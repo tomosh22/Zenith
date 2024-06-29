@@ -4,8 +4,10 @@
 
 
 #ifdef ZENITH_WINDOWS
-#include "Windows/Zenith_Windows_Window.h"
+#include "Zenith_Windows_Window.h"
 #endif
+
+#include "Flux/Zenith_Flux.h"
 
 #ifdef ZENITH_DEBUG
 static std::vector<const char*> s_xValidationLayers = { "VK_LAYER_KHRONOS_validation" };
@@ -35,14 +37,9 @@ uint32_t Zenith_Vulkan::s_auQueueIndices[COMMANDTYPE_MAX];
 vk::Device Zenith_Vulkan::s_xDevice;
 vk::Queue Zenith_Vulkan::s_axQueues[COMMANDTYPE_MAX];
 vk::CommandPool Zenith_Vulkan::s_axCommandPools[COMMANDTYPE_MAX];
+vk::DescriptorPool Zenith_Vulkan::s_axPerFrameDescriptorPools[MAX_FRAMES_IN_FLIGHT];
 
-
-
-
-void Zenith_Flux::Initialise()
-{
-	Zenith_Vulkan::Initialise();
-}
+const vk::DescriptorPool& Zenith_Vulkan::GetCurrentPerFrameDescriptorPool() { return s_axPerFrameDescriptorPools[Zenith_Flux::GetFrameIndex()]; }
 
 void Zenith_Vulkan::Initialise()
 {
@@ -53,6 +50,40 @@ void Zenith_Vulkan::Initialise()
 	CreateQueueFamilies();
 	CreateDevice();
 	CreateCommandPools();
+}
+
+void Zenith_Vulkan::BeginFrame()
+{
+	RecreatePerFrameDescriptorPool();
+}
+
+void Zenith_Vulkan::RecreatePerFrameDescriptorPool()
+{
+	vk::DescriptorPoolSize axPoolSizes[] =
+	{
+		{ vk::DescriptorType::eSampler, 10000 },
+		{ vk::DescriptorType::eCombinedImageSampler, 10000 },
+		{ vk::DescriptorType::eSampledImage, 10000 },
+		{ vk::DescriptorType::eStorageImage, 10000 },
+		{ vk::DescriptorType::eUniformTexelBuffer, 10000 },
+		{ vk::DescriptorType::eStorageTexelBuffer, 10000 },
+		{ vk::DescriptorType::eUniformBuffer, 10000 },
+		{ vk::DescriptorType::eStorageBuffer, 10000 },
+		{ vk::DescriptorType::eUniformBufferDynamic, 10000 },
+		{ vk::DescriptorType::eStorageBufferDynamic, 10000 },
+		{ vk::DescriptorType::eInputAttachment, 10000 }
+	};
+
+	vk::DescriptorPoolCreateInfo xPoolInfo = vk::DescriptorPoolCreateInfo()
+		.setPoolSizeCount(sizeof(axPoolSizes) / sizeof(axPoolSizes[0]))
+		.setPPoolSizes(axPoolSizes)
+		.setMaxSets(10000)
+		.setFlags(vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet | vk::DescriptorPoolCreateFlagBits::eUpdateAfterBind);
+
+	vk::DescriptorPool& xPool = s_axPerFrameDescriptorPools[Zenith_Flux::GetFrameIndex()];
+
+	s_xDevice.destroyDescriptorPool(xPool);
+	xPool = s_xDevice.createDescriptorPool(xPoolInfo);
 }
 
 void Zenith_Vulkan::CreateInstance()

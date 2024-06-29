@@ -6,6 +6,7 @@
 int main()
 {
 	Zenith_Window::Inititalise("Zenith", 1280, 720);
-	Zenith_Flux::Initialise();
+	Zenith_Flux::EarlyInitialise();
+	Zenith_Flux::LateInitialise();
 	__debugbreak();
 }
