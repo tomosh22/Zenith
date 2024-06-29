@@ -20,7 +20,7 @@ public class ZenithWindowsProject : Project
     public void ConfigureAll(Configuration conf, Target target)
     {
         conf.ProjectFileName = "[project.Name]_[target.Platform]";
-        conf.ProjectPath = @"[project.SharpmakeCsPath]\Build";
+        conf.ProjectPath = @"[project.SharpmakeCsPath]";
 
         conf.PrecompHeader = "Zenith.h";
         conf.PrecompSource = "Zenith.cpp";
@@ -65,7 +65,7 @@ public class ZenithWindowsSolution : Sharpmake.Solution
     public void ConfigureAll(Configuration conf, Target target)
     {
         conf.SolutionFileName = "[solution.Name]_[target.Platform]";
-        conf.SolutionPath = @"[solution.SharpmakeCsPath]\Build";
+        conf.SolutionPath = @"[solution.SharpmakeCsPath]";
         conf.AddProject<ZenithWindowsProject>(target);
     }
 }
