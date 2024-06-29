@@ -1,0 +1,90 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="Zenith\Core\Zenith.cpp">
+      <Filter>Zenith\Core</Filter>
+    </ClCompile>
+    <ClCompile Include="Zenith\Core\Zenith_Core.cpp">
+      <Filter>Zenith\Core</Filter>
+    </ClCompile>
+    <ClCompile Include="Zenith\Flux\Zenith_Flux.cpp">
+      <Filter>Zenith\Flux</Filter>
+    </ClCompile>
+    <ClCompile Include="Zenith\Input\Zenith_Input.cpp">
+      <Filter>Zenith\Input</Filter>
+    </ClCompile>
+    <ClCompile Include="Zenith\Vulkan\Zenith_Vulkan.cpp">
+      <Filter>Zenith\Vulkan</Filter>
+    </ClCompile>
+    <ClCompile Include="Zenith\Windows\Zenith_Windows_Window.cpp">
+      <Filter>Zenith\Windows</Filter>
+    </ClCompile>
+    <ClCompile Include="Zenith\Zenith_Main.cpp">
+      <Filter>Zenith</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="Middleware\glfw-3.4.bin.WIN64\include\GLFW\glfw3.h">
+      <Filter>Middleware\glfw-3.4.bin.WIN64\include\GLFW</Filter>
+    </ClInclude>
+    <ClInclude Include="Middleware\glfw-3.4.bin.WIN64\include\GLFW\glfw3native.h">
+      <Filter>Middleware\glfw-3.4.bin.WIN64\include\GLFW</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\Core\Zenith.h">
+      <Filter>Zenith\Core</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\Core\Zenith_Core.h">
+      <Filter>Zenith\Core</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\Flux\Zenith_Flux.h">
+      <Filter>Zenith\Flux</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\Input\Zenith_Input.h">
+      <Filter>Zenith\Input</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\Input\Zenith_KeyCodes.h">
+      <Filter>Zenith\Input</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\Vulkan\Zenith_Vulkan.h">
+      <Filter>Zenith\Vulkan</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\Windows\Zenith_OS_Include.h">
+      <Filter>Zenith\Windows</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\Windows\Zenith_Windows_Window.h">
+      <Filter>Zenith\Windows</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="Middleware">
+      <UniqueIdentifier>{eebf12a1-b020-34d6-90e9-3e7c687338df}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Middleware\glfw-3.4.bin.WIN64">
+      <UniqueIdentifier>{a102a3f2-a080-4282-d70c-c6ff853f6d18}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Middleware\glfw-3.4.bin.WIN64\include">
+      <UniqueIdentifier>{1d3023f3-a785-3fef-748a-e24337cf1429}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Middleware\glfw-3.4.bin.WIN64\include\GLFW">
+      <UniqueIdentifier>{3553b294-91e8-9b92-8b92-0057dc1cc29e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Zenith">
+      <UniqueIdentifier>{951448da-1e31-be13-d840-5e0fcc115357}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Zenith\Core">
+      <UniqueIdentifier>{e84b9d32-4703-7861-1735-99a5845a300c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Zenith\Flux">
+      <UniqueIdentifier>{9d602350-76e0-e794-ea6c-7f4e438d0b6b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Zenith\Input">
+      <UniqueIdentifier>{1b1e3505-0bf9-c172-d173-56b6842be504}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Zenith\Vulkan">
+      <UniqueIdentifier>{f7b47854-ceb7-87a4-f1b1-15a24762a34d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Zenith\Windows">
+      <UniqueIdentifier>{132806e3-63b4-26df-71df-631f0b76cc02}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>
