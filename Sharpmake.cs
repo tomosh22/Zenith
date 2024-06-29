@@ -14,6 +14,8 @@ public class ZenithWindowsProject : Project
         ));
 
         SourceRootPath = @"[project.SharpmakeCsPath]";
+		
+		SourceFilesExcludeRegex.Add(@".*VulkanSDK.*");
     }
 
     [Configure]
@@ -28,10 +30,10 @@ public class ZenithWindowsProject : Project
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Zenith");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Zenith/Core");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Middleware/glfw-3.4.bin.WIN64/include");
-		conf.IncludePaths.Add("$(VULKAN_SDK)/Include");
+		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Middleware/VulkanSDK/1.3.280.0/Include");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Zenith/Windows");
 		
-		conf.LibraryPaths.Add("$(VULKAN_SDK)/Lib");
+		conf.LibraryPaths.Add("[project.SharpmakeCsPath]/Middleware/VulkanSDK/1.3.280.0/Lib");
 		conf.LibraryPaths.Add("[project.SharpmakeCsPath]/Middleware/glfw-3.4.bin.WIN64/lib-vc2022");
 		
 		conf.LibraryFiles.Add("glfw3_mt.lib");
