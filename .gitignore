@@ -46,4 +46,11 @@
 /Middleware/VulkanSDK/1.3.280.0/Source/*
 /Middleware/VulkanSDK/1.3.280.0/Templates/*
 !/Middleware/VulkanSDK/1.3.280.0/Lib/vulkan-1.lib
-/Middleware/glfw-3.4.bin.WIN64/*
+/Middleware/glfw-3.4.bin.WIN64/docs
+/Middleware/glfw-3.4.bin.WIN64/lib-static-ucrt
+/Middleware/glfw-3.4.bin.WIN64/lib-vc2013
+/Middleware/glfw-3.4.bin.WIN64/lib-vc2015
+/Middleware/glfw-3.4.bin.WIN64/lib-vc2017
+/Middleware/glfw-3.4.bin.WIN64/lib-vc2019
+/Middleware/glfw-3.4.bin.WIN64/lib-vc2022/*
+!/Middleware/glfw-3.4.bin.WIN64/lib-vc2022/glfw3_mt.lib
