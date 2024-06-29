@@ -32,6 +32,7 @@ public class ZenithWindowsProject : Project
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Middleware/glfw-3.4.bin.WIN64/include");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Middleware/VulkanSDK/1.3.280.0/Include");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Zenith/Windows");
+		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Zenith/Vulkan");
 		
 		conf.LibraryPaths.Add("[project.SharpmakeCsPath]/Middleware/VulkanSDK/1.3.280.0/Lib");
 		conf.LibraryPaths.Add("[project.SharpmakeCsPath]/Middleware/glfw-3.4.bin.WIN64/lib-vc2022");
@@ -41,6 +42,7 @@ public class ZenithWindowsProject : Project
 		
 		conf.Defines.Add("ZENITH_VULKAN");
 		conf.Defines.Add("ZENITH_WINDOWS");
+		conf.Defines.Add("NOMINMAX");
 		
 		if(target.Optimization == Optimization.Debug)
 		{

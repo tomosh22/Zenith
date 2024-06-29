@@ -1,0 +1,86 @@
+#pragma once
+
+#include "vulkan/vulkan.hpp"
+#include "Flux/Zenith_Flux_Enums.h"
+
+class Zenith_Vulkan_Buffer;
+class Zenith_Vulkan_Texture;
+class Zenith_Vulkan_CommandBuffer;
+
+constexpr uint64_t g_uCpuPoolSize = 2ull * 1024ull * 1024ull * 1024ull;
+constexpr uint64_t g_uGpuPoolSize = 2ull * 1024ull * 1024ull * 1024ull;
+constexpr uint64_t g_uStagingPoolSize = 1024u * 1024u * 256u;
+
+#define ALIGN(size, align) ((size + align - 1) / align) * align
+
+class Zenith_Vulkan_MemoryManager
+{
+public:
+	
+	Zenith_Vulkan_MemoryManager() {}
+	~Zenith_Vulkan_MemoryManager() {
+		
+	}
+
+	enum MemoryResidency : uint8_t {
+		CPU_RESIDENT,
+		GPU_RESIDENT
+	};
+
+	static void Initialise();
+	static void Shutdown();
+	
+
+	static void BeginFrame();
+	static void EndFrame(bool bDefer = true);
+
+	static void ImageTransitionBarrier(vk::Image xImage, vk::ImageLayout eOldLayout, vk::ImageLayout eNewLayout, vk::ImageAspectFlags eAspect, vk::PipelineStageFlags eSrcStage, vk::PipelineStageFlags eDstStage, uint32_t uMipLevel = 0u, uint32_t uLayer = 0u);
+
+	static Zenith_Vulkan_Buffer* AllocateBuffer(size_t uSize, vk::BufferUsageFlags eUsageFlags, MemoryResidency eResidency);
+
+	static void AllocateTexture2DMemory(Zenith_Vulkan_Texture* pxTexture, uint32_t uWidth, uint32_t uHeight,TextureFormat eFormat, uint32_t uBitsPerPixel, uint32_t uNumMips, vk::ImageUsageFlags eUsageFlags, MemoryResidency eResidency);
+	static void FreeTexture2DMemory(Zenith_Vulkan_Texture* pxTexture, TextureFormat eFormat, MemoryResidency eResidency);
+
+	static void UploadStagingData(AllocationType eType, void* pAllocation, void* pData, size_t uSize);
+
+	static void UploadData(void* pAllocation, void* pData, size_t uSize);
+	static void ClearStagingBuffer();
+
+	static bool MemoryWasAllocated(void* pAllocation);
+
+	static Zenith_Vulkan_CommandBuffer* GetCommandBuffer();
+private:
+
+	static void HandleCpuOutOfMemory();
+	static void HandleGpuOutOfMemory();
+	static void HandleStagingBufferFull();
+
+	static void FlushStagingBuffer();
+
+	static vk::DeviceMemory s_xCPUMemory;
+	static vk::DeviceMemory s_xGPUMemory;
+
+	static Zenith_Vulkan_Buffer* s_pxStagingBuffer;
+	static Zenith_Vulkan_CommandBuffer* s_pxCommandBuffer;
+	
+	struct MemoryAllocation {
+		AllocationType m_eType;
+		size_t m_uSize;
+		size_t m_uOffset;
+	};
+	struct StagingMemoryAllocation {
+		AllocationType m_eType;
+		void* m_pAllocation;
+		size_t m_uSize;
+		size_t m_uOffset;
+	};
+	static std::list<StagingMemoryAllocation> s_xStagingAllocations;
+
+	static std::unordered_map<void*, MemoryAllocation> s_xCpuAllocationMap;
+	static std::unordered_map<void*, MemoryAllocation> s_xGpuAllocationMap;
+
+	static size_t s_uNextFreeCpuOffset;
+	static size_t s_uNextFreeGpuOffset;
+	static size_t s_uNextFreeStagingOffset;
+};
+

@@ -1,6 +1,8 @@
 #include <cstdio>
 #include <cstdint>
 #include <set>
+#include <unordered_map>
+#include <vector>
 
 #define ZENITH_LOG
 #ifdef ZENITH_LOG
@@ -20,4 +22,5 @@
 
 #define COUNT_OF(x) sizeof(x) / sizeof(x[0])
 
+#define STUBBED __debugbreak();
 //#define ZENITH_RAYTRACING
