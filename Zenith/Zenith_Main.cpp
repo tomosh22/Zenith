@@ -7,6 +7,5 @@ int main()
 {
 	Zenith_Window::Inititalise("Zenith", 1280, 720);
 	Zenith_Flux::Initialise();
-	this should fail
 	__debugbreak();
 }
