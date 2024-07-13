@@ -36,42 +36,41 @@ void Flux_Skybox::Initialise()
 		xVertexDesc,
 		&s_xShader,
 		xBlendStates,
-		true,
 		false,
-		DEPTH_COMPARE_FUNC_GREATEREQUAL,
+		false,
+		DEPTH_COMPARE_FUNC_ALWAYS,
 		{ COLOUR_FORMAT_BGRA8_SRGB },
-		DEPTHSTENCIL_FORMAT_D32_SFLOAT,
+		DEPTHSTENCIL_FORMAT_NONE,
 		"RenderToGBufferClear",
 		false,
 		false,
 		{ {0,0} },
 		//{ {3,0} },
-		Flux_Graphics::s_xFinalRenderTarget,
+		Flux_Swapchain::GetTargetSetup(),
 		LOAD_ACTION_CLEAR,
 		STORE_ACTION_STORE,
-		LOAD_ACTION_CLEAR,
-		STORE_ACTION_STORE,
-		RENDER_TARGET_USAGE_RENDERTARGET
+		LOAD_ACTION_DONTCARE,
+		STORE_ACTION_DONTCARE,
+		RENDER_TARGET_USAGE_PRESENT
 	);
 
 	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
 
-	Zenith_Log("Flux skybox initialised");
+	Zenith_Log("Flux_Skybox initialised");
 }
 
 void Flux_Skybox::Render()
 {
 	s_xCommandBuffer.BeginRecording();
 
-	s_xCommandBuffer.SubmitTargetSetup(Flux_Graphics::s_xFinalRenderTarget);
+	s_xCommandBuffer.SubmitTargetSetup(Flux_Swapchain::GetTargetSetup());
 
 	s_xCommandBuffer.SetPipeline(&s_xPipeline);
 
-	//s_xCommandBuffer.BeginBind(BINDING_FREQUENCY_PER_FRAME);
-	//s_xCommandBuffer.BindBuffer(app->m_pxCameraUBO->ppBuffers[pxRenderer->m_currentFrame], 0, 0);
+	s_xCommandBuffer.SetVertexBuffer(Flux_Graphics::s_xQuadVertexBuffer);
+	s_xCommandBuffer.SetIndexBuffer(Flux_Graphics::s_xQuadIndexBuffer);
 
-	s_xCommandBuffer.Draw(6);
-
+	s_xCommandBuffer.DrawIndexed(6);
 
 	s_xCommandBuffer.EndRecording(RENDER_ORDER_SKYBOX);
 }

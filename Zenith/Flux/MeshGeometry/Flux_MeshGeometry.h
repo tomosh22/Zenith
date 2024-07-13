@@ -16,6 +16,11 @@ public:
 	}
 
 	static void GenerateFullscreenQuad(Flux_MeshGeometry& xGeometryOut);
+
+	const void* GetVertexData() const { return m_pVertexData; }
+	const uint64_t GetVertexDataSize() const { return m_uNumVerts * m_xBufferLayout.GetStride(); }
+	const IndexType* GetIndexData() const { return m_puIndices; }
+	const uint64_t GetIndexDataSize() const { return m_uNumIndices * sizeof(IndexType); }
 private:
 	void GenerateLayoutAndVertexData();
 

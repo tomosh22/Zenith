@@ -4,6 +4,8 @@
 #include "Flux/Flux_Enums.h"
 
 class Zenith_Vulkan_Buffer;
+class Flux_VertexBuffer;
+class Flux_IndexBuffer;
 class Zenith_Vulkan_Texture;
 class Zenith_Vulkan_CommandBuffer;
 
@@ -31,14 +33,16 @@ public:
 
 	static void ImageTransitionBarrier(vk::Image xImage, vk::ImageLayout eOldLayout, vk::ImageLayout eNewLayout, vk::ImageAspectFlags eAspect, vk::PipelineStageFlags eSrcStage, vk::PipelineStageFlags eDstStage, uint32_t uMipLevel = 0u, uint32_t uLayer = 0u);
 
-	static Zenith_Vulkan_Buffer* AllocateBuffer(size_t uSize, vk::BufferUsageFlags eUsageFlags, MemoryResidency eResidency);
+	static void AllocateBuffer(size_t uSize, vk::BufferUsageFlags eUsageFlags, MemoryResidency eResidency, Zenith_Vulkan_Buffer& xBufferOut);
+	static void InitialiseVertexBuffer(const void* pData, size_t uSize, Flux_VertexBuffer& xBufferOut);
+	static void InitialiseIndexBuffer(const void* pData, size_t uSize, Flux_IndexBuffer& xBufferOut);
 
-	static Zenith_Vulkan_Texture* AllocateTexture(uint32_t uWidth, uint32_t uHeight, ColourFormat eColourFormat, DepthStencilFormat eDepthStencilFormat, uint32_t uBitsPerPixel, uint32_t uNumMips, vk::ImageUsageFlags eUsageFlags, MemoryResidency eResidency);
+	static void AllocateTexture(uint32_t uWidth, uint32_t uHeight, ColourFormat eColourFormat, DepthStencilFormat eDepthStencilFormat, uint32_t uBitsPerPixel, uint32_t uNumMips, vk::ImageUsageFlags eUsageFlags, MemoryResidency eResidency, Zenith_Vulkan_Texture& xTextureOut);
 	//static void FreeTexture2DMemory(Zenith_Vulkan_Texture* pxTexture, TextureFormat eFormat, MemoryResidency eResidency);
 
-	static void UploadStagingData(AllocationType eType, void* pAllocation, void* pData, size_t uSize);
+	static void UploadStagingData(AllocationType eType, void* pAllocation, const void* pData, size_t uSize);
 
-	static void UploadData(void* pAllocation, void* pData, size_t uSize);
+	static void UploadData(void* pAllocation, const void* pData, size_t uSize);
 	static void ClearStagingBuffer();
 
 	static bool MemoryWasAllocated(void* pAllocation);

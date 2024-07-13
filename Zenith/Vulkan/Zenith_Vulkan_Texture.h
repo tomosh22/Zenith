@@ -17,11 +17,11 @@ public:
 	static vk::AttachmentStoreOp ConvertToVkStoreAction(StoreAction eAction);
 	static vk::ImageLayout ConvertToVkTargetUsage(RenderTargetUsage eUsage, RenderTargetType eColourDepthStencil);
 
-	static Zenith_Vulkan_Texture* CreateColourAttachment(uint32_t uWidth, uint32_t uHeight, ColourFormat eFormat, uint32_t uBitsPerPixel);
-	static Zenith_Vulkan_Texture* CreateDepthStencilAttachment(uint32_t uWidth, uint32_t uHeight, DepthStencilFormat eFormat, uint32_t uBitsPerPixel);
+	static void CreateColourAttachment(uint32_t uWidth, uint32_t uHeight, ColourFormat eFormat, uint32_t uBitsPerPixel, Zenith_Vulkan_Texture& xTextureOut);
+	static void CreateDepthStencilAttachment(uint32_t uWidth, uint32_t uHeight, DepthStencilFormat eFormat, uint32_t uBitsPerPixel, Zenith_Vulkan_Texture& xTextureOut);
 
-	const vk::Image& GetImage() { return m_xImage; }
-	const vk::ImageView& GetImageView() { return m_xImageView; }
+	const vk::Image& GetImage() const { return m_xImage; }
+	const vk::ImageView& const GetImageView() { return m_xImageView; }
 	const uint32_t GetNumMips() const { return m_uNumMips; }
 
 	void SetImage(const vk::Image xImage) { m_xImage = xImage; }

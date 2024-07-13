@@ -74,7 +74,8 @@ void Zenith_Vulkan::EndFrame()
 	vk::Semaphore xMemorySemaphore = s_xDevice.createSemaphore(vk::SemaphoreCreateInfo());
 
 	std::vector<vk::CommandBuffer> xPlatformMemoryCmdBufs;
-	for (const Zenith_Vulkan_CommandBuffer* pCmdBuf : s_xPendingCommandBuffers[RENDER_ORDER_MEMORY_UPDATE]) {
+	for (const Zenith_Vulkan_CommandBuffer* pCmdBuf : s_xPendingCommandBuffers[RENDER_ORDER_MEMORY_UPDATE])
+	{
 		const vk::CommandBuffer& xBuf = *reinterpret_cast<const vk::CommandBuffer*>(pCmdBuf);
 		xPlatformMemoryCmdBufs.push_back(xBuf);
 	}
@@ -92,8 +93,10 @@ void Zenith_Vulkan::EndFrame()
 	s_axQueues[COMMANDTYPE_COPY].submit(xMemorySubmitInfo, VK_NULL_HANDLE);
 
 	std::vector<vk::CommandBuffer> xPlatformCmdBufs;
-	for (uint32_t i = RENDER_ORDER_MEMORY_UPDATE + 1; i < RENDER_ORDER_MAX; i++) {
-		for (const Zenith_Vulkan_CommandBuffer* pCmdBuf : s_xPendingCommandBuffers[i]) {
+	for (uint32_t i = RENDER_ORDER_MEMORY_UPDATE + 1; i < RENDER_ORDER_MAX; i++)
+	{
+		for (const Zenith_Vulkan_CommandBuffer* pCmdBuf : s_xPendingCommandBuffers[i])
+		{
 			const vk::CommandBuffer& xBuf = *reinterpret_cast<const vk::CommandBuffer*>(pCmdBuf);
 			xPlatformCmdBufs.push_back(xBuf);
 		}
@@ -112,8 +115,8 @@ void Zenith_Vulkan::EndFrame()
 	s_axQueues[COMMANDTYPE_GRAPHICS].submit(xRenderSubmitInfo, Zenith_Vulkan_Swapchain::GetCurrentInFlightFence());
 
 
-	//TODO: put this in end frame when I eventually write it
-	for (uint32_t i = 0; i < RENDER_ORDER_MAX; i++) {
+	for (uint32_t i = 0; i < RENDER_ORDER_MAX; i++)
+	{
 		s_xPendingCommandBuffers[i].clear();
 	}
 
@@ -170,7 +173,7 @@ void Zenith_Vulkan::CreateInstance()
 #error #TO_TODO: vulkan with not windows
 #endif
 
-	vk::InstanceCreateInfo instanceInfo = vk::InstanceCreateInfo()
+	vk::InstanceCreateInfo xInstanceInfo = vk::InstanceCreateInfo()
 		.setPApplicationInfo(&xAppInfo)
 		.setEnabledExtensionCount(xExtensions.size())
 		.setPpEnabledExtensionNames(xExtensions.data())
@@ -180,7 +183,7 @@ void Zenith_Vulkan::CreateInstance()
 #else
 		.setEnabledLayerCount(0);
 #endif
-	s_xInstance = vk::createInstance(instanceInfo);
+	s_xInstance = vk::createInstance(xInstanceInfo);
 
 	Zenith_Log("Vulkan instance created");
 }

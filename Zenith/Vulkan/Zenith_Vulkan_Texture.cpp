@@ -6,7 +6,8 @@
 #include "Zenith_Vulkan_MemoryManager.h"
 
 vk::Format Zenith_Vulkan_Texture::ConvertToVkFormat_Colour(ColourFormat eFormat) {
-	switch (eFormat) {
+	switch (eFormat)
+	{
 	case COLOUR_FORMAT_BGRA8_SRGB:
 		return vk::Format::eB8G8R8A8Srgb;
 	case COLOUR_FORMAT_R16G16B16A16_SFLOAT:
@@ -19,7 +20,8 @@ vk::Format Zenith_Vulkan_Texture::ConvertToVkFormat_Colour(ColourFormat eFormat)
 }
 
 vk::Format Zenith_Vulkan_Texture::ConvertToVkFormat_DepthStencil(DepthStencilFormat eFormat) {
-	switch (eFormat) {
+	switch (eFormat)
+	{
 	case DEPTHSTENCIL_FORMAT_D32_SFLOAT:
 		return vk::Format::eD32Sfloat;
 	default:
@@ -28,7 +30,8 @@ vk::Format Zenith_Vulkan_Texture::ConvertToVkFormat_DepthStencil(DepthStencilFor
 }
 
 vk::AttachmentLoadOp Zenith_Vulkan_Texture::ConvertToVkLoadAction(LoadAction eAction) {
-	switch (eAction) {
+	switch (eAction)
+	{
 	case LOAD_ACTION_DONTCARE:
 		return vk::AttachmentLoadOp::eDontCare;
 	case LOAD_ACTION_CLEAR:
@@ -41,7 +44,8 @@ vk::AttachmentLoadOp Zenith_Vulkan_Texture::ConvertToVkLoadAction(LoadAction eAc
 }
 
 vk::AttachmentStoreOp Zenith_Vulkan_Texture::ConvertToVkStoreAction(StoreAction eAction) {
-	switch (eAction) {
+	switch (eAction)
+	{
 	case STORE_ACTION_DONTCARE:
 		return vk::AttachmentStoreOp::eDontCare;
 	case STORE_ACTION_STORE:
@@ -52,9 +56,11 @@ vk::AttachmentStoreOp Zenith_Vulkan_Texture::ConvertToVkStoreAction(StoreAction 
 }
 
 vk::ImageLayout Zenith_Vulkan_Texture::ConvertToVkTargetUsage(RenderTargetUsage eUsage, RenderTargetType eColourDepthStencil) {
-	switch (eUsage) {
+	switch (eUsage)
+	{
 	case RENDER_TARGET_USAGE_RENDERTARGET:
-		switch (eColourDepthStencil) {
+		switch (eColourDepthStencil)
+		{
 		case RENDER_TARGET_TYPE_COLOUR:
 			return vk::ImageLayout::eColorAttachmentOptimal;
 		case RENDER_TARGET_TYPE_DEPTH:
@@ -72,13 +78,13 @@ vk::ImageLayout Zenith_Vulkan_Texture::ConvertToVkTargetUsage(RenderTargetUsage 
 	}
 }
 
-Zenith_Vulkan_Texture* Zenith_Vulkan_Texture::CreateColourAttachment(uint32_t uWidth, uint32_t uHeight, ColourFormat eFormat, uint32_t uBitsPerPixel)
+void Zenith_Vulkan_Texture::CreateColourAttachment(uint32_t uWidth, uint32_t uHeight, ColourFormat eFormat, uint32_t uBitsPerPixel, Zenith_Vulkan_Texture& xTextureOut)
 {
-	return Zenith_Vulkan_MemoryManager::AllocateTexture(uWidth, uHeight, eFormat, DEPTHSTENCIL_FORMAT_NONE, uBitsPerPixel, 1 /* #TO_TODO: mips */, vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled, MEMORY_RESIDENCY_GPU);
+	Zenith_Vulkan_MemoryManager::AllocateTexture(uWidth, uHeight, eFormat, DEPTHSTENCIL_FORMAT_NONE, uBitsPerPixel, 1 /* #TO_TODO: mips */, vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled, MEMORY_RESIDENCY_GPU, xTextureOut);
 }
-Zenith_Vulkan_Texture* Zenith_Vulkan_Texture::CreateDepthStencilAttachment(uint32_t uWidth, uint32_t uHeight, DepthStencilFormat eFormat, uint32_t uBitsPerPixel)
+void Zenith_Vulkan_Texture::CreateDepthStencilAttachment(uint32_t uWidth, uint32_t uHeight, DepthStencilFormat eFormat, uint32_t uBitsPerPixel, Zenith_Vulkan_Texture& xTextureOut)
 {
-	return Zenith_Vulkan_MemoryManager::AllocateTexture(uWidth, uHeight, COLOUR_FORMAT_NONE, eFormat, uBitsPerPixel, 1, vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled, MEMORY_RESIDENCY_GPU);
+	Zenith_Vulkan_MemoryManager::AllocateTexture(uWidth, uHeight, COLOUR_FORMAT_NONE, eFormat, uBitsPerPixel, 1, vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled, MEMORY_RESIDENCY_GPU, xTextureOut);
 }
 
 void Zenith_Vulkan_Sampler::InitialiseDefault(Zenith_Vulkan_Sampler& xSampler)

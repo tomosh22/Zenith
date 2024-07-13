@@ -5,8 +5,8 @@
 #define MAX_BINDINGS 16
 
 class Zenith_Vulkan_Buffer;
-class Zenith_Vulkan_VertexBuffer;
-class Zenith_Vulkan_IndexBuffer;
+class Flux_VertexBuffer;
+class Flux_IndexBuffer;
 class Zenith_Vulkan_Texture;
 class Zenith_Vulkan_Pipeline;
 class Flux_RenderTarget;
@@ -26,11 +26,11 @@ public:
 	void BeginRecording();
 	void EndRecording(RenderOrder eOrder, bool bEndPass = true) ;
 	void EndAndCpuWait(bool bEndPass);
-	void SetVertexBuffer(Zenith_Vulkan_VertexBuffer* pxVertexBuffer, uint32_t uBindPoint = 0);
-	void SetIndexBuffer(Zenith_Vulkan_IndexBuffer* pxIndexBuffer);
+	void SetVertexBuffer(Flux_VertexBuffer& xVertexBuffer, uint32_t uBindPoint = 0);
+	void SetIndexBuffer(Flux_IndexBuffer& xIndexBuffer);
 	void Draw(uint32_t uNumVerts);
 	void DrawIndexed(uint32_t uNumIndices, uint32_t uNumInstances = 1, uint32_t uVertexOffset = 0, uint32_t uIndexOffset = 0,uint32_t uInstanceOffset = 0);
-	void SubmitTargetSetup(const Flux_TargetSetup& xTargetSetup);
+	void SubmitTargetSetup(Flux_TargetSetup& xTargetSetup);
 	void SetPipeline(Zenith_Vulkan_Pipeline* pxPipeline);
 	void BindTexture(void* pxTexture, uint32_t uBindPoint, uint32_t uSet);
 	void BindBuffer(void* pxBuffer, uint32_t uBindPoint, uint32_t uSet);

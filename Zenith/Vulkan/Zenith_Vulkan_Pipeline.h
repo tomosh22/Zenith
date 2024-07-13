@@ -50,7 +50,7 @@ private:
 
 //#TO_TODO: there should be a platform independent version of this
 struct Zenith_Vulkan_PipelineSpecification {
-	Zenith_Vulkan_PipelineSpecification(std::string strName, Flux_VertexInputDescription xVertexInputDesc, Zenith_Vulkan_Shader* pxShader, std::vector<Flux_BlendState> xBlendStates, bool bDepthTestEnabled, bool bDepthWriteEnabled, DepthCompareFunc eDepthCompareFunc, std::vector<ColourFormat> aeColourFormats, DepthStencilFormat eDepthFormat, std::string strRenderPassName, bool bUsePushConstants, bool bUseTesselation, std::vector<std::array<uint32_t, DESCRIPTOR_TYPE_MAX>> xDescSetBindings, const Flux_TargetSetup& xTargetSetup, LoadAction eColourLoad, StoreAction eColourStore, LoadAction eDepthStencilLoad, StoreAction eDepthStencilStore, RenderTargetUsage eUsage);
+	Zenith_Vulkan_PipelineSpecification(std::string strName, Flux_VertexInputDescription xVertexInputDesc, Zenith_Vulkan_Shader* pxShader, std::vector<Flux_BlendState> xBlendStates, bool bDepthTestEnabled, bool bDepthWriteEnabled, DepthCompareFunc eDepthCompareFunc, std::vector<ColourFormat> aeColourFormats, DepthStencilFormat eDepthFormat, std::string strRenderPassName, bool bUsePushConstants, bool bUseTesselation, std::vector<std::array<uint32_t, DESCRIPTOR_TYPE_MAX>> xDescSetBindings, Flux_TargetSetup& xTargetSetup, LoadAction eColourLoad, StoreAction eColourStore, LoadAction eDepthStencilLoad, StoreAction eDepthStencilStore, RenderTargetUsage eUsage);
 
 	std::string m_strName;
 	Zenith_Vulkan_Shader* m_pxShader;
@@ -70,7 +70,7 @@ struct Zenith_Vulkan_PipelineSpecification {
 
 	Flux_VertexInputDescription m_eVertexInputDesc;
 
-	const Flux_TargetSetup& m_xTargetSetup;
+	Flux_TargetSetup& m_xTargetSetup;
 	LoadAction m_eColourLoadAction;
 	StoreAction m_eColourStoreAction;
 	LoadAction m_eDepthStencilLoadAction;
@@ -89,19 +89,19 @@ public:
 	std::vector<vk::DescriptorSet> m_axDescSets[MAX_FRAMES_IN_FLIGHT];
 
 
-	bool bUsePushConstants = false;//#TODO expand on this, currently just use model matrix
+	bool m_bUsePushConstants = false;//#TODO expand on this, currently just use model matrix
 
 	std::string m_strName;
 
-	static vk::RenderPass TargetSetupToRenderPass(const Flux_TargetSetup& xTargetSetup, LoadAction eColourLoad, StoreAction eColourStore, LoadAction eDepthStencilLoad, StoreAction eDepthStencilStore, RenderTargetUsage eUsage);
-	static vk::Framebuffer TargetSetupToFramebuffer(const Flux_TargetSetup& xTargetSetup, const vk::RenderPass& xPass);
+	static vk::RenderPass TargetSetupToRenderPass(Flux_TargetSetup& xTargetSetup, LoadAction eColourLoad, StoreAction eColourStore, LoadAction eDepthStencilLoad, StoreAction eDepthStencilStore, RenderTargetUsage eUsage);
+	static vk::Framebuffer TargetSetupToFramebuffer(Flux_TargetSetup& xTargetSetup, const vk::RenderPass& xPass);
 
 	void BindDescriptorSets(vk::CommandBuffer& xCmd, const std::vector<vk::DescriptorSet>& axSets, vk::PipelineBindPoint eBindPoint, uint32_t ufirstSet) const;
 };
 
 class Zenith_Vulkan_PipelineBuilder	{
 public:
-	Zenith_Vulkan_PipelineBuilder(const std::string& debugName = "");
+	Zenith_Vulkan_PipelineBuilder(const std::string& strPipeName = "");
 	~Zenith_Vulkan_PipelineBuilder() {}
 
 	Zenith_Vulkan_PipelineBuilder& WithDepthState(vk::CompareOp op, bool depthEnabled, bool writeEnabled, bool stencilEnabled = false);
@@ -142,31 +142,31 @@ protected:
 	};
 	static DescriptorThings HandleDescriptors(const Zenith_Vulkan_PipelineSpecification& spec, Zenith_Vulkan_PipelineBuilder& xBuilder);
 
-	vk::GraphicsPipelineCreateInfo				pipelineCreate;
-	vk::PipelineCacheCreateInfo					cacheCreate;
-	vk::PipelineInputAssemblyStateCreateInfo	inputAsmCreate;
-	vk::PipelineRasterizationStateCreateInfo	rasterCreate;
-	vk::PipelineColorBlendStateCreateInfo		blendCreate;
-	vk::PipelineDepthStencilStateCreateInfo		depthStencilCreate;
-	vk::PipelineViewportStateCreateInfo			viewportCreate;
-	vk::PipelineMultisampleStateCreateInfo		sampleCreate;
-	vk::PipelineDynamicStateCreateInfo			dynamicCreate;
-	vk::PipelineVertexInputStateCreateInfo		vertexCreate;
-	vk::PipelineLayout layout;
+	vk::GraphicsPipelineCreateInfo				m_xPipelineCreate;
+	vk::PipelineCacheCreateInfo					m_xCacheCreate;
+	vk::PipelineInputAssemblyStateCreateInfo	m_xInputAsmCreate;
+	vk::PipelineRasterizationStateCreateInfo	m_xRasterCreate;
+	vk::PipelineColorBlendStateCreateInfo		m_xBlendCreate;
+	vk::PipelineDepthStencilStateCreateInfo		m_xDepthStencilCreate;
+	vk::PipelineViewportStateCreateInfo			m_xViewportCreate;
+	vk::PipelineMultisampleStateCreateInfo		m_xSampleCreate;
+	vk::PipelineDynamicStateCreateInfo			m_xDynamicCreate;
+	vk::PipelineVertexInputStateCreateInfo		m_xVertexCreate;
+	vk::PipelineLayout m_xPipelineLayout;
 
-	std::vector< vk::PipelineColorBlendAttachmentState>			blendAttachStates;
+	std::vector< vk::PipelineColorBlendAttachmentState>			m_xBlendAttachStates;
 
-	vk::DynamicState dynamicStateEnables[2];
+	vk::DynamicState m_axDynamicStateEnables[2];
 
-	std::vector< vk::DescriptorSetLayout> allLayouts;
-	std::vector< vk::PushConstantRange> allPushConstants;
+	std::vector< vk::DescriptorSetLayout> m_xAllLayouts;
+	std::vector< vk::PushConstantRange> m_xAllPushConstants;
 
-	std::vector<ColourFormat> allColourRenderingFormats;
-	vk::Format depthRenderingFormat;
-	vk::Format stencilRenderingFormat;
+	std::vector<ColourFormat> m_xAllColourRenderingFormats;
+	vk::Format m_xDepthRenderingFormat;
+	vk::Format m_xStencilRenderingFormat;
 
-	bool useTesselation;
-	vk::PipelineTessellationStateCreateInfo tesselationCreate;
+	bool m_bUseTesselation;
+	vk::PipelineTessellationStateCreateInfo m_xTesselationCreate;
 
-	std::string debugName;
+	std::string m_strDebugName;
 };

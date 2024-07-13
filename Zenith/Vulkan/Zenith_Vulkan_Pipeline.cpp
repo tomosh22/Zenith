@@ -14,7 +14,7 @@ License: MIT (see LICENSE file at the top of the source tree)
 #include "Flux/Flux_RenderTargets.h"
 #include "FileAccess/Zenith_FileAccess.h"
 
-Zenith_Vulkan_PipelineSpecification::Zenith_Vulkan_PipelineSpecification(std::string strName, Flux_VertexInputDescription xVertexInputDesc, Zenith_Vulkan_Shader* pxShader, std::vector<Flux_BlendState> xBlendStates, bool bDepthTestEnabled, bool bDepthWriteEnabled, DepthCompareFunc eDepthCompareFunc, std::vector<ColourFormat> aeColourFormats, DepthStencilFormat eDepthStencilFormat, std::string strRenderPassName, bool bUsePushConstants, bool bUseTesselation, std::vector<std::array<uint32_t, DESCRIPTOR_TYPE_MAX>> xDescSetBindings, const Flux_TargetSetup& xTargetSetup, LoadAction eColourLoad, StoreAction eColourStore, LoadAction eDepthStencilLoad, StoreAction eDepthStencilStore, RenderTargetUsage eUsage)
+Zenith_Vulkan_PipelineSpecification::Zenith_Vulkan_PipelineSpecification(std::string strName, Flux_VertexInputDescription xVertexInputDesc, Zenith_Vulkan_Shader* pxShader, std::vector<Flux_BlendState> xBlendStates, bool bDepthTestEnabled, bool bDepthWriteEnabled, DepthCompareFunc eDepthCompareFunc, std::vector<ColourFormat> aeColourFormats, DepthStencilFormat eDepthStencilFormat, std::string strRenderPassName, bool bUsePushConstants, bool bUseTesselation, std::vector<std::array<uint32_t, DESCRIPTOR_TYPE_MAX>> xDescSetBindings, Flux_TargetSetup& xTargetSetup, LoadAction eColourLoad, StoreAction eColourStore, LoadAction eDepthStencilLoad, StoreAction eDepthStencilStore, RenderTargetUsage eUsage)
 	: m_strName(strName)
 	, m_eVertexInputDesc(xVertexInputDesc)
 	, m_pxShader(pxShader)
@@ -46,7 +46,8 @@ void Zenith_Vulkan_Shader::Initialise(const std::string& strVertex, const std::s
 
 	m_uStageCount = 2;
 
-	if (strDomain.length()) {
+	if (strDomain.length())
+	{
 		Zenith_Assert(strHull.length(), "Found tesc but not tese");
 		m_pcTescShaderCode = Zenith_FileAccess::ReadFile((strShaderRoot + strDomain + strExtension).c_str(), m_pcTescShaderCodeSize);
 		m_pcTeseShaderCode = Zenith_FileAccess::ReadFile((strShaderRoot + strHull + strExtension).c_str(), m_pcTeseShaderCodeSize);
@@ -186,13 +187,17 @@ public:
 		vk::DescriptorSetLayoutBindingFlagsCreateInfoEXT xBindingFlagsInfo;
 		std::vector< vk::DescriptorBindingFlags> xBindingFlags;
 
-		if (m_bUsingBindless) {
-			for (int i = 0; i < m_xAddedBindings.size(); ++i) {
-				if (m_xAddedBindings[i].descriptorType != vk::DescriptorType::eAccelerationStructureKHR) {
+		if (m_bUsingBindless)
+		{
+			for (int i = 0; i < m_xAddedBindings.size(); ++i)
+			{
+				if (m_xAddedBindings[i].descriptorType != vk::DescriptorType::eAccelerationStructureKHR)
+				{
 					//#TO_TODO: why do I get geometry and lighting flickering without this???
 					//xBindingFlags.push_back(vk::DescriptorBindingFlagBits::eUpdateAfterBind);
 				}
-				else {
+				else
+				{
 					xBindingFlags.push_back((vk::DescriptorBindingFlagBits)0);
 				}
 			}
@@ -233,13 +238,13 @@ static vk::PipelineVertexInputStateCreateInfo VertexDescToVulkanDesc(const Flux_
 {
 	uint32_t uBindPoint = 0;
 	const Flux_BufferLayout& xVertexLayout = xDesc.m_xPerVertexLayout;
-	for (const Flux_BufferElement& element : xVertexLayout.GetElements())
+	for (const Flux_BufferElement& xElement : xVertexLayout.GetElements())
 	{
 		vk::VertexInputAttributeDescription xAttrDesc = vk::VertexInputAttributeDescription()
 			.setBinding(0)
 			.setLocation(uBindPoint)
-			.setOffset(element._Offset)
-			.setFormat(Zenith_Vulkan::ShaderDataTypeToVulkanFormat(element._Type));
+			.setOffset(xElement._Offset)
+			.setFormat(Zenith_Vulkan::ShaderDataTypeToVulkanFormat(xElement._Type));
 		xAttrDescs.push_back(xAttrDesc);
 		uBindPoint++;
 	}
@@ -255,15 +260,15 @@ static vk::PipelineVertexInputStateCreateInfo VertexDescToVulkanDesc(const Flux_
 	const Flux_BufferLayout& xInstanceLayout = xDesc.m_xPerInstanceLayout;
 	if (xDesc.m_xPerInstanceLayout.GetElements().size())
 	{
-		for (const Flux_BufferElement& element : xInstanceLayout.GetElements())
+		for (const Flux_BufferElement& xElement : xInstanceLayout.GetElements())
 		{
 
 
 			vk::VertexInputAttributeDescription xInstanceAttrDesc = vk::VertexInputAttributeDescription()
 				.setBinding(1)
 				.setLocation(uBindPoint)
-				.setOffset(element._Offset)
-				.setFormat(Zenith_Vulkan::ShaderDataTypeToVulkanFormat(element._Type));
+				.setOffset(xElement._Offset)
+				.setFormat(Zenith_Vulkan::ShaderDataTypeToVulkanFormat(xElement._Type));
 			xAttrDescs.push_back(xInstanceAttrDesc);
 			uBindPoint++;
 		}
@@ -287,38 +292,38 @@ void Zenith_Vulkan_Pipeline::BindDescriptorSets(vk::CommandBuffer& xCmd, const s
 	xCmd.bindDescriptorSets(eBindPoint, m_xPipelineLayout, ufirstSet, axSets.size(), axSets.data(), 0, nullptr);
 }
 
-Zenith_Vulkan_PipelineBuilder::Zenith_Vulkan_PipelineBuilder(const std::string& pipeName)
+Zenith_Vulkan_PipelineBuilder::Zenith_Vulkan_PipelineBuilder(const std::string& strPipeName /* = "" */)
 {
-	dynamicStateEnables[0] = vk::DynamicState::eViewport;
-	dynamicStateEnables[1] = vk::DynamicState::eScissor;
+	m_axDynamicStateEnables[0] = vk::DynamicState::eViewport;
+	m_axDynamicStateEnables[1] = vk::DynamicState::eScissor;
 
-	dynamicCreate.setDynamicStateCount(2);
-	dynamicCreate.setPDynamicStates(dynamicStateEnables);
+	m_xDynamicCreate.setDynamicStateCount(2);
+	m_xDynamicCreate.setPDynamicStates(m_axDynamicStateEnables);
 
-	sampleCreate.setRasterizationSamples(vk::SampleCountFlagBits::e1);
+	m_xSampleCreate.setRasterizationSamples(vk::SampleCountFlagBits::e1);
 
-	viewportCreate.setViewportCount(1);
-	viewportCreate.setScissorCount(1);
+	m_xViewportCreate.setViewportCount(1);
+	m_xViewportCreate.setScissorCount(1);
 
-	pipelineCreate.setPViewportState(&viewportCreate);
+	m_xPipelineCreate.setPViewportState(&m_xViewportCreate);
 
-	depthStencilCreate.setDepthCompareOp(vk::CompareOp::eAlways)
+	m_xDepthStencilCreate.setDepthCompareOp(vk::CompareOp::eAlways)
 		.setDepthTestEnable(false)
 		.setDepthWriteEnable(false)
 		.setStencilTestEnable(false)
 		.setDepthBoundsTestEnable(false);
 
-	depthRenderingFormat = vk::Format::eUndefined;
-	stencilRenderingFormat = vk::Format::eUndefined;
+	m_xDepthRenderingFormat = vk::Format::eUndefined;
+	m_xStencilRenderingFormat = vk::Format::eUndefined;
 
-	rasterCreate.setCullMode(vk::CullModeFlagBits::eBack)
+	m_xRasterCreate.setCullMode(vk::CullModeFlagBits::eBack)
 		.setPolygonMode(vk::PolygonMode::eFill)
 		.setFrontFace(vk::FrontFace::eCounterClockwise)
 		.setLineWidth(1.0f);
 
-	debugName = pipeName;
+	m_strDebugName = strPipeName;
 
-	inputAsmCreate.setTopology(vk::PrimitiveTopology::eTriangleList);
+	m_xInputAsmCreate.setTopology(vk::PrimitiveTopology::eTriangleList);
 }
 
 Zenith_Vulkan_Pipeline::~Zenith_Vulkan_Pipeline()
@@ -334,7 +339,7 @@ Zenith_Vulkan_Pipeline::~Zenith_Vulkan_Pipeline()
 
 Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithDepthState(vk::CompareOp op, bool depthEnabled, bool writeEnabled, bool stencilEnabled)
 	{
-		depthStencilCreate.setDepthCompareOp(op)
+		m_xDepthStencilCreate.setDepthCompareOp(op)
 			.setDepthTestEnable(depthEnabled)
 			.setDepthWriteEnable(writeEnabled)
 			.setStencilTestEnable(stencilEnabled);
@@ -356,94 +361,95 @@ Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithBlendState(vk:
 			.setDstAlphaBlendFactor(dstState)
 			.setDstColorBlendFactor(dstState);
 
-		blendAttachStates.emplace_back(pipeBlend);
+		m_xBlendAttachStates.emplace_back(pipeBlend);
 
 		return *this;
 	}
 
 	Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithRaster(vk::CullModeFlagBits cullMode, vk::PolygonMode polyMode)
 	{
-		rasterCreate.setCullMode(cullMode).setPolygonMode(polyMode);
+		m_xRasterCreate.setCullMode(cullMode).setPolygonMode(polyMode);
 		return *this;
 	}
 
 	Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithVertexInputState(const vk::PipelineVertexInputStateCreateInfo& spec)
 	{
-		vertexCreate = spec;
+		m_xVertexCreate = spec;
 		return *this;
 	}
 
 	Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithTopology(vk::PrimitiveTopology topology)
 	{
-		inputAsmCreate.setTopology(topology);
+		m_xInputAsmCreate.setTopology(topology);
 		return *this;
 	}
 
 	Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithShader(const Zenith_Vulkan_Shader& shader)
 	{
-		shader.FillShaderStageCreateInfo(pipelineCreate);
+		shader.FillShaderStageCreateInfo(m_xPipelineCreate);
 		return *this;
 	}
 
 	Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithLayout(vk::PipelineLayout layout)
 	{
-		this->layout = layout;
-		pipelineCreate.setLayout(layout);
+		this->m_xPipelineLayout = layout;
+		m_xPipelineCreate.setLayout(layout);
 		return *this;
 	}
 
 	Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithPushConstant(vk::ShaderStageFlags flags, uint32_t offset)
 	{
 		const vk::PhysicalDevice& xPhysicalDevice = Zenith_Vulkan::GetPhysicalDevice();
-		allPushConstants.emplace_back(vk::PushConstantRange(flags, offset, xPhysicalDevice.getProperties().limits.maxPushConstantsSize));
+		m_xAllPushConstants.emplace_back(vk::PushConstantRange(flags, offset, xPhysicalDevice.getProperties().limits.maxPushConstantsSize));
 		return *this;
 	}
 
 	Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithPass(vk::RenderPass& renderPass)
 	{
-		pipelineCreate.setRenderPass(renderPass);
+		m_xPipelineCreate.setRenderPass(renderPass);
 		return *this;
 	}
 
 	Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithDepthStencilFormat(vk::Format depthFormat)
 	{
-		depthRenderingFormat = depthFormat;
-		stencilRenderingFormat = depthFormat;
+		m_xDepthRenderingFormat = depthFormat;
+		m_xStencilRenderingFormat = depthFormat;
 		return *this;
 	}
 
 	Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithDepthFormat(vk::Format depthFormat)
 	{
-		depthRenderingFormat = depthFormat;
+		m_xDepthRenderingFormat = depthFormat;
 		return *this;
 	}
 
 	Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithColourFormats(const std::vector<ColourFormat>& formats)
 	{
-		allColourRenderingFormats = formats;
+		m_xAllColourRenderingFormats = formats;
 		return *this;
 	}
 
 	Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithTesselation()
 	{
-		useTesselation = true;
-		inputAsmCreate.setTopology(vk::PrimitiveTopology::ePatchList);
-		tesselationCreate.setPatchControlPoints(3);
+		m_bUseTesselation = true;
+		m_xInputAsmCreate.setTopology(vk::PrimitiveTopology::ePatchList);
+		m_xTesselationCreate.setPatchControlPoints(3);
 		return *this;
 	}
 
 	Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithDescriptorSetLayout(uint32_t slot, vk::DescriptorSetLayout layout)
 	{
 		assert(slot < 32);
-		while (allLayouts.size() <= slot) {
-			allLayouts.push_back(vk::DescriptorSetLayout());
+		while (m_xAllLayouts.size() <= slot)
+		{
+			m_xAllLayouts.push_back(vk::DescriptorSetLayout());
 		}
-		allLayouts[slot] = layout;
+		m_xAllLayouts[slot] = layout;
 		return *this;
 	}
 
 	//VulkanPipelineBuilder& VulkanPipelineBuilder::WithDescriptorBuffers() {
-	//	pipelineCreate.flags |= vk::PipelineCreateFlagBits::eDescriptorBufferEXT;
+	//	m_xPipelineCreate.flags |= vk::PipelineCreateFlagBits::eDescriptorBufferEXT;
 	//	return *this;
 	//}
 
@@ -451,14 +457,14 @@ Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithBlendState(vk:
 	{
 		const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 		vk::PipelineLayoutCreateInfo xPipeLayoutCreate = vk::PipelineLayoutCreateInfo()
-			.setSetLayouts(allLayouts)
-			.setPushConstantRanges(allPushConstants);
+			.setSetLayouts(m_xAllLayouts)
+			.setPushConstantRanges(m_xAllPushConstants);
 
-		if (blendAttachStates.empty())
+		if (m_xBlendAttachStates.empty())
 		{
-			if (!allColourRenderingFormats.empty())
+			if (!m_xAllColourRenderingFormats.empty())
 			{
-				for (int i = 0; i < allColourRenderingFormats.size(); ++i)
+				for (int i = 0; i < m_xAllColourRenderingFormats.size(); ++i)
 				{
 					WithBlendState(vk::BlendFactor::eSrcAlpha, vk::BlendFactor::eOneMinusSrcAlpha, false);
 				}
@@ -469,33 +475,34 @@ Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithBlendState(vk:
 			}
 		}
 
-		blendCreate.setAttachments(blendAttachStates);
-		blendCreate.setBlendConstants({ 1.0f, 1.0f, 1.0f, 1.0f });
+		m_xBlendCreate.setAttachments(m_xBlendAttachStates);
+		m_xBlendCreate.setBlendConstants({ 1.0f, 1.0f, 1.0f, 1.0f });
 
 		int uShouldReturn = 0;
 
 		xPipelineOut.m_xPipelineLayout = xDevice.createPipelineLayout(xPipeLayoutCreate);
 
-		pipelineCreate.setPColorBlendState(&blendCreate)
-			.setPDepthStencilState(&depthStencilCreate)
-			.setPDynamicState(&dynamicCreate)
-			.setPInputAssemblyState(&inputAsmCreate)
-			.setPMultisampleState(&sampleCreate)
-			.setPRasterizationState(&rasterCreate)
+		m_xPipelineCreate.setPColorBlendState(&m_xBlendCreate)
+			.setPDepthStencilState(&m_xDepthStencilCreate)
+			.setPDynamicState(&m_xDynamicCreate)
+			.setPInputAssemblyState(&m_xInputAsmCreate)
+			.setPMultisampleState(&m_xSampleCreate)
+			.setPRasterizationState(&m_xRasterCreate)
 			.setLayout(xPipelineOut.m_xPipelineLayout)
-			.setPVertexInputState(&vertexCreate);
+			.setPVertexInputState(&m_xVertexCreate);
 
-		if (useTesselation)
+		if (m_bUseTesselation)
 		{
-			pipelineCreate = pipelineCreate.setPTessellationState(&tesselationCreate);
+			m_xPipelineCreate = m_xPipelineCreate.setPTessellationState(&m_xTesselationCreate);
 		}
-		xPipelineOut.m_xPipeline = xDevice.createGraphicsPipeline(VK_NULL_HANDLE, pipelineCreate).value;
+		xPipelineOut.m_xPipeline = xDevice.createGraphicsPipeline(VK_NULL_HANDLE, m_xPipelineCreate).value;
 		
 	}
 
 	vk::Format VceFormatToVKFormat(ColourFormat eFmt)
 	{
-		switch (eFmt) {
+		switch (eFmt)
+		{
 		case COLOUR_FORMAT_BGRA8_SRGB:
 			return vk::Format::eB8G8R8A8Srgb;
 		case COLOUR_FORMAT_BGRA8_UNORM:
@@ -507,7 +514,8 @@ Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithBlendState(vk:
 
 	vk::CompareOp VceCompareFuncToVkCompareFunc(DepthCompareFunc eFunc)
 	{
-		switch (eFunc) {
+		switch (eFunc)
+		{
 		case DEPTH_COMPARE_FUNC_GREATEREQUAL:
 			return vk::CompareOp::eGreaterOrEqual;
 		case DEPTH_COMPARE_FUNC_LESSEQUAL:
@@ -525,7 +533,8 @@ Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithBlendState(vk:
 
 	vk::BlendFactor VceBlendFactorToVKBlendFactor(BlendFactor eFactor)
 	{
-		switch (eFactor) {
+		switch (eFactor)
+		{
 		case BLEND_FACTOR_SRCALPHA:
 			return vk::BlendFactor::eSrcAlpha;
 		case BLEND_FACTOR_ONEMINUSSRCALPHA:
@@ -545,7 +554,8 @@ Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithBlendState(vk:
 		std::vector<vk::DescriptorSetLayout> xLayouts;
 		std::vector<vk::DescriptorSet> xSets;
 
-		for (std::array<uint32_t, DESCRIPTOR_TYPE_MAX> xSetDesc : spec.m_xDescSetBindings) {
+		for (std::array<uint32_t, DESCRIPTOR_TYPE_MAX> xSetDesc : spec.m_xDescSetBindings)
+		{
 			Zenith_Vulkan_DescriptorSetLayoutBuilder xDescBuilder = Zenith_Vulkan_DescriptorSetLayoutBuilder().WithBindlessAccess();
 
 			for (uint32_t i = 0; i < xSetDesc[DESCRIPTOR_TYPE_BUFFER]; i++)
@@ -572,7 +582,7 @@ Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithBlendState(vk:
 		
 	}
 
-	vk::RenderPass Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(const Flux_TargetSetup& xTargetSetup, LoadAction eColourLoad, StoreAction eColourStore, LoadAction eDepthStencilLoad, StoreAction eDepthStencilStore, RenderTargetUsage eUsage)
+	vk::RenderPass Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(Flux_TargetSetup& xTargetSetup, LoadAction eColourLoad, StoreAction eColourStore, LoadAction eDepthStencilLoad, StoreAction eDepthStencilStore, RenderTargetUsage eUsage)
 	{
 		uint32_t uNumColourAttachments = 0;
 		for (uint32_t i = 0; i < FLUX_MAX_TARGETS; i++)
@@ -611,7 +621,8 @@ Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithBlendState(vk:
 		bool bHasDepth = xTargetSetup.m_xDepthStencil.m_eDepthStencilFormat != DEPTHSTENCIL_FORMAT_NONE;
 		vk::AttachmentDescription xDepthStencilAttachment;
 		vk::AttachmentReference xDepthStencilAttachmentRef;
-		if (bHasDepth) {
+		if (bHasDepth)
+		{
 			xDepthStencilAttachment = vk::AttachmentDescription()
 				.setFormat(Zenith_Vulkan_Texture::ConvertToVkFormat_DepthStencil(xTargetSetup.m_xDepthStencil.m_eDepthStencilFormat))
 				.setSamples(vk::SampleCountFlagBits::e1)
@@ -635,7 +646,9 @@ Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithBlendState(vk:
 			.setColorAttachmentCount(uNumColourAttachments)
 			.setPColorAttachments(xAttachmentRefs.data());
 		if (bHasDepth)
+		{
 			xSubpass.setPDepthStencilAttachment(&xDepthStencilAttachmentRef);
+		}
 
 		vk::SubpassDependency xDependency = vk::SubpassDependency()
 			.setSrcSubpass(VK_SUBPASS_EXTERNAL)
@@ -656,7 +669,7 @@ Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithBlendState(vk:
 		return Zenith_Vulkan::GetDevice().createRenderPass(xRenderPassInfo);
 	}
 
-	vk::Framebuffer Zenith_Vulkan_Pipeline::TargetSetupToFramebuffer(const Flux_TargetSetup& xTargetSetup, const vk::RenderPass& xPass)
+	vk::Framebuffer Zenith_Vulkan_Pipeline::TargetSetupToFramebuffer(Flux_TargetSetup& xTargetSetup, const vk::RenderPass& xPass)
 	{
 		const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 		const uint32_t uFrameIndex = Zenith_Vulkan_Swapchain::GetCurrentFrameIndex();
@@ -679,14 +692,14 @@ Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithBlendState(vk:
 
 		vk::FramebufferCreateInfo framebufferInfo{};
 
-		vk::ImageView* axAttachments = new vk::ImageView[uNumAttachments];
+		vk::ImageView axAttachments[FLUX_MAX_TARGETS];
 		for (uint32_t i = 0; i < uNumColourAttachments; i++)
 		{
-			axAttachments[i] = xTargetSetup.m_axColourAttachments[i].m_axTargetTextures[uFrameIndex]->GetImageView();
+			axAttachments[i] = xTargetSetup.m_axColourAttachments[i].m_axTargetTextures[uFrameIndex].GetImageView();
 		}
 		if (bHasDepth)
 		{
-			axAttachments[uNumAttachments - 1] = xTargetSetup.m_xDepthStencil.m_axTargetTextures[uFrameIndex]->GetImageView();
+			axAttachments[uNumAttachments - 1] = xTargetSetup.m_xDepthStencil.m_axTargetTextures[uFrameIndex].GetImageView();
 		}
 
 		framebufferInfo.renderPass = xPass;
@@ -700,7 +713,6 @@ Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithBlendState(vk:
 		framebufferInfo.layers = 1;
 
 		vk::Framebuffer xFrameBuffer = xDevice.createFramebuffer(framebufferInfo);
-		delete[] axAttachments;
 		return xFrameBuffer;
 	}
 
@@ -765,5 +777,5 @@ Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithBlendState(vk:
 			xPipelineOut.m_axDescSets[i] = xDescThings.xSets;
 		}
 		xPipelineOut.m_strName = spec.m_strName;
-		xPipelineOut.bUsePushConstants = spec.m_bUsePushConstants;
+		xPipelineOut.m_bUsePushConstants = spec.m_bUsePushConstants;
 	}
