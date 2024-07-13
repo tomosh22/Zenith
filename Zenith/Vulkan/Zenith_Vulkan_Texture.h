@@ -10,6 +10,10 @@ public:
 	{
 		STUBBED
 	}
+	//#TO don't do this, will break memory manager as it relies on addresses of instances of this class to track them as allocations
+	//#TO_TODO: implement some sort of texture registry to get around this
+	Zenith_Vulkan_Texture(Zenith_Vulkan_Texture& xOther) = delete;
+	Zenith_Vulkan_Texture(const Zenith_Vulkan_Texture& xOther) = delete;
 
 	static vk::Format ConvertToVkFormat_Colour(ColourFormat eFormat);
 	static vk::Format ConvertToVkFormat_DepthStencil(DepthStencilFormat eFormat);
