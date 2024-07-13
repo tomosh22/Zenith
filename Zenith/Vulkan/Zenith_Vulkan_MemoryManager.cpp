@@ -7,6 +7,9 @@
 #include "Zenith_Vulkan_Buffer.h"
 #include "Zenith_Vulkan_Texture.h"
 
+#include "Flux/Flux_Buffers.h"
+#include "Flux/MeshGeometry/Flux_MeshGeometry.h"
+
 vk::DeviceMemory Zenith_Vulkan_MemoryManager::s_xCPUMemory;
 vk::DeviceMemory Zenith_Vulkan_MemoryManager::s_xGPUMemory;
 
@@ -31,13 +34,16 @@ void Zenith_Vulkan_MemoryManager::Initialise()
 	uint64_t uAlignedCpuSize = ALIGN(g_uCpuPoolSize, 4096);
 
 	uint32_t uCpuMemoryType = ~0u;
-	for (uint32_t i = 0; i < xPhysDevice.getMemoryProperties().memoryTypeCount; i++) {
+	for (uint32_t i = 0; i < xPhysDevice.getMemoryProperties().memoryTypeCount; i++)
+	{
 		vk::MemoryType xMemType = xPhysDevice.getMemoryProperties().memoryTypes[i];
 		if (xMemType.propertyFlags & vk::MemoryPropertyFlagBits::eHostVisible &&
 			xMemType.propertyFlags & vk::MemoryPropertyFlagBits::eHostCoherent &&
 			xPhysDevice.getMemoryProperties().memoryHeaps[xMemType.heapIndex].size > uAlignedCpuSize
 			)
+		{
 			uCpuMemoryType = i;
+		}
 	}
 	Zenith_Assert(uCpuMemoryType != ~0u, "couldn't find physical memory type");
 
@@ -57,13 +63,16 @@ void Zenith_Vulkan_MemoryManager::Initialise()
 	uint64_t uAlignedGpuSize = ALIGN(g_uGpuPoolSize, 4096);
 
 	uint32_t uGpuMemoryType = ~0u;
-	for (uint32_t i = 0; i < xPhysDevice.getMemoryProperties().memoryTypeCount; i++) {
+	for (uint32_t i = 0; i < xPhysDevice.getMemoryProperties().memoryTypeCount; i++)
+	{
 		vk::MemoryType xMemType = xPhysDevice.getMemoryProperties().memoryTypes[i];
 		if (xMemType.propertyFlags & vk::MemoryPropertyFlagBits::eDeviceLocal &&
 			xPhysDevice.getMemoryProperties().memoryHeaps[xMemType.heapIndex].size > uAlignedGpuSize
 			&& 59 & (1 << i) //#TO_TODO: what in the flying fuck is this about???
 			)
+		{
 			uGpuMemoryType = i;
+		}
 	}
 	Zenith_Assert(uGpuMemoryType != ~0u, "couldn't find physical memory type");
 
@@ -129,7 +138,8 @@ void Zenith_Vulkan_MemoryManager::ImageTransitionBarrier(vk::Image xImage, vk::I
 		.setOldLayout(eOldLayout)
 		.setNewLayout(eNewLayout);
 
-	switch (eNewLayout) {
+	switch (eNewLayout)
+	{
 	case (vk::ImageLayout::eTransferDstOptimal):
 		xMemoryBarrier.setDstAccessMask(vk::AccessFlagBits::eTransferWrite);
 		break;
@@ -157,58 +167,70 @@ void Zenith_Vulkan_MemoryManager::ImageTransitionBarrier(vk::Image xImage, vk::I
 	xCmd.pipelineBarrier(eSrcStage, eDstStage, vk::DependencyFlags(), 0, nullptr, 0, nullptr, 1, &xMemoryBarrier);
 }
 
-Zenith_Vulkan_Buffer* Zenith_Vulkan_MemoryManager::AllocateBuffer(size_t uSize, vk::BufferUsageFlags eUsageFlags, MemoryResidency eResidency)
+void Zenith_Vulkan_MemoryManager::AllocateBuffer(size_t uSize, vk::BufferUsageFlags eUsageFlags, MemoryResidency eResidency, Zenith_Vulkan_Buffer& xBufferOut)
 {
-	STUBBED
+	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 
-		/*Zenith_Vulkan_Buffer* pxRet = new Zenith_Vulkan_Buffer;
-		vk::Device& xDevice = pxRenderer->GetDevice();
+	vk::BufferCreateInfo xBufferInfo = vk::BufferCreateInfo()
+		.setSize(uSize)
+		.setUsage(eUsageFlags)
+		.setSharingMode(vk::SharingMode::eExclusive);
+	xBufferOut.SetBuffer(xDevice.createBuffer(xBufferInfo));
+	xBufferOut.SetSize(uSize);
 
-		vk::BufferCreateInfo xBufferInfo = vk::BufferCreateInfo()
-			.setSize(uSize)
-			.setUsage(eUsageFlags)
-			.setSharingMode(vk::SharingMode::eExclusive);
-		pxRet->m_xBuffer = xDevice.createBuffer(xBufferInfo);
-		pxRet->SetSize(uSize);
+	vk::MemoryRequirements xRequirements = xDevice.getBufferMemoryRequirements(xBufferOut.GetBuffer());
+	uint32_t uAlign = xRequirements.alignment;
+#ifdef ZENITH_RAYTRACING
+	uAlign = std::max(uAlign, 128u);
+#endif
 
-		vk::MemoryRequirements xRequirements = xDevice.getBufferMemoryRequirements(pxRet->m_xBuffer);
-		uint32_t uAlign = xRequirements.alignment;
-	#ifdef VCE_RAYTRACING
-		uAlign = std::max(uAlign, 128u);
-	#endif
-
-		if (eResidency == CPU_RESIDENT) {
-			if (ALIGN(m_uNextFreeCpuOffset, uAlign) + xRequirements.size >= g_uCpuPoolSize)
-				HandleCpuOutOfMemory();
-
-			xDevice.bindBufferMemory(pxRet->m_xBuffer, m_xCPUMemory, ALIGN(m_uNextFreeCpuOffset, uAlign));
-
-			MemoryAllocation xAllocation = { ALLOCATION_TYPE_BUFFER, xRequirements.size, ALIGN(m_uNextFreeCpuOffset, uAlign) };
-			m_xCpuAllocationMap.insert({pxRet, xAllocation });
-			m_uNextFreeCpuOffset = ALIGN(m_uNextFreeCpuOffset, uAlign) + xRequirements.size;
-		}
-		else if (eResidency == GPU_RESIDENT) {
-			if (ALIGN(m_uNextFreeGpuOffset, uAlign) + xRequirements.size >= g_uGpuPoolSize)
-				HandleGpuOutOfMemory();
-
-			xDevice.bindBufferMemory(pxRet->m_xBuffer, m_xGPUMemory, ALIGN(m_uNextFreeGpuOffset, uAlign));
-
-			MemoryAllocation xAllocation = { ALLOCATION_TYPE_BUFFER, xRequirements.size, ALIGN(m_uNextFreeGpuOffset, uAlign) };
-			m_xGpuAllocationMap.insert({ pxRet, xAllocation });
-			m_uNextFreeGpuOffset = ALIGN(m_uNextFreeGpuOffset, uAlign) + xRequirements.size;
+	if (eResidency == MEMORY_RESIDENCY_CPU) {
+		if (ALIGN(s_uNextFreeCpuOffset, uAlign) + xRequirements.size >= g_uCpuPoolSize)
+		{
+			HandleCpuOutOfMemory();
 		}
 
-		return pxRet;
-		*/
-		return nullptr;
+		xDevice.bindBufferMemory(xBufferOut.GetBuffer(), s_xCPUMemory, ALIGN(s_uNextFreeCpuOffset, uAlign));
+
+		MemoryAllocation xAllocation = { ALLOCATION_TYPE_BUFFER, xRequirements.size, ALIGN(s_uNextFreeCpuOffset, uAlign) };
+		s_xCpuAllocationMap.insert({ &xBufferOut, xAllocation });
+		s_uNextFreeCpuOffset = ALIGN(s_uNextFreeCpuOffset, uAlign) + xRequirements.size;
+	}
+	else if (eResidency == MEMORY_RESIDENCY_GPU)
+	{
+		if (ALIGN(s_uNextFreeGpuOffset, uAlign) + xRequirements.size >= g_uGpuPoolSize)
+		{
+			HandleGpuOutOfMemory();
+		}
+
+		xDevice.bindBufferMemory(xBufferOut.GetBuffer(), s_xGPUMemory, ALIGN(s_uNextFreeGpuOffset, uAlign));
+
+		MemoryAllocation xAllocation = { ALLOCATION_TYPE_BUFFER, xRequirements.size, ALIGN(s_uNextFreeGpuOffset, uAlign) };
+		s_xGpuAllocationMap.insert({ &xBufferOut, xAllocation });
+		s_uNextFreeGpuOffset = ALIGN(s_uNextFreeGpuOffset, uAlign) + xRequirements.size;
+	}
 }
 
-Zenith_Vulkan_Texture* Zenith_Vulkan_MemoryManager::AllocateTexture(uint32_t uWidth, uint32_t uHeight, ColourFormat eColourFormat, DepthStencilFormat eDepthStencilFormat, uint32_t uBitsPerPixel, uint32_t uNumMips, vk::ImageUsageFlags eUsageFlags, MemoryResidency eResidency)
+void Zenith_Vulkan_MemoryManager::InitialiseVertexBuffer(const void* pData, size_t uSize, Flux_VertexBuffer& xBufferOut)
+{
+	Zenith_Vulkan_Buffer& xBuffer = xBufferOut.GetBuffer();
+	vk::BufferUsageFlags eFlags = vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst;
+	AllocateBuffer(uSize, eFlags, MEMORY_RESIDENCY_GPU, xBuffer);
+	UploadData(&xBuffer, pData, uSize);
+}
+
+void Zenith_Vulkan_MemoryManager::InitialiseIndexBuffer(const void* pData, size_t uSize, Flux_IndexBuffer& xBufferOut)
+{
+	Zenith_Vulkan_Buffer& xBuffer = xBufferOut.GetBuffer();
+	vk::BufferUsageFlags eFlags = vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst;
+	AllocateBuffer(uSize, eFlags, MEMORY_RESIDENCY_GPU, xBuffer);
+	UploadData(&xBuffer, pData, uSize);
+}
+
+void Zenith_Vulkan_MemoryManager::AllocateTexture(uint32_t uWidth, uint32_t uHeight, ColourFormat eColourFormat, DepthStencilFormat eDepthStencilFormat, uint32_t uBitsPerPixel, uint32_t uNumMips, vk::ImageUsageFlags eUsageFlags, MemoryResidency eResidency, Zenith_Vulkan_Texture& xTextureOut)
 {
 
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
-
-	Zenith_Vulkan_Texture* pxRet = new Zenith_Vulkan_Texture;
 
 	vk::Format xFormat;
 	bool bIsDepth;
@@ -237,29 +259,35 @@ Zenith_Vulkan_Texture* Zenith_Vulkan_MemoryManager::AllocateTexture(uint32_t uWi
 		.setSharingMode(vk::SharingMode::eExclusive)
 		.setSamples(vk::SampleCountFlagBits::e1);
 
-	pxRet->SetImage(xDevice.createImage(xImageInfo));
+	xTextureOut.SetImage(xDevice.createImage(xImageInfo));
 
-	vk::MemoryRequirements xRequirements = xDevice.getImageMemoryRequirements(pxRet->GetImage());
+	vk::MemoryRequirements xRequirements = xDevice.getImageMemoryRequirements(xTextureOut.GetImage());
 	uint32_t uAlign = xRequirements.alignment;
 
-	if (eResidency == MEMORY_RESIDENCY_CPU) {
+	if (eResidency == MEMORY_RESIDENCY_CPU)
+	{
 		if (s_uNextFreeCpuOffset + xRequirements.size >= g_uCpuPoolSize)
+		{
 			HandleCpuOutOfMemory();
+		}
 
-		xDevice.bindImageMemory(pxRet->GetImage(), s_xCPUMemory, s_uNextFreeCpuOffset);
+		xDevice.bindImageMemory(xTextureOut.GetImage(), s_xCPUMemory, s_uNextFreeCpuOffset);
 
 		MemoryAllocation xAllocation = { ALLOCATION_TYPE_TEXTURE, xRequirements.size, s_uNextFreeCpuOffset };
-		s_xCpuAllocationMap.insert({ pxRet, xAllocation });
+		s_xCpuAllocationMap.insert({ &xTextureOut, xAllocation });
 		s_uNextFreeCpuOffset += xRequirements.size;
 	}
-	else if (eResidency == MEMORY_RESIDENCY_GPU) {
+	else if (eResidency == MEMORY_RESIDENCY_GPU)
+	{
 		if (ALIGN(s_uNextFreeGpuOffset, uAlign) + xRequirements.size >= g_uGpuPoolSize)
+		{
 			HandleGpuOutOfMemory();
+		}
 
-		xDevice.bindImageMemory(pxRet->GetImage(), s_xGPUMemory, ALIGN(s_uNextFreeGpuOffset, uAlign));
+		xDevice.bindImageMemory(xTextureOut.GetImage(), s_xGPUMemory, ALIGN(s_uNextFreeGpuOffset, uAlign));
 
 		MemoryAllocation xAllocation = { ALLOCATION_TYPE_TEXTURE, xRequirements.size, ALIGN(s_uNextFreeGpuOffset, uAlign) };
-		s_xGpuAllocationMap.insert({ pxRet, xAllocation });
+		s_xGpuAllocationMap.insert({ &xTextureOut, xAllocation });
 		s_uNextFreeGpuOffset = ALIGN(s_uNextFreeGpuOffset, uAlign) + xRequirements.size;
 	}
 
@@ -271,14 +299,12 @@ Zenith_Vulkan_Texture* Zenith_Vulkan_MemoryManager::AllocateTexture(uint32_t uWi
 		.setLayerCount(1);
 
 	vk::ImageViewCreateInfo xViewCreate = vk::ImageViewCreateInfo()
-		.setImage(pxRet->GetImage())
+		.setImage(xTextureOut.GetImage())
 		.setViewType(vk::ImageViewType::e2D)
 		.setFormat(xFormat)
 		.setSubresourceRange(xSubresourceRange);
 
-	pxRet->SetImageView(xDevice.createImageView(xViewCreate));
-
-	return pxRet;
+	xTextureOut.SetImageView(xDevice.createImageView(xViewCreate));
 }
 
 //void Zenith_Vulkan_MemoryManager::FreeTexture2DMemory(Zenith_Vulkan_Texture* pxTexture, TextureFormat eFormat, MemoryResidency eResidency)
@@ -333,7 +359,7 @@ void Zenith_Vulkan_MemoryManager::FlushStagingBuffer() {
 	s_uNextFreeStagingOffset = 0;
 }
 
-void Zenith_Vulkan_MemoryManager::UploadStagingData(AllocationType eType, void* pAllocation, void* pData, size_t uSize) {
+void Zenith_Vulkan_MemoryManager::UploadStagingData(AllocationType eType, void* pAllocation, const void* pData, size_t uSize) {
 
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 
@@ -351,7 +377,7 @@ void Zenith_Vulkan_MemoryManager::UploadStagingData(AllocationType eType, void* 
 	s_uNextFreeStagingOffset += uSize;
 }
 
-void Zenith_Vulkan_MemoryManager::UploadData(void* pAllocation, void* pData, size_t uSize)
+void Zenith_Vulkan_MemoryManager::UploadData(void* pAllocation, const void* pData, size_t uSize)
 {
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 	auto xCpuIt = s_xCpuAllocationMap.find(pAllocation);

@@ -8,6 +8,10 @@
 #include "Flux/Flux.h"
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_Buffers.h"
+
+//#TO purely for the static assert in SetIndexBuffer
+#include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 
 
 void Zenith_Vulkan_CommandBuffer::Initialise(CommandType eType /*= COMMANDTYPE_GRAPHICS*/)
@@ -84,22 +88,20 @@ void Zenith_Vulkan_CommandBuffer::EndAndCpuWait(bool bEndPass)
 	xDevice.waitForFences(1, &xFence, VK_TRUE, UINT64_MAX);
 }
 
-void Zenith_Vulkan_CommandBuffer::SetVertexBuffer(Zenith_Vulkan_VertexBuffer* pxVertexBuffer, uint32_t uBindPoint /*= 0*/)
+void Zenith_Vulkan_CommandBuffer::SetVertexBuffer(Flux_VertexBuffer& xVertexBuffer, uint32_t uBindPoint /*= 0*/)
 {
-	STUBBED
-	//const vk::Buffer& xBuffer = pxVertexBuffer->GetBuffer();
-	////TODO: offsets
-	//vk::DeviceSize offsets[] = { 0 };
-	//m_xCurrentCmdBuffer.bindVertexBuffers(uBindPoint, 1, &xBuffer, offsets);
+	const vk::Buffer& xBuffer = xVertexBuffer.GetBuffer().GetBuffer();
+	//#TO_TODO: offsets
+	vk::DeviceSize offsets[] = { 0 };
+	m_xCurrentCmdBuffer.bindVertexBuffers(uBindPoint, 1, &xBuffer, offsets);
 }
 
-void Zenith_Vulkan_CommandBuffer::SetIndexBuffer(Zenith_Vulkan_IndexBuffer* pxIndexBuffer)
+void Zenith_Vulkan_CommandBuffer::SetIndexBuffer(Flux_IndexBuffer& xIndexBuffer)
 {
-	STUBBED
-	/*
-	const vk::Buffer& xBuffer = pxIndexBuffer->GetBuffer();
+	const vk::Buffer& xBuffer = xIndexBuffer.GetBuffer().GetBuffer();
+	static_assert(std::is_same<Flux_MeshGeometry::IndexType, uint32_t>(), "#TO_TODO: stop hardcoding type");
 	m_xCurrentCmdBuffer.bindIndexBuffer(xBuffer, 0, vk::IndexType::eUint32);
-	*/
+	
 }
 
 void Zenith_Vulkan_CommandBuffer::PrepareDrawCallDescriptors()
@@ -117,7 +119,8 @@ void Zenith_Vulkan_CommandBuffer::PrepareDrawCallDescriptors()
 		vk::DescriptorSet xSet = xDevice.allocateDescriptorSets(xInfo)[0];
 
 		uint32_t uNumTextures = 0;
-		for (uint32_t i = 0; i < MAX_BINDINGS; i++) {
+		for (uint32_t i = 0; i < MAX_BINDINGS; i++)
+		{
 			if (m_xBindings[BINDING_FREQUENCY_PER_DRAW].m_xTextures[i] != nullptr)
 			{
 				uNumTextures++;
@@ -158,7 +161,8 @@ void Zenith_Vulkan_CommandBuffer::PrepareDrawCallDescriptors()
 		std::vector<vk::DescriptorImageInfo> xTexInfos(uNumTextures);
 		std::vector<vk::WriteDescriptorSet> xTexWrites(uNumTextures);
 		uint32_t uCount = 0;
-		for (uint32_t i = 0; i < uNumTextures; i++) {
+		for (uint32_t i = 0; i < uNumTextures; i++)
+		{
 			Zenith_Vulkan_Texture* pxTex = m_xBindings[BINDING_FREQUENCY_PER_DRAW].m_xTextures[i];
 
 			//#TO_TODO: different samplers
@@ -182,7 +186,8 @@ void Zenith_Vulkan_CommandBuffer::PrepareDrawCallDescriptors()
 
 		std::vector<vk::DescriptorBufferInfo> xBufferInfos(uNumBuffers);
 		std::vector<vk::WriteDescriptorSet> xBufferWrites(uNumBuffers);
-		for (uint32_t i = 0; i < uNumBuffers; i++) {
+		for (uint32_t i = 0; i < uNumBuffers; i++)
+		{
 			Zenith_Vulkan_Buffer* pxBuf = m_xBindings[BINDING_FREQUENCY_PER_DRAW].m_xBuffers[i];
 
 			vk::DescriptorBufferInfo& xInfo = xBufferInfos.at(uCount)
@@ -219,14 +224,14 @@ void Zenith_Vulkan_CommandBuffer::DrawIndexed(uint32_t uNumIndices, uint32_t uNu
 	m_xCurrentCmdBuffer.drawIndexed(uNumIndices, uNumInstances, uIndexOffset, uVertexOffset, uInstanceOffset);
 }
 
-void Zenith_Vulkan_CommandBuffer::SubmitTargetSetup(const Flux_TargetSetup& xTargetSetup)
+void Zenith_Vulkan_CommandBuffer::SubmitTargetSetup(Flux_TargetSetup& xTargetSetup)
 {
 	//#TO_TODO: set load/store actions properly
 	LoadAction eColourLoad = LOAD_ACTION_CLEAR;
 	StoreAction eColourStore = STORE_ACTION_STORE;
 	LoadAction eDepthStencilLoad = LOAD_ACTION_CLEAR;
 	StoreAction eDepthStencilStore = STORE_ACTION_STORE;
-	RenderTargetUsage eUsage = RENDER_TARGET_USAGE_RENDERTARGET;
+	RenderTargetUsage eUsage = RENDER_TARGET_USAGE_PRESENT;
 
 	uint32_t uNumColourAttachments = 0;
 	for (uint32_t i = 0; i < FLUX_MAX_TARGETS; i++)
@@ -454,13 +459,14 @@ void Zenith_Vulkan_CommandBuffer::ImageTransitionBarrier(vk::Image xImage, vk::I
 	m_xCurrentCmdBuffer.pipelineBarrier(eSrcStage, eDstStage, vk::DependencyFlags(), 0, nullptr, 0, nullptr, 1, &xMemoryBarrier);
 }
 
-void Zenith_Vulkan_CommandBuffer::CopyBufferToBuffer(Zenith_Vulkan_Buffer* pxSrc, Zenith_Vulkan_Buffer* pxDst, size_t uSize, size_t uSrcOffset) {
-	STUBBED
-	//vk::BufferCopy xCopyRegion(uSrcOffset, 0, uSize);
-	//m_xCurrentCmdBuffer.copyBuffer(pxSrc->m_xBuffer, pxDst->m_xBuffer, xCopyRegion);
+void Zenith_Vulkan_CommandBuffer::CopyBufferToBuffer(Zenith_Vulkan_Buffer* pxSrc, Zenith_Vulkan_Buffer* pxDst, size_t uSize, size_t uSrcOffset)
+{
+	vk::BufferCopy xCopyRegion(uSrcOffset, 0, uSize);
+	m_xCurrentCmdBuffer.copyBuffer(pxSrc->GetBuffer(), pxDst->GetBuffer(), xCopyRegion);
 }
 
-void Zenith_Vulkan_CommandBuffer::CopyBufferToTexture(Zenith_Vulkan_Buffer* pxSrc, Zenith_Vulkan_Texture* pxDst, size_t uSrcOffset) {
+void Zenith_Vulkan_CommandBuffer::CopyBufferToTexture(Zenith_Vulkan_Buffer* pxSrc, Zenith_Vulkan_Texture* pxDst, size_t uSrcOffset)
+{
 	STUBBED
 	/*vk::ImageSubresourceLayers xSubresource = vk::ImageSubresourceLayers()
 		.setAspectMask(vk::ImageAspectFlagBits::eColor)

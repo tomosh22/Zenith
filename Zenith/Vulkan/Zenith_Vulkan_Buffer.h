@@ -22,11 +22,13 @@ public:
 	const uint64_t GetSize() const { return m_ulSize; }
 	const vk::DeviceMemory& GetDeviceMemory() const { return m_xDeviceMem; }
 
+	void SetSize(const uint64_t ulSize) { m_ulSize = ulSize; }
+	void SetBuffer(const vk::Buffer& xBuffer) { m_xBuffer = xBuffer; }
 	
 private:
 	vk::Buffer m_xBuffer;
-	vk::DeviceMemory m_xDeviceMem;
-	uint64_t m_ulSize;
+	vk::DeviceMemory m_xDeviceMem;//#TO this is only used by the memory manager's staging buffer
+	uint64_t m_ulSize = 0;
 };
 
 

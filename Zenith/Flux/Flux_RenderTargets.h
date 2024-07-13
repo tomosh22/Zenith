@@ -18,7 +18,7 @@ struct Flux_RenderAttachment {
 	uint32_t m_uHeight = 0;
 
 	//one per frame in flight
-	std::vector<Flux_Texture*> m_axTargetTextures;
+	Flux_Texture m_axTargetTextures[MAX_FRAMES_IN_FLIGHT];
 };
 
 struct Flux_TargetSetup {

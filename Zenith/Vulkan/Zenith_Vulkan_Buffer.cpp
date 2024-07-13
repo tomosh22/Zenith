@@ -21,8 +21,10 @@ Zenith_Vulkan_Buffer::Zenith_Vulkan_Buffer(vk::DeviceSize uSize, vk::BufferUsage
 	vk::MemoryRequirements xRequirements = xDevice.getBufferMemoryRequirements(m_xBuffer);
 
 	uint32_t memoryType = ~0u;
-	for (uint32_t i = 0; i < xPhysicalDevice.getMemoryProperties().memoryTypeCount; i++) {
-		if ((xRequirements.memoryTypeBits & (1 << i)) && (xPhysicalDevice.getMemoryProperties().memoryTypes[i].propertyFlags & eMemProperties) == eMemProperties) {
+	for (uint32_t i = 0; i < xPhysicalDevice.getMemoryProperties().memoryTypeCount; i++)
+	{
+		if ((xRequirements.memoryTypeBits & (1 << i)) && (xPhysicalDevice.getMemoryProperties().memoryTypes[i].propertyFlags & eMemProperties) == eMemProperties)
+		{
 			memoryType = i;
 			break;
 		}
