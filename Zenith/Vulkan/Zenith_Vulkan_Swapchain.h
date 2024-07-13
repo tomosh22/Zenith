@@ -13,7 +13,7 @@ public:
 	~Zenith_Vulkan_Swapchain();
 	static void Initialise();
 
-	static void BeginFrame();
+	static bool BeginFrame();
 	static void EndFrame();
 
 	static uint32_t GetWidth() { return s_xExtent.width; }

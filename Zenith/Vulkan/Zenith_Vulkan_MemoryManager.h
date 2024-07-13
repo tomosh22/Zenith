@@ -37,8 +37,11 @@ public:
 	static void InitialiseVertexBuffer(const void* pData, size_t uSize, Flux_VertexBuffer& xBufferOut);
 	static void InitialiseIndexBuffer(const void* pData, size_t uSize, Flux_IndexBuffer& xBufferOut);
 
+	static void CreateColourAttachment(uint32_t uWidth, uint32_t uHeight, ColourFormat eFormat, uint32_t uBitsPerPixel, Zenith_Vulkan_Texture& xTextureOut);
+	static void CreateDepthStencilAttachment(uint32_t uWidth, uint32_t uHeight, DepthStencilFormat eFormat, uint32_t uBitsPerPixel, Zenith_Vulkan_Texture& xTextureOut);
+
 	static void AllocateTexture(uint32_t uWidth, uint32_t uHeight, ColourFormat eColourFormat, DepthStencilFormat eDepthStencilFormat, uint32_t uBitsPerPixel, uint32_t uNumMips, vk::ImageUsageFlags eUsageFlags, MemoryResidency eResidency, Zenith_Vulkan_Texture& xTextureOut);
-	//static void FreeTexture2DMemory(Zenith_Vulkan_Texture* pxTexture, TextureFormat eFormat, MemoryResidency eResidency);
+	static void FreeTexture(Zenith_Vulkan_Texture* pxTexture);
 
 	static void UploadStagingData(AllocationType eType, void* pAllocation, const void* pData, size_t uSize);
 

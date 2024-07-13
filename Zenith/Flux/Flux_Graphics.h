@@ -8,6 +8,7 @@ public:
 	~Flux_Graphics() = delete;
 
 	static void Initialise();
+	static void InitialiseRenderTargets();
 
 	static struct Flux_TargetSetup s_xFinalRenderTarget;
 

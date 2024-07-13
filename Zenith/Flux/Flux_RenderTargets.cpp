@@ -12,11 +12,11 @@ void Flux_RenderAttachmentBuilder::Build(Flux_RenderAttachment& xAttachment, Ren
 	{
 		if (eType == RENDER_TARGET_TYPE_COLOUR)
 		{
-			Flux_Texture::CreateColourAttachment(m_uWidth, m_uHeight, m_eColourFormat, ColourFormatBitsPerPixel(m_eColourFormat), xAttachment.m_axTargetTextures[i]);
+			Flux_MemoryManager::CreateColourAttachment(m_uWidth, m_uHeight, m_eColourFormat, ColourFormatBitsPerPixel(m_eColourFormat), xAttachment.m_axTargetTextures[i]);
 		}
 		else if (eType == RENDER_TARGET_TYPE_DEPTHSTENCIL)
 		{
-			Flux_Texture::CreateDepthStencilAttachment(m_uWidth, m_uHeight, m_eDepthStencilFormat, DepthStencilFormatBitsPerPixel(m_eDepthStencilFormat), xAttachment.m_axTargetTextures[i]);
+			Flux_MemoryManager::CreateDepthStencilAttachment(m_uWidth, m_uHeight, m_eDepthStencilFormat, DepthStencilFormatBitsPerPixel(m_eDepthStencilFormat), xAttachment.m_axTargetTextures[i]);
 		}
 	}
 }
