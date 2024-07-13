@@ -248,21 +248,28 @@ void Zenith_Vulkan_Swapchain::Initialise()
 	Zenith_Log("Vulkan swapchain initialised");
 }
 
-void Zenith_Vulkan_Swapchain::BeginFrame()
+bool Zenith_Vulkan_Swapchain::BeginFrame()
 {
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 
 	uint32_t uPreviousFrame = (s_uFrameIndex - 1) % MAX_FRAMES_IN_FLIGHT;
 	xDevice.waitForFences(1, &s_axInFlightFences[uPreviousFrame], VK_TRUE, UINT64_MAX);
 
-#ifdef ZENITH_ASSERT
-	vk::Result eResult =
-#endif
-	 xDevice.acquireNextImageKHR(s_xSwapChain, UINT64_MAX, s_axImageAvailableSemaphores[s_uFrameIndex], nullptr, &s_uCurrentImageIndex);
+	vk::Result eResult = xDevice.acquireNextImageKHR(s_xSwapChain, UINT64_MAX, s_axImageAvailableSemaphores[s_uFrameIndex], nullptr, &s_uCurrentImageIndex);
 
-	Zenith_Assert(eResult == vk::Result::eSuccess, "Failed to acquire swapchain image");
+	Zenith_Assert(eResult == vk::Result::eSuccess || eResult == vk::Result::eErrorOutOfDateKHR, "Failed to acquire swapchain image");
+
+	if (eResult == vk::Result::eErrorOutOfDateKHR)
+	{
+		//#TO_TODO: cleanup the rest, at least image views, probably other things
+		xDevice.destroySwapchainKHR(s_xSwapChain);
+		Initialise();
+		Flux::OnResChange();
+		return false;
+	}
 
 	xDevice.resetFences(1, &s_axInFlightFences[s_uFrameIndex]);
+	return true;
 }
 
 void Zenith_Vulkan_Swapchain::BindAsTarget()

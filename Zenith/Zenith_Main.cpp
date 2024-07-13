@@ -7,9 +7,13 @@
 void Zenith_MainLoop()
 {
 	Zenith_Window::GetInstance()->BeginFrame();
-	Flux_Swapchain::BeginFrame();
-	Flux_PlatformAPI::BeginFrame();
 	Flux_MemoryManager::BeginFrame();
+	if (!Flux_Swapchain::BeginFrame())
+	{
+		Flux_MemoryManager::EndFrame(false);
+		return;
+	}
+	Flux_PlatformAPI::BeginFrame();
 	Flux_Skybox::Render();
 	Flux_MemoryManager::EndFrame();
 	Flux_Swapchain::CopyToFramebuffer();

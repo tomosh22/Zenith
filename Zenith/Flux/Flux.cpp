@@ -5,7 +5,7 @@
 #include "Flux/Skybox/Flux_Skybox.h"
 
 uint32_t Flux::s_uFrameCounter = 0;
-
+std::vector<void(*)()> Flux::s_xResChangeCallbacks;
 
 
 
@@ -22,4 +22,12 @@ void Flux::LateInitialise()
 	Flux_Graphics::Initialise();
 	Flux_Skybox::Initialise();
 	Flux_MemoryManager::EndFrame(false);
+}
+
+void Flux::OnResChange()
+{
+	for (void(*pfnCallback)() : s_xResChangeCallbacks)
+	{
+		pfnCallback();
+	}
 }

@@ -14,14 +14,20 @@ Flux_IndexBuffer Flux_Graphics::s_xQuadIndexBuffer;
 
 void Flux_Graphics::Initialise()
 {
-
 	Flux_Sampler::InitialiseDefault(s_xDefaultSampler);
 
 	Flux_MeshGeometry::GenerateFullscreenQuad(s_xQuadMesh);
 	Flux_MemoryManager::InitialiseVertexBuffer(s_xQuadMesh.GetVertexData(), s_xQuadMesh.GetVertexDataSize(), s_xQuadVertexBuffer);
 	Flux_MemoryManager::InitialiseIndexBuffer(s_xQuadMesh.GetIndexData(), s_xQuadMesh.GetIndexDataSize(), s_xQuadIndexBuffer);
 
+	InitialiseRenderTargets();
+	Flux::AddResChangeCallback(InitialiseRenderTargets);
 
+	Zenith_Log("Flux_Graphics Initialised");
+}
+
+void Flux_Graphics::InitialiseRenderTargets()
+{
 	Flux_RenderAttachmentBuilder xBuilder;
 	xBuilder.m_uWidth = Flux_Swapchain::GetWidth();
 	xBuilder.m_uHeight = Flux_Swapchain::GetHeight();
@@ -31,6 +37,4 @@ void Flux_Graphics::Initialise()
 
 	xBuilder.m_eDepthStencilFormat = DEPTHSTENCIL_FORMAT_D32_SFLOAT;
 	xBuilder.Build(s_xFinalRenderTarget.m_xDepthStencil, RENDER_TARGET_TYPE_DEPTHSTENCIL);
-
-	Zenith_Log("Flux_Graphics Initialised");
 }
