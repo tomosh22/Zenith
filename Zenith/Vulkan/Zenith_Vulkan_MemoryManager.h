@@ -1,7 +1,7 @@
 #pragma once
 
 #include "vulkan/vulkan.hpp"
-#include "Flux/Zenith_Flux_Enums.h"
+#include "Flux/Flux_Enums.h"
 
 class Zenith_Vulkan_Buffer;
 class Zenith_Vulkan_Texture;
@@ -22,11 +22,6 @@ public:
 		
 	}
 
-	enum MemoryResidency : uint8_t {
-		CPU_RESIDENT,
-		GPU_RESIDENT
-	};
-
 	static void Initialise();
 	static void Shutdown();
 	
@@ -38,8 +33,8 @@ public:
 
 	static Zenith_Vulkan_Buffer* AllocateBuffer(size_t uSize, vk::BufferUsageFlags eUsageFlags, MemoryResidency eResidency);
 
-	static void AllocateTexture2DMemory(Zenith_Vulkan_Texture* pxTexture, uint32_t uWidth, uint32_t uHeight,TextureFormat eFormat, uint32_t uBitsPerPixel, uint32_t uNumMips, vk::ImageUsageFlags eUsageFlags, MemoryResidency eResidency);
-	static void FreeTexture2DMemory(Zenith_Vulkan_Texture* pxTexture, TextureFormat eFormat, MemoryResidency eResidency);
+	static Zenith_Vulkan_Texture* AllocateTexture(uint32_t uWidth, uint32_t uHeight, ColourFormat eColourFormat, DepthStencilFormat eDepthStencilFormat, uint32_t uBitsPerPixel, uint32_t uNumMips, vk::ImageUsageFlags eUsageFlags, MemoryResidency eResidency);
+	//static void FreeTexture2DMemory(Zenith_Vulkan_Texture* pxTexture, TextureFormat eFormat, MemoryResidency eResidency);
 
 	static void UploadStagingData(AllocationType eType, void* pAllocation, void* pData, size_t uSize);
 
@@ -48,7 +43,7 @@ public:
 
 	static bool MemoryWasAllocated(void* pAllocation);
 
-	static Zenith_Vulkan_CommandBuffer* GetCommandBuffer();
+	static Zenith_Vulkan_CommandBuffer& GetCommandBuffer();
 private:
 
 	static void HandleCpuOutOfMemory();
@@ -61,7 +56,7 @@ private:
 	static vk::DeviceMemory s_xGPUMemory;
 
 	static Zenith_Vulkan_Buffer* s_pxStagingBuffer;
-	static Zenith_Vulkan_CommandBuffer* s_pxCommandBuffer;
+	static Zenith_Vulkan_CommandBuffer s_xCommandBuffer;
 	
 	struct MemoryAllocation {
 		AllocationType m_eType;

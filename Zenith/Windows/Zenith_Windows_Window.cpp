@@ -54,3 +54,8 @@ Zenith_Windows_Window::~Zenith_Windows_Window()
 
 }
 
+void Zenith_Windows_Window::BeginFrame()
+{
+	glfwPollEvents();
+}
+

@@ -7,8 +7,23 @@
     <ClCompile Include="Zenith\Core\Zenith_Core.cpp">
       <Filter>Zenith\Core</Filter>
     </ClCompile>
-    <ClCompile Include="Zenith\Flux\Zenith_Flux.cpp">
+    <ClCompile Include="Zenith\FileAccess\Zenith_FileAccess.cpp">
+      <Filter>Zenith\FileAccess</Filter>
+    </ClCompile>
+    <ClCompile Include="Zenith\Flux\Flux.cpp">
       <Filter>Zenith\Flux</Filter>
+    </ClCompile>
+    <ClCompile Include="Zenith\Flux\Flux_Graphics.cpp">
+      <Filter>Zenith\Flux</Filter>
+    </ClCompile>
+    <ClCompile Include="Zenith\Flux\Flux_RenderTargets.cpp">
+      <Filter>Zenith\Flux</Filter>
+    </ClCompile>
+    <ClCompile Include="Zenith\Flux\MeshGeometry\Flux_MeshGeometry.cpp">
+      <Filter>Zenith\Flux\MeshGeometry</Filter>
+    </ClCompile>
+    <ClCompile Include="Zenith\Flux\Skybox\Flux_Skybox.cpp">
+      <Filter>Zenith\Flux\Skybox</Filter>
     </ClCompile>
     <ClCompile Include="Zenith\Input\Zenith_Input.cpp">
       <Filter>Zenith\Input</Filter>
@@ -28,7 +43,13 @@
     <ClCompile Include="Zenith\Vulkan\Zenith_Vulkan_MemoryManager.cpp">
       <Filter>Zenith\Vulkan</Filter>
     </ClCompile>
+    <ClCompile Include="Zenith\Vulkan\Zenith_Vulkan_Pipeline.cpp">
+      <Filter>Zenith\Vulkan</Filter>
+    </ClCompile>
     <ClCompile Include="Zenith\Vulkan\Zenith_Vulkan_Swapchain.cpp">
+      <Filter>Zenith\Vulkan</Filter>
+    </ClCompile>
+    <ClCompile Include="Zenith\Vulkan\Zenith_Vulkan_Texture.cpp">
       <Filter>Zenith\Vulkan</Filter>
     </ClCompile>
     <ClCompile Include="Zenith\Windows\Zenith_Windows_Window.cpp">
@@ -37,6 +58,7 @@
     <ClCompile Include="Zenith\Zenith_Main.cpp">
       <Filter>Zenith</Filter>
     </ClCompile>
+    <ClCompile Include="Zenith\Flux\Flux_Buffers.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Middleware\glfw-3.4.bin.WIN64\include\GLFW\glfw3.h">
@@ -51,11 +73,35 @@
     <ClInclude Include="Zenith\Core\Zenith_Core.h">
       <Filter>Zenith\Core</Filter>
     </ClInclude>
-    <ClInclude Include="Zenith\Flux\Zenith_Flux.h">
+    <ClInclude Include="Zenith\FileAccess\Zenith_FileAccess.h">
+      <Filter>Zenith\FileAccess</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\Flux\Flux.h">
       <Filter>Zenith\Flux</Filter>
     </ClInclude>
-    <ClInclude Include="Zenith\Flux\Zenith_Flux_Enums.h">
+    <ClInclude Include="Zenith\Flux\Flux_Buffers.h">
       <Filter>Zenith\Flux</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\Flux\Flux_Enums.h">
+      <Filter>Zenith\Flux</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\Flux\Flux_Graphics.h">
+      <Filter>Zenith\Flux</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\Flux\Flux_RenderTargets.h">
+      <Filter>Zenith\Flux</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\Flux\Flux_Types.h">
+      <Filter>Zenith\Flux</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\Flux\MeshGeometry\Flux_MeshGeometry.h">
+      <Filter>Zenith\Flux\MeshGeometry</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\Flux\Shaders\Common.h">
+      <Filter>Zenith\Flux\Shaders</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\Flux\Skybox\Flux_Skybox.h">
+      <Filter>Zenith\Flux\Skybox</Filter>
     </ClInclude>
     <ClInclude Include="Zenith\Input\Zenith_Input.h">
       <Filter>Zenith\Input</Filter>
@@ -81,7 +127,13 @@
     <ClInclude Include="Zenith\Vulkan\Zenith_Vulkan_MemoryManager.h">
       <Filter>Zenith\Vulkan</Filter>
     </ClInclude>
+    <ClInclude Include="Zenith\Vulkan\Zenith_Vulkan_Pipeline.h">
+      <Filter>Zenith\Vulkan</Filter>
+    </ClInclude>
     <ClInclude Include="Zenith\Vulkan\Zenith_Vulkan_Swapchain.h">
+      <Filter>Zenith\Vulkan</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\Vulkan\Zenith_Vulkan_Texture.h">
       <Filter>Zenith\Vulkan</Filter>
     </ClInclude>
     <ClInclude Include="Zenith\Windows\Zenith_OS_Include.h">
@@ -110,8 +162,20 @@
     <Filter Include="Zenith\Core">
       <UniqueIdentifier>{e84b9d32-4703-7861-1735-99a5845a300c}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Zenith\FileAccess">
+      <UniqueIdentifier>{cff7abfd-5391-6156-e4ec-0e283e244a6d}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Zenith\Flux">
       <UniqueIdentifier>{9d602350-76e0-e794-ea6c-7f4e438d0b6b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Zenith\Flux\MeshGeometry">
+      <UniqueIdentifier>{1ea2a6e2-5586-54cd-e29c-f7b7caaa7806}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Zenith\Flux\Shaders">
+      <UniqueIdentifier>{023039c4-353d-0c39-1bdd-99bb116ea5f5}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Zenith\Flux\Skybox">
+      <UniqueIdentifier>{61297b21-a027-e692-c57f-8a208efaaa3c}</UniqueIdentifier>
     </Filter>
     <Filter Include="Zenith\Input">
       <UniqueIdentifier>{1b1e3505-0bf9-c172-d173-56b6842be504}</UniqueIdentifier>

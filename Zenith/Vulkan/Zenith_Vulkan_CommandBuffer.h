@@ -1,6 +1,6 @@
 #pragma once
 #include "vulkan/vulkan.hpp"
-#include "Flux/Zenith_Flux_Enums.h"
+#include "Flux/Flux_Enums.h"
 
 #define MAX_BINDINGS 16
 
@@ -9,7 +9,8 @@ class Zenith_Vulkan_VertexBuffer;
 class Zenith_Vulkan_IndexBuffer;
 class Zenith_Vulkan_Texture;
 class Zenith_Vulkan_Pipeline;
-class Zenith_Flux_RenderTarget;
+class Flux_RenderTarget;
+struct Flux_TargetSetup;
 
 struct DescSetBindings {
 	Zenith_Vulkan_Buffer* m_xBuffers[MAX_BINDINGS];
@@ -20,14 +21,16 @@ struct DescSetBindings {
 class Zenith_Vulkan_CommandBuffer
 {
 public:
-	Zenith_Vulkan_CommandBuffer(CommandType eType = COMMANDTYPE_GRAPHICS);
+	Zenith_Vulkan_CommandBuffer() {}
+	void Initialise(CommandType eType = COMMANDTYPE_GRAPHICS);
 	void BeginRecording();
 	void EndRecording(RenderOrder eOrder, bool bEndPass = true) ;
 	void EndAndCpuWait(bool bEndPass);
 	void SetVertexBuffer(Zenith_Vulkan_VertexBuffer* pxVertexBuffer, uint32_t uBindPoint = 0);
 	void SetIndexBuffer(Zenith_Vulkan_IndexBuffer* pxIndexBuffer);
-	void Draw(uint32_t uNumIndices, uint32_t uNumInstances = 1, uint32_t uVertexOffset = 0, uint32_t uIndexOffset = 0,uint32_t uInstanceOffset = 0);
-	void SubmitTargetSetup(const char* szName);
+	void Draw(uint32_t uNumVerts);
+	void DrawIndexed(uint32_t uNumIndices, uint32_t uNumInstances = 1, uint32_t uVertexOffset = 0, uint32_t uIndexOffset = 0,uint32_t uInstanceOffset = 0);
+	void SubmitTargetSetup(const Flux_TargetSetup& xTargetSetup);
 	void SetPipeline(Zenith_Vulkan_Pipeline* pxPipeline);
 	void BindTexture(void* pxTexture, uint32_t uBindPoint, uint32_t uSet);
 	void BindBuffer(void* pxBuffer, uint32_t uBindPoint, uint32_t uSet);
@@ -46,19 +49,16 @@ public:
 	void BlitTextureToTexture(Zenith_Vulkan_Texture* pxSrc, Zenith_Vulkan_Texture* pxDst, uint32_t uDstMip);
 
 	//currently unused
-	vk::RenderPass TargetSetupToRenderPass(const Zenith_Flux_RenderTarget& xTargetSetup);
+	vk::RenderPass TargetSetupToRenderPass(const Flux_RenderTarget& xTargetSetup);
 	//currently unused
-	vk::Framebuffer TargetSetupToFramebuffer(const Zenith_Flux_RenderTarget& xTargetSetup);
+	vk::Framebuffer TargetSetupToFramebuffer(const Flux_RenderTarget& xTargetSetup);
 
 	bool IsRecording() const { return m_bIsRecording; }
 
 	vk::CommandBuffer m_xCurrentCmdBuffer;
-public:
-	class VulkanRenderer* m_pxRenderer;
-
+private:
+	void PrepareDrawCallDescriptors();
 	std::vector<vk::CommandBuffer> m_xCmdBuffers;
-	std::vector<vk::RenderPass> m_xRenderPasses;
-	std::vector<vk::Framebuffer> m_xFramebuffers;
 
 	
 	vk::RenderPass m_xCurrentRenderPass;
