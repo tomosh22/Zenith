@@ -4,6 +4,7 @@
 
 #include "Zenith_Vulkan.h"
 #include "Flux/Flux_Enums.h"
+#include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_RenderTargets.h"
 #include "Maths/Zenith_Maths.h"
 #include "Zenith_Vulkan_MemoryManager.h"
@@ -24,6 +25,10 @@ vk::Semaphore Zenith_Vulkan_Swapchain::s_axRenderFinishedSemaphores[MAX_FRAMES_I
 vk::Fence Zenith_Vulkan_Swapchain::s_axInFlightFences[MAX_FRAMES_IN_FLIGHT];
 uint32_t Zenith_Vulkan_Swapchain::s_uFrameIndex = 0;
 Flux_TargetSetup Zenith_Vulkan_Swapchain::s_xTargetSetup;
+
+static Zenith_Vulkan_Shader s_xShader;
+static Zenith_Vulkan_Pipeline s_xPipeline;
+static Zenith_Vulkan_CommandBuffer s_xCopyToFramebufferCmd;
 
 static struct SwapChainSupportDetails
 {
@@ -97,6 +102,46 @@ Zenith_Vulkan_Swapchain::~Zenith_Vulkan_Swapchain()
 		xDevice.destroySemaphore(s_axRenderFinishedSemaphores[i], nullptr);
 		xDevice.destroyFence(s_axInFlightFences[i], nullptr);
 	}
+}
+
+void InitialiseCopyToFramebufferCommands()
+{
+	s_xCopyToFramebufferCmd.Initialise();
+
+	s_xShader.Initialise("Flux_Fullscreen_UV.vert", "Flux_TexturedQuad.frag");
+
+	Flux_VertexInputDescription xVertexDesc;
+	xVertexDesc.m_eTopology = MESH_TOPOLOGY_NONE;
+	xVertexDesc.m_xPerVertexLayout.GetElements().push_back(SHADER_DATA_TYPE_FLOAT3);
+	xVertexDesc.m_xPerVertexLayout.GetElements().push_back(SHADER_DATA_TYPE_FLOAT2);
+	xVertexDesc.m_xPerVertexLayout.CalculateOffsetsAndStrides();
+
+	std::vector<Flux_BlendState> xBlendStates;
+	xBlendStates.push_back({ BLEND_FACTOR_SRCALPHA, BLEND_FACTOR_ONEMINUSSRCALPHA, true });
+
+	Zenith_Vulkan_PipelineSpecification xPipelineSpec(
+		"Zenith_Vulkan_Swapchain CopyToFramebuffer",
+		xVertexDesc,
+		&s_xShader,
+		xBlendStates,
+		false,
+		false,
+		DEPTH_COMPARE_FUNC_ALWAYS,
+		{ COLOUR_FORMAT_BGRA8_SRGB },
+		DEPTHSTENCIL_FORMAT_NONE,
+		"#TO_TODO: delete me",
+		false,
+		false,
+		{ {0,1} },
+		Flux_Swapchain::GetTargetSetup(),
+		LOAD_ACTION_CLEAR,
+		STORE_ACTION_STORE,
+		LOAD_ACTION_DONTCARE,
+		STORE_ACTION_DONTCARE,
+		RENDER_TARGET_USAGE_PRESENT
+	);
+
+	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
 }
 
 void Zenith_Vulkan_Swapchain::Initialise()
@@ -198,6 +243,8 @@ void Zenith_Vulkan_Swapchain::Initialise()
 		s_axInFlightFences[i] = xDevice.createFence(xFenceInfo);
 	}
 
+	InitialiseCopyToFramebufferCommands();
+
 	Zenith_Log("Vulkan swapchain initialised");
 }
 
@@ -216,6 +263,94 @@ void Zenith_Vulkan_Swapchain::BeginFrame()
 	Zenith_Assert(eResult == vk::Result::eSuccess, "Failed to acquire swapchain image");
 
 	xDevice.resetFences(1, &s_axInFlightFences[s_uFrameIndex]);
+}
+
+void Zenith_Vulkan_Swapchain::BindAsTarget()
+{
+	//#TO_TODO: set load/store actions properly
+	LoadAction eColourLoad = LOAD_ACTION_CLEAR;
+	StoreAction eColourStore = STORE_ACTION_STORE;
+	LoadAction eDepthStencilLoad = LOAD_ACTION_DONTCARE;
+	StoreAction eDepthStencilStore = STORE_ACTION_DONTCARE;
+	RenderTargetUsage eUsage = RENDER_TARGET_USAGE_PRESENT;
+
+	uint32_t uNumColourAttachments = 0;
+	for (uint32_t i = 0; i < FLUX_MAX_TARGETS; i++)
+	{
+		if (s_xTargetSetup.m_axColourAttachments[i].m_eColourFormat != COLOUR_FORMAT_NONE)
+		{
+			uNumColourAttachments++;
+		}
+		else
+		{
+			break;
+		}
+	}
+
+	vk::RenderPass xRenderPass = Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(s_xTargetSetup, eColourLoad, eColourStore, eDepthStencilLoad, eDepthStencilStore, eUsage);
+
+
+	vk::Framebuffer xFramebuffer = Zenith_Vulkan_Pipeline::TargetSetupToFramebuffer(s_xTargetSetup, xRenderPass);
+
+	vk::RenderPassBeginInfo xRenderPassInfo = vk::RenderPassBeginInfo()
+		.setRenderPass(xRenderPass)
+		.setFramebuffer(xFramebuffer)
+		.setRenderArea({ {0,0}, Zenith_Vulkan_Swapchain::GetExent() });
+
+	vk::ClearValue* axClearColour = nullptr;
+	//#TO im being lazy and assuming all render targets have the same load action
+	if (eColourLoad == LOAD_ACTION_CLEAR) {
+		axClearColour = new vk::ClearValue[uNumColourAttachments];
+		std::array<float, 4> tempColour{ 0.f,0.f,0.f,1.f };
+		for (uint32_t i = 0; i < uNumColourAttachments; i++)
+		{
+			axClearColour[i].color = { vk::ClearColorValue(tempColour) };
+			axClearColour[i].depthStencil = vk::ClearDepthStencilValue(0, 0);
+		}
+
+		xRenderPassInfo.clearValueCount = uNumColourAttachments;
+		xRenderPassInfo.pClearValues = axClearColour;
+	}
+
+
+	s_xCopyToFramebufferCmd.GetCurrentCmdBuffer().beginRenderPass(xRenderPassInfo, vk::SubpassContents::eInline);
+
+	if (axClearColour != nullptr) delete[] axClearColour;
+
+	//flipping because porting from opengl
+	vk::Viewport xViewport{};
+	xViewport.x = 0;
+	xViewport.y = s_xTargetSetup.m_axColourAttachments[0].m_uHeight;
+	xViewport.width = s_xTargetSetup.m_axColourAttachments[0].m_uWidth;
+	xViewport.height = -1 * (float)s_xTargetSetup.m_axColourAttachments[0].m_uHeight;
+	xViewport.minDepth = 0;
+	xViewport.minDepth = 1;
+
+	vk::Rect2D xScissor{};
+	xScissor.offset = vk::Offset2D(0, 0);
+	xScissor.extent = vk::Extent2D(xViewport.width, xViewport.y);
+
+	s_xCopyToFramebufferCmd.GetCurrentCmdBuffer().setViewport(0, 1, &xViewport);
+	s_xCopyToFramebufferCmd.GetCurrentCmdBuffer().setScissor(0, 1, &xScissor);
+}
+
+void Zenith_Vulkan_Swapchain::CopyToFramebuffer()
+{
+	s_xCopyToFramebufferCmd.BeginRecording();
+
+	BindAsTarget();
+
+	s_xCopyToFramebufferCmd.SetPipeline(&s_xPipeline);
+
+	s_xCopyToFramebufferCmd.SetVertexBuffer(Flux_Graphics::s_xQuadVertexBuffer);
+	s_xCopyToFramebufferCmd.SetIndexBuffer(Flux_Graphics::s_xQuadIndexBuffer);
+
+	s_xCopyToFramebufferCmd.BeginBind(BINDING_FREQUENCY_PER_FRAME);
+	s_xCopyToFramebufferCmd.BindTexture(&Flux_Graphics::s_xFinalRenderTarget.m_axColourAttachments[0].m_axTargetTextures[s_uFrameIndex], 0);
+
+	s_xCopyToFramebufferCmd.DrawIndexed(6);
+
+	s_xCopyToFramebufferCmd.EndRecording(RENDER_ORDER_COPYTOFRAMEBUFFER);
 }
 
 void Zenith_Vulkan_Swapchain::EndFrame()

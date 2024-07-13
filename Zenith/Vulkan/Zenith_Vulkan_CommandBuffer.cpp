@@ -86,6 +86,8 @@ void Zenith_Vulkan_CommandBuffer::EndAndCpuWait(bool bEndPass)
 	Zenith_Vulkan::GetQueue(m_eCommandType).submit(xSubmitInfo, xFence);
 
 	xDevice.waitForFences(1, &xFence, VK_TRUE, UINT64_MAX);
+
+	//#TO_TODO: plug fence leak
 }
 
 void Zenith_Vulkan_CommandBuffer::SetVertexBuffer(Flux_VertexBuffer& xVertexBuffer, uint32_t uBindPoint /*= 0*/)
@@ -231,7 +233,7 @@ void Zenith_Vulkan_CommandBuffer::SubmitTargetSetup(Flux_TargetSetup& xTargetSet
 	StoreAction eColourStore = STORE_ACTION_STORE;
 	LoadAction eDepthStencilLoad = LOAD_ACTION_CLEAR;
 	StoreAction eDepthStencilStore = STORE_ACTION_STORE;
-	RenderTargetUsage eUsage = RENDER_TARGET_USAGE_PRESENT;
+	RenderTargetUsage eUsage = RENDER_TARGET_USAGE_RENDERTARGET;
 
 	uint32_t uNumColourAttachments = 0;
 	for (uint32_t i = 0; i < FLUX_MAX_TARGETS; i++)
@@ -312,36 +314,35 @@ void Zenith_Vulkan_CommandBuffer::SetPipeline(Zenith_Vulkan_Pipeline* pxPipeline
 	m_pxCurrentPipeline = pxPipeline;
 }
 
-void Zenith_Vulkan_CommandBuffer::BindTexture(void* pxTexture, uint32_t uBindPoint, uint32_t uSet) {
-	STUBBED
-	/*
-	VCE_Assert(m_eCurrentBindFreq < BINDING_FREQUENCY_MAX, "Haven't called BeginBind");
+void Zenith_Vulkan_CommandBuffer::BindTexture(Zenith_Vulkan_Texture* pxTexture, uint32_t uBindPoint)
+{
+	Zenith_Assert(m_eCurrentBindFreq < BINDING_FREQUENCY_MAX, "Haven't called BeginBind");
 
 	if (m_eCurrentBindFreq == BINDING_FREQUENCY_PER_FRAME) {
-		VulkanTexture2D* pxTex = reinterpret_cast<VulkanTexture2D*>(pxTexture);
 
 		vk::DescriptorImageInfo xInfo = vk::DescriptorImageInfo()
-			.setSampler(pxTex->m_xSampler)
-			.setImageView(pxTex->m_xImageView)
+			.setSampler(Flux_Graphics::s_xDefaultSampler.GetSampler())
+			.setImageView(pxTexture->GetImageView())
 			.setImageLayout(vk::ImageLayout::eShaderReadOnlyOptimal);
 
 		vk::WriteDescriptorSet xWrite = vk::WriteDescriptorSet()
 			.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
 			//#TO index 0 for per frame set
-			.setDstSet(m_pxCurrentPipeline->m_axDescSets[m_pxRenderer->m_currentFrame][0])
+			.setDstSet(m_pxCurrentPipeline->m_axDescSets[Zenith_Vulkan_Swapchain::GetCurrentFrameIndex()][0])
 			.setDstBinding(uBindPoint)
 			.setDstArrayElement(0)
 			.setDescriptorCount(1)
 			.setPImageInfo(&xInfo);
 
-		m_pxRenderer->GetDevice().updateDescriptorSets(1, &xWrite, 0, nullptr);
+		Zenith_Vulkan::GetDevice().updateDescriptorSets(1, &xWrite, 0, nullptr);
 	}
-	else if(m_eCurrentBindFreq == BINDING_FREQUENCY_PER_DRAW)
-		m_xBindings[m_eCurrentBindFreq].m_xTextures[uBindPoint] = reinterpret_cast<Texture*>(pxTexture);
-	*/
+	else if (m_eCurrentBindFreq == BINDING_FREQUENCY_PER_DRAW)
+	{
+		m_xBindings[m_eCurrentBindFreq].m_xTextures[uBindPoint] = pxTexture;
+	}
 }
 
-void Zenith_Vulkan_CommandBuffer::BindBuffer(void* pxBuffer, uint32_t uBindPoint, uint32_t uSet) {
+void Zenith_Vulkan_CommandBuffer::BindBuffer(void* pxBuffer, uint32_t uBindPoint) {
 	STUBBED
 	/*
 	VCE_Assert(m_eCurrentBindFreq < BINDING_FREQUENCY_MAX, "Haven't called BeginBind");
@@ -370,7 +371,7 @@ void Zenith_Vulkan_CommandBuffer::BindBuffer(void* pxBuffer, uint32_t uBindPoint
 	*/
 }
 
-void Zenith_Vulkan_CommandBuffer::BindAccelerationStruct(void* pxStruct, uint32_t uBindPoint, uint32_t uSet) {
+void Zenith_Vulkan_CommandBuffer::BindAccelerationStruct(void* pxStruct, uint32_t uBindPoint) {
 	STUBBED
 	/*
 	Zenith_Assert(m_eCurrentBindFreq < BINDING_FREQUENCY_MAX, "Haven't called BeginBind");
