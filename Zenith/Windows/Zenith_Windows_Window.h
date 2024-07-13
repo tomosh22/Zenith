@@ -21,7 +21,7 @@ public:
 
 	static Zenith_Windows_Window* GetInstance() { return s_pxInstance; }
 
-	void OnUpdate();
+	void BeginFrame();
 
 	void ToggleCaptureCursor();
 	void EnableCaptureCursor();

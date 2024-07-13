@@ -3,7 +3,7 @@
 #include "Zenith_Vulkan_Swapchain.h"
 
 #include "Zenith_Vulkan.h"
-#include "Flux/Zenith_Flux_Enums.h"
+#include "Flux/Flux_Enums.h"
 #include "Maths/Zenith_Maths.h"
 #include "Zenith_Vulkan_MemoryManager.h"
 
@@ -16,6 +16,11 @@ vk::SwapchainKHR Zenith_Vulkan_Swapchain::s_xSwapChain;
 std::vector<vk::Image> Zenith_Vulkan_Swapchain::s_xImages;
 vk::Format Zenith_Vulkan_Swapchain::s_xImageFormat;
 vk::Extent2D Zenith_Vulkan_Swapchain::s_xExtent;
+uint32_t Zenith_Vulkan_Swapchain::s_uCurrentImageIndex = 0;
+vk::Semaphore Zenith_Vulkan_Swapchain::s_axImageAvailableSemaphores[MAX_FRAMES_IN_FLIGHT];
+vk::Semaphore Zenith_Vulkan_Swapchain::s_axRenderFinishedSemaphores[MAX_FRAMES_IN_FLIGHT];
+vk::Fence Zenith_Vulkan_Swapchain::s_axInFlightFences[MAX_FRAMES_IN_FLIGHT];
+uint32_t Zenith_Vulkan_Swapchain::s_uFrameIndex = 0;
 
 static struct SwapChainSupportDetails {
 	vk::SurfaceCapabilitiesKHR m_xCapabilities;
@@ -71,6 +76,19 @@ static vk::PresentModeKHR ChooseSwapPresentMode(const std::vector<vk::PresentMod
 		}
 	}
 	Zenith_Assert(false, "fifo not supported");
+}
+
+Zenith_Vulkan_Swapchain::~Zenith_Vulkan_Swapchain()
+
+{
+	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
+
+	for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+	{
+		xDevice.destroySemaphore(s_axImageAvailableSemaphores[i], nullptr);
+		xDevice.destroySemaphore(s_axRenderFinishedSemaphores[i], nullptr);
+		xDevice.destroyFence(s_axInFlightFences[i], nullptr);
+	}
 }
 
 void Zenith_Vulkan_Swapchain::Initialise()
@@ -132,5 +150,68 @@ void Zenith_Vulkan_Swapchain::Initialise()
 	s_xImageFormat = xSurfaceFormat.format;
 	s_xExtent = xExtent;
 
+	vk::SemaphoreCreateInfo xSemaphoreInfo;
+
+	vk::FenceCreateInfo xFenceInfo = vk::FenceCreateInfo()
+		.setFlags(vk::FenceCreateFlagBits::eSignaled);
+
+	for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+	{
+		s_axImageAvailableSemaphores[i] = xDevice.createSemaphore(xSemaphoreInfo);
+		s_axRenderFinishedSemaphores[i] = xDevice.createSemaphore(xSemaphoreInfo);
+		s_axInFlightFences[i] = xDevice.createFence(xFenceInfo);
+	}
+
 	Zenith_Log("Vulkan swapchain initialised");
+}
+
+void Zenith_Vulkan_Swapchain::BeginFrame()
+{
+	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
+
+	uint32_t uPreviousFrame = (s_uFrameIndex - 1) % MAX_FRAMES_IN_FLIGHT;
+	xDevice.waitForFences(1, &s_axInFlightFences[uPreviousFrame], VK_TRUE, UINT64_MAX);
+
+#ifdef ZENITH_ASSERT
+	vk::Result eResult =
+#endif
+	 xDevice.acquireNextImageKHR(s_xSwapChain, UINT64_MAX, s_axImageAvailableSemaphores[s_uFrameIndex], nullptr, &s_uCurrentImageIndex);
+
+	Zenith_Assert(eResult == vk::Result::eSuccess, "Failed to acquire swapchain image");
+
+	xDevice.resetFences(1, &s_axInFlightFences[s_uFrameIndex]);
+}
+
+void Zenith_Vulkan_Swapchain::EndFrame()
+{
+	vk::PresentInfoKHR presentInfo = vk::PresentInfoKHR()
+		.setSwapchainCount(1)
+		.setPSwapchains(&s_xSwapChain)
+		.setPImageIndices(&s_uCurrentImageIndex)
+		.setWaitSemaphoreCount(1).
+		setPWaitSemaphores(&s_axRenderFinishedSemaphores[s_uFrameIndex]);
+
+#ifdef ZENITH_ASSERT
+	vk::Result eResult =
+#endif
+		Zenith_Vulkan::GetQueue(COMMANDTYPE_PRESENT).presentKHR(&presentInfo);
+
+	Zenith_Assert(eResult == vk::Result::eSuccess || eResult == vk::Result::eErrorOutOfDateKHR || eResult == vk::Result::eSuboptimalKHR, "Failed to present");
+
+	s_uFrameIndex = (s_uFrameIndex + 1) % MAX_FRAMES_IN_FLIGHT;
+}
+
+vk::Semaphore& Zenith_Vulkan_Swapchain::GetCurrentImageAvailableSemaphore()
+{
+	return s_axImageAvailableSemaphores[s_uFrameIndex];
+}
+
+vk::Semaphore& Zenith_Vulkan_Swapchain::GetCurrentRenderCompleteSemaphore()
+{
+	return s_axRenderFinishedSemaphores[s_uFrameIndex];
+}
+
+vk::Fence& Zenith_Vulkan_Swapchain::GetCurrentInFlightFence()
+{
+	return s_axInFlightFences[s_uFrameIndex];
 }

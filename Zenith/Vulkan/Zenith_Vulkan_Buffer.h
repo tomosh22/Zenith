@@ -18,6 +18,10 @@ public:
 	static void CopyBufferToBuffer(Zenith_Vulkan_Buffer* pxSrc, Zenith_Vulkan_Buffer* pxDst, size_t uSize);
 	static void CopyBufferToImage(Zenith_Vulkan_Buffer* pxSrc, Zenith_Vulkan_Texture* pxDst, bool bAsyncLoader = false);
 
+	const vk::Buffer& GetBuffer() const { return m_xBuffer; }
+	const uint64_t GetSize() const { return m_ulSize; }
+	const vk::DeviceMemory& GetDeviceMemory() const { return m_xDeviceMem; }
+
 	
 private:
 	vk::Buffer m_xBuffer;

@@ -3,11 +3,12 @@
 #include <set>
 #include <unordered_map>
 #include <vector>
+#include <string>
 
 #define ZENITH_LOG
 #ifdef ZENITH_LOG
-#define Zenith_Log(...)printf(__VA_ARGS__);printf("\n")
-#define Zenith_Error(...)printf(__VA_ARGS__);printf("\n")
+#define Zenith_Log(...){printf(__VA_ARGS__);printf("\n");}
+#define Zenith_Error(...){printf(__VA_ARGS__);printf("\n");}
 #else
 #define Zenith_Log(...)
 #define Zenith_Error(...)

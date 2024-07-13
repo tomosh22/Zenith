@@ -1,13 +1,13 @@
 #include "Zenith.h"
 
-#include "vulkan/Zenith_Vulkan.h"
+#include "Vulkan/Zenith_Vulkan.h"
 
 
 #ifdef ZENITH_WINDOWS
 #include "Zenith_Windows_Window.h"
 #endif
 
-#include "Flux/Zenith_Flux.h"
+#include "Flux/Flux.h"
 
 #ifdef ZENITH_DEBUG
 static std::vector<const char*> s_xValidationLayers = { "VK_LAYER_KHRONOS_validation" };
@@ -15,7 +15,7 @@ static std::vector<const char*> s_xValidationLayers = { "VK_LAYER_KHRONOS_valida
 
 static const char* s_aszDeviceExtensions[] = {
 				VK_KHR_SWAPCHAIN_EXTENSION_NAME,
-				VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME,
+				//VK_EXT_DESCRIPTOR_INDEXING_EXTENSION_NAME,
 #ifdef ZENITH_RAYTRACING
 				VK_KHR_SHADER_FLOAT_CONTROLS_EXTENSION_NAME,
 				VK_KHR_SPIRV_1_4_EXTENSION_NAME,
@@ -37,9 +37,14 @@ uint32_t Zenith_Vulkan::s_auQueueIndices[COMMANDTYPE_MAX];
 vk::Device Zenith_Vulkan::s_xDevice;
 vk::Queue Zenith_Vulkan::s_axQueues[COMMANDTYPE_MAX];
 vk::CommandPool Zenith_Vulkan::s_axCommandPools[COMMANDTYPE_MAX];
+vk::DescriptorPool Zenith_Vulkan::s_xDefaultDescriptorPool;
 vk::DescriptorPool Zenith_Vulkan::s_axPerFrameDescriptorPools[MAX_FRAMES_IN_FLIGHT];
 
-const vk::DescriptorPool& Zenith_Vulkan::GetCurrentPerFrameDescriptorPool() { return s_axPerFrameDescriptorPools[Zenith_Flux::GetFrameIndex()]; }
+std::vector<const Zenith_Vulkan_CommandBuffer*> Zenith_Vulkan::s_xPendingCommandBuffers[RENDER_ORDER_MAX];
+
+
+
+const vk::DescriptorPool& Zenith_Vulkan::GetCurrentPerFrameDescriptorPool() { return s_axPerFrameDescriptorPools[Zenith_Vulkan_Swapchain::GetCurrentFrameIndex()]; }
 
 void Zenith_Vulkan::Initialise()
 {
@@ -50,11 +55,70 @@ void Zenith_Vulkan::Initialise()
 	CreateQueueFamilies();
 	CreateDevice();
 	CreateCommandPools();
+	CreateDefaultDescriptorPool();
 }
 
 void Zenith_Vulkan::BeginFrame()
 {
 	RecreatePerFrameDescriptorPool();
+}
+
+void Zenith_Vulkan::EndFrame()
+{
+	static_assert(RENDER_ORDER_MEMORY_UPDATE == 0u, "Memory update needs to come first");
+
+	vk::PipelineStageFlags eMemWaitStages = vk::PipelineStageFlagBits::eTransfer;
+	vk::PipelineStageFlags eRenderWaitStages = vk::PipelineStageFlagBits::eTransfer;
+
+	//#TO_TODO: stop making this every frame
+	vk::Semaphore xMemorySemaphore = s_xDevice.createSemaphore(vk::SemaphoreCreateInfo());
+
+	std::vector<vk::CommandBuffer> xPlatformMemoryCmdBufs;
+	for (const Zenith_Vulkan_CommandBuffer* pCmdBuf : s_xPendingCommandBuffers[RENDER_ORDER_MEMORY_UPDATE]) {
+		const vk::CommandBuffer& xBuf = *reinterpret_cast<const vk::CommandBuffer*>(pCmdBuf);
+		xPlatformMemoryCmdBufs.push_back(xBuf);
+	}
+
+	vk::SubmitInfo xMemorySubmitInfo = vk::SubmitInfo()
+		.setCommandBufferCount(xPlatformMemoryCmdBufs.size())
+		.setPCommandBuffers(xPlatformMemoryCmdBufs.data())
+		.setPWaitSemaphores(&Zenith_Vulkan_Swapchain::GetCurrentImageAvailableSemaphore())
+		.setPSignalSemaphores(&xMemorySemaphore)
+		.setWaitSemaphoreCount(1)
+		.setSignalSemaphoreCount(1)
+		.setWaitDstStageMask(eMemWaitStages);
+
+
+	s_axQueues[COMMANDTYPE_COPY].submit(xMemorySubmitInfo, VK_NULL_HANDLE);
+
+	std::vector<vk::CommandBuffer> xPlatformCmdBufs;
+	for (uint32_t i = RENDER_ORDER_MEMORY_UPDATE + 1; i < RENDER_ORDER_MAX; i++) {
+		for (const Zenith_Vulkan_CommandBuffer* pCmdBuf : s_xPendingCommandBuffers[i]) {
+			const vk::CommandBuffer& xBuf = *reinterpret_cast<const vk::CommandBuffer*>(pCmdBuf);
+			xPlatformCmdBufs.push_back(xBuf);
+		}
+	}
+
+	vk::SubmitInfo xRenderSubmitInfo = vk::SubmitInfo()
+		.setCommandBufferCount(xPlatformCmdBufs.size())
+		.setPCommandBuffers(xPlatformCmdBufs.data())
+		.setPWaitSemaphores(&xMemorySemaphore)
+		.setPSignalSemaphores(&Zenith_Vulkan_Swapchain::GetCurrentRenderCompleteSemaphore())
+		.setWaitSemaphoreCount(1)
+		.setSignalSemaphoreCount(1)
+		.setWaitDstStageMask(eRenderWaitStages);
+
+
+	s_axQueues[COMMANDTYPE_GRAPHICS].submit(xRenderSubmitInfo, Zenith_Vulkan_Swapchain::GetCurrentInFlightFence());
+
+
+	//TODO: put this in end frame when I eventually write it
+	for (uint32_t i = 0; i < RENDER_ORDER_MAX; i++) {
+		s_xPendingCommandBuffers[i].clear();
+	}
+
+	//#TO_TODO: plug semaphore leak
+	//s_xDevice.destroySemaphore(xMemorySemaphore);
 }
 
 void Zenith_Vulkan::RecreatePerFrameDescriptorPool()
@@ -75,12 +139,12 @@ void Zenith_Vulkan::RecreatePerFrameDescriptorPool()
 	};
 
 	vk::DescriptorPoolCreateInfo xPoolInfo = vk::DescriptorPoolCreateInfo()
-		.setPoolSizeCount(sizeof(axPoolSizes) / sizeof(axPoolSizes[0]))
+		.setPoolSizeCount(COUNT_OF(axPoolSizes))
 		.setPPoolSizes(axPoolSizes)
 		.setMaxSets(10000)
 		.setFlags(vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet | vk::DescriptorPoolCreateFlagBits::eUpdateAfterBind);
 
-	vk::DescriptorPool& xPool = s_axPerFrameDescriptorPools[Zenith_Flux::GetFrameIndex()];
+	vk::DescriptorPool& xPool = s_axPerFrameDescriptorPools[Zenith_Vulkan_Swapchain::GetCurrentFrameIndex()];
 
 	s_xDevice.destroyDescriptorPool(xPool);
 	xPool = s_xDevice.createDescriptorPool(xPoolInfo);
@@ -163,6 +227,7 @@ void Zenith_Vulkan::CreatePhysicalDevice()
 {
 	uint32_t uNumDevices;
 	s_xInstance.enumeratePhysicalDevices(&uNumDevices, nullptr);
+	Zenith_Log("%u physical vulkan devices to choose from", uNumDevices);
 	std::vector<vk::PhysicalDevice> xDevices;
 	xDevices.resize(uNumDevices);
 	s_xInstance.enumeratePhysicalDevices(&uNumDevices, xDevices.data());
@@ -246,49 +311,14 @@ void Zenith_Vulkan::CreateDevice()
 	}
 
 
-	vk::PhysicalDeviceFeatures deviceFeatures = vk::PhysicalDeviceFeatures()
-		.setSamplerAnisotropy(VK_TRUE)
-		.setTessellationShader(VK_TRUE);
-
-	vk::PhysicalDeviceFeatures2 deviceFeatures2;
-	deviceFeatures2.setFeatures(deviceFeatures);
-
-	vk::PhysicalDeviceDescriptorIndexingFeatures indexingFeatures;
-	indexingFeatures.descriptorBindingUniformBufferUpdateAfterBind = true;
-	indexingFeatures.descriptorBindingSampledImageUpdateAfterBind = true;
-	indexingFeatures.descriptorBindingPartiallyBound = true;
-	indexingFeatures.descriptorBindingVariableDescriptorCount = true;
-	indexingFeatures.runtimeDescriptorArray = true;
-	deviceFeatures2.setPNext((void*)&indexingFeatures);
-
-#ifdef ZENITH_RAYTRACING
-	vk::PhysicalDeviceRayTracingPipelineFeaturesKHR xRayFeatures;
-	xRayFeatures.setRayTracingPipeline(true);
-	indexingFeatures.setPNext(&xRayFeatures);
-
-	vk::PhysicalDeviceRayQueryFeaturesKHR xRayQueury;
-	xRayQueury.setRayQuery(true);
-	xRayFeatures.setPNext(&xRayQueury);
-
-	vk::PhysicalDeviceBufferDeviceAddressFeaturesKHR deviceAddressfeature(true);
-	xRayQueury.setPNext(&deviceAddressfeature);
-
-	vk::PhysicalDeviceAccelerationStructureFeaturesKHR xAccelStructFeatures;
-	xAccelStructFeatures.accelerationStructure = true;
-
-	deviceAddressfeature.setPNext(&xAccelStructFeatures);
-#endif
-
-
 	vk::DeviceCreateInfo deviceCreateInfo = vk::DeviceCreateInfo()
-		.setPNext(&deviceFeatures2)
 		.setPQueueCreateInfos(xQueueInfos.data())
 		.setQueueCreateInfoCount(xQueueInfos.size())
 		.setEnabledExtensionCount(COUNT_OF(s_aszDeviceExtensions))
 		.setPpEnabledExtensionNames(s_aszDeviceExtensions)
-#if DEBUG
-		.setEnabledLayerCount(m_validationLayers.size())
-		.setPpEnabledLayerNames(m_validationLayers.data());
+#ifdef ZENITH_DEBUG
+		.setEnabledLayerCount(s_xValidationLayers.size())
+		.setPpEnabledLayerNames(s_xValidationLayers.data());
 #else
 		.setEnabledLayerCount(0);
 #endif
@@ -311,4 +341,32 @@ void Zenith_Vulkan::CreateCommandPools()
 	}
 
 	Zenith_Log("Vulkan command pools created");
+}
+
+void Zenith_Vulkan::CreateDefaultDescriptorPool()
+{
+	vk::DescriptorPoolSize axPoolSizes[] =
+	{
+		{ vk::DescriptorType::eSampler, 10000 },
+		{ vk::DescriptorType::eCombinedImageSampler, 10000 },
+		{ vk::DescriptorType::eSampledImage, 10000 },
+		{ vk::DescriptorType::eStorageImage, 10000 },
+		{ vk::DescriptorType::eUniformTexelBuffer, 10000 },
+		{ vk::DescriptorType::eStorageTexelBuffer, 10000 },
+		{ vk::DescriptorType::eUniformBuffer, 10000 },
+		{ vk::DescriptorType::eStorageBuffer, 10000 },
+		{ vk::DescriptorType::eUniformBufferDynamic, 10000 },
+		{ vk::DescriptorType::eStorageBufferDynamic, 10000 },
+		{ vk::DescriptorType::eInputAttachment, 10000 }
+	};
+
+	vk::DescriptorPoolCreateInfo xPoolInfo = vk::DescriptorPoolCreateInfo()
+		.setPoolSizeCount(COUNT_OF(axPoolSizes))
+		.setPPoolSizes(axPoolSizes)
+		.setMaxSets(10000)
+		.setFlags(vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet | vk::DescriptorPoolCreateFlagBits::eUpdateAfterBind);
+
+	s_xDefaultDescriptorPool = s_xDevice.createDescriptorPool(xPoolInfo);
+
+	Zenith_Log("Vulkan default descriptor pool created");
 }
