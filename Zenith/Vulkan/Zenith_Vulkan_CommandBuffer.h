@@ -32,9 +32,9 @@ public:
 	void DrawIndexed(uint32_t uNumIndices, uint32_t uNumInstances = 1, uint32_t uVertexOffset = 0, uint32_t uIndexOffset = 0,uint32_t uInstanceOffset = 0);
 	void SubmitTargetSetup(Flux_TargetSetup& xTargetSetup);
 	void SetPipeline(Zenith_Vulkan_Pipeline* pxPipeline);
-	void BindTexture(void* pxTexture, uint32_t uBindPoint, uint32_t uSet);
-	void BindBuffer(void* pxBuffer, uint32_t uBindPoint, uint32_t uSet);
-	void BindAccelerationStruct(void* pxStruct, uint32_t uBindPoint, uint32_t uSet);
+	void BindTexture(Zenith_Vulkan_Texture* pxTexture, uint32_t uBindPoint);
+	void BindBuffer(void* pxBuffer, uint32_t uBindPoint);
+	void BindAccelerationStruct(void* pxStruct, uint32_t uBindPoint);
 	void PushConstant(void* pData, size_t uSize);
 	void UploadUniformData(void* pData, size_t uSize);
 

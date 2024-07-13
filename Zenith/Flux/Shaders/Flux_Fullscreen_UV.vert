@@ -1,16 +1,16 @@
 #version 450 core
 
+layout(location = 0) out vec2 o_xUV;
 
-layout(location = 0) out vec2 UV;
-
-void main(){
-    uint xBit = gl_VertexIndex & 1u;
-    uint yBit = (gl_VertexIndex >> 1) & 1u;
-
-    float xPos = float(xBit) * 2.0 - 1.0;
-    float yPos = float(yBit) * 2.0 - 1.0;
-
-    gl_Position = vec4(xPos, yPos, 1.0, 1.0);
-
-    UV = vec2((xPos + 1.0) * 0.5, (yPos + 1.0) * 0.5);
+void main()
+{
+	uint uXBit = gl_VertexIndex & 1u;
+	uint uYBit = (gl_VertexIndex >> 1) & 1u;
+	
+	float fXPos = float(uXBit) * 2.0f - 1.0f;
+	float fYPos = float(uYBit) * 2.0f - 1.0f;
+	
+	o_xUV = vec2((fXPos + 1.0f) * 0.5f, (fYPos + 1.0f) * 0.5f);
+	
+	gl_Position = vec4(fXPos, fYPos, 1.0f, 1.0f);
 }

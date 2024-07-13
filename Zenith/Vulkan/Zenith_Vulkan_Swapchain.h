@@ -28,7 +28,10 @@ public:
 	static uint32_t GetCurrentFrameIndex() { return s_uFrameIndex; }
 
 	static Flux_TargetSetup& GetTargetSetup() {return s_xTargetSetup;}
+
+	static void CopyToFramebuffer();
 private:
+	static void BindAsTarget();
 	static vk::SwapchainKHR s_xSwapChain;
 	//#TO_TODO: make these arrays, not vectors
 	static std::vector<vk::Image> s_xImages;

@@ -597,6 +597,19 @@ Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithBlendState(vk:
 			}
 		}
 
+		vk::ImageLayout eLayout;
+		switch (eUsage)
+		{
+		case RENDER_TARGET_USAGE_RENDERTARGET:
+			eLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+			break;
+		case RENDER_TARGET_USAGE_PRESENT:
+			eLayout = vk::ImageLayout::ePresentSrcKHR;
+			break;
+		default:
+			Zenith_Assert(false, "Unsupported usage");
+		}
+
 		std::vector<vk::AttachmentDescription> xAttachmentDescs(uNumColourAttachments);
 		std::vector<vk::AttachmentReference> xAttachmentRefs(uNumColourAttachments);
 		for (uint32_t i = 0; i < uNumColourAttachments; i++)
@@ -609,8 +622,8 @@ Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithBlendState(vk:
 				.setStoreOp(Zenith_Vulkan_Texture::ConvertToVkStoreAction(eColourStore))
 				.setStencilLoadOp(vk::AttachmentLoadOp::eDontCare)
 				.setStencilStoreOp(vk::AttachmentStoreOp::eDontCare)
-				.setInitialLayout(eUsage == RENDER_TARGET_USAGE_SHADERREAD ? vk::ImageLayout::eShaderReadOnlyOptimal : vk::ImageLayout::eUndefined) //TODO: make this a parameter
-				.setFinalLayout(Zenith_Vulkan_Texture::ConvertToVkTargetUsage(eUsage, RENDER_TARGET_TYPE_COLOUR));
+				.setInitialLayout(eLayout)
+				.setFinalLayout(eLayout);
 
 			xAttachmentRefs.at(i)
 				.setAttachment(i)

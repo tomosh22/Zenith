@@ -25,14 +25,9 @@ void Flux_Skybox::Initialise()
 
 	std::vector<Flux_BlendState> xBlendStates;
 	xBlendStates.push_back({ BLEND_FACTOR_SRCALPHA, BLEND_FACTOR_ONEMINUSSRCALPHA, true });
-	/*
-	xBlendStates.push_back({ BLEND_FACTOR_SRCALPHA, BLEND_FACTOR_ONEMINUSSRCALPHA, true });
-	xBlendStates.push_back({ BLEND_FACTOR_SRCALPHA, BLEND_FACTOR_ONEMINUSSRCALPHA, true });
-	xBlendStates.push_back({ BLEND_FACTOR_SRCALPHA, BLEND_FACTOR_ONEMINUSSRCALPHA, true });
-	*/
 
 	Zenith_Vulkan_PipelineSpecification xPipelineSpec(
-		"SkyboxGBuffer",
+		"Flux_Skybox",
 		xVertexDesc,
 		&s_xShader,
 		xBlendStates,
@@ -41,12 +36,12 @@ void Flux_Skybox::Initialise()
 		DEPTH_COMPARE_FUNC_ALWAYS,
 		{ COLOUR_FORMAT_BGRA8_SRGB },
 		DEPTHSTENCIL_FORMAT_NONE,
-		"RenderToGBufferClear",
+		"#TO_TODO: delete me",
 		false,
 		false,
 		{ {0,0} },
 		//{ {3,0} },
-		Flux_Swapchain::GetTargetSetup(),
+		Flux_Graphics::s_xFinalRenderTarget,
 		LOAD_ACTION_CLEAR,
 		STORE_ACTION_STORE,
 		LOAD_ACTION_DONTCARE,
@@ -63,7 +58,7 @@ void Flux_Skybox::Render()
 {
 	s_xCommandBuffer.BeginRecording();
 
-	s_xCommandBuffer.SubmitTargetSetup(Flux_Swapchain::GetTargetSetup());
+	s_xCommandBuffer.SubmitTargetSetup(Flux_Graphics::s_xFinalRenderTarget);
 
 	s_xCommandBuffer.SetPipeline(&s_xPipeline);
 
