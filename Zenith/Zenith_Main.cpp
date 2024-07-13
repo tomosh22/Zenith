@@ -12,7 +12,7 @@ void Zenith_MainLoop()
 	Flux_MemoryManager::BeginFrame();
 	Flux_Skybox::Render();
 	Flux_MemoryManager::EndFrame();
-	Zenith_Vulkan_Swapchain::CopyToFramebuffer();
+	Flux_Swapchain::CopyToFramebuffer();
 	Flux_PlatformAPI::EndFrame();
 	Flux_Swapchain::EndFrame();
 }
