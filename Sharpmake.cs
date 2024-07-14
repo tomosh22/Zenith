@@ -54,6 +54,7 @@ public class ZenithWindowsProject : Project
 		SourceFilesExcludeRegex.Add(@".*VulkanSDK.*");
 		SourceFilesExcludeRegex.Add(@".*FluxCompiler.*");
 		SourceFilesExcludeRegex.Add(@".*glm-master.*");
+		SourceFilesExcludeRegex.Add(@".*entt-3.13.2.*");
     }
 
     [Configure]
@@ -70,6 +71,7 @@ public class ZenithWindowsProject : Project
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Middleware/glfw-3.4.bin.WIN64/include");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Middleware/VulkanSDK/1.3.280.0/Include");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Middleware/glm-master");
+		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Middleware/entt-3.13.2/single_include");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Zenith/Windows");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Zenith/Vulkan");
 		
@@ -87,6 +89,9 @@ public class ZenithWindowsProject : Project
 		String shaderRoot = sharpmakePath + "/Zenith/Flux/Shaders/";
 		shaderRoot = shaderRoot.Replace('\\', '/');
 		conf.Defines.Add("SHADER_SOURCE_ROOT=\"" + shaderRoot + "\"");
+		
+		//#TO entt requires cpp17
+		conf.Options.Add(Options.Vc.Compiler.CppLanguageStandard.CPP17);
 		
 		if(target.Optimization == Optimization.Debug)
 		{

@@ -4,6 +4,10 @@
 #include <unordered_map>
 #include <vector>
 #include <string>
+#include <iostream>
+#include <fstream>
+
+#include "Maths/Zenith_Maths.h"
 
 #define ZENITH_LOG
 #ifdef ZENITH_LOG
@@ -25,3 +29,22 @@
 
 #define STUBBED __debugbreak();
 //#define ZENITH_RAYTRACING
+
+using GUIDType = uint64_t;
+static struct Zenith_GUID {
+	static Zenith_GUID Invalid;
+	Zenith_GUID() {
+		for (uint64_t i = 0; i < sizeof(GUIDType) * 8; i++)
+			if (rand() > RAND_MAX / 2)
+				m_uGUID |= static_cast<GUIDType>(1u) << i;
+	}
+	Zenith_GUID(GUIDType uGuid) : m_uGUID(uGuid) {}
+	GUIDType m_uGUID = 0;
+
+	bool operator == (const Zenith_GUID& xOther) const {
+		return m_uGUID == xOther.m_uGUID;
+	}
+
+	operator uint64_t() { return m_uGUID; }
+	operator uint32_t() { Zenith_Assert(false, "Attempting to compress GUID into 32 bits"); }
+};

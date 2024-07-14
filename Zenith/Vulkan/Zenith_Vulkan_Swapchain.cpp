@@ -6,7 +6,6 @@
 #include "Flux/Flux_Enums.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_RenderTargets.h"
-#include "Maths/Zenith_Maths.h"
 #include "Zenith_Vulkan_MemoryManager.h"
 
 #include "Zenith_OS_Include.h" //#TO for Zenith_Window
