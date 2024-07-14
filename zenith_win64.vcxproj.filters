@@ -7,10 +7,22 @@
     <ClCompile Include="Zenith\Core\Zenith_Core.cpp">
       <Filter>Zenith\Core</Filter>
     </ClCompile>
+    <ClCompile Include="Zenith\EntityComponent\Components\Zenith_TransformComponent.cpp">
+      <Filter>Zenith\EntityComponent\Components</Filter>
+    </ClCompile>
+    <ClCompile Include="Zenith\EntityComponent\Zenith_Entity.cpp">
+      <Filter>Zenith\EntityComponent</Filter>
+    </ClCompile>
+    <ClCompile Include="Zenith\EntityComponent\Zenith_Scene.cpp">
+      <Filter>Zenith\EntityComponent</Filter>
+    </ClCompile>
     <ClCompile Include="Zenith\FileAccess\Zenith_FileAccess.cpp">
       <Filter>Zenith\FileAccess</Filter>
     </ClCompile>
     <ClCompile Include="Zenith\Flux\Flux.cpp">
+      <Filter>Zenith\Flux</Filter>
+    </ClCompile>
+    <ClCompile Include="Zenith\Flux\Flux_Buffers.cpp">
       <Filter>Zenith\Flux</Filter>
     </ClCompile>
     <ClCompile Include="Zenith\Flux\Flux_Graphics.cpp">
@@ -58,7 +70,6 @@
     <ClCompile Include="Zenith\Zenith_Main.cpp">
       <Filter>Zenith</Filter>
     </ClCompile>
-    <ClCompile Include="Zenith\Flux\Flux_Buffers.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Middleware\glfw-3.4.bin.WIN64\include\GLFW\glfw3.h">
@@ -72,6 +83,15 @@
     </ClInclude>
     <ClInclude Include="Zenith\Core\Zenith_Core.h">
       <Filter>Zenith\Core</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\EntityComponent\Components\Zenith_TransformComponent.h">
+      <Filter>Zenith\EntityComponent\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\EntityComponent\Zenith_Entity.h">
+      <Filter>Zenith\EntityComponent</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\EntityComponent\Zenith_Scene.h">
+      <Filter>Zenith\EntityComponent</Filter>
     </ClInclude>
     <ClInclude Include="Zenith\FileAccess\Zenith_FileAccess.h">
       <Filter>Zenith\FileAccess</Filter>
@@ -161,6 +181,12 @@
     </Filter>
     <Filter Include="Zenith\Core">
       <UniqueIdentifier>{e84b9d32-4703-7861-1735-99a5845a300c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Zenith\EntityComponent">
+      <UniqueIdentifier>{aaa61361-bd1b-2316-4c75-f74b5ca58ae9}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Zenith\EntityComponent\Components">
+      <UniqueIdentifier>{42b07434-fb70-f5e9-66d0-6e5ae7213760}</UniqueIdentifier>
     </Filter>
     <Filter Include="Zenith\FileAccess">
       <UniqueIdentifier>{cff7abfd-5391-6156-e4ec-0e283e244a6d}</UniqueIdentifier>

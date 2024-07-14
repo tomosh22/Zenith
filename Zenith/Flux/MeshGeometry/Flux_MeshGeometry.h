@@ -1,5 +1,4 @@
 #pragma once
-#include "Maths/Zenith_Maths.h"
 #include "Flux/Flux_Types.h"
 
 class Flux_MeshGeometry

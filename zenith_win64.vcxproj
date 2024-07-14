@@ -67,7 +67,7 @@
       <WarningLevel>Level4</WarningLevel>
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>NOMINMAX;SHADER_SOURCE_ROOT="c:/dev/zenith/Zenith/Flux/Shaders/";WIN64;ZENITH_DEBUG;ZENITH_VULKAN;ZENITH_WINDOWS;_CONSOLE;_DEBUG;%(PreprocessorDefinitions);$(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>middleware\glfw-3.4.bin.win64\include;middleware\glm-master;middleware\vulkansdk\1.3.280.0\include;zenith;zenith\core;zenith\vulkan;zenith\windows</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>middleware\entt-3.13.2\single_include;middleware\glfw-3.4.bin.win64\include;middleware\glm-master;middleware\vulkansdk\1.3.280.0\include;zenith;zenith\core;zenith\vulkan;zenith\windows</AdditionalIncludeDirectories>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <TreatWarningAsError>false</TreatWarningAsError>
@@ -100,6 +100,7 @@
       <ForceConformanceInForLoopScope>true</ForceConformanceInForLoopScope>
       <RuntimeTypeInfo>false</RuntimeTypeInfo>
       <OpenMPSupport>false</OpenMPSupport>
+      <LanguageStandard>stdcpp17</LanguageStandard>
       <ExpandAttributedSource>false</ExpandAttributedSource>
       <AssemblerOutput>NoListing</AssemblerOutput>
       <GenerateXMLDocumentationFiles>false</GenerateXMLDocumentationFiles>
@@ -141,8 +142,7 @@
       <AdditionalDependencies>glfw3_mt.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
-      <IgnoreSpecificDefaultLibraries>
-      </IgnoreSpecificDefaultLibraries>
+      <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
       <LargeAddressAware>true</LargeAddressAware>
       <MapFileName>output\win64\debug\zenith.map</MapFileName>
     </Link>
@@ -153,7 +153,7 @@
       <WarningLevel>Level4</WarningLevel>
       <Optimization>Full</Optimization>
       <PreprocessorDefinitions>NDEBUG;NOMINMAX;SHADER_SOURCE_ROOT="c:/dev/zenith/Zenith/Flux/Shaders/";WIN64;ZENITH_VULKAN;ZENITH_WINDOWS;_CONSOLE;%(PreprocessorDefinitions);$(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>middleware\glfw-3.4.bin.win64\include;middleware\glm-master;middleware\vulkansdk\1.3.280.0\include;zenith;zenith\core;zenith\vulkan;zenith\windows</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>middleware\entt-3.13.2\single_include;middleware\glfw-3.4.bin.win64\include;middleware\glm-master;middleware\vulkansdk\1.3.280.0\include;zenith;zenith\core;zenith\vulkan;zenith\windows</AdditionalIncludeDirectories>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <TreatWarningAsError>false</TreatWarningAsError>
@@ -186,6 +186,7 @@
       <ForceConformanceInForLoopScope>true</ForceConformanceInForLoopScope>
       <RuntimeTypeInfo>false</RuntimeTypeInfo>
       <OpenMPSupport>false</OpenMPSupport>
+      <LanguageStandard>stdcpp17</LanguageStandard>
       <ExpandAttributedSource>false</ExpandAttributedSource>
       <AssemblerOutput>NoListing</AssemblerOutput>
       <GenerateXMLDocumentationFiles>false</GenerateXMLDocumentationFiles>
@@ -227,8 +228,7 @@
       <AdditionalDependencies>glfw3_mt.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
-      <IgnoreSpecificDefaultLibraries>
-      </IgnoreSpecificDefaultLibraries>
+      <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
       <LargeAddressAware>true</LargeAddressAware>
       <MapFileName>output\win64\release\zenith.map</MapFileName>
     </Link>
@@ -238,6 +238,9 @@
     <ClInclude Include="Middleware\glfw-3.4.bin.WIN64\include\GLFW\glfw3native.h" />
     <ClInclude Include="Zenith\Core\Zenith.h" />
     <ClInclude Include="Zenith\Core\Zenith_Core.h" />
+    <ClInclude Include="Zenith\EntityComponent\Components\Zenith_TransformComponent.h" />
+    <ClInclude Include="Zenith\EntityComponent\Zenith_Entity.h" />
+    <ClInclude Include="Zenith\EntityComponent\Zenith_Scene.h" />
     <ClInclude Include="Zenith\FileAccess\Zenith_FileAccess.h" />
     <ClInclude Include="Zenith\Flux\Flux.h" />
     <ClInclude Include="Zenith\Flux\Flux_Buffers.h" />
@@ -268,6 +271,9 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="Zenith\Core\Zenith_Core.cpp" />
+    <ClCompile Include="Zenith\EntityComponent\Components\Zenith_TransformComponent.cpp" />
+    <ClCompile Include="Zenith\EntityComponent\Zenith_Entity.cpp" />
+    <ClCompile Include="Zenith\EntityComponent\Zenith_Scene.cpp" />
     <ClCompile Include="Zenith\FileAccess\Zenith_FileAccess.cpp" />
     <ClCompile Include="Zenith\Flux\Flux.cpp" />
     <ClCompile Include="Zenith\Flux\Flux_Buffers.cpp" />
