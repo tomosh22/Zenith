@@ -6,6 +6,8 @@
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Flux_Graphics.h"
 
+#include "EntityComponent/Components/Zenith_CameraComponent.h"
+
 static Flux_CommandBuffer s_xCommandBuffer;
 
 static Flux_Shader s_xShader;
@@ -56,6 +58,8 @@ void Flux_Skybox::Initialise()
 
 void Flux_Skybox::Render()
 {
+	Zenith_CameraComponent& xCamera = Zenith_Scene::GetCurrentScene().GetMainCamera();
+
 	s_xCommandBuffer.BeginRecording();
 
 	s_xCommandBuffer.SubmitTargetSetup(Flux_Graphics::s_xFinalRenderTarget);

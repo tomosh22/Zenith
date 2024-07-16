@@ -1,5 +1,7 @@
 #pragma once
 
+using Zenith_KeyCode = int32_t;
+
 //#TO stolen from glfw
 #define ZENITH_KEY_SPACE              32
 #define ZENITH_KEY_APOSTROPHE         39  /* ' */

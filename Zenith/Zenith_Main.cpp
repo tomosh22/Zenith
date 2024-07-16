@@ -26,6 +26,7 @@ int main()
 	Zenith_Window::Inititalise("Zenith", 1280, 720);
 	Flux::EarlyInitialise();
 	Flux::LateInitialise();
+	Zenith_Core::Project_Startup();
 	while (true)
 	{
 		Zenith_MainLoop();

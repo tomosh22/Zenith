@@ -1,6 +1,9 @@
 #include "Zenith.h"
 #include "EntityComponent/Zenith_Entity.h"
 #include "EntityComponent/Zenith_Scene.h"
+#include "EntityComponent/Components/Zenith_CameraComponent.h"
+
+Zenith_Scene Zenith_Scene::s_xCurrentScene;
 
 enum class ComponentType {
 	Transform,
@@ -45,7 +48,7 @@ std::unordered_map<std::string, ScriptBehaviourType> g_xScriptBehaviourNames =
 	{"PlayerController", ScriptBehaviourType::PlayerController},
 };
 
-void Scene::LoadSceneFromFile(const std::string& strFilename) {
+void Zenith_Scene::LoadSceneFromFile(const std::string& strFilename) {
 	STUBBED
 #if 0
 	Application* app = Application::GetInstance();
@@ -59,7 +62,7 @@ void Scene::LoadSceneFromFile(const std::string& strFilename) {
 			std::getline(xIn, strGuid);
 			std::getline(xIn, strParentGuid);
 			std::getline(xIn, strName);
-			Entity xEntity(this, GUID(strtoull(strGuid.c_str(), nullptr, 10)), GUID(strtoull(strParentGuid.c_str(), nullptr, 10)), strName);
+			Zenith_Entity xEntity(this, GUID(strtoull(strGuid.c_str(), nullptr, 10)), GUID(strtoull(strParentGuid.c_str(), nullptr, 10)), strName);
 			while (std::getline(xIn, strLine)) {
 				if (strLine == "EndEntity")break;
 				switch (g_xComponentNames[strLine]) {
@@ -198,7 +201,7 @@ void Scene::LoadSceneFromFile(const std::string& strFilename) {
 #endif
 }
 
-Scene::Scene(const std::string& strFilename) {
+Zenith_Scene::Zenith_Scene(const std::string& strFilename) {
 	LoadSceneFromFile(strFilename);
 
 #if 0
@@ -209,15 +212,15 @@ Scene::Scene(const std::string& strFilename) {
 #endif
 }
 
-Scene::~Scene() {
+Zenith_Scene::~Zenith_Scene() {
 	m_xRegistry.clear();
 }
 
-void Scene::Reset() {
+void Zenith_Scene::Reset() {
 	
 }
 
-void Scene::Serialize(const std::string& strFilename) {
+void Zenith_Scene::Serialize(const std::string& strFilename) {
 	STUBBED
 #if 0
 	Zenith_Log("Serializing %s", strFilename.c_str());
@@ -232,6 +235,17 @@ void Scene::Serialize(const std::string& strFilename) {
 #endif
 }
 
-Entity Scene::GetEntityByGUID(Zenith_GUID ulGuid) {
+Zenith_Entity Zenith_Scene::GetEntityByGUID(Zenith_GUID ulGuid) {
 	return m_xEntityMap.at(ulGuid);
+}
+
+void Zenith_Scene::SetMainCameraEntity(Zenith_Entity& xEntity)
+{
+	Zenith_Assert(m_uMainCameraEntity == (EntityID)0, "Scene already has a main camera");
+	m_uMainCameraEntity = xEntity.GetEntityID();
+}
+
+Zenith_CameraComponent& Zenith_Scene::GetMainCamera()
+{
+	return GetComponentFromEntity<Zenith_CameraComponent>(m_uMainCameraEntity);
 }

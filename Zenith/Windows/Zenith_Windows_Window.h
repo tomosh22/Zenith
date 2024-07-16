@@ -9,6 +9,8 @@
 #include <GLFW/glfw3native.h>
 #endif
 
+#include "Input/Zenith_KeyCodes.h"
+
 class Zenith_Windows_Window
 {
 public:
@@ -39,6 +41,9 @@ public:
 	}
 	void SetVSync(bool bEnabled) { m_bVSync = bEnabled; };
 	bool GetVSyncEnabled() const { return m_bVSync; };
+
+	void GetMousePosition(Zenith_Maths::Vector2_64& xOut);
+	bool IsKeyDown(Zenith_KeyCode iKey);
 
 private:
 	static Zenith_Windows_Window* s_pxInstance;

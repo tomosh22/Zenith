@@ -59,3 +59,13 @@ void Zenith_Windows_Window::BeginFrame()
 	glfwPollEvents();
 }
 
+void Zenith_Windows_Window::GetMousePosition(Zenith_Maths::Vector2_64& xOut)
+{
+	glfwGetCursorPos(m_pxNativeWindow, &xOut.x, &xOut.y);
+}
+
+bool Zenith_Windows_Window::IsKeyDown(Zenith_KeyCode iKey)
+{
+	return glfwGetKey(m_pxNativeWindow, iKey) == GLFW_PRESS;
+}
+

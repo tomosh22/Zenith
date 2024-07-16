@@ -1,11 +1,17 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
+    <ClCompile Include="Games\Test\Test.cpp">
+      <Filter>Games\Test</Filter>
+    </ClCompile>
     <ClCompile Include="Zenith\Core\Zenith.cpp">
       <Filter>Zenith\Core</Filter>
     </ClCompile>
     <ClCompile Include="Zenith\Core\Zenith_Core.cpp">
       <Filter>Zenith\Core</Filter>
+    </ClCompile>
+    <ClCompile Include="Zenith\EntityComponent\Components\Zenith_CameraComponent.cpp">
+      <Filter>Zenith\EntityComponent\Components</Filter>
     </ClCompile>
     <ClCompile Include="Zenith\EntityComponent\Components\Zenith_TransformComponent.cpp">
       <Filter>Zenith\EntityComponent\Components</Filter>
@@ -83,6 +89,9 @@
     </ClInclude>
     <ClInclude Include="Zenith\Core\Zenith_Core.h">
       <Filter>Zenith\Core</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\EntityComponent\Components\Zenith_CameraComponent.h">
+      <Filter>Zenith\EntityComponent\Components</Filter>
     </ClInclude>
     <ClInclude Include="Zenith\EntityComponent\Components\Zenith_TransformComponent.h">
       <Filter>Zenith\EntityComponent\Components</Filter>
@@ -164,6 +173,12 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
+    <Filter Include="Games">
+      <UniqueIdentifier>{14d81b25-9138-8e23-cedc-306508e29017}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Games\Test">
+      <UniqueIdentifier>{cbfbdc38-e98c-599e-10d3-3282c5531581}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Middleware">
       <UniqueIdentifier>{eebf12a1-b020-34d6-90e9-3e7c687338df}</UniqueIdentifier>
     </Filter>
