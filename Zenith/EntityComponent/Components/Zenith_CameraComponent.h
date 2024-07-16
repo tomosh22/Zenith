@@ -1,0 +1,45 @@
+#pragma once
+#include "EntityComponent/Components/Zenith_TransformComponent.h"
+#include "EntityComponent/Zenith_Entity.h"
+
+class Zenith_CameraComponent
+{
+public:
+	static constexpr double s_dMoveSpeed = 250;
+	enum CameraType
+	{
+		CAMERA_TYPE_PERSPECTIVE,
+		CAMERA_TYPE_ORTHOGRAPHIC,
+		CAMERA_TYPE_MAX
+	};
+	Zenith_CameraComponent() = delete;
+	Zenith_CameraComponent(Zenith_TransformComponent& xTrans, Zenith_Entity& xParentEntity);
+	void InitialisePerspective(const Zenith_Maths::Vector3& xPos, const float fPitch, const float fYaw, const float fFOV, const float fNear, const float fFar, const float fAspectRatio);
+	void BuildViewMatrix(Zenith_Maths::Matrix4& xOut) const;
+	void BuildProjectionMatrix(Zenith_Maths::Matrix4& xOut) const;
+
+	void UpdateRotation(const float fDt);
+	void OnUpdate(const float fDt);
+
+	Zenith_TransformComponent& GetTransformRef() { return m_xTransRef; }
+
+	Zenith_Entity& GetParentEntity() { return m_xParentEntity; }
+
+
+private:
+	float m_fNear = 0;
+	float m_fFar = 0;
+	float m_fLeft = 0;
+	float m_fRight = 0;
+	float m_fTop = 0;
+	float m_fBottom = 0;
+	float m_fFOV = 0;
+	double m_fYaw = 0;
+	double m_fPitch = 0;
+	float m_fAspect = 0;
+	Zenith_Maths::Vector3 m_xPosition = {0,0,0};
+	CameraType m_eType = CAMERA_TYPE_MAX;
+
+	Zenith_TransformComponent& m_xTransRef;
+	Zenith_Entity& m_xParentEntity;
+};

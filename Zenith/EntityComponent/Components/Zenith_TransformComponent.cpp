@@ -3,7 +3,6 @@
 //#include "reactphysics3d/reactphysics3d.h"
 
 Zenith_TransformComponent::Zenith_TransformComponent(const std::string& strName) : m_strName(strName) {
-	STUBBED
 	//m_pxTransform = new reactphysics3d::Transform;
 }
 

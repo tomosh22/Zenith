@@ -8,6 +8,7 @@
 #include <fstream>
 
 #include "Maths/Zenith_Maths.h"
+#include "Zenith_Core.h"
 
 #define ZENITH_LOG
 #ifdef ZENITH_LOG
