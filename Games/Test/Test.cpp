@@ -9,7 +9,9 @@ void Zenith_Core::Project_Startup()
 {
 	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
 	s_xGameController.Initialise(&xScene, "Game Controller");
-	Zenith_CameraComponent& xCamera = s_xGameController.AddComponent<Zenith_CameraComponent>();
+	Zenith_ScriptComponent& xScript = s_xGameController.AddComponent<Zenith_ScriptComponent>();
+	xScript.SetBehaviour<Zenith_CameraBehaviour>();
+	Zenith_CameraBehaviour& xCamera = *(Zenith_CameraBehaviour*)xScript.m_pxScriptBehaviour;
 	const Zenith_Maths::Vector3 xPos = { 0, 0, 0 };
 	const float fPitch = 0;
 	const float fYaw = 0;

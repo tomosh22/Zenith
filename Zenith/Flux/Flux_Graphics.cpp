@@ -44,7 +44,7 @@ void Flux_Graphics::InitialiseRenderTargets()
 
 void Flux_Graphics::UploadFrameConstants()
 {
-	Zenith_CameraComponent& xCamera = Zenith_Scene::GetCurrentScene().GetMainCamera();
+	Zenith_CameraBehaviour& xCamera = Zenith_Scene::GetCurrentScene().GetMainCamera();
 
 	Zenith_FrameConstants xConstants;
 	xCamera.BuildViewMatrix(xConstants.m_xViewMat);

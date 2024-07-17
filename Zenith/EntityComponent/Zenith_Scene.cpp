@@ -235,6 +235,16 @@ void Zenith_Scene::Serialize(const std::string& strFilename) {
 #endif
 }
 
+void Zenith_Scene::Update(const float fDt)
+{
+	std::vector<Zenith_ScriptComponent*> xScripts;
+	s_xCurrentScene.GetAllOfComponentType<Zenith_ScriptComponent>(xScripts);
+	for (Zenith_ScriptComponent* pxScript : xScripts)
+	{
+		pxScript->OnUpdate(fDt);
+	}
+}
+
 Zenith_Entity Zenith_Scene::GetEntityByGUID(Zenith_GUID ulGuid) {
 	return m_xEntityMap.at(ulGuid);
 }
@@ -245,7 +255,8 @@ void Zenith_Scene::SetMainCameraEntity(Zenith_Entity& xEntity)
 	m_uMainCameraEntity = xEntity.GetEntityID();
 }
 
-Zenith_CameraComponent& Zenith_Scene::GetMainCamera()
+Zenith_CameraBehaviour& Zenith_Scene::GetMainCamera()
 {
-	return GetComponentFromEntity<Zenith_CameraComponent>(m_uMainCameraEntity);
+	//#TO_TODO: what happens if an entity has more than one script component
+	return *(Zenith_CameraBehaviour*)GetComponentFromEntity<Zenith_ScriptComponent>(m_uMainCameraEntity).m_pxScriptBehaviour;
 }

@@ -1,9 +1,11 @@
 #pragma once
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
+#include "EntityComponent/Components/Zenith_ScriptComponent.h"
 #include "EntityComponent/Zenith_Entity.h"
 
-class Zenith_CameraComponent
+class Zenith_CameraBehaviour : Zenith_ScriptBehaviour
 {
+	friend class Zenith_ScriptComponent;
 public:
 	static constexpr double s_dMoveSpeed = 250;
 	enum CameraType
@@ -12,18 +14,16 @@ public:
 		CAMERA_TYPE_ORTHOGRAPHIC,
 		CAMERA_TYPE_MAX
 	};
-	Zenith_CameraComponent() = delete;
-	Zenith_CameraComponent(Zenith_TransformComponent& xTrans, Zenith_Entity& xParentEntity);
+	Zenith_CameraBehaviour() = delete;
+	Zenith_CameraBehaviour(Zenith_ScriptComponent& xScriptComponent);
+	~Zenith_CameraBehaviour() {}
 	void InitialisePerspective(const Zenith_Maths::Vector3& xPos, const float fPitch, const float fYaw, const float fFOV, const float fNear, const float fFar, const float fAspectRatio);
 	void BuildViewMatrix(Zenith_Maths::Matrix4& xOut) const;
 	void BuildProjectionMatrix(Zenith_Maths::Matrix4& xOut) const;
 
 	void UpdateRotation(const float fDt);
-	void OnUpdate(const float fDt);
-
-	Zenith_TransformComponent& GetTransformRef() { return m_xTransRef; }
-
-	Zenith_Entity& GetParentEntity() { return m_xParentEntity; }
+	void OnUpdate(const float fDt) override;
+	void OnCreate() override {}
 
 
 private:
@@ -40,6 +40,5 @@ private:
 	Zenith_Maths::Vector3 m_xPosition = {0,0,0};
 	CameraType m_eType = CAMERA_TYPE_MAX;
 
-	Zenith_TransformComponent& m_xTransRef;
-	Zenith_Entity& m_xParentEntity;
+	Zenith_ScriptComponent& m_xScriptComponent;
 };
