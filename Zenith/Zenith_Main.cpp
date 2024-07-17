@@ -2,6 +2,7 @@
 
 #include "Zenith_OS_Include.h"
 #include "Flux/Flux.h"
+#include "Flux/Flux_Graphics.h"
 #include "Flux/Skybox/Flux_Skybox.h"
 
 void Zenith_MainLoop()
@@ -14,6 +15,7 @@ void Zenith_MainLoop()
 		return;
 	}
 	Flux_PlatformAPI::BeginFrame();
+	Flux_Graphics::UploadFrameConstants();
 	Flux_Skybox::Render();
 	Flux_MemoryManager::EndFrame();
 	Flux_Swapchain::CopyToFramebuffer();

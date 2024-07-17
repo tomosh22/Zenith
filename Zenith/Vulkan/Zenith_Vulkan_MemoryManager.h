@@ -6,6 +6,7 @@
 class Zenith_Vulkan_Buffer;
 class Flux_VertexBuffer;
 class Flux_IndexBuffer;
+class Flux_ConstantBuffer;
 class Zenith_Vulkan_Texture;
 class Zenith_Vulkan_CommandBuffer;
 
@@ -36,6 +37,7 @@ public:
 	static void AllocateBuffer(size_t uSize, vk::BufferUsageFlags eUsageFlags, MemoryResidency eResidency, Zenith_Vulkan_Buffer& xBufferOut);
 	static void InitialiseVertexBuffer(const void* pData, size_t uSize, Flux_VertexBuffer& xBufferOut);
 	static void InitialiseIndexBuffer(const void* pData, size_t uSize, Flux_IndexBuffer& xBufferOut);
+	static void InitialiseConstantBuffer(const void* pData, size_t uSize, Flux_ConstantBuffer& xBufferOut);
 
 	static void CreateColourAttachment(uint32_t uWidth, uint32_t uHeight, ColourFormat eFormat, uint32_t uBitsPerPixel, Zenith_Vulkan_Texture& xTextureOut);
 	static void CreateDepthStencilAttachment(uint32_t uWidth, uint32_t uHeight, DepthStencilFormat eFormat, uint32_t uBitsPerPixel, Zenith_Vulkan_Texture& xTextureOut);

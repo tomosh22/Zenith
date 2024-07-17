@@ -9,6 +9,14 @@ void Zenith_Core::Project_Startup()
 {
 	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
 	s_xGameController.Initialise(&xScene, "Game Controller");
-	s_xGameController.AddComponent<Zenith_CameraComponent>();
+	Zenith_CameraComponent& xCamera = s_xGameController.AddComponent<Zenith_CameraComponent>();
+	const Zenith_Maths::Vector3 xPos = { 0, 0, 0 };
+	const float fPitch = 0;
+	const float fYaw = 0;
+	const float fFOV = 45;
+	const float fNear = 1;
+	const float fFar = 10000;
+	const float fAspectRatio = 16./9.;
+	xCamera.InitialisePerspective(xPos, fPitch, fYaw, fFOV, fNear, fFar, fAspectRatio);
 	xScene.SetMainCameraEntity(s_xGameController);
 }

@@ -1,5 +1,6 @@
 #pragma once
-#include "Flux/Flux.h"
+#include "Flux.h"
+#include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 
 class Flux_Graphics
 {
@@ -10,11 +11,22 @@ public:
 	static void Initialise();
 	static void InitialiseRenderTargets();
 
-	static struct Flux_TargetSetup s_xFinalRenderTarget;
+	static void UploadFrameConstants();
+
+	static Flux_TargetSetup s_xFinalRenderTarget;
 
 	static Flux_Sampler s_xDefaultSampler;
 
-	static class Flux_MeshGeometry s_xQuadMesh;
-	static class Flux_VertexBuffer s_xQuadVertexBuffer;
-	static class Flux_IndexBuffer s_xQuadIndexBuffer;
+	static Flux_MeshGeometry s_xQuadMesh;
+	static Flux_VertexBuffer s_xQuadVertexBuffer;
+	static Flux_IndexBuffer s_xQuadIndexBuffer;
+
+	static Flux_ConstantBuffer s_xFrameConstantsBuffer;
+private:
+	struct Zenith_FrameConstants
+	{
+		Zenith_Maths::Matrix4 m_xViewMat;
+		Zenith_Maths::Matrix4 m_xProjMat;
+		Zenith_Maths::Matrix4 m_xViewProjMat;
+	};
 };

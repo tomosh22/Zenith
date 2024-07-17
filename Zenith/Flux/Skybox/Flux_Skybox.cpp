@@ -5,8 +5,7 @@
 #include "Flux/Flux.h"
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Flux_Graphics.h"
-
-#include "EntityComponent/Components/Zenith_CameraComponent.h"
+#include "Flux/Flux_Buffers.h"
 
 static Flux_CommandBuffer s_xCommandBuffer;
 
@@ -41,7 +40,7 @@ void Flux_Skybox::Initialise()
 		"#TO_TODO: delete me",
 		false,
 		false,
-		{ {0,0} },
+		{ {1,0} },
 		//{ {3,0} },
 		Flux_Graphics::s_xFinalRenderTarget,
 		LOAD_ACTION_CLEAR,
@@ -58,8 +57,6 @@ void Flux_Skybox::Initialise()
 
 void Flux_Skybox::Render()
 {
-	Zenith_CameraComponent& xCamera = Zenith_Scene::GetCurrentScene().GetMainCamera();
-
 	s_xCommandBuffer.BeginRecording();
 
 	s_xCommandBuffer.SubmitTargetSetup(Flux_Graphics::s_xFinalRenderTarget);
@@ -68,6 +65,9 @@ void Flux_Skybox::Render()
 
 	s_xCommandBuffer.SetVertexBuffer(Flux_Graphics::s_xQuadVertexBuffer);
 	s_xCommandBuffer.SetIndexBuffer(Flux_Graphics::s_xQuadIndexBuffer);
+
+	s_xCommandBuffer.BeginBind(BINDING_FREQUENCY_PER_FRAME);
+	s_xCommandBuffer.BindBuffer(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer(), 0);
 
 	s_xCommandBuffer.DrawIndexed(6);
 
