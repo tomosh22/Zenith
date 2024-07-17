@@ -282,18 +282,17 @@ void Zenith_Vulkan_CommandBuffer::SubmitTargetSetup(Flux_TargetSetup& xTargetSet
 
 	if (axClearColour != nullptr) delete[] axClearColour;
 
-	//flipping because porting from opengl
 	vk::Viewport xViewport{};
 	xViewport.x = 0;
-	xViewport.y = xTargetSetup.m_axColourAttachments[0].m_uHeight;
+	xViewport.y = 0;
 	xViewport.width = xTargetSetup.m_axColourAttachments[0].m_uWidth;
-	xViewport.height = -1 * (float)xTargetSetup.m_axColourAttachments[0].m_uHeight;
+	xViewport.height = xTargetSetup.m_axColourAttachments[0].m_uHeight;
 	xViewport.minDepth = 0;
 	xViewport.minDepth = 1;
 
 	vk::Rect2D xScissor{};
 	xScissor.offset = vk::Offset2D(0, 0);
-	xScissor.extent = vk::Extent2D(xViewport.width, xViewport.y);
+	xScissor.extent = vk::Extent2D(xViewport.width, xViewport.height);
 
 	m_xCurrentCmdBuffer.setViewport(0, 1, &xViewport);
 	m_xCurrentCmdBuffer.setScissor(0, 1, &xScissor);
