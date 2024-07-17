@@ -1,5 +1,7 @@
 #version 450 core
 
+#include "Common.h"
+
 layout(location = 0) out vec4 o_xColor;
 
 layout(location = 0) in vec2 a_xUV;

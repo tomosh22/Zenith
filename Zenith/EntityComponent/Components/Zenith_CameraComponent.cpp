@@ -17,6 +17,7 @@ void Zenith_CameraComponent::InitialisePerspective(const Zenith_Maths::Vector3& 
 	m_fFOV = fFOV;
 	m_fNear = fNear;
 	m_fFar = fFar;
+	m_fAspect = fAspectRatio;
 	m_eType = CAMERA_TYPE_PERSPECTIVE;
 }
 

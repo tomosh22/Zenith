@@ -33,7 +33,7 @@ public:
 	void SubmitTargetSetup(Flux_TargetSetup& xTargetSetup);
 	void SetPipeline(Zenith_Vulkan_Pipeline* pxPipeline);
 	void BindTexture(Zenith_Vulkan_Texture* pxTexture, uint32_t uBindPoint);
-	void BindBuffer(void* pxBuffer, uint32_t uBindPoint);
+	void BindBuffer(Zenith_Vulkan_Buffer* pxBuffer, uint32_t uBindPoint);
 	void BindAccelerationStruct(void* pxStruct, uint32_t uBindPoint);
 	void PushConstant(void* pData, size_t uSize);
 	void UploadUniformData(void* pData, size_t uSize);

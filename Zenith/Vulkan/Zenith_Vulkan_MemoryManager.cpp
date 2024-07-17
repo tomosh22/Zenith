@@ -227,6 +227,17 @@ void Zenith_Vulkan_MemoryManager::InitialiseIndexBuffer(const void* pData, size_
 	UploadData(&xBuffer, pData, uSize);
 }
 
+void Zenith_Vulkan_MemoryManager::InitialiseConstantBuffer(const void* pData, size_t uSize, Flux_ConstantBuffer& xBufferOut)
+{
+	Zenith_Vulkan_Buffer& xBuffer = xBufferOut.GetBuffer();
+	vk::BufferUsageFlags eFlags = vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eTransferDst;
+	AllocateBuffer(uSize, eFlags, MEMORY_RESIDENCY_CPU, xBuffer);
+	if (pData)
+	{
+		UploadData(&xBuffer, pData, uSize);
+	}
+}
+
 void Zenith_Vulkan_MemoryManager::CreateColourAttachment(uint32_t uWidth, uint32_t uHeight, ColourFormat eFormat, uint32_t uBitsPerPixel, Zenith_Vulkan_Texture& xTextureOut)
 {
 	FreeTexture(&xTextureOut);

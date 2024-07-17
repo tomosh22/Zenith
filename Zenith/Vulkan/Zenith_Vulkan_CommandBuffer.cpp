@@ -342,33 +342,31 @@ void Zenith_Vulkan_CommandBuffer::BindTexture(Zenith_Vulkan_Texture* pxTexture, 
 	}
 }
 
-void Zenith_Vulkan_CommandBuffer::BindBuffer(void* pxBuffer, uint32_t uBindPoint) {
-	STUBBED
-	/*
-	VCE_Assert(m_eCurrentBindFreq < BINDING_FREQUENCY_MAX, "Haven't called BeginBind");
+void Zenith_Vulkan_CommandBuffer::BindBuffer(Zenith_Vulkan_Buffer* pxBuffer, uint32_t uBindPoint)
+{
+	Zenith_Assert(m_eCurrentBindFreq < BINDING_FREQUENCY_MAX, "Haven't called BeginBind");
 
 	if (m_eCurrentBindFreq == BINDING_FREQUENCY_PER_FRAME) {
-		VulkanBuffer* pxBuf = reinterpret_cast<VulkanBuffer*>(pxBuffer);
-
 		vk::DescriptorBufferInfo xInfo = vk::DescriptorBufferInfo()
-			.setBuffer(pxBuf->m_xBuffer)
+			.setBuffer(pxBuffer->GetBuffer())
 			.setOffset(0)
-			.setRange(pxBuf->GetSize());
+			.setRange(pxBuffer->GetSize());
 
 		vk::WriteDescriptorSet xWrite = vk::WriteDescriptorSet()
 			.setDescriptorType(vk::DescriptorType::eUniformBuffer)
 			//#TO index 0 for per frame set
-			.setDstSet(m_pxCurrentPipeline->m_axDescSets[m_pxRenderer->m_currentFrame][0])
+			.setDstSet(m_pxCurrentPipeline->m_axDescSets[Zenith_Vulkan_Swapchain::GetCurrentFrameIndex()][0])
 			.setDstBinding(uBindPoint)
 			.setDescriptorCount(1)
 			.setPBufferInfo(&xInfo);
 
-		m_pxRenderer->GetDevice().updateDescriptorSets(1, &xWrite, 0, nullptr);
+		Zenith_Vulkan::GetDevice().updateDescriptorSets(1, &xWrite, 0, nullptr);
 
 	}
 	else if (m_eCurrentBindFreq == BINDING_FREQUENCY_PER_DRAW)
-		m_xBindings[m_eCurrentBindFreq].m_xBuffers[uBindPoint] = reinterpret_cast<Buffer*>(pxBuffer);
-	*/
+	{
+		m_xBindings[m_eCurrentBindFreq].m_xBuffers[uBindPoint] = pxBuffer;
+	}
 }
 
 void Zenith_Vulkan_CommandBuffer::BindAccelerationStruct(void* pxStruct, uint32_t uBindPoint) {
