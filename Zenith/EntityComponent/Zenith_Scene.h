@@ -1,7 +1,7 @@
 #pragma once
 #include "entt/entt.hpp"
 
-class Zenith_CameraComponent;
+class Zenith_CameraBehaviour;
 class Zenith_Entity;
 
 using EntityRegistry = entt::registry;
@@ -42,12 +42,14 @@ public:
 
 	void Serialize(const std::string& strFilename);
 
+	void Update(const float fDt);
+
 	Zenith_Entity GetEntityByGUID(Zenith_GUID ulGuid);
 
 	static Zenith_Scene& GetCurrentScene() { return s_xCurrentScene; }
 
 	void SetMainCameraEntity(Zenith_Entity& xEntity);
-	Zenith_CameraComponent& GetMainCamera();
+	Zenith_CameraBehaviour& GetMainCamera();
 private:
 	friend class Zenith_Entity;
 	EntityRegistry m_xRegistry;

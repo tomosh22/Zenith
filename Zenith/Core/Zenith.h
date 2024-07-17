@@ -6,6 +6,7 @@
 #include <string>
 #include <iostream>
 #include <fstream>
+#include <chrono>
 
 #include "Maths/Zenith_Maths.h"
 #include "Zenith_Core.h"

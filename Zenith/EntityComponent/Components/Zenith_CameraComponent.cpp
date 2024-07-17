@@ -3,13 +3,12 @@
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "Input/Zenith_Input.h"
 
-Zenith_CameraComponent::Zenith_CameraComponent(Zenith_TransformComponent& xTrans, Zenith_Entity& xParentEntity)
-	: m_xTransRef(xTrans)
-	, m_xParentEntity(xParentEntity)
+Zenith_CameraBehaviour::Zenith_CameraBehaviour(Zenith_ScriptComponent& xScriptComponent)
+	: m_xScriptComponent(xScriptComponent)
 {
 }
 
-void Zenith_CameraComponent::InitialisePerspective(const Zenith_Maths::Vector3& xPos, const float fPitch, const float fYaw, const float fFOV, const float fNear, const float fFar, const float fAspectRatio)
+void Zenith_CameraBehaviour::InitialisePerspective(const Zenith_Maths::Vector3& xPos, const float fPitch, const float fYaw, const float fFOV, const float fNear, const float fFar, const float fAspectRatio)
 {
 	m_xPosition = xPos;
 	m_fPitch = fPitch;
@@ -21,7 +20,7 @@ void Zenith_CameraComponent::InitialisePerspective(const Zenith_Maths::Vector3& 
 	m_eType = CAMERA_TYPE_PERSPECTIVE;
 }
 
-void Zenith_CameraComponent::BuildViewMatrix(Zenith_Maths::Matrix4& xOut) const
+void Zenith_CameraBehaviour::BuildViewMatrix(Zenith_Maths::Matrix4& xOut) const
 {
 	Zenith_Maths::Matrix4_64 xPitchMat = glm::rotate(-m_fPitch, glm::dvec3(1, 0, 0));
 	Zenith_Maths::Matrix4_64 xYawMat = glm::rotate(-m_fYaw, glm::dvec3(0, 1, 0));
@@ -29,7 +28,7 @@ void Zenith_CameraComponent::BuildViewMatrix(Zenith_Maths::Matrix4& xOut) const
 	xOut = xPitchMat * xYawMat * xTransMat;
 }
 
-void Zenith_CameraComponent::BuildProjectionMatrix(Zenith_Maths::Matrix4& xOut) const
+void Zenith_CameraBehaviour::BuildProjectionMatrix(Zenith_Maths::Matrix4& xOut) const
 {
 	switch (m_eType)
 	{
@@ -45,7 +44,7 @@ void Zenith_CameraComponent::BuildProjectionMatrix(Zenith_Maths::Matrix4& xOut) 
 	}
 }
 
-void Zenith_CameraComponent::UpdateRotation(const float fDt)
+void Zenith_CameraBehaviour::UpdateRotation(const float fDt)
 {
 	static Zenith_Maths::Vector2_64 s_xPreviousMousePos = { FLT_MAX,FLT_MAX };
 
@@ -82,7 +81,7 @@ void Zenith_CameraComponent::UpdateRotation(const float fDt)
 	s_xPreviousMousePos = xCurrentMousePos;
 }
 
-void Zenith_CameraComponent::OnUpdate(const float fDt)
+void Zenith_CameraBehaviour::OnUpdate(const float fDt)
 {
 	UpdateRotation(fDt);
 

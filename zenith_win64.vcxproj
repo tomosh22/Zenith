@@ -239,6 +239,7 @@
     <ClInclude Include="Zenith\Core\Zenith.h" />
     <ClInclude Include="Zenith\Core\Zenith_Core.h" />
     <ClInclude Include="Zenith\EntityComponent\Components\Zenith_CameraComponent.h" />
+    <ClInclude Include="Zenith\EntityComponent\Components\Zenith_ScriptComponent.h" />
     <ClInclude Include="Zenith\EntityComponent\Components\Zenith_TransformComponent.h" />
     <ClInclude Include="Zenith\EntityComponent\Zenith_Entity.h" />
     <ClInclude Include="Zenith\EntityComponent\Zenith_Scene.h" />
@@ -274,6 +275,7 @@
     </ClCompile>
     <ClCompile Include="Zenith\Core\Zenith_Core.cpp" />
     <ClCompile Include="Zenith\EntityComponent\Components\Zenith_CameraComponent.cpp" />
+    <ClCompile Include="Zenith\EntityComponent\Components\Zenith_ScriptComponent.cpp" />
     <ClCompile Include="Zenith\EntityComponent\Components\Zenith_TransformComponent.cpp" />
     <ClCompile Include="Zenith\EntityComponent\Zenith_Entity.cpp" />
     <ClCompile Include="Zenith\EntityComponent\Zenith_Scene.cpp" />
