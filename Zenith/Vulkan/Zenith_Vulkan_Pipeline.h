@@ -50,7 +50,7 @@ private:
 
 //#TO_TODO: there should be a platform independent version of this
 struct Zenith_Vulkan_PipelineSpecification {
-	Zenith_Vulkan_PipelineSpecification(Flux_VertexInputDescription xVertexInputDesc, Zenith_Vulkan_Shader* pxShader, std::vector<Flux_BlendState> xBlendStates, bool bDepthTestEnabled, bool bDepthWriteEnabled, DepthCompareFunc eDepthCompareFunc, std::vector<ColourFormat> aeColourFormats, DepthStencilFormat eDepthFormat, bool bUsePushConstants, bool bUseTesselation, std::vector<std::array<uint32_t, DESCRIPTOR_TYPE_MAX>> xDescSetBindings, Flux_TargetSetup& xTargetSetup, LoadAction eColourLoad, StoreAction eColourStore, LoadAction eDepthStencilLoad, StoreAction eDepthStencilStore, RenderTargetUsage eUsage);
+	Zenith_Vulkan_PipelineSpecification(Flux_VertexInputDescription xVertexInputDesc, Zenith_Vulkan_Shader* pxShader, std::vector<Flux_BlendState> xBlendStates, bool bDepthTestEnabled, bool bDepthWriteEnabled, DepthCompareFunc eDepthCompareFunc, std::vector<ColourFormat> aeColourFormats, DepthStencilFormat eDepthFormat, bool bUsePushConstants, bool bUseTesselation, std::array<uint32_t, DESCRIPTOR_TYPE_MAX> xPerFrameBindings, std::array<uint32_t, DESCRIPTOR_TYPE_MAX> xPerDrawBindings, Flux_TargetSetup& xTargetSetup, LoadAction eColourLoad, StoreAction eColourStore, LoadAction eDepthStencilLoad, StoreAction eDepthStencilStore, RenderTargetUsage eUsage);
 
 	Zenith_Vulkan_Shader* m_pxShader;
 
@@ -64,7 +64,8 @@ struct Zenith_Vulkan_PipelineSpecification {
 	bool m_bUsePushConstants;
 	bool m_bUseTesselation;
 
-	std::vector<std::array<uint32_t, DESCRIPTOR_TYPE_MAX>> m_xDescSetBindings;
+	std::array<uint32_t, DESCRIPTOR_TYPE_MAX> m_xPerFrameBindings;
+	std::array<uint32_t, DESCRIPTOR_TYPE_MAX> m_xPerDrawBindings;
 
 	Flux_VertexInputDescription m_eVertexInputDesc;
 
@@ -83,11 +84,16 @@ public:
 
 	~Zenith_Vulkan_Pipeline();
 
-	std::vector<vk::DescriptorSetLayout> m_axDescLayouts;
-	std::vector<vk::DescriptorSet> m_axDescSets[MAX_FRAMES_IN_FLIGHT];
+	vk::DescriptorSetLayout m_xPerFrameLayout;
+	vk::DescriptorSet m_axPerFrameSets[MAX_FRAMES_IN_FLIGHT];
+
+	vk::DescriptorSetLayout m_xPerDrawLayout;
+	vk::DescriptorSet m_axPerDrawSets[MAX_FRAMES_IN_FLIGHT];
 
 
 	bool m_bUsePushConstants = false;//#TODO expand on this, currently just use model matrix
+
+	bool m_bUsesPerDrawDescriptors = false;
 
 	static vk::RenderPass TargetSetupToRenderPass(Flux_TargetSetup& xTargetSetup, LoadAction eColourLoad, StoreAction eColourStore, LoadAction eDepthStencilLoad, StoreAction eDepthStencilStore, RenderTargetUsage eUsage);
 	static vk::Framebuffer TargetSetupToFramebuffer(Flux_TargetSetup& xTargetSetup, const vk::RenderPass& xPass);
@@ -133,8 +139,11 @@ public:
 
 protected:
 	struct DescriptorThings {
-		std::vector<vk::DescriptorSetLayout> xLayouts;
-		std::vector<vk::DescriptorSet> xSets;
+		vk::DescriptorSetLayout xPerFrameLayout;
+		vk::DescriptorSet xPerFrameSet;
+
+		vk::DescriptorSetLayout xPerDrawLayout;
+		vk::DescriptorSet xPerDrawSet;
 	};
 	static DescriptorThings HandleDescriptors(const Zenith_Vulkan_PipelineSpecification& spec, Zenith_Vulkan_PipelineBuilder& xBuilder);
 

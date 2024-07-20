@@ -109,9 +109,9 @@ void Zenith_Vulkan_CommandBuffer::SetIndexBuffer(Flux_IndexBuffer& xIndexBuffer)
 void Zenith_Vulkan_CommandBuffer::PrepareDrawCallDescriptors()
 {
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
-	if (m_pxCurrentPipeline->m_axDescLayouts.size() > 1)
+	if (m_pxCurrentPipeline->m_bUsesPerDrawDescriptors)
 	{
-		vk::DescriptorSetLayout& xLayout = m_pxCurrentPipeline->m_axDescLayouts[1];
+		vk::DescriptorSetLayout& xLayout = m_pxCurrentPipeline->m_xPerDrawLayout;
 
 		vk::DescriptorSetAllocateInfo xInfo = vk::DescriptorSetAllocateInfo()
 			.setDescriptorPool(Zenith_Vulkan::GetCurrentPerFrameDescriptorPool())
@@ -302,13 +302,10 @@ void Zenith_Vulkan_CommandBuffer::SubmitTargetSetup(Flux_TargetSetup& xTargetSet
 void Zenith_Vulkan_CommandBuffer::SetPipeline(Zenith_Vulkan_Pipeline* pxPipeline)
 {
 	m_xCurrentCmdBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pxPipeline->m_xPipeline);
-	std::vector<vk::DescriptorSet> axSets;
-	//new pipelines (skinned meshes)
-	if (pxPipeline->m_axDescLayouts.size()) {
-		for (const vk::DescriptorSet xSet : pxPipeline->m_axDescSets[Zenith_Vulkan_Swapchain::GetCurrentFrameIndex()])
-			axSets.push_back(xSet);
-	}
-	m_xCurrentCmdBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pxPipeline->m_xPipelineLayout, 0, axSets.size(), axSets.data(), 0, nullptr);
+
+	const vk::DescriptorSet& xPerFrameSet = pxPipeline->m_axPerFrameSets[Zenith_Vulkan_Swapchain::GetCurrentFrameIndex()];
+	
+	m_xCurrentCmdBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pxPipeline->m_xPipelineLayout, 0, 1, &xPerFrameSet, 0, nullptr);
 
 	m_pxCurrentPipeline = pxPipeline;
 }
@@ -326,8 +323,7 @@ void Zenith_Vulkan_CommandBuffer::BindTexture(Zenith_Vulkan_Texture* pxTexture, 
 
 		vk::WriteDescriptorSet xWrite = vk::WriteDescriptorSet()
 			.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
-			//#TO index 0 for per frame set
-			.setDstSet(m_pxCurrentPipeline->m_axDescSets[Zenith_Vulkan_Swapchain::GetCurrentFrameIndex()][0])
+			.setDstSet(m_pxCurrentPipeline->m_axPerFrameSets[Zenith_Vulkan_Swapchain::GetCurrentFrameIndex()])
 			.setDstBinding(uBindPoint)
 			.setDstArrayElement(0)
 			.setDescriptorCount(1)
@@ -353,8 +349,7 @@ void Zenith_Vulkan_CommandBuffer::BindBuffer(Zenith_Vulkan_Buffer* pxBuffer, uin
 
 		vk::WriteDescriptorSet xWrite = vk::WriteDescriptorSet()
 			.setDescriptorType(vk::DescriptorType::eUniformBuffer)
-			//#TO index 0 for per frame set
-			.setDstSet(m_pxCurrentPipeline->m_axDescSets[Zenith_Vulkan_Swapchain::GetCurrentFrameIndex()][0])
+			.setDstSet(m_pxCurrentPipeline->m_axPerFrameSets[Zenith_Vulkan_Swapchain::GetCurrentFrameIndex()])
 			.setDstBinding(uBindPoint)
 			.setDescriptorCount(1)
 			.setPBufferInfo(&xInfo);
