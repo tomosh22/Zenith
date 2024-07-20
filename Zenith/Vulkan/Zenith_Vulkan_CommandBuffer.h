@@ -30,7 +30,7 @@ public:
 	void SetIndexBuffer(Flux_IndexBuffer& xIndexBuffer);
 	void Draw(uint32_t uNumVerts);
 	void DrawIndexed(uint32_t uNumIndices, uint32_t uNumInstances = 1, uint32_t uVertexOffset = 0, uint32_t uIndexOffset = 0,uint32_t uInstanceOffset = 0);
-	void SubmitTargetSetup(Flux_TargetSetup& xTargetSetup);
+	void SubmitTargetSetup(Flux_TargetSetup& xTargetSetup, bool bClearColour = false, bool bClearDepth = false, bool bClearStencil = false);
 	void SetPipeline(Zenith_Vulkan_Pipeline* pxPipeline);
 	void BindTexture(Zenith_Vulkan_Texture* pxTexture, uint32_t uBindPoint);
 	void BindBuffer(Zenith_Vulkan_Buffer* pxBuffer, uint32_t uBindPoint);

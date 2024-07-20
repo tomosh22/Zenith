@@ -49,6 +49,9 @@
     <ClCompile Include="Zenith\Flux\Skybox\Flux_Skybox.cpp">
       <Filter>Zenith\Flux\Skybox</Filter>
     </ClCompile>
+    <ClCompile Include="Zenith\Flux\StaticMeshes\Flux_StaticMeshes.cpp">
+      <Filter>Zenith\Flux\StaticMeshes</Filter>
+    </ClCompile>
     <ClCompile Include="Zenith\Input\Zenith_Input.cpp">
       <Filter>Zenith\Input</Filter>
     </ClCompile>
@@ -144,6 +147,9 @@
     <ClInclude Include="Zenith\Flux\Skybox\Flux_Skybox.h">
       <Filter>Zenith\Flux\Skybox</Filter>
     </ClInclude>
+    <ClInclude Include="Zenith\Flux\StaticMeshes\Flux_StaticMeshes.h">
+      <Filter>Zenith\Flux\StaticMeshes</Filter>
+    </ClInclude>
     <ClInclude Include="Zenith\Input\Zenith_Input.h">
       <Filter>Zenith\Input</Filter>
     </ClInclude>
@@ -232,6 +238,9 @@
     </Filter>
     <Filter Include="Zenith\Flux\Skybox">
       <UniqueIdentifier>{61297b21-a027-e692-c57f-8a208efaaa3c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Zenith\Flux\StaticMeshes">
+      <UniqueIdentifier>{1e1daf61-e02e-9bec-5720-d6e6cc8e49c4}</UniqueIdentifier>
     </Filter>
     <Filter Include="Zenith\Input">
       <UniqueIdentifier>{1b1e3505-0bf9-c172-d173-56b6842be504}</UniqueIdentifier>

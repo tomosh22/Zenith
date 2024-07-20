@@ -36,7 +36,7 @@ void Flux_Skybox::Initialise()
 		false,
 		DEPTH_COMPARE_FUNC_ALWAYS,
 		{ COLOUR_FORMAT_BGRA8_SRGB },
-		DEPTHSTENCIL_FORMAT_NONE,
+		DEPTHSTENCIL_FORMAT_D32_SFLOAT,
 		"#TO_TODO: delete me",
 		false,
 		false,
@@ -45,9 +45,9 @@ void Flux_Skybox::Initialise()
 		Flux_Graphics::s_xFinalRenderTarget,
 		LOAD_ACTION_CLEAR,
 		STORE_ACTION_STORE,
-		LOAD_ACTION_DONTCARE,
-		STORE_ACTION_DONTCARE,
-		RENDER_TARGET_USAGE_PRESENT
+		LOAD_ACTION_CLEAR,
+		STORE_ACTION_STORE,
+		RENDER_TARGET_USAGE_RENDERTARGET
 	);
 
 	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
@@ -59,7 +59,8 @@ void Flux_Skybox::Render()
 {
 	s_xCommandBuffer.BeginRecording();
 
-	s_xCommandBuffer.SubmitTargetSetup(Flux_Graphics::s_xFinalRenderTarget);
+	//#TO clearing as this is first pass of the frame
+	s_xCommandBuffer.SubmitTargetSetup(Flux_Graphics::s_xFinalRenderTarget, true, true, true);
 
 	s_xCommandBuffer.SetPipeline(&s_xPipeline);
 

@@ -226,12 +226,12 @@ void Zenith_Vulkan_CommandBuffer::DrawIndexed(uint32_t uNumIndices, uint32_t uNu
 	m_xCurrentCmdBuffer.drawIndexed(uNumIndices, uNumInstances, uIndexOffset, uVertexOffset, uInstanceOffset);
 }
 
-void Zenith_Vulkan_CommandBuffer::SubmitTargetSetup(Flux_TargetSetup& xTargetSetup)
+void Zenith_Vulkan_CommandBuffer::SubmitTargetSetup(Flux_TargetSetup& xTargetSetup, bool bClearColour /*= false*/, bool bClearDepth /*= false*/, bool bClearStencil /*= false*/)
 {
-	//#TO_TODO: set load/store actions properly
-	LoadAction eColourLoad = LOAD_ACTION_CLEAR;
+	//#TO_TODO: how to clear depth/stencil independently
+	LoadAction eColourLoad = bClearColour ? LOAD_ACTION_CLEAR : LOAD_ACTION_LOAD;
 	StoreAction eColourStore = STORE_ACTION_STORE;
-	LoadAction eDepthStencilLoad = LOAD_ACTION_CLEAR;
+	LoadAction eDepthStencilLoad = bClearDepth ? LOAD_ACTION_CLEAR : LOAD_ACTION_LOAD;
 	StoreAction eDepthStencilStore = STORE_ACTION_STORE;
 	RenderTargetUsage eUsage = RENDER_TARGET_USAGE_RENDERTARGET;
 
@@ -403,10 +403,7 @@ void Zenith_Vulkan_CommandBuffer::BindAccelerationStruct(void* pxStruct, uint32_
 
 void Zenith_Vulkan_CommandBuffer::PushConstant(void* pData, size_t uSize)
 {
-	STUBBED
-	/*
 	m_xCurrentCmdBuffer.pushConstants(m_pxCurrentPipeline->m_xPipelineLayout, vk::ShaderStageFlagBits::eAll, 0, uSize, pData);
-	*/
 }
 
 void Zenith_Vulkan_CommandBuffer::BeginBind(BindingFrequency eFreq)

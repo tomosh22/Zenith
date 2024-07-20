@@ -133,6 +133,7 @@ void Zenith_AssetHandler::AddMesh(Zenith_GUID xGUID, const char* szPath)
 	AssetID uID = GetNextFreeMeshSlot();
 	Flux_MeshGeometry& xMesh = s_pxMeshes[uID];
 	s_xMeshMap.insert({ xGUID,uID });
+	Flux_MeshGeometry::LoadFromFile(szPath, xMesh);
 }
 
 Flux_Texture& Zenith_AssetHandler::GetTexture2D(Zenith_GUID xGUID)

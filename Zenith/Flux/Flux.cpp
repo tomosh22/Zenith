@@ -3,6 +3,7 @@
 #include "Flux/Flux.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Skybox/Flux_Skybox.h"
+#include "Flux/StaticMeshes/Flux_StaticMeshes.h"
 
 uint32_t Flux::s_uFrameCounter = 0;
 std::vector<void(*)()> Flux::s_xResChangeCallbacks;
@@ -21,6 +22,7 @@ void Flux::LateInitialise()
 	Flux_Swapchain::Initialise();
 	Flux_Graphics::Initialise();
 	Flux_Skybox::Initialise();
+	Flux_StaticMeshes::Initialise();
 	Flux_MemoryManager::EndFrame(false);
 }
 
