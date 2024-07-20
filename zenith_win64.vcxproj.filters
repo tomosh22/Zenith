@@ -4,6 +4,9 @@
     <ClCompile Include="Games\Test\Test.cpp">
       <Filter>Games\Test</Filter>
     </ClCompile>
+    <ClCompile Include="Zenith\AssetHandling\Zenith_AssetHandler.cpp">
+      <Filter>Zenith\AssetHandling</Filter>
+    </ClCompile>
     <ClCompile Include="Zenith\Core\Zenith.cpp">
       <Filter>Zenith\Core</Filter>
     </ClCompile>
@@ -86,6 +89,9 @@
     </ClInclude>
     <ClInclude Include="Middleware\glfw-3.4.bin.WIN64\include\GLFW\glfw3native.h">
       <Filter>Middleware\glfw-3.4.bin.WIN64\include\GLFW</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\AssetHandling\Zenith_AssetHandler.h">
+      <Filter>Zenith\AssetHandling</Filter>
     </ClInclude>
     <ClInclude Include="Zenith\Core\Zenith.h">
       <Filter>Zenith\Core</Filter>
@@ -199,6 +205,9 @@
     </Filter>
     <Filter Include="Zenith">
       <UniqueIdentifier>{951448da-1e31-be13-d840-5e0fcc115357}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Zenith\AssetHandling">
+      <UniqueIdentifier>{808608a9-0d57-dccc-df0f-610c009a1eae}</UniqueIdentifier>
     </Filter>
     <Filter Include="Zenith\Core">
       <UniqueIdentifier>{e84b9d32-4703-7861-1735-99a5845a300c}</UniqueIdentifier>

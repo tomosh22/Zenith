@@ -4,6 +4,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Zenith", "zenith_win64.vcxp
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "FluxCompiler", "fluxcompiler_win64.vcxproj", "{552B1383-405D-C8D0-C2D0-C8EAA727C14F}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ZenithTools", "zenithtools_win64.vcxproj", "{633DCFD2-75BF-C5CC-376E-41A7753B4988}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -18,6 +20,10 @@ Global
 		{552B1383-405D-C8D0-C2D0-C8EAA727C14F}.Debug|x64.Build.0 = Debug|x64
 		{552B1383-405D-C8D0-C2D0-C8EAA727C14F}.Release|x64.ActiveCfg = Release|x64
 		{552B1383-405D-C8D0-C2D0-C8EAA727C14F}.Release|x64.Build.0 = Release|x64
+		{633DCFD2-75BF-C5CC-376E-41A7753B4988}.Debug|x64.ActiveCfg = Debug|x64
+		{633DCFD2-75BF-C5CC-376E-41A7753B4988}.Debug|x64.Build.0 = Debug|x64
+		{633DCFD2-75BF-C5CC-376E-41A7753B4988}.Release|x64.ActiveCfg = Release|x64
+		{633DCFD2-75BF-C5CC-376E-41A7753B4988}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

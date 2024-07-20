@@ -15,12 +15,15 @@ public:
 	}
 
 	static void GenerateFullscreenQuad(Flux_MeshGeometry& xGeometryOut);
+	static void LoadFromFile(const char* szPath, Flux_MeshGeometry& xGeometryOut);
 
 	const void* GetVertexData() const { return m_pVertexData; }
 	const uint64_t GetVertexDataSize() const { return m_uNumVerts * m_xBufferLayout.GetStride(); }
 	const IndexType* GetIndexData() const { return m_puIndices; }
 	const uint64_t GetIndexDataSize() const { return m_uNumIndices * sizeof(IndexType); }
+#ifndef ZENITH_TOOLS
 private:
+#endif
 	void GenerateLayoutAndVertexData();
 
 	Flux_BufferLayout m_xBufferLayout;
@@ -32,6 +35,9 @@ private:
 
 	Zenith_Maths::Vector3* m_pxPositions = nullptr;
 	Zenith_Maths::Vector2* m_pxUVs = nullptr;
+	Zenith_Maths::Vector3* m_pxNormals = nullptr;
+	Zenith_Maths::Vector3* m_pxTangents = nullptr;
+	Zenith_Maths::Vector3* m_pxBitangents = nullptr;
 
 	void* m_pVertexData = nullptr;
 };

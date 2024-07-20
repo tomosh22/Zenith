@@ -2,11 +2,13 @@
 #include <cstdint>
 #include <set>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 #include <string>
 #include <iostream>
 #include <fstream>
 #include <chrono>
+#include <filesystem>
 
 #include "Maths/Zenith_Maths.h"
 #include "Zenith_Core.h"
@@ -50,3 +52,15 @@ static struct Zenith_GUID {
 	operator uint64_t() { return m_uGUID; }
 	operator uint32_t() { Zenith_Assert(false, "Attempting to compress GUID into 32 bits"); }
 };
+
+template <>
+struct std::hash<Zenith_GUID>
+{
+	size_t operator()(const Zenith_GUID& xGUID) const
+	{
+		return std::hash<GUIDType>()(xGUID.m_uGUID);
+	}
+};
+
+#define ZENITH_MAX_TEXTURES 1024
+#define ZENITH_MAX_MESHES 1024

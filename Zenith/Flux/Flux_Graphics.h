@@ -22,6 +22,9 @@ public:
 	static Flux_IndexBuffer s_xQuadIndexBuffer;
 
 	static Flux_ConstantBuffer s_xFrameConstantsBuffer;
+
+	static Flux_Texture s_xBlankTexture2D;
+	static Flux_MeshGeometry s_xBlankMesh;
 private:
 	struct Zenith_FrameConstants
 	{

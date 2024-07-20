@@ -2,8 +2,12 @@
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_Entity.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
+#include "AssetHandling/Zenith_AssetHandler.h"
 
 static Zenith_Entity s_xGameController;
+
+//#TO_TODO: delete me
+static Zenith_GUID xMeshGUID = 90834834756u;
 
 void Zenith_Core::Project_Startup()
 {
@@ -21,4 +25,6 @@ void Zenith_Core::Project_Startup()
 	const float fAspectRatio = 16./9.;
 	xCamera.InitialisePerspective(xPos, fPitch, fYaw, fFOV, fNear, fFar, fAspectRatio);
 	xScene.SetMainCameraEntity(s_xGameController);
+
+	Zenith_AssetHandler::AddMesh(xMeshGUID, "C:/dev/Zenith/Games/Test/Assets/Meshes/sphereSmooth.zmsh");
 }
