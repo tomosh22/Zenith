@@ -3,6 +3,9 @@
 #include "vulkan/vulkan.hpp"
 #include "Flux/Flux_Types.h"
 
+#define ZENITH_VULKAN_PER_FRAME_DESC_SET 0
+#define ZENITH_VULKAN_PER_DRAW_DESC_SET 0
+
 class Zenith_Vulkan_CommandBuffer;
 class Zenith_Vulkan
 {

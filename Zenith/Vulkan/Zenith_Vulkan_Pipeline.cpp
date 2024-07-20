@@ -14,7 +14,7 @@ License: MIT (see LICENSE file at the top of the source tree)
 #include "Flux/Flux_RenderTargets.h"
 #include "FileAccess/Zenith_FileAccess.h"
 
-Zenith_Vulkan_PipelineSpecification::Zenith_Vulkan_PipelineSpecification(Flux_VertexInputDescription xVertexInputDesc, Zenith_Vulkan_Shader* pxShader, std::vector<Flux_BlendState> xBlendStates, bool bDepthTestEnabled, bool bDepthWriteEnabled, DepthCompareFunc eDepthCompareFunc, std::vector<ColourFormat> aeColourFormats, DepthStencilFormat eDepthStencilFormat, bool bUsePushConstants, bool bUseTesselation, std::vector<std::array<uint32_t, DESCRIPTOR_TYPE_MAX>> xDescSetBindings, Flux_TargetSetup& xTargetSetup, LoadAction eColourLoad, StoreAction eColourStore, LoadAction eDepthStencilLoad, StoreAction eDepthStencilStore, RenderTargetUsage eUsage)
+Zenith_Vulkan_PipelineSpecification::Zenith_Vulkan_PipelineSpecification(Flux_VertexInputDescription xVertexInputDesc, Zenith_Vulkan_Shader* pxShader, std::vector<Flux_BlendState> xBlendStates, bool bDepthTestEnabled, bool bDepthWriteEnabled, DepthCompareFunc eDepthCompareFunc, std::vector<ColourFormat> aeColourFormats, DepthStencilFormat eDepthStencilFormat, bool bUsePushConstants, bool bUseTesselation, std::array<uint32_t, DESCRIPTOR_TYPE_MAX> xPerFrameBindings, std::array<uint32_t, DESCRIPTOR_TYPE_MAX> xPerDrawBindings, Flux_TargetSetup& xTargetSetup, LoadAction eColourLoad, StoreAction eColourStore, LoadAction eDepthStencilLoad, StoreAction eDepthStencilStore, RenderTargetUsage eUsage)
 	: m_eVertexInputDesc(xVertexInputDesc)
 	, m_pxShader(pxShader)
 	, m_xBlendStates(xBlendStates)
@@ -25,7 +25,8 @@ Zenith_Vulkan_PipelineSpecification::Zenith_Vulkan_PipelineSpecification(Flux_Ve
 	, m_eDepthStencilFormat(eDepthStencilFormat)
 	, m_bUsePushConstants(bUsePushConstants)
 	, m_bUseTesselation(bUseTesselation)
-	, m_xDescSetBindings(xDescSetBindings)
+	, m_xPerFrameBindings(xPerFrameBindings)
+	, m_xPerDrawBindings(xPerDrawBindings)
 	, m_xTargetSetup(xTargetSetup)
 	, m_eColourLoadAction(eColourLoad)
 	, m_eColourStoreAction(eColourStore)
@@ -327,10 +328,8 @@ Zenith_Vulkan_Pipeline::~Zenith_Vulkan_Pipeline()
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 	xDevice.destroyPipeline(m_xPipeline);
 	xDevice.destroyPipelineLayout(m_xPipelineLayout);
-	for (vk::DescriptorSetLayout xLayout : m_axDescLayouts)
-	{
-		xDevice.destroyDescriptorSetLayout(xLayout);
-	}
+	xDevice.destroyDescriptorSetLayout(m_xPerFrameLayout);
+	xDevice.destroyDescriptorSetLayout(m_xPerDrawLayout);
 }
 
 Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithDepthState(vk::CompareOp op, bool depthEnabled, bool writeEnabled, bool stencilEnabled)
@@ -548,35 +547,58 @@ Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithBlendState(vk:
 	Zenith_Vulkan_PipelineBuilder::DescriptorThings Zenith_Vulkan_PipelineBuilder::HandleDescriptors(const Zenith_Vulkan_PipelineSpecification& spec, Zenith_Vulkan_PipelineBuilder& xBuilder)
 	{
 		const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
-		uint32_t uSetIndex = 0;
-		std::vector<vk::DescriptorSetLayout> xLayouts;
-		std::vector<vk::DescriptorSet> xSets;
 
-		for (std::array<uint32_t, DESCRIPTOR_TYPE_MAX> xSetDesc : spec.m_xDescSetBindings)
+		vk::DescriptorSetLayout xPerFrameLayout;
+		vk::DescriptorSet xPerFrameSet;
+
+		vk::DescriptorSetLayout xPerDrawLayout;
+		vk::DescriptorSet xPerDrawSet;
+
+		std::array<uint32_t, DESCRIPTOR_TYPE_MAX> xPerFrame = spec.m_xPerFrameBindings;
 		{
 			Zenith_Vulkan_DescriptorSetLayoutBuilder xDescBuilder = Zenith_Vulkan_DescriptorSetLayoutBuilder().WithBindlessAccess();
 
-			for (uint32_t i = 0; i < xSetDesc[DESCRIPTOR_TYPE_BUFFER]; i++)
+			for (uint32_t i = 0; i < xPerFrame[DESCRIPTOR_TYPE_BUFFER]; i++)
 				xDescBuilder = xDescBuilder.WithUniformBuffers(1);
-			for (uint32_t i = 0; i < xSetDesc[DESCRIPTOR_TYPE_TEXTURE]; i++)
+			for (uint32_t i = 0; i < xPerFrame[DESCRIPTOR_TYPE_TEXTURE]; i++)
 				xDescBuilder = xDescBuilder.WithSamplers(1);
-#ifdef VCE_RAYTRACING
-			for (uint32_t i = 0; i < xSetDesc[DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE]; i++)
+#ifdef ZENITH_RAYTRACING
+			for (uint32_t i = 0; i < xPerFrame[DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE]; i++)
 				xDescBuilder = xDescBuilder.WithAccelStructures(1);
 #endif
 
 			vk::DescriptorSetLayout xLayout = xDescBuilder.Build(xDevice);
 
-			xBuilder = xBuilder.WithDescriptorSetLayout(uSetIndex, xLayout);
+			xBuilder = xBuilder.WithDescriptorSetLayout(ZENITH_VULKAN_PER_FRAME_DESC_SET, xLayout);
 
-			xLayouts.push_back(xLayout);
+			xPerFrameLayout = xLayout;
 
-			xSets.push_back(Zenith_Vulkan::CreateDescriptorSet(xLayout, Zenith_Vulkan::GetDefaultDescriptorPool()));
-
-			uSetIndex++;
+			xPerFrameSet = Zenith_Vulkan::CreateDescriptorSet(xLayout, Zenith_Vulkan::GetDefaultDescriptorPool());
 		}
 
-		return { xLayouts, xSets };
+		std::array<uint32_t, DESCRIPTOR_TYPE_MAX> xPerDraw = spec.m_xPerFrameBindings;
+		{
+			Zenith_Vulkan_DescriptorSetLayoutBuilder xDescBuilder = Zenith_Vulkan_DescriptorSetLayoutBuilder().WithBindlessAccess();
+
+			for (uint32_t i = 0; i < xPerDraw[DESCRIPTOR_TYPE_BUFFER]; i++)
+				xDescBuilder = xDescBuilder.WithUniformBuffers(1);
+			for (uint32_t i = 0; i < xPerDraw[DESCRIPTOR_TYPE_TEXTURE]; i++)
+				xDescBuilder = xDescBuilder.WithSamplers(1);
+#ifdef ZENITH_RAYTRACING
+			for (uint32_t i = 0; i < xPerDraw[DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE]; i++)
+				xDescBuilder = xDescBuilder.WithAccelStructures(1);
+#endif
+
+			vk::DescriptorSetLayout xLayout = xDescBuilder.Build(xDevice);
+
+			xBuilder = xBuilder.WithDescriptorSetLayout(ZENITH_VULKAN_PER_DRAW_DESC_SET, xLayout);
+
+			xPerDrawLayout = xLayout;
+
+			xPerDrawSet = Zenith_Vulkan::CreateDescriptorSet(xLayout, Zenith_Vulkan::GetDefaultDescriptorPool());
+		}
+
+		return { xPerFrameLayout, xPerFrameSet, xPerDrawLayout, xPerDrawSet };
 		
 	}
 
@@ -782,10 +804,23 @@ Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithBlendState(vk:
 		xBuilder = xBuilder.WithRaster(vk::CullModeFlagBits::eNone);
 
 		xBuilder.Build(xPipelineOut);
-		xPipelineOut.m_axDescLayouts = xDescThings.xLayouts;
+
+		xPipelineOut.m_xPerFrameLayout = xDescThings.xPerFrameLayout;
+		xPipelineOut.m_xPerDrawLayout = xDescThings.xPerDrawLayout;
 		for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
 		{
-			xPipelineOut.m_axDescSets[i] = xDescThings.xSets;
+			xPipelineOut.m_axPerFrameSets[i] = xDescThings.xPerFrameSet;
+			xPipelineOut.m_axPerDrawSets[i] = xDescThings.xPerDrawSet;
 		}
+
+		for (uint32_t i = 0; i < DESCRIPTOR_TYPE_MAX; i++)
+		{
+			if (spec.m_xPerDrawBindings[i] > 0)
+			{
+				xPipelineOut.m_bUsesPerDrawDescriptors = true;
+				break;
+			}
+		}
+
 		xPipelineOut.m_bUsePushConstants = spec.m_bUsePushConstants;
 	}
