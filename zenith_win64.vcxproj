@@ -236,6 +236,7 @@
   <ItemGroup>
     <ClInclude Include="Middleware\glfw-3.4.bin.WIN64\include\GLFW\glfw3.h" />
     <ClInclude Include="Middleware\glfw-3.4.bin.WIN64\include\GLFW\glfw3native.h" />
+    <ClInclude Include="Zenith\AssetHandling\Zenith_AssetHandler.h" />
     <ClInclude Include="Zenith\Core\Zenith.h" />
     <ClInclude Include="Zenith\Core\Zenith_Core.h" />
     <ClInclude Include="Zenith\EntityComponent\Components\Zenith_CameraComponent.h" />
@@ -269,6 +270,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Games\Test\Test.cpp" />
+    <ClCompile Include="Zenith\AssetHandling\Zenith_AssetHandler.cpp" />
     <ClCompile Include="Zenith\Core\Zenith.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>

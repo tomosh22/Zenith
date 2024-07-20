@@ -250,6 +250,13 @@ void Zenith_Vulkan_MemoryManager::CreateDepthStencilAttachment(uint32_t uWidth, 
 	AllocateTexture(uWidth, uHeight, COLOUR_FORMAT_NONE, eFormat, uBitsPerPixel, 1, vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled, MEMORY_RESIDENCY_GPU, xTextureOut);
 }
 
+void Zenith_Vulkan_MemoryManager::CreateTexture(const char* szPath, Zenith_Vulkan_Texture& xTextureOut)
+{
+	FreeTexture(&xTextureOut);
+	STUBBED
+	//#TO_TODO: implement me
+}
+
 void Zenith_Vulkan_MemoryManager::AllocateTexture(uint32_t uWidth, uint32_t uHeight, ColourFormat eColourFormat, DepthStencilFormat eDepthStencilFormat, uint32_t uBitsPerPixel, uint32_t uNumMips, vk::ImageUsageFlags eUsageFlags, MemoryResidency eResidency, Zenith_Vulkan_Texture& xTextureOut)
 {
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();

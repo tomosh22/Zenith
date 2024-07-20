@@ -13,6 +13,8 @@ Flux_MeshGeometry Flux_Graphics::s_xQuadMesh;
 Flux_VertexBuffer Flux_Graphics::s_xQuadVertexBuffer;
 Flux_IndexBuffer Flux_Graphics::s_xQuadIndexBuffer;
 Flux_ConstantBuffer Flux_Graphics::s_xFrameConstantsBuffer;
+Flux_Texture Flux_Graphics::s_xBlankTexture2D;
+Flux_MeshGeometry Flux_Graphics::s_xBlankMesh;
 
 void Flux_Graphics::Initialise()
 {

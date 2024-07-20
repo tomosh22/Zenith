@@ -8,6 +8,7 @@
 
 static float s_fDt = 0.;
 static std::chrono::high_resolution_clock::time_point s_xLastFrameTime;
+
 static void UpdateDt()
 {
 	std::chrono::high_resolution_clock::time_point xCurrentTime = std::chrono::high_resolution_clock::now();
@@ -38,12 +39,14 @@ void Zenith_MainLoop()
 	Flux_Swapchain::EndFrame();
 }
 
+#ifndef ZENITH_TOOLS
 int main()
 {
 	s_xLastFrameTime = std::chrono::high_resolution_clock::now();
 	Zenith_Window::Inititalise("Zenith", 1280, 720);
 	Flux::EarlyInitialise();
 	Flux::LateInitialise();
+	
 	Zenith_Core::Project_Startup();
 	while (true)
 	{
@@ -51,3 +54,4 @@ int main()
 	}
 	__debugbreak();
 }
+#endif

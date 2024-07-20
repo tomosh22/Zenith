@@ -67,7 +67,7 @@
       <WarningLevel>Level4</WarningLevel>
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>SHADER_SOURCE_ROOT="c:/dev/zenith/Zenith/Flux/Shaders";WIN64;_CONSOLE;_DEBUG;%(PreprocessorDefinitions);$(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>zenith;zenith\core</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>middleware\glm-master;zenith;zenith\core</AdditionalIncludeDirectories>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <TreatWarningAsError>false</TreatWarningAsError>
@@ -150,7 +150,7 @@
       <WarningLevel>Level4</WarningLevel>
       <Optimization>Full</Optimization>
       <PreprocessorDefinitions>NDEBUG;SHADER_SOURCE_ROOT="c:/dev/zenith/Zenith/Flux/Shaders";WIN64;_CONSOLE;%(PreprocessorDefinitions);$(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>zenith;zenith\core</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>middleware\glm-master;zenith;zenith\core</AdditionalIncludeDirectories>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <TreatWarningAsError>false</TreatWarningAsError>
