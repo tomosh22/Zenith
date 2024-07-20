@@ -745,7 +745,9 @@
     <ClCompile Include="Tools\Middleware\assimp-5.4.2\contrib\zlib\zutil.c">
       <Filter>Middleware\assimp-5.4.2\contrib\zlib</Filter>
     </ClCompile>
+    <ClCompile Include="Tools\Zenith_Tools_Main.cpp" />
     <ClCompile Include="Tools\Zenith_Tools_MeshExport.cpp" />
+    <ClCompile Include="Tools\Zenith_Tools_TextureExport.cpp" />
     <ClCompile Include="Zenith\Flux\MeshGeometry\Flux_MeshGeometry.cpp">
       <Filter>Zenith\Flux\MeshGeometry</Filter>
     </ClCompile>
@@ -2773,6 +2775,9 @@
     <ClInclude Include="Tools\Middleware\assimp-5.4.2\include\assimp\ZipArchiveIOSystem.h">
       <Filter>Middleware\assimp-5.4.2\include\assimp</Filter>
     </ClInclude>
+    <ClInclude Include="Tools\Middleware\stb\stb_image.h">
+      <Filter>Middleware\stb</Filter>
+    </ClInclude>
     <ClInclude Include="Zenith\Flux\MeshGeometry\Flux_MeshGeometry.h">
       <Filter>Zenith\Flux\MeshGeometry</Filter>
     </ClInclude>
@@ -3215,6 +3220,9 @@
     </Filter>
     <Filter Include="Middleware\assimp-5.4.2\include\assimp\port\AndroidJNI">
       <UniqueIdentifier>{7fabb149-7b45-577e-caa7-efa82790ab95}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Middleware\stb">
+      <UniqueIdentifier>{1c48f21f-8e0e-fc25-4967-888a7f33c7b8}</UniqueIdentifier>
     </Filter>
     <Filter Include="Zenith">
       <UniqueIdentifier>{951448da-1e31-be13-d840-5e0fcc115357}</UniqueIdentifier>

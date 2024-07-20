@@ -8,6 +8,7 @@ static Zenith_Entity s_xGameController;
 
 //#TO_TODO: delete me
 static Zenith_GUID xMeshGUID = 90834834756u;
+static Zenith_GUID xTexGUID = 24577524777u;
 
 void Zenith_Core::Project_Startup()
 {
@@ -27,4 +28,5 @@ void Zenith_Core::Project_Startup()
 	xScene.SetMainCameraEntity(s_xGameController);
 
 	Zenith_AssetHandler::AddMesh(xMeshGUID, "C:/dev/Zenith/Games/Test/Assets/Meshes/sphereSmooth.zmsh");
+	Zenith_AssetHandler::AddTexture(xTexGUID, "C:/dev/Zenith/Games/Test/Assets/Textures/crystal2k/diffuse.ztx");
 }

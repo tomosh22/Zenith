@@ -255,8 +255,51 @@ void Zenith_Vulkan_MemoryManager::CreateDepthStencilAttachment(uint32_t uWidth, 
 void Zenith_Vulkan_MemoryManager::CreateTexture(const char* szPath, Zenith_Vulkan_Texture& xTextureOut)
 {
 	FreeTexture(&xTextureOut);
-	STUBBED
-	//#TO_TODO: implement me
+
+	uint32_t uWidth = 0, uHeight = 0, uDepth = 0;
+	vk::Format eFormat = vk::Format::eUndefined;
+	void* pData = nullptr;
+
+
+	FILE* pxFile = fopen(szPath, "rb");
+	fseek(pxFile, 0, SEEK_END);
+	size_t ulFileSize = ftell(pxFile);
+	fseek(pxFile, 0, SEEK_SET);
+	char* pcData = new char[ulFileSize + 1];
+	fread(pcData, ulFileSize, 1, pxFile);
+	pcData[ulFileSize] = '\0';
+	fclose(pxFile);
+
+	size_t ulCursor = 0;
+
+	uWidth = atoi(pcData + ulCursor);
+	ulCursor += std::to_string(uWidth).length() + 1;
+
+	uHeight = atoi(pcData + ulCursor);
+	ulCursor += std::to_string(uHeight).length() + 1;
+
+	uDepth = atoi(pcData + ulCursor);
+	ulCursor += std::to_string(uDepth).length() + 1;
+
+	std::string strFormat(pcData + ulCursor);
+	ulCursor += strFormat.length() + 1;
+	//#TO_TODO: other formats
+	eFormat = vk::Format::eR8G8B8A8Unorm;
+	//eFormat = StringToVkFormat(strFormat);
+
+	size_t ulDataSize = uWidth * uHeight * uDepth * 4 /*bytes per pixel*/;
+	pData = malloc(ulDataSize);
+	memcpy(pData, pcData + ulCursor, ulDataSize);
+
+	delete[] pcData;
+
+	//#TO_TODO: other formats
+	AllocateTexture(uWidth, uHeight, COLOUR_FORMAT_BGRA8_UNORM, DEPTHSTENCIL_FORMAT_NONE, 4 /*bytes per pizel*/, 1 /*num mips*/, vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eTransferSrc, MEMORY_RESIDENCY_GPU, xTextureOut);
+	xTextureOut.SetWidth(uWidth);
+	xTextureOut.SetHeight(uHeight);
+	xTextureOut.SetNumMips(1);
+	UploadData(&xTextureOut, pData, ulDataSize);
+	delete pData;
 }
 
 void Zenith_Vulkan_MemoryManager::AllocateTexture(uint32_t uWidth, uint32_t uHeight, ColourFormat eColourFormat, DepthStencilFormat eDepthStencilFormat, uint32_t uBitsPerPixel, uint32_t uNumMips, vk::ImageUsageFlags eUsageFlags, MemoryResidency eResidency, Zenith_Vulkan_Texture& xTextureOut)
@@ -383,7 +426,7 @@ void Zenith_Vulkan_MemoryManager::FlushStagingBuffer() {
 				s_xCommandBuffer.BlitTextureToTexture(pxTexture, pxTexture, i);
 			}
 
-			s_xCommandBuffer.ImageTransitionBarrier(pxTexture->GetImage(), vk::ImageLayout::eTransferSrcOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eFragmentShader, 0, 0);
+			s_xCommandBuffer.ImageTransitionBarrier(pxTexture->GetImage(), vk::ImageLayout::eTransferSrcOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, 0, 0);
 
 			for (uint32_t i = 1; i < pxTexture->GetNumMips(); i++)
 			{

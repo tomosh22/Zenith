@@ -174,7 +174,7 @@ static void ExportFromObj(std::string& strFilename)
 	Export(xMesh, strFilename.c_str());
 }
 
-static void ExportAllMeshes()
+void ExportAllMeshes()
 {
 	for (auto& xFile : std::filesystem::recursive_directory_iterator(ASSETS_DIR))
 	{
@@ -192,10 +192,3 @@ static void ExportAllMeshes()
 		}
 	}
 }
-
-#ifdef ZENITH_TOOLS
-int main()
-{
-	ExportAllMeshes();
-}
-#endif

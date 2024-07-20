@@ -17,8 +17,10 @@ static Flux_VertexBuffer s_xVertexBuffer;
 static Flux_IndexBuffer s_xIndexBuffer;
 
 //#TO_TODO: delete me
-static Zenith_GUID xMeshGUID = 90834834756u;
+static Zenith_GUID s_xMeshGUID = 90834834756u;
+static Zenith_GUID s_xTexGUID = 24577524777u;
 static Flux_MeshGeometry& s_xMesh = Flux_Graphics::s_xBlankMesh;
+static Flux_Texture& s_xTex = Flux_Graphics::s_xBlankTexture2D;
 
 void Flux_StaticMeshes::Initialise()
 {
@@ -50,7 +52,7 @@ void Flux_StaticMeshes::Initialise()
 		true,
 		false,
 		{1,0},
-		{0,0},
+		{0,1},
 		Flux_Graphics::s_xFinalRenderTarget,
 		LOAD_ACTION_LOAD,
 		STORE_ACTION_STORE,
@@ -61,10 +63,11 @@ void Flux_StaticMeshes::Initialise()
 
 	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
 
-	s_xMesh = Zenith_AssetHandler::GetMesh(xMeshGUID);
-
+	s_xMesh = Zenith_AssetHandler::GetMesh(s_xMeshGUID);
 	Flux_MemoryManager::InitialiseVertexBuffer(s_xMesh.GetVertexData(), s_xMesh.GetVertexDataSize(), s_xVertexBuffer);
 	Flux_MemoryManager::InitialiseIndexBuffer(s_xMesh.GetIndexData(), s_xMesh.GetIndexDataSize(), s_xIndexBuffer);
+
+	s_xTex = Zenith_AssetHandler::GetTexture(s_xTexGUID);
 
 	Zenith_Log("Flux_StaticMeshes initialised");
 }
@@ -85,6 +88,9 @@ void Flux_StaticMeshes::Render()
 
 	s_xCommandBuffer.BeginBind(BINDING_FREQUENCY_PER_FRAME);
 	s_xCommandBuffer.BindBuffer(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer(), 0);
+
+	s_xCommandBuffer.BeginBind(BINDING_FREQUENCY_PER_DRAW);
+	s_xCommandBuffer.BindTexture(&s_xTex, 0);
 
 	s_xCommandBuffer.DrawIndexed(s_xMesh.GetNumIndices());
 
