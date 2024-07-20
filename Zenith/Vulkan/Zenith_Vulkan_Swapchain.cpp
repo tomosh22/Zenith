@@ -119,7 +119,6 @@ void InitialiseCopyToFramebufferCommands()
 	xBlendStates.push_back({ BLEND_FACTOR_SRCALPHA, BLEND_FACTOR_ONEMINUSSRCALPHA, true });
 
 	Zenith_Vulkan_PipelineSpecification xPipelineSpec(
-		"Zenith_Vulkan_Swapchain CopyToFramebuffer",
 		xVertexDesc,
 		&s_xShader,
 		xBlendStates,
@@ -128,7 +127,6 @@ void InitialiseCopyToFramebufferCommands()
 		DEPTH_COMPARE_FUNC_ALWAYS,
 		{ COLOUR_FORMAT_BGRA8_SRGB },
 		DEPTHSTENCIL_FORMAT_NONE,
-		"#TO_TODO: delete me",
 		false,
 		false,
 		{ {0,1} },

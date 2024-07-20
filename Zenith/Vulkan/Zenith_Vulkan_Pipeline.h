@@ -50,9 +50,8 @@ private:
 
 //#TO_TODO: there should be a platform independent version of this
 struct Zenith_Vulkan_PipelineSpecification {
-	Zenith_Vulkan_PipelineSpecification(std::string strName, Flux_VertexInputDescription xVertexInputDesc, Zenith_Vulkan_Shader* pxShader, std::vector<Flux_BlendState> xBlendStates, bool bDepthTestEnabled, bool bDepthWriteEnabled, DepthCompareFunc eDepthCompareFunc, std::vector<ColourFormat> aeColourFormats, DepthStencilFormat eDepthFormat, std::string strRenderPassName, bool bUsePushConstants, bool bUseTesselation, std::vector<std::array<uint32_t, DESCRIPTOR_TYPE_MAX>> xDescSetBindings, Flux_TargetSetup& xTargetSetup, LoadAction eColourLoad, StoreAction eColourStore, LoadAction eDepthStencilLoad, StoreAction eDepthStencilStore, RenderTargetUsage eUsage);
+	Zenith_Vulkan_PipelineSpecification(Flux_VertexInputDescription xVertexInputDesc, Zenith_Vulkan_Shader* pxShader, std::vector<Flux_BlendState> xBlendStates, bool bDepthTestEnabled, bool bDepthWriteEnabled, DepthCompareFunc eDepthCompareFunc, std::vector<ColourFormat> aeColourFormats, DepthStencilFormat eDepthFormat, bool bUsePushConstants, bool bUseTesselation, std::vector<std::array<uint32_t, DESCRIPTOR_TYPE_MAX>> xDescSetBindings, Flux_TargetSetup& xTargetSetup, LoadAction eColourLoad, StoreAction eColourStore, LoadAction eDepthStencilLoad, StoreAction eDepthStencilStore, RenderTargetUsage eUsage);
 
-	std::string m_strName;
 	Zenith_Vulkan_Shader* m_pxShader;
 
 	std::vector<Flux_BlendState> m_xBlendStates;
@@ -62,7 +61,6 @@ struct Zenith_Vulkan_PipelineSpecification {
 	DepthCompareFunc m_eDepthCompareFunc;
 	std::vector<ColourFormat> m_aeColourFormats;
 	DepthStencilFormat m_eDepthStencilFormat;
-	std::string m_strRenderPassName;
 	bool m_bUsePushConstants;
 	bool m_bUseTesselation;
 
@@ -91,8 +89,6 @@ public:
 
 	bool m_bUsePushConstants = false;//#TODO expand on this, currently just use model matrix
 
-	std::string m_strName;
-
 	static vk::RenderPass TargetSetupToRenderPass(Flux_TargetSetup& xTargetSetup, LoadAction eColourLoad, StoreAction eColourStore, LoadAction eDepthStencilLoad, StoreAction eDepthStencilStore, RenderTargetUsage eUsage);
 	static vk::Framebuffer TargetSetupToFramebuffer(Flux_TargetSetup& xTargetSetup, const vk::RenderPass& xPass);
 
@@ -101,7 +97,7 @@ public:
 
 class Zenith_Vulkan_PipelineBuilder	{
 public:
-	Zenith_Vulkan_PipelineBuilder(const std::string& strPipeName = "");
+	Zenith_Vulkan_PipelineBuilder();
 	~Zenith_Vulkan_PipelineBuilder() {}
 
 	Zenith_Vulkan_PipelineBuilder& WithDepthState(vk::CompareOp op, bool depthEnabled, bool writeEnabled, bool stencilEnabled = false);
@@ -167,6 +163,4 @@ protected:
 
 	bool m_bUseTesselation;
 	vk::PipelineTessellationStateCreateInfo m_xTesselationCreate;
-
-	std::string m_strDebugName;
 };
