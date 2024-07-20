@@ -541,6 +541,8 @@ Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithBlendState(vk:
 			return vk::BlendFactor::eOneMinusSrcAlpha;
 		case BLEND_FACTOR_ONE:
 			return vk::BlendFactor::eOne;
+		case BLEND_FACTOR_ZERO:
+			return vk::BlendFactor::eZero;
 		default:
 			Zenith_Assert(false, "Unsupported blend factor");
 		}
@@ -643,7 +645,7 @@ Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithBlendState(vk:
 				.setStoreOp(Zenith_Vulkan_Texture::ConvertToVkStoreAction(eDepthStencilStore))
 				.setStencilLoadOp(Zenith_Vulkan_Texture::ConvertToVkLoadAction(eDepthStencilLoad))
 				.setStencilStoreOp(Zenith_Vulkan_Texture::ConvertToVkStoreAction(eDepthStencilStore))
-				.setInitialLayout(eUsage == RENDER_TARGET_USAGE_SHADERREAD ? vk::ImageLayout::eShaderReadOnlyOptimal : vk::ImageLayout::eUndefined)
+				.setInitialLayout(eDepthStencilLoad == LOAD_ACTION_LOAD ? vk::ImageLayout::eDepthStencilAttachmentOptimal : vk::ImageLayout::eUndefined)
 				.setFinalLayout(Zenith_Vulkan_Texture::ConvertToVkTargetUsage(eUsage, RENDER_TARGET_TYPE_DEPTHSTENCIL));
 
 			xDepthStencilAttachmentRef = vk::AttachmentReference()

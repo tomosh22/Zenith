@@ -254,6 +254,7 @@
     <ClInclude Include="Zenith\Flux\MeshGeometry\Flux_MeshGeometry.h" />
     <ClInclude Include="Zenith\Flux\Shaders\Common.h" />
     <ClInclude Include="Zenith\Flux\Skybox\Flux_Skybox.h" />
+    <ClInclude Include="Zenith\Flux\StaticMeshes\Flux_StaticMeshes.h" />
     <ClInclude Include="Zenith\Input\Zenith_Input.h" />
     <ClInclude Include="Zenith\Input\Zenith_KeyCodes.h" />
     <ClInclude Include="Zenith\Maths\Zenith_Maths.h" />
@@ -288,6 +289,7 @@
     <ClCompile Include="Zenith\Flux\Flux_RenderTargets.cpp" />
     <ClCompile Include="Zenith\Flux\MeshGeometry\Flux_MeshGeometry.cpp" />
     <ClCompile Include="Zenith\Flux\Skybox\Flux_Skybox.cpp" />
+    <ClCompile Include="Zenith\Flux\StaticMeshes\Flux_StaticMeshes.cpp" />
     <ClCompile Include="Zenith\Input\Zenith_Input.cpp" />
     <ClCompile Include="Zenith\Maths\Zenith_Maths.cpp" />
     <ClCompile Include="Zenith\Vulkan\Zenith_Vulkan.cpp" />

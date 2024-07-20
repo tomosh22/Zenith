@@ -116,6 +116,21 @@ void Flux_MeshGeometry::GenerateLayoutAndVertexData()
 		m_xBufferLayout.GetElements().push_back({ SHADER_DATA_TYPE_FLOAT2 });
 		uNumFloats += 2;
 	}
+	if (m_pxNormals != nullptr)
+	{
+		m_xBufferLayout.GetElements().push_back({ SHADER_DATA_TYPE_FLOAT3 });
+		uNumFloats += 3;
+	}
+	if (m_pxTangents != nullptr)
+	{
+		m_xBufferLayout.GetElements().push_back({ SHADER_DATA_TYPE_FLOAT3 });
+		uNumFloats += 3;
+	}
+	if (m_pxBitangents != nullptr)
+	{
+		m_xBufferLayout.GetElements().push_back({ SHADER_DATA_TYPE_FLOAT3 });
+		uNumFloats += 3;
+	}
 
 	m_pVertexData = new float[m_uNumVerts * uNumFloats];
 
@@ -133,6 +148,24 @@ void Flux_MeshGeometry::GenerateLayoutAndVertexData()
 		{
 			((float*)m_pVertexData)[index++] = m_pxUVs[i].x;
 			((float*)m_pVertexData)[index++] = m_pxUVs[i].y;
+		}
+		if (m_pxNormals != nullptr)
+		{
+			((float*)m_pVertexData)[index++] = m_pxNormals[i].x;
+			((float*)m_pVertexData)[index++] = m_pxNormals[i].y;
+			((float*)m_pVertexData)[index++] = m_pxNormals[i].z;
+		}
+		if (m_pxTangents != nullptr)
+		{
+			((float*)m_pVertexData)[index++] = m_pxTangents[i].x;
+			((float*)m_pVertexData)[index++] = m_pxTangents[i].y;
+			((float*)m_pVertexData)[index++] = m_pxTangents[i].z;
+		}
+		if (m_pxBitangents != nullptr)
+		{
+			((float*)m_pVertexData)[index++] = m_pxBitangents[i].x;
+			((float*)m_pVertexData)[index++] = m_pxBitangents[i].y;
+			((float*)m_pVertexData)[index++] = m_pxBitangents[i].z;
 		}
 	}
 

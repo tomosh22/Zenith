@@ -248,6 +248,8 @@ void Zenith_Vulkan_MemoryManager::CreateDepthStencilAttachment(uint32_t uWidth, 
 {
 	FreeTexture(&xTextureOut);
 	AllocateTexture(uWidth, uHeight, COLOUR_FORMAT_NONE, eFormat, uBitsPerPixel, 1, vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled, MEMORY_RESIDENCY_GPU, xTextureOut);
+	Zenith_Assert(eFormat == DEPTHSTENCIL_FORMAT_D32_SFLOAT, "#TO_TODO: layouts for just depth without stencil");
+	ImageTransitionBarrier(xTextureOut.GetImage(), vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthStencilAttachmentOptimal, vk::ImageAspectFlagBits::eDepth, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands);
 }
 
 void Zenith_Vulkan_MemoryManager::CreateTexture(const char* szPath, Zenith_Vulkan_Texture& xTextureOut)

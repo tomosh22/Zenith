@@ -24,7 +24,7 @@ void Zenith_CameraBehaviour::BuildViewMatrix(Zenith_Maths::Matrix4& xOut) const
 {
 	Zenith_Maths::Matrix4_64 xPitchMat = glm::rotate(-m_fPitch, glm::dvec3(1, 0, 0));
 	Zenith_Maths::Matrix4_64 xYawMat = glm::rotate(-m_fYaw, glm::dvec3(0, 1, 0));
-	Zenith_Maths::Matrix4_64 xTransMat = glm::translate(m_xPosition);
+	Zenith_Maths::Matrix4_64 xTransMat = glm::translate(-m_xPosition);
 	xOut = xPitchMat * xYawMat * xTransMat;
 }
 
@@ -51,7 +51,7 @@ void Zenith_CameraBehaviour::UpdateRotation(const float fDt)
 	Zenith_Maths::Vector2_64 xCurrentMousePos;
 	Zenith_Input::GetMousePosition(xCurrentMousePos);
 
-	if (s_xPreviousMousePos.x == std::numeric_limits<double>::max())
+	if (s_xPreviousMousePos.x == FLT_MAX)
 	{
 		s_xPreviousMousePos = xCurrentMousePos;
 		return;

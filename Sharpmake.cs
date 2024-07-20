@@ -30,6 +30,7 @@ public class FluxCompilerProject : Project
 		shaderRoot = shaderRoot.Replace('\\', '/');
 		
 		conf.Defines.Add("SHADER_SOURCE_ROOT=\"" + shaderRoot + "\"");
+		conf.Defines.Add("GLM_ENABLE_EXPERIMENTAL");
 		
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Zenith");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Zenith/Core");

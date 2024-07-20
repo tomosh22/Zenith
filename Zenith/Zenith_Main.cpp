@@ -4,6 +4,7 @@
 #include "Flux/Flux.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Skybox/Flux_Skybox.h"
+#include "Flux/StaticMeshes/Flux_StaticMeshes.h"
 #include "EntityComponent/Zenith_Scene.h"
 
 static float s_fDt = 0.;
@@ -32,6 +33,7 @@ void Zenith_MainLoop()
 	Zenith_Scene::GetCurrentScene().Update(s_fDt);
 	Flux_Graphics::UploadFrameConstants();
 	Flux_Skybox::Render();
+	Flux_StaticMeshes::Render();
 
 	Flux_MemoryManager::EndFrame();
 	Flux_Swapchain::CopyToFramebuffer();
@@ -45,9 +47,9 @@ int main()
 	s_xLastFrameTime = std::chrono::high_resolution_clock::now();
 	Zenith_Window::Inititalise("Zenith", 1280, 720);
 	Flux::EarlyInitialise();
+	Zenith_Core::Project_Startup();
 	Flux::LateInitialise();
 	
-	Zenith_Core::Project_Startup();
 	while (true)
 	{
 		Zenith_MainLoop();

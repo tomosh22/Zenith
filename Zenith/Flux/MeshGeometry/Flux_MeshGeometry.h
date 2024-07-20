@@ -21,6 +21,8 @@ public:
 	const uint64_t GetVertexDataSize() const { return m_uNumVerts * m_xBufferLayout.GetStride(); }
 	const IndexType* GetIndexData() const { return m_puIndices; }
 	const uint64_t GetIndexDataSize() const { return m_uNumIndices * sizeof(IndexType); }
+	const uint32_t GetNumVerts() const { return m_uNumVerts; }
+	const uint32_t GetNumIndices() const { return m_uNumIndices; }
 #ifndef ZENITH_TOOLS
 private:
 #endif
