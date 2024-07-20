@@ -457,8 +457,7 @@ void Zenith_Vulkan_CommandBuffer::CopyBufferToBuffer(Zenith_Vulkan_Buffer* pxSrc
 
 void Zenith_Vulkan_CommandBuffer::CopyBufferToTexture(Zenith_Vulkan_Buffer* pxSrc, Zenith_Vulkan_Texture* pxDst, size_t uSrcOffset)
 {
-	STUBBED
-	/*vk::ImageSubresourceLayers xSubresource = vk::ImageSubresourceLayers()
+	vk::ImageSubresourceLayers xSubresource = vk::ImageSubresourceLayers()
 		.setAspectMask(vk::ImageAspectFlagBits::eColor)
 		.setMipLevel(0)
 		.setBaseArrayLayer(0)
@@ -474,8 +473,8 @@ void Zenith_Vulkan_CommandBuffer::CopyBufferToTexture(Zenith_Vulkan_Buffer* pxSr
 		.setImageExtent({ pxDst->GetWidth(), pxDst->GetHeight(), 1 });
 
 		
-		m_xCurrentCmdBuffer.copyBufferToImage(pxSrc->m_xBuffer, pxDst->m_xImage, vk::ImageLayout::eTransferDstOptimal, 1, &region);
-		*/
+	m_xCurrentCmdBuffer.copyBufferToImage(pxSrc->GetBuffer(), pxDst->
+		GetImage(), vk::ImageLayout::eTransferDstOptimal, 1, &region);
 	
 }
 void Zenith_Vulkan_CommandBuffer::BlitTextureToTexture(Zenith_Vulkan_Texture* pxSrc, Zenith_Vulkan_Texture* pxDst, uint32_t uDstMip)

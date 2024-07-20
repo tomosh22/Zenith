@@ -84,6 +84,7 @@ public class ZenithToolsProject : Project
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Zenith");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Zenith/Core");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Middleware/glm-master");
+		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Middleware/stb");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Tools/Middleware/assimp-5.4.2/include");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Tools/Middleware/assimp-5.4.2");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Tools/Middleware/assimp-5.4.2/assimp");

@@ -121,7 +121,7 @@ void Zenith_AssetHandler::LoadAssetsFromFile(const std::string& strFile)
 }
 
 
-void Zenith_AssetHandler::AddTexture2D(Zenith_GUID xGUID, const char* szPath)
+void Zenith_AssetHandler::AddTexture(Zenith_GUID xGUID, const char* szPath)
 {
 	AssetID uID = GetNextFreeTextureSlot();
 	Flux_Texture& xTex = s_pxTextures[uID];
@@ -136,12 +136,12 @@ void Zenith_AssetHandler::AddMesh(Zenith_GUID xGUID, const char* szPath)
 	Flux_MeshGeometry::LoadFromFile(szPath, xMesh);
 }
 
-Flux_Texture& Zenith_AssetHandler::GetTexture2D(Zenith_GUID xGUID)
+Flux_Texture& Zenith_AssetHandler::GetTexture(Zenith_GUID xGUID)
 {
 	Zenith_Assert(s_xTextureMap.find(xGUID) != s_xTextureMap.end(), "Texture2D doesn't exist");
 	return s_pxTextures[s_xTextureMap.at(xGUID)];
 }
-Flux_Texture& Zenith_AssetHandler::TryGetTexture2D(Zenith_GUID xGUID)
+Flux_Texture& Zenith_AssetHandler::TryGetTexture(Zenith_GUID xGUID)
 {
 	if (s_xTextureMap.find(xGUID) != s_xTextureMap.end())
 	{
@@ -169,7 +169,7 @@ Flux_MeshGeometry& Zenith_AssetHandler::TryGetMesh(Zenith_GUID xGUID)
 	}
 }
 
-void Zenith_AssetHandler::DeleteTexture2D(Zenith_GUID xGUID)
+void Zenith_AssetHandler::DeleteTexture(Zenith_GUID xGUID)
 {
 	Zenith_Assert(s_xTextureMap.find(xGUID) != s_xTextureMap.end(), "Texture2D doesn't exist");
 	s_xTextureMap.erase(xGUID);

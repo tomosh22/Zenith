@@ -576,7 +576,7 @@ Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithBlendState(vk:
 			xPerFrameSet = Zenith_Vulkan::CreateDescriptorSet(xLayout, Zenith_Vulkan::GetDefaultDescriptorPool());
 		}
 
-		std::array<uint32_t, DESCRIPTOR_TYPE_MAX> xPerDraw = spec.m_xPerFrameBindings;
+		std::array<uint32_t, DESCRIPTOR_TYPE_MAX> xPerDraw = spec.m_xPerDrawBindings;
 		{
 			Zenith_Vulkan_DescriptorSetLayoutBuilder xDescBuilder = Zenith_Vulkan_DescriptorSetLayoutBuilder().WithBindlessAccess();
 
