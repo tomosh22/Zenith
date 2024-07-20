@@ -39,7 +39,6 @@ void Flux_StaticMeshes::Initialise()
 	xBlendStates.push_back({ BLEND_FACTOR_ZERO, BLEND_FACTOR_ZERO, false });
 
 	Zenith_Vulkan_PipelineSpecification xPipelineSpec(
-		"Flux_StaticMeshes",
 		xVertexDesc,
 		&s_xShader,
 		xBlendStates,
@@ -48,7 +47,6 @@ void Flux_StaticMeshes::Initialise()
 		DEPTH_COMPARE_FUNC_GREATEREQUAL,
 		{ COLOUR_FORMAT_BGRA8_SRGB },
 		DEPTHSTENCIL_FORMAT_D32_SFLOAT,
-		"#TO_TODO: delete me",
 		true,
 		false,
 		{ {1,0} },

@@ -14,9 +14,8 @@ License: MIT (see LICENSE file at the top of the source tree)
 #include "Flux/Flux_RenderTargets.h"
 #include "FileAccess/Zenith_FileAccess.h"
 
-Zenith_Vulkan_PipelineSpecification::Zenith_Vulkan_PipelineSpecification(std::string strName, Flux_VertexInputDescription xVertexInputDesc, Zenith_Vulkan_Shader* pxShader, std::vector<Flux_BlendState> xBlendStates, bool bDepthTestEnabled, bool bDepthWriteEnabled, DepthCompareFunc eDepthCompareFunc, std::vector<ColourFormat> aeColourFormats, DepthStencilFormat eDepthStencilFormat, std::string strRenderPassName, bool bUsePushConstants, bool bUseTesselation, std::vector<std::array<uint32_t, DESCRIPTOR_TYPE_MAX>> xDescSetBindings, Flux_TargetSetup& xTargetSetup, LoadAction eColourLoad, StoreAction eColourStore, LoadAction eDepthStencilLoad, StoreAction eDepthStencilStore, RenderTargetUsage eUsage)
-	: m_strName(strName)
-	, m_eVertexInputDesc(xVertexInputDesc)
+Zenith_Vulkan_PipelineSpecification::Zenith_Vulkan_PipelineSpecification(Flux_VertexInputDescription xVertexInputDesc, Zenith_Vulkan_Shader* pxShader, std::vector<Flux_BlendState> xBlendStates, bool bDepthTestEnabled, bool bDepthWriteEnabled, DepthCompareFunc eDepthCompareFunc, std::vector<ColourFormat> aeColourFormats, DepthStencilFormat eDepthStencilFormat, bool bUsePushConstants, bool bUseTesselation, std::vector<std::array<uint32_t, DESCRIPTOR_TYPE_MAX>> xDescSetBindings, Flux_TargetSetup& xTargetSetup, LoadAction eColourLoad, StoreAction eColourStore, LoadAction eDepthStencilLoad, StoreAction eDepthStencilStore, RenderTargetUsage eUsage)
+	: m_eVertexInputDesc(xVertexInputDesc)
 	, m_pxShader(pxShader)
 	, m_xBlendStates(xBlendStates)
 	, m_bDepthTestEnabled(bDepthTestEnabled)
@@ -24,7 +23,6 @@ Zenith_Vulkan_PipelineSpecification::Zenith_Vulkan_PipelineSpecification(std::st
 	, m_eDepthCompareFunc(eDepthCompareFunc)
 	, m_aeColourFormats(aeColourFormats)
 	, m_eDepthStencilFormat(eDepthStencilFormat)
-	, m_strRenderPassName(strRenderPassName)
 	, m_bUsePushConstants(bUsePushConstants)
 	, m_bUseTesselation(bUseTesselation)
 	, m_xDescSetBindings(xDescSetBindings)
@@ -292,7 +290,7 @@ void Zenith_Vulkan_Pipeline::BindDescriptorSets(vk::CommandBuffer& xCmd, const s
 	xCmd.bindDescriptorSets(eBindPoint, m_xPipelineLayout, ufirstSet, axSets.size(), axSets.data(), 0, nullptr);
 }
 
-Zenith_Vulkan_PipelineBuilder::Zenith_Vulkan_PipelineBuilder(const std::string& strPipeName /* = "" */)
+Zenith_Vulkan_PipelineBuilder::Zenith_Vulkan_PipelineBuilder()
 {
 	m_axDynamicStateEnables[0] = vk::DynamicState::eViewport;
 	m_axDynamicStateEnables[1] = vk::DynamicState::eScissor;
@@ -320,8 +318,6 @@ Zenith_Vulkan_PipelineBuilder::Zenith_Vulkan_PipelineBuilder(const std::string& 
 		.setPolygonMode(vk::PolygonMode::eFill)
 		.setFrontFace(vk::FrontFace::eCounterClockwise)
 		.setLineWidth(1.0f);
-
-	m_strDebugName = strPipeName;
 
 	m_xInputAsmCreate.setTopology(vk::PrimitiveTopology::eTriangleList);
 }
@@ -737,7 +733,7 @@ Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithBlendState(vk:
 		std::vector<vk::VertexInputBindingDescription> axBindDescs;
 		std::vector<vk::VertexInputAttributeDescription> axAttrDescs;
 
-		Zenith_Vulkan_PipelineBuilder xBuilder = Zenith_Vulkan_PipelineBuilder(spec.m_strName.c_str());
+		Zenith_Vulkan_PipelineBuilder xBuilder = Zenith_Vulkan_PipelineBuilder();
 		if (spec.m_eVertexInputDesc.m_eTopology != MESH_TOPOLOGY_NONE)
 		{
 			xBuilder = xBuilder.WithVertexInputState(Zenith_Vulkan::VertexDescToVulkanDesc(spec.m_eVertexInputDesc, axBindDescs, axAttrDescs));
@@ -791,6 +787,5 @@ Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithBlendState(vk:
 		{
 			xPipelineOut.m_axDescSets[i] = xDescThings.xSets;
 		}
-		xPipelineOut.m_strName = spec.m_strName;
 		xPipelineOut.m_bUsePushConstants = spec.m_bUsePushConstants;
 	}

@@ -28,7 +28,6 @@ void Flux_Skybox::Initialise()
 	xBlendStates.push_back({ BLEND_FACTOR_SRCALPHA, BLEND_FACTOR_ONEMINUSSRCALPHA, true });
 
 	Zenith_Vulkan_PipelineSpecification xPipelineSpec(
-		"Flux_Skybox",
 		xVertexDesc,
 		&s_xShader,
 		xBlendStates,
@@ -37,7 +36,6 @@ void Flux_Skybox::Initialise()
 		DEPTH_COMPARE_FUNC_ALWAYS,
 		{ COLOUR_FORMAT_BGRA8_SRGB },
 		DEPTHSTENCIL_FORMAT_D32_SFLOAT,
-		"#TO_TODO: delete me",
 		false,
 		false,
 		{ {1,0} },
