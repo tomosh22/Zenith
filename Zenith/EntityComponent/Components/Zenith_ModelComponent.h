@@ -7,10 +7,9 @@
 class Zenith_ModelComponent
 {
 public:
-	Zenith_ModelComponent(Flux_MeshGeometry& xGeometry, Flux_Texture& xTexture, Zenith_TransformComponent& xTrans, Zenith_Entity& xEntity)
+	Zenith_ModelComponent(Flux_MeshGeometry& xGeometry, Flux_Texture& xTexture, Zenith_Entity& xEntity)
 	: m_xGeometry(xGeometry)
 	, m_xTexture(xTexture)
-	, m_xTransRef(xTrans)
 	, m_xParentEntity(xEntity)
 	{
 		Flux_MemoryManager::InitialiseVertexBuffer(m_xGeometry.GetVertexData(), m_xGeometry.GetVertexDataSize(), m_xVertexBuffer);
@@ -28,7 +27,6 @@ public:
 		
 private:
 	Zenith_Entity m_xParentEntity;
-	Zenith_TransformComponent& m_xTransRef;
 
 
 	Flux_MeshGeometry& m_xGeometry;
