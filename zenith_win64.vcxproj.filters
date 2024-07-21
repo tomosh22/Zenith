@@ -16,6 +16,9 @@
     <ClCompile Include="Zenith\EntityComponent\Components\Zenith_CameraComponent.cpp">
       <Filter>Zenith\EntityComponent\Components</Filter>
     </ClCompile>
+    <ClCompile Include="Zenith\EntityComponent\Components\Zenith_ModelComponent.cpp">
+      <Filter>Zenith\EntityComponent\Components</Filter>
+    </ClCompile>
     <ClCompile Include="Zenith\EntityComponent\Components\Zenith_ScriptComponent.cpp">
       <Filter>Zenith\EntityComponent\Components</Filter>
     </ClCompile>
@@ -103,6 +106,9 @@
       <Filter>Zenith\Core</Filter>
     </ClInclude>
     <ClInclude Include="Zenith\EntityComponent\Components\Zenith_CameraComponent.h">
+      <Filter>Zenith\EntityComponent\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\EntityComponent\Components\Zenith_ModelComponent.h">
       <Filter>Zenith\EntityComponent\Components</Filter>
     </ClInclude>
     <ClInclude Include="Zenith\EntityComponent\Components\Zenith_ScriptComponent.h">
