@@ -1,5 +1,6 @@
 #pragma once
 #include "Flux/Flux_Types.h"
+#include "Flux/Flux_Buffers.h"
 
 class Flux_MeshGeometry
 {
@@ -23,6 +24,9 @@ public:
 	const uint64_t GetIndexDataSize() const { return m_uNumIndices * sizeof(IndexType); }
 	const uint32_t GetNumVerts() const { return m_uNumVerts; }
 	const uint32_t GetNumIndices() const { return m_uNumIndices; }
+
+	const Flux_VertexBuffer& GetVertexBuffer() const { return m_xVertexBuffer; }
+	const Flux_IndexBuffer& GetIndexBuffer() const { return m_xIndexBuffer; }
 #ifndef ZENITH_TOOLS
 private:
 #endif
@@ -42,4 +46,7 @@ private:
 	Zenith_Maths::Vector3* m_pxBitangents = nullptr;
 
 	void* m_pVertexData = nullptr;
+
+	Flux_VertexBuffer m_xVertexBuffer;
+	Flux_IndexBuffer m_xIndexBuffer;
 };

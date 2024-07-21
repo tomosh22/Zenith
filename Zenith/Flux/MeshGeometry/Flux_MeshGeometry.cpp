@@ -101,6 +101,9 @@ void Flux_MeshGeometry::LoadFromFile(const char* szPath, Flux_MeshGeometry& xGeo
 	ulCursor += sizeof(xGeometryOut.m_pxNormals[0]) * xGeometryOut.m_uNumVerts;
 
 	delete[] pcData;
+
+	Flux_MemoryManager::InitialiseVertexBuffer(xGeometryOut.GetVertexData(), xGeometryOut.GetVertexDataSize(), xGeometryOut.m_xVertexBuffer);
+	Flux_MemoryManager::InitialiseIndexBuffer(xGeometryOut.GetIndexData(), xGeometryOut.GetIndexDataSize(), xGeometryOut.m_xIndexBuffer);
 }
 
 void Flux_MeshGeometry::GenerateLayoutAndVertexData()
