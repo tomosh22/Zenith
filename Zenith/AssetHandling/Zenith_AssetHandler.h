@@ -18,13 +18,18 @@ public:
 
 	static void LoadAssetsFromFile(const std::string& strFile);
 
-	static void AddTexture(Zenith_GUID xGUID, const char* szPath);
-	static void AddMesh(Zenith_GUID xGUID, const char* szPath);
+	static void AddTexture(Zenith_GUID xGUID, const std::string& strName, const char* szPath);
+	static void AddMesh(Zenith_GUID xGUID, const std::string& strName, const char* szPath);
 
 	static Flux_Texture& GetTexture(Zenith_GUID xGUID);
 	static Flux_Texture& TryGetTexture(Zenith_GUID xGUID);
 	static Flux_MeshGeometry& GetMesh(Zenith_GUID xGUID);
 	static Flux_MeshGeometry& TryGetMesh(Zenith_GUID xZGUID);
+
+	static Flux_Texture& GetTexture(const std::string& strName);
+	static Flux_Texture& TryGetTexture(const std::string& strName);
+	static Flux_MeshGeometry& GetMesh(const std::string& strName);
+	static Flux_MeshGeometry& TryGetMesh(const std::string& strName);
 
 	static void DeleteTexture(Zenith_GUID xGUID);
 	static void DeleteMesh(Zenith_GUID xGUID);
@@ -40,4 +45,6 @@ private:
 
 	static std::unordered_map<Zenith_GUID, AssetID> s_xTextureMap;
 	static std::unordered_map<Zenith_GUID, AssetID> s_xMeshMap;
+	static std::unordered_map<std::string, AssetID> s_xTextureNameMap;
+	static std::unordered_map<std::string, AssetID> s_xMeshNameMap;
 };

@@ -17,8 +17,6 @@ static Flux_VertexBuffer s_xVertexBuffer;
 static Flux_IndexBuffer s_xIndexBuffer;
 
 //#TO_TODO: delete me
-static Zenith_GUID s_xMeshGUID = 90834834756u;
-static Zenith_GUID s_xTexGUID = 24577524777u;
 static Flux_MeshGeometry& s_xMesh = Flux_Graphics::s_xBlankMesh;
 static Flux_Texture& s_xTex = Flux_Graphics::s_xBlankTexture2D;
 
@@ -63,11 +61,11 @@ void Flux_StaticMeshes::Initialise()
 
 	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
 
-	s_xMesh = Zenith_AssetHandler::GetMesh(s_xMeshGUID);
+	s_xMesh = Zenith_AssetHandler::GetMesh("Sphere_Smooth");
 	Flux_MemoryManager::InitialiseVertexBuffer(s_xMesh.GetVertexData(), s_xMesh.GetVertexDataSize(), s_xVertexBuffer);
 	Flux_MemoryManager::InitialiseIndexBuffer(s_xMesh.GetIndexData(), s_xMesh.GetIndexDataSize(), s_xIndexBuffer);
 
-	s_xTex = Zenith_AssetHandler::GetTexture(s_xTexGUID);
+	s_xTex = Zenith_AssetHandler::GetTexture("Crystal_Diffuse");
 
 	Zenith_Log("Flux_StaticMeshes initialised");
 }

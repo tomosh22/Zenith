@@ -7,6 +7,8 @@ Flux_MeshGeometry* Zenith_AssetHandler::s_pxMeshes = new Flux_MeshGeometry[ZENIT
 
 std::unordered_map<Zenith_GUID, Zenith_AssetHandler::AssetID> Zenith_AssetHandler::s_xTextureMap;
 std::unordered_map<Zenith_GUID, Zenith_AssetHandler::AssetID> Zenith_AssetHandler::s_xMeshMap;
+std::unordered_map<std::string, Zenith_AssetHandler::AssetID> Zenith_AssetHandler::s_xTextureNameMap;
+std::unordered_map<std::string, Zenith_AssetHandler::AssetID> Zenith_AssetHandler::s_xMeshNameMap;
 
 #if 0
 void Zenith_AssetHandler::LoadMeshCache()
@@ -121,18 +123,20 @@ void Zenith_AssetHandler::LoadAssetsFromFile(const std::string& strFile)
 }
 
 
-void Zenith_AssetHandler::AddTexture(Zenith_GUID xGUID, const char* szPath)
+void Zenith_AssetHandler::AddTexture(Zenith_GUID xGUID, const std::string& strName, const char* szPath)
 {
 	AssetID uID = GetNextFreeTextureSlot();
 	Flux_Texture& xTex = s_pxTextures[uID];
 	s_xTextureMap.insert({ xGUID,uID});
+	s_xTextureNameMap.insert({ strName, uID });
 	Flux_MemoryManager::CreateTexture(szPath, xTex);
 }
-void Zenith_AssetHandler::AddMesh(Zenith_GUID xGUID, const char* szPath)
+void Zenith_AssetHandler::AddMesh(Zenith_GUID xGUID, const std::string& strName, const char* szPath)
 {
 	AssetID uID = GetNextFreeMeshSlot();
 	Flux_MeshGeometry& xMesh = s_pxMeshes[uID];
 	s_xMeshMap.insert({ xGUID,uID });
+	s_xMeshNameMap.insert({ strName, uID });
 	Flux_MeshGeometry::LoadFromFile(szPath, xMesh);
 }
 
@@ -162,6 +166,42 @@ Flux_MeshGeometry& Zenith_AssetHandler::TryGetMesh(Zenith_GUID xGUID)
 	if (s_xMeshMap.find(xGUID) != s_xMeshMap.end())
 	{
 		return s_pxMeshes[s_xMeshMap.at(xGUID)];
+	}
+	else
+	{
+		return Flux_Graphics::s_xBlankMesh;
+	}
+}
+
+Flux_Texture& Zenith_AssetHandler::GetTexture(const std::string& strName)
+{
+	Zenith_Assert(s_xTextureNameMap.find(strName) != s_xTextureNameMap.end(), "Texture2D doesn't exist");
+	return s_pxTextures[s_xTextureNameMap.at(strName)];
+}
+
+Flux_Texture& Zenith_AssetHandler::TryGetTexture(const std::string& strName)
+{
+	if (s_xTextureNameMap.find(strName) != s_xTextureNameMap.end())
+	{
+		return s_pxTextures[s_xTextureNameMap.at(strName)];
+	}
+	else
+	{
+		return Flux_Graphics::s_xBlankTexture2D;
+	}
+}
+
+Flux_MeshGeometry& Zenith_AssetHandler::GetMesh(const std::string& strName)
+{
+	Zenith_Assert(s_xMeshNameMap.find(strName) != s_xMeshNameMap.end(), "Mesh doesn't exist");
+	return s_pxMeshes[s_xMeshNameMap.at(strName)];
+}
+
+Flux_MeshGeometry& Zenith_AssetHandler::TryGetMesh(const std::string& strName)
+{
+	if (s_xMeshNameMap.find(strName) != s_xMeshNameMap.end())
+	{
+		return s_pxMeshes[s_xMeshNameMap.at(strName)];
 	}
 	else
 	{

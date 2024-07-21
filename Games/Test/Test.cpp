@@ -6,10 +6,6 @@
 
 static Zenith_Entity s_xGameController;
 
-//#TO_TODO: delete me
-static Zenith_GUID xMeshGUID = 90834834756u;
-static Zenith_GUID xTexGUID = 24577524777u;
-
 void Zenith_Core::Project_Startup()
 {
 	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
@@ -27,6 +23,6 @@ void Zenith_Core::Project_Startup()
 	xCamera.InitialisePerspective(xPos, fPitch, fYaw, fFOV, fNear, fFar, fAspectRatio);
 	xScene.SetMainCameraEntity(s_xGameController);
 
-	Zenith_AssetHandler::AddMesh(xMeshGUID, "C:/dev/Zenith/Games/Test/Assets/Meshes/sphereSmooth.zmsh");
-	Zenith_AssetHandler::AddTexture(xTexGUID, "C:/dev/Zenith/Games/Test/Assets/Textures/crystal2k/diffuse.ztx");
+	Zenith_AssetHandler::AddMesh(Zenith_GUID(), "Sphere_Smooth", "C:/dev/Zenith/Games/Test/Assets/Meshes/sphereSmooth.zmsh");
+	Zenith_AssetHandler::AddTexture(Zenith_GUID(), "Crystal_Diffuse", "C:/dev/Zenith/Games/Test/Assets/Textures/crystal2k/diffuse.ztx");
 }
