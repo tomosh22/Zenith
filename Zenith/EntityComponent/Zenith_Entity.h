@@ -14,14 +14,14 @@ public:
 	template<typename T, typename... Args>
 	T& AddComponent(Args&&... args) {
 		Zenith_Assert(!HasComponent<T>(), "Already has this component");
-		return m_pxParentScene->m_xRegistry.emplace<T>(m_xEntity, std::forward<Args>(args)..., GetComponent<Zenith_TransformComponent>(), *this);
+		return m_pxParentScene->m_xRegistry.emplace<T>(m_xEntity, std::forward<Args>(args)..., *this);
 	}
 
 	template<typename T, typename... Args>
 	T& AddOrReplaceComponent(Args&&... args) {
 		if (HasComponent<T>())
 			RemoveComponent<T>();
-		return m_pxParentScene->m_xRegistry.emplace<T>(m_xEntity, std::forward<Args>(args)..., GetComponent<Zenith_TransformComponent>(), *this);
+		return m_pxParentScene->m_xRegistry.emplace<T>(m_xEntity, std::forward<Args>(args)..., *this);
 	}
 
 	template<>

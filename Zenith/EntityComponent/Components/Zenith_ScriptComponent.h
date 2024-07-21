@@ -17,7 +17,7 @@ class Zenith_ScriptComponent
 {
 public:
 
-	Zenith_ScriptComponent(Zenith_TransformComponent& xTrans, Zenith_Entity& xEntity) : m_xTransRef(xTrans), m_xParentEntity(xEntity) {};
+	Zenith_ScriptComponent(Zenith_Entity& xEntity) : m_xParentEntity(xEntity) {};
 	~Zenith_ScriptComponent() {
 		delete m_pxScriptBehaviour;
 	}
@@ -26,8 +26,6 @@ public:
 	Zenith_ScriptBehaviour* m_pxScriptBehaviour = nullptr;
 
 	Zenith_Entity m_xParentEntity;
-
-	Zenith_TransformComponent& m_xTransRef;
 
 	void OnCreate() { m_pxScriptBehaviour->OnCreate(); }
 	void OnUpdate(float fDt) { m_pxScriptBehaviour->OnUpdate(fDt); }
