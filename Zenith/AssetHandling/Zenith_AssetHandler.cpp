@@ -6,7 +6,9 @@ Flux_Texture* Zenith_AssetHandler::s_pxTextures = new Flux_Texture[ZENITH_MAX_TE
 Flux_MeshGeometry* Zenith_AssetHandler::s_pxMeshes = new Flux_MeshGeometry[ZENITH_MAX_MESHES];
 
 std::unordered_map<Zenith_GUID, Zenith_AssetHandler::AssetID> Zenith_AssetHandler::s_xTextureMap;
+std::map<Zenith_AssetHandler::AssetID, Zenith_GUID> Zenith_AssetHandler::s_xReverseTextureMap;
 std::unordered_map<Zenith_GUID, Zenith_AssetHandler::AssetID> Zenith_AssetHandler::s_xMeshMap;
+std::map<Zenith_AssetHandler::AssetID, Zenith_GUID> Zenith_AssetHandler::s_xReverseMeshMap;
 std::unordered_map<std::string, Zenith_AssetHandler::AssetID> Zenith_AssetHandler::s_xTextureNameMap;
 std::unordered_map<std::string, Zenith_AssetHandler::AssetID> Zenith_AssetHandler::s_xMeshNameMap;
 
@@ -129,6 +131,7 @@ void Zenith_AssetHandler::AddTexture(Zenith_GUID xGUID, const std::string& strNa
 	Flux_Texture& xTex = s_pxTextures[uID];
 	s_xTextureMap.insert({ xGUID,uID});
 	s_xTextureNameMap.insert({ strName, uID });
+	s_xReverseTextureMap.insert({ uID, xGUID });
 	Flux_MemoryManager::CreateTexture(szPath, xTex);
 }
 void Zenith_AssetHandler::AddMesh(Zenith_GUID xGUID, const std::string& strName, const char* szPath)
@@ -137,6 +140,7 @@ void Zenith_AssetHandler::AddMesh(Zenith_GUID xGUID, const std::string& strName,
 	Flux_MeshGeometry& xMesh = s_pxMeshes[uID];
 	s_xMeshMap.insert({ xGUID,uID });
 	s_xMeshNameMap.insert({ strName, uID });
+	s_xReverseMeshMap.insert({ uID, xGUID });
 	Flux_MeshGeometry::LoadFromFile(szPath, xMesh);
 }
 
@@ -224,7 +228,7 @@ Zenith_AssetHandler::AssetID Zenith_AssetHandler::GetNextFreeTextureSlot()
 {
 	for (AssetID u = 0; u < ZENITH_MAX_TEXTURES; u++)
 	{
-		if (s_xTextureMap.find(u) == s_xTextureMap.end())
+		if (s_xReverseTextureMap.find(u) == s_xReverseTextureMap.end())
 		{
 			return u;
 		}
@@ -235,7 +239,7 @@ Zenith_AssetHandler::AssetID Zenith_AssetHandler::GetNextFreeMeshSlot()
 {
 	for (AssetID u = 0; u < ZENITH_MAX_MESHES; u++)
 	{
-		if (s_xMeshMap.find(u) == s_xMeshMap.end())
+		if (s_xReverseMeshMap.find(u) == s_xReverseMeshMap.end())
 		{
 			return u;
 		}

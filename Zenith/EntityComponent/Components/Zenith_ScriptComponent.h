@@ -1,6 +1,5 @@
 #pragma once
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
-#include "EntityComponent/Zenith_Entity.h"
 
 class Zenith_ScriptBehaviour {
 	friend class Zenith_ScriptComponent;

@@ -1,7 +1,6 @@
 #pragma once
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
-#include "EntityComponent/Zenith_Entity.h"
 
 class Zenith_CameraBehaviour : Zenith_ScriptBehaviour
 {
@@ -20,6 +19,8 @@ public:
 	void InitialisePerspective(const Zenith_Maths::Vector3& xPos, const float fPitch, const float fYaw, const float fFOV, const float fNear, const float fFar, const float fAspectRatio);
 	void BuildViewMatrix(Zenith_Maths::Matrix4& xOut) const;
 	void BuildProjectionMatrix(Zenith_Maths::Matrix4& xOut) const;
+
+	Zenith_Maths::Vector3 ScreenSpaceToWorldSpace(Zenith_Maths::Vector3 xScreenSpace);
 
 	void UpdateRotation(const float fDt);
 	void OnUpdate(const float fDt) override;

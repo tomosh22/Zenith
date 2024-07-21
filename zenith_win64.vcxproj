@@ -67,7 +67,7 @@
       <WarningLevel>Level4</WarningLevel>
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>NOMINMAX;SHADER_SOURCE_ROOT="c:/dev/zenith/Zenith/Flux/Shaders/";WIN64;ZENITH_DEBUG;ZENITH_VULKAN;ZENITH_WINDOWS;_CONSOLE;_DEBUG;%(PreprocessorDefinitions);$(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>middleware\entt-3.13.2\single_include;middleware\glfw-3.4.bin.win64\include;middleware\glm-master;middleware\vulkansdk\1.3.280.0\include;zenith;zenith\core;zenith\vulkan;zenith\windows</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>middleware\entt-3.13.2\single_include;middleware\glfw-3.4.bin.win64\include;middleware\glm-master;middleware\reactphysics3d-0.10.1\include;middleware\vulkansdk\1.3.280.0\include;zenith;zenith\core;zenith\vulkan;zenith\windows</AdditionalIncludeDirectories>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <TreatWarningAsError>false</TreatWarningAsError>
@@ -153,7 +153,7 @@
       <WarningLevel>Level4</WarningLevel>
       <Optimization>Full</Optimization>
       <PreprocessorDefinitions>NDEBUG;NOMINMAX;SHADER_SOURCE_ROOT="c:/dev/zenith/Zenith/Flux/Shaders/";WIN64;ZENITH_VULKAN;ZENITH_WINDOWS;_CONSOLE;%(PreprocessorDefinitions);$(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>middleware\entt-3.13.2\single_include;middleware\glfw-3.4.bin.win64\include;middleware\glm-master;middleware\vulkansdk\1.3.280.0\include;zenith;zenith\core;zenith\vulkan;zenith\windows</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>middleware\entt-3.13.2\single_include;middleware\glfw-3.4.bin.win64\include;middleware\glm-master;middleware\reactphysics3d-0.10.1\include;middleware\vulkansdk\1.3.280.0\include;zenith;zenith\core;zenith\vulkan;zenith\windows</AdditionalIncludeDirectories>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <TreatWarningAsError>false</TreatWarningAsError>
@@ -236,6 +236,117 @@
   <ItemGroup>
     <ClInclude Include="Middleware\glfw-3.4.bin.WIN64\include\GLFW\glfw3.h" />
     <ClInclude Include="Middleware\glfw-3.4.bin.WIN64\include\GLFW\glfw3native.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\body\Body.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\body\RigidBody.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\collision\broadphase\DynamicAABBTree.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\collision\Collider.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\collision\CollisionCallback.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\collision\ContactManifold.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\collision\ContactManifoldInfo.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\collision\ContactPair.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\collision\ContactPointInfo.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\collision\ConvexMesh.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\collision\HalfEdgeStructure.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\collision\HeightField.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\collision\narrowphase\CapsuleVsCapsuleAlgorithm.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\collision\narrowphase\CapsuleVsConvexPolyhedronAlgorithm.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\collision\narrowphase\CollisionDispatch.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\collision\narrowphase\ConvexPolyhedronVsConvexPolyhedronAlgorithm.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\collision\narrowphase\GJK\GJKAlgorithm.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\collision\narrowphase\GJK\VoronoiSimplex.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\collision\narrowphase\NarrowPhaseAlgorithm.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\collision\narrowphase\NarrowPhaseInfoBatch.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\collision\narrowphase\NarrowPhaseInput.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\collision\narrowphase\SAT\SATAlgorithm.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\collision\narrowphase\SphereVsCapsuleAlgorithm.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\collision\narrowphase\SphereVsConvexPolyhedronAlgorithm.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\collision\narrowphase\SphereVsSphereAlgorithm.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\collision\OverlapCallback.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\collision\PolygonVertexArray.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\collision\RaycastInfo.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\collision\shapes\AABB.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\collision\shapes\BoxShape.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\collision\shapes\CapsuleShape.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\collision\shapes\CollisionShape.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\collision\shapes\ConcaveMeshShape.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\collision\shapes\ConcaveShape.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\collision\shapes\ConvexMeshShape.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\collision\shapes\ConvexPolyhedronShape.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\collision\shapes\ConvexShape.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\collision\shapes\HeightFieldShape.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\collision\shapes\SphereShape.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\collision\shapes\TriangleShape.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\collision\TriangleMesh.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\collision\TriangleVertexArray.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\collision\VertexArray.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\components\BallAndSocketJointComponents.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\components\BodyComponents.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\components\ColliderComponents.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\components\Components.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\components\FixedJointComponents.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\components\HingeJointComponents.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\components\JointComponents.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\components\RigidBodyComponents.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\components\SliderJointComponents.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\components\TransformComponents.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\configuration.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\constraint\BallAndSocketJoint.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\constraint\ContactPoint.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\constraint\FixedJoint.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\constraint\HingeJoint.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\constraint\Joint.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\constraint\SliderJoint.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\containers\Array.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\containers\containers_common.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\containers\Deque.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\containers\LinkedList.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\containers\Map.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\containers\Pair.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\containers\Set.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\containers\Stack.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\decimal.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\engine\Entity.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\engine\EntityManager.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\engine\EventListener.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\engine\Island.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\engine\Islands.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\engine\Material.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\engine\OverlappingPairs.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\engine\PhysicsCommon.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\engine\PhysicsWorld.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\mathematics\mathematics.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\mathematics\mathematics_common.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\mathematics\mathematics_functions.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\mathematics\Matrix2x2.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\mathematics\Matrix3x3.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\mathematics\Quaternion.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\mathematics\Ray.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\mathematics\Transform.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\mathematics\Vector2.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\mathematics\Vector3.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\memory\DefaultAllocator.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\memory\HeapAllocator.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\memory\MemoryAllocator.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\memory\MemoryManager.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\memory\PoolAllocator.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\memory\SingleFrameAllocator.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\reactphysics3d.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\systems\BroadPhaseSystem.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\systems\CollisionDetectionSystem.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\systems\ConstraintSolverSystem.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\systems\ContactSolverSystem.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\systems\DynamicsSystem.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\systems\SolveBallAndSocketJointSystem.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\systems\SolveFixedJointSystem.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\systems\SolveHingeJointSystem.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\systems\SolveSliderJointSystem.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\utils\DebugRenderer.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\utils\DefaultLogger.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\utils\Logger.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\utils\Message.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\utils\Profiler.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\utils\quickhull\QHHalfEdgeStructure.h" />
+    <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\utils\quickhull\QuickHull.h" />
     <ClInclude Include="Zenith\AssetHandling\Zenith_AssetHandler.h" />
     <ClInclude Include="Zenith\Core\Zenith.h" />
     <ClInclude Include="Zenith\Core\Zenith_Core.h" />
@@ -259,6 +370,7 @@
     <ClInclude Include="Zenith\Input\Zenith_Input.h" />
     <ClInclude Include="Zenith\Input\Zenith_KeyCodes.h" />
     <ClInclude Include="Zenith\Maths\Zenith_Maths.h" />
+    <ClInclude Include="Zenith\Physics\Zenith_Physics.h" />
     <ClInclude Include="Zenith\Vulkan\Zenith_PlatformGraphics_Include.h" />
     <ClInclude Include="Zenith\Vulkan\Zenith_Vulkan.h" />
     <ClInclude Include="Zenith\Vulkan\Zenith_Vulkan_Buffer.h" />
@@ -272,6 +384,354 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Games\Test\Test.cpp" />
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\body\Body.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\body\RigidBody.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\collision\broadphase\DynamicAABBTree.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\collision\Collider.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\collision\CollisionCallback.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\collision\ContactManifold.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\collision\ConvexMesh.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\collision\HalfEdgeStructure.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\collision\HeightField.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\collision\narrowphase\CapsuleVsCapsuleAlgorithm.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\collision\narrowphase\CapsuleVsConvexPolyhedronAlgorithm.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\collision\narrowphase\CollisionDispatch.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\collision\narrowphase\ConvexPolyhedronVsConvexPolyhedronAlgorithm.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\collision\narrowphase\GJK\GJKAlgorithm.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\collision\narrowphase\GJK\VoronoiSimplex.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\collision\narrowphase\NarrowPhaseInfoBatch.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\collision\narrowphase\NarrowPhaseInput.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\collision\narrowphase\SAT\SATAlgorithm.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\collision\narrowphase\SphereVsCapsuleAlgorithm.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\collision\narrowphase\SphereVsConvexPolyhedronAlgorithm.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\collision\narrowphase\SphereVsSphereAlgorithm.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\collision\OverlapCallback.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\collision\PolygonVertexArray.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\collision\RaycastInfo.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\collision\shapes\AABB.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\collision\shapes\BoxShape.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\collision\shapes\CapsuleShape.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\collision\shapes\CollisionShape.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\collision\shapes\ConcaveMeshShape.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\collision\shapes\ConcaveShape.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\collision\shapes\ConvexMeshShape.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\collision\shapes\ConvexPolyhedronShape.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\collision\shapes\ConvexShape.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\collision\shapes\HeightFieldShape.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\collision\shapes\SphereShape.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\collision\shapes\TriangleShape.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\collision\TriangleMesh.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\collision\TriangleVertexArray.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\collision\VertexArray.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\components\BallAndSocketJointComponents.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\components\BodyComponents.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\components\ColliderComponents.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\components\Components.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\components\FixedJointComponents.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\components\HingeJointComponents.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\components\JointComponents.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\components\RigidBodyComponents.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\components\SliderJointComponents.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\components\TransformComponents.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\constraint\BallAndSocketJoint.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\constraint\ContactPoint.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\constraint\FixedJoint.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\constraint\HingeJoint.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\constraint\Joint.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\constraint\SliderJoint.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\engine\Entity.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\engine\EntityManager.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\engine\Island.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\engine\Material.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\engine\OverlappingPairs.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\engine\PhysicsCommon.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\engine\PhysicsWorld.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\mathematics\Matrix2x2.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\mathematics\Matrix3x3.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\mathematics\Quaternion.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\mathematics\Transform.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\mathematics\Vector2.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\mathematics\Vector3.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\memory\HeapAllocator.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\memory\MemoryAllocator.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\memory\MemoryManager.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\memory\PoolAllocator.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\memory\SingleFrameAllocator.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\systems\BroadPhaseSystem.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\systems\CollisionDetectionSystem.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\systems\ConstraintSolverSystem.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\systems\ContactSolverSystem.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\systems\DynamicsSystem.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\systems\SolveBallAndSocketJointSystem.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\systems\SolveFixedJointSystem.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\systems\SolveHingeJointSystem.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\systems\SolveSliderJointSystem.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\utils\DebugRenderer.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\utils\DefaultLogger.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\utils\Profiler.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\utils\quickhull\QHHalfEdgeStructure.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\utils\quickhull\QuickHull.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="Zenith\AssetHandling\Zenith_AssetHandler.cpp" />
     <ClCompile Include="Zenith\Core\Zenith.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
@@ -294,6 +754,7 @@
     <ClCompile Include="Zenith\Flux\StaticMeshes\Flux_StaticMeshes.cpp" />
     <ClCompile Include="Zenith\Input\Zenith_Input.cpp" />
     <ClCompile Include="Zenith\Maths\Zenith_Maths.cpp" />
+    <ClCompile Include="Zenith\Physics\Zenith_Physics.cpp" />
     <ClCompile Include="Zenith\Vulkan\Zenith_Vulkan.cpp" />
     <ClCompile Include="Zenith\Vulkan\Zenith_Vulkan_Buffer.cpp" />
     <ClCompile Include="Zenith\Vulkan\Zenith_Vulkan_CommandBuffer.cpp" />

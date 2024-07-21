@@ -41,8 +41,9 @@ void Zenith_Core::Project_Startup()
 
 	s_xSphere0.Initialise(&xScene, "Sphere0");
 	s_xSphere0.AddComponent<Zenith_ModelComponent>(xSphereMesh, xCrystalDiffuseTex);
+	s_xSphere0.GetComponent<Zenith_TransformComponent>().SetPosition({ 10,0,10 });
 
 	s_xSphere1.Initialise(&xScene, "Sphere1");
 	s_xSphere1.AddComponent<Zenith_ModelComponent>(xSphereMesh, xCrystalNormalTex);
-
+	s_xSphere1.GetComponent<Zenith_TransformComponent>().SetPosition({ -10,0,-10 });
 }

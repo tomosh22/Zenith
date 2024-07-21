@@ -11,17 +11,17 @@
 
 #include "Input/Zenith_KeyCodes.h"
 
-class Zenith_Windows_Window
+class Zenith_Window
 {
 public:
-	Zenith_Windows_Window(const char* szTitle, uint32_t uWidth, uint32_t uHeight);
-	virtual ~Zenith_Windows_Window();
+	Zenith_Window(const char* szTitle, uint32_t uWidth, uint32_t uHeight);
+	virtual ~Zenith_Window();
 
-	static void Inititalise(const char* szTitle, uint32_t uWidth, uint32_t uHeight) { s_pxInstance = new Zenith_Windows_Window(szTitle, uWidth, uHeight); }
+	static void Inititalise(const char* szTitle, uint32_t uWidth, uint32_t uHeight) { s_pxInstance = new Zenith_Window(szTitle, uWidth, uHeight); }
 
 	GLFWwindow* GetNativeWindow() const { return m_pxNativeWindow; }
 
-	static Zenith_Windows_Window* GetInstance() { return s_pxInstance; }
+	static Zenith_Window* GetInstance() { return s_pxInstance; }
 
 	void BeginFrame();
 
@@ -46,7 +46,7 @@ public:
 	bool IsKeyDown(Zenith_KeyCode iKey);
 
 private:
-	static Zenith_Windows_Window* s_pxInstance;
+	static Zenith_Window* s_pxInstance;
 
 	GLFWwindow* m_pxNativeWindow = nullptr;
 	uint32_t m_uWidth, m_uHeight;

@@ -151,6 +151,9 @@ public class ZenithWindowsProject : Project
 		SourceFilesExcludeRegex.Add(@".*glm-master.*");
 		SourceFilesExcludeRegex.Add(@".*entt-3.13.2.*");
 		SourceFilesExcludeRegex.Add(@".*Tools.*");
+		SourceFilesExcludeRegex.Add(@".*reactphysics3d-0.10.1\\helloworld.*");
+		SourceFilesExcludeRegex.Add(@".*reactphysics3d-0.10.1\\test.*");
+		SourceFilesExcludeRegex.Add(@".*reactphysics3d-0.10.1\\testbed.*");
     }
 
     [Configure]
@@ -161,6 +164,7 @@ public class ZenithWindowsProject : Project
 
         conf.PrecompHeader = "Zenith.h";
         conf.PrecompSource = "Zenith.cpp";
+		conf.PrecompSourceExcludeFolders.Add("[project.SharpmakeCsPath]/Middleware/reactphysics3d-0.10.1");
 		
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Zenith");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Zenith/Core");
@@ -168,6 +172,7 @@ public class ZenithWindowsProject : Project
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Middleware/VulkanSDK/1.3.280.0/Include");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Middleware/glm-master");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Middleware/entt-3.13.2/single_include");
+		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Middleware/reactphysics3d-0.10.1/include");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Zenith/Windows");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Zenith/Vulkan");
 		

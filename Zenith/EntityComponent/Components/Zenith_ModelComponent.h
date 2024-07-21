@@ -1,6 +1,5 @@
 #pragma once
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
-#include "EntityComponent/Zenith_Entity.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "Flux/Flux.h"
 #include "Flux/Flux_Buffers.h"
@@ -20,7 +19,7 @@ public:
 	const Flux_Texture& GetTexture() const { return m_xTexture; }
 	Flux_Texture& GetTexture() { return m_xTexture; }
 
-		
+	Zenith_Entity GetParentEntity() const { return m_xParentEntity; }
 private:
 	Zenith_Entity m_xParentEntity;
 
