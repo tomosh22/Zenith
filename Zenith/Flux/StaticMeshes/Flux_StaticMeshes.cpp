@@ -71,6 +71,9 @@ void Flux_StaticMeshes::Render()
 	std::vector<Zenith_ModelComponent*> xModels;
 	Zenith_Scene::GetCurrentScene().GetAllOfComponentType<Zenith_ModelComponent>(xModels);
 
+	s_xCommandBuffer.BeginBind(BINDING_FREQUENCY_PER_FRAME);
+	s_xCommandBuffer.BindBuffer(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer(), 0);
+
 	for (Zenith_ModelComponent* pxModel : xModels)
 	{
 		s_xCommandBuffer.SetVertexBuffer(pxModel->GetMeshGeometry().GetVertexBuffer());
@@ -78,9 +81,6 @@ void Flux_StaticMeshes::Render()
 
 		Zenith_Maths::Matrix4 xModelMatrix = glm::scale(glm::identity<Zenith_Maths::Matrix4>(), glm::vec3(100, 100, 100));
 		s_xCommandBuffer.PushConstant(&xModelMatrix, sizeof(xModelMatrix));
-
-		s_xCommandBuffer.BeginBind(BINDING_FREQUENCY_PER_FRAME);
-		s_xCommandBuffer.BindBuffer(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer(), 0);
 
 		s_xCommandBuffer.BeginBind(BINDING_FREQUENCY_PER_DRAW);
 		s_xCommandBuffer.BindTexture(&pxModel->GetTexture(), 0);
