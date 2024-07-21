@@ -220,7 +220,7 @@ void Zenith_Vulkan::CreateDebugMessenger()
 
 void Zenith_Vulkan::CreateSurface()
 {
-	GLFWwindow* pxWindow = Zenith_Windows_Window::GetInstance()->GetNativeWindow();
+	GLFWwindow* pxWindow = Zenith_Window::GetInstance()->GetNativeWindow();
 	glfwCreateWindowSurface(s_xInstance, pxWindow, nullptr, (VkSurfaceKHR*)&s_xSurface);
 	
 	Zenith_Log("Vulkan surface created");

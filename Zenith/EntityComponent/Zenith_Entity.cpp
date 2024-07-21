@@ -1,6 +1,7 @@
 #include "Zenith.h"
 #include "EntityComponent/Zenith_Entity.h"
 #include "EntityComponent/Zenith_Scene.h"
+#include "EntityComponent/Components/Zenith_TransformComponent.h"
 
 Zenith_Entity::Zenith_Entity(Zenith_Scene* pxScene, const std::string& strName)
 	: m_pxParentScene(pxScene)

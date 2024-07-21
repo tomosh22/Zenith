@@ -2,6 +2,7 @@
 
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "Input/Zenith_Input.h"
+#include "Zenith_OS_Include.h"
 
 Zenith_CameraBehaviour::Zenith_CameraBehaviour(Zenith_ScriptComponent& xScriptComponent)
 	: m_xScriptComponent(xScriptComponent)
@@ -42,6 +43,36 @@ void Zenith_CameraBehaviour::BuildProjectionMatrix(Zenith_Maths::Matrix4& xOut) 
 		Zenith_Assert(false, "Camera uninitialised");
 		break;
 	}
+}
+
+Zenith_Maths::Vector3 Zenith_CameraBehaviour::ScreenSpaceToWorldSpace(Zenith_Maths::Vector3 xScreenSpace)
+{
+	Zenith_Window* pxWindow = Zenith_Window::GetInstance();
+	//#TO_TODO: adjust for viewport not taking up whole window in editor mode
+	Zenith_Maths::Vector2 xScreenSize = { pxWindow->GetWidth(), pxWindow->GetHeight()};
+
+	Zenith_Maths::Matrix4 xViewMat;
+	Zenith_Maths::Matrix4 xProjMat;
+	BuildViewMatrix(xViewMat);
+	BuildProjectionMatrix(xProjMat);
+	Zenith_Maths::Matrix4 xInvViewProj = glm::inverse(xViewMat) * glm::inverse(xProjMat);
+
+	Zenith_Maths::Vector4 xClipSpace = {
+		(xScreenSpace.x / xScreenSize.x) * 2.0f - 1.0f,
+		(xScreenSpace.y / xScreenSize.y) * 2.0f - 1.0f,
+		(xScreenSpace.z),
+		1.0f
+	};
+
+	Zenith_Maths::Vector4 xWorldSpacePreDivide = xInvViewProj * xClipSpace;
+
+	Zenith_Maths::Vector3 xWorldSpace = {
+		xWorldSpacePreDivide.x / xWorldSpacePreDivide.w,
+		xWorldSpacePreDivide.y / xWorldSpacePreDivide.w,
+		xWorldSpacePreDivide.z / xWorldSpacePreDivide.w
+	};
+
+	return xWorldSpace;
 }
 
 void Zenith_CameraBehaviour::UpdateRotation(const float fDt)

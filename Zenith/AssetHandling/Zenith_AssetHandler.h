@@ -44,7 +44,9 @@ private:
 	static AssetID GetNextFreeMeshSlot();
 
 	static std::unordered_map<Zenith_GUID, AssetID> s_xTextureMap;
+	static std::map<AssetID, Zenith_GUID> s_xReverseTextureMap;
 	static std::unordered_map<Zenith_GUID, AssetID> s_xMeshMap;
+	static std::map<AssetID, Zenith_GUID> s_xReverseMeshMap;
 	static std::unordered_map<std::string, AssetID> s_xTextureNameMap;
 	static std::unordered_map<std::string, AssetID> s_xMeshNameMap;
 };

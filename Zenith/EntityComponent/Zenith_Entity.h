@@ -1,6 +1,5 @@
 #pragma once
 #include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Components/Zenith_TransformComponent.h"
 
 class Zenith_Entity
 {
@@ -22,11 +21,6 @@ public:
 		if (HasComponent<T>())
 			RemoveComponent<T>();
 		return m_pxParentScene->m_xRegistry.emplace<T>(m_xEntity, std::forward<Args>(args)..., *this);
-	}
-
-	template<>
-	Zenith_TransformComponent& AddComponent(const std::string& strName) {
-		return m_pxParentScene->m_xRegistry.emplace<Zenith_TransformComponent>(m_xEntity, strName);
 	}
 
 	template<typename T>

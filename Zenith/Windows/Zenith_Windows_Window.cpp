@@ -4,7 +4,7 @@
 
 #include "Input/Zenith_Input.h"
 
-Zenith_Windows_Window* Zenith_Windows_Window::s_pxInstance = nullptr;
+Zenith_Window* Zenith_Window::s_pxInstance = nullptr;
 
 static void ErrorCallback(int32_t iError, const char* szDesc)
 {
@@ -31,7 +31,7 @@ static void MouseCallback(GLFWwindow* pxWindow, int32_t iKey, int32_t iAction, i
 	}
 }
 
-Zenith_Windows_Window::Zenith_Windows_Window(const char* szTitle, uint32_t uWidth, uint32_t uHeight)
+Zenith_Window::Zenith_Window(const char* szTitle, uint32_t uWidth, uint32_t uHeight)
 {
 	int glfwinit = glfwInit();
 
@@ -49,22 +49,22 @@ Zenith_Windows_Window::Zenith_Windows_Window(const char* szTitle, uint32_t uWidt
 	Zenith_Log("Window created");
 }
 
-Zenith_Windows_Window::~Zenith_Windows_Window()
+Zenith_Window::~Zenith_Window()
 {
 
 }
 
-void Zenith_Windows_Window::BeginFrame()
+void Zenith_Window::BeginFrame()
 {
 	glfwPollEvents();
 }
 
-void Zenith_Windows_Window::GetMousePosition(Zenith_Maths::Vector2_64& xOut)
+void Zenith_Window::GetMousePosition(Zenith_Maths::Vector2_64& xOut)
 {
 	glfwGetCursorPos(m_pxNativeWindow, &xOut.x, &xOut.y);
 }
 
-bool Zenith_Windows_Window::IsKeyDown(Zenith_KeyCode iKey)
+bool Zenith_Window::IsKeyDown(Zenith_KeyCode iKey)
 {
 	return glfwGetKey(m_pxNativeWindow, iKey) == GLFW_PRESS;
 }

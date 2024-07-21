@@ -2,6 +2,7 @@
 #include <cstdint>
 #include <set>
 #include <unordered_map>
+#include <map>
 #include <unordered_set>
 #include <vector>
 #include <string>
@@ -50,7 +51,7 @@ static struct Zenith_GUID {
 	}
 
 	operator uint64_t() { return m_uGUID; }
-	operator uint32_t() { Zenith_Assert(false, "Attempting to compress GUID into 32 bits"); }
+	operator uint32_t() = delete;
 };
 
 template <>
