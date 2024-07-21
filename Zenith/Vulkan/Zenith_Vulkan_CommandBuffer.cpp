@@ -90,7 +90,7 @@ void Zenith_Vulkan_CommandBuffer::EndAndCpuWait(bool bEndPass)
 	//#TO_TODO: plug fence leak
 }
 
-void Zenith_Vulkan_CommandBuffer::SetVertexBuffer(Flux_VertexBuffer& xVertexBuffer, uint32_t uBindPoint /*= 0*/)
+void Zenith_Vulkan_CommandBuffer::SetVertexBuffer(const Flux_VertexBuffer& xVertexBuffer, uint32_t uBindPoint /*= 0*/)
 {
 	const vk::Buffer& xBuffer = xVertexBuffer.GetBuffer().GetBuffer();
 	//#TO_TODO: offsets
@@ -98,7 +98,7 @@ void Zenith_Vulkan_CommandBuffer::SetVertexBuffer(Flux_VertexBuffer& xVertexBuff
 	m_xCurrentCmdBuffer.bindVertexBuffers(uBindPoint, 1, &xBuffer, offsets);
 }
 
-void Zenith_Vulkan_CommandBuffer::SetIndexBuffer(Flux_IndexBuffer& xIndexBuffer)
+void Zenith_Vulkan_CommandBuffer::SetIndexBuffer(const Flux_IndexBuffer& xIndexBuffer)
 {
 	const vk::Buffer& xBuffer = xIndexBuffer.GetBuffer().GetBuffer();
 	static_assert(std::is_same<Flux_MeshGeometry::IndexType, uint32_t>(), "#TO_TODO: stop hardcoding type");

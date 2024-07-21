@@ -26,8 +26,8 @@ public:
 	void BeginRecording();
 	void EndRecording(RenderOrder eOrder, bool bEndPass = true) ;
 	void EndAndCpuWait(bool bEndPass);
-	void SetVertexBuffer(Flux_VertexBuffer& xVertexBuffer, uint32_t uBindPoint = 0);
-	void SetIndexBuffer(Flux_IndexBuffer& xIndexBuffer);
+	void SetVertexBuffer(const Flux_VertexBuffer& xVertexBuffer, uint32_t uBindPoint = 0);
+	void SetIndexBuffer(const Flux_IndexBuffer& xIndexBuffer);
 	void Draw(uint32_t uNumVerts);
 	void DrawIndexed(uint32_t uNumIndices, uint32_t uNumInstances = 1, uint32_t uVertexOffset = 0, uint32_t uIndexOffset = 0,uint32_t uInstanceOffset = 0);
 	void SubmitTargetSetup(Flux_TargetSetup& xTargetSetup, bool bClearColour = false, bool bClearDepth = false, bool bClearStencil = false);
