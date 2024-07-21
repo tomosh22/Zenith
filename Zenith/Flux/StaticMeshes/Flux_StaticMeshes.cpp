@@ -73,8 +73,8 @@ void Flux_StaticMeshes::Render()
 
 	for (Zenith_ModelComponent* pxModel : xModels)
 	{
-		s_xCommandBuffer.SetVertexBuffer(pxModel->GetVertexBuffer());
-		s_xCommandBuffer.SetIndexBuffer(pxModel->GetIndexBuffer());
+		s_xCommandBuffer.SetVertexBuffer(pxModel->GetMeshGeometry().GetVertexBuffer());
+		s_xCommandBuffer.SetIndexBuffer(pxModel->GetMeshGeometry().GetIndexBuffer());
 
 		Zenith_Maths::Matrix4 xModelMatrix = glm::scale(glm::identity<Zenith_Maths::Matrix4>(), glm::vec3(100, 100, 100));
 		s_xCommandBuffer.PushConstant(&xModelMatrix, sizeof(xModelMatrix));
