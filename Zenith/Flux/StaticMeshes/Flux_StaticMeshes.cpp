@@ -46,7 +46,7 @@ void Flux_StaticMeshes::Initialise()
 		true,
 		false,
 		{1,0},
-		{0,1},
+		{0,4},
 		Flux_Graphics::s_xFinalRenderTarget,
 		LOAD_ACTION_LOAD,
 		STORE_ACTION_STORE,
@@ -84,8 +84,12 @@ void Flux_StaticMeshes::Render()
 		Zenith_Maths::Matrix4 xModelMatrix;
 		pxModel->GetParentEntity().GetComponent<Zenith_TransformComponent>().BuildModelMatrix(xModelMatrix);
 		s_xCommandBuffer.PushConstant(&xModelMatrix, sizeof(xModelMatrix));
+		Flux_Material& xMaterial = pxModel->GetMaterial();
 
-		s_xCommandBuffer.BindTexture(&pxModel->GetTexture(), 0);
+		s_xCommandBuffer.BindTexture(xMaterial.GetDiffuse(), 0);
+		s_xCommandBuffer.BindTexture(xMaterial.GetNormal(), 1);
+		s_xCommandBuffer.BindTexture(xMaterial.GetRoughness(), 2);
+		s_xCommandBuffer.BindTexture(xMaterial.GetMetallic(), 3);
 
 		s_xCommandBuffer.DrawIndexed(pxModel->GetMeshGeometry().GetNumIndices());
 	}

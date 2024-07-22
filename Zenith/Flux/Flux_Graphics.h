@@ -31,5 +31,6 @@ private:
 		Zenith_Maths::Matrix4 m_xViewMat;
 		Zenith_Maths::Matrix4 m_xProjMat;
 		Zenith_Maths::Matrix4 m_xViewProjMat;
+		Zenith_Maths::Vector4 m_xCamPos_Pad;
 	};
 };

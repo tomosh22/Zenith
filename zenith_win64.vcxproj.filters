@@ -304,6 +304,9 @@
     <ClCompile Include="Zenith\Flux\Flux_Graphics.cpp">
       <Filter>Zenith\Flux</Filter>
     </ClCompile>
+    <ClCompile Include="Zenith\Flux\Flux_Material.cpp">
+      <Filter>Zenith\Flux</Filter>
+    </ClCompile>
     <ClCompile Include="Zenith\Flux\Flux_RenderTargets.cpp">
       <Filter>Zenith\Flux</Filter>
     </ClCompile>
@@ -733,6 +736,9 @@
       <Filter>Zenith\Flux</Filter>
     </ClInclude>
     <ClInclude Include="Zenith\Flux\Flux_Graphics.h">
+      <Filter>Zenith\Flux</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\Flux\Flux_Material.h">
       <Filter>Zenith\Flux</Filter>
     </ClInclude>
     <ClInclude Include="Zenith\Flux\Flux_RenderTargets.h">

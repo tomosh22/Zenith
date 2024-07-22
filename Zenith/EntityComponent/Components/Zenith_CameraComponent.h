@@ -26,6 +26,10 @@ public:
 	void OnUpdate(const float fDt) override;
 	void OnCreate() override {}
 
+	void GetPosition(Zenith_Maths::Vector3& xOut);
+
+	//#TO w = 0 for padding
+	void GetPosition(Zenith_Maths::Vector4& xOut);
 
 private:
 	float m_fNear = 0;

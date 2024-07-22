@@ -153,3 +153,16 @@ void Zenith_CameraBehaviour::OnUpdate(const float fDt)
 		m_xPosition.y += dMoveSpeed;
 	}
 }
+
+void Zenith_CameraBehaviour::GetPosition(Zenith_Maths::Vector3& xOut)
+{
+	xOut = m_xPosition;
+}
+
+void Zenith_CameraBehaviour::GetPosition(Zenith_Maths::Vector4& xOut)
+{
+	xOut.x = m_xPosition.x;
+	xOut.y = m_xPosition.y;
+	xOut.z = m_xPosition.z;
+	xOut.w = 0.;
+}
