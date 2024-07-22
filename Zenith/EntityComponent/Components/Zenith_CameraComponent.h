@@ -14,8 +14,8 @@ public:
 		CAMERA_TYPE_MAX
 	};
 	Zenith_CameraBehaviour() = delete;
-	Zenith_CameraBehaviour(Zenith_ScriptComponent& xScriptComponent);
-	~Zenith_CameraBehaviour() {}
+	Zenith_CameraBehaviour(Zenith_Entity& xParentEntity);
+	~Zenith_CameraBehaviour() = default;
 	void InitialisePerspective(const Zenith_Maths::Vector3& xPos, const float fPitch, const float fYaw, const float fFOV, const float fNear, const float fFar, const float fAspectRatio);
 	void BuildViewMatrix(Zenith_Maths::Matrix4& xOut) const;
 	void BuildProjectionMatrix(Zenith_Maths::Matrix4& xOut) const;
@@ -45,5 +45,5 @@ private:
 	Zenith_Maths::Vector3 m_xPosition = {0,0,0};
 	CameraType m_eType = CAMERA_TYPE_MAX;
 
-	Zenith_ScriptComponent& m_xScriptComponent;
+	Zenith_Entity m_xParentEntity;
 };
