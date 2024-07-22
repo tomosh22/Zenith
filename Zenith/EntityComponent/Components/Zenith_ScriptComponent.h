@@ -32,7 +32,7 @@ public:
 
 	template<typename T>
 	void SetBehaviour() {
-		m_pxScriptBehaviour = new T(*this);
+		m_pxScriptBehaviour = new T(m_xParentEntity);
 	}
 };
 

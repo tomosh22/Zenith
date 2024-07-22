@@ -4,8 +4,8 @@
 #include "Input/Zenith_Input.h"
 #include "Zenith_OS_Include.h"
 
-Zenith_CameraBehaviour::Zenith_CameraBehaviour(Zenith_ScriptComponent& xScriptComponent)
-	: m_xScriptComponent(xScriptComponent)
+Zenith_CameraBehaviour::Zenith_CameraBehaviour(Zenith_Entity& xParentEntity)
+	: m_xParentEntity(xParentEntity)
 {
 }
 
