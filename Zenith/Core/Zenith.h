@@ -30,6 +30,13 @@
 #define Zenith_Assert(x, ...)
 #endif
 
+#define ZENITH_USE_FINAL
+#ifdef ZENITH_USE_FINAL
+#define ZENITH_FINAL final
+#else
+#define ZENITH_FINAL
+#endif
+
 #define COUNT_OF(x) sizeof(x) / sizeof(x[0])
 
 #define STUBBED __debugbreak();

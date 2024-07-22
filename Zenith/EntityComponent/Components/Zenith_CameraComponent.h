@@ -2,7 +2,7 @@
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
 
-class Zenith_CameraBehaviour : Zenith_ScriptBehaviour
+class Zenith_CameraBehaviour ZENITH_FINAL : Zenith_ScriptBehaviour
 {
 	friend class Zenith_ScriptComponent;
 public:
@@ -23,8 +23,8 @@ public:
 	Zenith_Maths::Vector3 ScreenSpaceToWorldSpace(Zenith_Maths::Vector3 xScreenSpace);
 
 	void UpdateRotation(const float fDt);
-	void OnUpdate(const float fDt) override;
-	void OnCreate() override {}
+	void OnUpdate(const float fDt) ZENITH_FINAL override;
+	void OnCreate() ZENITH_FINAL override {}
 
 	void GetPosition(Zenith_Maths::Vector3& xOut);
 
