@@ -52,5 +52,6 @@ void Flux_Graphics::UploadFrameConstants()
 	xCamera.BuildViewMatrix(xConstants.m_xViewMat);
 	xCamera.BuildProjectionMatrix(xConstants.m_xProjMat);
 	xConstants.m_xViewProjMat = xConstants.m_xProjMat * xConstants.m_xViewMat;
+	xCamera.GetPosition(xConstants.m_xCamPos_Pad);
 	Flux_MemoryManager::UploadData(&s_xFrameConstantsBuffer, &xConstants, sizeof(Zenith_FrameConstants));
 }
