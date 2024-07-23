@@ -5,7 +5,7 @@
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Flux_Buffers.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
-#include "EntityComponent/Components/Zenith_CameraComponent.h"
+#include "EntityComponent/Components/Zenith_CameraBehaviour.h"
 
 Flux_TargetSetup Flux_Graphics::s_xFinalRenderTarget;
 Flux_Sampler Flux_Graphics::s_xDefaultSampler;

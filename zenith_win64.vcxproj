@@ -67,7 +67,7 @@
       <WarningLevel>Level4</WarningLevel>
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>NOMINMAX;SHADER_SOURCE_ROOT="c:/dev/zenith/Zenith/Flux/Shaders/";WIN64;ZENITH_DEBUG;ZENITH_VULKAN;ZENITH_WINDOWS;_CONSOLE;_DEBUG;%(PreprocessorDefinitions);$(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>middleware\entt-3.13.2\single_include;middleware\glfw-3.4.bin.win64\include;middleware\glm-master;middleware\reactphysics3d-0.10.1\include;middleware\vulkansdk\1.3.280.0\include;zenith;zenith\core;zenith\vulkan;zenith\windows</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>games;middleware\entt-3.13.2\single_include;middleware\glfw-3.4.bin.win64\include;middleware\glm-master;middleware\reactphysics3d-0.10.1\include;middleware\vulkansdk\1.3.280.0\include;zenith;zenith\core;zenith\vulkan;zenith\windows</AdditionalIncludeDirectories>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <TreatWarningAsError>false</TreatWarningAsError>
@@ -153,7 +153,7 @@
       <WarningLevel>Level4</WarningLevel>
       <Optimization>Full</Optimization>
       <PreprocessorDefinitions>NDEBUG;NOMINMAX;SHADER_SOURCE_ROOT="c:/dev/zenith/Zenith/Flux/Shaders/";WIN64;ZENITH_VULKAN;ZENITH_WINDOWS;_CONSOLE;%(PreprocessorDefinitions);$(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>middleware\entt-3.13.2\single_include;middleware\glfw-3.4.bin.win64\include;middleware\glm-master;middleware\reactphysics3d-0.10.1\include;middleware\vulkansdk\1.3.280.0\include;zenith;zenith\core;zenith\vulkan;zenith\windows</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>games;middleware\entt-3.13.2\single_include;middleware\glfw-3.4.bin.win64\include;middleware\glm-master;middleware\reactphysics3d-0.10.1\include;middleware\vulkansdk\1.3.280.0\include;zenith;zenith\core;zenith\vulkan;zenith\windows</AdditionalIncludeDirectories>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <TreatWarningAsError>false</TreatWarningAsError>
@@ -234,6 +234,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="Games\Test\Components\SphereMovement_Behaviour.h" />
     <ClInclude Include="Middleware\glfw-3.4.bin.WIN64\include\GLFW\glfw3.h" />
     <ClInclude Include="Middleware\glfw-3.4.bin.WIN64\include\GLFW\glfw3native.h" />
     <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\body\Body.h" />
@@ -350,7 +351,7 @@
     <ClInclude Include="Zenith\AssetHandling\Zenith_AssetHandler.h" />
     <ClInclude Include="Zenith\Core\Zenith.h" />
     <ClInclude Include="Zenith\Core\Zenith_Core.h" />
-    <ClInclude Include="Zenith\EntityComponent\Components\Zenith_CameraComponent.h" />
+    <ClInclude Include="Zenith\EntityComponent\Components\Zenith_CameraBehaviour.h" />
     <ClInclude Include="Zenith\EntityComponent\Components\Zenith_ModelComponent.h" />
     <ClInclude Include="Zenith\EntityComponent\Components\Zenith_ScriptComponent.h" />
     <ClInclude Include="Zenith\EntityComponent\Components\Zenith_TransformComponent.h" />
@@ -384,6 +385,7 @@
     <ClInclude Include="Zenith\Windows\Zenith_Windows_Window.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="Games\Test\Components\SphereMovement_Behaviour.cpp" />
     <ClCompile Include="Games\Test\Test.cpp" />
     <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\body\Body.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NotUsing</PrecompiledHeader>
@@ -739,7 +741,7 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="Zenith\Core\Zenith_Core.cpp" />
-    <ClCompile Include="Zenith\EntityComponent\Components\Zenith_CameraComponent.cpp" />
+    <ClCompile Include="Zenith\EntityComponent\Components\Zenith_CameraBehaviour.cpp" />
     <ClCompile Include="Zenith\EntityComponent\Components\Zenith_ModelComponent.cpp" />
     <ClCompile Include="Zenith\EntityComponent\Components\Zenith_ScriptComponent.cpp" />
     <ClCompile Include="Zenith\EntityComponent\Components\Zenith_TransformComponent.cpp" />

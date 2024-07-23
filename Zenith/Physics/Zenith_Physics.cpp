@@ -1,6 +1,6 @@
 #include "Zenith.h"
 #include "Physics/Zenith_Physics.h"
-#include "EntityComponent/Components/Zenith_CameraComponent.h"
+#include "EntityComponent/Components/Zenith_CameraBehaviour.h"
 #include "Zenith_OS_Include.h"
 
 

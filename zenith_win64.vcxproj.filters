@@ -1,6 +1,9 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
+    <ClCompile Include="Games\Test\Components\SphereMovement_Behaviour.cpp">
+      <Filter>Games\Test\Components</Filter>
+    </ClCompile>
     <ClCompile Include="Games\Test\Test.cpp">
       <Filter>Games\Test</Filter>
     </ClCompile>
@@ -274,7 +277,7 @@
     <ClCompile Include="Zenith\Core\Zenith_Core.cpp">
       <Filter>Zenith\Core</Filter>
     </ClCompile>
-    <ClCompile Include="Zenith\EntityComponent\Components\Zenith_CameraComponent.cpp">
+    <ClCompile Include="Zenith\EntityComponent\Components\Zenith_CameraBehaviour.cpp">
       <Filter>Zenith\EntityComponent\Components</Filter>
     </ClCompile>
     <ClCompile Include="Zenith\EntityComponent\Components\Zenith_ModelComponent.cpp">
@@ -357,6 +360,9 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Games\Test\Components\SphereMovement_Behaviour.h">
+      <Filter>Games\Test\Components</Filter>
+    </ClInclude>
     <ClInclude Include="Middleware\glfw-3.4.bin.WIN64\include\GLFW\glfw3.h">
       <Filter>Middleware\glfw-3.4.bin.WIN64\include\GLFW</Filter>
     </ClInclude>
@@ -705,7 +711,7 @@
     <ClInclude Include="Zenith\Core\Zenith_Core.h">
       <Filter>Zenith\Core</Filter>
     </ClInclude>
-    <ClInclude Include="Zenith\EntityComponent\Components\Zenith_CameraComponent.h">
+    <ClInclude Include="Zenith\EntityComponent\Components\Zenith_CameraBehaviour.h">
       <Filter>Zenith\EntityComponent\Components</Filter>
     </ClInclude>
     <ClInclude Include="Zenith\EntityComponent\Components\Zenith_ModelComponent.h">
@@ -808,6 +814,9 @@
     </Filter>
     <Filter Include="Games\Test">
       <UniqueIdentifier>{cbfbdc38-e98c-599e-10d3-3282c5531581}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Games\Test\Components">
+      <UniqueIdentifier>{fd8cca08-abd5-26f2-8676-431bb0783af1}</UniqueIdentifier>
     </Filter>
     <Filter Include="Middleware">
       <UniqueIdentifier>{eebf12a1-b020-34d6-90e9-3e7c687338df}</UniqueIdentifier>

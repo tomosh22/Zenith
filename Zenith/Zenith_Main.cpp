@@ -7,20 +7,21 @@
 #include "Flux/StaticMeshes/Flux_StaticMeshes.h"
 #include "EntityComponent/Zenith_Scene.h"
 
-static float s_fDt = 0.;
 static std::chrono::high_resolution_clock::time_point s_xLastFrameTime;
 
-static void UpdateDt()
+static void UpdateTimers()
 {
 	std::chrono::high_resolution_clock::time_point xCurrentTime = std::chrono::high_resolution_clock::now();
 
-	s_fDt = std::chrono::duration_cast<std::chrono::nanoseconds>(xCurrentTime - s_xLastFrameTime).count() / 1.e9;
+	Zenith_Core::SetDt(std::chrono::duration_cast<std::chrono::nanoseconds>(xCurrentTime - s_xLastFrameTime).count() / 1.e9);
 	s_xLastFrameTime = xCurrentTime;
+
+	Zenith_Core::AddTimePassed(Zenith_Core::GetDt());
 }
 
 void Zenith_MainLoop()
 {
-	UpdateDt();
+	UpdateTimers();
 	Zenith_Window::GetInstance()->BeginFrame();
 	Flux_MemoryManager::BeginFrame();
 	if (!Flux_Swapchain::BeginFrame())
@@ -30,7 +31,7 @@ void Zenith_MainLoop()
 	}
 	Flux_PlatformAPI::BeginFrame();
 
-	Zenith_Scene::GetCurrentScene().Update(s_fDt);
+	Zenith_Scene::GetCurrentScene().Update(Zenith_Core::GetDt());
 	Flux_Graphics::UploadFrameConstants();
 	Flux_Skybox::Render();
 	Flux_StaticMeshes::Render();
