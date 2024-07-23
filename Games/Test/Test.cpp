@@ -1,11 +1,13 @@
 #include "Zenith.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_Entity.h"
-#include "EntityComponent/Components/Zenith_CameraComponent.h"
+#include "EntityComponent/Components/Zenith_CameraBehaviour.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "AssetHandling/Zenith_AssetHandler.h"
 #include "Flux/Flux_Material.h"
 #include "Flux/Flux_Graphics.h"
+
+#include "Test/Components/SphereMovement_Behaviour.h"
 
 static Zenith_Entity s_xGameController;
 static Zenith_Entity s_xSphere0;
@@ -75,15 +77,28 @@ void Zenith_Core::Project_Startup()
 
 	Flux_MeshGeometry& xSphereMesh = Zenith_AssetHandler::GetMesh("Sphere_Smooth");
 
-	s_xSphere0.Initialise(&xScene, "Sphere0");
-	s_xSphere0.AddComponent<Zenith_ModelComponent>(xSphereMesh, s_xCrystalMaterial);
-	Zenith_TransformComponent& xSphere0Trans = s_xSphere0.GetComponent<Zenith_TransformComponent>();
-	xSphere0Trans.SetPosition({ 10,0,10 });
-	xSphere0Trans.SetScale({ 10,10,10 });
+	{
+		s_xSphere0.Initialise(&xScene, "Sphere0");
+		s_xSphere0.AddComponent<Zenith_ModelComponent>(xSphereMesh, s_xCrystalMaterial);
+		Zenith_TransformComponent& xTrans = s_xSphere0.GetComponent<Zenith_TransformComponent>();
+		xTrans.SetScale({ 10,10,10 });
 
-	s_xSphere1.Initialise(&xScene, "Sphere1");
-	s_xSphere1.AddComponent<Zenith_ModelComponent>(xSphereMesh, s_xRockMaterial);
-	Zenith_TransformComponent& xSphere1Trans = s_xSphere1.GetComponent<Zenith_TransformComponent>();
-	xSphere1Trans.SetPosition({ -10,0,-10 });
-	xSphere1Trans.SetScale({ 10,10,10 });
+		Zenith_ScriptComponent& xScript = s_xSphere0.AddComponent<Zenith_ScriptComponent>();
+		xScript.SetBehaviour<SphereMovement_Behaviour>();
+		SphereMovement_Behaviour& xBehaviour = *(SphereMovement_Behaviour*)xScript.m_pxScriptBehaviour;
+		xBehaviour.SetInitialPosition({ 10.,0,10. });
+		xBehaviour.SetAmplitude(10.);
+	}
+	{
+		s_xSphere1.Initialise(&xScene, "Sphere1");
+		s_xSphere1.AddComponent<Zenith_ModelComponent>(xSphereMesh, s_xRockMaterial);
+		Zenith_TransformComponent& xTrans = s_xSphere1.GetComponent<Zenith_TransformComponent>();
+		xTrans.SetScale({ 10,10,10 });
+
+		Zenith_ScriptComponent& xScript = s_xSphere1.AddComponent<Zenith_ScriptComponent>();
+		xScript.SetBehaviour<SphereMovement_Behaviour>();
+		SphereMovement_Behaviour& xBehaviour = *(SphereMovement_Behaviour*)xScript.m_pxScriptBehaviour;
+		xBehaviour.SetInitialPosition({-10.,0,-10.});
+		xBehaviour.SetAmplitude(-10.);
+	}
 }

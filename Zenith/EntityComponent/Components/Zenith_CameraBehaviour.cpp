@@ -1,6 +1,6 @@
 #include "Zenith.h"
 
-#include "EntityComponent/Components/Zenith_CameraComponent.h"
+#include "EntityComponent/Components/Zenith_CameraBehaviour.h"
 #include "Input/Zenith_Input.h"
 #include "Zenith_OS_Include.h"
 

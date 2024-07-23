@@ -1,7 +1,7 @@
 #include "Zenith.h"
 #include "EntityComponent/Zenith_Entity.h"
 #include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Components/Zenith_CameraComponent.h"
+#include "EntityComponent/Components/Zenith_CameraBehaviour.h"
 
 Zenith_Scene Zenith_Scene::s_xCurrentScene;
 
