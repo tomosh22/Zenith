@@ -1,15 +1,16 @@
 #include "Zenith.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_Entity.h"
-#include "EntityComponent/Components/Zenith_CameraBehaviour.h"
+#include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "AssetHandling/Zenith_AssetHandler.h"
 #include "Flux/Flux_Material.h"
 #include "Flux/Flux_Graphics.h"
 
 #include "Test/Components/SphereMovement_Behaviour.h"
+#include "Test/Components/PlayerController_Behaviour.h"
 
-static Zenith_Entity s_xGameController;
+static Zenith_Entity s_xPlayer;
 static Zenith_Entity s_xSphere0;
 static Zenith_Entity s_xSphere1;
 
@@ -61,21 +62,30 @@ void Zenith_Core::Project_Startup()
 	LoadAssets();
 
 	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	s_xGameController.Initialise(&xScene, "Game Controller");
-	Zenith_ScriptComponent& xScript = s_xGameController.AddComponent<Zenith_ScriptComponent>();
-	xScript.SetBehaviour<Zenith_CameraBehaviour>();
-	Zenith_CameraBehaviour& xCamera = *(Zenith_CameraBehaviour*)xScript.m_pxScriptBehaviour;
+	s_xPlayer.Initialise(&xScene, "Game Controller");
+
+	Zenith_CameraComponent& xCamera = s_xPlayer.AddComponent<Zenith_CameraComponent>();
 	const Zenith_Maths::Vector3 xPos = { 0, 0, 0 };
 	const float fPitch = 0;
 	const float fYaw = 0;
 	const float fFOV = 45;
 	const float fNear = 1;
 	const float fFar = 10000;
-	const float fAspectRatio = 16./9.;
+	const float fAspectRatio = 16. / 9.;
 	xCamera.InitialisePerspective(xPos, fPitch, fYaw, fFOV, fNear, fFar, fAspectRatio);
-	xScene.SetMainCameraEntity(s_xGameController);
+	xScene.SetMainCameraEntity(s_xPlayer);
+
+	Zenith_ScriptComponent& xScript = s_xPlayer.AddComponent<Zenith_ScriptComponent>();
+	xScript.SetBehaviour<PlayerController_Behaviour>();
+
+	Zenith_TransformComponent& xTrans = s_xPlayer.GetComponent<Zenith_TransformComponent>();
+	xTrans.SetPosition({ 0,0,0 });
+	xTrans.SetScale({ 10,10,10 });
+	
 
 	Flux_MeshGeometry& xSphereMesh = Zenith_AssetHandler::GetMesh("Sphere_Smooth");
+
+	s_xPlayer.AddComponent<Zenith_ModelComponent>(xSphereMesh, s_xCrystalMaterial);
 
 	{
 		s_xSphere0.Initialise(&xScene, "Sphere0");

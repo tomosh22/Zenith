@@ -234,6 +234,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="Games\Test\Components\PlayerController_Behaviour.h" />
     <ClInclude Include="Games\Test\Components\SphereMovement_Behaviour.h" />
     <ClInclude Include="Middleware\glfw-3.4.bin.WIN64\include\GLFW\glfw3.h" />
     <ClInclude Include="Middleware\glfw-3.4.bin.WIN64\include\GLFW\glfw3native.h" />
@@ -351,7 +352,7 @@
     <ClInclude Include="Zenith\AssetHandling\Zenith_AssetHandler.h" />
     <ClInclude Include="Zenith\Core\Zenith.h" />
     <ClInclude Include="Zenith\Core\Zenith_Core.h" />
-    <ClInclude Include="Zenith\EntityComponent\Components\Zenith_CameraBehaviour.h" />
+    <ClInclude Include="Zenith\EntityComponent\Components\Zenith_CameraComponent.h" />
     <ClInclude Include="Zenith\EntityComponent\Components\Zenith_ModelComponent.h" />
     <ClInclude Include="Zenith\EntityComponent\Components\Zenith_ScriptComponent.h" />
     <ClInclude Include="Zenith\EntityComponent\Components\Zenith_TransformComponent.h" />
@@ -385,6 +386,7 @@
     <ClInclude Include="Zenith\Windows\Zenith_Windows_Window.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="Games\Test\Components\PlayerController_Behaviour.cpp" />
     <ClCompile Include="Games\Test\Components\SphereMovement_Behaviour.cpp" />
     <ClCompile Include="Games\Test\Test.cpp" />
     <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\body\Body.cpp">
@@ -741,7 +743,7 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Create</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="Zenith\Core\Zenith_Core.cpp" />
-    <ClCompile Include="Zenith\EntityComponent\Components\Zenith_CameraBehaviour.cpp" />
+    <ClCompile Include="Zenith\EntityComponent\Components\Zenith_CameraComponent.cpp" />
     <ClCompile Include="Zenith\EntityComponent\Components\Zenith_ModelComponent.cpp" />
     <ClCompile Include="Zenith\EntityComponent\Components\Zenith_ScriptComponent.cpp" />
     <ClCompile Include="Zenith\EntityComponent\Components\Zenith_TransformComponent.cpp" />

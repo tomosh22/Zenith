@@ -11,20 +11,43 @@ Zenith_TransformComponent::Zenith_TransformComponent(const std::string& strName,
 Zenith_TransformComponent::~Zenith_TransformComponent() {
 }
 
-void Zenith_TransformComponent::SetPosition(const Zenith_Maths::Vector3& xPos)
+void Zenith_TransformComponent::SetPosition(const Zenith_Maths::Vector3 xPos)
 {
 	m_xTransform.setPosition({xPos.x, xPos.y, xPos.z});
 }
 
-void Zenith_TransformComponent::SetRotation(const Zenith_Maths::Quat& xRot)
+void Zenith_TransformComponent::SetRotation(const Zenith_Maths::Quat xRot)
 {
 	m_xTransform.setOrientation({ xRot.x, xRot.y, xRot.z, xRot.w });
 }
 
-void Zenith_TransformComponent::SetScale(const Zenith_Maths::Vector3& xScale)
+void Zenith_TransformComponent::SetScale(const Zenith_Maths::Vector3 xScale)
 {
 	m_xScale = xScale;
 }
+
+void Zenith_TransformComponent::GetPosition(Zenith_Maths::Vector3& xPos)
+{
+	reactphysics3d::Vector3 xInternalPos = m_xTransform.getPosition();
+	xPos.x = xInternalPos.x;
+	xPos.y = xInternalPos.y;
+	xPos.z = xInternalPos.z;
+}
+
+void Zenith_TransformComponent::GetRotation(Zenith_Maths::Quat& xRot)
+{
+	reactphysics3d::Quaternion xInternalRot = m_xTransform.getOrientation();
+	xRot.x = xInternalRot.x;
+	xRot.y = xInternalRot.y;
+	xRot.z = xInternalRot.z;
+	xRot.w = xInternalRot.w;
+}
+
+void Zenith_TransformComponent::GetScale(Zenith_Maths::Vector3& xScale)
+{
+	xScale = m_xScale;
+}
+
 
 const reactphysics3d::Transform& const Zenith_TransformComponent::GetTransform()
 {

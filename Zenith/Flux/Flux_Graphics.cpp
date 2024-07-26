@@ -5,7 +5,7 @@
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Flux_Buffers.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
-#include "EntityComponent/Components/Zenith_CameraBehaviour.h"
+#include "EntityComponent/Components/Zenith_CameraComponent.h"
 
 Flux_TargetSetup Flux_Graphics::s_xFinalRenderTarget;
 Flux_Sampler Flux_Graphics::s_xDefaultSampler;
@@ -46,7 +46,7 @@ void Flux_Graphics::InitialiseRenderTargets()
 
 void Flux_Graphics::UploadFrameConstants()
 {
-	Zenith_CameraBehaviour& xCamera = Zenith_Scene::GetCurrentScene().GetMainCamera();
+	Zenith_CameraComponent& xCamera = Zenith_Scene::GetCurrentScene().GetMainCamera();
 
 	Zenith_FrameConstants xConstants;
 	xCamera.BuildViewMatrix(xConstants.m_xViewMat);
