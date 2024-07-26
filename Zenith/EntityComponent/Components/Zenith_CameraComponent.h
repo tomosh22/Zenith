@@ -2,34 +2,34 @@
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
 
-class Zenith_CameraBehaviour ZENITH_FINAL : Zenith_ScriptBehaviour
+class Zenith_CameraComponent
 {
 	friend class Zenith_ScriptComponent;
 public:
-	static constexpr double s_dMoveSpeed = 250;
 	enum CameraType
 	{
 		CAMERA_TYPE_PERSPECTIVE,
 		CAMERA_TYPE_ORTHOGRAPHIC,
 		CAMERA_TYPE_MAX
 	};
-	Zenith_CameraBehaviour() = delete;
-	Zenith_CameraBehaviour(Zenith_Entity& xParentEntity);
-	~Zenith_CameraBehaviour() = default;
+	Zenith_CameraComponent() = delete;
+	Zenith_CameraComponent(Zenith_Entity& xParentEntity);
+	~Zenith_CameraComponent() = default;
 	void InitialisePerspective(const Zenith_Maths::Vector3& xPos, const float fPitch, const float fYaw, const float fFOV, const float fNear, const float fFar, const float fAspectRatio);
 	void BuildViewMatrix(Zenith_Maths::Matrix4& xOut) const;
 	void BuildProjectionMatrix(Zenith_Maths::Matrix4& xOut) const;
 
 	Zenith_Maths::Vector3 ScreenSpaceToWorldSpace(Zenith_Maths::Vector3 xScreenSpace);
 
-	void UpdateRotation(const float fDt);
-	void OnUpdate(const float fDt) ZENITH_FINAL override;
-	void OnCreate() ZENITH_FINAL override {}
-
+	void SetPosition(const Zenith_Maths::Vector3 xPos) { m_xPosition = xPos; }
 	void GetPosition(Zenith_Maths::Vector3& xOut);
-
 	//#TO w = 0 for padding
 	void GetPosition(Zenith_Maths::Vector4& xOut);
+
+	double GetPitch() { return m_fPitch; }
+	void SetPitch(const double fPitch) { m_fPitch = fPitch; }
+	double GetYaw() { return m_fYaw; }
+	void SetYaw(const double fYaw) { m_fYaw = fYaw; }
 
 private:
 	float m_fNear = 0;

@@ -1,6 +1,9 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
+    <ClCompile Include="Games\Test\Components\PlayerController_Behaviour.cpp">
+      <Filter>Games\Test\Components</Filter>
+    </ClCompile>
     <ClCompile Include="Games\Test\Components\SphereMovement_Behaviour.cpp">
       <Filter>Games\Test\Components</Filter>
     </ClCompile>
@@ -277,7 +280,7 @@
     <ClCompile Include="Zenith\Core\Zenith_Core.cpp">
       <Filter>Zenith\Core</Filter>
     </ClCompile>
-    <ClCompile Include="Zenith\EntityComponent\Components\Zenith_CameraBehaviour.cpp">
+    <ClCompile Include="Zenith\EntityComponent\Components\Zenith_CameraComponent.cpp">
       <Filter>Zenith\EntityComponent\Components</Filter>
     </ClCompile>
     <ClCompile Include="Zenith\EntityComponent\Components\Zenith_ModelComponent.cpp">
@@ -360,6 +363,9 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="Games\Test\Components\PlayerController_Behaviour.h">
+      <Filter>Games\Test\Components</Filter>
+    </ClInclude>
     <ClInclude Include="Games\Test\Components\SphereMovement_Behaviour.h">
       <Filter>Games\Test\Components</Filter>
     </ClInclude>
@@ -711,7 +717,7 @@
     <ClInclude Include="Zenith\Core\Zenith_Core.h">
       <Filter>Zenith\Core</Filter>
     </ClInclude>
-    <ClInclude Include="Zenith\EntityComponent\Components\Zenith_CameraBehaviour.h">
+    <ClInclude Include="Zenith\EntityComponent\Components\Zenith_CameraComponent.h">
       <Filter>Zenith\EntityComponent\Components</Filter>
     </ClInclude>
     <ClInclude Include="Zenith\EntityComponent\Components\Zenith_ModelComponent.h">

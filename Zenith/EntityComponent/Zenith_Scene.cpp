@@ -1,7 +1,7 @@
 #include "Zenith.h"
 #include "EntityComponent/Zenith_Entity.h"
 #include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Components/Zenith_CameraBehaviour.h"
+#include "EntityComponent/Components/Zenith_CameraComponent.h"
 
 Zenith_Scene Zenith_Scene::s_xCurrentScene;
 
@@ -255,8 +255,8 @@ void Zenith_Scene::SetMainCameraEntity(Zenith_Entity& xEntity)
 	m_uMainCameraEntity = xEntity.GetEntityID();
 }
 
-Zenith_CameraBehaviour& Zenith_Scene::GetMainCamera()
+Zenith_CameraComponent& Zenith_Scene::GetMainCamera()
 {
 	//#TO_TODO: what happens if an entity has more than one script component
-	return *(Zenith_CameraBehaviour*)GetComponentFromEntity<Zenith_ScriptComponent>(m_uMainCameraEntity).m_pxScriptBehaviour;
+	return GetComponentFromEntity<Zenith_CameraComponent>(m_uMainCameraEntity);
 }

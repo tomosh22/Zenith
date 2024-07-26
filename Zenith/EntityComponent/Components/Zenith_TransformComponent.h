@@ -8,9 +8,14 @@ public:
 	Zenith_TransformComponent(const std::string& strName, Zenith_Entity& xEntity);
 	~Zenith_TransformComponent();
 	void Serialize(std::ofstream& xOut);
-	void SetPosition(const Zenith_Maths::Vector3& xPos);
-	void SetRotation(const Zenith_Maths::Quat& xRot);
-	void SetScale(const Zenith_Maths::Vector3& xScale);
+
+	void SetPosition(const Zenith_Maths::Vector3 xPos);
+	void SetRotation(const Zenith_Maths::Quat xRot);
+	void SetScale(const Zenith_Maths::Vector3 xScale);
+
+	void GetPosition(Zenith_Maths::Vector3& xPos);
+	void GetRotation(Zenith_Maths::Quat& xRot);
+	void GetScale(Zenith_Maths::Vector3& xScale);
 
 	const reactphysics3d::Transform& const GetTransform();
 	Zenith_Maths::Vector3 m_xScale = {1.,1.,1.};

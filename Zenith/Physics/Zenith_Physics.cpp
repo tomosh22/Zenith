@@ -1,6 +1,6 @@
 #include "Zenith.h"
 #include "Physics/Zenith_Physics.h"
-#include "EntityComponent/Components/Zenith_CameraBehaviour.h"
+#include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "Zenith_OS_Include.h"
 
 
@@ -32,7 +32,7 @@ void Zenith_Physics::ResetPhysics() {
 	s_pxPhysicsWorld->setEventListener(&s_xEventListener);
 }
 
-reactphysics3d::Ray Zenith_Physics::BuildRayFromMouse(Zenith_CameraBehaviour& xCam)
+reactphysics3d::Ray Zenith_Physics::BuildRayFromMouse(Zenith_CameraComponent& xCam)
 {
 
 	Zenith_Maths::Vector2_64 xMousePos;

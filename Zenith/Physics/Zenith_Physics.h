@@ -1,7 +1,7 @@
 #pragma once
 #include "reactphysics3d/reactphysics3d.h"
 #include "glm/glm.hpp"
-class Zenith_CameraBehaviour;
+class Zenith_CameraComponent;
 class Zenith_Physics
 {
 public:
@@ -35,7 +35,7 @@ public:
 	void UpdatePhysics(float fDt);
 	void ResetPhysics();
 
-	reactphysics3d::Ray BuildRayFromMouse(Zenith_CameraBehaviour& xCam);
+	reactphysics3d::Ray BuildRayFromMouse(Zenith_CameraComponent& xCam);
 
 	static double s_fTimestepAccumulator;
 	//#TO_TODO: make this a define
