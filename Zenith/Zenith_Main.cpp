@@ -6,6 +6,7 @@
 #include "Flux/Skybox/Flux_Skybox.h"
 #include "Flux/StaticMeshes/Flux_StaticMeshes.h"
 #include "EntityComponent/Zenith_Scene.h"
+#include "Physics/Zenith_Physics.h"
 
 static std::chrono::high_resolution_clock::time_point s_xLastFrameTime;
 
@@ -32,6 +33,7 @@ void Zenith_MainLoop()
 	Flux_PlatformAPI::BeginFrame();
 
 	Zenith_Scene::GetCurrentScene().Update(Zenith_Core::GetDt());
+	Zenith_Physics::Update(Zenith_Core::GetDt());
 	Flux_Graphics::UploadFrameConstants();
 	Flux_Skybox::Render();
 	Flux_StaticMeshes::Render();
@@ -48,6 +50,7 @@ int main()
 	s_xLastFrameTime = std::chrono::high_resolution_clock::now();
 	Zenith_Window::Inititalise("Zenith", 1280, 720);
 	Flux::EarlyInitialise();
+	Zenith_Physics::Initialise();
 	Zenith_Core::Project_Startup();
 	Flux::LateInitialise();
 	

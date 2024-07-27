@@ -3,6 +3,7 @@
 #include "EntityComponent/Zenith_Entity.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
+#include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "AssetHandling/Zenith_AssetHandler.h"
 #include "Flux/Flux_Material.h"
 #include "Flux/Flux_Graphics.h"
@@ -91,24 +92,30 @@ void Zenith_Core::Project_Startup()
 		s_xSphere0.Initialise(&xScene, "Sphere0");
 		s_xSphere0.AddComponent<Zenith_ModelComponent>(xSphereMesh, s_xCrystalMaterial);
 		Zenith_TransformComponent& xTrans = s_xSphere0.GetComponent<Zenith_TransformComponent>();
+		xTrans.SetPosition({ 10,10,10 });
 		xTrans.SetScale({ 10,10,10 });
 
 		Zenith_ScriptComponent& xScript = s_xSphere0.AddComponent<Zenith_ScriptComponent>();
 		xScript.SetBehaviour<SphereMovement_Behaviour>();
 		SphereMovement_Behaviour& xBehaviour = *(SphereMovement_Behaviour*)xScript.m_pxScriptBehaviour;
-		xBehaviour.SetInitialPosition({ 10.,0,10. });
-		xBehaviour.SetAmplitude(10.);
+		xBehaviour.SetDesiredPosition({ 20.,0,20. });
+
+		Zenith_ColliderComponent& xCollider = s_xSphere0.AddComponent<Zenith_ColliderComponent>();
+		xCollider.AddCollider(COLLISION_VOLUME_TYPE_SPHERE, RIGIDBODY_TYPE_DYNAMIC);
 	}
 	{
 		s_xSphere1.Initialise(&xScene, "Sphere1");
 		s_xSphere1.AddComponent<Zenith_ModelComponent>(xSphereMesh, s_xRockMaterial);
 		Zenith_TransformComponent& xTrans = s_xSphere1.GetComponent<Zenith_TransformComponent>();
+		xTrans.SetPosition({ -10,10,-10 });
 		xTrans.SetScale({ 10,10,10 });
 
 		Zenith_ScriptComponent& xScript = s_xSphere1.AddComponent<Zenith_ScriptComponent>();
 		xScript.SetBehaviour<SphereMovement_Behaviour>();
 		SphereMovement_Behaviour& xBehaviour = *(SphereMovement_Behaviour*)xScript.m_pxScriptBehaviour;
-		xBehaviour.SetInitialPosition({-10.,0,-10.});
-		xBehaviour.SetAmplitude(-10.);
+		xBehaviour.SetDesiredPosition({-20.,0,-20.});
+
+		Zenith_ColliderComponent& xCollider = s_xSphere1.AddComponent<Zenith_ColliderComponent>();
+		xCollider.AddCollider(COLLISION_VOLUME_TYPE_SPHERE, RIGIDBODY_TYPE_DYNAMIC);
 	}
 }

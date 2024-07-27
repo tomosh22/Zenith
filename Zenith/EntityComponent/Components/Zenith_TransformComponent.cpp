@@ -13,12 +13,32 @@ Zenith_TransformComponent::~Zenith_TransformComponent() {
 
 void Zenith_TransformComponent::SetPosition(const Zenith_Maths::Vector3 xPos)
 {
-	m_xTransform.setPosition({xPos.x, xPos.y, xPos.z});
+	if (m_pxRigidBody)
+	{
+		//#TO making a copy
+		reactphysics3d::Transform xTrans = m_pxRigidBody->getTransform();
+		xTrans.setPosition({xPos.x, xPos.y, xPos.z});
+		m_pxRigidBody->setTransform(xTrans);
+	}
+	else
+	{
+		m_xTransform.setPosition({ xPos.x, xPos.y, xPos.z });
+	}
 }
 
 void Zenith_TransformComponent::SetRotation(const Zenith_Maths::Quat xRot)
 {
-	m_xTransform.setOrientation({ xRot.x, xRot.y, xRot.z, xRot.w });
+	if (m_pxRigidBody)
+	{
+		//#TO making a copy
+		reactphysics3d::Transform xTrans = m_pxRigidBody->getTransform();
+		xTrans.setOrientation({ xRot.x, xRot.y, xRot.z, xRot.w });
+		m_pxRigidBody->setTransform(xTrans);
+	}
+	else
+	{
+		m_xTransform.setOrientation({ xRot.x, xRot.y, xRot.z, xRot.w });
+	}
 }
 
 void Zenith_TransformComponent::SetScale(const Zenith_Maths::Vector3 xScale)
@@ -28,19 +48,46 @@ void Zenith_TransformComponent::SetScale(const Zenith_Maths::Vector3 xScale)
 
 void Zenith_TransformComponent::GetPosition(Zenith_Maths::Vector3& xPos)
 {
-	reactphysics3d::Vector3 xInternalPos = m_xTransform.getPosition();
-	xPos.x = xInternalPos.x;
-	xPos.y = xInternalPos.y;
-	xPos.z = xInternalPos.z;
+	
+
+	if (m_pxRigidBody)
+	{
+		//#TO making a copy
+		reactphysics3d::Transform xTrans = m_pxRigidBody->getTransform();
+		reactphysics3d::Vector3 xInternalPos = xTrans.getPosition();
+		xPos.x = xInternalPos.x;
+		xPos.y = xInternalPos.y;
+		xPos.z = xInternalPos.z;
+	}
+	else
+	{
+		reactphysics3d::Vector3 xInternalPos = m_xTransform.getPosition();
+		xPos.x = xInternalPos.x;
+		xPos.y = xInternalPos.y;
+		xPos.z = xInternalPos.z;
+	}
 }
 
 void Zenith_TransformComponent::GetRotation(Zenith_Maths::Quat& xRot)
 {
-	reactphysics3d::Quaternion xInternalRot = m_xTransform.getOrientation();
-	xRot.x = xInternalRot.x;
-	xRot.y = xInternalRot.y;
-	xRot.z = xInternalRot.z;
-	xRot.w = xInternalRot.w;
+	if (m_pxRigidBody)
+	{
+		//#TO making a copy
+		reactphysics3d::Transform xTrans = m_pxRigidBody->getTransform();
+		reactphysics3d::Quaternion xInternalRot = xTrans.getOrientation();
+		xRot.x = xInternalRot.x;
+		xRot.y = xInternalRot.y;
+		xRot.z = xInternalRot.z;
+		xRot.w = xInternalRot.w;
+	}
+	else
+	{
+		reactphysics3d::Quaternion xInternalRot = m_xTransform.getOrientation();
+		xRot.x = xInternalRot.x;
+		xRot.y = xInternalRot.y;
+		xRot.z = xInternalRot.z;
+		xRot.w = xInternalRot.w;
+	}
 }
 
 void Zenith_TransformComponent::GetScale(Zenith_Maths::Vector3& xScale)

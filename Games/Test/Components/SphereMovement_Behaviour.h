@@ -20,12 +20,10 @@ public:
 	void OnUpdate(const float fDt) ZENITH_FINAL override;
 	void OnCreate() ZENITH_FINAL override {}
 
-	void SetInitialPosition(const Zenith_Maths::Vector3& xPos) { m_xInitialPosition = xPos; }
-	void SetAmplitude(const float fAmp) { m_fAmplitude = fAmp; }
+	void SetDesiredPosition(const Zenith_Maths::Vector3& xPos) { m_xDesiredPosition = xPos; }
 
 private:
-	Zenith_Maths::Vector3 m_xInitialPosition = { 0,0,0 };
-	float m_fAmplitude = 0.;
+	Zenith_Maths::Vector3 m_xDesiredPosition = { 0,0,0 };
 
 	Zenith_Entity m_xParentEntity;
 };

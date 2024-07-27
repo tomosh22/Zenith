@@ -10,14 +10,14 @@ double Zenith_Physics::s_fTimestepAccumulator = 0;
 Zenith_Physics::PhysicsEventListener Zenith_Physics::s_xEventListener;
 
 
-void Zenith_Physics::InitPhysics()
+void Zenith_Physics::Initialise()
 {
 	s_pxPhysicsWorld = s_xPhysicsCommon.createPhysicsWorld();
 	s_pxPhysicsWorld->setGravity({ 0,-9.81,0 });
 	s_pxPhysicsWorld->setEventListener(&s_xEventListener);
 }
 
-void Zenith_Physics::UpdatePhysics(float fDt) {
+void Zenith_Physics::Update(float fDt) {
 	s_fTimestepAccumulator += fDt;
 	while (s_fTimestepAccumulator > s_fDesiredFramerate) {
 		s_pxPhysicsWorld->update(s_fDesiredFramerate);
@@ -25,7 +25,7 @@ void Zenith_Physics::UpdatePhysics(float fDt) {
 	}
 }
 
-void Zenith_Physics::ResetPhysics() {
+void Zenith_Physics::Reset() {
 	s_xPhysicsCommon.destroyPhysicsWorld(s_pxPhysicsWorld);
 	s_pxPhysicsWorld = s_xPhysicsCommon.createPhysicsWorld();
 	s_pxPhysicsWorld->setGravity({ 0,-9.81,0 });
@@ -69,7 +69,6 @@ reactphysics3d::Ray Zenith_Physics::BuildRayFromMouse(Zenith_CameraComponent& xC
 Zenith_Physics::PhysicsEventListener::PhysicsEventListener() {}
 
 void Zenith_Physics::PhysicsEventListener::onContact(const CollisionCallback::CallbackData& xCallbackData) {
-	STUBBED
 #if 0
 	Application* pxApp = Application::GetInstance();
 	for (uint32_t i = 0; i < xCallbackData.getNbContactPairs(); i++) {
