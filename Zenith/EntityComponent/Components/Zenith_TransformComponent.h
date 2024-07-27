@@ -26,7 +26,7 @@ public:
 	std::string m_strName;
 		
 private:
-	friend class ColliderComponent;
+	friend class Zenith_ColliderComponent;
 	reactphysics3d::Transform& GetTransform_Unsafe();
 	reactphysics3d::Transform m_xTransform;
 

@@ -2,38 +2,39 @@
 #include "reactphysics3d/reactphysics3d.h"
 #include "glm/glm.hpp"
 class Zenith_CameraComponent;
+
+enum CollisionVolumeType
+{
+	COLLISION_VOLUME_TYPE_AABB,
+	COLLISION_VOLUME_TYPE_OBB,
+	COLLISION_VOLUME_TYPE_SPHERE,
+	COLLISION_VOLUME_TYPE_CAPSULE,
+	COLLISION_VOLUME_TYPE_TERRAIN
+};
+
+enum CollisionEventType
+{
+	COLLISION_EVENT_TYPE_START,
+	COLLISION_EVENT_TYPE_EXIT,
+	COLLISION_EVENT_TYPE_STAY
+};
+
+enum RigidBodyType
+{
+	RIGIDBODY_TYPE_DYNAMIC,
+	RIGIDBODY_TYPE_STATIC
+};
+
 class Zenith_Physics
 {
 public:
-	enum CollisionVolumeType
-	{
-		COLLISION_VOLUME_TYPE_AABB,
-		COLLISION_VOLUME_TYPE_OBB,
-		COLLISION_VOLUME_TYPE_SPHERE,
-		COLLISION_VOLUME_TYPE_CAPSULE,
-		COLLISION_VOLUME_TYPE_TERRAIN
-	};
-
-	enum CollisionEventType
-	{
-		COLLISION_EVENT_TYPE_START,
-		COLLISION_EVENT_TYPE_EXIT,
-		COLLISION_EVENT_TYPE_STAY
-	};
-
-	enum RigidBodyType 
-	{
-		RIGIDBODY_TYPE_DYNAMIC,
-		RIGIDBODY_TYPE_STATIC
-	};
-
 	static reactphysics3d::PhysicsCommon s_xPhysicsCommon;
 	static reactphysics3d::PhysicsWorld* s_pxPhysicsWorld;
 
 
-	void InitPhysics();
-	void UpdatePhysics(float fDt);
-	void ResetPhysics();
+	static void Initialise();
+	static void Update(float fDt);
+	static void Reset();
 
 	reactphysics3d::Ray BuildRayFromMouse(Zenith_CameraComponent& xCam);
 
