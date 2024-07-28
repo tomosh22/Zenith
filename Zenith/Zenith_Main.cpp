@@ -32,8 +32,8 @@ void Zenith_MainLoop()
 	}
 	Flux_PlatformAPI::BeginFrame();
 
-	Zenith_Scene::GetCurrentScene().Update(Zenith_Core::GetDt());
 	Zenith_Physics::Update(Zenith_Core::GetDt());
+	Zenith_Scene::GetCurrentScene().Update(Zenith_Core::GetDt());
 	Flux_Graphics::UploadFrameConstants();
 	Flux_Skybox::Render();
 	Flux_StaticMeshes::Render();

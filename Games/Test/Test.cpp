@@ -76,12 +76,18 @@ void Zenith_Core::Project_Startup()
 	xCamera.InitialisePerspective(xPos, fPitch, fYaw, fFOV, fNear, fFar, fAspectRatio);
 	xScene.SetMainCameraEntity(s_xPlayer);
 
+	Zenith_TransformComponent& xTrans = s_xPlayer.GetComponent<Zenith_TransformComponent>();
+	xTrans.SetPosition({ 100,0,100 });
+	xTrans.SetScale({ 10,10,10 });
+
+	Zenith_ColliderComponent& xCollider = s_xPlayer.AddComponent<Zenith_ColliderComponent>();
+	xCollider.AddCollider(COLLISION_VOLUME_TYPE_SPHERE, RIGIDBODY_TYPE_DYNAMIC);
+	xTrans.m_pxRigidBody->enableGravity(false);
+
 	Zenith_ScriptComponent& xScript = s_xPlayer.AddComponent<Zenith_ScriptComponent>();
 	xScript.SetBehaviour<PlayerController_Behaviour>();
 
-	Zenith_TransformComponent& xTrans = s_xPlayer.GetComponent<Zenith_TransformComponent>();
-	xTrans.SetPosition({ 0,0,0 });
-	xTrans.SetScale({ 10,10,10 });
+	
 	
 
 	Flux_MeshGeometry& xSphereMesh = Zenith_AssetHandler::GetMesh("Sphere_Smooth");

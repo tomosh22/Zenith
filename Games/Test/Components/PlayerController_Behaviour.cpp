@@ -2,15 +2,17 @@
 
 #include "Test/Components/PlayerController_Behaviour.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
+#include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "Input/Zenith_Input.h"
 
 PlayerController_Behaviour::PlayerController_Behaviour(Zenith_Entity& xParentEntity)
 	: m_xParentEntity(xParentEntity)
 {
+	Zenith_Assert(m_xParentEntity.HasComponent<Zenith_ColliderComponent>(), "");
 }
 
 
-void UpdateCameraRotation(const float fDt, Zenith_CameraComponent& xCamera)
+void UpdateCameraRotation(Zenith_CameraComponent& xCamera)
 {
 	static Zenith_Maths::Vector2_64 s_xPreviousMousePos = { FLT_MAX,FLT_MAX };
 
@@ -52,58 +54,49 @@ void PlayerController_Behaviour::OnUpdate(const float fDt)
 	Zenith_TransformComponent& xTrans = m_xParentEntity.GetComponent<Zenith_TransformComponent>();
 	Zenith_CameraComponent& xCamera = m_xParentEntity.GetComponent<Zenith_CameraComponent>();
 
-	const double dMoveSpeed = fDt * s_dMoveSpeed;
+	//#TO i don't think i need to multiply by fDt? physics update should handle frame rate inconsistencies right?
+	const double dMoveSpeed = s_dMoveSpeed;
 
-	UpdateCameraRotation(fDt, xCamera);
+	UpdateCameraRotation(xCamera);
 
-	Zenith_Maths::Vector3 xPos;
+	Zenith_Maths::Vector3 xFinalVelocity(0,0,0);
 
 	if (Zenith_Input::IsKeyDown(ZENITH_KEY_W))
 	{
 		Zenith_Maths::Matrix4_64 xRotation = glm::rotate(xCamera.GetYaw(), Zenith_Maths::Vector3_64(0, 1, 0));
 		Zenith_Maths::Vector4_64 xResult = xRotation * Zenith_Maths::Vector4(0, 0, -1, 1) * dMoveSpeed;
-		xTrans.GetPosition(xPos);
-		xPos += Zenith_Maths::Vector3(xResult);
-		xTrans.SetPosition(xPos);
+		xFinalVelocity += Zenith_Maths::Vector3(xResult);
 	}
 	if (Zenith_Input::IsKeyDown(ZENITH_KEY_S))
 	{
 		Zenith_Maths::Matrix4_64 xRotation = glm::rotate(xCamera.GetYaw(), Zenith_Maths::Vector3_64(0, 1, 0));
 		Zenith_Maths::Vector4_64 xResult = xRotation * Zenith_Maths::Vector4(0, 0, -1, 1) * dMoveSpeed;
-		xTrans.GetPosition(xPos);
-		xPos -= Zenith_Maths::Vector3(xResult);
-		xTrans.SetPosition(xPos);
+		xFinalVelocity -= Zenith_Maths::Vector3(xResult);
 	}
-
 	if (Zenith_Input::IsKeyDown(ZENITH_KEY_A))
 	{
 		Zenith_Maths::Matrix4_64 xRotation = glm::rotate(xCamera.GetYaw(), Zenith_Maths::Vector3_64(0, 1, 0));
 		Zenith_Maths::Vector4_64 xResult = xRotation * Zenith_Maths::Vector4(-1, 0, 0, 1) * dMoveSpeed;
-		xTrans.GetPosition(xPos);
-		xPos += Zenith_Maths::Vector3(xResult);
-		xTrans.SetPosition(xPos);
+		xFinalVelocity += Zenith_Maths::Vector3(xResult);
 	}
 	if (Zenith_Input::IsKeyDown(ZENITH_KEY_D))
 	{
 		Zenith_Maths::Matrix4_64 xRotation = glm::rotate(xCamera.GetYaw(), Zenith_Maths::Vector3_64(0, 1, 0));
 		Zenith_Maths::Vector4_64 xResult = xRotation * Zenith_Maths::Vector4(-1, 0, 0, 1) * dMoveSpeed;
-		xTrans.GetPosition(xPos);
-		xPos -= Zenith_Maths::Vector3(xResult);
-		xTrans.SetPosition(xPos);
+		xFinalVelocity -= Zenith_Maths::Vector3(xResult);
 	}
-
 	if (Zenith_Input::IsKeyDown(ZENITH_KEY_LEFT_SHIFT))
 	{
-		xTrans.GetPosition(xPos);
-		xPos.y -= dMoveSpeed;
-		xTrans.SetPosition(xPos);
+		xFinalVelocity.y -= dMoveSpeed;
 	}
 	if (Zenith_Input::IsKeyDown(ZENITH_KEY_SPACE))
 	{
-		xTrans.GetPosition(xPos);
-		xPos.y += dMoveSpeed;
-		xTrans.SetPosition(xPos);
+		xFinalVelocity.y += dMoveSpeed;
 	}
+
+	xTrans.m_pxRigidBody->setLinearVelocity({ xFinalVelocity.x, xFinalVelocity.y, xFinalVelocity.z });
+
+	Zenith_Maths::Vector3 xPos;
 	xTrans.GetPosition(xPos);
 	xCamera.SetPosition(xPos + Zenith_Maths::Vector3(0, 15, 0));
 }
