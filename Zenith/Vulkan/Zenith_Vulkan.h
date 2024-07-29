@@ -98,7 +98,9 @@ public:
 
 	static void Initialise();
 	static void CreateInstance();
+#ifdef VCE_DEBUG
 	static void CreateDebugMessenger();
+#endif
 	static void CreateSurface();
 	static void CreatePhysicalDevice();
 	static void CreateQueueFamilies();

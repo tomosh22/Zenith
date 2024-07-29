@@ -292,6 +292,9 @@
     <ClCompile Include="Zenith\EntityComponent\Components\Zenith_ScriptComponent.cpp">
       <Filter>Zenith\EntityComponent\Components</Filter>
     </ClCompile>
+    <ClCompile Include="Zenith\EntityComponent\Components\Zenith_TerrainComponent.cpp">
+      <Filter>Zenith\EntityComponent\Components</Filter>
+    </ClCompile>
     <ClCompile Include="Zenith\EntityComponent\Components\Zenith_TransformComponent.cpp">
       <Filter>Zenith\EntityComponent\Components</Filter>
     </ClCompile>
@@ -327,6 +330,9 @@
     </ClCompile>
     <ClCompile Include="Zenith\Flux\StaticMeshes\Flux_StaticMeshes.cpp">
       <Filter>Zenith\Flux\StaticMeshes</Filter>
+    </ClCompile>
+    <ClCompile Include="Zenith\Flux\Terrain\Flux_Terrain.cpp">
+      <Filter>Zenith\Flux\Terrain</Filter>
     </ClCompile>
     <ClCompile Include="Zenith\Input\Zenith_Input.cpp">
       <Filter>Zenith\Input</Filter>
@@ -732,6 +738,9 @@
     <ClInclude Include="Zenith\EntityComponent\Components\Zenith_ScriptComponent.h">
       <Filter>Zenith\EntityComponent\Components</Filter>
     </ClInclude>
+    <ClInclude Include="Zenith\EntityComponent\Components\Zenith_TerrainComponent.h">
+      <Filter>Zenith\EntityComponent\Components</Filter>
+    </ClInclude>
     <ClInclude Include="Zenith\EntityComponent\Components\Zenith_TransformComponent.h">
       <Filter>Zenith\EntityComponent\Components</Filter>
     </ClInclude>
@@ -776,6 +785,9 @@
     </ClInclude>
     <ClInclude Include="Zenith\Flux\StaticMeshes\Flux_StaticMeshes.h">
       <Filter>Zenith\Flux\StaticMeshes</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\Flux\Terrain\Flux_Terrain.h">
+      <Filter>Zenith\Flux\Terrain</Filter>
     </ClInclude>
     <ClInclude Include="Zenith\Input\Zenith_Input.h">
       <Filter>Zenith\Input</Filter>
@@ -979,6 +991,9 @@
     </Filter>
     <Filter Include="Zenith\Flux\StaticMeshes">
       <UniqueIdentifier>{1e1daf61-e02e-9bec-5720-d6e6cc8e49c4}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Zenith\Flux\Terrain">
+      <UniqueIdentifier>{8f50e9fb-4acd-475f-c23b-739763fb64b0}</UniqueIdentifier>
     </Filter>
     <Filter Include="Zenith\Input">
       <UniqueIdentifier>{1b1e3505-0bf9-c172-d173-56b6842be504}</UniqueIdentifier>

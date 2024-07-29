@@ -3,6 +3,8 @@
 #include "EntityComponent/Zenith_Entity.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
+#include "EntityComponent/Components/Zenith_TerrainComponent.h"
+#include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "AssetHandling/Zenith_AssetHandler.h"
 #include "Flux/Flux_Material.h"
@@ -14,6 +16,7 @@
 static Zenith_Entity s_xPlayer;
 static Zenith_Entity s_xSphere0;
 static Zenith_Entity s_xSphere1;
+static Zenith_Entity s_xTerrain[16][16];
 
 static Flux_Material s_xCrystalMaterial;
 static Flux_Material s_xRockMaterial;
@@ -56,6 +59,14 @@ void LoadAssets()
 		s_xRockMaterial.SetMetallic(&xMetallic);
 	}
 
+	for (uint32_t x = 0; x < 16; x++)
+	{
+		for (uint32_t y = 0; y < 16; y++)
+		{
+			std::string strSuffix = std::to_string(x) + "_" + std::to_string(y);
+			Zenith_AssetHandler::AddMesh(Zenith_GUID(), "Terrain" + strSuffix, std::string("C:/dev/Zenith/Games/Test/Assets/Terrain/" + strSuffix + ".zmsh").c_str());
+		}
+	}
 }
 
 void Zenith_Core::Project_Startup()
@@ -77,7 +88,7 @@ void Zenith_Core::Project_Startup()
 	xScene.SetMainCameraEntity(s_xPlayer);
 
 	Zenith_TransformComponent& xTrans = s_xPlayer.GetComponent<Zenith_TransformComponent>();
-	xTrans.SetPosition({ 100,0,100 });
+	xTrans.SetPosition({ 100,1000,100 });
 	xTrans.SetScale({ 10,10,10 });
 
 	Zenith_ColliderComponent& xCollider = s_xPlayer.AddComponent<Zenith_ColliderComponent>();
@@ -98,13 +109,13 @@ void Zenith_Core::Project_Startup()
 		s_xSphere0.Initialise(&xScene, "Sphere0");
 		s_xSphere0.AddComponent<Zenith_ModelComponent>(xSphereMesh, s_xCrystalMaterial);
 		Zenith_TransformComponent& xTrans = s_xSphere0.GetComponent<Zenith_TransformComponent>();
-		xTrans.SetPosition({ 10,10,10 });
+		xTrans.SetPosition({ 10,1010,10 });
 		xTrans.SetScale({ 10,10,10 });
 
 		Zenith_ScriptComponent& xScript = s_xSphere0.AddComponent<Zenith_ScriptComponent>();
 		xScript.SetBehaviour<SphereMovement_Behaviour>();
 		SphereMovement_Behaviour& xBehaviour = *(SphereMovement_Behaviour*)xScript.m_pxScriptBehaviour;
-		xBehaviour.SetDesiredPosition({ 20.,0,20. });
+		xBehaviour.SetDesiredPosition({ 20.,1000,20. });
 
 		Zenith_ColliderComponent& xCollider = s_xSphere0.AddComponent<Zenith_ColliderComponent>();
 		xCollider.AddCollider(COLLISION_VOLUME_TYPE_SPHERE, RIGIDBODY_TYPE_DYNAMIC);
@@ -113,15 +124,37 @@ void Zenith_Core::Project_Startup()
 		s_xSphere1.Initialise(&xScene, "Sphere1");
 		s_xSphere1.AddComponent<Zenith_ModelComponent>(xSphereMesh, s_xRockMaterial);
 		Zenith_TransformComponent& xTrans = s_xSphere1.GetComponent<Zenith_TransformComponent>();
-		xTrans.SetPosition({ -10,10,-10 });
+		xTrans.SetPosition({ -10,1010,-10 });
 		xTrans.SetScale({ 10,10,10 });
 
 		Zenith_ScriptComponent& xScript = s_xSphere1.AddComponent<Zenith_ScriptComponent>();
 		xScript.SetBehaviour<SphereMovement_Behaviour>();
 		SphereMovement_Behaviour& xBehaviour = *(SphereMovement_Behaviour*)xScript.m_pxScriptBehaviour;
-		xBehaviour.SetDesiredPosition({-20.,0,-20.});
+		xBehaviour.SetDesiredPosition({-20.,1000,-20.});
 
 		Zenith_ColliderComponent& xCollider = s_xSphere1.AddComponent<Zenith_ColliderComponent>();
 		xCollider.AddCollider(COLLISION_VOLUME_TYPE_SPHERE, RIGIDBODY_TYPE_DYNAMIC);
+	}
+
+	for (uint32_t x = 0; x < 16; x++)
+	{
+		for (uint32_t y = 0; y < 16; y++)
+		{
+			std::string strMeshName = "Terrain" + std::to_string(x) + "_" + std::to_string(y);
+			Flux_MeshGeometry& xTerrainMesh = Zenith_AssetHandler::GetMesh(strMeshName);
+
+			Zenith_Entity xTerrain = s_xTerrain[x][y];
+
+			xTerrain.Initialise(&xScene, "Sphere1");
+			xTerrain.AddComponent<Zenith_TerrainComponent>(xTerrainMesh, s_xRockMaterial, s_xCrystalMaterial);
+			Zenith_TransformComponent& xTrans = xTerrain.GetComponent<Zenith_TransformComponent>();
+			xTrans.SetPosition({ -10,1000,-10 });
+			xTrans.SetScale({ 10,10,10 });
+
+#if 0
+			Zenith_ColliderComponent& xCollider = s_xTerrain0_0.AddComponent<Zenith_ColliderComponent>();
+			xCollider.AddCollider(COLLISION_VOLUME_TYPE_TERRAIN, RIGIDBODY_TYPE_DYNAMIC);
+#endif
+		}
 	}
 }
