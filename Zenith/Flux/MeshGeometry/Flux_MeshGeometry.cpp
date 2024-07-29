@@ -106,6 +106,68 @@ void Flux_MeshGeometry::LoadFromFile(const char* szPath, Flux_MeshGeometry& xGeo
 	Flux_MemoryManager::InitialiseIndexBuffer(xGeometryOut.GetIndexData(), xGeometryOut.GetIndexDataSize(), xGeometryOut.m_xIndexBuffer);
 }
 
+#ifdef ZENITH_TOOLS
+static std::string ShaderDataTypeToString(ShaderDataType eType)
+{
+	switch (eType)
+	{
+	case SHADER_DATA_TYPE_FLOAT:
+		return "Float";
+	case SHADER_DATA_TYPE_FLOAT2:
+		return "Float2";
+	case SHADER_DATA_TYPE_FLOAT3:
+		return "Float3";
+	case SHADER_DATA_TYPE_FLOAT4:
+		return "Float4";
+	case SHADER_DATA_TYPE_UINT4:
+		return "UInt4";
+	default:
+		Zenith_Assert(false, "Unknown data type");
+		return "";
+	}
+
+}
+void Flux_MeshGeometry::Export(const char* szFilename)
+{
+	FILE* pxFile = fopen(szFilename, "wb");
+	Zenith_Assert(pxFile, "Failed to open file");
+	char cNull = '\0';
+
+	fputs(std::to_string(m_xBufferLayout.GetElements().size()).c_str(), pxFile);
+	fwrite(&cNull, 1, 1, pxFile);
+	for (Flux_BufferElement& xElement : m_xBufferLayout.GetElements())
+	{
+		fputs(ShaderDataTypeToString(xElement._Type).c_str(), pxFile);
+		fwrite(&cNull, 1, 1, pxFile);
+	}
+
+
+	fputs(std::to_string(m_uNumVerts).c_str(), pxFile);
+	fwrite(&cNull, 1, 1, pxFile);
+
+	fputs(std::to_string(m_uNumIndices).c_str(), pxFile);
+	fwrite(&cNull, 1, 1, pxFile);
+
+	fputs(std::to_string(m_uNumVerts * m_xBufferLayout.GetStride()).c_str(), pxFile);
+	fwrite(&cNull, 1, 1, pxFile);
+
+
+	fputs(std::to_string(m_uNumIndices * sizeof(Flux_MeshGeometry::IndexType)).c_str(), pxFile);
+	fwrite(&cNull, 1, 1, pxFile);
+
+	fwrite(m_pVertexData, m_uNumVerts * m_xBufferLayout.GetStride(), 1, pxFile);
+
+	fwrite(m_puIndices, m_uNumIndices * sizeof(Flux_MeshGeometry::IndexType), 1, pxFile);
+
+	fwrite(m_pxPositions, m_uNumVerts * sizeof(m_pxPositions[0]), 1, pxFile);
+
+	fwrite(m_pxNormals, m_uNumVerts * sizeof(m_pxNormals[0]), 1, pxFile);
+
+
+	fclose(pxFile);
+}
+#endif
+
 void Flux_MeshGeometry::GenerateLayoutAndVertexData()
 {
 	uint32_t uNumFloats = 0;
@@ -133,6 +195,11 @@ void Flux_MeshGeometry::GenerateLayoutAndVertexData()
 	{
 		m_xBufferLayout.GetElements().push_back({ SHADER_DATA_TYPE_FLOAT3 });
 		uNumFloats += 3;
+	}
+	if (m_pfMaterialLerps != nullptr)
+	{
+		m_xBufferLayout.GetElements().push_back({ SHADER_DATA_TYPE_FLOAT });
+		uNumFloats += 1;
 	}
 
 	m_pVertexData = new float[m_uNumVerts * uNumFloats];
@@ -170,7 +237,80 @@ void Flux_MeshGeometry::GenerateLayoutAndVertexData()
 			((float*)m_pVertexData)[index++] = m_pxBitangents[i].y;
 			((float*)m_pVertexData)[index++] = m_pxBitangents[i].z;
 		}
+		if (m_pfMaterialLerps != nullptr)
+		{
+			((float*)m_pVertexData)[index++] = m_pfMaterialLerps[i];
+		}
 	}
 
 	m_xBufferLayout.CalculateOffsetsAndStrides();
+}
+
+void Flux_MeshGeometry::GenerateNormals()
+{
+	for (size_t i = 0; i < m_uNumIndices / 3; i++)
+	{
+		IndexType uA = m_puIndices[i * 3];
+		IndexType uB = m_puIndices[i * 3 + 1];
+		IndexType uC = m_puIndices[i * 3 + 2];
+
+		Zenith_Maths::Vector3 xPosA = m_pxPositions[uA];
+		Zenith_Maths::Vector3 xPosB = m_pxPositions[uB];
+		Zenith_Maths::Vector3 xPosC = m_pxPositions[uC];
+
+		Zenith_Maths::Vector3 xNormal = glm::cross(xPosB - xPosA, xPosC - xPosA);
+		m_pxNormals[uA] += xNormal;
+		m_pxNormals[uB] += xNormal;
+		m_pxNormals[uC] += xNormal;
+	}
+
+	for (size_t i = 0; i < m_uNumVerts; i++)
+	{
+		m_pxNormals[i] = glm::normalize(m_pxNormals[i]);
+	}
+}
+
+void Flux_MeshGeometry::GenerateTangents()
+{
+	for (uint32_t i = 0; i < m_uNumIndices / 3; i++)
+	{
+		uint32_t uA = m_puIndices[i * 3];
+		uint32_t uB = m_puIndices[i * 3 + 1];
+		uint32_t uC = m_puIndices[i * 3 + 2];
+		Zenith_Maths::Vector3 tangent = GenerateTangent(uA, uB, uC);
+		m_pxTangents[uA] += tangent;
+		m_pxTangents[uB] += tangent;
+		m_pxTangents[uC] += tangent;
+	}
+
+	for (uint32_t i = 0; i < m_uNumVerts; i++)
+	{
+		m_pxTangents[i] = glm::normalize(m_pxTangents[i]);
+	}
+}
+
+void Flux_MeshGeometry::GenerateBitangents()
+{
+	for (uint32_t i = 0; i < m_uNumVerts; i++)
+	{
+		m_pxBitangents[i] = glm::cross(m_pxNormals[i], m_pxTangents[i]);
+	}
+}
+
+Zenith_Maths::Vector3 Flux_MeshGeometry::GenerateTangent(uint32_t a, uint32_t b, uint32_t c) {
+	Zenith_Maths::Vector3 xBa = m_pxPositions[b] - m_pxPositions[a];
+	Zenith_Maths::Vector3 xCa = m_pxPositions[c] - m_pxPositions[a];
+	Zenith_Maths::Vector2 xTba = m_pxUVs[b] - m_pxUVs[a];
+	Zenith_Maths::Vector2 xTca = m_pxUVs[c] - m_pxUVs[a];
+
+	Zenith_Maths::Matrix2 xTexMatrix(xTba, xTca);
+	xTexMatrix = glm::inverse(xTexMatrix);
+
+	Zenith_Maths::Vector3 xTangent = xBa * xTexMatrix[0][0] + xCa * xTexMatrix[0][1];
+	Zenith_Maths::Vector3 xBinormal = xBa * xTexMatrix[1][0] + xCa * xTexMatrix[1][1];
+
+	Zenith_Maths::Vector3 xNormal = glm::cross(xBa, xCa);
+	Zenith_Maths::Vector3 biCross = glm::cross(xTangent, xNormal);
+
+	return std::move(Zenith_Maths::Vector3(xTangent.x, xTangent.y, xTangent.z));
 }

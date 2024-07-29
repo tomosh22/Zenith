@@ -41,7 +41,7 @@ reactphysics3d::Ray Zenith_Physics::BuildRayFromMouse(Zenith_CameraComponent& xC
 	double fX = xMousePos.x;
 	double fY = xMousePos.y;
 
-#ifdef ZENITH_TOOLS
+#if 0//def ZENITH_TOOLS
 	//accounting for extra padding from imgui border
 	fX -= 10;
 	fY -= 45;

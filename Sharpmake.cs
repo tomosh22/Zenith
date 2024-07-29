@@ -1,24 +1,40 @@
 using Sharpmake;
 using System;
 
+[Fragment, Flags]
+public enum ToolsEnabled
+{
+    True = 1,
+	False = 2
+}
+public class CustomTarget : ITarget
+{
+	public Platform Platform;
+    public DevEnv DevEnv;
+    public Optimization Optimization;
+    public ToolsEnabled ToolsEnabled;
+}
+
 [Sharpmake.Generate]
 public class FluxCompilerProject : Project
 {
-    public FluxCompilerProject()
+    public FluxCompilerProject() : base(typeof(CustomTarget))
     {
         Name = "FluxCompiler";
 
-        AddTargets(new Target(
-                Platform.win64,
-                DevEnv.vs2022,
-                Optimization.Debug | Optimization.Release
-        ));
+        AddTargets(new CustomTarget
+		{
+                Platform = Platform.win64,
+                DevEnv = DevEnv.vs2022,
+                Optimization = Optimization.Debug | Optimization.Release,
+				ToolsEnabled = ToolsEnabled.True | ToolsEnabled.False
+        });
 
         SourceRootPath = @"[project.SharpmakeCsPath]/FluxCompiler";
     }
 
     [Configure]
-    public void ConfigureAll(Configuration conf, Target target)
+    public void ConfigureAll(Configuration conf, CustomTarget target)
     {
         conf.ProjectFileName = "[project.Name]_[target.Platform]";
         conf.ProjectPath = @"[project.SharpmakeCsPath]";
@@ -41,15 +57,17 @@ public class FluxCompilerProject : Project
 [Sharpmake.Generate]
 public class ZenithToolsProject : Project
 {
-    public ZenithToolsProject()
+    public ZenithToolsProject() : base(typeof(CustomTarget))
     {
         Name = "ZenithTools";
 
-        AddTargets(new Target(
-                Platform.win64,
-                DevEnv.vs2022,
-                Optimization.Debug | Optimization.Release
-        ));
+        AddTargets(new CustomTarget
+		{
+                Platform = Platform.win64,
+                DevEnv = DevEnv.vs2022,
+                Optimization = Optimization.Debug | Optimization.Release,
+				ToolsEnabled = ToolsEnabled.True | ToolsEnabled.False
+        });
 
         SourceRootPath = @"[project.SharpmakeCsPath]/Tools";
 		
@@ -70,11 +88,43 @@ public class ZenithToolsProject : Project
 		SourceFilesExcludeRegex.Add(@".*testzlib\\.*");
 		SourceFilesExcludeRegex.Add(@".*untgz\\.*");
 		
+		SourceFilesExcludeRegex.Add(@".*VulkanSDK.*");
+		SourceFilesExcludeRegex.Add(@".*FluxCompiler.*");
+		SourceFilesExcludeRegex.Add(@".*glm-master.*");
+		SourceFilesExcludeRegex.Add(@".*entt-3.13.2.*");
+		SourceFilesExcludeRegex.Add(@".*reactphysics3d-0.10.1\\helloworld.*");
+		SourceFilesExcludeRegex.Add(@".*reactphysics3d-0.10.1\\test.*");
+		SourceFilesExcludeRegex.Add(@".*reactphysics3d-0.10.1\\testbed.*");
+		SourceFilesExcludeRegex.Add(@".*opencv\\samples.*");
+		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\cmake.*");
+		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\modules\\calib3d.*");
+		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\modules\\core.*");
+		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\modules\\dnn.*");
+		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\modules\\gapi.*");
+		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\modules\\highgui.*");
+		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\modules\\features2d.*");
+		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\modules\\flann.*");
+		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\modules\\imgproc.*");
+		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\modules\\objdetect.*");
+		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\modules\\ml.*");
+		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\modules\\python.*");
+		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\modules\\stitching.*");
+		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\modules\\java.*");
+		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\modules\\video.*");
+		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\modules\\ts.*");
+		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\modules\\js.*");
+		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\modules\\photo.*");
+		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\modules\\imgcodecs\\test.*");
+		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\3rdparty.*");
+		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\samples.*");
+		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\apps.*");
+		SourceFilesExcludeRegex.Add(@".*opencv.*");
+		
 		AdditionalSourceRootPaths.Add("[project.SharpmakeCsPath]/Zenith/Flux/MeshGeometry");
     }
 
     [Configure]
-    public void ConfigureAll(Configuration conf, Target target)
+    public void ConfigureAll(Configuration conf, CustomTarget target)
     {
         conf.ProjectFileName = "[project.Name]_[target.Platform]";
         conf.ProjectPath = @"[project.SharpmakeCsPath]";
@@ -99,6 +149,16 @@ public class ZenithToolsProject : Project
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Tools/Middleware/assimp-5.4.2/contrib/openddlparser/include/");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Tools/Middleware/assimp-5.4.2/contrib/openddlparser/include/openddlparser");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Tools/Middleware/assimp-5.4.2/contrib/utf8cpp/source");
+		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Tools/Middleware/opencv/build/include");
+		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Tools/Middleware/opencv/build/include/opencv2");
+		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Tools/Middleware/opencv/sources/include");
+		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Tools/Middleware/opencv/sources/modules/core/include/");
+		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Tools/Middleware/opencv/sources/modules/ts/include/");
+		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Tools/Middleware/opencv/sources/cmake/templates/");
+		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Tools/Middleware/opencv/sources/3rdparty/libtiff/");
+		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Tools/Middleware/opencv/sources/3rdparty/openjpeg/openjp2/");
+		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Tools/Middleware/opencv/sources/3rdparty/libjpeg");
+		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Tools/Middleware/opencv/sources/3rdparty/libpng");
 		
 		
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Zenith");
@@ -128,23 +188,42 @@ public class ZenithToolsProject : Project
 		conf.Defines.Add("ASSIMP_BUILD_NO_3MF_EXPORTER");
 		conf.Defines.Add("ASSIMP_BUILD_NO_BLEND_IMPORTER");
 		conf.Defines.Add("OPENDDLPARSER_BUILD");
+		conf.Defines.Add("__OPENCV_BUILD");
+		
+		conf.Output = Configuration.OutputType.Lib;
+		
+		conf.LibraryPaths.Add("[project.SharpmakeCsPath]/Tools/Middleware/opencv/build/x64/vc16/lib");
+		
+		if(target.Optimization == Optimization.Debug)
+		{
+			conf.LibraryFiles.Add("opencv_world4100d.lib");
+		}
+		else{
+			conf.LibraryFiles.Add("opencv_world4100.lib");
+		}
+		
     }
 }
 
 [Sharpmake.Generate]
 public class ZenithWindowsProject : Project
 {
-    public ZenithWindowsProject()
+    public ZenithWindowsProject() : base(typeof(CustomTarget))
     {
         Name = "Zenith";
 
-        AddTargets(new Target(
-                Platform.win64,
-                DevEnv.vs2022,
-                Optimization.Debug | Optimization.Release
-        ));
+        AddTargets(new CustomTarget
+		{
+                Platform = Platform.win64,
+                DevEnv = DevEnv.vs2022,
+                Optimization = Optimization.Debug | Optimization.Release,
+				ToolsEnabled = ToolsEnabled.True | ToolsEnabled.False
+        });
 
         SourceRootPath = @"[project.SharpmakeCsPath]";
+		
+		SourceFilesExtensions = new Strings(".cpp", ".c", ".h");
+		SourceFilesCompileExtensions = new Strings(".cpp", ".c");
 		
 		SourceFilesExcludeRegex.Add(@".*VulkanSDK.*");
 		SourceFilesExcludeRegex.Add(@".*FluxCompiler.*");
@@ -157,7 +236,7 @@ public class ZenithWindowsProject : Project
     }
 
     [Configure]
-    public void ConfigureAll(Configuration conf, Target target)
+    public void ConfigureAll(Configuration conf, CustomTarget target)
     {
         conf.ProjectFileName = "[project.Name]_[target.Platform]";
         conf.ProjectPath = @"[project.SharpmakeCsPath]";
@@ -186,6 +265,11 @@ public class ZenithWindowsProject : Project
 		conf.Defines.Add("ZENITH_VULKAN");
 		conf.Defines.Add("ZENITH_WINDOWS");
 		conf.Defines.Add("NOMINMAX");
+		if(target.ToolsEnabled == ToolsEnabled.True)
+		{
+			conf.Defines.Add("ZENITH_TOOLS");
+			conf.AddPublicDependency<ZenithToolsProject>(target);
+		}
 		
 		String sharpmakePath = SharpmakeCsPath;
 		String shaderRoot = sharpmakePath + "/Zenith/Flux/Shaders/";
@@ -205,25 +289,27 @@ public class ZenithWindowsProject : Project
 [Sharpmake.Generate]
 public class ZenithWindowsSolution : Sharpmake.Solution
 {
-    public ZenithWindowsSolution()
+    public ZenithWindowsSolution() : base(typeof(CustomTarget))
     {
         Name = "Zenith";
 
-        AddTargets(new Target(
-                Platform.win64,
-                DevEnv.vs2022,
-                Optimization.Debug | Optimization.Release
-        ));
+        AddTargets(new CustomTarget
+		{
+                Platform = Platform.win64,
+                DevEnv = DevEnv.vs2022,
+                Optimization = Optimization.Debug | Optimization.Release,
+				ToolsEnabled = ToolsEnabled.True | ToolsEnabled.False
+        });
     }
 
     [Configure()]
-    public void ConfigureAll(Configuration conf, Target target)
+    public void ConfigureAll(Configuration conf, CustomTarget target)
     {
         conf.SolutionFileName = "[solution.Name]_[target.Platform]";
         conf.SolutionPath = @"[solution.SharpmakeCsPath]";
+		conf.AddProject<ZenithToolsProject>(target);
         conf.AddProject<ZenithWindowsProject>(target);
         conf.AddProject<FluxCompilerProject>(target);
-        conf.AddProject<ZenithToolsProject>(target);
     }
 }
 
