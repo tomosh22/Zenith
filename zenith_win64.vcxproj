@@ -82,7 +82,6 @@
     <LinkIncremental>false</LinkIncremental>
     <OutputFile>output\win64\vs2022_debug_win64_true\zenith.exe</OutputFile>
     <IgnoreImportLibrary>false</IgnoreImportLibrary>
-    <LibraryPath>$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">
     <TargetName>zenith</TargetName>
@@ -185,8 +184,7 @@
       <AdditionalDependencies>glfw3_mt.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
-      <IgnoreSpecificDefaultLibraries>
-      </IgnoreSpecificDefaultLibraries>
+      <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
       <LargeAddressAware>true</LargeAddressAware>
       <MapFileName>output\win64\vs2022_debug_win64_false\zenith.map</MapFileName>
     </Link>
@@ -272,8 +270,7 @@
       <AdditionalDependencies>zenithtools.lib;glfw3_mt.lib;opencv_world4100d.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
-      <IgnoreSpecificDefaultLibraries>
-      </IgnoreSpecificDefaultLibraries>
+      <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
       <LargeAddressAware>true</LargeAddressAware>
       <MapFileName>output\win64\vs2022_debug_win64_true\zenith.map</MapFileName>
     </Link>
@@ -359,8 +356,7 @@
       <AdditionalDependencies>glfw3_mt.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
-      <IgnoreSpecificDefaultLibraries>
-      </IgnoreSpecificDefaultLibraries>
+      <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
       <LargeAddressAware>true</LargeAddressAware>
       <MapFileName>output\win64\vs2022_release_win64_false\zenith.map</MapFileName>
     </Link>
@@ -446,8 +442,7 @@
       <AdditionalDependencies>zenithtools.lib;glfw3_mt.lib;opencv_world4100.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
-      <IgnoreSpecificDefaultLibraries>
-      </IgnoreSpecificDefaultLibraries>
+      <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
       <LargeAddressAware>true</LargeAddressAware>
       <MapFileName>output\win64\vs2022_release_win64_true\zenith.map</MapFileName>
     </Link>
@@ -575,6 +570,7 @@
     <ClInclude Include="Zenith\EntityComponent\Components\Zenith_ColliderComponent.h" />
     <ClInclude Include="Zenith\EntityComponent\Components\Zenith_ModelComponent.h" />
     <ClInclude Include="Zenith\EntityComponent\Components\Zenith_ScriptComponent.h" />
+    <ClInclude Include="Zenith\EntityComponent\Components\Zenith_TerrainComponent.h" />
     <ClInclude Include="Zenith\EntityComponent\Components\Zenith_TransformComponent.h" />
     <ClInclude Include="Zenith\EntityComponent\Zenith_Entity.h" />
     <ClInclude Include="Zenith\EntityComponent\Zenith_Scene.h" />
@@ -590,6 +586,7 @@
     <ClInclude Include="Zenith\Flux\Shaders\Common.h" />
     <ClInclude Include="Zenith\Flux\Skybox\Flux_Skybox.h" />
     <ClInclude Include="Zenith\Flux\StaticMeshes\Flux_StaticMeshes.h" />
+    <ClInclude Include="Zenith\Flux\Terrain\Flux_Terrain.h" />
     <ClInclude Include="Zenith\Input\Zenith_Input.h" />
     <ClInclude Include="Zenith\Input\Zenith_KeyCodes.h" />
     <ClInclude Include="Zenith\Maths\Zenith_Maths.h" />
@@ -1143,6 +1140,7 @@
     <ClCompile Include="Zenith\EntityComponent\Components\Zenith_ColliderComponent.cpp" />
     <ClCompile Include="Zenith\EntityComponent\Components\Zenith_ModelComponent.cpp" />
     <ClCompile Include="Zenith\EntityComponent\Components\Zenith_ScriptComponent.cpp" />
+    <ClCompile Include="Zenith\EntityComponent\Components\Zenith_TerrainComponent.cpp" />
     <ClCompile Include="Zenith\EntityComponent\Components\Zenith_TransformComponent.cpp" />
     <ClCompile Include="Zenith\EntityComponent\Zenith_Entity.cpp" />
     <ClCompile Include="Zenith\EntityComponent\Zenith_Scene.cpp" />
@@ -1155,6 +1153,7 @@
     <ClCompile Include="Zenith\Flux\MeshGeometry\Flux_MeshGeometry.cpp" />
     <ClCompile Include="Zenith\Flux\Skybox\Flux_Skybox.cpp" />
     <ClCompile Include="Zenith\Flux\StaticMeshes\Flux_StaticMeshes.cpp" />
+    <ClCompile Include="Zenith\Flux\Terrain\Flux_Terrain.cpp" />
     <ClCompile Include="Zenith\Input\Zenith_Input.cpp" />
     <ClCompile Include="Zenith\Maths\Zenith_Maths.cpp" />
     <ClCompile Include="Zenith\Physics\Zenith_Physics.cpp" />
