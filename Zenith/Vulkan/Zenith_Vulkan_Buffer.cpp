@@ -47,9 +47,10 @@ Zenith_Vulkan_Buffer::Zenith_Vulkan_Buffer(vk::DeviceSize uSize, vk::BufferUsage
 
 Zenith_Vulkan_Buffer::~Zenith_Vulkan_Buffer()
 {
-	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
-	xDevice.destroyBuffer(m_xBuffer);
-	xDevice.freeMemory(m_xDeviceMem);
+	//#TO_TODO: memory manager should handle this
+	//const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
+	//xDevice.destroyBuffer(m_xBuffer);
+	//xDevice.freeMemory(m_xDeviceMem);
 }
 
 void Zenith_Vulkan_Buffer::UploadData(void* pData, uint32_t uSize)

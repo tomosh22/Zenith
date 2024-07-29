@@ -4,66 +4,6 @@
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
 
-static std::string ShaderDataTypeToString(ShaderDataType eType)
-{
-	switch (eType)
-	{
-	case SHADER_DATA_TYPE_FLOAT:
-		return "Float";
-	case SHADER_DATA_TYPE_FLOAT2:
-		return "Float2";
-	case SHADER_DATA_TYPE_FLOAT3:
-		return "Float3";
-	case SHADER_DATA_TYPE_FLOAT4:
-		return "Float4";
-	case SHADER_DATA_TYPE_UINT4:
-		return "UInt4";
-	default:
-		Zenith_Assert(false, "Unknown data type");
-		return "";
-	}
-}
-
-static void Export(Flux_MeshGeometry& xMesh, const char* szFilename)
-{
-	FILE* pxFile = fopen(szFilename, "wb");
-	char cNull = '\0';
-
-	fputs(std::to_string(xMesh.m_xBufferLayout.GetElements().size()).c_str(), pxFile);
-	fwrite(&cNull, 1, 1, pxFile);
-	for (Flux_BufferElement& xElement : xMesh.m_xBufferLayout.GetElements())
-	{
-		fputs(ShaderDataTypeToString(xElement._Type).c_str(), pxFile);
-		fwrite(&cNull, 1, 1, pxFile);
-	}
-
-
-	fputs(std::to_string(xMesh.m_uNumVerts).c_str(), pxFile);
-	fwrite(&cNull, 1, 1, pxFile);
-
-	fputs(std::to_string(xMesh.m_uNumIndices).c_str(), pxFile);
-	fwrite(&cNull, 1, 1, pxFile);
-
-	fputs(std::to_string(xMesh.m_uNumVerts * xMesh.m_xBufferLayout.GetStride()).c_str(), pxFile);
-	fwrite(&cNull, 1, 1, pxFile);
-
-
-	fputs(std::to_string(xMesh.m_uNumIndices * sizeof(Flux_MeshGeometry::IndexType)).c_str(), pxFile);
-	fwrite(&cNull, 1, 1, pxFile);
-
-	fwrite(xMesh.m_pVertexData, xMesh.m_uNumVerts * xMesh.m_xBufferLayout.GetStride(), 1, pxFile);
-
-	fwrite(xMesh.m_puIndices, xMesh.m_uNumIndices * sizeof(Flux_MeshGeometry::IndexType), 1, pxFile);
-
-	fwrite(xMesh.m_pxPositions, xMesh.m_uNumVerts * sizeof(xMesh.m_pxPositions[0]), 1, pxFile);
-
-	fwrite(xMesh.m_pxNormals, xMesh.m_uNumVerts * sizeof(xMesh.m_pxNormals[0]), 1, pxFile);
-
-
-	fclose(pxFile);
-}
-
-
 static void ExportFromObj(std::string& strFilename)
 {
 	//#TO_TODO: double check this
@@ -171,7 +111,7 @@ static void ExportFromObj(std::string& strFilename)
 	Zenith_Assert(ulFindPos != std::string::npos, "How have we managed to get here when this isn't an obj file?");
 	strFilename.replace(ulFindPos, strlen("obj"), "zmsh");
 
-	Export(xMesh, strFilename.c_str());
+	xMesh.Export(strFilename.c_str());
 }
 
 void ExportAllMeshes()

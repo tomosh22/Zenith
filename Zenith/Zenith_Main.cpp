@@ -44,9 +44,17 @@ void Zenith_MainLoop()
 	Flux_Swapchain::EndFrame();
 }
 
-#ifndef ZENITH_TOOLS
+
 int main()
 {
+#ifdef ZENITH_TOOLS
+	extern void ExportAllMeshes();
+	extern void ExportAllTextures();
+	extern void ExportHeightmap();
+	ExportAllMeshes();
+	ExportAllTextures();
+	ExportHeightmap();
+#else
 	s_xLastFrameTime = std::chrono::high_resolution_clock::now();
 	Zenith_Window::Inititalise("Zenith", 1280, 720);
 	Flux::EarlyInitialise();
@@ -58,6 +66,6 @@ int main()
 	{
 		Zenith_MainLoop();
 	}
+#endif //ZENITH_TOOLS
 	__debugbreak();
 }
-#endif

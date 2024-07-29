@@ -60,7 +60,7 @@ public:
 
 		vk::VertexInputBindingDescription xBindDesc = vk::VertexInputBindingDescription()
 			.setBinding(0)
-			.setStride(xVertexLayout.m_uStride)
+			.setStride(xVertexLayout.GetStride())
 			.setInputRate(vk::VertexInputRate::eVertex);
 		axBindDescs.push_back(xBindDesc);
 
@@ -84,7 +84,7 @@ public:
 
 			vk::VertexInputBindingDescription xInstanceBindDesc = vk::VertexInputBindingDescription()
 				.setBinding(1)
-				.setStride(xInstanceLayout.m_uStride)
+				.setStride(xInstanceLayout.GetStride())
 				.setInputRate(vk::VertexInputRate::eInstance);
 			axBindDescs.push_back(xInstanceBindDesc);
 		}

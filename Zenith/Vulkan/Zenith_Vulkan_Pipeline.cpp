@@ -250,7 +250,7 @@ static vk::PipelineVertexInputStateCreateInfo VertexDescToVulkanDesc(const Flux_
 
 	vk::VertexInputBindingDescription xBindDesc = vk::VertexInputBindingDescription()
 		.setBinding(0)
-		.setStride(xVertexLayout.m_uStride)
+		.setStride(xVertexLayout.GetStride())
 		.setInputRate(vk::VertexInputRate::eVertex);
 	xBindDescs.push_back(xBindDesc);
 
@@ -274,7 +274,7 @@ static vk::PipelineVertexInputStateCreateInfo VertexDescToVulkanDesc(const Flux_
 
 		vk::VertexInputBindingDescription xInstanceBindDesc = vk::VertexInputBindingDescription()
 			.setBinding(1)
-			.setStride(xInstanceLayout.m_uStride)
+			.setStride(xInstanceLayout.GetStride())
 			.setInputRate(vk::VertexInputRate::eInstance);
 		xBindDescs.push_back(xInstanceBindDesc);
 	}

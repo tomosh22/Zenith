@@ -68,35 +68,24 @@ struct Flux_BufferElement
 class Flux_BufferLayout
 {
 public:
-	Flux_BufferLayout(const std::initializer_list<Flux_BufferElement>& xElements) : m_xElements(xElements)
-	{
-		CalculateOffsetsAndStrides();
-	};
-	Flux_BufferLayout() {};
+	Flux_BufferLayout() = default;
 	std::vector<Flux_BufferElement>& GetElements() { return m_xElements; };
 	const std::vector<Flux_BufferElement>& GetElements() const { return m_xElements; };
-
-	std::vector<Flux_BufferElement>::iterator begin() { return m_xElements.begin(); }
-	std::vector<Flux_BufferElement>::iterator end() { return m_xElements.end(); }
-	std::vector<Flux_BufferElement>::const_iterator begin() const { return m_xElements.cbegin(); }
-	std::vector<Flux_BufferElement>::const_iterator end() const { return m_xElements.cend(); }
 	const uint32_t GetStride() const { return m_uStride; }
 	void CalculateOffsetsAndStrides()
 	{
 		uint32_t uOffset = 0;
 		m_uStride = 0;
-		for (Flux_BufferElement& xElement : m_xElements) {
+		for (Flux_BufferElement& xElement : m_xElements)
+		{
 			xElement._Offset = uOffset;
 			uOffset += xElement._Size;
 			m_uStride += xElement._Size;
-
 		}
 	}
-	uint32_t m_uStride = 0;
 private:
-
+	uint32_t m_uStride = 0;
 	std::vector<Flux_BufferElement> m_xElements;
-
 };
 
 struct Flux_VertexInputDescription

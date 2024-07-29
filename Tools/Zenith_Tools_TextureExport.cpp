@@ -32,6 +32,7 @@ static void Export(std::string strFilename, const char* szExtension)
 	strFilename.replace(ulFindPos, strlen(szExtension), "ztx");
 
 	FILE* pxFile = fopen(strFilename.c_str(), "wb");
+	Zenith_Assert(pxFile, "Failed to open file");
 	char cNull = '\0';
 
 	fputs(std::to_string(iWidth).c_str(), pxFile);

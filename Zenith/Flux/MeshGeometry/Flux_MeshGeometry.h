@@ -27,10 +27,20 @@ public:
 
 	const Flux_VertexBuffer& GetVertexBuffer() const { return m_xVertexBuffer; }
 	const Flux_IndexBuffer& GetIndexBuffer() const { return m_xIndexBuffer; }
+
+#ifdef ZENITH_TOOLS
+	void Export(const char* szFilename);
+#endif
+
 #ifndef ZENITH_TOOLS
 private:
 #endif
 	void GenerateLayoutAndVertexData();
+
+	void GenerateNormals();
+	void GenerateTangents();
+	void GenerateBitangents();
+	Zenith_Maths::Vector3 GenerateTangent(uint32_t uA, uint32_t uB, uint32_t uC);
 
 	Flux_BufferLayout m_xBufferLayout;
 
@@ -44,6 +54,7 @@ private:
 	Zenith_Maths::Vector3* m_pxNormals = nullptr;
 	Zenith_Maths::Vector3* m_pxTangents = nullptr;
 	Zenith_Maths::Vector3* m_pxBitangents = nullptr;
+	float* m_pfMaterialLerps = nullptr;
 
 	void* m_pVertexData = nullptr;
 

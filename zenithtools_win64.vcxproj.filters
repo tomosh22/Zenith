@@ -451,6 +451,12 @@
     <ClCompile Include="Tools\Middleware\assimp-5.4.2\code\Common\Assimp.cpp">
       <Filter>Middleware\assimp-5.4.2\code\Common</Filter>
     </ClCompile>
+    <ClCompile Include="Tools\Middleware\assimp-5.4.2\code\Common\Assimp_DefaultLogger.cpp">
+      <Filter>Middleware\assimp-5.4.2\code\Common</Filter>
+    </ClCompile>
+    <ClCompile Include="Tools\Middleware\assimp-5.4.2\code\Common\Assimp_Material.cpp">
+      <Filter>Middleware\assimp-5.4.2\code\Common</Filter>
+    </ClCompile>
     <ClCompile Include="Tools\Middleware\assimp-5.4.2\code\Common\Base64.cpp">
       <Filter>Middleware\assimp-5.4.2\code\Common</Filter>
     </ClCompile>
@@ -475,9 +481,6 @@
     <ClCompile Include="Tools\Middleware\assimp-5.4.2\code\Common\DefaultIOSystem.cpp">
       <Filter>Middleware\assimp-5.4.2\code\Common</Filter>
     </ClCompile>
-    <ClCompile Include="Tools\Middleware\assimp-5.4.2\code\Common\DefaultLogger.cpp">
-      <Filter>Middleware\assimp-5.4.2\code\Common</Filter>
-    </ClCompile>
     <ClCompile Include="Tools\Middleware\assimp-5.4.2\code\Common\Exceptional.cpp">
       <Filter>Middleware\assimp-5.4.2\code\Common</Filter>
     </ClCompile>
@@ -491,9 +494,6 @@
       <Filter>Middleware\assimp-5.4.2\code\Common</Filter>
     </ClCompile>
     <ClCompile Include="Tools\Middleware\assimp-5.4.2\code\Common\IOSystem.cpp">
-      <Filter>Middleware\assimp-5.4.2\code\Common</Filter>
-    </ClCompile>
-    <ClCompile Include="Tools\Middleware\assimp-5.4.2\code\Common\material.cpp">
       <Filter>Middleware\assimp-5.4.2\code\Common</Filter>
     </ClCompile>
     <ClCompile Include="Tools\Middleware\assimp-5.4.2\code\Common\PostStepRegistry.cpp">
@@ -745,8 +745,8 @@
     <ClCompile Include="Tools\Middleware\assimp-5.4.2\contrib\zlib\zutil.c">
       <Filter>Middleware\assimp-5.4.2\contrib\zlib</Filter>
     </ClCompile>
-    <ClCompile Include="Tools\Zenith_Tools_Main.cpp" />
     <ClCompile Include="Tools\Zenith_Tools_MeshExport.cpp" />
+    <ClCompile Include="Tools\Zenith_Tools_TerrainExport.cpp" />
     <ClCompile Include="Tools\Zenith_Tools_TextureExport.cpp" />
     <ClCompile Include="Zenith\Flux\MeshGeometry\Flux_MeshGeometry.cpp">
       <Filter>Zenith\Flux\MeshGeometry</Filter>
@@ -2778,6 +2778,9 @@
     <ClInclude Include="Tools\Middleware\stb\stb_image.h">
       <Filter>Middleware\stb</Filter>
     </ClInclude>
+    <ClInclude Include="Tools\Zenith_Tools_MeshExport.h" />
+    <ClInclude Include="Tools\Zenith_Tools_TerrainExport.h" />
+    <ClInclude Include="Tools\Zenith_Tools_TextureExport.h" />
     <ClInclude Include="Zenith\Flux\MeshGeometry\Flux_MeshGeometry.h">
       <Filter>Zenith\Flux\MeshGeometry</Filter>
     </ClInclude>

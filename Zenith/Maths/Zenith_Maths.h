@@ -9,6 +9,8 @@ namespace Zenith_Maths
 	using Vector3_64 = glm::dvec3;
 	using Vector4 = glm::vec4;
 	using Vector4_64 = glm::dvec4;
+	using Matrix2 = glm::mat2;
+	using Matrix2_64 = glm::dmat2;
 	using Matrix3 = glm::mat3;
 	using Matrix3_64 = glm::dmat3;
 	using Matrix4 = glm::mat4;
