@@ -49,8 +49,6 @@ void Zenith_Vulkan_CommandBuffer::EndRecording(RenderOrder eOrder, bool bEndPass
 		m_xCurrentCmdBuffer.endRenderPass();
 	}
 
-	m_xCurrentCmdBuffer.pipelineBarrier(vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, {}, vk::MemoryBarrier(vk::AccessFlagBits::eDepthStencilAttachmentWrite, vk::AccessFlagBits::eVertexAttributeRead), {}, {});
-
 	m_xCurrentCmdBuffer.end();
 	Zenith_Vulkan::SubmitCommandBuffer(this, eOrder);
 
