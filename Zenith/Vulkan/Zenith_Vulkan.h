@@ -98,7 +98,7 @@ public:
 
 	static void Initialise();
 	static void CreateInstance();
-#ifdef VCE_DEBUG
+#ifdef ZENITH_DEBUG
 	static void CreateDebugMessenger();
 #endif
 	static void CreateSurface();

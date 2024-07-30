@@ -575,6 +575,7 @@
     <ClInclude Include="Zenith\EntityComponent\Zenith_Entity.h" />
     <ClInclude Include="Zenith\EntityComponent\Zenith_Scene.h" />
     <ClInclude Include="Zenith\FileAccess\Zenith_FileAccess.h" />
+    <ClInclude Include="Zenith\Flux\DeferredShading\Flux_DeferredShading.h" />
     <ClInclude Include="Zenith\Flux\Flux.h" />
     <ClInclude Include="Zenith\Flux\Flux_Buffers.h" />
     <ClInclude Include="Zenith\Flux\Flux_Enums.h" />
@@ -583,7 +584,16 @@
     <ClInclude Include="Zenith\Flux\Flux_RenderTargets.h" />
     <ClInclude Include="Zenith\Flux\Flux_Types.h" />
     <ClInclude Include="Zenith\Flux\MeshGeometry\Flux_MeshGeometry.h" />
-    <ClInclude Include="Zenith\Flux\Shaders\Common.h" />
+    <ClInclude Include="Zenith\Flux\Shaders\Common.fxh" />
+    <ClInclude Include="Zenith\Flux\Shaders\DeferredShading\Flux_DeferredShading.frag" />
+    <ClInclude Include="Zenith\Flux\Shaders\Flux_Fullscreen_UV.vert" />
+    <ClInclude Include="Zenith\Flux\Shaders\Flux_TexturedQuad.frag" />
+    <ClInclude Include="Zenith\Flux\Shaders\GBufferCommon.fxh" />
+    <ClInclude Include="Zenith\Flux\Shaders\Skybox\Flux_Skybox.frag" />
+    <ClInclude Include="Zenith\Flux\Shaders\StaticMeshes\Flux_StaticMeshes.frag" />
+    <ClInclude Include="Zenith\Flux\Shaders\StaticMeshes\Flux_StaticMeshes.vert" />
+    <ClInclude Include="Zenith\Flux\Shaders\Terrain\Flux_Terrain.frag" />
+    <ClInclude Include="Zenith\Flux\Shaders\Terrain\Flux_Terrain.vert" />
     <ClInclude Include="Zenith\Flux\Skybox\Flux_Skybox.h" />
     <ClInclude Include="Zenith\Flux\StaticMeshes\Flux_StaticMeshes.h" />
     <ClInclude Include="Zenith\Flux\Terrain\Flux_Terrain.h" />
@@ -1145,6 +1155,7 @@
     <ClCompile Include="Zenith\EntityComponent\Zenith_Entity.cpp" />
     <ClCompile Include="Zenith\EntityComponent\Zenith_Scene.cpp" />
     <ClCompile Include="Zenith\FileAccess\Zenith_FileAccess.cpp" />
+    <ClCompile Include="Zenith\Flux\DeferredShading\Flux_DeferredShading.cpp" />
     <ClCompile Include="Zenith\Flux\Flux.cpp" />
     <ClCompile Include="Zenith\Flux\Flux_Buffers.cpp" />
     <ClCompile Include="Zenith\Flux\Flux_Graphics.cpp" />

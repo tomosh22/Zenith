@@ -1,8 +1,7 @@
 #version 450 core
 
-#include "Common.h"
-
-layout(location = 0) out vec4 o_xColour;
+#include "../Common.fxh"
+#include "../GBufferCommon.fxh"
 
 layout(location = 0) in vec2 a_xUV;
 
@@ -26,6 +25,8 @@ vec3 RayDir(vec2 pixel)
 void main()
 {
 	vec3 xRayDir = RayDir(a_xUV);
-	o_xColour = vec4(0.2, 0.3, 0.9, 1.);
-	o_xColour += max(xRayDir.y + 0.3,0.);
+	vec4 xDiffuse = vec4(0.2, 0.3, 0.9, 1.);
+	xDiffuse += max(xRayDir.y + 0.3,0.);
+
+	OutputToGBuffer(xDiffuse, vec3(0.), 0., 0., 0., vec3(0.));
 }

@@ -307,6 +307,9 @@
     <ClCompile Include="Zenith\FileAccess\Zenith_FileAccess.cpp">
       <Filter>Zenith\FileAccess</Filter>
     </ClCompile>
+    <ClCompile Include="Zenith\Flux\DeferredShading\Flux_DeferredShading.cpp">
+      <Filter>Zenith\Flux\DeferredShading</Filter>
+    </ClCompile>
     <ClCompile Include="Zenith\Flux\Flux.cpp">
       <Filter>Zenith\Flux</Filter>
     </ClCompile>
@@ -753,6 +756,9 @@
     <ClInclude Include="Zenith\FileAccess\Zenith_FileAccess.h">
       <Filter>Zenith\FileAccess</Filter>
     </ClInclude>
+    <ClInclude Include="Zenith\Flux\DeferredShading\Flux_DeferredShading.h">
+      <Filter>Zenith\Flux\DeferredShading</Filter>
+    </ClInclude>
     <ClInclude Include="Zenith\Flux\Flux.h">
       <Filter>Zenith\Flux</Filter>
     </ClInclude>
@@ -777,8 +783,35 @@
     <ClInclude Include="Zenith\Flux\MeshGeometry\Flux_MeshGeometry.h">
       <Filter>Zenith\Flux\MeshGeometry</Filter>
     </ClInclude>
-    <ClInclude Include="Zenith\Flux\Shaders\Common.h">
+    <ClInclude Include="Zenith\Flux\Shaders\Common.fxh">
       <Filter>Zenith\Flux\Shaders</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\Flux\Shaders\DeferredShading\Flux_DeferredShading.frag">
+      <Filter>Zenith\Flux\Shaders\DeferredShading</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\Flux\Shaders\Flux_Fullscreen_UV.vert">
+      <Filter>Zenith\Flux\Shaders</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\Flux\Shaders\Flux_TexturedQuad.frag">
+      <Filter>Zenith\Flux\Shaders</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\Flux\Shaders\GBufferCommon.fxh">
+      <Filter>Zenith\Flux\Shaders</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\Flux\Shaders\Skybox\Flux_Skybox.frag">
+      <Filter>Zenith\Flux\Shaders\Skybox</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\Flux\Shaders\StaticMeshes\Flux_StaticMeshes.frag">
+      <Filter>Zenith\Flux\Shaders\StaticMeshes</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\Flux\Shaders\StaticMeshes\Flux_StaticMeshes.vert">
+      <Filter>Zenith\Flux\Shaders\StaticMeshes</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\Flux\Shaders\Terrain\Flux_Terrain.frag">
+      <Filter>Zenith\Flux\Shaders\Terrain</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\Flux\Shaders\Terrain\Flux_Terrain.vert">
+      <Filter>Zenith\Flux\Shaders\Terrain</Filter>
     </ClInclude>
     <ClInclude Include="Zenith\Flux\Skybox\Flux_Skybox.h">
       <Filter>Zenith\Flux\Skybox</Filter>
@@ -980,11 +1013,26 @@
     <Filter Include="Zenith\Flux">
       <UniqueIdentifier>{9d602350-76e0-e794-ea6c-7f4e438d0b6b}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Zenith\Flux\DeferredShading">
+      <UniqueIdentifier>{a05482b8-8497-e0cb-fb99-b146f9c748e5}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Zenith\Flux\MeshGeometry">
       <UniqueIdentifier>{1ea2a6e2-5586-54cd-e29c-f7b7caaa7806}</UniqueIdentifier>
     </Filter>
     <Filter Include="Zenith\Flux\Shaders">
       <UniqueIdentifier>{023039c4-353d-0c39-1bdd-99bb116ea5f5}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Zenith\Flux\Shaders\DeferredShading">
+      <UniqueIdentifier>{4803051e-ebbc-36d1-e229-2d53d979a6af}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Zenith\Flux\Shaders\Skybox">
+      <UniqueIdentifier>{bf2aae2b-cee3-e0f0-9869-c78bc13c7541}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Zenith\Flux\Shaders\StaticMeshes">
+      <UniqueIdentifier>{1042fbba-af9d-6c53-d724-9d5d379031c2}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Zenith\Flux\Shaders\Terrain">
+      <UniqueIdentifier>{c9d10ea7-fe94-0d9a-2112-36cfd1fa7166}</UniqueIdentifier>
     </Filter>
     <Filter Include="Zenith\Flux\Skybox">
       <UniqueIdentifier>{61297b21-a027-e692-c57f-8a208efaaa3c}</UniqueIdentifier>

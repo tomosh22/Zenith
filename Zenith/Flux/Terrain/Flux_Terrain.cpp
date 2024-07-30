@@ -34,6 +34,15 @@ void Flux_Terrain::Initialise()
 
 	std::vector<Flux_BlendState> xBlendStates;
 	xBlendStates.push_back({ BLEND_FACTOR_ZERO, BLEND_FACTOR_ZERO, false });
+	xBlendStates.push_back({ BLEND_FACTOR_ZERO, BLEND_FACTOR_ZERO, false });
+	xBlendStates.push_back({ BLEND_FACTOR_ZERO, BLEND_FACTOR_ZERO, false });
+	xBlendStates.push_back({ BLEND_FACTOR_ZERO, BLEND_FACTOR_ZERO, false });
+
+	std::vector<ColourFormat> xFormats;
+	for (ColourFormat eFormat : Flux_Graphics::s_aeMRTFormats)
+	{
+		xFormats.push_back(eFormat);
+	}
 
 	Zenith_Vulkan_PipelineSpecification xPipelineSpec(
 		xVertexDesc,
@@ -42,13 +51,13 @@ void Flux_Terrain::Initialise()
 		true,
 		true,
 		DEPTH_COMPARE_FUNC_GREATEREQUAL,
-		{ COLOUR_FORMAT_BGRA8_SRGB },
+		xFormats,
 		DEPTHSTENCIL_FORMAT_D32_SFLOAT,
 		true,
 		false,
 		{1,0},
 		{0,8},
-		Flux_Graphics::s_xFinalRenderTarget,
+		Flux_Graphics::s_xMRTTarget,
 		LOAD_ACTION_LOAD,
 		STORE_ACTION_STORE,
 		LOAD_ACTION_LOAD,
@@ -65,7 +74,7 @@ void Flux_Terrain::Render()
 {
 	s_xCommandBuffer.BeginRecording();
 
-	s_xCommandBuffer.SubmitTargetSetup(Flux_Graphics::s_xFinalRenderTarget);
+	s_xCommandBuffer.SubmitTargetSetup(Flux_Graphics::s_xMRTTarget);
 
 	s_xCommandBuffer.SetPipeline(&s_xPipeline);
 
@@ -98,5 +107,5 @@ void Flux_Terrain::Render()
 		s_xCommandBuffer.DrawIndexed(pxModel->GetMeshGeometry().GetNumIndices());
 	}
 
-	s_xCommandBuffer.EndRecording(RENDER_ORDER_OPAQUE_MESHES);
+	s_xCommandBuffer.EndRecording(RENDER_ORDER_TERRAIN);
 }

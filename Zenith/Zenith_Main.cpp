@@ -6,6 +6,7 @@
 #include "Flux/Skybox/Flux_Skybox.h"
 #include "Flux/StaticMeshes/Flux_StaticMeshes.h"
 #include "Flux/Terrain/Flux_Terrain.h"
+#include "Flux/DeferredShading/Flux_DeferredShading.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "Physics/Zenith_Physics.h"
 
@@ -39,6 +40,7 @@ void Zenith_MainLoop()
 	Flux_Skybox::Render();
 	Flux_StaticMeshes::Render();
 	Flux_Terrain::Render();
+	Flux_DeferredShading::Render();
 
 	Flux_MemoryManager::EndFrame();
 	Flux_Swapchain::CopyToFramebuffer();

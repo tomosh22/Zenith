@@ -1,6 +1,6 @@
 #version 450 core
 
-#include "Common.h"
+#include "../Common.fxh"
 
 layout(location = 0) in vec3 a_xPosition;
 layout(location = 1) in vec2 a_xUV;

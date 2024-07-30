@@ -222,7 +222,7 @@ public class ZenithWindowsProject : Project
 
         SourceRootPath = @"[project.SharpmakeCsPath]";
 		
-		SourceFilesExtensions = new Strings(".cpp", ".c", ".h");
+		SourceFilesExtensions = new Strings(".cpp", ".c", ".h", ".vert", ".frag", ".comp", ".tese", ".tesc", ".geom", ".fxh");
 		SourceFilesCompileExtensions = new Strings(".cpp", ".c");
 		
 		SourceFilesExcludeRegex.Add(@".*VulkanSDK.*");

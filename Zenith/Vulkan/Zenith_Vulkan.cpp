@@ -49,7 +49,7 @@ const vk::DescriptorPool& Zenith_Vulkan::GetCurrentPerFrameDescriptorPool() { re
 void Zenith_Vulkan::Initialise()
 {
 	CreateInstance();
-#ifdef VCE_DEBUG
+#ifdef ZENITH_DEBUG
 	CreateDebugMessenger();
 #endif
 	CreateSurface();
@@ -200,7 +200,7 @@ VKAPI_ATTR vk::Bool32 VKAPI_CALL Zenith_Vulkan::DebugCallback(vk::DebugUtilsMess
 	return VK_FALSE;
 }
 
-#ifdef VCE_DEBUG
+#ifdef ZENITH_DEBUG
 void Zenith_Vulkan::CreateDebugMessenger()
 {
 	vk::DebugUtilsMessengerCreateInfoEXT xCreateInfo = vk::DebugUtilsMessengerCreateInfoEXT()
