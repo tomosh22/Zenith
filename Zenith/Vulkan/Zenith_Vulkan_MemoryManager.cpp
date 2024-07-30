@@ -293,11 +293,13 @@ void Zenith_Vulkan_MemoryManager::CreateTexture(const char* szPath, Zenith_Vulka
 
 	delete[] pcData;
 
+	uint32_t uNumMips = std::floor(std::log2(std::max(uWidth, uHeight))) + 1;
+
 	//#TO_TODO: other formats
-	AllocateTexture(uWidth, uHeight, COLOUR_FORMAT_BGRA8_UNORM, DEPTHSTENCIL_FORMAT_NONE, 4 /*bytes per pizel*/, 1 /*num mips*/, vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eTransferSrc, MEMORY_RESIDENCY_GPU, xTextureOut);
+	AllocateTexture(uWidth, uHeight, COLOUR_FORMAT_BGRA8_UNORM, DEPTHSTENCIL_FORMAT_NONE, 4 /*bytes per pizel*/, uNumMips, vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eTransferSrc, MEMORY_RESIDENCY_GPU, xTextureOut);
 	xTextureOut.SetWidth(uWidth);
 	xTextureOut.SetHeight(uHeight);
-	xTextureOut.SetNumMips(1);
+	xTextureOut.SetNumMips(uNumMips);
 	UploadData(&xTextureOut, pData, ulDataSize);
 	delete pData;
 }
@@ -368,7 +370,7 @@ void Zenith_Vulkan_MemoryManager::AllocateTexture(uint32_t uWidth, uint32_t uHei
 	vk::ImageSubresourceRange xSubresourceRange = vk::ImageSubresourceRange()
 		.setAspectMask(bIsDepth ? vk::ImageAspectFlagBits::eDepth : vk::ImageAspectFlagBits::eColor)
 		.setBaseMipLevel(0)
-		.setLevelCount(1)
+		.setLevelCount(uNumMips)
 		.setBaseArrayLayer(0)
 		.setLayerCount(1);
 

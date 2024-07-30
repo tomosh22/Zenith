@@ -477,8 +477,7 @@ void Zenith_Vulkan_CommandBuffer::CopyBufferToTexture(Zenith_Vulkan_Buffer* pxSr
 }
 void Zenith_Vulkan_CommandBuffer::BlitTextureToTexture(Zenith_Vulkan_Texture* pxSrc, Zenith_Vulkan_Texture* pxDst, uint32_t uDstMip)
 {
-	STUBBED
-	/*std::array<vk::Offset3D, 2> axSrcOffsets;
+	std::array<vk::Offset3D, 2> axSrcOffsets;
 	axSrcOffsets.at(0).setX(0);
 	axSrcOffsets.at(0).setY(0);
 	axSrcOffsets.at(0).setZ(0);
@@ -512,8 +511,7 @@ void Zenith_Vulkan_CommandBuffer::BlitTextureToTexture(Zenith_Vulkan_Texture* px
 		.setSrcSubresource(xSrcSubresource)
 		.setDstSubresource(xDstSubresource);
 
-	m_xCurrentCmdBuffer.blitImage(pxSrc->m_xImage, vk::ImageLayout::eTransferSrcOptimal, pxDst->m_xImage, vk::ImageLayout::eTransferDstOptimal, xBlit, vk::Filter::eLinear);
-	*/
+	m_xCurrentCmdBuffer.blitImage(pxSrc->GetImage(), vk::ImageLayout::eTransferSrcOptimal, pxDst->GetImage(), vk::ImageLayout::eTransferDstOptimal, xBlit, vk::Filter::eLinear);
 }
 
 
