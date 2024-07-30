@@ -13,6 +13,7 @@ public:
 
 	static void UploadFrameConstants();
 
+	static Flux_TargetSetup s_xMRTTarget;
 	static Flux_TargetSetup s_xFinalRenderTarget;
 
 	static Flux_Sampler s_xDefaultSampler;
@@ -25,6 +26,10 @@ public:
 
 	static Flux_Texture s_xBlankTexture2D;
 	static Flux_MeshGeometry s_xBlankMesh;
+
+	static ColourFormat s_aeMRTFormats[MRT_INDEX_COUNT];
+
+	static Flux_Texture& GetGBufferTexture(MRTIndex eIndex);
 private:
 	struct Zenith_FrameConstants
 	{

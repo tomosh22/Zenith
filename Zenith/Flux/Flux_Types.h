@@ -99,6 +99,8 @@ static uint32_t ColourFormatBitsPerPixel(ColourFormat eFormat)
 {
 	switch (eFormat)
 	{
+	case COLOUR_FORMAT_RGBA8_UNORM:
+		return 32u;
 	case COLOUR_FORMAT_BGRA8_SRGB:
 		return 32u;
 	case COLOUR_FORMAT_BGRA8_UNORM:

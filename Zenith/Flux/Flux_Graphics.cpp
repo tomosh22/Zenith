@@ -7,6 +7,7 @@
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 
+Flux_TargetSetup Flux_Graphics::s_xMRTTarget;
 Flux_TargetSetup Flux_Graphics::s_xFinalRenderTarget;
 Flux_Sampler Flux_Graphics::s_xDefaultSampler;
 Flux_MeshGeometry Flux_Graphics::s_xQuadMesh;
@@ -15,6 +16,14 @@ Flux_IndexBuffer Flux_Graphics::s_xQuadIndexBuffer;
 Flux_ConstantBuffer Flux_Graphics::s_xFrameConstantsBuffer;
 Flux_Texture Flux_Graphics::s_xBlankTexture2D;
 Flux_MeshGeometry Flux_Graphics::s_xBlankMesh;
+
+ColourFormat Flux_Graphics::s_aeMRTFormats[MRT_INDEX_COUNT]
+{
+	COLOUR_FORMAT_RGBA8_UNORM, //MRT_INDEX_DIFFUSE
+	COLOUR_FORMAT_RGBA8_UNORM, //MRT_INDEX_NORMALSAMBIENT
+	COLOUR_FORMAT_RGBA8_UNORM, //MRT_INDEX_MATERIAL
+	COLOUR_FORMAT_R16G16B16A16_SFLOAT //MRT_INDEX_WORLDPOS
+};
 
 void Flux_Graphics::Initialise()
 {
@@ -37,6 +46,16 @@ void Flux_Graphics::InitialiseRenderTargets()
 	xBuilder.m_uWidth = Flux_Swapchain::GetWidth();
 	xBuilder.m_uHeight = Flux_Swapchain::GetHeight();
 
+	{
+		for (uint32_t u = 0; u < MRT_INDEX_COUNT; u++)
+		{
+			xBuilder.m_eColourFormat = s_aeMRTFormats[u];
+			xBuilder.Build(s_xMRTTarget.m_axColourAttachments[u], RENDER_TARGET_TYPE_COLOUR);
+		}
+		xBuilder.m_eDepthStencilFormat = DEPTHSTENCIL_FORMAT_D32_SFLOAT;
+		xBuilder.Build(s_xMRTTarget.m_xDepthStencil, RENDER_TARGET_TYPE_DEPTHSTENCIL);
+	}
+
 	xBuilder.m_eColourFormat = COLOUR_FORMAT_BGRA8_SRGB;
 	xBuilder.Build(s_xFinalRenderTarget.m_axColourAttachments[0], RENDER_TARGET_TYPE_COLOUR);
 
@@ -54,4 +73,9 @@ void Flux_Graphics::UploadFrameConstants()
 	xConstants.m_xViewProjMat = xConstants.m_xProjMat * xConstants.m_xViewMat;
 	xCamera.GetPosition(xConstants.m_xCamPos_Pad);
 	Flux_MemoryManager::UploadData(&s_xFrameConstantsBuffer, &xConstants, sizeof(Zenith_FrameConstants));
+}
+
+Flux_Texture& Flux_Graphics::GetGBufferTexture(MRTIndex eIndex)
+{
+	return s_xMRTTarget.m_axColourAttachments[eIndex].m_axTargetTextures[Flux_Swapchain::GetCurrentFrameIndex()];
 }

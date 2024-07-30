@@ -8,6 +8,8 @@
 vk::Format Zenith_Vulkan_Texture::ConvertToVkFormat_Colour(ColourFormat eFormat) {
 	switch (eFormat)
 	{
+	case COLOUR_FORMAT_RGBA8_UNORM:
+		return vk::Format::eR8G8B8A8Unorm;
 	case COLOUR_FORMAT_BGRA8_SRGB:
 		return vk::Format::eB8G8R8A8Srgb;
 	case COLOUR_FORMAT_R16G16B16A16_SFLOAT:

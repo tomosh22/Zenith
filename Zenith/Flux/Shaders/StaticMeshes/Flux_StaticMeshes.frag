@@ -1,8 +1,7 @@
 #version 450 core
 
-#include "Common.h"
-
-layout(location = 0) out vec4 o_xColour;
+#include "../Common.fxh"
+#include "../GBufferCommon.fxh"
 
 layout(location = 0) in vec2 a_xUV;
 layout(location = 1) in vec3 a_xNormal;
@@ -68,6 +67,5 @@ void main(){
 	xLight.m_xPosition_Radius = vec4(0.,0.,0.,2000.);
 	xLight.m_xColour = vec4(1.);
 	
-	o_xColour = vec4(0.);
-	CookTorrance_Point(o_xColour, xDiffuse, xLight, xNormal, fMetallic, fRoughness, 0.9f);
+	OutputToGBuffer(xDiffuse, xNormal, 0.2, fRoughness, fMetallic, a_xWorldPos);
 }
