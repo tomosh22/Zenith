@@ -285,7 +285,7 @@ void Zenith_Vulkan::CreateQueueFamilies()
 			s_auQueueIndices[COMMANDTYPE_COMPUTE] = i;
 		}
 
-		if (s_auQueueIndices[COMMANDTYPE_GRAPHICS] != i && s_auQueueIndices[COMMANDTYPE_COPY] == UINT32_MAX && xQueueFamilyProperties[i].queueFlags & vk::QueueFlagBits::eTransfer)
+		if (s_auQueueIndices[COMMANDTYPE_COPY] == UINT32_MAX && xQueueFamilyProperties[i].queueFlags & vk::QueueFlagBits::eTransfer && xQueueFamilyProperties[i].queueFlags & vk::QueueFlagBits::eGraphics)
 		{
 			s_auQueueIndices[COMMANDTYPE_COPY] = i;
 		}
@@ -293,7 +293,7 @@ void Zenith_Vulkan::CreateQueueFamilies()
 
 	for (uint32_t uType = 0; uType < COMMANDTYPE_MAX; uType++)
 	{
-		Zenith_Assert(uType != UINT32_MAX, "Couldn't find queue index");
+		Zenith_Assert(s_auQueueIndices[uType] != UINT32_MAX, "Couldn't find queue index");
 	}
 
 	Zenith_Log("Vulkan queue families created");
