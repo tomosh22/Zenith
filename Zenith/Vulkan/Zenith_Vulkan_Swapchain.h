@@ -29,6 +29,8 @@ public:
 
 	static Flux_TargetSetup& GetTargetSetup() {return s_xTargetSetup;}
 
+	static vk::Format GetFormat() { return s_xImageFormat; }
+
 	static void CopyToFramebuffer();
 private:
 	static void BindAsTarget();

@@ -1,6 +1,6 @@
 #pragma once
 
-#define MAX_FRAMES_IN_FLIGHT 4
+#define MAX_FRAMES_IN_FLIGHT 3
 #define FLUX_MAX_TARGETS 8
 
 enum CommandType

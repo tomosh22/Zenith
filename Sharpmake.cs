@@ -119,6 +119,15 @@ public class ZenithToolsProject : Project
 		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\samples.*");
 		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\apps.*");
 		SourceFilesExcludeRegex.Add(@".*opencv.*");
+		SourceFilesExcludeRegex.Add(@".*imgui-1.91.0\\examples.*");
+		SourceFilesExcludeRegex.Add(@".*imgui-1.91.0\\backends\\imgui_impl_sdl.*");
+		SourceFilesExcludeRegex.Add(@".*imgui-1.91.0\\backends\\imgui_impl_opengl.*");
+		SourceFilesExcludeRegex.Add(@".*imgui-1.91.0\\backends\\imgui_impl_dx.*");
+		SourceFilesExcludeRegex.Add(@".*imgui-1.91.0\\backends\\imgui_impl_android.*");
+		SourceFilesExcludeRegex.Add(@".*imgui-1.91.0\\backends\\imgui_impl_glut.*");
+		SourceFilesExcludeRegex.Add(@".*imgui-1.91.0\\backends\\imgui_impl_wgpu.*");
+		SourceFilesExcludeRegex.Add(@".*imgui-1.91.0\\backends\\imgui_impl_allegro.*");
+		SourceFilesExcludeRegex.Add(@".*imgui-1.91.0\\misc.*");
 		
 		AdditionalSourceRootPaths.Add("[project.SharpmakeCsPath]/Zenith/Flux/MeshGeometry");
     }
@@ -159,6 +168,7 @@ public class ZenithToolsProject : Project
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Tools/Middleware/opencv/sources/3rdparty/openjpeg/openjp2/");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Tools/Middleware/opencv/sources/3rdparty/libjpeg");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Tools/Middleware/opencv/sources/3rdparty/libpng");
+		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Tools/Middleware/imgui-1.91.0");
 		
 		
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Zenith");
