@@ -1,13 +1,20 @@
 #include "Zenith.h"
 
 #include "Vulkan/Zenith_Vulkan.h"
-
+#include "Flux/Flux.h"
 
 #ifdef ZENITH_WINDOWS
 #include "Zenith_Windows_Window.h"
 #endif
 
-#include "Flux/Flux.h"
+#ifdef ZENITH_TOOLS
+#include "imgui.h"
+#include "backends/imgui_impl_vulkan.h"
+#ifdef ZENITH_WINDOWS
+#include "backends/imgui_impl_glfw.h"
+#endif //ZENITH_WINDOWS
+vk::RenderPass Zenith_Vulkan::s_xImGuiRenderPass;
+#endif //ZENITH_TOOLS
 
 #ifdef ZENITH_DEBUG
 static std::vector<const char*> s_xValidationLayers = { "VK_LAYER_KHRONOS_validation" };
@@ -377,3 +384,89 @@ void Zenith_Vulkan::CreateDefaultDescriptorPool()
 
 	Zenith_Log("Vulkan default descriptor pool created");
 }
+
+#ifdef ZENITH_TOOLS
+
+void Zenith_Vulkan::InitialiseImGui()
+{
+	InitialiseImGuiRenderPass();
+	IMGUI_CHECKVERSION();
+	ImGui::CreateContext();
+
+	ImGui::StyleColorsDark();
+
+	ImGuiIO& xIO = ImGui::GetIO();
+	xIO.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+
+#ifdef ZENITH_WINDOWS
+	GLFWwindow* pxWindow = Zenith_Window::GetInstance()->GetNativeWindow();
+#endif
+
+	ImGui_ImplGlfw_InitForVulkan(pxWindow, true);
+	ImGui_ImplVulkan_InitInfo xInitInfo = {};
+	xInitInfo.Instance = s_xInstance;
+	xInitInfo.PhysicalDevice = s_xPhysicalDevice;
+	xInitInfo.Device = s_xDevice;
+	xInitInfo.QueueFamily = s_auQueueIndices[COMMANDTYPE_GRAPHICS];
+	xInitInfo.Queue = s_axQueues[COMMANDTYPE_GRAPHICS];
+	xInitInfo.DescriptorPool = s_xDefaultDescriptorPool;
+	xInitInfo.MinImageCount = MAX_FRAMES_IN_FLIGHT;
+	xInitInfo.ImageCount = MAX_FRAMES_IN_FLIGHT;
+	xInitInfo.RenderPass = s_xImGuiRenderPass;
+	ImGui_ImplVulkan_Init(&xInitInfo);
+
+	ImGui_ImplVulkan_CreateFontsTexture();
+}
+
+void Zenith_Vulkan::InitialiseImGuiRenderPass()
+{
+	vk::AttachmentDescription xColorAttachment = vk::AttachmentDescription()
+		.setFormat(Zenith_Vulkan_Swapchain::GetFormat())
+		.setSamples(vk::SampleCountFlagBits::e1)
+		.setLoadOp(vk::AttachmentLoadOp::eLoad)
+		.setStoreOp(vk::AttachmentStoreOp::eStore)
+		.setStencilLoadOp(vk::AttachmentLoadOp::eDontCare)
+		.setStencilStoreOp(vk::AttachmentStoreOp::eDontCare)
+		.setInitialLayout(vk::ImageLayout::ePresentSrcKHR)
+		.setFinalLayout(vk::ImageLayout::ePresentSrcKHR);
+
+	vk::AttachmentReference xColorAttachmentRef = vk::AttachmentReference()
+		.setAttachment(0)
+		.setLayout(vk::ImageLayout::eColorAttachmentOptimal);
+
+	vk::AttachmentReference axColorAtachments[1]{ xColorAttachmentRef };
+
+	vk::SubpassDescription xSubpass = vk::SubpassDescription()
+		.setPipelineBindPoint(vk::PipelineBindPoint::eGraphics)
+		.setColorAttachmentCount(1)
+		.setPColorAttachments(axColorAtachments);
+
+	vk::SubpassDependency xDependency = vk::SubpassDependency()
+		.setSrcSubpass(VK_SUBPASS_EXTERNAL)
+		.setDstSubpass(0)
+		.setSrcStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eEarlyFragmentTests)
+		.setSrcAccessMask(vk::AccessFlagBits::eNone)
+		.setDstStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eEarlyFragmentTests)
+		.setDstAccessMask(vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eDepthStencilAttachmentWrite);
+
+	vk::AttachmentDescription axAllAttachments[]{ xColorAttachment };
+
+	vk::RenderPassCreateInfo xRenderPassInfo = vk::RenderPassCreateInfo()
+		.setAttachmentCount(1)
+		.setPAttachments(axAllAttachments)
+		.setSubpassCount(1)
+		.setPSubpasses(&xSubpass)
+		.setDependencyCount(1)
+		.setPDependencies(&xDependency);
+
+	s_xImGuiRenderPass = s_xDevice.createRenderPass(xRenderPassInfo);
+}
+void Zenith_Vulkan::ImGuiBeginFrame()
+{
+	ImGui_ImplVulkan_NewFrame();
+#ifdef ZENITH_WINDOWS
+	ImGui_ImplGlfw_NewFrame();
+#endif
+	ImGui::NewFrame();
+}
+#endif

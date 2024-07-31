@@ -13,6 +13,11 @@
 #include "Zenith_Windows_Window.h"
 #endif
 
+#ifdef ZENITH_TOOLS
+#include "imgui.h"
+#include "backends/imgui_impl_vulkan.h"
+#endif
+
 vk::SwapchainKHR Zenith_Vulkan_Swapchain::s_xSwapChain;
 std::vector<vk::Image> Zenith_Vulkan_Swapchain::s_xImages;
 std::vector<vk::ImageView> Zenith_Vulkan_Swapchain::s_xImageViews;
@@ -250,7 +255,7 @@ bool Zenith_Vulkan_Swapchain::BeginFrame()
 {
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 
-	uint32_t uPreviousFrame = (s_uFrameIndex - 1) % MAX_FRAMES_IN_FLIGHT;
+	uint32_t uPreviousFrame = (s_uFrameIndex + MAX_FRAMES_IN_FLIGHT - 1) % MAX_FRAMES_IN_FLIGHT;
 	xDevice.waitForFences(1, &s_axInFlightFences[uPreviousFrame], VK_TRUE, UINT64_MAX);
 
 	vk::Result eResult = xDevice.acquireNextImageKHR(s_xSwapChain, UINT64_MAX, s_axImageAvailableSemaphores[s_uFrameIndex], nullptr, &s_uCurrentImageIndex);
@@ -300,7 +305,7 @@ void Zenith_Vulkan_Swapchain::BindAsTarget()
 	vk::RenderPassBeginInfo xRenderPassInfo = vk::RenderPassBeginInfo()
 		.setRenderPass(xRenderPass)
 		.setFramebuffer(xFramebuffer)
-		.setRenderArea({ {0,0}, Zenith_Vulkan_Swapchain::GetExent() });
+		.setRenderArea({ {0,0}, s_xExtent });
 
 	vk::ClearValue* axClearColour = nullptr;
 	//#TO im being lazy and assuming all render targets have the same load action
@@ -354,6 +359,37 @@ void Zenith_Vulkan_Swapchain::CopyToFramebuffer()
 	s_xCopyToFramebufferCmd.BindTexture(&Flux_Graphics::s_xFinalRenderTarget.m_axColourAttachments[0].m_axTargetTextures[s_uFrameIndex], 0);
 
 	s_xCopyToFramebufferCmd.DrawIndexed(6);
+
+#ifdef ZENITH_TOOLS
+	vk::CommandBuffer& xCmd = s_xCopyToFramebufferCmd.GetCurrentCmdBuffer();
+
+	xCmd.endRenderPass();
+
+	vk::RenderPassBeginInfo xRenderPassInfo = vk::RenderPassBeginInfo()
+	.setRenderPass(Zenith_Vulkan::s_xImGuiRenderPass)
+	.setFramebuffer(Zenith_Vulkan_Pipeline::TargetSetupToFramebuffer(s_xTargetSetup, Zenith_Vulkan::s_xImGuiRenderPass))
+	.setRenderArea({ {0,0}, s_xExtent });
+
+	xCmd.beginRenderPass(xRenderPassInfo, vk::SubpassContents::eInline);
+
+	vk::Viewport xViewport{};
+	xViewport.x = 0;
+	xViewport.y = 0;
+	xViewport.width = s_xExtent.width;
+	xViewport.height = s_xExtent.height;
+	xViewport.minDepth = 0;
+	xViewport.minDepth = 1;
+
+	vk::Rect2D xScissor{};
+	xScissor.offset = vk::Offset2D(0, 0);
+	xScissor.extent = s_xExtent;
+
+	xCmd.setViewport(0, 1, &xViewport);
+	xCmd.setScissor(0, 1, &xScissor);
+
+	ImGui::Render();
+	ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), xCmd);
+#endif
 
 	s_xCopyToFramebufferCmd.EndRecording(RENDER_ORDER_COPYTOFRAMEBUFFER);
 }

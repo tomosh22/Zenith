@@ -9,6 +9,9 @@
 #include "Flux/DeferredShading/Flux_DeferredShading.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "Physics/Zenith_Physics.h"
+#ifdef ZENITH_TOOLS
+#include "imgui.h"
+#endif
 
 static std::chrono::high_resolution_clock::time_point s_xLastFrameTime;
 
@@ -21,6 +24,15 @@ static void UpdateTimers()
 
 	Zenith_Core::AddTimePassed(Zenith_Core::GetDt());
 }
+
+#ifdef ZENITH_TOOLS
+void RenderImGui()
+{
+	Flux_PlatformAPI::ImGuiBeginFrame();
+
+	ImGui::ShowDemoWindow();
+}
+#endif
 
 void Zenith_MainLoop()
 {
@@ -43,6 +55,9 @@ void Zenith_MainLoop()
 	Flux_DeferredShading::Render();
 
 	Flux_MemoryManager::EndFrame();
+#ifdef ZENITH_TOOLS
+	RenderImGui();
+#endif
 	Flux_Swapchain::CopyToFramebuffer();
 	Flux_PlatformAPI::EndFrame();
 	Flux_Swapchain::EndFrame();
@@ -51,7 +66,7 @@ void Zenith_MainLoop()
 
 int main()
 {
-#ifdef ZENITH_TOOLS
+#if 0//def ZENITH_TOOLS
 	extern void ExportAllMeshes();
 	extern void ExportAllTextures();
 	extern void ExportHeightmap();

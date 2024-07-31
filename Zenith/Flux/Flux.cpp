@@ -22,6 +22,9 @@ void Flux::LateInitialise()
 {
 	Flux_MemoryManager::BeginFrame();
 	Flux_Swapchain::Initialise();
+#ifdef ZENITH_TOOLS
+	Flux_PlatformAPI::InitialiseImGui();
+#endif
 	Flux_Graphics::Initialise();
 	Flux_Skybox::Initialise();
 	Flux_StaticMeshes::Initialise();

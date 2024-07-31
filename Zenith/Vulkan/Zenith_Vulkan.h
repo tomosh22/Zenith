@@ -108,6 +108,13 @@ public:
 	static void CreateCommandPools();
 	static void CreateDefaultDescriptorPool();
 
+#ifdef ZENITH_TOOLS
+	static vk::RenderPass s_xImGuiRenderPass;
+	static void InitialiseImGui();
+	static void InitialiseImGuiRenderPass();
+	static void ImGuiBeginFrame();
+#endif
+
 	static void BeginFrame();
 	static void EndFrame();
 
