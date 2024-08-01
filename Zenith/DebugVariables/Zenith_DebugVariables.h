@@ -2,6 +2,7 @@
 #include "imgui.h"
 struct Zenith_DebugVariableTree
 {
+    static std::string s_strRootName;
     static constexpr uint32_t s_uMaxNameLength = 64;
 
     Zenith_DebugVariableTree()
