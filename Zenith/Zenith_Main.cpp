@@ -28,14 +28,9 @@ static void UpdateTimers()
 
 #ifdef ZENITH_TOOLS
 
-void TraverseTree(Zenith_DebugVariableTree::Node* pxNode)
+void TraverseTree(Zenith_DebugVariableTree::Node* pxNode, uint32_t uCurrentDepth)
 {
-	std::string strName;
-	for (const std::string& strHeader : pxNode->m_xName)
-	{
-		strName += strHeader;
-	}
-	if (!ImGui::CollapsingHeader(strName.c_str()))
+	if (!ImGui::CollapsingHeader(pxNode->m_xName[uCurrentDepth].c_str()))
 	{
 		return;
 	}
@@ -45,7 +40,7 @@ void TraverseTree(Zenith_DebugVariableTree::Node* pxNode)
 	}
 	for (Zenith_DebugVariableTree::Node* pxChild : pxNode->m_xChildren)
 	{
-		TraverseTree(pxChild);
+		TraverseTree(pxChild, uCurrentDepth + 1);
 	}
 }
 
@@ -59,7 +54,7 @@ void RenderImGui()
 
 	Zenith_DebugVariableTree& xTree = Zenith_DebugVariables::s_xTree;
 	Zenith_DebugVariableTree::Node* pxRoot = xTree.m_pxRoot;
-	TraverseTree(pxRoot);
+	TraverseTree(pxRoot, 0);
 
 	ImGui::End();
 }
