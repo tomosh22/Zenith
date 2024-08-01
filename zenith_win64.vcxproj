@@ -566,6 +566,7 @@
     <ClInclude Include="Zenith\AssetHandling\Zenith_AssetHandler.h" />
     <ClInclude Include="Zenith\Core\Zenith.h" />
     <ClInclude Include="Zenith\Core\Zenith_Core.h" />
+    <ClInclude Include="Zenith\DebugVariables\Zenith_DebugVariables.h" />
     <ClInclude Include="Zenith\EntityComponent\Components\Zenith_CameraComponent.h" />
     <ClInclude Include="Zenith\EntityComponent\Components\Zenith_ColliderComponent.h" />
     <ClInclude Include="Zenith\EntityComponent\Components\Zenith_ModelComponent.h" />
@@ -1146,6 +1147,7 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">Create</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="Zenith\Core\Zenith_Core.cpp" />
+    <ClCompile Include="Zenith\DebugVariables\Zenith_DebugVariables.cpp" />
     <ClCompile Include="Zenith\EntityComponent\Components\Zenith_CameraComponent.cpp" />
     <ClCompile Include="Zenith\EntityComponent\Components\Zenith_ColliderComponent.cpp" />
     <ClCompile Include="Zenith\EntityComponent\Components\Zenith_ModelComponent.cpp" />

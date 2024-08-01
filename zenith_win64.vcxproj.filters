@@ -280,6 +280,9 @@
     <ClCompile Include="Zenith\Core\Zenith_Core.cpp">
       <Filter>Zenith\Core</Filter>
     </ClCompile>
+    <ClCompile Include="Zenith\DebugVariables\Zenith_DebugVariables.cpp">
+      <Filter>Zenith\DebugVariables</Filter>
+    </ClCompile>
     <ClCompile Include="Zenith\EntityComponent\Components\Zenith_CameraComponent.cpp">
       <Filter>Zenith\EntityComponent\Components</Filter>
     </ClCompile>
@@ -729,6 +732,9 @@
     <ClInclude Include="Zenith\Core\Zenith_Core.h">
       <Filter>Zenith\Core</Filter>
     </ClInclude>
+    <ClInclude Include="Zenith\DebugVariables\Zenith_DebugVariables.h">
+      <Filter>Zenith\DebugVariables</Filter>
+    </ClInclude>
     <ClInclude Include="Zenith\EntityComponent\Components\Zenith_CameraComponent.h">
       <Filter>Zenith\EntityComponent\Components</Filter>
     </ClInclude>
@@ -1000,6 +1006,9 @@
     </Filter>
     <Filter Include="Zenith\Core">
       <UniqueIdentifier>{e84b9d32-4703-7861-1735-99a5845a300c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Zenith\DebugVariables">
+      <UniqueIdentifier>{7f1403f2-3ea3-a630-7141-9d9483afc14d}</UniqueIdentifier>
     </Filter>
     <Filter Include="Zenith\EntityComponent">
       <UniqueIdentifier>{aaa61361-bd1b-2316-4c75-f74b5ca58ae9}</UniqueIdentifier>
