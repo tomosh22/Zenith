@@ -784,7 +784,7 @@ Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithBlendState(vk:
 		xBuilder = xBuilder.WithColourFormats(spec.m_aeColourFormats);
 		xBuilder = xBuilder.WithDepthFormat(vk::Format::eD32Sfloat);
 		
-		xBuilder = xBuilder.WithPass(Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(spec.m_xTargetSetup, spec.m_eColourLoadAction, spec.m_eColourStoreAction, spec.m_eDepthStencilLoadAction, spec.m_eDepthStencilStoreAction, spec.m_eTargetUsage));
+		xBuilder = xBuilder.WithPass(Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(spec.m_xTargetSetup, LOAD_ACTION_DONTCARE, STORE_ACTION_DONTCARE, LOAD_ACTION_DONTCARE, STORE_ACTION_DONTCARE, spec.m_eTargetUsage));
 
 		DescriptorThings xDescThings = HandleDescriptors(spec, xBuilder);
 

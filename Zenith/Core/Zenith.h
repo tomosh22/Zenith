@@ -37,6 +37,13 @@
 #define ZENITH_FINAL
 #endif
 
+#define DEBUG_VARIABLES
+#ifdef DEBUG_VARIABLES
+#define DEBUGVAR static
+#else
+#define DEBUGVAR static const
+#endif
+
 #define COUNT_OF(x) sizeof(x) / sizeof(x[0])
 
 #define STUBBED __debugbreak();

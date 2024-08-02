@@ -34,6 +34,7 @@ void TraverseTree(Zenith_DebugVariableTree::Node* pxNode, uint32_t uCurrentDepth
 	{
 		return;
 	}
+	ImGui::Indent(uCurrentDepth * 10);
 	for (Zenith_DebugVariableTree::LeafNodeBase* pxLeaf : pxNode->m_xLeaves)
 	{
 		pxLeaf->ImGuiDisplay();
@@ -93,17 +94,10 @@ static bool s_bDVSTest0 = false;
 static bool s_bDVSTest1 = false;
 static bool s_bDVSTest2 = false;
 static bool s_bDVSTest3 = false;
+static Zenith_Maths::Vector3 s_xDVSTest4 = { 1,2,3 };
 
 int main()
 {
-#if 0//def ZENITH_TOOLS
-	extern void ExportAllMeshes();
-	extern void ExportAllTextures();
-	extern void ExportHeightmap();
-	ExportAllMeshes();
-	ExportAllTextures();
-	ExportHeightmap();
-#else
 	s_xLastFrameTime = std::chrono::high_resolution_clock::now();
 	Zenith_Window::Inititalise("Zenith", 1280, 720);
 	Flux::EarlyInitialise();
@@ -111,15 +105,20 @@ int main()
 	Zenith_Core::Project_Startup();
 	Flux::LateInitialise();
 
-	Zenith_DebugVariables::DebugBoolean({ "Root", "AAA", "BBB", "Test0" }, s_bDVSTest0);
-	Zenith_DebugVariables::DebugBoolean({ "Root", "AAA", "BBB", "Test1" }, s_bDVSTest1);
-	Zenith_DebugVariables::DebugBoolean({ "Root", "AAA", "CCC", "Test2" }, s_bDVSTest2);
-	Zenith_DebugVariables::DebugBoolean({ "Root", "Test3" }, s_bDVSTest3);
+#if defined ZENITH_TOOLS && defined DEBUG_VARIABLES
+
+	extern void ExportAllMeshes();
+	extern void ExportAllTextures();
+	extern void ExportHeightmap();
+
+	Zenith_DebugVariables::AddButton({ "Export", "Export All Meshes" }, ExportAllMeshes);
+	Zenith_DebugVariables::AddButton({ "Export", "Export All Textures" }, ExportAllTextures);
+	Zenith_DebugVariables::AddButton({ "Export", "Export Heightmap" }, ExportHeightmap);
+#endif
 	
 	while (true)
 	{
 		Zenith_MainLoop();
 	}
-#endif //ZENITH_TOOLS
 	__debugbreak();
 }
