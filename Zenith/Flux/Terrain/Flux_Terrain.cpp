@@ -7,14 +7,16 @@
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_Buffers.h"
 #include "AssetHandling/Zenith_AssetHandler.h"
-
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
+#include "DebugVariables/Zenith_DebugVariables.h"
 
 static Flux_CommandBuffer s_xCommandBuffer;
 
 static Flux_Shader s_xShader;
 static Flux_Pipeline s_xPipeline;
+
+DEBUGVAR bool dbg_Enable = true;
 
 void Flux_Terrain::Initialise()
 {
@@ -67,11 +69,20 @@ void Flux_Terrain::Initialise()
 
 	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
 
+#ifdef DEBUG_VARIABLES
+	Zenith_DebugVariables::AddBoolean({ "Render", "Enable", "Terrain" }, dbg_Enable);
+#endif
+
 	Zenith_Log("Flux_Terrain initialised");
 }
 
 void Flux_Terrain::Render()
 {
+	if (!dbg_Enable)
+	{
+		return;
+	}
+
 	s_xCommandBuffer.BeginRecording();
 
 	s_xCommandBuffer.SubmitTargetSetup(Flux_Graphics::s_xMRTTarget);
