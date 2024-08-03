@@ -94,7 +94,7 @@ void PlayerController_Behaviour::OnUpdate(const float fDt)
 		xFinalVelocity.y += dMoveSpeed;
 	}
 
-	xTrans.m_pxRigidBody->setLinearVelocity({ xFinalVelocity.x, xFinalVelocity.y, xFinalVelocity.z });
+	xTrans.m_pxRigidBody->applyWorldForceAtCenterOfMass({ xFinalVelocity.x, xFinalVelocity.y, xFinalVelocity.z });
 
 	Zenith_Maths::Vector3 xPos;
 	xTrans.GetPosition(xPos);

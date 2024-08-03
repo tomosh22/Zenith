@@ -1,5 +1,6 @@
 #include "Zenith.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
+#include "EntityComponent/Components/Zenith_TerrainComponent.h"
 
 Zenith_ColliderComponent::Zenith_ColliderComponent(Zenith_Entity& xEntity) :  m_xParentEntity(xEntity) {
 	Zenith_TransformComponent& xTrans = m_xParentEntity.GetComponent<Zenith_TransformComponent>();
@@ -33,38 +34,23 @@ void Zenith_ColliderComponent::AddCollider(CollisionVolumeType eVolumeType, Rigi
 	break;
 	case COLLISION_VOLUME_TYPE_TERRAIN:
 	{
-		STUBBED
-#if 0
-		VCE_Assert(m_xParentEntity.HasComponent<TerrainComponent>(), "Can't have a terrain collider without a terrain component");
-		const TerrainComponent& xTerrain = m_xParentEntity.GetComponent<TerrainComponent>();
+		Zenith_Assert(m_xParentEntity.HasComponent<Zenith_TerrainComponent>(), "Can't have a terrain collider without a terrain component");
+		const Zenith_TerrainComponent& xTerrain = m_xParentEntity.GetComponent<Zenith_TerrainComponent>();
 
-		const Mesh* pxMesh = xTerrain.m_pxMesh;
+		const Flux_MeshGeometry& xMesh = xTerrain.GetMeshGeometry();
 
-		if (!pxMesh->m_bInitialised) {
-			VCE_TRACE("Terrain mesh not initialised");
-			break;
-		}
+		const Zenith_Maths::Vector3 const* pxPositions = xMesh.m_pxPositions;
+		const Zenith_Maths::Vector3 const* pxNormals = xMesh.m_pxNormals;
+		const uint32_t const* puIndices = xMesh.m_puIndices;
 
-		glm::highp_vec3* pxPositions = pxMesh->m_pxVertexPositions;
-		const glm::highp_vec3* pxNormals = pxMesh->m_pxNormals;
-		uint32_t* puIndices = pxMesh->m_puIndices;
+		m_pxTriArray = new reactphysics3d::TriangleVertexArray(xMesh.m_uNumVerts, pxPositions, sizeof(pxPositions[0]), pxNormals, sizeof(pxNormals[0]), xMesh.m_uNumIndices / 3, puIndices, sizeof(puIndices[0]) * 3, reactphysics3d::TriangleVertexArray::VertexDataType::VERTEX_FLOAT_TYPE, reactphysics3d::TriangleVertexArray::NormalDataType::NORMAL_FLOAT_TYPE, reactphysics3d::TriangleVertexArray::IndexDataType::INDEX_INTEGER_TYPE);
 
-		//#TO_TODO: do i want a separate physics mesh? that way i can delete mesh data once it's on the GPU
-		for (uint32_t i = 0; i < pxMesh->m_uNumVerts; i++) {
-			pxPositions[i].y *= -1.f;
-			pxPositions[i].z *= -1.f;
-			//pxPositions[i].x *= -1.f;
-		}
+		std::vector<reactphysics3d::Message> xMessages;
+		m_pxTriMesh = Zenith_Physics::s_xPhysicsCommon.createTriangleMesh(*m_pxTriArray, xMessages);
 
-		m_pxTriArray = new reactphysics3d::TriangleVertexArray(pxMesh->m_uNumVerts, pxPositions, sizeof(pxPositions[0]), pxNormals, sizeof(pxNormals[0]), pxMesh->m_uNumIndices / 3, puIndices, sizeof(puIndices[0]) * 3, reactphysics3d::TriangleVertexArray::VertexDataType::VERTEX_FLOAT_TYPE, reactphysics3d::TriangleVertexArray::NormalDataType::NORMAL_FLOAT_TYPE, reactphysics3d::TriangleVertexArray::IndexDataType::INDEX_INTEGER_TYPE);
-
-		m_pxTriMesh = Physics::s_xPhysicsCommon.createTriangleMesh();
-		m_pxTriMesh->addSubpart(m_pxTriArray);
-
-		m_pxConcaveShape = Physics::s_xPhysicsCommon.createConcaveMeshShape(m_pxTriMesh);
+		m_pxConcaveShape = Zenith_Physics::s_xPhysicsCommon.createConcaveMeshShape(m_pxTriMesh);
 
 		m_pxCollider = m_pxRigidBody->addCollider(m_pxConcaveShape, reactphysics3d::Transform::identity());
-#endif
 	}
 	break;
 	}
