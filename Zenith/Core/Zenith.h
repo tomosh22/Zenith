@@ -37,7 +37,10 @@
 #define ZENITH_FINAL
 #endif
 
+#ifdef ZENITH_TOOLS
 #define DEBUG_VARIABLES
+#endif
+
 #ifdef DEBUG_VARIABLES
 #define DEBUGVAR static
 #else

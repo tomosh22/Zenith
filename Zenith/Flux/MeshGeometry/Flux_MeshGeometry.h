@@ -35,6 +35,7 @@ public:
 #ifndef ZENITH_TOOLS
 private:
 #endif
+	friend class Zenith_ColliderComponent;
 	void GenerateLayoutAndVertexData();
 
 	void GenerateNormals();
