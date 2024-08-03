@@ -93,7 +93,7 @@ void Zenith_Core::Project_Startup()
 
 	Zenith_ColliderComponent& xCollider = s_xPlayer.AddComponent<Zenith_ColliderComponent>();
 	xCollider.AddCollider(COLLISION_VOLUME_TYPE_SPHERE, RIGIDBODY_TYPE_DYNAMIC);
-	xTrans.m_pxRigidBody->enableGravity(false);
+	xTrans.m_pxRigidBody->enableGravity(true);
 
 	Zenith_ScriptComponent& xScript = s_xPlayer.AddComponent<Zenith_ScriptComponent>();
 	xScript.SetBehaviour<PlayerController_Behaviour>();
@@ -136,25 +136,22 @@ void Zenith_Core::Project_Startup()
 		xCollider.AddCollider(COLLISION_VOLUME_TYPE_SPHERE, RIGIDBODY_TYPE_DYNAMIC);
 	}
 
-	for (uint32_t x = 0; x < 16; x++)
+	//#TO_TODO: why does rp3d refuse to make colliders for the far edges? (15 not 16)
+	for (uint32_t x = 0; x < 15; x++)
 	{
-		for (uint32_t y = 0; y < 16; y++)
+		for (uint32_t y = 0; y < 15; y++)
 		{
 			std::string strMeshName = "Terrain" + std::to_string(x) + "_" + std::to_string(y);
 			Flux_MeshGeometry& xTerrainMesh = Zenith_AssetHandler::GetMesh(strMeshName);
 
-			Zenith_Entity xTerrain = s_xTerrain[x][y];
+			Zenith_Entity& xTerrain = s_xTerrain[x][y];
 
-			xTerrain.Initialise(&xScene, "Sphere1");
+			xTerrain.Initialise(&xScene, strMeshName);
 			xTerrain.AddComponent<Zenith_TerrainComponent>(xTerrainMesh, s_xRockMaterial, s_xCrystalMaterial);
 			Zenith_TransformComponent& xTrans = xTerrain.GetComponent<Zenith_TransformComponent>();
-			xTrans.SetPosition({ -10,1000,-10 });
-			xTrans.SetScale({ 10,10,10 });
 
-#if 0
-			Zenith_ColliderComponent& xCollider = s_xTerrain0_0.AddComponent<Zenith_ColliderComponent>();
-			xCollider.AddCollider(COLLISION_VOLUME_TYPE_TERRAIN, RIGIDBODY_TYPE_DYNAMIC);
-#endif
+			Zenith_ColliderComponent& xCollider = xTerrain.AddComponent<Zenith_ColliderComponent>();
+			xCollider.AddCollider(COLLISION_VOLUME_TYPE_TERRAIN, RIGIDBODY_TYPE_STATIC);
 		}
 	}
 }
