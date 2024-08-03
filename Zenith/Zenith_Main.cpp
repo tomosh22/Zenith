@@ -13,6 +13,7 @@
 #ifdef ZENITH_TOOLS
 #include "imgui.h"
 #endif
+#include "EntityComponent/Components/Zenith_CameraComponent.h"
 
 static std::chrono::high_resolution_clock::time_point s_xLastFrameTime;
 
@@ -50,8 +51,19 @@ void RenderImGui()
 	Flux_PlatformAPI::ImGuiBeginFrame();
 	ImGui::Begin("Zenith Tools");
 
-	bool bTest0 = false;
-	bool bTest1 = false;
+	const Zenith_CameraComponent& xCamera = Zenith_Scene::GetCurrentScene().GetMainCamera();
+
+	Zenith_Maths::Vector3 xCamPos;
+	xCamera.GetPosition(xCamPos);
+	std::string strCamPosText = "Camera Position: " + std::to_string(static_cast<int32_t>(xCamPos.x)) + " " + std::to_string(static_cast<int32_t>(xCamPos.y)) + " " + std::to_string(static_cast<int32_t>(xCamPos.z));
+
+	Zenith_Maths::Vector3 xFacingDir;
+	xCamera.GetFacingDir(xFacingDir);
+	std::string strCamDirText = "Camera Facing Dir: " + std::to_string(xFacingDir.x) + " " + std::to_string(xFacingDir.y) + " " + std::to_string(xFacingDir.z);
+
+	ImGui::Text(strCamPosText.c_str());
+	ImGui::Text(strCamDirText.c_str());
+
 
 	Zenith_DebugVariableTree& xTree = Zenith_DebugVariables::s_xTree;
 	Zenith_DebugVariableTree::Node* pxRoot = xTree.m_pxRoot;

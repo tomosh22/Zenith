@@ -76,7 +76,7 @@ Zenith_Maths::Vector3 Zenith_CameraComponent::ScreenSpaceToWorldSpace(Zenith_Mat
 }
 
 
-void Zenith_CameraComponent::GetPosition(Zenith_Maths::Vector3& xOut)
+void Zenith_CameraComponent::GetPosition(Zenith_Maths::Vector3& xOut) const
 {
 	xOut = m_xPosition;
 }
@@ -87,4 +87,12 @@ void Zenith_CameraComponent::GetPosition(Zenith_Maths::Vector4& xOut)
 	xOut.y = m_xPosition.y;
 	xOut.z = m_xPosition.z;
 	xOut.w = 0.;
+}
+
+void Zenith_CameraComponent::GetFacingDir(Zenith_Maths::Vector3& xOut) const
+{
+	xOut.z = -cos(m_fYaw) * cos(m_fPitch);
+	xOut.x = -sin(m_fYaw) * cos(m_fPitch);
+	xOut.y = sin(m_fPitch);
+	glm::normalize(xOut);
 }

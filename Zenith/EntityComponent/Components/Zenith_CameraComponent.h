@@ -22,9 +22,11 @@ public:
 	Zenith_Maths::Vector3 ScreenSpaceToWorldSpace(Zenith_Maths::Vector3 xScreenSpace);
 
 	void SetPosition(const Zenith_Maths::Vector3 xPos) { m_xPosition = xPos; }
-	void GetPosition(Zenith_Maths::Vector3& xOut);
+	void GetPosition(Zenith_Maths::Vector3& xOut) const;
 	//#TO w = 0 for padding
 	void GetPosition(Zenith_Maths::Vector4& xOut);
+
+	void GetFacingDir(Zenith_Maths::Vector3& xOut) const;
 
 	double GetPitch() { return m_fPitch; }
 	void SetPitch(const double fPitch) { m_fPitch = fPitch; }
