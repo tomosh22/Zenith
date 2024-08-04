@@ -25,6 +25,43 @@ void Flux_MeshGeometry::GenerateFullscreenQuad(Flux_MeshGeometry& xGeometryOut)
 	xGeometryOut.GenerateLayoutAndVertexData();
 }
 
+void Flux_MeshGeometry::GenerateFullscreenQuad(Flux_MeshGeometry& xGeometryOut, Zenith_Maths::Matrix4 xTransform)
+{
+	xGeometryOut.m_uNumVerts = 4;
+	xGeometryOut.m_uNumIndices = 6;
+	xGeometryOut.m_pxPositions = new Zenith_Maths::Vector3[xGeometryOut.m_uNumVerts];
+	xGeometryOut.m_pxUVs = new Zenith_Maths::Vector2[xGeometryOut.m_uNumVerts];
+
+	xGeometryOut.m_puIndices = new IndexType[xGeometryOut.m_uNumIndices]{ 0, 1, 2, 2, 1, 3 };
+
+	xGeometryOut.m_pxPositions[0] = { 1,1,0 };
+	xGeometryOut.m_pxPositions[1] = { 1,-1,0 };
+	xGeometryOut.m_pxPositions[2] = { -1,1,0 };
+	xGeometryOut.m_pxPositions[3] = { -1,-1,0 };
+
+	Zenith_Maths::Vector4 xTemp0 = { xGeometryOut.m_pxPositions[0].x, xGeometryOut.m_pxPositions[0].y, xGeometryOut.m_pxPositions[0].z, 1. };
+	Zenith_Maths::Vector4 xTemp1 = { xGeometryOut.m_pxPositions[1].x, xGeometryOut.m_pxPositions[1].y, xGeometryOut.m_pxPositions[1].z, 1. };
+	Zenith_Maths::Vector4 xTemp2 = { xGeometryOut.m_pxPositions[2].x, xGeometryOut.m_pxPositions[2].y, xGeometryOut.m_pxPositions[2].z, 1. };
+	Zenith_Maths::Vector4 xTemp3 = { xGeometryOut.m_pxPositions[3].x, xGeometryOut.m_pxPositions[3].y, xGeometryOut.m_pxPositions[3].z, 1. };
+
+	xTemp0 = xTransform * xTemp0;
+	xTemp1 = xTransform * xTemp1;
+	xTemp2 = xTransform * xTemp2;
+	xTemp3 = xTransform * xTemp3;
+
+	xGeometryOut.m_pxPositions[0] = {xTemp0.x, xTemp0.y, xTemp0.z};
+	xGeometryOut.m_pxPositions[1] = {xTemp1.x, xTemp1.y, xTemp1.z};
+	xGeometryOut.m_pxPositions[2] = {xTemp2.x, xTemp2.y, xTemp2.z};
+	xGeometryOut.m_pxPositions[3] = {xTemp3.x, xTemp3.y, xTemp3.z};
+
+	xGeometryOut.m_pxUVs[0] = { 1,0 };
+	xGeometryOut.m_pxUVs[1] = { 1,1 };
+	xGeometryOut.m_pxUVs[2] = { 0,0 };
+	xGeometryOut.m_pxUVs[3] = { 0,1 };
+
+	xGeometryOut.GenerateLayoutAndVertexData();
+}
+
 ShaderDataType StringToShaderDataType(const std::string& strString)
 {
 	if (strString == "Float") return SHADER_DATA_TYPE_FLOAT;

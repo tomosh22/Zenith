@@ -352,8 +352,8 @@ void Zenith_Vulkan_Swapchain::CopyToFramebuffer()
 
 	s_xCopyToFramebufferCmd.SetPipeline(&s_xPipeline);
 
-	s_xCopyToFramebufferCmd.SetVertexBuffer(Flux_Graphics::s_xQuadVertexBuffer);
-	s_xCopyToFramebufferCmd.SetIndexBuffer(Flux_Graphics::s_xQuadIndexBuffer);
+	s_xCopyToFramebufferCmd.SetVertexBuffer(Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
+	s_xCopyToFramebufferCmd.SetIndexBuffer(Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
 
 	s_xCopyToFramebufferCmd.BeginBind(BINDING_FREQUENCY_PER_FRAME);
 	s_xCopyToFramebufferCmd.BindTexture(&Flux_Graphics::s_xFinalRenderTarget.m_axColourAttachments[0].m_axTargetTextures[s_uFrameIndex], 0);

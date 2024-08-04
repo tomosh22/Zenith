@@ -71,8 +71,8 @@ void Flux_Skybox::Render()
 
 	s_xCommandBuffer.SetPipeline(&s_xPipeline);
 
-	s_xCommandBuffer.SetVertexBuffer(Flux_Graphics::s_xQuadVertexBuffer);
-	s_xCommandBuffer.SetIndexBuffer(Flux_Graphics::s_xQuadIndexBuffer);
+	s_xCommandBuffer.SetVertexBuffer(Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
+	s_xCommandBuffer.SetIndexBuffer(Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
 
 	s_xCommandBuffer.BeginBind(BINDING_FREQUENCY_PER_FRAME);
 	s_xCommandBuffer.BindBuffer(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer(), 0);

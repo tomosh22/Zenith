@@ -16,11 +16,11 @@ public:
 	static Flux_TargetSetup s_xMRTTarget;
 	static Flux_TargetSetup s_xFinalRenderTarget;
 
+	static struct Flux_RenderAttachment s_xDepthBuffer;
+
 	static Flux_Sampler s_xDefaultSampler;
 
 	static Flux_MeshGeometry s_xQuadMesh;
-	static Flux_VertexBuffer s_xQuadVertexBuffer;
-	static Flux_IndexBuffer s_xQuadIndexBuffer;
 
 	static Flux_ConstantBuffer s_xFrameConstantsBuffer;
 

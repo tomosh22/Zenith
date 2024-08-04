@@ -9,10 +9,9 @@
 
 Flux_TargetSetup Flux_Graphics::s_xMRTTarget;
 Flux_TargetSetup Flux_Graphics::s_xFinalRenderTarget;
+Flux_RenderAttachment Flux_Graphics::s_xDepthBuffer;
 Flux_Sampler Flux_Graphics::s_xDefaultSampler;
 Flux_MeshGeometry Flux_Graphics::s_xQuadMesh;
-Flux_VertexBuffer Flux_Graphics::s_xQuadVertexBuffer;
-Flux_IndexBuffer Flux_Graphics::s_xQuadIndexBuffer;
 Flux_ConstantBuffer Flux_Graphics::s_xFrameConstantsBuffer;
 Flux_Texture Flux_Graphics::s_xBlankTexture2D;
 Flux_MeshGeometry Flux_Graphics::s_xBlankMesh;
@@ -30,8 +29,8 @@ void Flux_Graphics::Initialise()
 	Flux_Sampler::InitialiseDefault(s_xDefaultSampler);
 
 	Flux_MeshGeometry::GenerateFullscreenQuad(s_xQuadMesh);
-	Flux_MemoryManager::InitialiseVertexBuffer(s_xQuadMesh.GetVertexData(), s_xQuadMesh.GetVertexDataSize(), s_xQuadVertexBuffer);
-	Flux_MemoryManager::InitialiseIndexBuffer(s_xQuadMesh.GetIndexData(), s_xQuadMesh.GetIndexDataSize(), s_xQuadIndexBuffer);
+	Flux_MemoryManager::InitialiseVertexBuffer(s_xQuadMesh.GetVertexData(), s_xQuadMesh.GetVertexDataSize(), s_xQuadMesh.GetVertexBuffer());
+	Flux_MemoryManager::InitialiseIndexBuffer(s_xQuadMesh.GetIndexData(), s_xQuadMesh.GetIndexDataSize(), s_xQuadMesh.GetIndexBuffer());
 	Flux_MemoryManager::InitialiseConstantBuffer(nullptr, sizeof(Zenith_FrameConstants), s_xFrameConstantsBuffer);
 
 	InitialiseRenderTargets();
@@ -46,21 +45,25 @@ void Flux_Graphics::InitialiseRenderTargets()
 	xBuilder.m_uWidth = Flux_Swapchain::GetWidth();
 	xBuilder.m_uHeight = Flux_Swapchain::GetHeight();
 
+	xBuilder.m_eDepthStencilFormat = DEPTHSTENCIL_FORMAT_D32_SFLOAT;
+	xBuilder.Build(s_xDepthBuffer, RENDER_TARGET_TYPE_DEPTHSTENCIL);
+
 	{
 		for (uint32_t u = 0; u < MRT_INDEX_COUNT; u++)
 		{
 			xBuilder.m_eColourFormat = s_aeMRTFormats[u];
 			xBuilder.Build(s_xMRTTarget.m_axColourAttachments[u], RENDER_TARGET_TYPE_COLOUR);
 		}
-		xBuilder.m_eDepthStencilFormat = DEPTHSTENCIL_FORMAT_D32_SFLOAT;
-		xBuilder.Build(s_xMRTTarget.m_xDepthStencil, RENDER_TARGET_TYPE_DEPTHSTENCIL);
+
+		s_xMRTTarget.AssignDepthStencil(&s_xDepthBuffer);
 	}
 
-	xBuilder.m_eColourFormat = COLOUR_FORMAT_BGRA8_SRGB;
-	xBuilder.Build(s_xFinalRenderTarget.m_axColourAttachments[0], RENDER_TARGET_TYPE_COLOUR);
+	{
+		xBuilder.m_eColourFormat = COLOUR_FORMAT_BGRA8_SRGB;
+		xBuilder.Build(s_xFinalRenderTarget.m_axColourAttachments[0], RENDER_TARGET_TYPE_COLOUR);
 
-	xBuilder.m_eDepthStencilFormat = DEPTHSTENCIL_FORMAT_D32_SFLOAT;
-	xBuilder.Build(s_xFinalRenderTarget.m_xDepthStencil, RENDER_TARGET_TYPE_DEPTHSTENCIL);
+		s_xFinalRenderTarget.AssignDepthStencil(&s_xDepthBuffer);
+	}
 }
 
 void Flux_Graphics::UploadFrameConstants()

@@ -16,6 +16,7 @@ public:
 	}
 
 	static void GenerateFullscreenQuad(Flux_MeshGeometry& xGeometryOut);
+	static void GenerateFullscreenQuad(Flux_MeshGeometry& xGeometryOut, Zenith_Maths::Matrix4 xTransform);
 	static void LoadFromFile(const char* szPath, Flux_MeshGeometry& xGeometryOut);
 
 	const void* GetVertexData() const { return m_pVertexData; }
@@ -26,7 +27,9 @@ public:
 	const uint32_t GetNumIndices() const { return m_uNumIndices; }
 
 	const Flux_VertexBuffer& GetVertexBuffer() const { return m_xVertexBuffer; }
+	Flux_VertexBuffer& GetVertexBuffer() { return m_xVertexBuffer; }
 	const Flux_IndexBuffer& GetIndexBuffer() const { return m_xIndexBuffer; }
+	Flux_IndexBuffer& GetIndexBuffer() { return m_xIndexBuffer; }
 
 #ifdef ZENITH_TOOLS
 	void Export(const char* szFilename);
