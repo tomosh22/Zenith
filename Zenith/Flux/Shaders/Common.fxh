@@ -4,3 +4,8 @@ layout(std140, set = 0, binding=0) uniform FrameConstants{
 	mat4 g_xViewProjMat;
 	vec4 g_xCamPos_Pad;
 };
+
+struct DirectionalLight{
+    vec4 m_xDirection;//4 bytes of padding
+    vec4 m_xColour;
+};

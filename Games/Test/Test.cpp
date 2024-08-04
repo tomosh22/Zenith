@@ -76,6 +76,8 @@ void LoadAssets()
 			Zenith_AssetHandler::AddMesh(Zenith_GUID(), "Terrain" + strSuffix, std::string("C:/dev/Zenith/Games/Test/Assets/Terrain/" + strSuffix + ".zmsh").c_str());
 		}
 	}
+
+	Zenith_AssetHandler::AddTexture(Zenith_GUID(), "Water_Normal", "C:/dev/Zenith/Games/Test/Assets/Textures/water/normal.ztx");
 }
 
 void Zenith_Core::Project_Startup()

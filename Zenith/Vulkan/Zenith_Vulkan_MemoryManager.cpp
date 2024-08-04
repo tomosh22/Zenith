@@ -296,7 +296,7 @@ void Zenith_Vulkan_MemoryManager::CreateTexture(const char* szPath, Zenith_Vulka
 	uint32_t uNumMips = std::floor(std::log2(std::max(uWidth, uHeight))) + 1;
 
 	//#TO_TODO: other formats
-	AllocateTexture(uWidth, uHeight, COLOUR_FORMAT_BGRA8_UNORM, DEPTHSTENCIL_FORMAT_NONE, 4 /*bytes per pizel*/, uNumMips, vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eTransferSrc, MEMORY_RESIDENCY_GPU, xTextureOut);
+	AllocateTexture(uWidth, uHeight, COLOUR_FORMAT_RGBA8_UNORM, DEPTHSTENCIL_FORMAT_NONE, 4 /*bytes per pizel*/, uNumMips, vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eTransferSrc, MEMORY_RESIDENCY_GPU, xTextureOut);
 	xTextureOut.SetWidth(uWidth);
 	xTextureOut.SetHeight(uHeight);
 	xTextureOut.SetNumMips(uNumMips);
