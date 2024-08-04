@@ -23,7 +23,7 @@ public:
 	template<typename T>
 	struct LeafNode : public LeafNodeBase
 	{
-		T* m_pData;
+		T* m_pData = nullptr;
 
 		LeafNode(std::vector<std::string>& xName, T* data)
 		{

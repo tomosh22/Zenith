@@ -11,12 +11,6 @@ layout(set = 0, binding = 2) uniform sampler2D g_xNormalsAmbientTex;
 layout(set = 0, binding = 3) uniform sampler2D g_xMaterialTex;
 layout(set = 0, binding = 4) uniform sampler2D g_xWorldPosTex;
 
-struct DirectionalLight{
-    vec4 m_xDirection;//4 bytes of padding
-    vec4 m_xColour;
-};
-
-
 void CookTorrance_Directional(inout vec4 xFinalColor, vec4 xDiffuse, DirectionalLight xLight, vec3 xNormal, float fMetal, float fRough, float fReflectivity, vec3 xWorldPos) {
 	vec3 xLightDir = xLight.m_xDirection.xyz;
 	vec3 xViewDir = normalize(g_xCamPos_Pad.xyz - xWorldPos);

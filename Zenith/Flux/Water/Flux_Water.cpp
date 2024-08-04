@@ -16,6 +16,9 @@ static Flux_CommandBuffer s_xCommandBuffer;
 static Flux_Shader s_xShader;
 static Flux_Pipeline s_xPipeline;
 
+static Flux_Texture* s_pxNormalTex = nullptr;
+static Flux_Texture* s_pxDisplacementTex = nullptr;
+
 DEBUGVAR bool dbg_Enable = true;
 
 void Flux_Water::Initialise()
@@ -31,17 +34,10 @@ void Flux_Water::Initialise()
 	xVertexDesc.m_xPerVertexLayout.CalculateOffsetsAndStrides();
 
 	std::vector<Flux_BlendState> xBlendStates;
-	xBlendStates.push_back({ BLEND_FACTOR_ZERO, BLEND_FACTOR_ZERO, false });
-	//xBlendStates.push_back({ BLEND_FACTOR_ZERO, BLEND_FACTOR_ZERO, false });
-	//xBlendStates.push_back({ BLEND_FACTOR_ZERO, BLEND_FACTOR_ZERO, false });
-	//xBlendStates.push_back({ BLEND_FACTOR_ZERO, BLEND_FACTOR_ZERO, false });
+	xBlendStates.push_back({ BLEND_FACTOR_SRCALPHA, BLEND_FACTOR_ONE, true });
 
 	std::vector<ColourFormat> xFormats;
 	xFormats.push_back(COLOUR_FORMAT_RGBA8_UNORM);
-	//for (ColourFormat eFormat : Flux_Graphics::s_aeMRTFormats)
-	//{
-		//xFormats.push_back(eFormat);
-	//}
 
 	Zenith_Vulkan_PipelineSpecification xPipelineSpec(
 		xVertexDesc,
@@ -55,7 +51,7 @@ void Flux_Water::Initialise()
 		true,
 		false,
 		{1,0},
-		{0,0},
+		{0,1},
 		Flux_Graphics::s_xFinalRenderTarget,
 		LOAD_ACTION_LOAD,
 		STORE_ACTION_STORE,
@@ -66,8 +62,10 @@ void Flux_Water::Initialise()
 
 	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
 
+	s_pxNormalTex = &Zenith_AssetHandler::GetTexture("Water_Normal");
+
 #ifdef DEBUG_VARIABLES
-	Zenith_DebugVariables::AddBoolean({ "Render", "Enable", "Static Meshes" }, dbg_Enable);
+	Zenith_DebugVariables::AddBoolean({ "Render", "Enable", "Water" }, dbg_Enable);
 #endif
 
 	Zenith_Log("Flux_Water initialised");
@@ -98,6 +96,8 @@ void Flux_Water::Render()
 	{
 		s_xCommandBuffer.SetVertexBuffer(pxTerrain->GetWaterGeometry().GetVertexBuffer());
 		s_xCommandBuffer.SetIndexBuffer(pxTerrain->GetWaterGeometry().GetIndexBuffer());
+
+		s_xCommandBuffer.BindTexture(s_pxNormalTex, 0);
 
 		s_xCommandBuffer.DrawIndexed(pxTerrain->GetWaterGeometry().GetNumIndices());
 	}

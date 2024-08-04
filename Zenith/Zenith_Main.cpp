@@ -125,9 +125,9 @@ int main()
 	extern void ExportAllTextures();
 	extern void ExportHeightmap();
 
-	Zenith_DebugVariables::AddButton({ "Export", "Export All Meshes" }, ExportAllMeshes);
-	Zenith_DebugVariables::AddButton({ "Export", "Export All Textures" }, ExportAllTextures);
-	Zenith_DebugVariables::AddButton({ "Export", "Export Heightmap" }, ExportHeightmap);
+	Zenith_DebugVariables::AddButton({ "Export", "Meshes", "Export All Meshes" }, ExportAllMeshes);
+	Zenith_DebugVariables::AddButton({ "Export", "Textures", "Export All Textures" }, ExportAllTextures);
+	Zenith_DebugVariables::AddButton({ "Export", "Terrain", "Export Heightmap" }, ExportHeightmap);
 #endif
 	
 	while (true)
