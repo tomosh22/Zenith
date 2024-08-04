@@ -6,11 +6,14 @@
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_Buffers.h"
+#include "AssetHandling/Zenith_AssetHandler.h"
 
 static Flux_CommandBuffer s_xCommandBuffer;
 
 static Flux_Shader s_xShader;
 static Flux_Pipeline s_xPipeline;
+
+static Flux_Texture* s_pxCubemap = nullptr;
 
 void Flux_Skybox::Initialise()
 {
@@ -47,7 +50,7 @@ void Flux_Skybox::Initialise()
 		DEPTHSTENCIL_FORMAT_D32_SFLOAT,
 		false,
 		false,
-		{1,0},
+		{1,1},
 		{0,0},
 		Flux_Graphics::s_xMRTTarget,
 		LOAD_ACTION_CLEAR,
@@ -58,6 +61,8 @@ void Flux_Skybox::Initialise()
 	);
 
 	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
+
+	s_pxCubemap = &Zenith_AssetHandler::GetTexture("Cubemap");
 
 	Zenith_Log("Flux_Skybox initialised");
 }
@@ -76,6 +81,7 @@ void Flux_Skybox::Render()
 
 	s_xCommandBuffer.BeginBind(BINDING_FREQUENCY_PER_FRAME);
 	s_xCommandBuffer.BindBuffer(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer(), 0);
+	s_xCommandBuffer.BindTexture(s_pxCubemap, 1);
 
 	s_xCommandBuffer.DrawIndexed(6);
 

@@ -453,13 +453,13 @@ void Zenith_Vulkan_CommandBuffer::CopyBufferToBuffer(Zenith_Vulkan_Buffer* pxSrc
 	m_xCurrentCmdBuffer.copyBuffer(pxSrc->GetBuffer(), pxDst->GetBuffer(), xCopyRegion);
 }
 
-void Zenith_Vulkan_CommandBuffer::CopyBufferToTexture(Zenith_Vulkan_Buffer* pxSrc, Zenith_Vulkan_Texture* pxDst, size_t uSrcOffset)
+void Zenith_Vulkan_CommandBuffer::CopyBufferToTexture(Zenith_Vulkan_Buffer* pxSrc, Zenith_Vulkan_Texture* pxDst, size_t uSrcOffset, uint32_t uNumLayers)
 {
 	vk::ImageSubresourceLayers xSubresource = vk::ImageSubresourceLayers()
 		.setAspectMask(vk::ImageAspectFlagBits::eColor)
 		.setMipLevel(0)
 		.setBaseArrayLayer(0)
-		.setLayerCount(1);
+		.setLayerCount(uNumLayers);
 
 
 	vk::BufferImageCopy region = vk::BufferImageCopy()
@@ -475,7 +475,7 @@ void Zenith_Vulkan_CommandBuffer::CopyBufferToTexture(Zenith_Vulkan_Buffer* pxSr
 		GetImage(), vk::ImageLayout::eTransferDstOptimal, 1, &region);
 	
 }
-void Zenith_Vulkan_CommandBuffer::BlitTextureToTexture(Zenith_Vulkan_Texture* pxSrc, Zenith_Vulkan_Texture* pxDst, uint32_t uDstMip)
+void Zenith_Vulkan_CommandBuffer::BlitTextureToTexture(Zenith_Vulkan_Texture* pxSrc, Zenith_Vulkan_Texture* pxDst, uint32_t uDstMip, uint32_t uDstLayer)
 {
 	std::array<vk::Offset3D, 2> axSrcOffsets;
 	axSrcOffsets.at(0).setX(0);
@@ -488,7 +488,7 @@ void Zenith_Vulkan_CommandBuffer::BlitTextureToTexture(Zenith_Vulkan_Texture* px
 	vk::ImageSubresourceLayers xSrcSubresource = vk::ImageSubresourceLayers()
 		.setAspectMask(vk::ImageAspectFlagBits::eColor)
 		.setMipLevel(0)
-		.setBaseArrayLayer(0)
+		.setBaseArrayLayer(uDstLayer)
 		.setLayerCount(1);
 
 	std::array<vk::Offset3D, 2> axDstOffsets;
@@ -502,7 +502,7 @@ void Zenith_Vulkan_CommandBuffer::BlitTextureToTexture(Zenith_Vulkan_Texture* px
 	vk::ImageSubresourceLayers xDstSubresource = vk::ImageSubresourceLayers()
 		.setAspectMask(vk::ImageAspectFlagBits::eColor)
 		.setMipLevel(uDstMip)
-		.setBaseArrayLayer(0)
+		.setBaseArrayLayer(uDstLayer)
 		.setLayerCount(1);
 
 	vk::ImageBlit xBlit = vk::ImageBlit()

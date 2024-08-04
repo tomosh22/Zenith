@@ -18,7 +18,8 @@ public:
 
 	static void LoadAssetsFromFile(const std::string& strFile);
 
-	static void AddTexture(Zenith_GUID xGUID, const std::string& strName, const char* szPath);
+	static void AddTexture2D(Zenith_GUID xGUID, const std::string& strName, const char* szPath);
+	static void AddTextureCube(Zenith_GUID xGUID, const std::string& strName, const char* szPathPX, const char* szPathNX, const char* szPathPY, const char* szPathNY, const char* szPathPZ, const char* szPathNZ);
 	static void AddMesh(Zenith_GUID xGUID, const std::string& strName, const char* szPath);
 
 	static Flux_Texture& GetTexture(Zenith_GUID xGUID);

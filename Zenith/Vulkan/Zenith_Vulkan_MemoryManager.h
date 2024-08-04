@@ -42,8 +42,9 @@ public:
 	static void CreateColourAttachment(uint32_t uWidth, uint32_t uHeight, ColourFormat eFormat, uint32_t uBitsPerPixel, Zenith_Vulkan_Texture& xTextureOut);
 	static void CreateDepthStencilAttachment(uint32_t uWidth, uint32_t uHeight, DepthStencilFormat eFormat, uint32_t uBitsPerPixel, Zenith_Vulkan_Texture& xTextureOut);
 	static void CreateTexture(const char* szPath, Zenith_Vulkan_Texture& xTextureOut);
+	static void CreateTextureCube(const char* szPathPX, const char* szPathNX, const char* szPathPY, const char* szPathNY, const char* szPathPZ, const char* szPathNZ, Zenith_Vulkan_Texture& xTextureOut);
 
-	static void AllocateTexture(uint32_t uWidth, uint32_t uHeight, ColourFormat eColourFormat, DepthStencilFormat eDepthStencilFormat, uint32_t uBitsPerPixel, uint32_t uNumMips, vk::ImageUsageFlags eUsageFlags, MemoryResidency eResidency, Zenith_Vulkan_Texture& xTextureOut);
+	static void AllocateTexture(uint32_t uWidth, uint32_t uHeight, uint32_t uNumLayers, ColourFormat eColourFormat, DepthStencilFormat eDepthStencilFormat, uint32_t uBitsPerPixel, uint32_t uNumMips, vk::ImageUsageFlags eUsageFlags, MemoryResidency eResidency, Zenith_Vulkan_Texture& xTextureOut);
 	static void FreeTexture(Zenith_Vulkan_Texture* pxTexture);
 
 	static void UploadStagingData(AllocationType eType, void* pAllocation, const void* pData, size_t uSize);

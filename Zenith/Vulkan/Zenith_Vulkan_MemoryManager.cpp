@@ -241,13 +241,13 @@ void Zenith_Vulkan_MemoryManager::InitialiseConstantBuffer(const void* pData, si
 void Zenith_Vulkan_MemoryManager::CreateColourAttachment(uint32_t uWidth, uint32_t uHeight, ColourFormat eFormat, uint32_t uBitsPerPixel, Zenith_Vulkan_Texture& xTextureOut)
 {
 	FreeTexture(&xTextureOut);
-	AllocateTexture(uWidth, uHeight, eFormat, DEPTHSTENCIL_FORMAT_NONE, uBitsPerPixel, 1 /* #TO_TODO: mips */, vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled, MEMORY_RESIDENCY_GPU, xTextureOut);
+	AllocateTexture(uWidth, uHeight, 1, eFormat, DEPTHSTENCIL_FORMAT_NONE, uBitsPerPixel, 1 /* #TO_TODO: mips */, vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled, MEMORY_RESIDENCY_GPU, xTextureOut);
 	ImageTransitionBarrier(xTextureOut.GetImage(), vk::ImageLayout::eUndefined, vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands);
 }
 void Zenith_Vulkan_MemoryManager::CreateDepthStencilAttachment(uint32_t uWidth, uint32_t uHeight, DepthStencilFormat eFormat, uint32_t uBitsPerPixel, Zenith_Vulkan_Texture& xTextureOut)
 {
 	FreeTexture(&xTextureOut);
-	AllocateTexture(uWidth, uHeight, COLOUR_FORMAT_NONE, eFormat, uBitsPerPixel, 1, vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled, MEMORY_RESIDENCY_GPU, xTextureOut);
+	AllocateTexture(uWidth, uHeight, 1, COLOUR_FORMAT_NONE, eFormat, uBitsPerPixel, 1, vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled, MEMORY_RESIDENCY_GPU, xTextureOut);
 	Zenith_Assert(eFormat == DEPTHSTENCIL_FORMAT_D32_SFLOAT, "#TO_TODO: layouts for just depth without stencil");
 	ImageTransitionBarrier(xTextureOut.GetImage(), vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthStencilAttachmentOptimal, vk::ImageAspectFlagBits::eDepth, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands);
 }
@@ -296,15 +296,117 @@ void Zenith_Vulkan_MemoryManager::CreateTexture(const char* szPath, Zenith_Vulka
 	uint32_t uNumMips = std::floor(std::log2(std::max(uWidth, uHeight))) + 1;
 
 	//#TO_TODO: other formats
-	AllocateTexture(uWidth, uHeight, COLOUR_FORMAT_RGBA8_UNORM, DEPTHSTENCIL_FORMAT_NONE, 4 /*bytes per pizel*/, uNumMips, vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eTransferSrc, MEMORY_RESIDENCY_GPU, xTextureOut);
+	AllocateTexture(uWidth, uHeight, 1, COLOUR_FORMAT_RGBA8_UNORM, DEPTHSTENCIL_FORMAT_NONE, 4 /*bytes per pizel*/, uNumMips, vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eTransferSrc, MEMORY_RESIDENCY_GPU, xTextureOut);
 	xTextureOut.SetWidth(uWidth);
 	xTextureOut.SetHeight(uHeight);
 	xTextureOut.SetNumMips(uNumMips);
+	xTextureOut.SetNumLayers(1);
 	UploadData(&xTextureOut, pData, ulDataSize);
 	delete pData;
 }
 
-void Zenith_Vulkan_MemoryManager::AllocateTexture(uint32_t uWidth, uint32_t uHeight, ColourFormat eColourFormat, DepthStencilFormat eDepthStencilFormat, uint32_t uBitsPerPixel, uint32_t uNumMips, vk::ImageUsageFlags eUsageFlags, MemoryResidency eResidency, Zenith_Vulkan_Texture& xTextureOut)
+void Zenith_Vulkan_MemoryManager::CreateTextureCube(const char* szPathPX, const char* szPathNX, const char* szPathPY, const char* szPathNY, const char* szPathPZ, const char* szPathNZ, Zenith_Vulkan_Texture& xTextureOut)
+{
+	FreeTexture(&xTextureOut);
+
+	const char* aszPaths[6] =
+	{
+		szPathPX,
+		szPathNX,
+		szPathPY,
+		szPathNY,
+		szPathPZ,
+		szPathNZ,
+	};
+
+	void* apDatas[6] =
+	{
+		nullptr,
+		nullptr,
+		nullptr,
+		nullptr,
+		nullptr,
+		nullptr,
+	};
+
+	size_t aulDataSizes[6] =
+	{
+		0,0,0,0,0,0
+	};
+
+	uint32_t uWidth = 0, uHeight = 0, uDepth = 0, uNumMips = 0;
+	size_t ulTotalDataSize = 0;
+
+	for (uint32_t u = 0; u < 6; u++)
+	{
+		const char* szPath = aszPaths[u];
+		void*& pData = apDatas[u];
+		
+		vk::Format eFormat = vk::Format::eUndefined;
+
+
+		FILE* pxFile = fopen(szPath, "rb");
+		fseek(pxFile, 0, SEEK_END);
+		size_t ulFileSize = ftell(pxFile);
+		fseek(pxFile, 0, SEEK_SET);
+		char* pcData = new char[ulFileSize + 1];
+		fread(pcData, ulFileSize, 1, pxFile);
+		pcData[ulFileSize] = '\0';
+		fclose(pxFile);
+
+		size_t ulCursor = 0;
+
+		uWidth = atoi(pcData + ulCursor);
+		ulCursor += std::to_string(uWidth).length() + 1;
+
+		uHeight = atoi(pcData + ulCursor);
+		ulCursor += std::to_string(uHeight).length() + 1;
+
+		uDepth = atoi(pcData + ulCursor);
+		ulCursor += std::to_string(uDepth).length() + 1;
+
+		std::string strFormat(pcData + ulCursor);
+		ulCursor += strFormat.length() + 1;
+		//#TO_TODO: other formats
+		eFormat = vk::Format::eR8G8B8A8Unorm;
+		//eFormat = StringToVkFormat(strFormat);
+
+		size_t ulThisFileDataSize = uWidth * uHeight * uDepth * 4 /*bytes per pixel*/;
+		aulDataSizes[u] = ulThisFileDataSize;
+
+		ulTotalDataSize += ulThisFileDataSize;
+		pData = malloc(ulThisFileDataSize);
+		memcpy(pData, pcData + ulCursor, ulThisFileDataSize);
+
+		delete[] pcData;
+
+		uNumMips = std::floor(std::log2(std::max(uWidth, uHeight))) + 1;
+	}
+
+	//#TO_TODO: other formats
+	AllocateTexture(uWidth, uHeight, 6, COLOUR_FORMAT_RGBA8_UNORM, DEPTHSTENCIL_FORMAT_NONE, 4 /*bytes per pizel*/, uNumMips, vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eTransferSrc, MEMORY_RESIDENCY_GPU, xTextureOut);
+	xTextureOut.SetWidth(uWidth);
+	xTextureOut.SetHeight(uHeight);
+	xTextureOut.SetNumMips(uNumMips);
+	xTextureOut.SetNumLayers(6);
+
+	void* pAllData = malloc(ulTotalDataSize);
+	size_t ulCursor = 0;
+	for (uint32_t u = 0; u < 6; u++)
+	{
+		memcpy((uint8_t*)pAllData + ulCursor, apDatas[u], aulDataSizes[u]);
+		ulCursor += aulDataSizes[u];
+	}
+
+	UploadData(&xTextureOut, pAllData, ulTotalDataSize);
+
+	for (uint32_t u = 0; u < 6; u++)
+	{
+		delete apDatas[u];
+	}
+}
+
+void Zenith_Vulkan_MemoryManager::AllocateTexture(uint32_t uWidth, uint32_t uHeight, uint32_t uNumLayers, ColourFormat eColourFormat, DepthStencilFormat eDepthStencilFormat, uint32_t uBitsPerPixel, uint32_t uNumMips, vk::ImageUsageFlags eUsageFlags, MemoryResidency eResidency, Zenith_Vulkan_Texture& xTextureOut)
 {
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 
@@ -329,11 +431,15 @@ void Zenith_Vulkan_MemoryManager::AllocateTexture(uint32_t uWidth, uint32_t uHei
 		.setTiling(vk::ImageTiling::eOptimal)
 		.setExtent({ uWidth,uHeight,1 })
 		.setMipLevels(uNumMips)
-		.setArrayLayers(1)
+		.setArrayLayers(uNumLayers)
 		.setInitialLayout(vk::ImageLayout::eUndefined)
 		.setUsage(eUsageFlags)
 		.setSharingMode(vk::SharingMode::eExclusive)
 		.setSamples(vk::SampleCountFlagBits::e1);
+	if (uNumLayers == 6)
+	{
+		xImageInfo = xImageInfo.setFlags(vk::ImageCreateFlagBits::eCubeCompatible);
+	}
 
 	xTextureOut.SetImage(xDevice.createImage(xImageInfo));
 
@@ -372,11 +478,11 @@ void Zenith_Vulkan_MemoryManager::AllocateTexture(uint32_t uWidth, uint32_t uHei
 		.setBaseMipLevel(0)
 		.setLevelCount(uNumMips)
 		.setBaseArrayLayer(0)
-		.setLayerCount(1);
+		.setLayerCount(uNumLayers);
 
 	vk::ImageViewCreateInfo xViewCreate = vk::ImageViewCreateInfo()
 		.setImage(xTextureOut.GetImage())
-		.setViewType(vk::ImageViewType::e2D)
+		.setViewType(uNumLayers == 1 ? vk::ImageViewType::e2D : vk::ImageViewType::eCube)
 		.setFormat(xFormat)
 		.setSubresourceRange(xSubresourceRange);
 
@@ -414,25 +520,28 @@ void Zenith_Vulkan_MemoryManager::FlushStagingBuffer() {
 		else if (xAlloc.m_eType == ALLOCATION_TYPE_TEXTURE) {
 			Zenith_Vulkan_Texture* pxTexture = reinterpret_cast<Zenith_Vulkan_Texture*>(xAlloc.m_pAllocation);
 
-			for (uint32_t i = 0; i < pxTexture->GetNumMips(); i++)
+			for (uint32_t uLayer = 0; uLayer < pxTexture->GetNumLayers(); uLayer++)
 			{
-				s_xCommandBuffer.ImageTransitionBarrier(pxTexture->GetImage(), vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eTransfer, i, 0);
-			}
+				for (uint32_t uMip = 0; uMip < pxTexture->GetNumMips(); uMip++)
+				{
+					s_xCommandBuffer.ImageTransitionBarrier(pxTexture->GetImage(), vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eTransfer, uMip, uLayer);
+				}
 
-			s_xCommandBuffer.CopyBufferToTexture(s_pxStagingBuffer, pxTexture, xAlloc.m_uOffset);
+				s_xCommandBuffer.CopyBufferToTexture(s_pxStagingBuffer, pxTexture, xAlloc.m_uOffset, pxTexture->GetNumLayers());
 
-			s_xCommandBuffer.ImageTransitionBarrier(pxTexture->GetImage(), vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eTransferSrcOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eTransfer, 0, 0);
+				s_xCommandBuffer.ImageTransitionBarrier(pxTexture->GetImage(), vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eTransferSrcOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eTransfer, 0, uLayer);
 
-			for (uint32_t i = 1; i < pxTexture->GetNumMips(); i++)
-			{
-				s_xCommandBuffer.BlitTextureToTexture(pxTexture, pxTexture, i);
-			}
+				for (uint32_t uMip = 0; uMip < pxTexture->GetNumMips(); uMip++)
+				{
+					s_xCommandBuffer.BlitTextureToTexture(pxTexture, pxTexture, uMip, uLayer);
+				}
 
-			s_xCommandBuffer.ImageTransitionBarrier(pxTexture->GetImage(), vk::ImageLayout::eTransferSrcOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, 0, 0);
+				s_xCommandBuffer.ImageTransitionBarrier(pxTexture->GetImage(), vk::ImageLayout::eTransferSrcOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, 0, uLayer);
 
-			for (uint32_t i = 1; i < pxTexture->GetNumMips(); i++)
-			{
-				s_xCommandBuffer.ImageTransitionBarrier(pxTexture->GetImage(), vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eFragmentShader, i, 0);//todo will probably need to change this to vertex shader in the future
+				for (uint32_t uMip = 0; uMip < pxTexture->GetNumMips(); uMip++)
+				{
+					s_xCommandBuffer.ImageTransitionBarrier(pxTexture->GetImage(), vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eAllCommands, uMip, uLayer);
+				}
 			}
 		}
 	}

@@ -5,6 +5,8 @@
 
 layout(location = 0) in vec2 a_xUV;
 
+layout(set = 0, binding = 1) uniform samplerCube g_xCubemap;
+
 vec3 RayDir(vec2 pixel)
 {
 	vec2 xNDC = pixel * 2. - 1.;
@@ -25,8 +27,6 @@ vec3 RayDir(vec2 pixel)
 void main()
 {
 	vec3 xRayDir = RayDir(a_xUV);
-	vec4 xDiffuse = vec4(0.2, 0.3, 0.9, 1.);
-	xDiffuse += max(xRayDir.y + 0.3,0.);
 
-	OutputToGBuffer(xDiffuse, vec3(0.), 0., 0., 0., vec3(0.));
+	OutputToGBuffer(texture(g_xCubemap, xRayDir), vec3(0.), 0., 0., 0., vec3(0.));
 }

@@ -35,10 +35,10 @@ void LoadAssets()
 	Zenith_AssetHandler::AddMesh(Zenith_GUID(), "Sphere_Smooth", "C:/dev/Zenith/Games/Test/Assets/Meshes/sphereSmooth.zmsh");
 
 	{
-		Zenith_AssetHandler::AddTexture(Zenith_GUID(), "Crystal_Diffuse", "C:/dev/Zenith/Games/Test/Assets/Textures/crystal2k/diffuse.ztx");
-		Zenith_AssetHandler::AddTexture(Zenith_GUID(), "Crystal_Normal", "C:/dev/Zenith/Games/Test/Assets/Textures/crystal2k/normal.ztx");
-		Zenith_AssetHandler::AddTexture(Zenith_GUID(), "Crystal_Roughness", "C:/dev/Zenith/Games/Test/Assets/Textures/crystal2k/roughness.ztx");
-		Zenith_AssetHandler::AddTexture(Zenith_GUID(), "Crystal_Metallic", "C:/dev/Zenith/Games/Test/Assets/Textures/crystal2k/metallic.ztx");
+		Zenith_AssetHandler::AddTexture2D(Zenith_GUID(), "Crystal_Diffuse", "C:/dev/Zenith/Games/Test/Assets/Textures/crystal2k/diffuse.ztx");
+		Zenith_AssetHandler::AddTexture2D(Zenith_GUID(), "Crystal_Normal", "C:/dev/Zenith/Games/Test/Assets/Textures/crystal2k/normal.ztx");
+		Zenith_AssetHandler::AddTexture2D(Zenith_GUID(), "Crystal_Roughness", "C:/dev/Zenith/Games/Test/Assets/Textures/crystal2k/roughness.ztx");
+		Zenith_AssetHandler::AddTexture2D(Zenith_GUID(), "Crystal_Metallic", "C:/dev/Zenith/Games/Test/Assets/Textures/crystal2k/metallic.ztx");
 
 		Flux_Texture& xDiffuse = Zenith_AssetHandler::GetTexture("Crystal_Diffuse");
 		Flux_Texture& xNormal = Zenith_AssetHandler::GetTexture("Crystal_Normal");
@@ -52,10 +52,10 @@ void LoadAssets()
 	}
 
 	{
-		Zenith_AssetHandler::AddTexture(Zenith_GUID(), "Rock_Diffuse", "C:/dev/Zenith/Games/Test/Assets/Textures/rock2k/diffuse.ztx");
-		Zenith_AssetHandler::AddTexture(Zenith_GUID(), "Rock_Normal", "C:/dev/Zenith/Games/Test/Assets/Textures/rock2k/normal.ztx");
-		Zenith_AssetHandler::AddTexture(Zenith_GUID(), "Rock_Roughness", "C:/dev/Zenith/Games/Test/Assets/Textures/rock2k/roughness.ztx");
-		Zenith_AssetHandler::AddTexture(Zenith_GUID(), "Rock_Metallic", "C:/dev/Zenith/Games/Test/Assets/Textures/rock2k/metallic.ztx");
+		Zenith_AssetHandler::AddTexture2D(Zenith_GUID(), "Rock_Diffuse", "C:/dev/Zenith/Games/Test/Assets/Textures/rock2k/diffuse.ztx");
+		Zenith_AssetHandler::AddTexture2D(Zenith_GUID(), "Rock_Normal", "C:/dev/Zenith/Games/Test/Assets/Textures/rock2k/normal.ztx");
+		Zenith_AssetHandler::AddTexture2D(Zenith_GUID(), "Rock_Roughness", "C:/dev/Zenith/Games/Test/Assets/Textures/rock2k/roughness.ztx");
+		Zenith_AssetHandler::AddTexture2D(Zenith_GUID(), "Rock_Metallic", "C:/dev/Zenith/Games/Test/Assets/Textures/rock2k/metallic.ztx");
 
 		Flux_Texture& xDiffuse = Zenith_AssetHandler::GetTexture("Rock_Diffuse");
 		Flux_Texture& xNormal = Zenith_AssetHandler::GetTexture("Rock_Normal");
@@ -77,7 +77,16 @@ void LoadAssets()
 		}
 	}
 
-	Zenith_AssetHandler::AddTexture(Zenith_GUID(), "Water_Normal", "C:/dev/Zenith/Games/Test/Assets/Textures/water/normal.ztx");
+	Zenith_AssetHandler::AddTexture2D(Zenith_GUID(), "Water_Normal", "C:/dev/Zenith/Games/Test/Assets/Textures/water/normal.ztx");
+
+	Zenith_AssetHandler::AddTextureCube(Zenith_GUID(), "Cubemap",
+		"C:/dev/Zenith/Games/Test/Assets/Textures/Cubemap/px.ztx",
+		"C:/dev/Zenith/Games/Test/Assets/Textures/Cubemap/nx.ztx",
+		"C:/dev/Zenith/Games/Test/Assets/Textures/Cubemap/py.ztx",
+		"C:/dev/Zenith/Games/Test/Assets/Textures/Cubemap/ny.ztx",
+		"C:/dev/Zenith/Games/Test/Assets/Textures/Cubemap/pz.ztx",
+		"C:/dev/Zenith/Games/Test/Assets/Textures/Cubemap/nz.ztx"
+		);
 }
 
 void Zenith_Core::Project_Startup()
