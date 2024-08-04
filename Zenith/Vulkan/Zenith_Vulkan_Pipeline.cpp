@@ -14,7 +14,7 @@ License: MIT (see LICENSE file at the top of the source tree)
 #include "Flux/Flux_RenderTargets.h"
 #include "FileAccess/Zenith_FileAccess.h"
 
-Zenith_Vulkan_PipelineSpecification::Zenith_Vulkan_PipelineSpecification(Flux_VertexInputDescription xVertexInputDesc, Zenith_Vulkan_Shader* pxShader, std::vector<Flux_BlendState> xBlendStates, bool bDepthTestEnabled, bool bDepthWriteEnabled, DepthCompareFunc eDepthCompareFunc, std::vector<ColourFormat> aeColourFormats, DepthStencilFormat eDepthStencilFormat, bool bUsePushConstants, bool bUseTesselation, std::array<uint32_t, DESCRIPTOR_TYPE_MAX> xPerFrameBindings, std::array<uint32_t, DESCRIPTOR_TYPE_MAX> xPerDrawBindings, Flux_TargetSetup& xTargetSetup, LoadAction eColourLoad, StoreAction eColourStore, LoadAction eDepthStencilLoad, StoreAction eDepthStencilStore, RenderTargetUsage eUsage)
+Zenith_Vulkan_PipelineSpecification::Zenith_Vulkan_PipelineSpecification(Flux_VertexInputDescription xVertexInputDesc, Zenith_Vulkan_Shader* pxShader, std::vector<Flux_BlendState> xBlendStates, bool bDepthTestEnabled, bool bDepthWriteEnabled, DepthCompareFunc eDepthCompareFunc, std::vector<ColourFormat> aeColourFormats, DepthStencilFormat eDepthStencilFormat, bool bUsePushConstants, bool bUseTesselation, std::array<uint32_t, DESCRIPTOR_TYPE_MAX> xPerFrameBindings, std::array<uint32_t, DESCRIPTOR_TYPE_MAX> xPerDrawBindings, Flux_TargetSetup& xTargetSetup, RenderTargetUsage eUsage)
 	: m_eVertexInputDesc(xVertexInputDesc)
 	, m_pxShader(pxShader)
 	, m_xBlendStates(xBlendStates)
@@ -28,10 +28,6 @@ Zenith_Vulkan_PipelineSpecification::Zenith_Vulkan_PipelineSpecification(Flux_Ve
 	, m_xPerFrameBindings(xPerFrameBindings)
 	, m_xPerDrawBindings(xPerDrawBindings)
 	, m_xTargetSetup(xTargetSetup)
-	, m_eColourLoadAction(eColourLoad)
-	, m_eColourStoreAction(eColourStore)
-	, m_eDepthStencilLoadAction(eDepthStencilLoad)
-	, m_eDepthStencilStoreAction(eDepthStencilStore)
 	, m_eTargetUsage(eUsage)
 {
 }

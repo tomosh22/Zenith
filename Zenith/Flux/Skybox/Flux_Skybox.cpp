@@ -39,7 +39,7 @@ void Flux_Skybox::Initialise()
 		xFormats.push_back(eFormat);
 	}
 
-	Zenith_Vulkan_PipelineSpecification xPipelineSpec(
+	Flux_PipelineSpecification xPipelineSpec(
 		xVertexDesc,
 		&s_xShader,
 		xBlendStates,
@@ -53,10 +53,6 @@ void Flux_Skybox::Initialise()
 		{1,1},
 		{0,0},
 		Flux_Graphics::s_xMRTTarget,
-		LOAD_ACTION_CLEAR,
-		STORE_ACTION_STORE,
-		LOAD_ACTION_CLEAR,
-		STORE_ACTION_STORE,
 		RENDER_TARGET_USAGE_RENDERTARGET
 	);
 

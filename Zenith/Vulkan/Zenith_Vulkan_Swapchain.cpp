@@ -137,10 +137,6 @@ void InitialiseCopyToFramebufferCommands()
 		{0,1},
 		{0,0},
 		Flux_Swapchain::GetTargetSetup(),
-		LOAD_ACTION_CLEAR,
-		STORE_ACTION_STORE,
-		LOAD_ACTION_DONTCARE,
-		STORE_ACTION_DONTCARE,
 		RENDER_TARGET_USAGE_PRESENT
 	);
 

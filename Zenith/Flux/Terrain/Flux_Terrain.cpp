@@ -46,7 +46,7 @@ void Flux_Terrain::Initialise()
 		xFormats.push_back(eFormat);
 	}
 
-	Zenith_Vulkan_PipelineSpecification xPipelineSpec(
+	Flux_PipelineSpecification xPipelineSpec(
 		xVertexDesc,
 		&s_xShader,
 		xBlendStates,
@@ -60,10 +60,6 @@ void Flux_Terrain::Initialise()
 		{1,0},
 		{0,8},
 		Flux_Graphics::s_xMRTTarget,
-		LOAD_ACTION_LOAD,
-		STORE_ACTION_STORE,
-		LOAD_ACTION_LOAD,
-		STORE_ACTION_STORE,
 		RENDER_TARGET_USAGE_RENDERTARGET
 	);
 
