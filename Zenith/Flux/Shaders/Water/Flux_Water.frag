@@ -10,5 +10,5 @@ layout(location = 2) in vec3 a_xWorldPos;
 
 void main()
 {
-	o_xColour = vec4(0.2,0.4,0.9,1.);
+	o_xColour = vec4(a_xNormal,1.);
 }
