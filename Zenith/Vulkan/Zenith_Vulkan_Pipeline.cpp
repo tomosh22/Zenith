@@ -14,14 +14,13 @@ License: MIT (see LICENSE file at the top of the source tree)
 #include "Flux/Flux_RenderTargets.h"
 #include "FileAccess/Zenith_FileAccess.h"
 
-Zenith_Vulkan_PipelineSpecification::Zenith_Vulkan_PipelineSpecification(Flux_VertexInputDescription xVertexInputDesc, Zenith_Vulkan_Shader* pxShader, std::vector<Flux_BlendState> xBlendStates, bool bDepthTestEnabled, bool bDepthWriteEnabled, DepthCompareFunc eDepthCompareFunc, std::vector<ColourFormat> aeColourFormats, DepthStencilFormat eDepthStencilFormat, bool bUsePushConstants, bool bUseTesselation, std::array<uint32_t, DESCRIPTOR_TYPE_MAX> xPerFrameBindings, std::array<uint32_t, DESCRIPTOR_TYPE_MAX> xPerDrawBindings, Flux_TargetSetup& xTargetSetup)
+Zenith_Vulkan_PipelineSpecification::Zenith_Vulkan_PipelineSpecification(Flux_VertexInputDescription xVertexInputDesc, Zenith_Vulkan_Shader* pxShader, std::vector<Flux_BlendState> xBlendStates, bool bDepthTestEnabled, bool bDepthWriteEnabled, DepthCompareFunc eDepthCompareFunc, DepthStencilFormat eDepthStencilFormat, bool bUsePushConstants, bool bUseTesselation, std::array<uint32_t, DESCRIPTOR_TYPE_MAX> xPerFrameBindings, std::array<uint32_t, DESCRIPTOR_TYPE_MAX> xPerDrawBindings, Flux_TargetSetup& xTargetSetup)
 	: m_eVertexInputDesc(xVertexInputDesc)
 	, m_pxShader(pxShader)
 	, m_xBlendStates(xBlendStates)
 	, m_bDepthTestEnabled(bDepthTestEnabled)
 	, m_bDepthWriteEnabled(bDepthWriteEnabled)
 	, m_eDepthCompareFunc(eDepthCompareFunc)
-	, m_aeColourFormats(aeColourFormats)
 	, m_eDepthStencilFormat(eDepthStencilFormat)
 	, m_bUsePushConstants(bUsePushConstants)
 	, m_bUseTesselation(bUseTesselation)
@@ -413,12 +412,6 @@ Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithBlendState(vk:
 		return *this;
 	}
 
-	Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithColourFormats(const std::vector<ColourFormat>& formats)
-	{
-		m_xAllColourRenderingFormats = formats;
-		return *this;
-	}
-
 	Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithTesselation()
 	{
 		m_bUseTesselation = true;
@@ -443,7 +436,7 @@ Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithBlendState(vk:
 	//	return *this;
 	//}
 
-	void Zenith_Vulkan_PipelineBuilder::Build(Zenith_Vulkan_Pipeline& xPipelineOut, vk::PipelineCache xCache /*= {}*/)
+	void Zenith_Vulkan_PipelineBuilder::Build(Zenith_Vulkan_Pipeline& xPipelineOut, const Zenith_Vulkan_PipelineSpecification& xSpec, vk::PipelineCache xCache /*= {}*/)
 	{
 		const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 		vk::PipelineLayoutCreateInfo xPipeLayoutCreate = vk::PipelineLayoutCreateInfo()
@@ -454,14 +447,11 @@ Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithBlendState(vk:
 		{
 			if (!m_xAllColourRenderingFormats.empty())
 			{
-				for (int i = 0; i < m_xAllColourRenderingFormats.size(); ++i)
+				for (int i = 0; i < xSpec.m_xTargetSetup.GetNumColourAttachments(); ++i)
 				{
+					//#TO can be anything
 					WithBlendState(vk::BlendFactor::eSrcAlpha, vk::BlendFactor::eOneMinusSrcAlpha, false);
 				}
-			}
-			else
-			{
-				WithBlendState(vk::BlendFactor::eSrcAlpha, vk::BlendFactor::eOneMinusSrcAlpha, false);
 			}
 		}
 
@@ -776,7 +766,6 @@ Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithBlendState(vk:
 			xBuilder = xBuilder.WithBlendState(VceBlendFactorToVKBlendFactor(xBlend.m_eSrcBlendFactor), VceBlendFactorToVKBlendFactor(xBlend.m_eDstBlendFactor), xBlend.m_bBlendEnabled);
 		}
 		xBuilder = xBuilder.WithDepthState(VceCompareFuncToVkCompareFunc(spec.m_eDepthCompareFunc), spec.m_bDepthTestEnabled, spec.m_bDepthWriteEnabled, false);
-		xBuilder = xBuilder.WithColourFormats(spec.m_aeColourFormats);
 		xBuilder = xBuilder.WithDepthFormat(vk::Format::eD32Sfloat);
 		
 		//#TO last parameter here can be whatever
@@ -799,7 +788,7 @@ Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithBlendState(vk:
 
 		xBuilder = xBuilder.WithRaster(vk::CullModeFlagBits::eNone);
 
-		xBuilder.Build(xPipelineOut);
+		xBuilder.Build(xPipelineOut, spec);
 
 		xPipelineOut.m_xPerFrameLayout = xDescThings.xPerFrameLayout;
 		xPipelineOut.m_xPerDrawLayout = xDescThings.xPerDrawLayout;

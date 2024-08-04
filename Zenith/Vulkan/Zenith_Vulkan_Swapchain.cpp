@@ -130,7 +130,6 @@ void InitialiseCopyToFramebufferCommands()
 		false,
 		false,
 		DEPTH_COMPARE_FUNC_ALWAYS,
-		{ COLOUR_FORMAT_BGRA8_SRGB },
 		DEPTHSTENCIL_FORMAT_NONE,
 		false,
 		false,

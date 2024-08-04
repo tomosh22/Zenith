@@ -30,6 +30,8 @@ struct Flux_TargetSetup {
 	std::string m_strName;
 
 	void AssignDepthStencil(Flux_RenderAttachment* pxDS);
+
+	const uint32_t GetNumColourAttachments();
 };
 
 class Flux_RenderAttachmentBuilder {

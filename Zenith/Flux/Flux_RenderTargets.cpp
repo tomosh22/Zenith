@@ -25,3 +25,20 @@ void Flux_TargetSetup::AssignDepthStencil(Flux_RenderAttachment* pxDS)
 {
 	m_pxDepthStencil = pxDS;
 }
+
+const uint32_t Flux_TargetSetup::GetNumColourAttachments()
+{
+	uint32_t uRet = 0;
+	for (Flux_RenderAttachment& xTarget : m_axColourAttachments)
+	{
+		if (xTarget.m_eColourFormat != COLOUR_FORMAT_NONE)
+		{
+			uRet++;
+		}
+		else
+		{
+			break;
+		}
+	}
+	return uRet;
+}
