@@ -193,7 +193,7 @@ public:
 				if (m_xAddedBindings[i].descriptorType != vk::DescriptorType::eAccelerationStructureKHR)
 				{
 					//#TO_TODO: why do I get geometry and lighting flickering without this???
-					//xBindingFlags.push_back(vk::DescriptorBindingFlagBits::eUpdateAfterBind);
+					xBindingFlags.push_back(vk::DescriptorBindingFlagBits::eUpdateAfterBind);
 				}
 				else
 				{
@@ -651,13 +651,13 @@ Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithBlendState(vk:
 		}
 
 		//should probably have a better way of checking for existence of depth/stencil target
-		bool bHasDepth = xTargetSetup.m_xDepthStencil.m_eDepthStencilFormat != DEPTHSTENCIL_FORMAT_NONE;
+		bool bHasDepth = xTargetSetup.m_pxDepthStencil != nullptr;
 		vk::AttachmentDescription xDepthStencilAttachment;
 		vk::AttachmentReference xDepthStencilAttachmentRef;
 		if (bHasDepth)
 		{
 			xDepthStencilAttachment = vk::AttachmentDescription()
-				.setFormat(Zenith_Vulkan_Texture::ConvertToVkFormat_DepthStencil(xTargetSetup.m_xDepthStencil.m_eDepthStencilFormat))
+				.setFormat(Zenith_Vulkan_Texture::ConvertToVkFormat_DepthStencil(xTargetSetup.m_pxDepthStencil->m_eDepthStencilFormat))
 				.setSamples(vk::SampleCountFlagBits::e1)
 				.setLoadOp(Zenith_Vulkan_Texture::ConvertToVkLoadAction(eDepthStencilLoad))
 				.setStoreOp(Zenith_Vulkan_Texture::ConvertToVkStoreAction(eDepthStencilStore))
@@ -706,7 +706,7 @@ Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithBlendState(vk:
 	{
 		const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 		const uint32_t uFrameIndex = Zenith_Vulkan_Swapchain::GetCurrentFrameIndex();
-		bool bHasDepth = xTargetSetup.m_xDepthStencil.m_eDepthStencilFormat != DEPTHSTENCIL_FORMAT_NONE;
+		bool bHasDepth = xTargetSetup.m_pxDepthStencil != nullptr;
 
 		uint32_t uNumColourAttachments = 0;
 		for (uint32_t i = 0; i < FLUX_MAX_TARGETS; i++)
@@ -732,7 +732,7 @@ Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithBlendState(vk:
 		}
 		if (bHasDepth)
 		{
-			axAttachments[uNumAttachments - 1] = xTargetSetup.m_xDepthStencil.m_axTargetTextures[uFrameIndex].GetImageView();
+			axAttachments[uNumAttachments - 1] = xTargetSetup.m_pxDepthStencil->m_axTargetTextures[uFrameIndex].GetImageView();
 		}
 
 		framebufferInfo.renderPass = xPass;

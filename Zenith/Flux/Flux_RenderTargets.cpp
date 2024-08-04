@@ -20,3 +20,8 @@ void Flux_RenderAttachmentBuilder::Build(Flux_RenderAttachment& xAttachment, Ren
 		}
 	}
 }
+
+void Flux_TargetSetup::AssignDepthStencil(Flux_RenderAttachment* pxDS)
+{
+	m_pxDepthStencil = pxDS;
+}

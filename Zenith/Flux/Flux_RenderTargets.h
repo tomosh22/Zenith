@@ -23,8 +23,13 @@ struct Flux_RenderAttachment {
 
 struct Flux_TargetSetup {
 	Flux_RenderAttachment m_axColourAttachments[FLUX_MAX_TARGETS];
-	Flux_RenderAttachment m_xDepthStencil;
+
+	//#TO not owned by this
+	Flux_RenderAttachment* m_pxDepthStencil = nullptr;
+
 	std::string m_strName;
+
+	void AssignDepthStencil(Flux_RenderAttachment* pxDS);
 };
 
 class Flux_RenderAttachmentBuilder {

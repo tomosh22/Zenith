@@ -259,7 +259,7 @@ void Zenith_Vulkan_CommandBuffer::SubmitTargetSetup(Flux_TargetSetup& xTargetSet
 	vk::ClearValue* axClearColour = nullptr;
 	//#TO im being lazy and assuming all render targets have the same load action
 	if (eColourLoad == LOAD_ACTION_CLEAR) {
-		bool bHasDepth = xTargetSetup.m_xDepthStencil.m_eDepthStencilFormat != DEPTHSTENCIL_FORMAT_NONE;
+		bool bHasDepth = xTargetSetup.m_pxDepthStencil != nullptr;
 		const uint32_t uNumAttachments = bHasDepth ? uNumColourAttachments + 1 : uNumColourAttachments;
 		axClearColour = new vk::ClearValue[uNumAttachments];
 		std::array<float, 4> tempColour{ 0.f,0.f,0.f,1.f };

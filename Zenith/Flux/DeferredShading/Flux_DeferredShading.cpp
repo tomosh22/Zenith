@@ -41,9 +41,9 @@ void Flux_DeferredShading::Initialise()
 		{1,4},
 		{0,0},
 		Flux_Graphics::s_xFinalRenderTarget,
-		LOAD_ACTION_CLEAR,
+		LOAD_ACTION_DONTCARE,
 		STORE_ACTION_STORE,
-		LOAD_ACTION_CLEAR,
+		LOAD_ACTION_DONTCARE,
 		STORE_ACTION_STORE,
 		RENDER_TARGET_USAGE_RENDERTARGET
 	);
@@ -58,12 +58,12 @@ void Flux_DeferredShading::Render()
 	s_xCommandBuffer.BeginRecording();
 
 	//#TO clearing as this is first pass of the frame
-	s_xCommandBuffer.SubmitTargetSetup(Flux_Graphics::s_xFinalRenderTarget, true, true, true);
+	s_xCommandBuffer.SubmitTargetSetup(Flux_Graphics::s_xFinalRenderTarget, true, false, false);
 
 	s_xCommandBuffer.SetPipeline(&s_xPipeline);
 
-	s_xCommandBuffer.SetVertexBuffer(Flux_Graphics::s_xQuadVertexBuffer);
-	s_xCommandBuffer.SetIndexBuffer(Flux_Graphics::s_xQuadIndexBuffer);
+	s_xCommandBuffer.SetVertexBuffer(Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
+	s_xCommandBuffer.SetIndexBuffer(Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
 
 	s_xCommandBuffer.BeginBind(BINDING_FREQUENCY_PER_FRAME);
 	s_xCommandBuffer.BindBuffer(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer(), 0);

@@ -340,6 +340,9 @@
     <ClCompile Include="Zenith\Flux\Terrain\Flux_Terrain.cpp">
       <Filter>Zenith\Flux\Terrain</Filter>
     </ClCompile>
+    <ClCompile Include="Zenith\Flux\Water\Flux_Water.cpp">
+      <Filter>Zenith\Flux\Water</Filter>
+    </ClCompile>
     <ClCompile Include="Zenith\Input\Zenith_Input.cpp">
       <Filter>Zenith\Input</Filter>
     </ClCompile>
@@ -819,6 +822,12 @@
     <ClInclude Include="Zenith\Flux\Shaders\Terrain\Flux_Terrain.vert">
       <Filter>Zenith\Flux\Shaders\Terrain</Filter>
     </ClInclude>
+    <ClInclude Include="Zenith\Flux\Shaders\Water\Flux_Water.frag">
+      <Filter>Zenith\Flux\Shaders\Water</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\Flux\Shaders\Water\Flux_Water.vert">
+      <Filter>Zenith\Flux\Shaders\Water</Filter>
+    </ClInclude>
     <ClInclude Include="Zenith\Flux\Skybox\Flux_Skybox.h">
       <Filter>Zenith\Flux\Skybox</Filter>
     </ClInclude>
@@ -827,6 +836,9 @@
     </ClInclude>
     <ClInclude Include="Zenith\Flux\Terrain\Flux_Terrain.h">
       <Filter>Zenith\Flux\Terrain</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\Flux\Water\Flux_Water.h">
+      <Filter>Zenith\Flux\Water</Filter>
     </ClInclude>
     <ClInclude Include="Zenith\Input\Zenith_Input.h">
       <Filter>Zenith\Input</Filter>
@@ -1043,6 +1055,9 @@
     <Filter Include="Zenith\Flux\Shaders\Terrain">
       <UniqueIdentifier>{c9d10ea7-fe94-0d9a-2112-36cfd1fa7166}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Zenith\Flux\Shaders\Water">
+      <UniqueIdentifier>{5d8d371d-a63f-3288-2190-27690819bd72}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Zenith\Flux\Skybox">
       <UniqueIdentifier>{61297b21-a027-e692-c57f-8a208efaaa3c}</UniqueIdentifier>
     </Filter>
@@ -1051,6 +1066,9 @@
     </Filter>
     <Filter Include="Zenith\Flux\Terrain">
       <UniqueIdentifier>{8f50e9fb-4acd-475f-c23b-739763fb64b0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Zenith\Flux\Water">
+      <UniqueIdentifier>{748bcb78-ce6a-217d-54f8-e6ed7623282c}</UniqueIdentifier>
     </Filter>
     <Filter Include="Zenith\Input">
       <UniqueIdentifier>{1b1e3505-0bf9-c172-d173-56b6842be504}</UniqueIdentifier>

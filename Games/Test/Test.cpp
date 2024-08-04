@@ -21,6 +21,15 @@ static Zenith_Entity s_xTerrain[16][16];
 static Flux_Material s_xCrystalMaterial;
 static Flux_Material s_xRockMaterial;
 
+
+//#TO_TODO: these need to be in a header file for tools terrain export
+
+#define MAX_TERRAIN_HEIGHT 2048
+//#TO width/height that heightmap is divided into
+#define TERRAIN_SIZE 64
+//#TO multiplier for vertex positions
+#define TERRAIN_SCALE 8
+
 void LoadAssets()
 {
 	Zenith_AssetHandler::AddMesh(Zenith_GUID(), "Sphere_Smooth", "C:/dev/Zenith/Games/Test/Assets/Meshes/sphereSmooth.zmsh");
@@ -147,7 +156,12 @@ void Zenith_Core::Project_Startup()
 			Zenith_Entity& xTerrain = s_xTerrain[x][y];
 
 			xTerrain.Initialise(&xScene, strMeshName);
-			xTerrain.AddComponent<Zenith_TerrainComponent>(xTerrainMesh, s_xRockMaterial, s_xCrystalMaterial);
+			Zenith_Maths::Matrix4 xWaterTransform =
+				glm::translate(glm::identity<Zenith_Maths::Matrix4>(), Zenith_Maths::Vector3(x * TERRAIN_SIZE * TERRAIN_SCALE + (TERRAIN_SIZE * TERRAIN_SCALE/2), MAX_TERRAIN_HEIGHT / 2, y * TERRAIN_SIZE * TERRAIN_SCALE + (TERRAIN_SIZE * TERRAIN_SCALE / 2))) *
+				Zenith_Maths::EulerRotationToMatrix4(90, {1.,0.,0.}) *
+				glm::scale(glm::identity<Zenith_Maths::Matrix4>(), Zenith_Maths::Vector3(TERRAIN_SIZE * TERRAIN_SCALE/2, TERRAIN_SIZE * TERRAIN_SCALE/2, TERRAIN_SIZE * TERRAIN_SCALE/2));
+
+			xTerrain.AddComponent<Zenith_TerrainComponent>(xTerrainMesh, s_xRockMaterial, s_xCrystalMaterial, xWaterTransform);
 			Zenith_TransformComponent& xTrans = xTerrain.GetComponent<Zenith_TransformComponent>();
 
 			Zenith_ColliderComponent& xCollider = xTerrain.AddComponent<Zenith_ColliderComponent>();
