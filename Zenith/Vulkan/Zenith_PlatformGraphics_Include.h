@@ -18,3 +18,4 @@ using Flux_Shader = Zenith_Vulkan_Shader;
 using Flux_Texture = Zenith_Vulkan_Texture;
 using Flux_Sampler = Zenith_Vulkan_Sampler;
 using Flux_Buffer = Zenith_Vulkan_Buffer;
+using Flux_PipelineSpecification = Zenith_Vulkan_PipelineSpecification;

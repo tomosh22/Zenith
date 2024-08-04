@@ -39,7 +39,7 @@ void Flux_Water::Initialise()
 	std::vector<ColourFormat> xFormats;
 	xFormats.push_back(COLOUR_FORMAT_RGBA8_UNORM);
 
-	Zenith_Vulkan_PipelineSpecification xPipelineSpec(
+	Flux_PipelineSpecification xPipelineSpec(
 		xVertexDesc,
 		&s_xShader,
 		xBlendStates,
@@ -53,10 +53,6 @@ void Flux_Water::Initialise()
 		{1,0},
 		{0,1},
 		Flux_Graphics::s_xFinalRenderTarget,
-		LOAD_ACTION_LOAD,
-		STORE_ACTION_STORE,
-		LOAD_ACTION_LOAD,
-		STORE_ACTION_STORE,
 		RENDER_TARGET_USAGE_RENDERTARGET
 	);
 

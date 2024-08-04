@@ -45,7 +45,7 @@ void Flux_StaticMeshes::Initialise()
 		xFormats.push_back(eFormat);
 	}
 
-	Zenith_Vulkan_PipelineSpecification xPipelineSpec(
+	Flux_PipelineSpecification xPipelineSpec(
 		xVertexDesc,
 		&s_xShader,
 		xBlendStates,
@@ -59,10 +59,6 @@ void Flux_StaticMeshes::Initialise()
 		{1,0},
 		{0,4},
 		Flux_Graphics::s_xMRTTarget,
-		LOAD_ACTION_LOAD,
-		STORE_ACTION_STORE,
-		LOAD_ACTION_LOAD,
-		STORE_ACTION_STORE,
 		RENDER_TARGET_USAGE_RENDERTARGET
 	);
 

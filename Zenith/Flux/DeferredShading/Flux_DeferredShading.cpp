@@ -27,7 +27,7 @@ void Flux_DeferredShading::Initialise()
 	std::vector<Flux_BlendState> xBlendStates;
 	xBlendStates.push_back({ BLEND_FACTOR_SRCALPHA, BLEND_FACTOR_ONEMINUSSRCALPHA, true });
 
-	Zenith_Vulkan_PipelineSpecification xPipelineSpec(
+	Flux_PipelineSpecification xPipelineSpec(
 		xVertexDesc,
 		&s_xShader,
 		xBlendStates,
@@ -41,10 +41,6 @@ void Flux_DeferredShading::Initialise()
 		{1,4},
 		{0,0},
 		Flux_Graphics::s_xFinalRenderTarget,
-		LOAD_ACTION_DONTCARE,
-		STORE_ACTION_STORE,
-		LOAD_ACTION_DONTCARE,
-		STORE_ACTION_STORE,
 		RENDER_TARGET_USAGE_RENDERTARGET
 	);
 
