@@ -24,6 +24,7 @@ public:
 	const vk::Image& GetImage() const { return m_xImage; }
 	const vk::ImageView& const GetImageView() { return m_xImageView; }
 	const uint32_t GetNumMips() const { return m_uNumMips; }
+	const uint32_t GetNumLayers() const { return m_uNumLayers; }
 
 	void SetImage(const vk::Image xImage) { m_xImage = xImage; }
 	void SetImageView(const vk::ImageView xView) { m_xImageView = xView; }
@@ -34,12 +35,14 @@ public:
 	void SetWidth(const uint32_t uWidth) { m_uWidth = uWidth; }
 	void SetHeight(const uint32_t uHeight) { m_uHeight = uHeight; }
 	void SetNumMips(const uint32_t uNumMips) { m_uNumMips = uNumMips; }
+	void SetNumLayers(const uint32_t uNumLayers) { m_uNumLayers = uNumLayers; }
 private:
 	vk::Image m_xImage;
 	vk::ImageView m_xImageView;
 	uint32_t m_uNumMips = 0;
 	uint32_t m_uWidth = 0;
 	uint32_t m_uHeight = 0;
+	uint32_t m_uNumLayers = 0;
 };
 
 class Zenith_Vulkan_Sampler

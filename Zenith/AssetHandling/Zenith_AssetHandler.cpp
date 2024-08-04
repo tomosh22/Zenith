@@ -125,7 +125,7 @@ void Zenith_AssetHandler::LoadAssetsFromFile(const std::string& strFile)
 }
 
 
-void Zenith_AssetHandler::AddTexture(Zenith_GUID xGUID, const std::string& strName, const char* szPath)
+void Zenith_AssetHandler::AddTexture2D(Zenith_GUID xGUID, const std::string& strName, const char* szPath)
 {
 	AssetID uID = GetNextFreeTextureSlot();
 	Flux_Texture& xTex = s_pxTextures[uID];
@@ -133,6 +133,15 @@ void Zenith_AssetHandler::AddTexture(Zenith_GUID xGUID, const std::string& strNa
 	s_xTextureNameMap.insert({ strName, uID });
 	s_xReverseTextureMap.insert({ uID, xGUID });
 	Flux_MemoryManager::CreateTexture(szPath, xTex);
+}
+void Zenith_AssetHandler::AddTextureCube(Zenith_GUID xGUID, const std::string& strName, const char* szPathPX, const char* szPathNX, const char* szPathPY, const char* szPathNY, const char* szPathPZ, const char* szPathNZ)
+{
+	AssetID uID = GetNextFreeTextureSlot();
+	Flux_Texture& xTex = s_pxTextures[uID];
+	s_xTextureMap.insert({ xGUID,uID });
+	s_xTextureNameMap.insert({ strName, uID });
+	s_xReverseTextureMap.insert({ uID, xGUID });
+	Flux_MemoryManager::CreateTextureCube(szPathPX, szPathNX, szPathPY, szPathNY, szPathPZ, szPathNZ, xTex);
 }
 void Zenith_AssetHandler::AddMesh(Zenith_GUID xGUID, const std::string& strName, const char* szPath)
 {
