@@ -186,11 +186,11 @@ public:
 		vk::DescriptorSetLayoutBindingFlagsCreateInfoEXT xBindingFlagsInfo;
 		std::vector< vk::DescriptorBindingFlags> xBindingFlags;
 
-		if (m_bUsingBindless)
+		//if (m_bUsingBindless)
 		{
 			for (int i = 0; i < m_xAddedBindings.size(); ++i)
 			{
-				if (m_xAddedBindings[i].descriptorType != vk::DescriptorType::eAccelerationStructureKHR)
+				if (m_xAddedBindings[i].descriptorType == vk::DescriptorType::eCombinedImageSampler)
 				{
 					//#TO_TODO: why do I get geometry and lighting flickering without this???
 					xBindingFlags.push_back(vk::DescriptorBindingFlagBits::eUpdateAfterBind);

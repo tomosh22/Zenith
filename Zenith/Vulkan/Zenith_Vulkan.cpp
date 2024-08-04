@@ -325,7 +325,7 @@ void Zenith_Vulkan::CreateDevice()
 	}
 
 
-	vk::DeviceCreateInfo deviceCreateInfo = vk::DeviceCreateInfo()
+	vk::DeviceCreateInfo xDeviceCreateInfo = vk::DeviceCreateInfo()
 		.setPQueueCreateInfos(xQueueInfos.data())
 		.setQueueCreateInfoCount(xQueueInfos.size())
 		.setEnabledExtensionCount(COUNT_OF(s_aszDeviceExtensions))
@@ -337,7 +337,12 @@ void Zenith_Vulkan::CreateDevice()
 		.setEnabledLayerCount(0);
 #endif
 
-	s_xDevice = s_xPhysicalDevice.createDevice(deviceCreateInfo);
+	vk::PhysicalDeviceDescriptorIndexingFeatures xIndexingFeatures = vk::PhysicalDeviceDescriptorIndexingFeatures()
+		.setDescriptorBindingSampledImageUpdateAfterBind(true);
+
+	xDeviceCreateInfo.setPNext(&xIndexingFeatures);
+
+	s_xDevice = s_xPhysicalDevice.createDevice(xDeviceCreateInfo);
 
 	for (uint32_t i = 0; i < COMMANDTYPE_MAX; i++)
 	{
