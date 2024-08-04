@@ -50,7 +50,7 @@ private:
 
 //#TO_TODO: there should be a platform independent version of this
 struct Zenith_Vulkan_PipelineSpecification {
-	Zenith_Vulkan_PipelineSpecification(Flux_VertexInputDescription xVertexInputDesc, Zenith_Vulkan_Shader* pxShader, std::vector<Flux_BlendState> xBlendStates, bool bDepthTestEnabled, bool bDepthWriteEnabled, DepthCompareFunc eDepthCompareFunc, std::vector<ColourFormat> aeColourFormats, DepthStencilFormat eDepthFormat, bool bUsePushConstants, bool bUseTesselation, std::array<uint32_t, DESCRIPTOR_TYPE_MAX> xPerFrameBindings, std::array<uint32_t, DESCRIPTOR_TYPE_MAX> xPerDrawBindings, Flux_TargetSetup& xTargetSetup);
+	Zenith_Vulkan_PipelineSpecification(Flux_VertexInputDescription xVertexInputDesc, Zenith_Vulkan_Shader* pxShader, std::vector<Flux_BlendState> xBlendStates, bool bDepthTestEnabled, bool bDepthWriteEnabled, DepthCompareFunc eDepthCompareFunc, DepthStencilFormat eDepthFormat, bool bUsePushConstants, bool bUseTesselation, std::array<uint32_t, DESCRIPTOR_TYPE_MAX> xPerFrameBindings, std::array<uint32_t, DESCRIPTOR_TYPE_MAX> xPerDrawBindings, Flux_TargetSetup& xTargetSetup);
 
 	Zenith_Vulkan_Shader* m_pxShader;
 
@@ -59,7 +59,6 @@ struct Zenith_Vulkan_PipelineSpecification {
 	bool m_bDepthTestEnabled;
 	bool m_bDepthWriteEnabled;
 	DepthCompareFunc m_eDepthCompareFunc;
-	std::vector<ColourFormat> m_aeColourFormats;
 	DepthStencilFormat m_eDepthStencilFormat;
 	bool m_bUsePushConstants;
 	bool m_bUseTesselation;
@@ -127,12 +126,11 @@ public:
 
 	Zenith_Vulkan_PipelineBuilder& WithDepthStencilFormat(vk::Format combinedFormat);
 	Zenith_Vulkan_PipelineBuilder& WithDepthFormat(vk::Format depthFormat);
-	Zenith_Vulkan_PipelineBuilder& WithColourFormats(const std::vector<ColourFormat>& formats);
 	Zenith_Vulkan_PipelineBuilder& WithTesselation();
 
 	//Zenith_Vulkan_PipelineBuilder& WithDescriptorBuffers();
 
-	void Build(Zenith_Vulkan_Pipeline& xPipelineOut, vk::PipelineCache xCache = {});
+	void Build(Zenith_Vulkan_Pipeline& xPipelineOut, const Zenith_Vulkan_PipelineSpecification& xSpec, vk::PipelineCache xCache = {});
 
 	static void FromSpecification(Zenith_Vulkan_Pipeline& xPipelineOut, const Zenith_Vulkan_PipelineSpecification& spec);
 

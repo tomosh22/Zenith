@@ -33,11 +33,6 @@ void Flux_Skybox::Initialise()
 	xBlendStates.push_back({ BLEND_FACTOR_SRCALPHA, BLEND_FACTOR_ONEMINUSSRCALPHA, true });
 	xBlendStates.push_back({ BLEND_FACTOR_SRCALPHA, BLEND_FACTOR_ONEMINUSSRCALPHA, true });
 
-	std::vector<ColourFormat> xFormats;
-	for (ColourFormat eFormat : Flux_Graphics::s_aeMRTFormats)
-	{
-		xFormats.push_back(eFormat);
-	}
 
 	Flux_PipelineSpecification xPipelineSpec(
 		xVertexDesc,
@@ -46,7 +41,6 @@ void Flux_Skybox::Initialise()
 		false,
 		false,
 		DEPTH_COMPARE_FUNC_ALWAYS,
-		xFormats,
 		DEPTHSTENCIL_FORMAT_D32_SFLOAT,
 		false,
 		false,

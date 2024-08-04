@@ -40,12 +40,6 @@ void Flux_Terrain::Initialise()
 	xBlendStates.push_back({ BLEND_FACTOR_ZERO, BLEND_FACTOR_ZERO, false });
 	xBlendStates.push_back({ BLEND_FACTOR_ZERO, BLEND_FACTOR_ZERO, false });
 
-	std::vector<ColourFormat> xFormats;
-	for (ColourFormat eFormat : Flux_Graphics::s_aeMRTFormats)
-	{
-		xFormats.push_back(eFormat);
-	}
-
 	Flux_PipelineSpecification xPipelineSpec(
 		xVertexDesc,
 		&s_xShader,
@@ -53,7 +47,6 @@ void Flux_Terrain::Initialise()
 		true,
 		true,
 		DEPTH_COMPARE_FUNC_GREATEREQUAL,
-		xFormats,
 		DEPTHSTENCIL_FORMAT_D32_SFLOAT,
 		true,
 		false,
