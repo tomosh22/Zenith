@@ -59,8 +59,7 @@ void Flux_Terrain::Initialise()
 		false,
 		{1,0},
 		{0,8},
-		Flux_Graphics::s_xMRTTarget,
-		RENDER_TARGET_USAGE_RENDERTARGET
+		Flux_Graphics::s_xMRTTarget
 	);
 
 	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
