@@ -50,7 +50,7 @@ private:
 
 //#TO_TODO: there should be a platform independent version of this
 struct Zenith_Vulkan_PipelineSpecification {
-	Zenith_Vulkan_PipelineSpecification(Flux_VertexInputDescription xVertexInputDesc, Zenith_Vulkan_Shader* pxShader, std::vector<Flux_BlendState> xBlendStates, bool bDepthTestEnabled, bool bDepthWriteEnabled, DepthCompareFunc eDepthCompareFunc, std::vector<ColourFormat> aeColourFormats, DepthStencilFormat eDepthFormat, bool bUsePushConstants, bool bUseTesselation, std::array<uint32_t, DESCRIPTOR_TYPE_MAX> xPerFrameBindings, std::array<uint32_t, DESCRIPTOR_TYPE_MAX> xPerDrawBindings, Flux_TargetSetup& xTargetSetup, RenderTargetUsage eUsage);
+	Zenith_Vulkan_PipelineSpecification(Flux_VertexInputDescription xVertexInputDesc, Zenith_Vulkan_Shader* pxShader, std::vector<Flux_BlendState> xBlendStates, bool bDepthTestEnabled, bool bDepthWriteEnabled, DepthCompareFunc eDepthCompareFunc, std::vector<ColourFormat> aeColourFormats, DepthStencilFormat eDepthFormat, bool bUsePushConstants, bool bUseTesselation, std::array<uint32_t, DESCRIPTOR_TYPE_MAX> xPerFrameBindings, std::array<uint32_t, DESCRIPTOR_TYPE_MAX> xPerDrawBindings, Flux_TargetSetup& xTargetSetup);
 
 	Zenith_Vulkan_Shader* m_pxShader;
 
@@ -74,7 +74,6 @@ struct Zenith_Vulkan_PipelineSpecification {
 	StoreAction m_eColourStoreAction;
 	LoadAction m_eDepthStencilLoadAction;
 	StoreAction m_eDepthStencilStoreAction;
-	RenderTargetUsage m_eTargetUsage;
 };
 
 class Zenith_Vulkan_Pipeline {

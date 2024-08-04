@@ -52,8 +52,7 @@ void Flux_Water::Initialise()
 		false,
 		{1,0},
 		{0,1},
-		Flux_Graphics::s_xFinalRenderTarget,
-		RENDER_TARGET_USAGE_RENDERTARGET
+		Flux_Graphics::s_xFinalRenderTarget
 	);
 
 	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);

@@ -136,8 +136,7 @@ void InitialiseCopyToFramebufferCommands()
 		false,
 		{0,1},
 		{0,0},
-		Flux_Swapchain::GetTargetSetup(),
-		RENDER_TARGET_USAGE_PRESENT
+		Flux_Swapchain::GetTargetSetup()
 	);
 
 	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
@@ -273,27 +272,9 @@ bool Zenith_Vulkan_Swapchain::BeginFrame()
 
 void Zenith_Vulkan_Swapchain::BindAsTarget()
 {
-	//#TO_TODO: set load/store actions properly
-	LoadAction eColourLoad = LOAD_ACTION_CLEAR;
-	StoreAction eColourStore = STORE_ACTION_STORE;
-	LoadAction eDepthStencilLoad = LOAD_ACTION_DONTCARE;
-	StoreAction eDepthStencilStore = STORE_ACTION_DONTCARE;
-	RenderTargetUsage eUsage = RENDER_TARGET_USAGE_PRESENT;
+	uint32_t uNumColourAttachments = 1;
 
-	uint32_t uNumColourAttachments = 0;
-	for (uint32_t i = 0; i < FLUX_MAX_TARGETS; i++)
-	{
-		if (s_xTargetSetup.m_axColourAttachments[i].m_eColourFormat != COLOUR_FORMAT_NONE)
-		{
-			uNumColourAttachments++;
-		}
-		else
-		{
-			break;
-		}
-	}
-
-	vk::RenderPass xRenderPass = Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(s_xTargetSetup, eColourLoad, eColourStore, eDepthStencilLoad, eDepthStencilStore, eUsage);
+	vk::RenderPass xRenderPass = Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(s_xTargetSetup, LOAD_ACTION_DONTCARE, STORE_ACTION_STORE, LOAD_ACTION_DONTCARE, STORE_ACTION_DONTCARE, RENDER_TARGET_USAGE_PRESENT);
 
 
 	vk::Framebuffer xFramebuffer = Zenith_Vulkan_Pipeline::TargetSetupToFramebuffer(s_xTargetSetup, xRenderPass);
@@ -303,25 +284,8 @@ void Zenith_Vulkan_Swapchain::BindAsTarget()
 		.setFramebuffer(xFramebuffer)
 		.setRenderArea({ {0,0}, s_xExtent });
 
-	vk::ClearValue* axClearColour = nullptr;
-	//#TO im being lazy and assuming all render targets have the same load action
-	if (eColourLoad == LOAD_ACTION_CLEAR) {
-		axClearColour = new vk::ClearValue[uNumColourAttachments];
-		std::array<float, 4> tempColour{ 0.f,0.f,0.f,1.f };
-		for (uint32_t i = 0; i < uNumColourAttachments; i++)
-		{
-			axClearColour[i].color = { vk::ClearColorValue(tempColour) };
-			axClearColour[i].depthStencil = vk::ClearDepthStencilValue(0, 0);
-		}
-
-		xRenderPassInfo.clearValueCount = uNumColourAttachments;
-		xRenderPassInfo.pClearValues = axClearColour;
-	}
-
 
 	s_xCopyToFramebufferCmd.GetCurrentCmdBuffer().beginRenderPass(xRenderPassInfo, vk::SubpassContents::eInline);
-
-	if (axClearColour != nullptr) delete[] axClearColour;
 
 	//flipping because porting from opengl
 	vk::Viewport xViewport{};
