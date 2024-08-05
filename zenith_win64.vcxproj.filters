@@ -328,6 +328,9 @@
     <ClCompile Include="Zenith\Flux\Flux_RenderTargets.cpp">
       <Filter>Zenith\Flux</Filter>
     </ClCompile>
+    <ClCompile Include="Zenith\Flux\Fog\Flux_Fog.cpp">
+      <Filter>Zenith\Flux\Fog</Filter>
+    </ClCompile>
     <ClCompile Include="Zenith\Flux\MeshGeometry\Flux_MeshGeometry.cpp">
       <Filter>Zenith\Flux\MeshGeometry</Filter>
     </ClCompile>
@@ -789,6 +792,9 @@
     <ClInclude Include="Zenith\Flux\Flux_Types.h">
       <Filter>Zenith\Flux</Filter>
     </ClInclude>
+    <ClInclude Include="Zenith\Flux\Fog\Flux_Fog.h">
+      <Filter>Zenith\Flux\Fog</Filter>
+    </ClInclude>
     <ClInclude Include="Zenith\Flux\MeshGeometry\Flux_MeshGeometry.h">
       <Filter>Zenith\Flux\MeshGeometry</Filter>
     </ClInclude>
@@ -803,6 +809,9 @@
     </ClInclude>
     <ClInclude Include="Zenith\Flux\Shaders\Flux_TexturedQuad.frag">
       <Filter>Zenith\Flux\Shaders</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\Flux\Shaders\Fog\Flux_Fog.frag">
+      <Filter>Zenith\Flux\Shaders\Fog</Filter>
     </ClInclude>
     <ClInclude Include="Zenith\Flux\Shaders\GBufferCommon.fxh">
       <Filter>Zenith\Flux\Shaders</Filter>
@@ -1037,6 +1046,9 @@
     <Filter Include="Zenith\Flux\DeferredShading">
       <UniqueIdentifier>{a05482b8-8497-e0cb-fb99-b146f9c748e5}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Zenith\Flux\Fog">
+      <UniqueIdentifier>{51baa591-d8d8-e368-a571-63779de9365a}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Zenith\Flux\MeshGeometry">
       <UniqueIdentifier>{1ea2a6e2-5586-54cd-e29c-f7b7caaa7806}</UniqueIdentifier>
     </Filter>
@@ -1045,6 +1057,9 @@
     </Filter>
     <Filter Include="Zenith\Flux\Shaders\DeferredShading">
       <UniqueIdentifier>{4803051e-ebbc-36d1-e229-2d53d979a6af}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Zenith\Flux\Shaders\Fog">
+      <UniqueIdentifier>{c394d484-195a-6c9e-0c13-a689b4cfc200}</UniqueIdentifier>
     </Filter>
     <Filter Include="Zenith\Flux\Shaders\Skybox">
       <UniqueIdentifier>{bf2aae2b-cee3-e0f0-9869-c78bc13c7541}</UniqueIdentifier>

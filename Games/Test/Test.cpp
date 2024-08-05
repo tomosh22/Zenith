@@ -102,7 +102,7 @@ void Zenith_Core::Project_Startup()
 	const float fYaw = 0;
 	const float fFOV = 45;
 	const float fNear = 1;
-	const float fFar = 10000;
+	const float fFar = 5000;
 	const float fAspectRatio = 16. / 9.;
 	xCamera.InitialisePerspective(xPos, fPitch, fYaw, fFOV, fNear, fFar, fAspectRatio);
 	xScene.SetMainCameraEntity(s_xPlayer);

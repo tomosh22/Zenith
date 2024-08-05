@@ -293,7 +293,7 @@ void Zenith_Vulkan_Swapchain::BindAsTarget()
 	xViewport.width = s_xTargetSetup.m_axColourAttachments[0].m_uWidth;
 	xViewport.height = -1 * (float)s_xTargetSetup.m_axColourAttachments[0].m_uHeight;
 	xViewport.minDepth = 0;
-	xViewport.minDepth = 1;
+	xViewport.maxDepth = 1;
 
 	vk::Rect2D xScissor{};
 	xScissor.offset = vk::Offset2D(0, 0);
@@ -337,7 +337,7 @@ void Zenith_Vulkan_Swapchain::CopyToFramebuffer()
 	xViewport.width = s_xExtent.width;
 	xViewport.height = s_xExtent.height;
 	xViewport.minDepth = 0;
-	xViewport.minDepth = 1;
+	xViewport.maxDepth = 1;
 
 	vk::Rect2D xScissor{};
 	xScissor.offset = vk::Offset2D(0, 0);

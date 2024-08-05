@@ -8,6 +8,7 @@
 #include "Flux/Terrain/Flux_Terrain.h"
 #include "Flux/DeferredShading/Flux_DeferredShading.h"
 #include "Flux/Water/Flux_Water.h"
+#include "Flux/Fog/Flux_Fog.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "Physics/Zenith_Physics.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
@@ -94,6 +95,7 @@ void Zenith_MainLoop()
 	Flux_Terrain::Render();
 	Flux_DeferredShading::Render();
 	Flux_Water::Render();
+	Flux_Fog::Render();
 
 	Flux_MemoryManager::EndFrame();
 #ifdef ZENITH_TOOLS

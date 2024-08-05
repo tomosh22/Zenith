@@ -59,7 +59,7 @@ void Flux_Graphics::InitialiseRenderTargets()
 	}
 
 	{
-		xBuilder.m_eColourFormat = COLOUR_FORMAT_BGRA8_SRGB;
+		xBuilder.m_eColourFormat = COLOUR_FORMAT_R16G16B16A16_UNORM;
 		xBuilder.Build(s_xFinalRenderTarget.m_axColourAttachments[0], RENDER_TARGET_TYPE_COLOUR);
 
 		s_xFinalRenderTarget.AssignDepthStencil(&s_xDepthBuffer);
@@ -81,4 +81,9 @@ void Flux_Graphics::UploadFrameConstants()
 Flux_Texture& Flux_Graphics::GetGBufferTexture(MRTIndex eIndex)
 {
 	return s_xMRTTarget.m_axColourAttachments[eIndex].m_axTargetTextures[Flux_Swapchain::GetCurrentFrameIndex()];
+}
+
+Flux_Texture& Flux_Graphics::GetDepthStencilTexture()
+{
+	return s_xDepthBuffer.m_axTargetTextures[Flux_Swapchain::GetCurrentFrameIndex()];
 }

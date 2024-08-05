@@ -524,23 +524,27 @@ void Zenith_Vulkan_MemoryManager::FlushStagingBuffer() {
 			{
 				for (uint32_t uMip = 0; uMip < pxTexture->GetNumMips(); uMip++)
 				{
-					s_xCommandBuffer.ImageTransitionBarrier(pxTexture->GetImage(), vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eTransfer, uMip, uLayer);
+					s_xCommandBuffer.ImageTransitionBarrier(pxTexture->GetImage(), vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, uMip, uLayer);
 				}
+			}
 
-				s_xCommandBuffer.CopyBufferToTexture(s_pxStagingBuffer, pxTexture, xAlloc.m_uOffset, pxTexture->GetNumLayers());
+			s_xCommandBuffer.CopyBufferToTexture(s_pxStagingBuffer, pxTexture, xAlloc.m_uOffset, pxTexture->GetNumLayers());
 
-				s_xCommandBuffer.ImageTransitionBarrier(pxTexture->GetImage(), vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eTransferSrcOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eTransfer, 0, uLayer);
+			for (uint32_t uLayer = 0; uLayer < pxTexture->GetNumLayers(); uLayer++)
+			{
 
-				for (uint32_t uMip = 0; uMip < pxTexture->GetNumMips(); uMip++)
+				s_xCommandBuffer.ImageTransitionBarrier(pxTexture->GetImage(), vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eTransferSrcOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, 0, uLayer);
+
+				for (uint32_t uMip = 1; uMip < pxTexture->GetNumMips(); uMip++)
 				{
 					s_xCommandBuffer.BlitTextureToTexture(pxTexture, pxTexture, uMip, uLayer);
 				}
 
 				s_xCommandBuffer.ImageTransitionBarrier(pxTexture->GetImage(), vk::ImageLayout::eTransferSrcOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, 0, uLayer);
 
-				for (uint32_t uMip = 0; uMip < pxTexture->GetNumMips(); uMip++)
+				for (uint32_t uMip = 1; uMip < pxTexture->GetNumMips(); uMip++)
 				{
-					s_xCommandBuffer.ImageTransitionBarrier(pxTexture->GetImage(), vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eTransfer, vk::PipelineStageFlagBits::eAllCommands, uMip, uLayer);
+					s_xCommandBuffer.ImageTransitionBarrier(pxTexture->GetImage(), vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, uMip, uLayer);
 				}
 			}
 		}

@@ -45,7 +45,7 @@ void Flux_StaticMeshes::Initialise()
 		xBlendStates,
 		true,
 		true,
-		DEPTH_COMPARE_FUNC_GREATEREQUAL,
+		DEPTH_COMPARE_FUNC_LESSEQUAL,
 		DEPTHSTENCIL_FORMAT_D32_SFLOAT,
 		true,
 		false,
