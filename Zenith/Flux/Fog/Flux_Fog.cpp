@@ -1,22 +1,30 @@
 #include "Zenith.h"
 
-#include "Flux/DeferredShading/Flux_DeferredShading.h"
+#include "Flux/Fog/Flux_Fog.h"
 
 #include "Flux/Flux.h"
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_Buffers.h"
+#include "DebugVariables/Zenith_DebugVariables.h"
 
 static Flux_CommandBuffer s_xCommandBuffer;
 
 static Flux_Shader s_xShader;
 static Flux_Pipeline s_xPipeline;
 
-void Flux_DeferredShading::Initialise()
+DEBUGVAR bool dbg_Enable = true;
+
+static struct Flux_FogConstants
+{
+	float m_fFalloff;
+} s_xConstants;
+
+void Flux_Fog::Initialise()
 {
 	s_xCommandBuffer.Initialise();
 
-	s_xShader.Initialise("Flux_Fullscreen_UV.vert", "DeferredShading/Flux_DeferredShading.frag");
+	s_xShader.Initialise("Flux_Fullscreen_UV.vert", "Fog/Flux_Fog.frag");
 
 	Flux_VertexInputDescription xVertexDesc;
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_NONE;
@@ -25,7 +33,8 @@ void Flux_DeferredShading::Initialise()
 	xVertexDesc.m_xPerVertexLayout.CalculateOffsetsAndStrides();
 
 	std::vector<Flux_BlendState> xBlendStates;
-	xBlendStates.push_back({ BLEND_FACTOR_ONE, BLEND_FACTOR_ONE, false });
+	xBlendStates.push_back({ BLEND_FACTOR_SRCALPHA, BLEND_FACTOR_ONE, true });
+
 
 	Flux_PipelineSpecification xPipelineSpec(
 		xVertexDesc,
@@ -35,23 +44,33 @@ void Flux_DeferredShading::Initialise()
 		false,
 		DEPTH_COMPARE_FUNC_ALWAYS,
 		DEPTHSTENCIL_FORMAT_D32_SFLOAT,
+		true,
 		false,
-		false,
-		{1,4},
+		{1,1},
 		{0,0},
 		Flux_Graphics::s_xFinalRenderTarget
 	);
 
 	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
 
-	Zenith_Log("Flux_DeferredShading initialised");
+#ifdef DEBUG_VARIABLES
+	Zenith_DebugVariables::AddBoolean({ "Render", "Enable", "Fog" }, dbg_Enable);
+	Zenith_DebugVariables::AddFloat({ "Render", "Fog", "Density" }, s_xConstants.m_fFalloff, 0., 0.0001);
+#endif
+
+	Zenith_Log("Flux_Fog initialised");
 }
 
-void Flux_DeferredShading::Render()
+void Flux_Fog::Render()
 {
+	if (!dbg_Enable)
+	{
+		return;
+	}
+
 	s_xCommandBuffer.BeginRecording();
 
-	s_xCommandBuffer.SubmitTargetSetup(Flux_Graphics::s_xFinalRenderTarget, true, false, false);
+	s_xCommandBuffer.SubmitTargetSetup(Flux_Graphics::s_xFinalRenderTarget);
 
 	s_xCommandBuffer.SetPipeline(&s_xPipeline);
 
@@ -60,12 +79,11 @@ void Flux_DeferredShading::Render()
 
 	s_xCommandBuffer.BeginBind(BINDING_FREQUENCY_PER_FRAME);
 	s_xCommandBuffer.BindBuffer(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer(), 0);
-	s_xCommandBuffer.BindTexture(&Flux_Graphics::GetGBufferTexture(MRT_INDEX_DIFFUSE), 1);
-	s_xCommandBuffer.BindTexture(&Flux_Graphics::GetGBufferTexture(MRT_INDEX_NORMALSAMBIENT), 2);
-	s_xCommandBuffer.BindTexture(&Flux_Graphics::GetGBufferTexture(MRT_INDEX_MATERIAL), 3);
-	s_xCommandBuffer.BindTexture(&Flux_Graphics::GetGBufferTexture(MRT_INDEX_WORLDPOS), 4);
+	s_xCommandBuffer.BindTexture(&Flux_Graphics::GetDepthStencilTexture(), 1);
+
+	s_xCommandBuffer.PushConstant(&s_xConstants, sizeof(s_xConstants));
 
 	s_xCommandBuffer.DrawIndexed(6);
 
-	s_xCommandBuffer.EndRecording(RENDER_ORDER_APPLY_LIGHTING);
+	s_xCommandBuffer.EndRecording(RENDER_ORDER_FOG);
 }

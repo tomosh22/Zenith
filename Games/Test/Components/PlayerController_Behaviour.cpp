@@ -63,25 +63,25 @@ void PlayerController_Behaviour::OnUpdate(const float fDt)
 
 	if (Zenith_Input::IsKeyDown(ZENITH_KEY_W))
 	{
-		Zenith_Maths::Matrix4_64 xRotation = glm::rotate(xCamera.GetYaw(), Zenith_Maths::Vector3_64(0, 1, 0));
-		Zenith_Maths::Vector4_64 xResult = xRotation * Zenith_Maths::Vector4(0, 0, -1, 1) * dMoveSpeed;
+		Zenith_Maths::Matrix4_64 xRotation = glm::rotate(-xCamera.GetYaw(), Zenith_Maths::Vector3_64(0, 1, 0));
+		Zenith_Maths::Vector4_64 xResult = xRotation * Zenith_Maths::Vector4(0, 0, 1, 1) * dMoveSpeed;
 		xFinalVelocity += Zenith_Maths::Vector3(xResult);
 	}
 	if (Zenith_Input::IsKeyDown(ZENITH_KEY_S))
 	{
-		Zenith_Maths::Matrix4_64 xRotation = glm::rotate(xCamera.GetYaw(), Zenith_Maths::Vector3_64(0, 1, 0));
-		Zenith_Maths::Vector4_64 xResult = xRotation * Zenith_Maths::Vector4(0, 0, -1, 1) * dMoveSpeed;
+		Zenith_Maths::Matrix4_64 xRotation = glm::rotate(-xCamera.GetYaw(), Zenith_Maths::Vector3_64(0, 1, 0));
+		Zenith_Maths::Vector4_64 xResult = xRotation * Zenith_Maths::Vector4(0, 0, 1, 1) * dMoveSpeed;
 		xFinalVelocity -= Zenith_Maths::Vector3(xResult);
 	}
 	if (Zenith_Input::IsKeyDown(ZENITH_KEY_A))
 	{
-		Zenith_Maths::Matrix4_64 xRotation = glm::rotate(xCamera.GetYaw(), Zenith_Maths::Vector3_64(0, 1, 0));
+		Zenith_Maths::Matrix4_64 xRotation = glm::rotate(-xCamera.GetYaw(), Zenith_Maths::Vector3_64(0, 1, 0));
 		Zenith_Maths::Vector4_64 xResult = xRotation * Zenith_Maths::Vector4(-1, 0, 0, 1) * dMoveSpeed;
 		xFinalVelocity += Zenith_Maths::Vector3(xResult);
 	}
 	if (Zenith_Input::IsKeyDown(ZENITH_KEY_D))
 	{
-		Zenith_Maths::Matrix4_64 xRotation = glm::rotate(xCamera.GetYaw(), Zenith_Maths::Vector3_64(0, 1, 0));
+		Zenith_Maths::Matrix4_64 xRotation = glm::rotate(-xCamera.GetYaw(), Zenith_Maths::Vector3_64(0, 1, 0));
 		Zenith_Maths::Vector4_64 xResult = xRotation * Zenith_Maths::Vector4(-1, 0, 0, 1) * dMoveSpeed;
 		xFinalVelocity -= Zenith_Maths::Vector3(xResult);
 	}

@@ -18,6 +18,12 @@ void Zenith_DebugVariableTree::LeafNodeWithRange<Zenith_Maths::Vector3, float>::
 }
 
 template<>
+void Zenith_DebugVariableTree::LeafNodeWithRange<float, float>::ImGuiDisplay()
+{
+	ImGui::SliderFloat(m_xName.back().c_str(), m_pData, m_xMin, m_xMax, "%.7f");
+}
+
+template<>
 void Zenith_DebugVariableTree::LeafNode<void(*)()>::ImGuiDisplay()
 {
 	if (ImGui::Button(m_xName.back().c_str()))

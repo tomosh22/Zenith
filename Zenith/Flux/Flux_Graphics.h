@@ -30,6 +30,7 @@ public:
 	static ColourFormat s_aeMRTFormats[MRT_INDEX_COUNT];
 
 	static Flux_Texture& GetGBufferTexture(MRTIndex eIndex);
+	static Flux_Texture& GetDepthStencilTexture();
 private:
 	struct Zenith_FrameConstants
 	{

@@ -269,7 +269,7 @@ void Zenith_Vulkan_CommandBuffer::SubmitTargetSetup(Flux_TargetSetup& xTargetSet
 			axClearColour[i].depthStencil = vk::ClearDepthStencilValue(0, 0);
 		}
 		if(bHasDepth)
-			axClearColour[uNumAttachments-1].depthStencil = vk::ClearDepthStencilValue(0, 0);
+			axClearColour[uNumAttachments-1].depthStencil = vk::ClearDepthStencilValue(1, 0);
 
 		xRenderPassInfo.clearValueCount = uNumAttachments;
 		xRenderPassInfo.pClearValues = axClearColour;
@@ -286,7 +286,7 @@ void Zenith_Vulkan_CommandBuffer::SubmitTargetSetup(Flux_TargetSetup& xTargetSet
 	xViewport.width = xTargetSetup.m_axColourAttachments[0].m_uWidth;
 	xViewport.height = xTargetSetup.m_axColourAttachments[0].m_uHeight;
 	xViewport.minDepth = 0;
-	xViewport.minDepth = 1;
+	xViewport.maxDepth = 1;
 
 	vk::Rect2D xScissor{};
 	xScissor.offset = vk::Offset2D(0, 0);

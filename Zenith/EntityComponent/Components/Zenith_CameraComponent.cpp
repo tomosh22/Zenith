@@ -23,8 +23,8 @@ void Zenith_CameraComponent::InitialisePerspective(const Zenith_Maths::Vector3& 
 
 void Zenith_CameraComponent::BuildViewMatrix(Zenith_Maths::Matrix4& xOut) const
 {
-	Zenith_Maths::Matrix4_64 xPitchMat = glm::rotate(-m_fPitch, glm::dvec3(1, 0, 0));
-	Zenith_Maths::Matrix4_64 xYawMat = glm::rotate(-m_fYaw, glm::dvec3(0, 1, 0));
+	Zenith_Maths::Matrix4_64 xPitchMat = glm::rotate(m_fPitch, glm::dvec3(1, 0, 0));
+	Zenith_Maths::Matrix4_64 xYawMat = glm::rotate(m_fYaw, glm::dvec3(0, 1, 0));
 	Zenith_Maths::Matrix4_64 xTransMat = glm::translate(-m_xPosition);
 	xOut = xPitchMat * xYawMat * xTransMat;
 }
