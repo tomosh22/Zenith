@@ -16,6 +16,7 @@
 static Zenith_Entity s_xPlayer;
 static Zenith_Entity s_xSphere0;
 static Zenith_Entity s_xSphere1;
+static Zenith_Entity s_axRotatingSpheres[3];
 static Zenith_Entity s_xTerrain[16][16];
 
 static Flux_Material s_xCrystalMaterial;
@@ -133,8 +134,8 @@ void Zenith_Core::Project_Startup()
 		xTrans.SetScale({ 10,10,10 });
 
 		Zenith_ScriptComponent& xScript = s_xSphere0.AddComponent<Zenith_ScriptComponent>();
-		xScript.SetBehaviour<SphereMovement_Behaviour>();
-		SphereMovement_Behaviour& xBehaviour = *(SphereMovement_Behaviour*)xScript.m_pxScriptBehaviour;
+		xScript.SetBehaviour<HookesLaw_Behaviour>();
+		HookesLaw_Behaviour& xBehaviour = *(HookesLaw_Behaviour*)xScript.m_pxScriptBehaviour;
 		xBehaviour.SetDesiredPosition({ 20.,1000,20. });
 
 		Zenith_ColliderComponent& xCollider = s_xSphere0.AddComponent<Zenith_ColliderComponent>();
@@ -148,12 +149,44 @@ void Zenith_Core::Project_Startup()
 		xTrans.SetScale({ 10,10,10 });
 
 		Zenith_ScriptComponent& xScript = s_xSphere1.AddComponent<Zenith_ScriptComponent>();
-		xScript.SetBehaviour<SphereMovement_Behaviour>();
-		SphereMovement_Behaviour& xBehaviour = *(SphereMovement_Behaviour*)xScript.m_pxScriptBehaviour;
+		xScript.SetBehaviour<HookesLaw_Behaviour>();
+		HookesLaw_Behaviour& xBehaviour = *(HookesLaw_Behaviour*)xScript.m_pxScriptBehaviour;
 		xBehaviour.SetDesiredPosition({-20.,1000,-20.});
 
 		Zenith_ColliderComponent& xCollider = s_xSphere1.AddComponent<Zenith_ColliderComponent>();
 		xCollider.AddCollider(COLLISION_VOLUME_TYPE_SPHERE, RIGIDBODY_TYPE_DYNAMIC);
+	}
+
+	uint32_t uCount = 0;
+	for(Zenith_Entity& xEntity : s_axRotatingSpheres)
+	{
+		xEntity.Initialise(&xScene, "Rotating Sphere");
+		xEntity.AddComponent<Zenith_ModelComponent>(xSphereMesh, s_xRockMaterial);
+		Zenith_TransformComponent& xTrans = xEntity.GetComponent<Zenith_TransformComponent>();
+		xTrans.SetPosition({ 500 + 200 * uCount,1010,100});
+		xTrans.SetScale({ 100,100,100 });
+
+		Zenith_ScriptComponent& xScript = xEntity.AddComponent<Zenith_ScriptComponent>();
+		xScript.SetBehaviour<RotationBehaviour_Behaviour>();
+		RotationBehaviour_Behaviour& xBehaviour = *(RotationBehaviour_Behaviour*)xScript.m_pxScriptBehaviour;
+		if(uCount % 3 == 0)
+		{
+			xBehaviour.SetAngularVel({ 1.,0.,0. });
+		}
+		else if (uCount % 3 == 1)
+		{
+			xBehaviour.SetAngularVel({ 0.,1.,0. });
+		}
+		else
+		{
+			xBehaviour.SetAngularVel({ 0.,0.,1. });
+		}
+
+		Zenith_ColliderComponent& xCollider = xEntity.AddComponent<Zenith_ColliderComponent>();
+		xCollider.AddCollider(COLLISION_VOLUME_TYPE_SPHERE, RIGIDBODY_TYPE_DYNAMIC);
+		xCollider.GetRigidBody()->enableGravity(false);
+
+		uCount++;
 	}
 
 	//#TO_TODO: why does rp3d refuse to make colliders for the far edges? (15 not 16)

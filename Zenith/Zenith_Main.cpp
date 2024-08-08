@@ -121,7 +121,7 @@ int main()
 	Zenith_Core::Project_Startup();
 	Flux::LateInitialise();
 
-#if defined ZENITH_TOOLS && defined DEBUG_VARIABLES
+#if defined ZENITH_TOOLS && defined ZENITH_DEBUG_VARIABLES
 
 	extern void ExportAllMeshes();
 	extern void ExportAllTextures();

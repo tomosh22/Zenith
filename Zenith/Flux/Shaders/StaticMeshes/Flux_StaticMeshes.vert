@@ -23,8 +23,8 @@ void main()
 	mat3 xNormalMatrix = transpose(inverse(mat3(g_xModelMatrix)));
 	o_xNormal = normalize(xNormalMatrix * normalize(a_xNormal));
 	vec3 xTangent = normalize(xNormalMatrix * normalize(a_xTangent));
-	vec3 xBitangent = cross(xTangent, o_xNormal);
-	o_xTBN = mat3(o_xNormal, xTangent, xBitangent);
+	vec3 xBitangent = normalize(xNormalMatrix * normalize(a_xBitangent));
+	o_xTBN = mat3(xTangent, xBitangent, o_xNormal);
 	o_xWorldPos = (g_xModelMatrix * vec4(a_xPosition,1)).xyz;
 
 	gl_Position = g_xViewProjMat * vec4(o_xWorldPos,1);

@@ -13,12 +13,12 @@ static Flux_CommandBuffer s_xCommandBuffer;
 static Flux_Shader s_xShader;
 static Flux_Pipeline s_xPipeline;
 
-DEBUGVAR bool dbg_Enable = true;
+DEBUGVAR bool dbg_bEnable = true;
 
-static struct Flux_FogConstants
+DEBUGVAR struct Flux_FogConstants
 {
-	float m_fFalloff;
-} s_xConstants;
+	Zenith_Maths::Vector4 m_xColour_Falloff = {0.5,0.6,0.7,0.000075};
+} dbg_xConstants;
 
 void Flux_Fog::Initialise()
 {
@@ -53,9 +53,10 @@ void Flux_Fog::Initialise()
 
 	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
 
-#ifdef DEBUG_VARIABLES
-	Zenith_DebugVariables::AddBoolean({ "Render", "Enable", "Fog" }, dbg_Enable);
-	Zenith_DebugVariables::AddFloat({ "Render", "Fog", "Density" }, s_xConstants.m_fFalloff, 0., 0.0001);
+#ifdef ZENITH_DEBUG_VARIABLES
+	Zenith_DebugVariables::AddBoolean({ "Render", "Enable", "Fog" }, dbg_bEnable);
+	Zenith_DebugVariables::AddVector3({ "Render", "Fog", "Colour" }, dbg_xConstants.m_xColour_Falloff, 0., 1.);
+	Zenith_DebugVariables::AddFloat({ "Render", "Fog", "Density" }, dbg_xConstants.m_xColour_Falloff.w, 0., 0.1);
 #endif
 
 	Zenith_Log("Flux_Fog initialised");
@@ -63,7 +64,7 @@ void Flux_Fog::Initialise()
 
 void Flux_Fog::Render()
 {
-	if (!dbg_Enable)
+	if (!dbg_bEnable)
 	{
 		return;
 	}
@@ -81,7 +82,7 @@ void Flux_Fog::Render()
 	s_xCommandBuffer.BindBuffer(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer(), 0);
 	s_xCommandBuffer.BindTexture(&Flux_Graphics::GetDepthStencilTexture(), 1);
 
-	s_xCommandBuffer.PushConstant(&s_xConstants, sizeof(s_xConstants));
+	s_xCommandBuffer.PushConstant(&dbg_xConstants, sizeof(Flux_FogConstants));
 
 	s_xCommandBuffer.DrawIndexed(6);
 

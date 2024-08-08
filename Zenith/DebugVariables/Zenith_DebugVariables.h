@@ -73,9 +73,9 @@ public:
 class Zenith_DebugVariables
 {
 public:
-	static void AddBoolean(std::vector<std::string> xName, bool& xVar)
+	static void AddBoolean(std::vector<std::string> xName, bool& bVar)
 	{
-		Zenith_DebugVariableTree::LeafNode<bool>* pxLeaf = new Zenith_DebugVariableTree::LeafNode<bool>(xName, &xVar);
+		Zenith_DebugVariableTree::LeafNode<bool>* pxLeaf = new Zenith_DebugVariableTree::LeafNode<bool>(xName, &bVar);
 		s_xTree.AddLeafNode(pxLeaf, xName);
 	}
 	static void AddVector3(std::vector<std::string> xName, Zenith_Maths::Vector3& xVar, float fMin, float fMax)
@@ -83,9 +83,19 @@ public:
 		Zenith_DebugVariableTree::LeafNodeWithRange<Zenith_Maths::Vector3, float>* pxLeaf = new Zenith_DebugVariableTree::LeafNodeWithRange<Zenith_Maths::Vector3, float>(xName, &xVar, fMin, fMax);
 		s_xTree.AddLeafNode(pxLeaf, xName);
 	}
-	static void AddFloat(std::vector<std::string> xName, float& xVar, float fMin, float fMax)
+	static void AddVector3(std::vector<std::string> xName, Zenith_Maths::Vector4& xVar, float fMin, float fMax)
 	{
-		Zenith_DebugVariableTree::LeafNodeWithRange<float, float>* pxLeaf = new Zenith_DebugVariableTree::LeafNodeWithRange<float, float>(xName, &xVar, fMin, fMax);
+		Zenith_DebugVariableTree::LeafNodeWithRange<Zenith_Maths::Vector4, float>* pxLeaf = new Zenith_DebugVariableTree::LeafNodeWithRange<Zenith_Maths::Vector4, float>(xName, &xVar, fMin, fMax);
+		s_xTree.AddLeafNode(pxLeaf, xName);
+	}
+	static void AddFloat(std::vector<std::string> xName, float& fVar, float fMin, float fMax)
+	{
+		Zenith_DebugVariableTree::LeafNodeWithRange<float, float>* pxLeaf = new Zenith_DebugVariableTree::LeafNodeWithRange<float, float>(xName, &fVar, fMin, fMax);
+		s_xTree.AddLeafNode(pxLeaf, xName);
+	}
+	static void AddUInt32(std::vector<std::string> xName, uint32_t& xVar, uint32_t uMin, uint32_t uMax)
+	{
+		Zenith_DebugVariableTree::LeafNodeWithRange<uint32_t, uint32_t>* pxLeaf = new Zenith_DebugVariableTree::LeafNodeWithRange<uint32_t, uint32_t>(xName, &xVar, uMin, uMax);
 		s_xTree.AddLeafNode(pxLeaf, xName);
 	}
 	static void AddButton(std::vector<std::string> xName, void(*pfnCallback)())

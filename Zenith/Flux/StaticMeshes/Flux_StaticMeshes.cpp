@@ -56,7 +56,7 @@ void Flux_StaticMeshes::Initialise()
 
 	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
 
-#ifdef DEBUG_VARIABLES
+#ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_DebugVariables::AddBoolean({ "Render", "Enable", "Static Meshes" }, dbg_Enable);
 #endif
 

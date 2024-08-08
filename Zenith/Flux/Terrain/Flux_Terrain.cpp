@@ -16,6 +16,12 @@ static Flux_CommandBuffer s_xCommandBuffer;
 static Flux_Shader s_xShader;
 static Flux_Pipeline s_xPipeline;
 
+struct TerrainConstants
+{
+	float m_fUVScale = 0.07;
+} s_xTerrainConstants;
+static Flux_ConstantBuffer s_xTerrainConstantsBuffer;
+
 DEBUGVAR bool dbg_Enable = true;
 
 void Flux_Terrain::Initialise()
@@ -50,15 +56,19 @@ void Flux_Terrain::Initialise()
 		DEPTHSTENCIL_FORMAT_D32_SFLOAT,
 		true,
 		false,
-		{1,0},
+		{2,0},
 		{0,8},
 		Flux_Graphics::s_xMRTTarget
 	);
 
 	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
 
-#ifdef DEBUG_VARIABLES
+	Flux_MemoryManager::InitialiseConstantBuffer(nullptr, sizeof(struct TerrainConstants
+		), s_xTerrainConstantsBuffer);
+
+#ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_DebugVariables::AddBoolean({ "Render", "Enable", "Terrain" }, dbg_Enable);
+	Zenith_DebugVariables::AddFloat({ "Render", "Terrain", "UV Scale" }, s_xTerrainConstants.m_fUVScale, 0., 10.);
 #endif
 
 	Zenith_Log("Flux_Terrain initialised");
@@ -71,6 +81,8 @@ void Flux_Terrain::Render()
 		return;
 	}
 
+	Flux_MemoryManager::UploadData(&s_xTerrainConstantsBuffer, &s_xTerrainConstants, sizeof(TerrainConstants));
+
 	s_xCommandBuffer.BeginRecording();
 
 	s_xCommandBuffer.SubmitTargetSetup(Flux_Graphics::s_xMRTTarget);
@@ -82,6 +94,7 @@ void Flux_Terrain::Render()
 
 	s_xCommandBuffer.BeginBind(BINDING_FREQUENCY_PER_FRAME);
 	s_xCommandBuffer.BindBuffer(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer(), 0);
+	s_xCommandBuffer.BindBuffer(&s_xTerrainConstantsBuffer.GetBuffer(), 1);
 
 	s_xCommandBuffer.BeginBind(BINDING_FREQUENCY_PER_DRAW);
 

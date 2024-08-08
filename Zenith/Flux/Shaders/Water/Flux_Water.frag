@@ -19,8 +19,8 @@ void main()
 	xNormal = xTBN * texture(g_xNormalTex, a_xUV).xyz;
 	
 	DirectionalLight xLight;
-	xLight.m_xColour = vec4(1.);
-	xLight.m_xDirection = vec4(0.,-1.,0., 0.);
+	xLight.m_xColour = vec4(g_xSunColour_Pad.xyz, 1.);
+	xLight.m_xDirection = vec4(g_xSunDir_Pad.xyz, 0.);
 	
 	vec3 xDiffuse = vec3(0.2,0.3,0.5);
 	
