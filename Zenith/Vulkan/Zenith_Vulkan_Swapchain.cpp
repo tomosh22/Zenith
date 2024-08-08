@@ -7,6 +7,7 @@
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_RenderTargets.h"
 #include "Zenith_Vulkan_MemoryManager.h"
+#include "DebugVariables/Zenith_DebugVariables.h"
 
 #include "Zenith_OS_Include.h" //#TO for Zenith_Window
 #ifdef ZENITH_WINDOWS
@@ -33,6 +34,9 @@ Flux_TargetSetup Zenith_Vulkan_Swapchain::s_xTargetSetup;
 static Zenith_Vulkan_Shader s_xShader;
 static Zenith_Vulkan_Pipeline s_xPipeline;
 static Zenith_Vulkan_CommandBuffer s_xCopyToFramebufferCmd;
+
+DEBUGVAR bool dbg_bOutputMRT = false;
+DEBUGVAR uint32_t dbg_uMRTIndex = MRT_INDEX_DIFFUSE;
 
 static struct SwapChainSupportDetails
 {
@@ -243,6 +247,17 @@ void Zenith_Vulkan_Swapchain::Initialise()
 	InitialiseCopyToFramebufferCommands();
 
 	Zenith_Log("Vulkan swapchain initialised");
+
+	//#TO_TODO: this is very hacky, Initialise gets called whenever we need to recreate the swapchain, e.g on resize, this should only be called once
+#ifdef ZENITH_DEBUG_VARIABLES
+	static bool s_bInitialisedDbgVars = false;
+	if (!s_bInitialisedDbgVars)
+	{
+		Zenith_DebugVariables::AddBoolean({ "Render", "Debug", "Output MRT" }, dbg_bOutputMRT);
+		Zenith_DebugVariables::AddUInt32({ "Render", "Debug", "MRT Index" }, dbg_uMRTIndex, 0, MRT_INDEX_COUNT - 1);
+		s_bInitialisedDbgVars = true;
+	}
+#endif
 }
 
 bool Zenith_Vulkan_Swapchain::BeginFrame()
@@ -273,7 +288,11 @@ void Zenith_Vulkan_Swapchain::BindAsTarget()
 {
 	uint32_t uNumColourAttachments = 1;
 
+#if 1//def ZENITH_DEBUG
+	vk::RenderPass xRenderPass = Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(s_xTargetSetup, LOAD_ACTION_CLEAR, STORE_ACTION_STORE, LOAD_ACTION_CLEAR, STORE_ACTION_DONTCARE, RENDER_TARGET_USAGE_PRESENT);
+#else
 	vk::RenderPass xRenderPass = Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(s_xTargetSetup, LOAD_ACTION_DONTCARE, STORE_ACTION_STORE, LOAD_ACTION_DONTCARE, STORE_ACTION_DONTCARE, RENDER_TARGET_USAGE_PRESENT);
+#endif
 
 
 	vk::Framebuffer xFramebuffer = Zenith_Vulkan_Pipeline::TargetSetupToFramebuffer(s_xTargetSetup, xRenderPass);
@@ -315,7 +334,16 @@ void Zenith_Vulkan_Swapchain::CopyToFramebuffer()
 	s_xCopyToFramebufferCmd.SetIndexBuffer(Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
 
 	s_xCopyToFramebufferCmd.BeginBind(BINDING_FREQUENCY_PER_FRAME);
-	s_xCopyToFramebufferCmd.BindTexture(&Flux_Graphics::s_xFinalRenderTarget.m_axColourAttachments[0].m_axTargetTextures[s_uFrameIndex], 0);
+#ifdef ZENITH_DEBUG_VARIABLES
+	if (dbg_bOutputMRT)
+	{
+		s_xCopyToFramebufferCmd.BindTexture(&Flux_Graphics::GetGBufferTexture((MRTIndex)dbg_uMRTIndex), 0);
+	}
+	else
+#endif
+	{
+		s_xCopyToFramebufferCmd.BindTexture(&Flux_Graphics::s_xFinalRenderTarget.m_axColourAttachments[0].m_axTargetTextures[s_uFrameIndex], 0);
+	}
 
 	s_xCopyToFramebufferCmd.DrawIndexed(6);
 

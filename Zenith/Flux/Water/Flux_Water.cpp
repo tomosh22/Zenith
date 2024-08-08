@@ -56,7 +56,7 @@ void Flux_Water::Initialise()
 
 	s_pxNormalTex = &Zenith_AssetHandler::GetTexture("Water_Normal");
 
-#ifdef DEBUG_VARIABLES
+#ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_DebugVariables::AddBoolean({ "Render", "Enable", "Water" }, dbg_Enable);
 #endif
 

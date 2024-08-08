@@ -13,13 +13,19 @@ layout(location = 0) out vec2 o_xUV;
 layout(location = 1) out vec3 o_xNormal;
 layout(location = 2) out vec3 o_xWorldPos;
 layout(location = 3) out float o_fMaterialLerp;
+layout(location = 4) out mat3 o_xTBN;
+
+layout(std140, set = 0, binding=1) uniform TerrainConstants{
+	float g_fUVScale;
+};
 
 void main()
 {
-	o_xUV = a_xUV;
+	o_xUV = a_xUV * g_fUVScale;
 	o_xNormal = a_xNormal;
 	o_xWorldPos = a_xPosition;
 	o_fMaterialLerp = a_fMaterialLerp;
+	o_xTBN = mat3(a_xTangent, a_xBitangent, a_xNormal);
 
 	gl_Position = g_xViewProjMat * vec4(o_xWorldPos,1);
 }

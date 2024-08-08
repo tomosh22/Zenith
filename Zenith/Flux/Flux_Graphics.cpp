@@ -6,6 +6,7 @@
 #include "Flux/Flux_Buffers.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
+#include "DebugVariables/Zenith_DebugVariables.h"
 
 Flux_TargetSetup Flux_Graphics::s_xMRTTarget;
 Flux_TargetSetup Flux_Graphics::s_xFinalRenderTarget;
@@ -19,10 +20,13 @@ Flux_MeshGeometry Flux_Graphics::s_xBlankMesh;
 ColourFormat Flux_Graphics::s_aeMRTFormats[MRT_INDEX_COUNT]
 {
 	COLOUR_FORMAT_RGBA8_UNORM, //MRT_INDEX_DIFFUSE
-	COLOUR_FORMAT_RGBA8_UNORM, //MRT_INDEX_NORMALSAMBIENT
+	COLOUR_FORMAT_R16G16B16A16_SFLOAT, //MRT_INDEX_NORMALSAMBIENT
 	COLOUR_FORMAT_RGBA8_UNORM, //MRT_INDEX_MATERIAL
 	COLOUR_FORMAT_R16G16B16A16_SFLOAT //MRT_INDEX_WORLDPOS
 };
+
+DEBUGVAR Zenith_Maths::Vector3 dbg_SunDir = {0.,-0.6, -0.8};
+DEBUGVAR Zenith_Maths::Vector3 dbg_SunColour = {0.7, 0.4,0.2};
 
 void Flux_Graphics::Initialise()
 {
@@ -35,6 +39,11 @@ void Flux_Graphics::Initialise()
 
 	InitialiseRenderTargets();
 	Flux::AddResChangeCallback(InitialiseRenderTargets);
+
+#ifdef ZENITH_DEBUG_VARIABLES
+	Zenith_DebugVariables::AddVector3({ "Render", "Sun Direction" }, dbg_SunDir, -1, 1.);
+	Zenith_DebugVariables::AddVector3({ "Render", "Sun Colour" }, dbg_SunColour, 0, 1.);
+#endif
 
 	Zenith_Log("Flux_Graphics Initialised");
 }
@@ -75,6 +84,8 @@ void Flux_Graphics::UploadFrameConstants()
 	xCamera.BuildProjectionMatrix(xConstants.m_xProjMat);
 	xConstants.m_xViewProjMat = xConstants.m_xProjMat * xConstants.m_xViewMat;
 	xCamera.GetPosition(xConstants.m_xCamPos_Pad);
+	xConstants.m_xSunDir_Pad = glm::normalize(Zenith_Maths::Vector4( dbg_SunDir.x, dbg_SunDir.y, dbg_SunDir.z, 0. ));
+	xConstants.m_xSunColour_Pad = { dbg_SunColour.x, dbg_SunColour.y, dbg_SunColour.z, 0. };
 	Flux_MemoryManager::UploadData(&s_xFrameConstantsBuffer, &xConstants, sizeof(Zenith_FrameConstants));
 }
 

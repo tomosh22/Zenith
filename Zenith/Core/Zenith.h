@@ -38,10 +38,10 @@
 #endif
 
 #ifdef ZENITH_TOOLS
-#define DEBUG_VARIABLES
+#define ZENITH_DEBUG_VARIABLES
 #endif
 
-#ifdef DEBUG_VARIABLES
+#ifdef ZENITH_DEBUG_VARIABLES
 #define DEBUGVAR static
 #else
 #define DEBUGVAR static const

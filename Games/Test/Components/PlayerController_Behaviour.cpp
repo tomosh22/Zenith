@@ -15,37 +15,37 @@ PlayerController_Behaviour::PlayerController_Behaviour(Zenith_Entity& xParentEnt
 void UpdateCameraRotation(Zenith_CameraComponent& xCamera)
 {
 	static Zenith_Maths::Vector2_64 s_xPreviousMousePos = { FLT_MAX,FLT_MAX };
-
 	Zenith_Maths::Vector2_64 xCurrentMousePos;
 	Zenith_Input::GetMousePosition(xCurrentMousePos);
-
-	if (s_xPreviousMousePos.x == FLT_MAX)
+	if (Zenith_Input::IsKeyDown(ZENITH_KEY_Q))
 	{
-		s_xPreviousMousePos = xCurrentMousePos;
-		return;
-	}
-
-	//#TO_TODO: if cursor was not released this frame
-	if (true)
-	{
-		double dDeltaPitch = (xCurrentMousePos.y - s_xPreviousMousePos.y) / 1000.;
-		xCamera.SetPitch(xCamera.GetPitch() - dDeltaPitch);
-		double dDeltaYaw = (xCurrentMousePos.x - s_xPreviousMousePos.x) / 1000.;
-		xCamera.SetYaw(xCamera.GetYaw() - dDeltaYaw);
-
-		xCamera.SetPitch(std::min(xCamera.GetPitch(), glm::pi<double>() / 2));
-		xCamera.SetPitch(std::max(xCamera.GetPitch(), -glm::pi<double>() / 2));
-
-		if (xCamera.GetYaw() < 0)
+		if (s_xPreviousMousePos.x == FLT_MAX)
 		{
-			xCamera.SetYaw(xCamera.GetYaw() + Zenith_Maths::Pi * 2.0);
+			s_xPreviousMousePos = xCurrentMousePos;
+			return;
 		}
-		if (xCamera.GetYaw() > Zenith_Maths::Pi * 2.0)
+
+		//#TO_TODO: if cursor was not released this frame
+		if (true)
 		{
-			xCamera.SetYaw(xCamera.GetYaw() - Zenith_Maths::Pi * 2.0);
+			double dDeltaPitch = (xCurrentMousePos.y - s_xPreviousMousePos.y) / 1000.;
+			xCamera.SetPitch(xCamera.GetPitch() - dDeltaPitch);
+			double dDeltaYaw = (xCurrentMousePos.x - s_xPreviousMousePos.x) / 1000.;
+			xCamera.SetYaw(xCamera.GetYaw() - dDeltaYaw);
+
+			xCamera.SetPitch(std::min(xCamera.GetPitch(), glm::pi<double>() / 2));
+			xCamera.SetPitch(std::max(xCamera.GetPitch(), -glm::pi<double>() / 2));
+
+			if (xCamera.GetYaw() < 0)
+			{
+				xCamera.SetYaw(xCamera.GetYaw() + Zenith_Maths::Pi * 2.0);
+			}
+			if (xCamera.GetYaw() > Zenith_Maths::Pi * 2.0)
+			{
+				xCamera.SetYaw(xCamera.GetYaw() - Zenith_Maths::Pi * 2.0);
+			}
 		}
 	}
-
 	s_xPreviousMousePos = xCurrentMousePos;
 }
 

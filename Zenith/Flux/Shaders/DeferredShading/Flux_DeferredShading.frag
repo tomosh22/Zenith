@@ -54,10 +54,10 @@ void main()
 	o_xColour.xyz = xDiffuse.xyz * fAmbient;
 
 	DirectionalLight xLight;
-	xLight.m_xColour = vec4(1.);
-	xLight.m_xDirection = vec4(0.,-1.,0., 0.);
+	xLight.m_xColour = vec4(g_xSunColour_Pad.xyz, 1.);
+	xLight.m_xDirection = vec4(-g_xSunDir_Pad.xyz, 0.);
 
-	float fReflectivity = 0.95f;
-	//CookTorrance_Directional(o_xColour, xDiffuse, xLight, xNormal, xMaterial.y, xMaterial.x, fReflectivity, xWorldPos);
+	float fReflectivity = 0.5f;
+	CookTorrance_Directional(o_xColour, xDiffuse, xLight, xNormal, xMaterial.y, xMaterial.x, fReflectivity, xWorldPos);
 	o_xColour.w = 1.f;
 }

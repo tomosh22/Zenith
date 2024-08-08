@@ -16,11 +16,22 @@ void Zenith_DebugVariableTree::LeafNodeWithRange<Zenith_Maths::Vector3, float>::
 {
 	ImGui::SliderFloat3(m_xName.back().c_str(), &m_pData->x, m_xMin, m_xMax);
 }
+template<>
+void Zenith_DebugVariableTree::LeafNodeWithRange<Zenith_Maths::Vector4, float>::ImGuiDisplay()
+{
+	ImGui::SliderFloat3(m_xName.back().c_str(), &m_pData->x, m_xMin, m_xMax);
+}
 
 template<>
 void Zenith_DebugVariableTree::LeafNodeWithRange<float, float>::ImGuiDisplay()
 {
 	ImGui::SliderFloat(m_xName.back().c_str(), m_pData, m_xMin, m_xMax, "%.7f");
+}
+
+template<>
+void Zenith_DebugVariableTree::LeafNodeWithRange<uint32_t, uint32_t>::ImGuiDisplay()
+{
+	ImGui::SliderInt(m_xName.back().c_str(), (int*)(m_pData), m_xMin, m_xMax);
 }
 
 template<>
