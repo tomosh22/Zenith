@@ -15,7 +15,7 @@ static Flux_Pipeline s_xPipeline;
 
 DEBUGVAR bool dbg_bEnable = true;
 
-DEBUGVAR struct Flux_FogConstants
+static struct Flux_FogConstants
 {
 	Zenith_Maths::Vector4 m_xColour_Falloff = {0.5,0.6,0.7,0.000075};
 } dbg_xConstants;
