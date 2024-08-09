@@ -34,6 +34,7 @@ static Flux_Material s_xRockMaterial;
 void LoadAssets()
 {
 	Zenith_AssetHandler::AddMesh(Zenith_GUID(), "Sphere_Smooth", "C:/dev/Zenith/Games/Test/Assets/Meshes/sphereSmooth.zmsh");
+	Zenith_AssetHandler::AddTexture2D(Zenith_GUID(), "Particle", "C:/dev/Zenith/Games/Test/Assets/Textures/particle.ztx");
 
 	{
 		Zenith_AssetHandler::AddTexture2D(Zenith_GUID(), "Crystal_Diffuse", "C:/dev/Zenith/Games/Test/Assets/Textures/crystal2k/diffuse.ztx");

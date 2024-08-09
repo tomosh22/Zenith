@@ -211,12 +211,15 @@ void Zenith_Vulkan_MemoryManager::AllocateBuffer(size_t uSize, vk::BufferUsageFl
 	}
 }
 
-void Zenith_Vulkan_MemoryManager::InitialiseVertexBuffer(const void* pData, size_t uSize, Flux_VertexBuffer& xBufferOut)
+void Zenith_Vulkan_MemoryManager::InitialiseVertexBuffer(const void* pData, size_t uSize, Flux_VertexBuffer& xBufferOut, bool bDeviceLocal /*= true*/)
 {
 	Zenith_Vulkan_Buffer& xBuffer = xBufferOut.GetBuffer();
 	vk::BufferUsageFlags eFlags = vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst;
-	AllocateBuffer(uSize, eFlags, MEMORY_RESIDENCY_GPU, xBuffer);
-	UploadData(&xBuffer, pData, uSize);
+	AllocateBuffer(uSize, eFlags, bDeviceLocal ? MEMORY_RESIDENCY_GPU : MEMORY_RESIDENCY_CPU, xBuffer);
+	if (pData)
+	{
+		UploadData(&xBuffer, pData, uSize);
+	}
 }
 
 void Zenith_Vulkan_MemoryManager::InitialiseIndexBuffer(const void* pData, size_t uSize, Flux_IndexBuffer& xBufferOut)
@@ -224,7 +227,10 @@ void Zenith_Vulkan_MemoryManager::InitialiseIndexBuffer(const void* pData, size_
 	Zenith_Vulkan_Buffer& xBuffer = xBufferOut.GetBuffer();
 	vk::BufferUsageFlags eFlags = vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst;
 	AllocateBuffer(uSize, eFlags, MEMORY_RESIDENCY_GPU, xBuffer);
-	UploadData(&xBuffer, pData, uSize);
+	if (pData)
+	{
+		UploadData(&xBuffer, pData, uSize);
+	}
 }
 
 void Zenith_Vulkan_MemoryManager::InitialiseConstantBuffer(const void* pData, size_t uSize, Flux_ConstantBuffer& xBufferOut)

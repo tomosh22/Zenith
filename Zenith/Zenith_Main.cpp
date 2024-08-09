@@ -9,6 +9,7 @@
 #include "Flux/DeferredShading/Flux_DeferredShading.h"
 #include "Flux/Water/Flux_Water.h"
 #include "Flux/Fog/Flux_Fog.h"
+#include "Flux/Particles/Flux_Particles.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "Physics/Zenith_Physics.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
@@ -96,6 +97,7 @@ void Zenith_MainLoop()
 	Flux_DeferredShading::Render();
 	Flux_Water::Render();
 	Flux_Fog::Render();
+	Flux_Particles::Render();
 
 	Flux_MemoryManager::EndFrame();
 #ifdef ZENITH_TOOLS

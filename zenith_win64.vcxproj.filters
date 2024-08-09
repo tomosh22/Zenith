@@ -334,6 +334,9 @@
     <ClCompile Include="Zenith\Flux\MeshGeometry\Flux_MeshGeometry.cpp">
       <Filter>Zenith\Flux\MeshGeometry</Filter>
     </ClCompile>
+    <ClCompile Include="Zenith\Flux\Particles\Flux_Particles.cpp">
+      <Filter>Zenith\Flux\Particles</Filter>
+    </ClCompile>
     <ClCompile Include="Zenith\Flux\Skybox\Flux_Skybox.cpp">
       <Filter>Zenith\Flux\Skybox</Filter>
     </ClCompile>
@@ -798,6 +801,9 @@
     <ClInclude Include="Zenith\Flux\MeshGeometry\Flux_MeshGeometry.h">
       <Filter>Zenith\Flux\MeshGeometry</Filter>
     </ClInclude>
+    <ClInclude Include="Zenith\Flux\Particles\Flux_Particles.h">
+      <Filter>Zenith\Flux\Particles</Filter>
+    </ClInclude>
     <ClInclude Include="Zenith\Flux\Shaders\Common.fxh">
       <Filter>Zenith\Flux\Shaders</Filter>
     </ClInclude>
@@ -1051,6 +1057,9 @@
     </Filter>
     <Filter Include="Zenith\Flux\MeshGeometry">
       <UniqueIdentifier>{1ea2a6e2-5586-54cd-e29c-f7b7caaa7806}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Zenith\Flux\Particles">
+      <UniqueIdentifier>{313cfa34-c922-a2ba-9616-d5f1a822197a}</UniqueIdentifier>
     </Filter>
     <Filter Include="Zenith\Flux\Shaders">
       <UniqueIdentifier>{023039c4-353d-0c39-1bdd-99bb116ea5f5}</UniqueIdentifier>
