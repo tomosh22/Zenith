@@ -37,6 +37,22 @@ public:
 		void ImGuiDisplay() override;
 	};
 
+	struct PfnLeafNode : public LeafNodeBase
+	{
+		void(*m_pData)() = nullptr;
+
+		PfnLeafNode(std::vector<std::string>& xName, void(*pfnData)())
+		{
+			for (const std::string& strSection : xName)
+			{
+				m_xName.push_back(strSection);
+			}
+			m_pData = pfnData;
+		}
+
+		void ImGuiDisplay() override;
+	};
+
 	template<typename ValueT, typename RangeT>
 	struct LeafNodeWithRange : public LeafNodeBase
 	{
@@ -100,7 +116,7 @@ public:
 	}
 	static void AddButton(std::vector<std::string> xName, void(*pfnCallback)())
 	{
-		Zenith_DebugVariableTree::LeafNode<void(*)()>* pxLeaf = new Zenith_DebugVariableTree::LeafNode<void(*)()>(xName, &pfnCallback);
+		Zenith_DebugVariableTree::PfnLeafNode* pxLeaf = new Zenith_DebugVariableTree::PfnLeafNode(xName, pfnCallback);
 		s_xTree.AddLeafNode(pxLeaf, xName);
 	}
 

@@ -8,6 +8,7 @@
 #include "Flux/DeferredShading/Flux_DeferredShading.h"
 #include "Flux/Water/Flux_Water.h"
 #include "Flux/Fog/Flux_Fog.h"
+#include "Flux/Particles/Flux_Particles.h"
 
 uint32_t Flux::s_uFrameCounter = 0;
 std::vector<void(*)()> Flux::s_xResChangeCallbacks;
@@ -34,6 +35,7 @@ void Flux::LateInitialise()
 	Flux_DeferredShading::Initialise();
 	Flux_Water::Initialise();
 	Flux_Fog::Initialise();
+	Flux_Particles::Initialise();
 	Flux_MemoryManager::EndFrame(false);
 }
 

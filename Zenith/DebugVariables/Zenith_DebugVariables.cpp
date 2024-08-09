@@ -34,8 +34,7 @@ void Zenith_DebugVariableTree::LeafNodeWithRange<uint32_t, uint32_t>::ImGuiDispl
 	ImGui::SliderInt(m_xName.back().c_str(), (int*)(m_pData), m_xMin, m_xMax);
 }
 
-template<>
-void Zenith_DebugVariableTree::LeafNode<void(*)()>::ImGuiDisplay()
+void Zenith_DebugVariableTree::PfnLeafNode::ImGuiDisplay()
 {
 	if (ImGui::Button(m_xName.back().c_str()))
 	{
