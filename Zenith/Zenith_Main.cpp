@@ -89,9 +89,6 @@ void Zenith_MainLoop()
 	}
 	Flux_PlatformAPI::BeginFrame();
 
-	Zenith_Physics::Update(Zenith_Core::GetDt());
-	Zenith_Scene::GetCurrentScene().Update(Zenith_Core::GetDt());
-	Flux_Graphics::UploadFrameConstants();
 	Flux_Skybox::Render();
 	Flux_StaticMeshes::Render();
 	Flux_Terrain::Render();
@@ -100,6 +97,10 @@ void Zenith_MainLoop()
 	Flux_Fog::Render();
 	Flux_SDFs::Render();
 	Flux_Particles::Render();
+
+	Zenith_Physics::Update(Zenith_Core::GetDt());
+	Zenith_Scene::GetCurrentScene().Update(Zenith_Core::GetDt());
+	Flux_Graphics::UploadFrameConstants();
 
 	Flux_MemoryManager::EndFrame();
 #ifdef ZENITH_TOOLS

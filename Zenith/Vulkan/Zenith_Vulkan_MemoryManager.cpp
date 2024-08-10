@@ -235,12 +235,15 @@ void Zenith_Vulkan_MemoryManager::InitialiseIndexBuffer(const void* pData, size_
 
 void Zenith_Vulkan_MemoryManager::InitialiseConstantBuffer(const void* pData, size_t uSize, Flux_ConstantBuffer& xBufferOut)
 {
-	Zenith_Vulkan_Buffer& xBuffer = xBufferOut.GetBuffer();
-	vk::BufferUsageFlags eFlags = vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eTransferDst;
-	AllocateBuffer(uSize, eFlags, MEMORY_RESIDENCY_CPU, xBuffer);
-	if (pData)
+	for (uint32_t u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
 	{
-		UploadData(&xBuffer, pData, uSize);
+		Zenith_Vulkan_Buffer& xBuffer = xBufferOut.GetBufferForFrameInFlight(u);
+		vk::BufferUsageFlags eFlags = vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eTransferDst;
+		AllocateBuffer(uSize, eFlags, MEMORY_RESIDENCY_CPU, xBuffer);
+		if (pData)
+		{
+			UploadData(&xBuffer, pData, uSize);
+		}
 	}
 }
 
