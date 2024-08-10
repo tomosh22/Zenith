@@ -67,7 +67,9 @@ void Flux_Particles::Initialise()
 
 	Flux_MemoryManager::InitialiseVertexBuffer(nullptr, s_uMaxParticles * sizeof(Particle), s_xInstanceBuffer, false);
 
-	s_pxParticleTexture = &Zenith_AssetHandler::GetTexture("Particle");
+	Zenith_AssetHandler::AddTexture2D(Zenith_GUID(), "Particle", "C:/dev/Zenith/Games/Test/Assets/Textures/particle.ztx");
+	Zenith_AssetHandler::AddTexture2D(Zenith_GUID(), "ParticleSwirl", "C:/dev/Zenith/Games/Test/Assets/Textures/particleSwirl.ztx");
+	s_pxParticleTexture = &Zenith_AssetHandler::GetTexture("ParticleSwirl");
 
 #ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_DebugVariables::AddBoolean({ "Render", "Enable", "Particles" }, dbg_Enable);
