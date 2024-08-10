@@ -587,12 +587,16 @@
     <ClInclude Include="Zenith\Flux\Fog\Flux_Fog.h" />
     <ClInclude Include="Zenith\Flux\MeshGeometry\Flux_MeshGeometry.h" />
     <ClInclude Include="Zenith\Flux\Particles\Flux_Particles.h" />
+    <ClInclude Include="Zenith\Flux\SDFs\Flux_SDFs.h" />
     <ClInclude Include="Zenith\Flux\Shaders\Common.fxh" />
     <ClInclude Include="Zenith\Flux\Shaders\DeferredShading\Flux_DeferredShading.frag" />
     <ClInclude Include="Zenith\Flux\Shaders\Flux_Fullscreen_UV.vert" />
     <ClInclude Include="Zenith\Flux\Shaders\Flux_TexturedQuad.frag" />
     <ClInclude Include="Zenith\Flux\Shaders\Fog\Flux_Fog.frag" />
     <ClInclude Include="Zenith\Flux\Shaders\GBufferCommon.fxh" />
+    <ClInclude Include="Zenith\Flux\Shaders\Particles\Flux_Particles.frag" />
+    <ClInclude Include="Zenith\Flux\Shaders\Particles\Flux_Particles.vert" />
+    <ClInclude Include="Zenith\Flux\Shaders\SDFs\Flux_SDFs.frag" />
     <ClInclude Include="Zenith\Flux\Shaders\Skybox\Flux_Skybox.frag" />
     <ClInclude Include="Zenith\Flux\Shaders\StaticMeshes\Flux_StaticMeshes.frag" />
     <ClInclude Include="Zenith\Flux\Shaders\StaticMeshes\Flux_StaticMeshes.vert" />
@@ -1172,6 +1176,7 @@
     <ClCompile Include="Zenith\Flux\Fog\Flux_Fog.cpp" />
     <ClCompile Include="Zenith\Flux\MeshGeometry\Flux_MeshGeometry.cpp" />
     <ClCompile Include="Zenith\Flux\Particles\Flux_Particles.cpp" />
+    <ClCompile Include="Zenith\Flux\SDFs\Flux_SDFs.cpp" />
     <ClCompile Include="Zenith\Flux\Skybox\Flux_Skybox.cpp" />
     <ClCompile Include="Zenith\Flux\StaticMeshes\Flux_StaticMeshes.cpp" />
     <ClCompile Include="Zenith\Flux\Terrain\Flux_Terrain.cpp" />
