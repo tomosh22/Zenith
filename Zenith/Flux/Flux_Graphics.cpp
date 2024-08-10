@@ -86,7 +86,7 @@ void Flux_Graphics::UploadFrameConstants()
 	xCamera.GetPosition(xConstants.m_xCamPos_Pad);
 	xConstants.m_xSunDir_Pad = glm::normalize(Zenith_Maths::Vector4( dbg_SunDir.x, dbg_SunDir.y, dbg_SunDir.z, 0. ));
 	xConstants.m_xSunColour_Pad = { dbg_SunColour.x, dbg_SunColour.y, dbg_SunColour.z, 0. };
-	Flux_MemoryManager::UploadData(&s_xFrameConstantsBuffer, &xConstants, sizeof(Zenith_FrameConstants));
+	Flux_MemoryManager::UploadData(&s_xFrameConstantsBuffer.GetBuffer(), &xConstants, sizeof(Zenith_FrameConstants));
 }
 
 Flux_Texture& Flux_Graphics::GetGBufferTexture(MRTIndex eIndex)
