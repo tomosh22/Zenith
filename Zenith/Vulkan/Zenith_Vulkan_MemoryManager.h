@@ -12,7 +12,7 @@ class Zenith_Vulkan_CommandBuffer;
 
 constexpr uint64_t g_uCpuPoolSize = 2ull * 1024ull * 1024ull * 1024ull;
 constexpr uint64_t g_uGpuPoolSize = 2ull * 1024ull * 1024ull * 1024ull;
-constexpr uint64_t g_uStagingPoolSize = 1024u * 1024u * 256u;
+constexpr uint64_t g_uStagingPoolSize = 1024u * 1024u * 512u;
 
 #define ALIGN(size, align) ((size + align - 1) / align) * align
 

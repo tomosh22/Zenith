@@ -21,6 +21,8 @@ static Zenith_Entity s_xTerrain[16][16];
 
 static Flux_Material s_xCrystalMaterial;
 static Flux_Material s_xRockMaterial;
+static Flux_Material s_xMuddyGrassMaterial;
+static Flux_Material s_xSupplyCrateMaterial;
 
 
 //#TO_TODO: these need to be in a header file for tools terrain export
@@ -34,8 +36,6 @@ static Flux_Material s_xRockMaterial;
 void LoadAssets()
 {
 	Zenith_AssetHandler::AddMesh(Zenith_GUID(), "Sphere_Smooth", "C:/dev/Zenith/Games/Test/Assets/Meshes/sphereSmooth.zmsh");
-	Zenith_AssetHandler::AddTexture2D(Zenith_GUID(), "Particle", "C:/dev/Zenith/Games/Test/Assets/Textures/particle.ztx");
-
 	{
 		Zenith_AssetHandler::AddTexture2D(Zenith_GUID(), "Crystal_Diffuse", "C:/dev/Zenith/Games/Test/Assets/Textures/crystal2k/diffuse.ztx");
 		Zenith_AssetHandler::AddTexture2D(Zenith_GUID(), "Crystal_Normal", "C:/dev/Zenith/Games/Test/Assets/Textures/crystal2k/normal.ztx");
@@ -52,7 +52,38 @@ void LoadAssets()
 		s_xCrystalMaterial.SetRoughness(&xRoughness);
 		s_xCrystalMaterial.SetMetallic(&xMetallic);
 	}
+	{
+		Zenith_AssetHandler::AddTexture2D(Zenith_GUID(), "MuddyGrass_Diffuse", "C:/dev/Zenith/Games/Test/Assets/Textures/muddyGrass2k/diffuse.ztx");
+		Zenith_AssetHandler::AddTexture2D(Zenith_GUID(), "MuddyGrass_Normal", "C:/dev/Zenith/Games/Test/Assets/Textures/muddyGrass2k/normal.ztx");
+		Zenith_AssetHandler::AddTexture2D(Zenith_GUID(), "MuddyGrass_Roughness", "C:/dev/Zenith/Games/Test/Assets/Textures/muddyGrass2k/roughness.ztx");
+		Zenith_AssetHandler::AddTexture2D(Zenith_GUID(), "MuddyGrass_Metallic", "C:/dev/Zenith/Games/Test/Assets/Textures/muddyGrass2k/metallic.ztx");
 
+		Flux_Texture& xDiffuse = Zenith_AssetHandler::GetTexture("MuddyGrass_Diffuse");
+		Flux_Texture& xNormal = Zenith_AssetHandler::GetTexture("MuddyGrass_Normal");
+		Flux_Texture& xRoughness = Zenith_AssetHandler::GetTexture("MuddyGrass_Roughness");
+		Flux_Texture& xMetallic = Zenith_AssetHandler::GetTexture("MuddyGrass_Metallic");
+
+		s_xMuddyGrassMaterial.SetDiffuse(&xDiffuse);
+		s_xMuddyGrassMaterial.SetNormal(&xNormal);
+		s_xMuddyGrassMaterial.SetRoughness(&xRoughness);
+		s_xMuddyGrassMaterial.SetMetallic(&xMetallic);
+	}
+	{
+		Zenith_AssetHandler::AddTexture2D(Zenith_GUID(), "SupplyCrate_Diffuse", "C:/dev/Zenith/Games/Test/Assets/Textures/supplyCrate2k/diffuse.ztx");
+		Zenith_AssetHandler::AddTexture2D(Zenith_GUID(), "SupplyCrate_Normal", "C:/dev/Zenith/Games/Test/Assets/Textures/supplyCrate2k/normal.ztx");
+		Zenith_AssetHandler::AddTexture2D(Zenith_GUID(), "SupplyCrate_Roughness", "C:/dev/Zenith/Games/Test/Assets/Textures/supplyCrate2k/roughness.ztx");
+		Zenith_AssetHandler::AddTexture2D(Zenith_GUID(), "SupplyCrate_Metallic", "C:/dev/Zenith/Games/Test/Assets/Textures/supplyCrate2k/metallic.ztx");
+
+		Flux_Texture& xDiffuse = Zenith_AssetHandler::GetTexture("SupplyCrate_Diffuse");
+		Flux_Texture& xNormal = Zenith_AssetHandler::GetTexture("SupplyCrate_Normal");
+		Flux_Texture& xRoughness = Zenith_AssetHandler::GetTexture("SupplyCrate_Roughness");
+		Flux_Texture& xMetallic = Zenith_AssetHandler::GetTexture("SupplyCrate_Metallic");
+
+		s_xSupplyCrateMaterial.SetDiffuse(&xDiffuse);
+		s_xSupplyCrateMaterial.SetNormal(&xNormal);
+		s_xSupplyCrateMaterial.SetRoughness(&xRoughness);
+		s_xSupplyCrateMaterial.SetMetallic(&xMetallic);
+	}
 	{
 		Zenith_AssetHandler::AddTexture2D(Zenith_GUID(), "Rock_Diffuse", "C:/dev/Zenith/Games/Test/Assets/Textures/rock2k/diffuse.ztx");
 		Zenith_AssetHandler::AddTexture2D(Zenith_GUID(), "Rock_Normal", "C:/dev/Zenith/Games/Test/Assets/Textures/rock2k/normal.ztx");
@@ -162,9 +193,8 @@ void Zenith_Core::Project_Startup()
 	for(Zenith_Entity& xEntity : s_axRotatingSpheres)
 	{
 		xEntity.Initialise(&xScene, "Rotating Sphere");
-		xEntity.AddComponent<Zenith_ModelComponent>(xSphereMesh, s_xRockMaterial);
 		Zenith_TransformComponent& xTrans = xEntity.GetComponent<Zenith_TransformComponent>();
-		xTrans.SetPosition({ 500 + 200 * uCount,1010,100});
+		xTrans.SetPosition({ 500 + 200 * uCount,1200,100});
 		xTrans.SetScale({ 100,100,100 });
 
 		Zenith_ScriptComponent& xScript = xEntity.AddComponent<Zenith_ScriptComponent>();
@@ -172,14 +202,17 @@ void Zenith_Core::Project_Startup()
 		RotationBehaviour_Behaviour& xBehaviour = *(RotationBehaviour_Behaviour*)xScript.m_pxScriptBehaviour;
 		if(uCount % 3 == 0)
 		{
+			xEntity.AddComponent<Zenith_ModelComponent>(xSphereMesh, s_xRockMaterial);
 			xBehaviour.SetAngularVel({ 1.,0.,0. });
 		}
 		else if (uCount % 3 == 1)
 		{
+			xEntity.AddComponent<Zenith_ModelComponent>(xSphereMesh, s_xMuddyGrassMaterial);
 			xBehaviour.SetAngularVel({ 0.,1.,0. });
 		}
 		else
 		{
+			xEntity.AddComponent<Zenith_ModelComponent>(xSphereMesh, s_xSupplyCrateMaterial);
 			xBehaviour.SetAngularVel({ 0.,0.,1. });
 		}
 
