@@ -87,6 +87,7 @@ void UploadInstanceData()
 		{{800.,1400.,800.,300.}, {0.,0.,1.,1.}},
 	};
 
+	//#TO_TODO: need a buffer per frame in flight
 	Flux_MemoryManager::UploadData(&s_xInstanceBuffer.GetBuffer(), axParticles, sizeof(axParticles));
 }
 

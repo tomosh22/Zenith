@@ -337,6 +337,9 @@
     <ClCompile Include="Zenith\Flux\Particles\Flux_Particles.cpp">
       <Filter>Zenith\Flux\Particles</Filter>
     </ClCompile>
+    <ClCompile Include="Zenith\Flux\SDFs\Flux_SDFs.cpp">
+      <Filter>Zenith\Flux\SDFs</Filter>
+    </ClCompile>
     <ClCompile Include="Zenith\Flux\Skybox\Flux_Skybox.cpp">
       <Filter>Zenith\Flux\Skybox</Filter>
     </ClCompile>
@@ -804,6 +807,9 @@
     <ClInclude Include="Zenith\Flux\Particles\Flux_Particles.h">
       <Filter>Zenith\Flux\Particles</Filter>
     </ClInclude>
+    <ClInclude Include="Zenith\Flux\SDFs\Flux_SDFs.h">
+      <Filter>Zenith\Flux\SDFs</Filter>
+    </ClInclude>
     <ClInclude Include="Zenith\Flux\Shaders\Common.fxh">
       <Filter>Zenith\Flux\Shaders</Filter>
     </ClInclude>
@@ -821,6 +827,15 @@
     </ClInclude>
     <ClInclude Include="Zenith\Flux\Shaders\GBufferCommon.fxh">
       <Filter>Zenith\Flux\Shaders</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\Flux\Shaders\Particles\Flux_Particles.frag">
+      <Filter>Zenith\Flux\Shaders\Particles</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\Flux\Shaders\Particles\Flux_Particles.vert">
+      <Filter>Zenith\Flux\Shaders\Particles</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\Flux\Shaders\SDFs\Flux_SDFs.frag">
+      <Filter>Zenith\Flux\Shaders\SDFs</Filter>
     </ClInclude>
     <ClInclude Include="Zenith\Flux\Shaders\Skybox\Flux_Skybox.frag">
       <Filter>Zenith\Flux\Shaders\Skybox</Filter>
@@ -1061,6 +1076,9 @@
     <Filter Include="Zenith\Flux\Particles">
       <UniqueIdentifier>{313cfa34-c922-a2ba-9616-d5f1a822197a}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Zenith\Flux\SDFs">
+      <UniqueIdentifier>{84088a68-a422-3be5-6db8-7fd09bc19fea}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Zenith\Flux\Shaders">
       <UniqueIdentifier>{023039c4-353d-0c39-1bdd-99bb116ea5f5}</UniqueIdentifier>
     </Filter>
@@ -1069,6 +1087,12 @@
     </Filter>
     <Filter Include="Zenith\Flux\Shaders\Fog">
       <UniqueIdentifier>{c394d484-195a-6c9e-0c13-a689b4cfc200}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Zenith\Flux\Shaders\Particles">
+      <UniqueIdentifier>{e42cdf4a-3a4b-88a1-5f85-835164898fa0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Zenith\Flux\Shaders\SDFs">
+      <UniqueIdentifier>{86b9ee1e-9f6b-d1c9-fe79-8f650ef3543a}</UniqueIdentifier>
     </Filter>
     <Filter Include="Zenith\Flux\Shaders\Skybox">
       <UniqueIdentifier>{bf2aae2b-cee3-e0f0-9869-c78bc13c7541}</UniqueIdentifier>
