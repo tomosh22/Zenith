@@ -107,6 +107,7 @@ void Flux_Particles::Render()
 	s_xCommandBuffer.SetPipeline(&s_xPipeline);
 
 	s_xCommandBuffer.SetVertexBuffer(Flux_Graphics::s_xQuadMesh.GetVertexBuffer(), 0);
+	s_xCommandBuffer.SetIndexBuffer(Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
 	s_xCommandBuffer.SetVertexBuffer(s_xInstanceBuffer, 1);
 
 	s_xCommandBuffer.BeginBind(BINDING_FREQUENCY_PER_FRAME);
