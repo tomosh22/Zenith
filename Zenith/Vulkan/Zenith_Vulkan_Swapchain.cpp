@@ -297,10 +297,16 @@ void Zenith_Vulkan_Swapchain::BindAsTarget()
 
 	vk::Framebuffer xFramebuffer = Zenith_Vulkan_Pipeline::TargetSetupToFramebuffer(s_xTargetSetup, xRenderPass);
 
+	vk::ClearValue xClear;
+	vk::ClearColorValue xClearColourValue(0.f, 0.f, 0.f, 1.f);
+	xClear.color = xClearColourValue;
+
 	vk::RenderPassBeginInfo xRenderPassInfo = vk::RenderPassBeginInfo()
 		.setRenderPass(xRenderPass)
 		.setFramebuffer(xFramebuffer)
-		.setRenderArea({ {0,0}, s_xExtent });
+		.setRenderArea({ {0,0}, s_xExtent })
+		.setPClearValues(&xClear)
+		.setClearValueCount(1);
 
 
 	s_xCopyToFramebufferCmd.GetCurrentCmdBuffer().beginRenderPass(xRenderPassInfo, vk::SubpassContents::eInline);
