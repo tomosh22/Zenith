@@ -183,10 +183,14 @@ public class ZenithToolsProject : Project
 		conf.Defines.Add("ZENITH_TOOLS");
 		
 		conf.Defines.Add("GLM_ENABLE_EXPERIMENTAL");
+		
 		String sharpmakePath = SharpmakeCsPath;
-		String assetRoot = sharpmakePath + "/Games/Test/Assets/";
-		assetRoot = assetRoot.Replace('\\', '/');
-		conf.Defines.Add("ASSETS_DIR=\"" + assetRoot + "\"");
+		String gameAssetRoot = sharpmakePath + "/Games/Test/Assets/";
+		gameAssetRoot = gameAssetRoot.Replace('\\', '/');
+		conf.Defines.Add("GAME_ASSETS_DIR=\"" + gameAssetRoot + "\"");
+		String engineAssetRoot = sharpmakePath + "/Zenith/Assets/";
+		engineAssetRoot = engineAssetRoot.Replace('\\', '/');
+		conf.Defines.Add("ENGINE_ASSETS_DIR=\"" + engineAssetRoot + "\"");
 		
 		conf.Defines.Add("ASSIMP_BUILD_NO_C4D_IMPORTER");
 		conf.Defines.Add("ASSIMP_BUILD_NO_OPENGEX_IMPORTER");

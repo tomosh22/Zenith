@@ -116,7 +116,7 @@ static void ExportFromObj(std::string& strFilename)
 
 void ExportAllMeshes()
 {
-	for (auto& xFile : std::filesystem::recursive_directory_iterator(ASSETS_DIR))
+	for (auto& xFile : std::filesystem::recursive_directory_iterator(GAME_ASSETS_DIR))
 	{
 		const wchar_t* wszFilename = xFile.path().c_str();
 		size_t ulLength = wcslen(wszFilename);

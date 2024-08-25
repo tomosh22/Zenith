@@ -16,11 +16,11 @@ static Flux_CommandBuffer s_xCommandBuffer;
 static Flux_Shader s_xShader;
 static Flux_Pipeline s_xPipeline;
 
-static Flux_VertexBuffer s_xInstanceBuffer;
+static Flux_DynamicVertexBuffer s_xInstanceBuffer;
 
 DEBUGVAR bool dbg_Enable = true;
 
-static constexpr uint32_t s_uMaxParticles = 1000;
+static constexpr uint32_t s_uMaxParticles = 1024;
 
 struct Particle
 {
@@ -65,7 +65,7 @@ void Flux_Particles::Initialise()
 
 	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
 
-	Flux_MemoryManager::InitialiseVertexBuffer(nullptr, s_uMaxParticles * sizeof(Particle), s_xInstanceBuffer, false);
+	Flux_MemoryManager::InitialiseDynamicVertexBuffer(nullptr, s_uMaxParticles * sizeof(Particle), s_xInstanceBuffer, false);
 
 	Zenith_AssetHandler::AddTexture2D(Zenith_GUID(), "Particle", "C:/dev/Zenith/Games/Test/Assets/Textures/particle.ztx");
 	Zenith_AssetHandler::AddTexture2D(Zenith_GUID(), "ParticleSwirl", "C:/dev/Zenith/Games/Test/Assets/Textures/particleSwirl.ztx");
@@ -82,9 +82,9 @@ void UploadInstanceData()
 {
 	Particle axParticles[] =
 	{
-		{{200.,1400.,200.,300.}, {1.,0.,0.,1.}},
-		{{400.,1400.,400.,300.}, {0.,1.,0.,1.}},
-		{{800.,1400.,800.,300.}, {0.,0.,1.,1.}},
+		{{200.,1500 + sin(Zenith_Core::GetTimePassed()) * 200, 200.,300.}, {1.,0.,0.,1.}},
+		{{400.,1500 + sin(Zenith_Core::GetTimePassed()) * 200, 400.,300.}, {0.,1.,0.,1.}},
+		{{800.,1500 + sin(Zenith_Core::GetTimePassed()) * 200, 800.,300.}, {0.,0.,1.,1.}},
 	};
 
 	//#TO_TODO: need a buffer per frame in flight

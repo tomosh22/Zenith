@@ -222,6 +222,21 @@ void Zenith_Vulkan_MemoryManager::InitialiseVertexBuffer(const void* pData, size
 	}
 }
 
+
+void Zenith_Vulkan_MemoryManager::InitialiseDynamicVertexBuffer(const void* pData, size_t uSize, Flux_DynamicVertexBuffer& xBufferOut, bool bDeviceLocal /*= true*/)
+{
+	for (uint32_t u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
+	{
+		Zenith_Vulkan_Buffer& xBuffer = xBufferOut.GetBufferForFrameInFlight(u);
+		vk::BufferUsageFlags eFlags = vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst;
+		AllocateBuffer(uSize, eFlags, bDeviceLocal ? MEMORY_RESIDENCY_GPU : MEMORY_RESIDENCY_CPU, xBuffer);
+		if (pData)
+		{
+			UploadData(&xBuffer, pData, uSize);
+		}
+	}
+}
+
 void Zenith_Vulkan_MemoryManager::InitialiseIndexBuffer(const void* pData, size_t uSize, Flux_IndexBuffer& xBufferOut)
 {
 	Zenith_Vulkan_Buffer& xBuffer = xBufferOut.GetBuffer();

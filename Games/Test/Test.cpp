@@ -6,6 +6,7 @@
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
+#include "EntityComponent/Components/Zenith_TextComponent.h"
 #include "AssetHandling/Zenith_AssetHandler.h"
 #include "Flux/Flux_Material.h"
 #include "Flux/Flux_Graphics.h"
@@ -151,6 +152,9 @@ void Zenith_Core::Project_Startup()
 	Zenith_ScriptComponent& xScript = s_xPlayer.AddComponent<Zenith_ScriptComponent>();
 	xScript.SetBehaviour<PlayerController_Behaviour>();
 
+	Zenith_TextComponent& xText = s_xPlayer.AddComponent<Zenith_TextComponent>();
+	TextEntry xTextEntry = { "abcdefghijklmnopqrstuvwxyz", { 0, 0 }, 1. };
+	xText.AddText(xTextEntry);
 	
 	
 

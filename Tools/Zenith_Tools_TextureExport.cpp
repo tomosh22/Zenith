@@ -55,31 +55,38 @@ static void Export(std::string strFilename, const char* szExtension)
 	fclose(pxFile);
 }
 
+void ExportTexture(const std::filesystem::directory_entry& xFile)
+{
+	const wchar_t* wszFilename = xFile.path().c_str();
+	size_t ulLength = wcslen(wszFilename);
+	char* szFilename = new char[ulLength + 1];
+	wcstombs(szFilename, wszFilename, ulLength);
+	szFilename[ulLength] = '\0';
+
+	constexpr char* aszExtensions[] =
+	{
+		"png",
+		"jpg",
+		"jpeg"
+	};
+	for (const char* szExt : aszExtensions)
+	{
+		if (!strcmp(szFilename + strlen(szFilename) - strlen(szExt), szExt))
+		{
+			std::string strFilename(szFilename);
+			Export(strFilename, szExt);
+		}
+	}
+}
 
 void ExportAllTextures()
 {
-	for (auto& xFile : std::filesystem::recursive_directory_iterator(ASSETS_DIR))
+	for (const std::filesystem::directory_entry& xFile : std::filesystem::recursive_directory_iterator(GAME_ASSETS_DIR))
 	{
-		const wchar_t* wszFilename = xFile.path().c_str();
-		size_t ulLength = wcslen(wszFilename);
-		char* szFilename = new char[ulLength + 1];
-		wcstombs(szFilename, wszFilename, ulLength);
-		szFilename[ulLength] = '\0';
-
-		constexpr char* aszExtensions[] =
-		{
-			"png",
-			"jpg",
-			"jpeg"
-		};
-		for (const char* szExt : aszExtensions)
-		{
-			if (!strcmp(szFilename + strlen(szFilename) - strlen(szExt), szExt))
-			{
-				std::string strFilename(szFilename);
-				Export(strFilename, szExt);
-			}
-		}
-		
+		ExportTexture(xFile);
+	}
+	for (const std::filesystem::directory_entry& xFile : std::filesystem::recursive_directory_iterator(ENGINE_ASSETS_DIR))
+	{
+		ExportTexture(xFile);
 	}
 }

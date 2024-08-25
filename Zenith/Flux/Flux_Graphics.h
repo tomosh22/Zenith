@@ -40,5 +40,7 @@ private:
 		Zenith_Maths::Vector4 m_xCamPos_Pad;
 		Zenith_Maths::Vector4 m_xSunDir_Pad;
 		Zenith_Maths::Vector4 m_xSunColour_Pad;
+		Zenith_Maths::UVector2 m_xScreenDims;
+		Zenith_Maths::Vector2 m_xRcpScreenDims;
 	};
 };
