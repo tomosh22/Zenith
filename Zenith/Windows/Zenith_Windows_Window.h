@@ -30,11 +30,7 @@ public:
 	void DisableCaptureCursor();
 	bool IsCursorCaptured();
 
-	uint32_t GetWidth() const { return m_uWidth; }
-	uint32_t GetHeight() const { return m_uHeight; }
-
-	void SetWidth(uint32_t uWidth)  { m_uWidth = uWidth; }
-	void SetHeight(uint32_t uHeight)  { m_uHeight = uHeight; }
+	void GetSize(int32_t& iWidth, int32_t& iHeight) { glfwGetWindowSize(m_pxNativeWindow, &iWidth, &iHeight); }
 
 	void SetEventCallback(void(*pfnEventCallback)()) {
 		m_pfnEventCallback = pfnEventCallback;
@@ -49,7 +45,6 @@ private:
 	static Zenith_Window* s_pxInstance;
 
 	GLFWwindow* m_pxNativeWindow = nullptr;
-	uint32_t m_uWidth, m_uHeight;
 	bool m_bVSync;
 	void(*m_pfnEventCallback)() = nullptr;
 

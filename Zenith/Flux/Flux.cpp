@@ -10,6 +10,7 @@
 #include "Flux/Fog/Flux_Fog.h"
 #include "Flux/SDFs/Flux_SDFs.h"
 #include "Flux/Particles/Flux_Particles.h"
+#include "Flux/Text/Flux_Text.h"
 
 uint32_t Flux::s_uFrameCounter = 0;
 std::vector<void(*)()> Flux::s_xResChangeCallbacks;
@@ -38,6 +39,7 @@ void Flux::LateInitialise()
 	Flux_Fog::Initialise();
 	Flux_SDFs::Initialise();
 	Flux_Particles::Initialise();
+	Flux_Text::Initialise();
 	Flux_MemoryManager::EndFrame(false);
 }
 

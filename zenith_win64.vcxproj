@@ -572,6 +572,7 @@
     <ClInclude Include="Zenith\EntityComponent\Components\Zenith_ModelComponent.h" />
     <ClInclude Include="Zenith\EntityComponent\Components\Zenith_ScriptComponent.h" />
     <ClInclude Include="Zenith\EntityComponent\Components\Zenith_TerrainComponent.h" />
+    <ClInclude Include="Zenith\EntityComponent\Components\Zenith_TextComponent.h" />
     <ClInclude Include="Zenith\EntityComponent\Components\Zenith_TransformComponent.h" />
     <ClInclude Include="Zenith\EntityComponent\Zenith_Entity.h" />
     <ClInclude Include="Zenith\EntityComponent\Zenith_Scene.h" />
@@ -602,11 +603,14 @@
     <ClInclude Include="Zenith\Flux\Shaders\StaticMeshes\Flux_StaticMeshes.vert" />
     <ClInclude Include="Zenith\Flux\Shaders\Terrain\Flux_Terrain.frag" />
     <ClInclude Include="Zenith\Flux\Shaders\Terrain\Flux_Terrain.vert" />
+    <ClInclude Include="Zenith\Flux\Shaders\Text\Flux_Text.frag" />
+    <ClInclude Include="Zenith\Flux\Shaders\Text\Flux_Text.vert" />
     <ClInclude Include="Zenith\Flux\Shaders\Water\Flux_Water.frag" />
     <ClInclude Include="Zenith\Flux\Shaders\Water\Flux_Water.vert" />
     <ClInclude Include="Zenith\Flux\Skybox\Flux_Skybox.h" />
     <ClInclude Include="Zenith\Flux\StaticMeshes\Flux_StaticMeshes.h" />
     <ClInclude Include="Zenith\Flux\Terrain\Flux_Terrain.h" />
+    <ClInclude Include="Zenith\Flux\Text\Flux_Text.h" />
     <ClInclude Include="Zenith\Flux\Water\Flux_Water.h" />
     <ClInclude Include="Zenith\Input\Zenith_Input.h" />
     <ClInclude Include="Zenith\Input\Zenith_KeyCodes.h" />
@@ -1163,6 +1167,7 @@
     <ClCompile Include="Zenith\EntityComponent\Components\Zenith_ModelComponent.cpp" />
     <ClCompile Include="Zenith\EntityComponent\Components\Zenith_ScriptComponent.cpp" />
     <ClCompile Include="Zenith\EntityComponent\Components\Zenith_TerrainComponent.cpp" />
+    <ClCompile Include="Zenith\EntityComponent\Components\Zenith_TextComponent.cpp" />
     <ClCompile Include="Zenith\EntityComponent\Components\Zenith_TransformComponent.cpp" />
     <ClCompile Include="Zenith\EntityComponent\Zenith_Entity.cpp" />
     <ClCompile Include="Zenith\EntityComponent\Zenith_Scene.cpp" />
@@ -1180,6 +1185,7 @@
     <ClCompile Include="Zenith\Flux\Skybox\Flux_Skybox.cpp" />
     <ClCompile Include="Zenith\Flux\StaticMeshes\Flux_StaticMeshes.cpp" />
     <ClCompile Include="Zenith\Flux\Terrain\Flux_Terrain.cpp" />
+    <ClCompile Include="Zenith\Flux\Text\Flux_Text.cpp" />
     <ClCompile Include="Zenith\Flux\Water\Flux_Water.cpp" />
     <ClCompile Include="Zenith\Input\Zenith_Input.cpp" />
     <ClCompile Include="Zenith\Maths\Zenith_Maths.cpp" />

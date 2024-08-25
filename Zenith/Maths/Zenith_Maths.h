@@ -6,6 +6,7 @@
 namespace Zenith_Maths
 {
 	using Vector2 = glm::vec2;
+	using UVector2 = glm::uvec2;
 	using Vector2_64 = glm::dvec2;
 	using Vector3 = glm::vec3;
 	using Vector3_64 = glm::dvec3;

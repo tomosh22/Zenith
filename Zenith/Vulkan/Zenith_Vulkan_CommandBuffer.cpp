@@ -96,6 +96,14 @@ void Zenith_Vulkan_CommandBuffer::SetVertexBuffer(const Flux_VertexBuffer& xVert
 	m_xCurrentCmdBuffer.bindVertexBuffers(uBindPoint, 1, &xBuffer, offsets);
 }
 
+void Zenith_Vulkan_CommandBuffer::SetVertexBuffer(const Flux_DynamicVertexBuffer& xVertexBuffer, uint32_t uBindPoint /*= 0*/)
+{
+	const vk::Buffer& xBuffer = xVertexBuffer.GetBuffer().GetBuffer();
+	//#TO_TODO: offsets
+	vk::DeviceSize offsets[] = { 0 };
+	m_xCurrentCmdBuffer.bindVertexBuffers(uBindPoint, 1, &xBuffer, offsets);
+}
+
 void Zenith_Vulkan_CommandBuffer::SetIndexBuffer(const Flux_IndexBuffer& xIndexBuffer)
 {
 	const vk::Buffer& xBuffer = xIndexBuffer.GetBuffer().GetBuffer();

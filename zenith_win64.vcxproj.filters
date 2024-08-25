@@ -298,6 +298,9 @@
     <ClCompile Include="Zenith\EntityComponent\Components\Zenith_TerrainComponent.cpp">
       <Filter>Zenith\EntityComponent\Components</Filter>
     </ClCompile>
+    <ClCompile Include="Zenith\EntityComponent\Components\Zenith_TextComponent.cpp">
+      <Filter>Zenith\EntityComponent\Components</Filter>
+    </ClCompile>
     <ClCompile Include="Zenith\EntityComponent\Components\Zenith_TransformComponent.cpp">
       <Filter>Zenith\EntityComponent\Components</Filter>
     </ClCompile>
@@ -348,6 +351,9 @@
     </ClCompile>
     <ClCompile Include="Zenith\Flux\Terrain\Flux_Terrain.cpp">
       <Filter>Zenith\Flux\Terrain</Filter>
+    </ClCompile>
+    <ClCompile Include="Zenith\Flux\Text\Flux_Text.cpp">
+      <Filter>Zenith\Flux\Text</Filter>
     </ClCompile>
     <ClCompile Include="Zenith\Flux\Water\Flux_Water.cpp">
       <Filter>Zenith\Flux\Water</Filter>
@@ -762,6 +768,9 @@
     <ClInclude Include="Zenith\EntityComponent\Components\Zenith_TerrainComponent.h">
       <Filter>Zenith\EntityComponent\Components</Filter>
     </ClInclude>
+    <ClInclude Include="Zenith\EntityComponent\Components\Zenith_TextComponent.h">
+      <Filter>Zenith\EntityComponent\Components</Filter>
+    </ClInclude>
     <ClInclude Include="Zenith\EntityComponent\Components\Zenith_TransformComponent.h">
       <Filter>Zenith\EntityComponent\Components</Filter>
     </ClInclude>
@@ -852,6 +861,12 @@
     <ClInclude Include="Zenith\Flux\Shaders\Terrain\Flux_Terrain.vert">
       <Filter>Zenith\Flux\Shaders\Terrain</Filter>
     </ClInclude>
+    <ClInclude Include="Zenith\Flux\Shaders\Text\Flux_Text.frag">
+      <Filter>Zenith\Flux\Shaders\Text</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\Flux\Shaders\Text\Flux_Text.vert">
+      <Filter>Zenith\Flux\Shaders\Text</Filter>
+    </ClInclude>
     <ClInclude Include="Zenith\Flux\Shaders\Water\Flux_Water.frag">
       <Filter>Zenith\Flux\Shaders\Water</Filter>
     </ClInclude>
@@ -866,6 +881,9 @@
     </ClInclude>
     <ClInclude Include="Zenith\Flux\Terrain\Flux_Terrain.h">
       <Filter>Zenith\Flux\Terrain</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\Flux\Text\Flux_Text.h">
+      <Filter>Zenith\Flux\Text</Filter>
     </ClInclude>
     <ClInclude Include="Zenith\Flux\Water\Flux_Water.h">
       <Filter>Zenith\Flux\Water</Filter>
@@ -1103,6 +1121,9 @@
     <Filter Include="Zenith\Flux\Shaders\Terrain">
       <UniqueIdentifier>{c9d10ea7-fe94-0d9a-2112-36cfd1fa7166}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Zenith\Flux\Shaders\Text">
+      <UniqueIdentifier>{52227360-1950-fd23-8bc8-8a049b8e0645}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Zenith\Flux\Shaders\Water">
       <UniqueIdentifier>{5d8d371d-a63f-3288-2190-27690819bd72}</UniqueIdentifier>
     </Filter>
@@ -1114,6 +1135,9 @@
     </Filter>
     <Filter Include="Zenith\Flux\Terrain">
       <UniqueIdentifier>{8f50e9fb-4acd-475f-c23b-739763fb64b0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Zenith\Flux\Text">
+      <UniqueIdentifier>{33f91a93-8249-2c02-767a-b7b1636dd6cc}</UniqueIdentifier>
     </Filter>
     <Filter Include="Zenith\Flux\Water">
       <UniqueIdentifier>{748bcb78-ce6a-217d-54f8-e6ed7623282c}</UniqueIdentifier>

@@ -7,6 +7,7 @@
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
+#include "Zenith_OS_Include.h"
 
 Flux_TargetSetup Flux_Graphics::s_xMRTTarget;
 Flux_TargetSetup Flux_Graphics::s_xFinalRenderTarget;
@@ -84,8 +85,12 @@ void Flux_Graphics::UploadFrameConstants()
 	xCamera.BuildProjectionMatrix(xConstants.m_xProjMat);
 	xConstants.m_xViewProjMat = xConstants.m_xProjMat * xConstants.m_xViewMat;
 	xCamera.GetPosition(xConstants.m_xCamPos_Pad);
-	xConstants.m_xSunDir_Pad = glm::normalize(Zenith_Maths::Vector4( dbg_SunDir.x, dbg_SunDir.y, dbg_SunDir.z, 0. ));
+	xConstants.m_xSunDir_Pad = glm::normalize(Zenith_Maths::Vector4(dbg_SunDir.x, dbg_SunDir.y, dbg_SunDir.z, 0.));
 	xConstants.m_xSunColour_Pad = { dbg_SunColour.x, dbg_SunColour.y, dbg_SunColour.z, 0. };
+	int32_t iWidth, iHeight;
+	Zenith_Window::GetInstance()->GetSize(iWidth, iHeight);
+	xConstants.m_xScreenDims = {static_cast<uint32_t>(iWidth), static_cast<uint32_t>(iHeight) };
+	xConstants.m_xRcpScreenDims = {1.f / xConstants.m_xScreenDims.x, 1.f / xConstants.m_xScreenDims.y};
 	Flux_MemoryManager::UploadData(&s_xFrameConstantsBuffer.GetBuffer(), &xConstants, sizeof(Zenith_FrameConstants));
 }
 

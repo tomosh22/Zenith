@@ -11,6 +11,7 @@
 #include "Flux/Fog/Flux_Fog.h"
 #include "Flux/SDFs/Flux_SDFs.h"
 #include "Flux/Particles/Flux_Particles.h"
+#include "Flux/Text/Flux_Text.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "Physics/Zenith_Physics.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
@@ -97,6 +98,7 @@ void Zenith_MainLoop()
 	Flux_Fog::Render();
 	Flux_SDFs::Render();
 	Flux_Particles::Render();
+	Flux_Text::Render();
 
 	Zenith_Physics::Update(Zenith_Core::GetDt());
 	Zenith_Scene::GetCurrentScene().Update(Zenith_Core::GetDt());
