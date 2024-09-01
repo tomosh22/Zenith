@@ -77,7 +77,12 @@ void Flux_MeshGeometry::LoadFromFile(const char* szPath, Flux_MeshGeometry& xGeo
 {
 
 	FILE* pxFile = fopen(szPath, "rb");
-	Zenith_Assert(pxFile, "Mesh file doesn't exist");
+
+	if (!pxFile)
+	{
+		Zenith_Log("Mesh file doesn't exist");
+		return;
+	}
 	fseek(pxFile, 0, SEEK_END);
 	size_t ulFileSize = ftell(pxFile);
 	fseek(pxFile, 0, SEEK_SET);

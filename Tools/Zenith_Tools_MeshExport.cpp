@@ -4,32 +4,12 @@
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
 
-static void ExportFromObj(std::string& strFilename)
+static void ExportAssimpMesh(aiMesh* pxAssimpMesh, std::string strOutFilename)
 {
 	//#TO_TODO: double check this
 	const bool bFlipWinding = false;
 
 	Flux_MeshGeometry xMesh;
-
-	Assimp::Importer importer;
-	const aiScene* pxScene = importer.ReadFile(strFilename,
-		aiProcess_CalcTangentSpace |
-		aiProcess_GenSmoothNormals |
-		aiProcess_Triangulate |
-		aiProcess_JoinIdenticalVertices |
-		aiProcess_SortByPType);
-
-
-
-	if (!pxScene)
-	{
-		Zenith_Log("Null mesh scene %s", strFilename);
-		return;
-	}
-
-
-	//#TO_TODO: do i care about any other meshes?
-	aiMesh* pxAssimpMesh = pxScene->mMeshes[0];
 
 	Zenith_Assert(pxAssimpMesh->mNumBones == 0, "Don't support exporting skinned meshes");
 
@@ -107,11 +87,46 @@ static void ExportFromObj(std::string& strFilename)
 
 	xMesh.GenerateLayoutAndVertexData();
 
-	size_t ulFindPos = strFilename.find("obj");
-	Zenith_Assert(ulFindPos != std::string::npos, "How have we managed to get here when this isn't an obj file?");
-	strFilename.replace(ulFindPos, strlen("obj"), "zmsh");
+	
 
-	xMesh.Export(strFilename.c_str());
+	xMesh.Export(strOutFilename.c_str());
+}
+
+static void ProcessNode(aiNode* pxNode, const aiScene* pxScene, const std::string& strExtension, const std::string& strFilename, uint32_t& uIndex)
+{
+	for (uint32_t u = 0; u < pxNode->mNumMeshes; u++)
+	{
+		aiMesh* pxAssimpMesh = pxScene->mMeshes[pxNode->mMeshes[u]];
+		std::string strExportFilename(strFilename);
+		size_t ulFindPos = strExportFilename.find(strExtension.c_str());
+		Zenith_Assert(ulFindPos != std::string::npos, "");
+		strExportFilename.replace(ulFindPos, strlen(strExtension.c_str()), "_" + std::to_string(uIndex++) + ".zmsh");
+
+		ExportAssimpMesh(pxAssimpMesh, strExportFilename);
+	}
+
+	for (uint32_t u = 0; u < pxNode->mNumChildren; u++)
+	{
+		ProcessNode(pxNode->mChildren[u], pxScene, strExtension, strFilename, uIndex);
+	}
+}
+
+static void Export(const std::string& strFilename, const std::string& strExtension)
+{
+	Assimp::Importer importer;
+	const aiScene* pxScene = importer.ReadFile(strFilename,
+		aiProcess_CalcTangentSpace |
+		aiProcess_Triangulate);
+
+	if (!pxScene)
+	{
+		Zenith_Log("Null mesh scene %s", strFilename.c_str());
+		Zenith_Log("Assimp error %s", importer.GetErrorString() ? importer.GetErrorString() : "no error");
+		return;
+	}
+
+	uint32_t uRootIndex = 0;
+	ProcessNode(pxScene->mRootNode, pxScene, strExtension, strFilename, uRootIndex);
 }
 
 void ExportAllMeshes()
@@ -124,11 +139,25 @@ void ExportAllMeshes()
 		wcstombs(szFilename, wszFilename, ulLength);
 		szFilename[ulLength] = '\0';
 
-		//is this an obj
-		if (!strcmp(szFilename + strlen(szFilename) - strlen("obj"), "obj"))
+		//is this a gltf
+		if (!strcmp(szFilename + strlen(szFilename) - strlen(".gltf"), ".gltf"))
 		{
 			std::string strFilename(szFilename);
-			ExportFromObj(strFilename);
+			Export(strFilename, ".gltf");
+		}
+
+		//is this an fbx
+		if (!strcmp(szFilename + strlen(szFilename) - strlen(".fbx"), ".fbx"))
+		{
+			std::string strFilename(szFilename);
+			Export(strFilename, ".fbx");
+		}
+
+		//is this an obj
+		if (!strcmp(szFilename + strlen(szFilename) - strlen(".obj"), ".obj"))
+		{
+			std::string strFilename(szFilename);
+			Export(strFilename, ".obj");
 		}
 	}
 }
