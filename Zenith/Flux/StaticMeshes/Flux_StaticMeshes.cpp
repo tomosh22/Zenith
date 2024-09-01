@@ -86,20 +86,23 @@ void Flux_StaticMeshes::Render()
 
 	for (Zenith_ModelComponent* pxModel : xModels)
 	{
-		s_xCommandBuffer.SetVertexBuffer(pxModel->GetMeshGeometry().GetVertexBuffer());
-		s_xCommandBuffer.SetIndexBuffer(pxModel->GetMeshGeometry().GetIndexBuffer());
+		for (uint32_t uMesh = 0; uMesh < pxModel->GetNumMeshEntires(); uMesh++)
+		{
+			s_xCommandBuffer.SetVertexBuffer(pxModel->GetMeshGeometryAtIndex(uMesh).GetVertexBuffer());
+			s_xCommandBuffer.SetIndexBuffer(pxModel->GetMeshGeometryAtIndex(uMesh).GetIndexBuffer());
 
-		Zenith_Maths::Matrix4 xModelMatrix;
-		pxModel->GetParentEntity().GetComponent<Zenith_TransformComponent>().BuildModelMatrix(xModelMatrix);
-		s_xCommandBuffer.PushConstant(&xModelMatrix, sizeof(xModelMatrix));
-		Flux_Material& xMaterial = pxModel->GetMaterial();
+			Zenith_Maths::Matrix4 xModelMatrix;
+			pxModel->GetParentEntity().GetComponent<Zenith_TransformComponent>().BuildModelMatrix(xModelMatrix);
+			s_xCommandBuffer.PushConstant(&xModelMatrix, sizeof(xModelMatrix));
+			Flux_Material& xMaterial = pxModel->GetMaterialAtIndex(uMesh);
 
-		s_xCommandBuffer.BindTexture(xMaterial.GetDiffuse(), 0);
-		s_xCommandBuffer.BindTexture(xMaterial.GetNormal(), 1);
-		s_xCommandBuffer.BindTexture(xMaterial.GetRoughness(), 2);
-		s_xCommandBuffer.BindTexture(xMaterial.GetMetallic(), 3);
+			s_xCommandBuffer.BindTexture(xMaterial.GetDiffuse(), 0);
+			s_xCommandBuffer.BindTexture(xMaterial.GetNormal(), 1);
+			s_xCommandBuffer.BindTexture(xMaterial.GetRoughness(), 2);
+			s_xCommandBuffer.BindTexture(xMaterial.GetMetallic(), 3);
 
-		s_xCommandBuffer.DrawIndexed(pxModel->GetMeshGeometry().GetNumIndices());
+			s_xCommandBuffer.DrawIndexed(pxModel->GetMeshGeometryAtIndex(uMesh).GetNumIndices());
+		}
 	}
 
 	s_xCommandBuffer.EndRecording(RENDER_ORDER_OPAQUE_MESHES);
