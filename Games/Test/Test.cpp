@@ -22,6 +22,7 @@ static Zenith_Entity s_axRotatingSpheres[3];
 static Zenith_Entity s_xTerrain[16][16];
 static Zenith_Entity s_axSponzaEntities[400];
 
+static Flux_Material s_xBarrelMaterial;
 static Flux_Material s_xCrystalMaterial;
 static Flux_Material s_xRockMaterial;
 static Flux_Material s_xMuddyGrassMaterial;
@@ -39,6 +40,17 @@ static Flux_Material s_xSupplyCrateMaterial;
 void LoadAssets()
 {
 	Zenith_AssetHandler::AddMesh(Zenith_GUID(), "Barrel", "C:/dev/Zenith/Games/Test/Assets/Meshes/barrel_0.zmsh");
+	{
+		Zenith_AssetHandler::AddTexture2D(Zenith_GUID(), "Barrel_Diffuse", "C:/dev/Zenith/Games/Test/Assets/Meshes/barrelDiffuse.ztx");
+		Zenith_AssetHandler::AddTexture2D(Zenith_GUID(), "Barrel_Metallic", "C:/dev/Zenith/Games/Test/Assets/Meshes/barrelShininess.ztx");
+
+		Flux_Texture& xDiffuse = Zenith_AssetHandler::GetTexture("Barrel_Diffuse");
+		Flux_Texture& xMetallic = Zenith_AssetHandler::GetTexture("Barrel_Metallic");
+
+		s_xBarrelMaterial.SetDiffuse(&xDiffuse);
+		s_xBarrelMaterial.SetMetallic(&xMetallic);
+	}
+
 	Zenith_AssetHandler::AddMesh(Zenith_GUID(), "Sphere_Smooth", "C:/dev/Zenith/Games/Test/Assets/Meshes/sphereSmooth_0.zmsh");
 	{
 		Zenith_AssetHandler::AddTexture2D(Zenith_GUID(), "Crystal_Diffuse", "C:/dev/Zenith/Games/Test/Assets/Textures/crystal2k/diffuse.ztx");
@@ -204,7 +216,7 @@ void Zenith_Core::Project_Startup()
 	Flux_MeshGeometry& xBarrelMesh = Zenith_AssetHandler::GetMesh("Barrel");
 	{
 		s_xBarrel.Initialise(&xScene, "Barrel");
-		s_xBarrel.AddComponent<Zenith_ModelComponent>(xBarrelMesh, s_xCrystalMaterial);
+		s_xBarrel.AddComponent<Zenith_ModelComponent>(xBarrelMesh, s_xBarrelMaterial);
 		Zenith_TransformComponent& xTrans = s_xBarrel.GetComponent<Zenith_TransformComponent>();
 		xTrans.SetPosition({ 1500,1200,100 });
 		xTrans.SetScale({ 10,10,10 });

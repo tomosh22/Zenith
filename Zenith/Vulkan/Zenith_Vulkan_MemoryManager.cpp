@@ -308,8 +308,8 @@ void Zenith_Vulkan_MemoryManager::CreateTexture(const char* szPath, Zenith_Vulka
 	std::string strFormat(pcData + ulCursor);
 	ulCursor += strFormat.length() + 1;
 	//#TO_TODO: other formats
-	eFormat = vk::Format::eR8G8B8A8Unorm;
-	//eFormat = StringToVkFormat(strFormat);
+	eFormat = Zenith_Vulkan_Texture::ConvertToVkFormat_Colour((ColourFormat)std::stoi(strFormat));
+	//eFormat = vk::Format::eR8G8B8A8Unorm;
 
 	size_t ulDataSize = uWidth * uHeight * uDepth * 4 /*bytes per pixel*/;
 	pData = malloc(ulDataSize);
