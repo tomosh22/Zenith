@@ -3,6 +3,8 @@
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
+#include "stb/stb_image.h"
+#include "Zenith_Tools_TextureExport.h"
 
 static void ExportAssimpMesh(aiMesh* pxAssimpMesh, std::string strOutFilename)
 {
@@ -111,12 +113,81 @@ static void ProcessNode(aiNode* pxNode, const aiScene* pxScene, const std::strin
 	}
 }
 
+static const char* s_aszMaterialTypeToName[]
+{
+	"None",				//0
+	"Diffuse",			//1
+	"Specular",			//2
+	"Ambient",			//3
+	"Emissive",			//4
+	"Height",			//5
+	"Normals",			//6
+	"Shininess",		//7
+	"Opacity",			//8
+	"Displacement",		//9
+	"Lightmap",			//10
+	"Reflection",		//11
+	"Base_Colour",		//12
+	"Normal_Camera",	//13
+	"Emission_Colour",	//14
+	"Metalness",		//15
+	"Diffuse_Roughness",//16
+	"Ambient_Occlusion",//17
+};
+
+static void ExportMaterialTextures(const aiMaterial* pxMat, const aiScene* pxScene, const std::string& strFilename)
+{
+	for (uint32_t uType = aiTextureType_NONE; uType <= aiTextureType_AMBIENT_OCCLUSION; uType++)
+	{
+		aiString str;
+		pxMat->GetTexture((aiTextureType)uType, 0, &str);
+		const aiTexture* pxTex = pxScene->GetEmbeddedTexture(str.C_Str());
+		if (pxTex == nullptr) continue;
+
+		Zenith_Assert(pxTex->mHeight == 0, "Need to add support for non compressed textures");
+
+		const uint32_t uCompressedDataSize = pxTex->mWidth;
+		const void* pCompressedData = pxTex->pcData;
+
+		int32_t iWidth, iHeight, iNumChannels;
+		uint8_t* pData = stbi_load_from_memory((uint8_t*)pCompressedData, uCompressedDataSize, &iWidth, &iHeight, &iNumChannels, STBI_rgb_alpha);
+
+		std::string strExportFile(strFilename);
+		strExportFile = strExportFile.replace(strExportFile.find("."), 1, (std::string(s_aszMaterialTypeToName[uType]) + ".").c_str());
+		size_t ulDotPos = strExportFile.find(".");
+		strExportFile = strExportFile.replace(ulDotPos, strExportFile.length() - ulDotPos, ".ztx");
+
+		//#TO_TODO: do this properly
+		ColourFormat eFormat;
+		if (iNumChannels == 3)
+		{
+			eFormat = COLOUR_FORMAT_RGB8_UNORM;
+		}
+		else if (iNumChannels == 4)
+		{
+			eFormat = COLOUR_FORMAT_RGBA8_UNORM;
+		}
+		else
+		{
+			Zenith_Assert(false, "What format is this?");
+		}
+
+		Zenith_Tools_TextureExport::ExportFromData(pData, strExportFile, iWidth, iHeight, eFormat);
+	}
+}
+
 static void Export(const std::string& strFilename, const std::string& strExtension)
 {
 	Assimp::Importer importer;
 	const aiScene* pxScene = importer.ReadFile(strFilename,
 		aiProcess_CalcTangentSpace |
-		aiProcess_Triangulate);
+		aiProcess_Triangulate |
+		aiProcess_FlipUVs);
+
+	for (uint32_t u = 0; u < pxScene->mNumMaterials; u++)
+	{
+		ExportMaterialTextures(pxScene->mMaterials[u], pxScene, strFilename);
+	}
 
 	if (!pxScene)
 	{
