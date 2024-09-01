@@ -15,10 +15,12 @@
 #include "Test/Components/PlayerController_Behaviour.h"
 
 static Zenith_Entity s_xPlayer;
+static Zenith_Entity s_xBarrel;
 static Zenith_Entity s_xSphere0;
 static Zenith_Entity s_xSphere1;
 static Zenith_Entity s_axRotatingSpheres[3];
 static Zenith_Entity s_xTerrain[16][16];
+static Zenith_Entity s_axSponzaEntities[400];
 
 static Flux_Material s_xCrystalMaterial;
 static Flux_Material s_xRockMaterial;
@@ -36,7 +38,8 @@ static Flux_Material s_xSupplyCrateMaterial;
 
 void LoadAssets()
 {
-	Zenith_AssetHandler::AddMesh(Zenith_GUID(), "Sphere_Smooth", "C:/dev/Zenith/Games/Test/Assets/Meshes/sphereSmooth.zmsh");
+	Zenith_AssetHandler::AddMesh(Zenith_GUID(), "Barrel", "C:/dev/Zenith/Games/Test/Assets/Meshes/barrel_0.zmsh");
+	Zenith_AssetHandler::AddMesh(Zenith_GUID(), "Sphere_Smooth", "C:/dev/Zenith/Games/Test/Assets/Meshes/sphereSmooth_0.zmsh");
 	{
 		Zenith_AssetHandler::AddTexture2D(Zenith_GUID(), "Crystal_Diffuse", "C:/dev/Zenith/Games/Test/Assets/Textures/crystal2k/diffuse.ztx");
 		Zenith_AssetHandler::AddTexture2D(Zenith_GUID(), "Crystal_Normal", "C:/dev/Zenith/Games/Test/Assets/Textures/crystal2k/normal.ztx");
@@ -111,6 +114,11 @@ void LoadAssets()
 		}
 	}
 
+	for (uint32_t u = 0; u < 200; u++)
+	{
+		Zenith_AssetHandler::AddMesh(Zenith_GUID(), "Sponza" + std::to_string(u), std::string("C:/dev/Zenith/Games/Test/Assets/Meshes/sponza/NewSponza_Main_Yup_003_" + std::to_string(u) + ".zmsh").c_str());
+	}
+
 	Zenith_AssetHandler::AddTexture2D(Zenith_GUID(), "Water_Normal", "C:/dev/Zenith/Games/Test/Assets/Textures/water/normal.ztx");
 
 	Zenith_AssetHandler::AddTextureCube(Zenith_GUID(), "Cubemap",
@@ -156,9 +164,9 @@ void Zenith_Core::Project_Startup()
 	TextEntry xTextEntry = { "abcdefghijklmnopqrstuvwxyz", { 0, 0 }, 1. };
 	xText.AddText(xTextEntry);
 	
-	
 
 	Flux_MeshGeometry& xSphereMesh = Zenith_AssetHandler::GetMesh("Sphere_Smooth");
+
 
 	s_xPlayer.AddComponent<Zenith_ModelComponent>(xSphereMesh, s_xCrystalMaterial);
 
@@ -191,6 +199,15 @@ void Zenith_Core::Project_Startup()
 
 		Zenith_ColliderComponent& xCollider = s_xSphere1.AddComponent<Zenith_ColliderComponent>();
 		xCollider.AddCollider(COLLISION_VOLUME_TYPE_SPHERE, RIGIDBODY_TYPE_DYNAMIC);
+	}
+
+	Flux_MeshGeometry& xBarrelMesh = Zenith_AssetHandler::GetMesh("Barrel");
+	{
+		s_xBarrel.Initialise(&xScene, "Barrel");
+		s_xBarrel.AddComponent<Zenith_ModelComponent>(xBarrelMesh, s_xCrystalMaterial);
+		Zenith_TransformComponent& xTrans = s_xBarrel.GetComponent<Zenith_TransformComponent>();
+		xTrans.SetPosition({ 1500,1200,100 });
+		xTrans.SetScale({ 10,10,10 });
 	}
 
 	uint32_t uCount = 0;
@@ -244,10 +261,26 @@ void Zenith_Core::Project_Startup()
 				glm::scale(glm::identity<Zenith_Maths::Matrix4>(), Zenith_Maths::Vector3(TERRAIN_SIZE * TERRAIN_SCALE/2, TERRAIN_SIZE * TERRAIN_SCALE/2, TERRAIN_SIZE * TERRAIN_SCALE/2));
 
 			xTerrain.AddComponent<Zenith_TerrainComponent>(xTerrainMesh, s_xRockMaterial, s_xCrystalMaterial, xWaterTransform);
-			Zenith_TransformComponent& xTrans = xTerrain.GetComponent<Zenith_TransformComponent>();
 
 			Zenith_ColliderComponent& xCollider = xTerrain.AddComponent<Zenith_ColliderComponent>();
 			xCollider.AddCollider(COLLISION_VOLUME_TYPE_TERRAIN, RIGIDBODY_TYPE_STATIC);
 		}
+	}
+
+	uCount = 0;
+	for (Zenith_Entity& xEntity : s_axSponzaEntities)
+	{
+		std::string strMeshName = "Sponza" + std::to_string(uCount);
+		//Flux_MeshGeometry& xMesh = Zenith_AssetHandler::GetMesh(strMeshName);
+
+		xEntity.Initialise(&xScene, strMeshName);
+
+		//xEntity.AddComponent<Zenith_ModelComponent>(xMesh, s_xRockMaterial);
+		
+		Zenith_TransformComponent& xTrans = xEntity.GetComponent<Zenith_TransformComponent>();
+		xTrans.SetPosition({ 0,0,0 });
+		xTrans.SetScale({ 1,1,1 });
+
+		uCount++;
 	}
 }

@@ -143,21 +143,9 @@ public class ZenithToolsProject : Project
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Zenith");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Zenith/Core");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Middleware/glm-master");
+		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Tools/Middleware");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Middleware/stb");
-		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Tools/Middleware/assimp-5.4.2/include");
-		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Tools/Middleware/assimp-5.4.2");
-		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Tools/Middleware/assimp-5.4.2/assimp");
-		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Tools/Middleware/assimp-5.4.2/code");
-		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Tools/Middleware/assimp-5.4.2/code/common");
-		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Tools/Middleware/assimp-5.4.2/contrib");
-		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Tools/Middleware/assimp-5.4.2/contrib/pugixml/src");
-		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Tools/Middleware/assimp-5.4.2/contrib/zlib/contrib/minizip");
-		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Tools/Middleware/assimp-5.4.2/contrib/rapidjson/include");
-		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Tools/Middleware/assimp-5.4.2/contrib/zlib");
-		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Tools/Middleware/assimp-5.4.2/code/AssetLib/Step");
-		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Tools/Middleware/assimp-5.4.2/contrib/openddlparser/include/");
-		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Tools/Middleware/assimp-5.4.2/contrib/openddlparser/include/openddlparser");
-		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Tools/Middleware/assimp-5.4.2/contrib/utf8cpp/source");
+		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Tools/Middleware/assimp/include");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Tools/Middleware/opencv/build/include");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Tools/Middleware/opencv/build/include/opencv2");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Tools/Middleware/opencv/sources/include");
@@ -192,28 +180,23 @@ public class ZenithToolsProject : Project
 		engineAssetRoot = engineAssetRoot.Replace('\\', '/');
 		conf.Defines.Add("ENGINE_ASSETS_DIR=\"" + engineAssetRoot + "\"");
 		
-		conf.Defines.Add("ASSIMP_BUILD_NO_C4D_IMPORTER");
-		conf.Defines.Add("ASSIMP_BUILD_NO_OPENGEX_IMPORTER");
-		conf.Defines.Add("ASSIMP_BUILD_NO_OPENGEX_IMPORTER");
-		conf.Defines.Add("ASSIMP_BUILD_NO_IFC_IMPORTER");
-		conf.Defines.Add("ASSIMP_BUILD_NO_IFC_IMPORTER");
-		conf.Defines.Add("ASSIMP_BUILD_NO_GLTF_IMPORTER");
-		conf.Defines.Add("ASSIMP_BUILD_NO_GLTF_EXPORTER");
-		conf.Defines.Add("ASSIMP_BUILD_NO_3MF_EXPORTER");
-		conf.Defines.Add("ASSIMP_BUILD_NO_BLEND_IMPORTER");
+		
 		conf.Defines.Add("OPENDDLPARSER_BUILD");
 		conf.Defines.Add("__OPENCV_BUILD");
 		
 		conf.Output = Configuration.OutputType.Lib;
 		
 		conf.LibraryPaths.Add("[project.SharpmakeCsPath]/Tools/Middleware/opencv/build/x64/vc16/lib");
+		conf.LibraryPaths.Add("[project.SharpmakeCsPath]/Tools/Middleware/assimp/lib");
 		
 		if(target.Optimization == Optimization.Debug)
 		{
 			conf.LibraryFiles.Add("opencv_world4100d.lib");
+			conf.LibraryFiles.Add("assimp-vc143-mtd.lib");
 		}
 		else{
 			conf.LibraryFiles.Add("opencv_world4100.lib");
+			conf.LibraryFiles.Add("assimp-vc143-mt.lib");
 		}
 		
     }
