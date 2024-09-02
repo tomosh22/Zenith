@@ -276,6 +276,21 @@ void Zenith_Vulkan_MemoryManager::CreateDepthStencilAttachment(uint32_t uWidth, 
 	ImageTransitionBarrier(xTextureOut.GetImage(), vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthStencilAttachmentOptimal, vk::ImageAspectFlagBits::eDepth, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands);
 }
 
+void Zenith_Vulkan_MemoryManager::CreateTexture(const void* pData, const uint32_t uWidth, const uint32_t uHeight, const uint32_t uDepth, ColourFormat eFormat, Zenith_Vulkan_Texture& xTextureOut)
+{
+	FreeTexture(&xTextureOut);
+
+	uint32_t uNumMips = std::floor(std::log2(std::max(uWidth, uHeight))) + 1;
+
+	//#TO_TODO: other formats
+	AllocateTexture(uWidth, uHeight, 1, eFormat, DEPTHSTENCIL_FORMAT_NONE, ColourFormatBytesPerPixel(eFormat) /*bytes per pizel*/, uNumMips, vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eTransferSrc, MEMORY_RESIDENCY_GPU, xTextureOut);
+	xTextureOut.SetWidth(uWidth);
+	xTextureOut.SetHeight(uHeight);
+	xTextureOut.SetNumMips(uNumMips);
+	xTextureOut.SetNumLayers(1);
+	UploadData(&xTextureOut, pData, ColourFormatBytesPerPixel(eFormat) * uWidth * uHeight * uDepth);
+}
+
 void Zenith_Vulkan_MemoryManager::CreateTexture(const char* szPath, Zenith_Vulkan_Texture& xTextureOut)
 {
 	FreeTexture(&xTextureOut);
@@ -430,7 +445,7 @@ void Zenith_Vulkan_MemoryManager::CreateTextureCube(const char* szPathPX, const 
 	}
 }
 
-void Zenith_Vulkan_MemoryManager::AllocateTexture(uint32_t uWidth, uint32_t uHeight, uint32_t uNumLayers, ColourFormat eColourFormat, DepthStencilFormat eDepthStencilFormat, uint32_t uBitsPerPixel, uint32_t uNumMips, vk::ImageUsageFlags eUsageFlags, MemoryResidency eResidency, Zenith_Vulkan_Texture& xTextureOut)
+void Zenith_Vulkan_MemoryManager::AllocateTexture(uint32_t uWidth, uint32_t uHeight, uint32_t uNumLayers, ColourFormat eColourFormat, DepthStencilFormat eDepthStencilFormat, uint32_t uBytesPerPixel, uint32_t uNumMips, vk::ImageUsageFlags eUsageFlags, MemoryResidency eResidency, Zenith_Vulkan_Texture& xTextureOut)
 {
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 

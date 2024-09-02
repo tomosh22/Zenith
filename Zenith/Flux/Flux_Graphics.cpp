@@ -33,6 +33,9 @@ void Flux_Graphics::Initialise()
 {
 	Flux_Sampler::InitialiseDefault(s_xDefaultSampler);
 
+	float afBlankTexData[] = { 1.f,1.f,1.f,1.f };
+	Flux_MemoryManager::CreateTexture(afBlankTexData, 1, 1, 1, COLOUR_FORMAT_RGBA8_UNORM, s_xBlankTexture2D);
+
 	Flux_MeshGeometry::GenerateFullscreenQuad(s_xQuadMesh);
 	Flux_MemoryManager::InitialiseVertexBuffer(s_xQuadMesh.GetVertexData(), s_xQuadMesh.GetVertexDataSize(), s_xQuadMesh.GetVertexBuffer());
 	Flux_MemoryManager::InitialiseIndexBuffer(s_xQuadMesh.GetIndexData(), s_xQuadMesh.GetIndexDataSize(), s_xQuadMesh.GetIndexBuffer());

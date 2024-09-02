@@ -20,12 +20,7 @@ static Zenith_Entity s_xSphere0;
 static Zenith_Entity s_xSphere1;
 static Zenith_Entity s_axRotatingSpheres[3];
 static Zenith_Entity s_xTerrain[16][16];
-
-static Flux_Material s_xBarrelMaterial;
-static Flux_Material s_xCrystalMaterial;
-static Flux_Material s_xRockMaterial;
-static Flux_Material s_xMuddyGrassMaterial;
-static Flux_Material s_xSupplyCrateMaterial;
+static Zenith_Entity s_xOgre;
 
 
 //#TO_TODO: these need to be in a header file for tools terrain export
@@ -46,8 +41,9 @@ void LoadAssets()
 		Flux_Texture& xDiffuse = Zenith_AssetHandler::GetTexture("Barrel_Diffuse");
 		Flux_Texture& xMetallic = Zenith_AssetHandler::GetTexture("Barrel_Metallic");
 
-		s_xBarrelMaterial.SetDiffuse(&xDiffuse);
-		s_xBarrelMaterial.SetMetallic(&xMetallic);
+		Flux_Material& xMat = Zenith_AssetHandler::AddMaterial(Zenith_GUID(), "Barrel");
+		xMat.SetDiffuse(&xDiffuse);
+		xMat.SetMetallic(&xMetallic);
 	}
 
 	Zenith_AssetHandler::AddMesh(Zenith_GUID(), "Sphere_Smooth", "C:/dev/Zenith/Games/Test/Assets/Meshes/sphereSmooth_0.zmsh");
@@ -62,10 +58,12 @@ void LoadAssets()
 		Flux_Texture& xRoughness = Zenith_AssetHandler::GetTexture("Crystal_Roughness");
 		Flux_Texture& xMetallic = Zenith_AssetHandler::GetTexture("Crystal_Metallic");
 
-		s_xCrystalMaterial.SetDiffuse(&xDiffuse);
-		s_xCrystalMaterial.SetNormal(&xNormal);
-		s_xCrystalMaterial.SetRoughness(&xRoughness);
-		s_xCrystalMaterial.SetMetallic(&xMetallic);
+
+		Flux_Material& xMat = Zenith_AssetHandler::AddMaterial(Zenith_GUID(), "Crystal");
+		xMat.SetDiffuse(&xDiffuse);
+		xMat.SetNormal(&xNormal);
+		xMat.SetRoughness(&xRoughness);
+		xMat.SetMetallic(&xMetallic);
 	}
 	{
 		Zenith_AssetHandler::AddTexture2D(Zenith_GUID(), "MuddyGrass_Diffuse", "C:/dev/Zenith/Games/Test/Assets/Textures/muddyGrass2k/diffuse.ztx");
@@ -78,10 +76,11 @@ void LoadAssets()
 		Flux_Texture& xRoughness = Zenith_AssetHandler::GetTexture("MuddyGrass_Roughness");
 		Flux_Texture& xMetallic = Zenith_AssetHandler::GetTexture("MuddyGrass_Metallic");
 
-		s_xMuddyGrassMaterial.SetDiffuse(&xDiffuse);
-		s_xMuddyGrassMaterial.SetNormal(&xNormal);
-		s_xMuddyGrassMaterial.SetRoughness(&xRoughness);
-		s_xMuddyGrassMaterial.SetMetallic(&xMetallic);
+		Flux_Material& xMat = Zenith_AssetHandler::AddMaterial(Zenith_GUID(), "MuddyGrass");
+		xMat.SetDiffuse(&xDiffuse);
+		xMat.SetNormal(&xNormal);
+		xMat.SetRoughness(&xRoughness);
+		xMat.SetMetallic(&xMetallic);
 	}
 	{
 		Zenith_AssetHandler::AddTexture2D(Zenith_GUID(), "SupplyCrate_Diffuse", "C:/dev/Zenith/Games/Test/Assets/Textures/supplyCrate2k/diffuse.ztx");
@@ -94,10 +93,11 @@ void LoadAssets()
 		Flux_Texture& xRoughness = Zenith_AssetHandler::GetTexture("SupplyCrate_Roughness");
 		Flux_Texture& xMetallic = Zenith_AssetHandler::GetTexture("SupplyCrate_Metallic");
 
-		s_xSupplyCrateMaterial.SetDiffuse(&xDiffuse);
-		s_xSupplyCrateMaterial.SetNormal(&xNormal);
-		s_xSupplyCrateMaterial.SetRoughness(&xRoughness);
-		s_xSupplyCrateMaterial.SetMetallic(&xMetallic);
+		Flux_Material& xMat = Zenith_AssetHandler::AddMaterial(Zenith_GUID(), "SupplyCrate");
+		xMat.SetDiffuse(&xDiffuse);
+		xMat.SetNormal(&xNormal);
+		xMat.SetRoughness(&xRoughness);
+		xMat.SetMetallic(&xMetallic);
 	}
 	{
 		Zenith_AssetHandler::AddTexture2D(Zenith_GUID(), "Rock_Diffuse", "C:/dev/Zenith/Games/Test/Assets/Textures/rock2k/diffuse.ztx");
@@ -110,10 +110,11 @@ void LoadAssets()
 		Flux_Texture& xRoughness = Zenith_AssetHandler::GetTexture("Rock_Roughness");
 		Flux_Texture& xMetallic = Zenith_AssetHandler::GetTexture("Rock_Metallic");
 
-		s_xRockMaterial.SetDiffuse(&xDiffuse);
-		s_xRockMaterial.SetNormal(&xNormal);
-		s_xRockMaterial.SetRoughness(&xRoughness);
-		s_xRockMaterial.SetMetallic(&xMetallic);
+		Flux_Material& xMat = Zenith_AssetHandler::AddMaterial(Zenith_GUID(), "Rock");
+		xMat.SetDiffuse(&xDiffuse);
+		xMat.SetNormal(&xNormal);
+		xMat.SetRoughness(&xRoughness);
+		xMat.SetMetallic(&xMetallic);
 	}
 
 	for (uint32_t x = 0; x < 16; x++)
@@ -175,12 +176,12 @@ void Zenith_Core::Project_Startup()
 
 
 	Zenith_ModelComponent& xModel = s_xPlayer.AddComponent<Zenith_ModelComponent>();
-	xModel.AddMeshEntry(xSphereMesh, s_xCrystalMaterial);
+	xModel.AddMeshEntry(xSphereMesh, Zenith_AssetHandler::GetMaterial("Crystal"));
 
 	{
 		s_xSphere0.Initialise(&xScene, "Sphere0");
 		Zenith_ModelComponent& xModel = s_xSphere0.AddComponent<Zenith_ModelComponent>();
-		xModel.AddMeshEntry(xSphereMesh, s_xCrystalMaterial);
+		xModel.AddMeshEntry(xSphereMesh, Zenith_AssetHandler::GetMaterial("Crystal"));
 		Zenith_TransformComponent& xTrans = s_xSphere0.GetComponent<Zenith_TransformComponent>();
 		xTrans.SetPosition({ 10,1010,10 });
 		xTrans.SetScale({ 10,10,10 });
@@ -196,7 +197,7 @@ void Zenith_Core::Project_Startup()
 	{
 		s_xSphere1.Initialise(&xScene, "Sphere1");
 		Zenith_ModelComponent& xModel = s_xSphere1.AddComponent<Zenith_ModelComponent>();
-		xModel.AddMeshEntry(xSphereMesh, s_xRockMaterial);
+		xModel.AddMeshEntry(xSphereMesh, Zenith_AssetHandler::GetMaterial("Rock"));
 		Zenith_TransformComponent& xTrans = s_xSphere1.GetComponent<Zenith_TransformComponent>();
 		xTrans.SetPosition({ -10,1010,-10 });
 		xTrans.SetScale({ 10,10,10 });
@@ -214,7 +215,7 @@ void Zenith_Core::Project_Startup()
 	{
 		s_xBarrel.Initialise(&xScene, "Barrel");
 		Zenith_ModelComponent& xModel = s_xBarrel.AddComponent<Zenith_ModelComponent>();
-		xModel.AddMeshEntry(xBarrelMesh, s_xBarrelMaterial);
+		xModel.AddMeshEntry(xBarrelMesh, Zenith_AssetHandler::GetMaterial("Barrel"));
 		Zenith_TransformComponent& xTrans = s_xBarrel.GetComponent<Zenith_TransformComponent>();
 		xTrans.SetPosition({ 1500,1200,100 });
 		xTrans.SetScale({ 10,10,10 });
@@ -234,19 +235,19 @@ void Zenith_Core::Project_Startup()
 		if(uCount % 3 == 0)
 		{
 			Zenith_ModelComponent& xModel = xEntity.AddComponent<Zenith_ModelComponent>();
-			xModel.AddMeshEntry(xSphereMesh, s_xRockMaterial);
+			xModel.AddMeshEntry(xSphereMesh, Zenith_AssetHandler::GetMaterial("Rock"));
 			xBehaviour.SetAngularVel({ 1.,0.,0. });
 		}
 		else if (uCount % 3 == 1)
 		{
 			Zenith_ModelComponent& xModel = xEntity.AddComponent<Zenith_ModelComponent>();
-			xModel.AddMeshEntry(xSphereMesh, s_xMuddyGrassMaterial);
+			xModel.AddMeshEntry(xSphereMesh, Zenith_AssetHandler::GetMaterial("MuddyGrass"));
 			xBehaviour.SetAngularVel({ 0.,1.,0. });
 		}
 		else
 		{
 			Zenith_ModelComponent& xModel = xEntity.AddComponent<Zenith_ModelComponent>();
-			xModel.AddMeshEntry(xSphereMesh, s_xSupplyCrateMaterial);
+			xModel.AddMeshEntry(xSphereMesh, Zenith_AssetHandler::GetMaterial("SupplyCrate"));
 			xBehaviour.SetAngularVel({ 0.,0.,1. });
 		}
 
@@ -273,10 +274,16 @@ void Zenith_Core::Project_Startup()
 				Zenith_Maths::EulerRotationToMatrix4(90, {1.,0.,0.}) *
 				glm::scale(glm::identity<Zenith_Maths::Matrix4>(), Zenith_Maths::Vector3(TERRAIN_SIZE * TERRAIN_SCALE/2, TERRAIN_SIZE * TERRAIN_SCALE/2, TERRAIN_SIZE * TERRAIN_SCALE/2));
 
-			xTerrain.AddComponent<Zenith_TerrainComponent>(xTerrainMesh, s_xRockMaterial, s_xCrystalMaterial, xWaterTransform);
+			xTerrain.AddComponent<Zenith_TerrainComponent>(xTerrainMesh, Zenith_AssetHandler::GetMaterial("Rock"), Zenith_AssetHandler::GetMaterial("Crystal"), xWaterTransform);
 
 			Zenith_ColliderComponent& xCollider = xTerrain.AddComponent<Zenith_ColliderComponent>();
 			xCollider.AddCollider(COLLISION_VOLUME_TYPE_TERRAIN, RIGIDBODY_TYPE_STATIC);
 		}
+	}
+
+	{
+		s_xOgre.Initialise(&xScene, "Ogre");
+		Zenith_ModelComponent& xModel = s_xOgre.AddComponent<Zenith_ModelComponent>();
+		xModel.LoadMeshesFromDir("C:/dev/Zenith/Games/Test/Assets/Meshes/ogre");
 	}
 }

@@ -102,7 +102,7 @@ static void ProcessNode(aiNode* pxNode, const aiScene* pxScene, const std::strin
 		std::string strExportFilename(strFilename);
 		size_t ulFindPos = strExportFilename.find(strExtension.c_str());
 		Zenith_Assert(ulFindPos != std::string::npos, "");
-		strExportFilename.replace(ulFindPos, strlen(strExtension.c_str()), "_" + std::to_string(uIndex++) + ".zmsh");
+		strExportFilename.replace(ulFindPos, strlen(strExtension.c_str()), "_Mesh" + std::to_string(uIndex++) + "_Mat" + std::to_string(pxAssimpMesh->mMaterialIndex) + ".zmsh");
 
 		ExportAssimpMesh(pxAssimpMesh, strExportFilename);
 	}
@@ -135,7 +135,7 @@ static const char* s_aszMaterialTypeToName[]
 	"Ambient_Occlusion",//17
 };
 
-static void ExportMaterialTextures(const aiMaterial* pxMat, const aiScene* pxScene, const std::string& strFilename)
+static void ExportMaterialTextures(const aiMaterial* pxMat, const aiScene* pxScene, const std::string& strFilename, const uint32_t uIndex)
 {
 	for (uint32_t uType = aiTextureType_NONE; uType <= aiTextureType_AMBIENT_OCCLUSION; uType++)
 	{
@@ -153,9 +153,11 @@ static void ExportMaterialTextures(const aiMaterial* pxMat, const aiScene* pxSce
 		uint8_t* pData = stbi_load_from_memory((uint8_t*)pCompressedData, uCompressedDataSize, &iWidth, &iHeight, &iNumChannels, STBI_rgb_alpha);
 
 		std::string strExportFile(strFilename);
-		strExportFile = strExportFile.replace(strExportFile.find("."), 1, (std::string(s_aszMaterialTypeToName[uType]) + ".").c_str());
 		size_t ulDotPos = strExportFile.find(".");
-		strExportFile = strExportFile.replace(ulDotPos, strExportFile.length() - ulDotPos, ".ztx");
+		strExportFile = strExportFile.substr(0, ulDotPos);
+		strExportFile += std::string("_") + s_aszMaterialTypeToName[uType];
+		strExportFile += std::string("_") + std::to_string(uIndex);
+		strExportFile += ".ztx";
 
 		//#TO_TODO: do this properly
 		ColourFormat eFormat;
@@ -184,9 +186,10 @@ static void Export(const std::string& strFilename, const std::string& strExtensi
 		aiProcess_Triangulate |
 		aiProcess_FlipUVs);
 
+	//#TO_TODO: move this for loop inside the function
 	for (uint32_t u = 0; u < pxScene->mNumMaterials; u++)
 	{
-		ExportMaterialTextures(pxScene->mMaterials[u], pxScene, strFilename);
+		ExportMaterialTextures(pxScene->mMaterials[u], pxScene, strFilename, u);
 	}
 
 	if (!pxScene)
