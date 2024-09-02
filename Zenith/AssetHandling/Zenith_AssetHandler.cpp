@@ -4,13 +4,19 @@
 
 Flux_Texture* Zenith_AssetHandler::s_pxTextures = new Flux_Texture[ZENITH_MAX_TEXTURES];
 Flux_MeshGeometry* Zenith_AssetHandler::s_pxMeshes = new Flux_MeshGeometry[ZENITH_MAX_MESHES];
+Flux_Material* Zenith_AssetHandler::s_pxMaterials = new Flux_Material[ZENITH_MAX_MATERIALS];
 
 std::unordered_map<Zenith_GUID, Zenith_AssetHandler::AssetID> Zenith_AssetHandler::s_xTextureMap;
 std::map<Zenith_AssetHandler::AssetID, Zenith_GUID> Zenith_AssetHandler::s_xReverseTextureMap;
+std::unordered_map<std::string, Zenith_AssetHandler::AssetID> Zenith_AssetHandler::s_xTextureNameMap;
+
 std::unordered_map<Zenith_GUID, Zenith_AssetHandler::AssetID> Zenith_AssetHandler::s_xMeshMap;
 std::map<Zenith_AssetHandler::AssetID, Zenith_GUID> Zenith_AssetHandler::s_xReverseMeshMap;
-std::unordered_map<std::string, Zenith_AssetHandler::AssetID> Zenith_AssetHandler::s_xTextureNameMap;
 std::unordered_map<std::string, Zenith_AssetHandler::AssetID> Zenith_AssetHandler::s_xMeshNameMap;
+
+std::unordered_map<Zenith_GUID, Zenith_AssetHandler::AssetID> Zenith_AssetHandler::s_xMaterialMap;
+std::map<Zenith_AssetHandler::AssetID, Zenith_GUID> Zenith_AssetHandler::s_xReverseMaterialMap;
+std::unordered_map<std::string, Zenith_AssetHandler::AssetID> Zenith_AssetHandler::s_xMaterialNameMap;
 
 #if 0
 void Zenith_AssetHandler::LoadMeshCache()
@@ -125,7 +131,7 @@ void Zenith_AssetHandler::LoadAssetsFromFile(const std::string& strFile)
 }
 
 
-void Zenith_AssetHandler::AddTexture2D(Zenith_GUID xGUID, const std::string& strName, const char* szPath)
+Flux_Texture& Zenith_AssetHandler::AddTexture2D(Zenith_GUID xGUID, const std::string& strName, const char* szPath)
 {
 	AssetID uID = GetNextFreeTextureSlot();
 	Flux_Texture& xTex = s_pxTextures[uID];
@@ -133,8 +139,9 @@ void Zenith_AssetHandler::AddTexture2D(Zenith_GUID xGUID, const std::string& str
 	s_xTextureNameMap.insert({ strName, uID });
 	s_xReverseTextureMap.insert({ uID, xGUID });
 	Flux_MemoryManager::CreateTexture(szPath, xTex);
+	return s_pxTextures[uID];
 }
-void Zenith_AssetHandler::AddTextureCube(Zenith_GUID xGUID, const std::string& strName, const char* szPathPX, const char* szPathNX, const char* szPathPY, const char* szPathNY, const char* szPathPZ, const char* szPathNZ)
+Flux_Texture& Zenith_AssetHandler::AddTextureCube(Zenith_GUID xGUID, const std::string& strName, const char* szPathPX, const char* szPathNX, const char* szPathPY, const char* szPathNY, const char* szPathPZ, const char* szPathNZ)
 {
 	AssetID uID = GetNextFreeTextureSlot();
 	Flux_Texture& xTex = s_pxTextures[uID];
@@ -142,8 +149,9 @@ void Zenith_AssetHandler::AddTextureCube(Zenith_GUID xGUID, const std::string& s
 	s_xTextureNameMap.insert({ strName, uID });
 	s_xReverseTextureMap.insert({ uID, xGUID });
 	Flux_MemoryManager::CreateTextureCube(szPathPX, szPathNX, szPathPY, szPathNY, szPathPZ, szPathNZ, xTex);
+	return s_pxTextures[uID];
 }
-void Zenith_AssetHandler::AddMesh(Zenith_GUID xGUID, const std::string& strName, const char* szPath)
+Flux_MeshGeometry& Zenith_AssetHandler::AddMesh(Zenith_GUID xGUID, const std::string& strName, const char* szPath)
 {
 	AssetID uID = GetNextFreeMeshSlot();
 	Flux_MeshGeometry& xMesh = s_pxMeshes[uID];
@@ -151,6 +159,16 @@ void Zenith_AssetHandler::AddMesh(Zenith_GUID xGUID, const std::string& strName,
 	s_xMeshNameMap.insert({ strName, uID });
 	s_xReverseMeshMap.insert({ uID, xGUID });
 	Flux_MeshGeometry::LoadFromFile(szPath, xMesh);
+	return s_pxMeshes[uID];
+}
+
+Flux_Material& Zenith_AssetHandler::AddMaterial(Zenith_GUID xGUID, const std::string& strName)
+{
+	AssetID uID = GetNextFreeMaterialSlot();
+	s_xMaterialMap.insert({ xGUID,uID });
+	s_xMaterialNameMap.insert({ strName, uID });
+	s_xReverseMaterialMap.insert({ uID, xGUID });
+	return s_pxMaterials[uID];
 }
 
 Flux_Texture& Zenith_AssetHandler::GetTexture(Zenith_GUID xGUID)
@@ -186,6 +204,24 @@ Flux_MeshGeometry& Zenith_AssetHandler::TryGetMesh(Zenith_GUID xGUID)
 	}
 }
 
+Flux_Material& Zenith_AssetHandler::GetMaterial(Zenith_GUID xGUID)
+{
+	Zenith_Assert(s_xMaterialMap.find(xGUID) != s_xMaterialMap.end(), "Material doesn't exist");
+	return s_pxMaterials[s_xMaterialMap.at(xGUID)];
+}
+
+Flux_Material& Zenith_AssetHandler::TryGetMaterial(Zenith_GUID xGUID)
+{
+	if (s_xMaterialMap.find(xGUID) != s_xMaterialMap.end())
+	{
+		return s_pxMaterials[s_xMaterialMap.at(xGUID)];
+	}
+	else
+	{
+		Zenith_Assert(false, "Implement a blank material");
+	}
+}
+
 Flux_Texture& Zenith_AssetHandler::GetTexture(const std::string& strName)
 {
 	Zenith_Assert(s_xTextureNameMap.find(strName) != s_xTextureNameMap.end(), "Texture2D doesn't exist");
@@ -202,6 +238,11 @@ Flux_Texture& Zenith_AssetHandler::TryGetTexture(const std::string& strName)
 	{
 		return Flux_Graphics::s_xBlankTexture2D;
 	}
+}
+
+bool Zenith_AssetHandler::TextureExists(const std::string& strName)
+{
+	return s_xTextureNameMap.find(strName) != s_xTextureNameMap.end();
 }
 
 Flux_MeshGeometry& Zenith_AssetHandler::GetMesh(const std::string& strName)
@@ -222,6 +263,34 @@ Flux_MeshGeometry& Zenith_AssetHandler::TryGetMesh(const std::string& strName)
 	}
 }
 
+bool Zenith_AssetHandler::MeshExists(const std::string& strName)
+{
+	return s_xMeshNameMap.find(strName) != s_xMeshNameMap.end();
+}
+
+Flux_Material& Zenith_AssetHandler::GetMaterial(const std::string& strName)
+{
+	Zenith_Assert(s_xMaterialNameMap.find(strName) != s_xMaterialNameMap.end(), "Material doesn't exist");
+	return s_pxMaterials[s_xMaterialNameMap.at(strName)];
+}
+
+Flux_Material& Zenith_AssetHandler::TryGetMaterial(const std::string& strName)
+{
+	if (s_xMaterialNameMap.find(strName) != s_xMaterialNameMap.end())
+	{
+		return s_pxMaterials[s_xMaterialNameMap.at(strName)];
+	}
+	else
+	{
+		Zenith_Assert(false, "Implement a blank material");
+	}
+}
+
+bool Zenith_AssetHandler::MaterialExists(const std::string& strName)
+{
+	return s_xMaterialNameMap.find(strName) != s_xMaterialNameMap.end();
+}
+
 void Zenith_AssetHandler::DeleteTexture(Zenith_GUID xGUID)
 {
 	Zenith_Assert(s_xTextureMap.find(xGUID) != s_xTextureMap.end(), "Texture2D doesn't exist");
@@ -233,6 +302,12 @@ void Zenith_AssetHandler::DeleteMesh(Zenith_GUID xGUID)
 	s_xMeshMap.erase(xGUID);
 }
 
+void Zenith_AssetHandler::DeleteMaterial(Zenith_GUID xGUID)
+{
+	Zenith_Assert(s_xMaterialMap.find(xGUID) != s_xMaterialMap.end(), "Material doesn't exist");
+	s_xMaterialMap.erase(xGUID);
+}
+
 Zenith_AssetHandler::AssetID Zenith_AssetHandler::GetNextFreeTextureSlot()
 {
 	for (AssetID u = 0; u < ZENITH_MAX_TEXTURES; u++)
@@ -242,6 +317,8 @@ Zenith_AssetHandler::AssetID Zenith_AssetHandler::GetNextFreeTextureSlot()
 			return u;
 		}
 	}
+	Zenith_Assert(false, "Run out of texture slots");
+	return -1;
 }
 
 Zenith_AssetHandler::AssetID Zenith_AssetHandler::GetNextFreeMeshSlot()
@@ -253,4 +330,19 @@ Zenith_AssetHandler::AssetID Zenith_AssetHandler::GetNextFreeMeshSlot()
 			return u;
 		}
 	}
+	Zenith_Assert(false, "Run out of mesh slots");
+	return -1;
+}
+
+Zenith_AssetHandler::AssetID Zenith_AssetHandler::GetNextFreeMaterialSlot()
+{
+	for (AssetID u = 0; u < ZENITH_MAX_MATERIALS; u++)
+	{
+		if (s_xReverseMaterialMap.find(u) == s_xReverseMaterialMap.end())
+		{
+			return u;
+		}
+	}
+	Zenith_Assert(false, "Run out of material slots");
+	return -1;
 }

@@ -115,6 +115,11 @@ static uint32_t ColourFormatBitsPerPixel(ColourFormat eFormat)
 	}
 }
 
+static uint32_t ColourFormatBytesPerPixel(ColourFormat eFormat)
+{
+	return ColourFormatBitsPerPixel(eFormat) / 8u;
+}
+
 static uint32_t DepthStencilFormatBitsPerPixel(DepthStencilFormat eFormat)
 {
 	switch (eFormat)
