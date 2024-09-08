@@ -10,7 +10,6 @@ struct Flux_BlendState
 };
 
 struct Flux_RenderAttachment {
-
 	ColourFormat m_eColourFormat = COLOUR_FORMAT_NONE;
 	DepthStencilFormat m_eDepthStencilFormat = DEPTHSTENCIL_FORMAT_NONE;
 

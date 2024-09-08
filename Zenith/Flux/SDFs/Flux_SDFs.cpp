@@ -13,7 +13,6 @@ static Flux_CommandBuffer s_xCommandBuffer;
 static Flux_Shader s_xShader;
 static Flux_Pipeline s_xPipeline;
 
-
 static constexpr uint32_t s_uMaxSpheres = 1000;
 static Flux_ConstantBuffer s_xSpheresBuffer;
 static struct Sphere
@@ -45,7 +44,6 @@ void Flux_SDFs::Initialise()
 	std::vector<Flux_BlendState> xBlendStates;
 	xBlendStates.push_back({ BLEND_FACTOR_SRCALPHA, BLEND_FACTOR_ONE, true });
 
-
 	Flux_PipelineSpecification xPipelineSpec(
 		xVertexDesc,
 		&s_xShader,
@@ -56,8 +54,8 @@ void Flux_SDFs::Initialise()
 		DEPTHSTENCIL_FORMAT_D32_SFLOAT,
 		true,
 		false,
-		{2,0},
-		{0,0},
+		{ 2,0 },
+		{ 0,0 },
 		Flux_Graphics::s_xFinalRenderTarget
 	);
 

@@ -1,7 +1,6 @@
 #pragma once
 #include "vulkan/vulkan.hpp"
 
-
 class Zenith_Vulkan_Texture;
 
 class Zenith_Vulkan_Buffer
@@ -24,11 +23,9 @@ public:
 
 	void SetSize(const uint64_t ulSize) { m_ulSize = ulSize; }
 	void SetBuffer(const vk::Buffer& xBuffer) { m_xBuffer = xBuffer; }
-	
+
 private:
 	vk::Buffer m_xBuffer;
 	vk::DeviceMemory m_xDeviceMem;//#TO this is only used by the memory manager's staging buffer
 	uint64_t m_ulSize = 0;
 };
-
-

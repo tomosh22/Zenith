@@ -8,10 +8,10 @@ class Zenith_TerrainComponent
 {
 public:
 	Zenith_TerrainComponent(Flux_MeshGeometry& xGeometry, Flux_Material& xMaterial0, Flux_Material& xMaterial1, Zenith_Maths::Matrix4 xWaterTransform, Zenith_Entity& xEntity)
-	: m_xGeometry(xGeometry)
-	, m_xMaterial0(xMaterial0)
-	, m_xMaterial1(xMaterial1)
-	, m_xParentEntity(xEntity)
+		: m_xGeometry(xGeometry)
+		, m_xMaterial0(xMaterial0)
+		, m_xMaterial1(xMaterial1)
+		, m_xParentEntity(xEntity)
 	{
 		Flux_MeshGeometry::GenerateFullscreenQuad(m_xWaterGeometry, xWaterTransform);
 		Flux_MemoryManager::InitialiseVertexBuffer(m_xWaterGeometry.GetVertexData(), m_xWaterGeometry.GetVertexDataSize(), m_xWaterGeometry.GetVertexBuffer());

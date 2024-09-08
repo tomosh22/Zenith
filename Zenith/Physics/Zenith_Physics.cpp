@@ -3,12 +3,10 @@
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "Zenith_OS_Include.h"
 
-
 reactphysics3d::PhysicsCommon Zenith_Physics::s_xPhysicsCommon;
 reactphysics3d::PhysicsWorld* Zenith_Physics::s_pxPhysicsWorld = nullptr;
 double Zenith_Physics::s_fTimestepAccumulator = 0;
 Zenith_Physics::PhysicsEventListener Zenith_Physics::s_xEventListener;
-
 
 void Zenith_Physics::Initialise()
 {
@@ -34,7 +32,6 @@ void Zenith_Physics::Reset() {
 
 reactphysics3d::Ray Zenith_Physics::BuildRayFromMouse(Zenith_CameraComponent& xCam)
 {
-
 	Zenith_Maths::Vector2_64 xMousePos;
 	Zenith_Window::GetInstance()->GetMousePosition(xMousePos);
 
@@ -65,7 +62,6 @@ reactphysics3d::Ray Zenith_Physics::BuildRayFromMouse(Zenith_CameraComponent& xC
 	return xRet;
 }
 
-
 Zenith_Physics::PhysicsEventListener::PhysicsEventListener() {}
 
 void Zenith_Physics::PhysicsEventListener::onContact(const CollisionCallback::CallbackData& xCallbackData) {
@@ -90,11 +86,11 @@ void Zenith_Physics::PhysicsEventListener::onContact(const CollisionCallback::Ca
 		case reactphysics3d::CollisionCallback::ContactPair::EventType::ContactExit:
 			if (xEntity1.HasComponent<ScriptComponent>()) {
 				ScriptComponent& xScript = xEntity1.GetComponent<ScriptComponent>();
-				xScript.OnCollision( xEntity2, CollisionEventType::Exit);
+				xScript.OnCollision(xEntity2, CollisionEventType::Exit);
 			}
 			if (xEntity2.HasComponent<ScriptComponent>()) {
 				ScriptComponent& xScript = xEntity2.GetComponent<ScriptComponent>();
-				xScript.OnCollision( xEntity1, CollisionEventType::Exit);
+				xScript.OnCollision(xEntity1, CollisionEventType::Exit);
 			}
 			break;
 		case reactphysics3d::CollisionCallback::ContactPair::EventType::ContactStay:

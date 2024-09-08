@@ -49,8 +49,8 @@ void Flux_StaticMeshes::Initialise()
 		DEPTHSTENCIL_FORMAT_D32_SFLOAT,
 		true,
 		false,
-		{1,0},
-		{0,4},
+		{ 1,0 },
+		{ 0,4 },
 		Flux_Graphics::s_xMRTTarget
 	);
 

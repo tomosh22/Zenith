@@ -45,7 +45,6 @@ private:
 	vk::ShaderModule m_xFragShaderModule;
 	vk::ShaderModule m_xTescShaderModule;
 	vk::ShaderModule m_xTeseShaderModule;
-
 };
 
 //#TO_TODO: there should be a platform independent version of this
@@ -88,7 +87,6 @@ public:
 	vk::DescriptorSetLayout m_xPerDrawLayout;
 	vk::DescriptorSet m_axPerDrawSets[MAX_FRAMES_IN_FLIGHT];
 
-
 	bool m_bUsePushConstants = false;//#TODO expand on this, currently just use model matrix
 
 	bool m_bUsesPerDrawDescriptors = false;
@@ -99,7 +97,7 @@ public:
 	void BindDescriptorSets(vk::CommandBuffer& xCmd, const std::vector<vk::DescriptorSet>& axSets, vk::PipelineBindPoint eBindPoint, uint32_t ufirstSet) const;
 };
 
-class Zenith_Vulkan_PipelineBuilder	{
+class Zenith_Vulkan_PipelineBuilder {
 public:
 	Zenith_Vulkan_PipelineBuilder();
 	~Zenith_Vulkan_PipelineBuilder() {}

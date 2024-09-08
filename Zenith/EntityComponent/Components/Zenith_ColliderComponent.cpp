@@ -2,7 +2,7 @@
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
 
-Zenith_ColliderComponent::Zenith_ColliderComponent(Zenith_Entity& xEntity) :  m_xParentEntity(xEntity) {
+Zenith_ColliderComponent::Zenith_ColliderComponent(Zenith_Entity& xEntity) : m_xParentEntity(xEntity) {
 	Zenith_TransformComponent& xTrans = m_xParentEntity.GetComponent<Zenith_TransformComponent>();
 	m_pxRigidBody = Zenith_Physics::s_pxPhysicsWorld->createRigidBody(xTrans.GetTransform_Unsafe());
 

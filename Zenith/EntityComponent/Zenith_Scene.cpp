@@ -27,7 +27,6 @@ std::unordered_map<std::string, ComponentType> g_xComponentNames =
 #if 0
 std::unordered_map<std::string, Physics::CollisionVolumeType> g_xColliderNames =
 {
-
 	{"OBB", Physics::CollisionVolumeType::OBB },
 	{"Sphere", Physics::CollisionVolumeType::Sphere },
 	{"Terrain", Physics::CollisionVolumeType::Terrain },
@@ -51,7 +50,7 @@ std::unordered_map<std::string, ScriptBehaviourType> g_xScriptBehaviourNames =
 void Zenith_Scene::LoadSceneFromFile(const std::string& strFilename) {
 	STUBBED
 #if 0
-	Application* app = Application::GetInstance();
+		Application* app = Application::GetInstance();
 	std::ifstream xIn(strFilename);
 	std::string strLine;
 	while (std::getline(xIn, strLine)) {
@@ -176,7 +175,7 @@ void Zenith_Scene::LoadSceneFromFile(const std::string& strFilename) {
 					std::string strNumPositions;
 					std::getline(xIn, strMaterialGUID);
 
-					std::getline(xIn,strNumPositions);
+					std::getline(xIn, strNumPositions);
 					size_t uNumPositions = std::atoi(strNumPositions.c_str());
 					std::vector<glm::vec3> xPositions(uNumPositions);
 					for (uint32_t i = 0; i < uNumPositions; i++) {
@@ -187,7 +186,7 @@ void Zenith_Scene::LoadSceneFromFile(const std::string& strFilename) {
 						std::getline(xPosStream, strPosX, ' ');
 						std::getline(xPosStream, strPosY, ' ');
 						std::getline(xPosStream, strPosZ, ' ');
-						xPositions.at(i) = {std::atof(strPosX.c_str()), std::atof(strPosY.c_str()), std::atof(strPosZ.c_str())};
+						xPositions.at(i) = { std::atof(strPosX.c_str()), std::atof(strPosY.c_str()), std::atof(strPosZ.c_str()) };
 					}
 
 					GUID xMaterialGUID(strtoull(strMaterialGUID.c_str(), nullptr, 10));
@@ -217,15 +216,14 @@ Zenith_Scene::~Zenith_Scene() {
 }
 
 void Zenith_Scene::Reset() {
-	
 }
 
 void Zenith_Scene::Serialize(const std::string& strFilename) {
 	STUBBED
 #if 0
-	Zenith_Log("Serializing %s", strFilename.c_str());
+		Zenith_Log("Serializing %s", strFilename.c_str());
 	std::ofstream xOut(strFilename.c_str());
-	
+
 	for (auto [xGuid, xEntity] : m_xEntityMap) {
 		xOut << "Entity\n";
 		xEntity.Serialize(xOut);

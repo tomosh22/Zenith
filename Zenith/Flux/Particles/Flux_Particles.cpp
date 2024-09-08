@@ -58,8 +58,8 @@ void Flux_Particles::Initialise()
 		DEPTHSTENCIL_FORMAT_D32_SFLOAT,
 		true,
 		false,
-		{1,1},
-		{0,0},
+		{ 1,1 },
+		{ 0,0 },
 		Flux_Graphics::s_xFinalRenderTarget
 	);
 

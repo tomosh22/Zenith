@@ -48,7 +48,5 @@ private:
 	bool m_bVSync;
 	void(*m_pfnEventCallback)() = nullptr;
 
-
-
 	void Shutdown();
 };

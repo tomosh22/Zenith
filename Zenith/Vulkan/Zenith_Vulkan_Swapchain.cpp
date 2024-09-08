@@ -137,8 +137,8 @@ void InitialiseCopyToFramebufferCommands()
 		DEPTHSTENCIL_FORMAT_NONE,
 		false,
 		false,
-		{0,1},
-		{0,0},
+		{ 0,1 },
+		{ 0,0 },
 		Flux_Swapchain::GetTargetSetup()
 	);
 
@@ -200,7 +200,7 @@ void Zenith_Vulkan_Swapchain::Initialise()
 	xDevice.getSwapchainImagesKHR(s_xSwapChain, &uImageCount, s_xImages.data());
 
 	Zenith_Assert(uImageCount == MAX_FRAMES_IN_FLIGHT, "Swapchain has wrong number of images");
-	
+
 	for (uint32_t i = 0; i < s_xImages.size(); i++)
 	{
 		vk::Image& xImage = s_xImages[i];
@@ -228,7 +228,7 @@ void Zenith_Vulkan_Swapchain::Initialise()
 	s_xTargetSetup.m_axColourAttachments[0].m_uHeight = xExtent.height;
 	//#TO_TODO: stop hardcoding swapchain colour format
 	s_xTargetSetup.m_axColourAttachments[0].m_eColourFormat = COLOUR_FORMAT_BGRA8_SRGB;
-	
+
 	s_xImageFormat = xSurfaceFormat.format;
 	s_xExtent = xExtent;
 
@@ -294,7 +294,6 @@ void Zenith_Vulkan_Swapchain::BindAsTarget()
 	vk::RenderPass xRenderPass = Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(s_xTargetSetup, LOAD_ACTION_DONTCARE, STORE_ACTION_STORE, LOAD_ACTION_DONTCARE, STORE_ACTION_DONTCARE, RENDER_TARGET_USAGE_PRESENT);
 #endif
 
-
 	vk::Framebuffer xFramebuffer = Zenith_Vulkan_Pipeline::TargetSetupToFramebuffer(s_xTargetSetup, xRenderPass);
 
 	vk::ClearValue xClear;
@@ -307,7 +306,6 @@ void Zenith_Vulkan_Swapchain::BindAsTarget()
 		.setRenderArea({ {0,0}, s_xExtent })
 		.setPClearValues(&xClear)
 		.setClearValueCount(1);
-
 
 	s_xCopyToFramebufferCmd.GetCurrentCmdBuffer().beginRenderPass(xRenderPassInfo, vk::SubpassContents::eInline);
 
@@ -359,9 +357,9 @@ void Zenith_Vulkan_Swapchain::CopyToFramebuffer()
 	xCmd.endRenderPass();
 
 	vk::RenderPassBeginInfo xRenderPassInfo = vk::RenderPassBeginInfo()
-	.setRenderPass(Zenith_Vulkan::s_xImGuiRenderPass)
-	.setFramebuffer(Zenith_Vulkan_Pipeline::TargetSetupToFramebuffer(s_xTargetSetup, Zenith_Vulkan::s_xImGuiRenderPass))
-	.setRenderArea({ {0,0}, s_xExtent });
+		.setRenderPass(Zenith_Vulkan::s_xImGuiRenderPass)
+		.setFramebuffer(Zenith_Vulkan_Pipeline::TargetSetupToFramebuffer(s_xTargetSetup, Zenith_Vulkan::s_xImGuiRenderPass))
+		.setRenderArea({ {0,0}, s_xExtent });
 
 	xCmd.beginRenderPass(xRenderPassInfo, vk::SubpassContents::eInline);
 

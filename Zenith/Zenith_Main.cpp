@@ -69,7 +69,6 @@ void RenderImGui()
 	ImGui::Text(strCamPosText.c_str());
 	ImGui::Text(strCamDirText.c_str());
 
-
 	Zenith_DebugVariableTree& xTree = Zenith_DebugVariables::s_xTree;
 	Zenith_DebugVariableTree::Node* pxRoot = xTree.m_pxRoot;
 	TraverseTree(pxRoot, 0);
@@ -138,7 +137,7 @@ int main()
 	Zenith_DebugVariables::AddButton({ "Export", "Textures", "Export All Textures" }, ExportAllTextures);
 	Zenith_DebugVariables::AddButton({ "Export", "Terrain", "Export Heightmap" }, ExportHeightmap);
 #endif
-	
+
 	while (true)
 	{
 		Zenith_MainLoop();

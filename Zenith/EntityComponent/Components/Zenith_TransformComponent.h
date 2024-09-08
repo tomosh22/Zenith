@@ -18,13 +18,13 @@ public:
 	void GetScale(Zenith_Maths::Vector3& xScale);
 
 	const reactphysics3d::Transform& const GetTransform();
-	Zenith_Maths::Vector3 m_xScale = {1.,1.,1.};
+	Zenith_Maths::Vector3 m_xScale = { 1.,1.,1. };
 	reactphysics3d::RigidBody* m_pxRigidBody = nullptr;
 
 	void BuildModelMatrix(Zenith_Maths::Matrix4& xMatOut);
 
 	std::string m_strName;
-		
+
 private:
 	friend class Zenith_ColliderComponent;
 	reactphysics3d::Transform& GetTransform_Unsafe();

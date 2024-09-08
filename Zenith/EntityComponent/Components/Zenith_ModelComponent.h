@@ -6,8 +6,6 @@
 #include "Flux/Flux_Material.h"
 #include "AssetHandling/Zenith_AssetHandler.h"
 
-
-
 class Zenith_ModelComponent
 {
 public:
@@ -19,7 +17,7 @@ public:
 	};
 
 	Zenith_ModelComponent(Zenith_Entity& xEntity)
-	: m_xParentEntity(xEntity)
+		: m_xParentEntity(xEntity)
 	{
 	};
 

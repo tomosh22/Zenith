@@ -44,7 +44,7 @@ private:
 	double m_fYaw = 0;
 	double m_fPitch = 0;
 	float m_fAspect = 0;
-	Zenith_Maths::Vector3 m_xPosition = {0,0,0};
+	Zenith_Maths::Vector3 m_xPosition = { 0,0,0 };
 	CameraType m_eType = CAMERA_TYPE_MAX;
 
 	Zenith_Entity m_xParentEntity;

@@ -17,20 +17,19 @@ struct DescSetBindings {
 	Zenith_Vulkan_Texture* m_xTextures[MAX_BINDINGS];
 };
 
-
 class Zenith_Vulkan_CommandBuffer
 {
 public:
 	Zenith_Vulkan_CommandBuffer() {}
 	void Initialise(CommandType eType = COMMANDTYPE_GRAPHICS);
 	void BeginRecording();
-	void EndRecording(RenderOrder eOrder, bool bEndPass = true) ;
+	void EndRecording(RenderOrder eOrder, bool bEndPass = true);
 	void EndAndCpuWait(bool bEndPass);
 	void SetVertexBuffer(const Flux_VertexBuffer& xVertexBuffer, uint32_t uBindPoint = 0);
 	void SetVertexBuffer(const Flux_DynamicVertexBuffer& xVertexBuffer, uint32_t uBindPoint = 0);
 	void SetIndexBuffer(const Flux_IndexBuffer& xIndexBuffer);
 	void Draw(uint32_t uNumVerts);
-	void DrawIndexed(uint32_t uNumIndices, uint32_t uNumInstances = 1, uint32_t uVertexOffset = 0, uint32_t uIndexOffset = 0,uint32_t uInstanceOffset = 0);
+	void DrawIndexed(uint32_t uNumIndices, uint32_t uNumInstances = 1, uint32_t uVertexOffset = 0, uint32_t uIndexOffset = 0, uint32_t uInstanceOffset = 0);
 	void SubmitTargetSetup(Flux_TargetSetup& xTargetSetup, bool bClearColour = false, bool bClearDepth = false, bool bClearStencil = false);
 	void SetPipeline(Zenith_Vulkan_Pipeline* pxPipeline);
 	void BindTexture(Zenith_Vulkan_Texture* pxTexture, uint32_t uBindPoint);
@@ -42,9 +41,9 @@ public:
 	void BeginBind(BindingFrequency eFreq);
 
 	vk::CommandBuffer& GetCurrentCmdBuffer() { return m_xCurrentCmdBuffer; }
-	void* Platform_GetCurrentCmdBuffer() const { return (void*) & m_xCurrentCmdBuffer; }
+	void* Platform_GetCurrentCmdBuffer() const { return (void*)&m_xCurrentCmdBuffer; }
 
-	void ImageTransitionBarrier(vk::Image xImage, vk::ImageLayout eOldLayout, vk::ImageLayout eNewLayout,vk::ImageAspectFlags eAspect, vk::PipelineStageFlags eSrcStage, vk::PipelineStageFlags eDstStage, int uMipLevel = 0,int uLayer = 0);
+	void ImageTransitionBarrier(vk::Image xImage, vk::ImageLayout eOldLayout, vk::ImageLayout eNewLayout, vk::ImageAspectFlags eAspect, vk::PipelineStageFlags eSrcStage, vk::PipelineStageFlags eDstStage, int uMipLevel = 0, int uLayer = 0);
 	void CopyBufferToBuffer(Zenith_Vulkan_Buffer* pxSrc, Zenith_Vulkan_Buffer* pxDst, size_t uSize, size_t uSrcOffset);
 	void CopyBufferToTexture(Zenith_Vulkan_Buffer* pxSrc, Zenith_Vulkan_Texture* pxDst, size_t uSrcOffset, uint32_t uNumLayers);
 	void BlitTextureToTexture(Zenith_Vulkan_Texture* pxSrc, Zenith_Vulkan_Texture* pxDst, uint32_t uDstMip, uint32_t uDstLayer);
@@ -56,7 +55,6 @@ private:
 	void PrepareDrawCallDescriptors();
 	std::vector<vk::CommandBuffer> m_xCmdBuffers;
 
-	
 	vk::RenderPass m_xCurrentRenderPass;
 	vk::Framebuffer m_xCurrentFramebuffer;
 
@@ -71,4 +69,3 @@ private:
 
 	bool m_bIsRecording = false;
 };
-

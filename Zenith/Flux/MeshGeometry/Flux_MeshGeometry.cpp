@@ -49,10 +49,10 @@ void Flux_MeshGeometry::GenerateFullscreenQuad(Flux_MeshGeometry& xGeometryOut, 
 	xTemp2 = xTransform * xTemp2;
 	xTemp3 = xTransform * xTemp3;
 
-	xGeometryOut.m_pxPositions[0] = {xTemp0.x, xTemp0.y, xTemp0.z};
-	xGeometryOut.m_pxPositions[1] = {xTemp1.x, xTemp1.y, xTemp1.z};
-	xGeometryOut.m_pxPositions[2] = {xTemp2.x, xTemp2.y, xTemp2.z};
-	xGeometryOut.m_pxPositions[3] = {xTemp3.x, xTemp3.y, xTemp3.z};
+	xGeometryOut.m_pxPositions[0] = { xTemp0.x, xTemp0.y, xTemp0.z };
+	xGeometryOut.m_pxPositions[1] = { xTemp1.x, xTemp1.y, xTemp1.z };
+	xGeometryOut.m_pxPositions[2] = { xTemp2.x, xTemp2.y, xTemp2.z };
+	xGeometryOut.m_pxPositions[3] = { xTemp3.x, xTemp3.y, xTemp3.z };
 
 	xGeometryOut.m_pxUVs[0] = { 1,0 };
 	xGeometryOut.m_pxUVs[1] = { 1,1 };
@@ -75,7 +75,6 @@ ShaderDataType StringToShaderDataType(const std::string& strString)
 
 void Flux_MeshGeometry::LoadFromFile(const char* szPath, Flux_MeshGeometry& xGeometryOut)
 {
-
 	FILE* pxFile = fopen(szPath, "rb");
 
 	if (!pxFile)
@@ -113,17 +112,14 @@ void Flux_MeshGeometry::LoadFromFile(const char* szPath, Flux_MeshGeometry& xGeo
 	size_t ulVertBufferLen = atoi(pcData + ulCursor);
 	ulCursor += std::to_string(ulVertBufferLen).length() + 1;
 
-
 	size_t ulIndexBufferLen = atoi(pcData + ulCursor);
 	ulCursor += std::to_string(ulIndexBufferLen).length() + 1;
-
 
 	xGeometryOut.m_uNumVerts = ulNumVerts;
 	xGeometryOut.m_uNumIndices = ulNumIndices;
 
 	Zenith_Assert(ulVertBufferLen == xGeometryOut.m_uNumVerts * xGeometryOut.m_xBufferLayout.GetStride(), "Vertex buffer is wrong size");
 	Zenith_Assert(ulIndexBufferLen == xGeometryOut.m_uNumIndices * sizeof(IndexType), "Index buffer is wrong size");
-
 
 	xGeometryOut.m_pVertexData = new char[ulVertBufferLen];
 	xGeometryOut.m_puIndices = new IndexType[xGeometryOut.m_uNumIndices];
@@ -167,7 +163,6 @@ static std::string ShaderDataTypeToString(ShaderDataType eType)
 		Zenith_Assert(false, "Unknown data type");
 		return "";
 	}
-
 }
 void Flux_MeshGeometry::Export(const char* szFilename)
 {
@@ -183,7 +178,6 @@ void Flux_MeshGeometry::Export(const char* szFilename)
 		fwrite(&cNull, 1, 1, pxFile);
 	}
 
-
 	fputs(std::to_string(m_uNumVerts).c_str(), pxFile);
 	fwrite(&cNull, 1, 1, pxFile);
 
@@ -192,7 +186,6 @@ void Flux_MeshGeometry::Export(const char* szFilename)
 
 	fputs(std::to_string(m_uNumVerts * m_xBufferLayout.GetStride()).c_str(), pxFile);
 	fwrite(&cNull, 1, 1, pxFile);
-
 
 	fputs(std::to_string(m_uNumIndices * sizeof(Flux_MeshGeometry::IndexType)).c_str(), pxFile);
 	fwrite(&cNull, 1, 1, pxFile);
@@ -204,7 +197,6 @@ void Flux_MeshGeometry::Export(const char* szFilename)
 	fwrite(m_pxPositions, m_uNumVerts * sizeof(m_pxPositions[0]), 1, pxFile);
 
 	fwrite(m_pxNormals, m_uNumVerts * sizeof(m_pxNormals[0]), 1, pxFile);
-
 
 	fclose(pxFile);
 }

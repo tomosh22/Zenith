@@ -5,7 +5,7 @@
 struct TextEntry
 {
 	std::string m_strText;
-	Zenith_Maths::Vector2 m_xPosition = {0,0}; //in pixels
+	Zenith_Maths::Vector2 m_xPosition = { 0,0 }; //in pixels
 	float m_fScale = 1.;
 };
 

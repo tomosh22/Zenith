@@ -130,12 +130,11 @@ void Zenith_AssetHandler::LoadAssetsFromFile(const std::string& strFile)
 #endif
 }
 
-
 Flux_Texture& Zenith_AssetHandler::AddTexture2D(Zenith_GUID xGUID, const std::string& strName, const char* szPath)
 {
 	AssetID uID = GetNextFreeTextureSlot();
 	Flux_Texture& xTex = s_pxTextures[uID];
-	s_xTextureMap.insert({ xGUID,uID});
+	s_xTextureMap.insert({ xGUID,uID });
 	s_xTextureNameMap.insert({ strName, uID });
 	s_xReverseTextureMap.insert({ uID, xGUID });
 	Flux_MemoryManager::CreateTexture(szPath, xTex);

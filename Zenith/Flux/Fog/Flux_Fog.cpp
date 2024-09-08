@@ -17,7 +17,7 @@ DEBUGVAR bool dbg_bEnable = true;
 
 static struct Flux_FogConstants
 {
-	Zenith_Maths::Vector4 m_xColour_Falloff = {0.5,0.6,0.7,0.000075};
+	Zenith_Maths::Vector4 m_xColour_Falloff = { 0.5,0.6,0.7,0.000075 };
 } dbg_xConstants;
 
 void Flux_Fog::Initialise()
@@ -35,7 +35,6 @@ void Flux_Fog::Initialise()
 	std::vector<Flux_BlendState> xBlendStates;
 	xBlendStates.push_back({ BLEND_FACTOR_SRCALPHA, BLEND_FACTOR_ONE, true });
 
-
 	Flux_PipelineSpecification xPipelineSpec(
 		xVertexDesc,
 		&s_xShader,
@@ -46,8 +45,8 @@ void Flux_Fog::Initialise()
 		DEPTHSTENCIL_FORMAT_D32_SFLOAT,
 		true,
 		false,
-		{1,1},
-		{0,0},
+		{ 1,1 },
+		{ 0,0 },
 		Flux_Graphics::s_xFinalRenderTarget
 	);
 
