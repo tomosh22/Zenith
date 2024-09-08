@@ -4,8 +4,7 @@
 #include "Zenith_Vulkan_Buffer.h"
 #include "Zenith_Vulkan_MemoryManager.h"
 
-
-Zenith_Vulkan_Buffer::Zenith_Vulkan_Buffer(vk::DeviceSize uSize, vk::BufferUsageFlags eUsageFlags,vk::MemoryPropertyFlags eMemProperties)
+Zenith_Vulkan_Buffer::Zenith_Vulkan_Buffer(vk::DeviceSize uSize, vk::BufferUsageFlags eUsageFlags, vk::MemoryPropertyFlags eMemProperties)
 	: m_ulSize(uSize)
 {
 	vk::BufferCreateInfo xInfo = vk::BufferCreateInfo()
@@ -56,7 +55,7 @@ Zenith_Vulkan_Buffer::~Zenith_Vulkan_Buffer()
 void Zenith_Vulkan_Buffer::UploadData(void* pData, uint32_t uSize)
 {
 	STUBBED
-	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
+		const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 
 	//void* pMappedPtr;
 	////TO_TODO: clean this up once every buffer goes through the memory manager
@@ -70,29 +69,25 @@ void Zenith_Vulkan_Buffer::UploadData(void* pData, uint32_t uSize)
 	//}
 }
 
-	void Zenith_Vulkan_Buffer::CopyBufferToBuffer(Zenith_Vulkan_Buffer* pxSrc, Zenith_Vulkan_Buffer* pxDst, size_t uSize)
-	{
-		STUBBED
+void Zenith_Vulkan_Buffer::CopyBufferToBuffer(Zenith_Vulkan_Buffer* pxSrc, Zenith_Vulkan_Buffer* pxDst, size_t uSize)
+{
+	STUBBED
 		/*vk::CommandBuffer xCmd = VulkanRenderer::GetInstance()->BeginSingleUseCmdBuffer(COMMANDTYPE_GRAPHICS);
-		
 
 		vk::BufferCopy xCopyRegion(0,0,uSize);
 		xCmd.copyBuffer(pxSrc->m_xBuffer, pxDst->m_xBuffer, xCopyRegion);
-		
 
 		VulkanRenderer::GetInstance()->EndSingleUseCmdBuffer(xCmd, COMMANDTYPE_GRAPHICS);*/
-
-	}
-	void Zenith_Vulkan_Buffer::CopyBufferToImage(Zenith_Vulkan_Buffer* pxSrc, Zenith_Vulkan_Texture* pxDst, bool bAsyncLoader /*= false*/)
-	{
-		STUBBED
+}
+void Zenith_Vulkan_Buffer::CopyBufferToImage(Zenith_Vulkan_Buffer* pxSrc, Zenith_Vulkan_Texture* pxDst, bool bAsyncLoader /*= false*/)
+{
+	STUBBED
 
 		/*vk::ImageSubresourceLayers xSubresource = vk::ImageSubresourceLayers()
 			.setAspectMask(vk::ImageAspectFlagBits::eColor)
 			.setMipLevel(0)
 			.setBaseArrayLayer(0)
 			.setLayerCount(1);
-
 
 		vk::BufferImageCopy region = vk::BufferImageCopy()
 			.setBufferOffset(0)
@@ -102,12 +97,8 @@ void Zenith_Vulkan_Buffer::UploadData(void* pData, uint32_t uSize)
 			.setImageOffset({ 0,0,0 })
 			.setImageExtent({ pxDst->GetWidth(), pxDst->GetHeight(), 1});
 
-		
 		vk::CommandBuffer xCmd = VulkanRenderer::GetInstance()->BeginSingleUseCmdBuffer(COMMANDTYPE_GRAPHICS);
 		xCmd.copyBufferToImage(pxSrc->m_xBuffer, pxDst->m_xImage, vk::ImageLayout::eTransferDstOptimal, 1, &region);
 		VulkanRenderer::GetInstance()->EndSingleUseCmdBuffer(xCmd, COMMANDTYPE_GRAPHICS);
 		*/
-
-		
-	}
-	
+}

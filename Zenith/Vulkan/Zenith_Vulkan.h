@@ -47,8 +47,6 @@ public:
 		const Flux_BufferLayout& xVertexLayout = xDesc.m_xPerVertexLayout;
 		for (const Flux_BufferElement& element : xVertexLayout.GetElements())
 		{
-
-
 			vk::VertexInputAttributeDescription xAttrDesc = vk::VertexInputAttributeDescription()
 				.setBinding(0)
 				.setLocation(uBindPoint)
@@ -64,15 +62,11 @@ public:
 			.setInputRate(vk::VertexInputRate::eVertex);
 		axBindDescs.push_back(xBindDesc);
 
-
-
 		const Flux_BufferLayout& xInstanceLayout = xDesc.m_xPerInstanceLayout;
 		if (xDesc.m_xPerInstanceLayout.GetElements().size())
 		{
 			for (const Flux_BufferElement& element : xInstanceLayout.GetElements())
 			{
-
-
 				vk::VertexInputAttributeDescription xInstanceAttrDesc = vk::VertexInputAttributeDescription()
 					.setBinding(1)
 					.setLocation(uBindPoint)

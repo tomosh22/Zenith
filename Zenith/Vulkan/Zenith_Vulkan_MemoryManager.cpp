@@ -25,7 +25,6 @@ size_t Zenith_Vulkan_MemoryManager::s_uNextFreeCpuOffset = 0;
 size_t Zenith_Vulkan_MemoryManager::s_uNextFreeGpuOffset = 0;
 size_t Zenith_Vulkan_MemoryManager::s_uNextFreeStagingOffset = 0;
 
-
 void Zenith_Vulkan_MemoryManager::Initialise()
 {
 	const vk::PhysicalDevice& xPhysDevice = Zenith_Vulkan::GetPhysicalDevice();
@@ -46,7 +45,6 @@ void Zenith_Vulkan_MemoryManager::Initialise()
 		}
 	}
 	Zenith_Assert(uCpuMemoryType != ~0u, "couldn't find physical memory type");
-
 
 	vk::MemoryAllocateInfo xCpuAllocInfo = vk::MemoryAllocateInfo()
 		.setAllocationSize(uAlignedCpuSize)
@@ -75,7 +73,6 @@ void Zenith_Vulkan_MemoryManager::Initialise()
 		}
 	}
 	Zenith_Assert(uGpuMemoryType != ~0u, "couldn't find physical memory type");
-
 
 	vk::MemoryAllocateInfo xGpuAllocInfo = vk::MemoryAllocateInfo()
 		.setAllocationSize(uAlignedGpuSize)
@@ -222,7 +219,6 @@ void Zenith_Vulkan_MemoryManager::InitialiseVertexBuffer(const void* pData, size
 	}
 }
 
-
 void Zenith_Vulkan_MemoryManager::InitialiseDynamicVertexBuffer(const void* pData, size_t uSize, Flux_DynamicVertexBuffer& xBufferOut, bool bDeviceLocal /*= true*/)
 {
 	for (uint32_t u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
@@ -298,7 +294,6 @@ void Zenith_Vulkan_MemoryManager::CreateTexture(const char* szPath, Zenith_Vulka
 	uint32_t uWidth = 0, uHeight = 0, uDepth = 0;
 	vk::Format eFormat = vk::Format::eUndefined;
 	void* pData = nullptr;
-
 
 	FILE* pxFile = fopen(szPath, "rb");
 	fseek(pxFile, 0, SEEK_END);
@@ -380,9 +375,8 @@ void Zenith_Vulkan_MemoryManager::CreateTextureCube(const char* szPathPX, const 
 	{
 		const char* szPath = aszPaths[u];
 		void*& pData = apDatas[u];
-		
-		vk::Format eFormat = vk::Format::eUndefined;
 
+		vk::Format eFormat = vk::Format::eUndefined;
 
 		FILE* pxFile = fopen(szPath, "rb");
 		fseek(pxFile, 0, SEEK_END);
@@ -571,7 +565,6 @@ void Zenith_Vulkan_MemoryManager::FlushStagingBuffer() {
 
 			for (uint32_t uLayer = 0; uLayer < pxTexture->GetNumLayers(); uLayer++)
 			{
-
 				s_xCommandBuffer.ImageTransitionBarrier(pxTexture->GetImage(), vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eTransferSrcOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, 0, uLayer);
 
 				for (uint32_t uMip = 1; uMip < pxTexture->GetNumMips(); uMip++)
@@ -595,7 +588,6 @@ void Zenith_Vulkan_MemoryManager::FlushStagingBuffer() {
 }
 
 void Zenith_Vulkan_MemoryManager::UploadStagingData(AllocationType eType, void* pAllocation, const void* pData, size_t uSize) {
-
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 
 	if (s_uNextFreeStagingOffset + uSize >= g_uStagingPoolSize)
@@ -630,19 +622,14 @@ void Zenith_Vulkan_MemoryManager::UploadData(void* pAllocation, const void* pDat
 	{
 		Zenith_Assert(s_xCpuAllocationMap.find(pAllocation) == s_xCpuAllocationMap.end(), "This allocation has somehow become a CPU and GPU allocation???");
 		MemoryAllocation xAlloc = xGpuIt->second;
-		
-
 
 		if (xAlloc.m_eType == ALLOCATION_TYPE_BUFFER)
 		{
 			UploadStagingData(ALLOCATION_TYPE_BUFFER, pAllocation, pData, uSize);
-			
 		}
 		else if (xAlloc.m_eType == ALLOCATION_TYPE_TEXTURE)
 		{
 			UploadStagingData(ALLOCATION_TYPE_TEXTURE, pAllocation, pData, uSize);
-			
-
 		}
 	}
 	else

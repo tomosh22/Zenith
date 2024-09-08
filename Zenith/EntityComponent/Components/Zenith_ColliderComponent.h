@@ -21,7 +21,6 @@ public:
 			Zenith_Physics::s_xPhysicsCommon.destroyConcaveMeshShape(m_pxConcaveShape);
 			delete m_pxTriArray;
 			m_pxTriArray = nullptr;
-
 		}
 	}
 	void Serialize(std::ofstream& xOut);
@@ -41,6 +40,4 @@ private:
 	reactphysics3d::TriangleVertexArray* m_pxTriArray = nullptr;
 	reactphysics3d::ConcaveMeshShape* m_pxConcaveShape = nullptr;
 	reactphysics3d::TriangleMesh* m_pxTriMesh = nullptr;
-
-
 };

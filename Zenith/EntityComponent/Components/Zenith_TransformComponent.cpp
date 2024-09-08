@@ -17,7 +17,7 @@ void Zenith_TransformComponent::SetPosition(const Zenith_Maths::Vector3 xPos)
 	{
 		//#TO making a copy
 		reactphysics3d::Transform xTrans = m_pxRigidBody->getTransform();
-		xTrans.setPosition({xPos.x, xPos.y, xPos.z});
+		xTrans.setPosition({ xPos.x, xPos.y, xPos.z });
 		m_pxRigidBody->setTransform(xTrans);
 	}
 	else
@@ -48,8 +48,6 @@ void Zenith_TransformComponent::SetScale(const Zenith_Maths::Vector3 xScale)
 
 void Zenith_TransformComponent::GetPosition(Zenith_Maths::Vector3& xPos)
 {
-	
-
 	if (m_pxRigidBody)
 	{
 		//#TO making a copy
@@ -95,7 +93,6 @@ void Zenith_TransformComponent::GetScale(Zenith_Maths::Vector3& xScale)
 	xScale = m_xScale;
 }
 
-
 const reactphysics3d::Transform& const Zenith_TransformComponent::GetTransform()
 {
 	return m_pxRigidBody ? m_pxRigidBody->getTransform() : m_xTransform;
@@ -119,7 +116,6 @@ void Zenith_TransformComponent::BuildModelMatrix(Zenith_Maths::Matrix4& xMatOut)
 	}
 }
 
-
 reactphysics3d::Transform& Zenith_TransformComponent::GetTransform_Unsafe()
 {
 	return m_xTransform;
@@ -129,7 +125,7 @@ void Zenith_TransformComponent::Serialize(std::ofstream& xOut)
 {
 	STUBBED
 #if 0
-	xOut << "TransformComponent\n";
+		xOut << "TransformComponent\n";
 	reactphysics3d::Transform* pxTrans = GetTransform();
 	xOut << pxTrans->getPosition().x << ' ' << pxTrans->getPosition().y << ' ' << pxTrans->getPosition().z << '\n';
 	xOut << pxTrans->getOrientation().x << ' ' << pxTrans->getOrientation().y << ' ' << pxTrans->getOrientation().z << ' ' << pxTrans->getOrientation().w << '\n';

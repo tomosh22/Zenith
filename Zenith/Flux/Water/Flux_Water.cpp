@@ -36,7 +36,6 @@ void Flux_Water::Initialise()
 	std::vector<Flux_BlendState> xBlendStates;
 	xBlendStates.push_back({ BLEND_FACTOR_SRCALPHA, BLEND_FACTOR_ONE, true });
 
-
 	Flux_PipelineSpecification xPipelineSpec(
 		xVertexDesc,
 		&s_xShader,
@@ -47,8 +46,8 @@ void Flux_Water::Initialise()
 		DEPTHSTENCIL_FORMAT_D32_SFLOAT,
 		true,
 		false,
-		{1,0},
-		{0,1},
+		{ 1,0 },
+		{ 0,1 },
 		Flux_Graphics::s_xFinalRenderTarget
 	);
 

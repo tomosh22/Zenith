@@ -51,7 +51,6 @@ Zenith_Window::Zenith_Window(const char* szTitle, uint32_t uWidth, uint32_t uHei
 
 Zenith_Window::~Zenith_Window()
 {
-
 }
 
 void Zenith_Window::BeginFrame()
@@ -68,4 +67,3 @@ bool Zenith_Window::IsKeyDown(Zenith_KeyCode iKey)
 {
 	return glfwGetKey(m_pxNativeWindow, iKey) == GLFW_PRESS;
 }
-

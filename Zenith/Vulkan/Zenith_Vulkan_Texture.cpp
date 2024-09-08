@@ -84,7 +84,6 @@ vk::ImageLayout Zenith_Vulkan_Texture::ConvertToVkTargetUsage(RenderTargetUsage 
 	}
 }
 
-
 void Zenith_Vulkan_Sampler::InitialiseDefault(Zenith_Vulkan_Sampler& xSampler)
 {
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();

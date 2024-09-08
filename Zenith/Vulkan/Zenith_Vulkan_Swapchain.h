@@ -27,7 +27,7 @@ public:
 
 	static uint32_t GetCurrentFrameIndex() { return s_uFrameIndex; }
 
-	static Flux_TargetSetup& GetTargetSetup() {return s_xTargetSetup;}
+	static Flux_TargetSetup& GetTargetSetup() { return s_xTargetSetup; }
 
 	static vk::Format GetFormat() { return s_xImageFormat; }
 

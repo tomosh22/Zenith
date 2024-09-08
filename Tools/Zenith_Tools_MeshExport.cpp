@@ -85,11 +85,7 @@ static void ExportAssimpMesh(aiMesh* pxAssimpMesh, std::string strOutFilename)
 		xMesh.m_puIndices[i * 3 + 2] = pxAssimpMesh->mFaces[i].mIndices[bFlipWinding ? 2 : 1];
 	}
 
-
-
 	xMesh.GenerateLayoutAndVertexData();
-
-	
 
 	xMesh.Export(strOutFilename.c_str());
 }

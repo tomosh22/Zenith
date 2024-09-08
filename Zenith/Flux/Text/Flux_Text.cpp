@@ -10,7 +10,6 @@
 #include "EntityComponent/Components/Zenith_TextComponent.h"
 #include "AssetHandling/Zenith_AssetHandler.h"
 
-
 static Flux_CommandBuffer s_xCommandBuffer;
 
 static Flux_Shader s_xShader;
@@ -29,7 +28,7 @@ static Flux_DynamicVertexBuffer s_xInstanceBuffer;
 static Flux_Texture* s_pxFontAtlas = nullptr;
 
 DEBUGVAR bool dbg_bEnable = true;
-DEBUGVAR Zenith_Maths::Vector2 dbg_xPosition = {0,0};
+DEBUGVAR Zenith_Maths::Vector2 dbg_xPosition = { 0,0 };
 DEBUGVAR float dbg_fTextSize = 100.f;
 
 void Flux_Text::Initialise()
@@ -52,7 +51,6 @@ void Flux_Text::Initialise()
 	std::vector<Flux_BlendState> xBlendStates;
 	xBlendStates.push_back({ BLEND_FACTOR_SRCALPHA, BLEND_FACTOR_ONE, true });
 
-	
 	Flux_PipelineSpecification xPipelineSpec(
 		xVertexDesc,
 		&s_xShader,
@@ -63,8 +61,8 @@ void Flux_Text::Initialise()
 		DEPTHSTENCIL_FORMAT_D32_SFLOAT,
 		true,
 		false,
-		{1,1},
-		{0,0},
+		{ 1,1 },
+		{ 0,0 },
 		Flux_Graphics::s_xFinalRenderTarget
 	);
 
@@ -79,8 +77,8 @@ void Flux_Text::Initialise()
 
 #ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_DebugVariables::AddBoolean({ "Render", "Enable", "Text" }, dbg_bEnable);
-	Zenith_DebugVariables::AddVector2( { "Text", "Position" }, dbg_xPosition, 0, 4000);
-	Zenith_DebugVariables::AddFloat( { "Text", "Size" }, dbg_fTextSize, 0, 1000);
+	Zenith_DebugVariables::AddVector2({ "Text", "Position" }, dbg_xPosition, 0, 4000);
+	Zenith_DebugVariables::AddFloat({ "Text", "Size" }, dbg_fTextSize, 0, 1000);
 #endif
 
 	Zenith_Log("Flux_Text initialised");

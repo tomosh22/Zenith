@@ -30,7 +30,6 @@ public:
 	static reactphysics3d::PhysicsCommon s_xPhysicsCommon;
 	static reactphysics3d::PhysicsWorld* s_pxPhysicsWorld;
 
-
 	static void Initialise();
 	static void Update(float fDt);
 	static void Reset();
@@ -49,5 +48,4 @@ public:
 	};
 
 	static PhysicsEventListener s_xEventListener;
-
 };

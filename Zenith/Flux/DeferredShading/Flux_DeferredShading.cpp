@@ -37,8 +37,8 @@ void Flux_DeferredShading::Initialise()
 		DEPTHSTENCIL_FORMAT_D32_SFLOAT,
 		false,
 		false,
-		{1,4},
-		{0,0},
+		{ 1,4 },
+		{ 0,0 },
 		Flux_Graphics::s_xFinalRenderTarget
 	);
 

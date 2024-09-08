@@ -11,7 +11,6 @@ PlayerController_Behaviour::PlayerController_Behaviour(Zenith_Entity& xParentEnt
 	Zenith_Assert(m_xParentEntity.HasComponent<Zenith_ColliderComponent>(), "");
 }
 
-
 void UpdateCameraRotation(Zenith_CameraComponent& xCamera)
 {
 	static Zenith_Maths::Vector2_64 s_xPreviousMousePos = { FLT_MAX,FLT_MAX };
@@ -59,7 +58,7 @@ void PlayerController_Behaviour::OnUpdate(const float fDt)
 
 	UpdateCameraRotation(xCamera);
 
-	Zenith_Maths::Vector3 xFinalVelocity(0,0,0);
+	Zenith_Maths::Vector3 xFinalVelocity(0, 0, 0);
 
 	if (Zenith_Input::IsKeyDown(ZENITH_KEY_W))
 	{

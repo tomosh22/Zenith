@@ -56,8 +56,8 @@ void Flux_Terrain::Initialise()
 		DEPTHSTENCIL_FORMAT_D32_SFLOAT,
 		true,
 		false,
-		{2,0},
-		{0,8},
+		{ 2,0 },
+		{ 0,8 },
 		Flux_Graphics::s_xMRTTarget
 	);
 

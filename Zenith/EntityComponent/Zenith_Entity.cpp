@@ -40,7 +40,7 @@ void Zenith_Entity::Initialise(Zenith_Scene* pxScene, Zenith_GUID xGUID, Zenith_
 void Zenith_Entity::Serialize(std::ofstream& xOut) {
 	STUBBED
 #if 0
-	xOut << m_xGuid.m_uGuid << '\n';
+		xOut << m_xGuid.m_uGuid << '\n';
 	xOut << GetComponent<TransformComponent>().m_strName << '\n';
 	if (HasComponent<TransformComponent>())
 		GetComponent<TransformComponent>().Serialize(xOut);

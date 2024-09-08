@@ -51,7 +51,7 @@ Zenith_Maths::Vector3 Zenith_CameraComponent::ScreenSpaceToWorldSpace(Zenith_Mat
 	//#TO_TODO: adjust for viewport not taking up whole window in editor mode
 	int32_t iWidth, iHeight;
 	pxWindow->GetSize(iWidth, iHeight);
-	Zenith_Maths::Vector2 xScreenSize = { static_cast<uint32_t>(iWidth), static_cast<uint32_t>(iHeight)};
+	Zenith_Maths::Vector2 xScreenSize = { static_cast<uint32_t>(iWidth), static_cast<uint32_t>(iHeight) };
 
 	Zenith_Maths::Matrix4 xViewMat;
 	Zenith_Maths::Matrix4 xProjMat;
@@ -76,7 +76,6 @@ Zenith_Maths::Vector3 Zenith_CameraComponent::ScreenSpaceToWorldSpace(Zenith_Mat
 
 	return xWorldSpace;
 }
-
 
 void Zenith_CameraComponent::GetPosition(Zenith_Maths::Vector3& xOut) const
 {

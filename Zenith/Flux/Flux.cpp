@@ -15,8 +15,6 @@
 uint32_t Flux::s_uFrameCounter = 0;
 std::vector<void(*)()> Flux::s_xResChangeCallbacks;
 
-
-
 void Flux::EarlyInitialise()
 {
 	Flux_PlatformAPI::Initialise();

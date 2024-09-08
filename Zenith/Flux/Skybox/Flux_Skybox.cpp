@@ -33,7 +33,6 @@ void Flux_Skybox::Initialise()
 	xBlendStates.push_back({ BLEND_FACTOR_SRCALPHA, BLEND_FACTOR_ONEMINUSSRCALPHA, true });
 	xBlendStates.push_back({ BLEND_FACTOR_SRCALPHA, BLEND_FACTOR_ONEMINUSSRCALPHA, true });
 
-
 	Flux_PipelineSpecification xPipelineSpec(
 		xVertexDesc,
 		&s_xShader,
@@ -44,8 +43,8 @@ void Flux_Skybox::Initialise()
 		DEPTHSTENCIL_FORMAT_D32_SFLOAT,
 		false,
 		false,
-		{1,1},
-		{0,0},
+		{ 1,1 },
+		{ 0,0 },
 		Flux_Graphics::s_xMRTTarget
 	);
 

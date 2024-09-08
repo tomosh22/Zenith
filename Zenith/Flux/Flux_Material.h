@@ -11,7 +11,6 @@ public:
 		, m_pxRoughness(&Flux_Graphics::s_xBlankTexture2D)
 		, m_pxMetallic(&Flux_Graphics::s_xBlankTexture2D)
 	{
-
 	}
 	Flux_Material(Flux_Texture* pxDiffuse, Flux_Texture* pxNormal, Flux_Texture* pxRoughness, Flux_Texture* pxMetallic)
 		: m_pxDiffuse(pxDiffuse)
@@ -19,7 +18,6 @@ public:
 		, m_pxRoughness(pxRoughness)
 		, m_pxMetallic(pxMetallic)
 	{
-
 	}
 
 	void SetDiffuse(Flux_Texture* pxDiffuse) { m_pxDiffuse = pxDiffuse; }

@@ -26,8 +26,8 @@ ColourFormat Flux_Graphics::s_aeMRTFormats[MRT_INDEX_COUNT]
 	COLOUR_FORMAT_R16G16B16A16_SFLOAT //MRT_INDEX_WORLDPOS
 };
 
-DEBUGVAR Zenith_Maths::Vector3 dbg_SunDir = {0.,-0.6, -0.8};
-DEBUGVAR Zenith_Maths::Vector3 dbg_SunColour = {0.7, 0.4,0.2};
+DEBUGVAR Zenith_Maths::Vector3 dbg_SunDir = { 0.,-0.6, -0.8 };
+DEBUGVAR Zenith_Maths::Vector3 dbg_SunColour = { 0.7, 0.4,0.2 };
 
 void Flux_Graphics::Initialise()
 {
@@ -92,8 +92,8 @@ void Flux_Graphics::UploadFrameConstants()
 	xConstants.m_xSunColour_Pad = { dbg_SunColour.x, dbg_SunColour.y, dbg_SunColour.z, 0. };
 	int32_t iWidth, iHeight;
 	Zenith_Window::GetInstance()->GetSize(iWidth, iHeight);
-	xConstants.m_xScreenDims = {static_cast<uint32_t>(iWidth), static_cast<uint32_t>(iHeight) };
-	xConstants.m_xRcpScreenDims = {1.f / xConstants.m_xScreenDims.x, 1.f / xConstants.m_xScreenDims.y};
+	xConstants.m_xScreenDims = { static_cast<uint32_t>(iWidth), static_cast<uint32_t>(iHeight) };
+	xConstants.m_xRcpScreenDims = { 1.f / xConstants.m_xScreenDims.x, 1.f / xConstants.m_xScreenDims.y };
 	Flux_MemoryManager::UploadData(&s_xFrameConstantsBuffer.GetBuffer(), &xConstants, sizeof(Zenith_FrameConstants));
 }
 

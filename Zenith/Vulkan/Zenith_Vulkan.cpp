@@ -49,8 +49,6 @@ vk::DescriptorPool Zenith_Vulkan::s_axPerFrameDescriptorPools[MAX_FRAMES_IN_FLIG
 
 std::vector<const Zenith_Vulkan_CommandBuffer*> Zenith_Vulkan::s_xPendingCommandBuffers[RENDER_ORDER_MAX];
 
-
-
 const vk::DescriptorPool& Zenith_Vulkan::GetCurrentPerFrameDescriptorPool() { return s_axPerFrameDescriptorPools[Zenith_Vulkan_Swapchain::GetCurrentFrameIndex()]; }
 
 void Zenith_Vulkan::Initialise()
@@ -98,7 +96,6 @@ void Zenith_Vulkan::EndFrame()
 		.setSignalSemaphoreCount(1)
 		.setWaitDstStageMask(eMemWaitStages);
 
-
 	s_axQueues[COMMANDTYPE_COPY].submit(xMemorySubmitInfo, VK_NULL_HANDLE);
 
 	std::vector<vk::CommandBuffer> xPlatformCmdBufs;
@@ -120,9 +117,7 @@ void Zenith_Vulkan::EndFrame()
 		.setSignalSemaphoreCount(1)
 		.setWaitDstStageMask(eRenderWaitStages);
 
-
 	s_axQueues[COMMANDTYPE_GRAPHICS].submit(xRenderSubmitInfo, Zenith_Vulkan_Swapchain::GetCurrentInFlightFence());
-
 
 	for (uint32_t i = 0; i < RENDER_ORDER_MAX; i++)
 	{
@@ -201,7 +196,7 @@ VKAPI_ATTR vk::Bool32 VKAPI_CALL Zenith_Vulkan::DebugCallback(vk::DebugUtilsMess
 {
 	if (eMessageSeverity >= vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning)
 	{
-		Zenith_Error("%s%s","Zenith_Vulkan::DebugCallback: ", pxCallbackData->pMessage);
+		Zenith_Error("%s%s", "Zenith_Vulkan::DebugCallback: ", pxCallbackData->pMessage);
 	}
 	__debugbreak();
 	return VK_FALSE;
@@ -233,7 +228,7 @@ void Zenith_Vulkan::CreateSurface()
 {
 	GLFWwindow* pxWindow = Zenith_Window::GetInstance()->GetNativeWindow();
 	glfwCreateWindowSurface(s_xInstance, pxWindow, nullptr, (VkSurfaceKHR*)&s_xSurface);
-	
+
 	Zenith_Log("Vulkan surface created");
 }
 
@@ -323,7 +318,6 @@ void Zenith_Vulkan::CreateDevice()
 			.setPQueuePriorities(&fQueuePriority);
 		xQueueInfos.push_back(xQueueInfo);
 	}
-
 
 	vk::DeviceCreateInfo xDeviceCreateInfo = vk::DeviceCreateInfo()
 		.setPQueueCreateInfos(xQueueInfos.data())

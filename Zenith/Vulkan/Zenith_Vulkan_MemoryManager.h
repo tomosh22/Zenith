@@ -92,4 +92,3 @@ private:
 	static size_t s_uNextFreeGpuOffset;
 	static size_t s_uNextFreeStagingOffset;
 };
-

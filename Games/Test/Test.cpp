@@ -22,7 +22,6 @@ static Zenith_Entity s_axRotatingSpheres[3];
 static Zenith_Entity s_xTerrain[16][16];
 static Zenith_Entity s_xOgre;
 
-
 //#TO_TODO: these need to be in a header file for tools terrain export
 
 #define MAX_TERRAIN_HEIGHT 2048
@@ -57,7 +56,6 @@ void LoadAssets()
 		Flux_Texture& xNormal = Zenith_AssetHandler::GetTexture("Crystal_Normal");
 		Flux_Texture& xRoughness = Zenith_AssetHandler::GetTexture("Crystal_Roughness");
 		Flux_Texture& xMetallic = Zenith_AssetHandler::GetTexture("Crystal_Metallic");
-
 
 		Flux_Material& xMat = Zenith_AssetHandler::AddMaterial(Zenith_GUID(), "Crystal");
 		xMat.SetDiffuse(&xDiffuse);
@@ -135,7 +133,7 @@ void LoadAssets()
 		"C:/dev/Zenith/Games/Test/Assets/Textures/Cubemap/ny.ztx",
 		"C:/dev/Zenith/Games/Test/Assets/Textures/Cubemap/pz.ztx",
 		"C:/dev/Zenith/Games/Test/Assets/Textures/Cubemap/nz.ztx"
-		);
+	);
 }
 
 void Zenith_Core::Project_Startup()
@@ -170,10 +168,8 @@ void Zenith_Core::Project_Startup()
 	Zenith_TextComponent& xText = s_xPlayer.AddComponent<Zenith_TextComponent>();
 	TextEntry xTextEntry = { "abcdefghijklmnopqrstuvwxyz", { 0, 0 }, 1. };
 	xText.AddText(xTextEntry);
-	
 
 	Flux_MeshGeometry& xSphereMesh = Zenith_AssetHandler::GetMesh("Sphere_Smooth");
-
 
 	Zenith_ModelComponent& xModel = s_xPlayer.AddComponent<Zenith_ModelComponent>();
 	xModel.AddMeshEntry(xSphereMesh, Zenith_AssetHandler::GetMaterial("Crystal"));
@@ -205,7 +201,7 @@ void Zenith_Core::Project_Startup()
 		Zenith_ScriptComponent& xScript = s_xSphere1.AddComponent<Zenith_ScriptComponent>();
 		xScript.SetBehaviour<HookesLaw_Behaviour>();
 		HookesLaw_Behaviour& xBehaviour = *(HookesLaw_Behaviour*)xScript.m_pxScriptBehaviour;
-		xBehaviour.SetDesiredPosition({-20.,1000,-20.});
+		xBehaviour.SetDesiredPosition({ -20.,1000,-20. });
 
 		Zenith_ColliderComponent& xCollider = s_xSphere1.AddComponent<Zenith_ColliderComponent>();
 		xCollider.AddCollider(COLLISION_VOLUME_TYPE_SPHERE, RIGIDBODY_TYPE_DYNAMIC);
@@ -222,17 +218,17 @@ void Zenith_Core::Project_Startup()
 	}
 
 	uint32_t uCount = 0;
-	for(Zenith_Entity& xEntity : s_axRotatingSpheres)
+	for (Zenith_Entity& xEntity : s_axRotatingSpheres)
 	{
 		xEntity.Initialise(&xScene, "Rotating Sphere");
 		Zenith_TransformComponent& xTrans = xEntity.GetComponent<Zenith_TransformComponent>();
-		xTrans.SetPosition({ 500 + 200 * uCount,1200,100});
+		xTrans.SetPosition({ 500 + 200 * uCount,1200,100 });
 		xTrans.SetScale({ 100,100,100 });
 
 		Zenith_ScriptComponent& xScript = xEntity.AddComponent<Zenith_ScriptComponent>();
 		xScript.SetBehaviour<RotationBehaviour_Behaviour>();
 		RotationBehaviour_Behaviour& xBehaviour = *(RotationBehaviour_Behaviour*)xScript.m_pxScriptBehaviour;
-		if(uCount % 3 == 0)
+		if (uCount % 3 == 0)
 		{
 			Zenith_ModelComponent& xModel = xEntity.AddComponent<Zenith_ModelComponent>();
 			xModel.AddMeshEntry(xSphereMesh, Zenith_AssetHandler::GetMaterial("Rock"));
@@ -270,9 +266,9 @@ void Zenith_Core::Project_Startup()
 
 			xTerrain.Initialise(&xScene, strMeshName);
 			Zenith_Maths::Matrix4 xWaterTransform =
-				glm::translate(glm::identity<Zenith_Maths::Matrix4>(), Zenith_Maths::Vector3(x * TERRAIN_SIZE * TERRAIN_SCALE + (TERRAIN_SIZE * TERRAIN_SCALE/2), MAX_TERRAIN_HEIGHT / 2, y * TERRAIN_SIZE * TERRAIN_SCALE + (TERRAIN_SIZE * TERRAIN_SCALE / 2))) *
-				Zenith_Maths::EulerRotationToMatrix4(90, {1.,0.,0.}) *
-				glm::scale(glm::identity<Zenith_Maths::Matrix4>(), Zenith_Maths::Vector3(TERRAIN_SIZE * TERRAIN_SCALE/2, TERRAIN_SIZE * TERRAIN_SCALE/2, TERRAIN_SIZE * TERRAIN_SCALE/2));
+				glm::translate(glm::identity<Zenith_Maths::Matrix4>(), Zenith_Maths::Vector3(x * TERRAIN_SIZE * TERRAIN_SCALE + (TERRAIN_SIZE * TERRAIN_SCALE / 2), MAX_TERRAIN_HEIGHT / 2, y * TERRAIN_SIZE * TERRAIN_SCALE + (TERRAIN_SIZE * TERRAIN_SCALE / 2))) *
+				Zenith_Maths::EulerRotationToMatrix4(90, { 1.,0.,0. }) *
+				glm::scale(glm::identity<Zenith_Maths::Matrix4>(), Zenith_Maths::Vector3(TERRAIN_SIZE * TERRAIN_SCALE / 2, TERRAIN_SIZE * TERRAIN_SCALE / 2, TERRAIN_SIZE * TERRAIN_SCALE / 2));
 
 			xTerrain.AddComponent<Zenith_TerrainComponent>(xTerrainMesh, Zenith_AssetHandler::GetMaterial("Rock"), Zenith_AssetHandler::GetMaterial("Crystal"), xWaterTransform);
 

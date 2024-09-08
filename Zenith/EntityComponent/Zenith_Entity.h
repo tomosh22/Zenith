@@ -41,7 +41,7 @@ public:
 	}
 
 	EntityID GetEntityID() { return m_xEntity; }
-	
+
 	Zenith_GUID GetGUID() { return m_ulGUID; }
 	const Zenith_GUID GetGUID() const { return m_ulGUID; }
 	class Zenith_Scene* m_pxParentScene;
@@ -52,12 +52,8 @@ public:
 	std::string m_strName;
 private:
 	EntityID m_xEntity;
-	
+
 	Zenith_GUID m_ulGUID;
 
 	bool m_bInitialised = false;
-	
 };
-
-
-

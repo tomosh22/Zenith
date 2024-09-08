@@ -4,7 +4,6 @@
 
 int main()
 {
-
 	static const char* aszShaderExtensions[] =
 	{
 		"vert",
@@ -26,7 +25,6 @@ int main()
 				system(strCommand.c_str());
 			}
 		}
-		
 	}
 	__debugbreak();
 }

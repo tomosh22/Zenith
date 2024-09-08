@@ -48,7 +48,6 @@ void Zenith_DebugVariableTree::PfnLeafNode::ImGuiDisplay()
 	}
 }
 
-
 void Zenith_DebugVariableTree::TryAddNode(Node* pxNodeToAdd, Node* pxNode, std::vector<std::string>& xSplits, uint32_t uCurrentDepth, uint32_t uMaxDepth, bool& bSuccess, Node*& pxResult)
 {
 	Zenith_Assert(uCurrentDepth < xSplits.size() - 1, "Gone too deep");
