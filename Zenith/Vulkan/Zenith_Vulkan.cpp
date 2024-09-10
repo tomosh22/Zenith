@@ -15,7 +15,10 @@
 #endif //ZENITH_WINDOWS
 vk::RenderPass Zenith_Vulkan::s_xImGuiRenderPass;
 #endif //ZENITH_TOOLS
+
+#ifdef ZENITH_DEBUG_VARIABLES
 #include "DebugVariables/Zenith_DebugVariables.h"
+#endif
 
 #ifdef ZENITH_DEBUG
 static std::vector<const char*> s_xValidationLayers = { "VK_LAYER_KHRONOS_validation" };
@@ -68,7 +71,9 @@ void Zenith_Vulkan::Initialise()
 	CreateCommandPools();
 	CreateDefaultDescriptorPool();
 
+#ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_DebugVariables::AddBoolean({ "Render", "Submit Draw Calls" }, dbg_bSubmitDrawCalls);
+#endif
 }
 
 void Zenith_Vulkan::BeginFrame()
