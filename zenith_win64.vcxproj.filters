@@ -741,6 +741,9 @@
     <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\utils\quickhull\QuickHull.h">
       <Filter>Middleware\reactphysics3d-0.10.1\include\reactphysics3d\utils\quickhull</Filter>
     </ClInclude>
+    <ClInclude Include="Middleware\vma\vk_mem_alloc.h">
+      <Filter>Middleware\vma</Filter>
+    </ClInclude>
     <ClInclude Include="Zenith\AssetHandling\Zenith_AssetHandler.h">
       <Filter>Zenith\AssetHandling</Filter>
     </ClInclude>
@@ -1057,6 +1060,9 @@
     </Filter>
     <Filter Include="Middleware\reactphysics3d-0.10.1\src\utils\quickhull">
       <UniqueIdentifier>{e0461293-b91f-2225-0448-b7ffc774657a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Middleware\vma">
+      <UniqueIdentifier>{444c4745-cac6-1720-ea36-eea5edc68c15}</UniqueIdentifier>
     </Filter>
     <Filter Include="Zenith">
       <UniqueIdentifier>{951448da-1e31-be13-d840-5e0fcc115357}</UniqueIdentifier>

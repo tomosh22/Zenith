@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#define VMA_IMPLEMENTATION
 
 #include "Zenith_Vulkan_MemoryManager.h"
 #include "Zenith_Vulkan_CommandBuffer.h"
@@ -10,92 +11,73 @@
 #include "Flux/Flux_Buffers.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 
-vk::DeviceMemory Zenith_Vulkan_MemoryManager::s_xCPUMemory;
-vk::DeviceMemory Zenith_Vulkan_MemoryManager::s_xGPUMemory;
-
-Zenith_Vulkan_Buffer* Zenith_Vulkan_MemoryManager::s_pxStagingBuffer = nullptr;
 Zenith_Vulkan_CommandBuffer Zenith_Vulkan_MemoryManager::s_xCommandBuffer;
-
-std::unordered_map<void*, Zenith_Vulkan_MemoryManager::MemoryAllocation> Zenith_Vulkan_MemoryManager::s_xCpuAllocationMap;
-std::unordered_map<void*, Zenith_Vulkan_MemoryManager::MemoryAllocation> Zenith_Vulkan_MemoryManager::s_xGpuAllocationMap;
-
+VmaAllocator Zenith_Vulkan_MemoryManager::s_xAllocator;
+Zenith_Vulkan_Buffer Zenith_Vulkan_MemoryManager::s_xStagingBuffer;
+vk::DeviceMemory Zenith_Vulkan_MemoryManager::s_xStagingMem;
 std::list<Zenith_Vulkan_MemoryManager::StagingMemoryAllocation> Zenith_Vulkan_MemoryManager::s_xStagingAllocations;
 
-size_t Zenith_Vulkan_MemoryManager::s_uNextFreeCpuOffset = 0;
-size_t Zenith_Vulkan_MemoryManager::s_uNextFreeGpuOffset = 0;
 size_t Zenith_Vulkan_MemoryManager::s_uNextFreeStagingOffset = 0;
+
+void Zenith_Vulkan_MemoryManager::InitialiseStagingBuffer()
+{
+	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
+	const vk::PhysicalDevice& xPhysicalDevice = Zenith_Vulkan::GetPhysicalDevice();
+
+	vk::BufferCreateInfo xInfo = vk::BufferCreateInfo()
+		.setSize(g_uStagingPoolSize)
+		.setUsage(vk::BufferUsageFlagBits::eTransferSrc)
+		.setSharingMode(vk::SharingMode::eExclusive);
+
+	s_xStagingBuffer.SetBuffer(xDevice.createBuffer(xInfo));
+
+	vk::MemoryRequirements xRequirements = xDevice.getBufferMemoryRequirements(s_xStagingBuffer.GetBuffer());
+
+	uint32_t memoryType = ~0u;
+	for (uint32_t i = 0; i < xPhysicalDevice.getMemoryProperties().memoryTypeCount; i++)
+	{
+		if ((xRequirements.memoryTypeBits & (1 << i)) && (xPhysicalDevice.getMemoryProperties().memoryTypes[i].propertyFlags & vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent) == vk::MemoryPropertyFlags(vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent))
+		{
+			memoryType = i;
+			break;
+		}
+	}
+	Zenith_Assert(memoryType != ~0u, "couldn't find physical memory type");
+
+	vk::MemoryAllocateInfo xAllocInfo = vk::MemoryAllocateInfo()
+		.setAllocationSize(ALIGN(xRequirements.size, 4096))
+		.setMemoryTypeIndex(memoryType);
+
+	s_xStagingMem = xDevice.allocateMemory(xAllocInfo);
+	xDevice.bindBufferMemory(s_xStagingBuffer.GetBuffer(), s_xStagingMem, 0);
+}
 
 void Zenith_Vulkan_MemoryManager::Initialise()
 {
-	const vk::PhysicalDevice& xPhysDevice = Zenith_Vulkan::GetPhysicalDevice();
-	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
+	
 
-	uint64_t uAlignedCpuSize = ALIGN(g_uCpuPoolSize, 4096);
-
-	uint32_t uCpuMemoryType = ~0u;
-	for (uint32_t i = 0; i < xPhysDevice.getMemoryProperties().memoryTypeCount; i++)
-	{
-		vk::MemoryType xMemType = xPhysDevice.getMemoryProperties().memoryTypes[i];
-		if (xMemType.propertyFlags & vk::MemoryPropertyFlagBits::eHostVisible &&
-			xMemType.propertyFlags & vk::MemoryPropertyFlagBits::eHostCoherent &&
-			xPhysDevice.getMemoryProperties().memoryHeaps[xMemType.heapIndex].size > uAlignedCpuSize
-			)
-		{
-			uCpuMemoryType = i;
-		}
-	}
-	Zenith_Assert(uCpuMemoryType != ~0u, "couldn't find physical memory type");
-
-	vk::MemoryAllocateInfo xCpuAllocInfo = vk::MemoryAllocateInfo()
-		.setAllocationSize(uAlignedCpuSize)
-		.setMemoryTypeIndex(uCpuMemoryType);
-
-#ifdef ZENITH_RAYTRACING
-	vk::MemoryAllocateFlagsInfo xCpuFlags = vk::MemoryAllocateFlagsInfo()
-		.setFlags(vk::MemoryAllocateFlagBits::eDeviceAddress);
-	xCpuAllocInfo.setPNext(&xCpuFlags);
+	VmaAllocatorCreateInfo xCreateInfo = {};
+	xCreateInfo.device = Zenith_Vulkan::GetDevice();
+	xCreateInfo.physicalDevice = Zenith_Vulkan::GetPhysicalDevice();
+	xCreateInfo.instance = Zenith_Vulkan::GetInstance();
+#ifdef VK_VERSION_1_3
+	xCreateInfo.vulkanApiVersion = VK_API_VERSION_1_3;
+#else
+#error check vulkan version
 #endif
 
-	s_xCPUMemory = xDevice.allocateMemory(xCpuAllocInfo);
-
-	uint64_t uAlignedGpuSize = ALIGN(g_uGpuPoolSize, 4096);
-
-	uint32_t uGpuMemoryType = ~0u;
-	for (uint32_t i = 0; i < xPhysDevice.getMemoryProperties().memoryTypeCount; i++)
-	{
-		vk::MemoryType xMemType = xPhysDevice.getMemoryProperties().memoryTypes[i];
-		if (xMemType.propertyFlags & vk::MemoryPropertyFlagBits::eDeviceLocal &&
-			xPhysDevice.getMemoryProperties().memoryHeaps[xMemType.heapIndex].size > uAlignedGpuSize
-			&& 59 & (1 << i) //#TO_TODO: what in the flying fuck is this about???
-			)
-		{
-			uGpuMemoryType = i;
-		}
-	}
-	Zenith_Assert(uGpuMemoryType != ~0u, "couldn't find physical memory type");
-
-	vk::MemoryAllocateInfo xGpuAllocInfo = vk::MemoryAllocateInfo()
-		.setAllocationSize(uAlignedGpuSize)
-		.setMemoryTypeIndex(uGpuMemoryType);
-
-#ifdef ZENITH_RAYTRACING
-	vk::MemoryAllocateFlagsInfo xGpuFlags = vk::MemoryAllocateFlagsInfo()
-		.setFlags(vk::MemoryAllocateFlagBits::eDeviceAddress);
-	xGpuAllocInfo.setPNext(&xGpuFlags);
-#endif
-
-	s_xGPUMemory = xDevice.allocateMemory(xGpuAllocInfo);
-
-	s_pxStagingBuffer = new Zenith_Vulkan_Buffer(g_uStagingPoolSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+	vmaCreateAllocator(&xCreateInfo, &s_xAllocator);
 
 	s_xCommandBuffer.Initialise(COMMANDTYPE_COPY);
+
+	InitialiseStagingBuffer();
 
 	Zenith_Log("Vulkan memory manager initialised");
 }
 
 void Zenith_Vulkan_MemoryManager::Shutdown()
 {
-	delete s_pxStagingBuffer;
+	vmaDestroyAllocator(s_xAllocator);
 }
 
 Zenith_Vulkan_CommandBuffer& Zenith_Vulkan_MemoryManager::GetCommandBuffer() {
@@ -175,37 +157,19 @@ void Zenith_Vulkan_MemoryManager::AllocateBuffer(size_t uSize, vk::BufferUsageFl
 	xBufferOut.SetBuffer(xDevice.createBuffer(xBufferInfo));
 	xBufferOut.SetSize(uSize);
 
-	vk::MemoryRequirements xRequirements = xDevice.getBufferMemoryRequirements(xBufferOut.GetBuffer());
-	uint32_t uAlign = xRequirements.alignment;
-#ifdef ZENITH_RAYTRACING
-	uAlign = std::max(uAlign, 128u);
-#endif
-
-	if (eResidency == MEMORY_RESIDENCY_CPU) {
-		if (ALIGN(s_uNextFreeCpuOffset, uAlign) + xRequirements.size >= g_uCpuPoolSize)
-		{
-			HandleCpuOutOfMemory();
-		}
-
-		xDevice.bindBufferMemory(xBufferOut.GetBuffer(), s_xCPUMemory, ALIGN(s_uNextFreeCpuOffset, uAlign));
-
-		MemoryAllocation xAllocation = { ALLOCATION_TYPE_BUFFER, xRequirements.size, ALIGN(s_uNextFreeCpuOffset, uAlign) };
-		s_xCpuAllocationMap.insert({ &xBufferOut, xAllocation });
-		s_uNextFreeCpuOffset = ALIGN(s_uNextFreeCpuOffset, uAlign) + xRequirements.size;
+	VmaAllocationCreateInfo xAllocInfo = {};
+	if (eResidency == MEMORY_RESIDENCY_CPU)
+	{
+		xAllocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
 	}
 	else if (eResidency == MEMORY_RESIDENCY_GPU)
 	{
-		if (ALIGN(s_uNextFreeGpuOffset, uAlign) + xRequirements.size >= g_uGpuPoolSize)
-		{
-			HandleGpuOutOfMemory();
-		}
-
-		xDevice.bindBufferMemory(xBufferOut.GetBuffer(), s_xGPUMemory, ALIGN(s_uNextFreeGpuOffset, uAlign));
-
-		MemoryAllocation xAllocation = { ALLOCATION_TYPE_BUFFER, xRequirements.size, ALIGN(s_uNextFreeGpuOffset, uAlign) };
-		s_xGpuAllocationMap.insert({ &xBufferOut, xAllocation });
-		s_uNextFreeGpuOffset = ALIGN(s_uNextFreeGpuOffset, uAlign) + xRequirements.size;
+		xAllocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
 	}
+
+	const vk::BufferCreateInfo::NativeType xBufferInfo_Native = xBufferInfo;
+
+	vmaCreateBuffer(s_xAllocator, &xBufferInfo_Native, &xAllocInfo, xBufferOut.GetBuffer_Ptr(), xBufferOut.GetAllocation_Ptr(), nullptr);
 }
 
 void Zenith_Vulkan_MemoryManager::InitialiseVertexBuffer(const void* pData, size_t uSize, Flux_VertexBuffer& xBufferOut, bool bDeviceLocal /*= true*/)
@@ -215,7 +179,7 @@ void Zenith_Vulkan_MemoryManager::InitialiseVertexBuffer(const void* pData, size
 	AllocateBuffer(uSize, eFlags, bDeviceLocal ? MEMORY_RESIDENCY_GPU : MEMORY_RESIDENCY_CPU, xBuffer);
 	if (pData)
 	{
-		UploadData(&xBuffer, pData, uSize);
+		UploadBufferData(xBuffer, pData, uSize);
 	}
 }
 
@@ -228,7 +192,7 @@ void Zenith_Vulkan_MemoryManager::InitialiseDynamicVertexBuffer(const void* pDat
 		AllocateBuffer(uSize, eFlags, bDeviceLocal ? MEMORY_RESIDENCY_GPU : MEMORY_RESIDENCY_CPU, xBuffer);
 		if (pData)
 		{
-			UploadData(&xBuffer, pData, uSize);
+			UploadBufferData(xBuffer, pData, uSize);
 		}
 	}
 }
@@ -240,7 +204,7 @@ void Zenith_Vulkan_MemoryManager::InitialiseIndexBuffer(const void* pData, size_
 	AllocateBuffer(uSize, eFlags, MEMORY_RESIDENCY_GPU, xBuffer);
 	if (pData)
 	{
-		UploadData(&xBuffer, pData, uSize);
+		UploadBufferData(xBuffer, pData, uSize);
 	}
 }
 
@@ -253,7 +217,7 @@ void Zenith_Vulkan_MemoryManager::InitialiseConstantBuffer(const void* pData, si
 		AllocateBuffer(uSize, eFlags, MEMORY_RESIDENCY_CPU, xBuffer);
 		if (pData)
 		{
-			UploadData(&xBuffer, pData, uSize);
+			UploadBufferData(xBuffer, pData, uSize);
 		}
 	}
 }
@@ -284,7 +248,7 @@ void Zenith_Vulkan_MemoryManager::CreateTexture(const void* pData, const uint32_
 	xTextureOut.SetHeight(uHeight);
 	xTextureOut.SetNumMips(uNumMips);
 	xTextureOut.SetNumLayers(1);
-	UploadData(&xTextureOut, pData, ColourFormatBytesPerPixel(eFormat) * uWidth * uHeight * uDepth);
+	UploadTextureData(xTextureOut, pData, ColourFormatBytesPerPixel(eFormat) * uWidth * uHeight * uDepth);
 }
 
 void Zenith_Vulkan_MemoryManager::CreateTexture(const char* szPath, Zenith_Vulkan_Texture& xTextureOut)
@@ -335,7 +299,7 @@ void Zenith_Vulkan_MemoryManager::CreateTexture(const char* szPath, Zenith_Vulka
 	xTextureOut.SetHeight(uHeight);
 	xTextureOut.SetNumMips(uNumMips);
 	xTextureOut.SetNumLayers(1);
-	UploadData(&xTextureOut, pData, ulDataSize);
+	UploadTextureData(xTextureOut, pData, ulDataSize);
 	delete pData;
 }
 
@@ -431,7 +395,7 @@ void Zenith_Vulkan_MemoryManager::CreateTextureCube(const char* szPathPX, const 
 		ulCursor += aulDataSizes[u];
 	}
 
-	UploadData(&xTextureOut, pAllData, ulTotalDataSize);
+	UploadTextureData(xTextureOut, pAllData, ulTotalDataSize);
 
 	for (uint32_t u = 0; u < 6; u++)
 	{
@@ -474,37 +438,19 @@ void Zenith_Vulkan_MemoryManager::AllocateTexture(uint32_t uWidth, uint32_t uHei
 		xImageInfo = xImageInfo.setFlags(vk::ImageCreateFlagBits::eCubeCompatible);
 	}
 
-	xTextureOut.SetImage(xDevice.createImage(xImageInfo));
-
-	vk::MemoryRequirements xRequirements = xDevice.getImageMemoryRequirements(xTextureOut.GetImage());
-	uint32_t uAlign = xRequirements.alignment;
-
+	VmaAllocationCreateInfo xAllocInfo = {};
 	if (eResidency == MEMORY_RESIDENCY_CPU)
 	{
-		if (s_uNextFreeCpuOffset + xRequirements.size >= g_uCpuPoolSize)
-		{
-			HandleCpuOutOfMemory();
-		}
-
-		xDevice.bindImageMemory(xTextureOut.GetImage(), s_xCPUMemory, s_uNextFreeCpuOffset);
-
-		MemoryAllocation xAllocation = { ALLOCATION_TYPE_TEXTURE, xRequirements.size, s_uNextFreeCpuOffset };
-		s_xCpuAllocationMap.insert({ &xTextureOut, xAllocation });
-		s_uNextFreeCpuOffset += xRequirements.size;
+		xAllocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
 	}
 	else if (eResidency == MEMORY_RESIDENCY_GPU)
 	{
-		if (ALIGN(s_uNextFreeGpuOffset, uAlign) + xRequirements.size >= g_uGpuPoolSize)
-		{
-			HandleGpuOutOfMemory();
-		}
-
-		xDevice.bindImageMemory(xTextureOut.GetImage(), s_xGPUMemory, ALIGN(s_uNextFreeGpuOffset, uAlign));
-
-		MemoryAllocation xAllocation = { ALLOCATION_TYPE_TEXTURE, xRequirements.size, ALIGN(s_uNextFreeGpuOffset, uAlign) };
-		s_xGpuAllocationMap.insert({ &xTextureOut, xAllocation });
-		s_uNextFreeGpuOffset = ALIGN(s_uNextFreeGpuOffset, uAlign) + xRequirements.size;
+		xAllocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
 	}
+
+	const vk::ImageCreateInfo::NativeType xImageInfo_Native = xImageInfo;
+
+	vmaCreateImage(s_xAllocator, &xImageInfo_Native, &xAllocInfo, xTextureOut.GetImage_Ptr(), xTextureOut.GetAllocation_Ptr(), nullptr);
 
 	vk::ImageSubresourceRange xSubresourceRange = vk::ImageSubresourceRange()
 		.setAspectMask(bIsDepth ? vk::ImageAspectFlagBits::eDepth : vk::ImageAspectFlagBits::eColor)
@@ -520,35 +466,104 @@ void Zenith_Vulkan_MemoryManager::AllocateTexture(uint32_t uWidth, uint32_t uHei
 		.setSubresourceRange(xSubresourceRange);
 
 	xTextureOut.SetImageView(xDevice.createImageView(xViewCreate));
+	xTextureOut.SetInitialised(true);
 }
 
 void Zenith_Vulkan_MemoryManager::FreeTexture(Zenith_Vulkan_Texture* pxTexture)
 {
+	if (!pxTexture->IsInitialised())
+	{
+		return;
+	}
+
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 
 	xDevice.destroyImageView(pxTexture->GetImageView());
 	xDevice.destroyImage(pxTexture->GetImage());
 
-	auto xCpuIt = s_xCpuAllocationMap.find(pxTexture);
-	auto xGpuIt = s_xGpuAllocationMap.find(pxTexture);
-	if (xCpuIt != s_xCpuAllocationMap.end())
+	vmaFreeMemory(s_xAllocator, pxTexture->GetAllocation());
+
+	pxTexture->SetInitialised(false);
+}
+
+
+void Zenith_Vulkan_MemoryManager::UploadBufferData(Zenith_Vulkan_Buffer& xBuffer, const void* pData, size_t uSize)
+{
+	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
+
+	const VmaAllocation& xAlloc = xBuffer.GetAllocation();
+	const VmaAllocationInfo* pxAllocInfo = xBuffer.GetAllocationInfo_Ptr();
+	VkMemoryPropertyFlags eMemoryProps;
+	vmaGetAllocationMemoryProperties(s_xAllocator, xAlloc, &eMemoryProps);
+
+	if (eMemoryProps & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
 	{
-		Zenith_Assert(s_xGpuAllocationMap.find(pxTexture) == s_xGpuAllocationMap.end(), "This allocation has somehow become a CPU and GPU allocation???");
-		s_xCpuAllocationMap.erase(pxTexture);
+		memcpy(pxAllocInfo->pMappedData, pData, uSize);
+#ifdef ZENITH_ASSERT
+		VkResult eResult = 
+#endif
+		vmaFlushAllocation(s_xAllocator, xAlloc, 0, VK_WHOLE_SIZE);
+		Zenith_Assert(eResult == VK_SUCCESS, "Failed to flush allocation");
 	}
-	else if (xGpuIt != s_xGpuAllocationMap.end())
+	else
 	{
-		Zenith_Assert(s_xCpuAllocationMap.find(pxTexture) == s_xCpuAllocationMap.end(), "This allocation has somehow become a CPU and GPU allocation???");
-		s_xGpuAllocationMap.erase(pxTexture);
+		if (s_uNextFreeStagingOffset + uSize >= g_uStagingPoolSize)
+		{
+			HandleStagingBufferFull();
+		}
+
+		StagingMemoryAllocation xAllocation = { ALLOCATION_TYPE_BUFFER, &xBuffer, uSize, s_uNextFreeStagingOffset };
+		s_xStagingAllocations.push_back(xAllocation);
+
+		void* pMap = xDevice.mapMemory(s_xStagingMem, s_uNextFreeStagingOffset, uSize);
+		memcpy(pMap, pData, uSize);
+		xDevice.unmapMemory(s_xStagingMem);
+		s_uNextFreeStagingOffset += uSize;
 	}
 }
 
-void Zenith_Vulkan_MemoryManager::FlushStagingBuffer() {
+void Zenith_Vulkan_MemoryManager::UploadTextureData(Zenith_Vulkan_Texture& xTexture, const void* pData, size_t uSize)
+{
+	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
+
+	const VmaAllocation& xAlloc = xTexture.GetAllocation();
+	const VmaAllocationInfo* pxAllocInfo = xTexture.GetAllocationInfo_Ptr();
+	VkMemoryPropertyFlags eMemoryProps;
+	vmaGetAllocationMemoryProperties(s_xAllocator, xAlloc, &eMemoryProps);
+
+	if (eMemoryProps & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
+	{
+		memcpy(pxAllocInfo->pMappedData, pData, uSize);
+#ifdef ZENITH_ASSERT
+		VkResult eResult =
+#endif
+			vmaFlushAllocation(s_xAllocator, xAlloc, 0, VK_WHOLE_SIZE);
+		Zenith_Assert(eResult == VK_SUCCESS, "Failed to flush allocation");
+	}
+	else
+	{
+		if (s_uNextFreeStagingOffset + uSize >= g_uStagingPoolSize)
+		{
+			HandleStagingBufferFull();
+		}
+
+		StagingMemoryAllocation xAllocation = { ALLOCATION_TYPE_TEXTURE, &xTexture, uSize, s_uNextFreeStagingOffset };
+		s_xStagingAllocations.push_back(xAllocation);
+
+		void* pMap = xDevice.mapMemory(s_xStagingMem, s_uNextFreeStagingOffset, uSize);
+		memcpy(pMap, pData, uSize);
+		xDevice.unmapMemory(s_xStagingMem);
+		s_uNextFreeStagingOffset += uSize;
+	}
+}
+
+void Zenith_Vulkan_MemoryManager::FlushStagingBuffer()
+{
 	for (auto it = s_xStagingAllocations.begin(); it != s_xStagingAllocations.end(); it++) {
 		StagingMemoryAllocation& xAlloc = *it;
 		if (xAlloc.m_eType == ALLOCATION_TYPE_BUFFER) {
 			Zenith_Vulkan_Buffer* pxVkBuffer = reinterpret_cast<Zenith_Vulkan_Buffer*>(xAlloc.m_pAllocation);
-			s_xCommandBuffer.CopyBufferToBuffer(s_pxStagingBuffer, pxVkBuffer, xAlloc.m_uSize, xAlloc.m_uOffset);
+			s_xCommandBuffer.CopyBufferToBuffer(&s_xStagingBuffer, pxVkBuffer, xAlloc.m_uSize, xAlloc.m_uOffset);
 		}
 		else if (xAlloc.m_eType == ALLOCATION_TYPE_TEXTURE) {
 			Zenith_Vulkan_Texture* pxTexture = reinterpret_cast<Zenith_Vulkan_Texture*>(xAlloc.m_pAllocation);
@@ -561,7 +576,7 @@ void Zenith_Vulkan_MemoryManager::FlushStagingBuffer() {
 				}
 			}
 
-			s_xCommandBuffer.CopyBufferToTexture(s_pxStagingBuffer, pxTexture, xAlloc.m_uOffset, pxTexture->GetNumLayers());
+			s_xCommandBuffer.CopyBufferToTexture(&s_xStagingBuffer, pxTexture, xAlloc.m_uOffset, pxTexture->GetNumLayers());
 
 			for (uint32_t uLayer = 0; uLayer < pxTexture->GetNumLayers(); uLayer++)
 			{
@@ -585,79 +600,6 @@ void Zenith_Vulkan_MemoryManager::FlushStagingBuffer() {
 	s_xStagingAllocations.clear();
 
 	s_uNextFreeStagingOffset = 0;
-}
-
-void Zenith_Vulkan_MemoryManager::UploadStagingData(AllocationType eType, void* pAllocation, const void* pData, size_t uSize) {
-	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
-
-	if (s_uNextFreeStagingOffset + uSize >= g_uStagingPoolSize)
-	{
-		HandleStagingBufferFull();
-	}
-
-	StagingMemoryAllocation xAllocation = { eType, pAllocation, uSize, s_uNextFreeStagingOffset };
-	s_xStagingAllocations.push_back(xAllocation);
-
-	void* pMap = xDevice.mapMemory(s_pxStagingBuffer->GetDeviceMemory(), s_uNextFreeStagingOffset, uSize);
-	memcpy(pMap, pData, uSize);
-	xDevice.unmapMemory(s_pxStagingBuffer->GetDeviceMemory());
-	s_uNextFreeStagingOffset += uSize;
-}
-
-void Zenith_Vulkan_MemoryManager::UploadData(void* pAllocation, const void* pData, size_t uSize)
-{
-	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
-	auto xCpuIt = s_xCpuAllocationMap.find(pAllocation);
-	auto xGpuIt = s_xGpuAllocationMap.find(pAllocation);
-	Zenith_Assert(pData, "Invalid data");
-	if (xCpuIt != s_xCpuAllocationMap.end())
-	{
-		Zenith_Assert(s_xGpuAllocationMap.find(pAllocation) == s_xGpuAllocationMap.end(), "This allocation has somehow become a CPU and GPU allocation???");
-		MemoryAllocation xAlloc = xCpuIt->second;
-		void* pMap = xDevice.mapMemory(s_xCPUMemory, xAlloc.m_uOffset, xAlloc.m_uSize);
-		memcpy(pMap, pData, uSize);
-		xDevice.unmapMemory(s_xCPUMemory);
-	}
-	else if (xGpuIt != s_xGpuAllocationMap.end())
-	{
-		Zenith_Assert(s_xCpuAllocationMap.find(pAllocation) == s_xCpuAllocationMap.end(), "This allocation has somehow become a CPU and GPU allocation???");
-		MemoryAllocation xAlloc = xGpuIt->second;
-
-		if (xAlloc.m_eType == ALLOCATION_TYPE_BUFFER)
-		{
-			UploadStagingData(ALLOCATION_TYPE_BUFFER, pAllocation, pData, uSize);
-		}
-		else if (xAlloc.m_eType == ALLOCATION_TYPE_TEXTURE)
-		{
-			UploadStagingData(ALLOCATION_TYPE_TEXTURE, pAllocation, pData, uSize);
-		}
-	}
-	else
-	{
-		Zenith_Assert(false, "This allocation didn't go through the memory manager");
-	}
-}
-
-void Zenith_Vulkan_MemoryManager::ClearStagingBuffer()
-{
-	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
-
-	void* pMap = xDevice.mapMemory(s_pxStagingBuffer->GetDeviceMemory(), 0, g_uStagingPoolSize);
-	memset(pMap, 0u, g_uStagingPoolSize);
-	xDevice.unmapMemory(s_pxStagingBuffer->GetDeviceMemory());
-}
-
-bool Zenith_Vulkan_MemoryManager::MemoryWasAllocated(void* pAllocation)
-{
-	return s_xCpuAllocationMap.find(pAllocation) != s_xCpuAllocationMap.end() || s_xGpuAllocationMap.find(pAllocation) != s_xGpuAllocationMap.end();
-}
-
-void Zenith_Vulkan_MemoryManager::HandleCpuOutOfMemory() {
-	Zenith_Assert(false, "Implement me");
-}
-
-void Zenith_Vulkan_MemoryManager::HandleGpuOutOfMemory() {
-	Zenith_Assert(false, "Implement me");
 }
 
 void Zenith_Vulkan_MemoryManager::HandleStagingBufferFull() {

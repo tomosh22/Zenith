@@ -123,6 +123,7 @@ public:
 
 	static void RecreatePerFrameDescriptorPool();
 
+	static const vk::Instance& GetInstance() { return s_xInstance; }
 	static const vk::PhysicalDevice& GetPhysicalDevice() { return s_xPhysicalDevice; }
 	static const vk::Device& GetDevice() { return s_xDevice; }
 	static const vk::CommandPool& GetCommandPool(CommandType eType) { return s_axCommandPools[eType]; }

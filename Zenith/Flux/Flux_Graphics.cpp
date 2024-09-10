@@ -94,7 +94,7 @@ void Flux_Graphics::UploadFrameConstants()
 	Zenith_Window::GetInstance()->GetSize(iWidth, iHeight);
 	xConstants.m_xScreenDims = { static_cast<uint32_t>(iWidth), static_cast<uint32_t>(iHeight) };
 	xConstants.m_xRcpScreenDims = { 1.f / xConstants.m_xScreenDims.x, 1.f / xConstants.m_xScreenDims.y };
-	Flux_MemoryManager::UploadData(&s_xFrameConstantsBuffer.GetBuffer(), &xConstants, sizeof(Zenith_FrameConstants));
+	Flux_MemoryManager::UploadBufferData(s_xFrameConstantsBuffer.GetBuffer(), &xConstants, sizeof(Zenith_FrameConstants));
 }
 
 Flux_Texture& Flux_Graphics::GetGBufferTexture(MRTIndex eIndex)

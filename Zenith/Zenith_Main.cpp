@@ -69,6 +69,9 @@ void RenderImGui()
 	ImGui::Text(strCamPosText.c_str());
 	ImGui::Text(strCamDirText.c_str());
 
+	std::string strFpsText = "FPS: " + std::to_string(1.f / Zenith_Core::GetDt());
+	ImGui::Text(strFpsText.c_str());
+
 	Zenith_DebugVariableTree& xTree = Zenith_DebugVariables::s_xTree;
 	Zenith_DebugVariableTree::Node* pxRoot = xTree.m_pxRoot;
 	TraverseTree(pxRoot, 0);

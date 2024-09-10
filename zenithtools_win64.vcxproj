@@ -103,12 +103,6 @@
     <OutputFile>output\win64\vs2022_release_win64_true\zenithtools.lib</OutputFile>
     <IgnoreImportLibrary>false</IgnoreImportLibrary>
   </PropertyGroup>
-  <PropertyGroup Label="Vcpkg">
-    <VcpkgEnabled>false</VcpkgEnabled>
-    <VcpkgManifestInstall>false</VcpkgManifestInstall>
-    <VcpkgAutoLink>false</VcpkgAutoLink>
-    <VcpkgApplocalDeps>false</VcpkgApplocalDeps>
-  </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">
     <ClCompile>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
@@ -166,7 +160,7 @@
     </Link>
     <Lib>
       <TargetMachine>MachineX64</TargetMachine>
-      <SubSystem />
+      <SubSystem/>
       <LinkTimeCodeGeneration>false</LinkTimeCodeGeneration>
       <OutputFile>output\win64\vs2022_debug_win64_false\zenithtools.lib</OutputFile>
     </Lib>
@@ -228,7 +222,7 @@
     </Link>
     <Lib>
       <TargetMachine>MachineX64</TargetMachine>
-      <SubSystem />
+      <SubSystem/>
       <LinkTimeCodeGeneration>false</LinkTimeCodeGeneration>
       <OutputFile>output\win64\vs2022_debug_win64_true\zenithtools.lib</OutputFile>
     </Lib>
@@ -290,7 +284,7 @@
     </Link>
     <Lib>
       <TargetMachine>MachineX64</TargetMachine>
-      <SubSystem />
+      <SubSystem/>
       <LinkTimeCodeGeneration>false</LinkTimeCodeGeneration>
       <OutputFile>output\win64\vs2022_release_win64_false\zenithtools.lib</OutputFile>
     </Lib>
@@ -352,7 +346,7 @@
     </Link>
     <Lib>
       <TargetMachine>MachineX64</TargetMachine>
-      <SubSystem />
+      <SubSystem/>
       <LinkTimeCodeGeneration>false</LinkTimeCodeGeneration>
       <OutputFile>output\win64\vs2022_release_win64_true\zenithtools.lib</OutputFile>
     </Lib>

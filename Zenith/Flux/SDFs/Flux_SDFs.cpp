@@ -85,7 +85,7 @@ void UploadSpheres()
 		xSphere.m_xColour = Zenith_Maths::Vector4(0., 1., 0., 1.);
 	}
 
-	Flux_MemoryManager::UploadData(&s_xSpheresBuffer.GetBuffer(), &s_axSphereData, sizeof(s_axSphereData));
+	Flux_MemoryManager::UploadBufferData(s_xSpheresBuffer.GetBuffer(), &s_axSphereData, sizeof(s_axSphereData));
 }
 
 void Flux_SDFs::Render()

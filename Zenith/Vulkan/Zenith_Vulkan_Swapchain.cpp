@@ -244,7 +244,7 @@ void Zenith_Vulkan_Swapchain::Initialise()
 		s_axInFlightFences[i] = xDevice.createFence(xFenceInfo);
 	}
 
-	InitialiseCopyToFramebufferCommands();
+	
 
 	Zenith_Log("Vulkan swapchain initialised");
 
@@ -256,6 +256,8 @@ void Zenith_Vulkan_Swapchain::Initialise()
 		Zenith_DebugVariables::AddBoolean({ "Render", "Debug", "Output MRT" }, dbg_bOutputMRT);
 		Zenith_DebugVariables::AddUInt32({ "Render", "Debug", "MRT Index" }, dbg_uMRTIndex, 0, MRT_INDEX_COUNT - 1);
 		s_bInitialisedDbgVars = true;
+
+		InitialiseCopyToFramebufferCommands();
 	}
 #endif
 }
