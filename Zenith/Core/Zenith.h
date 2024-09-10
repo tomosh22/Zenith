@@ -14,6 +14,10 @@
 #include "Maths/Zenith_Maths.h"
 #include "Zenith_Core.h"
 
+#ifdef ZENITH_WINDOWS
+#include <Windows.h>
+#endif
+
 #define ZENITH_LOG
 #ifdef ZENITH_LOG
 #define Zenith_Log(...){printf(__VA_ARGS__);printf("\n");}
@@ -25,7 +29,7 @@
 
 #define ZENITH_ASSERT
 #ifdef ZENITH_ASSERT
-#define Zenith_Assert(x,...)if(!(x)){Zenith_Error("Assertion failed: ",__VA_ARGS__);__debugbreak();}
+#define Zenith_Assert(x,...)if(!(x)){Zenith_Error("Assertion failed: " __VA_ARGS__);__debugbreak();}
 #else
 #define Zenith_Assert(x, ...)
 #endif
@@ -81,5 +85,5 @@ struct std::hash<Zenith_GUID>
 };
 
 #define ZENITH_MAX_TEXTURES 1024
-#define ZENITH_MAX_MESHES 1024
+#define ZENITH_MAX_MESHES 8192
 #define ZENITH_MAX_MATERIALS 1024

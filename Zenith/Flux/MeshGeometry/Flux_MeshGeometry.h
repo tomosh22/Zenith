@@ -17,7 +17,7 @@ public:
 
 	static void GenerateFullscreenQuad(Flux_MeshGeometry& xGeometryOut);
 	static void GenerateFullscreenQuad(Flux_MeshGeometry& xGeometryOut, Zenith_Maths::Matrix4 xTransform);
-	static void LoadFromFile(const char* szPath, Flux_MeshGeometry& xGeometryOut);
+	static void LoadFromFile(const char* szPath, Flux_MeshGeometry& xGeometryOut, const bool bRetainPositionsAndNormals = false);
 
 	const void* GetVertexData() const { return m_pVertexData; }
 	const uint64_t GetVertexDataSize() const { return m_uNumVerts * m_xBufferLayout.GetStride(); }

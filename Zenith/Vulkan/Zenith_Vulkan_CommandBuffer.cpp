@@ -215,13 +215,19 @@ void Zenith_Vulkan_CommandBuffer::PrepareDrawCallDescriptors()
 void Zenith_Vulkan_CommandBuffer::Draw(uint32_t uNumVerts)
 {
 	PrepareDrawCallDescriptors();
-	m_xCurrentCmdBuffer.draw(uNumVerts, 0, 0, 0);
+	if (Zenith_Vulkan::ShouldSubmitDrawCalls())
+	{
+		m_xCurrentCmdBuffer.draw(uNumVerts, 0, 0, 0);
+	}
 }
 
 void Zenith_Vulkan_CommandBuffer::DrawIndexed(uint32_t uNumIndices, uint32_t uNumInstances /*= 1*/, uint32_t uVertexOffset /*= 0*/, uint32_t uIndexOffset /*= 0*/, uint32_t uInstanceOffset /*= 0*/)
 {
 	PrepareDrawCallDescriptors();
-	m_xCurrentCmdBuffer.drawIndexed(uNumIndices, uNumInstances, uIndexOffset, uVertexOffset, uInstanceOffset);
+	if (Zenith_Vulkan::ShouldSubmitDrawCalls())
+	{
+		m_xCurrentCmdBuffer.drawIndexed(uNumIndices, uNumInstances, uIndexOffset, uVertexOffset, uInstanceOffset);
+	}
 }
 
 void Zenith_Vulkan_CommandBuffer::SubmitTargetSetup(Flux_TargetSetup& xTargetSetup, bool bClearColour /*= false*/, bool bClearDepth /*= false*/, bool bClearStencil /*= false*/)

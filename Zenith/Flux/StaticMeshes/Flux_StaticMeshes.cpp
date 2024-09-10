@@ -16,7 +16,7 @@ static Flux_CommandBuffer s_xCommandBuffer;
 static Flux_Shader s_xShader;
 static Flux_Pipeline s_xPipeline;
 
-DEBUGVAR bool dbg_Enable = true;
+DEBUGVAR bool dbg_bEnable = true;
 
 void Flux_StaticMeshes::Initialise()
 {
@@ -57,7 +57,7 @@ void Flux_StaticMeshes::Initialise()
 	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
 
 #ifdef ZENITH_DEBUG_VARIABLES
-	Zenith_DebugVariables::AddBoolean({ "Render", "Enable", "Static Meshes" }, dbg_Enable);
+	Zenith_DebugVariables::AddBoolean({ "Render", "Enable", "Static Meshes" }, dbg_bEnable);
 #endif
 
 	Zenith_Log("Flux_StaticMeshes initialised");
@@ -65,7 +65,7 @@ void Flux_StaticMeshes::Initialise()
 
 void Flux_StaticMeshes::Render()
 {
-	if (!dbg_Enable)
+	if (!dbg_bEnable)
 	{
 		return;
 	}

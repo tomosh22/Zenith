@@ -28,10 +28,12 @@ public:
 
 	void GetFacingDir(Zenith_Maths::Vector3& xOut) const;
 
-	double GetPitch() { return m_fPitch; }
+	const double GetPitch() const { return m_fPitch; }
 	void SetPitch(const double fPitch) { m_fPitch = fPitch; }
-	double GetYaw() { return m_fYaw; }
+	const double GetYaw() const { return m_fYaw; }
 	void SetYaw(const double fYaw) { m_fYaw = fYaw; }
+
+	const float GetFarPlane() const { return m_fFar; }
 
 private:
 	float m_fNear = 0;

@@ -127,7 +127,9 @@ int main()
 	Zenith_Window::Inititalise("Zenith", 1280, 720);
 	Flux::EarlyInitialise();
 	Zenith_Physics::Initialise();
+	Flux_MemoryManager::BeginFrame();
 	Zenith_Core::Project_Startup();
+	Flux_MemoryManager::EndFrame(false);
 	Flux::LateInitialise();
 
 #if defined ZENITH_TOOLS && defined ZENITH_DEBUG_VARIABLES

@@ -73,7 +73,7 @@ ShaderDataType StringToShaderDataType(const std::string& strString)
 	return SHADER_DATA_TYPE_NONE;
 }
 
-void Flux_MeshGeometry::LoadFromFile(const char* szPath, Flux_MeshGeometry& xGeometryOut)
+void Flux_MeshGeometry::LoadFromFile(const char* szPath, Flux_MeshGeometry& xGeometryOut, const bool bRetainPositionsAndNormals)
 {
 	FILE* pxFile = fopen(szPath, "rb");
 
@@ -123,8 +123,11 @@ void Flux_MeshGeometry::LoadFromFile(const char* szPath, Flux_MeshGeometry& xGeo
 
 	xGeometryOut.m_pVertexData = new char[ulVertBufferLen];
 	xGeometryOut.m_puIndices = new IndexType[xGeometryOut.m_uNumIndices];
-	xGeometryOut.m_pxPositions = new glm::highp_vec3[xGeometryOut.m_uNumVerts];
-	xGeometryOut.m_pxNormals = new glm::vec3[xGeometryOut.m_uNumVerts];
+	if (bRetainPositionsAndNormals)
+	{
+		xGeometryOut.m_pxPositions = new glm::highp_vec3[xGeometryOut.m_uNumVerts];
+		xGeometryOut.m_pxNormals = new glm::vec3[xGeometryOut.m_uNumVerts];
+	}
 
 	memcpy(xGeometryOut.m_pVertexData, pcData + ulCursor, ulVertBufferLen);
 	ulCursor += ulVertBufferLen;
@@ -132,11 +135,17 @@ void Flux_MeshGeometry::LoadFromFile(const char* szPath, Flux_MeshGeometry& xGeo
 	memcpy(xGeometryOut.m_puIndices, pcData + ulCursor, ulIndexBufferLen);
 	ulCursor += ulIndexBufferLen;
 
-	memcpy(xGeometryOut.m_pxPositions, pcData + ulCursor, sizeof(xGeometryOut.m_pxPositions[0]) * xGeometryOut.m_uNumVerts);
-	ulCursor += sizeof(xGeometryOut.m_pxPositions[0]) * xGeometryOut.m_uNumVerts;
+	if (bRetainPositionsAndNormals)
+	{
+		memcpy(xGeometryOut.m_pxPositions, pcData + ulCursor, sizeof(xGeometryOut.m_pxPositions[0]) * xGeometryOut.m_uNumVerts);
+	}
+	ulCursor += sizeof(glm::highp_vec3) * xGeometryOut.m_uNumVerts;
 
-	memcpy(xGeometryOut.m_pxNormals, pcData + ulCursor, sizeof(xGeometryOut.m_pxNormals[0]) * xGeometryOut.m_uNumVerts);
-	ulCursor += sizeof(xGeometryOut.m_pxNormals[0]) * xGeometryOut.m_uNumVerts;
+	if (bRetainPositionsAndNormals)
+	{
+		memcpy(xGeometryOut.m_pxNormals, pcData + ulCursor, sizeof(xGeometryOut.m_pxNormals[0]) * xGeometryOut.m_uNumVerts);
+	}
+	ulCursor += sizeof(glm::vec3) * xGeometryOut.m_uNumVerts;
 
 	delete[] pcData;
 
@@ -167,7 +176,7 @@ static std::string ShaderDataTypeToString(ShaderDataType eType)
 void Flux_MeshGeometry::Export(const char* szFilename)
 {
 	FILE* pxFile = fopen(szFilename, "wb");
-	Zenith_Assert(pxFile, "Failed to open file");
+	Zenith_Assert(pxFile, "Failed to open file %s", szFilename);
 	char cNull = '\0';
 
 	fputs(std::to_string(m_xBufferLayout.GetElements().size()).c_str(), pxFile);

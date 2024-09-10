@@ -7,10 +7,11 @@
 class Zenith_TerrainComponent
 {
 public:
-	Zenith_TerrainComponent(Flux_MeshGeometry& xGeometry, Flux_Material& xMaterial0, Flux_Material& xMaterial1, Zenith_Maths::Matrix4 xWaterTransform, Zenith_Entity& xEntity)
+	Zenith_TerrainComponent(Flux_MeshGeometry& xGeometry, Flux_Material& xMaterial0, Flux_Material& xMaterial1, Zenith_Maths::Matrix4 xWaterTransform, Zenith_Maths::Vector2 xPosition_2D, Zenith_Entity& xEntity)
 		: m_xGeometry(xGeometry)
 		, m_xMaterial0(xMaterial0)
 		, m_xMaterial1(xMaterial1)
+		, m_xPosition_2D(xPosition_2D)
 		, m_xParentEntity(xEntity)
 	{
 		Flux_MeshGeometry::GenerateFullscreenQuad(m_xWaterGeometry, xWaterTransform);
@@ -30,6 +31,8 @@ public:
 	Flux_MeshGeometry& GetWaterGeometry() { return m_xWaterGeometry; }
 
 	Zenith_Entity GetParentEntity() const { return m_xParentEntity; }
+
+	const Zenith_Maths::Vector2 GetPosition_2D() const { return m_xPosition_2D; }
 private:
 	Zenith_Entity m_xParentEntity;
 
@@ -39,4 +42,6 @@ private:
 
 	//#TO owned by this, not a reference to a mesh from the asset handler
 	Flux_MeshGeometry m_xWaterGeometry;
+
+	Zenith_Maths::Vector2 m_xPosition_2D = { FLT_MAX,FLT_MAX };
 };

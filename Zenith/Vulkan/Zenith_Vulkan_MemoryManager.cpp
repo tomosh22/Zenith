@@ -603,5 +603,7 @@ void Zenith_Vulkan_MemoryManager::FlushStagingBuffer()
 }
 
 void Zenith_Vulkan_MemoryManager::HandleStagingBufferFull() {
-	Zenith_Assert(false, "Implement me");
+	Zenith_Log("Staging buffer full, flushing");
+	EndFrame(false);
+	BeginFrame();
 }

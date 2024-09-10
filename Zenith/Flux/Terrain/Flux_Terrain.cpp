@@ -9,6 +9,7 @@
 #include "AssetHandling/Zenith_AssetHandler.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
+#include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 
 static Flux_CommandBuffer s_xCommandBuffer;
@@ -22,7 +23,7 @@ struct TerrainConstants
 } s_xTerrainConstants;
 static Flux_ConstantBuffer s_xTerrainConstantsBuffer;
 
-DEBUGVAR bool dbg_Enable = true;
+DEBUGVAR bool dbg_bEnable = true;
 
 void Flux_Terrain::Initialise()
 {
@@ -67,7 +68,7 @@ void Flux_Terrain::Initialise()
 		), s_xTerrainConstantsBuffer);
 
 #ifdef ZENITH_DEBUG_VARIABLES
-	Zenith_DebugVariables::AddBoolean({ "Render", "Enable", "Terrain" }, dbg_Enable);
+	Zenith_DebugVariables::AddBoolean({ "Render", "Enable", "Terrain" }, dbg_bEnable);
 	Zenith_DebugVariables::AddFloat({ "Render", "Terrain", "UV Scale" }, s_xTerrainConstants.m_fUVScale, 0., 10.);
 #endif
 
@@ -76,7 +77,7 @@ void Flux_Terrain::Initialise()
 
 void Flux_Terrain::Render()
 {
-	if (!dbg_Enable)
+	if (!dbg_bEnable)
 	{
 		return;
 	}
@@ -100,11 +101,24 @@ void Flux_Terrain::Render()
 
 	for (Zenith_TerrainComponent* pxTerrain : xTerrainComponents)
 	{
+		//#TO_TODO: this should be a camera frustum check against the terrain's encapsulating AABB
+		{
+			const Zenith_CameraComponent& xCam = Zenith_Scene::GetCurrentScene().GetMainCamera();
+			Zenith_Maths::Vector3 xCamPos;
+			xCam.GetPosition(xCamPos);
+			const Zenith_Maths::Vector2 xCamPos_2D(xCamPos.x, xCamPos.z);
+
+			if (glm::length(xCamPos_2D - pxTerrain->GetPosition_2D()) > xCam.GetFarPlane() * 2)
+			{
+				continue;
+			}
+		}
+
 		s_xCommandBuffer.SetVertexBuffer(pxTerrain->GetMeshGeometry().GetVertexBuffer());
 		s_xCommandBuffer.SetIndexBuffer(pxTerrain->GetMeshGeometry().GetIndexBuffer());
 
-		Flux_Material& xMaterial0 = pxTerrain->GetMaterial0();
-		Flux_Material& xMaterial1 = pxTerrain->GetMaterial1();
+		const Flux_Material& xMaterial0 = pxTerrain->GetMaterial0();
+		const Flux_Material& xMaterial1 = pxTerrain->GetMaterial1();
 
 		s_xCommandBuffer.BindTexture(xMaterial0.GetDiffuse(), 0);
 		s_xCommandBuffer.BindTexture(xMaterial0.GetNormal(), 1);

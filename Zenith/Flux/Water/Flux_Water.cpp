@@ -19,7 +19,7 @@ static Flux_Pipeline s_xPipeline;
 static Flux_Texture* s_pxNormalTex = nullptr;
 static Flux_Texture* s_pxDisplacementTex = nullptr;
 
-DEBUGVAR bool dbg_Enable = true;
+DEBUGVAR bool dbg_bEnable = true;
 
 void Flux_Water::Initialise()
 {
@@ -56,7 +56,7 @@ void Flux_Water::Initialise()
 	s_pxNormalTex = &Zenith_AssetHandler::GetTexture("Water_Normal");
 
 #ifdef ZENITH_DEBUG_VARIABLES
-	Zenith_DebugVariables::AddBoolean({ "Render", "Enable", "Water" }, dbg_Enable);
+	Zenith_DebugVariables::AddBoolean({ "Render", "Enable", "Water" }, dbg_bEnable);
 #endif
 
 	Zenith_Log("Flux_Water initialised");
@@ -64,7 +64,7 @@ void Flux_Water::Initialise()
 
 void Flux_Water::Render()
 {
-	if (!dbg_Enable)
+	if (!dbg_bEnable)
 	{
 		return;
 	}

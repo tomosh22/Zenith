@@ -25,10 +25,10 @@ public:
 	void SetRoughness(Flux_Texture* pxRoughness) { m_pxRoughness = pxRoughness; }
 	void SetMetallic(Flux_Texture* pxMetallic) { m_pxMetallic = pxMetallic; }
 
-	Flux_Texture* GetDiffuse() { return m_pxDiffuse ? m_pxDiffuse : &Flux_Graphics::s_xBlankTexture2D; }
-	Flux_Texture* GetNormal() { return m_pxNormal ? m_pxNormal : &Flux_Graphics::s_xBlankTexture2D; }
-	Flux_Texture* GetRoughness() { return m_pxRoughness ? m_pxRoughness : &Flux_Graphics::s_xBlankTexture2D; }
-	Flux_Texture* GetMetallic() { return m_pxMetallic ? m_pxMetallic : &Flux_Graphics::s_xBlankTexture2D; }
+	Flux_Texture* GetDiffuse() const { return m_pxDiffuse ? m_pxDiffuse : &Flux_Graphics::s_xBlankTexture2D; }
+	Flux_Texture* GetNormal() const { return m_pxNormal ? m_pxNormal : &Flux_Graphics::s_xBlankTexture2D; }
+	Flux_Texture* GetRoughness() const { return m_pxRoughness ? m_pxRoughness : &Flux_Graphics::s_xBlankTexture2D; }
+	Flux_Texture* GetMetallic() const { return m_pxMetallic ? m_pxMetallic : &Flux_Graphics::s_xBlankTexture2D; }
 
 private:
 	Flux_Texture* m_pxDiffuse = nullptr;

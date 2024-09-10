@@ -15,6 +15,7 @@
 #endif //ZENITH_WINDOWS
 vk::RenderPass Zenith_Vulkan::s_xImGuiRenderPass;
 #endif //ZENITH_TOOLS
+#include "DebugVariables/Zenith_DebugVariables.h"
 
 #ifdef ZENITH_DEBUG
 static std::vector<const char*> s_xValidationLayers = { "VK_LAYER_KHRONOS_validation" };
@@ -51,6 +52,9 @@ std::vector<const Zenith_Vulkan_CommandBuffer*> Zenith_Vulkan::s_xPendingCommand
 
 const vk::DescriptorPool& Zenith_Vulkan::GetCurrentPerFrameDescriptorPool() { return s_axPerFrameDescriptorPools[Zenith_Vulkan_Swapchain::GetCurrentFrameIndex()]; }
 
+DEBUGVAR bool dbg_bSubmitDrawCalls = true;
+const bool Zenith_Vulkan::ShouldSubmitDrawCalls() { return dbg_bSubmitDrawCalls; }
+
 void Zenith_Vulkan::Initialise()
 {
 	CreateInstance();
@@ -63,6 +67,8 @@ void Zenith_Vulkan::Initialise()
 	CreateDevice();
 	CreateCommandPools();
 	CreateDefaultDescriptorPool();
+
+	Zenith_DebugVariables::AddBoolean({ "Render", "Submit Draw Calls" }, dbg_bSubmitDrawCalls);
 }
 
 void Zenith_Vulkan::BeginFrame()

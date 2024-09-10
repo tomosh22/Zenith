@@ -18,7 +18,7 @@ static Flux_Pipeline s_xPipeline;
 
 static Flux_DynamicVertexBuffer s_xInstanceBuffer;
 
-DEBUGVAR bool dbg_Enable = true;
+DEBUGVAR bool dbg_bEnable = true;
 
 static constexpr uint32_t s_uMaxParticles = 1024;
 
@@ -72,7 +72,7 @@ void Flux_Particles::Initialise()
 	s_pxParticleTexture = &Zenith_AssetHandler::GetTexture("ParticleSwirl");
 
 #ifdef ZENITH_DEBUG_VARIABLES
-	Zenith_DebugVariables::AddBoolean({ "Render", "Enable", "Particles" }, dbg_Enable);
+	Zenith_DebugVariables::AddBoolean({ "Render", "Enable", "Particles" }, dbg_bEnable);
 #endif
 
 	Zenith_Log("Flux_Particles initialised");
@@ -93,7 +93,7 @@ void UploadInstanceData()
 
 void Flux_Particles::Render()
 {
-	if (!dbg_Enable)
+	if (!dbg_bEnable)
 	{
 		return;
 	}
