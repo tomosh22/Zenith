@@ -398,6 +398,7 @@ void ExportHeightmap()
 
 			xSubMesh.GenerateLayoutAndVertexData();
 			xSubMesh.Export((std::string(GAME_ASSETS_DIR) + std::string("Terrain\\") + std::to_string(x) + std::string("_") + std::to_string(z) + std::string(".zmsh")).c_str());
+			Sleep(10);
 
 #if 0
 			GUID xAssetGUID;

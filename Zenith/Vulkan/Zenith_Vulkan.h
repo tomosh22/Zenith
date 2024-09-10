@@ -132,6 +132,8 @@ public:
 	static const vk::SurfaceKHR& GetSurface() { return s_xSurface; }
 	static const uint32_t GetQueueIndex(CommandType eType) { return s_auQueueIndices[eType]; }
 	static const vk::DescriptorPool& GetDefaultDescriptorPool() { return s_xDefaultDescriptorPool; }
+
+	static const bool ShouldSubmitDrawCalls();
 private:
 	static vk::Instance s_xInstance;
 	static VKAPI_ATTR vk::Bool32 VKAPI_CALL DebugCallback(vk::DebugUtilsMessageSeverityFlagBitsEXT eMessageSeverity,

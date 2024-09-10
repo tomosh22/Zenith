@@ -168,9 +168,11 @@ public class ZenithToolsProject : Project
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Zenith/Windows");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Zenith/Vulkan");
 		
+		conf.Defines.Add("ZENITH_WINDOWS");
 		conf.Defines.Add("ZENITH_TOOLS");
 		
 		conf.Defines.Add("GLM_ENABLE_EXPERIMENTAL");
+		conf.Defines.Add("NOMINMAX");
 		
 		String sharpmakePath = SharpmakeCsPath;
 		String gameAssetRoot = sharpmakePath + "/Games/Test/Assets/";

@@ -14,12 +14,14 @@
 #include "Test/Components/SphereMovement_Behaviour.h"
 #include "Test/Components/PlayerController_Behaviour.h"
 
+#define TERRAIN_EXPORT_DIMS 64
+
 static Zenith_Entity s_xPlayer;
 static Zenith_Entity s_xBarrel;
 static Zenith_Entity s_xSphere0;
 static Zenith_Entity s_xSphere1;
 static Zenith_Entity s_axRotatingSpheres[3];
-static Zenith_Entity s_xTerrain[16][16];
+static Zenith_Entity s_xTerrain[TERRAIN_EXPORT_DIMS][TERRAIN_EXPORT_DIMS];
 static Zenith_Entity s_xOgre;
 
 //#TO_TODO: these need to be in a header file for tools terrain export
@@ -29,6 +31,8 @@ static Zenith_Entity s_xOgre;
 #define TERRAIN_SIZE 64
 //#TO multiplier for vertex positions
 #define TERRAIN_SCALE 8
+
+
 
 void LoadAssets()
 {
@@ -115,12 +119,16 @@ void LoadAssets()
 		xMat.SetMetallic(&xMetallic);
 	}
 
-	for (uint32_t x = 0; x < 16; x++)
+	for (uint32_t x = 0; x < TERRAIN_EXPORT_DIMS; x++)
 	{
-		for (uint32_t y = 0; y < 16; y++)
+		for (uint32_t y = 0; y < TERRAIN_EXPORT_DIMS; y++)
 		{
 			std::string strSuffix = std::to_string(x) + "_" + std::to_string(y);
+#if 0
+			Zenith_AssetHandler::AddMesh(Zenith_GUID(), "Terrain" + strSuffix, std::string("C:/dev/Zenith/Games/Test/Assets/Terrain/" + strSuffix + ".zmsh").c_str(), true);
+#else
 			Zenith_AssetHandler::AddMesh(Zenith_GUID(), "Terrain" + strSuffix, std::string("C:/dev/Zenith/Games/Test/Assets/Terrain/" + strSuffix + ".zmsh").c_str());
+#endif
 		}
 	}
 
@@ -254,10 +262,10 @@ void Zenith_Core::Project_Startup()
 		uCount++;
 	}
 
-	//#TO_TODO: why does rp3d refuse to make colliders for the far edges? (15 not 16)
-	for (uint32_t x = 0; x < 15; x++)
+	//#TO_TODO: why does rp3d refuse to make colliders for the far edges? (TERRAIN_EXPORT_DIMS - 1 not TERRAIN_EXPORT_DIMS)
+	for (uint32_t x = 0; x < TERRAIN_EXPORT_DIMS; x++)
 	{
-		for (uint32_t y = 0; y < 15; y++)
+		for (uint32_t y = 0; y < TERRAIN_EXPORT_DIMS; y++)
 		{
 			std::string strMeshName = "Terrain" + std::to_string(x) + "_" + std::to_string(y);
 			Flux_MeshGeometry& xTerrainMesh = Zenith_AssetHandler::GetMesh(strMeshName);
@@ -270,10 +278,12 @@ void Zenith_Core::Project_Startup()
 				Zenith_Maths::EulerRotationToMatrix4(90, { 1.,0.,0. }) *
 				glm::scale(glm::identity<Zenith_Maths::Matrix4>(), Zenith_Maths::Vector3(TERRAIN_SIZE * TERRAIN_SCALE / 2, TERRAIN_SIZE * TERRAIN_SCALE / 2, TERRAIN_SIZE * TERRAIN_SCALE / 2));
 
-			xTerrain.AddComponent<Zenith_TerrainComponent>(xTerrainMesh, Zenith_AssetHandler::GetMaterial("Rock"), Zenith_AssetHandler::GetMaterial("Crystal"), xWaterTransform);
+			xTerrain.AddComponent<Zenith_TerrainComponent>(xTerrainMesh, Zenith_AssetHandler::GetMaterial("Rock"), Zenith_AssetHandler::GetMaterial("Crystal"), xWaterTransform, Zenith_Maths::Vector2(x * TERRAIN_SIZE * TERRAIN_SCALE, y * TERRAIN_SIZE * TERRAIN_SCALE));
 
+#if 0
 			Zenith_ColliderComponent& xCollider = xTerrain.AddComponent<Zenith_ColliderComponent>();
 			xCollider.AddCollider(COLLISION_VOLUME_TYPE_TERRAIN, RIGIDBODY_TYPE_STATIC);
+#endif
 		}
 	}
 
