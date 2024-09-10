@@ -81,7 +81,7 @@ void Flux_Terrain::Render()
 		return;
 	}
 
-	Flux_MemoryManager::UploadData(&s_xTerrainConstantsBuffer.GetBuffer(), &s_xTerrainConstants, sizeof(TerrainConstants));
+	Flux_MemoryManager::UploadBufferData(s_xTerrainConstantsBuffer.GetBuffer(), &s_xTerrainConstants, sizeof(TerrainConstants));
 
 	s_xCommandBuffer.BeginRecording();
 

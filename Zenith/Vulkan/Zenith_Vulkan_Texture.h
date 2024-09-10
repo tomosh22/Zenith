@@ -1,6 +1,7 @@
 #pragma once
 #include "vulkan/vulkan.hpp"
 #include "Flux/Flux_Enums.h"
+#include "vma/vk_mem_alloc.h"
 
 class Zenith_Vulkan_Texture
 {
@@ -22,12 +23,17 @@ public:
 	static vk::ImageLayout ConvertToVkTargetUsage(RenderTargetUsage eUsage, RenderTargetType eColourDepthStencil);
 
 	const vk::Image& GetImage() const { return m_xImage; }
+	VkImage* GetImage_Ptr() { return &m_xImage; }
 	const vk::ImageView& const GetImageView() { return m_xImageView; }
 	const uint32_t GetNumMips() const { return m_uNumMips; }
 	const uint32_t GetNumLayers() const { return m_uNumLayers; }
+	const VmaAllocation& GetAllocation() const { return m_xAllocation; }
+	VmaAllocation* GetAllocation_Ptr() { return &m_xAllocation; }
+	VmaAllocationInfo* GetAllocationInfo_Ptr() { return &m_xAllocationInfo; }
 
-	void SetImage(const vk::Image xImage) { m_xImage = xImage; }
-	void SetImageView(const vk::ImageView xView) { m_xImageView = xView; }
+	void SetImage(const vk::Image& xImage) { m_xImage = xImage; }
+	void SetImageView(const vk::ImageView& xView) { m_xImageView = xView; }
+	void SetAllocation(const VmaAllocation& xAlloc) { m_xAllocation = xAlloc; }
 
 	const uint32_t GetWidth() const { return m_uWidth; }
 	const uint32_t GetHeight() const { return m_uHeight; }
@@ -36,13 +42,20 @@ public:
 	void SetHeight(const uint32_t uHeight) { m_uHeight = uHeight; }
 	void SetNumMips(const uint32_t uNumMips) { m_uNumMips = uNumMips; }
 	void SetNumLayers(const uint32_t uNumLayers) { m_uNumLayers = uNumLayers; }
+
+	const bool IsInitialised() const { return m_bIsInitialised; }
+	void SetInitialised(const bool bInit) { m_bIsInitialised = bInit; }
 private:
-	vk::Image m_xImage;
+	//#TO native type to support vma
+	vk::Image::NativeType m_xImage;
 	vk::ImageView m_xImageView;
 	uint32_t m_uNumMips = 0;
 	uint32_t m_uWidth = 0;
 	uint32_t m_uHeight = 0;
 	uint32_t m_uNumLayers = 0;
+	VmaAllocation m_xAllocation;
+	VmaAllocationInfo m_xAllocationInfo;
+	bool m_bIsInitialised = false;
 };
 
 class Zenith_Vulkan_Sampler

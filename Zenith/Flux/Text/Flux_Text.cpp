@@ -117,7 +117,7 @@ uint32_t Flux_Text::UploadChars()
 		}
 	}
 
-	Flux_MemoryManager::UploadData(&s_xInstanceBuffer.GetBuffer(), xVertices.data(), sizeof(TextVertex) * xVertices.size());
+	Flux_MemoryManager::UploadBufferData(s_xInstanceBuffer.GetBuffer(), xVertices.data(), sizeof(TextVertex) * xVertices.size());
 
 	return uCharCount;
 }

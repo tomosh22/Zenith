@@ -247,6 +247,7 @@ public class ZenithWindowsProject : Project
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Middleware/glfw-3.4.bin.WIN64/include");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Middleware/VulkanSDK/1.3.280.0/Include");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Middleware/glm-master");
+		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Middleware/vma");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Middleware/entt-3.13.2/single_include");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Middleware/reactphysics3d-0.10.1/include");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Zenith/Windows");

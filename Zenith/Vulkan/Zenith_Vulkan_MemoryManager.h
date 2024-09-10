@@ -2,6 +2,7 @@
 
 #include "vulkan/vulkan.hpp"
 #include "Flux/Flux_Enums.h"
+#include "vma/vk_mem_alloc.h"
 
 class Zenith_Vulkan_Buffer;
 class Flux_VertexBuffer;
@@ -10,11 +11,7 @@ class Flux_IndexBuffer;
 class Flux_ConstantBuffer;
 class Zenith_Vulkan_Texture;
 class Zenith_Vulkan_CommandBuffer;
-
-constexpr uint64_t g_uCpuPoolSize = 2ull * 1024ull * 1024ull * 1024ull;
-constexpr uint64_t g_uGpuPoolSize = 2ull * 1024ull * 1024ull * 1024ull;
 constexpr uint64_t g_uStagingPoolSize = 1024u * 1024u * 1024u;
-
 #define ALIGN(size, align) ((size + align - 1) / align) * align
 
 class Zenith_Vulkan_MemoryManager
@@ -52,13 +49,15 @@ public:
 
 	static void UploadStagingData(AllocationType eType, void* pAllocation, const void* pData, size_t uSize);
 
-	static void UploadData(void* pAllocation, const void* pData, size_t uSize);
+	static void UploadBufferData(Zenith_Vulkan_Buffer& xBuffer, const void* pData, size_t uSize);
+	static void UploadTextureData(Zenith_Vulkan_Texture& xTexture, const void* pData, size_t uSize);
 	static void ClearStagingBuffer();
 
 	static bool MemoryWasAllocated(void* pAllocation);
 
 	static Zenith_Vulkan_CommandBuffer& GetCommandBuffer();
 private:
+	static void InitialiseStagingBuffer();
 
 	static void HandleCpuOutOfMemory();
 	static void HandleGpuOutOfMemory();
@@ -66,17 +65,6 @@ private:
 
 	static void FlushStagingBuffer();
 
-	static vk::DeviceMemory s_xCPUMemory;
-	static vk::DeviceMemory s_xGPUMemory;
-
-	static Zenith_Vulkan_Buffer* s_pxStagingBuffer;
-	static Zenith_Vulkan_CommandBuffer s_xCommandBuffer;
-	
-	struct MemoryAllocation {
-		AllocationType m_eType;
-		size_t m_uSize;
-		size_t m_uOffset;
-	};
 	struct StagingMemoryAllocation {
 		AllocationType m_eType;
 		void* m_pAllocation;
@@ -85,10 +73,11 @@ private:
 	};
 	static std::list<StagingMemoryAllocation> s_xStagingAllocations;
 
-	static std::unordered_map<void*, MemoryAllocation> s_xCpuAllocationMap;
-	static std::unordered_map<void*, MemoryAllocation> s_xGpuAllocationMap;
+	static VmaAllocator s_xAllocator;
+	static Zenith_Vulkan_Buffer s_xStagingBuffer;
+	static vk::DeviceMemory s_xStagingMem;
 
-	static size_t s_uNextFreeCpuOffset;
-	static size_t s_uNextFreeGpuOffset;
+	static Zenith_Vulkan_CommandBuffer s_xCommandBuffer;
+
 	static size_t s_uNextFreeStagingOffset;
 };

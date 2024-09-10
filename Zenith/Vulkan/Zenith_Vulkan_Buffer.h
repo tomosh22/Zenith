@@ -1,5 +1,6 @@
 #pragma once
 #include "vulkan/vulkan.hpp"
+#include "vma/vk_mem_alloc.h"
 
 class Zenith_Vulkan_Texture;
 
@@ -8,9 +9,7 @@ class Zenith_Vulkan_Buffer
 public:
 	Zenith_Vulkan_Buffer() = default;
 	Zenith_Vulkan_Buffer(const Zenith_Vulkan_Buffer& other) = delete;
-	~Zenith_Vulkan_Buffer();
-
-	Zenith_Vulkan_Buffer(vk::DeviceSize uSize, vk::BufferUsageFlags eUsageFlags, vk::MemoryPropertyFlags eMemProperties);
+	~Zenith_Vulkan_Buffer() = default;
 
 	void UploadData(void* pData, uint32_t uSize);
 
@@ -18,14 +17,20 @@ public:
 	static void CopyBufferToImage(Zenith_Vulkan_Buffer* pxSrc, Zenith_Vulkan_Texture* pxDst, bool bAsyncLoader = false);
 
 	const vk::Buffer& GetBuffer() const { return m_xBuffer; }
+	VkBuffer* GetBuffer_Ptr() { return &m_xBuffer; }
 	const uint64_t GetSize() const { return m_ulSize; }
-	const vk::DeviceMemory& GetDeviceMemory() const { return m_xDeviceMem; }
+	const VmaAllocation& GetAllocation() const { return m_xAllocation; }
+	VmaAllocation* GetAllocation_Ptr() { return &m_xAllocation; }
+	VmaAllocationInfo* GetAllocationInfo_Ptr() { return &m_xAllocationInfo; }
 
 	void SetSize(const uint64_t ulSize) { m_ulSize = ulSize; }
 	void SetBuffer(const vk::Buffer& xBuffer) { m_xBuffer = xBuffer; }
+	void SetAllocation(const VmaAllocation& xAlloc) { m_xAllocation = xAlloc; }
 
 private:
-	vk::Buffer m_xBuffer;
-	vk::DeviceMemory m_xDeviceMem;//#TO this is only used by the memory manager's staging buffer
+	//#TO native type to support vma
+	vk::Buffer::NativeType m_xBuffer;
+	VmaAllocation m_xAllocation;
+	VmaAllocationInfo m_xAllocationInfo;
 	uint64_t m_ulSize = 0;
 };
