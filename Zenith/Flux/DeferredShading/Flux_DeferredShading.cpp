@@ -39,7 +39,8 @@ void Flux_DeferredShading::Initialise()
 		false,
 		{ 1,4 },
 		{ 0,0 },
-		Flux_Graphics::s_xFinalRenderTarget
+		Flux_Graphics::s_xFinalRenderTarget,
+		false
 	);
 
 	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
