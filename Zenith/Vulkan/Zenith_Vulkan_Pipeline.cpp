@@ -14,7 +14,7 @@ License: MIT (see LICENSE file at the top of the source tree)
 #include "Flux/Flux_RenderTargets.h"
 #include "FileAccess/Zenith_FileAccess.h"
 
-Zenith_Vulkan_PipelineSpecification::Zenith_Vulkan_PipelineSpecification(Flux_VertexInputDescription xVertexInputDesc, Zenith_Vulkan_Shader* pxShader, std::vector<Flux_BlendState> xBlendStates, bool bDepthTestEnabled, bool bDepthWriteEnabled, DepthCompareFunc eDepthCompareFunc, DepthStencilFormat eDepthStencilFormat, bool bUsePushConstants, bool bUseTesselation, std::array<uint32_t, DESCRIPTOR_TYPE_MAX> xPerFrameBindings, std::array<uint32_t, DESCRIPTOR_TYPE_MAX> xPerDrawBindings, Flux_TargetSetup& xTargetSetup)
+Zenith_Vulkan_PipelineSpecification::Zenith_Vulkan_PipelineSpecification(Flux_VertexInputDescription xVertexInputDesc, Zenith_Vulkan_Shader* pxShader, std::vector<Flux_BlendState> xBlendStates, bool bDepthTestEnabled, bool bDepthWriteEnabled, DepthCompareFunc eDepthCompareFunc, DepthStencilFormat eDepthStencilFormat, bool bUsePushConstants, bool bUseTesselation, std::array<uint32_t, DESCRIPTOR_TYPE_MAX> xPerFrameBindings, std::array<uint32_t, DESCRIPTOR_TYPE_MAX> xPerDrawBindings, Flux_TargetSetup& xTargetSetup, bool bWireframe)
 	: m_eVertexInputDesc(xVertexInputDesc)
 	, m_pxShader(pxShader)
 	, m_xBlendStates(xBlendStates)
@@ -27,6 +27,7 @@ Zenith_Vulkan_PipelineSpecification::Zenith_Vulkan_PipelineSpecification(Flux_Ve
 	, m_xPerFrameBindings(xPerFrameBindings)
 	, m_xPerDrawBindings(xPerDrawBindings)
 	, m_xTargetSetup(xTargetSetup)
+	, m_bWireframe(bWireframe)
 {
 }
 
@@ -779,7 +780,7 @@ void Zenith_Vulkan_PipelineBuilder::FromSpecification(Zenith_Vulkan_Pipeline& xP
 	//if (spec.m_strName == "PointLights")
 		//xBuilder = xBuilder.WithRaster(vk::CullModeFlagBits::eBack);
 
-	xBuilder = xBuilder.WithRaster(vk::CullModeFlagBits::eNone);
+	xBuilder = xBuilder.WithRaster(vk::CullModeFlagBits::eNone, spec.m_bWireframe ? vk::PolygonMode::eLine : vk::PolygonMode::eFill);
 
 	xBuilder.Build(xPipelineOut, spec);
 

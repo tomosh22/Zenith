@@ -56,7 +56,8 @@ void Flux_SDFs::Initialise()
 		false,
 		{ 2,0 },
 		{ 0,0 },
-		Flux_Graphics::s_xFinalRenderTarget
+		Flux_Graphics::s_xFinalRenderTarget,
+		false
 	);
 
 	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);

@@ -139,7 +139,8 @@ void InitialiseCopyToFramebufferCommands()
 		false,
 		{ 0,1 },
 		{ 0,0 },
-		Flux_Swapchain::GetTargetSetup()
+		Flux_Swapchain::GetTargetSetup(),
+		false
 	);
 
 	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);

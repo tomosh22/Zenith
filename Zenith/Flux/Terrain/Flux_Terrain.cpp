@@ -16,6 +16,8 @@ static Flux_CommandBuffer s_xCommandBuffer;
 
 static Flux_Shader s_xShader;
 static Flux_Pipeline s_xPipeline;
+static Flux_Pipeline s_xWireframePipeline;
+
 
 struct TerrainConstants
 {
@@ -24,6 +26,7 @@ struct TerrainConstants
 static Flux_ConstantBuffer s_xTerrainConstantsBuffer;
 
 DEBUGVAR bool dbg_bEnable = true;
+DEBUGVAR bool dbg_bWireframe = false;
 
 void Flux_Terrain::Initialise()
 {
@@ -59,10 +62,15 @@ void Flux_Terrain::Initialise()
 		false,
 		{ 2,0 },
 		{ 0,8 },
-		Flux_Graphics::s_xMRTTarget
+		Flux_Graphics::s_xMRTTarget,
+		false
 	);
 
 	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
+
+	xPipelineSpec.m_bWireframe = true;
+	Flux_PipelineBuilder::FromSpecification(s_xWireframePipeline, xPipelineSpec);
+
 
 	Flux_MemoryManager::InitialiseConstantBuffer(nullptr, sizeof(struct TerrainConstants
 		), s_xTerrainConstantsBuffer);
@@ -70,6 +78,7 @@ void Flux_Terrain::Initialise()
 #ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_DebugVariables::AddBoolean({ "Render", "Enable", "Terrain" }, dbg_bEnable);
 	Zenith_DebugVariables::AddFloat({ "Render", "Terrain", "UV Scale" }, s_xTerrainConstants.m_fUVScale, 0., 10.);
+	Zenith_DebugVariables::AddBoolean({ "Render", "Terrain", "Wireframe" }, dbg_bWireframe);
 #endif
 
 	Zenith_Log("Flux_Terrain initialised");
@@ -88,7 +97,7 @@ void Flux_Terrain::Render()
 
 	s_xCommandBuffer.SubmitTargetSetup(Flux_Graphics::s_xMRTTarget);
 
-	s_xCommandBuffer.SetPipeline(&s_xPipeline);
+	s_xCommandBuffer.SetPipeline(dbg_bWireframe ? &s_xWireframePipeline : &s_xPipeline);
 
 	std::vector<Zenith_TerrainComponent*> xTerrainComponents;
 	Zenith_Scene::GetCurrentScene().GetAllOfComponentType<Zenith_TerrainComponent>(xTerrainComponents);

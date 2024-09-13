@@ -51,7 +51,8 @@ void Flux_StaticMeshes::Initialise()
 		false,
 		{ 1,0 },
 		{ 0,4 },
-		Flux_Graphics::s_xMRTTarget
+		Flux_Graphics::s_xMRTTarget,
+		false
 	);
 
 	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);

@@ -63,7 +63,8 @@ void Flux_Text::Initialise()
 		false,
 		{ 1,1 },
 		{ 0,0 },
-		Flux_Graphics::s_xFinalRenderTarget
+		Flux_Graphics::s_xFinalRenderTarget,
+		false
 	);
 
 	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
