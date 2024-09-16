@@ -21,7 +21,7 @@ public:
 
 	static Flux_Texture& AddTexture2D(Zenith_GUID xGUID, const std::string& strName, const char* szPath);
 	static Flux_Texture& AddTextureCube(Zenith_GUID xGUID, const std::string& strName, const char* szPathPX, const char* szPathNX, const char* szPathPY, const char* szPathNY, const char* szPathPZ, const char* szPathNZ);
-	static Flux_MeshGeometry& AddMesh(Zenith_GUID xGUID, const std::string& strName, const char* szPath);
+	static Flux_MeshGeometry& AddMesh(Zenith_GUID xGUID, const std::string& strName, const char* szPath, const bool bRetainPositionsAndNormals = false);
 	static Flux_Material& AddMaterial(Zenith_GUID xGUID, const std::string& strName);
 
 	static Flux_Texture& GetTexture(Zenith_GUID xGUID);

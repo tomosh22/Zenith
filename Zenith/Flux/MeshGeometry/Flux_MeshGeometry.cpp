@@ -73,7 +73,7 @@ ShaderDataType StringToShaderDataType(const std::string& strString)
 	return SHADER_DATA_TYPE_NONE;
 }
 
-void Flux_MeshGeometry::LoadFromFile(const char* szPath, Flux_MeshGeometry& xGeometryOut, const bool bRetainPositionsAndNormals)
+void Flux_MeshGeometry::LoadFromFile(const char* szPath, Flux_MeshGeometry& xGeometryOut, const bool bRetainPositionsAndNormals /*= false*/)
 {
 	FILE* pxFile = fopen(szPath, "rb");
 

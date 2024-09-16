@@ -17,6 +17,7 @@ Flux_MeshGeometry Flux_Graphics::s_xQuadMesh;
 Flux_ConstantBuffer Flux_Graphics::s_xFrameConstantsBuffer;
 Flux_Texture Flux_Graphics::s_xBlankTexture2D;
 Flux_MeshGeometry Flux_Graphics::s_xBlankMesh;
+Flux_Graphics::FrameConstants Flux_Graphics::s_xFrameConstants;
 
 ColourFormat Flux_Graphics::s_aeMRTFormats[MRT_INDEX_COUNT]
 {
@@ -39,7 +40,7 @@ void Flux_Graphics::Initialise()
 	Flux_MeshGeometry::GenerateFullscreenQuad(s_xQuadMesh);
 	Flux_MemoryManager::InitialiseVertexBuffer(s_xQuadMesh.GetVertexData(), s_xQuadMesh.GetVertexDataSize(), s_xQuadMesh.GetVertexBuffer());
 	Flux_MemoryManager::InitialiseIndexBuffer(s_xQuadMesh.GetIndexData(), s_xQuadMesh.GetIndexDataSize(), s_xQuadMesh.GetIndexBuffer());
-	Flux_MemoryManager::InitialiseConstantBuffer(nullptr, sizeof(Zenith_FrameConstants), s_xFrameConstantsBuffer);
+	Flux_MemoryManager::InitialiseConstantBuffer(nullptr, sizeof(FrameConstants), s_xFrameConstantsBuffer);
 
 	InitialiseRenderTargets();
 	Flux::AddResChangeCallback(InitialiseRenderTargets);
@@ -83,18 +84,18 @@ void Flux_Graphics::UploadFrameConstants()
 {
 	Zenith_CameraComponent& xCamera = Zenith_Scene::GetCurrentScene().GetMainCamera();
 
-	Zenith_FrameConstants xConstants;
-	xCamera.BuildViewMatrix(xConstants.m_xViewMat);
-	xCamera.BuildProjectionMatrix(xConstants.m_xProjMat);
-	xConstants.m_xViewProjMat = xConstants.m_xProjMat * xConstants.m_xViewMat;
-	xCamera.GetPosition(xConstants.m_xCamPos_Pad);
-	xConstants.m_xSunDir_Pad = glm::normalize(Zenith_Maths::Vector4(dbg_SunDir.x, dbg_SunDir.y, dbg_SunDir.z, 0.));
-	xConstants.m_xSunColour_Pad = { dbg_SunColour.x, dbg_SunColour.y, dbg_SunColour.z, 0. };
+	xCamera.BuildViewMatrix(s_xFrameConstants.m_xViewMat);
+	xCamera.BuildProjectionMatrix(s_xFrameConstants.m_xProjMat);
+	s_xFrameConstants.m_xViewProjMat = s_xFrameConstants.m_xProjMat * s_xFrameConstants.m_xViewMat;
+	s_xFrameConstants.m_xInvViewProjMat = glm::inverse(s_xFrameConstants.m_xViewProjMat);
+	xCamera.GetPosition(s_xFrameConstants.m_xCamPos_Pad);
+	s_xFrameConstants.m_xSunDir_Pad = glm::normalize(Zenith_Maths::Vector4(dbg_SunDir.x, dbg_SunDir.y, dbg_SunDir.z, 0.));
+	s_xFrameConstants.m_xSunColour_Pad = { dbg_SunColour.x, dbg_SunColour.y, dbg_SunColour.z, 0. };
 	int32_t iWidth, iHeight;
 	Zenith_Window::GetInstance()->GetSize(iWidth, iHeight);
-	xConstants.m_xScreenDims = { static_cast<uint32_t>(iWidth), static_cast<uint32_t>(iHeight) };
-	xConstants.m_xRcpScreenDims = { 1.f / xConstants.m_xScreenDims.x, 1.f / xConstants.m_xScreenDims.y };
-	Flux_MemoryManager::UploadBufferData(s_xFrameConstantsBuffer.GetBuffer(), &xConstants, sizeof(Zenith_FrameConstants));
+	s_xFrameConstants.m_xScreenDims = { static_cast<uint32_t>(iWidth), static_cast<uint32_t>(iHeight) };
+	s_xFrameConstants.m_xRcpScreenDims = { 1.f / s_xFrameConstants.m_xScreenDims.x, 1.f / s_xFrameConstants.m_xScreenDims.y };
+	Flux_MemoryManager::UploadBufferData(s_xFrameConstantsBuffer.GetBuffer(), &s_xFrameConstants, sizeof(FrameConstants));
 }
 
 Flux_Texture& Flux_Graphics::GetGBufferTexture(MRTIndex eIndex)

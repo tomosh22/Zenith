@@ -110,17 +110,9 @@ void Flux_Terrain::Render()
 
 	for (Zenith_TerrainComponent* pxTerrain : xTerrainComponents)
 	{
-		//#TO_TODO: this should be a camera frustum check against the terrain's encapsulating AABB
+		if (!pxTerrain->IsVisible())
 		{
-			const Zenith_CameraComponent& xCam = Zenith_Scene::GetCurrentScene().GetMainCamera();
-			Zenith_Maths::Vector3 xCamPos;
-			xCam.GetPosition(xCamPos);
-			const Zenith_Maths::Vector2 xCamPos_2D(xCamPos.x, xCamPos.z);
-
-			if (glm::length(xCamPos_2D - pxTerrain->GetPosition_2D()) > xCam.GetFarPlane() * 2)
-			{
-				continue;
-			}
+			continue;
 		}
 
 		s_xCommandBuffer.SetVertexBuffer(pxTerrain->GetMeshGeometry().GetVertexBuffer());
