@@ -9,6 +9,13 @@ struct TextEntry
 	float m_fScale = 1.;
 };
 
+struct TextEntry_World
+{
+	std::string m_strText;
+	Zenith_Maths::Vector3 m_xPosition = { 0,0,0 };
+	float m_fScale = 1.;
+};
+
 class Zenith_TextComponent
 {
 public:
@@ -17,10 +24,12 @@ public:
 	~Zenith_TextComponent() = default;
 
 	void AddText(TextEntry& xEntry);
+	void AddText_World(TextEntry_World& xEntry);
 
 private:
 	friend class Flux_Text;
 	std::vector<TextEntry> m_xEntries;
+	std::vector<TextEntry_World> m_xEntries_World;
 
 	Zenith_Entity m_xParentEntity;
 };

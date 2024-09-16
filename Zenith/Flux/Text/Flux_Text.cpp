@@ -9,13 +9,14 @@
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "EntityComponent/Components/Zenith_TextComponent.h"
 #include "AssetHandling/Zenith_AssetHandler.h"
+#include "Zenith_OS_Include.h"
 
 static Flux_CommandBuffer s_xCommandBuffer;
 
 static Flux_Shader s_xShader;
 static Flux_Pipeline s_xPipeline;
 
-static constexpr uint32_t s_uMaxCharsPerFrame = 4096;
+static constexpr uint32_t s_uMaxCharsPerFrame = 65536;
 struct TextVertex
 {
 	Zenith_Maths::Vector2 m_xPos;
@@ -28,7 +29,6 @@ static Flux_DynamicVertexBuffer s_xInstanceBuffer;
 static Flux_Texture* s_pxFontAtlas = nullptr;
 
 DEBUGVAR bool dbg_bEnable = true;
-DEBUGVAR Zenith_Maths::Vector2 dbg_xPosition = { 0,0 };
 DEBUGVAR float dbg_fTextSize = 100.f;
 
 void Flux_Text::Initialise()
@@ -78,7 +78,6 @@ void Flux_Text::Initialise()
 
 #ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_DebugVariables::AddBoolean({ "Render", "Enable", "Text" }, dbg_bEnable);
-	Zenith_DebugVariables::AddVector2({ "Text", "Position" }, dbg_xPosition, 0, 4000);
 	Zenith_DebugVariables::AddFloat({ "Text", "Size" }, dbg_fTextSize, 0, 1000);
 #endif
 
@@ -99,11 +98,11 @@ uint32_t Flux_Text::UploadChars()
 		{
 			for (uint32_t u = 0; u < xText.m_strText.size(); u++)
 			{
-				TextVertex& xVertex = xVertices.at(uCharCount++);
-				xVertex.m_xTextRoot = dbg_xPosition;
+				TextVertex& xVertex = xVertices.at(uCharCount);
+				xVertex.m_xTextRoot = xText.m_xPosition;
 				xVertex.m_fTextSize = dbg_fTextSize;
-				const float fSpacing = xVertex.m_fTextSize / 500.f;
-				xVertex.m_xPos = Zenith_Maths::Vector2(uCharCount * fSpacing, 0.f);
+				const float fSpacing = xVertex.m_fTextSize / 200.f;
+				xVertex.m_xPos = Zenith_Maths::Vector2(u * fSpacing, 0.f);
 
 				char cChar = xText.m_strText.at(u);
 
@@ -116,6 +115,42 @@ uint32_t Flux_Text::UploadChars()
 				uCharCount++;
 			}
 		}
+
+		for (TextEntry_World& xText : pxComponent->m_xEntries_World)
+		{
+			for (uint32_t u = 0; u < xText.m_strText.size(); u++)
+			{
+				TextVertex& xVertex = xVertices.at(uCharCount);
+				Zenith_Maths::Vector4 xTextRoot(xText.m_xPosition.x, xText.m_xPosition.y, xText.m_xPosition.z, 1);
+				Zenith_Maths::Vector4 xClipSpace = Flux_Graphics::GetViewProjMatrix() * xTextRoot;
+				Zenith_Maths::Vector4 xScreenSpace = xClipSpace / xClipSpace.w;
+				if (xScreenSpace.x > 1 || xScreenSpace.x < -1 ||
+					xScreenSpace.y > 1 || xScreenSpace.y < -1 ||
+					xScreenSpace.z > 1 || xScreenSpace.z < -1)
+				{
+					continue;
+				}
+				xScreenSpace = (xScreenSpace + Zenith_Maths::Vector4(1.f)) / Zenith_Maths::Vector4(2.f);
+				int32_t iWindowWidth, iWindowHeight;
+				Zenith_Window::GetInstance()->GetSize(iWindowWidth, iWindowHeight);
+				xVertex.m_xTextRoot = { xScreenSpace.x * iWindowWidth, xScreenSpace.y * iWindowHeight};
+				xVertex.m_fTextSize = dbg_fTextSize;
+				const float fSpacing = xVertex.m_fTextSize / 200.f;
+				xVertex.m_xPos = Zenith_Maths::Vector2(u * fSpacing, 0.f);
+
+				char cChar = xText.m_strText.at(u);
+
+				//#TO font atlas starts at unicode 20, we take away 11 to shift where we sample up/left one character, and take off one more to account for off by one error
+				const uint32_t uIndex = cChar - 32;
+
+				const Zenith_Maths::UVector2 xTextureOffsets = { (uIndex % 10), (uIndex / 10) };
+				xVertex.m_xUV = { xTextureOffsets.x, xTextureOffsets.y };
+				xVertex.m_xUV /= 10.f;
+				uCharCount++;
+			}
+		}
+
+		
 	}
 
 	Flux_MemoryManager::UploadBufferData(s_xInstanceBuffer.GetBuffer(), xVertices.data(), sizeof(TextVertex) * xVertices.size());

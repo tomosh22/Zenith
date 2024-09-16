@@ -150,14 +150,14 @@ Flux_Texture& Zenith_AssetHandler::AddTextureCube(Zenith_GUID xGUID, const std::
 	Flux_MemoryManager::CreateTextureCube(szPathPX, szPathNX, szPathPY, szPathNY, szPathPZ, szPathNZ, xTex);
 	return s_pxTextures[uID];
 }
-Flux_MeshGeometry& Zenith_AssetHandler::AddMesh(Zenith_GUID xGUID, const std::string& strName, const char* szPath)
+Flux_MeshGeometry& Zenith_AssetHandler::AddMesh(Zenith_GUID xGUID, const std::string& strName, const char* szPath, const bool bRetainPositionsAndNormals /*= false*/)
 {
 	AssetID uID = GetNextFreeMeshSlot();
 	Flux_MeshGeometry& xMesh = s_pxMeshes[uID];
 	s_xMeshMap.insert({ xGUID,uID });
 	s_xMeshNameMap.insert({ strName, uID });
 	s_xReverseMeshMap.insert({ uID, xGUID });
-	Flux_MeshGeometry::LoadFromFile(szPath, xMesh);
+	Flux_MeshGeometry::LoadFromFile(szPath, xMesh, bRetainPositionsAndNormals);
 	return s_pxMeshes[uID];
 }
 

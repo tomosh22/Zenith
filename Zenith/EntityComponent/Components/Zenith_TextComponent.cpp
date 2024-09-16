@@ -13,3 +13,8 @@ void Zenith_TextComponent::AddText(TextEntry& xEntry)
 {
 	m_xEntries.push_back(xEntry);
 }
+
+void Zenith_TextComponent::AddText_World(TextEntry_World& xEntry)
+{
+	m_xEntries_World.push_back(xEntry);
+}

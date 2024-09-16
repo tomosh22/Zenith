@@ -33,6 +33,8 @@ public:
 	Zenith_Entity GetParentEntity() const { return m_xParentEntity; }
 
 	const Zenith_Maths::Vector2 GetPosition_2D() const { return m_xPosition_2D; }
+
+	const bool IsVisible() const;
 private:
 	Zenith_Entity m_xParentEntity;
 

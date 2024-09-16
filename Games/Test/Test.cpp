@@ -124,10 +124,10 @@ void LoadAssets()
 		for (uint32_t y = 0; y < TERRAIN_EXPORT_DIMS; y++)
 		{
 			std::string strSuffix = std::to_string(x) + "_" + std::to_string(y);
-#if 0
+#if 1
 			Zenith_AssetHandler::AddMesh(Zenith_GUID(), "Terrain" + strSuffix, std::string("C:/dev/Zenith/Games/Test/Assets/Terrain/" + strSuffix + ".zmsh").c_str(), true);
 #else
-			Zenith_AssetHandler::AddMesh(Zenith_GUID(), "Terrain" + strSuffix, std::string("C:/dev/Zenith/Games/Test/Assets/Terrain/" + strSuffix + ".zmsh").c_str());
+			Zenith_AssetHandler::AddMesh(Zenith_GUID(), "Terrain" + strSuffix, std::string("C:/dev/Zenith/Games/Test/Assets/Terrain/" + strSuffix + ".zmsh").c_str(), false);
 #endif
 		}
 	}
@@ -168,7 +168,7 @@ void Zenith_Core::Project_Startup()
 
 	Zenith_ColliderComponent& xCollider = s_xPlayer.AddComponent<Zenith_ColliderComponent>();
 	xCollider.AddCollider(COLLISION_VOLUME_TYPE_SPHERE, RIGIDBODY_TYPE_DYNAMIC);
-	xTrans.m_pxRigidBody->enableGravity(true);
+	xTrans.m_pxRigidBody->enableGravity(false);
 
 	Zenith_ScriptComponent& xScript = s_xPlayer.AddComponent<Zenith_ScriptComponent>();
 	xScript.SetBehaviour<PlayerController_Behaviour>();
@@ -279,6 +279,13 @@ void Zenith_Core::Project_Startup()
 				glm::scale(glm::identity<Zenith_Maths::Matrix4>(), Zenith_Maths::Vector3(TERRAIN_SIZE * TERRAIN_SCALE / 2, TERRAIN_SIZE * TERRAIN_SCALE / 2, TERRAIN_SIZE * TERRAIN_SCALE / 2));
 
 			xTerrain.AddComponent<Zenith_TerrainComponent>(xTerrainMesh, Zenith_AssetHandler::GetMaterial("Rock"), Zenith_AssetHandler::GetMaterial("Crystal"), xWaterTransform, Zenith_Maths::Vector2(x * TERRAIN_SIZE * TERRAIN_SCALE, y * TERRAIN_SIZE * TERRAIN_SCALE));
+
+			{
+				Zenith_TextComponent& xText = xTerrain.AddComponent<Zenith_TextComponent>();
+				TextEntry_World xTextEntry = { std::to_string(x * TERRAIN_SIZE * TERRAIN_SCALE) + " " + std::to_string(MAX_TERRAIN_HEIGHT / 2) + " " + std::to_string(y * TERRAIN_SIZE * TERRAIN_SCALE), {x * TERRAIN_SIZE * TERRAIN_SCALE, MAX_TERRAIN_HEIGHT / 2, y * TERRAIN_SIZE * TERRAIN_SCALE}, 1. };
+				xText.AddText_World(xTextEntry);
+			}
+
 
 #if 0
 			Zenith_ColliderComponent& xCollider = xTerrain.AddComponent<Zenith_ColliderComponent>();
