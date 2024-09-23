@@ -330,6 +330,7 @@ void Zenith_Vulkan::CreateDevice()
 		xQueueInfos.push_back(xQueueInfo);
 	}
 
+
 	vk::DeviceCreateInfo xDeviceCreateInfo = vk::DeviceCreateInfo()
 		.setPQueueCreateInfos(xQueueInfos.data())
 		.setQueueCreateInfoCount(xQueueInfos.size())
@@ -342,8 +343,18 @@ void Zenith_Vulkan::CreateDevice()
 		.setEnabledLayerCount(0);
 #endif
 
+	vk::PhysicalDeviceFeatures xDeviceFeatures = vk::PhysicalDeviceFeatures()
+		.setSamplerAnisotropy(VK_TRUE)
+		.setTessellationShader(VK_TRUE)
+		.setFillModeNonSolid(VK_TRUE);
+
+	vk::PhysicalDeviceFeatures2 xDeviceFeatures2 = vk::PhysicalDeviceFeatures2()
+		.setFeatures(xDeviceFeatures);
+
 	vk::PhysicalDeviceDescriptorIndexingFeatures xIndexingFeatures = vk::PhysicalDeviceDescriptorIndexingFeatures()
-		.setDescriptorBindingSampledImageUpdateAfterBind(true);
+		.setDescriptorBindingSampledImageUpdateAfterBind(true)
+		.setPNext(&xDeviceFeatures2);
+
 
 	xDeviceCreateInfo.setPNext(&xIndexingFeatures);
 

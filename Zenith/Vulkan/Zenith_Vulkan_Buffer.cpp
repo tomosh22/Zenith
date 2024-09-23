@@ -3,3 +3,8 @@
 #include "Zenith_Vulkan.h"
 #include "Zenith_Vulkan_Buffer.h"
 #include "Zenith_Vulkan_MemoryManager.h"
+
+void Zenith_Vulkan_Buffer::Reset()
+{
+	Zenith_Vulkan_MemoryManager::FreeBuffer(this);
+}

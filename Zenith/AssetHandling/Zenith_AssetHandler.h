@@ -17,19 +17,10 @@ public:
 	{
 	}
 
-	static void LoadAssetsFromFile(const std::string& strFile);
-
-	static Flux_Texture& AddTexture2D(Zenith_GUID xGUID, const std::string& strName, const char* szPath);
-	static Flux_Texture& AddTextureCube(Zenith_GUID xGUID, const std::string& strName, const char* szPathPX, const char* szPathNX, const char* szPathPY, const char* szPathNY, const char* szPathPZ, const char* szPathNZ);
-	static Flux_MeshGeometry& AddMesh(Zenith_GUID xGUID, const std::string& strName, const char* szPath, const bool bRetainPositionsAndNormals = false);
-	static Flux_Material& AddMaterial(Zenith_GUID xGUID, const std::string& strName);
-
-	static Flux_Texture& GetTexture(Zenith_GUID xGUID);
-	static Flux_Texture& TryGetTexture(Zenith_GUID xGUID);
-	static Flux_MeshGeometry& GetMesh(Zenith_GUID xGUID);
-	static Flux_MeshGeometry& TryGetMesh(Zenith_GUID xZGUID);
-	static Flux_Material& GetMaterial(Zenith_GUID xGUID);
-	static Flux_Material& TryGetMaterial(Zenith_GUID xZGUID);
+	static Flux_Texture& AddTexture2D(const std::string& strName, const char* szPath);
+	static Flux_Texture& AddTextureCube(const std::string& strName, const char* szPathPX, const char* szPathNX, const char* szPathPY, const char* szPathNY, const char* szPathPZ, const char* szPathNZ);
+	static Flux_MeshGeometry& AddMesh(const std::string& strName, const char* szPath, const bool bRetainPositionsAndNormals = false);
+	static Flux_Material& AddMaterial(const std::string& strName);
 
 	static Flux_Texture& GetTexture(const std::string& strName);
 	static Flux_Texture& TryGetTexture(const std::string& strName);
@@ -43,9 +34,9 @@ public:
 	static Flux_Material& TryGetMaterial(const std::string& strName);
 	static bool MaterialExists(const std::string& strName);
 
-	static void DeleteTexture(Zenith_GUID xGUID);
-	static void DeleteMesh(Zenith_GUID xGUID);
-	static void DeleteMaterial(Zenith_GUID xGUID);
+	static void DeleteTexture(const std::string& strName);
+	static void DeleteMesh(const std::string& strName);
+	static void DeleteMaterial(const std::string& strName);
 
 private:
 	//array of length ZENITH_MAX_TEXTURES
@@ -60,15 +51,12 @@ private:
 	static Flux_Material* s_pxMaterials;
 	static AssetID GetNextFreeMaterialSlot();
 
-	static std::unordered_map<Zenith_GUID, AssetID> s_xTextureMap;
-	static std::map<AssetID, Zenith_GUID> s_xReverseTextureMap;
 	static std::unordered_map<std::string, AssetID> s_xTextureNameMap;
+	static std::unordered_set<AssetID>				s_xUsedTextureIDs;
 
-	static std::unordered_map<Zenith_GUID, AssetID> s_xMeshMap;
-	static std::map<AssetID, Zenith_GUID> s_xReverseMeshMap;
 	static std::unordered_map<std::string, AssetID> s_xMeshNameMap;
+	static std::unordered_set<AssetID>				s_xUsedMeshIDs;
 
-	static std::unordered_map<Zenith_GUID, AssetID> s_xMaterialMap;
-	static std::map<AssetID, Zenith_GUID> s_xReverseMaterialMap;
 	static std::unordered_map<std::string, AssetID> s_xMaterialNameMap;
+	static std::unordered_set<AssetID>				s_xUsedMaterialIDs;
 };

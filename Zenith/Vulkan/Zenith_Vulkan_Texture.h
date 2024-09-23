@@ -9,12 +9,16 @@ public:
 	Zenith_Vulkan_Texture() = default;
 	~Zenith_Vulkan_Texture()
 	{
-		STUBBED
+		Reset();
 	}
 	//#TO don't do this, will break memory manager as it relies on addresses of instances of this class to track them as allocations
 	//#TO_TODO: implement some sort of texture registry to get around this
 	Zenith_Vulkan_Texture(Zenith_Vulkan_Texture& xOther) = delete;
 	Zenith_Vulkan_Texture(const Zenith_Vulkan_Texture& xOther) = delete;
+	void operator=(Zenith_Vulkan_Texture& xOther) = delete;
+	void operator=(const Zenith_Vulkan_Texture& xOther) = delete;
+
+	void Reset();
 
 	static vk::Format ConvertToVkFormat_Colour(ColourFormat eFormat);
 	static vk::Format ConvertToVkFormat_DepthStencil(DepthStencilFormat eFormat);
@@ -42,20 +46,16 @@ public:
 	void SetHeight(const uint32_t uHeight) { m_uHeight = uHeight; }
 	void SetNumMips(const uint32_t uNumMips) { m_uNumMips = uNumMips; }
 	void SetNumLayers(const uint32_t uNumLayers) { m_uNumLayers = uNumLayers; }
-
-	const bool IsInitialised() const { return m_bIsInitialised; }
-	void SetInitialised(const bool bInit) { m_bIsInitialised = bInit; }
 private:
 	//#TO native type to support vma
-	vk::Image::NativeType m_xImage;
-	vk::ImageView m_xImageView;
+	vk::Image::NativeType m_xImage = VK_NULL_HANDLE;
+	vk::ImageView m_xImageView = VK_NULL_HANDLE;
 	uint32_t m_uNumMips = 0;
 	uint32_t m_uWidth = 0;
 	uint32_t m_uHeight = 0;
 	uint32_t m_uNumLayers = 0;
 	VmaAllocation m_xAllocation;
 	VmaAllocationInfo m_xAllocationInfo;
-	bool m_bIsInitialised = false;
 };
 
 class Zenith_Vulkan_Sampler

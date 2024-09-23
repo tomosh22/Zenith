@@ -8,4 +8,7 @@
     <LocalDebuggerEnvironment>PATH=%PATH%;C:\dev\Zenith\Tools\Middleware\opencv\build\x64\vc16\bin</LocalDebuggerEnvironment>
     <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
   </PropertyGroup>
+  <PropertyGroup>
+    <ShowAllFiles>false</ShowAllFiles>
+  </PropertyGroup>
 </Project>

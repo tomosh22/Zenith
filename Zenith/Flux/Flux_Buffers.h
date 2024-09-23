@@ -5,6 +5,11 @@
 class Flux_VertexBuffer
 {
 public:
+	void Reset()
+	{
+		m_xBuffer.Reset();
+	}
+
 	const Flux_Buffer& GetBuffer() const { return m_xBuffer; }
 	Flux_Buffer& GetBuffer() { return m_xBuffer; }
 private:
@@ -13,6 +18,13 @@ private:
 class Flux_DynamicVertexBuffer
 {
 public:
+	void Reset()
+	{
+		for (Flux_Buffer& xBuffer : m_axBuffers)
+		{
+			xBuffer.Reset();
+		}
+	}
 	const Flux_Buffer& GetBuffer() const { return m_axBuffers[Flux_Swapchain::GetCurrentFrameIndex()]; }
 	Flux_Buffer& GetBuffer() { return m_axBuffers[Flux_Swapchain::GetCurrentFrameIndex()]; }
 
@@ -24,6 +36,11 @@ private:
 class Flux_IndexBuffer
 {
 public:
+	void Reset()
+	{
+		m_xBuffer.Reset();
+	}
+
 	const Flux_Buffer& GetBuffer() const { return m_xBuffer; }
 	Flux_Buffer& GetBuffer() { return m_xBuffer; }
 private:
@@ -33,6 +50,14 @@ private:
 class Flux_ConstantBuffer
 {
 public:
+	void Reset()
+	{
+		for (Flux_Buffer& xBuffer : m_axBuffers)
+		{
+			xBuffer.Reset();
+		}
+	}
+
 	const Flux_Buffer& GetBuffer() const { return m_axBuffers[Flux_Swapchain::GetCurrentFrameIndex()]; }
 	Flux_Buffer& GetBuffer() { return m_axBuffers[Flux_Swapchain::GetCurrentFrameIndex()]; }
 

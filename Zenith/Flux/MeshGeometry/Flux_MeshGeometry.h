@@ -9,10 +9,27 @@ public:
 
 	~Flux_MeshGeometry()
 	{
-		delete[] m_pVertexData;
-		delete[] m_puIndices;
-		delete[] m_pxPositions;
-		delete[] m_pxUVs;
+		Reset();
+	}
+
+	void Reset()
+	{
+		m_xBufferLayout.Reset();
+
+		if(m_pVertexData) delete[] m_pVertexData;
+		if(m_puIndices) delete[] m_puIndices;
+		if(m_pxPositions) delete[] m_pxPositions;
+		if(m_pxUVs) delete[] m_pxUVs;
+		if(m_pxNormals) delete[] m_pxNormals;
+		if(m_pxTangents) delete[] m_pxTangents;
+		if(m_pxBitangents) delete[] m_pxBitangents;
+		if(m_pfMaterialLerps) delete[] m_pfMaterialLerps;
+
+		Zenith_Log("Resetting vertex buffer");
+		m_xVertexBuffer.Reset();
+
+		Zenith_Log("Resetting index buffer");
+		m_xIndexBuffer.Reset();
 	}
 
 	static void GenerateFullscreenQuad(Flux_MeshGeometry& xGeometryOut);

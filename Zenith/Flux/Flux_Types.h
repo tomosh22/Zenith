@@ -69,6 +69,7 @@ class Flux_BufferLayout
 {
 public:
 	Flux_BufferLayout() = default;
+	void Reset() { m_xElements.clear(); }
 	std::vector<Flux_BufferElement>& GetElements() { return m_xElements; };
 	const std::vector<Flux_BufferElement>& GetElements() const { return m_xElements; };
 	const uint32_t GetStride() const { return m_uStride; }

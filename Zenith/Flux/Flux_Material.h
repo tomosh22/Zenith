@@ -20,6 +20,14 @@ public:
 	{
 	}
 
+	void Reset()
+	{
+		m_pxDiffuse = nullptr;
+		m_pxNormal = nullptr;
+		m_pxRoughness = nullptr;
+		m_pxMetallic = nullptr;
+	}
+
 	void SetDiffuse(Flux_Texture* pxDiffuse) { m_pxDiffuse = pxDiffuse; }
 	void SetNormal(Flux_Texture* pxNormal) { m_pxNormal = pxNormal; }
 	void SetRoughness(Flux_Texture* pxRoughness) { m_pxRoughness = pxRoughness; }
@@ -31,6 +39,7 @@ public:
 	Flux_Texture* GetMetallic() const { return m_pxMetallic ? m_pxMetallic : &Flux_Graphics::s_xBlankTexture2D; }
 
 private:
+	//#TO not owned
 	Flux_Texture* m_pxDiffuse = nullptr;
 	Flux_Texture* m_pxNormal = nullptr;
 	Flux_Texture* m_pxRoughness = nullptr;

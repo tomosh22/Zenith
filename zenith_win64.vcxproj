@@ -184,7 +184,8 @@
       <AdditionalDependencies>glfw3_mt.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
-      <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
+      <IgnoreSpecificDefaultLibraries>
+      </IgnoreSpecificDefaultLibraries>
       <LargeAddressAware>true</LargeAddressAware>
       <MapFileName>output\win64\vs2022_debug_win64_false\zenith.map</MapFileName>
     </Link>
@@ -270,7 +271,8 @@
       <AdditionalDependencies>zenithtools.lib;assimp-vc143-mtd.lib;glfw3_mt.lib;opencv_world4100d.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
-      <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
+      <IgnoreSpecificDefaultLibraries>
+      </IgnoreSpecificDefaultLibraries>
       <LargeAddressAware>true</LargeAddressAware>
       <MapFileName>output\win64\vs2022_debug_win64_true\zenith.map</MapFileName>
     </Link>
@@ -356,7 +358,8 @@
       <AdditionalDependencies>glfw3_mt.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
-      <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
+      <IgnoreSpecificDefaultLibraries>
+      </IgnoreSpecificDefaultLibraries>
       <LargeAddressAware>true</LargeAddressAware>
       <MapFileName>output\win64\vs2022_release_win64_false\zenith.map</MapFileName>
     </Link>
@@ -442,7 +445,8 @@
       <AdditionalDependencies>zenithtools.lib;assimp-vc143-mt.lib;glfw3_mt.lib;opencv_world4100.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
-      <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
+      <IgnoreSpecificDefaultLibraries>
+      </IgnoreSpecificDefaultLibraries>
       <LargeAddressAware>true</LargeAddressAware>
       <MapFileName>output\win64\vs2022_release_win64_true\zenith.map</MapFileName>
     </Link>
@@ -450,6 +454,7 @@
   <ItemGroup>
     <ClInclude Include="Games\Test\Components\PlayerController_Behaviour.h" />
     <ClInclude Include="Games\Test\Components\SphereMovement_Behaviour.h" />
+    <ClInclude Include="Games\Test\Test_State_MainMenu.h" />
     <ClInclude Include="Middleware\glfw-3.4.bin.WIN64\include\GLFW\glfw3.h" />
     <ClInclude Include="Middleware\glfw-3.4.bin.WIN64\include\GLFW\glfw3native.h" />
     <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\body\Body.h" />
@@ -564,6 +569,7 @@
     <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\utils\quickhull\QHHalfEdgeStructure.h" />
     <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\utils\quickhull\QuickHull.h" />
     <ClInclude Include="Middleware\vma\vk_mem_alloc.h" />
+    <ClInclude Include="Games\Test\Test_State_InGame.h" />
     <ClInclude Include="Zenith\AssetHandling\Zenith_AssetHandler.h" />
     <ClInclude Include="Zenith\Core\Zenith.h" />
     <ClInclude Include="Zenith\Core\Zenith_Core.h" />
@@ -617,6 +623,7 @@
     <ClInclude Include="Zenith\Input\Zenith_KeyCodes.h" />
     <ClInclude Include="Zenith\Maths\Zenith_Maths.h" />
     <ClInclude Include="Zenith\Physics\Zenith_Physics.h" />
+    <ClInclude Include="Zenith\StateMachine\Zenith_StateMachine.h" />
     <ClInclude Include="Zenith\Vulkan\Zenith_PlatformGraphics_Include.h" />
     <ClInclude Include="Zenith\Vulkan\Zenith_Vulkan.h" />
     <ClInclude Include="Zenith\Vulkan\Zenith_Vulkan_Buffer.h" />
@@ -631,7 +638,8 @@
   <ItemGroup>
     <ClCompile Include="Games\Test\Components\PlayerController_Behaviour.cpp" />
     <ClCompile Include="Games\Test\Components\SphereMovement_Behaviour.cpp" />
-    <ClCompile Include="Games\Test\Test.cpp" />
+    <ClCompile Include="Games\Test\Test_State_InGame.cpp" />
+    <ClCompile Include="Games\Test\Test_State_MainMenu.cpp" />
     <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\body\Body.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
@@ -1191,6 +1199,7 @@
     <ClCompile Include="Zenith\Input\Zenith_Input.cpp" />
     <ClCompile Include="Zenith\Maths\Zenith_Maths.cpp" />
     <ClCompile Include="Zenith\Physics\Zenith_Physics.cpp" />
+    <ClCompile Include="Zenith\StateMachine\Zenith_StateMachine.cpp" />
     <ClCompile Include="Zenith\Vulkan\Zenith_Vulkan.cpp" />
     <ClCompile Include="Zenith\Vulkan\Zenith_Vulkan_Buffer.cpp" />
     <ClCompile Include="Zenith\Vulkan\Zenith_Vulkan_CommandBuffer.cpp" />
