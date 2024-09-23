@@ -9,12 +9,12 @@ class Zenith_Vulkan_Buffer
 public:
 	Zenith_Vulkan_Buffer() = default;
 	Zenith_Vulkan_Buffer(const Zenith_Vulkan_Buffer& other) = delete;
-	~Zenith_Vulkan_Buffer() = default;
+	~Zenith_Vulkan_Buffer()
+	{
+		Reset();
+	}
 
-	void UploadData(void* pData, uint32_t uSize);
-
-	static void CopyBufferToBuffer(Zenith_Vulkan_Buffer* pxSrc, Zenith_Vulkan_Buffer* pxDst, size_t uSize);
-	static void CopyBufferToImage(Zenith_Vulkan_Buffer* pxSrc, Zenith_Vulkan_Texture* pxDst, bool bAsyncLoader = false);
+	void Reset();
 
 	const vk::Buffer& GetBuffer() const { return m_xBuffer; }
 	VkBuffer* GetBuffer_Ptr() { return &m_xBuffer; }
@@ -29,7 +29,7 @@ public:
 
 private:
 	//#TO native type to support vma
-	vk::Buffer::NativeType m_xBuffer;
+	vk::Buffer::NativeType m_xBuffer = VK_NULL_HANDLE;
 	VmaAllocation m_xAllocation;
 	VmaAllocationInfo m_xAllocationInfo;
 	uint64_t m_ulSize = 0;

@@ -7,7 +7,7 @@
     <ClCompile Include="Games\Test\Components\SphereMovement_Behaviour.cpp">
       <Filter>Games\Test\Components</Filter>
     </ClCompile>
-    <ClCompile Include="Games\Test\Test.cpp">
+    <ClCompile Include="Games\Test\Test_State_InGame.cpp">
       <Filter>Games\Test</Filter>
     </ClCompile>
     <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\body\Body.cpp">
@@ -367,6 +367,9 @@
     <ClCompile Include="Zenith\Physics\Zenith_Physics.cpp">
       <Filter>Zenith\Physics</Filter>
     </ClCompile>
+    <ClCompile Include="Zenith\StateMachine\Zenith_StateMachine.cpp">
+      <Filter>Zenith\StateMachine</Filter>
+    </ClCompile>
     <ClCompile Include="Zenith\Vulkan\Zenith_Vulkan.cpp">
       <Filter>Zenith\Vulkan</Filter>
     </ClCompile>
@@ -393,6 +396,9 @@
     </ClCompile>
     <ClCompile Include="Zenith\Zenith_Main.cpp">
       <Filter>Zenith</Filter>
+    </ClCompile>
+    <ClCompile Include="Games\Test\Test_State_MainMenu.cpp">
+      <Filter>Games\Test</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -903,6 +909,9 @@
     <ClInclude Include="Zenith\Physics\Zenith_Physics.h">
       <Filter>Zenith\Physics</Filter>
     </ClInclude>
+    <ClInclude Include="Zenith\StateMachine\Zenith_StateMachine.h">
+      <Filter>Zenith\StateMachine</Filter>
+    </ClInclude>
     <ClInclude Include="Zenith\Vulkan\Zenith_PlatformGraphics_Include.h">
       <Filter>Zenith\Vulkan</Filter>
     </ClInclude>
@@ -932,6 +941,12 @@
     </ClInclude>
     <ClInclude Include="Zenith\Windows\Zenith_Windows_Window.h">
       <Filter>Zenith\Windows</Filter>
+    </ClInclude>
+    <ClInclude Include="Games\Test\Test_State_InGame.h">
+      <Filter>Games\Test</Filter>
+    </ClInclude>
+    <ClInclude Include="Games\Test\Test_State_MainMenu.h">
+      <Filter>Games\Test</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -1156,6 +1171,9 @@
     </Filter>
     <Filter Include="Zenith\Physics">
       <UniqueIdentifier>{5ac8261e-3c4b-0ce4-a667-2e91565d611f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Zenith\StateMachine">
+      <UniqueIdentifier>{5cba6f0c-0cde-b209-96a1-7b8acd44e41c}</UniqueIdentifier>
     </Filter>
     <Filter Include="Zenith\Vulkan">
       <UniqueIdentifier>{f7b47854-ceb7-87a4-f1b1-15a24762a34d}</UniqueIdentifier>

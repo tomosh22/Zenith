@@ -5,6 +5,11 @@
 #include "Zenith_Vulkan.h"
 #include "Zenith_Vulkan_MemoryManager.h"
 
+void Zenith_Vulkan_Texture::Reset()
+{
+	Zenith_Vulkan_MemoryManager::FreeTexture(this);
+}
+
 vk::Format Zenith_Vulkan_Texture::ConvertToVkFormat_Colour(ColourFormat eFormat) {
 	switch (eFormat)
 	{

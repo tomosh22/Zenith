@@ -1,4 +1,6 @@
 #include "Zenith.h"
+#include "Test/Test_State_InGame.h"
+#include "Test/Test_State_MainMenu.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_Entity.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
@@ -10,11 +12,14 @@
 #include "AssetHandling/Zenith_AssetHandler.h"
 #include "Flux/Flux_Material.h"
 #include "Flux/Flux_Graphics.h"
+#include "Input/Zenith_Input.h"
 
 #include "Test/Components/SphereMovement_Behaviour.h"
 #include "Test/Components/PlayerController_Behaviour.h"
 
-#define TERRAIN_EXPORT_DIMS 64
+Zenith_State* Zenith_StateMachine::s_pxCurrentState = new Test_State_InGame;
+
+#define TERRAIN_EXPORT_DIMS 8
 
 static Zenith_Entity s_xPlayer;
 static Zenith_Entity s_xBarrel;
@@ -34,85 +39,85 @@ static Zenith_Entity s_xOgre;
 
 
 
-void LoadAssets()
+static void LoadAssets()
 {
-	Zenith_AssetHandler::AddMesh(Zenith_GUID(), "Barrel", "C:/dev/Zenith/Games/Test/Assets/Meshes/barrel_0.zmsh");
+	Zenith_AssetHandler::AddMesh("Barrel", "C:/dev/Zenith/Games/Test/Assets/Meshes/barrel_0.zmsh");
 	{
-		Zenith_AssetHandler::AddTexture2D(Zenith_GUID(), "Barrel_Diffuse", "C:/dev/Zenith/Games/Test/Assets/Meshes/barrelDiffuse.ztx");
-		Zenith_AssetHandler::AddTexture2D(Zenith_GUID(), "Barrel_Metallic", "C:/dev/Zenith/Games/Test/Assets/Meshes/barrelShininess.ztx");
+		Zenith_AssetHandler::AddTexture2D("Barrel_Diffuse", "C:/dev/Zenith/Games/Test/Assets/Meshes/barrelDiffuse.ztx");
+		Zenith_AssetHandler::AddTexture2D("Barrel_Metallic", "C:/dev/Zenith/Games/Test/Assets/Meshes/barrelShininess.ztx");
 
 		Flux_Texture& xDiffuse = Zenith_AssetHandler::GetTexture("Barrel_Diffuse");
 		Flux_Texture& xMetallic = Zenith_AssetHandler::GetTexture("Barrel_Metallic");
 
-		Flux_Material& xMat = Zenith_AssetHandler::AddMaterial(Zenith_GUID(), "Barrel");
+		Flux_Material& xMat = Zenith_AssetHandler::AddMaterial("Barrel");
 		xMat.SetDiffuse(&xDiffuse);
 		xMat.SetMetallic(&xMetallic);
 	}
 
-	Zenith_AssetHandler::AddMesh(Zenith_GUID(), "Sphere_Smooth", "C:/dev/Zenith/Games/Test/Assets/Meshes/sphereSmooth_0.zmsh");
+	Zenith_AssetHandler::AddMesh("Sphere_Smooth", "C:/dev/Zenith/Games/Test/Assets/Meshes/sphereSmooth_0.zmsh");
 	{
-		Zenith_AssetHandler::AddTexture2D(Zenith_GUID(), "Crystal_Diffuse", "C:/dev/Zenith/Games/Test/Assets/Textures/crystal2k/diffuse.ztx");
-		Zenith_AssetHandler::AddTexture2D(Zenith_GUID(), "Crystal_Normal", "C:/dev/Zenith/Games/Test/Assets/Textures/crystal2k/normal.ztx");
-		Zenith_AssetHandler::AddTexture2D(Zenith_GUID(), "Crystal_Roughness", "C:/dev/Zenith/Games/Test/Assets/Textures/crystal2k/roughness.ztx");
-		Zenith_AssetHandler::AddTexture2D(Zenith_GUID(), "Crystal_Metallic", "C:/dev/Zenith/Games/Test/Assets/Textures/crystal2k/metallic.ztx");
+		Zenith_AssetHandler::AddTexture2D("Crystal_Diffuse", "C:/dev/Zenith/Games/Test/Assets/Textures/crystal2k/diffuse.ztx");
+		Zenith_AssetHandler::AddTexture2D("Crystal_Normal", "C:/dev/Zenith/Games/Test/Assets/Textures/crystal2k/normal.ztx");
+		Zenith_AssetHandler::AddTexture2D("Crystal_Roughness", "C:/dev/Zenith/Games/Test/Assets/Textures/crystal2k/roughness.ztx");
+		Zenith_AssetHandler::AddTexture2D("Crystal_Metallic", "C:/dev/Zenith/Games/Test/Assets/Textures/crystal2k/metallic.ztx");
 
 		Flux_Texture& xDiffuse = Zenith_AssetHandler::GetTexture("Crystal_Diffuse");
 		Flux_Texture& xNormal = Zenith_AssetHandler::GetTexture("Crystal_Normal");
 		Flux_Texture& xRoughness = Zenith_AssetHandler::GetTexture("Crystal_Roughness");
 		Flux_Texture& xMetallic = Zenith_AssetHandler::GetTexture("Crystal_Metallic");
 
-		Flux_Material& xMat = Zenith_AssetHandler::AddMaterial(Zenith_GUID(), "Crystal");
+		Flux_Material& xMat = Zenith_AssetHandler::AddMaterial("Crystal");
 		xMat.SetDiffuse(&xDiffuse);
 		xMat.SetNormal(&xNormal);
 		xMat.SetRoughness(&xRoughness);
 		xMat.SetMetallic(&xMetallic);
 	}
 	{
-		Zenith_AssetHandler::AddTexture2D(Zenith_GUID(), "MuddyGrass_Diffuse", "C:/dev/Zenith/Games/Test/Assets/Textures/muddyGrass2k/diffuse.ztx");
-		Zenith_AssetHandler::AddTexture2D(Zenith_GUID(), "MuddyGrass_Normal", "C:/dev/Zenith/Games/Test/Assets/Textures/muddyGrass2k/normal.ztx");
-		Zenith_AssetHandler::AddTexture2D(Zenith_GUID(), "MuddyGrass_Roughness", "C:/dev/Zenith/Games/Test/Assets/Textures/muddyGrass2k/roughness.ztx");
-		Zenith_AssetHandler::AddTexture2D(Zenith_GUID(), "MuddyGrass_Metallic", "C:/dev/Zenith/Games/Test/Assets/Textures/muddyGrass2k/metallic.ztx");
+		Zenith_AssetHandler::AddTexture2D("MuddyGrass_Diffuse", "C:/dev/Zenith/Games/Test/Assets/Textures/muddyGrass2k/diffuse.ztx");
+		Zenith_AssetHandler::AddTexture2D("MuddyGrass_Normal", "C:/dev/Zenith/Games/Test/Assets/Textures/muddyGrass2k/normal.ztx");
+		Zenith_AssetHandler::AddTexture2D("MuddyGrass_Roughness", "C:/dev/Zenith/Games/Test/Assets/Textures/muddyGrass2k/roughness.ztx");
+		Zenith_AssetHandler::AddTexture2D("MuddyGrass_Metallic", "C:/dev/Zenith/Games/Test/Assets/Textures/muddyGrass2k/metallic.ztx");
 
 		Flux_Texture& xDiffuse = Zenith_AssetHandler::GetTexture("MuddyGrass_Diffuse");
 		Flux_Texture& xNormal = Zenith_AssetHandler::GetTexture("MuddyGrass_Normal");
 		Flux_Texture& xRoughness = Zenith_AssetHandler::GetTexture("MuddyGrass_Roughness");
 		Flux_Texture& xMetallic = Zenith_AssetHandler::GetTexture("MuddyGrass_Metallic");
 
-		Flux_Material& xMat = Zenith_AssetHandler::AddMaterial(Zenith_GUID(), "MuddyGrass");
+		Flux_Material& xMat = Zenith_AssetHandler::AddMaterial("MuddyGrass");
 		xMat.SetDiffuse(&xDiffuse);
 		xMat.SetNormal(&xNormal);
 		xMat.SetRoughness(&xRoughness);
 		xMat.SetMetallic(&xMetallic);
 	}
 	{
-		Zenith_AssetHandler::AddTexture2D(Zenith_GUID(), "SupplyCrate_Diffuse", "C:/dev/Zenith/Games/Test/Assets/Textures/supplyCrate2k/diffuse.ztx");
-		Zenith_AssetHandler::AddTexture2D(Zenith_GUID(), "SupplyCrate_Normal", "C:/dev/Zenith/Games/Test/Assets/Textures/supplyCrate2k/normal.ztx");
-		Zenith_AssetHandler::AddTexture2D(Zenith_GUID(), "SupplyCrate_Roughness", "C:/dev/Zenith/Games/Test/Assets/Textures/supplyCrate2k/roughness.ztx");
-		Zenith_AssetHandler::AddTexture2D(Zenith_GUID(), "SupplyCrate_Metallic", "C:/dev/Zenith/Games/Test/Assets/Textures/supplyCrate2k/metallic.ztx");
+		Zenith_AssetHandler::AddTexture2D("SupplyCrate_Diffuse", "C:/dev/Zenith/Games/Test/Assets/Textures/supplyCrate2k/diffuse.ztx");
+		Zenith_AssetHandler::AddTexture2D("SupplyCrate_Normal", "C:/dev/Zenith/Games/Test/Assets/Textures/supplyCrate2k/normal.ztx");
+		Zenith_AssetHandler::AddTexture2D("SupplyCrate_Roughness", "C:/dev/Zenith/Games/Test/Assets/Textures/supplyCrate2k/roughness.ztx");
+		Zenith_AssetHandler::AddTexture2D("SupplyCrate_Metallic", "C:/dev/Zenith/Games/Test/Assets/Textures/supplyCrate2k/metallic.ztx");
 
 		Flux_Texture& xDiffuse = Zenith_AssetHandler::GetTexture("SupplyCrate_Diffuse");
 		Flux_Texture& xNormal = Zenith_AssetHandler::GetTexture("SupplyCrate_Normal");
 		Flux_Texture& xRoughness = Zenith_AssetHandler::GetTexture("SupplyCrate_Roughness");
 		Flux_Texture& xMetallic = Zenith_AssetHandler::GetTexture("SupplyCrate_Metallic");
 
-		Flux_Material& xMat = Zenith_AssetHandler::AddMaterial(Zenith_GUID(), "SupplyCrate");
+		Flux_Material& xMat = Zenith_AssetHandler::AddMaterial("SupplyCrate");
 		xMat.SetDiffuse(&xDiffuse);
 		xMat.SetNormal(&xNormal);
 		xMat.SetRoughness(&xRoughness);
 		xMat.SetMetallic(&xMetallic);
 	}
 	{
-		Zenith_AssetHandler::AddTexture2D(Zenith_GUID(), "Rock_Diffuse", "C:/dev/Zenith/Games/Test/Assets/Textures/rock2k/diffuse.ztx");
-		Zenith_AssetHandler::AddTexture2D(Zenith_GUID(), "Rock_Normal", "C:/dev/Zenith/Games/Test/Assets/Textures/rock2k/normal.ztx");
-		Zenith_AssetHandler::AddTexture2D(Zenith_GUID(), "Rock_Roughness", "C:/dev/Zenith/Games/Test/Assets/Textures/rock2k/roughness.ztx");
-		Zenith_AssetHandler::AddTexture2D(Zenith_GUID(), "Rock_Metallic", "C:/dev/Zenith/Games/Test/Assets/Textures/rock2k/metallic.ztx");
+		Zenith_AssetHandler::AddTexture2D("Rock_Diffuse", "C:/dev/Zenith/Games/Test/Assets/Textures/rock2k/diffuse.ztx");
+		Zenith_AssetHandler::AddTexture2D("Rock_Normal", "C:/dev/Zenith/Games/Test/Assets/Textures/rock2k/normal.ztx");
+		Zenith_AssetHandler::AddTexture2D("Rock_Roughness", "C:/dev/Zenith/Games/Test/Assets/Textures/rock2k/roughness.ztx");
+		Zenith_AssetHandler::AddTexture2D("Rock_Metallic", "C:/dev/Zenith/Games/Test/Assets/Textures/rock2k/metallic.ztx");
 
 		Flux_Texture& xDiffuse = Zenith_AssetHandler::GetTexture("Rock_Diffuse");
 		Flux_Texture& xNormal = Zenith_AssetHandler::GetTexture("Rock_Normal");
 		Flux_Texture& xRoughness = Zenith_AssetHandler::GetTexture("Rock_Roughness");
 		Flux_Texture& xMetallic = Zenith_AssetHandler::GetTexture("Rock_Metallic");
 
-		Flux_Material& xMat = Zenith_AssetHandler::AddMaterial(Zenith_GUID(), "Rock");
+		Flux_Material& xMat = Zenith_AssetHandler::AddMaterial("Rock");
 		xMat.SetDiffuse(&xDiffuse);
 		xMat.SetNormal(&xNormal);
 		xMat.SetRoughness(&xRoughness);
@@ -125,28 +130,19 @@ void LoadAssets()
 		{
 			std::string strSuffix = std::to_string(x) + "_" + std::to_string(y);
 #if 1
-			Zenith_AssetHandler::AddMesh(Zenith_GUID(), "Terrain" + strSuffix, std::string("C:/dev/Zenith/Games/Test/Assets/Terrain/" + strSuffix + ".zmsh").c_str(), true);
+			Zenith_AssetHandler::AddMesh("Terrain" + strSuffix, std::string("C:/dev/Zenith/Games/Test/Assets/Terrain/" + strSuffix + ".zmsh").c_str(), true);
 #else
-			Zenith_AssetHandler::AddMesh(Zenith_GUID(), "Terrain" + strSuffix, std::string("C:/dev/Zenith/Games/Test/Assets/Terrain/" + strSuffix + ".zmsh").c_str(), false);
+			Zenith_AssetHandler::AddMesh("Terrain" + strSuffix, std::string("C:/dev/Zenith/Games/Test/Assets/Terrain/" + strSuffix + ".zmsh").c_str(), false);
 #endif
 		}
 	}
-
-	Zenith_AssetHandler::AddTexture2D(Zenith_GUID(), "Water_Normal", "C:/dev/Zenith/Games/Test/Assets/Textures/water/normal.ztx");
-
-	Zenith_AssetHandler::AddTextureCube(Zenith_GUID(), "Cubemap",
-		"C:/dev/Zenith/Games/Test/Assets/Textures/Cubemap/px.ztx",
-		"C:/dev/Zenith/Games/Test/Assets/Textures/Cubemap/nx.ztx",
-		"C:/dev/Zenith/Games/Test/Assets/Textures/Cubemap/py.ztx",
-		"C:/dev/Zenith/Games/Test/Assets/Textures/Cubemap/ny.ztx",
-		"C:/dev/Zenith/Games/Test/Assets/Textures/Cubemap/pz.ztx",
-		"C:/dev/Zenith/Games/Test/Assets/Textures/Cubemap/nz.ztx"
-	);
 }
 
-void Zenith_Core::Project_Startup()
+void Test_State_InGame::OnEnter()
 {
+	Flux_MemoryManager::BeginFrame();
 	LoadAssets();
+	Flux_MemoryManager::EndFrame(false);
 
 	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
 	s_xPlayer.Initialise(&xScene, "Game Controller");
@@ -299,4 +295,69 @@ void Zenith_Core::Project_Startup()
 		Zenith_ModelComponent& xModel = s_xOgre.AddComponent<Zenith_ModelComponent>();
 		xModel.LoadMeshesFromDir("C:/dev/Zenith/Games/Test/Assets/Meshes/ogre");
 	}
+}
+
+void Test_State_InGame::OnUpdate()
+{
+	Zenith_Core::Zenith_MainLoop();
+	if (Zenith_Input::IsKeyDown(ZENITH_KEY_P))
+	{
+		Zenith_StateMachine::RequestState(new Test_State_MainMenu);
+	}
+}
+
+void Test_State_InGame::OnExit()
+{
+	Zenith_AssetHandler::DeleteMesh("Barrel");
+	{
+		Zenith_AssetHandler::DeleteTexture("Barrel_Diffuse");
+		Zenith_AssetHandler::DeleteTexture("Barrel_Metallic");
+
+		Zenith_AssetHandler::DeleteMaterial("Barrel");
+	}
+
+	Zenith_AssetHandler::DeleteMesh("Sphere_Smooth");
+	{
+		Zenith_AssetHandler::DeleteTexture("Crystal_Diffuse");
+		Zenith_AssetHandler::DeleteTexture("Crystal_Normal");
+		Zenith_AssetHandler::DeleteTexture("Crystal_Roughness");
+		Zenith_AssetHandler::DeleteTexture("Crystal_Metallic");
+
+		Zenith_AssetHandler::DeleteMaterial("Crystal");
+	}
+	{
+		Zenith_AssetHandler::DeleteTexture("MuddyGrass_Diffuse");
+		Zenith_AssetHandler::DeleteTexture("MuddyGrass_Normal");
+		Zenith_AssetHandler::DeleteTexture("MuddyGrass_Roughness");
+		Zenith_AssetHandler::DeleteTexture("MuddyGrass_Metallic");
+
+		Zenith_AssetHandler::DeleteMaterial("MuddyGrass");
+	}
+	{
+		Zenith_AssetHandler::DeleteTexture("SupplyCrate_Diffuse");
+		Zenith_AssetHandler::DeleteTexture("SupplyCrate_Normal");
+		Zenith_AssetHandler::DeleteTexture("SupplyCrate_Roughness");
+		Zenith_AssetHandler::DeleteTexture("SupplyCrate_Metallic");
+
+		Zenith_AssetHandler::DeleteMaterial("SupplyCrate");
+	}
+	{
+		Zenith_AssetHandler::DeleteTexture("Rock_Diffuse");
+		Zenith_AssetHandler::DeleteTexture("Rock_Normal");
+		Zenith_AssetHandler::DeleteTexture("Rock_Roughness");
+		Zenith_AssetHandler::DeleteTexture("Rock_Metallic");
+
+		Zenith_AssetHandler::DeleteMaterial("Rock");
+	}
+
+	for (uint32_t x = 0; x < TERRAIN_EXPORT_DIMS; x++)
+	{
+		for (uint32_t y = 0; y < TERRAIN_EXPORT_DIMS; y++)
+		{
+			std::string strSuffix = std::to_string(x) + "_" + std::to_string(y);
+			Zenith_AssetHandler::DeleteMesh("Terrain" + strSuffix);
+		}
+	}
+
+	Zenith_Scene::GetCurrentScene().Reset();
 }

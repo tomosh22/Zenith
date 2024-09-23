@@ -8,9 +8,9 @@ class Zenith_TerrainComponent
 {
 public:
 	Zenith_TerrainComponent(Flux_MeshGeometry& xGeometry, Flux_Material& xMaterial0, Flux_Material& xMaterial1, Zenith_Maths::Matrix4 xWaterTransform, Zenith_Maths::Vector2 xPosition_2D, Zenith_Entity& xEntity)
-		: m_xGeometry(xGeometry)
-		, m_xMaterial0(xMaterial0)
-		, m_xMaterial1(xMaterial1)
+		: m_pxGeometry(&xGeometry)
+		, m_pxMaterial0(&xMaterial0)
+		, m_pxMaterial1(&xMaterial1)
 		, m_xPosition_2D(xPosition_2D)
 		, m_xParentEntity(xEntity)
 	{
@@ -21,11 +21,11 @@ public:
 
 	~Zenith_TerrainComponent() {}
 
-	const Flux_MeshGeometry& GetMeshGeometry() const { return m_xGeometry; }
-	const Flux_Material& GetMaterial0() const { return m_xMaterial0; }
-	Flux_Material& GetMaterial0() { return m_xMaterial0; }
-	const Flux_Material& GetMaterial1() const { return m_xMaterial1; }
-	Flux_Material& GetMaterial1() { return m_xMaterial1; }
+	const Flux_MeshGeometry& GetMeshGeometry() const { return *m_pxGeometry; }
+	const Flux_Material& GetMaterial0() const { return *m_pxMaterial0; }
+	Flux_Material& GetMaterial0() { return *m_pxMaterial0; }
+	const Flux_Material& GetMaterial1() const { return *m_pxMaterial1; }
+	Flux_Material& GetMaterial1() { return *m_pxMaterial1; }
 
 	const Flux_MeshGeometry& GetWaterGeometry() const { return m_xWaterGeometry; }
 	Flux_MeshGeometry& GetWaterGeometry() { return m_xWaterGeometry; }
@@ -37,10 +37,11 @@ public:
 	const bool IsVisible() const;
 private:
 	Zenith_Entity m_xParentEntity;
-
-	Flux_MeshGeometry& m_xGeometry;
-	Flux_Material& m_xMaterial0;
-	Flux_Material& m_xMaterial1;
+	
+	//#TO not owning
+	Flux_MeshGeometry* m_pxGeometry = nullptr;
+	Flux_Material* m_pxMaterial0 = nullptr;
+	Flux_Material* m_pxMaterial1 = nullptr;
 
 	//#TO owned by this, not a reference to a mesh from the asset handler
 	Flux_MeshGeometry m_xWaterGeometry;

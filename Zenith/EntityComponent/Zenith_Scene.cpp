@@ -212,10 +212,13 @@ Zenith_Scene::Zenith_Scene(const std::string& strFilename) {
 }
 
 Zenith_Scene::~Zenith_Scene() {
-	m_xRegistry.clear();
+	Reset();
 }
 
 void Zenith_Scene::Reset() {
+	m_xRegistry.clear();
+	m_uMainCameraEntity = (EntityID)0;
+	m_xEntityMap.clear();
 }
 
 void Zenith_Scene::Serialize(const std::string& strFilename) {

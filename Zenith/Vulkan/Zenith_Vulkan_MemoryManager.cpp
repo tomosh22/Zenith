@@ -170,6 +170,24 @@ void Zenith_Vulkan_MemoryManager::AllocateBuffer(size_t uSize, vk::BufferUsageFl
 	const vk::BufferCreateInfo::NativeType xBufferInfo_Native = xBufferInfo;
 
 	vmaCreateBuffer(s_xAllocator, &xBufferInfo_Native, &xAllocInfo, xBufferOut.GetBuffer_Ptr(), xBufferOut.GetAllocation_Ptr(), nullptr);
+
+	Zenith_Assert(xBufferOut.GetBuffer() != VK_NULL_HANDLE, "Buffer allocation failed");
+}
+
+void Zenith_Vulkan_MemoryManager::FreeBuffer(Zenith_Vulkan_Buffer* pxBuffer)
+{
+	//#TO this happens as Reset is called twice on vertex and index buffers
+	//	  during destruction of Flux_MeshGeometry
+	if (pxBuffer->GetBuffer() == VK_NULL_HANDLE)
+	{
+		return;
+	}
+
+	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
+
+	vmaDestroyBuffer(s_xAllocator, pxBuffer->GetBuffer(), pxBuffer->GetAllocation());
+
+	pxBuffer->SetBuffer(VK_NULL_HANDLE);
 }
 
 void Zenith_Vulkan_MemoryManager::InitialiseVertexBuffer(const void* pData, size_t uSize, Flux_VertexBuffer& xBufferOut, bool bDeviceLocal /*= true*/)
@@ -466,12 +484,11 @@ void Zenith_Vulkan_MemoryManager::AllocateTexture(uint32_t uWidth, uint32_t uHei
 		.setSubresourceRange(xSubresourceRange);
 
 	xTextureOut.SetImageView(xDevice.createImageView(xViewCreate));
-	xTextureOut.SetInitialised(true);
 }
 
 void Zenith_Vulkan_MemoryManager::FreeTexture(Zenith_Vulkan_Texture* pxTexture)
 {
-	if (!pxTexture->IsInitialised())
+	if (pxTexture->GetImage() == VK_NULL_HANDLE)
 	{
 		return;
 	}
@@ -479,11 +496,10 @@ void Zenith_Vulkan_MemoryManager::FreeTexture(Zenith_Vulkan_Texture* pxTexture)
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 
 	xDevice.destroyImageView(pxTexture->GetImageView());
-	xDevice.destroyImage(pxTexture->GetImage());
 
-	vmaFreeMemory(s_xAllocator, pxTexture->GetAllocation());
+	vmaDestroyImage(s_xAllocator, pxTexture->GetImage(), pxTexture->GetAllocation());
 
-	pxTexture->SetInitialised(false);
+	pxTexture->SetImage(VK_NULL_HANDLE);
 }
 
 
