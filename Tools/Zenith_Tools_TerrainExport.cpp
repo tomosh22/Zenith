@@ -2,7 +2,7 @@
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include <opencv2/opencv.hpp>
 
-#define HEIGHTMAP_MESH_DENSITY 1
+#define HEIGHTMAP_MESH_DENSITY (1.f / 1)
 
 #define MAX_TERRAIN_HEIGHT 2048
 
@@ -125,8 +125,8 @@ void ExportHeightmap()
 	WriteFoliageMaterialAsset(xFoliageMaterialGUID, xFoliageAlbedoGUID, xFoliageNormalGUID, xFoliageRoughnessGUID, xFoliageHeightmapGUID, xFoliageAlphaGUID, xFoliageTranslucencyGUID);
 #endif
 
-	Zenith_Assert((uImageWidth * HEIGHTMAP_MESH_DENSITY) % TERRAIN_SIZE == 0, "Invalid terrain width");
-	Zenith_Assert((uImageHeight * HEIGHTMAP_MESH_DENSITY) % TERRAIN_SIZE == 0, "Invalid terrain height");
+	Zenith_Assert(uint32_t(uImageWidth * HEIGHTMAP_MESH_DENSITY) % TERRAIN_SIZE == 0, "Invalid terrain width");
+	Zenith_Assert(uint32_t(uImageHeight * HEIGHTMAP_MESH_DENSITY) % TERRAIN_SIZE == 0, "Invalid terrain height");
 
 	uint32_t uNumSplitsX = uImageWidth / TERRAIN_SIZE;
 	uint32_t uNumSplitsZ = uImageHeight / TERRAIN_SIZE;
@@ -142,8 +142,8 @@ void ExportHeightmap()
 		for (uint32_t x = 0; x < uNumSplitsX; x++)
 		{
 			Flux_MeshGeometry xSubMesh;
-			xSubMesh.m_uNumVerts = (TERRAIN_SIZE + 1) * (TERRAIN_SIZE + 1) * HEIGHTMAP_MESH_DENSITY * HEIGHTMAP_MESH_DENSITY;
-			xSubMesh.m_uNumIndices = (((TERRAIN_SIZE + 1) * HEIGHTMAP_MESH_DENSITY) - 1) * (((TERRAIN_SIZE + 1) * HEIGHTMAP_MESH_DENSITY) - 1) * 6;
+			xSubMesh.m_uNumVerts = (TERRAIN_SIZE * HEIGHTMAP_MESH_DENSITY + 1) * (TERRAIN_SIZE * HEIGHTMAP_MESH_DENSITY + 1);
+			xSubMesh.m_uNumIndices = (((TERRAIN_SIZE * HEIGHTMAP_MESH_DENSITY + 1)) - 1) * (((TERRAIN_SIZE * HEIGHTMAP_MESH_DENSITY + 1)) - 1) * 6;
 			xSubMesh.m_pxPositions = new glm::highp_vec3[xSubMesh.m_uNumVerts];
 			xSubMesh.m_pxUVs = new glm::vec2[xSubMesh.m_uNumVerts];
 			xSubMesh.m_pxNormals = new glm::vec3[xSubMesh.m_uNumVerts];
@@ -162,8 +162,8 @@ void ExportHeightmap()
 			std::set<uint32_t> xFoundOldIndices;
 			std::set<uint32_t> xFoundNewIndices;
 #endif
-			std::array<uint32_t, TERRAIN_SIZE* HEIGHTMAP_MESH_DENSITY> xRightEdgeIndices;
-			std::array<uint32_t, TERRAIN_SIZE* HEIGHTMAP_MESH_DENSITY> xTopEdgeIndices;
+			std::array<uint32_t, size_t(TERRAIN_SIZE * HEIGHTMAP_MESH_DENSITY)> xRightEdgeIndices;
+			std::array<uint32_t, size_t(TERRAIN_SIZE * HEIGHTMAP_MESH_DENSITY)> xTopEdgeIndices;
 			uint32_t uTopRightFromBoth = 0;
 
 			std::vector<glm::vec3> xFoliagePositions;
