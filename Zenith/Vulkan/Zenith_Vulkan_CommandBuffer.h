@@ -68,4 +68,12 @@ private:
 	CommandType m_eCommandType;
 
 	bool m_bIsRecording = false;
+
+	Zenith_Vulkan_Texture* m_apxTextureCache[MAX_BINDINGS]{};
+	Zenith_Vulkan_Buffer* m_apxBufferCache[MAX_BINDINGS]{};
+	//#TO_TODO: accel struct cache
+
+	vk::DescriptorSet m_xCurrentDescSet = VK_NULL_HANDLE;
+	bool m_bDescriptorDirty = true;
+
 };

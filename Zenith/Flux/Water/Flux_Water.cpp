@@ -20,6 +20,7 @@ static Flux_Texture* s_pxNormalTex = nullptr;
 static Flux_Texture* s_pxDisplacementTex = nullptr;
 
 DEBUGVAR bool dbg_bEnable = true;
+DEBUGVAR float dbg_fVisibilityThresholdMultiplier = 0.5f;
 
 void Flux_Water::Initialise()
 {
@@ -58,6 +59,7 @@ void Flux_Water::Initialise()
 
 #ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_DebugVariables::AddBoolean({ "Render", "Enable", "Water" }, dbg_bEnable);
+	Zenith_DebugVariables::AddFloat({ "Render", "Water", "Visiblity Multiplier" }, dbg_fVisibilityThresholdMultiplier, 0.1f, 1.f);
 #endif
 
 	Zenith_Log("Flux_Water initialised");
@@ -84,8 +86,15 @@ void Flux_Water::Render()
 
 	s_xCommandBuffer.BeginBind(BINDING_FREQUENCY_PER_DRAW);
 
+	const Zenith_CameraComponent& xCam = Zenith_Scene::GetCurrentScene().GetMainCamera();
+
 	for (Zenith_TerrainComponent* pxTerrain : xTerrainComponents)
 	{
+		if (!pxTerrain->IsVisible(dbg_fVisibilityThresholdMultiplier, xCam))
+		{
+			continue;
+		}
+
 		s_xCommandBuffer.SetVertexBuffer(pxTerrain->GetWaterGeometry().GetVertexBuffer());
 		s_xCommandBuffer.SetIndexBuffer(pxTerrain->GetWaterGeometry().GetIndexBuffer());
 

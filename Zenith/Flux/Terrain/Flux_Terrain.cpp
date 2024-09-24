@@ -27,6 +27,7 @@ static Flux_ConstantBuffer s_xTerrainConstantsBuffer;
 
 DEBUGVAR bool dbg_bEnable = true;
 DEBUGVAR bool dbg_bWireframe = false;
+DEBUGVAR float dbg_fVisibilityThresholdMultiplier = 0.5f;
 
 void Flux_Terrain::Initialise()
 {
@@ -79,6 +80,7 @@ void Flux_Terrain::Initialise()
 	Zenith_DebugVariables::AddBoolean({ "Render", "Enable", "Terrain" }, dbg_bEnable);
 	Zenith_DebugVariables::AddFloat({ "Render", "Terrain", "UV Scale" }, s_xTerrainConstants.m_fUVScale, 0., 10.);
 	Zenith_DebugVariables::AddBoolean({ "Render", "Terrain", "Wireframe" }, dbg_bWireframe);
+	Zenith_DebugVariables::AddFloat({ "Render", "Terrain", "Visiblity Multiplier" }, dbg_fVisibilityThresholdMultiplier, 0.1f, 1.f);
 #endif
 
 	Zenith_Log("Flux_Terrain initialised");
@@ -108,9 +110,11 @@ void Flux_Terrain::Render()
 
 	s_xCommandBuffer.BeginBind(BINDING_FREQUENCY_PER_DRAW);
 
+	const Zenith_CameraComponent& xCam = Zenith_Scene::GetCurrentScene().GetMainCamera();
+
 	for (Zenith_TerrainComponent* pxTerrain : xTerrainComponents)
 	{
-		if (!pxTerrain->IsVisible())
+		if (!pxTerrain->IsVisible(dbg_fVisibilityThresholdMultiplier, xCam))
 		{
 			continue;
 		}

@@ -90,8 +90,6 @@ public:
 
 	bool m_bUsePushConstants = false;//#TODO expand on this, currently just use model matrix
 
-	bool m_bUsesPerDrawDescriptors = false;
-
 	static vk::RenderPass TargetSetupToRenderPass(Flux_TargetSetup& xTargetSetup, LoadAction eColourLoad, StoreAction eColourStore, LoadAction eDepthStencilLoad, StoreAction eDepthStencilStore, RenderTargetUsage eUsage);
 	static vk::Framebuffer TargetSetupToFramebuffer(Flux_TargetSetup& xTargetSetup, const vk::RenderPass& xPass);
 

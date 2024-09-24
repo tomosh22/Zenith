@@ -109,7 +109,7 @@ void Zenith_Vulkan_CommandBuffer::SetIndexBuffer(const Flux_IndexBuffer& xIndexB
 void Zenith_Vulkan_CommandBuffer::PrepareDrawCallDescriptors()
 {
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
-	if (m_pxCurrentPipeline->m_bUsesPerDrawDescriptors)
+	if (m_bDescriptorDirty)
 	{
 		vk::DescriptorSetLayout& xLayout = m_pxCurrentPipeline->m_xPerDrawLayout;
 
@@ -118,7 +118,7 @@ void Zenith_Vulkan_CommandBuffer::PrepareDrawCallDescriptors()
 			.setDescriptorSetCount(1)
 			.setPSetLayouts(&xLayout);
 
-		vk::DescriptorSet xSet = xDevice.allocateDescriptorSets(xInfo)[0];
+		m_xCurrentDescSet = xDevice.allocateDescriptorSets(xInfo)[0];
 
 		uint32_t uNumTextures = 0;
 		for (uint32_t i = 0; i < MAX_BINDINGS; i++)
@@ -173,7 +173,7 @@ void Zenith_Vulkan_CommandBuffer::PrepareDrawCallDescriptors()
 
 			vk::WriteDescriptorSet& xWrite = xTexWrites.at(uCount)
 				.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
-				.setDstSet(xSet)
+				.setDstSet(m_xCurrentDescSet)
 				.setDstBinding(uCount)
 				.setDstArrayElement(0)
 				.setDescriptorCount(1)
@@ -197,7 +197,7 @@ void Zenith_Vulkan_CommandBuffer::PrepareDrawCallDescriptors()
 
 			vk::WriteDescriptorSet& xWrite = xBufferWrites.at(uCount)
 				.setDescriptorType(vk::DescriptorType::eUniformBuffer)
-				.setDstSet(xSet)
+				.setDstSet(m_xCurrentDescSet)
 				.setDstBinding(uCount)
 				.setDstArrayElement(0)
 				.setDescriptorCount(1)
@@ -207,9 +207,9 @@ void Zenith_Vulkan_CommandBuffer::PrepareDrawCallDescriptors()
 		}
 
 		xDevice.updateDescriptorSets(xBufferWrites.size(), xBufferWrites.data(), 0, nullptr);
-
-		m_xCurrentCmdBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pxCurrentPipeline->m_xPipelineLayout, (int)BINDING_FREQUENCY_PER_DRAW, 1, &xSet, 0, nullptr);
 	}
+	m_bDescriptorDirty = false;
+	m_xCurrentCmdBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pxCurrentPipeline->m_xPipelineLayout, (int)BINDING_FREQUENCY_PER_DRAW, 1, &m_xCurrentDescSet, 0, nullptr);
 }
 
 void Zenith_Vulkan_CommandBuffer::Draw(uint32_t uNumVerts)
@@ -315,6 +315,12 @@ void Zenith_Vulkan_CommandBuffer::BindTexture(Zenith_Vulkan_Texture* pxTexture, 
 {
 	Zenith_Assert(m_eCurrentBindFreq < BINDING_FREQUENCY_MAX, "Haven't called BeginBind");
 
+	if (pxTexture != m_apxTextureCache[uBindPoint])
+	{
+		m_bDescriptorDirty = true;
+		m_apxTextureCache[uBindPoint] = pxTexture;
+	}
+
 	if (m_eCurrentBindFreq == BINDING_FREQUENCY_PER_FRAME) {
 		vk::DescriptorImageInfo xInfo = vk::DescriptorImageInfo()
 			.setSampler(Flux_Graphics::s_xDefaultSampler.GetSampler())
@@ -340,6 +346,12 @@ void Zenith_Vulkan_CommandBuffer::BindTexture(Zenith_Vulkan_Texture* pxTexture, 
 void Zenith_Vulkan_CommandBuffer::BindBuffer(Zenith_Vulkan_Buffer* pxBuffer, uint32_t uBindPoint)
 {
 	Zenith_Assert(m_eCurrentBindFreq < BINDING_FREQUENCY_MAX, "Haven't called BeginBind");
+
+	if (pxBuffer != m_apxBufferCache[uBindPoint])
+	{
+		m_bDescriptorDirty = true;
+		m_apxBufferCache[uBindPoint] = pxBuffer;
+	}
 
 	if (m_eCurrentBindFreq == BINDING_FREQUENCY_PER_FRAME) {
 		vk::DescriptorBufferInfo xInfo = vk::DescriptorBufferInfo()

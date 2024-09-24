@@ -34,7 +34,7 @@ public:
 
 	const Zenith_Maths::Vector2 GetPosition_2D() const { return m_xPosition_2D; }
 
-	const bool IsVisible() const;
+	const bool IsVisible(const float fVisibilityMultiplier, const Zenith_CameraComponent& xCam) const;
 private:
 	Zenith_Entity m_xParentEntity;
 	

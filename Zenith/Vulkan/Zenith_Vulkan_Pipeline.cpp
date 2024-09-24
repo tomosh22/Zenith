@@ -792,14 +792,5 @@ void Zenith_Vulkan_PipelineBuilder::FromSpecification(Zenith_Vulkan_Pipeline& xP
 		xPipelineOut.m_axPerDrawSets[i] = xDescThings.xPerDrawSet;
 	}
 
-	for (uint32_t i = 0; i < DESCRIPTOR_TYPE_MAX; i++)
-	{
-		if (spec.m_xPerDrawBindings[i] > 0)
-		{
-			xPipelineOut.m_bUsesPerDrawDescriptors = true;
-			break;
-		}
-	}
-
 	xPipelineOut.m_bUsePushConstants = spec.m_bUsePushConstants;
 }

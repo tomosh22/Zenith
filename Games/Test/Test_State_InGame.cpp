@@ -19,7 +19,7 @@
 
 Zenith_State* Zenith_StateMachine::s_pxCurrentState = new Test_State_InGame;
 
-#define TERRAIN_EXPORT_DIMS 8
+#define TERRAIN_EXPORT_DIMS 64
 
 static Zenith_Entity s_xPlayer;
 static Zenith_Entity s_xBarrel;
@@ -275,12 +275,13 @@ void Test_State_InGame::OnEnter()
 				glm::scale(glm::identity<Zenith_Maths::Matrix4>(), Zenith_Maths::Vector3(TERRAIN_SIZE * TERRAIN_SCALE / 2, TERRAIN_SIZE * TERRAIN_SCALE / 2, TERRAIN_SIZE * TERRAIN_SCALE / 2));
 
 			xTerrain.AddComponent<Zenith_TerrainComponent>(xTerrainMesh, Zenith_AssetHandler::GetMaterial("Rock"), Zenith_AssetHandler::GetMaterial("Crystal"), xWaterTransform, Zenith_Maths::Vector2(x * TERRAIN_SIZE * TERRAIN_SCALE, y * TERRAIN_SIZE * TERRAIN_SCALE));
-
+#if 0
 			{
 				Zenith_TextComponent& xText = xTerrain.AddComponent<Zenith_TextComponent>();
 				TextEntry_World xTextEntry = { std::to_string(x * TERRAIN_SIZE * TERRAIN_SCALE) + " " + std::to_string(MAX_TERRAIN_HEIGHT / 2) + " " + std::to_string(y * TERRAIN_SIZE * TERRAIN_SCALE), {x * TERRAIN_SIZE * TERRAIN_SCALE, MAX_TERRAIN_HEIGHT / 2, y * TERRAIN_SIZE * TERRAIN_SCALE}, 1. };
 				xText.AddText_World(xTextEntry);
 			}
+#endif
 
 
 #if 0
