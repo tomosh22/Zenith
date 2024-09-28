@@ -184,8 +184,7 @@
       <AdditionalDependencies>glfw3_mt.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
-      <IgnoreSpecificDefaultLibraries>
-      </IgnoreSpecificDefaultLibraries>
+      <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
       <LargeAddressAware>true</LargeAddressAware>
       <MapFileName>output\win64\vs2022_debug_win64_false\zenith.map</MapFileName>
     </Link>
@@ -271,8 +270,7 @@
       <AdditionalDependencies>zenithtools.lib;assimp-vc143-mtd.lib;glfw3_mt.lib;opencv_world4100d.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
-      <IgnoreSpecificDefaultLibraries>
-      </IgnoreSpecificDefaultLibraries>
+      <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
       <LargeAddressAware>true</LargeAddressAware>
       <MapFileName>output\win64\vs2022_debug_win64_true\zenith.map</MapFileName>
     </Link>
@@ -358,8 +356,7 @@
       <AdditionalDependencies>glfw3_mt.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
-      <IgnoreSpecificDefaultLibraries>
-      </IgnoreSpecificDefaultLibraries>
+      <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
       <LargeAddressAware>true</LargeAddressAware>
       <MapFileName>output\win64\vs2022_release_win64_false\zenith.map</MapFileName>
     </Link>
@@ -445,8 +442,7 @@
       <AdditionalDependencies>zenithtools.lib;assimp-vc143-mt.lib;glfw3_mt.lib;opencv_world4100.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
-      <IgnoreSpecificDefaultLibraries>
-      </IgnoreSpecificDefaultLibraries>
+      <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
       <LargeAddressAware>true</LargeAddressAware>
       <MapFileName>output\win64\vs2022_release_win64_true\zenith.map</MapFileName>
     </Link>
@@ -454,6 +450,7 @@
   <ItemGroup>
     <ClInclude Include="Games\Test\Components\PlayerController_Behaviour.h" />
     <ClInclude Include="Games\Test\Components\SphereMovement_Behaviour.h" />
+    <ClInclude Include="Games\Test\Test_State_InGame.h" />
     <ClInclude Include="Games\Test\Test_State_MainMenu.h" />
     <ClInclude Include="Middleware\glfw-3.4.bin.WIN64\include\GLFW\glfw3.h" />
     <ClInclude Include="Middleware\glfw-3.4.bin.WIN64\include\GLFW\glfw3native.h" />
@@ -569,7 +566,6 @@
     <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\utils\quickhull\QHHalfEdgeStructure.h" />
     <ClInclude Include="Middleware\reactphysics3d-0.10.1\include\reactphysics3d\utils\quickhull\QuickHull.h" />
     <ClInclude Include="Middleware\vma\vk_mem_alloc.h" />
-    <ClInclude Include="Games\Test\Test_State_InGame.h" />
     <ClInclude Include="Zenith\AssetHandling\Zenith_AssetHandler.h" />
     <ClInclude Include="Zenith\Core\Zenith.h" />
     <ClInclude Include="Zenith\Core\Zenith_Core.h" />
@@ -584,6 +580,7 @@
     <ClInclude Include="Zenith\EntityComponent\Zenith_Entity.h" />
     <ClInclude Include="Zenith\EntityComponent\Zenith_Scene.h" />
     <ClInclude Include="Zenith\FileAccess\Zenith_FileAccess.h" />
+    <ClInclude Include="Zenith\Flux\AnimatedMeshes\Flux_AnimatedMeshes.h" />
     <ClInclude Include="Zenith\Flux\DeferredShading\Flux_DeferredShading.h" />
     <ClInclude Include="Zenith\Flux\Flux.h" />
     <ClInclude Include="Zenith\Flux\Flux_Buffers.h" />
@@ -596,6 +593,8 @@
     <ClInclude Include="Zenith\Flux\MeshGeometry\Flux_MeshGeometry.h" />
     <ClInclude Include="Zenith\Flux\Particles\Flux_Particles.h" />
     <ClInclude Include="Zenith\Flux\SDFs\Flux_SDFs.h" />
+    <ClInclude Include="Zenith\Flux\Shaders\AnimatedMeshes\Flux_AnimatedMeshes.frag" />
+    <ClInclude Include="Zenith\Flux\Shaders\AnimatedMeshes\Flux_AnimatedMeshes.vert" />
     <ClInclude Include="Zenith\Flux\Shaders\Common.fxh" />
     <ClInclude Include="Zenith\Flux\Shaders\DeferredShading\Flux_DeferredShading.frag" />
     <ClInclude Include="Zenith\Flux\Shaders\Flux_Fullscreen_UV.vert" />
@@ -1181,6 +1180,7 @@
     <ClCompile Include="Zenith\EntityComponent\Zenith_Entity.cpp" />
     <ClCompile Include="Zenith\EntityComponent\Zenith_Scene.cpp" />
     <ClCompile Include="Zenith\FileAccess\Zenith_FileAccess.cpp" />
+    <ClCompile Include="Zenith\Flux\AnimatedMeshes\Flux_AnimatedMeshes.cpp" />
     <ClCompile Include="Zenith\Flux\DeferredShading\Flux_DeferredShading.cpp" />
     <ClCompile Include="Zenith\Flux\Flux.cpp" />
     <ClCompile Include="Zenith\Flux\Flux_Buffers.cpp" />

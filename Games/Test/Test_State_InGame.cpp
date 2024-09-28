@@ -41,10 +41,10 @@ static Zenith_Entity s_xOgre;
 
 static void LoadAssets()
 {
-	Zenith_AssetHandler::AddMesh("Barrel", "C:/dev/Zenith/Games/Test/Assets/Meshes/barrel_0.zmsh");
+	Zenith_AssetHandler::AddMesh("Barrel", "C:/dev/Zenith/Games/Test/Assets/Meshes/barrel_Mesh0_Mat0.zmsh");
 	{
-		Zenith_AssetHandler::AddTexture2D("Barrel_Diffuse", "C:/dev/Zenith/Games/Test/Assets/Meshes/barrelDiffuse.ztx");
-		Zenith_AssetHandler::AddTexture2D("Barrel_Metallic", "C:/dev/Zenith/Games/Test/Assets/Meshes/barrelShininess.ztx");
+		Zenith_AssetHandler::AddTexture2D("Barrel_Diffuse", "C:/dev/Zenith/Games/Test/Assets/Meshes/barrel_Diffuse_0.ztx");
+		Zenith_AssetHandler::AddTexture2D("Barrel_Metallic", "C:/dev/Zenith/Games/Test/Assets/Meshes/barrel_Shininess_0.ztx");
 
 		Flux_Texture& xDiffuse = Zenith_AssetHandler::GetTexture("Barrel_Diffuse");
 		Flux_Texture& xMetallic = Zenith_AssetHandler::GetTexture("Barrel_Metallic");
@@ -54,7 +54,7 @@ static void LoadAssets()
 		xMat.SetMetallic(&xMetallic);
 	}
 
-	Zenith_AssetHandler::AddMesh("Sphere_Smooth", "C:/dev/Zenith/Games/Test/Assets/Meshes/sphereSmooth_0.zmsh");
+	Zenith_AssetHandler::AddMesh("Sphere_Smooth", "C:/dev/Zenith/Games/Test/Assets/Meshes/sphereSmooth_Mesh0_Mat0.zmsh");
 	{
 		Zenith_AssetHandler::AddTexture2D("Crystal_Diffuse", "C:/dev/Zenith/Games/Test/Assets/Textures/crystal2k/diffuse.ztx");
 		Zenith_AssetHandler::AddTexture2D("Crystal_Normal", "C:/dev/Zenith/Games/Test/Assets/Textures/crystal2k/normal.ztx");

@@ -2,10 +2,18 @@
 #include "Flux/Flux_Types.h"
 #include "Flux/Flux_Buffers.h"
 
+#define MAX_BONES_PER_VERTEX 4
+
 class Flux_MeshGeometry
 {
 public:
 	using IndexType = uint32_t;
+
+	struct Bone
+	{
+		uint32_t m_uID = ~0u;
+		Zenith_Maths::Matrix4 m_xOffsetMat = glm::identity<glm::mat4>();
+	};
 
 	~Flux_MeshGeometry()
 	{
@@ -42,6 +50,7 @@ public:
 	const uint64_t GetIndexDataSize() const { return m_uNumIndices * sizeof(IndexType); }
 	const uint32_t GetNumVerts() const { return m_uNumVerts; }
 	const uint32_t GetNumIndices() const { return m_uNumIndices; }
+	const uint32_t GetNumBones() const { return m_uNumBones; }
 
 	const Flux_VertexBuffer& GetVertexBuffer() const { return m_xVertexBuffer; }
 	Flux_VertexBuffer& GetVertexBuffer() { return m_xVertexBuffer; }
@@ -67,6 +76,9 @@ private:
 
 	uint32_t m_uNumVerts = 0;
 	uint32_t m_uNumIndices = 0;
+	uint32_t m_uNumBones = 0;
+
+	std::unordered_map<std::string, uint32_t> m_xBoneNameToID;
 
 	IndexType* m_puIndices = nullptr;
 
@@ -76,6 +88,11 @@ private:
 	Zenith_Maths::Vector3* m_pxTangents = nullptr;
 	Zenith_Maths::Vector3* m_pxBitangents = nullptr;
 	float* m_pfMaterialLerps = nullptr;
+	uint32_t* m_puBoneIDs = nullptr;
+	float* m_pfBoneWeights = nullptr;
+
+	//#TO_TODO: move this to a separate skeleton class
+	Bone* m_pxBones = nullptr;
 
 	void* m_pVertexData = nullptr;
 

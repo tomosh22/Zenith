@@ -10,6 +10,9 @@
     <ClCompile Include="Games\Test\Test_State_InGame.cpp">
       <Filter>Games\Test</Filter>
     </ClCompile>
+    <ClCompile Include="Games\Test\Test_State_MainMenu.cpp">
+      <Filter>Games\Test</Filter>
+    </ClCompile>
     <ClCompile Include="Middleware\reactphysics3d-0.10.1\src\body\Body.cpp">
       <Filter>Middleware\reactphysics3d-0.10.1\src\body</Filter>
     </ClCompile>
@@ -313,6 +316,9 @@
     <ClCompile Include="Zenith\FileAccess\Zenith_FileAccess.cpp">
       <Filter>Zenith\FileAccess</Filter>
     </ClCompile>
+    <ClCompile Include="Zenith\Flux\AnimatedMeshes\Flux_AnimatedMeshes.cpp">
+      <Filter>Zenith\Flux\AnimatedMeshes</Filter>
+    </ClCompile>
     <ClCompile Include="Zenith\Flux\DeferredShading\Flux_DeferredShading.cpp">
       <Filter>Zenith\Flux\DeferredShading</Filter>
     </ClCompile>
@@ -397,9 +403,6 @@
     <ClCompile Include="Zenith\Zenith_Main.cpp">
       <Filter>Zenith</Filter>
     </ClCompile>
-    <ClCompile Include="Games\Test\Test_State_MainMenu.cpp">
-      <Filter>Games\Test</Filter>
-    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Games\Test\Components\PlayerController_Behaviour.h">
@@ -407,6 +410,12 @@
     </ClInclude>
     <ClInclude Include="Games\Test\Components\SphereMovement_Behaviour.h">
       <Filter>Games\Test\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="Games\Test\Test_State_InGame.h">
+      <Filter>Games\Test</Filter>
+    </ClInclude>
+    <ClInclude Include="Games\Test\Test_State_MainMenu.h">
+      <Filter>Games\Test</Filter>
     </ClInclude>
     <ClInclude Include="Middleware\glfw-3.4.bin.WIN64\include\GLFW\glfw3.h">
       <Filter>Middleware\glfw-3.4.bin.WIN64\include\GLFW</Filter>
@@ -792,6 +801,9 @@
     <ClInclude Include="Zenith\FileAccess\Zenith_FileAccess.h">
       <Filter>Zenith\FileAccess</Filter>
     </ClInclude>
+    <ClInclude Include="Zenith\Flux\AnimatedMeshes\Flux_AnimatedMeshes.h">
+      <Filter>Zenith\Flux\AnimatedMeshes</Filter>
+    </ClInclude>
     <ClInclude Include="Zenith\Flux\DeferredShading\Flux_DeferredShading.h">
       <Filter>Zenith\Flux\DeferredShading</Filter>
     </ClInclude>
@@ -827,6 +839,12 @@
     </ClInclude>
     <ClInclude Include="Zenith\Flux\SDFs\Flux_SDFs.h">
       <Filter>Zenith\Flux\SDFs</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\Flux\Shaders\AnimatedMeshes\Flux_AnimatedMeshes.frag">
+      <Filter>Zenith\Flux\Shaders\AnimatedMeshes</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\Flux\Shaders\AnimatedMeshes\Flux_AnimatedMeshes.vert">
+      <Filter>Zenith\Flux\Shaders\AnimatedMeshes</Filter>
     </ClInclude>
     <ClInclude Include="Zenith\Flux\Shaders\Common.fxh">
       <Filter>Zenith\Flux\Shaders</Filter>
@@ -941,12 +959,6 @@
     </ClInclude>
     <ClInclude Include="Zenith\Windows\Zenith_Windows_Window.h">
       <Filter>Zenith\Windows</Filter>
-    </ClInclude>
-    <ClInclude Include="Games\Test\Test_State_InGame.h">
-      <Filter>Games\Test</Filter>
-    </ClInclude>
-    <ClInclude Include="Games\Test\Test_State_MainMenu.h">
-      <Filter>Games\Test</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -1103,6 +1115,9 @@
     <Filter Include="Zenith\Flux">
       <UniqueIdentifier>{9d602350-76e0-e794-ea6c-7f4e438d0b6b}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Zenith\Flux\AnimatedMeshes">
+      <UniqueIdentifier>{f20ecdc9-c040-d7d0-6e61-2605d273d021}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Zenith\Flux\DeferredShading">
       <UniqueIdentifier>{a05482b8-8497-e0cb-fb99-b146f9c748e5}</UniqueIdentifier>
     </Filter>
@@ -1120,6 +1135,9 @@
     </Filter>
     <Filter Include="Zenith\Flux\Shaders">
       <UniqueIdentifier>{023039c4-353d-0c39-1bdd-99bb116ea5f5}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Zenith\Flux\Shaders\AnimatedMeshes">
+      <UniqueIdentifier>{ed4cf6ff-edeb-60db-a75d-df5258b36072}</UniqueIdentifier>
     </Filter>
     <Filter Include="Zenith\Flux\Shaders\DeferredShading">
       <UniqueIdentifier>{4803051e-ebbc-36d1-e229-2d53d979a6af}</UniqueIdentifier>

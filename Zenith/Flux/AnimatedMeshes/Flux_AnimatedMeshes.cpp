@@ -1,6 +1,6 @@
 #include "Zenith.h"
 
-#include "Flux/StaticMeshes/Flux_StaticMeshes.h"
+#include "Flux/AnimatedMeshes/Flux_AnimatedMeshes.h"
 
 #include "Flux/Flux.h"
 #include "Flux/Flux_RenderTargets.h"
@@ -18,11 +18,11 @@ static Flux_Pipeline s_xPipeline;
 
 DEBUGVAR bool dbg_bEnable = true;
 
-void Flux_StaticMeshes::Initialise()
+void Flux_AnimatedMeshes::Initialise()
 {
 	s_xCommandBuffer.Initialise();
 
-	s_xShader.Initialise("StaticMeshes/Flux_StaticMeshes.vert", "StaticMeshes/Flux_StaticMeshes.frag");
+	s_xShader.Initialise("AnimatedMeshes/Flux_AnimatedMeshes.vert", "AnimatedMeshes/Flux_AnimatedMeshes.frag");
 
 	Flux_VertexInputDescription xVertexDesc;
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_TRIANGLES;
@@ -31,6 +31,15 @@ void Flux_StaticMeshes::Initialise()
 	xVertexDesc.m_xPerVertexLayout.GetElements().push_back(SHADER_DATA_TYPE_FLOAT3);
 	xVertexDesc.m_xPerVertexLayout.GetElements().push_back(SHADER_DATA_TYPE_FLOAT3);
 	xVertexDesc.m_xPerVertexLayout.GetElements().push_back(SHADER_DATA_TYPE_FLOAT3);
+
+	xVertexDesc.m_xPerVertexLayout.GetElements().push_back(SHADER_DATA_TYPE_UINT);
+	xVertexDesc.m_xPerVertexLayout.GetElements().push_back(SHADER_DATA_TYPE_UINT);
+	xVertexDesc.m_xPerVertexLayout.GetElements().push_back(SHADER_DATA_TYPE_UINT);
+	xVertexDesc.m_xPerVertexLayout.GetElements().push_back(SHADER_DATA_TYPE_UINT);
+	xVertexDesc.m_xPerVertexLayout.GetElements().push_back(SHADER_DATA_TYPE_FLOAT);
+	xVertexDesc.m_xPerVertexLayout.GetElements().push_back(SHADER_DATA_TYPE_FLOAT);
+	xVertexDesc.m_xPerVertexLayout.GetElements().push_back(SHADER_DATA_TYPE_FLOAT);
+	xVertexDesc.m_xPerVertexLayout.GetElements().push_back(SHADER_DATA_TYPE_FLOAT);
 	xVertexDesc.m_xPerVertexLayout.CalculateOffsetsAndStrides();
 
 	std::vector<Flux_BlendState> xBlendStates;
@@ -58,13 +67,13 @@ void Flux_StaticMeshes::Initialise()
 	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
 
 #ifdef ZENITH_DEBUG_VARIABLES
-	Zenith_DebugVariables::AddBoolean({ "Render", "Enable", "Static Meshes" }, dbg_bEnable);
+	Zenith_DebugVariables::AddBoolean({ "Render", "Enable", "Animated Meshes" }, dbg_bEnable);
 #endif
 
-	Zenith_Log("Flux_StaticMeshes initialised");
+	Zenith_Log("Flux_AnimatedMeshes initialised");
 }
 
-void Flux_StaticMeshes::Render()
+void Flux_AnimatedMeshes::Render()
 {
 	if (!dbg_bEnable)
 	{
@@ -88,7 +97,7 @@ void Flux_StaticMeshes::Render()
 	for (Zenith_ModelComponent* pxModel : xModels)
 	{
 		//#TO_TODO: these 2 should probably be separate components
-		if (pxModel->GetMeshGeometryAtIndex(0).GetNumBones())
+		if (!pxModel->GetMeshGeometryAtIndex(0).GetNumBones())
 		{
 			continue;
 		}

@@ -13,18 +13,50 @@ static void ExportAssimpMesh(aiMesh* pxAssimpMesh, std::string strOutFilename)
 
 	Flux_MeshGeometry xMesh;
 
-	Zenith_Assert(pxAssimpMesh->mNumBones == 0, "Don't support exporting skinned meshes");
-
 	xMesh.m_uNumVerts = pxAssimpMesh->mNumVertices;
 	xMesh.m_uNumIndices = pxAssimpMesh->mNumFaces * 3;
 
 	xMesh.m_puIndices = new Flux_MeshGeometry::IndexType[xMesh.m_uNumIndices];
 
-	bool bHasPositions = &(pxAssimpMesh->mVertices[0]);
-	bool bHasUVs = &(pxAssimpMesh->mTextureCoords[0][0]);
-	bool bHasNormals = &(pxAssimpMesh->mNormals[0]);
-	bool bHasTangents = &(pxAssimpMesh->mTangents[0]);
-	bool bHasBitangents = &(pxAssimpMesh->mBitangents[0]);
+	const bool bHasPositions = &(pxAssimpMesh->mVertices[0]);
+	const bool bHasUVs = &(pxAssimpMesh->mTextureCoords[0][0]);
+	const bool bHasNormals = &(pxAssimpMesh->mNormals[0]);
+	const bool bHasTangents = &(pxAssimpMesh->mTangents[0]);
+	const bool bHasBitangents = &(pxAssimpMesh->mBitangents[0]);
+	const bool bHasBones = pxAssimpMesh->mNumBones;
+
+	if (bHasBones)
+	{
+		xMesh.m_uNumBones = pxAssimpMesh->mNumBones;
+		xMesh.m_pxBones = new Flux_MeshGeometry::Bone[xMesh.m_uNumBones];
+
+		for (uint32_t u = 0; u < xMesh.m_uNumBones; u++)
+		{
+			Flux_MeshGeometry::Bone& xBone = xMesh.m_pxBones[u];
+			xBone.m_uID = u;
+
+			const aiMatrix4x4& xAssimpMat = pxAssimpMesh->mBones[u]->mOffsetMatrix;
+			xBone.m_xOffsetMat[0][0] = xAssimpMat.a1;
+			xBone.m_xOffsetMat[1][0] = xAssimpMat.a2;
+			xBone.m_xOffsetMat[2][0] = xAssimpMat.a3;
+			xBone.m_xOffsetMat[3][0] = xAssimpMat.a4;
+			xBone.m_xOffsetMat[0][1] = xAssimpMat.b1;
+			xBone.m_xOffsetMat[1][1] = xAssimpMat.b2;
+			xBone.m_xOffsetMat[2][1] = xAssimpMat.b3;
+			xBone.m_xOffsetMat[3][1] = xAssimpMat.b4;
+			xBone.m_xOffsetMat[0][2] = xAssimpMat.c1;
+			xBone.m_xOffsetMat[1][2] = xAssimpMat.c2;
+			xBone.m_xOffsetMat[2][2] = xAssimpMat.c3;
+			xBone.m_xOffsetMat[3][2] = xAssimpMat.c4;
+			xBone.m_xOffsetMat[0][3] = xAssimpMat.d1;
+			xBone.m_xOffsetMat[1][3] = xAssimpMat.d2;
+			xBone.m_xOffsetMat[2][3] = xAssimpMat.d3;
+			xBone.m_xOffsetMat[3][3] = xAssimpMat.d4;
+
+			Zenith_Assert(xMesh.m_xBoneNameToID.find(pxAssimpMesh->mBones[u]->mName.C_Str()) == xMesh.m_xBoneNameToID.end(), "Bone name already exists");
+			xMesh.m_xBoneNameToID.insert({pxAssimpMesh->mBones[u]->mName.C_Str(), u});
+		}
+	}
 
 	if (bHasPositions)
 	{
@@ -46,7 +78,14 @@ static void ExportAssimpMesh(aiMesh* pxAssimpMesh, std::string strOutFilename)
 	{
 		xMesh.m_pxBitangents = new glm::vec3[xMesh.m_uNumVerts];
 	}
-
+	if (bHasBones)
+	{
+		xMesh.m_puBoneIDs = new uint32_t[xMesh.m_uNumVerts * MAX_BONES_PER_VERTEX];
+		xMesh.m_pfBoneWeights = new float[xMesh.m_uNumVerts * MAX_BONES_PER_VERTEX];
+		memset(xMesh.m_puBoneIDs, ~0u, sizeof(uint32_t) * xMesh.m_uNumVerts * MAX_BONES_PER_VERTEX);
+		memset(xMesh.m_pfBoneWeights, 0u, sizeof(float) * xMesh.m_uNumVerts * MAX_BONES_PER_VERTEX);
+	}
+	
 	for (uint32_t i = 0; i < pxAssimpMesh->mNumVertices; i++)
 	{
 		if (bHasPositions)
@@ -73,6 +112,34 @@ static void ExportAssimpMesh(aiMesh* pxAssimpMesh, std::string strOutFilename)
 		{
 			const aiVector3D* pxBitangent = &(pxAssimpMesh->mBitangents[i]);
 			xMesh.m_pxBitangents[i] = glm::vec3(pxBitangent->x, pxBitangent->y, pxBitangent->z);
+		}
+	}
+
+	if (bHasBones)
+	{
+		for (int uBoneIndex = 0; uBoneIndex < pxAssimpMesh->mNumBones; uBoneIndex++)
+		{
+			const aiBone* pxBone = pxAssimpMesh->mBones[uBoneIndex];
+			const aiVertexWeight* pxWeights = pxBone->mWeights;
+
+			for (uint32_t uWeightIndex = 0; uWeightIndex < pxAssimpMesh->mBones[uBoneIndex]->mNumWeights; uWeightIndex++)
+			{
+				const aiVertexWeight& xWeight = pxWeights[uWeightIndex];
+				uint32_t uVertexID = xWeight.mVertexId;
+				float fWeight = xWeight.mWeight;
+				
+				uint32_t* puFirstIndexForThisVertex = xMesh.m_puBoneIDs + uVertexID * MAX_BONES_PER_VERTEX;
+				for (uint32_t u = 0; u < MAX_BONES_PER_VERTEX; u++)
+				{
+					if (*(puFirstIndexForThisVertex + u) == ~0u)
+					{
+						*(puFirstIndexForThisVertex + u) = uBoneIndex;
+						*(xMesh.m_pfBoneWeights + u) = fWeight;
+						break;
+					}
+					Zenith_Assert(u < MAX_BONES_PER_VERTEX - 1, "Failed to assign vertex to bone");
+				}
+			}
 		}
 	}
 

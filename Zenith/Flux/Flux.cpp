@@ -4,6 +4,7 @@
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Skybox/Flux_Skybox.h"
 #include "Flux/StaticMeshes/Flux_StaticMeshes.h"
+#include "Flux/AnimatedMeshes/Flux_AnimatedMeshes.h"
 #include "Flux/Terrain/Flux_Terrain.h"
 #include "Flux/DeferredShading/Flux_DeferredShading.h"
 #include "Flux/Water/Flux_Water.h"
@@ -31,6 +32,7 @@ void Flux::LateInitialise()
 	Flux_Graphics::Initialise();
 	Flux_Skybox::Initialise();
 	Flux_StaticMeshes::Initialise();
+	Flux_AnimatedMeshes::Initialise();
 	Flux_Terrain::Initialise();
 	Flux_DeferredShading::Initialise();
 	Flux_Water::Initialise();
