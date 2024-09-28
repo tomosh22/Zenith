@@ -89,20 +89,21 @@ void Flux_StaticMeshes::Render()
 	{
 		for (uint32_t uMesh = 0; uMesh < pxModel->GetNumMeshEntires(); uMesh++)
 		{
-			s_xCommandBuffer.SetVertexBuffer(pxModel->GetMeshGeometryAtIndex(uMesh).GetVertexBuffer());
-			s_xCommandBuffer.SetIndexBuffer(pxModel->GetMeshGeometryAtIndex(uMesh).GetIndexBuffer());
+			const Flux_MeshGeometry& xMesh = pxModel->GetMeshGeometryAtIndex(uMesh);
+			s_xCommandBuffer.SetVertexBuffer(xMesh.GetVertexBuffer());
+			s_xCommandBuffer.SetIndexBuffer(xMesh.GetIndexBuffer());
 
 			Zenith_Maths::Matrix4 xModelMatrix;
 			pxModel->GetParentEntity().GetComponent<Zenith_TransformComponent>().BuildModelMatrix(xModelMatrix);
 			s_xCommandBuffer.PushConstant(&xModelMatrix, sizeof(xModelMatrix));
-			Flux_Material& xMaterial = pxModel->GetMaterialAtIndex(uMesh);
+			const Flux_Material& xMaterial = pxModel->GetMaterialAtIndex(uMesh);
 
 			s_xCommandBuffer.BindTexture(xMaterial.GetDiffuse(), 0);
 			s_xCommandBuffer.BindTexture(xMaterial.GetNormal(), 1);
 			s_xCommandBuffer.BindTexture(xMaterial.GetRoughness(), 2);
 			s_xCommandBuffer.BindTexture(xMaterial.GetMetallic(), 3);
 
-			s_xCommandBuffer.DrawIndexed(pxModel->GetMeshGeometryAtIndex(uMesh).GetNumIndices());
+			s_xCommandBuffer.DrawIndexed(xMesh.GetNumIndices());
 		}
 	}
 
