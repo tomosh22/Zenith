@@ -10,8 +10,11 @@
 #include "StateMachine/Zenith_StateMachine.h"
 #include "Physics/Zenith_Physics.h"
 
-
-
+#ifdef ZENITH_TOOLS
+extern void ExportAllMeshes();
+extern void ExportAllTextures();
+extern void ExportHeightmap();
+#endif
 
 
 static bool s_bDVSTest0 = false;
@@ -22,6 +25,8 @@ static Zenith_Maths::Vector3 s_xDVSTest4 = { 1,2,3 };
 
 int main()
 {
+	//ExportAllMeshes();
+	//ExportHeightmap();
 	Zenith_Core::s_xLastFrameTime = std::chrono::high_resolution_clock::now();
 	Zenith_Window::Inititalise("Zenith", 1280, 720);
 	Flux::EarlyInitialise();
@@ -41,10 +46,6 @@ int main()
 	Flux::LateInitialise();
 
 #if defined ZENITH_TOOLS && defined ZENITH_DEBUG_VARIABLES
-
-	extern void ExportAllMeshes();
-	extern void ExportAllTextures();
-	extern void ExportHeightmap();
 
 	Zenith_DebugVariables::AddButton({ "Export", "Meshes", "Export All Meshes" }, ExportAllMeshes);
 	Zenith_DebugVariables::AddButton({ "Export", "Textures", "Export All Textures" }, ExportAllTextures);

@@ -4,6 +4,7 @@
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Skybox/Flux_Skybox.h"
 #include "Flux/StaticMeshes/Flux_StaticMeshes.h"
+#include "Flux/AnimatedMeshes/Flux_AnimatedMeshes.h"
 #include "Flux/Terrain/Flux_Terrain.h"
 #include "Flux/DeferredShading/Flux_DeferredShading.h"
 #include "Flux/Water/Flux_Water.h"
@@ -95,6 +96,7 @@ void Zenith_Core::Zenith_MainLoop()
 
 	Flux_Skybox::Render();
 	Flux_StaticMeshes::Render();
+	Flux_AnimatedMeshes::Render();
 	Flux_Terrain::Render();
 	Flux_DeferredShading::Render();
 	Flux_Water::Render();

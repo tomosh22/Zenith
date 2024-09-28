@@ -87,6 +87,11 @@ void Flux_StaticMeshes::Render()
 
 	for (Zenith_ModelComponent* pxModel : xModels)
 	{
+		//#TO_TODO: these 2 should probably be separate components
+		if (pxModel->GetMeshGeometryAtIndex(0).GetNumBones())
+		{
+			continue;
+		}
 		for (uint32_t uMesh = 0; uMesh < pxModel->GetNumMeshEntires(); uMesh++)
 		{
 			const Flux_MeshGeometry& xMesh = pxModel->GetMeshGeometryAtIndex(uMesh);

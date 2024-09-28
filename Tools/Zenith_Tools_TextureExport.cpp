@@ -38,7 +38,7 @@ void Zenith_Tools_TextureExport::ExportFromFile(std::string strFilename, const c
 void Zenith_Tools_TextureExport::ExportFromData(const void* pData, const std::string& strFilename, int32_t iWidth, int32_t iHeight, ColourFormat eFormat)
 {
 	FILE* pxFile = fopen(strFilename.c_str(), "wb");
-	Zenith_Assert(pxFile, "Failed to open file");
+	Zenith_Assert(pxFile, "Failed to open file %s", strFilename.c_str());
 	char cNull = '\0';
 
 	fputs(std::to_string(iWidth).c_str(), pxFile);

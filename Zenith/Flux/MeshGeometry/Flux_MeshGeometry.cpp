@@ -68,6 +68,7 @@ ShaderDataType StringToShaderDataType(const std::string& strString)
 	if (strString == "Float2") return SHADER_DATA_TYPE_FLOAT2;
 	if (strString == "Float3") return SHADER_DATA_TYPE_FLOAT3;
 	if (strString == "Float4") return SHADER_DATA_TYPE_FLOAT4;
+	if (strString == "UInt") return SHADER_DATA_TYPE_UINT;
 	if (strString == "UInt4") return SHADER_DATA_TYPE_UINT4;
 	Zenith_Assert(false, "Unrecognized data type");
 	return SHADER_DATA_TYPE_NONE;
@@ -93,7 +94,7 @@ void Flux_MeshGeometry::LoadFromFile(const char* szPath, Flux_MeshGeometry& xGeo
 	size_t ulCursor = 0;
 
 	uint32_t uNumElements = atoi(pcData + ulCursor);
-	ulCursor += 2;
+	ulCursor += std::to_string(uNumElements).length() + 1;
 	for (uint32_t i = 0; i < uNumElements; i++)
 	{
 		std::string strType(pcData + ulCursor);
@@ -109,14 +110,21 @@ void Flux_MeshGeometry::LoadFromFile(const char* szPath, Flux_MeshGeometry& xGeo
 	size_t ulNumIndices = atoi(pcData + ulCursor);
 	ulCursor += std::to_string(ulNumIndices).length() + 1;
 
+	size_t ulNumBones = atoi(pcData + ulCursor);
+	ulCursor += std::to_string(ulNumBones).length() + 1;
+
 	size_t ulVertBufferLen = atoi(pcData + ulCursor);
 	ulCursor += std::to_string(ulVertBufferLen).length() + 1;
 
 	size_t ulIndexBufferLen = atoi(pcData + ulCursor);
 	ulCursor += std::to_string(ulIndexBufferLen).length() + 1;
 
+	size_t ulBoneBufferLen = atoi(pcData + ulCursor);
+	ulCursor += std::to_string(ulBoneBufferLen).length() + 1;
+
 	xGeometryOut.m_uNumVerts = ulNumVerts;
 	xGeometryOut.m_uNumIndices = ulNumIndices;
+	xGeometryOut.m_uNumBones = ulNumBones;
 
 	Zenith_Assert(ulVertBufferLen == xGeometryOut.m_uNumVerts * xGeometryOut.m_xBufferLayout.GetStride(), "Vertex buffer is wrong size");
 	Zenith_Assert(ulIndexBufferLen == xGeometryOut.m_uNumIndices * sizeof(IndexType), "Index buffer is wrong size");
@@ -166,6 +174,8 @@ static std::string ShaderDataTypeToString(ShaderDataType eType)
 		return "Float3";
 	case SHADER_DATA_TYPE_FLOAT4:
 		return "Float4";
+	case SHADER_DATA_TYPE_UINT:
+		return "UInt";
 	case SHADER_DATA_TYPE_UINT4:
 		return "UInt4";
 	default:
@@ -193,15 +203,26 @@ void Flux_MeshGeometry::Export(const char* szFilename)
 	fputs(std::to_string(m_uNumIndices).c_str(), pxFile);
 	fwrite(&cNull, 1, 1, pxFile);
 
+	//#TO_TODO: move to separate class
+	fputs(std::to_string(m_uNumBones).c_str(), pxFile);
+	fwrite(&cNull, 1, 1, pxFile);
+
 	fputs(std::to_string(m_uNumVerts * m_xBufferLayout.GetStride()).c_str(), pxFile);
 	fwrite(&cNull, 1, 1, pxFile);
 
 	fputs(std::to_string(m_uNumIndices * sizeof(Flux_MeshGeometry::IndexType)).c_str(), pxFile);
 	fwrite(&cNull, 1, 1, pxFile);
 
+	//#TO_TODO: move to separate class
+	fputs(std::to_string(m_uNumBones * sizeof(Flux_MeshGeometry::Bone)).c_str(), pxFile);
+	fwrite(&cNull, 1, 1, pxFile);
+
 	fwrite(m_pVertexData, m_uNumVerts * m_xBufferLayout.GetStride(), 1, pxFile);
 
 	fwrite(m_puIndices, m_uNumIndices * sizeof(Flux_MeshGeometry::IndexType), 1, pxFile);
+
+	//#TO_TODO: move to separate class
+	fwrite(m_pxBones, m_uNumBones * sizeof(Flux_MeshGeometry::Bone), 1, pxFile);
 
 	fwrite(m_pxPositions, m_uNumVerts * sizeof(m_pxPositions[0]), 1, pxFile);
 
@@ -245,6 +266,15 @@ void Flux_MeshGeometry::GenerateLayoutAndVertexData()
 		uNumFloats += 1;
 	}
 
+	if (m_puBoneIDs != nullptr)
+	{
+		Zenith_Assert(m_pfBoneWeights != nullptr, "How have we wound up with bone IDs but no weights");
+		static_assert(MAX_BONES_PER_VERTEX == 4, "data type needs changing");
+		m_xBufferLayout.GetElements().push_back({ SHADER_DATA_TYPE_UINT4 });
+		m_xBufferLayout.GetElements().push_back({ SHADER_DATA_TYPE_FLOAT4 });
+		uNumFloats += MAX_BONES_PER_VERTEX * 2;
+	}
+
 	m_pVertexData = new float[m_uNumVerts * uNumFloats];
 
 	size_t index = 0;
@@ -283,6 +313,18 @@ void Flux_MeshGeometry::GenerateLayoutAndVertexData()
 		if (m_pfMaterialLerps != nullptr)
 		{
 			((float*)m_pVertexData)[index++] = m_pfMaterialLerps[i];
+		}
+		if (m_puBoneIDs != nullptr)
+		{
+			//we've already asserted that weights isn't null
+			((uint32_t*)m_pVertexData)[index++] = m_puBoneIDs[i + 0];
+			((uint32_t*)m_pVertexData)[index++] = m_puBoneIDs[i + 1];
+			((uint32_t*)m_pVertexData)[index++] = m_puBoneIDs[i + 2];
+			((uint32_t*)m_pVertexData)[index++] = m_puBoneIDs[i + 3];
+			((float*)m_pVertexData)[index++] = m_pfBoneWeights[i + 0];
+			((float*)m_pVertexData)[index++] = m_pfBoneWeights[i + 1];
+			((float*)m_pVertexData)[index++] = m_pfBoneWeights[i + 2];
+			((float*)m_pVertexData)[index++] = m_pfBoneWeights[i + 3];
 		}
 	}
 
