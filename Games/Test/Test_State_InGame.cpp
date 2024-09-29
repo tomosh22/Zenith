@@ -19,7 +19,7 @@
 
 Zenith_State* Zenith_StateMachine::s_pxCurrentState = new Test_State_InGame;
 
-#define TERRAIN_EXPORT_DIMS 64
+#define TERRAIN_EXPORT_DIMS 8
 
 static Zenith_Entity s_xPlayer;
 static Zenith_Entity s_xBarrel;

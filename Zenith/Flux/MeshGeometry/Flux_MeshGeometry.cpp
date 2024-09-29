@@ -317,14 +317,14 @@ void Flux_MeshGeometry::GenerateLayoutAndVertexData()
 		if (m_puBoneIDs != nullptr)
 		{
 			//we've already asserted that weights isn't null
-			((uint32_t*)m_pVertexData)[index++] = m_puBoneIDs[i + 0];
-			((uint32_t*)m_pVertexData)[index++] = m_puBoneIDs[i + 1];
-			((uint32_t*)m_pVertexData)[index++] = m_puBoneIDs[i + 2];
-			((uint32_t*)m_pVertexData)[index++] = m_puBoneIDs[i + 3];
-			((float*)m_pVertexData)[index++] = m_pfBoneWeights[i + 0];
-			((float*)m_pVertexData)[index++] = m_pfBoneWeights[i + 1];
-			((float*)m_pVertexData)[index++] = m_pfBoneWeights[i + 2];
-			((float*)m_pVertexData)[index++] = m_pfBoneWeights[i + 3];
+			((uint32_t*)m_pVertexData)[index++] = m_puBoneIDs[i * MAX_BONES_PER_VERTEX + 0];
+			((uint32_t*)m_pVertexData)[index++] = m_puBoneIDs[i * MAX_BONES_PER_VERTEX + 1];
+			((uint32_t*)m_pVertexData)[index++] = m_puBoneIDs[i * MAX_BONES_PER_VERTEX + 2];
+			((uint32_t*)m_pVertexData)[index++] = m_puBoneIDs[i * MAX_BONES_PER_VERTEX + 3];
+			((float*)m_pVertexData)[index++] = m_pfBoneWeights[i * MAX_BONES_PER_VERTEX + 0];
+			((float*)m_pVertexData)[index++] = m_pfBoneWeights[i * MAX_BONES_PER_VERTEX + 1];
+			((float*)m_pVertexData)[index++] = m_pfBoneWeights[i * MAX_BONES_PER_VERTEX + 2];
+			((float*)m_pVertexData)[index++] = m_pfBoneWeights[i * MAX_BONES_PER_VERTEX + 3];
 		}
 	}
 

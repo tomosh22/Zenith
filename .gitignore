@@ -33,6 +33,8 @@
 
 *.pdb
 
+*.ilk
+
 /output/*
 /obj/*
 /*vs/*

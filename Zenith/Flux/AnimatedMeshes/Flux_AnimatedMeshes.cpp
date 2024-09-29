@@ -32,14 +32,8 @@ void Flux_AnimatedMeshes::Initialise()
 	xVertexDesc.m_xPerVertexLayout.GetElements().push_back(SHADER_DATA_TYPE_FLOAT3);
 	xVertexDesc.m_xPerVertexLayout.GetElements().push_back(SHADER_DATA_TYPE_FLOAT3);
 
-	xVertexDesc.m_xPerVertexLayout.GetElements().push_back(SHADER_DATA_TYPE_UINT);
-	xVertexDesc.m_xPerVertexLayout.GetElements().push_back(SHADER_DATA_TYPE_UINT);
-	xVertexDesc.m_xPerVertexLayout.GetElements().push_back(SHADER_DATA_TYPE_UINT);
-	xVertexDesc.m_xPerVertexLayout.GetElements().push_back(SHADER_DATA_TYPE_UINT);
-	xVertexDesc.m_xPerVertexLayout.GetElements().push_back(SHADER_DATA_TYPE_FLOAT);
-	xVertexDesc.m_xPerVertexLayout.GetElements().push_back(SHADER_DATA_TYPE_FLOAT);
-	xVertexDesc.m_xPerVertexLayout.GetElements().push_back(SHADER_DATA_TYPE_FLOAT);
-	xVertexDesc.m_xPerVertexLayout.GetElements().push_back(SHADER_DATA_TYPE_FLOAT);
+	xVertexDesc.m_xPerVertexLayout.GetElements().push_back(SHADER_DATA_TYPE_UINT4);
+	xVertexDesc.m_xPerVertexLayout.GetElements().push_back(SHADER_DATA_TYPE_FLOAT4);
 	xVertexDesc.m_xPerVertexLayout.CalculateOffsetsAndStrides();
 
 	std::vector<Flux_BlendState> xBlendStates;
