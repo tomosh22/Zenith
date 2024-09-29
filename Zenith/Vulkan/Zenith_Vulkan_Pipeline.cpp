@@ -109,7 +109,7 @@ vk::ShaderModule Zenith_Vulkan_Shader::CreateShaderModule(const char* szCode, ui
 	return Zenith_Vulkan::GetDevice().createShaderModule(xCreateInfo);
 }
 
-static class Zenith_Vulkan_DescriptorSetLayoutBuilder
+class Zenith_Vulkan_DescriptorSetLayoutBuilder
 {
 public:
 	Zenith_Vulkan_DescriptorSetLayoutBuilder(const std::string& name = "")
@@ -390,7 +390,7 @@ Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithPushConstant(v
 	return *this;
 }
 
-Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithPass(vk::RenderPass& renderPass)
+Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithPass(vk::RenderPass renderPass)
 {
 	m_xPipelineCreate.setRenderPass(renderPass);
 	return *this;

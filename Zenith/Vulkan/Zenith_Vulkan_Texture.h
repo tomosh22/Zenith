@@ -28,7 +28,7 @@ public:
 
 	const vk::Image& GetImage() const { return m_xImage; }
 	VkImage* GetImage_Ptr() { return &m_xImage; }
-	const vk::ImageView& const GetImageView() { return m_xImageView; }
+	const vk::ImageView& GetImageView() { return m_xImageView; }
 	const uint32_t GetNumMips() const { return m_uNumMips; }
 	const uint32_t GetNumLayers() const { return m_uNumLayers; }
 	const VmaAllocation& GetAllocation() const { return m_xAllocation; }

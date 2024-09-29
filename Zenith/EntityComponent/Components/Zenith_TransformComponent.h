@@ -17,7 +17,7 @@ public:
 	void GetRotation(Zenith_Maths::Quat& xRot);
 	void GetScale(Zenith_Maths::Vector3& xScale);
 
-	const reactphysics3d::Transform& const GetTransform();
+	const reactphysics3d::Transform& GetTransform();
 	Zenith_Maths::Vector3 m_xScale = { 1.,1.,1. };
 	reactphysics3d::RigidBody* m_pxRigidBody = nullptr;
 

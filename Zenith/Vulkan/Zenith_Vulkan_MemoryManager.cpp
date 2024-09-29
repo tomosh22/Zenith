@@ -154,7 +154,6 @@ void Zenith_Vulkan_MemoryManager::AllocateBuffer(size_t uSize, vk::BufferUsageFl
 		.setSize(uSize)
 		.setUsage(eUsageFlags)
 		.setSharingMode(vk::SharingMode::eExclusive);
-	xBufferOut.SetBuffer(xDevice.createBuffer(xBufferInfo));
 	xBufferOut.SetSize(uSize);
 
 	VmaAllocationCreateInfo xAllocInfo = {};

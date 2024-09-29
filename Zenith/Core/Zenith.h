@@ -1,4 +1,5 @@
-#include <cstdio>
+#pragma once
+//#include <cstdio>
 #include <cstdint>
 #include <set>
 #include <unordered_map>
@@ -10,6 +11,7 @@
 #include <fstream>
 #include <chrono>
 #include <filesystem>
+#include <list>
 
 #include "Maths/Zenith_Maths.h"
 #include "Zenith_Core.h"
@@ -57,7 +59,7 @@
 //#define ZENITH_RAYTRACING
 
 using GUIDType = uint64_t;
-static struct Zenith_GUID {
+struct Zenith_GUID {
 	static Zenith_GUID Invalid;
 	Zenith_GUID() {
 		for (uint64_t i = 0; i < sizeof(GUIDType) * 8; i++)

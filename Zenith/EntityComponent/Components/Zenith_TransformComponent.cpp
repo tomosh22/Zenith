@@ -93,7 +93,7 @@ void Zenith_TransformComponent::GetScale(Zenith_Maths::Vector3& xScale)
 	xScale = m_xScale;
 }
 
-const reactphysics3d::Transform& const Zenith_TransformComponent::GetTransform()
+const reactphysics3d::Transform& Zenith_TransformComponent::GetTransform()
 {
 	return m_pxRigidBody ? m_pxRigidBody->getTransform() : m_xTransform;
 }

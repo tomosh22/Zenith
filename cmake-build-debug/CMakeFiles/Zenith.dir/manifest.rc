@@ -1,0 +1,2 @@
+#pragma code_page(65001)
+1 /* CREATEPROCESS_MANIFEST_RESOURCE_ID */ 24 /* RT_MANIFEST */ "C:/dev/Zenith/cmake-build-debug/CMakeFiles/Zenith.dir/embed.manifest"

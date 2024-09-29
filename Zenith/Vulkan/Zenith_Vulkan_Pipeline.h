@@ -119,7 +119,7 @@ public:
 
 	Zenith_Vulkan_PipelineBuilder& WithDescriptorSetLayout(uint32_t slot, vk::DescriptorSetLayout layout);
 
-	Zenith_Vulkan_PipelineBuilder& WithPass(vk::RenderPass& renderPass);
+	Zenith_Vulkan_PipelineBuilder& WithPass(vk::RenderPass renderPass);
 
 	Zenith_Vulkan_PipelineBuilder& WithDepthStencilFormat(vk::Format combinedFormat);
 	Zenith_Vulkan_PipelineBuilder& WithDepthFormat(vk::Format depthFormat);

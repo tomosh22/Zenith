@@ -39,9 +39,9 @@ void Zenith_ColliderComponent::AddCollider(CollisionVolumeType eVolumeType, Rigi
 
 		const Flux_MeshGeometry& xMesh = xTerrain.GetMeshGeometry();
 
-		const Zenith_Maths::Vector3 const* pxPositions = xMesh.m_pxPositions;
-		const Zenith_Maths::Vector3 const* pxNormals = xMesh.m_pxNormals;
-		const uint32_t const* puIndices = xMesh.m_puIndices;
+		const Zenith_Maths::Vector3* pxPositions = xMesh.m_pxPositions;
+		const Zenith_Maths::Vector3* pxNormals = xMesh.m_pxNormals;
+		const uint32_t* puIndices = xMesh.m_puIndices;
 
 		m_pxTriArray = new reactphysics3d::TriangleVertexArray(xMesh.m_uNumVerts, pxPositions, sizeof(pxPositions[0]), pxNormals, sizeof(pxNormals[0]), xMesh.m_uNumIndices / 3, puIndices, sizeof(puIndices[0]) * 3, reactphysics3d::TriangleVertexArray::VertexDataType::VERTEX_FLOAT_TYPE, reactphysics3d::TriangleVertexArray::NormalDataType::NORMAL_FLOAT_TYPE, reactphysics3d::TriangleVertexArray::IndexDataType::INDEX_INTEGER_TYPE);
 

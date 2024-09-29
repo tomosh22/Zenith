@@ -117,30 +117,45 @@ static void ExportAssimpMesh(aiMesh* pxAssimpMesh, std::string strOutFilename)
 
 	if (bHasBones)
 	{
-		for (int uBoneIndex = 0; uBoneIndex < pxAssimpMesh->mNumBones; uBoneIndex++)
+		for (uint32_t uBoneIndex = 0; uBoneIndex < pxAssimpMesh->mNumBones; uBoneIndex++)
 		{
 			const aiBone* pxBone = pxAssimpMesh->mBones[uBoneIndex];
 			const aiVertexWeight* pxWeights = pxBone->mWeights;
 
-			for (uint32_t uWeightIndex = 0; uWeightIndex < pxAssimpMesh->mBones[uBoneIndex]->mNumWeights; uWeightIndex++)
+			for (uint32_t uWeightIndex = 0; uWeightIndex < pxBone->mNumWeights; uWeightIndex++)
 			{
 				const aiVertexWeight& xWeight = pxWeights[uWeightIndex];
 				uint32_t uVertexID = xWeight.mVertexId;
 				float fWeight = xWeight.mWeight;
 				
 				uint32_t* puFirstIndexForThisVertex = xMesh.m_puBoneIDs + uVertexID * MAX_BONES_PER_VERTEX;
+				float* puFirstWeightForThisVertex = xMesh.m_pfBoneWeights + uVertexID * MAX_BONES_PER_VERTEX;
 				for (uint32_t u = 0; u < MAX_BONES_PER_VERTEX; u++)
 				{
 					if (*(puFirstIndexForThisVertex + u) == ~0u)
 					{
 						*(puFirstIndexForThisVertex + u) = uBoneIndex;
-						*(xMesh.m_pfBoneWeights + u) = fWeight;
+						Zenith_Assert(*(puFirstWeightForThisVertex + u) == 0, "There is already a bone weight here");
+						*(puFirstWeightForThisVertex + u) = fWeight;
 						break;
 					}
 					Zenith_Assert(u < MAX_BONES_PER_VERTEX - 1, "Failed to assign vertex to bone");
 				}
 			}
 		}
+
+#ifdef ZENITH_ASSERT
+		for (uint32_t uVert = 0; uVert < xMesh.m_uNumVerts; uVert++)
+		{
+			float fTotalWeight = 0;
+			float* puFirstWeightForThisVertex  = xMesh.m_pfBoneWeights + uVert * MAX_BONES_PER_VERTEX;
+			for (uint32_t uWeight = 0; uWeight < MAX_BONES_PER_VERTEX; uWeight++)
+			{
+				fTotalWeight += *(puFirstWeightForThisVertex + uWeight);
+			}
+			Zenith_Assert(std::fabsf(1.f - fTotalWeight) < 0.1f, "Vertex weights don't add to 1");
+		}
+#endif
 	}
 
 	for (uint32_t i = 0; i < pxAssimpMesh->mNumFaces; i++)

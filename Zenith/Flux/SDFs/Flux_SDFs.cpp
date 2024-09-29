@@ -15,12 +15,12 @@ static Flux_Pipeline s_xPipeline;
 
 static constexpr uint32_t s_uMaxSpheres = 1000;
 static Flux_ConstantBuffer s_xSpheresBuffer;
-static struct Sphere
+struct Sphere
 {
 	Zenith_Maths::Vector4 m_xPosition_Radius;
 	Zenith_Maths::Vector4 m_xColour;
 };
-static struct SphereData
+struct SphereData
 {
 	uint32_t m_uNumSpheres;
 	uint32_t m_auPad[7];
