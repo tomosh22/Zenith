@@ -9,7 +9,7 @@ class Flux_MeshGeometry
 public:
 	using IndexType = uint32_t;
 
-	struct Bone
+	struct MeshBone
 	{
 		uint32_t m_uID = ~0u;
 		Zenith_Maths::Matrix4 m_xOffsetMat = glm::identity<glm::mat4>();
@@ -51,6 +51,7 @@ public:
 	const uint32_t GetNumVerts() const { return m_uNumVerts; }
 	const uint32_t GetNumIndices() const { return m_uNumIndices; }
 	const uint32_t GetNumBones() const { return m_uNumBones; }
+	void SetNumBones(const uint32_t uNumBones) { m_uNumBones = uNumBones; }
 
 	const Flux_VertexBuffer& GetVertexBuffer() const { return m_xVertexBuffer; }
 	Flux_VertexBuffer& GetVertexBuffer() { return m_xVertexBuffer; }
@@ -78,7 +79,10 @@ private:
 	uint32_t m_uNumIndices = 0;
 	uint32_t m_uNumBones = 0;
 
-	std::unordered_map<std::string, uint32_t> m_xBoneNameToID;
+	//#TO_TODO: move to private
+public:
+	std::unordered_map<std::string, std::pair<uint32_t, Zenith_Maths::Matrix4>> m_xBoneNameToIdAndOffset;
+	std::unordered_map<uint32_t, std::string> m_xBoneIDToName;
 
 	IndexType* m_puIndices = nullptr;
 
@@ -92,10 +96,13 @@ private:
 	float* m_pfBoneWeights = nullptr;
 
 	//#TO_TODO: move this to a separate skeleton class
-	Bone* m_pxBones = nullptr;
+	MeshBone* m_pxBones = nullptr;
 
 	void* m_pVertexData = nullptr;
 
 	Flux_VertexBuffer m_xVertexBuffer;
 	Flux_IndexBuffer m_xIndexBuffer;
+
+
+	class Flux_MeshAnimation* m_pxAnimation = nullptr;
 };

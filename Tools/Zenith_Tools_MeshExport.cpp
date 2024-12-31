@@ -28,11 +28,11 @@ static void ExportAssimpMesh(aiMesh* pxAssimpMesh, std::string strOutFilename)
 	if (bHasBones)
 	{
 		xMesh.m_uNumBones = pxAssimpMesh->mNumBones;
-		xMesh.m_pxBones = new Flux_MeshGeometry::Bone[xMesh.m_uNumBones];
+		xMesh.m_pxBones = new Flux_MeshGeometry::MeshBone[xMesh.m_uNumBones];
 
 		for (uint32_t u = 0; u < xMesh.m_uNumBones; u++)
 		{
-			Flux_MeshGeometry::Bone& xBone = xMesh.m_pxBones[u];
+			Flux_MeshGeometry::MeshBone& xBone = xMesh.m_pxBones[u];
 			xBone.m_uID = u;
 
 			const aiMatrix4x4& xAssimpMat = pxAssimpMesh->mBones[u]->mOffsetMatrix;
@@ -53,8 +53,8 @@ static void ExportAssimpMesh(aiMesh* pxAssimpMesh, std::string strOutFilename)
 			xBone.m_xOffsetMat[2][3] = xAssimpMat.d3;
 			xBone.m_xOffsetMat[3][3] = xAssimpMat.d4;
 
-			Zenith_Assert(xMesh.m_xBoneNameToID.find(pxAssimpMesh->mBones[u]->mName.C_Str()) == xMesh.m_xBoneNameToID.end(), "Bone name already exists");
-			xMesh.m_xBoneNameToID.insert({pxAssimpMesh->mBones[u]->mName.C_Str(), u});
+			Zenith_Assert(xMesh.m_xBoneNameToIdAndOffset.find(pxAssimpMesh->mBones[u]->mName.C_Str()) == xMesh.m_xBoneNameToIdAndOffset.end(), "Bone name already exists");
+			xMesh.m_xBoneNameToIdAndOffset.insert({ pxAssimpMesh->mBones[u]->mName.C_Str(), {u, xBone.m_xOffsetMat } });
 		}
 	}
 
@@ -121,6 +121,12 @@ static void ExportAssimpMesh(aiMesh* pxAssimpMesh, std::string strOutFilename)
 		{
 			const aiBone* pxBone = pxAssimpMesh->mBones[uBoneIndex];
 			const aiVertexWeight* pxWeights = pxBone->mWeights;
+
+			//Zenith_Assert(xMesh.m_xBoneNameToID.find(pxBone->mName.C_Str()) == xMesh.m_xBoneNameToID.end(), "Already found this bone name");
+			//Zenith_Assert(xMesh.m_xBoneIDToName.find(uBoneIndex) == xMesh.m_xBoneIDToName.end(), "Already found this bone id");
+
+			//xMesh.m_xBoneNameToID.insert({ pxBone->mName.C_Str(), uBoneIndex });
+			//xMesh.m_xBoneIDToName.insert({ uBoneIndex, pxBone->mName.C_Str() });
 
 			for (uint32_t uWeightIndex = 0; uWeightIndex < pxBone->mNumWeights; uWeightIndex++)
 			{

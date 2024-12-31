@@ -8,10 +8,10 @@ layout(location = 1) in vec3 a_xNormal;
 layout(location = 2) in vec3 a_xWorldPos;
 layout(location = 3) in mat3 a_xTBN;
 
-layout(set = 1, binding = 0) uniform sampler2D g_xDiffuseTex;
-layout(set = 1, binding = 1) uniform sampler2D g_xNormalTex;
-layout(set = 1, binding = 2) uniform sampler2D g_xRoughnessTex;
-layout(set = 1, binding = 3) uniform sampler2D g_xMetallicTex;
+layout(set = 1, binding = 1) uniform sampler2D g_xDiffuseTex;
+layout(set = 1, binding = 2) uniform sampler2D g_xNormalTex;
+layout(set = 1, binding = 3) uniform sampler2D g_xRoughnessTex;
+layout(set = 1, binding = 4) uniform sampler2D g_xMetallicTex;
 
 void main(){
 	vec4 xDiffuse = texture(g_xDiffuseTex, a_xUV);

@@ -114,7 +114,7 @@ public:
 
 	void AddMeshEntry(Flux_MeshGeometry& xGeometry, Flux_Material& xMaterial) { m_xMeshEntries.push_back({ &xGeometry, &xMaterial }); }
 
-	const Flux_MeshGeometry& GetMeshGeometryAtIndex(const uint32_t uIndex) const { return *m_xMeshEntries[uIndex].m_pxGeometry; }
+	Flux_MeshGeometry& GetMeshGeometryAtIndex(const uint32_t uIndex) const { return *m_xMeshEntries[uIndex].m_pxGeometry; }
 	const Flux_Material& GetMaterialAtIndex(const uint32_t uIndex) const { return *m_xMeshEntries[uIndex].m_pxMaterial; }
 	Flux_Material& GetMaterialAtIndex(const uint32_t uIndex) { return *m_xMeshEntries[uIndex].m_pxMaterial; }
 

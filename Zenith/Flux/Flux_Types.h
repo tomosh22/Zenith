@@ -110,6 +110,10 @@ static uint32_t ColourFormatBitsPerPixel(ColourFormat eFormat)
 		return 64u;
 	case COLOUR_FORMAT_R16G16B16A16_UNORM:
 		return 64u;
+	case COLOUR_FORMAT_R32G32B32A32_SFLOAT:
+		return 128u;
+	case COLOUR_FORMAT_R32G32B32_SFLOAT:
+		return 96u;
 	default:
 		Zenith_Assert(false, "Unrecognised colour format");
 		return 0u;

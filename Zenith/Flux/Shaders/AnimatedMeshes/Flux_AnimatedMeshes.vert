@@ -19,12 +19,10 @@ layout(push_constant) uniform ModelMatrix{
 	mat4 g_xModelMatrix;
 };
 
-#if 0
 layout(set = 1, binding = 0) uniform Bones
 {
-	mat4 g_xBones;
+	mat4 g_xBones[100];
 };
-#endif
 
 void main()
 {
@@ -32,16 +30,12 @@ void main()
 	vec4 xFinalPosition = vec4(0.f);
 	for(uint u = 0; u < 4; u++)
 	{
-		#if 0
 		if(a_xBoneIDs[u] == ~0u)
 		{
 			break;
 		}
 		
 		xFinalPosition += g_xBones[a_xBoneIDs[u]] * vec4(a_xPosition, 1.f) * a_xBoneWeights[u];
-		#else
-		xFinalPosition += mat4(1.f) * vec4(a_xPosition, 1.f) * 0.25f;
-		#endif
 	}
 
 

@@ -137,6 +137,40 @@ void Flux_MeshGeometry::LoadFromFile(const char* szPath, Flux_MeshGeometry& xGeo
 		xGeometryOut.m_pxNormals = new glm::vec3[xGeometryOut.m_uNumVerts];
 	}
 
+
+	size_t ulBoneMapSize = atoi(pcData + ulCursor);
+	ulCursor += std::to_string(ulBoneMapSize).length() + 1;
+	if (ulBoneMapSize)
+	{
+		for (uint32_t u = 0; u < ulBoneMapSize; u++)
+		{
+			std::string strName(pcData + ulCursor);
+			ulCursor += strName.length() + 1;
+
+			uint32_t uID = atoi(pcData + ulCursor);
+			ulCursor += std::to_string(uID).length() + 1;
+
+			Zenith_Maths::Matrix4 xMat;
+			for (uint32_t u = 0; u < 4; u++)
+			{
+				for (uint32_t v = 0; v < 4; v++)
+				{
+					char* endPtr = nullptr;
+					xMat[u][v] = strtof(pcData + ulCursor, &endPtr);
+					if (endPtr == pcData + ulCursor)
+					{
+						Zenith_Log("Failed to parse float value");
+						delete[] pcData;
+						return;
+					}
+					ulCursor += (endPtr - (pcData + ulCursor)) + 1; // Advance cursor, including null terminator
+				}
+			}
+
+			xGeometryOut.m_xBoneNameToIdAndOffset.insert({ strName, {uID, xMat} });
+		}
+	}
+
 	memcpy(xGeometryOut.m_pVertexData, pcData + ulCursor, ulVertBufferLen);
 	ulCursor += ulVertBufferLen;
 
@@ -214,15 +248,38 @@ void Flux_MeshGeometry::Export(const char* szFilename)
 	fwrite(&cNull, 1, 1, pxFile);
 
 	//#TO_TODO: move to separate class
-	fputs(std::to_string(m_uNumBones * sizeof(Flux_MeshGeometry::Bone)).c_str(), pxFile);
+	fputs(std::to_string(m_uNumBones * sizeof(Flux_MeshGeometry::MeshBone)).c_str(), pxFile);
 	fwrite(&cNull, 1, 1, pxFile);
+
+	fputs(std::to_string(m_xBoneNameToIdAndOffset.size()).c_str(), pxFile);
+	fwrite(&cNull, 1, 1, pxFile);
+	for (auto& xIt : m_xBoneNameToIdAndOffset)
+	{
+		fputs(xIt.first.c_str(), pxFile);
+		fwrite(&cNull, 1, 1, pxFile);
+
+		fputs(std::to_string(xIt.second.first).c_str(), pxFile);
+		fwrite(&cNull, 1, 1, pxFile);
+
+		const Zenith_Maths::Matrix4& xMat = xIt.second.second;
+		for (uint32_t u = 0; u < 4; u++)
+		{
+			for (uint32_t v = 0; v < 4; v++)
+			{
+				std::ostringstream oss;
+				oss << std::fixed << std::setprecision(8) << xMat[u][v]; // Control precision
+				fputs(oss.str().c_str(), pxFile);
+				fwrite(&cNull, 1, 1, pxFile); // Write a null terminator
+			}
+		}
+	}
 
 	fwrite(m_pVertexData, m_uNumVerts * m_xBufferLayout.GetStride(), 1, pxFile);
 
 	fwrite(m_puIndices, m_uNumIndices * sizeof(Flux_MeshGeometry::IndexType), 1, pxFile);
 
 	//#TO_TODO: move to separate class
-	fwrite(m_pxBones, m_uNumBones * sizeof(Flux_MeshGeometry::Bone), 1, pxFile);
+	fwrite(m_pxBones, m_uNumBones * sizeof(Flux_MeshGeometry::MeshBone), 1, pxFile);
 
 	fwrite(m_pxPositions, m_uNumVerts * sizeof(m_pxPositions[0]), 1, pxFile);
 

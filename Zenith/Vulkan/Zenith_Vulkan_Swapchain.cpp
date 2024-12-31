@@ -268,7 +268,8 @@ bool Zenith_Vulkan_Swapchain::BeginFrame()
 	uint32_t uPreviousFrame = (s_uFrameIndex + MAX_FRAMES_IN_FLIGHT - 1) % MAX_FRAMES_IN_FLIGHT;
 	xDevice.waitForFences(1, &s_axInFlightFences[uPreviousFrame], VK_TRUE, UINT64_MAX);
 
-	vk::Result eResult = xDevice.acquireNextImageKHR(s_xSwapChain, UINT64_MAX, s_axImageAvailableSemaphores[s_uFrameIndex], nullptr, &s_uCurrentImageIndex);
+	//#TO_TODO: -1 here to shut up validation layer
+	vk::Result eResult = xDevice.acquireNextImageKHR(s_xSwapChain, UINT64_MAX - 1, s_axImageAvailableSemaphores[s_uFrameIndex], nullptr, &s_uCurrentImageIndex);
 
 	Zenith_Assert(eResult == vk::Result::eSuccess || eResult == vk::Result::eErrorOutOfDateKHR, "Failed to acquire swapchain image");
 
