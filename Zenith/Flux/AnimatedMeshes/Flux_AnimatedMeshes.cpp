@@ -1,6 +1,7 @@
 #include "Zenith.h"
 
 #include "Flux/AnimatedMeshes/Flux_AnimatedMeshes.h"
+#include "Flux/MeshAnimation/Flux_MeshAnimation.h"
 
 #include "Flux/Flux.h"
 #include "Flux/Flux_RenderTargets.h"
@@ -53,7 +54,7 @@ void Flux_AnimatedMeshes::Initialise()
 		true,
 		false,
 		{ 1,0 },
-		{ 0,4 },
+		{ 1,4 },
 		Flux_Graphics::s_xMRTTarget,
 		false
 	);
@@ -106,10 +107,12 @@ void Flux_AnimatedMeshes::Render()
 			s_xCommandBuffer.PushConstant(&xModelMatrix, sizeof(xModelMatrix));
 			const Flux_Material& xMaterial = pxModel->GetMaterialAtIndex(uMesh);
 
-			s_xCommandBuffer.BindTexture(xMaterial.GetDiffuse(), 0);
-			s_xCommandBuffer.BindTexture(xMaterial.GetNormal(), 1);
-			s_xCommandBuffer.BindTexture(xMaterial.GetRoughness(), 2);
-			s_xCommandBuffer.BindTexture(xMaterial.GetMetallic(), 3);
+			s_xCommandBuffer.BindBuffer(&xMesh.m_pxAnimation->m_xBoneBuffer.GetBuffer(), 0);
+
+			s_xCommandBuffer.BindTexture(xMaterial.GetDiffuse(), 1);
+			s_xCommandBuffer.BindTexture(xMaterial.GetNormal(), 2);
+			s_xCommandBuffer.BindTexture(xMaterial.GetRoughness(), 3);
+			s_xCommandBuffer.BindTexture(xMaterial.GetMetallic(), 4);
 
 			s_xCommandBuffer.DrawIndexed(xMesh.GetNumIndices());
 		}

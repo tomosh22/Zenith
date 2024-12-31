@@ -232,6 +232,7 @@ public class ZenithWindowsProject : Project
 		SourceFilesExcludeRegex.Add(@".*reactphysics3d-0.10.1\\helloworld.*");
 		SourceFilesExcludeRegex.Add(@".*reactphysics3d-0.10.1\\test.*");
 		SourceFilesExcludeRegex.Add(@".*reactphysics3d-0.10.1\\testbed.*");
+		SourceFilesExcludeRegex.Add(@".*cmake.*");
     }
 
     [Configure]

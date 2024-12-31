@@ -12,6 +12,7 @@
 #include "AssetHandling/Zenith_AssetHandler.h"
 #include "Flux/Flux_Material.h"
 #include "Flux/Flux_Graphics.h"
+#include "Flux/MeshAnimation/Flux_MeshAnimation.h"
 #include "Input/Zenith_Input.h"
 
 #include "Test/Components/SphereMovement_Behaviour.h"
@@ -19,7 +20,7 @@
 
 Zenith_State* Zenith_StateMachine::s_pxCurrentState = new Test_State_InGame;
 
-#define TERRAIN_EXPORT_DIMS 8
+#define TERRAIN_EXPORT_DIMS 64
 
 static Zenith_Entity s_xPlayer;
 static Zenith_Entity s_xBarrel;
@@ -295,11 +296,25 @@ void Test_State_InGame::OnEnter()
 		s_xOgre.Initialise(&xScene, "Ogre");
 		Zenith_ModelComponent& xModel = s_xOgre.AddComponent<Zenith_ModelComponent>();
 		xModel.LoadMeshesFromDir("C:/dev/Zenith/Games/Test/Assets/Meshes/ogre");
+		Flux_MeshGeometry& xMesh0 = xModel.GetMeshGeometryAtIndex(0);
+		xMesh0.m_pxAnimation = new Flux_MeshAnimation("C:/dev/Zenith/Games/Test/Assets/Meshes/ogre/ogre.fbx", xMesh0);
+		Flux_MeshGeometry& xMesh1 = xModel.GetMeshGeometryAtIndex(1);
+		xMesh1.m_pxAnimation = new Flux_MeshAnimation("C:/dev/Zenith/Games/Test/Assets/Meshes/ogre/ogre.fbx", xMesh1);
 	}
 }
 
 void Test_State_InGame::OnUpdate()
 {
+
+	//#TO_TODO: move this to an animation handler component class
+	{
+		Zenith_ModelComponent& xModel = s_xOgre.GetComponent<Zenith_ModelComponent>();
+		Flux_MeshGeometry& xMesh0 = xModel.GetMeshGeometryAtIndex(0);
+		Flux_MeshGeometry& xMesh1 = xModel.GetMeshGeometryAtIndex(1);
+		xMesh0.m_pxAnimation->Update(Zenith_Core::GetDt());
+		xMesh1.m_pxAnimation->Update(Zenith_Core::GetDt());
+	}
+
 	Zenith_Core::Zenith_MainLoop();
 	if (Zenith_Input::IsKeyDown(ZENITH_KEY_P))
 	{
