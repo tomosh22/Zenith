@@ -127,16 +127,6 @@ void Zenith_Vulkan_CommandBuffer::PrepareDrawCallDescriptors()
 			{
 				uNumTextures++;
 			}
-			else
-			{
-#if 0//def VCE_ASSERT
-				for (uint32_t j = i + 1; j < MAX_BINDINGS; j++)
-				{
-					VCE_Assert(m_xBindings[BINDING_FREQUENCY_PER_DRAW].m_xTextures[j] == nullptr, "All non null textures must be contiguous");
-				}
-#endif
-				break;
-			}
 		}
 
 		uint32_t uNumBuffers = 0;
@@ -146,24 +136,18 @@ void Zenith_Vulkan_CommandBuffer::PrepareDrawCallDescriptors()
 			{
 				uNumBuffers++;
 			}
-			else
-			{
-#if 0//def VCE_ASSERT
-				for (uint32_t j = i + 1; j < MAX_BINDINGS; j++)
-				{
-					VCE_Assert(m_xBindings[BINDING_FREQUENCY_PER_DRAW].m_xBuffers[j] == nullptr, "All non null buffers must be contiguous");
-				}
-#endif
-				break;
-			}
 		}
 
 		std::vector<vk::DescriptorImageInfo> xTexInfos(uNumTextures);
 		std::vector<vk::WriteDescriptorSet> xTexWrites(uNumTextures);
 		uint32_t uCount = 0;
-		for (uint32_t i = 0; i < uNumTextures; i++)
+		for (uint32_t i = 0; i < MAX_BINDINGS; i++)
 		{
 			Zenith_Vulkan_Texture* pxTex = m_xBindings[BINDING_FREQUENCY_PER_DRAW].m_xTextures[i];
+			if (!pxTex)
+			{
+				continue;
+			}
 
 			//#TO_TODO: different samplers
 			vk::DescriptorImageInfo& xInfo = xTexInfos.at(uCount)
@@ -174,7 +158,7 @@ void Zenith_Vulkan_CommandBuffer::PrepareDrawCallDescriptors()
 			vk::WriteDescriptorSet& xWrite = xTexWrites.at(uCount)
 				.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
 				.setDstSet(m_xCurrentDescSet)
-				.setDstBinding(uCount)
+				.setDstBinding(i)
 				.setDstArrayElement(0)
 				.setDescriptorCount(1)
 				.setPImageInfo(&xInfo);
@@ -186,9 +170,14 @@ void Zenith_Vulkan_CommandBuffer::PrepareDrawCallDescriptors()
 
 		std::vector<vk::DescriptorBufferInfo> xBufferInfos(uNumBuffers);
 		std::vector<vk::WriteDescriptorSet> xBufferWrites(uNumBuffers);
-		for (uint32_t i = 0; i < uNumBuffers; i++)
+		uCount = 0;
+		for (uint32_t i = 0; i < MAX_BINDINGS; i++)
 		{
 			Zenith_Vulkan_Buffer* pxBuf = m_xBindings[BINDING_FREQUENCY_PER_DRAW].m_xBuffers[i];
+			if (!pxBuf)
+			{
+				continue;
+			}
 
 			vk::DescriptorBufferInfo& xInfo = xBufferInfos.at(uCount)
 				.setBuffer(pxBuf->GetBuffer())
@@ -198,7 +187,7 @@ void Zenith_Vulkan_CommandBuffer::PrepareDrawCallDescriptors()
 			vk::WriteDescriptorSet& xWrite = xBufferWrites.at(uCount)
 				.setDescriptorType(vk::DescriptorType::eUniformBuffer)
 				.setDstSet(m_xCurrentDescSet)
-				.setDstBinding(uCount)
+				.setDstBinding(i)
 				.setDstArrayElement(0)
 				.setDescriptorCount(1)
 				.setPBufferInfo(&xInfo);
