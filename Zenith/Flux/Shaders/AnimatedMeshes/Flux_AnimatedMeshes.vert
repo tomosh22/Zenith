@@ -19,10 +19,12 @@ layout(push_constant) uniform ModelMatrix{
 	mat4 g_xModelMatrix;
 };
 
+
 layout(set = 1, binding = 0) uniform Bones
 {
 	mat4 g_xBones[100];
 };
+
 
 void main()
 {

@@ -294,6 +294,7 @@ void Test_State_InGame::OnEnter()
 
 	{
 		s_xOgre.Initialise(&xScene, "Ogre");
+		s_xOgre.GetComponent<Zenith_TransformComponent>().SetPosition({ 600, 1500, -200 });
 		Zenith_ModelComponent& xModel = s_xOgre.AddComponent<Zenith_ModelComponent>();
 		xModel.LoadMeshesFromDir("C:/dev/Zenith/Games/Test/Assets/Meshes/ogre");
 		Flux_MeshGeometry& xMesh0 = xModel.GetMeshGeometryAtIndex(0);
