@@ -119,9 +119,6 @@ void Flux_MeshGeometry::LoadFromFile(const char* szPath, Flux_MeshGeometry& xGeo
 	size_t ulIndexBufferLen = atoi(pcData + ulCursor);
 	ulCursor += std::to_string(ulIndexBufferLen).length() + 1;
 
-	size_t ulBoneBufferLen = atoi(pcData + ulCursor);
-	ulCursor += std::to_string(ulBoneBufferLen).length() + 1;
-
 	xGeometryOut.m_uNumVerts = ulNumVerts;
 	xGeometryOut.m_uNumIndices = ulNumIndices;
 	xGeometryOut.m_uNumBones = ulNumBones;
@@ -247,10 +244,6 @@ void Flux_MeshGeometry::Export(const char* szFilename)
 	fputs(std::to_string(m_uNumIndices * sizeof(Flux_MeshGeometry::IndexType)).c_str(), pxFile);
 	fwrite(&cNull, 1, 1, pxFile);
 
-	//#TO_TODO: move to separate class
-	fputs(std::to_string(m_uNumBones * sizeof(Flux_MeshGeometry::MeshBone)).c_str(), pxFile);
-	fwrite(&cNull, 1, 1, pxFile);
-
 	fputs(std::to_string(m_xBoneNameToIdAndOffset.size()).c_str(), pxFile);
 	fwrite(&cNull, 1, 1, pxFile);
 	for (auto& xIt : m_xBoneNameToIdAndOffset)
@@ -277,9 +270,6 @@ void Flux_MeshGeometry::Export(const char* szFilename)
 	fwrite(m_pVertexData, m_uNumVerts * m_xBufferLayout.GetStride(), 1, pxFile);
 
 	fwrite(m_puIndices, m_uNumIndices * sizeof(Flux_MeshGeometry::IndexType), 1, pxFile);
-
-	//#TO_TODO: move to separate class
-	fwrite(m_pxBones, m_uNumBones * sizeof(Flux_MeshGeometry::MeshBone), 1, pxFile);
 
 	fwrite(m_pxPositions, m_uNumVerts * sizeof(m_pxPositions[0]), 1, pxFile);
 
