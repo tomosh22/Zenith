@@ -28,33 +28,30 @@ static void ExportAssimpMesh(aiMesh* pxAssimpMesh, std::string strOutFilename)
 	if (bHasBones)
 	{
 		xMesh.m_uNumBones = pxAssimpMesh->mNumBones;
-		xMesh.m_pxBones = new Flux_MeshGeometry::MeshBone[xMesh.m_uNumBones];
 
 		for (uint32_t u = 0; u < xMesh.m_uNumBones; u++)
 		{
-			Flux_MeshGeometry::MeshBone& xBone = xMesh.m_pxBones[u];
-			xBone.m_uID = u;
-
 			const aiMatrix4x4& xAssimpMat = pxAssimpMesh->mBones[u]->mOffsetMatrix;
-			xBone.m_xOffsetMat[0][0] = xAssimpMat.a1;
-			xBone.m_xOffsetMat[1][0] = xAssimpMat.a2;
-			xBone.m_xOffsetMat[2][0] = xAssimpMat.a3;
-			xBone.m_xOffsetMat[3][0] = xAssimpMat.a4;
-			xBone.m_xOffsetMat[0][1] = xAssimpMat.b1;
-			xBone.m_xOffsetMat[1][1] = xAssimpMat.b2;
-			xBone.m_xOffsetMat[2][1] = xAssimpMat.b3;
-			xBone.m_xOffsetMat[3][1] = xAssimpMat.b4;
-			xBone.m_xOffsetMat[0][2] = xAssimpMat.c1;
-			xBone.m_xOffsetMat[1][2] = xAssimpMat.c2;
-			xBone.m_xOffsetMat[2][2] = xAssimpMat.c3;
-			xBone.m_xOffsetMat[3][2] = xAssimpMat.c4;
-			xBone.m_xOffsetMat[0][3] = xAssimpMat.d1;
-			xBone.m_xOffsetMat[1][3] = xAssimpMat.d2;
-			xBone.m_xOffsetMat[2][3] = xAssimpMat.d3;
-			xBone.m_xOffsetMat[3][3] = xAssimpMat.d4;
+			Zenith_Maths::Matrix4 xMat;
+			xMat[0][0] = xAssimpMat.a1;
+			xMat[1][0] = xAssimpMat.a2;
+			xMat[2][0] = xAssimpMat.a3;
+			xMat[3][0] = xAssimpMat.a4;
+			xMat[0][1] = xAssimpMat.b1;
+			xMat[1][1] = xAssimpMat.b2;
+			xMat[2][1] = xAssimpMat.b3;
+			xMat[3][1] = xAssimpMat.b4;
+			xMat[0][2] = xAssimpMat.c1;
+			xMat[1][2] = xAssimpMat.c2;
+			xMat[2][2] = xAssimpMat.c3;
+			xMat[3][2] = xAssimpMat.c4;
+			xMat[0][3] = xAssimpMat.d1;
+			xMat[1][3] = xAssimpMat.d2;
+			xMat[2][3] = xAssimpMat.d3;
+			xMat[3][3] = xAssimpMat.d4;
 
 			Zenith_Assert(xMesh.m_xBoneNameToIdAndOffset.find(pxAssimpMesh->mBones[u]->mName.C_Str()) == xMesh.m_xBoneNameToIdAndOffset.end(), "Bone name already exists");
-			xMesh.m_xBoneNameToIdAndOffset.insert({ pxAssimpMesh->mBones[u]->mName.C_Str(), {u, xBone.m_xOffsetMat } });
+			xMesh.m_xBoneNameToIdAndOffset.insert({ pxAssimpMesh->mBones[u]->mName.C_Str(), {u, xMat } });
 		}
 	}
 

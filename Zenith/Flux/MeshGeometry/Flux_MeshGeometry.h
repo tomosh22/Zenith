@@ -95,9 +95,6 @@ public:
 	uint32_t* m_puBoneIDs = nullptr;
 	float* m_pfBoneWeights = nullptr;
 
-	//#TO_TODO: move this to a separate skeleton class
-	MeshBone* m_pxBones = nullptr;
-
 	void* m_pVertexData = nullptr;
 
 	Flux_VertexBuffer m_xVertexBuffer;
