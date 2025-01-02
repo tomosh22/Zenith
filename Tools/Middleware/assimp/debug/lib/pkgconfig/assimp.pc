@@ -4,7 +4,7 @@ includedir=${prefix}/../include
 
 Name: Assimp
 Description: Import various well-known 3D model formats in an uniform manner.
-Version: 5.4.1
+Version: 5.4.3
 Libs: "-L${libdir}" -lassimp-vc143-mtd
 Libs.private:  
 Cflags: "-I${includedir}"

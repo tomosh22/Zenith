@@ -30,6 +30,7 @@ void main()
 {
 
 	vec4 xFinalPosition = vec4(0.f);
+	mat4 xFinalMat = mat4(1.0f);
 	for(uint u = 0; u < 4; u++)
 	{
 		if(a_xBoneIDs[u] == ~0u)
@@ -38,11 +39,12 @@ void main()
 		}
 		
 		xFinalPosition += g_xBones[a_xBoneIDs[u]] * vec4(a_xPosition, 1.f) * a_xBoneWeights[u];
+		xFinalMat *= g_xBones[a_xBoneIDs[u]];
 	}
 
 
 	o_xUV = a_xUV;
-	mat3 xNormalMatrix = transpose(inverse(mat3(g_xModelMatrix)));
+	mat3 xNormalMatrix = transpose(inverse(mat3(g_xModelMatrix))) * transpose(inverse(mat3(xFinalMat)));
 	o_xNormal = normalize(xNormalMatrix * normalize(a_xNormal));
 	vec3 xTangent = normalize(xNormalMatrix * normalize(a_xTangent));
 	vec3 xBitangent = normalize(xNormalMatrix * normalize(a_xBitangent));
