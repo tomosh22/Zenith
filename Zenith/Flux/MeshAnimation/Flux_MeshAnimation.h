@@ -141,6 +141,8 @@ public:
         m_fCurrentTimestamp += m_uTicksPerSecond * fDt;
         m_fCurrentTimestamp = fmod(m_fCurrentTimestamp, m_fDuration);
         CalculateBoneTransform(&m_xRootNode, glm::mat4(1.0f));
+
+        Flux_MemoryManager::UploadBufferData(m_xBoneBuffer.GetBuffer(), m_axAnimMatrices, sizeof(m_axAnimMatrices));
     }
 
 #ifndef ZENITH_TOOLS

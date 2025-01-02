@@ -102,8 +102,6 @@ void Flux_MeshAnimation::CalculateBoneTransform(const Node* node, glm::mat4 pare
 
 	for (int i = 0; i < node->m_uChildCount; i++)
 		CalculateBoneTransform(&node->m_xChildren[i], globalTransformation);
-
-	Flux_MemoryManager::UploadBufferData(m_xBoneBuffer.GetBuffer(), m_axAnimMatrices, sizeof(m_axAnimMatrices));
 }
 
 Flux_MeshAnimation::Flux_MeshAnimation(const std::string& strPath, Flux_MeshGeometry& xParentGeometry)
@@ -118,12 +116,13 @@ Flux_MeshAnimation::Flux_MeshAnimation(const std::string& strPath, Flux_MeshGeom
 
 	Assimp::Importer xImporter;
 	const aiScene* pxScene = xImporter.ReadFile(strPath, aiProcess_Triangulate);
+
 	aiAnimation* pxAnimation = pxScene->mAnimations[0];
 	m_fDuration = pxAnimation->mDuration;
 	m_uTicksPerSecond = pxAnimation->mTicksPerSecond;
 	
 
-	
+	ReadHierarchy(m_xRootNode, *pxScene->mRootNode, xParentGeometry);
 
 
 
@@ -135,7 +134,7 @@ Flux_MeshAnimation::Flux_MeshAnimation(const std::string& strPath, Flux_MeshGeom
 	//reading channels(bones engaged in an animation and their keyframes)
 	for (int i = 0; i < size; i++)
 	{
-		auto channel = pxAnimation->mChannels[i];
+		aiNodeAnim* channel = pxAnimation->mChannels[i];
 		std::string boneName = channel->mNodeName.data;
 
 		std::string strName(channel->mNodeName.data);
@@ -150,7 +149,7 @@ Flux_MeshAnimation::Flux_MeshAnimation(const std::string& strPath, Flux_MeshGeom
 			boneInfoMap.at(strName).first, channel));
 	}
 
-	ReadHierarchy(m_xRootNode, *pxScene->mRootNode, xParentGeometry);
+	
 
 	Flux_MemoryManager::InitialiseConstantBuffer(nullptr, sizeof(m_axAnimMatrices), m_xBoneBuffer);
 }
