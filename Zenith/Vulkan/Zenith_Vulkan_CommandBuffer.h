@@ -21,9 +21,11 @@ class Zenith_Vulkan_CommandBuffer
 {
 public:
 	Zenith_Vulkan_CommandBuffer() {}
-	void Initialise(CommandType eType = COMMANDTYPE_GRAPHICS);
+	void Initialise(CommandType eType = COMMANDTYPE_GRAPHICS, bool bAsChild = false);
 	void BeginRecording();
 	void EndRecording(RenderOrder eOrder, bool bEndPass = true);
+	void CreateChild(Zenith_Vulkan_CommandBuffer& xChild);
+	void ExecuteChild(Zenith_Vulkan_CommandBuffer& xChild);
 	void EndAndCpuWait(bool bEndPass);
 	void SetVertexBuffer(const Flux_VertexBuffer& xVertexBuffer, uint32_t uBindPoint = 0);
 	void SetVertexBuffer(const Flux_DynamicVertexBuffer& xVertexBuffer, uint32_t uBindPoint = 0);
@@ -76,4 +78,10 @@ private:
 	vk::DescriptorSet m_xCurrentDescSet = VK_NULL_HANDLE;
 	bool m_bDescriptorDirty = true;
 
+	bool m_bIsChild = false;
+	bool m_bIsParent = false;
+	Zenith_Vulkan_CommandBuffer* m_pxParent = nullptr;
+
+	vk::Viewport m_xViewport;
+	vk::Rect2D m_xScissor;
 };

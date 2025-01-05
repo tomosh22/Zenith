@@ -7,12 +7,15 @@
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_Buffers.h"
+#include "Flux/DeferredShading/Flux_DeferredShading.h"
 #include "AssetHandling/Zenith_AssetHandler.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 
+#ifndef ZENITH_MERGE_GBUFFER_PASSES
 static Flux_CommandBuffer s_xCommandBuffer;
+#endif
 
 static Flux_Shader s_xShader;
 static Flux_Pipeline s_xPipeline;
@@ -21,7 +24,9 @@ DEBUGVAR bool dbg_bEnable = true;
 
 void Flux_AnimatedMeshes::Initialise()
 {
+	#ifndef ZENITH_MERGE_GBUFFER_PASSES
 	s_xCommandBuffer.Initialise();
+	#endif
 
 	s_xShader.Initialise("AnimatedMeshes/Flux_AnimatedMeshes.vert", "AnimatedMeshes/Flux_AnimatedMeshes.frag");
 
@@ -75,9 +80,15 @@ void Flux_AnimatedMeshes::Render()
 		return;
 	}
 
+	#ifdef ZENITH_MERGE_GBUFFER_PASSES
+	//#TO_TODO: fix up naming convention
+	Flux_CommandBuffer& s_xCommandBuffer = Flux_DeferredShading::GetAnimatedMeshesCommandBuffer();
+
 	s_xCommandBuffer.BeginRecording();
+	#else
 
 	s_xCommandBuffer.SubmitTargetSetup(Flux_Graphics::s_xMRTTarget);
+	#endif
 
 	s_xCommandBuffer.SetPipeline(&s_xPipeline);
 
@@ -118,5 +129,9 @@ void Flux_AnimatedMeshes::Render()
 		}
 	}
 
+	#ifdef ZENITH_MERGE_GBUFFER_PASSES
+	s_xCommandBuffer.EndRecording(RENDER_ORDER_GBUFFER);
+	#else
 	s_xCommandBuffer.EndRecording(RENDER_ORDER_OPAQUE_MESHES);
+	#endif
 }

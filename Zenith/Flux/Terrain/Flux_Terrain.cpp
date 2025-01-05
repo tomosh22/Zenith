@@ -6,13 +6,16 @@
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_Buffers.h"
+#include "Flux/DeferredShading/Flux_DeferredShading.h"
 #include "AssetHandling/Zenith_AssetHandler.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 
+#ifndef ZENITH_MERGE_GBUFFER_PASSES
 static Flux_CommandBuffer s_xCommandBuffer;
+#endif
 
 static Flux_Shader s_xShader;
 static Flux_Pipeline s_xPipeline;
@@ -31,7 +34,9 @@ DEBUGVAR float dbg_fVisibilityThresholdMultiplier = 0.5f;
 
 void Flux_Terrain::Initialise()
 {
+	#ifndef ZENITH_MERGE_GBUFFER_PASSES
 	s_xCommandBuffer.Initialise();
+	#endif
 
 	s_xShader.Initialise("Terrain/Flux_Terrain.vert", "Terrain/Flux_Terrain.frag");
 
@@ -95,9 +100,16 @@ void Flux_Terrain::Render()
 
 	Flux_MemoryManager::UploadBufferData(s_xTerrainConstantsBuffer.GetBuffer(), &s_xTerrainConstants, sizeof(TerrainConstants));
 
+	#ifdef ZENITH_MERGE_GBUFFER_PASSES
+	//#TO_TODO: fix up naming convention
+	Flux_CommandBuffer& s_xCommandBuffer = Flux_DeferredShading::GetTerrainCommandBuffer();
+
 	s_xCommandBuffer.BeginRecording();
+	#else
 
 	s_xCommandBuffer.SubmitTargetSetup(Flux_Graphics::s_xMRTTarget);
+
+	#endif
 
 	s_xCommandBuffer.SetPipeline(dbg_bWireframe ? &s_xWireframePipeline : &s_xPipeline);
 
@@ -138,5 +150,9 @@ void Flux_Terrain::Render()
 		s_xCommandBuffer.DrawIndexed(pxTerrain->GetMeshGeometry().GetNumIndices());
 	}
 
+	#ifdef ZENITH_MERGE_GBUFFER_PASSES
+	s_xCommandBuffer.EndRecording(RENDER_ORDER_GBUFFER);
+	#else
 	s_xCommandBuffer.EndRecording(RENDER_ORDER_TERRAIN);
+	#endif
 }
