@@ -2,19 +2,61 @@
 
 #include "Flux/DeferredShading/Flux_DeferredShading.h"
 
-#include "Flux/Flux.h"
+
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_Buffers.h"
 
 static Flux_CommandBuffer s_xCommandBuffer;
 
+#ifdef ZENITH_MERGE_GBUFFER_PASSES
+static Flux_CommandBuffer s_xGBufferCommandBuffer;
+static Flux_CommandBuffer s_xSkyboxCommandBuffer;
+static Flux_CommandBuffer s_xStaticMeshesCommandBuffer;
+static Flux_CommandBuffer s_xAnimatedMeshesCommandBuffer;
+static Flux_CommandBuffer s_xTerrainCommandBuffer;
+#endif
+
 static Flux_Shader s_xShader;
 static Flux_Pipeline s_xPipeline;
+
+Flux_CommandBuffer& Flux_DeferredShading::GetSkyboxCommandBuffer()
+{
+	return s_xSkyboxCommandBuffer;
+}
+
+Flux_CommandBuffer& Flux_DeferredShading::GetStaticMeshesCommandBuffer()
+{
+	return s_xStaticMeshesCommandBuffer;
+}
+
+Flux_CommandBuffer& Flux_DeferredShading::GetAnimatedMeshesCommandBuffer()
+{
+	return s_xAnimatedMeshesCommandBuffer;
+}
+
+Flux_CommandBuffer& Flux_DeferredShading::GetTerrainCommandBuffer()
+{
+	return s_xTerrainCommandBuffer;
+}
 
 void Flux_DeferredShading::Initialise()
 {
 	s_xCommandBuffer.Initialise();
+
+	#ifdef ZENITH_MERGE_GBUFFER_PASSES
+	s_xGBufferCommandBuffer.Initialise();
+
+	s_xSkyboxCommandBuffer.Initialise(COMMANDTYPE_GRAPHICS, true);
+	s_xStaticMeshesCommandBuffer.Initialise(COMMANDTYPE_GRAPHICS, true);
+	s_xAnimatedMeshesCommandBuffer.Initialise(COMMANDTYPE_GRAPHICS, true);
+	s_xTerrainCommandBuffer.Initialise(COMMANDTYPE_GRAPHICS, true);
+
+	s_xGBufferCommandBuffer.CreateChild(s_xSkyboxCommandBuffer);
+	s_xGBufferCommandBuffer.CreateChild(s_xStaticMeshesCommandBuffer);
+	s_xGBufferCommandBuffer.CreateChild(s_xAnimatedMeshesCommandBuffer);
+	s_xGBufferCommandBuffer.CreateChild(s_xTerrainCommandBuffer);
+	#endif
 
 	s_xShader.Initialise("Flux_Fullscreen_UV.vert", "DeferredShading/Flux_DeferredShading.frag");
 
@@ -48,6 +90,13 @@ void Flux_DeferredShading::Initialise()
 	Zenith_Log("Flux_DeferredShading initialised");
 }
 
+void Flux_DeferredShading::BeginFrame()
+{
+	s_xGBufferCommandBuffer.BeginRecording();
+
+	s_xGBufferCommandBuffer.SubmitTargetSetup(Flux_Graphics::s_xMRTTarget, true, true, true);
+}
+
 void Flux_DeferredShading::Render()
 {
 	s_xCommandBuffer.BeginRecording();
@@ -67,6 +116,14 @@ void Flux_DeferredShading::Render()
 	s_xCommandBuffer.BindTexture(&Flux_Graphics::GetGBufferTexture(MRT_INDEX_WORLDPOS), 4);
 
 	s_xCommandBuffer.DrawIndexed(6);
+
+	#ifdef ZENITH_MERGE_GBUFFER_PASSES
+	s_xGBufferCommandBuffer.ExecuteChild(s_xSkyboxCommandBuffer);
+	s_xGBufferCommandBuffer.ExecuteChild(s_xStaticMeshesCommandBuffer);
+	s_xGBufferCommandBuffer.ExecuteChild(s_xAnimatedMeshesCommandBuffer);
+	s_xGBufferCommandBuffer.ExecuteChild(s_xTerrainCommandBuffer);
+	s_xGBufferCommandBuffer.EndRecording(RENDER_ORDER_GBUFFER);
+	#endif
 
 	s_xCommandBuffer.EndRecording(RENDER_ORDER_APPLY_LIGHTING);
 }

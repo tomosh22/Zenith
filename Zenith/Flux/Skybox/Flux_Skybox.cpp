@@ -6,9 +6,12 @@
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_Buffers.h"
+#include "Flux/DeferredShading/Flux_DeferredShading.h"
 #include "AssetHandling/Zenith_AssetHandler.h"
 
+#ifndef ZENITH_MERGE_GBUFFER_PASSES
 static Flux_CommandBuffer s_xCommandBuffer;
+#endif
 
 static Flux_Shader s_xShader;
 static Flux_Pipeline s_xPipeline;
@@ -17,7 +20,9 @@ static Flux_Texture* s_pxCubemap = nullptr;
 
 void Flux_Skybox::Initialise()
 {
+#ifndef ZENITH_MERGE_GBUFFER_PASSES
 	s_xCommandBuffer.Initialise();
+#endif
 
 	s_xShader.Initialise("Flux_Fullscreen_UV.vert", "Skybox/Flux_Skybox.frag");
 
@@ -58,10 +63,16 @@ void Flux_Skybox::Initialise()
 
 void Flux_Skybox::Render()
 {
+#ifdef ZENITH_MERGE_GBUFFER_PASSES
+	//#TO_TODO: fix up naming convention
+	Flux_CommandBuffer& s_xCommandBuffer = Flux_DeferredShading::GetSkyboxCommandBuffer();
+
 	s_xCommandBuffer.BeginRecording();
+#else
 
 	//#TO clearing as this is first pass of the frame
 	s_xCommandBuffer.SubmitTargetSetup(Flux_Graphics::s_xMRTTarget, true, true, true);
+#endif
 
 	s_xCommandBuffer.SetPipeline(&s_xPipeline);
 
@@ -74,5 +85,9 @@ void Flux_Skybox::Render()
 
 	s_xCommandBuffer.DrawIndexed(6);
 
+#ifdef ZENITH_MERGE_GBUFFER_PASSES
+	s_xCommandBuffer.EndRecording(RENDER_ORDER_GBUFFER);
+#else
 	s_xCommandBuffer.EndRecording(RENDER_ORDER_SKYBOX);
+#endif
 }

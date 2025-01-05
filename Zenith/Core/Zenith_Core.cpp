@@ -94,6 +94,7 @@ void Zenith_Core::Zenith_MainLoop()
 	}
 	Flux_PlatformAPI::BeginFrame();
 
+	Flux_DeferredShading::BeginFrame();
 	Flux_Skybox::Render();
 	Flux_StaticMeshes::Render();
 	Flux_AnimatedMeshes::Render();

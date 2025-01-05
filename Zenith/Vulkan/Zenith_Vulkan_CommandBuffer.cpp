@@ -13,13 +13,14 @@
 //#TO purely for the static assert in SetIndexBuffer
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 
-void Zenith_Vulkan_CommandBuffer::Initialise(CommandType eType /*= COMMANDTYPE_GRAPHICS*/)
+void Zenith_Vulkan_CommandBuffer::Initialise(CommandType eType /*= COMMANDTYPE_GRAPHICS*/, bool bAsChild /*= false*/)
 {
 	m_eCommandType = eType;
+	m_bIsChild = bAsChild;
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 	vk::CommandBufferAllocateInfo xAllocInfo{};
 	xAllocInfo.commandPool = Zenith_Vulkan::GetCommandPool(eType);
-	xAllocInfo.level = vk::CommandBufferLevel::ePrimary;
+	xAllocInfo.level = bAsChild ? vk::CommandBufferLevel::eSecondary : vk::CommandBufferLevel::ePrimary;
 	xAllocInfo.commandBufferCount = MAX_FRAMES_IN_FLIGHT;
 	m_xCmdBuffers = xDevice.allocateCommandBuffers(xAllocInfo);
 
@@ -34,7 +35,28 @@ void Zenith_Vulkan_CommandBuffer::Initialise(CommandType eType /*= COMMANDTYPE_G
 void Zenith_Vulkan_CommandBuffer::BeginRecording()
 {
 	m_xCurrentCmdBuffer = m_xCmdBuffers[Zenith_Vulkan_Swapchain::GetCurrentFrameIndex()];
-	m_xCurrentCmdBuffer.begin(vk::CommandBufferBeginInfo());
+	if (!m_bIsChild)
+	{
+		m_xCurrentCmdBuffer.begin(vk::CommandBufferBeginInfo());
+	}
+	else
+	{
+		Zenith_Assert(m_pxParent != nullptr, "Child has no parent");
+		Zenith_Assert(m_pxParent->m_xCurrentRenderPass != VK_NULL_HANDLE && m_pxParent->m_xCurrentFramebuffer != VK_NULL_HANDLE, "Parent isn't recording a render pass");
+		vk::CommandBufferInheritanceInfo xInheritInfo = vk::CommandBufferInheritanceInfo()
+			.setRenderPass(m_pxParent->m_xCurrentRenderPass)
+			.setFramebuffer(m_pxParent->m_xCurrentFramebuffer)
+			.setSubpass(0);
+
+		vk::CommandBufferBeginInfo xBeginInfo = vk::CommandBufferBeginInfo()
+			.setPInheritanceInfo(&xInheritInfo)
+			.setFlags(vk::CommandBufferUsageFlagBits::eRenderPassContinue);
+
+		m_xCurrentCmdBuffer.begin(xBeginInfo);
+
+		m_xCurrentCmdBuffer.setViewport(0, 1, &m_pxParent->m_xViewport);
+		m_xCurrentCmdBuffer.setScissor(0, 1, &m_pxParent->m_xScissor);
+	}
 
 	m_eCurrentBindFreq = BINDING_FREQUENCY_MAX;
 
@@ -42,17 +64,32 @@ void Zenith_Vulkan_CommandBuffer::BeginRecording()
 }
 void Zenith_Vulkan_CommandBuffer::EndRecording(RenderOrder eOrder, bool bEndPass /*= true*/)
 {
-	if (bEndPass)
+	//#TO_TODO: should I pass in false for bEndPass if this is a child instead of this check?
+	if (bEndPass && !m_bIsChild)
 	{
 		m_xCurrentCmdBuffer.endRenderPass();
 	}
 
 	m_xCurrentCmdBuffer.end();
-	Zenith_Vulkan::SubmitCommandBuffer(this, eOrder);
+	if (!m_bIsChild)
+	{
+		Zenith_Vulkan::SubmitCommandBuffer(this, eOrder);
+	}
 
 	m_eCurrentBindFreq = BINDING_FREQUENCY_MAX;
 
 	m_bIsRecording = false;
+}
+
+void Zenith_Vulkan_CommandBuffer::CreateChild(Zenith_Vulkan_CommandBuffer& xChild)
+{
+	xChild.m_pxParent = this;
+	m_bIsParent = true;
+}
+
+void Zenith_Vulkan_CommandBuffer::ExecuteChild(Zenith_Vulkan_CommandBuffer& xChild)
+{
+	m_xCurrentCmdBuffer.executeCommands(xChild.GetCurrentCmdBuffer());
 }
 
 void Zenith_Vulkan_CommandBuffer::EndAndCpuWait(bool bEndPass)
@@ -269,24 +306,25 @@ void Zenith_Vulkan_CommandBuffer::SubmitTargetSetup(Flux_TargetSetup& xTargetSet
 		xRenderPassInfo.pClearValues = axClearColour;
 	}
 
-	m_xCurrentCmdBuffer.beginRenderPass(xRenderPassInfo, vk::SubpassContents::eInline);
+	m_xCurrentCmdBuffer.beginRenderPass(xRenderPassInfo, m_bIsParent ? vk::SubpassContents::eSecondaryCommandBuffers : vk::SubpassContents::eInline);
 
 	if (axClearColour != nullptr) delete[] axClearColour;
 
-	vk::Viewport xViewport{};
-	xViewport.x = 0;
-	xViewport.y = 0;
-	xViewport.width = xTargetSetup.m_axColourAttachments[0].m_uWidth;
-	xViewport.height = xTargetSetup.m_axColourAttachments[0].m_uHeight;
-	xViewport.minDepth = 0;
-	xViewport.maxDepth = 1;
+	m_xViewport.x = 0;
+	m_xViewport.y = 0;
+	m_xViewport.width = xTargetSetup.m_axColourAttachments[0].m_uWidth;
+	m_xViewport.height = xTargetSetup.m_axColourAttachments[0].m_uHeight;
+	m_xViewport.minDepth = 0;
+	m_xViewport.maxDepth = 1;
 
-	vk::Rect2D xScissor{};
-	xScissor.offset = vk::Offset2D(0, 0);
-	xScissor.extent = vk::Extent2D(xViewport.width, xViewport.height);
+	m_xScissor.offset = vk::Offset2D(0, 0);
+	m_xScissor.extent = vk::Extent2D(m_xViewport.width, m_xViewport.height);
 
-	m_xCurrentCmdBuffer.setViewport(0, 1, &xViewport);
-	m_xCurrentCmdBuffer.setScissor(0, 1, &xScissor);
+	if (!m_bIsParent)
+	{
+		m_xCurrentCmdBuffer.setViewport(0, 1, &m_xViewport);
+		m_xCurrentCmdBuffer.setScissor(0, 1, &m_xScissor);
+	}
 }
 
 void Zenith_Vulkan_CommandBuffer::SetPipeline(Zenith_Vulkan_Pipeline* pxPipeline)
