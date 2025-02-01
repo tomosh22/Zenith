@@ -31,6 +31,7 @@ static Flux_ConstantBuffer s_xTerrainConstantsBuffer;
 DEBUGVAR bool dbg_bEnable = true;
 DEBUGVAR bool dbg_bWireframe = false;
 DEBUGVAR float dbg_fVisibilityThresholdMultiplier = 0.5f;
+DEBUGVAR bool dbg_bIgnoreVisibilityCheck = true;
 
 void Flux_Terrain::Initialise()
 {
@@ -86,6 +87,7 @@ void Flux_Terrain::Initialise()
 	Zenith_DebugVariables::AddFloat({ "Render", "Terrain", "UV Scale" }, s_xTerrainConstants.m_fUVScale, 0., 10.);
 	Zenith_DebugVariables::AddBoolean({ "Render", "Terrain", "Wireframe" }, dbg_bWireframe);
 	Zenith_DebugVariables::AddFloat({ "Render", "Terrain", "Visiblity Multiplier" }, dbg_fVisibilityThresholdMultiplier, 0.1f, 1.f);
+	Zenith_DebugVariables::AddBoolean({ "Render", "Terrain", "Ignore Visibility Check" }, dbg_bIgnoreVisibilityCheck);
 #endif
 
 	Zenith_Log("Flux_Terrain initialised");
@@ -126,13 +128,13 @@ void Flux_Terrain::Render()
 
 	for (Zenith_TerrainComponent* pxTerrain : xTerrainComponents)
 	{
-		if (!pxTerrain->IsVisible(dbg_fVisibilityThresholdMultiplier, xCam))
+		if (!dbg_bIgnoreVisibilityCheck && !pxTerrain->IsVisible(dbg_fVisibilityThresholdMultiplier, xCam))
 		{
 			continue;
 		}
 
-		s_xCommandBuffer.SetVertexBuffer(pxTerrain->GetMeshGeometry().GetVertexBuffer());
-		s_xCommandBuffer.SetIndexBuffer(pxTerrain->GetMeshGeometry().GetIndexBuffer());
+		s_xCommandBuffer.SetVertexBuffer(pxTerrain->GetRenderMeshGeometry().GetVertexBuffer());
+		s_xCommandBuffer.SetIndexBuffer(pxTerrain->GetRenderMeshGeometry().GetIndexBuffer());
 
 		const Flux_Material& xMaterial0 = pxTerrain->GetMaterial0();
 		const Flux_Material& xMaterial1 = pxTerrain->GetMaterial1();
@@ -147,7 +149,7 @@ void Flux_Terrain::Render()
 		s_xCommandBuffer.BindTexture(xMaterial1.GetRoughness(), 6);
 		s_xCommandBuffer.BindTexture(xMaterial1.GetMetallic(), 7);
 
-		s_xCommandBuffer.DrawIndexed(pxTerrain->GetMeshGeometry().GetNumIndices());
+		s_xCommandBuffer.DrawIndexed(pxTerrain->GetRenderMeshGeometry().GetNumIndices());
 	}
 
 	#ifdef ZENITH_MERGE_GBUFFER_PASSES

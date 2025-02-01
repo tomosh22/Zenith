@@ -217,7 +217,7 @@ static std::string ShaderDataTypeToString(ShaderDataType eType)
 void Flux_MeshGeometry::Export(const char* szFilename)
 {
 	FILE* pxFile = fopen(szFilename, "wb");
-	Zenith_Assert(pxFile, "Failed to open file %s", szFilename);
+	Zenith_Assert(pxFile, "Failed to open file %s error code %u", szFilename, errno);
 	char cNull = '\0';
 
 	fputs(std::to_string(m_xBufferLayout.GetElements().size()).c_str(), pxFile);

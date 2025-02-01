@@ -24,13 +24,14 @@ public:
 		}
 	}
 	void Serialize(std::ofstream& xOut);
-	reactphysics3d::RigidBody* GetRigidBody() { return m_pxRigidBody; }
+	reactphysics3d::RigidBody* GetRigidBody() const { return m_pxRigidBody; }
+	reactphysics3d::Collider* GetCollider() const { return m_pxCollider; }
 	EntityID GetEntityID() { return m_xParentEntity.GetEntityID(); }
 
 	void AddCollider(CollisionVolumeType eVolumeType, RigidBodyType eRigidBodyType);
 private:
 	Zenith_Entity m_xParentEntity;
-	reactphysics3d::RigidBody* m_pxRigidBody;
+	reactphysics3d::RigidBody* m_pxRigidBody = nullptr;
 	reactphysics3d::Collider* m_pxCollider = nullptr;
 
 	CollisionVolumeType m_eVolumeType;

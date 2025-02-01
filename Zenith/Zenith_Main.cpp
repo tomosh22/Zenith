@@ -25,9 +25,8 @@ static Zenith_Maths::Vector3 s_xDVSTest4 = { 1,2,3 };
 
 int main()
 {
-	//ExportAllMeshes();
+	ExportAllMeshes();
 	//ExportHeightmap();
-	Zenith_Core::s_xLastFrameTime = std::chrono::high_resolution_clock::now();
 	Zenith_Window::Inititalise("Zenith", 1280, 720);
 	Flux::EarlyInitialise();
 	Zenith_Physics::Initialise();
@@ -53,6 +52,7 @@ int main()
 #endif
 
 	Zenith_StateMachine::s_pxCurrentState->OnEnter();
+	Zenith_Core::s_xLastFrameTime = std::chrono::high_resolution_clock::now();
 	while (true)
 	{
 		Zenith_StateMachine::Update();

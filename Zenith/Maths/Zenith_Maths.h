@@ -34,6 +34,7 @@ namespace Zenith_Maths
 	}
 
 	static constexpr double Pi = 3.14159265358979323846264338327950288;
+	static constexpr double RadToDeg = 180/Pi;
 
 	static Matrix4 PerspectiveProjection(const float fFOV, const float fAspect, const float fNear, const float fFar)
 	{

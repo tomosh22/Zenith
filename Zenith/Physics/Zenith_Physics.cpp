@@ -25,9 +25,7 @@ void Zenith_Physics::Update(float fDt) {
 
 void Zenith_Physics::Reset() {
 	s_xPhysicsCommon.destroyPhysicsWorld(s_pxPhysicsWorld);
-	s_pxPhysicsWorld = s_xPhysicsCommon.createPhysicsWorld();
-	s_pxPhysicsWorld->setGravity({ 0,-9.81,0 });
-	s_pxPhysicsWorld->setEventListener(&s_xEventListener);
+	Initialise();
 }
 
 reactphysics3d::Ray Zenith_Physics::BuildRayFromMouse(Zenith_CameraComponent& xCam)
