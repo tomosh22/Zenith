@@ -16,7 +16,7 @@ static void KeyCallback(GLFWwindow* pxWindow, int32_t iKey, int32_t iScancode, i
 	switch (iAction)
 	{
 	case GLFW_PRESS:
-		Zenith_Input::KeyPressedCallback(static_cast<uint32_t>(iKey));
+		Zenith_Input::KeyPressedCallback(iKey);
 		break;
 	}
 }

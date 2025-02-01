@@ -32,12 +32,19 @@ void Zenith_ColliderComponent::AddCollider(CollisionVolumeType eVolumeType, Rigi
 		m_pxCollider = m_pxRigidBody->addCollider(pxSphereShape, reactphysics3d::Transform::identity());
 	}
 	break;
+	case COLLISION_VOLUME_TYPE_CAPSULE:
+	{
+		reactphysics3d::CapsuleShape* pxCapsuleShape = Zenith_Physics::s_xPhysicsCommon.createCapsuleShape(glm::length(xTrans.m_xScale), glm::length(xTrans.m_xScale) * 2);
+
+		m_pxCollider = m_pxRigidBody->addCollider(pxCapsuleShape, reactphysics3d::Transform::identity());
+	}
+	break;
 	case COLLISION_VOLUME_TYPE_TERRAIN:
 	{
 		Zenith_Assert(m_xParentEntity.HasComponent<Zenith_TerrainComponent>(), "Can't have a terrain collider without a terrain component");
 		const Zenith_TerrainComponent& xTerrain = m_xParentEntity.GetComponent<Zenith_TerrainComponent>();
 
-		const Flux_MeshGeometry& xMesh = xTerrain.GetMeshGeometry();
+		const Flux_MeshGeometry& xMesh = xTerrain.GetPhysicsMeshGeometry();
 
 		const Zenith_Maths::Vector3* pxPositions = xMesh.m_pxPositions;
 		const Zenith_Maths::Vector3* pxNormals = xMesh.m_pxNormals;
@@ -51,6 +58,7 @@ void Zenith_ColliderComponent::AddCollider(CollisionVolumeType eVolumeType, Rigi
 		m_pxConcaveShape = Zenith_Physics::s_xPhysicsCommon.createConcaveMeshShape(m_pxTriMesh);
 
 		m_pxCollider = m_pxRigidBody->addCollider(m_pxConcaveShape, reactphysics3d::Transform::identity());
+		m_pxCollider->getMaterial().setBounciness(0);
 	}
 	break;
 	}

@@ -17,6 +17,7 @@
 #include "Zenith_OS_Include.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
+#include "Input/Zenith_Input.h"
 
 float Zenith_Core::s_fDt = 0.f;
 float Zenith_Core::s_fTimePassed = 0.f;
@@ -85,6 +86,7 @@ void RenderImGui()
 void Zenith_Core::Zenith_MainLoop()
 {
 	UpdateTimers();
+	Zenith_Input::BeginFrame();
 	Zenith_Window::GetInstance()->BeginFrame();
 	Flux_MemoryManager::BeginFrame();
 	if (!Flux_Swapchain::BeginFrame())

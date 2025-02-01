@@ -4,7 +4,6 @@
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_Entity.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
-#include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
@@ -42,10 +41,11 @@ static Zenith_Entity s_xOgre;
 
 static void LoadAssets()
 {
-	Zenith_AssetHandler::AddMesh("Barrel", "C:/dev/Zenith/Games/Test/Assets/Meshes/barrel_Mesh0_Mat0.zmsh");
+	Zenith_AssetHandler::AddMesh("StickyMcStickFace", ASSETS_ROOT"Meshes/StickyMcStickface_Mesh0_Mat0.zmsh");
+	Zenith_AssetHandler::AddMesh("Barrel", ASSETS_ROOT"Meshes/barrel_Mesh0_Mat0.zmsh");
 	{
-		Zenith_AssetHandler::AddTexture2D("Barrel_Diffuse", "C:/dev/Zenith/Games/Test/Assets/Meshes/barrel_Diffuse_0.ztx");
-		Zenith_AssetHandler::AddTexture2D("Barrel_Metallic", "C:/dev/Zenith/Games/Test/Assets/Meshes/barrel_Shininess_0.ztx");
+		Zenith_AssetHandler::AddTexture2D("Barrel_Diffuse", ASSETS_ROOT"Meshes/barrel_Diffuse_0.ztx");
+		Zenith_AssetHandler::AddTexture2D("Barrel_Metallic", ASSETS_ROOT"Meshes/barrel_Shininess_0.ztx");
 
 		Flux_Texture& xDiffuse = Zenith_AssetHandler::GetTexture("Barrel_Diffuse");
 		Flux_Texture& xMetallic = Zenith_AssetHandler::GetTexture("Barrel_Metallic");
@@ -55,12 +55,13 @@ static void LoadAssets()
 		xMat.SetMetallic(&xMetallic);
 	}
 
-	Zenith_AssetHandler::AddMesh("Sphere_Smooth", "C:/dev/Zenith/Games/Test/Assets/Meshes/sphereSmooth_Mesh0_Mat0.zmsh");
+	Zenith_AssetHandler::AddMesh("Capsule", ASSETS_ROOT"Meshes/capsule_Mesh0_Mat0.zmsh");
+	Zenith_AssetHandler::AddMesh("Sphere_Smooth", ASSETS_ROOT"Meshes/sphereSmooth_Mesh0_Mat0.zmsh");
 	{
-		Zenith_AssetHandler::AddTexture2D("Crystal_Diffuse", "C:/dev/Zenith/Games/Test/Assets/Textures/crystal2k/diffuse.ztx");
-		Zenith_AssetHandler::AddTexture2D("Crystal_Normal", "C:/dev/Zenith/Games/Test/Assets/Textures/crystal2k/normal.ztx");
-		Zenith_AssetHandler::AddTexture2D("Crystal_Roughness", "C:/dev/Zenith/Games/Test/Assets/Textures/crystal2k/roughness.ztx");
-		Zenith_AssetHandler::AddTexture2D("Crystal_Metallic", "C:/dev/Zenith/Games/Test/Assets/Textures/crystal2k/metallic.ztx");
+		Zenith_AssetHandler::AddTexture2D("Crystal_Diffuse", ASSETS_ROOT"Textures/crystal2k/diffuse.ztx");
+		Zenith_AssetHandler::AddTexture2D("Crystal_Normal", ASSETS_ROOT"Textures/crystal2k/normal.ztx");
+		Zenith_AssetHandler::AddTexture2D("Crystal_Roughness", ASSETS_ROOT"Textures/crystal2k/roughness.ztx");
+		Zenith_AssetHandler::AddTexture2D("Crystal_Metallic", ASSETS_ROOT"Textures/crystal2k/metallic.ztx");
 
 		Flux_Texture& xDiffuse = Zenith_AssetHandler::GetTexture("Crystal_Diffuse");
 		Flux_Texture& xNormal = Zenith_AssetHandler::GetTexture("Crystal_Normal");
@@ -131,7 +132,8 @@ static void LoadAssets()
 		{
 			std::string strSuffix = std::to_string(x) + "_" + std::to_string(y);
 #if 1
-			Zenith_AssetHandler::AddMesh("Terrain" + strSuffix, std::string("C:/dev/Zenith/Games/Test/Assets/Terrain/" + strSuffix + ".zmsh").c_str(), true);
+			Zenith_AssetHandler::AddMesh("Terrain_Render" + strSuffix, std::string("C:/dev/Zenith/Games/Test/Assets/Terrain/Render_" + strSuffix + ".zmsh").c_str(), true);
+			Zenith_AssetHandler::AddMesh("Terrain_Physics" + strSuffix, std::string("C:/dev/Zenith/Games/Test/Assets/Terrain/Physics_" + strSuffix + ".zmsh").c_str(), true);
 #else
 			Zenith_AssetHandler::AddMesh("Terrain" + strSuffix, std::string("C:/dev/Zenith/Games/Test/Assets/Terrain/" + strSuffix + ".zmsh").c_str(), false);
 #endif
@@ -160,12 +162,14 @@ void Test_State_InGame::OnEnter()
 	xScene.SetMainCameraEntity(s_xPlayer);
 
 	Zenith_TransformComponent& xTrans = s_xPlayer.GetComponent<Zenith_TransformComponent>();
-	xTrans.SetPosition({ 100,1000,100 });
-	xTrans.SetScale({ 10,10,10 });
+	xTrans.SetPosition({ 200,-600,200 });
+	xTrans.SetScale({ 2,2,2 });
 
 	Zenith_ColliderComponent& xCollider = s_xPlayer.AddComponent<Zenith_ColliderComponent>();
 	xCollider.AddCollider(COLLISION_VOLUME_TYPE_SPHERE, RIGIDBODY_TYPE_DYNAMIC);
-	xTrans.m_pxRigidBody->enableGravity(false);
+	//xTrans.m_pxRigidBody->enableGravity(false);
+	xTrans.m_pxRigidBody->setAngularLockAxisFactor({ 0, 0, 0 });
+	xCollider.GetCollider()->getMaterial().setBounciness(0);
 
 	Zenith_ScriptComponent& xScript = s_xPlayer.AddComponent<Zenith_ScriptComponent>();
 	xScript.SetBehaviour<PlayerController_Behaviour>();
@@ -177,20 +181,20 @@ void Test_State_InGame::OnEnter()
 	Flux_MeshGeometry& xSphereMesh = Zenith_AssetHandler::GetMesh("Sphere_Smooth");
 
 	Zenith_ModelComponent& xModel = s_xPlayer.AddComponent<Zenith_ModelComponent>();
-	xModel.AddMeshEntry(xSphereMesh, Zenith_AssetHandler::GetMaterial("Crystal"));
+	xModel.AddMeshEntry(Zenith_AssetHandler::GetMesh("StickyMcStickFace"), Zenith_AssetHandler::GetMaterial("Crystal"));
 
 	{
 		s_xSphere0.Initialise(&xScene, "Sphere0");
 		Zenith_ModelComponent& xModel = s_xSphere0.AddComponent<Zenith_ModelComponent>();
 		xModel.AddMeshEntry(xSphereMesh, Zenith_AssetHandler::GetMaterial("Crystal"));
 		Zenith_TransformComponent& xTrans = s_xSphere0.GetComponent<Zenith_TransformComponent>();
-		xTrans.SetPosition({ 10,1010,10 });
-		xTrans.SetScale({ 10,10,10 });
+		xTrans.SetPosition({ 1,101,1 });
+		xTrans.SetScale({ 1,1,1 });
 
 		Zenith_ScriptComponent& xScript = s_xSphere0.AddComponent<Zenith_ScriptComponent>();
 		xScript.SetBehaviour<HookesLaw_Behaviour>();
 		HookesLaw_Behaviour& xBehaviour = *(HookesLaw_Behaviour*)xScript.m_pxScriptBehaviour;
-		xBehaviour.SetDesiredPosition({ 20.,1000,20. });
+		xBehaviour.SetDesiredPosition({ 2.,100,2. });
 
 		Zenith_ColliderComponent& xCollider = s_xSphere0.AddComponent<Zenith_ColliderComponent>();
 		xCollider.AddCollider(COLLISION_VOLUME_TYPE_SPHERE, RIGIDBODY_TYPE_DYNAMIC);
@@ -200,13 +204,13 @@ void Test_State_InGame::OnEnter()
 		Zenith_ModelComponent& xModel = s_xSphere1.AddComponent<Zenith_ModelComponent>();
 		xModel.AddMeshEntry(xSphereMesh, Zenith_AssetHandler::GetMaterial("Rock"));
 		Zenith_TransformComponent& xTrans = s_xSphere1.GetComponent<Zenith_TransformComponent>();
-		xTrans.SetPosition({ -10,1010,-10 });
-		xTrans.SetScale({ 10,10,10 });
+		xTrans.SetPosition({ -1,101,-1 });
+		xTrans.SetScale({ 1,1,1 });
 
 		Zenith_ScriptComponent& xScript = s_xSphere1.AddComponent<Zenith_ScriptComponent>();
 		xScript.SetBehaviour<HookesLaw_Behaviour>();
 		HookesLaw_Behaviour& xBehaviour = *(HookesLaw_Behaviour*)xScript.m_pxScriptBehaviour;
-		xBehaviour.SetDesiredPosition({ -20.,1000,-20. });
+		xBehaviour.SetDesiredPosition({ -2.,100,-2. });
 
 		Zenith_ColliderComponent& xCollider = s_xSphere1.AddComponent<Zenith_ColliderComponent>();
 		xCollider.AddCollider(COLLISION_VOLUME_TYPE_SPHERE, RIGIDBODY_TYPE_DYNAMIC);
@@ -218,8 +222,8 @@ void Test_State_InGame::OnEnter()
 		Zenith_ModelComponent& xModel = s_xBarrel.AddComponent<Zenith_ModelComponent>();
 		xModel.AddMeshEntry(xBarrelMesh, Zenith_AssetHandler::GetMaterial("Barrel"));
 		Zenith_TransformComponent& xTrans = s_xBarrel.GetComponent<Zenith_TransformComponent>();
-		xTrans.SetPosition({ 1500,1200,100 });
-		xTrans.SetScale({ 10,10,10 });
+		xTrans.SetPosition({ 150,120,10 });
+		xTrans.SetScale({ 1,1,1 });
 	}
 
 	uint32_t uCount = 0;
@@ -227,8 +231,8 @@ void Test_State_InGame::OnEnter()
 	{
 		xEntity.Initialise(&xScene, "Rotating Sphere");
 		Zenith_TransformComponent& xTrans = xEntity.GetComponent<Zenith_TransformComponent>();
-		xTrans.SetPosition({ 500 + 200 * uCount,1200,100 });
-		xTrans.SetScale({ 100,100,100 });
+		xTrans.SetPosition({ 50 + 20 * uCount,120,10 });
+		xTrans.SetScale({ 10,10,10 });
 
 		Zenith_ScriptComponent& xScript = xEntity.AddComponent<Zenith_ScriptComponent>();
 		xScript.SetBehaviour<RotationBehaviour_Behaviour>();
@@ -264,18 +268,20 @@ void Test_State_InGame::OnEnter()
 	{
 		for (uint32_t y = 0; y < TERRAIN_EXPORT_DIMS; y++)
 		{
-			std::string strMeshName = "Terrain" + std::to_string(x) + "_" + std::to_string(y);
-			Flux_MeshGeometry& xTerrainMesh = Zenith_AssetHandler::GetMesh(strMeshName);
+			std::string strRenderMeshName = "Terrain_Render" + std::to_string(x) + "_" + std::to_string(y);
+			Flux_MeshGeometry& xTerrainRenderMesh = Zenith_AssetHandler::GetMesh(strRenderMeshName);
+			std::string strPhysicsMeshName = "Terrain_Physics" + std::to_string(x) + "_" + std::to_string(y);
+			Flux_MeshGeometry& xTerrainPhysicsMesh = Zenith_AssetHandler::GetMesh(strPhysicsMeshName);
 
 			Zenith_Entity& xTerrain = s_xTerrain[x][y];
 
-			xTerrain.Initialise(&xScene, strMeshName);
+			xTerrain.Initialise(&xScene, strRenderMeshName);
 			Zenith_Maths::Matrix4 xWaterTransform =
 				glm::translate(glm::identity<Zenith_Maths::Matrix4>(), Zenith_Maths::Vector3(x * TERRAIN_SIZE * TERRAIN_SCALE + (TERRAIN_SIZE * TERRAIN_SCALE / 2), MAX_TERRAIN_HEIGHT / 2, y * TERRAIN_SIZE * TERRAIN_SCALE + (TERRAIN_SIZE * TERRAIN_SCALE / 2))) *
 				Zenith_Maths::EulerRotationToMatrix4(90, { 1.,0.,0. }) *
 				glm::scale(glm::identity<Zenith_Maths::Matrix4>(), Zenith_Maths::Vector3(TERRAIN_SIZE * TERRAIN_SCALE / 2, TERRAIN_SIZE * TERRAIN_SCALE / 2, TERRAIN_SIZE * TERRAIN_SCALE / 2));
 
-			xTerrain.AddComponent<Zenith_TerrainComponent>(xTerrainMesh, Zenith_AssetHandler::GetMaterial("Rock"), Zenith_AssetHandler::GetMaterial("Crystal"), xWaterTransform, Zenith_Maths::Vector2(x * TERRAIN_SIZE * TERRAIN_SCALE, y * TERRAIN_SIZE * TERRAIN_SCALE));
+			xTerrain.AddComponent<Zenith_TerrainComponent>(xTerrainRenderMesh, xTerrainPhysicsMesh, Zenith_AssetHandler::GetMaterial("Rock"), Zenith_AssetHandler::GetMaterial("Crystal"), xWaterTransform, Zenith_Maths::Vector2(x * TERRAIN_SIZE * TERRAIN_SCALE, y * TERRAIN_SIZE * TERRAIN_SCALE));
 #if 0
 			{
 				Zenith_TextComponent& xText = xTerrain.AddComponent<Zenith_TextComponent>();
@@ -285,7 +291,7 @@ void Test_State_InGame::OnEnter()
 #endif
 
 
-#if 0
+#if 1
 			Zenith_ColliderComponent& xCollider = xTerrain.AddComponent<Zenith_ColliderComponent>();
 			xCollider.AddCollider(COLLISION_VOLUME_TYPE_TERRAIN, RIGIDBODY_TYPE_STATIC);
 #endif
@@ -295,7 +301,7 @@ void Test_State_InGame::OnEnter()
 	{
 		s_xOgre.Initialise(&xScene, "Ogre");
 		Zenith_TransformComponent& xTrans = s_xOgre.GetComponent<Zenith_TransformComponent>();
-		xTrans.SetPosition({ 600, 1700, -200 });
+		xTrans.SetPosition({ 60, 170, -20 });
 		xTrans.SetRotation({ 0.7071, 0, 0.7071, 0});
 		Zenith_ModelComponent& xModel = s_xOgre.AddComponent<Zenith_ModelComponent>();
 		xModel.LoadMeshesFromDir("C:/dev/Zenith/Games/Test/Assets/Meshes/ogre");

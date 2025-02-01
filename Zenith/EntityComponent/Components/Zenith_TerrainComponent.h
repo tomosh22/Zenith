@@ -7,8 +7,9 @@
 class Zenith_TerrainComponent
 {
 public:
-	Zenith_TerrainComponent(Flux_MeshGeometry& xGeometry, Flux_Material& xMaterial0, Flux_Material& xMaterial1, Zenith_Maths::Matrix4 xWaterTransform, Zenith_Maths::Vector2 xPosition_2D, Zenith_Entity& xEntity)
-		: m_pxGeometry(&xGeometry)
+	Zenith_TerrainComponent(Flux_MeshGeometry& xRenderGeometry, Flux_MeshGeometry& xPhysicsGeometry, Flux_Material& xMaterial0, Flux_Material& xMaterial1, Zenith_Maths::Matrix4 xWaterTransform, Zenith_Maths::Vector2 xPosition_2D, Zenith_Entity& xEntity)
+		: m_pxRenderGeometry(&xRenderGeometry)
+		, m_pxPhysicsGeometry(&xPhysicsGeometry)
 		, m_pxMaterial0(&xMaterial0)
 		, m_pxMaterial1(&xMaterial1)
 		, m_xPosition_2D(xPosition_2D)
@@ -21,7 +22,8 @@ public:
 
 	~Zenith_TerrainComponent() {}
 
-	const Flux_MeshGeometry& GetMeshGeometry() const { return *m_pxGeometry; }
+	const Flux_MeshGeometry& GetRenderMeshGeometry() const { return *m_pxRenderGeometry; }
+	const Flux_MeshGeometry& GetPhysicsMeshGeometry() const { return *m_pxPhysicsGeometry; }
 	const Flux_Material& GetMaterial0() const { return *m_pxMaterial0; }
 	Flux_Material& GetMaterial0() { return *m_pxMaterial0; }
 	const Flux_Material& GetMaterial1() const { return *m_pxMaterial1; }
@@ -39,7 +41,8 @@ private:
 	Zenith_Entity m_xParentEntity;
 	
 	//#TO not owning
-	Flux_MeshGeometry* m_pxGeometry = nullptr;
+	Flux_MeshGeometry* m_pxRenderGeometry = nullptr;
+	Flux_MeshGeometry* m_pxPhysicsGeometry = nullptr;
 	Flux_Material* m_pxMaterial0 = nullptr;
 	Flux_Material* m_pxMaterial1 = nullptr;
 

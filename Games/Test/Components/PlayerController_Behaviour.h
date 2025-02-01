@@ -6,7 +6,7 @@ class PlayerController_Behaviour ZENITH_FINAL : Zenith_ScriptBehaviour
 {
 	friend class Zenith_ScriptComponent;
 public:
-	static constexpr double s_dMoveSpeed = 250;
+	static constexpr double s_dMoveSpeed = 20;
 	enum CameraType
 	{
 		CAMERA_TYPE_PERSPECTIVE,
@@ -19,6 +19,8 @@ public:
 
 	void OnUpdate(const float fDt) ZENITH_FINAL override;
 	void OnCreate() ZENITH_FINAL override {}
+
+	void Shoot();
 
 private:
 
