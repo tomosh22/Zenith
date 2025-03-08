@@ -1,5 +1,3 @@
-#version 450 core
-
 #include "../Common.fxh"
 
 layout(location = 0) in vec3 a_xPosition;
@@ -17,6 +15,12 @@ layout(push_constant) uniform ModelMatrix{
 	mat4 g_xModelMatrix;
 };
 
+#ifdef SHADOWS
+layout(std140, set = 1, binding=0) uniform ShadowMatrix{
+	mat4 g_xSunViewProjMat;
+};
+#endif
+
 void main()
 {
 	o_xUV = a_xUV;
@@ -27,5 +31,11 @@ void main()
 	o_xTBN = mat3(xTangent, xBitangent, o_xNormal);
 	o_xWorldPos = (g_xModelMatrix * vec4(a_xPosition,1)).xyz;
 
+	#ifdef SHADOWS
+	gl_Position = g_xSunViewProjMat * vec4(o_xWorldPos,1);
+	gl_Position.z = 0.1f;
+	gl_Position.w = 1.f;
+	#else
 	gl_Position = g_xViewProjMat * vec4(o_xWorldPos,1);
+	#endif
 }

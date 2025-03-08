@@ -85,8 +85,8 @@ void Zenith_Vulkan::EndFrame()
 {
 	static_assert(RENDER_ORDER_MEMORY_UPDATE == 0u, "Memory update needs to come first");
 
-	vk::PipelineStageFlags eMemWaitStages = vk::PipelineStageFlagBits::eTransfer;
-	vk::PipelineStageFlags eRenderWaitStages = vk::PipelineStageFlagBits::eTransfer;
+	vk::PipelineStageFlags eMemWaitStages = vk::PipelineStageFlagBits::eAllCommands;
+	vk::PipelineStageFlags eRenderWaitStages = vk::PipelineStageFlagBits::eAllCommands;
 
 	//#TO_TODO: stop making this every frame
 	vk::Semaphore xMemorySemaphore = s_xDevice.createSemaphore(vk::SemaphoreCreateInfo());
@@ -107,7 +107,8 @@ void Zenith_Vulkan::EndFrame()
 		.setSignalSemaphoreCount(1)
 		.setWaitDstStageMask(eMemWaitStages);
 
-	s_axQueues[COMMANDTYPE_COPY].submit(xMemorySubmitInfo, VK_NULL_HANDLE);
+	//#TO_TODO: change this to copy queue, how do I make sure this finishes before graphics?
+	s_axQueues[COMMANDTYPE_GRAPHICS].submit(xMemorySubmitInfo, VK_NULL_HANDLE);
 
 	std::vector<vk::CommandBuffer> xPlatformCmdBufs;
 	for (uint32_t i = RENDER_ORDER_MEMORY_UPDATE + 1; i < RENDER_ORDER_MAX; i++)

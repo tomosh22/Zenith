@@ -23,6 +23,7 @@ public:
 	Zenith_Vulkan_CommandBuffer() {}
 	void Initialise(CommandType eType = COMMANDTYPE_GRAPHICS, bool bAsChild = false);
 	void BeginRecording();
+	void EndRenderPass();
 	void EndRecording(RenderOrder eOrder, bool bEndPass = true);
 	void CreateChild(Zenith_Vulkan_CommandBuffer& xChild);
 	void ExecuteChild(Zenith_Vulkan_CommandBuffer& xChild);

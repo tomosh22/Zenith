@@ -159,7 +159,9 @@ void Zenith_Vulkan_MemoryManager::AllocateBuffer(size_t uSize, vk::BufferUsageFl
 	VmaAllocationCreateInfo xAllocInfo = {};
 	if (eResidency == MEMORY_RESIDENCY_CPU)
 	{
+		xAllocInfo.requiredFlags = VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
 		xAllocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
+		xAllocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT;
 	}
 	else if (eResidency == MEMORY_RESIDENCY_GPU)
 	{
@@ -250,14 +252,15 @@ void Zenith_Vulkan_MemoryManager::CreateDepthStencilAttachment(uint32_t uWidth, 
 	FreeTexture(&xTextureOut);
 	AllocateTexture(uWidth, uHeight, 1, COLOUR_FORMAT_NONE, eFormat, uBitsPerPixel, 1, vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled, MEMORY_RESIDENCY_GPU, xTextureOut);
 	Zenith_Assert(eFormat == DEPTHSTENCIL_FORMAT_D32_SFLOAT, "#TO_TODO: layouts for just depth without stencil");
-	ImageTransitionBarrier(xTextureOut.GetImage(), vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthStencilAttachmentOptimal, vk::ImageAspectFlagBits::eDepth, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands);
+	ImageTransitionBarrier(xTextureOut.GetImage(), vk::ImageLayout::eUndefined, vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageAspectFlagBits::eDepth, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands);
 }
 
-void Zenith_Vulkan_MemoryManager::CreateTexture(const void* pData, const uint32_t uWidth, const uint32_t uHeight, const uint32_t uDepth, ColourFormat eFormat, Zenith_Vulkan_Texture& xTextureOut)
+void Zenith_Vulkan_MemoryManager::CreateTexture(const void* pData, const uint32_t uWidth, const uint32_t uHeight, const uint32_t uDepth, ColourFormat eFormat, DepthStencilFormat eDepthStencilFormat, bool bCreateMips, Zenith_Vulkan_Texture& xTextureOut)
 {
+	Zenith_Assert(eFormat == COLOUR_FORMAT_NONE ^ eDepthStencilFormat == DEPTHSTENCIL_FORMAT_NONE, "Can't have both colour and d/s format");
 	FreeTexture(&xTextureOut);
 
-	uint32_t uNumMips = std::floor(std::log2(std::max(uWidth, uHeight))) + 1;
+	uint32_t uNumMips = bCreateMips ? std::floor(std::log2(std::max(uWidth, uHeight))) + 1 : 1;
 
 	//#TO_TODO: other formats
 	AllocateTexture(uWidth, uHeight, 1, eFormat, DEPTHSTENCIL_FORMAT_NONE, ColourFormatBytesPerPixel(eFormat) /*bytes per pizel*/, uNumMips, vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eTransferSrc, MEMORY_RESIDENCY_GPU, xTextureOut);
@@ -265,7 +268,10 @@ void Zenith_Vulkan_MemoryManager::CreateTexture(const void* pData, const uint32_
 	xTextureOut.SetHeight(uHeight);
 	xTextureOut.SetNumMips(uNumMips);
 	xTextureOut.SetNumLayers(1);
-	UploadTextureData(xTextureOut, pData, ColourFormatBytesPerPixel(eFormat) * uWidth * uHeight * uDepth);
+	if (pData)
+	{
+		UploadTextureData(xTextureOut, pData, ColourFormatBytesPerPixel(eFormat) * uWidth * uHeight * uDepth);
+	}
 }
 
 void Zenith_Vulkan_MemoryManager::CreateTexture(const char* szPath, Zenith_Vulkan_Texture& xTextureOut)
@@ -507,18 +513,22 @@ void Zenith_Vulkan_MemoryManager::UploadBufferData(Zenith_Vulkan_Buffer& xBuffer
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 
 	const VmaAllocation& xAlloc = xBuffer.GetAllocation();
-	const VmaAllocationInfo* pxAllocInfo = xBuffer.GetAllocationInfo_Ptr();
 	VkMemoryPropertyFlags eMemoryProps;
 	vmaGetAllocationMemoryProperties(s_xAllocator, xAlloc, &eMemoryProps);
 
 	if (eMemoryProps & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
 	{
-		memcpy(pxAllocInfo->pMappedData, pData, uSize);
+		void* pMap = nullptr;
+		vmaMapMemory(s_xAllocator, xAlloc, &pMap);
+		Zenith_Assert(pMap != nullptr, "Memory isn't mapped");
+		memcpy(pMap, pData, uSize);
 #ifdef ZENITH_ASSERT
 		VkResult eResult = 
 #endif
-		vmaFlushAllocation(s_xAllocator, xAlloc, 0, VK_WHOLE_SIZE);
+		vmaFlushAllocation(s_xAllocator, xAlloc, 0, uSize);
 		Zenith_Assert(eResult == VK_SUCCESS, "Failed to flush allocation");
+
+		vmaUnmapMemory(s_xAllocator, xAlloc);
 	}
 	else
 	{

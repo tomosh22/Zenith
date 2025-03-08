@@ -2,6 +2,13 @@
 
 #ifdef ZENITH_TOOLS
 #include "DebugVariables/Zenith_DebugVariables.h"
+#include "Flux/Flux.h"
+
+//#TO_TODO: need a platform independent way of handling this
+#ifdef ZENITH_VULKAN
+#include "Zenith_Vulkan_Pipeline.h"
+#include "Flux/Flux_Graphics.h"
+#endif
 
 Zenith_DebugVariableTree Zenith_DebugVariables::s_xTree;
 
@@ -25,13 +32,58 @@ void Zenith_DebugVariableTree::LeafNodeWithRange<Zenith_Maths::Vector3, float>::
 template<>
 void Zenith_DebugVariableTree::LeafNodeWithRange<Zenith_Maths::Vector4, float>::ImGuiDisplay()
 {
-	ImGui::SliderFloat3(m_xName.back().c_str(), &m_pData->x, m_xMin, m_xMax);
+	ImGui::SliderFloat4(m_xName.back().c_str(), &m_pData->x, m_xMin, m_xMax);
 }
 
 template<>
 void Zenith_DebugVariableTree::LeafNodeWithRange<float, float>::ImGuiDisplay()
 {
 	ImGui::SliderFloat(m_xName.back().c_str(), m_pData, m_xMin, m_xMax, "%.7f");
+}
+
+template<>
+void Zenith_DebugVariableTree::LeafNode<const Flux_Texture>::ImGuiDisplay()
+{
+	//#TO_TODO: need a platform independent way of handling this
+#ifdef ZENITH_VULKAN
+
+	vk::DescriptorSetLayoutBinding xBinding = vk::DescriptorSetLayoutBinding()
+		.setBinding(0)
+		.setDescriptorCount(1)
+		.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
+		.setStageFlags(vk::ShaderStageFlagBits::eFragment);
+
+	vk::DescriptorSetLayoutCreateInfo xInfo = vk::DescriptorSetLayoutCreateInfo()
+		.setBindingCount(1)
+		.setPBindings(&xBinding);
+
+	vk::DescriptorSetLayout xLayout = Zenith_Vulkan::GetDevice().createDescriptorSetLayout(xInfo);
+
+	vk::DescriptorSetAllocateInfo xAllocInfo = vk::DescriptorSetAllocateInfo()
+		.setDescriptorPool(Zenith_Vulkan::GetCurrentPerFrameDescriptorPool())
+		.setDescriptorSetCount(1)
+		.setPSetLayouts(&xLayout);
+
+	vk::DescriptorSet xSet = Zenith_Vulkan::GetDevice().allocateDescriptorSets(xAllocInfo)[0];
+
+	vk::DescriptorImageInfo xImageInfo = vk::DescriptorImageInfo()
+		.setSampler(Flux_Graphics::s_xDefaultSampler.GetSampler())
+		.setImageView(m_pData->GetImageView())
+		.setImageLayout(vk::ImageLayout::eShaderReadOnlyOptimal);
+
+	vk::WriteDescriptorSet xImageWriteInfo = vk::WriteDescriptorSet()
+		.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
+		.setDstSet(xSet)
+		.setDstBinding(0)
+		.setDstArrayElement(0)
+		.setDescriptorCount(1)
+		.setPImageInfo(&xImageInfo);
+
+	Zenith_Vulkan::GetDevice().updateDescriptorSets(1, &xImageWriteInfo, 0, nullptr);
+
+	
+	ImGui::Image(xSet, ImVec2(200, 200), { 0, 1 }, { 1, 0 });
+#endif
 }
 
 template<>

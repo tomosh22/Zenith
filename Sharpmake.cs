@@ -173,8 +173,9 @@ public class ZenithToolsProject : Project
 		
 		conf.Defines.Add("GLM_ENABLE_EXPERIMENTAL");
 		conf.Defines.Add("NOMINMAX");
-		
-		String sharpmakePath = SharpmakeCsPath;
+        conf.Defines.Add("ASSETS_ROOT=\"c:/dev/zenith/Games/Test/Assets/\"");
+
+        String sharpmakePath = SharpmakeCsPath;
 		String gameAssetRoot = sharpmakePath + "/Games/Test/Assets/";
 		gameAssetRoot = gameAssetRoot.Replace('\\', '/');
 		conf.Defines.Add("GAME_ASSETS_DIR=\"" + gameAssetRoot + "\"");
@@ -266,6 +267,7 @@ public class ZenithWindowsProject : Project
 		conf.Defines.Add("ZENITH_VULKAN");
 		conf.Defines.Add("ZENITH_WINDOWS");
 		conf.Defines.Add("NOMINMAX");
+		conf.Defines.Add("ASSETS_ROOT=\"c:/dev/zenith/Games/Test/Assets/\"");
 		if(target.ToolsEnabled == ToolsEnabled.True)
 		{
 			conf.Defines.Add("ZENITH_TOOLS");

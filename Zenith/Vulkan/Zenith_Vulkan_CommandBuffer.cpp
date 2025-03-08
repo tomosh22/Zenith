@@ -62,6 +62,10 @@ void Zenith_Vulkan_CommandBuffer::BeginRecording()
 
 	m_bIsRecording = true;
 }
+void Zenith_Vulkan_CommandBuffer::EndRenderPass()
+{
+	m_xCurrentCmdBuffer.endRenderPass();
+}
 void Zenith_Vulkan_CommandBuffer::EndRecording(RenderOrder eOrder, bool bEndPass /*= true*/)
 {
 	//#TO_TODO: should I pass in false for bEndPass if this is a child instead of this check?
@@ -280,27 +284,39 @@ void Zenith_Vulkan_CommandBuffer::SubmitTargetSetup(Flux_TargetSetup& xTargetSet
 
 	m_xCurrentRenderPass = Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(xTargetSetup, eColourLoad, eColourStore, eDepthStencilLoad, eDepthStencilStore, eUsage);
 
-	m_xCurrentFramebuffer = Zenith_Vulkan_Pipeline::TargetSetupToFramebuffer(xTargetSetup, m_xCurrentRenderPass);
+	uint32_t uWidth, uHeight;
+	if (xTargetSetup.m_axColourAttachments[0].m_eColourFormat != COLOUR_FORMAT_NONE)
+	{
+		uWidth = xTargetSetup.m_axColourAttachments[0].m_uWidth;
+		uHeight = xTargetSetup.m_axColourAttachments[0].m_uHeight;
+	}
+	else
+	{
+		Zenith_Assert(xTargetSetup.m_pxDepthStencil->m_eDepthStencilFormat != DEPTHSTENCIL_FORMAT_NONE, "Target setup has no attachments");
+		uWidth = xTargetSetup.m_pxDepthStencil->m_uWidth;
+		uHeight = xTargetSetup.m_pxDepthStencil->m_uHeight;
+
+	}
+
+	m_xCurrentFramebuffer = Zenith_Vulkan_Pipeline::TargetSetupToFramebuffer(xTargetSetup, uWidth, uHeight, m_xCurrentRenderPass);
 
 	vk::RenderPassBeginInfo xRenderPassInfo = vk::RenderPassBeginInfo()
 		.setRenderPass(m_xCurrentRenderPass)
 		.setFramebuffer(m_xCurrentFramebuffer)
-		.setRenderArea({ {0,0}, Zenith_Vulkan_Swapchain::GetExent() });
+		.setRenderArea({ {0,0}, {uWidth, uHeight} });
 
 	vk::ClearValue* axClearColour = nullptr;
-	//#TO im being lazy and assuming all render targets have the same load action
-	if (eColourLoad == LOAD_ACTION_CLEAR) {
+	if (eColourLoad == LOAD_ACTION_CLEAR || eDepthStencilLoad == LOAD_ACTION_CLEAR)
+	{
 		bool bHasDepth = xTargetSetup.m_pxDepthStencil != nullptr;
 		const uint32_t uNumAttachments = bHasDepth ? uNumColourAttachments + 1 : uNumColourAttachments;
 		axClearColour = new vk::ClearValue[uNumAttachments];
 		std::array<float, 4> tempColour{ 0.f,0.f,0.f,1.f };
-		for (uint32_t i = 0; i < uNumColourAttachments; i++)
+		for (uint32_t i = 0; i < uNumAttachments; i++)
 		{
 			axClearColour[i].color = { vk::ClearColorValue(tempColour) };
-			axClearColour[i].depthStencil = vk::ClearDepthStencilValue(0, 0);
+			axClearColour[i].depthStencil = vk::ClearDepthStencilValue(1, 0);
 		}
-		if (bHasDepth)
-			axClearColour[uNumAttachments - 1].depthStencil = vk::ClearDepthStencilValue(1, 0);
 
 		xRenderPassInfo.clearValueCount = uNumAttachments;
 		xRenderPassInfo.pClearValues = axClearColour;
@@ -312,8 +328,8 @@ void Zenith_Vulkan_CommandBuffer::SubmitTargetSetup(Flux_TargetSetup& xTargetSet
 
 	m_xViewport.x = 0;
 	m_xViewport.y = 0;
-	m_xViewport.width = xTargetSetup.m_axColourAttachments[0].m_uWidth;
-	m_xViewport.height = xTargetSetup.m_axColourAttachments[0].m_uHeight;
+	m_xViewport.width = uWidth;
+	m_xViewport.height = uHeight;
 	m_xViewport.minDepth = 0;
 	m_xViewport.maxDepth = 1;
 

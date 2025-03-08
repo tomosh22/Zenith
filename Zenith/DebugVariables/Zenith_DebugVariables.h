@@ -1,5 +1,6 @@
 #ifdef ZENITH_TOOLS
 #include "imgui.h"
+#include "Flux/Flux.h"
 class Zenith_DebugVariableTree
 {
 public:
@@ -104,6 +105,11 @@ public:
 		Zenith_DebugVariableTree::LeafNodeWithRange<Zenith_Maths::Vector3, float>* pxLeaf = new Zenith_DebugVariableTree::LeafNodeWithRange<Zenith_Maths::Vector3, float>(xName, &xVar, fMin, fMax);
 		s_xTree.AddLeafNode(pxLeaf, xName);
 	}
+	static void AddVector4(std::vector<std::string> xName, Zenith_Maths::Vector4& xVar, float fMin, float fMax)
+	{
+		Zenith_DebugVariableTree::LeafNodeWithRange<Zenith_Maths::Vector4, float>* pxLeaf = new Zenith_DebugVariableTree::LeafNodeWithRange<Zenith_Maths::Vector4, float>(xName, &xVar, fMin, fMax);
+		s_xTree.AddLeafNode(pxLeaf, xName);
+	}
 	static void AddVector3(std::vector<std::string> xName, Zenith_Maths::Vector4& xVar, float fMin, float fMax)
 	{
 		Zenith_DebugVariableTree::LeafNodeWithRange<Zenith_Maths::Vector4, float>* pxLeaf = new Zenith_DebugVariableTree::LeafNodeWithRange<Zenith_Maths::Vector4, float>(xName, &xVar, fMin, fMax);
@@ -122,6 +128,11 @@ public:
 	static void AddButton(std::vector<std::string> xName, void(*pfnCallback)())
 	{
 		Zenith_DebugVariableTree::PfnLeafNode* pxLeaf = new Zenith_DebugVariableTree::PfnLeafNode(xName, pfnCallback);
+		s_xTree.AddLeafNode(pxLeaf, xName);
+	}
+	static void AddTexture(std::vector<std::string> xName, const Flux_Texture& xTexture)
+	{
+		Zenith_DebugVariableTree::LeafNode<const Flux_Texture>* pxLeaf = new Zenith_DebugVariableTree::LeafNode(xName, &xTexture);
 		s_xTree.AddLeafNode(pxLeaf, xName);
 	}
 
