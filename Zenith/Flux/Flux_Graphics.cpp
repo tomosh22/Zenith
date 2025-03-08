@@ -4,6 +4,7 @@
 #include "Flux/Flux_Types.h"
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Flux_Buffers.h"
+#include "Flux/Shadows/Flux_Shadows.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
@@ -27,15 +28,20 @@ ColourFormat Flux_Graphics::s_aeMRTFormats[MRT_INDEX_COUNT]
 	COLOUR_FORMAT_R32G32B32A32_SFLOAT //MRT_INDEX_WORLDPOS #TO unused alpha
 };
 
+#ifdef ZENITH_DEBUG_VARIABLES
 DEBUGVAR Zenith_Maths::Vector3 dbg_SunDir = { 0.,-0.6, -0.8 };
-DEBUGVAR Zenith_Maths::Vector3 dbg_SunColour = { 0.7, 0.4,0.2 };
+DEBUGVAR Zenith_Maths::Vector4 dbg_SunColour = { 0.7, 0.4,0.2, 1.f };
+
+DEBUGVAR bool dbg_bOverrideViewProjMat = false;
+DEBUGVAR uint32_t dbg_uOverrideViewProjMatIndex = 0;
+#endif
 
 void Flux_Graphics::Initialise()
 {
 	Flux_Sampler::InitialiseDefault(s_xDefaultSampler);
 
 	float afBlankTexData[] = { 1.f,1.f,1.f,1.f };
-	Flux_MemoryManager::CreateTexture(afBlankTexData, 1, 1, 1, COLOUR_FORMAT_RGBA8_UNORM, s_xBlankTexture2D);
+	Flux_MemoryManager::CreateTexture(afBlankTexData, 1, 1, 1, COLOUR_FORMAT_RGBA8_UNORM, DEPTHSTENCIL_FORMAT_NONE, false, s_xBlankTexture2D);
 
 	Flux_MeshGeometry::GenerateFullscreenQuad(s_xQuadMesh);
 	Flux_MemoryManager::InitialiseVertexBuffer(s_xQuadMesh.GetVertexData(), s_xQuadMesh.GetVertexDataSize(), s_xQuadMesh.GetVertexBuffer());
@@ -47,7 +53,12 @@ void Flux_Graphics::Initialise()
 
 #ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_DebugVariables::AddVector3({ "Render", "Sun Direction" }, dbg_SunDir, -1, 1.);
-	Zenith_DebugVariables::AddVector3({ "Render", "Sun Colour" }, dbg_SunColour, 0, 1.);
+	Zenith_DebugVariables::AddVector4({ "Render", "Sun Colour" }, dbg_SunColour, 0, 1.);
+
+	Zenith_DebugVariables::AddTexture({ "Render", "Debug", "MRT Diffuse" }, s_xMRTTarget.m_axColourAttachments[MRT_INDEX_DIFFUSE].m_axTargetTextures[0]);
+
+	Zenith_DebugVariables::AddBoolean({ "Shadows", "Override ViewProj Mat" }, dbg_bOverrideViewProjMat);
+	Zenith_DebugVariables::AddUInt32({ "Shadows", "Override ViewProj Mat Index" }, dbg_uOverrideViewProjMatIndex, 0, ZENITH_FLUX_NUM_CSMS);
 #endif
 
 	Zenith_Log("Flux_Graphics Initialised");
@@ -86,16 +97,28 @@ void Flux_Graphics::UploadFrameConstants()
 
 	xCamera.BuildViewMatrix(s_xFrameConstants.m_xViewMat);
 	xCamera.BuildProjectionMatrix(s_xFrameConstants.m_xProjMat);
-	s_xFrameConstants.m_xViewProjMat = s_xFrameConstants.m_xProjMat * s_xFrameConstants.m_xViewMat;
+	if (dbg_bOverrideViewProjMat)
+	{
+		s_xFrameConstants.m_xViewProjMat = Flux_Shadows::GetSunViewProjMatrix(dbg_uOverrideViewProjMatIndex);
+	}
+	else
+	{
+		s_xFrameConstants.m_xViewProjMat = s_xFrameConstants.m_xProjMat * s_xFrameConstants.m_xViewMat;
+	}
 	s_xFrameConstants.m_xInvViewProjMat = glm::inverse(s_xFrameConstants.m_xViewProjMat);
 	xCamera.GetPosition(s_xFrameConstants.m_xCamPos_Pad);
 	s_xFrameConstants.m_xSunDir_Pad = glm::normalize(Zenith_Maths::Vector4(dbg_SunDir.x, dbg_SunDir.y, dbg_SunDir.z, 0.));
-	s_xFrameConstants.m_xSunColour_Pad = { dbg_SunColour.x, dbg_SunColour.y, dbg_SunColour.z, 0. };
+	s_xFrameConstants.m_xSunColour_Pad = { dbg_SunColour.x, dbg_SunColour.y, dbg_SunColour.z, dbg_SunColour.w };
 	int32_t iWidth, iHeight;
 	Zenith_Window::GetInstance()->GetSize(iWidth, iHeight);
 	s_xFrameConstants.m_xScreenDims = { static_cast<uint32_t>(iWidth), static_cast<uint32_t>(iHeight) };
 	s_xFrameConstants.m_xRcpScreenDims = { 1.f / s_xFrameConstants.m_xScreenDims.x, 1.f / s_xFrameConstants.m_xScreenDims.y };
 	Flux_MemoryManager::UploadBufferData(s_xFrameConstantsBuffer.GetBuffer(), &s_xFrameConstants, sizeof(FrameConstants));
+}
+
+const Zenith_Maths::Vector3& Flux_Graphics::GetCameraPosition()
+{
+	return s_xFrameConstants.m_xCamPos_Pad;
 }
 
 Flux_Texture& Flux_Graphics::GetGBufferTexture(MRTIndex eIndex)
@@ -106,4 +129,24 @@ Flux_Texture& Flux_Graphics::GetGBufferTexture(MRTIndex eIndex)
 Flux_Texture& Flux_Graphics::GetDepthStencilTexture()
 {
 	return s_xDepthBuffer.m_axTargetTextures[Flux_Swapchain::GetCurrentFrameIndex()];
+}
+
+float Flux_Graphics::GetNearPlane()
+{
+	return Zenith_Scene::GetCurrentScene().GetMainCamera().GetNearPlane();
+
+}
+float Flux_Graphics::GetFarPlane()
+{
+	return Zenith_Scene::GetCurrentScene().GetMainCamera().GetFarPlane();
+}
+
+float Flux_Graphics::GetFOV()
+{
+	return Zenith_Scene::GetCurrentScene().GetMainCamera().GetFOV();
+}
+
+float Flux_Graphics::GetAspectRatio()
+{
+	return Zenith_Scene::GetCurrentScene().GetMainCamera().GetAspectRatio();
 }

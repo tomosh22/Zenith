@@ -10,6 +10,7 @@
 #include "Flux/Water/Flux_Water.h"
 #include "Flux/Fog/Flux_Fog.h"
 #include "Flux/SDFs/Flux_SDFs.h"
+#include "Flux/Shadows/Flux_Shadows.h"
 #include "Flux/Particles/Flux_Particles.h"
 #include "Flux/Text/Flux_Text.h"
 
@@ -30,6 +31,7 @@ void Flux::LateInitialise()
 	Flux_PlatformAPI::InitialiseImGui();
 #endif
 	Flux_Graphics::Initialise();
+	Flux_Shadows::Initialise();
 	Flux_Skybox::Initialise();
 	Flux_StaticMeshes::Initialise();
 	Flux_AnimatedMeshes::Initialise();

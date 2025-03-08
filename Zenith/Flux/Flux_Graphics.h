@@ -29,11 +29,18 @@ public:
 
 	static ColourFormat s_aeMRTFormats[MRT_INDEX_COUNT];
 
+	static const Zenith_Maths::Vector3& GetCameraPosition();
 	static Flux_Texture& GetGBufferTexture(MRTIndex eIndex);
 	static Flux_Texture& GetDepthStencilTexture();
 
 	static Zenith_Maths::Matrix4 GetViewProjMatrix() { return s_xFrameConstants.m_xViewProjMat; }
 	static Zenith_Maths::Matrix4 GetInvViewProjMatrix() { return s_xFrameConstants.m_xInvViewProjMat; }
+	static Zenith_Maths::Matrix4 GetViewMatrix() { return s_xFrameConstants.m_xViewMat; }
+	static Zenith_Maths::Vector3 GetSunDir() { return s_xFrameConstants.m_xSunDir_Pad; }
+	static float GetNearPlane();
+	static float GetFarPlane();
+	static float GetFOV();
+	static float GetAspectRatio();
 private:
 	struct FrameConstants
 	{

@@ -10,6 +10,7 @@
 #include "Flux/Water/Flux_Water.h"
 #include "Flux/Fog/Flux_Fog.h"
 #include "Flux/SDFs/Flux_SDFs.h"
+#include "Flux/Shadows/Flux_Shadows.h"
 #include "Flux/Particles/Flux_Particles.h"
 #include "Flux/Text/Flux_Text.h"
 #include "EntityComponent/Zenith_Scene.h"
@@ -95,10 +96,10 @@ void Zenith_Core::Zenith_MainLoop()
 		return;
 	}
 	Flux_PlatformAPI::BeginFrame();
-
+	Flux_Shadows::Render();
 	Flux_DeferredShading::BeginFrame();
 	Flux_Skybox::Render();
-	Flux_StaticMeshes::Render();
+	Flux_StaticMeshes::RenderToGBuffer();
 	Flux_AnimatedMeshes::Render();
 	Flux_Terrain::Render();
 	Flux_DeferredShading::Render();

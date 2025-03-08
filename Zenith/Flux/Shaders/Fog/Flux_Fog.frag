@@ -35,7 +35,7 @@ void main()
 	float fFogAmount = 1.0 - exp(-fDist * g_xFogColour_Falloff.w);
 	float fSunAmount = max( dot(normalize(xCameraToPixel), -g_xSunDir_Pad.xyz), 0.0 );
     vec3  xFogColour  = mix( g_xFogColour_Falloff.xyz,
-                           g_xSunColour_Pad.xyz,
+                           g_xSunColour.xyz,
                            pow(fSunAmount,8.0) );
 	o_xColour = vec4(xFogColour, fFogAmount);
 }

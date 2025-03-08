@@ -296,7 +296,7 @@ void Zenith_Vulkan_Swapchain::BindAsTarget()
 	vk::RenderPass xRenderPass = Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(s_xTargetSetup, LOAD_ACTION_DONTCARE, STORE_ACTION_STORE, LOAD_ACTION_DONTCARE, STORE_ACTION_DONTCARE, RENDER_TARGET_USAGE_PRESENT);
 #endif
 
-	vk::Framebuffer xFramebuffer = Zenith_Vulkan_Pipeline::TargetSetupToFramebuffer(s_xTargetSetup, xRenderPass);
+	vk::Framebuffer xFramebuffer = Zenith_Vulkan_Pipeline::TargetSetupToFramebuffer(s_xTargetSetup, Zenith_Vulkan_Swapchain::GetWidth(), Zenith_Vulkan_Swapchain::GetHeight(), xRenderPass);
 
 	vk::ClearValue xClear;
 	vk::ClearColorValue xClearColourValue(0.f, 0.f, 0.f, 1.f);
@@ -360,7 +360,7 @@ void Zenith_Vulkan_Swapchain::CopyToFramebuffer()
 
 	vk::RenderPassBeginInfo xRenderPassInfo = vk::RenderPassBeginInfo()
 		.setRenderPass(Zenith_Vulkan::s_xImGuiRenderPass)
-		.setFramebuffer(Zenith_Vulkan_Pipeline::TargetSetupToFramebuffer(s_xTargetSetup, Zenith_Vulkan::s_xImGuiRenderPass))
+		.setFramebuffer(Zenith_Vulkan_Pipeline::TargetSetupToFramebuffer(s_xTargetSetup, Zenith_Vulkan_Swapchain::GetWidth(), Zenith_Vulkan_Swapchain::GetHeight(), Zenith_Vulkan::s_xImGuiRenderPass))
 		.setRenderArea({ {0,0}, s_xExtent });
 
 	xCmd.beginRenderPass(xRenderPassInfo, vk::SubpassContents::eInline);

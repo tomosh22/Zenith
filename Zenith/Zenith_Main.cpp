@@ -25,7 +25,7 @@ static Zenith_Maths::Vector3 s_xDVSTest4 = { 1,2,3 };
 
 int main()
 {
-	ExportAllMeshes();
+	//ExportAllMeshes();
 	//ExportHeightmap();
 	Zenith_Window::Inititalise("Zenith", 1280, 720);
 	Flux::EarlyInitialise();
@@ -53,6 +53,7 @@ int main()
 
 	Zenith_StateMachine::s_pxCurrentState->OnEnter();
 	Zenith_Core::s_xLastFrameTime = std::chrono::high_resolution_clock::now();
+	Flux_Graphics::UploadFrameConstants();
 	while (true)
 	{
 		Zenith_StateMachine::Update();

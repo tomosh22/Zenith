@@ -91,7 +91,7 @@ public:
 	bool m_bUsePushConstants = false;//#TODO expand on this, currently just use model matrix
 
 	static vk::RenderPass TargetSetupToRenderPass(Flux_TargetSetup& xTargetSetup, LoadAction eColourLoad, StoreAction eColourStore, LoadAction eDepthStencilLoad, StoreAction eDepthStencilStore, RenderTargetUsage eUsage);
-	static vk::Framebuffer TargetSetupToFramebuffer(Flux_TargetSetup& xTargetSetup, const vk::RenderPass& xPass);
+	static vk::Framebuffer TargetSetupToFramebuffer(Flux_TargetSetup& xTargetSetup, uint32_t uWidth, uint32_t uHeight, const vk::RenderPass& xPass);
 
 	void BindDescriptorSets(vk::CommandBuffer& xCmd, const std::vector<vk::DescriptorSet>& axSets, vk::PipelineBindPoint eBindPoint, uint32_t ufirstSet) const;
 };

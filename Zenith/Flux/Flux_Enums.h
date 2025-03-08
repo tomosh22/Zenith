@@ -21,6 +21,7 @@ enum AllocationType
 enum RenderOrder
 {
 	RENDER_ORDER_MEMORY_UPDATE,
+	RENDER_ORDER_CSM,
 	#ifdef ZENITH_MERGE_GBUFFER_PASSES
 	RENDER_ORDER_GBUFFER,
 	#else

@@ -683,7 +683,7 @@ vk::RenderPass Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(Flux_TargetSetup&
 	return Zenith_Vulkan::GetDevice().createRenderPass(xRenderPassInfo);
 }
 
-vk::Framebuffer Zenith_Vulkan_Pipeline::TargetSetupToFramebuffer(Flux_TargetSetup& xTargetSetup, const vk::RenderPass& xPass)
+vk::Framebuffer Zenith_Vulkan_Pipeline::TargetSetupToFramebuffer(Flux_TargetSetup& xTargetSetup, uint32_t uWidth, uint32_t uHeight, const vk::RenderPass& xPass)
 {
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 	const uint32_t uFrameIndex = Zenith_Vulkan_Swapchain::GetCurrentFrameIndex();
@@ -720,9 +720,8 @@ vk::Framebuffer Zenith_Vulkan_Pipeline::TargetSetupToFramebuffer(Flux_TargetSetu
 	framebufferInfo.attachmentCount = uNumAttachments;
 	framebufferInfo.pAttachments = axAttachments;
 
-	//#TO assuming all targets are same resolution
-	framebufferInfo.width = xTargetSetup.m_axColourAttachments[0].m_uWidth;
-	framebufferInfo.height = xTargetSetup.m_axColourAttachments[0].m_uHeight;
+	framebufferInfo.width = uWidth;
+	framebufferInfo.height = uHeight;
 
 	framebufferInfo.layers = 1;
 

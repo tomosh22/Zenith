@@ -33,7 +33,11 @@ public:
 	const double GetYaw() const { return m_fYaw; }
 	void SetYaw(const double fYaw) { m_fYaw = fYaw; }
 
+	const float GetNearPlane() const { return m_fNear; }
 	const float GetFarPlane() const { return m_fFar; }
+
+	const float GetFOV() const { return m_fFOV; }
+	const float GetAspectRatio() const { return m_fAspect; }
 
 private:
 	float m_fNear = 0;
