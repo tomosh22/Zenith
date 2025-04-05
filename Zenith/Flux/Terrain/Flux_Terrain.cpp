@@ -6,6 +6,7 @@
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_Buffers.h"
+#include "Flux/Shadows/Flux_Shadows.h"
 #include "Flux/DeferredShading/Flux_DeferredShading.h"
 #include "AssetHandling/Zenith_AssetHandler.h"
 #include "EntityComponent/Zenith_Scene.h"
@@ -17,8 +18,10 @@
 static Flux_CommandBuffer s_xCommandBuffer;
 #endif
 
-static Flux_Shader s_xShader;
-static Flux_Pipeline s_xPipeline;
+static Flux_Shader s_xGBufferShader;
+static Flux_Pipeline s_xGBufferPipeline;
+static Flux_Shader s_xShadowShader;
+static Flux_Pipeline s_xShadowPipeline;
 static Flux_Pipeline s_xWireframePipeline;
 
 
@@ -39,7 +42,8 @@ void Flux_Terrain::Initialise()
 	s_xCommandBuffer.Initialise();
 	#endif
 
-	s_xShader.Initialise("Terrain/Flux_Terrain.vert", "Terrain/Flux_Terrain.frag");
+	s_xGBufferShader.Initialise("Terrain/Flux_Terrain_ToGBuffer.vert", "Terrain/Flux_Terrain_ToGBuffer.frag");
+	s_xShadowShader.Initialise("Terrain/Flux_Terrain_ToShadowmap.vert", "Terrain/Flux_Terrain_ToShadowmap.frag");
 
 	Flux_VertexInputDescription xVertexDesc;
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_TRIANGLES;
@@ -51,32 +55,60 @@ void Flux_Terrain::Initialise()
 	xVertexDesc.m_xPerVertexLayout.GetElements().push_back(SHADER_DATA_TYPE_FLOAT);
 	xVertexDesc.m_xPerVertexLayout.CalculateOffsetsAndStrides();
 
-	std::vector<Flux_BlendState> xBlendStates;
-	xBlendStates.push_back({ BLEND_FACTOR_ZERO, BLEND_FACTOR_ZERO, false });
-	xBlendStates.push_back({ BLEND_FACTOR_ZERO, BLEND_FACTOR_ZERO, false });
-	xBlendStates.push_back({ BLEND_FACTOR_ZERO, BLEND_FACTOR_ZERO, false });
-	xBlendStates.push_back({ BLEND_FACTOR_ZERO, BLEND_FACTOR_ZERO, false });
+	{
+		std::vector<Flux_BlendState> xBlendStates;
+		xBlendStates.push_back({ BLEND_FACTOR_ZERO, BLEND_FACTOR_ZERO, false });
+		xBlendStates.push_back({ BLEND_FACTOR_ZERO, BLEND_FACTOR_ZERO, false });
+		xBlendStates.push_back({ BLEND_FACTOR_ZERO, BLEND_FACTOR_ZERO, false });
+		xBlendStates.push_back({ BLEND_FACTOR_ZERO, BLEND_FACTOR_ZERO, false });
 
-	Flux_PipelineSpecification xPipelineSpec(
-		xVertexDesc,
-		&s_xShader,
-		xBlendStates,
-		true,
-		true,
-		DEPTH_COMPARE_FUNC_LESSEQUAL,
-		DEPTHSTENCIL_FORMAT_D32_SFLOAT,
-		true,
-		false,
-		{ 2,0 },
-		{ 0,8 },
-		Flux_Graphics::s_xMRTTarget,
-		false
-	);
+		Flux_PipelineSpecification xPipelineSpec(
+			xVertexDesc,
+			&s_xGBufferShader,
+			xBlendStates,
+			true,
+			true,
+			DEPTH_COMPARE_FUNC_LESSEQUAL,
+			DEPTHSTENCIL_FORMAT_D32_SFLOAT,
+			true,
+			false,
+			{ 2,0 },
+			{ 0,8 },
+			Flux_Graphics::s_xMRTTarget,
+			false
+		);
 
-	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
+		Flux_PipelineBuilder::FromSpecification(s_xGBufferPipeline, xPipelineSpec);
 
-	xPipelineSpec.m_bWireframe = true;
-	Flux_PipelineBuilder::FromSpecification(s_xWireframePipeline, xPipelineSpec);
+		xPipelineSpec.m_bWireframe = true;
+		Flux_PipelineBuilder::FromSpecification(s_xWireframePipeline, xPipelineSpec);
+	}
+
+	
+	{
+		//#TO_TODO: shouldn't need this at all, this is depth only
+		std::vector<Flux_BlendState> xBlendStates;
+		xBlendStates.push_back({ BLEND_FACTOR_ZERO, BLEND_FACTOR_ZERO, false });
+
+		Flux_PipelineSpecification xShadowPipelineSpec(
+			xVertexDesc,
+			&s_xShadowShader,
+			xBlendStates,
+			true,
+			true,
+			DEPTH_COMPARE_FUNC_LESSEQUAL,
+			DEPTHSTENCIL_FORMAT_D32_SFLOAT,
+			true,
+			false,
+			{ 2,0 },
+			{ 1,0 },
+			Flux_Shadows::GetCSMTargetSetup(0),
+			false
+		);
+
+		Flux_PipelineBuilder::FromSpecification(s_xShadowPipeline, xShadowPipelineSpec);
+	}
+	
 
 
 	Flux_MemoryManager::InitialiseConstantBuffer(nullptr, sizeof(struct TerrainConstants
@@ -93,7 +125,7 @@ void Flux_Terrain::Initialise()
 	Zenith_Log("Flux_Terrain initialised");
 }
 
-void Flux_Terrain::Render()
+void Flux_Terrain::RenderToGBuffer()
 {
 	if (!dbg_bEnable)
 	{
@@ -113,7 +145,7 @@ void Flux_Terrain::Render()
 
 	#endif
 
-	s_xCommandBuffer.SetPipeline(dbg_bWireframe ? &s_xWireframePipeline : &s_xPipeline);
+	s_xCommandBuffer.SetPipeline(dbg_bWireframe ? &s_xWireframePipeline : &s_xGBufferPipeline);
 
 	std::vector<Zenith_TerrainComponent*> xTerrainComponents;
 	Zenith_Scene::GetCurrentScene().GetAllOfComponentType<Zenith_TerrainComponent>(xTerrainComponents);
@@ -157,4 +189,31 @@ void Flux_Terrain::Render()
 	#else
 	s_xCommandBuffer.EndRecording(RENDER_ORDER_TERRAIN);
 	#endif
+}
+
+void Flux_Terrain::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf)
+{
+	std::vector<Zenith_TerrainComponent*> xTerrainComponents;
+	Zenith_Scene::GetCurrentScene().GetAllOfComponentType<Zenith_TerrainComponent>(xTerrainComponents);
+
+	//#TO_TODO: skip terrain components that aren't visibile from CSM
+
+	for (Zenith_TerrainComponent* pxTerrain : xTerrainComponents)
+	{
+
+		xCmdBuf.SetVertexBuffer(pxTerrain->GetRenderMeshGeometry().GetVertexBuffer());
+		xCmdBuf.SetIndexBuffer(pxTerrain->GetRenderMeshGeometry().GetIndexBuffer());
+
+		xCmdBuf.DrawIndexed(pxTerrain->GetRenderMeshGeometry().GetNumIndices());
+	}
+}
+
+Flux_Pipeline& Flux_Terrain::GetShadowPipeline()
+{
+	return s_xShadowPipeline;
+}
+
+Flux_ConstantBuffer& Flux_Terrain::GetTerrainConstantsBuffer()
+{
+	return s_xTerrainConstantsBuffer;
 }

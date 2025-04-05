@@ -6,6 +6,7 @@
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_Buffers.h"
+#include "Flux/Shadows/Flux_Shadows.h"
 
 static Flux_CommandBuffer s_xCommandBuffer;
 
@@ -79,7 +80,7 @@ void Flux_DeferredShading::Initialise()
 		DEPTHSTENCIL_FORMAT_D32_SFLOAT,
 		false,
 		false,
-		{ 1,4 },
+		{ 4,7 },
 		{ 0,0 },
 		Flux_Graphics::s_xFinalRenderTarget,
 		false
@@ -110,10 +111,21 @@ void Flux_DeferredShading::Render()
 
 	s_xCommandBuffer.BeginBind(BINDING_FREQUENCY_PER_FRAME);
 	s_xCommandBuffer.BindBuffer(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer(), 0);
-	s_xCommandBuffer.BindTexture(&Flux_Graphics::GetGBufferTexture(MRT_INDEX_DIFFUSE), 1);
-	s_xCommandBuffer.BindTexture(&Flux_Graphics::GetGBufferTexture(MRT_INDEX_NORMALSAMBIENT), 2);
-	s_xCommandBuffer.BindTexture(&Flux_Graphics::GetGBufferTexture(MRT_INDEX_MATERIAL), 3);
-	s_xCommandBuffer.BindTexture(&Flux_Graphics::GetGBufferTexture(MRT_INDEX_WORLDPOS), 4);
+	s_xCommandBuffer.BindTexture(&Flux_Graphics::GetGBufferTexture(MRT_INDEX_DIFFUSE), 4);
+	s_xCommandBuffer.BindTexture(&Flux_Graphics::GetGBufferTexture(MRT_INDEX_NORMALSAMBIENT), 5);
+	s_xCommandBuffer.BindTexture(&Flux_Graphics::GetGBufferTexture(MRT_INDEX_MATERIAL), 6);
+	s_xCommandBuffer.BindTexture(&Flux_Graphics::GetGBufferTexture(MRT_INDEX_WORLDPOS), 7);
+
+	constexpr uint32_t uFirstShadowTexBind = 8;
+	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
+	{
+		s_xCommandBuffer.BindTexture(&Flux_Shadows::GetCSMTexture(u), uFirstShadowTexBind + u);
+	}
+	constexpr uint32_t uFirstShadowBufferBind = 1;
+	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
+	{
+		s_xCommandBuffer.BindBuffer(&Flux_Shadows::GetShadowMatrixBuffer(u).GetBuffer(), uFirstShadowBufferBind + u);
+	}
 
 	s_xCommandBuffer.DrawIndexed(6);
 

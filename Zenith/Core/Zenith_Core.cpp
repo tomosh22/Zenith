@@ -101,7 +101,7 @@ void Zenith_Core::Zenith_MainLoop()
 	Flux_Skybox::Render();
 	Flux_StaticMeshes::RenderToGBuffer();
 	Flux_AnimatedMeshes::Render();
-	Flux_Terrain::Render();
+	Flux_Terrain::RenderToGBuffer();
 	Flux_DeferredShading::Render();
 	Flux_Water::Render();
 	Flux_Fog::Render();
