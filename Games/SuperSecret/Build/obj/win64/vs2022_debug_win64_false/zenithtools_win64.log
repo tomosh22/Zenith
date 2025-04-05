@@ -1,0 +1,404 @@
+﻿  stb_vorbis.c
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(1081,36): warning C4244: '=': conversion from 'int' to 'uint8', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(1149,35): warning C4244: '=': conversion from 'int' to 'int16', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(1208,29): warning C4244: 'function': conversion from 'int' to 'uint8', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(1224,38): warning C4244: '=': conversion from 'int' to 'uint8', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(1283,46): warning C4244: '=': conversion from 'unsigned int' to 'uint16', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(1348,11): warning C4244: 'return': conversion from 'int' to 'uint8', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(1556,22): warning C4244: '=': conversion from 'int' to 'uint8', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(1613,14): warning C4456: declaration of 'z' hides previous local declaration
+      C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(1601,11):
+      see declaration of 'z'
+  
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(2143,29): warning C4456: declaration of 'c' hides previous local declaration
+      C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(2109,8):
+      see declaration of 'c'
+  
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(2145,19): warning C4457: declaration of 'n' hides function parameter
+      C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(2104,75):
+      see declaration of 'n'
+  
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(2157,23): warning C4456: declaration of 'z' hides previous local declaration
+      C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(2140,20):
+      see declaration of 'z'
+  
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(2159,23): warning C4456: declaration of 'c' hides previous local declaration
+      C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(2109,8):
+      see declaration of 'c'
+  
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(2189,29): warning C4456: declaration of 'c' hides previous local declaration
+      C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(2109,8):
+      see declaration of 'c'
+  
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(2191,19): warning C4457: declaration of 'n' hides function parameter
+      C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(2104,75):
+      see declaration of 'n'
+  
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(2203,23): warning C4456: declaration of 'z' hides previous local declaration
+      C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(2186,20):
+      see declaration of 'z'
+  
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(2205,23): warning C4456: declaration of 'c' hides previous local declaration
+      C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(2109,8):
+      see declaration of 'c'
+  
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(2236,29): warning C4456: declaration of 'c' hides previous local declaration
+      C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(2109,8):
+      see declaration of 'c'
+  
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(2238,19): warning C4457: declaration of 'n' hides function parameter
+      C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(2104,75):
+      see declaration of 'n'
+  
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(2255,23): warning C4456: declaration of 'c' hides previous local declaration
+      C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(2109,8):
+      see declaration of 'c'
+  
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(2263,26): warning C4457: declaration of 'n' hides function parameter
+      C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(2104,75):
+      see declaration of 'n'
+  
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(3213,25): warning C4244: '=': conversion from 'uint32' to 'short', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(3214,25): warning C4244: '=': conversion from 'uint32' to 'short', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(3223,19): warning C4456: declaration of 'n' hides previous local declaration
+      C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(3183,14):
+      see declaration of 'n'
+  
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(3231,22): warning C4456: declaration of 'n' hides previous local declaration
+      C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(3183,14):
+      see declaration of 'n'
+  
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(3232,41): warning C4244: '=': conversion from 'int' to 'short', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(3257,51): warning C4244: '=': conversion from 'int' to 'short', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(3259,59): warning C4244: '=': conversion from 'int' to 'short', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(3262,42): warning C4244: '=': conversion from 'int' to 'short', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(3264,42): warning C4244: '=': conversion from 'int' to 'short', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(3267,31): warning C4244: '=': conversion from 'int' to 'short', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(3331,11): warning C4456: declaration of 'n2' hides previous local declaration
+      C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(3183,16):
+      see declaration of 'n2'
+  
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(3332,14): warning C4457: declaration of 'm' hides function parameter
+      C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(3180,63):
+      see declaration of 'm'
+  
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(3469,11): warning C4456: declaration of 'i' hides previous local declaration
+      C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(3458,13):
+      see declaration of 'i'
+  
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(3469,13): warning C4456: declaration of 'j' hides previous local declaration
+      C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(3458,15):
+      see declaration of 'j'
+  
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(3649,38): warning C4244: '=': conversion from 'int' to 'uint8', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(3656,22): warning C4244: '=': conversion from 'int' to 'char', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(3674,34): warning C4244: '=': conversion from 'int' to 'char', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(3680,8): warning C4244: '=': conversion from 'int' to 'uint8', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(3710,38): warning C4244: '=': conversion from 'int' to 'uint8', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(3726,11): warning C4244: '=': conversion from 'uint32' to 'uint8', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(3727,11): warning C4244: '=': conversion from 'uint32' to 'uint8', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(3728,11): warning C4244: '=': conversion from 'uint32' to 'uint8', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(3729,11): warning C4244: '=': conversion from 'uint32' to 'uint8', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(3731,11): warning C4244: '=': conversion from 'uint32' to 'uint8', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(3732,11): warning C4244: '=': conversion from 'uint32' to 'uint8', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(3735,27): warning C4244: '=': conversion from 'uint32' to 'uint8', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(3762,44): warning C4244: '=': conversion from 'uint32' to 'uint8', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(3847,24): warning C4244: '=': conversion from 'uint32' to 'uint8', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(3853,40): warning C4244: '=': conversion from 'uint32' to 'uint8', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(3854,26): warning C4244: '=': conversion from 'uint32' to 'uint8', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(3856,17): warning C4456: declaration of 'values' hides previous local declaration
+      C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(3720,15):
+      see declaration of 'values'
+  
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(3868,24): warning C4244: '=': conversion from 'int' to 'uint16', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(3873,17): warning C4456: declaration of 'len' hides previous local declaration
+      C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(3583,8):
+      see declaration of 'len'
+  
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(3929,23): warning C4244: '=': conversion from 'uint32' to 'uint8', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(3940,27): warning C4244: '=': conversion from 'uint32' to 'uint16', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(3944,21): warning C4244: '=': conversion from 'uint32' to 'uint8', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(3945,20): warning C4244: '=': conversion from 'uint32' to 'uint16', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(3946,29): warning C4244: '=': conversion from 'uint32' to 'uint16', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(3947,30): warning C4244: '=': conversion from 'uint32' to 'uint8', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(3948,32): warning C4244: '=': conversion from 'uint32' to 'uint8', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(3949,45): warning C4244: '=': conversion from 'uint32' to 'uint8', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(3951,31): warning C4244: '=': conversion from 'uint32' to 'uint8', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(3957,26): warning C4244: '=': conversion from 'uint32' to 'uint8', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(3959,42): warning C4244: '=': conversion from 'uint32' to 'uint8', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(3964,52): warning C4244: '=': conversion from 'uint32' to 'uint8', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(3965,38): warning C4244: '=': conversion from 'uint32' to 'uint8', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(3967,42): warning C4244: '=': conversion from 'uint32' to 'uint8', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(3975,46): warning C4244: '=': conversion from 'uint32' to 'uint8', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(3976,25): warning C4244: '=': conversion from 'uint32' to 'uint8', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(3983,38): warning C4244: '=': conversion from 'uint32' to 'uint16', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(3990,23): warning C4244: '=': conversion from 'int' to 'uint16', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(4002,34): warning C4244: '=': conversion from 'int' to 'uint8', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(4003,34): warning C4244: '=': conversion from 'int' to 'uint8', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(4019,29): warning C4244: '=': conversion from 'uint32' to 'uint16', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(4025,41): warning C4244: '=': conversion from 'uint32' to 'uint8', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(4026,22): warning C4244: '=': conversion from 'uint32' to 'uint8', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(4032,25): warning C4244: '=': conversion from 'uint32' to 'uint8', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(4040,41): warning C4244: '=': conversion from 'uint32' to 'int16', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(4075,36): warning C4244: '=': conversion from 'uint32' to 'uint8', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(4081,43): warning C4244: '=': conversion from 'uint32' to 'uint16', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(4084,36): warning C4244: '=': conversion from 'uint32' to 'uint8', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(4085,32): warning C4244: '=': conversion from 'uint32' to 'uint8', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(4097,30): warning C4244: '=': conversion from 'uint32' to 'uint8', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(4107,31): warning C4244: '=': conversion from 'uint32' to 'uint8', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(4108,33): warning C4244: '=': conversion from 'uint32' to 'uint8', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(4118,22): warning C4244: '=': conversion from 'uint32' to 'uint8', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(4119,23): warning C4244: '=': conversion from 'uint32' to 'uint16', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(4120,26): warning C4244: '=': conversion from 'uint32' to 'uint16', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(4121,20): warning C4244: '=': conversion from 'uint32' to 'uint8', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(4161,11): warning C4456: declaration of 'i' hides previous local declaration
+      C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(3583,12):
+      see declaration of 'i'
+  
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(4030,25): warning C4244: 'initializing': conversion from 'uint32' to 'uint8', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(4396,43): warning C4245: '=': conversion from 'int' to 'uint32', signed/unsigned mismatch
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(4411,11): warning C4456: declaration of 'n' hides previous local declaration
+      C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(4355,10):
+      see declaration of 'n'
+  
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(4580,20): warning C4456: declaration of 'i' hides previous local declaration
+      C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(4569,14):
+      see declaration of 'i'
+  
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(4596,40): warning C4244: 'function': conversion from 'int' to 'uint8', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(4868,23): warning C4244: '+=': conversion from 'int' to 'uint8', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(5174,17): warning C4244: '=': conversion from 'int' to 'short', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(5198,24): warning C4244: '=': conversion from 'int' to 'short', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(5238,25): warning C4244: '=': conversion from 'int' to 'short', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(5288,25): warning C4244: '=': conversion from 'int' to 'short', possible loss of data
+C:\dev\Zenith\Tools\Middleware\assimp\include\stb_vorbis.c(4758,1): warning C4701: potentially uninitialized local variable 'mid' used
+  imgui_impl_glfw.cpp
+  imgui_impl_vulkan.cpp
+  imgui_impl_win32.cpp
+  imgui.cpp
+  imgui_demo.cpp
+  imgui_draw.cpp
+  imgui_tables.cpp
+  imgui_widgets.cpp
+  Zenith_Tools_MeshExport.cpp
+  Zenith_Tools_TerrainExport.cpp
+  Zenith_Tools_TextureExport.cpp
+  Flux_MeshGeometry.cpp
+C:\dev\Zenith\zenith\vulkan\Zenith_Vulkan.h(87,54): warning C4267: 'argument': conversion from 'size_t' to 'uint32_t', possible loss of data
+  (compiling source file '../../../Tools/Zenith_Tools_TextureExport.cpp')
+  
+C:\dev\Zenith\zenith\vulkan\Zenith_Vulkan.h(89,56): warning C4267: 'argument': conversion from 'size_t' to 'uint32_t', possible loss of data
+  (compiling source file '../../../Tools/Zenith_Tools_TextureExport.cpp')
+  
+C:\dev\Zenith\zenith\vulkan\Zenith_Vulkan.h(87,54): warning C4267: 'argument': conversion from 'size_t' to 'uint32_t', possible loss of data
+  (compiling source file '../../../Zenith/Flux/MeshGeometry/Flux_MeshGeometry.cpp')
+  
+C:\dev\Zenith\zenith\vulkan\Zenith_Vulkan.h(89,56): warning C4267: 'argument': conversion from 'size_t' to 'uint32_t', possible loss of data
+  (compiling source file '../../../Zenith/Flux/MeshGeometry/Flux_MeshGeometry.cpp')
+  
+C:\dev\Zenith\zenith\vulkan\Zenith_Vulkan.h(87,54): warning C4267: 'argument': conversion from 'size_t' to 'uint32_t', possible loss of data
+  (compiling source file '../../../Tools/Zenith_Tools_TerrainExport.cpp')
+  
+C:\dev\Zenith\zenith\vulkan\Zenith_Vulkan.h(89,56): warning C4267: 'argument': conversion from 'size_t' to 'uint32_t', possible loss of data
+  (compiling source file '../../../Tools/Zenith_Tools_TerrainExport.cpp')
+  
+C:\dev\Zenith\zenith\vulkan\Zenith_Vulkan.h(87,54): warning C4267: 'argument': conversion from 'size_t' to 'uint32_t', possible loss of data
+  (compiling source file '../../../Tools/Zenith_Tools_MeshExport.cpp')
+  
+C:\dev\Zenith\zenith\vulkan\Zenith_Vulkan.h(89,56): warning C4267: 'argument': conversion from 'size_t' to 'uint32_t', possible loss of data
+  (compiling source file '../../../Tools/Zenith_Tools_MeshExport.cpp')
+  
+C:\dev\Zenith\Zenith\Flux\MeshGeometry\Flux_MeshGeometry.cpp(122,29): warning C4267: '=': conversion from 'size_t' to 'uint32_t', possible loss of data
+C:\dev\Zenith\Zenith\Flux\MeshGeometry\Flux_MeshGeometry.cpp(123,31): warning C4267: '=': conversion from 'size_t' to 'uint32_t', possible loss of data
+C:\dev\Zenith\Zenith\Flux\MeshGeometry\Flux_MeshGeometry.cpp(124,29): warning C4267: '=': conversion from 'size_t' to 'uint32_t', possible loss of data
+C:\dev\Zenith\Zenith\Flux\MeshGeometry\Flux_MeshGeometry.cpp(151,18): warning C4456: declaration of 'u' hides previous local declaration
+      C:\dev\Zenith\Zenith\Flux\MeshGeometry\Flux_MeshGeometry.cpp(142,17):
+      see declaration of 'u'
+  
+C:\dev\Zenith\Zenith\Flux\MeshGeometry\Flux_MeshGeometry.cpp(79,17): warning C4996: 'fopen': This function or variable may be unsafe. Consider using fopen_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+C:\dev\Zenith\Tools\Zenith_Tools_TextureExport.cpp(40,17): warning C4996: 'fopen': This function or variable may be unsafe. Consider using fopen_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+C:\dev\Zenith\Tools\Zenith_Tools_TextureExport.cpp(68,2): warning C4996: 'wcstombs': This function or variable may be unsafe. Consider using wcstombs_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+C:\dev\Zenith\Zenith\Flux\MeshGeometry\Flux_MeshGeometry.cpp(219,17): warning C4996: 'fopen': This function or variable may be unsafe. Consider using fopen_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.41.34120\include\ostream(316,13): warning C4530: C++ exception handler used, but unwind semantics are not enabled. Specify /EHsc
+  (compiling source file '../../../Tools/Zenith_Tools_TextureExport.cpp')
+      C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.41.34120\include\ostream(316,13):
+      the template instantiation context (the oldest one first) is
+          C:\dev\Zenith\middleware\vulkansdk\1.3.280.0\include\vulkan\vulkan_to_string.hpp(3534,23):
+          see reference to class template instantiation 'std::basic_stringstream<char,std::char_traits<char>,std::allocator<char>>' being compiled
+          C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.41.34120\include\sstream(853,14):
+          see reference to class template instantiation 'std::basic_iostream<char,std::char_traits<char>>' being compiled
+          C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.41.34120\include\istream(731,31):
+          see reference to class template instantiation 'std::basic_ostream<char,std::char_traits<char>>' being compiled
+          C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.41.34120\include\ostream(309,39):
+          while compiling class template member function 'std::basic_ostream<char,std::char_traits<char>> &std::basic_ostream<char,std::char_traits<char>>::operator <<(unsigned int)'
+              C:\dev\Zenith\middleware\vulkansdk\1.3.280.0\include\vulkan\vulkan_to_string.hpp(3535,24):
+              see the first reference to 'std::basic_ostream<char,std::char_traits<char>>::operator <<' in 'vk::toHexString'
+  
+C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.41.34120\include\ostream(407,13): warning C4530: C++ exception handler used, but unwind semantics are not enabled. Specify /EHsc
+  (compiling source file '../../../Zenith/Flux/MeshGeometry/Flux_MeshGeometry.cpp')
+      C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.41.34120\include\ostream(407,13):
+      the template instantiation context (the oldest one first) is
+          C:\dev\Zenith\middleware\vulkansdk\1.3.280.0\include\vulkan\vulkan_to_string.hpp(3534,23):
+          see reference to class template instantiation 'std::basic_stringstream<char,std::char_traits<char>,std::allocator<char>>' being compiled
+          C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.41.34120\include\sstream(853,14):
+          see reference to class template instantiation 'std::basic_iostream<char,std::char_traits<char>>' being compiled
+          C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.41.34120\include\istream(731,31):
+          see reference to class template instantiation 'std::basic_ostream<char,std::char_traits<char>>' being compiled
+          C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.41.34120\include\ostream(400,39):
+          while compiling class template member function 'std::basic_ostream<char,std::char_traits<char>> &std::basic_ostream<char,std::char_traits<char>>::operator <<(float)'
+              C:\dev\Zenith\Zenith\Flux\MeshGeometry\Flux_MeshGeometry.cpp(263,47):
+              see the first reference to 'std::basic_ostream<char,std::char_traits<char>>::operator <<' in 'Flux_MeshGeometry::Export'
+  
+C:\dev\Zenith\Tools\Zenith_Tools_MeshExport.cpp(294,3): warning C4996: 'wcstombs': This function or variable may be unsafe. Consider using wcstombs_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.41.34120\include\ostream(316,13): warning C4530: C++ exception handler used, but unwind semantics are not enabled. Specify /EHsc
+  (compiling source file '../../../Tools/Zenith_Tools_MeshExport.cpp')
+      C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.41.34120\include\ostream(316,13):
+      the template instantiation context (the oldest one first) is
+          C:\dev\Zenith\middleware\vulkansdk\1.3.280.0\include\vulkan\vulkan_to_string.hpp(3534,23):
+          see reference to class template instantiation 'std::basic_stringstream<char,std::char_traits<char>,std::allocator<char>>' being compiled
+          C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.41.34120\include\sstream(853,14):
+          see reference to class template instantiation 'std::basic_iostream<char,std::char_traits<char>>' being compiled
+          C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.41.34120\include\istream(731,31):
+          see reference to class template instantiation 'std::basic_ostream<char,std::char_traits<char>>' being compiled
+          C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.41.34120\include\ostream(309,39):
+          while compiling class template member function 'std::basic_ostream<char,std::char_traits<char>> &std::basic_ostream<char,std::char_traits<char>>::operator <<(unsigned int)'
+              C:\dev\Zenith\middleware\vulkansdk\1.3.280.0\include\vulkan\vulkan_to_string.hpp(3535,24):
+              see the first reference to 'std::basic_ostream<char,std::char_traits<char>>::operator <<' in 'vk::toHexString'
+  
+C:\dev\Zenith\zenith\Maths\Zenith_Maths.h(39,17): warning C4505: 'Zenith_Maths::PerspectiveProjection': unreferenced function with internal linkage has been removed
+  (compiling source file '../../../Tools/Zenith_Tools_TextureExport.cpp')
+  
+C:\dev\Zenith\zenith\Maths\Zenith_Maths.h(44,17): warning C4505: 'Zenith_Maths::OrthographicProjection': unreferenced function with internal linkage has been removed
+  (compiling source file '../../../Tools/Zenith_Tools_TextureExport.cpp')
+  
+C:\dev\Zenith\zenith\Maths\Zenith_Maths.h(49,17): warning C4505: 'Zenith_Maths::EulerRotationToMatrix4': unreferenced function with internal linkage has been removed
+  (compiling source file '../../../Tools/Zenith_Tools_TextureExport.cpp')
+  
+C:\dev\Zenith\zenith\Flux\Flux_Types.h(123,17): warning C4505: 'ColourFormatBytesPerPixel': unreferenced function with internal linkage has been removed
+  (compiling source file '../../../Tools/Zenith_Tools_TextureExport.cpp')
+  
+C:\dev\Zenith\zenith\Flux\Flux_Types.h(128,17): warning C4505: 'DepthStencilFormatBitsPerPixel': unreferenced function with internal linkage has been removed
+  (compiling source file '../../../Tools/Zenith_Tools_TextureExport.cpp')
+  
+C:\dev\Zenith\Tools\Zenith_Tools_TextureExport.cpp(7,20): warning C4505: 'ShaderDataTypeToString': unreferenced function with internal linkage has been removed
+C:\dev\Zenith\zenith\Maths\Zenith_Maths.h(39,17): warning C4505: 'Zenith_Maths::PerspectiveProjection': unreferenced function with internal linkage has been removed
+  (compiling source file '../../../Zenith/Flux/MeshGeometry/Flux_MeshGeometry.cpp')
+  
+C:\dev\Zenith\zenith\Maths\Zenith_Maths.h(44,17): warning C4505: 'Zenith_Maths::OrthographicProjection': unreferenced function with internal linkage has been removed
+  (compiling source file '../../../Zenith/Flux/MeshGeometry/Flux_MeshGeometry.cpp')
+  
+C:\dev\Zenith\zenith\Maths\Zenith_Maths.h(49,17): warning C4505: 'Zenith_Maths::EulerRotationToMatrix4': unreferenced function with internal linkage has been removed
+  (compiling source file '../../../Zenith/Flux/MeshGeometry/Flux_MeshGeometry.cpp')
+  
+C:\dev\Zenith\zenith\Flux\Flux_Types.h(123,17): warning C4505: 'ColourFormatBytesPerPixel': unreferenced function with internal linkage has been removed
+  (compiling source file '../../../Zenith/Flux/MeshGeometry/Flux_MeshGeometry.cpp')
+  
+C:\dev\Zenith\zenith\Flux\Flux_Types.h(128,17): warning C4505: 'DepthStencilFormatBitsPerPixel': unreferenced function with internal linkage has been removed
+  (compiling source file '../../../Zenith/Flux/MeshGeometry/Flux_MeshGeometry.cpp')
+  
+C:\dev\Zenith\zenith\Maths\Zenith_Maths.h(39,17): warning C4505: 'Zenith_Maths::PerspectiveProjection': unreferenced function with internal linkage has been removed
+  (compiling source file '../../../Tools/Zenith_Tools_MeshExport.cpp')
+  
+C:\dev\Zenith\zenith\Maths\Zenith_Maths.h(44,17): warning C4505: 'Zenith_Maths::OrthographicProjection': unreferenced function with internal linkage has been removed
+  (compiling source file '../../../Tools/Zenith_Tools_MeshExport.cpp')
+  
+C:\dev\Zenith\zenith\Maths\Zenith_Maths.h(49,17): warning C4505: 'Zenith_Maths::EulerRotationToMatrix4': unreferenced function with internal linkage has been removed
+  (compiling source file '../../../Tools/Zenith_Tools_MeshExport.cpp')
+  
+C:\dev\Zenith\zenith\Flux\Flux_Types.h(123,17): warning C4505: 'ColourFormatBytesPerPixel': unreferenced function with internal linkage has been removed
+  (compiling source file '../../../Tools/Zenith_Tools_MeshExport.cpp')
+  
+C:\dev\Zenith\zenith\Flux\Flux_Types.h(128,17): warning C4505: 'DepthStencilFormatBitsPerPixel': unreferenced function with internal linkage has been removed
+  (compiling source file '../../../Tools/Zenith_Tools_MeshExport.cpp')
+  
+C:\dev\Zenith\zenith\Flux\Flux_Types.h(26,1): warning C4715: 'Flux_ShaderDataTypeSize': not all control paths return a value
+C:\dev\Zenith\Tools\Zenith_Tools_TerrainExport.cpp(21,50): warning C4244: '=': conversion from 'float' to 'uint32_t', possible loss of data
+C:\dev\Zenith\Tools\Zenith_Tools_TerrainExport.cpp(22,79): warning C4244: '=': conversion from 'float' to 'uint32_t', possible loss of data
+C:\dev\Zenith\Tools\Zenith_Tools_TerrainExport.cpp(45,20): warning C4244: 'initializing': conversion from 'float' to 'uint32_t', possible loss of data
+C:\dev\Zenith\Tools\Zenith_Tools_TerrainExport.cpp(47,16): warning C4244: 'initializing': conversion from 'float' to 'uint32_t', possible loss of data
+C:\dev\Zenith\Tools\Zenith_Tools_TerrainExport.cpp(49,16): warning C4244: 'initializing': conversion from 'float' to 'uint32_t', possible loss of data
+C:\dev\Zenith\Tools\Zenith_Tools_TerrainExport.cpp(87,38): warning C4244: '=': conversion from 'double' to 'float', possible loss of data
+C:\dev\Zenith\Tools\Zenith_Tools_TerrainExport.cpp(96,10): warning C4244: 'initializing': conversion from 'float' to 'int', possible loss of data
+C:\dev\Zenith\Tools\Zenith_Tools_TerrainExport.cpp(97,10): warning C4244: 'initializing': conversion from 'float' to 'int', possible loss of data
+C:\dev\Zenith\Tools\Zenith_Tools_TerrainExport.cpp(98,10): warning C4244: 'initializing': conversion from 'float' to 'int', possible loss of data
+C:\dev\Zenith\Tools\Zenith_Tools_TerrainExport.cpp(99,10): warning C4244: 'initializing': conversion from 'float' to 'int', possible loss of data
+C:\dev\Zenith\Tools\Zenith_Tools_TerrainExport.cpp(153,57): warning C4244: '=': conversion from 'float' to 'uint32_t', possible loss of data
+C:\dev\Zenith\Tools\Zenith_Tools_TerrainExport.cpp(154,107): warning C4244: '=': conversion from 'float' to 'uint32_t', possible loss of data
+C:\dev\Zenith\Tools\Zenith_Tools_TerrainExport.cpp(173,61): warning C4244: 'initializing': conversion from 'float' to 'size_t', possible loss of data
+C:\dev\Zenith\Tools\Zenith_Tools_TerrainExport.cpp(174,59): warning C4244: 'initializing': conversion from 'float' to 'size_t', possible loss of data
+C:\dev\Zenith\Tools\Zenith_Tools_TerrainExport.cpp(184,26): warning C4244: 'initializing': conversion from 'float' to 'uint32_t', possible loss of data
+C:\dev\Zenith\Tools\Zenith_Tools_TerrainExport.cpp(186,27): warning C4244: 'initializing': conversion from 'float' to 'uint32_t', possible loss of data
+C:\dev\Zenith\Tools\Zenith_Tools_TerrainExport.cpp(188,29): warning C4244: 'initializing': conversion from 'float' to 'uint32_t', possible loss of data
+C:\dev\Zenith\Tools\Zenith_Tools_TerrainExport.cpp(227,17): warning C4244: 'initializing': conversion from 'float' to 'uint32_t', possible loss of data
+C:\dev\Zenith\Tools\Zenith_Tools_TerrainExport.cpp(228,17): warning C4244: 'initializing': conversion from 'float' to 'uint32_t', possible loss of data
+C:\dev\Zenith\Tools\Zenith_Tools_TerrainExport.cpp(229,17): warning C4244: 'initializing': conversion from 'float' to 'uint32_t', possible loss of data
+C:\dev\Zenith\Tools\Zenith_Tools_TerrainExport.cpp(230,17): warning C4244: 'initializing': conversion from 'float' to 'uint32_t', possible loss of data
+C:\dev\Zenith\Tools\Zenith_Tools_TerrainExport.cpp(244,19): warning C4244: 'initializing': conversion from 'float' to 'uint32_t', possible loss of data
+C:\dev\Zenith\Tools\Zenith_Tools_TerrainExport.cpp(251,27): warning C4244: 'initializing': conversion from 'float' to 'uint32_t', possible loss of data
+C:\dev\Zenith\Tools\Zenith_Tools_TerrainExport.cpp(253,29): warning C4244: 'initializing': conversion from 'float' to 'uint32_t', possible loss of data
+C:\dev\Zenith\Tools\Zenith_Tools_TerrainExport.cpp(280,51): warning C4244: '-=': conversion from 'float' to 'uint32_t', possible loss of data
+C:\dev\Zenith\Tools\Zenith_Tools_TerrainExport.cpp(282,21): warning C4244: 'initializing': conversion from 'float' to 'uint32_t', possible loss of data
+C:\dev\Zenith\Tools\Zenith_Tools_TerrainExport.cpp(304,19): warning C4244: 'initializing': conversion from 'float' to 'uint32_t', possible loss of data
+C:\dev\Zenith\Tools\Zenith_Tools_TerrainExport.cpp(311,27): warning C4244: 'initializing': conversion from 'float' to 'uint32_t', possible loss of data
+C:\dev\Zenith\Tools\Zenith_Tools_TerrainExport.cpp(313,29): warning C4244: 'initializing': conversion from 'float' to 'uint32_t', possible loss of data
+C:\dev\Zenith\Tools\Zenith_Tools_TerrainExport.cpp(339,51): warning C4244: '-=': conversion from 'float' to 'uint32_t', possible loss of data
+C:\dev\Zenith\Tools\Zenith_Tools_TerrainExport.cpp(341,21): warning C4244: 'initializing': conversion from 'float' to 'uint32_t', possible loss of data
+C:\dev\Zenith\Tools\Zenith_Tools_MeshExport.cpp(258,1): warning C4701: potentially uninitialized local variable 'eFormat' used
+C:\dev\Zenith\Tools\Zenith_Tools_TerrainExport.cpp(361,19): warning C4244: 'initializing': conversion from 'float' to 'uint32_t', possible loss of data
+C:\dev\Zenith\Tools\Zenith_Tools_TerrainExport.cpp(362,19): warning C4244: 'initializing': conversion from 'float' to 'uint32_t', possible loss of data
+C:\dev\Zenith\Tools\Zenith_Tools_TerrainExport.cpp(367,26): warning C4244: 'initializing': conversion from 'float' to 'uint32_t', possible loss of data
+C:\dev\Zenith\Tools\Zenith_Tools_TerrainExport.cpp(369,28): warning C4244: 'initializing': conversion from 'float' to 'uint32_t', possible loss of data
+C:\dev\Zenith\Tools\Zenith_Tools_TerrainExport.cpp(391,21): warning C4244: 'initializing': conversion from 'float' to 'uint32_t', possible loss of data
+C:\dev\Zenith\Tools\Zenith_Tools_TerrainExport.cpp(392,21): warning C4244: 'initializing': conversion from 'float' to 'uint32_t', possible loss of data
+C:\dev\Zenith\Tools\Zenith_Tools_TerrainExport.cpp(282,14): warning C4189: 'indexX': local variable is initialized but not referenced
+C:\dev\Zenith\Tools\Zenith_Tools_TerrainExport.cpp(341,14): warning C4189: 'indexZ': local variable is initialized but not referenced
+C:\dev\Zenith\Tools\Zenith_Tools_TerrainExport.cpp(392,14): warning C4189: 'indexX': local variable is initialized but not referenced
+C:\dev\Zenith\Tools\Zenith_Tools_TerrainExport.cpp(391,14): warning C4189: 'indexZ': local variable is initialized but not referenced
+C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.41.34120\include\ostream(425,13): warning C4530: C++ exception handler used, but unwind semantics are not enabled. Specify /EHsc
+  (compiling source file '../../../Tools/Zenith_Tools_TerrainExport.cpp')
+      C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.41.34120\include\ostream(425,13):
+      the template instantiation context (the oldest one first) is
+          C:\dev\Zenith\middleware\vulkansdk\1.3.280.0\include\vulkan\vulkan_to_string.hpp(3534,23):
+          see reference to class template instantiation 'std::basic_stringstream<char,std::char_traits<char>,std::allocator<char>>' being compiled
+          C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.41.34120\include\sstream(853,14):
+          see reference to class template instantiation 'std::basic_iostream<char,std::char_traits<char>>' being compiled
+          C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.41.34120\include\istream(731,31):
+          see reference to class template instantiation 'std::basic_ostream<char,std::char_traits<char>>' being compiled
+          C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.41.34120\include\ostream(418,39):
+          while compiling class template member function 'std::basic_ostream<char,std::char_traits<char>> &std::basic_ostream<char,std::char_traits<char>>::operator <<(double)'
+              C:\dev\Zenith\tools\middleware\opencv\build\include\opencv2\core\utility.hpp(400,5):
+              see the first reference to 'std::basic_ostream<char,std::char_traits<char>>::operator <<' in 'cv::operator <<'
+  
+C:\dev\Zenith\tools\middleware\opencv\build\include\opencv2\core\types.hpp(1847,5): warning C4127: conditional expression is constant
+  (compiling source file '../../../Tools/Zenith_Tools_TerrainExport.cpp')
+      C:\dev\Zenith\tools\middleware\opencv\build\include\opencv2\core\types.hpp(1847,5):
+      consider using 'if constexpr' statement instead
+      C:\dev\Zenith\tools\middleware\opencv\build\include\opencv2\core\types.hpp(1847,5):
+      the template instantiation context (the oldest one first) is
+          C:\dev\Zenith\tools\middleware\opencv\build\include\opencv2\core\types.hpp(2038,98):
+          see reference to class template instantiation 'cv::Rect_<double>' being compiled
+          C:\dev\Zenith\tools\middleware\opencv\build\include\opencv2\core\types.hpp(1845,1):
+          while compiling class template member function '_Tp cv::Rect_<_Tp>::area(void) const'
+          with
+          [
+              _Tp=double
+          ]
+              C:\dev\Zenith\tools\middleware\opencv\build\include\opencv2\core\types.hpp(2038,90):
+              see the first reference to 'cv::Rect_<double>::area' in 'cv::rectangleIntersectionArea'
+  
+C:\dev\Zenith\zenith\Maths\Zenith_Maths.h(39,17): warning C4505: 'Zenith_Maths::PerspectiveProjection': unreferenced function with internal linkage has been removed
+  (compiling source file '../../../Tools/Zenith_Tools_TerrainExport.cpp')
+  
+C:\dev\Zenith\zenith\Maths\Zenith_Maths.h(44,17): warning C4505: 'Zenith_Maths::OrthographicProjection': unreferenced function with internal linkage has been removed
+  (compiling source file '../../../Tools/Zenith_Tools_TerrainExport.cpp')
+  
+C:\dev\Zenith\zenith\Maths\Zenith_Maths.h(49,17): warning C4505: 'Zenith_Maths::EulerRotationToMatrix4': unreferenced function with internal linkage has been removed
+  (compiling source file '../../../Tools/Zenith_Tools_TerrainExport.cpp')
+  
+C:\dev\Zenith\zenith\Flux\Flux_Types.h(123,17): warning C4505: 'ColourFormatBytesPerPixel': unreferenced function with internal linkage has been removed
+  (compiling source file '../../../Tools/Zenith_Tools_TerrainExport.cpp')
+  
+C:\dev\Zenith\zenith\Flux\Flux_Types.h(128,17): warning C4505: 'DepthStencilFormatBitsPerPixel': unreferenced function with internal linkage has been removed
+  (compiling source file '../../../Tools/Zenith_Tools_TerrainExport.cpp')
+  
+  zenithtools_win64.vcxproj -> C:\dev\Zenith\Games\SuperSecret\Build\output\win64\vs2022_debug_win64_false\zenithtools.lib
