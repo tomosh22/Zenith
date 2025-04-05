@@ -82,7 +82,7 @@ void Zenith_DebugVariableTree::LeafNode<const Flux_Texture>::ImGuiDisplay()
 	Zenith_Vulkan::GetDevice().updateDescriptorSets(1, &xImageWriteInfo, 0, nullptr);
 
 	
-	ImGui::Image(xSet, ImVec2(200, 200), { 0, 1 }, { 1, 0 });
+	ImGui::Image(xSet, ImVec2(1024, 1024), { 0, 1 }, { 1, 0 });
 #endif
 }
 

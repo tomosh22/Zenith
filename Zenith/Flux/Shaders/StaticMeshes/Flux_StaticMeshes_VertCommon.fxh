@@ -33,8 +33,6 @@ void main()
 
 	#ifdef SHADOWS
 	gl_Position = g_xSunViewProjMat * vec4(o_xWorldPos,1);
-	gl_Position.z = 0.1f;
-	gl_Position.w = 1.f;
 	#else
 	gl_Position = g_xViewProjMat * vec4(o_xWorldPos,1);
 	#endif
