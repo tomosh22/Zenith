@@ -28,13 +28,11 @@ ColourFormat Flux_Graphics::s_aeMRTFormats[MRT_INDEX_COUNT]
 	COLOUR_FORMAT_R32G32B32A32_SFLOAT //MRT_INDEX_WORLDPOS #TO unused alpha
 };
 
-#ifdef ZENITH_DEBUG_VARIABLES
 DEBUGVAR Zenith_Maths::Vector3 dbg_SunDir = { 0.,-0.6, -0.8 };
 DEBUGVAR Zenith_Maths::Vector4 dbg_SunColour = { 0.7, 0.4,0.2, 1.f };
 
 DEBUGVAR bool dbg_bOverrideViewProjMat = false;
 DEBUGVAR uint32_t dbg_uOverrideViewProjMatIndex = 0;
-#endif
 
 void Flux_Graphics::Initialise()
 {
