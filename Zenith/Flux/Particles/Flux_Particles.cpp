@@ -79,7 +79,7 @@ void Flux_Particles::Initialise()
 	Zenith_Log("Flux_Particles initialised");
 }
 
-void UploadInstanceData()
+static void UploadInstanceData()
 {
 	Particle axParticles[] =
 	{

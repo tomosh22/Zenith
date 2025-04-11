@@ -12,6 +12,7 @@
 #include "Flux/SDFs/Flux_SDFs.h"
 #include "Flux/Shadows/Flux_Shadows.h"
 #include "Flux/Particles/Flux_Particles.h"
+#include "Flux/Quads/Flux_Quads.h"
 #include "Flux/Text/Flux_Text.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "Physics/Zenith_Physics.h"
@@ -107,6 +108,7 @@ void Zenith_Core::Zenith_MainLoop()
 	Flux_Fog::Render();
 	Flux_SDFs::Render();
 	Flux_Particles::Render();
+	Flux_Quads::Render();
 	Flux_Text::Render();
 
 	Zenith_Physics::Update(Zenith_Core::GetDt());
