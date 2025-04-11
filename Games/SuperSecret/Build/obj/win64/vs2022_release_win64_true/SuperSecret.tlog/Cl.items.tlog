@@ -110,6 +110,7 @@ C:\dev\Zenith\Zenith\Flux\Fog\Flux_Fog.cpp;C:\dev\Zenith\Games\SuperSecret\Build
 C:\dev\Zenith\Zenith\Flux\MeshAnimation\Flux_MeshAnimation.cpp;C:\dev\Zenith\Games\SuperSecret\Build\obj\win64\vs2022_release_win64_true\Flux_MeshAnimation.obj
 C:\dev\Zenith\Zenith\Flux\MeshGeometry\Flux_MeshGeometry.cpp;C:\dev\Zenith\Games\SuperSecret\Build\obj\win64\vs2022_release_win64_true\Flux_MeshGeometry.obj
 C:\dev\Zenith\Zenith\Flux\Particles\Flux_Particles.cpp;C:\dev\Zenith\Games\SuperSecret\Build\obj\win64\vs2022_release_win64_true\Flux_Particles.obj
+C:\dev\Zenith\Zenith\Flux\Quads\Flux_Quads.cpp;C:\dev\Zenith\Games\SuperSecret\Build\obj\win64\vs2022_release_win64_true\Flux_Quads.obj
 C:\dev\Zenith\Zenith\Flux\SDFs\Flux_SDFs.cpp;C:\dev\Zenith\Games\SuperSecret\Build\obj\win64\vs2022_release_win64_true\Flux_SDFs.obj
 C:\dev\Zenith\Zenith\Flux\Shadows\Flux_Shadows.cpp;C:\dev\Zenith\Games\SuperSecret\Build\obj\win64\vs2022_release_win64_true\Flux_Shadows.obj
 C:\dev\Zenith\Zenith\Flux\Skybox\Flux_Skybox.cpp;C:\dev\Zenith\Games\SuperSecret\Build\obj\win64\vs2022_release_win64_true\Flux_Skybox.obj
