@@ -4,6 +4,8 @@
 
 enum SUPERSECRET_TEXTURE_INDICES
 {
+	SUPERSECRET_TEXTURE_INDEX__PLAYER0,
+
 	SUPERSECRET_TEXTURE_INDEX__GROUND_MAIN,
 	SUPERSECRET_TEXTURE_INDEX__LONG_GRASS,
 	SUPERSECRET_TEXTURE_INDEX__PAVEMENT_CENTER,
@@ -19,6 +21,8 @@ enum SUPERSECRET_TEXTURE_INDICES
 
 static const char* g_aszTextureNames[SUPERSECRET_TEXTURE_INDEX__COUNT]
 {
+	"Player0",
+
 	"GroundMain",
 	"LongGrass",
 	"PavementCenter",
@@ -31,6 +35,8 @@ static const char* g_aszTextureNames[SUPERSECRET_TEXTURE_INDEX__COUNT]
 
 static const char* g_aszTextureFilenames[SUPERSECRET_TEXTURE_INDEX__COUNT]
 {
+	ASSETS_ROOT"Textures/player0.ztx",
+
 	ASSETS_ROOT"Textures/ground_main.ztx",
 	ASSETS_ROOT"Textures/long_grass.ztx",
 	ASSETS_ROOT"Textures/pavement_center.ztx",

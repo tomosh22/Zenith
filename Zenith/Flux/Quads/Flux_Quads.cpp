@@ -19,14 +19,8 @@ static Flux_DynamicVertexBuffer s_xInstanceBuffer;
 
 DEBUGVAR bool dbg_bEnable = true;
 
-static constexpr uint32_t s_uMaxQuads = 1024;
-
-struct Quad
-{
-	Zenith_Maths::Vector4 m_xPosition_Size;
-	Zenith_Maths::Vector4 m_xColour;
-	uint32_t m_uTexture;
-};
+Flux_Quads::Quad Flux_Quads::s_axQuadsToRender[FLUX_MAX_QUADS_PER_FRAME];
+uint32_t Flux_Quads::s_uQuadRenderIndex;
 
 void Flux_Quads::Initialise()
 {
@@ -66,7 +60,7 @@ void Flux_Quads::Initialise()
 
 	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
 
-	Flux_MemoryManager::InitialiseDynamicVertexBuffer(nullptr, s_uMaxQuads * sizeof(Quad), s_xInstanceBuffer, false);
+	Flux_MemoryManager::InitialiseDynamicVertexBuffer(nullptr, FLUX_MAX_QUADS_PER_FRAME * sizeof(Quad), s_xInstanceBuffer, false);
 
 #ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_DebugVariables::AddBoolean({ "Render", "Enable", "Quads" }, dbg_bEnable);
@@ -75,17 +69,10 @@ void Flux_Quads::Initialise()
 	Zenith_Log("Flux_Quads initialised");
 }
 
-static void UploadInstanceData()
+void Flux_Quads::UploadInstanceData()
 {
-	Quad axQuads[] =
-	{
-		{{200.,1000 + sin(Zenith_Core::GetTimePassed()) * 200, 50.,50.}, {1.,0.,0.,1.}, 0},
-		{{400.,1500 + sin(Zenith_Core::GetTimePassed()) * 200, 50.,50.}, {0.,1.,0.,1.}, 1},
-		{{800.,1500 + sin(Zenith_Core::GetTimePassed()) * 200, 50.,50.}, {0.,0.,1.,1.}, 2},
-	};
-
 	//#TO_TODO: need a buffer per frame in flight
-	Flux_MemoryManager::UploadBufferData(s_xInstanceBuffer.GetBuffer(), axQuads, sizeof(axQuads));
+	Flux_MemoryManager::UploadBufferData(s_xInstanceBuffer.GetBuffer(), s_axQuadsToRender, sizeof(Quad) * s_uQuadRenderIndex);
 }
 
 void Flux_Quads::Render()
@@ -112,7 +99,15 @@ void Flux_Quads::Render()
 
 	s_xCommandBuffer.UseBindlessTextures(2);
 
-	s_xCommandBuffer.DrawIndexed(6, 3);
+	s_xCommandBuffer.DrawIndexed(6, s_uQuadRenderIndex);
 
 	s_xCommandBuffer.EndRecording(RENDER_ORDER_QUADS);
+
+	s_uQuadRenderIndex = 0;
+
+}
+
+void Flux_Quads::UploadQuad(const Quad& xQuad)
+{
+	s_axQuadsToRender[s_uQuadRenderIndex++] = xQuad;
 }

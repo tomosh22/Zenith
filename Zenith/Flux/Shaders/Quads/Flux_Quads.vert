@@ -18,5 +18,5 @@ void main()
 	o_xColour = a_xInstanceColour;
 	o_uTexture = a_uTexture;
 	
-	gl_Position = vec4(((a_xPosition.xy * a_xInstancePositionSize.zw) + a_xInstancePositionSize.xy) * g_xRcpScreenDims, 0, 1);
+	gl_Position = g_xViewProjMat * vec4(((a_xPosition.xy * a_xInstancePositionSize.zw) + a_xInstancePositionSize.xy) * g_xRcpScreenDims * 2.f - 1.f, 0, 1);
 }
