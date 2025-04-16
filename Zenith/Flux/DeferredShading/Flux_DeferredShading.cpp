@@ -83,6 +83,7 @@ void Flux_DeferredShading::Initialise()
 		{ 4,7 },
 		{ 0,0 },
 		Flux_Graphics::s_xFinalRenderTarget,
+		false,
 		false
 	);
 

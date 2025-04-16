@@ -63,6 +63,7 @@ void Flux_StaticMeshes::Initialise()
 			{ 1,0 },
 			{ 0,4 },
 			Flux_Graphics::s_xMRTTarget,
+			false,
 			false
 		);
 
@@ -87,6 +88,7 @@ void Flux_StaticMeshes::Initialise()
 			{ 1,0 },
 			{ 1,0 },
 			Flux_Shadows::GetCSMTargetSetup(0),
+			false,
 			false
 		);
 

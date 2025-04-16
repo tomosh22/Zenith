@@ -452,6 +452,11 @@ void Zenith_Vulkan_CommandBuffer::PushConstant(void* pData, size_t uSize)
 	m_xCurrentCmdBuffer.pushConstants(m_pxCurrentPipeline->m_xPipelineLayout, vk::ShaderStageFlagBits::eAll, 0, uSize, pData);
 }
 
+void Zenith_Vulkan_CommandBuffer::UseBindlessTextures(const uint32_t uSet)
+{
+	m_xCurrentCmdBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pxCurrentPipeline->m_xPipelineLayout, uSet, 1, &Zenith_Vulkan::GetBindlessTexturesDescriptorSet(), 0, nullptr);
+}
+
 void Zenith_Vulkan_CommandBuffer::BeginBind(BindingFrequency eFreq)
 {
 	for (uint32_t i = 0; i < MAX_BINDINGS; i++)

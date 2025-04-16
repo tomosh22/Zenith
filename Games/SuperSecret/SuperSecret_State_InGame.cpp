@@ -3,41 +3,24 @@
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_Entity.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
-#include "EntityComponent/Components/Zenith_TerrainComponent.h"
-#include "EntityComponent/Components/Zenith_ModelComponent.h"
-#include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_TextComponent.h"
 #include "AssetHandling/Zenith_AssetHandler.h"
-#include "Flux/Flux_Material.h"
 #include "Flux/Flux_Graphics.h"
-#include "Flux/MeshAnimation/Flux_MeshAnimation.h"
 #include "Input/Zenith_Input.h"
 
 Zenith_State* Zenith_StateMachine::s_pxCurrentState = new SuperSecret_State_InGame;
 
-#define TERRAIN_EXPORT_DIMS 64
+static Zenith_Entity s_xController;
 
-static Zenith_Entity s_xPlayer;
-static Zenith_Entity s_xBarrel;
-static Zenith_Entity s_xSphere0;
-static Zenith_Entity s_xSphere1;
-static Zenith_Entity s_axRotatingSpheres[3];
-static Zenith_Entity s_xTerrain[TERRAIN_EXPORT_DIMS][TERRAIN_EXPORT_DIMS];
-static Zenith_Entity s_xOgre;
-
-//#TO_TODO: these need to be in a header file for tools terrain export
-
-#define MAX_TERRAIN_HEIGHT 2048
-//#TO width/height that heightmap is divided into
-#define TERRAIN_SIZE 64
-//#TO multiplier for vertex positions
-#define TERRAIN_SCALE 8
-
-
+static Flux_Texture* g_pxTextures[SUPERSECRET_TEXTURE_INDEX__COUNT];
 
 static void LoadAssets()
 {
-
+	for (uint32_t u = 0; u < SUPERSECRET_TEXTURE_INDEX__COUNT; u++)
+	{
+		g_pxTextures[u] = &Zenith_AssetHandler::AddTexture2D(g_aszTextureNames[u], g_aszTextureFilenames[u]);
+		Flux::RegisterBindlessTexture(g_pxTextures[u], u);
+	}
 }
 
 void SuperSecret_State_InGame::OnEnter()
@@ -47,9 +30,9 @@ void SuperSecret_State_InGame::OnEnter()
 	Flux_MemoryManager::EndFrame(false);
 
 	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	s_xPlayer.Initialise(&xScene, "Game Controller");
+	s_xController.Initialise(&xScene, "Controller");
 
-	Zenith_CameraComponent& xCamera = s_xPlayer.AddComponent<Zenith_CameraComponent>();
+	Zenith_CameraComponent& xCamera = s_xController.AddComponent<Zenith_CameraComponent>();
 	const Zenith_Maths::Vector3 xPos = { 0, 0, 0 };
 	const float fPitch = 0;
 	const float fYaw = 0;
@@ -58,9 +41,9 @@ void SuperSecret_State_InGame::OnEnter()
 	const float fFar = 5000;
 	const float fAspectRatio = 16. / 9.;
 	xCamera.InitialisePerspective(xPos, fPitch, fYaw, fFOV, fNear, fFar, fAspectRatio);
-	xScene.SetMainCameraEntity(s_xPlayer);
+	xScene.SetMainCameraEntity(s_xController);
 
-	Zenith_TextComponent& xText = s_xPlayer.AddComponent<Zenith_TextComponent>();
+	Zenith_TextComponent& xText = s_xController.AddComponent<Zenith_TextComponent>();
 	TextEntry xTextEntry = { "Super Secret Project Don't Tell Chloe", { 100, 200 }, 0.1f };
 	xText.AddText(xTextEntry);
 }
@@ -68,10 +51,6 @@ void SuperSecret_State_InGame::OnEnter()
 void SuperSecret_State_InGame::OnUpdate()
 {
 	Zenith_Core::Zenith_MainLoop();
-	if (Zenith_Input::IsKeyDown(ZENITH_KEY_P))
-	{
-		//Zenith_StateMachine::RequestState(new Test_State_MainMenu);
-	}
 }
 
 void SuperSecret_State_InGame::OnExit()

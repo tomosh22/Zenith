@@ -20,6 +20,8 @@ vk::RenderPass Zenith_Vulkan::s_xImGuiRenderPass;
 #include "DebugVariables/Zenith_DebugVariables.h"
 #endif
 
+#include "Flux/Flux_Graphics.h"
+
 #ifdef ZENITH_DEBUG
 static std::vector<const char*> s_xValidationLayers = { "VK_LAYER_KHRONOS_validation" };
 #endif
@@ -51,12 +53,34 @@ vk::CommandPool Zenith_Vulkan::s_axCommandPools[COMMANDTYPE_MAX];
 vk::DescriptorPool Zenith_Vulkan::s_xDefaultDescriptorPool;
 vk::DescriptorPool Zenith_Vulkan::s_axPerFrameDescriptorPools[MAX_FRAMES_IN_FLIGHT];
 
+vk::DescriptorPool Zenith_Vulkan::s_xBindlessTexturesDescriptorPool;
+vk::DescriptorSet Zenith_Vulkan::s_xBindlessTexturesDescriptorSet;
+vk::DescriptorSetLayout Zenith_Vulkan::s_xBindlessTexturesDescriptorSetLayout;
+
 std::vector<const Zenith_Vulkan_CommandBuffer*> Zenith_Vulkan::s_xPendingCommandBuffers[RENDER_ORDER_MAX];
 
 const vk::DescriptorPool& Zenith_Vulkan::GetCurrentPerFrameDescriptorPool() { return s_axPerFrameDescriptorPools[Zenith_Vulkan_Swapchain::GetCurrentFrameIndex()]; }
 
 DEBUGVAR bool dbg_bSubmitDrawCalls = true;
 const bool Zenith_Vulkan::ShouldSubmitDrawCalls() { return dbg_bSubmitDrawCalls; }
+
+void Flux::Platform_RegisterBindlessTexture(Zenith_Vulkan_Texture* pxTex, uint32_t uIndex)
+{
+	vk::DescriptorImageInfo xInfo = vk::DescriptorImageInfo()
+		.setSampler(Flux_Graphics::s_xDefaultSampler.GetSampler())
+		.setImageView(pxTex->GetImageView())
+		.setImageLayout(vk::ImageLayout::eShaderReadOnlyOptimal);
+
+	vk::WriteDescriptorSet xWrite = vk::WriteDescriptorSet()
+		.setDescriptorCount(1)
+		.setDstArrayElement(uIndex)
+		.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
+		.setDstSet(Zenith_Vulkan::GetBindlessTexturesDescriptorSet())
+		.setDstBinding(0)
+		.setImageInfo(xInfo);
+
+	Zenith_Vulkan::GetDevice().updateDescriptorSets(1, &xWrite, 0, nullptr);
+}
 
 void Zenith_Vulkan::Initialise()
 {
@@ -70,6 +94,7 @@ void Zenith_Vulkan::Initialise()
 	CreateDevice();
 	CreateCommandPools();
 	CreateDefaultDescriptorPool();
+	CreateBindlessTexturesDescriptorPool();
 
 #ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_DebugVariables::AddBoolean({ "Render", "Submit Draw Calls" }, dbg_bSubmitDrawCalls);
@@ -354,6 +379,7 @@ void Zenith_Vulkan::CreateDevice()
 
 	vk::PhysicalDeviceDescriptorIndexingFeatures xIndexingFeatures = vk::PhysicalDeviceDescriptorIndexingFeatures()
 		.setDescriptorBindingSampledImageUpdateAfterBind(true)
+		.setRuntimeDescriptorArray(true)
 		.setPNext(&xDeviceFeatures2);
 
 
@@ -405,6 +431,45 @@ void Zenith_Vulkan::CreateDefaultDescriptorPool()
 	s_xDefaultDescriptorPool = s_xDevice.createDescriptorPool(xPoolInfo);
 
 	Zenith_Log("Vulkan default descriptor pool created");
+}
+
+void Zenith_Vulkan::CreateBindlessTexturesDescriptorPool()
+{
+	vk::DescriptorPoolSize axPoolSizes[] =
+	{
+		{ vk::DescriptorType::eCombinedImageSampler, 1000 },
+	};
+
+	vk::DescriptorPoolCreateInfo xPoolInfo = vk::DescriptorPoolCreateInfo()
+		.setPoolSizeCount(COUNT_OF(axPoolSizes))
+		.setPPoolSizes(axPoolSizes)
+		.setMaxSets(1)
+		.setFlags(vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet | vk::DescriptorPoolCreateFlagBits::eUpdateAfterBind);
+
+	s_xBindlessTexturesDescriptorPool = s_xDevice.createDescriptorPool(xPoolInfo);
+
+	Zenith_Log("Vulkan bindless textures descriptor pool created");
+
+	vk::DescriptorSetLayoutBinding xBind = vk::DescriptorSetLayoutBinding()
+		.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
+		.setDescriptorCount(1000)
+		.setBinding(0)
+		.setStageFlags(vk::ShaderStageFlagBits::eAll)
+		.setPImmutableSamplers(nullptr);
+
+	vk::DescriptorSetLayoutCreateInfo xLayoutInfo = vk::DescriptorSetLayoutCreateInfo()
+		.setBindingCount(1)
+		.setPBindings(&xBind)
+		.setFlags(vk::DescriptorSetLayoutCreateFlagBits::eUpdateAfterBindPool);
+
+	s_xBindlessTexturesDescriptorSetLayout = s_xDevice.createDescriptorSetLayout(xLayoutInfo);
+
+	vk::DescriptorSetAllocateInfo xSetInfo = vk::DescriptorSetAllocateInfo()
+		.setDescriptorPool(s_xBindlessTexturesDescriptorPool)
+		.setDescriptorSetCount(1)
+		.setPSetLayouts(&s_xBindlessTexturesDescriptorSetLayout);
+
+	s_xBindlessTexturesDescriptorSet = s_xDevice.allocateDescriptorSets(xSetInfo)[0];
 }
 
 #ifdef ZENITH_TOOLS

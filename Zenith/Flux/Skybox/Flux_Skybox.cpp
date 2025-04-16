@@ -51,6 +51,7 @@ void Flux_Skybox::Initialise()
 		{ 1,1 },
 		{ 0,0 },
 		Flux_Graphics::s_xMRTTarget,
+		false,
 		false
 	);
 
