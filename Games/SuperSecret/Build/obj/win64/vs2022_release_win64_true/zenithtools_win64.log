@@ -3,40 +3,32 @@
   Zenith_Tools_TerrainExport.cpp
   Zenith_Tools_TextureExport.cpp
   Flux_MeshGeometry.cpp
-C:\dev\Zenith\zenith\vulkan\Zenith_Vulkan.h(87,54): warning C4267: 'argument': conversion from 'size_t' to 'uint32_t', possible loss of data
+C:\dev\Zenith\zenith\vulkan\Zenith_Vulkan.h(88,54): warning C4267: 'argument': conversion from 'size_t' to 'uint32_t', possible loss of data
   (compiling source file '../../../Tools/Zenith_Tools_TextureExport.cpp')
   
-C:\dev\Zenith\zenith\vulkan\Zenith_Vulkan.h(89,56): warning C4267: 'argument': conversion from 'size_t' to 'uint32_t', possible loss of data
+C:\dev\Zenith\zenith\vulkan\Zenith_Vulkan.h(90,56): warning C4267: 'argument': conversion from 'size_t' to 'uint32_t', possible loss of data
   (compiling source file '../../../Tools/Zenith_Tools_TextureExport.cpp')
   
-C:\dev\Zenith\zenith\vulkan\Zenith_Vulkan.h(87,54): warning C4267: 'argument': conversion from 'size_t' to 'uint32_t', possible loss of data
-  (compiling source file '../../../Tools/Zenith_Tools_TerrainExport.cpp')
-  
-C:\dev\Zenith\zenith\vulkan\Zenith_Vulkan.h(89,56): warning C4267: 'argument': conversion from 'size_t' to 'uint32_t', possible loss of data
-  (compiling source file '../../../Tools/Zenith_Tools_TerrainExport.cpp')
-  
-C:\dev\Zenith\zenith\vulkan\Zenith_Vulkan.h(87,54): warning C4267: 'argument': conversion from 'size_t' to 'uint32_t', possible loss of data
-  (compiling source file '../../../Tools/Zenith_Tools_MeshExport.cpp')
-  
-C:\dev\Zenith\zenith\vulkan\Zenith_Vulkan.h(89,56): warning C4267: 'argument': conversion from 'size_t' to 'uint32_t', possible loss of data
-  (compiling source file '../../../Tools/Zenith_Tools_MeshExport.cpp')
-  
-C:\dev\Zenith\zenith\vulkan\Zenith_Vulkan.h(87,54): warning C4267: 'argument': conversion from 'size_t' to 'uint32_t', possible loss of data
+C:\dev\Zenith\zenith\vulkan\Zenith_Vulkan.h(88,54): warning C4267: 'argument': conversion from 'size_t' to 'uint32_t', possible loss of data
   (compiling source file '../../../Zenith/Flux/MeshGeometry/Flux_MeshGeometry.cpp')
   
-C:\dev\Zenith\zenith\vulkan\Zenith_Vulkan.h(89,56): warning C4267: 'argument': conversion from 'size_t' to 'uint32_t', possible loss of data
+C:\dev\Zenith\zenith\vulkan\Zenith_Vulkan.h(90,56): warning C4267: 'argument': conversion from 'size_t' to 'uint32_t', possible loss of data
   (compiling source file '../../../Zenith/Flux/MeshGeometry/Flux_MeshGeometry.cpp')
   
-C:\dev\Zenith\Zenith\Flux\MeshGeometry\Flux_MeshGeometry.cpp(122,29): warning C4267: '=': conversion from 'size_t' to 'uint32_t', possible loss of data
-C:\dev\Zenith\Zenith\Flux\MeshGeometry\Flux_MeshGeometry.cpp(123,31): warning C4267: '=': conversion from 'size_t' to 'uint32_t', possible loss of data
-C:\dev\Zenith\Zenith\Flux\MeshGeometry\Flux_MeshGeometry.cpp(124,29): warning C4267: '=': conversion from 'size_t' to 'uint32_t', possible loss of data
-C:\dev\Zenith\Zenith\Flux\MeshGeometry\Flux_MeshGeometry.cpp(151,18): warning C4456: declaration of 'u' hides previous local declaration
-      C:\dev\Zenith\Zenith\Flux\MeshGeometry\Flux_MeshGeometry.cpp(142,17):
-      see declaration of 'u'
+C:\dev\Zenith\zenith\vulkan\Zenith_Vulkan.h(88,54): warning C4267: 'argument': conversion from 'size_t' to 'uint32_t', possible loss of data
+  (compiling source file '../../../Tools/Zenith_Tools_TerrainExport.cpp')
+  
+C:\dev\Zenith\zenith\vulkan\Zenith_Vulkan.h(90,56): warning C4267: 'argument': conversion from 'size_t' to 'uint32_t', possible loss of data
+  (compiling source file '../../../Tools/Zenith_Tools_TerrainExport.cpp')
+  
+C:\dev\Zenith\zenith\vulkan\Zenith_Vulkan.h(88,54): warning C4267: 'argument': conversion from 'size_t' to 'uint32_t', possible loss of data
+  (compiling source file '../../../Tools/Zenith_Tools_MeshExport.cpp')
+  
+C:\dev\Zenith\zenith\vulkan\Zenith_Vulkan.h(90,56): warning C4267: 'argument': conversion from 'size_t' to 'uint32_t', possible loss of data
+  (compiling source file '../../../Tools/Zenith_Tools_MeshExport.cpp')
   
 C:\dev\Zenith\Tools\Zenith_Tools_TextureExport.cpp(40,17): warning C4996: 'fopen': This function or variable may be unsafe. Consider using fopen_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
 C:\dev\Zenith\Tools\Zenith_Tools_TextureExport.cpp(68,2): warning C4996: 'wcstombs': This function or variable may be unsafe. Consider using wcstombs_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
-C:\dev\Zenith\Zenith\Flux\MeshGeometry\Flux_MeshGeometry.cpp(79,17): warning C4996: 'fopen': This function or variable may be unsafe. Consider using fopen_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
 C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.41.34120\include\ostream(316,13): warning C4530: C++ exception handler used, but unwind semantics are not enabled. Specify /EHsc
   (compiling source file '../../../Tools/Zenith_Tools_TextureExport.cpp')
       C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.41.34120\include\ostream(316,13):
@@ -52,6 +44,14 @@ C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.41.3412
               C:\dev\Zenith\middleware\vulkansdk\1.3.280.0\include\vulkan\vulkan_to_string.hpp(3535,24):
               see the first reference to 'std::basic_ostream<char,std::char_traits<char>>::operator <<' in 'vk::toHexString'
   
+C:\dev\Zenith\Zenith\Flux\MeshGeometry\Flux_MeshGeometry.cpp(122,29): warning C4267: '=': conversion from 'size_t' to 'uint32_t', possible loss of data
+C:\dev\Zenith\Zenith\Flux\MeshGeometry\Flux_MeshGeometry.cpp(123,31): warning C4267: '=': conversion from 'size_t' to 'uint32_t', possible loss of data
+C:\dev\Zenith\Zenith\Flux\MeshGeometry\Flux_MeshGeometry.cpp(124,29): warning C4267: '=': conversion from 'size_t' to 'uint32_t', possible loss of data
+C:\dev\Zenith\Zenith\Flux\MeshGeometry\Flux_MeshGeometry.cpp(151,18): warning C4456: declaration of 'u' hides previous local declaration
+      C:\dev\Zenith\Zenith\Flux\MeshGeometry\Flux_MeshGeometry.cpp(142,17):
+      see declaration of 'u'
+  
+C:\dev\Zenith\Zenith\Flux\MeshGeometry\Flux_MeshGeometry.cpp(79,17): warning C4996: 'fopen': This function or variable may be unsafe. Consider using fopen_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
 C:\dev\Zenith\Zenith\Flux\MeshGeometry\Flux_MeshGeometry.cpp(219,17): warning C4996: 'fopen': This function or variable may be unsafe. Consider using fopen_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
 C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.41.34120\include\ostream(407,13): warning C4530: C++ exception handler used, but unwind semantics are not enabled. Specify /EHsc
   (compiling source file '../../../Zenith/Flux/MeshGeometry/Flux_MeshGeometry.cpp')

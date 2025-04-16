@@ -57,6 +57,7 @@ void Flux_SDFs::Initialise()
 		{ 2,0 },
 		{ 0,0 },
 		Flux_Graphics::s_xFinalRenderTarget,
+		false,
 		false
 	);
 

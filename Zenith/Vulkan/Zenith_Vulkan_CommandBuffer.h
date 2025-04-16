@@ -41,6 +41,8 @@ public:
 	void PushConstant(void* pData, size_t uSize);
 	void UploadUniformData(void* pData, size_t uSize);
 
+	void UseBindlessTextures(const uint32_t uSet);
+
 	void BeginBind(BindingFrequency eFreq);
 
 	vk::CommandBuffer& GetCurrentCmdBuffer() { return m_xCurrentCmdBuffer; }

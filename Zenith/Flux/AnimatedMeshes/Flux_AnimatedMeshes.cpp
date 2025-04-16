@@ -61,6 +61,7 @@ void Flux_AnimatedMeshes::Initialise()
 		{ 1,0 },
 		{ 1,4 },
 		Flux_Graphics::s_xMRTTarget,
+		false,
 		false
 	);
 

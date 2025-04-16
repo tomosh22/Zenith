@@ -14,7 +14,7 @@ License: MIT (see LICENSE file at the top of the source tree)
 #include "Flux/Flux_RenderTargets.h"
 #include "FileAccess/Zenith_FileAccess.h"
 
-Zenith_Vulkan_PipelineSpecification::Zenith_Vulkan_PipelineSpecification(Flux_VertexInputDescription xVertexInputDesc, Zenith_Vulkan_Shader* pxShader, std::vector<Flux_BlendState> xBlendStates, bool bDepthTestEnabled, bool bDepthWriteEnabled, DepthCompareFunc eDepthCompareFunc, DepthStencilFormat eDepthStencilFormat, bool bUsePushConstants, bool bUseTesselation, std::array<uint32_t, DESCRIPTOR_TYPE_MAX> xPerFrameBindings, std::array<uint32_t, DESCRIPTOR_TYPE_MAX> xPerDrawBindings, Flux_TargetSetup& xTargetSetup, bool bWireframe)
+Zenith_Vulkan_PipelineSpecification::Zenith_Vulkan_PipelineSpecification(Flux_VertexInputDescription xVertexInputDesc, Zenith_Vulkan_Shader* pxShader, std::vector<Flux_BlendState> xBlendStates, bool bDepthTestEnabled, bool bDepthWriteEnabled, DepthCompareFunc eDepthCompareFunc, DepthStencilFormat eDepthStencilFormat, bool bUsePushConstants, bool bUseTesselation, std::array<uint32_t, DESCRIPTOR_TYPE_MAX> xPerFrameBindings, std::array<uint32_t, DESCRIPTOR_TYPE_MAX> xPerDrawBindings, Flux_TargetSetup& xTargetSetup, bool bWireframe, bool bUseBindlessTextures)
 	: m_eVertexInputDesc(xVertexInputDesc)
 	, m_pxShader(pxShader)
 	, m_xBlendStates(xBlendStates)
@@ -28,6 +28,7 @@ Zenith_Vulkan_PipelineSpecification::Zenith_Vulkan_PipelineSpecification(Flux_Ve
 	, m_xPerDrawBindings(xPerDrawBindings)
 	, m_xTargetSetup(xTargetSetup)
 	, m_bWireframe(bWireframe)
+	, m_bUseBindlessTextures(bUseBindlessTextures)
 {
 }
 
@@ -419,12 +420,7 @@ Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithTesselation()
 
 Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithDescriptorSetLayout(uint32_t slot, vk::DescriptorSetLayout layout)
 {
-	assert(slot < 32);
-	while (m_xAllLayouts.size() <= slot)
-	{
-		m_xAllLayouts.push_back(vk::DescriptorSetLayout());
-	}
-	m_xAllLayouts[slot] = layout;
+	m_xAllLayouts.push_back(layout);
 	return *this;
 }
 
@@ -765,6 +761,11 @@ void Zenith_Vulkan_PipelineBuilder::FromSpecification(Zenith_Vulkan_Pipeline& xP
 	xBuilder = xBuilder.WithPass(Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(spec.m_xTargetSetup, LOAD_ACTION_DONTCARE, STORE_ACTION_DONTCARE, LOAD_ACTION_DONTCARE, STORE_ACTION_DONTCARE, RENDER_TARGET_USAGE_RENDERTARGET));
 
 	DescriptorThings xDescThings = HandleDescriptors(spec, xBuilder);
+
+	if (spec.m_bUseBindlessTextures)
+	{
+		xBuilder = xBuilder.WithDescriptorSetLayout(ZENITH_VULKAN_BINDLESS_TEXTURES_DESC_SET, Zenith_Vulkan::GetBindlessTexturesDescriptorSetLayout());
+	}
 
 	if (spec.m_bUsePushConstants) {
 		xBuilder = xBuilder.WithPushConstant(vk::ShaderStageFlagBits::eAll, 0);

@@ -170,18 +170,12 @@ public class TestToolsProject : Project
 		
 		conf.Defines.Add("GLM_ENABLE_EXPERIMENTAL");
 		conf.Defines.Add("NOMINMAX");
-        conf.Defines.Add("ASSETS_ROOT=\"c:/dev/zenith/Games/" + Name + "/Assets/\"");
 
-        String sharpmakePath = SharpmakeCsPath;
-		String gameAssetRoot = sharpmakePath + "/Games/" + Name + "/Assets/";
-		gameAssetRoot = gameAssetRoot.Replace('\\', '/');
-		conf.Defines.Add("GAME_ASSETS_DIR=\"" + gameAssetRoot + "\"");
-		String engineAssetRoot = sharpmakePath + "/Zenith/Assets/";
-		engineAssetRoot = engineAssetRoot.Replace('\\', '/');
-		conf.Defines.Add("ENGINE_ASSETS_DIR=\"" + engineAssetRoot + "\"");
-		
-		
-		conf.Defines.Add("OPENDDLPARSER_BUILD");
+        conf.Defines.Add("GAME_ASSETS_DIR=\"c:/dev/zenith/Games/SuperSecret/Assets/\"");
+        conf.Defines.Add("ENGINE_ASSETS_DIR=\"c:/dev/zenith/Zenith/Assets/\"");
+
+
+        conf.Defines.Add("OPENDDLPARSER_BUILD");
 		conf.Defines.Add("__OPENCV_BUILD");
 		
 		conf.Output = Configuration.OutputType.Lib;
@@ -267,7 +261,7 @@ public class TestWindowsProject : Project
 		conf.Defines.Add("ZENITH_VULKAN");
 		conf.Defines.Add("ZENITH_WINDOWS");
 		conf.Defines.Add("NOMINMAX");
-		conf.Defines.Add("ASSETS_ROOT=\"c:/dev/zenith/Games/Test/Assets/\"");
+		conf.Defines.Add("ASSETS_ROOT=\"c:/dev/zenith/Games/" + Name + "/Assets/\"");
 		if(target.ToolsEnabled == ToolsEnabled.True)
 		{
 			conf.Defines.Add("ZENITH_TOOLS");

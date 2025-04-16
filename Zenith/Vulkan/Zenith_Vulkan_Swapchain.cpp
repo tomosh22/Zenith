@@ -140,6 +140,7 @@ void InitialiseCopyToFramebufferCommands()
 		{ 0,1 },
 		{ 0,0 },
 		Flux_Swapchain::GetTargetSetup(),
+		false,
 		false
 	);
 

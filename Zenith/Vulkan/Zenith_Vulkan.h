@@ -5,6 +5,7 @@
 
 #define ZENITH_VULKAN_PER_FRAME_DESC_SET 0
 #define ZENITH_VULKAN_PER_DRAW_DESC_SET 1
+#define ZENITH_VULKAN_BINDLESS_TEXTURES_DESC_SET 2
 
 class Zenith_Vulkan_CommandBuffer;
 class Zenith_Vulkan
@@ -101,6 +102,7 @@ public:
 	static void CreateDevice();
 	static void CreateCommandPools();
 	static void CreateDefaultDescriptorPool();
+	static void CreateBindlessTexturesDescriptorPool();
 
 #ifdef ZENITH_TOOLS
 	static vk::RenderPass s_xImGuiRenderPass;
@@ -134,6 +136,9 @@ public:
 	static const vk::DescriptorPool& GetDefaultDescriptorPool() { return s_xDefaultDescriptorPool; }
 
 	static const bool ShouldSubmitDrawCalls();
+
+	static vk::DescriptorSet& GetBindlessTexturesDescriptorSet() { return s_xBindlessTexturesDescriptorSet; }
+	static vk::DescriptorSetLayout& GetBindlessTexturesDescriptorSetLayout() { return s_xBindlessTexturesDescriptorSetLayout; }
 private:
 	static vk::Instance s_xInstance;
 	static VKAPI_ATTR vk::Bool32 VKAPI_CALL DebugCallback(vk::DebugUtilsMessageSeverityFlagBitsEXT eMessageSeverity,
@@ -155,6 +160,10 @@ private:
 	static vk::CommandPool s_axCommandPools[COMMANDTYPE_MAX];
 	static vk::DescriptorPool s_xDefaultDescriptorPool;
 	static vk::DescriptorPool s_axPerFrameDescriptorPools[MAX_FRAMES_IN_FLIGHT];
+
+	static vk::DescriptorPool s_xBindlessTexturesDescriptorPool;
+	static vk::DescriptorSet s_xBindlessTexturesDescriptorSet;
+	static vk::DescriptorSetLayout s_xBindlessTexturesDescriptorSetLayout;
 
 	static std::vector<const Zenith_Vulkan_CommandBuffer*> s_xPendingCommandBuffers[RENDER_ORDER_MAX];
 };

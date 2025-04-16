@@ -64,6 +64,7 @@ void Flux_Text::Initialise()
 		{ 1,1 },
 		{ 0,0 },
 		Flux_Graphics::s_xFinalRenderTarget,
+		false,
 		false
 	);
 

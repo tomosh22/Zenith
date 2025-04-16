@@ -25,6 +25,7 @@ struct Quad
 {
 	Zenith_Maths::Vector4 m_xPosition_Size;
 	Zenith_Maths::Vector4 m_xColour;
+	uint32_t m_uTexture;
 };
 
 void Flux_Quads::Initialise()
@@ -40,6 +41,7 @@ void Flux_Quads::Initialise()
 	xVertexDesc.m_xPerVertexLayout.CalculateOffsetsAndStrides();
 	xVertexDesc.m_xPerInstanceLayout.GetElements().push_back(SHADER_DATA_TYPE_FLOAT4);//position size
 	xVertexDesc.m_xPerInstanceLayout.GetElements().push_back(SHADER_DATA_TYPE_FLOAT4);//colour
+	xVertexDesc.m_xPerInstanceLayout.GetElements().push_back(SHADER_DATA_TYPE_UINT);//colour
 	xVertexDesc.m_xPerInstanceLayout.CalculateOffsetsAndStrides();
 
 	std::vector<Flux_BlendState> xBlendStates;
@@ -58,7 +60,8 @@ void Flux_Quads::Initialise()
 		{ 1,0 },
 		{ 0,0 },
 		Flux_Graphics::s_xFinalRenderTarget,
-		false
+		false,
+		true
 	);
 
 	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
@@ -76,9 +79,9 @@ static void UploadInstanceData()
 {
 	Quad axQuads[] =
 	{
-		{{200.,1000 + sin(Zenith_Core::GetTimePassed()) * 200, 50.,50.}, {1.,0.,0.,1.}},
-		{{400.,1500 + sin(Zenith_Core::GetTimePassed()) * 200, 50.,50.}, {0.,1.,0.,1.}},
-		{{800.,1500 + sin(Zenith_Core::GetTimePassed()) * 200, 50.,50.}, {0.,0.,1.,1.}},
+		{{200.,1000 + sin(Zenith_Core::GetTimePassed()) * 200, 50.,50.}, {1.,0.,0.,1.}, 0},
+		{{400.,1500 + sin(Zenith_Core::GetTimePassed()) * 200, 50.,50.}, {0.,1.,0.,1.}, 1},
+		{{800.,1500 + sin(Zenith_Core::GetTimePassed()) * 200, 50.,50.}, {0.,0.,1.,1.}, 2},
 	};
 
 	//#TO_TODO: need a buffer per frame in flight
@@ -106,6 +109,8 @@ void Flux_Quads::Render()
 
 	s_xCommandBuffer.BeginBind(BINDING_FREQUENCY_PER_FRAME);
 	s_xCommandBuffer.BindBuffer(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer(), 0);
+
+	s_xCommandBuffer.UseBindlessTextures(2);
 
 	s_xCommandBuffer.DrawIndexed(6, 3);
 

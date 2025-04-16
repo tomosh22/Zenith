@@ -75,6 +75,7 @@ void Flux_Terrain::Initialise()
 			{ 2,0 },
 			{ 0,8 },
 			Flux_Graphics::s_xMRTTarget,
+			false,
 			false
 		);
 
@@ -103,6 +104,7 @@ void Flux_Terrain::Initialise()
 			{ 2,0 },
 			{ 1,0 },
 			Flux_Shadows::GetCSMTargetSetup(0),
+			false,
 			false
 		);
 
