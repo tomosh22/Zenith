@@ -27,7 +27,7 @@ int main()
 {
 	//ExportAllMeshes();
 	//ExportHeightmap();
-	Zenith_Window::Inititalise("Zenith", 1280, 720);
+	Zenith_Window::Inititalise("Zenith", 256, 192);
 	Flux::EarlyInitialise();
 	Zenith_Physics::Initialise();
 	Flux_MemoryManager::BeginFrame();

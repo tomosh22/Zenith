@@ -71,8 +71,11 @@ void RenderImGui()
 	xCamera.GetFacingDir(xFacingDir);
 	std::string strCamDirText = "Camera Facing Dir: " + std::to_string(xFacingDir.x) + " " + std::to_string(xFacingDir.y) + " " + std::to_string(xFacingDir.z);
 
+	std::string strCamYawText = "Camera Yaw: " + std::to_string(xCamera.GetYaw());
+
 	ImGui::Text(strCamPosText.c_str());
 	ImGui::Text(strCamDirText.c_str());
+	ImGui::Text(strCamYawText.c_str());
 
 	std::string strFpsText = "FPS: " + std::to_string(1.f / Zenith_Core::GetDt());
 	ImGui::Text(strFpsText.c_str());

@@ -131,5 +131,6 @@ C:\dev\Zenith\Zenith\Vulkan\Zenith_Vulkan_Swapchain.cpp;C:\dev\Zenith\Games\Supe
 C:\dev\Zenith\Zenith\Vulkan\Zenith_Vulkan_Texture.cpp;C:\dev\Zenith\Games\SuperSecret\Build\obj\win64\vs2022_debug_win64_true\Zenith_Vulkan_Texture.obj
 C:\dev\Zenith\Zenith\Windows\Zenith_Windows_Window.cpp;C:\dev\Zenith\Games\SuperSecret\Build\obj\win64\vs2022_debug_win64_true\Zenith_Windows_Window.obj
 C:\dev\Zenith\Zenith\Zenith_Main.cpp;C:\dev\Zenith\Games\SuperSecret\Build\obj\win64\vs2022_debug_win64_true\Zenith_Main.obj
+C:\dev\Zenith\Games\SuperSecret\Components\CameraController_Behaviour.cpp;C:\dev\Zenith\Games\SuperSecret\Build\obj\win64\vs2022_debug_win64_true\CameraController_Behaviour.obj
 C:\dev\Zenith\Games\SuperSecret\Components\PlayerController_Behaviour.cpp;C:\dev\Zenith\Games\SuperSecret\Build\obj\win64\vs2022_debug_win64_true\PlayerController_Behaviour.obj
 C:\dev\Zenith\Games\SuperSecret\SuperSecret_State_InGame.cpp;C:\dev\Zenith\Games\SuperSecret\Build\obj\win64\vs2022_debug_win64_true\SuperSecret_State_InGame.obj
