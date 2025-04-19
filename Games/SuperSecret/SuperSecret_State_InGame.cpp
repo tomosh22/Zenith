@@ -12,10 +12,13 @@
 #include "Components/PlayerController_Behaviour.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "FileAccess/Zenith_FileAccess.h"
+#include "DataStream/Zenith_DataStream.h"
 
 #define QUAD_SIZE 256
 static uint32_t g_uMapWidth = -1;
 static uint32_t g_uMapHeight = -1;
+static constexpr uint32_t g_uMaxMapWidth = 1024;
+static constexpr uint32_t g_uMaxMapHeight = 1024;
 
 Zenith_State* Zenith_StateMachine::s_pxCurrentState = new SuperSecret_State_InGame;
 
@@ -24,7 +27,7 @@ static Zenith_Entity s_xPlayer0;
 
 static Flux_Texture* g_pxTextures[SUPERSECRET_TEXTURE_INDEX__COUNT];
 
-static SUPERSECRET_TEXTURE_INDICES* s_aeMap = nullptr;
+static SUPERSECRET_TEXTURE_INDICES s_aeMap[g_uMaxMapWidth * g_uMaxMapHeight];
 
 static void LoadAssets()
 {
@@ -61,7 +64,7 @@ void SuperSecret_State_InGame::OnEnter()
 	s_xController.Initialise(&xScene, "Controller");
 	Zenith_CameraComponent& xCamera = s_xController.AddComponent<Zenith_CameraComponent>();
 	const Zenith_Maths::Vector3 xPos = { 0, 0, 0 };
-	const float fPitch = 0;
+	const float fPitch = 0.2f;
 	const float fYaw = 0;
 	const float fFOV = 45;
 	const float fNear = 1;
@@ -84,14 +87,13 @@ void SuperSecret_State_InGame::OnEnter()
 	g_uMapHeight = atoi(pcData + ulCursor);
 	ulCursor += std::to_string(g_uMapHeight).length() + 1;
 
-	s_aeMap = new SUPERSECRET_TEXTURE_INDICES[g_uMapHeight * g_uMapHeight];
 	for (uint32_t u = 0; u < g_uMapWidth * g_uMapHeight; u++)
 	{
 		uint32_t uRead = atoi(pcData + ulCursor);
 		ulCursor += std::to_string(uRead).length() + 1;
 
 		s_aeMap[u] = static_cast<SUPERSECRET_TEXTURE_INDICES>(uRead);
-		Zenith_DebugVariables::AddUInt32({ "Map",std::to_string(u) }, s_aeMap[u], 0, SUPERSECRET_TEXTURE_INDEX__COUNT - 1);
+		//Zenith_DebugVariables::AddUInt32({ "Map",std::to_string(u) }, s_aeMap[u], 0, SUPERSECRET_TEXTURE_INDEX__COUNT - 1);
 	}
 }
 
@@ -127,6 +129,5 @@ void SuperSecret_State_InGame::OnUpdate()
 
 void SuperSecret_State_InGame::OnExit()
 {
-	delete[] s_aeMap;
 	Zenith_Scene::GetCurrentScene().Reset();
 }

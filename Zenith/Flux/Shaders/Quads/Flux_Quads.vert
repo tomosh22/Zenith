@@ -4,7 +4,7 @@
 
 layout(location = 0) in vec3 a_xPosition;
 layout(location = 1) in vec2 a_xUV;
-layout(location = 2) in vec4 a_xInstancePositionSize;
+layout(location = 2) in uvec4 a_xInstancePositionSize;
 layout(location = 3) in vec4 a_xInstanceColour;
 layout(location = 4) in uint a_uTexture;
 

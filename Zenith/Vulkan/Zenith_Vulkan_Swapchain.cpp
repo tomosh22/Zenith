@@ -277,9 +277,11 @@ bool Zenith_Vulkan_Swapchain::BeginFrame()
 	if (eResult == vk::Result::eErrorOutOfDateKHR)
 	{
 		//#TO_TODO: cleanup the rest, at least image views, probably other things
+		xDevice.waitIdle();
 		xDevice.destroySwapchainKHR(s_xSwapChain);
 		Initialise();
 		Flux::OnResChange();
+		xDevice.resetFences(1, &s_axInFlightFences[s_uFrameIndex]);
 		return false;
 	}
 

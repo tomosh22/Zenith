@@ -7,7 +7,15 @@ class Flux_Quads
 public:
 	struct Quad
 	{
-		Zenith_Maths::Vector4 m_xPosition_Size;
+		Quad() = default;
+		Quad(Zenith_Maths::UVector4 xPosition_Size, Zenith_Maths::Vector4 xColour, uint32_t uTexture)
+			: m_xPosition_Size(xPosition_Size)
+			, m_xColour(xColour)
+			, m_uTexture(uTexture)
+		{
+
+		}
+		Zenith_Maths::UVector4 m_xPosition_Size;
 		Zenith_Maths::Vector4 m_xColour;
 		uint32_t m_uTexture;
 	};

@@ -88,6 +88,7 @@ C:\dev\Zenith\Middleware\reactphysics3d-0.10.1\src\utils\quickhull\QuickHull.cpp
 C:\dev\Zenith\Zenith\AssetHandling\Zenith_AssetHandler.cpp;C:\dev\Zenith\Games\SuperSecret\Build\obj\win64\vs2022_debug_win64_true\Zenith_AssetHandler.obj
 C:\dev\Zenith\Zenith\Core\Zenith.cpp;C:\dev\Zenith\Games\SuperSecret\Build\obj\win64\vs2022_debug_win64_true\Zenith.obj
 C:\dev\Zenith\Zenith\Core\Zenith_Core.cpp;C:\dev\Zenith\Games\SuperSecret\Build\obj\win64\vs2022_debug_win64_true\Zenith_Core.obj
+C:\dev\Zenith\Zenith\DataStream\Zenith_DataStream.cpp;C:\dev\Zenith\Games\SuperSecret\Build\obj\win64\vs2022_debug_win64_true\Zenith_DataStream.obj
 C:\dev\Zenith\Zenith\DebugVariables\Zenith_DebugVariables.cpp;C:\dev\Zenith\Games\SuperSecret\Build\obj\win64\vs2022_debug_win64_true\Zenith_DebugVariables.obj
 C:\dev\Zenith\Zenith\EntityComponent\Components\Zenith_CameraComponent.cpp;C:\dev\Zenith\Games\SuperSecret\Build\obj\win64\vs2022_debug_win64_true\Zenith_CameraComponent.obj
 C:\dev\Zenith\Zenith\EntityComponent\Components\Zenith_ColliderComponent.cpp;C:\dev\Zenith\Games\SuperSecret\Build\obj\win64\vs2022_debug_win64_true\Zenith_ColliderComponent.obj
@@ -122,6 +123,7 @@ C:\dev\Zenith\Zenith\Input\Zenith_Input.cpp;C:\dev\Zenith\Games\SuperSecret\Buil
 C:\dev\Zenith\Zenith\Maths\Zenith_Maths.cpp;C:\dev\Zenith\Games\SuperSecret\Build\obj\win64\vs2022_debug_win64_true\Zenith_Maths.obj
 C:\dev\Zenith\Zenith\Physics\Zenith_Physics.cpp;C:\dev\Zenith\Games\SuperSecret\Build\obj\win64\vs2022_debug_win64_true\Zenith_Physics.obj
 C:\dev\Zenith\Zenith\StateMachine\Zenith_StateMachine.cpp;C:\dev\Zenith\Games\SuperSecret\Build\obj\win64\vs2022_debug_win64_true\Zenith_StateMachine.obj
+C:\dev\Zenith\Zenith\UnitTests\Zenith_UnitTests.cpp;C:\dev\Zenith\Games\SuperSecret\Build\obj\win64\vs2022_debug_win64_true\Zenith_UnitTests.obj
 C:\dev\Zenith\Zenith\Vulkan\Zenith_Vulkan.cpp;C:\dev\Zenith\Games\SuperSecret\Build\obj\win64\vs2022_debug_win64_true\Zenith_Vulkan.obj
 C:\dev\Zenith\Zenith\Vulkan\Zenith_Vulkan_Buffer.cpp;C:\dev\Zenith\Games\SuperSecret\Build\obj\win64\vs2022_debug_win64_true\Zenith_Vulkan_Buffer.obj
 C:\dev\Zenith\Zenith\Vulkan\Zenith_Vulkan_CommandBuffer.cpp;C:\dev\Zenith\Games\SuperSecret\Build\obj\win64\vs2022_debug_win64_true\Zenith_Vulkan_CommandBuffer.obj
