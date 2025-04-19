@@ -2,7 +2,7 @@
 
 #include "StateMachine/Zenith_StateMachine.h"
 
-enum SUPERSECRET_TEXTURE_INDICES
+enum SUPERSECRET_TEXTURE_INDICES : uint32_t
 {
 	SUPERSECRET_TEXTURE_INDEX__PLAYER0,
 

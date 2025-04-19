@@ -62,7 +62,10 @@ void CameraController_Behaviour::OnUpdate(const float fDt)
 
 	const float fMoveSpeed = MOVE_SPEED * fDt;
 
-	UpdateCameraRotation(xCamera);
+	if (Zenith_Input::IsKeyDown(ZENITH_KEY_O))
+	{
+		UpdateCameraRotation(xCamera);
+	}
 
 	Zenith_Maths::Vector3 xPosDelta(0, 0, 0);
 
