@@ -26,6 +26,16 @@ public:
 		m_ulCursor += sizeof(T);
 		Zenith_Assert(m_ulCursor < m_ulDataSize, "Ran past end of DataStream");
 	}
+
+	inline void WriteToFile(FILE* pFile) const
+	{
+#ifdef ZENITH_ASSERT
+		size_t ulSize = 
+#endif
+		fwrite(m_pData, 1, m_ulDataSize, pFile);
+
+		Zenith_Assert(ulSize == m_ulDataSize);
+	}
 private:
 	void* m_pData = nullptr;
 	uint64_t m_ulDataSize = 0;

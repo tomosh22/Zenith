@@ -19,7 +19,8 @@ void Zenith_UnitTests::TestDataStream()
 	xStream << Flux_Quads::Quad(
 		Zenith_Maths::UVector4( 1,2,3,4 ),
 		Zenith_Maths::Vector4( 5.f,6.f,7.f,8.f ),
-		500u
+		500u,
+		{1,1}
 	);
 
 	xStream.SetCursor(0);
@@ -42,6 +43,7 @@ void Zenith_UnitTests::TestDataStream()
 	Zenith_Assert(
 		xQuad.m_xPosition_Size == Zenith_Maths::UVector4(1, 2, 3, 4) &&
 		xQuad.m_xColour == Zenith_Maths::Vector4(5.f, 6.f, 7.f, 8.f) &&
-		xQuad.m_uTexture == 500u
+		xQuad.m_uTexture == 500u &&
+		xQuad.m_xUVMult_UVAdd == Zenith_Maths::Vector2(1,1)
 	);
 }

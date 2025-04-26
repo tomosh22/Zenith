@@ -8,16 +8,18 @@ public:
 	struct Quad
 	{
 		Quad() = default;
-		Quad(Zenith_Maths::UVector4 xPosition_Size, Zenith_Maths::Vector4 xColour, uint32_t uTexture)
+		Quad(Zenith_Maths::UVector4 xPosition_Size, Zenith_Maths::Vector4 xColour, uint32_t uTexture, Zenith_Maths::Vector2 xUVMult_UVAdd)
 			: m_xPosition_Size(xPosition_Size)
 			, m_xColour(xColour)
 			, m_uTexture(uTexture)
+			, m_xUVMult_UVAdd(xUVMult_UVAdd)
 		{
 
 		}
 		Zenith_Maths::UVector4 m_xPosition_Size;
 		Zenith_Maths::Vector4 m_xColour;
 		uint32_t m_uTexture;
+		Zenith_Maths::Vector2 m_xUVMult_UVAdd;
 	};
 
 	static void Initialise();

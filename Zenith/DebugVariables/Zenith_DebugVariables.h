@@ -105,6 +105,11 @@ public:
 		Zenith_DebugVariableTree::LeafNodeWithRange<Zenith_Maths::Vector3, float>* pxLeaf = new Zenith_DebugVariableTree::LeafNodeWithRange<Zenith_Maths::Vector3, float>(xName, &xVar, fMin, fMax);
 		s_xTree.AddLeafNode(pxLeaf, xName);
 	}
+	static void AddUVector4(std::vector<std::string> xName, Zenith_Maths::UVector4& xVar, float fMin, float fMax)
+	{
+		Zenith_DebugVariableTree::LeafNodeWithRange<Zenith_Maths::UVector4, float>* pxLeaf = new Zenith_DebugVariableTree::LeafNodeWithRange<Zenith_Maths::UVector4, float>(xName, &xVar, fMin, fMax);
+		s_xTree.AddLeafNode(pxLeaf, xName);
+	}
 	static void AddVector4(std::vector<std::string> xName, Zenith_Maths::Vector4& xVar, float fMin, float fMax)
 	{
 		Zenith_DebugVariableTree::LeafNodeWithRange<Zenith_Maths::Vector4, float>* pxLeaf = new Zenith_DebugVariableTree::LeafNodeWithRange<Zenith_Maths::Vector4, float>(xName, &xVar, fMin, fMax);
