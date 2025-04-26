@@ -27,7 +27,7 @@ static Zenith_Entity s_xPlayer0;
 
 static Flux_Texture* g_pxTextures[SUPERSECRET_TEXTURE_INDEX__COUNT];
 
-static SUPERSECRET_TEXTURE_INDICES s_aeMap[g_uMaxMapWidth * g_uMaxMapHeight];
+static Flux_Quads::Quad s_axMap[g_uMaxMapWidth * g_uMaxMapHeight];
 
 static void LoadAssets()
 {
@@ -50,7 +50,9 @@ void UploadQuad(const uint32_t uX, const uint32_t uY, const SUPERSECRET_TEXTURE_
 			QUAD_SIZE * fSizeMult
 		},
 		{1.,1.,1.,1.},
-		static_cast<uint32_t>(eTexture) });
+		static_cast<uint32_t>(eTexture),
+		{1,1}
+		});
 }
 
 void SuperSecret_State_InGame::OnEnter()
@@ -79,21 +81,24 @@ void SuperSecret_State_InGame::OnEnter()
 	s_xPlayer0.Initialise(&xScene, "Player0");
 	s_xPlayer0.AddComponent<Zenith_ScriptComponent>().SetBehaviour<PlayerController_Behaviour>();
 
-	char* pcData = Zenith_FileAccess::ReadFile(ASSETS_ROOT"Maps/map0.txt");
-	uint32_t ulCursor = 0;
+	uint64_t ulSize;
+	char* pcData = Zenith_FileAccess::ReadFile(ASSETS_ROOT"Maps/map0.txt", ulSize);
+	Zenith_DataStream xStream(pcData, ulSize);
 	
-	g_uMapWidth = atoi(pcData + ulCursor);
-	ulCursor += std::to_string(g_uMapWidth).length() + 1;
-	g_uMapHeight = atoi(pcData + ulCursor);
-	ulCursor += std::to_string(g_uMapHeight).length() + 1;
+	xStream >> g_uMapWidth;
+	xStream >> g_uMapHeight;
 
 	for (uint32_t u = 0; u < g_uMapWidth * g_uMapHeight; u++)
 	{
-		uint32_t uRead = atoi(pcData + ulCursor);
-		ulCursor += std::to_string(uRead).length() + 1;
+		xStream >> s_axMap[u];
 
-		s_aeMap[u] = static_cast<SUPERSECRET_TEXTURE_INDICES>(uRead);
-		//Zenith_DebugVariables::AddUInt32({ "Map",std::to_string(u) }, s_aeMap[u], 0, SUPERSECRET_TEXTURE_INDEX__COUNT - 1);
+		Zenith_DebugVariables::AddUInt32({ "Map",std::to_string(u), "Texture"}, s_axMap[u].m_uTexture, 0, SUPERSECRET_TEXTURE_INDEX__COUNT - 1);
+		Zenith_DebugVariables::AddUInt32({ "Map",std::to_string(u), "Pos X"}, s_axMap[u].m_xPosition_Size.x, 0, 8192);
+		Zenith_DebugVariables::AddUInt32({ "Map",std::to_string(u), "Pos Y"}, s_axMap[u].m_xPosition_Size.y, 0, 8192);
+		Zenith_DebugVariables::AddUInt32({ "Map",std::to_string(u), "Size X"}, s_axMap[u].m_xPosition_Size.z, 0, 512);
+		Zenith_DebugVariables::AddUInt32({ "Map",std::to_string(u), "Size Y"}, s_axMap[u].m_xPosition_Size.w, 0, 512);
+		Zenith_DebugVariables::AddFloat({ "Map",std::to_string(u), "UV Mult"}, s_axMap[u].m_xUVMult_UVAdd.x, 0, 2);
+		Zenith_DebugVariables::AddFloat({ "Map",std::to_string(u), "UV Add" }, s_axMap[u].m_xUVMult_UVAdd.y, 0, 2);
 	}
 }
 
@@ -101,26 +106,25 @@ void SuperSecret_State_InGame::OnUpdate()
 {
 	for (uint32_t u = 0; u < g_uMapWidth * g_uMapHeight; u++)
 	{
-		UploadQuad(u % g_uMapWidth, u / g_uMapWidth, static_cast<SUPERSECRET_TEXTURE_INDICES>(s_aeMap[u]));
+		Flux_Quads::UploadQuad(s_axMap[u]);
 	}
 	const PlayerController_Behaviour& xPlayer = *(PlayerController_Behaviour*)s_xPlayer0.GetComponent<Zenith_ScriptComponent>().m_pxScriptBehaviour;
 	UploadQuad(xPlayer.GetPosition().x, xPlayer.GetPosition().y, SUPERSECRET_TEXTURE_INDEX__PLAYER0, 2.0f);
 
 	if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_P))
 	{
-		FILE* pxFile = fopen(ASSETS_ROOT"Maps/map0.txt", "wb");
+		Zenith_DataStream xStream(sizeof(s_axMap) + sizeof(uint32_t) * 2);
 
-		fputs(std::to_string(g_uMapWidth).c_str(), pxFile);
-		fputs("\n", pxFile);
-		fputs(std::to_string(g_uMapHeight).c_str(), pxFile);
-		fputs("\n", pxFile);
+		xStream << g_uMapWidth;
+		xStream << g_uMapHeight;
 
 		for (uint32_t u = 0; u < g_uMapWidth * g_uMapHeight; u++)
 		{
-			fputs(std::to_string(s_aeMap[u]).c_str(), pxFile);
-			fputs("\n", pxFile);
+			xStream << s_axMap[u];
 		}
 
+		FILE* pxFile = fopen(ASSETS_ROOT"Maps/map0.txt", "wb");
+		xStream.WriteToFile(pxFile);
 		fclose(pxFile);
 	}
 
