@@ -89,13 +89,14 @@ void Zenith_Core::Zenith_MainLoop()
 	UpdateTimers();
 	Zenith_Input::BeginFrame();
 	Zenith_Window::GetInstance()->BeginFrame();
+	Flux_PlatformAPI::BeginFrame();
 	Flux_MemoryManager::BeginFrame();
 	if (!Flux_Swapchain::BeginFrame())
 	{
 		Flux_MemoryManager::EndFrame(false);
 		return;
 	}
-	Flux_PlatformAPI::BeginFrame();
+	
 	Flux_Shadows::Render();
 	Flux_DeferredShading::BeginFrame();
 	Flux_Skybox::Render();

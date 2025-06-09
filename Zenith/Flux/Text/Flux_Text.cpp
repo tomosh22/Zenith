@@ -51,7 +51,17 @@ void Flux_Text::Initialise()
 	std::vector<Flux_BlendState> xBlendStates;
 	xBlendStates.push_back({ BLEND_FACTOR_SRCALPHA, BLEND_FACTOR_ONE, true });
 
-	Flux_PipelineSpecification xPipelineSpec(
+	Flux_PipelineSpecification xPipelineSpec;
+	xPipelineSpec.m_pxTargetSetup = &Flux_Graphics::s_xFinalRenderTarget;
+	xPipelineSpec.m_pxShader = &s_xShader;
+	xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
+
+	Flux_PipelineLayout& xLayout = xPipelineSpec.m_xPipelineLayout;
+	xLayout.m_uNumDescriptorSets = 1;
+	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;
+	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_TEXTURE;
+#if 0
+	(
 		xVertexDesc,
 		&s_xShader,
 		xBlendStates,
@@ -66,6 +76,7 @@ void Flux_Text::Initialise()
 		Flux_Graphics::s_xFinalRenderTarget,
 		false
 	);
+#endif
 
 	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
 
@@ -74,7 +85,7 @@ void Flux_Text::Initialise()
 	Flux_MemoryManager::InitialiseDynamicVertexBuffer(nullptr, s_uMaxCharsPerFrame * sizeof(TextVertex), s_xInstanceBuffer, bDeviceLocal);
 
 	Zenith_AssetHandler::AddTexture2D("Font_Atlas", "C:/dev/Zenith/Zenith/Assets/FontAtlas.ztx");
-	s_pxFontAtlas = &Zenith_AssetHandler::GetTexture("Font_Atlas");
+	s_pxFontAtlas = Zenith_AssetHandler::GetTexture("Font_Atlas");
 
 #ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_DebugVariables::AddBoolean({ "Render", "Enable", "Text" }, dbg_bEnable);
@@ -177,7 +188,7 @@ void Flux_Text::Render()
 	s_xCommandBuffer.SetIndexBuffer(Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
 	s_xCommandBuffer.SetVertexBuffer(s_xInstanceBuffer, 1);
 
-	s_xCommandBuffer.BeginBind(BINDING_FREQUENCY_PER_FRAME);
+	s_xCommandBuffer.BeginBind(0);
 	s_xCommandBuffer.BindBuffer(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer(), 0);
 	s_xCommandBuffer.BindTexture(s_pxFontAtlas, 1);
 

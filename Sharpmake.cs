@@ -162,7 +162,7 @@ public class ZenithToolsProject : Project
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Zenith");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Zenith/Core");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Middleware/glfw-3.4.bin.WIN64/include");
-		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Middleware/VulkanSDK/1.3.280.0/Include");
+		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Middleware/VulkanSDK/1.4.313.1/Include");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Middleware/glm-master");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Middleware/entt-3.13.2/single_include");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Zenith/Windows");
@@ -249,7 +249,7 @@ public class ZenithWindowsProject : Project
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Zenith");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Zenith/Core");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Middleware/glfw-3.4.bin.WIN64/include");
-		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Middleware/VulkanSDK/1.3.280.0/Include");
+		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Middleware/VulkanSDK/1.4.313.1/Include");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Middleware/glm-master");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Middleware/vma");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Middleware/entt-3.13.2/single_include");
@@ -258,7 +258,7 @@ public class ZenithWindowsProject : Project
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Zenith/Vulkan");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Games");
 		
-		conf.LibraryPaths.Add("[project.SharpmakeCsPath]/Middleware/VulkanSDK/1.3.280.0/Lib");
+		conf.LibraryPaths.Add("[project.SharpmakeCsPath]/Middleware/VulkanSDK/1.4.313.1/Lib");
 		conf.LibraryPaths.Add("[project.SharpmakeCsPath]/Middleware/glfw-3.4.bin.WIN64/lib-vc2022");
 		
 		conf.LibraryFiles.Add("glfw3_mt.lib");

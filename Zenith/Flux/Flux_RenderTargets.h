@@ -2,12 +2,6 @@
 #include "Flux/Flux.h"
 #include "Flux/Flux_Enums.h"
 
-struct Flux_BlendState
-{
-	BlendFactor m_eSrcBlendFactor;
-	BlendFactor m_eDstBlendFactor;
-	bool m_bBlendEnabled;
-};
 
 struct Flux_RenderAttachment {
 	ColourFormat m_eColourFormat = COLOUR_FORMAT_NONE;
@@ -17,7 +11,7 @@ struct Flux_RenderAttachment {
 	uint32_t m_uHeight = 0;
 
 	//one per frame in flight
-	Flux_Texture m_axTargetTextures[MAX_FRAMES_IN_FLIGHT];
+	Flux_Texture* m_pxTargetTexture;
 };
 
 struct Flux_TargetSetup {
@@ -41,5 +35,5 @@ public:
 	uint32_t m_uWidth;
 	uint32_t m_uHeight;
 
-	void Build(Flux_RenderAttachment& xAttachment, RenderTargetType eType);
+	void Build(Flux_RenderAttachment& xAttachment, RenderTargetType eType, const std::string& strName);
 };

@@ -1,5 +1,6 @@
 #pragma once
 
+
 #include "Flux/Flux_Enums.h"
 
 static uint32_t Flux_ShaderDataTypeSize(ShaderDataType t)
@@ -27,7 +28,7 @@ static uint32_t Flux_ShaderDataTypeSize(ShaderDataType t)
 
 struct Flux_BufferElement
 {
-	uint32_t _Offset;
+	uint32_t m_uOffset;
 	uint32_t _Size;
 	ShaderDataType _Type;
 	bool _Normalized;
@@ -36,7 +37,7 @@ struct Flux_BufferElement
 	void* m_pData = nullptr;
 	unsigned int _numEntries = 0;
 
-	Flux_BufferElement(ShaderDataType type, bool normalized = false, bool instanced = false, unsigned int divisor = 0, void* data = nullptr, unsigned int numEntries = 0) : _Type(type), _Size(Flux_ShaderDataTypeSize(type)), _Offset(0), _Normalized(normalized), _Instanced(instanced), m_uDivisor(divisor), m_pData(data), _numEntries(numEntries)
+	Flux_BufferElement(ShaderDataType type, bool normalized = false, bool instanced = false, unsigned int divisor = 0, void* data = nullptr, unsigned int numEntries = 0) : _Type(type), _Size(Flux_ShaderDataTypeSize(type)), m_uOffset(0), _Normalized(normalized), _Instanced(instanced), m_uDivisor(divisor), m_pData(data), _numEntries(numEntries)
 	{
 	}
 
@@ -79,7 +80,7 @@ public:
 		m_uStride = 0;
 		for (Flux_BufferElement& xElement : m_xElements)
 		{
-			xElement._Offset = uOffset;
+			xElement.m_uOffset = uOffset;
 			uOffset += xElement._Size;
 			m_uStride += xElement._Size;
 		}
@@ -91,7 +92,7 @@ private:
 
 struct Flux_VertexInputDescription
 {
-	MeshTopology m_eTopology;
+	MeshTopology m_eTopology = MESH_TOPOLOGY_TRIANGLES;
 	Flux_BufferLayout m_xPerVertexLayout;
 	Flux_BufferLayout m_xPerInstanceLayout;
 };
@@ -136,3 +137,26 @@ static uint32_t DepthStencilFormatBitsPerPixel(DepthStencilFormat eFormat)
 		return 0u;
 	}
 }
+
+struct Flux_BlendState
+{
+	BlendFactor m_eSrcBlendFactor = BLEND_FACTOR_ONE;
+	BlendFactor m_eDstBlendFactor = BLEND_FACTOR_ONE;
+	bool m_bBlendEnabled = true;
+};
+
+struct Flux_DescriptorBinding
+{
+	DescriptorType m_eType = DESCRIPTOR_TYPE_MAX;
+};
+
+struct Flux_DescriptorSetLayout
+{
+	Flux_DescriptorBinding m_axBindings[FLUX_MAX_DESCRIPTOR_BINDINGS];
+};
+
+struct Flux_PipelineLayout
+{
+	u_int m_uNumDescriptorSets = 0;
+	Flux_DescriptorSetLayout m_axDescriptorSetLayouts[FLUX_MAX_DESCRIPTOR_SET_LAYOUTS];
+};

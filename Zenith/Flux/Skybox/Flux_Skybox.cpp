@@ -28,8 +28,6 @@ void Flux_Skybox::Initialise()
 
 	Flux_VertexInputDescription xVertexDesc;
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_NONE;
-	xVertexDesc.m_xPerVertexLayout.GetElements().push_back(SHADER_DATA_TYPE_FLOAT3);
-	xVertexDesc.m_xPerVertexLayout.GetElements().push_back(SHADER_DATA_TYPE_FLOAT2);
 	xVertexDesc.m_xPerVertexLayout.CalculateOffsetsAndStrides();
 
 	std::vector<Flux_BlendState> xBlendStates;
@@ -38,7 +36,17 @@ void Flux_Skybox::Initialise()
 	xBlendStates.push_back({ BLEND_FACTOR_SRCALPHA, BLEND_FACTOR_ONEMINUSSRCALPHA, true });
 	xBlendStates.push_back({ BLEND_FACTOR_SRCALPHA, BLEND_FACTOR_ONEMINUSSRCALPHA, true });
 
-	Flux_PipelineSpecification xPipelineSpec(
+	Flux_PipelineSpecification xPipelineSpec;
+	xPipelineSpec.m_pxTargetSetup = &Flux_Graphics::s_xMRTTarget;
+	xPipelineSpec.m_pxShader = &s_xShader;
+	xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
+
+	Flux_PipelineLayout& xLayout = xPipelineSpec.m_xPipelineLayout;
+	xLayout.m_uNumDescriptorSets = 1;
+	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;
+	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_TEXTURE;
+#if 0
+	(
 		xVertexDesc,
 		&s_xShader,
 		xBlendStates,
@@ -53,10 +61,11 @@ void Flux_Skybox::Initialise()
 		Flux_Graphics::s_xMRTTarget,
 		false
 	);
+#endif
 
 	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
 
-	s_pxCubemap = &Zenith_AssetHandler::GetTexture("Cubemap");
+	s_pxCubemap = Zenith_AssetHandler::GetTexture("Cubemap");
 
 	Zenith_Log("Flux_Skybox initialised");
 }
@@ -79,7 +88,7 @@ void Flux_Skybox::Render()
 	s_xCommandBuffer.SetVertexBuffer(Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
 	s_xCommandBuffer.SetIndexBuffer(Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
 
-	s_xCommandBuffer.BeginBind(BINDING_FREQUENCY_PER_FRAME);
+	s_xCommandBuffer.BeginBind(0);
 	s_xCommandBuffer.BindBuffer(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer(), 0);
 	s_xCommandBuffer.BindTexture(s_pxCubemap, 1);
 

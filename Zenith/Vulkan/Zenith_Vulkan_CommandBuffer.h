@@ -41,7 +41,7 @@ public:
 	void PushConstant(void* pData, size_t uSize);
 	void UploadUniformData(void* pData, size_t uSize);
 
-	void BeginBind(BindingFrequency eFreq);
+	void BeginBind(u_int uDescSet);
 
 	vk::CommandBuffer& GetCurrentCmdBuffer() { return m_xCurrentCmdBuffer; }
 	void* Platform_GetCurrentCmdBuffer() const { return (void*)&m_xCurrentCmdBuffer; }
@@ -65,8 +65,8 @@ private:
 
 	Zenith_Vulkan_Pipeline* m_pxCurrentPipeline;
 
-	DescSetBindings m_xBindings[BINDING_FREQUENCY_MAX];
-	BindingFrequency m_eCurrentBindFreq = BINDING_FREQUENCY_MAX;
+	DescSetBindings m_xBindings[FLUX_MAX_DESCRIPTOR_SET_LAYOUTS];
+	u_int m_uCurrentBindFreq = FLUX_MAX_DESCRIPTOR_SET_LAYOUTS;
 
 	CommandType m_eCommandType;
 

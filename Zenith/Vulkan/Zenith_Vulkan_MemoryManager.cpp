@@ -204,15 +204,12 @@ void Zenith_Vulkan_MemoryManager::InitialiseVertexBuffer(const void* pData, size
 
 void Zenith_Vulkan_MemoryManager::InitialiseDynamicVertexBuffer(const void* pData, size_t uSize, Flux_DynamicVertexBuffer& xBufferOut, bool bDeviceLocal /*= true*/)
 {
-	for (uint32_t u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
+	Zenith_Vulkan_Buffer& xBuffer = xBufferOut.GetBuffer();
+	vk::BufferUsageFlags eFlags = vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst;
+	AllocateBuffer(uSize, eFlags, bDeviceLocal ? MEMORY_RESIDENCY_GPU : MEMORY_RESIDENCY_CPU, xBuffer);
+	if (pData)
 	{
-		Zenith_Vulkan_Buffer& xBuffer = xBufferOut.GetBufferForFrameInFlight(u);
-		vk::BufferUsageFlags eFlags = vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst;
-		AllocateBuffer(uSize, eFlags, bDeviceLocal ? MEMORY_RESIDENCY_GPU : MEMORY_RESIDENCY_CPU, xBuffer);
-		if (pData)
-		{
-			UploadBufferData(xBuffer, pData, uSize);
-		}
+		UploadBufferData(xBuffer, pData, uSize);
 	}
 }
 
@@ -229,15 +226,12 @@ void Zenith_Vulkan_MemoryManager::InitialiseIndexBuffer(const void* pData, size_
 
 void Zenith_Vulkan_MemoryManager::InitialiseConstantBuffer(const void* pData, size_t uSize, Flux_ConstantBuffer& xBufferOut)
 {
-	for (uint32_t u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
+	Zenith_Vulkan_Buffer& xBuffer = xBufferOut.GetBuffer();
+	vk::BufferUsageFlags eFlags = vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eTransferDst;
+	AllocateBuffer(uSize, eFlags, MEMORY_RESIDENCY_CPU, xBuffer);
+	if (pData)
 	{
-		Zenith_Vulkan_Buffer& xBuffer = xBufferOut.GetBufferForFrameInFlight(u);
-		vk::BufferUsageFlags eFlags = vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eTransferDst;
-		AllocateBuffer(uSize, eFlags, MEMORY_RESIDENCY_CPU, xBuffer);
-		if (pData)
-		{
-			UploadBufferData(xBuffer, pData, uSize);
-		}
+		UploadBufferData(xBuffer, pData, uSize);
 	}
 }
 
@@ -252,7 +246,7 @@ void Zenith_Vulkan_MemoryManager::CreateDepthStencilAttachment(uint32_t uWidth, 
 	FreeTexture(&xTextureOut);
 	AllocateTexture(uWidth, uHeight, 1, COLOUR_FORMAT_NONE, eFormat, uBitsPerPixel, 1, vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled, MEMORY_RESIDENCY_GPU, xTextureOut);
 	Zenith_Assert(eFormat == DEPTHSTENCIL_FORMAT_D32_SFLOAT, "#TO_TODO: layouts for just depth without stencil");
-	ImageTransitionBarrier(xTextureOut.GetImage(), vk::ImageLayout::eUndefined, vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageAspectFlagBits::eDepth, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands);
+	ImageTransitionBarrier(xTextureOut.GetImage(), vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthStencilReadOnlyOptimal, vk::ImageAspectFlagBits::eDepth, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands);
 }
 
 void Zenith_Vulkan_MemoryManager::CreateTexture(const void* pData, const uint32_t uWidth, const uint32_t uHeight, const uint32_t uDepth, ColourFormat eFormat, DepthStencilFormat eDepthStencilFormat, bool bCreateMips, Zenith_Vulkan_Texture& xTextureOut)
@@ -489,6 +483,7 @@ void Zenith_Vulkan_MemoryManager::AllocateTexture(uint32_t uWidth, uint32_t uHei
 		.setSubresourceRange(xSubresourceRange);
 
 	xTextureOut.SetImageView(xDevice.createImageView(xViewCreate));
+	xTextureOut.SetFormat(xFormat);
 }
 
 void Zenith_Vulkan_MemoryManager::FreeTexture(Zenith_Vulkan_Texture* pxTexture)

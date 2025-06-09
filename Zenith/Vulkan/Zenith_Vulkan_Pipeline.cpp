@@ -14,23 +14,6 @@ License: MIT (see LICENSE file at the top of the source tree)
 #include "Flux/Flux_RenderTargets.h"
 #include "FileAccess/Zenith_FileAccess.h"
 
-Zenith_Vulkan_PipelineSpecification::Zenith_Vulkan_PipelineSpecification(Flux_VertexInputDescription xVertexInputDesc, Zenith_Vulkan_Shader* pxShader, std::vector<Flux_BlendState> xBlendStates, bool bDepthTestEnabled, bool bDepthWriteEnabled, DepthCompareFunc eDepthCompareFunc, DepthStencilFormat eDepthStencilFormat, bool bUsePushConstants, bool bUseTesselation, std::array<uint32_t, DESCRIPTOR_TYPE_MAX> xPerFrameBindings, std::array<uint32_t, DESCRIPTOR_TYPE_MAX> xPerDrawBindings, Flux_TargetSetup& xTargetSetup, bool bWireframe)
-	: m_eVertexInputDesc(xVertexInputDesc)
-	, m_pxShader(pxShader)
-	, m_xBlendStates(xBlendStates)
-	, m_bDepthTestEnabled(bDepthTestEnabled)
-	, m_bDepthWriteEnabled(bDepthWriteEnabled)
-	, m_eDepthCompareFunc(eDepthCompareFunc)
-	, m_eDepthStencilFormat(eDepthStencilFormat)
-	, m_bUsePushConstants(bUsePushConstants)
-	, m_bUseTesselation(bUseTesselation)
-	, m_xPerFrameBindings(xPerFrameBindings)
-	, m_xPerDrawBindings(xPerDrawBindings)
-	, m_xTargetSetup(xTargetSetup)
-	, m_bWireframe(bWireframe)
-{
-}
-
 void Zenith_Vulkan_Shader::Initialise(const std::string& strVertex, const std::string& strFragment, const std::string& strGeometry, const std::string& strDomain, const std::string& strHull)
 {
 	const std::string strExtension = ".spv";
@@ -237,7 +220,7 @@ static vk::PipelineVertexInputStateCreateInfo VertexDescToVulkanDesc(const Flux_
 		vk::VertexInputAttributeDescription xAttrDesc = vk::VertexInputAttributeDescription()
 			.setBinding(0)
 			.setLocation(uBindPoint)
-			.setOffset(xElement._Offset)
+			.setOffset(xElement.m_uOffset)
 			.setFormat(Zenith_Vulkan::ShaderDataTypeToVulkanFormat(xElement._Type));
 		xAttrDescs.push_back(xAttrDesc);
 		uBindPoint++;
@@ -257,7 +240,7 @@ static vk::PipelineVertexInputStateCreateInfo VertexDescToVulkanDesc(const Flux_
 			vk::VertexInputAttributeDescription xInstanceAttrDesc = vk::VertexInputAttributeDescription()
 				.setBinding(1)
 				.setLocation(uBindPoint)
-				.setOffset(xElement._Offset)
+				.setOffset(xElement.m_uOffset)
 				.setFormat(Zenith_Vulkan::ShaderDataTypeToVulkanFormat(xElement._Type));
 			xAttrDescs.push_back(xInstanceAttrDesc);
 			uBindPoint++;
@@ -279,7 +262,7 @@ static vk::PipelineVertexInputStateCreateInfo VertexDescToVulkanDesc(const Flux_
 
 void Zenith_Vulkan_Pipeline::BindDescriptorSets(vk::CommandBuffer& xCmd, const std::vector<vk::DescriptorSet>& axSets, vk::PipelineBindPoint eBindPoint, uint32_t ufirstSet) const
 {
-	xCmd.bindDescriptorSets(eBindPoint, m_xPipelineLayout, ufirstSet, axSets.size(), axSets.data(), 0, nullptr);
+	STUBBED
 }
 
 Zenith_Vulkan_PipelineBuilder::Zenith_Vulkan_PipelineBuilder()
@@ -306,7 +289,7 @@ Zenith_Vulkan_PipelineBuilder::Zenith_Vulkan_PipelineBuilder()
 	m_xDepthRenderingFormat = vk::Format::eUndefined;
 	m_xStencilRenderingFormat = vk::Format::eUndefined;
 
-	m_xRasterCreate.setCullMode(vk::CullModeFlagBits::eBack)
+	m_xRasterCreate.setCullMode(vk::CullModeFlagBits::eNone)
 		.setPolygonMode(vk::PolygonMode::eFill)
 		.setFrontFace(vk::FrontFace::eCounterClockwise)
 		.setLineWidth(1.0f);
@@ -316,11 +299,7 @@ Zenith_Vulkan_PipelineBuilder::Zenith_Vulkan_PipelineBuilder()
 
 Zenith_Vulkan_Pipeline::~Zenith_Vulkan_Pipeline()
 {
-	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
-	xDevice.destroyPipeline(m_xPipeline);
-	xDevice.destroyPipelineLayout(m_xPipelineLayout);
-	xDevice.destroyDescriptorSetLayout(m_xPerFrameLayout);
-	xDevice.destroyDescriptorSetLayout(m_xPerDrawLayout);
+	STUBBED
 }
 
 Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithDepthState(vk::CompareOp op, bool depthEnabled, bool writeEnabled, bool stencilEnabled)
@@ -433,46 +412,9 @@ Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithDescriptorSetL
 //	return *this;
 //}
 
-void Zenith_Vulkan_PipelineBuilder::Build(Zenith_Vulkan_Pipeline& xPipelineOut, const Zenith_Vulkan_PipelineSpecification& xSpec, vk::PipelineCache xCache /*= {}*/)
+void Zenith_Vulkan_PipelineBuilder::Build(Zenith_Vulkan_Pipeline& xPipelineOut, const Flux_PipelineSpecification& xSpec, vk::PipelineCache xCache /*= {}*/)
 {
-	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
-	vk::PipelineLayoutCreateInfo xPipeLayoutCreate = vk::PipelineLayoutCreateInfo()
-		.setSetLayouts(m_xAllLayouts)
-		.setPushConstantRanges(m_xAllPushConstants);
-
-	if (m_xBlendAttachStates.empty())
-	{
-		if (!m_xAllColourRenderingFormats.empty())
-		{
-			for (int i = 0; i < xSpec.m_xTargetSetup.GetNumColourAttachments(); ++i)
-			{
-				//#TO can be anything
-				WithBlendState(vk::BlendFactor::eSrcAlpha, vk::BlendFactor::eOneMinusSrcAlpha, false);
-			}
-		}
-	}
-
-	m_xBlendCreate.setAttachments(m_xBlendAttachStates);
-	m_xBlendCreate.setBlendConstants({ 1.0f, 1.0f, 1.0f, 1.0f });
-
-	int uShouldReturn = 0;
-
-	xPipelineOut.m_xPipelineLayout = xDevice.createPipelineLayout(xPipeLayoutCreate);
-
-	m_xPipelineCreate.setPColorBlendState(&m_xBlendCreate)
-		.setPDepthStencilState(&m_xDepthStencilCreate)
-		.setPDynamicState(&m_xDynamicCreate)
-		.setPInputAssemblyState(&m_xInputAsmCreate)
-		.setPMultisampleState(&m_xSampleCreate)
-		.setPRasterizationState(&m_xRasterCreate)
-		.setLayout(xPipelineOut.m_xPipelineLayout)
-		.setPVertexInputState(&m_xVertexCreate);
-
-	if (m_bUseTesselation)
-	{
-		m_xPipelineCreate = m_xPipelineCreate.setPTessellationState(&m_xTesselationCreate);
-	}
-	xPipelineOut.m_xPipeline = xDevice.createGraphicsPipeline(VK_NULL_HANDLE, m_xPipelineCreate).value;
+	STUBBED
 }
 
 vk::Format VceFormatToVKFormat(ColourFormat eFmt)
@@ -524,63 +466,6 @@ vk::BlendFactor VceBlendFactorToVKBlendFactor(BlendFactor eFactor)
 	default:
 		Zenith_Assert(false, "Unsupported blend factor");
 	}
-}
-
-Zenith_Vulkan_PipelineBuilder::DescriptorThings Zenith_Vulkan_PipelineBuilder::HandleDescriptors(const Zenith_Vulkan_PipelineSpecification& spec, Zenith_Vulkan_PipelineBuilder& xBuilder)
-{
-	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
-
-	vk::DescriptorSetLayout xPerFrameLayout;
-	vk::DescriptorSet xPerFrameSet;
-
-	vk::DescriptorSetLayout xPerDrawLayout;
-	vk::DescriptorSet xPerDrawSet;
-
-	std::array<uint32_t, DESCRIPTOR_TYPE_MAX> xPerFrame = spec.m_xPerFrameBindings;
-	{
-		Zenith_Vulkan_DescriptorSetLayoutBuilder xDescBuilder = Zenith_Vulkan_DescriptorSetLayoutBuilder().WithBindlessAccess();
-
-		for (uint32_t i = 0; i < xPerFrame[DESCRIPTOR_TYPE_BUFFER]; i++)
-			xDescBuilder = xDescBuilder.WithUniformBuffers(1);
-		for (uint32_t i = 0; i < xPerFrame[DESCRIPTOR_TYPE_TEXTURE]; i++)
-			xDescBuilder = xDescBuilder.WithSamplers(1);
-#ifdef ZENITH_RAYTRACING
-		for (uint32_t i = 0; i < xPerFrame[DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE]; i++)
-			xDescBuilder = xDescBuilder.WithAccelStructures(1);
-#endif
-
-		vk::DescriptorSetLayout xLayout = xDescBuilder.Build(xDevice);
-
-		xBuilder = xBuilder.WithDescriptorSetLayout(ZENITH_VULKAN_PER_FRAME_DESC_SET, xLayout);
-
-		xPerFrameLayout = xLayout;
-
-		xPerFrameSet = Zenith_Vulkan::CreateDescriptorSet(xLayout, Zenith_Vulkan::GetDefaultDescriptorPool());
-	}
-
-	std::array<uint32_t, DESCRIPTOR_TYPE_MAX> xPerDraw = spec.m_xPerDrawBindings;
-	{
-		Zenith_Vulkan_DescriptorSetLayoutBuilder xDescBuilder = Zenith_Vulkan_DescriptorSetLayoutBuilder().WithBindlessAccess();
-
-		for (uint32_t i = 0; i < xPerDraw[DESCRIPTOR_TYPE_BUFFER]; i++)
-			xDescBuilder = xDescBuilder.WithUniformBuffers(1);
-		for (uint32_t i = 0; i < xPerDraw[DESCRIPTOR_TYPE_TEXTURE]; i++)
-			xDescBuilder = xDescBuilder.WithSamplers(1);
-#ifdef ZENITH_RAYTRACING
-		for (uint32_t i = 0; i < xPerDraw[DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE]; i++)
-			xDescBuilder = xDescBuilder.WithAccelStructures(1);
-#endif
-
-		vk::DescriptorSetLayout xLayout = xDescBuilder.Build(xDevice);
-
-		xBuilder = xBuilder.WithDescriptorSetLayout(ZENITH_VULKAN_PER_DRAW_DESC_SET, xLayout);
-
-		xPerDrawLayout = xLayout;
-
-		xPerDrawSet = Zenith_Vulkan::CreateDescriptorSet(xLayout, Zenith_Vulkan::GetDefaultDescriptorPool());
-	}
-
-	return { xPerFrameLayout, xPerFrameSet, xPerDrawLayout, xPerDrawSet };
 }
 
 vk::RenderPass Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(Flux_TargetSetup& xTargetSetup, LoadAction eColourLoad, StoreAction eColourStore, LoadAction eDepthStencilLoad, StoreAction eDepthStencilStore, RenderTargetUsage eUsage)
@@ -644,8 +529,8 @@ vk::RenderPass Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(Flux_TargetSetup&
 			.setStoreOp(Zenith_Vulkan_Texture::ConvertToVkStoreAction(eDepthStencilStore))
 			.setStencilLoadOp(Zenith_Vulkan_Texture::ConvertToVkLoadAction(eDepthStencilLoad))
 			.setStencilStoreOp(Zenith_Vulkan_Texture::ConvertToVkStoreAction(eDepthStencilStore))
-			.setInitialLayout(eDepthStencilLoad == LOAD_ACTION_LOAD ? vk::ImageLayout::eDepthStencilAttachmentOptimal : vk::ImageLayout::eUndefined)
-			.setFinalLayout(Zenith_Vulkan_Texture::ConvertToVkTargetUsage(eUsage, RENDER_TARGET_TYPE_DEPTHSTENCIL));
+			.setInitialLayout(eDepthStencilLoad == LOAD_ACTION_LOAD ? vk::ImageLayout::eDepthStencilReadOnlyOptimal : vk::ImageLayout::eUndefined)
+			.setFinalLayout(vk::ImageLayout::eDepthStencilReadOnlyOptimal);
 
 		xDepthStencilAttachmentRef = vk::AttachmentReference()
 			.setAttachment(uNumColourAttachments)
@@ -686,7 +571,6 @@ vk::RenderPass Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(Flux_TargetSetup&
 vk::Framebuffer Zenith_Vulkan_Pipeline::TargetSetupToFramebuffer(Flux_TargetSetup& xTargetSetup, uint32_t uWidth, uint32_t uHeight, const vk::RenderPass& xPass)
 {
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
-	const uint32_t uFrameIndex = Zenith_Vulkan_Swapchain::GetCurrentFrameIndex();
 	bool bHasDepth = xTargetSetup.m_pxDepthStencil != nullptr;
 
 	uint32_t uNumColourAttachments = 0;
@@ -709,11 +593,11 @@ vk::Framebuffer Zenith_Vulkan_Pipeline::TargetSetupToFramebuffer(Flux_TargetSetu
 	vk::ImageView axAttachments[FLUX_MAX_TARGETS];
 	for (uint32_t i = 0; i < uNumColourAttachments; i++)
 	{
-		axAttachments[i] = xTargetSetup.m_axColourAttachments[i].m_axTargetTextures[uFrameIndex].GetImageView();
+		axAttachments[i] = xTargetSetup.m_axColourAttachments[i].m_pxTargetTexture->GetImageView();
 	}
 	if (bHasDepth)
 	{
-		axAttachments[uNumAttachments - 1] = xTargetSetup.m_pxDepthStencil->m_axTargetTextures[uFrameIndex].GetImageView();
+		axAttachments[uNumAttachments - 1] = xTargetSetup.m_pxDepthStencil->m_pxTargetTexture->GetImageView();
 	}
 
 	framebufferInfo.renderPass = xPass;
@@ -729,67 +613,210 @@ vk::Framebuffer Zenith_Vulkan_Pipeline::TargetSetupToFramebuffer(Flux_TargetSetu
 	return xFrameBuffer;
 }
 
-void Zenith_Vulkan_PipelineBuilder::FromSpecification(Zenith_Vulkan_Pipeline& xPipelineOut, const Zenith_Vulkan_PipelineSpecification& spec)
+void Zenith_Vulkan_PipelineBuilder::FromSpecification(Zenith_Vulkan_Pipeline& xPipelineOut, const Flux_PipelineSpecification& xSpec)
 {
-	std::vector<vk::VertexInputBindingDescription> axBindDescs;
-	std::vector<vk::VertexInputAttributeDescription> axAttrDescs;
+	vk::GraphicsPipelineCreateInfo xPipelineInfo;
 
-	Zenith_Vulkan_PipelineBuilder xBuilder = Zenith_Vulkan_PipelineBuilder();
-	if (spec.m_eVertexInputDesc.m_eTopology != MESH_TOPOLOGY_NONE)
+#pragma region Shaders
+	xPipelineInfo.setStageCount(xSpec.m_pxShader->m_uStageCount);
+	xPipelineInfo.setPStages(xSpec.m_pxShader->m_xInfos);
+#pragma endregion
+
+#pragma region VertexDesc
+
+	std::vector<vk::VertexInputBindingDescription> xBindDescs;
+	std::vector<vk::VertexInputAttributeDescription> xAttrDescs;
+
+	uint32_t uBindPoint = 0;
+	const Flux_BufferLayout& xVertexLayout = xSpec.m_xVertexInputDesc.m_xPerVertexLayout;
+	if (xVertexLayout.GetElements().size())
 	{
-		xBuilder = xBuilder.WithVertexInputState(Zenith_Vulkan::VertexDescToVulkanDesc(spec.m_eVertexInputDesc, axBindDescs, axAttrDescs));
-
-		//#TODO utility function
-		vk::PrimitiveTopology eTopology;
-		switch (spec.m_eVertexInputDesc.m_eTopology)
+		for (const Flux_BufferElement& xElement : xVertexLayout.GetElements())
 		{
-		case(MESH_TOPOLOGY_TRIANGLES):
-			eTopology = vk::PrimitiveTopology::eTriangleList;
-			break;
-		default:
-			Zenith_Assert(false, "Invalid topolgy");
-			break;
+			vk::VertexInputAttributeDescription xAttrDesc = vk::VertexInputAttributeDescription()
+				.setBinding(0)
+				.setLocation(uBindPoint)
+				.setOffset(xElement.m_uOffset)
+				.setFormat(Zenith_Vulkan::ShaderDataTypeToVulkanFormat(xElement._Type));
+			xAttrDescs.push_back(xAttrDesc);
+			uBindPoint++;
 		}
-		xBuilder = xBuilder.WithTopology(eTopology);
 	}
 
-	xBuilder = xBuilder.WithShader(*dynamic_cast<Zenith_Vulkan_Shader*>(spec.m_pxShader));
-	for (const Flux_BlendState& xBlend : spec.m_xBlendStates)
+	vk::VertexInputBindingDescription xBindDesc = vk::VertexInputBindingDescription()
+		.setBinding(0)
+		.setStride(xVertexLayout.GetStride())
+		.setInputRate(vk::VertexInputRate::eVertex);
+	xBindDescs.push_back(xBindDesc);
+
+	const Flux_BufferLayout& xInstanceLayout = xSpec.m_xVertexInputDesc.m_xPerInstanceLayout;
+	if (xInstanceLayout.GetElements().size())
 	{
-		xBuilder = xBuilder.WithBlendState(VceBlendFactorToVKBlendFactor(xBlend.m_eSrcBlendFactor), VceBlendFactorToVKBlendFactor(xBlend.m_eDstBlendFactor), xBlend.m_bBlendEnabled);
+		for (const Flux_BufferElement& xElement : xInstanceLayout.GetElements())
+		{
+			vk::VertexInputAttributeDescription xInstanceAttrDesc = vk::VertexInputAttributeDescription()
+				.setBinding(1)
+				.setLocation(uBindPoint)
+				.setOffset(xElement.m_uOffset)
+				.setFormat(Zenith_Vulkan::ShaderDataTypeToVulkanFormat(xElement._Type));
+			xAttrDescs.push_back(xInstanceAttrDesc);
+			uBindPoint++;
+		}
+
+		vk::VertexInputBindingDescription xInstanceBindDesc = vk::VertexInputBindingDescription()
+			.setBinding(1)
+			.setStride(xInstanceLayout.GetStride())
+			.setInputRate(vk::VertexInputRate::eInstance);
+		xBindDescs.push_back(xInstanceBindDesc);
 	}
-	xBuilder = xBuilder.WithDepthState(VceCompareFuncToVkCompareFunc(spec.m_eDepthCompareFunc), spec.m_bDepthTestEnabled, spec.m_bDepthWriteEnabled, false);
-	xBuilder = xBuilder.WithDepthFormat(vk::Format::eD32Sfloat);
 
-	//#TO last parameter here can be whatever
-	xBuilder = xBuilder.WithPass(Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(spec.m_xTargetSetup, LOAD_ACTION_DONTCARE, STORE_ACTION_DONTCARE, LOAD_ACTION_DONTCARE, STORE_ACTION_DONTCARE, RENDER_TARGET_USAGE_RENDERTARGET));
+	vk::PipelineVertexInputStateCreateInfo xVertexDesc = vk::PipelineVertexInputStateCreateInfo()
+		.setVertexBindingDescriptionCount(xBindDescs.size())
+		.setPVertexBindingDescriptions(xBindDescs.data())
+		.setVertexAttributeDescriptionCount(xAttrDescs.size())
+		.setPVertexAttributeDescriptions(xAttrDescs.data());
 
-	DescriptorThings xDescThings = HandleDescriptors(spec, xBuilder);
-
-	if (spec.m_bUsePushConstants) {
-		xBuilder = xBuilder.WithPushConstant(vk::ShaderStageFlagBits::eAll, 0);
-	}
-
-	if (spec.m_bUseTesselation)
-		xBuilder = xBuilder.WithTesselation();
-
-	//HACK HACK HACK HACK HACK HACK HACK HACK HACK
-	//HACK HACK HACK HACK HACK HACK HACK HACK HACK
-	//HACK HACK HACK HACK HACK HACK HACK HACK HACK
-	//if (spec.m_strName == "PointLights")
-		//xBuilder = xBuilder.WithRaster(vk::CullModeFlagBits::eBack);
-
-	xBuilder = xBuilder.WithRaster(vk::CullModeFlagBits::eNone, spec.m_bWireframe ? vk::PolygonMode::eLine : vk::PolygonMode::eFill);
-
-	xBuilder.Build(xPipelineOut, spec);
-
-	xPipelineOut.m_xPerFrameLayout = xDescThings.xPerFrameLayout;
-	xPipelineOut.m_xPerDrawLayout = xDescThings.xPerDrawLayout;
-	for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+	vk::PipelineInputAssemblyStateCreateInfo xTopology = vk::PipelineInputAssemblyStateCreateInfo();
+	switch (xSpec.m_xVertexInputDesc.m_eTopology)
 	{
-		xPipelineOut.m_axPerFrameSets[i] = xDescThings.xPerFrameSet;
-		xPipelineOut.m_axPerDrawSets[i] = xDescThings.xPerDrawSet;
+	case(MESH_TOPOLOGY_TRIANGLES):
+		xTopology.setTopology(vk::PrimitiveTopology::eTriangleList);
+		break;
+	default:
+		xTopology.setTopology(vk::PrimitiveTopology::eTriangleList);
+		break;
 	}
 
-	xPipelineOut.m_bUsePushConstants = spec.m_bUsePushConstants;
+	xPipelineInfo.setPVertexInputState(&xVertexDesc);
+	xPipelineInfo.setPInputAssemblyState(&xTopology);
+#pragma endregion
+
+#pragma region BlendStates
+	vk::PipelineColorBlendStateCreateInfo xBlendInfo;
+	vk::PipelineColorBlendAttachmentState axBlendInfo[FLUX_MAX_TARGETS];
+	for (u_int u = 0; u < FLUX_MAX_TARGETS; u++)
+	{
+		vk::PipelineColorBlendAttachmentState& xBlendInfo = axBlendInfo[u]
+			.setBlendEnable(xSpec.m_axBlendStates[u].m_bBlendEnabled)
+			.setAlphaBlendOp(vk::BlendOp::eAdd)
+			.setColorBlendOp(vk::BlendOp::eAdd)
+			.setSrcAlphaBlendFactor(VceBlendFactorToVKBlendFactor(xSpec.m_axBlendStates[u].m_eSrcBlendFactor))
+			.setSrcColorBlendFactor(VceBlendFactorToVKBlendFactor(xSpec.m_axBlendStates[u].m_eSrcBlendFactor))
+			.setDstAlphaBlendFactor(VceBlendFactorToVKBlendFactor(xSpec.m_axBlendStates[u].m_eDstBlendFactor))
+			.setDstColorBlendFactor(VceBlendFactorToVKBlendFactor(xSpec.m_axBlendStates[u].m_eDstBlendFactor));
+	}
+	xBlendInfo.setAttachmentCount(xSpec.m_pxTargetSetup->GetNumColourAttachments());
+	xBlendInfo.setPAttachments(axBlendInfo);
+
+	xPipelineInfo.setPColorBlendState(&xBlendInfo);
+#pragma endregion
+
+#pragma region DepthStencilState
+	vk::PipelineDepthStencilStateCreateInfo xDepthStencilInfo = vk::PipelineDepthStencilStateCreateInfo()
+		.setDepthCompareOp(VceCompareFuncToVkCompareFunc(xSpec.m_eDepthCompareFunc))
+		.setDepthTestEnable(xSpec.m_bDepthTestEnabled)
+		.setDepthWriteEnable(xSpec.m_bDepthWriteEnabled)
+		.setDepthBoundsTestEnable(false)
+		.setStencilTestEnable(false); //#TO_TODO: stencil
+
+	xPipelineInfo.setPDepthStencilState(&xDepthStencilInfo);
+#pragma endregion
+
+#pragma region RenderPass
+	xPipelineInfo.setRenderPass(Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(*xSpec.m_pxTargetSetup, LOAD_ACTION_DONTCARE, STORE_ACTION_DONTCARE, LOAD_ACTION_DONTCARE, STORE_ACTION_DONTCARE, RENDER_TARGET_USAGE_RENDERTARGET));
+#pragma endregion
+
+#pragma region RasterState
+	vk::PipelineRasterizationStateCreateInfo xRasterInfo = vk::PipelineRasterizationStateCreateInfo()
+		.setCullMode(vk::CullModeFlagBits::eNone)
+		.setFrontFace(vk::FrontFace::eCounterClockwise)
+		.setPolygonMode(xSpec.m_bWireframe ? vk::PolygonMode::eLine : vk::PolygonMode::eFill)
+		.setLineWidth(1.0f);
+
+	xPipelineInfo.setPRasterizationState(&xRasterInfo);
+#pragma endregion
+
+#pragma region Viewport
+	vk::PipelineViewportStateCreateInfo xViewportInfo = vk::PipelineViewportStateCreateInfo()
+		.setViewportCount(1)
+		.setScissorCount(1);
+
+	xPipelineInfo.setPViewportState(&xViewportInfo);
+#pragma endregion
+
+#pragma region DynamicState
+	vk::DynamicState aeDynamicState[] =
+	{
+		vk::DynamicState::eViewport,
+		vk::DynamicState::eScissor,
+	};
+	vk::PipelineDynamicStateCreateInfo xDynamicState = vk::PipelineDynamicStateCreateInfo()
+		.setDynamicStateCount(sizeof(aeDynamicState) / sizeof(aeDynamicState[0]))
+		.setPDynamicStates(aeDynamicState);
+
+	xPipelineInfo.setPDynamicState(&xDynamicState);
+#pragma endregion
+
+#pragma region Multisample
+	vk::PipelineMultisampleStateCreateInfo xMultisampleInfo = vk::PipelineMultisampleStateCreateInfo()
+		.setRasterizationSamples(vk::SampleCountFlagBits::e1);
+
+	xPipelineInfo.setPMultisampleState(&xMultisampleInfo);
+#pragma endregion
+
+#pragma region PipelineLayout
+	Zenith_Vulkan_RootSigBuilder::FromSpecification(xPipelineOut.m_xRootSig, xSpec.m_xPipelineLayout);
+	xPipelineInfo.setLayout(xPipelineOut.m_xRootSig.m_xLayout);
+#pragma endregion
+
+	xPipelineOut.m_xPipeline = Zenith_Vulkan::GetDevice().createGraphicsPipeline(VK_NULL_HANDLE, xPipelineInfo).value;
+}
+
+void Zenith_Vulkan_RootSigBuilder::FromSpecification(Zenith_Vulkan_RootSig& xRootSigOut, const Flux_PipelineLayout& xSpec)
+{
+	xRootSigOut.m_uNumDescriptorSets = xSpec.m_uNumDescriptorSets;
+	for (u_int uDescSet = 0; uDescSet < xSpec.m_uNumDescriptorSets; uDescSet++)
+	{
+		vk::DescriptorSetLayoutCreateInfo xInfo = vk::DescriptorSetLayoutCreateInfo();
+		const Flux_DescriptorSetLayout& xLayout = xSpec.m_axDescriptorSetLayouts[uDescSet];
+		vk::DescriptorSetLayoutBinding axBindings[FLUX_MAX_DESCRIPTOR_BINDINGS];
+		u_int uNumDescriptors = 0;
+		for (u_int uDesc = 0; uDesc < FLUX_MAX_DESCRIPTOR_BINDINGS; uDesc++)
+		{
+			if (xLayout.m_axBindings[uDesc].m_eType == DESCRIPTOR_TYPE_MAX)
+			{
+				break;
+			}
+
+			vk::DescriptorSetLayoutBinding& xBinding = axBindings[uDesc]
+				.setBinding(uDesc)
+				.setDescriptorCount(1)
+				.setStageFlags(vk::ShaderStageFlagBits::eAll);
+
+			switch (xLayout.m_axBindings[uDesc].m_eType)
+			{
+			case(DESCRIPTOR_TYPE_BUFFER):
+				xBinding.setDescriptorType(vk::DescriptorType::eUniformBuffer);
+				break;
+			case(DESCRIPTOR_TYPE_TEXTURE):
+				xBinding.setDescriptorType(vk::DescriptorType::eCombinedImageSampler);
+				break;
+			}
+
+			uNumDescriptors++;
+		}
+		xInfo.setBindingCount(uNumDescriptors);
+		xInfo.setPBindings(axBindings);
+		xInfo.setFlags(vk::DescriptorSetLayoutCreateFlagBits::eUpdateAfterBindPool);
+
+		xRootSigOut.m_axDescSetLayouts[uDescSet] = Zenith_Vulkan::GetDevice().createDescriptorSetLayout(xInfo);
+	}
+	vk::PushConstantRange xPushConstantRange(vk::ShaderStageFlagBits::eAll, 0, Zenith_Vulkan::GetPhysicalDevice().getProperties().limits.maxPushConstantsSize);
+	vk::PipelineLayoutCreateInfo xPipelineLayoutInfo = vk::PipelineLayoutCreateInfo()
+		.setPSetLayouts(xRootSigOut.m_axDescSetLayouts)
+		.setSetLayoutCount(xSpec.m_uNumDescriptorSets)
+		.setPushConstantRangeCount(1)
+		.setPPushConstantRanges(&xPushConstantRange);
+
+	xRootSigOut.m_xLayout = Zenith_Vulkan::GetDevice().createPipelineLayout(xPipelineLayoutInfo);
 }
