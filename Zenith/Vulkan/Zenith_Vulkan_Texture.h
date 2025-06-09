@@ -34,10 +34,12 @@ public:
 	const VmaAllocation& GetAllocation() const { return m_xAllocation; }
 	VmaAllocation* GetAllocation_Ptr() { return &m_xAllocation; }
 	VmaAllocationInfo* GetAllocationInfo_Ptr() { return &m_xAllocationInfo; }
+	const vk::Format GetTextureFormat() const { return m_eFormat; }
 
 	void SetImage(const vk::Image& xImage) { m_xImage = xImage; }
 	void SetImageView(const vk::ImageView& xView) { m_xImageView = xView; }
 	void SetAllocation(const VmaAllocation& xAlloc) { m_xAllocation = xAlloc; }
+	void SetFormat(const vk::Format eFormat) { m_eFormat = eFormat; }
 
 	const uint32_t GetWidth() const { return m_uWidth; }
 	const uint32_t GetHeight() const { return m_uHeight; }
@@ -56,6 +58,8 @@ private:
 	uint32_t m_uNumLayers = 0;
 	VmaAllocation m_xAllocation;
 	VmaAllocationInfo m_xAllocationInfo;
+
+	vk::Format m_eFormat = vk::Format::eUndefined;
 };
 
 class Zenith_Vulkan_Sampler

@@ -70,7 +70,7 @@ public:
 			{
 				const std::string strFilepath = xFile.path().string();
 				const std::string strFilename = xFile.path().stem().string();
-				Flux_Texture& xTex = Zenith_AssetHandler::AddTexture2D(strFilename, strFilepath.c_str());
+				Flux_Texture* pxTex = Zenith_AssetHandler::AddTexture2D(strFilename, strFilepath.c_str());
 				const uint32_t uMatIndex = GetMaterialIndexFromTextureName(strFilename);
 				const std::string strMatName = strLeaf + std::to_string(uMatIndex);
 				if (!Zenith_AssetHandler::MaterialExists(strMatName))
@@ -82,11 +82,11 @@ public:
 				//#TO_TODO: should probably have an enum for this
 				if (strFilename.find("Diffuse") != std::string::npos)
 				{
-					xMat.SetDiffuse(&xTex);
+					xMat.SetDiffuse(pxTex);
 				}
 				else if (strFilename.find("Normals") != std::string::npos)
 				{
-					xMat.SetNormal(&xTex);
+					xMat.SetNormal(pxTex);
 				}
 				else
 				{

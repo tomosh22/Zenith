@@ -22,31 +22,27 @@ public:
 	static vk::Extent2D& GetExent() { return s_xExtent; }
 
 	static vk::Semaphore& GetCurrentImageAvailableSemaphore();
-	static vk::Semaphore& GetCurrentRenderCompleteSemaphore();
-	static vk::Fence& GetCurrentInFlightFence();
 
 	static uint32_t GetCurrentFrameIndex() { return s_uFrameIndex; }
-
-	static Flux_TargetSetup& GetTargetSetup() { return s_xTargetSetup; }
 
 	static vk::Format GetFormat() { return s_xImageFormat; }
 
 	static void CopyToFramebuffer();
+
+	static bool ShouldWaitOnImageAvailableSemaphore();
 private:
 	static void BindAsTarget();
+	static void InitialiseCopyToFramebufferCommands();
 	static vk::SwapchainKHR s_xSwapChain;
 	//#TO_TODO: make these arrays, not vectors
 	static std::vector<vk::Image> s_xImages;
 	static std::vector<vk::ImageView> s_xImageViews;
 	static vk::Format s_xImageFormat;
 	static vk::Extent2D s_xExtent;
-
 	static vk::Semaphore s_axImageAvailableSemaphores[MAX_FRAMES_IN_FLIGHT];
-	static vk::Semaphore s_axRenderFinishedSemaphores[MAX_FRAMES_IN_FLIGHT];
-	static vk::Fence s_axInFlightFences[MAX_FRAMES_IN_FLIGHT];
-
 	static uint32_t s_uCurrentImageIndex; //set by acquireNextImageKHR
 	static uint32_t s_uFrameIndex; //set by us
+	static bool s_bShouldWaitOnImageAvailableSem;
 
-	static Flux_TargetSetup s_xTargetSetup;
+	static Flux_TargetSetup s_axTargetSetups[MAX_FRAMES_IN_FLIGHT];
 };

@@ -63,9 +63,10 @@ void Flux_Shadows::Initialise()
 	xBuilder.m_uHeight = ZENITH_FLUX_CSM_RESOLUTION;
 	xBuilder.m_eDepthStencilFormat = DEPTHSTENCIL_FORMAT_D32_SFLOAT;
 	
+	
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
-		xBuilder.Build(g_axCSMs[u], RENDER_TARGET_TYPE_DEPTHSTENCIL);
+		xBuilder.Build(g_axCSMs[u], RENDER_TARGET_TYPE_DEPTHSTENCIL, "CSM " + std::to_string(u));
 		g_axCSMTargetSetups[u].AssignDepthStencil(&g_axCSMs[u]);
 
 		Flux_MemoryManager::InitialiseConstantBuffer(nullptr, sizeof(Zenith_Maths::Matrix4), g_xShadowMatrixBuffers[u]);
@@ -80,7 +81,7 @@ void Flux_Shadows::Initialise()
 		Zenith_DebugVariables::AddVector3({ "Shadows", "Test Point" + std::to_string(u) }, dbg_xTestPoints[u], -10000, 10000);
 	}
 	Zenith_DebugVariables::AddFloat({"Shadows", "Z Multiplier"}, dbg_fZMultiplier, -10.f, 10.f);
-	Zenith_DebugVariables::AddTexture({ "Shadows", "CSM0" }, g_axCSMs->m_axTargetTextures[0]);
+	Zenith_DebugVariables::AddTexture({ "Shadows", "CSM0" }, *g_axCSMs->m_pxTargetTexture);
 #endif
 }
 
@@ -96,10 +97,10 @@ void Flux_Shadows::Render()
 		g_xCommandBuffer.SubmitTargetSetup(g_axCSMTargetSetups[u], false, true, false);
 		g_xCommandBuffer.SetPipeline(&Flux_StaticMeshes::GetShadowPipeline());
 
-		g_xCommandBuffer.BeginBind(BINDING_FREQUENCY_PER_FRAME);
+		g_xCommandBuffer.BeginBind(0);
 		g_xCommandBuffer.BindBuffer(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer(), 0);
 
-		g_xCommandBuffer.BeginBind(BINDING_FREQUENCY_PER_DRAW);
+		g_xCommandBuffer.BeginBind(1);
 		g_xCommandBuffer.BindBuffer(&g_xShadowMatrixBuffers[u].GetBuffer(), 0);
 
 		Flux_StaticMeshes::RenderToShadowMap(g_xCommandBuffer);
@@ -108,10 +109,10 @@ void Flux_Shadows::Render()
 		{
 			g_xCommandBuffer.SetPipeline(&Flux_Terrain::GetShadowPipeline());
 
-			g_xCommandBuffer.BeginBind(BINDING_FREQUENCY_PER_FRAME);
+			g_xCommandBuffer.BeginBind(0);
 			g_xCommandBuffer.BindBuffer(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer(), 0);
 
-			g_xCommandBuffer.BeginBind(BINDING_FREQUENCY_PER_DRAW);
+			g_xCommandBuffer.BeginBind(1);
 			g_xCommandBuffer.BindBuffer(&g_xShadowMatrixBuffers[u].GetBuffer(), 0);
 
 			Flux_Terrain::RenderToShadowMap(g_xCommandBuffer);
@@ -136,7 +137,7 @@ Zenith_Maths::Matrix4 Flux_Shadows::GetSunViewProjMatrix(const uint32_t uIndex)
 
 Flux_Texture& Flux_Shadows::GetCSMTexture(const uint32_t u)
 {
-	return g_axCSMs[u].m_axTargetTextures[Flux_Swapchain::GetCurrentFrameIndex()];
+	return *g_axCSMs[u].m_pxTargetTexture;
 }
 
 Flux_ConstantBuffer& Flux_Shadows::GetShadowMatrixBuffer(const uint32_t u)

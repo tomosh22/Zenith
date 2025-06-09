@@ -15,6 +15,7 @@ public:
 
 	static Flux_TargetSetup s_xMRTTarget;
 	static Flux_TargetSetup s_xFinalRenderTarget;
+	static Flux_TargetSetup s_xFinalRenderTarget_NoDepth;
 
 	static struct Flux_RenderAttachment s_xDepthBuffer;
 
@@ -24,7 +25,7 @@ public:
 
 	static Flux_ConstantBuffer s_xFrameConstantsBuffer;
 
-	static Flux_Texture s_xBlankTexture2D;
+	static Flux_Texture* s_pxBlankTexture2D;
 	static Flux_MeshGeometry s_xBlankMesh;
 
 	static ColourFormat s_aeMRTFormats[MRT_INDEX_COUNT];
@@ -41,6 +42,8 @@ public:
 	static float GetFarPlane();
 	static float GetFOV();
 	static float GetAspectRatio();
+
+	static Flux_DescriptorSetLayout s_xFrameConstantsLayout;
 private:
 	struct FrameConstants
 	{

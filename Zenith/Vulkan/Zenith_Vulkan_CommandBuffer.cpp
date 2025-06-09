@@ -58,7 +58,7 @@ void Zenith_Vulkan_CommandBuffer::BeginRecording()
 		m_xCurrentCmdBuffer.setScissor(0, 1, &m_pxParent->m_xScissor);
 	}
 
-	m_eCurrentBindFreq = BINDING_FREQUENCY_MAX;
+	m_uCurrentBindFreq = FLUX_MAX_DESCRIPTOR_SET_LAYOUTS;
 
 	m_bIsRecording = true;
 }
@@ -80,7 +80,7 @@ void Zenith_Vulkan_CommandBuffer::EndRecording(RenderOrder eOrder, bool bEndPass
 		Zenith_Vulkan::SubmitCommandBuffer(this, eOrder);
 	}
 
-	m_eCurrentBindFreq = BINDING_FREQUENCY_MAX;
+	m_uCurrentBindFreq = FLUX_MAX_DESCRIPTOR_SET_LAYOUTS;
 
 	m_bIsRecording = false;
 }
@@ -150,96 +150,114 @@ void Zenith_Vulkan_CommandBuffer::SetIndexBuffer(const Flux_IndexBuffer& xIndexB
 void Zenith_Vulkan_CommandBuffer::PrepareDrawCallDescriptors()
 {
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
-	if (m_bDescriptorDirty)
+	//if (m_bDescriptorDirty)
 	{
-		vk::DescriptorSetLayout& xLayout = m_pxCurrentPipeline->m_xPerDrawLayout;
-
-		vk::DescriptorSetAllocateInfo xInfo = vk::DescriptorSetAllocateInfo()
-			.setDescriptorPool(Zenith_Vulkan::GetCurrentPerFrameDescriptorPool())
-			.setDescriptorSetCount(1)
-			.setPSetLayouts(&xLayout);
-
-		m_xCurrentDescSet = xDevice.allocateDescriptorSets(xInfo)[0];
-
-		uint32_t uNumTextures = 0;
-		for (uint32_t i = 0; i < MAX_BINDINGS; i++)
+		for (u_int uDescSet = 0; uDescSet < m_pxCurrentPipeline->m_xRootSig.m_uNumDescriptorSets; uDescSet++)
 		{
-			if (m_xBindings[BINDING_FREQUENCY_PER_DRAW].m_xTextures[i] != nullptr)
-			{
-				uNumTextures++;
-			}
-		}
+			vk::DescriptorSetLayout& xLayout = m_pxCurrentPipeline->m_xRootSig.m_axDescSetLayouts[uDescSet];
 
-		uint32_t uNumBuffers = 0;
-		for (uint32_t i = 0; i < MAX_BINDINGS; i++)
-		{
-			if (m_xBindings[BINDING_FREQUENCY_PER_DRAW].m_xBuffers[i] != nullptr)
-			{
-				uNumBuffers++;
-			}
-		}
+			vk::DescriptorSetAllocateInfo xInfo = vk::DescriptorSetAllocateInfo()
+				.setDescriptorPool(Zenith_Vulkan::GetCurrentPerFrameDescriptorPool())
+				.setDescriptorSetCount(1)
+				.setPSetLayouts(&xLayout);
 
-		std::vector<vk::DescriptorImageInfo> xTexInfos(uNumTextures);
-		std::vector<vk::WriteDescriptorSet> xTexWrites(uNumTextures);
-		uint32_t uCount = 0;
-		for (uint32_t i = 0; i < MAX_BINDINGS; i++)
-		{
-			Zenith_Vulkan_Texture* pxTex = m_xBindings[BINDING_FREQUENCY_PER_DRAW].m_xTextures[i];
-			if (!pxTex)
+			m_xCurrentDescSet = xDevice.allocateDescriptorSets(xInfo)[0];
+
+			uint32_t uNumTextures = 0;
+			for (uint32_t i = 0; i < MAX_BINDINGS; i++)
 			{
-				continue;
+				if (m_xBindings[uDescSet].m_xTextures[i] != nullptr)
+				{
+					uNumTextures++;
+				}
 			}
 
-			//#TO_TODO: different samplers
-			vk::DescriptorImageInfo& xInfo = xTexInfos.at(uCount)
-				.setSampler(Flux_Graphics::s_xDefaultSampler.GetSampler())
-				.setImageView(pxTex->GetImageView())
-				.setImageLayout(vk::ImageLayout::eShaderReadOnlyOptimal);
-
-			vk::WriteDescriptorSet& xWrite = xTexWrites.at(uCount)
-				.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
-				.setDstSet(m_xCurrentDescSet)
-				.setDstBinding(i)
-				.setDstArrayElement(0)
-				.setDescriptorCount(1)
-				.setPImageInfo(&xInfo);
-
-			uCount++;
-		}
-
-		xDevice.updateDescriptorSets(xTexWrites.size(), xTexWrites.data(), 0, nullptr);
-
-		std::vector<vk::DescriptorBufferInfo> xBufferInfos(uNumBuffers);
-		std::vector<vk::WriteDescriptorSet> xBufferWrites(uNumBuffers);
-		uCount = 0;
-		for (uint32_t i = 0; i < MAX_BINDINGS; i++)
-		{
-			Zenith_Vulkan_Buffer* pxBuf = m_xBindings[BINDING_FREQUENCY_PER_DRAW].m_xBuffers[i];
-			if (!pxBuf)
+			uint32_t uNumBuffers = 0;
+			for (uint32_t i = 0; i < MAX_BINDINGS; i++)
 			{
-				continue;
+				if (m_xBindings[uDescSet].m_xBuffers[i] != nullptr)
+				{
+					uNumBuffers++;
+				}
 			}
 
-			vk::DescriptorBufferInfo& xInfo = xBufferInfos.at(uCount)
-				.setBuffer(pxBuf->GetBuffer())
-				.setOffset(0)
-				.setRange(pxBuf->GetSize());
+			std::vector<vk::DescriptorImageInfo> xTexInfos(uNumTextures);
+			std::vector<vk::WriteDescriptorSet> xTexWrites(uNumTextures);
+			uint32_t uCount = 0;
+			for (uint32_t i = 0; i < MAX_BINDINGS; i++)
+			{
+				Zenith_Vulkan_Texture* pxTex = m_xBindings[uDescSet].m_xTextures[i];
+				if (!pxTex)
+				{
+					continue;
+				}
 
-			vk::WriteDescriptorSet& xWrite = xBufferWrites.at(uCount)
-				.setDescriptorType(vk::DescriptorType::eUniformBuffer)
-				.setDstSet(m_xCurrentDescSet)
-				.setDstBinding(i)
-				.setDstArrayElement(0)
-				.setDescriptorCount(1)
-				.setPBufferInfo(&xInfo);
+				vk::ImageLayout eLayout;
+				switch (pxTex->GetTextureFormat())
+				{
+				case vk::Format::eD32Sfloat:
+					eLayout = vk::ImageLayout::eDepthReadOnlyOptimal;
+					break;
+				case vk::Format::eD32SfloatS8Uint:
+					eLayout = vk::ImageLayout::eDepthStencilReadOnlyOptimal;
+					break;
+				default:
+					eLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+				}
 
-			uCount++;
+				//#TO_TODO: different samplers
+				vk::DescriptorImageInfo& xInfo = xTexInfos.at(uCount)
+					.setSampler(Flux_Graphics::s_xDefaultSampler.GetSampler())
+					.setImageView(pxTex->GetImageView())
+					.setImageLayout(eLayout);
+
+				vk::WriteDescriptorSet& xWrite = xTexWrites.at(uCount)
+					.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
+					.setDstSet(m_xCurrentDescSet)
+					.setDstBinding(i)
+					.setDstArrayElement(0)
+					.setDescriptorCount(1)
+					.setPImageInfo(&xInfo);
+
+				uCount++;
+			}
+
+			xDevice.updateDescriptorSets(xTexWrites.size(), xTexWrites.data(), 0, nullptr);
+
+			std::vector<vk::DescriptorBufferInfo> xBufferInfos(uNumBuffers);
+			std::vector<vk::WriteDescriptorSet> xBufferWrites(uNumBuffers);
+			uCount = 0;
+			for (uint32_t i = 0; i < MAX_BINDINGS; i++)
+			{
+				Zenith_Vulkan_Buffer* pxBuf = m_xBindings[uDescSet].m_xBuffers[i];
+				if (!pxBuf)
+				{
+					continue;
+				}
+
+				vk::DescriptorBufferInfo& xInfo = xBufferInfos.at(uCount)
+					.setBuffer(pxBuf->GetBuffer())
+					.setOffset(0)
+					.setRange(pxBuf->GetSize());
+
+				vk::WriteDescriptorSet& xWrite = xBufferWrites.at(uCount)
+					.setDescriptorType(vk::DescriptorType::eUniformBuffer)
+					.setDstSet(m_xCurrentDescSet)
+					.setDstBinding(i)
+					.setDstArrayElement(0)
+					.setDescriptorCount(1)
+					.setPBufferInfo(&xInfo);
+
+				uCount++;
+			}
+
+			xDevice.updateDescriptorSets(xBufferWrites.size(), xBufferWrites.data(), 0, nullptr);
+
+			m_xCurrentCmdBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pxCurrentPipeline->m_xRootSig.m_xLayout, uDescSet, 1, &m_xCurrentDescSet, 0, nullptr);
 		}
-
-		xDevice.updateDescriptorSets(xBufferWrites.size(), xBufferWrites.data(), 0, nullptr);
+		m_bDescriptorDirty = false;
+		
 	}
-	m_bDescriptorDirty = false;
-	m_xCurrentCmdBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pxCurrentPipeline->m_xPipelineLayout, (int)BINDING_FREQUENCY_PER_DRAW, 1, &m_xCurrentDescSet, 0, nullptr);
 }
 
 void Zenith_Vulkan_CommandBuffer::Draw(uint32_t uNumVerts)
@@ -305,26 +323,22 @@ void Zenith_Vulkan_CommandBuffer::SubmitTargetSetup(Flux_TargetSetup& xTargetSet
 		.setFramebuffer(m_xCurrentFramebuffer)
 		.setRenderArea({ {0,0}, {uWidth, uHeight} });
 
-	vk::ClearValue* axClearColour = nullptr;
+	vk::ClearValue axClearColour[FLUX_MAX_TARGETS+1];
 	if (eColourLoad == LOAD_ACTION_CLEAR || eDepthStencilLoad == LOAD_ACTION_CLEAR)
 	{
 		bool bHasDepth = xTargetSetup.m_pxDepthStencil != nullptr;
-		const uint32_t uNumAttachments = bHasDepth ? uNumColourAttachments + 1 : uNumColourAttachments;
-		axClearColour = new vk::ClearValue[uNumAttachments];
-		std::array<float, 4> tempColour{ 0.f,0.f,0.f,1.f };
-		for (uint32_t i = 0; i < uNumAttachments; i++)
+		const uint32_t uNumAttachments = bHasDepth && eDepthStencilLoad == LOAD_ACTION_CLEAR ? uNumColourAttachments + 1 : uNumColourAttachments;
+		for (uint32_t i = 0; i < uNumColourAttachments; i++)
 		{
-			axClearColour[i].color = { vk::ClearColorValue(tempColour) };
-			axClearColour[i].depthStencil = vk::ClearDepthStencilValue(1, 0);
+			axClearColour[i].color = vk::ClearColorValue(1.f, 1.f, 1.f, 1.f);
 		}
+		axClearColour[uNumColourAttachments].depthStencil = vk::ClearDepthStencilValue(0, 0);
 
 		xRenderPassInfo.clearValueCount = uNumAttachments;
 		xRenderPassInfo.pClearValues = axClearColour;
 	}
 
 	m_xCurrentCmdBuffer.beginRenderPass(xRenderPassInfo, m_bIsParent ? vk::SubpassContents::eSecondaryCommandBuffers : vk::SubpassContents::eInline);
-
-	if (axClearColour != nullptr) delete[] axClearColour;
 
 	m_xViewport.x = 0;
 	m_xViewport.y = 0;
@@ -346,75 +360,31 @@ void Zenith_Vulkan_CommandBuffer::SubmitTargetSetup(Flux_TargetSetup& xTargetSet
 void Zenith_Vulkan_CommandBuffer::SetPipeline(Zenith_Vulkan_Pipeline* pxPipeline)
 {
 	m_xCurrentCmdBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pxPipeline->m_xPipeline);
-
-	const vk::DescriptorSet& xPerFrameSet = pxPipeline->m_axPerFrameSets[Zenith_Vulkan_Swapchain::GetCurrentFrameIndex()];
-
-	m_xCurrentCmdBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pxPipeline->m_xPipelineLayout, 0, 1, &xPerFrameSet, 0, nullptr);
-
 	m_pxCurrentPipeline = pxPipeline;
 }
 
 void Zenith_Vulkan_CommandBuffer::BindTexture(Zenith_Vulkan_Texture* pxTexture, uint32_t uBindPoint)
 {
-	Zenith_Assert(m_eCurrentBindFreq < BINDING_FREQUENCY_MAX, "Haven't called BeginBind");
+	Zenith_Assert(m_uCurrentBindFreq < FLUX_MAX_DESCRIPTOR_SET_LAYOUTS, "Haven't called BeginBind");
 
 	if (pxTexture != m_apxTextureCache[uBindPoint])
 	{
 		m_bDescriptorDirty = true;
 		m_apxTextureCache[uBindPoint] = pxTexture;
 	}
-
-	if (m_eCurrentBindFreq == BINDING_FREQUENCY_PER_FRAME) {
-		vk::DescriptorImageInfo xInfo = vk::DescriptorImageInfo()
-			.setSampler(Flux_Graphics::s_xDefaultSampler.GetSampler())
-			.setImageView(pxTexture->GetImageView())
-			.setImageLayout(vk::ImageLayout::eShaderReadOnlyOptimal);
-
-		vk::WriteDescriptorSet xWrite = vk::WriteDescriptorSet()
-			.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
-			.setDstSet(m_pxCurrentPipeline->m_axPerFrameSets[Zenith_Vulkan_Swapchain::GetCurrentFrameIndex()])
-			.setDstBinding(uBindPoint)
-			.setDstArrayElement(0)
-			.setDescriptorCount(1)
-			.setPImageInfo(&xInfo);
-
-		Zenith_Vulkan::GetDevice().updateDescriptorSets(1, &xWrite, 0, nullptr);
-	}
-	else if (m_eCurrentBindFreq == BINDING_FREQUENCY_PER_DRAW)
-	{
-		m_xBindings[m_eCurrentBindFreq].m_xTextures[uBindPoint] = pxTexture;
-	}
+	m_xBindings[m_uCurrentBindFreq].m_xTextures[uBindPoint] = pxTexture;
 }
 
 void Zenith_Vulkan_CommandBuffer::BindBuffer(Zenith_Vulkan_Buffer* pxBuffer, uint32_t uBindPoint)
 {
-	Zenith_Assert(m_eCurrentBindFreq < BINDING_FREQUENCY_MAX, "Haven't called BeginBind");
+	Zenith_Assert(m_uCurrentBindFreq < FLUX_MAX_DESCRIPTOR_SET_LAYOUTS, "Haven't called BeginBind");
 
 	if (pxBuffer != m_apxBufferCache[uBindPoint])
 	{
 		m_bDescriptorDirty = true;
 		m_apxBufferCache[uBindPoint] = pxBuffer;
 	}
-
-	if (m_eCurrentBindFreq == BINDING_FREQUENCY_PER_FRAME) {
-		vk::DescriptorBufferInfo xInfo = vk::DescriptorBufferInfo()
-			.setBuffer(pxBuffer->GetBuffer())
-			.setOffset(0)
-			.setRange(pxBuffer->GetSize());
-
-		vk::WriteDescriptorSet xWrite = vk::WriteDescriptorSet()
-			.setDescriptorType(vk::DescriptorType::eUniformBuffer)
-			.setDstSet(m_pxCurrentPipeline->m_axPerFrameSets[Zenith_Vulkan_Swapchain::GetCurrentFrameIndex()])
-			.setDstBinding(uBindPoint)
-			.setDescriptorCount(1)
-			.setPBufferInfo(&xInfo);
-
-		Zenith_Vulkan::GetDevice().updateDescriptorSets(1, &xWrite, 0, nullptr);
-	}
-	else if (m_eCurrentBindFreq == BINDING_FREQUENCY_PER_DRAW)
-	{
-		m_xBindings[m_eCurrentBindFreq].m_xBuffers[uBindPoint] = pxBuffer;
-	}
+	m_xBindings[m_uCurrentBindFreq].m_xBuffers[uBindPoint] = pxBuffer;
 }
 
 void Zenith_Vulkan_CommandBuffer::BindAccelerationStruct(void* pxStruct, uint32_t uBindPoint) {
@@ -449,17 +419,17 @@ void Zenith_Vulkan_CommandBuffer::BindAccelerationStruct(void* pxStruct, uint32_
 
 void Zenith_Vulkan_CommandBuffer::PushConstant(void* pData, size_t uSize)
 {
-	m_xCurrentCmdBuffer.pushConstants(m_pxCurrentPipeline->m_xPipelineLayout, vk::ShaderStageFlagBits::eAll, 0, uSize, pData);
+	m_xCurrentCmdBuffer.pushConstants(m_pxCurrentPipeline->m_xRootSig.m_xLayout, vk::ShaderStageFlagBits::eAll, 0, uSize, pData);
 }
 
-void Zenith_Vulkan_CommandBuffer::BeginBind(BindingFrequency eFreq)
+void Zenith_Vulkan_CommandBuffer::BeginBind(u_int uDescSet)
 {
 	for (uint32_t i = 0; i < MAX_BINDINGS; i++)
 	{
-		m_xBindings[eFreq].m_xBuffers[i] = nullptr;
-		m_xBindings[eFreq].m_xTextures[i] = nullptr;
+		m_xBindings[uDescSet].m_xBuffers[i] = nullptr;
+		m_xBindings[uDescSet].m_xTextures[i] = nullptr;
 	}
-	m_eCurrentBindFreq = eFreq;
+	m_uCurrentBindFreq = uDescSet;
 }
 void Zenith_Vulkan_CommandBuffer::ImageTransitionBarrier(vk::Image xImage, vk::ImageLayout eOldLayout, vk::ImageLayout eNewLayout, vk::ImageAspectFlags eAspect, vk::PipelineStageFlags eSrcStage, vk::PipelineStageFlags eDstStage, int uMipLevel, int uLayer)
 {

@@ -49,13 +49,34 @@ vk::Device Zenith_Vulkan::s_xDevice;
 vk::Queue Zenith_Vulkan::s_axQueues[COMMANDTYPE_MAX];
 vk::CommandPool Zenith_Vulkan::s_axCommandPools[COMMANDTYPE_MAX];
 vk::DescriptorPool Zenith_Vulkan::s_xDefaultDescriptorPool;
-vk::DescriptorPool Zenith_Vulkan::s_axPerFrameDescriptorPools[MAX_FRAMES_IN_FLIGHT];
+Zenith_Vulkan_PerFrame Zenith_Vulkan::s_axPerFrame[MAX_FRAMES_IN_FLIGHT];
+Zenith_Vulkan_PerFrame* Zenith_Vulkan::s_pxCurrentFrame = nullptr;
 
 std::vector<const Zenith_Vulkan_CommandBuffer*> Zenith_Vulkan::s_xPendingCommandBuffers[RENDER_ORDER_MAX];
 
-const vk::DescriptorPool& Zenith_Vulkan::GetCurrentPerFrameDescriptorPool() { return s_axPerFrameDescriptorPools[Zenith_Vulkan_Swapchain::GetCurrentFrameIndex()]; }
-
 DEBUGVAR bool dbg_bSubmitDrawCalls = true;
+const vk::DescriptorPool& Zenith_Vulkan::GetCurrentPerFrameDescriptorPool()
+{
+	//#TO_TODO: current thread
+	return s_pxCurrentFrame->m_axDescriptorPools[0];
+}
+vk::Fence& Zenith_Vulkan::GetCurrentInFlightFence()
+{
+	return s_pxCurrentFrame->m_xFence;
+}
+
+vk::Fence& Zenith_Vulkan::GetPreviousInFlightFence()
+{
+	uint32_t uPreviousFrame = (Zenith_Vulkan_Swapchain::GetCurrentFrameIndex() + MAX_FRAMES_IN_FLIGHT - 1) % MAX_FRAMES_IN_FLIGHT;
+	return s_axPerFrame[uPreviousFrame].m_xFence;
+}
+
+vk::Fence& Zenith_Vulkan::GetNextInFlightFence()
+{
+	uint32_t uPreviousFrame = (Zenith_Vulkan_Swapchain::GetCurrentFrameIndex() - MAX_FRAMES_IN_FLIGHT - 1) % MAX_FRAMES_IN_FLIGHT;
+	return s_axPerFrame[uPreviousFrame].m_xFence;
+}
+
 const bool Zenith_Vulkan::ShouldSubmitDrawCalls() { return dbg_bSubmitDrawCalls; }
 
 void Zenith_Vulkan::Initialise()
@@ -71,14 +92,21 @@ void Zenith_Vulkan::Initialise()
 	CreateCommandPools();
 	CreateDefaultDescriptorPool();
 
+	for (Zenith_Vulkan_PerFrame& xFrame : s_axPerFrame)
+	{
+		xFrame.Initialise();
+	}
+
 #ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_DebugVariables::AddBoolean({ "Render", "Submit Draw Calls" }, dbg_bSubmitDrawCalls);
 #endif
+
+	s_pxCurrentFrame = &s_axPerFrame[0];
 }
 
 void Zenith_Vulkan::BeginFrame()
 {
-	RecreatePerFrameDescriptorPool();
+	s_pxCurrentFrame->BeginFrame();
 }
 
 void Zenith_Vulkan::EndFrame()
@@ -98,14 +126,15 @@ void Zenith_Vulkan::EndFrame()
 		xPlatformMemoryCmdBufs.push_back(xBuf);
 	}
 
+	const bool bShouldWait = Zenith_Vulkan_Swapchain::ShouldWaitOnImageAvailableSemaphore();
 	vk::SubmitInfo xMemorySubmitInfo = vk::SubmitInfo()
 		.setCommandBufferCount(xPlatformMemoryCmdBufs.size())
 		.setPCommandBuffers(xPlatformMemoryCmdBufs.data())
-		.setPWaitSemaphores(&Zenith_Vulkan_Swapchain::GetCurrentImageAvailableSemaphore())
 		.setPSignalSemaphores(&xMemorySemaphore)
-		.setWaitSemaphoreCount(1)
 		.setSignalSemaphoreCount(1)
-		.setWaitDstStageMask(eMemWaitStages);
+		.setWaitDstStageMask(eMemWaitStages)
+		.setPWaitSemaphores(bShouldWait ? &Zenith_Vulkan_Swapchain::GetCurrentImageAvailableSemaphore() : nullptr)
+		.setWaitSemaphoreCount(bShouldWait);
 
 	//#TO_TODO: change this to copy queue, how do I make sure this finishes before graphics?
 	s_axQueues[COMMANDTYPE_GRAPHICS].submit(xMemorySubmitInfo, VK_NULL_HANDLE);
@@ -124,12 +153,12 @@ void Zenith_Vulkan::EndFrame()
 		.setCommandBufferCount(xPlatformCmdBufs.size())
 		.setPCommandBuffers(xPlatformCmdBufs.data())
 		.setPWaitSemaphores(&xMemorySemaphore)
-		.setPSignalSemaphores(&Zenith_Vulkan_Swapchain::GetCurrentRenderCompleteSemaphore())
+		.setPSignalSemaphores(nullptr)
 		.setWaitSemaphoreCount(1)
-		.setSignalSemaphoreCount(1)
+		.setSignalSemaphoreCount(0)
 		.setWaitDstStageMask(eRenderWaitStages);
 
-	s_axQueues[COMMANDTYPE_GRAPHICS].submit(xRenderSubmitInfo, Zenith_Vulkan_Swapchain::GetCurrentInFlightFence());
+	s_axQueues[COMMANDTYPE_GRAPHICS].submit(xRenderSubmitInfo, GetCurrentInFlightFence());
 
 	for (uint32_t i = 0; i < RENDER_ORDER_MAX; i++)
 	{
@@ -138,35 +167,8 @@ void Zenith_Vulkan::EndFrame()
 
 	//#TO_TODO: plug semaphore leak
 	//s_xDevice.destroySemaphore(xMemorySemaphore);
-}
 
-void Zenith_Vulkan::RecreatePerFrameDescriptorPool()
-{
-	vk::DescriptorPoolSize axPoolSizes[] =
-	{
-		{ vk::DescriptorType::eSampler, 10000 },
-		{ vk::DescriptorType::eCombinedImageSampler, 10000 },
-		{ vk::DescriptorType::eSampledImage, 10000 },
-		{ vk::DescriptorType::eStorageImage, 10000 },
-		{ vk::DescriptorType::eUniformTexelBuffer, 10000 },
-		{ vk::DescriptorType::eStorageTexelBuffer, 10000 },
-		{ vk::DescriptorType::eUniformBuffer, 10000 },
-		{ vk::DescriptorType::eStorageBuffer, 10000 },
-		{ vk::DescriptorType::eUniformBufferDynamic, 10000 },
-		{ vk::DescriptorType::eStorageBufferDynamic, 10000 },
-		{ vk::DescriptorType::eInputAttachment, 10000 }
-	};
-
-	vk::DescriptorPoolCreateInfo xPoolInfo = vk::DescriptorPoolCreateInfo()
-		.setPoolSizeCount(COUNT_OF(axPoolSizes))
-		.setPPoolSizes(axPoolSizes)
-		.setMaxSets(10000)
-		.setFlags(vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet | vk::DescriptorPoolCreateFlagBits::eUpdateAfterBind);
-
-	vk::DescriptorPool& xPool = s_axPerFrameDescriptorPools[Zenith_Vulkan_Swapchain::GetCurrentFrameIndex()];
-
-	s_xDevice.destroyDescriptorPool(xPool);
-	xPool = s_xDevice.createDescriptorPool(xPoolInfo);
+	s_pxCurrentFrame = &s_axPerFrame[Zenith_Vulkan_Swapchain::GetCurrentFrameIndex()];
 }
 
 void Zenith_Vulkan::CreateInstance()
@@ -229,7 +231,7 @@ void Zenith_Vulkan::CreateDebugMessenger()
 	s_xDebugMessenger = s_xInstance.createDebugUtilsMessengerEXT(
 		xCreateInfo,
 		nullptr,
-		vk::DispatchLoaderDynamic(s_xInstance, vkGetInstanceProcAddr)
+		vk::detail::DispatchLoaderDynamic(s_xInstance, vkGetInstanceProcAddr)
 	);
 
 	Zenith_Log("Vulkan debug messenger created");
@@ -492,3 +494,45 @@ void Zenith_Vulkan::ImGuiBeginFrame()
 	ImGui::NewFrame();
 }
 #endif
+
+void Zenith_Vulkan_PerFrame::Initialise()
+{
+	vk::DescriptorPoolSize axPoolSizes[] =
+	{
+		{ vk::DescriptorType::eSampler, 10000 },
+		{ vk::DescriptorType::eCombinedImageSampler, 10000 },
+		{ vk::DescriptorType::eSampledImage, 10000 },
+		{ vk::DescriptorType::eStorageImage, 10000 },
+		{ vk::DescriptorType::eUniformTexelBuffer, 10000 },
+		{ vk::DescriptorType::eStorageTexelBuffer, 10000 },
+		{ vk::DescriptorType::eUniformBuffer, 10000 },
+		{ vk::DescriptorType::eStorageBuffer, 10000 },
+		{ vk::DescriptorType::eUniformBufferDynamic, 10000 },
+		{ vk::DescriptorType::eStorageBufferDynamic, 10000 },
+		{ vk::DescriptorType::eInputAttachment, 10000 }
+	};
+
+	vk::DescriptorPoolCreateInfo xPoolInfo = vk::DescriptorPoolCreateInfo()
+		.setPoolSizeCount(COUNT_OF(axPoolSizes))
+		.setPPoolSizes(axPoolSizes)
+		.setMaxSets(10000)
+		.setFlags(vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet | vk::DescriptorPoolCreateFlagBits::eUpdateAfterBind);
+
+	for (vk::DescriptorPool& xPool : m_axDescriptorPools)
+	{
+		xPool = Zenith_Vulkan::GetDevice().createDescriptorPool(xPoolInfo);
+	}
+
+	vk::FenceCreateInfo xFenceInfo = vk::FenceCreateInfo()
+		.setFlags(vk::FenceCreateFlagBits::eSignaled);
+	m_xFence = Zenith_Vulkan::GetDevice().createFence(xFenceInfo);
+}
+
+void Zenith_Vulkan_PerFrame::BeginFrame()
+{
+	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
+	xDevice.waitForFences(1, &m_xFence, VK_TRUE, UINT64_MAX);
+	xDevice.resetFences(1, &m_xFence);
+
+	xDevice.resetDescriptorPool(m_axDescriptorPools[0]);
+}

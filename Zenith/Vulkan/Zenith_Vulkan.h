@@ -7,6 +7,20 @@
 #define ZENITH_VULKAN_PER_DRAW_DESC_SET 1
 
 class Zenith_Vulkan_CommandBuffer;
+
+class Zenith_Vulkan_PerFrame
+{
+public:
+	Zenith_Vulkan_PerFrame() = default;
+
+	void Initialise();
+	void BeginFrame();
+	vk::Fence m_xFence;
+	
+	//#TO_TODO: one per thread
+	vk::DescriptorPool m_axDescriptorPools[1];
+};
+
 class Zenith_Vulkan
 {
 public:
@@ -50,7 +64,7 @@ public:
 			vk::VertexInputAttributeDescription xAttrDesc = vk::VertexInputAttributeDescription()
 				.setBinding(0)
 				.setLocation(uBindPoint)
-				.setOffset(element._Offset)
+				.setOffset(element.m_uOffset)
 				.setFormat(ShaderDataTypeToVulkanFormat(element._Type));
 			axAttrDescs.push_back(xAttrDesc);
 			uBindPoint++;
@@ -70,7 +84,7 @@ public:
 				vk::VertexInputAttributeDescription xInstanceAttrDesc = vk::VertexInputAttributeDescription()
 					.setBinding(1)
 					.setLocation(uBindPoint)
-					.setOffset(element._Offset)
+					.setOffset(element.m_uOffset)
 					.setFormat(ShaderDataTypeToVulkanFormat(element._Type));
 				axAttrDescs.push_back(xInstanceAttrDesc);
 				uBindPoint++;
@@ -121,8 +135,6 @@ public:
 		s_xPendingCommandBuffers[eOrder].push_back(pxCmd);
 	}
 
-	static void RecreatePerFrameDescriptorPool();
-
 	static const vk::Instance& GetInstance() { return s_xInstance; }
 	static const vk::PhysicalDevice& GetPhysicalDevice() { return s_xPhysicalDevice; }
 	static const vk::Device& GetDevice() { return s_xDevice; }
@@ -132,6 +144,9 @@ public:
 	static const vk::SurfaceKHR& GetSurface() { return s_xSurface; }
 	static const uint32_t GetQueueIndex(CommandType eType) { return s_auQueueIndices[eType]; }
 	static const vk::DescriptorPool& GetDefaultDescriptorPool() { return s_xDefaultDescriptorPool; }
+	static vk::Fence& GetCurrentInFlightFence();
+	static vk::Fence& GetPreviousInFlightFence();
+	static vk::Fence& GetNextInFlightFence();
 
 	static const bool ShouldSubmitDrawCalls();
 private:
@@ -154,7 +169,9 @@ private:
 	static vk::Queue s_axQueues[COMMANDTYPE_MAX];
 	static vk::CommandPool s_axCommandPools[COMMANDTYPE_MAX];
 	static vk::DescriptorPool s_xDefaultDescriptorPool;
-	static vk::DescriptorPool s_axPerFrameDescriptorPools[MAX_FRAMES_IN_FLIGHT];
 
 	static std::vector<const Zenith_Vulkan_CommandBuffer*> s_xPendingCommandBuffers[RENDER_ORDER_MAX];
+
+	static Zenith_Vulkan_PerFrame s_axPerFrame[MAX_FRAMES_IN_FLIGHT];
+	static Zenith_Vulkan_PerFrame* s_pxCurrentFrame;
 };

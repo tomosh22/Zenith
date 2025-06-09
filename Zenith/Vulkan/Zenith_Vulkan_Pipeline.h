@@ -25,7 +25,7 @@ public:
 	void FillShaderStageCreateInfo(vk::GraphicsPipelineCreateInfo& xPipelineCreateInfo) const;
 	vk::PipelineShaderStageCreateInfo* m_xInfos = nullptr;
 
-private:
+//private:
 	vk::ShaderModule CreateShaderModule(const char* szCode, uint64_t ulCodeLength);
 
 	bool m_bTesselation = false;
@@ -47,53 +47,35 @@ private:
 	vk::ShaderModule m_xTeseShaderModule;
 };
 
-//#TO_TODO: there should be a platform independent version of this
-struct Zenith_Vulkan_PipelineSpecification {
-	Zenith_Vulkan_PipelineSpecification(Flux_VertexInputDescription xVertexInputDesc, Zenith_Vulkan_Shader* pxShader, std::vector<Flux_BlendState> xBlendStates, bool bDepthTestEnabled, bool bDepthWriteEnabled, DepthCompareFunc eDepthCompareFunc, DepthStencilFormat eDepthFormat, bool bUsePushConstants, bool bUseTesselation, std::array<uint32_t, DESCRIPTOR_TYPE_MAX> xPerFrameBindings, std::array<uint32_t, DESCRIPTOR_TYPE_MAX> xPerDrawBindings, Flux_TargetSetup& xTargetSetup, bool bWireframe);
-
-	Zenith_Vulkan_Shader* m_pxShader;
-
-	std::vector<Flux_BlendState> m_xBlendStates;
-
-	bool m_bDepthTestEnabled;
-	bool m_bDepthWriteEnabled;
-	DepthCompareFunc m_eDepthCompareFunc;
-	DepthStencilFormat m_eDepthStencilFormat;
-	bool m_bUsePushConstants;
-	bool m_bUseTesselation;
-
-	std::array<uint32_t, DESCRIPTOR_TYPE_MAX> m_xPerFrameBindings;
-	std::array<uint32_t, DESCRIPTOR_TYPE_MAX> m_xPerDrawBindings;
-
-	Flux_VertexInputDescription m_eVertexInputDesc;
-
-	Flux_TargetSetup& m_xTargetSetup;
-	LoadAction m_eColourLoadAction;
-	StoreAction m_eColourStoreAction;
-	LoadAction m_eDepthStencilLoadAction;
-	StoreAction m_eDepthStencilStoreAction;
-	bool m_bWireframe;
+class Zenith_Vulkan_RootSig
+{
+public:
+	vk::PipelineLayout m_xLayout;
+	vk::DescriptorSetLayout m_axDescSetLayouts[FLUX_MAX_DESCRIPTOR_BINDINGS];
+	u_int m_uNumDescriptorSets = -1;
 };
 
-class Zenith_Vulkan_Pipeline {
+class Zenith_Vulkan_Pipeline
+{
 public:
 	vk::Pipeline m_xPipeline;
-	vk::PipelineLayout	m_xPipelineLayout;
+	vk::RenderPass m_xRenderPass;
+	Zenith_Vulkan_RootSig m_xRootSig;
 
 	~Zenith_Vulkan_Pipeline();
 
-	vk::DescriptorSetLayout m_xPerFrameLayout;
-	vk::DescriptorSet m_axPerFrameSets[MAX_FRAMES_IN_FLIGHT];
-
-	vk::DescriptorSetLayout m_xPerDrawLayout;
-	vk::DescriptorSet m_axPerDrawSets[MAX_FRAMES_IN_FLIGHT];
-
-	bool m_bUsePushConstants = false;//#TODO expand on this, currently just use model matrix
+	
 
 	static vk::RenderPass TargetSetupToRenderPass(Flux_TargetSetup& xTargetSetup, LoadAction eColourLoad, StoreAction eColourStore, LoadAction eDepthStencilLoad, StoreAction eDepthStencilStore, RenderTargetUsage eUsage);
 	static vk::Framebuffer TargetSetupToFramebuffer(Flux_TargetSetup& xTargetSetup, uint32_t uWidth, uint32_t uHeight, const vk::RenderPass& xPass);
 
 	void BindDescriptorSets(vk::CommandBuffer& xCmd, const std::vector<vk::DescriptorSet>& axSets, vk::PipelineBindPoint eBindPoint, uint32_t ufirstSet) const;
+};
+
+class Zenith_Vulkan_RootSigBuilder
+{
+public:
+	static void FromSpecification(Zenith_Vulkan_RootSig& xRootSigOut, const Flux_PipelineLayout& xSpec);
 };
 
 class Zenith_Vulkan_PipelineBuilder {
@@ -125,21 +107,11 @@ public:
 	Zenith_Vulkan_PipelineBuilder& WithDepthFormat(vk::Format depthFormat);
 	Zenith_Vulkan_PipelineBuilder& WithTesselation();
 
-	//Zenith_Vulkan_PipelineBuilder& WithDescriptorBuffers();
+	void Build(Zenith_Vulkan_Pipeline& xPipelineOut, const struct Flux_PipelineSpecification& xSpec, vk::PipelineCache xCache = {});
 
-	void Build(Zenith_Vulkan_Pipeline& xPipelineOut, const Zenith_Vulkan_PipelineSpecification& xSpec, vk::PipelineCache xCache = {});
-
-	static void FromSpecification(Zenith_Vulkan_Pipeline& xPipelineOut, const Zenith_Vulkan_PipelineSpecification& spec);
+	static void FromSpecification(Zenith_Vulkan_Pipeline& xPipelineOut, const Flux_PipelineSpecification& xSpec);
 
 protected:
-	struct DescriptorThings {
-		vk::DescriptorSetLayout xPerFrameLayout;
-		vk::DescriptorSet xPerFrameSet;
-
-		vk::DescriptorSetLayout xPerDrawLayout;
-		vk::DescriptorSet xPerDrawSet;
-	};
-	static DescriptorThings HandleDescriptors(const Zenith_Vulkan_PipelineSpecification& spec, Zenith_Vulkan_PipelineBuilder& xBuilder);
 
 	vk::GraphicsPipelineCreateInfo				m_xPipelineCreate;
 	vk::PipelineCacheCreateInfo					m_xCacheCreate;

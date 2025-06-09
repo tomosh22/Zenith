@@ -48,7 +48,21 @@ void Flux_AnimatedMeshes::Initialise()
 	xBlendStates.push_back({ BLEND_FACTOR_ZERO, BLEND_FACTOR_ZERO, false });
 	xBlendStates.push_back({ BLEND_FACTOR_ZERO, BLEND_FACTOR_ZERO, false });
 
-	Flux_PipelineSpecification xPipelineSpec(
+	Flux_PipelineSpecification xPipelineSpec;
+	xPipelineSpec.m_pxTargetSetup = &Flux_Graphics::s_xMRTTarget;
+	xPipelineSpec.m_pxShader = &s_xShader;
+	xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
+
+	Flux_PipelineLayout& xLayout = xPipelineSpec.m_xPipelineLayout;
+	xLayout.m_uNumDescriptorSets = 2;
+	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;
+	xLayout.m_axDescriptorSetLayouts[1].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;
+	xLayout.m_axDescriptorSetLayouts[1].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_TEXTURE;
+	xLayout.m_axDescriptorSetLayouts[1].m_axBindings[2].m_eType = DESCRIPTOR_TYPE_TEXTURE;
+	xLayout.m_axDescriptorSetLayouts[1].m_axBindings[3].m_eType = DESCRIPTOR_TYPE_TEXTURE;
+	xLayout.m_axDescriptorSetLayouts[1].m_axBindings[4].m_eType = DESCRIPTOR_TYPE_TEXTURE;
+#if 0
+	(
 		xVertexDesc,
 		&s_xShader,
 		xBlendStates,
@@ -63,6 +77,7 @@ void Flux_AnimatedMeshes::Initialise()
 		Flux_Graphics::s_xMRTTarget,
 		false
 	);
+#endif
 
 	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
 
@@ -95,10 +110,10 @@ void Flux_AnimatedMeshes::Render()
 	std::vector<Zenith_ModelComponent*> xModels;
 	Zenith_Scene::GetCurrentScene().GetAllOfComponentType<Zenith_ModelComponent>(xModels);
 
-	s_xCommandBuffer.BeginBind(BINDING_FREQUENCY_PER_FRAME);
+	s_xCommandBuffer.BeginBind(0);
 	s_xCommandBuffer.BindBuffer(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer(), 0);
 
-	s_xCommandBuffer.BeginBind(BINDING_FREQUENCY_PER_DRAW);
+	s_xCommandBuffer.BeginBind(1);
 
 	for (Zenith_ModelComponent* pxModel : xModels)
 	{
