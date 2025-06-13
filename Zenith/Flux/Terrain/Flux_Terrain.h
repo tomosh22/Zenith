@@ -11,5 +11,5 @@ public:
 	static void RenderToShadowMap(Flux_CommandBuffer& xCmdBuf);
 
 	static Flux_Pipeline& GetShadowPipeline();
-	static Flux_ConstantBuffer& GetTerrainConstantsBuffer();
+	static Flux_DynamicConstantBuffer& GetTerrainConstantsBuffer();
 };

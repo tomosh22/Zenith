@@ -30,12 +30,6 @@ void Flux_Skybox::Initialise()
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_NONE;
 	xVertexDesc.m_xPerVertexLayout.CalculateOffsetsAndStrides();
 
-	std::vector<Flux_BlendState> xBlendStates;
-	xBlendStates.push_back({ BLEND_FACTOR_SRCALPHA, BLEND_FACTOR_ONEMINUSSRCALPHA, true });
-	xBlendStates.push_back({ BLEND_FACTOR_SRCALPHA, BLEND_FACTOR_ONEMINUSSRCALPHA, true });
-	xBlendStates.push_back({ BLEND_FACTOR_SRCALPHA, BLEND_FACTOR_ONEMINUSSRCALPHA, true });
-	xBlendStates.push_back({ BLEND_FACTOR_SRCALPHA, BLEND_FACTOR_ONEMINUSSRCALPHA, true });
-
 	Flux_PipelineSpecification xPipelineSpec;
 	xPipelineSpec.m_pxTargetSetup = &Flux_Graphics::s_xMRTTarget;
 	xPipelineSpec.m_pxShader = &s_xShader;
@@ -45,6 +39,15 @@ void Flux_Skybox::Initialise()
 	xLayout.m_uNumDescriptorSets = 1;
 	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;
 	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_TEXTURE;
+
+	for (Flux_BlendState& xBlendState : xPipelineSpec.m_axBlendStates)
+	{
+		xBlendState.m_eSrcBlendFactor = BLEND_FACTOR_ONE;
+		xBlendState.m_eDstBlendFactor = BLEND_FACTOR_ZERO;
+		xBlendState.m_bBlendEnabled = false;
+	}
+
+	xPipelineSpec.m_bDepthTestEnabled = false;
 #if 0
 	(
 		xVertexDesc,
@@ -78,7 +81,7 @@ void Flux_Skybox::Render()
 
 	s_xCommandBuffer.BeginRecording();
 #else
-
+	s_xCommandBuffer.BeginRecording();
 	//#TO clearing as this is first pass of the frame
 	s_xCommandBuffer.SubmitTargetSetup(Flux_Graphics::s_xMRTTarget, true, true, true);
 #endif

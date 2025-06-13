@@ -21,7 +21,7 @@ vk::RenderPass Zenith_Vulkan::s_xImGuiRenderPass;
 #endif
 
 #ifdef ZENITH_DEBUG
-static std::vector<const char*> s_xValidationLayers = { "VK_LAYER_KHRONOS_validation" };
+static std::vector<const char*> s_xValidationLayers = { "VK_LAYER_KHRONOS_validation", /*"VK_LAYER_KHRONOS_synchronization2"*/};
 #endif
 
 static const char* s_aszDeviceExtensions[] = {
@@ -212,7 +212,7 @@ VKAPI_ATTR vk::Bool32 VKAPI_CALL Zenith_Vulkan::DebugCallback(vk::DebugUtilsMess
 	{
 		Zenith_Error("%s%s", "Zenith_Vulkan::DebugCallback: ", pxCallbackData->pMessage);
 	}
-	__debugbreak();
+		__debugbreak();
 	return VK_FALSE;
 }
 

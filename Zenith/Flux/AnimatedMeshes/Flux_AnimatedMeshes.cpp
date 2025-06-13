@@ -42,12 +42,6 @@ void Flux_AnimatedMeshes::Initialise()
 	xVertexDesc.m_xPerVertexLayout.GetElements().push_back(SHADER_DATA_TYPE_FLOAT4);
 	xVertexDesc.m_xPerVertexLayout.CalculateOffsetsAndStrides();
 
-	std::vector<Flux_BlendState> xBlendStates;
-	xBlendStates.push_back({ BLEND_FACTOR_ZERO, BLEND_FACTOR_ZERO, false });
-	xBlendStates.push_back({ BLEND_FACTOR_ZERO, BLEND_FACTOR_ZERO, false });
-	xBlendStates.push_back({ BLEND_FACTOR_ZERO, BLEND_FACTOR_ZERO, false });
-	xBlendStates.push_back({ BLEND_FACTOR_ZERO, BLEND_FACTOR_ZERO, false });
-
 	Flux_PipelineSpecification xPipelineSpec;
 	xPipelineSpec.m_pxTargetSetup = &Flux_Graphics::s_xMRTTarget;
 	xPipelineSpec.m_pxShader = &s_xShader;
@@ -61,6 +55,13 @@ void Flux_AnimatedMeshes::Initialise()
 	xLayout.m_axDescriptorSetLayouts[1].m_axBindings[2].m_eType = DESCRIPTOR_TYPE_TEXTURE;
 	xLayout.m_axDescriptorSetLayouts[1].m_axBindings[3].m_eType = DESCRIPTOR_TYPE_TEXTURE;
 	xLayout.m_axDescriptorSetLayouts[1].m_axBindings[4].m_eType = DESCRIPTOR_TYPE_TEXTURE;
+
+	for (Flux_BlendState& xBlendState : xPipelineSpec.m_axBlendStates)
+	{
+		xBlendState.m_eSrcBlendFactor = BLEND_FACTOR_ONE;
+		xBlendState.m_eDstBlendFactor = BLEND_FACTOR_ZERO;
+		xBlendState.m_bBlendEnabled = false;
+	}
 #if 0
 	(
 		xVertexDesc,
@@ -101,7 +102,7 @@ void Flux_AnimatedMeshes::Render()
 
 	s_xCommandBuffer.BeginRecording();
 	#else
-
+	s_xCommandBuffer.BeginRecording();
 	s_xCommandBuffer.SubmitTargetSetup(Flux_Graphics::s_xMRTTarget);
 	#endif
 

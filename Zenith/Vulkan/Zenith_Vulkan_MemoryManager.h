@@ -8,7 +8,7 @@ class Zenith_Vulkan_Buffer;
 class Flux_VertexBuffer;
 class Flux_DynamicVertexBuffer;
 class Flux_IndexBuffer;
-class Flux_ConstantBuffer;
+class Flux_DynamicConstantBuffer;
 class Zenith_Vulkan_Texture;
 class Zenith_Vulkan_CommandBuffer;
 constexpr uint64_t g_uStagingPoolSize = 1024u * 1024u * 1024u;
@@ -37,7 +37,7 @@ public:
 	static void InitialiseVertexBuffer(const void* pData, size_t uSize, Flux_VertexBuffer& xBufferOut, bool bDeviceLocal = true);
 	static void InitialiseDynamicVertexBuffer(const void* pData, size_t uSize, Flux_DynamicVertexBuffer& xBufferOut, bool bDeviceLocal = true);
 	static void InitialiseIndexBuffer(const void* pData, size_t uSize, Flux_IndexBuffer& xBufferOut);
-	static void InitialiseConstantBuffer(const void* pData, size_t uSize, Flux_ConstantBuffer& xBufferOut);
+	static void InitialiseDynamicConstantBuffer(const void* pData, size_t uSize, Flux_DynamicConstantBuffer& xBufferOut);
 
 	static void UploadStagingData(AllocationType eType, void* pAllocation, const void* pData, size_t uSize);
 

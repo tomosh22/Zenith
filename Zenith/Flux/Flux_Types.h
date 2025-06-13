@@ -140,8 +140,8 @@ static uint32_t DepthStencilFormatBitsPerPixel(DepthStencilFormat eFormat)
 
 struct Flux_BlendState
 {
-	BlendFactor m_eSrcBlendFactor = BLEND_FACTOR_ONE;
-	BlendFactor m_eDstBlendFactor = BLEND_FACTOR_ONE;
+	BlendFactor m_eSrcBlendFactor = BLEND_FACTOR_SRCALPHA;
+	BlendFactor m_eDstBlendFactor = BLEND_FACTOR_ONEMINUSSRCALPHA;
 	bool m_bBlendEnabled = true;
 };
 

@@ -204,12 +204,15 @@ void Zenith_Vulkan_MemoryManager::InitialiseVertexBuffer(const void* pData, size
 
 void Zenith_Vulkan_MemoryManager::InitialiseDynamicVertexBuffer(const void* pData, size_t uSize, Flux_DynamicVertexBuffer& xBufferOut, bool bDeviceLocal /*= true*/)
 {
-	Zenith_Vulkan_Buffer& xBuffer = xBufferOut.GetBuffer();
-	vk::BufferUsageFlags eFlags = vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst;
-	AllocateBuffer(uSize, eFlags, bDeviceLocal ? MEMORY_RESIDENCY_GPU : MEMORY_RESIDENCY_CPU, xBuffer);
-	if (pData)
+	for (uint32_t u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
 	{
-		UploadBufferData(xBuffer, pData, uSize);
+		Zenith_Vulkan_Buffer& xBuffer = xBufferOut.GetBufferForFrameInFlight(u);
+		vk::BufferUsageFlags eFlags = vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst;
+		AllocateBuffer(uSize, eFlags, bDeviceLocal ? MEMORY_RESIDENCY_GPU : MEMORY_RESIDENCY_CPU, xBuffer);
+		if (pData)
+		{
+			UploadBufferData(xBuffer, pData, uSize);
+		}
 	}
 }
 
@@ -224,14 +227,17 @@ void Zenith_Vulkan_MemoryManager::InitialiseIndexBuffer(const void* pData, size_
 	}
 }
 
-void Zenith_Vulkan_MemoryManager::InitialiseConstantBuffer(const void* pData, size_t uSize, Flux_ConstantBuffer& xBufferOut)
+void Zenith_Vulkan_MemoryManager::InitialiseDynamicConstantBuffer(const void* pData, size_t uSize, Flux_DynamicConstantBuffer& xBufferOut)
 {
-	Zenith_Vulkan_Buffer& xBuffer = xBufferOut.GetBuffer();
-	vk::BufferUsageFlags eFlags = vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eTransferDst;
-	AllocateBuffer(uSize, eFlags, MEMORY_RESIDENCY_CPU, xBuffer);
-	if (pData)
+	for (uint32_t u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
 	{
-		UploadBufferData(xBuffer, pData, uSize);
+		Zenith_Vulkan_Buffer& xBuffer = xBufferOut.GetBufferForFrameInFlight(u);
+		vk::BufferUsageFlags eFlags = vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eTransferDst;
+		AllocateBuffer(uSize, eFlags, MEMORY_RESIDENCY_CPU, xBuffer);
+		if (pData)
+		{
+			UploadBufferData(xBuffer, pData, uSize);
+		}
 	}
 }
 

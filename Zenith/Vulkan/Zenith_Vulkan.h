@@ -55,55 +55,6 @@ public:
 		return (s_xDevice.allocateDescriptorSets(xInfo)[0]);
 	}
 
-	static vk::PipelineVertexInputStateCreateInfo VertexDescToVulkanDesc(const Flux_VertexInputDescription& xDesc, std::vector<vk::VertexInputBindingDescription>& axBindDescs, std::vector<vk::VertexInputAttributeDescription>& axAttrDescs)
-	{
-		uint32_t uBindPoint = 0;
-		const Flux_BufferLayout& xVertexLayout = xDesc.m_xPerVertexLayout;
-		for (const Flux_BufferElement& element : xVertexLayout.GetElements())
-		{
-			vk::VertexInputAttributeDescription xAttrDesc = vk::VertexInputAttributeDescription()
-				.setBinding(0)
-				.setLocation(uBindPoint)
-				.setOffset(element.m_uOffset)
-				.setFormat(ShaderDataTypeToVulkanFormat(element._Type));
-			axAttrDescs.push_back(xAttrDesc);
-			uBindPoint++;
-		}
-
-		vk::VertexInputBindingDescription xBindDesc = vk::VertexInputBindingDescription()
-			.setBinding(0)
-			.setStride(xVertexLayout.GetStride())
-			.setInputRate(vk::VertexInputRate::eVertex);
-		axBindDescs.push_back(xBindDesc);
-
-		const Flux_BufferLayout& xInstanceLayout = xDesc.m_xPerInstanceLayout;
-		if (xDesc.m_xPerInstanceLayout.GetElements().size())
-		{
-			for (const Flux_BufferElement& element : xInstanceLayout.GetElements())
-			{
-				vk::VertexInputAttributeDescription xInstanceAttrDesc = vk::VertexInputAttributeDescription()
-					.setBinding(1)
-					.setLocation(uBindPoint)
-					.setOffset(element.m_uOffset)
-					.setFormat(ShaderDataTypeToVulkanFormat(element._Type));
-				axAttrDescs.push_back(xInstanceAttrDesc);
-				uBindPoint++;
-			}
-
-			vk::VertexInputBindingDescription xInstanceBindDesc = vk::VertexInputBindingDescription()
-				.setBinding(1)
-				.setStride(xInstanceLayout.GetStride())
-				.setInputRate(vk::VertexInputRate::eInstance);
-			axBindDescs.push_back(xInstanceBindDesc);
-		}
-
-		return std::move(vk::PipelineVertexInputStateCreateInfo()
-			.setVertexBindingDescriptionCount(axBindDescs.size())
-			.setPVertexBindingDescriptions(axBindDescs.data())
-			.setVertexAttributeDescriptionCount(axAttrDescs.size())
-			.setPVertexAttributeDescriptions(axAttrDescs.data()));
-	}
-
 	static void Initialise();
 	static void CreateInstance();
 #ifdef ZENITH_DEBUG

@@ -13,7 +13,7 @@ static Flux_TargetSetup g_axCSMTargetSetups[ZENITH_FLUX_NUM_CSMS];
 static Zenith_Maths::Matrix4 g_axShadowMatrices[ZENITH_FLUX_NUM_CSMS];
 
 static Flux_CommandBuffer g_xCommandBuffer;
-static Flux_ConstantBuffer g_xShadowMatrixBuffers[ZENITH_FLUX_NUM_CSMS];
+static Flux_DynamicConstantBuffer g_xShadowMatrixBuffers[ZENITH_FLUX_NUM_CSMS];
 
 static Zenith_Maths::Matrix4 g_axSunViewProjMats[ZENITH_FLUX_NUM_CSMS];
 
@@ -69,7 +69,7 @@ void Flux_Shadows::Initialise()
 		xBuilder.Build(g_axCSMs[u], RENDER_TARGET_TYPE_DEPTHSTENCIL, "CSM " + std::to_string(u));
 		g_axCSMTargetSetups[u].AssignDepthStencil(&g_axCSMs[u]);
 
-		Flux_MemoryManager::InitialiseConstantBuffer(nullptr, sizeof(Zenith_Maths::Matrix4), g_xShadowMatrixBuffers[u]);
+		Flux_MemoryManager::InitialiseDynamicConstantBuffer(nullptr, sizeof(Zenith_Maths::Matrix4), g_xShadowMatrixBuffers[u]);
 	}
 
 	
@@ -140,7 +140,7 @@ Flux_Texture& Flux_Shadows::GetCSMTexture(const uint32_t u)
 	return *g_axCSMs[u].m_pxTargetTexture;
 }
 
-Flux_ConstantBuffer& Flux_Shadows::GetShadowMatrixBuffer(const uint32_t u)
+Flux_DynamicConstantBuffer& Flux_Shadows::GetShadowMatrixBuffer(const uint32_t u)
 {
 	return g_xShadowMatrixBuffers[u];
 }

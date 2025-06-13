@@ -15,7 +15,7 @@ public:
 	static Flux_TargetSetup& GetCSMTargetSetup(const uint32_t uIndex);
 	static Zenith_Maths::Matrix4 GetSunViewProjMatrix(const uint32_t uIndex);
 	static Flux_Texture& GetCSMTexture(const uint32_t u);
-	static Flux_ConstantBuffer& GetShadowMatrixBuffer(const uint32_t u);
+	static Flux_DynamicConstantBuffer& GetShadowMatrixBuffer(const uint32_t u);
 
 private:
 	static void UpdateShadowMatrices();

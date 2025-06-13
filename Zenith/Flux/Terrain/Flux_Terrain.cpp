@@ -29,7 +29,7 @@ struct TerrainConstants
 {
 	float m_fUVScale = 0.07;
 } s_xTerrainConstants;
-static Flux_ConstantBuffer s_xTerrainConstantsBuffer;
+static Flux_DynamicConstantBuffer s_xTerrainConstantsBuffer;
 
 DEBUGVAR bool dbg_bEnable = true;
 DEBUGVAR bool dbg_bWireframe = false;
@@ -56,11 +56,6 @@ void Flux_Terrain::Initialise()
 	xVertexDesc.m_xPerVertexLayout.CalculateOffsetsAndStrides();
 
 	{
-		std::vector<Flux_BlendState> xBlendStates;
-		xBlendStates.push_back({ BLEND_FACTOR_ZERO, BLEND_FACTOR_ZERO, false });
-		xBlendStates.push_back({ BLEND_FACTOR_ZERO, BLEND_FACTOR_ZERO, false });
-		xBlendStates.push_back({ BLEND_FACTOR_ZERO, BLEND_FACTOR_ZERO, false });
-		xBlendStates.push_back({ BLEND_FACTOR_ZERO, BLEND_FACTOR_ZERO, false });
 
 		Flux_PipelineSpecification xPipelineSpec;
 		xPipelineSpec.m_pxTargetSetup = &Flux_Graphics::s_xMRTTarget;
@@ -79,6 +74,13 @@ void Flux_Terrain::Initialise()
 		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[5].m_eType = DESCRIPTOR_TYPE_TEXTURE;
 		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[6].m_eType = DESCRIPTOR_TYPE_TEXTURE;
 		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[7].m_eType = DESCRIPTOR_TYPE_TEXTURE;
+
+		for (Flux_BlendState& xBlendState : xPipelineSpec.m_axBlendStates)
+		{
+			xBlendState.m_eSrcBlendFactor = BLEND_FACTOR_ONE;
+			xBlendState.m_eDstBlendFactor = BLEND_FACTOR_ZERO;
+			xBlendState.m_bBlendEnabled = false;
+		}
 #if 0
 		(
 			xVertexDesc,
@@ -105,10 +107,6 @@ void Flux_Terrain::Initialise()
 
 	
 	{
-		//#TO_TODO: shouldn't need this at all, this is depth only
-		std::vector<Flux_BlendState> xBlendStates;
-		xBlendStates.push_back({ BLEND_FACTOR_ZERO, BLEND_FACTOR_ZERO, false });
-
 		Flux_PipelineSpecification xShadowPipelineSpec;
 		xShadowPipelineSpec.m_pxTargetSetup = &Flux_Shadows::GetCSMTargetSetup(0);
 		xShadowPipelineSpec.m_pxShader = &s_xShadowShader;
@@ -118,6 +116,11 @@ void Flux_Terrain::Initialise()
 		xLayout.m_uNumDescriptorSets = 2;
 		xLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;
 		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;
+
+		xShadowPipelineSpec.m_bDepthTestEnabled = true;
+		xShadowPipelineSpec.m_bDepthWriteEnabled = true;
+		xShadowPipelineSpec.m_eDepthCompareFunc = DEPTH_COMPARE_FUNC_LESSEQUAL;
+
 #if 0
 		(
 			xVertexDesc,
@@ -141,7 +144,7 @@ void Flux_Terrain::Initialise()
 	
 
 
-	Flux_MemoryManager::InitialiseConstantBuffer(nullptr, sizeof(struct TerrainConstants
+	Flux_MemoryManager::InitialiseDynamicConstantBuffer(nullptr, sizeof(struct TerrainConstants
 		), s_xTerrainConstantsBuffer);
 
 #ifdef ZENITH_DEBUG_VARIABLES
@@ -169,6 +172,7 @@ void Flux_Terrain::RenderToGBuffer()
 	Flux_CommandBuffer& s_xCommandBuffer = Flux_DeferredShading::GetTerrainCommandBuffer();
 	s_xCommandBuffer.BeginRecording();
 	#else
+	s_xCommandBuffer.BeginRecording();
 	s_xCommandBuffer.SubmitTargetSetup(Flux_Graphics::s_xMRTTarget);
 	#endif
 
@@ -240,7 +244,7 @@ Flux_Pipeline& Flux_Terrain::GetShadowPipeline()
 	return s_xShadowPipeline;
 }
 
-Flux_ConstantBuffer& Flux_Terrain::GetTerrainConstantsBuffer()
+Flux_DynamicConstantBuffer& Flux_Terrain::GetTerrainConstantsBuffer()
 {
 	return s_xTerrainConstantsBuffer;
 }

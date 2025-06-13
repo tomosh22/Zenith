@@ -44,11 +44,6 @@ void Flux_StaticMeshes::Initialise()
 	xVertexDesc.m_xPerVertexLayout.CalculateOffsetsAndStrides();
 
 	{
-		std::vector<Flux_BlendState> xBlendStates;
-		xBlendStates.push_back({ BLEND_FACTOR_ZERO, BLEND_FACTOR_ZERO, false });
-		xBlendStates.push_back({ BLEND_FACTOR_ZERO, BLEND_FACTOR_ZERO, false });
-		xBlendStates.push_back({ BLEND_FACTOR_ZERO, BLEND_FACTOR_ZERO, false });
-		xBlendStates.push_back({ BLEND_FACTOR_ZERO, BLEND_FACTOR_ZERO, false });
 
 		Flux_PipelineSpecification xPipelineSpec;
 		xPipelineSpec.m_pxTargetSetup = &Flux_Graphics::s_xMRTTarget;
@@ -62,6 +57,13 @@ void Flux_StaticMeshes::Initialise()
 		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_TEXTURE;
 		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[2].m_eType = DESCRIPTOR_TYPE_TEXTURE;
 		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[3].m_eType = DESCRIPTOR_TYPE_TEXTURE;
+
+		for (Flux_BlendState& xBlendState : xPipelineSpec.m_axBlendStates)
+		{
+			xBlendState.m_eSrcBlendFactor = BLEND_FACTOR_ONE;
+			xBlendState.m_eDstBlendFactor = BLEND_FACTOR_ZERO;
+			xBlendState.m_bBlendEnabled = false;
+		}
 #if 0
 		(
 			xVertexDesc,
@@ -84,9 +86,6 @@ void Flux_StaticMeshes::Initialise()
 	}
 
 	{
-		//#TO_TODO: shouldn't need this at all, this is depth only
-		std::vector<Flux_BlendState> xBlendStates;
-		xBlendStates.push_back({ BLEND_FACTOR_ZERO, BLEND_FACTOR_ZERO, false });
 
 		Flux_PipelineSpecification xShadowPipelineSpec;
 		xShadowPipelineSpec.m_pxTargetSetup = &Flux_Shadows::GetCSMTargetSetup(0);
@@ -137,7 +136,7 @@ void Flux_StaticMeshes::RenderToGBuffer()
 	Flux_CommandBuffer& s_xCommandBuffer = Flux_DeferredShading::GetStaticMeshesCommandBuffer();
 	s_xCommandBuffer.BeginRecording();
 	#else
-
+	s_xCommandBuffer.BeginRecording();
 	s_xCommandBuffer.SubmitTargetSetup(Flux_Graphics::s_xMRTTarget);
 	#endif
 

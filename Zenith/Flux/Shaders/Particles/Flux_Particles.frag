@@ -12,4 +12,5 @@ layout(set = 0, binding = 1) uniform sampler2D g_xTexture;
 void main()
 {
 	o_xColour = texture(g_xTexture, a_xUV) * a_xColour;
+	if(o_xColour.a < 0.01f) discard;
 }

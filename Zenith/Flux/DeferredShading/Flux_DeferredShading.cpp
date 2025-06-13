@@ -21,6 +21,7 @@ static Flux_CommandBuffer s_xTerrainCommandBuffer;
 static Flux_Shader s_xShader;
 static Flux_Pipeline s_xPipeline;
 
+#ifdef ZENITH_MERGE_GBUFFER_PASSES
 Flux_CommandBuffer& Flux_DeferredShading::GetSkyboxCommandBuffer()
 {
 	return s_xSkyboxCommandBuffer;
@@ -40,6 +41,7 @@ Flux_CommandBuffer& Flux_DeferredShading::GetTerrainCommandBuffer()
 {
 	return s_xTerrainCommandBuffer;
 }
+#endif
 
 void Flux_DeferredShading::Initialise()
 {
@@ -64,11 +66,8 @@ void Flux_DeferredShading::Initialise()
 	Flux_VertexInputDescription xVertexDesc;
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_NONE;
 
-	std::vector<Flux_BlendState> xBlendStates;
-	xBlendStates.push_back({ BLEND_FACTOR_ONE, BLEND_FACTOR_ONE, false });
-
 	Flux_PipelineSpecification xPipelineSpec;
-	xPipelineSpec.m_pxTargetSetup = &Flux_Graphics::s_xFinalRenderTarget;
+	xPipelineSpec.m_pxTargetSetup = &Flux_Graphics::s_xFinalRenderTarget_NoDepth;
 	xPipelineSpec.m_pxShader = &s_xShader;
 	xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
 
@@ -85,6 +84,14 @@ void Flux_DeferredShading::Initialise()
 	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[8].m_eType = DESCRIPTOR_TYPE_TEXTURE;
 	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[9].m_eType = DESCRIPTOR_TYPE_TEXTURE;
 	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[10].m_eType = DESCRIPTOR_TYPE_TEXTURE;
+	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[11].m_eType = DESCRIPTOR_TYPE_TEXTURE;
+
+	xPipelineSpec.m_axBlendStates[0].m_eSrcBlendFactor = BLEND_FACTOR_ONE;
+	xPipelineSpec.m_axBlendStates[0].m_eDstBlendFactor = BLEND_FACTOR_ONE;
+	xPipelineSpec.m_axBlendStates[0].m_bBlendEnabled = false;
+
+	xPipelineSpec.m_bDepthTestEnabled = false;
+	xPipelineSpec.m_bDepthWriteEnabled = false;
 	
 #if 0(
 		xVertexDesc,
@@ -110,16 +117,18 @@ void Flux_DeferredShading::Initialise()
 
 void Flux_DeferredShading::BeginFrame()
 {
+	#ifdef ZENITH_MERGE_GBUFFER_PASSES
 	s_xGBufferCommandBuffer.BeginRecording();
 
 	s_xGBufferCommandBuffer.SubmitTargetSetup(Flux_Graphics::s_xMRTTarget, true, true, true);
+	#endif
 }
 
 void Flux_DeferredShading::Render()
 {
 	s_xCommandBuffer.BeginRecording();
 
-	s_xCommandBuffer.SubmitTargetSetup(Flux_Graphics::s_xFinalRenderTarget, true, false, false);
+	s_xCommandBuffer.SubmitTargetSetup(Flux_Graphics::s_xFinalRenderTarget_NoDepth, true, false, false);
 
 	s_xCommandBuffer.SetPipeline(&s_xPipeline);
 
@@ -132,8 +141,9 @@ void Flux_DeferredShading::Render()
 	s_xCommandBuffer.BindTexture(&Flux_Graphics::GetGBufferTexture(MRT_INDEX_NORMALSAMBIENT), 5);
 	s_xCommandBuffer.BindTexture(&Flux_Graphics::GetGBufferTexture(MRT_INDEX_MATERIAL), 6);
 	s_xCommandBuffer.BindTexture(&Flux_Graphics::GetGBufferTexture(MRT_INDEX_WORLDPOS), 7);
+	s_xCommandBuffer.BindTexture(&Flux_Graphics::GetDepthStencilTexture(), 8);
 
-	constexpr uint32_t uFirstShadowTexBind = 8;
+	constexpr uint32_t uFirstShadowTexBind = 9;
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
 		s_xCommandBuffer.BindTexture(&Flux_Shadows::GetCSMTexture(u), uFirstShadowTexBind + u);

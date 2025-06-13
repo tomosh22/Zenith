@@ -451,7 +451,7 @@ vk::CompareOp VceCompareFuncToVkCompareFunc(DepthCompareFunc eFunc)
 	}
 }
 
-vk::BlendFactor VceBlendFactorToVKBlendFactor(BlendFactor eFactor)
+vk::BlendFactor FluxBlendFactorToVK(BlendFactor eFactor)
 {
 	switch (eFactor)
 	{
@@ -694,16 +694,21 @@ void Zenith_Vulkan_PipelineBuilder::FromSpecification(Zenith_Vulkan_Pipeline& xP
 #pragma region BlendStates
 	vk::PipelineColorBlendStateCreateInfo xBlendInfo;
 	vk::PipelineColorBlendAttachmentState axBlendInfo[FLUX_MAX_TARGETS];
-	for (u_int u = 0; u < FLUX_MAX_TARGETS; u++)
+	for (u_int u = 0; u < xSpec.m_pxTargetSetup->GetNumColourAttachments(); u++)
 	{
 		vk::PipelineColorBlendAttachmentState& xBlendInfo = axBlendInfo[u]
+			.setColorWriteMask(
+				vk::ColorComponentFlagBits::eR |
+				vk::ColorComponentFlagBits::eG |
+				vk::ColorComponentFlagBits::eB |
+				vk::ColorComponentFlagBits::eA)
 			.setBlendEnable(xSpec.m_axBlendStates[u].m_bBlendEnabled)
 			.setAlphaBlendOp(vk::BlendOp::eAdd)
 			.setColorBlendOp(vk::BlendOp::eAdd)
-			.setSrcAlphaBlendFactor(VceBlendFactorToVKBlendFactor(xSpec.m_axBlendStates[u].m_eSrcBlendFactor))
-			.setSrcColorBlendFactor(VceBlendFactorToVKBlendFactor(xSpec.m_axBlendStates[u].m_eSrcBlendFactor))
-			.setDstAlphaBlendFactor(VceBlendFactorToVKBlendFactor(xSpec.m_axBlendStates[u].m_eDstBlendFactor))
-			.setDstColorBlendFactor(VceBlendFactorToVKBlendFactor(xSpec.m_axBlendStates[u].m_eDstBlendFactor));
+			.setSrcAlphaBlendFactor(FluxBlendFactorToVK(xSpec.m_axBlendStates[u].m_eSrcBlendFactor))
+			.setSrcColorBlendFactor(FluxBlendFactorToVK(xSpec.m_axBlendStates[u].m_eSrcBlendFactor))
+			.setDstAlphaBlendFactor(FluxBlendFactorToVK(xSpec.m_axBlendStates[u].m_eDstBlendFactor))
+			.setDstColorBlendFactor(FluxBlendFactorToVK(xSpec.m_axBlendStates[u].m_eDstBlendFactor));
 	}
 	xBlendInfo.setAttachmentCount(xSpec.m_pxTargetSetup->GetNumColourAttachments());
 	xBlendInfo.setPAttachments(axBlendInfo);
