@@ -23,7 +23,7 @@ public:
 
 	static Flux_MeshGeometry s_xQuadMesh;
 
-	static Flux_ConstantBuffer s_xFrameConstantsBuffer;
+	static Flux_DynamicConstantBuffer s_xFrameConstantsBuffer;
 
 	static Flux_Texture* s_pxBlankTexture2D;
 	static Flux_MeshGeometry s_xBlankMesh;

@@ -157,7 +157,7 @@ public:
 
         Zenith_Maths::Matrix4 m_axAnimMatrices[100];
         public:
-        Flux_ConstantBuffer m_xBoneBuffer;
+        Flux_DynamicConstantBuffer m_xBoneBuffer;
 
         
 };

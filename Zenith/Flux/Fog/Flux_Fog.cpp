@@ -29,9 +29,6 @@ void Flux_Fog::Initialise()
 	Flux_VertexInputDescription xVertexDesc;
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_NONE;
 
-	std::vector<Flux_BlendState> xBlendStates;
-	xBlendStates.push_back({ BLEND_FACTOR_SRCALPHA, BLEND_FACTOR_ONE, true });
-
 	Flux_PipelineSpecification xPipelineSpec;
 	xPipelineSpec.m_pxTargetSetup = &Flux_Graphics::s_xFinalRenderTarget_NoDepth;
 	xPipelineSpec.m_pxShader = &s_xShader;
@@ -41,6 +38,9 @@ void Flux_Fog::Initialise()
 	xLayout.m_uNumDescriptorSets = 1;
 	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;
 	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_TEXTURE;
+
+	xPipelineSpec.m_bDepthTestEnabled = false;
+	xPipelineSpec.m_bDepthWriteEnabled = false;
 #if 0
 	(
 		xVertexDesc,
@@ -64,7 +64,7 @@ void Flux_Fog::Initialise()
 #ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_DebugVariables::AddBoolean({ "Render", "Enable", "Fog" }, dbg_bEnable);
 	Zenith_DebugVariables::AddVector3({ "Render", "Fog", "Colour" }, dbg_xConstants.m_xColour_Falloff, 0., 1.);
-	Zenith_DebugVariables::AddFloat({ "Render", "Fog", "Density" }, dbg_xConstants.m_xColour_Falloff.w, 0., 0.04);
+	Zenith_DebugVariables::AddFloat({ "Render", "Fog", "Density" }, dbg_xConstants.m_xColour_Falloff.w, 0., 0.02);
 #endif
 
 	Zenith_Log("Flux_Fog initialised");

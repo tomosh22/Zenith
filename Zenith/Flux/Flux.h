@@ -30,7 +30,7 @@ struct Flux_PipelineSpecification
 
 	bool m_bDepthTestEnabled = true;
 	bool m_bDepthWriteEnabled = true;
-	DepthCompareFunc m_eDepthCompareFunc = DEPTH_COMPARE_FUNC_ALWAYS;
+	DepthCompareFunc m_eDepthCompareFunc = DEPTH_COMPARE_FUNC_LESSEQUAL;
 	DepthStencilFormat m_eDepthStencilFormat;
 	bool m_bUsePushConstants = true;
 	bool m_bUseTesselation = false;

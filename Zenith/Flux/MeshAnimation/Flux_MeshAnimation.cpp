@@ -151,5 +151,5 @@ Flux_MeshAnimation::Flux_MeshAnimation(const std::string& strPath, Flux_MeshGeom
 
 	
 
-	Flux_MemoryManager::InitialiseConstantBuffer(nullptr, sizeof(m_axAnimMatrices), m_xBoneBuffer);
+	Flux_MemoryManager::InitialiseDynamicConstantBuffer(nullptr, sizeof(m_axAnimMatrices), m_xBoneBuffer);
 }

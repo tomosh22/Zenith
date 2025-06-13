@@ -115,9 +115,6 @@ void Zenith_Vulkan_Swapchain::InitialiseCopyToFramebufferCommands()
 	Flux_VertexInputDescription xVertexDesc;
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_NONE;
 
-	std::vector<Flux_BlendState> xBlendStates;
-	xBlendStates.push_back({ BLEND_FACTOR_SRCALPHA, BLEND_FACTOR_ONEMINUSSRCALPHA, true });
-
 	Flux_PipelineSpecification xPipelineSpec;
 	xPipelineSpec.m_pxTargetSetup = &s_axTargetSetups[0];
 	xPipelineSpec.m_pxShader = &s_xShader;

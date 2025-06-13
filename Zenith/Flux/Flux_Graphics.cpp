@@ -17,7 +17,7 @@ Flux_TargetSetup Flux_Graphics::s_xFinalRenderTarget_NoDepth;
 Flux_RenderAttachment Flux_Graphics::s_xDepthBuffer;
 Flux_Sampler Flux_Graphics::s_xDefaultSampler;
 Flux_MeshGeometry Flux_Graphics::s_xQuadMesh;
-Flux_ConstantBuffer Flux_Graphics::s_xFrameConstantsBuffer;
+Flux_DynamicConstantBuffer Flux_Graphics::s_xFrameConstantsBuffer;
 Flux_Texture* Flux_Graphics::s_pxBlankTexture2D;
 Flux_MeshGeometry Flux_Graphics::s_xBlankMesh;
 Flux_Graphics::FrameConstants Flux_Graphics::s_xFrameConstants;
@@ -49,7 +49,7 @@ void Flux_Graphics::Initialise()
 	Flux_MeshGeometry::GenerateFullscreenQuad(s_xQuadMesh);
 	Flux_MemoryManager::InitialiseVertexBuffer(s_xQuadMesh.GetVertexData(), s_xQuadMesh.GetVertexDataSize(), s_xQuadMesh.GetVertexBuffer());
 	Flux_MemoryManager::InitialiseIndexBuffer(s_xQuadMesh.GetIndexData(), s_xQuadMesh.GetIndexDataSize(), s_xQuadMesh.GetIndexBuffer());
-	Flux_MemoryManager::InitialiseConstantBuffer(nullptr, sizeof(FrameConstants), s_xFrameConstantsBuffer);
+	Flux_MemoryManager::InitialiseDynamicConstantBuffer(nullptr, sizeof(FrameConstants), s_xFrameConstantsBuffer);
 
 	InitialiseRenderTargets();
 	Flux::AddResChangeCallback(InitialiseRenderTargets);

@@ -60,6 +60,8 @@ void Zenith_Vulkan_CommandBuffer::BeginRecording()
 
 	m_uCurrentBindFreq = FLUX_MAX_DESCRIPTOR_SET_LAYOUTS;
 
+	m_uDescriptorDirty = ~0u;
+
 	m_bIsRecording = true;
 }
 void Zenith_Vulkan_CommandBuffer::EndRenderPass()
@@ -150,9 +152,9 @@ void Zenith_Vulkan_CommandBuffer::SetIndexBuffer(const Flux_IndexBuffer& xIndexB
 void Zenith_Vulkan_CommandBuffer::PrepareDrawCallDescriptors()
 {
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
-	//if (m_bDescriptorDirty)
+	for (u_int uDescSet = 0; uDescSet < m_pxCurrentPipeline->m_xRootSig.m_uNumDescriptorSets; uDescSet++)
 	{
-		for (u_int uDescSet = 0; uDescSet < m_pxCurrentPipeline->m_xRootSig.m_uNumDescriptorSets; uDescSet++)
+		if (m_uDescriptorDirty & 1 << uDescSet)
 		{
 			vk::DescriptorSetLayout& xLayout = m_pxCurrentPipeline->m_xRootSig.m_axDescSetLayouts[uDescSet];
 
@@ -161,7 +163,7 @@ void Zenith_Vulkan_CommandBuffer::PrepareDrawCallDescriptors()
 				.setDescriptorSetCount(1)
 				.setPSetLayouts(&xLayout);
 
-			m_xCurrentDescSet = xDevice.allocateDescriptorSets(xInfo)[0];
+			m_axCurrentDescSet[uDescSet] = xDevice.allocateDescriptorSets(xInfo)[0];
 
 			uint32_t uNumTextures = 0;
 			for (uint32_t i = 0; i < MAX_BINDINGS; i++)
@@ -213,7 +215,7 @@ void Zenith_Vulkan_CommandBuffer::PrepareDrawCallDescriptors()
 
 				vk::WriteDescriptorSet& xWrite = xTexWrites.at(uCount)
 					.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
-					.setDstSet(m_xCurrentDescSet)
+					.setDstSet(m_axCurrentDescSet[uDescSet])
 					.setDstBinding(i)
 					.setDstArrayElement(0)
 					.setDescriptorCount(1)
@@ -242,7 +244,7 @@ void Zenith_Vulkan_CommandBuffer::PrepareDrawCallDescriptors()
 
 				vk::WriteDescriptorSet& xWrite = xBufferWrites.at(uCount)
 					.setDescriptorType(vk::DescriptorType::eUniformBuffer)
-					.setDstSet(m_xCurrentDescSet)
+					.setDstSet(m_axCurrentDescSet[uDescSet])
 					.setDstBinding(i)
 					.setDstArrayElement(0)
 					.setDescriptorCount(1)
@@ -252,12 +254,13 @@ void Zenith_Vulkan_CommandBuffer::PrepareDrawCallDescriptors()
 			}
 
 			xDevice.updateDescriptorSets(xBufferWrites.size(), xBufferWrites.data(), 0, nullptr);
-
-			m_xCurrentCmdBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pxCurrentPipeline->m_xRootSig.m_xLayout, uDescSet, 1, &m_xCurrentDescSet, 0, nullptr);
+			m_xCurrentCmdBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pxCurrentPipeline->m_xRootSig.m_xLayout, uDescSet, 1, &m_axCurrentDescSet[uDescSet], 0, nullptr);
+			m_uDescriptorDirty &= ~(1 << uDescSet);
 		}
-		m_bDescriptorDirty = false;
+
 		
 	}
+	
 }
 
 void Zenith_Vulkan_CommandBuffer::Draw(uint32_t uNumVerts)
@@ -330,9 +333,9 @@ void Zenith_Vulkan_CommandBuffer::SubmitTargetSetup(Flux_TargetSetup& xTargetSet
 		const uint32_t uNumAttachments = bHasDepth && eDepthStencilLoad == LOAD_ACTION_CLEAR ? uNumColourAttachments + 1 : uNumColourAttachments;
 		for (uint32_t i = 0; i < uNumColourAttachments; i++)
 		{
-			axClearColour[i].color = vk::ClearColorValue(1.f, 1.f, 1.f, 1.f);
+			axClearColour[i].color = vk::ClearColorValue(0.f, 0.f, 0.f, 0.f);
 		}
-		axClearColour[uNumColourAttachments].depthStencil = vk::ClearDepthStencilValue(0, 0);
+		axClearColour[uNumColourAttachments].depthStencil = vk::ClearDepthStencilValue(1, 0);
 
 		xRenderPassInfo.clearValueCount = uNumAttachments;
 		xRenderPassInfo.pClearValues = axClearColour;
@@ -367,10 +370,10 @@ void Zenith_Vulkan_CommandBuffer::BindTexture(Zenith_Vulkan_Texture* pxTexture, 
 {
 	Zenith_Assert(m_uCurrentBindFreq < FLUX_MAX_DESCRIPTOR_SET_LAYOUTS, "Haven't called BeginBind");
 
-	if (pxTexture != m_apxTextureCache[uBindPoint])
+	if (pxTexture != m_aapxTextureCache[m_uCurrentBindFreq][uBindPoint])
 	{
-		m_bDescriptorDirty = true;
-		m_apxTextureCache[uBindPoint] = pxTexture;
+		m_uDescriptorDirty |= 1<<m_uCurrentBindFreq;
+		m_aapxTextureCache[m_uCurrentBindFreq][uBindPoint] = pxTexture;
 	}
 	m_xBindings[m_uCurrentBindFreq].m_xTextures[uBindPoint] = pxTexture;
 }
@@ -379,10 +382,10 @@ void Zenith_Vulkan_CommandBuffer::BindBuffer(Zenith_Vulkan_Buffer* pxBuffer, uin
 {
 	Zenith_Assert(m_uCurrentBindFreq < FLUX_MAX_DESCRIPTOR_SET_LAYOUTS, "Haven't called BeginBind");
 
-	if (pxBuffer != m_apxBufferCache[uBindPoint])
+	if (pxBuffer != m_aapxBufferCache[m_uCurrentBindFreq][uBindPoint])
 	{
-		m_bDescriptorDirty = true;
-		m_apxBufferCache[uBindPoint] = pxBuffer;
+		m_uDescriptorDirty |= 1 << m_uCurrentBindFreq;
+		m_aapxBufferCache[m_uCurrentBindFreq][uBindPoint] = pxBuffer;
 	}
 	m_xBindings[m_uCurrentBindFreq].m_xBuffers[uBindPoint] = pxBuffer;
 }

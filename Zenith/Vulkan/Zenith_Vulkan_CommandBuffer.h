@@ -72,12 +72,12 @@ private:
 
 	bool m_bIsRecording = false;
 
-	Zenith_Vulkan_Texture* m_apxTextureCache[MAX_BINDINGS]{};
-	Zenith_Vulkan_Buffer* m_apxBufferCache[MAX_BINDINGS]{};
+	Zenith_Vulkan_Texture* m_aapxTextureCache[FLUX_MAX_DESCRIPTOR_SET_LAYOUTS][MAX_BINDINGS];
+	Zenith_Vulkan_Buffer* m_aapxBufferCache[FLUX_MAX_DESCRIPTOR_SET_LAYOUTS][MAX_BINDINGS];
 	//#TO_TODO: accel struct cache
 
-	vk::DescriptorSet m_xCurrentDescSet = VK_NULL_HANDLE;
-	bool m_bDescriptorDirty = true;
+	vk::DescriptorSet m_axCurrentDescSet[FLUX_MAX_DESCRIPTOR_SET_LAYOUTS] = { VK_NULL_HANDLE };
+	u_int m_uDescriptorDirty = true;
 
 	bool m_bIsChild = false;
 	bool m_bIsParent = false;

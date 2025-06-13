@@ -59,7 +59,7 @@
 
 #define STUBBED __debugbreak();
 //#define ZENITH_RAYTRACING
-#define ZENITH_MERGE_GBUFFER_PASSES
+//#define ZENITH_MERGE_GBUFFER_PASSES
 
 using GUIDType = uint64_t;
 struct Zenith_GUID {

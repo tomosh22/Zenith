@@ -86,10 +86,12 @@ void RenderImGui()
 
 void Zenith_Core::Zenith_MainLoop()
 {
+	Flux_PlatformAPI::BeginFrame();
+
 	UpdateTimers();
 	Zenith_Input::BeginFrame();
 	Zenith_Window::GetInstance()->BeginFrame();
-	Flux_PlatformAPI::BeginFrame();
+
 	Flux_MemoryManager::BeginFrame();
 	if (!Flux_Swapchain::BeginFrame())
 	{
@@ -97,6 +99,10 @@ void Zenith_Core::Zenith_MainLoop()
 		return;
 	}
 	
+	Zenith_Physics::Update(Zenith_Core::GetDt());
+	Zenith_Scene::GetCurrentScene().Update(Zenith_Core::GetDt());
+	Flux_Graphics::UploadFrameConstants();
+
 	Flux_Shadows::Render();
 	Flux_DeferredShading::BeginFrame();
 	Flux_Skybox::Render();
@@ -110,9 +116,7 @@ void Zenith_Core::Zenith_MainLoop()
 	Flux_Particles::Render();
 	Flux_Text::Render();
 
-	Zenith_Physics::Update(Zenith_Core::GetDt());
-	Zenith_Scene::GetCurrentScene().Update(Zenith_Core::GetDt());
-	Flux_Graphics::UploadFrameConstants();
+	
 
 	Flux_MemoryManager::EndFrame();
 #ifdef ZENITH_TOOLS

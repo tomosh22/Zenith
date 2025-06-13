@@ -21,11 +21,12 @@ layout(set = 0, binding = 4) uniform sampler2D g_xDiffuseTex;
 layout(set = 0, binding = 5) uniform sampler2D g_xNormalsAmbientTex;
 layout(set = 0, binding = 6) uniform sampler2D g_xMaterialTex;
 layout(set = 0, binding = 7) uniform sampler2D g_xWorldPosTex;
+layout(set = 0, binding = 8) uniform sampler2D g_xDepthTex;
 
 //#TO_TODO: texture arrays
-layout(set = 0, binding = 8) uniform sampler2D g_xCSM0;
-layout(set = 0, binding = 9) uniform sampler2D g_xCSM1;
-layout(set = 0, binding = 10) uniform sampler2D g_xCSM2;
+layout(set = 0, binding = 9) uniform sampler2D g_xCSM0;
+layout(set = 0, binding = 10) uniform sampler2D g_xCSM1;
+layout(set = 0, binding = 11) uniform sampler2D g_xCSM2;
 
 #define HandleShadow(uIndex)
 
@@ -63,12 +64,19 @@ void CookTorrance_Directional(inout vec4 xFinalColor, vec4 xDiffuse, Directional
 void main()
 {
 	vec4 xDiffuse = texture(g_xDiffuseTex, a_xUV);
+	
+	if(texture(g_xDepthTex, a_xUV).r == 1.0f)
+	{
+		o_xColour = xDiffuse;
+		return;
+	}
+	
 	vec4 xMaterial = texture(g_xMaterialTex, a_xUV);
 	vec4 xNormalAmbient = texture(g_xNormalsAmbientTex, a_xUV);
 	vec3 xNormal = xNormalAmbient.xyz;
 	float fAmbient = xNormalAmbient.w;
 	vec3 xWorldPos = texture(g_xWorldPosTex, a_xUV).xyz;
-
+	
 	o_xColour.xyz = xDiffuse.xyz * fAmbient;
 
 	DirectionalLight xLight;
@@ -90,6 +98,16 @@ void main()
 		if(u == 0)
 		{
 			if(texture(g_xCSM0, xSamplePos).x < 1.f)
+			{
+				o_xColour.w = 1.f;
+				return;
+			}
+			break;
+		}
+		
+		if(u == 1)
+		{
+			if(texture(g_xCSM1, xSamplePos).x < 1.f)
 			{
 				o_xColour.w = 1.f;
 				return;

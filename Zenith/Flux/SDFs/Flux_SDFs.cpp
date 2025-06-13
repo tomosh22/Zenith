@@ -14,7 +14,7 @@ static Flux_Shader s_xShader;
 static Flux_Pipeline s_xPipeline;
 
 static constexpr uint32_t s_uMaxSpheres = 1000;
-static Flux_ConstantBuffer s_xSpheresBuffer;
+static Flux_DynamicConstantBuffer s_xSpheresBuffer;
 struct Sphere
 {
 	Zenith_Maths::Vector4 m_xPosition_Radius;
@@ -38,9 +38,6 @@ void Flux_SDFs::Initialise()
 	Flux_VertexInputDescription xVertexDesc;
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_NONE;
 
-	std::vector<Flux_BlendState> xBlendStates;
-	xBlendStates.push_back({ BLEND_FACTOR_SRCALPHA, BLEND_FACTOR_ONE, true });
-
 	Flux_PipelineSpecification xPipelineSpec;
 	xPipelineSpec.m_pxTargetSetup = &Flux_Graphics::s_xFinalRenderTarget;
 	xPipelineSpec.m_pxShader = &s_xShader;
@@ -50,6 +47,8 @@ void Flux_SDFs::Initialise()
 	xLayout.m_uNumDescriptorSets = 1;
 	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;
 	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_BUFFER;
+
+	xPipelineSpec.m_axBlendStates[0].m_bBlendEnabled = true;
 #if 0
 	(
 		xVertexDesc,
@@ -70,7 +69,7 @@ void Flux_SDFs::Initialise()
 
 	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
 
-	Flux_MemoryManager::InitialiseConstantBuffer(&s_axSphereData, sizeof(s_axSphereData), s_xSpheresBuffer);
+	Flux_MemoryManager::InitialiseDynamicConstantBuffer(&s_axSphereData, sizeof(s_axSphereData), s_xSpheresBuffer);
 
 #ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_DebugVariables::AddBoolean({ "Render", "Enable", "SDFs" }, dbg_bEnable);

@@ -45,9 +45,6 @@ void Flux_Particles::Initialise()
 	xVertexDesc.m_xPerInstanceLayout.GetElements().push_back(SHADER_DATA_TYPE_FLOAT4);//colour
 	xVertexDesc.m_xPerInstanceLayout.CalculateOffsetsAndStrides();
 
-	std::vector<Flux_BlendState> xBlendStates;
-	xBlendStates.push_back({ BLEND_FACTOR_SRCALPHA, BLEND_FACTOR_ONE, true });
-
 	Flux_PipelineSpecification xPipelineSpec;
 	xPipelineSpec.m_pxTargetSetup = &Flux_Graphics::s_xFinalRenderTarget;
 	xPipelineSpec.m_pxShader = &s_xShader;
@@ -57,6 +54,8 @@ void Flux_Particles::Initialise()
 	xLayout.m_uNumDescriptorSets = 1;
 	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;
 	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_TEXTURE;
+
+	xPipelineSpec.m_bDepthWriteEnabled = false;
 #if 0
 	(
 		xVertexDesc,
