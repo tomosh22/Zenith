@@ -6,8 +6,8 @@
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
 
-Flux_MeshAnimation::AnimBone::AnimBone(const std::string& strName, const aiNodeAnim* pxChannel)
-	: m_strName(strName)
+Flux_MeshAnimation::AnimBone::AnimBone(const aiNodeAnim* pxChannel)
+	: m_strName(pxChannel->mNodeName.data)
 {
 	m_uNumPositions = pxChannel->mNumPositionKeys;
 	m_xPositions.resize(m_uNumPositions);
@@ -100,42 +100,35 @@ void Flux_MeshAnimation::CalculateBoneTransform(const Node* const pxNode, const 
 Flux_MeshAnimation::Flux_MeshAnimation(const std::string& strPath, Flux_MeshGeometry& xParentGeometry)
 	: m_xParentGeometry(xParentGeometry)
 {
-
-	for (auto& xIt : m_axAnimMatrices)
+	for (u_int u = 0; u < uMAX_BONES_PER_ANIM; u++)
 	{
-		xIt = glm::identity<Zenith_Maths::Matrix4>();
+		m_axAnimMatrices[u] = glm::identity<Zenith_Maths::Matrix4>();
 	}
-
 
 	Assimp::Importer xImporter;
 	const aiScene* pxScene = xImporter.ReadFile(strPath, aiProcess_Triangulate);
 
-	aiAnimation* pxAnimation = pxScene->mAnimations[0];
+	const aiAnimation* pxAnimation = pxScene->mAnimations[0];
 	m_fDuration = pxAnimation->mDuration;
 	m_uTicksPerSecond = pxAnimation->mTicksPerSecond;
 	
 
 	ReadHierarchy(m_xRootNode, *pxScene->mRootNode);
 
+	const std::unordered_map<std::string, std::pair<uint32_t, Zenith_Maths::Matrix4>>& xBoneInfoMap = xParentGeometry.m_xBoneNameToIdAndOffset;
 
-
-	int size = pxAnimation->mNumChannels;
-
-	std::unordered_map<std::string, std::pair<uint32_t, Zenith_Maths::Matrix4>>& boneInfoMap = xParentGeometry.m_xBoneNameToIdAndOffset;//getting m_BoneInfoMap from Model class
-	uint32_t boneCount = xParentGeometry.GetNumBones(); //getting the m_BoneCounter from Model class
-
-	//reading channels(bones engaged in an animation and their keyframes)
-	for (int i = 0; i < size; i++)
+	//#TO convert each channel into an AnimBone and register against its name
+	for (u_int u = 0; u < pxAnimation->mNumChannels; u++)
 	{
-		aiNodeAnim* channel = pxAnimation->mChannels[i];
-		std::string boneName = channel->mNodeName.data;
+		const aiNodeAnim* pxChannel = pxAnimation->mChannels[u];
+		const std::string& strBoneName = pxChannel->mNodeName.data;
 
-		if (boneInfoMap.find(boneName) == boneInfoMap.end())
+		if (xBoneInfoMap.find(strBoneName) == xBoneInfoMap.end())
 		{
 			continue;
 		}
 
-		m_xBones.insert({ boneName, AnimBone(channel->mNodeName.data, channel) });
+		m_xBones.insert({ strBoneName, AnimBone(pxChannel) });
 	}
 
 	

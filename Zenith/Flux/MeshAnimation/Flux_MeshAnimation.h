@@ -4,10 +4,12 @@
 class Flux_MeshAnimation
 {
 public:
+    static constexpr u_int uMAX_BONES_PER_ANIM = 100;
+
 	class AnimBone
 	{
 	public:
-		AnimBone(const std::string& strName, const struct aiNodeAnim* pxChannel);
+		AnimBone(const struct aiNodeAnim* pxChannel);
 		~AnimBone() = default;
 
         void Update(const float fTimestamp)
@@ -154,7 +156,7 @@ public:
         class Flux_MeshGeometry& m_xParentGeometry;
         float m_fCurrentTimestamp = 0.0f;
 
-        Zenith_Maths::Matrix4 m_axAnimMatrices[100];
+        Zenith_Maths::Matrix4 m_axAnimMatrices[uMAX_BONES_PER_ANIM];
         public:
         Flux_DynamicConstantBuffer m_xBoneBuffer;
 
