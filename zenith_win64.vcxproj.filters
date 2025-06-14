@@ -407,6 +407,12 @@
       <Filter>Zenith\Flux\MeshAnimation</Filter>
     </ClCompile>
     <ClCompile Include="Zenith\Flux\Shadows\Flux_Shadows.cpp" />
+    <ClCompile Include="Zenith\UnitTests\Zenith_UnitTests.cpp">
+      <Filter>Zenith\UnitTests</Filter>
+    </ClCompile>
+    <ClCompile Include="Zenith\DataStream\Zenith_DataStream.cpp">
+      <Filter>Zenith\DataStream</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Games\Test\Components\PlayerController_Behaviour.h">
@@ -968,6 +974,12 @@
       <Filter>Zenith\Flux\MeshAnimation</Filter>
     </ClInclude>
     <ClInclude Include="Zenith\Flux\Shadows\Flux_Shadows.h" />
+    <ClInclude Include="Zenith\UnitTests\Zenith_UnitTests.h">
+      <Filter>Zenith\UnitTests</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\DataStream\Zenith_DataStream.h">
+      <Filter>Zenith\DataStream</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Games">
@@ -1209,6 +1221,12 @@
     </Filter>
     <Filter Include="Zenith\Flux\MeshAnimation">
       <UniqueIdentifier>{8be03444-c631-434c-8c10-5428102a716f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Zenith\UnitTests">
+      <UniqueIdentifier>{b10da4ab-fd6d-4582-a8d3-73c24ea8c32b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Zenith\DataStream">
+      <UniqueIdentifier>{bb7d6330-9df7-4fad-8d13-b89c045bf542}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
 </Project>

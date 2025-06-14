@@ -452,6 +452,7 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="Zenith\DataStream\Zenith_DataStream.h" />
     <ClInclude Include="Zenith\Flux\MeshAnimation\Flux_MeshAnimation.h" />
     <ClInclude Include="Games\Test\Components\PlayerController_Behaviour.h" />
     <ClInclude Include="Games\Test\Components\SphereMovement_Behaviour.h" />
@@ -629,6 +630,7 @@
     <ClInclude Include="Zenith\Maths\Zenith_Maths.h" />
     <ClInclude Include="Zenith\Physics\Zenith_Physics.h" />
     <ClInclude Include="Zenith\StateMachine\Zenith_StateMachine.h" />
+    <ClInclude Include="Zenith\UnitTests\Zenith_UnitTests.h" />
     <ClInclude Include="Zenith\Vulkan\Zenith_PlatformGraphics_Include.h" />
     <ClInclude Include="Zenith\Vulkan\Zenith_Vulkan.h" />
     <ClInclude Include="Zenith\Vulkan\Zenith_Vulkan_Buffer.h" />
@@ -641,6 +643,7 @@
     <ClInclude Include="Zenith\Windows\Zenith_Windows_Window.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="Zenith\DataStream\Zenith_DataStream.cpp" />
     <ClCompile Include="Zenith\Flux\MeshAnimation\Flux_MeshAnimation.cpp" />
     <ClCompile Include="Games\Test\Components\PlayerController_Behaviour.cpp" />
     <ClCompile Include="Games\Test\Components\SphereMovement_Behaviour.cpp" />
@@ -1208,6 +1211,7 @@
     <ClCompile Include="Zenith\Maths\Zenith_Maths.cpp" />
     <ClCompile Include="Zenith\Physics\Zenith_Physics.cpp" />
     <ClCompile Include="Zenith\StateMachine\Zenith_StateMachine.cpp" />
+    <ClCompile Include="Zenith\UnitTests\Zenith_UnitTests.cpp" />
     <ClCompile Include="Zenith\Vulkan\Zenith_Vulkan.cpp" />
     <ClCompile Include="Zenith\Vulkan\Zenith_Vulkan_Buffer.cpp" />
     <ClCompile Include="Zenith\Vulkan\Zenith_Vulkan_CommandBuffer.cpp" />
