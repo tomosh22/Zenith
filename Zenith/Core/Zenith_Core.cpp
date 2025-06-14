@@ -44,7 +44,7 @@ void TraverseTree(Zenith_DebugVariableTree::Node* pxNode, uint32_t uCurrentDepth
 	{
 		return;
 	}
-	ImGui::Indent(uCurrentDepth * 10);
+	ImGui::Indent(uCurrentDepth * 20);
 	for (Zenith_DebugVariableTree::LeafNodeBase* pxLeaf : pxNode->m_xLeaves)
 	{
 		pxLeaf->ImGuiDisplay();
@@ -53,6 +53,7 @@ void TraverseTree(Zenith_DebugVariableTree::Node* pxNode, uint32_t uCurrentDepth
 	{
 		TraverseTree(pxChild, uCurrentDepth + 1);
 	}
+	ImGui::Unindent(uCurrentDepth * 20);
 }
 
 void RenderImGui()
