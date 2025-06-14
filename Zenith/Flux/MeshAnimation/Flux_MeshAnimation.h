@@ -7,7 +7,7 @@ public:
 	class AnimBone
 	{
 	public:
-		AnimBone(const std::string& strName, uint32_t uID, const struct aiNodeAnim* pxChannel);
+		AnimBone(const std::string& strName, const struct aiNodeAnim* pxChannel);
 		~AnimBone() = default;
 
         void Update(const float fTimestamp)
@@ -117,7 +117,6 @@ public:
         uint32_t m_uNumScales = 0;
 
 		Zenith_Maths::Matrix4 m_xLocalTransform = glm::identity<Zenith_Maths::Matrix4>();
-		uint32_t m_uID = ~0u;
         std::string m_strName;
 
 

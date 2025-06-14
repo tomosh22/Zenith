@@ -6,9 +6,8 @@
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
 
-Flux_MeshAnimation::AnimBone::AnimBone(const std::string& strName, uint32_t uID, const aiNodeAnim* pxChannel)
+Flux_MeshAnimation::AnimBone::AnimBone(const std::string& strName, const aiNodeAnim* pxChannel)
 	: m_strName(strName)
-	, m_uID(uID)
 {
 	m_uNumPositions = pxChannel->mNumPositionKeys;
 	m_xPositions.resize(m_uNumPositions);
@@ -145,8 +144,7 @@ Flux_MeshAnimation::Flux_MeshAnimation(const std::string& strPath, Flux_MeshGeom
 			xParentGeometry.SetNumBones(boneCount);
 		}
 
-		m_xBones.push_back(AnimBone(channel->mNodeName.data,
-			boneInfoMap.at(strName).first, channel));
+		m_xBones.push_back(AnimBone(channel->mNodeName.data, channel));
 	}
 
 	

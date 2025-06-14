@@ -9,6 +9,7 @@
 #include "AssetHandling/Zenith_AssetHandler.h"
 #include "StateMachine/Zenith_StateMachine.h"
 #include "Physics/Zenith_Physics.h"
+#include "UnitTests/Zenith_UnitTests.h"
 
 #ifdef ZENITH_TOOLS
 extern void ExportAllMeshes();
@@ -25,6 +26,7 @@ static Zenith_Maths::Vector3 s_xDVSTest4 = { 1,2,3 };
 
 int main()
 {
+	Zenith_UnitTests::RunAllTests();
 	//ExportAllMeshes();
 	//ExportHeightmap();
 	Zenith_Window::Inititalise("Zenith", 1280, 720);
