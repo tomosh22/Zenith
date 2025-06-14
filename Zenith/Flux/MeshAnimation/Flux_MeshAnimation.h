@@ -130,7 +130,7 @@ public:
         std::string m_strName;
     } m_xRootNode;
 
-    void CalculateBoneTransform(const Node* node, glm::mat4 parentTransform);
+    void CalculateBoneTransform(const Node* const node, const glm::mat4& parentTransform);
 
     Flux_MeshAnimation() = delete;
     Flux_MeshAnimation(const std::string& strPath, class Flux_MeshGeometry& xParentGeometry);
@@ -150,7 +150,7 @@ public:
 
         float m_fDuration = 0.0f;
         uint32_t m_uTicksPerSecond = 0;
-        std::vector<AnimBone> m_xBones;
+        std::unordered_map<std::string, AnimBone> m_xBones;
         class Flux_MeshGeometry& m_xParentGeometry;
         float m_fCurrentTimestamp = 0.0f;
 
