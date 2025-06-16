@@ -30,8 +30,9 @@ public:
 	{
 		std::string strFileCopy(strFilename);
 		const uint32_t uLength = strFileCopy.size();
-		char* szFileCopy = new char[uLength];
+		char* szFileCopy = new char[uLength+1];
 		strncpy(szFileCopy, strFileCopy.c_str(), uLength);
+		szFileCopy[uLength] = '\0';
 
 		std::string strTruncated(szFileCopy);
 		size_t ulUnderscorePos = strTruncated.find("_");
@@ -51,8 +52,9 @@ public:
 	{
 		std::string strSubstr = strFilename.substr(strFilename.find("Mat") + 3);
 		const uint32_t uLength = strSubstr.size();
-		char* szFileCopy = new char[uLength];
+		char* szFileCopy = new char[uLength+1];
 		strncpy(szFileCopy, strSubstr.c_str(), uLength);
+		szFileCopy[uLength] = '\0';
 
 		uint32_t uRet = std::atoi(szFileCopy);
 		delete[] szFileCopy;

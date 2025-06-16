@@ -1,16 +1,18 @@
 #ifdef ZENITH_TOOLS
 #include "imgui.h"
 #include "Flux/Flux.h"
+
+#define ROOT_NAME "Debug Variables"
+
 class Zenith_DebugVariableTree
 {
 public:
-	static constexpr char* s_szRootName = "Debug Variables";
 	static constexpr uint32_t s_uMaxNameLength = 64;
 
 	Zenith_DebugVariableTree()
 	{
 		m_pxRoot = new Node;
-		m_pxRoot->m_xName = { s_szRootName };
+		m_pxRoot->m_xName = { ROOT_NAME };
 	}
 
 	struct LeafNodeBase
@@ -18,7 +20,7 @@ public:
 		virtual ~LeafNodeBase() = default;
 		virtual void ImGuiDisplay() = 0;
 
-		std::vector<std::string> m_xName = { s_szRootName };
+		std::vector<std::string> m_xName = { ROOT_NAME };
 	};
 
 	template<typename T>

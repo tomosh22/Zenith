@@ -236,9 +236,9 @@ void Zenith_Vulkan_CommandBuffer::PrepareDrawCallDescriptors()
 				{
 					continue;
 				}
-
+				vk::Buffer xBuffer = pxBuf->GetBuffer();
 				vk::DescriptorBufferInfo& xInfo = xBufferInfos.at(uCount)
-					.setBuffer(pxBuf->GetBuffer())
+					.setBuffer(xBuffer)
 					.setOffset(0)
 					.setRange(pxBuf->GetSize());
 

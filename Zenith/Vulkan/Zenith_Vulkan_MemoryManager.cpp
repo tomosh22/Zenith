@@ -29,9 +29,10 @@ void Zenith_Vulkan_MemoryManager::InitialiseStagingBuffer()
 		.setUsage(vk::BufferUsageFlagBits::eTransferSrc)
 		.setSharingMode(vk::SharingMode::eExclusive);
 
-	s_xStagingBuffer.SetBuffer(xDevice.createBuffer(xInfo));
+	vk::Buffer xBuffer = xDevice.createBuffer(xInfo);
+	s_xStagingBuffer.SetBuffer(xBuffer);
 
-	vk::MemoryRequirements xRequirements = xDevice.getBufferMemoryRequirements(s_xStagingBuffer.GetBuffer());
+	vk::MemoryRequirements xRequirements = xDevice.getBufferMemoryRequirements(xBuffer);
 
 	uint32_t memoryType = ~0u;
 	for (uint32_t i = 0; i < xPhysicalDevice.getMemoryProperties().memoryTypeCount; i++)
@@ -49,7 +50,7 @@ void Zenith_Vulkan_MemoryManager::InitialiseStagingBuffer()
 		.setMemoryTypeIndex(memoryType);
 
 	s_xStagingMem = xDevice.allocateMemory(xAllocInfo);
-	xDevice.bindBufferMemory(s_xStagingBuffer.GetBuffer(), s_xStagingMem, 0);
+	xDevice.bindBufferMemory(xBuffer, s_xStagingMem, 0);
 }
 
 void Zenith_Vulkan_MemoryManager::Initialise()
@@ -482,8 +483,10 @@ void Zenith_Vulkan_MemoryManager::AllocateTexture(uint32_t uWidth, uint32_t uHei
 		.setBaseArrayLayer(0)
 		.setLayerCount(uNumLayers);
 
+	vk::Image xImage = xTextureOut.GetImage();
+
 	vk::ImageViewCreateInfo xViewCreate = vk::ImageViewCreateInfo()
-		.setImage(xTextureOut.GetImage())
+		.setImage(xImage)
 		.setViewType(uNumLayers == 1 ? vk::ImageViewType::e2D : vk::ImageViewType::eCube)
 		.setFormat(xFormat)
 		.setSubresourceRange(xSubresourceRange);
@@ -593,12 +596,13 @@ void Zenith_Vulkan_MemoryManager::FlushStagingBuffer()
 		}
 		else if (xAlloc.m_eType == ALLOCATION_TYPE_TEXTURE) {
 			Zenith_Vulkan_Texture* pxTexture = reinterpret_cast<Zenith_Vulkan_Texture*>(xAlloc.m_pAllocation);
+			vk::Image xImage = pxTexture->GetImage();
 
 			for (uint32_t uLayer = 0; uLayer < pxTexture->GetNumLayers(); uLayer++)
 			{
 				for (uint32_t uMip = 0; uMip < pxTexture->GetNumMips(); uMip++)
 				{
-					s_xCommandBuffer.ImageTransitionBarrier(pxTexture->GetImage(), vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, uMip, uLayer);
+					s_xCommandBuffer.ImageTransitionBarrier(xImage, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, uMip, uLayer);
 				}
 			}
 
@@ -606,18 +610,18 @@ void Zenith_Vulkan_MemoryManager::FlushStagingBuffer()
 
 			for (uint32_t uLayer = 0; uLayer < pxTexture->GetNumLayers(); uLayer++)
 			{
-				s_xCommandBuffer.ImageTransitionBarrier(pxTexture->GetImage(), vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eTransferSrcOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, 0, uLayer);
+				s_xCommandBuffer.ImageTransitionBarrier(xImage, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eTransferSrcOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, 0, uLayer);
 
 				for (uint32_t uMip = 1; uMip < pxTexture->GetNumMips(); uMip++)
 				{
 					s_xCommandBuffer.BlitTextureToTexture(pxTexture, pxTexture, uMip, uLayer);
 				}
 
-				s_xCommandBuffer.ImageTransitionBarrier(pxTexture->GetImage(), vk::ImageLayout::eTransferSrcOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, 0, uLayer);
+				s_xCommandBuffer.ImageTransitionBarrier(xImage, vk::ImageLayout::eTransferSrcOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, 0, uLayer);
 
 				for (uint32_t uMip = 1; uMip < pxTexture->GetNumMips(); uMip++)
 				{
-					s_xCommandBuffer.ImageTransitionBarrier(pxTexture->GetImage(), vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, uMip, uLayer);
+					s_xCommandBuffer.ImageTransitionBarrier(xImage, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, uMip, uLayer);
 				}
 			}
 		}

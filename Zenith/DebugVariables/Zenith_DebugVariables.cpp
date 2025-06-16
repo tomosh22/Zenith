@@ -135,7 +135,7 @@ void Zenith_DebugVariableTree::AddLeafNode(LeafNodeBase* pxLeafNode, std::vector
 	for (uint32_t u = 0; u < xSplits.size() - 1; u++)
 	{
 		Node* pxNodeToAdd = new Node;
-		pxNodeToAdd->m_xName.push_back(s_szRootName);
+		pxNodeToAdd->m_xName.push_back(ROOT_NAME);
 		for (uint32_t uSub = 0; uSub < u + 1; uSub++)
 		{
 			pxNodeToAdd->m_xName.push_back(xSplits[uSub]);

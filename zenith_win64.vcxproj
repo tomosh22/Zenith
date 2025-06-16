@@ -55,6 +55,7 @@
     <CharacterSet>MultiByte</CharacterSet>
     <WholeProgramOptimization>false</WholeProgramOptimization>
     <PlatformToolset>v143</PlatformToolset>
+    <EnableASAN>false</EnableASAN>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="ExtensionSettings">
@@ -643,7 +644,6 @@
     <ClInclude Include="Zenith\Windows\Zenith_Windows_Window.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="Zenith\DataStream\Zenith_DataStream.cpp" />
     <ClCompile Include="Zenith\Flux\MeshAnimation\Flux_MeshAnimation.cpp" />
     <ClCompile Include="Games\Test\Components\PlayerController_Behaviour.cpp" />
     <ClCompile Include="Games\Test\Components\SphereMovement_Behaviour.cpp" />
