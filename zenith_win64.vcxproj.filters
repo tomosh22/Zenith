@@ -410,9 +410,6 @@
     <ClCompile Include="Zenith\UnitTests\Zenith_UnitTests.cpp">
       <Filter>Zenith\UnitTests</Filter>
     </ClCompile>
-    <ClCompile Include="Zenith\DataStream\Zenith_DataStream.cpp">
-      <Filter>Zenith\DataStream</Filter>
-    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Games\Test\Components\PlayerController_Behaviour.h">

@@ -82,7 +82,6 @@ private:
 	//#TO_TODO: move to private
 public:
 	std::unordered_map<std::string, std::pair<uint32_t, Zenith_Maths::Matrix4>> m_xBoneNameToIdAndOffset;
-	std::unordered_map<uint32_t, std::string> m_xBoneIDToName;
 
 	IndexType* m_puIndices = nullptr;
 

@@ -2,6 +2,7 @@
 #include "Flux_MeshGeometry.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "Flux/Flux.h"
+#include "DataStream/Zenith_DataStream.h"
 
 void Flux_MeshGeometry::GenerateFullscreenQuad(Flux_MeshGeometry& xGeometryOut)
 {
@@ -76,117 +77,39 @@ ShaderDataType StringToShaderDataType(const std::string& strString)
 
 void Flux_MeshGeometry::LoadFromFile(const char* szPath, Flux_MeshGeometry& xGeometryOut, const bool bRetainPositionsAndNormals /*= false*/)
 {
-	FILE* pxFile = fopen(szPath, "rb");
+	Zenith_DataStream xStream;
+	xStream.ReadFromFile(szPath);
 
-	if (!pxFile)
-	{
-		Zenith_Log("Mesh file doesn't exist");
-		return;
-	}
-	fseek(pxFile, 0, SEEK_END);
-	size_t ulFileSize = ftell(pxFile);
-	fseek(pxFile, 0, SEEK_SET);
-	char* pcData = new char[ulFileSize + 1];
-	fread(pcData, ulFileSize, 1, pxFile);
-	pcData[ulFileSize] = '\0';
-	fclose(pxFile);
-
-	size_t ulCursor = 0;
-
-	uint32_t uNumElements = atoi(pcData + ulCursor);
-	ulCursor += std::to_string(uNumElements).length() + 1;
-	for (uint32_t i = 0; i < uNumElements; i++)
-	{
-		std::string strType(pcData + ulCursor);
-		ulCursor += strType.length() + 1;
-		ShaderDataType eType = StringToShaderDataType(strType);
-		xGeometryOut.m_xBufferLayout.GetElements().push_back({ eType });
-	}
+	xStream >> xGeometryOut.m_xBufferLayout.GetElements();
 	xGeometryOut.m_xBufferLayout.CalculateOffsetsAndStrides();
+	xStream >> xGeometryOut.m_uNumVerts;
+	xStream >> xGeometryOut.m_uNumIndices;
+	xStream >> xGeometryOut.m_uNumBones;
+	xStream >> xGeometryOut.m_xBoneNameToIdAndOffset;
 
-	size_t ulNumVerts = atoi(pcData + ulCursor);
-	ulCursor += std::to_string(ulNumVerts).length() + 1;
+	const u_int ulVertexDataSize = xGeometryOut.m_uNumVerts * xGeometryOut.m_xBufferLayout.GetStride();
+	const u_int ulIndexDataSize = xGeometryOut.m_uNumIndices * sizeof(IndexType);
 
-	size_t ulNumIndices = atoi(pcData + ulCursor);
-	ulCursor += std::to_string(ulNumIndices).length() + 1;
+	xGeometryOut.m_pVertexData = new uint8_t[ulVertexDataSize];
+	xStream.ReadData(xGeometryOut.m_pVertexData, ulVertexDataSize);
 
-	size_t ulNumBones = atoi(pcData + ulCursor);
-	ulCursor += std::to_string(ulNumBones).length() + 1;
-
-	size_t ulVertBufferLen = atoi(pcData + ulCursor);
-	ulCursor += std::to_string(ulVertBufferLen).length() + 1;
-
-	size_t ulIndexBufferLen = atoi(pcData + ulCursor);
-	ulCursor += std::to_string(ulIndexBufferLen).length() + 1;
-
-	xGeometryOut.m_uNumVerts = ulNumVerts;
-	xGeometryOut.m_uNumIndices = ulNumIndices;
-	xGeometryOut.m_uNumBones = ulNumBones;
-
-	Zenith_Assert(ulVertBufferLen == xGeometryOut.m_uNumVerts * xGeometryOut.m_xBufferLayout.GetStride(), "Vertex buffer is wrong size");
-	Zenith_Assert(ulIndexBufferLen == xGeometryOut.m_uNumIndices * sizeof(IndexType), "Index buffer is wrong size");
-
-	xGeometryOut.m_pVertexData = new char[ulVertBufferLen];
-	xGeometryOut.m_puIndices = new IndexType[xGeometryOut.m_uNumIndices];
-	if (bRetainPositionsAndNormals)
-	{
-		xGeometryOut.m_pxPositions = new glm::highp_vec3[xGeometryOut.m_uNumVerts];
-		xGeometryOut.m_pxNormals = new glm::vec3[xGeometryOut.m_uNumVerts];
-	}
-
-
-	size_t ulBoneMapSize = atoi(pcData + ulCursor);
-	ulCursor += std::to_string(ulBoneMapSize).length() + 1;
-	if (ulBoneMapSize)
-	{
-		for (uint32_t u = 0; u < ulBoneMapSize; u++)
-		{
-			std::string strName(pcData + ulCursor);
-			ulCursor += strName.length() + 1;
-
-			uint32_t uID = atoi(pcData + ulCursor);
-			ulCursor += std::to_string(uID).length() + 1;
-
-			Zenith_Maths::Matrix4 xMat;
-			for (uint32_t u = 0; u < 4; u++)
-			{
-				for (uint32_t v = 0; v < 4; v++)
-				{
-					char* endPtr = nullptr;
-					xMat[u][v] = strtof(pcData + ulCursor, &endPtr);
-					if (endPtr == pcData + ulCursor)
-					{
-						Zenith_Log("Failed to parse float value");
-						delete[] pcData;
-						return;
-					}
-					ulCursor += (endPtr - (pcData + ulCursor)) + 1; // Advance cursor, including null terminator
-				}
-			}
-
-			xGeometryOut.m_xBoneNameToIdAndOffset.insert({ strName, {uID, xMat} });
-		}
-	}
-
-	memcpy(xGeometryOut.m_pVertexData, pcData + ulCursor, ulVertBufferLen);
-	ulCursor += ulVertBufferLen;
-
-	memcpy(xGeometryOut.m_puIndices, pcData + ulCursor, ulIndexBufferLen);
-	ulCursor += ulIndexBufferLen;
+	xGeometryOut.m_puIndices = new Flux_MeshGeometry::IndexType[ulIndexDataSize / sizeof(Flux_MeshGeometry::IndexType)];
+	xStream.ReadData(xGeometryOut.m_puIndices, ulIndexDataSize);
 
 	if (bRetainPositionsAndNormals)
 	{
-		memcpy(xGeometryOut.m_pxPositions, pcData + ulCursor, sizeof(xGeometryOut.m_pxPositions[0]) * xGeometryOut.m_uNumVerts);
-	}
-	ulCursor += sizeof(glm::highp_vec3) * xGeometryOut.m_uNumVerts;
+		xGeometryOut.m_pxPositions = new Zenith_Maths::Vector3[xGeometryOut.m_uNumVerts];
+		xStream.ReadData(xGeometryOut.m_pxPositions, xGeometryOut.m_uNumVerts * sizeof(m_pxPositions[0]));
 
-	if (bRetainPositionsAndNormals)
+		xGeometryOut.m_pxNormals = new Zenith_Maths::Vector3[xGeometryOut.m_uNumVerts];
+		xStream.ReadData(xGeometryOut.m_pxNormals, xGeometryOut.m_uNumVerts * sizeof(m_pxNormals[0]));
+	}
+	else
 	{
-		memcpy(xGeometryOut.m_pxNormals, pcData + ulCursor, sizeof(xGeometryOut.m_pxNormals[0]) * xGeometryOut.m_uNumVerts);
+		xGeometryOut.m_pxPositions = nullptr;
+		xGeometryOut.m_pxNormals = nullptr;
+		xStream.SkipBytes(xGeometryOut.m_uNumVerts * (sizeof(m_pxPositions[0]) + sizeof(m_pxNormals[0])));
 	}
-	ulCursor += sizeof(glm::vec3) * xGeometryOut.m_uNumVerts;
-
-	delete[] pcData;
 
 	Flux_MemoryManager::InitialiseVertexBuffer(xGeometryOut.GetVertexData(), xGeometryOut.GetVertexDataSize(), xGeometryOut.m_xVertexBuffer);
 	Flux_MemoryManager::InitialiseIndexBuffer(xGeometryOut.GetIndexData(), xGeometryOut.GetIndexDataSize(), xGeometryOut.m_xIndexBuffer);
@@ -216,66 +139,18 @@ static std::string ShaderDataTypeToString(ShaderDataType eType)
 }
 void Flux_MeshGeometry::Export(const char* szFilename)
 {
-	FILE* pxFile = fopen(szFilename, "wb");
-	Zenith_Assert(pxFile, "Failed to open file %s error code %u", szFilename, errno);
-	char cNull = '\0';
+	Zenith_DataStream xStream;
+	xStream << m_xBufferLayout.GetElements();
+	xStream << m_uNumVerts;
+	xStream << m_uNumIndices;
+	xStream << m_uNumBones;
+	xStream << m_xBoneNameToIdAndOffset;
+	xStream.WriteData(m_pVertexData, m_uNumVerts * m_xBufferLayout.GetStride());
+	xStream.WriteData(m_puIndices, m_uNumIndices * sizeof(Flux_MeshGeometry::IndexType));
+	xStream.WriteData(m_pxPositions, m_uNumVerts * sizeof(m_pxPositions[0]));
+	xStream.WriteData(m_pxNormals, m_uNumVerts * sizeof(m_pxNormals[0]));
 
-	fputs(std::to_string(m_xBufferLayout.GetElements().size()).c_str(), pxFile);
-	fwrite(&cNull, 1, 1, pxFile);
-	for (Flux_BufferElement& xElement : m_xBufferLayout.GetElements())
-	{
-		fputs(ShaderDataTypeToString(xElement._Type).c_str(), pxFile);
-		fwrite(&cNull, 1, 1, pxFile);
-	}
-
-	fputs(std::to_string(m_uNumVerts).c_str(), pxFile);
-	fwrite(&cNull, 1, 1, pxFile);
-
-	fputs(std::to_string(m_uNumIndices).c_str(), pxFile);
-	fwrite(&cNull, 1, 1, pxFile);
-
-	//#TO_TODO: move to separate class
-	fputs(std::to_string(m_uNumBones).c_str(), pxFile);
-	fwrite(&cNull, 1, 1, pxFile);
-
-	fputs(std::to_string(m_uNumVerts * m_xBufferLayout.GetStride()).c_str(), pxFile);
-	fwrite(&cNull, 1, 1, pxFile);
-
-	fputs(std::to_string(m_uNumIndices * sizeof(Flux_MeshGeometry::IndexType)).c_str(), pxFile);
-	fwrite(&cNull, 1, 1, pxFile);
-
-	fputs(std::to_string(m_xBoneNameToIdAndOffset.size()).c_str(), pxFile);
-	fwrite(&cNull, 1, 1, pxFile);
-	for (auto& xIt : m_xBoneNameToIdAndOffset)
-	{
-		fputs(xIt.first.c_str(), pxFile);
-		fwrite(&cNull, 1, 1, pxFile);
-
-		fputs(std::to_string(xIt.second.first).c_str(), pxFile);
-		fwrite(&cNull, 1, 1, pxFile);
-
-		const Zenith_Maths::Matrix4& xMat = xIt.second.second;
-		for (uint32_t u = 0; u < 4; u++)
-		{
-			for (uint32_t v = 0; v < 4; v++)
-			{
-				std::ostringstream oss;
-				oss << std::fixed << std::setprecision(8) << xMat[u][v]; // Control precision
-				fputs(oss.str().c_str(), pxFile);
-				fwrite(&cNull, 1, 1, pxFile); // Write a null terminator
-			}
-		}
-	}
-
-	fwrite(m_pVertexData, m_uNumVerts * m_xBufferLayout.GetStride(), 1, pxFile);
-
-	fwrite(m_puIndices, m_uNumIndices * sizeof(Flux_MeshGeometry::IndexType), 1, pxFile);
-
-	fwrite(m_pxPositions, m_uNumVerts * sizeof(m_pxPositions[0]), 1, pxFile);
-
-	fwrite(m_pxNormals, m_uNumVerts * sizeof(m_pxNormals[0]), 1, pxFile);
-
-	fclose(pxFile);
+	xStream.WriteToFile(szFilename);
 }
 #endif
 

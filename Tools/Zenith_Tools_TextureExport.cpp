@@ -68,7 +68,7 @@ void ExportTexture(const std::filesystem::directory_entry& xFile)
 	wcstombs(szFilename, wszFilename, ulLength);
 	szFilename[ulLength] = '\0';
 
-	constexpr char* aszExtensions[] =
+	const char* aszExtensions[] =
 	{
 		"png",
 		"jpg",

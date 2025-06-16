@@ -28,4 +28,11 @@ namespace Zenith_FileAccess
 		xFile.close();
 		return pcRet;
 	}
+
+	static void WriteFile(const char* szFilename, const void* const pData, const uint64_t ulSize)
+	{
+		FILE* pxFile = fopen(szFilename, "wb");
+		fwrite(pData, ulSize, 1, pxFile);
+		fclose(pxFile);
+	}
 }
