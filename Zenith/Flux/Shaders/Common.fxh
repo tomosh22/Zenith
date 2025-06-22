@@ -8,6 +8,8 @@ layout(std140, set = 0, binding=0) uniform FrameConstants{
 	vec4 g_xSunColour;
 	uvec2 g_xScreenDims;
 	vec2 g_xRcpScreenDims;
+	uint g_bQuadUtilisationAnalysis;
+	uint g_uTargetPixelsPerTri;
 };
 
 struct DirectionalLight{

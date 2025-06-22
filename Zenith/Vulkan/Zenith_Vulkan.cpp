@@ -37,6 +37,7 @@ static const char* s_aszDeviceExtensions[] = {
 				VK_KHR_RAY_QUERY_EXTENSION_NAME,
 				VK_NV_RAY_TRACING_EXTENSION_NAME,
 #endif
+				VK_KHR_FRAGMENT_SHADER_BARYCENTRIC_EXTENSION_NAME,
 };
 
 vk::Instance Zenith_Vulkan::s_xInstance;
@@ -346,20 +347,30 @@ void Zenith_Vulkan::CreateDevice()
 		.setEnabledLayerCount(0);
 #endif
 
+	
+
 	vk::PhysicalDeviceFeatures xDeviceFeatures = vk::PhysicalDeviceFeatures()
 		.setSamplerAnisotropy(VK_TRUE)
 		.setTessellationShader(VK_TRUE)
 		.setFillModeNonSolid(VK_TRUE);
 
+
 	vk::PhysicalDeviceFeatures2 xDeviceFeatures2 = vk::PhysicalDeviceFeatures2()
 		.setFeatures(xDeviceFeatures);
+
+	
 
 	vk::PhysicalDeviceDescriptorIndexingFeatures xIndexingFeatures = vk::PhysicalDeviceDescriptorIndexingFeatures()
 		.setDescriptorBindingSampledImageUpdateAfterBind(true)
 		.setPNext(&xDeviceFeatures2);
 
+	vk::PhysicalDeviceFeatures2 xTemp;
+	vk::PhysicalDeviceFragmentShaderBarycentricFeaturesKHR xTempBary;
+	xTemp.setPNext(&xTempBary);
+	s_xPhysicalDevice.getFeatures2(&xTemp);
+	xTempBary.setPNext(&xIndexingFeatures);
 
-	xDeviceCreateInfo.setPNext(&xIndexingFeatures);
+	xDeviceCreateInfo.setPNext(&xTempBary);
 
 	s_xDevice = s_xPhysicalDevice.createDevice(xDeviceCreateInfo);
 

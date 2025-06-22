@@ -56,6 +56,8 @@ private:
 		Zenith_Maths::Vector4 m_xSunColour_Pad;
 		Zenith_Maths::UVector2 m_xScreenDims;
 		Zenith_Maths::Vector2 m_xRcpScreenDims;
+		u_int m_uQuadUtilisationAnalysis;
+		u_int m_uTargetPixelsPerTri;
 	};
 	static FrameConstants s_xFrameConstants;
 };

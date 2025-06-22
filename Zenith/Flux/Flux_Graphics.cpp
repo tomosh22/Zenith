@@ -35,8 +35,11 @@ ColourFormat Flux_Graphics::s_aeMRTFormats[MRT_INDEX_COUNT]
 DEBUGVAR Zenith_Maths::Vector3 dbg_SunDir = { 0.,-0.6, -0.8 };
 DEBUGVAR Zenith_Maths::Vector4 dbg_SunColour = { 0.7, 0.4,0.2, 1.f };
 
+DEBUGVAR bool dbg_bQuadUtilisationAnalysis = false;
+DEBUGVAR u_int dbg_uTargetPixelsPerTri = 10;
+
 DEBUGVAR bool dbg_bOverrideViewProjMat = false;
-DEBUGVAR uint32_t dbg_uOverrideViewProjMatIndex = 0;
+DEBUGVAR u_int dbg_uOverrideViewProjMatIndex = 0;
 #endif
 
 void Flux_Graphics::Initialise()
@@ -59,6 +62,9 @@ void Flux_Graphics::Initialise()
 	Zenith_DebugVariables::AddVector4({ "Render", "Sun Colour" }, dbg_SunColour, 0, 1.);
 
 	Zenith_DebugVariables::AddTexture({ "Render", "Debug", "MRT Diffuse" }, *s_xMRTTarget.m_axColourAttachments[MRT_INDEX_DIFFUSE].m_pxTargetTexture);
+
+	Zenith_DebugVariables::AddBoolean({ "Render", "Quad Utilisation Analysis" }, dbg_bQuadUtilisationAnalysis);
+	Zenith_DebugVariables::AddUInt32({ "Render", "Target Pixels Per Tri" }, dbg_uTargetPixelsPerTri, 1, 32);
 
 	Zenith_DebugVariables::AddBoolean({ "Shadows", "Override ViewProj Mat" }, dbg_bOverrideViewProjMat);
 	Zenith_DebugVariables::AddUInt32({ "Shadows", "Override ViewProj Mat Index" }, dbg_uOverrideViewProjMatIndex, 0, ZENITH_FLUX_NUM_CSMS);
@@ -121,6 +127,8 @@ void Flux_Graphics::UploadFrameConstants()
 	Zenith_Window::GetInstance()->GetSize(iWidth, iHeight);
 	s_xFrameConstants.m_xScreenDims = { static_cast<uint32_t>(iWidth), static_cast<uint32_t>(iHeight) };
 	s_xFrameConstants.m_xRcpScreenDims = { 1.f / s_xFrameConstants.m_xScreenDims.x, 1.f / s_xFrameConstants.m_xScreenDims.y };
+	s_xFrameConstants.m_uQuadUtilisationAnalysis = dbg_bQuadUtilisationAnalysis;
+	s_xFrameConstants.m_uTargetPixelsPerTri = dbg_uTargetPixelsPerTri;
 	Flux_MemoryManager::UploadBufferData(s_xFrameConstantsBuffer.GetBuffer(), &s_xFrameConstants, sizeof(FrameConstants));
 }
 
