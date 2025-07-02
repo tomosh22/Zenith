@@ -10,6 +10,7 @@
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Zenith_OS_Include.h"
 #include "AssetHandling/Zenith_AssetHandler.h"
+#include "Core/Zenith_Callback.h"
 
 Flux_TargetSetup Flux_Graphics::s_xMRTTarget;
 Flux_TargetSetup Flux_Graphics::s_xFinalRenderTarget;
@@ -58,7 +59,7 @@ void Flux_Graphics::Initialise()
 	Flux_MemoryManager::InitialiseDynamicConstantBuffer(nullptr, sizeof(FrameConstants), s_xFrameConstantsBuffer);
 
 	InitialiseRenderTargets();
-	Flux::AddResChangeCallback(InitialiseRenderTargets);
+	Flux::AddResChangeCallback(Zenith_Callback<void>(InitialiseRenderTargets));
 
 #ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_DebugVariables::AddVector3({ "Render", "Sun Direction" }, dbg_SunDir, -1, 1.);
