@@ -20,6 +20,7 @@ Flux_MeshGeometry Flux_Graphics::s_xQuadMesh;
 Flux_DynamicConstantBuffer Flux_Graphics::s_xFrameConstantsBuffer;
 Flux_Texture* Flux_Graphics::s_pxBlankTexture2D;
 Flux_MeshGeometry Flux_Graphics::s_xBlankMesh;
+Flux_Material* Flux_Graphics::s_pxBlankMaterial;
 Flux_Graphics::FrameConstants Flux_Graphics::s_xFrameConstants;
 Flux_DescriptorSetLayout Flux_Graphics::s_xFrameConstantsLayout;
 
@@ -48,6 +49,8 @@ void Flux_Graphics::Initialise()
 
 	float afBlankTexData[] = { 1.f,1.f,1.f,1.f };
 	s_pxBlankTexture2D = Zenith_AssetHandler::AddTexture2D("Flux Graphics Blank Texture", afBlankTexData, 1, 1, 1, COLOUR_FORMAT_RGBA8_UNORM, DEPTHSTENCIL_FORMAT_NONE, false);
+
+	s_pxBlankMaterial = &Zenith_AssetHandler::AddMaterial("BlankMaterial");
 
 	Flux_MeshGeometry::GenerateFullscreenQuad(s_xQuadMesh);
 	Flux_MemoryManager::InitialiseVertexBuffer(s_xQuadMesh.GetVertexData(), s_xQuadMesh.GetVertexDataSize(), s_xQuadMesh.GetVertexBuffer());

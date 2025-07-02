@@ -27,7 +27,7 @@ static Zenith_Maths::Vector3 s_xDVSTest4 = { 1,2,3 };
 int main()
 {
 	Zenith_UnitTests::RunAllTests();
-	//ExportAllMeshes();
+	ExportAllMeshes();
 	//ExportHeightmap();
 	Zenith_Window::Inititalise("Zenith", 1280, 720);
 	Flux::EarlyInitialise();

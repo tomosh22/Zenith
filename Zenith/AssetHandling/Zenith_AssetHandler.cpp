@@ -149,7 +149,7 @@ Flux_Material& Zenith_AssetHandler::TryGetMaterial(const std::string& strName)
 	}
 	else
 	{
-		Zenith_Assert(false, "Implement a blank material");
+		return *Flux_Graphics::s_pxBlankMaterial;
 	}
 }
 
