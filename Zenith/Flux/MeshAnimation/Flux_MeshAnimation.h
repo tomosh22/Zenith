@@ -15,9 +15,9 @@ public:
         void Update(const float fTimestamp)
         {
             m_xLocalTransform =
-                InterpolatePosition(fTimestamp) *
-                InterpolateRotation(fTimestamp) *
-                InterpolateScaling(fTimestamp);
+                InterpolatePosition(0) *
+                InterpolateRotation(0) *
+                InterpolateScaling(0);
         }
 
 	private:
@@ -132,16 +132,16 @@ public:
         std::string m_strName;
     } m_xRootNode;
 
-    void CalculateBoneTransform(const Node* const node, const glm::mat4& parentTransform);
+    void CalculateBoneTransform(const Node* const node, const glm::mat4& parentTransform, bool bDebug = false);
 
     Flux_MeshAnimation() = delete;
     Flux_MeshAnimation(const std::string& strPath, class Flux_MeshGeometry& xParentGeometry);
 
-    void Update(float fDt)
+    void Update(float fDt, bool bDebug = false)
     {
         m_fCurrentTimestamp += m_uTicksPerSecond * fDt;
         m_fCurrentTimestamp = fmod(m_fCurrentTimestamp, m_fDuration);
-        CalculateBoneTransform(&m_xRootNode, glm::mat4(1.0f));
+        CalculateBoneTransform(&m_xRootNode, glm::mat4(1.0f), bDebug);
 
         Flux_MemoryManager::UploadBufferData(m_xBoneBuffer.GetBuffer(), m_axAnimMatrices, sizeof(m_axAnimMatrices));
     }

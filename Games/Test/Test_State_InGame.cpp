@@ -41,7 +41,7 @@ static Zenith_Entity s_xOgre;
 
 static void LoadAssets()
 {
-	Zenith_AssetHandler::AddMesh("StickyMcStickFace", ASSETS_ROOT"Meshes/StickyMcStickface_Mesh0_Mat0.zmsh");
+	Zenith_AssetHandler::AddMesh("StickyMcStickFace", ASSETS_ROOT"Meshes/stickymcstickface_anim/StickyMcStickface_Anim_Mesh0_Mat0.zmsh");
 	Zenith_AssetHandler::AddMesh("Barrel", ASSETS_ROOT"Meshes/barrel_Mesh0_Mat0.zmsh");
 	{
 		Zenith_AssetHandler::AddTexture2D("Barrel_Diffuse", ASSETS_ROOT"Meshes/barrel_Diffuse_0.ztx");
@@ -182,6 +182,7 @@ void Test_State_InGame::OnEnter()
 
 	Zenith_ModelComponent& xModel = s_xPlayer.AddComponent<Zenith_ModelComponent>();
 	xModel.AddMeshEntry(Zenith_AssetHandler::GetMesh("StickyMcStickFace"), Zenith_AssetHandler::GetMaterial("Crystal"));
+	xModel.GetMeshGeometryAtIndex(0).m_pxAnimation = new Flux_MeshAnimation(ASSETS_ROOT"Meshes/stickymcstickface_anim/StickyMcStickface_Anim.fbx", xModel.GetMeshGeometryAtIndex(0));
 
 	{
 		s_xSphere0.Initialise(&xScene, "Sphere0");
@@ -323,6 +324,12 @@ void Test_State_InGame::OnUpdate()
 		xMesh0.m_pxAnimation->Update(Zenith_Core::GetDt());
 		xMesh1.m_pxAnimation->Update(Zenith_Core::GetDt());
 	}
+	{
+		Zenith_ModelComponent& xModel = s_xPlayer.GetComponent<Zenith_ModelComponent>();
+		Flux_MeshGeometry& xMesh0 = xModel.GetMeshGeometryAtIndex(0);
+		xMesh0.m_pxAnimation->Update(Zenith_Core::GetDt(), true);
+	}
+
 
 	Zenith_Core::Zenith_MainLoop();
 	if (Zenith_Input::IsKeyDown(ZENITH_KEY_P))

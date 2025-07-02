@@ -68,7 +68,7 @@ static void ReadHierarchy(Flux_MeshAnimation::Node& xDst, const aiNode& xSrc)
 	}
 }
 
-void Flux_MeshAnimation::CalculateBoneTransform(const Node* const pxNode, const glm::mat4& xParentTransform)
+void Flux_MeshAnimation::CalculateBoneTransform(const Node* const pxNode, const glm::mat4& xParentTransform, bool bDebug /*= false*/)
 {
 	const std::string& strNodeName = pxNode->m_strName;
 	Zenith_Maths::Matrix4 xNodeTransform = pxNode->m_xTrans;
@@ -78,6 +78,20 @@ void Flux_MeshAnimation::CalculateBoneTransform(const Node* const pxNode, const 
 		AnimBone& xBone = m_xBones.at(strNodeName);
 		xBone.Update(m_fCurrentTimestamp);
 		xNodeTransform = xBone.m_xLocalTransform;
+	}
+
+	if (bDebug)
+	{
+		printf("Animation Bone %s, local transform\n", strNodeName.c_str());
+		for (u_int u = 0; u < 4; u++)
+		{
+			for (u_int v = 0; v < 4; v++)
+			{
+				printf(" %f ", xNodeTransform[u][v]);
+			}
+			printf("\n");
+		}
+		printf("\n");
 	}
 
 	glm::mat4 xGlobalTransformation = xParentTransform * xNodeTransform;
@@ -93,7 +107,7 @@ void Flux_MeshAnimation::CalculateBoneTransform(const Node* const pxNode, const 
 
 	for (u_int u = 0; u < pxNode->m_uChildCount; u++)
 	{
-		CalculateBoneTransform(&pxNode->m_xChildren[u], xGlobalTransformation);
+		CalculateBoneTransform(&pxNode->m_xChildren[u], xGlobalTransformation, bDebug);
 	}
 }
 

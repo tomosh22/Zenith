@@ -108,7 +108,7 @@ public:
 				}
 				const uint32_t uMatIndex = GetMaterialIndexFromMeshName(xFile.path().stem().string());
 				const std::string strMatName = strLeaf + std::to_string(uMatIndex);
-				Flux_Material& xMat = Zenith_AssetHandler::GetMaterial(strMatName);
+				Flux_Material& xMat = Zenith_AssetHandler::TryGetMaterial(strMatName);
 				AddMeshEntry(Zenith_AssetHandler::GetMesh(xFile.path().stem().string()), xMat);
 			}
 		}

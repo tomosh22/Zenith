@@ -27,6 +27,7 @@ public:
 
 	static Flux_Texture* s_pxBlankTexture2D;
 	static Flux_MeshGeometry s_xBlankMesh;
+	static class Flux_Material* s_pxBlankMaterial;
 
 	static ColourFormat s_aeMRTFormats[MRT_INDEX_COUNT];
 
