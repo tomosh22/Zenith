@@ -977,9 +977,6 @@
     <ClInclude Include="Zenith\DataStream\Zenith_DataStream.h">
       <Filter>Zenith\DataStream</Filter>
     </ClInclude>
-    <ClInclude Include="Zenith\Core\Zenith_Callback.h">
-      <Filter>Zenith\Core</Filter>
-    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Games">

@@ -2,7 +2,6 @@
 
 #include "Zenith_PlatformGraphics_Include.h"
 #include "Flux/Flux_Enums.h"
-#include "Core/Zenith_Callback.h"
 
 class Flux
 {
@@ -14,11 +13,11 @@ public:
 
 	static const uint32_t GetFrameCounter() { return s_uFrameCounter; }
 
-	static void AddResChangeCallback(Zenith_Callback<void>& xCallback) { s_xResChangeCallbacks.push_back(xCallback); }
+	static void AddResChangeCallback(void(*pfnCallback)()) { s_xResChangeCallbacks.push_back(pfnCallback); }
 	static void OnResChange();
 private:
 	static uint32_t s_uFrameCounter;
-	static std::vector<Zenith_Callback<void>> s_xResChangeCallbacks;
+	static std::vector<void(*)()> s_xResChangeCallbacks;
 };
 
 struct Flux_PipelineSpecification
