@@ -15,7 +15,7 @@
 #include "Flux/Text/Flux_Text.h"
 
 uint32_t Flux::s_uFrameCounter = 0;
-std::vector<Zenith_Callback<void>> Flux::s_xResChangeCallbacks;
+std::vector<void(*)()> Flux::s_xResChangeCallbacks;
 
 void Flux::EarlyInitialise()
 {
@@ -47,8 +47,8 @@ void Flux::LateInitialise()
 
 void Flux::OnResChange()
 {
-	for (Zenith_Callback<void>& xCallback : s_xResChangeCallbacks)
+	for (void(*pfnCallback)() : s_xResChangeCallbacks)
 	{
-		xCallback.Execute();
+		pfnCallback();
 	}
 }

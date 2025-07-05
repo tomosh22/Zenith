@@ -7,5 +7,4 @@ public:
 	static void RunAllTests();
 private:
 	static void TestDataStream();
-	static void TestCallbacks();
 };

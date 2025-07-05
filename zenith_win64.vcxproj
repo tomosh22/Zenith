@@ -453,7 +453,6 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="Zenith\Core\Zenith_Callback.h" />
     <ClInclude Include="Zenith\DataStream\Zenith_DataStream.h" />
     <ClInclude Include="Zenith\Flux\MeshAnimation\Flux_MeshAnimation.h" />
     <ClInclude Include="Games\Test\Components\PlayerController_Behaviour.h" />
