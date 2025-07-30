@@ -1,5 +1,6 @@
 #pragma once
-//#include <cstdio>
+
+#include <cstdlib>
 #include <cstdint>
 #include <set>
 #include <unordered_map>
@@ -16,7 +17,7 @@
 #include "Maths/Zenith_Maths.h"
 #include "Zenith_Core.h"
 
-
+#include "Zenith_OS_Include.h"
 
 #ifdef ZENITH_WINDOWS
 #include <Windows.h>
@@ -92,3 +93,7 @@ struct std::hash<Zenith_GUID>
 #define ZENITH_MAX_TEXTURES 1024
 #define ZENITH_MAX_MESHES 16384
 #define ZENITH_MAX_MATERIALS 1024
+
+#include "Memory/Zenith_MemoryManagement_Disabled.h"
+#include "Memory/Zenith_MemoryManagement.h"
+#include "Memory/Zenith_MemoryManagement_Enabled.h"

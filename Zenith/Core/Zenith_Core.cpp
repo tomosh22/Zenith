@@ -1,5 +1,9 @@
 #include "Zenith.h"
 #include "Zenith_Core.h"
+
+#include "DebugVariables/Zenith_DebugVariables.h"
+#include "EntityComponent/Zenith_Scene.h"
+#include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "Flux/Flux.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Skybox/Flux_Skybox.h"
@@ -13,12 +17,10 @@
 #include "Flux/Shadows/Flux_Shadows.h"
 #include "Flux/Particles/Flux_Particles.h"
 #include "Flux/Text/Flux_Text.h"
-#include "EntityComponent/Zenith_Scene.h"
-#include "Physics/Zenith_Physics.h"
-#include "Zenith_OS_Include.h"
-#include "EntityComponent/Components/Zenith_CameraComponent.h"
-#include "DebugVariables/Zenith_DebugVariables.h"
 #include "Input/Zenith_Input.h"
+#include "Physics/Zenith_Physics.h"
+#include "Profiling/Zenith_Profiling.h"
+#include "Zenith_OS_Include.h"
 
 float Zenith_Core::s_fDt = 0.f;
 float Zenith_Core::s_fTimePassed = 0.f;
@@ -88,7 +90,7 @@ void RenderImGui()
 void Zenith_Core::Zenith_MainLoop()
 {
 	Flux_PlatformAPI::BeginFrame();
-
+	Zenith_Profiling::BeginFrame();
 	UpdateTimers();
 	Zenith_Input::BeginFrame();
 	Zenith_Window::GetInstance()->BeginFrame();
@@ -100,30 +102,34 @@ void Zenith_Core::Zenith_MainLoop()
 		return;
 	}
 	
-	Zenith_Physics::Update(Zenith_Core::GetDt());
-	Zenith_Scene::GetCurrentScene().Update(Zenith_Core::GetDt());
+	ZENITH_PROFILING_FUNCTION_WRAPPER(Zenith_Physics::Update, ZENITH_PROFILE_INDEX__PHYSICS, Zenith_Core::GetDt());
+	ZENITH_PROFILING_FUNCTION_WRAPPER(Zenith_Scene::Update, ZENITH_PROFILE_INDEX__SCENE_UPDATE, Zenith_Core::GetDt());
 	Flux_Graphics::UploadFrameConstants();
 
-	Flux_Shadows::Render();
-	Flux_DeferredShading::BeginFrame();
-	Flux_Skybox::Render();
-	Flux_StaticMeshes::RenderToGBuffer();
-	Flux_AnimatedMeshes::Render();
-	Flux_Terrain::RenderToGBuffer();
-	Flux_DeferredShading::Render();
-	Flux_Water::Render();
-	Flux_Fog::Render();
-	Flux_SDFs::Render();
-	Flux_Particles::Render();
-	Flux_Text::Render();
-
-	
+	ZENITH_PROFILING_FUNCTION_WRAPPER(Flux_Shadows::Render, ZENITH_PROFILE_INDEX__FLUX_SHADOWS);
+	ZENITH_PROFILING_FUNCTION_WRAPPER(Flux_DeferredShading::BeginFrame, ZENITH_PROFILE_INDEX__FLUX_DEFERRED_SHADING);
+	ZENITH_PROFILING_FUNCTION_WRAPPER(Flux_Skybox::Render, ZENITH_PROFILE_INDEX__FLUX_SKYBOX);
+	ZENITH_PROFILING_FUNCTION_WRAPPER(Flux_StaticMeshes::RenderToGBuffer, ZENITH_PROFILE_INDEX__FLUX_STATIC_MESHES);
+	ZENITH_PROFILING_FUNCTION_WRAPPER(Flux_AnimatedMeshes::Render, ZENITH_PROFILE_INDEX__FLUX_ANIMATED_MESHES);
+	ZENITH_PROFILING_FUNCTION_WRAPPER(Flux_Terrain::RenderToGBuffer, ZENITH_PROFILE_INDEX__FLUX_TERRAIN);
+	ZENITH_PROFILING_FUNCTION_WRAPPER(Flux_DeferredShading::Render, ZENITH_PROFILE_INDEX__FLUX_DEFERRED_SHADING);
+	ZENITH_PROFILING_FUNCTION_WRAPPER(Flux_Water::Render, ZENITH_PROFILE_INDEX__FLUX_WATER);
+	ZENITH_PROFILING_FUNCTION_WRAPPER(Flux_Fog::Render, ZENITH_PROFILE_INDEX__FLUX_FOG);
+	ZENITH_PROFILING_FUNCTION_WRAPPER(Flux_SDFs::Render, ZENITH_PROFILE_INDEX__FLUX_SDFS);
+	ZENITH_PROFILING_FUNCTION_WRAPPER(Flux_Particles::Render, ZENITH_PROFILE_INDEX__FLUX_PFX);
+	ZENITH_PROFILING_FUNCTION_WRAPPER(Flux_Text::Render, ZENITH_PROFILE_INDEX__FLUX_TEXT);
 
 	Flux_MemoryManager::EndFrame();
+
+	Zenith_MemoryManagement::EndFrame();
+
 #ifdef ZENITH_TOOLS
+	Zenith_Profiling::EndFrame();
 	RenderImGui();
+	Zenith_Profiling::RenderToImGui();
 #endif
 	Flux_Swapchain::CopyToFramebuffer();
+	Zenith_Scene::WaitForUpdateComplete();
 	Flux_PlatformAPI::EndFrame();
 	Flux_Swapchain::EndFrame();
 }

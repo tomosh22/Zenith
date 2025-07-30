@@ -310,7 +310,7 @@ void Zenith_Vulkan_MemoryManager::CreateTexture(const char* szPath, Zenith_Vulka
 	//eFormat = vk::Format::eR8G8B8A8Unorm;
 
 	size_t ulDataSize = uWidth * uHeight * uDepth * 4 /*bytes per pixel*/;
-	pData = malloc(ulDataSize);
+	pData = Zenith_MemoryManagement::Allocate(ulDataSize);
 	memcpy(pData, pcData + ulCursor, ulDataSize);
 
 	delete[] pcData;
@@ -324,7 +324,7 @@ void Zenith_Vulkan_MemoryManager::CreateTexture(const char* szPath, Zenith_Vulka
 	xTextureOut.SetNumMips(uNumMips);
 	xTextureOut.SetNumLayers(1);
 	UploadTextureData(xTextureOut, pData, ulDataSize);
-	delete pData;
+	Zenith_MemoryManagement::Deallocate(pData);
 }
 
 void Zenith_Vulkan_MemoryManager::CreateTextureCube(const char* szPathPX, const char* szPathNX, const char* szPathPY, const char* szPathNY, const char* szPathPZ, const char* szPathNZ, Zenith_Vulkan_Texture& xTextureOut)
@@ -396,7 +396,7 @@ void Zenith_Vulkan_MemoryManager::CreateTextureCube(const char* szPathPX, const 
 		aulDataSizes[u] = ulThisFileDataSize;
 
 		ulTotalDataSize += ulThisFileDataSize;
-		pData = malloc(ulThisFileDataSize);
+		pData = Zenith_MemoryManagement::Allocate(ulThisFileDataSize);
 		memcpy(pData, pcData + ulCursor, ulThisFileDataSize);
 
 		delete[] pcData;
@@ -411,7 +411,7 @@ void Zenith_Vulkan_MemoryManager::CreateTextureCube(const char* szPathPX, const 
 	xTextureOut.SetNumMips(uNumMips);
 	xTextureOut.SetNumLayers(6);
 
-	void* pAllData = malloc(ulTotalDataSize);
+	void* pAllData = Zenith_MemoryManagement::Allocate(ulTotalDataSize);
 	size_t ulCursor = 0;
 	for (uint32_t u = 0; u < 6; u++)
 	{
@@ -423,8 +423,9 @@ void Zenith_Vulkan_MemoryManager::CreateTextureCube(const char* szPathPX, const 
 
 	for (uint32_t u = 0; u < 6; u++)
 	{
-		delete apDatas[u];
+		Zenith_MemoryManagement::Deallocate(apDatas[u]);
 	}
+	Zenith_MemoryManagement::Deallocate(pAllData);
 }
 
 void Zenith_Vulkan_MemoryManager::AllocateTexture(uint32_t uWidth, uint32_t uHeight, uint32_t uNumLayers, ColourFormat eColourFormat, DepthStencilFormat eDepthStencilFormat, uint32_t uBytesPerPixel, uint32_t uNumMips, vk::ImageUsageFlags eUsageFlags, MemoryResidency eResidency, Zenith_Vulkan_Texture& xTextureOut)

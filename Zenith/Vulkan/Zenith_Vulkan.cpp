@@ -8,11 +8,13 @@
 #endif
 
 #ifdef ZENITH_TOOLS
+#include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "imgui.h"
 #include "backends/imgui_impl_vulkan.h"
 #ifdef ZENITH_WINDOWS
 #include "backends/imgui_impl_glfw.h"
 #endif //ZENITH_WINDOWS
+#include "Memory/Zenith_MemoryManagement_Enabled.h"
 vk::RenderPass Zenith_Vulkan::s_xImGuiRenderPass;
 #endif //ZENITH_TOOLS
 

@@ -7,4 +7,6 @@ public:
 	static void RunAllTests();
 private:
 	static void TestDataStream();
+	static void TestMemoryManagement();
+	static void TestProfiling();
 };

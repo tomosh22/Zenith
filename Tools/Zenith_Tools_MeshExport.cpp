@@ -1,10 +1,13 @@
 #include "Zenith.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
+#include "Zenith_Tools_TextureExport.h"
+
+#include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
 #include "stb/stb_image.h"
-#include "Zenith_Tools_TextureExport.h"
+#include "Memory/Zenith_MemoryManagement_Enabled.h"
 
 static void ExportAssimpMesh(aiMesh* pxAssimpMesh, std::string strOutFilename)
 {

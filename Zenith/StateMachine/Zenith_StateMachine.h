@@ -15,6 +15,7 @@ public:
 class Zenith_StateMachine
 {
 public:
+	static void Project_Initialise();
 	static void Update()
 	{
 		if (s_pxRequestedState)

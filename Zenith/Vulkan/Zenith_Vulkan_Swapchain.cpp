@@ -17,8 +17,10 @@
 #endif
 
 #ifdef ZENITH_TOOLS
+#include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "imgui.h"
 #include "backends/imgui_impl_vulkan.h"
+#include "Memory/Zenith_MemoryManagement_Enabled.h"
 #endif
 
 vk::SwapchainKHR Zenith_Vulkan_Swapchain::s_xSwapChain;

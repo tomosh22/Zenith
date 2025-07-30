@@ -1,6 +1,8 @@
 #include "Zenith.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
+#include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include <opencv2/opencv.hpp>
+#include "Memory/Zenith_MemoryManagement_Enabled.h"
 
 #define MAX_TERRAIN_HEIGHT 4096
 

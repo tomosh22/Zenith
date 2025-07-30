@@ -1,6 +1,5 @@
 #include "Zenith.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
-#include "reactphysics3d/reactphysics3d.h"
 
 Zenith_TransformComponent::Zenith_TransformComponent(const std::string& strName, Zenith_Entity& xEntity)
 	: m_strName(strName)
