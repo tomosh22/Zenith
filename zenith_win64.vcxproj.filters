@@ -406,10 +406,21 @@
     <ClCompile Include="Zenith\Flux\MeshAnimation\Flux_MeshAnimation.cpp">
       <Filter>Zenith\Flux\MeshAnimation</Filter>
     </ClCompile>
-    <ClCompile Include="Zenith\Flux\Shadows\Flux_Shadows.cpp" />
     <ClCompile Include="Zenith\UnitTests\Zenith_UnitTests.cpp">
       <Filter>Zenith\UnitTests</Filter>
     </ClCompile>
+    <ClCompile Include="Zenith\Core\Memory\Zenith_MemoryManagement.cpp">
+      <Filter>Zenith\Core\Memory</Filter>
+    </ClCompile>
+    <ClCompile Include="Zenith\Flux\Shadows\Flux_Shadows.cpp">
+      <Filter>Zenith\Flux\Shadows</Filter>
+    </ClCompile>
+    <ClCompile Include="Zenith\Profiling\Zenith_Profiling.cpp">
+      <Filter>Zenith\Profiling</Filter>
+    </ClCompile>
+    <ClCompile Include="Zenith\Core\Multithreading\Zenith_Multithreading.cpp" />
+    <ClCompile Include="Zenith\Windows\Multithreading\Zenith_Windows_Multithreading.cpp" />
+    <ClCompile Include="Zenith\TaskSystem\Zenith_TaskSystem.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Games\Test\Components\PlayerController_Behaviour.h">
@@ -970,13 +981,31 @@
     <ClInclude Include="Zenith\Flux\MeshAnimation\Flux_MeshAnimation.h">
       <Filter>Zenith\Flux\MeshAnimation</Filter>
     </ClInclude>
-    <ClInclude Include="Zenith\Flux\Shadows\Flux_Shadows.h" />
     <ClInclude Include="Zenith\UnitTests\Zenith_UnitTests.h">
       <Filter>Zenith\UnitTests</Filter>
     </ClInclude>
     <ClInclude Include="Zenith\DataStream\Zenith_DataStream.h">
       <Filter>Zenith\DataStream</Filter>
     </ClInclude>
+    <ClInclude Include="Zenith\Core\Memory\Zenith_MemoryManagement.h">
+      <Filter>Zenith\Core\Memory</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\Core\Memory\Zenith_MemoryManagement_Disabled.h">
+      <Filter>Zenith\Core\Memory</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\Core\Memory\Zenith_MemoryManagement_Enabled.h">
+      <Filter>Zenith\Core\Memory</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\Flux\Shadows\Flux_Shadows.h">
+      <Filter>Zenith\Flux\Shadows</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\Profiling\Zenith_Profiling.h">
+      <Filter>Zenith\Profiling</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\Core\Multithreading\Zenith_Multithreading.h" />
+    <ClInclude Include="Zenith\Windows\Multithreading\Zenith_Windows_Multithreading.h" />
+    <ClInclude Include="Zenith\Collections\Zenith_CircularQueue.h" />
+    <ClInclude Include="Zenith\TaskSystem\Zenith_TaskSystem.h" />
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Games">
@@ -1224,6 +1253,18 @@
     </Filter>
     <Filter Include="Zenith\DataStream">
       <UniqueIdentifier>{bb7d6330-9df7-4fad-8d13-b89c045bf542}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Zenith\Core\Memory">
+      <UniqueIdentifier>{4824c28e-256d-4fe1-9365-874b02880f75}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Zenith\Flux\Shadows">
+      <UniqueIdentifier>{a48ecbfb-3ab8-4d06-b26b-eb731402ad9c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Zenith\Profiling">
+      <UniqueIdentifier>{e30a1691-56ab-425f-8b25-40ef6245b86f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Zenith\Core\Multithreading">
+      <UniqueIdentifier>{5a9a44ed-f589-4488-89af-0cb43f491ed5}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
 </Project>

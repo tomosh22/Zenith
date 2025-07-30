@@ -1,5 +1,7 @@
 #pragma once
+#include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "vulkan/vulkan.hpp"
+#include "Memory/Zenith_MemoryManagement_Enabled.h"
 
 //#TO for MAX_FRAMES_IN_FLIGHT which should really be somewhere else
 #include "Flux/Flux_Enums.h"

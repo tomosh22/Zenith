@@ -34,7 +34,7 @@ static Flux_DynamicConstantBuffer s_xTerrainConstantsBuffer;
 DEBUGVAR bool dbg_bEnable = true;
 DEBUGVAR bool dbg_bWireframe = false;
 DEBUGVAR float dbg_fVisibilityThresholdMultiplier = 0.5f;
-DEBUGVAR bool dbg_bIgnoreVisibilityCheck = true;
+DEBUGVAR bool dbg_bIgnoreVisibilityCheck = false;
 
 void Flux_Terrain::Initialise()
 {

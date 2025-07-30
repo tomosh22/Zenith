@@ -15,9 +15,9 @@ public:
         void Update(const float fTimestamp)
         {
             m_xLocalTransform =
-                InterpolatePosition(0) *
-                InterpolateRotation(0) *
-                InterpolateScaling(0);
+                InterpolatePosition(fTimestamp) *
+                InterpolateRotation(fTimestamp) *
+                InterpolateScaling(fTimestamp);
         }
 
 	private:

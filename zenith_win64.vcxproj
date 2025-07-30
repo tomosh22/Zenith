@@ -453,6 +453,10 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="Zenith\Collections\Zenith_CircularQueue.h" />
+    <ClInclude Include="Zenith\Core\Memory\Zenith_MemoryManagement_Disabled.h" />
+    <ClInclude Include="Zenith\Core\Memory\Zenith_MemoryManagement_Enabled.h" />
+    <ClInclude Include="Zenith\Core\Multithreading\Zenith_Multithreading.h" />
     <ClInclude Include="Zenith\DataStream\Zenith_DataStream.h" />
     <ClInclude Include="Zenith\Flux\MeshAnimation\Flux_MeshAnimation.h" />
     <ClInclude Include="Games\Test\Components\PlayerController_Behaviour.h" />
@@ -630,7 +634,9 @@
     <ClInclude Include="Zenith\Input\Zenith_KeyCodes.h" />
     <ClInclude Include="Zenith\Maths\Zenith_Maths.h" />
     <ClInclude Include="Zenith\Physics\Zenith_Physics.h" />
+    <ClInclude Include="Zenith\Profiling\Zenith_Profiling.h" />
     <ClInclude Include="Zenith\StateMachine\Zenith_StateMachine.h" />
+    <ClInclude Include="Zenith\TaskSystem\Zenith_TaskSystem.h" />
     <ClInclude Include="Zenith\UnitTests\Zenith_UnitTests.h" />
     <ClInclude Include="Zenith\Vulkan\Zenith_PlatformGraphics_Include.h" />
     <ClInclude Include="Zenith\Vulkan\Zenith_Vulkan.h" />
@@ -640,10 +646,13 @@
     <ClInclude Include="Zenith\Vulkan\Zenith_Vulkan_Pipeline.h" />
     <ClInclude Include="Zenith\Vulkan\Zenith_Vulkan_Swapchain.h" />
     <ClInclude Include="Zenith\Vulkan\Zenith_Vulkan_Texture.h" />
+    <ClInclude Include="Zenith\Windows\Multithreading\Zenith_Windows_Multithreading.h" />
     <ClInclude Include="Zenith\Windows\Zenith_OS_Include.h" />
     <ClInclude Include="Zenith\Windows\Zenith_Windows_Window.h" />
+    <ClInclude Include="Zenith\Core\Memory\Zenith_MemoryManagement.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="Zenith\Core\Multithreading\Zenith_Multithreading.cpp" />
     <ClCompile Include="Zenith\Flux\MeshAnimation\Flux_MeshAnimation.cpp" />
     <ClCompile Include="Games\Test\Components\PlayerController_Behaviour.cpp" />
     <ClCompile Include="Games\Test\Components\SphereMovement_Behaviour.cpp" />
@@ -1210,7 +1219,9 @@
     <ClCompile Include="Zenith\Input\Zenith_Input.cpp" />
     <ClCompile Include="Zenith\Maths\Zenith_Maths.cpp" />
     <ClCompile Include="Zenith\Physics\Zenith_Physics.cpp" />
+    <ClCompile Include="Zenith\Profiling\Zenith_Profiling.cpp" />
     <ClCompile Include="Zenith\StateMachine\Zenith_StateMachine.cpp" />
+    <ClCompile Include="Zenith\TaskSystem\Zenith_TaskSystem.cpp" />
     <ClCompile Include="Zenith\UnitTests\Zenith_UnitTests.cpp" />
     <ClCompile Include="Zenith\Vulkan\Zenith_Vulkan.cpp" />
     <ClCompile Include="Zenith\Vulkan\Zenith_Vulkan_Buffer.cpp" />
@@ -1219,8 +1230,10 @@
     <ClCompile Include="Zenith\Vulkan\Zenith_Vulkan_Pipeline.cpp" />
     <ClCompile Include="Zenith\Vulkan\Zenith_Vulkan_Swapchain.cpp" />
     <ClCompile Include="Zenith\Vulkan\Zenith_Vulkan_Texture.cpp" />
+    <ClCompile Include="Zenith\Windows\Multithreading\Zenith_Windows_Multithreading.cpp" />
     <ClCompile Include="Zenith\Windows\Zenith_Windows_Window.cpp" />
     <ClCompile Include="Zenith\Zenith_Main.cpp" />
+    <ClCompile Include="Zenith\Core\Memory\Zenith_MemoryManagement.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

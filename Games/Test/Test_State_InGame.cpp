@@ -17,7 +17,12 @@
 #include "Test/Components/SphereMovement_Behaviour.h"
 #include "Test/Components/PlayerController_Behaviour.h"
 
-Zenith_State* Zenith_StateMachine::s_pxCurrentState = new Test_State_InGame;
+
+Zenith_State* Zenith_StateMachine::s_pxCurrentState = nullptr;
+void Zenith_StateMachine::Project_Initialise()
+{
+	s_pxCurrentState = new Test_State_InGame;
+}
 
 #define TERRAIN_EXPORT_DIMS 64
 
@@ -315,22 +320,6 @@ void Test_State_InGame::OnEnter()
 
 void Test_State_InGame::OnUpdate()
 {
-
-	//#TO_TODO: move this to an animation handler component class
-	{
-		Zenith_ModelComponent& xModel = s_xOgre.GetComponent<Zenith_ModelComponent>();
-		Flux_MeshGeometry& xMesh0 = xModel.GetMeshGeometryAtIndex(0);
-		Flux_MeshGeometry& xMesh1 = xModel.GetMeshGeometryAtIndex(1);
-		xMesh0.m_pxAnimation->Update(Zenith_Core::GetDt());
-		xMesh1.m_pxAnimation->Update(Zenith_Core::GetDt());
-	}
-	{
-		Zenith_ModelComponent& xModel = s_xPlayer.GetComponent<Zenith_ModelComponent>();
-		Flux_MeshGeometry& xMesh0 = xModel.GetMeshGeometryAtIndex(0);
-		xMesh0.m_pxAnimation->Update(Zenith_Core::GetDt(), true);
-	}
-
-
 	Zenith_Core::Zenith_MainLoop();
 	if (Zenith_Input::IsKeyDown(ZENITH_KEY_P))
 	{

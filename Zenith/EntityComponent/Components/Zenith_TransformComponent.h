@@ -1,6 +1,8 @@
 #pragma once
 #include "EntityComponent/Zenith_Entity.h"
+#include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "reactphysics3d/reactphysics3d.h"
+#include "Memory/Zenith_MemoryManagement_Enabled.h"
 
 class Zenith_TransformComponent
 {

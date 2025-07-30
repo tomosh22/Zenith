@@ -1,5 +1,7 @@
 #ifdef ZENITH_TOOLS
+#include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "imgui.h"
+#include "Memory/Zenith_MemoryManagement_Enabled.h"
 #include "Flux/Flux.h"
 
 #define ROOT_NAME "Debug Variables"
@@ -76,6 +78,21 @@ public:
 		void ImGuiDisplay() override;
 	};
 
+	struct TextNode : public LeafNodeBase
+	{
+		const std::string& m_strText;
+
+		TextNode(std::vector<std::string>& xName, const std::string& strText) : m_strText(strText)
+		{
+			for (const std::string& strSection : xName)
+			{
+				m_xName.push_back(strSection);
+			}
+		}
+
+		void ImGuiDisplay() override;
+	};
+
 	struct Node
 	{
 		std::vector<std::string> m_xName;
@@ -135,6 +152,11 @@ public:
 	static void AddTexture(std::vector<std::string> xName, const Flux_Texture& xTexture)
 	{
 		Zenith_DebugVariableTree::LeafNode<const Flux_Texture>* pxLeaf = new Zenith_DebugVariableTree::LeafNode(xName, &xTexture);
+		s_xTree.AddLeafNode(pxLeaf, xName);
+	}
+	static void AddText(std::vector<std::string> xName, std::string& strText)
+	{
+		Zenith_DebugVariableTree::TextNode* pxLeaf = new Zenith_DebugVariableTree::TextNode(xName, strText);
 		s_xTree.AddLeafNode(pxLeaf, xName);
 	}
 

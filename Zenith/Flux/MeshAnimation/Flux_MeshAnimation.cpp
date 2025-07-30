@@ -1,10 +1,12 @@
 #include "Zenith.h"
 #include "Flux_MeshAnimation.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
+#include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include <assimp/anim.h>
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
+#include "Memory/Zenith_MemoryManagement_Enabled.h"
 
 Flux_MeshAnimation::AnimBone::AnimBone(const aiNodeAnim* pxChannel)
 	: m_strName(pxChannel->mNodeName.data)

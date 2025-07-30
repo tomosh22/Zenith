@@ -2,7 +2,9 @@
 #include "Zenith_Tools_TextureExport.h"
 #include "Flux/Flux.h"
 #define STB_IMAGE_IMPLEMENTATION
+#include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "stb/stb_image.h"
+#include "Memory/Zenith_MemoryManagement_Enabled.h"
 
 static std::string ShaderDataTypeToString(ShaderDataType eType)
 {

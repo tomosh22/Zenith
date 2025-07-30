@@ -1,6 +1,8 @@
 #pragma once
+#include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "vulkan/vulkan.hpp"
 #include "vma/vk_mem_alloc.h"
+#include "Memory/Zenith_MemoryManagement_Enabled.h"
 
 class Zenith_Vulkan_Texture;
 

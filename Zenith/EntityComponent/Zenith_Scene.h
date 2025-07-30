@@ -1,5 +1,7 @@
 #pragma once
+#include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "entt/entt.hpp"
+#include "Memory/Zenith_MemoryManagement_Enabled.h"
 
 class Zenith_CameraComponent;
 class Zenith_Entity;
@@ -10,12 +12,9 @@ using EntityID = entt::entity;
 class Zenith_Scene
 {
 public:
-	Zenith_Scene() = default;
-	Zenith_Scene(const std::string& strFilename);
+	Zenith_Scene();
 	~Zenith_Scene();
 	void Reset();
-
-	void LoadSceneFromFile(const std::string& strFilename);
 
 	template<typename T>
 	T& GetComponentFromEntity(EntityID xID)
@@ -42,7 +41,8 @@ public:
 
 	void Serialize(const std::string& strFilename);
 
-	void Update(const float fDt);
+	static void Update(const float fDt);
+	static void WaitForUpdateComplete();
 
 	Zenith_Entity GetEntityByGUID(Zenith_GUID ulGuid);
 
