@@ -60,7 +60,6 @@ void Zenith_Profiling::RenderToImGui()
 {
     ImGui::Begin("Profiling");
 
-    // ─── Controls ───────────────────────────────────────────────
     static int ls_iMinDepthToRender = 0;
     static int ls_iMaxDepthToRender = 10;
     static int ls_iMaxDepthToRenderSeparately = 1;
@@ -79,7 +78,6 @@ void Zenith_Profiling::RenderToImGui()
     ls_iMaxDepthToRender = std::max(ls_iMaxDepthToRender, ls_iMinDepthToRender);
     ls_iMaxDepthToRenderSeparately = std::clamp(ls_iMaxDepthToRenderSeparately, ls_iMinDepthToRender, ls_iMaxDepthToRender);
 
-    // ─── Geometry ───────────────────────────────────────────────
     constexpr float fBASE_ROW_HEIGHT = 20.0f;
     constexpr float fBASE_ROW_SPACING = 5.0f;
     constexpr float fTHREAD_SPACING = 30.0f;
@@ -106,7 +104,6 @@ void Zenith_Profiling::RenderToImGui()
             );
         };
 
-    // ─── Render Events Per Thread ────────────────────────────────
     for (const auto& [uThreadID, xEvents] : g_xEvents)
     {
         const float fThreadBaseY = xCanvasPos.y + uThreadID * fThreadHeight;
