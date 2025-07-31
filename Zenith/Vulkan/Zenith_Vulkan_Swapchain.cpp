@@ -8,6 +8,7 @@
 #include "Flux/Flux_RenderTargets.h"
 #include "Zenith_Vulkan_MemoryManager.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
+#include "Profiling/Zenith_Profiling.h"
 
 #include "AssetHandling/Zenith_AssetHandler.h"
 
@@ -264,6 +265,7 @@ void Zenith_Vulkan_Swapchain::Initialise()
 
 bool Zenith_Vulkan_Swapchain::BeginFrame()
 {
+	Zenith_Profiling::BeginProfile(ZENITH_PROFILE_INDEX__FLUX_SWAPCHAIN_BEGIN_FRAME);
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 
 	//#TO_TODO: -1 here to shut up validation layer
@@ -283,6 +285,7 @@ bool Zenith_Vulkan_Swapchain::BeginFrame()
 		//s_uFrameIndex = (s_uFrameIndex + 1) % MAX_FRAMES_IN_FLIGHT;
 		//return false;
 	}
+	Zenith_Profiling::EndProfile(ZENITH_PROFILE_INDEX__FLUX_SWAPCHAIN_BEGIN_FRAME);
 	return true;
 }
 

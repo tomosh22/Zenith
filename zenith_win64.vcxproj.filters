@@ -415,12 +415,12 @@
     <ClCompile Include="Zenith\Flux\Shadows\Flux_Shadows.cpp">
       <Filter>Zenith\Flux\Shadows</Filter>
     </ClCompile>
-    <ClCompile Include="Zenith\Profiling\Zenith_Profiling.cpp">
-      <Filter>Zenith\Profiling</Filter>
-    </ClCompile>
     <ClCompile Include="Zenith\Core\Multithreading\Zenith_Multithreading.cpp" />
     <ClCompile Include="Zenith\Windows\Multithreading\Zenith_Windows_Multithreading.cpp" />
     <ClCompile Include="Zenith\TaskSystem\Zenith_TaskSystem.cpp" />
+    <ClCompile Include="Zenith\Profiling\Zenith_Profiling.cpp">
+      <Filter>Zenith\Profiling</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="Games\Test\Components\PlayerController_Behaviour.h">
