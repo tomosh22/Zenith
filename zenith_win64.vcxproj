@@ -1219,7 +1219,6 @@
     <ClCompile Include="Zenith\Input\Zenith_Input.cpp" />
     <ClCompile Include="Zenith\Maths\Zenith_Maths.cpp" />
     <ClCompile Include="Zenith\Physics\Zenith_Physics.cpp" />
-    <ClCompile Include="Zenith\Profiling\Zenith_Profiling.cpp" />
     <ClCompile Include="Zenith\StateMachine\Zenith_StateMachine.cpp" />
     <ClCompile Include="Zenith\TaskSystem\Zenith_TaskSystem.cpp" />
     <ClCompile Include="Zenith\UnitTests\Zenith_UnitTests.cpp" />
@@ -1234,6 +1233,7 @@
     <ClCompile Include="Zenith\Windows\Zenith_Windows_Window.cpp" />
     <ClCompile Include="Zenith\Zenith_Main.cpp" />
     <ClCompile Include="Zenith\Core\Memory\Zenith_MemoryManagement.cpp" />
+    <ClCompile Include="Zenith\Profiling\Zenith_Profiling.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
