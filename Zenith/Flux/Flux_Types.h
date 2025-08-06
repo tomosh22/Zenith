@@ -1,6 +1,6 @@
 #pragma once
 
-
+#include "Collections/Zenith_Vector.h"
 #include "Flux/Flux_Enums.h"
 
 static uint32_t Flux_ShaderDataTypeSize(ShaderDataType t)
@@ -70,16 +70,17 @@ class Flux_BufferLayout
 {
 public:
 	Flux_BufferLayout() = default;
-	void Reset() { m_xElements.clear(); }
-	std::vector<Flux_BufferElement>& GetElements() { return m_xElements; };
-	const std::vector<Flux_BufferElement>& GetElements() const { return m_xElements; };
+	void Reset() { m_xElements.Clear(); }
+	Zenith_Vector<Flux_BufferElement>& GetElements() { return m_xElements; };
+	const Zenith_Vector<Flux_BufferElement>& GetElements() const { return m_xElements; };
 	const uint32_t GetStride() const { return m_uStride; }
 	void CalculateOffsetsAndStrides()
 	{
 		uint32_t uOffset = 0;
 		m_uStride = 0;
-		for (Flux_BufferElement& xElement : m_xElements)
+		for (Zenith_Vector<Flux_BufferElement>::Iterator xIt(m_xElements); !xIt.Done(); xIt.Next())
 		{
+			Flux_BufferElement& xElement = xIt.GetData();
 			xElement.m_uOffset = uOffset;
 			uOffset += xElement._Size;
 			m_uStride += xElement._Size;
@@ -87,7 +88,7 @@ public:
 	}
 private:
 	uint32_t m_uStride = 0;
-	std::vector<Flux_BufferElement> m_xElements;
+	Zenith_Vector<Flux_BufferElement> m_xElements;
 };
 
 struct Flux_VertexInputDescription

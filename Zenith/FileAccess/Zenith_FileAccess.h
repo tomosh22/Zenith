@@ -9,7 +9,7 @@ namespace Zenith_FileAccess
 		Zenith_Assert(xFile.is_open(), "Failed to open file");
 
 		uint64_t ulFileSize = xFile.tellg();
-		char* pcRet = new char[ulFileSize];
+		char* pcRet = static_cast<char*>(Zenith_MemoryManagement::Allocate(ulFileSize));
 		xFile.seekg(0);
 		xFile.read(pcRet, ulFileSize);
 		xFile.close();
@@ -22,7 +22,7 @@ namespace Zenith_FileAccess
 		Zenith_Assert(xFile.is_open(), "Failed to open file");
 
 		ulSize = xFile.tellg();
-		char* pcRet = new char[ulSize];
+		char* pcRet = static_cast<char*>(Zenith_MemoryManagement::Allocate(ulSize));
 		xFile.seekg(0);
 		xFile.read(pcRet, ulSize);
 		xFile.close();

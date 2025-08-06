@@ -23,6 +23,11 @@ void* Zenith_MemoryManagement::Allocate(size_t ullSize)
 	return malloc(ullSize);
 }
 
+void* Zenith_MemoryManagement::Reallocate(void* p, size_t ullSize)
+{
+	return realloc(p, ullSize);
+}
+
 void Zenith_MemoryManagement::Deallocate(void* p)
 {
 	free(p);

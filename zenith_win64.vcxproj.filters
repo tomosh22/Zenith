@@ -1006,6 +1006,8 @@
     <ClInclude Include="Zenith\Windows\Multithreading\Zenith_Windows_Multithreading.h" />
     <ClInclude Include="Zenith\Collections\Zenith_CircularQueue.h" />
     <ClInclude Include="Zenith\TaskSystem\Zenith_TaskSystem.h" />
+    <ClInclude Include="Zenith\Core\Zenith_DisableSTL.h" />
+    <ClInclude Include="Zenith\Collections\Zenith_Vector.h" />
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Games">

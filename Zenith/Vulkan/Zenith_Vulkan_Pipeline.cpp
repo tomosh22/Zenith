@@ -215,8 +215,10 @@ static vk::PipelineVertexInputStateCreateInfo VertexDescToVulkanDesc(const Flux_
 {
 	uint32_t uBindPoint = 0;
 	const Flux_BufferLayout& xVertexLayout = xDesc.m_xPerVertexLayout;
-	for (const Flux_BufferElement& xElement : xVertexLayout.GetElements())
+	for (Zenith_Vector<Flux_BufferElement>::Iterator xIt(xVertexLayout.GetElements()); !xIt.Done(); xIt.Next())
 	{
+		const Flux_BufferElement& xElement = xIt.GetData();
+
 		vk::VertexInputAttributeDescription xAttrDesc = vk::VertexInputAttributeDescription()
 			.setBinding(0)
 			.setLocation(uBindPoint)
@@ -233,10 +235,12 @@ static vk::PipelineVertexInputStateCreateInfo VertexDescToVulkanDesc(const Flux_
 	xBindDescs.push_back(xBindDesc);
 
 	const Flux_BufferLayout& xInstanceLayout = xDesc.m_xPerInstanceLayout;
-	if (xDesc.m_xPerInstanceLayout.GetElements().size())
+	if (xDesc.m_xPerInstanceLayout.GetElements().GetSize())
 	{
-		for (const Flux_BufferElement& xElement : xInstanceLayout.GetElements())
+		for (Zenith_Vector<Flux_BufferElement>::Iterator xIt(xInstanceLayout.GetElements()); !xIt.Done(); xIt.Next())
 		{
+			const Flux_BufferElement& xElement = xIt.GetData();
+
 			vk::VertexInputAttributeDescription xInstanceAttrDesc = vk::VertexInputAttributeDescription()
 				.setBinding(1)
 				.setLocation(uBindPoint)
@@ -629,10 +633,11 @@ void Zenith_Vulkan_PipelineBuilder::FromSpecification(Zenith_Vulkan_Pipeline& xP
 
 	uint32_t uBindPoint = 0;
 	const Flux_BufferLayout& xVertexLayout = xSpec.m_xVertexInputDesc.m_xPerVertexLayout;
-	if (xVertexLayout.GetElements().size())
+	if (xVertexLayout.GetElements().GetSize())
 	{
-		for (const Flux_BufferElement& xElement : xVertexLayout.GetElements())
+		for (Zenith_Vector<Flux_BufferElement>::Iterator xIt(xVertexLayout.GetElements()); !xIt.Done(); xIt.Next())
 		{
+			const Flux_BufferElement& xElement = xIt.GetData();
 			vk::VertexInputAttributeDescription xAttrDesc = vk::VertexInputAttributeDescription()
 				.setBinding(0)
 				.setLocation(uBindPoint)
@@ -650,10 +655,11 @@ void Zenith_Vulkan_PipelineBuilder::FromSpecification(Zenith_Vulkan_Pipeline& xP
 	xBindDescs.push_back(xBindDesc);
 
 	const Flux_BufferLayout& xInstanceLayout = xSpec.m_xVertexInputDesc.m_xPerInstanceLayout;
-	if (xInstanceLayout.GetElements().size())
+	if (xInstanceLayout.GetElements().GetSize())
 	{
-		for (const Flux_BufferElement& xElement : xInstanceLayout.GetElements())
+		for (Zenith_Vector<Flux_BufferElement>::Iterator xIt(xInstanceLayout.GetElements()); !xIt.Done(); xIt.Next())
 		{
+			const Flux_BufferElement& xElement = xIt.GetData();
 			vk::VertexInputAttributeDescription xInstanceAttrDesc = vk::VertexInputAttributeDescription()
 				.setBinding(1)
 				.setLocation(uBindPoint)
