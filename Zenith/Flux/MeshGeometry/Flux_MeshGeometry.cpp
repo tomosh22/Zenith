@@ -159,32 +159,32 @@ void Flux_MeshGeometry::GenerateLayoutAndVertexData()
 	uint32_t uNumFloats = 0;
 	if (m_pxPositions != nullptr)
 	{
-		m_xBufferLayout.GetElements().push_back({ SHADER_DATA_TYPE_FLOAT3 });
+		m_xBufferLayout.GetElements().PushBack({ SHADER_DATA_TYPE_FLOAT3 });
 		uNumFloats += 3;
 	}
 	if (m_pxUVs != nullptr)
 	{
-		m_xBufferLayout.GetElements().push_back({ SHADER_DATA_TYPE_FLOAT2 });
+		m_xBufferLayout.GetElements().PushBack({ SHADER_DATA_TYPE_FLOAT2 });
 		uNumFloats += 2;
 	}
 	if (m_pxNormals != nullptr)
 	{
-		m_xBufferLayout.GetElements().push_back({ SHADER_DATA_TYPE_FLOAT3 });
+		m_xBufferLayout.GetElements().PushBack({ SHADER_DATA_TYPE_FLOAT3 });
 		uNumFloats += 3;
 	}
 	if (m_pxTangents != nullptr)
 	{
-		m_xBufferLayout.GetElements().push_back({ SHADER_DATA_TYPE_FLOAT3 });
+		m_xBufferLayout.GetElements().PushBack({ SHADER_DATA_TYPE_FLOAT3 });
 		uNumFloats += 3;
 	}
 	if (m_pxBitangents != nullptr)
 	{
-		m_xBufferLayout.GetElements().push_back({ SHADER_DATA_TYPE_FLOAT3 });
+		m_xBufferLayout.GetElements().PushBack({ SHADER_DATA_TYPE_FLOAT3 });
 		uNumFloats += 3;
 	}
 	if (m_pfMaterialLerps != nullptr)
 	{
-		m_xBufferLayout.GetElements().push_back({ SHADER_DATA_TYPE_FLOAT });
+		m_xBufferLayout.GetElements().PushBack({ SHADER_DATA_TYPE_FLOAT });
 		uNumFloats += 1;
 	}
 
@@ -192,8 +192,8 @@ void Flux_MeshGeometry::GenerateLayoutAndVertexData()
 	{
 		Zenith_Assert(m_pfBoneWeights != nullptr, "How have we wound up with bone IDs but no weights");
 		static_assert(MAX_BONES_PER_VERTEX == 4, "data type needs changing");
-		m_xBufferLayout.GetElements().push_back({ SHADER_DATA_TYPE_UINT4 });
-		m_xBufferLayout.GetElements().push_back({ SHADER_DATA_TYPE_FLOAT4 });
+		m_xBufferLayout.GetElements().PushBack({ SHADER_DATA_TYPE_UINT4 });
+		m_xBufferLayout.GetElements().PushBack({ SHADER_DATA_TYPE_FLOAT4 });
 		uNumFloats += MAX_BONES_PER_VERTEX * 2;
 	}
 

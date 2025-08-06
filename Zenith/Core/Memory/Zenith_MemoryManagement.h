@@ -25,5 +25,6 @@ public:
 	static void EndFrame();
 
 	static void* Allocate(size_t ullSize);
+	static void* Reallocate(void* p, size_t ullSize);
 	static void Deallocate(void* p);
 };

@@ -29,6 +29,11 @@ public:
 	void SetBuffer(const vk::Buffer& xBuffer) { m_xBuffer = xBuffer; }
 	void SetAllocation(const VmaAllocation& xAlloc) { m_xAllocation = xAlloc; }
 
+	bool IsValid() const
+	{
+		return m_xBuffer != VK_NULL_HANDLE;
+	}
+
 private:
 	//#TO native type to support vma
 	vk::Buffer::NativeType m_xBuffer = VK_NULL_HANDLE;

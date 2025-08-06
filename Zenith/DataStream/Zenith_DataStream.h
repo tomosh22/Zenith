@@ -12,7 +12,7 @@ public:
 		: m_bOwnsData(true)
 		, m_ulDataSize(ulSize)
 		, m_ulCursor(0)
-		, m_pData(new uint8_t[ulSize])
+		, m_pData(Zenith_MemoryManagement::Allocate(ulSize))
 	{
 	}
 
@@ -28,7 +28,7 @@ public:
 	{
 		if (m_bOwnsData)
 		{
-			delete[] m_pData;
+			Zenith_MemoryManagement::Deallocate(m_pData);
 		}
 	}
 
@@ -48,7 +48,6 @@ public:
 		while (ulNewCursor > m_ulDataSize) Resize();
 		memcpy(static_cast<uint8_t*>(m_pData) + m_ulCursor, pData, ulSize);
 		m_ulCursor = ulNewCursor;
-		Zenith_Assert(m_ulCursor <= m_ulDataSize, "DataStream ran out of space");
 	}
 
 	void ReadData(void* pData, uint64_t ulSize)
@@ -65,7 +64,6 @@ public:
 		while (ulNewCursor > m_ulDataSize) Resize();
 		memcpy(static_cast<uint8_t*>(m_pData) + m_ulCursor, &x, sizeof(T));
 		m_ulCursor = ulNewCursor;
-		Zenith_Assert(m_ulCursor <= m_ulDataSize, "DataStream ran out of space");
 	}
 
 	template<typename T, std::enable_if_t<std::is_trivially_copyable<T>::value, int> = 0>
@@ -193,11 +191,8 @@ private:
 			return;
 		}
 
-		void* pData = new uint8_t[m_ulDataSize * 10];
-		memcpy(pData, m_pData, m_ulDataSize);
-		delete[] m_pData;
-		m_pData = pData;
-		m_ulDataSize *= 10;
+		m_ulDataSize *= 2;
+		m_pData = Zenith_MemoryManagement::Reallocate(m_pData, m_ulDataSize);
 	}
 	static constexpr u_int uDEFAULT_INITIAL_SIZE = 1024;
 

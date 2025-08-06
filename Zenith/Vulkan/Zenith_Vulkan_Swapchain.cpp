@@ -146,6 +146,8 @@ void Zenith_Vulkan_Swapchain::InitialiseCopyToFramebufferCommands()
 #endif
 
 	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
+
+	volatile bool a = false;
 }
 
 void Zenith_Vulkan_Swapchain::Initialise()

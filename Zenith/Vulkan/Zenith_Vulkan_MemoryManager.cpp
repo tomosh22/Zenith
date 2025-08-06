@@ -180,7 +180,7 @@ void Zenith_Vulkan_MemoryManager::FreeBuffer(Zenith_Vulkan_Buffer* pxBuffer)
 {
 	//#TO this happens as Reset is called twice on vertex and index buffers
 	//	  during destruction of Flux_MeshGeometry
-	if (pxBuffer->GetBuffer() == VK_NULL_HANDLE)
+	if (!pxBuffer->IsValid())
 	{
 		return;
 	}
@@ -473,7 +473,7 @@ void Zenith_Vulkan_MemoryManager::AllocateTexture(uint32_t uWidth, uint32_t uHei
 		xAllocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
 	}
 
-	const vk::ImageCreateInfo::NativeType xImageInfo_Native = xImageInfo;
+	const vk::ImageCreateInfo::NativeType& xImageInfo_Native = xImageInfo;
 
 	vmaCreateImage(s_xAllocator, &xImageInfo_Native, &xAllocInfo, xTextureOut.GetImage_Ptr(), xTextureOut.GetAllocation_Ptr(), nullptr);
 
@@ -484,7 +484,7 @@ void Zenith_Vulkan_MemoryManager::AllocateTexture(uint32_t uWidth, uint32_t uHei
 		.setBaseArrayLayer(0)
 		.setLayerCount(uNumLayers);
 
-	vk::Image xImage = xTextureOut.GetImage();
+	const vk::Image xImage = xTextureOut.GetImage();
 
 	vk::ImageViewCreateInfo xViewCreate = vk::ImageViewCreateInfo()
 		.setImage(xImage)
@@ -498,7 +498,7 @@ void Zenith_Vulkan_MemoryManager::AllocateTexture(uint32_t uWidth, uint32_t uHei
 
 void Zenith_Vulkan_MemoryManager::FreeTexture(Zenith_Vulkan_Texture* pxTexture)
 {
-	if (pxTexture->GetImage() == VK_NULL_HANDLE)
+	if (!pxTexture->IsValid())
 	{
 		return;
 	}

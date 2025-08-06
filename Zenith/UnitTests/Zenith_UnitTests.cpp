@@ -2,7 +2,9 @@
 
 #include "UnitTests/Zenith_UnitTests.h"
 
+#include "Collections/Zenith_Vector.h"
 #include "DataStream/Zenith_DataStream.h"
+#include "Flux/Flux_Types.h"
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
 #include "Profiling/Zenith_Profiling.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
@@ -12,11 +14,12 @@ void Zenith_UnitTests::RunAllTests()
 	TestDataStream();
 	TestMemoryManagement();
 	TestProfiling();
+	TestVector();
 }
 
 void Zenith_UnitTests::TestDataStream()
 {
-	Zenith_DataStream xStream;
+	Zenith_DataStream xStream(1);
 
 	const char* szTestData = "This is a test string";
 	constexpr u_int uTestDataLen = 22;
@@ -59,8 +62,6 @@ void Zenith_UnitTests::TestMemoryManagement()
 {
 	int* piTest = new int[10];
 	delete[] piTest;
-
-	volatile bool a = false;
 }
 
 struct TestData
@@ -76,7 +77,6 @@ static void Test(void* pData)
 
 void Zenith_UnitTests::TestProfiling()
 {
-
 	constexpr Zenith_ProfileIndex eIndex0 = ZENITH_PROFILE_INDEX__FLUX_STATIC_MESHES;
 	constexpr Zenith_ProfileIndex eIndex1 = ZENITH_PROFILE_INDEX__FLUX_ANIMATED_MESHES;
 
@@ -120,8 +120,52 @@ void Zenith_UnitTests::TestProfiling()
 	delete pxTask2;
 
 	Zenith_Profiling::EndFrame();
+}
 
-	volatile bool a = false;
+void Zenith_UnitTests::TestVector()
+{
+	constexpr u_int uNUM_TESTS = 1024;
+
+	Zenith_Vector<u_int> xUIntVector(1);
+
+	for (u_int u = 0; u < uNUM_TESTS; u++)
+	{
+		xUIntVector.PushBack(u);
+		Zenith_Assert(xUIntVector.GetFront() == 0);
+		Zenith_Assert(xUIntVector.GetBack() == u);
+	}
+
+	for (u_int u = 0; u < uNUM_TESTS; u++)
+	{
+		Zenith_Assert(xUIntVector.Get(u) == u);
+	}
+
+	constexpr u_int uNUM_REMOVALS = uNUM_TESTS / 10;
+	for (u_int u = 0; u < uNUM_REMOVALS; u++)
+	{
+		xUIntVector.Remove(uNUM_TESTS / 2);
+		Zenith_Assert(xUIntVector.Get(uNUM_TESTS / 2) == uNUM_TESTS / 2 + u + 1);
+	}
+
+	Zenith_Vector<u_int> xCopy0 = xUIntVector;
+	Zenith_Vector<u_int> xCopy1(xUIntVector);
+
+	auto xTest = [uNUM_TESTS, uNUM_REMOVALS](Zenith_Vector<u_int> xVector)
+	{
+		for (u_int u = 0; u < uNUM_TESTS / 2; u++)
+		{
+			Zenith_Assert(xVector.Get(u) == u);
+		}
+
+		for (u_int u = uNUM_TESTS / 2; u < uNUM_TESTS - uNUM_REMOVALS; u++)
+		{
+			Zenith_Assert(xVector.Get(u) == u + uNUM_REMOVALS);
+		}
+	};
+
+	xTest(xUIntVector);
+	xTest(xCopy0);
+	xTest(xCopy1);
 }
 
 

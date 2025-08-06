@@ -41,6 +41,7 @@
     <CharacterSet>MultiByte</CharacterSet>
     <WholeProgramOptimization>false</WholeProgramOptimization>
     <PlatformToolset>v143</PlatformToolset>
+    <EnableASAN>false</EnableASAN>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
@@ -454,9 +455,11 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="Zenith\Collections\Zenith_CircularQueue.h" />
+    <ClInclude Include="Zenith\Collections\Zenith_Vector.h" />
     <ClInclude Include="Zenith\Core\Memory\Zenith_MemoryManagement_Disabled.h" />
     <ClInclude Include="Zenith\Core\Memory\Zenith_MemoryManagement_Enabled.h" />
     <ClInclude Include="Zenith\Core\Multithreading\Zenith_Multithreading.h" />
+    <ClInclude Include="Zenith\Core\Zenith_DisableSTL.h" />
     <ClInclude Include="Zenith\DataStream\Zenith_DataStream.h" />
     <ClInclude Include="Zenith\Flux\MeshAnimation\Flux_MeshAnimation.h" />
     <ClInclude Include="Games\Test\Components\PlayerController_Behaviour.h" />

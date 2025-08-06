@@ -51,6 +51,11 @@ public:
 	void SetHeight(const uint32_t uHeight) { m_uHeight = uHeight; }
 	void SetNumMips(const uint32_t uNumMips) { m_uNumMips = uNumMips; }
 	void SetNumLayers(const uint32_t uNumLayers) { m_uNumLayers = uNumLayers; }
+
+	bool IsValid() const
+	{
+		return m_xImage != VK_NULL_HANDLE;
+	}
 private:
 	//#TO native type to support vma
 	vk::Image::NativeType m_xImage = VK_NULL_HANDLE;
