@@ -178,7 +178,7 @@ void Flux_Terrain::RenderToGBuffer()
 
 	s_xCommandBuffer.SetPipeline(dbg_bWireframe ? &s_xWireframePipeline : &s_xGBufferPipeline);
 
-	std::vector<Zenith_TerrainComponent*> xTerrainComponents;
+	Zenith_Vector<Zenith_TerrainComponent*> xTerrainComponents;
 	Zenith_Scene::GetCurrentScene().GetAllOfComponentType<Zenith_TerrainComponent>(xTerrainComponents);
 
 	s_xCommandBuffer.BeginBind(0);
@@ -189,8 +189,9 @@ void Flux_Terrain::RenderToGBuffer()
 
 	const Zenith_CameraComponent& xCam = Zenith_Scene::GetCurrentScene().GetMainCamera();
 
-	for (Zenith_TerrainComponent* pxTerrain : xTerrainComponents)
+	for (Zenith_Vector<Zenith_TerrainComponent*>::Iterator xIt(xTerrainComponents); !xIt.Done(); xIt.Next())
 	{
+		Zenith_TerrainComponent* pxTerrain = xIt.GetData();
 		if (!dbg_bIgnoreVisibilityCheck && !pxTerrain->IsVisible(dbg_fVisibilityThresholdMultiplier, xCam))
 		{
 			continue;
@@ -224,13 +225,14 @@ void Flux_Terrain::RenderToGBuffer()
 
 void Flux_Terrain::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf)
 {
-	std::vector<Zenith_TerrainComponent*> xTerrainComponents;
+	Zenith_Vector<Zenith_TerrainComponent*> xTerrainComponents;
 	Zenith_Scene::GetCurrentScene().GetAllOfComponentType<Zenith_TerrainComponent>(xTerrainComponents);
 
 	//#TO_TODO: skip terrain components that aren't visibile from CSM
 
-	for (Zenith_TerrainComponent* pxTerrain : xTerrainComponents)
+	for (Zenith_Vector<Zenith_TerrainComponent*>::Iterator xIt(xTerrainComponents); !xIt.Done(); xIt.Next())
 	{
+		Zenith_TerrainComponent* pxTerrain = xIt.GetData();
 
 		xCmdBuf.SetVertexBuffer(pxTerrain->GetRenderMeshGeometry().GetVertexBuffer());
 		xCmdBuf.SetIndexBuffer(pxTerrain->GetRenderMeshGeometry().GetIndexBuffer());

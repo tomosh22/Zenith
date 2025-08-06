@@ -98,18 +98,20 @@ void Flux_Text::Initialise()
 //#TO returns number of chars to render
 uint32_t Flux_Text::UploadChars()
 {
-	std::vector<Zenith_TextComponent*> xComponents;
-	std::vector<TextVertex> xVertices(s_uMaxCharsPerFrame);
+	Zenith_Vector<Zenith_TextComponent*> xComponents;
+	Zenith_Vector<TextVertex> xVertices(s_uMaxCharsPerFrame);
 	Zenith_Scene::GetCurrentScene().GetAllOfComponentType<Zenith_TextComponent>(xComponents);
 
 	uint32_t uCharCount = 0;
-	for (Zenith_TextComponent* pxComponent : xComponents)
+	for (Zenith_Vector<Zenith_TextComponent*>::Iterator xIt(xComponents); !xIt.Done(); xIt.Next())
 	{
+		Zenith_TextComponent* pxComponent = xIt.GetData();
+
 		for (TextEntry& xText : pxComponent->m_xEntries)
 		{
 			for (uint32_t u = 0; u < xText.m_strText.size(); u++)
 			{
-				TextVertex& xVertex = xVertices.at(uCharCount);
+				TextVertex& xVertex = xVertices.Get(uCharCount);
 				xVertex.m_xTextRoot = xText.m_xPosition;
 				xVertex.m_fTextSize = dbg_fTextSize;
 				const float fSpacing = xVertex.m_fTextSize / 200.f;
@@ -131,7 +133,7 @@ uint32_t Flux_Text::UploadChars()
 		{
 			for (uint32_t u = 0; u < xText.m_strText.size(); u++)
 			{
-				TextVertex& xVertex = xVertices.at(uCharCount);
+				TextVertex& xVertex = xVertices.Get(uCharCount);
 				Zenith_Maths::Vector4 xTextRoot(xText.m_xPosition.x, xText.m_xPosition.y, xText.m_xPosition.z, 1);
 				Zenith_Maths::Vector4 xClipSpace = Flux_Graphics::GetViewProjMatrix() * xTextRoot;
 				Zenith_Maths::Vector4 xScreenSpace = xClipSpace / xClipSpace.w;
@@ -164,7 +166,7 @@ uint32_t Flux_Text::UploadChars()
 		
 	}
 
-	Flux_MemoryManager::UploadBufferData(s_xInstanceBuffer.GetBuffer(), xVertices.data(), sizeof(TextVertex) * xVertices.size());
+	Flux_MemoryManager::UploadBufferData(s_xInstanceBuffer.GetBuffer(), xVertices.GetDataPointer(), sizeof(TextVertex) * xVertices.GetSize());
 
 	return uCharCount;
 }

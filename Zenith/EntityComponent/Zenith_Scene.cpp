@@ -24,10 +24,11 @@ void AnimUpdateTask(void*)
 {
 	const float fDt = Zenith_Core::GetDt();
 
-	std::vector<Zenith_ModelComponent*> xModels;
+	Zenith_Vector<Zenith_ModelComponent*> xModels;
 	Zenith_Scene::GetCurrentScene().GetAllOfComponentType<Zenith_ModelComponent>(xModels);
-	for (Zenith_ModelComponent* pxModel : xModels)
+	for (Zenith_Vector<Zenith_ModelComponent*>::Iterator xIt(xModels); !xIt.Done(); xIt.Next())
 	{
+		Zenith_ModelComponent* pxModel = xIt.GetData();
 		for (u_int uMesh = 0; uMesh < pxModel->GetNumMeshEntires(); uMesh++)
 		{
 			Flux_MeshAnimation* pxAnim = pxModel->GetMeshGeometryAtIndex(uMesh).m_pxAnimation;
@@ -67,11 +68,11 @@ void Zenith_Scene::Serialize(const std::string& strFilename) {
 
 void Zenith_Scene::Update(const float fDt)
 {
-	std::vector<Zenith_ScriptComponent*> xScripts;
+	Zenith_Vector<Zenith_ScriptComponent*> xScripts;
 	s_xCurrentScene.GetAllOfComponentType<Zenith_ScriptComponent>(xScripts);
-	for (Zenith_ScriptComponent* pxScript : xScripts)
+	for (Zenith_Vector<Zenith_ScriptComponent*>::Iterator xIt(xScripts); !xIt.Done(); xIt.Next())
 	{
-		pxScript->OnUpdate(fDt);
+		xIt.GetData()->OnUpdate(fDt);
 	}
 
 	Zenith_TaskSystem::SubmitTask(g_pxAnimUpdateTask);
