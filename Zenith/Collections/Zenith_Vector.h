@@ -82,6 +82,11 @@ public:
 		return m_pxData[m_uSize - 1];
 	}
 
+	T* GetDataPointer() const
+	{
+		return m_pxData;
+	}
+
 	void Remove(u_int uIndex)
 	{
 		Zenith_Assert(uIndex < m_uSize, "Trying to remove element at index greater than vector size");

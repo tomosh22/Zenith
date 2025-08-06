@@ -88,7 +88,7 @@ void Flux_Water::Render()
 
 	s_xCommandBuffer.SetPipeline(&s_xPipeline);
 
-	std::vector<Zenith_TerrainComponent*> xTerrainComponents;
+	Zenith_Vector<Zenith_TerrainComponent*> xTerrainComponents;
 	Zenith_Scene::GetCurrentScene().GetAllOfComponentType<Zenith_TerrainComponent>(xTerrainComponents);
 
 	s_xCommandBuffer.BeginBind(0);
@@ -98,8 +98,9 @@ void Flux_Water::Render()
 
 	const Zenith_CameraComponent& xCam = Zenith_Scene::GetCurrentScene().GetMainCamera();
 
-	for (Zenith_TerrainComponent* pxTerrain : xTerrainComponents)
+	for (Zenith_Vector<Zenith_TerrainComponent*>::Iterator xIt(xTerrainComponents); !xIt.Done(); xIt.Next())
 	{
+		Zenith_TerrainComponent* pxTerrain = xIt.GetData();
 		if (!pxTerrain->IsVisible(dbg_fVisibilityThresholdMultiplier, xCam))
 		{
 			continue;

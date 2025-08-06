@@ -108,7 +108,7 @@ void Flux_AnimatedMeshes::Render()
 
 	s_xCommandBuffer.SetPipeline(&s_xPipeline);
 
-	std::vector<Zenith_ModelComponent*> xModels;
+	Zenith_Vector<Zenith_ModelComponent*> xModels;
 	Zenith_Scene::GetCurrentScene().GetAllOfComponentType<Zenith_ModelComponent>(xModels);
 
 	s_xCommandBuffer.BeginBind(0);
@@ -116,8 +116,9 @@ void Flux_AnimatedMeshes::Render()
 
 	s_xCommandBuffer.BeginBind(1);
 
-	for (Zenith_ModelComponent* pxModel : xModels)
+	for (Zenith_Vector<Zenith_ModelComponent*>::Iterator xIt(xModels); !xIt.Done(); xIt.Next())
 	{
+		Zenith_ModelComponent* pxModel = xIt.GetData();
 		//#TO_TODO: these 2 should probably be separate components
 		if (!pxModel->GetMeshGeometryAtIndex(0).GetNumBones())
 		{

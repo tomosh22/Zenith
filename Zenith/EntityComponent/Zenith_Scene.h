@@ -3,6 +3,8 @@
 #include "entt/entt.hpp"
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
 
+#include "Collections/Zenith_Vector.h"
+
 class Zenith_CameraComponent;
 class Zenith_Entity;
 
@@ -30,12 +32,12 @@ public:
 	}
 
 	template<typename T>
-	void GetAllOfComponentType(std::vector<T*>& xOut)
+	void GetAllOfComponentType(Zenith_Vector<T*>& xOut)
 	{
 		auto view = m_xRegistry.view<T>();
 		for (auto [xEntity, xComponent] : view.each())
 		{
-			xOut.push_back(&xComponent);
+			xOut.PushBack(&xComponent);
 		}
 	}
 
