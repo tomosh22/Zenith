@@ -105,15 +105,15 @@ void Zenith_UnitTests::TestProfiling()
 	Zenith_Assert(xTest1.Validate(), "");
 	Zenith_Assert(xTest2.Validate(), "");
 
-	const std::unordered_map<u_int, std::vector<Zenith_Profiling::Event>>& xEvents = Zenith_Profiling::GetEvents();
-	const std::vector<Zenith_Profiling::Event>& xEventsMain = xEvents.at(Zenith_Multithreading::GetCurrentThreadID());
-	const std::vector<Zenith_Profiling::Event>& xEvents0 = xEvents.at(pxTask0->GetCompletedThreadID());
-	const std::vector<Zenith_Profiling::Event>& xEvents1 = xEvents.at(pxTask0->GetCompletedThreadID());
-	const std::vector<Zenith_Profiling::Event>& xEvents2 = xEvents.at(pxTask0->GetCompletedThreadID());
+	const std::unordered_map<u_int, Zenith_Vector<Zenith_Profiling::Event>>& xEvents = Zenith_Profiling::GetEvents();
+	const Zenith_Vector<Zenith_Profiling::Event>& xEventsMain = xEvents.at(Zenith_Multithreading::GetCurrentThreadID());
+	const Zenith_Vector<Zenith_Profiling::Event>& xEvents0 = xEvents.at(pxTask0->GetCompletedThreadID());
+	const Zenith_Vector<Zenith_Profiling::Event>& xEvents1 = xEvents.at(pxTask0->GetCompletedThreadID());
+	const Zenith_Vector<Zenith_Profiling::Event>& xEvents2 = xEvents.at(pxTask0->GetCompletedThreadID());
 
-	Zenith_Assert(xEventsMain.size() == 2, "Expected 2 events, have %u", xEvents.size());
-	Zenith_Assert(xEventsMain.at(0).m_eIndex == eIndex1, "Wrong profile index");
-	Zenith_Assert(xEventsMain.at(1).m_eIndex == eIndex0, "Wrong profile index");
+	Zenith_Assert(xEventsMain.GetSize() == 2, "Expected 2 events, have %u", xEvents.size());
+	Zenith_Assert(xEventsMain.Get(0).m_eIndex == eIndex1, "Wrong profile index");
+	Zenith_Assert(xEventsMain.Get(1).m_eIndex == eIndex0, "Wrong profile index");
 
 	delete pxTask0;
 	delete pxTask1;
