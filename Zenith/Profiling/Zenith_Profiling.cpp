@@ -13,7 +13,7 @@ thread_local static u_int tl_g_uCurrentDepth;
 thread_local static Zenith_ProfileIndex tl_g_aeIndices[uMAX_PROFILE_DEPTH];
 thread_local static std::chrono::time_point<std::chrono::high_resolution_clock> tl_g_axStartPoints[uMAX_PROFILE_DEPTH];
 thread_local static std::chrono::time_point<std::chrono::high_resolution_clock> tl_g_axEndPoints[uMAX_PROFILE_DEPTH];
-static std::unordered_map<u_int, std::vector<Zenith_Profiling::Event>> g_xEvents;
+static std::unordered_map<u_int, Zenith_Vector<Zenith_Profiling::Event>> g_xEvents;
 static std::chrono::time_point<std::chrono::high_resolution_clock> g_xFrameStart;
 static std::chrono::time_point<std::chrono::high_resolution_clock> g_xFrameEnd;
 
@@ -41,7 +41,7 @@ void Zenith_Profiling::BeginFrame()
 
 	for (auto xIt = g_xEvents.begin(); xIt != g_xEvents.end(); xIt++)
 	{
-		xIt->second.clear();
+		xIt->second.Clear();
 	}
 
 	g_xFrameStart = std::chrono::high_resolution_clock::now();
@@ -155,9 +155,9 @@ void Zenith_Profiling::RenderToImGui()
 		snprintf(acLabel, sizeof(acLabel), "Thread %u", uThreadID);
 		pxDrawList->AddText(ImVec2(xCanvasPos.x, fThreadBaseY), IM_COL32_WHITE, acLabel);
 
-		for (u_int u = 0; u < xEvents.size(); u++)
+		for (u_int u = 0; u < xEvents.GetSize(); u++)
 		{
-			const Event& xEvent = xEvents[xEvents.size() - u - 1];
+			const Event& xEvent = xEvents.Get(xEvents.GetSize() - u - 1);
 
 			if (xEvent.m_uDepth < ls_iMinDepthToRender || xEvent.m_uDepth > ls_iMaxDepthToRender)
 				continue;
@@ -208,7 +208,8 @@ void Zenith_Profiling::EndProfile(const Zenith_ProfileIndex eIndex)
 	tl_g_uCurrentDepth--;
 
 	tl_g_axEndPoints[tl_g_uCurrentDepth] = std::chrono::high_resolution_clock::now();
-	const Event& xEvent = g_xEvents.at(Zenith_Multithreading::GetCurrentThreadID()).emplace_back(Event(tl_g_axStartPoints[tl_g_uCurrentDepth], tl_g_axEndPoints[tl_g_uCurrentDepth], tl_g_aeIndices[tl_g_uCurrentDepth], tl_g_uCurrentDepth));
+	const Event& xEvent = {tl_g_axStartPoints[tl_g_uCurrentDepth], tl_g_axEndPoints[tl_g_uCurrentDepth], tl_g_aeIndices[tl_g_uCurrentDepth], tl_g_uCurrentDepth};
+	g_xEvents.at(Zenith_Multithreading::GetCurrentThreadID()).PushBack(xEvent);
 
 	tl_g_aeIndices[tl_g_uCurrentDepth] = ZENITH_PROFILE_INDEX__TOTAL_FRAME;
 }
@@ -219,7 +220,7 @@ const Zenith_ProfileIndex Zenith_Profiling::GetCurrentIndex()
 	return tl_g_aeIndices[tl_g_uCurrentDepth - 1];
 }
 
-const std::unordered_map<u_int, std::vector<Zenith_Profiling::Event>>& Zenith_Profiling::GetEvents()
+const std::unordered_map<u_int, Zenith_Vector<Zenith_Profiling::Event>>& Zenith_Profiling::GetEvents()
 {
 	return g_xEvents;
 }

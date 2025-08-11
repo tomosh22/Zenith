@@ -5,179 +5,224 @@ template<typename T>
 class Zenith_Vector
 {
 public:
-	Zenith_Vector() : Zenith_Vector(uDEFAULT_INITIAL_COUNT)
-	{
-	}
-	Zenith_Vector(const u_int uCapacity)
-		: m_pxData(static_cast<T*>(Zenith_MemoryManagement::Allocate(uCapacity * sizeof(T))))
-		, m_uSize(0)
-		, m_uCapacity(uCapacity)
-	{
-	}
+    Zenith_Vector()
+        : Zenith_Vector(uDEFAULT_INITIAL_COUNT) {}
 
-	Zenith_Vector(const Zenith_Vector& xOther)
-	{
-		CopyFromOther(xOther);
-	}
+    explicit Zenith_Vector(size_t uCapacity)
+        : m_pxData(static_cast<T*>(Zenith_MemoryManagement::Allocate(uCapacity * sizeof(T)))),
+        m_uSize(0),
+        m_uCapacity(uCapacity) {}
 
-	Zenith_Vector(Zenith_Vector&& xOther)
-	{
-		CopyFromOther(xOther);
-	}
+    Zenith_Vector(const Zenith_Vector& other)
+        : m_pxData(nullptr), m_uSize(0), m_uCapacity(0)
+    {
+        CopyFromOther(other);
+    }
 
-	Zenith_Vector& operator=(const Zenith_Vector& xOther)
-	{
-		Zenith_MemoryManagement::Deallocate(m_pxData);
+    Zenith_Vector(Zenith_Vector&& other) noexcept
+        : m_pxData(other.m_pxData),
+        m_uSize(other.m_uSize),
+        m_uCapacity(other.m_uCapacity)
+    {
+        other.m_pxData = nullptr;
+        other.m_uSize = 0;
+        other.m_uCapacity = 0;
+    }
 
-		CopyFromOther(xOther);
+    Zenith_Vector& operator=(const Zenith_Vector& other)
+    {
+        if (this != &other)
+        {
+            Clear();
+            Zenith_MemoryManagement::Deallocate(m_pxData);
+            CopyFromOther(other);
+        }
+        return *this;
+    }
 
-		return *this;
-	}
+    Zenith_Vector& operator=(Zenith_Vector&& other) noexcept
+    {
+        if (this != &other)
+        {
+            Clear();
+            Zenith_MemoryManagement::Deallocate(m_pxData);
 
-	Zenith_Vector& operator=(Zenith_Vector&& xOther)
-	{
-		Zenith_MemoryManagement::Deallocate(m_pxData);
+            m_pxData = other.m_pxData;
+            m_uSize = other.m_uSize;
+            m_uCapacity = other.m_uCapacity;
 
-		CopyFromOther(xOther);
+            other.m_pxData = nullptr;
+            other.m_uSize = 0;
+            other.m_uCapacity = 0;
+        }
+        return *this;
+    }
 
-		return *this;
-	}
+    ~Zenith_Vector()
+    {
+        Clear();
+        Zenith_MemoryManagement::Deallocate(m_pxData);
+    }
 
+    size_t GetSize() const { return m_uSize; }
+    size_t GetCapacity() const { return m_uCapacity; }
 
-	~Zenith_Vector()
-	{
-		Clear();
-		Zenith_MemoryManagement::Deallocate(m_pxData);
-	}
+    void PushBack(const T& value)
+    {
+        EnsureCapacity();
+        #include "Memory/Zenith_MemoryManagement_Disabled.h"
+        new (&m_pxData[m_uSize]) T(value);
+        #include "Memory/Zenith_MemoryManagement_Enabled.h"
+        m_uSize++;
+    }
 
-	const u_int GetSize() const
-	{
-		return m_uSize;
-	}
+    void PushBack(T&& value)
+    {
+        EnsureCapacity();
+        #include "Memory/Zenith_MemoryManagement_Disabled.h"
+        new (&m_pxData[m_uSize]) T(std::move(value));
+        #include "Memory/Zenith_MemoryManagement_Enabled.h"
+        m_uSize++;
+    }
 
-	const u_int GetCapacity() const
-	{
-		return m_uCapacity;
-	}
+    T& Get(size_t index) const
+    {
+        Zenith_Assert(index < m_uSize, "Index out of range in Get()");
+        return m_pxData[index];
+    }
 
-	void PushBack(const T& x)
-	{
-		while (m_uSize >= m_uCapacity) Resize();
-		memcpy(static_cast<T*>(m_pxData) + m_uSize, &x, sizeof(T));
-		m_uSize++;
-	}
+    T& GetFront() const
+    {
+        Zenith_Assert(m_uSize > 0, "GetFront called on empty vector");
+        return m_pxData[0];
+    }
 
-	T& Get(u_int uIndex) const
-	{
-		return m_pxData[uIndex];
-	}
+    T& GetBack() const
+    {
+        Zenith_Assert(m_uSize > 0, "GetBack called on empty vector");
+        return m_pxData[m_uSize - 1];
+    }
 
-	T& GetFront() const
-	{
-		return m_pxData[0];
-	}
+    T* GetDataPointer() const { return m_pxData; }
 
-	T& GetBack() const
-	{
-		return m_pxData[m_uSize - 1];
-	}
+    void Remove(size_t index)
+    {
+        Zenith_Assert(index < m_uSize, "Index out of range in Remove()");
+        m_pxData[index].~T();
+        for (size_t i = index; i < m_uSize - 1; ++i)
+        {
+            #include "Memory/Zenith_MemoryManagement_Disabled.h"
+            new (&m_pxData[i]) T(std::move(m_pxData[i + 1]));
+            #include "Memory/Zenith_MemoryManagement_Enabled.h"
+            m_pxData[i + 1].~T();
+        }
+        m_uSize--;
+    }
 
-	T* GetDataPointer() const
-	{
-		return m_pxData;
-	}
+    void Clear()
+    {
+        for (size_t i = 0; i < m_uSize; ++i)
+        {
+            m_pxData[i].~T();
+        }
+        m_uSize = 0;
+    }
 
-	void Remove(u_int uIndex)
-	{
-		Zenith_Assert(uIndex < m_uSize, "Trying to remove element at index greater than vector size");
-		m_pxData[uIndex].~T();
-		memmove(m_pxData + uIndex, m_pxData + uIndex + 1, sizeof(T) * (m_uCapacity - uIndex - 1));
-		m_uSize--;
-	}
+    void Reserve(size_t newCapacity)
+    {
+        if (newCapacity <= m_uCapacity)
+            return;
 
-	void Clear()
-	{
-		for (u_int u = 0; u < m_uSize; u++)
-		{
-			m_pxData[u].~T();
-		}
-		m_uSize = 0;
-	}
+        T* newData = static_cast<T*>(Zenith_MemoryManagement::Allocate(newCapacity * sizeof(T)));
+        for (size_t i = 0; i < m_uSize; ++i)
+        {
+            #include "Memory/Zenith_MemoryManagement_Disabled.h"
+            new (&newData[i]) T(std::move(m_pxData[i]));
+            #include "Memory/Zenith_MemoryManagement_Enabled.h"
+            m_pxData[i].~T();
+        }
 
-	void Reserve(const u_int uCount)
-	{
-		m_pxData = static_cast<T*>(Zenith_MemoryManagement::Reallocate(m_pxData, sizeof(T) * uCount));
-	}
+        Zenith_MemoryManagement::Deallocate(m_pxData);
+        m_pxData = newData;
+        m_uCapacity = newCapacity;
+    }
 
-	void ReadFromDataStream(Zenith_DataStream& xStream)
-	{
-		u_int uSize;
-		xStream >> uSize;
-		Reserve(uSize);
-		for (u_int u = 0; u < uSize; u++)
-		{
-			T x;
-			xStream >> x;
-			PushBack(x);
-		}
-	}
+    void ReadFromDataStream(Zenith_DataStream& stream)
+    {
+        size_t size;
+        stream >> size;
+        Clear();
+        Reserve(size);
+        for (size_t i = 0; i < size; ++i)
+        {
+            T value;
+            stream >> value;
+            PushBack(std::move(value));
+        }
+    }
 
-	void WriteToDataStream(Zenith_DataStream& xStream) const
-	{
-		xStream << m_uSize;
-		for (Iterator xIt(*this); !xIt.Done(); xIt.Next())
-		{
-			xStream << xIt.GetData();
-		}
-	}
+    void WriteToDataStream(Zenith_DataStream& stream) const
+    {
+        stream << m_uSize;
+        for (Iterator it(*this); !it.Done(); it.Next())
+        {
+            stream << it.GetData();
+        }
+    }
 
-	class Iterator
-	{
-	public:
-		Iterator(const Zenith_Vector& xVec)
-		: m_xVec(xVec)
-		, m_uCursor(0)
-		{
-		}
+    class Iterator
+    {
+    public:
+        explicit Iterator(const Zenith_Vector& vec)
+            : m_vec(vec), m_index(0) {}
 
-		void Next()
-		{
-			Zenith_Assert(m_uCursor < m_xVec.GetSize()+1, "Iterated too far");
-			m_uCursor++;
-		}
+        void Next()
+        {
+            Zenith_Assert(m_index < m_vec.GetSize() + 1, "Iterator advanced past end");
+            ++m_index;
+        }
 
-		bool Done()
-		{
-			return m_uCursor == m_xVec.GetSize();
-		}
+        bool Done() const { return m_index == m_vec.GetSize(); }
 
-		T& GetData() {return m_xVec.Get(m_uCursor);}
-		const T& GetData() const { return m_xVec.Get(m_uCursor); }
+        T& GetData() { return m_vec.Get(m_index); }
 
-	private:
-		const Zenith_Vector<T>& m_xVec;
-		u_int m_uCursor;
-	};
+    private:
+        const Zenith_Vector<T>& m_vec;
+        size_t m_index;
+    };
 
 private:
-	static constexpr u_int uDEFAULT_INITIAL_COUNT = 8;
+    static constexpr size_t uDEFAULT_INITIAL_COUNT = 8;
 
-	void Resize()
-	{
-		m_uCapacity *= 2;
-		m_pxData = static_cast<T*>(Zenith_MemoryManagement::Reallocate(m_pxData, sizeof(T) * m_uCapacity));
-	}
+    void EnsureCapacity()
+    {
+        if (m_uSize >= m_uCapacity)
+        {
+            Resize();
+        }
+    }
 
-	void CopyFromOther(const Zenith_Vector& xOther)
-	{
-		m_pxData = static_cast<T*>(Zenith_MemoryManagement::Allocate(xOther.GetCapacity() * sizeof(T)));
-		m_uSize = xOther.GetSize();
-		m_uCapacity = xOther.GetCapacity();
+    void Resize()
+    {
+        size_t newCapacity = (m_uCapacity > 0) ? m_uCapacity * 2 : uDEFAULT_INITIAL_COUNT;
+        Reserve(newCapacity);
+    }
 
-		memcpy(m_pxData, xOther.m_pxData, sizeof(T) * m_uCapacity);
-	}
+    void CopyFromOther(const Zenith_Vector& other)
+    {
+        m_pxData = static_cast<T*>(Zenith_MemoryManagement::Allocate(other.m_uCapacity * sizeof(T)));
+        m_uSize = other.m_uSize;
+        m_uCapacity = other.m_uCapacity;
 
-	T* m_pxData;
-	u_int m_uSize;
-	u_int m_uCapacity;
+        for (size_t i = 0; i < m_uSize; ++i)
+        {
+            #include "Memory/Zenith_MemoryManagement_Disabled.h"
+            new (&m_pxData[i]) T(other.m_pxData[i]);
+            #include "Memory/Zenith_MemoryManagement_Enabled.h"
+        }
+    }
+
+    T* m_pxData = nullptr;
+    size_t m_uSize = 0;
+    size_t m_uCapacity = 0;
 };

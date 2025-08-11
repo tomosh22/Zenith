@@ -111,7 +111,7 @@ uint32_t Flux_Text::UploadChars()
 		{
 			for (uint32_t u = 0; u < xText.m_strText.size(); u++)
 			{
-				TextVertex& xVertex = xVertices.Get(uCharCount);
+				TextVertex xVertex;
 				xVertex.m_xTextRoot = xText.m_xPosition;
 				xVertex.m_fTextSize = dbg_fTextSize;
 				const float fSpacing = xVertex.m_fTextSize / 200.f;
@@ -126,6 +126,8 @@ uint32_t Flux_Text::UploadChars()
 				xVertex.m_xUV = { xTextureOffsets.x, xTextureOffsets.y };
 				xVertex.m_xUV /= 10.f;
 				uCharCount++;
+
+				xVertices.PushBack(xVertex);
 			}
 		}
 
@@ -133,7 +135,7 @@ uint32_t Flux_Text::UploadChars()
 		{
 			for (uint32_t u = 0; u < xText.m_strText.size(); u++)
 			{
-				TextVertex& xVertex = xVertices.Get(uCharCount);
+				TextVertex xVertex;
 				Zenith_Maths::Vector4 xTextRoot(xText.m_xPosition.x, xText.m_xPosition.y, xText.m_xPosition.z, 1);
 				Zenith_Maths::Vector4 xClipSpace = Flux_Graphics::GetViewProjMatrix() * xTextRoot;
 				Zenith_Maths::Vector4 xScreenSpace = xClipSpace / xClipSpace.w;
@@ -160,6 +162,8 @@ uint32_t Flux_Text::UploadChars()
 				xVertex.m_xUV = { xTextureOffsets.x, xTextureOffsets.y };
 				xVertex.m_xUV /= 10.f;
 				uCharCount++;
+
+				xVertices.PushBack(xVertex);
 			}
 		}
 

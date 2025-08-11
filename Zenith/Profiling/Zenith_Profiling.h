@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Collections/Zenith_Vector.h"
+
 enum Zenith_ProfileIndex
 {
 	ZENITH_PROFILE_INDEX__TOTAL_FRAME,
@@ -87,5 +89,5 @@ public:
 
 	static const Zenith_ProfileIndex GetCurrentIndex();
 
-	static const std::unordered_map<u_int, std::vector<Zenith_Profiling::Event>>& GetEvents();
+	static const std::unordered_map<u_int, Zenith_Vector<Zenith_Profiling::Event>>& GetEvents();
 };
