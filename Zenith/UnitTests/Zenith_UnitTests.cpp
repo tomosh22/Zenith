@@ -128,9 +128,16 @@ void Zenith_UnitTests::TestVector()
 
 	Zenith_Vector<u_int> xUIntVector(1);
 
-	for (u_int u = 0; u < uNUM_TESTS; u++)
+	for (u_int u = 0; u < uNUM_TESTS / 2; u++)
 	{
 		xUIntVector.PushBack(u);
+		Zenith_Assert(xUIntVector.GetFront() == 0);
+		Zenith_Assert(xUIntVector.GetBack() == u);
+	}
+
+	for (u_int u = uNUM_TESTS / 2; u < uNUM_TESTS; u++)
+	{
+		xUIntVector.EmplaceBack((u_int&&)u_int(u));
 		Zenith_Assert(xUIntVector.GetFront() == 0);
 		Zenith_Assert(xUIntVector.GetBack() == u);
 	}
