@@ -2,6 +2,7 @@
 
 #include "UnitTests/Zenith_UnitTests.h"
 
+#include "Collections/Zenith_MemoryPool.h"
 #include "Collections/Zenith_Vector.h"
 #include "DataStream/Zenith_DataStream.h"
 #include "Flux/Flux_Types.h"
@@ -15,6 +16,7 @@ void Zenith_UnitTests::RunAllTests()
 	TestMemoryManagement();
 	TestProfiling();
 	TestVector();
+	TestMemoryPool();
 }
 
 void Zenith_UnitTests::TestDataStream()
@@ -173,6 +175,53 @@ void Zenith_UnitTests::TestVector()
 	xTest(xUIntVector);
 	xTest(xCopy0);
 	xTest(xCopy1);
+}
+
+class MemoryPoolTest
+{
+public:
+	static int s_uCount;
+
+	explicit MemoryPoolTest(u_int& uOut)
+	: m_uTest(++s_uCount)
+	{
+		uOut = m_uTest;
+	}
+
+	~MemoryPoolTest()
+	{
+		s_uCount--;
+	}
+
+	int m_uTest;
+};
+int MemoryPoolTest::s_uCount = 0;
+
+void Zenith_UnitTests::TestMemoryPool()
+{
+	constexpr u_int uPOOL_SIZE = 128;
+	Zenith_MemoryPool<MemoryPoolTest, uPOOL_SIZE> xPool;
+	MemoryPoolTest* apxTest[uPOOL_SIZE];
+
+	Zenith_Assert(MemoryPoolTest::s_uCount == 0);
+
+	for (u_int u = 0; u < uPOOL_SIZE / 2; u++)
+	{
+		u_int uTest;
+		apxTest[u] = xPool.Allocate(uTest);
+		Zenith_Assert(MemoryPoolTest::s_uCount == u + 1);
+		Zenith_Assert(apxTest[u]->m_uTest == u + 1);
+		Zenith_Assert(uTest == u + 1);
+	}
+
+	for (u_int u = 0; u < uPOOL_SIZE / 4; u++)
+	{
+		Zenith_Assert(apxTest[u]->m_uTest == u + 1);
+		xPool.Deallocate(apxTest[u]);
+		Zenith_Assert(MemoryPoolTest::s_uCount == (uPOOL_SIZE / 2) - u - 1);
+	}
+
+	Zenith_Assert(MemoryPoolTest::s_uCount == uPOOL_SIZE / 4);
 }
 
 

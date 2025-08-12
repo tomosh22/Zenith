@@ -10,4 +10,5 @@ private:
 	static void TestMemoryManagement();
 	static void TestProfiling();
 	static void TestVector();
+	static void TestMemoryPool();
 };
