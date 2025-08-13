@@ -16,6 +16,7 @@
 
 uint32_t Flux::s_uFrameCounter = 0;
 std::vector<void(*)()> Flux::s_xResChangeCallbacks;
+Zenith_Vector<const Flux_CommandBuffer*> Flux::s_xPendingCommandBuffers[RENDER_ORDER_MAX];
 
 void Flux::EarlyInitialise()
 {

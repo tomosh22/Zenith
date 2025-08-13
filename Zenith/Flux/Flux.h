@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Collections/Zenith_Vector.h"
 #include "Zenith_PlatformGraphics_Include.h"
 #include "Flux/Flux_Enums.h"
 
@@ -16,8 +17,10 @@ public:
 	static void AddResChangeCallback(void(*pfnCallback)()) { s_xResChangeCallbacks.push_back(pfnCallback); }
 	static void OnResChange();
 private:
+	friend class Flux_PlatformAPI;
 	static uint32_t s_uFrameCounter;
 	static std::vector<void(*)()> s_xResChangeCallbacks;
+	static Zenith_Vector<const Flux_CommandBuffer*> s_xPendingCommandBuffers[RENDER_ORDER_MAX];
 };
 
 struct Flux_PipelineSpecification

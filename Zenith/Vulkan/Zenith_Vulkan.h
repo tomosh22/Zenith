@@ -78,14 +78,7 @@ public:
 	static void BeginFrame();
 	static void EndFrame();
 
-	static void SubmitCommandBuffer(const Zenith_Vulkan_CommandBuffer* pxCmd, RenderOrder eOrder)
-	{
-		for (const Zenith_Vulkan_CommandBuffer* pxExistingCmd : s_xPendingCommandBuffers[eOrder])
-		{
-			Zenith_Assert(pxExistingCmd != pxCmd, "Command buffer has already been submitted");
-		}
-		s_xPendingCommandBuffers[eOrder].push_back(pxCmd);
-	}
+	static void SubmitCommandBuffer(const Zenith_Vulkan_CommandBuffer* pxCmd, RenderOrder eOrder);
 
 	static const vk::Instance& GetInstance() { return s_xInstance; }
 	static const vk::PhysicalDevice& GetPhysicalDevice() { return s_xPhysicalDevice; }
@@ -121,8 +114,6 @@ private:
 	static vk::Queue s_axQueues[COMMANDTYPE_MAX];
 	static vk::CommandPool s_axCommandPools[COMMANDTYPE_MAX];
 	static vk::DescriptorPool s_xDefaultDescriptorPool;
-
-	static std::vector<const Zenith_Vulkan_CommandBuffer*> s_xPendingCommandBuffers[RENDER_ORDER_MAX];
 
 	static Zenith_Vulkan_PerFrame s_axPerFrame[MAX_FRAMES_IN_FLIGHT];
 	static Zenith_Vulkan_PerFrame* s_pxCurrentFrame;

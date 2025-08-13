@@ -55,8 +55,6 @@ vk::DescriptorPool Zenith_Vulkan::s_xDefaultDescriptorPool;
 Zenith_Vulkan_PerFrame Zenith_Vulkan::s_axPerFrame[MAX_FRAMES_IN_FLIGHT];
 Zenith_Vulkan_PerFrame* Zenith_Vulkan::s_pxCurrentFrame = nullptr;
 
-std::vector<const Zenith_Vulkan_CommandBuffer*> Zenith_Vulkan::s_xPendingCommandBuffers[RENDER_ORDER_MAX];
-
 DEBUGVAR bool dbg_bSubmitDrawCalls = true;
 const vk::DescriptorPool& Zenith_Vulkan::GetCurrentPerFrameDescriptorPool()
 {
@@ -123,9 +121,10 @@ void Zenith_Vulkan::EndFrame()
 	vk::Semaphore xMemorySemaphore = s_xDevice.createSemaphore(vk::SemaphoreCreateInfo());
 
 	std::vector<vk::CommandBuffer> xPlatformMemoryCmdBufs;
-	for (const Zenith_Vulkan_CommandBuffer* pCmdBuf : s_xPendingCommandBuffers[RENDER_ORDER_MEMORY_UPDATE])
+	for (Zenith_Vector<const Zenith_Vulkan_CommandBuffer*>::Iterator xIt(Flux::s_xPendingCommandBuffers[RENDER_ORDER_MEMORY_UPDATE]); !xIt.Done(); xIt.Next())
 	{
-		const vk::CommandBuffer& xBuf = *reinterpret_cast<const vk::CommandBuffer*>(pCmdBuf);
+		const Zenith_Vulkan_CommandBuffer* pxCmdBuf = xIt.GetData();
+		const vk::CommandBuffer& xBuf = *reinterpret_cast<const vk::CommandBuffer*>(pxCmdBuf);
 		xPlatformMemoryCmdBufs.push_back(xBuf);
 	}
 
@@ -145,9 +144,10 @@ void Zenith_Vulkan::EndFrame()
 	std::vector<vk::CommandBuffer> xPlatformCmdBufs;
 	for (uint32_t i = RENDER_ORDER_MEMORY_UPDATE + 1; i < RENDER_ORDER_MAX; i++)
 	{
-		for (const Zenith_Vulkan_CommandBuffer* pCmdBuf : s_xPendingCommandBuffers[i])
+		for (Zenith_Vector<const Zenith_Vulkan_CommandBuffer*>::Iterator xIt(Flux::s_xPendingCommandBuffers[i]); !xIt.Done(); xIt.Next())
 		{
-			const vk::CommandBuffer& xBuf = *reinterpret_cast<const vk::CommandBuffer*>(pCmdBuf);
+			const Zenith_Vulkan_CommandBuffer* pxCmdBuf = xIt.GetData();
+			const vk::CommandBuffer& xBuf = *reinterpret_cast<const vk::CommandBuffer*>(pxCmdBuf);
 			xPlatformCmdBufs.push_back(xBuf);
 		}
 	}
@@ -165,13 +165,23 @@ void Zenith_Vulkan::EndFrame()
 
 	for (uint32_t i = 0; i < RENDER_ORDER_MAX; i++)
 	{
-		s_xPendingCommandBuffers[i].clear();
+		Flux::s_xPendingCommandBuffers[i].Clear();
 	}
 
 	//#TO_TODO: plug semaphore leak
 	//s_xDevice.destroySemaphore(xMemorySemaphore);
 
 	s_pxCurrentFrame = &s_axPerFrame[Zenith_Vulkan_Swapchain::GetCurrentFrameIndex()];
+}
+
+void Zenith_Vulkan::SubmitCommandBuffer(const Zenith_Vulkan_CommandBuffer* pxCmd, RenderOrder eOrder)
+{
+	for (Zenith_Vector<const Zenith_Vulkan_CommandBuffer*>::Iterator xIt(Flux::s_xPendingCommandBuffers[eOrder]); !xIt.Done(); xIt.Next())
+	{
+		const Zenith_Vulkan_CommandBuffer* pxExistingCmd = xIt.GetData();
+		Zenith_Assert(pxExistingCmd != pxCmd, "Command buffer has already been submitted");
+	}
+	Flux::s_xPendingCommandBuffers[eOrder].PushBack(pxCmd);
 }
 
 void Zenith_Vulkan::CreateInstance()
