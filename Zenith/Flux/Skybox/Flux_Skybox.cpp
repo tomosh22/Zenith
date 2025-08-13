@@ -3,6 +3,7 @@
 #include "Flux/Skybox/Flux_Skybox.h"
 
 #include "Flux/Flux.h"
+#include "Flux/Flux_CommandList.h"
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_Buffers.h"
@@ -12,6 +13,7 @@
 #ifndef ZENITH_MERGE_GBUFFER_PASSES
 static Flux_CommandBuffer s_xCommandBuffer;
 #endif
+static Flux_CommandList<128> g_xCommandList;
 
 static Flux_Shader s_xShader;
 static Flux_Pipeline s_xPipeline;
@@ -86,16 +88,18 @@ void Flux_Skybox::Render()
 	s_xCommandBuffer.SubmitTargetSetup(Flux_Graphics::s_xMRTTarget, true, true, true);
 #endif
 
-	s_xCommandBuffer.SetPipeline(&s_xPipeline);
 
-	s_xCommandBuffer.SetVertexBuffer(Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
-	s_xCommandBuffer.SetIndexBuffer(Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
+	g_xCommandList.Reset();
+	g_xCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xPipeline);
+	g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
+	g_xCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
+	g_xCommandList.AddCommand<Flux_CommandBeginBind>(0);
+	g_xCommandList.AddCommand<Flux_CommandBindBuffer>(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer(), 0);
+	g_xCommandList.AddCommand<Flux_CommandBindTexture>(s_pxCubemap, 1);
+	g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(6);
+	g_xCommandList.IterateCommands(&s_xCommandBuffer);
 
-	s_xCommandBuffer.BeginBind(0);
-	s_xCommandBuffer.BindBuffer(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer(), 0);
-	s_xCommandBuffer.BindTexture(s_pxCubemap, 1);
 
-	s_xCommandBuffer.DrawIndexed(6);
 
 #ifdef ZENITH_MERGE_GBUFFER_PASSES
 	s_xCommandBuffer.EndRecording(RENDER_ORDER_GBUFFER);
