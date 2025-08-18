@@ -2,6 +2,7 @@
 
 #include "Vulkan/Zenith_Vulkan.h"
 #include "Flux/Flux.h"
+#include "Flux/Flux_Graphics.h"
 
 #ifdef ZENITH_WINDOWS
 #include "Zenith_Windows_Window.h"
@@ -55,6 +56,8 @@ vk::DescriptorPool Zenith_Vulkan::s_xDefaultDescriptorPool;
 Zenith_Vulkan_PerFrame Zenith_Vulkan::s_axPerFrame[MAX_FRAMES_IN_FLIGHT];
 Zenith_Vulkan_PerFrame* Zenith_Vulkan::s_pxCurrentFrame = nullptr;
 
+Zenith_Vulkan_CommandBuffer g_xCommandBuffer;
+
 DEBUGVAR bool dbg_bSubmitDrawCalls = true;
 const vk::DescriptorPool& Zenith_Vulkan::GetCurrentPerFrameDescriptorPool()
 {
@@ -103,6 +106,8 @@ void Zenith_Vulkan::Initialise()
 #endif
 
 	s_pxCurrentFrame = &s_axPerFrame[0];
+
+	g_xCommandBuffer.Initialise();
 }
 
 void Zenith_Vulkan::BeginFrame()
@@ -141,9 +146,50 @@ void Zenith_Vulkan::EndFrame()
 	//#TO_TODO: change this to copy queue, how do I make sure this finishes before graphics?
 	s_axQueues[COMMANDTYPE_GRAPHICS].submit(xMemorySubmitInfo, VK_NULL_HANDLE);
 
+	bool bHaveWaitedForMemory = false;
+	bool bDidEnd = false;
+	g_xCommandBuffer.BeginRecording();
+
 	std::vector<vk::CommandBuffer> xPlatformCmdBufs;
 	for (uint32_t i = RENDER_ORDER_MEMORY_UPDATE + 1; i < RENDER_ORDER_MAX; i++)
 	{
+		if (Flux::s_xPendingCommandLists[i].GetSize())
+		{
+			if (xPlatformCmdBufs.size())
+			{
+				vk::SubmitInfo xRenderSubmitInfo = vk::SubmitInfo()
+					.setCommandBufferCount(xPlatformCmdBufs.size())
+					.setPCommandBuffers(xPlatformCmdBufs.data())
+					.setPWaitSemaphores(&xMemorySemaphore)
+					.setPSignalSemaphores(nullptr)
+					.setWaitSemaphoreCount(1)
+					.setSignalSemaphoreCount(0)
+					.setWaitDstStageMask(eRenderWaitStages);
+
+				s_axQueues[COMMANDTYPE_GRAPHICS].submit(xRenderSubmitInfo, VK_NULL_HANDLE);
+				xPlatformCmdBufs.clear();
+			}
+			g_xCommandBuffer.SubmitTargetSetup(Flux_Graphics::s_xMRTTarget, true, true, true);
+
+			for (Zenith_Vector<const Flux_CommandList*>::Iterator xIt(Flux::s_xPendingCommandLists[i]); !xIt.Done(); xIt.Next())
+			{
+				xIt.GetData()->IterateCommands(&g_xCommandBuffer);
+				g_xCommandBuffer.GetCurrentCmdBuffer().endRenderPass();
+				g_xCommandBuffer.GetCurrentCmdBuffer().end();
+				bDidEnd = true;
+
+				vk::SubmitInfo xRenderSubmitInfo = vk::SubmitInfo()
+					.setCommandBufferCount(1)
+					.setPCommandBuffers(&g_xCommandBuffer.GetCurrentCmdBuffer())
+					.setPWaitSemaphores(nullptr)
+					.setPSignalSemaphores(nullptr)
+					.setWaitSemaphoreCount(0)
+					.setSignalSemaphoreCount(0);
+
+				s_axQueues[COMMANDTYPE_GRAPHICS].submit(xRenderSubmitInfo, VK_NULL_HANDLE);
+			}
+			continue;
+		}
 		for (Zenith_Vector<const Zenith_Vulkan_CommandBuffer*>::Iterator xIt(Flux::s_xPendingCommandBuffers[i]); !xIt.Done(); xIt.Next())
 		{
 			const Zenith_Vulkan_CommandBuffer* pxCmdBuf = xIt.GetData();
@@ -155,17 +201,22 @@ void Zenith_Vulkan::EndFrame()
 	vk::SubmitInfo xRenderSubmitInfo = vk::SubmitInfo()
 		.setCommandBufferCount(xPlatformCmdBufs.size())
 		.setPCommandBuffers(xPlatformCmdBufs.data())
-		.setPWaitSemaphores(&xMemorySemaphore)
+		.setPWaitSemaphores(nullptr)
 		.setPSignalSemaphores(nullptr)
-		.setWaitSemaphoreCount(1)
-		.setSignalSemaphoreCount(0)
-		.setWaitDstStageMask(eRenderWaitStages);
+		.setWaitSemaphoreCount(0)
+		.setSignalSemaphoreCount(0);
 
 	s_axQueues[COMMANDTYPE_GRAPHICS].submit(xRenderSubmitInfo, GetCurrentInFlightFence());
+
+	if (!bDidEnd)
+	{
+		g_xCommandBuffer.GetCurrentCmdBuffer().end();
+	}
 
 	for (uint32_t i = 0; i < RENDER_ORDER_MAX; i++)
 	{
 		Flux::s_xPendingCommandBuffers[i].Clear();
+		Flux::s_xPendingCommandLists[i].Clear();
 	}
 
 	//#TO_TODO: plug semaphore leak

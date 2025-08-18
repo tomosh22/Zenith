@@ -190,7 +190,7 @@ public:
 		m_uCursor += sizeof(CommandType_T) + sizeof(Flux_CommandType);
 	}
 
-	void IterateCommands(Flux_CommandBuffer* pxCmdBuf)
+	void IterateCommands(Flux_CommandBuffer* pxCmdBuf) const
 	{
 		u_int uCursor = 0;
 		while(uCursor < m_uCursor)

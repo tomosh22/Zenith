@@ -3,6 +3,7 @@
 #include "Collections/Zenith_Vector.h"
 #include "Zenith_PlatformGraphics_Include.h"
 #include "Flux/Flux_Enums.h"
+#include "Flux/Flux_CommandList.h"
 
 class Flux
 {
@@ -14,6 +15,8 @@ public:
 
 	static const uint32_t GetFrameCounter() { return s_uFrameCounter; }
 
+	static void SubmitCommandList(const Flux_CommandList* pxCmdList, RenderOrder eOrder){s_xPendingCommandLists[eOrder].PushBack(pxCmdList); }
+
 	static void AddResChangeCallback(void(*pfnCallback)()) { s_xResChangeCallbacks.push_back(pfnCallback); }
 	static void OnResChange();
 private:
@@ -21,6 +24,7 @@ private:
 	static uint32_t s_uFrameCounter;
 	static std::vector<void(*)()> s_xResChangeCallbacks;
 	static Zenith_Vector<const Flux_CommandBuffer*> s_xPendingCommandBuffers[RENDER_ORDER_MAX];
+	static Zenith_Vector<const Flux_CommandList*> s_xPendingCommandLists[RENDER_ORDER_MAX];
 };
 
 struct Flux_PipelineSpecification

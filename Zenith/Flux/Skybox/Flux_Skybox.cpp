@@ -83,9 +83,9 @@ void Flux_Skybox::Render()
 
 	s_xCommandBuffer.BeginRecording();
 #else
-	s_xCommandBuffer.BeginRecording();
+	//s_xCommandBuffer.BeginRecording();
 	//#TO clearing as this is first pass of the frame
-	s_xCommandBuffer.SubmitTargetSetup(Flux_Graphics::s_xMRTTarget, true, true, true);
+	//s_xCommandBuffer.SubmitTargetSetup(Flux_Graphics::s_xMRTTarget, true, true, true);
 #endif
 
 
@@ -97,13 +97,14 @@ void Flux_Skybox::Render()
 	g_xCommandList.AddCommand<Flux_CommandBindBuffer>(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer(), 0);
 	g_xCommandList.AddCommand<Flux_CommandBindTexture>(s_pxCubemap, 1);
 	g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(6);
-	g_xCommandList.IterateCommands(&s_xCommandBuffer);
+	//g_xCommandList.IterateCommands(&s_xCommandBuffer);
+	Flux::SubmitCommandList(&g_xCommandList, RENDER_ORDER_SKYBOX);
 
 
 
 #ifdef ZENITH_MERGE_GBUFFER_PASSES
 	s_xCommandBuffer.EndRecording(RENDER_ORDER_GBUFFER);
 #else
-	s_xCommandBuffer.EndRecording(RENDER_ORDER_SKYBOX);
+	//s_xCommandBuffer.EndRecording(RENDER_ORDER_SKYBOX);
 #endif
 }
