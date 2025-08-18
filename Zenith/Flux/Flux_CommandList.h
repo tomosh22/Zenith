@@ -169,6 +169,11 @@ public:
 	, m_uCapacity(uINITIAL_SIZE)
 	{}
 
+	~Flux_CommandList()
+	{
+		Zenith_MemoryManagement::Deallocate(m_pcData);
+	}
+
 	template<typename CommandType_T, typename... Args>
 	void AddCommand(Args... xArgs)
 	{
