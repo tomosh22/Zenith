@@ -13,7 +13,7 @@
 #ifndef ZENITH_MERGE_GBUFFER_PASSES
 static Flux_CommandBuffer s_xCommandBuffer;
 #endif
-static Flux_CommandList<128> g_xCommandList;
+static Flux_CommandList g_xCommandList;
 
 static Flux_Shader s_xShader;
 static Flux_Pipeline s_xPipeline;
