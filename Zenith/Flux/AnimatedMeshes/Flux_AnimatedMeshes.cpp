@@ -13,9 +13,7 @@
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 
-#ifndef ZENITH_MERGE_GBUFFER_PASSES
-static Flux_CommandBuffer s_xCommandBuffer;
-#endif
+static Flux_CommandList g_xCommandList("Animated Meshes");
 
 static Flux_Shader s_xShader;
 static Flux_Pipeline s_xPipeline;
@@ -24,10 +22,6 @@ DEBUGVAR bool dbg_bEnable = true;
 
 void Flux_AnimatedMeshes::Initialise()
 {
-	#ifndef ZENITH_MERGE_GBUFFER_PASSES
-	s_xCommandBuffer.Initialise();
-	#endif
-
 	s_xShader.Initialise("AnimatedMeshes/Flux_AnimatedMeshes.vert", "AnimatedMeshes/Flux_AnimatedMeshes.frag");
 
 	Flux_VertexInputDescription xVertexDesc;
@@ -62,23 +56,6 @@ void Flux_AnimatedMeshes::Initialise()
 		xBlendState.m_eDstBlendFactor = BLEND_FACTOR_ZERO;
 		xBlendState.m_bBlendEnabled = false;
 	}
-#if 0
-	(
-		xVertexDesc,
-		&s_xShader,
-		xBlendStates,
-		true,
-		true,
-		DEPTH_COMPARE_FUNC_LESSEQUAL,
-		DEPTHSTENCIL_FORMAT_D32_SFLOAT,
-		true,
-		false,
-		{ 1,0 },
-		{ 1,4 },
-		Flux_Graphics::s_xMRTTarget,
-		false
-	);
-#endif
 
 	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
 
@@ -96,25 +73,16 @@ void Flux_AnimatedMeshes::Render()
 		return;
 	}
 
-	#ifdef ZENITH_MERGE_GBUFFER_PASSES
-	//#TO_TODO: fix up naming convention
-	Flux_CommandBuffer& s_xCommandBuffer = Flux_DeferredShading::GetAnimatedMeshesCommandBuffer();
-
-	s_xCommandBuffer.BeginRecording();
-	#else
-	s_xCommandBuffer.BeginRecording();
-	s_xCommandBuffer.SubmitTargetSetup(Flux_Graphics::s_xMRTTarget);
-	#endif
-
-	s_xCommandBuffer.SetPipeline(&s_xPipeline);
+	g_xCommandList.Reset();
+	g_xCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xPipeline);
 
 	Zenith_Vector<Zenith_ModelComponent*> xModels;
 	Zenith_Scene::GetCurrentScene().GetAllOfComponentType<Zenith_ModelComponent>(xModels);
 
-	s_xCommandBuffer.BeginBind(0);
-	s_xCommandBuffer.BindBuffer(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer(), 0);
+	g_xCommandList.AddCommand<Flux_CommandBeginBind>(0);
+	g_xCommandList.AddCommand<Flux_CommandBindBuffer>(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer(), 0);
 
-	s_xCommandBuffer.BeginBind(1);
+	g_xCommandList.AddCommand<Flux_CommandBeginBind>(1);
 
 	for (Zenith_Vector<Zenith_ModelComponent*>::Iterator xIt(xModels); !xIt.Done(); xIt.Next())
 	{
@@ -127,28 +95,24 @@ void Flux_AnimatedMeshes::Render()
 		for (uint32_t uMesh = 0; uMesh < pxModel->GetNumMeshEntires(); uMesh++)
 		{
 			const Flux_MeshGeometry& xMesh = pxModel->GetMeshGeometryAtIndex(uMesh);
-			s_xCommandBuffer.SetVertexBuffer(xMesh.GetVertexBuffer());
-			s_xCommandBuffer.SetIndexBuffer(xMesh.GetIndexBuffer());
+			g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&xMesh.GetVertexBuffer());
+			g_xCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&xMesh.GetIndexBuffer());
 
 			Zenith_Maths::Matrix4 xModelMatrix;
 			pxModel->GetParentEntity().GetComponent<Zenith_TransformComponent>().BuildModelMatrix(xModelMatrix);
-			s_xCommandBuffer.PushConstant(&xModelMatrix, sizeof(xModelMatrix));
+			g_xCommandList.AddCommand<Flux_CommandPushConstant>(&xModelMatrix, sizeof(xModelMatrix));
 			const Flux_Material& xMaterial = pxModel->GetMaterialAtIndex(uMesh);
 
-			s_xCommandBuffer.BindBuffer(&xMesh.m_pxAnimation->m_xBoneBuffer.GetBuffer(), 0);
+			g_xCommandList.AddCommand<Flux_CommandBindBuffer>(&xMesh.m_pxAnimation->m_xBoneBuffer.GetBuffer(), 0);
 
-			s_xCommandBuffer.BindTexture(xMaterial.GetDiffuse(), 1);
-			s_xCommandBuffer.BindTexture(xMaterial.GetNormal(), 2);
-			s_xCommandBuffer.BindTexture(xMaterial.GetRoughness(), 3);
-			s_xCommandBuffer.BindTexture(xMaterial.GetMetallic(), 4);
+			g_xCommandList.AddCommand<Flux_CommandBindTexture>(xMaterial.GetDiffuse(), 1);
+			g_xCommandList.AddCommand<Flux_CommandBindTexture>(xMaterial.GetNormal(), 2);
+			g_xCommandList.AddCommand<Flux_CommandBindTexture>(xMaterial.GetRoughness(), 3);
+			g_xCommandList.AddCommand<Flux_CommandBindTexture>(xMaterial.GetMetallic(), 4);
 
-			s_xCommandBuffer.DrawIndexed(xMesh.GetNumIndices());
+			g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(xMesh.GetNumIndices());
 		}
 	}
 
-	#ifdef ZENITH_MERGE_GBUFFER_PASSES
-	s_xCommandBuffer.EndRecording(RENDER_ORDER_GBUFFER);
-	#else
-	s_xCommandBuffer.EndRecording(RENDER_ORDER_OPAQUE_MESHES);
-	#endif
+	Flux::SubmitCommandList(&g_xCommandList, RENDER_ORDER_SKINNED_MESHES);
 }

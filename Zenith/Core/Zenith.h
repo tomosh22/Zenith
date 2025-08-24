@@ -12,6 +12,22 @@
 #include <chrono>
 #include <filesystem>
 #include <list>
+#include <concepts>
+
+using u_int = unsigned int;
+
+using u_int8 = unsigned char;
+static_assert(sizeof(u_int8) == 1);
+
+using u_int16 = unsigned short;
+static_assert(sizeof(u_int16) == 2);
+
+using u_int32 = unsigned int;
+static_assert(sizeof(u_int32) == 4);
+
+using u_int64 = unsigned long long;
+static_assert(sizeof(u_int64) == 8);
+
 
 #include "Maths/Zenith_Maths.h"
 #include "Zenith_Core.h"

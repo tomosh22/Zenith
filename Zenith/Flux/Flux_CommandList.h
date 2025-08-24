@@ -1,10 +1,4 @@
 #pragma once
-
-using u_int = unsigned int;
-using u_int8 = unsigned char;
-class Flux_VertexBuffer;
-class Flux_IndexBuffer;
-
 #include "Zenith_PlatformGraphics_Include.h"
 
 enum Flux_CommandType
@@ -17,10 +11,41 @@ enum Flux_CommandType
 	FLUX_COMMANDTYPE__BIND_TEXTURE,
 	FLUX_COMMANDTYPE__BIND_BUFFER,
 
+	FLUX_COMMANDTYPE__PUSH_CONSTANT,
+
 	FLUX_COMMANDTYPE__DRAW,
 	FLUX_COMMANDTYPE__DRAW_INDEXED,
 
 	FLUX_COMMANDTYPE__COUNT,
+};
+
+template<typename T>
+concept IsCommand = requires(T t)
+{
+	{ t.m_eType } -> std::same_as<const Flux_CommandType&>;
+};
+
+class Flux_CommandPushConstant
+{
+public:
+	static constexpr Flux_CommandType m_eType = FLUX_COMMANDTYPE__PUSH_CONSTANT;
+
+	Flux_CommandPushConstant(void* pData, u_int uSize)
+	: m_uSize(uSize)
+	{
+		Zenith_Assert(uSize < uMAX_SIZE, "Push constant too big");
+		memcpy(m_acData, pData, uSize);
+	}
+	void operator()(Flux_CommandBuffer* pxCmdBuf)
+	{
+		pxCmdBuf->PushConstant(m_acData, m_uSize);
+	}
+private:
+	//#TO minimum that Vulkan requires for push constants
+	static constexpr u_int uMAX_SIZE = 128;
+
+	u_int8 m_acData[uMAX_SIZE];
+	u_int m_uSize;
 };
 
 class Flux_CommandSetPipeline
@@ -31,8 +56,6 @@ public:
 	Flux_CommandSetPipeline(Flux_Pipeline* pxPipeline) : m_pxPipeline(pxPipeline) {}
 	void operator()(Flux_CommandBuffer* pxCmdBuf)
 	{
-		printf("Set Pipeline: %x\n", m_pxPipeline);
-
 		pxCmdBuf->SetPipeline(m_pxPipeline);
 	}
 	Flux_Pipeline* m_pxPipeline;
@@ -44,15 +67,13 @@ class Flux_CommandSetVertexBuffer
 public:
 	static constexpr Flux_CommandType m_eType = FLUX_COMMANDTYPE__SET_VERTEX_BUFFER;
 
-	Flux_CommandSetVertexBuffer(Flux_VertexBuffer* const pxVertexBuffer) : m_pxVertexBuffer(pxVertexBuffer) {}
+	Flux_CommandSetVertexBuffer(const Flux_VertexBuffer* const pxVertexBuffer) : m_pxVertexBuffer(pxVertexBuffer) {}
 	void operator()(Flux_CommandBuffer* pxCmdBuf)
 	{
-		printf("Set Vertex Buffer: %x\n", m_pxVertexBuffer);
-
 		pxCmdBuf->SetVertexBuffer(*m_pxVertexBuffer);
 	}
 
-	Flux_VertexBuffer* m_pxVertexBuffer;
+	const Flux_VertexBuffer* m_pxVertexBuffer;
 };
 
 class Flux_CommandSetIndexBuffer
@@ -60,15 +81,13 @@ class Flux_CommandSetIndexBuffer
 public:
 	static constexpr Flux_CommandType m_eType = FLUX_COMMANDTYPE__SET_INDEX_BUFFER;
 
-	Flux_CommandSetIndexBuffer(Flux_IndexBuffer* const pxIndexBuffer) : m_pxIndexBuffer(pxIndexBuffer) {}
+	Flux_CommandSetIndexBuffer(const Flux_IndexBuffer* const pxIndexBuffer) : m_pxIndexBuffer(pxIndexBuffer) {}
 	void operator()(Flux_CommandBuffer* pxCmdBuf)
 	{
-		printf("Set Index Buffer: %x\n", m_pxIndexBuffer);
-
 		pxCmdBuf->SetIndexBuffer(*m_pxIndexBuffer);
 	}
 
-	Flux_IndexBuffer* m_pxIndexBuffer;
+	const Flux_IndexBuffer* m_pxIndexBuffer;
 };
 class Flux_CommandBeginBind
 {
@@ -78,8 +97,6 @@ public:
 	Flux_CommandBeginBind(const u_int uIndex) : m_uIndex(uIndex) {}
 	void operator()(Flux_CommandBuffer* pxCmdBuf)
 	{
-		printf("Begin Bind: %u\n", m_uIndex);
-
 		pxCmdBuf->BeginBind(m_uIndex);
 	}
 	u_int m_uIndex;
@@ -95,8 +112,6 @@ public:
 	{}
 	void operator()(Flux_CommandBuffer* pxCmdBuf)
 	{
-		printf("Bind Texture: %x\n", m_pxTexture);
-
 		pxCmdBuf->BindTexture(m_pxTexture, m_uBindPoint);
 	}
 	Flux_Texture* m_pxTexture;
@@ -113,8 +128,6 @@ public:
 	{}
 	void operator()(Flux_CommandBuffer* pxCmdBuf)
 	{
-		printf("Bind Buffer: %x\n", m_pxBuffer);
-
 		pxCmdBuf->BindBuffer(m_pxBuffer, m_uBindPoint);
 	}
 	Flux_Buffer* m_pxBuffer;
@@ -127,8 +140,6 @@ public:
 
 	void operator()(Flux_CommandBuffer* pxCmdBuf)
 	{
-		printf("Draw\n");
-
 		pxCmdBuf->Draw(m_uNumVerts);
 	}
 
@@ -148,8 +159,6 @@ public:
 	{}
 	void operator()(Flux_CommandBuffer* pxCmdBuf)
 	{
-		printf("Draw Indexed\n");
-
 		pxCmdBuf->DrawIndexed(m_uNumIndices, m_uNumInstances, m_uVertexOffset, m_uIndexOffset, m_uInstanceOffset);
 	}
 
@@ -163,10 +172,13 @@ public:
 class Flux_CommandList
 {
 public:
-	Flux_CommandList()
+	Flux_CommandList() = delete;
+
+	Flux_CommandList(const char* szName)
 	: m_pcData(static_cast<u_int8*>(Zenith_MemoryManagement::Allocate(uINITIAL_SIZE)))
 	, m_uCursor(0)
 	, m_uCapacity(uINITIAL_SIZE)
+	, m_szName(szName)
 	{}
 
 	~Flux_CommandList()
@@ -174,7 +186,7 @@ public:
 		Zenith_MemoryManagement::Deallocate(m_pcData);
 	}
 
-	template<typename CommandType_T, typename... Args>
+	template<IsCommand CommandType_T, typename... Args>
 	void AddCommand(Args... xArgs)
 	{
 		while (m_uCursor + sizeof(CommandType_T) + sizeof(Flux_CommandType) > m_uCapacity)
@@ -211,6 +223,7 @@ public:
 				HANDLE_COMMAND(FLUX_COMMANDTYPE__BEGIN_BIND, Flux_CommandBeginBind);
 				HANDLE_COMMAND(FLUX_COMMANDTYPE__BIND_TEXTURE, Flux_CommandBindTexture);
 				HANDLE_COMMAND(FLUX_COMMANDTYPE__BIND_BUFFER, Flux_CommandBindBuffer);
+				HANDLE_COMMAND(FLUX_COMMANDTYPE__PUSH_CONSTANT, Flux_CommandPushConstant);
 
 				HANDLE_COMMAND(FLUX_COMMANDTYPE__DRAW, Flux_CommandDraw);
 				HANDLE_COMMAND(FLUX_COMMANDTYPE__DRAW_INDEXED, Flux_CommandDrawIndexed);
@@ -230,4 +243,5 @@ private:
 	u_int8* m_pcData;
 	u_int m_uCursor = 0;
 	u_int m_uCapacity = 0;
+	const char* m_szName = nullptr;
 };

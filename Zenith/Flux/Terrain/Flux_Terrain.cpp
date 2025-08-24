@@ -14,9 +14,7 @@
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 
-#ifndef ZENITH_MERGE_GBUFFER_PASSES
-static Flux_CommandBuffer s_xCommandBuffer;
-#endif
+static Flux_CommandList g_xCommandList("Terrain");
 
 static Flux_Shader s_xGBufferShader;
 static Flux_Pipeline s_xGBufferPipeline;
@@ -38,10 +36,6 @@ DEBUGVAR bool dbg_bIgnoreVisibilityCheck = false;
 
 void Flux_Terrain::Initialise()
 {
-	#ifndef ZENITH_MERGE_GBUFFER_PASSES
-	s_xCommandBuffer.Initialise();
-	#endif
-
 	s_xGBufferShader.Initialise("Terrain/Flux_Terrain_ToGBuffer.vert", "Terrain/Flux_Terrain_ToGBuffer.frag");
 	s_xShadowShader.Initialise("Terrain/Flux_Terrain_ToShadowmap.vert", "Terrain/Flux_Terrain_ToShadowmap.frag");
 
@@ -81,23 +75,6 @@ void Flux_Terrain::Initialise()
 			xBlendState.m_eDstBlendFactor = BLEND_FACTOR_ZERO;
 			xBlendState.m_bBlendEnabled = false;
 		}
-#if 0
-		(
-			xVertexDesc,
-			&s_xGBufferShader,
-			xBlendStates,
-			true,
-			true,
-			DEPTH_COMPARE_FUNC_LESSEQUAL,
-			DEPTHSTENCIL_FORMAT_D32_SFLOAT,
-			true,
-			false,
-			{ 2,0 },
-			{ 0,8 },
-			Flux_Graphics::s_xMRTTarget,
-			false
-		);
-#endif
 
 		Flux_PipelineBuilder::FromSpecification(s_xGBufferPipeline, xPipelineSpec);
 
@@ -120,24 +97,6 @@ void Flux_Terrain::Initialise()
 		xShadowPipelineSpec.m_bDepthTestEnabled = true;
 		xShadowPipelineSpec.m_bDepthWriteEnabled = true;
 		xShadowPipelineSpec.m_eDepthCompareFunc = DEPTH_COMPARE_FUNC_LESSEQUAL;
-
-#if 0
-		(
-			xVertexDesc,
-			&s_xShadowShader,
-			xBlendStates,
-			true,
-			true,
-			DEPTH_COMPARE_FUNC_LESSEQUAL,
-			DEPTHSTENCIL_FORMAT_D32_SFLOAT,
-			true,
-			false,
-			{ 2,0 },
-			{ 1,0 },
-			Flux_Shadows::GetCSMTargetSetup(0),
-			false
-		);
-#endif
 
 		Flux_PipelineBuilder::FromSpecification(s_xShadowPipeline, xShadowPipelineSpec);
 	}
@@ -167,25 +126,18 @@ void Flux_Terrain::RenderToGBuffer()
 
 	Flux_MemoryManager::UploadBufferData(s_xTerrainConstantsBuffer.GetBuffer(), &s_xTerrainConstants, sizeof(TerrainConstants));
 
-	#ifdef ZENITH_MERGE_GBUFFER_PASSES
-	//#TO_TODO: fix up naming convention
-	Flux_CommandBuffer& s_xCommandBuffer = Flux_DeferredShading::GetTerrainCommandBuffer();
-	s_xCommandBuffer.BeginRecording();
-	#else
-	s_xCommandBuffer.BeginRecording();
-	s_xCommandBuffer.SubmitTargetSetup(Flux_Graphics::s_xMRTTarget);
-	#endif
+	g_xCommandList.Reset();
 
-	s_xCommandBuffer.SetPipeline(dbg_bWireframe ? &s_xWireframePipeline : &s_xGBufferPipeline);
+	g_xCommandList.AddCommand<Flux_CommandSetPipeline>(dbg_bWireframe ? &s_xWireframePipeline : &s_xGBufferPipeline);
 
 	Zenith_Vector<Zenith_TerrainComponent*> xTerrainComponents;
 	Zenith_Scene::GetCurrentScene().GetAllOfComponentType<Zenith_TerrainComponent>(xTerrainComponents);
 
-	s_xCommandBuffer.BeginBind(0);
-	s_xCommandBuffer.BindBuffer(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer(), 0);
-	s_xCommandBuffer.BindBuffer(&s_xTerrainConstantsBuffer.GetBuffer(), 1);
+	g_xCommandList.AddCommand<Flux_CommandBeginBind>(0);
+	g_xCommandList.AddCommand<Flux_CommandBindBuffer>(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer(), 0);
+	g_xCommandList.AddCommand<Flux_CommandBindBuffer>(&s_xTerrainConstantsBuffer.GetBuffer(), 1);
 
-	s_xCommandBuffer.BeginBind(1);
+	g_xCommandList.AddCommand<Flux_CommandBeginBind>(1);
 
 	const Zenith_CameraComponent& xCam = Zenith_Scene::GetCurrentScene().GetMainCamera();
 
@@ -197,30 +149,26 @@ void Flux_Terrain::RenderToGBuffer()
 			continue;
 		}
 
-		s_xCommandBuffer.SetVertexBuffer(pxTerrain->GetRenderMeshGeometry().GetVertexBuffer());
-		s_xCommandBuffer.SetIndexBuffer(pxTerrain->GetRenderMeshGeometry().GetIndexBuffer());
+		g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&pxTerrain->GetRenderMeshGeometry().GetVertexBuffer());
+		g_xCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&pxTerrain->GetRenderMeshGeometry().GetIndexBuffer());
 
 		const Flux_Material& xMaterial0 = pxTerrain->GetMaterial0();
 		const Flux_Material& xMaterial1 = pxTerrain->GetMaterial1();
 
-		s_xCommandBuffer.BindTexture(xMaterial0.GetDiffuse(), 0);
-		s_xCommandBuffer.BindTexture(xMaterial0.GetNormal(), 1);
-		s_xCommandBuffer.BindTexture(xMaterial0.GetRoughness(), 2);
-		s_xCommandBuffer.BindTexture(xMaterial0.GetMetallic(), 3);
+		g_xCommandList.AddCommand<Flux_CommandBindTexture>(xMaterial0.GetDiffuse(), 0);
+		g_xCommandList.AddCommand<Flux_CommandBindTexture>(xMaterial0.GetNormal(), 1);
+		g_xCommandList.AddCommand<Flux_CommandBindTexture>(xMaterial0.GetRoughness(), 2);
+		g_xCommandList.AddCommand<Flux_CommandBindTexture>(xMaterial0.GetMetallic(), 3);
 
-		s_xCommandBuffer.BindTexture(xMaterial1.GetDiffuse(), 4);
-		s_xCommandBuffer.BindTexture(xMaterial1.GetNormal(), 5);
-		s_xCommandBuffer.BindTexture(xMaterial1.GetRoughness(), 6);
-		s_xCommandBuffer.BindTexture(xMaterial1.GetMetallic(), 7);
+		g_xCommandList.AddCommand<Flux_CommandBindTexture>(xMaterial1.GetDiffuse(), 4);
+		g_xCommandList.AddCommand<Flux_CommandBindTexture>(xMaterial1.GetNormal(), 5);
+		g_xCommandList.AddCommand<Flux_CommandBindTexture>(xMaterial1.GetRoughness(), 6);
+		g_xCommandList.AddCommand<Flux_CommandBindTexture>(xMaterial1.GetMetallic(), 7);
 
-		s_xCommandBuffer.DrawIndexed(pxTerrain->GetRenderMeshGeometry().GetNumIndices());
+		g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(pxTerrain->GetRenderMeshGeometry().GetNumIndices());
 	}
 
-	#ifdef ZENITH_MERGE_GBUFFER_PASSES
-	s_xCommandBuffer.EndRecording(RENDER_ORDER_GBUFFER);
-	#else
-	s_xCommandBuffer.EndRecording(RENDER_ORDER_TERRAIN);
-	#endif
+	Flux::SubmitCommandList(&g_xCommandList, RENDER_ORDER_TERRAIN);
 }
 
 void Flux_Terrain::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf)

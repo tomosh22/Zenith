@@ -364,6 +364,11 @@ void Zenith_Vulkan_CommandBuffer::SetPipeline(Zenith_Vulkan_Pipeline* pxPipeline
 {
 	m_xCurrentCmdBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pxPipeline->m_xPipeline);
 	m_pxCurrentPipeline = pxPipeline;
+	m_uDescriptorDirty = ~0u;
+	memset(m_xBindings, 0, sizeof(m_xBindings));
+	memset(m_aapxTextureCache, 0, sizeof(m_aapxTextureCache));
+	memset(m_aapxBufferCache, 0, sizeof(m_aapxBufferCache));
+
 }
 
 void Zenith_Vulkan_CommandBuffer::BindTexture(Zenith_Vulkan_Texture* pxTexture, uint32_t uBindPoint)
