@@ -10,10 +10,7 @@
 #include "Flux/DeferredShading/Flux_DeferredShading.h"
 #include "AssetHandling/Zenith_AssetHandler.h"
 
-#ifndef ZENITH_MERGE_GBUFFER_PASSES
-static Flux_CommandBuffer s_xCommandBuffer;
-#endif
-static Flux_CommandList g_xCommandList;
+static Flux_CommandList g_xCommandList("Skybox");
 
 static Flux_Shader s_xShader;
 static Flux_Pipeline s_xPipeline;
@@ -22,10 +19,6 @@ static Flux_Texture* s_pxCubemap = nullptr;
 
 void Flux_Skybox::Initialise()
 {
-#ifndef ZENITH_MERGE_GBUFFER_PASSES
-	s_xCommandBuffer.Initialise();
-#endif
-
 	s_xShader.Initialise("Flux_Fullscreen_UV.vert", "Skybox/Flux_Skybox.frag");
 
 	Flux_VertexInputDescription xVertexDesc;
@@ -50,23 +43,6 @@ void Flux_Skybox::Initialise()
 	}
 
 	xPipelineSpec.m_bDepthTestEnabled = false;
-#if 0
-	(
-		xVertexDesc,
-		&s_xShader,
-		xBlendStates,
-		false,
-		false,
-		DEPTH_COMPARE_FUNC_ALWAYS,
-		DEPTHSTENCIL_FORMAT_D32_SFLOAT,
-		false,
-		false,
-		{ 1,1 },
-		{ 0,0 },
-		Flux_Graphics::s_xMRTTarget,
-		false
-	);
-#endif
 
 	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
 
@@ -77,18 +53,6 @@ void Flux_Skybox::Initialise()
 
 void Flux_Skybox::Render()
 {
-#ifdef ZENITH_MERGE_GBUFFER_PASSES
-	//#TO_TODO: fix up naming convention
-	Flux_CommandBuffer& s_xCommandBuffer = Flux_DeferredShading::GetSkyboxCommandBuffer();
-
-	s_xCommandBuffer.BeginRecording();
-#else
-	//s_xCommandBuffer.BeginRecording();
-	//#TO clearing as this is first pass of the frame
-	//s_xCommandBuffer.SubmitTargetSetup(Flux_Graphics::s_xMRTTarget, true, true, true);
-#endif
-
-
 	g_xCommandList.Reset();
 	g_xCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xPipeline);
 	g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
@@ -97,14 +61,5 @@ void Flux_Skybox::Render()
 	g_xCommandList.AddCommand<Flux_CommandBindBuffer>(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer(), 0);
 	g_xCommandList.AddCommand<Flux_CommandBindTexture>(s_pxCubemap, 1);
 	g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(6);
-	//g_xCommandList.IterateCommands(&s_xCommandBuffer);
 	Flux::SubmitCommandList(&g_xCommandList, RENDER_ORDER_SKYBOX);
-
-
-
-#ifdef ZENITH_MERGE_GBUFFER_PASSES
-	s_xCommandBuffer.EndRecording(RENDER_ORDER_GBUFFER);
-#else
-	//s_xCommandBuffer.EndRecording(RENDER_ORDER_SKYBOX);
-#endif
 }

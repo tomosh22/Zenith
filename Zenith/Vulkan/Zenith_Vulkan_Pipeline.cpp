@@ -264,11 +264,6 @@ static vk::PipelineVertexInputStateCreateInfo VertexDescToVulkanDesc(const Flux_
 		.setPVertexAttributeDescriptions(xAttrDescs.data()));
 }
 
-void Zenith_Vulkan_Pipeline::BindDescriptorSets(vk::CommandBuffer& xCmd, const std::vector<vk::DescriptorSet>& axSets, vk::PipelineBindPoint eBindPoint, uint32_t ufirstSet) const
-{
-	STUBBED
-}
-
 Zenith_Vulkan_PipelineBuilder::Zenith_Vulkan_PipelineBuilder()
 {
 	m_axDynamicStateEnables[0] = vk::DynamicState::eViewport;
