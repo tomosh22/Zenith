@@ -23,12 +23,11 @@ static void ThreadFunc(const void* pData)
 		Zenith_Task* pxTask = nullptr;
 		do
 		{
-			static Zenith_Mutex xMutex;
-			xMutex.Lock();
+			g_xQueueMutex.Lock();
 			g_xTaskQueue.Dequeue(pxTask);
-			xMutex.Unlock();
+			g_xQueueMutex.Unlock();
 		}
-		while (pxTask == nullptr);
+		while (!pxTask);
 
 		pxTask->DoTask();
 
@@ -56,6 +55,8 @@ void Zenith_TaskSystem::Inititalise()
 
 void Zenith_TaskSystem::SubmitTask(Zenith_Task* const pxTask)
 {
+	g_xQueueMutex.Lock();
 	g_xTaskQueue.Enqueue(pxTask);
+	g_xQueueMutex.Unlock();
 	g_pxWorkAvailableSem->Signal();
 }
