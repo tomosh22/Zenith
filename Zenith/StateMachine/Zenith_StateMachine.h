@@ -29,7 +29,6 @@ public:
 					continue;
 				}
 				Flux_PlatformAPI::BeginFrame();
-				Flux_Swapchain::CopyToFramebuffer();
 				Flux_PlatformAPI::EndFrame();
 				Flux_Swapchain::EndFrame();
 			}
