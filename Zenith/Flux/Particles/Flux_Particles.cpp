@@ -10,6 +10,9 @@
 #include "EntityComponent/Zenith_Scene.h"
 //#include "EntityComponent/Components/Zenith_ParticleSystemComponent.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
+#include "TaskSystem/Zenith_TaskSystem.h"
+
+static Zenith_Task g_xRenderTask(ZENITH_PROFILE_INDEX__FLUX_PFX, Flux_Particles::Render, nullptr);
 
 static Flux_CommandList g_xCommandList("Particles");
 
@@ -82,7 +85,17 @@ void UploadInstanceData()
 	Flux_MemoryManager::UploadBufferData(s_xInstanceBuffer.GetBuffer(), axParticles, sizeof(axParticles));
 }
 
-void Flux_Particles::Render()
+void Flux_Particles::SubmitRenderTask()
+{
+	Zenith_TaskSystem::SubmitTask(&g_xRenderTask);
+}
+
+void Flux_Particles::WaitForRenderTask()
+{
+	g_xRenderTask.WaitUntilComplete();
+}
+
+void Flux_Particles::Render(void*)
 {
 	if (!dbg_bEnable)
 	{

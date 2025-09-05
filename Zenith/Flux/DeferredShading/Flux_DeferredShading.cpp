@@ -7,6 +7,9 @@
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_Buffers.h"
 #include "Flux/Shadows/Flux_Shadows.h"
+#include "TaskSystem/Zenith_TaskSystem.h"
+
+static Zenith_Task g_xRenderTask(ZENITH_PROFILE_INDEX__FLUX_DEFERRED_SHADING, Flux_DeferredShading::Render, nullptr);
 
 static Flux_CommandList g_xCommandList("Apply Lighting");
 
@@ -52,7 +55,17 @@ void Flux_DeferredShading::Initialise()
 	Zenith_Log("Flux_DeferredShading initialised");
 }
 
-void Flux_DeferredShading::Render()
+void Flux_DeferredShading::SubmitRenderTask()
+{
+	Zenith_TaskSystem::SubmitTask(&g_xRenderTask);
+}
+
+void Flux_DeferredShading::WaitForRenderTask()
+{
+	g_xRenderTask.WaitUntilComplete();
+}
+
+void Flux_DeferredShading::Render(void*)
 {
 	g_xCommandList.Reset(true);
 

@@ -87,6 +87,36 @@ void RenderImGui()
 }
 #endif
 
+static void SubmitRenderTasks()
+{
+	Flux_Shadows::SubmitRenderTask();
+	Flux_Skybox::SubmitRenderTask();
+	Flux_StaticMeshes::SubmitRenderToGBufferTask();
+	Flux_AnimatedMeshes::SubmitRenderTask();
+	Flux_Terrain::SubmitRenderToGBufferTask();
+	Flux_DeferredShading::SubmitRenderTask();
+	Flux_Water::SubmitRenderTask();
+	Flux_Fog::SubmitRenderTask();
+	Flux_SDFs::SubmitRenderTask();
+	Flux_Particles::SubmitRenderTask();
+	Flux_Text::SubmitRenderTask();
+}
+
+static void WaitForRenderTasks()
+{
+	Flux_Shadows::WaitForRenderTask();
+	Flux_Skybox::WaitForRenderTask();
+	Flux_StaticMeshes::WaitForRenderToGBufferTask();
+	Flux_AnimatedMeshes::WaitForRenderTask();
+	Flux_Terrain::WaitForRenderToGBufferTask();
+	Flux_DeferredShading::WaitForRenderTask();
+	Flux_Water::WaitForRenderTask();
+	Flux_Fog::WaitForRenderTask();
+	Flux_SDFs::WaitForRenderTask();
+	Flux_Particles::WaitForRenderTask();
+	Flux_Text::WaitForRenderTask();
+}
+
 void Zenith_Core::Zenith_MainLoop()
 {
 	Flux_PlatformAPI::BeginFrame();
@@ -106,33 +136,22 @@ void Zenith_Core::Zenith_MainLoop()
 	ZENITH_PROFILING_FUNCTION_WRAPPER(Zenith_Scene::Update, ZENITH_PROFILE_INDEX__SCENE_UPDATE, Zenith_Core::GetDt());
 	Flux_Graphics::UploadFrameConstants();
 
-	Flux_Shadows::SubmitRenderTask();
-	Flux_Skybox::SubmitRenderTask();
-	Flux_StaticMeshes::SubmitRenderToGBufferTask();
-	Flux_AnimatedMeshes::SubmitRenderTask();
-	Flux_Terrain::SubmitRenderToGBufferTask();
-	ZENITH_PROFILING_FUNCTION_WRAPPER(Flux_DeferredShading::Render, ZENITH_PROFILE_INDEX__FLUX_DEFERRED_SHADING);
-	ZENITH_PROFILING_FUNCTION_WRAPPER(Flux_Water::Render, ZENITH_PROFILE_INDEX__FLUX_WATER);
-	ZENITH_PROFILING_FUNCTION_WRAPPER(Flux_Fog::Render, ZENITH_PROFILE_INDEX__FLUX_FOG);
-	ZENITH_PROFILING_FUNCTION_WRAPPER(Flux_SDFs::Render, ZENITH_PROFILE_INDEX__FLUX_SDFS);
-	ZENITH_PROFILING_FUNCTION_WRAPPER(Flux_Particles::Render, ZENITH_PROFILE_INDEX__FLUX_PFX);
-	ZENITH_PROFILING_FUNCTION_WRAPPER(Flux_Text::Render, ZENITH_PROFILE_INDEX__FLUX_TEXT);
+	SubmitRenderTasks();
+
+	WaitForRenderTasks();
+	Zenith_Scene::WaitForUpdateComplete();
 
 	Flux_MemoryManager::EndFrame();
 
 	Zenith_MemoryManagement::EndFrame();
 
+	//#TO_TODO: profiling currently doesn't include Flux_PlatformAPI/Flux_Swapchain EndFrame
 	Zenith_Profiling::EndFrame();
-#ifdef ZENITH_TOOLS
+	#ifdef ZENITH_TOOLS
 	RenderImGui();
 	Zenith_Profiling::RenderToImGui();
-#endif
-	Zenith_Scene::WaitForUpdateComplete();
-	Flux_Shadows::WaitForRenderTask();
-	Flux_Skybox::WaitForRenderTask();
-	Flux_StaticMeshes::WaitForRenderToGBufferTask();
-	Flux_AnimatedMeshes::WaitForRenderTask();
-	Flux_Terrain::WaitForRenderToGBufferTask();
+	#endif
+
 	Flux_PlatformAPI::EndFrame();
 	Flux_Swapchain::EndFrame();
 }

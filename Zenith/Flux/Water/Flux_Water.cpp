@@ -10,6 +10,9 @@
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
+#include "TaskSystem/Zenith_TaskSystem.h"
+
+static Zenith_Task g_xRenderTask(ZENITH_PROFILE_INDEX__FLUX_WATER, Flux_Water::Render, nullptr);
 
 static Flux_CommandList g_xCommandList("Water");
 
@@ -56,7 +59,17 @@ void Flux_Water::Initialise()
 	Zenith_Log("Flux_Water initialised");
 }
 
-void Flux_Water::Render()
+void Flux_Water::SubmitRenderTask()
+{
+	Zenith_TaskSystem::SubmitTask(&g_xRenderTask);
+}
+
+void Flux_Water::WaitForRenderTask()
+{
+	g_xRenderTask.WaitUntilComplete();
+}
+
+void Flux_Water::Render(void*)
 {
 	if (!dbg_bEnable)
 	{
