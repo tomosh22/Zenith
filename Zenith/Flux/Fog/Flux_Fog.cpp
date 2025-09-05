@@ -8,7 +8,7 @@
 #include "Flux/Flux_Buffers.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 
-static Flux_CommandBuffer s_xCommandBuffer;
+static Flux_CommandList g_xCommandList("Fog");
 
 static Flux_Shader s_xShader;
 static Flux_Pipeline s_xPipeline;
@@ -22,7 +22,6 @@ static struct Flux_FogConstants
 
 void Flux_Fog::Initialise()
 {
-	s_xCommandBuffer.Initialise();
 
 	s_xShader.Initialise("Flux_Fullscreen_UV.vert", "Fog/Flux_Fog.frag");
 
@@ -41,23 +40,6 @@ void Flux_Fog::Initialise()
 
 	xPipelineSpec.m_bDepthTestEnabled = false;
 	xPipelineSpec.m_bDepthWriteEnabled = false;
-#if 0
-	(
-		xVertexDesc,
-		&s_xShader,
-		xBlendStates,
-		false,
-		false,
-		DEPTH_COMPARE_FUNC_ALWAYS,
-		DEPTHSTENCIL_FORMAT_D32_SFLOAT,
-		true,
-		false,
-		{ 1,1 },
-		{ 0,0 },
-		Flux_Graphics::s_xFinalRenderTarget,
-		false
-	);
-#endif
 
 	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
 
@@ -77,22 +59,20 @@ void Flux_Fog::Render()
 		return;
 	}
 
-	s_xCommandBuffer.BeginRecording();
+	g_xCommandList.Reset(false);
 
-	s_xCommandBuffer.SubmitTargetSetup(Flux_Graphics::s_xFinalRenderTarget_NoDepth);
+	g_xCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xPipeline);
 
-	s_xCommandBuffer.SetPipeline(&s_xPipeline);
+	g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
+	g_xCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
 
-	s_xCommandBuffer.SetVertexBuffer(Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
-	s_xCommandBuffer.SetIndexBuffer(Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
+	g_xCommandList.AddCommand<Flux_CommandBeginBind>(0);
+	g_xCommandList.AddCommand<Flux_CommandBindBuffer>(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer(), 0);
+	g_xCommandList.AddCommand<Flux_CommandBindTexture>(&Flux_Graphics::GetDepthStencilTexture(), 1);
 
-	s_xCommandBuffer.BeginBind(0);
-	s_xCommandBuffer.BindBuffer(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer(), 0);
-	s_xCommandBuffer.BindTexture(&Flux_Graphics::GetDepthStencilTexture(), 1);
+	g_xCommandList.AddCommand<Flux_CommandPushConstant>(&dbg_xConstants, sizeof(Flux_FogConstants));
 
-	s_xCommandBuffer.PushConstant(&dbg_xConstants, sizeof(Flux_FogConstants));
+	g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(6);
 
-	s_xCommandBuffer.DrawIndexed(6);
-
-	s_xCommandBuffer.EndRecording(RENDER_ORDER_FOG);
+	Flux::SubmitCommandList(&g_xCommandList, Flux_Graphics::s_xFinalRenderTarget_NoDepth, RENDER_ORDER_FOG);
 }

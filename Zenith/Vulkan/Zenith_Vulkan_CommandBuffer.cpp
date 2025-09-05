@@ -13,14 +13,13 @@
 //#TO purely for the static assert in SetIndexBuffer
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 
-void Zenith_Vulkan_CommandBuffer::Initialise(CommandType eType /*= COMMANDTYPE_GRAPHICS*/, bool bAsChild /*= false*/)
+void Zenith_Vulkan_CommandBuffer::Initialise(CommandType eType /*= COMMANDTYPE_GRAPHICS*/)
 {
 	m_eCommandType = eType;
-	m_bIsChild = bAsChild;
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 	vk::CommandBufferAllocateInfo xAllocInfo{};
 	xAllocInfo.commandPool = Zenith_Vulkan::GetCommandPool(eType);
-	xAllocInfo.level = bAsChild ? vk::CommandBufferLevel::eSecondary : vk::CommandBufferLevel::ePrimary;
+	xAllocInfo.level = vk::CommandBufferLevel::ePrimary;
 	xAllocInfo.commandBufferCount = MAX_FRAMES_IN_FLIGHT;
 	m_xCmdBuffers = xDevice.allocateCommandBuffers(xAllocInfo);
 
@@ -35,28 +34,7 @@ void Zenith_Vulkan_CommandBuffer::Initialise(CommandType eType /*= COMMANDTYPE_G
 void Zenith_Vulkan_CommandBuffer::BeginRecording()
 {
 	m_xCurrentCmdBuffer = m_xCmdBuffers[Zenith_Vulkan_Swapchain::GetCurrentFrameIndex()];
-	if (!m_bIsChild)
-	{
-		m_xCurrentCmdBuffer.begin(vk::CommandBufferBeginInfo());
-	}
-	else
-	{
-		Zenith_Assert(m_pxParent != nullptr, "Child has no parent");
-		Zenith_Assert(m_pxParent->m_xCurrentRenderPass != VK_NULL_HANDLE && m_pxParent->m_xCurrentFramebuffer != VK_NULL_HANDLE, "Parent isn't recording a render pass");
-		vk::CommandBufferInheritanceInfo xInheritInfo = vk::CommandBufferInheritanceInfo()
-			.setRenderPass(m_pxParent->m_xCurrentRenderPass)
-			.setFramebuffer(m_pxParent->m_xCurrentFramebuffer)
-			.setSubpass(0);
-
-		vk::CommandBufferBeginInfo xBeginInfo = vk::CommandBufferBeginInfo()
-			.setPInheritanceInfo(&xInheritInfo)
-			.setFlags(vk::CommandBufferUsageFlagBits::eRenderPassContinue);
-
-		m_xCurrentCmdBuffer.begin(xBeginInfo);
-
-		m_xCurrentCmdBuffer.setViewport(0, 1, &m_pxParent->m_xViewport);
-		m_xCurrentCmdBuffer.setScissor(0, 1, &m_pxParent->m_xScissor);
-	}
+	m_xCurrentCmdBuffer.begin(vk::CommandBufferBeginInfo());
 
 	m_uCurrentBindFreq = FLUX_MAX_DESCRIPTOR_SET_LAYOUTS;
 
@@ -67,20 +45,18 @@ void Zenith_Vulkan_CommandBuffer::BeginRecording()
 void Zenith_Vulkan_CommandBuffer::EndRenderPass()
 {
 	m_xCurrentCmdBuffer.endRenderPass();
+	m_xCurrentRenderPass = VK_NULL_HANDLE;
 }
 void Zenith_Vulkan_CommandBuffer::EndRecording(RenderOrder eOrder, bool bEndPass /*= true*/)
 {
 	//#TO_TODO: should I pass in false for bEndPass if this is a child instead of this check?
-	if (bEndPass && !m_bIsChild)
+	if (bEndPass)
 	{
 		m_xCurrentCmdBuffer.endRenderPass();
+		m_xCurrentRenderPass = VK_NULL_HANDLE;
 	}
 
 	m_xCurrentCmdBuffer.end();
-	if (!m_bIsChild)
-	{
-		Zenith_Vulkan::SubmitCommandBuffer(this, eOrder);
-	}
 
 	m_uCurrentBindFreq = FLUX_MAX_DESCRIPTOR_SET_LAYOUTS;
 
@@ -105,6 +81,7 @@ void Zenith_Vulkan_CommandBuffer::EndAndCpuWait(bool bEndPass)
 	if (bEndPass)
 	{
 		m_xCurrentCmdBuffer.endRenderPass();
+		m_xCurrentRenderPass = VK_NULL_HANDLE;
 	}
 	m_xCurrentCmdBuffer.end();
 
@@ -428,6 +405,11 @@ void Zenith_Vulkan_CommandBuffer::BindAccelerationStruct(void* pxStruct, uint32_
 void Zenith_Vulkan_CommandBuffer::PushConstant(void* pData, size_t uSize)
 {
 	m_xCurrentCmdBuffer.pushConstants(m_pxCurrentPipeline->m_xRootSig.m_xLayout, vk::ShaderStageFlagBits::eAll, 0, uSize, pData);
+}
+
+void Zenith_Vulkan_CommandBuffer::SetShoudClear(const bool bClear)
+{
+	m_bShouldClear = bClear;
 }
 
 void Zenith_Vulkan_CommandBuffer::BeginBind(u_int uDescSet)

@@ -23,7 +23,7 @@ class Zenith_Vulkan_CommandBuffer
 {
 public:
 	Zenith_Vulkan_CommandBuffer() {}
-	void Initialise(CommandType eType = COMMANDTYPE_GRAPHICS, bool bAsChild = false);
+	void Initialise(CommandType eType = COMMANDTYPE_GRAPHICS);
 	void BeginRecording();
 	void EndRenderPass();
 	void EndRecording(RenderOrder eOrder, bool bEndPass = true);
@@ -42,6 +42,7 @@ public:
 	void BindAccelerationStruct(void* pxStruct, uint32_t uBindPoint);
 	void PushConstant(void* pData, size_t uSize);
 	void UploadUniformData(void* pData, size_t uSize);
+	void SetShoudClear(const bool bClear);
 
 	void BeginBind(u_int uDescSet);
 
@@ -56,11 +57,11 @@ public:
 	bool IsRecording() const { return m_bIsRecording; }
 
 	vk::CommandBuffer m_xCurrentCmdBuffer;
+	vk::RenderPass m_xCurrentRenderPass;
 private:
 	void PrepareDrawCallDescriptors();
 	std::vector<vk::CommandBuffer> m_xCmdBuffers;
 
-	vk::RenderPass m_xCurrentRenderPass;
 	vk::Framebuffer m_xCurrentFramebuffer;
 
 	std::vector<vk::Semaphore> m_xCompleteSems;
@@ -81,10 +82,11 @@ private:
 	vk::DescriptorSet m_axCurrentDescSet[FLUX_MAX_DESCRIPTOR_SET_LAYOUTS] = { VK_NULL_HANDLE };
 	u_int m_uDescriptorDirty = true;
 
-	bool m_bIsChild = false;
 	bool m_bIsParent = false;
 	Zenith_Vulkan_CommandBuffer* m_pxParent = nullptr;
 
 	vk::Viewport m_xViewport;
 	vk::Rect2D m_xScissor;
+
+	bool m_bShouldClear = false;
 };

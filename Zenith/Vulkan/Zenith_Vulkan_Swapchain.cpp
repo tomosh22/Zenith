@@ -335,6 +335,16 @@ void Zenith_Vulkan_Swapchain::BindAsTarget()
 
 void Zenith_Vulkan_Swapchain::CopyToFramebuffer()
 {
+	
+}
+
+bool Zenith_Vulkan_Swapchain::ShouldWaitOnImageAvailableSemaphore()
+{
+	return s_bShouldWaitOnImageAvailableSem;
+}
+
+void Zenith_Vulkan_Swapchain::EndFrame()
+{
 	s_xCopyToFramebufferCmd.BeginRecording();
 
 	BindAsTarget();
@@ -389,16 +399,19 @@ void Zenith_Vulkan_Swapchain::CopyToFramebuffer()
 	ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), xCmd);
 #endif
 
-	s_xCopyToFramebufferCmd.EndRecording(RENDER_ORDER_COPYTOFRAMEBUFFER);
-}
+	s_xCopyToFramebufferCmd.GetCurrentCmdBuffer().endRenderPass();
+	s_xCopyToFramebufferCmd.GetCurrentCmdBuffer().end();
 
-bool Zenith_Vulkan_Swapchain::ShouldWaitOnImageAvailableSemaphore()
-{
-	return s_bShouldWaitOnImageAvailableSem;
-}
+	vk::SubmitInfo xRenderSubmitInfo = vk::SubmitInfo()
+		.setCommandBufferCount(1)
+		.setPCommandBuffers(&s_xCopyToFramebufferCmd.GetCurrentCmdBuffer())
+		.setPWaitSemaphores(nullptr)
+		.setPSignalSemaphores(nullptr)
+		.setWaitSemaphoreCount(0)
+		.setSignalSemaphoreCount(0);
 
-void Zenith_Vulkan_Swapchain::EndFrame()
-{
+	Zenith_Vulkan::GetQueue(COMMANDTYPE_GRAPHICS).submit(xRenderSubmitInfo, Zenith_Vulkan::GetCurrentInFlightFence());
+
 	if (s_bShouldWaitOnImageAvailableSem)
 	{
 		vk::PresentInfoKHR presentInfo = vk::PresentInfoKHR()

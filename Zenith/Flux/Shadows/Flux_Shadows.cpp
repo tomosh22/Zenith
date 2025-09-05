@@ -12,7 +12,7 @@ static Flux_RenderAttachment g_axCSMs[ZENITH_FLUX_NUM_CSMS];
 static Flux_TargetSetup g_axCSMTargetSetups[ZENITH_FLUX_NUM_CSMS];
 static Zenith_Maths::Matrix4 g_axShadowMatrices[ZENITH_FLUX_NUM_CSMS];
 
-static Flux_CommandBuffer g_xCommandBuffer;
+static Flux_CommandList g_axCommandLists[ZENITH_FLUX_NUM_CSMS] = {{"Shadows"}, {"Shadows"}, {"Shadows"}};
 static Flux_DynamicConstantBuffer g_xShadowMatrixBuffers[ZENITH_FLUX_NUM_CSMS];
 
 static Zenith_Maths::Matrix4 g_axSunViewProjMats[ZENITH_FLUX_NUM_CSMS];
@@ -56,8 +56,6 @@ static FrustumCorners WorldSpaceFrustumCornersFromInverseViewProjMatrix(const Ze
 
 void Flux_Shadows::Initialise()
 {
-	g_xCommandBuffer.Initialise();
-
 	Flux_RenderAttachmentBuilder xBuilder;
 	xBuilder.m_uWidth = ZENITH_FLUX_CSM_RESOLUTION;
 	xBuilder.m_uHeight = ZENITH_FLUX_CSM_RESOLUTION;
@@ -89,40 +87,37 @@ void Flux_Shadows::Render()
 {
 
 	UpdateShadowMatrices();
-
-	g_xCommandBuffer.BeginRecording();
 	
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
-		g_xCommandBuffer.SubmitTargetSetup(g_axCSMTargetSetups[u], false, true, false);
-		g_xCommandBuffer.SetPipeline(&Flux_StaticMeshes::GetShadowPipeline());
+		g_axCommandLists[u].Reset(true);
+		g_axCommandLists[u].AddCommand<Flux_CommandSetPipeline>(&Flux_StaticMeshes::GetShadowPipeline());
 
-		g_xCommandBuffer.BeginBind(0);
-		g_xCommandBuffer.BindBuffer(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer(), 0);
+		g_axCommandLists[u].AddCommand<Flux_CommandBeginBind>(0);
+		g_axCommandLists[u].AddCommand<Flux_CommandBindBuffer>(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer(), 0);
 
-		g_xCommandBuffer.BeginBind(1);
-		g_xCommandBuffer.BindBuffer(&g_xShadowMatrixBuffers[u].GetBuffer(), 0);
+		g_axCommandLists[u].AddCommand<Flux_CommandBeginBind>(1);
+		g_axCommandLists[u].AddCommand<Flux_CommandBindBuffer>(&g_xShadowMatrixBuffers[u].GetBuffer(), 0);
 
-		Flux_StaticMeshes::RenderToShadowMap(g_xCommandBuffer);
+		Flux_StaticMeshes::RenderToShadowMap(g_axCommandLists[u]);
 
 		if (false)
 		{
-			g_xCommandBuffer.SetPipeline(&Flux_Terrain::GetShadowPipeline());
+			g_axCommandLists[u].AddCommand<Flux_CommandSetPipeline>(&Flux_Terrain::GetShadowPipeline());
 
-			g_xCommandBuffer.BeginBind(0);
-			g_xCommandBuffer.BindBuffer(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer(), 0);
+			g_axCommandLists[u].AddCommand<Flux_CommandBeginBind>(0);
+			g_axCommandLists[u].AddCommand<Flux_CommandBindBuffer>(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer(), 0);
 
-			g_xCommandBuffer.BeginBind(1);
-			g_xCommandBuffer.BindBuffer(&g_xShadowMatrixBuffers[u].GetBuffer(), 0);
+			g_axCommandLists[u].AddCommand<Flux_CommandBeginBind>(1);
+			g_axCommandLists[u].AddCommand<Flux_CommandBindBuffer>(&g_xShadowMatrixBuffers[u].GetBuffer(), 0);
 
-			Flux_Terrain::RenderToShadowMap(g_xCommandBuffer);
+			Flux_Terrain::RenderToShadowMap(g_axCommandLists[u]);
 		}
 
-		g_xCommandBuffer.EndRenderPass();
-
+		Flux::SubmitCommandList(&g_axCommandLists[u], g_axCSMTargetSetups[u], RENDER_ORDER_CSM);
 	}
 	
-	g_xCommandBuffer.EndRecording(RENDER_ORDER_CSM, false);
+	
 }
 
 Flux_TargetSetup& Flux_Shadows::GetCSMTargetSetup(const uint32_t uIndex)

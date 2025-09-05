@@ -20,9 +20,10 @@ enum Flux_CommandType
 };
 
 template<typename T>
-concept IsCommand = requires(T t)
+concept IsCommand = requires(T t, Flux_CommandBuffer* pxCmdBuf)
 {
 	{ t.m_eType } -> std::same_as<const Flux_CommandType&>;
+	t(pxCmdBuf);
 };
 
 class Flux_CommandPushConstant
@@ -62,18 +63,38 @@ public:
 
 };
 
+//#TO_TODO: I might vomit... this needs changing to avoid the branch
 class Flux_CommandSetVertexBuffer
 {
 public:
 	static constexpr Flux_CommandType m_eType = FLUX_COMMANDTYPE__SET_VERTEX_BUFFER;
 
-	Flux_CommandSetVertexBuffer(const Flux_VertexBuffer* const pxVertexBuffer) : m_pxVertexBuffer(pxVertexBuffer) {}
+	Flux_CommandSetVertexBuffer(const Flux_VertexBuffer* const pxVertexBuffer, const u_int uBindPoint = 0)
+	: m_pxVertexBuffer(pxVertexBuffer)
+	, m_pxDynamicVertexBuffer(nullptr)
+	, m_uBindPoint(uBindPoint)
+	{}
+	Flux_CommandSetVertexBuffer(const Flux_DynamicVertexBuffer* const pxDynamicVertexBuffer, const u_int uBindPoint = 0)
+	: m_pxVertexBuffer(nullptr)
+	, m_pxDynamicVertexBuffer(pxDynamicVertexBuffer)
+	, m_uBindPoint(uBindPoint)
+	{}
 	void operator()(Flux_CommandBuffer* pxCmdBuf)
 	{
-		pxCmdBuf->SetVertexBuffer(*m_pxVertexBuffer);
+		if(m_pxVertexBuffer)
+		{
+			pxCmdBuf->SetVertexBuffer(*m_pxVertexBuffer, m_uBindPoint);
+		}
+		else
+		{
+		Zenith_Assert(m_pxDynamicVertexBuffer, "Missing vertex buffer");
+			pxCmdBuf->SetVertexBuffer(*m_pxDynamicVertexBuffer, m_uBindPoint);
+		}
 	}
 
 	const Flux_VertexBuffer* m_pxVertexBuffer;
+	const Flux_DynamicVertexBuffer* m_pxDynamicVertexBuffer;
+	const u_int m_uBindPoint;
 };
 
 class Flux_CommandSetIndexBuffer
@@ -233,9 +254,15 @@ public:
 		}
 	}
 
-	void Reset()
+	void Reset(const bool bClearTargets)
 	{
 		m_uCursor = 0;
+		m_bClearTargets = bClearTargets;
+	}
+
+	bool RequiresClear() const
+	{
+		return m_bClearTargets;
 	}
 
 private:
@@ -244,4 +271,6 @@ private:
 	u_int m_uCursor = 0;
 	u_int m_uCapacity = 0;
 	const char* m_szName = nullptr;
+
+	bool m_bClearTargets;
 };

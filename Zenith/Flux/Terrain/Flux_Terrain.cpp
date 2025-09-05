@@ -126,7 +126,7 @@ void Flux_Terrain::RenderToGBuffer()
 
 	Flux_MemoryManager::UploadBufferData(s_xTerrainConstantsBuffer.GetBuffer(), &s_xTerrainConstants, sizeof(TerrainConstants));
 
-	g_xCommandList.Reset();
+	g_xCommandList.Reset(false);
 
 	g_xCommandList.AddCommand<Flux_CommandSetPipeline>(dbg_bWireframe ? &s_xWireframePipeline : &s_xGBufferPipeline);
 
@@ -168,10 +168,10 @@ void Flux_Terrain::RenderToGBuffer()
 		g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(pxTerrain->GetRenderMeshGeometry().GetNumIndices());
 	}
 
-	Flux::SubmitCommandList(&g_xCommandList, RENDER_ORDER_TERRAIN);
+	Flux::SubmitCommandList(&g_xCommandList, Flux_Graphics::s_xMRTTarget, RENDER_ORDER_TERRAIN);
 }
 
-void Flux_Terrain::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf)
+void Flux_Terrain::RenderToShadowMap(Flux_CommandList& xCmdBuf)
 {
 	Zenith_Vector<Zenith_TerrainComponent*> xTerrainComponents;
 	Zenith_Scene::GetCurrentScene().GetAllOfComponentType<Zenith_TerrainComponent>(xTerrainComponents);
@@ -182,10 +182,10 @@ void Flux_Terrain::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf)
 	{
 		Zenith_TerrainComponent* pxTerrain = xIt.GetData();
 
-		xCmdBuf.SetVertexBuffer(pxTerrain->GetRenderMeshGeometry().GetVertexBuffer());
-		xCmdBuf.SetIndexBuffer(pxTerrain->GetRenderMeshGeometry().GetIndexBuffer());
+		xCmdBuf.AddCommand<Flux_CommandSetVertexBuffer>(&pxTerrain->GetRenderMeshGeometry().GetVertexBuffer());
+		xCmdBuf.AddCommand<Flux_CommandSetIndexBuffer>(&pxTerrain->GetRenderMeshGeometry().GetIndexBuffer());
 
-		xCmdBuf.DrawIndexed(pxTerrain->GetRenderMeshGeometry().GetNumIndices());
+		xCmdBuf.AddCommand<Flux_CommandDrawIndexed>(pxTerrain->GetRenderMeshGeometry().GetNumIndices());
 	}
 }
 

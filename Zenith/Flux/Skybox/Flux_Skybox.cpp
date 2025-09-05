@@ -53,7 +53,7 @@ void Flux_Skybox::Initialise()
 
 void Flux_Skybox::Render()
 {
-	g_xCommandList.Reset();
+	g_xCommandList.Reset(true);
 	g_xCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xPipeline);
 	g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
 	g_xCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
@@ -61,5 +61,5 @@ void Flux_Skybox::Render()
 	g_xCommandList.AddCommand<Flux_CommandBindBuffer>(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer(), 0);
 	g_xCommandList.AddCommand<Flux_CommandBindTexture>(s_pxCubemap, 1);
 	g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(6);
-	Flux::SubmitCommandList(&g_xCommandList, RENDER_ORDER_SKYBOX);
+	Flux::SubmitCommandList(&g_xCommandList, Flux_Graphics::s_xMRTTarget, RENDER_ORDER_SKYBOX);
 }

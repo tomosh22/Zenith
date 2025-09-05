@@ -73,7 +73,7 @@ void Flux_AnimatedMeshes::Render()
 		return;
 	}
 
-	g_xCommandList.Reset();
+	g_xCommandList.Reset(false);
 	g_xCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xPipeline);
 
 	Zenith_Vector<Zenith_ModelComponent*> xModels;
@@ -114,5 +114,5 @@ void Flux_AnimatedMeshes::Render()
 		}
 	}
 
-	Flux::SubmitCommandList(&g_xCommandList, RENDER_ORDER_SKINNED_MESHES);
+	Flux::SubmitCommandList(&g_xCommandList, Flux_Graphics::s_xMRTTarget, RENDER_ORDER_SKINNED_MESHES);
 }

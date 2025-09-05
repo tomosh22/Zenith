@@ -11,7 +11,7 @@
 #include "AssetHandling/Zenith_AssetHandler.h"
 #include "Zenith_OS_Include.h"
 
-static Flux_CommandBuffer s_xCommandBuffer;
+static Flux_CommandList g_xCommandList("Text");
 
 static Flux_Shader s_xShader;
 static Flux_Pipeline s_xPipeline;
@@ -33,8 +33,6 @@ DEBUGVAR float dbg_fTextSize = 100.f;
 
 void Flux_Text::Initialise()
 {
-	s_xCommandBuffer.Initialise();
-
 	s_xShader.Initialise("Text/Flux_Text.vert", "Text/Flux_Text.frag");
 
 	Flux_VertexInputDescription xVertexDesc;
@@ -60,23 +58,6 @@ void Flux_Text::Initialise()
 
 	xPipelineSpec.m_bDepthTestEnabled = false;
 	xPipelineSpec.m_bDepthWriteEnabled = false;
-#if 0
-	(
-		xVertexDesc,
-		&s_xShader,
-		xBlendStates,
-		false,
-		false,
-		DEPTH_COMPARE_FUNC_ALWAYS,
-		DEPTHSTENCIL_FORMAT_D32_SFLOAT,
-		true,
-		false,
-		{ 1,1 },
-		{ 0,0 },
-		Flux_Graphics::s_xFinalRenderTarget,
-		false
-	);
-#endif
 
 	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
 
@@ -184,21 +165,19 @@ void Flux_Text::Render()
 
 	uint32_t uNumChars = UploadChars();
 
-	s_xCommandBuffer.BeginRecording();
+	g_xCommandList.Reset(false);
 
-	s_xCommandBuffer.SubmitTargetSetup(Flux_Graphics::s_xFinalRenderTarget);
+	g_xCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xPipeline);
 
-	s_xCommandBuffer.SetPipeline(&s_xPipeline);
+	g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer(), 0);
+	g_xCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
+	g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&s_xInstanceBuffer, 1);
 
-	s_xCommandBuffer.SetVertexBuffer(Flux_Graphics::s_xQuadMesh.GetVertexBuffer(), 0);
-	s_xCommandBuffer.SetIndexBuffer(Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
-	s_xCommandBuffer.SetVertexBuffer(s_xInstanceBuffer, 1);
+	g_xCommandList.AddCommand<Flux_CommandBeginBind>(0);
+	g_xCommandList.AddCommand<Flux_CommandBindBuffer>(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer(), 0);
+	g_xCommandList.AddCommand<Flux_CommandBindTexture>(s_pxFontAtlas, 1);
 
-	s_xCommandBuffer.BeginBind(0);
-	s_xCommandBuffer.BindBuffer(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer(), 0);
-	s_xCommandBuffer.BindTexture(s_pxFontAtlas, 1);
+	g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(6, uNumChars);
 
-	s_xCommandBuffer.DrawIndexed(6, uNumChars);
-
-	s_xCommandBuffer.EndRecording(RENDER_ORDER_TEXT);
+	Flux::SubmitCommandList(&g_xCommandList, Flux_Graphics::s_xFinalRenderTarget, RENDER_ORDER_TEXT);
 }
