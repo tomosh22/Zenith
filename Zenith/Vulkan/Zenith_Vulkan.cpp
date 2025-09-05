@@ -69,18 +69,6 @@ vk::Fence& Zenith_Vulkan::GetCurrentInFlightFence()
 	return s_pxCurrentFrame->m_xFence;
 }
 
-vk::Fence& Zenith_Vulkan::GetPreviousInFlightFence()
-{
-	uint32_t uPreviousFrame = (Zenith_Vulkan_Swapchain::GetCurrentFrameIndex() + MAX_FRAMES_IN_FLIGHT - 1) % MAX_FRAMES_IN_FLIGHT;
-	return s_axPerFrame[uPreviousFrame].m_xFence;
-}
-
-vk::Fence& Zenith_Vulkan::GetNextInFlightFence()
-{
-	uint32_t uPreviousFrame = (Zenith_Vulkan_Swapchain::GetCurrentFrameIndex() - MAX_FRAMES_IN_FLIGHT - 1) % MAX_FRAMES_IN_FLIGHT;
-	return s_axPerFrame[uPreviousFrame].m_xFence;
-}
-
 const bool Zenith_Vulkan::ShouldSubmitDrawCalls() { return dbg_bSubmitDrawCalls; }
 
 void Zenith_Vulkan::Initialise()
