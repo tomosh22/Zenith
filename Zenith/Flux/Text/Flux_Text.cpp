@@ -10,6 +10,9 @@
 #include "EntityComponent/Components/Zenith_TextComponent.h"
 #include "AssetHandling/Zenith_AssetHandler.h"
 #include "Zenith_OS_Include.h"
+#include "TaskSystem/Zenith_TaskSystem.h"
+
+static Zenith_Task g_xRenderTask(ZENITH_PROFILE_INDEX__FLUX_TEXT, Flux_Text::Render, nullptr);
 
 static Flux_CommandList g_xCommandList("Text");
 
@@ -156,7 +159,17 @@ uint32_t Flux_Text::UploadChars()
 	return uCharCount;
 }
 
-void Flux_Text::Render()
+void Flux_Text::SubmitRenderTask()
+{
+	Zenith_TaskSystem::SubmitTask(&g_xRenderTask);
+}
+
+void Flux_Text::WaitForRenderTask()
+{
+	g_xRenderTask.WaitUntilComplete();
+}
+
+void Flux_Text::Render(void*)
 {
 	if (!dbg_bEnable)
 	{

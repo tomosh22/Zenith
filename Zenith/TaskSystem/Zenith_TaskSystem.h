@@ -31,7 +31,9 @@ public:
 
 	void WaitUntilComplete()
 	{
+		Zenith_Profiling::BeginProfile(ZENITH_PROFILE_INDEX__WAIT_FOR_TASK_SYSTEM);
 		m_xSemaphore.Wait();
+		Zenith_Profiling::EndProfile(ZENITH_PROFILE_INDEX__WAIT_FOR_TASK_SYSTEM);
 	}
 
 	const Zenith_ProfileIndex GetProfileIndex() const

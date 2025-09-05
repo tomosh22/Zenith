@@ -68,15 +68,14 @@ void Zenith_Scene::Serialize(const std::string& strFilename) {
 
 void Zenith_Scene::Update(const float fDt)
 {
+	Zenith_TaskSystem::SubmitTask(g_pxAnimUpdateTask);
+
 	Zenith_Vector<Zenith_ScriptComponent*> xScripts;
 	s_xCurrentScene.GetAllOfComponentType<Zenith_ScriptComponent>(xScripts);
 	for (Zenith_Vector<Zenith_ScriptComponent*>::Iterator xIt(xScripts); !xIt.Done(); xIt.Next())
 	{
 		xIt.GetData()->OnUpdate(fDt);
 	}
-
-	Zenith_TaskSystem::SubmitTask(g_pxAnimUpdateTask);
-
 }
 
 void Zenith_Scene::WaitForUpdateComplete()

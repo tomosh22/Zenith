@@ -7,6 +7,9 @@
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_Buffers.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
+#include "TaskSystem/Zenith_TaskSystem.h"
+
+static Zenith_Task g_xRenderTask(ZENITH_PROFILE_INDEX__FLUX_FOG, Flux_Fog::Render, nullptr);
 
 static Flux_CommandList g_xCommandList("Fog");
 
@@ -52,7 +55,17 @@ void Flux_Fog::Initialise()
 	Zenith_Log("Flux_Fog initialised");
 }
 
-void Flux_Fog::Render()
+void Flux_Fog::SubmitRenderTask()
+{
+	Zenith_TaskSystem::SubmitTask(&g_xRenderTask);
+}
+
+void Flux_Fog::WaitForRenderTask()
+{
+	g_xRenderTask.WaitUntilComplete();
+}
+
+void Flux_Fog::Render(void*)
 {
 	if (!dbg_bEnable)
 	{

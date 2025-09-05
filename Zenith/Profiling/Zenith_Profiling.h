@@ -6,6 +6,8 @@ enum Zenith_ProfileIndex
 {
 	ZENITH_PROFILE_INDEX__TOTAL_FRAME,
 
+	ZENITH_PROFILE_INDEX__WAIT_FOR_TASK_SYSTEM,
+
 	ZENITH_PROFILE_INDEX__ANIMATION,
 	ZENITH_PROFILE_INDEX__SCENE_UPDATE,
 	ZENITH_PROFILE_INDEX__PHYSICS,
@@ -31,6 +33,7 @@ enum Zenith_ProfileIndex
 static const char* g_aszProfileNames[]
 {
 	"Total Frame",
+	"Wait for Task System",
 	"Animation",
 	"Scene Update",
 	"Physics",

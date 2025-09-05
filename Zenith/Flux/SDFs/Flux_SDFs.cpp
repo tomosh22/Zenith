@@ -7,6 +7,9 @@
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_Buffers.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
+#include "TaskSystem/Zenith_TaskSystem.h"
+
+static Zenith_Task g_xRenderTask(ZENITH_PROFILE_INDEX__FLUX_SDFS, Flux_SDFs::Render, nullptr);
 
 static Flux_CommandList g_xCommandList("SDFs");
 
@@ -77,7 +80,17 @@ void UploadSpheres()
 	Flux_MemoryManager::UploadBufferData(s_xSpheresBuffer.GetBuffer(), &s_axSphereData, sizeof(s_axSphereData));
 }
 
-void Flux_SDFs::Render()
+void Flux_SDFs::SubmitRenderTask()
+{
+	Zenith_TaskSystem::SubmitTask(&g_xRenderTask);
+}
+
+void Flux_SDFs::WaitForRenderTask()
+{
+	g_xRenderTask.WaitUntilComplete();
+}
+
+void Flux_SDFs::Render(void*)
 {
 	if (!dbg_bEnable)
 	{
