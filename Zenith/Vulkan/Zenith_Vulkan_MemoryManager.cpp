@@ -100,7 +100,8 @@ void Zenith_Vulkan_MemoryManager::EndFrame(bool bDefer /*= true*/)
 
 	if (bDefer)
 	{
-		s_xCommandBuffer.EndRecording(RENDER_ORDER_MEMORY_UPDATE, false);
+		s_xCommandBuffer.GetCurrentCmdBuffer().end();
+		Zenith_Vulkan::s_pxMemoryUpdateCmdBuf = &s_xCommandBuffer;
 	}
 	else
 	{

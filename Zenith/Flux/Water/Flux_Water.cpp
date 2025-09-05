@@ -11,7 +11,7 @@
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 
-static Flux_CommandBuffer s_xCommandBuffer;
+static Flux_CommandList g_xCommandList("Water");
 
 static Flux_Shader s_xShader;
 static Flux_Pipeline s_xPipeline;
@@ -24,8 +24,6 @@ DEBUGVAR float dbg_fVisibilityThresholdMultiplier = 0.5f;
 
 void Flux_Water::Initialise()
 {
-	s_xCommandBuffer.Initialise();
-
 	s_xShader.Initialise("Water/Flux_Water.vert", "Water/Flux_Water.frag");
 
 	Flux_VertexInputDescription xVertexDesc;
@@ -45,23 +43,6 @@ void Flux_Water::Initialise()
 	xLayout.m_axDescriptorSetLayouts[1].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_TEXTURE;
 
 	xPipelineSpec.m_bDepthWriteEnabled = false;
-#if 0
-	(
-		xVertexDesc,
-		&s_xShader,
-		xBlendStates,
-		true,
-		true,
-		DEPTH_COMPARE_FUNC_LESSEQUAL,
-		DEPTHSTENCIL_FORMAT_D32_SFLOAT,
-		true,
-		false,
-		{ 1,0 },
-		{ 0,1 },
-		Flux_Graphics::s_xFinalRenderTarget,
-		false
-	);
-#endif
 
 	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
 
@@ -82,19 +63,17 @@ void Flux_Water::Render()
 		return;
 	}
 
-	s_xCommandBuffer.BeginRecording();
+	g_xCommandList.Reset(false);
 
-	s_xCommandBuffer.SubmitTargetSetup(Flux_Graphics::s_xFinalRenderTarget);
-
-	s_xCommandBuffer.SetPipeline(&s_xPipeline);
+	g_xCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xPipeline);
 
 	Zenith_Vector<Zenith_TerrainComponent*> xTerrainComponents;
 	Zenith_Scene::GetCurrentScene().GetAllOfComponentType<Zenith_TerrainComponent>(xTerrainComponents);
 
-	s_xCommandBuffer.BeginBind(0);
-	s_xCommandBuffer.BindBuffer(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer(), 0);
+	g_xCommandList.AddCommand<Flux_CommandBeginBind>(0);
+	g_xCommandList.AddCommand<Flux_CommandBindBuffer>(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer(), 0);
 
-	s_xCommandBuffer.BeginBind(1);
+	g_xCommandList.AddCommand<Flux_CommandBeginBind>(1);
 
 	const Zenith_CameraComponent& xCam = Zenith_Scene::GetCurrentScene().GetMainCamera();
 
@@ -106,13 +85,13 @@ void Flux_Water::Render()
 			continue;
 		}
 
-		s_xCommandBuffer.SetVertexBuffer(pxTerrain->GetWaterGeometry().GetVertexBuffer());
-		s_xCommandBuffer.SetIndexBuffer(pxTerrain->GetWaterGeometry().GetIndexBuffer());
+		g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&pxTerrain->GetWaterGeometry().GetVertexBuffer());
+		g_xCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&pxTerrain->GetWaterGeometry().GetIndexBuffer());
 
-		s_xCommandBuffer.BindTexture(s_pxNormalTex, 0);
+		g_xCommandList.AddCommand<Flux_CommandBindTexture>(s_pxNormalTex, 0);
 
-		s_xCommandBuffer.DrawIndexed(pxTerrain->GetWaterGeometry().GetNumIndices());
+		g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(pxTerrain->GetWaterGeometry().GetNumIndices());
 	}
 
-	s_xCommandBuffer.EndRecording(RENDER_ORDER_WATER);
+	Flux::SubmitCommandList(&g_xCommandList, Flux_Graphics::s_xFinalRenderTarget, RENDER_ORDER_WATER);
 }

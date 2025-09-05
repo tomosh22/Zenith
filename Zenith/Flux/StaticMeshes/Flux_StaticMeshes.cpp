@@ -93,7 +93,7 @@ void Flux_StaticMeshes::RenderToGBuffer()
 		return;
 	}
 
-	g_xCommandList.Reset();
+	g_xCommandList.Reset(false);
 	g_xCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xGBufferPipeline);
 
 	Zenith_Vector<Zenith_ModelComponent*> xModels;
@@ -132,10 +132,10 @@ void Flux_StaticMeshes::RenderToGBuffer()
 		}
 	}
 
-	Flux::SubmitCommandList(&g_xCommandList, RENDER_ORDER_OPAQUE_MESHES);
+	Flux::SubmitCommandList(&g_xCommandList, Flux_Graphics::s_xMRTTarget, RENDER_ORDER_OPAQUE_MESHES);
 }
 
-void Flux_StaticMeshes::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf)
+void Flux_StaticMeshes::RenderToShadowMap(Flux_CommandList& xCmdBuf)
 {
 
 	Zenith_Vector<Zenith_ModelComponent*> xModels;
@@ -152,15 +152,15 @@ void Flux_StaticMeshes::RenderToShadowMap(Flux_CommandBuffer& xCmdBuf)
 		for (uint32_t uMesh = 0; uMesh < pxModel->GetNumMeshEntires(); uMesh++)
 		{
 			const Flux_MeshGeometry& xMesh = pxModel->GetMeshGeometryAtIndex(uMesh);
-			xCmdBuf.SetVertexBuffer(xMesh.GetVertexBuffer());
-			xCmdBuf.SetIndexBuffer(xMesh.GetIndexBuffer());
+			xCmdBuf.AddCommand<Flux_CommandSetVertexBuffer>(&xMesh.GetVertexBuffer());
+			xCmdBuf.AddCommand<Flux_CommandSetIndexBuffer>(&xMesh.GetIndexBuffer());
 
 			Zenith_Maths::Matrix4 xModelMatrix;
 			pxModel->GetParentEntity().GetComponent<Zenith_TransformComponent>().BuildModelMatrix(xModelMatrix);
-			xCmdBuf.PushConstant(&xModelMatrix, sizeof(xModelMatrix));
+			xCmdBuf.AddCommand<Flux_CommandPushConstant>(&xModelMatrix, sizeof(xModelMatrix));
 			const Flux_Material& xMaterial = pxModel->GetMaterialAtIndex(uMesh);
 
-			xCmdBuf.DrawIndexed(xMesh.GetNumIndices());
+			xCmdBuf.AddCommand<Flux_CommandDrawIndexed>(xMesh.GetNumIndices());
 		}
 	}
 }

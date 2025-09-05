@@ -8,7 +8,7 @@
 #include "Flux/Flux_Buffers.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 
-static Flux_CommandBuffer s_xCommandBuffer;
+static Flux_CommandList g_xCommandList("SDFs");
 
 static Flux_Shader s_xShader;
 static Flux_Pipeline s_xPipeline;
@@ -31,8 +31,6 @@ DEBUGVAR bool dbg_bEnable = true;
 
 void Flux_SDFs::Initialise()
 {
-	s_xCommandBuffer.Initialise();
-
 	s_xShader.Initialise("Flux_Fullscreen_UV.vert", "SDFs/Flux_SDFs.frag");
 
 	Flux_VertexInputDescription xVertexDesc;
@@ -49,23 +47,6 @@ void Flux_SDFs::Initialise()
 	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_BUFFER;
 
 	xPipelineSpec.m_axBlendStates[0].m_bBlendEnabled = true;
-#if 0
-	(
-		xVertexDesc,
-		&s_xShader,
-		xBlendStates,
-		false,
-		false,
-		DEPTH_COMPARE_FUNC_ALWAYS,
-		DEPTHSTENCIL_FORMAT_D32_SFLOAT,
-		true,
-		false,
-		{ 2,0 },
-		{ 0,0 },
-		Flux_Graphics::s_xFinalRenderTarget,
-		false
-	);
-#endif
 
 	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
 
@@ -105,20 +86,18 @@ void Flux_SDFs::Render()
 
 	UploadSpheres();
 
-	s_xCommandBuffer.BeginRecording();
+	g_xCommandList.Reset(false);
 
-	s_xCommandBuffer.SubmitTargetSetup(Flux_Graphics::s_xFinalRenderTarget);
+	g_xCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xPipeline);
 
-	s_xCommandBuffer.SetPipeline(&s_xPipeline);
+	g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
+	g_xCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
 
-	s_xCommandBuffer.SetVertexBuffer(Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
-	s_xCommandBuffer.SetIndexBuffer(Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
+	g_xCommandList.AddCommand<Flux_CommandBeginBind>(0);
+	g_xCommandList.AddCommand<Flux_CommandBindBuffer>(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer(), 0);
+	g_xCommandList.AddCommand<Flux_CommandBindBuffer>(&s_xSpheresBuffer.GetBuffer(), 1);
 
-	s_xCommandBuffer.BeginBind(0);
-	s_xCommandBuffer.BindBuffer(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer(), 0);
-	s_xCommandBuffer.BindBuffer(&s_xSpheresBuffer.GetBuffer(), 1);
+	g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(6);
 
-	s_xCommandBuffer.DrawIndexed(6);
-
-	s_xCommandBuffer.EndRecording(RENDER_ORDER_SDFS);
+	Flux::SubmitCommandList(&g_xCommandList, Flux_Graphics::s_xFinalRenderTarget, RENDER_ORDER_SDFS);
 }

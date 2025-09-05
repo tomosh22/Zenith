@@ -92,6 +92,8 @@ public:
 	static vk::Fence& GetCurrentInFlightFence();
 
 	static const bool ShouldSubmitDrawCalls();
+
+	static Zenith_Vulkan_CommandBuffer* s_pxMemoryUpdateCmdBuf;
 private:
 	static vk::Instance s_xInstance;
 	static VKAPI_ATTR vk::Bool32 VKAPI_CALL DebugCallback(vk::DebugUtilsMessageSeverityFlagBitsEXT eMessageSeverity,

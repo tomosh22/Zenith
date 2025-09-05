@@ -11,7 +11,7 @@
 //#include "EntityComponent/Components/Zenith_ParticleSystemComponent.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 
-static Flux_CommandBuffer s_xCommandBuffer;
+static Flux_CommandList g_xCommandList("Particles");
 
 static Flux_Shader s_xShader;
 static Flux_Pipeline s_xPipeline;
@@ -32,8 +32,6 @@ static Flux_Texture* s_pxParticleTexture = nullptr;
 
 void Flux_Particles::Initialise()
 {
-	s_xCommandBuffer.Initialise();
-
 	s_xShader.Initialise("Particles/Flux_Particles.vert", "Particles/Flux_Particles.frag");
 
 	Flux_VertexInputDescription xVertexDesc;
@@ -56,23 +54,6 @@ void Flux_Particles::Initialise()
 	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_TEXTURE;
 
 	xPipelineSpec.m_bDepthWriteEnabled = false;
-#if 0
-	(
-		xVertexDesc,
-		&s_xShader,
-		xBlendStates,
-		true,
-		false, //#TO don't write to depth, need to make sure nothing can draw over particles later in the frame
-		DEPTH_COMPARE_FUNC_LESSEQUAL,
-		DEPTHSTENCIL_FORMAT_D32_SFLOAT,
-		true,
-		false,
-		{ 1,1 },
-		{ 0,0 },
-		Flux_Graphics::s_xFinalRenderTarget,
-		false
-	);
-#endif
 
 	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
 
@@ -98,7 +79,6 @@ void UploadInstanceData()
 		{{800.,1500 + sin(Zenith_Core::GetTimePassed()) * 200, 800.,300.}, {0.,0.,1.,1.}},
 	};
 
-	//#TO_TODO: need a buffer per frame in flight
 	Flux_MemoryManager::UploadBufferData(s_xInstanceBuffer.GetBuffer(), axParticles, sizeof(axParticles));
 }
 
@@ -111,21 +91,19 @@ void Flux_Particles::Render()
 
 	UploadInstanceData();
 
-	s_xCommandBuffer.BeginRecording();
+	g_xCommandList.Reset(false);
 
-	s_xCommandBuffer.SubmitTargetSetup(Flux_Graphics::s_xFinalRenderTarget);
+	g_xCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xPipeline);
 
-	s_xCommandBuffer.SetPipeline(&s_xPipeline);
+	g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer(), 0);
+	g_xCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
+	g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&s_xInstanceBuffer, 1);
 
-	s_xCommandBuffer.SetVertexBuffer(Flux_Graphics::s_xQuadMesh.GetVertexBuffer(), 0);
-	s_xCommandBuffer.SetIndexBuffer(Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
-	s_xCommandBuffer.SetVertexBuffer(s_xInstanceBuffer, 1);
+	g_xCommandList.AddCommand<Flux_CommandBeginBind>(0);
+	g_xCommandList.AddCommand<Flux_CommandBindBuffer>(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer(), 0);
+	g_xCommandList.AddCommand<Flux_CommandBindTexture>(s_pxParticleTexture, 1);
 
-	s_xCommandBuffer.BeginBind(0);
-	s_xCommandBuffer.BindBuffer(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer(), 0);
-	s_xCommandBuffer.BindTexture(s_pxParticleTexture, 1);
+	g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(6, 3);
 
-	s_xCommandBuffer.DrawIndexed(6, 3);
-
-	s_xCommandBuffer.EndRecording(RENDER_ORDER_PARTICLES);
+	Flux::SubmitCommandList(&g_xCommandList, Flux_Graphics::s_xFinalRenderTarget, RENDER_ORDER_PARTICLES);
 }
