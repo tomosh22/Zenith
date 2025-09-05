@@ -123,8 +123,8 @@ void Zenith_Core::Zenith_MainLoop()
 
 	Zenith_MemoryManagement::EndFrame();
 
-#ifdef ZENITH_TOOLS
 	Zenith_Profiling::EndFrame();
+#ifdef ZENITH_TOOLS
 	RenderImGui();
 	Zenith_Profiling::RenderToImGui();
 #endif
