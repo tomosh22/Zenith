@@ -29,8 +29,6 @@ public:
 
 	static vk::Format GetFormat() { return s_xImageFormat; }
 
-	static void CopyToFramebuffer();
-
 	static bool ShouldWaitOnImageAvailableSemaphore();
 private:
 	static void BindAsTarget();

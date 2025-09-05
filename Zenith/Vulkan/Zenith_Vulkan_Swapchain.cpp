@@ -333,11 +333,6 @@ void Zenith_Vulkan_Swapchain::BindAsTarget()
 	s_xCopyToFramebufferCmd.GetCurrentCmdBuffer().setScissor(0, 1, &xScissor);
 }
 
-void Zenith_Vulkan_Swapchain::CopyToFramebuffer()
-{
-	
-}
-
 bool Zenith_Vulkan_Swapchain::ShouldWaitOnImageAvailableSemaphore()
 {
 	return s_bShouldWaitOnImageAvailableSem;

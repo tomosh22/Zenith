@@ -128,7 +128,6 @@ void Zenith_Core::Zenith_MainLoop()
 	RenderImGui();
 	Zenith_Profiling::RenderToImGui();
 #endif
-	Flux_Swapchain::CopyToFramebuffer();
 	Zenith_Scene::WaitForUpdateComplete();
 	Flux_PlatformAPI::EndFrame();
 	Flux_Swapchain::EndFrame();
