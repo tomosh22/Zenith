@@ -13,6 +13,9 @@
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
+#include "TaskSystem/Zenith_TaskSystem.h"
+
+static Zenith_Task g_xRenderTask(ZENITH_PROFILE_INDEX__FLUX_STATIC_MESHES, Flux_StaticMeshes::RenderToGBuffer, nullptr);
 
 static Flux_CommandList g_xCommandList("Static Meshes");
 
@@ -86,7 +89,17 @@ void Flux_StaticMeshes::Initialise()
 	Zenith_Log("Flux_StaticMeshes initialised");
 }
 
-void Flux_StaticMeshes::RenderToGBuffer()
+void Flux_StaticMeshes::SubmitRenderToGBufferTask()
+{
+	Zenith_TaskSystem::SubmitTask(&g_xRenderTask);
+}
+
+void Flux_StaticMeshes::WaitForRenderToGBufferTask()
+{
+	g_xRenderTask.WaitUntilComplete();
+}
+
+void Flux_StaticMeshes::RenderToGBuffer(void*)
 {
 	if (!dbg_bEnable)
 	{

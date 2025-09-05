@@ -10,7 +10,10 @@ class Flux_Shadows
 public:
 	static void Initialise();
 
-	static void Render();
+	static void Render(void*);
+
+	static void SubmitRenderTask();
+	static void WaitForRenderTask();
 
 	static Flux_TargetSetup& GetCSMTargetSetup(const uint32_t uIndex);
 	static Zenith_Maths::Matrix4 GetSunViewProjMatrix(const uint32_t uIndex);

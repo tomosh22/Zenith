@@ -106,12 +106,11 @@ void Zenith_Core::Zenith_MainLoop()
 	ZENITH_PROFILING_FUNCTION_WRAPPER(Zenith_Scene::Update, ZENITH_PROFILE_INDEX__SCENE_UPDATE, Zenith_Core::GetDt());
 	Flux_Graphics::UploadFrameConstants();
 
-	ZENITH_PROFILING_FUNCTION_WRAPPER(Flux_Shadows::Render, ZENITH_PROFILE_INDEX__FLUX_SHADOWS);
-	ZENITH_PROFILING_FUNCTION_WRAPPER(Flux_DeferredShading::BeginFrame, ZENITH_PROFILE_INDEX__FLUX_DEFERRED_SHADING);
-	ZENITH_PROFILING_FUNCTION_WRAPPER(Flux_Skybox::Render, ZENITH_PROFILE_INDEX__FLUX_SKYBOX);
-	ZENITH_PROFILING_FUNCTION_WRAPPER(Flux_StaticMeshes::RenderToGBuffer, ZENITH_PROFILE_INDEX__FLUX_STATIC_MESHES);
-	ZENITH_PROFILING_FUNCTION_WRAPPER(Flux_AnimatedMeshes::Render, ZENITH_PROFILE_INDEX__FLUX_ANIMATED_MESHES);
-	ZENITH_PROFILING_FUNCTION_WRAPPER(Flux_Terrain::RenderToGBuffer, ZENITH_PROFILE_INDEX__FLUX_TERRAIN);
+	Flux_Shadows::SubmitRenderTask();
+	Flux_Skybox::SubmitRenderTask();
+	Flux_StaticMeshes::SubmitRenderToGBufferTask();
+	Flux_AnimatedMeshes::SubmitRenderTask();
+	Flux_Terrain::SubmitRenderToGBufferTask();
 	ZENITH_PROFILING_FUNCTION_WRAPPER(Flux_DeferredShading::Render, ZENITH_PROFILE_INDEX__FLUX_DEFERRED_SHADING);
 	ZENITH_PROFILING_FUNCTION_WRAPPER(Flux_Water::Render, ZENITH_PROFILE_INDEX__FLUX_WATER);
 	ZENITH_PROFILING_FUNCTION_WRAPPER(Flux_Fog::Render, ZENITH_PROFILE_INDEX__FLUX_FOG);
@@ -129,6 +128,11 @@ void Zenith_Core::Zenith_MainLoop()
 	Zenith_Profiling::RenderToImGui();
 #endif
 	Zenith_Scene::WaitForUpdateComplete();
+	Flux_Shadows::WaitForRenderTask();
+	Flux_Skybox::WaitForRenderTask();
+	Flux_StaticMeshes::WaitForRenderToGBufferTask();
+	Flux_AnimatedMeshes::WaitForRenderTask();
+	Flux_Terrain::WaitForRenderToGBufferTask();
 	Flux_PlatformAPI::EndFrame();
 	Flux_Swapchain::EndFrame();
 }

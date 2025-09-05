@@ -7,10 +7,13 @@
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/StaticMeshes/Flux_StaticMeshes.h"
 #include "Flux/Terrain/Flux_Terrain.h"
+#include "TaskSystem/Zenith_TaskSystem.h"
 
 static Flux_RenderAttachment g_axCSMs[ZENITH_FLUX_NUM_CSMS];
 static Flux_TargetSetup g_axCSMTargetSetups[ZENITH_FLUX_NUM_CSMS];
 static Zenith_Maths::Matrix4 g_axShadowMatrices[ZENITH_FLUX_NUM_CSMS];
+
+static Zenith_Task g_xRenderTask(ZENITH_PROFILE_INDEX__FLUX_SHADOWS, Flux_Shadows::Render, nullptr);
 
 static Flux_CommandList g_axCommandLists[ZENITH_FLUX_NUM_CSMS] = {{"Shadows"}, {"Shadows"}, {"Shadows"}};
 static Flux_DynamicConstantBuffer g_xShadowMatrixBuffers[ZENITH_FLUX_NUM_CSMS];
@@ -74,7 +77,7 @@ void Flux_Shadows::Initialise()
 #endif
 }
 
-void Flux_Shadows::Render()
+void Flux_Shadows::Render(void*)
 {
 
 	UpdateShadowMatrices();
@@ -109,6 +112,16 @@ void Flux_Shadows::Render()
 	}
 	
 	
+}
+
+void Flux_Shadows::SubmitRenderTask()
+{
+	Zenith_TaskSystem::SubmitTask(&g_xRenderTask);
+}
+
+void Flux_Shadows::WaitForRenderTask()
+{
+	g_xRenderTask.WaitUntilComplete();
 }
 
 Flux_TargetSetup& Flux_Shadows::GetCSMTargetSetup(const uint32_t uIndex)
