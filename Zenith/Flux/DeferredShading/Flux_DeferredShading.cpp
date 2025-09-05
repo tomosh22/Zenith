@@ -52,10 +52,6 @@ void Flux_DeferredShading::Initialise()
 	Zenith_Log("Flux_DeferredShading initialised");
 }
 
-void Flux_DeferredShading::BeginFrame()
-{
-}
-
 void Flux_DeferredShading::Render()
 {
 	g_xCommandList.Reset(true);

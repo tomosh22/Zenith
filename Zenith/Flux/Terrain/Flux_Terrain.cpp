@@ -13,6 +13,9 @@
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
+#include "TaskSystem/Zenith_TaskSystem.h"
+
+static Zenith_Task g_xRenderTask(ZENITH_PROFILE_INDEX__FLUX_TERRAIN, Flux_Terrain::RenderToGBuffer, nullptr);
 
 static Flux_CommandList g_xCommandList("Terrain");
 
@@ -117,7 +120,17 @@ void Flux_Terrain::Initialise()
 	Zenith_Log("Flux_Terrain initialised");
 }
 
-void Flux_Terrain::RenderToGBuffer()
+void Flux_Terrain::SubmitRenderToGBufferTask()
+{
+	Zenith_TaskSystem::SubmitTask(&g_xRenderTask);
+}
+
+void Flux_Terrain::WaitForRenderToGBufferTask()
+{
+	g_xRenderTask.WaitUntilComplete();
+}
+
+void Flux_Terrain::RenderToGBuffer(void*)
 {
 	if (!dbg_bEnable)
 	{

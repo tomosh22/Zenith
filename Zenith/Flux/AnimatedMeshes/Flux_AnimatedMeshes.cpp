@@ -12,6 +12,9 @@
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
+#include "TaskSystem/Zenith_TaskSystem.h"
+
+static Zenith_Task g_xRenderTask(ZENITH_PROFILE_INDEX__FLUX_ANIMATED_MESHES, Flux_AnimatedMeshes::Render, nullptr);
 
 static Flux_CommandList g_xCommandList("Animated Meshes");
 
@@ -66,7 +69,17 @@ void Flux_AnimatedMeshes::Initialise()
 	Zenith_Log("Flux_AnimatedMeshes initialised");
 }
 
-void Flux_AnimatedMeshes::Render()
+void Flux_AnimatedMeshes::SubmitRenderTask()
+{
+	Zenith_TaskSystem::SubmitTask(&g_xRenderTask);
+}
+
+void Flux_AnimatedMeshes::WaitForRenderTask()
+{
+	g_xRenderTask.WaitUntilComplete();
+}
+
+void Flux_AnimatedMeshes::Render(void*)
 {
 	if (!dbg_bEnable)
 	{

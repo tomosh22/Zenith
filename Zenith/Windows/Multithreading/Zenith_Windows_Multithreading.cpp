@@ -47,7 +47,8 @@ Zenith_Windows_Semaphore::~Zenith_Windows_Semaphore()
 
 void Zenith_Windows_Semaphore::Wait()
 {
-	WaitForSingleObject(m_xHandle, INFINITE);
+	DWORD ulResult = WaitForSingleObject(m_xHandle, INFINITE);
+	Zenith_Assert(ulResult == WAIT_OBJECT_0, "Failed to wait for semaphore");
 }
 
 bool Zenith_Windows_Semaphore::TryWait()
@@ -57,7 +58,15 @@ bool Zenith_Windows_Semaphore::TryWait()
 
 bool Zenith_Windows_Semaphore::Signal()
 {
-	return ReleaseSemaphore(m_xHandle, 1, 0) != 0;
+	const bool bRet = ReleaseSemaphore(m_xHandle, 1, 0) != 0;
+	#ifdef ZENITH_ASSERT
+	if (!bRet)
+	{
+		DWORD ulError = GetLastError();
+		Zenith_Assert(false, "Failed to signal semaphore");
+	}
+	#endif
+	return bRet;
 }
 
 struct ThreadParams

@@ -2,13 +2,16 @@
 
 #include "Flux/Skybox/Flux_Skybox.h"
 
+#include "AssetHandling/Zenith_AssetHandler.h"
 #include "Flux/Flux.h"
 #include "Flux/Flux_CommandList.h"
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_Buffers.h"
 #include "Flux/DeferredShading/Flux_DeferredShading.h"
-#include "AssetHandling/Zenith_AssetHandler.h"
+#include "TaskSystem/Zenith_TaskSystem.h"
+
+static Zenith_Task g_xRenderTask(ZENITH_PROFILE_INDEX__FLUX_SKYBOX, Flux_Skybox::Render, nullptr);
 
 static Flux_CommandList g_xCommandList("Skybox");
 
@@ -51,7 +54,17 @@ void Flux_Skybox::Initialise()
 	Zenith_Log("Flux_Skybox initialised");
 }
 
-void Flux_Skybox::Render()
+void Flux_Skybox::SubmitRenderTask()
+{
+	Zenith_TaskSystem::SubmitTask(&g_xRenderTask);
+}
+
+void Flux_Skybox::WaitForRenderTask()
+{
+	g_xRenderTask.WaitUntilComplete();
+}
+
+void Flux_Skybox::Render(void*)
 {
 	g_xCommandList.Reset(true);
 	g_xCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xPipeline);
