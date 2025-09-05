@@ -17,11 +17,7 @@ static Flux_DynamicConstantBuffer g_xShadowMatrixBuffers[ZENITH_FLUX_NUM_CSMS];
 
 static Zenith_Maths::Matrix4 g_axSunViewProjMats[ZENITH_FLUX_NUM_CSMS];
 
-#ifdef ZENITH_DEBUG_VARIABLES
-DEBUGVAR Zenith_Maths::Vector3 dbg_xTestPoints[ZENITH_FLUX_NUM_CSMS];
-DEBUGVAR Zenith_Maths::Vector3 dbg_xFrustumCenters[ZENITH_FLUX_NUM_CSMS];
 DEBUGVAR float dbg_fZMultiplier = 10.f;
-#endif
 
 struct FrustumCorners
 {
@@ -73,11 +69,6 @@ void Flux_Shadows::Initialise()
 	
 
 #ifdef ZENITH_DEBUG_VARIABLES
-	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
-	{
-		Zenith_DebugVariables::AddVector3({ "Shadows", "Frustum Center" + std::to_string(u)}, dbg_xFrustumCenters[u], -10000, 10000);
-		Zenith_DebugVariables::AddVector3({ "Shadows", "Test Point" + std::to_string(u) }, dbg_xTestPoints[u], -10000, 10000);
-	}
 	Zenith_DebugVariables::AddFloat({"Shadows", "Z Multiplier"}, dbg_fZMultiplier, -10.f, 10.f);
 	Zenith_DebugVariables::AddTexture({ "Shadows", "CSM0" }, *g_axCSMs->m_pxTargetTexture);
 #endif
@@ -154,11 +145,6 @@ void Flux_Shadows::UpdateShadowMatrices()
 
 		FrustumCorners xFrustumCorners = WorldSpaceFrustumCornersFromInverseViewProjMatrix(xInvViewProjMat);
 		Zenith_Maths::Vector3 xFrustumCenter = xFrustumCorners.GetCenter();
-
-#ifdef ZENITH_DEBUG_VARIABLES
-		dbg_xFrustumCenters[u] = xFrustumCenter;
-		dbg_xTestPoints[u] = xInvViewProjMat * Zenith_Maths::Vector4(0, 0, 1, 1);
-#endif
 
 		Zenith_Maths::Matrix4 xSunViewMat = glm::lookAt(xFrustumCenter - Flux_Graphics::GetSunDir(), xFrustumCenter, Zenith_Maths::Vector3(0, 1, 0));
 

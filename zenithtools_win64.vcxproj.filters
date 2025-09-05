@@ -1020,7 +1020,7 @@
     <ClInclude Include="Tools\Middleware\assimp\include\stb_image.h">
       <Filter>Middleware\assimp\include</Filter>
     </ClInclude>
-    <ClInclude Include="Tools\Middleware\assimp\include\stb_image_resize.h">
+    <ClInclude Include="Tools\Middleware\assimp\include\stb_image_resize2.h">
       <Filter>Middleware\assimp\include</Filter>
     </ClInclude>
     <ClInclude Include="Tools\Middleware\assimp\include\stb_image_write.h">

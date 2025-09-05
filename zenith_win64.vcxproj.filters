@@ -277,6 +277,12 @@
     <ClCompile Include="Zenith\AssetHandling\Zenith_AssetHandler.cpp">
       <Filter>Zenith\AssetHandling</Filter>
     </ClCompile>
+    <ClCompile Include="Zenith\Core\Memory\Zenith_MemoryManagement.cpp">
+      <Filter>Zenith\Core\Memory</Filter>
+    </ClCompile>
+    <ClCompile Include="Zenith\Core\Multithreading\Zenith_Multithreading.cpp">
+      <Filter>Zenith\Core\Multithreading</Filter>
+    </ClCompile>
     <ClCompile Include="Zenith\Core\Zenith.cpp">
       <Filter>Zenith\Core</Filter>
     </ClCompile>
@@ -328,6 +334,9 @@
     <ClCompile Include="Zenith\Flux\Flux_Buffers.cpp">
       <Filter>Zenith\Flux</Filter>
     </ClCompile>
+    <ClCompile Include="Zenith\Flux\Flux_CommandList.cpp">
+      <Filter>Zenith\Flux</Filter>
+    </ClCompile>
     <ClCompile Include="Zenith\Flux\Flux_Graphics.cpp">
       <Filter>Zenith\Flux</Filter>
     </ClCompile>
@@ -340,6 +349,9 @@
     <ClCompile Include="Zenith\Flux\Fog\Flux_Fog.cpp">
       <Filter>Zenith\Flux\Fog</Filter>
     </ClCompile>
+    <ClCompile Include="Zenith\Flux\MeshAnimation\Flux_MeshAnimation.cpp">
+      <Filter>Zenith\Flux\MeshAnimation</Filter>
+    </ClCompile>
     <ClCompile Include="Zenith\Flux\MeshGeometry\Flux_MeshGeometry.cpp">
       <Filter>Zenith\Flux\MeshGeometry</Filter>
     </ClCompile>
@@ -348,6 +360,9 @@
     </ClCompile>
     <ClCompile Include="Zenith\Flux\SDFs\Flux_SDFs.cpp">
       <Filter>Zenith\Flux\SDFs</Filter>
+    </ClCompile>
+    <ClCompile Include="Zenith\Flux\Shadows\Flux_Shadows.cpp">
+      <Filter>Zenith\Flux\Shadows</Filter>
     </ClCompile>
     <ClCompile Include="Zenith\Flux\Skybox\Flux_Skybox.cpp">
       <Filter>Zenith\Flux\Skybox</Filter>
@@ -373,8 +388,17 @@
     <ClCompile Include="Zenith\Physics\Zenith_Physics.cpp">
       <Filter>Zenith\Physics</Filter>
     </ClCompile>
+    <ClCompile Include="Zenith\Profiling\Zenith_Profiling.cpp">
+      <Filter>Zenith\Profiling</Filter>
+    </ClCompile>
     <ClCompile Include="Zenith\StateMachine\Zenith_StateMachine.cpp">
       <Filter>Zenith\StateMachine</Filter>
+    </ClCompile>
+    <ClCompile Include="Zenith\TaskSystem\Zenith_TaskSystem.cpp">
+      <Filter>Zenith\TaskSystem</Filter>
+    </ClCompile>
+    <ClCompile Include="Zenith\UnitTests\Zenith_UnitTests.cpp">
+      <Filter>Zenith\UnitTests</Filter>
     </ClCompile>
     <ClCompile Include="Zenith\Vulkan\Zenith_Vulkan.cpp">
       <Filter>Zenith\Vulkan</Filter>
@@ -397,29 +421,14 @@
     <ClCompile Include="Zenith\Vulkan\Zenith_Vulkan_Texture.cpp">
       <Filter>Zenith\Vulkan</Filter>
     </ClCompile>
+    <ClCompile Include="Zenith\Windows\Multithreading\Zenith_Windows_Multithreading.cpp">
+      <Filter>Zenith\Windows\Multithreading</Filter>
+    </ClCompile>
     <ClCompile Include="Zenith\Windows\Zenith_Windows_Window.cpp">
       <Filter>Zenith\Windows</Filter>
     </ClCompile>
     <ClCompile Include="Zenith\Zenith_Main.cpp">
       <Filter>Zenith</Filter>
-    </ClCompile>
-    <ClCompile Include="Zenith\Flux\MeshAnimation\Flux_MeshAnimation.cpp">
-      <Filter>Zenith\Flux\MeshAnimation</Filter>
-    </ClCompile>
-    <ClCompile Include="Zenith\UnitTests\Zenith_UnitTests.cpp">
-      <Filter>Zenith\UnitTests</Filter>
-    </ClCompile>
-    <ClCompile Include="Zenith\Core\Memory\Zenith_MemoryManagement.cpp">
-      <Filter>Zenith\Core\Memory</Filter>
-    </ClCompile>
-    <ClCompile Include="Zenith\Flux\Shadows\Flux_Shadows.cpp">
-      <Filter>Zenith\Flux\Shadows</Filter>
-    </ClCompile>
-    <ClCompile Include="Zenith\Core\Multithreading\Zenith_Multithreading.cpp" />
-    <ClCompile Include="Zenith\Windows\Multithreading\Zenith_Windows_Multithreading.cpp" />
-    <ClCompile Include="Zenith\TaskSystem\Zenith_TaskSystem.cpp" />
-    <ClCompile Include="Zenith\Profiling\Zenith_Profiling.cpp">
-      <Filter>Zenith\Profiling</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -780,11 +789,35 @@
     <ClInclude Include="Zenith\AssetHandling\Zenith_AssetHandler.h">
       <Filter>Zenith\AssetHandling</Filter>
     </ClInclude>
+    <ClInclude Include="Zenith\Collections\Zenith_CircularQueue.h">
+      <Filter>Zenith\Collections</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\Collections\Zenith_MemoryPool.h">
+      <Filter>Zenith\Collections</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\Collections\Zenith_Vector.h">
+      <Filter>Zenith\Collections</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\Core\Memory\Zenith_MemoryManagement.h">
+      <Filter>Zenith\Core\Memory</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\Core\Memory\Zenith_MemoryManagement_Disabled.h">
+      <Filter>Zenith\Core\Memory</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\Core\Memory\Zenith_MemoryManagement_Enabled.h">
+      <Filter>Zenith\Core\Memory</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\Core\Multithreading\Zenith_Multithreading.h">
+      <Filter>Zenith\Core\Multithreading</Filter>
+    </ClInclude>
     <ClInclude Include="Zenith\Core\Zenith.h">
       <Filter>Zenith\Core</Filter>
     </ClInclude>
     <ClInclude Include="Zenith\Core\Zenith_Core.h">
       <Filter>Zenith\Core</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\DataStream\Zenith_DataStream.h">
+      <Filter>Zenith\DataStream</Filter>
     </ClInclude>
     <ClInclude Include="Zenith\DebugVariables\Zenith_DebugVariables.h">
       <Filter>Zenith\DebugVariables</Filter>
@@ -831,6 +864,9 @@
     <ClInclude Include="Zenith\Flux\Flux_Buffers.h">
       <Filter>Zenith\Flux</Filter>
     </ClInclude>
+    <ClInclude Include="Zenith\Flux\Flux_CommandList.h">
+      <Filter>Zenith\Flux</Filter>
+    </ClInclude>
     <ClInclude Include="Zenith\Flux\Flux_Enums.h">
       <Filter>Zenith\Flux</Filter>
     </ClInclude>
@@ -848,6 +884,9 @@
     </ClInclude>
     <ClInclude Include="Zenith\Flux\Fog\Flux_Fog.h">
       <Filter>Zenith\Flux\Fog</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\Flux\MeshAnimation\Flux_MeshAnimation.h">
+      <Filter>Zenith\Flux\MeshAnimation</Filter>
     </ClInclude>
     <ClInclude Include="Zenith\Flux\MeshGeometry\Flux_MeshGeometry.h">
       <Filter>Zenith\Flux\MeshGeometry</Filter>
@@ -894,16 +933,40 @@
     <ClInclude Include="Zenith\Flux\Shaders\Skybox\Flux_Skybox.frag">
       <Filter>Zenith\Flux\Shaders\Skybox</Filter>
     </ClInclude>
-    <ClInclude Include="Zenith\Flux\Shaders\StaticMeshes\Flux_StaticMeshes.frag">
+    <ClInclude Include="Zenith\Flux\Shaders\StaticMeshes\Flux_StaticMeshes_FragCommon.fxh">
       <Filter>Zenith\Flux\Shaders\StaticMeshes</Filter>
     </ClInclude>
-    <ClInclude Include="Zenith\Flux\Shaders\StaticMeshes\Flux_StaticMeshes.vert">
+    <ClInclude Include="Zenith\Flux\Shaders\StaticMeshes\Flux_StaticMeshes_ToGBuffer.frag">
       <Filter>Zenith\Flux\Shaders\StaticMeshes</Filter>
     </ClInclude>
-    <ClInclude Include="Zenith\Flux\Shaders\Terrain\Flux_Terrain.frag">
+    <ClInclude Include="Zenith\Flux\Shaders\StaticMeshes\Flux_StaticMeshes_ToGBuffer.vert">
+      <Filter>Zenith\Flux\Shaders\StaticMeshes</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\Flux\Shaders\StaticMeshes\Flux_StaticMeshes_ToShadowmap.frag">
+      <Filter>Zenith\Flux\Shaders\StaticMeshes</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\Flux\Shaders\StaticMeshes\Flux_StaticMeshes_ToShadowmap.vert">
+      <Filter>Zenith\Flux\Shaders\StaticMeshes</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\Flux\Shaders\StaticMeshes\Flux_StaticMeshes_VertCommon.fxh">
+      <Filter>Zenith\Flux\Shaders\StaticMeshes</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\Flux\Shaders\Terrain\Flux_Terrain_FragCommon.fxh">
       <Filter>Zenith\Flux\Shaders\Terrain</Filter>
     </ClInclude>
-    <ClInclude Include="Zenith\Flux\Shaders\Terrain\Flux_Terrain.vert">
+    <ClInclude Include="Zenith\Flux\Shaders\Terrain\Flux_Terrain_ToGBuffer.frag">
+      <Filter>Zenith\Flux\Shaders\Terrain</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\Flux\Shaders\Terrain\Flux_Terrain_ToGBuffer.vert">
+      <Filter>Zenith\Flux\Shaders\Terrain</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\Flux\Shaders\Terrain\Flux_Terrain_ToShadowmap.frag">
+      <Filter>Zenith\Flux\Shaders\Terrain</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\Flux\Shaders\Terrain\Flux_Terrain_ToShadowmap.vert">
+      <Filter>Zenith\Flux\Shaders\Terrain</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\Flux\Shaders\Terrain\Flux_Terrain_VertCommon.fxh">
       <Filter>Zenith\Flux\Shaders\Terrain</Filter>
     </ClInclude>
     <ClInclude Include="Zenith\Flux\Shaders\Text\Flux_Text.frag">
@@ -917,6 +980,9 @@
     </ClInclude>
     <ClInclude Include="Zenith\Flux\Shaders\Water\Flux_Water.vert">
       <Filter>Zenith\Flux\Shaders\Water</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\Flux\Shadows\Flux_Shadows.h">
+      <Filter>Zenith\Flux\Shadows</Filter>
     </ClInclude>
     <ClInclude Include="Zenith\Flux\Skybox\Flux_Skybox.h">
       <Filter>Zenith\Flux\Skybox</Filter>
@@ -945,8 +1011,17 @@
     <ClInclude Include="Zenith\Physics\Zenith_Physics.h">
       <Filter>Zenith\Physics</Filter>
     </ClInclude>
+    <ClInclude Include="Zenith\Profiling\Zenith_Profiling.h">
+      <Filter>Zenith\Profiling</Filter>
+    </ClInclude>
     <ClInclude Include="Zenith\StateMachine\Zenith_StateMachine.h">
       <Filter>Zenith\StateMachine</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\TaskSystem\Zenith_TaskSystem.h">
+      <Filter>Zenith\TaskSystem</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\UnitTests\Zenith_UnitTests.h">
+      <Filter>Zenith\UnitTests</Filter>
     </ClInclude>
     <ClInclude Include="Zenith\Vulkan\Zenith_PlatformGraphics_Include.h">
       <Filter>Zenith\Vulkan</Filter>
@@ -972,42 +1047,15 @@
     <ClInclude Include="Zenith\Vulkan\Zenith_Vulkan_Texture.h">
       <Filter>Zenith\Vulkan</Filter>
     </ClInclude>
+    <ClInclude Include="Zenith\Windows\Multithreading\Zenith_Windows_Multithreading.h">
+      <Filter>Zenith\Windows\Multithreading</Filter>
+    </ClInclude>
     <ClInclude Include="Zenith\Windows\Zenith_OS_Include.h">
       <Filter>Zenith\Windows</Filter>
     </ClInclude>
     <ClInclude Include="Zenith\Windows\Zenith_Windows_Window.h">
       <Filter>Zenith\Windows</Filter>
     </ClInclude>
-    <ClInclude Include="Zenith\Flux\MeshAnimation\Flux_MeshAnimation.h">
-      <Filter>Zenith\Flux\MeshAnimation</Filter>
-    </ClInclude>
-    <ClInclude Include="Zenith\UnitTests\Zenith_UnitTests.h">
-      <Filter>Zenith\UnitTests</Filter>
-    </ClInclude>
-    <ClInclude Include="Zenith\DataStream\Zenith_DataStream.h">
-      <Filter>Zenith\DataStream</Filter>
-    </ClInclude>
-    <ClInclude Include="Zenith\Core\Memory\Zenith_MemoryManagement.h">
-      <Filter>Zenith\Core\Memory</Filter>
-    </ClInclude>
-    <ClInclude Include="Zenith\Core\Memory\Zenith_MemoryManagement_Disabled.h">
-      <Filter>Zenith\Core\Memory</Filter>
-    </ClInclude>
-    <ClInclude Include="Zenith\Core\Memory\Zenith_MemoryManagement_Enabled.h">
-      <Filter>Zenith\Core\Memory</Filter>
-    </ClInclude>
-    <ClInclude Include="Zenith\Flux\Shadows\Flux_Shadows.h">
-      <Filter>Zenith\Flux\Shadows</Filter>
-    </ClInclude>
-    <ClInclude Include="Zenith\Profiling\Zenith_Profiling.h">
-      <Filter>Zenith\Profiling</Filter>
-    </ClInclude>
-    <ClInclude Include="Zenith\Core\Multithreading\Zenith_Multithreading.h" />
-    <ClInclude Include="Zenith\Windows\Multithreading\Zenith_Windows_Multithreading.h" />
-    <ClInclude Include="Zenith\Collections\Zenith_CircularQueue.h" />
-    <ClInclude Include="Zenith\TaskSystem\Zenith_TaskSystem.h" />
-    <ClInclude Include="Zenith\Core\Zenith_DisableSTL.h" />
-    <ClInclude Include="Zenith\Collections\Zenith_Vector.h" />
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Games">
@@ -1145,8 +1193,20 @@
     <Filter Include="Zenith\AssetHandling">
       <UniqueIdentifier>{808608a9-0d57-dccc-df0f-610c009a1eae}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Zenith\Collections">
+      <UniqueIdentifier>{f61b53ab-d2ad-390e-a69f-4749c35f985f}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Zenith\Core">
       <UniqueIdentifier>{e84b9d32-4703-7861-1735-99a5845a300c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Zenith\Core\Memory">
+      <UniqueIdentifier>{4255c81c-f05e-3869-ab44-3b7c42150b4e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Zenith\Core\Multithreading">
+      <UniqueIdentifier>{2a4da5f7-c5af-ff3d-fb6b-9d4066cbf910}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Zenith\DataStream">
+      <UniqueIdentifier>{6cea842d-b6c3-0cc1-a5a0-2ad0b446eded}</UniqueIdentifier>
     </Filter>
     <Filter Include="Zenith\DebugVariables">
       <UniqueIdentifier>{7f1403f2-3ea3-a630-7141-9d9483afc14d}</UniqueIdentifier>
@@ -1171,6 +1231,9 @@
     </Filter>
     <Filter Include="Zenith\Flux\Fog">
       <UniqueIdentifier>{51baa591-d8d8-e368-a571-63779de9365a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Zenith\Flux\MeshAnimation">
+      <UniqueIdentifier>{e7aa55b9-3260-1190-cef4-bc1c7f6b95cc}</UniqueIdentifier>
     </Filter>
     <Filter Include="Zenith\Flux\MeshGeometry">
       <UniqueIdentifier>{1ea2a6e2-5586-54cd-e29c-f7b7caaa7806}</UniqueIdentifier>
@@ -1214,6 +1277,9 @@
     <Filter Include="Zenith\Flux\Shaders\Water">
       <UniqueIdentifier>{5d8d371d-a63f-3288-2190-27690819bd72}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Zenith\Flux\Shadows">
+      <UniqueIdentifier>{17cfb099-db01-65df-8728-be5af370e926}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Zenith\Flux\Skybox">
       <UniqueIdentifier>{61297b21-a027-e692-c57f-8a208efaaa3c}</UniqueIdentifier>
     </Filter>
@@ -1238,8 +1304,17 @@
     <Filter Include="Zenith\Physics">
       <UniqueIdentifier>{5ac8261e-3c4b-0ce4-a667-2e91565d611f}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Zenith\Profiling">
+      <UniqueIdentifier>{d5002f3f-e4fd-7c83-92af-8e2b645cf421}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Zenith\StateMachine">
       <UniqueIdentifier>{5cba6f0c-0cde-b209-96a1-7b8acd44e41c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Zenith\TaskSystem">
+      <UniqueIdentifier>{b31c7fe8-c684-8849-62d1-797a55846f2c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Zenith\UnitTests">
+      <UniqueIdentifier>{3d301829-0afe-f174-12f7-0ddf2f344d87}</UniqueIdentifier>
     </Filter>
     <Filter Include="Zenith\Vulkan">
       <UniqueIdentifier>{f7b47854-ceb7-87a4-f1b1-15a24762a34d}</UniqueIdentifier>
@@ -1247,26 +1322,8 @@
     <Filter Include="Zenith\Windows">
       <UniqueIdentifier>{132806e3-63b4-26df-71df-631f0b76cc02}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Zenith\Flux\MeshAnimation">
-      <UniqueIdentifier>{8be03444-c631-434c-8c10-5428102a716f}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Zenith\UnitTests">
-      <UniqueIdentifier>{b10da4ab-fd6d-4582-a8d3-73c24ea8c32b}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Zenith\DataStream">
-      <UniqueIdentifier>{bb7d6330-9df7-4fad-8d13-b89c045bf542}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Zenith\Core\Memory">
-      <UniqueIdentifier>{4824c28e-256d-4fe1-9365-874b02880f75}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Zenith\Flux\Shadows">
-      <UniqueIdentifier>{a48ecbfb-3ab8-4d06-b26b-eb731402ad9c}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Zenith\Profiling">
-      <UniqueIdentifier>{e30a1691-56ab-425f-8b25-40ef6245b86f}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Zenith\Core\Multithreading">
-      <UniqueIdentifier>{5a9a44ed-f589-4488-89af-0cb43f491ed5}</UniqueIdentifier>
+    <Filter Include="Zenith\Windows\Multithreading">
+      <UniqueIdentifier>{8be0c66e-b619-c25e-6bbc-4dbea81dba49}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
 </Project>

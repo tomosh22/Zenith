@@ -138,7 +138,7 @@ public class ZenithToolsProject : Project
         conf.ProjectFileName = "[project.Name]_[target.Platform]";
         conf.ProjectPath = @"[project.SharpmakeCsPath]";
 		
-		conf.Options.Add(Options.Vc.Compiler.CppLanguageStandard.CPP17);
+		conf.Options.Add(Options.Vc.Compiler.CppLanguageStandard.CPP20);
 		
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Zenith");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/Zenith/Core");
@@ -242,7 +242,9 @@ public class ZenithWindowsProject : Project
         conf.ProjectFileName = "[project.Name]_[target.Platform]";
         conf.ProjectPath = @"[project.SharpmakeCsPath]";
 
-        conf.PrecompHeader = "Zenith.h";
+		conf.Options.Add(Options.Vc.Compiler.CppLanguageStandard.CPP20);
+
+		conf.PrecompHeader = "Zenith.h";
         conf.PrecompSource = "Zenith.cpp";
 		conf.PrecompSourceExcludeFolders.Add("[project.SharpmakeCsPath]/Middleware/reactphysics3d-0.10.1");
 		
@@ -278,9 +280,6 @@ public class ZenithWindowsProject : Project
 		String shaderRoot = sharpmakePath + "/Zenith/Flux/Shaders/";
 		shaderRoot = shaderRoot.Replace('\\', '/');
 		conf.Defines.Add("SHADER_SOURCE_ROOT=\"" + shaderRoot + "\"");
-		
-		//#TO entt requires cpp17
-		conf.Options.Add(Options.Vc.Compiler.CppLanguageStandard.CPP17);
 		
 		if(target.Optimization == Optimization.Debug)
 		{
