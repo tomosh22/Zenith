@@ -90,8 +90,6 @@ public:
 	static const uint32_t GetQueueIndex(CommandType eType) { return s_auQueueIndices[eType]; }
 	static const vk::DescriptorPool& GetDefaultDescriptorPool() { return s_xDefaultDescriptorPool; }
 	static vk::Fence& GetCurrentInFlightFence();
-	static vk::Fence& GetPreviousInFlightFence();
-	static vk::Fence& GetNextInFlightFence();
 
 	static const bool ShouldSubmitDrawCalls();
 private:
