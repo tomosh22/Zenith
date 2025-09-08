@@ -48,7 +48,9 @@ public class FluxCompilerProject : Project
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/../../../Zenith");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/../../../Zenith/Core");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/../../../Middleware/glm-master");
-    }
+		conf.IncludePaths.Add("[project.SharpmakeCsPath]/../../../Zenith/Windows");
+		conf.IncludePaths.Add("[project.SharpmakeCsPath]/../../../Middleware/glfw-3.4.bin.WIN64/include");
+	}
 }
 
 [Sharpmake.Generate]
