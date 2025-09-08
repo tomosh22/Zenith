@@ -265,11 +265,20 @@
     <ClCompile Include="..\..\..\Zenith\AssetHandling\Zenith_AssetHandler.cpp">
       <Filter>Zenith\AssetHandling</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\..\Zenith\Core\Memory\Zenith_MemoryManagement.cpp">
+      <Filter>Zenith\Core\Memory</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\Zenith\Core\Multithreading\Zenith_Multithreading.cpp">
+      <Filter>Zenith\Core\Multithreading</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\..\Zenith\Core\Zenith.cpp">
       <Filter>Zenith\Core</Filter>
     </ClCompile>
     <ClCompile Include="..\..\..\Zenith\Core\Zenith_Core.cpp">
       <Filter>Zenith\Core</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\Zenith\DataStream\Zenith_DataStream.cpp">
+      <Filter>Zenith\DataStream</Filter>
     </ClCompile>
     <ClCompile Include="..\..\..\Zenith\DebugVariables\Zenith_DebugVariables.cpp">
       <Filter>Zenith\DebugVariables</Filter>
@@ -316,6 +325,9 @@
     <ClCompile Include="..\..\..\Zenith\Flux\Flux_Buffers.cpp">
       <Filter>Zenith\Flux</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\..\Zenith\Flux\Flux_CommandList.cpp">
+      <Filter>Zenith\Flux</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\..\Zenith\Flux\Flux_Graphics.cpp">
       <Filter>Zenith\Flux</Filter>
     </ClCompile>
@@ -336,6 +348,9 @@
     </ClCompile>
     <ClCompile Include="..\..\..\Zenith\Flux\Particles\Flux_Particles.cpp">
       <Filter>Zenith\Flux\Particles</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\Zenith\Flux\Quads\Flux_Quads.cpp">
+      <Filter>Zenith\Flux\Quads</Filter>
     </ClCompile>
     <ClCompile Include="..\..\..\Zenith\Flux\SDFs\Flux_SDFs.cpp">
       <Filter>Zenith\Flux\SDFs</Filter>
@@ -367,8 +382,17 @@
     <ClCompile Include="..\..\..\Zenith\Physics\Zenith_Physics.cpp">
       <Filter>Zenith\Physics</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\..\Zenith\Profiling\Zenith_Profiling.cpp">
+      <Filter>Zenith\Profiling</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\..\Zenith\StateMachine\Zenith_StateMachine.cpp">
       <Filter>Zenith\StateMachine</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\Zenith\TaskSystem\Zenith_TaskSystem.cpp">
+      <Filter>Zenith\TaskSystem</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\Zenith\UnitTests\Zenith_UnitTests.cpp">
+      <Filter>Zenith\UnitTests</Filter>
     </ClCompile>
     <ClCompile Include="..\..\..\Zenith\Vulkan\Zenith_Vulkan.cpp">
       <Filter>Zenith\Vulkan</Filter>
@@ -390,6 +414,9 @@
     </ClCompile>
     <ClCompile Include="..\..\..\Zenith\Vulkan\Zenith_Vulkan_Texture.cpp">
       <Filter>Zenith\Vulkan</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\Zenith\Windows\Multithreading\Zenith_Windows_Multithreading.cpp">
+      <Filter>Zenith\Windows\Multithreading</Filter>
     </ClCompile>
     <ClCompile Include="..\..\..\Zenith\Windows\Zenith_Windows_Window.cpp">
       <Filter>Zenith\Windows</Filter>
@@ -756,11 +783,35 @@
     <ClInclude Include="..\..\..\Zenith\AssetHandling\Zenith_AssetHandler.h">
       <Filter>Zenith\AssetHandling</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\Collections\Zenith_CircularQueue.h">
+      <Filter>Zenith\Collections</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\Collections\Zenith_MemoryPool.h">
+      <Filter>Zenith\Collections</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\Collections\Zenith_Vector.h">
+      <Filter>Zenith\Collections</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\Core\Memory\Zenith_MemoryManagement.h">
+      <Filter>Zenith\Core\Memory</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\Core\Memory\Zenith_MemoryManagement_Disabled.h">
+      <Filter>Zenith\Core\Memory</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\Core\Memory\Zenith_MemoryManagement_Enabled.h">
+      <Filter>Zenith\Core\Memory</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\Core\Multithreading\Zenith_Multithreading.h">
+      <Filter>Zenith\Core\Multithreading</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\..\Zenith\Core\Zenith.h">
       <Filter>Zenith\Core</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\Zenith\Core\Zenith_Core.h">
       <Filter>Zenith\Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\DataStream\Zenith_DataStream.h">
+      <Filter>Zenith\DataStream</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\Zenith\DebugVariables\Zenith_DebugVariables.h">
       <Filter>Zenith\DebugVariables</Filter>
@@ -807,6 +858,9 @@
     <ClInclude Include="..\..\..\Zenith\Flux\Flux_Buffers.h">
       <Filter>Zenith\Flux</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\Flux\Flux_CommandList.h">
+      <Filter>Zenith\Flux</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\..\Zenith\Flux\Flux_Enums.h">
       <Filter>Zenith\Flux</Filter>
     </ClInclude>
@@ -833,6 +887,9 @@
     </ClInclude>
     <ClInclude Include="..\..\..\Zenith\Flux\Particles\Flux_Particles.h">
       <Filter>Zenith\Flux\Particles</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\Flux\Quads\Flux_Quads.h">
+      <Filter>Zenith\Flux\Quads</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\Zenith\Flux\SDFs\Flux_SDFs.h">
       <Filter>Zenith\Flux\SDFs</Filter>
@@ -866,6 +923,12 @@
     </ClInclude>
     <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Particles\Flux_Particles.vert">
       <Filter>Zenith\Flux\Shaders\Particles</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Quads\Flux_Quads.frag">
+      <Filter>Zenith\Flux\Shaders\Quads</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Quads\Flux_Quads.vert">
+      <Filter>Zenith\Flux\Shaders\Quads</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\Zenith\Flux\Shaders\SDFs\Flux_SDFs.frag">
       <Filter>Zenith\Flux\Shaders\SDFs</Filter>
@@ -951,8 +1014,17 @@
     <ClInclude Include="..\..\..\Zenith\Physics\Zenith_Physics.h">
       <Filter>Zenith\Physics</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\Profiling\Zenith_Profiling.h">
+      <Filter>Zenith\Profiling</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\..\Zenith\StateMachine\Zenith_StateMachine.h">
       <Filter>Zenith\StateMachine</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\TaskSystem\Zenith_TaskSystem.h">
+      <Filter>Zenith\TaskSystem</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\UnitTests\Zenith_UnitTests.h">
+      <Filter>Zenith\UnitTests</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\Zenith\Vulkan\Zenith_PlatformGraphics_Include.h">
       <Filter>Zenith\Vulkan</Filter>
@@ -977,6 +1049,9 @@
     </ClInclude>
     <ClInclude Include="..\..\..\Zenith\Vulkan\Zenith_Vulkan_Texture.h">
       <Filter>Zenith\Vulkan</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\Windows\Multithreading\Zenith_Windows_Multithreading.h">
+      <Filter>Zenith\Windows\Multithreading</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\Zenith\Windows\Zenith_OS_Include.h">
       <Filter>Zenith\Windows</Filter>
@@ -1133,8 +1208,20 @@
     <Filter Include="Zenith\AssetHandling">
       <UniqueIdentifier>{808608a9-0d57-dccc-df0f-610c009a1eae}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Zenith\Collections">
+      <UniqueIdentifier>{f61b53ab-d2ad-390e-a69f-4749c35f985f}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Zenith\Core">
       <UniqueIdentifier>{e84b9d32-4703-7861-1735-99a5845a300c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Zenith\Core\Memory">
+      <UniqueIdentifier>{4255c81c-f05e-3869-ab44-3b7c42150b4e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Zenith\Core\Multithreading">
+      <UniqueIdentifier>{2a4da5f7-c5af-ff3d-fb6b-9d4066cbf910}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Zenith\DataStream">
+      <UniqueIdentifier>{6cea842d-b6c3-0cc1-a5a0-2ad0b446eded}</UniqueIdentifier>
     </Filter>
     <Filter Include="Zenith\DebugVariables">
       <UniqueIdentifier>{7f1403f2-3ea3-a630-7141-9d9483afc14d}</UniqueIdentifier>
@@ -1169,6 +1256,9 @@
     <Filter Include="Zenith\Flux\Particles">
       <UniqueIdentifier>{313cfa34-c922-a2ba-9616-d5f1a822197a}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Zenith\Flux\Quads">
+      <UniqueIdentifier>{4b9d249e-f731-90d7-cf4c-292f9f6061e6}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Zenith\Flux\SDFs">
       <UniqueIdentifier>{84088a68-a422-3be5-6db8-7fd09bc19fea}</UniqueIdentifier>
     </Filter>
@@ -1186,6 +1276,9 @@
     </Filter>
     <Filter Include="Zenith\Flux\Shaders\Particles">
       <UniqueIdentifier>{e42cdf4a-3a4b-88a1-5f85-835164898fa0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Zenith\Flux\Shaders\Quads">
+      <UniqueIdentifier>{a88c049c-914b-9ef5-395c-773a7bab69a9}</UniqueIdentifier>
     </Filter>
     <Filter Include="Zenith\Flux\Shaders\SDFs">
       <UniqueIdentifier>{86b9ee1e-9f6b-d1c9-fe79-8f650ef3543a}</UniqueIdentifier>
@@ -1232,14 +1325,26 @@
     <Filter Include="Zenith\Physics">
       <UniqueIdentifier>{5ac8261e-3c4b-0ce4-a667-2e91565d611f}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Zenith\Profiling">
+      <UniqueIdentifier>{d5002f3f-e4fd-7c83-92af-8e2b645cf421}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Zenith\StateMachine">
       <UniqueIdentifier>{5cba6f0c-0cde-b209-96a1-7b8acd44e41c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Zenith\TaskSystem">
+      <UniqueIdentifier>{b31c7fe8-c684-8849-62d1-797a55846f2c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Zenith\UnitTests">
+      <UniqueIdentifier>{3d301829-0afe-f174-12f7-0ddf2f344d87}</UniqueIdentifier>
     </Filter>
     <Filter Include="Zenith\Vulkan">
       <UniqueIdentifier>{f7b47854-ceb7-87a4-f1b1-15a24762a34d}</UniqueIdentifier>
     </Filter>
     <Filter Include="Zenith\Windows">
       <UniqueIdentifier>{132806e3-63b4-26df-71df-631f0b76cc02}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Zenith\Windows\Multithreading">
+      <UniqueIdentifier>{8be0c66e-b619-c25e-6bbc-4dbea81dba49}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
 </Project>

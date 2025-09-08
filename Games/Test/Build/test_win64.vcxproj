@@ -25,7 +25,7 @@
     <ProjectName>Test</ProjectName>
   </PropertyGroup>
   <PropertyGroup Label="Globals">
-    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <WindowsTargetPlatformVersion>10.0.19041.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'" Label="Configuration">
@@ -184,8 +184,7 @@
       <AdditionalDependencies>glfw3_mt.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
-      <IgnoreSpecificDefaultLibraries>
-      </IgnoreSpecificDefaultLibraries>
+      <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
       <LargeAddressAware>true</LargeAddressAware>
       <MapFileName>output\win64\vs2022_debug_win64_false\test.map</MapFileName>
     </Link>
@@ -271,8 +270,7 @@
       <AdditionalDependencies>zenithtools.lib;assimp-vc143-mtd.lib;glfw3_mt.lib;opencv_world4100d.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
-      <IgnoreSpecificDefaultLibraries>
-      </IgnoreSpecificDefaultLibraries>
+      <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
       <LargeAddressAware>true</LargeAddressAware>
       <MapFileName>output\win64\vs2022_debug_win64_true\test.map</MapFileName>
     </Link>
@@ -358,8 +356,7 @@
       <AdditionalDependencies>glfw3_mt.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
-      <IgnoreSpecificDefaultLibraries>
-      </IgnoreSpecificDefaultLibraries>
+      <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
       <LargeAddressAware>true</LargeAddressAware>
       <MapFileName>output\win64\vs2022_release_win64_false\test.map</MapFileName>
     </Link>
@@ -445,8 +442,7 @@
       <AdditionalDependencies>zenithtools.lib;assimp-vc143-mt.lib;glfw3_mt.lib;opencv_world4100.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
-      <IgnoreSpecificDefaultLibraries>
-      </IgnoreSpecificDefaultLibraries>
+      <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
       <LargeAddressAware>true</LargeAddressAware>
       <MapFileName>output\win64\vs2022_release_win64_true\test.map</MapFileName>
     </Link>
@@ -567,8 +563,16 @@
     <ClInclude Include="..\..\..\Middleware\reactphysics3d-0.10.1\include\reactphysics3d\utils\quickhull\QuickHull.h" />
     <ClInclude Include="..\..\..\Middleware\vma\vk_mem_alloc.h" />
     <ClInclude Include="..\..\..\Zenith\AssetHandling\Zenith_AssetHandler.h" />
+    <ClInclude Include="..\..\..\Zenith\Collections\Zenith_CircularQueue.h" />
+    <ClInclude Include="..\..\..\Zenith\Collections\Zenith_MemoryPool.h" />
+    <ClInclude Include="..\..\..\Zenith\Collections\Zenith_Vector.h" />
+    <ClInclude Include="..\..\..\Zenith\Core\Memory\Zenith_MemoryManagement.h" />
+    <ClInclude Include="..\..\..\Zenith\Core\Memory\Zenith_MemoryManagement_Disabled.h" />
+    <ClInclude Include="..\..\..\Zenith\Core\Memory\Zenith_MemoryManagement_Enabled.h" />
+    <ClInclude Include="..\..\..\Zenith\Core\Multithreading\Zenith_Multithreading.h" />
     <ClInclude Include="..\..\..\Zenith\Core\Zenith.h" />
     <ClInclude Include="..\..\..\Zenith\Core\Zenith_Core.h" />
+    <ClInclude Include="..\..\..\Zenith\DataStream\Zenith_DataStream.h" />
     <ClInclude Include="..\..\..\Zenith\DebugVariables\Zenith_DebugVariables.h" />
     <ClInclude Include="..\..\..\Zenith\EntityComponent\Components\Zenith_CameraComponent.h" />
     <ClInclude Include="..\..\..\Zenith\EntityComponent\Components\Zenith_ColliderComponent.h" />
@@ -584,6 +588,7 @@
     <ClInclude Include="..\..\..\Zenith\Flux\DeferredShading\Flux_DeferredShading.h" />
     <ClInclude Include="..\..\..\Zenith\Flux\Flux.h" />
     <ClInclude Include="..\..\..\Zenith\Flux\Flux_Buffers.h" />
+    <ClInclude Include="..\..\..\Zenith\Flux\Flux_CommandList.h" />
     <ClInclude Include="..\..\..\Zenith\Flux\Flux_Enums.h" />
     <ClInclude Include="..\..\..\Zenith\Flux\Flux_Graphics.h" />
     <ClInclude Include="..\..\..\Zenith\Flux\Flux_Material.h" />
@@ -593,6 +598,7 @@
     <ClInclude Include="..\..\..\Zenith\Flux\MeshAnimation\Flux_MeshAnimation.h" />
     <ClInclude Include="..\..\..\Zenith\Flux\MeshGeometry\Flux_MeshGeometry.h" />
     <ClInclude Include="..\..\..\Zenith\Flux\Particles\Flux_Particles.h" />
+    <ClInclude Include="..\..\..\Zenith\Flux\Quads\Flux_Quads.h" />
     <ClInclude Include="..\..\..\Zenith\Flux\SDFs\Flux_SDFs.h" />
     <ClInclude Include="..\..\..\Zenith\Flux\Shaders\AnimatedMeshes\Flux_AnimatedMeshes.frag" />
     <ClInclude Include="..\..\..\Zenith\Flux\Shaders\AnimatedMeshes\Flux_AnimatedMeshes.vert" />
@@ -604,6 +610,8 @@
     <ClInclude Include="..\..\..\Zenith\Flux\Shaders\GBufferCommon.fxh" />
     <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Particles\Flux_Particles.frag" />
     <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Particles\Flux_Particles.vert" />
+    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Quads\Flux_Quads.frag" />
+    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Quads\Flux_Quads.vert" />
     <ClInclude Include="..\..\..\Zenith\Flux\Shaders\SDFs\Flux_SDFs.frag" />
     <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Skybox\Flux_Skybox.frag" />
     <ClInclude Include="..\..\..\Zenith\Flux\Shaders\StaticMeshes\Flux_StaticMeshes_FragCommon.fxh" />
@@ -632,7 +640,10 @@
     <ClInclude Include="..\..\..\Zenith\Input\Zenith_KeyCodes.h" />
     <ClInclude Include="..\..\..\Zenith\Maths\Zenith_Maths.h" />
     <ClInclude Include="..\..\..\Zenith\Physics\Zenith_Physics.h" />
+    <ClInclude Include="..\..\..\Zenith\Profiling\Zenith_Profiling.h" />
     <ClInclude Include="..\..\..\Zenith\StateMachine\Zenith_StateMachine.h" />
+    <ClInclude Include="..\..\..\Zenith\TaskSystem\Zenith_TaskSystem.h" />
+    <ClInclude Include="..\..\..\Zenith\UnitTests\Zenith_UnitTests.h" />
     <ClInclude Include="..\..\..\Zenith\Vulkan\Zenith_PlatformGraphics_Include.h" />
     <ClInclude Include="..\..\..\Zenith\Vulkan\Zenith_Vulkan.h" />
     <ClInclude Include="..\..\..\Zenith\Vulkan\Zenith_Vulkan_Buffer.h" />
@@ -641,6 +652,7 @@
     <ClInclude Include="..\..\..\Zenith\Vulkan\Zenith_Vulkan_Pipeline.h" />
     <ClInclude Include="..\..\..\Zenith\Vulkan\Zenith_Vulkan_Swapchain.h" />
     <ClInclude Include="..\..\..\Zenith\Vulkan\Zenith_Vulkan_Texture.h" />
+    <ClInclude Include="..\..\..\Zenith\Windows\Multithreading\Zenith_Windows_Multithreading.h" />
     <ClInclude Include="..\..\..\Zenith\Windows\Zenith_OS_Include.h" />
     <ClInclude Include="..\..\..\Zenith\Windows\Zenith_Windows_Window.h" />
     <ClInclude Include="..\Components\PlayerController_Behaviour.h" />
@@ -1172,6 +1184,8 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="..\..\..\Zenith\AssetHandling\Zenith_AssetHandler.cpp" />
+    <ClCompile Include="..\..\..\Zenith\Core\Memory\Zenith_MemoryManagement.cpp" />
+    <ClCompile Include="..\..\..\Zenith\Core\Multithreading\Zenith_Multithreading.cpp" />
     <ClCompile Include="..\..\..\Zenith\Core\Zenith.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">Create</PrecompiledHeader>
@@ -1179,6 +1193,7 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">Create</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="..\..\..\Zenith\Core\Zenith_Core.cpp" />
+    <ClCompile Include="..\..\..\Zenith\DataStream\Zenith_DataStream.cpp" />
     <ClCompile Include="..\..\..\Zenith\DebugVariables\Zenith_DebugVariables.cpp" />
     <ClCompile Include="..\..\..\Zenith\EntityComponent\Components\Zenith_CameraComponent.cpp" />
     <ClCompile Include="..\..\..\Zenith\EntityComponent\Components\Zenith_ColliderComponent.cpp" />
@@ -1194,6 +1209,7 @@
     <ClCompile Include="..\..\..\Zenith\Flux\DeferredShading\Flux_DeferredShading.cpp" />
     <ClCompile Include="..\..\..\Zenith\Flux\Flux.cpp" />
     <ClCompile Include="..\..\..\Zenith\Flux\Flux_Buffers.cpp" />
+    <ClCompile Include="..\..\..\Zenith\Flux\Flux_CommandList.cpp" />
     <ClCompile Include="..\..\..\Zenith\Flux\Flux_Graphics.cpp" />
     <ClCompile Include="..\..\..\Zenith\Flux\Flux_Material.cpp" />
     <ClCompile Include="..\..\..\Zenith\Flux\Flux_RenderTargets.cpp" />
@@ -1201,6 +1217,7 @@
     <ClCompile Include="..\..\..\Zenith\Flux\MeshAnimation\Flux_MeshAnimation.cpp" />
     <ClCompile Include="..\..\..\Zenith\Flux\MeshGeometry\Flux_MeshGeometry.cpp" />
     <ClCompile Include="..\..\..\Zenith\Flux\Particles\Flux_Particles.cpp" />
+    <ClCompile Include="..\..\..\Zenith\Flux\Quads\Flux_Quads.cpp" />
     <ClCompile Include="..\..\..\Zenith\Flux\SDFs\Flux_SDFs.cpp" />
     <ClCompile Include="..\..\..\Zenith\Flux\Shadows\Flux_Shadows.cpp" />
     <ClCompile Include="..\..\..\Zenith\Flux\Skybox\Flux_Skybox.cpp" />
@@ -1211,7 +1228,10 @@
     <ClCompile Include="..\..\..\Zenith\Input\Zenith_Input.cpp" />
     <ClCompile Include="..\..\..\Zenith\Maths\Zenith_Maths.cpp" />
     <ClCompile Include="..\..\..\Zenith\Physics\Zenith_Physics.cpp" />
+    <ClCompile Include="..\..\..\Zenith\Profiling\Zenith_Profiling.cpp" />
     <ClCompile Include="..\..\..\Zenith\StateMachine\Zenith_StateMachine.cpp" />
+    <ClCompile Include="..\..\..\Zenith\TaskSystem\Zenith_TaskSystem.cpp" />
+    <ClCompile Include="..\..\..\Zenith\UnitTests\Zenith_UnitTests.cpp" />
     <ClCompile Include="..\..\..\Zenith\Vulkan\Zenith_Vulkan.cpp" />
     <ClCompile Include="..\..\..\Zenith\Vulkan\Zenith_Vulkan_Buffer.cpp" />
     <ClCompile Include="..\..\..\Zenith\Vulkan\Zenith_Vulkan_CommandBuffer.cpp" />
@@ -1219,6 +1239,7 @@
     <ClCompile Include="..\..\..\Zenith\Vulkan\Zenith_Vulkan_Pipeline.cpp" />
     <ClCompile Include="..\..\..\Zenith\Vulkan\Zenith_Vulkan_Swapchain.cpp" />
     <ClCompile Include="..\..\..\Zenith\Vulkan\Zenith_Vulkan_Texture.cpp" />
+    <ClCompile Include="..\..\..\Zenith\Windows\Multithreading\Zenith_Windows_Multithreading.cpp" />
     <ClCompile Include="..\..\..\Zenith\Windows\Zenith_Windows_Window.cpp" />
     <ClCompile Include="..\..\..\Zenith\Zenith_Main.cpp" />
     <ClCompile Include="..\Components\PlayerController_Behaviour.cpp" />
