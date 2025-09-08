@@ -412,6 +412,11 @@ void Zenith_Vulkan_CommandBuffer::SetShoudClear(const bool bClear)
 	m_bShouldClear = bClear;
 }
 
+void Zenith_Vulkan_CommandBuffer::UseBindlessTextures(const uint32_t uSet)
+{
+	m_xCurrentCmdBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pxCurrentPipeline->m_xPipelineLayout, uSet, 1, &Zenith_Vulkan::GetBindlessTexturesDescriptorSet(), 0, nullptr);
+}
+
 void Zenith_Vulkan_CommandBuffer::BeginBind(u_int uDescSet)
 {
 	for (uint32_t i = 0; i < MAX_BINDINGS; i++)

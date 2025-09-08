@@ -34,6 +34,20 @@ void Zenith_DebugVariableTree::LeafNodeWithRange<Zenith_Maths::Vector4, float>::
 {
 	ImGui::SliderFloat4(m_xName.back().c_str(), &m_pData->x, m_xMin, m_xMax);
 }
+template<>
+void Zenith_DebugVariableTree::LeafNodeWithRange<Zenith_Maths::UVector4, float>::ImGuiDisplay()
+{
+	int iTempX = static_cast<int>(m_pData->x);
+	int iTempY = static_cast<int>(m_pData->y);
+	int iTempZ = static_cast<int>(m_pData->z);
+	int iTempW = static_cast<int>(m_pData->w);
+	int aiTemp[4] = { iTempX, iTempY, iTempZ, iTempW };
+	ImGui::InputInt4(m_xName.back().c_str(), aiTemp);
+	m_pData->x = aiTemp[0];
+	m_pData->y = aiTemp[1];
+	m_pData->z = aiTemp[2];
+	m_pData->w = aiTemp[3];
+}
 
 template<>
 void Zenith_DebugVariableTree::LeafNodeWithRange<float, float>::ImGuiDisplay()
