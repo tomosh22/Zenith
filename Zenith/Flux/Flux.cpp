@@ -13,6 +13,7 @@
 #include "Flux/Shadows/Flux_Shadows.h"
 #include "Flux/Particles/Flux_Particles.h"
 #include "Flux/Text/Flux_Text.h"
+#include "Flux/Quads/Flux_Quads.h"
 
 uint32_t Flux::s_uFrameCounter = 0;
 std::vector<void(*)()> Flux::s_xResChangeCallbacks;
@@ -42,6 +43,7 @@ void Flux::LateInitialise()
 	Flux_Fog::Initialise();
 	Flux_SDFs::Initialise();
 	Flux_Particles::Initialise();
+	Flux_Quads::Initialise();
 	Flux_Text::Initialise();
 	Flux_MemoryManager::EndFrame(false);
 }
@@ -52,4 +54,9 @@ void Flux::OnResChange()
 	{
 		pfnCallback();
 	}
+}
+
+void Flux::RegisterBindlessTexture(Flux_Texture* pxTex, uint32_t uIndex)
+{
+	Platform_RegisterBindlessTexture(pxTex, uIndex);
 }

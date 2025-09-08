@@ -397,12 +397,7 @@ Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithTesselation()
 
 Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithDescriptorSetLayout(uint32_t slot, vk::DescriptorSetLayout layout)
 {
-	assert(slot < 32);
-	while (m_xAllLayouts.size() <= slot)
-	{
-		m_xAllLayouts.push_back(vk::DescriptorSetLayout());
-	}
-	m_xAllLayouts[slot] = layout;
+	m_xAllLayouts.push_back(layout);
 	return *this;
 }
 
@@ -769,6 +764,11 @@ void Zenith_Vulkan_PipelineBuilder::FromSpecification(Zenith_Vulkan_Pipeline& xP
 
 	xPipelineInfo.setPMultisampleState(&xMultisampleInfo);
 #pragma endregion
+
+	if (spec.m_bUseBindlessTextures)
+	{
+		xBuilder = xBuilder.WithDescriptorSetLayout(ZENITH_VULKAN_BINDLESS_TEXTURES_DESC_SET, Zenith_Vulkan::GetBindlessTexturesDescriptorSetLayout());
+	}
 
 #pragma region PipelineLayout
 	Zenith_Vulkan_RootSigBuilder::FromSpecification(xPipelineOut.m_xRootSig, xSpec.m_xPipelineLayout);

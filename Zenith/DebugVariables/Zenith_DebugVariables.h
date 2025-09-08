@@ -124,6 +124,11 @@ public:
 		Zenith_DebugVariableTree::LeafNodeWithRange<Zenith_Maths::Vector3, float>* pxLeaf = new Zenith_DebugVariableTree::LeafNodeWithRange<Zenith_Maths::Vector3, float>(xName, &xVar, fMin, fMax);
 		s_xTree.AddLeafNode(pxLeaf, xName);
 	}
+	static void AddUVector4(std::vector<std::string> xName, Zenith_Maths::UVector4& xVar, float fMin, float fMax)
+	{
+		Zenith_DebugVariableTree::LeafNodeWithRange<Zenith_Maths::UVector4, float>* pxLeaf = new Zenith_DebugVariableTree::LeafNodeWithRange<Zenith_Maths::UVector4, float>(xName, &xVar, fMin, fMax);
+		s_xTree.AddLeafNode(pxLeaf, xName);
+	}
 	static void AddVector4(std::vector<std::string> xName, Zenith_Maths::Vector4& xVar, float fMin, float fMax)
 	{
 		Zenith_DebugVariableTree::LeafNodeWithRange<Zenith_Maths::Vector4, float>* pxLeaf = new Zenith_DebugVariableTree::LeafNodeWithRange<Zenith_Maths::Vector4, float>(xName, &xVar, fMin, fMax);
@@ -142,6 +147,13 @@ public:
 	static void AddUInt32(std::vector<std::string> xName, uint32_t& xVar, uint32_t uMin, uint32_t uMax)
 	{
 		Zenith_DebugVariableTree::LeafNodeWithRange<uint32_t, uint32_t>* pxLeaf = new Zenith_DebugVariableTree::LeafNodeWithRange<uint32_t, uint32_t>(xName, &xVar, uMin, uMax);
+		s_xTree.AddLeafNode(pxLeaf, xName);
+	}
+	template<typename T>
+	static void AddUInt32(std::vector<std::string> xName, T& xVar, uint32_t uMin, uint32_t uMax)
+	{
+		static_assert(std::is_enum<T>(), "Not an enum");
+		Zenith_DebugVariableTree::LeafNodeWithRange<uint32_t, uint32_t>* pxLeaf = new Zenith_DebugVariableTree::LeafNodeWithRange<uint32_t, uint32_t>(xName, reinterpret_cast<uint32_t*>(&xVar), uMin, uMax);
 		s_xTree.AddLeafNode(pxLeaf, xName);
 	}
 	static void AddButton(std::vector<std::string> xName, void(*pfnCallback)())

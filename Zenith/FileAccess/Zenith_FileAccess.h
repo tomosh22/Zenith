@@ -19,7 +19,7 @@ namespace Zenith_FileAccess
 	static char* ReadFile(const char* szFilename, uint64_t& ulSize)
 	{
 		std::ifstream xFile(szFilename, std::ios::ate | std::ios::binary);
-		Zenith_Assert(xFile.is_open(), "Failed to open file");
+		Zenith_Assert(xFile.is_open(), "Failed to open file %s", szFilename);
 
 		ulSize = xFile.tellg();
 		char* pcRet = static_cast<char*>(Zenith_MemoryManagement::Allocate(ulSize));

@@ -44,6 +44,8 @@ public:
 	void UploadUniformData(void* pData, size_t uSize);
 	void SetShoudClear(const bool bClear);
 
+	void UseBindlessTextures(const uint32_t uSet);
+
 	void BeginBind(u_int uDescSet);
 
 	vk::CommandBuffer& GetCurrentCmdBuffer() { return m_xCurrentCmdBuffer; }
