@@ -19,7 +19,7 @@ int main()
 		szFilename[ulLength] = '\0';
 		for (const char* szExtension : aszShaderExtensions)
 		{
-			if (strstr(xFile.path().extension().generic_u8string().c_str(), szExtension))
+			if (strstr((const char*)xFile.path().extension().generic_u8string().c_str(), szExtension))
 			{
 				std::string strCommand = "%VULKAN_SDK%/Bin/glslc.exe " + std::string(szFilename) + " -g --target-env=vulkan1.3 -I" + SHADER_SOURCE_ROOT + " -o " + std::string(szFilename) + ".spv";
 				system(strCommand.c_str());

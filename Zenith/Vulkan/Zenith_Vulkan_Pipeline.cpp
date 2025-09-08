@@ -765,11 +765,6 @@ void Zenith_Vulkan_PipelineBuilder::FromSpecification(Zenith_Vulkan_Pipeline& xP
 	xPipelineInfo.setPMultisampleState(&xMultisampleInfo);
 #pragma endregion
 
-	if (spec.m_bUseBindlessTextures)
-	{
-		xBuilder = xBuilder.WithDescriptorSetLayout(ZENITH_VULKAN_BINDLESS_TEXTURES_DESC_SET, Zenith_Vulkan::GetBindlessTexturesDescriptorSetLayout());
-	}
-
 #pragma region PipelineLayout
 	Zenith_Vulkan_RootSigBuilder::FromSpecification(xPipelineOut.m_xRootSig, xSpec.m_xPipelineLayout);
 	xPipelineInfo.setLayout(xPipelineOut.m_xRootSig.m_xLayout);
@@ -783,8 +778,15 @@ void Zenith_Vulkan_RootSigBuilder::FromSpecification(Zenith_Vulkan_RootSig& xRoo
 	xRootSigOut.m_uNumDescriptorSets = xSpec.m_uNumDescriptorSets;
 	for (u_int uDescSet = 0; uDescSet < xSpec.m_uNumDescriptorSets; uDescSet++)
 	{
-		vk::DescriptorSetLayoutCreateInfo xInfo = vk::DescriptorSetLayoutCreateInfo();
 		const Flux_DescriptorSetLayout& xLayout = xSpec.m_axDescriptorSetLayouts[uDescSet];
+
+		if (xLayout.m_axBindings[0].m_eType == DESCRIPTOR_TYPE_UNBOUNDED_TEXTURES)
+		{
+			xRootSigOut.m_axDescSetLayouts[uDescSet] = Zenith_Vulkan::GetBindlessTexturesDescriptorSetLayout();
+			continue;
+		}
+
+		vk::DescriptorSetLayoutCreateInfo xInfo = vk::DescriptorSetLayoutCreateInfo();
 		vk::DescriptorSetLayoutBinding axBindings[FLUX_MAX_DESCRIPTOR_BINDINGS];
 		u_int uNumDescriptors = 0;
 		for (u_int uDesc = 0; uDesc < FLUX_MAX_DESCRIPTOR_BINDINGS; uDesc++)
@@ -806,6 +808,9 @@ void Zenith_Vulkan_RootSigBuilder::FromSpecification(Zenith_Vulkan_RootSig& xRoo
 				break;
 			case(DESCRIPTOR_TYPE_TEXTURE):
 				xBinding.setDescriptorType(vk::DescriptorType::eCombinedImageSampler);
+				break;
+			case(DESCRIPTOR_TYPE_UNBOUNDED_TEXTURES):
+				Zenith_Assert(false, "Unbounded textures must be in their own table");
 				break;
 			}
 

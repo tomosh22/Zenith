@@ -39,7 +39,7 @@ public class FluxCompilerProject : Project
         conf.ProjectFileName = "[project.Name]_[target.Platform]";
         conf.ProjectPath = @"[project.SharpmakeCsPath]/../../..";
 		
-		conf.Options.Add(Options.Vc.Compiler.CppLanguageStandard.CPP17);
+		conf.Options.Add(Options.Vc.Compiler.CppLanguageStandard.CPP20);
 
         conf.Defines.Add("SHADER_SOURCE_ROOT=\"C:/dev/Zenith/Zenith/Flux/Shaders/\"");
 
@@ -136,9 +136,9 @@ public class TestToolsProject : Project
     {
         conf.ProjectFileName = "[project.Name]_[target.Platform]";
         conf.ProjectPath = @"[project.SharpmakeCsPath]";
-		
-		conf.Options.Add(Options.Vc.Compiler.CppLanguageStandard.CPP17);
-		
+
+		conf.Options.Add(Options.Vc.Compiler.CppLanguageStandard.CPP20);
+
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/../../../Zenith");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/../../../Zenith/Core");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/../../../Middleware/glm-master");
@@ -272,10 +272,9 @@ public class TestWindowsProject : Project
 
         conf.Defines.Add("SHADER_SOURCE_ROOT=\"C:/dev/Zenith/Zenith/Flux/Shaders/\"");
 
-        //#TO entt requires cpp17
-        conf.Options.Add(Options.Vc.Compiler.CppLanguageStandard.CPP17);
-		
-		if(target.Optimization == Optimization.Debug)
+		conf.Options.Add(Options.Vc.Compiler.CppLanguageStandard.CPP20);
+
+		if (target.Optimization == Optimization.Debug)
 		{
 			conf.Defines.Add("ZENITH_DEBUG");
 		}

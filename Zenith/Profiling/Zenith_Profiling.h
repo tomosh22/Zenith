@@ -23,6 +23,7 @@ enum Zenith_ProfileIndex
 	ZENITH_PROFILE_INDEX__FLUX_SDFS,
 	ZENITH_PROFILE_INDEX__FLUX_PFX,
 	ZENITH_PROFILE_INDEX__FLUX_TEXT,
+	ZENITH_PROFILE_INDEX__FLUX_QUADS,
 	ZENITH_PROFILE_INDEX__FLUX_SWAPCHAIN_BEGIN_FRAME,
 
 	ZENITH_PROFILE_INDEX__VISIBILITY_CHECK,
@@ -48,6 +49,7 @@ static const char* g_aszProfileNames[]
 	"Flux SDFs",
 	"Flux PFX",
 	"Flux Text",
+	"Flux Quads",
 	"Flux Swapchain Begin Frame",
 	"Visibility Check",
 };

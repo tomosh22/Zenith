@@ -11,6 +11,8 @@ enum Flux_CommandType
 	FLUX_COMMANDTYPE__BIND_TEXTURE,
 	FLUX_COMMANDTYPE__BIND_BUFFER,
 
+	FLUX_COMMANDTYPE__USE_UNBOUNDED_TEXTURES,
+
 	FLUX_COMMANDTYPE__PUSH_CONSTANT,
 
 	FLUX_COMMANDTYPE__DRAW,
@@ -24,6 +26,23 @@ concept IsCommand = requires(T t, Flux_CommandBuffer* pxCmdBuf)
 {
 	{ t.m_eType } -> std::same_as<const Flux_CommandType&>;
 	t(pxCmdBuf);
+};
+
+class Flux_CommandUseUnboundedTextures
+{
+public:
+	static constexpr Flux_CommandType m_eType = FLUX_COMMANDTYPE__USE_UNBOUNDED_TEXTURES;
+
+	Flux_CommandUseUnboundedTextures(u_int uBindPoint)
+	: m_uBindPoint(uBindPoint)
+	{
+	}
+	void operator()(Flux_CommandBuffer* pxCmdBuf)
+	{
+		pxCmdBuf->UseBindlessTextures(m_uBindPoint);
+	}
+private:
+	u_int m_uBindPoint;
 };
 
 class Flux_CommandPushConstant
@@ -60,7 +79,6 @@ public:
 		pxCmdBuf->SetPipeline(m_pxPipeline);
 	}
 	Flux_Pipeline* m_pxPipeline;
-
 };
 
 //#TO_TODO: I might vomit... this needs changing to avoid the branch
@@ -245,6 +263,7 @@ public:
 				HANDLE_COMMAND(FLUX_COMMANDTYPE__BIND_TEXTURE, Flux_CommandBindTexture);
 				HANDLE_COMMAND(FLUX_COMMANDTYPE__BIND_BUFFER, Flux_CommandBindBuffer);
 				HANDLE_COMMAND(FLUX_COMMANDTYPE__PUSH_CONSTANT, Flux_CommandPushConstant);
+				HANDLE_COMMAND(FLUX_COMMANDTYPE__USE_UNBOUNDED_TEXTURES, Flux_CommandUseUnboundedTextures);
 
 				HANDLE_COMMAND(FLUX_COMMANDTYPE__DRAW, Flux_CommandDraw);
 				HANDLE_COMMAND(FLUX_COMMANDTYPE__DRAW_INDEXED, Flux_CommandDrawIndexed);

@@ -18,22 +18,19 @@ public:
 	~Zenith_Scene();
 	void Reset();
 
-	template<typename T>
-	T& GetComponentFromEntity(EntityID xID)
+	void AcquireMutex()
 	{
-		Zenith_Assert(EntityHasComponent<T>(xID), "Doesn't have this component");
-		return m_xRegistry.get<T>(xID);
+		m_xMutex.Lock();
 	}
-
-	template<typename T>
-	bool EntityHasComponent(EntityID xID) const
+	void ReleaseMutex()
 	{
-		return m_xRegistry.all_of<T>(xID);
+		m_xMutex.Unlock();
 	}
 
 	template<typename T>
 	void GetAllOfComponentType(Zenith_Vector<T*>& xOut)
 	{
+		//#TO_TODO: assert that we have acquired the mutex
 		auto view = m_xRegistry.view<T>();
 		for (auto [xEntity, xComponent] : view.each())
 		{
@@ -57,5 +54,6 @@ private:
 	EntityRegistry m_xRegistry;
 	std::unordered_map<GUIDType, Zenith_Entity> m_xEntityMap;
 	static Zenith_Scene s_xCurrentScene;
-	EntityID m_uMainCameraEntity = (EntityID)0;
+	Zenith_Entity* m_pxMainCameraEntity;
+	Zenith_Mutex m_xMutex;
 };

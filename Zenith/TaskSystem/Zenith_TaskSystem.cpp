@@ -55,6 +55,8 @@ void Zenith_TaskSystem::Inititalise()
 
 void Zenith_TaskSystem::SubmitTask(Zenith_Task* const pxTask)
 {
+	//pxTask->DoTask();
+	//return;
 	g_xQueueMutex.Lock();
 	g_xTaskQueue.Enqueue(pxTask);
 	g_xQueueMutex.Unlock();

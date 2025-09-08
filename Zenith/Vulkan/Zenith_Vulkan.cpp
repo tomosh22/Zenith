@@ -267,7 +267,7 @@ void Zenith_Vulkan::CreateDebugMessenger()
 	s_xDebugMessenger = s_xInstance.createDebugUtilsMessengerEXT(
 		xCreateInfo,
 		nullptr,
-		vk::detail::DispatchLoaderDynamic(s_xInstance, vkGetInstanceProcAddr)
+		vk::DispatchLoaderDynamic(s_xInstance, vkGetInstanceProcAddr)
 	);
 
 	Zenith_Log("Vulkan debug messenger created");
