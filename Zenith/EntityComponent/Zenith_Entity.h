@@ -11,31 +11,36 @@ public:
 	void Initialise(Zenith_Scene* pxScene, Zenith_GUID xGUID, Zenith_GUID xParentGUID, const std::string& strName);
 
 	template<typename T, typename... Args>
-	T& AddComponent(Args&&... args) {
+	T& AddComponent(Args&&... args)
+	{
 		Zenith_Assert(!HasComponent<T>(), "Already has this component");
 		return m_pxParentScene->m_xRegistry.emplace<T>(m_xEntity, std::forward<Args>(args)..., *this);
 	}
 
 	template<typename T, typename... Args>
-	T& AddOrReplaceComponent(Args&&... args) {
+	T& AddOrReplaceComponent(Args&&... args)
+	{
 		if (HasComponent<T>())
 			RemoveComponent<T>();
 		return m_pxParentScene->m_xRegistry.emplace<T>(m_xEntity, std::forward<Args>(args)..., *this);
 	}
 
 	template<typename T>
-	bool HasComponent() {
+	bool HasComponent() const
+	{
 		return m_pxParentScene->m_xRegistry.all_of<T>(m_xEntity);
 	}
 
 	template<typename T>
-	T& GetComponent() {
+	T& GetComponent() const
+	{
 		Zenith_Assert(HasComponent<T>(), "Doesn't have this component");
 		return m_pxParentScene->m_xRegistry.get<T>(m_xEntity);
 	}
 
 	template<typename T>
-	void RemoveComponent() {
+	void RemoveComponent()
+	{
 		Zenith_Assert(HasComponent<T>(), "Doesn't have this component");
 		m_pxParentScene->m_xRegistry.remove<T>(m_xEntity);
 	}

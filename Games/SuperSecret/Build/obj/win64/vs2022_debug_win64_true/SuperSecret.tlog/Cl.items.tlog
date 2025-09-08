@@ -86,6 +86,8 @@ C:\dev\Zenith\Middleware\reactphysics3d-0.10.1\src\utils\Profiler.cpp;C:\dev\Zen
 C:\dev\Zenith\Middleware\reactphysics3d-0.10.1\src\utils\quickhull\QHHalfEdgeStructure.cpp;C:\dev\Zenith\Games\SuperSecret\Build\obj\win64\vs2022_debug_win64_true\QHHalfEdgeStructure.obj
 C:\dev\Zenith\Middleware\reactphysics3d-0.10.1\src\utils\quickhull\QuickHull.cpp;C:\dev\Zenith\Games\SuperSecret\Build\obj\win64\vs2022_debug_win64_true\QuickHull.obj
 C:\dev\Zenith\Zenith\AssetHandling\Zenith_AssetHandler.cpp;C:\dev\Zenith\Games\SuperSecret\Build\obj\win64\vs2022_debug_win64_true\Zenith_AssetHandler.obj
+C:\dev\Zenith\Zenith\Core\Memory\Zenith_MemoryManagement.cpp;C:\dev\Zenith\Games\SuperSecret\Build\obj\win64\vs2022_debug_win64_true\Zenith_MemoryManagement.obj
+C:\dev\Zenith\Zenith\Core\Multithreading\Zenith_Multithreading.cpp;C:\dev\Zenith\Games\SuperSecret\Build\obj\win64\vs2022_debug_win64_true\Zenith_Multithreading.obj
 C:\dev\Zenith\Zenith\Core\Zenith.cpp;C:\dev\Zenith\Games\SuperSecret\Build\obj\win64\vs2022_debug_win64_true\Zenith.obj
 C:\dev\Zenith\Zenith\Core\Zenith_Core.cpp;C:\dev\Zenith\Games\SuperSecret\Build\obj\win64\vs2022_debug_win64_true\Zenith_Core.obj
 C:\dev\Zenith\Zenith\DataStream\Zenith_DataStream.cpp;C:\dev\Zenith\Games\SuperSecret\Build\obj\win64\vs2022_debug_win64_true\Zenith_DataStream.obj
@@ -104,6 +106,7 @@ C:\dev\Zenith\Zenith\Flux\AnimatedMeshes\Flux_AnimatedMeshes.cpp;C:\dev\Zenith\G
 C:\dev\Zenith\Zenith\Flux\DeferredShading\Flux_DeferredShading.cpp;C:\dev\Zenith\Games\SuperSecret\Build\obj\win64\vs2022_debug_win64_true\Flux_DeferredShading.obj
 C:\dev\Zenith\Zenith\Flux\Flux.cpp;C:\dev\Zenith\Games\SuperSecret\Build\obj\win64\vs2022_debug_win64_true\Flux.obj
 C:\dev\Zenith\Zenith\Flux\Flux_Buffers.cpp;C:\dev\Zenith\Games\SuperSecret\Build\obj\win64\vs2022_debug_win64_true\Flux_Buffers.obj
+C:\dev\Zenith\Zenith\Flux\Flux_CommandList.cpp;C:\dev\Zenith\Games\SuperSecret\Build\obj\win64\vs2022_debug_win64_true\Flux_CommandList.obj
 C:\dev\Zenith\Zenith\Flux\Flux_Graphics.cpp;C:\dev\Zenith\Games\SuperSecret\Build\obj\win64\vs2022_debug_win64_true\Flux_Graphics.obj
 C:\dev\Zenith\Zenith\Flux\Flux_Material.cpp;C:\dev\Zenith\Games\SuperSecret\Build\obj\win64\vs2022_debug_win64_true\Flux_Material.obj
 C:\dev\Zenith\Zenith\Flux\Flux_RenderTargets.cpp;C:\dev\Zenith\Games\SuperSecret\Build\obj\win64\vs2022_debug_win64_true\Flux_RenderTargets.obj
@@ -122,7 +125,9 @@ C:\dev\Zenith\Zenith\Flux\Water\Flux_Water.cpp;C:\dev\Zenith\Games\SuperSecret\B
 C:\dev\Zenith\Zenith\Input\Zenith_Input.cpp;C:\dev\Zenith\Games\SuperSecret\Build\obj\win64\vs2022_debug_win64_true\Zenith_Input.obj
 C:\dev\Zenith\Zenith\Maths\Zenith_Maths.cpp;C:\dev\Zenith\Games\SuperSecret\Build\obj\win64\vs2022_debug_win64_true\Zenith_Maths.obj
 C:\dev\Zenith\Zenith\Physics\Zenith_Physics.cpp;C:\dev\Zenith\Games\SuperSecret\Build\obj\win64\vs2022_debug_win64_true\Zenith_Physics.obj
+C:\dev\Zenith\Zenith\Profiling\Zenith_Profiling.cpp;C:\dev\Zenith\Games\SuperSecret\Build\obj\win64\vs2022_debug_win64_true\Zenith_Profiling.obj
 C:\dev\Zenith\Zenith\StateMachine\Zenith_StateMachine.cpp;C:\dev\Zenith\Games\SuperSecret\Build\obj\win64\vs2022_debug_win64_true\Zenith_StateMachine.obj
+C:\dev\Zenith\Zenith\TaskSystem\Zenith_TaskSystem.cpp;C:\dev\Zenith\Games\SuperSecret\Build\obj\win64\vs2022_debug_win64_true\Zenith_TaskSystem.obj
 C:\dev\Zenith\Zenith\UnitTests\Zenith_UnitTests.cpp;C:\dev\Zenith\Games\SuperSecret\Build\obj\win64\vs2022_debug_win64_true\Zenith_UnitTests.obj
 C:\dev\Zenith\Zenith\Vulkan\Zenith_Vulkan.cpp;C:\dev\Zenith\Games\SuperSecret\Build\obj\win64\vs2022_debug_win64_true\Zenith_Vulkan.obj
 C:\dev\Zenith\Zenith\Vulkan\Zenith_Vulkan_Buffer.cpp;C:\dev\Zenith\Games\SuperSecret\Build\obj\win64\vs2022_debug_win64_true\Zenith_Vulkan_Buffer.obj
@@ -131,6 +136,7 @@ C:\dev\Zenith\Zenith\Vulkan\Zenith_Vulkan_MemoryManager.cpp;C:\dev\Zenith\Games\
 C:\dev\Zenith\Zenith\Vulkan\Zenith_Vulkan_Pipeline.cpp;C:\dev\Zenith\Games\SuperSecret\Build\obj\win64\vs2022_debug_win64_true\Zenith_Vulkan_Pipeline.obj
 C:\dev\Zenith\Zenith\Vulkan\Zenith_Vulkan_Swapchain.cpp;C:\dev\Zenith\Games\SuperSecret\Build\obj\win64\vs2022_debug_win64_true\Zenith_Vulkan_Swapchain.obj
 C:\dev\Zenith\Zenith\Vulkan\Zenith_Vulkan_Texture.cpp;C:\dev\Zenith\Games\SuperSecret\Build\obj\win64\vs2022_debug_win64_true\Zenith_Vulkan_Texture.obj
+C:\dev\Zenith\Zenith\Windows\Multithreading\Zenith_Windows_Multithreading.cpp;C:\dev\Zenith\Games\SuperSecret\Build\obj\win64\vs2022_debug_win64_true\Zenith_Windows_Multithreading.obj
 C:\dev\Zenith\Zenith\Windows\Zenith_Windows_Window.cpp;C:\dev\Zenith\Games\SuperSecret\Build\obj\win64\vs2022_debug_win64_true\Zenith_Windows_Window.obj
 C:\dev\Zenith\Zenith\Zenith_Main.cpp;C:\dev\Zenith\Games\SuperSecret\Build\obj\win64\vs2022_debug_win64_true\Zenith_Main.obj
 C:\dev\Zenith\Games\SuperSecret\Components\CameraController_Behaviour.cpp;C:\dev\Zenith\Games\SuperSecret\Build\obj\win64\vs2022_debug_win64_true\CameraController_Behaviour.obj

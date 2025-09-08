@@ -20,7 +20,11 @@ static uint32_t g_uMapHeight = -1;
 static constexpr uint32_t g_uMaxMapWidth = 1024;
 static constexpr uint32_t g_uMaxMapHeight = 1024;
 
-Zenith_State* Zenith_StateMachine::s_pxCurrentState = new SuperSecret_State_InGame;
+Zenith_State* Zenith_StateMachine::s_pxCurrentState = nullptr;
+void Zenith_StateMachine::Project_Initialise()
+{
+	s_pxCurrentState = new SuperSecret_State_InGame;
+}
 
 static Zenith_Entity s_xController;
 static Zenith_Entity s_xPlayer0;
@@ -33,7 +37,7 @@ static void LoadAssets()
 {
 	for (uint32_t u = 0; u < SUPERSECRET_TEXTURE_INDEX__COUNT; u++)
 	{
-		g_pxTextures[u] = &Zenith_AssetHandler::AddTexture2D(g_aszTextureNames[u], g_aszTextureFilenames[u]);
+		g_pxTextures[u] = Zenith_AssetHandler::AddTexture2D(g_aszTextureNames[u], g_aszTextureFilenames[u]);
 		Flux::RegisterBindlessTexture(g_pxTextures[u], u);
 	}
 }
@@ -63,6 +67,9 @@ void SuperSecret_State_InGame::OnEnter()
 
 	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
 
+	s_xPlayer0.Initialise(&xScene, "Player0");
+	s_xPlayer0.AddComponent<Zenith_ScriptComponent>().SetBehaviour<PlayerController_Behaviour>();
+
 	s_xController.Initialise(&xScene, "Controller");
 	Zenith_CameraComponent& xCamera = s_xController.AddComponent<Zenith_CameraComponent>();
 	const Zenith_Maths::Vector3 xPos = { 0, 0, 0 };
@@ -77,9 +84,10 @@ void SuperSecret_State_InGame::OnEnter()
 	xScene.SetMainCameraEntity(s_xController);
 	s_xController.AddComponent<Zenith_ScriptComponent>().SetBehaviour<CameraController_Behaviour>();
 
+	s_xController.GetComponent<Zenith_ScriptComponent>().OnUpdate(0.67);
 
-	s_xPlayer0.Initialise(&xScene, "Player0");
-	s_xPlayer0.AddComponent<Zenith_ScriptComponent>().SetBehaviour<PlayerController_Behaviour>();
+
+	
 
 	uint64_t ulSize;
 	char* pcData = Zenith_FileAccess::ReadFile(ASSETS_ROOT"Maps/map0.txt", ulSize);
@@ -92,6 +100,7 @@ void SuperSecret_State_InGame::OnEnter()
 	{
 		xStream >> s_axMap[u];
 
+		#ifdef ZENITH_DEBUG_VARIABLES
 		Zenith_DebugVariables::AddUInt32({ "Map",std::to_string(u), "Texture"}, s_axMap[u].m_uTexture, 0, SUPERSECRET_TEXTURE_INDEX__COUNT - 1);
 		Zenith_DebugVariables::AddUInt32({ "Map",std::to_string(u), "Pos X"}, s_axMap[u].m_xPosition_Size.x, 0, 8192);
 		Zenith_DebugVariables::AddUInt32({ "Map",std::to_string(u), "Pos Y"}, s_axMap[u].m_xPosition_Size.y, 0, 8192);
@@ -99,6 +108,7 @@ void SuperSecret_State_InGame::OnEnter()
 		Zenith_DebugVariables::AddUInt32({ "Map",std::to_string(u), "Size Y"}, s_axMap[u].m_xPosition_Size.w, 0, 512);
 		Zenith_DebugVariables::AddFloat({ "Map",std::to_string(u), "UV Mult"}, s_axMap[u].m_xUVMult_UVAdd.x, 0, 2);
 		Zenith_DebugVariables::AddFloat({ "Map",std::to_string(u), "UV Add" }, s_axMap[u].m_xUVMult_UVAdd.y, 0, 2);
+		#endif
 	}
 }
 
@@ -123,9 +133,7 @@ void SuperSecret_State_InGame::OnUpdate()
 			xStream << s_axMap[u];
 		}
 
-		FILE* pxFile = fopen(ASSETS_ROOT"Maps/map0.txt", "wb");
-		xStream.WriteToFile(pxFile);
-		fclose(pxFile);
+		xStream.WriteToFile(ASSETS_ROOT"Maps/map0.txt");
 	}
 
 	Zenith_Core::Zenith_MainLoop();

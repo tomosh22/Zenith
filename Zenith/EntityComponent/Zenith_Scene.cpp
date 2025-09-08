@@ -58,7 +58,6 @@ Zenith_Scene::~Zenith_Scene() {
 
 void Zenith_Scene::Reset() {
 	m_xRegistry.clear();
-	m_uMainCameraEntity = (EntityID)0;
 	m_xEntityMap.clear();
 }
 
@@ -70,12 +69,14 @@ void Zenith_Scene::Update(const float fDt)
 {
 	Zenith_TaskSystem::SubmitTask(g_pxAnimUpdateTask);
 
+	s_xCurrentScene.AcquireMutex();
 	Zenith_Vector<Zenith_ScriptComponent*> xScripts;
 	s_xCurrentScene.GetAllOfComponentType<Zenith_ScriptComponent>(xScripts);
 	for (Zenith_Vector<Zenith_ScriptComponent*>::Iterator xIt(xScripts); !xIt.Done(); xIt.Next())
 	{
 		xIt.GetData()->OnUpdate(fDt);
 	}
+	s_xCurrentScene.ReleaseMutex();
 }
 
 void Zenith_Scene::WaitForUpdateComplete()
@@ -89,11 +90,10 @@ Zenith_Entity Zenith_Scene::GetEntityByGUID(Zenith_GUID ulGuid) {
 
 void Zenith_Scene::SetMainCameraEntity(Zenith_Entity& xEntity)
 {
-	Zenith_Assert(m_uMainCameraEntity == (EntityID)0, "Scene already has a main camera");
-	m_uMainCameraEntity = xEntity.GetEntityID();
+	m_pxMainCameraEntity = &xEntity;
 }
 
 Zenith_CameraComponent& Zenith_Scene::GetMainCamera()
 {
-	return GetComponentFromEntity<Zenith_CameraComponent>(m_uMainCameraEntity);
+	return m_pxMainCameraEntity->GetComponent<Zenith_CameraComponent>();
 }

@@ -485,7 +485,7 @@ void Zenith_Vulkan_MemoryManager::AllocateTexture(uint32_t uWidth, uint32_t uHei
 		.setBaseArrayLayer(0)
 		.setLayerCount(uNumLayers);
 
-	const vk::Image xImage = xTextureOut.GetImage();
+	const vk::Image& xImage = xTextureOut.GetImage();
 
 	vk::ImageViewCreateInfo xViewCreate = vk::ImageViewCreateInfo()
 		.setImage(xImage)

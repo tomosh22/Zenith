@@ -13,6 +13,7 @@
 #include "Flux/DeferredShading/Flux_DeferredShading.h"
 #include "Flux/Water/Flux_Water.h"
 #include "Flux/Fog/Flux_Fog.h"
+#include "Flux/Quads/Flux_Quads.h"
 #include "Flux/SDFs/Flux_SDFs.h"
 #include "Flux/Shadows/Flux_Shadows.h"
 #include "Flux/Particles/Flux_Particles.h"
@@ -100,6 +101,7 @@ static void SubmitRenderTasks()
 	Flux_SDFs::SubmitRenderTask();
 	Flux_Particles::SubmitRenderTask();
 	Flux_Text::SubmitRenderTask();
+	Flux_Quads::SubmitRenderTask();
 }
 
 static void WaitForRenderTasks()
@@ -115,6 +117,7 @@ static void WaitForRenderTasks()
 	Flux_SDFs::WaitForRenderTask();
 	Flux_Particles::WaitForRenderTask();
 	Flux_Text::WaitForRenderTask();
+	Flux_Quads::WaitForRenderTask();
 }
 
 void Zenith_Core::Zenith_MainLoop()
