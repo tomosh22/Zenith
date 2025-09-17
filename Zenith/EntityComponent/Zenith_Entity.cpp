@@ -7,34 +7,37 @@ Zenith_Entity::Zenith_Entity(Zenith_Scene* pxScene, const std::string& strName)
 	: m_pxParentScene(pxScene)
 	, m_strName(strName)
 {
-	m_xEntity = m_pxParentScene->m_xRegistry.create();
+	STUBBED
+		m_uEntityID = m_pxParentScene->CreateEntity();
 	AddComponent<Zenith_TransformComponent>(strName);
-	pxScene->m_xEntityMap.insert({ m_ulGUID, *this });
+	pxScene->m_xEntityMap.insert({ m_uEntityID, *this });
 }
 
-Zenith_Entity::Zenith_Entity(Zenith_Scene* pxScene, Zenith_GUID xGUID, Zenith_GUID xParentGUID, const std::string& strName) : m_pxParentScene(pxScene), m_ulGUID(xGUID), m_xParentEntityGUID(xParentGUID), m_strName(strName) {
-	m_xEntity = m_pxParentScene->m_xRegistry.create();
+Zenith_Entity::Zenith_Entity(Zenith_Scene* pxScene, Zenith_EntityID uID, Zenith_EntityID uParentID, const std::string& strName) : m_pxParentScene(pxScene), m_uEntityID(uID), m_uParentEntityID(uParentID), m_strName(strName) {
+	STUBBED
+	m_uEntityID = uID;
 	AddComponent<Zenith_TransformComponent>(strName);
-	pxScene->m_xEntityMap.insert({ m_ulGUID, *this });
+	pxScene->m_xEntityMap.insert({ m_uEntityID, *this });
 }
 
 void Zenith_Entity::Initialise(Zenith_Scene* pxScene, const std::string& strName)
 {
 	m_pxParentScene = pxScene;
 	m_strName = strName;
-	m_xEntity = m_pxParentScene->m_xRegistry.create();
+	m_uEntityID = m_pxParentScene->CreateEntity();
 	AddComponent<Zenith_TransformComponent>(strName);
-	pxScene->m_xEntityMap.insert({ m_ulGUID, *this });
+	pxScene->m_xEntityMap.insert({ m_uEntityID, *this });
 }
 
-void Zenith_Entity::Initialise(Zenith_Scene* pxScene, Zenith_GUID xGUID, Zenith_GUID xParentGUID, const std::string& strName)
+void Zenith_Entity::Initialise(Zenith_Scene* pxScene, Zenith_EntityID uID, Zenith_EntityID uParentID, const std::string& strName)
 {
 	m_pxParentScene = pxScene;
 	m_strName = strName;
-	m_xParentEntityGUID = xParentGUID;
-	m_xEntity = m_pxParentScene->m_xRegistry.create();
+	m_uParentEntityID = uParentID;
+	STUBBED
+	m_uEntityID = uID;
 	AddComponent<Zenith_TransformComponent>(strName);
-	pxScene->m_xEntityMap.insert({ m_ulGUID, *this });
+	pxScene->m_xEntityMap.insert({ m_uEntityID, *this });
 }
 
 void Zenith_Entity::Serialize(std::ofstream& xOut) {

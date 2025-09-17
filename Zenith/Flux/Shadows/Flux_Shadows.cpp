@@ -20,6 +20,7 @@ static Flux_DynamicConstantBuffer g_xShadowMatrixBuffers[ZENITH_FLUX_NUM_CSMS];
 
 static Zenith_Maths::Matrix4 g_axSunViewProjMats[ZENITH_FLUX_NUM_CSMS];
 
+DEBUGVAR bool dbg_bEnabled = true;
 DEBUGVAR float dbg_fZMultiplier = 10.f;
 
 struct FrustumCorners
@@ -72,6 +73,7 @@ void Flux_Shadows::Initialise()
 	
 
 #ifdef ZENITH_DEBUG_VARIABLES
+	Zenith_DebugVariables::AddBoolean({"Render", "Enable", "Shadows"}, dbg_bEnabled);
 	Zenith_DebugVariables::AddFloat({"Shadows", "Z Multiplier"}, dbg_fZMultiplier, -10.f, 10.f);
 	Zenith_DebugVariables::AddTexture({ "Shadows", "CSM0" }, *g_axCSMs->m_pxTargetTexture);
 #endif
@@ -79,6 +81,10 @@ void Flux_Shadows::Initialise()
 
 void Flux_Shadows::Render(void*)
 {
+	if (!dbg_bEnabled)
+	{
+		return;
+	}
 
 	UpdateShadowMatrices();
 	
@@ -136,7 +142,7 @@ Zenith_Maths::Matrix4 Flux_Shadows::GetSunViewProjMatrix(const uint32_t uIndex)
 
 Flux_Texture& Flux_Shadows::GetCSMTexture(const uint32_t u)
 {
-	return *g_axCSMs[u].m_pxTargetTexture;
+	return dbg_bEnabled ? *g_axCSMs[u].m_pxTargetTexture : *Flux_Graphics::s_pxBlankTexture2D;
 }
 
 Flux_DynamicConstantBuffer& Flux_Shadows::GetShadowMatrixBuffer(const uint32_t u)
@@ -146,6 +152,7 @@ Flux_DynamicConstantBuffer& Flux_Shadows::GetShadowMatrixBuffer(const uint32_t u
 
 void Flux_Shadows::UpdateShadowMatrices()
 {
+	Zenith_Profiling::BeginProfile(ZENITH_PROFILE_INDEX__FLUX_SHADOWS_UPDATE_MATRICES);
 	const Zenith_Maths::Matrix4& xViewMat = Flux_Graphics::GetViewMatrix();
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
@@ -187,6 +194,5 @@ void Flux_Shadows::UpdateShadowMatrices()
 
 		Flux_MemoryManager::UploadBufferData(g_xShadowMatrixBuffers[u].GetBuffer(), &g_axSunViewProjMats[u], sizeof(g_axSunViewProjMats[u]));
 	}
-
-	
+	Zenith_Profiling::EndProfile(ZENITH_PROFILE_INDEX__FLUX_SHADOWS_UPDATE_MATRICES);
 }

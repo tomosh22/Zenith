@@ -2,6 +2,7 @@
 
 #include "TaskSystem/Zenith_TaskSystem.h"
 
+#include "DebugVariables/Zenith_DebugVariables.h"
 #include "Multithreading/Zenith_Multithreading.h"
 
 static constexpr u_int uMAX_TASKS = 128;
@@ -11,6 +12,8 @@ static Zenith_Semaphore* g_pxWorkAvailableSem = nullptr;
 static Zenith_Semaphore* g_pxThreadsTerminatedSem = nullptr;
 static Zenith_Mutex g_xQueueMutex;
 static bool g_bTerminateThreads = false;
+
+DEBUGVAR bool dbg_bMultithreaded = true;
 
 static void ThreadFunc(const void* pData)
 {
@@ -51,12 +54,19 @@ void Zenith_TaskSystem::Inititalise()
 		snprintf(acName, Zenith_Multithreading::uMAX_THREAD_NAME_LENGTH, "Zenith_TaskSystem %u", u);
 		Zenith_Multithreading::CreateThread(acName, ThreadFunc, nullptr);
 	}
+
+#ifdef ZENITH_DEBUG_VARIABLES
+	Zenith_DebugVariables::AddBoolean({ "Task System", "Multithreaded" }, dbg_bMultithreaded);
+#endif
 }
 
 void Zenith_TaskSystem::SubmitTask(Zenith_Task* const pxTask)
 {
-	//pxTask->DoTask();
-	//return;
+	if (!dbg_bMultithreaded)
+	{
+		pxTask->DoTask();
+		return;
+	}
 	g_xQueueMutex.Lock();
 	g_xTaskQueue.Enqueue(pxTask);
 	g_xQueueMutex.Unlock();

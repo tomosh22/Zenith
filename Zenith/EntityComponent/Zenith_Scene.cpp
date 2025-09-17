@@ -57,8 +57,7 @@ Zenith_Scene::~Zenith_Scene() {
 }
 
 void Zenith_Scene::Reset() {
-	m_xRegistry.clear();
-	m_xEntityMap.clear();
+	STUBBED
 }
 
 void Zenith_Scene::Serialize(const std::string& strFilename) {
@@ -84,8 +83,8 @@ void Zenith_Scene::WaitForUpdateComplete()
 	g_pxAnimUpdateTask->WaitUntilComplete();
 }
 
-Zenith_Entity Zenith_Scene::GetEntityByGUID(Zenith_GUID ulGuid) {
-	return m_xEntityMap.at(ulGuid);
+Zenith_Entity Zenith_Scene::GetEntityByID(Zenith_EntityID uID) {
+	return m_xEntityMap.at(uID);
 }
 
 void Zenith_Scene::SetMainCameraEntity(Zenith_Entity& xEntity)

@@ -26,7 +26,7 @@ public:
 	void Serialize(std::ofstream& xOut);
 	reactphysics3d::RigidBody* GetRigidBody() const { return m_pxRigidBody; }
 	reactphysics3d::Collider* GetCollider() const { return m_pxCollider; }
-	EntityID GetEntityID() { return m_xParentEntity.GetEntityID(); }
+	Zenith_EntityID GetEntityID() { return m_xParentEntity.GetEntityID(); }
 
 	void AddCollider(CollisionVolumeType eVolumeType, RigidBodyType eRigidBodyType);
 private:

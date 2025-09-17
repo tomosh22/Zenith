@@ -80,7 +80,7 @@ void SuperSecret_State_InGame::OnEnter()
 	const float fFar = 5000;
 	const float fAspectRatio = 256. / 192.;
 	xCamera.InitialisePerspective(xPos, fPitch, fYaw, fFOV, fNear, fFar, fAspectRatio);
-	xCamera.SetPosition({40, 30, -60});
+	xCamera.SetPosition({0, 0, -10});
 	xScene.SetMainCameraEntity(s_xController);
 	s_xController.AddComponent<Zenith_ScriptComponent>().SetBehaviour<CameraController_Behaviour>();
 

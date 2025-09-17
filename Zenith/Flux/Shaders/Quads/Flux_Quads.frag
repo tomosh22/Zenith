@@ -15,4 +15,5 @@ layout (set = 1, binding = 0) uniform sampler2D g_axBindlessTextures[];
 void main()
 {
 	o_xColour = texture(g_axBindlessTextures[a_uTexture], a_xUV);
+	//o_xColour = vec4(1);
 }

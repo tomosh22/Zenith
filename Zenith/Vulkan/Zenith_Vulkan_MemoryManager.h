@@ -85,4 +85,6 @@ private:
 	static Zenith_Vulkan_CommandBuffer s_xCommandBuffer;
 
 	static size_t s_uNextFreeStagingOffset;
+
+	static Zenith_Mutex s_xMutex;
 };

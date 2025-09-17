@@ -119,8 +119,8 @@ void Zenith_Profiling::RenderToImGui()
 	ImGui::SliderInt("Min Depth to Render", &ls_iMinDepthToRender, 0, 10);
 	ImGui::SliderInt("Max Depth to Render", &ls_iMaxDepthToRender, 0, 20);
 	ImGui::SliderInt("Max Depth to Render Separately", &ls_iMaxDepthToRenderSeparately, 0, 20);
-	ImGui::SliderFloat("Zoom (X)", &ls_fTimelineZoom, 0.1f, 10.0f, "%.1fx");
-	ImGui::SliderFloat("Scroll (X)", &ls_fTimelineScroll, 0.0f, 10000.0f, "%.0f px");
+	ImGui::SliderFloat("Zoom (X)", &ls_fTimelineZoom, 0.1f, 100.0f, "%.1fx");
+	ImGui::SliderFloat("Scroll (X)", &ls_fTimelineScroll, 0.0f, 100000.0f, "%.0f px");
 	ImGui::SliderFloat("Vertical Scale", &ls_fVerticalScale, 0.5f, 4.0f, "%.1fx");
 	ImGui::Checkbox("Paused", &dbg_bPaused);
 

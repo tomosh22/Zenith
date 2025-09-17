@@ -23,6 +23,7 @@ public:
 	static Flux_Texture* AddTexture2D(const std::string& strName, const void* pData, const uint32_t uWidth, const uint32_t uHeight, const uint32_t uDepth, ColourFormat eFormat, DepthStencilFormat eDepthStencilFormat, bool bCreateMips);
 	static Flux_Texture* AddTexture2D(const std::string& strName, const char* szPath);
 	static Flux_Texture* AddTextureCube(const std::string& strName, const char* szPathPX, const char* szPathNX, const char* szPathPY, const char* szPathNY, const char* szPathPZ, const char* szPathNZ);
+	static Flux_MeshGeometry& AddMesh(const std::string& strName);
 	static Flux_MeshGeometry& AddMesh(const std::string& strName, const char* szPath, const bool bRetainPositionsAndNormals = false);
 	static Flux_Material& AddMaterial(const std::string& strName);
 
