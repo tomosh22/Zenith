@@ -67,7 +67,6 @@ void Flux_Quads::Initialise()
 
 void Flux_Quads::UploadInstanceData()
 {
-	//#TO_TODO: need a buffer per frame in flight
 	Flux_MemoryManager::UploadBufferData(s_xInstanceBuffer.GetBuffer(), s_axQuadsToRender, sizeof(Quad) * s_uQuadRenderIndex);
 }
 
@@ -113,5 +112,10 @@ void Flux_Quads::Render(void*)
 
 void Flux_Quads::UploadQuad(const Quad& xQuad)
 {
+	if (!dbg_bEnable)
+	{
+		return;
+	}
+
 	s_axQuadsToRender[s_uQuadRenderIndex++] = xQuad;
 }

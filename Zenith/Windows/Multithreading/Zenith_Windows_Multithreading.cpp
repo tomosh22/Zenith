@@ -2,6 +2,7 @@
 
 #include "Zenith_Windows_Multithreading.h"
 
+#include "Profiling/Zenith_Profiling.h"
 #include "Multithreading/Zenith_Multithreading.h"
 
 #include <process.h>
@@ -22,7 +23,9 @@ Zenith_Windows_Mutex::~Zenith_Windows_Mutex()
 
 void Zenith_Windows_Mutex::Lock()
 {
+	Zenith_Profiling::BeginProfile(ZENITH_PROFILE_INDEX__WAIT_FOR_MUTEX);
 	EnterCriticalSection(&m_xCriticalSection);
+	Zenith_Profiling::EndProfile(ZENITH_PROFILE_INDEX__WAIT_FOR_MUTEX);
 }
 
 bool Zenith_Windows_Mutex::TryLock()

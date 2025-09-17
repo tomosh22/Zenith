@@ -7,12 +7,15 @@ enum Zenith_ProfileIndex
 	ZENITH_PROFILE_INDEX__TOTAL_FRAME,
 
 	ZENITH_PROFILE_INDEX__WAIT_FOR_TASK_SYSTEM,
+	ZENITH_PROFILE_INDEX__WAIT_FOR_MUTEX,
 
 	ZENITH_PROFILE_INDEX__ANIMATION,
 	ZENITH_PROFILE_INDEX__SCENE_UPDATE,
 	ZENITH_PROFILE_INDEX__PHYSICS,
 
 	ZENITH_PROFILE_INDEX__FLUX_SHADOWS,
+	ZENITH_PROFILE_INDEX__FLUX_SHADOWS_UPDATE_MATRICES,
+
 	ZENITH_PROFILE_INDEX__FLUX_DEFERRED_SHADING,
 	ZENITH_PROFILE_INDEX__FLUX_SKYBOX,
 	ZENITH_PROFILE_INDEX__FLUX_STATIC_MESHES,
@@ -35,10 +38,12 @@ static const char* g_aszProfileNames[]
 {
 	"Total Frame",
 	"Wait for Task System",
+	"Wait for Mutex",
 	"Animation",
 	"Scene Update",
 	"Physics",
 	"Flux Shadows",
+	"Flux Shadows Update Matrices",
 	"Flux Deferred Shading",
 	"Flux Skybox",
 	"Flux Static Meshes",

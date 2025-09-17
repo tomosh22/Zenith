@@ -71,6 +71,14 @@ Flux_Texture* Zenith_AssetHandler::AddTextureCube(const std::string& strName, co
 	s_xUsedTextureIDs.insert(uID);
 	return &s_pxTextures[uID];
 }
+Flux_MeshGeometry& Zenith_AssetHandler::AddMesh(const std::string& strName)
+{
+	AssetID uID = GetNextFreeMeshSlot();
+	Flux_MeshGeometry& xMesh = s_pxMeshes[uID];
+	s_xMeshNameMap.insert({ strName, uID });
+	s_xUsedMeshIDs.insert(uID);
+	return s_pxMeshes[uID];
+}
 Flux_MeshGeometry& Zenith_AssetHandler::AddMesh(const std::string& strName, const char* szPath, const bool bRetainPositionsAndNormals /*= false*/)
 {
 	AssetID uID = GetNextFreeMeshSlot();

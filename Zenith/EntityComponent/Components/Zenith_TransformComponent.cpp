@@ -102,16 +102,16 @@ void Zenith_TransformComponent::BuildModelMatrix(Zenith_Maths::Matrix4& xMatOut)
 	GetTransform().getOpenGLMatrix(&xMatOut[0][0]);
 	xMatOut *= glm::scale(glm::identity<glm::highp_mat4>(), m_xScale);
 
-	Zenith_GUID xParentGUID = m_xParentEntity.m_xParentEntityGUID;
-	while ((GUIDType)xParentGUID != (GUIDType)Zenith_GUID::Invalid)
+	Zenith_EntityID uParentGUID = m_xParentEntity.m_uParentEntityID;
+	while (uParentGUID != -1)
 	{
 		glm::mat4 xToMultiply;
-		Zenith_Entity xEntity = m_xParentEntity.m_pxParentScene->GetEntityByGUID(xParentGUID);
+		Zenith_Entity xEntity = m_xParentEntity.m_pxParentScene->GetEntityByID(uParentGUID);
 		xEntity.GetComponent<Zenith_TransformComponent>().GetTransform().getOpenGLMatrix(&xToMultiply[0][0]);
 		xMatOut *= xToMultiply;
 		//#TO_TODO: why is the minus necessary?
 		xMatOut *= -glm::scale(glm::identity<glm::highp_mat4>(), xEntity.GetComponent<Zenith_TransformComponent>().m_xScale);
-		xParentGUID = xEntity.m_xParentEntityGUID;
+		uParentGUID = xEntity.m_uParentEntityID;
 	}
 }
 

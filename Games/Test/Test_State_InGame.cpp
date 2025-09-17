@@ -139,6 +139,15 @@ static void LoadAssets()
 #if 1
 			Zenith_AssetHandler::AddMesh("Terrain_Render" + strSuffix, std::string("C:/dev/Zenith/Games/Test/Assets/Terrain/Render_" + strSuffix + ".zmsh").c_str(), true);
 			Zenith_AssetHandler::AddMesh("Terrain_Physics" + strSuffix, std::string("C:/dev/Zenith/Games/Test/Assets/Terrain/Physics_" + strSuffix + ".zmsh").c_str(), true);
+
+			Zenith_Maths::Matrix4 xWaterTransform =
+				glm::translate(glm::identity<Zenith_Maths::Matrix4>(), Zenith_Maths::Vector3(x * TERRAIN_SIZE * TERRAIN_SCALE + (TERRAIN_SIZE * TERRAIN_SCALE / 2), MAX_TERRAIN_HEIGHT / 2, y * TERRAIN_SIZE * TERRAIN_SCALE + (TERRAIN_SIZE * TERRAIN_SCALE / 2))) *
+				Zenith_Maths::EulerRotationToMatrix4(90, { 1.,0.,0. }) *
+				glm::scale(glm::identity<Zenith_Maths::Matrix4>(), Zenith_Maths::Vector3(TERRAIN_SIZE * TERRAIN_SCALE / 2, TERRAIN_SIZE * TERRAIN_SCALE / 2, TERRAIN_SIZE * TERRAIN_SCALE / 2));
+			Flux_MeshGeometry& xWaterMesh = Zenith_AssetHandler::AddMesh("Terrain_Water" + strSuffix);
+			Flux_MeshGeometry::GenerateFullscreenQuad(xWaterMesh, xWaterTransform);
+			Flux_MemoryManager::InitialiseVertexBuffer(xWaterMesh.GetVertexData(), xWaterMesh.GetVertexDataSize(), xWaterMesh.GetVertexBuffer());
+			Flux_MemoryManager::InitialiseIndexBuffer(xWaterMesh.GetIndexData(), xWaterMesh.GetIndexDataSize(), xWaterMesh.GetIndexBuffer());
 #else
 			Zenith_AssetHandler::AddMesh("Terrain" + strSuffix, std::string("C:/dev/Zenith/Games/Test/Assets/Terrain/" + strSuffix + ".zmsh").c_str(), false);
 #endif
@@ -278,16 +287,14 @@ void Test_State_InGame::OnEnter()
 			Flux_MeshGeometry& xTerrainRenderMesh = Zenith_AssetHandler::GetMesh(strRenderMeshName);
 			std::string strPhysicsMeshName = "Terrain_Physics" + std::to_string(x) + "_" + std::to_string(y);
 			Flux_MeshGeometry& xTerrainPhysicsMesh = Zenith_AssetHandler::GetMesh(strPhysicsMeshName);
+			std::string strWaterMeshName = "Terrain_Water" + std::to_string(x) + "_" + std::to_string(y);
+			Flux_MeshGeometry& xTerrainWaterMesh = Zenith_AssetHandler::GetMesh(strWaterMeshName);
 
 			Zenith_Entity& xTerrain = s_xTerrain[x][y];
 
 			xTerrain.Initialise(&xScene, strRenderMeshName);
-			Zenith_Maths::Matrix4 xWaterTransform =
-				glm::translate(glm::identity<Zenith_Maths::Matrix4>(), Zenith_Maths::Vector3(x * TERRAIN_SIZE * TERRAIN_SCALE + (TERRAIN_SIZE * TERRAIN_SCALE / 2), MAX_TERRAIN_HEIGHT / 2, y * TERRAIN_SIZE * TERRAIN_SCALE + (TERRAIN_SIZE * TERRAIN_SCALE / 2))) *
-				Zenith_Maths::EulerRotationToMatrix4(90, { 1.,0.,0. }) *
-				glm::scale(glm::identity<Zenith_Maths::Matrix4>(), Zenith_Maths::Vector3(TERRAIN_SIZE * TERRAIN_SCALE / 2, TERRAIN_SIZE * TERRAIN_SCALE / 2, TERRAIN_SIZE * TERRAIN_SCALE / 2));
 
-			xTerrain.AddComponent<Zenith_TerrainComponent>(xTerrainRenderMesh, xTerrainPhysicsMesh, Zenith_AssetHandler::GetMaterial("Rock"), Zenith_AssetHandler::GetMaterial("Crystal"), xWaterTransform, Zenith_Maths::Vector2(x * TERRAIN_SIZE * TERRAIN_SCALE, y * TERRAIN_SIZE * TERRAIN_SCALE));
+			xTerrain.AddComponent<Zenith_TerrainComponent>(xTerrainRenderMesh, xTerrainPhysicsMesh, xTerrainWaterMesh, Zenith_AssetHandler::GetMaterial("Rock"), Zenith_AssetHandler::GetMaterial("Crystal"), Zenith_Maths::Vector2(x * TERRAIN_SIZE * TERRAIN_SCALE, y * TERRAIN_SIZE * TERRAIN_SCALE));
 #if 0
 			{
 				Zenith_TextComponent& xText = xTerrain.AddComponent<Zenith_TextComponent>();

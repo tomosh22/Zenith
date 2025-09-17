@@ -6,7 +6,7 @@ Zenith_ColliderComponent::Zenith_ColliderComponent(Zenith_Entity& xEntity) : m_x
 	Zenith_TransformComponent& xTrans = m_xParentEntity.GetComponent<Zenith_TransformComponent>();
 	m_pxRigidBody = Zenith_Physics::s_pxPhysicsWorld->createRigidBody(xTrans.GetTransform_Unsafe());
 
-	m_pxRigidBody->setUserData(reinterpret_cast<void*>((GUIDType)xEntity.GetGUID()));
+	//m_pxRigidBody->setUserData(reinterpret_cast<void*>((GUIDType)xEntity.GetGUID()));
 
 	xTrans.m_pxRigidBody = m_pxRigidBody;
 }

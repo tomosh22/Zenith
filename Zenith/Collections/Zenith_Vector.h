@@ -72,12 +72,13 @@ public:
 		m_uSize++;
 	}
 
-	void EmplaceBack(T&& xValue)
+	template<typename... Args>
+	void EmplaceBack(Args&&... args)
 	{
 		while (m_uSize >= m_uCapacity) Resize();
 
 		#include "Memory/Zenith_MemoryManagement_Disabled.h"
-		new (&m_pxData[m_uSize]) T(xValue);
+		new (&m_pxData[m_uSize]) T(std::forward<Args>(args)...);
 		#include "Memory/Zenith_MemoryManagement_Enabled.h"
 		m_uSize++;
 	}

@@ -90,7 +90,6 @@ public class TestToolsProject : Project
 		SourceFilesExcludeRegex.Add(@".*VulkanSDK.*");
 		SourceFilesExcludeRegex.Add(@".*FluxCompiler.*");
 		SourceFilesExcludeRegex.Add(@".*glm-master.*");
-		SourceFilesExcludeRegex.Add(@".*entt-3.13.2.*");
 		SourceFilesExcludeRegex.Add(@".*reactphysics3d-0.10.1\\helloworld.*");
 		SourceFilesExcludeRegex.Add(@".*reactphysics3d-0.10.1\\test.*");
 		SourceFilesExcludeRegex.Add(@".*reactphysics3d-0.10.1\\testbed.*");
@@ -163,7 +162,6 @@ public class TestToolsProject : Project
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/../../../Middleware/glfw-3.4.bin.WIN64/include");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/../../../Middleware/VulkanSDK/1.3.280.0/Include");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/../../../Middleware/glm-master");
-		conf.IncludePaths.Add("[project.SharpmakeCsPath]/../../../Middleware/entt-3.13.2/single_include");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/../../../Zenith/Windows");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/../../../Zenith/Vulkan");
 		
@@ -221,7 +219,6 @@ public class TestWindowsProject : Project
 		SourceFilesExcludeRegex.Add(@".*VulkanSDK.*");
 		SourceFilesExcludeRegex.Add(@".*FluxCompiler.*");
 		SourceFilesExcludeRegex.Add(@".*glm-master.*");
-		SourceFilesExcludeRegex.Add(@".*entt-3.13.2.*");
 		SourceFilesExcludeRegex.Add(@".*Tools.*");
 		SourceFilesExcludeRegex.Add(@".*reactphysics3d-0.10.1\\helloworld.*");
 		SourceFilesExcludeRegex.Add(@".*reactphysics3d-0.10.1\\test.*");
@@ -247,7 +244,6 @@ public class TestWindowsProject : Project
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/../../../Middleware/VulkanSDK/1.3.280.0/Include");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/../../../Middleware/glm-master");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/../../../Middleware/vma");
-		conf.IncludePaths.Add("[project.SharpmakeCsPath]/../../../Middleware/entt-3.13.2/single_include");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/../../../Middleware/reactphysics3d-0.10.1/include");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/../../../Zenith/Windows");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/../../../Zenith/Vulkan");

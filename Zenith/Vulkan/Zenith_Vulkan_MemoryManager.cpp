@@ -19,6 +19,8 @@ std::list<Zenith_Vulkan_MemoryManager::StagingMemoryAllocation> Zenith_Vulkan_Me
 
 size_t Zenith_Vulkan_MemoryManager::s_uNextFreeStagingOffset = 0;
 
+Zenith_Mutex Zenith_Vulkan_MemoryManager::s_xMutex;
+
 void Zenith_Vulkan_MemoryManager::InitialiseStagingBuffer()
 {
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
@@ -516,6 +518,7 @@ void Zenith_Vulkan_MemoryManager::FreeTexture(Zenith_Vulkan_Texture* pxTexture)
 
 void Zenith_Vulkan_MemoryManager::UploadBufferData(Zenith_Vulkan_Buffer& xBuffer, const void* pData, size_t uSize)
 {
+	s_xMutex.Lock();
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 
 	const VmaAllocation& xAlloc = xBuffer.GetAllocation();
@@ -551,10 +554,12 @@ void Zenith_Vulkan_MemoryManager::UploadBufferData(Zenith_Vulkan_Buffer& xBuffer
 		xDevice.unmapMemory(s_xStagingMem);
 		s_uNextFreeStagingOffset += uSize;
 	}
+	s_xMutex.Unlock();
 }
 
 void Zenith_Vulkan_MemoryManager::UploadTextureData(Zenith_Vulkan_Texture& xTexture, const void* pData, size_t uSize)
 {
+	s_xMutex.Lock();
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 
 	const VmaAllocation& xAlloc = xTexture.GetAllocation();
@@ -586,6 +591,7 @@ void Zenith_Vulkan_MemoryManager::UploadTextureData(Zenith_Vulkan_Texture& xText
 		xDevice.unmapMemory(s_xStagingMem);
 		s_uNextFreeStagingOffset += uSize;
 	}
+	s_xMutex.Unlock();
 }
 
 void Zenith_Vulkan_MemoryManager::FlushStagingBuffer()
