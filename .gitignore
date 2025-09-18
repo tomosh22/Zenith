@@ -33,13 +33,18 @@
 
 *.pdb
 
+*.tlog
+*.map
+
 *.ilk
 
+
+**/Build/obj/
+**/Build/output
 /output/*
 /obj/*
 /*vs/*
 .vs/
-Build/
 /Middleware/VulkanSDK/1.4.313.1/Lib/*
 /Middleware/VulkanSDK/1.4.313.1/Bin/*
 /Middleware/VulkanSDK/1.4.313.1/Bin32/*

@@ -176,7 +176,7 @@ void Test_State_InGame::OnEnter()
 	xScene.SetMainCameraEntity(s_xPlayer);
 
 	Zenith_TransformComponent& xTrans = s_xPlayer.GetComponent<Zenith_TransformComponent>();
-	xTrans.SetPosition({ 200,-600,200 });
+	xTrans.SetPosition({ 2100,-566,1500 });
 	xTrans.SetScale({ 2,2,2 });
 
 	Zenith_ColliderComponent& xCollider = s_xPlayer.AddComponent<Zenith_ColliderComponent>();
@@ -294,11 +294,11 @@ void Test_State_InGame::OnEnter()
 
 			xTerrain.Initialise(&xScene, strRenderMeshName);
 
-			xTerrain.AddComponent<Zenith_TerrainComponent>(xTerrainRenderMesh, xTerrainPhysicsMesh, xTerrainWaterMesh, Zenith_AssetHandler::GetMaterial("Rock"), Zenith_AssetHandler::GetMaterial("Crystal"), Zenith_Maths::Vector2(x * TERRAIN_SIZE * TERRAIN_SCALE, y * TERRAIN_SIZE * TERRAIN_SCALE));
+			xTerrain.AddComponent<Zenith_TerrainComponent>(xTerrainRenderMesh, xTerrainPhysicsMesh, xTerrainWaterMesh, Zenith_AssetHandler::GetMaterial("Rock"), Zenith_AssetHandler::GetMaterial("Crystal"), Zenith_Maths::Vector2(x * TERRAIN_SIZE, y * TERRAIN_SIZE));
 #if 0
 			{
 				Zenith_TextComponent& xText = xTerrain.AddComponent<Zenith_TextComponent>();
-				TextEntry_World xTextEntry = { std::to_string(x * TERRAIN_SIZE * TERRAIN_SCALE) + " " + std::to_string(MAX_TERRAIN_HEIGHT / 2) + " " + std::to_string(y * TERRAIN_SIZE * TERRAIN_SCALE), {x * TERRAIN_SIZE * TERRAIN_SCALE, MAX_TERRAIN_HEIGHT / 2, y * TERRAIN_SIZE * TERRAIN_SCALE}, 1. };
+				TextEntry_World xTextEntry = { std::to_string(x * TERRAIN_SIZE * TERRAIN_SCALE) + " " + std::to_string(MAX_TERRAIN_HEIGHT / 2) + " " + std::to_string(y * TERRAIN_SIZE * TERRAIN_SCALE), {x * TERRAIN_SIZE, MAX_TERRAIN_HEIGHT / 2, y * TERRAIN_SIZE}, 1. };
 				xText.AddText_World(xTextEntry);
 			}
 #endif
