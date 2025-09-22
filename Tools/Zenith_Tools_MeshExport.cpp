@@ -297,6 +297,12 @@ void ExportAllMeshes()
 		wcstombs(szFilename, wszFilename, ulLength);
 		szFilename[ulLength] = '\0';
 
+		//#TO_TODO: fix asset export pipeline, we need this to avoid trying to export C++ IR files (.obj)
+		if (!strstr(szFilename, "Assets"))
+		{
+			continue;
+		}
+
 		//is this a gltf
 		if (!strcmp(szFilename + strlen(szFilename) - strlen(".gltf"), ".gltf"))
 		{

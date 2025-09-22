@@ -11,7 +11,6 @@
 #include "Flux/AnimatedMeshes/Flux_AnimatedMeshes.h"
 #include "Flux/Terrain/Flux_Terrain.h"
 #include "Flux/DeferredShading/Flux_DeferredShading.h"
-#include "Flux/Water/Flux_Water.h"
 #include "Flux/Fog/Flux_Fog.h"
 #include "Flux/Quads/Flux_Quads.h"
 #include "Flux/SDFs/Flux_SDFs.h"
@@ -96,7 +95,6 @@ static void SubmitRenderTasks()
 	Flux_AnimatedMeshes::SubmitRenderTask();
 	Flux_Terrain::SubmitRenderToGBufferTask();
 	Flux_DeferredShading::SubmitRenderTask();
-	Flux_Water::SubmitRenderTask();
 	Flux_Fog::SubmitRenderTask();
 	Flux_SDFs::SubmitRenderTask();
 	Flux_Particles::SubmitRenderTask();
@@ -112,7 +110,6 @@ static void WaitForRenderTasks()
 	Flux_AnimatedMeshes::WaitForRenderTask();
 	Flux_Terrain::WaitForRenderToGBufferTask();
 	Flux_DeferredShading::WaitForRenderTask();
-	Flux_Water::WaitForRenderTask();
 	Flux_Fog::WaitForRenderTask();
 	Flux_SDFs::WaitForRenderTask();
 	Flux_Particles::WaitForRenderTask();

@@ -61,7 +61,7 @@ public:
 		return uRet;
 	}
 
-	void LoadMeshesFromDir(const std::filesystem::path& strPath)
+	void LoadMeshesFromDir(const std::filesystem::path& strPath, Flux_Material* const pxOverrideMaterial = nullptr)
 	{
 		const std::string strLeaf = strPath.stem().string();
 
@@ -108,8 +108,15 @@ public:
 				}
 				const uint32_t uMatIndex = GetMaterialIndexFromMeshName(xFile.path().stem().string());
 				const std::string strMatName = strLeaf + std::to_string(uMatIndex);
-				Flux_Material& xMat = Zenith_AssetHandler::TryGetMaterial(strMatName);
-				AddMeshEntry(Zenith_AssetHandler::GetMesh(xFile.path().stem().string()), xMat);
+				if (pxOverrideMaterial)
+				{
+					AddMeshEntry(Zenith_AssetHandler::GetMesh(xFile.path().stem().string()), *pxOverrideMaterial);
+				}
+				else
+				{
+					Flux_Material& xMat = Zenith_AssetHandler::TryGetMaterial(strMatName);
+					AddMeshEntry(Zenith_AssetHandler::GetMesh(xFile.path().stem().string()), xMat);
+				}
 			}
 		}
 	}
