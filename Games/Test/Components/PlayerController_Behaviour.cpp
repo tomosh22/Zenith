@@ -147,7 +147,7 @@ void PlayerController_Behaviour::OnUpdate(const float fDt)
 	Zenith_Maths::Vector3 xOffsetXZ = Zenith_Maths::Vector3(sinf(xCamera.GetYaw()), 0, -cosf(xCamera.GetYaw())) * dbg_fCamDistance;
 	Zenith_Maths::Vector3 xPos;
 	xTrans.GetPosition(xPos);
-	xCamera.SetPosition(xPos + Zenith_Maths::Vector3(0, 10, 0) + xOffsetXZ);
+	xCamera.SetPosition(xPos + Zenith_Maths::Vector3(0, 20, 0) + xOffsetXZ);
 
 	if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_E))
 	{

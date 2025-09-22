@@ -1,5 +1,6 @@
 using Sharpmake;
 using System;
+using System.IO;
 
 [Fragment, Flags]
 public enum ToolsEnabled
@@ -170,17 +171,16 @@ public class TestToolsProject : Project
 		
 		conf.Defines.Add("GLM_ENABLE_EXPERIMENTAL");
 		conf.Defines.Add("NOMINMAX");
-        conf.Defines.Add("ASSETS_ROOT=\"c:/dev/zenith/Games/" + Name + "/Assets/\"");
+        conf.Defines.Add("ASSETS_ROOT=\"c:/dev/zenith/Games/" + "Test" + "/Assets/\"");
 
         String sharpmakePath = SharpmakeCsPath;
-		String gameAssetRoot = sharpmakePath + "/Games/" + Name + "/Assets/";
+		String gameAssetRoot = new DirectoryInfo(sharpmakePath).Parent + "/Assets/";
 		gameAssetRoot = gameAssetRoot.Replace('\\', '/');
 		conf.Defines.Add("GAME_ASSETS_DIR=\"" + gameAssetRoot + "\"");
-		String engineAssetRoot = sharpmakePath + "/Zenith/Assets/";
-		engineAssetRoot = engineAssetRoot.Replace('\\', '/');
-		conf.Defines.Add("ENGINE_ASSETS_DIR=\"" + engineAssetRoot + "\"");
-		
-		
+
+		conf.Defines.Add("ENGINE_ASSETS_DIR=\"c:/dev/zenith/zenith/Assets/\"");
+
+
 		conf.Defines.Add("OPENDDLPARSER_BUILD");
 		conf.Defines.Add("__OPENCV_BUILD");
 		

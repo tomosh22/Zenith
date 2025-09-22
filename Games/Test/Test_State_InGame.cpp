@@ -195,8 +195,13 @@ void Test_State_InGame::OnEnter()
 	Flux_MeshGeometry& xSphereMesh = Zenith_AssetHandler::GetMesh("Sphere_Smooth");
 
 	Zenith_ModelComponent& xModel = s_xPlayer.AddComponent<Zenith_ModelComponent>();
-	xModel.AddMeshEntry(Zenith_AssetHandler::GetMesh("StickyMcStickFace"), Zenith_AssetHandler::GetMaterial("Crystal"));
-	xModel.GetMeshGeometryAtIndex(0).m_pxAnimation = new Flux_MeshAnimation(ASSETS_ROOT"Meshes/stickymcstickface_anim/StickyMcStickface_Anim.fbx", xModel.GetMeshGeometryAtIndex(0));
+	//xModel.AddMeshEntry(Zenith_AssetHandler::GetMesh("StickyMcStickFace"), Zenith_AssetHandler::GetMaterial("Crystal"));
+	Flux_Material& xCrystalMaterial = Zenith_AssetHandler::GetMaterial("Crystal");
+	xModel.LoadMeshesFromDir("C:/dev/Zenith/Games/Test/Assets/Meshes/stickymcstickface_anim", &xCrystalMaterial);
+	for(u_int u = 0; u < xModel.GetNumMeshEntires(); u++)
+	{
+		xModel.GetMeshGeometryAtIndex(u).m_pxAnimation = new Flux_MeshAnimation(ASSETS_ROOT"Meshes/stickymcstickface_anim/StickyMcStickface_Anim.fbx", xModel.GetMeshGeometryAtIndex(u));
+	}
 
 	{
 		s_xSphere0.Initialise(&xScene, "Sphere0");
@@ -295,13 +300,6 @@ void Test_State_InGame::OnEnter()
 			xTerrain.Initialise(&xScene, strRenderMeshName);
 
 			xTerrain.AddComponent<Zenith_TerrainComponent>(xTerrainRenderMesh, xTerrainPhysicsMesh, xTerrainWaterMesh, Zenith_AssetHandler::GetMaterial("Rock"), Zenith_AssetHandler::GetMaterial("Crystal"), Zenith_Maths::Vector2(x * TERRAIN_SIZE, y * TERRAIN_SIZE));
-#if 0
-			{
-				Zenith_TextComponent& xText = xTerrain.AddComponent<Zenith_TextComponent>();
-				TextEntry_World xTextEntry = { std::to_string(x * TERRAIN_SIZE * TERRAIN_SCALE) + " " + std::to_string(MAX_TERRAIN_HEIGHT / 2) + " " + std::to_string(y * TERRAIN_SIZE * TERRAIN_SCALE), {x * TERRAIN_SIZE, MAX_TERRAIN_HEIGHT / 2, y * TERRAIN_SIZE}, 1. };
-				xText.AddText_World(xTextEntry);
-			}
-#endif
 
 
 #if 1
