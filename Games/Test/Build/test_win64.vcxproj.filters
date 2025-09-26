@@ -1065,6 +1065,9 @@
     <ClInclude Include="..\Test_State_MainMenu.h">
       <Filter>Games\Test</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\Core\Zenith_String.h">
+      <Filter>Zenith\Core</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Games">

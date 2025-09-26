@@ -1,6 +1,8 @@
 #pragma once
 #include <fstream>
 
+#define ZENITH_MAX_PATH_LENGTH 1024
+
 namespace Zenith_FileAccess
 {
 	static char* ReadFile(const char* szFilename)
@@ -31,8 +33,14 @@ namespace Zenith_FileAccess
 
 	static void WriteFile(const char* szFilename, const void* const pData, const uint64_t ulSize)
 	{
-		FILE* pxFile = fopen(szFilename, "wb");
-		fwrite(pData, ulSize, 1, pxFile);
-		fclose(pxFile);
+		char acFixedFilename[ZENITH_MAX_PATH_LENGTH]{0};
+		strncpy(acFixedFilename, szFilename, strlen(szFilename));
+		Zenith_StringUtil::ReplaceAllChars(acFixedFilename, '\\', '/');
+
+		std::ofstream xFile(acFixedFilename, std::ios::trunc | std::ios::binary);
+		Zenith_Assert(xFile.is_open(), "Failed to open file");
+
+		xFile.write(static_cast<const char*>(pData), ulSize);
+		xFile.close();
 	}
 }

@@ -30,6 +30,7 @@ static_assert(sizeof(u_int64) == 8);
 
 
 #include "Maths/Zenith_Maths.h"
+#include "Core/Zenith_String.h"
 #include "Zenith_Core.h"
 
 #include "Zenith_OS_Include.h"
