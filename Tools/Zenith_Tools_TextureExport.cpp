@@ -39,27 +39,17 @@ void Zenith_Tools_TextureExport::ExportFromFile(std::string strFilename, const c
 
 void Zenith_Tools_TextureExport::ExportFromData(const void* pData, const std::string& strFilename, int32_t iWidth, int32_t iHeight, ColourFormat eFormat)
 {
-	FILE* pxFile = fopen(strFilename.c_str(), "wb");
-	Zenith_Assert(pxFile, "Failed to open file %s", strFilename.c_str());
-	char cNull = '\0';
 
-	fputs(std::to_string(iWidth).c_str(), pxFile);
-	fwrite(&cNull, 1, 1, pxFile);
+	const size_t ulDataSize = iWidth * iHeight * 1 /*depth*/ * 4 /*bytes per pixel*/;
 
-	fputs(std::to_string(iHeight).c_str(), pxFile);
-	fwrite(&cNull, 1, 1, pxFile);
-
-	//#TO_TODO: 3d textures (depth)
-	fputs(std::to_string(1u).c_str(), pxFile);
-	fwrite(&cNull, 1, 1, pxFile);
-
-	fputs(std::to_string(eFormat).c_str(), pxFile);
-	fwrite(&cNull, 1, 1, pxFile);
-
-	size_t ulDataSize = iWidth * iHeight * 1 /*depth*/ * 4 /*bytes per pixel*/;
-	fwrite(pData, ulDataSize, 1, pxFile);
-
-	fclose(pxFile);
+	Zenith_DataStream xStream;
+	xStream << iWidth;
+	xStream << iHeight;
+	xStream << 1;
+	xStream << eFormat;
+	xStream << ulDataSize;
+	xStream.WriteData(pData, ulDataSize);
+	xStream.WriteToFile(strFilename.c_str());
 }
 
 void ExportTexture(const std::filesystem::directory_entry& xFile)

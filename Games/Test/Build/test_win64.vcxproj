@@ -41,6 +41,7 @@
     <CharacterSet>MultiByte</CharacterSet>
     <WholeProgramOptimization>false</WholeProgramOptimization>
     <PlatformToolset>v143</PlatformToolset>
+    <EnableASAN>true</EnableASAN>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
@@ -55,6 +56,7 @@
     <CharacterSet>MultiByte</CharacterSet>
     <WholeProgramOptimization>false</WholeProgramOptimization>
     <PlatformToolset>v143</PlatformToolset>
+    <EnableASAN>true</EnableASAN>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="ExtensionSettings">
@@ -184,7 +186,8 @@
       <AdditionalDependencies>glfw3_mt.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
-      <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
+      <IgnoreSpecificDefaultLibraries>
+      </IgnoreSpecificDefaultLibraries>
       <LargeAddressAware>true</LargeAddressAware>
       <MapFileName>output\win64\vs2022_debug_win64_false\test.map</MapFileName>
     </Link>
@@ -240,6 +243,7 @@
       <PrecompiledHeaderOutputFile>obj\win64\vs2022_debug_win64_true\Test.pch</PrecompiledHeaderOutputFile>
       <ProgramDatabaseFileName>obj\win64\vs2022_debug_win64_true\test_compiler.pdb</ProgramDatabaseFileName>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+      <ConformanceMode>true</ConformanceMode>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -270,7 +274,8 @@
       <AdditionalDependencies>zenithtools.lib;assimp-vc143-mtd.lib;glfw3_mt.lib;opencv_world4100d.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
-      <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
+      <IgnoreSpecificDefaultLibraries>
+      </IgnoreSpecificDefaultLibraries>
       <LargeAddressAware>true</LargeAddressAware>
       <MapFileName>output\win64\vs2022_debug_win64_true\test.map</MapFileName>
     </Link>
@@ -356,7 +361,8 @@
       <AdditionalDependencies>glfw3_mt.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
-      <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
+      <IgnoreSpecificDefaultLibraries>
+      </IgnoreSpecificDefaultLibraries>
       <LargeAddressAware>true</LargeAddressAware>
       <MapFileName>output\win64\vs2022_release_win64_false\test.map</MapFileName>
     </Link>
@@ -442,7 +448,8 @@
       <AdditionalDependencies>zenithtools.lib;assimp-vc143-mt.lib;glfw3_mt.lib;opencv_world4100.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
-      <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
+      <IgnoreSpecificDefaultLibraries>
+      </IgnoreSpecificDefaultLibraries>
       <LargeAddressAware>true</LargeAddressAware>
       <MapFileName>output\win64\vs2022_release_win64_true\test.map</MapFileName>
     </Link>
@@ -572,6 +579,7 @@
     <ClInclude Include="..\..\..\Zenith\Core\Multithreading\Zenith_Multithreading.h" />
     <ClInclude Include="..\..\..\Zenith\Core\Zenith.h" />
     <ClInclude Include="..\..\..\Zenith\Core\Zenith_Core.h" />
+    <ClInclude Include="..\..\..\Zenith\Core\Zenith_String.h" />
     <ClInclude Include="..\..\..\Zenith\DataStream\Zenith_DataStream.h" />
     <ClInclude Include="..\..\..\Zenith\DebugVariables\Zenith_DebugVariables.h" />
     <ClInclude Include="..\..\..\Zenith\EntityComponent\Components\Zenith_CameraComponent.h" />

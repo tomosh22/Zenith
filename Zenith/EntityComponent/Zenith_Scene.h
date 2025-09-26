@@ -109,11 +109,9 @@ public:
 	template<typename T>
 	void GetAllOfComponentType(Zenith_Vector<T*>& xOut)
 	{
-		Zenith_ComponentPool<T>* pxPool = GetComponentPool<T>();
-		for (typename Zenith_Vector<T>::Iterator xIt(pxPool->m_xData); !xIt.Done(); xIt.Next())
+		for (typename Zenith_Vector<T>::Iterator xIt(GetComponentPool<T>()->m_xData); !xIt.Done(); xIt.Next())
 		{
-			T& x = xIt.GetData();
-			xOut.PushBack(&x);
+			xOut.PushBack(&xIt.GetData());
 		}
 	}
 

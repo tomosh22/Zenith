@@ -29,9 +29,9 @@ public:
 	static vk::AttachmentStoreOp ConvertToVkStoreAction(StoreAction eAction);
 	static vk::ImageLayout ConvertToVkTargetUsage(RenderTargetUsage eUsage, RenderTargetType eColourDepthStencil);
 
-	const vk::Image& GetImage() const { return m_xImage; }
+	const vk::Image GetImage() const { return m_xImage; }
 	VkImage* GetImage_Ptr() { return &m_xImage; }
-	const vk::ImageView& GetImageView() const { return m_xImageView; }
+	const vk::ImageView GetImageView() const { return m_xImageView; }
 	const uint32_t GetNumMips() const { return m_uNumMips; }
 	const uint32_t GetNumLayers() const { return m_uNumLayers; }
 	const VmaAllocation& GetAllocation() const { return m_xAllocation; }
@@ -39,8 +39,8 @@ public:
 	VmaAllocationInfo* GetAllocationInfo_Ptr() { return &m_xAllocationInfo; }
 	const vk::Format GetTextureFormat() const { return m_eFormat; }
 
-	void SetImage(const vk::Image& xImage) { m_xImage = xImage; }
-	void SetImageView(const vk::ImageView& xView) { m_xImageView = xView; }
+	void SetImage(const vk::Image xImage) { m_xImage = xImage; }
+	void SetImageView(const vk::ImageView xView) { m_xImageView = xView; }
 	void SetAllocation(const VmaAllocation& xAlloc) { m_xAllocation = xAlloc; }
 	void SetFormat(const vk::Format eFormat) { m_eFormat = eFormat; }
 

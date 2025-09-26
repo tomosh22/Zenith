@@ -282,41 +282,23 @@ void Zenith_Vulkan_MemoryManager::CreateTexture(const char* szPath, Zenith_Vulka
 {
 	FreeTexture(&xTextureOut);
 
-	uint32_t uWidth = 0, uHeight = 0, uDepth = 0;
-	vk::Format eFormat = vk::Format::eUndefined;
-	void* pData = nullptr;
+	size_t ulDataSize;
+	int32_t uWidth = 0, uHeight = 0, uDepth = 0;
+	ColourFormat eFormat;
 
-	FILE* pxFile = fopen(szPath, "rb");
-	fseek(pxFile, 0, SEEK_END);
-	size_t ulFileSize = ftell(pxFile);
-	fseek(pxFile, 0, SEEK_SET);
-	char* pcData = new char[ulFileSize + 1];
-	fread(pcData, ulFileSize, 1, pxFile);
-	pcData[ulFileSize] = '\0';
-	fclose(pxFile);
+	Zenith_DataStream xStream;
+	xStream.ReadFromFile(szPath);
 
-	size_t ulCursor = 0;
+	xStream >> uWidth;
+	xStream >> uHeight;
+	xStream >> uDepth;
+	xStream >> eFormat;
+	xStream >> ulDataSize;
 
-	uWidth = atoi(pcData + ulCursor);
-	ulCursor += std::to_string(uWidth).length() + 1;
+	void* const pData = Zenith_MemoryManagement::Allocate(ulDataSize);
+	xStream.ReadData(pData, ulDataSize);
 
-	uHeight = atoi(pcData + ulCursor);
-	ulCursor += std::to_string(uHeight).length() + 1;
 
-	uDepth = atoi(pcData + ulCursor);
-	ulCursor += std::to_string(uDepth).length() + 1;
-
-	std::string strFormat(pcData + ulCursor);
-	ulCursor += strFormat.length() + 1;
-	//#TO_TODO: other formats
-	eFormat = Zenith_Vulkan_Texture::ConvertToVkFormat_Colour((ColourFormat)std::stoi(strFormat));
-	//eFormat = vk::Format::eR8G8B8A8Unorm;
-
-	size_t ulDataSize = uWidth * uHeight * uDepth * 4 /*bytes per pixel*/;
-	pData = Zenith_MemoryManagement::Allocate(ulDataSize);
-	memcpy(pData, pcData + ulCursor, ulDataSize);
-
-	delete[] pcData;
 
 	uint32_t uNumMips = std::floor(std::log2(std::max(uWidth, uHeight))) + 1;
 
@@ -366,43 +348,25 @@ void Zenith_Vulkan_MemoryManager::CreateTextureCube(const char* szPathPX, const 
 	{
 		const char* szPath = aszPaths[u];
 		void*& pData = apDatas[u];
+		size_t ulDataSize;
+		ColourFormat eFormat;
 
-		vk::Format eFormat = vk::Format::eUndefined;
+		Zenith_DataStream xStream;
+		xStream.ReadFromFile(szPath);
 
-		FILE* pxFile = fopen(szPath, "rb");
-		fseek(pxFile, 0, SEEK_END);
-		size_t ulFileSize = ftell(pxFile);
-		fseek(pxFile, 0, SEEK_SET);
-		char* pcData = new char[ulFileSize + 1];
-		fread(pcData, ulFileSize, 1, pxFile);
-		pcData[ulFileSize] = '\0';
-		fclose(pxFile);
+		xStream >> uWidth;
+		xStream >> uHeight;
+		xStream >> uDepth;
+		xStream >> eFormat;
+		xStream >> ulDataSize;
 
-		size_t ulCursor = 0;
-
-		uWidth = atoi(pcData + ulCursor);
-		ulCursor += std::to_string(uWidth).length() + 1;
-
-		uHeight = atoi(pcData + ulCursor);
-		ulCursor += std::to_string(uHeight).length() + 1;
-
-		uDepth = atoi(pcData + ulCursor);
-		ulCursor += std::to_string(uDepth).length() + 1;
-
-		std::string strFormat(pcData + ulCursor);
-		ulCursor += strFormat.length() + 1;
-		//#TO_TODO: other formats
-		eFormat = vk::Format::eR8G8B8A8Unorm;
+		pData = Zenith_MemoryManagement::Allocate(ulDataSize);
+		xStream.ReadData(pData, ulDataSize);
 		//eFormat = StringToVkFormat(strFormat);
 
-		size_t ulThisFileDataSize = uWidth * uHeight * uDepth * 4 /*bytes per pixel*/;
-		aulDataSizes[u] = ulThisFileDataSize;
+		aulDataSizes[u] = ulDataSize;
 
-		ulTotalDataSize += ulThisFileDataSize;
-		pData = Zenith_MemoryManagement::Allocate(ulThisFileDataSize);
-		memcpy(pData, pcData + ulCursor, ulThisFileDataSize);
-
-		delete[] pcData;
+		ulTotalDataSize += ulDataSize;
 
 		uNumMips = std::floor(std::log2(std::max(uWidth, uHeight))) + 1;
 	}
@@ -476,7 +440,7 @@ void Zenith_Vulkan_MemoryManager::AllocateTexture(uint32_t uWidth, uint32_t uHei
 		xAllocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
 	}
 
-	const vk::ImageCreateInfo::NativeType& xImageInfo_Native = xImageInfo;
+	const vk::ImageCreateInfo::NativeType xImageInfo_Native = xImageInfo;
 
 	vmaCreateImage(s_xAllocator, &xImageInfo_Native, &xAllocInfo, xTextureOut.GetImage_Ptr(), xTextureOut.GetAllocation_Ptr(), nullptr);
 

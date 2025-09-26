@@ -18,7 +18,7 @@ public:
 
 	void Reset();
 
-	const vk::Buffer& GetBuffer() const { return m_xBuffer; }
+	const vk::Buffer GetBuffer() const { return m_xBuffer; }
 	VkBuffer* GetBuffer_Ptr() { return &m_xBuffer; }
 	const uint64_t GetSize() const { return m_ulSize; }
 	const VmaAllocation& GetAllocation() const { return m_xAllocation; }
@@ -26,7 +26,7 @@ public:
 	VmaAllocationInfo* GetAllocationInfo_Ptr() { return &m_xAllocationInfo; }
 
 	void SetSize(const uint64_t ulSize) { m_ulSize = ulSize; }
-	void SetBuffer(const vk::Buffer& xBuffer) { m_xBuffer = xBuffer; }
+	void SetBuffer(const vk::Buffer xBuffer) { m_xBuffer = xBuffer; }
 	void SetAllocation(const VmaAllocation& xAlloc) { m_xAllocation = xAlloc; }
 
 	bool IsValid() const

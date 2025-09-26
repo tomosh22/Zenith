@@ -66,8 +66,6 @@ void Zenith_Scene::Serialize(const std::string& strFilename) {
 
 void Zenith_Scene::Update(const float fDt)
 {
-	Zenith_TaskSystem::SubmitTask(g_pxAnimUpdateTask);
-
 	s_xCurrentScene.AcquireMutex();
 	Zenith_Vector<Zenith_ScriptComponent*> xScripts;
 	s_xCurrentScene.GetAllOfComponentType<Zenith_ScriptComponent>(xScripts);
@@ -76,6 +74,10 @@ void Zenith_Scene::Update(const float fDt)
 		xIt.GetData()->OnUpdate(fDt);
 	}
 	s_xCurrentScene.ReleaseMutex();
+
+	//#TO used to have this before script update but scripts can add new model components
+	//causing a vector resize which causes the animation update to read deallocate model memory
+	Zenith_TaskSystem::SubmitTask(g_pxAnimUpdateTask);
 }
 
 void Zenith_Scene::WaitForUpdateComplete()

@@ -121,17 +121,17 @@ public:
 		}
 	}
 
-	void AddMeshEntry(Flux_MeshGeometry& xGeometry, Flux_Material& xMaterial) { m_xMeshEntries.push_back({ &xGeometry, &xMaterial }); }
+	void AddMeshEntry(Flux_MeshGeometry& xGeometry, Flux_Material& xMaterial) { m_xMeshEntries.PushBack({ &xGeometry, &xMaterial }); }
 
-	Flux_MeshGeometry& GetMeshGeometryAtIndex(const uint32_t uIndex) const { return *m_xMeshEntries[uIndex].m_pxGeometry; }
-	const Flux_Material& GetMaterialAtIndex(const uint32_t uIndex) const { return *m_xMeshEntries[uIndex].m_pxMaterial; }
-	Flux_Material& GetMaterialAtIndex(const uint32_t uIndex) { return *m_xMeshEntries[uIndex].m_pxMaterial; }
+	Flux_MeshGeometry& GetMeshGeometryAtIndex(const uint32_t uIndex) const { return *m_xMeshEntries.Get(uIndex).m_pxGeometry; }
+	const Flux_Material& GetMaterialAtIndex(const uint32_t uIndex) const { return *m_xMeshEntries.Get(uIndex).m_pxMaterial; }
+	Flux_Material& GetMaterialAtIndex(const uint32_t uIndex) { return *m_xMeshEntries.Get(uIndex).m_pxMaterial; }
 
-	const uint32_t GetNumMeshEntires() const { return m_xMeshEntries.size(); }
+	const uint32_t GetNumMeshEntires() const { return m_xMeshEntries.GetSize(); }
 
 	Zenith_Entity GetParentEntity() const { return m_xParentEntity; }
 private:
 	Zenith_Entity m_xParentEntity;
 
-	std::vector<MeshEntry> m_xMeshEntries;
+	Zenith_Vector<MeshEntry> m_xMeshEntries;
 };
