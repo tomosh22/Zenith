@@ -2,6 +2,7 @@
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "Zenith_Tools_TextureExport.h"
 
+#include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
@@ -178,12 +179,12 @@ static void ExportAssimpMesh(aiMesh* pxAssimpMesh, std::string strOutFilename)
 	xMesh.Export(strOutFilename.c_str());
 }
 
-static void ProcessNode(aiNode* pxNode, const aiScene* pxScene, const std::string& strExtension, const std::string& strFilename, uint32_t& uIndex)
+static void ProcessNode(aiNode* pxNode, const aiScene* pxScene, const std::string& strExtension, const std::string& strFilename, uint32_t& uIndex, const char* szExportFilenameOverride = nullptr)
 {
 	for (uint32_t u = 0; u < pxNode->mNumMeshes; u++)
 	{
 		aiMesh* pxAssimpMesh = pxScene->mMeshes[pxNode->mMeshes[u]];
-		std::string strExportFilename(strFilename);
+		std::string strExportFilename = szExportFilenameOverride ? szExportFilenameOverride : strFilename;
 		size_t ulFindPos = strExportFilename.find(strExtension.c_str());
 		Zenith_Assert(ulFindPos != std::string::npos, "");
 		strExportFilename.replace(ulFindPos, strlen(strExtension.c_str()), "_Mesh" + std::to_string(uIndex++) + "_Mat" + std::to_string(pxAssimpMesh->mMaterialIndex) + ".zmsh");
@@ -193,7 +194,7 @@ static void ProcessNode(aiNode* pxNode, const aiScene* pxScene, const std::strin
 
 	for (uint32_t u = 0; u < pxNode->mNumChildren; u++)
 	{
-		ProcessNode(pxNode->mChildren[u], pxScene, strExtension, strFilename, uIndex);
+		ProcessNode(pxNode->mChildren[u], pxScene, strExtension, strFilename, uIndex, szExportFilenameOverride);
 	}
 }
 
@@ -262,7 +263,7 @@ static void ExportMaterialTextures(const aiMaterial* pxMat, const aiScene* pxSce
 	}
 }
 
-static void Export(const std::string& strFilename, const std::string& strExtension)
+static void Export(const std::string& strFilename, const std::string& strExtension, const char* szExportFilenameOverride = nullptr)
 {
 	Assimp::Importer importer;
 	const aiScene* pxScene = importer.ReadFile(strFilename,
@@ -284,7 +285,50 @@ static void Export(const std::string& strFilename, const std::string& strExtensi
 	}
 
 	uint32_t uRootIndex = 0;
-	ProcessNode(pxScene->mRootNode, pxScene, strExtension, strFilename, uRootIndex);
+	ProcessNode(pxScene->mRootNode, pxScene, strExtension, strFilename, uRootIndex, szExportFilenameOverride);
+}
+
+//#TO export twice and ensure both are identical
+static void ExportDeterminismCheck(const std::string& strFilename, const std::string& strExtension)
+{
+	std::string strCopy0 = strFilename + "0";
+	std::string strCopy1 = strFilename + "1";
+	Export(strFilename, strExtension, strCopy0.c_str());
+	//Export(strFilename, strExtension, strCopy1.c_str());
+
+	Zenith_Entity xDummyEntity0, xDummyEntity1;
+	Zenith_ModelComponent xModel0(xDummyEntity0), xModel1(xDummyEntity1);
+
+	std::string strDir = std::filesystem::directory_entry(strFilename).path().parent_path().string();
+	xModel0.LoadMeshesFromDir(strDir, nullptr, true, false);
+	xModel1.LoadMeshesFromDir(strDir, nullptr, true, false);
+
+	Zenith_Assert(xModel0.GetNumMeshEntires() == xModel1.GetNumMeshEntires());
+
+	for (u_int u = 0; u < xModel0.GetNumMeshEntires(); u++)
+	{
+		Flux_MeshGeometry& xMesh0 = xModel0.GetMeshGeometryAtIndex(u);
+		Flux_MeshGeometry& xMesh1 = xModel1.GetMeshGeometryAtIndex(u);
+		//buffer layout
+		Zenith_Assert(xMesh0.m_xBufferLayout.GetStride() == xMesh1.m_xBufferLayout.GetStride());
+
+		Zenith_Assert(xMesh0.GetNumVerts() == xMesh1.GetNumVerts());
+		Zenith_Assert(xMesh0.GetNumIndices() == xMesh1.GetNumIndices());
+		Zenith_Assert(xMesh0.GetNumBones() == xMesh1.GetNumBones());
+		Zenith_Assert(xMesh0.m_xBoneNameToIdAndOffset == xMesh1.m_xBoneNameToIdAndOffset);
+
+		const u_int uVertexDataSize = xMesh0.m_uNumVerts * xMesh0.m_xBufferLayout.GetStride();
+		const u_int uIndexDataSize = xMesh0.m_uNumIndices * sizeof(Flux_MeshGeometry::IndexType);
+
+		Zenith_Assert(!memcmp(xMesh0.m_pVertexData, xMesh1.m_pVertexData, uVertexDataSize));
+		Zenith_Assert(!memcmp(xMesh0.m_puIndices, xMesh1.m_puIndices, uIndexDataSize));
+		Zenith_Assert(!memcmp(xMesh0.m_pxPositions, xMesh1.m_pxPositions, xMesh0.m_uNumVerts * sizeof(xMesh0.m_pxPositions[0])));
+		Zenith_Assert(!memcmp(xMesh0.m_pxNormals, xMesh1.m_pxNormals, xMesh0.m_uNumVerts * sizeof(xMesh0.m_pxNormals[0])));
+	}
+
+	volatile bool a = false;
+	//std::filesystem::remove(strCopy0);
+	//std::filesystem::remove(strCopy1);
 }
 
 void ExportAllMeshes()
@@ -315,6 +359,11 @@ void ExportAllMeshes()
 		{
 			std::string strFilename(szFilename);
 			Export(strFilename, ".fbx");
+
+			if(strFilename.find("stickymcstickface") != std::string::npos)
+			{
+				//ExportDeterminismCheck(strFilename, ".fbx");
+			}
 		}
 
 		//is this an obj

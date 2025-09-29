@@ -11,6 +11,7 @@
 #include "AssetHandling/Zenith_AssetHandler.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
+#include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
 
