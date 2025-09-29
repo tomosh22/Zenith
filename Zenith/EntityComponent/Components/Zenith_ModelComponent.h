@@ -1,5 +1,5 @@
 #pragma once
-#include "EntityComponent/Components/Zenith_TransformComponent.h"
+#include "EntityComponent/Zenith_Entity.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "Flux/Flux.h"
 #include "Flux/Flux_Buffers.h"
@@ -61,7 +61,7 @@ public:
 		return uRet;
 	}
 
-	void LoadMeshesFromDir(const std::filesystem::path& strPath, Flux_Material* const pxOverrideMaterial = nullptr)
+	void LoadMeshesFromDir(const std::filesystem::path& strPath, Flux_Material* const pxOverrideMaterial = nullptr, const bool bRetainPositionsAndNormals = false, const bool bUploadToGPU = true)
 	{
 		const std::string strLeaf = strPath.stem().string();
 
@@ -104,7 +104,7 @@ public:
 			{
 				if (!Zenith_AssetHandler::MeshExists(xFile.path().stem().string()))
 				{
-					Zenith_AssetHandler::AddMesh(xFile.path().stem().string(), xFile.path().string().c_str());
+					Zenith_AssetHandler::AddMesh(xFile.path().stem().string(), xFile.path().string().c_str(), bRetainPositionsAndNormals, bUploadToGPU);
 				}
 				const uint32_t uMatIndex = GetMaterialIndexFromMeshName(xFile.path().stem().string());
 				const std::string strMatName = strLeaf + std::to_string(uMatIndex);

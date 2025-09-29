@@ -75,7 +75,7 @@ ShaderDataType StringToShaderDataType(const std::string& strString)
 	return SHADER_DATA_TYPE_NONE;
 }
 
-void Flux_MeshGeometry::LoadFromFile(const char* szPath, Flux_MeshGeometry& xGeometryOut, const bool bRetainPositionsAndNormals /*= false*/)
+void Flux_MeshGeometry::LoadFromFile(const char* szPath, Flux_MeshGeometry& xGeometryOut, const bool bRetainPositionsAndNormals /*= false*/, const bool bUploadToGPU /*= true*/)
 {
 	Zenith_DataStream xStream;
 	xStream.ReadFromFile(szPath);
@@ -111,8 +111,11 @@ void Flux_MeshGeometry::LoadFromFile(const char* szPath, Flux_MeshGeometry& xGeo
 		xStream.SkipBytes(xGeometryOut.m_uNumVerts * (sizeof(m_pxPositions[0]) + sizeof(m_pxNormals[0])));
 	}
 
+	if(bUploadToGPU)
+	{
 	Flux_MemoryManager::InitialiseVertexBuffer(xGeometryOut.GetVertexData(), xGeometryOut.GetVertexDataSize(), xGeometryOut.m_xVertexBuffer);
 	Flux_MemoryManager::InitialiseIndexBuffer(xGeometryOut.GetIndexData(), xGeometryOut.GetIndexDataSize(), xGeometryOut.m_xIndexBuffer);
+	}
 }
 
 #ifdef ZENITH_TOOLS
