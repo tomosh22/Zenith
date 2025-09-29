@@ -101,10 +101,68 @@ void PlayerController_Behaviour::OnUpdate(const float fDt)
 	Zenith_TransformComponent& xTrans = m_xParentEntity.GetComponent<Zenith_TransformComponent>();
 	Zenith_CameraComponent& xCamera = m_xParentEntity.GetComponent<Zenith_CameraComponent>();
 
+	UpdateCameraRotation(xCamera);
+
 	//#TO i don't think i need to multiply by fDt? physics update should handle frame rate inconsistencies right?
 	const double dMoveSpeed = s_dMoveSpeed;
 
-	UpdateCameraRotation(xCamera);
+	if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_C))
+	{
+		m_bFlyCamEnabled = !m_bFlyCamEnabled;
+	}
+
+	if (m_bFlyCamEnabled)
+	{
+		Zenith_Maths::Vector3 xFinalVelocity(0,0,0);
+
+		if (Zenith_Input::IsKeyDown(ZENITH_KEY_W))
+		{
+			Zenith_Maths::Matrix4_64 xRotation = glm::rotate(-xCamera.GetYaw(), Zenith_Maths::Vector3_64(0, 1, 0));
+			Zenith_Maths::Vector4_64 xResult = xRotation * Zenith_Maths::Vector4(0, 0, 1, 1) * dMoveSpeed;
+			xFinalVelocity += Zenith_Maths::Vector3(xResult);
+		}
+		if (Zenith_Input::IsKeyDown(ZENITH_KEY_S))
+		{
+			Zenith_Maths::Matrix4_64 xRotation = glm::rotate(-xCamera.GetYaw(), Zenith_Maths::Vector3_64(0, 1, 0));
+			Zenith_Maths::Vector4_64 xResult = xRotation * Zenith_Maths::Vector4(0, 0, 1, 1) * dMoveSpeed;
+			xFinalVelocity -= Zenith_Maths::Vector3(xResult);
+		}
+		if (Zenith_Input::IsKeyDown(ZENITH_KEY_A))
+		{
+			Zenith_Maths::Matrix4_64 xRotation = glm::rotate(-xCamera.GetYaw(), Zenith_Maths::Vector3_64(0, 1, 0));
+			Zenith_Maths::Vector4_64 xResult = xRotation * Zenith_Maths::Vector4(-1, 0, 0, 1) * dMoveSpeed;
+			xFinalVelocity += Zenith_Maths::Vector3(xResult);
+		}
+		if (Zenith_Input::IsKeyDown(ZENITH_KEY_D))
+		{
+			Zenith_Maths::Matrix4_64 xRotation = glm::rotate(-xCamera.GetYaw(), Zenith_Maths::Vector3_64(0, 1, 0));
+			Zenith_Maths::Vector4_64 xResult = xRotation * Zenith_Maths::Vector4(-1, 0, 0, 1) * dMoveSpeed;
+			xFinalVelocity -= Zenith_Maths::Vector3(xResult);
+		}
+		if (Zenith_Input::IsKeyDown(ZENITH_KEY_LEFT_SHIFT))
+		{
+			Zenith_Maths::Vector3_64 xUp = xCamera.GetUpDir();
+
+			xFinalVelocity -= xUp * dMoveSpeed;
+		}
+		if (Zenith_Input::IsKeyDown(ZENITH_KEY_SPACE))
+		{
+			Zenith_Maths::Vector3_64 xUp = xCamera.GetUpDir();
+
+			xFinalVelocity += xUp * dMoveSpeed;
+		}
+
+		Zenith_Maths::Vector3 xPos;
+		xCamera.GetPosition(xPos);
+		xFinalVelocity *= Zenith_Maths::Vector3(Zenith_Core::GetDt());
+		xPos += xFinalVelocity;
+		xCamera.SetPosition(xPos);
+
+		return;
+	}
+
+	
+
 
 	Zenith_Maths::Vector3 xFinalVelocity(0, xTrans.m_pxRigidBody->getLinearVelocity().y, 0);
 

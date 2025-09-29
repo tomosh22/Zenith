@@ -90,10 +90,26 @@ void Zenith_CameraComponent::GetPosition(Zenith_Maths::Vector4& xOut)
 	xOut.w = 0.;
 }
 
+void Zenith_CameraComponent::GetPosition(Zenith_Maths::Vector3& xOut)
+{
+	xOut.x = m_xPosition.x;
+	xOut.y = m_xPosition.y;
+	xOut.z = m_xPosition.z;
+}
+
 void Zenith_CameraComponent::GetFacingDir(Zenith_Maths::Vector3& xOut) const
 {
 	xOut.z = cos(m_fYaw) * cos(m_fPitch);
 	xOut.x = -sin(m_fYaw) * cos(m_fPitch);
 	xOut.y = sin(m_fPitch);
 	glm::normalize(xOut);
+}
+
+Zenith_Maths::Vector3 Zenith_CameraComponent::GetUpDir()
+{
+	Zenith_Maths::Matrix4 xYawMatrix = glm::rotate(-m_fYaw, Zenith_Maths::Vector3_64(0, 1, 0));
+	Zenith_Maths::Matrix4 xPitchMatrix = glm::rotate(-m_fPitch, Zenith_Maths::Vector3_64(1, 0, 0));
+	Zenith_Maths::Matrix4 xRotationMatrix = xYawMatrix * xPitchMatrix;
+	Zenith_Maths::Vector4 xUp = xRotationMatrix * Zenith_Maths::Vector4(0, 1, 0, 1);
+	return {xUp.x, xUp.y, xUp.z};
 }

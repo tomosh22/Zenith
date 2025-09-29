@@ -23,6 +23,6 @@ public:
 	void Shoot();
 
 private:
-
+	bool m_bFlyCamEnabled = false;
 	Zenith_Entity m_xParentEntity;
 };
