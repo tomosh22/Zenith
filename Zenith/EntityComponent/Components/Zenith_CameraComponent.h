@@ -25,6 +25,7 @@ public:
 	void GetPosition(Zenith_Maths::Vector3& xOut) const;
 	//#TO w = 0 for padding
 	void GetPosition(Zenith_Maths::Vector4& xOut);
+	void GetPosition(Zenith_Maths::Vector3& xOut);
 
 	void GetFacingDir(Zenith_Maths::Vector3& xOut) const;
 
@@ -32,6 +33,8 @@ public:
 	void SetPitch(const double fPitch) { m_fPitch = fPitch; }
 	const double GetYaw() const { return m_fYaw; }
 	void SetYaw(const double fYaw) { m_fYaw = fYaw; }
+
+	Zenith_Maths::Vector3 GetUpDir();
 
 	const float GetNearPlane() const { return m_fNear; }
 	const float GetFarPlane() const { return m_fFar; }
