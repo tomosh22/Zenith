@@ -227,15 +227,33 @@ static void ExportMaterialTextures(const aiMaterial* pxMat, const aiScene* pxSce
 		aiString str;
 		pxMat->GetTexture((aiTextureType)uType, 0, &str);
 		const aiTexture* pxTex = pxScene->GetEmbeddedTexture(str.C_Str());
-		if (pxTex == nullptr) continue;
 
-		Zenith_Assert(pxTex->mHeight == 0, "Need to add support for non compressed textures");
+		int32_t iWidth = 0, iHeight = 0, iNumChannels = 0;
+		uint8_t* pData = nullptr;
 
-		const uint32_t uCompressedDataSize = pxTex->mWidth;
-		const void* pCompressedData = pxTex->pcData;
-
-		int32_t iWidth, iHeight, iNumChannels;
-		uint8_t* pData = stbi_load_from_memory((uint8_t*)pCompressedData, uCompressedDataSize, &iWidth, &iHeight, &iNumChannels, STBI_rgb_alpha);
+		if (pxTex)
+		{
+			Zenith_Assert(pxTex->mHeight == 0, "Need to add support for non compressed textures");
+			const uint32_t uCompressedDataSize = pxTex->mWidth;
+			const void* pCompressedData = pxTex->pcData;
+			pData = stbi_load_from_memory((uint8_t*)pCompressedData, uCompressedDataSize, &iWidth, &iHeight, &iNumChannels, STBI_rgb_alpha);
+		}
+		else
+		{
+			if (str.length == 0)
+			{
+				continue;
+			}
+			std::filesystem::path xModelPath = std::filesystem::directory_entry(strFilename).path().parent_path();
+			std::filesystem::path xTexRelPath = std::filesystem::path(str.C_Str());
+			std::filesystem::path xTexPath = xTexRelPath.is_absolute() ? xTexRelPath : (xModelPath / xTexRelPath);
+			std::string strTexPath = xTexPath.string();
+			pData = stbi_load(strTexPath.c_str(), &iWidth, &iHeight, &iNumChannels, STBI_rgb_alpha);
+			if (!pData)
+			{
+				continue;
+			}
+		}
 
 		std::string strExportFile(strFilename);
 		size_t ulDotPos = strExportFile.find(".");
@@ -244,22 +262,9 @@ static void ExportMaterialTextures(const aiMaterial* pxMat, const aiScene* pxSce
 		strExportFile += std::string("_") + std::to_string(uIndex);
 		strExportFile += ".ztx";
 
-		//#TO_TODO: do this properly
-		ColourFormat eFormat;
-		if (iNumChannels == 3)
-		{
-			eFormat = COLOUR_FORMAT_RGB8_UNORM;
-		}
-		else if (iNumChannels == 4)
-		{
-			eFormat = COLOUR_FORMAT_RGBA8_UNORM;
-		}
-		else
-		{
-			Zenith_Assert(false, "What format is this?");
-		}
-
+		ColourFormat eFormat = COLOUR_FORMAT_RGBA8_UNORM;
 		Zenith_Tools_TextureExport::ExportFromData(pData, strExportFile, iWidth, iHeight, eFormat);
+		stbi_image_free(pData);
 	}
 }
 
