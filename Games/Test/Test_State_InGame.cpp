@@ -46,7 +46,6 @@ static Zenith_Entity s_xOgre;
 
 static void LoadAssets()
 {
-	Zenith_AssetHandler::AddMesh("StickyMcStickFace", ASSETS_ROOT"Meshes/stickymcstickface_anim/StickyMcStickface_Anim_Mesh0_Mat0.zmsh");
 	Zenith_AssetHandler::AddMesh("Barrel", ASSETS_ROOT"Meshes/barrel_Mesh0_Mat0.zmsh");
 	{
 		Zenith_AssetHandler::AddTexture2D("Barrel_Diffuse", ASSETS_ROOT"Meshes/barrel_Diffuse_0.ztx");

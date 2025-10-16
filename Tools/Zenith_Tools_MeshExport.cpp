@@ -8,175 +8,221 @@
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
 #include "stb/stb_image.h"
+#include <vector>
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
 
 static void ExportAssimpMesh(aiMesh* pxAssimpMesh, std::string strOutFilename)
 {
-	//#TO_TODO: double check this
 	const bool bFlipWinding = false;
 
 	Flux_MeshGeometry xMesh;
 
-	xMesh.m_uNumVerts = pxAssimpMesh->mNumVertices;
-	xMesh.m_uNumIndices = pxAssimpMesh->mNumFaces * 3;
+	const uint32_t uNumVerts = pxAssimpMesh->mNumVertices;
+	const uint32_t uNumIndices = pxAssimpMesh->mNumFaces * 3;
+	xMesh.m_uNumVerts = uNumVerts;
+	xMesh.m_uNumIndices = uNumIndices;
+	xMesh.m_puIndices = new Flux_MeshGeometry::IndexType[uNumIndices];
 
-	xMesh.m_puIndices = new Flux_MeshGeometry::IndexType[xMesh.m_uNumIndices];
+	const bool bHasPositions = pxAssimpMesh->mVertices != nullptr;
+	const bool bHasUVs = pxAssimpMesh->mTextureCoords[0] != nullptr;
+	const bool bHasNormals = pxAssimpMesh->mNormals != nullptr;
+	const bool bHasTangents = pxAssimpMesh->mTangents != nullptr;
+	const bool bHasBitangents = pxAssimpMesh->mBitangents != nullptr;
+	const bool bHasBones = pxAssimpMesh->mNumBones > 0;
 
-	const bool bHasPositions = &(pxAssimpMesh->mVertices[0]);
-	const bool bHasUVs = &(pxAssimpMesh->mTextureCoords[0][0]);
-	const bool bHasNormals = &(pxAssimpMesh->mNormals[0]);
-	const bool bHasTangents = &(pxAssimpMesh->mTangents[0]);
-	const bool bHasBitangents = &(pxAssimpMesh->mBitangents[0]);
-	const bool bHasBones = pxAssimpMesh->mNumBones;
+	Zenith_Log("MESH_EXPORT: Exporting mesh to %s (Verts: %u, Indices: %u, Bones: %u)",
+		strOutFilename.c_str(), uNumVerts, uNumIndices, pxAssimpMesh->mNumBones);
 
 	if (bHasBones)
 	{
-		xMesh.m_uNumBones = pxAssimpMesh->mNumBones;
+		xMesh.SetNumBones(pxAssimpMesh->mNumBones);
 
-		for (uint32_t u = 0; u < xMesh.m_uNumBones; u++)
+		u_int* puVertexBoneCount = new u_int[uNumVerts];
+		memset(puVertexBoneCount, 0, sizeof(u_int) * uNumVerts);
+
+		for (u_int uBoneIndex = 0; uBoneIndex < pxAssimpMesh->mNumBones; uBoneIndex++)
 		{
-			const aiMatrix4x4& xAssimpMat = pxAssimpMesh->mBones[u]->mOffsetMatrix;
-			Zenith_Maths::Matrix4 xMat;
-			xMat[0][0] = xAssimpMat.a1;
-			xMat[1][0] = xAssimpMat.a2;
-			xMat[2][0] = xAssimpMat.a3;
-			xMat[3][0] = xAssimpMat.a4;
-			xMat[0][1] = xAssimpMat.b1;
-			xMat[1][1] = xAssimpMat.b2;
-			xMat[2][1] = xAssimpMat.b3;
-			xMat[3][1] = xAssimpMat.b4;
-			xMat[0][2] = xAssimpMat.c1;
-			xMat[1][2] = xAssimpMat.c2;
-			xMat[2][2] = xAssimpMat.c3;
-			xMat[3][2] = xAssimpMat.c4;
-			xMat[0][3] = xAssimpMat.d1;
-			xMat[1][3] = xAssimpMat.d2;
-			xMat[2][3] = xAssimpMat.d3;
-			xMat[3][3] = xAssimpMat.d4;
+			const aiBone* pxBone = pxAssimpMesh->mBones[uBoneIndex];
 
-			Zenith_Assert(xMesh.m_xBoneNameToIdAndOffset.find(pxAssimpMesh->mBones[u]->mName.C_Str()) == xMesh.m_xBoneNameToIdAndOffset.end(), "Bone name already exists");
-			xMesh.m_xBoneNameToIdAndOffset.insert({ pxAssimpMesh->mBones[u]->mName.C_Str(), {u, xMat } });
+			for (u_int uWeightIndex = 0; uWeightIndex < pxBone->mNumWeights; uWeightIndex++)
+			{
+				u_int uVertexID = pxBone->mWeights[uWeightIndex].mVertexId;
+				puVertexBoneCount[uVertexID]++;
+			}
+		}
+
+		for (u_int uVert = 0; uVert < uNumVerts; uVert++)
+		{
+			if (puVertexBoneCount[uVert] > MAX_BONES_PER_VERTEX)
+			{
+				Zenith_Assert(false, "Mesh has vertices with more than MAX_BONES_PER_VERTEX bone influences");
+				return;
+			}
+		}
+
+		delete[] puVertexBoneCount;
+
+		for (u_int uBoneIndex = 0; uBoneIndex < pxAssimpMesh->mNumBones; uBoneIndex++)
+		{
+			const aiBone* pxBone = pxAssimpMesh->mBones[uBoneIndex];
+			const aiMatrix4x4& xAssimpMat = pxBone->mOffsetMatrix;
+
+			Zenith_Maths::Matrix4 xMat;
+			xMat[0][0] = xAssimpMat.a1; xMat[1][0] = xAssimpMat.a2; xMat[2][0] = xAssimpMat.a3; xMat[3][0] = xAssimpMat.a4;
+			xMat[0][1] = xAssimpMat.b1; xMat[1][1] = xAssimpMat.b2; xMat[2][1] = xAssimpMat.b3; xMat[3][1] = xAssimpMat.b4;
+			xMat[0][2] = xAssimpMat.c1; xMat[1][2] = xAssimpMat.c2; xMat[2][2] = xAssimpMat.c3; xMat[3][2] = xAssimpMat.c4;
+			xMat[0][3] = xAssimpMat.d1; xMat[1][3] = xAssimpMat.d2; xMat[2][3] = xAssimpMat.d3; xMat[3][3] = xAssimpMat.d4;
+
+			Zenith_Assert(xMesh.m_xBoneNameToIdAndOffset.find(pxBone->mName.C_Str()) == xMesh.m_xBoneNameToIdAndOffset.end(),
+				"Duplicate bone name found");
+			xMesh.m_xBoneNameToIdAndOffset.insert({ pxBone->mName.C_Str(), {uBoneIndex, xMat} });
 		}
 	}
 
 	if (bHasPositions)
-	{
-		xMesh.m_pxPositions = new glm::vec3[xMesh.m_uNumVerts];
-	}
+		xMesh.m_pxPositions = new glm::vec3[uNumVerts];
 	if (bHasUVs)
-	{
-		xMesh.m_pxUVs = new glm::vec2[xMesh.m_uNumVerts];
-	}
+		xMesh.m_pxUVs = new glm::vec2[uNumVerts];
+
 	if (bHasNormals)
-	{
-		xMesh.m_pxNormals = new glm::vec3[xMesh.m_uNumVerts];
-	}
+		xMesh.m_pxNormals = new glm::vec3[uNumVerts];
+
 	if (bHasTangents)
-	{
-		xMesh.m_pxTangents = new glm::vec3[xMesh.m_uNumVerts];
-	}
+		xMesh.m_pxTangents = new glm::vec3[uNumVerts];
+
 	if (bHasBitangents)
-	{
-		xMesh.m_pxBitangents = new glm::vec3[xMesh.m_uNumVerts];
-	}
+		xMesh.m_pxBitangents = new glm::vec3[uNumVerts];
+
 	if (bHasBones)
 	{
-		xMesh.m_puBoneIDs = new uint32_t[xMesh.m_uNumVerts * MAX_BONES_PER_VERTEX];
-		xMesh.m_pfBoneWeights = new float[xMesh.m_uNumVerts * MAX_BONES_PER_VERTEX];
-		memset(xMesh.m_puBoneIDs, ~0u, sizeof(uint32_t) * xMesh.m_uNumVerts * MAX_BONES_PER_VERTEX);
-		memset(xMesh.m_pfBoneWeights, 0u, sizeof(float) * xMesh.m_uNumVerts * MAX_BONES_PER_VERTEX);
+		xMesh.m_puBoneIDs = new u_int[uNumVerts * MAX_BONES_PER_VERTEX];
+		xMesh.m_pfBoneWeights = new float[uNumVerts * MAX_BONES_PER_VERTEX];
+
+		for (u_int i = 0; i < uNumVerts * MAX_BONES_PER_VERTEX; i++)
+		{
+			xMesh.m_puBoneIDs[i] = ~0u;
+			xMesh.m_pfBoneWeights[i] = 0.0f;
+		}
 	}
-	
-	for (uint32_t i = 0; i < pxAssimpMesh->mNumVertices; i++)
+
+	for (u_int i = 0; i < pxAssimpMesh->mNumVertices; i++)
 	{
 		if (bHasPositions)
 		{
-			const aiVector3D* pxPos = &(pxAssimpMesh->mVertices[i]);
-			xMesh.m_pxPositions[i] = glm::vec3(pxPos->x, pxPos->y, pxPos->z);
+			const aiVector3D& xPos = pxAssimpMesh->mVertices[i];
+			xMesh.m_pxPositions[i] = glm::vec3(xPos.x, xPos.y, xPos.z);
 		}
+
 		if (bHasUVs)
 		{
-			const aiVector3D* pxTexCoord = &(pxAssimpMesh->mTextureCoords[0][i]);
-			xMesh.m_pxUVs[i] = glm::vec2(pxTexCoord->x, pxTexCoord->y);
+			const aiVector3D& xUV = pxAssimpMesh->mTextureCoords[0][i];
+			xMesh.m_pxUVs[i] = glm::vec2(xUV.x, xUV.y);
 		}
+
 		if (bHasNormals)
 		{
-			const aiVector3D* pxNormal = &(pxAssimpMesh->mNormals[i]);
-			xMesh.m_pxNormals[i] = glm::vec3(pxNormal->x, pxNormal->y, pxNormal->z);
+			const aiVector3D& xNormal = pxAssimpMesh->mNormals[i];
+			xMesh.m_pxNormals[i] = glm::normalize(glm::vec3(xNormal.x, xNormal.y, xNormal.z));
 		}
+
 		if (bHasTangents)
 		{
-			const aiVector3D* pxTangent = &(pxAssimpMesh->mTangents[i]);
-			xMesh.m_pxTangents[i] = glm::vec3(pxTangent->x, pxTangent->y, pxTangent->z);
+			const aiVector3D& xTangent = pxAssimpMesh->mTangents[i];
+			xMesh.m_pxTangents[i] = glm::normalize(glm::vec3(xTangent.x, xTangent.y, xTangent.z));
 		}
+
 		if (bHasBitangents)
 		{
-			const aiVector3D* pxBitangent = &(pxAssimpMesh->mBitangents[i]);
-			xMesh.m_pxBitangents[i] = glm::vec3(pxBitangent->x, pxBitangent->y, pxBitangent->z);
+			const aiVector3D& xBitangent = pxAssimpMesh->mBitangents[i];
+			xMesh.m_pxBitangents[i] = glm::normalize(glm::vec3(xBitangent.x, xBitangent.y, xBitangent.z));
 		}
 	}
 
 	if (bHasBones)
 	{
-		for (uint32_t uBoneIndex = 0; uBoneIndex < pxAssimpMesh->mNumBones; uBoneIndex++)
+		for (u_int uBoneIndex = 0; uBoneIndex < pxAssimpMesh->mNumBones; uBoneIndex++)
 		{
 			const aiBone* pxBone = pxAssimpMesh->mBones[uBoneIndex];
-			const aiVertexWeight* pxWeights = pxBone->mWeights;
 
-			//Zenith_Assert(xMesh.m_xBoneNameToID.find(pxBone->mName.C_Str()) == xMesh.m_xBoneNameToID.end(), "Already found this bone name");
-			//Zenith_Assert(xMesh.m_xBoneIDToName.find(uBoneIndex) == xMesh.m_xBoneIDToName.end(), "Already found this bone id");
-
-			//xMesh.m_xBoneNameToID.insert({ pxBone->mName.C_Str(), uBoneIndex });
-			//xMesh.m_xBoneIDToName.insert({ uBoneIndex, pxBone->mName.C_Str() });
-
-			for (uint32_t uWeightIndex = 0; uWeightIndex < pxBone->mNumWeights; uWeightIndex++)
+			for (u_int uWeightIndex = 0; uWeightIndex < pxBone->mNumWeights; uWeightIndex++)
 			{
-				const aiVertexWeight& xWeight = pxWeights[uWeightIndex];
-				uint32_t uVertexID = xWeight.mVertexId;
+				const aiVertexWeight& xWeight = pxBone->mWeights[uWeightIndex];
+				u_int uVertexID = xWeight.mVertexId;
 				float fWeight = xWeight.mWeight;
-				
-				uint32_t* puFirstIndexForThisVertex = xMesh.m_puBoneIDs + uVertexID * MAX_BONES_PER_VERTEX;
-				float* puFirstWeightForThisVertex = xMesh.m_pfBoneWeights + uVertexID * MAX_BONES_PER_VERTEX;
-				for (uint32_t u = 0; u < MAX_BONES_PER_VERTEX; u++)
+
+				Zenith_Assert(uVertexID < uNumVerts, "Vertex ID out of range");
+
+				u_int* puBoneIDs = xMesh.m_puBoneIDs + (uVertexID * MAX_BONES_PER_VERTEX);
+				float* pfBoneWeights = xMesh.m_pfBoneWeights + (uVertexID * MAX_BONES_PER_VERTEX);
+
+				bool bAssigned = false;
+				for (u_int uSlot = 0; uSlot < MAX_BONES_PER_VERTEX; uSlot++)
 				{
-					if (*(puFirstIndexForThisVertex + u) == ~0u)
+					if (puBoneIDs[uSlot] == ~0u)
 					{
-						*(puFirstIndexForThisVertex + u) = uBoneIndex;
-						Zenith_Assert(*(puFirstWeightForThisVertex + u) == 0, "There is already a bone weight here");
-						*(puFirstWeightForThisVertex + u) = fWeight;
+						puBoneIDs[uSlot] = uBoneIndex;
+						pfBoneWeights[uSlot] = fWeight;
+						bAssigned = true;
 						break;
 					}
-					Zenith_Assert(u < MAX_BONES_PER_VERTEX - 1, "Failed to assign vertex to bone");
+				}
+
+				Zenith_Assert(bAssigned, "Failed to assign bone weight");
+			}
+		}
+
+		for (u_int uVert = 0; uVert < uNumVerts; uVert++)
+		{
+			float* pfBoneWeights = xMesh.m_pfBoneWeights + (uVert * MAX_BONES_PER_VERTEX);
+
+			float fTotalWeight = 0.0f;
+			for (u_int uSlot = 0; uSlot < MAX_BONES_PER_VERTEX; uSlot++)
+			{
+				fTotalWeight += pfBoneWeights[uSlot];
+			}
+
+			if (fTotalWeight > 0.0001f)
+			{
+				float fInvTotalWeight = 1.0f / fTotalWeight;
+				for (u_int uSlot = 0; uSlot < MAX_BONES_PER_VERTEX; uSlot++)
+				{
+					pfBoneWeights[uSlot] *= fInvTotalWeight;
 				}
 			}
 		}
 
-#ifdef ZENITH_ASSERT
-		for (uint32_t uVert = 0; uVert < xMesh.m_uNumVerts; uVert++)
+		for (u_int uVert = 0; uVert < uNumVerts; uVert++)
 		{
-			float fTotalWeight = 0;
-			float* puFirstWeightForThisVertex  = xMesh.m_pfBoneWeights + uVert * MAX_BONES_PER_VERTEX;
-			for (uint32_t uWeight = 0; uWeight < MAX_BONES_PER_VERTEX; uWeight++)
+			float* pfBoneWeights = xMesh.m_pfBoneWeights + (uVert * MAX_BONES_PER_VERTEX);
+
+			float fTotalWeight = 0.0f;
+			for (u_int uSlot = 0; uSlot < MAX_BONES_PER_VERTEX; uSlot++)
 			{
-				fTotalWeight += *(puFirstWeightForThisVertex + uWeight);
+				fTotalWeight += pfBoneWeights[uSlot];
 			}
-			Zenith_Assert(std::fabsf(1.f - fTotalWeight) < 0.1f, "Vertex weights don't add to 1");
+
+			if (fTotalWeight > 0.0001f)
+			{
+				Zenith_Assert(std::fabsf(1.0f - fTotalWeight) < 0.01f,
+					"Vertex bone weights don't sum to 1.0 after normalization");
+			}
 		}
-#endif
 	}
 
-	for (uint32_t i = 0; i < pxAssimpMesh->mNumFaces; i++)
+	for (u_int i = 0; i < pxAssimpMesh->mNumFaces; i++)
 	{
-		Zenith_Assert(pxAssimpMesh->mFaces[i].mNumIndices == 3, "Face isn't a triangle");
+		const aiFace& xFace = pxAssimpMesh->mFaces[i];
+		Zenith_Assert(xFace.mNumIndices == 3, "Face is not a triangle - triangulation failed");
 
-		xMesh.m_puIndices[i * 3 + 0] = pxAssimpMesh->mFaces[i].mIndices[0];
-		xMesh.m_puIndices[i * 3 + 1] = pxAssimpMesh->mFaces[i].mIndices[bFlipWinding ? 1 : 2];
-		xMesh.m_puIndices[i * 3 + 2] = pxAssimpMesh->mFaces[i].mIndices[bFlipWinding ? 2 : 1];
+		xMesh.m_puIndices[i * 3 + 0] = xFace.mIndices[0];
+		xMesh.m_puIndices[i * 3 + 1] = xFace.mIndices[bFlipWinding ? 1 : 2];
+		xMesh.m_puIndices[i * 3 + 2] = xFace.mIndices[bFlipWinding ? 2 : 1];
 	}
 
 	xMesh.GenerateLayoutAndVertexData();
-
 	xMesh.Export(strOutFilename.c_str());
+
+	Zenith_Log("MESH_EXPORT: Successfully exported %s", strOutFilename.c_str());
 }
 
 static void ProcessNode(aiNode* pxNode, const aiScene* pxScene, const std::string& strExtension, const std::string& strFilename, uint32_t& uIndex, const char* szExportFilenameOverride = nullptr)
@@ -365,7 +411,7 @@ void ExportAllMeshes()
 			std::string strFilename(szFilename);
 			Export(strFilename, ".fbx");
 
-			if(strFilename.find("stickymcstickface") != std::string::npos)
+			if (strFilename.find("stickymcstickface") != std::string::npos)
 			{
 				//ExportDeterminismCheck(strFilename, ".fbx");
 			}
