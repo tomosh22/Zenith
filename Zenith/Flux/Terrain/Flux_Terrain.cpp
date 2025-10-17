@@ -76,8 +76,6 @@ void Flux_Terrain::Initialise()
 		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[3].m_eType = DESCRIPTOR_TYPE_TEXTURE;
 		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[4].m_eType = DESCRIPTOR_TYPE_TEXTURE;
 		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[5].m_eType = DESCRIPTOR_TYPE_TEXTURE;
-		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[6].m_eType = DESCRIPTOR_TYPE_TEXTURE;
-		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[7].m_eType = DESCRIPTOR_TYPE_TEXTURE;
 
 		for (Flux_BlendState& xBlendState : xPipelineSpec.m_axBlendStates)
 		{
@@ -209,13 +207,11 @@ void Flux_Terrain::RenderToGBuffer(void*)
 
 		g_xTerrainCommandList.AddCommand<Flux_CommandBindTexture>(xMaterial0.GetDiffuse(), 0);
 		g_xTerrainCommandList.AddCommand<Flux_CommandBindTexture>(xMaterial0.GetNormal(), 1);
-		g_xTerrainCommandList.AddCommand<Flux_CommandBindTexture>(xMaterial0.GetRoughness(), 2);
-		g_xTerrainCommandList.AddCommand<Flux_CommandBindTexture>(xMaterial0.GetMetallic(), 3);
+		g_xTerrainCommandList.AddCommand<Flux_CommandBindTexture>(xMaterial0.GetRoughnessMetallic(), 2);
 
-		g_xTerrainCommandList.AddCommand<Flux_CommandBindTexture>(xMaterial1.GetDiffuse(), 4);
-		g_xTerrainCommandList.AddCommand<Flux_CommandBindTexture>(xMaterial1.GetNormal(), 5);
-		g_xTerrainCommandList.AddCommand<Flux_CommandBindTexture>(xMaterial1.GetRoughness(), 6);
-		g_xTerrainCommandList.AddCommand<Flux_CommandBindTexture>(xMaterial1.GetMetallic(), 7);
+		g_xTerrainCommandList.AddCommand<Flux_CommandBindTexture>(xMaterial1.GetDiffuse(), 3);
+		g_xTerrainCommandList.AddCommand<Flux_CommandBindTexture>(xMaterial1.GetNormal(), 4);
+		g_xTerrainCommandList.AddCommand<Flux_CommandBindTexture>(xMaterial1.GetRoughnessMetallic(), 5);
 
 		g_xTerrainCommandList.AddCommand<Flux_CommandDrawIndexed>(pxTerrain->GetRenderMeshGeometry().GetNumIndices());
 

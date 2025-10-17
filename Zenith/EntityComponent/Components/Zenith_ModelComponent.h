@@ -141,11 +141,11 @@ public:
 				}
 				else if (strFilename.find("Metallic") != std::string::npos)
 				{
-					xMat.SetMetallic(pxTex);
+					xMat.SetRoughnessMetallic(pxTex);
 				}
 				else if (strFilename.find("Roughness") != std::string::npos)
 				{
-					xMat.SetRoughness(pxTex);
+					xMat.SetRoughnessMetallic(pxTex);
 				}
 				else if (strFilename.find("Occlusion") != std::string::npos)
 				{

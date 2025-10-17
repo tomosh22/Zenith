@@ -57,7 +57,7 @@ static void LoadAssets()
 
 		Flux_Material& xMat = Zenith_AssetHandler::AddMaterial("Barrel");
 		xMat.SetDiffuse(pxDiffuse);
-		xMat.SetMetallic(pxMetallic);
+		xMat.SetRoughnessMetallic(pxMetallic);
 	}
 
 	Zenith_AssetHandler::AddMesh("Capsule", ASSETS_ROOT"Meshes/capsule_Mesh0_Mat0.zmsh");
@@ -76,8 +76,7 @@ static void LoadAssets()
 		Flux_Material& xMat = Zenith_AssetHandler::AddMaterial("Crystal");
 		xMat.SetDiffuse(pxDiffuse);
 		xMat.SetNormal(pxNormal);
-		xMat.SetRoughness(pxRoughness);
-		xMat.SetMetallic(pxMetallic);
+		xMat.SetRoughnessMetallic(pxRoughness);
 	}
 	{
 		Zenith_AssetHandler::AddTexture2D("MuddyGrass_Diffuse", "C:/dev/Zenith/Games/Test/Assets/Textures/muddyGrass2k/diffuse.ztx");
@@ -93,8 +92,7 @@ static void LoadAssets()
 		Flux_Material& xMat = Zenith_AssetHandler::AddMaterial("MuddyGrass");
 		xMat.SetDiffuse(pxDiffuse);
 		xMat.SetNormal(pxNormal);
-		xMat.SetRoughness(pxRoughness);
-		xMat.SetMetallic(pxMetallic);
+		xMat.SetRoughnessMetallic(pxRoughness);
 	}
 	{
 		Zenith_AssetHandler::AddTexture2D("SupplyCrate_Diffuse", "C:/dev/Zenith/Games/Test/Assets/Textures/supplyCrate2k/diffuse.ztx");
@@ -110,8 +108,7 @@ static void LoadAssets()
 		Flux_Material& xMat = Zenith_AssetHandler::AddMaterial("SupplyCrate");
 		xMat.SetDiffuse(pxDiffuse);
 		xMat.SetNormal(pxNormal);
-		xMat.SetRoughness(pxRoughness);
-		xMat.SetMetallic(pxMetallic);
+		xMat.SetRoughnessMetallic(pxRoughness);
 	}
 	{
 		Zenith_AssetHandler::AddTexture2D("Rock_Diffuse", "C:/dev/Zenith/Games/Test/Assets/Textures/rock2k/diffuse.ztx");
@@ -127,8 +124,7 @@ static void LoadAssets()
 		Flux_Material& xMat = Zenith_AssetHandler::AddMaterial("Rock");
 		xMat.SetDiffuse(pxDiffuse);
 		xMat.SetNormal(pxNormal);
-		xMat.SetRoughness(pxRoughness);
-		xMat.SetMetallic(pxMetallic);
+		xMat.SetRoughnessMetallic(pxRoughness);
 	}
 
 	for (uint32_t x = 0; x < TERRAIN_EXPORT_DIMS; x++)

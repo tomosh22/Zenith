@@ -1,7 +1,7 @@
 #pragma once
 
 #define ZENITH_FLUX_NUM_CSMS 4
-#define ZENITH_FLUX_CSM_RESOLUTION 1024
+#define ZENITH_FLUX_CSM_RESOLUTION 2048
 
 #include "Flux/Flux.h"
 

@@ -14,32 +14,27 @@ layout(location = 4) in mat3 a_xTBN;
 #ifndef SHADOWS
 layout(set = 1, binding = 0) uniform sampler2D g_xDiffuseTex0;
 layout(set = 1, binding = 1) uniform sampler2D g_xNormalTex0;
-layout(set = 1, binding = 2) uniform sampler2D g_xRoughnessTex0;
-layout(set = 1, binding = 3) uniform sampler2D g_xMetallicTex0;
+layout(set = 1, binding = 2) uniform sampler2D g_xRoughnessMetallicTex0;
 
-layout(set = 1, binding = 4) uniform sampler2D g_xDiffuseTex1;
-layout(set = 1, binding = 5) uniform sampler2D g_xNormalTex1;
-layout(set = 1, binding = 6) uniform sampler2D g_xRoughnessTex1;
-layout(set = 1, binding = 7) uniform sampler2D g_xMetallicTex1;
+layout(set = 1, binding = 3) uniform sampler2D g_xDiffuseTex1;
+layout(set = 1, binding = 4) uniform sampler2D g_xNormalTex1;
+layout(set = 1, binding = 5) uniform sampler2D g_xRoughnessMetallicTex1;
 #endif
 
 void main(){
 	#ifndef SHADOWS
 	vec4 xDiffuse0 = texture(g_xDiffuseTex0, a_xUV);
 	vec3 xNormal0 = a_xTBN * (2 * texture(g_xNormalTex0, a_xUV).xyz - 1.);
-	float fRoughness0 = texture(g_xRoughnessTex0, a_xUV).x;
-	float fMetallic0 = texture(g_xMetallicTex0, a_xUV).x;
+	vec2 xRoughnessMetallic0 = texture(g_xRoughnessMetallicTex0, a_xUV).gb;
 	
 	vec4 xDiffuse1 = texture(g_xDiffuseTex1, a_xUV);
 	vec3 xNormal1 = a_xTBN * (2 * texture(g_xNormalTex1, a_xUV).xyz - 1.);
-	float fRoughness1 = texture(g_xRoughnessTex1, a_xUV).x;
-	float fMetallic1 = texture(g_xMetallicTex1, a_xUV).x;
+	vec2 xRoughnessMetallic1 = texture(g_xRoughnessMetallicTex1, a_xUV).gb;
 	
 	vec4 xDiffuse = mix(xDiffuse0, xDiffuse1, a_fMaterialLerp);
 	vec3 xNormal = mix(xNormal0, xNormal1, a_fMaterialLerp);
-	float fRoughness = mix(fRoughness0, fRoughness1, a_fMaterialLerp);
-	float fMetallic = mix(fMetallic0, fMetallic1, a_fMaterialLerp);
+	vec2 xRoughnessMetallic = mix(xRoughnessMetallic0, xRoughnessMetallic1, a_fMaterialLerp);
 
-	OutputToGBuffer(xDiffuse, xNormal, 0.2, fRoughness, fMetallic, a_xWorldPos);
+	OutputToGBuffer(xDiffuse, xNormal, 0.2, xRoughnessMetallic.x, xRoughnessMetallic.y, a_xWorldPos);
 	#endif
 }
