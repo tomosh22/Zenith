@@ -19,5 +19,5 @@ void main(){
 	vec3 xNormal = a_xTBN * (2 * texture(g_xNormalTex, a_xUV).xyz - 1.);
 	vec2 xRoughnessMetallic = texture(g_xRoughnessMetallicTex, a_xUV).gb;
 	
-	OutputToGBuffer(xDiffuse, xNormal, 0.2, xRoughnessMetallic.x, xRoughnessMetallic.y, a_xWorldPos);
+	OutputToGBuffer(xDiffuse, xNormal, 0.2, xRoughnessMetallic.x, xRoughnessMetallic.y);
 }

@@ -35,6 +35,6 @@ void main(){
 	vec3 xNormal = mix(xNormal0, xNormal1, a_fMaterialLerp);
 	vec2 xRoughnessMetallic = mix(xRoughnessMetallic0, xRoughnessMetallic1, a_fMaterialLerp);
 
-	OutputToGBuffer(xDiffuse, xNormal, 0.2, xRoughnessMetallic.x, xRoughnessMetallic.y, a_xWorldPos);
+	OutputToGBuffer(xDiffuse, xNormal, 0.2, xRoughnessMetallic.x, xRoughnessMetallic.y);
 	#endif
 }

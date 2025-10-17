@@ -387,6 +387,7 @@ void Zenith_Vulkan::CreateDevice()
 	vk::PhysicalDeviceFeatures xDeviceFeatures = vk::PhysicalDeviceFeatures()
 		.setSamplerAnisotropy(VK_TRUE)
 		.setTessellationShader(VK_TRUE)
+		.setDepthBiasClamp(VK_TRUE)
 		.setFillModeNonSolid(VK_TRUE);
 
 

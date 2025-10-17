@@ -11,5 +11,5 @@ void main()
 {
 	vec3 xRayDir = RayDir(a_xUV);
 
-	OutputToGBuffer(texture(g_xCubemap, xRayDir), vec3(0.), 0., 0., 0., vec3(0.));
+	OutputToGBuffer(texture(g_xCubemap, xRayDir), vec3(0.), 0., 0., 0.);
 }

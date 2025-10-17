@@ -23,14 +23,13 @@ layout(std140, set = 0, binding=4) uniform ShadowMatrix3{
 layout(set = 0, binding = 5) uniform sampler2D g_xDiffuseTex;
 layout(set = 0, binding = 6) uniform sampler2D g_xNormalsAmbientTex;
 layout(set = 0, binding = 7) uniform sampler2D g_xMaterialTex;
-layout(set = 0, binding = 8) uniform sampler2D g_xWorldPosTex;
-layout(set = 0, binding = 9) uniform sampler2D g_xDepthTex;
+layout(set = 0, binding = 8) uniform sampler2D g_xDepthTex;
 
 //#TO_TODO: texture arrays
-layout(set = 0, binding = 10) uniform sampler2D g_xCSM0;
-layout(set = 0, binding = 11) uniform sampler2D g_xCSM1;
-layout(set = 0, binding = 12) uniform sampler2D g_xCSM2;
-layout(set = 0, binding = 13) uniform sampler2D g_xCSM3;
+layout(set = 0, binding = 9) uniform sampler2D g_xCSM0;
+layout(set = 0, binding = 10) uniform sampler2D g_xCSM1;
+layout(set = 0, binding = 11) uniform sampler2D g_xCSM2;
+layout(set = 0, binding = 12) uniform sampler2D g_xCSM3;
 
 #define HandleShadow(uIndex)
 
@@ -167,7 +166,19 @@ void main()
 	vec4 xNormalAmbient = texture(g_xNormalsAmbientTex, a_xUV);
 	vec3 xNormal = xNormalAmbient.xyz;
 	float fAmbient = xNormalAmbient.w;
-	vec3 xWorldPos = texture(g_xWorldPosTex, a_xUV).xyz;
+	
+	float fDepth = texture(g_xDepthTex, a_xUV).x;
+	
+	vec2 xNDC = a_xUV * 2. - 1.;
+
+	vec4 xClipSpace = vec4(xNDC, fDepth, 1.);
+
+	//#TO_TODO: invert this CPU side
+	vec4 xViewSpace = inverse(g_xProjMat) * xClipSpace;
+	xViewSpace /= xViewSpace.w;
+
+	//#TO_TODO: same here
+	vec3 xWorldPos = (inverse(g_xViewMat) * xViewSpace).xyz;
 	
 	float fRoughness = xMaterial.x;
 	float fMetallic = xMaterial.y;
