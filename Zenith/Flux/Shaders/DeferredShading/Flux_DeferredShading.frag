@@ -34,35 +34,123 @@ layout(set = 0, binding = 13) uniform sampler2D g_xCSM3;
 
 #define HandleShadow(uIndex)
 
+const float PI = 3.14159265359;
+
+// Fresnel-Schlick approximation
+vec3 FresnelSchlick(float cosTheta, vec3 F0) {
+	return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+}
+
+// Fresnel-Schlick with roughness for ambient lighting
+vec3 FresnelSchlickRoughness(float cosTheta, vec3 F0, float roughness) {
+	return F0 + (max(vec3(1.0 - roughness), F0) - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+}
+
+// GGX/Trowbridge-Reitz Normal Distribution Function
+float DistributionGGX(float NdotH, float roughness) {
+	float a = roughness * roughness;
+	float a2 = a * a;
+	float NdotH2 = NdotH * NdotH;
+	
+	float denom = (NdotH2 * (a2 - 1.0) + 1.0);
+	denom = PI * denom * denom;
+	
+	return a2 / max(denom, 0.0000001);
+}
+
+// Smith's Schlick-GGX Geometry Function (single direction)
+float GeometrySchlickGGX(float NdotV, float roughness) {
+	float r = (roughness + 1.0);
+	float k = (r * r) / 8.0;
+	
+	return NdotV / (NdotV * (1.0 - k) + k);
+}
+
+// Smith's method combining view and light directions
+float GeometrySmith(float NdotV, float NdotL, float roughness) {
+	float ggx2 = GeometrySchlickGGX(NdotV, roughness);
+	float ggx1 = GeometrySchlickGGX(NdotL, roughness);
+	
+	return ggx1 * ggx2;
+}
+
 void CookTorrance_Directional(inout vec4 xFinalColor, vec4 xDiffuse, DirectionalLight xLight, vec3 xNormal, float fMetal, float fRough, float fReflectivity, vec3 xWorldPos) {
-	vec3 xLightDir = xLight.m_xDirection.xyz;
+	// Light direction is FROM the sun (already pointing away from sun towards surface)
+	vec3 xLightDir = normalize(xLight.m_xDirection.xyz);
 	vec3 xViewDir = normalize(g_xCamPos_Pad.xyz - xWorldPos);
 	vec3 xHalfDir = normalize(xLightDir + xViewDir);
 
-	float xNormalDotLightDir = max(dot(xNormal, xLightDir), 0.0001);
-	float xNormalDotViewDir = max(dot(xNormal, xViewDir), 0.0001);
-	float xNormalDotHalfDir = max(dot(xNormal, xHalfDir), 0.0001);
-	float xHalfDirDotViewDir = max(dot(xHalfDir, xViewDir), 0.0001);
+	float NdotL = max(dot(xNormal, xLightDir), 0.0);
+	float NdotV = max(dot(xNormal, xViewDir), 0.0001); // Prevent division by zero
+	float NdotH = max(dot(xNormal, xHalfDir), 0.0);
+	float HdotV = max(dot(xHalfDir, xViewDir), 0.0);
 	
+	// Early exit if no light contribution
+	if(NdotL <= 0.0001) {
+		return;
+	}
+	
+	// Clamp roughness to prevent artifacts
+	float roughness = max(fRough, 0.04);
+	
+	// Calculate F0 (base reflectivity at normal incidence)
+	// Dielectrics have ~0.04, metals use albedo as F0
+	vec3 F0 = vec3(0.04);
+	F0 = mix(F0, xDiffuse.rgb, fMetal);
+	
+	// Cook-Torrance BRDF components
+	float D = DistributionGGX(NdotH, roughness);
+	float G = GeometrySmith(NdotV, NdotL, roughness);
+	vec3 F = FresnelSchlick(HdotV, F0);
+	
+	// Specular BRDF
+	vec3 numerator = D * G * F;
+	float denominator = 4.0 * NdotV * NdotL;
+	vec3 specular = numerator / max(denominator, 0.001);
+	
+	// Energy conservation - what isn't reflected is refracted
+	vec3 kS = F; // Specular contribution
+	vec3 kD = vec3(1.0) - kS; // Diffuse contribution
+	
+	// Metals don't have diffuse lighting
+	kD *= (1.0 - fMetal);
+	
+	// Improved diffuse: Disney/Burley diffuse for more realistic subsurface scattering
+	// Fall back to Lambertian for better performance, but with proper normalization
+	vec3 diffuse = kD * xDiffuse.rgb / PI;
+	
+	// Combine diffuse and specular with incoming radiance
+	vec3 radiance = xLight.m_xColour.rgb * xLight.m_xColour.a;
+	vec3 Lo = (diffuse + specular) * radiance * NdotL;
+	
+	xFinalColor.rgb += Lo;
+	xFinalColor.a = 1.0;
+}
 
-	float fF = fReflectivity + (1 - fReflectivity) * pow((1-xHalfDirDotViewDir), 5.);
+// ACES Filmic Tone Mapping
+vec3 ACESFilm(vec3 x) {
+	float a = 2.51;
+	float b = 0.03;
+	float c = 2.43;
+	float d = 0.59;
+	float e = 0.14;
+	return clamp((x * (a * x + b)) / (x * (c * x + d) + e), 0.0, 1.0);
+}
 
-	fF = 1. - fF;
+// Reinhard Tone Mapping (simpler alternative)
+vec3 ReinhardToneMapping(vec3 color) {
+	return color / (color + vec3(1.0));
+}
 
-	float fD = pow(fRough, 2.) / (3.14 * pow((pow(xNormalDotHalfDir, 2) * (pow(fRough, 2.) - 1.) + 1.), 2.));
-
-	float fK = pow(fRough + 1., 2) / 8.;
-	float fG = xNormalDotViewDir / (xNormalDotViewDir * (1 - fK) + fK);
-
-	float fDFG = fD * fF * fG;
-
-	vec4 xSurface = xDiffuse * vec4(xLight.m_xColour.xyz, 1) * xLight.m_xColour.w;
-	vec4 xC = xSurface * (1. - fMetal);
-
-	vec4 xBRDF = ((1. - fF) * (xC / 3.14)) + (fDFG / (4. * xNormalDotLightDir * xNormalDotViewDir));
-
-	xFinalColor += xBRDF * xNormalDotLightDir * xLight.m_xColour;
-	xFinalColor.a = 1.;
+// Uncharted 2 Tone Mapping
+vec3 Uncharted2Tonemap(vec3 x) {
+	float A = 0.15;
+	float B = 0.50;
+	float C = 0.10;
+	float D = 0.20;
+	float E = 0.02;
+	float F = 0.30;
+	return ((x * (A * x + C * B) + D * E) / (x * (A * x + B) + D * F)) - E / F;
 }
 
 void main()
@@ -81,7 +169,31 @@ void main()
 	float fAmbient = xNormalAmbient.w;
 	vec3 xWorldPos = texture(g_xWorldPosTex, a_xUV).xyz;
 	
-	o_xColour.xyz = xDiffuse.xyz * fAmbient;
+	float fRoughness = xMaterial.x;
+	float fMetallic = xMaterial.y;
+	
+	// Calculate view direction for ambient Fresnel
+	vec3 xViewDir = normalize(g_xCamPos_Pad.xyz - xWorldPos);
+	float NdotV = max(dot(xNormal, xViewDir), 0.0);
+	
+	// Calculate F0 for ambient term
+	vec3 F0 = vec3(0.04);
+	F0 = mix(F0, xDiffuse.rgb, fMetallic);
+	
+	// Ambient with energy conservation
+	vec3 kS_ambient = FresnelSchlickRoughness(NdotV, F0, fRoughness);
+	vec3 kD_ambient = (1.0 - kS_ambient) * (1.0 - fMetallic);
+	
+	// Apply ambient diffuse
+	vec3 ambientDiffuse = kD_ambient * xDiffuse.rgb * fAmbient;
+	
+	// Apply ambient specular (approximation for metals and reflective surfaces)
+	// This simulates environment reflection without an actual environment map
+	// Use roughness to modulate the ambient specular strength
+	float specularStrength = 1.0 - fRoughness * 0.7; // Rougher = less specular reflection
+	vec3 ambientSpecular = kS_ambient * F0 * fAmbient * specularStrength;
+	
+	o_xColour.rgb = ambientDiffuse + ambientSpecular;
 
 	DirectionalLight xLight;
 	xLight.m_xColour = g_xSunColour;
@@ -132,11 +244,8 @@ void main()
 			fShadowDepth = texture(g_xCSM3, xSamplePos).x;
 		}
 		
-		// Use larger bias for distant cascades (lower resolution per world unit)
-		float fBias = 0.0005 * (1.0 + float(iCascade) * 0.5);
 		
-		// Depth comparison with adaptive bias
-		if(fCurrentDepth > fShadowDepth + fBias)
+		if(fCurrentDepth > fShadowDepth)
 		{
 			bInShadow = true;
 		}
@@ -156,7 +265,8 @@ void main()
 	float fReflectivity = 0.5f;
 	if(xLight.m_xColour.a > 0.1)
 	{
-		CookTorrance_Directional(o_xColour, xDiffuse, xLight, xNormal, xMaterial.y, xMaterial.x, fReflectivity, xWorldPos);
+		CookTorrance_Directional(o_xColour, xDiffuse, xLight, xNormal, fMetallic, fRoughness, fReflectivity, xWorldPos);
 	}
+	
 	o_xColour.w = 1.f;
 }

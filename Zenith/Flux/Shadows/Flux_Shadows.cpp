@@ -21,7 +21,7 @@ static Flux_DynamicConstantBuffer g_xShadowMatrixBuffers[ZENITH_FLUX_NUM_CSMS];
 static Zenith_Maths::Matrix4 g_axSunViewProjMats[ZENITH_FLUX_NUM_CSMS];
 
 DEBUGVAR bool dbg_bEnabled = true;
-DEBUGVAR float dbg_fZMultiplier = 5.f;
+DEBUGVAR float dbg_fZMultiplier = 7.f;
 
 struct FrustumCorners
 {
