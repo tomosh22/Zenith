@@ -733,6 +733,14 @@ void Zenith_Vulkan_PipelineBuilder::FromSpecification(Zenith_Vulkan_Pipeline& xP
 		.setFrontFace(vk::FrontFace::eCounterClockwise)
 		.setPolygonMode(xSpec.m_bWireframe ? vk::PolygonMode::eLine : vk::PolygonMode::eFill)
 		.setLineWidth(1.0f);
+	if (xSpec.m_bDepthBias)
+	{
+		xRasterInfo
+			.setDepthBiasEnable(true)
+			.setDepthBiasConstantFactor(xSpec.m_fDepthBiasConstant)
+			.setDepthBiasSlopeFactor(xSpec.m_fDepthBiasSlope)
+			.setDepthBiasClamp(xSpec.m_fDepthBiasClamp);
+	}
 
 	xPipelineInfo.setPRasterizationState(&xRasterInfo);
 #pragma endregion

@@ -1,6 +1,6 @@
 #pragma once
 
-#define ZENITH_FLUX_NUM_CSMS 3
+#define ZENITH_FLUX_NUM_CSMS 4
 #define ZENITH_FLUX_CSM_RESOLUTION 1024
 
 #include "Flux/Flux.h"
@@ -22,6 +22,5 @@ public:
 
 private:
 	static void UpdateShadowMatrices();
-
-	static constexpr float s_afCSMLevels[ZENITH_FLUX_NUM_CSMS + 1]{ 1000,200,50,1 };
+	static constexpr float s_afCSMLevels[ZENITH_FLUX_NUM_CSMS + 1]{ 2000, 100, 20, 10, 1 };
 };

@@ -16,17 +16,21 @@ layout(std140, set = 0, binding=2) uniform ShadowMatrix1{
 layout(std140, set = 0, binding=3) uniform ShadowMatrix2{
 	mat4 g_xShadowMat2;
 };
+layout(std140, set = 0, binding=4) uniform ShadowMatrix3{
+	mat4 g_xShadowMat3;
+};
 
-layout(set = 0, binding = 4) uniform sampler2D g_xDiffuseTex;
-layout(set = 0, binding = 5) uniform sampler2D g_xNormalsAmbientTex;
-layout(set = 0, binding = 6) uniform sampler2D g_xMaterialTex;
-layout(set = 0, binding = 7) uniform sampler2D g_xWorldPosTex;
-layout(set = 0, binding = 8) uniform sampler2D g_xDepthTex;
+layout(set = 0, binding = 5) uniform sampler2D g_xDiffuseTex;
+layout(set = 0, binding = 6) uniform sampler2D g_xNormalsAmbientTex;
+layout(set = 0, binding = 7) uniform sampler2D g_xMaterialTex;
+layout(set = 0, binding = 8) uniform sampler2D g_xWorldPosTex;
+layout(set = 0, binding = 9) uniform sampler2D g_xDepthTex;
 
 //#TO_TODO: texture arrays
-layout(set = 0, binding = 9) uniform sampler2D g_xCSM0;
-layout(set = 0, binding = 10) uniform sampler2D g_xCSM1;
-layout(set = 0, binding = 11) uniform sampler2D g_xCSM2;
+layout(set = 0, binding = 10) uniform sampler2D g_xCSM0;
+layout(set = 0, binding = 11) uniform sampler2D g_xCSM1;
+layout(set = 0, binding = 12) uniform sampler2D g_xCSM2;
+layout(set = 0, binding = 13) uniform sampler2D g_xCSM3;
 
 #define HandleShadow(uIndex)
 
@@ -83,36 +87,68 @@ void main()
 	xLight.m_xColour = g_xSunColour;
 	xLight.m_xDirection = vec4(-g_xSunDir_Pad.xyz, 0.);
 	
-	const uint uNumCSMs = 3;
-	mat4 axShadowMats[uNumCSMs] = {g_xShadowMat0, g_xShadowMat1, g_xShadowMat2};
+	const uint uNumCSMs = 4;
+	mat4 axShadowMats[uNumCSMs] = {g_xShadowMat0, g_xShadowMat1, g_xShadowMat2, g_xShadowMat3};
 	
-	for(uint u = 0; u < uNumCSMs; u++)
+	bool bInShadow = false;
+	
+	// Try cascades in order from highest quality (0) to lowest (2)
+	// Break when we find one that contains the fragment
+	for(int iCascade = 0; iCascade < int(uNumCSMs); iCascade++)
 	{
-		vec4 xShadowSpace = axShadowMats[u] * vec4(xWorldPos,1);
+		// Transform to shadow space for this cascade
+		vec4 xShadowSpace = axShadowMats[iCascade] * vec4(xWorldPos, 1);
 		vec2 xSamplePos = xShadowSpace.xy / xShadowSpace.w * 0.5 + 0.5;
-		if(xSamplePos.x > 1 || xSamplePos.x < 0 || xSamplePos.y > 1 || xSamplePos.y < 0)
+		float fCurrentDepth = xShadowSpace.z / xShadowSpace.w;
+		
+		// Check if sample position is within valid bounds [0, 1]
+		if(xSamplePos.x < 0 || xSamplePos.x > 1 || xSamplePos.y < 0 || xSamplePos.y > 1)
 		{
-			continue;
-		}
-	
-		if(u == 0)
-		{
-			if(texture(g_xCSM0, xSamplePos).x < 1.f)
-			{
-				o_xColour.w = 1.f;
-				return;
-			}
-			break;
+			continue; // Try next cascade
 		}
 		
-		if(u == 1)
+		// Check if depth is within valid range
+		if(fCurrentDepth < 0 || fCurrentDepth > 1.0)
 		{
-			if(texture(g_xCSM1, xSamplePos).x < 1.f)
-			{
-				o_xColour.w = 1.f;
-				return;
-			}
+			continue; // Try next cascade
 		}
+		
+		// Sample the appropriate shadow map
+		float fShadowDepth = 0.0;
+		if(iCascade == 0)
+		{
+			fShadowDepth = texture(g_xCSM0, xSamplePos).x;
+		}
+		else if(iCascade == 1)
+		{
+			fShadowDepth = texture(g_xCSM1, xSamplePos).x;
+		}
+		else if(iCascade == 2)
+		{
+			fShadowDepth = texture(g_xCSM2, xSamplePos).x;
+		}
+		else if(iCascade == 3)
+		{
+			fShadowDepth = texture(g_xCSM3, xSamplePos).x;
+		}
+		
+		// Use larger bias for distant cascades (lower resolution per world unit)
+		float fBias = 0.0005 * (1.0 + float(iCascade) * 0.5);
+		
+		// Depth comparison with adaptive bias
+		if(fCurrentDepth > fShadowDepth + fBias)
+		{
+			bInShadow = true;
+		}
+		
+		// Found a valid cascade, stop searching
+		break;
+	}
+	
+	if(bInShadow)
+	{
+		o_xColour.w = 1.f;
+		return;
 	}
 	
 	

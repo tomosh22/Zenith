@@ -15,17 +15,17 @@ static Zenith_Maths::Matrix4 g_axShadowMatrices[ZENITH_FLUX_NUM_CSMS];
 
 static Zenith_Task g_xRenderTask(ZENITH_PROFILE_INDEX__FLUX_SHADOWS, Flux_Shadows::Render, nullptr);
 
-static Flux_CommandList g_axCommandLists[ZENITH_FLUX_NUM_CSMS] = {{"Shadows"}, {"Shadows"}, {"Shadows"}};
+static Flux_CommandList g_axCommandLists[ZENITH_FLUX_NUM_CSMS] = {{"Shadows"}, {"Shadows"}, {"Shadows"}, {"Shadows"}};
 static Flux_DynamicConstantBuffer g_xShadowMatrixBuffers[ZENITH_FLUX_NUM_CSMS];
 
 static Zenith_Maths::Matrix4 g_axSunViewProjMats[ZENITH_FLUX_NUM_CSMS];
 
 DEBUGVAR bool dbg_bEnabled = true;
-DEBUGVAR float dbg_fZMultiplier = 10.f;
+DEBUGVAR float dbg_fZMultiplier = 5.f;
 
 struct FrustumCorners
 {
-	Zenith_Maths::Vector3 GetCenter()
+	const Zenith_Maths::Vector3 GetCenter() const
 	{
 		Zenith_Maths::Vector3 xRet(0,0,0);
 		for (uint32_t u = 0; u < 8; u++) xRet += m_axCorners[u];
@@ -142,7 +142,7 @@ Zenith_Maths::Matrix4 Flux_Shadows::GetSunViewProjMatrix(const uint32_t uIndex)
 
 Flux_Texture& Flux_Shadows::GetCSMTexture(const uint32_t u)
 {
-	return dbg_bEnabled ? *g_axCSMs[u].m_pxTargetTexture : *Flux_Graphics::s_pxBlankTexture2D;
+	return dbg_bEnabled ? *g_axCSMs[u].m_pxTargetTexture : *Flux_Graphics::s_pxWhiteBlankTexture2D;
 }
 
 Flux_DynamicConstantBuffer& Flux_Shadows::GetShadowMatrixBuffer(const uint32_t u)
@@ -154,45 +154,44 @@ void Flux_Shadows::UpdateShadowMatrices()
 {
 	Zenith_Profiling::BeginProfile(ZENITH_PROFILE_INDEX__FLUX_SHADOWS_UPDATE_MATRICES);
 	const Zenith_Maths::Matrix4& xViewMat = Flux_Graphics::GetViewMatrix();
+	
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
 		const float fNearPlane = Flux_Graphics::GetFarPlane() / s_afCSMLevels[u];
 		const float fFarPlane = Flux_Graphics::GetFarPlane() / s_afCSMLevels[u + 1];
 
 		const Zenith_Maths::Matrix4 xProjMat = Zenith_Maths::PerspectiveProjection(Flux_Graphics::GetFOV(), Flux_Graphics::GetAspectRatio(), fNearPlane, fFarPlane);
-		
 		const Zenith_Maths::Matrix4 xInvViewProjMat = glm::inverse(xProjMat * xViewMat);
 
-		FrustumCorners xFrustumCorners = WorldSpaceFrustumCornersFromInverseViewProjMatrix(xInvViewProjMat);
-		Zenith_Maths::Vector3 xFrustumCenter = xFrustumCorners.GetCenter();
+		const FrustumCorners xFrustumCorners = WorldSpaceFrustumCornersFromInverseViewProjMatrix(xInvViewProjMat);
+		const Zenith_Maths::Vector3 xFrustumCenter = xFrustumCorners.GetCenter();
 
-		Zenith_Maths::Matrix4 xSunViewMat = glm::lookAt(xFrustumCenter - Flux_Graphics::GetSunDir(), xFrustumCenter, Zenith_Maths::Vector3(0, 1, 0));
-
-		float fMinX = FLT_MAX;
-		float fMinY = FLT_MAX;
-		float fMinZ = FLT_MAX;
-		float fMaxX = -FLT_MAX;
-		float fMaxY = -FLT_MAX;
-		float fMaxZ = -FLT_MAX;
-		for (uint32_t u = 0; u < 8; u++)
+		float fRadius = 0.0f;
+		for (uint32_t uCorner = 0; uCorner < 8; uCorner++)
 		{
-			Zenith_Maths::Vector3 xTransformedCorner = xSunViewMat * Zenith_Maths::Vector4(xFrustumCorners.m_axCorners[u], 1);
-			fMinX = xTransformedCorner.x < fMinX ? xTransformedCorner.x : fMinX;
-			fMinY = xTransformedCorner.y < fMinY ? xTransformedCorner.y : fMinY;
-			fMinZ = xTransformedCorner.z < fMinZ ? xTransformedCorner.z : fMinZ;
-
-			fMaxX = xTransformedCorner.x > fMaxX ? xTransformedCorner.x : fMaxX;
-			fMaxY = xTransformedCorner.y > fMaxY ? xTransformedCorner.y : fMaxY;
-			fMaxZ = xTransformedCorner.z > fMaxZ ? xTransformedCorner.z : fMaxZ;
+			float fDist = glm::length(xFrustumCorners.m_axCorners[uCorner] - xFrustumCenter);
+			fRadius = fDist > fRadius ? fDist : fRadius;
 		}
 
-		const float fMultiplierZ = dbg_fZMultiplier;
-		fMinZ = fMinZ < 0 ? fMinZ * fMultiplierZ : fMinZ / fMultiplierZ;
-		fMaxZ = fMaxZ > 0 ? fMaxZ * fMultiplierZ : fMaxZ / fMultiplierZ;
+		const Zenith_Maths::Vector3& xSunDir = Flux_Graphics::GetSunDir();
+		const Zenith_Maths::Vector3 xUp(0, 1, 0);
+		
+		Zenith_Maths::Matrix4 xSunViewMat = glm::lookAt(Zenith_Maths::Vector3(0, 0, 0), xSunDir, xUp);
+		
+		const Zenith_Maths::Vector3 xCenterLightSpace = xSunViewMat * Zenith_Maths::Vector4(xFrustumCenter, 1);
+		
+		const Zenith_Maths::Vector3 xSnappedCenter = glm::inverse(xSunViewMat) * Zenith_Maths::Vector4(xCenterLightSpace, 1);
+		
+		const float fDepthExtension = fRadius * (1.0f + dbg_fZMultiplier);
+		xSunViewMat = glm::lookAt(xSnappedCenter - xSunDir * fDepthExtension, xSnappedCenter, xUp);
 
-		g_axSunViewProjMats[u] = glm::ortho(fMinX, fMaxX, fMinY, fMaxY, fMinZ, fMaxZ) * xSunViewMat;
+		const float fNear = 0.0f;
+		const float fFar = fDepthExtension * 2.0f;
+
+		g_axSunViewProjMats[u] = glm::ortho(-fRadius, fRadius, -fRadius, fRadius, fNear, fFar) * xSunViewMat;
 
 		Flux_MemoryManager::UploadBufferData(g_xShadowMatrixBuffers[u].GetBuffer(), &g_axSunViewProjMats[u], sizeof(g_axSunViewProjMats[u]));
 	}
+
 	Zenith_Profiling::EndProfile(ZENITH_PROFILE_INDEX__FLUX_SHADOWS_UPDATE_MATRICES);
 }

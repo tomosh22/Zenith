@@ -12,6 +12,8 @@ layout(set = 1, binding = 1) uniform sampler2D g_xDiffuseTex;
 layout(set = 1, binding = 2) uniform sampler2D g_xNormalTex;
 layout(set = 1, binding = 3) uniform sampler2D g_xRoughnessTex;
 layout(set = 1, binding = 4) uniform sampler2D g_xMetallicTex;
+layout(set = 1, binding = 5) uniform sampler2D g_xOcclusionTex;
+layout(set = 1, binding = 6) uniform sampler2D g_xEmissiveTex;
 
 void main(){
 	vec4 xDiffuse = texture(g_xDiffuseTex, a_xUV);

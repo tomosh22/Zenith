@@ -34,7 +34,7 @@ void Flux_DeferredShading::Initialise()
 	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_BUFFER;
 	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[2].m_eType = DESCRIPTOR_TYPE_BUFFER;
 	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[3].m_eType = DESCRIPTOR_TYPE_BUFFER;
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[4].m_eType = DESCRIPTOR_TYPE_TEXTURE;
+	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[4].m_eType = DESCRIPTOR_TYPE_BUFFER;
 	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[5].m_eType = DESCRIPTOR_TYPE_TEXTURE;
 	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[6].m_eType = DESCRIPTOR_TYPE_TEXTURE;
 	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[7].m_eType = DESCRIPTOR_TYPE_TEXTURE;
@@ -42,6 +42,8 @@ void Flux_DeferredShading::Initialise()
 	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[9].m_eType = DESCRIPTOR_TYPE_TEXTURE;
 	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[10].m_eType = DESCRIPTOR_TYPE_TEXTURE;
 	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[11].m_eType = DESCRIPTOR_TYPE_TEXTURE;
+	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[12].m_eType = DESCRIPTOR_TYPE_TEXTURE;
+	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[13].m_eType = DESCRIPTOR_TYPE_TEXTURE;
 
 	xPipelineSpec.m_axBlendStates[0].m_eSrcBlendFactor = BLEND_FACTOR_ONE;
 	xPipelineSpec.m_axBlendStates[0].m_eDstBlendFactor = BLEND_FACTOR_ONE;
@@ -76,13 +78,13 @@ void Flux_DeferredShading::Render(void*)
 
 	g_xCommandList.AddCommand<Flux_CommandBeginBind>(0);
 	g_xCommandList.AddCommand<Flux_CommandBindBuffer>(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer(), 0);
-	g_xCommandList.AddCommand<Flux_CommandBindTexture>(&Flux_Graphics::GetGBufferTexture(MRT_INDEX_DIFFUSE), 4);
-	g_xCommandList.AddCommand<Flux_CommandBindTexture>(&Flux_Graphics::GetGBufferTexture(MRT_INDEX_NORMALSAMBIENT), 5);
-	g_xCommandList.AddCommand<Flux_CommandBindTexture>(&Flux_Graphics::GetGBufferTexture(MRT_INDEX_MATERIAL), 6);
-	g_xCommandList.AddCommand<Flux_CommandBindTexture>(&Flux_Graphics::GetGBufferTexture(MRT_INDEX_WORLDPOS), 7);
-	g_xCommandList.AddCommand<Flux_CommandBindTexture>(&Flux_Graphics::GetDepthStencilTexture(), 8);
+	g_xCommandList.AddCommand<Flux_CommandBindTexture>(&Flux_Graphics::GetGBufferTexture(MRT_INDEX_DIFFUSE), 5);
+	g_xCommandList.AddCommand<Flux_CommandBindTexture>(&Flux_Graphics::GetGBufferTexture(MRT_INDEX_NORMALSAMBIENT), 6);
+	g_xCommandList.AddCommand<Flux_CommandBindTexture>(&Flux_Graphics::GetGBufferTexture(MRT_INDEX_MATERIAL), 7);
+	g_xCommandList.AddCommand<Flux_CommandBindTexture>(&Flux_Graphics::GetGBufferTexture(MRT_INDEX_WORLDPOS), 8);
+	g_xCommandList.AddCommand<Flux_CommandBindTexture>(&Flux_Graphics::GetDepthStencilTexture(), 9);
 
-	constexpr uint32_t uFirstShadowTexBind = 9;
+	constexpr uint32_t uFirstShadowTexBind = 10;
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
 		g_xCommandList.AddCommand<Flux_CommandBindTexture>(&Flux_Shadows::GetCSMTexture(u), uFirstShadowTexBind + u);

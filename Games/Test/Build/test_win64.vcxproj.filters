@@ -278,7 +278,7 @@
       <Filter>Zenith\Core</Filter>
     </ClCompile>
     <ClCompile Include="..\..\..\Zenith\DataStream\Zenith_DataStream.cpp">
-      <Filter>Zenith\DataStream</Filter>
+      <Filter>Zenith\Core\DataStream</Filter>
     </ClCompile>
     <ClCompile Include="..\..\..\Zenith\DebugVariables\Zenith_DebugVariables.cpp">
       <Filter>Zenith\DebugVariables</Filter>
@@ -808,7 +808,7 @@
       <Filter>Zenith\Core</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\Zenith\DataStream\Zenith_DataStream.h">
-      <Filter>Zenith\DataStream</Filter>
+      <Filter>Zenith\Core\DataStream</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\Zenith\DebugVariables\Zenith_DebugVariables.h">
       <Filter>Zenith\DebugVariables</Filter>
@@ -1217,9 +1217,6 @@
     <Filter Include="Zenith\Core\Multithreading">
       <UniqueIdentifier>{2a4da5f7-c5af-ff3d-fb6b-9d4066cbf910}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Zenith\DataStream">
-      <UniqueIdentifier>{6cea842d-b6c3-0cc1-a5a0-2ad0b446eded}</UniqueIdentifier>
-    </Filter>
     <Filter Include="Zenith\DebugVariables">
       <UniqueIdentifier>{7f1403f2-3ea3-a630-7141-9d9483afc14d}</UniqueIdentifier>
     </Filter>
@@ -1339,6 +1336,9 @@
     </Filter>
     <Filter Include="Zenith\Windows\Multithreading">
       <UniqueIdentifier>{8be0c66e-b619-c25e-6bbc-4dbea81dba49}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Zenith\Core\DataStream">
+      <UniqueIdentifier>{6cea842d-b6c3-0cc1-a5a0-2ad0b446eded}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
 </Project>

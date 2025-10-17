@@ -111,7 +111,7 @@ Flux_Texture* Zenith_AssetHandler::TryGetTexture(const std::string& strName)
 	}
 	else
 	{
-		return Flux_Graphics::s_pxBlankTexture2D;
+		return Flux_Graphics::s_pxBlackBlankTexture2D;
 	}
 }
 

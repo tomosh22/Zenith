@@ -78,7 +78,7 @@ void ExportTexture(const std::filesystem::directory_entry& xFile)
 
 void ExportAllTextures()
 {
-	for (const std::filesystem::directory_entry& xFile : std::filesystem::recursive_directory_iterator(GAME_ASSETS_DIR))
+	for (const std::filesystem::directory_entry& xFile : std::filesystem::recursive_directory_iterator(GAME_ASSETS_DIR"Textures"))
 	{
 		ExportTexture(xFile);
 	}

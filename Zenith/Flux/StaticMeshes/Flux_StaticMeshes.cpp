@@ -57,6 +57,8 @@ void Flux_StaticMeshes::Initialise()
 		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_TEXTURE;
 		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[2].m_eType = DESCRIPTOR_TYPE_TEXTURE;
 		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[3].m_eType = DESCRIPTOR_TYPE_TEXTURE;
+		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[4].m_eType = DESCRIPTOR_TYPE_TEXTURE;
+		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[5].m_eType = DESCRIPTOR_TYPE_TEXTURE;
 
 		for (Flux_BlendState& xBlendState : xPipelineSpec.m_axBlendStates)
 		{
@@ -74,6 +76,11 @@ void Flux_StaticMeshes::Initialise()
 		xShadowPipelineSpec.m_pxTargetSetup = &Flux_Shadows::GetCSMTargetSetup(0);
 		xShadowPipelineSpec.m_pxShader = &s_xShadowShader;
 		xShadowPipelineSpec.m_xVertexInputDesc = xVertexDesc;
+
+		xShadowPipelineSpec.m_bDepthBias = true;
+		xShadowPipelineSpec.m_fDepthBiasConstant = 0.5f;
+		xShadowPipelineSpec.m_fDepthBiasSlope = 2.f;
+		xShadowPipelineSpec.m_fDepthBiasClamp = 0.05f;
 
 		Flux_PipelineLayout& xLayout = xShadowPipelineSpec.m_xPipelineLayout;
 		xLayout.m_uNumDescriptorSets = 2;
@@ -141,6 +148,8 @@ void Flux_StaticMeshes::RenderToGBuffer(void*)
 			g_xCommandList.AddCommand<Flux_CommandBindTexture>(xMaterial.GetNormal(), 1);
 			g_xCommandList.AddCommand<Flux_CommandBindTexture>(xMaterial.GetRoughness(), 2);
 			g_xCommandList.AddCommand<Flux_CommandBindTexture>(xMaterial.GetMetallic(), 3);
+			g_xCommandList.AddCommand<Flux_CommandBindTexture>(xMaterial.GetOcclusion(), 4);
+			g_xCommandList.AddCommand<Flux_CommandBindTexture>(xMaterial.GetEmissive(), 5);
 
 			g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(xMesh.GetNumIndices());
 		}

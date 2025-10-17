@@ -42,13 +42,8 @@ public:
 	static void InitialiseIndexBuffer(const void* pData, size_t uSize, Flux_IndexBuffer& xBufferOut);
 	static void InitialiseDynamicConstantBuffer(const void* pData, size_t uSize, Flux_DynamicConstantBuffer& xBufferOut);
 
-	static void UploadStagingData(AllocationType eType, void* pAllocation, const void* pData, size_t uSize);
-
 	static void UploadBufferData(Zenith_Vulkan_Buffer& xBuffer, const void* pData, size_t uSize);
 	static void UploadTextureData(Zenith_Vulkan_Texture& xTexture, const void* pData, size_t uSize);
-	static void ClearStagingBuffer();
-
-	static bool MemoryWasAllocated(void* pAllocation);
 
 	static Zenith_Vulkan_CommandBuffer& GetCommandBuffer();
 private:
@@ -64,8 +59,6 @@ private:
 	static void FreeTexture(Zenith_Vulkan_Texture* pxTexture);
 	static void InitialiseStagingBuffer();
 
-	static void HandleCpuOutOfMemory();
-	static void HandleGpuOutOfMemory();
 	static void HandleStagingBufferFull();
 
 	static void FlushStagingBuffer();

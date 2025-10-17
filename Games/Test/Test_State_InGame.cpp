@@ -33,6 +33,7 @@ static Zenith_Entity s_xSphere1;
 static Zenith_Entity s_axRotatingSpheres[3];
 static Zenith_Entity s_xTerrain[TERRAIN_EXPORT_DIMS][TERRAIN_EXPORT_DIMS];
 static Zenith_Entity s_xOgre;
+static Zenith_Entity s_xGltfTest[2];
 
 //#TO_TODO: these need to be in a header file for tools terrain export
 
@@ -42,7 +43,7 @@ static Zenith_Entity s_xOgre;
 //#TO multiplier for vertex positions
 #define TERRAIN_SCALE 8
 
-
+static Zenith_Maths::Vector3 s_xPlayerSpawn = { 2100,-566,1500 };
 
 static void LoadAssets()
 {
@@ -169,7 +170,7 @@ void Test_State_InGame::OnEnter()
 	const float fYaw = 0;
 	const float fFOV = 45;
 	const float fNear = 1;
-	const float fFar = 5000;
+	const float fFar = 2000;
 	const float fAspectRatio = 16. / 9.;
 	xCamera.InitialisePerspective(xPos, fPitch, fYaw, fFOV, fNear, fFar, fAspectRatio);
 	xScene.SetMainCameraEntity(s_xPlayer);
@@ -319,6 +320,27 @@ void Test_State_InGame::OnEnter()
 		xMesh0.m_pxAnimation = new Flux_MeshAnimation("C:/dev/Zenith/Games/Test/Assets/Meshes/ogre/ogre.fbx", xMesh0);
 		Flux_MeshGeometry& xMesh1 = xModel.GetMeshGeometryAtIndex(1);
 		xMesh1.m_pxAnimation = new Flux_MeshAnimation("C:/dev/Zenith/Games/Test/Assets/Meshes/ogre/ogre.fbx", xMesh1);
+	}
+
+	const char* aszAssetNames[] = 
+	{
+		"C:/dev/Zenith/Games/Test/Assets/Meshes/Khronos_GLTF_Models/Sponza/glTF",
+		"C:/dev/Zenith/Games/Test/Assets/Meshes/Khronos_GLTF_Models/Avocado/glTF",
+	};
+	float afScales[] = 
+	{
+		0.1f,
+		100.f,
+	};
+
+	for(u_int u = 0; u < COUNT_OF(s_xGltfTest); u++)
+	{
+		s_xGltfTest[u].Initialise(&xScene, "GLTF Test");
+		Zenith_TransformComponent& xTrans = s_xGltfTest[u].GetComponent<Zenith_TransformComponent>();
+		xTrans.SetPosition(s_xPlayerSpawn + Zenith_Maths::Vector3(u * 10, 100, 0));
+		xTrans.SetScale({ afScales[u],afScales[u],afScales[u] });
+		Zenith_ModelComponent& xModel = s_xGltfTest[u].AddComponent<Zenith_ModelComponent>();
+		xModel.LoadMeshesFromDir(aszAssetNames[u]);
 	}
 }
 

@@ -53,6 +53,8 @@ void Flux_AnimatedMeshes::Initialise()
 	xLayout.m_axDescriptorSetLayouts[1].m_axBindings[2].m_eType = DESCRIPTOR_TYPE_TEXTURE;
 	xLayout.m_axDescriptorSetLayouts[1].m_axBindings[3].m_eType = DESCRIPTOR_TYPE_TEXTURE;
 	xLayout.m_axDescriptorSetLayouts[1].m_axBindings[4].m_eType = DESCRIPTOR_TYPE_TEXTURE;
+	xLayout.m_axDescriptorSetLayouts[1].m_axBindings[5].m_eType = DESCRIPTOR_TYPE_TEXTURE;
+	xLayout.m_axDescriptorSetLayouts[1].m_axBindings[6].m_eType = DESCRIPTOR_TYPE_TEXTURE;
 
 	for (Flux_BlendState& xBlendState : xPipelineSpec.m_axBlendStates)
 	{
@@ -123,6 +125,8 @@ void Flux_AnimatedMeshes::Render(void*)
 			g_xCommandList.AddCommand<Flux_CommandBindTexture>(xMaterial.GetNormal(), 2);
 			g_xCommandList.AddCommand<Flux_CommandBindTexture>(xMaterial.GetRoughness(), 3);
 			g_xCommandList.AddCommand<Flux_CommandBindTexture>(xMaterial.GetMetallic(), 4);
+			g_xCommandList.AddCommand<Flux_CommandBindTexture>(xMaterial.GetOcclusion(), 5);
+			g_xCommandList.AddCommand<Flux_CommandBindTexture>(xMaterial.GetEmissive(), 6);
 
 			g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(xMesh.GetNumIndices());
 		}

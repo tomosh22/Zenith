@@ -63,6 +63,8 @@ public:
 
 	void LoadMeshesFromDir(const std::filesystem::path& strPath, Flux_Material* const pxOverrideMaterial = nullptr, const bool bRetainPositionsAndNormals = false, const bool bUploadToGPU = true)
 	{
+		static u_int ls_uCount = 0;
+		ls_uCount++;
 		const std::string strLeaf = strPath.stem().string();
 
 		//#TO iterate over textures first to create materials
@@ -74,21 +76,80 @@ public:
 				const std::string strFilename = xFile.path().stem().string();
 				Flux_Texture* pxTex = Zenith_AssetHandler::AddTexture2D(strFilename, strFilepath.c_str());
 				const uint32_t uMatIndex = GetMaterialIndexFromTextureName(strFilename);
-				const std::string strMatName = strLeaf + std::to_string(uMatIndex);
+				const std::string strMatName = strLeaf + std::to_string(uMatIndex) + std::to_string(ls_uCount);
 				if (!Zenith_AssetHandler::MaterialExists(strMatName))
 				{
 					Zenith_AssetHandler::AddMaterial(strMatName);
 				}
 				Flux_Material& xMat = Zenith_AssetHandler::GetMaterial(strMatName);
 
-				//#TO_TODO: should probably have an enum for this
 				if (strFilename.find("Diffuse") != std::string::npos)
 				{
 					xMat.SetDiffuse(pxTex);
 				}
+				else if (strFilename.find("Specular") != std::string::npos)
+				{
+					Zenith_Assert(false, "Unhandled texture type");
+				}
+				else if (strFilename.find("Ambient") != std::string::npos)
+				{
+					Zenith_Assert(false, "Unhandled texture type");
+				}
+				else if (strFilename.find("Emissive") != std::string::npos)
+				{
+					Zenith_Assert(false, "Unhandled texture type");
+				}
+				else if (strFilename.find("Height") != std::string::npos)
+				{
+					Zenith_Assert(false, "Unhandled texture type");
+				}
 				else if (strFilename.find("Normals") != std::string::npos)
 				{
 					xMat.SetNormal(pxTex);
+				}
+				else if (strFilename.find("Shininess") != std::string::npos)
+				{
+					Zenith_Assert(false, "Unhandled texture type");
+				}
+				else if (strFilename.find("Opacity") != std::string::npos)
+				{
+					Zenith_Assert(false, "Unhandled texture type");
+				}
+				else if (strFilename.find("Displacement") != std::string::npos)
+				{
+					Zenith_Assert(false, "Unhandled texture type");
+				}
+				else if (strFilename.find("Lightmap") != std::string::npos)
+				{
+					Zenith_Assert(false, "Unhandled texture type");
+				}
+				else if (strFilename.find("Reflection") != std::string::npos)
+				{
+					Zenith_Assert(false, "Unhandled texture type");
+				}
+				else if (strFilename.find("BaseColor") != std::string::npos)
+				{
+					xMat.SetDiffuse(pxTex);
+				}
+				else if (strFilename.find("Normal_Camera") != std::string::npos)
+				{
+					Zenith_Assert(false, "Unhandled texture type");
+				}
+				else if (strFilename.find("Emissive") != std::string::npos)
+				{
+					Zenith_Assert(false, "Unhandled texture type");
+				}
+				else if (strFilename.find("Metallic") != std::string::npos)
+				{
+					xMat.SetMetallic(pxTex);
+				}
+				else if (strFilename.find("Roughness") != std::string::npos)
+				{
+					xMat.SetRoughness(pxTex);
+				}
+				else if (strFilename.find("Occlusion") != std::string::npos)
+				{
+					Zenith_Assert(false, "Unhandled texture type");
 				}
 				else
 				{
@@ -107,7 +168,7 @@ public:
 					Zenith_AssetHandler::AddMesh(xFile.path().stem().string(), xFile.path().string().c_str(), bRetainPositionsAndNormals, bUploadToGPU);
 				}
 				const uint32_t uMatIndex = GetMaterialIndexFromMeshName(xFile.path().stem().string());
-				const std::string strMatName = strLeaf + std::to_string(uMatIndex);
+				const std::string strMatName = strLeaf + std::to_string(uMatIndex) + std::to_string(ls_uCount);
 				if (pxOverrideMaterial)
 				{
 					AddMeshEntry(Zenith_AssetHandler::GetMesh(xFile.path().stem().string()), *pxOverrideMaterial);

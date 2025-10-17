@@ -107,4 +107,9 @@ struct Flux_PipelineSpecification
 	LoadAction m_eDepthStencilLoadAction;
 	StoreAction m_eDepthStencilStoreAction;
 	bool m_bWireframe = false;
+
+	bool m_bDepthBias = false;
+	float m_fDepthBiasConstant = 0.0f;
+	float m_fDepthBiasSlope = 0.0f;
+	float m_fDepthBiasClamp = 0.0f;
 };

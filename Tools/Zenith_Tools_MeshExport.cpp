@@ -55,7 +55,7 @@ static void ExportAssimpMesh(aiMesh* pxAssimpMesh, std::string strOutFilename)
 		{
 			if (puVertexBoneCount[uVert] > MAX_BONES_PER_VERTEX)
 			{
-				Zenith_Assert(false, "Mesh has vertices with more than MAX_BONES_PER_VERTEX bone influences");
+				Zenith_Log("Mesh has vertices with more than MAX_BONES_PER_VERTEX bone influences");
 				return;
 			}
 		}
@@ -212,7 +212,11 @@ static void ExportAssimpMesh(aiMesh* pxAssimpMesh, std::string strOutFilename)
 	for (u_int i = 0; i < pxAssimpMesh->mNumFaces; i++)
 	{
 		const aiFace& xFace = pxAssimpMesh->mFaces[i];
-		Zenith_Assert(xFace.mNumIndices == 3, "Face is not a triangle - triangulation failed");
+		if (xFace.mNumIndices != 3)
+		{
+			Zenith_Log("Face is not a triangle, aborting");
+			return;
+		}
 
 		xMesh.m_puIndices[i * 3 + 0] = xFace.mIndices[0];
 		xMesh.m_puIndices[i * 3 + 1] = xFace.mIndices[bFlipWinding ? 1 : 2];
@@ -258,12 +262,12 @@ static const char* s_aszMaterialTypeToName[]
 	"Displacement",		//9
 	"Lightmap",			//10
 	"Reflection",		//11
-	"Base_Colour",		//12
+	"BaseColor",		//12 - glTF base color texture
 	"Normal_Camera",	//13
-	"Emission_Colour",	//14
-	"Metalness",		//15
-	"Diffuse_Roughness",//16
-	"Ambient_Occlusion",//17
+	"Emissive",			//14 - glTF emissive texture
+	"Metallic",			//15 - glTF metallic texture
+	"Roughness",		//16 - glTF roughness or combined MetallicRoughness
+	"Occlusion",		//17 - glTF ambient occlusion texture
 };
 
 static void ExportMaterialTextures(const aiMaterial* pxMat, const aiScene* pxScene, const std::string& strFilename, const uint32_t uIndex)
@@ -322,18 +326,20 @@ static void Export(const std::string& strFilename, const std::string& strExtensi
 		aiProcess_Triangulate |
 		aiProcess_FlipUVs);
 
-	//#TO_TODO: move this for loop inside the function
-	for (uint32_t u = 0; u < pxScene->mNumMaterials; u++)
-	{
-		ExportMaterialTextures(pxScene->mMaterials[u], pxScene, strFilename, u);
-	}
-
 	if (!pxScene)
 	{
 		Zenith_Log("Null mesh scene %s", strFilename.c_str());
 		Zenith_Log("Assimp error %s", importer.GetErrorString() ? importer.GetErrorString() : "no error");
 		return;
 	}
+
+	//#TO_TODO: move this for loop inside the function
+	for (uint32_t u = 0; u < pxScene->mNumMaterials; u++)
+	{
+		ExportMaterialTextures(pxScene->mMaterials[u], pxScene, strFilename, u);
+	}
+
+
 
 	uint32_t uRootIndex = 0;
 	ProcessNode(pxScene->mRootNode, pxScene, strExtension, strFilename, uRootIndex, szExportFilenameOverride);

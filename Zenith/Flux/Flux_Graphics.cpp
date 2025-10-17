@@ -18,7 +18,8 @@ Flux_RenderAttachment Flux_Graphics::s_xDepthBuffer;
 Flux_Sampler Flux_Graphics::s_xDefaultSampler;
 Flux_MeshGeometry Flux_Graphics::s_xQuadMesh;
 Flux_DynamicConstantBuffer Flux_Graphics::s_xFrameConstantsBuffer;
-Flux_Texture* Flux_Graphics::s_pxBlankTexture2D;
+Flux_Texture* Flux_Graphics::s_pxWhiteBlankTexture2D;
+Flux_Texture* Flux_Graphics::s_pxBlackBlankTexture2D;
 Flux_MeshGeometry Flux_Graphics::s_xBlankMesh;
 Flux_Material* Flux_Graphics::s_pxBlankMaterial;
 Flux_Graphics::FrameConstants Flux_Graphics::s_xFrameConstants;
@@ -32,8 +33,8 @@ ColourFormat Flux_Graphics::s_aeMRTFormats[MRT_INDEX_COUNT]
 	COLOUR_FORMAT_R32G32B32A32_SFLOAT //MRT_INDEX_WORLDPOS #TO unused alpha
 };
 
-DEBUGVAR Zenith_Maths::Vector3 dbg_SunDir = { 0.,-0.6, -0.8 };
-DEBUGVAR Zenith_Maths::Vector4 dbg_SunColour = { 0.7, 0.4,0.2, 1.f };
+DEBUGVAR Zenith_Maths::Vector3 dbg_SunDir = { 0.1,-1.0, 0.1 };
+DEBUGVAR Zenith_Maths::Vector4 dbg_SunColour = { 0.9, 0.8,0.7, 1.f };
 
 DEBUGVAR bool dbg_bQuadUtilisationAnalysis = false;
 DEBUGVAR u_int dbg_uTargetPixelsPerTri = 10;
@@ -45,8 +46,11 @@ void Flux_Graphics::Initialise()
 {
 	Flux_Sampler::InitialiseDefault(s_xDefaultSampler);
 
-	float afBlankTexData[] = { 1.f,1.f,1.f,1.f };
-	s_pxBlankTexture2D = Zenith_AssetHandler::AddTexture2D("Flux Graphics Blank Texture", afBlankTexData, 1, 1, 1, COLOUR_FORMAT_RGBA8_UNORM, DEPTHSTENCIL_FORMAT_NONE, false);
+	u_int8 aucWhiteBlankTexData[] = { 255,255,255,255 };
+	s_pxWhiteBlankTexture2D = Zenith_AssetHandler::AddTexture2D("Flux Graphics White Blank Texture", aucWhiteBlankTexData, 1, 1, 1, COLOUR_FORMAT_RGBA8_UNORM, DEPTHSTENCIL_FORMAT_NONE, false);
+
+	u_int8 aucBlackBlankTexData[] = { 0,0,0,0 };
+	s_pxBlackBlankTexture2D = Zenith_AssetHandler::AddTexture2D("Flux Graphics Black Blank Texture", aucBlackBlankTexData, 1, 1, 1, COLOUR_FORMAT_RGBA8_UNORM, DEPTHSTENCIL_FORMAT_NONE, false);
 
 	s_pxBlankMaterial = &Zenith_AssetHandler::AddMaterial("BlankMaterial");
 

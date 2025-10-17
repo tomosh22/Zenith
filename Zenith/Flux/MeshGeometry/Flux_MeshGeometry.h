@@ -33,16 +33,14 @@ public:
 		if(m_pxBitangents) delete[] m_pxBitangents;
 		if(m_pfMaterialLerps) delete[] m_pfMaterialLerps;
 
-		Zenith_Log("Resetting vertex buffer");
 		m_xVertexBuffer.Reset();
 
-		Zenith_Log("Resetting index buffer");
 		m_xIndexBuffer.Reset();
 	}
 
 	static void GenerateFullscreenQuad(Flux_MeshGeometry& xGeometryOut);
 	static void GenerateFullscreenQuad(Flux_MeshGeometry& xGeometryOut, Zenith_Maths::Matrix4 xTransform);
-	static void LoadFromFile(const char* szPath, Flux_MeshGeometry& xGeometryOut, const bool bRetainPositionsAndNormals = false, const bool bUploadToGPU = true);
+	static void LoadFromFile(const char* szPath, Flux_MeshGeometry& xGeometryOut, const bool bRetainAttributes = false, const bool bUploadToGPU = true);
 
 	const void* GetVertexData() const { return m_pVertexData; }
 	const uint64_t GetVertexDataSize() const { return m_uNumVerts * m_xBufferLayout.GetStride(); }
@@ -94,7 +92,7 @@ public:
 	uint32_t* m_puBoneIDs = nullptr;
 	float* m_pfBoneWeights = nullptr;
 
-	void* m_pVertexData = nullptr;
+	u_int8* m_pVertexData = nullptr;
 
 	Flux_VertexBuffer m_xVertexBuffer;
 	Flux_IndexBuffer m_xIndexBuffer;
