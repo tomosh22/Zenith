@@ -14,20 +14,9 @@ layout(push_constant) uniform FogConstants{
 
 void main()
 {
-	float fDepth = texture(g_xDepthTex, a_xUV).x;
+	vec3 xWorldPos = GetWorldPosFromDepthTex(g_xDepthTex, a_xUV);
 	
-	vec2 xNDC = a_xUV * 2. - 1.;
-
-	vec4 xClipSpace = vec4(xNDC, fDepth, 1.);
-
-	//#TO_TODO: invert this CPU side
-	vec4 xViewSpace = inverse(g_xProjMat) * xClipSpace;
-	xViewSpace /= xViewSpace.w;
-
-	//#TO_TODO: same here
-	vec4 xWorldSpace = (inverse(g_xViewMat) * xViewSpace);
-	
-	vec3 xCameraToPixel = xWorldSpace.xyz - g_xCamPos_Pad.xyz;
+	vec3 xCameraToPixel = xWorldPos.xyz - g_xCamPos_Pad.xyz;
 	
 	float fDist = length(xCameraToPixel);
 	

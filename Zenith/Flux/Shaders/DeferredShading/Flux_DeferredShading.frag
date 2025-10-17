@@ -167,18 +167,7 @@ void main()
 	vec3 xNormal = xNormalAmbient.xyz;
 	float fAmbient = xNormalAmbient.w;
 	
-	float fDepth = texture(g_xDepthTex, a_xUV).x;
-	
-	vec2 xNDC = a_xUV * 2. - 1.;
-
-	vec4 xClipSpace = vec4(xNDC, fDepth, 1.);
-
-	//#TO_TODO: invert this CPU side
-	vec4 xViewSpace = inverse(g_xProjMat) * xClipSpace;
-	xViewSpace /= xViewSpace.w;
-
-	//#TO_TODO: same here
-	vec3 xWorldPos = (inverse(g_xViewMat) * xViewSpace).xyz;
+	vec3 xWorldPos = GetWorldPosFromDepthTex(g_xDepthTex, a_xUV);
 	
 	float fRoughness = xMaterial.x;
 	float fMetallic = xMaterial.y;
