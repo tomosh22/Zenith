@@ -8,6 +8,7 @@
 #include "Flux/Flux_Buffers.h"
 #include "Flux/Shadows/Flux_Shadows.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
+#include "DebugVariables/Zenith_DebugVariables.h"
 
 static Zenith_Task g_xRenderTask(ZENITH_PROFILE_INDEX__FLUX_DEFERRED_SHADING, Flux_DeferredShading::Render, nullptr);
 
@@ -15,6 +16,9 @@ static Flux_CommandList g_xCommandList("Apply Lighting");
 
 static Flux_Shader s_xShader;
 static Flux_Pipeline s_xPipeline;
+
+DEBUGVAR u_int dbg_uVisualiseCSMs = 0;
+DEBUGVAR bool dbg_bVisualiseCSMs = false;
 
 void Flux_DeferredShading::Initialise()
 {
@@ -53,6 +57,10 @@ void Flux_DeferredShading::Initialise()
 
 	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
 
+	#ifdef ZENITH_DEBUG_VARIABLES
+	Zenith_DebugVariables::AddBoolean({ "Render", "Shadows", "Visualise CSMs" }, dbg_bVisualiseCSMs);
+	#endif
+
 	Zenith_Log("Flux_DeferredShading initialised");
 }
 
@@ -85,13 +93,16 @@ void Flux_DeferredShading::Render(void*)
 	constexpr uint32_t uFirstShadowTexBind = 9;
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
-		g_xCommandList.AddCommand<Flux_CommandBindTexture>(&Flux_Shadows::GetCSMTexture(u), uFirstShadowTexBind + u);
+		g_xCommandList.AddCommand<Flux_CommandBindTexture>(&Flux_Shadows::GetCSMTexture(u), uFirstShadowTexBind + u, &Flux_Graphics::s_xClampSampler);
 	}
 	constexpr uint32_t uFirstShadowBufferBind = 1;
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
 		g_xCommandList.AddCommand<Flux_CommandBindBuffer>(&Flux_Shadows::GetShadowMatrixBuffer(u).GetBuffer(), uFirstShadowBufferBind + u);
 	}
+
+	dbg_uVisualiseCSMs = dbg_bVisualiseCSMs ? 1 : 0;
+	g_xCommandList.AddCommand<Flux_CommandPushConstant>(&dbg_uVisualiseCSMs, sizeof(dbg_uVisualiseCSMs));
 
 	g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(6);
 

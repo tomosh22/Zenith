@@ -31,7 +31,11 @@ layout(set = 0, binding = 10) uniform sampler2D g_xCSM1;
 layout(set = 0, binding = 11) uniform sampler2D g_xCSM2;
 layout(set = 0, binding = 12) uniform sampler2D g_xCSM3;
 
-#define HandleShadow(uIndex)
+layout(push_constant) uniform DeferredShadingConstants
+{
+	uint g_bVisualiseCSMs;
+};
+
 
 const float PI = 3.14159265359;
 
@@ -223,6 +227,12 @@ void main()
 		if(fCurrentDepth < 0 || fCurrentDepth > 1.0)
 		{
 			continue; // Try next cascade
+		}
+
+		if(g_bVisualiseCSMs > 0)
+		{
+			o_xColour = vec4(1.f / int(uNumCSMs)) * iCascade;
+			return;
 		}
 		
 		// Sample the appropriate shadow map

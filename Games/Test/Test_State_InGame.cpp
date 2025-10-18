@@ -326,14 +326,14 @@ void Test_State_InGame::OnEnter()
 	float afScales[] = 
 	{
 		0.1f,
-		100.f,
+		200.f,
 	};
 
 	for(u_int u = 0; u < COUNT_OF(s_xGltfTest); u++)
 	{
 		s_xGltfTest[u].Initialise(&xScene, "GLTF Test");
 		Zenith_TransformComponent& xTrans = s_xGltfTest[u].GetComponent<Zenith_TransformComponent>();
-		xTrans.SetPosition(s_xPlayerSpawn + Zenith_Maths::Vector3(u * 10, 100, 0));
+		xTrans.SetPosition(s_xPlayerSpawn + Zenith_Maths::Vector3(u * 10, 100 - 5 * u, 0));
 		xTrans.SetScale({ afScales[u],afScales[u],afScales[u] });
 		Zenith_ModelComponent& xModel = s_xGltfTest[u].AddComponent<Zenith_ModelComponent>();
 		xModel.LoadMeshesFromDir(aszAssetNames[u]);

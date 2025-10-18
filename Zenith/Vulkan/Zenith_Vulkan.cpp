@@ -82,7 +82,7 @@ const bool Zenith_Vulkan::ShouldSubmitDrawCalls() { return dbg_bSubmitDrawCalls;
 void Flux::Platform_RegisterBindlessTexture(Zenith_Vulkan_Texture* pxTex, uint32_t uIndex)
 {
 	vk::DescriptorImageInfo xInfo = vk::DescriptorImageInfo()
-		.setSampler(Flux_Graphics::s_xDefaultSampler.GetSampler())
+		.setSampler(Flux_Graphics::s_xRepeatSampler.GetSampler())
 		.setImageView(pxTex->GetImageView())
 		.setImageLayout(vk::ImageLayout::eShaderReadOnlyOptimal);
 

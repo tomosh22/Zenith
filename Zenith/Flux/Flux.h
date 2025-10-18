@@ -67,7 +67,13 @@ public:
 
 	static const uint32_t GetFrameCounter() { return s_uFrameCounter; }
 
-	static void SubmitCommandList(const Flux_CommandList* pxCmdList, const Flux_TargetSetup& xTargetSetup, RenderOrder eOrder){s_xPendingCommandLists[eOrder].PushBack({pxCmdList, xTargetSetup}); }
+	static void SubmitCommandList(const Flux_CommandList* pxCmdList, const Flux_TargetSetup& xTargetSetup, RenderOrder eOrder)
+	{
+		static Zenith_Mutex ls_xMutex;
+		ls_xMutex.Lock();
+		s_xPendingCommandLists[eOrder].PushBack({pxCmdList, xTargetSetup});
+		ls_xMutex.Unlock();
+		}
 
 	static void AddResChangeCallback(void(*pfnCallback)()) { s_xResChangeCallbacks.push_back(pfnCallback); }
 	static void OnResChange();

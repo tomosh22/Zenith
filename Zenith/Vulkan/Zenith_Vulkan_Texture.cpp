@@ -93,7 +93,7 @@ vk::ImageLayout Zenith_Vulkan_Texture::ConvertToVkTargetUsage(RenderTargetUsage 
 	}
 }
 
-void Zenith_Vulkan_Sampler::InitialiseDefault(Zenith_Vulkan_Sampler& xSampler)
+void Zenith_Vulkan_Sampler::InitialiseRepeat(Zenith_Vulkan_Sampler& xSampler)
 {
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 	const vk::PhysicalDevice& xPhysDevice = Zenith_Vulkan::GetPhysicalDevice();
@@ -104,6 +104,29 @@ void Zenith_Vulkan_Sampler::InitialiseDefault(Zenith_Vulkan_Sampler& xSampler)
 		.setAddressModeU(vk::SamplerAddressMode::eRepeat)
 		.setAddressModeV(vk::SamplerAddressMode::eRepeat)
 		.setAddressModeW(vk::SamplerAddressMode::eRepeat)
+		//.setAnisotropyEnable(VK_TRUE)
+		//.setMaxAnisotropy(xPhysDevice.getProperties().limits.maxSamplerAnisotropy)
+		.setBorderColor(vk::BorderColor::eIntOpaqueBlack)
+		.setUnnormalizedCoordinates(VK_FALSE)
+		.setCompareEnable(VK_FALSE)
+		.setCompareOp(vk::CompareOp::eAlways)
+		.setMipmapMode(vk::SamplerMipmapMode::eLinear)
+		.setMaxLod(FLT_MAX);
+
+	xSampler.m_xSampler = xDevice.createSampler(xInfo);
+}
+
+void Zenith_Vulkan_Sampler::InitialiseClamp(Zenith_Vulkan_Sampler& xSampler)
+{
+	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
+	const vk::PhysicalDevice& xPhysDevice = Zenith_Vulkan::GetPhysicalDevice();
+
+	vk::SamplerCreateInfo xInfo = vk::SamplerCreateInfo()
+		.setMagFilter(vk::Filter::eLinear)
+		.setMinFilter(vk::Filter::eLinear)
+		.setAddressModeU(vk::SamplerAddressMode::eClampToEdge)
+		.setAddressModeV(vk::SamplerAddressMode::eClampToEdge)
+		.setAddressModeW(vk::SamplerAddressMode::eClampToEdge)
 		//.setAnisotropyEnable(VK_TRUE)
 		//.setMaxAnisotropy(xPhysDevice.getProperties().limits.maxSamplerAnisotropy)
 		.setBorderColor(vk::BorderColor::eIntOpaqueBlack)

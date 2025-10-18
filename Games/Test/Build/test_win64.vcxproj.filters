@@ -278,7 +278,7 @@
       <Filter>Zenith\Core</Filter>
     </ClCompile>
     <ClCompile Include="..\..\..\Zenith\DataStream\Zenith_DataStream.cpp">
-      <Filter>Zenith\Core\DataStream</Filter>
+      <Filter>Zenith\DataStream</Filter>
     </ClCompile>
     <ClCompile Include="..\..\..\Zenith\DebugVariables\Zenith_DebugVariables.cpp">
       <Filter>Zenith\DebugVariables</Filter>
@@ -360,6 +360,9 @@
     </ClCompile>
     <ClCompile Include="..\..\..\Zenith\Flux\Skybox\Flux_Skybox.cpp">
       <Filter>Zenith\Flux\Skybox</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\Zenith\Flux\SSAO\Flux_SSAO.cpp">
+      <Filter>Zenith\Flux\SSAO</Filter>
     </ClCompile>
     <ClCompile Include="..\..\..\Zenith\Flux\StaticMeshes\Flux_StaticMeshes.cpp">
       <Filter>Zenith\Flux\StaticMeshes</Filter>
@@ -807,8 +810,11 @@
     <ClInclude Include="..\..\..\Zenith\Core\Zenith_Core.h">
       <Filter>Zenith\Core</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\Core\Zenith_String.h">
+      <Filter>Zenith\Core</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\..\Zenith\DataStream\Zenith_DataStream.h">
-      <Filter>Zenith\Core\DataStream</Filter>
+      <Filter>Zenith\DataStream</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\Zenith\DebugVariables\Zenith_DebugVariables.h">
       <Filter>Zenith\DebugVariables</Filter>
@@ -933,6 +939,9 @@
     <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Skybox\Flux_Skybox.frag">
       <Filter>Zenith\Flux\Shaders\Skybox</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\SSAO\Flux_SSAO.frag">
+      <Filter>Zenith\Flux\Shaders\SSAO</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\..\Zenith\Flux\Shaders\StaticMeshes\Flux_StaticMeshes_FragCommon.fxh">
       <Filter>Zenith\Flux\Shaders\StaticMeshes</Filter>
     </ClInclude>
@@ -986,6 +995,9 @@
     </ClInclude>
     <ClInclude Include="..\..\..\Zenith\Flux\Skybox\Flux_Skybox.h">
       <Filter>Zenith\Flux\Skybox</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\Flux\SSAO\Flux_SSAO.h">
+      <Filter>Zenith\Flux\SSAO</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\Zenith\Flux\StaticMeshes\Flux_StaticMeshes.h">
       <Filter>Zenith\Flux\StaticMeshes</Filter>
@@ -1064,9 +1076,6 @@
     </ClInclude>
     <ClInclude Include="..\Test_State_MainMenu.h">
       <Filter>Games\Test</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\..\Zenith\Core\Zenith_String.h">
-      <Filter>Zenith\Core</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
@@ -1217,6 +1226,9 @@
     <Filter Include="Zenith\Core\Multithreading">
       <UniqueIdentifier>{2a4da5f7-c5af-ff3d-fb6b-9d4066cbf910}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Zenith\DataStream">
+      <UniqueIdentifier>{6cea842d-b6c3-0cc1-a5a0-2ad0b446eded}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Zenith\DebugVariables">
       <UniqueIdentifier>{7f1403f2-3ea3-a630-7141-9d9483afc14d}</UniqueIdentifier>
     </Filter>
@@ -1256,6 +1268,9 @@
     <Filter Include="Zenith\Flux\SDFs">
       <UniqueIdentifier>{84088a68-a422-3be5-6db8-7fd09bc19fea}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Zenith\Flux\SSAO">
+      <UniqueIdentifier>{a53ee9eb-2d46-3e12-8b28-a9a4b938c2ef}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Zenith\Flux\Shaders">
       <UniqueIdentifier>{023039c4-353d-0c39-1bdd-99bb116ea5f5}</UniqueIdentifier>
     </Filter>
@@ -1276,6 +1291,9 @@
     </Filter>
     <Filter Include="Zenith\Flux\Shaders\SDFs">
       <UniqueIdentifier>{86b9ee1e-9f6b-d1c9-fe79-8f650ef3543a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Zenith\Flux\Shaders\SSAO">
+      <UniqueIdentifier>{cd3e72aa-5224-d822-bc8b-0d0a9e9d96b7}</UniqueIdentifier>
     </Filter>
     <Filter Include="Zenith\Flux\Shaders\Skybox">
       <UniqueIdentifier>{bf2aae2b-cee3-e0f0-9869-c78bc13c7541}</UniqueIdentifier>
@@ -1336,9 +1354,6 @@
     </Filter>
     <Filter Include="Zenith\Windows\Multithreading">
       <UniqueIdentifier>{8be0c66e-b619-c25e-6bbc-4dbea81dba49}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Zenith\Core\DataStream">
-      <UniqueIdentifier>{6cea842d-b6c3-0cc1-a5a0-2ad0b446eded}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
 </Project>

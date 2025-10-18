@@ -41,7 +41,6 @@
     <CharacterSet>MultiByte</CharacterSet>
     <WholeProgramOptimization>false</WholeProgramOptimization>
     <PlatformToolset>v143</PlatformToolset>
-    <EnableASAN>true</EnableASAN>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'" Label="Configuration">
     <ConfigurationType>Application</ConfigurationType>
@@ -56,7 +55,6 @@
     <CharacterSet>MultiByte</CharacterSet>
     <WholeProgramOptimization>false</WholeProgramOptimization>
     <PlatformToolset>v143</PlatformToolset>
-    <EnableASAN>true</EnableASAN>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <ImportGroup Label="ExtensionSettings">
@@ -186,8 +184,7 @@
       <AdditionalDependencies>glfw3_mt.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
-      <IgnoreSpecificDefaultLibraries>
-      </IgnoreSpecificDefaultLibraries>
+      <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
       <LargeAddressAware>true</LargeAddressAware>
       <MapFileName>output\win64\vs2022_debug_win64_false\test.map</MapFileName>
     </Link>
@@ -243,7 +240,6 @@
       <PrecompiledHeaderOutputFile>obj\win64\vs2022_debug_win64_true\Test.pch</PrecompiledHeaderOutputFile>
       <ProgramDatabaseFileName>obj\win64\vs2022_debug_win64_true\test_compiler.pdb</ProgramDatabaseFileName>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
-      <ConformanceMode>true</ConformanceMode>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -274,8 +270,7 @@
       <AdditionalDependencies>zenithtools.lib;assimp-vc143-mtd.lib;glfw3_mt.lib;opencv_world4100d.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
-      <IgnoreSpecificDefaultLibraries>
-      </IgnoreSpecificDefaultLibraries>
+      <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
       <LargeAddressAware>true</LargeAddressAware>
       <MapFileName>output\win64\vs2022_debug_win64_true\test.map</MapFileName>
     </Link>
@@ -361,8 +356,7 @@
       <AdditionalDependencies>glfw3_mt.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
-      <IgnoreSpecificDefaultLibraries>
-      </IgnoreSpecificDefaultLibraries>
+      <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
       <LargeAddressAware>true</LargeAddressAware>
       <MapFileName>output\win64\vs2022_release_win64_false\test.map</MapFileName>
     </Link>
@@ -448,8 +442,7 @@
       <AdditionalDependencies>zenithtools.lib;assimp-vc143-mt.lib;glfw3_mt.lib;opencv_world4100.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
-      <IgnoreSpecificDefaultLibraries>
-      </IgnoreSpecificDefaultLibraries>
+      <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
       <LargeAddressAware>true</LargeAddressAware>
       <MapFileName>output\win64\vs2022_release_win64_true\test.map</MapFileName>
     </Link>
@@ -622,6 +615,7 @@
     <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Quads\Flux_Quads.vert" />
     <ClInclude Include="..\..\..\Zenith\Flux\Shaders\SDFs\Flux_SDFs.frag" />
     <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Skybox\Flux_Skybox.frag" />
+    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\SSAO\Flux_SSAO.frag" />
     <ClInclude Include="..\..\..\Zenith\Flux\Shaders\StaticMeshes\Flux_StaticMeshes_FragCommon.fxh" />
     <ClInclude Include="..\..\..\Zenith\Flux\Shaders\StaticMeshes\Flux_StaticMeshes_ToGBuffer.frag" />
     <ClInclude Include="..\..\..\Zenith\Flux\Shaders\StaticMeshes\Flux_StaticMeshes_ToGBuffer.vert" />
@@ -640,6 +634,7 @@
     <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Water\Flux_Water.vert" />
     <ClInclude Include="..\..\..\Zenith\Flux\Shadows\Flux_Shadows.h" />
     <ClInclude Include="..\..\..\Zenith\Flux\Skybox\Flux_Skybox.h" />
+    <ClInclude Include="..\..\..\Zenith\Flux\SSAO\Flux_SSAO.h" />
     <ClInclude Include="..\..\..\Zenith\Flux\StaticMeshes\Flux_StaticMeshes.h" />
     <ClInclude Include="..\..\..\Zenith\Flux\Terrain\Flux_Terrain.h" />
     <ClInclude Include="..\..\..\Zenith\Flux\Text\Flux_Text.h" />
@@ -1228,6 +1223,7 @@
     <ClCompile Include="..\..\..\Zenith\Flux\SDFs\Flux_SDFs.cpp" />
     <ClCompile Include="..\..\..\Zenith\Flux\Shadows\Flux_Shadows.cpp" />
     <ClCompile Include="..\..\..\Zenith\Flux\Skybox\Flux_Skybox.cpp" />
+    <ClCompile Include="..\..\..\Zenith\Flux\SSAO\Flux_SSAO.cpp" />
     <ClCompile Include="..\..\..\Zenith\Flux\StaticMeshes\Flux_StaticMeshes.cpp" />
     <ClCompile Include="..\..\..\Zenith\Flux\Terrain\Flux_Terrain.cpp" />
     <ClCompile Include="..\..\..\Zenith\Flux\Text\Flux_Text.cpp" />

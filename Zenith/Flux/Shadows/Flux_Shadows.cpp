@@ -21,7 +21,7 @@ static Flux_DynamicConstantBuffer g_xShadowMatrixBuffers[ZENITH_FLUX_NUM_CSMS];
 static Zenith_Maths::Matrix4 g_axSunViewProjMats[ZENITH_FLUX_NUM_CSMS];
 
 DEBUGVAR bool dbg_bEnabled = true;
-DEBUGVAR float dbg_fZMultiplier = 7.f;
+DEBUGVAR float dbg_fZMultiplier = 8.f;
 
 struct FrustumCorners
 {
@@ -74,8 +74,8 @@ void Flux_Shadows::Initialise()
 
 #ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_DebugVariables::AddBoolean({"Render", "Enable", "Shadows"}, dbg_bEnabled);
-	Zenith_DebugVariables::AddFloat({"Shadows", "Z Multiplier"}, dbg_fZMultiplier, -10.f, 10.f);
-	Zenith_DebugVariables::AddTexture({ "Shadows", "CSM0" }, *g_axCSMs->m_pxTargetTexture);
+	Zenith_DebugVariables::AddFloat({"Render", "Shadows", "Z Multiplier"}, dbg_fZMultiplier, -10.f, 10.f);
+	Zenith_DebugVariables::AddTexture({"Render", "Shadows", "CSM0" }, *g_axCSMs->m_pxTargetTexture);
 #endif
 }
 

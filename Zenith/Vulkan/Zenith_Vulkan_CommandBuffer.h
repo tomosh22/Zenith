@@ -4,19 +4,20 @@
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
 #include "Flux/Flux_Enums.h"
 
+#include "Vulkan/Zenith_Vulkan_Texture.h"
+
 #define MAX_BINDINGS 16
 
 class Zenith_Vulkan_Buffer;
 class Flux_VertexBuffer;
 class Flux_DynamicVertexBuffer;
 class Flux_IndexBuffer;
-class Zenith_Vulkan_Texture;
 class Zenith_Vulkan_Pipeline;
 struct Flux_TargetSetup;
 
 struct DescSetBindings {
 	Zenith_Vulkan_Buffer* m_xBuffers[MAX_BINDINGS];
-	Zenith_Vulkan_Texture* m_xTextures[MAX_BINDINGS];
+	std::pair<Zenith_Vulkan_Texture*, Zenith_Vulkan_Sampler*> m_xTextures[MAX_BINDINGS];
 };
 
 class Zenith_Vulkan_CommandBuffer
@@ -37,7 +38,7 @@ public:
 	void DrawIndexed(uint32_t uNumIndices, uint32_t uNumInstances = 1, uint32_t uVertexOffset = 0, uint32_t uIndexOffset = 0, uint32_t uInstanceOffset = 0);
 	void SubmitTargetSetup(Flux_TargetSetup& xTargetSetup, bool bClearColour = false, bool bClearDepth = false, bool bClearStencil = false);
 	void SetPipeline(Zenith_Vulkan_Pipeline* pxPipeline);
-	void BindTexture(Zenith_Vulkan_Texture* pxTexture, uint32_t uBindPoint);
+	void BindTexture(Zenith_Vulkan_Texture* pxTexture, uint32_t uBindPoint, Zenith_Vulkan_Sampler* pxSampler = nullptr);
 	void BindBuffer(Zenith_Vulkan_Buffer* pxBuffer, uint32_t uBindPoint);
 	void BindAccelerationStruct(void* pxStruct, uint32_t uBindPoint);
 	void PushConstant(void* pData, size_t uSize);

@@ -145,16 +145,18 @@ class Flux_CommandBindTexture
 public:
 	static constexpr Flux_CommandType m_eType = FLUX_COMMANDTYPE__BIND_TEXTURE;
 
-	Flux_CommandBindTexture(Flux_Texture* const pxTexture, const u_int uBindPoint)
+	Flux_CommandBindTexture(Flux_Texture* const pxTexture, const u_int uBindPoint, Flux_Sampler* pxSampler = nullptr)
 		: m_pxTexture(pxTexture)
 		, m_uBindPoint(uBindPoint)
+		, m_pxSampler(pxSampler)
 	{}
 	void operator()(Flux_CommandBuffer* pxCmdBuf)
 	{
-		pxCmdBuf->BindTexture(m_pxTexture, m_uBindPoint);
+		pxCmdBuf->BindTexture(m_pxTexture, m_uBindPoint, m_pxSampler);
 	}
 	Flux_Texture* m_pxTexture;
 	const u_int m_uBindPoint;
+	Flux_Sampler* m_pxSampler;
 };
 class Flux_CommandBindBuffer
 {

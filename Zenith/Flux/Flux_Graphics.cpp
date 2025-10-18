@@ -15,7 +15,8 @@ Flux_TargetSetup Flux_Graphics::s_xMRTTarget;
 Flux_TargetSetup Flux_Graphics::s_xFinalRenderTarget;
 Flux_TargetSetup Flux_Graphics::s_xFinalRenderTarget_NoDepth;
 Flux_RenderAttachment Flux_Graphics::s_xDepthBuffer;
-Flux_Sampler Flux_Graphics::s_xDefaultSampler;
+Flux_Sampler Flux_Graphics::s_xRepeatSampler;
+Flux_Sampler Flux_Graphics::s_xClampSampler;
 Flux_MeshGeometry Flux_Graphics::s_xQuadMesh;
 Flux_DynamicConstantBuffer Flux_Graphics::s_xFrameConstantsBuffer;
 Flux_Texture* Flux_Graphics::s_pxWhiteBlankTexture2D;
@@ -43,7 +44,8 @@ DEBUGVAR u_int dbg_uOverrideViewProjMatIndex = 0;
 
 void Flux_Graphics::Initialise()
 {
-	Flux_Sampler::InitialiseDefault(s_xDefaultSampler);
+	Flux_Sampler::InitialiseRepeat(s_xRepeatSampler);
+	Flux_Sampler::InitialiseClamp(s_xClampSampler);
 
 	u_int8 aucWhiteBlankTexData[] = { 255,255,255,255 };
 	s_pxWhiteBlankTexture2D = Zenith_AssetHandler::AddTexture2D("Flux Graphics White Blank Texture", aucWhiteBlankTexData, 1, 1, 1, COLOUR_FORMAT_RGBA8_UNORM, DEPTHSTENCIL_FORMAT_NONE, false);
@@ -70,8 +72,8 @@ void Flux_Graphics::Initialise()
 	Zenith_DebugVariables::AddBoolean({ "Render", "Quad Utilisation Analysis" }, dbg_bQuadUtilisationAnalysis);
 	Zenith_DebugVariables::AddUInt32({ "Render", "Target Pixels Per Tri" }, dbg_uTargetPixelsPerTri, 1, 32);
 
-	Zenith_DebugVariables::AddBoolean({ "Shadows", "Override ViewProj Mat" }, dbg_bOverrideViewProjMat);
-	Zenith_DebugVariables::AddUInt32({ "Shadows", "Override ViewProj Mat Index" }, dbg_uOverrideViewProjMatIndex, 0, ZENITH_FLUX_NUM_CSMS);
+	Zenith_DebugVariables::AddBoolean({ "Render", "Shadows", "Override ViewProj Mat" }, dbg_bOverrideViewProjMat);
+	Zenith_DebugVariables::AddUInt32({ "Render", "Shadows", "Override ViewProj Mat Index" }, dbg_uOverrideViewProjMatIndex, 0, ZENITH_FLUX_NUM_CSMS);
 #endif
 
 	s_xFrameConstantsLayout.m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;

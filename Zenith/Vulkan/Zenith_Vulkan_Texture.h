@@ -75,7 +75,8 @@ class Zenith_Vulkan_Sampler
 public:
 	const vk::Sampler& GetSampler() const { return m_xSampler; }
 
-	static void InitialiseDefault(Zenith_Vulkan_Sampler& xSampler);
+	static void InitialiseRepeat(Zenith_Vulkan_Sampler& xSampler);
+	static void InitialiseClamp(Zenith_Vulkan_Sampler& xSampler);
 private:
 	vk::Sampler m_xSampler;
 };

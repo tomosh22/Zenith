@@ -81,7 +81,7 @@ void Zenith_DebugVariableTree::LeafNode<const Flux_Texture>::ImGuiDisplay()
 	vk::DescriptorSet xSet = Zenith_Vulkan::GetDevice().allocateDescriptorSets(xAllocInfo)[0];
 
 	vk::DescriptorImageInfo xImageInfo = vk::DescriptorImageInfo()
-		.setSampler(Flux_Graphics::s_xDefaultSampler.GetSampler())
+		.setSampler(Flux_Graphics::s_xRepeatSampler.GetSampler())
 		.setImageView(m_pData->GetImageView())
 		.setImageLayout(vk::ImageLayout::eShaderReadOnlyOptimal);
 

@@ -19,7 +19,8 @@ public:
 
 	static struct Flux_RenderAttachment s_xDepthBuffer;
 
-	static Flux_Sampler s_xDefaultSampler;
+	static Flux_Sampler s_xRepeatSampler;
+	static Flux_Sampler s_xClampSampler;
 
 	static Flux_MeshGeometry s_xQuadMesh;
 

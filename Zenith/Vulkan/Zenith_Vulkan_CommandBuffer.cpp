@@ -145,7 +145,7 @@ void Zenith_Vulkan_CommandBuffer::PrepareDrawCallDescriptors()
 			uint32_t uNumTextures = 0;
 			for (uint32_t i = 0; i < MAX_BINDINGS; i++)
 			{
-				if (m_xBindings[uDescSet].m_xTextures[i] != nullptr)
+				if (m_xBindings[uDescSet].m_xTextures[i].first != nullptr)
 				{
 					uNumTextures++;
 				}
@@ -165,7 +165,7 @@ void Zenith_Vulkan_CommandBuffer::PrepareDrawCallDescriptors()
 			uint32_t uCount = 0;
 			for (uint32_t i = 0; i < MAX_BINDINGS; i++)
 			{
-				Zenith_Vulkan_Texture* pxTex = m_xBindings[uDescSet].m_xTextures[i];
+				Zenith_Vulkan_Texture* pxTex = m_xBindings[uDescSet].m_xTextures[i].first;
 				if (!pxTex)
 				{
 					continue;
@@ -186,7 +186,7 @@ void Zenith_Vulkan_CommandBuffer::PrepareDrawCallDescriptors()
 
 				//#TO_TODO: different samplers
 				vk::DescriptorImageInfo& xInfo = xTexInfos.at(uCount)
-					.setSampler(Flux_Graphics::s_xDefaultSampler.GetSampler())
+					.setSampler(m_xBindings[uDescSet].m_xTextures[i].second ? m_xBindings[uDescSet].m_xTextures[i].second->GetSampler() : Flux_Graphics::s_xRepeatSampler.GetSampler())
 					.setImageView(pxTex->GetImageView())
 					.setImageLayout(eLayout);
 
@@ -348,7 +348,7 @@ void Zenith_Vulkan_CommandBuffer::SetPipeline(Zenith_Vulkan_Pipeline* pxPipeline
 
 }
 
-void Zenith_Vulkan_CommandBuffer::BindTexture(Zenith_Vulkan_Texture* pxTexture, uint32_t uBindPoint)
+void Zenith_Vulkan_CommandBuffer::BindTexture(Zenith_Vulkan_Texture* pxTexture, uint32_t uBindPoint, Zenith_Vulkan_Sampler* pxSampler /*= nullptr*/)
 {
 	Zenith_Assert(m_uCurrentBindFreq < FLUX_MAX_DESCRIPTOR_SET_LAYOUTS, "Haven't called BeginBind");
 
@@ -357,7 +357,7 @@ void Zenith_Vulkan_CommandBuffer::BindTexture(Zenith_Vulkan_Texture* pxTexture, 
 		m_uDescriptorDirty |= 1<<m_uCurrentBindFreq;
 		m_aapxTextureCache[m_uCurrentBindFreq][uBindPoint] = pxTexture;
 	}
-	m_xBindings[m_uCurrentBindFreq].m_xTextures[uBindPoint] = pxTexture;
+	m_xBindings[m_uCurrentBindFreq].m_xTextures[uBindPoint] = {pxTexture, pxSampler};
 }
 
 void Zenith_Vulkan_CommandBuffer::BindBuffer(Zenith_Vulkan_Buffer* pxBuffer, uint32_t uBindPoint)
@@ -423,7 +423,7 @@ void Zenith_Vulkan_CommandBuffer::BeginBind(u_int uDescSet)
 	for (uint32_t i = 0; i < MAX_BINDINGS; i++)
 	{
 		m_xBindings[uDescSet].m_xBuffers[i] = nullptr;
-		m_xBindings[uDescSet].m_xTextures[i] = nullptr;
+		m_xBindings[uDescSet].m_xTextures[i] = {nullptr, nullptr};
 	}
 	m_uCurrentBindFreq = uDescSet;
 }

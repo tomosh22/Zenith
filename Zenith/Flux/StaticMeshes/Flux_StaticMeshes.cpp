@@ -77,9 +77,9 @@ void Flux_StaticMeshes::Initialise()
 		xShadowPipelineSpec.m_xVertexInputDesc = xVertexDesc;
 
 		xShadowPipelineSpec.m_bDepthBias = true;
-		xShadowPipelineSpec.m_fDepthBiasConstant = 0.5f;
-		xShadowPipelineSpec.m_fDepthBiasSlope = 2.f;
-		xShadowPipelineSpec.m_fDepthBiasClamp = 0.05f;
+		xShadowPipelineSpec.m_fDepthBiasConstant = 0.1f;
+		xShadowPipelineSpec.m_fDepthBiasSlope = 1.f;
+		xShadowPipelineSpec.m_fDepthBiasClamp = 1.f;
 
 		Flux_PipelineLayout& xLayout = xShadowPipelineSpec.m_xPipelineLayout;
 		xLayout.m_uNumDescriptorSets = 2;
