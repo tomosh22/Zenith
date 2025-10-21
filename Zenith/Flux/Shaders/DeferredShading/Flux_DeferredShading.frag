@@ -206,9 +206,13 @@ void main()
 	const uint uNumCSMs = 4;
 	mat4 axShadowMats[uNumCSMs] = {g_xShadowMat0, g_xShadowMat1, g_xShadowMat2, g_xShadowMat3};
 	
-	bool bInShadow = false;
+	float fShadowFactor = 1.0; // 1.0 = fully lit, 0.0 = fully shadowed
 	
-	// Try cascades in order from highest quality (0) to lowest (2)
+	// Calculate normal-based bias to prevent shadow acne
+	vec3 xLightDir = normalize(xLight.m_xDirection.xyz);
+	float fNdotL = max(dot(xNormal, xLightDir), 0.0);
+	
+	// Try cascades in order from highest quality (0) to lowest (3)
 	// Break when we find one that contains the fragment
 	for(int iCascade = 0; iCascade < int(uNumCSMs); iCascade++)
 	{
@@ -235,47 +239,60 @@ void main()
 			return;
 		}
 		
-		// Sample the appropriate shadow map
-		float fShadowDepth = 0.0;
+		// Adaptive bias based on surface angle to light
+		// Higher bias when surface is nearly parallel to light (grazing angles)
+		float fMinBias = 0.0005;
+		float fMaxBias = 0.005;
+		float fBias = max(fMinBias, fMaxBias * (1.0 - fNdotL));
+		
+		// Apply bias to current depth once
+		float fBiasedDepth = fCurrentDepth - fBias;
+		
+		// PCF using textureGather for efficiency (samples 2x2 quad in one call)
+		float fShadow = 0.0;
+		vec2 texelSize = 1.0 / textureSize(g_xCSM0, 0);
+		
+		// Sample 4 points using textureGather (more efficient than 4 individual texture calls)
+		// textureGather returns the 4 samples as a vec4
+		vec4 shadowDepths;
 		if(iCascade == 0)
 		{
-			fShadowDepth = texture(g_xCSM0, xSamplePos).x;
+			shadowDepths = textureGather(g_xCSM0, xSamplePos, 0);
 		}
 		else if(iCascade == 1)
 		{
-			fShadowDepth = texture(g_xCSM1, xSamplePos).x;
+			shadowDepths = textureGather(g_xCSM1, xSamplePos, 0);
 		}
 		else if(iCascade == 2)
 		{
-			fShadowDepth = texture(g_xCSM2, xSamplePos).x;
+			shadowDepths = textureGather(g_xCSM2, xSamplePos, 0);
 		}
 		else if(iCascade == 3)
 		{
-			fShadowDepth = texture(g_xCSM3, xSamplePos).x;
+			shadowDepths = textureGather(g_xCSM3, xSamplePos, 0);
 		}
 		
-		
-		if(fCurrentDepth > fShadowDepth)
-		{
-			bInShadow = true;
-		}
+		// Compare all 4 gathered samples
+		vec4 comparison = step(vec4(fBiasedDepth), shadowDepths);
+		fShadowFactor = dot(comparison, vec4(0.25)); // Average the 4 samples
 		
 		// Found a valid cascade, stop searching
 		break;
 	}
 	
-	if(bInShadow)
+	// Apply shadow factor to lighting
+	// Don't apply shadows if the surface is facing away from light
+	if(fNdotL > 0.0)
 	{
-		o_xColour.w = 1.f;
-		return;
-	}
-	
-	
-
-	float fReflectivity = 0.5f;
-	if(xLight.m_xColour.a > 0.1)
-	{
-		CookTorrance_Directional(o_xColour, xDiffuse, xLight, xNormal, fMetallic, fRoughness, fReflectivity, xWorldPos);
+		float fReflectivity = 0.5f;
+		if(xLight.m_xColour.a > 0.1)
+		{
+			CookTorrance_Directional(o_xColour, xDiffuse, xLight, xNormal, fMetallic, fRoughness, fReflectivity, xWorldPos);
+		}
+		
+		// Modulate lighting by shadow factor
+		// fShadowFactor: 1.0 = fully lit, 0.0 = fully shadowed
+		o_xColour.rgb = ambientDiffuse + ambientSpecular + (o_xColour.rgb - ambientDiffuse - ambientSpecular) * fShadowFactor;
 	}
 	
 	o_xColour.w = 1.f;
