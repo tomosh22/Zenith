@@ -178,7 +178,7 @@ void Zenith_Vulkan::EndFrame()
 					g_xCommandBuffer.EndRenderPass();
 				}
 
-				g_xCommandBuffer.SubmitTargetSetup(xIt.GetData().second, bClear, bClear, bClear);
+				g_xCommandBuffer.BeginRenderPass(xIt.GetData().second, bClear, bClear, bClear);
 				xCurrentTargetSetup = xIt.GetData().second;
 			}
 			xIt.GetData().first->IterateCommands(&g_xCommandBuffer);
