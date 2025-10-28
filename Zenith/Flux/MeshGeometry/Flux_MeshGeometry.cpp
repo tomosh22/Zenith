@@ -108,7 +108,17 @@ void SkipAttribute(T*& ptData, Zenith_DataStream& xStream, u_int uDataSize)
 	}
 }
 
-void Flux_MeshGeometry::LoadFromFile(const char* szPath, Flux_MeshGeometry& xGeometryOut, const bool bRetainAttributes /*= false*/, const bool bUploadToGPU /*= true*/)
+#define READ_ATTR(uAttribute, pOutData, uSize)\
+if (uRetainAttributeBits & 1 << uAttribute)\
+{\
+	ReadAttribute(pOutData, xStream, uSize);\
+}\
+else\
+{\
+	SkipAttribute(pOutData, xStream, uSize);\
+}
+
+void Flux_MeshGeometry::LoadFromFile(const char* szPath, Flux_MeshGeometry& xGeometryOut, u_int uRetainAttributeBits /*= 0*/, const bool bUploadToGPU /*= true*/)
 {
 	Zenith_DataStream xStream;
 	xStream.ReadFromFile(szPath);
@@ -122,26 +132,14 @@ void Flux_MeshGeometry::LoadFromFile(const char* szPath, Flux_MeshGeometry& xGeo
 
 	ReadAttribute(xGeometryOut.m_pVertexData, xStream, xGeometryOut.m_uNumVerts * xGeometryOut.m_xBufferLayout.GetStride());
 	ReadAttribute(xGeometryOut.m_puIndices, xStream, xGeometryOut.m_uNumIndices * sizeof(m_puIndices[0]));
-	if (bRetainAttributes)
-	{
-		ReadAttribute(xGeometryOut.m_pxPositions, xStream, xGeometryOut.m_uNumVerts * sizeof(m_pxPositions[0]));
-		ReadAttribute(xGeometryOut.m_pxNormals, xStream, xGeometryOut.m_uNumVerts * sizeof(m_pxNormals[0]));
-		ReadAttribute(xGeometryOut.m_pxTangents, xStream, xGeometryOut.m_uNumVerts * sizeof(m_pxTangents[0]));
-		ReadAttribute(xGeometryOut.m_pxBitangents, xStream, xGeometryOut.m_uNumVerts * sizeof(m_pxBitangents[0]));
-		ReadAttribute(xGeometryOut.m_puBoneIDs, xStream, xGeometryOut.m_uNumVerts * sizeof(m_puBoneIDs[0]));
-		ReadAttribute(xGeometryOut.m_pfBoneWeights, xStream, xGeometryOut.m_uNumVerts * sizeof(m_pfBoneWeights[0]));
-	}
-	else
-	{
-		SkipAttribute(xGeometryOut.m_pxPositions, xStream, xGeometryOut.m_uNumVerts * sizeof(m_pxPositions[0]));
-		SkipAttribute(xGeometryOut.m_pxNormals, xStream, xGeometryOut.m_uNumVerts * sizeof(m_pxNormals[0]));
-		SkipAttribute(xGeometryOut.m_pxTangents, xStream, xGeometryOut.m_uNumVerts * sizeof(m_pxTangents[0]));
-		SkipAttribute(xGeometryOut.m_pxBitangents, xStream, xGeometryOut.m_uNumVerts * sizeof(m_pxBitangents[0]));
-		SkipAttribute(xGeometryOut.m_puBoneIDs, xStream, xGeometryOut.m_uNumVerts * sizeof(m_puBoneIDs[0]));
-		SkipAttribute(xGeometryOut.m_pfBoneWeights, xStream, xGeometryOut.m_uNumVerts * sizeof(m_pfBoneWeights[0]));
-	}
 
-	
+	READ_ATTR(FLUX_VERTEX_ATTRIBUTE__POSITION, xGeometryOut.m_pxPositions, xGeometryOut.m_uNumVerts * sizeof(m_pxPositions[0]));
+	READ_ATTR(FLUX_VERTEX_ATTRIBUTE__NORMAL, xGeometryOut.m_pxNormals, xGeometryOut.m_uNumVerts * sizeof(m_pxNormals[0]));
+	READ_ATTR(FLUX_VERTEX_ATTRIBUTE__TANGENT, xGeometryOut.m_pxTangents, xGeometryOut.m_uNumVerts * sizeof(m_pxTangents[0]));
+	READ_ATTR(FLUX_VERTEX_ATTRIBUTE__BITANGENT, xGeometryOut.m_pxBitangents, xGeometryOut.m_uNumVerts * sizeof(m_pxBitangents[0]));
+	//READ_ATTR(FLUX_VERTEX_ATTRIBUTE__MATERIAL_LERP, , );
+	READ_ATTR(FLUX_VERTEX_ATTRIBUTE__BONE_IDS, xGeometryOut.m_puBoneIDs, xGeometryOut.m_uNumVerts * sizeof(m_puBoneIDs[0]));
+	READ_ATTR(FLUX_VERTEX_ATTRIBUTE__BONE_WEIGHTS, xGeometryOut.m_pfBoneWeights, xGeometryOut.m_uNumVerts * sizeof(m_pfBoneWeights[0]));
 
 	if(bUploadToGPU)
 	{

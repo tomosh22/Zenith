@@ -51,14 +51,14 @@ int main()
 		Flux_MemoryManager::BeginFrame();
 		//#TO_TODO: engine should have its own versions of these
 		Zenith_AssetHandler::AddTextureCube("Cubemap",
-			"C:/dev/Zenith/Games/Test/Assets/Textures/Cubemap/px.ztx",
-			"C:/dev/Zenith/Games/Test/Assets/Textures/Cubemap/nx.ztx",
-			"C:/dev/Zenith/Games/Test/Assets/Textures/Cubemap/py.ztx",
-			"C:/dev/Zenith/Games/Test/Assets/Textures/Cubemap/ny.ztx",
-			"C:/dev/Zenith/Games/Test/Assets/Textures/Cubemap/pz.ztx",
-			"C:/dev/Zenith/Games/Test/Assets/Textures/Cubemap/nz.ztx"
+			ASSETS_ROOT"Textures/Cubemap/px.ztx",
+			ASSETS_ROOT"Textures/Cubemap/nx.ztx",
+			ASSETS_ROOT"Textures/Cubemap/py.ztx",
+			ASSETS_ROOT"Textures/Cubemap/ny.ztx",
+			ASSETS_ROOT"Textures/Cubemap/pz.ztx",
+			ASSETS_ROOT"Textures/Cubemap/nz.ztx"
 		);
-		Zenith_AssetHandler::AddTexture2D("Water_Normal", "C:/dev/Zenith/Games/Test/Assets/Textures/water/normal.ztx");
+		Zenith_AssetHandler::AddTexture2D("Water_Normal", ASSETS_ROOT"Textures/water/normal.ztx");
 		Flux_MemoryManager::EndFrame(false);
 	}
 

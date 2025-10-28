@@ -61,7 +61,7 @@ public:
 		return uRet;
 	}
 
-	void LoadMeshesFromDir(const std::filesystem::path& strPath, Flux_Material* const pxOverrideMaterial = nullptr, const bool bRetainPositionsAndNormals = false, const bool bUploadToGPU = true)
+	void LoadMeshesFromDir(const std::filesystem::path& strPath, Flux_Material* const pxOverrideMaterial = nullptr, u_int uRetainAttributeBits = 0, const bool bUploadToGPU = true)
 	{
 		static u_int ls_uCount = 0;
 		ls_uCount++;
@@ -165,7 +165,7 @@ public:
 			{
 				if (!Zenith_AssetHandler::MeshExists(xFile.path().stem().string()))
 				{
-					Zenith_AssetHandler::AddMesh(xFile.path().stem().string(), xFile.path().string().c_str(), bRetainPositionsAndNormals, bUploadToGPU);
+					Zenith_AssetHandler::AddMesh(xFile.path().stem().string(), xFile.path().string().c_str(), uRetainAttributeBits, bUploadToGPU);
 				}
 				const uint32_t uMatIndex = GetMaterialIndexFromMeshName(xFile.path().stem().string());
 				const std::string strMatName = strLeaf + std::to_string(uMatIndex) + std::to_string(ls_uCount);

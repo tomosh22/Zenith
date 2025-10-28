@@ -79,10 +79,10 @@ static void LoadAssets()
 		xMat.SetRoughnessMetallic(pxRoughness);
 	}
 	{
-		Zenith_AssetHandler::AddTexture2D("MuddyGrass_Diffuse", "C:/dev/Zenith/Games/Test/Assets/Textures/muddyGrass2k/diffuse.ztx");
-		Zenith_AssetHandler::AddTexture2D("MuddyGrass_Normal", "C:/dev/Zenith/Games/Test/Assets/Textures/muddyGrass2k/normal.ztx");
-		Zenith_AssetHandler::AddTexture2D("MuddyGrass_Roughness", "C:/dev/Zenith/Games/Test/Assets/Textures/muddyGrass2k/roughness.ztx");
-		Zenith_AssetHandler::AddTexture2D("MuddyGrass_Metallic", "C:/dev/Zenith/Games/Test/Assets/Textures/muddyGrass2k/metallic.ztx");
+		Zenith_AssetHandler::AddTexture2D("MuddyGrass_Diffuse", ASSETS_ROOT"Textures/muddyGrass2k/diffuse.ztx");
+		Zenith_AssetHandler::AddTexture2D("MuddyGrass_Normal", ASSETS_ROOT"Textures/muddyGrass2k/normal.ztx");
+		Zenith_AssetHandler::AddTexture2D("MuddyGrass_Roughness", ASSETS_ROOT"Textures/muddyGrass2k/roughness.ztx");
+		Zenith_AssetHandler::AddTexture2D("MuddyGrass_Metallic", ASSETS_ROOT"Textures/muddyGrass2k/metallic.ztx");
 
 		Flux_Texture* pxDiffuse = Zenith_AssetHandler::GetTexture("MuddyGrass_Diffuse");
 		Flux_Texture* pxNormal = Zenith_AssetHandler::GetTexture("MuddyGrass_Normal");
@@ -95,10 +95,10 @@ static void LoadAssets()
 		xMat.SetRoughnessMetallic(pxRoughness);
 	}
 	{
-		Zenith_AssetHandler::AddTexture2D("SupplyCrate_Diffuse", "C:/dev/Zenith/Games/Test/Assets/Textures/supplyCrate2k/diffuse.ztx");
-		Zenith_AssetHandler::AddTexture2D("SupplyCrate_Normal", "C:/dev/Zenith/Games/Test/Assets/Textures/supplyCrate2k/normal.ztx");
-		Zenith_AssetHandler::AddTexture2D("SupplyCrate_Roughness", "C:/dev/Zenith/Games/Test/Assets/Textures/supplyCrate2k/roughness.ztx");
-		Zenith_AssetHandler::AddTexture2D("SupplyCrate_Metallic", "C:/dev/Zenith/Games/Test/Assets/Textures/supplyCrate2k/metallic.ztx");
+		Zenith_AssetHandler::AddTexture2D("SupplyCrate_Diffuse", ASSETS_ROOT"Textures/supplyCrate2k/diffuse.ztx");
+		Zenith_AssetHandler::AddTexture2D("SupplyCrate_Normal", ASSETS_ROOT"Textures/supplyCrate2k/normal.ztx");
+		Zenith_AssetHandler::AddTexture2D("SupplyCrate_Roughness", ASSETS_ROOT"Textures/supplyCrate2k/roughness.ztx");
+		Zenith_AssetHandler::AddTexture2D("SupplyCrate_Metallic", ASSETS_ROOT"Textures/supplyCrate2k/metallic.ztx");
 
 		Flux_Texture* pxDiffuse = Zenith_AssetHandler::GetTexture("SupplyCrate_Diffuse");
 		Flux_Texture* pxNormal = Zenith_AssetHandler::GetTexture("SupplyCrate_Normal");
@@ -111,10 +111,10 @@ static void LoadAssets()
 		xMat.SetRoughnessMetallic(pxRoughness);
 	}
 	{
-		Zenith_AssetHandler::AddTexture2D("Rock_Diffuse", "C:/dev/Zenith/Games/Test/Assets/Textures/rock2k/diffuse.ztx");
-		Zenith_AssetHandler::AddTexture2D("Rock_Normal", "C:/dev/Zenith/Games/Test/Assets/Textures/rock2k/normal.ztx");
-		Zenith_AssetHandler::AddTexture2D("Rock_Roughness", "C:/dev/Zenith/Games/Test/Assets/Textures/rock2k/roughness.ztx");
-		Zenith_AssetHandler::AddTexture2D("Rock_Metallic", "C:/dev/Zenith/Games/Test/Assets/Textures/rock2k/metallic.ztx");
+		Zenith_AssetHandler::AddTexture2D("Rock_Diffuse", ASSETS_ROOT"Textures/rock2k/diffuse.ztx");
+		Zenith_AssetHandler::AddTexture2D("Rock_Normal", ASSETS_ROOT"Textures/rock2k/normal.ztx");
+		Zenith_AssetHandler::AddTexture2D("Rock_Roughness", ASSETS_ROOT"Textures/rock2k/roughness.ztx");
+		Zenith_AssetHandler::AddTexture2D("Rock_Metallic", ASSETS_ROOT"Textures/rock2k/metallic.ztx");
 
 		Flux_Texture* pxDiffuse = Zenith_AssetHandler::GetTexture("Rock_Diffuse");
 		Flux_Texture* pxNormal = Zenith_AssetHandler::GetTexture("Rock_Normal");
@@ -132,9 +132,9 @@ static void LoadAssets()
 		for (uint32_t y = 0; y < TERRAIN_EXPORT_DIMS; y++)
 		{
 			std::string strSuffix = std::to_string(x) + "_" + std::to_string(y);
-#if 1
-			Zenith_AssetHandler::AddMesh("Terrain_Render" + strSuffix, std::string("C:/dev/Zenith/Games/Test/Assets/Terrain/Render_" + strSuffix + ".zmsh").c_str(), true);
-			Zenith_AssetHandler::AddMesh("Terrain_Physics" + strSuffix, std::string("C:/dev/Zenith/Games/Test/Assets/Terrain/Physics_" + strSuffix + ".zmsh").c_str(), true);
+
+			Zenith_AssetHandler::AddMesh("Terrain_Render" + strSuffix, std::string(ASSETS_ROOT"Terrain/Render_" + strSuffix + ".zmsh").c_str(), 0);
+			Zenith_AssetHandler::AddMesh("Terrain_Physics" + strSuffix, std::string(ASSETS_ROOT"Terrain/Physics_" + strSuffix + ".zmsh").c_str(), 1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__POSITION | 1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__NORMAL);
 
 			Zenith_Maths::Matrix4 xWaterTransform =
 				glm::translate(glm::identity<Zenith_Maths::Matrix4>(), Zenith_Maths::Vector3(x * TERRAIN_SIZE * TERRAIN_SCALE + (TERRAIN_SIZE * TERRAIN_SCALE / 2), MAX_TERRAIN_HEIGHT / 2, y * TERRAIN_SIZE * TERRAIN_SCALE + (TERRAIN_SIZE * TERRAIN_SCALE / 2))) *
@@ -144,9 +144,6 @@ static void LoadAssets()
 			Flux_MeshGeometry::GenerateFullscreenQuad(xWaterMesh, xWaterTransform);
 			Flux_MemoryManager::InitialiseVertexBuffer(xWaterMesh.GetVertexData(), xWaterMesh.GetVertexDataSize(), xWaterMesh.GetVertexBuffer());
 			Flux_MemoryManager::InitialiseIndexBuffer(xWaterMesh.GetIndexData(), xWaterMesh.GetIndexDataSize(), xWaterMesh.GetIndexBuffer());
-#else
-			Zenith_AssetHandler::AddMesh("Terrain" + strSuffix, std::string("C:/dev/Zenith/Games/Test/Assets/Terrain/" + strSuffix + ".zmsh").c_str(), false);
-#endif
 		}
 	}
 }
@@ -193,7 +190,7 @@ void Test_State_InGame::OnEnter()
 	Zenith_ModelComponent& xModel = s_xPlayer.AddComponent<Zenith_ModelComponent>();
 	//xModel.AddMeshEntry(Zenith_AssetHandler::GetMesh("StickyMcStickFace"), Zenith_AssetHandler::GetMaterial("Crystal"));
 	Flux_Material& xCrystalMaterial = Zenith_AssetHandler::GetMaterial("Crystal");
-	xModel.LoadMeshesFromDir("C:/dev/Zenith/Games/Test/Assets/Meshes/stickymcstickface_anim", &xCrystalMaterial);
+	xModel.LoadMeshesFromDir(ASSETS_ROOT"Meshes/stickymcstickface_anim", &xCrystalMaterial);
 	for(u_int u = 0; u < xModel.GetNumMeshEntires(); u++)
 	{
 		xModel.GetMeshGeometryAtIndex(u).m_pxAnimation = new Flux_MeshAnimation(ASSETS_ROOT"Meshes/stickymcstickface_anim/StickyMcStickface_Anim.fbx", xModel.GetMeshGeometryAtIndex(u));
@@ -311,17 +308,17 @@ void Test_State_InGame::OnEnter()
 		xTrans.SetPosition({ 60, 170, -20 });
 		xTrans.SetRotation({ 0.7071, 0, 0.7071, 0});
 		Zenith_ModelComponent& xModel = s_xOgre.AddComponent<Zenith_ModelComponent>();
-		xModel.LoadMeshesFromDir("C:/dev/Zenith/Games/Test/Assets/Meshes/ogre");
+		xModel.LoadMeshesFromDir(ASSETS_ROOT"Meshes/ogre");
 		Flux_MeshGeometry& xMesh0 = xModel.GetMeshGeometryAtIndex(0);
-		xMesh0.m_pxAnimation = new Flux_MeshAnimation("C:/dev/Zenith/Games/Test/Assets/Meshes/ogre/ogre.fbx", xMesh0);
+		xMesh0.m_pxAnimation = new Flux_MeshAnimation(ASSETS_ROOT"Meshes/ogre/ogre.fbx", xMesh0);
 		Flux_MeshGeometry& xMesh1 = xModel.GetMeshGeometryAtIndex(1);
-		xMesh1.m_pxAnimation = new Flux_MeshAnimation("C:/dev/Zenith/Games/Test/Assets/Meshes/ogre/ogre.fbx", xMesh1);
+		xMesh1.m_pxAnimation = new Flux_MeshAnimation(ASSETS_ROOT"Meshes/ogre/ogre.fbx", xMesh1);
 	}
 
 	const char* aszAssetNames[] = 
 	{
-		"C:/dev/Zenith/Games/Test/Assets/Meshes/Khronos_GLTF_Models/Sponza/glTF",
-		"C:/dev/Zenith/Games/Test/Assets/Meshes/Khronos_GLTF_Models/Avocado/glTF",
+		ASSETS_ROOT"Meshes/Khronos_GLTF_Models/Sponza/glTF",
+		ASSETS_ROOT"Meshes/Khronos_GLTF_Models/Avocado/glTF",
 	};
 	float afScales[] = 
 	{

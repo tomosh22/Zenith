@@ -22,5 +22,5 @@ public:
 
 private:
 	static void UpdateShadowMatrices();
-	static constexpr float s_afCSMLevels[ZENITH_FLUX_NUM_CSMS + 1]{ 2000, 100, 20, 10, 1 };
+	static constexpr float s_afCSMLevels[ZENITH_FLUX_NUM_CSMS + 1]{ 2000, 50, 10, 5, 1 };
 };

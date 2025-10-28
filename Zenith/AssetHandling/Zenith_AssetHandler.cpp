@@ -79,12 +79,12 @@ Flux_MeshGeometry& Zenith_AssetHandler::AddMesh(const std::string& strName)
 	s_xUsedMeshIDs.insert(uID);
 	return s_pxMeshes[uID];
 }
-Flux_MeshGeometry& Zenith_AssetHandler::AddMesh(const std::string& strName, const char* szPath, const bool bRetainPositionsAndNormals /*= false*/, const bool bUploadToGPU /*= true*/)
+Flux_MeshGeometry& Zenith_AssetHandler::AddMesh(const std::string& strName, const char* szPath, u_int uRetainAttributeBits /*= 0*/, const bool bUploadToGPU /*= true*/)
 {
 	AssetID uID = GetNextFreeMeshSlot();
 	Flux_MeshGeometry& xMesh = s_pxMeshes[uID];
 	s_xMeshNameMap.insert({ strName, uID });
-	Flux_MeshGeometry::LoadFromFile(szPath, xMesh, bRetainPositionsAndNormals, bUploadToGPU);
+	Flux_MeshGeometry::LoadFromFile(szPath, xMesh, uRetainAttributeBits, bUploadToGPU);
 	s_xUsedMeshIDs.insert(uID);
 	return s_pxMeshes[uID];
 }

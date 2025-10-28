@@ -43,11 +43,16 @@ void Zenith_Core::UpdateTimers()
 
 void TraverseTree(Zenith_DebugVariableTree::Node* pxNode, uint32_t uCurrentDepth)
 {
+	ImGui::PushID(pxNode);
+	
 	if (!ImGui::CollapsingHeader(pxNode->m_xName[uCurrentDepth].c_str()))
 	{
+		ImGui::PopID();
 		return;
 	}
-	ImGui::Indent(uCurrentDepth * 20);
+	
+	ImGui::Indent();
+	
 	for (Zenith_DebugVariableTree::LeafNodeBase* pxLeaf : pxNode->m_xLeaves)
 	{
 		pxLeaf->ImGuiDisplay();
@@ -56,7 +61,9 @@ void TraverseTree(Zenith_DebugVariableTree::Node* pxNode, uint32_t uCurrentDepth
 	{
 		TraverseTree(pxChild, uCurrentDepth + 1);
 	}
-	ImGui::Unindent(uCurrentDepth * 20);
+	
+	ImGui::Unindent();
+	ImGui::PopID();
 }
 
 void RenderImGui()

@@ -357,8 +357,8 @@ static void ExportDeterminismCheck(const std::string& strFilename, const std::st
 	Zenith_ModelComponent xModel0(xDummyEntity0), xModel1(xDummyEntity1);
 
 	std::string strDir = std::filesystem::directory_entry(strFilename).path().parent_path().string();
-	xModel0.LoadMeshesFromDir(strDir, nullptr, true, false);
-	xModel1.LoadMeshesFromDir(strDir, nullptr, true, false);
+	xModel0.LoadMeshesFromDir(strDir, nullptr, -1, false);
+	xModel1.LoadMeshesFromDir(strDir, nullptr, -1, false);
 
 	Zenith_Assert(xModel0.GetNumMeshEntires() == xModel1.GetNumMeshEntires());
 

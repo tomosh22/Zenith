@@ -9,6 +9,18 @@ class Flux_MeshGeometry
 public:
 	using IndexType = uint32_t;
 
+	enum VertexAttribute : uint8_t
+	{
+		FLUX_VERTEX_ATTRIBUTE__POSITION = 0,
+		FLUX_VERTEX_ATTRIBUTE__NORMAL,
+		FLUX_VERTEX_ATTRIBUTE__TANGENT,
+		FLUX_VERTEX_ATTRIBUTE__BITANGENT,
+		FLUX_VERTEX_ATTRIBUTE__MATERIAL_LERP,
+		FLUX_VERTEX_ATTRIBUTE__BONE_IDS,
+		FLUX_VERTEX_ATTRIBUTE__BONE_WEIGHTS,
+		FLUX_VERTEX_ATTRIBUTE__COUNT
+	};
+
 	struct MeshBone
 	{
 		uint32_t m_uID = ~0u;
@@ -40,7 +52,7 @@ public:
 
 	static void GenerateFullscreenQuad(Flux_MeshGeometry& xGeometryOut);
 	static void GenerateFullscreenQuad(Flux_MeshGeometry& xGeometryOut, Zenith_Maths::Matrix4 xTransform);
-	static void LoadFromFile(const char* szPath, Flux_MeshGeometry& xGeometryOut, const bool bRetainAttributes = false, const bool bUploadToGPU = true);
+	static void LoadFromFile(const char* szPath, Flux_MeshGeometry& xGeometryOut, u_int uRetainAttributeBits = 0, const bool bUploadToGPU = true);
 
 	const void* GetVertexData() const { return m_pVertexData; }
 	const uint64_t GetVertexDataSize() const { return m_uNumVerts * m_xBufferLayout.GetStride(); }
