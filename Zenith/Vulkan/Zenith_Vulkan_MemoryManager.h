@@ -11,6 +11,7 @@ class Zenith_Vulkan_Buffer;
 class Flux_VertexBuffer;
 class Flux_DynamicVertexBuffer;
 class Flux_IndexBuffer;
+class Flux_SurfaceInfo;
 class Flux_DynamicConstantBuffer;
 class Zenith_Vulkan_Texture;
 class Zenith_Vulkan_CommandBuffer;
@@ -49,13 +50,13 @@ public:
 private:
 	friend class Zenith_Vulkan_Texture;
 	friend class Zenith_AssetHandler;
-	static void CreateColourAttachment(uint32_t uWidth, uint32_t uHeight, ColourFormat eFormat, uint32_t uBitsPerPixel, Zenith_Vulkan_Texture& xTextureOut);
-	static void CreateDepthStencilAttachment(uint32_t uWidth, uint32_t uHeight, DepthStencilFormat eFormat, uint32_t uBitsPerPixel, Zenith_Vulkan_Texture& xTextureOut);
-	static void CreateTexture(const void* pData, const uint32_t uWidth, const uint32_t uHeight, const uint32_t uDepth, ColourFormat eFormat, DepthStencilFormat eDepthStencilFormat, bool bCreateMips, Zenith_Vulkan_Texture& xTextureOut);
+	static void CreateColourAttachment(const Flux_SurfaceInfo& xInfo, Zenith_Vulkan_Texture& xTextureOut);
+	static void CreateDepthStencilAttachment(const Flux_SurfaceInfo& xInfo, Zenith_Vulkan_Texture& xTextureOut);
+	static void CreateTexture(const void* pData, Flux_SurfaceInfo xInfo, bool bCreateMips, Zenith_Vulkan_Texture& xTextureOut);
 	static void CreateTexture(const char* szPath, Zenith_Vulkan_Texture& xTextureOut);
 	static void CreateTextureCube(const char* szPathPX, const char* szPathNX, const char* szPathPY, const char* szPathNY, const char* szPathPZ, const char* szPathNZ, Zenith_Vulkan_Texture& xTextureOut);
 
-	static void AllocateTexture(uint32_t uWidth, uint32_t uHeight, uint32_t uNumLayers, ColourFormat eColourFormat, DepthStencilFormat eDepthStencilFormat, uint32_t uBytesPerPixel, uint32_t uNumMips, vk::ImageUsageFlags eUsageFlags, MemoryResidency eResidency, Zenith_Vulkan_Texture& xTextureOut);
+	static void AllocateTexture(const Flux_SurfaceInfo&, vk::ImageUsageFlags eUsageFlags, MemoryResidency eResidency, Zenith_Vulkan_Texture& xTextureOut);
 	static void FreeTexture(Zenith_Vulkan_Texture* pxTexture);
 	static void InitialiseStagingBuffer();
 

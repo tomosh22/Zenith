@@ -57,12 +57,20 @@ public:
 	void CopyBufferToTexture(Zenith_Vulkan_Buffer* pxSrc, Zenith_Vulkan_Texture* pxDst, size_t uSrcOffset, uint32_t uNumLayers);
 	void BlitTextureToTexture(Zenith_Vulkan_Texture* pxSrc, Zenith_Vulkan_Texture* pxDst, uint32_t uDstMip, uint32_t uDstLayer);
 
+	// Compute methods
+	void BindComputePipeline(Zenith_Vulkan_Pipeline* pxPipeline);
+	void BindStorageImage(Zenith_Vulkan_Texture* pxTexture, uint32_t uBindPoint);
+	void Dispatch(uint32_t uGroupCountX, uint32_t uGroupCountY, uint32_t uGroupCountZ);
+	void ImageBarrier(Zenith_Vulkan_Texture* pxTexture, uint32_t uOldLayout, uint32_t uNewLayout);
+
 	bool IsRecording() const { return m_bIsRecording; }
 
 	vk::CommandBuffer m_xCurrentCmdBuffer;
 	vk::RenderPass m_xCurrentRenderPass;
 private:
 	void PrepareDrawCallDescriptors();
+	void TransitionComputeResourcesBefore();
+	void TransitionComputeResourcesAfter();
 	std::vector<vk::CommandBuffer> m_xCmdBuffers;
 
 	vk::Framebuffer m_xCurrentFramebuffer;
@@ -70,6 +78,7 @@ private:
 	std::vector<vk::Semaphore> m_xCompleteSems;
 
 	Zenith_Vulkan_Pipeline* m_pxCurrentPipeline;
+	vk::PipelineBindPoint m_eCurrentBindPoint = vk::PipelineBindPoint::eGraphics;
 
 	DescSetBindings m_xBindings[FLUX_MAX_DESCRIPTOR_SET_LAYOUTS];
 	u_int m_uCurrentBindFreq = FLUX_MAX_DESCRIPTOR_SET_LAYOUTS;

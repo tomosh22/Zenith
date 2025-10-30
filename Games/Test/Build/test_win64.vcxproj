@@ -586,6 +586,7 @@
     <ClInclude Include="..\..\..\Zenith\EntityComponent\Zenith_Scene.h" />
     <ClInclude Include="..\..\..\Zenith\FileAccess\Zenith_FileAccess.h" />
     <ClInclude Include="..\..\..\Zenith\Flux\AnimatedMeshes\Flux_AnimatedMeshes.h" />
+    <ClInclude Include="..\..\..\Zenith\Flux\ComputeTest\Flux_ComputeTest.h" />
     <ClInclude Include="..\..\..\Zenith\Flux\DeferredShading\Flux_DeferredShading.h" />
     <ClInclude Include="..\..\..\Zenith\Flux\Flux.h" />
     <ClInclude Include="..\..\..\Zenith\Flux\Flux_Buffers.h" />
@@ -604,6 +605,9 @@
     <ClInclude Include="..\..\..\Zenith\Flux\Shaders\AnimatedMeshes\Flux_AnimatedMeshes.frag" />
     <ClInclude Include="..\..\..\Zenith\Flux\Shaders\AnimatedMeshes\Flux_AnimatedMeshes.vert" />
     <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Common.fxh" />
+    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\ComputeTest\ComputeTest.comp" />
+    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\ComputeTest\ComputeTest_Display.frag" />
+    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\ComputeTest\ComputeTest_Display.vert" />
     <ClInclude Include="..\..\..\Zenith\Flux\Shaders\DeferredShading\Flux_DeferredShading.frag" />
     <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Flux_Fullscreen_UV.vert" />
     <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Flux_TexturedQuad.frag" />
@@ -1208,6 +1212,7 @@
     <ClCompile Include="..\..\..\Zenith\EntityComponent\Zenith_Scene.cpp" />
     <ClCompile Include="..\..\..\Zenith\FileAccess\Zenith_FileAccess.cpp" />
     <ClCompile Include="..\..\..\Zenith\Flux\AnimatedMeshes\Flux_AnimatedMeshes.cpp" />
+    <ClCompile Include="..\..\..\Zenith\Flux\ComputeTest\Flux_ComputeTest.cpp" />
     <ClCompile Include="..\..\..\Zenith\Flux\DeferredShading\Flux_DeferredShading.cpp" />
     <ClCompile Include="..\..\..\Zenith\Flux\Flux.cpp" />
     <ClCompile Include="..\..\..\Zenith\Flux\Flux_Buffers.cpp" />

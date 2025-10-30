@@ -7,7 +7,8 @@ int main()
 	static const char* aszShaderExtensions[] =
 	{
 		"vert",
-		"frag"
+		"frag",
+		"comp"
 	};
 
 	for (auto& xFile : std::filesystem::recursive_directory_iterator(SHADER_SOURCE_ROOT))

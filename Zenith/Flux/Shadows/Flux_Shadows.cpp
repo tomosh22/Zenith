@@ -59,12 +59,13 @@ void Flux_Shadows::Initialise()
 	Flux_RenderAttachmentBuilder xBuilder;
 	xBuilder.m_uWidth = ZENITH_FLUX_CSM_RESOLUTION;
 	xBuilder.m_uHeight = ZENITH_FLUX_CSM_RESOLUTION;
-	xBuilder.m_eDepthStencilFormat = DEPTHSTENCIL_FORMAT_D32_SFLOAT;
+	xBuilder.m_eFormat = TEXTURE_FORMAT_D32_SFLOAT;
+	xBuilder.m_uMemoryFlags = 1u << MEMORY_FLAGS__SHADER_READ;
 	
 	
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
-		xBuilder.Build(g_axCSMs[u], RENDER_TARGET_TYPE_DEPTHSTENCIL, "CSM " + std::to_string(u));
+		xBuilder.BuildDepthStencil(g_axCSMs[u], "CSM " + std::to_string(u));
 		g_axCSMTargetSetups[u].AssignDepthStencil(&g_axCSMs[u]);
 
 		Flux_MemoryManager::InitialiseDynamicConstantBuffer(nullptr, sizeof(Zenith_Maths::Matrix4), g_xShadowMatrixBuffers[u]);

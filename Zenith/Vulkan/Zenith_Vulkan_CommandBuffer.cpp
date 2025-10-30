@@ -126,8 +126,119 @@ void Zenith_Vulkan_CommandBuffer::SetIndexBuffer(const Flux_IndexBuffer& xIndexB
 	m_xCurrentCmdBuffer.bindIndexBuffer(xBuffer, 0, vk::IndexType::eUint32);
 }
 
+void Zenith_Vulkan_CommandBuffer::TransitionComputeResourcesBefore()
+{
+	// Only apply automatic barriers for compute pipelines
+	if (m_eCurrentBindPoint != vk::PipelineBindPoint::eCompute)
+	{
+		return;
+	}
+
+	// Transition all storage images from ShaderReadOnlyOptimal to General layout
+	std::vector<vk::ImageMemoryBarrier> axBarriers;
+
+	for (u_int uDescSet = 0; uDescSet < m_pxCurrentPipeline->m_xRootSig.m_uNumDescriptorSets; uDescSet++)
+	{
+		for (uint32_t i = 0; i < MAX_BINDINGS; i++)
+		{
+			Zenith_Vulkan_Texture* pxTex = m_xBindings[uDescSet].m_xTextures[i].first;
+			if (!pxTex || !pxTex->IsValid())
+			{
+				continue;
+			}
+
+			// Check if this is a storage image
+			bool bIsStorageImage = (m_pxCurrentPipeline->m_xRootSig.m_axDescriptorTypes[uDescSet][i] == DESCRIPTOR_TYPE_STORAGE_IMAGE);
+			
+			if (bIsStorageImage)
+			{
+				vk::ImageSubresourceRange xSubRange = vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
+
+				vk::ImageMemoryBarrier xBarrier = vk::ImageMemoryBarrier()
+					.setSubresourceRange(xSubRange)
+					.setImage(pxTex->GetImage())
+					.setOldLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
+					.setNewLayout(vk::ImageLayout::eGeneral)
+					.setSrcAccessMask(vk::AccessFlagBits::eShaderRead)
+					.setDstAccessMask(vk::AccessFlagBits::eShaderWrite | vk::AccessFlagBits::eShaderRead);
+
+				axBarriers.push_back(xBarrier);
+			}
+		}
+	}
+
+	if (!axBarriers.empty())
+	{
+		m_xCurrentCmdBuffer.pipelineBarrier(
+			vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eComputeShader,
+			vk::PipelineStageFlagBits::eComputeShader,
+			vk::DependencyFlags(),
+			0, nullptr,
+			0, nullptr,
+			axBarriers.size(), axBarriers.data()
+		);
+	}
+}
+
+void Zenith_Vulkan_CommandBuffer::TransitionComputeResourcesAfter()
+{
+	// Only apply automatic barriers for compute pipelines
+	if (m_eCurrentBindPoint != vk::PipelineBindPoint::eCompute)
+	{
+		return;
+	}
+
+	// Transition all storage images from General back to ShaderReadOnlyOptimal layout
+	std::vector<vk::ImageMemoryBarrier> axBarriers;
+
+	for (u_int uDescSet = 0; uDescSet < m_pxCurrentPipeline->m_xRootSig.m_uNumDescriptorSets; uDescSet++)
+	{
+		for (uint32_t i = 0; i < MAX_BINDINGS; i++)
+		{
+			Zenith_Vulkan_Texture* pxTex = m_xBindings[uDescSet].m_xTextures[i].first;
+			if (!pxTex || !pxTex->IsValid())
+			{
+				continue;
+			}
+
+			// Check if this is a storage image
+			bool bIsStorageImage = (m_pxCurrentPipeline->m_xRootSig.m_axDescriptorTypes[uDescSet][i] == DESCRIPTOR_TYPE_STORAGE_IMAGE);
+			
+			if (bIsStorageImage)
+			{
+				vk::ImageSubresourceRange xSubRange = vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
+
+				vk::ImageMemoryBarrier xBarrier = vk::ImageMemoryBarrier()
+					.setSubresourceRange(xSubRange)
+					.setImage(pxTex->GetImage())
+					.setOldLayout(vk::ImageLayout::eGeneral)
+					.setNewLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
+					.setSrcAccessMask(vk::AccessFlagBits::eShaderWrite | vk::AccessFlagBits::eShaderRead)
+					.setDstAccessMask(vk::AccessFlagBits::eShaderRead);
+
+				axBarriers.push_back(xBarrier);
+			}
+		}
+	}
+
+	if (!axBarriers.empty())
+	{
+		m_xCurrentCmdBuffer.pipelineBarrier(
+			vk::PipelineStageFlagBits::eComputeShader,
+			vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eComputeShader,
+			vk::DependencyFlags(),
+			0, nullptr,
+			0, nullptr,
+			axBarriers.size(), axBarriers.data()
+		);
+	}
+}
+
 void Zenith_Vulkan_CommandBuffer::PrepareDrawCallDescriptors()
 {
+	// Transition compute resources to the correct layout before binding
+	TransitionComputeResourcesBefore();
+
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 	for (u_int uDescSet = 0; uDescSet < m_pxCurrentPipeline->m_xRootSig.m_uNumDescriptorSets; uDescSet++)
 	{
@@ -172,15 +283,18 @@ void Zenith_Vulkan_CommandBuffer::PrepareDrawCallDescriptors()
 				}
 
 				vk::ImageLayout eLayout;
-				switch (pxTex->GetTextureFormat())
+				vk::DescriptorType eDescType = vk::DescriptorType::eCombinedImageSampler;
+				
+				// Check if this is a storage image (used with compute shaders)
+				bool bIsStorageImage = (m_pxCurrentPipeline->m_xRootSig.m_axDescriptorTypes[uDescSet][i] == DESCRIPTOR_TYPE_STORAGE_IMAGE);
+				
+				if (bIsStorageImage)
 				{
-				case vk::Format::eD32Sfloat:
-					eLayout = vk::ImageLayout::eDepthReadOnlyOptimal;
-					break;
-				case vk::Format::eD32SfloatS8Uint:
-					eLayout = vk::ImageLayout::eDepthStencilReadOnlyOptimal;
-					break;
-				default:
+					eLayout = vk::ImageLayout::eGeneral;
+					eDescType = vk::DescriptorType::eStorageImage;
+				}
+				else
+				{
 					eLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
 				}
 
@@ -191,7 +305,7 @@ void Zenith_Vulkan_CommandBuffer::PrepareDrawCallDescriptors()
 					.setImageLayout(eLayout);
 
 				vk::WriteDescriptorSet& xWrite = xTexWrites.at(uCount)
-					.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
+					.setDescriptorType(eDescType)
 					.setDstSet(m_axCurrentDescSet[uDescSet])
 					.setDstBinding(i)
 					.setDstArrayElement(0)
@@ -231,7 +345,9 @@ void Zenith_Vulkan_CommandBuffer::PrepareDrawCallDescriptors()
 			}
 
 			xDevice.updateDescriptorSets(xBufferWrites.size(), xBufferWrites.data(), 0, nullptr);
-			m_xCurrentCmdBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pxCurrentPipeline->m_xRootSig.m_xLayout, uDescSet, 1, &m_axCurrentDescSet[uDescSet], 0, nullptr);
+			
+			// Use the bind point set when the pipeline was bound
+			m_xCurrentCmdBuffer.bindDescriptorSets(m_eCurrentBindPoint, m_pxCurrentPipeline->m_xRootSig.m_xLayout, uDescSet, 1, &m_axCurrentDescSet[uDescSet], 0, nullptr);
 			m_uDescriptorDirty &= ~(1 << uDescSet);
 		}
 
@@ -270,7 +386,7 @@ void Zenith_Vulkan_CommandBuffer::BeginRenderPass(Flux_TargetSetup& xTargetSetup
 	uint32_t uNumColourAttachments = 0;
 	for (uint32_t i = 0; i < FLUX_MAX_TARGETS; i++)
 	{
-		if (xTargetSetup.m_axColourAttachments[i].m_eColourFormat != COLOUR_FORMAT_NONE)
+		if (xTargetSetup.m_axColourAttachments[i].m_eFormat != TEXTURE_FORMAT_NONE)
 		{
 			uNumColourAttachments++;
 		}
@@ -283,14 +399,14 @@ void Zenith_Vulkan_CommandBuffer::BeginRenderPass(Flux_TargetSetup& xTargetSetup
 	m_xCurrentRenderPass = Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(xTargetSetup, eColourLoad, eColourStore, eDepthStencilLoad, eDepthStencilStore, eUsage);
 
 	uint32_t uWidth, uHeight;
-	if (xTargetSetup.m_axColourAttachments[0].m_eColourFormat != COLOUR_FORMAT_NONE)
+	if (xTargetSetup.m_axColourAttachments[0].m_eFormat != TEXTURE_FORMAT_NONE)
 	{
 		uWidth = xTargetSetup.m_axColourAttachments[0].m_uWidth;
 		uHeight = xTargetSetup.m_axColourAttachments[0].m_uHeight;
 	}
 	else
 	{
-		Zenith_Assert(xTargetSetup.m_pxDepthStencil->m_eDepthStencilFormat != DEPTHSTENCIL_FORMAT_NONE, "Target setup has no attachments");
+		Zenith_Assert(xTargetSetup.m_pxDepthStencil->m_eFormat != TEXTURE_FORMAT_NONE, "Target setup has no attachments");
 		uWidth = xTargetSetup.m_pxDepthStencil->m_uWidth;
 		uHeight = xTargetSetup.m_pxDepthStencil->m_uHeight;
 
@@ -339,6 +455,7 @@ void Zenith_Vulkan_CommandBuffer::BeginRenderPass(Flux_TargetSetup& xTargetSetup
 
 void Zenith_Vulkan_CommandBuffer::SetPipeline(Zenith_Vulkan_Pipeline* pxPipeline)
 {
+	m_eCurrentBindPoint = vk::PipelineBindPoint::eGraphics;
 	m_xCurrentCmdBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pxPipeline->m_xPipeline);
 	m_pxCurrentPipeline = pxPipeline;
 	m_uDescriptorDirty = ~0u;
@@ -526,5 +643,72 @@ void Zenith_Vulkan_CommandBuffer::BlitTextureToTexture(Zenith_Vulkan_Texture* px
 		.setSrcSubresource(xSrcSubresource)
 		.setDstSubresource(xDstSubresource);
 
-	m_xCurrentCmdBuffer.blitImage(pxSrc->GetImage(), vk::ImageLayout::eTransferSrcOptimal, pxDst->GetImage(), vk::ImageLayout::eTransferDstOptimal, xBlit, vk::Filter::eLinear);
+		m_xCurrentCmdBuffer.blitImage(pxSrc->GetImage(), vk::ImageLayout::eTransferSrcOptimal, pxDst->GetImage(), vk::ImageLayout::eTransferDstOptimal, xBlit, vk::Filter::eLinear);
+}
+
+// ========== COMPUTE METHODS ==========
+
+void Zenith_Vulkan_CommandBuffer::BindComputePipeline(Zenith_Vulkan_Pipeline* pxPipeline)
+{
+	m_eCurrentBindPoint = vk::PipelineBindPoint::eCompute;
+	m_pxCurrentPipeline = pxPipeline;
+	m_xCurrentCmdBuffer.bindPipeline(vk::PipelineBindPoint::eCompute, pxPipeline->m_xPipeline);
+	m_uDescriptorDirty = ~0u;
+}
+
+void Zenith_Vulkan_CommandBuffer::BindStorageImage(Zenith_Vulkan_Texture* pxTexture, uint32_t uBindPoint)
+{
+	Zenith_Assert(m_uCurrentBindFreq < FLUX_MAX_DESCRIPTOR_SET_LAYOUTS, "Must call BeginBind first");
+	Zenith_Assert(uBindPoint < MAX_BINDINGS, "Bind point out of range");
+	
+	m_xBindings[m_uCurrentBindFreq].m_xTextures[uBindPoint] = { pxTexture, nullptr };
+	
+	if (m_aapxTextureCache[m_uCurrentBindFreq][uBindPoint] != pxTexture)
+	{
+		m_aapxTextureCache[m_uCurrentBindFreq][uBindPoint] = pxTexture;
+		m_uDescriptorDirty |= (1 << m_uCurrentBindFreq);
+	}
+}
+
+void Zenith_Vulkan_CommandBuffer::Dispatch(uint32_t uGroupCountX, uint32_t uGroupCountY, uint32_t uGroupCountZ)
+{
+	PrepareDrawCallDescriptors();
+	m_xCurrentCmdBuffer.dispatch(uGroupCountX, uGroupCountY, uGroupCountZ);
+	TransitionComputeResourcesAfter();
+}
+
+void Zenith_Vulkan_CommandBuffer::ImageBarrier(Zenith_Vulkan_Texture* pxTexture, uint32_t uOldLayout, uint32_t uNewLayout)
+{
+	vk::ImageLayout eOldLayout = static_cast<vk::ImageLayout>(uOldLayout);
+	vk::ImageLayout eNewLayout = static_cast<vk::ImageLayout>(uNewLayout);
+	
+	vk::PipelineStageFlags eSrcStage = vk::PipelineStageFlagBits::eComputeShader;
+	vk::PipelineStageFlags eDstStage = vk::PipelineStageFlagBits::eFragmentShader;
+	vk::AccessFlags eSrcAccess = vk::AccessFlagBits::eShaderWrite;
+	vk::AccessFlags eDstAccess = vk::AccessFlagBits::eShaderRead;
+	
+	if (eOldLayout == vk::ImageLayout::eUndefined)
+	{
+		eSrcStage = vk::PipelineStageFlagBits::eTopOfPipe;
+		eSrcAccess = {};
+	}
+	
+	vk::ImageMemoryBarrier barrier = vk::ImageMemoryBarrier()
+		.setOldLayout(eOldLayout)
+		.setNewLayout(eNewLayout)
+		.setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+		.setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+		.setImage(pxTexture->GetImage())
+		.setSubresourceRange(vk::ImageSubresourceRange()
+			.setAspectMask(vk::ImageAspectFlagBits::eColor)
+			.setBaseMipLevel(0)
+			.setLevelCount(1)
+			.setBaseArrayLayer(0)
+			.setLayerCount(1))
+		.setSrcAccessMask(eSrcAccess)
+		.setDstAccessMask(eDstAccess);
+	
+	m_xCurrentCmdBuffer.pipelineBarrier(
+		eSrcStage, eDstStage,
+		{}, 0, nullptr, 0, nullptr, 1, &barrier);
 }

@@ -63,6 +63,16 @@ void Zenith_Vulkan_Shader::Initialise(const std::string& strVertex, const std::s
 	}
 }
 
+void Zenith_Vulkan_Shader::InitialiseCompute(const std::string& strCompute)
+{
+	const std::string strExtension = ".spv";
+	std::string strShaderRoot(SHADER_SOURCE_ROOT);
+	m_pcCompShaderCode = Zenith_FileAccess::ReadFile((strShaderRoot + strCompute + strExtension).c_str(), m_pcCompShaderCodeSize);
+	
+	m_xCompShaderModule = CreateShaderModule(m_pcCompShaderCode, m_pcCompShaderCodeSize);
+	m_uStageCount = 1;
+}
+
 Zenith_Vulkan_Shader::~Zenith_Vulkan_Shader()
 {
 	const vk::Device xDevice = Zenith_Vulkan::GetDevice();
@@ -70,10 +80,12 @@ Zenith_Vulkan_Shader::~Zenith_Vulkan_Shader()
 	xDevice.destroyShaderModule(m_xFragShaderModule);
 	xDevice.destroyShaderModule(m_xTescShaderModule);
 	xDevice.destroyShaderModule(m_xTeseShaderModule);
+	xDevice.destroyShaderModule(m_xCompShaderModule);
 	delete[] m_pcVertShaderCode;
 	delete[] m_pcFragShaderCode;
 	delete[] m_pcTescShaderCode;
 	delete[] m_pcTeseShaderCode;
+	delete[] m_pcCompShaderCode;
 	delete[] m_xInfos;
 }
 
@@ -411,15 +423,15 @@ void Zenith_Vulkan_PipelineBuilder::Build(Zenith_Vulkan_Pipeline& xPipelineOut, 
 	STUBBED
 }
 
-vk::Format VceFormatToVKFormat(ColourFormat eFmt)
+vk::Format VceFormatToVKFormat(TextureFormat eFmt)
 {
 	switch (eFmt)
 	{
-	case COLOUR_FORMAT_R16G16B16A16_UNORM:
+	case TEXTURE_FORMAT_R16G16B16A16_UNORM:
 		return vk::Format::eR16G16B16A16Unorm;
-	case COLOUR_FORMAT_BGRA8_SRGB:
+	case TEXTURE_FORMAT_BGRA8_SRGB:
 		return vk::Format::eB8G8R8A8Srgb;
-	case COLOUR_FORMAT_BGRA8_UNORM:
+	case TEXTURE_FORMAT_BGRA8_UNORM:
 		return vk::Format::eB8G8R8A8Unorm;
 	default:
 		Zenith_Assert(false, "Unsupported format");
@@ -467,7 +479,7 @@ vk::RenderPass Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(Flux_TargetSetup&
 	uint32_t uNumColourAttachments = 0;
 	for (uint32_t i = 0; i < FLUX_MAX_TARGETS; i++)
 	{
-		if (xTargetSetup.m_axColourAttachments[i].m_eColourFormat != COLOUR_FORMAT_NONE)
+		if (xTargetSetup.m_axColourAttachments[i].m_eFormat != TEXTURE_FORMAT_NONE)
 		{
 			uNumColourAttachments++;
 		}
@@ -481,7 +493,7 @@ vk::RenderPass Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(Flux_TargetSetup&
 	switch (eUsage)
 	{
 	case RENDER_TARGET_USAGE_RENDERTARGET:
-		eLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+		eLayout = vk::ImageLayout::eColorAttachmentOptimal;
 		break;
 	case RENDER_TARGET_USAGE_PRESENT:
 		eLayout = vk::ImageLayout::ePresentSrcKHR;
@@ -496,7 +508,7 @@ vk::RenderPass Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(Flux_TargetSetup&
 	{
 		const Flux_RenderAttachment& xTarget = xTargetSetup.m_axColourAttachments[i];
 		xAttachmentDescs.at(i)
-			.setFormat(Zenith_Vulkan_Texture::ConvertToVkFormat_Colour(xTarget.m_eColourFormat))
+			.setFormat(Zenith_Vulkan_Texture::ConvertToVkFormat_Colour(xTarget.m_eFormat))
 			.setSamples(vk::SampleCountFlagBits::e1)
 			.setLoadOp(Zenith_Vulkan_Texture::ConvertToVkLoadAction(eColourLoad))
 			.setStoreOp(Zenith_Vulkan_Texture::ConvertToVkStoreAction(eColourStore))
@@ -517,7 +529,7 @@ vk::RenderPass Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(Flux_TargetSetup&
 	if (bHasDepth)
 	{
 		xDepthStencilAttachment = vk::AttachmentDescription()
-			.setFormat(Zenith_Vulkan_Texture::ConvertToVkFormat_DepthStencil(xTargetSetup.m_pxDepthStencil->m_eDepthStencilFormat))
+			.setFormat(Zenith_Vulkan_Texture::ConvertToVkFormat_DepthStencil(xTargetSetup.m_pxDepthStencil->m_eFormat))
 			.setSamples(vk::SampleCountFlagBits::e1)
 			.setLoadOp(Zenith_Vulkan_Texture::ConvertToVkLoadAction(eDepthStencilLoad))
 			.setStoreOp(Zenith_Vulkan_Texture::ConvertToVkStoreAction(eDepthStencilStore))
@@ -570,7 +582,7 @@ vk::Framebuffer Zenith_Vulkan_Pipeline::TargetSetupToFramebuffer(Flux_TargetSetu
 	uint32_t uNumColourAttachments = 0;
 	for (uint32_t i = 0; i < FLUX_MAX_TARGETS; i++)
 	{
-		if (xTargetSetup.m_axColourAttachments[i].m_eColourFormat != COLOUR_FORMAT_NONE)
+		if (xTargetSetup.m_axColourAttachments[i].m_eFormat != TEXTURE_FORMAT_NONE)
 		{
 			uNumColourAttachments++;
 		}
@@ -804,6 +816,9 @@ void Zenith_Vulkan_RootSigBuilder::FromSpecification(Zenith_Vulkan_RootSig& xRoo
 				break;
 			}
 
+			// Store descriptor type for later use in command buffer
+			xRootSigOut.m_axDescriptorTypes[uDescSet][uDesc] = xLayout.m_axBindings[uDesc].m_eType;
+
 			vk::DescriptorSetLayoutBinding& xBinding = axBindings[uDesc]
 				.setBinding(uDesc)
 				.setDescriptorCount(1)
@@ -816,6 +831,9 @@ void Zenith_Vulkan_RootSigBuilder::FromSpecification(Zenith_Vulkan_RootSig& xRoo
 				break;
 			case(DESCRIPTOR_TYPE_TEXTURE):
 				xBinding.setDescriptorType(vk::DescriptorType::eCombinedImageSampler);
+				break;
+			case(DESCRIPTOR_TYPE_STORAGE_IMAGE):
+				xBinding.setDescriptorType(vk::DescriptorType::eStorageImage);
 				break;
 			case(DESCRIPTOR_TYPE_UNBOUNDED_TEXTURES):
 				Zenith_Assert(false, "Unbounded textures must be in their own table");
@@ -838,4 +856,45 @@ void Zenith_Vulkan_RootSigBuilder::FromSpecification(Zenith_Vulkan_RootSig& xRoo
 		.setPPushConstantRanges(&xPushConstantRange);
 
 	xRootSigOut.m_xLayout = Zenith_Vulkan::GetDevice().createPipelineLayout(xPipelineLayoutInfo);
+}
+
+// ========== COMPUTE PIPELINE BUILDER IMPLEMENTATION ==========
+
+Zenith_Vulkan_ComputePipelineBuilder::Zenith_Vulkan_ComputePipelineBuilder()
+{
+}
+
+Zenith_Vulkan_ComputePipelineBuilder& Zenith_Vulkan_ComputePipelineBuilder::WithShader(const Zenith_Vulkan_Shader& shader)
+{
+	m_pxShader = &shader;
+	return *this;
+}
+
+Zenith_Vulkan_ComputePipelineBuilder& Zenith_Vulkan_ComputePipelineBuilder::WithLayout(vk::PipelineLayout layout)
+{
+	m_xLayout = layout;
+	return *this;
+}
+
+void Zenith_Vulkan_ComputePipelineBuilder::Build(Zenith_Vulkan_Pipeline& pipelineOut)
+{
+	Zenith_Assert(m_pxShader != nullptr, "Compute shader not set");
+	Zenith_Assert(m_xLayout != VK_NULL_HANDLE, "Pipeline layout not set");
+	
+	vk::PipelineShaderStageCreateInfo stageInfo = vk::PipelineShaderStageCreateInfo()
+		.setStage(vk::ShaderStageFlagBits::eCompute)
+		.setModule(m_pxShader->m_xCompShaderModule)
+		.setPName("main");
+	
+	vk::ComputePipelineCreateInfo pipelineInfo = vk::ComputePipelineCreateInfo()
+		.setStage(stageInfo)
+		.setLayout(m_xLayout);
+	
+	vk::Result result = Zenith_Vulkan::GetDevice().createComputePipelines(
+		VK_NULL_HANDLE, 1, &pipelineInfo, nullptr, &pipelineOut.m_xPipeline);
+	
+	if (result != vk::Result::eSuccess)
+	{
+		Zenith_Error("Failed to create compute pipeline");
+	}
 }

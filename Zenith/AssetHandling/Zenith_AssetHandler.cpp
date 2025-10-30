@@ -24,31 +24,31 @@ Flux_Texture* Zenith_AssetHandler::CreateDummyTexture(const std::string& strName
 	return &s_pxTextures[uID];
 }
 
-Flux_Texture* Zenith_AssetHandler::CreateColourAttachment(const std::string& strName, uint32_t uWidth, uint32_t uHeight, ColourFormat eFormat, uint32_t uBitsPerPixel)
+Flux_Texture* Zenith_AssetHandler::CreateColourAttachment(const std::string& strName, const Flux_SurfaceInfo& xInfo)
 {
 	AssetID uID = GetNextFreeTextureSlot();
 	Flux_Texture& xTex = s_pxTextures[uID];
 	s_xTextureNameMap.insert({ strName, uID });
-	Flux_MemoryManager::CreateColourAttachment(uWidth, uHeight, eFormat, uBitsPerPixel, xTex);
+	Flux_MemoryManager::CreateColourAttachment(xInfo, xTex);
 	s_xUsedTextureIDs.insert(uID);
 	return &s_pxTextures[uID];
 }
-Flux_Texture* Zenith_AssetHandler::CreateDepthStencilAttachment(const std::string& strName, uint32_t uWidth, uint32_t uHeight, DepthStencilFormat eFormat, uint32_t uBitsPerPixel)
+Flux_Texture* Zenith_AssetHandler::CreateDepthStencilAttachment(const std::string& strName, const Flux_SurfaceInfo& xInfo)
 {
 	AssetID uID = GetNextFreeTextureSlot();
 	Flux_Texture& xTex = s_pxTextures[uID];
 	s_xTextureNameMap.insert({ strName, uID });
-	Flux_MemoryManager::CreateDepthStencilAttachment(uWidth, uHeight, eFormat, uBitsPerPixel, xTex);
+	Flux_MemoryManager::CreateDepthStencilAttachment(xInfo, xTex);
 	s_xUsedTextureIDs.insert(uID);
 	return &s_pxTextures[uID];
 }
 
-Flux_Texture* Zenith_AssetHandler::AddTexture2D(const std::string& strName, const void* pData, const uint32_t uWidth, const uint32_t uHeight, const uint32_t uDepth, ColourFormat eFormat, DepthStencilFormat eDepthStencilFormat, bool bCreateMips)
+Flux_Texture* Zenith_AssetHandler::AddTexture2D(const std::string& strName, const void* pData, const Flux_SurfaceInfo& xInfo, bool bCreateMips)
 {
 	AssetID uID = GetNextFreeTextureSlot();
 	Flux_Texture& xTex = s_pxTextures[uID];
 	s_xTextureNameMap.insert({ strName, uID });
-	Flux_MemoryManager::CreateTexture(pData, uWidth, uHeight, uDepth, eFormat, eDepthStencilFormat, bCreateMips, xTex);
+	Flux_MemoryManager::CreateTexture(pData, xInfo, bCreateMips, xTex);
 	s_xUsedTextureIDs.insert(uID);
 	return &s_pxTextures[uID];
 }

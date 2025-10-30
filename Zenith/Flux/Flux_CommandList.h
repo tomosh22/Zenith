@@ -18,6 +18,11 @@ enum Flux_CommandType
 	FLUX_COMMANDTYPE__DRAW,
 	FLUX_COMMANDTYPE__DRAW_INDEXED,
 
+	// Compute commands
+	FLUX_COMMANDTYPE__BIND_COMPUTE_PIPELINE,
+	FLUX_COMMANDTYPE__BIND_STORAGE_IMAGE,
+	FLUX_COMMANDTYPE__DISPATCH,
+
 	FLUX_COMMANDTYPE__COUNT,
 };
 
@@ -210,6 +215,57 @@ public:
 	u_int m_uInstanceOffset;
 };
 
+// ========== COMPUTE COMMANDS ==========
+
+class Flux_CommandBindComputePipeline
+{
+public:
+	static constexpr Flux_CommandType m_eType = FLUX_COMMANDTYPE__BIND_COMPUTE_PIPELINE;
+
+	Flux_CommandBindComputePipeline(Flux_Pipeline* pxPipeline) : m_pxPipeline(pxPipeline) {}
+	void operator()(Flux_CommandBuffer* pxCmdBuf)
+	{
+		pxCmdBuf->BindComputePipeline(m_pxPipeline);
+	}
+	Flux_Pipeline* m_pxPipeline;
+};
+
+class Flux_CommandBindStorageImage
+{
+public:
+	static constexpr Flux_CommandType m_eType = FLUX_COMMANDTYPE__BIND_STORAGE_IMAGE;
+
+	Flux_CommandBindStorageImage(Flux_Texture* pxTexture, u_int uBindPoint)
+		: m_pxTexture(pxTexture)
+		, m_uBindPoint(uBindPoint)
+	{}
+	void operator()(Flux_CommandBuffer* pxCmdBuf)
+	{
+		pxCmdBuf->BindStorageImage(m_pxTexture, m_uBindPoint);
+	}
+	Flux_Texture* m_pxTexture;
+	u_int m_uBindPoint;
+};
+
+class Flux_CommandDispatch
+{
+public:
+	static constexpr Flux_CommandType m_eType = FLUX_COMMANDTYPE__DISPATCH;
+
+	Flux_CommandDispatch(u_int uGroupCountX, u_int uGroupCountY, u_int uGroupCountZ)
+		: m_uGroupCountX(uGroupCountX)
+		, m_uGroupCountY(uGroupCountY)
+		, m_uGroupCountZ(uGroupCountZ)
+	{}
+	void operator()(Flux_CommandBuffer* pxCmdBuf)
+	{
+		pxCmdBuf->Dispatch(m_uGroupCountX, m_uGroupCountY, m_uGroupCountZ);
+	}
+	u_int m_uGroupCountX;
+	u_int m_uGroupCountY;
+	u_int m_uGroupCountZ;
+};
+
 class Flux_CommandList
 {
 public:
@@ -269,6 +325,11 @@ public:
 
 				HANDLE_COMMAND(FLUX_COMMANDTYPE__DRAW, Flux_CommandDraw);
 				HANDLE_COMMAND(FLUX_COMMANDTYPE__DRAW_INDEXED, Flux_CommandDrawIndexed);
+				
+				HANDLE_COMMAND(FLUX_COMMANDTYPE__BIND_COMPUTE_PIPELINE, Flux_CommandBindComputePipeline);
+				HANDLE_COMMAND(FLUX_COMMANDTYPE__BIND_STORAGE_IMAGE, Flux_CommandBindStorageImage);
+				HANDLE_COMMAND(FLUX_COMMANDTYPE__DISPATCH, Flux_CommandDispatch);
+				
 				default:
 					Zenith_Assert(false, "Unhandled command");
 			}

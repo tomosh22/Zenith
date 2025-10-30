@@ -18,9 +18,9 @@ public:
 	}
 
 	static Flux_Texture* CreateDummyTexture(const std::string& strName);
-	static Flux_Texture* CreateColourAttachment(const std::string& strName, uint32_t uWidth, uint32_t uHeight, ColourFormat eFormat, uint32_t uBitsPerPixel);
-	static Flux_Texture* CreateDepthStencilAttachment(const std::string& strName, uint32_t uWidth, uint32_t uHeight, DepthStencilFormat eFormat, uint32_t uBitsPerPixel);
-	static Flux_Texture* AddTexture2D(const std::string& strName, const void* pData, const uint32_t uWidth, const uint32_t uHeight, const uint32_t uDepth, ColourFormat eFormat, DepthStencilFormat eDepthStencilFormat, bool bCreateMips);
+	static Flux_Texture* CreateColourAttachment(const std::string& strName, const Flux_SurfaceInfo& xInfo);
+	static Flux_Texture* CreateDepthStencilAttachment(const std::string& strName, const Flux_SurfaceInfo& xInfo);
+	static Flux_Texture* AddTexture2D(const std::string& strName, const void* pData, const Flux_SurfaceInfo& xInfo, bool bCreateMips);
 	static Flux_Texture* AddTexture2D(const std::string& strName, const char* szPath);
 	static Flux_Texture* AddTextureCube(const std::string& strName, const char* szPathPX, const char* szPathNX, const char* szPathPY, const char* szPathNY, const char* szPathPZ, const char* szPathNZ);
 	static Flux_MeshGeometry& AddMesh(const std::string& strName);

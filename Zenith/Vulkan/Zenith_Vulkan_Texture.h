@@ -23,11 +23,14 @@ public:
 
 	void Reset();
 
-	static vk::Format ConvertToVkFormat_Colour(ColourFormat eFormat);
-	static vk::Format ConvertToVkFormat_DepthStencil(DepthStencilFormat eFormat);
+	static vk::Format ConvertToVkFormat_Colour(TextureFormat eFormat);
+	static vk::Format ConvertToVkFormat_DepthStencil(TextureFormat eFormat);
 	static vk::AttachmentLoadOp ConvertToVkLoadAction(LoadAction eAction);
 	static vk::AttachmentStoreOp ConvertToVkStoreAction(StoreAction eAction);
-	static vk::ImageLayout ConvertToVkTargetUsage(RenderTargetUsage eUsage, RenderTargetType eColourDepthStencil);
+
+	#if 0
+	static vk::ImageLayout ConvertToVkTargetUsage(RenderTargetUsage eUsage);
+	#endif
 
 	const vk::Image GetImage() const { return m_xImage; }
 	VkImage* GetImage_Ptr() { return &m_xImage; }

@@ -316,6 +316,9 @@
     <ClCompile Include="..\..\..\Zenith\Flux\AnimatedMeshes\Flux_AnimatedMeshes.cpp">
       <Filter>Zenith\Flux\AnimatedMeshes</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\..\Zenith\Flux\ComputeTest\Flux_ComputeTest.cpp">
+      <Filter>Zenith\Flux\ComputeTest</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\..\Zenith\Flux\DeferredShading\Flux_DeferredShading.cpp">
       <Filter>Zenith\Flux\DeferredShading</Filter>
     </ClCompile>
@@ -852,6 +855,9 @@
     <ClInclude Include="..\..\..\Zenith\Flux\AnimatedMeshes\Flux_AnimatedMeshes.h">
       <Filter>Zenith\Flux\AnimatedMeshes</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\Flux\ComputeTest\Flux_ComputeTest.h">
+      <Filter>Zenith\Flux\ComputeTest</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\..\Zenith\Flux\DeferredShading\Flux_DeferredShading.h">
       <Filter>Zenith\Flux\DeferredShading</Filter>
     </ClInclude>
@@ -905,6 +911,15 @@
     </ClInclude>
     <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Common.fxh">
       <Filter>Zenith\Flux\Shaders</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\ComputeTest\ComputeTest.comp">
+      <Filter>Zenith\Flux\Shaders\ComputeTest</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\ComputeTest\ComputeTest_Display.frag">
+      <Filter>Zenith\Flux\Shaders\ComputeTest</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\ComputeTest\ComputeTest_Display.vert">
+      <Filter>Zenith\Flux\Shaders\ComputeTest</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\Zenith\Flux\Shaders\DeferredShading\Flux_DeferredShading.frag">
       <Filter>Zenith\Flux\Shaders\DeferredShading</Filter>
@@ -1247,6 +1262,9 @@
     <Filter Include="Zenith\Flux\AnimatedMeshes">
       <UniqueIdentifier>{f20ecdc9-c040-d7d0-6e61-2605d273d021}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Zenith\Flux\ComputeTest">
+      <UniqueIdentifier>{bbb61ff6-5083-a317-5343-19f2cd196aac}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Zenith\Flux\DeferredShading">
       <UniqueIdentifier>{a05482b8-8497-e0cb-fb99-b146f9c748e5}</UniqueIdentifier>
     </Filter>
@@ -1276,6 +1294,9 @@
     </Filter>
     <Filter Include="Zenith\Flux\Shaders\AnimatedMeshes">
       <UniqueIdentifier>{ed4cf6ff-edeb-60db-a75d-df5258b36072}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Zenith\Flux\Shaders\ComputeTest">
+      <UniqueIdentifier>{f7cf58a7-463e-f8d7-9da7-0f4c7fc008db}</UniqueIdentifier>
     </Filter>
     <Filter Include="Zenith\Flux\Shaders\DeferredShading">
       <UniqueIdentifier>{4803051e-ebbc-36d1-e229-2d53d979a6af}</UniqueIdentifier>

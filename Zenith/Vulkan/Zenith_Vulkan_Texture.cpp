@@ -10,34 +10,34 @@ void Zenith_Vulkan_Texture::Reset()
 	Zenith_Vulkan_MemoryManager::FreeTexture(this);
 }
 
-vk::Format Zenith_Vulkan_Texture::ConvertToVkFormat_Colour(ColourFormat eFormat) {
+vk::Format Zenith_Vulkan_Texture::ConvertToVkFormat_Colour(TextureFormat eFormat) {
 	switch (eFormat)
 	{
-	case COLOUR_FORMAT_RGB8_UNORM:
+	case TEXTURE_FORMAT_RGB8_UNORM:
 		return vk::Format::eR8G8B8Unorm;
-	case COLOUR_FORMAT_RGBA8_UNORM:
+	case TEXTURE_FORMAT_RGBA8_UNORM:
 		return vk::Format::eR8G8B8A8Unorm;
-	case COLOUR_FORMAT_BGRA8_SRGB:
+	case TEXTURE_FORMAT_BGRA8_SRGB:
 		return vk::Format::eB8G8R8A8Srgb;
-	case COLOUR_FORMAT_R16G16B16A16_SFLOAT:
+	case TEXTURE_FORMAT_R16G16B16A16_SFLOAT:
 		return vk::Format::eR16G16B16A16Sfloat;
-	case COLOUR_FORMAT_R32G32B32A32_SFLOAT:
+	case TEXTURE_FORMAT_R32G32B32A32_SFLOAT:
 		return vk::Format::eR32G32B32A32Sfloat;
-	case COLOUR_FORMAT_R32G32B32_SFLOAT:
+	case TEXTURE_FORMAT_R32G32B32_SFLOAT:
 		return vk::Format::eR32G32B32Sfloat;
-	case COLOUR_FORMAT_R16G16B16A16_UNORM:
+	case TEXTURE_FORMAT_R16G16B16A16_UNORM:
 		return vk::Format::eR16G16B16A16Unorm;
-	case COLOUR_FORMAT_BGRA8_UNORM:
+	case TEXTURE_FORMAT_BGRA8_UNORM:
 		return vk::Format::eB8G8R8A8Unorm;
 	default:
 		Zenith_Assert(false, "Invalid format");
 	}
 }
 
-vk::Format Zenith_Vulkan_Texture::ConvertToVkFormat_DepthStencil(DepthStencilFormat eFormat) {
+vk::Format Zenith_Vulkan_Texture::ConvertToVkFormat_DepthStencil(TextureFormat eFormat) {
 	switch (eFormat)
 	{
-	case DEPTHSTENCIL_FORMAT_D32_SFLOAT:
+	case TEXTURE_FORMAT_D32_SFLOAT:
 		return vk::Format::eD32Sfloat;
 	default:
 		Zenith_Assert(false, "Invalid format");
@@ -70,6 +70,7 @@ vk::AttachmentStoreOp Zenith_Vulkan_Texture::ConvertToVkStoreAction(StoreAction 
 	}
 }
 
+#if 0
 vk::ImageLayout Zenith_Vulkan_Texture::ConvertToVkTargetUsage(RenderTargetUsage eUsage, RenderTargetType eColourDepthStencil) {
 	switch (eUsage)
 	{
@@ -92,6 +93,7 @@ vk::ImageLayout Zenith_Vulkan_Texture::ConvertToVkTargetUsage(RenderTargetUsage 
 		Zenith_Assert(false, "Invalid usage");
 	}
 }
+#endif
 
 void Zenith_Vulkan_Sampler::InitialiseRepeat(Zenith_Vulkan_Sampler& xSampler)
 {

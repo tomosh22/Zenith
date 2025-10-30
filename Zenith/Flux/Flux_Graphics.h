@@ -16,6 +16,7 @@ public:
 	static Flux_TargetSetup s_xMRTTarget;
 	static Flux_TargetSetup s_xFinalRenderTarget;
 	static Flux_TargetSetup s_xFinalRenderTarget_NoDepth;
+	static Flux_TargetSetup s_xNullTargetSetup;  // For compute passes without render targets
 
 	static struct Flux_RenderAttachment s_xDepthBuffer;
 
@@ -31,7 +32,7 @@ public:
 	static Flux_MeshGeometry s_xBlankMesh;
 	static class Flux_Material* s_pxBlankMaterial;
 
-	static ColourFormat s_aeMRTFormats[MRT_INDEX_COUNT];
+	static TextureFormat s_aeMRTFormats[MRT_INDEX_COUNT];
 
 	static const Zenith_Maths::Vector3& GetCameraPosition();
 	static Flux_Texture& GetGBufferTexture(MRTIndex eIndex);
@@ -47,7 +48,7 @@ public:
 	static float GetAspectRatio();
 
 	static Flux_DescriptorSetLayout s_xFrameConstantsLayout;
-private:
+
 	struct FrameConstants
 	{
 		Zenith_Maths::Matrix4 m_xViewMat;
@@ -63,4 +64,6 @@ private:
 		u_int m_uTargetPixelsPerTri;
 	};
 	static FrameConstants s_xFrameConstants;
+private:
+	
 };

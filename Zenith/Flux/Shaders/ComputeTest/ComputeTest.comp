@@ -1,0 +1,25 @@
+#version 450
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
+
+layout(binding = 0, rgba8) uniform image2D outputImage;
+
+layout(push_constant) uniform PushConstants {
+    uvec2 imageSize;
+} pushConstants;
+
+void main() {
+    uvec2 pixelCoords = gl_GlobalInvocationID.xy;
+    
+    // Check bounds
+    if (pixelCoords.x >= pushConstants.imageSize.x || pixelCoords.y >= pushConstants.imageSize.y) {
+        return;
+    }
+    
+    // Calculate UV coordinates in 0-1 range
+    vec2 uv = vec2(pixelCoords) / vec2(pushConstants.imageSize);
+    
+    // Write UV coordinates as RG, with B=0 and A=1
+    vec4 color = vec4(uv, 0.0, 1.0);
+    imageStore(outputImage, ivec2(pixelCoords), color);
+}

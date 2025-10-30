@@ -98,23 +98,23 @@ struct Flux_VertexInputDescription
 	Flux_BufferLayout m_xPerInstanceLayout;
 };
 
-static uint32_t ColourFormatBitsPerPixel(ColourFormat eFormat)
+static uint32_t ColourFormatBitsPerPixel(TextureFormat eFormat)
 {
 	switch (eFormat)
 	{
-	case COLOUR_FORMAT_RGBA8_UNORM:
+	case TEXTURE_FORMAT_RGBA8_UNORM:
 		return 32u;
-	case COLOUR_FORMAT_BGRA8_SRGB:
+	case TEXTURE_FORMAT_BGRA8_SRGB:
 		return 32u;
-	case COLOUR_FORMAT_BGRA8_UNORM:
+	case TEXTURE_FORMAT_BGRA8_UNORM:
 		return 32u;
-	case COLOUR_FORMAT_R16G16B16A16_SFLOAT:
+	case TEXTURE_FORMAT_R16G16B16A16_SFLOAT:
 		return 64u;
-	case COLOUR_FORMAT_R16G16B16A16_UNORM:
+	case TEXTURE_FORMAT_R16G16B16A16_UNORM:
 		return 64u;
-	case COLOUR_FORMAT_R32G32B32A32_SFLOAT:
+	case TEXTURE_FORMAT_R32G32B32A32_SFLOAT:
 		return 128u;
-	case COLOUR_FORMAT_R32G32B32_SFLOAT:
+	case TEXTURE_FORMAT_R32G32B32_SFLOAT:
 		return 96u;
 	default:
 		Zenith_Assert(false, "Unrecognised colour format");
@@ -122,16 +122,16 @@ static uint32_t ColourFormatBitsPerPixel(ColourFormat eFormat)
 	}
 }
 
-static uint32_t ColourFormatBytesPerPixel(ColourFormat eFormat)
+static uint32_t ColourFormatBytesPerPixel(TextureFormat eFormat)
 {
 	return ColourFormatBitsPerPixel(eFormat) / 8u;
 }
 
-static uint32_t DepthStencilFormatBitsPerPixel(DepthStencilFormat eFormat)
+static uint32_t DepthStencilFormatBitsPerPixel(TextureFormat eFormat)
 {
 	switch (eFormat)
 	{
-	case DEPTHSTENCIL_FORMAT_D32_SFLOAT:
+	case TEXTURE_FORMAT_D32_SFLOAT:
 		return 32;
 	default:
 		Zenith_Assert(false, "Unrecognised depth/stencil format");

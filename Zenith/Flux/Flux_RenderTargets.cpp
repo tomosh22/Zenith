@@ -4,21 +4,39 @@
 
 #include "AssetHandling/Zenith_AssetHandler.h"
 
-void Flux_RenderAttachmentBuilder::Build(Flux_RenderAttachment& xAttachment, RenderTargetType eType, const std::string& strName)
+void Flux_RenderAttachmentBuilder::BuildColour(Flux_RenderAttachment& xAttachment, const std::string& strName)
 {
-	xAttachment.m_eColourFormat = m_eColourFormat;
-	xAttachment.m_eDepthStencilFormat = m_eDepthStencilFormat;
+	Flux_SurfaceInfo xInfo;
+	xInfo.m_uWidth = m_uWidth;
+	xInfo.m_uHeight = m_uHeight;
+	xInfo.m_eFormat = m_eFormat;
+	xInfo.m_uNumMips = 1;
+	xInfo.m_uNumLayers = 1;
+	xInfo.m_uMemoryFlags = m_uMemoryFlags;
+
+
+	xAttachment.m_eFormat = m_eFormat;
 	xAttachment.m_uWidth = m_uWidth;
 	xAttachment.m_uHeight = m_uHeight;
-	if (eType == RENDER_TARGET_TYPE_COLOUR)
-	{
-		xAttachment.m_pxTargetTexture = Zenith_AssetHandler::CreateColourAttachment(strName, m_uWidth, m_uHeight, m_eColourFormat, ColourFormatBitsPerPixel(m_eColourFormat));
-	}
-	else if (eType == RENDER_TARGET_TYPE_DEPTHSTENCIL)
-	{
-		xAttachment.m_pxTargetTexture = Zenith_AssetHandler::CreateDepthStencilAttachment(strName, m_uWidth, m_uHeight, m_eDepthStencilFormat, DepthStencilFormatBitsPerPixel(m_eDepthStencilFormat));
-	}
+	xAttachment.m_pxTargetTexture = Zenith_AssetHandler::CreateColourAttachment(strName, xInfo);
 	
+}
+
+void Flux_RenderAttachmentBuilder::BuildDepthStencil(Flux_RenderAttachment& xAttachment, const std::string& strName)
+{
+	Flux_SurfaceInfo xInfo;
+	xInfo.m_uWidth = m_uWidth;
+	xInfo.m_uHeight = m_uHeight;
+	xInfo.m_eFormat = m_eFormat;
+	xInfo.m_uNumMips = 1;
+	xInfo.m_uNumLayers = 1;
+	xInfo.m_uMemoryFlags = m_uMemoryFlags;
+
+	xAttachment.m_eFormat = m_eFormat;
+	xAttachment.m_uWidth = m_uWidth;
+	xAttachment.m_uHeight = m_uHeight;
+	xAttachment.m_pxTargetTexture = Zenith_AssetHandler::CreateDepthStencilAttachment(strName, xInfo);
+
 }
 
 void Flux_TargetSetup::AssignDepthStencil(Flux_RenderAttachment* pxDS)
@@ -31,7 +49,7 @@ const uint32_t Flux_TargetSetup::GetNumColourAttachments()
 	uint32_t uRet = 0;
 	for (Flux_RenderAttachment& xTarget : m_axColourAttachments)
 	{
-		if (xTarget.m_eColourFormat != COLOUR_FORMAT_NONE)
+		if (xTarget.m_eFormat != TEXTURE_FORMAT_NONE)
 		{
 			uRet++;
 		}

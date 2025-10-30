@@ -34,10 +34,10 @@ void Zenith_Tools_TextureExport::ExportFromFile(std::string strFilename, const c
 	size_t ulFindPos = strFilename.find(szExtension);
 	strFilename.replace(ulFindPos, strlen(szExtension), "ztx");
 
-	ExportFromData(pData, strFilename, iWidth, iHeight, COLOUR_FORMAT_RGBA8_UNORM);
+	ExportFromData(pData, strFilename, iWidth, iHeight, TEXTURE_FORMAT_RGBA8_UNORM);
 }
 
-void Zenith_Tools_TextureExport::ExportFromData(const void* pData, const std::string& strFilename, int32_t iWidth, int32_t iHeight, ColourFormat eFormat)
+void Zenith_Tools_TextureExport::ExportFromData(const void* pData, const std::string& strFilename, int32_t iWidth, int32_t iHeight, TextureFormat eFormat)
 {
 
 	const size_t ulDataSize = iWidth * iHeight * 1 /*depth*/ * 4 /*bytes per pixel*/;

@@ -67,6 +67,131 @@ std::vector<const Zenith_Vulkan_CommandBuffer*> Zenith_Vulkan::s_xPendingCommand
 Zenith_Vulkan_CommandBuffer g_xCommandBuffer;
 
 DEBUGVAR bool dbg_bSubmitDrawCalls = true;
+
+// Transition color targets to ColorAttachmentOptimal and ensure depth is in ReadOnlyOptimal before render pass
+static void TransitionColorTargets(Zenith_Vulkan_CommandBuffer& xCommandBuffer, const Flux_TargetSetup& xTargetSetup,
+	vk::ImageLayout eOldLayout, vk::ImageLayout eNewLayout, vk::AccessFlags eAccessMask,
+	vk::PipelineStageFlags eSrcStage, vk::PipelineStageFlags eDstStage)
+{
+	vk::ImageMemoryBarrier axBarriers[FLUX_MAX_TARGETS];
+	uint32_t uNumBarriers = 0;
+
+	for (uint32_t i = 0; i < FLUX_MAX_TARGETS; i++)
+	{
+		if (xTargetSetup.m_axColourAttachments[i].m_eFormat != TEXTURE_FORMAT_NONE)
+		{
+			Zenith_Vulkan_Texture* pxTexture = xTargetSetup.m_axColourAttachments[i].m_pxTargetTexture;
+			if (pxTexture && pxTexture->IsValid())
+			{
+				// Skip swapchain images (they use PresentSrcKHR layout)
+				if (pxTexture->GetAllocation() == VK_NULL_HANDLE)
+				{
+					continue;
+				}
+
+				vk::ImageSubresourceRange xSubRange = vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
+
+				axBarriers[uNumBarriers] = vk::ImageMemoryBarrier()
+					.setSubresourceRange(xSubRange)
+					.setImage(pxTexture->GetImage())
+					.setOldLayout(eOldLayout)
+					.setNewLayout(eNewLayout)
+					.setDstAccessMask(eAccessMask);
+
+				uNumBarriers++;
+			}
+		}
+		else
+		{
+			break;
+		}
+	}
+
+	if (uNumBarriers > 0)
+	{
+		xCommandBuffer.GetCurrentCmdBuffer().pipelineBarrier(
+			eSrcStage, eDstStage, vk::DependencyFlags(),
+			0, nullptr,
+			0, nullptr,
+			uNumBarriers, axBarriers
+		);
+	}
+}
+
+static void TransitionDepthStencilTarget(Zenith_Vulkan_CommandBuffer& xCommandBuffer, const Flux_TargetSetup& xTargetSetup,
+	vk::ImageLayout eOldLayout, vk::ImageLayout eNewLayout, vk::AccessFlags eSrcAccessMask, vk::AccessFlags eDstAccessMask,
+	vk::PipelineStageFlags eSrcStage, vk::PipelineStageFlags eDstStage)
+{
+	if (xTargetSetup.m_pxDepthStencil == nullptr)
+	{
+		return;
+	}
+
+	Zenith_Vulkan_Texture* pxDepthTexture = xTargetSetup.m_pxDepthStencil->m_pxTargetTexture;
+	if (!pxDepthTexture || !pxDepthTexture->IsValid())
+	{
+		return;
+	}
+
+	vk::ImageSubresourceRange xSubRange = vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eDepth, 0, 1, 0, 1);
+
+	vk::ImageMemoryBarrier xBarrier = vk::ImageMemoryBarrier()
+		.setSubresourceRange(xSubRange)
+		.setImage(pxDepthTexture->GetImage())
+		.setOldLayout(eOldLayout)
+		.setNewLayout(eNewLayout)
+		.setSrcAccessMask(eSrcAccessMask)
+		.setDstAccessMask(eDstAccessMask);
+
+	xCommandBuffer.GetCurrentCmdBuffer().pipelineBarrier(
+		eSrcStage, eDstStage, vk::DependencyFlags(),
+		0, nullptr,
+		0, nullptr,
+		1, &xBarrier
+	);
+}
+
+static void TransitionTargetsForRenderPass(Zenith_Vulkan_CommandBuffer& xCommandBuffer, const Flux_TargetSetup& xTargetSetup,
+	vk::PipelineStageFlags eSrcStage, vk::PipelineStageFlags eDstStage, bool bClear)
+{
+	// Transition color attachments to ColorAttachmentOptimal
+	vk::ImageLayout eOldLayout = bClear ? vk::ImageLayout::eUndefined : vk::ImageLayout::eShaderReadOnlyOptimal;
+	TransitionColorTargets(xCommandBuffer, xTargetSetup, eOldLayout, vk::ImageLayout::eColorAttachmentOptimal,
+		vk::AccessFlagBits::eColorAttachmentWrite, eSrcStage, eDstStage);
+
+	// Ensure depth is in DepthStencilReadOnlyOptimal to match render pass initial layout
+	// (Render pass handles ReadOnly->Attachment transition internally)
+	// Use DepthStencilReadOnlyOptimal for all formats (doesn't require separateDepthStencilLayouts feature)
+	if (!bClear)
+	{
+		TransitionDepthStencilTarget(xCommandBuffer, xTargetSetup,
+			vk::ImageLayout::eShaderReadOnlyOptimal,
+			vk::ImageLayout::eDepthStencilReadOnlyOptimal,
+			vk::AccessFlagBits::eShaderRead,
+			vk::AccessFlagBits::eDepthStencilAttachmentRead,
+			eSrcStage, eDstStage);
+	}
+}
+
+// Transition color targets back to ShaderReadOnlyOptimal after render pass
+// Also transition depth to DepthStencilReadOnlyOptimal for shader sampling
+static void TransitionTargetsAfterRenderPass(Zenith_Vulkan_CommandBuffer& xCommandBuffer, const Flux_TargetSetup& xTargetSetup,
+	vk::PipelineStageFlags eSrcStage, vk::PipelineStageFlags eDstStage)
+{
+	// Transition color attachments
+	TransitionColorTargets(xCommandBuffer, xTargetSetup, vk::ImageLayout::eColorAttachmentOptimal, 
+		vk::ImageLayout::eShaderReadOnlyOptimal, vk::AccessFlagBits::eShaderRead, eSrcStage, eDstStage);
+
+	// Transition depth from render pass final layout to shader read layout
+	// Use DepthStencilReadOnlyOptimal for all formats (doesn't require separateDepthStencilLayouts feature)
+	TransitionDepthStencilTarget(xCommandBuffer, xTargetSetup,
+		vk::ImageLayout::eDepthStencilReadOnlyOptimal,
+		vk::ImageLayout::eShaderReadOnlyOptimal,
+		vk::AccessFlagBits::eDepthStencilAttachmentRead,
+		vk::AccessFlagBits::eShaderRead,
+		eSrcStage, eDstStage);
+}
+
 const vk::DescriptorPool& Zenith_Vulkan::GetCurrentPerFrameDescriptorPool()
 {
 	//#TO_TODO: current thread
@@ -171,21 +296,68 @@ void Zenith_Vulkan::EndFrame()
 		for (Zenith_Vector<std::pair<const Flux_CommandList*, Flux_TargetSetup>>::Iterator xIt(Flux::s_xPendingCommandLists[i]); !xIt.Done(); xIt.Next())
 		{
 			const bool bClear = xIt.GetData().first->RequiresClear();
-			if (xIt.GetData().second != xCurrentTargetSetup || bClear || g_xCommandBuffer.m_xCurrentRenderPass == VK_NULL_HANDLE)
+			
+			// Check if this is a compute pass (null target setup)
+			const bool bIsComputePass = (xIt.GetData().second == Flux_Graphics::s_xNullTargetSetup);
+			
+			if (bIsComputePass)
+			{
+				// Execute compute commands without render pass
+				if (g_xCommandBuffer.m_xCurrentRenderPass != VK_NULL_HANDLE)
+				{
+					g_xCommandBuffer.EndRenderPass();
+					TransitionTargetsAfterRenderPass(
+						g_xCommandBuffer, 
+						xCurrentTargetSetup,
+						vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eLateFragmentTests,
+						vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eComputeShader
+					);
+					xCurrentTargetSetup = Flux_Graphics::s_xNullTargetSetup;
+				}
+				xIt.GetData().first->IterateCommands(&g_xCommandBuffer);
+			}
+			else if (xIt.GetData().second != xCurrentTargetSetup || bClear || g_xCommandBuffer.m_xCurrentRenderPass == VK_NULL_HANDLE)
 			{
 				if (g_xCommandBuffer.m_xCurrentRenderPass != VK_NULL_HANDLE)
 				{
 					g_xCommandBuffer.EndRenderPass();
+					TransitionTargetsAfterRenderPass(
+						g_xCommandBuffer, 
+						xCurrentTargetSetup,
+						vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eLateFragmentTests,
+						vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eComputeShader
+					);
 				}
 
+				TransitionTargetsForRenderPass(
+					g_xCommandBuffer, 
+					xIt.GetData().second,
+					vk::PipelineStageFlagBits::eFragmentShader,
+					vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eEarlyFragmentTests,
+					bClear
+				);
 				g_xCommandBuffer.BeginRenderPass(xIt.GetData().second, bClear, bClear, bClear);
 				xCurrentTargetSetup = xIt.GetData().second;
+				xIt.GetData().first->IterateCommands(&g_xCommandBuffer);
 			}
-			xIt.GetData().first->IterateCommands(&g_xCommandBuffer);
+			else
+			{
+				xIt.GetData().first->IterateCommands(&g_xCommandBuffer);
+			}
 		}
 	}
 
-	g_xCommandBuffer.EndRenderPass();
+	// Only end render pass and transition targets if we're not in a compute-only pass
+	if (!(xCurrentTargetSetup == Flux_Graphics::s_xNullTargetSetup))
+	{
+		g_xCommandBuffer.EndRenderPass();
+		TransitionTargetsAfterRenderPass(
+			g_xCommandBuffer, 
+			xCurrentTargetSetup,
+			vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eLateFragmentTests,
+			vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eComputeShader
+		);
+	}
 	g_xCommandBuffer.GetCurrentCmdBuffer().end();
 
 	vk::SubmitInfo xRenderSubmitInfo = vk::SubmitInfo()

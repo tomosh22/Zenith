@@ -245,36 +245,36 @@ void Zenith_Vulkan_MemoryManager::InitialiseDynamicConstantBuffer(const void* pD
 	}
 }
 
-void Zenith_Vulkan_MemoryManager::CreateColourAttachment(uint32_t uWidth, uint32_t uHeight, ColourFormat eFormat, uint32_t uBitsPerPixel, Zenith_Vulkan_Texture& xTextureOut)
+void Zenith_Vulkan_MemoryManager::CreateColourAttachment(const Flux_SurfaceInfo& xInfo, Zenith_Vulkan_Texture& xTextureOut)
 {
 	FreeTexture(&xTextureOut);
-	AllocateTexture(uWidth, uHeight, 1, eFormat, DEPTHSTENCIL_FORMAT_NONE, uBitsPerPixel, 1 /* #TO_TODO: mips */, vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled, MEMORY_RESIDENCY_GPU, xTextureOut);
+	AllocateTexture(xInfo, vk::ImageUsageFlagBits::eColorAttachment, MEMORY_RESIDENCY_GPU, xTextureOut);
 	ImageTransitionBarrier(xTextureOut.GetImage(), vk::ImageLayout::eUndefined, vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands);
 }
-void Zenith_Vulkan_MemoryManager::CreateDepthStencilAttachment(uint32_t uWidth, uint32_t uHeight, DepthStencilFormat eFormat, uint32_t uBitsPerPixel, Zenith_Vulkan_Texture& xTextureOut)
+void Zenith_Vulkan_MemoryManager::CreateDepthStencilAttachment(const Flux_SurfaceInfo& xInfo, Zenith_Vulkan_Texture& xTextureOut)
 {
 	FreeTexture(&xTextureOut);
-	AllocateTexture(uWidth, uHeight, 1, COLOUR_FORMAT_NONE, eFormat, uBitsPerPixel, 1, vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled, MEMORY_RESIDENCY_GPU, xTextureOut);
-	Zenith_Assert(eFormat == DEPTHSTENCIL_FORMAT_D32_SFLOAT, "#TO_TODO: layouts for just depth without stencil");
+	AllocateTexture(xInfo, vk::ImageUsageFlagBits::eDepthStencilAttachment, MEMORY_RESIDENCY_GPU, xTextureOut);
+	Zenith_Assert(xInfo.m_eFormat == TEXTURE_FORMAT_D32_SFLOAT, "#TO_TODO: layouts for just depth without stencil");
 	ImageTransitionBarrier(xTextureOut.GetImage(), vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthStencilReadOnlyOptimal, vk::ImageAspectFlagBits::eDepth, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands);
 }
 
-void Zenith_Vulkan_MemoryManager::CreateTexture(const void* pData, const uint32_t uWidth, const uint32_t uHeight, const uint32_t uDepth, ColourFormat eFormat, DepthStencilFormat eDepthStencilFormat, bool bCreateMips, Zenith_Vulkan_Texture& xTextureOut)
+void Zenith_Vulkan_MemoryManager::CreateTexture(const void* pData, Flux_SurfaceInfo xInfo, bool bCreateMips, Zenith_Vulkan_Texture& xTextureOut)
 {
-	Zenith_Assert(eFormat == COLOUR_FORMAT_NONE ^ eDepthStencilFormat == DEPTHSTENCIL_FORMAT_NONE, "Can't have both colour and d/s format");
 	FreeTexture(&xTextureOut);
-
-	uint32_t uNumMips = bCreateMips ? std::floor(std::log2(std::max(uWidth, uHeight))) + 1 : 1;
+	
+	//#TO_TODO: this should be done by from calling code, make xInfo const ref
+	xInfo.m_uNumMips = bCreateMips ? std::floor(std::log2(std::max(xInfo.m_uWidth, xInfo.m_uHeight))) + 1 : 1;
 
 	//#TO_TODO: other formats
-	AllocateTexture(uWidth, uHeight, 1, eFormat, DEPTHSTENCIL_FORMAT_NONE, ColourFormatBytesPerPixel(eFormat) /*bytes per pizel*/, uNumMips, vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eTransferSrc, MEMORY_RESIDENCY_GPU, xTextureOut);
-	xTextureOut.SetWidth(uWidth);
-	xTextureOut.SetHeight(uHeight);
-	xTextureOut.SetNumMips(uNumMips);
+	AllocateTexture(xInfo, vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eTransferSrc, MEMORY_RESIDENCY_GPU, xTextureOut);
+	xTextureOut.SetWidth(xInfo.m_uWidth);
+	xTextureOut.SetHeight(xInfo.m_uHeight);
+	xTextureOut.SetNumMips(xInfo.m_uNumMips);
 	xTextureOut.SetNumLayers(1);
 	if (pData)
 	{
-		UploadTextureData(xTextureOut, pData, ColourFormatBytesPerPixel(eFormat) * uWidth * uHeight * uDepth);
+		UploadTextureData(xTextureOut, pData, ColourFormatBytesPerPixel(xInfo.m_eFormat) * xInfo.m_uWidth * xInfo.m_uHeight * xInfo.m_uDepth);
 	}
 }
 
@@ -284,7 +284,7 @@ void Zenith_Vulkan_MemoryManager::CreateTexture(const char* szPath, Zenith_Vulka
 
 	size_t ulDataSize;
 	int32_t uWidth = 0, uHeight = 0, uDepth = 0;
-	ColourFormat eFormat;
+	TextureFormat eFormat;
 
 	Zenith_DataStream xStream;
 	xStream.ReadFromFile(szPath);
@@ -300,10 +300,17 @@ void Zenith_Vulkan_MemoryManager::CreateTexture(const char* szPath, Zenith_Vulka
 
 
 
-	uint32_t uNumMips = std::floor(std::log2(std::max(uWidth, uHeight))) + 1;
+	const uint32_t uNumMips = std::floor(std::log2(std::max(uWidth, uHeight))) + 1;
+
+	Flux_SurfaceInfo xInfo;
+	xInfo.m_uWidth = uWidth;
+	xInfo.m_uHeight = uHeight;
+	xInfo.m_uNumLayers = 1;
+	xInfo.m_eFormat = TEXTURE_FORMAT_RGBA8_UNORM;
+	xInfo.m_uNumMips = uNumMips;
 
 	//#TO_TODO: other formats
-	AllocateTexture(uWidth, uHeight, 1, COLOUR_FORMAT_RGBA8_UNORM, DEPTHSTENCIL_FORMAT_NONE, 4 /*bytes per pizel*/, uNumMips, vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eTransferSrc, MEMORY_RESIDENCY_GPU, xTextureOut);
+	AllocateTexture(xInfo, vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eTransferSrc, MEMORY_RESIDENCY_GPU, xTextureOut);
 	xTextureOut.SetWidth(uWidth);
 	xTextureOut.SetHeight(uHeight);
 	xTextureOut.SetNumMips(uNumMips);
@@ -349,7 +356,7 @@ void Zenith_Vulkan_MemoryManager::CreateTextureCube(const char* szPathPX, const 
 		const char* szPath = aszPaths[u];
 		void*& pData = apDatas[u];
 		size_t ulDataSize;
-		ColourFormat eFormat;
+		TextureFormat eFormat;
 
 		Zenith_DataStream xStream;
 		xStream.ReadFromFile(szPath);
@@ -371,8 +378,15 @@ void Zenith_Vulkan_MemoryManager::CreateTextureCube(const char* szPathPX, const 
 		uNumMips = std::floor(std::log2(std::max(uWidth, uHeight))) + 1;
 	}
 
+	Flux_SurfaceInfo xInfo;
+	xInfo.m_uWidth = uWidth;
+	xInfo.m_uHeight = uHeight;
+	xInfo.m_uNumLayers = 6;
+	xInfo.m_eFormat = TEXTURE_FORMAT_RGBA8_UNORM;
+	xInfo.m_uNumMips = uNumMips;
+
 	//#TO_TODO: other formats
-	AllocateTexture(uWidth, uHeight, 6, COLOUR_FORMAT_RGBA8_UNORM, DEPTHSTENCIL_FORMAT_NONE, 4 /*bytes per pizel*/, uNumMips, vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eTransferSrc, MEMORY_RESIDENCY_GPU, xTextureOut);
+	AllocateTexture(xInfo, vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eTransferSrc, MEMORY_RESIDENCY_GPU, xTextureOut);
 	xTextureOut.SetWidth(uWidth);
 	xTextureOut.SetHeight(uHeight);
 	xTextureOut.SetNumMips(uNumMips);
@@ -395,37 +409,30 @@ void Zenith_Vulkan_MemoryManager::CreateTextureCube(const char* szPathPX, const 
 	Zenith_MemoryManagement::Deallocate(pAllData);
 }
 
-void Zenith_Vulkan_MemoryManager::AllocateTexture(uint32_t uWidth, uint32_t uHeight, uint32_t uNumLayers, ColourFormat eColourFormat, DepthStencilFormat eDepthStencilFormat, uint32_t uBytesPerPixel, uint32_t uNumMips, vk::ImageUsageFlags eUsageFlags, MemoryResidency eResidency, Zenith_Vulkan_Texture& xTextureOut)
+void Zenith_Vulkan_MemoryManager::AllocateTexture(const Flux_SurfaceInfo& xInfo, vk::ImageUsageFlags eUsageFlags, MemoryResidency eResidency, Zenith_Vulkan_Texture& xTextureOut)
 {
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 
-	vk::Format xFormat;
-	bool bIsDepth;
-	if (eColourFormat != COLOUR_FORMAT_NONE)
-	{
-		Zenith_Assert(eDepthStencilFormat == DEPTHSTENCIL_FORMAT_NONE, "Can't have both colour and d/s format");
-		xFormat = Zenith_Vulkan_Texture::ConvertToVkFormat_Colour(eColourFormat);
-		bIsDepth = false;
-	}
-	else if (eDepthStencilFormat != DEPTHSTENCIL_FORMAT_NONE)
-	{
-		Zenith_Assert(eColourFormat == COLOUR_FORMAT_NONE, "Can't have both colour and d/s format");
-		xFormat = Zenith_Vulkan_Texture::ConvertToVkFormat_DepthStencil(eDepthStencilFormat);
-		bIsDepth = true;
-	}
+	
+	const bool bIsDepth = xInfo.m_eFormat > TEXTURE_FORMAT_DEPTH_STENCIL_BEGIN && xInfo.m_eFormat < TEXTURE_FORMAT_DEPTH_STENCIL_END;
+
+	const vk::Format xFormat = bIsDepth ? Zenith_Vulkan_Texture::ConvertToVkFormat_DepthStencil(xInfo.m_eFormat) : Zenith_Vulkan_Texture::ConvertToVkFormat_Colour(xInfo.m_eFormat);
+
+	if (xInfo.m_uMemoryFlags & 1 << MEMORY_FLAGS__SHADER_READ) eUsageFlags |= vk::ImageUsageFlagBits::eSampled;
+	if (xInfo.m_uMemoryFlags & 1 << MEMORY_FLAGS__UNORDERED_ACCESS) eUsageFlags |= vk::ImageUsageFlagBits::eStorage;
 
 	vk::ImageCreateInfo xImageInfo = vk::ImageCreateInfo()
 		.setImageType(vk::ImageType::e2D)
 		.setFormat(xFormat)
 		.setTiling(vk::ImageTiling::eOptimal)
-		.setExtent({ uWidth,uHeight,1 })
-		.setMipLevels(uNumMips)
-		.setArrayLayers(uNumLayers)
+		.setExtent({ xInfo.m_uWidth,xInfo.m_uHeight,1 })
+		.setMipLevels(xInfo.m_uNumMips)
+		.setArrayLayers(xInfo.m_uNumLayers)
 		.setInitialLayout(vk::ImageLayout::eUndefined)
 		.setUsage(eUsageFlags)
 		.setSharingMode(vk::SharingMode::eExclusive)
 		.setSamples(vk::SampleCountFlagBits::e1);
-	if (uNumLayers == 6)
+	if (xInfo.m_uNumLayers == 6)
 	{
 		xImageInfo = xImageInfo.setFlags(vk::ImageCreateFlagBits::eCubeCompatible);
 	}
@@ -447,15 +454,15 @@ void Zenith_Vulkan_MemoryManager::AllocateTexture(uint32_t uWidth, uint32_t uHei
 	vk::ImageSubresourceRange xSubresourceRange = vk::ImageSubresourceRange()
 		.setAspectMask(bIsDepth ? vk::ImageAspectFlagBits::eDepth : vk::ImageAspectFlagBits::eColor)
 		.setBaseMipLevel(0)
-		.setLevelCount(uNumMips)
+		.setLevelCount(xInfo.m_uNumMips)
 		.setBaseArrayLayer(0)
-		.setLayerCount(uNumLayers);
+		.setLayerCount(xInfo.m_uNumLayers);
 
 	const vk::Image& xImage = xTextureOut.GetImage();
 
 	vk::ImageViewCreateInfo xViewCreate = vk::ImageViewCreateInfo()
 		.setImage(xImage)
-		.setViewType(uNumLayers == 1 ? vk::ImageViewType::e2D : vk::ImageViewType::eCube)
+		.setViewType(xInfo.m_uNumLayers == 1 ? vk::ImageViewType::e2D : vk::ImageViewType::eCube)
 		.setFormat(xFormat)
 		.setSubresourceRange(xSubresourceRange);
 

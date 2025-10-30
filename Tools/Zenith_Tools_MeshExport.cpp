@@ -312,7 +312,7 @@ static void ExportMaterialTextures(const aiMaterial* pxMat, const aiScene* pxSce
 		strExportFile += std::string("_") + std::to_string(uIndex);
 		strExportFile += ".ztx";
 
-		ColourFormat eFormat = COLOUR_FORMAT_RGBA8_UNORM;
+		TextureFormat eFormat = TEXTURE_FORMAT_RGBA8_UNORM;
 		Zenith_Tools_TextureExport::ExportFromData(pData, strExportFile, iWidth, iHeight, eFormat);
 		stbi_image_free(pData);
 	}

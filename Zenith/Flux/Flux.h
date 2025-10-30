@@ -6,8 +6,7 @@
 #include "Flux/Flux_CommandList.h"
 
 struct Flux_RenderAttachment {
-	ColourFormat m_eColourFormat = COLOUR_FORMAT_NONE;
-	DepthStencilFormat m_eDepthStencilFormat = DEPTHSTENCIL_FORMAT_NONE;
+	TextureFormat m_eFormat = TEXTURE_FORMAT_NONE;
 
 	uint32_t m_uWidth = 0;
 	uint32_t m_uHeight = 0;
@@ -16,15 +15,28 @@ struct Flux_RenderAttachment {
 	Flux_Texture* m_pxTargetTexture = nullptr;
 };
 
+struct Flux_SurfaceInfo
+{
+	TextureFormat m_eFormat = TEXTURE_FORMAT_NONE;
+	u_int m_uWidth = 0;
+	u_int m_uHeight = 0;
+	u_int m_uDepth = 0;
+	u_int m_uNumMips = 0;
+	u_int m_uNumLayers = 0;
+	u_int m_uMemoryFlags = MEMORY_FLAGS__NONE;
+};
+
 class Flux_RenderAttachmentBuilder {
 public:
 	Flux_RenderAttachmentBuilder() = default;
-	ColourFormat m_eColourFormat = COLOUR_FORMAT_NONE;
-	DepthStencilFormat m_eDepthStencilFormat = DEPTHSTENCIL_FORMAT_NONE;
+	TextureFormat m_eFormat = TEXTURE_FORMAT_NONE;
+	u_int m_uMemoryFlags = MEMORY_FLAGS__NONE;
+
 	uint32_t m_uWidth;
 	uint32_t m_uHeight;
 
-	void Build(Flux_RenderAttachment& xAttachment, RenderTargetType eType, const std::string& strName);
+	void BuildColour(Flux_RenderAttachment& xAttachment, const std::string& strName);
+	void BuildDepthStencil(Flux_RenderAttachment& xAttachment, const std::string& strName);
 };
 
 struct Flux_TargetSetup {
@@ -99,7 +111,7 @@ struct Flux_PipelineSpecification
 	bool m_bDepthTestEnabled = true;
 	bool m_bDepthWriteEnabled = true;
 	DepthCompareFunc m_eDepthCompareFunc = DEPTH_COMPARE_FUNC_LESSEQUAL;
-	DepthStencilFormat m_eDepthStencilFormat;
+	TextureFormat m_eDepthStencilFormat;
 	bool m_bUsePushConstants = true;
 	bool m_bUseTesselation = false;
 

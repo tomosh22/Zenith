@@ -14,6 +14,7 @@
 #include "Flux/Particles/Flux_Particles.h"
 #include "Flux/Text/Flux_Text.h"
 #include "Flux/Quads/Flux_Quads.h"
+#include "Flux/ComputeTest/Flux_ComputeTest.h"
 
 uint32_t Flux::s_uFrameCounter = 0;
 std::vector<void(*)()> Flux::s_xResChangeCallbacks;
@@ -45,6 +46,7 @@ void Flux::LateInitialise()
 	Flux_Particles::Initialise();
 	Flux_Quads::Initialise();
 	Flux_Text::Initialise();
+	Flux_ComputeTest::Initialise();
 	Flux_MemoryManager::EndFrame(false);
 }
 

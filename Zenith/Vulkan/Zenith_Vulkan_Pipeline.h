@@ -21,6 +21,7 @@ public:
 	Zenith_Vulkan_Shader() = default;
 
 	void Initialise(const std::string& strVertex, const std::string& strFragment, const std::string& strGeometry = "", const std::string& strDomain = "", const std::string& strHull = "");
+	void InitialiseCompute(const std::string& strCompute);
 	~Zenith_Vulkan_Shader();
 
 	//credit Rich Davison
@@ -37,16 +38,19 @@ public:
 	char* m_pcFragShaderCode = nullptr;
 	char* m_pcTescShaderCode = nullptr;
 	char* m_pcTeseShaderCode = nullptr;
+	char* m_pcCompShaderCode = nullptr;
 
 	uint64_t m_pcVertShaderCodeSize = 0;
 	uint64_t m_pcFragShaderCodeSize = 0;
 	uint64_t m_pcTescShaderCodeSize = 0;
 	uint64_t m_pcTeseShaderCodeSize = 0;
+	uint64_t m_pcCompShaderCodeSize = 0;
 
 	vk::ShaderModule m_xVertShaderModule;
 	vk::ShaderModule m_xFragShaderModule;
 	vk::ShaderModule m_xTescShaderModule;
 	vk::ShaderModule m_xTeseShaderModule;
+	vk::ShaderModule m_xCompShaderModule;
 };
 
 class Zenith_Vulkan_RootSig
@@ -54,6 +58,7 @@ class Zenith_Vulkan_RootSig
 public:
 	vk::PipelineLayout m_xLayout;
 	vk::DescriptorSetLayout m_axDescSetLayouts[FLUX_MAX_DESCRIPTOR_BINDINGS];
+	DescriptorType m_axDescriptorTypes[FLUX_MAX_DESCRIPTOR_BINDINGS][FLUX_MAX_DESCRIPTOR_BINDINGS];
 	u_int m_uNumDescriptorSets = -1;
 };
 
@@ -132,10 +137,25 @@ protected:
 	std::vector< vk::DescriptorSetLayout> m_xAllLayouts;
 	std::vector< vk::PushConstantRange> m_xAllPushConstants;
 
-	std::vector<ColourFormat> m_xAllColourRenderingFormats;
+	std::vector<TextureFormat> m_xAllColourRenderingFormats;
 	vk::Format m_xDepthRenderingFormat;
 	vk::Format m_xStencilRenderingFormat;
 
 	bool m_bUseTesselation;
 	vk::PipelineTessellationStateCreateInfo m_xTesselationCreate;
+};
+
+class Zenith_Vulkan_ComputePipelineBuilder
+{
+public:
+	Zenith_Vulkan_ComputePipelineBuilder();
+	
+	Zenith_Vulkan_ComputePipelineBuilder& WithShader(const Zenith_Vulkan_Shader& shader);
+	Zenith_Vulkan_ComputePipelineBuilder& WithLayout(vk::PipelineLayout layout);
+	
+	void Build(Zenith_Vulkan_Pipeline& pipelineOut);
+	
+private:
+	const Zenith_Vulkan_Shader* m_pxShader = nullptr;
+	vk::PipelineLayout m_xLayout;
 };

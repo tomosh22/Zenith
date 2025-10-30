@@ -14,6 +14,7 @@
 Flux_TargetSetup Flux_Graphics::s_xMRTTarget;
 Flux_TargetSetup Flux_Graphics::s_xFinalRenderTarget;
 Flux_TargetSetup Flux_Graphics::s_xFinalRenderTarget_NoDepth;
+Flux_TargetSetup Flux_Graphics::s_xNullTargetSetup;  // For compute passes without render targets
 Flux_RenderAttachment Flux_Graphics::s_xDepthBuffer;
 Flux_Sampler Flux_Graphics::s_xRepeatSampler;
 Flux_Sampler Flux_Graphics::s_xClampSampler;
@@ -26,11 +27,11 @@ Flux_Material* Flux_Graphics::s_pxBlankMaterial;
 Flux_Graphics::FrameConstants Flux_Graphics::s_xFrameConstants;
 Flux_DescriptorSetLayout Flux_Graphics::s_xFrameConstantsLayout;
 
-ColourFormat Flux_Graphics::s_aeMRTFormats[MRT_INDEX_COUNT]
+TextureFormat Flux_Graphics::s_aeMRTFormats[MRT_INDEX_COUNT]
 {
-	COLOUR_FORMAT_RGBA8_UNORM, //MRT_INDEX_DIFFUSE
-	COLOUR_FORMAT_R16G16B16A16_SFLOAT, //MRT_INDEX_NORMALSAMBIENT
-	COLOUR_FORMAT_RGBA8_UNORM, //MRT_INDEX_MATERIAL
+	TEXTURE_FORMAT_RGBA8_UNORM, //MRT_INDEX_DIFFUSE
+	TEXTURE_FORMAT_R16G16B16A16_SFLOAT, //MRT_INDEX_NORMALSAMBIENT
+	TEXTURE_FORMAT_RGBA8_UNORM, //MRT_INDEX_MATERIAL
 };
 
 DEBUGVAR Zenith_Maths::Vector3 dbg_SunDir = { 0.1,-1.0, 0.1 };
@@ -47,11 +48,21 @@ void Flux_Graphics::Initialise()
 	Flux_Sampler::InitialiseRepeat(s_xRepeatSampler);
 	Flux_Sampler::InitialiseClamp(s_xClampSampler);
 
+	Flux_SurfaceInfo xTexInfo;
+	xTexInfo.m_eFormat = TEXTURE_FORMAT_RGBA8_UNORM;
+	xTexInfo.m_uWidth = 1;
+	xTexInfo.m_uHeight = 1;
+	xTexInfo.m_uDepth = 1;
+	xTexInfo.m_uNumMips = 1;
+	xTexInfo.m_uNumLayers = 1;
+	xTexInfo.m_uMemoryFlags = 1 << MEMORY_FLAGS__SHADER_READ;
+
 	u_int8 aucWhiteBlankTexData[] = { 255,255,255,255 };
-	s_pxWhiteBlankTexture2D = Zenith_AssetHandler::AddTexture2D("Flux Graphics White Blank Texture", aucWhiteBlankTexData, 1, 1, 1, COLOUR_FORMAT_RGBA8_UNORM, DEPTHSTENCIL_FORMAT_NONE, false);
+
+	s_pxWhiteBlankTexture2D = Zenith_AssetHandler::AddTexture2D("Flux Graphics White Blank Texture", aucWhiteBlankTexData, xTexInfo, false);
 
 	u_int8 aucBlackBlankTexData[] = { 0,0,0,0 };
-	s_pxBlackBlankTexture2D = Zenith_AssetHandler::AddTexture2D("Flux Graphics Black Blank Texture", aucBlackBlankTexData, 1, 1, 1, COLOUR_FORMAT_RGBA8_UNORM, DEPTHSTENCIL_FORMAT_NONE, false);
+	s_pxBlackBlankTexture2D = Zenith_AssetHandler::AddTexture2D("Flux Graphics Black Blank Texture", aucBlackBlankTexData, xTexInfo, false);
 
 	s_pxBlankMaterial = &Zenith_AssetHandler::AddMaterial("BlankMaterial");
 
@@ -86,24 +97,25 @@ void Flux_Graphics::InitialiseRenderTargets()
 	Flux_RenderAttachmentBuilder xBuilder;
 	xBuilder.m_uWidth = Flux_Swapchain::GetWidth();
 	xBuilder.m_uHeight = Flux_Swapchain::GetHeight();
+	xBuilder.m_uMemoryFlags = 1u << MEMORY_FLAGS__SHADER_READ;
 
-	xBuilder.m_eDepthStencilFormat = DEPTHSTENCIL_FORMAT_D32_SFLOAT;
-	xBuilder.Build(s_xDepthBuffer, RENDER_TARGET_TYPE_DEPTHSTENCIL, "Flux Graphics Depth Buffer");
+	xBuilder.m_eFormat = TEXTURE_FORMAT_D32_SFLOAT;
+	xBuilder.BuildDepthStencil(s_xDepthBuffer, "Flux Graphics Depth Buffer");
 	Zenith_Log("Depth Buffer: %p", s_xDepthBuffer.m_pxTargetTexture->GetImage());
 
 	{
 		for (uint32_t u = 0; u < MRT_INDEX_COUNT; u++)
 		{
-			xBuilder.m_eColourFormat = s_aeMRTFormats[u];
-			xBuilder.Build(s_xMRTTarget.m_axColourAttachments[u], RENDER_TARGET_TYPE_COLOUR, "Flux Graphics MRT " + std::to_string(u));
+			xBuilder.m_eFormat = s_aeMRTFormats[u];
+			xBuilder.BuildColour(s_xMRTTarget.m_axColourAttachments[u], "Flux Graphics MRT " + std::to_string(u));
 		}
 
 		s_xMRTTarget.AssignDepthStencil(&s_xDepthBuffer);
 	}
 
 	{
-		xBuilder.m_eColourFormat = COLOUR_FORMAT_R16G16B16A16_UNORM;
-		xBuilder.Build(s_xFinalRenderTarget.m_axColourAttachments[0], RENDER_TARGET_TYPE_COLOUR, "Flux Graphics Final Render Target");
+		xBuilder.m_eFormat = TEXTURE_FORMAT_R16G16B16A16_UNORM;
+		xBuilder.BuildColour(s_xFinalRenderTarget.m_axColourAttachments[0], "Flux Graphics Final Render Target");
 
 		s_xFinalRenderTarget.AssignDepthStencil(&s_xDepthBuffer);
 

@@ -18,6 +18,7 @@
 #include "Flux/Shadows/Flux_Shadows.h"
 #include "Flux/Particles/Flux_Particles.h"
 #include "Flux/Text/Flux_Text.h"
+#include "Flux/ComputeTest/Flux_ComputeTest.h"
 #include "Input/Zenith_Input.h"
 #include "Physics/Zenith_Physics.h"
 #include "Profiling/Zenith_Profiling.h"
@@ -97,6 +98,7 @@ void RenderImGui()
 
 static void SubmitRenderTasks()
 {
+	Flux_ComputeTest::Run();  // Run compute test synchronously before other render tasks
 	Flux_Shadows::SubmitRenderTask();
 	Flux_Skybox::SubmitRenderTask();
 	Flux_StaticMeshes::SubmitRenderToGBufferTask();

@@ -234,7 +234,7 @@ void Zenith_Vulkan_Swapchain::Initialise()
 		s_axTargetSetups[u].m_axColourAttachments[0].m_uWidth = xExtent.width;
 		s_axTargetSetups[u].m_axColourAttachments[0].m_uHeight = xExtent.height;
 		//#TO_TODO: stop hardcoding swapchain colour format
-		s_axTargetSetups[u].m_axColourAttachments[0].m_eColourFormat = COLOUR_FORMAT_BGRA8_SRGB;
+		s_axTargetSetups[u].m_axColourAttachments[0].m_eFormat = TEXTURE_FORMAT_BGRA8_SRGB;
 		s_axTargetSetups[u].m_axColourAttachments[0].m_pxTargetTexture->SetFormat(xSurfaceFormat.format);
 	}
 	
