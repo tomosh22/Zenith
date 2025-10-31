@@ -555,21 +555,13 @@ vk::RenderPass Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(Flux_TargetSetup&
 		xSubpass.setPDepthStencilAttachment(&xDepthStencilAttachmentRef);
 	}
 
-	vk::SubpassDependency xDependency = vk::SubpassDependency()
-		.setSrcSubpass(VK_SUBPASS_EXTERNAL)
-		.setDstSubpass(0)
-		.setSrcStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eEarlyFragmentTests)
-		.setSrcAccessMask(vk::AccessFlagBits::eNone)
-		.setDstStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eEarlyFragmentTests)
-		.setDstAccessMask(vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eDepthStencilAttachmentWrite);
-
 	vk::RenderPassCreateInfo xRenderPassInfo = vk::RenderPassCreateInfo()
 		.setAttachmentCount(xAttachmentDescs.size())
 		.setPAttachments(xAttachmentDescs.data())
 		.setSubpassCount(1)
 		.setPSubpasses(&xSubpass)
-		.setDependencyCount(1)
-		.setPDependencies(&xDependency);
+		.setDependencyCount(0)
+		.setPDependencies(nullptr);
 
 	return Zenith_Vulkan::GetDevice().createRenderPass(xRenderPassInfo);
 }

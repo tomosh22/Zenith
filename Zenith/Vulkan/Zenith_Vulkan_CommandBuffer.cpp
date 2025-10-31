@@ -128,12 +128,6 @@ void Zenith_Vulkan_CommandBuffer::SetIndexBuffer(const Flux_IndexBuffer& xIndexB
 
 void Zenith_Vulkan_CommandBuffer::TransitionComputeResourcesBefore()
 {
-	// Only apply automatic barriers for compute pipelines
-	if (m_eCurrentBindPoint != vk::PipelineBindPoint::eCompute)
-	{
-		return;
-	}
-
 	// Transition all storage images from ShaderReadOnlyOptimal to General layout
 	std::vector<vk::ImageMemoryBarrier> axBarriers;
 
@@ -236,9 +230,6 @@ void Zenith_Vulkan_CommandBuffer::TransitionComputeResourcesAfter()
 
 void Zenith_Vulkan_CommandBuffer::PrepareDrawCallDescriptors()
 {
-	// Transition compute resources to the correct layout before binding
-	TransitionComputeResourcesBefore();
-
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 	for (u_int uDescSet = 0; uDescSet < m_pxCurrentPipeline->m_xRootSig.m_uNumDescriptorSets; uDescSet++)
 	{
@@ -672,6 +663,8 @@ void Zenith_Vulkan_CommandBuffer::BindStorageImage(Zenith_Vulkan_Texture* pxText
 
 void Zenith_Vulkan_CommandBuffer::Dispatch(uint32_t uGroupCountX, uint32_t uGroupCountY, uint32_t uGroupCountZ)
 {
+	// Transition compute resources to the correct layout before binding
+	TransitionComputeResourcesBefore();
 	PrepareDrawCallDescriptors();
 	m_xCurrentCmdBuffer.dispatch(uGroupCountX, uGroupCountY, uGroupCountZ);
 	TransitionComputeResourcesAfter();
