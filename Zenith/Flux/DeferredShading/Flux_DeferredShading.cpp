@@ -85,15 +85,16 @@ void Flux_DeferredShading::Render(void*)
 
 	g_xCommandList.AddCommand<Flux_CommandBeginBind>(0);
 	g_xCommandList.AddCommand<Flux_CommandBindBuffer>(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer(), 0);
-	g_xCommandList.AddCommand<Flux_CommandBindTexture>(&Flux_Graphics::GetGBufferTexture(MRT_INDEX_DIFFUSE), 5);
-	g_xCommandList.AddCommand<Flux_CommandBindTexture>(&Flux_Graphics::GetGBufferTexture(MRT_INDEX_NORMALSAMBIENT), 6);
-	g_xCommandList.AddCommand<Flux_CommandBindTexture>(&Flux_Graphics::GetGBufferTexture(MRT_INDEX_MATERIAL), 7);
-	g_xCommandList.AddCommand<Flux_CommandBindTexture>(&Flux_Graphics::GetDepthStencilTexture(), 8);
+	g_xCommandList.AddCommand<Flux_CommandBindSRV>(Flux_Graphics::GetGBufferSRV(MRT_INDEX_DIFFUSE), 5);
+	g_xCommandList.AddCommand<Flux_CommandBindSRV>(Flux_Graphics::GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT), 6);
+	g_xCommandList.AddCommand<Flux_CommandBindSRV>(Flux_Graphics::GetGBufferSRV(MRT_INDEX_MATERIAL), 7);
+	g_xCommandList.AddCommand<Flux_CommandBindSRV>(Flux_Graphics::GetDepthStencilSRV(), 8);
 
 	constexpr uint32_t uFirstShadowTexBind = 9;
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
-		g_xCommandList.AddCommand<Flux_CommandBindTexture>(&Flux_Shadows::GetCSMTexture(u), uFirstShadowTexBind + u, &Flux_Graphics::s_xClampSampler);
+		Flux_ShaderResourceView* pxSRV = Flux_Shadows::GetCSMSRV(u);
+		g_xCommandList.AddCommand<Flux_CommandBindSRV>(pxSRV, uFirstShadowTexBind + u, &Flux_Graphics::s_xClampSampler);
 	}
 	constexpr uint32_t uFirstShadowBufferBind = 1;
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)

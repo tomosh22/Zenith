@@ -37,6 +37,12 @@ public:
 	static const Zenith_Maths::Vector3& GetCameraPosition();
 	static Flux_Texture& GetGBufferTexture(MRTIndex eIndex);
 	static Flux_Texture& GetDepthStencilTexture();
+	
+	// View accessors for resource binding
+	static Flux_ShaderResourceView* GetGBufferSRV(MRTIndex eIndex);
+	static Flux_ShaderResourceView* GetDepthStencilSRV();
+	static Flux_RenderTargetView* GetGBufferRTV(MRTIndex eIndex);
+	static Flux_DepthStencilView* GetDepthStencilDSV();
 
 	static Zenith_Maths::Matrix4 GetViewProjMatrix() { return s_xFrameConstants.m_xViewProjMat; }
 	static Zenith_Maths::Matrix4 GetInvViewProjMatrix() { return s_xFrameConstants.m_xInvViewProjMat; }

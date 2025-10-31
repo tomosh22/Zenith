@@ -146,6 +146,11 @@ Flux_Texture& Flux_Shadows::GetCSMTexture(const uint32_t u)
 	return dbg_bEnabled ? *g_axCSMs[u].m_pxTargetTexture : *Flux_Graphics::s_pxWhiteBlankTexture2D;
 }
 
+Flux_ShaderResourceView* Flux_Shadows::GetCSMSRV(const uint32_t u)
+{
+	return dbg_bEnabled ? g_axCSMs[u].m_pxSRV : nullptr;
+}
+
 Flux_DynamicConstantBuffer& Flux_Shadows::GetShadowMatrixBuffer(const uint32_t u)
 {
 	return g_xShadowMatrixBuffers[u];

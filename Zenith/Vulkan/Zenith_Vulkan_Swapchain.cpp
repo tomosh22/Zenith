@@ -236,6 +236,15 @@ void Zenith_Vulkan_Swapchain::Initialise()
 		//#TO_TODO: stop hardcoding swapchain colour format
 		s_axTargetSetups[u].m_axColourAttachments[0].m_eFormat = TEXTURE_FORMAT_BGRA8_SRGB;
 		s_axTargetSetups[u].m_axColourAttachments[0].m_pxTargetTexture->SetFormat(xSurfaceFormat.format);
+		
+		// Create views for swapchain images
+		s_axTargetSetups[u].m_axColourAttachments[0].m_pxSRV = new Flux_ShaderResourceView();
+		s_axTargetSetups[u].m_axColourAttachments[0].m_pxSRV->m_pxTexture = s_axTargetSetups[u].m_axColourAttachments[0].m_pxTargetTexture;
+		s_axTargetSetups[u].m_axColourAttachments[0].m_pxSRV->m_eViewType = VIEW_TYPE_SRV;
+		
+		s_axTargetSetups[u].m_axColourAttachments[0].m_pxRTV = new Flux_RenderTargetView();
+		s_axTargetSetups[u].m_axColourAttachments[0].m_pxRTV->m_pxTexture = s_axTargetSetups[u].m_axColourAttachments[0].m_pxTargetTexture;
+		s_axTargetSetups[u].m_axColourAttachments[0].m_pxRTV->m_eViewType = VIEW_TYPE_RTV;
 	}
 	
 
@@ -353,12 +362,23 @@ void Zenith_Vulkan_Swapchain::EndFrame()
 #ifdef ZENITH_DEBUG_VARIABLES
 	if (dbg_bOutputMRT)
 	{
+		// When debugging, bind the MRT texture directly (uses legacy BindTexture for now)
 		s_xCopyToFramebufferCmd.BindTexture(&Flux_Graphics::GetGBufferTexture((MRTIndex)dbg_uMRTIndex), 0);
 	}
 	else
 #endif
 	{
-		s_xCopyToFramebufferCmd.BindTexture(Flux_Graphics::s_xFinalRenderTarget.m_axColourAttachments[0].m_pxTargetTexture, 0);
+		// Bind final render target using SRV
+		Flux_ShaderResourceView* pxSRV = Flux_Graphics::s_xFinalRenderTarget.m_axColourAttachments[0].m_pxSRV;
+		if (pxSRV)
+		{
+			s_xCopyToFramebufferCmd.BindSRV(pxSRV, 0);
+		}
+		else
+		{
+			// Fallback if SRV not created
+			s_xCopyToFramebufferCmd.BindTexture(Flux_Graphics::s_xFinalRenderTarget.m_axColourAttachments[0].m_pxTargetTexture, 0);
+		}
 	}
 
 	s_xCopyToFramebufferCmd.DrawIndexed(6);

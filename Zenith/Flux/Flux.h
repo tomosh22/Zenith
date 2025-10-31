@@ -5,14 +5,41 @@
 #include "Flux/Flux_Enums.h"
 #include "Flux/Flux_CommandList.h"
 
+// View structures for Direct3D-style resource views
+struct Flux_ShaderResourceView {
+	Flux_Texture* m_pxTexture = nullptr;
+	ViewType m_eViewType = VIEW_TYPE_SRV;
+};
+
+struct Flux_UnorderedAccessView {
+	Flux_Texture* m_pxTexture = nullptr;
+	ViewType m_eViewType = VIEW_TYPE_UAV;
+};
+
+struct Flux_RenderTargetView {
+	Flux_Texture* m_pxTexture = nullptr;
+	ViewType m_eViewType = VIEW_TYPE_RTV;
+};
+
+struct Flux_DepthStencilView {
+	Flux_Texture* m_pxTexture = nullptr;
+	ViewType m_eViewType = VIEW_TYPE_DSV;
+};
+
 struct Flux_RenderAttachment {
 	TextureFormat m_eFormat = TEXTURE_FORMAT_NONE;
 
 	uint32_t m_uWidth = 0;
 	uint32_t m_uHeight = 0;
 
-	//one per frame in flight
+	// Physical texture resource
 	Flux_Texture* m_pxTargetTexture = nullptr;
+
+	// Views for different usage patterns
+	Flux_ShaderResourceView* m_pxSRV = nullptr;  // For reading in shaders
+	Flux_UnorderedAccessView* m_pxUAV = nullptr; // For compute shader read/write
+	Flux_RenderTargetView* m_pxRTV = nullptr;     // For rendering (color attachments)
+	Flux_DepthStencilView* m_pxDSV = nullptr;     // For depth/stencil attachments
 };
 
 struct Flux_SurfaceInfo

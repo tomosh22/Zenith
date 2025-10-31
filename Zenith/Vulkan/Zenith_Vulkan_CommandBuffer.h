@@ -14,10 +14,20 @@ class Flux_DynamicVertexBuffer;
 class Flux_IndexBuffer;
 class Zenith_Vulkan_Pipeline;
 struct Flux_TargetSetup;
+struct Flux_ShaderResourceView;
+struct Flux_UnorderedAccessView;
+struct Flux_RenderTargetView;
+struct Flux_DepthStencilView;
 
 struct DescSetBindings {
 	Zenith_Vulkan_Buffer* m_xBuffers[MAX_BINDINGS];
 	std::pair<Zenith_Vulkan_Texture*, Zenith_Vulkan_Sampler*> m_xTextures[MAX_BINDINGS];
+	
+	// Direct3D-style view bindings
+	Flux_ShaderResourceView* m_xSRVs[MAX_BINDINGS];
+	Flux_UnorderedAccessView* m_xUAVs[MAX_BINDINGS];
+	Flux_RenderTargetView* m_xRTVs[MAX_BINDINGS];
+	Flux_DepthStencilView* m_xDSVs[MAX_BINDINGS];
 };
 
 class Zenith_Vulkan_CommandBuffer
@@ -38,7 +48,16 @@ public:
 	void DrawIndexed(uint32_t uNumIndices, uint32_t uNumInstances = 1, uint32_t uVertexOffset = 0, uint32_t uIndexOffset = 0, uint32_t uInstanceOffset = 0);
 	void BeginRenderPass(Flux_TargetSetup& xTargetSetup, bool bClearColour = false, bool bClearDepth = false, bool bClearStencil = false);
 	void SetPipeline(Zenith_Vulkan_Pipeline* pxPipeline);
+	
+	// Legacy texture binding (deprecated - use view-specific methods)
 	void BindTexture(Zenith_Vulkan_Texture* pxTexture, uint32_t uBindPoint, Zenith_Vulkan_Sampler* pxSampler = nullptr);
+	
+	// Direct3D-style view binding methods
+	void BindSRV(Flux_ShaderResourceView* pxSRV, uint32_t uBindPoint, Zenith_Vulkan_Sampler* pxSampler = nullptr);
+	void BindUAV(Flux_UnorderedAccessView* pxUAV, uint32_t uBindPoint);
+	void BindRTV(Flux_RenderTargetView* pxRTV, uint32_t uBindPoint);
+	void BindDSV(Flux_DepthStencilView* pxDSV, uint32_t uBindPoint);
+	
 	void BindBuffer(Zenith_Vulkan_Buffer* pxBuffer, uint32_t uBindPoint);
 	void BindAccelerationStruct(void* pxStruct, uint32_t uBindPoint);
 	void PushConstant(void* pData, size_t uSize);

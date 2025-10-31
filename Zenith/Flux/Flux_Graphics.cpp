@@ -165,6 +165,26 @@ Flux_Texture& Flux_Graphics::GetDepthStencilTexture()
 	return *s_xDepthBuffer.m_pxTargetTexture;
 }
 
+Flux_ShaderResourceView* Flux_Graphics::GetGBufferSRV(MRTIndex eIndex)
+{
+	return s_xMRTTarget.m_axColourAttachments[eIndex].m_pxSRV;
+}
+
+Flux_ShaderResourceView* Flux_Graphics::GetDepthStencilSRV()
+{
+	return s_xDepthBuffer.m_pxSRV;
+}
+
+Flux_RenderTargetView* Flux_Graphics::GetGBufferRTV(MRTIndex eIndex)
+{
+	return s_xMRTTarget.m_axColourAttachments[eIndex].m_pxRTV;
+}
+
+Flux_DepthStencilView* Flux_Graphics::GetDepthStencilDSV()
+{
+	return s_xDepthBuffer.m_pxDSV;
+}
+
 float Flux_Graphics::GetNearPlane()
 {
 	return Zenith_Scene::GetCurrentScene().GetMainCamera().GetNearPlane();
