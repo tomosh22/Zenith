@@ -57,8 +57,3 @@ void Flux::OnResChange()
 		pfnCallback();
 	}
 }
-
-void Flux::RegisterBindlessTexture(Flux_Texture* pxTex, uint32_t uIndex)
-{
-	Platform_RegisterBindlessTexture(pxTex, uIndex);
-}

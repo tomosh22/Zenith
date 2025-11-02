@@ -56,8 +56,7 @@ void Flux_ComputeTest::Initialise()
 	Zenith_Log("Flux_ComputeTest - Built compute pipeline");
 	
 #ifdef ZENITH_DEBUG_VARIABLES
-	//#TO_TODO: Update debug variables to work with VRAM handles instead of Flux_Texture
-	//Zenith_DebugVariables::AddTexture({ "Compute Test", "Output Texture" }, *g_xComputeOutput.m_pxTargetTexture);
+	Zenith_DebugVariables::AddTexture({ "Compute Test", "Output Texture" }, *g_xComputeOutput.m_pxSRV);
 #endif
 }
 

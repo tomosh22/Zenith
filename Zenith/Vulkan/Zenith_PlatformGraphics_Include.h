@@ -15,7 +15,6 @@
 #define Flux_Pipeline Zenith_Vulkan_Pipeline
 #define Flux_PipelineBuilder Zenith_Vulkan_PipelineBuilder
 #define Flux_Shader Zenith_Vulkan_Shader
-#define Flux_Texture Zenith_Vulkan_Texture
 #define Flux_Sampler Zenith_Vulkan_Sampler
 #define Flux_Buffer Zenith_Vulkan_Buffer
 #define Flux_RootSig Zenith_Vulkan_RootSig

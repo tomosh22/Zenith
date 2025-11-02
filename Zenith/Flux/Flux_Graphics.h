@@ -42,8 +42,6 @@ public:
 	static TextureFormat s_aeMRTFormats[MRT_INDEX_COUNT];
 
 	static const Zenith_Maths::Vector3& GetCameraPosition();
-	static Flux_Texture& GetGBufferTexture(MRTIndex eIndex);
-	static Flux_Texture& GetDepthStencilTexture();
 	
 	// View accessors for resource binding
 	static Flux_ShaderResourceView* GetGBufferSRV(MRTIndex eIndex);

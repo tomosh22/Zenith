@@ -2,7 +2,6 @@
 #include "AssetHandling/Zenith_AssetHandler.h"
 #include "Flux/Flux_Graphics.h"
 
-Flux_Texture* Zenith_AssetHandler::s_pxTextures = new Flux_Texture[ZENITH_MAX_TEXTURES];
 Flux_MeshGeometry* Zenith_AssetHandler::s_pxMeshes = new Flux_MeshGeometry[ZENITH_MAX_MESHES];
 Flux_Material* Zenith_AssetHandler::s_pxMaterials = new Flux_Material[ZENITH_MAX_MATERIALS];
 
@@ -14,15 +13,6 @@ std::unordered_set<Zenith_AssetHandler::AssetID>	Zenith_AssetHandler::s_xUsedMes
 
 std::unordered_map<std::string, Zenith_AssetHandler::AssetID> Zenith_AssetHandler::s_xMaterialNameMap;
 std::unordered_set<Zenith_AssetHandler::AssetID>	Zenith_AssetHandler::s_xUsedMaterialIDs;
-
-Flux_Texture* Zenith_AssetHandler::CreateDummyTexture(const std::string& strName)
-{
-	AssetID uID = GetNextFreeTextureSlot();
-	Flux_Texture& xTex = s_pxTextures[uID];
-	s_xTextureNameMap.insert({ strName, uID });
-	s_xUsedTextureIDs.insert(uID);
-	return &s_pxTextures[uID];
-}
 
 uint32_t Zenith_AssetHandler::CreateColourAttachment(const std::string& strName, const Flux_SurfaceInfo& xInfo)
 {
@@ -151,10 +141,7 @@ bool Zenith_AssetHandler::MaterialExists(const std::string& strName)
 
 void Zenith_AssetHandler::DeleteTexture(const std::string& strName)
 {
-	Zenith_Assert(s_xTextureNameMap.find(strName) != s_xTextureNameMap.end(), "Texture doesn't exist");
-	AssetID uID = s_xTextureNameMap.find(strName)->second;
-	s_pxTextures[uID].Reset();
-	s_xTextureNameMap.erase(strName);
+	STUBBED
 }
 
 void Zenith_AssetHandler::DeleteMesh(const std::string& strName)
@@ -171,19 +158,6 @@ void Zenith_AssetHandler::DeleteMaterial(const std::string& strName)
 	AssetID uID = s_xMaterialNameMap.find(strName)->second;
 	s_pxMaterials[uID].Reset();
 	s_xMaterialNameMap.erase(strName);
-}
-
-Zenith_AssetHandler::AssetID Zenith_AssetHandler::GetNextFreeTextureSlot()
-{
-	for (AssetID u = 0; u < ZENITH_MAX_TEXTURES; u++)
-	{
-		if (s_xUsedTextureIDs.find(u) == s_xUsedTextureIDs.end())
-		{
-			return u;
-		}
-	}
-	Zenith_Assert(false, "Run out of texture slots");
-	return -1;
 }
 
 Zenith_AssetHandler::AssetID Zenith_AssetHandler::GetNextFreeMeshSlot()

@@ -56,7 +56,7 @@ void Zenith_DebugVariableTree::LeafNodeWithRange<float, float>::ImGuiDisplay()
 }
 
 template<>
-void Zenith_DebugVariableTree::LeafNode<const Flux_Texture>::ImGuiDisplay()
+void Zenith_DebugVariableTree::LeafNode<const Flux_ShaderResourceView>::ImGuiDisplay()
 {
 	//#TO_TODO: need a platform independent way of handling this
 #ifdef ZENITH_VULKAN
@@ -82,7 +82,7 @@ void Zenith_DebugVariableTree::LeafNode<const Flux_Texture>::ImGuiDisplay()
 
 	vk::DescriptorImageInfo xImageInfo = vk::DescriptorImageInfo()
 		.setSampler(Flux_Graphics::s_xRepeatSampler.GetSampler())
-		.setImageView(m_pData->GetImageView())
+		.setImageView(m_pData->m_xImageView)
 		.setImageLayout(vk::ImageLayout::eShaderReadOnlyOptimal);
 
 	vk::WriteDescriptorSet xImageWriteInfo = vk::WriteDescriptorSet()

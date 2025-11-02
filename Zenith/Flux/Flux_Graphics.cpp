@@ -83,8 +83,7 @@ void Flux_Graphics::Initialise()
 	Zenith_DebugVariables::AddVector3({ "Render", "Sun Direction" }, dbg_SunDir, -1, 1.);
 	Zenith_DebugVariables::AddVector4({ "Render", "Sun Colour" }, dbg_SunColour, 0, 1.);
 
-	//#TO_TODO: Update debug variables to work with VRAM handles instead of Flux_Texture
-	//Zenith_DebugVariables::AddTexture({ "Render", "Debug", "MRT Diffuse" }, *s_xMRTTarget.m_axColourAttachments[MRT_INDEX_DIFFUSE].m_pxTargetTexture);
+	Zenith_DebugVariables::AddTexture({ "Render", "Debug", "MRT Diffuse" }, *s_xMRTTarget.m_axColourAttachments[MRT_INDEX_DIFFUSE].m_pxSRV);
 
 	Zenith_DebugVariables::AddBoolean({ "Render", "Quad Utilisation Analysis" }, dbg_bQuadUtilisationAnalysis);
 	Zenith_DebugVariables::AddUInt32({ "Render", "Target Pixels Per Tri" }, dbg_uTargetPixelsPerTri, 1, 32);
@@ -160,20 +159,6 @@ void Flux_Graphics::UploadFrameConstants()
 const Zenith_Maths::Vector3& Flux_Graphics::GetCameraPosition()
 {
 	return s_xFrameConstants.m_xCamPos_Pad;
-}
-
-Flux_Texture& Flux_Graphics::GetGBufferTexture(MRTIndex eIndex)
-{
-	Zenith_Assert(false, "GetGBufferTexture is deprecated - render attachments now use VRAM handles instead of Flux_Texture. Use GetGBufferSRV() to get the shader resource view.");
-	static Flux_Texture sDummy;
-	return sDummy;
-}
-
-Flux_Texture& Flux_Graphics::GetDepthStencilTexture()
-{
-	Zenith_Assert(false, "GetDepthStencilTexture is deprecated - render attachments now use VRAM handles instead of Flux_Texture. Use GetDepthStencilSRV() to get the shader resource view.");
-	static Flux_Texture sDummy;
-	return sDummy;
 }
 
 Flux_ShaderResourceView* Flux_Graphics::GetGBufferSRV(MRTIndex eIndex)

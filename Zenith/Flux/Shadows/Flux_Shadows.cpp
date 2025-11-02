@@ -76,8 +76,7 @@ void Flux_Shadows::Initialise()
 #ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_DebugVariables::AddBoolean({"Render", "Enable", "Shadows"}, dbg_bEnabled);
 	Zenith_DebugVariables::AddFloat({"Render", "Shadows", "Z Multiplier"}, dbg_fZMultiplier, -10.f, 10.f);
-	//#TO_TODO: Update debug variables to work with VRAM handles instead of Flux_Texture
-	//Zenith_DebugVariables::AddTexture({"Render", "Shadows", "CSM0" }, *g_axCSMs->m_pxTargetTexture);
+	Zenith_DebugVariables::AddTexture({"Render", "Shadows", "CSM0" }, *g_axCSMs->m_pxSRV);
 #endif
 }
 
@@ -140,13 +139,6 @@ Flux_TargetSetup& Flux_Shadows::GetCSMTargetSetup(const uint32_t uIndex)
 Zenith_Maths::Matrix4 Flux_Shadows::GetSunViewProjMatrix(const uint32_t uIndex)
 {
 	return g_axSunViewProjMats[uIndex];
-}
-
-Flux_Texture& Flux_Shadows::GetCSMTexture(const uint32_t u)
-{
-	Zenith_Assert(false, "GetCSMTexture is deprecated - render attachments now use VRAM handles instead of Flux_Texture. Use GetCSMSRV() to get the shader resource view.");
-	static Flux_Texture sDummy;
-	return sDummy;
 }
 
 Flux_ShaderResourceView* Flux_Shadows::GetCSMSRV(const uint32_t u)

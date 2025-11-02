@@ -17,7 +17,6 @@ public:
 	{
 	}
 
-	static Flux_Texture* CreateDummyTexture(const std::string& strName);
 	static uint32_t CreateColourAttachment(const std::string& strName, const Flux_SurfaceInfo& xInfo);
 	static uint32_t CreateDepthStencilAttachment(const std::string& strName, const Flux_SurfaceInfo& xInfo);
 	static uint32_t AddTexture2D(const std::string& strName, const void* pData, const Flux_SurfaceInfo& xInfo, bool bCreateMips);
@@ -44,9 +43,6 @@ public:
 	static void DeleteMaterial(const std::string& strName);
 
 private:
-	//array of length ZENITH_MAX_TEXTURES
-	static Flux_Texture* s_pxTextures;
-	static AssetID GetNextFreeTextureSlot();
 
 	//array of length ZENITH_MAX_MESHES
 	static Flux_MeshGeometry* s_pxMeshes;

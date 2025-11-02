@@ -210,24 +210,6 @@ vk::Fence& Zenith_Vulkan::GetCurrentInFlightFence()
 
 const bool Zenith_Vulkan::ShouldSubmitDrawCalls() { return dbg_bSubmitDrawCalls; }
 
-void Flux::Platform_RegisterBindlessTexture(Zenith_Vulkan_Texture* pxTex, uint32_t uIndex)
-{
-	vk::DescriptorImageInfo xInfo = vk::DescriptorImageInfo()
-		.setSampler(Flux_Graphics::s_xRepeatSampler.GetSampler())
-		.setImageView(pxTex->GetImageView())
-		.setImageLayout(vk::ImageLayout::eShaderReadOnlyOptimal);
-
-	vk::WriteDescriptorSet xWrite = vk::WriteDescriptorSet()
-		.setDescriptorCount(1)
-		.setDstArrayElement(uIndex)
-		.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
-		.setDstSet(Zenith_Vulkan::GetBindlessTexturesDescriptorSet())
-		.setDstBinding(0)
-		.setImageInfo(xInfo);
-
-	Zenith_Vulkan::GetDevice().updateDescriptorSets(1, &xWrite, 0, nullptr);
-}
-
 void Zenith_Vulkan::Initialise()
 {
 	CreateInstance();

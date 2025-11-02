@@ -24,7 +24,6 @@ enum Flux_CommandType
 
 	// Compute commands
 	FLUX_COMMANDTYPE__BIND_COMPUTE_PIPELINE,
-	FLUX_COMMANDTYPE__BIND_STORAGE_IMAGE,  // Deprecated - use BIND_UAV
 	FLUX_COMMANDTYPE__DISPATCH,
 
 	FLUX_COMMANDTYPE__COUNT,
@@ -307,23 +306,6 @@ public:
 	Flux_Pipeline* m_pxPipeline;
 };
 
-class Flux_CommandBindStorageImage
-{
-public:
-	static constexpr Flux_CommandType m_eType = FLUX_COMMANDTYPE__BIND_STORAGE_IMAGE;
-
-	Flux_CommandBindStorageImage(Flux_Texture* pxTexture, u_int uBindPoint)
-		: m_pxTexture(pxTexture)
-		, m_uBindPoint(uBindPoint)
-	{}
-	void operator()(Flux_CommandBuffer* pxCmdBuf)
-	{
-		pxCmdBuf->BindStorageImage(m_pxTexture, m_uBindPoint);
-	}
-	Flux_Texture* m_pxTexture;
-	u_int m_uBindPoint;
-};
-
 class Flux_CommandDispatch
 {
 public:
@@ -408,7 +390,6 @@ public:
 				HANDLE_COMMAND(FLUX_COMMANDTYPE__DRAW_INDEXED, Flux_CommandDrawIndexed);
 				
 				HANDLE_COMMAND(FLUX_COMMANDTYPE__BIND_COMPUTE_PIPELINE, Flux_CommandBindComputePipeline);
-				HANDLE_COMMAND(FLUX_COMMANDTYPE__BIND_STORAGE_IMAGE, Flux_CommandBindStorageImage);
 				HANDLE_COMMAND(FLUX_COMMANDTYPE__DISPATCH, Flux_CommandDispatch);
 				
 				default:

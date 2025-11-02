@@ -161,9 +161,9 @@ public:
 		Zenith_DebugVariableTree::PfnLeafNode* pxLeaf = new Zenith_DebugVariableTree::PfnLeafNode(xName, pfnCallback);
 		s_xTree.AddLeafNode(pxLeaf, xName);
 	}
-	static void AddTexture(std::vector<std::string> xName, const Flux_Texture& xTexture)
+	static void AddTexture(std::vector<std::string> xName, const Flux_ShaderResourceView& xTexture)
 	{
-		Zenith_DebugVariableTree::LeafNode<const Flux_Texture>* pxLeaf = new Zenith_DebugVariableTree::LeafNode(xName, &xTexture);
+		Zenith_DebugVariableTree::LeafNode<const Flux_ShaderResourceView>* pxLeaf = new Zenith_DebugVariableTree::LeafNode(xName, &xTexture);
 		s_xTree.AddLeafNode(pxLeaf, xName);
 	}
 	static void AddText(std::vector<std::string> xName, std::string& strText)
