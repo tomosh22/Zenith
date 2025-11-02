@@ -137,7 +137,7 @@ void Zenith_Vulkan_CommandBuffer::TransitionComputeResourcesBefore()
 		{
 			// Check if we have a UAV bound at this slot
 			Flux_UnorderedAccessView* pxUAV = m_xBindings[uDescSet].m_xUAVs[i];
-			if (!pxUAV || !pxUAV->m_pxTexture)
+			if (!pxUAV || !pxUAV->m_xImageView)
 			{
 				// Fallback to old storage image check for compatibility
 				Zenith_Vulkan_Texture* pxTex = m_xBindings[uDescSet].m_xTextures[i].first;
@@ -153,16 +153,8 @@ void Zenith_Vulkan_CommandBuffer::TransitionComputeResourcesBefore()
 				{
 					continue;
 				}
-			}
-			else
-			{
-				// We have a UAV, use its texture
-				Zenith_Vulkan_Texture* pxTex = pxUAV->m_pxTexture;
-				if (!pxTex->IsValid())
-				{
-					continue;
-				}
-
+				
+				// Fallback path for legacy storage images
 				vk::ImageSubresourceRange xSubRange = vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
 
 				vk::ImageMemoryBarrier xBarrier = vk::ImageMemoryBarrier()
@@ -176,20 +168,28 @@ void Zenith_Vulkan_CommandBuffer::TransitionComputeResourcesBefore()
 				axBarriers.push_back(xBarrier);
 				continue;
 			}
+			else
+			{
+				// We have a UAV, use its VRAM handle to get the image
+				Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(pxUAV->m_uVRAMHandle);
+				if (!pxVRAM)
+				{
+					continue;
+				}
 
-			// Fallback path for legacy storage images
-			Zenith_Vulkan_Texture* pxTex = m_xBindings[uDescSet].m_xTextures[i].first;
-			vk::ImageSubresourceRange xSubRange = vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
+				vk::ImageSubresourceRange xSubRange = vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
 
-			vk::ImageMemoryBarrier xBarrier = vk::ImageMemoryBarrier()
-				.setSubresourceRange(xSubRange)
-				.setImage(pxTex->GetImage())
-				.setOldLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
-				.setNewLayout(vk::ImageLayout::eGeneral)
-				.setSrcAccessMask(vk::AccessFlagBits::eShaderRead)
-				.setDstAccessMask(vk::AccessFlagBits::eShaderWrite | vk::AccessFlagBits::eShaderRead);
+				vk::ImageMemoryBarrier xBarrier = vk::ImageMemoryBarrier()
+					.setSubresourceRange(xSubRange)
+					.setImage(pxVRAM->GetImage())
+					.setOldLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
+					.setNewLayout(vk::ImageLayout::eGeneral)
+					.setSrcAccessMask(vk::AccessFlagBits::eShaderRead)
+					.setDstAccessMask(vk::AccessFlagBits::eShaderWrite | vk::AccessFlagBits::eShaderRead);
 
-			axBarriers.push_back(xBarrier);
+				axBarriers.push_back(xBarrier);
+				continue;
+			}
 		}
 	}
 
@@ -223,7 +223,7 @@ void Zenith_Vulkan_CommandBuffer::TransitionComputeResourcesAfter()
 		{
 			// Check if we have a UAV bound at this slot
 			Flux_UnorderedAccessView* pxUAV = m_xBindings[uDescSet].m_xUAVs[i];
-			if (!pxUAV || !pxUAV->m_pxTexture)
+			if (!pxUAV || !pxUAV->m_xImageView)
 			{
 				// Fallback to old storage image check for compatibility
 				Zenith_Vulkan_Texture* pxTex = m_xBindings[uDescSet].m_xTextures[i].first;
@@ -239,12 +239,26 @@ void Zenith_Vulkan_CommandBuffer::TransitionComputeResourcesAfter()
 				{
 					continue;
 				}
+				
+				// Fallback path for legacy storage images
+				vk::ImageSubresourceRange xSubRange = vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
+
+				vk::ImageMemoryBarrier xBarrier = vk::ImageMemoryBarrier()
+					.setSubresourceRange(xSubRange)
+					.setImage(pxTex->GetImage())
+					.setOldLayout(vk::ImageLayout::eGeneral)
+					.setNewLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
+					.setSrcAccessMask(vk::AccessFlagBits::eShaderWrite | vk::AccessFlagBits::eShaderRead)
+					.setDstAccessMask(vk::AccessFlagBits::eShaderRead);
+
+				axBarriers.push_back(xBarrier);
+				continue;
 			}
 			else
 			{
-				// We have a UAV, use its texture
-				Zenith_Vulkan_Texture* pxTex = pxUAV->m_pxTexture;
-				if (!pxTex->IsValid())
+				// We have a UAV, use its VRAM handle to get the image
+				Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(pxUAV->m_uVRAMHandle);
+				if (!pxVRAM)
 				{
 					continue;
 				}
@@ -253,7 +267,7 @@ void Zenith_Vulkan_CommandBuffer::TransitionComputeResourcesAfter()
 
 				vk::ImageMemoryBarrier xBarrier = vk::ImageMemoryBarrier()
 					.setSubresourceRange(xSubRange)
-					.setImage(pxTex->GetImage())
+					.setImage(pxVRAM->GetImage())
 					.setOldLayout(vk::ImageLayout::eGeneral)
 					.setNewLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
 					.setSrcAccessMask(vk::AccessFlagBits::eShaderWrite | vk::AccessFlagBits::eShaderRead)
@@ -296,7 +310,19 @@ void Zenith_Vulkan_CommandBuffer::PrepareDrawCallDescriptors()
 			uint32_t uNumTextures = 0;
 			for (uint32_t i = 0; i < MAX_BINDINGS; i++)
 			{
-				if (m_xBindings[uDescSet].m_xTextures[i].first != nullptr)
+				// Skip bindings that don't exist in the pipeline layout
+				if (m_pxCurrentPipeline->m_xRootSig.m_axDescriptorTypes[uDescSet][i] == DESCRIPTOR_TYPE_MAX)
+				{
+					continue;
+				}
+				
+				// Count textures from legacy bindings, SRV/UAV, or direct ImageView bindings
+				bool bHasTexture = (m_xBindings[uDescSet].m_xTextures[i].first != nullptr);
+				bool bHasSRV = (m_xBindings[uDescSet].m_xSRVs[i] != nullptr && m_xBindings[uDescSet].m_xSRVs[i]->m_xImageView);
+				bool bHasUAV = (m_xBindings[uDescSet].m_xUAVs[i] != nullptr && m_xBindings[uDescSet].m_xUAVs[i]->m_xImageView);
+				bool bHasImageView = (m_xBindings[uDescSet].m_xImageViews[i] != VK_NULL_HANDLE);
+				
+				if (bHasTexture || bHasSRV || bHasUAV || bHasImageView)
 				{
 					uNumTextures++;
 				}
@@ -305,6 +331,12 @@ void Zenith_Vulkan_CommandBuffer::PrepareDrawCallDescriptors()
 			uint32_t uNumBuffers = 0;
 			for (uint32_t i = 0; i < MAX_BINDINGS; i++)
 			{
+				// Skip bindings that don't exist in the pipeline layout
+				if (m_pxCurrentPipeline->m_xRootSig.m_axDescriptorTypes[uDescSet][i] == DESCRIPTOR_TYPE_MAX)
+				{
+					continue;
+				}
+				
 				if (m_xBindings[uDescSet].m_xBuffers[i] != nullptr)
 				{
 					uNumBuffers++;
@@ -316,21 +348,57 @@ void Zenith_Vulkan_CommandBuffer::PrepareDrawCallDescriptors()
 			uint32_t uCount = 0;
 			for (uint32_t i = 0; i < MAX_BINDINGS; i++)
 			{
-				Zenith_Vulkan_Texture* pxTex = m_xBindings[uDescSet].m_xTextures[i].first;
-				if (!pxTex)
+				// Skip bindings that don't exist in the pipeline layout
+				if (m_pxCurrentPipeline->m_xRootSig.m_axDescriptorTypes[uDescSet][i] == DESCRIPTOR_TYPE_MAX)
+				{
+					continue;
+				}
+				
+				// Check for UAV or SRV first
+				Flux_UnorderedAccessView* pxUAV = m_xBindings[uDescSet].m_xUAVs[i];
+				Flux_ShaderResourceView* pxSRV = m_xBindings[uDescSet].m_xSRVs[i];
+				vk::ImageView xDirectImageView = m_xBindings[uDescSet].m_xImageViews[i];
+				
+				vk::ImageView xImageView;
+				bool bIsStorageImage = false;
+				Zenith_Vulkan_Sampler* pxSampler = m_xBindings[uDescSet].m_xTextures[i].second;
+				
+				if (pxUAV && pxUAV->m_xImageView)
+				{
+					// Use UAV's ImageView
+					xImageView = pxUAV->m_xImageView;
+					bIsStorageImage = true;
+				}
+				else if (pxSRV && pxSRV->m_xImageView)
+				{
+					// Use SRV's ImageView
+					xImageView = pxSRV->m_xImageView;
+				}
+				else if (xDirectImageView)
+				{
+					// Use directly stored ImageView (from VRAM handle binding)
+					xImageView = xDirectImageView;
+				}
+				else
+				{
+					// Fallback to legacy texture binding
+					Zenith_Vulkan_Texture* pxTex = m_xBindings[uDescSet].m_xTextures[i].first;
+					if (!pxTex)
+					{
+						continue;
+					}
+					xImageView = pxTex->GetImageView();
+					// Check if this is a legacy storage image
+					bIsStorageImage = (m_pxCurrentPipeline->m_xRootSig.m_axDescriptorTypes[uDescSet][i] == DESCRIPTOR_TYPE_STORAGE_IMAGE);
+				}
+
+				if (!xImageView)
 				{
 					continue;
 				}
 
 				vk::ImageLayout eLayout;
 				vk::DescriptorType eDescType = vk::DescriptorType::eCombinedImageSampler;
-				
-				// Determine descriptor type based on view type
-				bool bIsUAV = (m_xBindings[uDescSet].m_xUAVs[i] != nullptr);
-				bool bIsSRV = (m_xBindings[uDescSet].m_xSRVs[i] != nullptr);
-				
-				// Check if this is a storage image (UAV or legacy storage image)
-				bool bIsStorageImage = bIsUAV || (m_pxCurrentPipeline->m_xRootSig.m_axDescriptorTypes[uDescSet][i] == DESCRIPTOR_TYPE_STORAGE_IMAGE);
 				
 				if (bIsStorageImage)
 				{
@@ -344,8 +412,8 @@ void Zenith_Vulkan_CommandBuffer::PrepareDrawCallDescriptors()
 
 				//#TO_TODO: different samplers
 				vk::DescriptorImageInfo& xInfo = xTexInfos.at(uCount)
-					.setSampler(m_xBindings[uDescSet].m_xTextures[i].second ? m_xBindings[uDescSet].m_xTextures[i].second->GetSampler() : Flux_Graphics::s_xRepeatSampler.GetSampler())
-					.setImageView(pxTex->GetImageView())
+					.setSampler(pxSampler ? pxSampler->GetSampler() : Flux_Graphics::s_xRepeatSampler.GetSampler())
+					.setImageView(xImageView)
 					.setImageLayout(eLayout);
 
 				vk::WriteDescriptorSet& xWrite = xTexWrites.at(uCount)
@@ -366,6 +434,12 @@ void Zenith_Vulkan_CommandBuffer::PrepareDrawCallDescriptors()
 			uCount = 0;
 			for (uint32_t i = 0; i < MAX_BINDINGS; i++)
 			{
+				// Skip bindings that don't exist in the pipeline layout
+				if (m_pxCurrentPipeline->m_xRootSig.m_axDescriptorTypes[uDescSet][i] == DESCRIPTOR_TYPE_MAX)
+				{
+					continue;
+				}
+				
 				Zenith_Vulkan_Buffer* pxBuf = m_xBindings[uDescSet].m_xBuffers[i];
 				if (!pxBuf)
 				{
@@ -521,64 +595,77 @@ void Zenith_Vulkan_CommandBuffer::BindTexture(Zenith_Vulkan_Texture* pxTexture, 
 	m_xBindings[m_uCurrentBindFreq].m_xTextures[uBindPoint] = {pxTexture, pxSampler};
 }
 
+void Zenith_Vulkan_CommandBuffer::BindTextureHandle(uint32_t uVRAMHandle, uint32_t uBindPoint, Zenith_Vulkan_Sampler* pxSampler /*= nullptr*/)
+{
+	Zenith_Assert(m_uCurrentBindFreq < FLUX_MAX_DESCRIPTOR_SET_LAYOUTS, "Haven't called BeginBind");
+	
+	// Get VRAM from handle
+	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(uVRAMHandle);
+	Zenith_Assert(pxVRAM, "Invalid VRAM handle");
+	
+	// Get the pre-created default SRV
+	vk::ImageView xImageView = pxVRAM->GetDefaultSRV();
+	Zenith_Assert(xImageView, "VRAM has no default SRV");
+	
+	m_uDescriptorDirty |= 1 << m_uCurrentBindFreq;
+	
+	// Store the ImageView and sampler
+	m_xBindings[m_uCurrentBindFreq].m_xImageViews[uBindPoint] = xImageView;
+	m_xBindings[m_uCurrentBindFreq].m_xTextures[uBindPoint] = {nullptr, pxSampler};
+}
+
 void Zenith_Vulkan_CommandBuffer::BindSRV(Flux_ShaderResourceView* pxSRV, uint32_t uBindPoint, Zenith_Vulkan_Sampler* pxSampler /*= nullptr*/)
 {
 	Zenith_Assert(m_uCurrentBindFreq < FLUX_MAX_DESCRIPTOR_SET_LAYOUTS, "Haven't called BeginBind");
-	Zenith_Assert(pxSRV && pxSRV->m_pxTexture, "Invalid SRV");
+	Zenith_Assert(pxSRV && pxSRV->m_xImageView, "Invalid SRV");
 
-	Zenith_Vulkan_Texture* pxTexture = pxSRV->m_pxTexture;
-	if (pxTexture != m_aapxTextureCache[m_uCurrentBindFreq][uBindPoint])
-	{
-		m_uDescriptorDirty |= 1 << m_uCurrentBindFreq;
-		m_aapxTextureCache[m_uCurrentBindFreq][uBindPoint] = pxTexture;
-	}
+	vk::ImageView xImageView = pxSRV->m_xImageView;
+	// Note: Cache comparison disabled for now since we're using ImageView directly
+	// Could add ImageView caching if needed for performance
+	m_uDescriptorDirty |= 1 << m_uCurrentBindFreq;
+	
 	m_xBindings[m_uCurrentBindFreq].m_xSRVs[uBindPoint] = pxSRV;
-	m_xBindings[m_uCurrentBindFreq].m_xTextures[uBindPoint] = {pxTexture, pxSampler};
+	// Store sampler in textures slot (will need to extract ImageView later during descriptor writes)
+	m_xBindings[m_uCurrentBindFreq].m_xTextures[uBindPoint] = {nullptr, pxSampler};
 }
 
 void Zenith_Vulkan_CommandBuffer::BindUAV(Flux_UnorderedAccessView* pxUAV, uint32_t uBindPoint)
 {
 	Zenith_Assert(m_uCurrentBindFreq < FLUX_MAX_DESCRIPTOR_SET_LAYOUTS, "Haven't called BeginBind");
-	Zenith_Assert(pxUAV && pxUAV->m_pxTexture, "Invalid UAV");
+	Zenith_Assert(pxUAV && pxUAV->m_xImageView, "Invalid UAV");
 
-	Zenith_Vulkan_Texture* pxTexture = pxUAV->m_pxTexture;
-	if (pxTexture != m_aapxTextureCache[m_uCurrentBindFreq][uBindPoint])
-	{
-		m_uDescriptorDirty |= 1 << m_uCurrentBindFreq;
-		m_aapxTextureCache[m_uCurrentBindFreq][uBindPoint] = pxTexture;
-	}
+	vk::ImageView xImageView = pxUAV->m_xImageView;
+	// Note: Cache comparison disabled for now since we're using ImageView directly
+	m_uDescriptorDirty |= 1 << m_uCurrentBindFreq;
+	
 	m_xBindings[m_uCurrentBindFreq].m_xUAVs[uBindPoint] = pxUAV;
-	m_xBindings[m_uCurrentBindFreq].m_xTextures[uBindPoint] = {pxTexture, nullptr};
+	m_xBindings[m_uCurrentBindFreq].m_xTextures[uBindPoint] = {nullptr, nullptr};
 }
 
 void Zenith_Vulkan_CommandBuffer::BindRTV(Flux_RenderTargetView* pxRTV, uint32_t uBindPoint)
 {
 	Zenith_Assert(m_uCurrentBindFreq < FLUX_MAX_DESCRIPTOR_SET_LAYOUTS, "Haven't called BeginBind");
-	Zenith_Assert(pxRTV && pxRTV->m_pxTexture, "Invalid RTV");
+	Zenith_Assert(pxRTV && pxRTV->m_xImageView, "Invalid RTV");
 
-	Zenith_Vulkan_Texture* pxTexture = pxRTV->m_pxTexture;
-	if (pxTexture != m_aapxTextureCache[m_uCurrentBindFreq][uBindPoint])
-	{
-		m_uDescriptorDirty |= 1 << m_uCurrentBindFreq;
-		m_aapxTextureCache[m_uCurrentBindFreq][uBindPoint] = pxTexture;
-	}
+	vk::ImageView xImageView = pxRTV->m_xImageView;
+	// Note: Cache comparison disabled for now since we're using ImageView directly
+	m_uDescriptorDirty |= 1 << m_uCurrentBindFreq;
+	
 	m_xBindings[m_uCurrentBindFreq].m_xRTVs[uBindPoint] = pxRTV;
-	m_xBindings[m_uCurrentBindFreq].m_xTextures[uBindPoint] = {pxTexture, nullptr};
+	m_xBindings[m_uCurrentBindFreq].m_xTextures[uBindPoint] = {nullptr, nullptr};
 }
 
 void Zenith_Vulkan_CommandBuffer::BindDSV(Flux_DepthStencilView* pxDSV, uint32_t uBindPoint)
 {
 	Zenith_Assert(m_uCurrentBindFreq < FLUX_MAX_DESCRIPTOR_SET_LAYOUTS, "Haven't called BeginBind");
-	Zenith_Assert(pxDSV && pxDSV->m_pxTexture, "Invalid DSV");
+	Zenith_Assert(pxDSV && pxDSV->m_xImageView, "Invalid DSV");
 
-	Zenith_Vulkan_Texture* pxTexture = pxDSV->m_pxTexture;
-	if (pxTexture != m_aapxTextureCache[m_uCurrentBindFreq][uBindPoint])
-	{
-		m_uDescriptorDirty |= 1 << m_uCurrentBindFreq;
-		m_aapxTextureCache[m_uCurrentBindFreq][uBindPoint] = pxTexture;
-	}
+	vk::ImageView xImageView = pxDSV->m_xImageView;
+	// Note: Cache comparison disabled for now since we're using ImageView directly
+	m_uDescriptorDirty |= 1 << m_uCurrentBindFreq;
+	
 	m_xBindings[m_uCurrentBindFreq].m_xDSVs[uBindPoint] = pxDSV;
-	m_xBindings[m_uCurrentBindFreq].m_xTextures[uBindPoint] = {pxTexture, nullptr};
+	m_xBindings[m_uCurrentBindFreq].m_xTextures[uBindPoint] = {nullptr, nullptr};
 }
 
 void Zenith_Vulkan_CommandBuffer::BindBuffer(Zenith_Vulkan_Buffer* pxBuffer, uint32_t uBindPoint)

@@ -63,6 +63,8 @@ vk::DescriptorPool Zenith_Vulkan::s_xBindlessTexturesDescriptorPool;
 vk::DescriptorSet Zenith_Vulkan::s_xBindlessTexturesDescriptorSet;
 vk::DescriptorSetLayout Zenith_Vulkan::s_xBindlessTexturesDescriptorSetLayout;
 
+std::vector<Zenith_Vulkan_VRAM*> Zenith_Vulkan::s_xVRAMRegistry;
+
 std::vector<const Zenith_Vulkan_CommandBuffer*> Zenith_Vulkan::s_xPendingCommandBuffers[RENDER_ORDER_MAX];
 Zenith_Vulkan_CommandBuffer g_xCommandBuffer;
 
@@ -80,25 +82,23 @@ static void TransitionColorTargets(Zenith_Vulkan_CommandBuffer& xCommandBuffer, 
 	{
 		if (xTargetSetup.m_axColourAttachments[i].m_eFormat != TEXTURE_FORMAT_NONE)
 		{
-			Zenith_Vulkan_Texture* pxTexture = xTargetSetup.m_axColourAttachments[i].m_pxTargetTexture;
-			if (pxTexture && pxTexture->IsValid())
+			uint32_t uVRAMHandle = xTargetSetup.m_axColourAttachments[i].m_uVRAMHandle;
+			if (uVRAMHandle != UINT32_MAX)
 			{
-				// Skip swapchain images (they use PresentSrcKHR layout)
-				if (pxTexture->GetAllocation() == VK_NULL_HANDLE)
+				Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(uVRAMHandle);
+				if (pxVRAM)
 				{
-					continue;
+					vk::ImageSubresourceRange xSubRange = vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
+
+					axBarriers[uNumBarriers] = vk::ImageMemoryBarrier()
+						.setSubresourceRange(xSubRange)
+						.setImage(pxVRAM->GetImage())
+						.setOldLayout(eOldLayout)
+						.setNewLayout(eNewLayout)
+						.setDstAccessMask(eAccessMask);
+
+					uNumBarriers++;
 				}
-
-				vk::ImageSubresourceRange xSubRange = vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
-
-				axBarriers[uNumBarriers] = vk::ImageMemoryBarrier()
-					.setSubresourceRange(xSubRange)
-					.setImage(pxTexture->GetImage())
-					.setOldLayout(eOldLayout)
-					.setNewLayout(eNewLayout)
-					.setDstAccessMask(eAccessMask);
-
-				uNumBarriers++;
 			}
 		}
 		else
@@ -127,8 +127,14 @@ static void TransitionDepthStencilTarget(Zenith_Vulkan_CommandBuffer& xCommandBu
 		return;
 	}
 
-	Zenith_Vulkan_Texture* pxDepthTexture = xTargetSetup.m_pxDepthStencil->m_pxTargetTexture;
-	if (!pxDepthTexture || !pxDepthTexture->IsValid())
+	uint32_t uVRAMHandle = xTargetSetup.m_pxDepthStencil->m_uVRAMHandle;
+	if (uVRAMHandle == UINT32_MAX)
+	{
+		return;
+	}
+
+	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(uVRAMHandle);
+	if (!pxVRAM)
 	{
 		return;
 	}
@@ -137,7 +143,7 @@ static void TransitionDepthStencilTarget(Zenith_Vulkan_CommandBuffer& xCommandBu
 
 	vk::ImageMemoryBarrier xBarrier = vk::ImageMemoryBarrier()
 		.setSubresourceRange(xSubRange)
-		.setImage(pxDepthTexture->GetImage())
+		.setImage(pxVRAM->GetImage())
 		.setOldLayout(eOldLayout)
 		.setNewLayout(eNewLayout)
 		.setSrcAccessMask(eSrcAccessMask)
@@ -794,4 +800,17 @@ void Zenith_Vulkan_PerFrame::BeginFrame()
 	xDevice.resetFences(1, &m_xFence);
 
 	xDevice.resetDescriptorPool(m_axDescriptorPools[0]);
+}
+
+uint32_t Zenith_Vulkan::RegisterVRAM(Zenith_Vulkan_VRAM* pxVRAM)
+{
+	uint32_t uHandle = static_cast<uint32_t>(s_xVRAMRegistry.size());
+	s_xVRAMRegistry.push_back(pxVRAM);
+	return uHandle;
+}
+
+Zenith_Vulkan_VRAM* Zenith_Vulkan::GetVRAM(uint32_t uHandle)
+{
+	Zenith_Assert(uHandle < s_xVRAMRegistry.size(), "Invalid VRAM handle");
+	return s_xVRAMRegistry[uHandle];
 }

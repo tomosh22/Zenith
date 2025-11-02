@@ -7,22 +7,26 @@
 
 // View structures for Direct3D-style resource views
 struct Flux_ShaderResourceView {
-	Flux_Texture* m_pxTexture = nullptr;
+	vk::ImageView m_xImageView = VK_NULL_HANDLE;
+	uint32_t m_uVRAMHandle = UINT32_MAX;
 	ViewType m_eViewType = VIEW_TYPE_SRV;
 };
 
 struct Flux_UnorderedAccessView {
-	Flux_Texture* m_pxTexture = nullptr;
+	vk::ImageView m_xImageView = VK_NULL_HANDLE;
+	uint32_t m_uVRAMHandle = UINT32_MAX;
 	ViewType m_eViewType = VIEW_TYPE_UAV;
 };
 
 struct Flux_RenderTargetView {
-	Flux_Texture* m_pxTexture = nullptr;
+	vk::ImageView m_xImageView = VK_NULL_HANDLE;
+	uint32_t m_uVRAMHandle = UINT32_MAX;
 	ViewType m_eViewType = VIEW_TYPE_RTV;
 };
 
 struct Flux_DepthStencilView {
-	Flux_Texture* m_pxTexture = nullptr;
+	vk::ImageView m_xImageView = VK_NULL_HANDLE;
+	uint32_t m_uVRAMHandle = UINT32_MAX;
 	ViewType m_eViewType = VIEW_TYPE_DSV;
 };
 
@@ -32,8 +36,8 @@ struct Flux_RenderAttachment {
 	uint32_t m_uWidth = 0;
 	uint32_t m_uHeight = 0;
 
-	// Physical texture resource
-	Flux_Texture* m_pxTargetTexture = nullptr;
+	// VRAM handle for the actual resource
+	uint32_t m_uVRAMHandle = UINT32_MAX;
 
 	// Views for different usage patterns
 	Flux_ShaderResourceView* m_pxSRV = nullptr;  // For reading in shaders
@@ -82,7 +86,7 @@ struct Flux_TargetSetup {
 	{
 		for (u_int u = 0; u < FLUX_MAX_TARGETS; u++)
 		{
-			if (m_axColourAttachments[u].m_pxTargetTexture != xOther.m_axColourAttachments[u].m_pxTargetTexture)
+			if (m_axColourAttachments[u].m_uVRAMHandle != xOther.m_axColourAttachments[u].m_uVRAMHandle)
 			{
 				return false;
 			}

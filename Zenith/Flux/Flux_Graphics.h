@@ -27,8 +27,15 @@ public:
 
 	static Flux_DynamicConstantBuffer s_xFrameConstantsBuffer;
 
-	static Flux_Texture* s_pxWhiteBlankTexture2D;
-	static Flux_Texture* s_pxBlackBlankTexture2D;
+	struct BlankTexture
+	{
+		uint32_t m_uVRAMHandle;
+		Flux_ShaderResourceView m_xSRV;
+	};
+
+	static BlankTexture s_xWhiteBlankTexture2D;
+	static BlankTexture s_xBlackBlankTexture2D;
+	
 	static Flux_MeshGeometry s_xBlankMesh;
 	static class Flux_Material* s_pxBlankMaterial;
 

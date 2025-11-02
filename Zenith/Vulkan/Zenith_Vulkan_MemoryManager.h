@@ -46,10 +46,21 @@ public:
 	static void UploadBufferData(Zenith_Vulkan_Buffer& xBuffer, const void* pData, size_t uSize);
 	static void UploadTextureData(Zenith_Vulkan_Texture& xTexture, const void* pData, size_t uSize);
 
+	// View creation functions
+	static vk::ImageView CreateRenderTargetView(uint32_t uVRAMHandle, const Flux_SurfaceInfo& xInfo, uint32_t uMipLevel = 0);
+	static vk::ImageView CreateDepthStencilView(uint32_t uVRAMHandle, const Flux_SurfaceInfo& xInfo, uint32_t uMipLevel = 0);
+	static vk::ImageView CreateShaderResourceView(uint32_t uVRAMHandle, const Flux_SurfaceInfo& xInfo, uint32_t uBaseMip = 0, uint32_t uMipCount = 1);
+	static vk::ImageView CreateUnorderedAccessView(uint32_t uVRAMHandle, const Flux_SurfaceInfo& xInfo, uint32_t uMipLevel = 0);
+
 	static Zenith_Vulkan_CommandBuffer& GetCommandBuffer();
 private:
 	friend class Zenith_Vulkan_Texture;
 	friend class Zenith_AssetHandler;
+	static uint32_t CreateColourAttachmentVRAM(const Flux_SurfaceInfo& xInfo);
+	static uint32_t CreateDepthStencilAttachmentVRAM(const Flux_SurfaceInfo& xInfo);
+	static uint32_t CreateTextureVRAM(const void* pData, const Flux_SurfaceInfo& xInfo, bool bCreateMips);
+	static uint32_t CreateTextureVRAM(const char* szPath);
+	static uint32_t CreateTextureCubeVRAM(const char* szPathPX, const char* szPathNX, const char* szPathPY, const char* szPathNY, const char* szPathPZ, const char* szPathNZ);
 	static void CreateColourAttachment(const Flux_SurfaceInfo& xInfo, Zenith_Vulkan_Texture& xTextureOut);
 	static void CreateDepthStencilAttachment(const Flux_SurfaceInfo& xInfo, Zenith_Vulkan_Texture& xTextureOut);
 	static void CreateTexture(const void* pData, Flux_SurfaceInfo xInfo, bool bCreateMips, Zenith_Vulkan_Texture& xTextureOut);

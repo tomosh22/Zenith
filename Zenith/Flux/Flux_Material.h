@@ -6,48 +6,47 @@ class Flux_Material
 {
 public:
 	Flux_Material()
-		: m_pxDiffuse(nullptr)
-		, m_pxNormal(nullptr)
-		, m_pxRoughnessMetallic(nullptr)
-		, m_pxOcclusion(nullptr)
-		, m_pxEmissive(nullptr)
+		: m_uDiffuse(UINT32_MAX)
+		, m_uNormal(UINT32_MAX)
+		, m_uRoughnessMetallic(UINT32_MAX)
+		, m_uOcclusion(UINT32_MAX)
+		, m_uEmissive(UINT32_MAX)
 	{
 	}
-	Flux_Material(Flux_Texture* pxDiffuse, Flux_Texture* pxNormal, Flux_Texture* pxRoughnessMetallic)
-		: m_pxDiffuse(pxDiffuse)
-		, m_pxNormal(pxNormal)
-		, m_pxRoughnessMetallic(pxRoughnessMetallic)
-		, m_pxOcclusion(nullptr)
-		, m_pxEmissive(nullptr)
+	Flux_Material(uint32_t uDiffuse, uint32_t uNormal, uint32_t uRoughnessMetallic)
+		: m_uDiffuse(uDiffuse)
+		, m_uNormal(uNormal)
+		, m_uRoughnessMetallic(uRoughnessMetallic)
+		, m_uOcclusion(UINT32_MAX)
+		, m_uEmissive(UINT32_MAX)
 	{
 	}
 
 	void Reset()
 	{
-		m_pxDiffuse = nullptr;
-		m_pxNormal = nullptr;
-		m_pxRoughnessMetallic = nullptr;
-		m_pxOcclusion = nullptr;
-		m_pxEmissive = nullptr;
+		m_uDiffuse = UINT32_MAX;
+		m_uNormal = UINT32_MAX;
+		m_uRoughnessMetallic = UINT32_MAX;
+		m_uOcclusion = UINT32_MAX;
+		m_uEmissive = UINT32_MAX;
 	}
 
-	void SetDiffuse(Flux_Texture* pxDiffuse) { m_pxDiffuse = pxDiffuse; }
-	void SetNormal(Flux_Texture* pxNormal) { m_pxNormal = pxNormal; }
-	void SetRoughnessMetallic(Flux_Texture* pxRoughness) { m_pxRoughnessMetallic = pxRoughness; }
-	void SetOcclusion(Flux_Texture* pxOcclusion) { m_pxOcclusion = pxOcclusion; }
-	void SetEmissive(Flux_Texture* pxEmissive) { m_pxEmissive = pxEmissive; }
+	void SetDiffuse(uint32_t uHandle) { m_uDiffuse = uHandle; }
+	void SetNormal(uint32_t uHandle) { m_uNormal = uHandle; }
+	void SetRoughnessMetallic(uint32_t uHandle) { m_uRoughnessMetallic = uHandle; }
+	void SetOcclusion(uint32_t uHandle) { m_uOcclusion = uHandle; }
+	void SetEmissive(uint32_t uHandle) { m_uEmissive = uHandle; }
 
-	Flux_Texture* GetDiffuse() const { return m_pxDiffuse ? m_pxDiffuse : Flux_Graphics::s_pxBlackBlankTexture2D; }
-	Flux_Texture* GetNormal() const { return m_pxNormal ? m_pxNormal : Flux_Graphics::s_pxBlackBlankTexture2D; }
-	Flux_Texture* GetRoughnessMetallic() const { return m_pxRoughnessMetallic ? m_pxRoughnessMetallic : Flux_Graphics::s_pxBlackBlankTexture2D; }
-	Flux_Texture* GetOcclusion() const { return m_pxOcclusion ? m_pxOcclusion : Flux_Graphics::s_pxBlackBlankTexture2D; }
-	Flux_Texture* GetEmissive() const { return m_pxEmissive ? m_pxEmissive : Flux_Graphics::s_pxBlackBlankTexture2D; }
+	uint32_t GetDiffuse() const { return m_uDiffuse != UINT32_MAX ? m_uDiffuse : Flux_Graphics::s_xBlackBlankTexture2D.m_uVRAMHandle; }
+	uint32_t GetNormal() const { return m_uNormal != UINT32_MAX ? m_uNormal : Flux_Graphics::s_xBlackBlankTexture2D.m_uVRAMHandle; }
+	uint32_t GetRoughnessMetallic() const { return m_uRoughnessMetallic != UINT32_MAX ? m_uRoughnessMetallic : Flux_Graphics::s_xBlackBlankTexture2D.m_uVRAMHandle; }
+	uint32_t GetOcclusion() const { return m_uOcclusion != UINT32_MAX ? m_uOcclusion : Flux_Graphics::s_xBlackBlankTexture2D.m_uVRAMHandle; }
+	uint32_t GetEmissive() const { return m_uEmissive != UINT32_MAX ? m_uEmissive : Flux_Graphics::s_xBlackBlankTexture2D.m_uVRAMHandle; }
 
 private:
-	//#TO not owned
-	Flux_Texture* m_pxDiffuse = nullptr;
-	Flux_Texture* m_pxNormal = nullptr;
-	Flux_Texture* m_pxRoughnessMetallic = nullptr;
-	Flux_Texture* m_pxOcclusion = nullptr;
-	Flux_Texture* m_pxEmissive = nullptr;
+	uint32_t m_uDiffuse = UINT32_MAX;
+	uint32_t m_uNormal = UINT32_MAX;
+	uint32_t m_uRoughnessMetallic = UINT32_MAX;
+	uint32_t m_uOcclusion = UINT32_MAX;
+	uint32_t m_uEmissive = UINT32_MAX;
 };

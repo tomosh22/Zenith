@@ -31,7 +31,7 @@ void Flux_ComputeTest::Initialise()
 
 	xBuilder.BuildColour(g_xComputeOutput, "Compute Test Output");
 	
-	Zenith_Log("Flux_ComputeTest - Created storage texture: %p", g_xComputeOutput.m_pxTargetTexture);
+	Zenith_Log("Flux_ComputeTest - Created storage texture with VRAM handle: %u", g_xComputeOutput.m_uVRAMHandle);
 	
 	// ========== COMPUTE PIPELINE SETUP ==========
 	g_xComputeShader.InitialiseCompute("ComputeTest/ComputeTest.comp");
@@ -56,7 +56,8 @@ void Flux_ComputeTest::Initialise()
 	Zenith_Log("Flux_ComputeTest - Built compute pipeline");
 	
 #ifdef ZENITH_DEBUG_VARIABLES
-	Zenith_DebugVariables::AddTexture({ "Compute Test", "Output Texture" }, *g_xComputeOutput.m_pxTargetTexture);
+	//#TO_TODO: Update debug variables to work with VRAM handles instead of Flux_Texture
+	//Zenith_DebugVariables::AddTexture({ "Compute Test", "Output Texture" }, *g_xComputeOutput.m_pxTargetTexture);
 #endif
 }
 

@@ -29,7 +29,7 @@ void Zenith_StateMachine::Project_Initialise()
 static Zenith_Entity s_xController;
 static Zenith_Entity s_xPlayer0;
 
-static Flux_Texture* g_pxTextures[SUPERSECRET_TEXTURE_INDEX__COUNT];
+static uint32_t g_uTextureHandles[SUPERSECRET_TEXTURE_INDEX__COUNT];
 
 static Flux_Quads::Quad s_axMap[g_uMaxMapWidth * g_uMaxMapHeight];
 
@@ -37,8 +37,8 @@ static void LoadAssets()
 {
 	for (uint32_t u = 0; u < SUPERSECRET_TEXTURE_INDEX__COUNT; u++)
 	{
-		g_pxTextures[u] = Zenith_AssetHandler::AddTexture2D(g_aszTextureNames[u], g_aszTextureFilenames[u]);
-		Flux::RegisterBindlessTexture(g_pxTextures[u], u);
+		g_uTextureHandles[u] = Zenith_AssetHandler::AddTexture2D(g_aszTextureNames[u], g_aszTextureFilenames[u]);
+		//Flux::RegisterBindlessTexture(g_uTextureHandles[u], u); // TODO: Update bindless system for handles
 	}
 }
 

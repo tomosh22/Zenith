@@ -1,6 +1,7 @@
 #pragma once
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "vulkan/vulkan.hpp"
+#include "vma/vk_mem_alloc.h"
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
 #include "Flux/Flux_Types.h"
 
@@ -9,6 +10,7 @@
 #define ZENITH_VULKAN_BINDLESS_TEXTURES_DESC_SET 2
 
 class Zenith_Vulkan_CommandBuffer;
+class Zenith_Vulkan_VRAM;
 
 class Zenith_Vulkan_PerFrame
 {
@@ -99,6 +101,10 @@ public:
 
 	static vk::DescriptorSet& GetBindlessTexturesDescriptorSet() { return s_xBindlessTexturesDescriptorSet; }
 	static vk::DescriptorSetLayout& GetBindlessTexturesDescriptorSetLayout() { return s_xBindlessTexturesDescriptorSetLayout; }
+
+	// VRAM Registry
+	static uint32_t RegisterVRAM(Zenith_Vulkan_VRAM* pxVRAM);
+	static Zenith_Vulkan_VRAM* GetVRAM(uint32_t uHandle);
 private:
 	static vk::Instance s_xInstance;
 	static VKAPI_ATTR vk::Bool32 VKAPI_CALL DebugCallback(vk::DebugUtilsMessageSeverityFlagBitsEXT eMessageSeverity,
@@ -124,7 +130,64 @@ private:
 	static vk::DescriptorSet s_xBindlessTexturesDescriptorSet;
 	static vk::DescriptorSetLayout s_xBindlessTexturesDescriptorSetLayout;
 
+	static std::vector<Zenith_Vulkan_VRAM*> s_xVRAMRegistry;
+
 	static std::vector<const Zenith_Vulkan_CommandBuffer*> s_xPendingCommandBuffers[RENDER_ORDER_MAX];
 	static Zenith_Vulkan_PerFrame s_axPerFrame[MAX_FRAMES_IN_FLIGHT];
 	static Zenith_Vulkan_PerFrame* s_pxCurrentFrame;
+};
+
+class Zenith_Vulkan_VRAM
+{
+public:
+	Zenith_Vulkan_VRAM(const vk::Image xImage, const VmaAllocation xAllocation, VmaAllocator xAllocator)
+		: m_xImage(xImage), m_xAllocation(xAllocation), m_xAllocator(xAllocator), m_bIsImage(true)
+	{
+	}
+
+	Zenith_Vulkan_VRAM(const vk::Buffer xBuffer, const VmaAllocation xAllocation, VmaAllocator xAllocator, const u_int uSize)
+		: m_xBuffer(xBuffer), m_xAllocation(xAllocation), m_xAllocator(xAllocator), m_uBufferSize(uSize), m_bIsImage(false)
+	{
+	}
+
+	~Zenith_Vulkan_VRAM()
+	{
+		if (m_xAllocation != VK_NULL_HANDLE && m_xAllocator != VK_NULL_HANDLE)
+		{
+			if (m_bIsImage && m_xImage != VK_NULL_HANDLE)
+			{
+				// Destroy the default SRV if it exists
+				if (m_xDefaultSRV != VK_NULL_HANDLE)
+				{
+					Zenith_Vulkan::GetDevice().destroyImageView(m_xDefaultSRV);
+				}
+				vmaDestroyImage(m_xAllocator, m_xImage, m_xAllocation);
+			}
+			else if (!m_bIsImage && m_xBuffer != VK_NULL_HANDLE)
+			{
+				vmaDestroyBuffer(m_xAllocator, m_xBuffer, m_xAllocation);
+			}
+		}
+	}
+
+	VmaAllocation GetAllocation() const { return m_xAllocation; }
+	vk::Image GetImage() const { return m_xImage; }
+	vk::Buffer GetBuffer() const { return m_xBuffer; }
+	u_int GetBufferSize() const { return m_uBufferSize; }
+	
+	// View accessors for images
+	vk::ImageView GetDefaultSRV() const { return m_xDefaultSRV; }
+	void SetDefaultSRV(vk::ImageView xView) { m_xDefaultSRV = xView; }
+
+private:
+	VmaAllocation m_xAllocation = VK_NULL_HANDLE;
+	VmaAllocator m_xAllocator = VK_NULL_HANDLE;
+
+	vk::Buffer m_xBuffer = VK_NULL_HANDLE;
+	u_int m_uBufferSize = 0;
+
+	vk::Image m_xImage = VK_NULL_HANDLE;
+	vk::ImageView m_xDefaultSRV = VK_NULL_HANDLE; // Default shader resource view for textures
+	
+	bool m_bIsImage = true;
 };

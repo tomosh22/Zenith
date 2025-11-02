@@ -18,7 +18,7 @@ static Flux_CommandList g_xCommandList("Skybox");
 static Flux_Shader s_xShader;
 static Flux_Pipeline s_xPipeline;
 
-static Flux_Texture* s_pxCubemap = nullptr;
+static uint32_t s_uCubemapHandle = UINT32_MAX;
 
 void Flux_Skybox::Initialise()
 {
@@ -49,7 +49,7 @@ void Flux_Skybox::Initialise()
 
 	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
 
-	s_pxCubemap = Zenith_AssetHandler::GetTexture("Cubemap");
+	s_uCubemapHandle = Zenith_AssetHandler::GetTexture("Cubemap");
 
 	Zenith_Log("Flux_Skybox initialised");
 }
@@ -72,7 +72,7 @@ void Flux_Skybox::Render(void*)
 	g_xCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
 	g_xCommandList.AddCommand<Flux_CommandBeginBind>(0);
 	g_xCommandList.AddCommand<Flux_CommandBindBuffer>(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer(), 0);
-	g_xCommandList.AddCommand<Flux_CommandBindTexture>(s_pxCubemap, 1);
+	g_xCommandList.AddCommand<Flux_CommandBindTexture>(s_uCubemapHandle, 1);
 	g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(6);
 	Flux::SubmitCommandList(&g_xCommandList, Flux_Graphics::s_xMRTTarget, RENDER_ORDER_SKYBOX);
 }

@@ -29,8 +29,8 @@ static Flux_Pipeline s_xTerrainWireframePipeline;
 static Flux_Shader s_xWaterShader;
 static Flux_Pipeline s_xWaterPipeline;
 
-static Flux_Texture* s_pxWaterNormalTex = nullptr;
-static Flux_Texture* s_pxWaterDisplacementTex = nullptr;
+static uint32_t s_uWaterNormalTexHandle = UINT32_MAX;
+static uint32_t s_uWaterDisplacementTexHandle = UINT32_MAX;
 
 struct TerrainConstants
 {
@@ -133,7 +133,7 @@ void Flux_Terrain::Initialise()
 		Flux_PipelineBuilder::FromSpecification(s_xWaterPipeline, xPipelineSpec);
 	}
 
-	s_pxWaterNormalTex = Zenith_AssetHandler::GetTexture("Water_Normal");
+	s_uWaterNormalTexHandle = Zenith_AssetHandler::GetTexture("Water_Normal");
 
 	Flux_MemoryManager::InitialiseDynamicConstantBuffer(nullptr, sizeof(struct TerrainConstants
 		), s_xTerrainConstantsBuffer);
@@ -219,7 +219,7 @@ void Flux_Terrain::RenderToGBuffer(void*)
 		g_xWaterCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&pxTerrain->GetWaterGeometry().GetVertexBuffer());
 		g_xWaterCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&pxTerrain->GetWaterGeometry().GetIndexBuffer());
 
-		g_xWaterCommandList.AddCommand<Flux_CommandBindTexture>(s_pxWaterNormalTex, 0);
+		g_xWaterCommandList.AddCommand<Flux_CommandBindTexture>(s_uWaterNormalTexHandle, 0);
 
 		g_xWaterCommandList.AddCommand<Flux_CommandDrawIndexed>(pxTerrain->GetWaterGeometry().GetNumIndices());
 	}

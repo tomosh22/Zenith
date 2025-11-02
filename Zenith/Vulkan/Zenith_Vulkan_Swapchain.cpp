@@ -226,24 +226,23 @@ void Zenith_Vulkan_Swapchain::Initialise()
 
 		s_xImageViews[u] = xDevice.createImageView(xViewCreate);
 
-		s_axTargetSetups[u].m_axColourAttachments[0].m_pxTargetTexture = Zenith_AssetHandler::CreateDummyTexture("Swapchain " + std::to_string(u));
-
-		s_axTargetSetups[u].m_axColourAttachments[0].m_pxTargetTexture->SetImage(xImage);
-		s_axTargetSetups[u].m_axColourAttachments[0].m_pxTargetTexture->SetImageView(s_xImageViews[u]);
+		// Swapchain images don't use VRAM handles since they're managed by the swapchain
+		s_axTargetSetups[u].m_axColourAttachments[0].m_uVRAMHandle = UINT32_MAX;
 
 		s_axTargetSetups[u].m_axColourAttachments[0].m_uWidth = xExtent.width;
 		s_axTargetSetups[u].m_axColourAttachments[0].m_uHeight = xExtent.height;
 		//#TO_TODO: stop hardcoding swapchain colour format
 		s_axTargetSetups[u].m_axColourAttachments[0].m_eFormat = TEXTURE_FORMAT_BGRA8_SRGB;
-		s_axTargetSetups[u].m_axColourAttachments[0].m_pxTargetTexture->SetFormat(xSurfaceFormat.format);
 		
 		// Create views for swapchain images
 		s_axTargetSetups[u].m_axColourAttachments[0].m_pxSRV = new Flux_ShaderResourceView();
-		s_axTargetSetups[u].m_axColourAttachments[0].m_pxSRV->m_pxTexture = s_axTargetSetups[u].m_axColourAttachments[0].m_pxTargetTexture;
+		s_axTargetSetups[u].m_axColourAttachments[0].m_pxSRV->m_xImageView = s_xImageViews[u];
+		s_axTargetSetups[u].m_axColourAttachments[0].m_pxSRV->m_uVRAMHandle = UINT32_MAX;
 		s_axTargetSetups[u].m_axColourAttachments[0].m_pxSRV->m_eViewType = VIEW_TYPE_SRV;
 		
 		s_axTargetSetups[u].m_axColourAttachments[0].m_pxRTV = new Flux_RenderTargetView();
-		s_axTargetSetups[u].m_axColourAttachments[0].m_pxRTV->m_pxTexture = s_axTargetSetups[u].m_axColourAttachments[0].m_pxTargetTexture;
+		s_axTargetSetups[u].m_axColourAttachments[0].m_pxRTV->m_xImageView = s_xImageViews[u];
+		s_axTargetSetups[u].m_axColourAttachments[0].m_pxRTV->m_uVRAMHandle = UINT32_MAX;
 		s_axTargetSetups[u].m_axColourAttachments[0].m_pxRTV->m_eViewType = VIEW_TYPE_RTV;
 	}
 	
@@ -362,8 +361,12 @@ void Zenith_Vulkan_Swapchain::EndFrame()
 #ifdef ZENITH_DEBUG_VARIABLES
 	if (dbg_bOutputMRT)
 	{
-		// When debugging, bind the MRT texture directly (uses legacy BindTexture for now)
-		s_xCopyToFramebufferCmd.BindTexture(&Flux_Graphics::GetGBufferTexture((MRTIndex)dbg_uMRTIndex), 0);
+		// When debugging, bind the MRT SRV
+		Flux_ShaderResourceView* pxMRTSRV = Flux_Graphics::GetGBufferSRV((MRTIndex)dbg_uMRTIndex);
+		if (pxMRTSRV)
+		{
+			s_xCopyToFramebufferCmd.BindSRV(pxMRTSRV, 0);
+		}
 	}
 	else
 #endif
@@ -376,8 +379,7 @@ void Zenith_Vulkan_Swapchain::EndFrame()
 		}
 		else
 		{
-			// Fallback if SRV not created
-			s_xCopyToFramebufferCmd.BindTexture(Flux_Graphics::s_xFinalRenderTarget.m_axColourAttachments[0].m_pxTargetTexture, 0);
+			Zenith_Assert(false, "Final render target SRV not created");
 		}
 	}
 

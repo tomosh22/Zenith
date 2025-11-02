@@ -28,6 +28,9 @@ struct DescSetBindings {
 	Flux_UnorderedAccessView* m_xUAVs[MAX_BINDINGS];
 	Flux_RenderTargetView* m_xRTVs[MAX_BINDINGS];
 	Flux_DepthStencilView* m_xDSVs[MAX_BINDINGS];
+	
+	// Direct ImageView storage for VRAM handle bindings
+	vk::ImageView m_xImageViews[MAX_BINDINGS];
 };
 
 class Zenith_Vulkan_CommandBuffer
@@ -51,6 +54,7 @@ public:
 	
 	// Legacy texture binding (deprecated - use view-specific methods)
 	void BindTexture(Zenith_Vulkan_Texture* pxTexture, uint32_t uBindPoint, Zenith_Vulkan_Sampler* pxSampler = nullptr);
+	void BindTextureHandle(uint32_t uVRAMHandle, uint32_t uBindPoint, Zenith_Vulkan_Sampler* pxSampler = nullptr);
 	
 	// Direct3D-style view binding methods
 	void BindSRV(Flux_ShaderResourceView* pxSRV, uint32_t uBindPoint, Zenith_Vulkan_Sampler* pxSampler = nullptr);

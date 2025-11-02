@@ -56,6 +56,18 @@ public:
 class Zenith_Vulkan_RootSig
 {
 public:
+	Zenith_Vulkan_RootSig()
+	{
+		// Initialize all descriptor types to MAX (invalid/unused)
+		for (u_int i = 0; i < FLUX_MAX_DESCRIPTOR_BINDINGS; i++)
+		{
+			for (u_int j = 0; j < FLUX_MAX_DESCRIPTOR_BINDINGS; j++)
+			{
+				m_axDescriptorTypes[i][j] = DESCRIPTOR_TYPE_MAX;
+			}
+		}
+	}
+	
 	vk::PipelineLayout m_xLayout;
 	vk::DescriptorSetLayout m_axDescSetLayouts[FLUX_MAX_DESCRIPTOR_BINDINGS];
 	DescriptorType m_axDescriptorTypes[FLUX_MAX_DESCRIPTOR_BINDINGS][FLUX_MAX_DESCRIPTOR_BINDINGS];

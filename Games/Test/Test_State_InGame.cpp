@@ -52,12 +52,12 @@ static void LoadAssets()
 		Zenith_AssetHandler::AddTexture2D("Barrel_Diffuse", ASSETS_ROOT"Meshes/barrel_Diffuse_0.ztx");
 		Zenith_AssetHandler::AddTexture2D("Barrel_Metallic", ASSETS_ROOT"Meshes/barrel_Shininess_0.ztx");
 
-		Flux_Texture* pxDiffuse = Zenith_AssetHandler::GetTexture("Barrel_Diffuse");
-		Flux_Texture* pxMetallic = Zenith_AssetHandler::GetTexture("Barrel_Metallic");
+		uint32_t uDiffuse = Zenith_AssetHandler::GetTexture("Barrel_Diffuse");
+		uint32_t uMetallic = Zenith_AssetHandler::GetTexture("Barrel_Metallic");
 
 		Flux_Material& xMat = Zenith_AssetHandler::AddMaterial("Barrel");
-		xMat.SetDiffuse(pxDiffuse);
-		xMat.SetRoughnessMetallic(pxMetallic);
+		xMat.SetDiffuse(uDiffuse);
+		xMat.SetRoughnessMetallic(uMetallic);
 	}
 
 	Zenith_AssetHandler::AddMesh("Capsule", ASSETS_ROOT"Meshes/capsule_Mesh0_Mat0.zmsh");
@@ -68,15 +68,15 @@ static void LoadAssets()
 		Zenith_AssetHandler::AddTexture2D("Crystal_Roughness", ASSETS_ROOT"Textures/crystal2k/roughness.ztx");
 		Zenith_AssetHandler::AddTexture2D("Crystal_Metallic", ASSETS_ROOT"Textures/crystal2k/metallic.ztx");
 
-		Flux_Texture* pxDiffuse = Zenith_AssetHandler::GetTexture("Crystal_Diffuse");
-		Flux_Texture* pxNormal = Zenith_AssetHandler::GetTexture("Crystal_Normal");
-		Flux_Texture* pxRoughness = Zenith_AssetHandler::GetTexture("Crystal_Roughness");
-		Flux_Texture* pxMetallic = Zenith_AssetHandler::GetTexture("Crystal_Metallic");
+		uint32_t uDiffuse = Zenith_AssetHandler::GetTexture("Crystal_Diffuse");
+		uint32_t uNormal = Zenith_AssetHandler::GetTexture("Crystal_Normal");
+		uint32_t uRoughness = Zenith_AssetHandler::GetTexture("Crystal_Roughness");
+		uint32_t uMetallic = Zenith_AssetHandler::GetTexture("Crystal_Metallic");
 
 		Flux_Material& xMat = Zenith_AssetHandler::AddMaterial("Crystal");
-		xMat.SetDiffuse(pxDiffuse);
-		xMat.SetNormal(pxNormal);
-		xMat.SetRoughnessMetallic(pxRoughness);
+		xMat.SetDiffuse(uDiffuse);
+		xMat.SetNormal(uNormal);
+		xMat.SetRoughnessMetallic(uRoughness);
 	}
 	{
 		Zenith_AssetHandler::AddTexture2D("MuddyGrass_Diffuse", ASSETS_ROOT"Textures/muddyGrass2k/diffuse.ztx");
@@ -84,15 +84,15 @@ static void LoadAssets()
 		Zenith_AssetHandler::AddTexture2D("MuddyGrass_Roughness", ASSETS_ROOT"Textures/muddyGrass2k/roughness.ztx");
 		Zenith_AssetHandler::AddTexture2D("MuddyGrass_Metallic", ASSETS_ROOT"Textures/muddyGrass2k/metallic.ztx");
 
-		Flux_Texture* pxDiffuse = Zenith_AssetHandler::GetTexture("MuddyGrass_Diffuse");
-		Flux_Texture* pxNormal = Zenith_AssetHandler::GetTexture("MuddyGrass_Normal");
-		Flux_Texture* pxRoughness = Zenith_AssetHandler::GetTexture("MuddyGrass_Roughness");
-		Flux_Texture* pxMetallic = Zenith_AssetHandler::GetTexture("MuddyGrass_Metallic");
+		uint32_t uDiffuse = Zenith_AssetHandler::GetTexture("MuddyGrass_Diffuse");
+		uint32_t uNormal = Zenith_AssetHandler::GetTexture("MuddyGrass_Normal");
+		uint32_t uRoughness = Zenith_AssetHandler::GetTexture("MuddyGrass_Roughness");
+		uint32_t uMetallic = Zenith_AssetHandler::GetTexture("MuddyGrass_Metallic");
 
 		Flux_Material& xMat = Zenith_AssetHandler::AddMaterial("MuddyGrass");
-		xMat.SetDiffuse(pxDiffuse);
-		xMat.SetNormal(pxNormal);
-		xMat.SetRoughnessMetallic(pxRoughness);
+		xMat.SetDiffuse(uDiffuse);
+		xMat.SetNormal(uNormal);
+		xMat.SetRoughnessMetallic(uRoughness);
 	}
 	{
 		Zenith_AssetHandler::AddTexture2D("SupplyCrate_Diffuse", ASSETS_ROOT"Textures/supplyCrate2k/diffuse.ztx");
@@ -100,15 +100,15 @@ static void LoadAssets()
 		Zenith_AssetHandler::AddTexture2D("SupplyCrate_Roughness", ASSETS_ROOT"Textures/supplyCrate2k/roughness.ztx");
 		Zenith_AssetHandler::AddTexture2D("SupplyCrate_Metallic", ASSETS_ROOT"Textures/supplyCrate2k/metallic.ztx");
 
-		Flux_Texture* pxDiffuse = Zenith_AssetHandler::GetTexture("SupplyCrate_Diffuse");
-		Flux_Texture* pxNormal = Zenith_AssetHandler::GetTexture("SupplyCrate_Normal");
-		Flux_Texture* pxRoughness = Zenith_AssetHandler::GetTexture("SupplyCrate_Roughness");
-		Flux_Texture* pxMetallic = Zenith_AssetHandler::GetTexture("SupplyCrate_Metallic");
+		uint32_t uDiffuse = Zenith_AssetHandler::GetTexture("SupplyCrate_Diffuse");
+		uint32_t uNormal = Zenith_AssetHandler::GetTexture("SupplyCrate_Normal");
+		uint32_t uRoughness = Zenith_AssetHandler::GetTexture("SupplyCrate_Roughness");
+		uint32_t uMetallic = Zenith_AssetHandler::GetTexture("SupplyCrate_Metallic");
 
 		Flux_Material& xMat = Zenith_AssetHandler::AddMaterial("SupplyCrate");
-		xMat.SetDiffuse(pxDiffuse);
-		xMat.SetNormal(pxNormal);
-		xMat.SetRoughnessMetallic(pxRoughness);
+		xMat.SetDiffuse(uDiffuse);
+		xMat.SetNormal(uNormal);
+		xMat.SetRoughnessMetallic(uRoughness);
 	}
 	{
 		Zenith_AssetHandler::AddTexture2D("Rock_Diffuse", ASSETS_ROOT"Textures/rock2k/diffuse.ztx");
@@ -116,15 +116,15 @@ static void LoadAssets()
 		Zenith_AssetHandler::AddTexture2D("Rock_Roughness", ASSETS_ROOT"Textures/rock2k/roughness.ztx");
 		Zenith_AssetHandler::AddTexture2D("Rock_Metallic", ASSETS_ROOT"Textures/rock2k/metallic.ztx");
 
-		Flux_Texture* pxDiffuse = Zenith_AssetHandler::GetTexture("Rock_Diffuse");
-		Flux_Texture* pxNormal = Zenith_AssetHandler::GetTexture("Rock_Normal");
-		Flux_Texture* pxRoughness = Zenith_AssetHandler::GetTexture("Rock_Roughness");
-		Flux_Texture* pxMetallic = Zenith_AssetHandler::GetTexture("Rock_Metallic");
+		uint32_t uDiffuse = Zenith_AssetHandler::GetTexture("Rock_Diffuse");
+		uint32_t uNormal = Zenith_AssetHandler::GetTexture("Rock_Normal");
+		uint32_t uRoughness = Zenith_AssetHandler::GetTexture("Rock_Roughness");
+		uint32_t uMetallic = Zenith_AssetHandler::GetTexture("Rock_Metallic");
 
 		Flux_Material& xMat = Zenith_AssetHandler::AddMaterial("Rock");
-		xMat.SetDiffuse(pxDiffuse);
-		xMat.SetNormal(pxNormal);
-		xMat.SetRoughnessMetallic(pxRoughness);
+		xMat.SetDiffuse(uDiffuse);
+		xMat.SetNormal(uNormal);
+		xMat.SetRoughnessMetallic(uRoughness);
 	}
 
 	for (uint32_t x = 0; x < TERRAIN_EXPORT_DIMS; x++)
@@ -187,10 +187,12 @@ void Test_State_InGame::OnEnter()
 
 	Flux_MeshGeometry& xSphereMesh = Zenith_AssetHandler::GetMesh("Sphere_Smooth");
 
+	Flux_MemoryManager::BeginFrame();
 	Zenith_ModelComponent& xModel = s_xPlayer.AddComponent<Zenith_ModelComponent>();
 	//xModel.AddMeshEntry(Zenith_AssetHandler::GetMesh("StickyMcStickFace"), Zenith_AssetHandler::GetMaterial("Crystal"));
 	Flux_Material& xCrystalMaterial = Zenith_AssetHandler::GetMaterial("Crystal");
 	xModel.LoadMeshesFromDir(ASSETS_ROOT"Meshes/stickymcstickface_anim", &xCrystalMaterial);
+	Flux_MemoryManager::EndFrame(false);
 	for(u_int u = 0; u < xModel.GetNumMeshEntires(); u++)
 	{
 		xModel.GetMeshGeometryAtIndex(u).m_pxAnimation = new Flux_MeshAnimation(ASSETS_ROOT"Meshes/stickymcstickface_anim/StickyMcStickface_Anim.fbx", xModel.GetMeshGeometryAtIndex(u));
@@ -308,7 +310,9 @@ void Test_State_InGame::OnEnter()
 		xTrans.SetPosition({ 60, 170, -20 });
 		xTrans.SetRotation({ 0.7071, 0, 0.7071, 0});
 		Zenith_ModelComponent& xModel = s_xOgre.AddComponent<Zenith_ModelComponent>();
+		Flux_MemoryManager::BeginFrame();
 		xModel.LoadMeshesFromDir(ASSETS_ROOT"Meshes/ogre");
+		Flux_MemoryManager::EndFrame(false);
 		Flux_MeshGeometry& xMesh0 = xModel.GetMeshGeometryAtIndex(0);
 		xMesh0.m_pxAnimation = new Flux_MeshAnimation(ASSETS_ROOT"Meshes/ogre/ogre.fbx", xMesh0);
 		Flux_MeshGeometry& xMesh1 = xModel.GetMeshGeometryAtIndex(1);
@@ -333,7 +337,9 @@ void Test_State_InGame::OnEnter()
 		xTrans.SetPosition(s_xPlayerSpawn + Zenith_Maths::Vector3(u * 10, 100, 0));
 		xTrans.SetScale({ afScales[u],afScales[u],afScales[u] });
 		Zenith_ModelComponent& xModel = s_xGltfTest[u].AddComponent<Zenith_ModelComponent>();
+		Flux_MemoryManager::BeginFrame();
 		xModel.LoadMeshesFromDir(aszAssetNames[u]);
+		Flux_MemoryManager::EndFrame(false);
 	}
 }
 

@@ -29,7 +29,7 @@ struct TextVertex
 };
 static Flux_DynamicVertexBuffer s_xInstanceBuffer;
 
-static Flux_Texture* s_pxFontAtlas = nullptr;
+static uint32_t s_uFontAtlasHandle = UINT32_MAX;
 
 DEBUGVAR bool dbg_bEnable = true;
 DEBUGVAR float dbg_fTextSize = 100.f;
@@ -69,7 +69,7 @@ void Flux_Text::Initialise()
 	Flux_MemoryManager::InitialiseDynamicVertexBuffer(nullptr, s_uMaxCharsPerFrame * sizeof(TextVertex), s_xInstanceBuffer, bDeviceLocal);
 
 	Zenith_AssetHandler::AddTexture2D("Font_Atlas", "C:/dev/Zenith/Zenith/Assets/FontAtlas.ztx");
-	s_pxFontAtlas = Zenith_AssetHandler::GetTexture("Font_Atlas");
+	s_uFontAtlasHandle = Zenith_AssetHandler::GetTexture("Font_Atlas");
 
 #ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_DebugVariables::AddBoolean({ "Render", "Enable", "Text" }, dbg_bEnable);
@@ -188,7 +188,7 @@ void Flux_Text::Render(void*)
 
 	g_xCommandList.AddCommand<Flux_CommandBeginBind>(0);
 	g_xCommandList.AddCommand<Flux_CommandBindBuffer>(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer(), 0);
-	g_xCommandList.AddCommand<Flux_CommandBindTexture>(s_pxFontAtlas, 1);
+	g_xCommandList.AddCommand<Flux_CommandBindTexture>(s_uFontAtlasHandle, 1);
 
 	g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(6, uNumChars);
 

@@ -6,7 +6,7 @@ Flux_Texture* Zenith_AssetHandler::s_pxTextures = new Flux_Texture[ZENITH_MAX_TE
 Flux_MeshGeometry* Zenith_AssetHandler::s_pxMeshes = new Flux_MeshGeometry[ZENITH_MAX_MESHES];
 Flux_Material* Zenith_AssetHandler::s_pxMaterials = new Flux_Material[ZENITH_MAX_MATERIALS];
 
-std::unordered_map<std::string, Zenith_AssetHandler::AssetID> Zenith_AssetHandler::s_xTextureNameMap;
+std::unordered_map<std::string, uint32_t> Zenith_AssetHandler::s_xTextureNameMap;
 std::unordered_set<Zenith_AssetHandler::AssetID>	Zenith_AssetHandler::s_xUsedTextureIDs;
 
 std::unordered_map<std::string, Zenith_AssetHandler::AssetID> Zenith_AssetHandler::s_xMeshNameMap;
@@ -24,52 +24,34 @@ Flux_Texture* Zenith_AssetHandler::CreateDummyTexture(const std::string& strName
 	return &s_pxTextures[uID];
 }
 
-Flux_Texture* Zenith_AssetHandler::CreateColourAttachment(const std::string& strName, const Flux_SurfaceInfo& xInfo)
+uint32_t Zenith_AssetHandler::CreateColourAttachment(const std::string& strName, const Flux_SurfaceInfo& xInfo)
 {
-	AssetID uID = GetNextFreeTextureSlot();
-	Flux_Texture& xTex = s_pxTextures[uID];
-	s_xTextureNameMap.insert({ strName, uID });
-	Flux_MemoryManager::CreateColourAttachment(xInfo, xTex);
-	s_xUsedTextureIDs.insert(uID);
-	return &s_pxTextures[uID];
-}
-Flux_Texture* Zenith_AssetHandler::CreateDepthStencilAttachment(const std::string& strName, const Flux_SurfaceInfo& xInfo)
-{
-	AssetID uID = GetNextFreeTextureSlot();
-	Flux_Texture& xTex = s_pxTextures[uID];
-	s_xTextureNameMap.insert({ strName, uID });
-	Flux_MemoryManager::CreateDepthStencilAttachment(xInfo, xTex);
-	s_xUsedTextureIDs.insert(uID);
-	return &s_pxTextures[uID];
+	return Flux_MemoryManager::CreateColourAttachmentVRAM(xInfo);
 }
 
-Flux_Texture* Zenith_AssetHandler::AddTexture2D(const std::string& strName, const void* pData, const Flux_SurfaceInfo& xInfo, bool bCreateMips)
+uint32_t Zenith_AssetHandler::CreateDepthStencilAttachment(const std::string& strName, const Flux_SurfaceInfo& xInfo)
 {
-	AssetID uID = GetNextFreeTextureSlot();
-	Flux_Texture& xTex = s_pxTextures[uID];
-	s_xTextureNameMap.insert({ strName, uID });
-	Flux_MemoryManager::CreateTexture(pData, xInfo, bCreateMips, xTex);
-	s_xUsedTextureIDs.insert(uID);
-	return &s_pxTextures[uID];
+	return Flux_MemoryManager::CreateDepthStencilAttachmentVRAM(xInfo);
 }
 
-Flux_Texture* Zenith_AssetHandler::AddTexture2D(const std::string& strName, const char* szPath)
+uint32_t Zenith_AssetHandler::AddTexture2D(const std::string& strName, const void* pData, const Flux_SurfaceInfo& xInfo, bool bCreateMips)
 {
-	AssetID uID = GetNextFreeTextureSlot();
-	Flux_Texture& xTex = s_pxTextures[uID];
-	s_xTextureNameMap.insert({ strName, uID });
-	Flux_MemoryManager::CreateTexture(szPath, xTex);
-	s_xUsedTextureIDs.insert(uID);
-	return &s_pxTextures[uID];
+	uint32_t uVRAMHandle = Flux_MemoryManager::CreateTextureVRAM(pData, xInfo, bCreateMips);
+	s_xTextureNameMap.insert({ strName, uVRAMHandle });
+	return uVRAMHandle;
 }
-Flux_Texture* Zenith_AssetHandler::AddTextureCube(const std::string& strName, const char* szPathPX, const char* szPathNX, const char* szPathPY, const char* szPathNY, const char* szPathPZ, const char* szPathNZ)
+
+uint32_t Zenith_AssetHandler::AddTexture2D(const std::string& strName, const char* szPath)
 {
-	AssetID uID = GetNextFreeTextureSlot();
-	Flux_Texture& xTex = s_pxTextures[uID];
-	s_xTextureNameMap.insert({ strName, uID });
-	Flux_MemoryManager::CreateTextureCube(szPathPX, szPathNX, szPathPY, szPathNY, szPathPZ, szPathNZ, xTex);
-	s_xUsedTextureIDs.insert(uID);
-	return &s_pxTextures[uID];
+	uint32_t uVRAMHandle = Flux_MemoryManager::CreateTextureVRAM(szPath);
+	s_xTextureNameMap.insert({ strName, uVRAMHandle });
+	return uVRAMHandle;
+}
+uint32_t Zenith_AssetHandler::AddTextureCube(const std::string& strName, const char* szPathPX, const char* szPathNX, const char* szPathPY, const char* szPathNY, const char* szPathPZ, const char* szPathNZ)
+{
+	uint32_t uVRAMHandle = Flux_MemoryManager::CreateTextureCubeVRAM(szPathPX, szPathNX, szPathPY, szPathNY, szPathPZ, szPathNZ);
+	s_xTextureNameMap.insert({ strName, uVRAMHandle });
+	return uVRAMHandle;
 }
 Flux_MeshGeometry& Zenith_AssetHandler::AddMesh(const std::string& strName)
 {
@@ -97,21 +79,21 @@ Flux_Material& Zenith_AssetHandler::AddMaterial(const std::string& strName)
 	return s_pxMaterials[uID];
 }
 
-Flux_Texture* Zenith_AssetHandler::GetTexture(const std::string& strName)
+uint32_t Zenith_AssetHandler::GetTexture(const std::string& strName)
 {
 	Zenith_Assert(s_xTextureNameMap.find(strName) != s_xTextureNameMap.end(), "Texture2D doesn't exist");
-	return &s_pxTextures[s_xTextureNameMap.at(strName)];
+	return s_xTextureNameMap.at(strName);
 }
 
-Flux_Texture* Zenith_AssetHandler::TryGetTexture(const std::string& strName)
+uint32_t Zenith_AssetHandler::TryGetTexture(const std::string& strName)
 {
 	if (s_xTextureNameMap.find(strName) != s_xTextureNameMap.end())
 	{
-		return &s_pxTextures[s_xTextureNameMap.at(strName)];
+		return s_xTextureNameMap.at(strName);
 	}
 	else
 	{
-		return Flux_Graphics::s_pxBlackBlankTexture2D;
+		return Flux_Graphics::s_xBlackBlankTexture2D.m_uVRAMHandle;
 	}
 }
 
