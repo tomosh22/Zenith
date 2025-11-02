@@ -76,7 +76,7 @@ void Flux_Shadows::Initialise()
 #ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_DebugVariables::AddBoolean({"Render", "Enable", "Shadows"}, dbg_bEnabled);
 	Zenith_DebugVariables::AddFloat({"Render", "Shadows", "Z Multiplier"}, dbg_fZMultiplier, -10.f, 10.f);
-	Zenith_DebugVariables::AddTexture({"Render", "Shadows", "CSM0" }, *g_axCSMs->m_pxSRV);
+	Zenith_DebugVariables::AddTexture({"Render", "Shadows", "CSM0" }, g_axCSMs->m_pxSRV);
 #endif
 }
 
@@ -141,9 +141,9 @@ Zenith_Maths::Matrix4 Flux_Shadows::GetSunViewProjMatrix(const uint32_t uIndex)
 	return g_axSunViewProjMats[uIndex];
 }
 
-Flux_ShaderResourceView* Flux_Shadows::GetCSMSRV(const uint32_t u)
+Flux_ShaderResourceView& Flux_Shadows::GetCSMSRV(const uint32_t u)
 {
-	return dbg_bEnabled ? g_axCSMs[u].m_pxSRV : &Flux_Graphics::s_xWhiteBlankTexture2D.m_xSRV;
+	return dbg_bEnabled ? g_axCSMs[u].m_pxSRV : Flux_Graphics::s_xWhiteBlankTexture2D.m_xSRV;
 }
 
 Flux_DynamicConstantBuffer& Flux_Shadows::GetShadowMatrixBuffer(const uint32_t u)

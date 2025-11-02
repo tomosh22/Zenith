@@ -31,8 +31,6 @@ void Flux_ComputeTest::Initialise()
 
 	xBuilder.BuildColour(g_xComputeOutput, "Compute Test Output");
 	
-	Zenith_Log("Flux_ComputeTest - Created storage texture with VRAM handle: %u", g_xComputeOutput.m_uVRAMHandle);
-	
 	// ========== COMPUTE PIPELINE SETUP ==========
 	g_xComputeShader.InitialiseCompute("ComputeTest/ComputeTest.comp");
 	
@@ -56,7 +54,7 @@ void Flux_ComputeTest::Initialise()
 	Zenith_Log("Flux_ComputeTest - Built compute pipeline");
 	
 #ifdef ZENITH_DEBUG_VARIABLES
-	Zenith_DebugVariables::AddTexture({ "Compute Test", "Output Texture" }, *g_xComputeOutput.m_pxSRV);
+	Zenith_DebugVariables::AddTexture({ "Compute Test", "Output Texture" }, g_xComputeOutput.m_pxSRV);
 #endif
 }
 
@@ -73,7 +71,7 @@ void Flux_ComputeTest::RunComputePass()
 	
 	g_xComputeCommandList.AddCommand<Flux_CommandBindComputePipeline>(&g_xComputePipeline);
 	g_xComputeCommandList.AddCommand<Flux_CommandBeginBind>(0);
-	g_xComputeCommandList.AddCommand<Flux_CommandBindUAV>(g_xComputeOutput.m_pxUAV, 0);
+	g_xComputeCommandList.AddCommand<Flux_CommandBindUAV>(&g_xComputeOutput.m_pxUAV, 0);
 
 	g_xComputeCommandList.AddCommand<Flux_CommandPushConstant>(&Flux_Graphics::s_xFrameConstants.m_xScreenDims, sizeof(Flux_Graphics::s_xFrameConstants.m_xScreenDims));
 	// Dispatch compute shader: (width/8, height/8, 1) workgroups for 8x8 local size

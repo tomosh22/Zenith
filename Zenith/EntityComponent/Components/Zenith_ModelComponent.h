@@ -74,7 +74,7 @@ public:
 			{
 				const std::string strFilepath = xFile.path().string();
 				const std::string strFilename = xFile.path().stem().string();
-				uint32_t uTexHandle = Zenith_AssetHandler::AddTexture2D(strFilename, strFilepath.c_str());
+				Flux_Texture xTexture = Zenith_AssetHandler::AddTexture2D(strFilename, strFilepath.c_str());
 				const uint32_t uMatIndex = GetMaterialIndexFromTextureName(strFilename);
 				const std::string strMatName = strLeaf + std::to_string(uMatIndex) + std::to_string(ls_uCount);
 				if (!Zenith_AssetHandler::MaterialExists(strMatName))
@@ -85,7 +85,7 @@ public:
 
 				if (strFilename.find("Diffuse") != std::string::npos)
 				{
-					xMat.SetDiffuse(uTexHandle);
+					xMat.SetDiffuse(xTexture);
 				}
 				else if (strFilename.find("Specular") != std::string::npos)
 				{
@@ -105,7 +105,7 @@ public:
 				}
 				else if (strFilename.find("Normals") != std::string::npos)
 				{
-					xMat.SetNormal(uTexHandle);
+					xMat.SetNormal(xTexture);
 				}
 				else if (strFilename.find("Shininess") != std::string::npos)
 				{
@@ -129,7 +129,7 @@ public:
 				}
 				else if (strFilename.find("BaseColor") != std::string::npos)
 				{
-					xMat.SetDiffuse(uTexHandle);
+					xMat.SetDiffuse(xTexture);
 				}
 				else if (strFilename.find("Normal_Camera") != std::string::npos)
 				{
@@ -141,11 +141,11 @@ public:
 				}
 				else if (strFilename.find("Metallic") != std::string::npos)
 				{
-					xMat.SetRoughnessMetallic(uTexHandle);
+					xMat.SetRoughnessMetallic(xTexture);
 				}
 				else if (strFilename.find("Roughness") != std::string::npos)
 				{
-					xMat.SetRoughnessMetallic(uTexHandle);
+					xMat.SetRoughnessMetallic(xTexture);
 				}
 				else if (strFilename.find("Occlusion") != std::string::npos)
 				{

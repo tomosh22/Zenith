@@ -31,7 +31,7 @@ struct Particle
 	Zenith_Maths::Vector4 m_xColour;
 };
 
-static uint32_t s_uParticleTextureHandle = UINT32_MAX;
+static Flux_Texture s_xParticleTexture;
 
 void Flux_Particles::Initialise()
 {
@@ -64,7 +64,7 @@ void Flux_Particles::Initialise()
 
 	Zenith_AssetHandler::AddTexture2D("Particle", "C:/dev/Zenith/Games/Test/Assets/Textures/particle.ztx");
 	Zenith_AssetHandler::AddTexture2D("ParticleSwirl", "C:/dev/Zenith/Games/Test/Assets/Textures/particleSwirl.ztx");
-	s_uParticleTextureHandle = Zenith_AssetHandler::GetTexture("ParticleSwirl");
+	s_xParticleTexture = Zenith_AssetHandler::GetTexture("ParticleSwirl");
 
 #ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_DebugVariables::AddBoolean({ "Render", "Enable", "Particles" }, dbg_bEnable);
@@ -114,7 +114,7 @@ void Flux_Particles::Render(void*)
 
 	g_xCommandList.AddCommand<Flux_CommandBeginBind>(0);
 	g_xCommandList.AddCommand<Flux_CommandBindBuffer>(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer(), 0);
-	g_xCommandList.AddCommand<Flux_CommandBindTexture>(s_uParticleTextureHandle, 1);
+	g_xCommandList.AddCommand<Flux_CommandBindTexture>(&s_xParticleTexture, 1);
 
 	g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(6, 3);
 

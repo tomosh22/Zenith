@@ -227,23 +227,21 @@ void Zenith_Vulkan_Swapchain::Initialise()
 		s_xImageViews[u] = xDevice.createImageView(xViewCreate);
 
 		// Swapchain images don't use VRAM handles since they're managed by the swapchain
-		s_axTargetSetups[u].m_axColourAttachments[0].m_uVRAMHandle = UINT32_MAX;
+		s_axTargetSetups[u].m_axColourAttachments[0].m_xVRAMHandle = Flux_VRAMHandle(UINT32_MAX);
 
-		s_axTargetSetups[u].m_axColourAttachments[0].m_uWidth = xExtent.width;
-		s_axTargetSetups[u].m_axColourAttachments[0].m_uHeight = xExtent.height;
+		s_axTargetSetups[u].m_axColourAttachments[0].m_xSurfaceInfo.m_uWidth = xExtent.width;
+		s_axTargetSetups[u].m_axColourAttachments[0].m_xSurfaceInfo.m_uHeight = xExtent.height;
 		//#TO_TODO: stop hardcoding swapchain colour format
-		s_axTargetSetups[u].m_axColourAttachments[0].m_eFormat = TEXTURE_FORMAT_BGRA8_SRGB;
+		s_axTargetSetups[u].m_axColourAttachments[0].m_xSurfaceInfo.m_eFormat = TEXTURE_FORMAT_BGRA8_SRGB;
 		
 		// Create views for swapchain images
-		s_axTargetSetups[u].m_axColourAttachments[0].m_pxSRV = new Flux_ShaderResourceView();
-		s_axTargetSetups[u].m_axColourAttachments[0].m_pxSRV->m_xImageView = s_xImageViews[u];
-		s_axTargetSetups[u].m_axColourAttachments[0].m_pxSRV->m_uVRAMHandle = UINT32_MAX;
-		s_axTargetSetups[u].m_axColourAttachments[0].m_pxSRV->m_eViewType = VIEW_TYPE_SRV;
+		s_axTargetSetups[u].m_axColourAttachments[0].m_pxSRV.m_xImageView = s_xImageViews[u];
+		s_axTargetSetups[u].m_axColourAttachments[0].m_pxSRV.m_xVRAMHandle = Flux_VRAMHandle(UINT32_MAX);
+		s_axTargetSetups[u].m_axColourAttachments[0].m_pxSRV.m_eViewType = VIEW_TYPE_SRV;
 		
-		s_axTargetSetups[u].m_axColourAttachments[0].m_pxRTV = new Flux_RenderTargetView();
-		s_axTargetSetups[u].m_axColourAttachments[0].m_pxRTV->m_xImageView = s_xImageViews[u];
-		s_axTargetSetups[u].m_axColourAttachments[0].m_pxRTV->m_uVRAMHandle = UINT32_MAX;
-		s_axTargetSetups[u].m_axColourAttachments[0].m_pxRTV->m_eViewType = VIEW_TYPE_RTV;
+		s_axTargetSetups[u].m_axColourAttachments[0].m_pxRTV.m_xImageView = s_xImageViews[u];
+		s_axTargetSetups[u].m_axColourAttachments[0].m_pxRTV.m_xVRAMHandle = Flux_VRAMHandle(UINT32_MAX);
+		s_axTargetSetups[u].m_axColourAttachments[0].m_pxRTV.m_eViewType = VIEW_TYPE_RTV;
 	}
 	
 
@@ -327,9 +325,9 @@ void Zenith_Vulkan_Swapchain::BindAsTarget()
 	//flipping because porting from opengl
 	vk::Viewport xViewport{};
 	xViewport.x = 0;
-	xViewport.y = s_axTargetSetups[s_uCurrentImageIndex].m_axColourAttachments[0].m_uHeight;
-	xViewport.width = s_axTargetSetups[s_uCurrentImageIndex].m_axColourAttachments[0].m_uWidth;
-	xViewport.height = -1 * (float)s_axTargetSetups[s_uCurrentImageIndex].m_axColourAttachments[0].m_uHeight;
+	xViewport.y = s_axTargetSetups[s_uCurrentImageIndex].m_axColourAttachments[0].m_xSurfaceInfo.m_uHeight;
+	xViewport.width = s_axTargetSetups[s_uCurrentImageIndex].m_axColourAttachments[0].m_xSurfaceInfo.m_uWidth;
+	xViewport.height = -1 * (float)s_axTargetSetups[s_uCurrentImageIndex].m_axColourAttachments[0].m_xSurfaceInfo.m_uHeight;
 	xViewport.minDepth = 0;
 	xViewport.maxDepth = 1;
 
@@ -372,10 +370,10 @@ void Zenith_Vulkan_Swapchain::EndFrame()
 #endif
 	{
 		// Bind final render target using SRV
-		Flux_ShaderResourceView* pxSRV = Flux_Graphics::s_xFinalRenderTarget.m_axColourAttachments[0].m_pxSRV;
-		if (pxSRV)
+		Flux_ShaderResourceView& xSRV = Flux_Graphics::s_xFinalRenderTarget.m_axColourAttachments[0].m_pxSRV;
+		if (xSRV.m_xImageView != VK_NULL_HANDLE)
 		{
-			s_xCopyToFramebufferCmd.BindSRV(pxSRV, 0);
+			s_xCopyToFramebufferCmd.BindSRV(&xSRV, 0);
 		}
 		else
 		{

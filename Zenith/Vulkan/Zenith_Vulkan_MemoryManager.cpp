@@ -252,7 +252,7 @@ void Zenith_Vulkan_MemoryManager::CreateColourAttachment(const Flux_SurfaceInfo&
 	ImageTransitionBarrier(xTextureOut.GetImage(), vk::ImageLayout::eUndefined, vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands);
 }
 
-uint32_t Zenith_Vulkan_MemoryManager::CreateColourAttachmentVRAM(const Flux_SurfaceInfo& xInfo)
+Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateColourAttachmentVRAM(const Flux_SurfaceInfo& xInfo)
 {
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 	
@@ -284,11 +284,11 @@ uint32_t Zenith_Vulkan_MemoryManager::CreateColourAttachmentVRAM(const Flux_Surf
 	vmaCreateImage(s_xAllocator, &xImageInfo_Native, &xAllocInfo, &xImage, &xAllocation, nullptr);
 
 	Zenith_Vulkan_VRAM* pxVRAM = new Zenith_Vulkan_VRAM(vk::Image(xImage), xAllocation, s_xAllocator);
-	uint32_t uHandle = Zenith_Vulkan::RegisterVRAM(pxVRAM);
+	Flux_VRAMHandle xHandle = Zenith_Vulkan::RegisterVRAM(pxVRAM);
 
 	ImageTransitionBarrier(vk::Image(xImage), vk::ImageLayout::eUndefined, vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands);
 
-	return uHandle;
+	return xHandle;
 }
 
 void Zenith_Vulkan_MemoryManager::CreateDepthStencilAttachment(const Flux_SurfaceInfo& xInfo, Zenith_Vulkan_Texture& xTextureOut)
@@ -299,7 +299,7 @@ void Zenith_Vulkan_MemoryManager::CreateDepthStencilAttachment(const Flux_Surfac
 	ImageTransitionBarrier(xTextureOut.GetImage(), vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthStencilReadOnlyOptimal, vk::ImageAspectFlagBits::eDepth, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands);
 }
 
-uint32_t Zenith_Vulkan_MemoryManager::CreateDepthStencilAttachmentVRAM(const Flux_SurfaceInfo& xInfo)
+Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateDepthStencilAttachmentVRAM(const Flux_SurfaceInfo& xInfo)
 {
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 	
@@ -330,15 +330,15 @@ uint32_t Zenith_Vulkan_MemoryManager::CreateDepthStencilAttachmentVRAM(const Flu
 	vmaCreateImage(s_xAllocator, &xImageInfo_Native, &xAllocInfo, &xImage, &xAllocation, nullptr);
 
 	Zenith_Vulkan_VRAM* pxVRAM = new Zenith_Vulkan_VRAM(vk::Image(xImage), xAllocation, s_xAllocator);
-	uint32_t uHandle = Zenith_Vulkan::RegisterVRAM(pxVRAM);
+	Flux_VRAMHandle xHandle = Zenith_Vulkan::RegisterVRAM(pxVRAM);
 
 	Zenith_Assert(xInfo.m_eFormat == TEXTURE_FORMAT_D32_SFLOAT, "#TO_TODO: layouts for just depth without stencil");
 	ImageTransitionBarrier(vk::Image(xImage), vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthStencilReadOnlyOptimal, vk::ImageAspectFlagBits::eDepth, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands);
 
-	return uHandle;
+	return xHandle;
 }
 
-uint32_t Zenith_Vulkan_MemoryManager::CreateTextureVRAM(const void* pData, const Flux_SurfaceInfo& xInfo, bool bCreateMips)
+Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateTextureVRAM(const void* pData, const Flux_SurfaceInfo& xInfo, bool bCreateMips)
 {
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 	
@@ -373,7 +373,7 @@ uint32_t Zenith_Vulkan_MemoryManager::CreateTextureVRAM(const void* pData, const
 	vmaCreateImage(s_xAllocator, &xImageInfo_Native, &xAllocInfo, &xImage, &xAllocation, nullptr);
 
 	Zenith_Vulkan_VRAM* pxVRAM = new Zenith_Vulkan_VRAM(vk::Image(xImage), xAllocation, s_xAllocator);
-	uint32_t uHandle = Zenith_Vulkan::RegisterVRAM(pxVRAM);
+	Flux_VRAMHandle xHandle = Zenith_Vulkan::RegisterVRAM(pxVRAM);
 
 	if (pData)
 	{
@@ -401,10 +401,10 @@ uint32_t Zenith_Vulkan_MemoryManager::CreateTextureVRAM(const void* pData, const
 
 	ImageTransitionBarrier(vk::Image(xImage), vk::ImageLayout::eUndefined, vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands);
 
-	return uHandle;
+	return xHandle;
 }
 
-uint32_t Zenith_Vulkan_MemoryManager::CreateTextureVRAM(const char* szPath, Flux_SurfaceInfo* pxInfoOut)
+Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateTextureVRAM(const char* szPath, Flux_SurfaceInfo* pxInfoOut)
 {
 	size_t ulDataSize;
 	int32_t uWidth = 0, uHeight = 0, uDepth = 0;
@@ -438,14 +438,14 @@ uint32_t Zenith_Vulkan_MemoryManager::CreateTextureVRAM(const char* szPath, Flux
 		*pxInfoOut = xInfo;
 	}
 
-	uint32_t uHandle = CreateTextureVRAM(pData, xInfo, true);
+	Flux_VRAMHandle xHandle = CreateTextureVRAM(pData, xInfo, true);
 	
 	Zenith_MemoryManagement::Deallocate(pData);
 	
-	return uHandle;
+	return xHandle;
 }
 
-uint32_t Zenith_Vulkan_MemoryManager::CreateTextureCubeVRAM(const char* szPathPX, const char* szPathNX, const char* szPathPY, const char* szPathNY, const char* szPathPZ, const char* szPathNZ, Flux_SurfaceInfo* pxInfoOut)
+Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateTextureCubeVRAM(const char* szPathPX, const char* szPathNX, const char* szPathPY, const char* szPathNY, const char* szPathPZ, const char* szPathNZ, Flux_SurfaceInfo* pxInfoOut)
 {
 	const char* aszPaths[6] =
 	{
@@ -531,7 +531,7 @@ uint32_t Zenith_Vulkan_MemoryManager::CreateTextureCubeVRAM(const char* szPathPX
 	vmaCreateImage(s_xAllocator, &xImageInfo_Native, &xAllocInfo, &xImage, &xAllocation, nullptr);
 
 	Zenith_Vulkan_VRAM* pxVRAM = new Zenith_Vulkan_VRAM(vk::Image(xImage), xAllocation, s_xAllocator);
-	uint32_t uHandle = Zenith_Vulkan::RegisterVRAM(pxVRAM);
+	Flux_VRAMHandle xHandle = Zenith_Vulkan::RegisterVRAM(pxVRAM);
 
 	// Upload using legacy texture temporarily - concatenate all layer data
 	size_t ulTotalDataSize = 0;
@@ -573,7 +573,7 @@ uint32_t Zenith_Vulkan_MemoryManager::CreateTextureCubeVRAM(const char* szPathPX
 
 	ImageTransitionBarrier(vk::Image(xImage), vk::ImageLayout::eUndefined, vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands);
 
-	return uHandle;
+	return xHandle;
 }
 
 
@@ -806,10 +806,10 @@ void Zenith_Vulkan_MemoryManager::FreeTexture(Zenith_Vulkan_Texture* pxTexture)
 	pxTexture->SetImage(VK_NULL_HANDLE);
 }
 
-vk::ImageView Zenith_Vulkan_MemoryManager::CreateRenderTargetView(uint32_t uVRAMHandle, const Flux_SurfaceInfo& xInfo, uint32_t uMipLevel)
+vk::ImageView Zenith_Vulkan_MemoryManager::CreateRenderTargetView(Flux_VRAMHandle xVRAMHandle, const Flux_SurfaceInfo& xInfo, uint32_t uMipLevel)
 {
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
-	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(uVRAMHandle);
+	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xVRAMHandle);
 	
 	vk::Format xFormat = Zenith_Vulkan_Texture::ConvertToVkFormat_Colour(xInfo.m_eFormat);
 	
@@ -831,10 +831,10 @@ vk::ImageView Zenith_Vulkan_MemoryManager::CreateRenderTargetView(uint32_t uVRAM
 	return xDevice.createImageView(xViewCreate);
 }
 
-vk::ImageView Zenith_Vulkan_MemoryManager::CreateDepthStencilView(uint32_t uVRAMHandle, const Flux_SurfaceInfo& xInfo, uint32_t uMipLevel)
+vk::ImageView Zenith_Vulkan_MemoryManager::CreateDepthStencilView(Flux_VRAMHandle xVRAMHandle, const Flux_SurfaceInfo& xInfo, uint32_t uMipLevel)
 {
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
-	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(uVRAMHandle);
+	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xVRAMHandle);
 	
 	vk::Format xFormat = Zenith_Vulkan_Texture::ConvertToVkFormat_DepthStencil(xInfo.m_eFormat);
 	
@@ -856,10 +856,10 @@ vk::ImageView Zenith_Vulkan_MemoryManager::CreateDepthStencilView(uint32_t uVRAM
 	return xDevice.createImageView(xViewCreate);
 }
 
-vk::ImageView Zenith_Vulkan_MemoryManager::CreateShaderResourceView(uint32_t uVRAMHandle, const Flux_SurfaceInfo& xInfo, uint32_t uBaseMip, uint32_t uMipCount)
+vk::ImageView Zenith_Vulkan_MemoryManager::CreateShaderResourceView(Flux_VRAMHandle xVRAMHandle, const Flux_SurfaceInfo& xInfo, uint32_t uBaseMip, uint32_t uMipCount)
 {
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
-	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(uVRAMHandle);
+	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xVRAMHandle);
 	
 	const bool bIsDepth = xInfo.m_eFormat > TEXTURE_FORMAT_DEPTH_STENCIL_BEGIN && xInfo.m_eFormat < TEXTURE_FORMAT_DEPTH_STENCIL_END;
 	vk::Format xFormat = bIsDepth ? Zenith_Vulkan_Texture::ConvertToVkFormat_DepthStencil(xInfo.m_eFormat) : Zenith_Vulkan_Texture::ConvertToVkFormat_Colour(xInfo.m_eFormat);
@@ -882,10 +882,10 @@ vk::ImageView Zenith_Vulkan_MemoryManager::CreateShaderResourceView(uint32_t uVR
 	return xDevice.createImageView(xViewCreate);
 }
 
-vk::ImageView Zenith_Vulkan_MemoryManager::CreateUnorderedAccessView(uint32_t uVRAMHandle, const Flux_SurfaceInfo& xInfo, uint32_t uMipLevel)
+vk::ImageView Zenith_Vulkan_MemoryManager::CreateUnorderedAccessView(Flux_VRAMHandle xVRAMHandle, const Flux_SurfaceInfo& xInfo, uint32_t uMipLevel)
 {
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
-	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(uVRAMHandle);
+	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xVRAMHandle);
 	
 	vk::Format xFormat = Zenith_Vulkan_Texture::ConvertToVkFormat_Colour(xInfo.m_eFormat);
 	

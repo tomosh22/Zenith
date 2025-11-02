@@ -80,12 +80,12 @@ static void TransitionColorTargets(Zenith_Vulkan_CommandBuffer& xCommandBuffer, 
 
 	for (uint32_t i = 0; i < FLUX_MAX_TARGETS; i++)
 	{
-		if (xTargetSetup.m_axColourAttachments[i].m_eFormat != TEXTURE_FORMAT_NONE)
+		if (xTargetSetup.m_axColourAttachments[i].m_xSurfaceInfo.m_eFormat != TEXTURE_FORMAT_NONE)
 		{
-			uint32_t uVRAMHandle = xTargetSetup.m_axColourAttachments[i].m_uVRAMHandle;
-			if (uVRAMHandle != UINT32_MAX)
+			Flux_VRAMHandle xVRAMHandle = xTargetSetup.m_axColourAttachments[i].m_xVRAMHandle;
+			if (xVRAMHandle.AsUInt() != UINT32_MAX)
 			{
-				Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(uVRAMHandle);
+				Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xVRAMHandle);
 				if (pxVRAM)
 				{
 					vk::ImageSubresourceRange xSubRange = vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
@@ -127,8 +127,8 @@ static void TransitionDepthStencilTarget(Zenith_Vulkan_CommandBuffer& xCommandBu
 		return;
 	}
 
-	uint32_t uVRAMHandle = xTargetSetup.m_pxDepthStencil->m_uVRAMHandle;
-	if (uVRAMHandle == UINT32_MAX)
+	Flux_VRAMHandle uVRAMHandle = xTargetSetup.m_pxDepthStencil->m_xVRAMHandle;
+	if (!uVRAMHandle.IsValid())
 	{
 		return;
 	}
@@ -784,15 +784,16 @@ void Zenith_Vulkan_PerFrame::BeginFrame()
 	xDevice.resetDescriptorPool(m_axDescriptorPools[0]);
 }
 
-uint32_t Zenith_Vulkan::RegisterVRAM(Zenith_Vulkan_VRAM* pxVRAM)
+Flux_VRAMHandle Zenith_Vulkan::RegisterVRAM(Zenith_Vulkan_VRAM* pxVRAM)
 {
-	uint32_t uHandle = static_cast<uint32_t>(s_xVRAMRegistry.size());
+	Flux_VRAMHandle xHandle;
+	xHandle.SetValue(s_xVRAMRegistry.size());
 	s_xVRAMRegistry.push_back(pxVRAM);
-	return uHandle;
+	return xHandle;
 }
 
-Zenith_Vulkan_VRAM* Zenith_Vulkan::GetVRAM(uint32_t uHandle)
+Zenith_Vulkan_VRAM* Zenith_Vulkan::GetVRAM(const Flux_VRAMHandle xHandle)
 {
-	Zenith_Assert(uHandle < s_xVRAMRegistry.size(), "Invalid VRAM handle");
-	return s_xVRAMRegistry[uHandle];
+	Zenith_Assert(xHandle.AsUInt() < s_xVRAMRegistry.size(), "Invalid VRAM handle");
+	return s_xVRAMRegistry[xHandle.AsUInt()];
 }

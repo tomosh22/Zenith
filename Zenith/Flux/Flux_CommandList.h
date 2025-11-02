@@ -1,6 +1,9 @@
 #pragma once
 #include "Zenith_PlatformGraphics_Include.h"
 
+// Forward declarations
+struct Flux_Texture;
+
 enum Flux_CommandType
 {
 	FLUX_COMMANDTYPE__SET_PIPELINE,
@@ -153,16 +156,14 @@ class Flux_CommandBindTexture
 public:
 	static constexpr Flux_CommandType m_eType = FLUX_COMMANDTYPE__BIND_TEXTURE;
 
-	Flux_CommandBindTexture(uint32_t uVRAMHandle, const u_int uBindPoint, Flux_Sampler* pxSampler = nullptr)
-		: m_uVRAMHandle(uVRAMHandle)
+	Flux_CommandBindTexture(const Flux_Texture* pxTexture, const u_int uBindPoint, Flux_Sampler* pxSampler = nullptr)
+		: m_pxTexture(pxTexture)
 		, m_uBindPoint(uBindPoint)
 		, m_pxSampler(pxSampler)
 	{}
-	void operator()(Flux_CommandBuffer* pxCmdBuf)
-	{
-		pxCmdBuf->BindTextureHandle(m_uVRAMHandle, m_uBindPoint, m_pxSampler);
-	}
-	uint32_t m_uVRAMHandle;
+	void operator()(Flux_CommandBuffer* pxCmdBuf);
+	
+	const Flux_Texture* m_pxTexture;
 	const u_int m_uBindPoint;
 	Flux_Sampler* m_pxSampler;
 };

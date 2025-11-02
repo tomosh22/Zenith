@@ -17,17 +17,17 @@ public:
 	{
 	}
 
-	static uint32_t CreateColourAttachment(const std::string& strName, const Flux_SurfaceInfo& xInfo);
-	static uint32_t CreateDepthStencilAttachment(const std::string& strName, const Flux_SurfaceInfo& xInfo);
-	static uint32_t AddTexture2D(const std::string& strName, const void* pData, const Flux_SurfaceInfo& xInfo, bool bCreateMips);
-	static uint32_t AddTexture2D(const std::string& strName, const char* szPath);
-	static uint32_t AddTextureCube(const std::string& strName, const char* szPathPX, const char* szPathNX, const char* szPathPY, const char* szPathNY, const char* szPathPZ, const char* szPathNZ);
+	static Flux_VRAMHandle CreateColourAttachment(const std::string& strName, const Flux_SurfaceInfo& xInfo);
+	static Flux_VRAMHandle CreateDepthStencilAttachment(const std::string& strName, const Flux_SurfaceInfo& xInfo);
+	static Flux_Texture AddTexture2D(const std::string& strName, const void* pData, const Flux_SurfaceInfo& xInfo, bool bCreateMips);
+	static Flux_Texture AddTexture2D(const std::string& strName, const char* szPath);
+	static Flux_Texture AddTextureCube(const std::string& strName, const char* szPathPX, const char* szPathNX, const char* szPathPY, const char* szPathNY, const char* szPathPZ, const char* szPathNZ);
 	static Flux_MeshGeometry& AddMesh(const std::string& strName);
 	static Flux_MeshGeometry& AddMesh(const std::string& strName, const char* szPath, u_int uRetainAttributeBits = 0, const bool bUploadToGPU = true);
 	static Flux_Material& AddMaterial(const std::string& strName);
 
-	static uint32_t GetTexture(const std::string& strName);
-	static uint32_t TryGetTexture(const std::string& strName);
+	static Flux_Texture GetTexture(const std::string& strName);
+	static Flux_Texture TryGetTexture(const std::string& strName);
 	static bool TextureExists(const std::string& strName);
 	
 	static Flux_ShaderResourceView* GetTextureSRV(const std::string& strName);

@@ -8,7 +8,7 @@ public:
 	Zenith_ColliderComponent(Zenith_Entity& xEntity);
 	~Zenith_ColliderComponent() {
 		Zenith_Physics::s_pxPhysicsWorld->destroyRigidBody(m_pxRigidBody);
-		Zenith_Assert(!(m_pxTriArray != nullptr ^ m_pxConcaveShape != nullptr), "If we have a TriangleVertexArray then we must also have a ConcaveMeshShape, and vice-versa");
+		Zenith_Assert(!((m_pxTriArray != nullptr) ^ (m_pxConcaveShape != nullptr)), "If we have a TriangleVertexArray then we must also have a ConcaveMeshShape, and vice-versa");
 		if (m_pxTriArray != nullptr) {
 			Zenith_Assert(m_eVolumeType == COLLISION_VOLUME_TYPE_TERRAIN, "A collider component that isn't a terrain collider has somehow ended up with a triangle vertex array");
 			//#TO_TODO: deprecated?

@@ -93,8 +93,8 @@ void Flux_DeferredShading::Render(void*)
 	constexpr uint32_t uFirstShadowTexBind = 9;
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
-		Flux_ShaderResourceView* pxSRV = Flux_Shadows::GetCSMSRV(u);
-		g_xCommandList.AddCommand<Flux_CommandBindSRV>(pxSRV, uFirstShadowTexBind + u, &Flux_Graphics::s_xClampSampler);
+		Flux_ShaderResourceView& xSRV = Flux_Shadows::GetCSMSRV(u);
+		g_xCommandList.AddCommand<Flux_CommandBindSRV>(&xSRV, uFirstShadowTexBind + u, &Flux_Graphics::s_xClampSampler);
 	}
 	constexpr uint32_t uFirstShadowBufferBind = 1;
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)

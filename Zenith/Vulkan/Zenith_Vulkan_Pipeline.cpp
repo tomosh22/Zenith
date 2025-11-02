@@ -479,7 +479,7 @@ vk::RenderPass Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(Flux_TargetSetup&
 	uint32_t uNumColourAttachments = 0;
 	for (uint32_t i = 0; i < FLUX_MAX_TARGETS; i++)
 	{
-		if (xTargetSetup.m_axColourAttachments[i].m_eFormat != TEXTURE_FORMAT_NONE)
+		if (xTargetSetup.m_axColourAttachments[i].m_xSurfaceInfo.m_eFormat != TEXTURE_FORMAT_NONE)
 		{
 			uNumColourAttachments++;
 		}
@@ -508,7 +508,7 @@ vk::RenderPass Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(Flux_TargetSetup&
 	{
 		const Flux_RenderAttachment& xTarget = xTargetSetup.m_axColourAttachments[i];
 		xAttachmentDescs.at(i)
-			.setFormat(Zenith_Vulkan_Texture::ConvertToVkFormat_Colour(xTarget.m_eFormat))
+			.setFormat(Zenith_Vulkan_Texture::ConvertToVkFormat_Colour(xTarget.m_xSurfaceInfo.m_eFormat))
 			.setSamples(vk::SampleCountFlagBits::e1)
 			.setLoadOp(Zenith_Vulkan_Texture::ConvertToVkLoadAction(eColourLoad))
 			.setStoreOp(Zenith_Vulkan_Texture::ConvertToVkStoreAction(eColourStore))
@@ -529,7 +529,7 @@ vk::RenderPass Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(Flux_TargetSetup&
 	if (bHasDepth)
 	{
 		xDepthStencilAttachment = vk::AttachmentDescription()
-			.setFormat(Zenith_Vulkan_Texture::ConvertToVkFormat_DepthStencil(xTargetSetup.m_pxDepthStencil->m_eFormat))
+			.setFormat(Zenith_Vulkan_Texture::ConvertToVkFormat_DepthStencil(xTargetSetup.m_pxDepthStencil->m_xSurfaceInfo.m_eFormat))
 			.setSamples(vk::SampleCountFlagBits::e1)
 			.setLoadOp(Zenith_Vulkan_Texture::ConvertToVkLoadAction(eDepthStencilLoad))
 			.setStoreOp(Zenith_Vulkan_Texture::ConvertToVkStoreAction(eDepthStencilStore))
@@ -574,7 +574,7 @@ vk::Framebuffer Zenith_Vulkan_Pipeline::TargetSetupToFramebuffer(Flux_TargetSetu
 	uint32_t uNumColourAttachments = 0;
 	for (uint32_t i = 0; i < FLUX_MAX_TARGETS; i++)
 	{
-		if (xTargetSetup.m_axColourAttachments[i].m_eFormat != TEXTURE_FORMAT_NONE)
+		if (xTargetSetup.m_axColourAttachments[i].m_xSurfaceInfo.m_eFormat != TEXTURE_FORMAT_NONE)
 		{
 			uNumColourAttachments++;
 		}
@@ -591,11 +591,11 @@ vk::Framebuffer Zenith_Vulkan_Pipeline::TargetSetupToFramebuffer(Flux_TargetSetu
 	vk::ImageView axAttachments[FLUX_MAX_TARGETS];
 	for (uint32_t i = 0; i < uNumColourAttachments; i++)
 	{
-		axAttachments[i] = xTargetSetup.m_axColourAttachments[i].m_pxRTV->m_xImageView;
+		axAttachments[i] = xTargetSetup.m_axColourAttachments[i].m_pxRTV.m_xImageView;
 	}
 	if (bHasDepth)
 	{
-		axAttachments[uNumAttachments - 1] = xTargetSetup.m_pxDepthStencil->m_pxDSV->m_xImageView;
+		axAttachments[uNumAttachments - 1] = xTargetSetup.m_pxDepthStencil->m_pxDSV.m_xImageView;
 	}
 
 	framebufferInfo.renderPass = xPass;

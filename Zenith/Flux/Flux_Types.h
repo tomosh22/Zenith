@@ -3,6 +3,19 @@
 #include "Collections/Zenith_Vector.h"
 #include "Flux/Flux_Enums.h"
 
+class Flux_VRAMHandle
+{
+public:
+	Flux_VRAMHandle() = default;
+
+	void SetValue(const u_int uVal) { m_uVRAMHandle = uVal; }
+
+	u_int AsUInt() const { return m_uVRAMHandle; }
+	bool IsValid() const { return m_uVRAMHandle != UINT32_MAX; }
+private:
+	u_int m_uVRAMHandle = UINT32_MAX;
+};
+
 static uint32_t Flux_ShaderDataTypeSize(ShaderDataType t)
 {
 	switch (t)

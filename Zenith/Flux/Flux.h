@@ -5,47 +5,6 @@
 #include "Flux/Flux_Enums.h"
 #include "Flux/Flux_CommandList.h"
 
-// View structures for Direct3D-style resource views
-struct Flux_ShaderResourceView {
-	vk::ImageView m_xImageView = VK_NULL_HANDLE;
-	uint32_t m_uVRAMHandle = UINT32_MAX;
-	ViewType m_eViewType = VIEW_TYPE_SRV;
-};
-
-struct Flux_UnorderedAccessView {
-	vk::ImageView m_xImageView = VK_NULL_HANDLE;
-	uint32_t m_uVRAMHandle = UINT32_MAX;
-	ViewType m_eViewType = VIEW_TYPE_UAV;
-};
-
-struct Flux_RenderTargetView {
-	vk::ImageView m_xImageView = VK_NULL_HANDLE;
-	uint32_t m_uVRAMHandle = UINT32_MAX;
-	ViewType m_eViewType = VIEW_TYPE_RTV;
-};
-
-struct Flux_DepthStencilView {
-	vk::ImageView m_xImageView = VK_NULL_HANDLE;
-	uint32_t m_uVRAMHandle = UINT32_MAX;
-	ViewType m_eViewType = VIEW_TYPE_DSV;
-};
-
-struct Flux_RenderAttachment {
-	TextureFormat m_eFormat = TEXTURE_FORMAT_NONE;
-
-	uint32_t m_uWidth = 0;
-	uint32_t m_uHeight = 0;
-
-	// VRAM handle for the actual resource
-	uint32_t m_uVRAMHandle = UINT32_MAX;
-
-	// Views for different usage patterns
-	Flux_ShaderResourceView* m_pxSRV = nullptr;  // For reading in shaders
-	Flux_UnorderedAccessView* m_pxUAV = nullptr; // For compute shader read/write
-	Flux_RenderTargetView* m_pxRTV = nullptr;     // For rendering (color attachments)
-	Flux_DepthStencilView* m_pxDSV = nullptr;     // For depth/stencil attachments
-};
-
 struct Flux_SurfaceInfo
 {
 	TextureFormat m_eFormat = TEXTURE_FORMAT_NONE;
@@ -56,6 +15,53 @@ struct Flux_SurfaceInfo
 	u_int m_uNumLayers = 0;
 	u_int m_uMemoryFlags = MEMORY_FLAGS__NONE;
 };
+
+// View structures for Direct3D-style resource views
+struct Flux_ShaderResourceView {
+	vk::ImageView m_xImageView = VK_NULL_HANDLE;
+	Flux_VRAMHandle m_xVRAMHandle;
+	ViewType m_eViewType = VIEW_TYPE_SRV;
+};
+
+struct Flux_UnorderedAccessView {
+	vk::ImageView m_xImageView = VK_NULL_HANDLE;
+	Flux_VRAMHandle m_xVRAMHandle;
+	ViewType m_eViewType = VIEW_TYPE_UAV;
+};
+
+struct Flux_RenderTargetView {
+	vk::ImageView m_xImageView = VK_NULL_HANDLE;
+	Flux_VRAMHandle m_xVRAMHandle;
+	ViewType m_eViewType = VIEW_TYPE_RTV;
+};
+
+struct Flux_DepthStencilView {
+	vk::ImageView m_xImageView = VK_NULL_HANDLE;
+	Flux_VRAMHandle m_xVRAMHandle;
+	ViewType m_eViewType = VIEW_TYPE_DSV;
+};
+
+struct Flux_RenderAttachment {
+	Flux_SurfaceInfo m_xSurfaceInfo;
+
+	Flux_VRAMHandle m_xVRAMHandle;
+
+	// Views for different usage patterns
+	Flux_ShaderResourceView m_pxSRV;  // For reading in shaders
+	Flux_UnorderedAccessView m_pxUAV; // For compute shader read/write
+	Flux_RenderTargetView m_pxRTV;     // For rendering (color attachments)
+	Flux_DepthStencilView m_pxDSV;     // For depth/stencil attachments
+};
+
+struct Flux_Texture
+{
+	Flux_SurfaceInfo m_xSurfaceInfo;
+
+	Flux_VRAMHandle m_xVRAMHandle;
+
+	Flux_ShaderResourceView m_xSRV;
+};
+
 
 class Flux_RenderAttachmentBuilder {
 public:
@@ -86,7 +92,7 @@ struct Flux_TargetSetup {
 	{
 		for (u_int u = 0; u < FLUX_MAX_TARGETS; u++)
 		{
-			if (m_axColourAttachments[u].m_uVRAMHandle != xOther.m_axColourAttachments[u].m_uVRAMHandle)
+			if (m_axColourAttachments[u].m_xVRAMHandle.AsUInt() != xOther.m_axColourAttachments[u].m_xVRAMHandle.AsUInt())
 			{
 				return false;
 			}

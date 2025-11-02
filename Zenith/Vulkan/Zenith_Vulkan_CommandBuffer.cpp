@@ -171,9 +171,9 @@ void Zenith_Vulkan_CommandBuffer::TransitionComputeResourcesBefore()
 			}
 			else
 			{
-				// We have a UAV, use its VRAM handle to get the image
-				Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(pxUAV->m_uVRAMHandle);
-				if (!pxVRAM)
+			// We have a UAV, use its VRAM handle to get the image
+			Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(pxUAV->m_xVRAMHandle);
+			if (!pxVRAM)
 				{
 					continue;
 				}
@@ -258,7 +258,7 @@ void Zenith_Vulkan_CommandBuffer::TransitionComputeResourcesAfter()
 			else
 			{
 				// We have a UAV, use its VRAM handle to get the image
-				Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(pxUAV->m_uVRAMHandle);
+				Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(pxUAV->m_xVRAMHandle);
 				if (!pxVRAM)
 				{
 					continue;
@@ -505,7 +505,7 @@ void Zenith_Vulkan_CommandBuffer::BeginRenderPass(Flux_TargetSetup& xTargetSetup
 	uint32_t uNumColourAttachments = 0;
 	for (uint32_t i = 0; i < FLUX_MAX_TARGETS; i++)
 	{
-		if (xTargetSetup.m_axColourAttachments[i].m_eFormat != TEXTURE_FORMAT_NONE)
+		if (xTargetSetup.m_axColourAttachments[i].m_xSurfaceInfo.m_eFormat != TEXTURE_FORMAT_NONE)
 		{
 			uNumColourAttachments++;
 		}
@@ -518,16 +518,16 @@ void Zenith_Vulkan_CommandBuffer::BeginRenderPass(Flux_TargetSetup& xTargetSetup
 	m_xCurrentRenderPass = Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(xTargetSetup, eColourLoad, eColourStore, eDepthStencilLoad, eDepthStencilStore, eUsage);
 
 	uint32_t uWidth, uHeight;
-	if (xTargetSetup.m_axColourAttachments[0].m_eFormat != TEXTURE_FORMAT_NONE)
+	if (xTargetSetup.m_axColourAttachments[0].m_xSurfaceInfo.m_eFormat != TEXTURE_FORMAT_NONE)
 	{
-		uWidth = xTargetSetup.m_axColourAttachments[0].m_uWidth;
-		uHeight = xTargetSetup.m_axColourAttachments[0].m_uHeight;
+		uWidth = xTargetSetup.m_axColourAttachments[0].m_xSurfaceInfo.m_uWidth;
+		uHeight = xTargetSetup.m_axColourAttachments[0].m_xSurfaceInfo.m_uHeight;
 	}
 	else
 	{
-		Zenith_Assert(xTargetSetup.m_pxDepthStencil->m_eFormat != TEXTURE_FORMAT_NONE, "Target setup has no attachments");
-		uWidth = xTargetSetup.m_pxDepthStencil->m_uWidth;
-		uHeight = xTargetSetup.m_pxDepthStencil->m_uHeight;
+		Zenith_Assert(xTargetSetup.m_pxDepthStencil->m_xSurfaceInfo.m_eFormat != TEXTURE_FORMAT_NONE, "Target setup has no attachments");
+		uWidth = xTargetSetup.m_pxDepthStencil->m_xSurfaceInfo.m_uWidth;
+		uHeight = xTargetSetup.m_pxDepthStencil->m_xSurfaceInfo.m_uHeight;
 
 	}
 

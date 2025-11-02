@@ -20,8 +20,8 @@ Flux_Sampler Flux_Graphics::s_xRepeatSampler;
 Flux_Sampler Flux_Graphics::s_xClampSampler;
 Flux_MeshGeometry Flux_Graphics::s_xQuadMesh;
 Flux_DynamicConstantBuffer Flux_Graphics::s_xFrameConstantsBuffer;
-Flux_Graphics::BlankTexture Flux_Graphics::s_xWhiteBlankTexture2D;
-Flux_Graphics::BlankTexture Flux_Graphics::s_xBlackBlankTexture2D;
+Flux_Texture Flux_Graphics::s_xWhiteBlankTexture2D;
+Flux_Texture Flux_Graphics::s_xBlackBlankTexture2D;
 Flux_MeshGeometry Flux_Graphics::s_xBlankMesh;
 Flux_Material* Flux_Graphics::s_pxBlankMaterial;
 Flux_Graphics::FrameConstants Flux_Graphics::s_xFrameConstants;
@@ -59,15 +59,11 @@ void Flux_Graphics::Initialise()
 
 	u_int8 aucWhiteBlankTexData[] = { 255,255,255,255 };
 
-	s_xWhiteBlankTexture2D.m_uVRAMHandle = Zenith_AssetHandler::AddTexture2D("Flux Graphics White Blank Texture", aucWhiteBlankTexData, xTexInfo, false);
-	s_xWhiteBlankTexture2D.m_xSRV.m_uVRAMHandle = s_xWhiteBlankTexture2D.m_uVRAMHandle;
-	s_xWhiteBlankTexture2D.m_xSRV.m_xImageView = Flux_MemoryManager::CreateShaderResourceView(s_xWhiteBlankTexture2D.m_uVRAMHandle, xTexInfo);
+	s_xWhiteBlankTexture2D = Zenith_AssetHandler::AddTexture2D("Flux Graphics White Blank Texture", aucWhiteBlankTexData, xTexInfo, false);
 
 	u_int8 aucBlackBlankTexData[] = { 0,0,0,0 };
 	
-	s_xBlackBlankTexture2D.m_uVRAMHandle = Zenith_AssetHandler::AddTexture2D("Flux Graphics Black Blank Texture", aucBlackBlankTexData, xTexInfo, false);
-	s_xBlackBlankTexture2D.m_xSRV.m_uVRAMHandle = s_xBlackBlankTexture2D.m_uVRAMHandle;
-	s_xBlackBlankTexture2D.m_xSRV.m_xImageView = Flux_MemoryManager::CreateShaderResourceView(s_xBlackBlankTexture2D.m_uVRAMHandle, xTexInfo);
+	s_xBlackBlankTexture2D = Zenith_AssetHandler::AddTexture2D("Flux Graphics Black Blank Texture", aucBlackBlankTexData, xTexInfo, false);
 
 	s_pxBlankMaterial = &Zenith_AssetHandler::AddMaterial("BlankMaterial");
 
@@ -83,7 +79,7 @@ void Flux_Graphics::Initialise()
 	Zenith_DebugVariables::AddVector3({ "Render", "Sun Direction" }, dbg_SunDir, -1, 1.);
 	Zenith_DebugVariables::AddVector4({ "Render", "Sun Colour" }, dbg_SunColour, 0, 1.);
 
-	Zenith_DebugVariables::AddTexture({ "Render", "Debug", "MRT Diffuse" }, *s_xMRTTarget.m_axColourAttachments[MRT_INDEX_DIFFUSE].m_pxSRV);
+	Zenith_DebugVariables::AddTexture({ "Render", "Debug", "MRT Diffuse" }, s_xMRTTarget.m_axColourAttachments[MRT_INDEX_DIFFUSE].m_pxSRV);
 
 	Zenith_DebugVariables::AddBoolean({ "Render", "Quad Utilisation Analysis" }, dbg_bQuadUtilisationAnalysis);
 	Zenith_DebugVariables::AddUInt32({ "Render", "Target Pixels Per Tri" }, dbg_uTargetPixelsPerTri, 1, 32);
@@ -106,8 +102,7 @@ void Flux_Graphics::InitialiseRenderTargets()
 
 	xBuilder.m_eFormat = TEXTURE_FORMAT_D32_SFLOAT;
 	xBuilder.BuildDepthStencil(s_xDepthBuffer, "Flux Graphics Depth Buffer");
-	Zenith_Vulkan_VRAM* pxDepthVRAM = Zenith_Vulkan::GetVRAM(s_xDepthBuffer.m_uVRAMHandle);
-	Zenith_Log("Depth Buffer VRAM handle: %u, Image: %p", s_xDepthBuffer.m_uVRAMHandle, pxDepthVRAM ? pxDepthVRAM->GetImage() : VK_NULL_HANDLE);
+	Zenith_Vulkan_VRAM* pxDepthVRAM = Zenith_Vulkan::GetVRAM(s_xDepthBuffer.m_xVRAMHandle);
 
 	{
 		for (uint32_t u = 0; u < MRT_INDEX_COUNT; u++)
@@ -163,22 +158,22 @@ const Zenith_Maths::Vector3& Flux_Graphics::GetCameraPosition()
 
 Flux_ShaderResourceView* Flux_Graphics::GetGBufferSRV(MRTIndex eIndex)
 {
-	return s_xMRTTarget.m_axColourAttachments[eIndex].m_pxSRV;
+	return &s_xMRTTarget.m_axColourAttachments[eIndex].m_pxSRV;
 }
 
 Flux_ShaderResourceView* Flux_Graphics::GetDepthStencilSRV()
 {
-	return s_xDepthBuffer.m_pxSRV;
+	return &s_xDepthBuffer.m_pxSRV;
 }
 
 Flux_RenderTargetView* Flux_Graphics::GetGBufferRTV(MRTIndex eIndex)
 {
-	return s_xMRTTarget.m_axColourAttachments[eIndex].m_pxRTV;
+	return &s_xMRTTarget.m_axColourAttachments[eIndex].m_pxRTV;
 }
 
 Flux_DepthStencilView* Flux_Graphics::GetDepthStencilDSV()
 {
-	return s_xDepthBuffer.m_pxDSV;
+	return &s_xDepthBuffer.m_pxDSV;
 }
 
 float Flux_Graphics::GetNearPlane()

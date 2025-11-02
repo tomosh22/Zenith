@@ -103,8 +103,8 @@ public:
 	static vk::DescriptorSetLayout& GetBindlessTexturesDescriptorSetLayout() { return s_xBindlessTexturesDescriptorSetLayout; }
 
 	// VRAM Registry
-	static uint32_t RegisterVRAM(Zenith_Vulkan_VRAM* pxVRAM);
-	static Zenith_Vulkan_VRAM* GetVRAM(uint32_t uHandle);
+	static Flux_VRAMHandle RegisterVRAM(Zenith_Vulkan_VRAM* pxVRAM);
+	static Zenith_Vulkan_VRAM* GetVRAM(const Flux_VRAMHandle xHandle);
 private:
 	static vk::Instance s_xInstance;
 	static VKAPI_ATTR vk::Bool32 VKAPI_CALL DebugCallback(vk::DebugUtilsMessageSeverityFlagBitsEXT eMessageSeverity,
