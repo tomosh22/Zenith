@@ -185,12 +185,3 @@ enum MemoryFlags : u_int
 	MEMORY_FLAGS__SHADER_READ,
 	MEMORY_FLAGS__UNORDERED_ACCESS,
 };
-
-enum ViewType
-{
-	VIEW_TYPE_SRV,  // Shader Resource View (read-only in shaders)
-	VIEW_TYPE_UAV,  // Unordered Access View (read-write in compute shaders)
-	VIEW_TYPE_RTV,  // Render Target View (color attachment for rendering)
-	VIEW_TYPE_DSV,  // Depth Stencil View (depth/stencil attachment for rendering)
-	VIEW_TYPE_MAX
-};

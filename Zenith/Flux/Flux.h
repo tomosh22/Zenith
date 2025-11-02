@@ -20,25 +20,21 @@ struct Flux_SurfaceInfo
 struct Flux_ShaderResourceView {
 	vk::ImageView m_xImageView = VK_NULL_HANDLE;
 	Flux_VRAMHandle m_xVRAMHandle;
-	ViewType m_eViewType = VIEW_TYPE_SRV;
 };
 
 struct Flux_UnorderedAccessView {
 	vk::ImageView m_xImageView = VK_NULL_HANDLE;
 	Flux_VRAMHandle m_xVRAMHandle;
-	ViewType m_eViewType = VIEW_TYPE_UAV;
 };
 
 struct Flux_RenderTargetView {
 	vk::ImageView m_xImageView = VK_NULL_HANDLE;
 	Flux_VRAMHandle m_xVRAMHandle;
-	ViewType m_eViewType = VIEW_TYPE_RTV;
 };
 
 struct Flux_DepthStencilView {
 	vk::ImageView m_xImageView = VK_NULL_HANDLE;
 	Flux_VRAMHandle m_xVRAMHandle;
-	ViewType m_eViewType = VIEW_TYPE_DSV;
 };
 
 struct Flux_RenderAttachment {

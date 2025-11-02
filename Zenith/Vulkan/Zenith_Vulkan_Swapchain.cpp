@@ -227,7 +227,7 @@ void Zenith_Vulkan_Swapchain::Initialise()
 		s_xImageViews[u] = xDevice.createImageView(xViewCreate);
 
 		// Swapchain images don't use VRAM handles since they're managed by the swapchain
-		s_axTargetSetups[u].m_axColourAttachments[0].m_xVRAMHandle = Flux_VRAMHandle(UINT32_MAX);
+		s_axTargetSetups[u].m_axColourAttachments[0].m_xVRAMHandle.SetValue(UINT32_MAX);
 
 		s_axTargetSetups[u].m_axColourAttachments[0].m_xSurfaceInfo.m_uWidth = xExtent.width;
 		s_axTargetSetups[u].m_axColourAttachments[0].m_xSurfaceInfo.m_uHeight = xExtent.height;
@@ -236,12 +236,10 @@ void Zenith_Vulkan_Swapchain::Initialise()
 		
 		// Create views for swapchain images
 		s_axTargetSetups[u].m_axColourAttachments[0].m_pxSRV.m_xImageView = s_xImageViews[u];
-		s_axTargetSetups[u].m_axColourAttachments[0].m_pxSRV.m_xVRAMHandle = Flux_VRAMHandle(UINT32_MAX);
-		s_axTargetSetups[u].m_axColourAttachments[0].m_pxSRV.m_eViewType = VIEW_TYPE_SRV;
+		s_axTargetSetups[u].m_axColourAttachments[0].m_pxSRV.m_xVRAMHandle.SetValue(UINT32_MAX);
 		
 		s_axTargetSetups[u].m_axColourAttachments[0].m_pxRTV.m_xImageView = s_xImageViews[u];
-		s_axTargetSetups[u].m_axColourAttachments[0].m_pxRTV.m_xVRAMHandle = Flux_VRAMHandle(UINT32_MAX);
-		s_axTargetSetups[u].m_axColourAttachments[0].m_pxRTV.m_eViewType = VIEW_TYPE_RTV;
+		s_axTargetSetups[u].m_axColourAttachments[0].m_pxRTV.m_xVRAMHandle.SetValue(UINT32_MAX);
 	}
 	
 

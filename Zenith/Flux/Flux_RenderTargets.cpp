@@ -21,19 +21,16 @@ void Flux_RenderAttachmentBuilder::BuildColour(Flux_RenderAttachment& xAttachmen
 	// Create RTV with mips
 	xAttachment.m_pxRTV.m_xImageView = Flux_MemoryManager::CreateRenderTargetView(xAttachment.m_xVRAMHandle, xInfo, 0);
 	xAttachment.m_pxRTV.m_xVRAMHandle = xAttachment.m_xVRAMHandle;
-	xAttachment.m_pxRTV.m_eViewType = VIEW_TYPE_RTV;
 
 	// Create SRV with mips
 	xAttachment.m_pxSRV.m_xImageView = Flux_MemoryManager::CreateShaderResourceView(xAttachment.m_xVRAMHandle, xInfo, 0, xInfo.m_uNumMips);
 	xAttachment.m_pxSRV.m_xVRAMHandle = xAttachment.m_xVRAMHandle;
-	xAttachment.m_pxSRV.m_eViewType = VIEW_TYPE_SRV;
 
 	// Create UAV with mips if requested by memory flags
 	if (m_uMemoryFlags & MEMORY_FLAGS__UNORDERED_ACCESS)
 	{
 		xAttachment.m_pxUAV.m_xImageView = Flux_MemoryManager::CreateUnorderedAccessView(xAttachment.m_xVRAMHandle, xInfo, 0);
 		xAttachment.m_pxUAV.m_xVRAMHandle = xAttachment.m_xVRAMHandle;
-		xAttachment.m_pxUAV.m_eViewType = VIEW_TYPE_UAV;
 	}
 }
 
@@ -54,12 +51,10 @@ void Flux_RenderAttachmentBuilder::BuildDepthStencil(Flux_RenderAttachment& xAtt
 	// Create DSV with mips
 	xAttachment.m_pxDSV.m_xImageView = Flux_MemoryManager::CreateDepthStencilView(xAttachment.m_xVRAMHandle, xInfo, 0);
 	xAttachment.m_pxDSV.m_xVRAMHandle = xAttachment.m_xVRAMHandle;
-	xAttachment.m_pxDSV.m_eViewType = VIEW_TYPE_DSV;
 
 	// Create SRV with mips
 	xAttachment.m_pxSRV.m_xImageView = Flux_MemoryManager::CreateShaderResourceView(xAttachment.m_xVRAMHandle, xInfo, 0, xInfo.m_uNumMips);
 	xAttachment.m_pxSRV.m_xVRAMHandle = xAttachment.m_xVRAMHandle;
-	xAttachment.m_pxSRV.m_eViewType = VIEW_TYPE_SRV;
 }
 
 void Flux_TargetSetup::AssignDepthStencil(Flux_RenderAttachment* pxDS)
