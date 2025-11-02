@@ -127,17 +127,10 @@ static void TransitionDepthStencilTarget(Zenith_Vulkan_CommandBuffer& xCommandBu
 		return;
 	}
 
-	Flux_VRAMHandle uVRAMHandle = xTargetSetup.m_pxDepthStencil->m_xVRAMHandle;
-	if (!uVRAMHandle.IsValid())
-	{
-		return;
-	}
+	Flux_VRAMHandle xVRAMHandle = xTargetSetup.m_pxDepthStencil->m_xVRAMHandle;
+	Zenith_Assert(xVRAMHandle.IsValid(), "Depth stencil target has invalid VRAM handle");
 
-	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(uVRAMHandle);
-	if (!pxVRAM)
-	{
-		return;
-	}
+	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xVRAMHandle);
 
 	vk::ImageSubresourceRange xSubRange = vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eDepth, 0, 1, 0, 1);
 
