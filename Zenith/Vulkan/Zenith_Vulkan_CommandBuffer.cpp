@@ -5,6 +5,7 @@
 
 #include "Zenith_Vulkan.h"
 #include "Zenith_Vulkan_Buffer.h"
+#include "AssetHandling/Zenith_AssetHandler.h"
 #include "Flux/Flux.h"
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Flux_Graphics.h"
@@ -599,14 +600,11 @@ void Zenith_Vulkan_CommandBuffer::BindTextureHandle(uint32_t uVRAMHandle, uint32
 {
 	Zenith_Assert(m_uCurrentBindFreq < FLUX_MAX_DESCRIPTOR_SET_LAYOUTS, "Haven't called BeginBind");
 	
-	// Get VRAM from handle
-	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(uVRAMHandle);
-	Zenith_Assert(pxVRAM, "Invalid VRAM handle");
+	// Get SRV from AssetHandler
+	Flux_ShaderResourceView* pxSRV = Zenith_AssetHandler::GetTextureSRVByHandle(uVRAMHandle);
+	Zenith_Assert(pxSRV && pxSRV->m_xImageView, "No SRV found for texture handle");
 	
-	// Get the pre-created default SRV
-	vk::ImageView xImageView = pxVRAM->GetDefaultSRV();
-	Zenith_Assert(xImageView, "VRAM has no default SRV");
-	
+	vk::ImageView xImageView = pxSRV->m_xImageView;
 	m_uDescriptorDirty |= 1 << m_uCurrentBindFreq;
 	
 	// Store the ImageView and sampler

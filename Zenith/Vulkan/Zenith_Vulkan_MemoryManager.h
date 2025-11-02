@@ -59,8 +59,8 @@ private:
 	static uint32_t CreateColourAttachmentVRAM(const Flux_SurfaceInfo& xInfo);
 	static uint32_t CreateDepthStencilAttachmentVRAM(const Flux_SurfaceInfo& xInfo);
 	static uint32_t CreateTextureVRAM(const void* pData, const Flux_SurfaceInfo& xInfo, bool bCreateMips);
-	static uint32_t CreateTextureVRAM(const char* szPath);
-	static uint32_t CreateTextureCubeVRAM(const char* szPathPX, const char* szPathNX, const char* szPathPY, const char* szPathNY, const char* szPathPZ, const char* szPathNZ);
+	static uint32_t CreateTextureVRAM(const char* szPath, Flux_SurfaceInfo* pxInfoOut = nullptr);
+	static uint32_t CreateTextureCubeVRAM(const char* szPathPX, const char* szPathNX, const char* szPathPY, const char* szPathNY, const char* szPathPZ, const char* szPathNZ, Flux_SurfaceInfo* pxInfoOut = nullptr);
 	static void CreateColourAttachment(const Flux_SurfaceInfo& xInfo, Zenith_Vulkan_Texture& xTextureOut);
 	static void CreateDepthStencilAttachment(const Flux_SurfaceInfo& xInfo, Zenith_Vulkan_Texture& xTextureOut);
 	static void CreateTexture(const void* pData, Flux_SurfaceInfo xInfo, bool bCreateMips, Zenith_Vulkan_Texture& xTextureOut);

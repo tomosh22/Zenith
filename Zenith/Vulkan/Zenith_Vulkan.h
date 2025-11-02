@@ -156,11 +156,6 @@ public:
 		{
 			if (m_bIsImage && m_xImage != VK_NULL_HANDLE)
 			{
-				// Destroy the default SRV if it exists
-				if (m_xDefaultSRV != VK_NULL_HANDLE)
-				{
-					Zenith_Vulkan::GetDevice().destroyImageView(m_xDefaultSRV);
-				}
 				vmaDestroyImage(m_xAllocator, m_xImage, m_xAllocation);
 			}
 			else if (!m_bIsImage && m_xBuffer != VK_NULL_HANDLE)
@@ -174,10 +169,6 @@ public:
 	vk::Image GetImage() const { return m_xImage; }
 	vk::Buffer GetBuffer() const { return m_xBuffer; }
 	u_int GetBufferSize() const { return m_uBufferSize; }
-	
-	// View accessors for images
-	vk::ImageView GetDefaultSRV() const { return m_xDefaultSRV; }
-	void SetDefaultSRV(vk::ImageView xView) { m_xDefaultSRV = xView; }
 
 private:
 	VmaAllocation m_xAllocation = VK_NULL_HANDLE;
@@ -187,7 +178,6 @@ private:
 	u_int m_uBufferSize = 0;
 
 	vk::Image m_xImage = VK_NULL_HANDLE;
-	vk::ImageView m_xDefaultSRV = VK_NULL_HANDLE; // Default shader resource view for textures
 	
 	bool m_bIsImage = true;
 };

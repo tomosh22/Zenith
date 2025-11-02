@@ -374,10 +374,6 @@ uint32_t Zenith_Vulkan_MemoryManager::CreateTextureVRAM(const void* pData, const
 
 	Zenith_Vulkan_VRAM* pxVRAM = new Zenith_Vulkan_VRAM(vk::Image(xImage), xAllocation, s_xAllocator);
 	uint32_t uHandle = Zenith_Vulkan::RegisterVRAM(pxVRAM);
-	
-	// Create default SRV for shader access
-	vk::ImageView xDefaultSRV = CreateShaderResourceView(uHandle, xInfoCopy);
-	pxVRAM->SetDefaultSRV(xDefaultSRV);
 
 	if (pData)
 	{
@@ -408,7 +404,7 @@ uint32_t Zenith_Vulkan_MemoryManager::CreateTextureVRAM(const void* pData, const
 	return uHandle;
 }
 
-uint32_t Zenith_Vulkan_MemoryManager::CreateTextureVRAM(const char* szPath)
+uint32_t Zenith_Vulkan_MemoryManager::CreateTextureVRAM(const char* szPath, Flux_SurfaceInfo* pxInfoOut)
 {
 	size_t ulDataSize;
 	int32_t uWidth = 0, uHeight = 0, uDepth = 0;
@@ -437,6 +433,11 @@ uint32_t Zenith_Vulkan_MemoryManager::CreateTextureVRAM(const char* szPath)
 	xInfo.m_uNumMips = uNumMips;
 	xInfo.m_uMemoryFlags = 1 << MEMORY_FLAGS__SHADER_READ;
 
+	if (pxInfoOut)
+	{
+		*pxInfoOut = xInfo;
+	}
+
 	uint32_t uHandle = CreateTextureVRAM(pData, xInfo, true);
 	
 	Zenith_MemoryManagement::Deallocate(pData);
@@ -444,7 +445,7 @@ uint32_t Zenith_Vulkan_MemoryManager::CreateTextureVRAM(const char* szPath)
 	return uHandle;
 }
 
-uint32_t Zenith_Vulkan_MemoryManager::CreateTextureCubeVRAM(const char* szPathPX, const char* szPathNX, const char* szPathPY, const char* szPathNY, const char* szPathPZ, const char* szPathNZ)
+uint32_t Zenith_Vulkan_MemoryManager::CreateTextureCubeVRAM(const char* szPathPX, const char* szPathNX, const char* szPathPY, const char* szPathNY, const char* szPathPZ, const char* szPathNZ, Flux_SurfaceInfo* pxInfoOut)
 {
 	const char* aszPaths[6] =
 	{
@@ -496,6 +497,11 @@ uint32_t Zenith_Vulkan_MemoryManager::CreateTextureCubeVRAM(const char* szPathPX
 	xInfo.m_uNumMips = uNumMips;
 	xInfo.m_uMemoryFlags = 1 << MEMORY_FLAGS__SHADER_READ;
 
+	if (pxInfoOut)
+	{
+		*pxInfoOut = xInfo;
+	}
+
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 	
 	vk::Format xFormat = Zenith_Vulkan_Texture::ConvertToVkFormat_Colour(xInfo.m_eFormat);
@@ -526,10 +532,6 @@ uint32_t Zenith_Vulkan_MemoryManager::CreateTextureCubeVRAM(const char* szPathPX
 
 	Zenith_Vulkan_VRAM* pxVRAM = new Zenith_Vulkan_VRAM(vk::Image(xImage), xAllocation, s_xAllocator);
 	uint32_t uHandle = Zenith_Vulkan::RegisterVRAM(pxVRAM);
-	
-	// Create default SRV for shader access
-	vk::ImageView xDefaultSRV = CreateShaderResourceView(uHandle, xInfo);
-	pxVRAM->SetDefaultSRV(xDefaultSRV);
 
 	// Upload using legacy texture temporarily - concatenate all layer data
 	size_t ulTotalDataSize = 0;

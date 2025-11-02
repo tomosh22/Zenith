@@ -29,6 +29,11 @@ public:
 	static uint32_t GetTexture(const std::string& strName);
 	static uint32_t TryGetTexture(const std::string& strName);
 	static bool TextureExists(const std::string& strName);
+	
+	static Flux_ShaderResourceView* GetTextureSRV(const std::string& strName);
+	static Flux_ShaderResourceView* TryGetTextureSRV(const std::string& strName);
+	static Flux_ShaderResourceView* GetTextureSRVByHandle(uint32_t uVRAMHandle);
+	static Flux_ShaderResourceView* TryGetTextureSRVByHandle(uint32_t uVRAMHandle);
 
 	static Flux_MeshGeometry& GetMesh(const std::string& strName);
 	static Flux_MeshGeometry& TryGetMesh(const std::string& strName);
@@ -54,6 +59,8 @@ private:
 
 	static std::unordered_map<std::string, uint32_t> s_xTextureNameMap;
 	static std::unordered_set<AssetID>				s_xUsedTextureIDs;
+	static std::unordered_map<std::string, Flux_ShaderResourceView> s_xTextureSRVMap;
+	static std::unordered_map<uint32_t, Flux_ShaderResourceView> s_xTextureHandleToSRVMap;
 
 	static std::unordered_map<std::string, AssetID> s_xMeshNameMap;
 	static std::unordered_set<AssetID>				s_xUsedMeshIDs;
