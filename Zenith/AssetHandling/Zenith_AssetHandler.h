@@ -17,8 +17,6 @@ public:
 	{
 	}
 
-	static Flux_VRAMHandle CreateColourAttachment(const std::string& strName, const Flux_SurfaceInfo& xInfo);
-	static Flux_VRAMHandle CreateDepthStencilAttachment(const std::string& strName, const Flux_SurfaceInfo& xInfo);
 	static Flux_Texture AddTexture2D(const std::string& strName, const void* pData, const Flux_SurfaceInfo& xInfo, bool bCreateMips);
 	static Flux_Texture AddTexture2D(const std::string& strName, const char* szPath);
 	static Flux_Texture AddTextureCube(const std::string& strName, const char* szPathPX, const char* szPathNX, const char* szPathPY, const char* szPathNY, const char* szPathPZ, const char* szPathNZ);

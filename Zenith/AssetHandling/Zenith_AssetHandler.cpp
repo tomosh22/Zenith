@@ -16,16 +16,6 @@ std::unordered_set<Zenith_AssetHandler::AssetID>	Zenith_AssetHandler::s_xUsedMes
 std::unordered_map<std::string, Zenith_AssetHandler::AssetID> Zenith_AssetHandler::s_xMaterialNameMap;
 std::unordered_set<Zenith_AssetHandler::AssetID>	Zenith_AssetHandler::s_xUsedMaterialIDs;
 
-Flux_VRAMHandle Zenith_AssetHandler::CreateColourAttachment(const std::string& strName, const Flux_SurfaceInfo& xInfo)
-{
-	return Flux_VRAMHandle(Flux_MemoryManager::CreateColourAttachmentVRAM(xInfo));
-}
-
-Flux_VRAMHandle Zenith_AssetHandler::CreateDepthStencilAttachment(const std::string& strName, const Flux_SurfaceInfo& xInfo)
-{
-	return Flux_VRAMHandle(Flux_MemoryManager::CreateDepthStencilAttachmentVRAM(xInfo));
-}
-
 Flux_Texture Zenith_AssetHandler::AddTexture2D(const std::string& strName, const void* pData, const Flux_SurfaceInfo& xInfo, bool bCreateMips)
 {
 	Flux_VRAMHandle xVRAMHandle = Flux_MemoryManager::CreateTextureVRAM(pData, xInfo, bCreateMips);

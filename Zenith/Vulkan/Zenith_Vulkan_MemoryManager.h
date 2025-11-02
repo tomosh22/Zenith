@@ -47,6 +47,9 @@ public:
 	static void UploadBufferData(Zenith_Vulkan_Buffer& xBuffer, const void* pData, size_t uSize);
 	static void UploadTextureData(Zenith_Vulkan_Texture& xTexture, const void* pData, size_t uSize);
 
+	static Flux_VRAMHandle CreateColourAttachmentVRAM(const Flux_SurfaceInfo& xInfo);
+	static Flux_VRAMHandle CreateDepthStencilAttachmentVRAM(const Flux_SurfaceInfo& xInfo);
+
 	// View creation functions
 	static vk::ImageView CreateRenderTargetView(Flux_VRAMHandle xVRAMHandle, const Flux_SurfaceInfo& xInfo, uint32_t uMipLevel = 0);
 	static vk::ImageView CreateDepthStencilView(Flux_VRAMHandle xVRAMHandle, const Flux_SurfaceInfo& xInfo, uint32_t uMipLevel = 0);
@@ -57,8 +60,7 @@ public:
 private:
 	friend class Zenith_Vulkan_Texture;
 	friend class Zenith_AssetHandler;
-	static Flux_VRAMHandle CreateColourAttachmentVRAM(const Flux_SurfaceInfo& xInfo);
-	static Flux_VRAMHandle CreateDepthStencilAttachmentVRAM(const Flux_SurfaceInfo& xInfo);
+	
 	static Flux_VRAMHandle CreateTextureVRAM(const void* pData, const Flux_SurfaceInfo& xInfo, bool bCreateMips);
 	static Flux_VRAMHandle CreateTextureVRAM(const char* szPath, Flux_SurfaceInfo* pxInfoOut = nullptr);
 	static Flux_VRAMHandle CreateTextureCubeVRAM(const char* szPathPX, const char* szPathNX, const char* szPathPY, const char* szPathNY, const char* szPathPZ, const char* szPathNZ, Flux_SurfaceInfo* pxInfoOut = nullptr);
