@@ -6,3 +6,8 @@ void Flux_CommandBindTexture::operator()(Flux_CommandBuffer* pxCmdBuf)
 {
 	pxCmdBuf->BindTextureHandle(m_pxTexture->m_xVRAMHandle.AsUInt(), m_uBindPoint, m_pxSampler);
 }
+
+void Flux_CommandBindBuffer::operator()(Flux_CommandBuffer* pxCmdBuf)
+{
+	pxCmdBuf->BindBuffer(m_pxBufferVRAM->m_xVRAMHandle, m_uBindPoint);
+}

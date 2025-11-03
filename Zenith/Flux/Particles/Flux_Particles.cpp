@@ -88,7 +88,7 @@ void UploadInstanceData()
 		{{800.,1500 + sin(Zenith_Core::GetTimePassed()) * 200, 800.,300.}, {0.,0.,1.,1.}},
 	};
 
-	Flux_MemoryManager::UploadBufferData(s_xInstanceBuffer.GetBuffer(), axParticles, sizeof(axParticles));
+	Flux_MemoryManager::UploadBufferData(s_xInstanceBuffer.GetBufferVRAM().m_xVRAMHandle, axParticles, sizeof(axParticles));
 }
 
 void Flux_Particles::SubmitRenderTask()
@@ -119,7 +119,7 @@ void Flux_Particles::Render(void*)
 	g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&s_xInstanceBuffer, 1);
 
 	g_xCommandList.AddCommand<Flux_CommandBeginBind>(0);
-	g_xCommandList.AddCommand<Flux_CommandBindBuffer>(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer(), 0);
+	g_xCommandList.AddCommand<Flux_CommandBindBuffer>(&Flux_Graphics::s_xFrameConstantsBuffer.GetBufferVRAM(), 0);
 	g_xCommandList.AddCommand<Flux_CommandBindTexture>(&s_xParticleTexture, 1);
 
 	g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(6, 3);

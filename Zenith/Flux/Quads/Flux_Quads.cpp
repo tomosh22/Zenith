@@ -67,7 +67,7 @@ void Flux_Quads::Initialise()
 
 void Flux_Quads::UploadInstanceData()
 {
-	Flux_MemoryManager::UploadBufferData(s_xInstanceBuffer.GetBuffer(), s_axQuadsToRender, sizeof(Quad) * s_uQuadRenderIndex);
+	Flux_MemoryManager::UploadBufferData(s_xInstanceBuffer.GetBufferVRAM().m_xVRAMHandle, s_axQuadsToRender, sizeof(Quad) * s_uQuadRenderIndex);
 }
 
 void Flux_Quads::SubmitRenderTask()
@@ -98,7 +98,7 @@ void Flux_Quads::Render(void*)
 	g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&s_xInstanceBuffer, 1);
 
 	g_xCommandList.AddCommand<Flux_CommandBeginBind>(0);
-	g_xCommandList.AddCommand<Flux_CommandBindBuffer>(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer(), 0);
+	g_xCommandList.AddCommand<Flux_CommandBindBuffer>(&Flux_Graphics::s_xFrameConstantsBuffer.GetBufferVRAM(), 0);
 
 	g_xCommandList.AddCommand<Flux_CommandUseUnboundedTextures>(1);
 

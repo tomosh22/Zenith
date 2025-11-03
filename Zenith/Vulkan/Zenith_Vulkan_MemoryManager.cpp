@@ -150,15 +150,77 @@ void Zenith_Vulkan_MemoryManager::ImageTransitionBarrier(vk::Image xImage, vk::I
 	xCmd.pipelineBarrier(eSrcStage, eDstStage, vk::DependencyFlags(), 0, nullptr, 0, nullptr, 1, &xMemoryBarrier);
 }
 
-void Zenith_Vulkan_MemoryManager::AllocateBuffer(size_t uSize, vk::BufferUsageFlags eUsageFlags, MemoryResidency eResidency, Zenith_Vulkan_Buffer& xBufferOut)
+void Zenith_Vulkan_MemoryManager::InitialiseVertexBuffer(const void* pData, size_t uSize, Flux_VertexBuffer& xBufferOut, bool bDeviceLocal /*= true*/)
+{
+	Flux_VRAMHandle xHandle = CreateBufferVRAM(uSize, static_cast<MemoryFlags>(1 << MEMORY_FLAGS__VERTEX_BUFFER), bDeviceLocal ? MEMORY_RESIDENCY_GPU : MEMORY_RESIDENCY_CPU);
+	xBufferOut.GetBufferVRAM().m_xVRAMHandle = xHandle;
+	xBufferOut.GetBufferVRAM().m_ulSize = uSize;
+	
+	if (pData)
+	{
+		UploadBufferData(xHandle, pData, uSize);
+	}
+}
+
+void Zenith_Vulkan_MemoryManager::InitialiseDynamicVertexBuffer(const void* pData, size_t uSize, Flux_DynamicVertexBuffer& xBufferOut, bool bDeviceLocal /*= true*/)
+{
+	for (uint32_t u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
+	{
+		Flux_VRAMHandle xHandle = CreateBufferVRAM(uSize, static_cast<MemoryFlags>(1 << MEMORY_FLAGS__VERTEX_BUFFER), bDeviceLocal ? MEMORY_RESIDENCY_GPU : MEMORY_RESIDENCY_CPU);
+		xBufferOut.GetBufferVRAMForFrameInFlight(u).m_xVRAMHandle = xHandle;
+		xBufferOut.GetBufferVRAMForFrameInFlight(u).m_ulSize = uSize;
+		
+		if (pData)
+		{
+			UploadBufferData(xHandle, pData, uSize);
+		}
+	}
+}
+
+void Zenith_Vulkan_MemoryManager::InitialiseIndexBuffer(const void* pData, size_t uSize, Flux_IndexBuffer& xBufferOut)
+{
+	Flux_VRAMHandle xHandle = CreateBufferVRAM(uSize, static_cast<MemoryFlags>(1 << MEMORY_FLAGS__INDEX_BUFFER), MEMORY_RESIDENCY_GPU);
+	xBufferOut.GetBufferVRAM().m_xVRAMHandle = xHandle;
+	xBufferOut.GetBufferVRAM().m_ulSize = uSize;
+	
+	if (pData)
+	{
+		UploadBufferData(xHandle, pData, uSize);
+	}
+}
+
+void Zenith_Vulkan_MemoryManager::InitialiseDynamicConstantBuffer(const void* pData, size_t uSize, Flux_DynamicConstantBuffer& xBufferOut)
+{
+	for (uint32_t u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
+	{
+		Flux_VRAMHandle xHandle = CreateBufferVRAM(uSize, static_cast<MemoryFlags>(1 << MEMORY_FLAGS__SHADER_READ), MEMORY_RESIDENCY_CPU);
+		xBufferOut.GetBufferVRAMForFrameInFlight(u).m_xVRAMHandle = xHandle;
+		xBufferOut.GetBufferVRAMForFrameInFlight(u).m_ulSize = uSize;
+		
+		if (pData)
+		{
+			UploadBufferData(xHandle, pData, uSize);
+		}
+	}
+}
+
+Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateBufferVRAM(const u_int uSize, const MemoryFlags eFlags, MemoryResidency eResidency)
 {
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
+
+	vk::BufferUsageFlags eUsageFlags = vk::BufferUsageFlagBits::eTransferDst;
+	
+	if (eFlags & 1 << MEMORY_FLAGS__VERTEX_BUFFER)
+		eUsageFlags |= vk::BufferUsageFlagBits::eVertexBuffer;
+	if (eFlags & 1 << MEMORY_FLAGS__INDEX_BUFFER)
+		eUsageFlags |= vk::BufferUsageFlagBits::eIndexBuffer;
+	if (eFlags & 1 << MEMORY_FLAGS__SHADER_READ)
+		eUsageFlags |= vk::BufferUsageFlagBits::eUniformBuffer;
 
 	vk::BufferCreateInfo xBufferInfo = vk::BufferCreateInfo()
 		.setSize(uSize)
 		.setUsage(eUsageFlags)
 		.setSharingMode(vk::SharingMode::eExclusive);
-	xBufferOut.SetSize(uSize);
 
 	VmaAllocationCreateInfo xAllocInfo = {};
 	if (eResidency == MEMORY_RESIDENCY_CPU)
@@ -174,75 +236,14 @@ void Zenith_Vulkan_MemoryManager::AllocateBuffer(size_t uSize, vk::BufferUsageFl
 
 	const vk::BufferCreateInfo::NativeType xBufferInfo_Native = xBufferInfo;
 
-	vmaCreateBuffer(s_xAllocator, &xBufferInfo_Native, &xAllocInfo, xBufferOut.GetBuffer_Ptr(), xBufferOut.GetAllocation_Ptr(), nullptr);
+	VkBuffer xBuffer;
+	VmaAllocation xAllocation;
+	vmaCreateBuffer(s_xAllocator, &xBufferInfo_Native, &xAllocInfo, &xBuffer, &xAllocation, nullptr);
 
-	Zenith_Assert(xBufferOut.GetBuffer() != VK_NULL_HANDLE, "Buffer allocation failed");
-}
+	Zenith_Vulkan_VRAM* pxVRAM = new Zenith_Vulkan_VRAM(vk::Buffer(xBuffer), xAllocation, s_xAllocator, uSize);
+	Flux_VRAMHandle xHandle = Zenith_Vulkan::RegisterVRAM(pxVRAM);
 
-void Zenith_Vulkan_MemoryManager::FreeBuffer(Zenith_Vulkan_Buffer* pxBuffer)
-{
-	//#TO this happens as Reset is called twice on vertex and index buffers
-	//	  during destruction of Flux_MeshGeometry
-	if (!pxBuffer->IsValid())
-	{
-		return;
-	}
-
-	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
-
-	vmaDestroyBuffer(s_xAllocator, pxBuffer->GetBuffer(), pxBuffer->GetAllocation());
-
-	pxBuffer->SetBuffer(VK_NULL_HANDLE);
-}
-
-void Zenith_Vulkan_MemoryManager::InitialiseVertexBuffer(const void* pData, size_t uSize, Flux_VertexBuffer& xBufferOut, bool bDeviceLocal /*= true*/)
-{
-	Zenith_Vulkan_Buffer& xBuffer = xBufferOut.GetBuffer();
-	vk::BufferUsageFlags eFlags = vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst;
-	AllocateBuffer(uSize, eFlags, bDeviceLocal ? MEMORY_RESIDENCY_GPU : MEMORY_RESIDENCY_CPU, xBuffer);
-	if (pData)
-	{
-		UploadBufferData(xBuffer, pData, uSize);
-	}
-}
-
-void Zenith_Vulkan_MemoryManager::InitialiseDynamicVertexBuffer(const void* pData, size_t uSize, Flux_DynamicVertexBuffer& xBufferOut, bool bDeviceLocal /*= true*/)
-{
-	for (uint32_t u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
-	{
-		Zenith_Vulkan_Buffer& xBuffer = xBufferOut.GetBufferForFrameInFlight(u);
-		vk::BufferUsageFlags eFlags = vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst;
-		AllocateBuffer(uSize, eFlags, bDeviceLocal ? MEMORY_RESIDENCY_GPU : MEMORY_RESIDENCY_CPU, xBuffer);
-		if (pData)
-		{
-			UploadBufferData(xBuffer, pData, uSize);
-		}
-	}
-}
-
-void Zenith_Vulkan_MemoryManager::InitialiseIndexBuffer(const void* pData, size_t uSize, Flux_IndexBuffer& xBufferOut)
-{
-	Zenith_Vulkan_Buffer& xBuffer = xBufferOut.GetBuffer();
-	vk::BufferUsageFlags eFlags = vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst;
-	AllocateBuffer(uSize, eFlags, MEMORY_RESIDENCY_GPU, xBuffer);
-	if (pData)
-	{
-		UploadBufferData(xBuffer, pData, uSize);
-	}
-}
-
-void Zenith_Vulkan_MemoryManager::InitialiseDynamicConstantBuffer(const void* pData, size_t uSize, Flux_DynamicConstantBuffer& xBufferOut)
-{
-	for (uint32_t u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
-	{
-		Zenith_Vulkan_Buffer& xBuffer = xBufferOut.GetBufferForFrameInFlight(u);
-		vk::BufferUsageFlags eFlags = vk::BufferUsageFlagBits::eUniformBuffer | vk::BufferUsageFlagBits::eTransferDst;
-		AllocateBuffer(uSize, eFlags, MEMORY_RESIDENCY_CPU, xBuffer);
-		if (pData)
-		{
-			UploadBufferData(xBuffer, pData, uSize);
-		}
-	}
+	return xHandle;
 }
 
 Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateRenderTargetVRAM(const Flux_SurfaceInfo& xInfo)
@@ -545,6 +546,52 @@ void Zenith_Vulkan_MemoryManager::UploadBufferData(Zenith_Vulkan_Buffer& xBuffer
 		StagingMemoryAllocation xAllocation;
 		xAllocation.m_eType = ALLOCATION_TYPE_BUFFER;
 		xAllocation.m_xBufferMetadata.m_xBuffer = xBuffer.GetBuffer();
+		xAllocation.m_uSize = uSize;
+		xAllocation.m_uOffset = s_uNextFreeStagingOffset;
+		s_xStagingAllocations.push_back(xAllocation);
+
+		void* pMap = xDevice.mapMemory(s_xStagingMem, s_uNextFreeStagingOffset, uSize);
+		memcpy(pMap, pData, uSize);
+		xDevice.unmapMemory(s_xStagingMem);
+		s_uNextFreeStagingOffset += uSize;
+	}
+	s_xMutex.Unlock();
+}
+
+void Zenith_Vulkan_MemoryManager::UploadBufferData(Flux_VRAMHandle xBufferHandle, const void* pData, size_t uSize)
+{
+	s_xMutex.Lock();
+	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
+	
+	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xBufferHandle);
+	const VmaAllocation& xAlloc = pxVRAM->GetAllocation();
+	VkMemoryPropertyFlags eMemoryProps;
+	vmaGetAllocationMemoryProperties(s_xAllocator, xAlloc, &eMemoryProps);
+
+	if (eMemoryProps & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
+	{
+		void* pMap = nullptr;
+		vmaMapMemory(s_xAllocator, xAlloc, &pMap);
+		Zenith_Assert(pMap != nullptr, "Memory isn't mapped");
+		memcpy(pMap, pData, uSize);
+#ifdef ZENITH_ASSERT
+		VkResult eResult = 
+#endif
+		vmaFlushAllocation(s_xAllocator, xAlloc, 0, uSize);
+		Zenith_Assert(eResult == VK_SUCCESS, "Failed to flush allocation");
+
+		vmaUnmapMemory(s_xAllocator, xAlloc);
+	}
+	else
+	{
+		if (s_uNextFreeStagingOffset + uSize >= g_uStagingPoolSize)
+		{
+			HandleStagingBufferFull();
+		}
+
+		StagingMemoryAllocation xAllocation;
+		xAllocation.m_eType = ALLOCATION_TYPE_BUFFER;
+		xAllocation.m_xBufferMetadata.m_xBuffer = pxVRAM->GetBuffer();
 		xAllocation.m_uSize = uSize;
 		xAllocation.m_uOffset = s_uNextFreeStagingOffset;
 		s_xStagingAllocations.push_back(xAllocation);

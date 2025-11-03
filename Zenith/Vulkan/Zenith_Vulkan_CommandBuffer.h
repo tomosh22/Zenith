@@ -3,6 +3,7 @@
 #include "vulkan/vulkan.hpp"
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
 #include "Flux/Flux_Enums.h"
+#include "Flux/Flux_Types.h"
 
 #include "Vulkan/Zenith_Vulkan_Texture.h"
 
@@ -20,7 +21,7 @@ struct Flux_RenderTargetView;
 struct Flux_DepthStencilView;
 
 struct DescSetBindings {
-	Zenith_Vulkan_Buffer* m_xBuffers[MAX_BINDINGS];
+	Flux_VRAMHandle m_xBuffers[MAX_BINDINGS];
 	std::pair<Zenith_Vulkan_Texture*, Zenith_Vulkan_Sampler*> m_xTextures[MAX_BINDINGS];
 	
 	// Direct3D-style view bindings
@@ -62,7 +63,7 @@ public:
 	void BindRTV(Flux_RenderTargetView* pxRTV, uint32_t uBindPoint);
 	void BindDSV(Flux_DepthStencilView* pxDSV, uint32_t uBindPoint);
 	
-	void BindBuffer(Zenith_Vulkan_Buffer* pxBuffer, uint32_t uBindPoint);
+	void BindBuffer(Flux_VRAMHandle xBufferHandle, uint32_t uBindPoint);
 	void BindAccelerationStruct(void* pxStruct, uint32_t uBindPoint);
 	void PushConstant(void* pData, size_t uSize);
 	void UploadUniformData(void* pData, size_t uSize);
@@ -111,7 +112,7 @@ private:
 	bool m_bIsRecording = false;
 
 	Zenith_Vulkan_Texture* m_aapxTextureCache[FLUX_MAX_DESCRIPTOR_SET_LAYOUTS][MAX_BINDINGS];
-	Zenith_Vulkan_Buffer* m_aapxBufferCache[FLUX_MAX_DESCRIPTOR_SET_LAYOUTS][MAX_BINDINGS];
+	Flux_VRAMHandle m_aaxBufferCache[FLUX_MAX_DESCRIPTOR_SET_LAYOUTS][MAX_BINDINGS];
 	//#TO_TODO: accel struct cache
 
 	vk::DescriptorSet m_axCurrentDescSet[FLUX_MAX_DESCRIPTOR_SET_LAYOUTS] = { VK_NULL_HANDLE };

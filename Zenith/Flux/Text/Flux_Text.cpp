@@ -156,7 +156,7 @@ uint32_t Flux_Text::UploadChars()
 		
 	}
 
-	Flux_MemoryManager::UploadBufferData(s_xInstanceBuffer.GetBuffer(), xVertices.GetDataPointer(), sizeof(TextVertex) * xVertices.GetSize());
+	Flux_MemoryManager::UploadBufferData(s_xInstanceBuffer.GetBufferVRAM().m_xVRAMHandle, xVertices.GetDataPointer(), sizeof(TextVertex) * xVertices.GetSize());
 
 	return uCharCount;
 }
@@ -189,7 +189,7 @@ void Flux_Text::Render(void*)
 	g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&s_xInstanceBuffer, 1);
 
 	g_xCommandList.AddCommand<Flux_CommandBeginBind>(0);
-	g_xCommandList.AddCommand<Flux_CommandBindBuffer>(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer(), 0);
+	g_xCommandList.AddCommand<Flux_CommandBindBuffer>(&Flux_Graphics::s_xFrameConstantsBuffer.GetBufferVRAM(), 0);
 	g_xCommandList.AddCommand<Flux_CommandBindTexture>(&s_xFontAtlasTexture, 1);
 
 	g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(6, uNumChars);

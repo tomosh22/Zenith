@@ -6,5 +6,5 @@
 
 void Zenith_Vulkan_Buffer::Reset()
 {
-	Zenith_Vulkan_MemoryManager::FreeBuffer(this);
+	STUBBED
 }

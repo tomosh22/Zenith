@@ -84,7 +84,7 @@ void Flux_DeferredShading::Render(void*)
 	g_xCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
 
 	g_xCommandList.AddCommand<Flux_CommandBeginBind>(0);
-	g_xCommandList.AddCommand<Flux_CommandBindBuffer>(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer(), 0);
+	g_xCommandList.AddCommand<Flux_CommandBindBuffer>(&Flux_Graphics::s_xFrameConstantsBuffer.GetBufferVRAM(), 0);
 	g_xCommandList.AddCommand<Flux_CommandBindSRV>(Flux_Graphics::GetGBufferSRV(MRT_INDEX_DIFFUSE), 5);
 	g_xCommandList.AddCommand<Flux_CommandBindSRV>(Flux_Graphics::GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT), 6);
 	g_xCommandList.AddCommand<Flux_CommandBindSRV>(Flux_Graphics::GetGBufferSRV(MRT_INDEX_MATERIAL), 7);
@@ -99,7 +99,7 @@ void Flux_DeferredShading::Render(void*)
 	constexpr uint32_t uFirstShadowBufferBind = 1;
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
-		g_xCommandList.AddCommand<Flux_CommandBindBuffer>(&Flux_Shadows::GetShadowMatrixBuffer(u).GetBuffer(), uFirstShadowBufferBind + u);
+		g_xCommandList.AddCommand<Flux_CommandBindBuffer>(&Flux_Shadows::GetShadowMatrixBuffer(u).GetBufferVRAM(), uFirstShadowBufferBind + u);
 	}
 
 	dbg_uVisualiseCSMs = dbg_bVisualiseCSMs ? 1 : 0;

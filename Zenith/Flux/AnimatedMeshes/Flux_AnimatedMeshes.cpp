@@ -95,7 +95,7 @@ void Flux_AnimatedMeshes::Render(void*)
 	Zenith_Scene::GetCurrentScene().GetAllOfComponentType<Zenith_ModelComponent>(xModels);
 
 	g_xCommandList.AddCommand<Flux_CommandBeginBind>(0);
-	g_xCommandList.AddCommand<Flux_CommandBindBuffer>(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer(), 0);
+	g_xCommandList.AddCommand<Flux_CommandBindBuffer>(&Flux_Graphics::s_xFrameConstantsBuffer.GetBufferVRAM(), 0);
 
 	g_xCommandList.AddCommand<Flux_CommandBeginBind>(1);
 
@@ -118,7 +118,7 @@ void Flux_AnimatedMeshes::Render(void*)
 			g_xCommandList.AddCommand<Flux_CommandPushConstant>(&xModelMatrix, sizeof(xModelMatrix));
 			const Flux_Material& xMaterial = pxModel->GetMaterialAtIndex(uMesh);
 
-			g_xCommandList.AddCommand<Flux_CommandBindBuffer>(&xMesh.m_pxAnimation->m_xBoneBuffer.GetBuffer(), 0);
+			g_xCommandList.AddCommand<Flux_CommandBindBuffer>(&xMesh.m_pxAnimation->m_xBoneBuffer.GetBufferVRAM(), 0);
 
 			g_xCommandList.AddCommand<Flux_CommandBindTexture>(xMaterial.GetDiffuse(), 1);
 			g_xCommandList.AddCommand<Flux_CommandBindTexture>(xMaterial.GetNormal(), 2);

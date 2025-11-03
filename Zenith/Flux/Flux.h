@@ -58,6 +58,12 @@ struct Flux_Texture
 	Flux_ShaderResourceView m_xSRV;
 };
 
+struct Flux_BufferVRAM
+{
+	Flux_VRAMHandle m_xVRAMHandle;
+	u_int64 m_ulSize = 0;
+};
+
 
 class Flux_RenderAttachmentBuilder {
 public:

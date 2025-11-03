@@ -106,7 +106,8 @@ void Zenith_Vulkan_CommandBuffer::EndAndCpuWait(bool bEndPass)
 
 void Zenith_Vulkan_CommandBuffer::SetVertexBuffer(const Flux_VertexBuffer& xVertexBuffer, uint32_t uBindPoint /*= 0*/)
 {
-	const vk::Buffer xBuffer = xVertexBuffer.GetBuffer().GetBuffer();
+	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xVertexBuffer.GetBufferVRAM().m_xVRAMHandle);
+	const vk::Buffer xBuffer = pxVRAM->GetBuffer();
 	//#TO_TODO: offsets
 	vk::DeviceSize offsets[] = { 0 };
 	m_xCurrentCmdBuffer.bindVertexBuffers(uBindPoint, 1, &xBuffer, offsets);
@@ -114,7 +115,8 @@ void Zenith_Vulkan_CommandBuffer::SetVertexBuffer(const Flux_VertexBuffer& xVert
 
 void Zenith_Vulkan_CommandBuffer::SetVertexBuffer(const Flux_DynamicVertexBuffer& xVertexBuffer, uint32_t uBindPoint /*= 0*/)
 {
-	const vk::Buffer xBuffer = xVertexBuffer.GetBuffer().GetBuffer();
+	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xVertexBuffer.GetBufferVRAM().m_xVRAMHandle);
+	const vk::Buffer xBuffer = pxVRAM->GetBuffer();
 	//#TO_TODO: offsets
 	vk::DeviceSize offsets[] = { 0 };
 	m_xCurrentCmdBuffer.bindVertexBuffers(uBindPoint, 1, &xBuffer, offsets);
@@ -122,7 +124,8 @@ void Zenith_Vulkan_CommandBuffer::SetVertexBuffer(const Flux_DynamicVertexBuffer
 
 void Zenith_Vulkan_CommandBuffer::SetIndexBuffer(const Flux_IndexBuffer& xIndexBuffer)
 {
-	const vk::Buffer xBuffer = xIndexBuffer.GetBuffer().GetBuffer();
+	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xIndexBuffer.GetBufferVRAM().m_xVRAMHandle);
+	const vk::Buffer xBuffer = pxVRAM->GetBuffer();
 	static_assert(std::is_same<Flux_MeshGeometry::IndexType, uint32_t>(), "#TO_TODO: stop hardcoding type");
 	m_xCurrentCmdBuffer.bindIndexBuffer(xBuffer, 0, vk::IndexType::eUint32);
 }
@@ -338,7 +341,7 @@ void Zenith_Vulkan_CommandBuffer::PrepareDrawCallDescriptors()
 					continue;
 				}
 				
-				if (m_xBindings[uDescSet].m_xBuffers[i] != nullptr)
+				if (m_xBindings[uDescSet].m_xBuffers[i].IsValid())
 				{
 					uNumBuffers++;
 				}
@@ -441,16 +444,17 @@ void Zenith_Vulkan_CommandBuffer::PrepareDrawCallDescriptors()
 					continue;
 				}
 				
-				Zenith_Vulkan_Buffer* pxBuf = m_xBindings[uDescSet].m_xBuffers[i];
-				if (!pxBuf)
+				Flux_VRAMHandle xBufferHandle = m_xBindings[uDescSet].m_xBuffers[i];
+				if (!xBufferHandle.IsValid())
 				{
 					continue;
 				}
-				vk::Buffer xBuffer = pxBuf->GetBuffer();
+				Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xBufferHandle);
+				vk::Buffer xBuffer = pxVRAM->GetBuffer();
 				vk::DescriptorBufferInfo& xInfo = xBufferInfos.at(uCount)
 					.setBuffer(xBuffer)
 					.setOffset(0)
-					.setRange(pxBuf->GetSize());
+					.setRange(pxVRAM->GetBufferSize());
 
 				vk::WriteDescriptorSet& xWrite = xBufferWrites.at(uCount)
 					.setDescriptorType(vk::DescriptorType::eUniformBuffer)
@@ -580,7 +584,7 @@ void Zenith_Vulkan_CommandBuffer::SetPipeline(Zenith_Vulkan_Pipeline* pxPipeline
 	m_uDescriptorDirty = ~0u;
 	memset(m_xBindings, 0, sizeof(m_xBindings));
 	memset(m_aapxTextureCache, 0, sizeof(m_aapxTextureCache));
-	memset(m_aapxBufferCache, 0, sizeof(m_aapxBufferCache));
+	memset(m_aaxBufferCache, 0, sizeof(m_aaxBufferCache));
 
 }
 
@@ -666,16 +670,16 @@ void Zenith_Vulkan_CommandBuffer::BindDSV(Flux_DepthStencilView* pxDSV, uint32_t
 	m_xBindings[m_uCurrentBindFreq].m_xTextures[uBindPoint] = {nullptr, nullptr};
 }
 
-void Zenith_Vulkan_CommandBuffer::BindBuffer(Zenith_Vulkan_Buffer* pxBuffer, uint32_t uBindPoint)
+void Zenith_Vulkan_CommandBuffer::BindBuffer(Flux_VRAMHandle xBufferHandle, uint32_t uBindPoint)
 {
 	Zenith_Assert(m_uCurrentBindFreq < FLUX_MAX_DESCRIPTOR_SET_LAYOUTS, "Haven't called BeginBind");
 
-	if (pxBuffer != m_aapxBufferCache[m_uCurrentBindFreq][uBindPoint])
+	if (xBufferHandle.AsUInt() != m_aaxBufferCache[m_uCurrentBindFreq][uBindPoint].AsUInt())
 	{
 		m_uDescriptorDirty |= 1 << m_uCurrentBindFreq;
-		m_aapxBufferCache[m_uCurrentBindFreq][uBindPoint] = pxBuffer;
+		m_aaxBufferCache[m_uCurrentBindFreq][uBindPoint] = xBufferHandle;
 	}
-	m_xBindings[m_uCurrentBindFreq].m_xBuffers[uBindPoint] = pxBuffer;
+	m_xBindings[m_uCurrentBindFreq].m_xBuffers[uBindPoint] = xBufferHandle;
 }
 
 void Zenith_Vulkan_CommandBuffer::BindAccelerationStruct(void* pxStruct, uint32_t uBindPoint) {
@@ -728,7 +732,7 @@ void Zenith_Vulkan_CommandBuffer::BeginBind(u_int uDescSet)
 {
 	for (uint32_t i = 0; i < MAX_BINDINGS; i++)
 	{
-		m_xBindings[uDescSet].m_xBuffers[i] = nullptr;
+		m_xBindings[uDescSet].m_xBuffers[i] = Flux_VRAMHandle();
 		m_xBindings[uDescSet].m_xTextures[i] = {nullptr, nullptr};
 		m_xBindings[uDescSet].m_xSRVs[i] = nullptr;
 		m_xBindings[uDescSet].m_xUAVs[i] = nullptr;
