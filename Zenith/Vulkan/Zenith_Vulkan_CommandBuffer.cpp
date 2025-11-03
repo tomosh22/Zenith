@@ -4,7 +4,6 @@
 #include "Zenith_Vulkan_Texture.h"
 
 #include "Zenith_Vulkan.h"
-#include "Zenith_Vulkan_Buffer.h"
 #include "AssetHandling/Zenith_AssetHandler.h"
 #include "Flux/Flux.h"
 #include "Flux/Flux_RenderTargets.h"
@@ -779,31 +778,6 @@ void Zenith_Vulkan_CommandBuffer::ImageTransitionBarrier(vk::Image xImage, vk::I
 	m_xCurrentCmdBuffer.pipelineBarrier(eSrcStage, eDstStage, vk::DependencyFlags(), 0, nullptr, 0, nullptr, 1, &xMemoryBarrier);
 }
 
-void Zenith_Vulkan_CommandBuffer::CopyBufferToBuffer(Zenith_Vulkan_Buffer* pxSrc, Zenith_Vulkan_Buffer* pxDst, size_t uSize, size_t uSrcOffset)
-{
-	vk::BufferCopy xCopyRegion(uSrcOffset, 0, uSize);
-	m_xCurrentCmdBuffer.copyBuffer(pxSrc->GetBuffer(), pxDst->GetBuffer(), xCopyRegion);
-}
-
-void Zenith_Vulkan_CommandBuffer::CopyBufferToTexture(Zenith_Vulkan_Buffer* pxSrc, Zenith_Vulkan_Texture* pxDst, size_t uSrcOffset, uint32_t uNumLayers)
-{
-	vk::ImageSubresourceLayers xSubresource = vk::ImageSubresourceLayers()
-		.setAspectMask(vk::ImageAspectFlagBits::eColor)
-		.setMipLevel(0)
-		.setBaseArrayLayer(0)
-		.setLayerCount(uNumLayers);
-
-	vk::BufferImageCopy region = vk::BufferImageCopy()
-		.setBufferOffset(uSrcOffset)
-		.setBufferRowLength(0)
-		.setBufferImageHeight(0)
-		.setImageSubresource(xSubresource)
-		.setImageOffset({ 0,0,0 })
-		.setImageExtent({ pxDst->GetWidth(), pxDst->GetHeight(), 1 });
-
-	m_xCurrentCmdBuffer.copyBufferToImage(pxSrc->GetBuffer(), pxDst->
-		GetImage(), vk::ImageLayout::eTransferDstOptimal, 1, &region);
-}
 void Zenith_Vulkan_CommandBuffer::BlitTextureToTexture(Zenith_Vulkan_Texture* pxSrc, Zenith_Vulkan_Texture* pxDst, uint32_t uDstMip, uint32_t uDstLayer)
 {
 	std::array<vk::Offset3D, 2> axSrcOffsets;

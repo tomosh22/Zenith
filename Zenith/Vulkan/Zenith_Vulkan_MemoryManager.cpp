@@ -5,7 +5,6 @@
 #include "Zenith_Vulkan_CommandBuffer.h"
 
 #include "Zenith_Vulkan.h"
-#include "Zenith_Vulkan_Buffer.h"
 #include "Zenith_Vulkan_Texture.h"
 
 #include "Flux/Flux_Buffers.h"
@@ -13,7 +12,7 @@
 
 Zenith_Vulkan_CommandBuffer Zenith_Vulkan_MemoryManager::s_xCommandBuffer;
 VmaAllocator Zenith_Vulkan_MemoryManager::s_xAllocator;
-Zenith_Vulkan_Buffer Zenith_Vulkan_MemoryManager::s_xStagingBuffer;
+vk::Buffer Zenith_Vulkan_MemoryManager::s_xStagingBuffer;
 vk::DeviceMemory Zenith_Vulkan_MemoryManager::s_xStagingMem;
 std::list<Zenith_Vulkan_MemoryManager::StagingMemoryAllocation> Zenith_Vulkan_MemoryManager::s_xStagingAllocations;
 
@@ -32,7 +31,7 @@ void Zenith_Vulkan_MemoryManager::InitialiseStagingBuffer()
 		.setSharingMode(vk::SharingMode::eExclusive);
 
 	vk::Buffer xBuffer = xDevice.createBuffer(xInfo);
-	s_xStagingBuffer.SetBuffer(xBuffer);
+	s_xStagingBuffer = xBuffer;
 
 	vk::MemoryRequirements xRequirements = xDevice.getBufferMemoryRequirements(xBuffer);
 
@@ -512,52 +511,6 @@ vk::ImageView Zenith_Vulkan_MemoryManager::CreateUnorderedAccessView(Flux_VRAMHa
 	return xDevice.createImageView(xViewCreate);
 }
 
-
-void Zenith_Vulkan_MemoryManager::UploadBufferData(Zenith_Vulkan_Buffer& xBuffer, const void* pData, size_t uSize)
-{
-	s_xMutex.Lock();
-	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
-
-	const VmaAllocation& xAlloc = xBuffer.GetAllocation();
-	VkMemoryPropertyFlags eMemoryProps;
-	vmaGetAllocationMemoryProperties(s_xAllocator, xAlloc, &eMemoryProps);
-
-	if (eMemoryProps & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
-	{
-		void* pMap = nullptr;
-		vmaMapMemory(s_xAllocator, xAlloc, &pMap);
-		Zenith_Assert(pMap != nullptr, "Memory isn't mapped");
-		memcpy(pMap, pData, uSize);
-#ifdef ZENITH_ASSERT
-		VkResult eResult = 
-#endif
-		vmaFlushAllocation(s_xAllocator, xAlloc, 0, uSize);
-		Zenith_Assert(eResult == VK_SUCCESS, "Failed to flush allocation");
-
-		vmaUnmapMemory(s_xAllocator, xAlloc);
-	}
-	else
-	{
-		if (s_uNextFreeStagingOffset + uSize >= g_uStagingPoolSize)
-		{
-			HandleStagingBufferFull();
-		}
-
-		StagingMemoryAllocation xAllocation;
-		xAllocation.m_eType = ALLOCATION_TYPE_BUFFER;
-		xAllocation.m_xBufferMetadata.m_xBuffer = xBuffer.GetBuffer();
-		xAllocation.m_uSize = uSize;
-		xAllocation.m_uOffset = s_uNextFreeStagingOffset;
-		s_xStagingAllocations.push_back(xAllocation);
-
-		void* pMap = xDevice.mapMemory(s_xStagingMem, s_uNextFreeStagingOffset, uSize);
-		memcpy(pMap, pData, uSize);
-		xDevice.unmapMemory(s_xStagingMem);
-		s_uNextFreeStagingOffset += uSize;
-	}
-	s_xMutex.Unlock();
-}
-
 void Zenith_Vulkan_MemoryManager::UploadBufferData(Flux_VRAMHandle xBufferHandle, const void* pData, size_t uSize)
 {
 	s_xMutex.Lock();
@@ -656,7 +609,7 @@ void Zenith_Vulkan_MemoryManager::FlushStagingBuffer()
 		if (xAlloc.m_eType == ALLOCATION_TYPE_BUFFER) {
 			const StagingBufferMetadata& xMeta = xAlloc.m_xBufferMetadata;
 			vk::BufferCopy xCopyRegion(xAlloc.m_uOffset, 0, xAlloc.m_uSize);
-			s_xCommandBuffer.GetCurrentCmdBuffer().copyBuffer(s_xStagingBuffer.GetBuffer(), xMeta.m_xBuffer, xCopyRegion);
+			s_xCommandBuffer.GetCurrentCmdBuffer().copyBuffer(s_xStagingBuffer, xMeta.m_xBuffer, xCopyRegion);
 		}
 		else if (xAlloc.m_eType == ALLOCATION_TYPE_TEXTURE) {
 			const StagingTextureMetadata& xMeta = xAlloc.m_xTextureMetadata;
@@ -685,7 +638,7 @@ void Zenith_Vulkan_MemoryManager::FlushStagingBuffer()
 				.setImageOffset({ 0, 0, 0 })
 				.setImageExtent({ xMeta.m_uWidth, xMeta.m_uHeight, 1 });
 
-			s_xCommandBuffer.GetCurrentCmdBuffer().copyBufferToImage(s_xStagingBuffer.GetBuffer(), xImage, vk::ImageLayout::eTransferDstOptimal, 1, &region);
+			s_xCommandBuffer.GetCurrentCmdBuffer().copyBufferToImage(s_xStagingBuffer, xImage, vk::ImageLayout::eTransferDstOptimal, 1, &region);
 
 			for (uint32_t uLayer = 0; uLayer < xMeta.m_uNumLayers; uLayer++)
 			{

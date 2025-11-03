@@ -7,7 +7,6 @@
 
 #include "Flux/Flux_Types.h"
 
-class Zenith_Vulkan_Buffer;
 class Flux_VertexBuffer;
 class Flux_DynamicVertexBuffer;
 class Flux_IndexBuffer;
@@ -42,7 +41,6 @@ public:
 	static void InitialiseIndexBuffer(const void* pData, size_t uSize, Flux_IndexBuffer& xBufferOut);
 	static void InitialiseDynamicConstantBuffer(const void* pData, size_t uSize, Flux_DynamicConstantBuffer& xBufferOut);
 
-	static void UploadBufferData(Zenith_Vulkan_Buffer& xBuffer, const void* pData, size_t uSize);
 	static void UploadBufferData(Flux_VRAMHandle xBufferHandle, const void* pData, size_t uSize);
 	static void UploadTextureData(Zenith_Vulkan_Texture& xTexture, const void* pData, size_t uSize);
 
@@ -91,7 +89,7 @@ private:
 	static std::list<StagingMemoryAllocation> s_xStagingAllocations;
 
 	static VmaAllocator s_xAllocator;
-	static Zenith_Vulkan_Buffer s_xStagingBuffer;
+	static vk::Buffer s_xStagingBuffer;
 	static vk::DeviceMemory s_xStagingMem;
 
 	static Zenith_Vulkan_CommandBuffer s_xCommandBuffer;
