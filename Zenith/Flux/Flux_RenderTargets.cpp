@@ -15,7 +15,7 @@ void Flux_RenderAttachmentBuilder::BuildColour(Flux_RenderAttachment& xAttachmen
 	xInfo.m_uMemoryFlags = m_uMemoryFlags;
 
 	// Create actual target VRAM and store it in registry
-	xAttachment.m_xVRAMHandle = Flux_MemoryManager::CreateColourAttachmentVRAM(xInfo);
+	xAttachment.m_xVRAMHandle = Flux_MemoryManager::CreateRenderTargetVRAM(xInfo);
 	xAttachment.m_xSurfaceInfo = xInfo;
 	
 	// Create RTV with mips
@@ -45,7 +45,7 @@ void Flux_RenderAttachmentBuilder::BuildDepthStencil(Flux_RenderAttachment& xAtt
 	xInfo.m_uMemoryFlags = m_uMemoryFlags;
 
 	// Create actual target VRAM and store it in registry
-	xAttachment.m_xVRAMHandle = Flux_MemoryManager::CreateDepthStencilAttachmentVRAM(xInfo);
+	xAttachment.m_xVRAMHandle = Flux_MemoryManager::CreateRenderTargetVRAM(xInfo);
 	xAttachment.m_xSurfaceInfo = xInfo;
 
 	// Create DSV with mips

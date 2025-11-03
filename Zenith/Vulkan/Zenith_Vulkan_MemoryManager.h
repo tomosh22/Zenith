@@ -48,8 +48,7 @@ public:
 	static void UploadTextureData(Zenith_Vulkan_Texture& xTexture, const void* pData, size_t uSize);
 
 	static Flux_VRAMHandle CreateTextureVRAM(const void* pData, const Flux_SurfaceInfo& xInfo, bool bCreateMips);
-	static Flux_VRAMHandle CreateColourAttachmentVRAM(const Flux_SurfaceInfo& xInfo);
-	static Flux_VRAMHandle CreateDepthStencilAttachmentVRAM(const Flux_SurfaceInfo& xInfo);
+	static Flux_VRAMHandle CreateRenderTargetVRAM(const Flux_SurfaceInfo& xInfo);
 
 	// View creation functions
 	static vk::ImageView CreateRenderTargetView(Flux_VRAMHandle xVRAMHandle, const Flux_SurfaceInfo& xInfo, uint32_t uMipLevel = 0);

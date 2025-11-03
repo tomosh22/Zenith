@@ -245,15 +245,39 @@ void Zenith_Vulkan_MemoryManager::InitialiseDynamicConstantBuffer(const void* pD
 	}
 }
 
-Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateColourAttachmentVRAM(const Flux_SurfaceInfo& xInfo)
+Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateRenderTargetVRAM(const Flux_SurfaceInfo& xInfo)
 {
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 	
-	vk::Format xFormat = Zenith_Vulkan_Texture::ConvertToVkFormat_Colour(xInfo.m_eFormat);
+	const bool bIsColour = xInfo.m_eFormat > TEXTURE_FORMAT_COLOUR_BEGIN && xInfo.m_eFormat < TEXTURE_FORMAT_COLOUR_END;
+	const bool bIsDepthStencil = xInfo.m_eFormat > TEXTURE_FORMAT_DEPTH_STENCIL_BEGIN && xInfo.m_eFormat < TEXTURE_FORMAT_DEPTH_STENCIL_END;
+	Zenith_Assert(bIsColour ^ bIsDepthStencil, "Invalid texture format for render target");
 	
-	vk::ImageUsageFlags eUsageFlags = vk::ImageUsageFlagBits::eColorAttachment;
-	if (xInfo.m_uMemoryFlags & 1 << MEMORY_FLAGS__SHADER_READ) eUsageFlags |= vk::ImageUsageFlagBits::eSampled;
-	if (xInfo.m_uMemoryFlags & 1 << MEMORY_FLAGS__UNORDERED_ACCESS) eUsageFlags |= vk::ImageUsageFlagBits::eStorage;
+	vk::Format xFormat;
+	vk::ImageUsageFlags eUsageFlags;
+	vk::ImageAspectFlags eAspectFlags;
+	vk::ImageLayout eInitialLayout;
+	
+	if (bIsColour)
+	{
+		xFormat = Zenith_Vulkan_Texture::ConvertToVkFormat_Colour(xInfo.m_eFormat);
+		eUsageFlags = vk::ImageUsageFlagBits::eColorAttachment;
+		eAspectFlags = vk::ImageAspectFlagBits::eColor;
+		eInitialLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
+		
+		if (xInfo.m_uMemoryFlags & 1 << MEMORY_FLAGS__UNORDERED_ACCESS) 
+			eUsageFlags |= vk::ImageUsageFlagBits::eStorage;
+	}
+	else // bIsDepthStencil
+	{
+		xFormat = Zenith_Vulkan_Texture::ConvertToVkFormat_DepthStencil(xInfo.m_eFormat);
+		eUsageFlags = vk::ImageUsageFlagBits::eDepthStencilAttachment;
+		eAspectFlags = vk::ImageAspectFlagBits::eDepth;
+		eInitialLayout = vk::ImageLayout::eDepthStencilReadOnlyOptimal;
+	}
+	
+	if (xInfo.m_uMemoryFlags & 1 << MEMORY_FLAGS__SHADER_READ) 
+		eUsageFlags |= vk::ImageUsageFlagBits::eSampled;
 
 	vk::ImageCreateInfo xImageInfo = vk::ImageCreateInfo()
 		.setImageType(vk::ImageType::e2D)
@@ -279,46 +303,12 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateColourAttachmentVRAM(const Fl
 	Zenith_Vulkan_VRAM* pxVRAM = new Zenith_Vulkan_VRAM(vk::Image(xImage), xAllocation, s_xAllocator);
 	Flux_VRAMHandle xHandle = Zenith_Vulkan::RegisterVRAM(pxVRAM);
 
-	ImageTransitionBarrier(vk::Image(xImage), vk::ImageLayout::eUndefined, vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands);
-
-	return xHandle;
-}
-
-Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateDepthStencilAttachmentVRAM(const Flux_SurfaceInfo& xInfo)
-{
-	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
+	if (bIsDepthStencil)
+	{
+		Zenith_Assert(xInfo.m_eFormat == TEXTURE_FORMAT_D32_SFLOAT, "#TO_TODO: layouts for just depth without stencil");
+	}
 	
-	vk::Format xFormat = Zenith_Vulkan_Texture::ConvertToVkFormat_DepthStencil(xInfo.m_eFormat);
-	
-	vk::ImageUsageFlags eUsageFlags = vk::ImageUsageFlagBits::eDepthStencilAttachment;
-	if (xInfo.m_uMemoryFlags & 1 << MEMORY_FLAGS__SHADER_READ) eUsageFlags |= vk::ImageUsageFlagBits::eSampled;
-
-	vk::ImageCreateInfo xImageInfo = vk::ImageCreateInfo()
-		.setImageType(vk::ImageType::e2D)
-		.setFormat(xFormat)
-		.setTiling(vk::ImageTiling::eOptimal)
-		.setExtent({ xInfo.m_uWidth, xInfo.m_uHeight, 1 })
-		.setMipLevels(xInfo.m_uNumMips)
-		.setArrayLayers(xInfo.m_uNumLayers)
-		.setInitialLayout(vk::ImageLayout::eUndefined)
-		.setUsage(eUsageFlags)
-		.setSharingMode(vk::SharingMode::eExclusive)
-		.setSamples(vk::SampleCountFlagBits::e1);
-
-	VmaAllocationCreateInfo xAllocInfo = {};
-	xAllocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
-
-	const vk::ImageCreateInfo::NativeType xImageInfo_Native = xImageInfo;
-	
-	VkImage xImage;
-	VmaAllocation xAllocation;
-	vmaCreateImage(s_xAllocator, &xImageInfo_Native, &xAllocInfo, &xImage, &xAllocation, nullptr);
-
-	Zenith_Vulkan_VRAM* pxVRAM = new Zenith_Vulkan_VRAM(vk::Image(xImage), xAllocation, s_xAllocator);
-	Flux_VRAMHandle xHandle = Zenith_Vulkan::RegisterVRAM(pxVRAM);
-
-	Zenith_Assert(xInfo.m_eFormat == TEXTURE_FORMAT_D32_SFLOAT, "#TO_TODO: layouts for just depth without stencil");
-	ImageTransitionBarrier(vk::Image(xImage), vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthStencilReadOnlyOptimal, vk::ImageAspectFlagBits::eDepth, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands);
+	ImageTransitionBarrier(vk::Image(xImage), vk::ImageLayout::eUndefined, eInitialLayout, eAspectFlags, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands);
 
 	return xHandle;
 }
