@@ -79,12 +79,16 @@ private:
 		uint32_t m_uNumLayers;
 	};
 
+	struct StagingBufferMetadata {
+		vk::Buffer m_xBuffer;
+	};
+
 	struct StagingMemoryAllocation {
-		StagingMemoryAllocation() : m_eType(ALLOCATION_TYPE_BUFFER), m_pAllocation(nullptr), m_uSize(0), m_uOffset(0) {}
+		StagingMemoryAllocation() : m_eType(ALLOCATION_TYPE_COUNT), m_uSize(0), m_uOffset(0) {}
 		
 		AllocationType m_eType;
 		union {
-			void* m_pAllocation;
+			StagingBufferMetadata m_xBufferMetadata;
 			StagingTextureMetadata m_xTextureMetadata;
 		};
 		size_t m_uSize;

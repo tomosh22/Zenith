@@ -747,7 +747,7 @@ void Zenith_Vulkan_MemoryManager::UploadBufferData(Zenith_Vulkan_Buffer& xBuffer
 
 		StagingMemoryAllocation xAllocation;
 		xAllocation.m_eType = ALLOCATION_TYPE_BUFFER;
-		xAllocation.m_pAllocation = &xBuffer;
+		xAllocation.m_xBufferMetadata.m_xBuffer = xBuffer.GetBuffer();
 		xAllocation.m_uSize = uSize;
 		xAllocation.m_uOffset = s_uNextFreeStagingOffset;
 		s_xStagingAllocations.push_back(xAllocation);
@@ -810,8 +810,9 @@ void Zenith_Vulkan_MemoryManager::FlushStagingBuffer()
 	for (auto it = s_xStagingAllocations.begin(); it != s_xStagingAllocations.end(); it++) {
 		StagingMemoryAllocation& xAlloc = *it;
 		if (xAlloc.m_eType == ALLOCATION_TYPE_BUFFER) {
-			Zenith_Vulkan_Buffer* pxVkBuffer = reinterpret_cast<Zenith_Vulkan_Buffer*>(xAlloc.m_pAllocation);
-			s_xCommandBuffer.CopyBufferToBuffer(&s_xStagingBuffer, pxVkBuffer, xAlloc.m_uSize, xAlloc.m_uOffset);
+			const StagingBufferMetadata& xMeta = xAlloc.m_xBufferMetadata;
+			vk::BufferCopy xCopyRegion(xAlloc.m_uOffset, 0, xAlloc.m_uSize);
+			s_xCommandBuffer.GetCurrentCmdBuffer().copyBuffer(s_xStagingBuffer.GetBuffer(), xMeta.m_xBuffer, xCopyRegion);
 		}
 		else if (xAlloc.m_eType == ALLOCATION_TYPE_TEXTURE) {
 			const StagingTextureMetadata& xMeta = xAlloc.m_xTextureMetadata;

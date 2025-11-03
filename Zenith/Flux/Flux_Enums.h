@@ -18,6 +18,7 @@ enum AllocationType
 {
 	ALLOCATION_TYPE_BUFFER,
 	ALLOCATION_TYPE_TEXTURE,
+	ALLOCATION_TYPE_COUNT,
 };
 
 enum RenderOrder
