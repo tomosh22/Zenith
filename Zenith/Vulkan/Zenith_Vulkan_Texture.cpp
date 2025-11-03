@@ -7,7 +7,6 @@
 
 void Zenith_Vulkan_Texture::Reset()
 {
-	Zenith_Vulkan_MemoryManager::FreeTexture(this);
 }
 
 vk::Format Zenith_Vulkan_Texture::ConvertToVkFormat_Colour(TextureFormat eFormat) {

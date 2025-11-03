@@ -64,23 +64,29 @@ private:
 	static Flux_VRAMHandle CreateTextureVRAM(const void* pData, const Flux_SurfaceInfo& xInfo, bool bCreateMips);
 	static Flux_VRAMHandle CreateTextureVRAM(const char* szPath, Flux_SurfaceInfo* pxInfoOut = nullptr);
 	static Flux_VRAMHandle CreateTextureCubeVRAM(const char* szPathPX, const char* szPathNX, const char* szPathPY, const char* szPathNY, const char* szPathPZ, const char* szPathNZ, Flux_SurfaceInfo* pxInfoOut = nullptr);
-	static void CreateColourAttachment(const Flux_SurfaceInfo& xInfo, Zenith_Vulkan_Texture& xTextureOut);
-	static void CreateDepthStencilAttachment(const Flux_SurfaceInfo& xInfo, Zenith_Vulkan_Texture& xTextureOut);
-	static void CreateTexture(const void* pData, Flux_SurfaceInfo xInfo, bool bCreateMips, Zenith_Vulkan_Texture& xTextureOut);
-	static void CreateTexture(const char* szPath, Zenith_Vulkan_Texture& xTextureOut);
-	static void CreateTextureCube(const char* szPathPX, const char* szPathNX, const char* szPathPY, const char* szPathNY, const char* szPathPZ, const char* szPathNZ, Zenith_Vulkan_Texture& xTextureOut);
 
-	static void AllocateTexture(const Flux_SurfaceInfo&, vk::ImageUsageFlags eUsageFlags, MemoryResidency eResidency, Zenith_Vulkan_Texture& xTextureOut);
-	static void FreeTexture(Zenith_Vulkan_Texture* pxTexture);
 	static void InitialiseStagingBuffer();
 
 	static void HandleStagingBufferFull();
 
 	static void FlushStagingBuffer();
 
+	struct StagingTextureMetadata {
+		vk::Image m_xImage;
+		uint32_t m_uWidth;
+		uint32_t m_uHeight;
+		uint32_t m_uNumMips;
+		uint32_t m_uNumLayers;
+	};
+
 	struct StagingMemoryAllocation {
+		StagingMemoryAllocation() : m_eType(ALLOCATION_TYPE_BUFFER), m_pAllocation(nullptr), m_uSize(0), m_uOffset(0) {}
+		
 		AllocationType m_eType;
-		void* m_pAllocation;
+		union {
+			void* m_pAllocation;
+			StagingTextureMetadata m_xTextureMetadata;
+		};
 		size_t m_uSize;
 		size_t m_uOffset;
 	};
