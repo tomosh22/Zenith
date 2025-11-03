@@ -5,7 +5,7 @@
 #include "vma/vk_mem_alloc.h"
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
 
-#include "Flux/Flux_Enums.h"
+#include "Flux/Flux_Types.h"
 
 class Zenith_Vulkan_Buffer;
 class Flux_VertexBuffer;
@@ -47,6 +47,7 @@ public:
 	static void UploadBufferData(Zenith_Vulkan_Buffer& xBuffer, const void* pData, size_t uSize);
 	static void UploadTextureData(Zenith_Vulkan_Texture& xTexture, const void* pData, size_t uSize);
 
+	static Flux_VRAMHandle CreateTextureVRAM(const void* pData, const Flux_SurfaceInfo& xInfo, bool bCreateMips);
 	static Flux_VRAMHandle CreateColourAttachmentVRAM(const Flux_SurfaceInfo& xInfo);
 	static Flux_VRAMHandle CreateDepthStencilAttachmentVRAM(const Flux_SurfaceInfo& xInfo);
 
@@ -58,12 +59,6 @@ public:
 
 	static Zenith_Vulkan_CommandBuffer& GetCommandBuffer();
 private:
-	friend class Zenith_Vulkan_Texture;
-	friend class Zenith_AssetHandler;
-	
-	static Flux_VRAMHandle CreateTextureVRAM(const void* pData, const Flux_SurfaceInfo& xInfo, bool bCreateMips);
-	static Flux_VRAMHandle CreateTextureVRAM(const char* szPath, Flux_SurfaceInfo* pxInfoOut = nullptr);
-	static Flux_VRAMHandle CreateTextureCubeVRAM(const char* szPathPX, const char* szPathNX, const char* szPathPY, const char* szPathNY, const char* szPathPZ, const char* szPathNZ, Flux_SurfaceInfo* pxInfoOut = nullptr);
 
 	static void InitialiseStagingBuffer();
 

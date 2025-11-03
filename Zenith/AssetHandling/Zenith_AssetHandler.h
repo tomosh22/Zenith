@@ -17,9 +17,43 @@ public:
 	{
 	}
 
-	static Flux_Texture AddTexture2D(const std::string& strName, const void* pData, const Flux_SurfaceInfo& xInfo, bool bCreateMips);
-	static Flux_Texture AddTexture2D(const std::string& strName, const char* szPath);
-	static Flux_Texture AddTextureCube(const std::string& strName, const char* szPathPX, const char* szPathNX, const char* szPathPY, const char* szPathNY, const char* szPathPZ, const char* szPathNZ);
+	struct TextureData
+	{
+		union
+		{
+			const void* apCubeFaceData[6] = { nullptr };  // Pointers to 6 cube face data (for cube textures)
+			const void* pData;              // Pointer to texture data (for 2D textures)
+		};
+		Flux_SurfaceInfo xSurfaceInfo;
+		bool bCreateMips = false;
+		bool bIsCubemap = false;
+		
+		// Helper to free allocated memory
+		void FreeAllocatedData()
+		{
+			if (bIsCubemap)
+			{
+				for (uint32_t u = 0; u < 6; u++)
+				{
+					if (apCubeFaceData[u])
+					{
+						Zenith_MemoryManagement::Deallocate(const_cast<void*>(apCubeFaceData[u]));
+					}
+				}
+			}
+			else if (pData)
+			{
+				Zenith_MemoryManagement::Deallocate(const_cast<void*>(pData));
+			}
+		}
+	};
+
+	// Unified texture addition function
+	static Flux_Texture AddTexture(const std::string& strName, const TextureData& xTextureData);
+	
+	// Helper functions to load texture data from files
+	static TextureData LoadTexture2DFromFile(const char* szPath);
+	static TextureData LoadTextureCubeFromFiles(const char* szPathPX, const char* szPathNX, const char* szPathPY, const char* szPathNY, const char* szPathPZ, const char* szPathNZ);
 	static Flux_MeshGeometry& AddMesh(const std::string& strName);
 	static Flux_MeshGeometry& AddMesh(const std::string& strName, const char* szPath, u_int uRetainAttributeBits = 0, const bool bUploadToGPU = true);
 	static Flux_Material& AddMaterial(const std::string& strName);

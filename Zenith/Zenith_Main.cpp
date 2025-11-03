@@ -50,7 +50,7 @@ int main()
 	{
 		Flux_MemoryManager::BeginFrame();
 		//#TO_TODO: engine should have its own versions of these
-		Zenith_AssetHandler::AddTextureCube("Cubemap",
+		Zenith_AssetHandler::TextureData xCubemapTexData = Zenith_AssetHandler::LoadTextureCubeFromFiles(
 			ASSETS_ROOT"Textures/Cubemap/px.ztx",
 			ASSETS_ROOT"Textures/Cubemap/nx.ztx",
 			ASSETS_ROOT"Textures/Cubemap/py.ztx",
@@ -58,7 +58,12 @@ int main()
 			ASSETS_ROOT"Textures/Cubemap/pz.ztx",
 			ASSETS_ROOT"Textures/Cubemap/nz.ztx"
 		);
-		Zenith_AssetHandler::AddTexture2D("Water_Normal", ASSETS_ROOT"Textures/water/normal.ztx");
+		Zenith_AssetHandler::AddTexture("Cubemap", xCubemapTexData);
+		xCubemapTexData.FreeAllocatedData();
+		
+		Zenith_AssetHandler::TextureData xWaterNormalTexData = Zenith_AssetHandler::LoadTexture2DFromFile(ASSETS_ROOT"Textures/water/normal.ztx");
+		Zenith_AssetHandler::AddTexture("Water_Normal", xWaterNormalTexData);
+		xWaterNormalTexData.FreeAllocatedData();
 		Flux_MemoryManager::EndFrame(false);
 	}
 

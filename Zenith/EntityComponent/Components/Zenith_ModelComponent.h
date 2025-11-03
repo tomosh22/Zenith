@@ -74,7 +74,9 @@ public:
 			{
 				const std::string strFilepath = xFile.path().string();
 				const std::string strFilename = xFile.path().stem().string();
-				Flux_Texture xTexture = Zenith_AssetHandler::AddTexture2D(strFilename, strFilepath.c_str());
+				Zenith_AssetHandler::TextureData xTexData = Zenith_AssetHandler::LoadTexture2DFromFile(strFilepath.c_str());
+				Flux_Texture xTexture = Zenith_AssetHandler::AddTexture(strFilename, xTexData);
+				xTexData.FreeAllocatedData();
 				const uint32_t uMatIndex = GetMaterialIndexFromTextureName(strFilename);
 				const std::string strMatName = strLeaf + std::to_string(uMatIndex) + std::to_string(ls_uCount);
 				if (!Zenith_AssetHandler::MaterialExists(strMatName))

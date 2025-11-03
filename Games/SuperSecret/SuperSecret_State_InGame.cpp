@@ -37,7 +37,9 @@ static void LoadAssets()
 {
 	for (uint32_t u = 0; u < SUPERSECRET_TEXTURE_INDEX__COUNT; u++)
 	{
-		g_uTextureHandles[u] = Zenith_AssetHandler::AddTexture2D(g_aszTextureNames[u], g_aszTextureFilenames[u]).m_uVRAMHandle;
+		Zenith_AssetHandler::TextureData xTexData = Zenith_AssetHandler::LoadTexture2DFromFile(g_aszTextureFilenames[u]);
+		g_uTextureHandles[u] = Zenith_AssetHandler::AddTexture(g_aszTextureNames[u], xTexData).m_uVRAMHandle;
+		xTexData.FreeAllocatedData();
 		//Flux::RegisterBindlessTexture(g_uTextureHandles[u], u); // TODO: Update bindless system for handles
 	}
 }

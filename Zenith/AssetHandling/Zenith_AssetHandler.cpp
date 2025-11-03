@@ -16,70 +16,157 @@ std::unordered_set<Zenith_AssetHandler::AssetID>	Zenith_AssetHandler::s_xUsedMes
 std::unordered_map<std::string, Zenith_AssetHandler::AssetID> Zenith_AssetHandler::s_xMaterialNameMap;
 std::unordered_set<Zenith_AssetHandler::AssetID>	Zenith_AssetHandler::s_xUsedMaterialIDs;
 
-Flux_Texture Zenith_AssetHandler::AddTexture2D(const std::string& strName, const void* pData, const Flux_SurfaceInfo& xInfo, bool bCreateMips)
+Flux_Texture Zenith_AssetHandler::AddTexture(const std::string& strName, const TextureData& xTextureData)
 {
-	Flux_VRAMHandle xVRAMHandle = Flux_MemoryManager::CreateTextureVRAM(pData, xInfo, bCreateMips);
+	Flux_VRAMHandle xVRAMHandle;
+	
+	if (xTextureData.bIsCubemap)
+	{
+		// Concatenate cube face data for unified VRAM creation
+		const size_t ulLayerDataSize = ColourFormatBytesPerPixel(xTextureData.xSurfaceInfo.m_eFormat) * 
+			xTextureData.xSurfaceInfo.m_uWidth * xTextureData.xSurfaceInfo.m_uHeight;
+		const size_t ulTotalDataSize = ulLayerDataSize * 6;
+		
+		void* pAllData = Zenith_MemoryManagement::Allocate(ulTotalDataSize);
+		for (uint32_t u = 0; u < 6; u++)
+		{
+			memcpy((uint8_t*)pAllData + (u * ulLayerDataSize), xTextureData.apCubeFaceData[u], ulLayerDataSize);
+		}
+		
+		xVRAMHandle = Flux_MemoryManager::CreateTextureVRAM(pAllData, xTextureData.xSurfaceInfo, xTextureData.bCreateMips);
+		
+		Zenith_MemoryManagement::Deallocate(pAllData);
+	}
+	else
+	{
+		// Create 2D texture
+		xVRAMHandle = Flux_MemoryManager::CreateTextureVRAM(xTextureData.pData, xTextureData.xSurfaceInfo, xTextureData.bCreateMips);
+	}
+	
 	s_xTextureNameMap.insert({ strName, xVRAMHandle.AsUInt()});
 	
 	// Create and store SRV
 	Flux_ShaderResourceView xSRV;
 	xSRV.m_xVRAMHandle = xVRAMHandle;
-	xSRV.m_xImageView = Flux_MemoryManager::CreateShaderResourceView(xVRAMHandle, xInfo);
+	xSRV.m_xImageView = Flux_MemoryManager::CreateShaderResourceView(xVRAMHandle, xTextureData.xSurfaceInfo);
 	s_xTextureSRVMap.insert({ strName, xSRV });
 	s_xTextureHandleToSRVMap.insert({ xVRAMHandle.AsUInt(), xSRV});
 	
 	// Create Flux_Texture to return
 	Flux_Texture xTexture;
-	xTexture.m_xSurfaceInfo = xInfo;
+	xTexture.m_xSurfaceInfo = xTextureData.xSurfaceInfo;
 	xTexture.m_xVRAMHandle = xVRAMHandle;
 	xTexture.m_xSRV = xSRV;
 	
 	return xTexture;
 }
 
-Flux_Texture Zenith_AssetHandler::AddTexture2D(const std::string& strName, const char* szPath)
+Zenith_AssetHandler::TextureData Zenith_AssetHandler::LoadTexture2DFromFile(const char* szPath)
 {
+	// Load texture data from file
+	size_t ulDataSize;
+	int32_t uWidth = 0, uHeight = 0, uDepth = 0;
+	TextureFormat eFormat;
+
+	Zenith_DataStream xStream;
+	xStream.ReadFromFile(szPath);
+
+	xStream >> uWidth;
+	xStream >> uHeight;
+	xStream >> uDepth;
+	xStream >> eFormat;
+	xStream >> ulDataSize;
+
+	void* const pData = Zenith_MemoryManagement::Allocate(ulDataSize);
+	xStream.ReadData(pData, ulDataSize);
+
+	const uint32_t uNumMips = std::floor(std::log2((std::max)(uWidth, uHeight))) + 1;
+
 	Flux_SurfaceInfo xInfo;
-	Flux_VRAMHandle xVRAMHandle = Flux_MemoryManager::CreateTextureVRAM(szPath, &xInfo);
-	s_xTextureNameMap.insert({ strName, xVRAMHandle.AsUInt()});
+	xInfo.m_uWidth = uWidth;
+	xInfo.m_uHeight = uHeight;
+	xInfo.m_uDepth = uDepth;
+	xInfo.m_uNumLayers = 1;
+	xInfo.m_eFormat = TEXTURE_FORMAT_RGBA8_UNORM;
+	xInfo.m_uNumMips = uNumMips;
+	xInfo.m_uMemoryFlags = 1 << MEMORY_FLAGS__SHADER_READ;
+
+	TextureData xTextureData;
+	xTextureData.pData = pData;
+	xTextureData.xSurfaceInfo = xInfo;
+	xTextureData.bCreateMips = true;
+	xTextureData.bIsCubemap = false;
 	
-	// Create and store SRV
-	Flux_ShaderResourceView xSRV;
-	xSRV.m_xVRAMHandle = xVRAMHandle;
-	xSRV.m_xImageView = Flux_MemoryManager::CreateShaderResourceView(xVRAMHandle, xInfo);
-	s_xTextureSRVMap.insert({ strName, xSRV });
-	s_xTextureHandleToSRVMap.insert({ xVRAMHandle.AsUInt(), xSRV});
-	
-	// Create Flux_Texture to return
-	Flux_Texture xTexture;
-	xTexture.m_xSurfaceInfo = xInfo;
-	xTexture.m_xVRAMHandle = xVRAMHandle;
-	xTexture.m_xSRV = xSRV;
-	
-	return xTexture;
+	return xTextureData;
 }
 
-Flux_Texture Zenith_AssetHandler::AddTextureCube(const std::string& strName, const char* szPathPX, const char* szPathNX, const char* szPathPY, const char* szPathNY, const char* szPathPZ, const char* szPathNZ)
+Zenith_AssetHandler::TextureData Zenith_AssetHandler::LoadTextureCubeFromFiles(const char* szPathPX, const char* szPathNX, const char* szPathPY, const char* szPathNY, const char* szPathPZ, const char* szPathNZ)
 {
+	const char* aszPaths[6] =
+	{
+		szPathPX,
+		szPathNX,
+		szPathPY,
+		szPathNY,
+		szPathPZ,
+		szPathNZ,
+	};
+
+	void* apDatas[6] =
+	{
+		nullptr,
+		nullptr,
+		nullptr,
+		nullptr,
+		nullptr,
+		nullptr,
+	};
+
+	size_t aulDataSizes[6] = { 0, 0, 0, 0, 0, 0 };
+	uint32_t uWidth = 0, uHeight = 0, uDepth = 0;
+
+	for (uint32_t u = 0; u < 6; u++)
+	{
+		Zenith_DataStream xStream;
+		xStream.ReadFromFile(aszPaths[u]);
+
+		TextureFormat eFormat;
+
+		xStream >> uWidth;
+		xStream >> uHeight;
+		xStream >> uDepth;
+		xStream >> eFormat;
+		xStream >> aulDataSizes[u];
+
+		apDatas[u] = Zenith_MemoryManagement::Allocate(aulDataSizes[u]);
+		xStream.ReadData(apDatas[u], aulDataSizes[u]);
+	}
+
+	const uint32_t uNumMips = std::floor(std::log2((std::max)(uWidth, uHeight))) + 1;
+
 	Flux_SurfaceInfo xInfo;
-	Flux_VRAMHandle xVRAMHandle = Flux_MemoryManager::CreateTextureCubeVRAM(szPathPX, szPathNX, szPathPY, szPathNY, szPathPZ, szPathNZ, &xInfo);
-	s_xTextureNameMap.insert({ strName, xVRAMHandle.AsUInt()});
+	xInfo.m_uWidth = uWidth;
+	xInfo.m_uHeight = uHeight;
+	xInfo.m_uDepth = uDepth;
+	xInfo.m_uNumLayers = 6;
+	xInfo.m_eFormat = TEXTURE_FORMAT_RGBA8_UNORM;
+	xInfo.m_uNumMips = uNumMips;
+	xInfo.m_uMemoryFlags = 1 << MEMORY_FLAGS__SHADER_READ;
+
+	TextureData xTextureData;
+	xTextureData.apCubeFaceData[0] = apDatas[0];
+	xTextureData.apCubeFaceData[1] = apDatas[1];
+	xTextureData.apCubeFaceData[2] = apDatas[2];
+	xTextureData.apCubeFaceData[3] = apDatas[3];
+	xTextureData.apCubeFaceData[4] = apDatas[4];
+	xTextureData.apCubeFaceData[5] = apDatas[5];
+	xTextureData.xSurfaceInfo = xInfo;
+	xTextureData.bCreateMips = true;
+	xTextureData.bIsCubemap = true;
 	
-	// Create and store SRV
-	Flux_ShaderResourceView xSRV;
-	xSRV.m_xVRAMHandle = xVRAMHandle;
-	xSRV.m_xImageView = Flux_MemoryManager::CreateShaderResourceView(xVRAMHandle, xInfo);
-	s_xTextureSRVMap.insert({ strName, xSRV });
-	s_xTextureHandleToSRVMap.insert({ xVRAMHandle.AsUInt(), xSRV});
-	
-	// Create Flux_Texture to return
-	Flux_Texture xTexture;
-	xTexture.m_xSurfaceInfo = xInfo;
-	xTexture.m_xVRAMHandle = xVRAMHandle;
-	xTexture.m_xSRV = xSRV;
-	
-	return xTexture;
+	return xTextureData;
 }
+
 Flux_MeshGeometry& Zenith_AssetHandler::AddMesh(const std::string& strName)
 {
 	AssetID uID = GetNextFreeMeshSlot();

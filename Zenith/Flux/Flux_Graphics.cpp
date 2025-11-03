@@ -59,11 +59,21 @@ void Flux_Graphics::Initialise()
 
 	u_int8 aucWhiteBlankTexData[] = { 255,255,255,255 };
 
-	s_xWhiteBlankTexture2D = Zenith_AssetHandler::AddTexture2D("Flux Graphics White Blank Texture", aucWhiteBlankTexData, xTexInfo, false);
+	Zenith_AssetHandler::TextureData xWhiteTexData;
+	xWhiteTexData.pData = aucWhiteBlankTexData;
+	xWhiteTexData.xSurfaceInfo = xTexInfo;
+	xWhiteTexData.bCreateMips = false;
+	xWhiteTexData.bIsCubemap = false;
+	s_xWhiteBlankTexture2D = Zenith_AssetHandler::AddTexture("Flux Graphics White Blank Texture", xWhiteTexData);
 
 	u_int8 aucBlackBlankTexData[] = { 0,0,0,0 };
 	
-	s_xBlackBlankTexture2D = Zenith_AssetHandler::AddTexture2D("Flux Graphics Black Blank Texture", aucBlackBlankTexData, xTexInfo, false);
+	Zenith_AssetHandler::TextureData xBlackTexData;
+	xBlackTexData.pData = aucBlackBlankTexData;
+	xBlackTexData.xSurfaceInfo = xTexInfo;
+	xBlackTexData.bCreateMips = false;
+	xBlackTexData.bIsCubemap = false;
+	s_xBlackBlankTexture2D = Zenith_AssetHandler::AddTexture("Flux Graphics Black Blank Texture", xBlackTexData);
 
 	s_pxBlankMaterial = &Zenith_AssetHandler::AddMaterial("BlankMaterial");
 

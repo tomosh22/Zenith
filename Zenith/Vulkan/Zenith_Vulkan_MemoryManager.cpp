@@ -347,6 +347,12 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateTextureVRAM(const void* pData
 		.setUsage(eUsageFlags)
 		.setSharingMode(vk::SharingMode::eExclusive)
 		.setSamples(vk::SampleCountFlagBits::e1);
+	
+	// Add cube compatible flag if this is a cubemap (6 layers)
+	if (xInfoCopy.m_uNumLayers == 6)
+	{
+		xImageInfo.setFlags(vk::ImageCreateFlagBits::eCubeCompatible);
+	}
 
 	VmaAllocationCreateInfo xAllocInfo = {};
 	xAllocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
@@ -362,7 +368,7 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateTextureVRAM(const void* pData
 
 	if (pData)
 	{
-		const size_t ulDataSize = ColourFormatBytesPerPixel(xInfoCopy.m_eFormat) * xInfoCopy.m_uWidth * xInfoCopy.m_uHeight * xInfoCopy.m_uDepth;
+		const size_t ulDataSize = ColourFormatBytesPerPixel(xInfoCopy.m_eFormat) * xInfoCopy.m_uWidth * xInfoCopy.m_uHeight * xInfoCopy.m_uDepth * xInfoCopy.m_uNumLayers;
 
 		// Upload data directly without creating temp texture object
 		s_xMutex.Lock();
@@ -393,7 +399,7 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateTextureVRAM(const void* pData
 			xStagingAlloc.m_xTextureMetadata.m_uWidth = xInfoCopy.m_uWidth;
 			xStagingAlloc.m_xTextureMetadata.m_uHeight = xInfoCopy.m_uHeight;
 			xStagingAlloc.m_xTextureMetadata.m_uNumMips = xInfoCopy.m_uNumMips;
-			xStagingAlloc.m_xTextureMetadata.m_uNumLayers = 1;
+			xStagingAlloc.m_xTextureMetadata.m_uNumLayers = xInfoCopy.m_uNumLayers;
 			xStagingAlloc.m_uSize = ulDataSize;
 			xStagingAlloc.m_uOffset = s_uNextFreeStagingOffset;
 			s_xStagingAllocations.push_back(xStagingAlloc);
@@ -408,205 +414,6 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateTextureVRAM(const void* pData
 	else
 	{
 		// For host-visible memory, transition directly to shader read layout
-		ImageTransitionBarrier(vk::Image(xImage), vk::ImageLayout::eUndefined, vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands);
-	}
-
-	return xHandle;
-}
-
-Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateTextureVRAM(const char* szPath, Flux_SurfaceInfo* pxInfoOut)
-{
-	size_t ulDataSize;
-	int32_t uWidth = 0, uHeight = 0, uDepth = 0;
-	TextureFormat eFormat;
-
-	Zenith_DataStream xStream;
-	xStream.ReadFromFile(szPath);
-
-	xStream >> uWidth;
-	xStream >> uHeight;
-	xStream >> uDepth;
-	xStream >> eFormat;
-	xStream >> ulDataSize;
-
-	void* const pData = Zenith_MemoryManagement::Allocate(ulDataSize);
-	xStream.ReadData(pData, ulDataSize);
-
-	const uint32_t uNumMips = std::floor(std::log2((std::max)(uWidth, uHeight))) + 1;
-
-	Flux_SurfaceInfo xInfo;
-	xInfo.m_uWidth = uWidth;
-	xInfo.m_uHeight = uHeight;
-	xInfo.m_uDepth = uDepth;
-	xInfo.m_uNumLayers = 1;
-	xInfo.m_eFormat = TEXTURE_FORMAT_RGBA8_UNORM;
-	xInfo.m_uNumMips = uNumMips;
-	xInfo.m_uMemoryFlags = 1 << MEMORY_FLAGS__SHADER_READ;
-
-	if (pxInfoOut)
-	{
-		*pxInfoOut = xInfo;
-	}
-
-	Flux_VRAMHandle xHandle = CreateTextureVRAM(pData, xInfo, true);
-	
-	Zenith_MemoryManagement::Deallocate(pData);
-	
-	return xHandle;
-}
-
-Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateTextureCubeVRAM(const char* szPathPX, const char* szPathNX, const char* szPathPY, const char* szPathNY, const char* szPathPZ, const char* szPathNZ, Flux_SurfaceInfo* pxInfoOut)
-{
-	const char* aszPaths[6] =
-	{
-		szPathPX,
-		szPathNX,
-		szPathPY,
-		szPathNY,
-		szPathPZ,
-		szPathNZ,
-	};
-
-	void* apDatas[6] =
-	{
-		nullptr,
-		nullptr,
-		nullptr,
-		nullptr,
-		nullptr,
-		nullptr,
-	};
-
-	size_t aulDataSizes[6] = { 0, 0, 0, 0, 0, 0 };
-	uint32_t uWidth = 0, uHeight = 0, uDepth = 0;
-
-	for (uint32_t u = 0; u < 6; u++)
-	{
-		Zenith_DataStream xStream;
-		xStream.ReadFromFile(aszPaths[u]);
-
-		TextureFormat eFormat;
-
-		xStream >> uWidth;
-		xStream >> uHeight;
-		xStream >> uDepth;
-		xStream >> eFormat;
-		xStream >> aulDataSizes[u];
-
-		apDatas[u] = Zenith_MemoryManagement::Allocate(aulDataSizes[u]);
-		xStream.ReadData(apDatas[u], aulDataSizes[u]);
-	}
-
-	const uint32_t uNumMips = std::floor(std::log2((std::max)(uWidth, uHeight))) + 1;
-
-	Flux_SurfaceInfo xInfo;
-	xInfo.m_uWidth = uWidth;
-	xInfo.m_uHeight = uHeight;
-	xInfo.m_uNumLayers = 6;
-	xInfo.m_eFormat = TEXTURE_FORMAT_RGBA8_UNORM;
-	xInfo.m_uNumMips = uNumMips;
-	xInfo.m_uMemoryFlags = 1 << MEMORY_FLAGS__SHADER_READ;
-
-	if (pxInfoOut)
-	{
-		*pxInfoOut = xInfo;
-	}
-
-	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
-	
-	vk::Format xFormat = Zenith_Vulkan_Texture::ConvertToVkFormat_Colour(xInfo.m_eFormat);
-	
-	vk::ImageUsageFlags eUsageFlags = vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eSampled;
-
-	vk::ImageCreateInfo xImageInfo = vk::ImageCreateInfo()
-		.setImageType(vk::ImageType::e2D)
-		.setFormat(xFormat)
-		.setTiling(vk::ImageTiling::eOptimal)
-		.setExtent({ xInfo.m_uWidth, xInfo.m_uHeight, 1 })
-		.setMipLevels(xInfo.m_uNumMips)
-		.setArrayLayers(6)
-		.setInitialLayout(vk::ImageLayout::eUndefined)
-		.setUsage(eUsageFlags)
-		.setSharingMode(vk::SharingMode::eExclusive)
-		.setSamples(vk::SampleCountFlagBits::e1)
-		.setFlags(vk::ImageCreateFlagBits::eCubeCompatible);
-
-	VmaAllocationCreateInfo xAllocInfo = {};
-	xAllocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
-
-	const vk::ImageCreateInfo::NativeType xImageInfo_Native = xImageInfo;
-	
-	VkImage xImage;
-	VmaAllocation xAllocation;
-	vmaCreateImage(s_xAllocator, &xImageInfo_Native, &xAllocInfo, &xImage, &xAllocation, nullptr);
-
-	Zenith_Vulkan_VRAM* pxVRAM = new Zenith_Vulkan_VRAM(vk::Image(xImage), xAllocation, s_xAllocator);
-	Flux_VRAMHandle xHandle = Zenith_Vulkan::RegisterVRAM(pxVRAM);
-
-	// Upload texture data - concatenate all layer data
-	size_t ulTotalDataSize = 0;
-	for (uint32_t u = 0; u < 6; u++)
-	{
-		ulTotalDataSize += aulDataSizes[u];
-	}
-
-	void* pAllData = Zenith_MemoryManagement::Allocate(ulTotalDataSize);
-	size_t ulCursor = 0;
-	for (uint32_t u = 0; u < 6; u++)
-	{
-		memcpy((uint8_t*)pAllData + ulCursor, apDatas[u], aulDataSizes[u]);
-		ulCursor += aulDataSizes[u];
-		Zenith_MemoryManagement::Deallocate(apDatas[u]);
-	}
-
-	// Upload data directly without creating temp texture object
-	s_xMutex.Lock();
-
-	VkMemoryPropertyFlags eMemoryProps;
-	vmaGetAllocationMemoryProperties(s_xAllocator, xAllocation, &eMemoryProps);
-
-	if (eMemoryProps & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
-	{
-		// Direct upload to host-visible memory
-		VmaAllocationInfo xAllocInfo;
-		vmaGetAllocationInfo(s_xAllocator, xAllocation, &xAllocInfo);
-		memcpy(xAllocInfo.pMappedData, pAllData, ulTotalDataSize);
-		vmaFlushAllocation(s_xAllocator, xAllocation, 0, VK_WHOLE_SIZE);
-	}
-	else
-	{
-		// Upload via staging buffer
-		if (s_uNextFreeStagingOffset + ulTotalDataSize >= g_uStagingPoolSize)
-		{
-			HandleStagingBufferFull();
-		}
-
-		// Create staging allocation with texture metadata directly - no temp texture object
-		StagingMemoryAllocation xStagingAlloc;
-		xStagingAlloc.m_eType = ALLOCATION_TYPE_TEXTURE;
-		xStagingAlloc.m_xTextureMetadata.m_xImage = vk::Image(xImage);
-		xStagingAlloc.m_xTextureMetadata.m_uWidth = xInfo.m_uWidth;
-		xStagingAlloc.m_xTextureMetadata.m_uHeight = xInfo.m_uHeight;
-		xStagingAlloc.m_xTextureMetadata.m_uNumMips = xInfo.m_uNumMips;
-		xStagingAlloc.m_xTextureMetadata.m_uNumLayers = 6;
-		xStagingAlloc.m_uSize = ulTotalDataSize;
-		xStagingAlloc.m_uOffset = s_uNextFreeStagingOffset;
-		s_xStagingAllocations.push_back(xStagingAlloc);
-
-		void* pMap = xDevice.mapMemory(s_xStagingMem, s_uNextFreeStagingOffset, ulTotalDataSize);
-		memcpy(pMap, pAllData, ulTotalDataSize);
-		xDevice.unmapMemory(s_xStagingMem);
-		s_uNextFreeStagingOffset += ulTotalDataSize;
-	}
-	s_xMutex.Unlock();
-
-	Zenith_MemoryManagement::Deallocate(pAllData);
-
-	
-
-	// For host-visible memory path, transition directly to shader read layout
-	if (eMemoryProps & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
-	{
 		ImageTransitionBarrier(vk::Image(xImage), vk::ImageLayout::eUndefined, vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands);
 	}
 
