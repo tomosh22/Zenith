@@ -486,8 +486,6 @@ void Zenith_Vulkan_CommandBuffer::SetPipeline(Zenith_Vulkan_Pipeline* pxPipeline
 	m_pxCurrentPipeline = pxPipeline;
 	m_uDescriptorDirty = ~0u;
 	memset(m_xBindings, 0, sizeof(m_xBindings));
-	memset(m_aapxTextureCache, 0, sizeof(m_aapxTextureCache));
-	memset(m_aaxBufferCache, 0, sizeof(m_aaxBufferCache));
 
 }
 
@@ -497,12 +495,10 @@ void Zenith_Vulkan_CommandBuffer::BindSRV(const Flux_ShaderResourceView* pxSRV, 
 	Zenith_Assert(pxSRV && pxSRV->m_xImageView, "Invalid SRV");
 
 	vk::ImageView xImageView = pxSRV->m_xImageView;
-	// Note: Cache comparison disabled for now since we're using ImageView directly
-	// Could add ImageView caching if needed for performance
+
 	m_uDescriptorDirty |= 1 << m_uCurrentBindFreq;
 	
 	m_xBindings[m_uCurrentBindFreq].m_xSRVs[uBindPoint] = pxSRV;
-	// Store sampler in textures slot (will need to extract ImageView later during descriptor writes)
 	m_xBindings[m_uCurrentBindFreq].m_apxSamplers[uBindPoint] = pxSampler;
 }
 
@@ -512,7 +508,7 @@ void Zenith_Vulkan_CommandBuffer::BindUAV(const Flux_UnorderedAccessView* pxUAV,
 	Zenith_Assert(pxUAV && pxUAV->m_xImageView, "Invalid UAV");
 
 	vk::ImageView xImageView = pxUAV->m_xImageView;
-	// Note: Cache comparison disabled for now since we're using ImageView directly
+
 	m_uDescriptorDirty |= 1 << m_uCurrentBindFreq;
 	
 	m_xBindings[m_uCurrentBindFreq].m_xUAVs[uBindPoint] = pxUAV;
@@ -525,7 +521,7 @@ void Zenith_Vulkan_CommandBuffer::BindRTV(const Flux_RenderTargetView* pxRTV, ui
 	Zenith_Assert(pxRTV && pxRTV->m_xImageView, "Invalid RTV");
 
 	vk::ImageView xImageView = pxRTV->m_xImageView;
-	// Note: Cache comparison disabled for now since we're using ImageView directly
+
 	m_uDescriptorDirty |= 1 << m_uCurrentBindFreq;
 	
 	m_xBindings[m_uCurrentBindFreq].m_xRTVs[uBindPoint] = pxRTV;
@@ -538,7 +534,7 @@ void Zenith_Vulkan_CommandBuffer::BindDSV(const Flux_DepthStencilView* pxDSV, ui
 	Zenith_Assert(pxDSV && pxDSV->m_xImageView, "Invalid DSV");
 
 	vk::ImageView xImageView = pxDSV->m_xImageView;
-	// Note: Cache comparison disabled for now since we're using ImageView directly
+
 	m_uDescriptorDirty |= 1 << m_uCurrentBindFreq;
 	
 	m_xBindings[m_uCurrentBindFreq].m_xDSVs[uBindPoint] = pxDSV;
@@ -550,11 +546,8 @@ void Zenith_Vulkan_CommandBuffer::BindCBV(const Flux_ConstantBufferView* pxCBV, 
 	Zenith_Assert(m_uCurrentBindFreq < FLUX_MAX_DESCRIPTOR_SET_LAYOUTS, "Haven't called BeginBind");
 	Zenith_Assert(pxCBV, "Invalid CBV");
 
-	if (pxCBV->m_xVRAMHandle.AsUInt() != m_aaxBufferCache[m_uCurrentBindFreq][uBindPoint].AsUInt())
-	{
-		m_uDescriptorDirty |= 1 << m_uCurrentBindFreq;
-		m_aaxBufferCache[m_uCurrentBindFreq][uBindPoint] = pxCBV->m_xVRAMHandle;
-	}
+	m_uDescriptorDirty |= 1 << m_uCurrentBindFreq;
+
 	m_xBindings[m_uCurrentBindFreq].m_xCBVs[uBindPoint] = pxCBV;
 }
 

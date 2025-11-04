@@ -90,10 +90,6 @@ private:
 
 	CommandType m_eCommandType;
 
-	Flux_Texture* m_aapxTextureCache[FLUX_MAX_DESCRIPTOR_SET_LAYOUTS][MAX_BINDINGS];
-	Flux_VRAMHandle m_aaxBufferCache[FLUX_MAX_DESCRIPTOR_SET_LAYOUTS][MAX_BINDINGS];
-	//#TO_TODO: accel struct cache
-
 	vk::DescriptorSet m_axCurrentDescSet[FLUX_MAX_DESCRIPTOR_SET_LAYOUTS] = { VK_NULL_HANDLE };
 	u_int m_uDescriptorDirty = true;
 
