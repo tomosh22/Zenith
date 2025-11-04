@@ -58,7 +58,7 @@ struct Flux_Texture
 	Flux_ShaderResourceView m_xSRV;
 };
 
-struct Flux_BufferVRAM
+struct Flux_Buffer
 {
 	Flux_VRAMHandle m_xVRAMHandle;
 	u_int64 m_ulSize = 0;

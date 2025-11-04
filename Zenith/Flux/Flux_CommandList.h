@@ -3,7 +3,7 @@
 
 // Forward declarations
 struct Flux_Texture;
-struct Flux_BufferVRAM;
+struct Flux_Buffer;
 
 enum Flux_CommandType
 {
@@ -156,13 +156,13 @@ class Flux_CommandBindBuffer
 public:
 	static constexpr Flux_CommandType m_eType = FLUX_COMMANDTYPE__BIND_BUFFER;
 
-	Flux_CommandBindBuffer(const Flux_BufferVRAM* pxBufferVRAM, const u_int uBindPoint)
+	Flux_CommandBindBuffer(const Flux_Buffer* pxBufferVRAM, const u_int uBindPoint)
 		: m_pxBufferVRAM(pxBufferVRAM)
 		, m_uBindPoint(uBindPoint)
 	{}
 	void operator()(Flux_CommandBuffer* pxCmdBuf);
 
-	const Flux_BufferVRAM* m_pxBufferVRAM;
+	const Flux_Buffer* m_pxBufferVRAM;
 	const u_int m_uBindPoint;
 };
 
