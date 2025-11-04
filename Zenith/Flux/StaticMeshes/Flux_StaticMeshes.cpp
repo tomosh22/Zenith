@@ -140,11 +140,11 @@ void Flux_StaticMeshes::RenderToGBuffer(void*)
 			g_xCommandList.AddCommand<Flux_CommandPushConstant>(&xModelMatrix, sizeof(xModelMatrix));
 			const Flux_Material& xMaterial = pxModel->GetMaterialAtIndex(uMesh);
 
-			g_xCommandList.AddCommand<Flux_CommandBindTexture>(xMaterial.GetDiffuse(), 0);
-			g_xCommandList.AddCommand<Flux_CommandBindTexture>(xMaterial.GetNormal(), 1);
-			g_xCommandList.AddCommand<Flux_CommandBindTexture>(xMaterial.GetRoughnessMetallic(), 2);
-			g_xCommandList.AddCommand<Flux_CommandBindTexture>(xMaterial.GetOcclusion(), 3);
-			g_xCommandList.AddCommand<Flux_CommandBindTexture>(xMaterial.GetEmissive(), 4);
+			g_xCommandList.AddCommand<Flux_CommandBindSRV>(&xMaterial.GetDiffuse()->m_xSRV, 0);
+			g_xCommandList.AddCommand<Flux_CommandBindSRV>(&xMaterial.GetNormal()->m_xSRV, 1);
+			g_xCommandList.AddCommand<Flux_CommandBindSRV>(&xMaterial.GetRoughnessMetallic()->m_xSRV, 2);
+			g_xCommandList.AddCommand<Flux_CommandBindSRV>(&xMaterial.GetOcclusion()->m_xSRV, 3);
+			g_xCommandList.AddCommand<Flux_CommandBindSRV>(&xMaterial.GetEmissive()->m_xSRV, 4);
 
 			g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(xMesh.GetNumIndices());
 		}

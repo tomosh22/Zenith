@@ -120,11 +120,11 @@ void Flux_AnimatedMeshes::Render(void*)
 
 			g_xCommandList.AddCommand<Flux_CommandBindBuffer>(&xMesh.m_pxAnimation->m_xBoneBuffer.GetBufferVRAM(), 0);
 
-			g_xCommandList.AddCommand<Flux_CommandBindTexture>(xMaterial.GetDiffuse(), 1);
-			g_xCommandList.AddCommand<Flux_CommandBindTexture>(xMaterial.GetNormal(), 2);
-			g_xCommandList.AddCommand<Flux_CommandBindTexture>(xMaterial.GetRoughnessMetallic(), 3);
-			g_xCommandList.AddCommand<Flux_CommandBindTexture>(xMaterial.GetOcclusion(), 4);
-			g_xCommandList.AddCommand<Flux_CommandBindTexture>(xMaterial.GetEmissive(), 5);
+			g_xCommandList.AddCommand<Flux_CommandBindSRV>(&xMaterial.GetDiffuse()->m_xSRV, 1);
+			g_xCommandList.AddCommand<Flux_CommandBindSRV>(&xMaterial.GetNormal()->m_xSRV, 2);
+			g_xCommandList.AddCommand<Flux_CommandBindSRV>(&xMaterial.GetRoughnessMetallic()->m_xSRV, 3);
+			g_xCommandList.AddCommand<Flux_CommandBindSRV>(&xMaterial.GetOcclusion()->m_xSRV, 4);
+			g_xCommandList.AddCommand<Flux_CommandBindSRV>(&xMaterial.GetEmissive()->m_xSRV, 5);
 
 			g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(xMesh.GetNumIndices());
 		}

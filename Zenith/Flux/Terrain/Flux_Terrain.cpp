@@ -203,13 +203,13 @@ void Flux_Terrain::RenderToGBuffer(void*)
 		const Flux_Material& xMaterial0 = pxTerrain->GetMaterial0();
 		const Flux_Material& xMaterial1 = pxTerrain->GetMaterial1();
 
-		g_xTerrainCommandList.AddCommand<Flux_CommandBindTexture>(xMaterial0.GetDiffuse(), 0);
-		g_xTerrainCommandList.AddCommand<Flux_CommandBindTexture>(xMaterial0.GetNormal(), 1);
-		g_xTerrainCommandList.AddCommand<Flux_CommandBindTexture>(xMaterial0.GetRoughnessMetallic(), 2);
+		g_xTerrainCommandList.AddCommand<Flux_CommandBindSRV>(&xMaterial0.GetDiffuse()->m_xSRV, 0);
+		g_xTerrainCommandList.AddCommand<Flux_CommandBindSRV>(&xMaterial0.GetNormal()->m_xSRV, 1);
+		g_xTerrainCommandList.AddCommand<Flux_CommandBindSRV>(&xMaterial0.GetRoughnessMetallic()->m_xSRV, 2);
 
-		g_xTerrainCommandList.AddCommand<Flux_CommandBindTexture>(xMaterial1.GetDiffuse(), 3);
-		g_xTerrainCommandList.AddCommand<Flux_CommandBindTexture>(xMaterial1.GetNormal(), 4);
-		g_xTerrainCommandList.AddCommand<Flux_CommandBindTexture>(xMaterial1.GetRoughnessMetallic(), 5);
+		g_xTerrainCommandList.AddCommand<Flux_CommandBindSRV>(&xMaterial1.GetDiffuse()->m_xSRV, 3);
+		g_xTerrainCommandList.AddCommand<Flux_CommandBindSRV>(&xMaterial1.GetNormal()->m_xSRV, 4);
+		g_xTerrainCommandList.AddCommand<Flux_CommandBindSRV>(&xMaterial1.GetRoughnessMetallic()->m_xSRV, 5);
 
 		g_xTerrainCommandList.AddCommand<Flux_CommandDrawIndexed>(pxTerrain->GetRenderMeshGeometry().GetNumIndices());
 
@@ -217,7 +217,7 @@ void Flux_Terrain::RenderToGBuffer(void*)
 		g_xWaterCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&pxTerrain->GetWaterGeometry().GetVertexBuffer());
 		g_xWaterCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&pxTerrain->GetWaterGeometry().GetIndexBuffer());
 
-		g_xWaterCommandList.AddCommand<Flux_CommandBindTexture>(&s_xWaterNormalTexture, 0);
+		g_xWaterCommandList.AddCommand<Flux_CommandBindSRV>(&s_xWaterNormalTexture.m_xSRV, 0);
 
 		g_xWaterCommandList.AddCommand<Flux_CommandDrawIndexed>(pxTerrain->GetWaterGeometry().GetNumIndices());
 	}

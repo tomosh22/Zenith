@@ -12,7 +12,6 @@ enum Flux_CommandType
 	FLUX_COMMANDTYPE__SET_INDEX_BUFFER,
 
 	FLUX_COMMANDTYPE__BEGIN_BIND,
-	FLUX_COMMANDTYPE__BIND_TEXTURE,       // Deprecated - use view-specific bindings
 	FLUX_COMMANDTYPE__BIND_SRV,           // Shader Resource View
 	FLUX_COMMANDTYPE__BIND_UAV,           // Unordered Access View
 	FLUX_COMMANDTYPE__BIND_RTV,           // Render Target View
@@ -152,22 +151,6 @@ public:
 	}
 	u_int m_uIndex;
 };
-class Flux_CommandBindTexture
-{
-public:
-	static constexpr Flux_CommandType m_eType = FLUX_COMMANDTYPE__BIND_TEXTURE;
-
-	Flux_CommandBindTexture(const Flux_Texture* pxTexture, const u_int uBindPoint, Flux_Sampler* pxSampler = nullptr)
-		: m_pxTexture(pxTexture)
-		, m_uBindPoint(uBindPoint)
-		, m_pxSampler(pxSampler)
-	{}
-	void operator()(Flux_CommandBuffer* pxCmdBuf);
-	
-	const Flux_Texture* m_pxTexture;
-	const u_int m_uBindPoint;
-	Flux_Sampler* m_pxSampler;
-};
 class Flux_CommandBindBuffer
 {
 public:
@@ -190,7 +173,7 @@ class Flux_CommandBindSRV
 public:
 	static constexpr Flux_CommandType m_eType = FLUX_COMMANDTYPE__BIND_SRV;
 
-	Flux_CommandBindSRV(Flux_ShaderResourceView* const pxSRV, const u_int uBindPoint, Flux_Sampler* pxSampler = nullptr)
+	Flux_CommandBindSRV(const Flux_ShaderResourceView* const pxSRV, const u_int uBindPoint, Flux_Sampler* pxSampler = nullptr)
 		: m_pxSRV(pxSRV)
 		, m_uBindPoint(uBindPoint)
 		, m_pxSampler(pxSampler)
@@ -199,7 +182,7 @@ public:
 	{
 		pxCmdBuf->BindSRV(m_pxSRV, m_uBindPoint, m_pxSampler);
 	}
-	Flux_ShaderResourceView* m_pxSRV;
+	const Flux_ShaderResourceView* m_pxSRV;
 	const u_int m_uBindPoint;
 	Flux_Sampler* m_pxSampler;
 };
@@ -209,7 +192,7 @@ class Flux_CommandBindUAV
 public:
 	static constexpr Flux_CommandType m_eType = FLUX_COMMANDTYPE__BIND_UAV;
 
-	Flux_CommandBindUAV(Flux_UnorderedAccessView* const pxUAV, const u_int uBindPoint)
+	Flux_CommandBindUAV(const Flux_UnorderedAccessView* const pxUAV, const u_int uBindPoint)
 		: m_pxUAV(pxUAV)
 		, m_uBindPoint(uBindPoint)
 	{}
@@ -217,7 +200,7 @@ public:
 	{
 		pxCmdBuf->BindUAV(m_pxUAV, m_uBindPoint);
 	}
-	Flux_UnorderedAccessView* m_pxUAV;
+	const Flux_UnorderedAccessView* m_pxUAV;
 	const u_int m_uBindPoint;
 };
 
@@ -377,7 +360,6 @@ public:
 				HANDLE_COMMAND(FLUX_COMMANDTYPE__SET_INDEX_BUFFER, Flux_CommandSetIndexBuffer);
 
 				HANDLE_COMMAND(FLUX_COMMANDTYPE__BEGIN_BIND, Flux_CommandBeginBind);
-				HANDLE_COMMAND(FLUX_COMMANDTYPE__BIND_TEXTURE, Flux_CommandBindTexture);
 				HANDLE_COMMAND(FLUX_COMMANDTYPE__BIND_SRV, Flux_CommandBindSRV);
 				HANDLE_COMMAND(FLUX_COMMANDTYPE__BIND_UAV, Flux_CommandBindUAV);
 				HANDLE_COMMAND(FLUX_COMMANDTYPE__BIND_RTV, Flux_CommandBindRTV);

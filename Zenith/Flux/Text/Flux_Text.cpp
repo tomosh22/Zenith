@@ -190,7 +190,7 @@ void Flux_Text::Render(void*)
 
 	g_xCommandList.AddCommand<Flux_CommandBeginBind>(0);
 	g_xCommandList.AddCommand<Flux_CommandBindBuffer>(&Flux_Graphics::s_xFrameConstantsBuffer.GetBufferVRAM(), 0);
-	g_xCommandList.AddCommand<Flux_CommandBindTexture>(&s_xFontAtlasTexture, 1);
+	g_xCommandList.AddCommand<Flux_CommandBindSRV>(&s_xFontAtlasTexture.m_xSRV, 1);
 
 	g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(6, uNumChars);
 
