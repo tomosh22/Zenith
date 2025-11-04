@@ -5,7 +5,6 @@
 #include "Zenith_Vulkan_CommandBuffer.h"
 #include "Zenith_Vulkan_Swapchain.h"
 #include "Zenith_Vulkan_Pipeline.h"
-#include "Zenith_Vulkan_Texture.h"
 
 #define Flux_PlatformAPI Zenith_Vulkan
 #define Flux_MemoryManager Zenith_Vulkan_MemoryManager

@@ -5,14 +5,14 @@
 #include "Flux/Flux_Enums.h"
 #include "Flux/Flux_Types.h"
 
-#include "Vulkan/Zenith_Vulkan_Texture.h"
-
 #define MAX_BINDINGS 16
 
 class Flux_VertexBuffer;
+class Flux_Texture;
 class Flux_DynamicVertexBuffer;
 class Flux_IndexBuffer;
 class Zenith_Vulkan_Pipeline;
+class Zenith_Vulkan_Sampler;
 struct Flux_TargetSetup;
 struct Flux_ShaderResourceView;
 struct Flux_UnorderedAccessView;
@@ -21,7 +21,7 @@ struct Flux_DepthStencilView;
 
 struct DescSetBindings {
 	Flux_VRAMHandle m_xBuffers[MAX_BINDINGS];
-	std::pair<Zenith_Vulkan_Texture*, Zenith_Vulkan_Sampler*> m_xTextures[MAX_BINDINGS];
+	std::pair<Flux_Texture*, Zenith_Vulkan_Sampler*> m_xTextures[MAX_BINDINGS];
 	
 	// Direct3D-style view bindings
 	Flux_ShaderResourceView* m_xSRVs[MAX_BINDINGS];
@@ -52,8 +52,6 @@ public:
 	void BeginRenderPass(Flux_TargetSetup& xTargetSetup, bool bClearColour = false, bool bClearDepth = false, bool bClearStencil = false);
 	void SetPipeline(Zenith_Vulkan_Pipeline* pxPipeline);
 	
-	// Legacy texture binding (deprecated - use view-specific methods)
-	void BindTexture(Zenith_Vulkan_Texture* pxTexture, uint32_t uBindPoint, Zenith_Vulkan_Sampler* pxSampler = nullptr);
 	void BindTextureHandle(uint32_t uVRAMHandle, uint32_t uBindPoint, Zenith_Vulkan_Sampler* pxSampler = nullptr);
 	
 	// Direct3D-style view binding methods
@@ -76,13 +74,13 @@ public:
 	void* Platform_GetCurrentCmdBuffer() const { return (void*)&m_xCurrentCmdBuffer; }
 
 	void ImageTransitionBarrier(vk::Image xImage, vk::ImageLayout eOldLayout, vk::ImageLayout eNewLayout, vk::ImageAspectFlags eAspect, vk::PipelineStageFlags eSrcStage, vk::PipelineStageFlags eDstStage, int uMipLevel = 0, int uLayer = 0);
-	void BlitTextureToTexture(Zenith_Vulkan_Texture* pxSrc, Zenith_Vulkan_Texture* pxDst, uint32_t uDstMip, uint32_t uDstLayer);
+	void BlitTextureToTexture(Flux_Texture* pxSrc, Flux_Texture* pxDst, uint32_t uDstMip, uint32_t uDstLayer);
 
 	// Compute methods
 	void BindComputePipeline(Zenith_Vulkan_Pipeline* pxPipeline);
-	void BindStorageImage(Zenith_Vulkan_Texture* pxTexture, uint32_t uBindPoint);
+	void BindStorageImage(Flux_Texture* pxTexture, uint32_t uBindPoint);
 	void Dispatch(uint32_t uGroupCountX, uint32_t uGroupCountY, uint32_t uGroupCountZ);
-	void ImageBarrier(Zenith_Vulkan_Texture* pxTexture, uint32_t uOldLayout, uint32_t uNewLayout);
+	void ImageBarrier(Flux_Texture* pxTexture, uint32_t uOldLayout, uint32_t uNewLayout);
 
 	bool IsRecording() const { return m_bIsRecording; }
 
@@ -108,7 +106,7 @@ private:
 
 	bool m_bIsRecording = false;
 
-	Zenith_Vulkan_Texture* m_aapxTextureCache[FLUX_MAX_DESCRIPTOR_SET_LAYOUTS][MAX_BINDINGS];
+	Flux_Texture* m_aapxTextureCache[FLUX_MAX_DESCRIPTOR_SET_LAYOUTS][MAX_BINDINGS];
 	Flux_VRAMHandle m_aaxBufferCache[FLUX_MAX_DESCRIPTOR_SET_LAYOUTS][MAX_BINDINGS];
 	//#TO_TODO: accel struct cache
 

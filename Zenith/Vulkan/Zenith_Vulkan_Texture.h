@@ -72,14 +72,3 @@ private:
 
 	vk::Format m_eFormat = vk::Format::eUndefined;
 };
-
-class Zenith_Vulkan_Sampler
-{
-public:
-	const vk::Sampler& GetSampler() const { return m_xSampler; }
-
-	static void InitialiseRepeat(Zenith_Vulkan_Sampler& xSampler);
-	static void InitialiseClamp(Zenith_Vulkan_Sampler& xSampler);
-private:
-	vk::Sampler m_xSampler;
-};

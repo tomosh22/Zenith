@@ -4,8 +4,6 @@
 #include "vma/vk_mem_alloc.h"
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
 
-class Zenith_Vulkan_Texture;
-
 class Zenith_Vulkan_Buffer
 {
 public:

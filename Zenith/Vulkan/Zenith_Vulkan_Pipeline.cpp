@@ -508,10 +508,10 @@ vk::RenderPass Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(Flux_TargetSetup&
 	{
 		const Flux_RenderAttachment& xTarget = xTargetSetup.m_axColourAttachments[i];
 		xAttachmentDescs.at(i)
-			.setFormat(Zenith_Vulkan_Texture::ConvertToVkFormat_Colour(xTarget.m_xSurfaceInfo.m_eFormat))
+			.setFormat(Zenith_Vulkan::ConvertToVkFormat_Colour(xTarget.m_xSurfaceInfo.m_eFormat))
 			.setSamples(vk::SampleCountFlagBits::e1)
-			.setLoadOp(Zenith_Vulkan_Texture::ConvertToVkLoadAction(eColourLoad))
-			.setStoreOp(Zenith_Vulkan_Texture::ConvertToVkStoreAction(eColourStore))
+			.setLoadOp(Zenith_Vulkan::ConvertToVkLoadAction(eColourLoad))
+			.setStoreOp(Zenith_Vulkan::ConvertToVkStoreAction(eColourStore))
 			.setStencilLoadOp(vk::AttachmentLoadOp::eDontCare)
 			.setStencilStoreOp(vk::AttachmentStoreOp::eDontCare)
 			.setInitialLayout(eLayout)
@@ -529,12 +529,12 @@ vk::RenderPass Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(Flux_TargetSetup&
 	if (bHasDepth)
 	{
 		xDepthStencilAttachment = vk::AttachmentDescription()
-			.setFormat(Zenith_Vulkan_Texture::ConvertToVkFormat_DepthStencil(xTargetSetup.m_pxDepthStencil->m_xSurfaceInfo.m_eFormat))
+			.setFormat(Zenith_Vulkan::ConvertToVkFormat_DepthStencil(xTargetSetup.m_pxDepthStencil->m_xSurfaceInfo.m_eFormat))
 			.setSamples(vk::SampleCountFlagBits::e1)
-			.setLoadOp(Zenith_Vulkan_Texture::ConvertToVkLoadAction(eDepthStencilLoad))
-			.setStoreOp(Zenith_Vulkan_Texture::ConvertToVkStoreAction(eDepthStencilStore))
-			.setStencilLoadOp(Zenith_Vulkan_Texture::ConvertToVkLoadAction(eDepthStencilLoad))
-			.setStencilStoreOp(Zenith_Vulkan_Texture::ConvertToVkStoreAction(eDepthStencilStore))
+			.setLoadOp(Zenith_Vulkan::ConvertToVkLoadAction(eDepthStencilLoad))
+			.setStoreOp(Zenith_Vulkan::ConvertToVkStoreAction(eDepthStencilStore))
+			.setStencilLoadOp(Zenith_Vulkan::ConvertToVkLoadAction(eDepthStencilLoad))
+			.setStencilStoreOp(Zenith_Vulkan::ConvertToVkStoreAction(eDepthStencilStore))
 			.setInitialLayout(eDepthStencilLoad == LOAD_ACTION_LOAD ? vk::ImageLayout::eDepthStencilReadOnlyOptimal : vk::ImageLayout::eUndefined)
 			.setFinalLayout(vk::ImageLayout::eDepthStencilReadOnlyOptimal);
 

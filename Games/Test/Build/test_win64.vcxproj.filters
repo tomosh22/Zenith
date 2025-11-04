@@ -415,9 +415,6 @@
     <ClCompile Include="..\..\..\Zenith\Vulkan\Zenith_Vulkan_Swapchain.cpp">
       <Filter>Zenith\Vulkan</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\Zenith\Vulkan\Zenith_Vulkan_Texture.cpp">
-      <Filter>Zenith\Vulkan</Filter>
-    </ClCompile>
     <ClCompile Include="..\..\..\Zenith\Windows\Multithreading\Zenith_Windows_Multithreading.cpp">
       <Filter>Zenith\Windows\Multithreading</Filter>
     </ClCompile>
@@ -1066,9 +1063,6 @@
       <Filter>Zenith\Vulkan</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\Zenith\Vulkan\Zenith_Vulkan_Swapchain.h">
-      <Filter>Zenith\Vulkan</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\..\Zenith\Vulkan\Zenith_Vulkan_Texture.h">
       <Filter>Zenith\Vulkan</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\Zenith\Windows\Multithreading\Zenith_Windows_Multithreading.h">

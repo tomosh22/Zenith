@@ -25,6 +25,17 @@ public:
 	vk::DescriptorPool m_axDescriptorPools[1];
 };
 
+class Zenith_Vulkan_Sampler
+{
+public:
+	const vk::Sampler& GetSampler() const { return m_xSampler; }
+
+	static void InitialiseRepeat(Zenith_Vulkan_Sampler& xSampler);
+	static void InitialiseClamp(Zenith_Vulkan_Sampler& xSampler);
+private:
+	vk::Sampler m_xSampler;
+};
+
 class Zenith_Vulkan
 {
 public:
@@ -105,6 +116,13 @@ public:
 	// VRAM Registry
 	static Flux_VRAMHandle RegisterVRAM(Zenith_Vulkan_VRAM* pxVRAM);
 	static Zenith_Vulkan_VRAM* GetVRAM(const Flux_VRAMHandle xHandle);
+
+	// Format conversion utilities
+	static vk::Format ConvertToVkFormat_Colour(TextureFormat eFormat);
+	static vk::Format ConvertToVkFormat_DepthStencil(TextureFormat eFormat);
+	static vk::AttachmentLoadOp ConvertToVkLoadAction(LoadAction eAction);
+	static vk::AttachmentStoreOp ConvertToVkStoreAction(StoreAction eAction);
+
 private:
 	static vk::Instance s_xInstance;
 	static VKAPI_ATTR vk::Bool32 VKAPI_CALL DebugCallback(vk::DebugUtilsMessageSeverityFlagBitsEXT eMessageSeverity,

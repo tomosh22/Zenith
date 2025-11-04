@@ -1,7 +1,6 @@
 #include "Zenith.h"
 
 #include "Zenith_Vulkan_CommandBuffer.h"
-#include "Zenith_Vulkan_Texture.h"
 
 #include "Zenith_Vulkan.h"
 #include "AssetHandling/Zenith_AssetHandler.h"
@@ -143,8 +142,8 @@ void Zenith_Vulkan_CommandBuffer::TransitionComputeResourcesBefore()
 			if (!pxUAV || !pxUAV->m_xImageView)
 			{
 				// Fallback to old storage image check for compatibility
-				Zenith_Vulkan_Texture* pxTex = m_xBindings[uDescSet].m_xTextures[i].first;
-				if (!pxTex || !pxTex->IsValid())
+				Flux_Texture* pxTex = m_xBindings[uDescSet].m_xTextures[i].first;
+				if (!pxTex || !pxTex->m_xVRAMHandle.IsValid())
 				{
 					continue;
 				}
@@ -158,11 +157,12 @@ void Zenith_Vulkan_CommandBuffer::TransitionComputeResourcesBefore()
 				}
 				
 				// Fallback path for legacy storage images
+				Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(pxTex->m_xVRAMHandle);
 				vk::ImageSubresourceRange xSubRange = vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
 
 				vk::ImageMemoryBarrier xBarrier = vk::ImageMemoryBarrier()
 					.setSubresourceRange(xSubRange)
-					.setImage(pxTex->GetImage())
+					.setImage(pxVRAM->GetImage())
 					.setOldLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
 					.setNewLayout(vk::ImageLayout::eGeneral)
 					.setSrcAccessMask(vk::AccessFlagBits::eShaderRead)
@@ -229,8 +229,8 @@ void Zenith_Vulkan_CommandBuffer::TransitionComputeResourcesAfter()
 			if (!pxUAV || !pxUAV->m_xImageView)
 			{
 				// Fallback to old storage image check for compatibility
-				Zenith_Vulkan_Texture* pxTex = m_xBindings[uDescSet].m_xTextures[i].first;
-				if (!pxTex || !pxTex->IsValid())
+				Flux_Texture* pxTex = m_xBindings[uDescSet].m_xTextures[i].first;
+				if (!pxTex || !pxTex->m_xVRAMHandle.IsValid())
 				{
 					continue;
 				}
@@ -244,11 +244,12 @@ void Zenith_Vulkan_CommandBuffer::TransitionComputeResourcesAfter()
 				}
 				
 				// Fallback path for legacy storage images
+				Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(pxTex->m_xVRAMHandle);
 				vk::ImageSubresourceRange xSubRange = vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
 
 				vk::ImageMemoryBarrier xBarrier = vk::ImageMemoryBarrier()
 					.setSubresourceRange(xSubRange)
-					.setImage(pxTex->GetImage())
+					.setImage(pxVRAM->GetImage())
 					.setOldLayout(vk::ImageLayout::eGeneral)
 					.setNewLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
 					.setSrcAccessMask(vk::AccessFlagBits::eShaderWrite | vk::AccessFlagBits::eShaderRead)
@@ -374,33 +375,19 @@ void Zenith_Vulkan_CommandBuffer::PrepareDrawCallDescriptors()
 				}
 				else if (pxSRV && pxSRV->m_xImageView)
 				{
-					// Use SRV's ImageView
-					xImageView = pxSRV->m_xImageView;
-				}
-				else if (xDirectImageView)
-				{
-					// Use directly stored ImageView (from VRAM handle binding)
-					xImageView = xDirectImageView;
-				}
-				else
-				{
-					// Fallback to legacy texture binding
-					Zenith_Vulkan_Texture* pxTex = m_xBindings[uDescSet].m_xTextures[i].first;
-					if (!pxTex)
-					{
-						continue;
-					}
-					xImageView = pxTex->GetImageView();
-					// Check if this is a legacy storage image
-					bIsStorageImage = (m_pxCurrentPipeline->m_xRootSig.m_axDescriptorTypes[uDescSet][i] == DESCRIPTOR_TYPE_STORAGE_IMAGE);
-				}
+				// Use SRV's ImageView
+				xImageView = pxSRV->m_xImageView;
+			}
+			else if (xDirectImageView)
+			{
+				// Use directly stored ImageView (from VRAM handle binding)
+				xImageView = xDirectImageView;
+			}
 
-				if (!xImageView)
-				{
-					continue;
-				}
-
-				vk::ImageLayout eLayout;
+			if (!xImageView)
+			{
+				continue;
+			}				vk::ImageLayout eLayout;
 				vk::DescriptorType eDescType = vk::DescriptorType::eCombinedImageSampler;
 				
 				if (bIsStorageImage)
@@ -587,18 +574,6 @@ void Zenith_Vulkan_CommandBuffer::SetPipeline(Zenith_Vulkan_Pipeline* pxPipeline
 
 }
 
-void Zenith_Vulkan_CommandBuffer::BindTexture(Zenith_Vulkan_Texture* pxTexture, uint32_t uBindPoint, Zenith_Vulkan_Sampler* pxSampler /*= nullptr*/)
-{
-	Zenith_Assert(m_uCurrentBindFreq < FLUX_MAX_DESCRIPTOR_SET_LAYOUTS, "Haven't called BeginBind");
-
-	if (pxTexture != m_aapxTextureCache[m_uCurrentBindFreq][uBindPoint])
-	{
-		m_uDescriptorDirty |= 1<<m_uCurrentBindFreq;
-		m_aapxTextureCache[m_uCurrentBindFreq][uBindPoint] = pxTexture;
-	}
-	m_xBindings[m_uCurrentBindFreq].m_xTextures[uBindPoint] = {pxTexture, pxSampler};
-}
-
 void Zenith_Vulkan_CommandBuffer::BindTextureHandle(uint32_t uVRAMHandle, uint32_t uBindPoint, Zenith_Vulkan_Sampler* pxSampler /*= nullptr*/)
 {
 	Zenith_Assert(m_uCurrentBindFreq < FLUX_MAX_DESCRIPTOR_SET_LAYOUTS, "Haven't called BeginBind");
@@ -778,14 +753,14 @@ void Zenith_Vulkan_CommandBuffer::ImageTransitionBarrier(vk::Image xImage, vk::I
 	m_xCurrentCmdBuffer.pipelineBarrier(eSrcStage, eDstStage, vk::DependencyFlags(), 0, nullptr, 0, nullptr, 1, &xMemoryBarrier);
 }
 
-void Zenith_Vulkan_CommandBuffer::BlitTextureToTexture(Zenith_Vulkan_Texture* pxSrc, Zenith_Vulkan_Texture* pxDst, uint32_t uDstMip, uint32_t uDstLayer)
+void Zenith_Vulkan_CommandBuffer::BlitTextureToTexture(Flux_Texture* pxSrc, Flux_Texture* pxDst, uint32_t uDstMip, uint32_t uDstLayer)
 {
 	std::array<vk::Offset3D, 2> axSrcOffsets;
 	axSrcOffsets.at(0).setX(0);
 	axSrcOffsets.at(0).setY(0);
 	axSrcOffsets.at(0).setZ(0);
-	axSrcOffsets.at(1).setX(pxSrc->GetWidth());
-	axSrcOffsets.at(1).setY(pxSrc->GetHeight());
+	axSrcOffsets.at(1).setX(pxSrc->m_xSurfaceInfo.m_uWidth);
+	axSrcOffsets.at(1).setY(pxSrc->m_xSurfaceInfo.m_uHeight);
 	axSrcOffsets.at(1).setZ(1);
 
 	vk::ImageSubresourceLayers xSrcSubresource = vk::ImageSubresourceLayers()
@@ -798,8 +773,8 @@ void Zenith_Vulkan_CommandBuffer::BlitTextureToTexture(Zenith_Vulkan_Texture* px
 	axDstOffsets.at(0).setX(0);
 	axDstOffsets.at(0).setY(0);
 	axDstOffsets.at(0).setZ(0);
-	axDstOffsets.at(1).setX(pxSrc->GetWidth() / std::pow(2, uDstMip));
-	axDstOffsets.at(1).setY(pxSrc->GetHeight() / std::pow(2, uDstMip));
+	axDstOffsets.at(1).setX(pxSrc->m_xSurfaceInfo.m_uWidth / std::pow(2, uDstMip));
+	axDstOffsets.at(1).setY(pxSrc->m_xSurfaceInfo.m_uHeight / std::pow(2, uDstMip));
 	axDstOffsets.at(1).setZ(1);
 
 	vk::ImageSubresourceLayers xDstSubresource = vk::ImageSubresourceLayers()
@@ -814,7 +789,7 @@ void Zenith_Vulkan_CommandBuffer::BlitTextureToTexture(Zenith_Vulkan_Texture* px
 		.setSrcSubresource(xSrcSubresource)
 		.setDstSubresource(xDstSubresource);
 
-		m_xCurrentCmdBuffer.blitImage(pxSrc->GetImage(), vk::ImageLayout::eTransferSrcOptimal, pxDst->GetImage(), vk::ImageLayout::eTransferDstOptimal, xBlit, vk::Filter::eLinear);
+		m_xCurrentCmdBuffer.blitImage(Zenith_Vulkan::GetVRAM(pxSrc->m_xVRAMHandle)->GetImage(), vk::ImageLayout::eTransferSrcOptimal, Zenith_Vulkan::GetVRAM(pxDst->m_xVRAMHandle)->GetImage(), vk::ImageLayout::eTransferDstOptimal, xBlit, vk::Filter::eLinear);
 }
 
 // ========== COMPUTE METHODS ==========
@@ -827,7 +802,7 @@ void Zenith_Vulkan_CommandBuffer::BindComputePipeline(Zenith_Vulkan_Pipeline* px
 	m_uDescriptorDirty = ~0u;
 }
 
-void Zenith_Vulkan_CommandBuffer::BindStorageImage(Zenith_Vulkan_Texture* pxTexture, uint32_t uBindPoint)
+void Zenith_Vulkan_CommandBuffer::BindStorageImage(Flux_Texture* pxTexture, uint32_t uBindPoint)
 {
 	Zenith_Assert(m_uCurrentBindFreq < FLUX_MAX_DESCRIPTOR_SET_LAYOUTS, "Must call BeginBind first");
 	Zenith_Assert(uBindPoint < MAX_BINDINGS, "Bind point out of range");
@@ -850,7 +825,7 @@ void Zenith_Vulkan_CommandBuffer::Dispatch(uint32_t uGroupCountX, uint32_t uGrou
 	TransitionComputeResourcesAfter();
 }
 
-void Zenith_Vulkan_CommandBuffer::ImageBarrier(Zenith_Vulkan_Texture* pxTexture, uint32_t uOldLayout, uint32_t uNewLayout)
+void Zenith_Vulkan_CommandBuffer::ImageBarrier(Flux_Texture* pxTexture, uint32_t uOldLayout, uint32_t uNewLayout)
 {
 	vk::ImageLayout eOldLayout = static_cast<vk::ImageLayout>(uOldLayout);
 	vk::ImageLayout eNewLayout = static_cast<vk::ImageLayout>(uNewLayout);
@@ -871,7 +846,7 @@ void Zenith_Vulkan_CommandBuffer::ImageBarrier(Zenith_Vulkan_Texture* pxTexture,
 		.setNewLayout(eNewLayout)
 		.setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
 		.setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-		.setImage(pxTexture->GetImage())
+		.setImage(Zenith_Vulkan::GetVRAM(pxTexture->m_xVRAMHandle)->GetImage())
 		.setSubresourceRange(vk::ImageSubresourceRange()
 			.setAspectMask(vk::ImageAspectFlagBits::eColor)
 			.setBaseMipLevel(0)

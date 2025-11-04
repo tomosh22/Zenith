@@ -2,6 +2,7 @@
 
 #include "Vulkan/Zenith_Vulkan.h"
 #include "Flux/Flux.h"
+#include "Flux/Flux_Enums.h"
 #include "Flux/Flux_Graphics.h"
 
 #ifdef ZENITH_WINDOWS
@@ -789,4 +790,110 @@ Zenith_Vulkan_VRAM* Zenith_Vulkan::GetVRAM(const Flux_VRAMHandle xHandle)
 {
 	Zenith_Assert(xHandle.AsUInt() < s_xVRAMRegistry.size(), "Invalid VRAM handle");
 	return s_xVRAMRegistry[xHandle.AsUInt()];
+}
+
+vk::Format Zenith_Vulkan::ConvertToVkFormat_Colour(TextureFormat eFormat) {
+	switch (eFormat)
+	{
+	case TEXTURE_FORMAT_RGB8_UNORM:
+		return vk::Format::eR8G8B8Unorm;
+	case TEXTURE_FORMAT_RGBA8_UNORM:
+		return vk::Format::eR8G8B8A8Unorm;
+	case TEXTURE_FORMAT_BGRA8_SRGB:
+		return vk::Format::eB8G8R8A8Srgb;
+	case TEXTURE_FORMAT_R16G16B16A16_SFLOAT:
+		return vk::Format::eR16G16B16A16Sfloat;
+	case TEXTURE_FORMAT_R32G32B32A32_SFLOAT:
+		return vk::Format::eR32G32B32A32Sfloat;
+	case TEXTURE_FORMAT_R32G32B32_SFLOAT:
+		return vk::Format::eR32G32B32Sfloat;
+	case TEXTURE_FORMAT_R16G16B16A16_UNORM:
+		return vk::Format::eR16G16B16A16Unorm;
+	case TEXTURE_FORMAT_BGRA8_UNORM:
+		return vk::Format::eB8G8R8A8Unorm;
+	default:
+		Zenith_Assert(false, "Invalid format");
+	}
+}
+
+vk::Format Zenith_Vulkan::ConvertToVkFormat_DepthStencil(TextureFormat eFormat) {
+	switch (eFormat)
+	{
+	case TEXTURE_FORMAT_D32_SFLOAT:
+		return vk::Format::eD32Sfloat;
+	default:
+		Zenith_Assert(false, "Invalid format");
+	}
+}
+
+vk::AttachmentLoadOp Zenith_Vulkan::ConvertToVkLoadAction(LoadAction eAction) {
+	switch (eAction)
+	{
+	case LOAD_ACTION_DONTCARE:
+		return vk::AttachmentLoadOp::eDontCare;
+	case LOAD_ACTION_CLEAR:
+		return vk::AttachmentLoadOp::eClear;
+	case LOAD_ACTION_LOAD:
+		return vk::AttachmentLoadOp::eLoad;
+	default:
+		Zenith_Assert(false, "Invalid action");
+	}
+}
+
+vk::AttachmentStoreOp Zenith_Vulkan::ConvertToVkStoreAction(StoreAction eAction) {
+	switch (eAction)
+	{
+	case STORE_ACTION_DONTCARE:
+		return vk::AttachmentStoreOp::eDontCare;
+	case STORE_ACTION_STORE:
+		return vk::AttachmentStoreOp::eStore;
+	default:
+		Zenith_Assert(false, "Invalid action");
+	}
+}
+
+void Zenith_Vulkan_Sampler::InitialiseRepeat(Zenith_Vulkan_Sampler& xSampler)
+{
+	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
+	const vk::PhysicalDevice& xPhysDevice = Zenith_Vulkan::GetPhysicalDevice();
+
+	vk::SamplerCreateInfo xInfo = vk::SamplerCreateInfo()
+		.setMagFilter(vk::Filter::eLinear)
+		.setMinFilter(vk::Filter::eLinear)
+		.setAddressModeU(vk::SamplerAddressMode::eRepeat)
+		.setAddressModeV(vk::SamplerAddressMode::eRepeat)
+		.setAddressModeW(vk::SamplerAddressMode::eRepeat)
+		//.setAnisotropyEnable(VK_TRUE)
+		//.setMaxAnisotropy(xPhysDevice.getProperties().limits.maxSamplerAnisotropy)
+		.setBorderColor(vk::BorderColor::eIntOpaqueBlack)
+		.setUnnormalizedCoordinates(VK_FALSE)
+		.setCompareEnable(VK_FALSE)
+		.setCompareOp(vk::CompareOp::eAlways)
+		.setMipmapMode(vk::SamplerMipmapMode::eLinear)
+		.setMaxLod(FLT_MAX);
+
+	xSampler.m_xSampler = xDevice.createSampler(xInfo);
+}
+
+void Zenith_Vulkan_Sampler::InitialiseClamp(Zenith_Vulkan_Sampler& xSampler)
+{
+	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
+	const vk::PhysicalDevice& xPhysDevice = Zenith_Vulkan::GetPhysicalDevice();
+
+	vk::SamplerCreateInfo xInfo = vk::SamplerCreateInfo()
+		.setMagFilter(vk::Filter::eLinear)
+		.setMinFilter(vk::Filter::eLinear)
+		.setAddressModeU(vk::SamplerAddressMode::eClampToEdge)
+		.setAddressModeV(vk::SamplerAddressMode::eClampToEdge)
+		.setAddressModeW(vk::SamplerAddressMode::eClampToEdge)
+		//.setAnisotropyEnable(VK_TRUE)
+		//.setMaxAnisotropy(xPhysDevice.getProperties().limits.maxSamplerAnisotropy)
+		.setBorderColor(vk::BorderColor::eIntOpaqueBlack)
+		.setUnnormalizedCoordinates(VK_FALSE)
+		.setCompareEnable(VK_FALSE)
+		.setCompareOp(vk::CompareOp::eAlways)
+		.setMipmapMode(vk::SamplerMipmapMode::eLinear)
+		.setMaxLod(FLT_MAX);
+
+	xSampler.m_xSampler = xDevice.createSampler(xInfo);
 }

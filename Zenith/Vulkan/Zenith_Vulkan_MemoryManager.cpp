@@ -5,7 +5,6 @@
 #include "Zenith_Vulkan_CommandBuffer.h"
 
 #include "Zenith_Vulkan.h"
-#include "Zenith_Vulkan_Texture.h"
 
 #include "Flux/Flux_Buffers.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
@@ -260,7 +259,7 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateRenderTargetVRAM(const Flux_S
 	
 	if (bIsColour)
 	{
-		xFormat = Zenith_Vulkan_Texture::ConvertToVkFormat_Colour(xInfo.m_eFormat);
+		xFormat = Zenith_Vulkan::ConvertToVkFormat_Colour(xInfo.m_eFormat);
 		eUsageFlags = vk::ImageUsageFlagBits::eColorAttachment;
 		eAspectFlags = vk::ImageAspectFlagBits::eColor;
 		eInitialLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
@@ -270,7 +269,7 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateRenderTargetVRAM(const Flux_S
 	}
 	else // bIsDepthStencil
 	{
-		xFormat = Zenith_Vulkan_Texture::ConvertToVkFormat_DepthStencil(xInfo.m_eFormat);
+		xFormat = Zenith_Vulkan::ConvertToVkFormat_DepthStencil(xInfo.m_eFormat);
 		eUsageFlags = vk::ImageUsageFlagBits::eDepthStencilAttachment;
 		eAspectFlags = vk::ImageAspectFlagBits::eDepth;
 		eInitialLayout = vk::ImageLayout::eDepthStencilReadOnlyOptimal;
@@ -320,7 +319,7 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateTextureVRAM(const void* pData
 	Flux_SurfaceInfo xInfoCopy = xInfo;
 	xInfoCopy.m_uNumMips = bCreateMips ? std::floor(std::log2((std::max)(xInfo.m_uWidth, xInfo.m_uHeight))) + 1 : 1;
 	
-	vk::Format xFormat = Zenith_Vulkan_Texture::ConvertToVkFormat_Colour(xInfoCopy.m_eFormat);
+	vk::Format xFormat = Zenith_Vulkan::ConvertToVkFormat_Colour(xInfoCopy.m_eFormat);
 	
 	vk::ImageUsageFlags eUsageFlags = vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eTransferSrc;
 	if (xInfoCopy.m_uMemoryFlags & 1 << MEMORY_FLAGS__SHADER_READ) eUsageFlags |= vk::ImageUsageFlagBits::eSampled;
@@ -415,7 +414,7 @@ vk::ImageView Zenith_Vulkan_MemoryManager::CreateRenderTargetView(Flux_VRAMHandl
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xVRAMHandle);
 	
-	vk::Format xFormat = Zenith_Vulkan_Texture::ConvertToVkFormat_Colour(xInfo.m_eFormat);
+	vk::Format xFormat = Zenith_Vulkan::ConvertToVkFormat_Colour(xInfo.m_eFormat);
 	
 	const bool bIsCube = xInfo.m_uNumLayers == 6;
 	const uint32_t uLayerCount = bIsCube ? 6 : (xInfo.m_uNumLayers > 0 ? xInfo.m_uNumLayers : 1);
@@ -440,7 +439,7 @@ vk::ImageView Zenith_Vulkan_MemoryManager::CreateDepthStencilView(Flux_VRAMHandl
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xVRAMHandle);
 	
-	vk::Format xFormat = Zenith_Vulkan_Texture::ConvertToVkFormat_DepthStencil(xInfo.m_eFormat);
+	vk::Format xFormat = Zenith_Vulkan::ConvertToVkFormat_DepthStencil(xInfo.m_eFormat);
 	
 	const bool bIsCube = xInfo.m_uNumLayers == 6;
 	const uint32_t uLayerCount = bIsCube ? 6 : (xInfo.m_uNumLayers > 0 ? xInfo.m_uNumLayers : 1);
@@ -466,7 +465,7 @@ vk::ImageView Zenith_Vulkan_MemoryManager::CreateShaderResourceView(Flux_VRAMHan
 	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xVRAMHandle);
 	
 	const bool bIsDepth = xInfo.m_eFormat > TEXTURE_FORMAT_DEPTH_STENCIL_BEGIN && xInfo.m_eFormat < TEXTURE_FORMAT_DEPTH_STENCIL_END;
-	vk::Format xFormat = bIsDepth ? Zenith_Vulkan_Texture::ConvertToVkFormat_DepthStencil(xInfo.m_eFormat) : Zenith_Vulkan_Texture::ConvertToVkFormat_Colour(xInfo.m_eFormat);
+	vk::Format xFormat = bIsDepth ? Zenith_Vulkan::ConvertToVkFormat_DepthStencil(xInfo.m_eFormat) : Zenith_Vulkan::ConvertToVkFormat_Colour(xInfo.m_eFormat);
 	
 	const bool bIsCube = xInfo.m_uNumLayers == 6;
 	const uint32_t uLayerCount = bIsCube ? 6 : (xInfo.m_uNumLayers > 0 ? xInfo.m_uNumLayers : 1);
@@ -491,7 +490,7 @@ vk::ImageView Zenith_Vulkan_MemoryManager::CreateUnorderedAccessView(Flux_VRAMHa
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xVRAMHandle);
 	
-	vk::Format xFormat = Zenith_Vulkan_Texture::ConvertToVkFormat_Colour(xInfo.m_eFormat);
+	vk::Format xFormat = Zenith_Vulkan::ConvertToVkFormat_Colour(xInfo.m_eFormat);
 	
 	const bool bIsCube = xInfo.m_uNumLayers == 6;
 	const uint32_t uLayerCount = bIsCube ? 6 : (xInfo.m_uNumLayers > 0 ? xInfo.m_uNumLayers : 1);
@@ -545,51 +544,6 @@ void Zenith_Vulkan_MemoryManager::UploadBufferData(Flux_VRAMHandle xBufferHandle
 		StagingMemoryAllocation xAllocation;
 		xAllocation.m_eType = ALLOCATION_TYPE_BUFFER;
 		xAllocation.m_xBufferMetadata.m_xBuffer = pxVRAM->GetBuffer();
-		xAllocation.m_uSize = uSize;
-		xAllocation.m_uOffset = s_uNextFreeStagingOffset;
-		s_xStagingAllocations.push_back(xAllocation);
-
-		void* pMap = xDevice.mapMemory(s_xStagingMem, s_uNextFreeStagingOffset, uSize);
-		memcpy(pMap, pData, uSize);
-		xDevice.unmapMemory(s_xStagingMem);
-		s_uNextFreeStagingOffset += uSize;
-	}
-	s_xMutex.Unlock();
-}
-
-void Zenith_Vulkan_MemoryManager::UploadTextureData(Zenith_Vulkan_Texture& xTexture, const void* pData, size_t uSize)
-{
-	s_xMutex.Lock();
-	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
-
-	const VmaAllocation& xAlloc = xTexture.GetAllocation();
-	const VmaAllocationInfo* pxAllocInfo = xTexture.GetAllocationInfo_Ptr();
-	VkMemoryPropertyFlags eMemoryProps;
-	vmaGetAllocationMemoryProperties(s_xAllocator, xAlloc, &eMemoryProps);
-
-	if (eMemoryProps & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
-	{
-		memcpy(pxAllocInfo->pMappedData, pData, uSize);
-#ifdef ZENITH_ASSERT
-		VkResult eResult =
-#endif
-			vmaFlushAllocation(s_xAllocator, xAlloc, 0, VK_WHOLE_SIZE);
-		Zenith_Assert(eResult == VK_SUCCESS, "Failed to flush allocation");
-	}
-	else
-	{
-		if (s_uNextFreeStagingOffset + uSize >= g_uStagingPoolSize)
-		{
-			HandleStagingBufferFull();
-		}
-
-		StagingMemoryAllocation xAllocation;
-		xAllocation.m_eType = ALLOCATION_TYPE_TEXTURE;
-		xAllocation.m_xTextureMetadata.m_xImage = xTexture.GetImage();
-		xAllocation.m_xTextureMetadata.m_uWidth = xTexture.GetWidth();
-		xAllocation.m_xTextureMetadata.m_uHeight = xTexture.GetHeight();
-		xAllocation.m_xTextureMetadata.m_uNumMips = xTexture.GetNumMips();
-		xAllocation.m_xTextureMetadata.m_uNumLayers = xTexture.GetNumLayers();
 		xAllocation.m_uSize = uSize;
 		xAllocation.m_uOffset = s_uNextFreeStagingOffset;
 		s_xStagingAllocations.push_back(xAllocation);

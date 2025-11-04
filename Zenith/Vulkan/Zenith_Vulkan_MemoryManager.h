@@ -13,7 +13,6 @@ class Flux_IndexBuffer;
 class Flux_SurfaceInfo;
 class Flux_VRAMHandle;
 class Flux_DynamicConstantBuffer;
-class Zenith_Vulkan_Texture;
 class Zenith_Vulkan_CommandBuffer;
 constexpr uint64_t g_uStagingPoolSize = 1024u * 1024u * 1024u;
 #define ALIGN(size, align) ((size + align - 1) / align) * align
@@ -42,7 +41,6 @@ public:
 	static void InitialiseDynamicConstantBuffer(const void* pData, size_t uSize, Flux_DynamicConstantBuffer& xBufferOut);
 
 	static void UploadBufferData(Flux_VRAMHandle xBufferHandle, const void* pData, size_t uSize);
-	static void UploadTextureData(Zenith_Vulkan_Texture& xTexture, const void* pData, size_t uSize);
 
 	static Flux_VRAMHandle CreateBufferVRAM(const u_int uSize, const MemoryFlags eFlags, MemoryResidency eResidency);
 	static Flux_VRAMHandle CreateTextureVRAM(const void* pData, const Flux_SurfaceInfo& xInfo, bool bCreateMips);
