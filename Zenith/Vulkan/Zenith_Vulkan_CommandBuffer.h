@@ -14,13 +14,14 @@ class Flux_IndexBuffer;
 class Zenith_Vulkan_Pipeline;
 class Zenith_Vulkan_Sampler;
 struct Flux_TargetSetup;
+struct Flux_ConstantBufferView;
 struct Flux_ShaderResourceView;
 struct Flux_UnorderedAccessView;
 struct Flux_RenderTargetView;
 struct Flux_DepthStencilView;
 
 struct DescSetBindings {
-	Flux_VRAMHandle m_xBuffers[MAX_BINDINGS];
+	const Flux_ConstantBufferView* m_xCBVs[MAX_BINDINGS];
 	
 	// Direct3D-style view bindings
 	const Flux_ShaderResourceView* m_xSRVs[MAX_BINDINGS];
@@ -54,7 +55,7 @@ public:
 	void BindRTV(const Flux_RenderTargetView* pxRTV, uint32_t uBindPoint);
 	void BindDSV(const Flux_DepthStencilView* pxDSV, uint32_t uBindPoint);
 	
-	void BindBuffer(Flux_VRAMHandle xBufferHandle, uint32_t uBindPoint);
+	void BindCBV(const Flux_ConstantBufferView* pxCBV, uint32_t uBindPoint);
 	void BindAccelerationStruct(void* pxStruct, uint32_t uBindPoint);
 	void PushConstant(void* pData, size_t uSize);
 	void SetShoudClear(const bool bClear);

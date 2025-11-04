@@ -16,7 +16,7 @@ enum Flux_CommandType
 	FLUX_COMMANDTYPE__BIND_UAV,           // Unordered Access View
 	FLUX_COMMANDTYPE__BIND_RTV,           // Render Target View
 	FLUX_COMMANDTYPE__BIND_DSV,           // Depth Stencil View
-	FLUX_COMMANDTYPE__BIND_BUFFER,
+	FLUX_COMMANDTYPE__BIND_CBV,
 
 	FLUX_COMMANDTYPE__USE_UNBOUNDED_TEXTURES,
 
@@ -151,18 +151,21 @@ public:
 	}
 	u_int m_uIndex;
 };
-class Flux_CommandBindBuffer
+class Flux_CommandBindCBV
 {
 public:
-	static constexpr Flux_CommandType m_eType = FLUX_COMMANDTYPE__BIND_BUFFER;
+	static constexpr Flux_CommandType m_eType = FLUX_COMMANDTYPE__BIND_CBV;
 
-	Flux_CommandBindBuffer(const Flux_Buffer* pxBufferVRAM, const u_int uBindPoint)
-		: m_pxBufferVRAM(pxBufferVRAM)
+	Flux_CommandBindCBV(const Flux_ConstantBufferView* pxCBV, const u_int uBindPoint)
+		: m_pxCBV(pxCBV)
 		, m_uBindPoint(uBindPoint)
 	{}
-	void operator()(Flux_CommandBuffer* pxCmdBuf);
+	void operator()(Flux_CommandBuffer* pxCmdBuf)
+	{
+		pxCmdBuf->BindCBV(m_pxCBV, m_uBindPoint);
+	}
 
-	const Flux_Buffer* m_pxBufferVRAM;
+	const Flux_ConstantBufferView* m_pxCBV;
 	const u_int m_uBindPoint;
 };
 
@@ -364,7 +367,7 @@ public:
 				HANDLE_COMMAND(FLUX_COMMANDTYPE__BIND_UAV, Flux_CommandBindUAV);
 				HANDLE_COMMAND(FLUX_COMMANDTYPE__BIND_RTV, Flux_CommandBindRTV);
 				HANDLE_COMMAND(FLUX_COMMANDTYPE__BIND_DSV, Flux_CommandBindDSV);
-				HANDLE_COMMAND(FLUX_COMMANDTYPE__BIND_BUFFER, Flux_CommandBindBuffer);
+				HANDLE_COMMAND(FLUX_COMMANDTYPE__BIND_CBV, Flux_CommandBindCBV);
 				HANDLE_COMMAND(FLUX_COMMANDTYPE__PUSH_CONSTANT, Flux_CommandPushConstant);
 				HANDLE_COMMAND(FLUX_COMMANDTYPE__USE_UNBOUNDED_TEXTURES, Flux_CommandUseUnboundedTextures);
 

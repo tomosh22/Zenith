@@ -95,10 +95,10 @@ void Flux_Shadows::Render(void*)
 		g_axCommandLists[u].AddCommand<Flux_CommandSetPipeline>(&Flux_StaticMeshes::GetShadowPipeline());
 
 		g_axCommandLists[u].AddCommand<Flux_CommandBeginBind>(0);
-		g_axCommandLists[u].AddCommand<Flux_CommandBindBuffer>(&Flux_Graphics::s_xFrameConstantsBuffer.GetBufferVRAM(), 0);
+		g_axCommandLists[u].AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer().m_xCBV, 0);
 
 		g_axCommandLists[u].AddCommand<Flux_CommandBeginBind>(1);
-		g_axCommandLists[u].AddCommand<Flux_CommandBindBuffer>(&g_xShadowMatrixBuffers[u].GetBufferVRAM(), 0);
+		g_axCommandLists[u].AddCommand<Flux_CommandBindCBV>(&g_xShadowMatrixBuffers[u].GetBuffer().m_xCBV, 0);
 
 		Flux_StaticMeshes::RenderToShadowMap(g_axCommandLists[u]);
 
@@ -107,10 +107,10 @@ void Flux_Shadows::Render(void*)
 			g_axCommandLists[u].AddCommand<Flux_CommandSetPipeline>(&Flux_Terrain::GetShadowPipeline());
 
 			g_axCommandLists[u].AddCommand<Flux_CommandBeginBind>(0);
-			g_axCommandLists[u].AddCommand<Flux_CommandBindBuffer>(&Flux_Graphics::s_xFrameConstantsBuffer.GetBufferVRAM(), 0);
+			g_axCommandLists[u].AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer().m_xCBV, 0);
 
 			g_axCommandLists[u].AddCommand<Flux_CommandBeginBind>(1);
-			g_axCommandLists[u].AddCommand<Flux_CommandBindBuffer>(&g_xShadowMatrixBuffers[u].GetBufferVRAM(), 0);
+			g_axCommandLists[u].AddCommand<Flux_CommandBindCBV>(&g_xShadowMatrixBuffers[u].GetBuffer().m_xCBV, 0);
 
 			Flux_Terrain::RenderToShadowMap(g_axCommandLists[u]);
 		}
@@ -197,7 +197,7 @@ void Flux_Shadows::UpdateShadowMatrices()
 
 		g_axSunViewProjMats[u] = glm::ortho(fMinX, fMaxX, fMinY, fMaxY, 0.0f, fMaxZ - fMinZ + fZRange * dbg_fZMultiplier) * xSunViewMat;
 
-		Flux_MemoryManager::UploadBufferData(g_xShadowMatrixBuffers[u].GetBufferVRAM().m_xVRAMHandle, &g_axSunViewProjMats[u], sizeof(g_axSunViewProjMats[u]));
+		Flux_MemoryManager::UploadBufferData(g_xShadowMatrixBuffers[u].GetBuffer().m_xVRAMHandle, &g_axSunViewProjMats[u], sizeof(g_axSunViewProjMats[u]));
 	}
 
 	Zenith_Profiling::EndProfile(ZENITH_PROFILE_INDEX__FLUX_SHADOWS_UPDATE_MATRICES);

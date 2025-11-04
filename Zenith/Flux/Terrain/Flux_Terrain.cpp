@@ -167,7 +167,7 @@ void Flux_Terrain::RenderToGBuffer(void*)
 		return;
 	}
 
-	Flux_MemoryManager::UploadBufferData(s_xTerrainConstantsBuffer.GetBufferVRAM().m_xVRAMHandle, &s_xTerrainConstants, sizeof(TerrainConstants));
+	Flux_MemoryManager::UploadBufferData(s_xTerrainConstantsBuffer.GetBuffer().m_xVRAMHandle, &s_xTerrainConstants, sizeof(TerrainConstants));
 
 	g_xTerrainCommandList.Reset(false);
 	g_xWaterCommandList.Reset(false);
@@ -179,13 +179,13 @@ void Flux_Terrain::RenderToGBuffer(void*)
 	Zenith_Scene::GetCurrentScene().GetAllOfComponentType<Zenith_TerrainComponent>(xTerrainComponents);
 
 	g_xTerrainCommandList.AddCommand<Flux_CommandBeginBind>(0);
-	g_xTerrainCommandList.AddCommand<Flux_CommandBindBuffer>(&Flux_Graphics::s_xFrameConstantsBuffer.GetBufferVRAM(), 0);
-	g_xTerrainCommandList.AddCommand<Flux_CommandBindBuffer>(&s_xTerrainConstantsBuffer.GetBufferVRAM(), 1);
+	g_xTerrainCommandList.AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer().m_xCBV, 0);
+	g_xTerrainCommandList.AddCommand<Flux_CommandBindCBV>(&s_xTerrainConstantsBuffer.GetBuffer().m_xCBV, 1);
 
 	g_xTerrainCommandList.AddCommand<Flux_CommandBeginBind>(1);
 	
 	g_xWaterCommandList.AddCommand<Flux_CommandBeginBind>(0);
-	g_xWaterCommandList.AddCommand<Flux_CommandBindBuffer>(&Flux_Graphics::s_xFrameConstantsBuffer.GetBufferVRAM(), 0);	g_xWaterCommandList.AddCommand<Flux_CommandBeginBind>(1);
+	g_xWaterCommandList.AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer().m_xCBV, 0);	g_xWaterCommandList.AddCommand<Flux_CommandBeginBind>(1);
 
 	const Zenith_CameraComponent& xCam = Zenith_Scene::GetCurrentScene().GetMainCamera();
 

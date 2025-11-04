@@ -37,6 +37,11 @@ struct Flux_DepthStencilView {
 	Flux_VRAMHandle m_xVRAMHandle;
 };
 
+struct Flux_ConstantBufferView {
+	vk::DescriptorBufferInfo m_xBufferInfo;
+	Flux_VRAMHandle m_xVRAMHandle;
+};
+
 struct Flux_RenderAttachment {
 	Flux_SurfaceInfo m_xSurfaceInfo;
 
@@ -62,6 +67,8 @@ struct Flux_Buffer
 {
 	Flux_VRAMHandle m_xVRAMHandle;
 	u_int64 m_ulSize = 0;
+	
+	Flux_ConstantBufferView m_xCBV;
 };
 
 

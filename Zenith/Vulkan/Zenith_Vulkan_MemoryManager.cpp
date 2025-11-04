@@ -151,8 +151,8 @@ void Zenith_Vulkan_MemoryManager::ImageTransitionBarrier(vk::Image xImage, vk::I
 void Zenith_Vulkan_MemoryManager::InitialiseVertexBuffer(const void* pData, size_t uSize, Flux_VertexBuffer& xBufferOut, bool bDeviceLocal /*= true*/)
 {
 	Flux_VRAMHandle xHandle = CreateBufferVRAM(uSize, static_cast<MemoryFlags>(1 << MEMORY_FLAGS__VERTEX_BUFFER), bDeviceLocal ? MEMORY_RESIDENCY_GPU : MEMORY_RESIDENCY_CPU);
-	xBufferOut.GetBufferVRAM().m_xVRAMHandle = xHandle;
-	xBufferOut.GetBufferVRAM().m_ulSize = uSize;
+	xBufferOut.GetBuffer().m_xVRAMHandle = xHandle;
+	xBufferOut.GetBuffer().m_ulSize = uSize;
 	
 	if (pData)
 	{
@@ -165,8 +165,8 @@ void Zenith_Vulkan_MemoryManager::InitialiseDynamicVertexBuffer(const void* pDat
 	for (uint32_t u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
 	{
 		Flux_VRAMHandle xHandle = CreateBufferVRAM(uSize, static_cast<MemoryFlags>(1 << MEMORY_FLAGS__VERTEX_BUFFER), bDeviceLocal ? MEMORY_RESIDENCY_GPU : MEMORY_RESIDENCY_CPU);
-		xBufferOut.GetBufferVRAMForFrameInFlight(u).m_xVRAMHandle = xHandle;
-		xBufferOut.GetBufferVRAMForFrameInFlight(u).m_ulSize = uSize;
+		xBufferOut.GetBufferForFrameInFlight(u).m_xVRAMHandle = xHandle;
+		xBufferOut.GetBufferForFrameInFlight(u).m_ulSize = uSize;
 		
 		if (pData)
 		{
@@ -178,8 +178,8 @@ void Zenith_Vulkan_MemoryManager::InitialiseDynamicVertexBuffer(const void* pDat
 void Zenith_Vulkan_MemoryManager::InitialiseIndexBuffer(const void* pData, size_t uSize, Flux_IndexBuffer& xBufferOut)
 {
 	Flux_VRAMHandle xHandle = CreateBufferVRAM(uSize, static_cast<MemoryFlags>(1 << MEMORY_FLAGS__INDEX_BUFFER), MEMORY_RESIDENCY_GPU);
-	xBufferOut.GetBufferVRAM().m_xVRAMHandle = xHandle;
-	xBufferOut.GetBufferVRAM().m_ulSize = uSize;
+	xBufferOut.GetBuffer().m_xVRAMHandle = xHandle;
+	xBufferOut.GetBuffer().m_ulSize = uSize;
 	
 	if (pData)
 	{
@@ -192,8 +192,17 @@ void Zenith_Vulkan_MemoryManager::InitialiseDynamicConstantBuffer(const void* pD
 	for (uint32_t u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
 	{
 		Flux_VRAMHandle xHandle = CreateBufferVRAM(uSize, static_cast<MemoryFlags>(1 << MEMORY_FLAGS__SHADER_READ), MEMORY_RESIDENCY_CPU);
-		xBufferOut.GetBufferVRAMForFrameInFlight(u).m_xVRAMHandle = xHandle;
-		xBufferOut.GetBufferVRAMForFrameInFlight(u).m_ulSize = uSize;
+		Flux_Buffer& xBuffer = xBufferOut.GetBufferForFrameInFlight(u);
+		xBuffer.m_xVRAMHandle = xHandle;
+		xBuffer.m_ulSize = uSize;
+
+		Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xHandle);
+		Zenith_Assert(pxVRAM, "Invalid buffer VRAM handle");
+
+		xBuffer.m_xCBV.m_xBufferInfo.setBuffer(pxVRAM->GetBuffer());
+		xBuffer.m_xCBV.m_xBufferInfo.setOffset(0);
+		xBuffer.m_xCBV.m_xBufferInfo.setRange(uSize);
+		xBuffer.m_xCBV.m_xVRAMHandle = xHandle;
 		
 		if (pData)
 		{

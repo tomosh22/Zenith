@@ -158,7 +158,7 @@ void Flux_Graphics::UploadFrameConstants()
 	s_xFrameConstants.m_xRcpScreenDims = { 1.f / s_xFrameConstants.m_xScreenDims.x, 1.f / s_xFrameConstants.m_xScreenDims.y };
 	s_xFrameConstants.m_uQuadUtilisationAnalysis = dbg_bQuadUtilisationAnalysis;
 	s_xFrameConstants.m_uTargetPixelsPerTri = dbg_uTargetPixelsPerTri;
-	Flux_MemoryManager::UploadBufferData(s_xFrameConstantsBuffer.GetBufferVRAM().m_xVRAMHandle, &s_xFrameConstants, sizeof(FrameConstants));
+	Flux_MemoryManager::UploadBufferData(s_xFrameConstantsBuffer.GetBuffer().m_xVRAMHandle, &s_xFrameConstants, sizeof(FrameConstants));
 }
 
 const Zenith_Maths::Vector3& Flux_Graphics::GetCameraPosition()

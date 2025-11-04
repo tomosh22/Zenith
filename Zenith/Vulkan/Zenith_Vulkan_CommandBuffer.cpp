@@ -82,7 +82,7 @@ void Zenith_Vulkan_CommandBuffer::EndAndCpuWait(bool bEndPass)
 
 void Zenith_Vulkan_CommandBuffer::SetVertexBuffer(const Flux_VertexBuffer& xVertexBuffer, uint32_t uBindPoint /*= 0*/)
 {
-	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xVertexBuffer.GetBufferVRAM().m_xVRAMHandle);
+	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xVertexBuffer.GetBuffer().m_xVRAMHandle);
 	const vk::Buffer xBuffer = pxVRAM->GetBuffer();
 	//#TO_TODO: offsets
 	vk::DeviceSize offsets[] = { 0 };
@@ -91,7 +91,7 @@ void Zenith_Vulkan_CommandBuffer::SetVertexBuffer(const Flux_VertexBuffer& xVert
 
 void Zenith_Vulkan_CommandBuffer::SetVertexBuffer(const Flux_DynamicVertexBuffer& xVertexBuffer, uint32_t uBindPoint /*= 0*/)
 {
-	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xVertexBuffer.GetBufferVRAM().m_xVRAMHandle);
+	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xVertexBuffer.GetBuffer().m_xVRAMHandle);
 	const vk::Buffer xBuffer = pxVRAM->GetBuffer();
 	//#TO_TODO: offsets
 	vk::DeviceSize offsets[] = { 0 };
@@ -100,7 +100,7 @@ void Zenith_Vulkan_CommandBuffer::SetVertexBuffer(const Flux_DynamicVertexBuffer
 
 void Zenith_Vulkan_CommandBuffer::SetIndexBuffer(const Flux_IndexBuffer& xIndexBuffer)
 {
-	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xIndexBuffer.GetBufferVRAM().m_xVRAMHandle);
+	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xIndexBuffer.GetBuffer().m_xVRAMHandle);
 	const vk::Buffer xBuffer = pxVRAM->GetBuffer();
 	static_assert(std::is_same<Flux_MeshGeometry::IndexType, uint32_t>(), "#TO_TODO: stop hardcoding type");
 	m_xCurrentCmdBuffer.bindIndexBuffer(xBuffer, 0, vk::IndexType::eUint32);
@@ -273,7 +273,7 @@ void Zenith_Vulkan_CommandBuffer::PrepareDrawCallDescriptors()
 					continue;
 				}
 				
-				if (m_xBindings[uDescSet].m_xBuffers[i].IsValid())
+				if (m_xBindings[uDescSet].m_xCBVs[i] != nullptr)
 				{
 					uNumBuffers++;
 				}
@@ -356,17 +356,14 @@ void Zenith_Vulkan_CommandBuffer::PrepareDrawCallDescriptors()
 					continue;
 				}
 				
-				Flux_VRAMHandle xBufferHandle = m_xBindings[uDescSet].m_xBuffers[i];
-				if (!xBufferHandle.IsValid())
+				const Flux_ConstantBufferView* pxCBV = m_xBindings[uDescSet].m_xCBVs[i];
+				if (!pxCBV)
 				{
 					continue;
 				}
-				Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xBufferHandle);
-				vk::Buffer xBuffer = pxVRAM->GetBuffer();
-				vk::DescriptorBufferInfo& xInfo = xBufferInfos.at(uCount)
-					.setBuffer(xBuffer)
-					.setOffset(0)
-					.setRange(pxVRAM->GetBufferSize());
+				
+				vk::DescriptorBufferInfo& xInfo = xBufferInfos.at(uCount);
+				xInfo = pxCBV->m_xBufferInfo;
 
 				vk::WriteDescriptorSet& xWrite = xBufferWrites.at(uCount)
 					.setDescriptorType(vk::DescriptorType::eUniformBuffer)
@@ -548,16 +545,17 @@ void Zenith_Vulkan_CommandBuffer::BindDSV(const Flux_DepthStencilView* pxDSV, ui
 	m_xBindings[m_uCurrentBindFreq].m_apxSamplers[uBindPoint] = nullptr;
 }
 
-void Zenith_Vulkan_CommandBuffer::BindBuffer(Flux_VRAMHandle xBufferHandle, uint32_t uBindPoint)
+void Zenith_Vulkan_CommandBuffer::BindCBV(const Flux_ConstantBufferView* pxCBV, uint32_t uBindPoint)
 {
 	Zenith_Assert(m_uCurrentBindFreq < FLUX_MAX_DESCRIPTOR_SET_LAYOUTS, "Haven't called BeginBind");
+	Zenith_Assert(pxCBV, "Invalid CBV");
 
-	if (xBufferHandle.AsUInt() != m_aaxBufferCache[m_uCurrentBindFreq][uBindPoint].AsUInt())
+	if (pxCBV->m_xVRAMHandle.AsUInt() != m_aaxBufferCache[m_uCurrentBindFreq][uBindPoint].AsUInt())
 	{
 		m_uDescriptorDirty |= 1 << m_uCurrentBindFreq;
-		m_aaxBufferCache[m_uCurrentBindFreq][uBindPoint] = xBufferHandle;
+		m_aaxBufferCache[m_uCurrentBindFreq][uBindPoint] = pxCBV->m_xVRAMHandle;
 	}
-	m_xBindings[m_uCurrentBindFreq].m_xBuffers[uBindPoint] = xBufferHandle;
+	m_xBindings[m_uCurrentBindFreq].m_xCBVs[uBindPoint] = pxCBV;
 }
 
 void Zenith_Vulkan_CommandBuffer::BindAccelerationStruct(void* pxStruct, uint32_t uBindPoint) {
@@ -610,7 +608,7 @@ void Zenith_Vulkan_CommandBuffer::BeginBind(u_int uDescSet)
 {
 	for (uint32_t i = 0; i < MAX_BINDINGS; i++)
 	{
-		m_xBindings[uDescSet].m_xBuffers[i] = Flux_VRAMHandle();
+		m_xBindings[uDescSet].m_xCBVs[i] = nullptr;
 		m_xBindings[uDescSet].m_apxSamplers[i] = nullptr;
 		m_xBindings[uDescSet].m_xSRVs[i] = nullptr;
 		m_xBindings[uDescSet].m_xUAVs[i] = nullptr;
