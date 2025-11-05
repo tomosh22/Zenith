@@ -111,41 +111,7 @@ void Zenith_Vulkan_MemoryManager::EndFrame(bool bDefer /*= true*/)
 
 void Zenith_Vulkan_MemoryManager::ImageTransitionBarrier(vk::Image xImage, vk::ImageLayout eOldLayout, vk::ImageLayout eNewLayout, vk::ImageAspectFlags eAspect, vk::PipelineStageFlags eSrcStage, vk::PipelineStageFlags eDstStage, uint32_t uMipLevel, uint32_t uLayer)
 {
-	vk::ImageSubresourceRange xSubRange = vk::ImageSubresourceRange(eAspect, uMipLevel, 1, uLayer, 1);
-
-	vk::ImageMemoryBarrier xMemoryBarrier = vk::ImageMemoryBarrier()
-		.setSubresourceRange(xSubRange)
-		.setImage(xImage)
-		.setOldLayout(eOldLayout)
-		.setNewLayout(eNewLayout);
-
-	switch (eNewLayout)
-	{
-	case (vk::ImageLayout::eTransferDstOptimal):
-		xMemoryBarrier.setDstAccessMask(vk::AccessFlagBits::eTransferWrite);
-		break;
-	case (vk::ImageLayout::eTransferSrcOptimal):
-		xMemoryBarrier.setDstAccessMask(vk::AccessFlagBits::eTransferRead);
-		break;
-	case (vk::ImageLayout::eColorAttachmentOptimal):
-		xMemoryBarrier.setDstAccessMask(vk::AccessFlagBits::eColorAttachmentWrite);
-		break;
-	case (vk::ImageLayout::eDepthAttachmentOptimal):
-		xMemoryBarrier.setDstAccessMask(vk::AccessFlagBits::eDepthStencilAttachmentWrite);
-		break;
-	case (vk::ImageLayout::eDepthStencilAttachmentOptimal):
-		xMemoryBarrier.setDstAccessMask(vk::AccessFlagBits::eDepthStencilAttachmentWrite);
-		break;
-	case (vk::ImageLayout::eShaderReadOnlyOptimal):
-		xMemoryBarrier.setDstAccessMask(vk::AccessFlagBits::eShaderRead);
-		break;
-	default:
-		break;
-	}
-
-	const vk::CommandBuffer& xCmd = s_xCommandBuffer.GetCurrentCmdBuffer();
-
-	xCmd.pipelineBarrier(eSrcStage, eDstStage, vk::DependencyFlags(), 0, nullptr, 0, nullptr, 1, &xMemoryBarrier);
+	s_xCommandBuffer.ImageTransitionBarrier(xImage, eOldLayout, eNewLayout, eAspect, eSrcStage, eDstStage, uMipLevel, uLayer);
 }
 
 void Zenith_Vulkan_MemoryManager::InitialiseVertexBuffer(const void* pData, size_t uSize, Flux_VertexBuffer& xBufferOut, bool bDeviceLocal /*= true*/)

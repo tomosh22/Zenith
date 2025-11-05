@@ -27,11 +27,10 @@ void Zenith_Vulkan_CommandBuffer::BeginRecording()
 {
 	m_xCurrentCmdBuffer = m_xCmdBuffers[Zenith_Vulkan_Swapchain::GetCurrentFrameIndex()];
 	m_xCurrentCmdBuffer.begin(vk::CommandBufferBeginInfo());
-
 	m_uCurrentBindFreq = FLUX_MAX_DESCRIPTOR_SET_LAYOUTS;
-
 	m_uDescriptorDirty = ~0u;
 }
+
 void Zenith_Vulkan_CommandBuffer::EndRenderPass()
 {
 	m_xCurrentCmdBuffer.endRenderPass();
@@ -39,15 +38,12 @@ void Zenith_Vulkan_CommandBuffer::EndRenderPass()
 }
 void Zenith_Vulkan_CommandBuffer::EndRecording(RenderOrder eOrder, bool bEndPass /*= true*/)
 {
-	//#TO_TODO: should I pass in false for bEndPass if this is a child instead of this check?
 	if (bEndPass)
 	{
 		m_xCurrentCmdBuffer.endRenderPass();
 		m_xCurrentRenderPass = VK_NULL_HANDLE;
 	}
-
 	m_xCurrentCmdBuffer.end();
-
 	m_uCurrentBindFreq = FLUX_MAX_DESCRIPTOR_SET_LAYOUTS;
 }
 
@@ -80,28 +76,27 @@ void Zenith_Vulkan_CommandBuffer::EndAndCpuWait(bool bEndPass)
 	//#TO_TODO: plug fence leak
 }
 
+template<typename T>
+void BindVertexBufferImpl(vk::CommandBuffer& cmdBuffer, const T& xVertexBuffer, uint32_t uBindPoint)
+{
+	const vk::Buffer xBuffer = Zenith_Vulkan::GetVRAM(xVertexBuffer.GetBuffer().m_xVRAMHandle)->GetBuffer();
+	vk::DeviceSize offset = 0;
+	cmdBuffer.bindVertexBuffers(uBindPoint, 1, &xBuffer, &offset);
+}
+
 void Zenith_Vulkan_CommandBuffer::SetVertexBuffer(const Flux_VertexBuffer& xVertexBuffer, uint32_t uBindPoint /*= 0*/)
 {
-	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xVertexBuffer.GetBuffer().m_xVRAMHandle);
-	const vk::Buffer xBuffer = pxVRAM->GetBuffer();
-	//#TO_TODO: offsets
-	vk::DeviceSize offsets[] = { 0 };
-	m_xCurrentCmdBuffer.bindVertexBuffers(uBindPoint, 1, &xBuffer, offsets);
+	BindVertexBufferImpl(m_xCurrentCmdBuffer, xVertexBuffer, uBindPoint);
 }
 
 void Zenith_Vulkan_CommandBuffer::SetVertexBuffer(const Flux_DynamicVertexBuffer& xVertexBuffer, uint32_t uBindPoint /*= 0*/)
 {
-	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xVertexBuffer.GetBuffer().m_xVRAMHandle);
-	const vk::Buffer xBuffer = pxVRAM->GetBuffer();
-	//#TO_TODO: offsets
-	vk::DeviceSize offsets[] = { 0 };
-	m_xCurrentCmdBuffer.bindVertexBuffers(uBindPoint, 1, &xBuffer, offsets);
+	BindVertexBufferImpl(m_xCurrentCmdBuffer, xVertexBuffer, uBindPoint);
 }
 
 void Zenith_Vulkan_CommandBuffer::SetIndexBuffer(const Flux_IndexBuffer& xIndexBuffer)
 {
-	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xIndexBuffer.GetBuffer().m_xVRAMHandle);
-	const vk::Buffer xBuffer = pxVRAM->GetBuffer();
+	const vk::Buffer xBuffer = Zenith_Vulkan::GetVRAM(xIndexBuffer.GetBuffer().m_xVRAMHandle)->GetBuffer();
 	static_assert(std::is_same<Flux_MeshGeometry::IndexType, uint32_t>(), "#TO_TODO: stop hardcoding type");
 	m_xCurrentCmdBuffer.bindIndexBuffer(xBuffer, 0, vk::IndexType::eUint32);
 }
@@ -228,43 +223,30 @@ void Zenith_Vulkan_CommandBuffer::Draw(uint32_t uNumVerts)
 {
 	UpdateDescriptorSets();
 	if (Zenith_Vulkan::ShouldSubmitDrawCalls())
-	{
 		m_xCurrentCmdBuffer.draw(uNumVerts, 0, 0, 0);
-	}
 }
 
 void Zenith_Vulkan_CommandBuffer::DrawIndexed(uint32_t uNumIndices, uint32_t uNumInstances /*= 1*/, uint32_t uVertexOffset /*= 0*/, uint32_t uIndexOffset /*= 0*/, uint32_t uInstanceOffset /*= 0*/)
 {
 	UpdateDescriptorSets();
 	if (Zenith_Vulkan::ShouldSubmitDrawCalls())
-	{
 		m_xCurrentCmdBuffer.drawIndexed(uNumIndices, uNumInstances, uIndexOffset, uVertexOffset, uInstanceOffset);
-	}
 }
 
 void Zenith_Vulkan_CommandBuffer::BeginRenderPass(Flux_TargetSetup& xTargetSetup, bool bClearColour /*= false*/, bool bClearDepth /*= false*/, bool bClearStencil /*= false*/)
 {
-	//#TO_TODO: how to clear depth/stencil independently
 	LoadAction eColourLoad = bClearColour ? LOAD_ACTION_CLEAR : LOAD_ACTION_LOAD;
-	StoreAction eColourStore = STORE_ACTION_STORE;
 	LoadAction eDepthStencilLoad = bClearDepth ? LOAD_ACTION_CLEAR : LOAD_ACTION_LOAD;
-	StoreAction eDepthStencilStore = STORE_ACTION_STORE;
-	RenderTargetUsage eUsage = RENDER_TARGET_USAGE_RENDERTARGET;
 
 	uint32_t uNumColourAttachments = 0;
 	for (uint32_t i = 0; i < FLUX_MAX_TARGETS; i++)
 	{
-		if (xTargetSetup.m_axColourAttachments[i].m_xSurfaceInfo.m_eFormat != TEXTURE_FORMAT_NONE)
-		{
-			uNumColourAttachments++;
-		}
-		else
-		{
+		if (xTargetSetup.m_axColourAttachments[i].m_xSurfaceInfo.m_eFormat == TEXTURE_FORMAT_NONE)
 			break;
-		}
+		uNumColourAttachments++;
 	}
 
-	m_xCurrentRenderPass = Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(xTargetSetup, eColourLoad, eColourStore, eDepthStencilLoad, eDepthStencilStore, eUsage);
+	m_xCurrentRenderPass = Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(xTargetSetup, eColourLoad, STORE_ACTION_STORE, eDepthStencilLoad, STORE_ACTION_STORE, RENDER_TARGET_USAGE_RENDERTARGET);
 
 	uint32_t uWidth, uHeight;
 	if (xTargetSetup.m_axColourAttachments[0].m_xSurfaceInfo.m_eFormat != TEXTURE_FORMAT_NONE)
@@ -277,7 +259,6 @@ void Zenith_Vulkan_CommandBuffer::BeginRenderPass(Flux_TargetSetup& xTargetSetup
 		Zenith_Assert(xTargetSetup.m_pxDepthStencil->m_xSurfaceInfo.m_eFormat != TEXTURE_FORMAT_NONE, "Target setup has no attachments");
 		uWidth = xTargetSetup.m_pxDepthStencil->m_xSurfaceInfo.m_uWidth;
 		uHeight = xTargetSetup.m_pxDepthStencil->m_xSurfaceInfo.m_uHeight;
-
 	}
 
 	vk::RenderPassBeginInfo xRenderPassInfo = vk::RenderPassBeginInfo()
@@ -291,26 +272,16 @@ void Zenith_Vulkan_CommandBuffer::BeginRenderPass(Flux_TargetSetup& xTargetSetup
 		bool bHasDepth = xTargetSetup.m_pxDepthStencil != nullptr;
 		const uint32_t uNumAttachments = bHasDepth && eDepthStencilLoad == LOAD_ACTION_CLEAR ? uNumColourAttachments + 1 : uNumColourAttachments;
 		for (uint32_t i = 0; i < uNumColourAttachments; i++)
-		{
 			axClearColour[i].color = vk::ClearColorValue(0.f, 0.f, 0.f, 0.f);
-		}
 		axClearColour[uNumColourAttachments].depthStencil = vk::ClearDepthStencilValue(1, 0);
-
 		xRenderPassInfo.clearValueCount = uNumAttachments;
 		xRenderPassInfo.pClearValues = axClearColour;
 	}
 
 	m_xCurrentCmdBuffer.beginRenderPass(xRenderPassInfo, vk::SubpassContents::eInline);
 
-	m_xViewport.x = 0;
-	m_xViewport.y = 0;
-	m_xViewport.width = uWidth;
-	m_xViewport.height = uHeight;
-	m_xViewport.minDepth = 0;
-	m_xViewport.maxDepth = 1;
-
-	m_xScissor.offset = vk::Offset2D(0, 0);
-	m_xScissor.extent = vk::Extent2D(m_xViewport.width, m_xViewport.height);
+	m_xViewport = vk::Viewport(0, 0, uWidth, uHeight, 0, 1);
+	m_xScissor = vk::Rect2D({0, 0}, {uWidth, uHeight});
 	m_xCurrentCmdBuffer.setViewport(0, 1, &m_xViewport);
 	m_xCurrentCmdBuffer.setScissor(0, 1, &m_xScissor);
 }
@@ -329,11 +300,7 @@ void Zenith_Vulkan_CommandBuffer::BindSRV(const Flux_ShaderResourceView* pxSRV, 
 {
 	Zenith_Assert(m_uCurrentBindFreq < FLUX_MAX_DESCRIPTOR_SET_LAYOUTS, "Haven't called BeginBind");
 	Zenith_Assert(pxSRV && pxSRV->m_xImageView, "Invalid SRV");
-
-	vk::ImageView xImageView = pxSRV->m_xImageView;
-
 	m_uDescriptorDirty |= 1 << m_uCurrentBindFreq;
-	
 	m_xBindings[m_uCurrentBindFreq].m_xSRVs[uBindPoint] = pxSRV;
 	m_xBindings[m_uCurrentBindFreq].m_apxSamplers[uBindPoint] = pxSampler;
 }
@@ -342,11 +309,7 @@ void Zenith_Vulkan_CommandBuffer::BindUAV(const Flux_UnorderedAccessView* pxUAV,
 {
 	Zenith_Assert(m_uCurrentBindFreq < FLUX_MAX_DESCRIPTOR_SET_LAYOUTS, "Haven't called BeginBind");
 	Zenith_Assert(pxUAV && pxUAV->m_xImageView, "Invalid UAV");
-
-	vk::ImageView xImageView = pxUAV->m_xImageView;
-
 	m_uDescriptorDirty |= 1 << m_uCurrentBindFreq;
-	
 	m_xBindings[m_uCurrentBindFreq].m_xUAVs[uBindPoint] = pxUAV;
 	m_xBindings[m_uCurrentBindFreq].m_apxSamplers[uBindPoint] = nullptr;
 }
@@ -355,9 +318,7 @@ void Zenith_Vulkan_CommandBuffer::BindCBV(const Flux_ConstantBufferView* pxCBV, 
 {
 	Zenith_Assert(m_uCurrentBindFreq < FLUX_MAX_DESCRIPTOR_SET_LAYOUTS, "Haven't called BeginBind");
 	Zenith_Assert(pxCBV, "Invalid CBV");
-
 	m_uDescriptorDirty |= 1 << m_uCurrentBindFreq;
-
 	m_xBindings[m_uCurrentBindFreq].m_xCBVs[uBindPoint] = pxCBV;
 }
 
@@ -409,51 +370,52 @@ void Zenith_Vulkan_CommandBuffer::UseBindlessTextures(const uint32_t uSet)
 
 void Zenith_Vulkan_CommandBuffer::BeginBind(u_int uDescSet)
 {
-	for (uint32_t i = 0; i < MAX_BINDINGS; i++)
-	{
-		m_xBindings[uDescSet].m_xSRVs[i] = nullptr;
-		m_xBindings[uDescSet].m_xCBVs[i] = nullptr;
-		m_xBindings[uDescSet].m_xUAVs[i] = nullptr;
-		m_xBindings[uDescSet].m_apxSamplers[i] = nullptr;
-	}
+	memset(&m_xBindings[uDescSet], 0, sizeof(DescSetBindings));
 	m_uCurrentBindFreq = uDescSet;
 }
 
-void Zenith_Vulkan_CommandBuffer::ImageTransitionBarrier(vk::Image xImage, vk::ImageLayout eOldLayout, vk::ImageLayout eNewLayout, vk::ImageAspectFlags eAspect, vk::PipelineStageFlags eSrcStage, vk::PipelineStageFlags eDstStage, int uMipLevel, int uLayer)
+static vk::ImageMemoryBarrier CreateImageBarrier(vk::Image xImage, vk::ImageLayout eOldLayout, vk::ImageLayout eNewLayout, vk::ImageAspectFlags eAspect, uint32_t uMipLevel, uint32_t uLayer)
 {
-	vk::ImageSubresourceRange xSubRange = vk::ImageSubresourceRange(eAspect, uMipLevel, 1, uLayer, 1);
-
 	vk::ImageMemoryBarrier xMemoryBarrier = vk::ImageMemoryBarrier()
-		.setSubresourceRange(xSubRange)
+		.setSubresourceRange(vk::ImageSubresourceRange(eAspect, uMipLevel, 1, uLayer, 1))
 		.setImage(xImage)
 		.setOldLayout(eOldLayout)
 		.setNewLayout(eNewLayout);
 
 	switch (eNewLayout)
 	{
-	case (vk::ImageLayout::eTransferDstOptimal):
+	case vk::ImageLayout::eTransferDstOptimal:
 		xMemoryBarrier.setDstAccessMask(vk::AccessFlagBits::eTransferWrite);
 		break;
-	case (vk::ImageLayout::eTransferSrcOptimal):
+	case vk::ImageLayout::eTransferSrcOptimal:
 		xMemoryBarrier.setDstAccessMask(vk::AccessFlagBits::eTransferRead);
 		break;
-	case (vk::ImageLayout::eColorAttachmentOptimal):
+	case vk::ImageLayout::eColorAttachmentOptimal:
 		xMemoryBarrier.setDstAccessMask(vk::AccessFlagBits::eColorAttachmentWrite);
 		break;
-	case (vk::ImageLayout::eDepthAttachmentOptimal):
+	case vk::ImageLayout::eDepthAttachmentOptimal:
+	case vk::ImageLayout::eDepthStencilAttachmentOptimal:
 		xMemoryBarrier.setDstAccessMask(vk::AccessFlagBits::eDepthStencilAttachmentWrite);
 		break;
-	case (vk::ImageLayout::eDepthStencilAttachmentOptimal):
-		xMemoryBarrier.setDstAccessMask(vk::AccessFlagBits::eDepthStencilAttachmentWrite);
-		break;
-	case (vk::ImageLayout::eShaderReadOnlyOptimal):
+	case vk::ImageLayout::eShaderReadOnlyOptimal:
 		xMemoryBarrier.setDstAccessMask(vk::AccessFlagBits::eShaderRead);
+		break;
+	case vk::ImageLayout::ePresentSrcKHR:
+	case vk::ImageLayout::eDepthStencilReadOnlyOptimal:
+		//#TO_TODO: do we need an access mask for these?
+		xMemoryBarrier.setDstAccessMask(vk::AccessFlagBits::eNone);
 		break;
 	default:
 		Zenith_Assert(false, "unknown layout");
 		break;
 	}
 
+	return xMemoryBarrier;
+}
+
+void Zenith_Vulkan_CommandBuffer::ImageTransitionBarrier(vk::Image xImage, vk::ImageLayout eOldLayout, vk::ImageLayout eNewLayout, vk::ImageAspectFlags eAspect, vk::PipelineStageFlags eSrcStage, vk::PipelineStageFlags eDstStage, int uMipLevel, int uLayer)
+{
+	vk::ImageMemoryBarrier xMemoryBarrier = CreateImageBarrier(xImage, eOldLayout, eNewLayout, eAspect, uMipLevel, uLayer);
 	m_xCurrentCmdBuffer.pipelineBarrier(eSrcStage, eDstStage, vk::DependencyFlags(), 0, nullptr, 0, nullptr, 1, &xMemoryBarrier);
 }
 

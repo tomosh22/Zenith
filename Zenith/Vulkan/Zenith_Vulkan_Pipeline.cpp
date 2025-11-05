@@ -223,51 +223,33 @@ protected:
 	vk::DescriptorSetLayoutCreateInfo m_xCreateInfo;
 };
 
+static void AddVertexAttributes(const Flux_BufferLayout& xLayout, uint32_t uBinding, vk::VertexInputRate eRate, 
+	std::vector<vk::VertexInputBindingDescription>& xBindDescs, std::vector<vk::VertexInputAttributeDescription>& xAttrDescs, uint32_t& uBindPoint)
+{
+	if (xLayout.GetElements().GetSize() == 0)
+		return;
+
+	for (Zenith_Vector<Flux_BufferElement>::Iterator xIt(xLayout.GetElements()); !xIt.Done(); xIt.Next())
+	{
+		const Flux_BufferElement& xElement = xIt.GetData();
+		xAttrDescs.push_back(vk::VertexInputAttributeDescription()
+			.setBinding(uBinding)
+			.setLocation(uBindPoint++)
+			.setOffset(xElement.m_uOffset)
+			.setFormat(Zenith_Vulkan::ShaderDataTypeToVulkanFormat(xElement._Type)));
+	}
+
+	xBindDescs.push_back(vk::VertexInputBindingDescription()
+		.setBinding(uBinding)
+		.setStride(xLayout.GetStride())
+		.setInputRate(eRate));
+}
+
 static vk::PipelineVertexInputStateCreateInfo VertexDescToVulkanDesc(const Flux_VertexInputDescription& xDesc, std::vector<vk::VertexInputBindingDescription>& xBindDescs, std::vector<vk::VertexInputAttributeDescription>& xAttrDescs)
 {
 	uint32_t uBindPoint = 0;
-	const Flux_BufferLayout& xVertexLayout = xDesc.m_xPerVertexLayout;
-	for (Zenith_Vector<Flux_BufferElement>::Iterator xIt(xVertexLayout.GetElements()); !xIt.Done(); xIt.Next())
-	{
-		const Flux_BufferElement& xElement = xIt.GetData();
-
-		vk::VertexInputAttributeDescription xAttrDesc = vk::VertexInputAttributeDescription()
-			.setBinding(0)
-			.setLocation(uBindPoint)
-			.setOffset(xElement.m_uOffset)
-			.setFormat(Zenith_Vulkan::ShaderDataTypeToVulkanFormat(xElement._Type));
-		xAttrDescs.push_back(xAttrDesc);
-		uBindPoint++;
-	}
-
-	vk::VertexInputBindingDescription xBindDesc = vk::VertexInputBindingDescription()
-		.setBinding(0)
-		.setStride(xVertexLayout.GetStride())
-		.setInputRate(vk::VertexInputRate::eVertex);
-	xBindDescs.push_back(xBindDesc);
-
-	const Flux_BufferLayout& xInstanceLayout = xDesc.m_xPerInstanceLayout;
-	if (xDesc.m_xPerInstanceLayout.GetElements().GetSize())
-	{
-		for (Zenith_Vector<Flux_BufferElement>::Iterator xIt(xInstanceLayout.GetElements()); !xIt.Done(); xIt.Next())
-		{
-			const Flux_BufferElement& xElement = xIt.GetData();
-
-			vk::VertexInputAttributeDescription xInstanceAttrDesc = vk::VertexInputAttributeDescription()
-				.setBinding(1)
-				.setLocation(uBindPoint)
-				.setOffset(xElement.m_uOffset)
-				.setFormat(Zenith_Vulkan::ShaderDataTypeToVulkanFormat(xElement._Type));
-			xAttrDescs.push_back(xInstanceAttrDesc);
-			uBindPoint++;
-		}
-
-		vk::VertexInputBindingDescription xInstanceBindDesc = vk::VertexInputBindingDescription()
-			.setBinding(1)
-			.setStride(xInstanceLayout.GetStride())
-			.setInputRate(vk::VertexInputRate::eInstance);
-		xBindDescs.push_back(xInstanceBindDesc);
-	}
+	AddVertexAttributes(xDesc.m_xPerVertexLayout, 0, vk::VertexInputRate::eVertex, xBindDescs, xAttrDescs, uBindPoint);
+	AddVertexAttributes(xDesc.m_xPerInstanceLayout, 1, vk::VertexInputRate::eInstance, xBindDescs, xAttrDescs, uBindPoint);
 
 	return std::move(vk::PipelineVertexInputStateCreateInfo()
 		.setVertexBindingDescriptionCount(xBindDescs.size())
@@ -474,20 +456,19 @@ vk::BlendFactor FluxBlendFactorToVK(BlendFactor eFactor)
 	}
 }
 
-vk::RenderPass Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(Flux_TargetSetup& xTargetSetup, LoadAction eColourLoad, StoreAction eColourStore, LoadAction eDepthStencilLoad, StoreAction eDepthStencilStore, RenderTargetUsage eUsage)
+static uint32_t CountColourAttachments(const Flux_TargetSetup& xTargetSetup)
 {
-	uint32_t uNumColourAttachments = 0;
 	for (uint32_t i = 0; i < FLUX_MAX_TARGETS; i++)
 	{
-		if (xTargetSetup.m_axColourAttachments[i].m_xSurfaceInfo.m_eFormat != TEXTURE_FORMAT_NONE)
-		{
-			uNumColourAttachments++;
-		}
-		else
-		{
-			break;
-		}
+		if (xTargetSetup.m_axColourAttachments[i].m_xSurfaceInfo.m_eFormat == TEXTURE_FORMAT_NONE)
+			return i;
 	}
+	return FLUX_MAX_TARGETS;
+}
+
+vk::RenderPass Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(Flux_TargetSetup& xTargetSetup, LoadAction eColourLoad, StoreAction eColourStore, LoadAction eDepthStencilLoad, StoreAction eDepthStencilStore, RenderTargetUsage eUsage)
+{
+	const uint32_t uNumColourAttachments = CountColourAttachments(xTargetSetup);
 
 	vk::ImageLayout eLayout;
 	switch (eUsage)
@@ -569,46 +550,25 @@ vk::RenderPass Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(Flux_TargetSetup&
 vk::Framebuffer Zenith_Vulkan_Pipeline::TargetSetupToFramebuffer(Flux_TargetSetup& xTargetSetup, uint32_t uWidth, uint32_t uHeight, const vk::RenderPass& xPass)
 {
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
-	bool bHasDepth = xTargetSetup.m_pxDepthStencil != nullptr;
-
-	uint32_t uNumColourAttachments = 0;
-	for (uint32_t i = 0; i < FLUX_MAX_TARGETS; i++)
-	{
-		if (xTargetSetup.m_axColourAttachments[i].m_xSurfaceInfo.m_eFormat != TEXTURE_FORMAT_NONE)
-		{
-			uNumColourAttachments++;
-		}
-		else
-		{
-			break;
-		}
-	}
-
+	const bool bHasDepth = xTargetSetup.m_pxDepthStencil != nullptr;
+	const uint32_t uNumColourAttachments = CountColourAttachments(xTargetSetup);
 	const uint32_t uNumAttachments = bHasDepth ? uNumColourAttachments + 1 : uNumColourAttachments;
-
-	vk::FramebufferCreateInfo framebufferInfo{};
 
 	vk::ImageView axAttachments[FLUX_MAX_TARGETS];
 	for (uint32_t i = 0; i < uNumColourAttachments; i++)
-	{
 		axAttachments[i] = xTargetSetup.m_axColourAttachments[i].m_pxRTV.m_xImageView;
-	}
 	if (bHasDepth)
-	{
 		axAttachments[uNumAttachments - 1] = xTargetSetup.m_pxDepthStencil->m_pxDSV.m_xImageView;
-	}
 
-	framebufferInfo.renderPass = xPass;
-	framebufferInfo.attachmentCount = uNumAttachments;
-	framebufferInfo.pAttachments = axAttachments;
+	vk::FramebufferCreateInfo framebufferInfo = vk::FramebufferCreateInfo()
+		.setRenderPass(xPass)
+		.setAttachmentCount(uNumAttachments)
+		.setPAttachments(axAttachments)
+		.setWidth(uWidth)
+		.setHeight(uHeight)
+		.setLayers(1);
 
-	framebufferInfo.width = uWidth;
-	framebufferInfo.height = uHeight;
-
-	framebufferInfo.layers = 1;
-
-	vk::Framebuffer xFrameBuffer = xDevice.createFramebuffer(framebufferInfo);
-	return xFrameBuffer;
+	return xDevice.createFramebuffer(framebufferInfo);
 }
 
 void Zenith_Vulkan_PipelineBuilder::FromSpecification(Zenith_Vulkan_Pipeline& xPipelineOut, const Flux_PipelineSpecification& xSpec)
@@ -621,60 +581,9 @@ void Zenith_Vulkan_PipelineBuilder::FromSpecification(Zenith_Vulkan_Pipeline& xP
 #pragma endregion
 
 #pragma region VertexDesc
-
 	std::vector<vk::VertexInputBindingDescription> xBindDescs;
 	std::vector<vk::VertexInputAttributeDescription> xAttrDescs;
-
-	uint32_t uBindPoint = 0;
-	const Flux_BufferLayout& xVertexLayout = xSpec.m_xVertexInputDesc.m_xPerVertexLayout;
-	if (xVertexLayout.GetElements().GetSize())
-	{
-		for (Zenith_Vector<Flux_BufferElement>::Iterator xIt(xVertexLayout.GetElements()); !xIt.Done(); xIt.Next())
-		{
-			const Flux_BufferElement& xElement = xIt.GetData();
-			vk::VertexInputAttributeDescription xAttrDesc = vk::VertexInputAttributeDescription()
-				.setBinding(0)
-				.setLocation(uBindPoint)
-				.setOffset(xElement.m_uOffset)
-				.setFormat(Zenith_Vulkan::ShaderDataTypeToVulkanFormat(xElement._Type));
-			xAttrDescs.push_back(xAttrDesc);
-			uBindPoint++;
-		}
-	}
-
-	vk::VertexInputBindingDescription xBindDesc = vk::VertexInputBindingDescription()
-		.setBinding(0)
-		.setStride(xVertexLayout.GetStride())
-		.setInputRate(vk::VertexInputRate::eVertex);
-	xBindDescs.push_back(xBindDesc);
-
-	const Flux_BufferLayout& xInstanceLayout = xSpec.m_xVertexInputDesc.m_xPerInstanceLayout;
-	if (xInstanceLayout.GetElements().GetSize())
-	{
-		for (Zenith_Vector<Flux_BufferElement>::Iterator xIt(xInstanceLayout.GetElements()); !xIt.Done(); xIt.Next())
-		{
-			const Flux_BufferElement& xElement = xIt.GetData();
-			vk::VertexInputAttributeDescription xInstanceAttrDesc = vk::VertexInputAttributeDescription()
-				.setBinding(1)
-				.setLocation(uBindPoint)
-				.setOffset(xElement.m_uOffset)
-				.setFormat(Zenith_Vulkan::ShaderDataTypeToVulkanFormat(xElement._Type));
-			xAttrDescs.push_back(xInstanceAttrDesc);
-			uBindPoint++;
-		}
-
-		vk::VertexInputBindingDescription xInstanceBindDesc = vk::VertexInputBindingDescription()
-			.setBinding(1)
-			.setStride(xInstanceLayout.GetStride())
-			.setInputRate(vk::VertexInputRate::eInstance);
-		xBindDescs.push_back(xInstanceBindDesc);
-	}
-
-	vk::PipelineVertexInputStateCreateInfo xVertexDesc = vk::PipelineVertexInputStateCreateInfo()
-		.setVertexBindingDescriptionCount(xBindDescs.size())
-		.setPVertexBindingDescriptions(xBindDescs.data())
-		.setVertexAttributeDescriptionCount(xAttrDescs.size())
-		.setPVertexAttributeDescriptions(xAttrDescs.data());
+	vk::PipelineVertexInputStateCreateInfo xVertexDesc = VertexDescToVulkanDesc(xSpec.m_xVertexInputDesc, xBindDescs, xAttrDescs);
 
 	vk::PipelineInputAssemblyStateCreateInfo xTopology = vk::PipelineInputAssemblyStateCreateInfo();
 	switch (xSpec.m_xVertexInputDesc.m_eTopology)
