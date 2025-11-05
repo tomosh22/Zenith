@@ -106,127 +106,40 @@ void Zenith_Vulkan_CommandBuffer::SetIndexBuffer(const Flux_IndexBuffer& xIndexB
 	m_xCurrentCmdBuffer.bindIndexBuffer(xBuffer, 0, vk::IndexType::eUint32);
 }
 
-void Zenith_Vulkan_CommandBuffer::TransitionComputeResourcesBefore()
+void Zenith_Vulkan_CommandBuffer::TransitionUAVs(vk::ImageLayout eOldLayout, vk::ImageLayout eNewLayout, vk::AccessFlags eSrcAccessFlags, vk::AccessFlags eDstAccessFlags, vk::PipelineStageFlags eSrcStages, vk::PipelineStageFlags eDstStages)
 {
-	// Transition all UAVs (storage images) from ShaderReadOnlyOptimal to General layout
-	std::vector<vk::ImageMemoryBarrier> axBarriers;
+	vk::ImageMemoryBarrier axBarriers[MAX_BINDINGS];
+	u_int uNumBarriers = 0;
 
 	for (u_int uDescSet = 0; uDescSet < m_pxCurrentPipeline->m_xRootSig.m_uNumDescriptorSets; uDescSet++)
 	{
-		for (uint32_t i = 0; i < MAX_BINDINGS; i++)
+		for (u_int i = 0; i < MAX_BINDINGS; i++)
 		{
-			// Check if we have a UAV bound at this slot
 			const Flux_UnorderedAccessView* pxUAV = m_xBindings[uDescSet].m_xUAVs[i];
-			if (!pxUAV || !pxUAV->m_xImageView)
-			{
-				// Check if this is a storage image
-				bool bIsStorageImage = (m_pxCurrentPipeline->m_xRootSig.m_axDescriptorTypes[uDescSet][i] == DESCRIPTOR_TYPE_STORAGE_IMAGE);
-				
-				if (!bIsStorageImage)
-				{
-					continue;
-				}
-			}
-			else
-			{
-			// We have a UAV, use its VRAM handle to get the image
+			if (!pxUAV || !pxUAV->m_xImageView) continue;
+
 			Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(pxUAV->m_xVRAMHandle);
-			if (!pxVRAM)
-				{
-					continue;
-				}
+			Zenith_Assert(pxVRAM, "Invalid VRAM for UAV");
 
-				vk::ImageSubresourceRange xSubRange = vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
-
-				vk::ImageMemoryBarrier xBarrier = vk::ImageMemoryBarrier()
-					.setSubresourceRange(xSubRange)
-					.setImage(pxVRAM->GetImage())
-					.setOldLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
-					.setNewLayout(vk::ImageLayout::eGeneral)
-					.setSrcAccessMask(vk::AccessFlagBits::eShaderRead)
-					.setDstAccessMask(vk::AccessFlagBits::eShaderWrite | vk::AccessFlagBits::eShaderRead);
-
-				axBarriers.push_back(xBarrier);
-				continue;
-			}
+			axBarriers[uNumBarriers++] = vk::ImageMemoryBarrier()
+				.setSubresourceRange(vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1))
+				.setImage(pxVRAM->GetImage())
+				.setOldLayout(eOldLayout)
+				.setNewLayout(eNewLayout)
+				.setSrcAccessMask(eSrcAccessFlags)
+				.setDstAccessMask(eDstAccessFlags);
 		}
 	}
 
-	if (!axBarriers.empty())
-	{
-		m_xCurrentCmdBuffer.pipelineBarrier(
-			vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eComputeShader,
-			vk::PipelineStageFlagBits::eComputeShader,
-			vk::DependencyFlags(),
-			0, nullptr,
-			0, nullptr,
-			axBarriers.size(), axBarriers.data()
-		);
-	}
-}
-
-void Zenith_Vulkan_CommandBuffer::TransitionComputeResourcesAfter()
-{
-	// Only apply automatic barriers for compute pipelines
-	if (m_eCurrentBindPoint != vk::PipelineBindPoint::eCompute)
-	{
-		return;
-	}
-
-	// Transition all UAVs (storage images) from General back to ShaderReadOnlyOptimal layout
-	std::vector<vk::ImageMemoryBarrier> axBarriers;
-
-	for (u_int uDescSet = 0; uDescSet < m_pxCurrentPipeline->m_xRootSig.m_uNumDescriptorSets; uDescSet++)
-	{
-		for (uint32_t i = 0; i < MAX_BINDINGS; i++)
-		{
-			// Check if we have a UAV bound at this slot
-			const Flux_UnorderedAccessView* pxUAV = m_xBindings[uDescSet].m_xUAVs[i];
-			if (!pxUAV || !pxUAV->m_xImageView)
-			{
-				// Check if this is a storage image
-				bool bIsStorageImage = (m_pxCurrentPipeline->m_xRootSig.m_axDescriptorTypes[uDescSet][i] == DESCRIPTOR_TYPE_STORAGE_IMAGE);
-				
-				if (!bIsStorageImage)
-				{
-					continue;
-				}
-			}
-			else
-			{
-				// We have a UAV, use its VRAM handle to get the image
-				Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(pxUAV->m_xVRAMHandle);
-				if (!pxVRAM)
-				{
-					continue;
-				}
-
-				vk::ImageSubresourceRange xSubRange = vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
-
-				vk::ImageMemoryBarrier xBarrier = vk::ImageMemoryBarrier()
-					.setSubresourceRange(xSubRange)
-					.setImage(pxVRAM->GetImage())
-					.setOldLayout(vk::ImageLayout::eGeneral)
-					.setNewLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
-					.setSrcAccessMask(vk::AccessFlagBits::eShaderWrite | vk::AccessFlagBits::eShaderRead)
-					.setDstAccessMask(vk::AccessFlagBits::eShaderRead);
-
-				axBarriers.push_back(xBarrier);
-			}
-		}
-	}
-
-	if (!axBarriers.empty())
-	{
-		m_xCurrentCmdBuffer.pipelineBarrier(
-			vk::PipelineStageFlagBits::eComputeShader,
-			vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eComputeShader,
-			vk::DependencyFlags(),
-			0, nullptr,
-			0, nullptr,
-			axBarriers.size(), axBarriers.data()
-		);
-	}
+	m_xCurrentCmdBuffer.pipelineBarrier
+	(
+		eSrcStages,
+		eDstStages,
+		vk::DependencyFlags(),
+		0, nullptr,
+		0, nullptr,
+		uNumBarriers, axBarriers
+	);
 }
 
 void Zenith_Vulkan_CommandBuffer::PrepareDrawCallDescriptors()
@@ -515,32 +428,6 @@ void Zenith_Vulkan_CommandBuffer::BindUAV(const Flux_UnorderedAccessView* pxUAV,
 	m_xBindings[m_uCurrentBindFreq].m_apxSamplers[uBindPoint] = nullptr;
 }
 
-void Zenith_Vulkan_CommandBuffer::BindRTV(const Flux_RenderTargetView* pxRTV, uint32_t uBindPoint)
-{
-	Zenith_Assert(m_uCurrentBindFreq < FLUX_MAX_DESCRIPTOR_SET_LAYOUTS, "Haven't called BeginBind");
-	Zenith_Assert(pxRTV && pxRTV->m_xImageView, "Invalid RTV");
-
-	vk::ImageView xImageView = pxRTV->m_xImageView;
-
-	m_uDescriptorDirty |= 1 << m_uCurrentBindFreq;
-	
-	m_xBindings[m_uCurrentBindFreq].m_xRTVs[uBindPoint] = pxRTV;
-	m_xBindings[m_uCurrentBindFreq].m_apxSamplers[uBindPoint] = nullptr;
-}
-
-void Zenith_Vulkan_CommandBuffer::BindDSV(const Flux_DepthStencilView* pxDSV, uint32_t uBindPoint)
-{
-	Zenith_Assert(m_uCurrentBindFreq < FLUX_MAX_DESCRIPTOR_SET_LAYOUTS, "Haven't called BeginBind");
-	Zenith_Assert(pxDSV && pxDSV->m_xImageView, "Invalid DSV");
-
-	vk::ImageView xImageView = pxDSV->m_xImageView;
-
-	m_uDescriptorDirty |= 1 << m_uCurrentBindFreq;
-	
-	m_xBindings[m_uCurrentBindFreq].m_xDSVs[uBindPoint] = pxDSV;
-	m_xBindings[m_uCurrentBindFreq].m_apxSamplers[uBindPoint] = nullptr;
-}
-
 void Zenith_Vulkan_CommandBuffer::BindCBV(const Flux_ConstantBufferView* pxCBV, uint32_t uBindPoint)
 {
 	Zenith_Assert(m_uCurrentBindFreq < FLUX_MAX_DESCRIPTOR_SET_LAYOUTS, "Haven't called BeginBind");
@@ -601,12 +488,10 @@ void Zenith_Vulkan_CommandBuffer::BeginBind(u_int uDescSet)
 {
 	for (uint32_t i = 0; i < MAX_BINDINGS; i++)
 	{
-		m_xBindings[uDescSet].m_xCBVs[i] = nullptr;
-		m_xBindings[uDescSet].m_apxSamplers[i] = nullptr;
 		m_xBindings[uDescSet].m_xSRVs[i] = nullptr;
+		m_xBindings[uDescSet].m_xCBVs[i] = nullptr;
 		m_xBindings[uDescSet].m_xUAVs[i] = nullptr;
-		m_xBindings[uDescSet].m_xRTVs[i] = nullptr;
-		m_xBindings[uDescSet].m_xDSVs[i] = nullptr;
+		m_xBindings[uDescSet].m_apxSamplers[i] = nullptr;
 	}
 	m_uCurrentBindFreq = uDescSet;
 }
@@ -661,10 +546,19 @@ void Zenith_Vulkan_CommandBuffer::BindComputePipeline(Zenith_Vulkan_Pipeline* px
 void Zenith_Vulkan_CommandBuffer::Dispatch(uint32_t uGroupCountX, uint32_t uGroupCountY, uint32_t uGroupCountZ)
 {
 	// Transition compute resources to the correct layout before binding
-	TransitionComputeResourcesBefore();
 	PrepareDrawCallDescriptors();
+
+	TransitionUAVs(vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageLayout::eGeneral,
+		vk::AccessFlagBits::eShaderRead, vk::AccessFlagBits::eShaderWrite | vk::AccessFlagBits::eShaderRead,
+		vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eComputeShader,
+		vk::PipelineStageFlagBits::eComputeShader);
+
+
 	m_xCurrentCmdBuffer.dispatch(uGroupCountX, uGroupCountY, uGroupCountZ);
-	TransitionComputeResourcesAfter();
+	TransitionUAVs(vk::ImageLayout::eGeneral, vk::ImageLayout::eShaderReadOnlyOptimal,
+		vk::AccessFlagBits::eShaderWrite | vk::AccessFlagBits::eShaderRead, vk::AccessFlagBits::eShaderRead,
+		vk::PipelineStageFlagBits::eComputeShader,
+		vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eComputeShader);
 }
 
 void Zenith_Vulkan_CommandBuffer::ImageBarrier(Flux_Texture* pxTexture, uint32_t uOldLayout, uint32_t uNewLayout)

@@ -12,10 +12,8 @@ enum Flux_CommandType
 	FLUX_COMMANDTYPE__SET_INDEX_BUFFER,
 
 	FLUX_COMMANDTYPE__BEGIN_BIND,
-	FLUX_COMMANDTYPE__BIND_SRV,           // Shader Resource View
-	FLUX_COMMANDTYPE__BIND_UAV,           // Unordered Access View
-	FLUX_COMMANDTYPE__BIND_RTV,           // Render Target View
-	FLUX_COMMANDTYPE__BIND_DSV,           // Depth Stencil View
+	FLUX_COMMANDTYPE__BIND_SRV,
+	FLUX_COMMANDTYPE__BIND_UAV,
 	FLUX_COMMANDTYPE__BIND_CBV,
 
 	FLUX_COMMANDTYPE__USE_UNBOUNDED_TEXTURES,
@@ -207,40 +205,6 @@ public:
 	const u_int m_uBindPoint;
 };
 
-class Flux_CommandBindRTV
-{
-public:
-	static constexpr Flux_CommandType m_eType = FLUX_COMMANDTYPE__BIND_RTV;
-
-	Flux_CommandBindRTV(Flux_RenderTargetView* const pxRTV, const u_int uBindPoint)
-		: m_pxRTV(pxRTV)
-		, m_uBindPoint(uBindPoint)
-	{}
-	void operator()(Flux_CommandBuffer* pxCmdBuf)
-	{
-		pxCmdBuf->BindRTV(m_pxRTV, m_uBindPoint);
-	}
-	Flux_RenderTargetView* m_pxRTV;
-	const u_int m_uBindPoint;
-};
-
-class Flux_CommandBindDSV
-{
-public:
-	static constexpr Flux_CommandType m_eType = FLUX_COMMANDTYPE__BIND_DSV;
-
-	Flux_CommandBindDSV(Flux_DepthStencilView* const pxDSV, const u_int uBindPoint)
-		: m_pxDSV(pxDSV)
-		, m_uBindPoint(uBindPoint)
-	{}
-	void operator()(Flux_CommandBuffer* pxCmdBuf)
-	{
-		pxCmdBuf->BindDSV(m_pxDSV, m_uBindPoint);
-	}
-	Flux_DepthStencilView* m_pxDSV;
-	const u_int m_uBindPoint;
-};
-
 class Flux_CommandDraw
 {
 public:
@@ -365,8 +329,6 @@ public:
 				HANDLE_COMMAND(FLUX_COMMANDTYPE__BEGIN_BIND, Flux_CommandBeginBind);
 				HANDLE_COMMAND(FLUX_COMMANDTYPE__BIND_SRV, Flux_CommandBindSRV);
 				HANDLE_COMMAND(FLUX_COMMANDTYPE__BIND_UAV, Flux_CommandBindUAV);
-				HANDLE_COMMAND(FLUX_COMMANDTYPE__BIND_RTV, Flux_CommandBindRTV);
-				HANDLE_COMMAND(FLUX_COMMANDTYPE__BIND_DSV, Flux_CommandBindDSV);
 				HANDLE_COMMAND(FLUX_COMMANDTYPE__BIND_CBV, Flux_CommandBindCBV);
 				HANDLE_COMMAND(FLUX_COMMANDTYPE__PUSH_CONSTANT, Flux_CommandPushConstant);
 				HANDLE_COMMAND(FLUX_COMMANDTYPE__USE_UNBOUNDED_TEXTURES, Flux_CommandUseUnboundedTextures);

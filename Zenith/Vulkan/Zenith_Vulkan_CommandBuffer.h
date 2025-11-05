@@ -21,13 +21,9 @@ struct Flux_RenderTargetView;
 struct Flux_DepthStencilView;
 
 struct DescSetBindings {
-	const Flux_ConstantBufferView* m_xCBVs[MAX_BINDINGS];
-	
-	// Direct3D-style view bindings
 	const Flux_ShaderResourceView* m_xSRVs[MAX_BINDINGS];
 	const Flux_UnorderedAccessView* m_xUAVs[MAX_BINDINGS];
-	const Flux_RenderTargetView* m_xRTVs[MAX_BINDINGS];
-	const Flux_DepthStencilView* m_xDSVs[MAX_BINDINGS];
+	const Flux_ConstantBufferView* m_xCBVs[MAX_BINDINGS];
 
 	Zenith_Vulkan_Sampler* m_apxSamplers[MAX_BINDINGS];
 };
@@ -52,10 +48,8 @@ public:
 	// Direct3D-style view binding methods
 	void BindSRV(const Flux_ShaderResourceView* pxSRV, uint32_t uBindPoint, Zenith_Vulkan_Sampler* pxSampler = nullptr);
 	void BindUAV(const Flux_UnorderedAccessView* pxUAV, uint32_t uBindPoint);
-	void BindRTV(const Flux_RenderTargetView* pxRTV, uint32_t uBindPoint);
-	void BindDSV(const Flux_DepthStencilView* pxDSV, uint32_t uBindPoint);
-	
 	void BindCBV(const Flux_ConstantBufferView* pxCBV, uint32_t uBindPoint);
+
 	void BindAccelerationStruct(void* pxStruct, uint32_t uBindPoint);
 	void PushConstant(void* pData, size_t uSize);
 	void SetShoudClear(const bool bClear);
@@ -78,8 +72,7 @@ public:
 	vk::RenderPass m_xCurrentRenderPass;
 private:
 	void PrepareDrawCallDescriptors();
-	void TransitionComputeResourcesBefore();
-	void TransitionComputeResourcesAfter();
+	void TransitionUAVs(vk::ImageLayout eOldLayout, vk::ImageLayout eNewLayout, vk::AccessFlags eSrcAccessFlags, vk::AccessFlags eDstAccessFlags, vk::PipelineStageFlags eSrcStages, vk::PipelineStageFlags eDstStages);
 	std::vector<vk::CommandBuffer> m_xCmdBuffers;
 
 	Zenith_Vulkan_Pipeline* m_pxCurrentPipeline;
