@@ -142,168 +142,91 @@ void Zenith_Vulkan_CommandBuffer::TransitionUAVs(vk::ImageLayout eOldLayout, vk:
 	);
 }
 
-void Zenith_Vulkan_CommandBuffer::PrepareDrawCallDescriptors()
+void Zenith_Vulkan_CommandBuffer::UpdateDescriptorSets()
 {
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 	for (u_int uDescSet = 0; uDescSet < m_pxCurrentPipeline->m_xRootSig.m_uNumDescriptorSets; uDescSet++)
 	{
-		if (m_uDescriptorDirty & 1 << uDescSet)
+		if (!(m_uDescriptorDirty & 1 << uDescSet)) continue;
+
+		vk::DescriptorSetLayout& xLayout = m_pxCurrentPipeline->m_xRootSig.m_axDescSetLayouts[uDescSet];
+		vk::DescriptorSetAllocateInfo xInfo = vk::DescriptorSetAllocateInfo()
+			.setDescriptorPool(Zenith_Vulkan::GetCurrentPerFrameDescriptorPool())
+			.setDescriptorSetCount(1)
+			.setPSetLayouts(&xLayout);
+		m_axCurrentDescSet[uDescSet] = xDevice.allocateDescriptorSets(xInfo)[0];
+
+		u_int uNumBufferWrites = 0;
+		vk::DescriptorBufferInfo axBufferInfos[MAX_BINDINGS];
+
+		u_int uNumTexWrites = 0;
+		vk::DescriptorImageInfo axTexInfos[MAX_BINDINGS * 2]; //SRVs and UAVs
+
+		u_int uNumWrites = 0;
+		vk::WriteDescriptorSet axWrites[MAX_BINDINGS * 3]; //SRVs, UAVs and CBVs
+
+		for (u_int u = 0; u < MAX_BINDINGS; u++)
 		{
-			vk::DescriptorSetLayout& xLayout = m_pxCurrentPipeline->m_xRootSig.m_axDescSetLayouts[uDescSet];
+			if (m_pxCurrentPipeline->m_xRootSig.m_axDescriptorTypes[uDescSet][u] == DESCRIPTOR_TYPE_MAX) continue;
 
-			vk::DescriptorSetAllocateInfo xInfo = vk::DescriptorSetAllocateInfo()
-				.setDescriptorPool(Zenith_Vulkan::GetCurrentPerFrameDescriptorPool())
-				.setDescriptorSetCount(1)
-				.setPSetLayouts(&xLayout);
-
-			m_axCurrentDescSet[uDescSet] = xDevice.allocateDescriptorSets(xInfo)[0];
-
-			uint32_t uNumTextures = 0;
-			for (uint32_t i = 0; i < MAX_BINDINGS; i++)
+			const Flux_ShaderResourceView* const pxSRV = m_xBindings[uDescSet].m_xSRVs[u];
+			if (pxSRV)
 			{
-				// Skip bindings that don't exist in the pipeline layout
-				if (m_pxCurrentPipeline->m_xRootSig.m_axDescriptorTypes[uDescSet][i] == DESCRIPTOR_TYPE_MAX)
-				{
-					continue;
-				}
-				
-				// Count textures from SRV/UAV bindings
-				bool bHasSRV = (m_xBindings[uDescSet].m_xSRVs[i] != nullptr && m_xBindings[uDescSet].m_xSRVs[i]->m_xImageView);
-				bool bHasUAV = (m_xBindings[uDescSet].m_xUAVs[i] != nullptr && m_xBindings[uDescSet].m_xUAVs[i]->m_xImageView);
-				
-				if (bHasSRV || bHasUAV)
-				{
-					uNumTextures++;
-				}
-			}
-
-			uint32_t uNumBuffers = 0;
-			for (uint32_t i = 0; i < MAX_BINDINGS; i++)
-			{
-				// Skip bindings that don't exist in the pipeline layout
-				if (m_pxCurrentPipeline->m_xRootSig.m_axDescriptorTypes[uDescSet][i] == DESCRIPTOR_TYPE_MAX)
-				{
-					continue;
-				}
-				
-				if (m_xBindings[uDescSet].m_xCBVs[i] != nullptr)
-				{
-					uNumBuffers++;
-				}
-			}
-
-			std::vector<vk::DescriptorImageInfo> xTexInfos(uNumTextures);
-			std::vector<vk::WriteDescriptorSet> xTexWrites(uNumTextures);
-			uint32_t uCount = 0;
-			for (uint32_t i = 0; i < MAX_BINDINGS; i++)
-			{
-				// Skip bindings that don't exist in the pipeline layout
-				if (m_pxCurrentPipeline->m_xRootSig.m_axDescriptorTypes[uDescSet][i] == DESCRIPTOR_TYPE_MAX)
-				{
-					continue;
-				}
-				
-				// Check for UAV or SRV first
-				const Flux_UnorderedAccessView* pxUAV = m_xBindings[uDescSet].m_xUAVs[i];
-				const Flux_ShaderResourceView* pxSRV = m_xBindings[uDescSet].m_xSRVs[i];
-				
-				vk::ImageView xImageView;
-				bool bIsStorageImage = false;
-				Zenith_Vulkan_Sampler* pxSampler = m_xBindings[uDescSet].m_apxSamplers[i];
-				
-				if (pxUAV && pxUAV->m_xImageView)
-				{
-					// Use UAV's ImageView
-					xImageView = pxUAV->m_xImageView;
-					bIsStorageImage = true;
-				}
-				else if (pxSRV && pxSRV->m_xImageView)
-				{
-					// Use SRV's ImageView
-					xImageView = pxSRV->m_xImageView;
-				}
-
-			if (!xImageView)
-			{
-				continue;
-			}				vk::ImageLayout eLayout;
-				vk::DescriptorType eDescType = vk::DescriptorType::eCombinedImageSampler;
-				
-				if (bIsStorageImage)
-				{
-					eLayout = vk::ImageLayout::eGeneral;
-					eDescType = vk::DescriptorType::eStorageImage;
-				}
-				else
-				{
-					eLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
-				}
-
-				//#TO_TODO: different samplers
-				vk::DescriptorImageInfo& xInfo = xTexInfos.at(uCount)
+				Zenith_Vulkan_Sampler* pxSampler = m_xBindings[uDescSet].m_apxSamplers[u];
+				axTexInfos[uNumTexWrites] = vk::DescriptorImageInfo()
 					.setSampler(pxSampler ? pxSampler->GetSampler() : Flux_Graphics::s_xRepeatSampler.GetSampler())
-					.setImageView(xImageView)
-					.setImageLayout(eLayout);
-
-				vk::WriteDescriptorSet& xWrite = xTexWrites.at(uCount)
-					.setDescriptorType(eDescType)
+					.setImageView(pxSRV->m_xImageView)
+					.setImageLayout(vk::ImageLayout::eShaderReadOnlyOptimal);
+				
+				axWrites[uNumWrites++] = vk::WriteDescriptorSet()
+					.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
 					.setDstSet(m_axCurrentDescSet[uDescSet])
-					.setDstBinding(i)
+					.setDstBinding(u)
 					.setDstArrayElement(0)
 					.setDescriptorCount(1)
-					.setPImageInfo(&xInfo);
-
-				uCount++;
+					.setPImageInfo(axTexInfos + uNumTexWrites++);
 			}
 
-			xDevice.updateDescriptorSets(xTexWrites.size(), xTexWrites.data(), 0, nullptr);
-
-			std::vector<vk::DescriptorBufferInfo> xBufferInfos(uNumBuffers);
-			std::vector<vk::WriteDescriptorSet> xBufferWrites(uNumBuffers);
-			uCount = 0;
-			for (uint32_t i = 0; i < MAX_BINDINGS; i++)
+			const Flux_UnorderedAccessView* const pxUAV = m_xBindings[uDescSet].m_xUAVs[u];
+			if (pxUAV)
 			{
-				// Skip bindings that don't exist in the pipeline layout
-				if (m_pxCurrentPipeline->m_xRootSig.m_axDescriptorTypes[uDescSet][i] == DESCRIPTOR_TYPE_MAX)
-				{
-					continue;
-				}
-				
-				const Flux_ConstantBufferView* pxCBV = m_xBindings[uDescSet].m_xCBVs[i];
-				if (!pxCBV)
-				{
-					continue;
-				}
-				
-				vk::DescriptorBufferInfo& xInfo = xBufferInfos.at(uCount);
-				xInfo = pxCBV->m_xBufferInfo;
+				axTexInfos[uNumTexWrites] = vk::DescriptorImageInfo()
+					.setImageView(pxUAV->m_xImageView)
+					.setImageLayout(vk::ImageLayout::eGeneral);
 
-				vk::WriteDescriptorSet& xWrite = xBufferWrites.at(uCount)
+				axWrites[uNumWrites++] = vk::WriteDescriptorSet()
+					.setDescriptorType(vk::DescriptorType::eStorageImage)
+					.setDstSet(m_axCurrentDescSet[uDescSet])
+					.setDstBinding(u)
+					.setDstArrayElement(0)
+					.setDescriptorCount(1)
+					.setPImageInfo(axTexInfos + uNumTexWrites++);
+			}
+
+			const Flux_ConstantBufferView* const pxCBV = m_xBindings[uDescSet].m_xCBVs[u];
+			if (pxCBV)
+			{
+				axBufferInfos[uNumBufferWrites] = pxCBV->m_xBufferInfo;
+				axWrites[uNumWrites++] = vk::WriteDescriptorSet()
 					.setDescriptorType(vk::DescriptorType::eUniformBuffer)
 					.setDstSet(m_axCurrentDescSet[uDescSet])
-					.setDstBinding(i)
+					.setDstBinding(u)
 					.setDstArrayElement(0)
 					.setDescriptorCount(1)
-					.setPBufferInfo(&xInfo);
-
-				uCount++;
+					.setPBufferInfo(axBufferInfos + uNumBufferWrites++);
 			}
-
-			xDevice.updateDescriptorSets(xBufferWrites.size(), xBufferWrites.data(), 0, nullptr);
-			
-			// Use the bind point set when the pipeline was bound
-			m_xCurrentCmdBuffer.bindDescriptorSets(m_eCurrentBindPoint, m_pxCurrentPipeline->m_xRootSig.m_xLayout, uDescSet, 1, &m_axCurrentDescSet[uDescSet], 0, nullptr);
-			m_uDescriptorDirty &= ~(1 << uDescSet);
 		}
 
-		
+		xDevice.updateDescriptorSets(uNumWrites, axWrites, 0, nullptr);
+
+		m_xCurrentCmdBuffer.bindDescriptorSets(m_eCurrentBindPoint, m_pxCurrentPipeline->m_xRootSig.m_xLayout, uDescSet, 1, &m_axCurrentDescSet[uDescSet], 0, nullptr);
+		m_uDescriptorDirty &= ~(1 << uDescSet);
 	}
-	
 }
 
 void Zenith_Vulkan_CommandBuffer::Draw(uint32_t uNumVerts)
 {
-	PrepareDrawCallDescriptors();
+	UpdateDescriptorSets();
 	if (Zenith_Vulkan::ShouldSubmitDrawCalls())
 	{
 		m_xCurrentCmdBuffer.draw(uNumVerts, 0, 0, 0);
@@ -312,7 +235,7 @@ void Zenith_Vulkan_CommandBuffer::Draw(uint32_t uNumVerts)
 
 void Zenith_Vulkan_CommandBuffer::DrawIndexed(uint32_t uNumIndices, uint32_t uNumInstances /*= 1*/, uint32_t uVertexOffset /*= 0*/, uint32_t uIndexOffset /*= 0*/, uint32_t uInstanceOffset /*= 0*/)
 {
-	PrepareDrawCallDescriptors();
+	UpdateDescriptorSets();
 	if (Zenith_Vulkan::ShouldSubmitDrawCalls())
 	{
 		m_xCurrentCmdBuffer.drawIndexed(uNumIndices, uNumInstances, uIndexOffset, uVertexOffset, uInstanceOffset);
@@ -545,16 +468,15 @@ void Zenith_Vulkan_CommandBuffer::BindComputePipeline(Zenith_Vulkan_Pipeline* px
 
 void Zenith_Vulkan_CommandBuffer::Dispatch(uint32_t uGroupCountX, uint32_t uGroupCountY, uint32_t uGroupCountZ)
 {
-	// Transition compute resources to the correct layout before binding
-	PrepareDrawCallDescriptors();
+	UpdateDescriptorSets();
 
 	TransitionUAVs(vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageLayout::eGeneral,
 		vk::AccessFlagBits::eShaderRead, vk::AccessFlagBits::eShaderWrite | vk::AccessFlagBits::eShaderRead,
 		vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eComputeShader,
 		vk::PipelineStageFlagBits::eComputeShader);
 
-
 	m_xCurrentCmdBuffer.dispatch(uGroupCountX, uGroupCountY, uGroupCountZ);
+
 	TransitionUAVs(vk::ImageLayout::eGeneral, vk::ImageLayout::eShaderReadOnlyOptimal,
 		vk::AccessFlagBits::eShaderWrite | vk::AccessFlagBits::eShaderRead, vk::AccessFlagBits::eShaderRead,
 		vk::PipelineStageFlagBits::eComputeShader,

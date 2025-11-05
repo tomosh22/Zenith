@@ -71,7 +71,7 @@ public:
 	vk::CommandBuffer m_xCurrentCmdBuffer;
 	vk::RenderPass m_xCurrentRenderPass;
 private:
-	void PrepareDrawCallDescriptors();
+	void UpdateDescriptorSets();
 	void TransitionUAVs(vk::ImageLayout eOldLayout, vk::ImageLayout eNewLayout, vk::AccessFlags eSrcAccessFlags, vk::AccessFlags eDstAccessFlags, vk::PipelineStageFlags eSrcStages, vk::PipelineStageFlags eDstStages);
 	std::vector<vk::CommandBuffer> m_xCmdBuffers;
 
