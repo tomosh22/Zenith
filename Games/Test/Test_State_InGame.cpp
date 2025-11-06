@@ -450,7 +450,8 @@ void Test_State_InGame::OnExit()
 		for (uint32_t y = 0; y < TERRAIN_EXPORT_DIMS; y++)
 		{
 			std::string strSuffix = std::to_string(x) + "_" + std::to_string(y);
-			Zenith_AssetHandler::DeleteMesh("Terrain" + strSuffix);
+			Zenith_AssetHandler::DeleteMesh("Terrain_Render" + strSuffix);
+			Zenith_AssetHandler::DeleteMesh("Terrain_Physics" + strSuffix);
 		}
 	}
 

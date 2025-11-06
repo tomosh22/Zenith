@@ -20,18 +20,6 @@ public:
 	{
 		if (s_pxRequestedState)
 		{
-			//#TO_TODO: extremely lazy solution to destroying gpu resources that are still in flight
-			for (uint32_t u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
-			{
-				if (!Flux_Swapchain::BeginFrame())
-				{
-					Flux_MemoryManager::EndFrame(false);
-					continue;
-				}
-				Flux_PlatformAPI::BeginFrame();
-				Flux_PlatformAPI::EndFrame();
-				Flux_Swapchain::EndFrame();
-			}
 			s_pxCurrentState->OnExit();
 			delete s_pxCurrentState;
 			s_pxCurrentState = s_pxRequestedState;

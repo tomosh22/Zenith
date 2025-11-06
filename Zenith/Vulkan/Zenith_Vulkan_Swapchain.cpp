@@ -284,6 +284,10 @@ bool Zenith_Vulkan_Swapchain::BeginFrame()
 	if (eResult == vk::Result::eErrorOutOfDateKHR)
 	{
 		//#TO_TODO: cleanup the rest, at least image views, probably other things
+		for (u_int u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
+		{
+			Flux_MemoryManager::QueueImageViewDeletion(s_xImageViews[u]);
+		}
 		xDevice.destroySwapchainKHR(s_xSwapChain);
 		Initialise();
 		Flux::OnResChange();

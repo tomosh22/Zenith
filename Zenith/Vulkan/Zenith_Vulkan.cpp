@@ -65,6 +65,7 @@ vk::DescriptorSet Zenith_Vulkan::s_xBindlessTexturesDescriptorSet;
 vk::DescriptorSetLayout Zenith_Vulkan::s_xBindlessTexturesDescriptorSetLayout;
 
 std::vector<Zenith_Vulkan_VRAM*> Zenith_Vulkan::s_xVRAMRegistry;
+std::vector<uint32_t> Zenith_Vulkan::s_xFreeVRAMHandles;
 
 std::vector<const Zenith_Vulkan_CommandBuffer*> Zenith_Vulkan::s_xPendingCommandBuffers[RENDER_ORDER_MAX];
 Zenith_Vulkan_CommandBuffer g_xCommandBuffer;
@@ -781,8 +782,23 @@ void Zenith_Vulkan_PerFrame::BeginFrame()
 Flux_VRAMHandle Zenith_Vulkan::RegisterVRAM(Zenith_Vulkan_VRAM* pxVRAM)
 {
 	Flux_VRAMHandle xHandle;
-	xHandle.SetValue(s_xVRAMRegistry.size());
-	s_xVRAMRegistry.push_back(pxVRAM);
+	
+	// Check if there are any free handles to recycle
+	if (!s_xFreeVRAMHandles.empty())
+	{
+		uint32_t uFreeIndex = s_xFreeVRAMHandles.back();
+		s_xFreeVRAMHandles.pop_back();
+		
+		xHandle.SetValue(uFreeIndex);
+		s_xVRAMRegistry[uFreeIndex] = pxVRAM;
+	}
+	else
+	{
+		// No free handles, grow the registry
+		xHandle.SetValue(s_xVRAMRegistry.size());
+		s_xVRAMRegistry.push_back(pxVRAM);
+	}
+	
 	return xHandle;
 }
 
@@ -790,6 +806,22 @@ Zenith_Vulkan_VRAM* Zenith_Vulkan::GetVRAM(const Flux_VRAMHandle xHandle)
 {
 	Zenith_Assert(xHandle.AsUInt() < s_xVRAMRegistry.size(), "Invalid VRAM handle");
 	return s_xVRAMRegistry[xHandle.AsUInt()];
+}
+
+void Zenith_Vulkan::ReleaseVRAMHandle(const Flux_VRAMHandle xHandle)
+{
+	if (!xHandle.IsValid())
+	{
+		return;
+	}
+	
+	Zenith_Assert(xHandle.AsUInt() < s_xVRAMRegistry.size(), "Invalid VRAM handle");
+	
+	// Mark slot as free by setting to nullptr
+	s_xVRAMRegistry[xHandle.AsUInt()] = nullptr;
+	
+	// Add index to free list for recycling
+	s_xFreeVRAMHandles.push_back(xHandle.AsUInt());
 }
 
 vk::Format Zenith_Vulkan::ConvertToVkFormat_Colour(TextureFormat eFormat) {

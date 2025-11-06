@@ -116,6 +116,7 @@ public:
 	// VRAM Registry
 	static Flux_VRAMHandle RegisterVRAM(Zenith_Vulkan_VRAM* pxVRAM);
 	static Zenith_Vulkan_VRAM* GetVRAM(const Flux_VRAMHandle xHandle);
+	static void ReleaseVRAMHandle(const Flux_VRAMHandle xHandle);
 
 	// Format conversion utilities
 	static vk::Format ConvertToVkFormat_Colour(TextureFormat eFormat);
@@ -148,7 +149,9 @@ private:
 	static vk::DescriptorSet s_xBindlessTexturesDescriptorSet;
 	static vk::DescriptorSetLayout s_xBindlessTexturesDescriptorSetLayout;
 
+	public:
 	static std::vector<Zenith_Vulkan_VRAM*> s_xVRAMRegistry;
+	static std::vector<uint32_t> s_xFreeVRAMHandles;
 
 	static std::vector<const Zenith_Vulkan_CommandBuffer*> s_xPendingCommandBuffers[RENDER_ORDER_MAX];
 	static Zenith_Vulkan_PerFrame s_axPerFrame[MAX_FRAMES_IN_FLIGHT];
@@ -159,12 +162,12 @@ class Zenith_Vulkan_VRAM
 {
 public:
 	Zenith_Vulkan_VRAM(const vk::Image xImage, const VmaAllocation xAllocation, VmaAllocator xAllocator)
-		: m_xImage(xImage), m_xAllocation(xAllocation), m_xAllocator(xAllocator), m_bIsImage(true)
+		: m_xImage(xImage), m_xAllocation(xAllocation), m_xAllocator(xAllocator)
 	{
 	}
 
 	Zenith_Vulkan_VRAM(const vk::Buffer xBuffer, const VmaAllocation xAllocation, VmaAllocator xAllocator, const u_int uSize)
-		: m_xBuffer(xBuffer), m_xAllocation(xAllocation), m_xAllocator(xAllocator), m_uBufferSize(uSize), m_bIsImage(false)
+		: m_xBuffer(xBuffer), m_xAllocation(xAllocation), m_xAllocator(xAllocator), m_uBufferSize(uSize)
 	{
 	}
 
@@ -172,11 +175,11 @@ public:
 	{
 		if (m_xAllocation != VK_NULL_HANDLE && m_xAllocator != VK_NULL_HANDLE)
 		{
-			if (m_bIsImage && m_xImage != VK_NULL_HANDLE)
+			if (m_xImage != VK_NULL_HANDLE)
 			{
 				vmaDestroyImage(m_xAllocator, m_xImage, m_xAllocation);
 			}
-			else if (!m_bIsImage && m_xBuffer != VK_NULL_HANDLE)
+			else if ( m_xBuffer != VK_NULL_HANDLE)
 			{
 				vmaDestroyBuffer(m_xAllocator, m_xBuffer, m_xAllocation);
 			}
@@ -196,6 +199,4 @@ private:
 	u_int m_uBufferSize = 0;
 
 	vk::Image m_xImage = VK_NULL_HANDLE;
-	
-	bool m_bIsImage = true;
 };

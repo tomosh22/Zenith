@@ -14,6 +14,7 @@ VmaAllocator Zenith_Vulkan_MemoryManager::s_xAllocator;
 vk::Buffer Zenith_Vulkan_MemoryManager::s_xStagingBuffer;
 vk::DeviceMemory Zenith_Vulkan_MemoryManager::s_xStagingMem;
 std::list<Zenith_Vulkan_MemoryManager::StagingMemoryAllocation> Zenith_Vulkan_MemoryManager::s_xStagingAllocations;
+std::list<Zenith_Vulkan_MemoryManager::PendingVRAMDeletion> Zenith_Vulkan_MemoryManager::s_xPendingDeletions;
 
 size_t Zenith_Vulkan_MemoryManager::s_uNextFreeStagingOffset = 0;
 
@@ -97,6 +98,12 @@ void Zenith_Vulkan_MemoryManager::BeginFrame()
 void Zenith_Vulkan_MemoryManager::EndFrame(bool bDefer /*= true*/)
 {
 	FlushStagingBuffer();
+
+	const u_int uNumAllocatedVRAMs = Zenith_Vulkan::s_xVRAMRegistry.size();
+	printf("Num Allocated VRAMs %u \n", uNumAllocatedVRAMs);
+
+	// Process deferred VRAM deletions
+	ProcessDeferredDeletions();
 
 	if (bDefer)
 	{
@@ -633,4 +640,80 @@ void Zenith_Vulkan_MemoryManager::HandleStagingBufferFull() {
 	Zenith_Log("Staging buffer full, flushing");
 	EndFrame(false);
 	BeginFrame();
+}
+
+void Zenith_Vulkan_MemoryManager::QueueVRAMDeletion(Zenith_Vulkan_VRAM* pxVRAM, const Flux_VRAMHandle xHandle, 
+	vk::ImageView xRTV, vk::ImageView xDSV, vk::ImageView xSRV, vk::ImageView xUAV)
+{
+	if (pxVRAM == nullptr && xRTV == VK_NULL_HANDLE && xDSV == VK_NULL_HANDLE && 
+		xSRV == VK_NULL_HANDLE && xUAV == VK_NULL_HANDLE)
+	{
+		return;
+	}
+
+	PendingVRAMDeletion xDeletion;
+	xDeletion.m_pxVRAM = pxVRAM;
+	xDeletion.m_xHandle = xHandle;
+	xDeletion.m_xRTV = xRTV;
+	xDeletion.m_xDSV = xDSV;
+	xDeletion.m_xSRV = xSRV;
+	xDeletion.m_xUAV = xUAV;
+	xDeletion.m_uFramesRemaining = MAX_FRAMES_IN_FLIGHT;
+	s_xPendingDeletions.push_back(xDeletion);
+}
+
+void Zenith_Vulkan_MemoryManager::QueueImageViewDeletion(vk::ImageView xImageView)
+{
+	if (xImageView == VK_NULL_HANDLE)
+	{
+		return;
+	}
+	
+	// Queue for deletion without VRAM - just destroy the image view
+	Flux_VRAMHandle xInvalidHandle;  // Default constructed handle is invalid
+	QueueVRAMDeletion(nullptr, xInvalidHandle, xImageView);
+}
+
+void Zenith_Vulkan_MemoryManager::ProcessDeferredDeletions()
+{
+	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
+	
+	for (auto it = s_xPendingDeletions.begin(); it != s_xPendingDeletions.end();)
+	{
+		it->m_uFramesRemaining--;
+		
+		if (it->m_uFramesRemaining == 0)
+		{
+			// Destroy all image views before deleting VRAM
+			if (it->m_xRTV != VK_NULL_HANDLE)
+			{
+				xDevice.destroyImageView(it->m_xRTV);
+			}
+			if (it->m_xDSV != VK_NULL_HANDLE)
+			{
+				xDevice.destroyImageView(it->m_xDSV);
+			}
+			if (it->m_xSRV != VK_NULL_HANDLE)
+			{
+				xDevice.destroyImageView(it->m_xSRV);
+			}
+			if (it->m_xUAV != VK_NULL_HANDLE)
+			{
+				xDevice.destroyImageView(it->m_xUAV);
+			}
+			
+			// Delete VRAM and release handle (only if VRAM exists)
+			if (it->m_pxVRAM != nullptr)
+			{
+				delete it->m_pxVRAM;
+				Zenith_Vulkan::ReleaseVRAMHandle(it->m_xHandle);
+			}
+			
+			it = s_xPendingDeletions.erase(it);
+		}
+		else
+		{
+			++it;
+		}
+	}
 }

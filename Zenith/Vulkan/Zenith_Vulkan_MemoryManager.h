@@ -7,6 +7,7 @@
 
 #include "Flux/Flux_Types.h"
 
+class Zenith_Vulkan_VRAM;
 class Flux_VertexBuffer;
 class Flux_DynamicVertexBuffer;
 class Flux_IndexBuffer;
@@ -53,6 +54,14 @@ public:
 	static vk::ImageView CreateUnorderedAccessView(Flux_VRAMHandle xVRAMHandlee, const Flux_SurfaceInfo& xInfo, uint32_t uMipLevel = 0);
 
 	static Zenith_Vulkan_CommandBuffer& GetCommandBuffer();
+
+	// Deferred deletion system
+	static void QueueVRAMDeletion(Zenith_Vulkan_VRAM* pxVRAM, const Flux_VRAMHandle xHandle, 
+		vk::ImageView xRTV = VK_NULL_HANDLE, vk::ImageView xDSV = VK_NULL_HANDLE, 
+		vk::ImageView xSRV = VK_NULL_HANDLE, vk::ImageView xUAV = VK_NULL_HANDLE);
+	static void QueueImageViewDeletion(vk::ImageView xImageView);
+	static void ProcessDeferredDeletions();
+
 private:
 
 	static void InitialiseStagingBuffer();
@@ -85,6 +94,20 @@ private:
 		size_t m_uOffset;
 	};
 	static std::list<StagingMemoryAllocation> s_xStagingAllocations;
+
+	// Deferred deletion tracking
+	struct PendingVRAMDeletion {
+		Zenith_Vulkan_VRAM* m_pxVRAM;
+		Flux_VRAMHandle m_xHandle;
+		uint32_t m_uFramesRemaining;
+		
+		// Image views that need to be destroyed
+		vk::ImageView m_xRTV = VK_NULL_HANDLE;
+		vk::ImageView m_xDSV = VK_NULL_HANDLE;
+		vk::ImageView m_xSRV = VK_NULL_HANDLE;
+		vk::ImageView m_xUAV = VK_NULL_HANDLE;
+	};
+	static std::list<PendingVRAMDeletion> s_xPendingDeletions;
 
 	static VmaAllocator s_xAllocator;
 	static vk::Buffer s_xStagingBuffer;

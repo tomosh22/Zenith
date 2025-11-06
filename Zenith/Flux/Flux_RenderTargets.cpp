@@ -6,6 +6,15 @@
 
 void Flux_RenderAttachmentBuilder::BuildColour(Flux_RenderAttachment& xAttachment, const std::string& strName)
 {
+	// Check if attachment already has VRAM allocated and queue it for deletion
+	if (xAttachment.m_xVRAMHandle.IsValid())
+	{
+		Zenith_Vulkan_VRAM* pxOldVRAM = Zenith_Vulkan::GetVRAM(xAttachment.m_xVRAMHandle);
+		Flux_MemoryManager::QueueVRAMDeletion(pxOldVRAM, xAttachment.m_xVRAMHandle,
+			xAttachment.m_pxRTV.m_xImageView, VK_NULL_HANDLE, 
+			xAttachment.m_pxSRV.m_xImageView, xAttachment.m_pxUAV.m_xImageView);
+	}
+
 	Flux_SurfaceInfo xInfo;
 	xInfo.m_uWidth = m_uWidth;
 	xInfo.m_uHeight = m_uHeight;
@@ -36,6 +45,15 @@ void Flux_RenderAttachmentBuilder::BuildColour(Flux_RenderAttachment& xAttachmen
 
 void Flux_RenderAttachmentBuilder::BuildDepthStencil(Flux_RenderAttachment& xAttachment, const std::string& strName)
 {
+	// Check if attachment already has VRAM allocated and queue it for deletion
+	if (xAttachment.m_xVRAMHandle.IsValid())
+	{
+		Zenith_Vulkan_VRAM* pxOldVRAM = Zenith_Vulkan::GetVRAM(xAttachment.m_xVRAMHandle);
+		Flux_MemoryManager::QueueVRAMDeletion(pxOldVRAM, xAttachment.m_xVRAMHandle,
+			VK_NULL_HANDLE, xAttachment.m_pxDSV.m_xImageView, 
+			xAttachment.m_pxSRV.m_xImageView, VK_NULL_HANDLE);
+	}
+
 	Flux_SurfaceInfo xInfo;
 	xInfo.m_uWidth = m_uWidth;
 	xInfo.m_uHeight = m_uHeight;
