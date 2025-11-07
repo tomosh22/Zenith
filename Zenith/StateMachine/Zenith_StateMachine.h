@@ -1,6 +1,5 @@
 #pragma once
-//#TO just for MAX_FRAMES_IN_FLIGHT
-#include "Flux/Flux_Enums.h"
+#include "EntityComponent/Zenith_Scene.h"
 #include "Flux/Flux.h"
 class Zenith_State
 {
@@ -20,11 +19,16 @@ public:
 	{
 		if (s_pxRequestedState)
 		{
+			Zenith_Scene::GetCurrentScene().Reset();
 			s_pxCurrentState->OnExit();
 			delete s_pxCurrentState;
+			Zenith_Vulkan::GetDevice().waitIdle();
 			s_pxCurrentState = s_pxRequestedState;
+			Flux_MemoryManager::BeginFrame();
 			s_pxCurrentState->OnEnter();
+			Flux_MemoryManager::EndFrame(false);
 			s_pxRequestedState = nullptr;
+			return;
 		}
 		s_pxCurrentState->OnUpdate();
 	}

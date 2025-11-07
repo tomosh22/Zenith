@@ -199,9 +199,7 @@ static void LoadAssets()
 
 void Test_State_InGame::OnEnter()
 {
-	Flux_MemoryManager::BeginFrame();
 	LoadAssets();
-	Flux_MemoryManager::EndFrame(false);
 
 	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
 	s_xPlayer.Initialise(&xScene, "Game Controller");
@@ -236,12 +234,10 @@ void Test_State_InGame::OnEnter()
 
 	Flux_MeshGeometry& xSphereMesh = Zenith_AssetHandler::GetMesh("Sphere_Smooth");
 
-	Flux_MemoryManager::BeginFrame();
 	Zenith_ModelComponent& xModel = s_xPlayer.AddComponent<Zenith_ModelComponent>();
 	//xModel.AddMeshEntry(Zenith_AssetHandler::GetMesh("StickyMcStickFace"), Zenith_AssetHandler::GetMaterial("Crystal"));
 	Flux_Material& xCrystalMaterial = Zenith_AssetHandler::GetMaterial("Crystal");
 	xModel.LoadMeshesFromDir(ASSETS_ROOT"Meshes/stickymcstickface_anim", &xCrystalMaterial);
-	Flux_MemoryManager::EndFrame(false);
 	for(u_int u = 0; u < xModel.GetNumMeshEntires(); u++)
 	{
 		xModel.GetMeshGeometryAtIndex(u).m_pxAnimation = new Flux_MeshAnimation(ASSETS_ROOT"Meshes/stickymcstickface_anim/StickyMcStickface_Anim.fbx", xModel.GetMeshGeometryAtIndex(u));
@@ -359,9 +355,7 @@ void Test_State_InGame::OnEnter()
 		xTrans.SetPosition({ 60, 170, -20 });
 		xTrans.SetRotation({ 0.7071, 0, 0.7071, 0});
 		Zenith_ModelComponent& xModel = s_xOgre.AddComponent<Zenith_ModelComponent>();
-		Flux_MemoryManager::BeginFrame();
 		xModel.LoadMeshesFromDir(ASSETS_ROOT"Meshes/ogre");
-		Flux_MemoryManager::EndFrame(false);
 		Flux_MeshGeometry& xMesh0 = xModel.GetMeshGeometryAtIndex(0);
 		xMesh0.m_pxAnimation = new Flux_MeshAnimation(ASSETS_ROOT"Meshes/ogre/ogre.fbx", xMesh0);
 		Flux_MeshGeometry& xMesh1 = xModel.GetMeshGeometryAtIndex(1);
@@ -386,9 +380,7 @@ void Test_State_InGame::OnEnter()
 		xTrans.SetPosition(s_xPlayerSpawn + Zenith_Maths::Vector3(u * 10, 100, 0));
 		xTrans.SetScale({ afScales[u],afScales[u],afScales[u] });
 		Zenith_ModelComponent& xModel = s_xGltfTest[u].AddComponent<Zenith_ModelComponent>();
-		Flux_MemoryManager::BeginFrame();
 		xModel.LoadMeshesFromDir(aszAssetNames[u]);
-		Flux_MemoryManager::EndFrame(false);
 	}
 }
 
@@ -403,45 +395,48 @@ void Test_State_InGame::OnUpdate()
 
 void Test_State_InGame::OnExit()
 {
+	
+
+	// Now delete all the assets (meshes, textures, materials)
 	Zenith_AssetHandler::DeleteMesh("Barrel");
+	Zenith_AssetHandler::DeleteMesh("Capsule");
+	Zenith_AssetHandler::DeleteMesh("Sphere_Smooth");
+
 	{
 		Zenith_AssetHandler::DeleteTexture("Barrel_Diffuse");
 		Zenith_AssetHandler::DeleteTexture("Barrel_Metallic");
-
 		Zenith_AssetHandler::DeleteMaterial("Barrel");
 	}
 
-	Zenith_AssetHandler::DeleteMesh("Sphere_Smooth");
 	{
 		Zenith_AssetHandler::DeleteTexture("Crystal_Diffuse");
 		Zenith_AssetHandler::DeleteTexture("Crystal_Normal");
 		Zenith_AssetHandler::DeleteTexture("Crystal_Roughness");
 		Zenith_AssetHandler::DeleteTexture("Crystal_Metallic");
-
 		Zenith_AssetHandler::DeleteMaterial("Crystal");
 	}
+
 	{
 		Zenith_AssetHandler::DeleteTexture("MuddyGrass_Diffuse");
 		Zenith_AssetHandler::DeleteTexture("MuddyGrass_Normal");
 		Zenith_AssetHandler::DeleteTexture("MuddyGrass_Roughness");
 		Zenith_AssetHandler::DeleteTexture("MuddyGrass_Metallic");
-
 		Zenith_AssetHandler::DeleteMaterial("MuddyGrass");
 	}
+
 	{
 		Zenith_AssetHandler::DeleteTexture("SupplyCrate_Diffuse");
 		Zenith_AssetHandler::DeleteTexture("SupplyCrate_Normal");
 		Zenith_AssetHandler::DeleteTexture("SupplyCrate_Roughness");
 		Zenith_AssetHandler::DeleteTexture("SupplyCrate_Metallic");
-
 		Zenith_AssetHandler::DeleteMaterial("SupplyCrate");
 	}
+
 	{
 		Zenith_AssetHandler::DeleteTexture("Rock_Diffuse");
 		Zenith_AssetHandler::DeleteTexture("Rock_Normal");
 		Zenith_AssetHandler::DeleteTexture("Rock_Roughness");
 		Zenith_AssetHandler::DeleteTexture("Rock_Metallic");
-
 		Zenith_AssetHandler::DeleteMaterial("Rock");
 	}
 
@@ -452,8 +447,7 @@ void Test_State_InGame::OnExit()
 			std::string strSuffix = std::to_string(x) + "_" + std::to_string(y);
 			Zenith_AssetHandler::DeleteMesh("Terrain_Render" + strSuffix);
 			Zenith_AssetHandler::DeleteMesh("Terrain_Physics" + strSuffix);
+			Zenith_AssetHandler::DeleteMesh("Terrain_Water" + strSuffix);
 		}
 	}
-
-	Zenith_Scene::GetCurrentScene().Reset();
 }

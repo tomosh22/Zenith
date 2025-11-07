@@ -76,7 +76,9 @@ int main()
 #endif
 
 	Zenith_StateMachine::Project_Initialise();
+	Flux_MemoryManager::BeginFrame();
 	Zenith_StateMachine::s_pxCurrentState->OnEnter();
+	Flux_MemoryManager::EndFrame(false);
 	Zenith_Core::s_xLastFrameTime = std::chrono::high_resolution_clock::now();
 
 	//#TO_TODO: exit properly

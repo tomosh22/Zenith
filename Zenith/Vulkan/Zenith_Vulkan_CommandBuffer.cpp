@@ -26,7 +26,9 @@ void Zenith_Vulkan_CommandBuffer::Initialise(CommandType eType /*= COMMANDTYPE_G
 void Zenith_Vulkan_CommandBuffer::BeginRecording()
 {
 	m_xCurrentCmdBuffer = m_xCmdBuffers[Zenith_Vulkan_Swapchain::GetCurrentFrameIndex()];
-	m_xCurrentCmdBuffer.begin(vk::CommandBufferBeginInfo());
+	vk::CommandBufferBeginInfo xBeginInfo;
+	xBeginInfo.setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
+	m_xCurrentCmdBuffer.begin(xBeginInfo);
 	m_uCurrentBindFreq = FLUX_MAX_DESCRIPTOR_SET_LAYOUTS;
 	m_uDescriptorDirty = ~0u;
 }
@@ -72,8 +74,7 @@ void Zenith_Vulkan_CommandBuffer::EndAndCpuWait(bool bEndPass)
 	Zenith_Vulkan::GetQueue(m_eCommandType).submit(xSubmitInfo, xFence);
 
 	xDevice.waitForFences(1, &xFence, VK_TRUE, UINT64_MAX);
-
-	//#TO_TODO: plug fence leak
+	xDevice.destroyFence(xFence);
 }
 
 template<typename T>

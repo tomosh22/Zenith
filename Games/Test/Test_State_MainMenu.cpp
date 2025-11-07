@@ -36,5 +36,4 @@ void Test_State_MainMenu::OnUpdate()
 
 void Test_State_MainMenu::OnExit()
 {
-	Zenith_Scene::GetCurrentScene().Reset();
 }

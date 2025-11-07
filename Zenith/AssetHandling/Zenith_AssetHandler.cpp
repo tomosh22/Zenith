@@ -291,15 +291,60 @@ bool Zenith_AssetHandler::MaterialExists(const std::string& strName)
 
 void Zenith_AssetHandler::DeleteTexture(const std::string& strName)
 {
-	STUBBED
+	// Check if texture exists
+	if (s_xTextureNameMap.find(strName) == s_xTextureNameMap.end())
+	{
+		Zenith_Assert(false, "Texture doesn't exist");
+		return;
+	}
+	
+	// Get the VRAM handle
+	uint32_t uVRAMHandleValue = s_xTextureNameMap.at(strName);
+	Flux_VRAMHandle xVRAMHandle;
+	xVRAMHandle.SetValue(uVRAMHandleValue);
+	
+	// Get the VRAM instance and SRV
+	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xVRAMHandle);
+	Flux_ShaderResourceView* pxSRV = GetTextureSRV(strName);
+	
+	// Queue VRAM and ImageView for deferred deletion
+	// For textures, we only have an SRV (no RTV, DSV, or UAV)
+	Flux_MemoryManager::QueueVRAMDeletion(pxVRAM, xVRAMHandle, 
+		VK_NULL_HANDLE, VK_NULL_HANDLE, pxSRV->m_xImageView, VK_NULL_HANDLE);
+	
+	// Remove from all maps
+	s_xTextureNameMap.erase(strName);
+	s_xTextureSRVMap.erase(strName);
+	s_xTextureHandleToSRVMap.erase(uVRAMHandleValue);
 }
 
 void Zenith_AssetHandler::DeleteMesh(const std::string& strName)
 {
 	Zenith_Assert(s_xMeshNameMap.find(strName) != s_xMeshNameMap.end(), "Mesh doesn't exist");
 	AssetID uID = s_xMeshNameMap.find(strName)->second;
-	s_pxMeshes[uID].Reset();
+	
+	Flux_MeshGeometry& xMesh = s_pxMeshes[uID];
+	
+	// Queue vertex buffer VRAM for deletion if it exists
+	if (xMesh.GetVertexBuffer().GetBuffer().m_xVRAMHandle.IsValid())
+	{
+		Zenith_Vulkan_VRAM* pxVertexVRAM = Zenith_Vulkan::GetVRAM(xMesh.GetVertexBuffer().GetBuffer().m_xVRAMHandle);
+		Flux_MemoryManager::QueueVRAMDeletion(pxVertexVRAM, xMesh.GetVertexBuffer().GetBuffer().m_xVRAMHandle);
+	}
+	
+	// Queue index buffer VRAM for deletion if it exists
+	if (xMesh.GetIndexBuffer().GetBuffer().m_xVRAMHandle.IsValid())
+	{
+		Zenith_Vulkan_VRAM* pxIndexVRAM = Zenith_Vulkan::GetVRAM(xMesh.GetIndexBuffer().GetBuffer().m_xVRAMHandle);
+		Flux_MemoryManager::QueueVRAMDeletion(pxIndexVRAM, xMesh.GetIndexBuffer().GetBuffer().m_xVRAMHandle);
+	}
+	
+	// Reset the mesh (clears CPU-side data)
+	xMesh.Reset();
+	
+	// Remove from tracking structures
 	s_xMeshNameMap.erase(strName);
+	s_xUsedMeshIDs.erase(uID);
 }
 
 void Zenith_AssetHandler::DeleteMaterial(const std::string& strName)
@@ -308,6 +353,7 @@ void Zenith_AssetHandler::DeleteMaterial(const std::string& strName)
 	AssetID uID = s_xMaterialNameMap.find(strName)->second;
 	s_pxMaterials[uID].Reset();
 	s_xMaterialNameMap.erase(strName);
+	s_xUsedMaterialIDs.erase(uID);
 }
 
 Zenith_AssetHandler::AssetID Zenith_AssetHandler::GetNextFreeMeshSlot()

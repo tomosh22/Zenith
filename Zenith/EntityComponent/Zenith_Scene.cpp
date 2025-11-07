@@ -56,8 +56,21 @@ Zenith_Scene::~Zenith_Scene() {
 	Reset();
 }
 
-void Zenith_Scene::Reset() {
-	STUBBED
+void Zenith_Scene::Reset()
+{
+
+	for (Zenith_Vector<Zenith_ComponentPoolBase*>::Iterator xIt(m_xComponents); !xIt.Done(); xIt.Next())
+	{
+		Zenith_ComponentPoolBase* pxPool = xIt.GetData();
+		if (pxPool)
+		{
+			delete pxPool;
+		}
+	}
+	m_xComponents.Clear();
+	m_xEntityComponents.Clear();
+	m_xEntityMap.clear();
+	m_pxMainCameraEntity = nullptr;
 }
 
 void Zenith_Scene::Serialize(const std::string& strFilename) {
