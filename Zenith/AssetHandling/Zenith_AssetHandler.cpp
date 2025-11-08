@@ -2,13 +2,12 @@
 #include "AssetHandling/Zenith_AssetHandler.h"
 #include "Flux/Flux_Graphics.h"
 
+Flux_Texture* Zenith_AssetHandler::s_pxTextures = new Flux_Texture[ZENITH_MAX_TEXTURES];
 Flux_MeshGeometry* Zenith_AssetHandler::s_pxMeshes = new Flux_MeshGeometry[ZENITH_MAX_MESHES];
 Flux_Material* Zenith_AssetHandler::s_pxMaterials = new Flux_Material[ZENITH_MAX_MATERIALS];
 
-std::unordered_map<std::string, uint32_t> Zenith_AssetHandler::s_xTextureNameMap;
+std::unordered_map<std::string, Zenith_AssetHandler::AssetID> Zenith_AssetHandler::s_xTextureNameMap;
 std::unordered_set<Zenith_AssetHandler::AssetID>	Zenith_AssetHandler::s_xUsedTextureIDs;
-std::unordered_map<std::string, Flux_ShaderResourceView> Zenith_AssetHandler::s_xTextureSRVMap;
-std::unordered_map<uint32_t, Flux_ShaderResourceView> Zenith_AssetHandler::s_xTextureHandleToSRVMap;
 
 std::unordered_map<std::string, Zenith_AssetHandler::AssetID> Zenith_AssetHandler::s_xMeshNameMap;
 std::unordered_set<Zenith_AssetHandler::AssetID>	Zenith_AssetHandler::s_xUsedMeshIDs;
@@ -16,7 +15,7 @@ std::unordered_set<Zenith_AssetHandler::AssetID>	Zenith_AssetHandler::s_xUsedMes
 std::unordered_map<std::string, Zenith_AssetHandler::AssetID> Zenith_AssetHandler::s_xMaterialNameMap;
 std::unordered_set<Zenith_AssetHandler::AssetID>	Zenith_AssetHandler::s_xUsedMaterialIDs;
 
-Flux_Texture Zenith_AssetHandler::AddTexture(const std::string& strName, const TextureData& xTextureData)
+Flux_Texture& Zenith_AssetHandler::AddTexture(const std::string& strName, const TextureData& xTextureData)
 {
 	Flux_VRAMHandle xVRAMHandle;
 	
@@ -43,20 +42,19 @@ Flux_Texture Zenith_AssetHandler::AddTexture(const std::string& strName, const T
 		xVRAMHandle = Flux_MemoryManager::CreateTextureVRAM(xTextureData.pData, xTextureData.xSurfaceInfo, xTextureData.bCreateMips);
 	}
 	
-	s_xTextureNameMap.insert({ strName, xVRAMHandle.AsUInt()});
-	
 	// Create and store SRV
 	Flux_ShaderResourceView xSRV;
 	xSRV.m_xVRAMHandle = xVRAMHandle;
 	xSRV.m_xImageView = Flux_MemoryManager::CreateShaderResourceView(xVRAMHandle, xTextureData.xSurfaceInfo);
-	s_xTextureSRVMap.insert({ strName, xSRV });
-	s_xTextureHandleToSRVMap.insert({ xVRAMHandle.AsUInt(), xSRV});
 	
-	// Create Flux_Texture to return
-	Flux_Texture xTexture;
+	
+	AssetID uID = GetNextFreeTextureSlot();
+	Flux_Texture& xTexture = s_pxTextures[uID];
 	xTexture.m_xSurfaceInfo = xTextureData.xSurfaceInfo;
 	xTexture.m_xVRAMHandle = xVRAMHandle;
 	xTexture.m_xSRV = xSRV;
+	s_xTextureNameMap.insert({ strName, uID });
+	s_xUsedTextureIDs.insert(uID);
 	
 	return xTexture;
 }
@@ -193,25 +191,17 @@ Flux_Material& Zenith_AssetHandler::AddMaterial(const std::string& strName)
 	return s_pxMaterials[uID];
 }
 
-Flux_Texture Zenith_AssetHandler::GetTexture(const std::string& strName)
+Flux_Texture& Zenith_AssetHandler::GetTexture(const std::string& strName)
 {
-	Zenith_Assert(s_xTextureNameMap.find(strName) != s_xTextureNameMap.end(), "Texture2D doesn't exist");
-	
-	Flux_ShaderResourceView* pxSRV = GetTextureSRV(strName);
-	
-	Flux_Texture xTexture;
-	xTexture.m_xVRAMHandle.SetValue(s_xTextureNameMap.at(strName));
-	xTexture.m_xSRV = *pxSRV;
-	xTexture.m_xSurfaceInfo = pxSRV->m_xVRAMHandle.IsValid() ? Flux_SurfaceInfo{} : Flux_SurfaceInfo{};
-	
-	return xTexture;
+	Zenith_Assert(s_xTextureNameMap.find(strName) != s_xTextureNameMap.end(), "Texture doesn't exist");
+	return s_pxTextures[s_xTextureNameMap.at(strName)];
 }
 
-Flux_Texture Zenith_AssetHandler::TryGetTexture(const std::string& strName)
+Flux_Texture& Zenith_AssetHandler::TryGetTexture(const std::string& strName)
 {
 	if (s_xTextureNameMap.find(strName) != s_xTextureNameMap.end())
 	{
-		return GetTexture(strName);
+		return s_pxTextures[s_xTextureNameMap.at(strName)];
 	}
 	else
 	{
@@ -222,24 +212,6 @@ Flux_Texture Zenith_AssetHandler::TryGetTexture(const std::string& strName)
 bool Zenith_AssetHandler::TextureExists(const std::string& strName)
 {
 	return s_xTextureNameMap.find(strName) != s_xTextureNameMap.end();
-}
-
-Flux_ShaderResourceView* Zenith_AssetHandler::GetTextureSRV(const std::string& strName)
-{
-	Zenith_Assert(s_xTextureSRVMap.find(strName) != s_xTextureSRVMap.end(), "Texture SRV doesn't exist");
-	return &s_xTextureSRVMap.at(strName);
-}
-
-Flux_ShaderResourceView* Zenith_AssetHandler::TryGetTextureSRV(const std::string& strName)
-{
-	if (s_xTextureSRVMap.find(strName) != s_xTextureSRVMap.end())
-	{
-		return &s_xTextureSRVMap.at(strName);
-	}
-	else
-	{
-		return &Flux_Graphics::s_xBlackBlankTexture2D.m_xSRV;
-	}
 }
 
 Flux_MeshGeometry& Zenith_AssetHandler::GetMesh(const std::string& strName)
@@ -291,31 +263,21 @@ bool Zenith_AssetHandler::MaterialExists(const std::string& strName)
 
 void Zenith_AssetHandler::DeleteTexture(const std::string& strName)
 {
-	// Check if texture exists
-	if (s_xTextureNameMap.find(strName) == s_xTextureNameMap.end())
-	{
-		Zenith_Assert(false, "Texture doesn't exist");
-		return;
-	}
+	Zenith_Assert(s_xTextureNameMap.find(strName) != s_xTextureNameMap.end(), "Texture doesn't exist");
+	AssetID uID = s_xTextureNameMap.find(strName)->second;
+
+	Flux_Texture& xTexture = s_pxTextures[uID];
+
+	Zenith_Assert(xTexture.m_xVRAMHandle.IsValid(), "Deleting invalid texture");
+
 	
-	// Get the VRAM handle
-	uint32_t uVRAMHandleValue = s_xTextureNameMap.at(strName);
-	Flux_VRAMHandle xVRAMHandle;
-	xVRAMHandle.SetValue(uVRAMHandleValue);
-	
-	// Get the VRAM instance and SRV
-	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xVRAMHandle);
-	Flux_ShaderResourceView* pxSRV = GetTextureSRV(strName);
-	
-	// Queue VRAM and ImageView for deferred deletion
-	// For textures, we only have an SRV (no RTV, DSV, or UAV)
-	Flux_MemoryManager::QueueVRAMDeletion(pxVRAM, xVRAMHandle, 
-		VK_NULL_HANDLE, VK_NULL_HANDLE, pxSRV->m_xImageView, VK_NULL_HANDLE);
-	
-	// Remove from all maps
+	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xTexture.m_xVRAMHandle);
+	Flux_MemoryManager::QueueVRAMDeletion(pxVRAM, xTexture.m_xVRAMHandle,
+			xTexture.m_xSRV.m_xImageView);
+
+	// Remove from tracking structures
 	s_xTextureNameMap.erase(strName);
-	s_xTextureSRVMap.erase(strName);
-	s_xTextureHandleToSRVMap.erase(uVRAMHandleValue);
+	s_xUsedTextureIDs.erase(uID);
 }
 
 void Zenith_AssetHandler::DeleteMesh(const std::string& strName)
@@ -356,6 +318,19 @@ void Zenith_AssetHandler::DeleteMaterial(const std::string& strName)
 	s_xUsedMaterialIDs.erase(uID);
 }
 
+Zenith_AssetHandler::AssetID Zenith_AssetHandler::GetNextFreeTextureSlot()
+{
+	for (AssetID u = 0; u < ZENITH_MAX_TEXTURES; u++)
+	{
+		if (s_xUsedTextureIDs.find(u) == s_xUsedTextureIDs.end())
+		{
+			return u;
+		}
+	}
+	Zenith_Assert(false, "Run out of texture slots");
+	return -1;
+}
+
 Zenith_AssetHandler::AssetID Zenith_AssetHandler::GetNextFreeMeshSlot()
 {
 	for (AssetID u = 0; u < ZENITH_MAX_MESHES; u++)
@@ -380,21 +355,4 @@ Zenith_AssetHandler::AssetID Zenith_AssetHandler::GetNextFreeMaterialSlot()
 	}
 	Zenith_Assert(false, "Run out of material slots");
 	return -1;
-}
-
-Flux_ShaderResourceView* Zenith_AssetHandler::GetTextureSRVByHandle(uint32_t uVRAMHandle)
-{
-	auto it = s_xTextureHandleToSRVMap.find(uVRAMHandle);
-	Zenith_Assert(it != s_xTextureHandleToSRVMap.end(), "Texture handle SRV doesn't exist");
-	return &it->second;
-}
-
-Flux_ShaderResourceView* Zenith_AssetHandler::TryGetTextureSRVByHandle(uint32_t uVRAMHandle)
-{
-	auto it = s_xTextureHandleToSRVMap.find(uVRAMHandle);
-	if (it != s_xTextureHandleToSRVMap.end())
-	{
-		return &it->second;
-	}
-	return nullptr;
 }

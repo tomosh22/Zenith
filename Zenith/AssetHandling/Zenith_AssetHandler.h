@@ -48,24 +48,17 @@ public:
 		}
 	};
 
-	// Unified texture addition function
-	static Flux_Texture AddTexture(const std::string& strName, const TextureData& xTextureData);
-	
-	// Helper functions to load texture data from files
 	static TextureData LoadTexture2DFromFile(const char* szPath);
 	static TextureData LoadTextureCubeFromFiles(const char* szPathPX, const char* szPathNX, const char* szPathPY, const char* szPathNY, const char* szPathPZ, const char* szPathNZ);
+
+	static Flux_Texture& AddTexture(const std::string& strName, const TextureData& xTextureData);
 	static Flux_MeshGeometry& AddMesh(const std::string& strName);
 	static Flux_MeshGeometry& AddMesh(const std::string& strName, const char* szPath, u_int uRetainAttributeBits = 0, const bool bUploadToGPU = true);
 	static Flux_Material& AddMaterial(const std::string& strName);
 
-	static Flux_Texture GetTexture(const std::string& strName);
-	static Flux_Texture TryGetTexture(const std::string& strName);
+	static Flux_Texture& GetTexture(const std::string& strName);
+	static Flux_Texture& TryGetTexture(const std::string& strName);
 	static bool TextureExists(const std::string& strName);
-	
-	static Flux_ShaderResourceView* GetTextureSRV(const std::string& strName);
-	static Flux_ShaderResourceView* TryGetTextureSRV(const std::string& strName);
-	static Flux_ShaderResourceView* GetTextureSRVByHandle(uint32_t uVRAMHandle);
-	static Flux_ShaderResourceView* TryGetTextureSRVByHandle(uint32_t uVRAMHandle);
 
 	static Flux_MeshGeometry& GetMesh(const std::string& strName);
 	static Flux_MeshGeometry& TryGetMesh(const std::string& strName);
@@ -81,6 +74,10 @@ public:
 
 private:
 
+	//array of length ZENITH_MAX_TEXTURES
+	static Flux_Texture* s_pxTextures;
+	static AssetID GetNextFreeTextureSlot();
+
 	//array of length ZENITH_MAX_MESHES
 	static Flux_MeshGeometry* s_pxMeshes;
 	static AssetID GetNextFreeMeshSlot();
@@ -89,10 +86,8 @@ private:
 	static Flux_Material* s_pxMaterials;
 	static AssetID GetNextFreeMaterialSlot();
 
-	static std::unordered_map<std::string, uint32_t> s_xTextureNameMap;
+	static std::unordered_map<std::string, AssetID> s_xTextureNameMap;
 	static std::unordered_set<AssetID>				s_xUsedTextureIDs;
-	static std::unordered_map<std::string, Flux_ShaderResourceView> s_xTextureSRVMap;
-	static std::unordered_map<uint32_t, Flux_ShaderResourceView> s_xTextureHandleToSRVMap;
 
 	static std::unordered_map<std::string, AssetID> s_xMeshNameMap;
 	static std::unordered_set<AssetID>				s_xUsedMeshIDs;
