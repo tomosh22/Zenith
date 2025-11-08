@@ -372,7 +372,7 @@ void Test_State_InGame::OnEnter()
 	{
 		0.1f,
 		100.f,
-		100.f,
+		10.f,
 	};
 	const char* aszFileNames[] =
 	{

@@ -147,7 +147,13 @@ Flux_MeshAnimation::Flux_MeshAnimation(const std::string& strPath, Flux_MeshGeom
 		m_xBones.insert({ strBoneName, AnimBone(pxChannel) });
 	}
 
-	
+	// Initialize bone transforms at t=0 and calculate initial bone matrices
+	m_fCurrentTimestamp = 0.0f;
+	for (auto& xPair : m_xBones)
+	{
+		xPair.second.Update(m_fCurrentTimestamp);
+	}
+	CalculateBoneTransform(&m_xRootNode, glm::mat4(1.0f));
 
-	Flux_MemoryManager::InitialiseDynamicConstantBuffer(nullptr, sizeof(m_axAnimMatrices), m_xBoneBuffer);
+	Flux_MemoryManager::InitialiseDynamicConstantBuffer(m_axAnimMatrices, sizeof(m_axAnimMatrices), m_xBoneBuffer);
 }

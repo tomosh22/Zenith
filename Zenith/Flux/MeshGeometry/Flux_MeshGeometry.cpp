@@ -138,8 +138,8 @@ void Flux_MeshGeometry::LoadFromFile(const char* szPath, Flux_MeshGeometry& xGeo
 	READ_ATTR(FLUX_VERTEX_ATTRIBUTE__TANGENT, xGeometryOut.m_pxTangents, xGeometryOut.m_uNumVerts * sizeof(m_pxTangents[0]));
 	READ_ATTR(FLUX_VERTEX_ATTRIBUTE__BITANGENT, xGeometryOut.m_pxBitangents, xGeometryOut.m_uNumVerts * sizeof(m_pxBitangents[0]));
 	//READ_ATTR(FLUX_VERTEX_ATTRIBUTE__MATERIAL_LERP, , );
-	READ_ATTR(FLUX_VERTEX_ATTRIBUTE__BONE_IDS, xGeometryOut.m_puBoneIDs, xGeometryOut.m_uNumVerts * sizeof(m_puBoneIDs[0]));
-	READ_ATTR(FLUX_VERTEX_ATTRIBUTE__BONE_WEIGHTS, xGeometryOut.m_pfBoneWeights, xGeometryOut.m_uNumVerts * sizeof(m_pfBoneWeights[0]));
+	READ_ATTR(FLUX_VERTEX_ATTRIBUTE__BONE_IDS, xGeometryOut.m_puBoneIDs, xGeometryOut.m_uNumVerts * MAX_BONES_PER_VERTEX * sizeof(m_puBoneIDs[0]));
+	READ_ATTR(FLUX_VERTEX_ATTRIBUTE__BONE_WEIGHTS, xGeometryOut.m_pfBoneWeights, xGeometryOut.m_uNumVerts * MAX_BONES_PER_VERTEX * sizeof(m_pfBoneWeights[0]));
 
 	if(bUploadToGPU)
 	{
@@ -176,8 +176,8 @@ void Flux_MeshGeometry::Export(const char* szFilename)
 	ExportAttribute(m_pxNormals, xStream, m_uNumVerts * sizeof(m_pxNormals[0]));
 	ExportAttribute(m_pxTangents, xStream, m_uNumVerts * sizeof(m_pxTangents[0]));
 	ExportAttribute(m_pxBitangents, xStream, m_uNumVerts * sizeof(m_pxBitangents[0]));
-	ExportAttribute(m_puBoneIDs, xStream, m_uNumVerts * sizeof(m_puBoneIDs[0]));
-	ExportAttribute(m_pfBoneWeights, xStream, m_uNumVerts * sizeof(m_pfBoneWeights[0]));
+	ExportAttribute(m_puBoneIDs, xStream, m_uNumVerts * MAX_BONES_PER_VERTEX * sizeof(m_puBoneIDs[0]));
+	ExportAttribute(m_pfBoneWeights, xStream, m_uNumVerts * MAX_BONES_PER_VERTEX * sizeof(m_pfBoneWeights[0]));
 
 	xStream.WriteToFile(szFilename);
 }

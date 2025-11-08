@@ -28,9 +28,11 @@ layout(set = 1, binding = 0) uniform Bones
 
 void main()
 {
-
 	vec4 xFinalPosition = vec4(0.f);
-	mat4 xFinalMat = mat4(1.0f);
+	vec3 xFinalNormal = vec3(0.f);
+	vec3 xFinalTangent = vec3(0.f);
+	vec3 xFinalBitangent = vec3(0.f);
+	
 	for(uint u = 0; u < 4; u++)
 	{
 		if(a_xBoneIDs[u] == ~0u)
@@ -38,18 +40,23 @@ void main()
 			break;
 		}
 		
-		xFinalPosition += g_xBones[a_xBoneIDs[u]] * vec4(a_xPosition, 1.f) * a_xBoneWeights[u];
-		xFinalMat *= g_xBones[a_xBoneIDs[u]];
+		mat4 xBoneTransform = g_xBones[a_xBoneIDs[u]];
+		float fWeight = a_xBoneWeights[u];
+		
+		xFinalPosition += xBoneTransform * vec4(a_xPosition, 1.f) * fWeight;
+		xFinalNormal += mat3(xBoneTransform) * a_xNormal * fWeight;
+		xFinalTangent += mat3(xBoneTransform) * a_xTangent * fWeight;
+		xFinalBitangent += mat3(xBoneTransform) * a_xBitangent * fWeight;
 	}
-
+	
 
 	o_xUV = a_xUV;
-	mat3 xNormalMatrix = transpose(inverse(mat3(g_xModelMatrix))) * transpose(inverse(mat3(xFinalMat)));
-	o_xNormal = normalize(xNormalMatrix * normalize(a_xNormal));
-	vec3 xTangent = normalize(xNormalMatrix * normalize(a_xTangent));
-	vec3 xBitangent = normalize(xNormalMatrix * normalize(a_xBitangent));
+	mat3 xNormalMatrix = transpose(inverse(mat3(g_xModelMatrix)));
+	o_xNormal = normalize(xNormalMatrix * normalize(xFinalNormal));
+	vec3 xTangent = normalize(xNormalMatrix * normalize(xFinalTangent));
+	vec3 xBitangent = normalize(xNormalMatrix * normalize(xFinalBitangent));
 	o_xTBN = mat3(xTangent, xBitangent, o_xNormal);
 
-	o_xWorldPos = (g_xModelMatrix * vec4(xFinalPosition.xyz,1)).xyz;
-	gl_Position = g_xViewProjMat * vec4(o_xWorldPos,1);
+	o_xWorldPos = (g_xModelMatrix * xFinalPosition).xyz;
+	gl_Position = g_xViewProjMat * vec4(o_xWorldPos, 1);
 }

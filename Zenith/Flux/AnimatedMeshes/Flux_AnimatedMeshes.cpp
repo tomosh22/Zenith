@@ -102,14 +102,15 @@ void Flux_AnimatedMeshes::Render(void*)
 	for (Zenith_Vector<Zenith_ModelComponent*>::Iterator xIt(xModels); !xIt.Done(); xIt.Next())
 	{
 		Zenith_ModelComponent* pxModel = xIt.GetData();
-		//#TO_TODO: these 2 should probably be separate components
-		if (!pxModel->GetMeshGeometryAtIndex(0).GetNumBones())
-		{
-			continue;
-		}
 		for (uint32_t uMesh = 0; uMesh < pxModel->GetNumMeshEntires(); uMesh++)
 		{
 			const Flux_MeshGeometry& xMesh = pxModel->GetMeshGeometryAtIndex(uMesh);
+			
+			if (!xMesh.GetNumBones() || !xMesh.m_pxAnimation)
+			{
+				continue;
+			}
+			
 			g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&xMesh.GetVertexBuffer());
 			g_xCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&xMesh.GetIndexBuffer());
 

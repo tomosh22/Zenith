@@ -81,16 +81,19 @@ static void ExportAssimpMesh(aiMesh* pxAssimpMesh, std::string strOutFilename)
 
 	if (bHasPositions)
 		xMesh.m_pxPositions = new glm::vec3[uNumVerts];
-	if (bHasUVs)
+	
+	// Always allocate UVs for animated meshes to ensure consistent vertex layout
+	if (bHasUVs || bHasBones)
 		xMesh.m_pxUVs = new glm::vec2[uNumVerts];
 
 	if (bHasNormals)
 		xMesh.m_pxNormals = new glm::vec3[uNumVerts];
 
-	if (bHasTangents)
+	// Always allocate tangents and bitangents for animated meshes to ensure consistent vertex layout
+	if (bHasTangents || bHasBones)
 		xMesh.m_pxTangents = new glm::vec3[uNumVerts];
 
-	if (bHasBitangents)
+	if (bHasBitangents || bHasBones)
 		xMesh.m_pxBitangents = new glm::vec3[uNumVerts];
 
 	if (bHasBones)
@@ -118,6 +121,11 @@ static void ExportAssimpMesh(aiMesh* pxAssimpMesh, std::string strOutFilename)
 			const aiVector3D& xUV = pxAssimpMesh->mTextureCoords[0][i];
 			xMesh.m_pxUVs[i] = glm::vec2(xUV.x, xUV.y);
 		}
+		else if (bHasBones)
+		{
+			// Set dummy UVs for skinned meshes without UVs to maintain vertex layout
+			xMesh.m_pxUVs[i] = glm::vec2(0.0f, 0.0f);
+		}
 
 		if (bHasNormals)
 		{
@@ -130,11 +138,21 @@ static void ExportAssimpMesh(aiMesh* pxAssimpMesh, std::string strOutFilename)
 			const aiVector3D& xTangent = pxAssimpMesh->mTangents[i];
 			xMesh.m_pxTangents[i] = glm::normalize(glm::vec3(xTangent.x, xTangent.y, xTangent.z));
 		}
+		else if (bHasBones)
+		{
+			// Set dummy tangent for skinned meshes without tangents
+			xMesh.m_pxTangents[i] = glm::vec3(1.0f, 0.0f, 0.0f);
+		}
 
 		if (bHasBitangents)
 		{
 			const aiVector3D& xBitangent = pxAssimpMesh->mBitangents[i];
 			xMesh.m_pxBitangents[i] = glm::normalize(glm::vec3(xBitangent.x, xBitangent.y, xBitangent.z));
+		}
+		else if (bHasBones)
+		{
+			// Set dummy bitangent for skinned meshes without bitangents
+			xMesh.m_pxBitangents[i] = glm::vec3(0.0f, 1.0f, 0.0f);
 		}
 	}
 
