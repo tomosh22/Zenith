@@ -33,7 +33,7 @@ static Zenith_Entity s_xSphere1;
 static Zenith_Entity s_axRotatingSpheres[3];
 static Zenith_Entity s_xTerrain[TERRAIN_EXPORT_DIMS][TERRAIN_EXPORT_DIMS];
 static Zenith_Entity s_xOgre;
-static Zenith_Entity s_xGltfTest[2];
+static Zenith_Entity s_xGltfTest[3];
 
 //#TO_TODO: these need to be in a header file for tools terrain export
 
@@ -366,11 +366,19 @@ void Test_State_InGame::OnEnter()
 	{
 		ASSETS_ROOT"Meshes/Khronos_GLTF_Models/Sponza/glTF",
 		ASSETS_ROOT"Meshes/Khronos_GLTF_Models/Avocado/glTF",
+		ASSETS_ROOT"Meshes/Khronos_GLTF_Models/BrainStem/glTF",
 	};
 	float afScales[] = 
 	{
 		0.1f,
 		100.f,
+		100.f,
+	};
+	const char* aszFileNames[] =
+	{
+		ASSETS_ROOT"Meshes/Khronos_GLTF_Models/Sponza/glTF/Sponza.gltf",
+		"",
+		ASSETS_ROOT"Meshes/Khronos_GLTF_Models/BrainStem/glTF/BrainStem.gltf",
 	};
 
 	for(u_int u = 0; u < COUNT_OF(s_xGltfTest); u++)
@@ -381,6 +389,14 @@ void Test_State_InGame::OnEnter()
 		xTrans.SetScale({ afScales[u],afScales[u],afScales[u] });
 		Zenith_ModelComponent& xModel = s_xGltfTest[u].AddComponent<Zenith_ModelComponent>();
 		xModel.LoadMeshesFromDir(aszAssetNames[u]);
+		for (u_int uMeshEntry = 0; uMeshEntry < xModel.GetNumMeshEntires(); uMeshEntry++)
+		{
+			Flux_MeshGeometry& xMesh = xModel.GetMeshGeometryAtIndex(uMeshEntry);
+			if (xMesh.GetNumBones())
+			{
+				xMesh.m_pxAnimation = new Flux_MeshAnimation(aszFileNames[u], xMesh);
+			}
+		}
 	}
 }
 

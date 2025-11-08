@@ -33,10 +33,10 @@ static void ExportAssimpMesh(aiMesh* pxAssimpMesh, std::string strOutFilename)
 	Zenith_Log("MESH_EXPORT: Exporting mesh to %s (Verts: %u, Indices: %u, Bones: %u)",
 		strOutFilename.c_str(), uNumVerts, uNumIndices, pxAssimpMesh->mNumBones);
 
+	xMesh.SetNumBones(pxAssimpMesh->mNumBones);
+
 	if (bHasBones)
 	{
-		xMesh.SetNumBones(pxAssimpMesh->mNumBones);
-
 		u_int* puVertexBoneCount = new u_int[uNumVerts];
 		memset(puVertexBoneCount, 0, sizeof(u_int) * uNumVerts);
 
@@ -323,6 +323,7 @@ static void Export(const std::string& strFilename, const std::string& strExtensi
 	Assimp::Importer importer;
 	const aiScene* pxScene = importer.ReadFile(strFilename,
 		aiProcess_CalcTangentSpace |
+		aiProcess_LimitBoneWeights |
 		aiProcess_Triangulate |
 		aiProcess_FlipUVs);
 

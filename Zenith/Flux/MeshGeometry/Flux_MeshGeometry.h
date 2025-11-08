@@ -48,6 +48,8 @@ public:
 		m_xVertexBuffer.Reset();
 
 		m_xIndexBuffer.Reset();
+
+		m_uNumBones = 0;
 	}
 
 	static void GenerateFullscreenQuad(Flux_MeshGeometry& xGeometryOut);
