@@ -9,7 +9,8 @@
 
 Zenith_Scene Zenith_Scene::s_xCurrentScene;
 
-static Zenith_Task* g_pxAnimUpdateTask = nullptr;
+static Zenith_TaskArray* g_pxAnimUpdateTask = nullptr;
+static Zenith_Vector<Flux_MeshAnimation*> g_xAnimationsToUpdate;
 
 enum class ComponentType {
 	Transform,
@@ -20,23 +21,26 @@ enum class ComponentType {
 	Foliage
 };
 
-void AnimUpdateTask(void*)
+void AnimUpdateTask(void*, u_int uInvocationIndex, u_int uNumInvocations)
 {
 	const float fDt = Zenith_Core::GetDt();
+	const u_int uTotalAnimations = g_xAnimationsToUpdate.GetSize();
 
-	Zenith_Vector<Zenith_ModelComponent*> xModels;
-	Zenith_Scene::GetCurrentScene().GetAllOfComponentType<Zenith_ModelComponent>(xModels);
-	for (Zenith_Vector<Zenith_ModelComponent*>::Iterator xIt(xModels); !xIt.Done(); xIt.Next())
+	if (uInvocationIndex >= uTotalAnimations)
 	{
-		Zenith_ModelComponent* pxModel = xIt.GetData();
-		for (u_int uMesh = 0; uMesh < pxModel->GetNumMeshEntires(); uMesh++)
-		{
-			Flux_MeshAnimation* pxAnim = pxModel->GetMeshGeometryAtIndex(uMesh).m_pxAnimation;
-			if (pxAnim)
-			{
-				pxAnim->Update(fDt);
-			}
-		}
+		return;
+	}
+
+	const u_int uAnimsPerInvocation = (uTotalAnimations + uNumInvocations - 1) / uNumInvocations;
+	const u_int uStartIndex = uInvocationIndex * uAnimsPerInvocation;
+	const u_int uEndIndex = (uStartIndex + uAnimsPerInvocation < uTotalAnimations) ? 
+		uStartIndex + uAnimsPerInvocation : uTotalAnimations;
+
+	for (u_int u = uStartIndex; u < uEndIndex; u++)
+	{
+		Flux_MeshAnimation* pxAnim = g_xAnimationsToUpdate.Get(u);
+		Zenith_Assert(pxAnim != nullptr, "Null animation")
+		pxAnim->Update(fDt);
 	}
 }
 
@@ -47,7 +51,8 @@ Zenith_Scene::Zenith_Scene()
 	if (ls_bOnce)
 	{
 		ls_bOnce = false;
-		g_pxAnimUpdateTask = new Zenith_Task(ZENITH_PROFILE_INDEX__ANIMATION, AnimUpdateTask, nullptr);
+		// Create task array with 4 invocations for parallel processing
+		g_pxAnimUpdateTask = new Zenith_TaskArray(ZENITH_PROFILE_INDEX__ANIMATION, AnimUpdateTask, nullptr, 4);
 		atexit([]() {delete g_pxAnimUpdateTask; });
 	}
 }
@@ -90,7 +95,23 @@ void Zenith_Scene::Update(const float fDt)
 
 	//#TO used to have this before script update but scripts can add new model components
 	//causing a vector resize which causes the animation update to read deallocate model memory
-	Zenith_TaskSystem::SubmitTask(g_pxAnimUpdateTask);
+	
+	g_xAnimationsToUpdate.Clear();
+	Zenith_Vector<Zenith_ModelComponent*> xModels;
+	s_xCurrentScene.GetAllOfComponentType<Zenith_ModelComponent>(xModels);
+	for (Zenith_Vector<Zenith_ModelComponent*>::Iterator xIt(xModels); !xIt.Done(); xIt.Next())
+	{
+		Zenith_ModelComponent* pxModel = xIt.GetData();
+		for (u_int uMesh = 0; uMesh < pxModel->GetNumMeshEntires(); uMesh++)
+		{
+			if(Flux_MeshAnimation* pxAnim = pxModel->GetMeshGeometryAtIndex(uMesh).m_pxAnimation)
+			{
+				g_xAnimationsToUpdate.PushBack(pxAnim);
+			}
+		}
+	}
+
+	Zenith_TaskSystem::SubmitTaskArray(g_pxAnimUpdateTask);
 }
 
 void Zenith_Scene::WaitForUpdateComplete()

@@ -5,6 +5,7 @@
 #include "Profiling/Zenith_Profiling.h"
 
 using Zenith_TaskFunction = void(*)(void* pData);
+using Zenith_TaskArrayFunction = void(*)(void* pData, u_int uInvocationIndex, u_int uNumInvocations);
 
 class Zenith_Task
 {
@@ -20,7 +21,9 @@ public:
 
 	}
 
-	void DoTask()
+	virtual ~Zenith_Task() = default;
+
+	virtual void DoTask()
 	{
 		Zenith_Profiling::BeginProfile(m_eProfileIndex);
 		m_pfnFunc(m_pData);
@@ -46,7 +49,7 @@ public:
 		return m_uCompletedThreadID;
 	}
 
-private:
+protected:
 
 	Zenith_ProfileIndex m_eProfileIndex;
 	Zenith_TaskFunction m_pfnFunc;
@@ -55,12 +58,60 @@ private:
 	u_int m_uCompletedThreadID;
 };
 
+class Zenith_TaskArray : public Zenith_Task
+{
+public:
+	Zenith_TaskArray() = delete;
+	Zenith_TaskArray(Zenith_ProfileIndex eProfileIndex, Zenith_TaskArrayFunction pfnFunc, void* pData, u_int uNumInvocations)
+		: Zenith_Task(eProfileIndex, nullptr, pData)
+		, m_pfnArrayFunc(pfnFunc)
+		, m_uNumInvocations(uNumInvocations)
+		, m_uInvocationCounter(0)
+	{
+
+	}
+
+	virtual void DoTask() override
+	{
+		u_int uInvocationIndex = m_uInvocationCounter.fetch_add(1);
+
+		Zenith_Profiling::BeginProfile(m_eProfileIndex);
+		m_pfnArrayFunc(m_pData, uInvocationIndex, m_uNumInvocations);
+		Zenith_Profiling::EndProfile(m_eProfileIndex);
+
+		// Only the thread that completes the last invocation signals the semaphore
+		Zenith_Assert(uInvocationIndex < m_uNumInvocations, "We have done this task too many times");
+		if (uInvocationIndex == m_uNumInvocations - 1)
+		{
+			m_uCompletedThreadID = Zenith_Multithreading::GetCurrentThreadID();
+			m_xSemaphore.Signal();
+		}
+	}
+
+	void Reset()
+	{
+		m_uInvocationCounter.store(0);
+	}
+
+	const u_int GetNumInvocations() const
+	{
+		return m_uNumInvocations;
+	}
+
+private:
+
+	Zenith_TaskArrayFunction m_pfnArrayFunc;
+	u_int m_uNumInvocations;
+	std::atomic<u_int> m_uInvocationCounter;
+};
+
 class Zenith_TaskSystem
 {
 public:
 	static void Inititalise();
 
 	static void SubmitTask(Zenith_Task* const pxTask);
+	static void SubmitTaskArray(Zenith_TaskArray* const pxTaskArray);
 
 private:
 };

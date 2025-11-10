@@ -34,7 +34,6 @@ static void ThreadFunc(const void* pData)
 
 		pxTask->DoTask();
 
-
 	} while (!g_bTerminateThreads);
 
 	g_pxThreadsTerminatedSem->Signal();
@@ -71,4 +70,35 @@ void Zenith_TaskSystem::SubmitTask(Zenith_Task* const pxTask)
 	g_xTaskQueue.Enqueue(pxTask);
 	g_xQueueMutex.Unlock();
 	g_pxWorkAvailableSem->Signal();
+}
+
+void Zenith_TaskSystem::SubmitTaskArray(Zenith_TaskArray* const pxTaskArray)
+{
+	if (!dbg_bMultithreaded)
+	{
+		// Execute all invocations sequentially in debug mode
+		for (u_int u = 0; u < pxTaskArray->GetNumInvocations(); u++)
+		{
+			pxTaskArray->DoTask();
+		}
+		pxTaskArray->Reset();
+		return;
+	}
+
+	pxTaskArray->Reset();
+
+	// Submit the task array multiple times to allow parallel execution
+	const u_int uNumInvocations = pxTaskArray->GetNumInvocations();
+	g_xQueueMutex.Lock();
+	for (u_int u = 0; u < uNumInvocations; u++)
+	{
+		g_xTaskQueue.Enqueue(pxTaskArray);
+	}
+	g_xQueueMutex.Unlock();
+
+	// Signal worker threads
+	for (u_int u = 0; u < uNumInvocations; u++)
+	{
+		g_pxWorkAvailableSem->Signal();
+	}
 }
