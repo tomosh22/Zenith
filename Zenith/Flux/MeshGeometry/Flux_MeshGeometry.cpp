@@ -129,6 +129,7 @@ void Flux_MeshGeometry::LoadFromFile(const char* szPath, Flux_MeshGeometry& xGeo
 	xStream >> xGeometryOut.m_uNumIndices;
 	xStream >> xGeometryOut.m_uNumBones;
 	xStream >> xGeometryOut.m_xBoneNameToIdAndOffset;
+	xStream >> xGeometryOut.m_xMaterialColor;
 
 	ReadAttribute(xGeometryOut.m_pVertexData, xStream, xGeometryOut.m_uNumVerts * xGeometryOut.m_xBufferLayout.GetStride());
 	ReadAttribute(xGeometryOut.m_puIndices, xStream, xGeometryOut.m_uNumIndices * sizeof(m_puIndices[0]));
@@ -137,6 +138,7 @@ void Flux_MeshGeometry::LoadFromFile(const char* szPath, Flux_MeshGeometry& xGeo
 	READ_ATTR(FLUX_VERTEX_ATTRIBUTE__NORMAL, xGeometryOut.m_pxNormals, xGeometryOut.m_uNumVerts * sizeof(m_pxNormals[0]));
 	READ_ATTR(FLUX_VERTEX_ATTRIBUTE__TANGENT, xGeometryOut.m_pxTangents, xGeometryOut.m_uNumVerts * sizeof(m_pxTangents[0]));
 	READ_ATTR(FLUX_VERTEX_ATTRIBUTE__BITANGENT, xGeometryOut.m_pxBitangents, xGeometryOut.m_uNumVerts * sizeof(m_pxBitangents[0]));
+	READ_ATTR(FLUX_VERTEX_ATTRIBUTE__COLOR, xGeometryOut.m_pxColors, xGeometryOut.m_uNumVerts * sizeof(m_pxColors[0]));
 	//READ_ATTR(FLUX_VERTEX_ATTRIBUTE__MATERIAL_LERP, , );
 	READ_ATTR(FLUX_VERTEX_ATTRIBUTE__BONE_IDS, xGeometryOut.m_puBoneIDs, xGeometryOut.m_uNumVerts * MAX_BONES_PER_VERTEX * sizeof(m_puBoneIDs[0]));
 	READ_ATTR(FLUX_VERTEX_ATTRIBUTE__BONE_WEIGHTS, xGeometryOut.m_pfBoneWeights, xGeometryOut.m_uNumVerts * MAX_BONES_PER_VERTEX * sizeof(m_pfBoneWeights[0]));
@@ -170,12 +172,14 @@ void Flux_MeshGeometry::Export(const char* szFilename)
 	xStream << m_uNumIndices;
 	xStream << m_uNumBones;
 	xStream << m_xBoneNameToIdAndOffset;
+	xStream << m_xMaterialColor;
 	ExportAttribute(m_pVertexData, xStream, m_uNumVerts * m_xBufferLayout.GetStride());
 	ExportAttribute(m_puIndices, xStream, m_uNumIndices * sizeof(Flux_MeshGeometry::IndexType));
 	ExportAttribute(m_pxPositions, xStream, m_uNumVerts * sizeof(m_pxPositions[0]));
 	ExportAttribute(m_pxNormals, xStream, m_uNumVerts * sizeof(m_pxNormals[0]));
 	ExportAttribute(m_pxTangents, xStream, m_uNumVerts * sizeof(m_pxTangents[0]));
 	ExportAttribute(m_pxBitangents, xStream, m_uNumVerts * sizeof(m_pxBitangents[0]));
+	ExportAttribute(m_pxColors, xStream, m_uNumVerts * sizeof(m_pxColors[0]));
 	ExportAttribute(m_puBoneIDs, xStream, m_uNumVerts * MAX_BONES_PER_VERTEX * sizeof(m_puBoneIDs[0]));
 	ExportAttribute(m_pfBoneWeights, xStream, m_uNumVerts * MAX_BONES_PER_VERTEX * sizeof(m_pfBoneWeights[0]));
 
@@ -210,6 +214,11 @@ void Flux_MeshGeometry::GenerateLayoutAndVertexData()
 	{
 		m_xBufferLayout.GetElements().PushBack({ SHADER_DATA_TYPE_FLOAT3 });
 		uNumFloats += 3;
+	}
+	if (m_pxColors != nullptr)
+	{
+		m_xBufferLayout.GetElements().PushBack({ SHADER_DATA_TYPE_FLOAT4 });
+		uNumFloats += 4;
 	}
 	if (m_pfMaterialLerps != nullptr)
 	{
@@ -260,6 +269,13 @@ void Flux_MeshGeometry::GenerateLayoutAndVertexData()
 			((float*)m_pVertexData)[index++] = m_pxBitangents[i].x;
 			((float*)m_pVertexData)[index++] = m_pxBitangents[i].y;
 			((float*)m_pVertexData)[index++] = m_pxBitangents[i].z;
+		}
+		if (m_pxColors != nullptr)
+		{
+			((float*)m_pVertexData)[index++] = m_pxColors[i].x;
+			((float*)m_pVertexData)[index++] = m_pxColors[i].y;
+			((float*)m_pVertexData)[index++] = m_pxColors[i].z;
+			((float*)m_pVertexData)[index++] = m_pxColors[i].w;
 		}
 		if (m_pfMaterialLerps != nullptr)
 		{

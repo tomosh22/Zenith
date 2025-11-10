@@ -5,6 +5,7 @@
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_RenderTargets.h"
+#include "Flux/AnimatedMeshes/Flux_AnimatedMeshes.h"
 #include "Flux/StaticMeshes/Flux_StaticMeshes.h"
 #include "Flux/Terrain/Flux_Terrain.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
@@ -91,16 +92,30 @@ void Flux_Shadows::Render(void*)
 	
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
-		g_axCommandLists[u].Reset(true);
-		g_axCommandLists[u].AddCommand<Flux_CommandSetPipeline>(&Flux_StaticMeshes::GetShadowPipeline());
+		{
+			g_axCommandLists[u].Reset(true);
+			g_axCommandLists[u].AddCommand<Flux_CommandSetPipeline>(&Flux_StaticMeshes::GetShadowPipeline());
 
-		g_axCommandLists[u].AddCommand<Flux_CommandBeginBind>(0);
-		g_axCommandLists[u].AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer().m_xCBV, 0);
+			g_axCommandLists[u].AddCommand<Flux_CommandBeginBind>(0);
+			g_axCommandLists[u].AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer().m_xCBV, 0);
 
-		g_axCommandLists[u].AddCommand<Flux_CommandBeginBind>(1);
-		g_axCommandLists[u].AddCommand<Flux_CommandBindCBV>(&g_xShadowMatrixBuffers[u].GetBuffer().m_xCBV, 0);
+			g_axCommandLists[u].AddCommand<Flux_CommandBeginBind>(1);
+			g_axCommandLists[u].AddCommand<Flux_CommandBindCBV>(&g_xShadowMatrixBuffers[u].GetBuffer().m_xCBV, 0);
 
-		Flux_StaticMeshes::RenderToShadowMap(g_axCommandLists[u]);
+			Flux_StaticMeshes::RenderToShadowMap(g_axCommandLists[u]);
+		}
+
+		{
+			g_axCommandLists[u].AddCommand<Flux_CommandSetPipeline>(&Flux_AnimatedMeshes::GetShadowPipeline());
+
+			g_axCommandLists[u].AddCommand<Flux_CommandBeginBind>(0);
+			g_axCommandLists[u].AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer().m_xCBV, 0);
+
+			g_axCommandLists[u].AddCommand<Flux_CommandBeginBind>(1);
+			g_axCommandLists[u].AddCommand<Flux_CommandBindCBV>(&g_xShadowMatrixBuffers[u].GetBuffer().m_xCBV, 1);
+
+			Flux_AnimatedMeshes::RenderToShadowMap(g_axCommandLists[u]);
+		}
 
 		if (false)
 		{

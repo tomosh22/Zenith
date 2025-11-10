@@ -41,6 +41,7 @@ void Flux_StaticMeshes::Initialise()
 	xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT3);
 	xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT3);
 	xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT3);
+	xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT4);
 	xVertexDesc.m_xPerVertexLayout.CalculateOffsetsAndStrides();
 
 	{
@@ -129,7 +130,7 @@ void Flux_StaticMeshes::RenderToGBuffer(void*)
 		{
 			continue;
 		}
-		for (uint32_t uMesh = 0; uMesh < pxModel->GetNumMeshEntires(); uMesh++)
+		for (u_int uMesh = 0; uMesh < pxModel->GetNumMeshEntires(); uMesh++)
 		{
 			const Flux_MeshGeometry& xMesh = pxModel->GetMeshGeometryAtIndex(uMesh);
 			g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&xMesh.GetVertexBuffer());

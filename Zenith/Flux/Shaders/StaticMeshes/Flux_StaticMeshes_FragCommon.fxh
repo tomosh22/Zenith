@@ -7,6 +7,7 @@ layout(location = 0) in vec2 a_xUV;
 layout(location = 1) in vec3 a_xNormal;
 layout(location = 2) in vec3 a_xWorldPos;
 layout(location = 3) in mat3 a_xTBN;
+layout(location = 6) in vec4 a_xColor;
 
 #ifndef SHADOWS
 layout(set = 1, binding = 0) uniform sampler2D g_xDiffuseTex;
@@ -19,6 +20,13 @@ layout(set = 1, binding = 4) uniform sampler2D g_xEmissiveTex;
 void main(){
 	#ifndef SHADOWS
 	vec4 xDiffuse = texture(g_xDiffuseTex, a_xUV);
+	
+	// If vertex has color data, multiply it with the texture
+	if (a_xColor.a > 0.0f)
+	{
+		xDiffuse *= a_xColor;
+	}
+	
 	if (xDiffuse.a < 0.01f)
 	{
 		discard;

@@ -201,7 +201,12 @@ public:
 				else
 				{
 					Flux_Material& xMat = Zenith_AssetHandler::TryGetMaterial(strMatName);
-					AddMeshEntry(Zenith_AssetHandler::GetMesh(xFile.path().stem().string()), xMat);
+					
+					// Set the base color from the mesh's material color
+					Flux_MeshGeometry& xMeshGeometry = Zenith_AssetHandler::GetMesh(xFile.path().stem().string());
+					xMat.SetBaseColor(xMeshGeometry.m_xMaterialColor);
+					
+					AddMeshEntry(xMeshGeometry, xMat);
 				}
 			}
 		}

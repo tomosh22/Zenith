@@ -15,6 +15,7 @@ public:
 		FLUX_VERTEX_ATTRIBUTE__NORMAL,
 		FLUX_VERTEX_ATTRIBUTE__TANGENT,
 		FLUX_VERTEX_ATTRIBUTE__BITANGENT,
+		FLUX_VERTEX_ATTRIBUTE__COLOR,
 		FLUX_VERTEX_ATTRIBUTE__MATERIAL_LERP,
 		FLUX_VERTEX_ATTRIBUTE__BONE_IDS,
 		FLUX_VERTEX_ATTRIBUTE__BONE_WEIGHTS,
@@ -43,6 +44,7 @@ public:
 		if(m_pxNormals) delete[] m_pxNormals;
 		if(m_pxTangents) delete[] m_pxTangents;
 		if(m_pxBitangents) delete[] m_pxBitangents;
+		if(m_pxColors) delete[] m_pxColors;
 		if(m_pfMaterialLerps) delete[] m_pfMaterialLerps;
 
 		m_xVertexBuffer.Reset();
@@ -102,9 +104,12 @@ public:
 	Zenith_Maths::Vector3* m_pxNormals = nullptr;
 	Zenith_Maths::Vector3* m_pxTangents = nullptr;
 	Zenith_Maths::Vector3* m_pxBitangents = nullptr;
+	Zenith_Maths::Vector4* m_pxColors = nullptr;
 	float* m_pfMaterialLerps = nullptr;
 	uint32_t* m_puBoneIDs = nullptr;
 	float* m_pfBoneWeights = nullptr;
+
+	Zenith_Maths::Vector4 m_xMaterialColor = Zenith_Maths::Vector4(1.0f, 1.0f, 1.0f, 1.0f);
 
 	u_int8* m_pVertexData = nullptr;
 

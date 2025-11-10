@@ -11,7 +11,7 @@
 #include <vector>
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
 
-static void ExportAssimpMesh(aiMesh* pxAssimpMesh, std::string strOutFilename)
+static void ExportAssimpMesh(aiMesh* pxAssimpMesh, const aiScene* pxScene, std::string strOutFilename)
 {
 	const bool bFlipWinding = false;
 
@@ -29,9 +29,24 @@ static void ExportAssimpMesh(aiMesh* pxAssimpMesh, std::string strOutFilename)
 	const bool bHasTangents = pxAssimpMesh->mTangents != nullptr;
 	const bool bHasBitangents = pxAssimpMesh->mBitangents != nullptr;
 	const bool bHasBones = pxAssimpMesh->mNumBones > 0;
+	const bool bHasVertexColors = pxAssimpMesh->mColors[0] != nullptr;
+	
+	// Extract material base color
+	glm::vec4 xMaterialColor(1.0f, 1.0f, 1.0f, 1.0f);
+	if (pxAssimpMesh->mMaterialIndex < pxScene->mNumMaterials)
+	{
+		const aiMaterial* pxMat = pxScene->mMaterials[pxAssimpMesh->mMaterialIndex];
+		aiColor4D xDiffuseColor;
+		if (AI_SUCCESS == pxMat->Get(AI_MATKEY_COLOR_DIFFUSE, xDiffuseColor))
+		{
+			xMaterialColor = glm::vec4(xDiffuseColor.r, xDiffuseColor.g, xDiffuseColor.b, xDiffuseColor.a);
+		}
+	}
+	xMesh.m_xMaterialColor = xMaterialColor;
 
-	Zenith_Log("MESH_EXPORT: Exporting mesh to %s (Verts: %u, Indices: %u, Bones: %u)",
-		strOutFilename.c_str(), uNumVerts, uNumIndices, pxAssimpMesh->mNumBones);
+	Zenith_Log("MESH_EXPORT: Exporting mesh to %s (Verts: %u, Indices: %u, Bones: %u, VertexColors: %s, MaterialColor: %.2f,%.2f,%.2f)",
+		strOutFilename.c_str(), uNumVerts, uNumIndices, pxAssimpMesh->mNumBones, 
+		bHasVertexColors ? "Yes" : "No", xMaterialColor.r, xMaterialColor.g, xMaterialColor.b);
 
 	xMesh.SetNumBones(pxAssimpMesh->mNumBones);
 
@@ -96,6 +111,9 @@ static void ExportAssimpMesh(aiMesh* pxAssimpMesh, std::string strOutFilename)
 	if (bHasBitangents || bHasBones)
 		xMesh.m_pxBitangents = new glm::vec3[uNumVerts];
 
+	// Always allocate vertex colors - either from mesh or from material
+	xMesh.m_pxColors = new glm::vec4[uNumVerts];
+
 	if (bHasBones)
 	{
 		xMesh.m_puBoneIDs = new u_int[uNumVerts * MAX_BONES_PER_VERTEX];
@@ -153,6 +171,17 @@ static void ExportAssimpMesh(aiMesh* pxAssimpMesh, std::string strOutFilename)
 		{
 			// Set dummy bitangent for skinned meshes without bitangents
 			xMesh.m_pxBitangents[i] = glm::vec3(0.0f, 1.0f, 0.0f);
+		}
+
+		if (bHasVertexColors)
+		{
+			const aiColor4D& xColor = pxAssimpMesh->mColors[0][i];
+			xMesh.m_pxColors[i] = glm::vec4(xColor.r, xColor.g, xColor.b, xColor.a);
+		}
+		else
+		{
+			// Use material color as vertex color if no per-vertex colors
+			xMesh.m_pxColors[i] = xMaterialColor;
 		}
 	}
 
@@ -257,7 +286,7 @@ static void ProcessNode(aiNode* pxNode, const aiScene* pxScene, const std::strin
 		Zenith_Assert(ulFindPos != std::string::npos, "");
 		strExportFilename.replace(ulFindPos, strlen(strExtension.c_str()), "_Mesh" + std::to_string(uIndex++) + "_Mat" + std::to_string(pxAssimpMesh->mMaterialIndex) + ".zmsh");
 
-		ExportAssimpMesh(pxAssimpMesh, strExportFilename);
+		ExportAssimpMesh(pxAssimpMesh, pxScene, strExportFilename);
 	}
 
 	for (uint32_t u = 0; u < pxNode->mNumChildren; u++)
