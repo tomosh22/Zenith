@@ -14,8 +14,11 @@ thread_local static Zenith_ProfileIndex tl_g_aeIndices[uMAX_PROFILE_DEPTH];
 thread_local static std::chrono::time_point<std::chrono::high_resolution_clock> tl_g_axStartPoints[uMAX_PROFILE_DEPTH];
 thread_local static std::chrono::time_point<std::chrono::high_resolution_clock> tl_g_axEndPoints[uMAX_PROFILE_DEPTH];
 static std::unordered_map<u_int, Zenith_Vector<Zenith_Profiling::Event>> g_xEvents;
+static std::unordered_map<u_int, Zenith_Vector<Zenith_Profiling::Event>> g_xPreviousFrameEvents;
 static std::chrono::time_point<std::chrono::high_resolution_clock> g_xFrameStart;
 static std::chrono::time_point<std::chrono::high_resolution_clock> g_xFrameEnd;
+static std::chrono::time_point<std::chrono::high_resolution_clock> g_xPreviousFrameStart;
+static std::chrono::time_point<std::chrono::high_resolution_clock> g_xPreviousFrameEnd;
 
 DEBUGVAR bool dbg_bPaused = false;
 static bool g_bIsPaused = false;
@@ -38,6 +41,11 @@ void Zenith_Profiling::RegisterThread()
 void Zenith_Profiling::BeginFrame()
 {
 	if (g_bIsPaused) return;
+
+	// Save previous frame's data for rendering
+	g_xPreviousFrameEvents = g_xEvents;
+	g_xPreviousFrameStart = g_xFrameStart;
+	g_xPreviousFrameEnd = g_xFrameEnd;
 
 	for (auto xIt = g_xEvents.begin(); xIt != g_xEvents.end(); xIt++)
 	{
@@ -139,15 +147,15 @@ void Zenith_Profiling::RenderToImGui()
 	const float fThreadHeight = uRowsPerThread * (fRowHeight + fRowSpacing) + fTHREAD_SPACING;
 
 	const float fCanvasWidth = ImGui::GetContentRegionAvail().x;
-	const float fTotalHeight = static_cast<float>(g_xEvents.size()) * fThreadHeight;
+	const float fTotalHeight = static_cast<float>(g_xPreviousFrameEvents.size()) * fThreadHeight;
 
 	ImGui::Dummy(ImVec2(fCanvasWidth, fTotalHeight));
 	ImDrawList* const pxDrawList = ImGui::GetWindowDrawList();
 	const ImVec2 xCanvasPos = ImGui::GetItemRectMin();
 
-	const float fFrameDuration = std::chrono::duration_cast<std::chrono::nanoseconds>(g_xFrameEnd - g_xFrameStart).count();
+	const float fFrameDuration = std::chrono::duration_cast<std::chrono::nanoseconds>(g_xPreviousFrameEnd - g_xPreviousFrameStart).count();
 
-	for (const auto& [uThreadID, xEvents] : g_xEvents)
+	for (const auto& [uThreadID, xEvents] : g_xPreviousFrameEvents)
 	{
 		const float fThreadBaseY = xCanvasPos.y + uThreadID * fThreadHeight;
 
@@ -166,8 +174,8 @@ void Zenith_Profiling::RenderToImGui()
 				? (xEvent.m_uDepth - ls_iMinDepthToRender)
 				: (ls_iMaxDepthToRenderSeparately - ls_iMinDepthToRender);
 
-			const float fStartPx = ((std::chrono::duration_cast<std::chrono::nanoseconds>(xEvent.m_xBegin - g_xFrameStart).count() / fFrameDuration) * fCanvasWidth * ls_fTimelineZoom) - ls_fTimelineScroll;
-			const float fEndPx = ((std::chrono::duration_cast<std::chrono::nanoseconds>(xEvent.m_xEnd - g_xFrameStart).count() / fFrameDuration) * fCanvasWidth * ls_fTimelineZoom) - ls_fTimelineScroll;
+			const float fStartPx = ((std::chrono::duration_cast<std::chrono::nanoseconds>(xEvent.m_xBegin - g_xPreviousFrameStart).count() / fFrameDuration) * fCanvasWidth * ls_fTimelineZoom) - ls_fTimelineScroll;
+			const float fEndPx = ((std::chrono::duration_cast<std::chrono::nanoseconds>(xEvent.m_xEnd - g_xPreviousFrameStart).count() / fFrameDuration) * fCanvasWidth * ls_fTimelineZoom) - ls_fTimelineScroll;
 
 			const ImVec2 xRectMin = ImVec2(xCanvasPos.x + fStartPx, fThreadBaseY + uRowIndex * (fRowHeight + fRowSpacing));
 			const ImVec2 xRectMax = ImVec2(xCanvasPos.x + fEndPx, xRectMin.y + fRowHeight);

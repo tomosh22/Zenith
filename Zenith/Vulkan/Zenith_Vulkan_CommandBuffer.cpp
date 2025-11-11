@@ -140,6 +140,7 @@ void Zenith_Vulkan_CommandBuffer::TransitionUAVs(vk::ImageLayout eOldLayout, vk:
 
 void Zenith_Vulkan_CommandBuffer::UpdateDescriptorSets()
 {
+	Zenith_Profiling::BeginProfile(ZENITH_PROFILE_INDEX__VULKAN_UPDATE_DESCRIPTOR_SETS);
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 	for (u_int uDescSet = 0; uDescSet < m_pxCurrentPipeline->m_xRootSig.m_uNumDescriptorSets; uDescSet++)
 	{
@@ -218,6 +219,7 @@ void Zenith_Vulkan_CommandBuffer::UpdateDescriptorSets()
 		m_xCurrentCmdBuffer.bindDescriptorSets(m_eCurrentBindPoint, m_pxCurrentPipeline->m_xRootSig.m_xLayout, uDescSet, 1, &m_axCurrentDescSet[uDescSet], 0, nullptr);
 		m_uDescriptorDirty &= ~(1 << uDescSet);
 	}
+	Zenith_Profiling::EndProfile(ZENITH_PROFILE_INDEX__VULKAN_UPDATE_DESCRIPTOR_SETS);
 }
 
 void Zenith_Vulkan_CommandBuffer::Draw(uint32_t uNumVerts)

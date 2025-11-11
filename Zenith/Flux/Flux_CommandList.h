@@ -1,6 +1,8 @@
 #pragma once
 #include "Zenith_PlatformGraphics_Include.h"
 
+#include "Profiling/Zenith_Profiling.h"
+
 // Forward declarations
 struct Flux_Texture;
 struct Flux_Buffer;
@@ -310,6 +312,7 @@ public:
 
 	void IterateCommands(Flux_CommandBuffer* pxCmdBuf) const
 	{
+		Zenith_Profiling::BeginProfile(ZENITH_PROFILE_INDEX__FLUX_ITERATE_COMMANDS);
 		u_int uCursor = 0;
 		while(uCursor < m_uCursor)
 		{
@@ -343,6 +346,7 @@ public:
 					Zenith_Assert(false, "Unhandled command");
 			}
 		}
+		Zenith_Profiling::EndProfile(ZENITH_PROFILE_INDEX__FLUX_ITERATE_COMMANDS);
 	}
 
 	void Reset(const bool bClearTargets)

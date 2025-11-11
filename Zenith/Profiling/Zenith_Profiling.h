@@ -29,6 +29,14 @@ enum Zenith_ProfileIndex
 	ZENITH_PROFILE_INDEX__FLUX_TEXT,
 	ZENITH_PROFILE_INDEX__FLUX_QUADS,
 	ZENITH_PROFILE_INDEX__FLUX_SWAPCHAIN_BEGIN_FRAME,
+	ZENITH_PROFILE_INDEX__FLUX_SWAPCHAIN_END_FRAME,
+	ZENITH_PROFILE_INDEX__FLUX_PLATFORMAPI_END_FRAME,
+
+	ZENITH_PROFILE_INDEX__FLUX_ITERATE_COMMANDS,
+
+	//#TO_TODO: rename these at runtime
+	ZENITH_PROFILE_INDEX__VULKAN_UPDATE_DESCRIPTOR_SETS,
+	
 
 	ZENITH_PROFILE_INDEX__VISIBILITY_CHECK,
 
@@ -58,6 +66,11 @@ static const char* g_aszProfileNames[]
 	"Flux Text",
 	"Flux Quads",
 	"Flux Swapchain Begin Frame",
+	"Flux Swapchain End Frame",
+	"Flux PlatformAPI End Frame",
+	"Flux Iterate Commands",
+	//#TO_TODO: rename these at runtime
+	"Vulkan Update Descriptor Sets",
 	"Visibility Check",
 };
 static_assert(COUNT_OF(g_aszProfileNames) == ZENITH_PROFILE_INDEX__COUNT, "g_aszProfileNames mismatch");

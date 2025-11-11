@@ -157,13 +157,14 @@ void Zenith_Core::Zenith_MainLoop()
 
 	Zenith_MemoryManagement::EndFrame();
 
-	//#TO_TODO: profiling currently doesn't include Flux_PlatformAPI/Flux_Swapchain EndFrame
-	Zenith_Profiling::EndFrame();
 	#ifdef ZENITH_TOOLS
 	RenderImGui();
 	Zenith_Profiling::RenderToImGui();
 	#endif
 
-	Flux_PlatformAPI::EndFrame();
-	Flux_Swapchain::EndFrame();
+	ZENITH_PROFILING_FUNCTION_WRAPPER(Flux_PlatformAPI::EndFrame, ZENITH_PROFILE_INDEX__FLUX_PLATFORMAPI_END_FRAME);
+	
+	ZENITH_PROFILING_FUNCTION_WRAPPER(Flux_Swapchain::EndFrame, ZENITH_PROFILE_INDEX__FLUX_SWAPCHAIN_END_FRAME);
+	
+	Zenith_Profiling::EndFrame();
 }
