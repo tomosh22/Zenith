@@ -152,8 +152,25 @@ void Zenith_Profiling::RenderToImGui()
 	ImGui::Dummy(ImVec2(fCanvasWidth, fTotalHeight));
 	ImDrawList* const pxDrawList = ImGui::GetWindowDrawList();
 	const ImVec2 xCanvasPos = ImGui::GetItemRectMin();
+	
+	static ImU32 ls_axCachedColors[ZENITH_PROFILE_INDEX__COUNT] = {0};
+	static float ls_afCachedTextWidths[ZENITH_PROFILE_INDEX__COUNT] = { 0.f };
+
+	//#TO_TODO: this should be in Initialise but ImGui hasn't been inited a that point
+	static bool ls_bOnce = true;
+	if (ls_bOnce)
+	{
+		for (u_int i = 0; i < ZENITH_PROFILE_INDEX__COUNT; ++i)
+		{
+			const Zenith_Maths::Vector3 xColour = IntToColour(i) * 255.f;
+			ls_axCachedColors[i] = IM_COL32((int)xColour.r, (int)xColour.g, (int)xColour.b, 255);
+			ls_afCachedTextWidths[i] = ImGui::CalcTextSize(g_aszProfileNames[i]).x;
+		}
+		ls_bOnce = false;
+	}
 
 	const float fFrameDuration = std::chrono::duration_cast<std::chrono::nanoseconds>(g_xPreviousFrameEnd - g_xPreviousFrameStart).count();
+	const float fCanvasTimeScale = (fCanvasWidth * ls_fTimelineZoom) / fFrameDuration;
 
 	for (const auto& [uThreadID, xEvents] : g_xPreviousFrameEvents)
 	{
@@ -163,9 +180,10 @@ void Zenith_Profiling::RenderToImGui()
 		snprintf(acLabel, sizeof(acLabel), "Thread %u", uThreadID);
 		pxDrawList->AddText(ImVec2(xCanvasPos.x, fThreadBaseY), IM_COL32_WHITE, acLabel);
 
-		for (u_int u = 0; u < xEvents.GetSize(); u++)
+		const u_int uEventCount = xEvents.GetSize();
+		for (u_int u = 0; u < uEventCount; ++u)
 		{
-			const Event& xEvent = xEvents.Get(xEvents.GetSize() - u - 1);
+			const Event& xEvent = xEvents.Get(uEventCount - u - 1);
 
 			if (xEvent.m_uDepth < ls_iMinDepthToRender || xEvent.m_uDepth > ls_iMaxDepthToRender)
 				continue;
@@ -174,17 +192,23 @@ void Zenith_Profiling::RenderToImGui()
 				? (xEvent.m_uDepth - ls_iMinDepthToRender)
 				: (ls_iMaxDepthToRenderSeparately - ls_iMinDepthToRender);
 
-			const float fStartPx = ((std::chrono::duration_cast<std::chrono::nanoseconds>(xEvent.m_xBegin - g_xPreviousFrameStart).count() / fFrameDuration) * fCanvasWidth * ls_fTimelineZoom) - ls_fTimelineScroll;
-			const float fEndPx = ((std::chrono::duration_cast<std::chrono::nanoseconds>(xEvent.m_xEnd - g_xPreviousFrameStart).count() / fFrameDuration) * fCanvasWidth * ls_fTimelineZoom) - ls_fTimelineScroll;
+			const float fEventStartNs = std::chrono::duration_cast<std::chrono::nanoseconds>(xEvent.m_xBegin - g_xPreviousFrameStart).count();
+			const float fEventEndNs = std::chrono::duration_cast<std::chrono::nanoseconds>(xEvent.m_xEnd - g_xPreviousFrameStart).count();
+			
+			const float fStartPx = (fEventStartNs * fCanvasTimeScale) - ls_fTimelineScroll;
+			const float fEndPx = (fEventEndNs * fCanvasTimeScale) - ls_fTimelineScroll;
+			
+			if (fEndPx < 0.0f || fStartPx > fCanvasWidth)
+				continue;
 
-			const ImVec2 xRectMin = ImVec2(xCanvasPos.x + fStartPx, fThreadBaseY + uRowIndex * (fRowHeight + fRowSpacing));
-			const ImVec2 xRectMax = ImVec2(xCanvasPos.x + fEndPx, xRectMin.y + fRowHeight);
+			const float fRowY = fThreadBaseY + uRowIndex * (fRowHeight + fRowSpacing);
+			const ImVec2 xRectMin = ImVec2(xCanvasPos.x + fStartPx, fRowY);
+			const ImVec2 xRectMax = ImVec2(xCanvasPos.x + fEndPx, fRowY + fRowHeight);
 
-			Zenith_Maths::Vector3 xColour = IntToColour(xEvent.m_eIndex) * 255.f;
-			const ImU32 xColor = IM_COL32((int)xColour.r, (int)xColour.g, (int)xColour.b, 255);
-			pxDrawList->AddRectFilled(xRectMin, xRectMax, xColor, 3.0f);
+			pxDrawList->AddRectFilled(xRectMin, xRectMax, ls_axCachedColors[xEvent.m_eIndex], 3.0f);
 
-			if (ImGui::CalcTextSize(g_aszProfileNames[xEvent.m_eIndex]).x <= (xRectMax.x - xRectMin.x))
+			const float fRectWidth = xRectMax.x - xRectMin.x;
+			if (ls_afCachedTextWidths[xEvent.m_eIndex] <= fRectWidth)
 			{
 				pxDrawList->AddText(xRectMin, IM_COL32_WHITE, g_aszProfileNames[xEvent.m_eIndex]);
 			}
