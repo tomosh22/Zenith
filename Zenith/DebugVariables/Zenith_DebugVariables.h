@@ -78,6 +78,23 @@ public:
 		void ImGuiDisplay() override;
 	};
 
+	template<typename T>
+	struct LeafNodeReadOnly : public LeafNodeBase
+	{
+		T* m_pData = nullptr;
+
+		LeafNodeReadOnly(std::vector<std::string>& xName, T* data)
+		{
+			for (const std::string& strSection : xName)
+			{
+				m_xName.push_back(strSection);
+			}
+			m_pData = data;
+		}
+
+		void ImGuiDisplay() override;
+	};
+
 	struct TextNode : public LeafNodeBase
 	{
 		const std::string& m_strText;
@@ -154,6 +171,11 @@ public:
 	{
 		static_assert(std::is_enum<T>(), "Not an enum");
 		Zenith_DebugVariableTree::LeafNodeWithRange<uint32_t, uint32_t>* pxLeaf = new Zenith_DebugVariableTree::LeafNodeWithRange<uint32_t, uint32_t>(xName, reinterpret_cast<uint32_t*>(&xVar), uMin, uMax);
+		s_xTree.AddLeafNode(pxLeaf, xName);
+	}
+	static void AddUInt32_ReadOnly(std::vector<std::string> xName, uint32_t& xVar, uint32_t uMin, uint32_t uMax)
+	{
+		Zenith_DebugVariableTree::LeafNodeReadOnly<uint32_t>* pxLeaf = new Zenith_DebugVariableTree::LeafNodeReadOnly<uint32_t>(xName, &xVar);
 		s_xTree.AddLeafNode(pxLeaf, xName);
 	}
 	static void AddButton(std::vector<std::string> xName, void(*pfnCallback)())

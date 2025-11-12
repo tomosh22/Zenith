@@ -73,6 +73,7 @@ Zenith_Vulkan_CommandBuffer g_xCommandBuffer;
 DEBUGVAR bool dbg_bSubmitDrawCalls = true;
 DEBUGVAR bool dbg_bUseDescSetCache = true;
 DEBUGVAR bool dbg_bOnlyUpdateDirtyDescriptors = true;
+DEBUGVAR u_int dbg_uNumDescSetAllocations = 0;
 
 // Transition color targets to ColorAttachmentOptimal and ensure depth is in ReadOnlyOptimal before render pass
 static void TransitionColorTargets(Zenith_Vulkan_CommandBuffer& xCommandBuffer, const Flux_TargetSetup& xTargetSetup,
@@ -208,6 +209,7 @@ vk::Fence& Zenith_Vulkan::GetCurrentInFlightFence()
 const bool Zenith_Vulkan::ShouldSubmitDrawCalls() { return dbg_bSubmitDrawCalls; }
 const bool Zenith_Vulkan::ShouldUseDescSetCache() { return dbg_bUseDescSetCache; }
 const bool Zenith_Vulkan::ShouldOnlyUpdateDirtyDescriptors() { return dbg_bOnlyUpdateDirtyDescriptors; }
+const void Zenith_Vulkan::IncrementDescriptorSetAllocations(){ dbg_uNumDescSetAllocations++;}
 
 void Zenith_Vulkan::Initialise()
 {
@@ -232,6 +234,8 @@ void Zenith_Vulkan::Initialise()
 	Zenith_DebugVariables::AddBoolean({ "Vulkan", "Submit Draw Calls" }, dbg_bSubmitDrawCalls);
 	Zenith_DebugVariables::AddBoolean({ "Vulkan", "Use Descriptor Set Cache" }, dbg_bUseDescSetCache);
 	Zenith_DebugVariables::AddBoolean({ "Vulkan", "Only Update Dirty Descriptors" }, dbg_bOnlyUpdateDirtyDescriptors);
+
+	Zenith_DebugVariables::AddUInt32_ReadOnly({ "Vulkan", "Descriptor Sets Allocated" }, dbg_uNumDescSetAllocations, 0,-1);
 #endif
 
 	s_pxCurrentFrame = &s_axPerFrame[0];
@@ -243,6 +247,8 @@ void Zenith_Vulkan::BeginFrame()
 {
 	s_pxCurrentFrame = &s_axPerFrame[Zenith_Vulkan_Swapchain::GetCurrentFrameIndex()];
 	s_pxCurrentFrame->BeginFrame();
+
+	dbg_uNumDescSetAllocations = 0;
 }
 
 void Zenith_Vulkan::EndFrame()
@@ -763,7 +769,7 @@ void Zenith_Vulkan_PerFrame::Initialise()
 	vk::DescriptorPoolCreateInfo xPoolInfo = vk::DescriptorPoolCreateInfo()
 		.setPoolSizeCount(COUNT_OF(axPoolSizes))
 		.setPPoolSizes(axPoolSizes)
-		.setMaxSets(10000)
+		.setMaxSets(100000)
 		.setFlags(vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet | vk::DescriptorPoolCreateFlagBits::eUpdateAfterBind);
 
 	for (vk::DescriptorPool& xPool : m_axDescriptorPools)

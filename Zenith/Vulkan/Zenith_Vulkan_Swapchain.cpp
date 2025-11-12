@@ -22,6 +22,7 @@
 #include "imgui.h"
 #include "backends/imgui_impl_vulkan.h"
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
+void RenderImGui();
 #endif
 
 vk::SwapchainKHR Zenith_Vulkan_Swapchain::s_xSwapChain;
@@ -389,6 +390,11 @@ void Zenith_Vulkan_Swapchain::EndFrame()
 	vk::CommandBuffer& xCmd = s_xCopyToFramebufferCmd.GetCurrentCmdBuffer();
 
 	xCmd.endRenderPass();
+
+#ifdef ZENITH_TOOLS
+	ZENITH_PROFILING_FUNCTION_WRAPPER(RenderImGui, ZENITH_PROFILE_INDEX__RENDER_IMGUI);
+	ZENITH_PROFILING_FUNCTION_WRAPPER(Zenith_Profiling::RenderToImGui, ZENITH_PROFILE_INDEX__RENDER_IMGUI_PROFILING);
+#endif
 
 	vk::RenderPassBeginInfo xRenderPassInfo = vk::RenderPassBeginInfo()
 		.setRenderPass(Zenith_Vulkan::s_xImGuiRenderPass)

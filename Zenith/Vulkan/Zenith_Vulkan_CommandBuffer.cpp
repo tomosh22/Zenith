@@ -171,6 +171,7 @@ void Zenith_Vulkan_CommandBuffer::UpdateDescriptorSets()
 				.setDescriptorSetCount(1)
 				.setPSetLayouts(&xLayout);
 			m_axCurrentDescSet[uDescSet] = xDevice.allocateDescriptorSets(xInfo)[0];
+			Zenith_Vulkan::IncrementDescriptorSetAllocations();
 
 			// Stack-allocated arrays for building descriptor writes
 			u_int uNumBufferWrites = 0;

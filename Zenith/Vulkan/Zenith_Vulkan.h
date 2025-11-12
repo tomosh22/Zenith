@@ -93,8 +93,6 @@ public:
 	static void BeginFrame();
 	static void EndFrame();
 
-	static void SubmitCommandBuffer(const Zenith_Vulkan_CommandBuffer* pxCmd, RenderOrder eOrder);
-
 	static const vk::Instance& GetInstance() { return s_xInstance; }
 	static const vk::PhysicalDevice& GetPhysicalDevice() { return s_xPhysicalDevice; }
 	static const vk::Device& GetDevice() { return s_xDevice; }
@@ -109,6 +107,7 @@ public:
 	static const bool ShouldSubmitDrawCalls();
 	static const bool ShouldUseDescSetCache();
 	static const bool ShouldOnlyUpdateDirtyDescriptors();
+	static const void IncrementDescriptorSetAllocations();
 
 	static Zenith_Vulkan_CommandBuffer* s_pxMemoryUpdateCmdBuf;
 
