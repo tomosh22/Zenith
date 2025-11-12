@@ -158,11 +158,6 @@ void Flux_Terrain::Initialise()
 
 void Flux_Terrain::SubmitRenderToGBufferTask()
 {
-	if (!dbg_bEnableTerrain && !dbg_bEnableWater)
-	{
-		return;
-	}
-
 	g_xTerrainComponentsToRender.Clear();
 	Zenith_Scene::GetCurrentScene().GetAllOfComponentType<Zenith_TerrainComponent>(g_xTerrainComponentsToRender);
 
@@ -178,6 +173,11 @@ void Flux_Terrain::WaitForRenderToGBufferTask()
 
 void Flux_Terrain::RenderToGBuffer(void*, u_int uInvocationIndex, u_int uNumInvocations)
 {
+	if (!dbg_bEnableTerrain && !dbg_bEnableWater)
+	{
+		return;
+	}
+
 	const u_int uTotalTerrains = g_xTerrainComponentsToRender.GetSize();
 	
 	if (uInvocationIndex >= uTotalTerrains)

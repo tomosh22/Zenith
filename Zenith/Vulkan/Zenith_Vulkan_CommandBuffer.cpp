@@ -31,6 +31,13 @@ void Zenith_Vulkan_CommandBuffer::BeginRecording()
 	m_xCurrentCmdBuffer.begin(xBeginInfo);
 	m_uCurrentBindFreq = FLUX_MAX_DESCRIPTOR_SET_LAYOUTS;
 	m_uDescriptorDirty = ~0u;
+	
+	// Clear descriptor set cache for this frame (descriptor pool gets reset per frame anyway)
+	for (u_int i = 0; i < FLUX_MAX_DESCRIPTOR_SET_LAYOUTS; i++)
+	{
+		m_axDescriptorSetCache[i].descriptorSet = VK_NULL_HANDLE;
+		m_axDescriptorSetCache[i].layout = VK_NULL_HANDLE;
+	}
 }
 
 void Zenith_Vulkan_CommandBuffer::EndRenderPass()
@@ -142,79 +149,101 @@ void Zenith_Vulkan_CommandBuffer::UpdateDescriptorSets()
 {
 	Zenith_Profiling::BeginProfile(ZENITH_PROFILE_INDEX__VULKAN_UPDATE_DESCRIPTOR_SETS);
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
+	
 	for (u_int uDescSet = 0; uDescSet < m_pxCurrentPipeline->m_xRootSig.m_uNumDescriptorSets; uDescSet++)
 	{
-		if (!(m_uDescriptorDirty & 1 << uDescSet)) continue;
+		if (Zenith_Vulkan::ShouldOnlyUpdateDirtyDescriptors() && !(m_uDescriptorDirty & (1 << uDescSet))) continue;
 
 		vk::DescriptorSetLayout& xLayout = m_pxCurrentPipeline->m_xRootSig.m_axDescSetLayouts[uDescSet];
-		vk::DescriptorSetAllocateInfo xInfo = vk::DescriptorSetAllocateInfo()
-			.setDescriptorPool(Zenith_Vulkan::GetCurrentPerFrameDescriptorPool())
-			.setDescriptorSetCount(1)
-			.setPSetLayouts(&xLayout);
-		m_axCurrentDescSet[uDescSet] = xDevice.allocateDescriptorSets(xInfo)[0];
-
-		u_int uNumBufferWrites = 0;
-		vk::DescriptorBufferInfo axBufferInfos[MAX_BINDINGS];
-
-		u_int uNumTexWrites = 0;
-		vk::DescriptorImageInfo axTexInfos[MAX_BINDINGS * 2]; //SRVs and UAVs
-
-		u_int uNumWrites = 0;
-		vk::WriteDescriptorSet axWrites[MAX_BINDINGS * 3]; //SRVs, UAVs and CBVs
-
-		for (u_int u = 0; u < MAX_BINDINGS; u++)
+		
+		DescriptorSetCacheEntry& xCacheEntry = m_axDescriptorSetCache[uDescSet];
+		if (Zenith_Vulkan::ShouldUseDescSetCache() &&
+			xCacheEntry.descriptorSet != VK_NULL_HANDLE &&
+			xCacheEntry.layout == xLayout &&
+			xCacheEntry.bindings == m_xBindings[uDescSet])
 		{
-			if (m_pxCurrentPipeline->m_xRootSig.m_axDescriptorTypes[uDescSet][u] == DESCRIPTOR_TYPE_MAX) continue;
-
-			const Flux_ShaderResourceView* const pxSRV = m_xBindings[uDescSet].m_xSRVs[u];
-			if (pxSRV)
-			{
-				Zenith_Vulkan_Sampler* pxSampler = m_xBindings[uDescSet].m_apxSamplers[u];
-				axTexInfos[uNumTexWrites] = vk::DescriptorImageInfo()
-					.setSampler(pxSampler ? pxSampler->GetSampler() : Flux_Graphics::s_xRepeatSampler.GetSampler())
-					.setImageView(pxSRV->m_xImageView)
-					.setImageLayout(vk::ImageLayout::eShaderReadOnlyOptimal);
-				
-				axWrites[uNumWrites++] = vk::WriteDescriptorSet()
-					.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
-					.setDstSet(m_axCurrentDescSet[uDescSet])
-					.setDstBinding(u)
-					.setDstArrayElement(0)
-					.setDescriptorCount(1)
-					.setPImageInfo(axTexInfos + uNumTexWrites++);
-			}
-
-			const Flux_UnorderedAccessView* const pxUAV = m_xBindings[uDescSet].m_xUAVs[u];
-			if (pxUAV)
-			{
-				axTexInfos[uNumTexWrites] = vk::DescriptorImageInfo()
-					.setImageView(pxUAV->m_xImageView)
-					.setImageLayout(vk::ImageLayout::eGeneral);
-
-				axWrites[uNumWrites++] = vk::WriteDescriptorSet()
-					.setDescriptorType(vk::DescriptorType::eStorageImage)
-					.setDstSet(m_axCurrentDescSet[uDescSet])
-					.setDstBinding(u)
-					.setDstArrayElement(0)
-					.setDescriptorCount(1)
-					.setPImageInfo(axTexInfos + uNumTexWrites++);
-			}
-
-			const Flux_ConstantBufferView* const pxCBV = m_xBindings[uDescSet].m_xCBVs[u];
-			if (pxCBV)
-			{
-				axBufferInfos[uNumBufferWrites] = pxCBV->m_xBufferInfo;
-				axWrites[uNumWrites++] = vk::WriteDescriptorSet()
-					.setDescriptorType(vk::DescriptorType::eUniformBuffer)
-					.setDstSet(m_axCurrentDescSet[uDescSet])
-					.setDstBinding(u)
-					.setDstArrayElement(0)
-					.setDescriptorCount(1)
-					.setPBufferInfo(axBufferInfos + uNumBufferWrites++);
-			}
+			m_axCurrentDescSet[uDescSet] = xCacheEntry.descriptorSet;
 		}
+		else
+		{
+			vk::DescriptorSetAllocateInfo xInfo = vk::DescriptorSetAllocateInfo()
+				.setDescriptorPool(Zenith_Vulkan::GetCurrentPerFrameDescriptorPool())
+				.setDescriptorSetCount(1)
+				.setPSetLayouts(&xLayout);
+			m_axCurrentDescSet[uDescSet] = xDevice.allocateDescriptorSets(xInfo)[0];
 
-		xDevice.updateDescriptorSets(uNumWrites, axWrites, 0, nullptr);
+			// Stack-allocated arrays for building descriptor writes
+			u_int uNumBufferWrites = 0;
+			vk::DescriptorBufferInfo axBufferInfos[MAX_BINDINGS];
+
+			u_int uNumTexWrites = 0;
+			vk::DescriptorImageInfo axTexInfos[MAX_BINDINGS * 2]; //SRVs and UAVs
+
+			u_int uNumWrites = 0;
+			vk::WriteDescriptorSet axWrites[MAX_BINDINGS * 3]; //SRVs, UAVs and CBVs
+
+			for (u_int u = 0; u < MAX_BINDINGS; u++)
+			{
+				const DescriptorType eType = m_pxCurrentPipeline->m_xRootSig.m_axDescriptorTypes[uDescSet][u];
+				if (eType == DESCRIPTOR_TYPE_MAX) continue;
+
+				const Flux_ShaderResourceView* const pxSRV = m_xBindings[uDescSet].m_xSRVs[u];
+				if (pxSRV)
+				{
+					Zenith_Vulkan_Sampler* pxSampler = m_xBindings[uDescSet].m_apxSamplers[u];
+					axTexInfos[uNumTexWrites] = vk::DescriptorImageInfo()
+						.setSampler(pxSampler ? pxSampler->GetSampler() : Flux_Graphics::s_xRepeatSampler.GetSampler())
+						.setImageView(pxSRV->m_xImageView)
+						.setImageLayout(vk::ImageLayout::eShaderReadOnlyOptimal);
+					
+					axWrites[uNumWrites++] = vk::WriteDescriptorSet()
+						.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
+						.setDstSet(m_axCurrentDescSet[uDescSet])
+						.setDstBinding(u)
+						.setDstArrayElement(0)
+						.setDescriptorCount(1)
+						.setPImageInfo(axTexInfos + uNumTexWrites++);
+				}
+
+				const Flux_UnorderedAccessView* const pxUAV = m_xBindings[uDescSet].m_xUAVs[u];
+				if (pxUAV)
+				{
+					axTexInfos[uNumTexWrites] = vk::DescriptorImageInfo()
+						.setImageView(pxUAV->m_xImageView)
+						.setImageLayout(vk::ImageLayout::eGeneral);
+
+					axWrites[uNumWrites++] = vk::WriteDescriptorSet()
+						.setDescriptorType(vk::DescriptorType::eStorageImage)
+						.setDstSet(m_axCurrentDescSet[uDescSet])
+						.setDstBinding(u)
+						.setDstArrayElement(0)
+						.setDescriptorCount(1)
+						.setPImageInfo(axTexInfos + uNumTexWrites++);
+				}
+
+				const Flux_ConstantBufferView* const pxCBV = m_xBindings[uDescSet].m_xCBVs[u];
+				if (pxCBV)
+				{
+					axBufferInfos[uNumBufferWrites] = pxCBV->m_xBufferInfo;
+					axWrites[uNumWrites++] = vk::WriteDescriptorSet()
+						.setDescriptorType(vk::DescriptorType::eUniformBuffer)
+						.setDstSet(m_axCurrentDescSet[uDescSet])
+						.setDstBinding(u)
+						.setDstArrayElement(0)
+						.setDescriptorCount(1)
+						.setPBufferInfo(axBufferInfos + uNumBufferWrites++);
+				}
+			}
+
+			if (uNumWrites > 0)
+			{
+				xDevice.updateDescriptorSets(uNumWrites, axWrites, 0, nullptr);
+			}
+			
+			xCacheEntry.layout = xLayout;
+			xCacheEntry.bindings = m_xBindings[uDescSet];
+			xCacheEntry.descriptorSet = m_axCurrentDescSet[uDescSet];
+		}
 
 		m_xCurrentCmdBuffer.bindDescriptorSets(m_eCurrentBindPoint, m_pxCurrentPipeline->m_xRootSig.m_xLayout, uDescSet, 1, &m_axCurrentDescSet[uDescSet], 0, nullptr);
 		m_uDescriptorDirty &= ~(1 << uDescSet);
@@ -224,16 +253,20 @@ void Zenith_Vulkan_CommandBuffer::UpdateDescriptorSets()
 
 void Zenith_Vulkan_CommandBuffer::Draw(uint32_t uNumVerts)
 {
-	UpdateDescriptorSets();
 	if (Zenith_Vulkan::ShouldSubmitDrawCalls())
+	{
+		UpdateDescriptorSets();
 		m_xCurrentCmdBuffer.draw(uNumVerts, 0, 0, 0);
+	}
 }
 
 void Zenith_Vulkan_CommandBuffer::DrawIndexed(uint32_t uNumIndices, uint32_t uNumInstances /*= 1*/, uint32_t uVertexOffset /*= 0*/, uint32_t uIndexOffset /*= 0*/, uint32_t uInstanceOffset /*= 0*/)
 {
-	UpdateDescriptorSets();
 	if (Zenith_Vulkan::ShouldSubmitDrawCalls())
+	{
+		UpdateDescriptorSets();
 		m_xCurrentCmdBuffer.drawIndexed(uNumIndices, uNumInstances, uIndexOffset, uVertexOffset, uInstanceOffset);
+	}
 }
 
 void Zenith_Vulkan_CommandBuffer::BeginRenderPass(Flux_TargetSetup& xTargetSetup, bool bClearColour /*= false*/, bool bClearDepth /*= false*/, bool bClearStencil /*= false*/)

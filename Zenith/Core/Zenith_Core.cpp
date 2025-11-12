@@ -153,13 +153,13 @@ void Zenith_Core::Zenith_MainLoop()
 	WaitForRenderTasks();
 	Zenith_Scene::WaitForUpdateComplete();
 
-	Flux_MemoryManager::EndFrame();
+	ZENITH_PROFILING_FUNCTION_WRAPPER(Flux_MemoryManager::EndFrame, ZENITH_PROFILE_INDEX__FLUX_MEMORY_MANAGER);
 
 	Zenith_MemoryManagement::EndFrame();
 
 	#ifdef ZENITH_TOOLS
-	RenderImGui();
-	Zenith_Profiling::RenderToImGui();
+	ZENITH_PROFILING_FUNCTION_WRAPPER(RenderImGui, ZENITH_PROFILE_INDEX__RENDER_IMGUI);
+	ZENITH_PROFILING_FUNCTION_WRAPPER(Zenith_Profiling::RenderToImGui, ZENITH_PROFILE_INDEX__RENDER_IMGUI_PROFILING);
 	#endif
 
 	ZENITH_PROFILING_FUNCTION_WRAPPER(Flux_PlatformAPI::EndFrame, ZENITH_PROFILE_INDEX__FLUX_PLATFORMAPI_END_FRAME);

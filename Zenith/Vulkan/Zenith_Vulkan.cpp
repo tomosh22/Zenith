@@ -71,6 +71,8 @@ std::vector<const Zenith_Vulkan_CommandBuffer*> Zenith_Vulkan::s_xPendingCommand
 Zenith_Vulkan_CommandBuffer g_xCommandBuffer;
 
 DEBUGVAR bool dbg_bSubmitDrawCalls = true;
+DEBUGVAR bool dbg_bUseDescSetCache = true;
+DEBUGVAR bool dbg_bOnlyUpdateDirtyDescriptors = true;
 
 // Transition color targets to ColorAttachmentOptimal and ensure depth is in ReadOnlyOptimal before render pass
 static void TransitionColorTargets(Zenith_Vulkan_CommandBuffer& xCommandBuffer, const Flux_TargetSetup& xTargetSetup,
@@ -204,6 +206,8 @@ vk::Fence& Zenith_Vulkan::GetCurrentInFlightFence()
 }
 
 const bool Zenith_Vulkan::ShouldSubmitDrawCalls() { return dbg_bSubmitDrawCalls; }
+const bool Zenith_Vulkan::ShouldUseDescSetCache() { return dbg_bUseDescSetCache; }
+const bool Zenith_Vulkan::ShouldOnlyUpdateDirtyDescriptors() { return dbg_bOnlyUpdateDirtyDescriptors; }
 
 void Zenith_Vulkan::Initialise()
 {
@@ -225,7 +229,9 @@ void Zenith_Vulkan::Initialise()
 	}
 
 #ifdef ZENITH_DEBUG_VARIABLES
-	Zenith_DebugVariables::AddBoolean({ "Render", "Submit Draw Calls" }, dbg_bSubmitDrawCalls);
+	Zenith_DebugVariables::AddBoolean({ "Vulkan", "Submit Draw Calls" }, dbg_bSubmitDrawCalls);
+	Zenith_DebugVariables::AddBoolean({ "Vulkan", "Use Descriptor Set Cache" }, dbg_bUseDescSetCache);
+	Zenith_DebugVariables::AddBoolean({ "Vulkan", "Only Update Dirty Descriptors" }, dbg_bUseDescSetCache);
 #endif
 
 	s_pxCurrentFrame = &s_axPerFrame[0];

@@ -28,6 +28,7 @@ enum Zenith_ProfileIndex
 	ZENITH_PROFILE_INDEX__FLUX_PFX,
 	ZENITH_PROFILE_INDEX__FLUX_TEXT,
 	ZENITH_PROFILE_INDEX__FLUX_QUADS,
+	ZENITH_PROFILE_INDEX__FLUX_MEMORY_MANAGER,
 	ZENITH_PROFILE_INDEX__FLUX_SWAPCHAIN_BEGIN_FRAME,
 	ZENITH_PROFILE_INDEX__FLUX_SWAPCHAIN_END_FRAME,
 	ZENITH_PROFILE_INDEX__FLUX_PLATFORMAPI_END_FRAME,
@@ -39,6 +40,11 @@ enum Zenith_ProfileIndex
 	
 
 	ZENITH_PROFILE_INDEX__VISIBILITY_CHECK,
+
+	#ifdef ZENITH_TOOLS
+	ZENITH_PROFILE_INDEX__RENDER_IMGUI,
+	ZENITH_PROFILE_INDEX__RENDER_IMGUI_PROFILING,
+	#endif
 
 	ZENITH_PROFILE_INDEX__COUNT,
 };
@@ -65,6 +71,7 @@ static const char* g_aszProfileNames[]
 	"Flux PFX",
 	"Flux Text",
 	"Flux Quads",
+	"Flux Memory Manager",
 	"Flux Swapchain Begin Frame",
 	"Flux Swapchain End Frame",
 	"Flux PlatformAPI End Frame",
@@ -72,6 +79,10 @@ static const char* g_aszProfileNames[]
 	//#TO_TODO: rename these at runtime
 	"Vulkan Update Descriptor Sets",
 	"Visibility Check",
+	#ifdef ZENITH_TOOLS
+	"ImGUI",
+	"ImGUI Profiling",
+	#endif
 };
 static_assert(COUNT_OF(g_aszProfileNames) == ZENITH_PROFILE_INDEX__COUNT, "g_aszProfileNames mismatch");
 

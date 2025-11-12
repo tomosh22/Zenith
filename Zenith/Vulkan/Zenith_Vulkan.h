@@ -107,6 +107,8 @@ public:
 	static vk::Fence& GetCurrentInFlightFence();
 
 	static const bool ShouldSubmitDrawCalls();
+	static const bool ShouldUseDescSetCache();
+	static const bool ShouldOnlyUpdateDirtyDescriptors();
 
 	static Zenith_Vulkan_CommandBuffer* s_pxMemoryUpdateCmdBuf;
 

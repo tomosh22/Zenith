@@ -26,6 +26,12 @@ struct DescSetBindings {
 	const Flux_ConstantBufferView* m_xCBVs[MAX_BINDINGS];
 
 	Zenith_Vulkan_Sampler* m_apxSamplers[MAX_BINDINGS];
+	
+	// Helper for hashing - compares if two DescSetBindings are equal
+	bool operator==(const DescSetBindings& other) const
+	{
+		return memcmp(this, &other, sizeof(DescSetBindings)) == 0;
+	}
 };
 
 class Zenith_Vulkan_CommandBuffer
@@ -90,4 +96,14 @@ private:
 	vk::Rect2D m_xScissor;
 
 	bool m_bShouldClear = false;
+	
+	// Simple descriptor set cache - stores last used bindings and descriptor set per descriptor set slot
+	struct DescriptorSetCacheEntry
+	{
+		DescSetBindings bindings;
+		vk::DescriptorSet descriptorSet = VK_NULL_HANDLE;
+		vk::DescriptorSetLayout layout = VK_NULL_HANDLE;
+	};
+	
+	DescriptorSetCacheEntry m_axDescriptorSetCache[FLUX_MAX_DESCRIPTOR_SET_LAYOUTS];
 };
