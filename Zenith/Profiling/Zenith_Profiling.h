@@ -118,6 +118,11 @@ public:
 	static void EndFrame();
 	#ifdef ZENITH_TOOLS
 	static void RenderToImGui();
+private:
+	static void RenderTimelineView(int& iMinDepthToRender, int& iMaxDepthToRender, int& iMaxDepthToRenderSeparately,
+	                                float& fTimelineZoom, float& fTimelineScroll, float& fVerticalScale, float fFrameDurationMs);
+	static void RenderThreadBreakdown(float fFrameDurationMs, u_int& uThreadID);
+public:
 	#endif
 
 	static void BeginProfile(const Zenith_ProfileIndex eIndex);
