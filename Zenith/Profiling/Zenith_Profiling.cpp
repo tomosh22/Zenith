@@ -6,10 +6,6 @@
 #include "Flux/Flux.h"
 #include "Multithreading/Zenith_Multithreading.h"
 
-#include <chrono>
-#include <algorithm>
-#include <functional>
-
 static constexpr u_int uMAX_PROFILE_DEPTH = 16;
 thread_local static u_int tl_g_uCurrentDepth;
 thread_local static Zenith_ProfileIndex tl_g_aeIndices[uMAX_PROFILE_DEPTH];
@@ -422,30 +418,17 @@ void Zenith_Profiling::RenderThreadBreakdown(float fFrameDurationMs, u_int& uThr
 	std::sort(xSortedEvents.GetDataPointer(), xSortedEvents.GetDataPointer() + xSortedEvents.GetSize(),
 		[](const Event* a, const Event* b) { return a->m_xBegin < b->m_xBegin; });
 
-	// Build hierarchy using a stack of currently active events
+	// Build hierarchy using depth information
+	// The depth field already tells us the nesting level, we just need to track the current parent at each depth
 	Zenith_Vector<ProfileNode> xRootNodes;
-	Zenith_Vector<ProfileNode*> xActiveStack; // Stack of nodes that are currently active (haven't ended yet)
+	Zenith_Vector<ProfileNode*> xDepthStack; // xDepthStack[i] = current parent node at depth i
+	xDepthStack.Reserve(16);
 	
 	for (u_int u = 0; u < xSortedEvents.GetSize(); ++u)
 	{
 		const Event* pEvent = xSortedEvents.Get(u);
 		const float fDurationNs = std::chrono::duration_cast<std::chrono::nanoseconds>(pEvent->m_xEnd - pEvent->m_xBegin).count();
 		const float fDurationMs = fDurationNs / 1000000.0f;
-		
-		// Pop from stack any events that have ended before this event starts
-		while (xActiveStack.GetSize() > 0)
-		{
-			ProfileNode* pStackNode = xActiveStack.Get(xActiveStack.GetSize() - 1);
-			// Check if the stacked event has ended before this new event starts
-			if (pStackNode->pEvent->m_xEnd <= pEvent->m_xBegin)
-			{
-				xActiveStack.Remove(xActiveStack.GetSize() - 1);
-			}
-			else
-			{
-				break;
-			}
-		}
 		
 		// Create new node
 		ProfileNode xNode;
@@ -456,20 +439,53 @@ void Zenith_Profiling::RenderThreadBreakdown(float fFrameDurationMs, u_int& uThr
 		xNode.uDepth = pEvent->m_uDepth;
 		xNode.pEvent = pEvent;
 		
-		// Add to parent or root
-		if (xActiveStack.GetSize() == 0)
+		// First, pop any events from the stack that have already ended
+		// This prevents assigning children to expired parents
+		while (xDepthStack.GetSize() > 0)
 		{
-			// This is a root node
-			xRootNodes.PushBack(xNode);
-			xActiveStack.PushBack(&xRootNodes.Get(xRootNodes.GetSize() - 1));
+			ProfileNode* pStackTop = xDepthStack.Get(xDepthStack.GetSize() - 1);
+			if (pStackTop->pEvent->m_xEnd <= pEvent->m_xBegin)
+			{
+				xDepthStack.Remove(xDepthStack.GetSize() - 1);
+			}
+			else
+			{
+				break;
+			}
 		}
-		else
+		
+		// Then trim stack to current depth (remove any entries at depth >= current)
+		while (xDepthStack.GetSize() > pEvent->m_uDepth)
 		{
-			// This is a child of the top stack node (the most recent still-active event)
-			ProfileNode* pParent = xActiveStack.Get(xActiveStack.GetSize() - 1);
+			xDepthStack.Remove(xDepthStack.GetSize() - 1);
+		}
+		
+		// Add node based on depth
+		if (pEvent->m_uDepth == 0)
+		{
+			// Depth 0 = root node
+			xRootNodes.PushBack(xNode);
+			// Ensure stack is correct size for depth 0
+			while (xDepthStack.GetSize() > 0)
+			{
+				xDepthStack.Remove(xDepthStack.GetSize() - 1);
+			}
+			// Add this root node to stack at depth 0
+			xDepthStack.PushBack(&xRootNodes.Get(xRootNodes.GetSize() - 1));
+		}
+		else if (pEvent->m_uDepth > 0 && xDepthStack.GetSize() >= pEvent->m_uDepth)
+		{
+			// This is a child node, parent is at depth-1
+			ProfileNode* pParent = xDepthStack.Get(pEvent->m_uDepth - 1);
 			pParent->xChildren.PushBack(xNode);
-			pParent->fSelfTimeMs -= fDurationMs; // Subtract child time from parent's self time
-			xActiveStack.PushBack(&pParent->xChildren.Get(pParent->xChildren.GetSize() - 1));
+			pParent->fSelfTimeMs -= fDurationMs;
+			
+			// Ensure stack is the right size, then add this node
+			while (xDepthStack.GetSize() > pEvent->m_uDepth)
+			{
+				xDepthStack.Remove(xDepthStack.GetSize() - 1);
+			}
+			xDepthStack.PushBack(&pParent->xChildren.Get(pParent->xChildren.GetSize() - 1));
 		}
 	}
 
