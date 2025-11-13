@@ -4,6 +4,7 @@
 #include "vma/vk_mem_alloc.h"
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
 #include "Flux/Flux_Types.h"
+#include "Zenith_Vulkan_CommandBuffer.h"
 
 #define ZENITH_VULKAN_PER_FRAME_DESC_SET 0
 #define ZENITH_VULKAN_PER_DRAW_DESC_SET 1
@@ -11,6 +12,7 @@
 
 class Zenith_Vulkan_CommandBuffer;
 class Zenith_Vulkan_VRAM;
+class Flux_CommandList;
 
 class Zenith_Vulkan_PerFrame
 {
@@ -19,10 +21,16 @@ public:
 
 	void Initialise();
 	void BeginFrame();
+	const vk::DescriptorPool& GetDescriptorPoolForThread(u_int uThreadID);
+	const vk::CommandPool& GetCommandPoolForThread(u_int uThreadID);
+	Zenith_Vulkan_CommandBuffer& GetWorkerCommandBuffer(u_int uThreadID);
+	
 	vk::Fence m_xFence;
 	
-	//#TO_TODO: one per thread
-	vk::DescriptorPool m_axDescriptorPools[1];
+	static constexpr u_int NUM_WORKER_THREADS = 4;
+	vk::DescriptorPool m_axDescriptorPools[NUM_WORKER_THREADS];
+	vk::CommandPool m_axCommandPools[NUM_WORKER_THREADS];
+	Zenith_Vulkan_CommandBuffer m_axWorkerCommandBuffers[NUM_WORKER_THREADS];
 };
 
 class Zenith_Vulkan_Sampler
@@ -93,10 +101,13 @@ public:
 	static void BeginFrame();
 	static void EndFrame();
 
+	static void RecordCommandBuffersTask(void* pData, u_int uInvocationIndex, u_int uNumInvocations);
+
 	static const vk::Instance& GetInstance() { return s_xInstance; }
 	static const vk::PhysicalDevice& GetPhysicalDevice() { return s_xPhysicalDevice; }
 	static const vk::Device& GetDevice() { return s_xDevice; }
 	static const vk::CommandPool& GetCommandPool(CommandType eType) { return s_axCommandPools[eType]; }
+	static const vk::CommandPool& GetWorkerCommandPool(u_int uThreadIndex);
 	static const vk::Queue& GetQueue(CommandType eType) { return s_axQueues[eType]; }
 	static const vk::DescriptorPool& GetCurrentPerFrameDescriptorPool();
 	static const vk::SurfaceKHR& GetSurface() { return s_xSurface; }
@@ -144,6 +155,7 @@ private:
 	static vk::Device s_xDevice;
 	static vk::Queue s_axQueues[COMMANDTYPE_MAX];
 	static vk::CommandPool s_axCommandPools[COMMANDTYPE_MAX];
+	
 	static vk::DescriptorPool s_xDefaultDescriptorPool;
 
 	static vk::DescriptorPool s_xBindlessTexturesDescriptorPool;

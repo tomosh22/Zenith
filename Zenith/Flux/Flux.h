@@ -20,6 +20,7 @@ struct Flux_SurfaceInfo
 struct Flux_ShaderResourceView {
 	vk::ImageView m_xImageView = VK_NULL_HANDLE;
 	Flux_VRAMHandle m_xVRAMHandle;
+	vk::ImageLayout m_eExpectedLayout = vk::ImageLayout::eShaderReadOnlyOptimal;
 };
 
 struct Flux_UnorderedAccessView {

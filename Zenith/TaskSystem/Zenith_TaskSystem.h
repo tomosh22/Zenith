@@ -67,6 +67,7 @@ public:
 		, m_pfnArrayFunc(pfnFunc)
 		, m_uNumInvocations(uNumInvocations)
 		, m_uInvocationCounter(0)
+		, m_uCompletionCounter(0)
 	{
 
 	}
@@ -79,9 +80,10 @@ public:
 		m_pfnArrayFunc(m_pData, uInvocationIndex, m_uNumInvocations);
 		Zenith_Profiling::EndProfile(m_eProfileIndex);
 
-		// Only the thread that completes the last invocation signals the semaphore
+		// Signal completion when ALL threads have finished their work
 		Zenith_Assert(uInvocationIndex < m_uNumInvocations, "We have done this task too many times");
-		if (uInvocationIndex == m_uNumInvocations - 1)
+		u_int uCompletedCount = m_uCompletionCounter.fetch_add(1) + 1;
+		if (uCompletedCount == m_uNumInvocations)
 		{
 			m_uCompletedThreadID = Zenith_Multithreading::GetCurrentThreadID();
 			m_xSemaphore.Signal();
@@ -91,6 +93,7 @@ public:
 	void Reset()
 	{
 		m_uInvocationCounter.store(0);
+		m_uCompletionCounter.store(0);
 	}
 
 	const u_int GetNumInvocations() const
@@ -103,6 +106,7 @@ private:
 	Zenith_TaskArrayFunction m_pfnArrayFunc;
 	u_int m_uNumInvocations;
 	std::atomic<u_int> m_uInvocationCounter;
+	std::atomic<u_int> m_uCompletionCounter;
 };
 
 class Zenith_TaskSystem

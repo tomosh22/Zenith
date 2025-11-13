@@ -70,9 +70,10 @@ void Flux_RenderAttachmentBuilder::BuildDepthStencil(Flux_RenderAttachment& xAtt
 	xAttachment.m_pxDSV.m_xImageView = Flux_MemoryManager::CreateDepthStencilView(xAttachment.m_xVRAMHandle, xInfo, 0);
 	xAttachment.m_pxDSV.m_xVRAMHandle = xAttachment.m_xVRAMHandle;
 
-	// Create SRV with mips
+	// Create SRV with mips - depth textures use DepthStencilReadOnlyOptimal layout
 	xAttachment.m_pxSRV.m_xImageView = Flux_MemoryManager::CreateShaderResourceView(xAttachment.m_xVRAMHandle, xInfo, 0, xInfo.m_uNumMips);
 	xAttachment.m_pxSRV.m_xVRAMHandle = xAttachment.m_xVRAMHandle;
+	xAttachment.m_pxSRV.m_eExpectedLayout = vk::ImageLayout::eDepthStencilReadOnlyOptimal;
 }
 
 void Flux_TargetSetup::AssignDepthStencil(Flux_RenderAttachment* pxDS)

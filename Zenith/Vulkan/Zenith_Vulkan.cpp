@@ -4,6 +4,8 @@
 #include "Flux/Flux.h"
 #include "Flux/Flux_Enums.h"
 #include "Flux/Flux_Graphics.h"
+#include "TaskSystem/Zenith_TaskSystem.h"
+#include "Multithreading/Zenith_Multithreading.h"
 
 #ifdef ZENITH_WINDOWS
 #include "Zenith_Windows_Window.h"
@@ -169,7 +171,7 @@ static void TransitionTargetsForRenderPass(Zenith_Vulkan_CommandBuffer& xCommand
 	if (!bClear)
 	{
 		TransitionDepthStencilTarget(xCommandBuffer, xTargetSetup,
-			vk::ImageLayout::eShaderReadOnlyOptimal,
+			vk::ImageLayout::eDepthStencilReadOnlyOptimal,
 			vk::ImageLayout::eDepthStencilReadOnlyOptimal,
 			vk::AccessFlagBits::eShaderRead,
 			vk::AccessFlagBits::eDepthStencilAttachmentRead,
@@ -190,7 +192,7 @@ static void TransitionTargetsAfterRenderPass(Zenith_Vulkan_CommandBuffer& xComma
 	// Use DepthStencilReadOnlyOptimal for all formats (doesn't require separateDepthStencilLayouts feature)
 	TransitionDepthStencilTarget(xCommandBuffer, xTargetSetup,
 		vk::ImageLayout::eDepthStencilReadOnlyOptimal,
-		vk::ImageLayout::eShaderReadOnlyOptimal,
+		vk::ImageLayout::eDepthStencilReadOnlyOptimal,
 		vk::AccessFlagBits::eDepthStencilAttachmentRead,
 		vk::AccessFlagBits::eShaderRead,
 		eSrcStage, eDstStage);
@@ -199,8 +201,15 @@ static void TransitionTargetsAfterRenderPass(Zenith_Vulkan_CommandBuffer& xComma
 const vk::DescriptorPool& Zenith_Vulkan::GetCurrentPerFrameDescriptorPool()
 {
 	//#TO_TODO: current thread
-	return s_pxCurrentFrame->m_axDescriptorPools[0];
+	u_int uThreadID = Zenith_Multithreading::GetCurrentThreadID();
+	return s_pxCurrentFrame->GetDescriptorPoolForThread(uThreadID);
 }
+
+const vk::CommandPool& Zenith_Vulkan::GetWorkerCommandPool(u_int uThreadIndex)
+{
+	return s_pxCurrentFrame->GetCommandPoolForThread(uThreadIndex);
+}
+
 vk::Fence& Zenith_Vulkan::GetCurrentInFlightFence()
 {
 	return s_pxCurrentFrame->m_xFence;
@@ -251,6 +260,122 @@ void Zenith_Vulkan::BeginFrame()
 	dbg_uNumDescSetAllocations = 0;
 }
 
+// Structure to hold work for each thread
+struct CommandRecordingWorkData
+{
+	u_int uStartRenderOrder;
+	u_int uEndRenderOrder;
+	std::vector<vk::CommandBuffer>* pxOutCommandBuffers;
+	Zenith_Mutex* pxMutex;
+};
+
+// Task array function to record command buffers in parallel
+void Zenith_Vulkan::RecordCommandBuffersTask(void* pData, u_int uInvocationIndex, u_int uNumInvocations)
+{
+	CommandRecordingWorkData* pWorkData = static_cast<CommandRecordingWorkData*>(pData);
+	
+	// Calculate the range of render orders this thread should process
+	u_int uTotalOrders = pWorkData->uEndRenderOrder - pWorkData->uStartRenderOrder;
+	u_int uOrdersPerThread = (uTotalOrders + uNumInvocations - 1) / uNumInvocations;
+	u_int uLocalStartOrder = pWorkData->uStartRenderOrder + (uInvocationIndex * uOrdersPerThread);
+	u_int uLocalEndOrder = (uLocalStartOrder + uOrdersPerThread < pWorkData->uEndRenderOrder) ? 
+		(uLocalStartOrder + uOrdersPerThread) : pWorkData->uEndRenderOrder;
+	
+	if (uLocalStartOrder >= uLocalEndOrder)
+	{
+		return; // No work for this thread
+	}
+	
+	// Get the worker command buffer from the current frame
+	Zenith_Vulkan_CommandBuffer& xCommandBuffer = Zenith_Vulkan::s_pxCurrentFrame->GetWorkerCommandBuffer(uInvocationIndex);
+	xCommandBuffer.BeginRecording();
+	
+	Flux_TargetSetup xCurrentTargetSetup;
+	
+	for (u_int i = uLocalStartOrder; i < uLocalEndOrder; i++)
+	{
+		Zenith_Vector<std::pair<const Flux_CommandList*, Flux_TargetSetup>>& xCommandLists = Flux::s_xPendingCommandLists[i];
+		
+		// Skip empty render orders
+		if (xCommandLists.GetSize() == 0)
+		{
+			continue;
+		}
+		
+		for (Zenith_Vector<std::pair<const Flux_CommandList*, Flux_TargetSetup>>::Iterator xIt(xCommandLists); !xIt.Done(); xIt.Next())
+		{
+			const bool bClear = xIt.GetData().first->RequiresClear();
+			
+			// Check if this is a compute pass (null target setup)
+			const bool bIsComputePass = (xIt.GetData().second == Flux_Graphics::s_xNullTargetSetup);
+			
+			if (bIsComputePass)
+			{
+				// Execute compute commands without render pass
+				if (xCommandBuffer.m_xCurrentRenderPass != VK_NULL_HANDLE)
+				{
+					xCommandBuffer.EndRenderPass();
+					TransitionTargetsAfterRenderPass(
+						xCommandBuffer, 
+						xCurrentTargetSetup,
+						vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eLateFragmentTests,
+						vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eComputeShader
+					);
+					xCurrentTargetSetup = Flux_Graphics::s_xNullTargetSetup;
+				}
+				xIt.GetData().first->IterateCommands(&xCommandBuffer);
+			}
+			else if (xIt.GetData().second != xCurrentTargetSetup || bClear || xCommandBuffer.m_xCurrentRenderPass == VK_NULL_HANDLE)
+			{
+				if (xCommandBuffer.m_xCurrentRenderPass != VK_NULL_HANDLE)
+				{
+					xCommandBuffer.EndRenderPass();
+					TransitionTargetsAfterRenderPass(
+						xCommandBuffer, 
+						xCurrentTargetSetup,
+						vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eLateFragmentTests,
+						vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eComputeShader
+					);
+				}
+
+				TransitionTargetsForRenderPass(
+					xCommandBuffer, 
+					xIt.GetData().second,
+					vk::PipelineStageFlagBits::eFragmentShader,
+					vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eEarlyFragmentTests,
+					bClear
+				);
+				xCommandBuffer.BeginRenderPass(xIt.GetData().second, bClear, bClear, bClear);
+				xCurrentTargetSetup = xIt.GetData().second;
+				xIt.GetData().first->IterateCommands(&xCommandBuffer);
+			}
+			else
+			{
+				xIt.GetData().first->IterateCommands(&xCommandBuffer);
+			}
+		}
+	}
+	
+	// Only end render pass and transition targets if we're not in a compute-only pass
+	if (!(xCurrentTargetSetup == Flux_Graphics::s_xNullTargetSetup))
+	{
+		xCommandBuffer.EndRenderPass();
+		TransitionTargetsAfterRenderPass(
+			xCommandBuffer, 
+			xCurrentTargetSetup,
+			vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eLateFragmentTests,
+			vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eComputeShader
+		);
+	}
+	
+	xCommandBuffer.GetCurrentCmdBuffer().end();
+	
+	// Thread-safe add the command buffer to the output list
+	pWorkData->pxMutex->Lock();
+	pWorkData->pxOutCommandBuffers->push_back(xCommandBuffer.GetCurrentCmdBuffer());
+	pWorkData->pxMutex->Unlock();
+}
+
 void Zenith_Vulkan::EndFrame()
 {
 	static_assert(RENDER_ORDER_MEMORY_UPDATE == 0u, "Memory update needs to come first");
@@ -282,88 +407,40 @@ void Zenith_Vulkan::EndFrame()
 	//#TO_TODO: change this to copy queue, how do I make sure this finishes before graphics?
 	s_axQueues[COMMANDTYPE_GRAPHICS].submit(xMemorySubmitInfo, VK_NULL_HANDLE);
 
-	bool bHaveWaitedForMemory = false;
-	g_xCommandBuffer.BeginRecording();
-
-	Flux_TargetSetup xCurrentTargetSetup;
-	for (uint32_t i = RENDER_ORDER_MEMORY_UPDATE + 1; i < RENDER_ORDER_MAX; i++)
+	// Use multithreaded command buffer recording
+	std::vector<vk::CommandBuffer> xRecordedCommandBuffers;
+	Zenith_Mutex xMutex;
+	
+	CommandRecordingWorkData xWorkData;
+	xWorkData.uStartRenderOrder = RENDER_ORDER_MEMORY_UPDATE + 1;
+	xWorkData.uEndRenderOrder = RENDER_ORDER_MAX;
+	xWorkData.pxOutCommandBuffers = &xRecordedCommandBuffers;
+	xWorkData.pxMutex = &xMutex;
+	
+	// Create and submit task array for parallel command buffer recording
+	Zenith_TaskArray xRecordingTask(
+		ZENITH_PROFILE_INDEX__FLUX_RECORD_COMMAND_BUFFERS,
+		RecordCommandBuffersTask,
+		&xWorkData,
+		Zenith_Vulkan_PerFrame::NUM_WORKER_THREADS
+	);
+	
+	Zenith_TaskSystem::SubmitTaskArray(&xRecordingTask);
+	xRecordingTask.WaitUntilComplete();
+	
+	// Submit all recorded command buffers
+	if (!xRecordedCommandBuffers.empty())
 	{
-		for (Zenith_Vector<std::pair<const Flux_CommandList*, Flux_TargetSetup>>::Iterator xIt(Flux::s_xPendingCommandLists[i]); !xIt.Done(); xIt.Next())
-		{
-			const bool bClear = xIt.GetData().first->RequiresClear();
-			
-			// Check if this is a compute pass (null target setup)
-			const bool bIsComputePass = (xIt.GetData().second == Flux_Graphics::s_xNullTargetSetup);
-			
-			if (bIsComputePass)
-			{
-				// Execute compute commands without render pass
-				if (g_xCommandBuffer.m_xCurrentRenderPass != VK_NULL_HANDLE)
-				{
-					g_xCommandBuffer.EndRenderPass();
-					TransitionTargetsAfterRenderPass(
-						g_xCommandBuffer, 
-						xCurrentTargetSetup,
-						vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eLateFragmentTests,
-						vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eComputeShader
-					);
-					xCurrentTargetSetup = Flux_Graphics::s_xNullTargetSetup;
-				}
-				xIt.GetData().first->IterateCommands(&g_xCommandBuffer);
-			}
-			else if (xIt.GetData().second != xCurrentTargetSetup || bClear || g_xCommandBuffer.m_xCurrentRenderPass == VK_NULL_HANDLE)
-			{
-				if (g_xCommandBuffer.m_xCurrentRenderPass != VK_NULL_HANDLE)
-				{
-					g_xCommandBuffer.EndRenderPass();
-					TransitionTargetsAfterRenderPass(
-						g_xCommandBuffer, 
-						xCurrentTargetSetup,
-						vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eLateFragmentTests,
-						vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eComputeShader
-					);
-				}
+		vk::SubmitInfo xRenderSubmitInfo = vk::SubmitInfo()
+			.setCommandBufferCount(xRecordedCommandBuffers.size())
+			.setPCommandBuffers(xRecordedCommandBuffers.data())
+			.setPWaitSemaphores(nullptr)
+			.setPSignalSemaphores(nullptr)
+			.setWaitSemaphoreCount(0)
+			.setSignalSemaphoreCount(0);
 
-				TransitionTargetsForRenderPass(
-					g_xCommandBuffer, 
-					xIt.GetData().second,
-					vk::PipelineStageFlagBits::eFragmentShader,
-					vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eEarlyFragmentTests,
-					bClear
-				);
-				g_xCommandBuffer.BeginRenderPass(xIt.GetData().second, bClear, bClear, bClear);
-				xCurrentTargetSetup = xIt.GetData().second;
-				xIt.GetData().first->IterateCommands(&g_xCommandBuffer);
-			}
-			else
-			{
-				xIt.GetData().first->IterateCommands(&g_xCommandBuffer);
-			}
-		}
+		s_axQueues[COMMANDTYPE_GRAPHICS].submit(xRenderSubmitInfo, VK_NULL_HANDLE);
 	}
-
-	// Only end render pass and transition targets if we're not in a compute-only pass
-	if (!(xCurrentTargetSetup == Flux_Graphics::s_xNullTargetSetup))
-	{
-		g_xCommandBuffer.EndRenderPass();
-		TransitionTargetsAfterRenderPass(
-			g_xCommandBuffer, 
-			xCurrentTargetSetup,
-			vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eLateFragmentTests,
-			vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eComputeShader
-		);
-	}
-	g_xCommandBuffer.GetCurrentCmdBuffer().end();
-
-	vk::SubmitInfo xRenderSubmitInfo = vk::SubmitInfo()
-		.setCommandBufferCount(1)
-		.setPCommandBuffers(&g_xCommandBuffer.GetCurrentCmdBuffer())
-		.setPWaitSemaphores(nullptr)
-		.setPSignalSemaphores(nullptr)
-		.setWaitSemaphoreCount(0)
-		.setSignalSemaphoreCount(0);
-
-	s_axQueues[COMMANDTYPE_GRAPHICS].submit(xRenderSubmitInfo, VK_NULL_HANDLE);
 
 	for (uint32_t i = 0; i < RENDER_ORDER_MAX; i++)
 	{
@@ -592,6 +669,8 @@ void Zenith_Vulkan::CreateCommandPools()
 	{
 		s_axCommandPools[i] = s_xDevice.createCommandPool(vk::CommandPoolCreateInfo(vk::CommandPoolCreateFlagBits::eResetCommandBuffer, s_auQueueIndices[i]));
 	}
+	
+	// Note: Worker thread command pools are now created per-frame in Zenith_Vulkan_PerFrame::Initialise()
 
 	Zenith_Log("Vulkan command pools created");
 }
@@ -776,6 +855,17 @@ void Zenith_Vulkan_PerFrame::Initialise()
 	{
 		xPool = Zenith_Vulkan::GetDevice().createDescriptorPool(xPoolInfo);
 	}
+	
+	// Create per-worker-thread command pools for multithreaded command buffer recording
+	for (u_int i = 0; i < NUM_WORKER_THREADS; i++)
+	{
+		m_axCommandPools[i] = Zenith_Vulkan::GetDevice().createCommandPool(
+			vk::CommandPoolCreateInfo(vk::CommandPoolCreateFlagBits::eResetCommandBuffer, 
+			Zenith_Vulkan::GetQueueIndex(COMMANDTYPE_GRAPHICS)));
+		
+		// Initialize worker command buffers with their dedicated command pools
+		m_axWorkerCommandBuffers[i].InitialiseWithCustomPool(m_axCommandPools[i]);
+	}
 
 	vk::FenceCreateInfo xFenceInfo = vk::FenceCreateInfo()
 		.setFlags(vk::FenceCreateFlagBits::eSignaled);
@@ -788,7 +878,31 @@ void Zenith_Vulkan_PerFrame::BeginFrame()
 	xDevice.waitForFences(1, &m_xFence, VK_TRUE, UINT64_MAX);
 	xDevice.resetFences(1, &m_xFence);
 
-	xDevice.resetDescriptorPool(m_axDescriptorPools[0]);
+	for (vk::DescriptorPool& xPool : m_axDescriptorPools)
+	{
+		xDevice.resetDescriptorPool(xPool);
+	}
+}
+
+const vk::DescriptorPool& Zenith_Vulkan_PerFrame::GetDescriptorPoolForThread(u_int uThreadID)
+{
+	// Map thread ID to pool index (0 to NUM_WORKER_THREADS-1)
+	u_int uPoolIndex = uThreadID % NUM_WORKER_THREADS;
+	return m_axDescriptorPools[uPoolIndex];
+}
+
+const vk::CommandPool& Zenith_Vulkan_PerFrame::GetCommandPoolForThread(u_int uThreadID)
+{
+	// Map thread ID to pool index (0 to NUM_WORKER_THREADS-1)
+	u_int uPoolIndex = uThreadID % NUM_WORKER_THREADS;
+	return m_axCommandPools[uPoolIndex];
+}
+
+Zenith_Vulkan_CommandBuffer& Zenith_Vulkan_PerFrame::GetWorkerCommandBuffer(u_int uThreadID)
+{
+	// Map thread ID to buffer index (0 to NUM_WORKER_THREADS-1)
+	u_int uBufferIndex = uThreadID % NUM_WORKER_THREADS;
+	return m_axWorkerCommandBuffers[uBufferIndex];
 }
 
 Flux_VRAMHandle Zenith_Vulkan::RegisterVRAM(Zenith_Vulkan_VRAM* pxVRAM)

@@ -23,6 +23,17 @@ void Zenith_Vulkan_CommandBuffer::Initialise(CommandType eType /*= COMMANDTYPE_G
 	m_xCmdBuffers = xDevice.allocateCommandBuffers(xAllocInfo);
 }
 
+void Zenith_Vulkan_CommandBuffer::InitialiseWithCustomPool(const vk::CommandPool& xCustomPool, CommandType eType /*= COMMANDTYPE_GRAPHICS*/)
+{
+	m_eCommandType = eType;
+	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
+	vk::CommandBufferAllocateInfo xAllocInfo{};
+	xAllocInfo.commandPool = xCustomPool;
+	xAllocInfo.level = vk::CommandBufferLevel::ePrimary;
+	xAllocInfo.commandBufferCount = MAX_FRAMES_IN_FLIGHT;
+	m_xCmdBuffers = xDevice.allocateCommandBuffers(xAllocInfo);
+}
+
 void Zenith_Vulkan_CommandBuffer::BeginRecording()
 {
 	m_xCurrentCmdBuffer = m_xCmdBuffers[Zenith_Vulkan_Swapchain::GetCurrentFrameIndex()];
@@ -195,7 +206,7 @@ void Zenith_Vulkan_CommandBuffer::UpdateDescriptorSets()
 					axTexInfos[uNumTexWrites] = vk::DescriptorImageInfo()
 						.setSampler(pxSampler ? pxSampler->GetSampler() : Flux_Graphics::s_xRepeatSampler.GetSampler())
 						.setImageView(pxSRV->m_xImageView)
-						.setImageLayout(vk::ImageLayout::eShaderReadOnlyOptimal);
+						.setImageLayout(pxSRV->m_eExpectedLayout);
 					
 					axWrites[uNumWrites++] = vk::WriteDescriptorSet()
 						.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)

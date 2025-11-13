@@ -39,6 +39,7 @@ class Zenith_Vulkan_CommandBuffer
 public:
 	Zenith_Vulkan_CommandBuffer() {}
 	void Initialise(CommandType eType = COMMANDTYPE_GRAPHICS);
+	void InitialiseWithCustomPool(const vk::CommandPool& xCustomPool, CommandType eType = COMMANDTYPE_GRAPHICS);
 	void BeginRecording();
 	void EndRenderPass();
 	void EndRecording(RenderOrder eOrder, bool bEndPass = true);

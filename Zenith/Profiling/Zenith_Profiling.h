@@ -35,6 +35,7 @@ enum Zenith_ProfileIndex
 	ZENITH_PROFILE_INDEX__FLUX_PLATFORMAPI_END_FRAME,
 
 	ZENITH_PROFILE_INDEX__FLUX_ITERATE_COMMANDS,
+	ZENITH_PROFILE_INDEX__FLUX_RECORD_COMMAND_BUFFERS,
 
 	//#TO_TODO: rename these at runtime
 	ZENITH_PROFILE_INDEX__VULKAN_UPDATE_DESCRIPTOR_SETS,
@@ -78,6 +79,7 @@ static const char* g_aszProfileNames[]
 	"Flux PlatformAPI Begin Frame",
 	"Flux PlatformAPI End Frame",
 	"Flux Iterate Commands",
+	"Flux Record Command Buffers",
 	//#TO_TODO: rename these at runtime
 	"Vulkan Update Descriptor Sets",
 	"Visibility Check",
