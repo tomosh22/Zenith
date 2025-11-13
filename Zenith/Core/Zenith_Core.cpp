@@ -131,8 +131,8 @@ static void WaitForRenderTasks()
 
 void Zenith_Core::Zenith_MainLoop()
 {
-	Flux_PlatformAPI::BeginFrame();
-	Zenith_Profiling::BeginFrame();
+	ZENITH_PROFILING_FUNCTION_WRAPPER(Flux_PlatformAPI::BeginFrame, ZENITH_PROFILE_INDEX__FLUX_PLATFORMAPI_BEGIN_FRAME);
+
 	UpdateTimers();
 	Zenith_Input::BeginFrame();
 	Zenith_Window::GetInstance()->BeginFrame();
@@ -160,6 +160,4 @@ void Zenith_Core::Zenith_MainLoop()
 	ZENITH_PROFILING_FUNCTION_WRAPPER(Flux_PlatformAPI::EndFrame, ZENITH_PROFILE_INDEX__FLUX_PLATFORMAPI_END_FRAME);
 	
 	ZENITH_PROFILING_FUNCTION_WRAPPER(Flux_Swapchain::EndFrame, ZENITH_PROFILE_INDEX__FLUX_SWAPCHAIN_END_FRAME);
-	
-	Zenith_Profiling::EndFrame();
 }

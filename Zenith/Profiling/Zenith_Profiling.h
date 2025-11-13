@@ -31,6 +31,7 @@ enum Zenith_ProfileIndex
 	ZENITH_PROFILE_INDEX__FLUX_MEMORY_MANAGER,
 	ZENITH_PROFILE_INDEX__FLUX_SWAPCHAIN_BEGIN_FRAME,
 	ZENITH_PROFILE_INDEX__FLUX_SWAPCHAIN_END_FRAME,
+	ZENITH_PROFILE_INDEX__FLUX_PLATFORMAPI_BEGIN_FRAME,
 	ZENITH_PROFILE_INDEX__FLUX_PLATFORMAPI_END_FRAME,
 
 	ZENITH_PROFILE_INDEX__FLUX_ITERATE_COMMANDS,
@@ -74,6 +75,7 @@ static const char* g_aszProfileNames[]
 	"Flux Memory Manager",
 	"Flux Swapchain Begin Frame",
 	"Flux Swapchain End Frame",
+	"Flux PlatformAPI Begin Frame",
 	"Flux PlatformAPI End Frame",
 	"Flux Iterate Commands",
 	//#TO_TODO: rename these at runtime

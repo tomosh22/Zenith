@@ -84,7 +84,9 @@ int main()
 	//#TO_TODO: exit properly
 	while (true)
 	{
+		Zenith_Profiling::BeginFrame();
 		Zenith_StateMachine::Update();
+		Zenith_Profiling::EndFrame();
 	}
 	__debugbreak();
 }
