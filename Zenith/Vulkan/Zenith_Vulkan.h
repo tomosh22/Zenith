@@ -21,13 +21,13 @@ public:
 
 	void Initialise();
 	void BeginFrame();
-	const vk::DescriptorPool& GetDescriptorPoolForThread(u_int uThreadID);
-	const vk::CommandPool& GetCommandPoolForThread(u_int uThreadID);
-	Zenith_Vulkan_CommandBuffer& GetWorkerCommandBuffer(u_int uThreadID);
+	const vk::DescriptorPool& GetDescriptorPoolForWorkerIndex(u_int uWorkerIndex);
+	const vk::CommandPool& GetCommandPoolForWorkerIndex(u_int uWorkerIndex);
+	Zenith_Vulkan_CommandBuffer& GetWorkerCommandBuffer(u_int uWorkerIndex);
 	
 	vk::Fence m_xFence;
 	
-	static constexpr u_int NUM_WORKER_THREADS = 4;
+	static constexpr u_int NUM_WORKER_THREADS = 8;
 	vk::DescriptorPool m_axDescriptorPools[NUM_WORKER_THREADS];
 	vk::CommandPool m_axCommandPools[NUM_WORKER_THREADS];
 	Zenith_Vulkan_CommandBuffer m_axWorkerCommandBuffers[NUM_WORKER_THREADS];
@@ -109,7 +109,7 @@ public:
 	static const vk::CommandPool& GetCommandPool(CommandType eType) { return s_axCommandPools[eType]; }
 	static const vk::CommandPool& GetWorkerCommandPool(u_int uThreadIndex);
 	static const vk::Queue& GetQueue(CommandType eType) { return s_axQueues[eType]; }
-	static const vk::DescriptorPool& GetCurrentPerFrameDescriptorPool();
+	static const vk::DescriptorPool& GetPerFrameDescriptorPool(u_int uWorkerIndex);
 	static const vk::SurfaceKHR& GetSurface() { return s_xSurface; }
 	static const uint32_t GetQueueIndex(CommandType eType) { return s_auQueueIndices[eType]; }
 	static const vk::DescriptorPool& GetDefaultDescriptorPool() { return s_xDefaultDescriptorPool; }

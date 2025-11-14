@@ -37,9 +37,9 @@ struct DescSetBindings {
 class Zenith_Vulkan_CommandBuffer
 {
 public:
-	Zenith_Vulkan_CommandBuffer() {}
+	Zenith_Vulkan_CommandBuffer() : m_uWorkerIndex(0) {}
 	void Initialise(CommandType eType = COMMANDTYPE_GRAPHICS);
-	void InitialiseWithCustomPool(const vk::CommandPool& xCustomPool, CommandType eType = COMMANDTYPE_GRAPHICS);
+	void InitialiseWithCustomPool(const vk::CommandPool& xCustomPool, u_int uWorkerIndex, CommandType eType = COMMANDTYPE_GRAPHICS);
 	void BeginRecording();
 	void EndRenderPass();
 	void EndRecording(RenderOrder eOrder, bool bEndPass = true);
@@ -67,6 +67,8 @@ public:
 
 	vk::CommandBuffer& GetCurrentCmdBuffer() { return m_xCurrentCmdBuffer; }
 	void* Platform_GetCurrentCmdBuffer() const { return (void*)&m_xCurrentCmdBuffer; }
+	
+	u_int GetWorkerIndex() const { return m_uWorkerIndex; }
 
 	void ImageTransitionBarrier(vk::Image xImage, vk::ImageLayout eOldLayout, vk::ImageLayout eNewLayout, vk::ImageAspectFlags eAspect, vk::PipelineStageFlags eSrcStage, vk::PipelineStageFlags eDstStage, int uMipLevel = 0, int uLayer = 0);
 
@@ -89,6 +91,7 @@ private:
 	u_int m_uCurrentBindFreq = FLUX_MAX_DESCRIPTOR_SET_LAYOUTS;
 
 	CommandType m_eCommandType;
+	u_int m_uWorkerIndex; // Index of the worker thread (0 to NUM_WORKER_THREADS-1)
 
 	vk::DescriptorSet m_axCurrentDescSet[FLUX_MAX_DESCRIPTOR_SET_LAYOUTS] = { VK_NULL_HANDLE };
 	u_int m_uDescriptorDirty = true;

@@ -199,16 +199,14 @@ static void TransitionTargetsAfterRenderPass(Zenith_Vulkan_CommandBuffer& xComma
 		eSrcStage, eDstStage);
 }
 
-const vk::DescriptorPool& Zenith_Vulkan::GetCurrentPerFrameDescriptorPool()
+const vk::DescriptorPool& Zenith_Vulkan::GetPerFrameDescriptorPool(u_int uWorkerIndex)
 {
-	//#TO_TODO: current thread
-	u_int uThreadID = Zenith_Multithreading::GetCurrentThreadID();
-	return s_pxCurrentFrame->GetDescriptorPoolForThread(uThreadID);
+	return s_pxCurrentFrame->GetDescriptorPoolForWorkerIndex(uWorkerIndex);
 }
 
 const vk::CommandPool& Zenith_Vulkan::GetWorkerCommandPool(u_int uThreadIndex)
 {
-	return s_pxCurrentFrame->GetCommandPoolForThread(uThreadIndex);
+	return s_pxCurrentFrame->GetCommandPoolForWorkerIndex(uThreadIndex);
 }
 
 vk::Fence& Zenith_Vulkan::GetCurrentInFlightFence()
@@ -419,11 +417,13 @@ void Zenith_Vulkan::EndFrame()
 	xWorkData.pxMutex = &xMutex;
 	
 	// Create and submit task array for parallel command buffer recording
+	// Enable submitting thread joining to utilize the main thread
 	Zenith_TaskArray xRecordingTask(
 		ZENITH_PROFILE_INDEX__FLUX_RECORD_COMMAND_BUFFERS,
 		RecordCommandBuffersTask,
 		&xWorkData,
-		Zenith_Vulkan_PerFrame::NUM_WORKER_THREADS
+		Zenith_Vulkan_PerFrame::NUM_WORKER_THREADS,
+		true
 	);
 	
 	Zenith_TaskSystem::SubmitTaskArray(&xRecordingTask);
@@ -878,8 +878,8 @@ void Zenith_Vulkan_PerFrame::Initialise()
 			vk::CommandPoolCreateInfo(vk::CommandPoolCreateFlagBits::eResetCommandBuffer, 
 			Zenith_Vulkan::GetQueueIndex(COMMANDTYPE_GRAPHICS)));
 		
-		// Initialize worker command buffers with their dedicated command pools
-		m_axWorkerCommandBuffers[i].InitialiseWithCustomPool(m_axCommandPools[i]);
+		// Initialize worker command buffers with their dedicated command pools and worker index
+		m_axWorkerCommandBuffers[i].InitialiseWithCustomPool(m_axCommandPools[i], i);
 	}
 
 	vk::FenceCreateInfo xFenceInfo = vk::FenceCreateInfo()
@@ -899,25 +899,22 @@ void Zenith_Vulkan_PerFrame::BeginFrame()
 	}
 }
 
-const vk::DescriptorPool& Zenith_Vulkan_PerFrame::GetDescriptorPoolForThread(u_int uThreadID)
+const vk::DescriptorPool& Zenith_Vulkan_PerFrame::GetDescriptorPoolForWorkerIndex(u_int uWorkerIndex)
 {
-	// Map thread ID to pool index (0 to NUM_WORKER_THREADS-1)
-	u_int uPoolIndex = uThreadID % NUM_WORKER_THREADS;
-	return m_axDescriptorPools[uPoolIndex];
+	Zenith_Assert(uWorkerIndex < NUM_WORKER_THREADS, "Worker index out of range");
+	return m_axDescriptorPools[uWorkerIndex];
 }
 
-const vk::CommandPool& Zenith_Vulkan_PerFrame::GetCommandPoolForThread(u_int uThreadID)
+const vk::CommandPool& Zenith_Vulkan_PerFrame::GetCommandPoolForWorkerIndex(u_int uWorkerIndex)
 {
-	// Map thread ID to pool index (0 to NUM_WORKER_THREADS-1)
-	u_int uPoolIndex = uThreadID % NUM_WORKER_THREADS;
-	return m_axCommandPools[uPoolIndex];
+	Zenith_Assert(uWorkerIndex < NUM_WORKER_THREADS, "Worker index out of range");
+	return m_axCommandPools[uWorkerIndex];
 }
 
-Zenith_Vulkan_CommandBuffer& Zenith_Vulkan_PerFrame::GetWorkerCommandBuffer(u_int uThreadID)
+Zenith_Vulkan_CommandBuffer& Zenith_Vulkan_PerFrame::GetWorkerCommandBuffer(u_int uWorkerIndex)
 {
-	// Map thread ID to buffer index (0 to NUM_WORKER_THREADS-1)
-	u_int uBufferIndex = uThreadID % NUM_WORKER_THREADS;
-	return m_axWorkerCommandBuffers[uBufferIndex];
+	Zenith_Assert(uWorkerIndex < NUM_WORKER_THREADS, "Worker index out of range");
+	return m_axWorkerCommandBuffers[uWorkerIndex];
 }
 
 Flux_VRAMHandle Zenith_Vulkan::RegisterVRAM(Zenith_Vulkan_VRAM* pxVRAM)

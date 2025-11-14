@@ -42,7 +42,7 @@ static void ThreadFunc(const void* pData)
 void Zenith_TaskSystem::Inititalise()
 {
 	//#TO_TODO: work this out properly
-	const u_int uNumThreads = 4;
+	const u_int uNumThreads = 8;
 
 	g_pxWorkAvailableSem = new Zenith_Semaphore(0, uMAX_TASKS);
 	g_pxThreadsTerminatedSem = new Zenith_Semaphore(0, uNumThreads);
@@ -87,18 +87,47 @@ void Zenith_TaskSystem::SubmitTaskArray(Zenith_TaskArray* const pxTaskArray)
 
 	pxTaskArray->Reset();
 
-	// Submit the task array multiple times to allow parallel execution
 	const u_int uNumInvocations = pxTaskArray->GetNumInvocations();
-	g_xQueueMutex.Lock();
-	for (u_int u = 0; u < uNumInvocations; u++)
-	{
-		g_xTaskQueue.Enqueue(pxTaskArray);
-	}
-	g_xQueueMutex.Unlock();
+	const bool bSubmittingThreadJoins = pxTaskArray->GetSubmittingThreadJoins();
 
-	// Signal worker threads
-	for (u_int u = 0; u < uNumInvocations; u++)
+	if (bSubmittingThreadJoins)
 	{
-		g_pxWorkAvailableSem->Signal();
+		// Submit (N-1) tasks to worker threads, submitting thread will do the last one
+		const u_int uTasksForWorkers = uNumInvocations > 0 ? uNumInvocations - 1 : 0;
+		
+		g_xQueueMutex.Lock();
+		for (u_int u = 0; u < uTasksForWorkers; u++)
+		{
+			g_xTaskQueue.Enqueue(pxTaskArray);
+		}
+		g_xQueueMutex.Unlock();
+
+		// Signal worker threads
+		for (u_int u = 0; u < uTasksForWorkers; u++)
+		{
+			g_pxWorkAvailableSem->Signal();
+		}
+
+		// Submitting thread executes one task
+		if (uNumInvocations > 0)
+		{
+			pxTaskArray->DoTask();
+		}
+	}
+	else
+	{
+		// Original behavior: submit all tasks to worker threads
+		g_xQueueMutex.Lock();
+		for (u_int u = 0; u < uNumInvocations; u++)
+		{
+			g_xTaskQueue.Enqueue(pxTaskArray);
+		}
+		g_xQueueMutex.Unlock();
+
+		// Signal worker threads
+		for (u_int u = 0; u < uNumInvocations; u++)
+		{
+			g_pxWorkAvailableSem->Signal();
+		}
 	}
 }

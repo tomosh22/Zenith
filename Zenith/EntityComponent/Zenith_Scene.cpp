@@ -52,7 +52,8 @@ Zenith_Scene::Zenith_Scene()
 	{
 		ls_bOnce = false;
 		// Create task array with 4 invocations for parallel processing
-		g_pxAnimUpdateTask = new Zenith_TaskArray(ZENITH_PROFILE_INDEX__ANIMATION, AnimUpdateTask, nullptr, 4);
+		// Enable submitting thread joining to utilize the main thread
+		g_pxAnimUpdateTask = new Zenith_TaskArray(ZENITH_PROFILE_INDEX__ANIMATION, AnimUpdateTask, nullptr, 4, true);
 		atexit([]() {delete g_pxAnimUpdateTask; });
 	}
 }

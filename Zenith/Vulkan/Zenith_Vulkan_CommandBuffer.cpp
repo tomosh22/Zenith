@@ -23,9 +23,10 @@ void Zenith_Vulkan_CommandBuffer::Initialise(CommandType eType /*= COMMANDTYPE_G
 	m_xCmdBuffers = xDevice.allocateCommandBuffers(xAllocInfo);
 }
 
-void Zenith_Vulkan_CommandBuffer::InitialiseWithCustomPool(const vk::CommandPool& xCustomPool, CommandType eType /*= COMMANDTYPE_GRAPHICS*/)
+void Zenith_Vulkan_CommandBuffer::InitialiseWithCustomPool(const vk::CommandPool& xCustomPool, u_int uWorkerIndex, CommandType eType /*= COMMANDTYPE_GRAPHICS*/)
 {
 	m_eCommandType = eType;
+	m_uWorkerIndex = uWorkerIndex;
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 	vk::CommandBufferAllocateInfo xAllocInfo{};
 	xAllocInfo.commandPool = xCustomPool;
@@ -178,7 +179,7 @@ void Zenith_Vulkan_CommandBuffer::UpdateDescriptorSets()
 		else
 		{
 			vk::DescriptorSetAllocateInfo xInfo = vk::DescriptorSetAllocateInfo()
-				.setDescriptorPool(Zenith_Vulkan::GetCurrentPerFrameDescriptorPool())
+				.setDescriptorPool(Zenith_Vulkan::GetPerFrameDescriptorPool(m_uWorkerIndex))
 				.setDescriptorSetCount(1)
 				.setPSetLayouts(&xLayout);
 			m_axCurrentDescSet[uDescSet] = xDevice.allocateDescriptorSets(xInfo)[0];

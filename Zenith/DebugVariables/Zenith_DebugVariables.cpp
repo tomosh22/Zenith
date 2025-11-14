@@ -73,8 +73,9 @@ void Zenith_DebugVariableTree::LeafNode<const Flux_ShaderResourceView>::ImGuiDis
 
 	vk::DescriptorSetLayout xLayout = Zenith_Vulkan::GetDevice().createDescriptorSetLayout(xInfo);
 
+	// Use worker index 0 since this is called from the main thread during ImGui rendering
 	vk::DescriptorSetAllocateInfo xAllocInfo = vk::DescriptorSetAllocateInfo()
-		.setDescriptorPool(Zenith_Vulkan::GetCurrentPerFrameDescriptorPool())
+		.setDescriptorPool(Zenith_Vulkan::GetPerFrameDescriptorPool(0))
 		.setDescriptorSetCount(1)
 		.setPSetLayouts(&xLayout);
 

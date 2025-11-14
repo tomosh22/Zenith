@@ -62,10 +62,11 @@ class Zenith_TaskArray : public Zenith_Task
 {
 public:
 	Zenith_TaskArray() = delete;
-	Zenith_TaskArray(Zenith_ProfileIndex eProfileIndex, Zenith_TaskArrayFunction pfnFunc, void* pData, u_int uNumInvocations)
+	Zenith_TaskArray(Zenith_ProfileIndex eProfileIndex, Zenith_TaskArrayFunction pfnFunc, void* pData, u_int uNumInvocations, bool bSubmittingThreadJoins = false)
 		: Zenith_Task(eProfileIndex, nullptr, pData)
 		, m_pfnArrayFunc(pfnFunc)
 		, m_uNumInvocations(uNumInvocations)
+		, m_bSubmittingThreadJoins(bSubmittingThreadJoins)
 		, m_uInvocationCounter(0)
 		, m_uCompletionCounter(0)
 	{
@@ -101,10 +102,16 @@ public:
 		return m_uNumInvocations;
 	}
 
+	const bool GetSubmittingThreadJoins() const
+	{
+		return m_bSubmittingThreadJoins;
+	}
+
 private:
 
 	Zenith_TaskArrayFunction m_pfnArrayFunc;
 	u_int m_uNumInvocations;
+	bool m_bSubmittingThreadJoins;
 	std::atomic<u_int> m_uInvocationCounter;
 	std::atomic<u_int> m_uCompletionCounter;
 };
