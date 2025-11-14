@@ -6,6 +6,7 @@
 #include "Flux/Flux_Graphics.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
 #include "Multithreading/Zenith_Multithreading.h"
+#include <algorithm>
 
 #ifdef ZENITH_WINDOWS
 #include "Zenith_Windows_Window.h"
@@ -265,7 +266,7 @@ struct CommandRecordingWorkData
 {
 	u_int uStartRenderOrder;
 	u_int uEndRenderOrder;
-	std::vector<vk::CommandBuffer>* pxOutCommandBuffers;
+	std::vector<std::pair<u_int, vk::CommandBuffer>>* pxOutCommandBuffers; // pair of (startRenderOrder, commandBuffer)
 	Zenith_Mutex* pxMutex;
 };
 
@@ -370,9 +371,9 @@ void Zenith_Vulkan::RecordCommandBuffersTask(void* pData, u_int uInvocationIndex
 	
 	xCommandBuffer.GetCurrentCmdBuffer().end();
 	
-	// Thread-safe add the command buffer to the output list
+	// Thread-safe add the command buffer to the output list with its starting render order
 	pWorkData->pxMutex->Lock();
-	pWorkData->pxOutCommandBuffers->push_back(xCommandBuffer.GetCurrentCmdBuffer());
+	pWorkData->pxOutCommandBuffers->push_back(std::make_pair(uLocalStartOrder, xCommandBuffer.GetCurrentCmdBuffer()));
 	pWorkData->pxMutex->Unlock();
 }
 
@@ -408,7 +409,7 @@ void Zenith_Vulkan::EndFrame()
 	s_axQueues[COMMANDTYPE_GRAPHICS].submit(xMemorySubmitInfo, VK_NULL_HANDLE);
 
 	// Use multithreaded command buffer recording
-	std::vector<vk::CommandBuffer> xRecordedCommandBuffers;
+	std::vector<std::pair<u_int, vk::CommandBuffer>> xRecordedCommandBuffers;
 	Zenith_Mutex xMutex;
 	
 	CommandRecordingWorkData xWorkData;
@@ -428,12 +429,26 @@ void Zenith_Vulkan::EndFrame()
 	Zenith_TaskSystem::SubmitTaskArray(&xRecordingTask);
 	xRecordingTask.WaitUntilComplete();
 	
-	// Submit all recorded command buffers
-	if (!xRecordedCommandBuffers.empty())
+	// Sort command buffers by render order before submission
+	std::sort(xRecordedCommandBuffers.begin(), xRecordedCommandBuffers.end(),
+		[](const std::pair<u_int, vk::CommandBuffer>& a, const std::pair<u_int, vk::CommandBuffer>& b) {
+			return a.first < b.first;
+		});
+	
+	// Extract just the command buffers for submission
+	std::vector<vk::CommandBuffer> xCommandBuffersToSubmit;
+	xCommandBuffersToSubmit.reserve(xRecordedCommandBuffers.size());
+	for (const auto& pair : xRecordedCommandBuffers)
+	{
+		xCommandBuffersToSubmit.push_back(pair.second);
+	}
+	
+	// Submit all recorded command buffers in correct render order
+	if (!xCommandBuffersToSubmit.empty())
 	{
 		vk::SubmitInfo xRenderSubmitInfo = vk::SubmitInfo()
-			.setCommandBufferCount(xRecordedCommandBuffers.size())
-			.setPCommandBuffers(xRecordedCommandBuffers.data())
+			.setCommandBufferCount(xCommandBuffersToSubmit.size())
+			.setPCommandBuffers(xCommandBuffersToSubmit.data())
 			.setPWaitSemaphores(nullptr)
 			.setPSignalSemaphores(nullptr)
 			.setWaitSemaphoreCount(0)
