@@ -172,7 +172,7 @@ static void TransitionTargetsForRenderPass(Zenith_Vulkan_CommandBuffer& xCommand
 	if (!bClear)
 	{
 		TransitionDepthStencilTarget(xCommandBuffer, xTargetSetup,
-			vk::ImageLayout::eDepthStencilReadOnlyOptimal,
+			vk::ImageLayout::eShaderReadOnlyOptimal,
 			vk::ImageLayout::eDepthStencilReadOnlyOptimal,
 			vk::AccessFlagBits::eShaderRead,
 			vk::AccessFlagBits::eDepthStencilAttachmentRead,
@@ -193,7 +193,7 @@ static void TransitionTargetsAfterRenderPass(Zenith_Vulkan_CommandBuffer& xComma
 	// Use DepthStencilReadOnlyOptimal for all formats (doesn't require separateDepthStencilLayouts feature)
 	TransitionDepthStencilTarget(xCommandBuffer, xTargetSetup,
 		vk::ImageLayout::eDepthStencilReadOnlyOptimal,
-		vk::ImageLayout::eDepthStencilReadOnlyOptimal,
+		vk::ImageLayout::eShaderReadOnlyOptimal,
 		vk::AccessFlagBits::eDepthStencilAttachmentRead,
 		vk::AccessFlagBits::eShaderRead,
 		eSrcStage, eDstStage);

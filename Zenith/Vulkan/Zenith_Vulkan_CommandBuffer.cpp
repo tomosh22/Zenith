@@ -206,7 +206,7 @@ void Zenith_Vulkan_CommandBuffer::UpdateDescriptorSets()
 					axTexInfos[uNumTexWrites] = vk::DescriptorImageInfo()
 						.setSampler(pxSampler ? pxSampler->GetSampler() : Flux_Graphics::s_xRepeatSampler.GetSampler())
 						.setImageView(pxSRV->m_xImageView)
-						.setImageLayout(pxSRV->m_eExpectedLayout);
+						.setImageLayout(vk::ImageLayout::eShaderReadOnlyOptimal);
 					
 					axWrites[uNumWrites++] = vk::WriteDescriptorSet()
 						.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
