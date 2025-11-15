@@ -308,6 +308,7 @@ public:
 		new (reinterpret_cast<CommandType_T*>(&m_pcData[m_uCursor + sizeof(Flux_CommandType)])) CommandType_T(std::forward<Args>(xArgs)...);
 		#include "Memory/Zenith_MemoryManagement_Enabled.h"
 		m_uCursor += sizeof(CommandType_T) + sizeof(Flux_CommandType);
+		m_uCommandCount++;
 	}
 
 	void IterateCommands(Flux_CommandBuffer* pxCmdBuf) const
@@ -352,6 +353,7 @@ public:
 	void Reset(const bool bClearTargets)
 	{
 		m_uCursor = 0;
+		m_uCommandCount = 0;
 		m_bClearTargets = bClearTargets;
 	}
 
@@ -360,11 +362,17 @@ public:
 		return m_bClearTargets;
 	}
 
+	u_int GetCommandCount() const
+	{
+		return m_uCommandCount;
+	}
+
 private:
 	static constexpr u_int uINITIAL_SIZE = 32;
 	u_int8* m_pcData;
 	u_int m_uCursor = 0;
 	u_int m_uCapacity = 0;
+	u_int m_uCommandCount = 0;
 	const char* m_szName = nullptr;
 
 	bool m_bClearTargets;

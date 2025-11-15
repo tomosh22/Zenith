@@ -97,7 +97,7 @@ struct Flux_TargetSetup {
 
 	const uint32_t GetNumColourAttachments();
 
-	bool operator==(const Flux_TargetSetup& xOther)
+	bool operator==(const Flux_TargetSetup& xOther) const
 	{
 		for (u_int u = 0; u < FLUX_MAX_TARGETS; u++)
 		{
@@ -109,7 +109,7 @@ struct Flux_TargetSetup {
 		return m_pxDepthStencil == xOther.m_pxDepthStencil;
 	}
 
-	bool operator!=(const Flux_TargetSetup& xOther)
+	bool operator!=(const Flux_TargetSetup& xOther) const
 	{
 		return !(*this == xOther);
 	}

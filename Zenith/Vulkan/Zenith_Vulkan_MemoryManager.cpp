@@ -100,7 +100,6 @@ void Zenith_Vulkan_MemoryManager::EndFrame(bool bDefer /*= true*/)
 	FlushStagingBuffer();
 
 	const u_int uNumAllocatedVRAMs = Zenith_Vulkan::s_xVRAMRegistry.size();
-	printf("Num Allocated VRAMs %u \n", uNumAllocatedVRAMs);
 
 	// Process deferred VRAM deletions
 	ProcessDeferredDeletions();
