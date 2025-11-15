@@ -57,3 +57,72 @@ void Flux::OnResChange()
 		pfnCallback();
 	}
 }
+
+bool Flux::PrepareFrame(Flux_WorkDistribution& xOutDistribution)
+{
+	xOutDistribution.Clear();
+	
+	// Count total commands across all render orders
+	for (u_int uRenderOrder = RENDER_ORDER_MEMORY_UPDATE + 1; uRenderOrder < RENDER_ORDER_MAX; uRenderOrder++)
+	{
+		const Zenith_Vector<std::pair<const Flux_CommandList*, Flux_TargetSetup>>& xCommandLists = s_xPendingCommandLists[uRenderOrder];
+		
+		for (u_int i = 0; i < xCommandLists.GetSize(); i++)
+		{
+			xOutDistribution.uTotalCommandCount += xCommandLists.Get(i).first->GetCommandCount();
+		}
+	}
+	
+	// Early exit if there are no commands
+	if (xOutDistribution.uTotalCommandCount == 0)
+	{
+		return false;
+	}
+	
+	// Distribute work across threads based on command count
+	const u_int uTargetCommandsPerThread = (xOutDistribution.uTotalCommandCount + FLUX_NUM_WORKER_THREADS - 1) / FLUX_NUM_WORKER_THREADS;
+	u_int uCurrentThreadIndex = 0;
+	u_int uCurrentThreadCommandCount = 0;
+	
+	// Set the first thread's start position
+	xOutDistribution.auStartRenderOrder[0] = RENDER_ORDER_MEMORY_UPDATE + 1;
+	xOutDistribution.auStartIndex[0] = 0;
+	
+	// Iterate through all render orders and command lists to distribute work
+	for (u_int uRenderOrder = RENDER_ORDER_MEMORY_UPDATE + 1; uRenderOrder < RENDER_ORDER_MAX; uRenderOrder++)
+	{
+		const Zenith_Vector<std::pair<const Flux_CommandList*, Flux_TargetSetup>>& xCommandLists = s_xPendingCommandLists[uRenderOrder];
+		
+		for (u_int uIndex = 0; uIndex < xCommandLists.GetSize(); uIndex++)
+		{
+			const u_int uCommandCount = xCommandLists.Get(uIndex).first->GetCommandCount();
+			
+			// If adding this item would exceed the target and we have more threads available, move to next thread
+			if (uCurrentThreadCommandCount > 0 && 
+			    uCurrentThreadCommandCount + uCommandCount > uTargetCommandsPerThread && 
+			    uCurrentThreadIndex < FLUX_NUM_WORKER_THREADS - 1)
+			{
+				// Finalize current thread's range
+				xOutDistribution.auEndRenderOrder[uCurrentThreadIndex] = uRenderOrder;
+				xOutDistribution.auEndIndex[uCurrentThreadIndex] = uIndex;
+				
+				// Move to next thread
+				uCurrentThreadIndex++;
+				uCurrentThreadCommandCount = 0;
+				xOutDistribution.auStartRenderOrder[uCurrentThreadIndex] = uRenderOrder;
+				xOutDistribution.auStartIndex[uCurrentThreadIndex] = uIndex;
+			}
+			
+			uCurrentThreadCommandCount += uCommandCount;
+		}
+	}
+	
+	// Finalize the last thread's range (end is exclusive, so point to start of next render order)
+	if (uCurrentThreadIndex < FLUX_NUM_WORKER_THREADS)
+	{
+		xOutDistribution.auEndRenderOrder[uCurrentThreadIndex] = RENDER_ORDER_MAX;
+		xOutDistribution.auEndIndex[uCurrentThreadIndex] = 0;
+	}
+	
+	return true;
+}

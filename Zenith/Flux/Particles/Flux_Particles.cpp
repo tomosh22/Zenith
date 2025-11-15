@@ -83,9 +83,9 @@ void UploadInstanceData()
 {
 	Particle axParticles[] =
 	{
-		{{200.,1500 + sin(Zenith_Core::GetTimePassed()) * 200, 200.,300.}, {1.,0.,0.,1.}},
-		{{400.,1500 + sin(Zenith_Core::GetTimePassed()) * 200, 400.,300.}, {0.,1.,0.,1.}},
-		{{800.,1500 + sin(Zenith_Core::GetTimePassed()) * 200, 800.,300.}, {0.,0.,1.,1.}},
+		{{2000,500 + sin(Zenith_Core::GetTimePassed()) * 200, 1500,300.}, {1.,0.,0.,1.}},
+		{{2100,500 + sin(Zenith_Core::GetTimePassed()) * 200, 1600,300.}, {0.,1.,0.,1.}},
+		{{2200,500 + sin(Zenith_Core::GetTimePassed()) * 200, 1700,300.}, {0.,0.,1.,1.}},
 	};
 
 	Flux_MemoryManager::UploadBufferData(s_xInstanceBuffer.GetBuffer().m_xVRAMHandle, axParticles, sizeof(axParticles));

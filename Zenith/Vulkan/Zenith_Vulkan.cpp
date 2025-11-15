@@ -217,7 +217,7 @@ vk::Fence& Zenith_Vulkan::GetCurrentInFlightFence()
 const bool Zenith_Vulkan::ShouldSubmitDrawCalls() { return dbg_bSubmitDrawCalls; }
 const bool Zenith_Vulkan::ShouldUseDescSetCache() { return dbg_bUseDescSetCache; }
 const bool Zenith_Vulkan::ShouldOnlyUpdateDirtyDescriptors() { return dbg_bOnlyUpdateDirtyDescriptors; }
-const void Zenith_Vulkan::IncrementDescriptorSetAllocations(){ dbg_uNumDescSetAllocations++;}
+void Zenith_Vulkan::IncrementDescriptorSetAllocations(){ dbg_uNumDescSetAllocations++;}
 
 void Zenith_Vulkan::Initialise()
 {
@@ -256,77 +256,52 @@ void Zenith_Vulkan::BeginFrame()
 	s_pxCurrentFrame = &s_axPerFrame[Zenith_Vulkan_Swapchain::GetCurrentFrameIndex()];
 	s_pxCurrentFrame->BeginFrame();
 
+#ifdef ZENITH_DEBUG_VARIABLES
 	dbg_uNumDescSetAllocations = 0;
+#endif
 }
 
 // Structure representing a chunk of work for command buffer recording
-struct CommandListWorkItem
-{
-	u_int uRenderOrder;
-	u_int uCommandListIndex;
-	const Flux_CommandList* pxCommandList;
-	Flux_TargetSetup xTargetSetup;
-	u_int uCommandCount;
-};
-
-// Structure to hold work for each thread
-struct CommandBufferForSubmission
-{
-	u_int uRenderOrder;
-	u_int uInvocationIndex; // For stable sorting when render orders match
-	vk::CommandBuffer xCommandBuffer;
-};
-
-struct CommandRecordingWorkData
-{
-	Zenith_Vector<CommandListWorkItem>* pxWorkItems; // All work items to be processed
-	u_int uStartIndex; // Start index for this thread
-	u_int uEndIndex;   // End index for this thread (exclusive)
-	std::vector<CommandBufferForSubmission>* pxOutCommandBuffers;
-	Zenith_Mutex* pxMutex;
-};
-
 // Task array function to record command buffers in parallel
 void Zenith_Vulkan::RecordCommandBuffersTask(void* pData, u_int uInvocationIndex, u_int uNumInvocations)
 {
-	CommandRecordingWorkData* pWorkData = static_cast<CommandRecordingWorkData*>(pData);
-	
-	// Check if this thread has any work to do
-	if (pWorkData[uInvocationIndex].uStartIndex >= pWorkData[uInvocationIndex].uEndIndex)
-	{
-		printf("  Thread %u: No work (range [%u, %u))\n", uInvocationIndex, 
-		       pWorkData[uInvocationIndex].uStartIndex, pWorkData[uInvocationIndex].uEndIndex);
-		return; // No work for this thread
-	}
-	
-	printf("  Thread %u: Processing range [%u, %u) = %u items\n", uInvocationIndex,
-	       pWorkData[uInvocationIndex].uStartIndex, pWorkData[uInvocationIndex].uEndIndex,
-	       pWorkData[uInvocationIndex].uEndIndex - pWorkData[uInvocationIndex].uStartIndex);
+	const Flux_WorkDistribution* pWorkDistribution = static_cast<const Flux_WorkDistribution*>(pData);
 	
 	// Get the worker command buffer from the current frame
 	Zenith_Vulkan_CommandBuffer& xCommandBuffer = Zenith_Vulkan::s_pxCurrentFrame->GetWorkerCommandBuffer(uInvocationIndex);
 	xCommandBuffer.BeginRecording();
 	
 	Flux_TargetSetup xCurrentTargetSetup;
-	u_int uFirstRenderOrder = RENDER_ORDER_MAX;
 	
-	// Process the assigned contiguous range of work items
-	for (u_int uWorkItemIndex = pWorkData[uInvocationIndex].uStartIndex; 
-	     uWorkItemIndex < pWorkData[uInvocationIndex].uEndIndex; 
-	     uWorkItemIndex++)
+	const u_int uStartRenderOrder = pWorkDistribution->auStartRenderOrder[uInvocationIndex];
+	const u_int uStartIndex = pWorkDistribution->auStartIndex[uInvocationIndex];
+	const u_int uEndRenderOrder = pWorkDistribution->auEndRenderOrder[uInvocationIndex];
+	const u_int uEndIndex = pWorkDistribution->auEndIndex[uInvocationIndex];
+	
+	// Process all assigned command lists across render orders
+	for (u_int uRenderOrder = uStartRenderOrder; uRenderOrder <= uEndRenderOrder; uRenderOrder++)
 	{
-		CommandListWorkItem& xWorkItem = pWorkData[uInvocationIndex].pxWorkItems->Get(uWorkItemIndex);
+		Zenith_Vector<std::pair<const Flux_CommandList*, Flux_TargetSetup>>& xCommandLists = Flux::s_xPendingCommandLists[uRenderOrder];
 		
-		// Track the first render order this thread processes (for sorting command buffers)
-		if (uFirstRenderOrder == RENDER_ORDER_MAX)
+		// Skip empty render orders
+		if (xCommandLists.GetSize() == 0)
 		{
-			uFirstRenderOrder = xWorkItem.uRenderOrder;
+			continue;
 		}
 		
-		const bool bClear = xWorkItem.pxCommandList->RequiresClear();
+		// Determine the range within this render order
+		const u_int uIndexStart = (uRenderOrder == uStartRenderOrder) ? uStartIndex : 0;
+		const u_int uIndexEnd = (uRenderOrder == uEndRenderOrder) ? uEndIndex : xCommandLists.GetSize();
 		
-		// Check if this is a compute pass (null target setup)
-		const bool bIsComputePass = (xWorkItem.xTargetSetup == Flux_Graphics::s_xNullTargetSetup);
+		for (u_int i = uIndexStart; i < uIndexEnd; i++)
+		{
+			const Flux_CommandList* pxCommandList = xCommandLists.Get(i).first;
+			Flux_TargetSetup& xTargetSetup = xCommandLists.Get(i).second;
+			
+			const bool bClear = pxCommandList->RequiresClear();
+			
+			// Check if this is a compute pass (null target setup)
+			const bool bIsComputePass = (xTargetSetup == Flux_Graphics::s_xNullTargetSetup);
 		
 		if (bIsComputePass)
 		{
@@ -342,9 +317,9 @@ void Zenith_Vulkan::RecordCommandBuffersTask(void* pData, u_int uInvocationIndex
 				);
 				xCurrentTargetSetup = Flux_Graphics::s_xNullTargetSetup;
 			}
-			xWorkItem.pxCommandList->IterateCommands(&xCommandBuffer);
+			pxCommandList->IterateCommands(&xCommandBuffer);
 		}
-		else if (xWorkItem.xTargetSetup != xCurrentTargetSetup || bClear || xCommandBuffer.m_xCurrentRenderPass == VK_NULL_HANDLE)
+		else if (xTargetSetup != xCurrentTargetSetup || bClear || xCommandBuffer.m_xCurrentRenderPass == VK_NULL_HANDLE)
 		{
 			if (xCommandBuffer.m_xCurrentRenderPass != VK_NULL_HANDLE)
 			{
@@ -359,18 +334,19 @@ void Zenith_Vulkan::RecordCommandBuffersTask(void* pData, u_int uInvocationIndex
 
 			TransitionTargetsForRenderPass(
 				xCommandBuffer, 
-				xWorkItem.xTargetSetup,
+				xTargetSetup,
 				vk::PipelineStageFlagBits::eFragmentShader,
 				vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eEarlyFragmentTests,
 				bClear
 			);
-			xCommandBuffer.BeginRenderPass(xWorkItem.xTargetSetup, bClear, bClear, bClear);
-			xCurrentTargetSetup = xWorkItem.xTargetSetup;
-			xWorkItem.pxCommandList->IterateCommands(&xCommandBuffer);
+			xCommandBuffer.BeginRenderPass(xTargetSetup, bClear, bClear, bClear);
+			xCurrentTargetSetup = xTargetSetup;
+			pxCommandList->IterateCommands(&xCommandBuffer);
 		}
 		else
 		{
-			xWorkItem.pxCommandList->IterateCommands(&xCommandBuffer);
+			pxCommandList->IterateCommands(&xCommandBuffer);
+		}
 		}
 	}
 	
@@ -387,17 +363,7 @@ void Zenith_Vulkan::RecordCommandBuffersTask(void* pData, u_int uInvocationIndex
 	}
 	
 	xCommandBuffer.GetCurrentCmdBuffer().end();
-	
-	// Thread-safe add the command buffer to the output list with its first render order (for sorting)
-	pWorkData[uInvocationIndex].pxMutex->Lock();
-	printf("  Thread %u: First render order = %u, adding command buffer\n", uInvocationIndex, uFirstRenderOrder);
-	// Store render order, invocation index, and command buffer for stable sorting
-	CommandBufferForSubmission xSubmission;
-	xSubmission.uRenderOrder = uFirstRenderOrder;
-	xSubmission.uInvocationIndex = uInvocationIndex;
-	xSubmission.xCommandBuffer = xCommandBuffer.GetCurrentCmdBuffer();
-	pWorkData[uInvocationIndex].pxOutCommandBuffers->push_back(xSubmission);
-	pWorkData[uInvocationIndex].pxMutex->Unlock();
+
 }
 
 void Zenith_Vulkan::EndFrame()
@@ -431,119 +397,11 @@ void Zenith_Vulkan::EndFrame()
 	//#TO_TODO: change this to copy queue, how do I make sure this finishes before graphics?
 	s_axQueues[COMMANDTYPE_GRAPHICS].submit(xMemorySubmitInfo, VK_NULL_HANDLE);
 
-	// Build work items from all pending command lists
-	Zenith_Vector<CommandListWorkItem> xWorkItems;
-	u_int uTotalCommandCount = 0;
-	
-	for (u_int uRenderOrder = RENDER_ORDER_MEMORY_UPDATE + 1; uRenderOrder < RENDER_ORDER_MAX; uRenderOrder++)
+	// Prepare frame work distribution in platform-independent layer
+	Flux_WorkDistribution xWorkDistribution;
+	if (!Flux::PrepareFrame(xWorkDistribution))
 	{
-		Zenith_Vector<std::pair<const Flux_CommandList*, Flux_TargetSetup>>& xCommandLists = Flux::s_xPendingCommandLists[uRenderOrder];
-		
-		for (u_int uCmdListIndex = 0; uCmdListIndex < xCommandLists.GetSize(); uCmdListIndex++)
-		{
-			const Flux_CommandList* pxCmdList = xCommandLists.Get(uCmdListIndex).first;
-			const Flux_TargetSetup& xTargetSetup = xCommandLists.Get(uCmdListIndex).second;
-			const u_int uCommandCount = pxCmdList->GetCommandCount();
-			
-			if (uCommandCount > 0)
-			{
-				CommandListWorkItem xItem;
-				xItem.uRenderOrder = uRenderOrder;
-				xItem.uCommandListIndex = uCmdListIndex;
-				xItem.pxCommandList = pxCmdList;
-				xItem.xTargetSetup = xTargetSetup;
-				xItem.uCommandCount = uCommandCount;
-				
-				xWorkItems.PushBack(xItem);
-				uTotalCommandCount += uCommandCount;
-			}
-		}
-	}
-	
-	// Debug: Check what we're about to process
-	static u_int s_uFrameCounter = 0;
-	s_uFrameCounter++;
-	printf("Frame %u: Total work items: %u, Total commands: %u\n", s_uFrameCounter, xWorkItems.GetSize(), uTotalCommandCount);
-	
-	// Early exit if there are no work items
-	if (xWorkItems.GetSize() == 0)
-	{
-		for (uint32_t i = 0; i < RENDER_ORDER_MAX; i++)
-		{
-			Flux::s_xPendingCommandLists[i].Clear();
-		}
-		return;
-	}
-	
-	// Distribute work items across threads based on command count
-	// Each thread gets a contiguous range that represents roughly equal command counts
-	constexpr u_int uNumWorkerThreads = Zenith_Vulkan_PerFrame::NUM_WORKER_THREADS;
-	CommandRecordingWorkData axWorkData[uNumWorkerThreads];
-	std::vector<CommandBufferForSubmission> xRecordedCommandBuffers;
-	Zenith_Mutex xMutex;
-	
-	const u_int uTargetCommandsPerThread = (uTotalCommandCount + uNumWorkerThreads - 1) / uNumWorkerThreads;
-	u_int uCurrentThreadIndex = 0;
-	u_int uCurrentThreadCommandCount = 0;
-	u_int uCurrentThreadStartIndex = 0;
-	
-	for (u_int i = 0; i < uNumWorkerThreads; i++)
-	{
-		axWorkData[i].pxWorkItems = &xWorkItems;
-		axWorkData[i].pxOutCommandBuffers = &xRecordedCommandBuffers;
-		axWorkData[i].pxMutex = &xMutex;
-		axWorkData[i].uStartIndex = 0;
-		axWorkData[i].uEndIndex = 0;
-	}
-	
-	// Set the first thread's start index explicitly
-	axWorkData[0].uStartIndex = 0;
-	
-	// Assign contiguous ranges of work items to threads based on command count
-	for (u_int uWorkItemIndex = 0; uWorkItemIndex < xWorkItems.GetSize(); uWorkItemIndex++)
-	{
-		const u_int uCommandCount = xWorkItems.Get(uWorkItemIndex).uCommandCount;
-		
-		// If adding this item would exceed the target and we have more threads available, move to next thread
-		if (uCurrentThreadCommandCount > 0 && 
-		    uCurrentThreadCommandCount + uCommandCount > uTargetCommandsPerThread && 
-		    uCurrentThreadIndex < uNumWorkerThreads - 1)
-		{
-			// Finalize current thread's range
-			axWorkData[uCurrentThreadIndex].uEndIndex = uWorkItemIndex;
-			
-			// Move to next thread
-			uCurrentThreadIndex++;
-			uCurrentThreadStartIndex = uWorkItemIndex;
-			uCurrentThreadCommandCount = 0;
-			axWorkData[uCurrentThreadIndex].uStartIndex = uCurrentThreadStartIndex;
-		}
-		
-		uCurrentThreadCommandCount += uCommandCount;
-	}
-	
-	// Finalize the last thread's range
-	if (uCurrentThreadIndex < uNumWorkerThreads)
-	{
-		axWorkData[uCurrentThreadIndex].uEndIndex = xWorkItems.GetSize();
-	}
-	
-	// Debug: Verify all work items are assigned
-	u_int uTotalAssignedItems = 0;
-	for (u_int i = 0; i < uNumWorkerThreads; i++)
-	{
-		uTotalAssignedItems += (axWorkData[i].uEndIndex - axWorkData[i].uStartIndex);
-	}
-	if (uTotalAssignedItems != xWorkItems.GetSize())
-	{
-		printf("WARNING: Work distribution mismatch! Total items: %u, Assigned items: %u\n", 
-		       xWorkItems.GetSize(), uTotalAssignedItems);
-		for (u_int i = 0; i < uNumWorkerThreads; i++)
-		{
-			printf("  Thread %u: [%u, %u) = %u items\n", 
-			       i, axWorkData[i].uStartIndex, axWorkData[i].uEndIndex, 
-			       axWorkData[i].uEndIndex - axWorkData[i].uStartIndex);
-		}
+		return; // No work to do this frame
 	}
 	
 	// Create and submit task array for parallel command buffer recording
@@ -551,32 +409,30 @@ void Zenith_Vulkan::EndFrame()
 	Zenith_TaskArray xRecordingTask(
 		ZENITH_PROFILE_INDEX__FLUX_RECORD_COMMAND_BUFFERS,
 		RecordCommandBuffersTask,
-		axWorkData,
-		uNumWorkerThreads,
+		&xWorkDistribution,
+		FLUX_NUM_WORKER_THREADS,
 		true
 	);
 	
 	Zenith_TaskSystem::SubmitTaskArray(&xRecordingTask);
 	xRecordingTask.WaitUntilComplete();
 	
-	// Sort command buffers by render order (primary) and invocation index (secondary)
-	// This ensures deterministic ordering even when multiple threads have the same render order
-	std::sort(xRecordedCommandBuffers.begin(), xRecordedCommandBuffers.end(),
-		[](const CommandBufferForSubmission& a, const CommandBufferForSubmission& b) {
-			if (a.uRenderOrder != b.uRenderOrder)
-				return a.uRenderOrder < b.uRenderOrder;
-			return a.uInvocationIndex < b.uInvocationIndex;
-		});
-	
-	// Extract just the command buffers for submission
-	std::vector<vk::CommandBuffer> xCommandBuffersToSubmit;
-	xCommandBuffersToSubmit.reserve(xRecordedCommandBuffers.size());
-	for (const auto& xSubmission : xRecordedCommandBuffers)
+	// Clear all pending command lists now that recording is complete
+	for (u_int i = 0; i < RENDER_ORDER_MAX; i++)
 	{
-		xCommandBuffersToSubmit.push_back(xSubmission.xCommandBuffer);
+		Flux::s_xPendingCommandLists[i].Clear();
 	}
 	
-	// Submit all recorded command buffers in correct render order
+	// Submit all worker command buffers in order (0 to 7)
+	// This maintains correct render order since work is distributed contiguously
+	std::vector<vk::CommandBuffer> xCommandBuffersToSubmit;
+	xCommandBuffersToSubmit.reserve(FLUX_NUM_WORKER_THREADS);
+	for (u_int i = 0; i < FLUX_NUM_WORKER_THREADS; i++)
+	{
+		xCommandBuffersToSubmit.push_back(s_pxCurrentFrame->GetWorkerCommandBuffer(i).GetCurrentCmdBuffer());
+	}
+	
+	// Submit all recorded command buffers in correct order
 	if (!xCommandBuffersToSubmit.empty())
 	{
 		vk::SubmitInfo xRenderSubmitInfo = vk::SubmitInfo()
@@ -588,11 +444,6 @@ void Zenith_Vulkan::EndFrame()
 			.setSignalSemaphoreCount(0);
 
 		s_axQueues[COMMANDTYPE_GRAPHICS].submit(xRenderSubmitInfo, VK_NULL_HANDLE);
-	}
-
-	for (uint32_t i = 0; i < RENDER_ORDER_MAX; i++)
-	{
-		Flux::s_xPendingCommandLists[i].Clear();
 	}
 
 	//#TO_TODO: plug semaphore leak

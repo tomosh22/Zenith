@@ -115,6 +115,30 @@ struct Flux_TargetSetup {
 	}
 };
 
+// Work distribution indices for parallel command buffer recording
+struct Flux_WorkDistribution
+{
+	// Start and end positions for each worker thread
+	// Each position is a (render order, index within that render order) pair
+	u_int auStartRenderOrder[FLUX_NUM_WORKER_THREADS];
+	u_int auStartIndex[FLUX_NUM_WORKER_THREADS];
+	u_int auEndRenderOrder[FLUX_NUM_WORKER_THREADS];
+	u_int auEndIndex[FLUX_NUM_WORKER_THREADS];
+	u_int uTotalCommandCount;
+	
+	void Clear()
+	{
+		for (u_int i = 0; i < FLUX_NUM_WORKER_THREADS; i++)
+		{
+			auStartRenderOrder[i] = 0;
+			auStartIndex[i] = 0;
+			auEndRenderOrder[i] = 0;
+			auEndIndex[i] = 0;
+		}
+		uTotalCommandCount = 0;
+	}
+};
+
 class Flux
 {
 public:
@@ -132,15 +156,21 @@ public:
 		s_xPendingCommandLists[eOrder].PushBack({pxCmdList, xTargetSetup});
 		ls_xMutex.Unlock();
 		}
+	
+	// Prepare frame for rendering - distributes work across worker threads
+	// Returns false if there is no work to do
+	static bool PrepareFrame(Flux_WorkDistribution& xOutDistribution);
 
 	static void AddResChangeCallback(void(*pfnCallback)()) { s_xResChangeCallbacks.push_back(pfnCallback); }
 	static void OnResChange();
+	
+	// Public access to pending command lists for platform layer
+	static Zenith_Vector<std::pair<const Flux_CommandList*, Flux_TargetSetup>> s_xPendingCommandLists[RENDER_ORDER_MAX];
 private:
 	friend class Flux_PlatformAPI;
 
 	static uint32_t s_uFrameCounter;
 	static std::vector<void(*)()> s_xResChangeCallbacks;
-	static Zenith_Vector<std::pair<const Flux_CommandList*, Flux_TargetSetup>> s_xPendingCommandLists[RENDER_ORDER_MAX];
 };
 
 struct Flux_PipelineSpecification

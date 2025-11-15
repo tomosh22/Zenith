@@ -27,7 +27,7 @@ public:
 	
 	vk::Fence m_xFence;
 	
-	static constexpr u_int NUM_WORKER_THREADS = 8;
+	static constexpr u_int NUM_WORKER_THREADS = FLUX_NUM_WORKER_THREADS;
 	vk::DescriptorPool m_axDescriptorPools[NUM_WORKER_THREADS];
 	vk::CommandPool m_axCommandPools[NUM_WORKER_THREADS];
 	Zenith_Vulkan_CommandBuffer m_axWorkerCommandBuffers[NUM_WORKER_THREADS];
@@ -118,7 +118,7 @@ public:
 	static const bool ShouldSubmitDrawCalls();
 	static const bool ShouldUseDescSetCache();
 	static const bool ShouldOnlyUpdateDirtyDescriptors();
-	static const void IncrementDescriptorSetAllocations();
+	static void IncrementDescriptorSetAllocations();
 
 	static Zenith_Vulkan_CommandBuffer* s_pxMemoryUpdateCmdBuf;
 
