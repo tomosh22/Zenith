@@ -144,9 +144,9 @@ static void LoadAssets()
 		Flux_Texture xMetallic = Zenith_AssetHandler::GetTexture("SupplyCrate_Metallic");
 
 		Flux_Material& xMat = Zenith_AssetHandler::AddMaterial("SupplyCrate");
-		xMat.SetDiffuse(xDiffuse);
+	 xMat.SetDiffuse(xDiffuse);
 		xMat.SetNormal(xNormal);
-		xMat.SetRoughnessMetallic(xRoughness);
+	 xMat.SetRoughnessMetallic(xRoughness);
 	}
 	{
 		Zenith_AssetHandler::TextureData xDiffuseData = Zenith_AssetHandler::LoadTexture2DFromFile(ASSETS_ROOT"Textures/rock2k/diffuse.ztx");
@@ -221,9 +221,7 @@ void Test_State_InGame::OnEnter()
 
 	Zenith_ColliderComponent& xCollider = s_xPlayer.AddComponent<Zenith_ColliderComponent>();
 	xCollider.AddCollider(COLLISION_VOLUME_TYPE_SPHERE, RIGIDBODY_TYPE_DYNAMIC);
-	//xTrans.m_pxRigidBody->enableGravity(false);
-	xTrans.m_pxRigidBody->setAngularLockAxisFactor({ 0, 0, 0 });
-	xCollider.GetCollider()->getMaterial().setBounciness(0);
+
 
 	Zenith_ScriptComponent& xScript = s_xPlayer.AddComponent<Zenith_ScriptComponent>();
 	xScript.SetBehaviour<PlayerController_Behaviour>();
@@ -252,9 +250,9 @@ void Test_State_InGame::OnEnter()
 		xTrans.SetScale({ 1,1,1 });
 
 		Zenith_ScriptComponent& xScript = s_xSphere0.AddComponent<Zenith_ScriptComponent>();
-		xScript.SetBehaviour<HookesLaw_Behaviour>();
+	 xScript.SetBehaviour<HookesLaw_Behaviour>();
 		HookesLaw_Behaviour& xBehaviour = *(HookesLaw_Behaviour*)xScript.m_pxScriptBehaviour;
-		xBehaviour.SetDesiredPosition({ 2.,100,2. });
+	 xBehaviour.SetDesiredPosition({ 2.,100,2. });
 
 		Zenith_ColliderComponent& xCollider = s_xSphere0.AddComponent<Zenith_ColliderComponent>();
 		xCollider.AddCollider(COLLISION_VOLUME_TYPE_SPHERE, RIGIDBODY_TYPE_DYNAMIC);
@@ -268,9 +266,9 @@ void Test_State_InGame::OnEnter()
 		xTrans.SetScale({ 1,1,1 });
 
 		Zenith_ScriptComponent& xScript = s_xSphere1.AddComponent<Zenith_ScriptComponent>();
-		xScript.SetBehaviour<HookesLaw_Behaviour>();
+	 xScript.SetBehaviour<HookesLaw_Behaviour>();
 		HookesLaw_Behaviour& xBehaviour = *(HookesLaw_Behaviour*)xScript.m_pxScriptBehaviour;
-		xBehaviour.SetDesiredPosition({ -2.,100,-2. });
+	 xBehaviour.SetDesiredPosition({ -2.,100,-2. });
 
 		Zenith_ColliderComponent& xCollider = s_xSphere1.AddComponent<Zenith_ColliderComponent>();
 		xCollider.AddCollider(COLLISION_VOLUME_TYPE_SPHERE, RIGIDBODY_TYPE_DYNAMIC);
@@ -313,12 +311,12 @@ void Test_State_InGame::OnEnter()
 		{
 			Zenith_ModelComponent& xModel = xEntity.AddComponent<Zenith_ModelComponent>();
 			xModel.AddMeshEntry(xSphereMesh, Zenith_AssetHandler::GetMaterial("SupplyCrate"));
-			xBehaviour.SetAngularVel({ 0.,0.,1. });
+		 xBehaviour.SetAngularVel({ 0.,0.,1. });
 		}
 
 		Zenith_ColliderComponent& xCollider = xEntity.AddComponent<Zenith_ColliderComponent>();
 		xCollider.AddCollider(COLLISION_VOLUME_TYPE_SPHERE, RIGIDBODY_TYPE_DYNAMIC);
-		xCollider.GetRigidBody()->enableGravity(false);
+		Zenith_Physics::SetGravityEnabled(xCollider.GetRigidBody(), false);
 
 		uCount++;
 	}

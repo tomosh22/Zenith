@@ -102,7 +102,6 @@ void Flux_DeferredShading::Render(void*)
 		g_xCommandList.AddCommand<Flux_CommandBindCBV>(&Flux_Shadows::GetShadowMatrixBuffer(u).GetBuffer().m_xCBV, uFirstShadowBufferBind + u);
 	}
 
-	dbg_uVisualiseCSMs = dbg_bVisualiseCSMs ? 1 : 0;
 	g_xCommandList.AddCommand<Flux_CommandPushConstant>(&dbg_uVisualiseCSMs, sizeof(dbg_uVisualiseCSMs));
 
 	g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(6);

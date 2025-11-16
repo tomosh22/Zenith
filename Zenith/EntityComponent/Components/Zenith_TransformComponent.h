@@ -1,8 +1,11 @@
 #pragma once
 #include "EntityComponent/Zenith_Entity.h"
-#include "Memory/Zenith_MemoryManagement_Disabled.h"
-#include "reactphysics3d/reactphysics3d.h"
-#include "Memory/Zenith_MemoryManagement_Enabled.h"
+#include "Maths/Zenith_Maths.h"
+
+namespace JPH
+{
+	class Body;
+}
 
 class Zenith_TransformComponent
 {
@@ -19,9 +22,8 @@ public:
 	void GetRotation(Zenith_Maths::Quat& xRot);
 	void GetScale(Zenith_Maths::Vector3& xScale);
 
-	const reactphysics3d::Transform& GetTransform();
 	Zenith_Maths::Vector3 m_xScale = { 1.,1.,1. };
-	reactphysics3d::RigidBody* m_pxRigidBody = nullptr;
+	JPH::Body* m_pxRigidBody = nullptr;
 
 	void BuildModelMatrix(Zenith_Maths::Matrix4& xMatOut);
 
@@ -29,8 +31,9 @@ public:
 
 private:
 	friend class Zenith_ColliderComponent;
-	reactphysics3d::Transform& GetTransform_Unsafe();
-	reactphysics3d::Transform m_xTransform;
+	
+	Zenith_Maths::Vector3 m_xPosition = { 0.0, 0.0, 0.0 };
+	Zenith_Maths::Quat m_xRotation = { 1.0, 0.0, 0.0, 0.0 };
 
 	Zenith_Entity m_xParentEntity;
 };

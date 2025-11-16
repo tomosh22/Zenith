@@ -91,9 +91,6 @@ public class TestToolsProject : Project
 		SourceFilesExcludeRegex.Add(@".*VulkanSDK.*");
 		SourceFilesExcludeRegex.Add(@".*FluxCompiler.*");
 		SourceFilesExcludeRegex.Add(@".*glm-master.*");
-		SourceFilesExcludeRegex.Add(@".*reactphysics3d-0.10.1\\helloworld.*");
-		SourceFilesExcludeRegex.Add(@".*reactphysics3d-0.10.1\\test.*");
-		SourceFilesExcludeRegex.Add(@".*reactphysics3d-0.10.1\\testbed.*");
 		SourceFilesExcludeRegex.Add(@".*opencv\\samples.*");
 		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\cmake.*");
 		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\modules\\calib3d.*");
@@ -126,6 +123,16 @@ public class TestToolsProject : Project
 		SourceFilesExcludeRegex.Add(@".*imgui-1.91.0\\backends\\imgui_impl_glut.*");
 		SourceFilesExcludeRegex.Add(@".*imgui-1.91.0\\backends\\imgui_impl_wgpu.*");
 		SourceFilesExcludeRegex.Add(@".*imgui-1.91.0\\backends\\imgui_impl_allegro.*");
+		SourceFilesExcludeRegex.Add(@".*reactphysics3d-0.10.1.*");
+		SourceFilesExcludeRegex.Add(@".*JoltPhysics-5.4.0\\Build.*");
+		SourceFilesExcludeRegex.Add(@".*JoltPhysics-5.4.0\\Docs.*");
+		SourceFilesExcludeRegex.Add(@".*JoltPhysics-5.4.0\\UnitTests.*");
+		SourceFilesExcludeRegex.Add(@".*JoltPhysics-5.4.0\\Samples.*");
+		SourceFilesExcludeRegex.Add(@".*JoltPhysics-5.4.0\\TestFramework.*");
+		SourceFilesExcludeRegex.Add(@".*JoltPhysics-5.4.0\\PerformanceTest.*");
+		SourceFilesExcludeRegex.Add(@".*JoltPhysics-5.4.0\\JoltViewer.*");
+		SourceFilesExcludeRegex.Add(@".*JoltPhysics-5.4.0\\HelloWorld.*");
+		SourceFilesExcludeRegex.Add(@".*cmake.*");
 		SourceFilesExcludeRegex.Add(@".*imgui-1.91.0\\misc.*");
 		
 		AdditionalSourceRootPaths.Add("[project.SharpmakeCsPath]/../../../Zenith/Flux/MeshGeometry");
@@ -225,10 +232,16 @@ public class TestWindowsProject : Project
 		SourceFilesExcludeRegex.Add(@".*VulkanSDK.*");
 		SourceFilesExcludeRegex.Add(@".*FluxCompiler.*");
 		SourceFilesExcludeRegex.Add(@".*glm-master.*");
-		SourceFilesExcludeRegex.Add(@".*Tools.*");
-		SourceFilesExcludeRegex.Add(@".*reactphysics3d-0.10.1\\helloworld.*");
-		SourceFilesExcludeRegex.Add(@".*reactphysics3d-0.10.1\\test.*");
-		SourceFilesExcludeRegex.Add(@".*reactphysics3d-0.10.1\\testbed.*");
+		SourceFilesExcludeRegex.Add(@".*\\Tools\\.*");
+		SourceFilesExcludeRegex.Add(@".*reactphysics3d-0.10.1.*");
+		SourceFilesExcludeRegex.Add(@".*JoltPhysics-5.4.0\\Build.*");
+		SourceFilesExcludeRegex.Add(@".*JoltPhysics-5.4.0\\Docs.*");
+		SourceFilesExcludeRegex.Add(@".*JoltPhysics-5.4.0\\UnitTests.*");
+		SourceFilesExcludeRegex.Add(@".*JoltPhysics-5.4.0\\Samples.*");
+		SourceFilesExcludeRegex.Add(@".*JoltPhysics-5.4.0\\TestFramework.*");
+		SourceFilesExcludeRegex.Add(@".*JoltPhysics-5.4.0\\PerformanceTest.*");
+		SourceFilesExcludeRegex.Add(@".*JoltPhysics-5.4.0\\JoltViewer.*");
+		SourceFilesExcludeRegex.Add(@".*JoltPhysics-5.4.0\\HelloWorld.*");
 		SourceFilesExcludeRegex.Add(@".*cmake.*");
 
 		SourceFilesExcludeRegex.Add(@".*Games\\(?!" + Name + ").*");
@@ -242,6 +255,7 @@ public class TestWindowsProject : Project
 
         conf.PrecompHeader = "Zenith.h";
         conf.PrecompSource = "Zenith.cpp";
+		conf.PrecompSourceExcludeFolders.Add("[project.SharpmakeCsPath]/../../../Middleware/JoltPhysics-5.4.0");
 		conf.PrecompSourceExcludeFolders.Add("[project.SharpmakeCsPath]/../../../Middleware/reactphysics3d-0.10.1");
 		
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/../../../Zenith");
@@ -250,7 +264,7 @@ public class TestWindowsProject : Project
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/../../../Middleware/VulkanSDK/1.3.280.0/Include");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/../../../Middleware/glm-master");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/../../../Middleware/vma");
-		conf.IncludePaths.Add("[project.SharpmakeCsPath]/../../../Middleware/reactphysics3d-0.10.1/include");
+		conf.IncludePaths.Add("[project.SharpmakeCsPath]/../../../Middleware/JoltPhysics-5.4.0");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/../../../Zenith/Windows");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/../../../Zenith/Vulkan");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/../../../Games/" + Name);

@@ -40,7 +40,7 @@ public:
 
 	static void InitialiseRepeat(Zenith_Vulkan_Sampler& xSampler);
 	static void InitialiseClamp(Zenith_Vulkan_Sampler& xSampler);
-private:
+
 	vk::Sampler m_xSampler;
 };
 
@@ -118,7 +118,9 @@ public:
 	static const bool ShouldSubmitDrawCalls();
 	static const bool ShouldUseDescSetCache();
 	static const bool ShouldOnlyUpdateDirtyDescriptors();
+	#ifdef ZENITH_DEBUG_VARIABLES
 	static void IncrementDescriptorSetAllocations();
+	#endif
 
 	static Zenith_Vulkan_CommandBuffer* s_pxMemoryUpdateCmdBuf;
 

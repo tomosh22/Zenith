@@ -92,8 +92,7 @@ void PlayerController_Behaviour::Shoot()
 
 	Zenith_ColliderComponent& xCollider = xBulletEntity.AddComponent<Zenith_ColliderComponent>();
 	xCollider.AddCollider(COLLISION_VOLUME_TYPE_SPHERE, RIGIDBODY_TYPE_DYNAMIC);
-	xCollider.GetRigidBody()->setLinearVelocity({xFacingDir.x, xFacingDir.y, xFacingDir.z});
-
+	Zenith_Physics::SetLinearVelocity(xCollider.GetRigidBody(), xFacingDir);
 }
 
 void PlayerController_Behaviour::OnUpdate(const float fDt)
@@ -163,8 +162,7 @@ void PlayerController_Behaviour::OnUpdate(const float fDt)
 
 	
 
-
-	Zenith_Maths::Vector3 xFinalVelocity(0, xTrans.m_pxRigidBody->getLinearVelocity().y, 0);
+	Zenith_Maths::Vector3 xFinalVelocity(0, Zenith_Physics::GetLinearVelocity(xTrans.m_pxRigidBody).y, 0);
 
 	if (Zenith_Input::IsKeyDown(ZENITH_KEY_W))
 	{
@@ -199,7 +197,7 @@ void PlayerController_Behaviour::OnUpdate(const float fDt)
 		xFinalVelocity.y = dMoveSpeed / 10;
 	}
 
-	xTrans.m_pxRigidBody->setLinearVelocity({ xFinalVelocity.x, xFinalVelocity.y, xFinalVelocity.z });
+	Zenith_Physics::SetLinearVelocity(xTrans.m_pxRigidBody, xFinalVelocity);
 	xTrans.SetRotation(Zenith_Maths::EulerRotationToMatrix4(-xCamera.GetYaw() * Zenith_Maths::RadToDeg, { 0,1,0 }));
 
 	Zenith_Maths::Vector3 xOffsetXZ = Zenith_Maths::Vector3(sinf(xCamera.GetYaw()), 0, -cosf(xCamera.GetYaw())) * dbg_fCamDistance;
