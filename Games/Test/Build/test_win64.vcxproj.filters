@@ -481,6 +481,9 @@
     <ClCompile Include="..\..\..\Zenith\Flux\Fog\Flux_Fog.cpp">
       <Filter>Zenith\Flux\Fog</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\..\Zenith\Flux\ImGui\Flux_ImGui.cpp">
+      <Filter>Zenith\Flux\ImGui</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\..\Zenith\Flux\MeshAnimation\Flux_MeshAnimation.cpp">
       <Filter>Zenith\Flux\MeshAnimation</Filter>
     </ClCompile>
@@ -1611,6 +1614,9 @@
     <ClInclude Include="..\..\..\Zenith\Flux\Fog\Flux_Fog.h">
       <Filter>Zenith\Flux\Fog</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\Flux\ImGui\Flux_ImGui.h">
+      <Filter>Zenith\Flux\ImGui</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\..\Zenith\Flux\MeshAnimation\Flux_MeshAnimation.h">
       <Filter>Zenith\Flux\MeshAnimation</Filter>
     </ClInclude>
@@ -1989,6 +1995,9 @@
     </Filter>
     <Filter Include="Zenith\Flux\Fog">
       <UniqueIdentifier>{51baa591-d8d8-e368-a571-63779de9365a}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Zenith\Flux\ImGui">
+      <UniqueIdentifier>{79fedd6b-2c95-dc6a-38f4-a30337eeb788}</UniqueIdentifier>
     </Filter>
     <Filter Include="Zenith\Flux\MeshAnimation">
       <UniqueIdentifier>{e7aa55b9-3260-1190-cef4-bc1c7f6b95cc}</UniqueIdentifier>

@@ -327,16 +327,18 @@ void Zenith_Vulkan_Swapchain::BindAsTarget()
 
 	//flipping because porting from opengl
 	vk::Viewport xViewport{};
-	xViewport.x = 0;
-	xViewport.y = s_axTargetSetups[s_uCurrentImageIndex].m_axColourAttachments[0].m_xSurfaceInfo.m_uHeight;
-	xViewport.width = s_axTargetSetups[s_uCurrentImageIndex].m_axColourAttachments[0].m_xSurfaceInfo.m_uWidth;
-	xViewport.height = -1 * (float)s_axTargetSetups[s_uCurrentImageIndex].m_axColourAttachments[0].m_xSurfaceInfo.m_uHeight;
-	xViewport.minDepth = 0;
-	xViewport.maxDepth = 1;
+	xViewport.x = 0.0f;
+	xViewport.y = 0.0f;
+	xViewport.width = static_cast<float>(s_axTargetSetups[s_uCurrentImageIndex].m_axColourAttachments[0].m_xSurfaceInfo.m_uWidth);
+	xViewport.height = static_cast<float>(s_axTargetSetups[s_uCurrentImageIndex].m_axColourAttachments[0].m_xSurfaceInfo.m_uHeight);
+	xViewport.minDepth = 0.0f;
+	xViewport.maxDepth = 1.0f;
 
 	vk::Rect2D xScissor{};
 	xScissor.offset = vk::Offset2D(0, 0);
-	xScissor.extent = vk::Extent2D(xViewport.width, xViewport.y);
+	xScissor.extent = vk::Extent2D(
+		s_axTargetSetups[s_uCurrentImageIndex].m_axColourAttachments[0].m_xSurfaceInfo.m_uWidth,
+		s_axTargetSetups[s_uCurrentImageIndex].m_axColourAttachments[0].m_xSurfaceInfo.m_uHeight);
 
 	s_xCopyToFramebufferCmd.GetCurrentCmdBuffer().setViewport(0, 1, &xViewport);
 	s_xCopyToFramebufferCmd.GetCurrentCmdBuffer().setScissor(0, 1, &xScissor);
@@ -385,42 +387,6 @@ void Zenith_Vulkan_Swapchain::EndFrame()
 	}
 
 	s_xCopyToFramebufferCmd.DrawIndexed(6);
-
-#ifdef ZENITH_TOOLS
-	vk::CommandBuffer& xCmd = s_xCopyToFramebufferCmd.GetCurrentCmdBuffer();
-
-	xCmd.endRenderPass();
-
-#ifdef ZENITH_TOOLS
-	ZENITH_PROFILING_FUNCTION_WRAPPER(RenderImGui, ZENITH_PROFILE_INDEX__RENDER_IMGUI);
-	ZENITH_PROFILING_FUNCTION_WRAPPER(Zenith_Profiling::RenderToImGui, ZENITH_PROFILE_INDEX__RENDER_IMGUI_PROFILING);
-#endif
-
-	vk::RenderPassBeginInfo xRenderPassInfo = vk::RenderPassBeginInfo()
-		.setRenderPass(Zenith_Vulkan::s_xImGuiRenderPass)
-		.setFramebuffer(Zenith_Vulkan_Pipeline::TargetSetupToFramebuffer(s_axTargetSetups[s_uCurrentImageIndex], Zenith_Vulkan_Swapchain::GetWidth(), Zenith_Vulkan_Swapchain::GetHeight(), Zenith_Vulkan::s_xImGuiRenderPass))
-		.setRenderArea({ {0,0}, s_xExtent });
-
-	xCmd.beginRenderPass(xRenderPassInfo, vk::SubpassContents::eInline);
-
-	vk::Viewport xViewport{};
-	xViewport.x = 0;
-	xViewport.y = 0;
-	xViewport.width = s_xExtent.width;
-	xViewport.height = s_xExtent.height;
-	xViewport.minDepth = 0;
-	xViewport.maxDepth = 1;
-
-	vk::Rect2D xScissor{};
-	xScissor.offset = vk::Offset2D(0, 0);
-	xScissor.extent = s_xExtent;
-
-	xCmd.setViewport(0, 1, &xViewport);
-	xCmd.setScissor(0, 1, &xScissor);
-
-	ImGui::Render();
-	ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), xCmd);
-#endif
 
 	s_xCopyToFramebufferCmd.GetCurrentCmdBuffer().endRenderPass();
 	s_xCopyToFramebufferCmd.GetCurrentCmdBuffer().end();

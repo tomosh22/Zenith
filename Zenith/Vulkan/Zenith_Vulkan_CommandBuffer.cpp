@@ -12,6 +12,13 @@
 //#TO purely for the static assert in SetIndexBuffer
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 
+#ifdef ZENITH_TOOLS
+#include "Memory/Zenith_MemoryManagement_Disabled.h"
+#include "imgui.h"
+#include "backends/imgui_impl_vulkan.h"
+#include "Memory/Zenith_MemoryManagement_Enabled.h"
+#endif
+
 void Zenith_Vulkan_CommandBuffer::Initialise(CommandType eType /*= COMMANDTYPE_GRAPHICS*/)
 {
 	m_eCommandType = eType;
@@ -529,3 +536,18 @@ void Zenith_Vulkan_CommandBuffer::ImageBarrier(Flux_Texture* pxTexture, uint32_t
 		eSrcStage, eDstStage,
 		{}, 0, nullptr, 0, nullptr, 1, &barrier);
 }
+
+#ifdef ZENITH_TOOLS
+void Zenith_Vulkan_CommandBuffer::RenderImGui()
+{
+	// Get ImGui draw data
+	ImDrawData* pxDrawData = ImGui::GetDrawData();
+	if (!pxDrawData || pxDrawData->TotalVtxCount == 0)
+	{
+		return;  // Nothing to render
+	}
+	
+	// Call ImGui's Vulkan rendering backend with raw Vulkan command buffer handle
+	ImGui_ImplVulkan_RenderDrawData(pxDrawData, static_cast<VkCommandBuffer>(m_xCurrentCmdBuffer));
+}
+#endif

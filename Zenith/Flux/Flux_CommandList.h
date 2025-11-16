@@ -24,10 +24,10 @@ enum Flux_CommandType
 
 	FLUX_COMMANDTYPE__DRAW,
 	FLUX_COMMANDTYPE__DRAW_INDEXED,
-
-	// Compute commands
 	FLUX_COMMANDTYPE__BIND_COMPUTE_PIPELINE,
 	FLUX_COMMANDTYPE__DISPATCH,
+
+	FLUX_COMMANDTYPE__RENDER_IMGUI,
 
 	FLUX_COMMANDTYPE__COUNT,
 };
@@ -169,8 +169,6 @@ public:
 	const u_int m_uBindPoint;
 };
 
-// ========== Direct3D-Style View Binding Commands ==========
-
 class Flux_CommandBindSRV
 {
 public:
@@ -277,6 +275,21 @@ public:
 	u_int m_uGroupCountZ;
 };
 
+#ifdef ZENITH_TOOLS
+class Flux_CommandRenderImGui
+{
+public:
+	static constexpr Flux_CommandType m_eType = FLUX_COMMANDTYPE__RENDER_IMGUI;
+
+	Flux_CommandRenderImGui() = default;
+	
+	void operator()(Flux_CommandBuffer* pxCmdBuf)
+	{
+		pxCmdBuf->RenderImGui();
+	}
+};
+#endif
+
 class Flux_CommandList
 {
 public:
@@ -342,6 +355,8 @@ public:
 				
 				HANDLE_COMMAND(FLUX_COMMANDTYPE__BIND_COMPUTE_PIPELINE, Flux_CommandBindComputePipeline);
 				HANDLE_COMMAND(FLUX_COMMANDTYPE__DISPATCH, Flux_CommandDispatch);
+				
+				HANDLE_COMMAND(FLUX_COMMANDTYPE__RENDER_IMGUI, Flux_CommandRenderImGui);
 				
 				default:
 					Zenith_Assert(false, "Unhandled command");

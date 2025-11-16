@@ -405,21 +405,6 @@ void Zenith_Vulkan_PipelineBuilder::Build(Zenith_Vulkan_Pipeline& xPipelineOut, 
 	STUBBED
 }
 
-vk::Format VceFormatToVKFormat(TextureFormat eFmt)
-{
-	switch (eFmt)
-	{
-	case TEXTURE_FORMAT_R16G16B16A16_UNORM:
-		return vk::Format::eR16G16B16A16Unorm;
-	case TEXTURE_FORMAT_BGRA8_SRGB:
-		return vk::Format::eB8G8R8A8Srgb;
-	case TEXTURE_FORMAT_BGRA8_UNORM:
-		return vk::Format::eB8G8R8A8Unorm;
-	default:
-		Zenith_Assert(false, "Unsupported format");
-	}
-}
-
 vk::CompareOp VceCompareFuncToVkCompareFunc(DepthCompareFunc eFunc)
 {
 	switch (eFunc)

@@ -77,6 +77,8 @@ public:
 	void Dispatch(uint32_t uGroupCountX, uint32_t uGroupCountY, uint32_t uGroupCountZ);
 	void ImageBarrier(Flux_Texture* pxTexture, uint32_t uOldLayout, uint32_t uNewLayout);
 
+	void RenderImGui();
+
 	vk::CommandBuffer m_xCurrentCmdBuffer;
 	vk::RenderPass m_xCurrentRenderPass;
 private:

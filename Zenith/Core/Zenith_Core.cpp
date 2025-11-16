@@ -19,6 +19,9 @@
 #include "Flux/Particles/Flux_Particles.h"
 #include "Flux/Text/Flux_Text.h"
 #include "Flux/ComputeTest/Flux_ComputeTest.h"
+#ifdef ZENITH_TOOLS
+#include "Flux/ImGui/Flux_ImGui.h"
+#endif
 #include "Input/Zenith_Input.h"
 #include "Physics/Zenith_Physics.h"
 #include "Profiling/Zenith_Profiling.h"
@@ -93,7 +96,14 @@ void RenderImGui()
 	TraverseTree(pxRoot, 0);
 
 	ImGui::End();
+	
+	// Render profiling window
+	ZENITH_PROFILING_FUNCTION_WRAPPER(Zenith_Profiling::RenderToImGui, ZENITH_PROFILE_INDEX__RENDER_IMGUI_PROFILING);
+	
+	// Finalize ImGui rendering data - this MUST be called before submitting the render task
+	ImGui::Render();
 }
+
 #endif
 
 static void SubmitRenderTasks()
@@ -111,6 +121,12 @@ static void SubmitRenderTasks()
 	Flux_Particles::SubmitRenderTask();
 	Flux_Text::SubmitRenderTask();
 	Flux_Quads::SubmitRenderTask();
+	
+#ifdef ZENITH_TOOLS
+	// Submit ImGui rendering as the last render task before swapchain present
+	ZENITH_PROFILING_FUNCTION_WRAPPER(RenderImGui, ZENITH_PROFILE_INDEX__RENDER_IMGUI);
+	Flux_ImGui::SubmitRenderTask();
+#endif
 }
 
 static void WaitForRenderTasks()

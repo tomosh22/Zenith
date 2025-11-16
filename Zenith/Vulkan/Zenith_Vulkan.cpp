@@ -779,14 +779,14 @@ void Zenith_Vulkan::InitialiseImGui()
 void Zenith_Vulkan::InitialiseImGuiRenderPass()
 {
 	vk::AttachmentDescription xColorAttachment = vk::AttachmentDescription()
-		.setFormat(Zenith_Vulkan_Swapchain::GetFormat())
+		.setFormat(ConvertToVkFormat_Colour(TEXTURE_FORMAT_R16G16B16A16_UNORM))
 		.setSamples(vk::SampleCountFlagBits::e1)
 		.setLoadOp(vk::AttachmentLoadOp::eLoad)
 		.setStoreOp(vk::AttachmentStoreOp::eStore)
 		.setStencilLoadOp(vk::AttachmentLoadOp::eDontCare)
 		.setStencilStoreOp(vk::AttachmentStoreOp::eDontCare)
-		.setInitialLayout(vk::ImageLayout::ePresentSrcKHR)
-		.setFinalLayout(vk::ImageLayout::ePresentSrcKHR);
+		.setInitialLayout(vk::ImageLayout::eColorAttachmentOptimal)
+		.setFinalLayout(vk::ImageLayout::eColorAttachmentOptimal);
 
 	vk::AttachmentReference xColorAttachmentRef = vk::AttachmentReference()
 		.setAttachment(0)
@@ -799,14 +799,6 @@ void Zenith_Vulkan::InitialiseImGuiRenderPass()
 		.setColorAttachmentCount(1)
 		.setPColorAttachments(axColorAtachments);
 
-	vk::SubpassDependency xDependency = vk::SubpassDependency()
-		.setSrcSubpass(VK_SUBPASS_EXTERNAL)
-		.setDstSubpass(0)
-		.setSrcStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eEarlyFragmentTests)
-		.setSrcAccessMask(vk::AccessFlagBits::eNone)
-		.setDstStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eEarlyFragmentTests)
-		.setDstAccessMask(vk::AccessFlagBits::eColorAttachmentWrite | vk::AccessFlagBits::eDepthStencilAttachmentWrite);
-
 	vk::AttachmentDescription axAllAttachments[]{ xColorAttachment };
 
 	vk::RenderPassCreateInfo xRenderPassInfo = vk::RenderPassCreateInfo()
@@ -814,8 +806,8 @@ void Zenith_Vulkan::InitialiseImGuiRenderPass()
 		.setPAttachments(axAllAttachments)
 		.setSubpassCount(1)
 		.setPSubpasses(&xSubpass)
-		.setDependencyCount(1)
-		.setPDependencies(&xDependency);
+		.setDependencyCount(0)
+		.setPDependencies(nullptr);
 
 	s_xImGuiRenderPass = s_xDevice.createRenderPass(xRenderPassInfo);
 }

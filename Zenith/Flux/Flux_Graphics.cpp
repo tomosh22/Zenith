@@ -161,6 +161,11 @@ void Flux_Graphics::UploadFrameConstants()
 	Flux_MemoryManager::UploadBufferData(s_xFrameConstantsBuffer.GetBuffer().m_xVRAMHandle, &s_xFrameConstants, sizeof(FrameConstants));
 }
 
+TextureFormat Flux_Graphics::GetMRTFormat(MRTIndex eIndex)
+{
+	return s_aeMRTFormats[eIndex];
+}
+
 const Zenith_Maths::Vector3& Flux_Graphics::GetCameraPosition()
 {
 	return s_xFrameConstants.m_xCamPos_Pad;

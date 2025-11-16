@@ -35,6 +35,7 @@ void Zenith_CameraComponent::BuildProjectionMatrix(Zenith_Maths::Matrix4& xOut) 
 	{
 	case CAMERA_TYPE_PERSPECTIVE:
 		xOut = Zenith_Maths::PerspectiveProjection(m_fFOV, m_fAspect, m_fNear, m_fFar);
+		xOut[1][1] *= -1;
 		break;
 	case CAMERA_TYPE_ORTHOGRAPHIC:
 		xOut = Zenith_Maths::OrthographicProjection(m_fLeft, m_fRight, m_fBottom, m_fTop, m_fNear, m_fFar);
