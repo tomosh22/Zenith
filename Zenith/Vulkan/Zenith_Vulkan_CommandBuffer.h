@@ -78,6 +78,7 @@ public:
 	void ImageBarrier(Flux_Texture* pxTexture, uint32_t uOldLayout, uint32_t uNewLayout);
 
 	void RenderImGui();
+	void SetCurrentRenderPass(vk::RenderPass xRenderPass) { m_xCurrentRenderPass = xRenderPass; }
 
 	vk::CommandBuffer m_xCurrentCmdBuffer;
 	vk::RenderPass m_xCurrentRenderPass;

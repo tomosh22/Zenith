@@ -109,7 +109,7 @@
       <WarningLevel>Level4</WarningLevel>
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>ASSETS_ROOT="c:/dev/zenith/Games/Test/Assets/";NOMINMAX;SHADER_SOURCE_ROOT="C:/dev/Zenith/Zenith/Flux/Shaders/";WIN64;ZENITH_DEBUG;ZENITH_VULKAN;ZENITH_WINDOWS;_CONSOLE;_DEBUG;%(PreprocessorDefinitions);$(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>..\..;..;..\..\..\middleware\glfw-3.4.bin.win64\include;..\..\..\middleware\glm-master;..\..\..\middleware\joltphysics-5.4.0;..\..\..\middleware\vma;..\..\..\middleware\vulkansdk\1.3.280.0\include;..\..\..\zenith;..\..\..\zenith\core;..\..\..\zenith\vulkan;..\..\..\zenith\windows</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\..;..;..\..\..\middleware;..\..\..\middleware\glfw-3.4.bin.win64\include;..\..\..\middleware\glm-master;..\..\..\middleware\imgui-docking;..\..\..\middleware\joltphysics-5.4.0;..\..\..\middleware\stb;..\..\..\middleware\vma;..\..\..\middleware\vulkansdk\1.3.280.0\include;..\..\..\zenith;..\..\..\zenith\core;..\..\..\zenith\vulkan;..\..\..\zenith\windows</AdditionalIncludeDirectories>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <TreatWarningAsError>false</TreatWarningAsError>
@@ -195,7 +195,7 @@
       <WarningLevel>Level4</WarningLevel>
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>ASSETS_ROOT="c:/dev/zenith/Games/Test/Assets/";NOMINMAX;SHADER_SOURCE_ROOT="C:/dev/Zenith/Zenith/Flux/Shaders/";WIN64;ZENITH_DEBUG;ZENITH_TOOLS;ZENITH_VULKAN;ZENITH_WINDOWS;_CONSOLE;_DEBUG;%(PreprocessorDefinitions);$(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>..\..;..;..\..\..\middleware\glfw-3.4.bin.win64\include;..\..\..\middleware\glm-master;..\..\..\middleware\joltphysics-5.4.0;..\..\..\middleware\stb;..\..\..\middleware\vma;..\..\..\middleware\vulkansdk\1.3.280.0\include;..\..\..\tools\middleware;..\..\..\tools\middleware\assimp\include;..\..\..\tools\middleware\imgui-1.91.0;..\..\..\tools\middleware\opencv\build\include;..\..\..\tools\middleware\opencv\build\include\opencv2;..\..\..\tools\middleware\opencv\sources\3rdparty\libjpeg;..\..\..\tools\middleware\opencv\sources\3rdparty\libpng;..\..\..\tools\middleware\opencv\sources\3rdparty\libtiff;..\..\..\tools\middleware\opencv\sources\3rdparty\openjpeg\openjp2;..\..\..\tools\middleware\opencv\sources\cmake\templates;..\..\..\tools\middleware\opencv\sources\include;..\..\..\tools\middleware\opencv\sources\modules\core\include;..\..\..\tools\middleware\opencv\sources\modules\ts\include;..\..\..\zenith;..\..\..\zenith\core;..\..\..\zenith\vulkan;..\..\..\zenith\windows</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\..;..;..\..\..\middleware;..\..\..\middleware\glfw-3.4.bin.win64\include;..\..\..\middleware\glm-master;..\..\..\middleware\imgui-docking;..\..\..\middleware\joltphysics-5.4.0;..\..\..\middleware\stb;..\..\..\middleware\vma;..\..\..\middleware\vulkansdk\1.3.280.0\include;..\..\..\tools\middleware;..\..\..\tools\middleware\assimp\include;..\..\..\tools\middleware\opencv\build\include;..\..\..\tools\middleware\opencv\build\include\opencv2;..\..\..\tools\middleware\opencv\sources\3rdparty\libjpeg;..\..\..\tools\middleware\opencv\sources\3rdparty\libpng;..\..\..\tools\middleware\opencv\sources\3rdparty\libtiff;..\..\..\tools\middleware\opencv\sources\3rdparty\openjpeg\openjp2;..\..\..\tools\middleware\opencv\sources\cmake\templates;..\..\..\tools\middleware\opencv\sources\include;..\..\..\tools\middleware\opencv\sources\modules\core\include;..\..\..\tools\middleware\opencv\sources\modules\ts\include;..\..\..\zenith;..\..\..\zenith\core;..\..\..\zenith\vulkan;..\..\..\zenith\windows</AdditionalIncludeDirectories>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <TreatWarningAsError>false</TreatWarningAsError>
@@ -281,7 +281,7 @@
       <WarningLevel>Level4</WarningLevel>
       <Optimization>Full</Optimization>
       <PreprocessorDefinitions>ASSETS_ROOT="c:/dev/zenith/Games/Test/Assets/";NDEBUG;NOMINMAX;SHADER_SOURCE_ROOT="C:/dev/Zenith/Zenith/Flux/Shaders/";WIN64;ZENITH_VULKAN;ZENITH_WINDOWS;_CONSOLE;%(PreprocessorDefinitions);$(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>..\..;..;..\..\..\middleware\glfw-3.4.bin.win64\include;..\..\..\middleware\glm-master;..\..\..\middleware\joltphysics-5.4.0;..\..\..\middleware\vma;..\..\..\middleware\vulkansdk\1.3.280.0\include;..\..\..\zenith;..\..\..\zenith\core;..\..\..\zenith\vulkan;..\..\..\zenith\windows</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\..;..;..\..\..\middleware;..\..\..\middleware\glfw-3.4.bin.win64\include;..\..\..\middleware\glm-master;..\..\..\middleware\imgui-docking;..\..\..\middleware\joltphysics-5.4.0;..\..\..\middleware\stb;..\..\..\middleware\vma;..\..\..\middleware\vulkansdk\1.3.280.0\include;..\..\..\zenith;..\..\..\zenith\core;..\..\..\zenith\vulkan;..\..\..\zenith\windows</AdditionalIncludeDirectories>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <TreatWarningAsError>false</TreatWarningAsError>
@@ -367,7 +367,7 @@
       <WarningLevel>Level4</WarningLevel>
       <Optimization>Full</Optimization>
       <PreprocessorDefinitions>ASSETS_ROOT="c:/dev/zenith/Games/Test/Assets/";NDEBUG;NOMINMAX;SHADER_SOURCE_ROOT="C:/dev/Zenith/Zenith/Flux/Shaders/";WIN64;ZENITH_TOOLS;ZENITH_VULKAN;ZENITH_WINDOWS;_CONSOLE;%(PreprocessorDefinitions);$(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>..\..;..;..\..\..\middleware\glfw-3.4.bin.win64\include;..\..\..\middleware\glm-master;..\..\..\middleware\joltphysics-5.4.0;..\..\..\middleware\stb;..\..\..\middleware\vma;..\..\..\middleware\vulkansdk\1.3.280.0\include;..\..\..\tools\middleware;..\..\..\tools\middleware\assimp\include;..\..\..\tools\middleware\imgui-1.91.0;..\..\..\tools\middleware\opencv\build\include;..\..\..\tools\middleware\opencv\build\include\opencv2;..\..\..\tools\middleware\opencv\sources\3rdparty\libjpeg;..\..\..\tools\middleware\opencv\sources\3rdparty\libpng;..\..\..\tools\middleware\opencv\sources\3rdparty\libtiff;..\..\..\tools\middleware\opencv\sources\3rdparty\openjpeg\openjp2;..\..\..\tools\middleware\opencv\sources\cmake\templates;..\..\..\tools\middleware\opencv\sources\include;..\..\..\tools\middleware\opencv\sources\modules\core\include;..\..\..\tools\middleware\opencv\sources\modules\ts\include;..\..\..\zenith;..\..\..\zenith\core;..\..\..\zenith\vulkan;..\..\..\zenith\windows</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\..;..;..\..\..\middleware;..\..\..\middleware\glfw-3.4.bin.win64\include;..\..\..\middleware\glm-master;..\..\..\middleware\imgui-docking;..\..\..\middleware\joltphysics-5.4.0;..\..\..\middleware\stb;..\..\..\middleware\vma;..\..\..\middleware\vulkansdk\1.3.280.0\include;..\..\..\tools\middleware;..\..\..\tools\middleware\assimp\include;..\..\..\tools\middleware\opencv\build\include;..\..\..\tools\middleware\opencv\build\include\opencv2;..\..\..\tools\middleware\opencv\sources\3rdparty\libjpeg;..\..\..\tools\middleware\opencv\sources\3rdparty\libpng;..\..\..\tools\middleware\opencv\sources\3rdparty\libtiff;..\..\..\tools\middleware\opencv\sources\3rdparty\openjpeg\openjp2;..\..\..\tools\middleware\opencv\sources\cmake\templates;..\..\..\tools\middleware\opencv\sources\include;..\..\..\tools\middleware\opencv\sources\modules\core\include;..\..\..\tools\middleware\opencv\sources\modules\ts\include;..\..\..\zenith;..\..\..\zenith\core;..\..\..\zenith\vulkan;..\..\..\zenith\windows</AdditionalIncludeDirectories>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <TreatWarningAsError>false</TreatWarningAsError>
@@ -450,6 +450,21 @@
   <ItemGroup>
     <ClInclude Include="..\..\..\Middleware\glfw-3.4.bin.WIN64\include\GLFW\glfw3.h" />
     <ClInclude Include="..\..\..\Middleware\glfw-3.4.bin.WIN64\include\GLFW\glfw3native.h" />
+    <ClInclude Include="..\..\..\Middleware\imgui-docking\backends\imgui_impl_glfw.h" />
+    <ClInclude Include="..\..\..\Middleware\imgui-docking\backends\imgui_impl_metal.h" />
+    <ClInclude Include="..\..\..\Middleware\imgui-docking\backends\imgui_impl_osx.h" />
+    <ClInclude Include="..\..\..\Middleware\imgui-docking\backends\imgui_impl_vulkan.h" />
+    <ClInclude Include="..\..\..\Middleware\imgui-docking\backends\imgui_impl_win32.h" />
+    <ClInclude Include="..\..\..\Middleware\imgui-docking\backends\sdlgpu3\shader.frag" />
+    <ClInclude Include="..\..\..\Middleware\imgui-docking\backends\sdlgpu3\shader.vert" />
+    <ClInclude Include="..\..\..\Middleware\imgui-docking\backends\vulkan\glsl_shader.frag" />
+    <ClInclude Include="..\..\..\Middleware\imgui-docking\backends\vulkan\glsl_shader.vert" />
+    <ClInclude Include="..\..\..\Middleware\imgui-docking\imconfig.h" />
+    <ClInclude Include="..\..\..\Middleware\imgui-docking\imgui.h" />
+    <ClInclude Include="..\..\..\Middleware\imgui-docking\imgui_internal.h" />
+    <ClInclude Include="..\..\..\Middleware\imgui-docking\imstb_rectpack.h" />
+    <ClInclude Include="..\..\..\Middleware\imgui-docking\imstb_textedit.h" />
+    <ClInclude Include="..\..\..\Middleware\imgui-docking\imstb_truetype.h" />
     <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Assets\Shaders\DX\VertexConstants.h" />
     <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Assets\Shaders\MTL\VertexConstants.h" />
     <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Assets\Shaders\VK\FontPixelShader.frag" />
@@ -756,6 +771,7 @@
     <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\TriangleSplitter\TriangleSplitter.h" />
     <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\TriangleSplitter\TriangleSplitterBinning.h" />
     <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\TriangleSplitter\TriangleSplitterMean.h" />
+    <ClInclude Include="..\..\..\Middleware\stb\stb_image.h" />
     <ClInclude Include="..\..\..\Middleware\vma\vk_mem_alloc.h" />
     <ClInclude Include="..\..\..\Zenith\AssetHandling\Zenith_AssetHandler.h" />
     <ClInclude Include="..\..\..\Zenith\Collections\Zenith_CircularQueue.h" />
@@ -865,11 +881,62 @@
     <ClInclude Include="..\Components\SphereMovement_Behaviour.h" />
     <ClInclude Include="..\Test_State_InGame.h" />
     <ClInclude Include="..\Test_State_MainMenu.h" />
+    <ClInclude Include="Zenith\Editor\Zenith_Editor.h" />
+    <ClInclude Include="Zenith\Editor\Zenith_Gizmo.h" />
+    <ClInclude Include="Zenith\Editor\Zenith_SelectionSystem.h" />
   </ItemGroup>
   <ItemGroup>
     <Natvis Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Jolt.natvis" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="..\..\..\Middleware\imgui-docking\backends\imgui_impl_glfw.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\..\..\Middleware\imgui-docking\backends\imgui_impl_vulkan.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\..\..\Middleware\imgui-docking\backends\imgui_impl_win32.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\..\..\Middleware\imgui-docking\imgui.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\..\..\Middleware\imgui-docking\imgui_demo.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\..\..\Middleware\imgui-docking\imgui_draw.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\..\..\Middleware\imgui-docking\imgui_tables.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\..\..\Middleware\imgui-docking\imgui_widgets.cpp">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\AABBTree\AABBTreeBuilder.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
@@ -1733,6 +1800,9 @@
     <ClCompile Include="..\Components\SphereMovement_Behaviour.cpp" />
     <ClCompile Include="..\Test_State_InGame.cpp" />
     <ClCompile Include="..\Test_State_MainMenu.cpp" />
+    <ClCompile Include="Zenith\Editor\Zenith_Editor.cpp" />
+    <ClCompile Include="Zenith\Editor\Zenith_Gizmo.cpp" />
+    <ClCompile Include="Zenith\Editor\Zenith_SelectionSystem.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

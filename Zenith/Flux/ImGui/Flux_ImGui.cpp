@@ -11,10 +11,8 @@ static Flux_CommandList s_xImGuiCommandList("ImGui");
 
 void Flux_ImGui::SubmitRenderTask()
 {
-	s_xImGuiCommandList.Reset(false);
-	s_xImGuiCommandList.AddCommand<Flux_CommandRenderImGui>();
-	
-	Flux::SubmitCommandList(&s_xImGuiCommandList, Flux_Graphics::s_xFinalRenderTarget_NoDepth, RENDER_ORDER_IMGUI);
+	// ImGui will be rendered separately in the swapchain EndFrame
+	// Don't submit it through the normal command list pipeline to avoid render pass issues
 }
 
 #endif // ZENITH_TOOLS

@@ -1,0 +1,69 @@
+#pragma once
+
+#ifdef ZENITH_TOOLS
+
+#include "Maths/Zenith_Maths.h"
+#include <vector>
+
+class Zenith_Entity;
+class Zenith_Scene;
+
+enum class EditorMode
+{
+	Stopped,
+	Playing,
+	Paused
+};
+
+enum class GizmoMode
+{
+	Translate,
+	Rotate,
+	Scale
+};
+
+class Zenith_Editor
+{
+public:
+	static void Initialise();
+	static void Shutdown();
+	static void Update();
+	static void Render();
+
+	// Editor state
+	static EditorMode GetEditorMode() { return s_eEditorMode; }
+	static void SetEditorMode(EditorMode eMode);
+	
+	// Object selection
+	static void SelectEntity(Zenith_Entity* pxEntity);
+	static void ClearSelection();
+	static Zenith_Entity* GetSelectedEntity() { return s_pxSelectedEntity; }
+	
+	// Gizmo
+	static GizmoMode GetGizmoMode() { return s_eGizmoMode; }
+	static void SetGizmoMode(GizmoMode eMode) { s_eGizmoMode = eMode; }
+
+private:
+	static void RenderMainMenuBar();
+	static void RenderToolbar();
+	static void RenderHierarchyPanel();
+	static void RenderPropertiesPanel();
+	static void RenderViewport();
+	static void HandleObjectPicking();
+	static void RenderGizmos();
+	
+	static EditorMode s_eEditorMode;
+	static GizmoMode s_eGizmoMode;
+	static Zenith_Entity* s_pxSelectedEntity;
+	
+	// Viewport
+	static Zenith_Maths::Vector2 s_xViewportSize;
+	static Zenith_Maths::Vector2 s_xViewportPos;
+	static bool s_bViewportHovered;
+	static bool s_bViewportFocused;
+	
+	// Scene state backup (for play mode)
+	static Zenith_Scene* s_pxBackupScene;
+};
+
+#endif // ZENITH_TOOLS

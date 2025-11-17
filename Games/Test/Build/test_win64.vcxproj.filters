@@ -1,6 +1,30 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
+    <ClCompile Include="..\..\..\Middleware\imgui-docking\backends\imgui_impl_glfw.cpp">
+      <Filter>Middleware\imgui-docking\backends</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\Middleware\imgui-docking\backends\imgui_impl_vulkan.cpp">
+      <Filter>Middleware\imgui-docking\backends</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\Middleware\imgui-docking\backends\imgui_impl_win32.cpp">
+      <Filter>Middleware\imgui-docking\backends</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\Middleware\imgui-docking\imgui.cpp">
+      <Filter>Middleware\imgui-docking</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\Middleware\imgui-docking\imgui_demo.cpp">
+      <Filter>Middleware\imgui-docking</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\Middleware\imgui-docking\imgui_draw.cpp">
+      <Filter>Middleware\imgui-docking</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\Middleware\imgui-docking\imgui_tables.cpp">
+      <Filter>Middleware\imgui-docking</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\Middleware\imgui-docking\imgui_widgets.cpp">
+      <Filter>Middleware\imgui-docking</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\AABBTree\AABBTreeBuilder.cpp">
       <Filter>Middleware\JoltPhysics-5.4.0\Jolt\AABBTree</Filter>
     </ClCompile>
@@ -580,6 +604,15 @@
     <ClCompile Include="..\Test_State_MainMenu.cpp">
       <Filter>Games\Test</Filter>
     </ClCompile>
+    <ClCompile Include="Zenith\Editor\Zenith_Editor.cpp">
+      <Filter>Games\Test\Build\Zenith\Editor</Filter>
+    </ClCompile>
+    <ClCompile Include="Zenith\Editor\Zenith_Gizmo.cpp">
+      <Filter>Games\Test\Build\Zenith\Editor</Filter>
+    </ClCompile>
+    <ClCompile Include="Zenith\Editor\Zenith_SelectionSystem.cpp">
+      <Filter>Games\Test\Build\Zenith\Editor</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\..\Middleware\glfw-3.4.bin.WIN64\include\GLFW\glfw3.h">
@@ -587,6 +620,51 @@
     </ClInclude>
     <ClInclude Include="..\..\..\Middleware\glfw-3.4.bin.WIN64\include\GLFW\glfw3native.h">
       <Filter>Middleware\glfw-3.4.bin.WIN64\include\GLFW</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\Middleware\imgui-docking\backends\imgui_impl_glfw.h">
+      <Filter>Middleware\imgui-docking\backends</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\Middleware\imgui-docking\backends\imgui_impl_metal.h">
+      <Filter>Middleware\imgui-docking\backends</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\Middleware\imgui-docking\backends\imgui_impl_osx.h">
+      <Filter>Middleware\imgui-docking\backends</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\Middleware\imgui-docking\backends\imgui_impl_vulkan.h">
+      <Filter>Middleware\imgui-docking\backends</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\Middleware\imgui-docking\backends\imgui_impl_win32.h">
+      <Filter>Middleware\imgui-docking\backends</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\Middleware\imgui-docking\backends\sdlgpu3\shader.frag">
+      <Filter>Middleware\imgui-docking\backends\sdlgpu3</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\Middleware\imgui-docking\backends\sdlgpu3\shader.vert">
+      <Filter>Middleware\imgui-docking\backends\sdlgpu3</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\Middleware\imgui-docking\backends\vulkan\glsl_shader.frag">
+      <Filter>Middleware\imgui-docking\backends\vulkan</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\Middleware\imgui-docking\backends\vulkan\glsl_shader.vert">
+      <Filter>Middleware\imgui-docking\backends\vulkan</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\Middleware\imgui-docking\imconfig.h">
+      <Filter>Middleware\imgui-docking</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\Middleware\imgui-docking\imgui.h">
+      <Filter>Middleware\imgui-docking</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\Middleware\imgui-docking\imgui_internal.h">
+      <Filter>Middleware\imgui-docking</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\Middleware\imgui-docking\imstb_rectpack.h">
+      <Filter>Middleware\imgui-docking</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\Middleware\imgui-docking\imstb_textedit.h">
+      <Filter>Middleware\imgui-docking</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\Middleware\imgui-docking\imstb_truetype.h">
+      <Filter>Middleware\imgui-docking</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Assets\Shaders\DX\VertexConstants.h">
       <Filter>Middleware\JoltPhysics-5.4.0\Assets\Shaders\DX</Filter>
@@ -1506,6 +1584,9 @@
     <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\TriangleSplitter\TriangleSplitterMean.h">
       <Filter>Middleware\JoltPhysics-5.4.0\Jolt\TriangleSplitter</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\..\Middleware\stb\stb_image.h">
+      <Filter>Middleware\stb</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\..\Middleware\vma\vk_mem_alloc.h">
       <Filter>Middleware\vma</Filter>
     </ClInclude>
@@ -1833,6 +1914,15 @@
     <ClInclude Include="..\Test_State_MainMenu.h">
       <Filter>Games\Test</Filter>
     </ClInclude>
+    <ClInclude Include="Zenith\Editor\Zenith_Editor.h">
+      <Filter>Games\Test\Build\Zenith\Editor</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\Editor\Zenith_Gizmo.h">
+      <Filter>Games\Test\Build\Zenith\Editor</Filter>
+    </ClInclude>
+    <ClInclude Include="Zenith\Editor\Zenith_SelectionSystem.h">
+      <Filter>Games\Test\Build\Zenith\Editor</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Natvis Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Jolt.natvis">
@@ -1845,6 +1935,15 @@
     </Filter>
     <Filter Include="Games\Test">
       <UniqueIdentifier>{cbfbdc38-e98c-599e-10d3-3282c5531581}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Games\Test\Build">
+      <UniqueIdentifier>{3d3e6911-9e5d-16d0-07af-c92f686499c6}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Games\Test\Build\Zenith">
+      <UniqueIdentifier>{cd9bbd00-1ae3-433e-0865-2fbf017895c1}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Games\Test\Build\Zenith\Editor">
+      <UniqueIdentifier>{e0425047-8393-69e4-6193-0cb4b4061f1b}</UniqueIdentifier>
     </Filter>
     <Filter Include="Games\Test\Components">
       <UniqueIdentifier>{fd8cca08-abd5-26f2-8676-431bb0783af1}</UniqueIdentifier>
@@ -1944,6 +2043,21 @@
     </Filter>
     <Filter Include="Middleware\glfw-3.4.bin.WIN64\include\GLFW">
       <UniqueIdentifier>{3553b294-91e8-9b92-8b92-0057dc1cc29e}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Middleware\imgui-docking">
+      <UniqueIdentifier>{c71024a9-54bf-8bd8-8d53-59ca9d1086ab}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Middleware\imgui-docking\backends">
+      <UniqueIdentifier>{25eca6d2-1521-1c5a-0765-f719ba0131a3}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Middleware\imgui-docking\backends\sdlgpu3">
+      <UniqueIdentifier>{1f778a42-06b4-f1aa-6195-19d48c1212be}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Middleware\imgui-docking\backends\vulkan">
+      <UniqueIdentifier>{b42d0075-05c5-02d3-4820-862d8af1478c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Middleware\stb">
+      <UniqueIdentifier>{1c48f21f-8e0e-fc25-4967-888a7f33c7b8}</UniqueIdentifier>
     </Filter>
     <Filter Include="Middleware\vma">
       <UniqueIdentifier>{444c4745-cac6-1720-ea36-eea5edc68c15}</UniqueIdentifier>

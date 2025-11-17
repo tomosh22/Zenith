@@ -30,6 +30,9 @@ public:
 	static vk::Format GetFormat() { return s_xImageFormat; }
 
 	static bool ShouldWaitOnImageAvailableSemaphore();
+	
+	static Flux_TargetSetup* GetCurrentSwapchainTarget();
+	
 private:
 	static void BindAsTarget();
 	static void InitialiseCopyToFramebufferCommands();

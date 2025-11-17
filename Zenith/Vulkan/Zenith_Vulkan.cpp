@@ -20,7 +20,6 @@
 #include "backends/imgui_impl_glfw.h"
 #endif //ZENITH_WINDOWS
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
-vk::RenderPass Zenith_Vulkan::s_xImGuiRenderPass;
 #endif //ZENITH_TOOLS
 
 #ifdef ZENITH_DEBUG_VARIABLES
@@ -31,6 +30,12 @@ vk::RenderPass Zenith_Vulkan::s_xImGuiRenderPass;
 
 #ifdef ZENITH_DEBUG
 static std::vector<const char*> s_xValidationLayers = { "VK_LAYER_KHRONOS_validation", /*"VK_LAYER_KHRONOS_synchronization2"*/ };
+#endif
+
+// Static member definitions
+#ifdef ZENITH_TOOLS
+vk::RenderPass Zenith_Vulkan::s_xImGuiRenderPass;
+vk::DescriptorPool Zenith_Vulkan::s_xImGuiDescriptorPool;
 #endif
 
 static const char* s_aszDeviceExtensions[] = {
@@ -748,6 +753,33 @@ void Zenith_Vulkan::CreateBindlessTexturesDescriptorPool()
 void Zenith_Vulkan::InitialiseImGui()
 {
 	InitialiseImGuiRenderPass();
+	
+	// Create a dedicated descriptor pool for ImGui that won't be reset every frame
+	vk::DescriptorPoolSize axImGuiPoolSizes[] =
+	{
+		{ vk::DescriptorType::eSampler, 1000 },
+		{ vk::DescriptorType::eCombinedImageSampler, 1000 },
+		{ vk::DescriptorType::eSampledImage, 1000 },
+		{ vk::DescriptorType::eStorageImage, 1000 },
+		{ vk::DescriptorType::eUniformTexelBuffer, 1000 },
+		{ vk::DescriptorType::eStorageTexelBuffer, 1000 },
+		{ vk::DescriptorType::eUniformBuffer, 1000 },
+		{ vk::DescriptorType::eStorageBuffer, 1000 },
+		{ vk::DescriptorType::eUniformBufferDynamic, 1000 },
+		{ vk::DescriptorType::eStorageBufferDynamic, 1000 },
+		{ vk::DescriptorType::eInputAttachment, 1000 }
+	};
+
+	vk::DescriptorPoolCreateInfo xImGuiPoolInfo = vk::DescriptorPoolCreateInfo()
+		.setPoolSizeCount(COUNT_OF(axImGuiPoolSizes))
+		.setPPoolSizes(axImGuiPoolSizes)
+		.setMaxSets(1000)
+		.setFlags(vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet);
+
+	s_xImGuiDescriptorPool = s_xDevice.createDescriptorPool(xImGuiPoolInfo);
+	
+	Zenith_Log("ImGui dedicated descriptor pool created");
+
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
 
@@ -755,31 +787,40 @@ void Zenith_Vulkan::InitialiseImGui()
 
 	ImGuiIO& xIO = ImGui::GetIO();
 	xIO.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+	xIO.ConfigFlags |= ImGuiConfigFlags_DockingEnable;      // Enable Docking
 
 #ifdef ZENITH_WINDOWS
 	GLFWwindow* pxWindow = Zenith_Window::GetInstance()->GetNativeWindow();
 #endif
 
 	ImGui_ImplGlfw_InitForVulkan(pxWindow, true);
+	
 	ImGui_ImplVulkan_InitInfo xInitInfo = {};
 	xInitInfo.Instance = s_xInstance;
 	xInitInfo.PhysicalDevice = s_xPhysicalDevice;
 	xInitInfo.Device = s_xDevice;
 	xInitInfo.QueueFamily = s_auQueueIndices[COMMANDTYPE_GRAPHICS];
 	xInitInfo.Queue = s_axQueues[COMMANDTYPE_GRAPHICS];
-	xInitInfo.DescriptorPool = s_xDefaultDescriptorPool;
+	xInitInfo.DescriptorPool = s_xImGuiDescriptorPool;  // Use dedicated ImGui pool
 	xInitInfo.MinImageCount = MAX_FRAMES_IN_FLIGHT;
 	xInitInfo.ImageCount = MAX_FRAMES_IN_FLIGHT;
-	xInitInfo.RenderPass = s_xImGuiRenderPass;
+	
+	// Set up pipeline info for main viewport (newer ImGui API)
+	xInitInfo.PipelineInfoMain.RenderPass = s_xImGuiRenderPass;
+	xInitInfo.PipelineInfoMain.Subpass = 0;
+	xInitInfo.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+	
+	// Disable dynamic rendering since we're using a render pass
+	xInitInfo.UseDynamicRendering = false;
+	
 	ImGui_ImplVulkan_Init(&xInitInfo);
-
-	ImGui_ImplVulkan_CreateFontsTexture();
 }
 
 void Zenith_Vulkan::InitialiseImGuiRenderPass()
 {
+	// Use swapchain format (BGRA8_SRGB) since ImGui will render directly to the swapchain
 	vk::AttachmentDescription xColorAttachment = vk::AttachmentDescription()
-		.setFormat(ConvertToVkFormat_Colour(TEXTURE_FORMAT_R16G16B16A16_UNORM))
+		.setFormat(Zenith_Vulkan_Swapchain::GetFormat())
 		.setSamples(vk::SampleCountFlagBits::e1)
 		.setLoadOp(vk::AttachmentLoadOp::eLoad)
 		.setStoreOp(vk::AttachmentStoreOp::eStore)
@@ -792,25 +833,22 @@ void Zenith_Vulkan::InitialiseImGuiRenderPass()
 		.setAttachment(0)
 		.setLayout(vk::ImageLayout::eColorAttachmentOptimal);
 
-	vk::AttachmentReference axColorAtachments[1]{ xColorAttachmentRef };
-
 	vk::SubpassDescription xSubpass = vk::SubpassDescription()
 		.setPipelineBindPoint(vk::PipelineBindPoint::eGraphics)
 		.setColorAttachmentCount(1)
-		.setPColorAttachments(axColorAtachments);
-
-	vk::AttachmentDescription axAllAttachments[]{ xColorAttachment };
+		.setPColorAttachments(&xColorAttachmentRef);
 
 	vk::RenderPassCreateInfo xRenderPassInfo = vk::RenderPassCreateInfo()
 		.setAttachmentCount(1)
-		.setPAttachments(axAllAttachments)
+		.setPAttachments(&xColorAttachment)
 		.setSubpassCount(1)
 		.setPSubpasses(&xSubpass)
 		.setDependencyCount(0)
 		.setPDependencies(nullptr);
-
+	
 	s_xImGuiRenderPass = s_xDevice.createRenderPass(xRenderPassInfo);
 }
+
 void Zenith_Vulkan::ImGuiBeginFrame()
 {
 	ImGui_ImplVulkan_NewFrame();

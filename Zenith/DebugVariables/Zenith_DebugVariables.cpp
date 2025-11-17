@@ -96,8 +96,8 @@ void Zenith_DebugVariableTree::LeafNode<const Flux_ShaderResourceView>::ImGuiDis
 
 	Zenith_Vulkan::GetDevice().updateDescriptorSets(1, &xImageWriteInfo, 0, nullptr);
 
-	
-	ImGui::Image(xSet, ImVec2(1024, 1024), { 0, 1 }, { 1, 0 });
+	// ImGui docking branch uses ImTextureID which is a void* or ImU64
+	ImGui::Image((ImTextureID)(uintptr_t)static_cast<VkDescriptorSet>(xSet), ImVec2(1024, 1024), ImVec2(0, 1), ImVec2(1, 0));
 #endif
 }
 

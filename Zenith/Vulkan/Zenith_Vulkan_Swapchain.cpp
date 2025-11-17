@@ -324,6 +324,9 @@ void Zenith_Vulkan_Swapchain::BindAsTarget()
 		.setClearValueCount(1);
 
 	s_xCopyToFramebufferCmd.GetCurrentCmdBuffer().beginRenderPass(xRenderPassInfo, vk::SubpassContents::eInline);
+	
+	// Set the render pass in the command buffer object so RenderImGui() can verify it's active
+	s_xCopyToFramebufferCmd.SetCurrentRenderPass(xRenderPass);
 
 	//flipping because porting from opengl
 	vk::Viewport xViewport{};
@@ -388,6 +391,12 @@ void Zenith_Vulkan_Swapchain::EndFrame()
 
 	s_xCopyToFramebufferCmd.DrawIndexed(6);
 
+#ifdef ZENITH_TOOLS
+	// Render ImGui on top of the game content
+	// The render pass is still active from BindAsTarget()
+	s_xCopyToFramebufferCmd.RenderImGui();
+#endif
+
 	s_xCopyToFramebufferCmd.GetCurrentCmdBuffer().endRenderPass();
 	s_xCopyToFramebufferCmd.GetCurrentCmdBuffer().end();
 
@@ -424,4 +433,9 @@ void Zenith_Vulkan_Swapchain::EndFrame()
 vk::Semaphore& Zenith_Vulkan_Swapchain::GetCurrentImageAvailableSemaphore()
 {
 	return s_axImageAvailableSemaphores[s_uFrameIndex];
+}
+
+Flux_TargetSetup* Zenith_Vulkan_Swapchain::GetCurrentSwapchainTarget()
+{
+	return &s_axTargetSetups[s_uCurrentImageIndex];
 }

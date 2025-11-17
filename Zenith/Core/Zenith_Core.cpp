@@ -21,6 +21,14 @@
 #include "Flux/ComputeTest/Flux_ComputeTest.h"
 #ifdef ZENITH_TOOLS
 #include "Flux/ImGui/Flux_ImGui.h"
+
+// Forward declaration for editor
+class Zenith_Editor
+{
+public:
+	static void Render();
+};
+
 #endif
 #include "Input/Zenith_Input.h"
 #include "Physics/Zenith_Physics.h"
@@ -73,6 +81,11 @@ void TraverseTree(Zenith_DebugVariableTree::Node* pxNode, uint32_t uCurrentDepth
 void RenderImGui()
 {
 	Flux_PlatformAPI::ImGuiBeginFrame();
+	
+	// Render the editor UI (includes docking, viewport, hierarchy, etc.)
+	Zenith_Editor::Render();
+	
+	// Also render the old debug tools window for backwards compatibility
 	ImGui::Begin("Zenith Tools");
 
 	const Zenith_CameraComponent& xCamera = Zenith_Scene::GetCurrentScene().GetMainCamera();

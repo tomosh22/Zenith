@@ -115,14 +115,7 @@ public class TestToolsProject : Project
 		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\samples.*");
 		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\apps.*");
 		SourceFilesExcludeRegex.Add(@".*opencv.*");
-		SourceFilesExcludeRegex.Add(@".*imgui-1.91.0\\examples.*");
-		SourceFilesExcludeRegex.Add(@".*imgui-1.91.0\\backends\\imgui_impl_sdl.*");
-		SourceFilesExcludeRegex.Add(@".*imgui-1.91.0\\backends\\imgui_impl_opengl.*");
-		SourceFilesExcludeRegex.Add(@".*imgui-1.91.0\\backends\\imgui_impl_dx.*");
-		SourceFilesExcludeRegex.Add(@".*imgui-1.91.0\\backends\\imgui_impl_android.*");
-		SourceFilesExcludeRegex.Add(@".*imgui-1.91.0\\backends\\imgui_impl_glut.*");
-		SourceFilesExcludeRegex.Add(@".*imgui-1.91.0\\backends\\imgui_impl_wgpu.*");
-		SourceFilesExcludeRegex.Add(@".*imgui-1.91.0\\backends\\imgui_impl_allegro.*");
+		
 		SourceFilesExcludeRegex.Add(@".*reactphysics3d-0.10.1.*");
 		SourceFilesExcludeRegex.Add(@".*JoltPhysics-5.4.0\\Build.*");
 		SourceFilesExcludeRegex.Add(@".*JoltPhysics-5.4.0\\Docs.*");
@@ -133,7 +126,6 @@ public class TestToolsProject : Project
 		SourceFilesExcludeRegex.Add(@".*JoltPhysics-5.4.0\\JoltViewer.*");
 		SourceFilesExcludeRegex.Add(@".*JoltPhysics-5.4.0\\HelloWorld.*");
 		SourceFilesExcludeRegex.Add(@".*cmake.*");
-		SourceFilesExcludeRegex.Add(@".*imgui-1.91.0\\misc.*");
 		
 		AdditionalSourceRootPaths.Add("[project.SharpmakeCsPath]/../../../Zenith/Flux/MeshGeometry");
     }
@@ -150,7 +142,6 @@ public class TestToolsProject : Project
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/../../../Zenith/Core");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/../../../Middleware/glm-master");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/../../../Tools/Middleware");
-		conf.IncludePaths.Add("[project.SharpmakeCsPath]/../../../Middleware/stb");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/../../../Tools/Middleware/assimp/include");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/../../../Tools/Middleware/opencv/build/include");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/../../../Tools/Middleware/opencv/build/include/opencv2");
@@ -162,9 +153,11 @@ public class TestToolsProject : Project
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/../../../Tools/Middleware/opencv/sources/3rdparty/openjpeg/openjp2/");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/../../../Tools/Middleware/opencv/sources/3rdparty/libjpeg");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/../../../Tools/Middleware/opencv/sources/3rdparty/libpng");
-		conf.IncludePaths.Add("[project.SharpmakeCsPath]/../../../Tools/Middleware/imgui-1.91.0");
-		
-		
+		conf.IncludePaths.Add("[project.SharpmakeCsPath]/../../../Middleware/stb");
+		conf.IncludePaths.Add("[project.SharpmakeCsPath]/../../../Middleware");
+
+
+
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/../../../Zenith");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/../../../Zenith/Core");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/../../../Middleware/glfw-3.4.bin.WIN64/include");
@@ -242,6 +235,16 @@ public class TestWindowsProject : Project
 		SourceFilesExcludeRegex.Add(@".*JoltPhysics-5.4.0\\PerformanceTest.*");
 		SourceFilesExcludeRegex.Add(@".*JoltPhysics-5.4.0\\JoltViewer.*");
 		SourceFilesExcludeRegex.Add(@".*JoltPhysics-5.4.0\\HelloWorld.*");
+		SourceFilesExcludeRegex.Add(@".*imgui-docking\\examples.*");
+		SourceFilesExcludeRegex.Add(@".*imgui-docking\\backends\\imgui_impl_sdl.*");
+		SourceFilesExcludeRegex.Add(@".*imgui-docking\\backends\\imgui_impl_opengl.*");
+		SourceFilesExcludeRegex.Add(@".*imgui-docking\\backends\\imgui_impl_dx.*");
+		SourceFilesExcludeRegex.Add(@".*imgui-docking\\backends\\imgui_impl_android.*");
+		SourceFilesExcludeRegex.Add(@".*imgui-docking\\backends\\imgui_impl_glut.*");
+		SourceFilesExcludeRegex.Add(@".*imgui-docking\\backends\\imgui_impl_wgpu.*");
+		SourceFilesExcludeRegex.Add(@".*imgui-docking\\backends\\imgui_impl_allegro.*");
+		SourceFilesExcludeRegex.Add(@".*imgui-docking\\misc.*");
+
 		SourceFilesExcludeRegex.Add(@".*cmake.*");
 
 		SourceFilesExcludeRegex.Add(@".*Games\\(?!" + Name + ").*");
@@ -257,6 +260,7 @@ public class TestWindowsProject : Project
         conf.PrecompSource = "Zenith.cpp";
 		conf.PrecompSourceExcludeFolders.Add("[project.SharpmakeCsPath]/../../../Middleware/JoltPhysics-5.4.0");
 		conf.PrecompSourceExcludeFolders.Add("[project.SharpmakeCsPath]/../../../Middleware/reactphysics3d-0.10.1");
+		conf.PrecompSourceExcludeFolders.Add("[project.SharpmakeCsPath]/../../../Middleware/imgui-docking");
 		
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/../../../Zenith");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/../../../Zenith/Core");
@@ -269,7 +273,12 @@ public class TestWindowsProject : Project
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/../../../Zenith/Vulkan");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/../../../Games/" + Name);
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/../../../Games/");
-		
+		conf.IncludePaths.Add("[project.SharpmakeCsPath]/../../../Middleware/stb");
+		conf.IncludePaths.Add("[project.SharpmakeCsPath]/../../../Middleware");
+
+		conf.IncludePaths.Add("[project.SharpmakeCsPath]/../../../Middleware/imgui-docking");
+
+
 		conf.LibraryPaths.Add("[project.SharpmakeCsPath]/../../../Middleware/VulkanSDK/1.3.280.0/Lib");
 		conf.LibraryPaths.Add("[project.SharpmakeCsPath]/../../../Middleware/glfw-3.4.bin.WIN64/lib-vc2022");
 		

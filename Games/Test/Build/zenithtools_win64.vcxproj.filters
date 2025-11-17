@@ -4,30 +4,6 @@
     <ClCompile Include="..\..\..\Tools\Middleware\assimp\include\stb_vorbis.c">
       <Filter>Middleware\assimp\include</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\Tools\Middleware\imgui-1.91.0\backends\imgui_impl_glfw.cpp">
-      <Filter>Middleware\imgui-1.91.0\backends</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Tools\Middleware\imgui-1.91.0\backends\imgui_impl_vulkan.cpp">
-      <Filter>Middleware\imgui-1.91.0\backends</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Tools\Middleware\imgui-1.91.0\backends\imgui_impl_win32.cpp">
-      <Filter>Middleware\imgui-1.91.0\backends</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Tools\Middleware\imgui-1.91.0\imgui.cpp">
-      <Filter>Middleware\imgui-1.91.0</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Tools\Middleware\imgui-1.91.0\imgui_demo.cpp">
-      <Filter>Middleware\imgui-1.91.0</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Tools\Middleware\imgui-1.91.0\imgui_draw.cpp">
-      <Filter>Middleware\imgui-1.91.0</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Tools\Middleware\imgui-1.91.0\imgui_tables.cpp">
-      <Filter>Middleware\imgui-1.91.0</Filter>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Tools\Middleware\imgui-1.91.0\imgui_widgets.cpp">
-      <Filter>Middleware\imgui-1.91.0</Filter>
-    </ClCompile>
     <ClCompile Include="..\..\..\Tools\Zenith_Tools_MeshExport.cpp" />
     <ClCompile Include="..\..\..\Tools\Zenith_Tools_TerrainExport.cpp" />
     <ClCompile Include="..\..\..\Tools\Zenith_Tools_TextureExport.cpp" />
@@ -1080,42 +1056,6 @@
     <ClInclude Include="..\..\..\Tools\Middleware\assimp\include\zlib.h">
       <Filter>Middleware\assimp\include</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\Tools\Middleware\imgui-1.91.0\backends\imgui_impl_glfw.h">
-      <Filter>Middleware\imgui-1.91.0\backends</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\..\Tools\Middleware\imgui-1.91.0\backends\imgui_impl_metal.h">
-      <Filter>Middleware\imgui-1.91.0\backends</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\..\Tools\Middleware\imgui-1.91.0\backends\imgui_impl_osx.h">
-      <Filter>Middleware\imgui-1.91.0\backends</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\..\Tools\Middleware\imgui-1.91.0\backends\imgui_impl_vulkan.h">
-      <Filter>Middleware\imgui-1.91.0\backends</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\..\Tools\Middleware\imgui-1.91.0\backends\imgui_impl_win32.h">
-      <Filter>Middleware\imgui-1.91.0\backends</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\..\Tools\Middleware\imgui-1.91.0\imconfig.h">
-      <Filter>Middleware\imgui-1.91.0</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\..\Tools\Middleware\imgui-1.91.0\imgui.h">
-      <Filter>Middleware\imgui-1.91.0</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\..\Tools\Middleware\imgui-1.91.0\imgui_internal.h">
-      <Filter>Middleware\imgui-1.91.0</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\..\Tools\Middleware\imgui-1.91.0\imstb_rectpack.h">
-      <Filter>Middleware\imgui-1.91.0</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\..\Tools\Middleware\imgui-1.91.0\imstb_textedit.h">
-      <Filter>Middleware\imgui-1.91.0</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\..\Tools\Middleware\imgui-1.91.0\imstb_truetype.h">
-      <Filter>Middleware\imgui-1.91.0</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\..\Tools\Middleware\stb\stb_image.h">
-      <Filter>Middleware\stb</Filter>
-    </ClInclude>
     <ClInclude Include="..\..\..\Tools\Zenith_Tools_MeshExport.h" />
     <ClInclude Include="..\..\..\Tools\Zenith_Tools_TerrainExport.h" />
     <ClInclude Include="..\..\..\Tools\Zenith_Tools_TextureExport.h" />
@@ -1225,15 +1165,6 @@
     </Filter>
     <Filter Include="Middleware\assimp\include\utf8cpp\utf8">
       <UniqueIdentifier>{c1b2d1d5-cc13-5fec-7603-323dab167d1b}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Middleware\imgui-1.91.0">
-      <UniqueIdentifier>{deef4c08-75b6-b885-20cd-d72a510036c5}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Middleware\imgui-1.91.0\backends">
-      <UniqueIdentifier>{59eb22f9-7d33-c1ad-105a-5ecaf013d4e9}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Middleware\stb">
-      <UniqueIdentifier>{1c48f21f-8e0e-fc25-4967-888a7f33c7b8}</UniqueIdentifier>
     </Filter>
     <Filter Include="Zenith">
       <UniqueIdentifier>{951448da-1e31-be13-d840-5e0fcc115357}</UniqueIdentifier>

@@ -61,7 +61,7 @@ class Flux_CommandPushConstant
 public:
 	static constexpr Flux_CommandType m_eType = FLUX_COMMANDTYPE__PUSH_CONSTANT;
 
-	Flux_CommandPushConstant(void* pData, u_int uSize)
+	Flux_CommandPushConstant(const void* pData, u_int uSize)
 	: m_uSize(uSize)
 	{
 		Zenith_Assert(uSize < uMAX_SIZE, "Push constant too big");
@@ -275,7 +275,6 @@ public:
 	u_int m_uGroupCountZ;
 };
 
-#ifdef ZENITH_TOOLS
 class Flux_CommandRenderImGui
 {
 public:
@@ -288,7 +287,6 @@ public:
 		pxCmdBuf->RenderImGui();
 	}
 };
-#endif
 
 class Flux_CommandList
 {
