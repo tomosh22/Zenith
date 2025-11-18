@@ -44,11 +44,13 @@ public:
 	// Settings
 	static void SetSnapEnabled(bool enabled) { s_bSnapEnabled = enabled; }
 	static bool IsSnapEnabled() { return s_bSnapEnabled; }
-	
+
 	static void SetSnapValue(float value) { s_fSnapValue = value; }
 	static float GetSnapValue() { return s_fSnapValue; }
 
-private:
+	// State queries
+	static bool IsManipulating() { return s_bIsManipulating; }
+
 	static bool HandleTranslateGizmo(
 		Zenith_Entity* pxEntity,
 		const Zenith_Maths::Matrix4& viewMatrix,

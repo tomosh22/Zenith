@@ -128,6 +128,10 @@ public:
 	Zenith_CameraComponent& GetMainCamera();
 private:
 	friend class Zenith_Entity;
+#ifdef ZENITH_TOOLS
+	friend class Zenith_Editor;
+	friend class Zenith_SelectionSystem;
+#endif
 
 	template<typename T>
 	T& GetComponentFromPool(u_int uIndex)

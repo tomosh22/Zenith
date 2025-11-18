@@ -3,6 +3,8 @@
 #ifdef ZENITH_TOOLS
 
 #include "Zenith_Editor.h"
+#include "Zenith_SelectionSystem.h"
+#include "Zenith_Gizmo.h"
 #include "EntityComponent/Zenith_Entity.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
@@ -29,18 +31,39 @@ bool Zenith_Editor::s_bViewportFocused = false;
 Zenith_Scene* Zenith_Editor::s_pxBackupScene = nullptr;
 
 // Cache the ImGui descriptor set for the game viewport texture
-static VkDescriptorSet s_xCachedGameTextureDescriptorSet = VK_NULL_HANDLE;
-static VkImageView s_xCachedImageView = VK_NULL_HANDLE;
+static vk::DescriptorSet s_xCachedGameTextureDescriptorSet = VK_NULL_HANDLE;
+static vk::ImageView s_xCachedImageView = VK_NULL_HANDLE;
+
+// Deferred deletion queue for descriptor sets
+// Vulkan requires waiting for GPU to finish using resources before freeing them
+struct PendingDescriptorSetDeletion
+{
+	VkDescriptorSet descriptorSet;
+	u_int framesUntilDeletion;
+};
+static std::vector<PendingDescriptorSetDeletion> s_xPendingDeletions;
 
 void Zenith_Editor::Initialise()
 {
 	s_eEditorMode = EditorMode::Stopped;
 	s_pxSelectedEntity = nullptr;
 	s_eGizmoMode = GizmoMode::Translate;
+
+	// Initialize editor subsystems
+	Zenith_SelectionSystem::Initialise();
+	Zenith_Gizmo::Initialise();
 }
 
 void Zenith_Editor::Shutdown()
 {
+	// Process all pending deletions immediately on shutdown
+	// At shutdown, we can safely assume all GPU work is done or will be waited for
+	for (auto& pending : s_xPendingDeletions)
+	{
+		ImGui_ImplVulkan_RemoveTexture(pending.descriptorSet);
+	}
+	s_xPendingDeletions.clear();
+
 	// Free the cached ImGui descriptor set
 	if (s_xCachedGameTextureDescriptorSet != VK_NULL_HANDLE)
 	{
@@ -48,16 +71,41 @@ void Zenith_Editor::Shutdown()
 		s_xCachedGameTextureDescriptorSet = VK_NULL_HANDLE;
 		s_xCachedImageView = VK_NULL_HANDLE;
 	}
-	
+
 	if (s_pxBackupScene)
 	{
 		delete s_pxBackupScene;
 		s_pxBackupScene = nullptr;
 	}
+
+	// Shutdown editor subsystems
+	Zenith_Gizmo::Shutdown();
+	Zenith_SelectionSystem::Shutdown();
 }
 
 void Zenith_Editor::Update()
 {
+	// Process deferred descriptor set deletions
+	// We wait N frames before freeing to ensure GPU has finished using them
+	for (auto it = s_xPendingDeletions.begin(); it != s_xPendingDeletions.end(); )
+	{
+		if (it->framesUntilDeletion == 0)
+		{
+			// Safe to delete now - GPU has finished with this descriptor set
+			ImGui_ImplVulkan_RemoveTexture(it->descriptorSet);
+			it = s_xPendingDeletions.erase(it);
+		}
+		else
+		{
+			// Decrement frame counter
+			it->framesUntilDeletion--;
+			++it;
+		}
+	}
+
+	// Update bounding boxes for all entities (needed for selection)
+	Zenith_SelectionSystem::UpdateBoundingBoxes();
+
 	// Handle editor mode changes
 	if (s_eEditorMode == EditorMode::Playing)
 	{
@@ -67,9 +115,12 @@ void Zenith_Editor::Update()
 	{
 		// Game is paused - don't update game logic
 	}
-	
-	// Handle object picking
-	HandleObjectPicking();
+
+	// Handle object picking (only when not manipulating gizmo)
+	if (!Zenith_Gizmo::IsManipulating())
+	{
+		HandleObjectPicking();
+	}
 }
 
 void Zenith_Editor::Render()
@@ -105,6 +156,9 @@ void Zenith_Editor::Render()
 	RenderHierarchyPanel();
 	RenderPropertiesPanel();
 	RenderViewport();
+
+	// Render gizmos and overlays (after viewport so they appear on top)
+	RenderGizmos();
 }
 
 void Zenith_Editor::RenderMainMenuBar()
@@ -113,29 +167,81 @@ void Zenith_Editor::RenderMainMenuBar()
 	{
 		if (ImGui::BeginMenu("File"))
 		{
-			if (ImGui::MenuItem("New Scene")) { }
-			if (ImGui::MenuItem("Open Scene")) { }
-			if (ImGui::MenuItem("Save Scene")) { }
+			if (ImGui::MenuItem("New Scene"))
+			{
+				// TODO: Implement new scene creation
+				// Would clear current scene and create a default setup
+				Zenith_Log("New Scene - Not yet implemented");
+			}
+
+			if (ImGui::MenuItem("Open Scene"))
+			{
+				// TODO: Implement scene loading with file dialog
+				// Would show native file picker and load .zscene file
+				Zenith_Log("Open Scene - Not yet implemented");
+				// Example: Zenith_Scene::GetCurrentScene().Deserialize("scene.zscene");
+			}
+
+			if (ImGui::MenuItem("Save Scene"))
+			{
+				// TODO: Implement scene saving with file dialog
+				// Would show native file picker and save to .zscene file
+				Zenith_Log("Save Scene - Not yet implemented");
+				// Example: Zenith_Scene::GetCurrentScene().Serialize("scene.zscene");
+			}
+
 			ImGui::Separator();
-			if (ImGui::MenuItem("Exit")) { }
+
+			if (ImGui::MenuItem("Exit"))
+			{
+				// TODO: Implement graceful shutdown
+				// Would trigger application exit
+				Zenith_Log("Exit - Not yet implemented");
+			}
+
 			ImGui::EndMenu();
 		}
-		
+
 		if (ImGui::BeginMenu("Edit"))
 		{
-			if (ImGui::MenuItem("Undo", "Ctrl+Z")) { }
-			if (ImGui::MenuItem("Redo", "Ctrl+Y")) { }
+			if (ImGui::MenuItem("Undo", "Ctrl+Z"))
+			{
+				// TODO: Implement undo system
+				Zenith_Log("Undo - Not yet implemented");
+			}
+
+			if (ImGui::MenuItem("Redo", "Ctrl+Y"))
+			{
+				// TODO: Implement redo system
+				Zenith_Log("Redo - Not yet implemented");
+			}
+
 			ImGui::EndMenu();
 		}
-		
+
 		if (ImGui::BeginMenu("View"))
 		{
-			if (ImGui::MenuItem("Hierarchy")) { }
-			if (ImGui::MenuItem("Properties")) { }
-			if (ImGui::MenuItem("Console")) { }
+			if (ImGui::MenuItem("Hierarchy"))
+			{
+				// TODO: Toggle hierarchy panel visibility
+				Zenith_Log("Toggle Hierarchy - Not yet implemented");
+			}
+
+			if (ImGui::MenuItem("Properties"))
+			{
+				// TODO: Toggle properties panel visibility
+				Zenith_Log("Toggle Properties - Not yet implemented");
+			}
+
+			if (ImGui::MenuItem("Console"))
+			{
+				// TODO: Toggle console panel visibility
+				Zenith_Log("Toggle Console - Not yet implemented");
+			}
+
 			ImGui::EndMenu();
 		}
-		
+
 		ImGui::EndMenuBar();
 	}
 }
@@ -195,11 +301,54 @@ void Zenith_Editor::RenderToolbar()
 void Zenith_Editor::RenderHierarchyPanel()
 {
 	ImGui::Begin("Hierarchy");
-	
-	// TODO: Display all entities in the scene
+
 	ImGui::Text("Scene Entities:");
 	ImGui::Separator();
-	
+
+	// Get reference to current scene
+	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+
+	// Iterate through all entities in the scene
+	for (auto& [entityID, entity] : xScene.m_xEntityMap)
+	{
+		// Check if this entity is currently selected
+		bool bIsSelected = (s_pxSelectedEntity && s_pxSelectedEntity->GetEntityID() == entityID);
+
+		// Create selectable item for entity
+		// Use entity name if available, otherwise show ID
+		std::string strDisplayName = entity.m_strName.empty() ?
+			("Entity_" + std::to_string(entityID)) : entity.m_strName;
+
+		// Add unique ID to avoid ImGui label collisions
+		std::string strLabel = strDisplayName + "##" + std::to_string(entityID);
+
+		if (ImGui::Selectable(strLabel.c_str(), bIsSelected))
+		{
+			// Entity map stores entities by value, so we need to get a pointer
+			// WARNING: This pointer is only valid until the entity map is modified
+			SelectEntity(&entity);
+		}
+
+		// Show context menu on right-click
+		if (ImGui::BeginPopupContextItem())
+		{
+			if (ImGui::MenuItem("Delete Entity"))
+			{
+				// TODO: Implement entity deletion
+				// Need to handle cleanup and deselection
+			}
+			ImGui::EndPopup();
+		}
+	}
+
+	// Add button to create new entity
+	ImGui::Separator();
+	if (ImGui::Button("+ Create Entity"))
+	{
+		// TODO: Implement entity creation
+		// Create new entity with default name
+	}
+
 	ImGui::End();
 }
 
@@ -212,7 +361,8 @@ void Zenith_Editor::RenderPropertiesPanel()
 		ImGui::Text("Selected Entity");
 		ImGui::Separator();
 		
-		// Transform component
+		// Transform component editing
+		// Currently only shows Transform - need to add other components
 		if (s_pxSelectedEntity->HasComponent<Zenith_TransformComponent>())
 		{
 			if (ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen))
@@ -236,8 +386,19 @@ void Zenith_Editor::RenderPropertiesPanel()
 				{
 					transform.SetScale({ scaleValues[0], scaleValues[1], scaleValues[2] });
 				}
+				
+				// TODO: Add rotation editing (currently missing)
+				// Convert quaternion to Euler angles for editing
+				// Update quaternion when Euler angles change
 			}
 		}
+		
+		// TODO: Add component editor for other component types
+		// - ModelComponent: Show model/material selection
+		// - CameraComponent: Show FOV, near/far planes, etc.
+		// - ColliderComponent: Show collision shape settings
+		// - ScriptComponent: Show script assignment
+		// Each needs custom ImGui widgets for its properties
 	}
 	else
 	{
@@ -250,82 +411,239 @@ void Zenith_Editor::RenderPropertiesPanel()
 void Zenith_Editor::RenderViewport()
 {
 	ImGui::Begin("Viewport");
-	
+
+	// Track viewport position for mouse picking
+	ImVec2 xViewportPanelPos = ImGui::GetCursorScreenPos();
+	s_xViewportPos = { xViewportPanelPos.x, xViewportPanelPos.y };
+
 	// Get the final render target SRV
 	Flux_ShaderResourceView& xGameRenderSRV = Flux_Graphics::s_xFinalRenderTarget.m_axColourAttachments[0].m_pxSRV;
-	
+
 	if (xGameRenderSRV.m_xImageView != VK_NULL_HANDLE)
 	{
-		// Ensure the image is in the correct layout for sampling
-		// After all game rendering is done, the image should already be in ShaderReadOnlyOptimal
-		// from TransitionTargetsAfterRenderPass, but we'll verify it's ready for sampling
-			
-		// Register the texture with ImGui
-		VkDescriptorSet xDescriptorSet = ImGui_ImplVulkan_AddTexture(
+		// Check if the image view has changed (e.g., due to window resize)
+		// Only allocate a new descriptor set if necessary to avoid exhausting the pool
+		if (s_xCachedImageView != xGameRenderSRV.m_xImageView)
+		{
+			// Queue old descriptor set for deferred deletion
+			// We can't free it immediately because the GPU may still be using it in in-flight command buffers
+			// Vulkan spec requires waiting for all commands referencing the descriptor set to complete
+			if (s_xCachedGameTextureDescriptorSet != VK_NULL_HANDLE)
+			{
+				// Wait 3 frames before deletion to ensure GPU has finished
+				// This accounts for frames in flight (typically 2-3 frames buffered)
+				constexpr u_int FRAMES_TO_WAIT = 3;
+				s_xPendingDeletions.push_back({
+					s_xCachedGameTextureDescriptorSet,
+					FRAMES_TO_WAIT
+				});
+			}
+
+			// Allocate new descriptor set for the game viewport texture
+			s_xCachedGameTextureDescriptorSet = ImGui_ImplVulkan_AddTexture(
 				Flux_Graphics::s_xRepeatSampler.GetSampler(),
 				xGameRenderSRV.m_xImageView,
 				VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
 			);
-			
+
+			// Cache the image view so we know when it changes
+			s_xCachedImageView = xGameRenderSRV.m_xImageView;
+		}
+
 		// Get available content region size
 		ImVec2 viewportPanelSize = ImGui::GetContentRegionAvail();
-		
-		// Display the game render target as an image
-		ImGui::Image((ImTextureID)(uintptr_t)xDescriptorSet, viewportPanelSize);
+
+		// Store viewport size for object picking
+		s_xViewportSize = { viewportPanelSize.x, viewportPanelSize.y };
+
+		// Track viewport hover/focus state for input handling
+		s_bViewportHovered = ImGui::IsWindowHovered();
+		s_bViewportFocused = ImGui::IsWindowFocused();
+
+		// Display the game render target as an image using the cached descriptor set
+		if (s_xCachedGameTextureDescriptorSet != VK_NULL_HANDLE)
+		{
+			ImGui::Image((ImTextureID)(uintptr_t)static_cast<VkDescriptorSet>(s_xCachedGameTextureDescriptorSet), viewportPanelSize);
+		}
+		else
+		{
+			ImGui::Text("Viewport texture not yet initialized");
+		}
 	}
 	else
 	{
 		ImGui::Text("Game render target not available");
 	}
-	
+
 	ImGui::End();
 }
 
 void Zenith_Editor::HandleObjectPicking()
 {
-	// TODO: Implement raycasting to pick objects
-	// This requires:
-	// 1. Get mouse position in viewport
-	// 2. Convert to world ray
-	// 3. Test ray against all entity bounding boxes
-	// 4. Select the closest hit entity
+	// Only pick when viewport is hovered
+	if (!s_bViewportHovered)
+		return;
+
+	// Only pick on left mouse button press (not held)
+	if (!Zenith_Input::WasKeyPressedThisFrame(ZENITH_MOUSE_BUTTON_LEFT))
+		return;
+
+	// Get mouse position in screen space
+	Zenith_Maths::Vector2_64 xGlobalMousePos;
+	Zenith_Input::GetMousePosition(xGlobalMousePos);
+
+	// Convert to viewport-relative coordinates
+	Zenith_Maths::Vector2 xViewportMousePos = {
+		static_cast<float>(xGlobalMousePos.x - s_xViewportPos.x),
+		static_cast<float>(xGlobalMousePos.y - s_xViewportPos.y)
+	};
+
+	// Check if mouse is within viewport bounds
+	if (xViewportMousePos.x < 0 || xViewportMousePos.x > s_xViewportSize.x ||
+		xViewportMousePos.y < 0 || xViewportMousePos.y > s_xViewportSize.y)
+		return;
+
+	// Get camera matrices for ray casting
+	Zenith_CameraComponent& xCamera = Zenith_Scene::GetCurrentScene().GetMainCamera();
+	Zenith_Maths::Matrix4 xViewMatrix, xProjMatrix;
+	xCamera.BuildViewMatrix(xViewMatrix);
+	xCamera.BuildProjectionMatrix(xProjMatrix);
+
+	// Convert screen position to world-space ray
+	Zenith_Maths::Vector3 xRayDir = Zenith_Gizmo::ScreenToWorldRay(
+		xViewportMousePos,
+		{ 0, 0 },  // Viewport relative, so offset is 0
+		s_xViewportSize,
+		xViewMatrix,
+		xProjMatrix
+	);
+
+	// Ray origin is camera position
+	Zenith_Maths::Vector3 xRayOrigin;
+	xCamera.GetPosition(xRayOrigin);
+
+	// Perform raycast to find entity under mouse
+	Zenith_Entity* pxHitEntity = Zenith_SelectionSystem::RaycastSelect(xRayOrigin, xRayDir);
+
+	if (pxHitEntity)
+	{
+		SelectEntity(pxHitEntity);
+	}
+	else
+	{
+		ClearSelection();
+	}
 }
 
 void Zenith_Editor::RenderGizmos()
 {
-	// TODO: Implement gizmo rendering
+	// Only render if an entity is selected
+	if (!s_pxSelectedEntity)
+		return;
+
+	// Only render gizmos in Stopped or Paused mode (not during active play)
+	if (s_eEditorMode == EditorMode::Playing)
+		return;
+
+	// Get camera matrices for gizmo rendering
+	Zenith_CameraComponent& xCamera = Zenith_Scene::GetCurrentScene().GetMainCamera();
+	Zenith_Maths::Matrix4 xViewMatrix, xProjMatrix;
+	xCamera.BuildViewMatrix(xViewMatrix);
+	xCamera.BuildProjectionMatrix(xProjMatrix);
+
+	// Convert GizmoMode to GizmoOperation
+	GizmoOperation eOperation = static_cast<GizmoOperation>(s_eGizmoMode);
+
+	// Call gizmo manipulation (handles both rendering and interaction)
+	bool bWasManipulated = Zenith_Gizmo::Manipulate(
+		s_pxSelectedEntity,
+		eOperation,
+		xViewMatrix,
+		xProjMatrix,
+		s_xViewportPos,
+		s_xViewportSize
+	);
+
+	// Optionally render selection bounding box for visual feedback
+	// (Currently disabled - can enable for debugging)
+	// Zenith_SelectionSystem::RenderSelectedBoundingBox(s_pxSelectedEntity);
 }
 
 void Zenith_Editor::SetEditorMode(EditorMode eMode)
 {
 	if (s_eEditorMode == eMode)
 		return;
-	
+
 	EditorMode oldMode = s_eEditorMode;
 	s_eEditorMode = eMode;
-	
+
 	// Handle mode transitions
+
+	// STOPPED -> PLAYING: Backup scene state
 	if (oldMode == EditorMode::Stopped && eMode == EditorMode::Playing)
 	{
 		Zenith_Log("Editor: Entering Play Mode");
+
+		// TODO: FULL IMPLEMENTATION NEEDED
+		// Currently this is a simplified implementation that does NOT preserve scene state
+		// A full implementation would need to:
+		// 1. Deep copy all entities and components to s_pxBackupScene
+		// 2. Preserve entity relationships, component data, and resource references
+		// 3. Handle pointers and references between entities
+		//
+		// RECOMMENDED APPROACHES:
+		// A) Implement Scene::Clone() with component-level copy constructors
+		// B) Use serialization/deserialization to memory (most robust)
+		// C) Implement copy-on-write for modified entities only
+		//
+		// For now, we'll just log the transition and let the game run
+		// When Stop is pressed, scene will NOT revert to pre-play state
+
+		s_pxBackupScene = nullptr;  // Placeholder - would store cloned scene here
+
+		Zenith_Log("WARNING: Scene state backup not yet implemented - changes during play will persist!");
 	}
+
+	// PLAYING/PAUSED -> STOPPED: Restore scene state
 	else if (oldMode != EditorMode::Stopped && eMode == EditorMode::Stopped)
 	{
 		Zenith_Log("Editor: Stopping Play Mode");
-		
+
+		// TODO: FULL IMPLEMENTATION NEEDED
+		// Currently this doesn't restore scene state
+		// A full implementation would:
+		// 1. Reset current scene: Zenith_Scene::GetCurrentScene().Reset()
+		// 2. Restore entities and components from s_pxBackupScene
+		// 3. Restore camera and selection references
+		// 4. Clean up backup scene
+		//
+		// For now, we just clean up and note that state wasn't restored
+
 		if (s_pxBackupScene)
 		{
 			delete s_pxBackupScene;
-		 s_pxBackupScene = nullptr;
+			s_pxBackupScene = nullptr;
 		}
+
+		// Clear selection as entity pointers may no longer be valid
+		// (In full implementation, we'd restore selection by EntityID)
+		ClearSelection();
+
+		Zenith_Log("Scene returned to edit mode (state preservation not yet implemented)");
 	}
+
+	// PAUSED state - suspend scene updates
 	else if (eMode == EditorMode::Paused)
 	{
 		Zenith_Log("Editor: Pausing");
+		// Scene updates will be skipped in main loop when paused
 	}
+
+	// PAUSED -> PLAYING: Resume scene updates
 	else if (oldMode == EditorMode::Paused && eMode == EditorMode::Playing)
 	{
 		Zenith_Log("Editor: Resuming");
+		// Scene updates will resume in main loop
 	}
 }
 
