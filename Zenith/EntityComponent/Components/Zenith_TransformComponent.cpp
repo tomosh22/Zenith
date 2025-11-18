@@ -1,6 +1,7 @@
 #include "Zenith.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "Physics/Zenith_Physics.h"
+#include "DataStream/Zenith_DataStream.h"
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include <Jolt/Jolt.h>
 #include <Jolt/Physics/Body/Body.h>
@@ -118,17 +119,35 @@ void Zenith_TransformComponent::BuildModelMatrix(Zenith_Maths::Matrix4& xMatOut)
 	}
 }
 
-void Zenith_TransformComponent::Serialize(std::ofstream& xOut)
+void Zenith_TransformComponent::WriteToDataStream(Zenith_DataStream& xStream) const
 {
-	STUBBED
-#if 0
-	xOut << "TransformComponent\n";
+	// Write name
+	xStream << m_strName;
+
+	// Write position, rotation, and scale
+	// Note: We get current values from physics if rigid body exists
 	Zenith_Maths::Vector3 xPos;
 	Zenith_Maths::Quat xRot;
-	GetPosition(xPos);
-	GetRotation(xRot);
-	xOut << xPos.x << ' ' << xPos.y << ' ' << xPos.z << '\n';
-	xOut << xRot.x << ' ' << xRot.y << ' ' << xRot.z << ' ' << xRot.w << '\n';
-	xOut << m_xScale.x << ' ' << m_xScale.y << ' ' << m_xScale.z << '\n';
-#endif
+	const_cast<Zenith_TransformComponent*>(this)->GetPosition(xPos);
+	const_cast<Zenith_TransformComponent*>(this)->GetRotation(xRot);
+
+	xStream << xPos;
+	xStream << xRot;
+	xStream << m_xScale;
+
+	// Note: m_pxRigidBody is not serialized as it's a runtime-only physics handle
+	// Physics will be reconstructed from ColliderComponent on load
+}
+
+void Zenith_TransformComponent::ReadFromDataStream(Zenith_DataStream& xStream)
+{
+	// Read name
+	xStream >> m_strName;
+
+	// Read position, rotation, and scale
+	xStream >> m_xPosition;
+	xStream >> m_xRotation;
+	xStream >> m_xScale;
+
+	// m_pxRigidBody remains nullptr - will be set by ColliderComponent if needed
 }

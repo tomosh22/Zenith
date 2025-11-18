@@ -115,7 +115,12 @@ public:
 		}
 	}
 
-	void Serialize(const std::string& strFilename);
+	// Serialization methods
+	void SaveToFile(const std::string& strFilename);
+	void LoadFromFile(const std::string& strFilename);
+
+	// Query methods
+	u_int GetEntityCount() const { return static_cast<u_int>(m_xEntityMap.size()); }
 
 	static void Update(const float fDt);
 	static void WaitForUpdateComplete();

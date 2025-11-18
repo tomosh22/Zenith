@@ -38,6 +38,10 @@ public:
 		}
 	}
 
+	// Serialization methods for Zenith_DataStream
+	void WriteToDataStream(Zenith_DataStream& xStream) const;
+	void ReadFromDataStream(Zenith_DataStream& xStream);
+
 	//#TO not the cleanest code in the world
 	//takes a filename in the form meshname_texturetype_materialindex (no extension)
 	//and returns materialindex, for example Assets/Meshes/foo_bar_5 would return 5

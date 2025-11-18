@@ -2,6 +2,7 @@
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
 #include "Physics/Zenith_Physics.h"
+#include "DataStream/Zenith_DataStream.h"
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include <Jolt/Jolt.h>
 #include <Jolt/Physics/Body/Body.h>
@@ -149,4 +150,35 @@ void Zenith_ColliderComponent::AddCollider(CollisionVolumeType eVolumeType, Rigi
 		m_pxRigidBody = &xLock.GetBody();
 		xTrans.m_pxRigidBody = m_pxRigidBody;
 	}
+}
+
+void Zenith_ColliderComponent::WriteToDataStream(Zenith_DataStream& xStream) const
+{
+	// Write collision volume type and rigid body type
+	xStream << static_cast<u_int>(m_eVolumeType);
+	xStream << static_cast<u_int>(m_eRigidBodyType);
+
+	// Note: m_pxRigidBody and m_xBodyID are runtime-only physics handles
+	// They will be recreated by calling AddCollider during deserialization
+
+	// Note: m_pxTerrainMeshData is also runtime-only and will be recreated
+	// from the TerrainComponent during deserialization
+}
+
+void Zenith_ColliderComponent::ReadFromDataStream(Zenith_DataStream& xStream)
+{
+	// Read collision volume type and rigid body type
+	u_int uVolumeType;
+	u_int uRigidBodyType;
+	xStream >> uVolumeType;
+	xStream >> uRigidBodyType;
+
+	m_eVolumeType = static_cast<CollisionVolumeType>(uVolumeType);
+	m_eRigidBodyType = static_cast<RigidBodyType>(uRigidBodyType);
+
+	// Call AddCollider to recreate the physics body
+	// This must be done after the entity and transform component are fully deserialized
+	AddCollider(m_eVolumeType, m_eRigidBodyType);
+
+	// m_xParentEntity will be set by the entity deserialization system
 }

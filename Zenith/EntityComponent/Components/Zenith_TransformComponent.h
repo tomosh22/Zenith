@@ -12,7 +12,10 @@ class Zenith_TransformComponent
 public:
 	Zenith_TransformComponent(const std::string& strName, Zenith_Entity& xEntity);
 	~Zenith_TransformComponent();
-	void Serialize(std::ofstream& xOut);
+
+	// Serialization methods for Zenith_DataStream
+	void WriteToDataStream(Zenith_DataStream& xStream) const;
+	void ReadFromDataStream(Zenith_DataStream& xStream);
 
 	void SetPosition(const Zenith_Maths::Vector3 xPos);
 	void SetRotation(const Zenith_Maths::Quat xRot);

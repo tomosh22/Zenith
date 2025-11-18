@@ -356,3 +356,61 @@ Zenith_AssetHandler::AssetID Zenith_AssetHandler::GetNextFreeMaterialSlot()
 	Zenith_Assert(false, "Run out of material slots");
 	return -1;
 }
+
+// Reverse lookup functions for serialization
+std::string Zenith_AssetHandler::GetMeshName(const Flux_MeshGeometry* pxMesh)
+{
+	if (!pxMesh) return "";
+
+	// Calculate the asset ID from the pointer offset in the array
+	AssetID uAssetID = static_cast<AssetID>(pxMesh - s_pxMeshes);
+
+	// Find the name by iterating through the name map
+	for (const auto& pair : s_xMeshNameMap)
+	{
+		if (pair.second == uAssetID)
+		{
+			return pair.first;
+		}
+	}
+
+	return ""; // Asset not found in registry
+}
+
+std::string Zenith_AssetHandler::GetMaterialName(const Flux_Material* pxMaterial)
+{
+	if (!pxMaterial) return "";
+
+	// Calculate the asset ID from the pointer offset in the array
+	AssetID uAssetID = static_cast<AssetID>(pxMaterial - s_pxMaterials);
+
+	// Find the name by iterating through the name map
+	for (const auto& pair : s_xMaterialNameMap)
+	{
+		if (pair.second == uAssetID)
+		{
+			return pair.first;
+		}
+	}
+
+	return ""; // Asset not found in registry
+}
+
+std::string Zenith_AssetHandler::GetTextureName(const Flux_Texture* pxTexture)
+{
+	if (!pxTexture) return "";
+
+	// Calculate the asset ID from the pointer offset in the array
+	AssetID uAssetID = static_cast<AssetID>(pxTexture - s_pxTextures);
+
+	// Find the name by iterating through the name map
+	for (const auto& pair : s_xTextureNameMap)
+	{
+		if (pair.second == uAssetID)
+		{
+			return pair.first;
+		}
+	}
+
+	return ""; // Asset not found in registry
+}

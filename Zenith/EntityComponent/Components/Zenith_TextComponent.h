@@ -7,6 +7,21 @@ struct TextEntry
 	std::string m_strText;
 	Zenith_Maths::Vector2 m_xPosition = { 0,0 }; //in pixels
 	float m_fScale = 1.;
+
+	// Serialization methods for Zenith_DataStream
+	void WriteToDataStream(Zenith_DataStream& xStream) const
+	{
+		xStream << m_strText;
+		xStream << m_xPosition;
+		xStream << m_fScale;
+	}
+
+	void ReadFromDataStream(Zenith_DataStream& xStream)
+	{
+		xStream >> m_strText;
+		xStream >> m_xPosition;
+		xStream >> m_fScale;
+	}
 };
 
 struct TextEntry_World
@@ -14,6 +29,21 @@ struct TextEntry_World
 	std::string m_strText;
 	Zenith_Maths::Vector3 m_xPosition = { 0,0,0 };
 	float m_fScale = 1.;
+
+	// Serialization methods for Zenith_DataStream
+	void WriteToDataStream(Zenith_DataStream& xStream) const
+	{
+		xStream << m_strText;
+		xStream << m_xPosition;
+		xStream << m_fScale;
+	}
+
+	void ReadFromDataStream(Zenith_DataStream& xStream)
+	{
+		xStream >> m_strText;
+		xStream >> m_xPosition;
+		xStream >> m_fScale;
+	}
 };
 
 class Zenith_TextComponent
@@ -25,6 +55,10 @@ public:
 
 	void AddText(TextEntry& xEntry);
 	void AddText_World(TextEntry_World& xEntry);
+
+	// Serialization methods for Zenith_DataStream
+	void WriteToDataStream(Zenith_DataStream& xStream) const;
+	void ReadFromDataStream(Zenith_DataStream& xStream);
 
 private:
 	friend class Flux_Text;

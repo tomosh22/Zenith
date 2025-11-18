@@ -14,8 +14,11 @@ public:
 	Zenith_ColliderComponent() = delete;
 	Zenith_ColliderComponent(Zenith_Entity& xEntity);
 	~Zenith_ColliderComponent();
-	
-	void Serialize(std::ofstream& xOut);
+
+	// Serialization methods for Zenith_DataStream
+	void WriteToDataStream(Zenith_DataStream& xStream) const;
+	void ReadFromDataStream(Zenith_DataStream& xStream);
+
 	JPH::Body* GetRigidBody() const { return m_pxRigidBody; }
 	Zenith_EntityID GetEntityID() { return m_xParentEntity.GetEntityID(); }
 

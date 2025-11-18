@@ -72,6 +72,11 @@ public:
 	static void DeleteMesh(const std::string& strName);
 	static void DeleteMaterial(const std::string& strName);
 
+	// Reverse lookup: get asset name from pointer (for serialization)
+	static std::string GetMeshName(const Flux_MeshGeometry* pxMesh);
+	static std::string GetMaterialName(const Flux_Material* pxMaterial);
+	static std::string GetTextureName(const Flux_Texture* pxTexture);
+
 private:
 
 	//array of length ZENITH_MAX_TEXTURES

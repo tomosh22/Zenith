@@ -50,7 +50,9 @@ public:
 	Zenith_EntityID GetEntityID() { return m_uEntityID; }
 	class Zenith_Scene* m_pxParentScene;
 
-	void Serialize(std::ofstream& xOut);
+	// Serialization methods for Zenith_DataStream
+	void WriteToDataStream(Zenith_DataStream& xStream) const;
+	void ReadFromDataStream(Zenith_DataStream& xStream);
 
 	Zenith_EntityID m_uParentEntityID = -1;
 	std::string m_strName;

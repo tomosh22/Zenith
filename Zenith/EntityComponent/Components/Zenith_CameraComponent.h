@@ -16,6 +16,10 @@ public:
 	Zenith_CameraComponent(Zenith_Entity& xParentEntity);
 	~Zenith_CameraComponent() = default;
 	void InitialisePerspective(const Zenith_Maths::Vector3& xPos, const float fPitch, const float fYaw, const float fFOV, const float fNear, const float fFar, const float fAspectRatio);
+
+	// Serialization methods for Zenith_DataStream
+	void WriteToDataStream(Zenith_DataStream& xStream) const;
+	void ReadFromDataStream(Zenith_DataStream& xStream);
 	void BuildViewMatrix(Zenith_Maths::Matrix4& xOut) const;
 	void BuildProjectionMatrix(Zenith_Maths::Matrix4& xOut) const;
 

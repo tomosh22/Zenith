@@ -3,6 +3,7 @@
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "Input/Zenith_Input.h"
 #include "Zenith_OS_Include.h"
+#include "DataStream/Zenith_DataStream.h"
 
 Zenith_CameraComponent::Zenith_CameraComponent(Zenith_Entity& xParentEntity)
 	: m_xParentEntity(xParentEntity)
@@ -113,4 +114,48 @@ Zenith_Maths::Vector3 Zenith_CameraComponent::GetUpDir()
 	Zenith_Maths::Matrix4 xRotationMatrix = xYawMatrix * xPitchMatrix;
 	Zenith_Maths::Vector4 xUp = xRotationMatrix * Zenith_Maths::Vector4(0, 1, 0, 1);
 	return {xUp.x, xUp.y, xUp.z};
+}
+
+void Zenith_CameraComponent::WriteToDataStream(Zenith_DataStream& xStream) const
+{
+	// Write camera type
+	xStream << static_cast<u_int>(m_eType);
+
+	// Write all camera parameters
+	xStream << m_fNear;
+	xStream << m_fFar;
+	xStream << m_fLeft;
+	xStream << m_fRight;
+	xStream << m_fTop;
+	xStream << m_fBottom;
+	xStream << m_fFOV;
+	xStream << m_fYaw;
+	xStream << m_fPitch;
+	xStream << m_fAspect;
+	xStream << m_xPosition;
+
+	// m_xParentEntity reference is not serialized - will be restored during deserialization
+}
+
+void Zenith_CameraComponent::ReadFromDataStream(Zenith_DataStream& xStream)
+{
+	// Read camera type
+	u_int uType;
+	xStream >> uType;
+	m_eType = static_cast<CameraType>(uType);
+
+	// Read all camera parameters
+	xStream >> m_fNear;
+	xStream >> m_fFar;
+	xStream >> m_fLeft;
+	xStream >> m_fRight;
+	xStream >> m_fTop;
+	xStream >> m_fBottom;
+	xStream >> m_fFOV;
+	xStream >> m_fYaw;
+	xStream >> m_fPitch;
+	xStream >> m_fAspect;
+	xStream >> m_xPosition;
+
+	// m_xParentEntity will be set by the entity deserialization system
 }

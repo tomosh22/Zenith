@@ -35,6 +35,11 @@ public:
 	const Zenith_Maths::Vector2 GetPosition_2D() const { return m_xPosition_2D; }
 
 	const bool IsVisible(const float fVisibilityMultiplier, const Zenith_CameraComponent& xCam) const;
+
+	// Serialization methods for Zenith_DataStream
+	void WriteToDataStream(Zenith_DataStream& xStream) const;
+	void ReadFromDataStream(Zenith_DataStream& xStream);
+
 private:
 	Zenith_Entity m_xParentEntity;
 	

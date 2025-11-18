@@ -169,25 +169,43 @@ void Zenith_Editor::RenderMainMenuBar()
 		{
 			if (ImGui::MenuItem("New Scene"))
 			{
-				// TODO: Implement new scene creation
-				// Would clear current scene and create a default setup
-				Zenith_Log("New Scene - Not yet implemented");
+				// Clear the current scene
+				Zenith_Scene::GetCurrentScene().Reset();
+				Zenith_Log("New scene created");
 			}
 
-			if (ImGui::MenuItem("Open Scene"))
+			if (ImGui::MenuItem("Open Scene", "Ctrl+O"))
 			{
-				// TODO: Implement scene loading with file dialog
-				// Would show native file picker and load .zscene file
-				Zenith_Log("Open Scene - Not yet implemented");
-				// Example: Zenith_Scene::GetCurrentScene().Deserialize("scene.zscene");
+				// For now, use a hardcoded path
+				// TODO: Implement native file dialog
+				const std::string strScenePath = "scene.zscen";
+
+				try
+				{
+					Zenith_Scene::GetCurrentScene().LoadFromFile(strScenePath);
+					Zenith_Log("Scene loaded from %s", strScenePath.c_str());
+				}
+				catch (const std::exception& e)
+				{
+					Zenith_Log("Failed to load scene: %s", e.what());
+				}
 			}
 
-			if (ImGui::MenuItem("Save Scene"))
+			if (ImGui::MenuItem("Save Scene", "Ctrl+S"))
 			{
-				// TODO: Implement scene saving with file dialog
-				// Would show native file picker and save to .zscene file
-				Zenith_Log("Save Scene - Not yet implemented");
-				// Example: Zenith_Scene::GetCurrentScene().Serialize("scene.zscene");
+				// For now, use a hardcoded path
+				// TODO: Implement native file dialog
+				const std::string strScenePath = "scene.zscen";
+
+				try
+				{
+					Zenith_Scene::GetCurrentScene().SaveToFile(strScenePath);
+					Zenith_Log("Scene saved to %s", strScenePath.c_str());
+				}
+				catch (const std::exception& e)
+				{
+					Zenith_Log("Failed to save scene: %s", e.what());
+				}
 			}
 
 			ImGui::Separator();
