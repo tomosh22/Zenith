@@ -131,7 +131,11 @@ public:
 
 	void SetMainCameraEntity(Zenith_Entity& xEntity);
 	Zenith_CameraComponent& GetMainCamera();
+
+	// Scene loading state (prevents asset deletion during Reset())
+	static bool IsLoadingScene() { return s_bIsLoadingScene; }
 private:
+	static bool s_bIsLoadingScene;
 	friend class Zenith_Entity;
 #ifdef ZENITH_TOOLS
 	friend class Zenith_Editor;

@@ -1,6 +1,14 @@
 #include "Zenith.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
+#include "EntityComponent/Zenith_Scene.h"
 #include "DataStream/Zenith_DataStream.h"
+
+// Helper function to check if we should delete assets in the destructor
+// Returns false during scene loading to prevent deleting assets that will be reused
+bool Zenith_ModelComponent_ShouldDeleteAssets()
+{
+	return !Zenith_Scene::IsLoadingScene();
+}
 
 void Zenith_ModelComponent::WriteToDataStream(Zenith_DataStream& xStream) const
 {

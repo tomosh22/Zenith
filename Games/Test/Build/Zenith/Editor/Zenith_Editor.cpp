@@ -29,6 +29,10 @@ Zenith_Maths::Vector2 Zenith_Editor::s_xViewportPos = { 0, 0 };
 bool Zenith_Editor::s_bViewportHovered = false;
 bool Zenith_Editor::s_bViewportFocused = false;
 Zenith_Scene* Zenith_Editor::s_pxBackupScene = nullptr;
+bool Zenith_Editor::s_bPendingSceneLoad = false;
+std::string Zenith_Editor::s_strPendingSceneLoadPath = "";
+bool Zenith_Editor::s_bPendingSceneSave = false;
+std::string Zenith_Editor::s_strPendingSceneSavePath = "";
 
 // Cache the ImGui descriptor set for the game viewport texture
 static vk::DescriptorSet s_xCachedGameTextureDescriptorSet = VK_NULL_HANDLE;
@@ -85,6 +89,61 @@ void Zenith_Editor::Shutdown()
 
 void Zenith_Editor::Update()
 {
+	// CRITICAL: Handle pending scene operations FIRST, before any rendering
+	// This must happen here (not during RenderMainMenuBar) to avoid concurrent access
+	// to scene data while render tasks are active.
+	//
+	// Both save and load operations iterate through scene data structures.
+	// If render tasks are active while these operations occur, we risk:
+	// - Reading corrupted data during save (render tasks modifying while we read)
+	// - Crashes during load (destroying pools while render tasks access them)
+
+	// Handle pending scene save
+	if (s_bPendingSceneSave)
+	{
+		s_bPendingSceneSave = false;
+
+		try
+		{
+			// Safe to save now - no render tasks are accessing scene data
+			Zenith_Scene::GetCurrentScene().SaveToFile(s_strPendingSceneSavePath);
+			Zenith_Log("Scene saved to %s", s_strPendingSceneSavePath.c_str());
+		}
+		catch (const std::exception& e)
+		{
+			Zenith_Log("Failed to save scene: %s", e.what());
+		}
+
+		s_strPendingSceneSavePath.clear();
+	}
+
+	// Handle pending scene load
+	// Timeline when loading scene:
+	// 1. User clicks "Open Scene" in menu -> sets s_bPendingSceneLoad flag
+	// 2. Frame continues, ImGui rendered, render tasks submitted and complete
+	// 3. Next frame starts -> Update() called BEFORE any rendering
+	// 4. Scene loaded here when no render tasks are accessing scene data
+	if (s_bPendingSceneLoad)
+	{
+		s_bPendingSceneLoad = false;
+
+		try
+		{
+			// Safe to load now - no render tasks are active
+			Zenith_Scene::GetCurrentScene().LoadFromFile(s_strPendingSceneLoadPath);
+			Zenith_Log("Scene loaded from %s", s_strPendingSceneLoadPath.c_str());
+
+			// Clear selection as entity pointers are now invalid
+			ClearSelection();
+		}
+		catch (const std::exception& e)
+		{
+			Zenith_Log("Failed to load scene: %s", e.what());
+		}
+
+		s_strPendingSceneLoadPath.clear();
+	}
+
 	// Process deferred descriptor set deletions
 	// We wait N frames before freeing to ensure GPU has finished using them
 	for (auto it = s_xPendingDeletions.begin(); it != s_xPendingDeletions.end(); )
@@ -176,36 +235,41 @@ void Zenith_Editor::RenderMainMenuBar()
 
 			if (ImGui::MenuItem("Open Scene", "Ctrl+O"))
 			{
+				// CRITICAL: Do NOT load the scene immediately here!
+				// This menu item is rendered during SubmitRenderTasks(), which means
+				// render tasks are currently active and may be accessing scene data.
+				// Loading the scene now would call Reset() which destroys component pools,
+				// causing crashes due to concurrent access.
+				//
+				// Instead, we defer the load to the next frame's Update() call,
+				// which happens BEFORE any render tasks are submitted.
+
 				// For now, use a hardcoded path
 				// TODO: Implement native file dialog
-				const std::string strScenePath = "scene.zscen";
+				s_strPendingSceneLoadPath = "scene.zscen";
+				s_bPendingSceneLoad = true;
 
-				try
-				{
-					Zenith_Scene::GetCurrentScene().LoadFromFile(strScenePath);
-					Zenith_Log("Scene loaded from %s", strScenePath.c_str());
-				}
-				catch (const std::exception& e)
-				{
-					Zenith_Log("Failed to load scene: %s", e.what());
-				}
+				Zenith_Log("Scene load queued: %s (will load next frame)", s_strPendingSceneLoadPath.c_str());
 			}
 
 			if (ImGui::MenuItem("Save Scene", "Ctrl+S"))
 			{
+				// CRITICAL: Do NOT save the scene immediately here!
+				// This menu item is rendered during SubmitRenderTasks(), which means
+				// render tasks are currently active and may be accessing scene data.
+				// While saving doesn't call Reset() like loading does, it's still safer
+				// to defer the save operation to maintain consistency with the deferred
+				// loading pattern and avoid any potential concurrent access issues.
+				//
+				// Instead, we defer the save to the next frame's Update() call,
+				// which happens BEFORE any render tasks are submitted.
+
 				// For now, use a hardcoded path
 				// TODO: Implement native file dialog
-				const std::string strScenePath = "scene.zscen";
+				s_strPendingSceneSavePath = "scene.zscen";
+				s_bPendingSceneSave = true;
 
-				try
-				{
-					Zenith_Scene::GetCurrentScene().SaveToFile(strScenePath);
-					Zenith_Log("Scene saved to %s", strScenePath.c_str());
-				}
-				catch (const std::exception& e)
-				{
-					Zenith_Log("Failed to save scene: %s", e.what());
-				}
+				Zenith_Log("Scene save queued: %s (will save next frame)", s_strPendingSceneSavePath.c_str());
 			}
 
 			ImGui::Separator();

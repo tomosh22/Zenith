@@ -23,18 +23,30 @@ public:
 
 	~Zenith_ModelComponent()
 	{
-		// Clean up any textures and materials that were created by LoadMeshesFromDir
-		for (uint32_t u = 0; u < m_xCreatedTextures.GetSize(); u++)
+		// CRITICAL: Do NOT delete assets if we're loading a scene!
+		// When LoadFromFile calls Reset(), it destroys all existing components.
+		// If we delete assets here, they won't be available when deserializing
+		// the new components that reference the same assets.
+		//
+		// Forward declaration used here to avoid circular dependency with Zenith_Scene.h
+		// Implementation is in Zenith_ModelComponent.cpp where we can include Zenith_Scene.h
+		extern bool Zenith_ModelComponent_ShouldDeleteAssets();
+
+		if (Zenith_ModelComponent_ShouldDeleteAssets())
 		{
-			Zenith_AssetHandler::DeleteTexture(m_xCreatedTextures.Get(u));
-		}
-		for (uint32_t u = 0; u < m_xCreatedMaterials.GetSize(); u++)
-		{
-			Zenith_AssetHandler::DeleteMaterial(m_xCreatedMaterials.Get(u));
-		}
-		for (uint32_t u = 0; u < m_xCreatedMeshes.GetSize(); u++)
-		{
-			Zenith_AssetHandler::DeleteMesh(m_xCreatedMeshes.Get(u));
+			// Clean up any textures and materials that were created by LoadMeshesFromDir
+			for (uint32_t u = 0; u < m_xCreatedTextures.GetSize(); u++)
+			{
+				Zenith_AssetHandler::DeleteTexture(m_xCreatedTextures.Get(u));
+			}
+			for (uint32_t u = 0; u < m_xCreatedMaterials.GetSize(); u++)
+			{
+				Zenith_AssetHandler::DeleteMaterial(m_xCreatedMaterials.Get(u));
+			}
+			for (uint32_t u = 0; u < m_xCreatedMeshes.GetSize(); u++)
+			{
+				Zenith_AssetHandler::DeleteMesh(m_xCreatedMeshes.Get(u));
+			}
 		}
 	}
 

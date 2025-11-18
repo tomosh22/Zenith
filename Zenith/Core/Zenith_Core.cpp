@@ -26,6 +26,7 @@
 class Zenith_Editor
 {
 public:
+	static void Update();
 	static void Render();
 };
 
@@ -172,7 +173,14 @@ void Zenith_Core::Zenith_MainLoop()
 		Flux_MemoryManager::EndFrame(false);
 		return;
 	}
-	
+
+#ifdef ZENITH_TOOLS
+	// CRITICAL: Update editor BEFORE any game logic or rendering
+	// This is where deferred scene loads happen (from "Open Scene" menu)
+	// Must occur when no render tasks are active to avoid concurrent access to scene data
+	Zenith_Editor::Update();
+#endif
+
 	ZENITH_PROFILING_FUNCTION_WRAPPER(Zenith_Physics::Update, ZENITH_PROFILE_INDEX__PHYSICS, Zenith_Core::GetDt());
 	ZENITH_PROFILING_FUNCTION_WRAPPER(Zenith_Scene::Update, ZENITH_PROFILE_INDEX__SCENE_UPDATE, Zenith_Core::GetDt());
 	Flux_Graphics::UploadFrameConstants();
@@ -187,6 +195,6 @@ void Zenith_Core::Zenith_MainLoop()
 	Zenith_MemoryManagement::EndFrame();
 
 	ZENITH_PROFILING_FUNCTION_WRAPPER(Flux_PlatformAPI::EndFrame, ZENITH_PROFILE_INDEX__FLUX_PLATFORMAPI_END_FRAME);
-	
+
 	ZENITH_PROFILING_FUNCTION_WRAPPER(Flux_Swapchain::EndFrame, ZENITH_PROFILE_INDEX__FLUX_SWAPCHAIN_END_FRAME);
 }

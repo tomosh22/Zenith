@@ -849,6 +849,586 @@ for (auto& [id, entity] : scene.m_xEntityMap) {
    - Parallel component iteration
    - Read/write dependency tracking
 
+## Thread Safety and Concurrency
+
+### Scene Mutation During Rendering
+
+**CRITICAL ISSUE:** Scene data (component pools, entity maps) is accessed by render tasks running on worker threads. Any modification to the scene while these tasks are active causes crashes due to concurrent access.
+
+**Examples of Unsafe Operations:**
+- `Zenith_Scene::Reset()` - Destroys all component pools
+- `Zenith_Scene::LoadFromFile()` - Calls Reset() then reconstructs scene
+- Adding/removing entities during rendering
+- Resizing component pools during rendering
+
+### Safe Scene Loading and Saving Architecture
+
+**Problem:** Prior to the fix, "Open Scene" and "Save Scene" in the editor were triggered from the ImGui menu, which is rendered during `SubmitRenderTasks()`. This meant scene operations were called while render tasks were active:
+
+**Unsafe Call Stack (OLD):**
+```
+Zenith_Core::Zenith_MainLoop()
+  └─ SubmitRenderTasks()
+      └─ RenderImGui()
+          └─ Zenith_Editor::Render()
+              └─ RenderMainMenuBar()
+                  └─ ImGui::MenuItem("Open Scene") clicked
+                      └─ Zenith_Scene::LoadFromFile()  // CRASH: render tasks still active!
+                          └─ Reset()  // Destroys pools being read by render tasks
+```
+
+**Solution:** Deferred scene loading and saving via `Zenith_Editor::Update()`
+
+**Safe Call Stack (NEW):**
+```
+Frame N:
+  Zenith_Core::Zenith_MainLoop()
+    └─ SubmitRenderTasks()
+        └─ RenderImGui()
+            └─ Zenith_Editor::Render()
+                └─ RenderMainMenuBar()
+                    └─ ImGui::MenuItem("Open Scene") clicked
+                        └─ Sets s_bPendingSceneLoad = true  // Just set flag, don't load!
+    └─ WaitForRenderTasks()  // All render tasks complete
+
+Frame N+1:
+  Zenith_Core::Zenith_MainLoop()
+    └─ Zenith_Editor::Update()  // Called BEFORE any rendering
+        └─ if (s_bPendingSceneLoad)
+            └─ Zenith_Scene::LoadFromFile()  // SAFE: no tasks active
+                └─ Reset()  // Safe to destroy pools
+```
+
+**Implementation Details:**
+
+```cpp
+// Zenith_Editor.h
+class Zenith_Editor {
+private:
+    // Deferred scene operations (to avoid concurrent access during render tasks)
+    static bool s_bPendingSceneLoad;
+    static std::string s_strPendingSceneLoadPath;
+    static bool s_bPendingSceneSave;
+    static std::string s_strPendingSceneSavePath;
+};
+
+// Zenith_Editor.cpp - Menu handlers
+if (ImGui::MenuItem("Open Scene", "Ctrl+O")) {
+    // Do NOT load immediately - just queue it
+    s_strPendingSceneLoadPath = "scene.zscen";
+    s_bPendingSceneLoad = true;
+}
+
+if (ImGui::MenuItem("Save Scene", "Ctrl+S")) {
+    // Do NOT save immediately - just queue it
+    s_strPendingSceneSavePath = "scene.zscen";
+    s_bPendingSceneSave = true;
+}
+
+// Zenith_Editor.cpp - Update function
+void Zenith_Editor::Update() {
+    // Process deferred saves FIRST
+    if (s_bPendingSceneSave) {
+        s_bPendingSceneSave = false;
+        // Safe to save - no render tasks active
+        Zenith_Scene::GetCurrentScene().SaveToFile(s_strPendingSceneSavePath);
+        s_strPendingSceneSavePath.clear();
+    }
+
+    // Process deferred loads (after saves, so save-then-load works correctly)
+    if (s_bPendingSceneLoad) {
+        s_bPendingSceneLoad = false;
+        // Safe to load - no render tasks active
+        Zenith_Scene::GetCurrentScene().LoadFromFile(s_strPendingSceneLoadPath);
+        ClearSelection();  // Entity pointers now invalid
+        s_strPendingSceneLoadPath.clear();
+    }
+    // ... rest of update
+}
+
+// Zenith_Core.cpp - Main loop
+void Zenith_Core::Zenith_MainLoop() {
+    // ... begin frame setup ...
+
+#ifdef ZENITH_TOOLS
+    Zenith_Editor::Update();  // BEFORE any rendering!
+#endif
+
+    // Physics, scene update...
+    SubmitRenderTasks();  // Now safe - scene won't change during render
+    WaitForRenderTasks();
+    // ... end frame ...
+}
+```
+
+**Key Guarantees:**
+1. `Zenith_Editor::Update()` is called **before** `SubmitRenderTasks()`
+2. Scene loading and saving only happen in `Update()`, never during rendering
+3. Saves processed before loads (ensuring save-then-load workflows work correctly)
+4. One frame delay between user action and scene operation (acceptable)
+5. Entity pointers cleared after load to prevent dangling references
+
+### Entity Component Array Pre-Allocation
+
+**Context:** When loading a scene from file, entities can have arbitrary IDs (e.g., Entity ID 100, 200, 500) due to how they were created/deleted during editing.
+
+**Data Structure:**
+```cpp
+class Zenith_Scene {
+    // Indexed by EntityID
+    Zenith_Vector<std::unordered_map<TypeID, u_int>> m_xEntityComponents;
+};
+```
+
+**Problem:** If we're loading Entity ID 100, but `m_xEntityComponents` only has 10 elements, accessing `m_xEntityComponents[100]` is out of bounds.
+
+**Solution in LoadFromFile():**
+```cpp
+void Zenith_Scene::LoadFromFile(const std::string& strFilename) {
+    for (u_int u = 0; u < uNumEntities; u++) {
+        Zenith_EntityID uEntityID;
+        xStream >> uEntityID;
+
+        // CRITICAL: Ensure vector is large enough for this entity ID
+        // Without this, accessing m_xEntityComponents[uEntityID] would crash
+        while (m_xEntityComponents.GetSize() <= uEntityID) {
+            m_xEntityComponents.PushBack({});  // Add empty component map
+        }
+
+        // Now safe to create entity with this ID
+        Zenith_Entity xEntity(this, uEntityID, ...);
+    }
+}
+```
+
+**Why This Works:**
+1. `m_xEntityComponents` is indexed directly by entity ID
+2. Pre-allocating ensures `m_xEntityComponents[uEntityID]` is always valid
+3. Empty maps for "gaps" (unused entity IDs) have minimal memory cost
+4. When components are added, they're inserted into the pre-allocated map
+
+**Example:**
+```
+Loading entities with IDs: 5, 10, 15
+
+Before pre-allocation:
+  m_xEntityComponents.size() = 0
+
+After loading Entity 5:
+  m_xEntityComponents = [{}, {}, {}, {}, {}, {}]
+                         0   1   2   3   4   5
+
+After loading Entity 10:
+  m_xEntityComponents = [{}, {}, {}, {}, {}, {}, {}, {}, {}, {}, {}]
+                         0   1   2   3   4   5   6   7   8   9  10
+
+After loading Entity 15:
+  m_xEntityComponents = [{}, {}, {}, ..., {}, {}, {}]
+                         0   1   2  ...  13  14  15
+```
+
+Entities 0-4, 6-9, 11-14 have empty component maps (no memory overhead beyond the map itself), while entities 5, 10, 15 have their actual component mappings.
+
+### Component Deserialization Patterns
+
+**Important:** Components must support deserialization-friendly constructors for scene loading to work correctly.
+
+#### Pattern 1: Simple Components (Default Constructor)
+Most components can use a simple default constructor or minimal constructor:
+
+```cpp
+class Zenith_TransformComponent {
+public:
+    Zenith_TransformComponent(Zenith_Entity& xEntity)
+        : m_xParentEntity(xEntity) {}
+
+    void ReadFromDataStream(Zenith_DataStream& xStream);
+    void WriteToDataStream(Zenith_DataStream& xStream) const;
+};
+```
+
+**Deserialization:**
+```cpp
+auto& component = entity.AddComponent<Zenith_TransformComponent>();
+component.ReadFromDataStream(xStream);  // Populates all data
+```
+
+#### Pattern 2: Asset-Dependent Components (TerrainComponent)
+
+Components that reference assets (meshes, materials, textures) must be loadable even when assets might not exist initially.
+
+**Problem:** `Zenith_TerrainComponent` originally only had a constructor requiring all assets:
+```cpp
+// ORIGINAL - Doesn't work for deserialization!
+Zenith_TerrainComponent(
+    Flux_MeshGeometry& xRenderGeometry,
+    Flux_MeshGeometry& xPhysicsGeometry,
+    Flux_MeshGeometry& xWaterGeometry,
+    Flux_Material& xMaterial0,
+    Flux_Material& xMaterial1,
+    Zenith_Maths::Vector2 xPosition_2D,
+    Zenith_Entity& xEntity
+);
+```
+
+**Solution:** Add a minimal constructor for deserialization:
+```cpp
+// Minimal constructor for deserialization
+Zenith_TerrainComponent(Zenith_Entity& xEntity)
+    : m_xParentEntity(xEntity)
+    , m_pxRenderGeometry(nullptr)
+    , m_pxPhysicsGeometry(nullptr)
+    , m_pxWaterGeometry(nullptr)
+    , m_pxMaterial0(nullptr)
+    , m_pxMaterial1(nullptr)
+    , m_xPosition_2D(FLT_MAX, FLT_MAX)
+{
+};
+
+// Full constructor for runtime creation (unchanged)
+Zenith_TerrainComponent(
+    Flux_MeshGeometry& xRenderGeometry,
+    Flux_MeshGeometry& xPhysicsGeometry,
+    Flux_MeshGeometry& xWaterGeometry,
+    Flux_Material& xMaterial0,
+    Flux_Material& xMaterial1,
+    Zenith_Maths::Vector2 xPosition_2D,
+    Zenith_Entity& xEntity
+);
+```
+
+**How ReadFromDataStream Handles Assets:**
+
+```cpp
+void Zenith_TerrainComponent::ReadFromDataStream(Zenith_DataStream& xStream)
+{
+    // Read asset names from stream
+    std::string strRenderGeometryName;
+    std::string strPhysicsGeometryName;
+    std::string strWaterGeometryName;
+    std::string strMaterial0Name;
+    std::string strMaterial1Name;
+
+    xStream >> strRenderGeometryName;
+    xStream >> strPhysicsGeometryName;
+    xStream >> strWaterGeometryName;
+    xStream >> strMaterial0Name;
+    xStream >> strMaterial1Name;
+
+    // Look up assets using AssetHandler
+    // Assets MUST be loaded before deserializing the scene!
+    if (Zenith_AssetHandler::MeshExists(strRenderGeometryName) &&
+        Zenith_AssetHandler::MeshExists(strPhysicsGeometryName) &&
+        Zenith_AssetHandler::MeshExists(strWaterGeometryName) &&
+        Zenith_AssetHandler::MaterialExists(strMaterial0Name) &&
+        Zenith_AssetHandler::MaterialExists(strMaterial1Name))
+    {
+        m_pxRenderGeometry = &Zenith_AssetHandler::GetMesh(strRenderGeometryName);
+        m_pxPhysicsGeometry = &Zenith_AssetHandler::GetMesh(strPhysicsGeometryName);
+        m_pxWaterGeometry = &Zenith_AssetHandler::GetMesh(strWaterGeometryName);
+        m_pxMaterial0 = &Zenith_AssetHandler::GetMaterial(strMaterial0Name);
+        m_pxMaterial1 = &Zenith_AssetHandler::GetMaterial(strMaterial1Name);
+    }
+    else
+    {
+        Zenith_Assert(false, "Referenced assets not found during TerrainComponent deserialization");
+    }
+
+    // Read remaining component data
+    xStream >> m_xPosition_2D;
+}
+```
+
+**Key Points:**
+1. **Asset Names, Not Pointers:** Serialization saves asset names as strings, not pointers
+2. **Asset Lookup:** `Zenith_AssetHandler` provides a global registry to look up assets by name
+3. **Load Order Critical:** Assets MUST be loaded before calling `LoadFromFile()` on the scene
+4. **Graceful Failure:** If assets don't exist, assertion fails (could be changed to warning for resilience)
+
+**Usage in Scene Loading:**
+```cpp
+// In Zenith_Scene::LoadFromFile()
+if (strComponentType == "TerrainComponent")
+{
+    // Create component with minimal constructor
+    Zenith_TerrainComponent& xComponent =
+        xEntityInMap.AddComponent<Zenith_TerrainComponent>();
+
+    // ReadFromDataStream handles asset lookup and population
+    xComponent.ReadFromDataStream(xStream);
+}
+```
+
+#### Pattern 3: AddComponent Forwarding Mechanism
+
+**Important Mechanism:** `Entity::AddComponent()` automatically appends the entity reference:
+
+```cpp
+template<typename T, typename... Args>
+T& AddComponent(Args&&... args) {
+    return m_pxParentScene->CreateComponent<T>(
+        m_uEntityID,
+        std::forward<Args>(args)...,
+        *this  // ← Entity reference automatically added!
+    );
+}
+```
+
+This means:
+- `entity.AddComponent<TransformComponent>()` → calls constructor with `(entity)`
+- `entity.AddComponent<TerrainComponent>()` → calls constructor with `(entity)`
+- `entity.AddComponent<CustomComponent>(param1, param2)` → calls constructor with `(param1, param2, entity)`
+
+All components receive the entity reference as their **final constructor parameter**.
+
+#### Pattern 4: Component Dependency Ordering
+
+**CRITICAL:** Components with dependencies on other components must be serialized in the correct order!
+
+**Problem:** `Zenith_ColliderComponent` can have terrain colliders, which require `Zenith_TerrainComponent` to exist:
+
+```cpp
+// In Zenith_ColliderComponent::AddCollider()
+case COLLISION_VOLUME_TYPE_TERRAIN:
+{
+    // ❌ Crashes if TerrainComponent doesn't exist yet!
+    Zenith_Assert(m_xParentEntity.HasComponent<Zenith_TerrainComponent>(),
+                  "Can't have a terrain collider without a terrain component");
+    const Zenith_TerrainComponent& xTerrain = m_xParentEntity.GetComponent<Zenith_TerrainComponent>();
+    // Uses terrain mesh data...
+}
+```
+
+**If serialization order is wrong:**
+```
+Save order: Transform → Model → Camera → Collider → Text → Terrain
+                                          ↑                    ↑
+                                      Saved 4th           Saved 6th
+
+Load order: Same order as saved
+  1. Transform ✅
+  2. Model ✅
+  3. Camera ✅
+  4. Collider → ReadFromDataStream() → AddCollider(TERRAIN)
+              → Checks for TerrainComponent... NOT LOADED YET!
+              → ❌ CRASH: "Can't have a terrain collider without a terrain component"
+  5. Text
+  6. Terrain (too late!)
+```
+
+**Solution:** TerrainComponent MUST be serialized BEFORE ColliderComponent:
+
+```cpp
+// In Zenith_Entity::WriteToDataStream()
+// IMPORTANT: Order matters for deserialization!
+// Components with dependencies must be serialized AFTER their dependencies
+if (HasComponent<Zenith_TransformComponent>())
+    xComponentTypes.push_back("TransformComponent");
+if (HasComponent<Zenith_ModelComponent>())
+    xComponentTypes.push_back("ModelComponent");
+if (HasComponent<Zenith_CameraComponent>())
+    xComponentTypes.push_back("CameraComponent");
+if (HasComponent<Zenith_TextComponent>())
+    xComponentTypes.push_back("TextComponent");
+// TerrainComponent BEFORE ColliderComponent!
+if (HasComponent<Zenith_TerrainComponent>())
+    xComponentTypes.push_back("TerrainComponent");
+if (HasComponent<Zenith_ColliderComponent>())
+    xComponentTypes.push_back("ColliderComponent");
+```
+
+**Correct load order:**
+```
+Load order: Transform → Model → Camera → Text → Terrain → Collider
+                                                  ↑         ↑
+                                              Loaded 5th  Loaded 6th
+
+  1. Transform ✅
+  2. Model ✅
+  3. Camera ✅
+  4. Text ✅
+  5. Terrain ✅
+  6. Collider → ReadFromDataStream() → AddCollider(TERRAIN)
+              → Checks for TerrainComponent... ✅ EXISTS!
+              → Uses terrain mesh data
+              → ✅ SUCCESS!
+```
+
+**General Rule:** When adding new components:
+1. **Identify dependencies:** Does the component's constructor or `ReadFromDataStream` access other components?
+2. **Update serialization order:** Ensure dependencies are serialized BEFORE dependent components
+3. **Test loading:** Verify scene loads without assertions
+
+**Common Dependency Chains:**
+- `ColliderComponent` → depends on → `TerrainComponent` (for terrain colliders)
+- `ScriptComponent` → may depend on → any component (check script implementation)
+- `ChildComponent` → would depend on → `ParentComponent` (hypothetical example)
+
+## Asset Lifetime Management and Scene Loading
+
+### The Problem: Component-Owned Assets
+
+Some components create and "own" assets through methods like `ModelComponent::LoadMeshesFromDir()`. These components track created assets in arrays (`m_xCreatedMeshes`, `m_xCreatedMaterials`, `m_xCreatedTextures`) and delete them in the destructor to prevent leaks.
+
+**The Issue During Scene Loading:**
+
+When you save and load a scene:
+
+```cpp
+// Runtime: Create components with LoadMeshesFromDir
+Zenith_ModelComponent& xModel = entity.AddComponent<Zenith_ModelComponent>();
+xModel.LoadMeshesFromDir("Meshes/ogre");  // Creates assets: "ogre01", "ogre_mesh_0", etc.
+                                           // Tracks them in m_xCreatedMaterials, m_xCreatedMeshes
+
+// Save scene: Serializes asset names
+scene.SaveToFile("scene.zscen");  // Saves: "ogre01", "ogre_mesh_0"
+
+// Load scene: CRASHES!
+scene.LoadFromFile("scene.zscen");
+  └─ Reset()  // Destroys all components
+      └─ ~ModelComponent()  // Deletes assets from AssetHandler
+          └─ DeleteMaterial("ogre01")  // ❌ Asset deleted!
+          └─ DeleteMesh("ogre_mesh_0")  // ❌ Asset deleted!
+  └─ ReadFromDataStream()  // Tries to find "ogre01", "ogre_mesh_0"
+      └─ MaterialExists("ogre01")  // ❌ Returns false!
+      └─ Zenith_Assert(false, "Referenced assets not found during ModelComponent deserialization")
+```
+
+**Root Cause:** `LoadFromFile()` calls `Reset()` which destroys old components, deleting their assets. Then deserialization tries to reference those same assets, but they're gone!
+
+### The Solution: IsLoadingScene Flag
+
+**Implementation:**
+
+```cpp
+// Zenith_Scene.h
+class Zenith_Scene {
+public:
+    static bool IsLoadingScene() { return s_bIsLoadingScene; }
+private:
+    static bool s_bIsLoadingScene;
+};
+
+// Zenith_Scene.cpp
+void Zenith_Scene::LoadFromFile(const std::string& strFilename)
+{
+    // Set flag BEFORE Reset()
+    s_bIsLoadingScene = true;
+
+    Reset();  // Destroys components, but they check the flag
+
+    // ... deserialize scene ...
+
+    // Clear flag after loading complete
+    s_bIsLoadingScene = false;
+}
+
+// Zenith_ModelComponent.cpp
+bool Zenith_ModelComponent_ShouldDeleteAssets()
+{
+    return !Zenith_Scene::IsLoadingScene();
+}
+
+// Zenith_ModelComponent.h
+~Zenith_ModelComponent()
+{
+    extern bool Zenith_ModelComponent_ShouldDeleteAssets();
+
+    if (Zenith_ModelComponent_ShouldDeleteAssets())
+    {
+        // Only delete assets if NOT loading a scene
+        for (uint32_t u = 0; u < m_xCreatedMaterials.GetSize(); u++)
+        {
+            Zenith_AssetHandler::DeleteMaterial(m_xCreatedMaterials.Get(u));
+        }
+        // ... delete meshes, textures ...
+    }
+}
+```
+
+**How It Works:**
+
+1. **Before Reset():** `LoadFromFile` sets `s_bIsLoadingScene = true`
+2. **During Reset():** Component destructors check `IsLoadingScene()`
+   - If true: Skip asset deletion (assets preserved for deserialization)
+   - If false: Delete assets normally (component being individually destroyed)
+3. **After Deserialization:** `LoadFromFile` sets `s_bIsLoadingScene = false`
+
+**Result:** Assets created by `LoadMeshesFromDir` persist through scene loads!
+
+### Why Forward Declaration is Needed
+
+In `Zenith_ModelComponent.h`, we use a forward declaration instead of including `Zenith_Scene.h`:
+
+```cpp
+extern bool Zenith_ModelComponent_ShouldDeleteAssets();
+```
+
+**Reason:** Circular dependency prevention:
+- `Zenith_Scene.h` includes `Zenith_ModelComponent.h` (for deserialization)
+- If `Zenith_ModelComponent.h` included `Zenith_Scene.h`, we'd have a circular include
+
+The implementation in `Zenith_ModelComponent.cpp` can safely include `Zenith_Scene.h` since `.cpp` files don't cause circular dependencies.
+
+### Asset Naming and LoadMeshesFromDir
+
+**Important Behavior:** `LoadMeshesFromDir` uses a static counter to create unique material names:
+
+```cpp
+void LoadMeshesFromDir(const std::filesystem::path& strPath, ...)
+{
+    static u_int ls_uCount = 0;
+    ls_uCount++;  // Increments EVERY call
+
+    // Material name includes the counter
+    const std::string strMatName = strLeaf + std::to_string(uMatIndex) + std::to_string(ls_uCount);
+    //                               ↑                                     ↑
+    //                          directory name                       unique counter
+}
+```
+
+**Why This Matters:**
+
+- **First call:** Creates materials like "ogre01", "ogre11"
+- **Second call:** Creates materials like "ogre02", "ogre12"
+- **Third call:** Creates materials like "ogre03", "ogre13"
+
+Each call to `LoadMeshesFromDir` creates materials with a new suffix, allowing multiple instances of the same model to have independent materials.
+
+**Serialization Implications:**
+
+- Saved scene references "ogre01" (from first call)
+- During scene load, assets persist (thanks to `IsLoadingScene` flag)
+- Deserialization finds "ogre01" successfully
+- Counter persists across scene loads (it's static), so new `LoadMeshesFromDir` calls create "ogre02", etc.
+
+### Best Practices for Component Asset Management
+
+1. **Use Global Assets When Possible:**
+   ```cpp
+   // Preferred for shared assets
+   xModel.AddMeshEntry(
+       Zenith_AssetHandler::GetMesh("Sphere_Smooth"),
+       Zenith_AssetHandler::GetMaterial("Crystal")
+   );
+   ```
+
+2. **Use LoadMeshesFromDir for Unique Models:**
+   ```cpp
+   // For models with unique materials/textures
+   xModel.LoadMeshesFromDir("Meshes/ogre");
+   ```
+
+3. **Track Asset Ownership Carefully:**
+   - Assets created by `LoadMeshesFromDir` → tracked in `m_xCreatedXXX` → deleted by destructor (except during scene loads)
+   - Assets from `AssetHandler::GetXXX()` → NOT tracked → NOT deleted by component
+   - **Don't mix ownership models!** If you call `LoadMeshesFromDir`, don't manually add global assets to the same component
+
+4. **Serialization is Automatic:**
+   - `WriteToDataStream` automatically saves asset names
+   - `ReadFromDataStream` automatically looks up assets by name
+   - No manual tracking needed - just ensure assets exist before calling `LoadFromFile`
+
 ## Conclusion
 
 Zenith's ECS provides:
@@ -857,5 +1437,6 @@ Zenith's ECS provides:
 - **Flexibility:** Components define entity behavior
 - **Type Safety:** Compile-time type checking
 - **Extensibility:** Easy to add new component types
+- **Thread Safety:** Deferred scene loading prevents concurrent access
 
 While not as optimized as pure archetype-based ECS (like EnTT or FLECS), it strikes a balance between performance and simplicity, suitable for games with thousands of entities.

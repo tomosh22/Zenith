@@ -7,6 +7,20 @@
 class Zenith_TerrainComponent
 {
 public:
+	// Default constructor for deserialization
+	// ReadFromDataStream will populate all members from saved data
+	Zenith_TerrainComponent(Zenith_Entity& xEntity)
+		: m_xParentEntity(xEntity)
+		, m_pxRenderGeometry(nullptr)
+		, m_pxPhysicsGeometry(nullptr)
+		, m_pxWaterGeometry(nullptr)
+		, m_pxMaterial0(nullptr)
+		, m_pxMaterial1(nullptr)
+		, m_xPosition_2D(FLT_MAX, FLT_MAX)
+	{
+	};
+
+	// Full constructor for runtime creation
 	Zenith_TerrainComponent(Flux_MeshGeometry& xRenderGeometry, Flux_MeshGeometry& xPhysicsGeometry, Flux_MeshGeometry& xWaterGeometry, Flux_Material& xMaterial0, Flux_Material& xMaterial1, Zenith_Maths::Vector2 xPosition_2D, Zenith_Entity& xEntity)
 		: m_pxRenderGeometry(&xRenderGeometry)
 		, m_pxPhysicsGeometry(&xPhysicsGeometry)

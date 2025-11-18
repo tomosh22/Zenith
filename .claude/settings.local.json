@@ -4,7 +4,8 @@
       "Bash(find:*)",
       "Bash(\"C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\MSBuild\\Current\\Bin\\MSBuild.exe\" test_win64.vcxproj -p:Configuration=vs2022_Debug_Win64_True -p:Platform=x64)",
       "Bash(\"C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\MSBuild\\Current\\Bin\\MSBuild.exe\" test_win64.vcxproj -p:Configuration=vs2022_Debug_Win64_True -p:Platform=x64 -t:rebuild)",
-      "Bash(\"C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\MSBuild\\Current\\Bin\\MSBuild.exe\" test_win64.vcxproj -p:Configuration=vs2022_Debug_Win64_True -p:Platform=x64 -verbosity:minimal)"
+      "Bash(\"C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\MSBuild\\Current\\Bin\\MSBuild.exe\" test_win64.vcxproj -p:Configuration=vs2022_Debug_Win64_True -p:Platform=x64 -verbosity:minimal)",
+      "Bash(\"output\\win64\\vs2022_release_win64_true\\fluxcompiler.exe\")"
     ],
     "deny": [],
     "ask": []

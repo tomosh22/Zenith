@@ -641,6 +641,129 @@ vk::Framebuffer CreateFramebuffer(vk::RenderPass renderPass, const Flux_TargetSe
 }
 ```
 
+## Shader System
+
+### Shader Compilation (FluxCompiler)
+
+**Build Process:**
+1. FluxCompiler tool recursively scans `Zenith/Flux/Shaders/` directory
+2. Finds all `.vert`, `.frag`, and `.comp` files
+3. Compiles each using `glslc.exe` (Vulkan SDK) to SPIR-V bytecode (`.spv` files)
+4. Command: `glslc.exe <source> -g --target-env=vulkan1.3 -I<shader_root> -o <source>.spv`
+
+**Source Location:** `FluxCompiler/FluxCompiler.cpp`
+```cpp
+for (auto& xFile : std::filesystem::recursive_directory_iterator(SHADER_SOURCE_ROOT)) {
+    if (strstr(extension, "vert") || strstr(extension, "frag") || strstr(extension, "comp")) {
+        std::string strCommand = "%VULKAN_SDK%/Bin/glslc.exe " + std::string(szFilename) +
+            " -g --target-env=vulkan1.3 -I" + SHADER_SOURCE_ROOT + " -o " +
+            std::string(szFilename) + ".spv";
+        system(strCommand.c_str());
+    }
+}
+```
+
+**Output:** For each shader file (e.g., `Fog/Flux_Fog.frag`), produces `Fog/Flux_Fog.frag.spv`
+
+### Shader Structure
+
+**GLSL Format:**
+```glsl
+#version 450 core
+
+// Include common headers (frame constants, utilities)
+#include "../Common.fxh"
+
+// Input/output locations
+layout(location = 0) in vec2 a_xUV;
+layout(location = 0) out vec4 o_xColour;
+
+// Descriptor bindings (set, binding)
+layout(set = 0, binding = 0) uniform FrameConstants {
+    mat4 g_xViewProjMatrix;
+    vec4 g_xCamPos_Pad;
+    vec4 g_xSunDir_Pad;
+    vec4 g_xSunColour;
+    // ... etc
+};
+
+layout(set = 0, binding = 1) uniform sampler2D g_xDepthTex;
+
+// Push constants (fast per-draw data, <128 bytes)
+layout(push_constant) uniform PushData {
+    vec4 g_xFogColour_Falloff;
+};
+
+void main() {
+    vec3 xWorldPos = GetWorldPosFromDepthTex(g_xDepthTex, a_xUV);
+    float fDist = length(xWorldPos.xyz - g_xCamPos_Pad.xyz);
+    float fFogAmount = 1.0 - exp(-fDist * g_xFogColour_Falloff.w);
+    o_xColour = vec4(g_xFogColour_Falloff.xyz, fFogAmount);
+}
+```
+
+**Common Headers:**
+- `Common.fxh` - Frame constants (camera, sun, time, etc.)
+- `GBufferCommon.fxh` - G-Buffer packing/unpacking
+- `Flux_Fullscreen_UV.vert` - Standard fullscreen quad vertex shader
+
+### Shader Loading
+
+**Runtime Pattern:**
+```cpp
+// Platform-specific alias (#define Flux_Shader Zenith_Vulkan_Shader)
+static Flux_Shader s_xShader;
+
+void MySystem::Initialise() {
+    // Loads compiled SPIR-V bytecode from disk
+    // Paths are relative to Zenith/Flux/Shaders/
+    s_xShader.Initialise("Flux_Fullscreen_UV.vert", "Fog/Flux_Fog.frag");
+
+    // Internally loads:
+    // - Shaders/Flux_Fullscreen_UV.vert.spv
+    // - Shaders/Fog/Flux_Fog.frag.spv
+}
+```
+
+**Implementation (Zenith_Vulkan_Shader):**
+```cpp
+void Zenith_Vulkan_Shader::Initialise(
+    const std::string& strVertex,
+    const std::string& strFragment,
+    const std::string& strGeometry,
+    const std::string& strDomain,
+    const std::string& strHull
+) {
+    // Load .spv files from disk
+    m_pcVertShaderCode = LoadFile(SHADER_ROOT + strVertex + ".spv", m_pcVertShaderCodeSize);
+    m_pcFragShaderCode = LoadFile(SHADER_ROOT + strFragment + ".spv", m_pcFragShaderCodeSize);
+
+    // Create Vulkan shader modules
+    m_xVertShaderModule = CreateShaderModule(m_pcVertShaderCode, m_pcVertShaderCodeSize);
+    m_xFragShaderModule = CreateShaderModule(m_pcFragShaderCode, m_pcFragShaderCodeSize);
+
+    // Build stage create infos for pipeline
+    m_xInfos = new vk::PipelineShaderStageCreateInfo[2];
+    m_xInfos[0].stage = vk::ShaderStageFlagBits::eVertex;
+    m_xInfos[0].module = m_xVertShaderModule;
+    m_xInfos[0].pName = "main";
+
+    m_xInfos[1].stage = vk::ShaderStageFlagBits::eFragment;
+    m_xInfos[1].module = m_xFragShaderModule;
+    m_xInfos[1].pName = "main";
+
+    m_uStageCount = 2;
+}
+```
+
+**Compute Shaders:**
+```cpp
+void MyComputeSystem::Initialise() {
+    s_xComputeShader.InitialiseCompute("MySystem/Compute.comp");
+    // Loads Shaders/MySystem/Compute.comp.spv
+}
+```
+
 ## Pipeline Management
 
 ### Pipeline Specification

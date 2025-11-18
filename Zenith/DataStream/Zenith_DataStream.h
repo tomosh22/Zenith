@@ -134,6 +134,7 @@ public:
 	template<>
 	void operator>>(std::string& str)
 	{
+		str.clear();
 		u_int uLength;
 		*this >> uLength;
 		for (u_int u = 0; u < uLength; u++)

@@ -64,6 +64,12 @@ private:
 	
 	// Scene state backup (for play mode)
 	static Zenith_Scene* s_pxBackupScene;
+
+	// Deferred scene operations (to avoid concurrent access during render tasks)
+	static bool s_bPendingSceneLoad;
+	static std::string s_strPendingSceneLoadPath;
+	static bool s_bPendingSceneSave;
+	static std::string s_strPendingSceneSavePath;
 };
 
 #endif // ZENITH_TOOLS

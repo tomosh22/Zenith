@@ -6,6 +6,7 @@
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_TextComponent.h"
+#include "EntityComponent/Components/Zenith_TerrainComponent.h"
 #include "DataStream/Zenith_DataStream.h"
 
 Zenith_Entity::Zenith_Entity(Zenith_Scene* pxScene, const std::string& strName)
@@ -55,16 +56,22 @@ void Zenith_Entity::WriteToDataStream(Zenith_DataStream& xStream) const
 	std::vector<std::string> xComponentTypes;
 
 	// Check for each component type and add to list
+	// IMPORTANT: Order matters for deserialization!
+	// Components with dependencies must be serialized AFTER their dependencies
 	if (const_cast<Zenith_Entity*>(this)->HasComponent<Zenith_TransformComponent>())
 		xComponentTypes.push_back("TransformComponent");
 	if (const_cast<Zenith_Entity*>(this)->HasComponent<Zenith_ModelComponent>())
 		xComponentTypes.push_back("ModelComponent");
 	if (const_cast<Zenith_Entity*>(this)->HasComponent<Zenith_CameraComponent>())
 		xComponentTypes.push_back("CameraComponent");
-	if (const_cast<Zenith_Entity*>(this)->HasComponent<Zenith_ColliderComponent>())
-		xComponentTypes.push_back("ColliderComponent");
 	if (const_cast<Zenith_Entity*>(this)->HasComponent<Zenith_TextComponent>())
 		xComponentTypes.push_back("TextComponent");
+	// TerrainComponent MUST come before ColliderComponent
+	// (ColliderComponent may depend on TerrainComponent for terrain colliders)
+	if (const_cast<Zenith_Entity*>(this)->HasComponent<Zenith_TerrainComponent>())
+		xComponentTypes.push_back("TerrainComponent");
+	if (const_cast<Zenith_Entity*>(this)->HasComponent<Zenith_ColliderComponent>())
+		xComponentTypes.push_back("ColliderComponent");
 
 	// Write the number of components
 	u_int uNumComponents = static_cast<u_int>(xComponentTypes.size());
@@ -88,13 +95,17 @@ void Zenith_Entity::WriteToDataStream(Zenith_DataStream& xStream) const
 		{
 			const_cast<Zenith_Entity*>(this)->GetComponent<Zenith_CameraComponent>().WriteToDataStream(xStream);
 		}
-		else if (strTypeName == "ColliderComponent")
-		{
-			const_cast<Zenith_Entity*>(this)->GetComponent<Zenith_ColliderComponent>().WriteToDataStream(xStream);
-		}
 		else if (strTypeName == "TextComponent")
 		{
 			const_cast<Zenith_Entity*>(this)->GetComponent<Zenith_TextComponent>().WriteToDataStream(xStream);
+		}
+		else if (strTypeName == "TerrainComponent")
+		{
+			const_cast<Zenith_Entity*>(this)->GetComponent<Zenith_TerrainComponent>().WriteToDataStream(xStream);
+		}
+		else if (strTypeName == "ColliderComponent")
+		{
+			const_cast<Zenith_Entity*>(this)->GetComponent<Zenith_ColliderComponent>().WriteToDataStream(xStream);
 		}
 	}
 }
@@ -141,19 +152,27 @@ void Zenith_Entity::ReadFromDataStream(Zenith_DataStream& xStream)
 				xComponent.ReadFromDataStream(xStream);
 			}
 		}
-		else if (strComponentType == "ColliderComponent")
-		{
-			if (!HasComponent<Zenith_ColliderComponent>())
-			{
-				Zenith_ColliderComponent& xComponent = AddComponent<Zenith_ColliderComponent>();
-				xComponent.ReadFromDataStream(xStream);
-			}
-		}
 		else if (strComponentType == "TextComponent")
 		{
 			if (!HasComponent<Zenith_TextComponent>())
 			{
 				Zenith_TextComponent& xComponent = AddComponent<Zenith_TextComponent>();
+				xComponent.ReadFromDataStream(xStream);
+			}
+		}
+		else if (strComponentType == "TerrainComponent")
+		{
+			if (!HasComponent<Zenith_TerrainComponent>())
+			{
+				Zenith_TerrainComponent& xComponent = AddComponent<Zenith_TerrainComponent>();
+				xComponent.ReadFromDataStream(xStream);
+			}
+		}
+		else if (strComponentType == "ColliderComponent")
+		{
+			if (!HasComponent<Zenith_ColliderComponent>())
+			{
+				Zenith_ColliderComponent& xComponent = AddComponent<Zenith_ColliderComponent>();
 				xComponent.ReadFromDataStream(xStream);
 			}
 		}
