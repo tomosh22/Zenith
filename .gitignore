@@ -68,3 +68,4 @@
 
 # Ignore all Assets directories
 **/Assets/
+/nul

@@ -193,6 +193,10 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateBufferVRAM(const u_int uSize,
 		eUsageFlags |= vk::BufferUsageFlagBits::eVertexBuffer;
 	if (eFlags & 1 << MEMORY_FLAGS__INDEX_BUFFER)
 		eUsageFlags |= vk::BufferUsageFlagBits::eIndexBuffer;
+	if (eFlags & 1 << MEMORY_FLAGS__INDIRECT_BUFFER)
+		eUsageFlags |= vk::BufferUsageFlagBits::eIndirectBuffer;
+	if (eFlags & 1 << MEMORY_FLAGS__UNORDERED_ACCESS)
+		eUsageFlags |= vk::BufferUsageFlagBits::eStorageBuffer;
 	if (eFlags & 1 << MEMORY_FLAGS__SHADER_READ)
 		eUsageFlags |= vk::BufferUsageFlagBits::eUniformBuffer;
 

@@ -14,6 +14,7 @@ class Flux_IndexBuffer;
 class Zenith_Vulkan_Pipeline;
 class Zenith_Vulkan_Sampler;
 struct Flux_TargetSetup;
+struct Flux_Buffer;
 struct Flux_ConstantBufferView;
 struct Flux_ShaderResourceView;
 struct Flux_UnorderedAccessView;
@@ -49,6 +50,7 @@ public:
 	void SetIndexBuffer(const Flux_IndexBuffer& xIndexBuffer);
 	void Draw(uint32_t uNumVerts);
 	void DrawIndexed(uint32_t uNumIndices, uint32_t uNumInstances = 1, uint32_t uVertexOffset = 0, uint32_t uIndexOffset = 0, uint32_t uInstanceOffset = 0);
+	void DrawIndexedIndirect(const Flux_Buffer* pxIndirectBuffer, uint32_t uDrawCount, uint32_t uOffset = 0, uint32_t uStride = 20);
 	void BeginRenderPass(Flux_TargetSetup& xTargetSetup, bool bClearColour = false, bool bClearDepth = false, bool bClearStencil = false);
 	void SetPipeline(Zenith_Vulkan_Pipeline* pxPipeline);
 	

@@ -245,8 +245,11 @@ void Zenith_Vulkan_CommandBuffer::UpdateDescriptorSets()
 				if (pxCBV)
 				{
 					axBufferInfos[uNumBufferWrites] = pxCBV->m_xBufferInfo;
+					vk::DescriptorType eBufferType = (eType == DESCRIPTOR_TYPE_STORAGE_BUFFER)
+						? vk::DescriptorType::eStorageBuffer
+						: vk::DescriptorType::eUniformBuffer;
 					axWrites[uNumWrites++] = vk::WriteDescriptorSet()
-						.setDescriptorType(vk::DescriptorType::eUniformBuffer)
+						.setDescriptorType(eBufferType)
 						.setDstSet(m_axCurrentDescSet[uDescSet])
 						.setDstBinding(u)
 						.setDstArrayElement(0)
@@ -286,6 +289,16 @@ void Zenith_Vulkan_CommandBuffer::DrawIndexed(uint32_t uNumIndices, uint32_t uNu
 	{
 		UpdateDescriptorSets();
 		m_xCurrentCmdBuffer.drawIndexed(uNumIndices, uNumInstances, uIndexOffset, uVertexOffset, uInstanceOffset);
+	}
+}
+
+void Zenith_Vulkan_CommandBuffer::DrawIndexedIndirect(const Flux_Buffer* pxIndirectBuffer, uint32_t uDrawCount, uint32_t uOffset /*= 0*/, uint32_t uStride /*= 20*/)
+{
+	if (Zenith_Vulkan::ShouldSubmitDrawCalls())
+	{
+		UpdateDescriptorSets();
+		const vk::Buffer xIndirectBuffer = Zenith_Vulkan::GetVRAM(pxIndirectBuffer->m_xVRAMHandle)->GetBuffer();
+		m_xCurrentCmdBuffer.drawIndexedIndirect(xIndirectBuffer, uOffset, uDrawCount, uStride);
 	}
 }
 

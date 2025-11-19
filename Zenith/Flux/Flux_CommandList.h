@@ -24,6 +24,7 @@ enum Flux_CommandType
 
 	FLUX_COMMANDTYPE__DRAW,
 	FLUX_COMMANDTYPE__DRAW_INDEXED,
+	FLUX_COMMANDTYPE__DRAW_INDEXED_INDIRECT,
 	FLUX_COMMANDTYPE__BIND_COMPUTE_PIPELINE,
 	FLUX_COMMANDTYPE__DISPATCH,
 
@@ -241,6 +242,28 @@ public:
 	u_int m_uInstanceOffset;
 };
 
+class Flux_CommandDrawIndexedIndirect
+{
+public:
+	static constexpr Flux_CommandType m_eType = FLUX_COMMANDTYPE__DRAW_INDEXED_INDIRECT;
+
+	Flux_CommandDrawIndexedIndirect(const Flux_Buffer* pxIndirectBuffer, u_int uDrawCount, u_int uOffset = 0, u_int uStride = 20)
+		: m_pxIndirectBuffer(pxIndirectBuffer)
+		, m_uDrawCount(uDrawCount)
+		, m_uOffset(uOffset)
+		, m_uStride(uStride)
+	{}
+	void operator()(Flux_CommandBuffer* pxCmdBuf)
+	{
+		pxCmdBuf->DrawIndexedIndirect(m_pxIndirectBuffer, m_uDrawCount, m_uOffset, m_uStride);
+	}
+
+	const Flux_Buffer* m_pxIndirectBuffer;
+	u_int m_uDrawCount;
+	u_int m_uOffset;
+	u_int m_uStride;
+};
+
 // ========== COMPUTE COMMANDS ==========
 
 class Flux_CommandBindComputePipeline
@@ -350,7 +373,8 @@ public:
 
 				HANDLE_COMMAND(FLUX_COMMANDTYPE__DRAW, Flux_CommandDraw);
 				HANDLE_COMMAND(FLUX_COMMANDTYPE__DRAW_INDEXED, Flux_CommandDrawIndexed);
-				
+				HANDLE_COMMAND(FLUX_COMMANDTYPE__DRAW_INDEXED_INDIRECT, Flux_CommandDrawIndexedIndirect);
+
 				HANDLE_COMMAND(FLUX_COMMANDTYPE__BIND_COMPUTE_PIPELINE, Flux_CommandBindComputePipeline);
 				HANDLE_COMMAND(FLUX_COMMANDTYPE__DISPATCH, Flux_CommandDispatch);
 				

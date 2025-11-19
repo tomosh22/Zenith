@@ -715,6 +715,9 @@ void Zenith_Vulkan_RootSigBuilder::FromSpecification(Zenith_Vulkan_RootSig& xRoo
 			case(DESCRIPTOR_TYPE_BUFFER):
 				xBinding.setDescriptorType(vk::DescriptorType::eUniformBuffer);
 				break;
+			case(DESCRIPTOR_TYPE_STORAGE_BUFFER):
+				xBinding.setDescriptorType(vk::DescriptorType::eStorageBuffer);
+				break;
 			case(DESCRIPTOR_TYPE_TEXTURE):
 				xBinding.setDescriptorType(vk::DescriptorType::eCombinedImageSampler);
 				break;
