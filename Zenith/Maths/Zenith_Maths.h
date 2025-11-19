@@ -23,6 +23,7 @@ namespace Zenith_Maths
 	using Matrix4 = glm::mat4;
 	using Matrix4_64 = glm::dmat4;
 	using Quat = glm::quat;
+	using Quaternion = glm::quat;  // Alias for Quat for consistency
 	template<typename T>
 	static T Clamp(T xArg, T xMin, T xMax)
 	{

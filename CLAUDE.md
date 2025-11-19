@@ -124,6 +124,16 @@ Modern Vulkan-based deferred renderer with multi-threaded command buffer recordi
 - `Flux_Graphics.h/cpp` - Global graphics state
 - `Flux_CommandList.h/cpp` - Platform-agnostic command recording
 
+**Terrain Frustum Culling:**
+- **Location:** `Zenith/Flux/Terrain/`
+- **Documentation:** See [Flux/Terrain/CLAUDE.md](Zenith/Flux/Terrain/CLAUDE.md)
+- CPU-based AABB frustum culling for terrain components
+- GPU culling infrastructure prepared (compute shader ready, currently disabled)
+- 70-75% reduction in terrain rendered vs distance-based checks
+- ~30-50 CPU cycles per terrain chunk
+- Lazy AABB caching in TerrainComponent (24 bytes per terrain)
+- Conservative culling (no false negatives)
+
 ### 3. Task System
 
 **Location:** `Zenith/TaskSystem/`

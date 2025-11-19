@@ -4,6 +4,7 @@
 #include "Flux/Flux.h"
 #include "Flux/Flux_Buffers.h"
 #include "Flux/Flux_Material.h"
+#include "Maths/Zenith_FrustumCulling.h"
 class Zenith_TerrainComponent
 {
 public:
@@ -50,6 +51,11 @@ public:
 
 	const bool IsVisible(const float fVisibilityMultiplier, const Zenith_CameraComponent& xCam) const;
 
+	// AABB for frustum culling (cached)
+	void SetAABB(const Zenith_AABB& xAABB) { m_xAABB = xAABB; m_bAABBValid = true; }
+	const Zenith_AABB& GetAABB() const { return m_xAABB; }
+	bool HasValidAABB() const { return m_bAABBValid; }
+
 	// Serialization methods for Zenith_DataStream
 	void WriteToDataStream(Zenith_DataStream& xStream) const;
 	void ReadFromDataStream(Zenith_DataStream& xStream);
@@ -65,4 +71,8 @@ private:
 	Flux_Material* m_pxMaterial1 = nullptr;
 
 	Zenith_Maths::Vector2 m_xPosition_2D = { FLT_MAX,FLT_MAX };
+
+	// Cached AABB for frustum culling
+	Zenith_AABB m_xAABB;
+	bool m_bAABBValid = false;
 };

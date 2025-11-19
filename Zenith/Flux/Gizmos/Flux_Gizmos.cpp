@@ -62,30 +62,10 @@ void Flux_Gizmos::Initialise()
 
 	// Vertex input description
 	Flux_VertexInputDescription xVertexDesc;
-	xVertexDesc.m_eTopology = MESH_TOPOLOGY_TRIANGLE_LIST;
-
-	// Position + Color
-	Flux_VertexInputBinding xBinding;
-	xBinding.m_uBinding = 0;
-	xBinding.m_uStride = sizeof(Zenith_Maths::Vector3) * 2;  // Position (3 floats) + Color (3 floats)
-	xBinding.m_eInputRate = VERTEX_INPUT_RATE_VERTEX;
-	xVertexDesc.m_xBindings.PushBack(xBinding);
-
-	// Position attribute
-	Flux_VertexInputAttribute xPosAttr;
-	xPosAttr.m_uLocation = 0;
-	xPosAttr.m_uBinding = 0;
-	xPosAttr.m_eFormat = VERTEX_FORMAT_RGB32_SFLOAT;
-	xPosAttr.m_uOffset = 0;
-	xVertexDesc.m_xAttributes.PushBack(xPosAttr);
-
-	// Color attribute
-	Flux_VertexInputAttribute xColorAttr;
-	xColorAttr.m_uLocation = 1;
-	xColorAttr.m_uBinding = 0;
-	xColorAttr.m_eFormat = VERTEX_FORMAT_RGB32_SFLOAT;
-	xColorAttr.m_uOffset = sizeof(Zenith_Maths::Vector3);
-	xVertexDesc.m_xAttributes.PushBack(xColorAttr);
+	xVertexDesc.m_eTopology = MESH_TOPOLOGY_TRIANGLES;
+	xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT3); // Position
+	xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT3); // Color
+	xVertexDesc.m_xPerVertexLayout.CalculateOffsetsAndStrides();
 
 	xSpec.m_xVertexInputDesc = xVertexDesc;
 
@@ -94,13 +74,9 @@ void Flux_Gizmos::Initialise()
 	xSpec.m_bDepthWriteEnabled = false;
 
 	// Blending for transparency
-	xSpec.m_axBlendStates[0].m_bEnabled = true;
-	xSpec.m_axBlendStates[0].m_eSrcColor = BLEND_FACTOR_SRC_ALPHA;
-	xSpec.m_axBlendStates[0].m_eDstColor = BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-	xSpec.m_axBlendStates[0].m_eColorOp = BLEND_OP_ADD;
-	xSpec.m_axBlendStates[0].m_eSrcAlpha = BLEND_FACTOR_ONE;
-	xSpec.m_axBlendStates[0].m_eDstAlpha = BLEND_FACTOR_ZERO;
-	xSpec.m_axBlendStates[0].m_eAlphaOp = BLEND_OP_ADD;
+	xSpec.m_axBlendStates[0].m_bBlendEnabled = true;
+	xSpec.m_axBlendStates[0].m_eSrcBlendFactor = BLEND_FACTOR_SRCALPHA;
+	xSpec.m_axBlendStates[0].m_eDstBlendFactor = BLEND_FACTOR_ONEMINUSSRCALPHA;
 
 	// Pipeline layout - needs frame constants (in Common.fxh)
 	Flux_PipelineLayout& xLayout = xSpec.m_xPipelineLayout;
@@ -127,23 +103,7 @@ void Flux_Gizmos::Initialise()
 
 void Flux_Gizmos::Shutdown()
 {
-	// Cleanup geometry buffers
-	for (uint32_t i = 0; i < s_xTranslateGeometry.GetSize(); ++i)
-	{
-		Flux_MemoryManager::DestroyBuffer(s_xTranslateGeometry[i].m_xVertexBuffer);
-		Flux_MemoryManager::DestroyBuffer(s_xTranslateGeometry[i].m_xIndexBuffer);
-	}
-	for (uint32_t i = 0; i < s_xRotateGeometry.GetSize(); ++i)
-	{
-		Flux_MemoryManager::DestroyBuffer(s_xRotateGeometry[i].m_xVertexBuffer);
-		Flux_MemoryManager::DestroyBuffer(s_xRotateGeometry[i].m_xIndexBuffer);
-	}
-	for (uint32_t i = 0; i < s_xScaleGeometry.GetSize(); ++i)
-	{
-		Flux_MemoryManager::DestroyBuffer(s_xScaleGeometry[i].m_xVertexBuffer);
-		Flux_MemoryManager::DestroyBuffer(s_xScaleGeometry[i].m_xIndexBuffer);
-	}
-
+	// Clear geometry buffers (Flux_VertexBuffer and Flux_IndexBuffer handle their own cleanup)
 	s_xTranslateGeometry.Clear();
 	s_xRotateGeometry.Clear();
 	s_xScaleGeometry.Clear();
@@ -195,7 +155,7 @@ void Flux_Gizmos::Render(void*)
 	// Render each gizmo component
 	for (uint32_t i = 0; i < pxGeometry->GetSize(); ++i)
 	{
-		const GizmoGeometry& xGeom = (*pxGeometry)[i];
+		const GizmoGeometry& xGeom = pxGeometry->Get(i);
 
 		// Set vertex and index buffers
 		s_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&xGeom.m_xVertexBuffer);
@@ -224,8 +184,8 @@ void Flux_Gizmos::Render(void*)
 		s_xCommandList.AddCommand<Flux_CommandDrawIndexed>(xGeom.m_uIndexCount);
 	}
 
-	// Submit to forward rendering pass (after scene but before UI)
-	Flux::SubmitCommandList(&s_xCommandList, Flux_Graphics::s_xFinalRenderTarget, RENDER_ORDER_FORWARD);
+	// Submit to rendering pass (after scene but before UI)
+	Flux::SubmitCommandList(&s_xCommandList, Flux_Graphics::s_xFinalRenderTarget, RENDER_ORDER_TEXT);
 }
 
 void Flux_Gizmos::SubmitRenderTask()
@@ -411,27 +371,25 @@ void Flux_Gizmos::GenerateArrowGeometry(Zenith_Vector<GizmoGeometry>& geometryLi
 	Zenith_Vector<float> vertexData;
 	for (uint32_t i = 0; i < positions.GetSize(); ++i)
 	{
-		vertexData.PushBack(positions[i].x);
-		vertexData.PushBack(positions[i].y);
-		vertexData.PushBack(positions[i].z);
-		vertexData.PushBack(colors[i].x);
-		vertexData.PushBack(colors[i].y);
-		vertexData.PushBack(colors[i].z);
+		vertexData.PushBack(positions.Get(i).x);
+		vertexData.PushBack(positions.Get(i).y);
+		vertexData.PushBack(positions.Get(i).z);
+		vertexData.PushBack(colors.Get(i).x);
+		vertexData.PushBack(colors.Get(i).y);
+		vertexData.PushBack(colors.Get(i).z);
 	}
 
 	// Create vertex buffer
-	Flux_MemoryManager::CreateBuffer(
+	Flux_MemoryManager::InitialiseVertexBuffer(
 		vertexData.GetDataPointer(),
 		vertexData.GetSize() * sizeof(float),
-		1u << MEMORY_FLAGS__VERTEX_BUFFER,
 		geom.m_xVertexBuffer
 	);
 
 	// Create index buffer
-	Flux_MemoryManager::CreateBuffer(
+	Flux_MemoryManager::InitialiseIndexBuffer(
 		indices.GetDataPointer(),
 		indices.GetSize() * sizeof(uint32_t),
-		1u << MEMORY_FLAGS__INDEX_BUFFER,
 		geom.m_xIndexBuffer
 	);
 
@@ -477,25 +435,23 @@ void Flux_Gizmos::GenerateCircleGeometry(Zenith_Vector<GizmoGeometry>& geometryL
 	Zenith_Vector<float> vertexData;
 	for (uint32_t i = 0; i < positions.GetSize(); ++i)
 	{
-		vertexData.PushBack(positions[i].x);
-		vertexData.PushBack(positions[i].y);
-		vertexData.PushBack(positions[i].z);
-		vertexData.PushBack(colors[i].x);
-		vertexData.PushBack(colors[i].y);
-		vertexData.PushBack(colors[i].z);
+		vertexData.PushBack(positions.Get(i).x);
+		vertexData.PushBack(positions.Get(i).y);
+		vertexData.PushBack(positions.Get(i).z);
+		vertexData.PushBack(colors.Get(i).x);
+		vertexData.PushBack(colors.Get(i).y);
+		vertexData.PushBack(colors.Get(i).z);
 	}
 
-	Flux_MemoryManager::CreateBuffer(
+	Flux_MemoryManager::InitialiseVertexBuffer(
 		vertexData.GetDataPointer(),
 		vertexData.GetSize() * sizeof(float),
-		1u << MEMORY_FLAGS__VERTEX_BUFFER,
 		geom.m_xVertexBuffer
 	);
 
-	Flux_MemoryManager::CreateBuffer(
+	Flux_MemoryManager::InitialiseIndexBuffer(
 		indices.GetDataPointer(),
 		indices.GetSize() * sizeof(uint32_t),
-		1u << MEMORY_FLAGS__INDEX_BUFFER,
 		geom.m_xIndexBuffer
 	);
 
@@ -550,25 +506,23 @@ void Flux_Gizmos::GenerateCubeGeometry(Zenith_Vector<GizmoGeometry>& geometryLis
 	Zenith_Vector<float> vertexData;
 	for (uint32_t i = 0; i < positions.GetSize(); ++i)
 	{
-		vertexData.PushBack(positions[i].x);
-		vertexData.PushBack(positions[i].y);
-		vertexData.PushBack(positions[i].z);
-		vertexData.PushBack(colors[i].x);
-		vertexData.PushBack(colors[i].y);
-		vertexData.PushBack(colors[i].z);
+		vertexData.PushBack(positions.Get(i).x);
+		vertexData.PushBack(positions.Get(i).y);
+		vertexData.PushBack(positions.Get(i).z);
+		vertexData.PushBack(colors.Get(i).x);
+		vertexData.PushBack(colors.Get(i).y);
+		vertexData.PushBack(colors.Get(i).z);
 	}
 
-	Flux_MemoryManager::CreateBuffer(
+	Flux_MemoryManager::InitialiseVertexBuffer(
 		vertexData.GetDataPointer(),
 		vertexData.GetSize() * sizeof(float),
-		1u << MEMORY_FLAGS__VERTEX_BUFFER,
 		geom.m_xVertexBuffer
 	);
 
-	Flux_MemoryManager::CreateBuffer(
+	Flux_MemoryManager::InitialiseIndexBuffer(
 		indices.GetDataPointer(),
 		indices.GetSize() * sizeof(uint32_t),
-		1u << MEMORY_FLAGS__INDEX_BUFFER,
 		geom.m_xIndexBuffer
 	);
 

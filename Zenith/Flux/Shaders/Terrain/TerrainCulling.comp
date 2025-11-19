@@ -1,0 +1,190 @@
+#version 450
+
+/**
+ * Terrain Frustum Culling Compute Shader
+ *
+ * This shader performs GPU-based frustum culling for terrain components.
+ * It reads all terrain AABBs, tests them against the camera frustum,
+ * and outputs indices of visible terrain for indirect drawing.
+ *
+ * Local size: 64 threads per workgroup (optimal for most GPUs)
+ * Each thread processes one terrain component
+ */
+
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+// === Structures ===
+
+struct TerrainAABB
+{
+	vec4 minAndIndex;  // xyz = min corner, w = terrain index
+	vec4 max;          // xyz = max corner, w = unused
+};
+
+struct FrustumPlane
+{
+	vec4 normalAndDistance;  // xyz = normal, w = distance
+};
+
+struct FrustumData
+{
+	FrustumPlane planes[6];  // left, right, bottom, top, near, far
+};
+
+struct IndirectDrawCommand
+{
+	uint indexCount;
+	uint instanceCount;
+	uint firstIndex;
+	int vertexOffset;
+	uint firstInstance;
+};
+
+// === Input Buffers (Read-Only) ===
+
+layout(set = 0, binding = 0) readonly buffer TerrainAABBs
+{
+	TerrainAABB aabbs[];
+};
+
+layout(set = 0, binding = 1) readonly buffer FrustumBuffer
+{
+	FrustumData frustum;
+};
+
+layout(set = 0, binding = 2) readonly buffer TerrainDrawInfo
+{
+	// Per-terrain draw information (index count, first index, etc.)
+	// Indexed by terrain index
+	IndirectDrawCommand baseDrawCommands[];
+};
+
+// === Output Buffers (Write) ===
+
+layout(set = 0, binding = 3) writeonly buffer VisibleIndices
+{
+	// Output: indices of visible terrain components
+	uint visibleIndices[];
+};
+
+layout(set = 0, binding = 4) buffer VisibleCount
+{
+	// Atomic counter for number of visible terrain
+	uint count;
+};
+
+layout(set = 0, binding = 5) writeonly buffer IndirectDrawCommands
+{
+	// Output: indirect draw commands for visible terrain
+	IndirectDrawCommand drawCommands[];
+};
+
+// === Push Constants ===
+
+layout(push_constant) uniform PushConstants
+{
+	uint terrainCount;  // Total number of terrain components to test
+} constants;
+
+// === Shared Memory for Compaction ===
+
+shared uint sharedVisibleCount;
+shared uint sharedVisibleIndices[64];  // Match local_size_x
+
+// === Frustum Culling Function ===
+
+/**
+ * Test if an AABB intersects with the frustum
+ * Uses the radius test for efficient culling
+ *
+ * Returns true if the AABB is at least partially visible
+ */
+bool TestAABBFrustum(vec3 aabbMin, vec3 aabbMax, FrustumData f)
+{
+	// Calculate AABB center and extents
+	vec3 center = (aabbMin + aabbMax) * 0.5;
+	vec3 extents = (aabbMax - aabbMin) * 0.5;
+
+	// Test against each frustum plane
+	for (int i = 0; i < 6; ++i)
+	{
+		vec3 planeNormal = frustum.planes[i].normalAndDistance.xyz;
+		float planeDistance = frustum.planes[i].normalAndDistance.w;
+
+		// Calculate effective radius along plane normal
+		float radius =
+			extents.x * abs(planeNormal.x) +
+			extents.y * abs(planeNormal.y) +
+			extents.z * abs(planeNormal.z);
+
+		// Test if AABB is completely behind this plane
+		float centerDistance = dot(planeNormal, center) + planeDistance;
+		if (centerDistance < -radius)
+		{
+			return false;  // AABB is completely outside frustum
+		}
+	}
+
+	return true;  // AABB passed all plane tests - it's visible
+}
+
+// === Main Compute Shader ===
+
+void main()
+{
+	uint terrainIndex = gl_GlobalInvocationID.x;
+
+	// Initialize shared counter on first thread
+	if (gl_LocalInvocationID.x == 0)
+	{
+		sharedVisibleCount = 0;
+	}
+	barrier();
+
+	// Early exit if beyond terrain count
+	if (terrainIndex >= constants.terrainCount)
+	{
+		return;
+	}
+
+	// Load AABB for this terrain
+	TerrainAABB aabb = aabbs[terrainIndex];
+	vec3 aabbMin = aabb.minAndIndex.xyz;
+	vec3 aabbMax = aabb.max.xyz;
+
+	// Perform frustum culling
+	bool isVisible = TestAABBFrustum(aabbMin, aabbMax, frustum);
+
+	// Compact visible terrain indices using shared memory
+	uint localIndex = 0;
+	if (isVisible)
+	{
+		// Atomically allocate space in shared array
+		localIndex = atomicAdd(sharedVisibleCount, 1);
+		sharedVisibleIndices[localIndex] = terrainIndex;
+	}
+
+	// Wait for all threads in workgroup to finish testing
+	barrier();
+
+	// First thread writes workgroup's visible terrain to global buffers
+	if (gl_LocalInvocationID.x == 0 && sharedVisibleCount > 0)
+	{
+		// Atomically allocate space in global output buffer
+		uint globalOffset = atomicAdd(count, sharedVisibleCount);
+
+		// Write all visible terrain from this workgroup
+		for (uint i = 0; i < sharedVisibleCount; ++i)
+		{
+			uint visibleTerrainIndex = sharedVisibleIndices[i];
+			uint outputIndex = globalOffset + i;
+
+			// Write terrain index to visible list
+			visibleIndices[outputIndex] = visibleTerrainIndex;
+
+			// Copy draw command for this terrain
+			// The indirect draw buffer will be used by vkCmdDrawIndexedIndirect
+			drawCommands[outputIndex] = baseDrawCommands[visibleTerrainIndex];
+		}
+	}
+}

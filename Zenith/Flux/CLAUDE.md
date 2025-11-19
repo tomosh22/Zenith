@@ -1068,6 +1068,222 @@ cmdBuffer.pipelineBarrier(
 - Buffers, samplers, etc.
 - Eliminate descriptor updates entirely
 
+## Common Build Errors and Solutions
+
+### Creating a New Flux Rendering System
+
+When creating a new Flux rendering system (like Flux_Gizmos, Flux_Particles, etc.), follow these patterns to avoid common build errors:
+
+#### 1. Correct Includes
+
+**Header (.h) file:**
+```cpp
+#pragma once
+
+#include "Flux/Flux.h"
+#include "Flux/Flux_Buffers.h"  // Required for Flux_VertexBuffer, Flux_IndexBuffer
+#include "Maths/Zenith_Maths.h"
+```
+
+**Implementation (.cpp) file:**
+```cpp
+#include "Zenith.h"  // ALWAYS first
+
+#include "Flux/MySystem/Flux_MySystem.h"
+
+#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_CommandList.h"
+#include "Flux/Flux_Buffers.h"
+#include "TaskSystem/Zenith_TaskSystem.h"
+#include "DebugVariables/Zenith_DebugVariables.h"
+```
+
+#### 2. Vertex Input Description - Correct API
+
+**❌ WRONG** (manually specifying bindings and attributes):
+```cpp
+Flux_VertexInputDescription xVertexDesc;
+xVertexDesc.m_eTopology = MESH_TOPOLOGY_TRIANGLE_LIST;  // Wrong enum
+
+Flux_VertexInputBinding xBinding;
+xBinding.m_uBinding = 0;
+xBinding.m_uStride = sizeof(float) * 6;
+xBinding.m_eInputRate = VERTEX_INPUT_RATE_VERTEX;  // These don't exist
+xVertexDesc.m_xBindings.PushBack(xBinding);  // Wrong API
+```
+
+**✅ CORRECT** (using per-vertex/per-instance layouts):
+```cpp
+Flux_VertexInputDescription xVertexDesc;
+xVertexDesc.m_eTopology = MESH_TOPOLOGY_TRIANGLES;  // Correct enum
+
+// Per-vertex data
+xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT3);  // Position
+xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT3);  // Color
+xVertexDesc.m_xPerVertexLayout.CalculateOffsetsAndStrides();
+
+// Per-instance data (if needed)
+xVertexDesc.m_xPerInstanceLayout.GetElements().PushBack(SHADER_DATA_TYPE_UINT4);
+xVertexDesc.m_xPerInstanceLayout.CalculateOffsetsAndStrides();
+```
+
+#### 3. Blend State - Correct Properties
+
+**❌ WRONG**:
+```cpp
+xSpec.m_axBlendStates[0].m_bEnabled = true;  // Wrong property name
+xSpec.m_axBlendStates[0].m_eSrcColor = BLEND_FACTOR_SRC_ALPHA;  // Wrong enum
+xSpec.m_axBlendStates[0].m_eDstColor = BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;  // Wrong property
+xSpec.m_axBlendStates[0].m_eColorOp = BLEND_OP_ADD;  // Doesn't exist
+```
+
+**✅ CORRECT**:
+```cpp
+xSpec.m_axBlendStates[0].m_bBlendEnabled = true;  // Correct property
+xSpec.m_axBlendStates[0].m_eSrcBlendFactor = BLEND_FACTOR_SRCALPHA;  // Correct enum (no underscores)
+xSpec.m_axBlendStates[0].m_eDstBlendFactor = BLEND_FACTOR_ONEMINUSSRCALPHA;  // Correct property and enum
+
+// Note: Flux_BlendState only has 3 properties:
+// - m_eSrcBlendFactor
+// - m_eDstBlendFactor
+// - m_bBlendEnabled
+// No separate color/alpha blend ops
+```
+
+#### 4. Buffer Management
+
+**Use typed buffer wrappers:**
+```cpp
+struct MyGeometry {
+    Flux_VertexBuffer m_xVertexBuffer;  // NOT Flux_Buffer
+    Flux_IndexBuffer m_xIndexBuffer;    // NOT Flux_Buffer
+    uint32_t m_uIndexCount;
+};
+
+// Initialize buffers
+Flux_MemoryManager::InitialiseVertexBuffer(
+    vertexData.GetDataPointer(),
+    vertexData.GetSize() * sizeof(float),
+    geom.m_xVertexBuffer
+);
+
+Flux_MemoryManager::InitialiseIndexBuffer(
+    indices.GetDataPointer(),
+    indices.GetSize() * sizeof(uint32_t),
+    geom.m_xIndexBuffer
+);
+```
+
+**Command list usage:**
+```cpp
+// Pass pointer to buffer wrapper, not inner buffer
+cmdList.AddCommand<Flux_CommandSetVertexBuffer>(&geom.m_xVertexBuffer);
+cmdList.AddCommand<Flux_CommandSetIndexBuffer>(&geom.m_xIndexBuffer);
+```
+
+#### 5. Container Access - Zenith_Vector
+
+**❌ WRONG** (using operator[]):
+```cpp
+for (uint32_t i = 0; i < myVector.GetSize(); ++i) {
+    MyType& item = myVector[i];  // operator[] doesn't exist
+}
+```
+
+**✅ CORRECT** (using .Get()):
+```cpp
+for (uint32_t i = 0; i < myVector.GetSize(); ++i) {
+    MyType& item = myVector.Get(i);  // Correct
+}
+```
+
+#### 6. Render Order Enums
+
+Use existing render orders from [Flux/Flux_Enums.h](Flux/Flux_Enums.h:25-47):
+```cpp
+enum RenderOrder {
+    RENDER_ORDER_MEMORY_UPDATE,
+    RENDER_ORDER_CSM,
+    RENDER_ORDER_SKYBOX,
+    RENDER_ORDER_OPAQUE_MESHES,
+    RENDER_ORDER_TERRAIN,
+    RENDER_ORDER_SKINNED_MESHES,
+    RENDER_ORDER_FOLIAGE,
+    RENDER_ORDER_APPLY_LIGHTING,
+    RENDER_ORDER_POINT_LIGHTS,
+    RENDER_ORDER_WATER,
+    RENDER_ORDER_SSAO,
+    RENDER_ORDER_FOG,
+    RENDER_ORDER_SDFS,
+    RENDER_ORDER_PARTICLES,
+    RENDER_ORDER_QUADS,
+    RENDER_ORDER_TEXT,
+    RENDER_ORDER_COMPUTE_TEST,
+    RENDER_ORDER_IMGUI,
+    RENDER_ORDER_COPYTOFRAMEBUFFER,
+    RENDER_ORDER_MAX
+};
+```
+
+**Don't create custom enums like `RENDER_ORDER_FORWARD`** - use existing ones or add to the enum.
+
+#### 7. Memory Manager Alias
+
+`Flux_MemoryManager` is a `#define` for `Zenith_Vulkan_MemoryManager`:
+```cpp
+// From Zenith/Vulkan/Zenith_PlatformGraphics_Include.h
+#define Flux_MemoryManager Zenith_Vulkan_MemoryManager
+```
+
+This allows platform abstraction while keeping code clean.
+
+#### 8. Static Task Pattern
+
+**Standard pattern for render tasks:**
+```cpp
+// In .cpp file (file-scope)
+static Zenith_Task g_xRenderTask(
+    ZENITH_PROFILE_INDEX__MY_SYSTEM,
+    MySystem::Render,
+    nullptr
+);
+
+static Flux_CommandList g_xCommandList("MySystemName");
+
+void MySystem::SubmitRenderTask() {
+    Zenith_TaskSystem::SubmitTask(&g_xRenderTask);
+}
+
+void MySystem::WaitForRenderTask() {
+    g_xRenderTask.WaitUntilComplete();
+}
+
+void MySystem::Render(void*) {
+    g_xCommandList.Reset(false);  // false = don't clear targets
+
+    // Record commands
+    g_xCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xPipeline);
+    // ...
+
+    Flux::SubmitCommandList(&g_xCommandList, myTargetSetup, RENDER_ORDER_XXX);
+}
+```
+
+### Quick Reference Checklist
+
+When creating a new Flux rendering system:
+
+- [ ] Include `"Flux/Flux_Buffers.h"` in header if using buffer types
+- [ ] Use `MESH_TOPOLOGY_TRIANGLES` (not `TRIANGLE_LIST`)
+- [ ] Use `m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_XXX)`
+- [ ] Use `m_bBlendEnabled`, `m_eSrcBlendFactor`, `m_eDstBlendFactor`
+- [ ] Use `Flux_VertexBuffer` and `Flux_IndexBuffer`, not raw `Flux_Buffer`
+- [ ] Use `InitialiseVertexBuffer()` and `InitialiseIndexBuffer()` to create buffers
+- [ ] Pass `&myBuffer` to command list, not `&myBuffer.GetBuffer()`
+- [ ] Use `myVector.Get(i)` instead of `myVector[i]`
+- [ ] Use existing `RenderOrder` enums
+- [ ] Follow static task pattern with file-scope statics
+
 ## Conclusion
 
 Flux provides a high-performance, platform-agnostic rendering abstraction that:

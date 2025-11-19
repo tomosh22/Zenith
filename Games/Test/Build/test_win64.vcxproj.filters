@@ -466,6 +466,12 @@
     <ClCompile Include="..\..\..\Zenith\EntityComponent\Components\Zenith_TransformComponent.cpp">
       <Filter>Zenith\EntityComponent\Components</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\..\Zenith\EntityComponent\Zenith_ComponentRegistration.cpp">
+      <Filter>Zenith\EntityComponent</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\Zenith\EntityComponent\Zenith_ComponentRegistry.cpp">
+      <Filter>Zenith\EntityComponent</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\..\Zenith\EntityComponent\Zenith_Entity.cpp">
       <Filter>Zenith\EntityComponent</Filter>
     </ClCompile>
@@ -505,6 +511,9 @@
     <ClCompile Include="..\..\..\Zenith\Flux\Fog\Flux_Fog.cpp">
       <Filter>Zenith\Flux\Fog</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\..\Zenith\Flux\Gizmos\Flux_Gizmos.cpp">
+      <Filter>Zenith\Flux\Gizmos</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\..\Zenith\Flux\ImGui\Flux_ImGui.cpp">
       <Filter>Zenith\Flux\ImGui</Filter>
     </ClCompile>
@@ -536,6 +545,12 @@
       <Filter>Zenith\Flux\StaticMeshes</Filter>
     </ClCompile>
     <ClCompile Include="..\..\..\Zenith\Flux\Terrain\Flux_Terrain.cpp">
+      <Filter>Zenith\Flux\Terrain</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\Zenith\Flux\Terrain\Flux_TerrainCulling.cpp">
+      <Filter>Zenith\Flux\Terrain</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\Zenith\Flux\Terrain\Flux_TerrainCulling_Example.cpp">
       <Filter>Zenith\Flux\Terrain</Filter>
     </ClCompile>
     <ClCompile Include="..\..\..\Zenith\Flux\Text\Flux_Text.cpp">
@@ -1650,6 +1665,9 @@
     <ClInclude Include="..\..\..\Zenith\EntityComponent\Components\Zenith_TransformComponent.h">
       <Filter>Zenith\EntityComponent\Components</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\EntityComponent\Zenith_ComponentRegistry.h">
+      <Filter>Zenith\EntityComponent</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\..\Zenith\EntityComponent\Zenith_Entity.h">
       <Filter>Zenith\EntityComponent</Filter>
     </ClInclude>
@@ -1694,6 +1712,9 @@
     </ClInclude>
     <ClInclude Include="..\..\..\Zenith\Flux\Fog\Flux_Fog.h">
       <Filter>Zenith\Flux\Fog</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\Flux\Gizmos\Flux_Gizmos.h">
+      <Filter>Zenith\Flux\Gizmos</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\Zenith\Flux\ImGui\Flux_ImGui.h">
       <Filter>Zenith\Flux\ImGui</Filter>
@@ -1758,6 +1779,12 @@
     <ClInclude Include="..\..\..\Zenith\Flux\Shaders\GBufferCommon.fxh">
       <Filter>Zenith\Flux\Shaders</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Gizmos\Flux_Gizmos.frag">
+      <Filter>Zenith\Flux\Shaders\Gizmos</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Gizmos\Flux_Gizmos.vert">
+      <Filter>Zenith\Flux\Shaders\Gizmos</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Particles\Flux_Particles.frag">
       <Filter>Zenith\Flux\Shaders\Particles</Filter>
     </ClInclude>
@@ -1815,6 +1842,9 @@
     <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Terrain\Flux_Terrain_VertCommon.fxh">
       <Filter>Zenith\Flux\Shaders\Terrain</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Terrain\TerrainCulling.comp">
+      <Filter>Zenith\Flux\Shaders\Terrain</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Text\Flux_Text.frag">
       <Filter>Zenith\Flux\Shaders\Text</Filter>
     </ClInclude>
@@ -1842,6 +1872,9 @@
     <ClInclude Include="..\..\..\Zenith\Flux\Terrain\Flux_Terrain.h">
       <Filter>Zenith\Flux\Terrain</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\Flux\Terrain\Flux_TerrainCulling.h">
+      <Filter>Zenith\Flux\Terrain</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\..\Zenith\Flux\Text\Flux_Text.h">
       <Filter>Zenith\Flux\Text</Filter>
     </ClInclude>
@@ -1850,6 +1883,9 @@
     </ClInclude>
     <ClInclude Include="..\..\..\Zenith\Input\Zenith_KeyCodes.h">
       <Filter>Zenith\Input</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\Maths\Zenith_FrustumCulling.h">
+      <Filter>Zenith\Maths</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\Zenith\Maths\Zenith_Maths.h">
       <Filter>Zenith\Maths</Filter>
@@ -2110,6 +2146,9 @@
     <Filter Include="Zenith\Flux\Fog">
       <UniqueIdentifier>{51baa591-d8d8-e368-a571-63779de9365a}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Zenith\Flux\Gizmos">
+      <UniqueIdentifier>{d9751839-c8e9-b1ad-da57-e2db45465127}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Zenith\Flux\ImGui">
       <UniqueIdentifier>{79fedd6b-2c95-dc6a-38f4-a30337eeb788}</UniqueIdentifier>
     </Filter>
@@ -2145,6 +2184,9 @@
     </Filter>
     <Filter Include="Zenith\Flux\Shaders\Fog">
       <UniqueIdentifier>{c394d484-195a-6c9e-0c13-a689b4cfc200}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Zenith\Flux\Shaders\Gizmos">
+      <UniqueIdentifier>{aca2587d-a337-9cdc-c689-ceebcebc9ed4}</UniqueIdentifier>
     </Filter>
     <Filter Include="Zenith\Flux\Shaders\Particles">
       <UniqueIdentifier>{e42cdf4a-3a4b-88a1-5f85-835164898fa0}</UniqueIdentifier>

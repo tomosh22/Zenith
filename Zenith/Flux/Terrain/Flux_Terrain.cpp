@@ -8,6 +8,7 @@
 #include "Flux/Flux_Buffers.h"
 #include "Flux/Shadows/Flux_Shadows.h"
 #include "Flux/DeferredShading/Flux_DeferredShading.h"
+#include "Flux/Terrain/Flux_TerrainCulling.h"
 #include "AssetHandling/Zenith_AssetHandler.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
@@ -49,6 +50,9 @@ DEBUGVAR bool dbg_bIgnoreVisibilityCheck = false;
 
 void Flux_Terrain::Initialise()
 {
+	// Initialize frustum culling system
+	Flux_TerrainCulling::Initialise();
+
 	s_xTerrainGBufferShader.Initialise("Terrain/Flux_Terrain_ToGBuffer.vert", "Terrain/Flux_Terrain_ToGBuffer.frag");
 	s_xTerrainShadowShader.Initialise("Terrain/Flux_Terrain_ToShadowmap.vert", "Terrain/Flux_Terrain_ToShadowmap.frag");
 
@@ -158,8 +162,27 @@ void Flux_Terrain::Initialise()
 
 void Flux_Terrain::SubmitRenderToGBufferTask()
 {
-	g_xTerrainComponentsToRender.Clear();
-	Zenith_Scene::GetCurrentScene().GetAllOfComponentType<Zenith_TerrainComponent>(g_xTerrainComponentsToRender);
+	// Get all terrain components
+	Zenith_Vector<Zenith_TerrainComponent*> xAllTerrain;
+	Zenith_Scene::GetCurrentScene().GetAllOfComponentType<Zenith_TerrainComponent>(xAllTerrain);
+
+	// Ensure AABBs are generated for all terrain (lazy initialization)
+	for (Zenith_Vector<Zenith_TerrainComponent*>::Iterator xIt(xAllTerrain); !xIt.Done(); xIt.Next())
+	{
+		Zenith_TerrainComponent* pxTerrain = xIt.GetData();
+		if (!pxTerrain->HasValidAABB())
+		{
+			Zenith_AABB xAABB = Flux_TerrainCulling::GenerateTerrainAABB(*pxTerrain);
+			pxTerrain->SetAABB(xAABB);
+		}
+	}
+
+	// Perform frustum culling
+	const Zenith_CameraComponent& xCam = Zenith_Scene::GetCurrentScene().GetMainCamera();
+	Flux_TerrainCulling::PerformCulling(xCam, xAllTerrain);
+
+	// Get visible terrain after culling
+	g_xTerrainComponentsToRender = Flux_TerrainCulling::GetVisibleTerrainComponents();
 
 	Flux_MemoryManager::UploadBufferData(s_xTerrainConstantsBuffer.GetBuffer().m_xVRAMHandle, &s_xTerrainConstants, sizeof(TerrainConstants));
 
@@ -209,16 +232,12 @@ void Flux_Terrain::RenderToGBuffer(void*, u_int uInvocationIndex, u_int uNumInvo
 	xWaterCmdList.AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer().m_xCBV, 0);
 	xWaterCmdList.AddCommand<Flux_CommandBeginBind>(1);
 
-	const Zenith_CameraComponent& xCam = Zenith_Scene::GetCurrentScene().GetMainCamera();
-
 	for (u_int u = uStartIndex; u < uEndIndex; u++)
 	{
 		Zenith_TerrainComponent* pxTerrain = g_xTerrainComponentsToRender.Get(u);
-		
-		if (!dbg_bIgnoreVisibilityCheck && !pxTerrain->IsVisible(dbg_fVisibilityThresholdMultiplier, xCam))
-		{
-			continue;
-		}
+
+		// Note: Frustum culling already performed in SubmitRenderToGBufferTask()
+		// No per-terrain visibility check needed here
 
 		xTerrainCmdList.AddCommand<Flux_CommandSetVertexBuffer>(&pxTerrain->GetRenderMeshGeometry().GetVertexBuffer());
 		xTerrainCmdList.AddCommand<Flux_CommandSetIndexBuffer>(&pxTerrain->GetRenderMeshGeometry().GetIndexBuffer());

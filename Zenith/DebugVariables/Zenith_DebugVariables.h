@@ -178,6 +178,11 @@ public:
 		Zenith_DebugVariableTree::LeafNodeReadOnly<uint32_t>* pxLeaf = new Zenith_DebugVariableTree::LeafNodeReadOnly<uint32_t>(xName, &xVar);
 		s_xTree.AddLeafNode(pxLeaf, xName);
 	}
+	static void AddFloat_ReadOnly(std::vector<std::string> xName, float& fVar)
+	{
+		Zenith_DebugVariableTree::LeafNodeReadOnly<float>* pxLeaf = new Zenith_DebugVariableTree::LeafNodeReadOnly<float>(xName, &fVar);
+		s_xTree.AddLeafNode(pxLeaf, xName);
+	}
 	static void AddButton(std::vector<std::string> xName, void(*pfnCallback)())
 	{
 		Zenith_DebugVariableTree::PfnLeafNode* pxLeaf = new Zenith_DebugVariableTree::PfnLeafNode(xName, pfnCallback);
