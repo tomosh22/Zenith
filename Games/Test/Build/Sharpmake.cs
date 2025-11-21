@@ -38,7 +38,7 @@ public class FluxCompilerProject : Project
     public void ConfigureAll(Configuration conf, CustomTarget target)
     {
         conf.ProjectFileName = "[project.Name]_[target.Platform]";
-        conf.ProjectPath = @"[project.SharpmakeCsPath]/../../..";
+        conf.ProjectPath = @"[project.SharpmakeCsPath]/../../../FluxCompiler";
 
 		conf.Options.Add(Options.Vc.Compiler.CppLanguageStandard.CPP20);
 

@@ -786,6 +786,9 @@
     <ClInclude Include="..\..\..\Zenith\Core\Zenith_String.h" />
     <ClInclude Include="..\..\..\Zenith\DataStream\Zenith_DataStream.h" />
     <ClInclude Include="..\..\..\Zenith\DebugVariables\Zenith_DebugVariables.h" />
+    <ClInclude Include="..\..\..\Zenith\Editor\Zenith_Editor.h" />
+    <ClInclude Include="..\..\..\Zenith\Editor\Zenith_Gizmo.h" />
+    <ClInclude Include="..\..\..\Zenith\Editor\Zenith_SelectionSystem.h" />
     <ClInclude Include="..\..\..\Zenith\EntityComponent\Components\Zenith_CameraComponent.h" />
     <ClInclude Include="..\..\..\Zenith\EntityComponent\Components\Zenith_ColliderComponent.h" />
     <ClInclude Include="..\..\..\Zenith\EntityComponent\Components\Zenith_ModelComponent.h" />
@@ -888,9 +891,6 @@
     <ClInclude Include="..\Components\SphereMovement_Behaviour.h" />
     <ClInclude Include="..\Test_State_InGame.h" />
     <ClInclude Include="..\Test_State_MainMenu.h" />
-    <ClInclude Include="Zenith\Editor\Zenith_Editor.h" />
-    <ClInclude Include="Zenith\Editor\Zenith_Gizmo.h" />
-    <ClInclude Include="Zenith\Editor\Zenith_SelectionSystem.h" />
   </ItemGroup>
   <ItemGroup>
     <Natvis Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Jolt.natvis" />
@@ -1754,6 +1754,9 @@
     <ClCompile Include="..\..\..\Zenith\Core\Zenith_Core.cpp" />
     <ClCompile Include="..\..\..\Zenith\DataStream\Zenith_DataStream.cpp" />
     <ClCompile Include="..\..\..\Zenith\DebugVariables\Zenith_DebugVariables.cpp" />
+    <ClCompile Include="..\..\..\Zenith\Editor\Zenith_Editor.cpp" />
+    <ClCompile Include="..\..\..\Zenith\Editor\Zenith_Gizmo.cpp" />
+    <ClCompile Include="..\..\..\Zenith\Editor\Zenith_SelectionSystem.cpp" />
     <ClCompile Include="..\..\..\Zenith\EntityComponent\Components\Zenith_CameraComponent.cpp" />
     <ClCompile Include="..\..\..\Zenith\EntityComponent\Components\Zenith_ColliderComponent.cpp" />
     <ClCompile Include="..\..\..\Zenith\EntityComponent\Components\Zenith_ModelComponent.cpp" />
@@ -1812,9 +1815,6 @@
     <ClCompile Include="..\Components\SphereMovement_Behaviour.cpp" />
     <ClCompile Include="..\Test_State_InGame.cpp" />
     <ClCompile Include="..\Test_State_MainMenu.cpp" />
-    <ClCompile Include="Zenith\Editor\Zenith_Editor.cpp" />
-    <ClCompile Include="Zenith\Editor\Zenith_Gizmo.cpp" />
-    <ClCompile Include="Zenith\Editor\Zenith_SelectionSystem.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
