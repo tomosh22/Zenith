@@ -116,7 +116,6 @@ public class TestToolsProject : Project
 		SourceFilesExcludeRegex.Add(@".*opencv\\sources\\apps.*");
 		SourceFilesExcludeRegex.Add(@".*opencv.*");
 		
-		SourceFilesExcludeRegex.Add(@".*reactphysics3d-0.10.1.*");
 		SourceFilesExcludeRegex.Add(@".*JoltPhysics-5.4.0\\Build.*");
 		SourceFilesExcludeRegex.Add(@".*JoltPhysics-5.4.0\\Docs.*");
 		SourceFilesExcludeRegex.Add(@".*JoltPhysics-5.4.0\\UnitTests.*");
@@ -226,7 +225,6 @@ public class TestWindowsProject : Project
 		SourceFilesExcludeRegex.Add(@".*FluxCompiler.*");
 		SourceFilesExcludeRegex.Add(@".*glm-master.*");
 		SourceFilesExcludeRegex.Add(@".*\\Tools\\.*");
-		SourceFilesExcludeRegex.Add(@".*reactphysics3d-0.10.1.*");
 		SourceFilesExcludeRegex.Add(@".*JoltPhysics-5.4.0\\Build.*");
 		SourceFilesExcludeRegex.Add(@".*JoltPhysics-5.4.0\\Docs.*");
 		SourceFilesExcludeRegex.Add(@".*JoltPhysics-5.4.0\\UnitTests.*");
@@ -259,7 +257,6 @@ public class TestWindowsProject : Project
         conf.PrecompHeader = "Zenith.h";
         conf.PrecompSource = "Zenith.cpp";
 		conf.PrecompSourceExcludeFolders.Add("[project.SharpmakeCsPath]/../../../Middleware/JoltPhysics-5.4.0");
-		conf.PrecompSourceExcludeFolders.Add("[project.SharpmakeCsPath]/../../../Middleware/reactphysics3d-0.10.1");
 		conf.PrecompSourceExcludeFolders.Add("[project.SharpmakeCsPath]/../../../Middleware/imgui-docking");
 		
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/../../../Zenith");

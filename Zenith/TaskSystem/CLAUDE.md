@@ -3,7 +3,6 @@
 ## Overview
 
 Zenith's task system provides work-stealing parallelism for CPU-intensive operations:
-- **Worker Thread Pool:** 8 dedicated threads (configurable)
 - **Task Arrays:** Data-parallel workloads
 - **Profiling Integration:** Automatic performance tracking
 - **Lock-Free Queue:** Minimal contention

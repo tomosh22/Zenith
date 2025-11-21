@@ -431,16 +431,20 @@ class MyScript : public Zenith_Script {
 
 ### Zenith_ColliderComponent
 
-**Purpose:** Physics collision shape
+Manages physics collision shapes.
 
 ```cpp
 class Zenith_ColliderComponent {
 public:
+    // Jolt Physics handles
+    JPH::Body* m_pxBody;
+    
+    // Collision shape types
     enum ColliderType {
-        COLLIDER_TYPE_BOX,
-        COLLIDER_TYPE_SPHERE,
-        COLLIDER_TYPE_CAPSULE,
-        COLLIDER_TYPE_MESH
+        BOX,
+        SPHERE,
+        CAPSULE,
+        MESH
     };
     
     ColliderType m_eType;
@@ -455,14 +459,26 @@ public:
     float m_fFriction;
     float m_fRestitution;
     bool m_bIsKinematic;
-    
-    // ReactPhysics3D handle
-    reactphysics3d::RigidBody* m_pxRigidBody;
-    reactphysics3d::Collider* m_pxCollider;
-    
-private:
-    Zenith_Entity m_xParentEntity;
 };
+```
+
+**Thread Safety Considerations:**
+
+When synchronizing physics and rendering:
+
+```cpp
+void SyncPhysicsToTransform() {
+    // Read from Jolt Physics body (on physics thread)
+    if (m_pxBody && m_pxBody->IsActive()) {
+        const JPH::RVec3& physicsPosition = m_pxBody->GetPosition();
+        const JPH::Quat& physicsRotation = m_pxBody->GetRotation();
+        
+        // Write to transform component (requires lock if accessed by render thread)
+        Zenith_TransformComponent& xTransform = GetEntity().GetComponent<Zenith_TransformComponent>();
+        xTransform.SetPosition(Zenith_Maths::Vector3(physicsPosition.GetX(), physicsPosition.GetY(), physicsPosition.GetZ()));
+        xTransform.SetRotation(Zenith_Maths::Quaternion(physicsRotation.GetX(), physicsRotation.GetY(), physicsRotation.GetZ(), physicsRotation.GetW()));
+    }
+}
 ```
 
 ### Zenith_TextComponent

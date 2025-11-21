@@ -166,7 +166,7 @@ pTask->WaitUntilComplete();
 
 **Location:** `Zenith/Physics/`
 
-Integration with ReactPhysics3D for rigid body dynamics.
+Integration with Jolt Physics for rigid body dynamics.
 
 **Features:**
 - Rigid body simulation
@@ -177,8 +177,8 @@ Integration with ReactPhysics3D for rigid body dynamics.
 
 **Integration:**
 - Physics bodies synced with `Zenith_TransformComponent`
-- `Zenith_ColliderComponent` manages ReactPhysics3D handles
-- Physics update runs in parallel with rendering
+- `Zenith_ColliderComponent` manages Jolt Physics handles
+- Fixed timestep simulation (60 Hz)
 
 ### 5. Asset Management
 
@@ -323,15 +323,19 @@ See [EntityComponent/CLAUDE.md - Thread Safety](Zenith/EntityComponent/CLAUDE.md
 
 ### Worker Threads
 
-The engine spawns `ZENITH_NUM_WORKER_THREADS` threads at startup:
+The engine uses a fixed thread pool for rendering and other parallel tasks:
 
 ```cpp
-constexpr u_int ZENITH_NUM_WORKER_THREADS = 8;
+// Flux rendering workers
+constexpr u_int FLUX_NUM_WORKER_THREADS = 8;
+
+// Physics uses Jolt's thread pool: hardware_concurrency - 1
 ```
 
 **Thread Roles:**
 1. **Main Thread:** Game logic, ECS updates, input handling
-2. **Worker Threads 0-7:** Task execution (rendering, physics, etc.)
+2. **Flux Worker Threads 0-7:** Command buffer recording, task execution
+3. **Physics Thread Pool:** Jolt Physics simulation (separate from Flux workers)
 
 ### Synchronization
 
@@ -347,7 +351,7 @@ constexpr u_int ZENITH_NUM_WORKER_THREADS = 8;
 
 ### Frame Pipelining
 
-The engine can pipeline up to MAX_FRAMES_IN_FLIGHT frames:
+The engine pipelines up to `MAX_FRAMES_IN_FLIGHT` (currently 2) frames:
 - Frame N: GPU execution
 - Frame N+1: CPU preparation
 
@@ -376,38 +380,38 @@ AddTargets(new CustomTarget {
 
 ```
 Zenith/
-??? AssetHandling/      # Asset loading and management
-??? Collections/        # Custom containers (Vector, Pool, etc.)
-??? Core/              # Core utilities and engine loop
-?   ??? Memory/        # Memory allocators
-?   ??? Zenith_Core.*  # Main game loop
-??? DataStream/        # Binary serialization
-??? DebugVariables/    # Runtime-tweakable debug variables
-??? EntityComponent/   # ECS implementation
-?   ??? Components/    # Component definitions
-??? Flux/              # Vulkan renderer
-?   ??? StaticMeshes/  # Opaque geometry rendering
-?   ??? Shadows/       # Shadow map generation
-?   ??? DeferredShading/ # Lighting pass
-?   ??? Particles/     # Particle systems
-?   ??? Shaders/       # GLSL shader source
-??? Input/             # Keyboard/mouse/gamepad input
-??? Maths/             # Math library (GLM wrapper)
-??? Physics/           # ReactPhysics3D integration
-??? Profiling/         # CPU profiler
-??? StateMachine/      # Game state management
-??? TaskSystem/        # Multi-threading infrastructure
-??? Vulkan/            # Vulkan platform backend
-??? Windows/           # Windows platform layer
+├── AssetHandling/      # Asset loading and management
+├── Collections/        # Custom containers (Vector, Pool, etc.)
+├── Core/              # Core utilities and engine loop
+│   └── Memory/        # Memory allocators
+├── DataStream/        # Binary serialization
+├── DebugVariables/    # Runtime-tweakable debug variables
+├── EntityComponent/   # ECS implementation
+│   └── Components/    # Component definitions
+├── Flux/              # Vulkan renderer
+│   ├── StaticMeshes/  # Opaque geometry rendering
+│   ├── Shadows/       # Shadow map generation
+│   ├── DeferredShading/ # Lighting pass
+│   ├── Particles/     # Particle systems
+│   ├── Terrain/       # Terrain rendering & culling
+│   └── Shaders/       # GLSL shader source
+├── Input/             # Keyboard/mouse/gamepad input
+├── Maths/             # Math library (GLM wrapper)
+├── Physics/           # Jolt Physics integration
+├── Profiling/         # CPU profiler
+├── StateMachine/      # Game state management
+├── TaskSystem/        # Multi-threading infrastructure
+├── Vulkan/            # Vulkan platform backend
+└── Windows/           # Windows platform layer
 
 Games/
-??? SuperSecret/       # Example game project
-?   ??? Assets/       # Game-specific assets
-?   ??? Source/       # Game code
+└── Test/              # Test game project
+    ├── Assets/       # Game-specific assets
+    └── Source/       # Game code
 
 Tools/
-??? FluxCompiler/      # Shader compilation tool
-??? AssetConverters/   # Mesh/texture converters
+├── FluxCompiler/      # Shader compilation tool
+└── AssetConverters/   # Mesh/texture converters
 ```
 
 ## Platform Support
@@ -427,11 +431,10 @@ Tools/
 
 **Core Engine:**
 - GLM - Math library
-- Jolt - Physics simulation
+- Jolt Physics - Physics simulation
 - GLFW - Window/input management
-- Vulkan SDK - Graphics API
-- - ImGui - Debug UI
-
+- Vulkan SDK 1.3 - Graphics API
+- ImGui - Debug UI
 
 **Tools Only:**
 - Assimp - Model importing
