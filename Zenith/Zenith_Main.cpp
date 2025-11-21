@@ -30,9 +30,6 @@ static Zenith_Maths::Vector3 s_xDVSTest4 = { 1,2,3 };
 
 int main()
 {
-	//#TO_TODO: why does mesh export need to run in debug? animations broken when exported in release
-	//same thing for heightmap, rp3d complaining about tiny triangles
-	// 
 	//ExportAllMeshes();
 	//ExportAllTextures();
 	//ExportHeightmap();

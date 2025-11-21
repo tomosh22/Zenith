@@ -166,19 +166,27 @@ pTask->WaitUntilComplete();
 
 **Location:** `Zenith/Physics/`
 
-Integration with Jolt Physics for rigid body dynamics.
+Integration with **Jolt Physics** for rigid body dynamics.
 
 **Features:**
 - Rigid body simulation
 - Collision detection (box, sphere, capsule, mesh)
-- Constraint solving (hinges, sliders, etc.)
+- Constraint solving
 - Raycasting and shape casting
 - Character controller
 
 **Integration:**
 - Physics bodies synced with `Zenith_TransformComponent`
-- `Zenith_ColliderComponent` manages Jolt Physics handles
+- `Zenith_ColliderComponent` manages Jolt Physics handles (`JPH::Body*`)
 - Fixed timestep simulation (60 Hz)
+- Contact listener for collision callbacks
+
+**Key Implementation Details:**
+- Uses `JPH::PhysicsSystem` for simulation
+- `JPH::JobSystemThreadPool` uses `hardware_concurrency - 1` threads
+- `JPH::TempAllocatorImpl` with 10MB pre-allocated
+- Two object layers: `NON_MOVING` (static) and `MOVING` (dynamic)
+- Two broadphase layers for efficient spatial partitioning
 
 ### 5. Asset Management
 
@@ -258,15 +266,18 @@ Wrapper around GLM with engine-specific extensions.
 
 ## Frame Loop
 
-The main game loop in `Zenith_Core::Zenith_MainLoop()`:
+The main game loop in `Zenith_Core::Zenith_MainLoop()` (verified from source):
 
 ```cpp
 void Zenith_Core::Zenith_MainLoop() {
     // 1. Begin Frame
+    Flux_PlatformAPI::BeginFrame();    // Platform setup
     UpdateTimers();                    // Calculate delta time
     Zenith_Input::BeginFrame();        // Poll input
+    Zenith_Window::GetInstance()->BeginFrame();  // Window events
     Flux_MemoryManager::BeginFrame();  // Reset frame allocators
-    Flux_Swapchain::BeginFrame();      // Acquire swapchain image
+    if (!Flux_Swapchain::BeginFrame()) // Acquire swapchain image
+        return;  // Skip frame if swapchain unavailable
 
 #ifdef ZENITH_TOOLS
     // 2. Update Editor (CRITICAL: Before any rendering!)
@@ -274,26 +285,29 @@ void Zenith_Core::Zenith_MainLoop() {
 #endif
 
     // 3. Update Game Logic
-    Zenith_Physics::Update(dt);        // Physics simulation
-    Zenith_Scene::Update(dt);          // Entity scripts
-
-    // 4. Upload Frame Data
+    Zenith_Physics::Update(dt);        // Physics simulation (60 Hz fixed timestep)
+    Zenith_Scene::Update(dt);          // Entity scripts and component updates
     Flux_Graphics::UploadFrameConstants();  // Camera matrices, etc.
 
-    // 5. Submit Render Tasks
-    SubmitRenderTasks();               // Queue rendering work
+    // 4. Submit Render Tasks
+    SubmitRenderTasks();               // Queue rendering work for worker threads
+    
+    // 5. Wait for Completion
+    WaitForRenderTasks();              // Sync with rendering threads
+    Zenith_Scene::WaitForUpdateComplete();  // Sync with scene update tasks
 
-    // 6. Wait for Completion
-    WaitForRenderTasks();              // Sync with GPU
-
-    // 7. Present
+    // 6. End Frame
+    Flux_MemoryManager::EndFrame();    // Cleanup frame allocations
+    Zenith_MemoryManagement::EndFrame();
+    Flux_PlatformAPI::EndFrame();
     Flux_Swapchain::EndFrame();        // Present to screen
 }
 ```
 
 **Execution Model:**
 - Game logic runs on main thread
-- Rendering runs on worker threads
+- Rendering runs on worker threads (8 Flux workers)
+- Physics uses separate Jolt thread pool (`hardware_concurrency - 1` threads)
 
 **CRITICAL: Editor Update Timing**
 
@@ -326,16 +340,17 @@ See [EntityComponent/CLAUDE.md - Thread Safety](Zenith/EntityComponent/CLAUDE.md
 The engine uses a fixed thread pool for rendering and other parallel tasks:
 
 ```cpp
-// Flux rendering workers
+// Flux rendering workers (from Zenith_Vulkan.cpp)
 constexpr u_int FLUX_NUM_WORKER_THREADS = 8;
 
-// Physics uses Jolt's thread pool: hardware_concurrency - 1
+// Physics uses Jolt's thread pool (from Zenith_Physics.cpp)
+// std::thread::hardware_concurrency() - 1
 ```
 
 **Thread Roles:**
 1. **Main Thread:** Game logic, ECS updates, input handling
-2. **Flux Worker Threads 0-7:** Command buffer recording, task execution
-3. **Physics Thread Pool:** Jolt Physics simulation (separate from Flux workers)
+2. **Flux Worker Threads 0-7:** Command buffer recording, task execution  
+3. **Jolt Physics Thread Pool:** Physics simulation (separate from Flux workers, uses hardware_concurrency - 1 threads)
 
 ### Synchronization
 
@@ -430,11 +445,11 @@ Tools/
 ## Dependencies
 
 **Core Engine:**
-- GLM - Math library
-- Jolt Physics - Physics simulation
+- GLM - Math library (vector/matrix types via `using` declarations in Zenith_Maths.h)
+- Jolt Physics - Physics simulation (`JPH::PhysicsSystem`, `JPH::Body`, etc.)
 - GLFW - Window/input management
 - Vulkan SDK 1.3 - Graphics API
-- ImGui - Debug UI
+- ImGui - Debug UI (docking branch for editor)
 
 **Tools Only:**
 - Assimp - Model importing

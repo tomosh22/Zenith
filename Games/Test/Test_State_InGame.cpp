@@ -321,7 +321,6 @@ void Test_State_InGame::OnEnter()
 		uCount++;
 	}
 
-	//#TO_TODO: why does rp3d refuse to make colliders for the far edges? (TERRAIN_EXPORT_DIMS - 1 not TERRAIN_EXPORT_DIMS)
 	for (uint32_t x = 0; x < TERRAIN_EXPORT_DIMS; x++)
 	{
 		for (uint32_t y = 0; y < TERRAIN_EXPORT_DIMS; y++)

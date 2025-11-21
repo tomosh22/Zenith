@@ -607,35 +607,6 @@ void Flux_StaticMeshes::Render() {
 }
 ```
 
-### Physics System Integration
-
-```cpp
-void Zenith_Physics::Update(float dt) {
-    // Step physics simulation
-    m_pxWorld->update(dt);
-    
-    // Sync physics transforms to entity transforms
-    Zenith_Vector<Zenith_ColliderComponent*> colliders;
-    Zenith_Scene::GetCurrentScene().GetAllOfComponentType<Zenith_ColliderComponent>(colliders);
-    
-    for (Zenith_ColliderComponent* collider : colliders) {
-        if (collider->m_bIsKinematic)
-            continue;  // Kinematic objects driven by entity transform
-        
-        // Get physics transform
-        const reactphysics3d::Transform& physicsTransform = 
-            collider->m_pxRigidBody->getTransform();
-        
-        // Update entity transform
-        Zenith_Entity& entity = collider->m_xParentEntity;
-        Zenith_TransformComponent& transform = entity.GetComponent<TransformComponent>();
-        
-        transform.m_xPosition = ConvertVector(physicsTransform.getPosition());
-        transform.m_xRotation = ConvertQuaternion(physicsTransform.getOrientation());
-    }
-}
-```
-
 ## Serialization
 
 ### Entity Serialization
