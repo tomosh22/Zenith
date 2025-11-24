@@ -14,6 +14,7 @@ layout(location = 1) out vec3 o_xNormal;
 layout(location = 2) out vec3 o_xWorldPos;
 layout(location = 3) out float o_fMaterialLerp;
 layout(location = 4) out mat3 o_xTBN;
+layout(location = 7) flat out uint o_uLODLevel;  // Flat shading for LOD level
 
 #ifndef SHADOWS
 layout(std140, set = 0, binding=1) uniform TerrainConstants{
@@ -27,6 +28,12 @@ layout(std140, set = 1, binding=0) uniform ShadowMatrix{
 };
 #endif
 
+// LOD level buffer (read-only in vertex shader)
+layout(std430, set = 0, binding = 2) readonly buffer LODLevelBuffer
+{
+	uint lodLevels[];
+};
+
 void main()
 {
 	#ifndef SHADOWS
@@ -36,6 +43,10 @@ void main()
 	o_xWorldPos = a_xPosition;
 	o_fMaterialLerp = a_fMaterialLerp;
 	o_xTBN = mat3(a_xTangent, a_xBitangent, a_xNormal);
+	
+	// Read LOD level for this draw call
+	// For DrawIndexedIndirectCount, gl_DrawIDARB gives us the draw index
+	o_uLODLevel = lodLevels[gl_DrawIDARB];
 
 	#ifdef SHADOWS
 	gl_Position = g_xSunViewProjMat * vec4(o_xWorldPos,1);

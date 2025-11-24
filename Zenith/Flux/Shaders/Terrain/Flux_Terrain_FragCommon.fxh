@@ -10,6 +10,7 @@ layout(location = 1) in vec3 a_xNormal;
 layout(location = 2) in vec3 a_xWorldPos;
 layout(location = 3) in float a_fMaterialLerp;
 layout(location = 4) in mat3 a_xTBN;
+layout(location = 7) flat in uint a_uLODLevel;  // LOD level from vertex shader
 
 #ifndef SHADOWS
 layout(set = 1, binding = 0) uniform sampler2D g_xDiffuseTex0;
@@ -20,6 +21,11 @@ layout(set = 1, binding = 3) uniform sampler2D g_xDiffuseTex1;
 layout(set = 1, binding = 4) uniform sampler2D g_xNormalTex1;
 layout(set = 1, binding = 5) uniform sampler2D g_xRoughnessMetallicTex1;
 #endif
+
+// Push constant for debug mode
+layout(push_constant) uniform DebugConstants {
+	uint debugVisualizeLOD;  // 0 = normal rendering, 1 = visualize LOD
+} debugConstants;
 
 void main(){
 	#ifndef SHADOWS
@@ -34,6 +40,22 @@ void main(){
 	vec4 xDiffuse = mix(xDiffuse0, xDiffuse1, a_fMaterialLerp);
 	vec3 xNormal = mix(xNormal0, xNormal1, a_fMaterialLerp);
 	vec2 xRoughnessMetallic = mix(xRoughnessMetallic0, xRoughnessMetallic1, a_fMaterialLerp);
+
+	// LOD visualization mode
+	if (debugConstants.debugVisualizeLOD != 0)
+	{
+		// Color code by LOD level:
+		// LOD0 = Red, LOD1 = Green, LOD2 = Blue, LOD3 = Magenta
+		vec3 lodColors[4] = vec3[](
+			vec3(1.0, 0.0, 0.0),  // LOD0: Red
+			vec3(0.0, 1.0, 0.0),  // LOD1: Green
+			vec3(0.0, 0.0, 1.0),  // LOD2: Blue
+			vec3(1.0, 0.0, 1.0)   // LOD3: Magenta
+		);
+		
+		xDiffuse.rgb = lodColors[a_uLODLevel];
+		xRoughnessMetallic = vec2(0.8, 0.0);  // Make it matte for better visibility
+	}
 
 	OutputToGBuffer(xDiffuse, xNormal, 0.2, xRoughnessMetallic.x, xRoughnessMetallic.y);
 	#endif

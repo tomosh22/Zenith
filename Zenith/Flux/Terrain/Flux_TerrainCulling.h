@@ -98,6 +98,12 @@ public:
 	 */
 	static uint32_t GetMaxDrawCount();
 
+	/**
+	 * Get the LOD level buffer for visualization
+	 * This buffer contains the LOD level (0-3) for each visible chunk
+	 */
+	static Flux_ReadWriteBuffer& GetLODLevelBuffer();
+
 private:
 	static void BuildChunkData();
 	static void ExtractFrustumPlanes(const Zenith_Maths::Matrix4& xViewProjMatrix, Flux_FrustumPlaneGPU* pxOutPlanes);

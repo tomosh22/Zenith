@@ -75,6 +75,12 @@ layout(std430, set = 0, binding = 3) buffer VisibleCountBuffer
     uint visibleCount;
 };
 
+// Output: LOD levels for each draw call (for visualization)
+layout(std430, set = 0, binding = 4) buffer LODLevelBuffer
+{
+    uint lodLevels[];
+};
+
 // Shared memory for sorting visible chunks within workgroup
 shared VisibleChunkData s_visibleChunks[64];
 shared uint s_localVisibleCount;
@@ -210,6 +216,9 @@ void main()
             drawCommands[outIndex].firstIndex = selectedLOD.firstIndex;
             drawCommands[outIndex].vertexOffset = int(selectedLOD.vertexOffset);
             drawCommands[outIndex].firstInstance = 0;
+            
+            // Write LOD level for this draw call (for visualization)
+            lodLevels[outIndex] = srcLODLevel;
         }
     }
 }

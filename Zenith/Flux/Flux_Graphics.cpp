@@ -168,7 +168,10 @@ TextureFormat Flux_Graphics::GetMRTFormat(MRTIndex eIndex)
 
 const Zenith_Maths::Vector3& Flux_Graphics::GetCameraPosition()
 {
-	return s_xFrameConstants.m_xCamPos_Pad;
+	// Return the xyz components of the camera position (w is padding)
+	// Note: This is safe because Vector4's memory layout is {x, y, z, w} contiguously
+	// and Vector3 is {x, y, z}, so we can reinterpret the first 3 components
+	return *reinterpret_cast<const Zenith_Maths::Vector3*>(&s_xFrameConstants.m_xCamPos_Pad);
 }
 
 Flux_ShaderResourceView* Flux_Graphics::GetGBufferSRV(MRTIndex eIndex)

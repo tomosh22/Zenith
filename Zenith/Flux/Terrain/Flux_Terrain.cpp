@@ -41,7 +41,8 @@ DEBUGVAR bool dbg_bEnableTerrain = true;
 DEBUGVAR bool dbg_bWireframe = false;
 DEBUGVAR float dbg_fVisibilityThresholdMultiplier = 0.5f;
 DEBUGVAR bool dbg_bIgnoreVisibilityCheck = false;
-DEBUGVAR bool dbg_bUseGPUCulling = true;  // New: Toggle GPU-driven terrain culling
+DEBUGVAR bool dbg_bUseGPUCulling = true;  // Toggle GPU-driven terrain culling
+DEBUGVAR bool dbg_bVisualizeLOD = false;  // Toggle LOD visualization (Red=LOD0, Green=LOD1, Blue=LOD2, Magenta=LOD3)
 
 void Flux_Terrain::Initialise()
 {
@@ -70,12 +71,14 @@ void Flux_Terrain::Initialise()
 		xLayout.m_uNumDescriptorSets = 2;
 		xLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;
 		xLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_BUFFER;
+		xLayout.m_axDescriptorSetLayouts[0].m_axBindings[2].m_eType = DESCRIPTOR_TYPE_STORAGE_BUFFER;  // LOD level buffer
 		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_TEXTURE;
 		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_TEXTURE;
 		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[2].m_eType = DESCRIPTOR_TYPE_TEXTURE;
 		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[3].m_eType = DESCRIPTOR_TYPE_TEXTURE;
 		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[4].m_eType = DESCRIPTOR_TYPE_TEXTURE;
 		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[5].m_eType = DESCRIPTOR_TYPE_TEXTURE;
+		
 
 		for (Flux_BlendState& xBlendState : xPipelineSpec.m_axBlendStates)
 		{
@@ -147,6 +150,7 @@ void Flux_Terrain::Initialise()
 	Zenith_DebugVariables::AddBoolean({ "Render", "Terrain", "Wireframe" }, dbg_bWireframe);
 	Zenith_DebugVariables::AddFloat({ "Render", "Terrain", "Visiblity Multiplier" }, dbg_fVisibilityThresholdMultiplier, 0.1f, 1.f);
 	Zenith_DebugVariables::AddBoolean({ "Render", "Terrain", "Ignore Visibility Check" }, dbg_bIgnoreVisibilityCheck);
+	Zenith_DebugVariables::AddBoolean({ "Render", "Terrain", "Visualize LOD" }, dbg_bVisualizeLOD);
 #endif
 
 	// Initialize GPU-driven terrain culling system
@@ -192,6 +196,16 @@ void Flux_Terrain::RenderToGBuffer(void*)
 	g_xTerrainCommandList.AddCommand<Flux_CommandBeginBind>(0);
 	g_xTerrainCommandList.AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
 	g_xTerrainCommandList.AddCommand<Flux_CommandBindCBV>(&s_xTerrainConstantsBuffer.GetCBV(), 1);
+	
+	// Bind LOD level buffer for visualization (binding 2 in set 0)
+	if (dbg_bUseGPUCulling)
+	{
+		g_xTerrainCommandList.AddCommand<Flux_CommandBindUAV_Buffer>(&Flux_TerrainCulling::GetLODLevelBuffer().GetUAV(), 2);
+	}
+	
+	// Set push constant for LOD visualization
+	uint32_t uVisualizeLOD = dbg_bVisualizeLOD ? 1 : 0;
+	g_xTerrainCommandList.AddCommand<Flux_CommandPushConstant>(&uVisualizeLOD, sizeof(uint32_t));
 
 	g_xTerrainCommandList.AddCommand<Flux_CommandBeginBind>(1);
 
