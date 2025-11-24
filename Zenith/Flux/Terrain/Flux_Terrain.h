@@ -7,7 +7,7 @@ class Flux_Terrain
 public:
 	static void Initialise();
 
-	static void RenderToGBuffer(void*, u_int uInvocationIndex, u_int uNumInvocations);
+	static void RenderToGBuffer(void*);
 	static void RenderToShadowMap(Flux_CommandList& xCmdBuf);
 
 	static void SubmitRenderToGBufferTask();

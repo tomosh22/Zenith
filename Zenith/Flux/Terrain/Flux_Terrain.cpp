@@ -13,12 +13,10 @@
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
 
-static constexpr u_int uNUM_TASKS = 4;
-
-static Zenith_TaskArray* g_pxRenderTask = nullptr;
+static Zenith_Task* g_pxRenderTask = nullptr;
 static Zenith_Vector<Zenith_TerrainComponent*> g_xTerrainComponentsToRender;
 
-static Flux_CommandList g_axPerThreadTerrainCommandLists[uNUM_TASKS] {"Terrain", "Terrain", "Terrain", "Terrain"};
+static Flux_CommandList g_xTerrainCommandList("Terrain");
 
 static Flux_Shader s_xTerrainGBufferShader;
 static Flux_Pipeline s_xTerrainGBufferPipeline;
@@ -39,7 +37,6 @@ struct TerrainConstants
 static Flux_DynamicConstantBuffer s_xTerrainConstantsBuffer;
 
 DEBUGVAR bool dbg_bEnableTerrain = true;
-DEBUGVAR bool dbg_bEnableWater = true;
 DEBUGVAR bool dbg_bWireframe = false;
 DEBUGVAR float dbg_fVisibilityThresholdMultiplier = 0.5f;
 DEBUGVAR bool dbg_bIgnoreVisibilityCheck = false;
@@ -140,11 +137,10 @@ void Flux_Terrain::Initialise()
 		), s_xTerrainConstantsBuffer);
 
 	//#TO_TODO: delete this on shutdown
-	g_pxRenderTask = new Zenith_TaskArray(ZENITH_PROFILE_INDEX__FLUX_TERRAIN, Flux_Terrain::RenderToGBuffer, nullptr, uNUM_TASKS);
+	g_pxRenderTask = new Zenith_Task(ZENITH_PROFILE_INDEX__FLUX_TERRAIN, Flux_Terrain::RenderToGBuffer, nullptr);
 
 #ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_DebugVariables::AddBoolean({ "Render", "Enable", "Terrain" }, dbg_bEnableTerrain);
-	Zenith_DebugVariables::AddBoolean({ "Render", "Enable", "Water" }, dbg_bEnableWater);
 	Zenith_DebugVariables::AddFloat({ "Render", "Terrain", "UV Scale" }, s_xTerrainConstants.m_fUVScale, 0., 10.);
 	Zenith_DebugVariables::AddBoolean({ "Render", "Terrain", "Wireframe" }, dbg_bWireframe);
 	Zenith_DebugVariables::AddFloat({ "Render", "Terrain", "Visiblity Multiplier" }, dbg_fVisibilityThresholdMultiplier, 0.1f, 1.f);
@@ -163,7 +159,7 @@ void Flux_Terrain::SubmitRenderToGBufferTask()
 
 	Flux_MemoryManager::UploadBufferData(s_xTerrainConstantsBuffer.GetBuffer().m_xVRAMHandle, &s_xTerrainConstants, sizeof(TerrainConstants));
 
-	Zenith_TaskSystem::SubmitTaskArray(g_pxRenderTask);
+	Zenith_TaskSystem::SubmitTask(g_pxRenderTask);
 }
 
 void Flux_Terrain::WaitForRenderToGBufferTask()
@@ -171,62 +167,48 @@ void Flux_Terrain::WaitForRenderToGBufferTask()
 	g_pxRenderTask->WaitUntilComplete();
 }
 
-void Flux_Terrain::RenderToGBuffer(void*, u_int uInvocationIndex, u_int uNumInvocations)
+void Flux_Terrain::RenderToGBuffer(void*)
 {
-	if (!dbg_bEnableTerrain && !dbg_bEnableWater)
+	if (!dbg_bEnableTerrain)
 	{
 		return;
 	}
 
-	const u_int uTotalTerrains = g_xTerrainComponentsToRender.GetSize();
-	
-	if (uInvocationIndex >= uTotalTerrains)
-	{
-		return;
-	}
+	g_xTerrainCommandList.Reset(false);
 
-	const u_int uTerrainsPerInvocation = (uTotalTerrains + uNumInvocations - 1) / uNumInvocations;
-	const u_int uStartIndex = uInvocationIndex * uTerrainsPerInvocation;
-	const u_int uEndIndex = (uStartIndex + uTerrainsPerInvocation < uTotalTerrains) ? 
-		uStartIndex + uTerrainsPerInvocation : uTotalTerrains;
+	g_xTerrainCommandList.AddCommand<Flux_CommandSetPipeline>(dbg_bWireframe ? &s_xTerrainWireframePipeline : &s_xTerrainGBufferPipeline);
 
-	Flux_CommandList& xTerrainCmdList = g_axPerThreadTerrainCommandLists[uInvocationIndex];
+	g_xTerrainCommandList.AddCommand<Flux_CommandBeginBind>(0);
+	g_xTerrainCommandList.AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer().m_xCBV, 0);
+	g_xTerrainCommandList.AddCommand<Flux_CommandBindCBV>(&s_xTerrainConstantsBuffer.GetBuffer().m_xCBV, 1);
 
-	xTerrainCmdList.Reset(false);
+	g_xTerrainCommandList.AddCommand<Flux_CommandBeginBind>(1);
 
-	xTerrainCmdList.AddCommand<Flux_CommandSetPipeline>(dbg_bWireframe ? &s_xTerrainWireframePipeline : &s_xTerrainGBufferPipeline);
-
-	xTerrainCmdList.AddCommand<Flux_CommandBeginBind>(0);
-	xTerrainCmdList.AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer().m_xCBV, 0);
-	xTerrainCmdList.AddCommand<Flux_CommandBindCBV>(&s_xTerrainConstantsBuffer.GetBuffer().m_xCBV, 1);
-
-	xTerrainCmdList.AddCommand<Flux_CommandBeginBind>(1);
-
-	for (u_int u = uStartIndex; u < uEndIndex; u++)
+	for (u_int u = 0; u < g_xTerrainComponentsToRender.GetSize(); u++)
 	{
 		Zenith_TerrainComponent* pxTerrain = g_xTerrainComponentsToRender.Get(u);
 
 		// Note: Frustum culling already performed in SubmitRenderToGBufferTask()
 		// No per-terrain visibility check needed here
 
-		xTerrainCmdList.AddCommand<Flux_CommandSetVertexBuffer>(&pxTerrain->GetRenderMeshGeometry().GetVertexBuffer());
-		xTerrainCmdList.AddCommand<Flux_CommandSetIndexBuffer>(&pxTerrain->GetRenderMeshGeometry().GetIndexBuffer());
+		g_xTerrainCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&pxTerrain->GetRenderMeshGeometry().GetVertexBuffer());
+		g_xTerrainCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&pxTerrain->GetRenderMeshGeometry().GetIndexBuffer());
 
 		const Flux_Material& xMaterial0 = pxTerrain->GetMaterial0();
 		const Flux_Material& xMaterial1 = pxTerrain->GetMaterial1();
 
-		xTerrainCmdList.AddCommand<Flux_CommandBindSRV>(&xMaterial0.GetDiffuse()->m_xSRV, 0);
-		xTerrainCmdList.AddCommand<Flux_CommandBindSRV>(&xMaterial0.GetNormal()->m_xSRV, 1);
-		xTerrainCmdList.AddCommand<Flux_CommandBindSRV>(&xMaterial0.GetRoughnessMetallic()->m_xSRV, 2);
+		g_xTerrainCommandList.AddCommand<Flux_CommandBindSRV>(&xMaterial0.GetDiffuse()->m_xSRV, 0);
+		g_xTerrainCommandList.AddCommand<Flux_CommandBindSRV>(&xMaterial0.GetNormal()->m_xSRV, 1);
+		g_xTerrainCommandList.AddCommand<Flux_CommandBindSRV>(&xMaterial0.GetRoughnessMetallic()->m_xSRV, 2);
 
-		xTerrainCmdList.AddCommand<Flux_CommandBindSRV>(&xMaterial1.GetDiffuse()->m_xSRV, 3);
-		xTerrainCmdList.AddCommand<Flux_CommandBindSRV>(&xMaterial1.GetNormal()->m_xSRV, 4);
-		xTerrainCmdList.AddCommand<Flux_CommandBindSRV>(&xMaterial1.GetRoughnessMetallic()->m_xSRV, 5);
+		g_xTerrainCommandList.AddCommand<Flux_CommandBindSRV>(&xMaterial1.GetDiffuse()->m_xSRV, 3);
+		g_xTerrainCommandList.AddCommand<Flux_CommandBindSRV>(&xMaterial1.GetNormal()->m_xSRV, 4);
+		g_xTerrainCommandList.AddCommand<Flux_CommandBindSRV>(&xMaterial1.GetRoughnessMetallic()->m_xSRV, 5);
 
-		xTerrainCmdList.AddCommand<Flux_CommandDrawIndexed>(pxTerrain->GetRenderMeshGeometry().GetNumIndices());
+		g_xTerrainCommandList.AddCommand<Flux_CommandDrawIndexed>(pxTerrain->GetRenderMeshGeometry().GetNumIndices());
 	}
 
-	Flux::SubmitCommandList(&xTerrainCmdList, Flux_Graphics::s_xMRTTarget, RENDER_ORDER_TERRAIN);
+	Flux::SubmitCommandList(&g_xTerrainCommandList, Flux_Graphics::s_xMRTTarget, RENDER_ORDER_TERRAIN);
 }
 
 void Flux_Terrain::RenderToShadowMap(Flux_CommandList& xCmdBuf)
