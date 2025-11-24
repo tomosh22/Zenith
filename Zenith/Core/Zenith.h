@@ -106,7 +106,7 @@ struct std::hash<Zenith_GUID>
 };
 
 #define ZENITH_MAX_TEXTURES 1024
-#define ZENITH_MAX_MESHES 16384
+#define ZENITH_MAX_MESHES 16384*2
 #define ZENITH_MAX_MATERIALS 1024
 
 #include "Memory/Zenith_MemoryManagement_Disabled.h"

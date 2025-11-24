@@ -5,6 +5,7 @@
 #include "Profiling/Zenith_Profiling.h"
 #include "DataStream/Zenith_DataStream.h"
 #include "AssetHandling/Zenith_AssetHandler.h"
+#include <fstream>
 
 Zenith_TerrainComponent::Zenith_TerrainComponent(Flux_Material& xMaterial0, Flux_Material& xMaterial1, Zenith_Entity& xEntity)
 	: m_pxMaterial0(&xMaterial0)
@@ -13,21 +14,49 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Flux_Material& xMaterial0, Flux
 {
 #pragma region Render
 {
-	for (uint32_t x = 0; x < TERRAIN_EXPORT_DIMS; x++)
+	// Define LOD suffixes
+	const char* LOD_SUFFIXES[4] = { "", "_LOD1", "_LOD2", "_LOD3" };
+	
+	// Load all chunks for all LOD levels
+	for (uint32_t uLOD = 0; uLOD < 4; ++uLOD)
 	{
-		for (uint32_t y = 0; y < TERRAIN_EXPORT_DIMS; y++)
+		for (uint32_t x = 0; x < TERRAIN_EXPORT_DIMS; x++)
 		{
-			std::string strSuffix = std::to_string(x) + "_" + std::to_string(y);
-
-			Zenith_AssetHandler::AddMesh("Terrain_Render" + strSuffix, std::string(ASSETS_ROOT"Terrain/Render_" + strSuffix + ".zmsh").c_str());
+			for (uint32_t y = 0; y < TERRAIN_EXPORT_DIMS; y++)
+			{
+				std::string strSuffix = std::to_string(x) + "_" + std::to_string(y);
+				std::string strLODMeshName = std::string("Terrain_Render") + LOD_SUFFIXES[uLOD] + strSuffix;
+				std::string strLODPath = std::string(ASSETS_ROOT"Terrain/Render") + LOD_SUFFIXES[uLOD] + "_" + strSuffix + ".zmsh";
+				
+				// Check if LOD file exists, fallback to LOD0 if not
+				std::ifstream lodFile(strLODPath);
+				if (!lodFile.good() && uLOD > 0)
+				{
+					// Use LOD0 as fallback
+					strLODPath = std::string(ASSETS_ROOT"Terrain/Render_") + strSuffix + ".zmsh";
+					Zenith_Log("WARNING: LOD%u not found for chunk (%u,%u), using LOD0 as fallback", uLOD, x, y);
+				}
+				
+				Zenith_AssetHandler::AddMesh(strLODMeshName, strLODPath.c_str());
+			}
 		}
 	}
 
+	// Start with LOD0 chunk 0,0 as base
 	Flux_MeshGeometry& xRenderGeometry = Zenith_AssetHandler::GetMesh("Terrain_Render0_0");
 
-	const u_int64 ulTotalVertexDataSize = xRenderGeometry.GetVertexDataSize() * TERRAIN_EXPORT_DIMS * TERRAIN_EXPORT_DIMS;
-	const u_int64 ulTotalIndexDataSize = xRenderGeometry.GetIndexDataSize() * TERRAIN_EXPORT_DIMS * TERRAIN_EXPORT_DIMS;
-	const u_int64 ulTotalPositionDataSize = xRenderGeometry.m_uNumVerts * sizeof(Zenith_Maths::Vector3) * TERRAIN_EXPORT_DIMS * TERRAIN_EXPORT_DIMS;
+	// Calculate total size needed for all chunks and all LODs
+	// We need to reserve space for: (num_chunks * num_LODs) worth of data
+	// Each LOD uses progressively less data: LOD1=1/4, LOD2=1/16, LOD3=1/64
+	const u_int64 ulSingleChunkVertexSize = xRenderGeometry.GetVertexDataSize();
+	const u_int64 ulSingleChunkIndexSize = xRenderGeometry.GetIndexDataSize();
+	const u_int64 ulSingleChunkPositionSize = xRenderGeometry.m_uNumVerts * sizeof(Zenith_Maths::Vector3);
+	
+	// Approximate total size (LOD0 + LOD1/4 + LOD2/16 + LOD3/64) ? 1.33x LOD0
+	const float fLODSizeMultiplier = 1.0f + 0.25f + 0.0625f + 0.015625f; // ? 1.33
+	const u_int64 ulTotalVertexDataSize = static_cast<u_int64>(ulSingleChunkVertexSize * TERRAIN_EXPORT_DIMS * TERRAIN_EXPORT_DIMS * fLODSizeMultiplier);
+	const u_int64 ulTotalIndexDataSize = static_cast<u_int64>(ulSingleChunkIndexSize * TERRAIN_EXPORT_DIMS * TERRAIN_EXPORT_DIMS * fLODSizeMultiplier);
+	const u_int64 ulTotalPositionDataSize = static_cast<u_int64>(ulSingleChunkPositionSize * TERRAIN_EXPORT_DIMS * TERRAIN_EXPORT_DIMS * fLODSizeMultiplier);
 
 	xRenderGeometry.m_pVertexData = static_cast<u_int8*>(Zenith_MemoryManagement::Reallocate(xRenderGeometry.m_pVertexData, ulTotalVertexDataSize));
 	xRenderGeometry.m_ulReservedVertexDataSize = ulTotalVertexDataSize;
@@ -35,21 +64,34 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Flux_Material& xMaterial0, Flux
 	xRenderGeometry.m_puIndices = static_cast<Flux_MeshGeometry::IndexType*>(Zenith_MemoryManagement::Reallocate(xRenderGeometry.m_puIndices, ulTotalIndexDataSize));
 	xRenderGeometry.m_ulReservedIndexDataSize = ulTotalIndexDataSize;
 
+	// Combine all chunks for all LOD levels
 	for (uint32_t x = 0; x < TERRAIN_EXPORT_DIMS; x++)
 	{
 		for (uint32_t y = 0; y < TERRAIN_EXPORT_DIMS; y++)
 		{
-			if(x == 0 && y == 0) continue;
+			for (uint32_t uLOD = 0; uLOD < 4; ++uLOD)
+			{
+				// Skip the first chunk's LOD0 (already loaded as base)
+				if (x == 0 && y == 0 && uLOD == 0) continue;
 
-			std::string strRenderMeshName = "Terrain_Render" + std::to_string(x) + "_" + std::to_string(y);
-			Flux_MeshGeometry& xTerrainRenderMesh = Zenith_AssetHandler::GetMesh(strRenderMeshName);
+				std::string strSuffix = std::to_string(x) + "_" + std::to_string(y);
+				std::string strLODMeshName = std::string("Terrain_Render") + LOD_SUFFIXES[uLOD] + strSuffix;
+				Flux_MeshGeometry& xTerrainRenderMesh = Zenith_AssetHandler::GetMesh(strLODMeshName);
 
-			Flux_MeshGeometry::Combine(xRenderGeometry, xTerrainRenderMesh);
-			Zenith_Log("Combined %u %u", x, y);
+				Flux_MeshGeometry::Combine(xRenderGeometry, xTerrainRenderMesh);
+				
+				if ((x * TERRAIN_EXPORT_DIMS + y) % 256 == 0 || uLOD == 0)
+				{
+					Zenith_Log("Combined LOD%u chunk (%u,%u)", uLOD, x, y);
+				}
 
-			Zenith_AssetHandler::DeleteMesh(strRenderMeshName);
+				Zenith_AssetHandler::DeleteMesh(strLODMeshName);
+			}
 		}
 	}
+
+	Zenith_Log("Terrain: Combined %u chunks × 4 LOD levels into unified vertex/index buffers", TERRAIN_EXPORT_DIMS * TERRAIN_EXPORT_DIMS);
+	Zenith_Log("Terrain: Total vertices: %u, Total indices: %u", xRenderGeometry.m_uNumVerts, xRenderGeometry.m_uNumIndices);
 
 	Flux_MemoryManager::InitialiseVertexBuffer(xRenderGeometry.GetVertexData(), xRenderGeometry.GetVertexDataSize(), xRenderGeometry.m_xVertexBuffer);
 	Flux_MemoryManager::InitialiseIndexBuffer(xRenderGeometry.GetIndexData(), xRenderGeometry.GetIndexDataSize(), xRenderGeometry.m_xIndexBuffer);

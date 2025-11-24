@@ -18,7 +18,7 @@ class Flux_ConstantBuffer;
 class Flux_IndirectBuffer;
 class Flux_ReadWriteBuffer;
 class Zenith_Vulkan_CommandBuffer;
-constexpr uint64_t g_uStagingPoolSize = 1024u * 1024u * 1024u;
+constexpr uint64_t g_uStagingPoolSize = 2048u * 1024u * 1024u;
 #define ALIGN(size, align) ((size + align - 1) / align) * align
 
 class Zenith_Vulkan_MemoryManager

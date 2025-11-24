@@ -289,7 +289,7 @@ class Flux_CommandDrawIndexedIndirectCount
 public:
 	static constexpr Flux_CommandType m_eType = FLUX_COMMANDTYPE__DRAW_INDEXED_INDIRECT_COUNT;
 
-	Flux_CommandDrawIndexedIndirectCount(const Flux_IndirectBuffer* pxIndirectBuffer, const Flux_ReadWriteBuffer* pxCountBuffer, u_int uMaxDrawCount, u_int uIndirectOffset = 0, u_int uCountOffset = 0, u_int uStride = 20)
+	Flux_CommandDrawIndexedIndirectCount(const Flux_IndirectBuffer* pxIndirectBuffer, const Flux_IndirectBuffer* pxCountBuffer, u_int uMaxDrawCount, u_int uIndirectOffset = 0, u_int uCountOffset = 0, u_int uStride = 20)
 		: m_pxIndirectBuffer(pxIndirectBuffer)
 		, m_pxCountBuffer(pxCountBuffer)
 		, m_uMaxDrawCount(uMaxDrawCount)
@@ -303,7 +303,7 @@ public:
 	}
 
 	const Flux_IndirectBuffer* m_pxIndirectBuffer;
-	const Flux_ReadWriteBuffer* m_pxCountBuffer;
+	const Flux_IndirectBuffer* m_pxCountBuffer;
 	u_int m_uMaxDrawCount;
 	u_int m_uIndirectOffset;
 	u_int m_uCountOffset;

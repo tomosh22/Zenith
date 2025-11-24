@@ -402,7 +402,7 @@ void ExportMesh(u_int uDensityDivisor, std::string strName)
 				xSubMesh.m_puIndices[indexIndex++] = b;
 				xSubMesh.m_puIndices[indexIndex++] = c;
 				xSubMesh.m_puIndices[indexIndex++] = a;
-				xSubMesh.m_puIndices[indexIndex++] = d;
+			 xSubMesh.m_puIndices[indexIndex++] = d;
 				Zenith_Assert(indexIndex <= xSubMesh.m_uNumIndices, "Index index too big");
 			}
 
@@ -417,6 +417,19 @@ void ExportMesh(u_int uDensityDivisor, std::string strName)
 
 void ExportHeightmap()
 {
+	// Export full detail render meshes (LOD0)
 	ExportMesh(1, "Render");
+	
+	// Export LOD1 meshes (2x downsampled - skip every other vertex)
+	ExportMesh(2, "Render_LOD1");
+	
+	// Export LOD2 meshes (4x downsampled - skip 3 out of 4 vertices)
+	ExportMesh(4, "Render_LOD2");
+	
+	// Export LOD3 meshes (8x downsampled - skip 7 out of 8 vertices)
+	ExportMesh(8, "Render_LOD3");
+	
+	// Export physics mesh (8x downsampled, already existed)
+	// Rename it to avoid confusion
 	ExportMesh(8, "Physics");
 }

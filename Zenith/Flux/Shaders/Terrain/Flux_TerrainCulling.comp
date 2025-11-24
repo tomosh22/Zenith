@@ -1,19 +1,29 @@
 #version 450
 
-// Compute shader for GPU-driven terrain chunk culling with front-to-back sorting
-// This runs once per terrain chunk, tests visibility, calculates distance, and writes sorted draw commands
+// Compute shader for GPU-driven terrain chunk culling with LOD selection and front-to-back sorting
+// This runs once per terrain chunk, tests visibility, selects appropriate LOD based on distance,
+// calculates distance, and writes sorted draw commands
 
 layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+// Number of LOD levels per chunk
+#define TERRAIN_LOD_COUNT 4
+
+// LOD data for a single level
+struct LODData
+{
+    uint firstIndex;
+    uint indexCount;
+    uint vertexOffset;
+    float maxDistanceSq;  // Maximum distance squared at which this LOD is used
+};
 
 // Chunk data structure - matches CPU-side TerrainChunkData
 struct TerrainChunkData
 {
-    vec4 aabbMin;  // xyz = min corner, w = padding
-    vec4 aabbMax;  // xyz = max corner, w = padding
-    uint firstIndex;
-    uint indexCount;
-    uint vertexOffset;
-    uint padding;
+    vec4 aabbMin;               // xyz = min corner, w = padding
+    vec4 aabbMax;               // xyz = max corner, w = padding
+    LODData lods[TERRAIN_LOD_COUNT];  // LOD mesh data (LOD0=highest detail)
 };
 
 // Indirect draw command structure - matches VkDrawIndexedIndirectCommand
@@ -36,7 +46,8 @@ struct FrustumPlane
 struct VisibleChunkData
 {
     uint chunkIndex;
-    float distanceSquared;  // Distance squared to camera (for front-to-back sorting)
+    uint lodLevel;              // Selected LOD level (0-3)
+    float distanceSquared;      // Distance squared to camera (for front-to-back sorting)
 };
 
 // Input: chunk data (read-only)
@@ -100,6 +111,23 @@ bool testAABBFrustum(vec3 aabbMin, vec3 aabbMax)
     return true;
 }
 
+// Select appropriate LOD level based on distance squared
+uint selectLOD(float distanceSq, TerrainChunkData chunk)
+{
+    // LOD selection based on distance thresholds
+    // LODs are ordered from highest detail (LOD0) to lowest (LOD3)
+    for (uint i = 0; i < TERRAIN_LOD_COUNT; ++i)
+    {
+        if (distanceSq < chunk.lods[i].maxDistanceSq)
+        {
+            return i;
+        }
+    }
+    
+    // If distance exceeds all thresholds, use lowest LOD
+    return TERRAIN_LOD_COUNT - 1;
+}
+
 void main()
 {
     uint chunkIndex = gl_GlobalInvocationID.x;
@@ -124,16 +152,20 @@ void main()
     
     if (isVisible)
     {
-        // Calculate distance squared from camera to chunk center (for sorting)
+        // Calculate distance squared from camera to chunk center (for LOD selection and sorting)
         vec3 chunkCenter = (chunk.aabbMin.xyz + chunk.aabbMax.xyz) * 0.5;
         vec3 toCameraVec = cameraPosition.xyz - chunkCenter;
         float distSq = dot(toCameraVec, toCameraVec);
+        
+        // Select appropriate LOD level based on distance
+        uint lodLevel = selectLOD(distSq, chunk);
         
         // Add to local visible list
         uint localSlot = atomicAdd(s_localVisibleCount, 1);
         if (localSlot < 64)
         {
             s_visibleChunks[localSlot].chunkIndex = chunkIndex;
+            s_visibleChunks[localSlot].lodLevel = lodLevel;
             s_visibleChunks[localSlot].distanceSquared = distSq;
         }
     }
@@ -147,6 +179,7 @@ void main()
         uint count = min(s_localVisibleCount, 64);
         
         // Insertion sort: front-to-back (closest first)
+        // This improves depth buffer efficiency and early-Z culling
         for (uint i = 1; i < count; ++i)
         {
             VisibleChunkData key = s_visibleChunks[i];
@@ -160,18 +193,22 @@ void main()
             s_visibleChunks[j + 1] = key;
         }
         
-        // Write sorted visible chunks to output buffer
+        // Write sorted visible chunks to output buffer with selected LOD
         uint baseIndex = atomicAdd(visibleCount, count);
         for (uint i = 0; i < count; ++i)
         {
             uint outIndex = baseIndex + i;
             uint srcChunkIndex = s_visibleChunks[i].chunkIndex;
-            TerrainChunkData srcChunk = chunks[srcChunkIndex];
+            uint srcLODLevel = s_visibleChunks[i].lodLevel;
             
-            drawCommands[outIndex].indexCount = srcChunk.indexCount;
+            TerrainChunkData srcChunk = chunks[srcChunkIndex];
+            LODData selectedLOD = srcChunk.lods[srcLODLevel];
+            
+            // Write indirect draw command with selected LOD mesh data
+            drawCommands[outIndex].indexCount = selectedLOD.indexCount;
             drawCommands[outIndex].instanceCount = 1;
-            drawCommands[outIndex].firstIndex = srcChunk.firstIndex;
-            drawCommands[outIndex].vertexOffset = int(srcChunk.vertexOffset);
+            drawCommands[outIndex].firstIndex = selectedLOD.firstIndex;
+            drawCommands[outIndex].vertexOffset = int(selectedLOD.vertexOffset);
             drawCommands[outIndex].firstInstance = 0;
         }
     }
