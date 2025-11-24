@@ -159,6 +159,28 @@ void Zenith_Vulkan_MemoryManager::InitialiseIndexBuffer(const void* pData, size_
 	}
 }
 
+void Zenith_Vulkan_MemoryManager::InitialiseConstantBuffer(const void* pData, size_t uSize, Flux_ConstantBuffer& xBufferOut)
+{
+	Flux_VRAMHandle xHandle = CreateBufferVRAM(uSize, static_cast<MemoryFlags>(1 << MEMORY_FLAGS__SHADER_READ), MEMORY_RESIDENCY_CPU);
+	Flux_Buffer& xBuffer = xBufferOut.GetBuffer();
+	xBuffer.m_xVRAMHandle = xHandle;
+	xBuffer.m_ulSize = uSize;
+
+	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xHandle);
+	Zenith_Assert(pxVRAM, "Invalid buffer VRAM handle");
+
+	Flux_ConstantBufferView& xCBV = xBufferOut.GetCBV();
+	xCBV.m_xBufferInfo.setBuffer(pxVRAM->GetBuffer());
+	xCBV.m_xBufferInfo.setOffset(0);
+	xCBV.m_xBufferInfo.setRange(uSize);
+	xCBV.m_xVRAMHandle = xHandle;
+
+	if (pData)
+	{
+		UploadBufferData(xHandle, pData, uSize);
+	}
+}
+
 void Zenith_Vulkan_MemoryManager::InitialiseDynamicConstantBuffer(const void* pData, size_t uSize, Flux_DynamicConstantBuffer& xBufferOut)
 {
 	for (uint32_t u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
@@ -171,15 +193,53 @@ void Zenith_Vulkan_MemoryManager::InitialiseDynamicConstantBuffer(const void* pD
 		Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xHandle);
 		Zenith_Assert(pxVRAM, "Invalid buffer VRAM handle");
 
-		xBuffer.m_xCBV.m_xBufferInfo.setBuffer(pxVRAM->GetBuffer());
-		xBuffer.m_xCBV.m_xBufferInfo.setOffset(0);
-		xBuffer.m_xCBV.m_xBufferInfo.setRange(uSize);
-		xBuffer.m_xCBV.m_xVRAMHandle = xHandle;
+		Flux_ConstantBufferView& xCBV = xBufferOut.GetCBVForFrameInFlight(u);
+		xCBV.m_xBufferInfo.setBuffer(pxVRAM->GetBuffer());
+		xCBV.m_xBufferInfo.setOffset(0);
+		xCBV.m_xBufferInfo.setRange(uSize);
+		xCBV.m_xVRAMHandle = xHandle;
 		
 		if (pData)
 		{
 			UploadBufferData(xHandle, pData, uSize);
 		}
+	}
+}
+
+void Zenith_Vulkan_MemoryManager::InitialiseIndirectBuffer(size_t uSize, Flux_IndirectBuffer& xBufferOut)
+{
+	Flux_VRAMHandle xHandle = CreateBufferVRAM(uSize, static_cast<MemoryFlags>(1 << MEMORY_FLAGS__INDIRECT_BUFFER | 1 << MEMORY_FLAGS__UNORDERED_ACCESS), MEMORY_RESIDENCY_GPU);
+	xBufferOut.GetBuffer().m_xVRAMHandle = xHandle;
+	xBufferOut.GetBuffer().m_ulSize = uSize;
+
+	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xHandle);
+	Zenith_Assert(pxVRAM, "Invalid buffer VRAM handle");
+
+	Flux_UnorderedAccessView_Buffer& xUAV = xBufferOut.GetUAV();
+	xUAV.m_xBufferInfo.setBuffer(pxVRAM->GetBuffer());
+	xUAV.m_xBufferInfo.setOffset(0);
+	xUAV.m_xBufferInfo.setRange(uSize);
+	xUAV.m_xVRAMHandle = xHandle;
+}
+
+void Zenith_Vulkan_MemoryManager::InitialiseReadWriteBuffer(const void* pData, size_t uSize, Flux_ReadWriteBuffer& xBufferOut)
+{
+	Flux_VRAMHandle xHandle = CreateBufferVRAM(uSize, static_cast<MemoryFlags>(1 << MEMORY_FLAGS__UNORDERED_ACCESS | 1 << MEMORY_FLAGS__SHADER_READ), MEMORY_RESIDENCY_GPU);
+	xBufferOut.GetBuffer().m_xVRAMHandle = xHandle;
+	xBufferOut.GetBuffer().m_ulSize = uSize;
+
+	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xHandle);
+	Zenith_Assert(pxVRAM, "Invalid buffer VRAM handle");
+
+	Flux_UnorderedAccessView_Buffer& xUAV = xBufferOut.GetUAV();
+	xUAV.m_xBufferInfo.setBuffer(pxVRAM->GetBuffer());
+	xUAV.m_xBufferInfo.setOffset(0);
+	xUAV.m_xBufferInfo.setRange(uSize);
+	xUAV.m_xVRAMHandle = xHandle;
+	
+	if (pData)
+	{
+		UploadBufferData(xHandle, pData, uSize);
 	}
 }
 

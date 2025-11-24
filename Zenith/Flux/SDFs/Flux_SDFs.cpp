@@ -107,8 +107,8 @@ void Flux_SDFs::Render(void*)
 	g_xCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
 
 	g_xCommandList.AddCommand<Flux_CommandBeginBind>(0);
-	g_xCommandList.AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer().m_xCBV, 0);
-	g_xCommandList.AddCommand<Flux_CommandBindCBV>(&s_xSpheresBuffer.GetBuffer().m_xCBV, 1);
+	g_xCommandList.AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
+	g_xCommandList.AddCommand<Flux_CommandBindCBV>(&s_xSpheresBuffer.GetCBV(), 1);
 
 	g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(6);
 

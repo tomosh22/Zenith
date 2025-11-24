@@ -10,20 +10,24 @@
 class Flux_VertexBuffer;
 class Flux_Texture;
 class Flux_DynamicVertexBuffer;
+class Flux_IndirectBuffer;
 class Flux_IndexBuffer;
 class Zenith_Vulkan_Pipeline;
 class Zenith_Vulkan_Sampler;
 struct Flux_TargetSetup;
 struct Flux_Buffer;
+struct Flux_ReadWriteBuffer;
 struct Flux_ConstantBufferView;
 struct Flux_ShaderResourceView;
-struct Flux_UnorderedAccessView;
+struct Flux_UnorderedAccessView_Texture;
+struct Flux_UnorderedAccessView_Buffer;
 struct Flux_RenderTargetView;
 struct Flux_DepthStencilView;
 
 struct DescSetBindings {
 	const Flux_ShaderResourceView* m_xSRVs[MAX_BINDINGS];
-	const Flux_UnorderedAccessView* m_xUAVs[MAX_BINDINGS];
+	const Flux_UnorderedAccessView_Texture* m_xUAV_Textures[MAX_BINDINGS];
+	const Flux_UnorderedAccessView_Buffer* m_xUAV_Buffers[MAX_BINDINGS];
 	const Flux_ConstantBufferView* m_xCBVs[MAX_BINDINGS];
 
 	Zenith_Vulkan_Sampler* m_apxSamplers[MAX_BINDINGS];
@@ -50,13 +54,15 @@ public:
 	void SetIndexBuffer(const Flux_IndexBuffer& xIndexBuffer);
 	void Draw(uint32_t uNumVerts);
 	void DrawIndexed(uint32_t uNumIndices, uint32_t uNumInstances = 1, uint32_t uVertexOffset = 0, uint32_t uIndexOffset = 0, uint32_t uInstanceOffset = 0);
-	void DrawIndexedIndirect(const Flux_Buffer* pxIndirectBuffer, uint32_t uDrawCount, uint32_t uOffset = 0, uint32_t uStride = 20);
+	void DrawIndexedIndirect(const Flux_IndirectBuffer* pxIndirectBuffer, uint32_t uDrawCount, uint32_t uOffset = 0, uint32_t uStride = 20);
+	void DrawIndexedIndirectCount(const Flux_IndirectBuffer* pxIndirectBuffer, const Flux_ReadWriteBuffer* pxCountBuffer, uint32_t uMaxDrawCount, uint32_t uIndirectOffset = 0, uint32_t uCountOffset = 0, uint32_t uStride = 20);
 	void BeginRenderPass(Flux_TargetSetup& xTargetSetup, bool bClearColour = false, bool bClearDepth = false, bool bClearStencil = false);
 	void SetPipeline(Zenith_Vulkan_Pipeline* pxPipeline);
 	
 	// Direct3D-style view binding methods
 	void BindSRV(const Flux_ShaderResourceView* pxSRV, uint32_t uBindPoint, Zenith_Vulkan_Sampler* pxSampler = nullptr);
-	void BindUAV(const Flux_UnorderedAccessView* pxUAV, uint32_t uBindPoint);
+	void BindUAV_Texture(const Flux_UnorderedAccessView_Texture* pxUAV, uint32_t uBindPoint);
+	void BindUAV_Buffer(const Flux_UnorderedAccessView_Buffer* pxUAV, uint32_t uBindPoint);
 	void BindCBV(const Flux_ConstantBufferView* pxCBV, uint32_t uBindPoint);
 
 	void BindAccelerationStruct(void* pxStruct, uint32_t uBindPoint);

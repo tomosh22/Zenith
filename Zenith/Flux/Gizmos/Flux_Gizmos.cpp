@@ -150,7 +150,7 @@ void Flux_Gizmos::Render(void*)
 
 	// Bind frame constants (set 0, binding 0)
 	s_xCommandList.AddCommand<Flux_CommandBeginBind>(0);
-	s_xCommandList.AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer().m_xCBV, 0);
+	s_xCommandList.AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
 
 	// Render each gizmo component
 	for (uint32_t i = 0; i < pxGeometry->GetSize(); ++i)

@@ -14,6 +14,9 @@ class Flux_IndexBuffer;
 class Flux_SurfaceInfo;
 class Flux_VRAMHandle;
 class Flux_DynamicConstantBuffer;
+class Flux_ConstantBuffer;
+class Flux_IndirectBuffer;
+class Flux_ReadWriteBuffer;
 class Zenith_Vulkan_CommandBuffer;
 constexpr uint64_t g_uStagingPoolSize = 1024u * 1024u * 1024u;
 #define ALIGN(size, align) ((size + align - 1) / align) * align
@@ -39,7 +42,10 @@ public:
 	static void InitialiseVertexBuffer(const void* pData, size_t uSize, Flux_VertexBuffer& xBufferOut, bool bDeviceLocal = true);
 	static void InitialiseDynamicVertexBuffer(const void* pData, size_t uSize, Flux_DynamicVertexBuffer& xBufferOut, bool bDeviceLocal = true);
 	static void InitialiseIndexBuffer(const void* pData, size_t uSize, Flux_IndexBuffer& xBufferOut);
+	static void InitialiseConstantBuffer(const void* pData, size_t uSize, Flux_ConstantBuffer& xBufferOut);
 	static void InitialiseDynamicConstantBuffer(const void* pData, size_t uSize, Flux_DynamicConstantBuffer& xBufferOut);
+	static void InitialiseIndirectBuffer(size_t uSize, Flux_IndirectBuffer& xBufferOut);
+	static void InitialiseReadWriteBuffer(const void* pData, size_t uSize, Flux_ReadWriteBuffer& xBufferOut);
 
 	static void UploadBufferData(Flux_VRAMHandle xBufferHandle, const void* pData, size_t uSize);
 

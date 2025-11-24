@@ -556,6 +556,9 @@
     <ClCompile Include="..\..\..\Zenith\Flux\Terrain\Flux_Terrain.cpp">
       <Filter>Zenith\Flux\Terrain</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\..\Zenith\Flux\Terrain\Flux_TerrainCulling.cpp">
+      <Filter>Zenith\Flux\Terrain</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\..\Zenith\Flux\Text\Flux_Text.cpp">
       <Filter>Zenith\Flux\Text</Filter>
     </ClCompile>
@@ -1827,6 +1830,9 @@
     <ClInclude Include="..\..\..\Zenith\Flux\Shaders\StaticMeshes\Flux_StaticMeshes_VertCommon.fxh">
       <Filter>Zenith\Flux\Shaders\StaticMeshes</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Terrain\Flux_TerrainCulling.comp">
+      <Filter>Zenith\Flux\Shaders\Terrain</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Terrain\Flux_Terrain_FragCommon.fxh">
       <Filter>Zenith\Flux\Shaders\Terrain</Filter>
     </ClInclude>
@@ -1843,9 +1849,6 @@
       <Filter>Zenith\Flux\Shaders\Terrain</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Terrain\Flux_Terrain_VertCommon.fxh">
-      <Filter>Zenith\Flux\Shaders\Terrain</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Terrain\TerrainCulling.comp">
       <Filter>Zenith\Flux\Shaders\Terrain</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Text\Flux_Text.frag">
@@ -1873,6 +1876,9 @@
       <Filter>Zenith\Flux\StaticMeshes</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\Zenith\Flux\Terrain\Flux_Terrain.h">
+      <Filter>Zenith\Flux\Terrain</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\Flux\Terrain\Flux_TerrainCulling.h">
       <Filter>Zenith\Flux\Terrain</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\Zenith\Flux\Text\Flux_Text.h">

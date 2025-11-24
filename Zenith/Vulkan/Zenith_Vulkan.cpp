@@ -52,6 +52,7 @@ static const char* s_aszDeviceExtensions[] = {
 				VK_NV_RAY_TRACING_EXTENSION_NAME,
 #endif
 				VK_KHR_FRAGMENT_SHADER_BARYCENTRIC_EXTENSION_NAME,
+				VK_KHR_DRAW_INDIRECT_COUNT_EXTENSION_NAME
 };
 
 vk::Instance Zenith_Vulkan::s_xInstance;
@@ -638,6 +639,7 @@ void Zenith_Vulkan::CreateDevice()
 		.setSamplerAnisotropy(VK_TRUE)
 		.setTessellationShader(VK_TRUE)
 		.setDepthBiasClamp(VK_TRUE)
+		.setMultiDrawIndirect(VK_TRUE)
 		.setFillModeNonSolid(VK_TRUE);
 
 

@@ -122,40 +122,45 @@ struct Zenith_Frustum
 	 * Extract frustum planes from a view-projection matrix
 	 * This uses the Gribb-Hartmann method for extracting planes
 	 * from the combined view-projection matrix.
+	 * 
+	 * Planes should point INWARD (normals point toward the visible region).
 	 */
 	void ExtractFromViewProjection(const Zenith_Maths::Matrix4& xViewProj)
 	{
-		// Left plane: m[3] + m[0]
+		// GLM stores matrices in column-major order
+		// To extract row i: (xViewProj[0][i], xViewProj[1][i], xViewProj[2][i], xViewProj[3][i])
+
+		// Left plane: row3 + row0
 		m_axPlanes[0].m_xNormal.x = xViewProj[0][3] + xViewProj[0][0];
 		m_axPlanes[0].m_xNormal.y = xViewProj[1][3] + xViewProj[1][0];
 		m_axPlanes[0].m_xNormal.z = xViewProj[2][3] + xViewProj[2][0];
 		m_axPlanes[0].m_fDistance = xViewProj[3][3] + xViewProj[3][0];
 
-		// Right plane: m[3] - m[0]
+		// Right plane: row3 - row0
 		m_axPlanes[1].m_xNormal.x = xViewProj[0][3] - xViewProj[0][0];
 		m_axPlanes[1].m_xNormal.y = xViewProj[1][3] - xViewProj[1][0];
 		m_axPlanes[1].m_xNormal.z = xViewProj[2][3] - xViewProj[2][0];
 		m_axPlanes[1].m_fDistance = xViewProj[3][3] - xViewProj[3][0];
 
-		// Bottom plane: m[3] + m[1]
+		// Bottom plane: row3 + row1
 		m_axPlanes[2].m_xNormal.x = xViewProj[0][3] + xViewProj[0][1];
 		m_axPlanes[2].m_xNormal.y = xViewProj[1][3] + xViewProj[1][1];
 		m_axPlanes[2].m_xNormal.z = xViewProj[2][3] + xViewProj[2][1];
 		m_axPlanes[2].m_fDistance = xViewProj[3][3] + xViewProj[3][1];
 
-		// Top plane: m[3] - m[1]
+		// Top plane: row3 - row1
 		m_axPlanes[3].m_xNormal.x = xViewProj[0][3] - xViewProj[0][1];
 		m_axPlanes[3].m_xNormal.y = xViewProj[1][3] - xViewProj[1][1];
 		m_axPlanes[3].m_xNormal.z = xViewProj[2][3] - xViewProj[2][1];
 		m_axPlanes[3].m_fDistance = xViewProj[3][3] - xViewProj[3][1];
 
-		// Near plane: m[3] + m[2]
+		// Near plane: row3 + row2
 		m_axPlanes[4].m_xNormal.x = xViewProj[0][3] + xViewProj[0][2];
 		m_axPlanes[4].m_xNormal.y = xViewProj[1][3] + xViewProj[1][2];
 		m_axPlanes[4].m_xNormal.z = xViewProj[2][3] + xViewProj[2][2];
 		m_axPlanes[4].m_fDistance = xViewProj[3][3] + xViewProj[3][2];
 
-		// Far plane: m[3] - m[2]
+		// Far plane: row3 - row2
 		m_axPlanes[5].m_xNormal.x = xViewProj[0][3] - xViewProj[0][2];
 		m_axPlanes[5].m_xNormal.y = xViewProj[1][3] - xViewProj[1][2];
 		m_axPlanes[5].m_xNormal.z = xViewProj[2][3] - xViewProj[2][2];

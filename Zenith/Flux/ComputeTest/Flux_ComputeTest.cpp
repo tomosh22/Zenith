@@ -71,7 +71,7 @@ void Flux_ComputeTest::RunComputePass()
 	
 	g_xComputeCommandList.AddCommand<Flux_CommandBindComputePipeline>(&g_xComputePipeline);
 	g_xComputeCommandList.AddCommand<Flux_CommandBeginBind>(0);
-	g_xComputeCommandList.AddCommand<Flux_CommandBindUAV>(&g_xComputeOutput.m_pxUAV, 0);
+	g_xComputeCommandList.AddCommand<Flux_CommandBindUAV_Texture>(&g_xComputeOutput.m_pxUAV, 0);
 
 	g_xComputeCommandList.AddCommand<Flux_CommandPushConstant>(&Flux_Graphics::s_xFrameConstants.m_xScreenDims, sizeof(Flux_Graphics::s_xFrameConstants.m_xScreenDims));
 	// Dispatch compute shader: (width/8, height/8, 1) workgroups for 8x8 local size

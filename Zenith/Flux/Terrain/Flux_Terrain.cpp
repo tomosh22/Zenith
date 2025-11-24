@@ -1,6 +1,7 @@
 #include "Zenith.h"
 
 #include "Flux/Terrain/Flux_Terrain.h"
+#include "Flux/Terrain/Flux_TerrainCulling.h"
 
 #include "Flux/Flux.h"
 #include "Flux/Flux_Graphics.h"
@@ -40,6 +41,7 @@ DEBUGVAR bool dbg_bEnableTerrain = true;
 DEBUGVAR bool dbg_bWireframe = false;
 DEBUGVAR float dbg_fVisibilityThresholdMultiplier = 0.5f;
 DEBUGVAR bool dbg_bIgnoreVisibilityCheck = false;
+DEBUGVAR bool dbg_bUseGPUCulling = true;  // New: Toggle GPU-driven terrain culling
 
 void Flux_Terrain::Initialise()
 {
@@ -147,6 +149,9 @@ void Flux_Terrain::Initialise()
 	Zenith_DebugVariables::AddBoolean({ "Render", "Terrain", "Ignore Visibility Check" }, dbg_bIgnoreVisibilityCheck);
 #endif
 
+	// Initialize GPU-driven terrain culling system
+	Flux_TerrainCulling::Initialise();
+
 	Zenith_Log("Flux_Terrain initialised");
 }
 
@@ -158,6 +163,12 @@ void Flux_Terrain::SubmitRenderToGBufferTask()
 	Zenith_Scene::GetCurrentScene().GetAllOfComponentType<Zenith_TerrainComponent>(g_xTerrainComponentsToRender);
 
 	Flux_MemoryManager::UploadBufferData(s_xTerrainConstantsBuffer.GetBuffer().m_xVRAMHandle, &s_xTerrainConstants, sizeof(TerrainConstants));
+
+	// Dispatch terrain culling compute shader if GPU culling is enabled
+	if (dbg_bUseGPUCulling)
+	{
+		Flux_TerrainCulling::DispatchCulling(Flux_Graphics::s_xFrameConstants.m_xViewProjMat);
+	}
 
 	Zenith_TaskSystem::SubmitTask(g_pxRenderTask);
 }
@@ -179,17 +190,14 @@ void Flux_Terrain::RenderToGBuffer(void*)
 	g_xTerrainCommandList.AddCommand<Flux_CommandSetPipeline>(dbg_bWireframe ? &s_xTerrainWireframePipeline : &s_xTerrainGBufferPipeline);
 
 	g_xTerrainCommandList.AddCommand<Flux_CommandBeginBind>(0);
-	g_xTerrainCommandList.AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer().m_xCBV, 0);
-	g_xTerrainCommandList.AddCommand<Flux_CommandBindCBV>(&s_xTerrainConstantsBuffer.GetBuffer().m_xCBV, 1);
+	g_xTerrainCommandList.AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
+	g_xTerrainCommandList.AddCommand<Flux_CommandBindCBV>(&s_xTerrainConstantsBuffer.GetCBV(), 1);
 
 	g_xTerrainCommandList.AddCommand<Flux_CommandBeginBind>(1);
 
 	for (u_int u = 0; u < g_xTerrainComponentsToRender.GetSize(); u++)
 	{
 		Zenith_TerrainComponent* pxTerrain = g_xTerrainComponentsToRender.Get(u);
-
-		// Note: Frustum culling already performed in SubmitRenderToGBufferTask()
-		// No per-terrain visibility check needed here
 
 		g_xTerrainCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&pxTerrain->GetRenderMeshGeometry().GetVertexBuffer());
 		g_xTerrainCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&pxTerrain->GetRenderMeshGeometry().GetIndexBuffer());
@@ -205,7 +213,24 @@ void Flux_Terrain::RenderToGBuffer(void*)
 		g_xTerrainCommandList.AddCommand<Flux_CommandBindSRV>(&xMaterial1.GetNormal()->m_xSRV, 4);
 		g_xTerrainCommandList.AddCommand<Flux_CommandBindSRV>(&xMaterial1.GetRoughnessMetallic()->m_xSRV, 5);
 
-		g_xTerrainCommandList.AddCommand<Flux_CommandDrawIndexed>(pxTerrain->GetRenderMeshGeometry().GetNumIndices());
+		if (dbg_bUseGPUCulling)
+		{
+			// GPU-driven indirect rendering - draw only visible chunks
+			// The compute shader has filled the indirect draw buffer with commands for visible chunks
+			// We specify a fixed maximum of 4096 draws (the theoretical maximum number of terrain chunks)
+			// The compute shader writes actual draw commands sequentially, and unused slots will have indexCount=0
+			g_xTerrainCommandList.AddCommand<Flux_CommandDrawIndexedIndirect>(
+				&Flux_TerrainCulling::GetIndirectDrawBuffer(),
+				Flux_TerrainCulling::GetMaxDrawCount(),  // Max 4096 draws
+				0,                                         // Indirect buffer offset (bytes)
+				20                                         // Stride between commands (5 * sizeof(uint32_t))
+			);
+		}
+		else
+		{
+			// Fallback: Draw all terrain in one call (old behavior - huge vertex shader bottleneck)
+			g_xTerrainCommandList.AddCommand<Flux_CommandDrawIndexed>(pxTerrain->GetRenderMeshGeometry().GetNumIndices());
+		}
 	}
 
 	Flux::SubmitCommandList(&g_xTerrainCommandList, Flux_Graphics::s_xMRTTarget, RENDER_ORDER_TERRAIN);

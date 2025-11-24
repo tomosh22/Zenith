@@ -22,8 +22,13 @@ struct Flux_ShaderResourceView {
 	Flux_VRAMHandle m_xVRAMHandle;
 };
 
-struct Flux_UnorderedAccessView {
+struct Flux_UnorderedAccessView_Texture{
 	vk::ImageView m_xImageView = VK_NULL_HANDLE;
+	Flux_VRAMHandle m_xVRAMHandle;
+};
+
+struct Flux_UnorderedAccessView_Buffer {
+	vk::DescriptorBufferInfo m_xBufferInfo;
 	Flux_VRAMHandle m_xVRAMHandle;
 };
 
@@ -49,7 +54,7 @@ struct Flux_RenderAttachment {
 
 	// Views for different usage patterns
 	Flux_ShaderResourceView m_pxSRV;  // For reading in shaders
-	Flux_UnorderedAccessView m_pxUAV; // For compute shader read/write
+	Flux_UnorderedAccessView_Texture m_pxUAV; // For compute shader read/write
 	Flux_RenderTargetView m_pxRTV;     // For rendering (color attachments)
 	Flux_DepthStencilView m_pxDSV;     // For depth/stencil attachments
 };
@@ -67,8 +72,6 @@ struct Flux_Buffer
 {
 	Flux_VRAMHandle m_xVRAMHandle;
 	u_int64 m_ulSize = 0;
-	
-	Flux_ConstantBufferView m_xCBV;
 };
 
 

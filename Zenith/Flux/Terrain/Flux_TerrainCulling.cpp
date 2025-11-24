@@ -1,0 +1,259 @@
+#include "Zenith.h"
+
+#include "Flux/Terrain/Flux_TerrainCulling.h"
+#include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_Buffers.h"
+#include "Vulkan/Zenith_Vulkan_MemoryManager.h"
+#include "Vulkan/Zenith_Vulkan_Pipeline.h"
+#include "EntityComponent/Components/Zenith_TerrainComponent.h"
+#include "AssetHandling/Zenith_AssetHandler.h"
+
+// Static GPU resources
+static Flux_ReadWriteBuffer g_xChunkDataBuffer;
+static Flux_IndirectBuffer g_xIndirectDrawBuffer;
+static Flux_DynamicConstantBuffer g_xFrustumPlanesBuffer;
+static Flux_ReadWriteBuffer g_xVisibleCountBuffer;
+
+static Zenith_Vulkan_Pipeline g_xCullingPipeline;
+static Zenith_Vulkan_Shader g_xCullingShader;
+static Zenith_Vulkan_RootSig g_xCullingRootSig;
+
+static constexpr uint32_t TERRAIN_CHUNK_COUNT = TERRAIN_EXPORT_DIMS * TERRAIN_EXPORT_DIMS;
+
+void Flux_TerrainCulling::Initialise()
+{
+	Zenith_Log("Flux_TerrainCulling::Initialise() - Starting GPU-driven terrain culling setup");
+
+	// ========== BUILD CHUNK DATA ==========
+	BuildChunkData();
+
+	// ========== CREATE GPU BUFFERS ==========
+
+	// Frustum planes buffer (6 planes, updated per frame)
+	Flux_MemoryManager::InitialiseDynamicConstantBuffer(
+		nullptr,
+		sizeof(Flux_FrustumPlaneGPU) * 6,
+		g_xFrustumPlanesBuffer
+	);
+
+	// Indirect draw command buffer (one command per chunk, max)
+	// Structure: VkDrawIndexedIndirectCommand (5 uint32_t values)
+	// Initialize to zeros so all commands start with indexCount=0
+	const size_t indirectBufferSize = sizeof(uint32_t) * 5 * TERRAIN_CHUNK_COUNT;
+	uint32_t* pZeroBuffer = new uint32_t[5 * TERRAIN_CHUNK_COUNT];
+	memset(pZeroBuffer, 0, indirectBufferSize);
+	
+	Flux_MemoryManager::InitialiseIndirectBuffer(
+		indirectBufferSize,
+		g_xIndirectDrawBuffer
+	);
+	
+	// Upload the zero-initialized data
+	Flux_MemoryManager::UploadBufferData(g_xIndirectDrawBuffer.GetBuffer().m_xVRAMHandle, pZeroBuffer, indirectBufferSize);
+	delete[] pZeroBuffer;
+
+	// Visible chunk counter (single atomic uint32_t)
+	Flux_MemoryManager::InitialiseReadWriteBuffer(
+		nullptr,
+		sizeof(uint32_t),
+		g_xVisibleCountBuffer
+	);
+
+	// ========== CREATE COMPUTE PIPELINE ==========
+
+	g_xCullingShader.InitialiseCompute("Terrain/Flux_TerrainCulling.comp");
+	Zenith_Log("Flux_TerrainCulling - Loaded compute shader");
+
+	// Build compute root signature
+	Flux_PipelineLayout xCullingLayout;
+	xCullingLayout.m_uNumDescriptorSets = 1;
+	xCullingLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_STORAGE_BUFFER;  // Chunk data (read)
+	xCullingLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_BUFFER;  // Frustum planes (read)
+	xCullingLayout.m_axDescriptorSetLayouts[0].m_axBindings[2].m_eType = DESCRIPTOR_TYPE_STORAGE_BUFFER;  // Indirect commands (write)
+	xCullingLayout.m_axDescriptorSetLayouts[0].m_axBindings[3].m_eType = DESCRIPTOR_TYPE_STORAGE_BUFFER;  // Visible count (read/write atomic)
+	xCullingLayout.m_axDescriptorSetLayouts[0].m_axBindings[4].m_eType = DESCRIPTOR_TYPE_MAX;
+	
+	Zenith_Vulkan_RootSigBuilder::FromSpecification(g_xCullingRootSig, xCullingLayout);
+
+	// Build compute pipeline
+	Zenith_Vulkan_ComputePipelineBuilder xCullingBuilder;
+	xCullingBuilder.WithShader(g_xCullingShader)
+		.WithLayout(g_xCullingRootSig.m_xLayout)
+		.Build(g_xCullingPipeline);
+
+	g_xCullingPipeline.m_xRootSig = g_xCullingRootSig;
+
+	Zenith_Log("Flux_TerrainCulling - Built compute pipeline");
+	Zenith_Log("Flux_TerrainCulling - Initialized with %u terrain chunks", TERRAIN_CHUNK_COUNT);
+}
+
+void Flux_TerrainCulling::Shutdown()
+{
+	// Cleanup GPU resources
+	//Flux_MemoryManager::DestroyBuffer(g_xChunkDataBuffer);
+	//Flux_MemoryManager::DestroyBuffer(g_xFrustumPlanesBuffer);
+	//Flux_MemoryManager::DestroyBuffer(g_xIndirectDrawBuffer);
+	//Flux_MemoryManager::DestroyBuffer(g_xVisibleCountBuffer);
+}
+
+void Flux_TerrainCulling::BuildChunkData()
+{
+	Zenith_Log("Flux_TerrainCulling::BuildChunkData() - Building chunk AABBs for %u chunks", TERRAIN_CHUNK_COUNT);
+
+	// Temporary CPU-side buffer for chunk data
+	Flux_TerrainChunkData* pxChunkData = new Flux_TerrainChunkData[TERRAIN_CHUNK_COUNT];
+
+	// We need to load all terrain chunks to extract their AABBs
+	// Each chunk is a TERRAIN_SIZE x TERRAIN_SIZE grid
+	
+	uint32_t uCurrentIndexOffset = 0;
+	uint32_t uCurrentVertexOffset = 0;
+
+	// IMPORTANT: This iteration order MUST match Zenith_TerrainComponent::Zenith_TerrainComponent
+	// which combines chunks in x (outer), y (inner) order
+	for (uint32_t x = 0; x < TERRAIN_EXPORT_DIMS; ++x)
+	{
+		for (uint32_t y = 0; y < TERRAIN_EXPORT_DIMS; ++y)
+		{
+			// Chunk index for x (outer), y (inner) iteration
+			uint32_t uCurrentChunk = x * TERRAIN_EXPORT_DIMS + y;
+
+			// Load the chunk mesh (temporarily)
+			std::string strChunkName = "Terrain_ChunkBuild_" + std::to_string(x) + "_" + std::to_string(y);
+			std::string strChunkPath = std::string(ASSETS_ROOT"Terrain/Render_") + std::to_string(x) + "_" + std::to_string(y) + ".zmsh";
+			
+			Zenith_AssetHandler::AddMesh(strChunkName, strChunkPath.c_str(), 1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__POSITION);
+			Flux_MeshGeometry& xChunkMesh = Zenith_AssetHandler::GetMesh(strChunkName);
+
+			// Validate that positions were loaded
+			if (!xChunkMesh.m_pxPositions || xChunkMesh.m_uNumVerts == 0)
+			{
+				Zenith_Log("ERROR: Chunk (%u,%u) has no position data! m_pxPositions=%p, m_uNumVerts=%u",
+					x, y, xChunkMesh.m_pxPositions, xChunkMesh.m_uNumVerts);
+				Zenith_Assert(false, "Terrain chunk has no vertex positions");
+			}
+
+			// Generate AABB from vertex positions
+			Zenith_AABB xChunkAABB = Zenith_FrustumCulling::GenerateAABBFromVertices(
+				xChunkMesh.m_pxPositions,
+				xChunkMesh.m_uNumVerts
+			);
+
+			// Validate AABB
+			if (!xChunkAABB.IsValid())
+			{
+				Zenith_Log("ERROR: Chunk (%u,%u) generated invalid AABB! min=(%.2f,%.2f,%.2f), max=(%.2f,%.2f,%.2f)",
+					x, y,
+					xChunkAABB.m_xMin.x, xChunkAABB.m_xMin.y, xChunkAABB.m_xMin.z,
+					xChunkAABB.m_xMax.x, xChunkAABB.m_xMax.y, xChunkAABB.m_xMax.z);
+				Zenith_Assert(false, "Terrain chunk generated invalid AABB");
+			}
+
+			// Store chunk data with CURRENT offsets (before incrementing)
+			pxChunkData[uCurrentChunk].m_xAABBMin = Zenith_Maths::Vector4(xChunkAABB.m_xMin, 0.0f);
+			pxChunkData[uCurrentChunk].m_xAABBMax = Zenith_Maths::Vector4(xChunkAABB.m_xMax, 0.0f);
+			pxChunkData[uCurrentChunk].m_uFirstIndex = uCurrentIndexOffset;
+			pxChunkData[uCurrentChunk].m_uIndexCount = xChunkMesh.m_uNumIndices;
+			pxChunkData[uCurrentChunk].m_uVertexOffset = 0;  // Always 0 because indices in combined mesh are pre-adjusted
+			pxChunkData[uCurrentChunk].m_uPadding = 0;
+
+			// Debug log for first few chunks
+			if (uCurrentChunk < 10)
+			{
+				Zenith_Log("Chunk[%u] (%u,%u): firstIdx=%u, idxCount=%u, vtxOffset=0 (indices pre-adjusted), AABB min=(%.1f,%.1f,%.1f) max=(%.1f,%.1f,%.1f)",
+					uCurrentChunk, x, y,
+					uCurrentIndexOffset, xChunkMesh.m_uNumIndices,
+					xChunkAABB.m_xMin.x, xChunkAABB.m_xMin.y, xChunkAABB.m_xMin.z,
+					xChunkAABB.m_xMax.x, xChunkAABB.m_xMax.y, xChunkAABB.m_xMax.z);
+			}
+
+			// Update offsets for NEXT chunk
+			uCurrentIndexOffset += xChunkMesh.m_uNumIndices;
+			uCurrentVertexOffset += xChunkMesh.m_uNumVerts;  // Still track this for validation
+
+			// Clean up temporary chunk mesh
+			Zenith_AssetHandler::DeleteMesh(strChunkName);
+
+			if ((uCurrentChunk + 1) % 256 == 0)
+			{
+				Zenith_Log("Flux_TerrainCulling - Processed %u/%u chunks", uCurrentChunk + 1, TERRAIN_CHUNK_COUNT);
+			}
+		}
+	}
+
+	Zenith_Log("Flux_TerrainCulling - Total indices: %u, Total vertices: %u", uCurrentIndexOffset, uCurrentVertexOffset);
+
+	// Upload chunk data to GPU
+	Flux_MemoryManager::InitialiseReadWriteBuffer(
+		pxChunkData,
+		sizeof(Flux_TerrainChunkData) * TERRAIN_CHUNK_COUNT,
+		g_xChunkDataBuffer
+	);
+
+	// Cleanup CPU data
+	delete[] pxChunkData;
+
+	Zenith_Log("Flux_TerrainCulling - Chunk data uploaded to GPU");
+}
+
+void Flux_TerrainCulling::ExtractFrustumPlanes(const Zenith_Maths::Matrix4& xViewProjMatrix, Flux_FrustumPlaneGPU* pxOutPlanes)
+{
+	// Use existing frustum extraction code
+	Zenith_Frustum xFrustum;
+	xFrustum.ExtractFromViewProjection(xViewProjMatrix);
+
+	// Convert to GPU format
+	for (int i = 0; i < 6; ++i)
+	{
+		pxOutPlanes[i].m_xNormalAndDistance = Zenith_Maths::Vector4(
+			xFrustum.m_axPlanes[i].m_xNormal,
+			xFrustum.m_axPlanes[i].m_fDistance
+		);
+	}
+}
+
+void Flux_TerrainCulling::DispatchCulling(const Zenith_Maths::Matrix4& xViewProjMatrix)
+{
+	// Extract frustum planes and upload to GPU
+	Flux_FrustumPlaneGPU axFrustumPlanes[6];
+	ExtractFrustumPlanes(xViewProjMatrix, axFrustumPlanes);
+	Flux_MemoryManager::UploadBufferData(g_xFrustumPlanesBuffer.GetBuffer().m_xVRAMHandle, axFrustumPlanes, sizeof(axFrustumPlanes));
+
+	// Reset visible chunk counter to 0
+	uint32_t uZero = 0;
+	Flux_MemoryManager::UploadBufferData(g_xVisibleCountBuffer.GetBuffer().m_xVRAMHandle, &uZero, sizeof(uint32_t));
+
+	// Create and submit compute command list for terrain culling
+	static Flux_CommandList s_xCullingCommandList("Terrain Culling Compute");
+	s_xCullingCommandList.Reset(false);  // No render targets to clear
+
+	// Bind compute pipeline
+	s_xCullingCommandList.AddCommand<Flux_CommandBindComputePipeline>(&g_xCullingPipeline);
+
+	// Bind descriptor set 0 with all buffers
+	// Note: We bind using CBV but the descriptor type STORAGE_BUFFER in the pipeline layout tells Vulkan to treat them as storage buffers
+	s_xCullingCommandList.AddCommand<Flux_CommandBeginBind>(0);
+	s_xCullingCommandList.AddCommand<Flux_CommandBindUAV_Buffer>(&g_xChunkDataBuffer.GetUAV(), 0);          // Chunk data (read)
+	s_xCullingCommandList.AddCommand<Flux_CommandBindCBV>(&g_xFrustumPlanesBuffer.GetCBV(), 1);     // Frustum planes (read)
+	s_xCullingCommandList.AddCommand<Flux_CommandBindUAV_Buffer>(&g_xIndirectDrawBuffer.GetUAV(), 2);      // Indirect commands (write)
+	s_xCullingCommandList.AddCommand<Flux_CommandBindUAV_Buffer>(&g_xVisibleCountBuffer.GetUAV(), 3);      // Visible count (read/write atomic)
+
+	// Dispatch compute shader
+	// We have 64x64 = 4096 chunks, with local_size_x=64 we need (4096 + 63) / 64 = 64 workgroups
+	uint32_t uNumWorkgroups = (TERRAIN_CHUNK_COUNT + 63) / 64;
+	s_xCullingCommandList.AddCommand<Flux_CommandDispatch>(uNumWorkgroups, 1, 1);
+
+	// Submit to RENDER_ORDER_SKYBOX (which runs before terrain in the current ordering)
+	// This ensures the culling compute completes before terrain rendering begins
+	Flux::SubmitCommandList(&s_xCullingCommandList, Flux_Graphics::s_xNullTargetSetup, RENDER_ORDER_TERRAIN_CULLING);
+}
+
+const Flux_IndirectBuffer& Flux_TerrainCulling::GetIndirectDrawBuffer()
+{
+	return g_xIndirectDrawBuffer;
+}
+
+uint32_t Flux_TerrainCulling::GetMaxDrawCount()
+{
+	return TERRAIN_CHUNK_COUNT;
+}

@@ -15,7 +15,8 @@ enum Flux_CommandType
 
 	FLUX_COMMANDTYPE__BEGIN_BIND,
 	FLUX_COMMANDTYPE__BIND_SRV,
-	FLUX_COMMANDTYPE__BIND_UAV,
+	FLUX_COMMANDTYPE__BIND_UAV_TEXTURE,
+	FLUX_COMMANDTYPE__BIND_UAV_BUFFER,
 	FLUX_COMMANDTYPE__BIND_CBV,
 
 	FLUX_COMMANDTYPE__USE_UNBOUNDED_TEXTURES,
@@ -25,6 +26,7 @@ enum Flux_CommandType
 	FLUX_COMMANDTYPE__DRAW,
 	FLUX_COMMANDTYPE__DRAW_INDEXED,
 	FLUX_COMMANDTYPE__DRAW_INDEXED_INDIRECT,
+	FLUX_COMMANDTYPE__DRAW_INDEXED_INDIRECT_COUNT,
 	FLUX_COMMANDTYPE__BIND_COMPUTE_PIPELINE,
 	FLUX_COMMANDTYPE__DISPATCH,
 
@@ -189,20 +191,38 @@ public:
 	Flux_Sampler* m_pxSampler;
 };
 
-class Flux_CommandBindUAV
+class Flux_CommandBindUAV_Texture
 {
 public:
-	static constexpr Flux_CommandType m_eType = FLUX_COMMANDTYPE__BIND_UAV;
+	static constexpr Flux_CommandType m_eType = FLUX_COMMANDTYPE__BIND_UAV_TEXTURE;
 
-	Flux_CommandBindUAV(const Flux_UnorderedAccessView* const pxUAV, const u_int uBindPoint)
+	Flux_CommandBindUAV_Texture(const Flux_UnorderedAccessView_Texture* const pxUAV, const u_int uBindPoint)
 		: m_pxUAV(pxUAV)
 		, m_uBindPoint(uBindPoint)
 	{}
 	void operator()(Flux_CommandBuffer* pxCmdBuf)
 	{
-		pxCmdBuf->BindUAV(m_pxUAV, m_uBindPoint);
+		pxCmdBuf->BindUAV_Texture(m_pxUAV, m_uBindPoint);
 	}
-	const Flux_UnorderedAccessView* m_pxUAV;
+	const Flux_UnorderedAccessView_Texture* m_pxUAV;
+	const u_int m_uBindPoint;
+};
+
+class Flux_CommandBindUAV_Buffer
+{
+public:
+	static constexpr Flux_CommandType m_eType = FLUX_COMMANDTYPE__BIND_UAV_BUFFER;
+
+	Flux_CommandBindUAV_Buffer(const Flux_UnorderedAccessView_Buffer* const pxUAV, const u_int uBindPoint)
+		: m_pxUAV(pxUAV)
+		, m_uBindPoint(uBindPoint)
+	{
+	}
+	void operator()(Flux_CommandBuffer* pxCmdBuf)
+	{
+		pxCmdBuf->BindUAV_Buffer(m_pxUAV, m_uBindPoint);
+	}
+	const Flux_UnorderedAccessView_Buffer* m_pxUAV;
 	const u_int m_uBindPoint;
 };
 
@@ -247,7 +267,7 @@ class Flux_CommandDrawIndexedIndirect
 public:
 	static constexpr Flux_CommandType m_eType = FLUX_COMMANDTYPE__DRAW_INDEXED_INDIRECT;
 
-	Flux_CommandDrawIndexedIndirect(const Flux_Buffer* pxIndirectBuffer, u_int uDrawCount, u_int uOffset = 0, u_int uStride = 20)
+	Flux_CommandDrawIndexedIndirect(const Flux_IndirectBuffer* pxIndirectBuffer, u_int uDrawCount, u_int uOffset = 0, u_int uStride = 20)
 		: m_pxIndirectBuffer(pxIndirectBuffer)
 		, m_uDrawCount(uDrawCount)
 		, m_uOffset(uOffset)
@@ -258,9 +278,35 @@ public:
 		pxCmdBuf->DrawIndexedIndirect(m_pxIndirectBuffer, m_uDrawCount, m_uOffset, m_uStride);
 	}
 
-	const Flux_Buffer* m_pxIndirectBuffer;
+	const Flux_IndirectBuffer* m_pxIndirectBuffer;
 	u_int m_uDrawCount;
 	u_int m_uOffset;
+	u_int m_uStride;
+};
+
+class Flux_CommandDrawIndexedIndirectCount
+{
+public:
+	static constexpr Flux_CommandType m_eType = FLUX_COMMANDTYPE__DRAW_INDEXED_INDIRECT_COUNT;
+
+	Flux_CommandDrawIndexedIndirectCount(const Flux_IndirectBuffer* pxIndirectBuffer, const Flux_ReadWriteBuffer* pxCountBuffer, u_int uMaxDrawCount, u_int uIndirectOffset = 0, u_int uCountOffset = 0, u_int uStride = 20)
+		: m_pxIndirectBuffer(pxIndirectBuffer)
+		, m_pxCountBuffer(pxCountBuffer)
+		, m_uMaxDrawCount(uMaxDrawCount)
+		, m_uIndirectOffset(uIndirectOffset)
+		, m_uCountOffset(uCountOffset)
+		, m_uStride(uStride)
+	{}
+	void operator()(Flux_CommandBuffer* pxCmdBuf)
+	{
+		pxCmdBuf->DrawIndexedIndirectCount(m_pxIndirectBuffer, m_pxCountBuffer, m_uMaxDrawCount, m_uIndirectOffset, m_uCountOffset, m_uStride);
+	}
+
+	const Flux_IndirectBuffer* m_pxIndirectBuffer;
+	const Flux_ReadWriteBuffer* m_pxCountBuffer;
+	u_int m_uMaxDrawCount;
+	u_int m_uIndirectOffset;
+	u_int m_uCountOffset;
 	u_int m_uStride;
 };
 
@@ -366,7 +412,8 @@ public:
 
 				HANDLE_COMMAND(FLUX_COMMANDTYPE__BEGIN_BIND, Flux_CommandBeginBind);
 				HANDLE_COMMAND(FLUX_COMMANDTYPE__BIND_SRV, Flux_CommandBindSRV);
-				HANDLE_COMMAND(FLUX_COMMANDTYPE__BIND_UAV, Flux_CommandBindUAV);
+				HANDLE_COMMAND(FLUX_COMMANDTYPE__BIND_UAV_TEXTURE, Flux_CommandBindUAV_Texture);
+				HANDLE_COMMAND(FLUX_COMMANDTYPE__BIND_UAV_BUFFER, Flux_CommandBindUAV_Buffer);
 				HANDLE_COMMAND(FLUX_COMMANDTYPE__BIND_CBV, Flux_CommandBindCBV);
 				HANDLE_COMMAND(FLUX_COMMANDTYPE__PUSH_CONSTANT, Flux_CommandPushConstant);
 				HANDLE_COMMAND(FLUX_COMMANDTYPE__USE_UNBOUNDED_TEXTURES, Flux_CommandUseUnboundedTextures);
@@ -374,6 +421,7 @@ public:
 				HANDLE_COMMAND(FLUX_COMMANDTYPE__DRAW, Flux_CommandDraw);
 				HANDLE_COMMAND(FLUX_COMMANDTYPE__DRAW_INDEXED, Flux_CommandDrawIndexed);
 				HANDLE_COMMAND(FLUX_COMMANDTYPE__DRAW_INDEXED_INDIRECT, Flux_CommandDrawIndexedIndirect);
+				HANDLE_COMMAND(FLUX_COMMANDTYPE__DRAW_INDEXED_INDIRECT_COUNT, Flux_CommandDrawIndexedIndirectCount);
 
 				HANDLE_COMMAND(FLUX_COMMANDTYPE__BIND_COMPUTE_PIPELINE, Flux_CommandBindComputePipeline);
 				HANDLE_COMMAND(FLUX_COMMANDTYPE__DISPATCH, Flux_CommandDispatch);

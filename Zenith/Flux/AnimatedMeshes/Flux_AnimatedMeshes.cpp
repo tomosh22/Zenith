@@ -120,7 +120,7 @@ void Flux_AnimatedMeshes::RenderToGBuffer(void*)
 	Zenith_Scene::GetCurrentScene().GetAllOfComponentType<Zenith_ModelComponent>(xModels);
 
 	g_xCommandList.AddCommand<Flux_CommandBeginBind>(0);
-	g_xCommandList.AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer().m_xCBV, 0);
+	g_xCommandList.AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
 
 	g_xCommandList.AddCommand<Flux_CommandBeginBind>(1);
 
@@ -144,7 +144,7 @@ void Flux_AnimatedMeshes::RenderToGBuffer(void*)
 			g_xCommandList.AddCommand<Flux_CommandPushConstant>(&xModelMatrix, sizeof(xModelMatrix));
 			const Flux_Material& xMaterial = pxModel->GetMaterialAtIndex(uMesh);
 
-			g_xCommandList.AddCommand<Flux_CommandBindCBV>(&xMesh.m_pxAnimation->m_xBoneBuffer.GetBuffer().m_xCBV, 0);
+			g_xCommandList.AddCommand<Flux_CommandBindCBV>(&xMesh.m_pxAnimation->m_xBoneBuffer.GetCBV(), 0);
 
 			g_xCommandList.AddCommand<Flux_CommandBindSRV>(&xMaterial.GetDiffuse()->m_xSRV, 1);
 			g_xCommandList.AddCommand<Flux_CommandBindSRV>(&xMaterial.GetNormal()->m_xSRV, 2);
@@ -183,7 +183,7 @@ void Flux_AnimatedMeshes::RenderToShadowMap(Flux_CommandList& xCmdBuf)
 			pxModel->GetParentEntity().GetComponent<Zenith_TransformComponent>().BuildModelMatrix(xModelMatrix);
 			xCmdBuf.AddCommand<Flux_CommandPushConstant>(&xModelMatrix, sizeof(xModelMatrix));
 
-			xCmdBuf.AddCommand<Flux_CommandBindCBV>(&xMesh.m_pxAnimation->m_xBoneBuffer.GetBuffer().m_xCBV, 0);
+			xCmdBuf.AddCommand<Flux_CommandBindCBV>(&xMesh.m_pxAnimation->m_xBoneBuffer.GetCBV(), 0);
 
 			xCmdBuf.AddCommand<Flux_CommandDrawIndexed>(xMesh.GetNumIndices());
 		}

@@ -97,10 +97,10 @@ void Flux_Shadows::Render(void*)
 			g_axCommandLists[u].AddCommand<Flux_CommandSetPipeline>(&Flux_StaticMeshes::GetShadowPipeline());
 
 			g_axCommandLists[u].AddCommand<Flux_CommandBeginBind>(0);
-			g_axCommandLists[u].AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer().m_xCBV, 0);
+			g_axCommandLists[u].AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
 
 			g_axCommandLists[u].AddCommand<Flux_CommandBeginBind>(1);
-			g_axCommandLists[u].AddCommand<Flux_CommandBindCBV>(&g_xShadowMatrixBuffers[u].GetBuffer().m_xCBV, 0);
+			g_axCommandLists[u].AddCommand<Flux_CommandBindCBV>(&g_xShadowMatrixBuffers[u].GetCBV(), 0);
 
 			Flux_StaticMeshes::RenderToShadowMap(g_axCommandLists[u]);
 		}
@@ -109,10 +109,10 @@ void Flux_Shadows::Render(void*)
 			g_axCommandLists[u].AddCommand<Flux_CommandSetPipeline>(&Flux_AnimatedMeshes::GetShadowPipeline());
 
 			g_axCommandLists[u].AddCommand<Flux_CommandBeginBind>(0);
-			g_axCommandLists[u].AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer().m_xCBV, 0);
+			g_axCommandLists[u].AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
 
 			g_axCommandLists[u].AddCommand<Flux_CommandBeginBind>(1);
-			g_axCommandLists[u].AddCommand<Flux_CommandBindCBV>(&g_xShadowMatrixBuffers[u].GetBuffer().m_xCBV, 1);
+			g_axCommandLists[u].AddCommand<Flux_CommandBindCBV>(&g_xShadowMatrixBuffers[u].GetCBV(), 1);
 
 			Flux_AnimatedMeshes::RenderToShadowMap(g_axCommandLists[u]);
 		}
@@ -122,10 +122,10 @@ void Flux_Shadows::Render(void*)
 			g_axCommandLists[u].AddCommand<Flux_CommandSetPipeline>(&Flux_Terrain::GetShadowPipeline());
 
 			g_axCommandLists[u].AddCommand<Flux_CommandBeginBind>(0);
-			g_axCommandLists[u].AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer().m_xCBV, 0);
+			g_axCommandLists[u].AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
 
 			g_axCommandLists[u].AddCommand<Flux_CommandBeginBind>(1);
-			g_axCommandLists[u].AddCommand<Flux_CommandBindCBV>(&g_xShadowMatrixBuffers[u].GetBuffer().m_xCBV, 0);
+			g_axCommandLists[u].AddCommand<Flux_CommandBindCBV>(&g_xShadowMatrixBuffers[u].GetCBV(), 0);
 
 			Flux_Terrain::RenderToShadowMap(g_axCommandLists[u]);
 		}

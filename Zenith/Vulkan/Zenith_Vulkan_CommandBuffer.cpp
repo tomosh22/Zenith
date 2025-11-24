@@ -135,7 +135,7 @@ void Zenith_Vulkan_CommandBuffer::TransitionUAVs(vk::ImageLayout eOldLayout, vk:
 	{
 		for (u_int i = 0; i < MAX_BINDINGS; i++)
 		{
-			const Flux_UnorderedAccessView* pxUAV = m_xBindings[uDescSet].m_xUAVs[i];
+			const Flux_UnorderedAccessView_Texture* pxUAV = m_xBindings[uDescSet].m_xUAV_Textures[i];
 			if (!pxUAV || !pxUAV->m_xImageView) continue;
 
 			Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(pxUAV->m_xVRAMHandle);
@@ -225,11 +225,11 @@ void Zenith_Vulkan_CommandBuffer::UpdateDescriptorSets()
 						.setPImageInfo(axTexInfos + uNumTexWrites++);
 				}
 
-				const Flux_UnorderedAccessView* const pxUAV = m_xBindings[uDescSet].m_xUAVs[u];
-				if (pxUAV)
+				const Flux_UnorderedAccessView_Texture* const pxUAV_Texture = m_xBindings[uDescSet].m_xUAV_Textures[u];
+				if (pxUAV_Texture)
 				{
 					axTexInfos[uNumTexWrites] = vk::DescriptorImageInfo()
-						.setImageView(pxUAV->m_xImageView)
+						.setImageView(pxUAV_Texture->m_xImageView)
 						.setImageLayout(vk::ImageLayout::eGeneral);
 
 					axWrites[uNumWrites++] = vk::WriteDescriptorSet()
@@ -239,6 +239,20 @@ void Zenith_Vulkan_CommandBuffer::UpdateDescriptorSets()
 						.setDstArrayElement(0)
 						.setDescriptorCount(1)
 						.setPImageInfo(axTexInfos + uNumTexWrites++);
+				}
+
+				const Flux_UnorderedAccessView_Buffer* const pxUAV_Buffer = m_xBindings[uDescSet].m_xUAV_Buffers[u];
+				if (pxUAV_Buffer)
+				{
+					axBufferInfos[uNumBufferWrites] = pxUAV_Buffer->m_xBufferInfo;
+					vk::DescriptorType eBufferType = vk::DescriptorType::eStorageBuffer;
+					axWrites[uNumWrites++] = vk::WriteDescriptorSet()
+						.setDescriptorType(eBufferType)
+						.setDstSet(m_axCurrentDescSet[uDescSet])
+						.setDstBinding(u)
+						.setDstArrayElement(0)
+						.setDescriptorCount(1)
+						.setPBufferInfo(axBufferInfos + uNumBufferWrites++);
 				}
 
 				const Flux_ConstantBufferView* const pxCBV = m_xBindings[uDescSet].m_xCBVs[u];
@@ -292,13 +306,24 @@ void Zenith_Vulkan_CommandBuffer::DrawIndexed(uint32_t uNumIndices, uint32_t uNu
 	}
 }
 
-void Zenith_Vulkan_CommandBuffer::DrawIndexedIndirect(const Flux_Buffer* pxIndirectBuffer, uint32_t uDrawCount, uint32_t uOffset /*= 0*/, uint32_t uStride /*= 20*/)
+void Zenith_Vulkan_CommandBuffer::DrawIndexedIndirect(const Flux_IndirectBuffer* pxIndirectBuffer, uint32_t uDrawCount, uint32_t uOffset /*= 0*/, uint32_t uStride /*= 20*/)
 {
 	if (Zenith_Vulkan::ShouldSubmitDrawCalls())
 	{
 		UpdateDescriptorSets();
-		const vk::Buffer xIndirectBuffer = Zenith_Vulkan::GetVRAM(pxIndirectBuffer->m_xVRAMHandle)->GetBuffer();
+		const vk::Buffer xIndirectBuffer = Zenith_Vulkan::GetVRAM(pxIndirectBuffer->GetBuffer().m_xVRAMHandle)->GetBuffer();
 		m_xCurrentCmdBuffer.drawIndexedIndirect(xIndirectBuffer, uOffset, uDrawCount, uStride);
+	}
+}
+
+void Zenith_Vulkan_CommandBuffer::DrawIndexedIndirectCount(const Flux_IndirectBuffer* pxIndirectBuffer, const Flux_ReadWriteBuffer* pxCountBuffer, uint32_t uMaxDrawCount, uint32_t uIndirectOffset /*= 0*/, uint32_t uCountOffset /*= 0*/, uint32_t uStride /*= 20*/)
+{
+	if (Zenith_Vulkan::ShouldSubmitDrawCalls())
+	{
+		UpdateDescriptorSets();
+		const vk::Buffer xIndirectBuffer = Zenith_Vulkan::GetVRAM(pxIndirectBuffer->GetBuffer().m_xVRAMHandle)->GetBuffer();
+		const vk::Buffer xCountBuffer = Zenith_Vulkan::GetVRAM(pxCountBuffer->GetBuffer().m_xVRAMHandle)->GetBuffer();
+		m_xCurrentCmdBuffer.drawIndexedIndirectCount(xIndirectBuffer, uIndirectOffset, xCountBuffer, uCountOffset, uMaxDrawCount, uStride);
 	}
 }
 
@@ -374,12 +399,21 @@ void Zenith_Vulkan_CommandBuffer::BindSRV(const Flux_ShaderResourceView* pxSRV, 
 	m_xBindings[m_uCurrentBindFreq].m_apxSamplers[uBindPoint] = pxSampler;
 }
 
-void Zenith_Vulkan_CommandBuffer::BindUAV(const Flux_UnorderedAccessView* pxUAV, uint32_t uBindPoint)
+void Zenith_Vulkan_CommandBuffer::BindUAV_Texture(const Flux_UnorderedAccessView_Texture* pxUAV, uint32_t uBindPoint)
 {
 	Zenith_Assert(m_uCurrentBindFreq < FLUX_MAX_DESCRIPTOR_SET_LAYOUTS, "Haven't called BeginBind");
 	Zenith_Assert(pxUAV && pxUAV->m_xImageView, "Invalid UAV");
 	m_uDescriptorDirty |= 1 << m_uCurrentBindFreq;
-	m_xBindings[m_uCurrentBindFreq].m_xUAVs[uBindPoint] = pxUAV;
+	m_xBindings[m_uCurrentBindFreq].m_xUAV_Textures[uBindPoint] = pxUAV;
+	m_xBindings[m_uCurrentBindFreq].m_apxSamplers[uBindPoint] = nullptr;
+}
+
+void Zenith_Vulkan_CommandBuffer::BindUAV_Buffer(const Flux_UnorderedAccessView_Buffer* pxUAV, uint32_t uBindPoint)
+{
+	Zenith_Assert(m_uCurrentBindFreq < FLUX_MAX_DESCRIPTOR_SET_LAYOUTS, "Haven't called BeginBind");
+	Zenith_Assert(pxUAV, "Invalid UAV");
+	m_uDescriptorDirty |= 1 << m_uCurrentBindFreq;
+	m_xBindings[m_uCurrentBindFreq].m_xUAV_Buffers[uBindPoint] = pxUAV;
 	m_xBindings[m_uCurrentBindFreq].m_apxSamplers[uBindPoint] = nullptr;
 }
 
@@ -501,17 +535,105 @@ void Zenith_Vulkan_CommandBuffer::Dispatch(uint32_t uGroupCountX, uint32_t uGrou
 {
 	UpdateDescriptorSets();
 
-	TransitionUAVs(vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageLayout::eGeneral,
-		vk::AccessFlagBits::eShaderRead, vk::AccessFlagBits::eShaderWrite | vk::AccessFlagBits::eShaderRead,
-		vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eComputeShader,
-		vk::PipelineStageFlagBits::eComputeShader);
+	// Collect all barriers - both images and buffers
+	vk::ImageMemoryBarrier axImageBarriers[MAX_BINDINGS];
+	vk::BufferMemoryBarrier axBufferBarriers[MAX_BINDINGS];
+	u_int uNumImageBarriers = 0;
+	u_int uNumBufferBarriers = 0;
 
+	// Transition image UAVs to general layout for compute write
+	for (u_int uDescSet = 0; uDescSet < m_pxCurrentPipeline->m_xRootSig.m_uNumDescriptorSets; uDescSet++)
+	{
+		for (u_int i = 0; i < MAX_BINDINGS; i++)
+		{
+			const Flux_UnorderedAccessView_Texture* pxUAV = m_xBindings[uDescSet].m_xUAV_Textures[i];
+			if (!pxUAV || !pxUAV->m_xImageView) continue;
+
+			Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(pxUAV->m_xVRAMHandle);
+			Zenith_Assert(pxVRAM, "Invalid VRAM for UAV");
+
+			axImageBarriers[uNumImageBarriers++] = vk::ImageMemoryBarrier()
+				.setSubresourceRange(vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1))
+				.setImage(pxVRAM->GetImage())
+				.setOldLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
+				.setNewLayout(vk::ImageLayout::eGeneral)
+				.setSrcAccessMask(vk::AccessFlagBits::eShaderRead)
+				.setDstAccessMask(vk::AccessFlagBits::eShaderWrite | vk::AccessFlagBits::eShaderRead);
+		}
+	}
+
+	// Pre-dispatch barrier: transition images to general layout
+	if (uNumImageBarriers > 0)
+	{
+		m_xCurrentCmdBuffer.pipelineBarrier(
+			vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eComputeShader,
+			vk::PipelineStageFlagBits::eComputeShader,
+			vk::DependencyFlags(),
+			0, nullptr,
+			0, nullptr,
+			uNumImageBarriers, axImageBarriers
+		);
+	}
+
+	// Execute compute shader
 	m_xCurrentCmdBuffer.dispatch(uGroupCountX, uGroupCountY, uGroupCountZ);
 
-	TransitionUAVs(vk::ImageLayout::eGeneral, vk::ImageLayout::eShaderReadOnlyOptimal,
-		vk::AccessFlagBits::eShaderWrite | vk::AccessFlagBits::eShaderRead, vk::AccessFlagBits::eShaderRead,
-		vk::PipelineStageFlagBits::eComputeShader,
-		vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eComputeShader);
+	// Reset barrier counts
+	uNumImageBarriers = 0;
+	uNumBufferBarriers = 0;
+
+	// Post-dispatch barriers: transition images back and add buffer barriers
+	for (u_int uDescSet = 0; uDescSet < m_pxCurrentPipeline->m_xRootSig.m_uNumDescriptorSets; uDescSet++)
+	{
+		for (u_int i = 0; i < MAX_BINDINGS; i++)
+		{
+			// Image UAVs: transition back to shader read
+			const Flux_UnorderedAccessView_Texture* pxUAV_Texture = m_xBindings[uDescSet].m_xUAV_Textures[i];
+			if (pxUAV_Texture && pxUAV_Texture->m_xImageView)
+			{
+				Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(pxUAV_Texture->m_xVRAMHandle);
+				Zenith_Assert(pxVRAM, "Invalid VRAM for image UAV");
+
+				axImageBarriers[uNumImageBarriers++] = vk::ImageMemoryBarrier()
+					.setSubresourceRange(vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1))
+					.setImage(pxVRAM->GetImage())
+					.setOldLayout(vk::ImageLayout::eGeneral)
+					.setNewLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
+					.setSrcAccessMask(vk::AccessFlagBits::eShaderWrite | vk::AccessFlagBits::eShaderRead)
+					.setDstAccessMask(vk::AccessFlagBits::eShaderRead);
+			}
+
+			// Buffer UAVs: ensure writes are visible
+			const Flux_UnorderedAccessView_Buffer* pxUAV_Buffer = m_xBindings[uDescSet].m_xUAV_Buffers[i];
+			if (pxUAV_Buffer)
+			{
+				Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(pxUAV_Buffer->m_xVRAMHandle);
+				Zenith_Assert(pxVRAM, "Invalid VRAM for buffer UAV");
+
+				axBufferBarriers[uNumBufferBarriers++] = vk::BufferMemoryBarrier()
+					.setBuffer(pxVRAM->GetBuffer())
+					.setOffset(0)
+					.setSize(VK_WHOLE_SIZE)
+					.setSrcAccessMask(vk::AccessFlagBits::eShaderWrite)
+					.setDstAccessMask(vk::AccessFlagBits::eShaderRead | vk::AccessFlagBits::eIndirectCommandRead)
+					.setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
+					.setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED);
+			}
+		}
+	}
+
+	// Combined post-dispatch barrier for both images and buffers
+	if (uNumImageBarriers > 0 || uNumBufferBarriers > 0)
+	{
+		m_xCurrentCmdBuffer.pipelineBarrier(
+			vk::PipelineStageFlagBits::eComputeShader,
+			vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eComputeShader | vk::PipelineStageFlagBits::eDrawIndirect | vk::PipelineStageFlagBits::eVertexShader,
+			vk::DependencyFlags(),
+			0, nullptr,
+			uNumBufferBarriers, axBufferBarriers,
+			uNumImageBarriers, axImageBarriers
+		);
+	}
 }
 
 void Zenith_Vulkan_CommandBuffer::ImageBarrier(Flux_Texture* pxTexture, uint32_t uOldLayout, uint32_t uNewLayout)

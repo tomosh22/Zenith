@@ -184,8 +184,7 @@
       <AdditionalDependencies>glfw3_mt.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
-      <IgnoreSpecificDefaultLibraries>
-      </IgnoreSpecificDefaultLibraries>
+      <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
       <LargeAddressAware>true</LargeAddressAware>
       <MapFileName>output\win64\vs2022_debug_win64_false\test.map</MapFileName>
     </Link>
@@ -271,8 +270,7 @@
       <AdditionalDependencies>zenithtools.lib;assimp-vc143-mtd.lib;glfw3_mt.lib;opencv_world4100d.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
-      <IgnoreSpecificDefaultLibraries>
-      </IgnoreSpecificDefaultLibraries>
+      <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
       <LargeAddressAware>true</LargeAddressAware>
       <MapFileName>output\win64\vs2022_debug_win64_true\test.map</MapFileName>
     </Link>
@@ -358,8 +356,7 @@
       <AdditionalDependencies>glfw3_mt.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
-      <IgnoreSpecificDefaultLibraries>
-      </IgnoreSpecificDefaultLibraries>
+      <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
       <LargeAddressAware>true</LargeAddressAware>
       <MapFileName>output\win64\vs2022_release_win64_false\test.map</MapFileName>
     </Link>
@@ -445,8 +442,7 @@
       <AdditionalDependencies>zenithtools.lib;assimp-vc143-mt.lib;glfw3_mt.lib;opencv_world4100.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
-      <IgnoreSpecificDefaultLibraries>
-      </IgnoreSpecificDefaultLibraries>
+      <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
       <LargeAddressAware>true</LargeAddressAware>
       <MapFileName>output\win64\vs2022_release_win64_true\test.map</MapFileName>
     </Link>
@@ -853,13 +849,13 @@
     <ClInclude Include="..\..\..\Zenith\Flux\Shaders\StaticMeshes\Flux_StaticMeshes_ToShadowmap.frag" />
     <ClInclude Include="..\..\..\Zenith\Flux\Shaders\StaticMeshes\Flux_StaticMeshes_ToShadowmap.vert" />
     <ClInclude Include="..\..\..\Zenith\Flux\Shaders\StaticMeshes\Flux_StaticMeshes_VertCommon.fxh" />
+    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Terrain\Flux_TerrainCulling.comp" />
     <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Terrain\Flux_Terrain_FragCommon.fxh" />
     <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Terrain\Flux_Terrain_ToGBuffer.frag" />
     <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Terrain\Flux_Terrain_ToGBuffer.vert" />
     <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Terrain\Flux_Terrain_ToShadowmap.frag" />
     <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Terrain\Flux_Terrain_ToShadowmap.vert" />
     <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Terrain\Flux_Terrain_VertCommon.fxh" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Terrain\TerrainCulling.comp" />
     <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Text\Flux_Text.frag" />
     <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Text\Flux_Text.vert" />
     <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Water\Flux_Water.frag" />
@@ -869,6 +865,7 @@
     <ClInclude Include="..\..\..\Zenith\Flux\SSAO\Flux_SSAO.h" />
     <ClInclude Include="..\..\..\Zenith\Flux\StaticMeshes\Flux_StaticMeshes.h" />
     <ClInclude Include="..\..\..\Zenith\Flux\Terrain\Flux_Terrain.h" />
+    <ClInclude Include="..\..\..\Zenith\Flux\Terrain\Flux_TerrainCulling.h" />
     <ClInclude Include="..\..\..\Zenith\Flux\Text\Flux_Text.h" />
     <ClInclude Include="..\..\..\Zenith\Input\Zenith_Input.h" />
     <ClInclude Include="..\..\..\Zenith\Input\Zenith_KeyCodes.h" />
@@ -1794,6 +1791,7 @@
     <ClCompile Include="..\..\..\Zenith\Flux\SSAO\Flux_SSAO.cpp" />
     <ClCompile Include="..\..\..\Zenith\Flux\StaticMeshes\Flux_StaticMeshes.cpp" />
     <ClCompile Include="..\..\..\Zenith\Flux\Terrain\Flux_Terrain.cpp" />
+    <ClCompile Include="..\..\..\Zenith\Flux\Terrain\Flux_TerrainCulling.cpp" />
     <ClCompile Include="..\..\..\Zenith\Flux\Text\Flux_Text.cpp" />
     <ClCompile Include="..\..\..\Zenith\Input\Zenith_Input.cpp" />
     <ClCompile Include="..\..\..\Zenith\Maths\Zenith_Maths.cpp" />
