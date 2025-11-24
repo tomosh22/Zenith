@@ -57,6 +57,7 @@ public:
 	static void GenerateFullscreenQuad(Flux_MeshGeometry& xGeometryOut);
 	static void GenerateFullscreenQuad(Flux_MeshGeometry& xGeometryOut, Zenith_Maths::Matrix4 xTransform);
 	static void LoadFromFile(const char* szPath, Flux_MeshGeometry& xGeometryOut, u_int uRetainAttributeBits = 0, const bool bUploadToGPU = true);
+	static void Combine(Flux_MeshGeometry& xDst, const Flux_MeshGeometry& xSrc);
 
 	const void* GetVertexData() const { return m_pVertexData; }
 	const uint64_t GetVertexDataSize() const { return m_uNumVerts * m_xBufferLayout.GetStride(); }
@@ -115,6 +116,10 @@ public:
 
 	Flux_VertexBuffer m_xVertexBuffer;
 	Flux_IndexBuffer m_xIndexBuffer;
+
+	u_int64 m_ulReservedVertexDataSize = 0;
+	u_int64 m_ulReservedIndexDataSize = 0;
+	u_int64 m_ulReservedPositionDataSize = 0;
 
 
 	class Flux_MeshAnimation* m_pxAnimation = nullptr;

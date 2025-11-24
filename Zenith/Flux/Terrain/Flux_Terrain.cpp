@@ -3,12 +3,9 @@
 #include "Flux/Terrain/Flux_Terrain.h"
 
 #include "Flux/Flux.h"
-#include "Flux/Flux_RenderTargets.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_Buffers.h"
 #include "Flux/Shadows/Flux_Shadows.h"
-#include "Flux/DeferredShading/Flux_DeferredShading.h"
-#include "Flux/Terrain/Flux_TerrainCulling.h"
 #include "AssetHandling/Zenith_AssetHandler.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
@@ -22,7 +19,6 @@ static Zenith_TaskArray* g_pxRenderTask = nullptr;
 static Zenith_Vector<Zenith_TerrainComponent*> g_xTerrainComponentsToRender;
 
 static Flux_CommandList g_axPerThreadTerrainCommandLists[uNUM_TASKS] {"Terrain", "Terrain", "Terrain", "Terrain"};
-static Flux_CommandList g_axPerThreadWaterCommandLists[uNUM_TASKS] {"Water", "Water" , "Water" , "Water"};
 
 static Flux_Shader s_xTerrainGBufferShader;
 static Flux_Pipeline s_xTerrainGBufferPipeline;
@@ -50,8 +46,6 @@ DEBUGVAR bool dbg_bIgnoreVisibilityCheck = false;
 
 void Flux_Terrain::Initialise()
 {
-	// Initialize frustum culling system
-	Flux_TerrainCulling::Initialise();
 
 	s_xTerrainGBufferShader.Initialise("Terrain/Flux_Terrain_ToGBuffer.vert", "Terrain/Flux_Terrain_ToGBuffer.frag");
 	s_xTerrainShadowShader.Initialise("Terrain/Flux_Terrain_ToShadowmap.vert", "Terrain/Flux_Terrain_ToShadowmap.frag");
@@ -164,25 +158,8 @@ void Flux_Terrain::SubmitRenderToGBufferTask()
 {
 	// Get all terrain components
 	Zenith_Vector<Zenith_TerrainComponent*> xAllTerrain;
-	Zenith_Scene::GetCurrentScene().GetAllOfComponentType<Zenith_TerrainComponent>(xAllTerrain);
-
-	// Ensure AABBs are generated for all terrain (lazy initialization)
-	for (Zenith_Vector<Zenith_TerrainComponent*>::Iterator xIt(xAllTerrain); !xIt.Done(); xIt.Next())
-	{
-		Zenith_TerrainComponent* pxTerrain = xIt.GetData();
-		if (!pxTerrain->HasValidAABB())
-		{
-			Zenith_AABB xAABB = Flux_TerrainCulling::GenerateTerrainAABB(*pxTerrain);
-			pxTerrain->SetAABB(xAABB);
-		}
-	}
-
-	// Perform frustum culling
-	const Zenith_CameraComponent& xCam = Zenith_Scene::GetCurrentScene().GetMainCamera();
-	Flux_TerrainCulling::PerformCulling(xCam, xAllTerrain);
-
-	// Get visible terrain after culling
-	g_xTerrainComponentsToRender = Flux_TerrainCulling::GetVisibleTerrainComponents();
+	g_xTerrainComponentsToRender.Clear();
+	Zenith_Scene::GetCurrentScene().GetAllOfComponentType<Zenith_TerrainComponent>(g_xTerrainComponentsToRender);
 
 	Flux_MemoryManager::UploadBufferData(s_xTerrainConstantsBuffer.GetBuffer().m_xVRAMHandle, &s_xTerrainConstants, sizeof(TerrainConstants));
 
@@ -214,23 +191,16 @@ void Flux_Terrain::RenderToGBuffer(void*, u_int uInvocationIndex, u_int uNumInvo
 		uStartIndex + uTerrainsPerInvocation : uTotalTerrains;
 
 	Flux_CommandList& xTerrainCmdList = g_axPerThreadTerrainCommandLists[uInvocationIndex];
-	Flux_CommandList& xWaterCmdList = g_axPerThreadWaterCommandLists[uInvocationIndex];
 
 	xTerrainCmdList.Reset(false);
-	xWaterCmdList.Reset(false);
 
 	xTerrainCmdList.AddCommand<Flux_CommandSetPipeline>(dbg_bWireframe ? &s_xTerrainWireframePipeline : &s_xTerrainGBufferPipeline);
-	xWaterCmdList.AddCommand<Flux_CommandSetPipeline>(&s_xWaterPipeline);
 
 	xTerrainCmdList.AddCommand<Flux_CommandBeginBind>(0);
 	xTerrainCmdList.AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer().m_xCBV, 0);
 	xTerrainCmdList.AddCommand<Flux_CommandBindCBV>(&s_xTerrainConstantsBuffer.GetBuffer().m_xCBV, 1);
 
 	xTerrainCmdList.AddCommand<Flux_CommandBeginBind>(1);
-	
-	xWaterCmdList.AddCommand<Flux_CommandBeginBind>(0);
-	xWaterCmdList.AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetBuffer().m_xCBV, 0);
-	xWaterCmdList.AddCommand<Flux_CommandBeginBind>(1);
 
 	for (u_int u = uStartIndex; u < uEndIndex; u++)
 	{
@@ -254,18 +224,9 @@ void Flux_Terrain::RenderToGBuffer(void*, u_int uInvocationIndex, u_int uNumInvo
 		xTerrainCmdList.AddCommand<Flux_CommandBindSRV>(&xMaterial1.GetRoughnessMetallic()->m_xSRV, 5);
 
 		xTerrainCmdList.AddCommand<Flux_CommandDrawIndexed>(pxTerrain->GetRenderMeshGeometry().GetNumIndices());
-
-
-		xWaterCmdList.AddCommand<Flux_CommandSetVertexBuffer>(&pxTerrain->GetWaterGeometry().GetVertexBuffer());
-		xWaterCmdList.AddCommand<Flux_CommandSetIndexBuffer>(&pxTerrain->GetWaterGeometry().GetIndexBuffer());
-
-		xWaterCmdList.AddCommand<Flux_CommandBindSRV>(&s_xWaterNormalTexture.m_xSRV, 0);
-
-		xWaterCmdList.AddCommand<Flux_CommandDrawIndexed>(pxTerrain->GetWaterGeometry().GetNumIndices());
 	}
 
 	Flux::SubmitCommandList(&xTerrainCmdList, Flux_Graphics::s_xMRTTarget, RENDER_ORDER_TERRAIN);
-	Flux::SubmitCommandList(&xWaterCmdList, Flux_Graphics::s_xFinalRenderTarget, RENDER_ORDER_WATER);
 }
 
 void Flux_Terrain::RenderToShadowMap(Flux_CommandList& xCmdBuf)

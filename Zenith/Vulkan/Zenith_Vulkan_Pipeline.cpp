@@ -236,7 +236,7 @@ static void AddVertexAttributes(const Flux_BufferLayout& xLayout, uint32_t uBind
 			.setBinding(uBinding)
 			.setLocation(uBindPoint++)
 			.setOffset(xElement.m_uOffset)
-			.setFormat(Zenith_Vulkan::ShaderDataTypeToVulkanFormat(xElement._Type)));
+			.setFormat(Zenith_Vulkan::ShaderDataTypeToVulkanFormat(xElement.m_eType)));
 	}
 
 	xBindDescs.push_back(vk::VertexInputBindingDescription()

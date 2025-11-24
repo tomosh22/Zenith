@@ -10,7 +10,6 @@
 #include "EntityComponent/Components/Zenith_TextComponent.h"
 #include "AssetHandling/Zenith_AssetHandler.h"
 #include "Flux/Flux_Material.h"
-#include "Flux/Flux_Graphics.h"
 #include "Flux/MeshAnimation/Flux_MeshAnimation.h"
 #include "Input/Zenith_Input.h"
 
@@ -24,24 +23,14 @@ void Zenith_StateMachine::Project_Initialise()
 	s_pxCurrentState = new Test_State_InGame;
 }
 
-#define TERRAIN_EXPORT_DIMS 64
-
 static Zenith_Entity s_xPlayer;
 static Zenith_Entity s_xBarrel;
 static Zenith_Entity s_xSphere0;
 static Zenith_Entity s_xSphere1;
 static Zenith_Entity s_axRotatingSpheres[3];
-static Zenith_Entity s_xTerrain[TERRAIN_EXPORT_DIMS][TERRAIN_EXPORT_DIMS];
+static Zenith_Entity s_xTerrain;
 static Zenith_Entity s_xOgre;
 static Zenith_Entity s_xGltfTest[3];
-
-//#TO_TODO: these need to be in a header file for tools terrain export
-
-#define MAX_TERRAIN_HEIGHT 2048
-//#TO width/height that heightmap is divided into
-#define TERRAIN_SIZE 64
-//#TO multiplier for vertex positions
-#define TERRAIN_SCALE 8
 
 static Zenith_Maths::Vector3 s_xPlayerSpawn = { 2100,-566,1500 };
 
@@ -175,26 +164,6 @@ static void LoadAssets()
 		xMat.SetNormal(xNormal);
 		xMat.SetRoughnessMetallic(xRoughness);
 	}
-
-	for (uint32_t x = 0; x < TERRAIN_EXPORT_DIMS; x++)
-	{
-		for (uint32_t y = 0; y < TERRAIN_EXPORT_DIMS; y++)
-		{
-			std::string strSuffix = std::to_string(x) + "_" + std::to_string(y);
-
-			Zenith_AssetHandler::AddMesh("Terrain_Render" + strSuffix, std::string(ASSETS_ROOT"Terrain/Render_" + strSuffix + ".zmsh").c_str(), 1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__POSITION);
-			Zenith_AssetHandler::AddMesh("Terrain_Physics" + strSuffix, std::string(ASSETS_ROOT"Terrain/Physics_" + strSuffix + ".zmsh").c_str(), 1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__POSITION | 1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__NORMAL);
-
-			Zenith_Maths::Matrix4 xWaterTransform =
-				glm::translate(glm::identity<Zenith_Maths::Matrix4>(), Zenith_Maths::Vector3(x * TERRAIN_SIZE * TERRAIN_SCALE + (TERRAIN_SIZE * TERRAIN_SCALE / 2), MAX_TERRAIN_HEIGHT / 2, y * TERRAIN_SIZE * TERRAIN_SCALE + (TERRAIN_SIZE * TERRAIN_SCALE / 2))) *
-				Zenith_Maths::EulerRotationToMatrix4(90, { 1.,0.,0. }) *
-				glm::scale(glm::identity<Zenith_Maths::Matrix4>(), Zenith_Maths::Vector3(TERRAIN_SIZE * TERRAIN_SCALE / 2, TERRAIN_SIZE * TERRAIN_SCALE / 2, TERRAIN_SIZE * TERRAIN_SCALE / 2));
-			Flux_MeshGeometry& xWaterMesh = Zenith_AssetHandler::AddMesh("Terrain_Water" + strSuffix);
-			Flux_MeshGeometry::GenerateFullscreenQuad(xWaterMesh, xWaterTransform);
-			Flux_MemoryManager::InitialiseVertexBuffer(xWaterMesh.GetVertexData(), xWaterMesh.GetVertexDataSize(), xWaterMesh.GetVertexBuffer());
-			Flux_MemoryManager::InitialiseIndexBuffer(xWaterMesh.GetIndexData(), xWaterMesh.GetIndexDataSize(), xWaterMesh.GetIndexBuffer());
-		}
-	}
 }
 
 void Test_State_InGame::OnEnter()
@@ -320,30 +289,12 @@ void Test_State_InGame::OnEnter()
 
 		uCount++;
 	}
-
-	for (uint32_t x = 0; x < TERRAIN_EXPORT_DIMS; x++)
+	
 	{
-		for (uint32_t y = 0; y < TERRAIN_EXPORT_DIMS; y++)
-		{
-			std::string strRenderMeshName = "Terrain_Render" + std::to_string(x) + "_" + std::to_string(y);
-			Flux_MeshGeometry& xTerrainRenderMesh = Zenith_AssetHandler::GetMesh(strRenderMeshName);
-			std::string strPhysicsMeshName = "Terrain_Physics" + std::to_string(x) + "_" + std::to_string(y);
-			Flux_MeshGeometry& xTerrainPhysicsMesh = Zenith_AssetHandler::GetMesh(strPhysicsMeshName);
-			std::string strWaterMeshName = "Terrain_Water" + std::to_string(x) + "_" + std::to_string(y);
-			Flux_MeshGeometry& xTerrainWaterMesh = Zenith_AssetHandler::GetMesh(strWaterMeshName);
-
-			Zenith_Entity& xTerrain = s_xTerrain[x][y];
-
-			xTerrain.Initialise(&xScene, strRenderMeshName);
-
-			xTerrain.AddComponent<Zenith_TerrainComponent>(xTerrainRenderMesh, xTerrainPhysicsMesh, xTerrainWaterMesh, Zenith_AssetHandler::GetMaterial("Rock"), Zenith_AssetHandler::GetMaterial("Crystal"), Zenith_Maths::Vector2(x * TERRAIN_SIZE, y * TERRAIN_SIZE));
-
-
-#if 1
-			Zenith_ColliderComponent& xCollider = xTerrain.AddComponent<Zenith_ColliderComponent>();
-			xCollider.AddCollider(COLLISION_VOLUME_TYPE_TERRAIN, RIGIDBODY_TYPE_STATIC);
-#endif
-		}
+		s_xTerrain.Initialise(&xScene, "Terrain");
+		s_xTerrain.AddComponent<Zenith_TerrainComponent>(Zenith_AssetHandler::GetMaterial("Rock"), Zenith_AssetHandler::GetMaterial("Crystal"));
+		Zenith_ColliderComponent& xCollider = s_xTerrain.AddComponent<Zenith_ColliderComponent>();
+		xCollider.AddCollider(COLLISION_VOLUME_TYPE_TERRAIN, RIGIDBODY_TYPE_STATIC);
 	}
 
 	{
@@ -451,16 +402,5 @@ void Test_State_InGame::OnExit()
 		Zenith_AssetHandler::DeleteTexture("Rock_Roughness");
 		Zenith_AssetHandler::DeleteTexture("Rock_Metallic");
 		Zenith_AssetHandler::DeleteMaterial("Rock");
-	}
-
-	for (uint32_t x = 0; x < TERRAIN_EXPORT_DIMS; x++)
-	{
-		for (uint32_t y = 0; y < TERRAIN_EXPORT_DIMS; y++)
-		{
-			std::string strSuffix = std::to_string(x) + "_" + std::to_string(y);
-			Zenith_AssetHandler::DeleteMesh("Terrain_Render" + strSuffix);
-			Zenith_AssetHandler::DeleteMesh("Terrain_Physics" + strSuffix);
-			Zenith_AssetHandler::DeleteMesh("Terrain_Water" + strSuffix);
-		}
 	}
 }

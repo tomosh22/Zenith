@@ -42,23 +42,23 @@ static uint32_t Flux_ShaderDataTypeSize(ShaderDataType t)
 struct Flux_BufferElement
 {
 	uint32_t m_uOffset;
-	uint32_t _Size;
-	ShaderDataType _Type;
-	bool _Normalized;
-	bool _Instanced = false;
-	unsigned int m_uDivisor = 0;
-	void* m_pData = nullptr;
-	unsigned int _numEntries = 0;
+	uint32_t m_uSize;
+	ShaderDataType m_eType;
 
-	Flux_BufferElement(ShaderDataType type, bool normalized = false, bool instanced = false, unsigned int divisor = 0, void* data = nullptr, unsigned int numEntries = 0) : _Type(type), _Size(Flux_ShaderDataTypeSize(type)), m_uOffset(0), _Normalized(normalized), _Instanced(instanced), m_uDivisor(divisor), m_pData(data), _numEntries(numEntries)
+	Flux_BufferElement(ShaderDataType type, bool normalized = false, bool instanced = false, unsigned int divisor = 0, void* data = nullptr, unsigned int numEntries = 0) : m_eType(type), m_uSize(Flux_ShaderDataTypeSize(type)), m_uOffset(0)
 	{
 	}
 
 	Flux_BufferElement() {};
 
+	bool operator==(const Flux_BufferElement& other) const
+	{
+		return m_eType == other.m_eType && m_uSize == other.m_uSize && m_uOffset == other.m_uOffset;
+	}
+
 	uint32_t GetComponentCount() const
 	{
-		switch (_Type)
+		switch (m_eType)
 		{
 		case SHADER_DATA_TYPE_FLOAT:	return 1;
 		case SHADER_DATA_TYPE_FLOAT2:	return 2;
@@ -83,6 +83,24 @@ class Flux_BufferLayout
 {
 public:
 	Flux_BufferLayout() = default;
+
+	bool operator==(const Flux_BufferLayout& other) const
+	{
+		if (m_xElements.GetSize() != other.m_xElements.GetSize())
+		{
+			return false;
+		}
+
+		for (uint32_t u = 0; u < m_xElements.GetSize(); u++)
+		{
+			if (m_xElements.Get(u) != other.m_xElements.Get(u))
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+
 	void Reset() { m_xElements.Clear(); }
 	Zenith_Vector<Flux_BufferElement>& GetElements() { return m_xElements; };
 	const Zenith_Vector<Flux_BufferElement>& GetElements() const { return m_xElements; };
@@ -95,8 +113,8 @@ public:
 		{
 			Flux_BufferElement& xElement = xIt.GetData();
 			xElement.m_uOffset = uOffset;
-			uOffset += xElement._Size;
-			m_uStride += xElement._Size;
+			uOffset += xElement.m_uSize;
+			m_uStride += xElement.m_uSize;
 		}
 	}
 private:

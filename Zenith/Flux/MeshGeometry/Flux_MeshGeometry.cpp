@@ -150,6 +150,77 @@ void Flux_MeshGeometry::LoadFromFile(const char* szPath, Flux_MeshGeometry& xGeo
 	}
 }
 
+void Flux_MeshGeometry::Combine(Flux_MeshGeometry& xDst, const Flux_MeshGeometry& xSrc)
+{
+	Zenith_Assert(xDst.m_xBufferLayout == xSrc.m_xBufferLayout, "Incompatible meshes");
+
+	if(xDst.m_ulReservedVertexDataSize < xDst.GetVertexDataSize() + xSrc.GetVertexDataSize())
+	{
+		xDst.m_pVertexData = static_cast<u_int8*>(Zenith_MemoryManagement::Reallocate(xDst.m_pVertexData, xDst.GetVertexDataSize() + xSrc.GetVertexDataSize()));
+	}
+	memcpy(xDst.m_pVertexData + xDst.GetVertexDataSize(), xSrc.m_pVertexData, xSrc.GetVertexDataSize());
+
+	if(xDst.m_ulReservedIndexDataSize < xDst.GetIndexDataSize() + xSrc.GetIndexDataSize())
+	{
+		xDst.m_puIndices = static_cast<Flux_MeshGeometry::IndexType*>(Zenith_MemoryManagement::Reallocate(xDst.m_puIndices, xDst.GetIndexDataSize() + xSrc.GetIndexDataSize()));
+	}
+	memcpy(xDst.m_puIndices + xDst.m_uNumIndices, xSrc.m_puIndices, xSrc.GetIndexDataSize());
+	for (u_int u = 0; u < xSrc.m_uNumIndices; u++)
+	{
+		xDst.m_puIndices[xDst.m_uNumIndices + u] += xDst.m_uNumVerts;
+	}
+
+	if (xDst.m_pxPositions)
+	{
+		if(xDst.m_ulReservedPositionDataSize < (xDst.m_uNumVerts + xSrc.m_uNumVerts) * sizeof(Zenith_Maths::Vector3))
+		{
+			xDst.m_pxPositions = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Reallocate(xDst.m_pxPositions, (xDst.m_uNumVerts + xSrc.m_uNumVerts) * sizeof(Zenith_Maths::Vector3)));
+		}
+		memcpy(xDst.m_pxPositions + xDst.m_uNumVerts, xSrc.m_pxPositions, xSrc.m_uNumVerts * sizeof(Zenith_Maths::Vector3));
+	}
+
+	if (xDst.m_pxNormals)
+	{
+		xDst.m_pxNormals = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Reallocate(xDst.m_pxNormals, (xDst.m_uNumVerts + xSrc.m_uNumVerts) * sizeof(Zenith_Maths::Vector3)));
+		memcpy(xDst.m_pxNormals + xDst.m_uNumVerts, xSrc.m_pxNormals, xSrc.m_uNumVerts * sizeof(Zenith_Maths::Vector3));
+	}
+
+	if (xDst.m_pxTangents)
+	{
+		xDst.m_pxTangents = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Reallocate(xDst.m_pxTangents, (xDst.m_uNumVerts + xSrc.m_uNumVerts) * sizeof(Zenith_Maths::Vector3)));
+		memcpy(xDst.m_pxTangents + xDst.m_uNumVerts, xSrc.m_pxTangents, xSrc.m_uNumVerts * sizeof(Zenith_Maths::Vector3));
+	}
+
+	if (xDst.m_pxBitangents)
+	{
+		xDst.m_pxBitangents = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Reallocate(xDst.m_pxBitangents, (xDst.m_uNumVerts + xSrc.m_uNumVerts) * sizeof(Zenith_Maths::Vector3)));
+		memcpy(xDst.m_pxBitangents + xDst.m_uNumVerts, xSrc.m_pxBitangents, xSrc.m_uNumVerts * sizeof(Zenith_Maths::Vector3));
+	}
+
+	if (xDst.m_pxColors)
+	{
+		xDst.m_pxColors = static_cast<Zenith_Maths::Vector4*>(Zenith_MemoryManagement::Reallocate(xDst.m_pxColors, (xDst.m_uNumVerts + xSrc.m_uNumVerts) * sizeof(Zenith_Maths::Vector4)));
+		memcpy(xDst.m_pxColors + xDst.m_uNumVerts, xSrc.m_pxColors, xSrc.m_uNumVerts * sizeof(Zenith_Maths::Vector4));
+	}
+
+	if (xDst.m_pfMaterialLerps)
+	{
+		xDst.m_pfMaterialLerps = static_cast<float*>(Zenith_MemoryManagement::Reallocate(xDst.m_pfMaterialLerps, (xDst.m_uNumVerts + xSrc.m_uNumVerts) * sizeof(float)));
+		memcpy(xDst.m_pfMaterialLerps + xDst.m_uNumVerts, xSrc.m_pfMaterialLerps, xSrc.m_uNumVerts * sizeof(float));
+	}
+
+
+	xDst.m_uNumVerts += xSrc.m_uNumVerts;
+	xDst.m_uNumIndices += xSrc.m_uNumIndices;
+	xDst.m_uNumBones += xSrc.m_uNumBones;
+	for (auto& xIt : xSrc.m_xBoneNameToIdAndOffset)
+	{
+		Zenith_Assert(xDst.m_xBoneNameToIdAndOffset.find(xIt.first) == xDst.m_xBoneNameToIdAndOffset.end(), "Bone name collision when combining meshes");
+		xDst.m_xBoneNameToIdAndOffset[xIt.first] = xIt.second;
+	}
+	//#TO just ignore material color
+}
+
 #ifdef ZENITH_TOOLS
 template<typename T>
 void ExportAttribute(T* ptData, Zenith_DataStream& xStream, u_int uSize)
