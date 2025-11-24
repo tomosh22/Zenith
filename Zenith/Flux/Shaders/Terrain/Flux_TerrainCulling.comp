@@ -1,7 +1,7 @@
 #version 450
 
-// Compute shader for GPU-driven terrain chunk culling
-// This runs once per terrain chunk and tests if it's visible in the camera frustum
+// Compute shader for GPU-driven terrain chunk culling with front-to-back sorting
+// This runs once per terrain chunk, tests visibility, calculates distance, and writes sorted draw commands
 
 layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 
@@ -32,27 +32,43 @@ struct FrustumPlane
     vec4 normalAndDistance;  // xyz = normal, w = distance
 };
 
+// Visible chunk data for sorting
+struct VisibleChunkData
+{
+    uint chunkIndex;
+    float distanceSquared;  // Distance squared to camera (for front-to-back sorting)
+};
+
 // Input: chunk data (read-only)
 layout(std140, set = 0, binding = 0) readonly buffer ChunkBuffer
 {
     TerrainChunkData chunks[];
 };
 
-// Input: frustum planes extracted from viewProjection matrix
-layout(std140, set = 0, binding = 1) uniform FrustumBuffer
+// Input: frustum planes and camera position extracted from viewProjection matrix
+layout(std140, set = 0, binding = 1) uniform CameraBuffer
 {
     FrustumPlane frustumPlanes[6];  // Left, Right, Bottom, Top, Near, Far
+    vec4 cameraPosition;             // xyz = camera position, w = padding
 };
 
 // Output: indirect draw commands (one per chunk)
-// Visible chunks will have indexCount > 0, non-visible chunks will have indexCount = 0
 layout(std430, set = 0, binding = 2) buffer IndirectCommandBuffer
 {
     DrawIndexedIndirectCommand drawCommands[];
 };
 
+// Output: atomic counter for visible chunks
+layout(std430, set = 0, binding = 3) buffer VisibleCountBuffer
+{
+    uint visibleCount;
+};
+
+// Shared memory for sorting visible chunks within workgroup
+shared VisibleChunkData s_visibleChunks[64];
+shared uint s_localVisibleCount;
+
 // Test if an AABB intersects with the frustum
-// Uses the "p-vertex" method for efficient testing
 bool testAABBFrustum(vec3 aabbMin, vec3 aabbMax)
 {
     vec3 center = (aabbMin + aabbMax) * 0.5;
@@ -87,6 +103,14 @@ bool testAABBFrustum(vec3 aabbMin, vec3 aabbMax)
 void main()
 {
     uint chunkIndex = gl_GlobalInvocationID.x;
+    uint localIndex = gl_LocalInvocationID.x;
+    
+    // Initialize shared memory on first thread
+    if (localIndex == 0)
+    {
+        s_localVisibleCount = 0;
+    }
+    barrier();
     
     // Bounds check (we may have launched more threads than chunks)
     if (chunkIndex >= chunks.length())
@@ -98,23 +122,57 @@ void main()
     // Perform frustum culling test
     bool isVisible = testAABBFrustum(chunk.aabbMin.xyz, chunk.aabbMax.xyz);
     
-    // Write the indirect draw command directly at the chunk's index
-    // If visible, write the actual draw command; if not visible, write indexCount=0 to skip it
     if (isVisible)
     {
-        drawCommands[chunkIndex].indexCount = chunk.indexCount;
-        drawCommands[chunkIndex].instanceCount = 1;
-        drawCommands[chunkIndex].firstIndex = chunk.firstIndex;
-        drawCommands[chunkIndex].vertexOffset = int(chunk.vertexOffset);
-        drawCommands[chunkIndex].firstInstance = 0;
+        // Calculate distance squared from camera to chunk center (for sorting)
+        vec3 chunkCenter = (chunk.aabbMin.xyz + chunk.aabbMax.xyz) * 0.5;
+        vec3 toCameraVec = cameraPosition.xyz - chunkCenter;
+        float distSq = dot(toCameraVec, toCameraVec);
+        
+        // Add to local visible list
+        uint localSlot = atomicAdd(s_localVisibleCount, 1);
+        if (localSlot < 64)
+        {
+            s_visibleChunks[localSlot].chunkIndex = chunkIndex;
+            s_visibleChunks[localSlot].distanceSquared = distSq;
+        }
     }
-    else
+    
+    barrier();
+    
+    // Sort visible chunks within workgroup (simple insertion sort for small arrays)
+    // Only thread 0 does the sorting
+    if (localIndex == 0 && s_localVisibleCount > 0)
     {
-        // Write a command with indexCount=0 which will be skipped by the GPU
-        drawCommands[chunkIndex].indexCount = 0;
-        drawCommands[chunkIndex].instanceCount = 0;
-        drawCommands[chunkIndex].firstIndex = 0;
-        drawCommands[chunkIndex].vertexOffset = 0;
-        drawCommands[chunkIndex].firstInstance = 0;
+        uint count = min(s_localVisibleCount, 64);
+        
+        // Insertion sort: front-to-back (closest first)
+        for (uint i = 1; i < count; ++i)
+        {
+            VisibleChunkData key = s_visibleChunks[i];
+            int j = int(i) - 1;
+            
+            while (j >= 0 && s_visibleChunks[j].distanceSquared > key.distanceSquared)
+            {
+                s_visibleChunks[j + 1] = s_visibleChunks[j];
+                j--;
+            }
+            s_visibleChunks[j + 1] = key;
+        }
+        
+        // Write sorted visible chunks to output buffer
+        uint baseIndex = atomicAdd(visibleCount, count);
+        for (uint i = 0; i < count; ++i)
+        {
+            uint outIndex = baseIndex + i;
+            uint srcChunkIndex = s_visibleChunks[i].chunkIndex;
+            TerrainChunkData srcChunk = chunks[srcChunkIndex];
+            
+            drawCommands[outIndex].indexCount = srcChunk.indexCount;
+            drawCommands[outIndex].instanceCount = 1;
+            drawCommands[outIndex].firstIndex = srcChunk.firstIndex;
+            drawCommands[outIndex].vertexOffset = int(srcChunk.vertexOffset);
+            drawCommands[outIndex].firstInstance = 0;
+        }
     }
 }

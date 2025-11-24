@@ -35,6 +35,13 @@ struct Flux_FrustumPlaneGPU
 	Zenith_Maths::Vector4 m_xNormalAndDistance;  // xyz = normal, w = distance
 };
 
+// Camera culling data structure for GPU upload
+struct Flux_CameraDataGPU
+{
+	Flux_FrustumPlaneGPU m_axFrustumPlanes[6];  // 6 frustum planes
+	Zenith_Maths::Vector4 m_xCameraPosition;     // xyz = camera position, w = padding
+};
+
 class Flux_TerrainCulling
 {
 public:
@@ -43,8 +50,8 @@ public:
 
 	/**
 	 * Dispatch the terrain culling compute shader
-	 * This tests all terrain chunks against the camera frustum and writes
-	 * indirect draw commands for visible chunks
+	 * This tests all terrain chunks against the camera frustum, calculates distance to camera,
+	 * sorts visible chunks front-to-back, and writes compacted indirect draw commands
 	 * 
 	 * @param xViewProjMatrix The camera's view-projection matrix
 	 */
@@ -53,8 +60,15 @@ public:
 	/**
 	 * Get the indirect draw buffer for rendering
 	 * This buffer contains VkDrawIndexedIndirectCommand structs written by the compute shader
+	 * The commands are compacted (only visible chunks) and sorted front-to-back
 	 */
 	static const Flux_IndirectBuffer& GetIndirectDrawBuffer();
+
+	/**
+	 * Get the actual number of visible chunks (for indirect draw count)
+	 * This should be read back from GPU after culling compute completes
+	 */
+	static const Flux_ReadWriteBuffer& GetVisibleCountBuffer();
 
 	/**
 	 * Get the maximum number of draw commands (= 4096, the theoretical maximum)

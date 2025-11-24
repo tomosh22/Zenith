@@ -32,7 +32,7 @@ void Flux_TerrainCulling::Initialise()
 	// Frustum planes buffer (6 planes, updated per frame)
 	Flux_MemoryManager::InitialiseDynamicConstantBuffer(
 		nullptr,
-		sizeof(Flux_FrustumPlaneGPU) * 6,
+		sizeof(Flux_CameraDataGPU),
 		g_xFrustumPlanesBuffer
 	);
 
@@ -214,10 +214,24 @@ void Flux_TerrainCulling::ExtractFrustumPlanes(const Zenith_Maths::Matrix4& xVie
 
 void Flux_TerrainCulling::DispatchCulling(const Zenith_Maths::Matrix4& xViewProjMatrix)
 {
-	// Extract frustum planes and upload to GPU
-	Flux_FrustumPlaneGPU axFrustumPlanes[6];
-	ExtractFrustumPlanes(xViewProjMatrix, axFrustumPlanes);
-	Flux_MemoryManager::UploadBufferData(g_xFrustumPlanesBuffer.GetBuffer().m_xVRAMHandle, axFrustumPlanes, sizeof(axFrustumPlanes));
+	// Extract frustum planes and camera position, upload to GPU
+	Flux_CameraDataGPU xCameraData;
+	Zenith_Frustum xFrustum;
+	xFrustum.ExtractFromViewProjection(xViewProjMatrix);
+	
+	// Convert frustum to GPU format
+	for (int i = 0; i < 6; ++i)
+	{
+		xCameraData.m_axFrustumPlanes[i].m_xNormalAndDistance = Zenith_Maths::Vector4(
+			xFrustum.m_axPlanes[i].m_xNormal,
+			xFrustum.m_axPlanes[i].m_fDistance
+		);
+	}
+	
+	// Add camera position for distance-based sorting
+	xCameraData.m_xCameraPosition = Zenith_Maths::Vector4(Flux_Graphics::GetCameraPosition(), 0.0f);
+	
+	Flux_MemoryManager::UploadBufferData(g_xFrustumPlanesBuffer.GetBuffer().m_xVRAMHandle, &xCameraData, sizeof(Flux_CameraDataGPU));
 
 	// Reset visible chunk counter to 0
 	uint32_t uZero = 0;
@@ -251,6 +265,11 @@ void Flux_TerrainCulling::DispatchCulling(const Zenith_Maths::Matrix4& xViewProj
 const Flux_IndirectBuffer& Flux_TerrainCulling::GetIndirectDrawBuffer()
 {
 	return g_xIndirectDrawBuffer;
+}
+
+const Flux_ReadWriteBuffer& Flux_TerrainCulling::GetVisibleCountBuffer()
+{
+	return g_xVisibleCountBuffer;
 }
 
 uint32_t Flux_TerrainCulling::GetMaxDrawCount()

@@ -215,15 +215,16 @@ void Flux_Terrain::RenderToGBuffer(void*)
 
 		if (dbg_bUseGPUCulling)
 		{
-			// GPU-driven indirect rendering - draw only visible chunks
-			// The compute shader has filled the indirect draw buffer with commands for visible chunks
-			// We specify a fixed maximum of 4096 draws (the theoretical maximum number of terrain chunks)
-			// The compute shader writes actual draw commands sequentially, and unused slots will have indexCount=0
-			g_xTerrainCommandList.AddCommand<Flux_CommandDrawIndexedIndirect>(
-				&Flux_TerrainCulling::GetIndirectDrawBuffer(),
-				Flux_TerrainCulling::GetMaxDrawCount(),  // Max 4096 draws
-				0,                                         // Indirect buffer offset (bytes)
-				20                                         // Stride between commands (5 * sizeof(uint32_t))
+			// GPU-driven indirect rendering with front-to-back sorted visible chunks
+			// The compute shader has filled the indirect draw buffer with draw commands for visible chunks
+			// sorted from front to back, and written the count to the visible count buffer
+			g_xTerrainCommandList.AddCommand<Flux_CommandDrawIndexedIndirectCount>(
+				&Flux_TerrainCulling::GetIndirectDrawBuffer(),  // Indirect buffer with sorted draw commands
+				&Flux_TerrainCulling::GetVisibleCountBuffer(),   // Count buffer with actual number of visible chunks
+				Flux_TerrainCulling::GetMaxDrawCount(),          // Max 4096 draws (theoretical maximum)
+				0,                                                // Indirect buffer offset (bytes)
+				0,                                                // Count buffer offset (bytes)
+				20                                                // Stride between commands (5 * sizeof(uint32_t))
 			);
 		}
 		else
