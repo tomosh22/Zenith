@@ -22,17 +22,11 @@ static Zenith_Vulkan_RootSig g_xCullingRootSig;
 
 static constexpr uint32_t TERRAIN_CHUNK_COUNT = TERRAIN_EXPORT_DIMS * TERRAIN_EXPORT_DIMS;
 
-// LOD distance thresholds (squared distances for performance)
-// Each chunk is 64*8 = 512 units wide
-// LOD0: 0 to 1000 units (high detail - 2 chunks distance)
-// LOD1: 1000 to 2500 units (medium detail - 5 chunks distance)  
-// LOD2: 2500 to 5000 units (low detail - 10 chunks distance)
-// LOD3: 5000+ units (lowest detail - beyond 10 chunks)
 static constexpr float LOD_DISTANCES_SQ[TERRAIN_LOD_COUNT] = {
-	400000.0f,    // LOD0: High detail (0-1000 units)
-	1000000.0f,    // LOD1: Medium detail (1000-2500 units)
-	2000000.0f,   // LOD2: Low detail (2500-5000 units)
-	FLT_MAX        // LOD3: Lowest detail (5000+ units)
+	400000.0f,
+	1000000.0f,
+	2000000.0f,
+	FLT_MAX
 };
 
 void Flux_TerrainCulling::Initialise()
