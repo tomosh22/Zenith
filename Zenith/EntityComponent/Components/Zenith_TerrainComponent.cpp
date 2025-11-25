@@ -1,6 +1,7 @@
 #include "Zenith.h"
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
+#include "Flux/Terrain/Flux_TerrainCulling.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Profiling/Zenith_Profiling.h"
 #include "DataStream/Zenith_DataStream.h"
@@ -18,6 +19,7 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Flux_Material& xMaterial0, Flux
 	const char* LOD_SUFFIXES[4] = { "", "_LOD1", "_LOD2", "_LOD3" };
 	
 	// Load all chunks for all LOD levels
+	// IMPORTANT: Load with POSITION attribute retained for AABB calculation
 	for (uint32_t uLOD = 0; uLOD < 4; ++uLOD)
 	{
 		for (uint32_t x = 0; x < TERRAIN_EXPORT_DIMS; x++)
@@ -37,7 +39,9 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Flux_Material& xMaterial0, Flux
 					Zenith_Log("WARNING: LOD%u not found for chunk (%u,%u), using LOD0 as fallback", uLOD, x, y);
 				}
 				
-				Zenith_AssetHandler::AddMesh(strLODMeshName, strLODPath.c_str());
+				// Load mesh with POSITION attribute retained for AABB calculation
+				Zenith_AssetHandler::AddMesh(strLODMeshName, strLODPath.c_str(), 
+					1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__POSITION);
 			}
 		}
 	}
@@ -45,25 +49,88 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Flux_Material& xMaterial0, Flux
 	// Start with LOD0 chunk 0,0 as base
 	Flux_MeshGeometry& xRenderGeometry = Zenith_AssetHandler::GetMesh("Terrain_Render0_0");
 
-	// Calculate total size needed for all chunks and all LODs
-	// We need to reserve space for: (num_chunks * num_LODs) worth of data
-	// Each LOD uses progressively less data: LOD1=1/4, LOD2=1/16, LOD3=1/64
-	const u_int64 ulSingleChunkVertexSize = xRenderGeometry.GetVertexDataSize();
-	const u_int64 ulSingleChunkIndexSize = xRenderGeometry.GetIndexDataSize();
-	const u_int64 ulSingleChunkPositionSize = xRenderGeometry.m_uNumVerts * sizeof(Zenith_Maths::Vector3);
+	// Calculate EXACT total size needed for ALL chunks × ALL LOD levels
+	// Based on terrain export formulas from Zenith_Tools_TerrainExport.cpp
+	//
+	// Each chunk has:
+	// - Base vertices: (TERRAIN_SIZE * density + 1)^2
+	// - Right edge stitching (if not rightmost chunk): TERRAIN_SIZE * density verts
+	// - Top edge stitching (if not topmost chunk): TERRAIN_SIZE * density verts
+	// - Top-right corner (if has both edges): 1 vert
+	//
+	// Indices follow a similar pattern with extra triangles for stitching
 	
-	// Approximate total size (LOD0 + LOD1/4 + LOD2/16 + LOD3/64) ? 1.33x LOD0
-	const float fLODSizeMultiplier = 1.0f + 0.25f + 0.0625f + 0.015625f; // ? 1.33
-	const u_int64 ulTotalVertexDataSize = static_cast<u_int64>(ulSingleChunkVertexSize * TERRAIN_EXPORT_DIMS * TERRAIN_EXPORT_DIMS * fLODSizeMultiplier);
-	const u_int64 ulTotalIndexDataSize = static_cast<u_int64>(ulSingleChunkIndexSize * TERRAIN_EXPORT_DIMS * TERRAIN_EXPORT_DIMS * fLODSizeMultiplier);
-	const u_int64 ulTotalPositionDataSize = static_cast<u_int64>(ulSingleChunkPositionSize * TERRAIN_EXPORT_DIMS * TERRAIN_EXPORT_DIMS * fLODSizeMultiplier);
+	const uint32_t uNumChunks = TERRAIN_EXPORT_DIMS * TERRAIN_EXPORT_DIMS;
+	const uint32_t uChunksX = TERRAIN_EXPORT_DIMS;
+	const uint32_t uChunksZ = TERRAIN_EXPORT_DIMS;
+	
+	// Calculate total for all chunks at all LOD levels
+	uint32_t uTotalVerts = 0;
+	uint32_t uTotalIndices = 0;
+	
+	const float densities[4] = { 1.0f, 0.5f, 0.25f, 0.125f }; // LOD0, LOD1, LOD2, LOD3
+	
+	for (uint32_t lodLevel = 0; lodLevel < 4; ++lodLevel)
+	{
+		float density = densities[lodLevel];
+		
+		for (uint32_t z = 0; z < uChunksZ; ++z)
+		{
+			for (uint32_t x = 0; x < uChunksX; ++x)
+			{
+				bool hasRightEdge = (x < uChunksX - 1);
+				bool hasTopEdge = (z < uChunksZ - 1);
+				
+				// Base vertices and indices
+				uint32_t verts = (uint32_t)((TERRAIN_SIZE * density + 1) * (TERRAIN_SIZE * density + 1));
+				uint32_t indices = (uint32_t)((TERRAIN_SIZE * density) * (TERRAIN_SIZE * density) * 6);
+				
+				// Add edge stitching vertices and indices
+				if (hasRightEdge)
+				{
+					verts += (uint32_t)(TERRAIN_SIZE * density);
+					indices += (uint32_t)((TERRAIN_SIZE * density - 1) * 6); // Right edge triangles
+				}
+				if (hasTopEdge)
+				{
+					verts += (uint32_t)(TERRAIN_SIZE * density);
+					indices += (uint32_t)((TERRAIN_SIZE * density - 1) * 6); // Top edge triangles
+				}
+				if (hasRightEdge && hasTopEdge)
+				{
+					verts += 1; // Top-right corner vertex
+					indices += 6; // Corner triangles
+				}
+				
+				uTotalVerts += verts;
+				uTotalIndices += indices;
+			}
+		}
+	}
+	
+	// Convert to byte sizes
+	const u_int64 ulTotalVertexDataSize = static_cast<u_int64>(uTotalVerts) * xRenderGeometry.m_xBufferLayout.GetStride();
+	const u_int64 ulTotalIndexDataSize = static_cast<u_int64>(uTotalIndices) * sizeof(Flux_MeshGeometry::IndexType);
+	const u_int64 ulTotalPositionDataSize = static_cast<u_int64>(uTotalVerts) * sizeof(Zenith_Maths::Vector3);
 
+	Zenith_Log("Terrain EXACT pre-allocation (with edge stitching): %u total verts, %u total indices across all LODs", uTotalVerts, uTotalIndices);
+	Zenith_Log("Terrain EXACT pre-allocation: Vertex=%llu MB, Index=%llu MB, Position=%llu MB",
+		ulTotalVertexDataSize / (1024*1024), ulTotalIndexDataSize / (1024*1024), ulTotalPositionDataSize / (1024*1024));
+	
+	// Pre-allocate buffers and set reserved sizes BEFORE combining to avoid reallocations
 	xRenderGeometry.m_pVertexData = static_cast<u_int8*>(Zenith_MemoryManagement::Reallocate(xRenderGeometry.m_pVertexData, ulTotalVertexDataSize));
 	xRenderGeometry.m_ulReservedVertexDataSize = ulTotalVertexDataSize;
 
 	xRenderGeometry.m_puIndices = static_cast<Flux_MeshGeometry::IndexType*>(Zenith_MemoryManagement::Reallocate(xRenderGeometry.m_puIndices, ulTotalIndexDataSize));
 	xRenderGeometry.m_ulReservedIndexDataSize = ulTotalIndexDataSize;
 
+	// Also pre-allocate position buffer (needed for AABB calculations later)
+	if (xRenderGeometry.m_pxPositions)
+	{
+		xRenderGeometry.m_pxPositions = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Reallocate(xRenderGeometry.m_pxPositions, ulTotalPositionDataSize));
+		xRenderGeometry.m_ulReservedPositionDataSize = ulTotalPositionDataSize;
+	}
+	
 	// Combine all chunks for all LOD levels
 	for (uint32_t x = 0; x < TERRAIN_EXPORT_DIMS; x++)
 	{
@@ -85,7 +152,7 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Flux_Material& xMaterial0, Flux
 					Zenith_Log("Combined LOD%u chunk (%u,%u)", uLOD, x, y);
 				}
 
-				Zenith_AssetHandler::DeleteMesh(strLODMeshName);
+				// Don't delete yet - we'll need these for BuildCullingData()
 			}
 		}
 	}
@@ -97,6 +164,10 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Flux_Material& xMaterial0, Flux
 	Flux_MemoryManager::InitialiseIndexBuffer(xRenderGeometry.GetIndexData(), xRenderGeometry.GetIndexDataSize(), xRenderGeometry.m_xIndexBuffer);
 
 	m_pxRenderGeometry = &xRenderGeometry;
+
+	// Build GPU culling data now that all terrain meshes are loaded
+	// This extracts AABBs and LOD index ranges from the meshes we just loaded
+	Flux_TerrainCulling::BuildChunkData();
 }
 #pragma endregion
 
@@ -122,7 +193,7 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Flux_Material& xMaterial0, Flux
 	xPhysicsGeometry.m_ulReservedVertexDataSize = ulTotalVertexDataSize;
 
 	xPhysicsGeometry.m_puIndices = static_cast<Flux_MeshGeometry::IndexType*>(Zenith_MemoryManagement::Reallocate(xPhysicsGeometry.m_puIndices, ulTotalIndexDataSize));
-	xPhysicsGeometry.m_ulReservedIndexDataSize = ulTotalIndexDataSize;
+xPhysicsGeometry.m_ulReservedIndexDataSize = ulTotalIndexDataSize;
 
 	xPhysicsGeometry.m_pxPositions = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Reallocate(xPhysicsGeometry.m_pxPositions, ulTotalPositionDataSize));
 	xPhysicsGeometry.m_ulReservedPositionDataSize = ulTotalPositionDataSize;
@@ -194,7 +265,7 @@ void Zenith_TerrainComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 
 	xStream >> strRenderGeometryName;
 	xStream >> strPhysicsGeometryName;
-	xStream >> strMaterial0Name;
+ xStream >> strMaterial0Name;
 	xStream >> strMaterial1Name;
 
 	// Look up assets by name (they must already be loaded)
@@ -219,3 +290,4 @@ void Zenith_TerrainComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 
 	// m_xParentEntity will be set by the entity deserialization system
 }
+

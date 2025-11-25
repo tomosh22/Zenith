@@ -3,6 +3,9 @@
 #include "Flux/Flux.h"
 #include "Maths/Zenith_FrustumCulling.h"
 
+// Forward declarations
+class Flux_MeshGeometry;
+
 /**
  * GPU-Driven Terrain Chunk Culling System with LOD Support
  * 
@@ -71,6 +74,15 @@ public:
 	static void Shutdown();
 
 	/**
+	 * Build chunk culling data from pre-loaded terrain meshes
+	 * This should be called AFTER all terrain meshes have been loaded into AssetHandler
+	 * It extracts AABBs and LOD index ranges from the loaded meshes
+	 * 
+	 * NOTE: Called automatically by Zenith_TerrainComponent constructor
+	 */
+	static void BuildChunkData();
+
+	/**
 	 * Dispatch the terrain culling compute shader
 	 * This tests all terrain chunks against the camera frustum, calculates distance to camera,
 	 * selects appropriate LOD level, sorts visible chunks front-to-back, and writes compacted 
@@ -105,6 +117,5 @@ public:
 	static Flux_ReadWriteBuffer& GetLODLevelBuffer();
 
 private:
-	static void BuildChunkData();
 	static void ExtractFrustumPlanes(const Zenith_Maths::Matrix4& xViewProjMatrix, Flux_FrustumPlaneGPU* pxOutPlanes);
 };
