@@ -28,11 +28,13 @@ layout(std140, set = 1, binding=0) uniform ShadowMatrix{
 };
 #endif
 
+#ifndef SHADOWS
 // LOD level buffer (read-only in vertex shader)
 layout(std430, set = 0, binding = 2) readonly buffer LODLevelBuffer
 {
 	uint lodLevels[];
 };
+#endif
 
 void main()
 {
@@ -44,9 +46,11 @@ void main()
 	o_fMaterialLerp = a_fMaterialLerp;
 	o_xTBN = mat3(a_xTangent, a_xBitangent, a_xNormal);
 	
+	#ifndef SHADOWS
 	// Read LOD level for this draw call
 	// For DrawIndexedIndirectCount, gl_DrawIDARB gives us the draw index
 	o_uLODLevel = lodLevels[gl_DrawIDARB];
+	#endif
 
 	#ifdef SHADOWS
 	gl_Position = g_xSunViewProjMat * vec4(o_xWorldPos,1);

@@ -646,12 +646,14 @@ void Zenith_Vulkan::CreateDevice()
 	vk::PhysicalDeviceFeatures2 xDeviceFeatures2 = vk::PhysicalDeviceFeatures2()
 		.setFeatures(xDeviceFeatures);
 
-	
+	vk::PhysicalDeviceShaderDrawParameterFeatures xShaderDrawFeatures = vk::PhysicalDeviceShaderDrawParameterFeatures()
+	.setShaderDrawParameters(VK_TRUE)
+		.setPNext(&xDeviceFeatures2);
 
 	vk::PhysicalDeviceDescriptorIndexingFeatures xIndexingFeatures = vk::PhysicalDeviceDescriptorIndexingFeatures()
 		.setDescriptorBindingSampledImageUpdateAfterBind(true)
 		.setRuntimeDescriptorArray(true)
-		.setPNext(&xDeviceFeatures2);
+		.setPNext(&xShaderDrawFeatures);
 
 	vk::PhysicalDeviceFeatures2 xTemp;
 	vk::PhysicalDeviceFragmentShaderBarycentricFeaturesKHR xTempBary;
