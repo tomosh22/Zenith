@@ -37,6 +37,7 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Flux_Material& xMaterial0, Flux
 					// Use LOD0 as fallback
 					strLODPath = std::string(ASSETS_ROOT"Terrain/Render_") + strSuffix + ".zmsh";
 					Zenith_Log("WARNING: LOD%u not found for chunk (%u,%u), using LOD0 as fallback", uLOD, x, y);
+					Zenith_Assert(false, "");
 				}
 				
 				// Load mesh with POSITION attribute retained for AABB calculation

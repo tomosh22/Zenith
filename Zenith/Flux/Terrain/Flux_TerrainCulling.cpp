@@ -33,9 +33,6 @@ void Flux_TerrainCulling::Initialise()
 {
 	Zenith_Log("Flux_TerrainCulling::Initialise() - Starting GPU-driven terrain culling with LOD support");
 
-	// NOTE: BuildChunkData() is called by Zenith_TerrainComponent constructor
-	// AFTER all terrain meshes have been loaded
-
 	// ========== CREATE GPU BUFFERS ==========
 
 	// Frustum planes buffer (6 planes, updated per frame)
@@ -51,12 +48,12 @@ void Flux_TerrainCulling::Initialise()
 	const size_t indirectBufferSize = sizeof(uint32_t) * 5 * TERRAIN_CHUNK_COUNT;
 	uint32_t* pZeroBuffer = new uint32_t[5 * TERRAIN_CHUNK_COUNT];
 	memset(pZeroBuffer, 0, indirectBufferSize);
-	
+
 	Flux_MemoryManager::InitialiseIndirectBuffer(
 		indirectBufferSize,
 		g_xIndirectDrawBuffer
 	);
-	
+
 	// Upload the zero-initialized data
 	Flux_MemoryManager::UploadBufferData(g_xIndirectDrawBuffer.GetBuffer().m_xVRAMHandle, pZeroBuffer, indirectBufferSize);
 	delete[] pZeroBuffer;
@@ -88,7 +85,7 @@ void Flux_TerrainCulling::Initialise()
 	xCullingLayout.m_axDescriptorSetLayouts[0].m_axBindings[3].m_eType = DESCRIPTOR_TYPE_STORAGE_BUFFER;  // Visible count (read/write atomic)
 	xCullingLayout.m_axDescriptorSetLayouts[0].m_axBindings[4].m_eType = DESCRIPTOR_TYPE_STORAGE_BUFFER;  // LOD levels (write)
 	xCullingLayout.m_axDescriptorSetLayouts[0].m_axBindings[5].m_eType = DESCRIPTOR_TYPE_MAX;
-	
+
 	Zenith_Vulkan_RootSigBuilder::FromSpecification(g_xCullingRootSig, xCullingLayout);
 
 	// Build compute pipeline
@@ -114,6 +111,168 @@ void Flux_TerrainCulling::Shutdown()
 	//Flux_MemoryManager::DestroyBuffer(g_xVisibleCountBuffer);
 }
 
+void Flux_TerrainCulling::BuildChunkData()
+{
+	Zenith_Log("Flux_TerrainCulling::BuildChunkData() - Building chunk AABBs and LOD meshes for %u chunks", TERRAIN_CHUNK_COUNT);
+
+	// Temporary CPU-side buffer for chunk data
+	Flux_TerrainChunkData* pxChunkData = new Flux_TerrainChunkData[TERRAIN_CHUNK_COUNT];
+
+	uint32_t uCurrentIndexOffset = 0;
+
+	// LOD file suffixes
+	const char* LOD_SUFFIXES[TERRAIN_LOD_COUNT] = { "", "_LOD1", "_LOD2", "_LOD3" };
+
+	// IMPORTANT: This iteration order MUST match Zenith_TerrainComponent::Zenith_TerrainComponent
+	// which combines chunks in x (outer), y (inner), LOD (innermost) order, skipping chunk (0,0) LOD0
+
+	// First, calculate AABBs for all chunks using LOD0 geometry
+	for (uint32_t x = 0; x < TERRAIN_EXPORT_DIMS; ++x)
+	{
+		for (uint32_t y = 0; y < TERRAIN_EXPORT_DIMS; ++y)
+		{
+			// Chunk index for x (outer), y (inner) iteration
+			uint32_t uCurrentChunk = x * TERRAIN_EXPORT_DIMS + y;
+
+			// Load LOD0 chunk mesh for AABB calculation
+			std::string strChunkName = "Terrain_ChunkBuild_" + std::to_string(x) + "_" + std::to_string(y);
+			std::string strChunkPath = std::string(ASSETS_ROOT"Terrain/Render_") + std::to_string(x) + "_" + std::to_string(y) + ".zmsh";
+
+			Zenith_AssetHandler::AddMesh(strChunkName, strChunkPath.c_str(), 1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__POSITION);
+			Flux_MeshGeometry& xChunkMesh = Zenith_AssetHandler::GetMesh(strChunkName);
+
+			// Validate that positions were loaded
+			if (!xChunkMesh.m_pxPositions || xChunkMesh.m_uNumVerts == 0)
+			{
+				Zenith_Log("ERROR: Chunk (%u,%u) has no position data! m_pxPositions=%p, m_uNumVerts=%u",
+					x, y, xChunkMesh.m_pxPositions, xChunkMesh.m_uNumVerts);
+				Zenith_Assert(false, "Terrain chunk has no vertex positions");
+			}
+
+			// Generate AABB from vertex positions (use LOD0 for AABB)
+			Zenith_AABB xChunkAABB = Zenith_FrustumCulling::GenerateAABBFromVertices(
+				xChunkMesh.m_pxPositions,
+				xChunkMesh.m_uNumVerts
+			);
+
+			// Validate AABB
+			if (!xChunkAABB.IsValid())
+			{
+				Zenith_Log("ERROR: Chunk (%u,%u) generated invalid AABB! min=(%.2f,%.2f,%.2f), max=(%.2f,%.2f,%.2f)",
+					x, y,
+					xChunkAABB.m_xMin.x, xChunkAABB.m_xMin.y, xChunkAABB.m_xMin.z,
+					xChunkAABB.m_xMax.x, xChunkAABB.m_xMax.y, xChunkAABB.m_xMax.z);
+				Zenith_Assert(false, "Terrain chunk generated invalid AABB");
+			}
+
+			// Store chunk AABB
+			pxChunkData[uCurrentChunk].m_xAABBMin = Zenith_Maths::Vector4(xChunkAABB.m_xMin, 0.0f);
+			pxChunkData[uCurrentChunk].m_xAABBMax = Zenith_Maths::Vector4(xChunkAABB.m_xMax, 0.0f);
+
+			// Initialize LOD distance thresholds for this chunk (same for all chunks)
+			// These must be set BEFORE we populate the index/vertex offsets
+			for (uint32_t uLOD = 0; uLOD < TERRAIN_LOD_COUNT; ++uLOD)
+			{
+				pxChunkData[uCurrentChunk].m_axLODs[uLOD].m_fMaxDistance = LOD_DISTANCES_SQ[uLOD];
+			}
+
+			// Clean up LOD0 mesh (we'll reload it later when combining all meshes)
+			Zenith_AssetHandler::DeleteMesh(strChunkName);
+		}
+	}
+
+	// Now load and configure all LOD levels in the EXACT order they are combined in Zenith_TerrainComponent
+	// The terrain component combines in this order: for x, for y, for LOD, skipping (0,0) LOD0
+	for (uint32_t x = 0; x < TERRAIN_EXPORT_DIMS; ++x)
+	{
+		for (uint32_t y = 0; y < TERRAIN_EXPORT_DIMS; ++y)
+		{
+			uint32_t uCurrentChunk = x * TERRAIN_EXPORT_DIMS + y;
+
+			for (uint32_t uLOD = 0; uLOD < TERRAIN_LOD_COUNT; ++uLOD)
+			{
+				// Skip chunk (0,0) LOD0 as it's the base mesh in the terrain component
+				if (x == 0 && y == 0 && uLOD == 0)
+				{
+					// Still need to load it to get the index count
+					std::string strLODChunkPath = std::string(ASSETS_ROOT"Terrain/Render_0_0.zmsh");
+					std::string strLODChunkName = "Terrain_ChunkBuild_LOD0_0_0";
+					Zenith_AssetHandler::AddMesh(strLODChunkName, strLODChunkPath.c_str(), 1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__POSITION);
+					Flux_MeshGeometry& xLODMesh = Zenith_AssetHandler::GetMesh(strLODChunkName);
+
+					// Store LOD data (this is the first mesh so offset is 0)
+					pxChunkData[uCurrentChunk].m_axLODs[uLOD].m_uFirstIndex = 0;
+					pxChunkData[uCurrentChunk].m_axLODs[uLOD].m_uIndexCount = xLODMesh.m_uNumIndices;
+					pxChunkData[uCurrentChunk].m_axLODs[uLOD].m_uVertexOffset = 0;
+					// LOD distance already set in first loop
+
+					// Update index offset for the NEXT mesh
+					uCurrentIndexOffset = xLODMesh.m_uNumIndices;
+
+					Zenith_Log("Chunk[%u] (%u,%u) LOD%u: firstIndex=%u, count=%u (BASE MESH)",
+						uCurrentChunk, x, y, uLOD, 0, xLODMesh.m_uNumIndices);
+
+					Zenith_AssetHandler::DeleteMesh(strLODChunkName);
+					continue;
+				}
+
+				std::string strSuffix = std::to_string(x) + "_" + std::to_string(y);
+				std::string strLODChunkName = "Terrain_ChunkBuild_LOD" + std::to_string(uLOD) + "_" + strSuffix;
+				// FIXED: Match TerrainComponent's path format exactly: "Render" + LOD_SUFFIX + "_" + x + "_" + y
+				std::string strLODChunkPath = std::string(ASSETS_ROOT"Terrain/Render") + LOD_SUFFIXES[uLOD] + "_" + strSuffix + ".zmsh";
+
+				// Check if LOD file exists
+				std::ifstream lodFile(strLODChunkPath);
+				if (!lodFile.good())
+				{
+					Zenith_Log("WARNING: LOD%u file not found for chunk (%u,%u): %s", uLOD, x, y, strLODChunkPath.c_str());
+					Zenith_Log("         Using LOD0 (full detail) as fallback");
+
+					// Fallback to LOD0
+					strLODChunkPath = std::string(ASSETS_ROOT"Terrain/Render_") + strSuffix + ".zmsh";
+				}
+
+				// Load LOD mesh (only positions needed for index counting)
+				Zenith_AssetHandler::AddMesh(strLODChunkName, strLODChunkPath.c_str(), 1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__POSITION);
+				Flux_MeshGeometry& xLODMesh = Zenith_AssetHandler::GetMesh(strLODChunkName);
+
+				// Store LOD data (index/vertex offsets only - distances already set)
+				pxChunkData[uCurrentChunk].m_axLODs[uLOD].m_uFirstIndex = uCurrentIndexOffset;
+				pxChunkData[uCurrentChunk].m_axLODs[uLOD].m_uIndexCount = xLODMesh.m_uNumIndices;
+				pxChunkData[uCurrentChunk].m_axLODs[uLOD].m_uVertexOffset = 0;
+				// LOD distance already set in first loop
+
+				// Debug log for first few chunks and LOD transitions
+				if (uCurrentChunk < 3 || (x == 0 && y == 1 && uLOD == 0) || (x == 1 && y == 0 && uLOD == 0))
+				{
+					Zenith_Log("Chunk[%u] (%u,%u) LOD%u: firstIndex=%u, count=%u",
+						uCurrentChunk, x, y, uLOD, uCurrentIndexOffset, xLODMesh.m_uNumIndices);
+				}
+
+				// Update index offset
+				uCurrentIndexOffset += xLODMesh.m_uNumIndices;
+
+				// Clean up
+				Zenith_AssetHandler::DeleteMesh(strLODChunkName);
+			}
+		}
+	}
+
+	Zenith_Log("Flux_TerrainCulling - Total indices across all LODs: %u", uCurrentIndexOffset);
+
+	// Upload chunk data to GPU
+	Flux_MemoryManager::InitialiseReadWriteBuffer(
+		pxChunkData,
+		sizeof(Flux_TerrainChunkData) * TERRAIN_CHUNK_COUNT,
+		g_xChunkDataBuffer
+	);
+
+	// Cleanup CPU data
+	delete[] pxChunkData;
+
+	Zenith_Log("Flux_TerrainCulling - Chunk data with %u LOD levels uploaded to GPU", TERRAIN_LOD_COUNT);
+}
+
 void Flux_TerrainCulling::ExtractFrustumPlanes(const Zenith_Maths::Matrix4& xViewProjMatrix, Flux_FrustumPlaneGPU* pxOutPlanes)
 {
 	// Use existing frustum extraction code
@@ -136,7 +295,7 @@ void Flux_TerrainCulling::DispatchCulling(const Zenith_Maths::Matrix4& xViewProj
 	Flux_CameraDataGPU xCameraData;
 	Zenith_Frustum xFrustum;
 	xFrustum.ExtractFromViewProjection(xViewProjMatrix);
-	
+
 	// Convert frustum to GPU format
 	for (int i = 0; i < 6; ++i)
 	{
@@ -145,18 +304,18 @@ void Flux_TerrainCulling::DispatchCulling(const Zenith_Maths::Matrix4& xViewProj
 			xFrustum.m_axPlanes[i].m_fDistance
 		);
 	}
-	
+
 	// Add camera position for distance-based sorting and LOD selection
 	Zenith_Maths::Vector3 xCameraPos = Flux_Graphics::GetCameraPosition();
 	xCameraData.m_xCameraPosition = Zenith_Maths::Vector4(xCameraPos, 0.0f);
-	
+
 	// Debug: Log camera position once every 60 frames
 	static int frameCount = 0;
 	if (frameCount++ % 60 == 0)
 	{
 		Zenith_Log("Camera position: (%.1f, %.1f, %.1f)", xCameraPos.x, xCameraPos.y, xCameraPos.z);
 	}
-	
+
 	Flux_MemoryManager::UploadBufferData(g_xFrustumPlanesBuffer.GetBuffer().m_xVRAMHandle, &xCameraData, sizeof(Flux_CameraDataGPU));
 
 	// Reset visible chunk counter to 0
@@ -207,125 +366,4 @@ uint32_t Flux_TerrainCulling::GetMaxDrawCount()
 Flux_ReadWriteBuffer& Flux_TerrainCulling::GetLODLevelBuffer()
 {
 	return g_xLODLevelBuffer;
-}
-
-void Flux_TerrainCulling::BuildChunkData()
-{
-	Zenith_Log("Flux_TerrainCulling::BuildChunkData() - Building chunk AABBs and LOD data from terrain meshes");
-
-	// Temporary CPU-side buffer for chunk data
-	Flux_TerrainChunkData* pxChunkData = new Flux_TerrainChunkData[TERRAIN_CHUNK_COUNT];
-
-	const char* LOD_SUFFIXES[4] = { "", "_LOD1", "_LOD2", "_LOD3" };
-
-	uint32_t uCurrentIndexOffset = 0;
-
-	// IMPORTANT: This iteration order MUST match Zenith_TerrainComponent::Zenith_TerrainComponent
-	// which combines chunks in x (outer), y (inner), LOD (innermost) order, skipping chunk (0,0) LOD0
-	
-	// First, calculate AABBs for all chunks using LOD0 geometry
-	// NOTE: Meshes should already be loaded by TerrainComponent constructor
-	for (uint32_t x = 0; x < TERRAIN_EXPORT_DIMS; ++x)
-	{
-		for (uint32_t y = 0; y < TERRAIN_EXPORT_DIMS; ++y)
-		{
-			// Chunk index for x (outer), y (inner) iteration
-			uint32_t uCurrentChunk = x * TERRAIN_EXPORT_DIMS + y;
-
-			// Get LOD0 mesh for this chunk (should already be loaded)
-			// Mesh name format: "Terrain_Render" + x + "_" + y (no LOD suffix for LOD0)
-			std::string strSuffix = std::to_string(x) + "_" + std::to_string(y);
-			std::string strChunkName = "Terrain_Render" + strSuffix;
-
-			if (!Zenith_AssetHandler::MeshExists(strChunkName))
-			{
-				Zenith_Log("ERROR: LOD0 mesh '%s' not loaded yet - TerrainComponent should load meshes before BuildChunkData", strChunkName.c_str());
-				Zenith_Assert(false, "BuildChunkData called before meshes were loaded");
-			}
-
-			Flux_MeshGeometry& xChunkMesh = Zenith_AssetHandler::GetMesh(strChunkName);
-
-			// Validate that positions were loaded
-			if (!xChunkMesh.m_pxPositions || xChunkMesh.m_uNumVerts == 0)
-			{
-				Zenith_Log("ERROR: Chunk (%u,%u) has no position data! m_pxPositions=%p, m_uNumVerts=%u",
-					x, y, xChunkMesh.m_pxPositions, xChunkMesh.m_uNumVerts);
-				Zenith_Assert(false, "Terrain chunk has no vertex positions");
-			}
-
-			// Generate AABB from vertex positions (use LOD0 for AABB)
-			Zenith_AABB xChunkAABB = Zenith_FrustumCulling::GenerateAABBFromVertices(
-				xChunkMesh.m_pxPositions,
-				xChunkMesh.m_uNumVerts
-			);
-
-			// Store chunk AABB
-			pxChunkData[uCurrentChunk].m_xAABBMin = Zenith_Maths::Vector4(xChunkAABB.m_xMin, 0.0f);
-			pxChunkData[uCurrentChunk].m_xAABBMax = Zenith_Maths::Vector4(xChunkAABB.m_xMax, 0.0f);
-
-			// Initialize LOD distance thresholds for this chunk (same for all chunks)
-			for (uint32_t uLOD = 0; uLOD < TERRAIN_LOD_COUNT; ++uLOD)
-			{
-				pxChunkData[uCurrentChunk].m_axLODs[uLOD].m_fMaxDistance = LOD_DISTANCES_SQ[uLOD];
-			}
-		}
-	}
-
-	// Now extract LOD data from all meshes in the EXACT order they are combined
-	for (uint32_t x = 0; x < TERRAIN_EXPORT_DIMS; ++x)
-	{
-		for (uint32_t y = 0; y < TERRAIN_EXPORT_DIMS; ++y)
-		{
-			uint32_t uCurrentChunk = x * TERRAIN_EXPORT_DIMS + y;
-
-			for (uint32_t uLOD = 0; uLOD < TERRAIN_LOD_COUNT; ++uLOD)
-			{
-				std::string strSuffix = std::to_string(x) + "_" + std::to_string(y);
-				std::string strLODMeshName = std::string("Terrain_Render") + LOD_SUFFIXES[uLOD] + strSuffix;
-
-				if (!Zenith_AssetHandler::MeshExists(strLODMeshName))
-				{
-					Zenith_Log("ERROR: Mesh '%s' not loaded yet", strLODMeshName.c_str());
-					Zenith_Assert(false, "BuildChunkData called before meshes were loaded");
-				}
-
-				Flux_MeshGeometry& xLODMesh = Zenith_AssetHandler::GetMesh(strLODMeshName);
-
-				// Skip chunk (0,0) LOD0 as it's the base mesh
-				if (x == 0 && y == 0 && uLOD == 0)
-				{
-					// Store LOD data (this is the first mesh so offset is 0)
-					pxChunkData[uCurrentChunk].m_axLODs[uLOD].m_uFirstIndex = 0;
-					pxChunkData[uCurrentChunk].m_axLODs[uLOD].m_uIndexCount = xLODMesh.m_uNumIndices;
-					pxChunkData[uCurrentChunk].m_axLODs[uLOD].m_uVertexOffset = 0;
-					
-					// Update index offset for the NEXT mesh
-					uCurrentIndexOffset = xLODMesh.m_uNumIndices;
-					continue;
-				}
-
-				// Store LOD data
-				pxChunkData[uCurrentChunk].m_axLODs[uLOD].m_uFirstIndex = uCurrentIndexOffset;
-				pxChunkData[uCurrentChunk].m_axLODs[uLOD].m_uIndexCount = xLODMesh.m_uNumIndices;
-				pxChunkData[uCurrentChunk].m_axLODs[uLOD].m_uVertexOffset = 0;
-				
-				// Update index offset
-				uCurrentIndexOffset += xLODMesh.m_uNumIndices;
-			}
-		}
-	}
-
-	Zenith_Log("Flux_TerrainCulling - Total indices across all LODs: %u", uCurrentIndexOffset);
-
-	// Upload chunk data to GPU
-	Flux_MemoryManager::InitialiseReadWriteBuffer(
-		pxChunkData,
-		sizeof(Flux_TerrainChunkData) * TERRAIN_CHUNK_COUNT,
-		g_xChunkDataBuffer
-	);
-
-	// Cleanup CPU data
-	delete[] pxChunkData;
-
-	Zenith_Log("Flux_TerrainCulling - Chunk data with %u LOD levels uploaded to GPU", TERRAIN_LOD_COUNT);
 }
