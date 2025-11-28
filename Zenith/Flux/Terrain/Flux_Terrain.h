@@ -15,4 +15,10 @@ public:
 
 	static Flux_Pipeline& GetShadowPipeline();
 	static Flux_DynamicConstantBuffer& GetTerrainConstantsBuffer();
+
+	/**
+	 * Get the terrain culling compute pipeline
+	 * Used by Zenith_TerrainComponent to bind the pipeline before dispatching culling
+	 */
+	static Flux_Pipeline& GetCullingPipeline();
 };

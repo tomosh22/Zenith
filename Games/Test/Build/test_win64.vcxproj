@@ -865,7 +865,6 @@
     <ClInclude Include="..\..\..\Zenith\Flux\SSAO\Flux_SSAO.h" />
     <ClInclude Include="..\..\..\Zenith\Flux\StaticMeshes\Flux_StaticMeshes.h" />
     <ClInclude Include="..\..\..\Zenith\Flux\Terrain\Flux_Terrain.h" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Terrain\Flux_TerrainCulling.h" />
     <ClInclude Include="..\..\..\Zenith\Flux\Text\Flux_Text.h" />
     <ClInclude Include="..\..\..\Zenith\Input\Zenith_Input.h" />
     <ClInclude Include="..\..\..\Zenith\Input\Zenith_KeyCodes.h" />
@@ -1791,7 +1790,6 @@
     <ClCompile Include="..\..\..\Zenith\Flux\SSAO\Flux_SSAO.cpp" />
     <ClCompile Include="..\..\..\Zenith\Flux\StaticMeshes\Flux_StaticMeshes.cpp" />
     <ClCompile Include="..\..\..\Zenith\Flux\Terrain\Flux_Terrain.cpp" />
-    <ClCompile Include="..\..\..\Zenith\Flux\Terrain\Flux_TerrainCulling.cpp" />
     <ClCompile Include="..\..\..\Zenith\Flux\Text\Flux_Text.cpp" />
     <ClCompile Include="..\..\..\Zenith\Input\Zenith_Input.cpp" />
     <ClCompile Include="..\..\..\Zenith\Maths\Zenith_Maths.cpp" />
