@@ -10,6 +10,7 @@
 #include "Flux/StaticMeshes/Flux_StaticMeshes.h"
 #include "Flux/AnimatedMeshes/Flux_AnimatedMeshes.h"
 #include "Flux/Terrain/Flux_Terrain.h"
+#include "Flux/Primitives/Flux_Primitives.h"
 #include "Flux/DeferredShading/Flux_DeferredShading.h"
 #include "Flux/SSAO/Flux_SSAO.h"
 #include "Flux/Fog/Flux_Fog.h"
@@ -128,6 +129,7 @@ static void SubmitRenderTasks()
 	Flux_StaticMeshes::SubmitRenderToGBufferTask();
 	Flux_AnimatedMeshes::SubmitRenderTask();
 	Flux_Terrain::SubmitRenderToGBufferTask();
+	Flux_Primitives::SubmitRenderTask();  // Debug primitives - rendered after terrain
 	Flux_DeferredShading::SubmitRenderTask();
 	Flux_SSAO::SubmitRenderTask();
 	Flux_Fog::SubmitRenderTask();
@@ -150,6 +152,7 @@ static void WaitForRenderTasks()
 	Flux_StaticMeshes::WaitForRenderToGBufferTask();
 	Flux_AnimatedMeshes::WaitForRenderTask();
 	Flux_Terrain::WaitForRenderToGBufferTask();
+	Flux_Primitives::WaitForRenderTask();  // Debug primitives
 	Flux_DeferredShading::WaitForRenderTask();
 	Flux_SSAO::WaitForRenderTask();
 	Flux_Fog::WaitForRenderTask();

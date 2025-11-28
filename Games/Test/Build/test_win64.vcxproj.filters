@@ -535,6 +535,9 @@
     <ClCompile Include="..\..\..\Zenith\Flux\Particles\Flux_Particles.cpp">
       <Filter>Zenith\Flux\Particles</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\..\Zenith\Flux\Primitives\Flux_Primitives.cpp">
+      <Filter>Zenith\Flux\Primitives</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\..\Zenith\Flux\Quads\Flux_Quads.cpp">
       <Filter>Zenith\Flux\Quads</Filter>
     </ClCompile>
@@ -1731,6 +1734,9 @@
     <ClInclude Include="..\..\..\Zenith\Flux\Particles\Flux_Particles.h">
       <Filter>Zenith\Flux\Particles</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\Flux\Primitives\Flux_Primitives.h">
+      <Filter>Zenith\Flux\Primitives</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\..\Zenith\Flux\Quads\Flux_Quads.h">
       <Filter>Zenith\Flux\Quads</Filter>
     </ClInclude>
@@ -1793,6 +1799,12 @@
     </ClInclude>
     <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Particles\Flux_Particles.vert">
       <Filter>Zenith\Flux\Shaders\Particles</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Primitives\Flux_Primitives.frag">
+      <Filter>Zenith\Flux\Shaders\Primitives</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Primitives\Flux_Primitives.vert">
+      <Filter>Zenith\Flux\Shaders\Primitives</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Quads\Flux_Quads.frag">
       <Filter>Zenith\Flux\Shaders\Quads</Filter>
@@ -2146,6 +2158,9 @@
     <Filter Include="Zenith\Flux\Particles">
       <UniqueIdentifier>{313cfa34-c922-a2ba-9616-d5f1a822197a}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Zenith\Flux\Primitives">
+      <UniqueIdentifier>{4770a720-c7e0-8dc0-f370-5bdf3ededd84}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Zenith\Flux\Quads">
       <UniqueIdentifier>{4b9d249e-f731-90d7-cf4c-292f9f6061e6}</UniqueIdentifier>
     </Filter>
@@ -2175,6 +2190,9 @@
     </Filter>
     <Filter Include="Zenith\Flux\Shaders\Particles">
       <UniqueIdentifier>{e42cdf4a-3a4b-88a1-5f85-835164898fa0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Zenith\Flux\Shaders\Primitives">
+      <UniqueIdentifier>{9d95ec96-a821-344e-ee1f-5ab6ec10e6d7}</UniqueIdentifier>
     </Filter>
     <Filter Include="Zenith\Flux\Shaders\Quads">
       <UniqueIdentifier>{a88c049c-914b-9ef5-395c-773a7bab69a9}</UniqueIdentifier>

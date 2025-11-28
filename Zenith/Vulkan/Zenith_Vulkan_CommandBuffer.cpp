@@ -48,6 +48,7 @@ void Zenith_Vulkan_CommandBuffer::BeginRecording()
 	m_xCurrentCmdBuffer.begin(xBeginInfo);
 	m_uCurrentBindFreq = FLUX_MAX_DESCRIPTOR_SET_LAYOUTS;
 	m_uDescriptorDirty = ~0u;
+	memset(m_xBindings, 0, sizeof(m_xBindings));
 	
 	// Clear descriptor set cache for this frame (descriptor pool gets reset per frame anyway)
 	for (u_int i = 0; i < FLUX_MAX_DESCRIPTOR_SET_LAYOUTS; i++)
@@ -386,8 +387,6 @@ void Zenith_Vulkan_CommandBuffer::SetPipeline(Zenith_Vulkan_Pipeline* pxPipeline
 	m_xCurrentCmdBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, pxPipeline->m_xPipeline);
 	m_pxCurrentPipeline = pxPipeline;
 	m_uDescriptorDirty = ~0u;
-	memset(m_xBindings, 0, sizeof(m_xBindings));
-
 }
 
 void Zenith_Vulkan_CommandBuffer::BindSRV(const Flux_ShaderResourceView* pxSRV, uint32_t uBindPoint, Zenith_Vulkan_Sampler* pxSampler /*= nullptr*/)

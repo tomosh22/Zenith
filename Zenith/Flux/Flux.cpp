@@ -6,6 +6,7 @@
 #include "Flux/StaticMeshes/Flux_StaticMeshes.h"
 #include "Flux/AnimatedMeshes/Flux_AnimatedMeshes.h"
 #include "Flux/Terrain/Flux_Terrain.h"
+#include "Flux/Primitives/Flux_Primitives.h"
 #include "Flux/DeferredShading/Flux_DeferredShading.h"
 #include "Flux/SSAO/Flux_SSAO.h"
 #include "Flux/Fog/Flux_Fog.h"
@@ -39,6 +40,7 @@ void Flux::LateInitialise()
 	Flux_StaticMeshes::Initialise();
 	Flux_AnimatedMeshes::Initialise();
 	Flux_Terrain::Initialise();
+	Flux_Primitives::Initialise();  // Debug primitives - initialized after terrain
 	Flux_DeferredShading::Initialise();
 	Flux_SSAO::Initialise();
 	Flux_Fog::Initialise();

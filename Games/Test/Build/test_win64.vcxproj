@@ -817,6 +817,7 @@
     <ClInclude Include="..\..\..\Zenith\Flux\MeshAnimation\Flux_MeshAnimation.h" />
     <ClInclude Include="..\..\..\Zenith\Flux\MeshGeometry\Flux_MeshGeometry.h" />
     <ClInclude Include="..\..\..\Zenith\Flux\Particles\Flux_Particles.h" />
+    <ClInclude Include="..\..\..\Zenith\Flux\Primitives\Flux_Primitives.h" />
     <ClInclude Include="..\..\..\Zenith\Flux\Quads\Flux_Quads.h" />
     <ClInclude Include="..\..\..\Zenith\Flux\SDFs\Flux_SDFs.h" />
     <ClInclude Include="..\..\..\Zenith\Flux\Shaders\AnimatedMeshes\Flux_AnimatedMeshes_FragCommon.fxh" />
@@ -838,6 +839,8 @@
     <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Gizmos\Flux_Gizmos.vert" />
     <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Particles\Flux_Particles.frag" />
     <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Particles\Flux_Particles.vert" />
+    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Primitives\Flux_Primitives.frag" />
+    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Primitives\Flux_Primitives.vert" />
     <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Quads\Flux_Quads.frag" />
     <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Quads\Flux_Quads.vert" />
     <ClInclude Include="..\..\..\Zenith\Flux\Shaders\SDFs\Flux_SDFs.frag" />
@@ -1783,6 +1786,7 @@
     <ClCompile Include="..\..\..\Zenith\Flux\MeshAnimation\Flux_MeshAnimation.cpp" />
     <ClCompile Include="..\..\..\Zenith\Flux\MeshGeometry\Flux_MeshGeometry.cpp" />
     <ClCompile Include="..\..\..\Zenith\Flux\Particles\Flux_Particles.cpp" />
+    <ClCompile Include="..\..\..\Zenith\Flux\Primitives\Flux_Primitives.cpp" />
     <ClCompile Include="..\..\..\Zenith\Flux\Quads\Flux_Quads.cpp" />
     <ClCompile Include="..\..\..\Zenith\Flux\SDFs\Flux_SDFs.cpp" />
     <ClCompile Include="..\..\..\Zenith\Flux\Shadows\Flux_Shadows.cpp" />

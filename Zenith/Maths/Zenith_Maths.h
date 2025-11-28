@@ -6,6 +6,7 @@
 #include <glm/glm.hpp>
 #include <glm/gtx/quaternion.hpp>
 #include <glm/gtx/transform.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 namespace Zenith_Maths
 {
 	using Vector2 = glm::vec2;
@@ -71,5 +72,65 @@ namespace Zenith_Maths
 		xRet[2][2] = (xAxis.z * xAxis.z) * (1.0f - fCos) + fCos;
 
 		return xRet;
+	}
+
+	// ========== GLM Wrapper Functions for Flux_Primitives ==========
+
+	// Vector operations
+	static inline Vector3 Normalize(const Vector3& v)
+	{
+		return glm::normalize(v);
+	}
+
+	static inline float Length(const Vector3& v)
+	{
+		return glm::length(v);
+	}
+
+	static inline float Dot(const Vector3& a, const Vector3& b)
+	{
+		return glm::dot(a, b);
+	}
+
+	static inline Vector3 Cross(const Vector3& a, const Vector3& b)
+	{
+		return glm::cross(a, b);
+	}
+
+	// Matrix transformation operations
+	static inline Matrix4 Translate(const Matrix4& m, const Vector3& v)
+	{
+		return glm::translate(m, v);
+	}
+
+	static inline Matrix4 Scale(const Matrix4& m, const Vector3& v)
+	{
+		return glm::scale(m, v);
+	}
+
+	static inline Matrix4 Rotate(const Matrix4& m, float angle, const Vector3& axis)
+	{
+		return glm::rotate(m, angle, axis);
+	}
+
+	// Quaternion operations
+	static inline Quaternion AngleAxis(float angle, const Vector3& axis)
+	{
+		return glm::angleAxis(angle, axis);
+	}
+
+	static inline Matrix4 Mat4Cast(const Quaternion& q)
+	{
+		return glm::mat4_cast(q);
+	}
+
+	static inline Quaternion QuatCast(const Matrix4& m)
+	{
+		return glm::quat_cast(m);
+	}
+
+	static inline Quaternion QuatLookAt(const Vector3& direction, const Vector3& up)
+	{
+		return glm::quatLookAt(direction, up);
 	}
 }
