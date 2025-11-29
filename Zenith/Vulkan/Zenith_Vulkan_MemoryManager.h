@@ -18,7 +18,7 @@ class Flux_ConstantBuffer;
 class Flux_IndirectBuffer;
 class Flux_ReadWriteBuffer;
 class Zenith_Vulkan_CommandBuffer;
-constexpr uint64_t g_uStagingPoolSize = 2048u * 1024u * 1024u;
+constexpr uint64_t g_uStagingPoolSize = 512u * 1024u * 1024u;
 #define ALIGN(size, align) ((size + align - 1) / align) * align
 
 class Zenith_Vulkan_MemoryManager
@@ -75,6 +75,10 @@ private:
 	static void HandleStagingBufferFull();
 
 	static void FlushStagingBuffer();
+
+	// Helper for chunked staging uploads when data exceeds staging buffer size
+	static void UploadBufferDataChunked(vk::Buffer xDestBuffer, const void* pData, size_t uSize);
+	static void UploadTextureDataChunked(vk::Image xDestImage, const void* pData, size_t uSize, uint32_t uWidth, uint32_t uHeight, uint32_t uNumMips, uint32_t uNumLayers);
 
 	struct StagingTextureMetadata {
 		vk::Image m_xImage;

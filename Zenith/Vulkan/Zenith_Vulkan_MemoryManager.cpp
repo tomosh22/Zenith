@@ -420,28 +420,37 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateTextureVRAM(const void* pData
 		}
 		else
 		{
-			// Upload via staging buffer
-			if (s_uNextFreeStagingOffset + ulDataSize >= g_uStagingPoolSize)
+			// If the allocation is larger than the entire staging buffer, use chunked upload
+			if (ulDataSize > g_uStagingPoolSize)
 			{
-				HandleStagingBufferFull();
+				s_xMutex.Unlock();
+				UploadTextureDataChunked(vk::Image(xImage), pData, ulDataSize, xInfoCopy.m_uWidth, xInfoCopy.m_uHeight, xInfoCopy.m_uNumMips, xInfoCopy.m_uNumLayers);
 			}
+			else
+			{
+				// Upload via staging buffer
+				if (s_uNextFreeStagingOffset + ulDataSize >= g_uStagingPoolSize)
+				{
+					HandleStagingBufferFull();
+				}
 
-			// Create staging allocation with texture metadata directly - no temp texture object
-			StagingMemoryAllocation xStagingAlloc;
-			xStagingAlloc.m_eType = ALLOCATION_TYPE_TEXTURE;
-			xStagingAlloc.m_xTextureMetadata.m_xImage = vk::Image(xImage);
-			xStagingAlloc.m_xTextureMetadata.m_uWidth = xInfoCopy.m_uWidth;
-			xStagingAlloc.m_xTextureMetadata.m_uHeight = xInfoCopy.m_uHeight;
-			xStagingAlloc.m_xTextureMetadata.m_uNumMips = xInfoCopy.m_uNumMips;
-			xStagingAlloc.m_xTextureMetadata.m_uNumLayers = xInfoCopy.m_uNumLayers;
-			xStagingAlloc.m_uSize = ulDataSize;
-			xStagingAlloc.m_uOffset = s_uNextFreeStagingOffset;
-			s_xStagingAllocations.push_back(xStagingAlloc);
+				// Create staging allocation with texture metadata directly - no temp texture object
+				StagingMemoryAllocation xStagingAlloc;
+				xStagingAlloc.m_eType = ALLOCATION_TYPE_TEXTURE;
+				xStagingAlloc.m_xTextureMetadata.m_xImage = vk::Image(xImage);
+				xStagingAlloc.m_xTextureMetadata.m_uWidth = xInfoCopy.m_uWidth;
+				xStagingAlloc.m_xTextureMetadata.m_uHeight = xInfoCopy.m_uHeight;
+				xStagingAlloc.m_xTextureMetadata.m_uNumMips = xInfoCopy.m_uNumMips;
+				xStagingAlloc.m_xTextureMetadata.m_uNumLayers = xInfoCopy.m_uNumLayers;
+				xStagingAlloc.m_uSize = ulDataSize;
+				xStagingAlloc.m_uOffset = s_uNextFreeStagingOffset;
+				s_xStagingAllocations.push_back(xStagingAlloc);
 
-			void* pMap = xDevice.mapMemory(s_xStagingMem, s_uNextFreeStagingOffset, ulDataSize);
-			memcpy(pMap, pData, ulDataSize);
-			xDevice.unmapMemory(s_xStagingMem);
-			s_uNextFreeStagingOffset += ulDataSize;
+				void* pMap = xDevice.mapMemory(s_xStagingMem, s_uNextFreeStagingOffset, ulDataSize);
+				memcpy(pMap, pData, ulDataSize);
+				xDevice.unmapMemory(s_xStagingMem);
+				s_uNextFreeStagingOffset += ulDataSize;
+			}
 		}
 		s_xMutex.Unlock();
 	}
@@ -559,7 +568,7 @@ void Zenith_Vulkan_MemoryManager::UploadBufferData(Flux_VRAMHandle xBufferHandle
 {
 	s_xMutex.Lock();
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
-	
+
 	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xBufferHandle);
 	const VmaAllocation& xAlloc = pxVRAM->GetAllocation();
 	VkMemoryPropertyFlags eMemoryProps;
@@ -572,7 +581,7 @@ void Zenith_Vulkan_MemoryManager::UploadBufferData(Flux_VRAMHandle xBufferHandle
 		Zenith_Assert(pMap != nullptr, "Memory isn't mapped");
 		memcpy(pMap, pData, uSize);
 #ifdef ZENITH_ASSERT
-		VkResult eResult = 
+		VkResult eResult =
 #endif
 		vmaFlushAllocation(s_xAllocator, xAlloc, 0, uSize);
 		Zenith_Assert(eResult == VK_SUCCESS, "Failed to flush allocation");
@@ -581,6 +590,14 @@ void Zenith_Vulkan_MemoryManager::UploadBufferData(Flux_VRAMHandle xBufferHandle
 	}
 	else
 	{
+		// If the allocation is larger than the entire staging buffer, use chunked upload
+		if (uSize > g_uStagingPoolSize)
+		{
+			s_xMutex.Unlock();
+			UploadBufferDataChunked(pxVRAM->GetBuffer(), pData, uSize);
+			return;
+		}
+
 		if (s_uNextFreeStagingOffset + uSize >= g_uStagingPoolSize)
 		{
 			HandleStagingBufferFull();
@@ -703,6 +720,206 @@ void Zenith_Vulkan_MemoryManager::HandleStagingBufferFull() {
 	Zenith_Log("Staging buffer full, flushing");
 	EndFrame(false);
 	BeginFrame();
+}
+
+void Zenith_Vulkan_MemoryManager::UploadBufferDataChunked(vk::Buffer xDestBuffer, const void* pData, size_t uSize)
+{
+	Zenith_Log("Uploading large buffer in chunks: %llu bytes (staging buffer size: %llu bytes)", uSize, g_uStagingPoolSize);
+
+	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
+	const uint8_t* pSrcData = static_cast<const uint8_t*>(pData);
+	size_t uRemainingSize = uSize;
+	size_t uCurrentOffset = 0;
+
+	// Process in chunks that fit in the staging buffer
+	while (uRemainingSize > 0)
+	{
+		// Calculate chunk size (leave some headroom for alignment)
+		const size_t uChunkSize = (std::min)(uRemainingSize, g_uStagingPoolSize - 4096);
+
+		s_xMutex.Lock();
+
+		// Ensure staging buffer is empty
+		if (s_uNextFreeStagingOffset != 0)
+		{
+			HandleStagingBufferFull();
+		}
+
+		// Create staging allocation for this chunk
+		StagingMemoryAllocation xAllocation;
+		xAllocation.m_eType = ALLOCATION_TYPE_BUFFER;
+		xAllocation.m_xBufferMetadata.m_xBuffer = xDestBuffer;
+		xAllocation.m_uSize = uChunkSize;
+		xAllocation.m_uOffset = 0; // Always use offset 0 since we flush between chunks
+		s_xStagingAllocations.push_back(xAllocation);
+
+		// Map, copy, and unmap
+		void* pMap = xDevice.mapMemory(s_xStagingMem, 0, uChunkSize);
+		memcpy(pMap, pSrcData + uCurrentOffset, uChunkSize);
+		xDevice.unmapMemory(s_xStagingMem);
+		s_uNextFreeStagingOffset = uChunkSize;
+
+
+		vk::BufferCopy xCopyRegion(0, uCurrentOffset, uChunkSize);
+		s_xCommandBuffer.GetCurrentCmdBuffer().copyBuffer(s_xStagingBuffer, xDestBuffer, xCopyRegion);
+
+		s_xCommandBuffer.EndAndCpuWait(false);
+
+		// Clear staging allocations after flush
+		s_xStagingAllocations.clear();
+		s_uNextFreeStagingOffset = 0;
+
+		// Move to next chunk
+		uCurrentOffset += uChunkSize;
+		uRemainingSize -= uChunkSize;
+
+		// Restart command buffer for next chunk
+		s_xCommandBuffer.BeginRecording();
+
+		s_xMutex.Unlock();
+	}
+
+	Zenith_Log("Chunked buffer upload complete");
+}
+
+void Zenith_Vulkan_MemoryManager::UploadTextureDataChunked(vk::Image xDestImage, const void* pData, size_t uSize, uint32_t uWidth, uint32_t uHeight, uint32_t uNumMips, uint32_t uNumLayers)
+{
+	Zenith_Log("Uploading large texture in chunks: %llu bytes (staging buffer size: %llu bytes)", uSize, g_uStagingPoolSize);
+
+	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
+	const uint8_t* pSrcData = static_cast<const uint8_t*>(pData);
+	size_t uRemainingSize = uSize;
+	size_t uCurrentOffset = 0;
+
+	// For simplicity, chunk by scanlines to avoid partial row uploads
+	// This assumes mip level 0 only for now (no mipmap support in chunked path)
+	const size_t uBytesPerRow = uSize / (uHeight * uNumLayers);
+	const size_t uRowsPerChunk = std::max(size_t(1), (g_uStagingPoolSize - 4096) / uBytesPerRow);
+	const size_t uChunkHeight = std::min(size_t(uHeight), uRowsPerChunk);
+
+	uint32_t uCurrentRow = 0;
+
+	// Transition entire image to transfer dst layout first
+	s_xCommandBuffer.BeginRecording();
+	for (uint32_t uLayer = 0; uLayer < uNumLayers; uLayer++)
+	{
+		for (uint32_t uMip = 0; uMip < uNumMips; uMip++)
+		{
+			s_xCommandBuffer.ImageTransitionBarrier(xDestImage, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, uMip, uLayer);
+		}
+	}
+
+	while (uCurrentRow < uHeight * uNumLayers)
+	{
+		const uint32_t uCurrentLayer = uCurrentRow / uHeight;
+		const uint32_t uRowInLayer = uCurrentRow % uHeight;
+		const uint32_t uRemainingRows = std::min(uChunkHeight, static_cast<size_t>(uHeight - uRowInLayer));
+		const size_t uChunkSize = uRemainingRows * uBytesPerRow;
+
+		s_xMutex.Lock();
+
+		// Ensure staging buffer is empty
+		if (s_uNextFreeStagingOffset != 0)
+		{
+			s_xMutex.Unlock();
+			HandleStagingBufferFull();
+			s_xMutex.Lock();
+		}
+
+		// Map, copy, and unmap
+		void* pMap = xDevice.mapMemory(s_xStagingMem, 0, uChunkSize);
+		memcpy(pMap, pSrcData + uCurrentOffset, uChunkSize);
+		xDevice.unmapMemory(s_xStagingMem);
+
+		s_xMutex.Unlock();
+
+		// Copy this chunk to the image
+		vk::ImageSubresourceLayers xSubresource = vk::ImageSubresourceLayers()
+			.setAspectMask(vk::ImageAspectFlagBits::eColor)
+			.setMipLevel(0)
+			.setBaseArrayLayer(uCurrentLayer)
+			.setLayerCount(1);
+
+		vk::BufferImageCopy region = vk::BufferImageCopy()
+			.setBufferOffset(0)
+			.setBufferRowLength(0)
+			.setBufferImageHeight(0)
+			.setImageSubresource(xSubresource)
+			.setImageOffset({ 0, static_cast<int32_t>(uRowInLayer), 0 })
+			.setImageExtent({ uWidth, uRemainingRows, 1 });
+
+		s_xCommandBuffer.GetCurrentCmdBuffer().copyBufferToImage(s_xStagingBuffer, xDestImage, vk::ImageLayout::eTransferDstOptimal, 1, &region);
+
+		uCurrentOffset += uChunkSize;
+		uCurrentRow += uRemainingRows;
+	}
+
+	// Generate mipmaps if needed
+	for (uint32_t uLayer = 0; uLayer < uNumLayers; uLayer++)
+	{
+		s_xCommandBuffer.ImageTransitionBarrier(xDestImage, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eTransferSrcOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, 0, uLayer);
+
+		for (uint32_t uMip = 1; uMip < uNumMips; uMip++)
+		{
+			// Blit mipmap generation
+			std::array<vk::Offset3D, 2> axSrcOffsets;
+			axSrcOffsets.at(0).setX(0);
+			axSrcOffsets.at(0).setY(0);
+			axSrcOffsets.at(0).setZ(0);
+			axSrcOffsets.at(1).setX(uWidth >> (uMip - 1));
+			axSrcOffsets.at(1).setY(uHeight >> (uMip - 1));
+			axSrcOffsets.at(1).setZ(1);
+
+			vk::ImageSubresourceLayers xSrcSubresource = vk::ImageSubresourceLayers()
+				.setAspectMask(vk::ImageAspectFlagBits::eColor)
+				.setMipLevel(uMip - 1)
+				.setBaseArrayLayer(uLayer)
+				.setLayerCount(1);
+
+			std::array<vk::Offset3D, 2> axDstOffsets;
+			axDstOffsets.at(0).setX(0);
+			axDstOffsets.at(0).setY(0);
+			axDstOffsets.at(0).setZ(0);
+			axDstOffsets.at(1).setX(uWidth >> uMip);
+			axDstOffsets.at(1).setY(uHeight >> uMip);
+			axDstOffsets.at(1).setZ(1);
+
+			vk::ImageSubresourceLayers xDstSubresource = vk::ImageSubresourceLayers()
+				.setAspectMask(vk::ImageAspectFlagBits::eColor)
+				.setMipLevel(uMip)
+				.setBaseArrayLayer(uLayer)
+				.setLayerCount(1);
+
+			vk::ImageBlit xBlit = vk::ImageBlit()
+				.setSrcOffsets(axSrcOffsets)
+				.setSrcSubresource(xSrcSubresource)
+				.setDstOffsets(axDstOffsets)
+				.setDstSubresource(xDstSubresource);
+
+			s_xCommandBuffer.GetCurrentCmdBuffer().blitImage(xDestImage, vk::ImageLayout::eTransferSrcOptimal, xDestImage, vk::ImageLayout::eTransferDstOptimal, 1, &xBlit, vk::Filter::eLinear);
+			s_xCommandBuffer.ImageTransitionBarrier(xDestImage, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eTransferSrcOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, uMip, uLayer);
+		}
+
+		// Transition all mips to shader read layout
+		s_xCommandBuffer.ImageTransitionBarrier(xDestImage, vk::ImageLayout::eTransferSrcOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, 0, uLayer);
+
+		for (uint32_t uMip = 1; uMip < uNumMips; uMip++)
+		{
+			s_xCommandBuffer.ImageTransitionBarrier(xDestImage, vk::ImageLayout::eTransferSrcOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, uMip, uLayer);
+		}
+	}
+
+	// Execute and wait
+	s_xCommandBuffer.EndAndCpuWait(false);
+
+	// Clean up
+	s_xStagingAllocations.clear();
+	s_uNextFreeStagingOffset = 0;
+
+	// Restart command buffer for next operations
+	s_xCommandBuffer.BeginRecording();
+
+	Zenith_Log("Chunked texture upload complete");
 }
 
 void Zenith_Vulkan_MemoryManager::QueueVRAMDeletion(Zenith_Vulkan_VRAM* pxVRAM, const Flux_VRAMHandle xHandle, 

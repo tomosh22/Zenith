@@ -22,7 +22,8 @@
       "Bash(Select-String -Pattern \"(error|Flux_Primitives)\" -Context 2)",
       "Bash(cmd /c:*)",
       "Bash(\"C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\MSBuild\\Current\\Bin\\MSBuild.exe\" test_win64.vcxproj -p:Configuration=vs2022_Debug_Win64_True -p:Platform=x64 -verbosity:normal)",
-      "Bash(c:/dev/Zenith/FluxCompiler/output/win64/vs2022_release_win64_true/fluxcompiler.exe)"
+      "Bash(c:/dev/Zenith/FluxCompiler/output/win64/vs2022_release_win64_true/fluxcompiler.exe)",
+      "Bash(\"C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\MSBuild\\Current\\Bin\\MSBuild.exe\" \"Games\\Test\\Build\\test_win64.vcxproj\" -p:Configuration=vs2022_Debug_Win64_True -p:Platform=x64 -t:ClCompile -p:SelectedFiles=\"Zenith\\Vulkan\\Zenith_Vulkan_MemoryManager.cpp\" -verbosity:minimal)"
     ],
     "deny": [],
     "ask": []
