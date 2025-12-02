@@ -1,6 +1,7 @@
 #include "Zenith.h"
 
 #include "Flux/Terrain/Flux_Terrain.h"
+#include "Flux/Terrain/Flux_TerrainStreamingManager.h"
 
 #include "Flux/Flux.h"
 #include "Flux/Flux_Graphics.h"
@@ -188,6 +189,9 @@ void Flux_Terrain::Initialise()
 
 	Zenith_Log("Flux_Terrain - Built terrain culling compute pipeline");
 
+	// ========== Initialize Terrain Streaming Manager ==========
+	Flux_TerrainStreamingManager::Initialize();
+
 	Zenith_Log("Flux_Terrain initialised");
 }
 
@@ -199,6 +203,19 @@ void Flux_Terrain::SubmitRenderToGBufferTask()
 	Zenith_Scene::GetCurrentScene().GetAllOfComponentType<Zenith_TerrainComponent>(g_xTerrainComponentsToRender);
 
 	Flux_MemoryManager::UploadBufferData(s_xTerrainConstantsBuffer.GetBuffer().m_xVRAMHandle, &s_xTerrainConstants, sizeof(TerrainConstants));
+
+	// ========== Update Terrain LOD Streaming ==========
+	// Process streaming requests and evictions based on camera position
+	Zenith_Maths::Vector3 xCameraPos = Flux_Graphics::GetCameraPosition();
+	Flux_TerrainStreamingManager::Get().UpdateStreaming(xCameraPos);
+
+	// ========== Update Chunk LOD Allocations ==========
+	// Update each terrain component's chunk data buffer with current LOD allocations
+	for (u_int u = 0; u < g_xTerrainComponentsToRender.GetSize(); u++)
+	{
+		Zenith_TerrainComponent* pxTerrain = g_xTerrainComponentsToRender.Get(u);
+		pxTerrain->UpdateChunkLODAllocations();
+	}
 
 	// ========== Per-Component Terrain Culling Dispatch ==========
 	// Each terrain component dispatches its own culling compute pass

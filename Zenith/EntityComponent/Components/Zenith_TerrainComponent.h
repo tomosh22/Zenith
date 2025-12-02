@@ -61,7 +61,6 @@ public:
 	// ReadFromDataStream will populate all members from saved data
 	Zenith_TerrainComponent(Zenith_Entity& xEntity)
 		: m_xParentEntity(xEntity)
-		, m_pxRenderGeometry(nullptr)
 		, m_pxPhysicsGeometry(nullptr)
 		, m_pxMaterial0(nullptr)
 		, m_pxMaterial1(nullptr)
@@ -74,7 +73,7 @@ public:
 
 	~Zenith_TerrainComponent();
 
-	const Flux_MeshGeometry& GetRenderMeshGeometry() const { return *m_pxRenderGeometry; }
+	const Flux_MeshGeometry& GetRenderMeshGeometry() const { return m_xRenderGeometryFacade; }
 	const Flux_MeshGeometry& GetPhysicsMeshGeometry() const { return *m_pxPhysicsGeometry; }
 	const Flux_Material& GetMaterial0() const { return *m_pxMaterial0; }
 	Flux_Material& GetMaterial0() { return *m_pxMaterial0; }
@@ -137,14 +136,24 @@ public:
 	 */
 	Flux_ReadWriteBuffer& GetLODLevelBuffer() { return m_xLODLevelBuffer; }
 
+	/**
+	 * Update chunk LOD allocations in GPU buffer based on current streaming manager state
+	 * Called each frame after streaming manager updates
+	 */
+	void UpdateChunkLODAllocations();
+
 private:
 	Zenith_Entity m_xParentEntity;
 
-	//#TO not owning
-	Flux_MeshGeometry* m_pxRenderGeometry = nullptr;
+	//#TO not owning - just references to materials and physics geometry
+	// Render geometry now comes from Flux_TerrainStreamingManager
 	Flux_MeshGeometry* m_pxPhysicsGeometry = nullptr;
 	Flux_Material* m_pxMaterial0 = nullptr;
 	Flux_Material* m_pxMaterial1 = nullptr;
+
+	// Facade mesh geometry that references streaming manager's buffers
+	// This allows existing rendering code to work without changes
+	Flux_MeshGeometry m_xRenderGeometryFacade;
 
 	// ========== GPU-Driven Culling State ==========
 	bool m_bCullingResourcesInitialized = false;

@@ -618,6 +618,78 @@ void Zenith_Vulkan_MemoryManager::UploadBufferData(Flux_VRAMHandle xBufferHandle
 	s_xMutex.Unlock();
 }
 
+void Zenith_Vulkan_MemoryManager::UploadBufferDataAtOffset(Flux_VRAMHandle xBufferHandle, const void* pData, size_t uSize, size_t uDestOffset)
+{
+	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
+	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xBufferHandle);
+	const VmaAllocation& xAlloc = pxVRAM->GetAllocation();
+	VkMemoryPropertyFlags eMemoryProps;
+	vmaGetAllocationMemoryProperties(s_xAllocator, xAlloc, &eMemoryProps);
+
+	// For host-visible memory, map and copy directly with offset
+	if (eMemoryProps & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
+	{
+		s_xMutex.Lock();
+		void* pMap = nullptr;
+		vmaMapMemory(s_xAllocator, xAlloc, &pMap);
+		Zenith_Assert(pMap != nullptr, "Memory isn't mapped");
+
+		// Copy to the destination offset
+		memcpy(static_cast<uint8_t*>(pMap) + uDestOffset, pData, uSize);
+
+#ifdef ZENITH_ASSERT
+		VkResult eResult =
+#endif
+		vmaFlushAllocation(s_xAllocator, xAlloc, uDestOffset, uSize);
+		Zenith_Assert(eResult == VK_SUCCESS, "Failed to flush allocation");
+
+		vmaUnmapMemory(s_xAllocator, xAlloc);
+		s_xMutex.Unlock();
+	}
+	else
+	{
+		// For device-local memory, use staging buffer with destination offset
+		// Handle large uploads in chunks
+		const uint8_t* pSrcData = static_cast<const uint8_t*>(pData);
+		size_t uRemainingSize = uSize;
+		size_t uCurrentSrcOffset = 0;
+		size_t uCurrentDestOffset = uDestOffset;
+
+		while (uRemainingSize > 0)
+		{
+			// Calculate chunk size (leave headroom for alignment)
+			const size_t uChunkSize = (std::min)(uRemainingSize, g_uStagingPoolSize - 4096);
+
+			s_xMutex.Lock();
+
+			// Ensure staging buffer has space
+			if (s_uNextFreeStagingOffset != 0)
+			{
+				HandleStagingBufferFull();
+			}
+
+			// Copy data to staging buffer
+			void* pMap = xDevice.mapMemory(s_xStagingMem, 0, uChunkSize);
+			memcpy(pMap, pSrcData + uCurrentSrcOffset, uChunkSize);
+			xDevice.unmapMemory(s_xStagingMem);
+
+			// Issue copy command with destination offset
+			vk::BufferCopy xCopyRegion(0, uCurrentDestOffset, uChunkSize);
+			s_xCommandBuffer.GetCurrentCmdBuffer().copyBuffer(s_xStagingBuffer, pxVRAM->GetBuffer(), xCopyRegion);
+
+			// Flush and wait
+			s_xCommandBuffer.EndAndCpuWait(false);
+			s_xCommandBuffer.BeginRecording();
+			s_xMutex.Unlock();
+
+			// Move to next chunk
+			uCurrentSrcOffset += uChunkSize;
+			uCurrentDestOffset += uChunkSize;
+			uRemainingSize -= uChunkSize;
+		}
+	}
+}
+
 void Zenith_Vulkan_MemoryManager::FlushStagingBuffer()
 {
 	for (auto it = s_xStagingAllocations.begin(); it != s_xStagingAllocations.end(); it++) {

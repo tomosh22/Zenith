@@ -559,6 +559,9 @@
     <ClCompile Include="..\..\..\Zenith\Flux\Terrain\Flux_Terrain.cpp">
       <Filter>Zenith\Flux\Terrain</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\..\Zenith\Flux\Terrain\Flux_TerrainStreamingManager.cpp">
+      <Filter>Zenith\Flux\Terrain</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\..\Zenith\Flux\Text\Flux_Text.cpp">
       <Filter>Zenith\Flux\Text</Filter>
     </ClCompile>
@@ -1885,6 +1888,9 @@
       <Filter>Zenith\Flux\StaticMeshes</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\Zenith\Flux\Terrain\Flux_Terrain.h">
+      <Filter>Zenith\Flux\Terrain</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\Flux\Terrain\Flux_TerrainStreamingManager.h">
       <Filter>Zenith\Flux\Terrain</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\Zenith\Flux\Text\Flux_Text.h">

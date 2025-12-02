@@ -23,7 +23,19 @@
       "Bash(cmd /c:*)",
       "Bash(\"C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\MSBuild\\Current\\Bin\\MSBuild.exe\" test_win64.vcxproj -p:Configuration=vs2022_Debug_Win64_True -p:Platform=x64 -verbosity:normal)",
       "Bash(c:/dev/Zenith/FluxCompiler/output/win64/vs2022_release_win64_true/fluxcompiler.exe)",
-      "Bash(\"C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\MSBuild\\Current\\Bin\\MSBuild.exe\" \"Games\\Test\\Build\\test_win64.vcxproj\" -p:Configuration=vs2022_Debug_Win64_True -p:Platform=x64 -t:ClCompile -p:SelectedFiles=\"Zenith\\Vulkan\\Zenith_Vulkan_MemoryManager.cpp\" -verbosity:minimal)"
+      "Bash(\"C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\MSBuild\\Current\\Bin\\MSBuild.exe\" \"Games\\Test\\Build\\test_win64.vcxproj\" -p:Configuration=vs2022_Debug_Win64_True -p:Platform=x64 -t:ClCompile -p:SelectedFiles=\"Zenith\\Vulkan\\Zenith_Vulkan_MemoryManager.cpp\" -verbosity:minimal)",
+      "Bash(\"C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\MSBuild\\Current\\Bin\\MSBuild.exe\" \"test_win64.vcxproj\" -p:Configuration=vs2022_Debug_Win64_True -p:Platform=x64 -verbosity:minimal)",
+      "Bash(Select-String -Pattern \"(error|warning|Flux_Terrain|TerrainComponent)\" -Context 1)",
+      "Bash(Select-Object -First 50)",
+      "Bash(\"C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\MSBuild\\Current\\Bin\\MSBuild.exe\":*)",
+      "Bash(dir \"Games\\Test\\Build\\output\\win64\\vs2022_debug_win64_true\\test.exe\")",
+      "Bash(test:*)",
+      "Bash(./test.exe:*)",
+      "Bash(Select-String -Pattern \"(error|Build succeeded|Build FAILED)\" -Context 0,2)",
+      "Bash(dir:*)",
+      "Bash(test.exe)",
+      "Bash(\"c:\\dev\\Zenith\\Games\\Test\\Build\\output\\win64\\vs2022_debug_win64_true\\test.exe\")",
+      "Bash(powershell:*)"
     ],
     "deny": [],
     "ask": []
