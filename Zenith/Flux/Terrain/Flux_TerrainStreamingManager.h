@@ -1,18 +1,15 @@
 #pragma once
 
 #include "Flux/Flux_Buffers.h"
+#include "Flux/Terrain/Flux_TerrainConfig.h"
 #include "Maths/Zenith_Maths.h"
 #include "Maths/Zenith_FrustumCulling.h"
 #include <vector>
 #include <queue>
 #include <cstdint>
 
-// Terrain constants (must match Zenith_TerrainComponent.h)
-#define TERRAIN_EXPORT_DIMS 64
-#define TERRAIN_LOD_COUNT 4
-#define TERRAIN_SIZE 64
-#define TERRAIN_SCALE 8
-#define MAX_TERRAIN_HEIGHT 2048
+// Use unified terrain configuration
+using namespace Flux_TerrainConfig;
 
 // Forward declarations
 class Flux_MeshGeometry;
@@ -40,15 +37,15 @@ struct Flux_TerrainLODAllocation
 // Per-chunk per-LOD residency tracking
 struct Flux_TerrainChunkResidency
 {
-	Flux_TerrainLODResidencyState m_aeStates[TERRAIN_LOD_COUNT];
-	Flux_TerrainLODAllocation m_axAllocations[TERRAIN_LOD_COUNT];
+	Flux_TerrainLODResidencyState m_aeStates[LOD_COUNT];
+	Flux_TerrainLODAllocation m_axAllocations[LOD_COUNT];
 
 	// Last frame this chunk was requested at each LOD
 	// Used for eviction heuristics (LRU-style)
-	uint32_t m_auLastRequestedFrame[TERRAIN_LOD_COUNT];
+	uint32_t m_auLastRequestedFrame[LOD_COUNT];
 
 	// Priority score for each LOD (lower distance = higher priority)
-	float m_afPriorities[TERRAIN_LOD_COUNT];
+	float m_afPriorities[LOD_COUNT];
 };
 
 // Simple free-list allocator for buffer space
@@ -145,7 +142,7 @@ public:
 	 * Build chunk data array for GPU upload
 	 * This is called by Zenith_TerrainComponent::BuildChunkData() to get the current
 	 * allocation info for all chunks and LODs
-	 * @param pxChunkDataOut [out] Array of TERRAIN_EXPORT_DIMS * TERRAIN_EXPORT_DIMS chunk data structs
+	 * @param pxChunkDataOut [out] Array of TOTAL_CHUNKS chunk data structs
 	 */
 	void BuildChunkDataForGPU(Zenith_TerrainChunkData* pxChunkDataOut) const;
 
@@ -224,12 +221,12 @@ private:
 	Flux_TerrainBufferAllocator m_xVertexAllocator;
 	Flux_TerrainBufferAllocator m_xIndexAllocator;
 
-	// Per-chunk residency state (4096 chunks = 64x64)
-	Flux_TerrainChunkResidency m_axChunkResidency[TERRAIN_EXPORT_DIMS * TERRAIN_EXPORT_DIMS];
+	// Per-chunk residency state (64x64 = 4096 chunks)
+	Flux_TerrainChunkResidency m_axChunkResidency[TOTAL_CHUNKS];
 
 	// Cached AABBs for all chunks (computed once, reused for all chunk data updates)
 	// Mutable because caching is an implementation detail that doesn't affect logical const-ness
-	mutable Zenith_AABB m_axChunkAABBs[TERRAIN_EXPORT_DIMS * TERRAIN_EXPORT_DIMS];
+	mutable Zenith_AABB m_axChunkAABBs[TOTAL_CHUNKS];
 	mutable bool m_bAABBsCached = false;
 
 	// ========== Streaming Queue ==========
@@ -273,16 +270,8 @@ private:
 	// Camera position tracking for incremental updates
 	Zenith_Maths::Vector3 m_xLastCameraPos = Zenith_Maths::Vector3(FLT_MAX, FLT_MAX, FLT_MAX);
 	
-	// Camera movement threshold (squared) before re-evaluating chunks
-	// Avoids constant LOD recalculation for small camera movements
-	static constexpr float CAMERA_MOVE_THRESHOLD_SQ = 100.0f;  // ~10m movement
-	
-	// LOD hysteresis - chunks must move past threshold + hysteresis to change LOD
-	// Prevents LOD flipping when camera is near LOD boundary
-	static constexpr float LOD_HYSTERESIS_FACTOR = 1.1f;  // 10% hysteresis band
-	
 	// Current desired LOD for each chunk (cached to avoid recomputation)
-	uint8_t m_auDesiredLOD[TERRAIN_EXPORT_DIMS * TERRAIN_EXPORT_DIMS];
+	uint8_t m_auDesiredLOD[TOTAL_CHUNKS];
 	
 	// Dirty flag - true when chunk data needs GPU re-upload
 	mutable bool m_bChunkDataDirty = true;
@@ -363,7 +352,7 @@ private:
 	 */
 	inline uint32_t ChunkCoordsToIndex(uint32_t uChunkX, uint32_t uChunkY) const
 	{
-		return uChunkX * TERRAIN_EXPORT_DIMS + uChunkY;
+		return uChunkX * CHUNK_GRID_SIZE + uChunkY;
 	}
 
 	/**
@@ -373,7 +362,7 @@ private:
 	 */
 	inline void ChunkIndexToCoords(uint32_t uChunkIndex, uint32_t& uChunkX, uint32_t& uChunkY) const
 	{
-		uChunkX = uChunkIndex / TERRAIN_EXPORT_DIMS;
-		uChunkY = uChunkIndex % TERRAIN_EXPORT_DIMS;
+		uChunkX = uChunkIndex / CHUNK_GRID_SIZE;
+		uChunkY = uChunkIndex % CHUNK_GRID_SIZE;
 	}
 };

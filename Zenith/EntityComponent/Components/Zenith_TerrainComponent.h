@@ -1,14 +1,8 @@
 #pragma once
 
-#define TERRAIN_EXPORT_DIMS 64
-
-//#TO_TODO: these need to be in a header file for tools terrain export
-
-#define MAX_TERRAIN_HEIGHT 2048
-//#TO width/height that heightmap is divided into
-#define TERRAIN_SIZE 64
-//#TO multiplier for vertex positions
-#define TERRAIN_SCALE 8
+// Unified terrain configuration - single source of truth for all terrain constants
+#include "Flux/Terrain/Flux_TerrainConfig.h"
+using namespace Flux_TerrainConfig;
 
 #include "EntityComponent/Zenith_Entity.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
@@ -19,9 +13,6 @@
 
 // Forward declarations
 class Flux_CommandList;
-
-// Number of LOD levels per terrain chunk
-#define TERRAIN_LOD_COUNT 4
 
 // LOD data for a single level
 struct Zenith_TerrainLODData
@@ -36,9 +27,9 @@ struct Zenith_TerrainLODData
 // Must match the GLSL struct in Flux_TerrainCulling.comp
 struct Zenith_TerrainChunkData
 {
-	Zenith_Maths::Vector4 m_xAABBMin;                      // xyz = min corner, w = padding
-	Zenith_Maths::Vector4 m_xAABBMax;                      // xyz = max corner, w = padding
-	Zenith_TerrainLODData m_axLODs[TERRAIN_LOD_COUNT];     // LOD mesh data (LOD0=highest detail)
+	Zenith_Maths::Vector4 m_xAABBMin;                   // xyz = min corner, w = padding
+	Zenith_Maths::Vector4 m_xAABBMax;                   // xyz = max corner, w = padding
+	Zenith_TerrainLODData m_axLODs[LOD_COUNT];          // LOD mesh data (LOD0=highest detail)
 };
 
 // Frustum plane structure for GPU upload
@@ -127,9 +118,9 @@ public:
 	const Flux_IndirectBuffer& GetVisibleCountBuffer() const { return m_xVisibleCountBuffer; }
 
 	/**
-	 * Get the maximum number of draw commands (= 4096, the theoretical maximum)
+	 * Get the maximum number of draw commands (= total chunks)
 	 */
-	uint32_t GetMaxDrawCount() const { return TERRAIN_EXPORT_DIMS * TERRAIN_EXPORT_DIMS; }
+	uint32_t GetMaxDrawCount() const { return TOTAL_CHUNKS; }
 
 	/**
 	 * Get the LOD level buffer for visualization

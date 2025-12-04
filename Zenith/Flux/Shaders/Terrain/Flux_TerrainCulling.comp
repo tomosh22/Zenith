@@ -3,10 +3,13 @@
 // Compute shader for GPU-driven terrain chunk culling with LOD selection and front-to-back sorting
 // This runs once per terrain chunk, tests visibility, selects appropriate LOD based on distance,
 // calculates distance, and writes sorted draw commands
+//
+// LOD distance thresholds are set by CPU-side Flux_TerrainConfig.h via BuildChunkDataForGPU()
+// Thresholds (distance²): LOD0 < 400000, LOD1 < 1000000, LOD2 < 2000000, LOD3 = always
 
 layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 
-// Number of LOD levels per chunk
+// Number of LOD levels per chunk (must match LOD_COUNT in Flux_TerrainConfig.h)
 #define TERRAIN_LOD_COUNT 4
 
 // LOD data for a single level

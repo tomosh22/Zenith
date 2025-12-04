@@ -10,13 +10,8 @@
 #include "Vulkan/Zenith_Vulkan_MemoryManager.h"
 #include <fstream>
 
-// LOD distance thresholds (distance squared)
-static constexpr float LOD_DISTANCES_SQ[TERRAIN_LOD_COUNT] = {
-	400000.0f,
-	1000000.0f,
-	2000000.0f,
-	FLT_MAX
-};
+// LOD distance thresholds from unified config (distance squared)
+// Used for debug visualization - actual thresholds are in Flux_TerrainConfig.h
 
 Zenith_TerrainComponent::Zenith_TerrainComponent(Flux_Material& xMaterial0, Flux_Material& xMaterial1, Zenith_Entity& xEntity)
 	: m_pxMaterial0(&xMaterial0)
@@ -27,15 +22,15 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Flux_Material& xMaterial0, Flux
 #pragma region Render
 {
 	// Define LOD suffixes
-	const char* LOD_SUFFIXES[4] = { "", "_LOD1", "_LOD2", "_LOD3" };
+	const char* LOD_SUFFIXES[LOD_COUNT] = { "", "_LOD1", "_LOD2", "_LOD3" };
 	
 	// Load all chunks for all LOD levels
 	// IMPORTANT: Load with POSITION attribute retained for AABB calculation
-	for (uint32_t uLOD = 0; uLOD < 4; ++uLOD)
+	for (uint32_t uLOD = 0; uLOD < LOD_COUNT; ++uLOD)
 	{
-		for (uint32_t x = 0; x < TERRAIN_EXPORT_DIMS; x++)
+		for (uint32_t x = 0; x < CHUNK_GRID_SIZE; x++)
 		{
-			for (uint32_t y = 0; y < TERRAIN_EXPORT_DIMS; y++)
+			for (uint32_t y = 0; y < CHUNK_GRID_SIZE; y++)
 			{
 				std::string strSuffix = std::to_string(x) + "_" + std::to_string(y);
 				std::string strLODMeshName = std::string("Terrain_Render") + LOD_SUFFIXES[uLOD] + strSuffix;
@@ -61,28 +56,30 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Flux_Material& xMaterial0, Flux
 	// Start with LOD0 chunk 0,0 as base
 	Flux_MeshGeometry& xRenderGeometry = Zenith_AssetHandler::GetMesh("Terrain_Render0_0");
 
-	// Calculate EXACT total size needed for ALL chunks � ALL LOD levels
+	// Calculate EXACT total size needed for ALL chunks at ALL LOD levels
 	// Based on terrain export formulas from Zenith_Tools_TerrainExport.cpp
 	//
 	// Each chunk has:
-	// - Base vertices: (TERRAIN_SIZE * density + 1)^2
-	// - Right edge stitching (if not rightmost chunk): TERRAIN_SIZE * density verts
-	// - Top edge stitching (if not topmost chunk): TERRAIN_SIZE * density verts
+	// - Base vertices: (CHUNK_SIZE_WORLD * density + 1)^2
+	// - Right edge stitching (if not rightmost chunk): CHUNK_SIZE_WORLD * density verts
+	// - Top edge stitching (if not topmost chunk): CHUNK_SIZE_WORLD * density verts
 	// - Top-right corner (if has both edges): 1 vert
+	//
+	// NOTE: Use CHUNK_SIZE_WORLD (64), NOT TERRAIN_SIZE (4096)!
+	// Each chunk is 64x64 units regardless of grid size.
 	//
 	// Indices follow a similar pattern with extra triangles for stitching
 	
-	const uint32_t uNumChunks = TERRAIN_EXPORT_DIMS * TERRAIN_EXPORT_DIMS;
-	const uint32_t uChunksX = TERRAIN_EXPORT_DIMS;
-	const uint32_t uChunksZ = TERRAIN_EXPORT_DIMS;
+	const uint32_t uChunksX = CHUNK_GRID_SIZE;
+	const uint32_t uChunksZ = CHUNK_GRID_SIZE;
 	
 	// Calculate total for all chunks at all LOD levels
 	uint32_t uTotalVerts = 0;
 	uint32_t uTotalIndices = 0;
 	
-	const float densities[4] = { 1.0f, 0.5f, 0.25f, 0.125f }; // LOD0, LOD1, LOD2, LOD3
+	const float densities[LOD_COUNT] = { 1.0f, 0.5f, 0.25f, 0.125f }; // LOD0, LOD1, LOD2, LOD3
 	
-	for (uint32_t lodLevel = 0; lodLevel < 4; ++lodLevel)
+	for (uint32_t lodLevel = 0; lodLevel < LOD_COUNT; ++lodLevel)
 	{
 		float density = densities[lodLevel];
 		
@@ -93,20 +90,20 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Flux_Material& xMaterial0, Flux
 				bool hasRightEdge = (x < uChunksX - 1);
 				bool hasTopEdge = (z < uChunksZ - 1);
 				
-				// Base vertices and indices
-				uint32_t verts = (uint32_t)((TERRAIN_SIZE * density + 1) * (TERRAIN_SIZE * density + 1));
-				uint32_t indices = (uint32_t)((TERRAIN_SIZE * density) * (TERRAIN_SIZE * density) * 6);
+				// Base vertices and indices per chunk (64x64 units)
+				uint32_t verts = (uint32_t)((CHUNK_SIZE_WORLD * density + 1) * (CHUNK_SIZE_WORLD * density + 1));
+				uint32_t indices = (uint32_t)((CHUNK_SIZE_WORLD * density) * (CHUNK_SIZE_WORLD * density) * 6);
 				
 				// Add edge stitching vertices and indices
 				if (hasRightEdge)
 				{
-					verts += (uint32_t)(TERRAIN_SIZE * density);
-					indices += (uint32_t)((TERRAIN_SIZE * density - 1) * 6); // Right edge triangles
+					verts += (uint32_t)(CHUNK_SIZE_WORLD * density);
+					indices += (uint32_t)((CHUNK_SIZE_WORLD * density - 1) * 6); // Right edge triangles
 				}
 				if (hasTopEdge)
 				{
-					verts += (uint32_t)(TERRAIN_SIZE * density);
-					indices += (uint32_t)((TERRAIN_SIZE * density - 1) * 6); // Top edge triangles
+					verts += (uint32_t)(CHUNK_SIZE_WORLD * density);
+					indices += (uint32_t)((CHUNK_SIZE_WORLD * density - 1) * 6); // Top edge triangles
 				}
 				if (hasRightEdge && hasTopEdge)
 				{
@@ -144,11 +141,11 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Flux_Material& xMaterial0, Flux
 	}
 	
 	// Combine all chunks for all LOD levels
-	for (uint32_t x = 0; x < TERRAIN_EXPORT_DIMS; x++)
+	for (uint32_t x = 0; x < CHUNK_GRID_SIZE; x++)
 	{
-		for (uint32_t y = 0; y < TERRAIN_EXPORT_DIMS; y++)
+		for (uint32_t y = 0; y < CHUNK_GRID_SIZE; y++)
 		{
-			for (uint32_t uLOD = 0; uLOD < 4; ++uLOD)
+			for (uint32_t uLOD = 0; uLOD < LOD_COUNT; ++uLOD)
 			{
 				// Skip the first chunk's LOD0 (already loaded as base)
 				if (x == 0 && y == 0 && uLOD == 0) continue;
@@ -159,7 +156,7 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Flux_Material& xMaterial0, Flux
 
 				Flux_MeshGeometry::Combine(xRenderGeometry, xTerrainRenderMesh);
 				
-				if ((x * TERRAIN_EXPORT_DIMS + y) % 256 == 0 || uLOD == 0)
+				if ((x * CHUNK_GRID_SIZE + y) % 256 == 0 || uLOD == 0)
 				{
 					Zenith_Log("Combined LOD%u chunk (%u,%u)", uLOD, x, y);
 				}
@@ -169,7 +166,7 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Flux_Material& xMaterial0, Flux
 		}
 	}
 
-	Zenith_Log("Terrain: Combined %u chunks � 4 LOD levels into unified vertex/index buffers", TERRAIN_EXPORT_DIMS * TERRAIN_EXPORT_DIMS);
+	Zenith_Log("Terrain: Combined %u chunks × %u LOD levels into unified vertex/index buffers", TOTAL_CHUNKS, LOD_COUNT);
 	Zenith_Log("Terrain: Total vertices: %u, Total indices: %u", xRenderGeometry.m_uNumVerts, xRenderGeometry.m_uNumIndices);
 
 	Flux_MemoryManager::InitialiseVertexBuffer(xRenderGeometry.GetVertexData(), xRenderGeometry.GetVertexDataSize(), xRenderGeometry.m_xVertexBuffer);
@@ -191,9 +188,9 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Flux_Material& xMaterial0, Flux
 
 #pragma region Physics
 {
-	for (uint32_t x = 0; x < TERRAIN_EXPORT_DIMS; x++)
+	for (uint32_t x = 0; x < CHUNK_GRID_SIZE; x++)
 	{
-		for (uint32_t y = 0; y < TERRAIN_EXPORT_DIMS; y++)
+		for (uint32_t y = 0; y < CHUNK_GRID_SIZE; y++)
 		{
 			std::string strSuffix = std::to_string(x) + "_" + std::to_string(y);
 
@@ -203,9 +200,9 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Flux_Material& xMaterial0, Flux
 
 	Flux_MeshGeometry& xPhysicsGeometry = Zenith_AssetHandler::GetMesh("Terrain_Physics0_0");
 
-	const u_int64 ulTotalVertexDataSize = xPhysicsGeometry.GetVertexDataSize() * TERRAIN_EXPORT_DIMS * TERRAIN_EXPORT_DIMS;
-	const u_int64 ulTotalIndexDataSize = xPhysicsGeometry.GetIndexDataSize() * TERRAIN_EXPORT_DIMS * TERRAIN_EXPORT_DIMS;
-	const u_int64 ulTotalPositionDataSize = xPhysicsGeometry.m_uNumVerts * sizeof(Zenith_Maths::Vector3) * TERRAIN_EXPORT_DIMS * TERRAIN_EXPORT_DIMS;
+	const u_int64 ulTotalVertexDataSize = xPhysicsGeometry.GetVertexDataSize() * TOTAL_CHUNKS;
+	const u_int64 ulTotalIndexDataSize = xPhysicsGeometry.GetIndexDataSize() * TOTAL_CHUNKS;
+	const u_int64 ulTotalPositionDataSize = xPhysicsGeometry.m_uNumVerts * sizeof(Zenith_Maths::Vector3) * TOTAL_CHUNKS;
 
 	xPhysicsGeometry.m_pVertexData = static_cast<u_int8*>(Zenith_MemoryManagement::Reallocate(xPhysicsGeometry.m_pVertexData, ulTotalVertexDataSize));
 	xPhysicsGeometry.m_ulReservedVertexDataSize = ulTotalVertexDataSize;
@@ -216,9 +213,9 @@ xPhysicsGeometry.m_ulReservedIndexDataSize = ulTotalIndexDataSize;
 	xPhysicsGeometry.m_pxPositions = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Reallocate(xPhysicsGeometry.m_pxPositions, ulTotalPositionDataSize));
 	xPhysicsGeometry.m_ulReservedPositionDataSize = ulTotalPositionDataSize;
 
-	for (uint32_t x = 0; x < TERRAIN_EXPORT_DIMS; x++)
+	for (uint32_t x = 0; x < CHUNK_GRID_SIZE; x++)
 	{
-		for (uint32_t y = 0; y < TERRAIN_EXPORT_DIMS; y++)
+		for (uint32_t y = 0; y < CHUNK_GRID_SIZE; y++)
 		{
 			if (x == 0 && y == 0) continue;
 
@@ -332,13 +329,11 @@ void Zenith_TerrainComponent::InitializeCullingResources()
 		m_xFrustumPlanesBuffer
 	);
 
-	constexpr uint32_t TERRAIN_CHUNK_COUNT = TERRAIN_EXPORT_DIMS * TERRAIN_EXPORT_DIMS;
-
 	// Indirect draw command buffer (one command per chunk, max)
 	// Structure: VkDrawIndexedIndirectCommand (5 uint32_t values)
 	// Initialize to zeros so all commands start with indexCount=0
-	const size_t indirectBufferSize = sizeof(uint32_t) * 5 * TERRAIN_CHUNK_COUNT;
-	uint32_t* pZeroBuffer = new uint32_t[5 * TERRAIN_CHUNK_COUNT];
+	const size_t indirectBufferSize = sizeof(uint32_t) * 5 * TOTAL_CHUNKS;
+	uint32_t* pZeroBuffer = new uint32_t[5 * TOTAL_CHUNKS];
 	memset(pZeroBuffer, 0, indirectBufferSize);
 
 	Flux_MemoryManager::InitialiseIndirectBuffer(
@@ -359,7 +354,7 @@ void Zenith_TerrainComponent::InitializeCullingResources()
 	// LOD level buffer (one uint32_t per potential draw call)
 	Flux_MemoryManager::InitialiseReadWriteBuffer(
 		nullptr,
-		sizeof(uint32_t) * TERRAIN_CHUNK_COUNT,
+		sizeof(uint32_t) * TOTAL_CHUNKS,
 		m_xLODLevelBuffer
 	);
 
@@ -368,9 +363,9 @@ void Zenith_TerrainComponent::InitializeCullingResources()
 
 	m_bCullingResourcesInitialized = true;
 
-	Zenith_Log("Zenith_TerrainComponent - Culling resources initialized with %u terrain chunks, %u LOD levels", TERRAIN_CHUNK_COUNT, TERRAIN_LOD_COUNT);
+	Zenith_Log("Zenith_TerrainComponent - Culling resources initialized with %u terrain chunks, %u LOD levels", TOTAL_CHUNKS, LOD_COUNT);
 	Zenith_Log("Zenith_TerrainComponent - LOD distances: LOD0<%.1f, LOD1<%.1f, LOD2<%.1f, LOD3<inf",
-		sqrtf(LOD_DISTANCES_SQ[0]), sqrtf(LOD_DISTANCES_SQ[1]), sqrtf(LOD_DISTANCES_SQ[2]));
+		sqrtf(LOD_DISTANCE_SQ[0]), sqrtf(LOD_DISTANCE_SQ[1]), sqrtf(LOD_DISTANCE_SQ[2]));
 }
 
 void Zenith_TerrainComponent::DestroyCullingResources()
@@ -394,27 +389,25 @@ void Zenith_TerrainComponent::DestroyCullingResources()
 
 void Zenith_TerrainComponent::BuildChunkData()
 {
-	constexpr uint32_t TERRAIN_CHUNK_COUNT = TERRAIN_EXPORT_DIMS * TERRAIN_EXPORT_DIMS;
-
 	Zenith_Log("Zenith_TerrainComponent::BuildChunkData() - Building chunk data using streaming manager");
 
 	// Get chunk data from streaming manager (includes AABBs and current LOD allocations)
-	Zenith_TerrainChunkData* pxChunkData = new Zenith_TerrainChunkData[TERRAIN_CHUNK_COUNT];
+	Zenith_TerrainChunkData* pxChunkData = new Zenith_TerrainChunkData[TOTAL_CHUNKS];
 	Flux_TerrainStreamingManager::Get().BuildChunkDataForGPU(pxChunkData);
 
-	Zenith_Log("Zenith_TerrainComponent - Chunk data retrieved from streaming manager for %u chunks", TERRAIN_CHUNK_COUNT);
+	Zenith_Log("Zenith_TerrainComponent - Chunk data retrieved from streaming manager for %u chunks", TOTAL_CHUNKS);
 
 	// Upload chunk data to GPU
 	Flux_MemoryManager::InitialiseReadWriteBuffer(
 		pxChunkData,
-		sizeof(Zenith_TerrainChunkData) * TERRAIN_CHUNK_COUNT,
+		sizeof(Zenith_TerrainChunkData) * TOTAL_CHUNKS,
 		m_xChunkDataBuffer
 	);
 
 	// Cleanup CPU data
 	delete[] pxChunkData;
 
-	Zenith_Log("Zenith_TerrainComponent - Chunk data with %u LOD levels uploaded to GPU", TERRAIN_LOD_COUNT);
+	Zenith_Log("Zenith_TerrainComponent - Chunk data with %u LOD levels uploaded to GPU", LOD_COUNT);
 }
 
 void Zenith_TerrainComponent::UpdateChunkLODAllocations()
@@ -429,8 +422,6 @@ void Zenith_TerrainComponent::UpdateChunkLODAllocations()
 	// DEBUG: Log when we're updating chunk allocations
 	static uint32_t s_uUpdateCount = 0;
 	s_uUpdateCount++;
-	
-	constexpr uint32_t TERRAIN_CHUNK_COUNT = TERRAIN_EXPORT_DIMS * TERRAIN_EXPORT_DIMS;
 
 	// OPTIMIZATION: Use pre-allocated buffer from streaming manager to avoid heap allocation
 	Zenith_TerrainChunkData* pxChunkData = xStreamMgr.GetCachedChunkDataBuffer();
@@ -439,7 +430,7 @@ void Zenith_TerrainComponent::UpdateChunkLODAllocations()
 	if (pxChunkData == nullptr)
 	{
 		// Fallback to allocation if cached buffer not available (shouldn't happen)
-		pxChunkData = new Zenith_TerrainChunkData[TERRAIN_CHUNK_COUNT];
+		pxChunkData = new Zenith_TerrainChunkData[TOTAL_CHUNKS];
 	}
 	
 	xStreamMgr.BuildChunkDataForGPU(pxChunkData);
@@ -460,7 +451,7 @@ void Zenith_TerrainComponent::UpdateChunkLODAllocations()
 			chunk0.m_axLODs[3].m_uFirstIndex, chunk0.m_axLODs[3].m_uIndexCount, chunk0.m_axLODs[3].m_uVertexOffset);
 		
 		// Log chunk near camera: (32, 23) = index 32*64+23 = 2071
-		uint32_t nearCameraIdx = 32 * 64 + 23;
+		uint32_t nearCameraIdx = 32 * CHUNK_GRID_SIZE + 23;
 		const Zenith_TerrainChunkData& chunkNear = pxChunkData[nearCameraIdx];
 		Zenith_Log("Chunk[%u] (32,23) - NEAR camera:", nearCameraIdx);
 		Zenith_Log("  LOD0: firstIndex=%u, indexCount=%u, vertexOffset=%u",
@@ -477,7 +468,7 @@ void Zenith_TerrainComponent::UpdateChunkLODAllocations()
 	Flux_MemoryManager::UploadBufferDataAtOffset(
 		m_xChunkDataBuffer.GetBuffer().m_xVRAMHandle,
 		pxChunkData,
-		sizeof(Zenith_TerrainChunkData) * TERRAIN_CHUNK_COUNT,
+		sizeof(Zenith_TerrainChunkData) * TOTAL_CHUNKS,
 		0  // Offset 0 - replace entire buffer
 	);
 	
@@ -560,9 +551,7 @@ void Zenith_TerrainComponent::UpdateCullingAndLod(Flux_CommandList& xCmdList, co
 	xCmdList.AddCommand<Flux_CommandBindUAV_Buffer>(&m_xLODLevelBuffer.GetUAV(), 4);           // LOD levels (write)
 
 	// Dispatch compute shader
-	// We have 64x64 = 4096 chunks, with local_size_x=64 we need (4096 + 63) / 64 = 64 workgroups
-	constexpr uint32_t TERRAIN_CHUNK_COUNT = TERRAIN_EXPORT_DIMS * TERRAIN_EXPORT_DIMS;
-	uint32_t uNumWorkgroups = (TERRAIN_CHUNK_COUNT + 63) / 64;
+	// We have TOTAL_CHUNKS chunks, with local_size_x=64 we need (TOTAL_CHUNKS + 63) / 64 workgroups
+	uint32_t uNumWorkgroups = (TOTAL_CHUNKS + 63) / 64;
 	xCmdList.AddCommand<Flux_CommandDispatch>(uNumWorkgroups, 1, 1);
 }
-
