@@ -51,7 +51,8 @@ struct VisibleChunkData
 };
 
 // Input: chunk data (read-only)
-layout(std140, set = 0, binding = 0) readonly buffer ChunkBuffer
+// NOTE: Using std430 for tighter packing that matches C++ struct layout
+layout(std430, set = 0, binding = 0) readonly buffer ChunkBuffer
 {
     TerrainChunkData chunks[];
 };
@@ -215,7 +216,9 @@ void main()
             drawCommands[outIndex].instanceCount = 1;
             drawCommands[outIndex].firstIndex = selectedLOD.firstIndex;
             drawCommands[outIndex].vertexOffset = int(selectedLOD.vertexOffset);
-            drawCommands[outIndex].firstInstance = 0;
+            // Use firstInstance to encode the draw index for LOD lookup in vertex shader
+            // This provides a fallback in case gl_DrawIDARB isn't supported/working
+            drawCommands[outIndex].firstInstance = outIndex;
             
             // Write LOD level for this draw call (for visualization)
             lodLevels[outIndex] = srcLODLevel;

@@ -32,7 +32,7 @@ int main()
 {
 	//ExportAllMeshes();
 	//ExportAllTextures();
-	ExportHeightmap();
+	//ExportHeightmap();
 
 	Zenith_Profiling::Initialise();
 	Zenith_Multithreading::RegisterThread();

@@ -69,13 +69,13 @@ public:
 	static void QueueImageViewDeletion(vk::ImageView xImageView);
 	static void ProcessDeferredDeletions();
 
+	static void FlushStagingBuffer();
 private:
 
 	static void InitialiseStagingBuffer();
 
 	static void HandleStagingBufferFull();
 
-	static void FlushStagingBuffer();
 
 	// Helper for chunked staging uploads when data exceeds staging buffer size
 	static void UploadBufferDataChunked(vk::Buffer xDestBuffer, const void* pData, size_t uSize);

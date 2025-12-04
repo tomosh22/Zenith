@@ -46,14 +46,23 @@ void main(){
 	{
 		// Color code by LOD level:
 		// LOD0 = Red, LOD1 = Green, LOD2 = Blue, LOD3 = Magenta
-		vec3 lodColors[4] = vec3[](
+		// Out of range = Yellow (error indicator)
+		vec3 lodColors[5] = vec3[](
 			vec3(1.0, 0.0, 0.0),  // LOD0: Red
 			vec3(0.0, 1.0, 0.0),  // LOD1: Green
 			vec3(0.0, 0.0, 1.0),  // LOD2: Blue
-			vec3(1.0, 0.0, 1.0)   // LOD3: Magenta
+			vec3(1.0, 0.0, 1.0),  // LOD3: Magenta
+			vec3(1.0, 1.0, 0.0)   // Error: Yellow (LOD > 3)
 		);
 		
-		xDiffuse.rgb = lodColors[a_uLODLevel];
+		uint clampedLOD = min(a_uLODLevel, 4u);
+		xDiffuse.rgb = lodColors[clampedLOD];
+		
+		// DEBUG: Also visualize LOD as grayscale intensity to see variation
+		// LOD 0 = bright, LOD 3 = dark
+		// Uncomment this line to debug if colors aren't varying:
+		// xDiffuse.rgb = vec3(1.0 - float(clampedLOD) * 0.25);
+		
 		xRoughnessMetallic = vec2(0.8, 0.0);  // Make it matte for better visibility
 	}
 

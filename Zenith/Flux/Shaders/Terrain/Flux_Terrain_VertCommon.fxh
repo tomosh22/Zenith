@@ -48,8 +48,9 @@ void main()
 	
 	#ifndef SHADOWS
 	// Read LOD level for this draw call
-	// For DrawIndexedIndirectCount, gl_DrawIDARB gives us the draw index
-	o_uLODLevel = lodLevels[gl_DrawIDARB];
+	// gl_InstanceIndex = firstInstance + instanceID. Since instanceCount=1 and instanceID=0,
+	// gl_InstanceIndex equals firstInstance which we set to the draw index in the compute shader
+	o_uLODLevel = lodLevels[gl_InstanceIndex];
 	#endif
 
 	#ifdef SHADOWS

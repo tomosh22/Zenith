@@ -149,6 +149,23 @@ public:
 	 */
 	void BuildChunkDataForGPU(Zenith_TerrainChunkData* pxChunkDataOut) const;
 
+	/**
+	 * Check if chunk data needs to be re-uploaded to GPU
+	 * Returns true if any LOD allocations have changed since last upload
+	 */
+	bool IsChunkDataDirty() const { return m_bChunkDataDirty; }
+	
+	/**
+	 * Mark chunk data as uploaded (clear dirty flag)
+	 */
+	void ClearChunkDataDirty() { m_bChunkDataDirty = false; }
+	
+	/**
+	 * Get pre-allocated chunk data buffer for zero-allocation updates
+	 * Returns nullptr if not initialized
+	 */
+	Zenith_TerrainChunkData* GetCachedChunkDataBuffer() const { return m_pxCachedChunkData; }
+
 	// ========== Buffer Access ==========
 
 	/**
@@ -251,6 +268,38 @@ private:
 
 	StreamingStats m_xStats;
 
+	// ========== Performance Optimization State ==========
+
+	// Camera position tracking for incremental updates
+	Zenith_Maths::Vector3 m_xLastCameraPos = Zenith_Maths::Vector3(FLT_MAX, FLT_MAX, FLT_MAX);
+	
+	// Camera movement threshold (squared) before re-evaluating chunks
+	// Avoids constant LOD recalculation for small camera movements
+	static constexpr float CAMERA_MOVE_THRESHOLD_SQ = 100.0f;  // ~10m movement
+	
+	// LOD hysteresis - chunks must move past threshold + hysteresis to change LOD
+	// Prevents LOD flipping when camera is near LOD boundary
+	static constexpr float LOD_HYSTERESIS_FACTOR = 1.1f;  // 10% hysteresis band
+	
+	// Current desired LOD for each chunk (cached to avoid recomputation)
+	uint8_t m_auDesiredLOD[TERRAIN_EXPORT_DIMS * TERRAIN_EXPORT_DIMS];
+	
+	// Dirty flag - true when chunk data needs GPU re-upload
+	mutable bool m_bChunkDataDirty = true;
+	
+	// Pre-allocated chunk data buffer to avoid per-frame allocations
+	mutable Zenith_TerrainChunkData* m_pxCachedChunkData = nullptr;
+	
+	// Frame skip for streaming updates (not every frame needs full update)
+	uint32_t m_uStreamingUpdateInterval = 2;  // Process streaming every N frames
+	
+	// Active chunk set - chunks within streaming consideration distance
+	// Avoids scanning all 4096 chunks every frame
+	std::vector<uint32_t> m_xActiveChunkIndices;
+	uint32_t m_uActiveChunkRadius = 16;  // Chunks in each direction from camera
+	int32_t m_iLastCameraChunkX = INT32_MIN;
+	int32_t m_iLastCameraChunkY = INT32_MIN;
+
 	// ========== Internal Helpers ==========
 
 	/**
@@ -295,6 +344,17 @@ private:
 	 * Calculate chunk center position for distance calculations
 	 */
 	Zenith_Maths::Vector3 GetChunkCenter(uint32_t uChunkX, uint32_t uChunkY) const;
+
+	/**
+	 * Rebuild the active chunk set based on camera position
+	 * Only chunks in this set are considered for LOD updates each frame
+	 */
+	void RebuildActiveChunkSet(int32_t iCameraChunkX, int32_t iCameraChunkY);
+
+	/**
+	 * Get chunk coords from world position
+	 */
+	void WorldPosToChunkCoords(const Zenith_Maths::Vector3& xWorldPos, int32_t& iChunkX, int32_t& iChunkY) const;
 
 	/**
 	 * Convert 2D chunk coords to flat index

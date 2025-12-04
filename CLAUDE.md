@@ -126,13 +126,33 @@ Modern Vulkan-based deferred renderer with multi-threaded command buffer recordi
 
 **Terrain Frustum Culling:**
 - **Location:** `Zenith/Flux/Terrain/`
-- **Documentation:** See [Flux/Terrain/CLAUDE.md](Zenith/Flux/Terrain/CLAUDE.md)
+- **Documentation:** See [Flux/Terrain/CLAUDE.md](Zenith/Flux/Terrain/CLAUDE.md) - **CRITICAL: READ BEFORE MODIFYING**
 - CPU-based AABB frustum culling for terrain components
 - GPU culling infrastructure prepared (compute shader ready, currently disabled)
 - 70-75% reduction in terrain rendered vs distance-based checks
 - ~30-50 CPU cycles per terrain chunk
 - Lazy AABB caching in TerrainComponent (24 bytes per terrain)
 - Conservative culling (no false negatives)
+
+**Terrain LOD Streaming:**
+- **Location:** `Zenith/Flux/Terrain/Flux_TerrainStreamingManager.h/cpp`
+- **Documentation:** See [Flux/Terrain/CLAUDE.md](Zenith/Flux/Terrain/CLAUDE.md) - **CRITICAL: READ BEFORE MODIFYING**
+- 4096 terrain chunks (64×64 grid), 4 LOD levels (LOD0=highest, LOD3=lowest)
+- Unified buffer architecture: LOD3 always-resident + streaming region for LOD0-2
+- Streaming budget: 256MB vertices, 64MB indices
+- Distance-based LOD selection matching between CPU and GPU
+- Priority-queue streaming with LRU eviction
+- State machine: NOT_LOADED → QUEUED → LOADING → RESIDENT → EVICTING
+- AABBs cached from actual mesh data during initialization
+
+**⚠️ TERRAIN SYSTEM WARNING:**
+The terrain LOD streaming system has had several subtle bugs that took hours to debug.
+Before making ANY changes, read the "Critical Bug History" section in [Flux/Terrain/CLAUDE.md](Zenith/Flux/Terrain/CLAUDE.md).
+Key pitfalls:
+- `TERRAIN_SCALE` mismatch between export tool (1) and runtime (8) - use TERRAIN_SIZE only
+- CPU/GPU LOD thresholds MUST match exactly (400000, 1000000, 2000000)
+- Buffer offsets: absolute vs relative - allocator uses relative, residency stores absolute
+- Vertex stride must be 60 bytes everywhere (not 12 for position-only)
 
 ### 3. Task System
 
@@ -471,6 +491,7 @@ Tools/
 - Occlusion culling (planned)
 - Level-of-detail (planned)
 - Texture streaming (planned)
+- Terrain LOD streaming (implemented - see [Flux/Terrain/CLAUDE.md](Zenith/Flux/Terrain/CLAUDE.md))
 
 ## Debug Features
 
