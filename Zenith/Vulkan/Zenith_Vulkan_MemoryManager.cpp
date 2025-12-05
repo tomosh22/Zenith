@@ -402,7 +402,16 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateTextureVRAM(const void* pData
 
 	if (pData)
 	{
-		const size_t ulDataSize = ColourFormatBytesPerPixel(xInfoCopy.m_eFormat) * xInfoCopy.m_uWidth * xInfoCopy.m_uHeight * xInfoCopy.m_uDepth * xInfoCopy.m_uNumLayers;
+		// Calculate data size based on format (compressed vs uncompressed)
+		size_t ulDataSize;
+		if (IsCompressedFormat(xInfoCopy.m_eFormat))
+		{
+			ulDataSize = CalculateCompressedTextureSize(xInfoCopy.m_eFormat, xInfoCopy.m_uWidth, xInfoCopy.m_uHeight) * xInfoCopy.m_uNumLayers;
+		}
+		else
+		{
+			ulDataSize = ColourFormatBytesPerPixel(xInfoCopy.m_eFormat) * xInfoCopy.m_uWidth * xInfoCopy.m_uHeight * xInfoCopy.m_uDepth * xInfoCopy.m_uNumLayers;
+		}
 
 		// Upload data directly without creating temp texture object
 		s_xMutex.Lock();

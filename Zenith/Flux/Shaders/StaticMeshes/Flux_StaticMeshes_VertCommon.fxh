@@ -10,8 +10,9 @@ layout(location = 5) in vec4 a_xColor;
 layout(location = 0) out vec2 o_xUV;
 layout(location = 1) out vec3 o_xNormal;
 layout(location = 2) out vec3 o_xWorldPos;
-layout(location = 3) out mat3 o_xTBN;
-layout(location = 6) out vec4 o_xColor;
+layout(location = 3) out vec3 o_xTangent;
+layout(location = 4) out float o_fBitangentSign;  // Sign for bitangent reconstruction (saves 2 varyings)
+layout(location = 5) out vec4 o_xColor;
 
 layout(push_constant) uniform ModelMatrix{
 	mat4 g_xModelMatrix;
@@ -27,11 +28,21 @@ void main()
 {
 	o_xUV = a_xUV;
 	o_xColor = a_xColor;
+	
+	// OPTIMIZATION: Pre-compute normal matrix on CPU if possible
+	// For now, compute inverse-transpose for non-uniform scaling support
 	mat3 xNormalMatrix = transpose(inverse(mat3(g_xModelMatrix)));
-	o_xNormal = normalize(xNormalMatrix * normalize(a_xNormal));
-	vec3 xTangent = normalize(xNormalMatrix * normalize(a_xTangent));
-	vec3 xBitangent = normalize(xNormalMatrix * normalize(a_xBitangent));
-	o_xTBN = mat3(xTangent, xBitangent, o_xNormal);
+	
+	// Transform normal and tangent to world space
+	o_xNormal = normalize(xNormalMatrix * a_xNormal);
+	o_xTangent = normalize(xNormalMatrix * a_xTangent);
+	
+	// OPTIMIZATION: Compute bitangent sign (handedness) instead of passing full bitangent
+	// This saves 2 varying components (vec3 -> float)
+	// Bitangent will be reconstructed in fragment shader: B = cross(N, T) * sign
+	vec3 xBitangent = normalize(xNormalMatrix * a_xBitangent);
+	o_fBitangentSign = sign(dot(xBitangent, cross(o_xNormal, o_xTangent)));
+	
 	o_xWorldPos = (g_xModelMatrix * vec4(a_xPosition,1)).xyz;
 
 	#ifdef SHADOWS

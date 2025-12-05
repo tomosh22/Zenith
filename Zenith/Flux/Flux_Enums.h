@@ -61,6 +61,12 @@ enum TextureFormat
 	TEXTURE_FORMAT_R16G16B16A16_SFLOAT,
 	TEXTURE_FORMAT_R32G32B32A32_SFLOAT,
 	TEXTURE_FORMAT_R32G32B32_SFLOAT,
+	// BC Compressed formats
+	TEXTURE_FORMAT_BC1_RGB_UNORM,      // 4 bits/pixel, RGB, no alpha (6:1 compression)
+	TEXTURE_FORMAT_BC1_RGBA_UNORM,     // 4 bits/pixel, RGB + 1-bit alpha (6:1 compression)
+	TEXTURE_FORMAT_BC3_RGBA_UNORM,     // 8 bits/pixel, RGB + smooth alpha (4:1 compression)
+	TEXTURE_FORMAT_BC5_RG_UNORM,       // 8 bits/pixel, RG only, ideal for normal maps (4:1 compression)
+	TEXTURE_FORMAT_BC7_RGBA_UNORM,     // 8 bits/pixel, high quality RGBA (4:1 compression)
 	TEXTURE_FORMAT_COLOUR_END,/////////////////////////
 
 	TEXTURE_FORMAT_DEPTH_STENCIL_BEGIN,////////////////

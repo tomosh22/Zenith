@@ -1001,6 +1001,17 @@ vk::Format Zenith_Vulkan::ConvertToVkFormat_Colour(TextureFormat eFormat) {
 		return vk::Format::eR16G16B16A16Unorm;
 	case TEXTURE_FORMAT_BGRA8_UNORM:
 		return vk::Format::eB8G8R8A8Unorm;
+	// BC Compressed formats
+	case TEXTURE_FORMAT_BC1_RGB_UNORM:
+		return vk::Format::eBc1RgbUnormBlock;
+	case TEXTURE_FORMAT_BC1_RGBA_UNORM:
+		return vk::Format::eBc1RgbaUnormBlock;
+	case TEXTURE_FORMAT_BC3_RGBA_UNORM:
+		return vk::Format::eBc3UnormBlock;
+	case TEXTURE_FORMAT_BC5_RG_UNORM:
+		return vk::Format::eBc5UnormBlock;
+	case TEXTURE_FORMAT_BC7_RGBA_UNORM:
+		return vk::Format::eBc7UnormBlock;
 	default:
 		Zenith_Assert(false, "Invalid format");
 	}

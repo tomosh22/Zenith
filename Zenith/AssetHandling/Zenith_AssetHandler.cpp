@@ -22,8 +22,17 @@ Flux_Texture& Zenith_AssetHandler::AddTexture(const std::string& strName, const 
 	if (xTextureData.bIsCubemap)
 	{
 		// Concatenate cube face data for unified VRAM creation
-		const size_t ulLayerDataSize = ColourFormatBytesPerPixel(xTextureData.xSurfaceInfo.m_eFormat) * 
-			xTextureData.xSurfaceInfo.m_uWidth * xTextureData.xSurfaceInfo.m_uHeight;
+		size_t ulLayerDataSize;
+		if (IsCompressedFormat(xTextureData.xSurfaceInfo.m_eFormat))
+		{
+			ulLayerDataSize = CalculateCompressedTextureSize(xTextureData.xSurfaceInfo.m_eFormat,
+				xTextureData.xSurfaceInfo.m_uWidth, xTextureData.xSurfaceInfo.m_uHeight);
+		}
+		else
+		{
+			ulLayerDataSize = ColourFormatBytesPerPixel(xTextureData.xSurfaceInfo.m_eFormat) * 
+				xTextureData.xSurfaceInfo.m_uWidth * xTextureData.xSurfaceInfo.m_uHeight;
+		}
 		const size_t ulTotalDataSize = ulLayerDataSize * 6;
 		
 		void* pAllData = Zenith_MemoryManagement::Allocate(ulTotalDataSize);
@@ -78,21 +87,24 @@ Zenith_AssetHandler::TextureData Zenith_AssetHandler::LoadTexture2DFromFile(cons
 	void* const pData = Zenith_MemoryManagement::Allocate(ulDataSize);
 	xStream.ReadData(pData, ulDataSize);
 
-	const uint32_t uNumMips = std::floor(std::log2((std::max)(uWidth, uHeight))) + 1;
+	// For compressed formats, we only have mip 0 (no runtime mip generation)
+	// For uncompressed formats, we generate mips at runtime
+	const bool bIsCompressed = IsCompressedFormat(eFormat);
+	const uint32_t uNumMips = bIsCompressed ? 1 : (std::floor(std::log2((std::max)(uWidth, uHeight))) + 1);
 
 	Flux_SurfaceInfo xInfo;
 	xInfo.m_uWidth = uWidth;
 	xInfo.m_uHeight = uHeight;
 	xInfo.m_uDepth = uDepth;
 	xInfo.m_uNumLayers = 1;
-	xInfo.m_eFormat = TEXTURE_FORMAT_RGBA8_UNORM;
+	xInfo.m_eFormat = eFormat;  // Use format from file
 	xInfo.m_uNumMips = uNumMips;
 	xInfo.m_uMemoryFlags = 1 << MEMORY_FLAGS__SHADER_READ;
 
 	TextureData xTextureData;
 	xTextureData.pData = pData;
 	xTextureData.xSurfaceInfo = xInfo;
-	xTextureData.bCreateMips = true;
+	xTextureData.bCreateMips = !bIsCompressed;  // Don't generate mips for compressed textures
 	xTextureData.bIsCubemap = false;
 	
 	return xTextureData;
@@ -122,32 +134,42 @@ Zenith_AssetHandler::TextureData Zenith_AssetHandler::LoadTextureCubeFromFiles(c
 
 	size_t aulDataSizes[6] = { 0, 0, 0, 0, 0, 0 };
 	uint32_t uWidth = 0, uHeight = 0, uDepth = 0;
+	TextureFormat eFormat = TEXTURE_FORMAT_RGBA8_UNORM;  // Will be read from first face
 
 	for (uint32_t u = 0; u < 6; u++)
 	{
 		Zenith_DataStream xStream;
 		xStream.ReadFromFile(aszPaths[u]);
 
-		TextureFormat eFormat;
+		TextureFormat eFaceFormat;
 
 		xStream >> uWidth;
 		xStream >> uHeight;
 		xStream >> uDepth;
-		xStream >> eFormat;
+		xStream >> eFaceFormat;
 		xStream >> aulDataSizes[u];
+
+		// Use format from first face (all faces should have same format)
+		if (u == 0)
+		{
+			eFormat = eFaceFormat;
+		}
 
 		apDatas[u] = Zenith_MemoryManagement::Allocate(aulDataSizes[u]);
 		xStream.ReadData(apDatas[u], aulDataSizes[u]);
 	}
 
-	const uint32_t uNumMips = std::floor(std::log2((std::max)(uWidth, uHeight))) + 1;
+	// For compressed formats, we only have mip 0 (no runtime mip generation)
+	// For uncompressed formats, we generate mips at runtime
+	const bool bIsCompressed = IsCompressedFormat(eFormat);
+	const uint32_t uNumMips = bIsCompressed ? 1 : (std::floor(std::log2((std::max)(uWidth, uHeight))) + 1);
 
 	Flux_SurfaceInfo xInfo;
 	xInfo.m_uWidth = uWidth;
 	xInfo.m_uHeight = uHeight;
 	xInfo.m_uDepth = uDepth;
 	xInfo.m_uNumLayers = 6;
-	xInfo.m_eFormat = TEXTURE_FORMAT_RGBA8_UNORM;
+	xInfo.m_eFormat = eFormat;  // Use actual format from file
 	xInfo.m_uNumMips = uNumMips;
 	xInfo.m_uMemoryFlags = 1 << MEMORY_FLAGS__SHADER_READ;
 
@@ -159,7 +181,7 @@ Zenith_AssetHandler::TextureData Zenith_AssetHandler::LoadTextureCubeFromFiles(c
 	xTextureData.apCubeFaceData[4] = apDatas[4];
 	xTextureData.apCubeFaceData[5] = apDatas[5];
 	xTextureData.xSurfaceInfo = xInfo;
-	xTextureData.bCreateMips = true;
+	xTextureData.bCreateMips = !bIsCompressed;  // Don't generate mips for compressed textures
 	xTextureData.bIsCubemap = true;
 	
 	return xTextureData;

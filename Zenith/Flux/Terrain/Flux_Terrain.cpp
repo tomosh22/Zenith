@@ -13,6 +13,7 @@
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
+#include "Profiling/Zenith_Profiling.h"
 
 static Zenith_Task* g_pxRenderTask = nullptr;
 static Zenith_Vector<Zenith_TerrainComponent*> g_xTerrainComponentsToRender;
@@ -38,6 +39,12 @@ static Flux_Shader s_xCullingShader;
 static Flux_RootSig s_xCullingRootSig;
 static Flux_CommandList s_xCullingCommandList("Terrain Culling Compute");
 
+// ========== Performance Metrics ==========
+static uint32_t s_uFrameCounter = 0;
+static uint32_t s_uLastVisibleChunks = 0;
+static float s_fCullingTimeMs = 0.0f;
+static float s_fStreamingTimeMs = 0.0f;
+
 struct TerrainConstants
 {
 	float m_fUVScale = 0.07;
@@ -49,6 +56,7 @@ DEBUGVAR bool dbg_bWireframe = false;
 DEBUGVAR float dbg_fVisibilityThresholdMultiplier = 0.5f;
 DEBUGVAR bool dbg_bIgnoreVisibilityCheck = false;
 DEBUGVAR bool dbg_bUseGPUCulling = true;  // Toggle GPU-driven terrain culling
+DEBUGVAR bool dbg_bLogTerrainMetrics = false;  // Log terrain performance metrics
 DEBUGVAR bool dbg_bVisualizeLOD = false;  // Toggle LOD visualization (Red=LOD0, Green=LOD1, Blue=LOD2, Magenta=LOD3)
 
 void Flux_Terrain::Initialise()
@@ -158,6 +166,7 @@ void Flux_Terrain::Initialise()
 	Zenith_DebugVariables::AddFloat({ "Render", "Terrain", "Visiblity Multiplier" }, dbg_fVisibilityThresholdMultiplier, 0.1f, 1.f);
 	Zenith_DebugVariables::AddBoolean({ "Render", "Terrain", "Ignore Visibility Check" }, dbg_bIgnoreVisibilityCheck);
 	Zenith_DebugVariables::AddBoolean({ "Render", "Terrain", "Visualize LOD" }, dbg_bVisualizeLOD);
+	Zenith_DebugVariables::AddBoolean({ "Render", "Terrain", "Log Metrics" }, dbg_bLogTerrainMetrics);
 #endif
 
 	// ========== Initialize GPU-Driven Terrain Culling Compute Pipeline ==========
@@ -197,6 +206,8 @@ void Flux_Terrain::Initialise()
 
 void Flux_Terrain::SubmitRenderToGBufferTask()
 {
+	s_uFrameCounter++;
+	
 	// Get all terrain components
 	Zenith_Vector<Zenith_TerrainComponent*> xAllTerrain;
 	g_xTerrainComponentsToRender.Clear();
@@ -206,8 +217,10 @@ void Flux_Terrain::SubmitRenderToGBufferTask()
 
 	// ========== Update Terrain LOD Streaming ==========
 	// Process streaming requests and evictions based on camera position
+	Zenith_Profiling::BeginProfile(ZENITH_PROFILE_INDEX__FLUX_TERRAIN_STREAMING);
 	Zenith_Maths::Vector3 xCameraPos = Flux_Graphics::GetCameraPosition();
 	Flux_TerrainStreamingManager::Get().UpdateStreaming(xCameraPos);
+	Zenith_Profiling::EndProfile(ZENITH_PROFILE_INDEX__FLUX_TERRAIN_STREAMING);
 
 	// ========== Update Chunk LOD Allocations ==========
 	// Update each terrain component's chunk data buffer with current LOD allocations
@@ -222,6 +235,7 @@ void Flux_Terrain::SubmitRenderToGBufferTask()
 	// using its own chunk/LOD metadata and indirect draw buffers
 	if (dbg_bUseGPUCulling)
 	{
+		Zenith_Profiling::BeginProfile(ZENITH_PROFILE_INDEX__FLUX_TERRAIN_CULLING);
 		s_xCullingCommandList.Reset(false);  // No render targets to clear
 
 		// Bind the terrain culling compute pipeline once (owned by Flux_Terrain)
@@ -238,6 +252,23 @@ void Flux_Terrain::SubmitRenderToGBufferTask()
 
 		// Submit culling compute command list before terrain rendering
 		Flux::SubmitCommandList(&s_xCullingCommandList, Flux_Graphics::s_xNullTargetSetup, RENDER_ORDER_TERRAIN_CULLING);
+		Zenith_Profiling::EndProfile(ZENITH_PROFILE_INDEX__FLUX_TERRAIN_CULLING);
+	}
+	
+	// ========== Log Performance Metrics (periodic) ==========
+	if (dbg_bLogTerrainMetrics && (s_uFrameCounter % 120 == 0))
+	{
+		const Flux_TerrainStreamingManager::StreamingStats& xStats = Flux_TerrainStreamingManager::Get().GetStats();
+		Zenith_Log("=== Terrain Performance Metrics (Frame %u) ===", s_uFrameCounter);
+		Zenith_Log("  High-LOD chunks resident: %u", xStats.m_uHighLODChunksResident);
+		Zenith_Log("  Streaming vertex buffer: %u/%u MB (%.1f%%)", 
+			xStats.m_uVertexBufferUsedMB, xStats.m_uVertexBufferTotalMB,
+			(xStats.m_uVertexBufferUsedMB * 100.0f) / xStats.m_uVertexBufferTotalMB);
+		Zenith_Log("  Streaming index buffer: %u/%u MB (%.1f%%)",
+			xStats.m_uIndexBufferUsedMB, xStats.m_uIndexBufferTotalMB,
+			(xStats.m_uIndexBufferUsedMB * 100.0f) / xStats.m_uIndexBufferTotalMB);
+		Zenith_Log("  Buffer fragmentation: %u vertex blocks, %u index blocks",
+			xStats.m_uVertexFragments, xStats.m_uIndexFragments);
 	}
 
 	Zenith_TaskSystem::SubmitTask(g_pxRenderTask);

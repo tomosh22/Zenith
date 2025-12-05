@@ -30,8 +30,8 @@ static Zenith_Maths::Vector3 s_xDVSTest4 = { 1,2,3 };
 
 int main()
 {
-	//ExportAllMeshes();
-	//ExportAllTextures();
+	ExportAllMeshes();
+	ExportAllTextures();
 	ExportHeightmap();
 
 	Zenith_Profiling::Initialise();

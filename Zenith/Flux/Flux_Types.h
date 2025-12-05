@@ -129,6 +129,40 @@ struct Flux_VertexInputDescription
 	Flux_BufferLayout m_xPerInstanceLayout;
 };
 
+static bool IsCompressedFormat(TextureFormat eFormat)
+{
+	return eFormat == TEXTURE_FORMAT_BC1_RGB_UNORM ||
+		   eFormat == TEXTURE_FORMAT_BC1_RGBA_UNORM ||
+		   eFormat == TEXTURE_FORMAT_BC3_RGBA_UNORM ||
+		   eFormat == TEXTURE_FORMAT_BC5_RG_UNORM ||
+		   eFormat == TEXTURE_FORMAT_BC7_RGBA_UNORM;
+}
+
+// Returns bytes per 4x4 block for compressed formats
+static uint32_t CompressedFormatBytesPerBlock(TextureFormat eFormat)
+{
+	switch (eFormat)
+	{
+	case TEXTURE_FORMAT_BC1_RGB_UNORM:
+	case TEXTURE_FORMAT_BC1_RGBA_UNORM:
+		return 8u;  // 8 bytes per 4x4 block
+	case TEXTURE_FORMAT_BC3_RGBA_UNORM:
+	case TEXTURE_FORMAT_BC5_RG_UNORM:
+	case TEXTURE_FORMAT_BC7_RGBA_UNORM:
+		return 16u; // 16 bytes per 4x4 block
+	default:
+		return 0u;
+	}
+}
+
+// Calculate total size in bytes for a compressed texture
+static size_t CalculateCompressedTextureSize(TextureFormat eFormat, uint32_t uWidth, uint32_t uHeight)
+{
+	const uint32_t uBlocksX = (uWidth + 3) / 4;
+	const uint32_t uBlocksY = (uHeight + 3) / 4;
+	return static_cast<size_t>(uBlocksX) * uBlocksY * CompressedFormatBytesPerBlock(eFormat);
+}
+
 static uint32_t ColourFormatBitsPerPixel(TextureFormat eFormat)
 {
 	switch (eFormat)

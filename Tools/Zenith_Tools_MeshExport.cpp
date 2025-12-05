@@ -359,8 +359,8 @@ static void ExportMaterialTextures(const aiMaterial* pxMat, const aiScene* pxSce
 		strExportFile += std::string("_") + std::to_string(uIndex);
 		strExportFile += ".ztx";
 
-		TextureFormat eFormat = TEXTURE_FORMAT_RGBA8_UNORM;
-		Zenith_Tools_TextureExport::ExportFromData(pData, strExportFile, iWidth, iHeight, eFormat);
+		// Use BC1 compression for better GPU performance
+		Zenith_Tools_TextureExport::ExportFromDataCompressed(pData, strExportFile, iWidth, iHeight, TextureCompressionMode::BC1);
 		stbi_image_free(pData);
 	}
 }
