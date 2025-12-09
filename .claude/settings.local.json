@@ -35,7 +35,10 @@
       "Bash(dir:*)",
       "Bash(test.exe)",
       "Bash(\"c:\\dev\\Zenith\\Games\\Test\\Build\\output\\win64\\vs2022_debug_win64_true\\test.exe\")",
-      "Bash(powershell:*)"
+      "Bash(powershell:*)",
+      "Bash(\"C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\MSBuild\\Current\\Bin\\MSBuild.exe\" \"Games\\Test\\Build\\test_win64.vcxproj\" -p:Configuration=vs2022_Debug_Win64_True -p:Platform=x64 -t:ClCompile -p:SelectedFiles=\"Zenith\\Flux\\Gizmos\\Flux_Gizmos.cpp\" -verbosity:minimal)",
+      "Bash(Select-String -Pattern \"(Flux_Gizmos|error)\" -Context 1)",
+      "Bash(Select-String -Pattern \"error\" -Context 0,2)"
     ],
     "deny": [],
     "ask": []

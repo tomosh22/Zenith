@@ -449,22 +449,45 @@ void Flux_Gizmos::GenerateCircleGeometry(Zenith_Vector<GizmoGeometry>& geometryL
 	Zenith_Maths::Vector3 tangent = glm::normalize(glm::cross(normal, perpendicular));
 	Zenith_Maths::Vector3 bitangent = glm::cross(normal, tangent);
 
-	// Generate circle vertices
+	// FIXED: Generate circle as a 3D tube/ribbon with actual triangle geometry
+	// Create two rings (inner and outer) to form a visible tube
+	const float tubeThickness = 0.02f;  // Thickness of the tube in local space
+
 	for (uint32_t i = 0; i < GIZMO_CIRCLE_SEGMENTS; ++i)
 	{
 		float angle = (float)i / GIZMO_CIRCLE_SEGMENTS * 2.0f * 3.14159f;
-		Zenith_Maths::Vector3 pos = tangent * cosf(angle) * GIZMO_CIRCLE_RADIUS + bitangent * sinf(angle) * GIZMO_CIRCLE_RADIUS;
 
-		positions.PushBack(pos);
+		// Position on the circle
+		Zenith_Maths::Vector3 circlePos = tangent * cosf(angle) * GIZMO_CIRCLE_RADIUS + bitangent * sinf(angle) * GIZMO_CIRCLE_RADIUS;
+
+		// Radial direction for tube thickness
+		Zenith_Maths::Vector3 radialDir = glm::normalize(circlePos);
+
+		// Create inner and outer vertices
+		Zenith_Maths::Vector3 innerPos = circlePos - radialDir * tubeThickness;
+		Zenith_Maths::Vector3 outerPos = circlePos + radialDir * tubeThickness;
+
+		positions.PushBack(innerPos);
+		colors.PushBack(color);
+		positions.PushBack(outerPos);
 		colors.PushBack(color);
 	}
 
-	// Generate line indices
+	// Generate quad indices (two triangles per segment)
 	for (uint32_t i = 0; i < GIZMO_CIRCLE_SEGMENTS; ++i)
 	{
-		indices.PushBack(i);
-		indices.PushBack((i + 1) % GIZMO_CIRCLE_SEGMENTS);
-		indices.PushBack(i);  // Degenerate triangle to create lines (will need line topology)
+		uint32_t baseIdx = i * 2;
+		uint32_t nextBaseIdx = ((i + 1) % GIZMO_CIRCLE_SEGMENTS) * 2;
+
+		// First triangle of quad
+		indices.PushBack(baseIdx);          // Inner current
+		indices.PushBack(baseIdx + 1);      // Outer current
+		indices.PushBack(nextBaseIdx);      // Inner next
+
+		// Second triangle of quad
+		indices.PushBack(baseIdx + 1);      // Outer current
+		indices.PushBack(nextBaseIdx + 1);  // Outer next
+		indices.PushBack(nextBaseIdx);      // Inner next
 	}
 
 	// Create GPU buffers
@@ -804,23 +827,90 @@ void Flux_Gizmos::ApplyScale(const Zenith_Maths::Vector3& rayOrigin, const Zenit
 
 	Zenith_TransformComponent& xTransform = xScene.GetComponentFromEntity<Zenith_TransformComponent>(s_pxTargetEntity->GetEntityID());
 
-	// Calculate scale factor based on ray movement
-	Zenith_Maths::Vector3 toRayOrigin = rayOrigin - s_xInitialEntityPosition;
-	float initialDist = glm::length(s_xInteractionStartPos - s_xInitialEntityPosition);
-	float currentDist = glm::length(toRayOrigin + rayDir * glm::dot(rayDir, toRayOrigin));
+	// Get constraint axis
+	Zenith_Maths::Vector3 axis(0, 0, 0);
+	bool bUniformScale = false;
 
-	float scaleFactor = currentDist / (initialDist + 0.0001f);
+	switch (s_eActiveComponent)
+	{
+		case GizmoComponent::ScaleX: axis = Zenith_Maths::Vector3(1, 0, 0); break;
+		case GizmoComponent::ScaleY: axis = Zenith_Maths::Vector3(0, 1, 0); break;
+		case GizmoComponent::ScaleZ: axis = Zenith_Maths::Vector3(0, 0, 1); break;
+		case GizmoComponent::ScaleXYZ:
+			axis = Zenith_Maths::Vector3(1, 1, 1);
+			bUniformScale = true;
+			break;
+		default: return;
+	}
+
+	// FIXED: Use same line-line closest point algorithm as translation
+	// Scale is calculated based on offset along the constraint axis
+	//
+	// The key insight: measure how far along the axis the user has dragged
+	// and convert that distance to a scale multiplier
+
+	// For uniform scale, use the camera view direction as the constraint "axis"
+	if (bUniformScale)
+	{
+		// Get camera position and forward direction
+		Zenith_Maths::Vector3 xCameraPos = Flux_Graphics::GetCameraPosition();
+		axis = glm::normalize(s_xInitialEntityPosition - xCameraPos);
+	}
+
+	// Find closest point on axis to the INITIAL click position
+	Zenith_Maths::Vector3 offsetToClick = s_xInteractionStartPos - s_xInitialEntityPosition;
+	float t_initial = glm::dot(offsetToClick, axis);  // Project click onto axis
+
+	// Find closest point on axis to the CURRENT mouse ray
+	// Using line-line closest point formula (same as translation)
+	Zenith_Maths::Vector3 w = s_xInitialEntityPosition - rayOrigin;
+
+	float a = 1.0f;  // dot(axis, axis) = 1 for unit vector
+	float b = glm::dot(axis, rayDir);
+	float c = glm::dot(rayDir, rayDir);
+	float d = glm::dot(axis, w);
+	float e = glm::dot(rayDir, w);
+
+	float denom = a * c - b * b;
+
+	// Check if ray is parallel to axis
+	if (glm::abs(denom) < 0.0001f)
+		return;
+
+	// Solve for t (parameter along axis for closest point to current ray)
+	float t_current = (b * e - c * d) / denom;
+
+	// Calculate scale factor based on movement along axis
+	// delta = how far we've moved along the axis
+	float delta_t = t_current - t_initial;
+
+	// Convert delta to scale factor
+	// Use a scaling factor to make the manipulation feel natural
+	// A movement of 1.0 unit along axis = 1.0 additional scale (2x total)
+	const float scaleSpeed = 0.5f;  // Adjust for sensitivity
+	float scaleFactor = 1.0f + (delta_t * scaleSpeed);
+
+	// Clamp to prevent negative or zero scale
+	scaleFactor = glm::max(scaleFactor, 0.01f);
 
 	// Apply scale based on active component
 	Zenith_Maths::Vector3 newScale = s_xInitialEntityScale;
 
-	switch (s_eActiveComponent)
+	if (bUniformScale)
 	{
-		case GizmoComponent::ScaleX: newScale.x *= scaleFactor; break;
-		case GizmoComponent::ScaleY: newScale.y *= scaleFactor; break;
-		case GizmoComponent::ScaleZ: newScale.z *= scaleFactor; break;
-		case GizmoComponent::ScaleXYZ: newScale *= scaleFactor; break;  // Uniform scale
-		default: return;
+		// Uniform scaling
+		newScale *= scaleFactor;
+	}
+	else
+	{
+		// Per-axis scaling
+		switch (s_eActiveComponent)
+		{
+			case GizmoComponent::ScaleX: newScale.x *= scaleFactor; break;
+			case GizmoComponent::ScaleY: newScale.y *= scaleFactor; break;
+			case GizmoComponent::ScaleZ: newScale.z *= scaleFactor; break;
+			default: return;
+		}
 	}
 
 	xTransform.SetScale(newScale);
