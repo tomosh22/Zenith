@@ -22,6 +22,7 @@
 #include "Flux/ComputeTest/Flux_ComputeTest.h"
 #ifdef ZENITH_TOOLS
 #include "Flux/ImGui/Flux_ImGui.h"
+#include "Flux/Gizmos/Flux_Gizmos.h"
 
 // Forward declaration for editor
 class Zenith_Editor
@@ -160,6 +161,7 @@ static void WaitForRenderTasks()
 	Flux_Particles::WaitForRenderTask();
 	Flux_Text::WaitForRenderTask();
 	Flux_Quads::WaitForRenderTask();
+	Flux_Gizmos::WaitForRenderTask();  // Editor gizmos
 }
 
 void Zenith_Core::Zenith_MainLoop()

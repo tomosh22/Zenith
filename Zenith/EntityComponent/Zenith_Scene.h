@@ -6,6 +6,7 @@ class Zenith_CameraComponent;
 class Zenith_Entity;
 
 using Zenith_EntityID = u_int;
+constexpr Zenith_EntityID INVALID_ENTITY_ID = static_cast<Zenith_EntityID>(-1);
 
 class Zenith_ComponentPoolBase
 {

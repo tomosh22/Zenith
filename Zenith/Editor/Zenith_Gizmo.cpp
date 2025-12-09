@@ -483,18 +483,26 @@ Zenith_Maths::Vector3 Zenith_Gizmo::ScreenToWorldRay(
 	float x = (mousePos.x / viewportSize.x) * 2.0f - 1.0f;
 	float y = (mousePos.y / viewportSize.y) * 2.0f - 1.0f;
 
-	// Invert Y for Vulkan coordinate system (top-left origin)
-	y = -y;
+	// FIXED: Don't flip Y - the projection matrix already handles the coordinate system
+	// The original flip was causing inverted Y interaction (clicking top hits bottom, dragging up moves down)
+	// Screen space: (0,0) = top-left, Y increases downward
+	// After normalization: top → y=-1, bottom → y=+1
+	// This matches what the projection matrix expects
 
-	// STEP 2: Create clip space coordinates (near plane)
-	Zenith_Maths::Vector4 rayClip(x, y, -1.0f, 1.0f);
+	// STEP 2: Create clip space coordinates
+	// For Vulkan, depth range is [0, 1], use 0 for near plane
+	Zenith_Maths::Vector4 rayClip(x, y, 0.0f, 1.0f);
 
 	// STEP 3: Transform to view/eye space
 	Zenith_Maths::Matrix4 invProj = glm::inverse(projMatrix);
 	Zenith_Maths::Vector4 rayEye = invProj * rayClip;
 
 	// Convert to direction vector (not a point)
-	rayEye = Zenith_Maths::Vector4(rayEye.x, rayEye.y, -1.0f, 0.0f);
+	// Perspective divide
+	rayEye.x /= rayEye.w;
+	rayEye.y /= rayEye.w;
+	rayEye.z /= rayEye.w;
+	rayEye.w = 0.0f;  // Direction, not a point
 
 	// STEP 4: Transform to world space
 	Zenith_Maths::Matrix4 invView = glm::inverse(viewMatrix);

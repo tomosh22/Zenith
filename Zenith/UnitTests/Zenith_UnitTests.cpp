@@ -22,6 +22,10 @@
 #include "Physics/Zenith_Physics.h"
 #include <filesystem>
 
+#ifdef ZENITH_TOOLS
+#include "UnitTests/Zenith_EditorTests.h"
+#endif
+
 void Zenith_UnitTests::RunAllTests()
 {
 	TestDataStream();
@@ -35,6 +39,11 @@ void Zenith_UnitTests::RunAllTests()
 	TestEntitySerialization();
 	TestSceneSerialization();
 	TestSceneRoundTrip();
+
+#ifdef ZENITH_TOOLS
+	// Editor tests (only in tools builds)
+	Zenith_EditorTests::RunAllTests();
+#endif
 }
 
 void Zenith_UnitTests::TestDataStream()

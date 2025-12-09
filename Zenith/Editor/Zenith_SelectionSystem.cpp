@@ -75,18 +75,15 @@ void BoundingBox::Transform(const Zenith_Maths::Matrix4& transform)
 
 // Selection system implementation
 static std::unordered_map<Zenith_EntityID, BoundingBox> s_xEntityBoundingBoxes;
-static Zenith_Entity* s_pxSelectedEntity = nullptr;
 
 void Zenith_SelectionSystem::Initialise()
 {
 	s_xEntityBoundingBoxes.clear();
-	s_pxSelectedEntity = nullptr;
 }
 
 void Zenith_SelectionSystem::Shutdown()
 {
 	s_xEntityBoundingBoxes.clear();
-	s_pxSelectedEntity = nullptr;
 }
 
 void Zenith_SelectionSystem::UpdateBoundingBoxes()
@@ -144,61 +141,10 @@ BoundingBox Zenith_SelectionSystem::GetEntityBoundingBox(Zenith_Entity* pxEntity
 	return CalculateBoundingBox(pxEntity);
 }
 
-Zenith_Entity* Zenith_SelectionSystem::RaycastSelect(const Zenith_Maths::Vector3& rayOrigin, const Zenith_Maths::Vector3& rayDir)
+Zenith_EntityID Zenith_SelectionSystem::RaycastSelect(const Zenith_Maths::Vector3& rayOrigin, const Zenith_Maths::Vector3& rayDir)
 {
 	float closestDistance = std::numeric_limits<float>::max();
-	Zenith_Entity* pxClosestEntity = nullptr;
-	
-	// TODO: Find the entity with the closest bounding box intersection
-	//
-	// ALGORITHM:
-	// 1. Iterate through all cached bounding boxes (from UpdateBoundingBoxes())
-	// 2. For each bounding box:
-	//    a. Test ray-AABB intersection using BoundingBox::Intersects()
-	//    b. If intersected, check if this is closer than previous hits
-	//    c. Keep track of closest hit entity and distance
-	// 3. Return closest hit entity, or nullptr if no hits
-	//
-	// IMPLEMENTATION:
-	// for (auto& [uEntityID, xBoundingBox] : s_xEntityBoundingBoxes)
-	// {
-	//     float distance;
-	//     if (xBoundingBox.Intersects(rayOrigin, rayDir, distance))
-	//     {
-	//         if (distance < closestDistance)
-	//         {
-	//             closestDistance = distance;
-	//             // Get entity from scene by ID
-	//             Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	//             Zenith_Entity xEntity = xScene.GetEntityByID(uEntityID);
-	//             pxClosestEntity = ???; // How to return entity pointer?
-	//         }
-	//     }
-	// }
-	//
-	// CRITICAL ISSUE: Returning pointer to local Zenith_Entity object!
-	// The entity returned by GetEntityByID() is a copy, not a reference.
-	// Returning a pointer to this copy will result in undefined behavior.
-	//
-	// POSSIBLE SOLUTIONS:
-	// 1. Return Zenith_EntityID instead of pointer (RECOMMENDED)
-	//    - Change function signature to return EntityID
-	//    - Let caller get entity from scene using ID
-	//    - More robust, no pointer lifetime issues
-	//
-	// 2. Store selected entity in static variable
-	//    - Allocate on heap: new Zenith_Entity(xEntity)
-	//    - Remember to delete previous selection
-	//    - Memory management complexity
-	//
-	// 3. Make Zenith_Entity a handle/reference type
-	//    - Redesign entity system (major change)
-	//    - Entity stores SceneID + EntityID
-	//    - Always valid as long as entity exists in scene
-	//
-	// 4. Use smart pointers (shared_ptr)
-	//    - Requires changing entity storage in scene
-	//    - More overhead but automatic lifetime management
+	Zenith_EntityID uClosestEntityID = INVALID_ENTITY_ID;
 	
 	// Check all cached bounding boxes
 	for (auto& [uEntityID, xBoundingBox] : s_xEntityBoundingBoxes)
@@ -209,20 +155,12 @@ Zenith_Entity* Zenith_SelectionSystem::RaycastSelect(const Zenith_Maths::Vector3
 			if (distance < closestDistance)
 			{
 				closestDistance = distance;
-				Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-				Zenith_Entity xEntity = xScene.GetEntityByID(uEntityID);
-				pxClosestEntity = new Zenith_Entity(xEntity);  // Allocate entity on heap to return pointer
-				// WARNING: This leaks memory! Need to delete old selection first
+				uClosestEntityID = uEntityID;
 			}
 		}
 	}
 	
-	if (pxClosestEntity)
-	{
-		s_pxSelectedEntity = pxClosestEntity;
-	}
-	
-	return pxClosestEntity;
+	return uClosestEntityID;
 }
 
 BoundingBox Zenith_SelectionSystem::CalculateBoundingBox(Zenith_Entity* pxEntity)

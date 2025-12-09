@@ -499,11 +499,133 @@ Tools/
 - ImGui editor interface
 - Visual profiler
 - Entity inspector
+- **3D Gizmos for entity manipulation** (see below)
 
 **Release Build:**
 - Minimal overhead
 - No debug variables
 - Optimized shaders
+
+## Editor System (Zenith_Editor)
+
+**Location:** `Zenith/Editor/`
+
+The editor provides an ImGui-based interface for scene editing, entity manipulation, and debugging.
+
+**Architecture:**
+- **Singleton Pattern:** `Zenith_Editor` provides static methods for global editor state
+- **EntityID-Based Selection:** Uses `Zenith_EntityID` instead of raw pointers to prevent dangling references
+- **Deferred Operations:** Scene loads and entity deletions are deferred to prevent thread conflicts
+
+**Key Components:**
+
+1. **Menu Bar** (`RenderMenuBar`):
+   - File operations (New Scene, Open Scene, Save Scene)
+   - Scene state controls (Play, Pause, Stop)
+   - Deferred scene loading to prevent concurrent access during rendering
+
+2. **Scene Hierarchy Panel** (`RenderSceneHierarchy`):
+   - Lists all entities in the current scene
+   - Click to select entities
+   - Returns `EntityID` instead of raw pointer for safety
+
+3. **Properties Panel** (`RenderPropertiesPanel`):
+   - Displays and edits components of selected entity
+   - **Transform editing:** Position, rotation (Euler angles), scale
+   - **Entity naming:** Editable entity name field
+   - Component-specific editors
+
+4. **Viewport Panel** (`RenderViewport`):
+   - Displays game view with ImGui::Image
+   - Tracks viewport position and size for mouse coordinate conversion
+   - Handles gizmo rendering and interaction
+   - Sets `s_bViewportHovered` flag for input filtering
+
+5. **3D Gizmo System** (Flux_Gizmos):
+   - **Location:** `Zenith/Flux/Gizmos/`
+   - Interactive 3D widgets for manipulating entity transforms
+   - Three modes: Translate, Rotate, Scale
+   - Visual feedback with color-coded axes (X=Red, Y=Green, Z=Blue)
+
+**Editor Update Timing:**
+`Zenith_Editor::Update()` is called at the start of each frame (before rendering) to:
+- Process deferred scene loads
+- Handle deferred entity deletions
+- Update editor state
+
+See "CRITICAL: Editor Update Timing" section above for threading details.
+
+### 3D Gizmo System (Flux_Gizmos)
+
+**Recent Implementation (December 2024):**
+
+The gizmo system allows users to manipulate entity transforms by clicking and dragging 3D widgets in the viewport.
+
+**Files:**
+- `Zenith/Flux/Gizmos/Flux_Gizmos.h/cpp` - Core gizmo rendering and interaction
+- `Zenith/Gizmos/Zenith_Gizmo.h/cpp` - Utility functions (ray casting, intersection tests)
+
+**Key Features:**
+
+1. **Rendering:**
+   - Separate render task submitted each frame
+   - Auto-scaling based on camera distance for consistent screen size
+   - Color-coded axes: X (Red), Y (Green), Z (Blue)
+   - Geometry generated at initialization (arrows, circles, cubes)
+
+2. **Interaction:**
+   - Ray-cylinder intersection for arrow picking
+   - Extended interaction bounds (10× visual length) for easier clicking from any angle
+   - Three-phase interaction: BeginInteraction → UpdateInteraction → EndInteraction
+   - Transform manipulation in BeginInteraction stores initial state
+
+3. **Transform Application:**
+   - **Translate:** Projects ray onto constraint axis, calculates offset from initial position
+   - **Rotate:** Calculates rotation angle around axis based on ray-plane intersection
+   - **Scale:** Applies uniform or per-axis scaling based on drag distance
+
+**Critical Implementation Details:**
+
+1. **Coordinate System:**
+   - Uses **Vulkan depth range [0, 1]** (not OpenGL's [-1, 1])
+   - `ScreenToWorldRay` sets `rayClip.z = 0.0f` for near plane
+   - Proper perspective divide: `rayClip / rayClip.w` before transforming to world space
+
+2. **Gizmo Scale:**
+   - Calculated in `Render()`: `s_fGizmoScale = distance / GIZMO_AUTO_SCALE_DISTANCE`
+   - Ray transformed to local space by dividing by scale: `localRay = (ray - gizmoPos) / scale`
+   - Intersection tests performed in local space (unit-sized arrows)
+
+3. **Interaction Bounds:**
+   - Visual arrow length: `GIZMO_ARROW_LENGTH = 1.2` (local space)
+   - Interaction length: `1.2 × GIZMO_INTERACTION_LENGTH_MULTIPLIER = 1.2 × 10.0 = 12.0`
+   - Extended bounds necessary because camera angle can cause ray to hit cylinder far from arrow tip
+
+4. **Input Handling:**
+   - Mouse button input uses `glfwGetMouseButton()` (not `glfwGetKey()`)
+   - Independent `if` statements (not `if-else`) allow same-frame Begin + Update
+   - `WasKeyPressedThisFrame` only true for one frame; `IsKeyDown` true while held
+
+5. **Semaphore Management:**
+   - Gizmo render task uses semaphore with max count = 1
+   - `WaitForRenderTask()` called every frame in `WaitForRenderTasks()` to prevent overflow
+   - Task always submitted once per frame even if not rendering
+
+**Common Issues Fixed:**
+
+1. **Buffer Alignment:** Vulkan staging buffer offsets must be 8-byte aligned for BC1 compressed textures
+2. **Raycast Calculation:** Must use Vulkan depth range [0, 1], not OpenGL [-1, 1]
+3. **Mouse Input:** Mouse buttons require `glfwGetMouseButton()`, not `glfwGetKey()`
+4. **Interaction Bounds:** Visual arrow too short for clicking; extended to 10× for usability
+5. **UpdateInteraction Not Called:** Fixed by removing `else` keywords between Begin/Update/End checks
+
+**Debug Logging:**
+Use `EDITOR_LOG()` macro for gizmo-specific logging (only active in ZENITH_TOOLS builds).
+
+**Known Limitations:**
+- Transform manipulation math may need refinement for accurate final positions
+- Currently no visual feedback for active axis during drag
+- No snapping or grid alignment (planned feature)
 
 ## Getting Started
 

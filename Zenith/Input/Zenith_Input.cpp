@@ -17,6 +17,7 @@ void Zenith_Input::KeyPressedCallback(Zenith_KeyCode iKey)
 
 void Zenith_Input::MouseButtonPressedCallback(Zenith_KeyCode iKey)
 {
+	s_xFrameKeyPresses.insert(iKey);
 }
 
 void Zenith_Input::GetMousePosition(Zenith_Maths::Vector2_64& xOut)

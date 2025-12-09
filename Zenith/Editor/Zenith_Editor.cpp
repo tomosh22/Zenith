@@ -5,6 +5,7 @@
 #include "Zenith_Editor.h"
 #include "Zenith_SelectionSystem.h"
 #include "Zenith_Gizmo.h"
+#include "Flux/Gizmos/Flux_Gizmos.h"
 #include "EntityComponent/Zenith_Entity.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
@@ -22,8 +23,8 @@
 
 // Static member initialization
 EditorMode Zenith_Editor::s_eEditorMode = EditorMode::Stopped;
-GizmoMode Zenith_Editor::s_eGizmoMode = GizmoMode::Translate;
-Zenith_Entity* Zenith_Editor::s_pxSelectedEntity = nullptr;
+EditorGizmoMode Zenith_Editor::s_eGizmoMode = EditorGizmoMode::Translate;
+Zenith_EntityID Zenith_Editor::s_uSelectedEntityID = INVALID_ENTITY_ID;
 Zenith_Maths::Vector2 Zenith_Editor::s_xViewportSize = { 1280, 720 };
 Zenith_Maths::Vector2 Zenith_Editor::s_xViewportPos = { 0, 0 };
 bool Zenith_Editor::s_bViewportHovered = false;
@@ -50,12 +51,13 @@ static std::vector<PendingDescriptorSetDeletion> s_xPendingDeletions;
 void Zenith_Editor::Initialise()
 {
 	s_eEditorMode = EditorMode::Stopped;
-	s_pxSelectedEntity = nullptr;
-	s_eGizmoMode = GizmoMode::Translate;
+	s_uSelectedEntityID = INVALID_ENTITY_ID;
+	s_eGizmoMode = EditorGizmoMode::Translate;
 
 	// Initialize editor subsystems
 	Zenith_SelectionSystem::Initialise();
 	Zenith_Gizmo::Initialise();
+	Flux_Gizmos::Initialise();
 }
 
 void Zenith_Editor::Shutdown()
@@ -83,6 +85,7 @@ void Zenith_Editor::Shutdown()
 	}
 
 	// Shutdown editor subsystems
+	Flux_Gizmos::Shutdown();
 	Zenith_Gizmo::Shutdown();
 	Zenith_SelectionSystem::Shutdown();
 }
@@ -175,8 +178,31 @@ void Zenith_Editor::Update()
 		// Game is paused - don't update game logic
 	}
 
+	// Handle gizmo mode keyboard shortcuts (when viewport is focused and not playing)
+	if (s_bViewportFocused && s_eEditorMode != EditorMode::Playing)
+	{
+		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_W))
+		{
+			SetGizmoMode(EditorGizmoMode::Translate);
+			Flux_Gizmos::SetGizmoMode(GizmoMode::Translate);
+		}
+		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_E))
+		{
+			SetGizmoMode(EditorGizmoMode::Rotate);
+			Flux_Gizmos::SetGizmoMode(GizmoMode::Rotate);
+		}
+		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_R))
+		{
+			SetGizmoMode(EditorGizmoMode::Scale);
+			Flux_Gizmos::SetGizmoMode(GizmoMode::Scale);
+		}
+	}
+
+	// Handle gizmo interaction first (before object picking)
+	HandleGizmoInteraction();
+
 	// Handle object picking (only when not manipulating gizmo)
-	if (!Zenith_Gizmo::IsManipulating())
+	if (!Flux_Gizmos::IsInteracting() && !Zenith_Gizmo::IsManipulating())
 	{
 		HandleObjectPicking();
 	}
@@ -360,21 +386,21 @@ void Zenith_Editor::RenderToolbar()
 	ImGui::Separator();
 	
 	// Gizmo mode buttons
-	if (ImGui::RadioButton("Translate", s_eGizmoMode == GizmoMode::Translate))
+	if (ImGui::RadioButton("Translate", s_eGizmoMode == EditorGizmoMode::Translate))
 	{
-		SetGizmoMode(GizmoMode::Translate);
+		SetGizmoMode(EditorGizmoMode::Translate);
 	}
 	ImGui::SameLine();
 	
-	if (ImGui::RadioButton("Rotate", s_eGizmoMode == GizmoMode::Rotate))
+	if (ImGui::RadioButton("Rotate", s_eGizmoMode == EditorGizmoMode::Rotate))
 	{
-		SetGizmoMode(GizmoMode::Rotate);
+		SetGizmoMode(EditorGizmoMode::Rotate);
 	}
 	ImGui::SameLine();
 	
-	if (ImGui::RadioButton("Scale", s_eGizmoMode == GizmoMode::Scale))
+	if (ImGui::RadioButton("Scale", s_eGizmoMode == EditorGizmoMode::Scale))
 	{
-		SetGizmoMode(GizmoMode::Scale);
+		SetGizmoMode(EditorGizmoMode::Scale);
 	}
 	
 	ImGui::End();
@@ -394,7 +420,7 @@ void Zenith_Editor::RenderHierarchyPanel()
 	for (auto& [entityID, entity] : xScene.m_xEntityMap)
 	{
 		// Check if this entity is currently selected
-		bool bIsSelected = (s_pxSelectedEntity && s_pxSelectedEntity->GetEntityID() == entityID);
+		bool bIsSelected = (s_uSelectedEntityID == entityID);
 
 		// Create selectable item for entity
 		// Use entity name if available, otherwise show ID
@@ -406,9 +432,8 @@ void Zenith_Editor::RenderHierarchyPanel()
 
 		if (ImGui::Selectable(strLabel.c_str(), bIsSelected))
 		{
-			// Entity map stores entities by value, so we need to get a pointer
-			// WARNING: This pointer is only valid until the entity map is modified
-			SelectEntity(&entity);
+			// Select by EntityID for safer memory management
+			SelectEntity(entityID);
 		}
 
 		// Show context menu on right-click
@@ -438,18 +463,27 @@ void Zenith_Editor::RenderPropertiesPanel()
 {
 	ImGui::Begin("Properties");
 	
-	if (s_pxSelectedEntity)
+	Zenith_Entity* pxSelectedEntity = GetSelectedEntity();
+	
+	if (pxSelectedEntity)
 	{
-		ImGui::Text("Selected Entity");
+		// Entity name editing
+		char nameBuffer[256];
+		strncpy(nameBuffer, pxSelectedEntity->m_strName.c_str(), sizeof(nameBuffer));
+		nameBuffer[sizeof(nameBuffer) - 1] = '\0';
+		if (ImGui::InputText("Name", nameBuffer, sizeof(nameBuffer)))
+		{
+			pxSelectedEntity->m_strName = nameBuffer;
+		}
+		
 		ImGui::Separator();
 		
 		// Transform component editing
-		// Currently only shows Transform - need to add other components
-		if (s_pxSelectedEntity->HasComponent<Zenith_TransformComponent>())
+		if (pxSelectedEntity->HasComponent<Zenith_TransformComponent>())
 		{
 			if (ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen))
 			{
-				Zenith_TransformComponent& transform = s_pxSelectedEntity->GetComponent<Zenith_TransformComponent>();
+				Zenith_TransformComponent& transform = pxSelectedEntity->GetComponent<Zenith_TransformComponent>();
 				
 				Zenith_Maths::Vector3 pos, scale;
 				Zenith_Maths::Quat rot;
@@ -457,30 +491,57 @@ void Zenith_Editor::RenderPropertiesPanel()
 				transform.GetRotation(rot);
 				transform.GetScale(scale);
 				
+				// Position editing
 				float position[3] = { pos.x, pos.y, pos.z };
 				if (ImGui::DragFloat3("Position", position, 0.1f))
 				{
 					transform.SetPosition({ position[0], position[1], position[2] });
 				}
 				
+				// Rotation editing - convert quaternion to Euler angles for UI
+				Zenith_Maths::Vector3 euler = glm::degrees(glm::eulerAngles(rot));
+				float rotation[3] = { euler.x, euler.y, euler.z };
+				if (ImGui::DragFloat3("Rotation", rotation, 1.0f))
+				{
+					Zenith_Maths::Vector3 newEuler = glm::radians(Zenith_Maths::Vector3(rotation[0], rotation[1], rotation[2]));
+					transform.SetRotation(Zenith_Maths::Quat(newEuler));
+				}
+				
+				// Scale editing
 				float scaleValues[3] = { scale.x, scale.y, scale.z };
 				if (ImGui::DragFloat3("Scale", scaleValues, 0.1f))
 				{
 					transform.SetScale({ scaleValues[0], scaleValues[1], scaleValues[2] });
 				}
+			}
+		}
+		
+		// Camera component display (read-only for now as setters don't exist)
+		if (pxSelectedEntity->HasComponent<Zenith_CameraComponent>())
+		{
+			if (ImGui::CollapsingHeader("Camera", ImGuiTreeNodeFlags_DefaultOpen))
+			{
+				Zenith_CameraComponent& camera = pxSelectedEntity->GetComponent<Zenith_CameraComponent>();
 				
-				// TODO: Add rotation editing (currently missing)
-				// Convert quaternion to Euler angles for editing
-				// Update quaternion when Euler angles change
+				// Display camera properties (read-only for now)
+				float fFOV = camera.GetFOV();
+				ImGui::Text("FOV: %.1f", fFOV);
+				
+				float fNear = camera.GetNearPlane();
+				ImGui::Text("Near Plane: %.3f", fNear);
+				
+				float fFar = camera.GetFarPlane();
+				ImGui::Text("Far Plane: %.1f", fFar);
+				
+				ImGui::Text("Pitch: %.2f", camera.GetPitch());
+				ImGui::Text("Yaw: %.2f", camera.GetYaw());
 			}
 		}
 		
 		// TODO: Add component editor for other component types
 		// - ModelComponent: Show model/material selection
-		// - CameraComponent: Show FOV, near/far planes, etc.
 		// - ColliderComponent: Show collision shape settings
 		// - ScriptComponent: Show script assignment
-		// Each needs custom ImGui widgets for its properties
 	}
 	else
 	{
@@ -604,12 +665,12 @@ void Zenith_Editor::HandleObjectPicking()
 	Zenith_Maths::Vector3 xRayOrigin;
 	xCamera.GetPosition(xRayOrigin);
 
-	// Perform raycast to find entity under mouse
-	Zenith_Entity* pxHitEntity = Zenith_SelectionSystem::RaycastSelect(xRayOrigin, xRayDir);
+	// Perform raycast to find entity under mouse - now returns EntityID
+	Zenith_EntityID uHitEntityID = Zenith_SelectionSystem::RaycastSelect(xRayOrigin, xRayDir);
 
-	if (pxHitEntity)
+	if (uHitEntityID != INVALID_ENTITY_ID)
 	{
-		SelectEntity(pxHitEntity);
+		SelectEntity(uHitEntityID);
 	}
 	else
 	{
@@ -619,36 +680,117 @@ void Zenith_Editor::HandleObjectPicking()
 
 void Zenith_Editor::RenderGizmos()
 {
-	// Only render if an entity is selected
-	if (!s_pxSelectedEntity)
-		return;
+	// Set target entity and gizmo mode for Flux_Gizmos
+	// Task must always be submitted once per frame (even if null) for proper synchronization
+	Zenith_Entity* pxSelectedEntity = nullptr;
 
 	// Only render gizmos in Stopped or Paused mode (not during active play)
+	if (s_eEditorMode != EditorMode::Playing)
+	{
+		pxSelectedEntity = GetSelectedEntity();
+	}
+
+	// CRITICAL: Only update target/mode when NOT interacting!
+	// SetTargetEntity and SetGizmoMode reset s_bIsInteracting, which would
+	// break mid-drag operations. Only update when safe to do so.
+	if (!Flux_Gizmos::IsInteracting())
+	{
+		Flux_Gizmos::SetTargetEntity(pxSelectedEntity);
+		Flux_Gizmos::SetGizmoMode(static_cast<GizmoMode>(s_eGizmoMode));
+	}
+
+	// Submit Flux_Gizmos render task (renders 3D gizmos in Vulkan)
+	// Must always submit exactly once per frame, task will early-out if no target entity
+	Flux_Gizmos::SubmitRenderTask();
+
+	// Optionally render selection bounding box for visual feedback
+	// Zenith_SelectionSystem::RenderSelectedBoundingBox(pxSelectedEntity);
+}
+
+void Zenith_Editor::HandleGizmoInteraction()
+{
+	// Only handle gizmo interaction when viewport is hovered and entity selected
+	if (!s_bViewportHovered || s_uSelectedEntityID == INVALID_ENTITY_ID)
+		return;
+
+	// Only handle in Stopped or Paused mode
 	if (s_eEditorMode == EditorMode::Playing)
 		return;
 
-	// Get camera matrices for gizmo rendering
+	// Get camera matrices for ray casting
 	Zenith_CameraComponent& xCamera = Zenith_Scene::GetCurrentScene().GetMainCamera();
 	Zenith_Maths::Matrix4 xViewMatrix, xProjMatrix;
 	xCamera.BuildViewMatrix(xViewMatrix);
 	xCamera.BuildProjectionMatrix(xProjMatrix);
 
-	// Convert GizmoMode to GizmoOperation
-	GizmoOperation eOperation = static_cast<GizmoOperation>(s_eGizmoMode);
+	// Get mouse position
+	Zenith_Maths::Vector2_64 xGlobalMousePos;
+	Zenith_Input::GetMousePosition(xGlobalMousePos);
 
-	// Call gizmo manipulation (handles both rendering and interaction)
-	bool bWasManipulated = Zenith_Gizmo::Manipulate(
-		s_pxSelectedEntity,
-		eOperation,
+	Zenith_Maths::Vector2 xViewportMousePos = {
+		static_cast<float>(xGlobalMousePos.x - s_xViewportPos.x),
+		static_cast<float>(xGlobalMousePos.y - s_xViewportPos.y)
+	};
+
+	// Debug: Log mouse position every frame during interaction
+	static int s_iFrameCounter = 0;
+	if (Flux_Gizmos::IsInteracting())
+	{
+		if (++s_iFrameCounter % 60 == 0) // Log every 60 frames
+		{
+			Zenith_Log("Mouse: Global=(%.1f,%.1f), Viewport=(%.1f,%.1f)",
+				xGlobalMousePos.x, xGlobalMousePos.y,
+				xViewportMousePos.x, xViewportMousePos.y);
+		}
+	}
+	else
+	{
+		s_iFrameCounter = 0;
+	}
+
+	// Convert screen position to world-space ray
+	Zenith_Maths::Vector3 xRayDir = Zenith_Gizmo::ScreenToWorldRay(
+		xViewportMousePos,
+		{ 0, 0 },
+		s_xViewportSize,
 		xViewMatrix,
-		xProjMatrix,
-		s_xViewportPos,
-		s_xViewportSize
+		xProjMatrix
 	);
 
-	// Optionally render selection bounding box for visual feedback
-	// (Currently disabled - can enable for debugging)
-	// Zenith_SelectionSystem::RenderSelectedBoundingBox(s_pxSelectedEntity);
+	// Ray origin is camera position
+	Zenith_Maths::Vector3 xRayOrigin;
+	xCamera.GetPosition(xRayOrigin);
+
+	// Handle mouse input for gizmo interaction
+	if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_MOUSE_BUTTON_LEFT))
+	{
+		Zenith_Log("Mouse left pressed - viewport hovered=%d, selected=%d", s_bViewportHovered, s_uSelectedEntityID);
+		Flux_Gizmos::BeginInteraction(xRayOrigin, xRayDir);
+		Zenith_Log("After BeginInteraction: IsInteracting=%d", Flux_Gizmos::IsInteracting());
+	}
+	
+	// Update interaction while dragging (can happen same frame as BeginInteraction)
+	bool bIsKeyDown = Zenith_Input::IsKeyDown(ZENITH_MOUSE_BUTTON_LEFT);
+	bool bIsInteracting = Flux_Gizmos::IsInteracting();
+	
+	if (bIsKeyDown || bIsInteracting)
+	{
+		Zenith_Log("Check UpdateInteraction: IsKeyDown=%d, IsInteracting=%d", bIsKeyDown, bIsInteracting);
+	}
+	
+	if (bIsKeyDown && bIsInteracting)
+	{
+		Zenith_Log("Calling UpdateInteraction: ViewportMouse=(%.1f,%.1f)",
+			xViewportMousePos.x, xViewportMousePos.y);
+		Flux_Gizmos::UpdateInteraction(xRayOrigin, xRayDir);
+	}
+	
+	// End interaction when mouse released
+	if (!Zenith_Input::IsKeyDown(ZENITH_MOUSE_BUTTON_LEFT) && Flux_Gizmos::IsInteracting())
+	{
+		Zenith_Log("Ending interaction");
+		Flux_Gizmos::EndInteraction();
+	}
 }
 
 void Zenith_Editor::SetEditorMode(EditorMode eMode)
@@ -729,19 +871,46 @@ void Zenith_Editor::SetEditorMode(EditorMode eMode)
 	}
 }
 
-void Zenith_Editor::SelectEntity(Zenith_Entity* pxEntity)
+void Zenith_Editor::SelectEntity(Zenith_EntityID uEntityID)
 {
-	s_pxSelectedEntity = pxEntity;
+	s_uSelectedEntityID = uEntityID;
 	
-	if (pxEntity)
+	if (uEntityID != INVALID_ENTITY_ID)
 	{
-		Zenith_Log("Editor: Selected entity");
+		Zenith_Log("Editor: Selected entity %u", uEntityID);
+		
+		// Update Flux_Gizmos target entity
+		Zenith_Entity* pxEntity = GetSelectedEntity();
+		if (pxEntity)
+		{
+			Flux_Gizmos::SetTargetEntity(pxEntity);
+		}
 	}
 }
 
 void Zenith_Editor::ClearSelection()
 {
-	s_pxSelectedEntity = nullptr;
+	s_uSelectedEntityID = INVALID_ENTITY_ID;
+	Flux_Gizmos::SetTargetEntity(nullptr);
+}
+
+Zenith_Entity* Zenith_Editor::GetSelectedEntity()
+{
+	if (s_uSelectedEntityID == INVALID_ENTITY_ID)
+		return nullptr;
+	
+	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+	
+	// Check if entity still exists in the scene
+	auto it = xScene.m_xEntityMap.find(s_uSelectedEntityID);
+	if (it == xScene.m_xEntityMap.end())
+	{
+		// Entity no longer exists - clear selection
+		s_uSelectedEntityID = INVALID_ENTITY_ID;
+		return nullptr;
+	}
+	
+	return &it->second;
 }
 
 #endif // ZENITH_TOOLS

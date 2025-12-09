@@ -18,3 +18,8 @@ private:
 	static void TestEntitySerialization();
 	static void TestSceneRoundTrip();
 };
+
+// Include editor tests separately as they are only available in ZENITH_TOOLS builds
+#ifdef ZENITH_TOOLS
+#include "Zenith_EditorTests.h"
+#endif

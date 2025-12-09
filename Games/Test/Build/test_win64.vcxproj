@@ -771,6 +771,7 @@
     <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\TriangleSplitter\TriangleSplitter.h" />
     <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\TriangleSplitter\TriangleSplitterBinning.h" />
     <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\TriangleSplitter\TriangleSplitterMean.h" />
+    <ClInclude Include="..\..\..\Middleware\stb\stb_dxt.h" />
     <ClInclude Include="..\..\..\Middleware\stb\stb_image.h" />
     <ClInclude Include="..\..\..\Middleware\vma\vk_mem_alloc.h" />
     <ClInclude Include="..\..\..\Zenith\AssetHandling\Zenith_AssetHandler.h" />
@@ -787,6 +788,7 @@
     <ClInclude Include="..\..\..\Zenith\DataStream\Zenith_DataStream.h" />
     <ClInclude Include="..\..\..\Zenith\DebugVariables\Zenith_DebugVariables.h" />
     <ClInclude Include="..\..\..\Zenith\Editor\Zenith_Editor.h" />
+    <ClInclude Include="..\..\..\Zenith\Editor\Zenith_EditorLog.h" />
     <ClInclude Include="..\..\..\Zenith\Editor\Zenith_Gizmo.h" />
     <ClInclude Include="..\..\..\Zenith\Editor\Zenith_SelectionSystem.h" />
     <ClInclude Include="..\..\..\Zenith\EntityComponent\Components\Zenith_CameraComponent.h" />
@@ -868,6 +870,7 @@
     <ClInclude Include="..\..\..\Zenith\Flux\SSAO\Flux_SSAO.h" />
     <ClInclude Include="..\..\..\Zenith\Flux\StaticMeshes\Flux_StaticMeshes.h" />
     <ClInclude Include="..\..\..\Zenith\Flux\Terrain\Flux_Terrain.h" />
+    <ClInclude Include="..\..\..\Zenith\Flux\Terrain\Flux_TerrainConfig.h" />
     <ClInclude Include="..\..\..\Zenith\Flux\Terrain\Flux_TerrainStreamingManager.h" />
     <ClInclude Include="..\..\..\Zenith\Flux\Text\Flux_Text.h" />
     <ClInclude Include="..\..\..\Zenith\Input\Zenith_Input.h" />
@@ -878,6 +881,7 @@
     <ClInclude Include="..\..\..\Zenith\Profiling\Zenith_Profiling.h" />
     <ClInclude Include="..\..\..\Zenith\StateMachine\Zenith_StateMachine.h" />
     <ClInclude Include="..\..\..\Zenith\TaskSystem\Zenith_TaskSystem.h" />
+    <ClInclude Include="..\..\..\Zenith\UnitTests\Zenith_EditorTests.h" />
     <ClInclude Include="..\..\..\Zenith\UnitTests\Zenith_UnitTests.h" />
     <ClInclude Include="..\..\..\Zenith\Vulkan\Zenith_PlatformGraphics_Include.h" />
     <ClInclude Include="..\..\..\Zenith\Vulkan\Zenith_Vulkan.h" />
@@ -1803,6 +1807,7 @@
     <ClCompile Include="..\..\..\Zenith\Profiling\Zenith_Profiling.cpp" />
     <ClCompile Include="..\..\..\Zenith\StateMachine\Zenith_StateMachine.cpp" />
     <ClCompile Include="..\..\..\Zenith\TaskSystem\Zenith_TaskSystem.cpp" />
+    <ClCompile Include="..\..\..\Zenith\UnitTests\Zenith_EditorTests.cpp" />
     <ClCompile Include="..\..\..\Zenith\UnitTests\Zenith_UnitTests.cpp" />
     <ClCompile Include="..\..\..\Zenith\Vulkan\Zenith_Vulkan.cpp" />
     <ClCompile Include="..\..\..\Zenith\Vulkan\Zenith_Vulkan_Buffer.cpp" />

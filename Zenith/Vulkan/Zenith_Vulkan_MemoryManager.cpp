@@ -459,6 +459,8 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateTextureVRAM(const void* pData
 				memcpy(pMap, pData, ulDataSize);
 				xDevice.unmapMemory(s_xStagingMem);
 				s_uNextFreeStagingOffset += ulDataSize;
+				// Align to 8 bytes for compressed texture formats (BC1, BC3, etc.)
+				s_uNextFreeStagingOffset = ALIGN(s_uNextFreeStagingOffset, 8);
 			}
 		}
 		s_xMutex.Unlock();
@@ -623,6 +625,8 @@ void Zenith_Vulkan_MemoryManager::UploadBufferData(Flux_VRAMHandle xBufferHandle
 		memcpy(pMap, pData, uSize);
 		xDevice.unmapMemory(s_xStagingMem);
 		s_uNextFreeStagingOffset += uSize;
+		// Align to 8 bytes for consistency and compressed texture support
+		s_uNextFreeStagingOffset = ALIGN(s_uNextFreeStagingOffset, 8);
 	}
 	s_xMutex.Unlock();
 }
@@ -838,7 +842,7 @@ void Zenith_Vulkan_MemoryManager::UploadBufferDataChunked(vk::Buffer xDestBuffer
 		void* pMap = xDevice.mapMemory(s_xStagingMem, 0, uChunkSize);
 		memcpy(pMap, pSrcData + uCurrentOffset, uChunkSize);
 		xDevice.unmapMemory(s_xStagingMem);
-		s_uNextFreeStagingOffset = uChunkSize;
+		s_uNextFreeStagingOffset = ALIGN(uChunkSize, 8);
 
 
 		vk::BufferCopy xCopyRegion(0, uCurrentOffset, uChunkSize);

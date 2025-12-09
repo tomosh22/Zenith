@@ -5,6 +5,7 @@
 #include "Flux/Gizmos/Flux_Gizmos.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_Buffers.h"
+#include "Flux/Primitives/Flux_Primitives.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_Entity.h"
@@ -21,6 +22,7 @@ static constexpr float GIZMO_CIRCLE_RADIUS = 1.0f;
 static constexpr uint32_t GIZMO_CIRCLE_SEGMENTS = 64;
 static constexpr float GIZMO_CUBE_SIZE = 0.15f;
 static constexpr float GIZMO_INTERACTION_THRESHOLD = 0.2f;  // Distance threshold for ray-gizmo intersection
+static constexpr float GIZMO_INTERACTION_LENGTH_MULTIPLIER = 10.0f; // Extend interaction bounds for easier clicking
 static constexpr float GIZMO_AUTO_SCALE_DISTANCE = 5.0f;     // Distance at which gizmo is 1.0 scale
 
 // Debug variables
@@ -93,6 +95,9 @@ void Flux_Gizmos::Initialise()
 	GenerateRotationGizmoGeometry();
 	GenerateScaleGizmoGeometry();
 
+	Zenith_Log("Flux_Gizmos: Generated geometry - Translate:%d Rotate:%d Scale:%d", 
+		s_xTranslateGeometry.GetSize(), s_xRotateGeometry.GetSize(), s_xScaleGeometry.GetSize());
+
 #ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_DebugVariables::AddBoolean({"Editor", "Gizmos", "Render"}, dbg_bRenderGizmos);
 	Zenith_DebugVariables::AddFloat({"Editor", "Gizmos", "Alpha"}, dbg_fGizmoAlpha, 0.0f, 1.0f);
@@ -112,12 +117,18 @@ void Flux_Gizmos::Shutdown()
 void Flux_Gizmos::Render(void*)
 {
 	if (!dbg_bRenderGizmos || !s_pxTargetEntity)
+	{
+		Zenith_Log("Gizmos: Early out - render=%d, target=%p", dbg_bRenderGizmos, s_pxTargetEntity);
 		return;
+	}
 
 	// Get entity transform
 	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
 	if (!xScene.EntityHasComponent<Zenith_TransformComponent>(s_pxTargetEntity->GetEntityID()))
+	{
+		Zenith_Log("Gizmos: Entity has no transform component");
 		return;
+	}
 
 	Zenith_TransformComponent& xTransform = xScene.GetComponentFromEntity<Zenith_TransformComponent>(s_pxTargetEntity->GetEntityID());
 
@@ -142,7 +153,23 @@ void Flux_Gizmos::Render(void*)
 	}
 
 	if (!pxGeometry || pxGeometry->GetSize() == 0)
+	{
+		Zenith_Log("Gizmos: No geometry - mode=%d, size=%d", s_eMode, pxGeometry ? pxGeometry->GetSize() : 0);
 		return;
+	}
+
+	//Zenith_Log("Gizmos: Rendering %d components at pos(%.1f,%.1f,%.1f) scale=%.2f", pxGeometry->GetSize(), xEntityPos.x, xEntityPos.y, xEntityPos.z, s_fGizmoScale);
+
+	// Visualize gizmo interaction bounding boxes for debugging
+	Flux_Primitives::AddWireframeCube(xEntityPos + Zenith_Maths::Vector3(1, 0, 0) * GIZMO_ARROW_LENGTH * 0.5f * s_fGizmoScale,
+		Zenith_Maths::Vector3(GIZMO_ARROW_LENGTH * s_fGizmoScale * 0.5f, GIZMO_INTERACTION_THRESHOLD * s_fGizmoScale, GIZMO_INTERACTION_THRESHOLD * s_fGizmoScale),
+		Zenith_Maths::Vector3(1, 0, 0));
+	Flux_Primitives::AddWireframeCube(xEntityPos + Zenith_Maths::Vector3(0, 1, 0) * GIZMO_ARROW_LENGTH * 0.5f * s_fGizmoScale,
+		Zenith_Maths::Vector3(GIZMO_INTERACTION_THRESHOLD * s_fGizmoScale, GIZMO_ARROW_LENGTH * s_fGizmoScale * 0.5f, GIZMO_INTERACTION_THRESHOLD * s_fGizmoScale),
+		Zenith_Maths::Vector3(0, 1, 0));
+	Flux_Primitives::AddWireframeCube(xEntityPos + Zenith_Maths::Vector3(0, 0, 1) * GIZMO_ARROW_LENGTH * 0.5f * s_fGizmoScale,
+		Zenith_Maths::Vector3(GIZMO_INTERACTION_THRESHOLD * s_fGizmoScale, GIZMO_INTERACTION_THRESHOLD * s_fGizmoScale, GIZMO_ARROW_LENGTH * s_fGizmoScale * 0.5f),
+		Zenith_Maths::Vector3(0, 0, 1));
 
 	// Record rendering commands
 	s_xCommandList.Reset(false);
@@ -221,11 +248,16 @@ void Flux_Gizmos::SetGizmoMode(GizmoMode eMode)
 void Flux_Gizmos::BeginInteraction(const Zenith_Maths::Vector3& rayOrigin, const Zenith_Maths::Vector3& rayDir)
 {
 	if (!s_pxTargetEntity)
+	{
+		Zenith_Log("BeginInteraction: No target entity");
 		return;
+	}
 
 	// Raycast against gizmo to find which component was clicked
 	float fDistance;
 	GizmoComponent eHitComponent = RaycastGizmo(rayOrigin, rayDir, fDistance);
+	
+	Zenith_Log("BeginInteraction: RaycastGizmo returned component=%d, distance=%.2f", (int)eHitComponent, fDistance);
 
 	if (eHitComponent != GizmoComponent::None)
 	{
@@ -241,7 +273,13 @@ void Flux_Gizmos::BeginInteraction(const Zenith_Maths::Vector3& rayOrigin, const
 			xTransform.GetPosition(s_xInitialEntityPosition);
 			xTransform.GetRotation(s_xInitialEntityRotation);
 			xTransform.GetScale(s_xInitialEntityScale);
+			
+			Zenith_Log("BeginInteraction: Started on component=%d", eHitComponent);
 		}
+	}
+	else
+	{
+		Zenith_Log("BeginInteraction: Raycast missed (component=None)");
 	}
 }
 
@@ -249,6 +287,9 @@ void Flux_Gizmos::UpdateInteraction(const Zenith_Maths::Vector3& rayOrigin, cons
 {
 	if (!s_bIsInteracting || !s_pxTargetEntity)
 		return;
+
+	Zenith_Log("UpdateInteraction: RayOrigin=(%.1f,%.1f,%.1f) RayDir=(%.2f,%.2f,%.2f)",
+		rayOrigin.x, rayOrigin.y, rayOrigin.z, rayDir.x, rayDir.y, rayDir.z);
 
 	// Apply transformation based on gizmo mode
 	switch (s_eMode)
@@ -536,7 +577,7 @@ GizmoComponent Flux_Gizmos::RaycastGizmo(const Zenith_Maths::Vector3& rayOrigin,
 	if (!s_pxTargetEntity)
 		return GizmoComponent::None;
 
-	// Get entity position
+	// Get entity position (gizmo center)
 	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
 	if (!xScene.EntityHasComponent<Zenith_TransformComponent>(s_pxTargetEntity->GetEntityID()))
 		return GizmoComponent::None;
@@ -545,9 +586,19 @@ GizmoComponent Flux_Gizmos::RaycastGizmo(const Zenith_Maths::Vector3& rayOrigin,
 	Zenith_Maths::Vector3 xGizmoPos;
 	xTransform.GetPosition(xGizmoPos);
 
-	// Transform ray to gizmo local space
-	Zenith_Maths::Vector3 localRayOrigin = (rayOrigin - xGizmoPos) / s_fGizmoScale;
-	Zenith_Maths::Vector3 localRayDir = rayDir;
+	// FIXED: Do all calculations in WORLD space
+	// Translate ray origin relative to gizmo center, but keep same units
+	Zenith_Maths::Vector3 relativeRayOrigin = rayOrigin - xGizmoPos;
+
+	// Scale thresholds and lengths to world space
+	float worldArrowLength = GIZMO_ARROW_LENGTH * s_fGizmoScale * GIZMO_INTERACTION_LENGTH_MULTIPLIER;
+	float worldInteractionThreshold = GIZMO_INTERACTION_THRESHOLD * s_fGizmoScale;
+	float worldCircleRadius = GIZMO_CIRCLE_RADIUS * s_fGizmoScale;
+	float worldCubeSize = GIZMO_CUBE_SIZE * s_fGizmoScale;
+
+	Zenith_Log("RaycastGizmo: GizmoPos=(%.1f,%.1f,%.1f), Scale=%.2f", xGizmoPos.x, xGizmoPos.y, xGizmoPos.z, s_fGizmoScale);
+	Zenith_Log("  RayOrigin=(%.1f,%.1f,%.1f), RayDir=(%.2f,%.2f,%.2f)", rayOrigin.x, rayOrigin.y, rayOrigin.z, rayDir.x, rayDir.y, rayDir.z);
+	Zenith_Log("  WorldThreshold=%.3f, WorldArrowLen=%.3f", worldInteractionThreshold, worldArrowLength);
 
 	float closestDistance = FLT_MAX;
 	GizmoComponent closestComponent = GizmoComponent::None;
@@ -557,19 +608,19 @@ GizmoComponent Flux_Gizmos::RaycastGizmo(const Zenith_Maths::Vector3& rayOrigin,
 	{
 		// Test X axis
 		float dist;
-		if (RayIntersectsArrow(localRayOrigin, localRayDir, Zenith_Maths::Vector3(1, 0, 0), dist) && dist < closestDistance)
+		if (RayIntersectsArrowWorld(relativeRayOrigin, rayDir, Zenith_Maths::Vector3(1, 0, 0), worldInteractionThreshold, worldArrowLength, dist) && dist < closestDistance)
 		{
 			closestDistance = dist;
 			closestComponent = (s_eMode == GizmoMode::Translate) ? GizmoComponent::TranslateX : GizmoComponent::ScaleX;
 		}
 		// Test Y axis
-		if (RayIntersectsArrow(localRayOrigin, localRayDir, Zenith_Maths::Vector3(0, 1, 0), dist) && dist < closestDistance)
+		if (RayIntersectsArrowWorld(relativeRayOrigin, rayDir, Zenith_Maths::Vector3(0, 1, 0), worldInteractionThreshold, worldArrowLength, dist) && dist < closestDistance)
 		{
 			closestDistance = dist;
 			closestComponent = (s_eMode == GizmoMode::Translate) ? GizmoComponent::TranslateY : GizmoComponent::ScaleY;
 		}
 		// Test Z axis
-		if (RayIntersectsArrow(localRayOrigin, localRayDir, Zenith_Maths::Vector3(0, 0, 1), dist) && dist < closestDistance)
+		if (RayIntersectsArrowWorld(relativeRayOrigin, rayDir, Zenith_Maths::Vector3(0, 0, 1), worldInteractionThreshold, worldArrowLength, dist) && dist < closestDistance)
 		{
 			closestDistance = dist;
 			closestComponent = (s_eMode == GizmoMode::Translate) ? GizmoComponent::TranslateZ : GizmoComponent::ScaleZ;
@@ -578,7 +629,7 @@ GizmoComponent Flux_Gizmos::RaycastGizmo(const Zenith_Maths::Vector3& rayOrigin,
 		// Test center cube for scale mode
 		if (s_eMode == GizmoMode::Scale)
 		{
-			if (RayIntersectsCube(localRayOrigin, localRayDir, Zenith_Maths::Vector3(0, 0, 0), dist) && dist < closestDistance)
+			if (RayIntersectsCubeWorld(relativeRayOrigin, rayDir, Zenith_Maths::Vector3(0, 0, 0), worldCubeSize, dist) && dist < closestDistance)
 			{
 				closestDistance = dist;
 				closestComponent = GizmoComponent::ScaleXYZ;
@@ -589,58 +640,93 @@ GizmoComponent Flux_Gizmos::RaycastGizmo(const Zenith_Maths::Vector3& rayOrigin,
 	{
 		// Test rotation circles
 		float dist;
-		if (RayIntersectsCircle(localRayOrigin, localRayDir, Zenith_Maths::Vector3(1, 0, 0), dist) && dist < closestDistance)
+		if (RayIntersectsCircleWorld(relativeRayOrigin, rayDir, Zenith_Maths::Vector3(1, 0, 0), worldCircleRadius, worldInteractionThreshold, dist) && dist < closestDistance)
 		{
 			closestDistance = dist;
 			closestComponent = GizmoComponent::RotateX;
 		}
-		if (RayIntersectsCircle(localRayOrigin, localRayDir, Zenith_Maths::Vector3(0, 1, 0), dist) && dist < closestDistance)
+		if (RayIntersectsCircleWorld(relativeRayOrigin, rayDir, Zenith_Maths::Vector3(0, 1, 0), worldCircleRadius, worldInteractionThreshold, dist) && dist < closestDistance)
 		{
 			closestDistance = dist;
 			closestComponent = GizmoComponent::RotateY;
 		}
-		if (RayIntersectsCircle(localRayOrigin, localRayDir, Zenith_Maths::Vector3(0, 0, 1), dist) && dist < closestDistance)
+		if (RayIntersectsCircleWorld(relativeRayOrigin, rayDir, Zenith_Maths::Vector3(0, 0, 1), worldCircleRadius, worldInteractionThreshold, dist) && dist < closestDistance)
 		{
 			closestDistance = dist;
 			closestComponent = GizmoComponent::RotateZ;
 		}
 	}
 
-	outDistance = closestDistance * s_fGizmoScale;
+	// Distance is already in world space, no conversion needed
+	outDistance = closestDistance;
 	return closestComponent;
 }
 
-bool Flux_Gizmos::RayIntersectsArrow(const Zenith_Maths::Vector3& rayOrigin, const Zenith_Maths::Vector3& rayDir, const Zenith_Maths::Vector3& axis, float& outDistance)
+// FIXED: World-space arrow intersection with explicit threshold and length parameters
+bool Flux_Gizmos::RayIntersectsArrowWorld(const Zenith_Maths::Vector3& rayOrigin, const Zenith_Maths::Vector3& rayDir,
+	const Zenith_Maths::Vector3& axis, float cylinderRadius, float arrowLength, float& outDistance)
 {
-	// Simplified: Treat arrow as cylinder for intersection
-	// More accurate would test cone and cylinder separately
+	// Ray-cylinder intersection (finite cylinder along axis from origin)
+	// Ray: P = rayOrigin + t * rayDir
+	// Cylinder: |P - (P·axis)*axis|² = radius², 0 <= P·axis <= arrowLength
 
-	// Ray-cylinder intersection (infinite cylinder along axis)
 	Zenith_Maths::Vector3 ao = rayOrigin;
 	float dotAxisDir = glm::dot(axis, rayDir);
 	float dotAxisOrigin = glm::dot(axis, ao);
 
-	// Quadratic coefficients
+	// Quadratic coefficients for ray-cylinder intersection
+	// We're solving for t where the ray hits the infinite cylinder
 	float a = glm::dot(rayDir, rayDir) - dotAxisDir * dotAxisDir;
 	float b = 2.0f * (glm::dot(rayDir, ao) - dotAxisDir * dotAxisOrigin);
-	float c = glm::dot(ao, ao) - dotAxisOrigin * dotAxisOrigin - GIZMO_INTERACTION_THRESHOLD * GIZMO_INTERACTION_THRESHOLD;
+	float c = glm::dot(ao, ao) - dotAxisOrigin * dotAxisOrigin - cylinderRadius * cylinderRadius;
+
+	// Handle degenerate case where ray is parallel to axis
+	if (glm::abs(a) < 0.0001f)
+	{
+		// Ray is parallel to cylinder axis
+		// Check if ray origin is inside cylinder radius
+		float distFromAxis = sqrtf(glm::max(0.0f, glm::dot(ao, ao) - dotAxisOrigin * dotAxisOrigin));
+		if (distFromAxis <= cylinderRadius)
+		{
+			// Find where along axis the ray is closest
+			outDistance = 0.0f;
+			return true;
+		}
+		return false;
+	}
 
 	float discriminant = b * b - 4.0f * a * c;
+
 	if (discriminant < 0.0f)
 		return false;
 
-	float t = (-b - sqrtf(discriminant)) / (2.0f * a);
-	if (t < 0.0f)
-		t = (-b + sqrtf(discriminant)) / (2.0f * a);
+	// Get both intersection points
+	float sqrtDisc = sqrtf(discriminant);
+	float t1 = (-b - sqrtDisc) / (2.0f * a);
+	float t2 = (-b + sqrtDisc) / (2.0f * a);
 
+	// Try the closer intersection first
+	float t = t1;
+	if (t < 0.0f)
+		t = t2;
 	if (t < 0.0f)
 		return false;
 
-	// Check if hit point is within arrow length
+	// Check if hit point is within arrow length bounds
 	Zenith_Maths::Vector3 hitPoint = rayOrigin + rayDir * t;
 	float alongAxis = glm::dot(hitPoint, axis);
 
-	if (alongAxis >= 0.0f && alongAxis <= GIZMO_ARROW_LENGTH)
+	// If first hit is outside bounds, try the second hit
+	if (alongAxis < 0.0f || alongAxis > arrowLength)
+	{
+		t = t2;
+		if (t < 0.0f)
+			return false;
+		hitPoint = rayOrigin + rayDir * t;
+		alongAxis = glm::dot(hitPoint, axis);
+	}
+
+	if (alongAxis >= 0.0f && alongAxis <= arrowLength)
 	{
 		outDistance = t;
 		return true;
@@ -649,7 +735,20 @@ bool Flux_Gizmos::RayIntersectsArrow(const Zenith_Maths::Vector3& rayOrigin, con
 	return false;
 }
 
-bool Flux_Gizmos::RayIntersectsCircle(const Zenith_Maths::Vector3& rayOrigin, const Zenith_Maths::Vector3& rayDir, const Zenith_Maths::Vector3& normal, float& outDistance)
+// Legacy function - kept for reference but no longer used
+bool Flux_Gizmos::RayIntersectsArrow(const Zenith_Maths::Vector3& rayOrigin, const Zenith_Maths::Vector3& rayDir, const Zenith_Maths::Vector3& axis, float& outDistance)
+{
+	// Redirect to world-space version with default parameters
+	// This is here for API compatibility but shouldn't be called
+	return RayIntersectsArrowWorld(rayOrigin, rayDir, axis,
+		GIZMO_INTERACTION_THRESHOLD * s_fGizmoScale,
+		GIZMO_ARROW_LENGTH * s_fGizmoScale * GIZMO_INTERACTION_LENGTH_MULTIPLIER,
+		outDistance);
+}
+
+// FIXED: World-space circle intersection with explicit radius and threshold
+bool Flux_Gizmos::RayIntersectsCircleWorld(const Zenith_Maths::Vector3& rayOrigin, const Zenith_Maths::Vector3& rayDir,
+	const Zenith_Maths::Vector3& normal, float circleRadius, float threshold, float& outDistance)
 {
 	// Ray-plane intersection
 	float denom = glm::dot(normal, rayDir);
@@ -660,11 +759,11 @@ bool Flux_Gizmos::RayIntersectsCircle(const Zenith_Maths::Vector3& rayOrigin, co
 	if (t < 0.0f)
 		return false;
 
-	// Check if hit point is near the circle
+	// Check if hit point is near the circle (torus-like region)
 	Zenith_Maths::Vector3 hitPoint = rayOrigin + rayDir * t;
 	float distFromCenter = glm::length(hitPoint);
 
-	if (fabsf(distFromCenter - GIZMO_CIRCLE_RADIUS) < GIZMO_INTERACTION_THRESHOLD)
+	if (fabsf(distFromCenter - circleRadius) < threshold)
 	{
 		outDistance = t;
 		return true;
@@ -673,10 +772,21 @@ bool Flux_Gizmos::RayIntersectsCircle(const Zenith_Maths::Vector3& rayOrigin, co
 	return false;
 }
 
-bool Flux_Gizmos::RayIntersectsCube(const Zenith_Maths::Vector3& rayOrigin, const Zenith_Maths::Vector3& rayDir, const Zenith_Maths::Vector3& center, float& outDistance)
+bool Flux_Gizmos::RayIntersectsCircle(const Zenith_Maths::Vector3& rayOrigin, const Zenith_Maths::Vector3& rayDir, const Zenith_Maths::Vector3& normal, float& outDistance)
+{
+	// Legacy - redirect to world-space version
+	return RayIntersectsCircleWorld(rayOrigin, rayDir, normal,
+		GIZMO_CIRCLE_RADIUS * s_fGizmoScale,
+		GIZMO_INTERACTION_THRESHOLD * s_fGizmoScale,
+		outDistance);
+}
+
+// FIXED: World-space cube intersection with explicit size
+bool Flux_Gizmos::RayIntersectsCubeWorld(const Zenith_Maths::Vector3& rayOrigin, const Zenith_Maths::Vector3& rayDir,
+	const Zenith_Maths::Vector3& center, float cubeSize, float& outDistance)
 {
 	// Simple AABB intersection
-	float half = GIZMO_CUBE_SIZE * 0.5f;
+	float half = cubeSize * 0.5f;
 	Zenith_Maths::Vector3 boxMin = center - Zenith_Maths::Vector3(half);
 	Zenith_Maths::Vector3 boxMax = center + Zenith_Maths::Vector3(half);
 
@@ -695,6 +805,14 @@ bool Flux_Gizmos::RayIntersectsCube(const Zenith_Maths::Vector3& rayOrigin, cons
 
 	outDistance = tNear > 0.0f ? tNear : tFar;
 	return true;
+}
+
+bool Flux_Gizmos::RayIntersectsCube(const Zenith_Maths::Vector3& rayOrigin, const Zenith_Maths::Vector3& rayDir, const Zenith_Maths::Vector3& center, float& outDistance)
+{
+	// Legacy - redirect to world-space version
+	return RayIntersectsCubeWorld(rayOrigin, rayDir, center,
+		GIZMO_CUBE_SIZE * s_fGizmoScale,
+		outDistance);
 }
 
 // ==================== TRANSFORM MANIPULATION ====================
@@ -717,16 +835,70 @@ void Flux_Gizmos::ApplyTranslation(const Zenith_Maths::Vector3& rayOrigin, const
 		default: return;
 	}
 
-	// Project ray onto axis to find closest point on axis to ray
-	Zenith_Maths::Vector3 toRayOrigin = rayOrigin - s_xInitialEntityPosition;
-	float rayDotAxis = glm::dot(rayDir, axis);
-	float originDotAxis = glm::dot(toRayOrigin, axis);
+	// CORRECT APPROACH: Track offset from initial click and maintain it
+	// 
+	// The user clicks at s_xInteractionStartPos on the gizmo.
+	// As they drag, we want the gizmo to "follow" the mouse ray along the constraint axis.
+	// 
+	// The key insight: Find the closest point on the constraint axis to BOTH rays:
+	// - Initial ray (at click): Find closest point -> this is our reference offset
+	// - Current ray (during drag): Find closest point -> this is where we want to be
+	// The difference between these is how much to move the entity.
+	
+	// The constraint axis always passes through s_xInitialEntityPosition (where entity started)
+	// Axis line: P(t) = s_xInitialEntityPosition + t * axis
+	
+	// First: Find closest point on axis to the INITIAL click position
+	Zenith_Maths::Vector3 offsetToClick = s_xInteractionStartPos - s_xInitialEntityPosition;
+	float t_initial = glm::dot(offsetToClick, axis);  // Project click onto axis
+	
+	// Second: Find closest point on axis to the CURRENT mouse ray using line-line closest point
+	// Ray: R(s) = rayOrigin + s * rayDir
+	// Axis: A(t) = s_xInitialEntityPosition + t * axis
+	// We want to find t that minimizes distance between the lines
+	//
+	// Standard formula: w = AxisOrigin - RayOrigin (P1 - P2)
+	// t = (b*e - c*d) / (a*c - b*b)
+	// where a = axis·axis, b = axis·rayDir, c = rayDir·rayDir, d = axis·w, e = rayDir·w
 
-	// Find parameter t along axis where it's closest to the ray
-	// This is a line-line closest point problem
-	float t = originDotAxis - glm::dot(rayDir - axis * rayDotAxis, toRayOrigin) / (1.0f - rayDotAxis * rayDotAxis + 0.0001f);
+	Zenith_Maths::Vector3 w = s_xInitialEntityPosition - rayOrigin;  // FIXED: w = P1 - P2
 
-	Zenith_Maths::Vector3 newPosition = s_xInitialEntityPosition + axis * t;
+	float a = 1.0f;                           // dot(axis, axis) = 1 for unit vector
+	float b = glm::dot(axis, rayDir);
+	float c = glm::dot(rayDir, rayDir);
+	float d = glm::dot(axis, w);
+	float e = glm::dot(rayDir, w);
+
+	float denom = a * c - b * b;
+
+	// Check if ray is parallel to axis
+	if (glm::abs(denom) < 0.0001f)
+	{
+		Zenith_Log("ApplyTranslation: Ray parallel to axis (denom=%.6f), no movement", denom);
+		return;
+	}
+
+	// Solve for t (parameter along axis for closest point to current ray)
+	float t_current = (b * e - c * d) / denom;
+	
+	// The entity should move by the difference
+	float delta_t = t_current - t_initial;
+	
+	// Apply the movement
+	Zenith_Maths::Vector3 newPosition = s_xInitialEntityPosition + axis * delta_t;
+	
+	Zenith_Log("ApplyTranslation DEBUG:");
+	Zenith_Log("  InitialEntityPos=(%.2f,%.2f,%.2f)", s_xInitialEntityPosition.x, s_xInitialEntityPosition.y, s_xInitialEntityPosition.z);
+	Zenith_Log("  InteractionStartPos=(%.2f,%.2f,%.2f)", s_xInteractionStartPos.x, s_xInteractionStartPos.y, s_xInteractionStartPos.z);
+	Zenith_Log("  Axis=(%.2f,%.2f,%.2f)", axis.x, axis.y, axis.z);
+	Zenith_Log("  RayOrigin=(%.2f,%.2f,%.2f) RayDir=(%.2f,%.2f,%.2f)", rayOrigin.x, rayOrigin.y, rayOrigin.z, rayDir.x, rayDir.y, rayDir.z);
+	Zenith_Log("  t_initial=%.4f (click offset on axis)", t_initial);
+	Zenith_Log("  t_current=%.4f (current ray closest point)", t_current);
+	Zenith_Log("  delta_t=%.4f", delta_t);
+	Zenith_Log("  Math: a=%.4f, b=%.4f, c=%.4f, d=%.4f, e=%.4f, denom=%.6f", a, b, c, d, e, denom);
+	Zenith_Log("  NewPosition=(%.2f,%.2f,%.2f)", newPosition.x, newPosition.y, newPosition.z);
+	Zenith_Log("  TotalDelta=(%.2f,%.2f,%.2f)", newPosition.x - s_xInitialEntityPosition.x, newPosition.y - s_xInitialEntityPosition.y, newPosition.z - s_xInitialEntityPosition.z);
+	
 	xTransform.SetPosition(newPosition);
 }
 

@@ -3,6 +3,7 @@
 #ifdef ZENITH_TOOLS
 
 #include "Maths/Zenith_Maths.h"
+#include "EntityComponent/Zenith_Scene.h"
 
 class Zenith_Entity;
 
@@ -43,8 +44,8 @@ public:
 	// Get bounding box for an entity
 	static BoundingBox GetEntityBoundingBox(Zenith_Entity* pxEntity);
 	
-	// Raycast to select entities
-	static Zenith_Entity* RaycastSelect(const Zenith_Maths::Vector3& rayOrigin, const Zenith_Maths::Vector3& rayDir);
+	// Raycast to select entities - returns EntityID to avoid memory management issues
+	static Zenith_EntityID RaycastSelect(const Zenith_Maths::Vector3& rayOrigin, const Zenith_Maths::Vector3& rayDir);
 	
 	// Debug rendering
 	static void RenderBoundingBoxes();

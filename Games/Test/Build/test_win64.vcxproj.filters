@@ -583,6 +583,9 @@
     <ClCompile Include="..\..\..\Zenith\TaskSystem\Zenith_TaskSystem.cpp">
       <Filter>Zenith\TaskSystem</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\..\Zenith\UnitTests\Zenith_EditorTests.cpp">
+      <Filter>Zenith\UnitTests</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\..\Zenith\UnitTests\Zenith_UnitTests.cpp">
       <Filter>Zenith\UnitTests</Filter>
     </ClCompile>
@@ -1599,6 +1602,9 @@
     <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\TriangleSplitter\TriangleSplitterMean.h">
       <Filter>Middleware\JoltPhysics-5.4.0\Jolt\TriangleSplitter</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\..\Middleware\stb\stb_dxt.h">
+      <Filter>Middleware\stb</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\..\Middleware\stb\stb_image.h">
       <Filter>Middleware\stb</Filter>
     </ClInclude>
@@ -1645,6 +1651,9 @@
       <Filter>Zenith\DebugVariables</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\Zenith\Editor\Zenith_Editor.h">
+      <Filter>Zenith\Editor</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\Editor\Zenith_EditorLog.h">
       <Filter>Zenith\Editor</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\Zenith\Editor\Zenith_Gizmo.h">
@@ -1890,6 +1899,9 @@
     <ClInclude Include="..\..\..\Zenith\Flux\Terrain\Flux_Terrain.h">
       <Filter>Zenith\Flux\Terrain</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\Flux\Terrain\Flux_TerrainConfig.h">
+      <Filter>Zenith\Flux\Terrain</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\..\Zenith\Flux\Terrain\Flux_TerrainStreamingManager.h">
       <Filter>Zenith\Flux\Terrain</Filter>
     </ClInclude>
@@ -1919,6 +1931,9 @@
     </ClInclude>
     <ClInclude Include="..\..\..\Zenith\TaskSystem\Zenith_TaskSystem.h">
       <Filter>Zenith\TaskSystem</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\UnitTests\Zenith_EditorTests.h">
+      <Filter>Zenith\UnitTests</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\Zenith\UnitTests\Zenith_UnitTests.h">
       <Filter>Zenith\UnitTests</Filter>

@@ -3,6 +3,7 @@
 #ifdef ZENITH_TOOLS
 
 #include "Maths/Zenith_Maths.h"
+#include "EntityComponent/Zenith_Scene.h"
 #include <vector>
 
 class Zenith_Entity;
@@ -15,7 +16,7 @@ enum class EditorMode
 	Paused
 };
 
-enum class GizmoMode
+enum class EditorGizmoMode
 {
 	Translate,
 	Rotate,
@@ -34,14 +35,16 @@ public:
 	static EditorMode GetEditorMode() { return s_eEditorMode; }
 	static void SetEditorMode(EditorMode eMode);
 	
-	// Object selection
-	static void SelectEntity(Zenith_Entity* pxEntity);
+	// Object selection - now uses EntityID for safer memory management
+	static void SelectEntity(Zenith_EntityID uEntityID);
 	static void ClearSelection();
-	static Zenith_Entity* GetSelectedEntity() { return s_pxSelectedEntity; }
+	static Zenith_EntityID GetSelectedEntityID() { return s_uSelectedEntityID; }
+	static Zenith_Entity* GetSelectedEntity();  // Helper to safely get entity from ID
+	static bool HasSelection() { return s_uSelectedEntityID != INVALID_ENTITY_ID; }
 	
 	// Gizmo
-	static GizmoMode GetGizmoMode() { return s_eGizmoMode; }
-	static void SetGizmoMode(GizmoMode eMode) { s_eGizmoMode = eMode; }
+	static EditorGizmoMode GetGizmoMode() { return s_eGizmoMode; }
+	static void SetGizmoMode(EditorGizmoMode eMode) { s_eGizmoMode = eMode; }
 
 private:
 	static void RenderMainMenuBar();
@@ -51,10 +54,11 @@ private:
 	static void RenderViewport();
 	static void HandleObjectPicking();
 	static void RenderGizmos();
+	static void HandleGizmoInteraction();  // New method for Flux_Gizmos integration
 	
 	static EditorMode s_eEditorMode;
-	static GizmoMode s_eGizmoMode;
-	static Zenith_Entity* s_pxSelectedEntity;
+	static EditorGizmoMode s_eGizmoMode;
+	static Zenith_EntityID s_uSelectedEntityID;  // Changed from pointer to ID
 	
 	// Viewport
 	static Zenith_Maths::Vector2 s_xViewportSize;

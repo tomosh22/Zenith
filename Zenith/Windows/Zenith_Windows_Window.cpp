@@ -65,5 +65,14 @@ void Zenith_Window::GetMousePosition(Zenith_Maths::Vector2_64& xOut)
 
 bool Zenith_Window::IsKeyDown(Zenith_KeyCode iKey)
 {
-	return glfwGetKey(m_pxNativeWindow, iKey) == GLFW_PRESS;
+	// Mouse buttons use GLFW_MOUSE_BUTTON_* codes (0-7)
+	// Keyboard keys use GLFW_KEY_* codes (starting from 32)
+	if (iKey <= ZENITH_MOUSE_BUTTON_LAST)
+	{
+		return glfwGetMouseButton(m_pxNativeWindow, iKey) == GLFW_PRESS;
+	}
+	else
+	{
+		return glfwGetKey(m_pxNativeWindow, iKey) == GLFW_PRESS;
+	}
 }
