@@ -22,7 +22,7 @@ static constexpr float GIZMO_CIRCLE_RADIUS = 1.0f;
 static constexpr uint32_t GIZMO_CIRCLE_SEGMENTS = 64;
 static constexpr float GIZMO_CUBE_SIZE = 0.15f;
 static constexpr float GIZMO_INTERACTION_THRESHOLD = 0.2f;  // Distance threshold for ray-gizmo intersection
-static constexpr float GIZMO_INTERACTION_LENGTH_MULTIPLIER = 10.0f; // Extend interaction bounds for easier clicking
+static constexpr float GIZMO_INTERACTION_LENGTH_MULTIPLIER = 1.0f; // FIXED: Was 10.0 - caused false positive hits far from arrow
 static constexpr float GIZMO_AUTO_SCALE_DISTANCE = 5.0f;     // Distance at which gizmo is 1.0 scale
 
 // Debug variables
