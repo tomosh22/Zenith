@@ -234,7 +234,7 @@ public:
 	const Flux_Material& GetMaterialAtIndex(const uint32_t uIndex) const { return *m_xMeshEntries.Get(uIndex).m_pxMaterial; }
 	Flux_Material& GetMaterialAtIndex(const uint32_t uIndex) { return *m_xMeshEntries.Get(uIndex).m_pxMaterial; }
 
-	const uint32_t GetNumMeshEntires() const { return m_xMeshEntries.GetSize(); }
+	const uint32_t GetNumMeshEntries() const { return m_xMeshEntries.GetSize(); }
 
 	Zenith_Entity GetParentEntity() const { return m_xParentEntity; }
 private:

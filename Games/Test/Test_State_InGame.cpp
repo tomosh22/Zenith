@@ -205,7 +205,7 @@ void Test_State_InGame::OnEnter()
 	//xModel.AddMeshEntry(Zenith_AssetHandler::GetMesh("StickyMcStickFace"), Zenith_AssetHandler::GetMaterial("Crystal"));
 	Flux_Material& xCrystalMaterial = Zenith_AssetHandler::GetMaterial("Crystal");
 	xModel.LoadMeshesFromDir(ASSETS_ROOT"Meshes/stickymcstickface_anim", &xCrystalMaterial);
-	for(u_int u = 0; u < xModel.GetNumMeshEntires(); u++)
+	for(u_int u = 0; u < xModel.GetNumMeshEntries(); u++)
 	{
 		xModel.GetMeshGeometryAtIndex(u).m_pxAnimation = new Flux_MeshAnimation(ASSETS_ROOT"Meshes/stickymcstickface_anim/StickyMcStickface_Anim.fbx", xModel.GetMeshGeometryAtIndex(u));
 	}
@@ -337,7 +337,7 @@ void Test_State_InGame::OnEnter()
 		xTrans.SetScale({ afScales[u],afScales[u],afScales[u] });
 		Zenith_ModelComponent& xModel = s_xGltfTest[u].AddComponent<Zenith_ModelComponent>();
 		xModel.LoadMeshesFromDir(aszAssetNames[u]);
-		for (u_int uMeshEntry = 0; uMeshEntry < xModel.GetNumMeshEntires(); uMeshEntry++)
+		for (u_int uMeshEntry = 0; uMeshEntry < xModel.GetNumMeshEntries(); uMeshEntry++)
 		{
 			Flux_MeshGeometry& xMesh = xModel.GetMeshGeometryAtIndex(uMeshEntry);
 			if (xMesh.GetNumBones())

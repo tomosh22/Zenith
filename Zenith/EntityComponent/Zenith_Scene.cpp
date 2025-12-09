@@ -278,7 +278,7 @@ void Zenith_Scene::Update(const float fDt)
 	for (Zenith_Vector<Zenith_ModelComponent*>::Iterator xIt(xModels); !xIt.Done(); xIt.Next())
 	{
 		Zenith_ModelComponent* pxModel = xIt.GetData();
-		for (u_int uMesh = 0; uMesh < pxModel->GetNumMeshEntires(); uMesh++)
+		for (u_int uMesh = 0; uMesh < pxModel->GetNumMeshEntries(); uMesh++)
 		{
 			if(Flux_MeshAnimation* pxAnim = pxModel->GetMeshGeometryAtIndex(uMesh).m_pxAnimation)
 			{

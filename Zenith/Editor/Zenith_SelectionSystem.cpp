@@ -206,7 +206,7 @@ BoundingBox Zenith_SelectionSystem::CalculateBoundingBox(Zenith_Entity* pxEntity
 	
 	// Iterate through all mesh entries in the model
 	// A model can contain multiple sub-meshes (LODs, parts, etc.)
-	for (u_int i = 0; i < xModel.GetNumMeshEntires(); ++i)
+	for (u_int i = 0; i < xModel.GetNumMeshEntries(); ++i)
 	{
 		Flux_MeshGeometry& xGeometry = xModel.GetMeshGeometryAtIndex(i);
 		

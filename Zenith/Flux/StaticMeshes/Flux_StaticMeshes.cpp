@@ -130,7 +130,7 @@ void Flux_StaticMeshes::RenderToGBuffer(void*)
 		{
 			continue;
 		}
-		for (u_int uMesh = 0; uMesh < pxModel->GetNumMeshEntires(); uMesh++)
+		for (u_int uMesh = 0; uMesh < pxModel->GetNumMeshEntries(); uMesh++)
 		{
 			const Flux_MeshGeometry& xMesh = pxModel->GetMeshGeometryAtIndex(uMesh);
 			g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&xMesh.GetVertexBuffer());
@@ -168,7 +168,7 @@ void Flux_StaticMeshes::RenderToShadowMap(Flux_CommandList& xCmdBuf)
 		{
 			continue;
 		}
-		for (uint32_t uMesh = 0; uMesh < pxModel->GetNumMeshEntires(); uMesh++)
+		for (uint32_t uMesh = 0; uMesh < pxModel->GetNumMeshEntries(); uMesh++)
 		{
 			const Flux_MeshGeometry& xMesh = pxModel->GetMeshGeometryAtIndex(uMesh);
 			xCmdBuf.AddCommand<Flux_CommandSetVertexBuffer>(&xMesh.GetVertexBuffer());

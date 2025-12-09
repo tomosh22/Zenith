@@ -127,7 +127,7 @@ void Flux_AnimatedMeshes::RenderToGBuffer(void*)
 	for (Zenith_Vector<Zenith_ModelComponent*>::Iterator xIt(xModels); !xIt.Done(); xIt.Next())
 	{
 		Zenith_ModelComponent* pxModel = xIt.GetData();
-		for (uint32_t uMesh = 0; uMesh < pxModel->GetNumMeshEntires(); uMesh++)
+		for (uint32_t uMesh = 0; uMesh < pxModel->GetNumMeshEntries(); uMesh++)
 		{
 			const Flux_MeshGeometry& xMesh = pxModel->GetMeshGeometryAtIndex(uMesh);
 			
@@ -172,7 +172,7 @@ void Flux_AnimatedMeshes::RenderToShadowMap(Flux_CommandList& xCmdBuf)
 		{
 			continue;
 		}
-		for (u_int uMesh = 0; uMesh < pxModel->GetNumMeshEntires(); uMesh++)
+		for (u_int uMesh = 0; uMesh < pxModel->GetNumMeshEntries(); uMesh++)
 		{
 			const Flux_MeshGeometry& xMesh = pxModel->GetMeshGeometryAtIndex(uMesh);
 			

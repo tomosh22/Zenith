@@ -408,9 +408,9 @@ static void ExportDeterminismCheck(const std::string& strFilename, const std::st
 	xModel0.LoadMeshesFromDir(strDir, nullptr, -1, false);
 	xModel1.LoadMeshesFromDir(strDir, nullptr, -1, false);
 
-	Zenith_Assert(xModel0.GetNumMeshEntires() == xModel1.GetNumMeshEntires());
+	Zenith_Assert(xModel0.GetNumMeshEntries() == xModel1.GetNumMeshEntries());
 
-	for (u_int u = 0; u < xModel0.GetNumMeshEntires(); u++)
+	for (u_int u = 0; u < xModel0.GetNumMeshEntries(); u++)
 	{
 		Flux_MeshGeometry& xMesh0 = xModel0.GetMeshGeometryAtIndex(u);
 		Flux_MeshGeometry& xMesh1 = xModel1.GetMeshGeometryAtIndex(u);
