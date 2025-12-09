@@ -77,17 +77,6 @@ private:
 
 	// Ray-gizmo intersection (world-space versions - preferred)
 	static GizmoComponent RaycastGizmo(const Zenith_Maths::Vector3& rayOrigin, const Zenith_Maths::Vector3& rayDir, float& outDistance);
-	static bool RayIntersectsArrowWorld(const Zenith_Maths::Vector3& rayOrigin, const Zenith_Maths::Vector3& rayDir,
-		const Zenith_Maths::Vector3& axis, float cylinderRadius, float arrowLength, float& outDistance);
-	static bool RayIntersectsCircleWorld(const Zenith_Maths::Vector3& rayOrigin, const Zenith_Maths::Vector3& rayDir,
-		const Zenith_Maths::Vector3& normal, float circleRadius, float threshold, float& outDistance);
-	static bool RayIntersectsCubeWorld(const Zenith_Maths::Vector3& rayOrigin, const Zenith_Maths::Vector3& rayDir,
-		const Zenith_Maths::Vector3& center, float cubeSize, float& outDistance);
-
-	// Legacy intersection functions (redirect to world-space versions)
-	static bool RayIntersectsArrow(const Zenith_Maths::Vector3& rayOrigin, const Zenith_Maths::Vector3& rayDir, const Zenith_Maths::Vector3& axis, float& outDistance);
-	static bool RayIntersectsCircle(const Zenith_Maths::Vector3& rayOrigin, const Zenith_Maths::Vector3& rayDir, const Zenith_Maths::Vector3& normal, float& outDistance);
-	static bool RayIntersectsCube(const Zenith_Maths::Vector3& rayOrigin, const Zenith_Maths::Vector3& rayDir, const Zenith_Maths::Vector3& center, float& outDistance);
 
 	// Transform manipulation
 	static void ApplyTranslation(const Zenith_Maths::Vector3& rayOrigin, const Zenith_Maths::Vector3& rayDir);

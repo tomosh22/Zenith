@@ -1983,6 +1983,9 @@
     <ClInclude Include="..\Test_State_MainMenu.h">
       <Filter>Games\Test</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\Maths\Zenith_Maths_Intersections.h">
+      <Filter>Zenith\Maths</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Natvis Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Jolt.natvis">

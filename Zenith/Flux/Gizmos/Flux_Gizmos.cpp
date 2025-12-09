@@ -2,15 +2,16 @@
 
 #ifdef ZENITH_TOOLS
 
+#include "DebugVariables/Zenith_DebugVariables.h"
+#include "EntityComponent/Zenith_Scene.h"
+#include "EntityComponent/Zenith_Entity.h"
+#include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "Flux/Gizmos/Flux_Gizmos.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_Buffers.h"
 #include "Flux/Primitives/Flux_Primitives.h"
+#include "Maths/Zenith_Maths_Intersections.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
-#include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Zenith_Entity.h"
-#include "EntityComponent/Components/Zenith_TransformComponent.h"
-#include "DebugVariables/Zenith_DebugVariables.h"
 
 // Constants
 static constexpr float GIZMO_BASE_SIZE = 1.0f;
@@ -608,19 +609,19 @@ GizmoComponent Flux_Gizmos::RaycastGizmo(const Zenith_Maths::Vector3& rayOrigin,
 	{
 		// Test X axis
 		float dist;
-		if (RayIntersectsArrowWorld(relativeRayOrigin, rayDir, Zenith_Maths::Vector3(1, 0, 0), worldInteractionThreshold, worldArrowLength, dist) && dist < closestDistance)
+		if (Zenith_Maths::Intersections::RayIntersectsCylinder(relativeRayOrigin, rayDir, Zenith_Maths::Vector3(1, 0, 0), worldInteractionThreshold, worldArrowLength, dist) && dist < closestDistance)
 		{
 			closestDistance = dist;
 			closestComponent = (s_eMode == GizmoMode::Translate) ? GizmoComponent::TranslateX : GizmoComponent::ScaleX;
 		}
 		// Test Y axis
-		if (RayIntersectsArrowWorld(relativeRayOrigin, rayDir, Zenith_Maths::Vector3(0, 1, 0), worldInteractionThreshold, worldArrowLength, dist) && dist < closestDistance)
+		if (Zenith_Maths::Intersections::RayIntersectsCylinder(relativeRayOrigin, rayDir, Zenith_Maths::Vector3(0, 1, 0), worldInteractionThreshold, worldArrowLength, dist) && dist < closestDistance)
 		{
 			closestDistance = dist;
 			closestComponent = (s_eMode == GizmoMode::Translate) ? GizmoComponent::TranslateY : GizmoComponent::ScaleY;
 		}
 		// Test Z axis
-		if (RayIntersectsArrowWorld(relativeRayOrigin, rayDir, Zenith_Maths::Vector3(0, 0, 1), worldInteractionThreshold, worldArrowLength, dist) && dist < closestDistance)
+		if (Zenith_Maths::Intersections::RayIntersectsCylinder(relativeRayOrigin, rayDir, Zenith_Maths::Vector3(0, 0, 1), worldInteractionThreshold, worldArrowLength, dist) && dist < closestDistance)
 		{
 			closestDistance = dist;
 			closestComponent = (s_eMode == GizmoMode::Translate) ? GizmoComponent::TranslateZ : GizmoComponent::ScaleZ;
@@ -629,7 +630,7 @@ GizmoComponent Flux_Gizmos::RaycastGizmo(const Zenith_Maths::Vector3& rayOrigin,
 		// Test center cube for scale mode
 		if (s_eMode == GizmoMode::Scale)
 		{
-			if (RayIntersectsCubeWorld(relativeRayOrigin, rayDir, Zenith_Maths::Vector3(0, 0, 0), worldCubeSize, dist) && dist < closestDistance)
+			if (Zenith_Maths::Intersections::RayIntersectsAABB(relativeRayOrigin, rayDir, Zenith_Maths::Vector3(0, 0, 0), worldCubeSize, dist) && dist < closestDistance)
 			{
 				closestDistance = dist;
 				closestComponent = GizmoComponent::ScaleXYZ;
@@ -640,17 +641,17 @@ GizmoComponent Flux_Gizmos::RaycastGizmo(const Zenith_Maths::Vector3& rayOrigin,
 	{
 		// Test rotation circles
 		float dist;
-		if (RayIntersectsCircleWorld(relativeRayOrigin, rayDir, Zenith_Maths::Vector3(1, 0, 0), worldCircleRadius, worldInteractionThreshold, dist) && dist < closestDistance)
+		if (Zenith_Maths::Intersections::RayIntersectsCircle(relativeRayOrigin, rayDir, Zenith_Maths::Vector3(1, 0, 0), worldCircleRadius, worldInteractionThreshold, dist) && dist < closestDistance)
 		{
 			closestDistance = dist;
 			closestComponent = GizmoComponent::RotateX;
 		}
-		if (RayIntersectsCircleWorld(relativeRayOrigin, rayDir, Zenith_Maths::Vector3(0, 1, 0), worldCircleRadius, worldInteractionThreshold, dist) && dist < closestDistance)
+		if (Zenith_Maths::Intersections::RayIntersectsCircle(relativeRayOrigin, rayDir, Zenith_Maths::Vector3(0, 1, 0), worldCircleRadius, worldInteractionThreshold, dist) && dist < closestDistance)
 		{
 			closestDistance = dist;
 			closestComponent = GizmoComponent::RotateY;
 		}
-		if (RayIntersectsCircleWorld(relativeRayOrigin, rayDir, Zenith_Maths::Vector3(0, 0, 1), worldCircleRadius, worldInteractionThreshold, dist) && dist < closestDistance)
+		if (Zenith_Maths::Intersections::RayIntersectsCircle(relativeRayOrigin, rayDir, Zenith_Maths::Vector3(0, 0, 1), worldCircleRadius, worldInteractionThreshold, dist) && dist < closestDistance)
 		{
 			closestDistance = dist;
 			closestComponent = GizmoComponent::RotateZ;
@@ -660,159 +661,6 @@ GizmoComponent Flux_Gizmos::RaycastGizmo(const Zenith_Maths::Vector3& rayOrigin,
 	// Distance is already in world space, no conversion needed
 	outDistance = closestDistance;
 	return closestComponent;
-}
-
-// FIXED: World-space arrow intersection with explicit threshold and length parameters
-bool Flux_Gizmos::RayIntersectsArrowWorld(const Zenith_Maths::Vector3& rayOrigin, const Zenith_Maths::Vector3& rayDir,
-	const Zenith_Maths::Vector3& axis, float cylinderRadius, float arrowLength, float& outDistance)
-{
-	// Ray-cylinder intersection (finite cylinder along axis from origin)
-	// Ray: P = rayOrigin + t * rayDir
-	// Cylinder: |P - (P·axis)*axis|² = radius², 0 <= P·axis <= arrowLength
-
-	Zenith_Maths::Vector3 ao = rayOrigin;
-	float dotAxisDir = glm::dot(axis, rayDir);
-	float dotAxisOrigin = glm::dot(axis, ao);
-
-	// Quadratic coefficients for ray-cylinder intersection
-	// We're solving for t where the ray hits the infinite cylinder
-	float a = glm::dot(rayDir, rayDir) - dotAxisDir * dotAxisDir;
-	float b = 2.0f * (glm::dot(rayDir, ao) - dotAxisDir * dotAxisOrigin);
-	float c = glm::dot(ao, ao) - dotAxisOrigin * dotAxisOrigin - cylinderRadius * cylinderRadius;
-
-	// Handle degenerate case where ray is parallel to axis
-	if (glm::abs(a) < 0.0001f)
-	{
-		// Ray is parallel to cylinder axis
-		// Check if ray origin is inside cylinder radius
-		float distFromAxis = sqrtf(glm::max(0.0f, glm::dot(ao, ao) - dotAxisOrigin * dotAxisOrigin));
-		if (distFromAxis <= cylinderRadius)
-		{
-			// Find where along axis the ray is closest
-			outDistance = 0.0f;
-			return true;
-		}
-		return false;
-	}
-
-	float discriminant = b * b - 4.0f * a * c;
-
-	if (discriminant < 0.0f)
-		return false;
-
-	// Get both intersection points
-	float sqrtDisc = sqrtf(discriminant);
-	float t1 = (-b - sqrtDisc) / (2.0f * a);
-	float t2 = (-b + sqrtDisc) / (2.0f * a);
-
-	// Try the closer intersection first
-	float t = t1;
-	if (t < 0.0f)
-		t = t2;
-	if (t < 0.0f)
-		return false;
-
-	// Check if hit point is within arrow length bounds
-	Zenith_Maths::Vector3 hitPoint = rayOrigin + rayDir * t;
-	float alongAxis = glm::dot(hitPoint, axis);
-
-	// If first hit is outside bounds, try the second hit
-	if (alongAxis < 0.0f || alongAxis > arrowLength)
-	{
-		t = t2;
-		if (t < 0.0f)
-			return false;
-		hitPoint = rayOrigin + rayDir * t;
-		alongAxis = glm::dot(hitPoint, axis);
-	}
-
-	if (alongAxis >= 0.0f && alongAxis <= arrowLength)
-	{
-		outDistance = t;
-		return true;
-	}
-
-	return false;
-}
-
-// Legacy function - kept for reference but no longer used
-bool Flux_Gizmos::RayIntersectsArrow(const Zenith_Maths::Vector3& rayOrigin, const Zenith_Maths::Vector3& rayDir, const Zenith_Maths::Vector3& axis, float& outDistance)
-{
-	// Redirect to world-space version with default parameters
-	// This is here for API compatibility but shouldn't be called
-	return RayIntersectsArrowWorld(rayOrigin, rayDir, axis,
-		GIZMO_INTERACTION_THRESHOLD * s_fGizmoScale,
-		GIZMO_ARROW_LENGTH * s_fGizmoScale * GIZMO_INTERACTION_LENGTH_MULTIPLIER,
-		outDistance);
-}
-
-// FIXED: World-space circle intersection with explicit radius and threshold
-bool Flux_Gizmos::RayIntersectsCircleWorld(const Zenith_Maths::Vector3& rayOrigin, const Zenith_Maths::Vector3& rayDir,
-	const Zenith_Maths::Vector3& normal, float circleRadius, float threshold, float& outDistance)
-{
-	// Ray-plane intersection
-	float denom = glm::dot(normal, rayDir);
-	if (fabsf(denom) < 0.0001f)
-		return false;  // Parallel
-
-	float t = -glm::dot(normal, rayOrigin) / denom;
-	if (t < 0.0f)
-		return false;
-
-	// Check if hit point is near the circle (torus-like region)
-	Zenith_Maths::Vector3 hitPoint = rayOrigin + rayDir * t;
-	float distFromCenter = glm::length(hitPoint);
-
-	if (fabsf(distFromCenter - circleRadius) < threshold)
-	{
-		outDistance = t;
-		return true;
-	}
-
-	return false;
-}
-
-bool Flux_Gizmos::RayIntersectsCircle(const Zenith_Maths::Vector3& rayOrigin, const Zenith_Maths::Vector3& rayDir, const Zenith_Maths::Vector3& normal, float& outDistance)
-{
-	// Legacy - redirect to world-space version
-	return RayIntersectsCircleWorld(rayOrigin, rayDir, normal,
-		GIZMO_CIRCLE_RADIUS * s_fGizmoScale,
-		GIZMO_INTERACTION_THRESHOLD * s_fGizmoScale,
-		outDistance);
-}
-
-// FIXED: World-space cube intersection with explicit size
-bool Flux_Gizmos::RayIntersectsCubeWorld(const Zenith_Maths::Vector3& rayOrigin, const Zenith_Maths::Vector3& rayDir,
-	const Zenith_Maths::Vector3& center, float cubeSize, float& outDistance)
-{
-	// Simple AABB intersection
-	float half = cubeSize * 0.5f;
-	Zenith_Maths::Vector3 boxMin = center - Zenith_Maths::Vector3(half);
-	Zenith_Maths::Vector3 boxMax = center + Zenith_Maths::Vector3(half);
-
-	Zenith_Maths::Vector3 invDir = 1.0f / rayDir;
-	Zenith_Maths::Vector3 t0 = (boxMin - rayOrigin) * invDir;
-	Zenith_Maths::Vector3 t1 = (boxMax - rayOrigin) * invDir;
-
-	Zenith_Maths::Vector3 tmin = glm::min(t0, t1);
-	Zenith_Maths::Vector3 tmax = glm::max(t0, t1);
-
-	float tNear = glm::max(glm::max(tmin.x, tmin.y), tmin.z);
-	float tFar = glm::min(glm::min(tmax.x, tmax.y), tmax.z);
-
-	if (tNear > tFar || tFar < 0.0f)
-		return false;
-
-	outDistance = tNear > 0.0f ? tNear : tFar;
-	return true;
-}
-
-bool Flux_Gizmos::RayIntersectsCube(const Zenith_Maths::Vector3& rayOrigin, const Zenith_Maths::Vector3& rayDir, const Zenith_Maths::Vector3& center, float& outDistance)
-{
-	// Legacy - redirect to world-space version
-	return RayIntersectsCubeWorld(rayOrigin, rayDir, center,
-		GIZMO_CUBE_SIZE * s_fGizmoScale,
-		outDistance);
 }
 
 // ==================== TRANSFORM MANIPULATION ====================
