@@ -207,6 +207,30 @@ Store `Zenith_EntityID` instead of `Zenith_Entity*` for robust selection.
 
 ## Gizmo System
 
+**⚠️ CRITICAL: Full gizmo documentation is in [Flux/Gizmos/CLAUDE.md](../Flux/Gizmos/CLAUDE.md)**
+
+The gizmo system is implemented in `Zenith/Flux/Gizmos/` as true 3D geometry rendered via the Flux pipeline. The Editor provides the integration layer between user input and the Flux_Gizmos system.
+
+### Architecture Overview
+
+```
+Zenith_Editor.cpp (Integration Layer)
+    │
+    ├── Entity Selection (via Zenith_SelectionSystem)
+    │   └── Sets Flux_Gizmos::SetTargetEntity()
+    │
+    ├── Gizmo Mode (W/E/R keys → Translate/Rotate/Scale)
+    │   └── Sets Flux_Gizmos::SetGizmoMode()
+    │
+    ├── Mouse Input Forwarding
+    │   ├── MouseDown → Flux_Gizmos::BeginInteraction()
+    │   ├── MouseMove → Flux_Gizmos::UpdateInteraction()
+    │   └── MouseUp   → Flux_Gizmos::EndInteraction()
+    │
+    └── Ray Generation
+        └── Zenith_Gizmo::ScreenToWorldRay()
+```
+
 ### Coordinate Systems
 
 The gizmo system deals with multiple coordinate spaces:
@@ -226,7 +250,7 @@ The gizmo system deals with multiple coordinate spaces:
 // 1. Normalize to NDC [-1, 1]
 float x = (mousePos.x / viewportSize.x) * 2.0f - 1.0f;
 float y = (mousePos.y / viewportSize.y) * 2.0f - 1.0f;
-y = -y;  // Invert for Vulkan top-left origin
+// NOTE: No Y-inversion! The projection matrix already handles coordinate system
 
 // 2. Clip space
 Vector4 rayClip(x, y, -1.0, 1.0);
@@ -240,48 +264,81 @@ Vector4 rayWorld = inverse(viewMatrix) * rayEye;
 Vector3 rayDir = normalize(rayWorld.xyz);
 ```
 
-**Critical:** The Y-axis inversion is necessary because Vulkan uses top-left origin, while NDC uses bottom-left.
+**⚠️ BUG HISTORY - Y-Axis Inversion:**
+There was originally a `y = -y` line here that caused inverted Y-axis interaction (clicking top hit bottom).
+The projection matrix already handles the Vulkan coordinate system convention, so NO manual Y-inversion is needed.
+See [Flux/Gizmos/CLAUDE.md - Bug History](../Flux/Gizmos/CLAUDE.md#critical-bug-history) for details.
 
-### Translation Gizmo Interaction
+### Editor Integration with Flux_Gizmos
 
-**State Machine:**
-```
-Idle ──MouseDown on Axis──> Manipulating
-                           <──MouseUp──
-```
+**Location:** `Zenith_Editor.cpp` - `RenderGizmos()` function
 
-**Constraint Planes:**
-- X-axis movement: Constrained to XZ plane (normal = [0, 1, 0])
-- Y-axis movement: Constrained to XY plane (normal = [0, 0, 1])
-- Z-axis movement: Constrained to YZ plane (normal = [1, 0, 0])
+**CRITICAL: State Update Guard**
 
-**Ray-Plane Intersection:**
+The editor must NOT update gizmo state while an interaction is in progress:
+
 ```cpp
-float t = dot(planePoint - rayOrigin, planeNormal) / dot(rayDir, planeNormal);
-Vector3 intersection = rayOrigin + rayDir * t;
+void Zenith_Editor::RenderGizmos()
+{
+    // CRITICAL: Only update target/mode when NOT interacting!
+    // Otherwise we reset s_bIsInteracting = false every frame
+    if (!Flux_Gizmos::IsInteracting())
+    {
+        Flux_Gizmos::SetTargetEntity(pxSelectedEntity);
+        Flux_Gizmos::SetGizmoMode(static_cast<GizmoMode>(s_eGizmoMode));
+    }
+
+    // ... mouse input handling ...
+}
+```
+
+**Why This Matters:**
+`SetTargetEntity()` resets `s_bIsInteracting = false` to clear stale interaction state.
+If called every frame during dragging, it terminates the drag after ~1 frame.
+
+### Mouse Input Flow
+
+```cpp
+// In RenderGizmos():
+
+// 1. Generate ray from mouse position
+Zenith_Maths::Vector3 rayOrigin, rayDir;
+Zenith_Gizmo::ScreenToWorldRay(mousePos, viewportSize, rayOrigin, rayDir);
+
+// 2. Handle mouse events
+if (mousePressed && !wasInteracting)
+{
+    Flux_Gizmos::BeginInteraction(rayOrigin, rayDir);
+}
+else if (mouseDown && Flux_Gizmos::IsInteracting())
+{
+    Flux_Gizmos::UpdateInteraction(rayOrigin, rayDir);
+}
+else if (mouseReleased)
+{
+    Flux_Gizmos::EndInteraction();
+}
 ```
 
 ### Gizmo Rendering
 
-**Method:** ImGui overlay (2D lines in screen space)
+**Method:** True 3D geometry rendered via Flux pipeline
 
-**Advantages:**
-- Fast to implement
-- No 3D geometry pipeline needed
-- Always renders on top
+The gizmos are rendered as actual 3D geometry (cylinders, cones, circles, cubes) using:
+- Custom Flux shader (`Gizmo.shader`)
+- Per-axis vertex/index buffers
+- Auto-scaling based on camera distance
 
-**Disadvantages:**
-- No depth testing
-- Can't properly occlude behind objects
-
-**Future Enhancement:**
-Render as actual 3D geometry using Flux command lists for proper depth handling.
+**Render Pipeline Position:**
+Gizmos render AFTER the main scene in a forward pass, writing to the final render target.
+They use depth testing against the scene but write their own depth values.
 
 ### Constant Screen-Space Size
 
 ```cpp
-float distanceToCamera = length(entityPos - cameraPos);
-float gizmoWorldSize = distanceToCamera * 0.15f;  // Scale factor
+// In Flux_Gizmos.cpp
+float distanceToCamera = Zenith_Maths::Length(xGizmoPos - cameraPos);
+s_fGizmoScale = distanceToCamera * GIZMO_SCALE_FACTOR;  // 0.15f
 ```
 
 This ensures the gizmo appears the same size on screen regardless of camera distance.
@@ -364,18 +421,22 @@ The editor needs access to private scene data. Instead of making everything publ
 ### Current Limitations
 
 1. **Scene state not preserved** in play mode (see "Scene State Backup" above)
-2. **No axis hit testing** - Gizmo always starts on X axis
-3. **No rotate/scale gizmos** - Stubs in place, needs implementation
-4. **Entity pointers can become invalid** - Should use EntityID
-5. **No undo/redo** - Requires command pattern implementation
-6. **No multi-selection** - Only one entity at a time
-7. **Gizmo has no depth testing** - Always renders on top
+2. **Entity pointers can become invalid** - Should use EntityID
+3. **No undo/redo** - Requires command pattern implementation
+4. **No multi-selection** - Only one entity at a time
+
+### Recently Fixed (2025)
+
+- ✅ **Axis hit testing** - Now uses proper ray-cylinder intersection in world space
+- ✅ **3D gizmo rendering** - True 3D geometry via Flux pipeline with depth testing
+- ✅ **Rotate/scale gizmo geometry** - Generated and renderable (interaction WIP)
+- ✅ **Translation gizmo** - Fully functional with line-line closest point math
 
 ### Roadmap
 
 **Short Term:**
-- [ ] Implement proper axis hit testing for gizmos
-- [ ] Add rotate and scale gizmo implementations
+- [ ] Implement rotate gizmo interaction
+- [ ] Implement scale gizmo interaction
 - [ ] Store selection by EntityID instead of pointer
 - [ ] Add keyboard shortcuts (Q/W/E/R for gizmo modes)
 
@@ -388,7 +449,6 @@ The editor needs access to private scene data. Instead of making everything publ
 **Long Term:**
 - [ ] Prefab system
 - [ ] Visual scripting integration
-- [ ] 3D gizmo rendering with depth testing
 - [ ] Asset browser panel
 
 ## Debugging Tips
@@ -414,6 +474,19 @@ vkCmdDraw(): Image layout mismatch
 2. Verify camera matrices are valid
 3. Check gizmo is not behind camera (negative Z)
 4. Ensure viewport is focused/hovered
+5. Verify `Flux_Gizmos::Initialise()` was called at startup
+
+**Gizmo not responding to clicks:**
+1. Check that `SetTargetEntity()` is NOT called during interaction (see "State Update Guard" above)
+2. Verify ray origin and direction are in world space
+3. Check `GIZMO_INTERACTION_LENGTH_MULTIPLIER` is 1.0 (not larger)
+4. Ensure gizmo scale (`s_fGizmoScale`) is reasonable for camera distance
+
+**Gizmo clicks register in wrong position:**
+1. Check `ScreenToWorldRay()` for Y-axis issues (should NOT have `y = -y`)
+2. Verify viewport position offset is subtracted from mouse position
+3. Check camera view/projection matrices are correct
+4. See [Flux/Gizmos/CLAUDE.md - Bug History](../Flux/Gizmos/CLAUDE.md#critical-bug-history)
 
 **Selection not working:**
 1. Verify UpdateBoundingBoxes() is called
@@ -464,6 +537,7 @@ If you change the core engine and break the editor:
 
 ## References
 
+- **Flux Gizmos Documentation** - See [Flux/Gizmos/CLAUDE.md](../Flux/Gizmos/CLAUDE.md) - **CRITICAL: Read before modifying gizmo code**
 - **EDITOR_IMPLEMENTATION_PLAN.md** - Comprehensive implementation guide with detailed algorithms
 - **ImGui Documentation** - https://github.com/ocornut/imgui
 - **Vulkan Spec** - https://www.khronos.org/vulkan/
@@ -471,6 +545,6 @@ If you change the core engine and break the editor:
 
 ---
 
-**Last Updated:** 2025-01-XX
+**Last Updated:** 2025-12
 **Author:** Claude (Anthropic)
-**Status:** Editor functional, scene state preservation pending
+**Status:** Editor functional, translation gizmo working, scene state preservation pending

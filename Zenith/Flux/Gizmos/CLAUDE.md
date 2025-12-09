@@ -4,392 +4,687 @@
 
 The Flux Gizmos system provides interactive 3D manipulation tools for the Zenith Editor, allowing users to transform entities (translate, rotate, scale) directly in the 3D viewport using visual gizmos.
 
+**Key Files:**
+- [Flux_Gizmos.h](Flux_Gizmos.h) / [Flux_Gizmos.cpp](Flux_Gizmos.cpp) - Core gizmo rendering and interaction
+- [Zenith_Gizmo.h](../../Editor/Zenith_Gizmo.h) / [Zenith_Gizmo.cpp](../../Editor/Zenith_Gizmo.cpp) - Utility functions (ScreenToWorldRay)
+- [Zenith_Editor.cpp](../../Editor/Zenith_Editor.cpp) - Editor integration and input handling
+
+---
+
+## ⚠️ CRITICAL BUG HISTORY - READ BEFORE MODIFYING
+
+The gizmo system has had several subtle bugs that took significant debugging effort to resolve. Before making ANY changes, understand these pitfalls:
+
+### Bug #1: Interaction State Reset Every Frame (CRITICAL)
+
+**Symptom:** Dragging stops responding after a fraction of a second
+
+**Root Cause:** `RenderGizmos()` was calling `SetTargetEntity()` and `SetGizmoMode()` every frame, which reset `s_bIsInteracting = false`, immediately ending the drag operation.
+
+**Location:** [Zenith_Editor.cpp:693-700](../../Editor/Zenith_Editor.cpp#L693-L700)
+
+**Fix:** Only update target/mode when NOT actively interacting:
+```cpp
+// CRITICAL: Only update target/mode when NOT interacting!
+if (!Flux_Gizmos::IsInteracting())
+{
+    Flux_Gizmos::SetTargetEntity(pxSelectedEntity);
+    Flux_Gizmos::SetGizmoMode(static_cast<GizmoMode>(s_eGizmoMode));
+}
+```
+
+**Lesson:** Never reset interaction state from render/update functions that run every frame.
+
+---
+
+### Bug #2: Raycast Coordinate Space Mismatch (CRITICAL)
+
+**Symptom:** Gizmos can only be clicked near the world origin; clicking elsewhere misses
+
+**Root Cause:** The ray origin was transformed to "local space" (divided by scale) but the ray direction was NOT, causing the intersection math to mix units:
+
+```cpp
+// BROKEN - Mixed coordinate spaces!
+Zenith_Maths::Vector3 localRayOrigin = (rayOrigin - xGizmoPos) / s_fGizmoScale;
+Zenith_Maths::Vector3 localRayDir = rayDir;  // NOT scaled - unit mismatch!
+```
+
+When the quadratic intersection formula uses `localRayOrigin` (in local units) with `localRayDir` (in world units) and `GIZMO_INTERACTION_THRESHOLD` (in local units), the math produces incorrect results.
+
+**Location:** [Flux_Gizmos.cpp:589-601](Flux_Gizmos.cpp#L589-L601)
+
+**Fix:** Do ALL calculations in world space by scaling the thresholds instead:
+```cpp
+// FIXED - All in world space
+Zenith_Maths::Vector3 relativeRayOrigin = rayOrigin - xGizmoPos;  // World units
+float worldArrowLength = GIZMO_ARROW_LENGTH * s_fGizmoScale;       // Scale to world
+float worldInteractionThreshold = GIZMO_INTERACTION_THRESHOLD * s_fGizmoScale;
+```
+
+**Lesson:** Never mix coordinate spaces in intersection math. Either transform everything to local space OR scale constants to world space.
+
+---
+
+### Bug #3: ApplyTranslation Sign Error (CRITICAL)
+
+**Symptom:** Objects move in the wrong direction, often opposite to mouse drag
+
+**Root Cause:** The `w` vector in the line-line closest point formula had the wrong sign:
+
+```cpp
+// BROKEN - Sign is inverted!
+Zenith_Maths::Vector3 w = rayOrigin - s_xInitialEntityPosition;  // P2 - P1 (WRONG!)
+```
+
+The standard formula requires `w = P1 - P2` (axis origin minus ray origin). Getting this backwards causes `t_current` to have the wrong sign.
+
+**Location:** [Flux_Gizmos.cpp:864](Flux_Gizmos.cpp#L864)
+
+**Fix:**
+```cpp
+// FIXED - Correct sign
+Zenith_Maths::Vector3 w = s_xInitialEntityPosition - rayOrigin;  // P1 - P2 (CORRECT!)
+```
+
+**Lesson:** Line-line closest point formulas are sign-sensitive. Always verify `w = Line1Origin - Line2Origin`.
+
+---
+
+### Bug #4: Y-Axis Inversion in Screen-to-World Ray
+
+**Symptom:** Clicking top of screen hits bottom gizmos; dragging up moves objects down
+
+**Root Cause:** Unnecessary Y-axis flip in `ScreenToWorldRay()`:
+
+```cpp
+// BROKEN - Flip was causing inverted Y interaction
+y = -y;  // Invert Y for Vulkan
+```
+
+The projection matrix already handles coordinate system differences; the extra flip inverted everything.
+
+**Location:** [Zenith_Gizmo.cpp:486](../../Editor/Zenith_Gizmo.cpp#L486)
+
+**Fix:** Remove the flip:
+```cpp
+// FIXED - Projection matrix handles coordinate system
+// Don't flip Y - causes inverted interaction
+```
+
+**Lesson:** Understand your projection matrix's coordinate conventions before adding manual flips.
+
+---
+
+### Bug #5: Interaction Length Multiplier Too Large
+
+**Symptom:** False-positive hits when cursor is far from gizmo in screen space
+
+**Root Cause:** `GIZMO_INTERACTION_LENGTH_MULTIPLIER = 10.0f` extended the interaction cylinder to 10x the visual arrow length.
+
+**Location:** [Flux_Gizmos.cpp:25](Flux_Gizmos.cpp#L25)
+
+**Fix:** Set multiplier to `1.0f` to match visual bounds.
+
+**Lesson:** Debug visualization should match actual interaction bounds. Use the wireframe debug cubes to verify.
+
+---
+
 ## Architecture
 
-### Components
+### System Overview
 
-**1. Gizmo Rendering** ([Flux_Gizmos.h](Flux_Gizmos.h), [Flux_Gizmos.cpp](Flux_Gizmos.cpp))
-- Custom geometry generation for arrows, circles, and cubes
-- Forward rendering with depth testing disabled (always on top)
-- Highlight system for hover and active states
-- Auto-scaling based on camera distance for consistent screen size
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                       Zenith_Editor                                  │
+│  ┌──────────────────────────────────────────────────────────────┐   │
+│  │ HandleGizmoInteraction()                                      │   │
+│  │   1. Get mouse position → viewport-relative coordinates       │   │
+│  │   2. ScreenToWorldRay() → ray origin + direction              │   │
+│  │   3. On mouse down: BeginInteraction(ray)                     │   │
+│  │   4. While dragging: UpdateInteraction(ray)                   │   │
+│  │   5. On mouse up: EndInteraction()                            │   │
+│  └──────────────────────────────────────────────────────────────┘   │
+│                                ↓                                     │
+│  ┌──────────────────────────────────────────────────────────────┐   │
+│  │ RenderGizmos()                                                │   │
+│  │   - SetTargetEntity() (only when not interacting!)            │   │
+│  │   - SetGizmoMode()                                            │   │
+│  │   - SubmitRenderTask()                                        │   │
+│  └──────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────┘
+                                 ↓
+┌─────────────────────────────────────────────────────────────────────┐
+│                       Flux_Gizmos                                    │
+│  ┌──────────────────────────────────────────────────────────────┐   │
+│  │ BeginInteraction(rayOrigin, rayDir)                           │   │
+│  │   1. RaycastGizmo() → which component was clicked             │   │
+│  │   2. Store: s_xInitialEntityPosition, s_xInteractionStartPos  │   │
+│  │   3. Set: s_bIsInteracting = true, s_eActiveComponent         │   │
+│  └──────────────────────────────────────────────────────────────┘   │
+│  ┌──────────────────────────────────────────────────────────────┐   │
+│  │ UpdateInteraction(rayOrigin, rayDir)                          │   │
+│  │   - ApplyTranslation() / ApplyRotation() / ApplyScale()       │   │
+│  │   - Modifies entity's TransformComponent                      │   │
+│  └──────────────────────────────────────────────────────────────┘   │
+│  ┌──────────────────────────────────────────────────────────────┐   │
+│  │ Render()                                                      │   │
+│  │   - Calculate gizmo scale from camera distance                │   │
+│  │   - Build model matrix: translate(entityPos) * scale(gizmoScale)│
+│  │   - Submit draw commands for gizmo geometry                   │   │
+│  └──────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────┘
+```
 
-**2. Mouse Interaction**
-- Ray-gizmo intersection testing
-- Constraint-based dragging (axis-aligned translation, planar rotation, etc.)
-- Real-time entity transform manipulation
+### Interaction State Machine
 
-**3. Shader Pipeline** ([Flux_Gizmos.vert](../Shaders/Gizmos/Flux_Gizmos.vert), [Flux_Gizmos.frag](../Shaders/Gizmos/Flux_Gizmos.frag))
-- Unlit rendering for clear visibility
-- Per-vertex color with highlight intensity
-- Push constants for per-gizmo transform and state
+```
+                    ┌──────────────┐
+                    │     IDLE     │
+                    │ s_bIsInteracting = false
+                    │ s_eActiveComponent = None
+                    └──────┬───────┘
+                           │
+                           │ Mouse Down + RaycastGizmo() hits
+                           ↓
+                    ┌──────────────┐
+                    │  INTERACTING │
+                    │ s_bIsInteracting = true
+                    │ s_eActiveComponent = X/Y/Z
+                    │ s_xInitialEntityPosition stored
+                    │ s_xInteractionStartPos stored
+                    └──────┬───────┘
+                           │
+           ┌───────────────┼───────────────┐
+           │               │               │
+           ↓               ↓               ↓
+    UpdateInteraction  UpdateInteraction  Mouse Up
+    (every frame)      (every frame)          │
+           │               │               │
+           └───────────────┴───────────────┘
+                           │
+                           ↓
+                    ┌──────────────┐
+                    │     IDLE     │
+                    └──────────────┘
+```
 
-## Gizmo Modes
+**CRITICAL:** `SetTargetEntity()` and `SetGizmoMode()` both set `s_bIsInteracting = false`. Never call them during active interaction!
 
-### Translation Mode
-**Visual:** Three colored arrows (X=Red, Y=Green, Z=Blue)
-**Interaction:** Click and drag arrow to move entity along that axis
-**Implementation:** Line-ray closest point calculation projects mouse movement onto axis
+---
 
-### Rotation Mode
-**Visual:** Three colored circles/toruses around each axis
-**Interaction:** Click circle and drag to rotate around that axis
-**Implementation:** Projects mouse onto rotation plane, calculates angle from initial click point
+## Entity Selection → Gizmo Flow
 
-### Scale Mode
-**Visual:** Three colored arrows (like translation) + center cube for uniform scale
-**Interaction:**
-- Click arrow: Scale along that axis
-- Click center cube: Uniform scale (all axes)
-**Implementation:** Calculates scale factor from distance change along ray
+Before gizmos appear, an entity must be selected:
 
-## Usage
-
-### Initialization
+### 1. Object Picking (HandleObjectPicking)
 
 ```cpp
-#ifdef ZENITH_TOOLS
-void MyEditor::Initialise() {
-    Flux_Gizmos::Initialise();  // Load shaders, create pipelines, generate geometry
+// Get mouse position relative to viewport
+Zenith_Maths::Vector2 xViewportMousePos = {
+    static_cast<float>(xGlobalMousePos.x - s_xViewportPos.x),
+    static_cast<float>(xGlobalMousePos.y - s_xViewportPos.y)
+};
+
+// Convert to world ray
+Zenith_Maths::Vector3 xRayDir = Zenith_Gizmo::ScreenToWorldRay(
+    xViewportMousePos, {0, 0}, s_xViewportSize, xViewMatrix, xProjMatrix
+);
+
+// Raycast against scene entities
+Zenith_EntityID uHitEntityID = Zenith_SelectionSystem::RaycastSelect(xRayOrigin, xRayDir);
+
+// Store selection (by ID, not pointer!)
+SelectEntity(uHitEntityID);
+```
+
+### 2. Selection Stored
+
+```cpp
+static Zenith_EntityID s_uSelectedEntityID = INVALID_ENTITY_ID;
+
+Zenith_Entity* GetSelectedEntity() {
+    if (s_uSelectedEntityID == INVALID_ENTITY_ID)
+        return nullptr;
+
+    auto it = xScene.m_xEntityMap.find(s_uSelectedEntityID);
+    if (it == xScene.m_xEntityMap.end()) {
+        s_uSelectedEntityID = INVALID_ENTITY_ID;  // Entity no longer exists
+        return nullptr;
+    }
+    return &it->second;
 }
 ```
 
-### Rendering
+### 3. Gizmo Target Set
 
 ```cpp
-void MyEditor::Update() {
-    // Set target entity to manipulate
-    if (selectedEntity) {
-        Flux_Gizmos::SetTargetEntity(selectedEntity);
-    }
+void RenderGizmos() {
+    Zenith_Entity* pxSelectedEntity = GetSelectedEntity();
 
-    // Set gizmo mode based on user input (hotkeys, toolbar, etc.)
-    if (Input::IsKeyPressed(KEY_W))
-        Flux_Gizmos::SetGizmoMode(GizmoMode::Translate);
-    else if (Input::IsKeyPressed(KEY_E))
-        Flux_Gizmos::SetGizmoMode(GizmoMode::Rotate);
-    else if (Input::IsKeyPressed(KEY_R))
-        Flux_Gizmos::SetGizmoMode(GizmoMode::Scale);
-
-    // Submit rendering task
-    Flux_Gizmos::SubmitRenderTask();
-}
-
-void MyEditor::Render() {
-    Flux_Gizmos::WaitForRenderTask();
-}
-```
-
-### Mouse Interaction
-
-```cpp
-void MyEditor::HandleMouseInput() {
-    // Build ray from mouse cursor
-    Zenith_Physics::RaycastInfo rayInfo = Zenith_Physics::BuildRayFromMouse(camera);
-
-    // Begin interaction on mouse down
-    if (Input::IsMouseButtonPressed(MOUSE_LEFT)) {
-        Flux_Gizmos::BeginInteraction(rayInfo.m_xOrigin, rayInfo.m_xDirection);
-    }
-
-    // Update interaction while dragging
-    if (Flux_Gizmos::IsInteracting()) {
-        Flux_Gizmos::UpdateInteraction(rayInfo.m_xOrigin, rayInfo.m_xDirection);
-    }
-
-    // End interaction on mouse release
-    if (Input::IsMouseButtonReleased(MOUSE_LEFT)) {
-        Flux_Gizmos::EndInteraction();
+    // CRITICAL: Only when not interacting!
+    if (!Flux_Gizmos::IsInteracting()) {
+        Flux_Gizmos::SetTargetEntity(pxSelectedEntity);
     }
 }
 ```
 
-## Technical Details
+---
+
+## Screen-to-World Ray Mathematics
+
+### The Complete Pipeline
+
+```
+Screen Space (pixels)
+    ↓  mousePos = (px_x, px_y)
+    ↓
+Viewport Space (normalized)
+    ↓  normalized = mousePos / viewportSize → [0, 1]
+    ↓
+NDC (Normalized Device Coordinates)
+    ↓  ndc = normalized * 2 - 1 → [-1, 1]
+    ↓
+Clip Space
+    ↓  clip = (ndc.x, ndc.y, 0, 1)  // 0 = near plane for Vulkan
+    ↓
+View Space (Eye Space)
+    ↓  eye = inverse(projMatrix) * clip
+    ↓  eye.xyz /= eye.w  // Perspective divide
+    ↓
+World Space
+    ↓  world = inverse(viewMatrix) * (eye.xyz, 0)  // w=0 for direction
+    ↓  rayDir = normalize(world.xyz)
+```
+
+### Implementation
+
+```cpp
+Zenith_Maths::Vector3 Zenith_Gizmo::ScreenToWorldRay(
+    const Zenith_Maths::Vector2& mousePos,
+    const Zenith_Maths::Vector2& viewportPos,  // Usually (0,0) for relative coords
+    const Zenith_Maths::Vector2& viewportSize,
+    const Zenith_Maths::Matrix4& viewMatrix,
+    const Zenith_Maths::Matrix4& projMatrix)
+{
+    // STEP 1: Screen → NDC
+    float x = (mousePos.x / viewportSize.x) * 2.0f - 1.0f;
+    float y = (mousePos.y / viewportSize.y) * 2.0f - 1.0f;
+
+    // NOTE: Do NOT flip Y here - projection matrix handles coordinate system
+    // (Flipping Y was a bug that caused inverted interaction)
+
+    // STEP 2: Clip space point on near plane
+    // For Vulkan: depth = 0 is near plane, depth = 1 is far plane
+    Zenith_Maths::Vector4 rayClip(x, y, 0.0f, 1.0f);
+
+    // STEP 3: Unproject to view space
+    Zenith_Maths::Matrix4 invProj = glm::inverse(projMatrix);
+    Zenith_Maths::Vector4 rayEye = invProj * rayClip;
+
+    // Perspective divide
+    rayEye.x /= rayEye.w;
+    rayEye.y /= rayEye.w;
+    rayEye.z /= rayEye.w;
+    rayEye.w = 0.0f;  // Convert to direction (w=0 means no translation)
+
+    // STEP 4: Transform direction to world space
+    Zenith_Maths::Matrix4 invView = glm::inverse(viewMatrix);
+    Zenith_Maths::Vector4 rayWorld = invView * rayEye;
+
+    // STEP 5: Normalize
+    return glm::normalize(Zenith_Maths::Vector3(rayWorld.x, rayWorld.y, rayWorld.z));
+}
+```
+
+### Coordinate System Reference
+
+| Space | Origin | X | Y | Z | Range |
+|-------|--------|---|---|---|-------|
+| Screen | Top-left | Right | Down | - | [0, viewport] |
+| NDC | Center | Right | Up* | Into screen | [-1, 1] |
+| View | Camera | Right | Up | Forward | World units |
+| World | World origin | Engine convention | Engine convention | Engine convention | World units |
+
+*Note: NDC Y direction depends on projection matrix conventions. Vulkan uses top-left origin by default.
+
+---
+
+## Ray-Gizmo Intersection Mathematics
+
+### Ray-Cylinder Intersection (Arrow Axes)
+
+The translation/scale gizmo arrows are tested as finite cylinders along each axis.
+
+**Problem:** Find where ray `P = O + t*D` intersects cylinder of radius `r` along axis `A`.
+
+**Setup:**
+```
+Ray:      P(t) = rayOrigin + t * rayDir
+Cylinder: |P - (P·A)*A|² = r²,  where 0 ≤ P·A ≤ length
+```
+
+**Derivation:**
+
+The distance from point P to the axis is:
+```
+distToAxis = |P - (P·A)*A|
+```
+
+Substituting the ray equation and squaring:
+```
+|(O + t*D) - ((O + t*D)·A)*A|² = r²
+```
+
+Let:
+- `ao = rayOrigin` (relative to gizmo center)
+- `dotAxisDir = A · D`
+- `dotAxisOrigin = A · ao`
+
+This expands to quadratic form `at² + bt + c = 0`:
+```cpp
+float a = dot(D, D) - dotAxisDir * dotAxisDir;
+float b = 2.0f * (dot(D, ao) - dotAxisDir * dotAxisOrigin);
+float c = dot(ao, ao) - dotAxisOrigin * dotAxisOrigin - radius * radius;
+
+float discriminant = b*b - 4*a*c;
+if (discriminant < 0) return false;  // No intersection
+
+float t = (-b - sqrt(discriminant)) / (2*a);  // Closer hit
+```
+
+**Bounds Check:**
+
+After finding `t`, verify hit point is within arrow length:
+```cpp
+Vector3 hitPoint = rayOrigin + rayDir * t;
+float alongAxis = dot(hitPoint, axis);
+
+if (alongAxis >= 0.0f && alongAxis <= arrowLength)
+    return true;  // Valid hit
+```
+
+### Ray-Circle Intersection (Rotation Rings)
+
+Rotation gizmo rings are circles (torus cross-sections) in planes perpendicular to each axis.
+
+**Problem:** Find where ray hits the circle of radius `R` in plane with normal `N`.
+
+**Step 1: Ray-Plane Intersection**
+```cpp
+float denom = dot(N, D);
+if (abs(denom) < 0.0001f) return false;  // Ray parallel to plane
+
+float t = -dot(N, rayOrigin) / denom;
+if (t < 0) return false;  // Behind camera
+
+Vector3 hitPoint = rayOrigin + rayDir * t;
+```
+
+**Step 2: Check Distance to Circle**
+```cpp
+float distFromCenter = length(hitPoint);
+
+// Hit if we're within threshold of the circle's radius
+if (abs(distFromCenter - circleRadius) < threshold)
+    return true;
+```
+
+### Ray-AABB Intersection (Scale Cube)
+
+The center cube for uniform scaling uses slab-based AABB intersection.
+
+```cpp
+Vector3 invDir = 1.0f / rayDir;
+Vector3 t0 = (boxMin - rayOrigin) * invDir;
+Vector3 t1 = (boxMax - rayOrigin) * invDir;
+
+Vector3 tmin = min(t0, t1);
+Vector3 tmax = max(t0, t1);
+
+float tNear = max(max(tmin.x, tmin.y), tmin.z);
+float tFar = min(min(tmax.x, tmax.y), tmax.z);
+
+if (tNear <= tFar && tFar >= 0)
+    return true;
+```
+
+---
+
+## Translation Manipulation Mathematics
+
+The translation gizmo uses **line-line closest point** to project mouse movement onto the constraint axis.
+
+### Problem Statement
+
+Given:
+- **Axis line:** `A(t) = entityPos + t * axis` (the constraint axis)
+- **Ray line:** `R(s) = rayOrigin + s * rayDir` (current mouse ray)
+- **Initial click point:** `s_xInteractionStartPos` (where user first clicked)
+
+Find: How far along the axis to move the entity.
+
+### Line-Line Closest Point Formula
+
+The closest points between two lines minimizes |A(t) - R(s)|².
+
+**Standard notation:**
+```
+Line 1: P(t) = P1 + t * u    (Axis: entityPos, axis)
+Line 2: Q(s) = P2 + s * v    (Ray: rayOrigin, rayDir)
+
+w = P1 - P2                  (CRITICAL: Order matters!)
+a = u · u = 1                (axis is unit vector)
+b = u · v = axis · rayDir
+c = v · v = rayDir · rayDir
+d = u · w = axis · w
+e = v · w = rayDir · w
+```
+
+**Solution for t (position along axis):**
+```
+denom = a*c - b*b
+
+t = (b*e - c*d) / denom
+```
+
+**Implementation:**
+```cpp
+void Flux_Gizmos::ApplyTranslation(const Vector3& rayOrigin, const Vector3& rayDir)
+{
+    // Get constraint axis
+    Vector3 axis = GetAxisForComponent(s_eActiveComponent);  // (1,0,0), (0,1,0), or (0,0,1)
+
+    // Initial offset: how far along axis did user click?
+    Vector3 offsetToClick = s_xInteractionStartPos - s_xInitialEntityPosition;
+    float t_initial = dot(offsetToClick, axis);
+
+    // Line-line closest point
+    // CRITICAL: w = AxisOrigin - RayOrigin (P1 - P2)
+    Vector3 w = s_xInitialEntityPosition - rayOrigin;  // NOT rayOrigin - entityPos!
+
+    float a = 1.0f;                    // axis · axis = 1 (unit vector)
+    float b = dot(axis, rayDir);
+    float c = dot(rayDir, rayDir);    // ≈1 if normalized
+    float d = dot(axis, w);
+    float e = dot(rayDir, w);
+
+    float denom = a*c - b*b;
+
+    if (abs(denom) < 0.0001f)
+        return;  // Ray parallel to axis
+
+    float t_current = (b*e - c*d) / denom;
+
+    // Move entity by the difference
+    float delta_t = t_current - t_initial;
+    Vector3 newPosition = s_xInitialEntityPosition + axis * delta_t;
+
+    entity.SetPosition(newPosition);
+}
+```
+
+### Why the Sign of w Matters
+
+With `w = s_xInitialEntityPosition - rayOrigin` (correct):
+- Moving mouse right increases `e` (rayDir · w component)
+- This increases `t_current`
+- Entity moves in positive axis direction ✓
+
+With `w = rayOrigin - s_xInitialEntityPosition` (WRONG):
+- The signs of `d` and `e` are inverted
+- `t_current = (b*(-e) - c*(-d)) / denom = -(b*e - c*d) / denom`
+- Entity moves in OPPOSITE direction ✗
+
+---
+
+## Gizmo Rendering
 
 ### Geometry Generation
 
-**Arrow Geometry** (Translation & Scale):
-- Cylinder shaft: 8-segment circular cross-section
-- Cone head: Tapered tip for directional indication
-- Generated procedurally on initialization
-- Stored in GPU vertex/index buffers
+Gizmo geometry is generated procedurally at initialization:
 
-**Circle Geometry** (Rotation):
-- 64-segment torus ring around axis
-- Rendered as connected line segments (degenerate triangles)
-- Perpendicular to rotation axis
-
-**Cube Geometry** (Uniform Scale):
-- Simple 6-face cube at gizmo origin
-- Only visible in Scale mode
-
-### Raycasting
-
-**Ray-Cylinder Intersection** (Arrows):
-```cpp
-// Quadratic formula for ray-infinite-cylinder intersection
-// Then clamp to arrow length (0 to GIZMO_ARROW_LENGTH)
-float a = dot(rayDir, rayDir) - dot(axis, rayDir)^2;
-float b = 2 * (dot(rayDir, rayOrigin) - dot(axis, rayDir) * dot(axis, rayOrigin));
-float c = dot(rayOrigin, rayOrigin) - dot(axis, rayOrigin)^2 - radius^2;
-
-float t = (-b ± sqrt(b^2 - 4ac)) / 2a;
-if (0 <= dot(hitPoint, axis) <= arrowLength) -> HIT
+**Arrow (Translation/Scale):**
+```
+Shaft:  8-segment cylinder from origin along axis
+Head:   Cone at end of shaft
+Total:  ~100 triangles per arrow
 ```
 
-**Ray-Circle Intersection** (Rotation):
-```cpp
-// 1. Intersect ray with circle plane (perpendicular to axis)
-float t = -dot(axis, rayOrigin) / dot(axis, rayDir);
-Vector3 hitPoint = rayOrigin + rayDir * t;
-
-// 2. Check if hit point is on the circle (distance from center ≈ radius)
-if (abs(length(hitPoint) - circleRadius) < threshold) -> HIT
+**Circle (Rotation):**
+```
+Ring:   64-segment circle in plane perpendicular to axis
+Tube:   Optional torus for better visibility
+Total:  ~64-128 triangles per ring
 ```
 
-**Ray-AABB Intersection** (Cube):
-```cpp
-// Standard slab method
-Vector3 tMin = (boxMin - rayOrigin) / rayDir;
-Vector3 tMax = (boxMax - rayOrigin) / rayDir;
-
-float tNear = max(tMin.x, tMin.y, tMin.z);
-float tFar = min(tMax.x, tMax.y, tMax.z);
-
-if (tNear <= tFar && tFar >= 0) -> HIT
+**Cube (Uniform Scale):**
+```
+Standard cube centered at origin
+6 faces, 12 triangles
 ```
 
-### Transform Manipulation
+### Pipeline Configuration
 
-**Translation:**
 ```cpp
-// Project ray onto constraint axis to find closest point
-// This gives the translation amount along that axis
-Vector3 toRayOrigin = rayOrigin - initialEntityPosition;
-float rayDotAxis = dot(rayDir, axis);
-float originDotAxis = dot(toRayOrigin, axis);
-
-// Line-line closest point problem
-float t = originDotAxis - dot(rayDir - axis * rayDotAxis, toRayOrigin) /
-          (1.0 - rayDotAxis * rayDotAxis);
-
-Vector3 newPosition = initialEntityPosition + axis * t;
+Flux_PipelineSpecification xSpec;
+xSpec.m_bDepthTestEnabled = false;   // Always on top
+xSpec.m_bDepthWriteEnabled = false;
+xSpec.m_axBlendStates[0].m_bBlendEnabled = true;  // For transparency
 ```
-
-**Rotation:**
-```cpp
-// 1. Intersect current ray with rotation plane
-Vector3 currentPoint = rayOrigin + rayDir * t;
-
-// 2. Calculate angle between initial and current vectors
-Vector3 initialVec = normalize(interactionStartPos - entityPosition);
-Vector3 currentVec = normalize(currentPoint - entityPosition);
-
-float angle = acos(dot(initialVec, currentVec));
-
-// 3. Determine rotation direction using cross product
-if (dot(cross(initialVec, currentVec), axis) < 0)
-    angle = -angle;
-
-// 4. Apply delta rotation to initial rotation
-Quaternion deltaRotation = angleAxis(angle, axis);
-Quaternion newRotation = deltaRotation * initialEntityRotation;
-```
-
-**Scale:**
-```cpp
-// Calculate distance ratio from interaction start to current position
-float initialDist = length(interactionStartPos - entityPosition);
-float currentDist = length(currentRayPoint - entityPosition);
-
-float scaleFactor = currentDist / initialDist;
-
-// Apply to appropriate axis (or all axes for uniform scale)
-Vector3 newScale = initialEntityScale;
-switch (activeComponent) {
-    case ScaleX: newScale.x *= scaleFactor; break;
-    case ScaleY: newScale.y *= scaleFactor; break;
-    case ScaleZ: newScale.z *= scaleFactor; break;
-    case ScaleXYZ: newScale *= scaleFactor; break;  // Uniform
-}
-```
-
-### Rendering Pipeline
-
-**Vertex Input:**
-- Position (vec3) + Color (vec3) interleaved
-- 6 floats per vertex (24 bytes)
-
-**Pipeline State:**
-- **Depth Test:** Disabled (gizmos always on top)
-- **Depth Write:** Disabled
-- **Blending:** Enabled (for semi-transparent hover states)
-- **Topology:** Triangle list
-- **Cull Mode:** Back-face culling
-
-**Descriptor Sets:**
-- Set 0, Binding 0: Frame constants (view/projection matrices)
-
-**Push Constants:**
-```cpp
-struct GizmoPushConstants {
-    mat4 modelMatrix;           // Gizmo world transform
-    float highlightIntensity;   // 0=normal, 0.5=hovered, 1.0=active
-    float padding[3];
-};
-```
-
-**Shaders:**
-- Vertex: Transforms geometry, applies highlight to color
-- Fragment: Simple unlit output (gizmos should be clearly visible)
 
 ### Auto-Scaling
 
-Gizmos automatically scale with camera distance to maintain consistent screen size:
+Gizmos maintain constant screen-space size:
 
 ```cpp
-float distance = length(entityPosition - cameraPosition);
-float gizmoScale = distance / AUTO_SCALE_DISTANCE;  // AUTO_SCALE_DISTANCE = 5.0
+float distance = length(entityPos - cameraPos);
+float gizmoScale = distance / GIZMO_AUTO_SCALE_DISTANCE;  // 5.0 = reference distance
 
-Matrix4 gizmoMatrix = translate(entityPosition) * scale(gizmoScale);
+Matrix4 gizmoMatrix = translate(entityPos) * scale(gizmoScale);
 ```
 
-This ensures gizmos are:
-- Large enough to interact with when far away
-- Small enough not to obscure the entity when close
+At `GIZMO_AUTO_SCALE_DISTANCE` units from camera, gizmo has scale 1.0.
 
-## Integration with Editor
+---
 
-### Required Steps
+## Constants Reference
 
-1. **Initialize in Editor Startup:**
-```cpp
-Flux_Gizmos::Initialise();
-```
+| Constant | Value | Description |
+|----------|-------|-------------|
+| `GIZMO_ARROW_LENGTH` | 1.2 | Length of arrow in local units |
+| `GIZMO_ARROW_HEAD_LENGTH` | 0.3 | Cone head length |
+| `GIZMO_ARROW_HEAD_RADIUS` | 0.1 | Cone head radius |
+| `GIZMO_ARROW_SHAFT_RADIUS` | 0.03 | Cylinder shaft radius |
+| `GIZMO_CIRCLE_RADIUS` | 1.0 | Rotation ring radius |
+| `GIZMO_CUBE_SIZE` | 0.15 | Uniform scale cube size |
+| `GIZMO_INTERACTION_THRESHOLD` | 0.2 | Ray-cylinder hit tolerance |
+| `GIZMO_INTERACTION_LENGTH_MULTIPLIER` | 1.0 | Interaction bounds multiplier (was 10.0 - bug!) |
+| `GIZMO_AUTO_SCALE_DISTANCE` | 5.0 | Distance for scale=1.0 |
 
-2. **Update in Editor Loop:**
-```cpp
-// Set target and mode
-Flux_Gizmos::SetTargetEntity(selectedEntity);
-Flux_Gizmos::SetGizmoMode(currentMode);
+**Tuning Tips:**
+- Increase `INTERACTION_THRESHOLD` if clicking is too precise
+- Increase `INTERACTION_LENGTH_MULTIPLIER` slightly (1.3-1.5) if clicking endpoints is hard
+- Never set `INTERACTION_LENGTH_MULTIPLIER` above 2.0 - causes false positives
 
-// Handle mouse input
-HandleGizmoInteraction();
-
-// Submit rendering
-Flux_Gizmos::SubmitRenderTask();
-```
-
-3. **Wait Before Present:**
-```cpp
-Flux_Gizmos::WaitForRenderTask();
-```
-
-4. **Shutdown on Exit:**
-```cpp
-Flux_Gizmos::Shutdown();
-```
-
-### Example Editor Integration
-
-```cpp
-void Zenith_Editor::RenderGizmos() {
-    if (!s_pxSelectedEntity)
-        return;
-
-    // Update gizmo target
-    Flux_Gizmos::SetTargetEntity(s_pxSelectedEntity);
-    Flux_Gizmos::SetGizmoMode(s_eGizmoMode);
-
-    // Handle mouse interaction
-    if (s_bViewportHovered) {
-        Zenith_CameraComponent& camera = GetEditorCamera();
-        auto rayInfo = Zenith_Physics::BuildRayFromMouse(camera);
-
-        if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-            Flux_Gizmos::BeginInteraction(rayInfo.m_xOrigin, rayInfo.m_xDirection);
-        }
-
-        if (Flux_Gizmos::IsInteracting()) {
-            Flux_Gizmos::UpdateInteraction(rayInfo.m_xOrigin, rayInfo.m_xDirection);
-        }
-
-        if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
-            Flux_Gizmos::EndInteraction();
-        }
-    }
-
-    // Render
-    Flux_Gizmos::SubmitRenderTask();
-}
-```
+---
 
 ## Debug Features
 
-**Debug Variables** (ZENITH_TOOLS only):
+### Debug Visualization
+
+The system renders wireframe cubes showing interaction bounds:
+```cpp
+Flux_Primitives::AddWireframeCube(
+    xEntityPos + axis * GIZMO_ARROW_LENGTH * 0.5f * s_fGizmoScale,
+    Vector3(length/2, threshold, threshold) * s_fGizmoScale,
+    axisColor
+);
+```
+
+### Debug Variables (ZENITH_TOOLS)
+
 - `Editor/Gizmos/Render` - Toggle gizmo rendering
-- `Editor/Gizmos/Alpha` - Adjust gizmo opacity
+- `Editor/Gizmos/Alpha` - Adjust transparency
 
-**Profiling:**
-- `ZENITH_PROFILE_INDEX__FLUX_GIZMOS` tracks rendering performance
-- Viewable in ImGui profiler
+### Logging
 
-## Performance Considerations
-
-**Geometry:**
-- Static geometry generated once at initialization
-- Stored in GPU memory (no per-frame uploads)
-- Low poly count: ~300 triangles per gizmo mode
-
-**Rendering:**
-- Single draw call per gizmo component (3-4 total per frame)
-- No depth writes or complex shaders (fast fragment processing)
-- Auto-scales to avoid distant overdraw
-
-**Interaction:**
-- Raycasting is CPU-only (no GPU queries)
-- O(1) tests per frame (max 3-4 components)
-- Transforms applied directly to entity component (no intermediate state)
-
-## Limitations & Future Improvements
-
-**Current Limitations:**
-1. **No Multi-Selection:** Only one entity can have gizmo at a time
-2. **No Custom Axes:** Rotation/translation always world-aligned (not local-space)
-3. **No Snapping:** No grid/angle snapping for precise transformations
-4. **No Undo/Redo:** Transform changes aren't tracked for history
-
-**Potential Improvements:**
-1. **Local vs World Space Toggle:** Allow rotation/translation in entity's local coordinate frame
-2. **Multi-Entity Manipulation:** Apply transformations to multiple selected entities
-3. **Snapping System:** Grid snapping for translation, angle snapping for rotation
-4. **Plane Manipulation:** Add XY, YZ, XZ plane handles for 2-axis translation
-5. **Scale Planes:** Add planes for 2-axis scaling (scale XY together, etc.)
-6. **Better Visual Feedback:** Add visual guides (grid projection, angle arc, etc.)
-7. **Coordinate Display:** Show numerical values during manipulation
-8. **Camera-Relative Mode:** Rotate/translate relative to camera view
-9. **Touch/Tablet Support:** Multi-touch gestures for manipulation
-
-## File Structure
-
+Key functions log debug info:
+```cpp
+Zenith_Log("RaycastGizmo: GizmoPos=(%.1f,%.1f,%.1f), Scale=%.2f", ...);
+Zenith_Log("ApplyTranslation: t_initial=%.4f, t_current=%.4f, delta_t=%.4f", ...);
 ```
-Zenith/Flux/Gizmos/
-├── Flux_Gizmos.h              # Public API and data structures
-├── Flux_Gizmos.cpp            # Implementation
-├── CLAUDE.md                  # This documentation
-└── ../Shaders/Gizmos/
-    ├── Flux_Gizmos.vert       # Vertex shader (GLSL)
-    ├── Flux_Gizmos.frag       # Fragment shader (GLSL)
-    ├── Flux_Gizmos.vert.spv   # Compiled SPIR-V (generated)
-    └── Flux_Gizmos.frag.spv   # Compiled SPIR-V (generated)
-```
+
+---
+
+## Common Issues & Debugging
+
+### "Gizmo not responding to clicks"
+
+1. **Check `s_bIsInteracting`** - Is it being reset unexpectedly?
+2. **Check raycast** - Log ray origin/direction, verify they're sane
+3. **Check coordinate spaces** - Are all values in world space?
+4. **Check thresholds** - Is `GIZMO_INTERACTION_THRESHOLD` too small?
+
+### "Object moves wrong direction"
+
+1. **Check `w` sign** in ApplyTranslation - Must be `entityPos - rayOrigin`
+2. **Check Y-flip** in ScreenToWorldRay - Should NOT flip Y
+3. **Check axis vector** - Verify it's the correct axis for the component
+
+### "False positive hits far from gizmo"
+
+1. **Check `GIZMO_INTERACTION_LENGTH_MULTIPLIER`** - Should be 1.0
+2. **Check debug visualization** - Do wireframe boxes match visual gizmo?
+3. **Check coordinate space** - Is ray in world space, not local?
+
+### "Dragging stops after starting"
+
+1. **Check `RenderGizmos()`** - Is it calling `SetTargetEntity()` during drag?
+2. **Check mode changes** - Is gizmo mode changing during drag?
+3. **Check input handling** - Is `IsKeyDown()` returning false unexpectedly?
+
+---
+
+## Integration Checklist
+
+When integrating gizmos into a new editor:
+
+- [ ] Initialize: `Flux_Gizmos::Initialise()` at startup
+- [ ] Set target: `SetTargetEntity()` only when NOT interacting
+- [ ] Set mode: `SetGizmoMode()` only when NOT interacting
+- [ ] Handle input: `BeginInteraction()` on mouse down, `UpdateInteraction()` while held, `EndInteraction()` on release
+- [ ] Submit render: `SubmitRenderTask()` every frame
+- [ ] Wait for render: `WaitForRenderTask()` before present
+- [ ] Shutdown: `Flux_Gizmos::Shutdown()` on exit
+
+---
 
 ## References
 
-- **Entity-Component System:** See `Zenith/EntityComponent/CLAUDE.md`
-- **Flux Rendering:** See `Zenith/Flux/CLAUDE.md`
-- **Editor Architecture:** See `Games/Test/Build/Zenith/Editor/`
-- **Physics Raycasting:** See `Zenith/Physics/Zenith_Physics.h`
+- **Entity-Component System:** See [Zenith/EntityComponent/CLAUDE.md](../../EntityComponent/CLAUDE.md)
+- **Editor Architecture:** See [Zenith/Editor/CLAUDE.md](../../Editor/CLAUDE.md)
+- **Main Engine Docs:** See [CLAUDE.md](../../../CLAUDE.md)
+- **Line-Line Closest Point:** [Geometric Tools - Distance Between Lines](https://www.geometrictools.com/Documentation/DistanceLine3Line3.pdf)
 
 ---
 

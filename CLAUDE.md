@@ -154,6 +154,24 @@ Key pitfalls:
 - Buffer offsets: absolute vs relative - allocator uses relative, residency stores absolute
 - Vertex stride must be 60 bytes everywhere (not 12 for position-only)
 
+**Editor Gizmos (Tools Build Only):**
+- **Location:** `Zenith/Flux/Gizmos/`
+- **Documentation:** See [Flux/Gizmos/CLAUDE.md](Zenith/Flux/Gizmos/CLAUDE.md) - **CRITICAL: READ BEFORE MODIFYING**
+- 3D translation/rotation/scale gizmos rendered via Flux pipeline
+- Screen-to-world raycasting with ray-cylinder intersection for axis selection
+- Line-line closest point algorithm for translation manipulation
+- Auto-scaling based on camera distance for constant screen-space size
+- Integration with Editor via `Zenith_Editor.cpp` (see [Editor/CLAUDE.md](Zenith/Editor/CLAUDE.md))
+
+**⚠️ GIZMO SYSTEM WARNING:**
+The gizmo interaction system has had several critical bugs involving coordinate spaces and state management.
+Before making ANY changes, read the "Critical Bug History" section in [Flux/Gizmos/CLAUDE.md](Zenith/Flux/Gizmos/CLAUDE.md).
+Key pitfalls:
+- Do NOT call `SetTargetEntity()` during active interaction (resets state)
+- Ray origin and direction MUST both be in world space (not mixed local/world)
+- No Y-axis inversion in `ScreenToWorldRay()` - projection matrix handles it
+- `GIZMO_INTERACTION_LENGTH_MULTIPLIER` must be 1.0 (not larger)
+
 ### 3. Task System
 
 **Location:** `Zenith/TaskSystem/`
@@ -423,12 +441,14 @@ Zenith/
 ├── DebugVariables/    # Runtime-tweakable debug variables
 ├── EntityComponent/   # ECS implementation
 │   └── Components/    # Component definitions
+├── Editor/            # Editor tools (ZENITH_TOOLS only)
 ├── Flux/              # Vulkan renderer
 │   ├── StaticMeshes/  # Opaque geometry rendering
 │   ├── Shadows/       # Shadow map generation
 │   ├── DeferredShading/ # Lighting pass
 │   ├── Particles/     # Particle systems
 │   ├── Terrain/       # Terrain rendering & culling
+│   ├── Gizmos/        # 3D transform gizmos (ZENITH_TOOLS only)
 │   └── Shaders/       # GLSL shader source
 ├── Input/             # Keyboard/mouse/gamepad input
 ├── Maths/             # Math library (GLM wrapper)
