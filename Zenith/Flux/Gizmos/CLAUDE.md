@@ -129,6 +129,127 @@ The projection matrix already handles coordinate system differences; the extra f
 
 ---
 
+### Bug #6: Rotation Gizmo Circles Not Rendering (December 2024)
+
+**Symptom:** Rotation mode doesn't render any visible gizmos (though interaction still works)
+
+**Root Cause:** `GenerateCircleGeometry()` generated degenerate triangles for line rendering, but the pipeline uses `MESH_TOPOLOGY_TRIANGLES`:
+
+```cpp
+// BROKEN - Degenerate triangles won't render
+for (uint32_t i = 0; i < GIZMO_CIRCLE_SEGMENTS; ++i)
+{
+    indices.PushBack(i);
+    indices.PushBack((i + 1) % GIZMO_CIRCLE_SEGMENTS);
+    indices.PushBack(i);  // Degenerate triangle - THIS WON'T RENDER
+}
+```
+
+The comment "will need line topology" indicated the issue, but the circles were never converted to proper geometry.
+
+**Location:** [Flux_Gizmos.cpp:441-501](Flux_Gizmos.cpp#L441-L501)
+
+**Fix:** Convert circles to 3D tube/ribbon geometry with actual triangle quads:
+
+```cpp
+// FIXED: Generate circle as a 3D tube/ribbon with actual triangle geometry
+const float tubeThickness = 0.02f;  // Thickness of the tube in local space
+
+for (uint32_t i = 0; i < GIZMO_CIRCLE_SEGMENTS; ++i)
+{
+    float angle = (float)i / GIZMO_CIRCLE_SEGMENTS * 2.0f * 3.14159f;
+
+    Vector3 circlePos = tangent * cosf(angle) * GIZMO_CIRCLE_RADIUS + bitangent * sinf(angle) * GIZMO_CIRCLE_RADIUS;
+    Vector3 radialDir = normalize(circlePos);
+
+    // Create inner and outer vertices for tube
+    positions.PushBack(circlePos - radialDir * tubeThickness);
+    positions.PushBack(circlePos + radialDir * tubeThickness);
+}
+
+// Generate quad indices (two triangles per segment)
+for (uint32_t i = 0; i < GIZMO_CIRCLE_SEGMENTS; ++i)
+{
+    uint32_t baseIdx = i * 2;
+    uint32_t nextBaseIdx = ((i + 1) % GIZMO_CIRCLE_SEGMENTS) * 2;
+
+    // First triangle of quad
+    indices.PushBack(baseIdx);          // Inner current
+    indices.PushBack(baseIdx + 1);      // Outer current
+    indices.PushBack(nextBaseIdx);      // Inner next
+
+    // Second triangle of quad
+    indices.PushBack(baseIdx + 1);      // Outer current
+    indices.PushBack(nextBaseIdx + 1);  // Outer next
+    indices.PushBack(nextBaseIdx);      // Inner next
+}
+```
+
+**Lesson:** Always verify topology matches pipeline configuration. Degenerate triangles don't render with standard triangle topology.
+
+---
+
+### Bug #7: Scale Manipulation Too Aggressive (December 2024)
+
+**Symptom:** Scaling objects makes them grow/shrink by extreme amounts with tiny mouse movements
+
+**Root Cause:** `ApplyScale()` calculated scale factor based on camera-to-entity distance instead of axis projection:
+
+```cpp
+// BROKEN - Uses camera distance, not axis projection!
+Zenith_Maths::Vector3 toRayOrigin = rayOrigin - s_xInitialEntityPosition;
+float initialDist = glm::length(s_xInteractionStartPos - s_xInitialEntityPosition);
+float currentDist = glm::length(toRayOrigin + rayDir * glm::dot(rayDir, toRayOrigin));
+float scaleFactor = currentDist / (initialDist + 0.0001f);
+```
+
+This causes the scale to change dramatically with any mouse movement because the camera distance varies widely.
+
+**Location:** [Flux_Gizmos.cpp:799-827](Flux_Gizmos.cpp#L799-L827)
+
+**Fix:** Use the same line-line closest point algorithm as translation, then convert offset to scale factor:
+
+```cpp
+// FIXED: Use axis projection like translation does
+Vector3 axis = GetAxisForComponent(s_eActiveComponent);
+
+// For uniform scale, use camera view direction as constraint
+if (bUniformScale) {
+    Vector3 cameraPos = Flux_Graphics::GetCameraPosition();
+    axis = normalize(s_xInitialEntityPosition - cameraPos);
+}
+
+// Line-line closest point (same as translation)
+Vector3 offsetToClick = s_xInteractionStartPos - s_xInitialEntityPosition;
+float t_initial = dot(offsetToClick, axis);
+
+Vector3 w = s_xInitialEntityPosition - rayOrigin;
+float a = 1.0f;
+float b = dot(axis, rayDir);
+float c = dot(rayDir, rayDir);
+float d = dot(axis, w);
+float e = dot(rayDir, w);
+float denom = a*c - b*b;
+
+if (abs(denom) < 0.0001f) return;
+
+float t_current = (b*e - c*d) / denom;
+
+// Convert delta to scale factor
+float delta_t = t_current - t_initial;
+const float scaleSpeed = 0.5f;  // Adjust for sensitivity
+float scaleFactor = 1.0f + (delta_t * scaleSpeed);
+
+// Clamp to prevent negative scale
+scaleFactor = max(scaleFactor, 0.01f);
+```
+
+**Tuning:** Adjust `scaleSpeed` constant for desired sensitivity (0.5 = moderate, 1.0 = fast, 0.2 = slow).
+
+**Lesson:** Reuse proven algorithms. Translation and scale both need axis projection; don't reinvent the math.
+
+---
+
 ## Architecture
 
 ### System Overview
@@ -537,6 +658,101 @@ With `w = rayOrigin - s_xInitialEntityPosition` (WRONG):
 
 ---
 
+## Scale Manipulation Mathematics
+
+The scale gizmo uses the **same line-line closest point** algorithm as translation, but converts the axis offset to a scale multiplier.
+
+### Problem Statement
+
+Given:
+- **Axis line:** `A(t) = entityPos + t * axis` (the constraint axis)
+- **Ray line:** `R(s) = rayOrigin + s * rayDir` (current mouse ray)
+- **Initial scale:** `s_xInitialEntityScale` (scale when drag started)
+
+Find: The new scale factor to apply.
+
+### Implementation
+
+```cpp
+void Flux_Gizmos::ApplyScale(const Vector3& rayOrigin, const Vector3& rayDir)
+{
+    // Get constraint axis
+    Vector3 axis = GetAxisForComponent(s_eActiveComponent);  // (1,0,0), (0,1,0), or (0,0,1)
+
+    // Special case: Uniform scale uses camera view direction
+    bool bUniformScale = (s_eActiveComponent == GizmoComponent::ScaleXYZ);
+    if (bUniformScale) {
+        Vector3 cameraPos = Flux_Graphics::GetCameraPosition();
+        axis = normalize(s_xInitialEntityPosition - cameraPos);
+    }
+
+    // Initial offset: how far along axis did user click?
+    Vector3 offsetToClick = s_xInteractionStartPos - s_xInitialEntityPosition;
+    float t_initial = dot(offsetToClick, axis);
+
+    // Line-line closest point (identical to translation)
+    Vector3 w = s_xInitialEntityPosition - rayOrigin;
+
+    float a = 1.0f;
+    float b = dot(axis, rayDir);
+    float c = dot(rayDir, rayDir);
+    float d = dot(axis, w);
+    float e = dot(rayDir, w);
+    float denom = a*c - b*b;
+
+    if (abs(denom) < 0.0001f)
+        return;  // Ray parallel to axis
+
+    float t_current = (b*e - c*d) / denom;
+
+    // Convert offset to scale factor
+    float delta_t = t_current - t_initial;
+    const float scaleSpeed = 0.5f;  // Tunable sensitivity
+    float scaleFactor = 1.0f + (delta_t * scaleSpeed);
+
+    // Prevent negative/zero scale
+    scaleFactor = max(scaleFactor, 0.01f);
+
+    // Apply per-axis or uniform
+    Vector3 newScale = s_xInitialEntityScale;
+    if (bUniformScale) {
+        newScale *= scaleFactor;
+    } else {
+        newScale[axisIndex] *= scaleFactor;
+    }
+
+    entity.SetScale(newScale);
+}
+```
+
+### Scale Speed Tuning
+
+The `scaleSpeed` constant controls how much scale changes per unit of mouse movement:
+
+| scaleSpeed | Behavior | Best For |
+|------------|----------|----------|
+| 0.2 | Slow, precise | Fine-tuning, architectural work |
+| 0.5 | Moderate (default) | General use |
+| 1.0 | Fast | Large objects, quick iteration |
+| 2.0+ | Very fast | Not recommended - too sensitive |
+
+**Formula:** `scaleFactor = 1.0 + (delta_t * scaleSpeed)`
+
+Example:
+- Mouse moves 1.0 units along axis
+- `delta_t = 1.0`
+- With `scaleSpeed = 0.5`: `scaleFactor = 1.0 + (1.0 * 0.5) = 1.5` → 50% larger
+- With `scaleSpeed = 1.0`: `scaleFactor = 1.0 + (1.0 * 1.0) = 2.0` → 100% larger (2x)
+
+### Uniform Scale Behavior
+
+When dragging the center cube for uniform scaling:
+- Uses camera-to-entity direction as the "constraint axis"
+- Allows scaling toward/away from camera
+- All three axes (X, Y, Z) scale by the same factor
+
+---
+
 ## Gizmo Rendering
 
 ### Geometry Generation
@@ -553,8 +769,10 @@ Total:  ~100 triangles per arrow
 **Circle (Rotation):**
 ```
 Ring:   64-segment circle in plane perpendicular to axis
-Tube:   Optional torus for better visibility
-Total:  ~64-128 triangles per ring
+Tube:   3D ribbon/tube with inner and outer vertices (tubeThickness = 0.02)
+        Each segment creates 2 vertices (inner/outer)
+        Each quad between segments = 2 triangles
+Total:  128 triangles per ring (64 segments × 2 triangles)
 ```
 
 **Cube (Uniform Scale):**
