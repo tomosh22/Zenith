@@ -1,7 +1,7 @@
 #include "Zenith.h"
 #include "Physics/Zenith_Physics.h"
+#include "Physics/Zenith_PhysicsMeshGenerator.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
-#include "EntityComponent/Components/Zenith_PhysicsMeshGenerator.h"
 #include "Zenith_OS_Include.h"
 
 JPH::TempAllocatorImpl* Zenith_Physics::s_pxTempAllocator = nullptr;
@@ -245,6 +245,13 @@ void Zenith_Physics::SetAngularVelocity(JPH::Body* pxBody, const Zenith_Maths::V
 	if (!pxBody) return;
 	JPH::BodyInterface& xBodyInterface = s_pxPhysicsSystem->GetBodyInterface();
 	xBodyInterface.SetAngularVelocity(pxBody->GetID(), JPH::Vec3(xVelocity.x, xVelocity.y, xVelocity.z));
+}
+
+Zenith_Maths::Vector3 Zenith_Physics::GetAngularVelocity(JPH::Body* pxBody)
+{
+	if (!pxBody) return Zenith_Maths::Vector3(0, 0, 0);
+	JPH::Vec3 xVel = pxBody->GetAngularVelocity();
+	return Zenith_Maths::Vector3(xVel.GetX(), xVel.GetY(), xVel.GetZ());
 }
 
 void Zenith_Physics::AddForce(JPH::Body* pxBody, const Zenith_Maths::Vector3& xForce)

@@ -23,6 +23,7 @@ public:
 	Zenith_EntityID GetEntityID() { return m_xParentEntity.GetEntityID(); }
 
 	void AddCollider(CollisionVolumeType eVolumeType, RigidBodyType eRigidBodyType);
+	void RebuildCollider(); // Rebuild collider with current transform (e.g., after scale change)
 	
 private:
 	Zenith_Entity m_xParentEntity;

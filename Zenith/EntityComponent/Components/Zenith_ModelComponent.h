@@ -102,6 +102,12 @@ public:
 		ls_uCount++;
 		const std::string strLeaf = strPath.stem().string();
 
+		// If physics mesh auto-generation is enabled, ensure position data is retained
+		if (g_xPhysicsMeshConfig.m_bAutoGenerate)
+		{
+			uRetainAttributeBits |= (1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__POSITION);
+		}
+
 		//#TO iterate over textures first to create materials
 		if (!pxOverrideMaterial)
 		{

@@ -34,14 +34,14 @@ struct PhysicsMeshConfig
 {
 	PhysicsMeshQuality m_eQuality = PHYSICS_MESH_QUALITY_HIGH;
 	
-	// For HIGH quality: target triangle reduction ratio (0.0-1.0, lower = more simplified)
-	float m_fSimplificationRatio = 0.25f;
+	// For HIGH quality: target triangle reduction ratio (0.0-1.0, 1.0 = no simplification)
+	float m_fSimplificationRatio = 1.0f;  // Keep all triangles for exact match to render mesh
 	
 	// Minimum number of triangles to keep (prevents over-simplification)
-	uint32_t m_uMinTriangles = 12;
+	uint32_t m_uMinTriangles = 100;  // Higher minimum for better shape representation
 	
 	// Maximum number of triangles allowed (cap for very complex models)
-	uint32_t m_uMaxTriangles = 1024;
+	uint32_t m_uMaxTriangles = 10000;  // Very high limit to preserve detail
 	
 	// Whether to generate physics mesh automatically on model load
 	bool m_bAutoGenerate = true;

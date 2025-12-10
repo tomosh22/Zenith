@@ -1,5 +1,7 @@
 #include "Zenith.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
+#include "EntityComponent/Components/Zenith_ColliderComponent.h"
+#include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "Physics/Zenith_Physics.h"
 #include "DataStream/Zenith_DataStream.h"
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
@@ -46,7 +48,30 @@ void Zenith_TransformComponent::SetRotation(const Zenith_Maths::Quat xRot)
 
 void Zenith_TransformComponent::SetScale(const Zenith_Maths::Vector3 xScale)
 {
+	// Check if scale actually changed
+	if (m_xScale.x == xScale.x && m_xScale.y == xScale.y && m_xScale.z == xScale.z)
+	{
+		return;
+	}
+
 	m_xScale = xScale;
+
+	// If entity has a model component, regenerate physics mesh with new baked scale
+	if (m_xParentEntity.HasComponent<Zenith_ModelComponent>())
+	{
+		Zenith_ModelComponent& xModel = m_xParentEntity.GetComponent<Zenith_ModelComponent>();
+		if (xModel.HasPhysicsMesh())
+		{
+			xModel.GeneratePhysicsMesh();
+		}
+	}
+
+	// If entity has a collider component, rebuild it to reflect new scale
+	if (m_xParentEntity.HasComponent<Zenith_ColliderComponent>())
+	{
+		Zenith_ColliderComponent& xCollider = m_xParentEntity.GetComponent<Zenith_ColliderComponent>();
+		xCollider.RebuildCollider();
+	}
 }
 
 void Zenith_TransformComponent::GetPosition(Zenith_Maths::Vector3& xPos)

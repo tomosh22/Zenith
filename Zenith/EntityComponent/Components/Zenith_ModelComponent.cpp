@@ -118,6 +118,16 @@ void Zenith_ModelComponent::GeneratePhysicsMeshWithConfig(const PhysicsMeshConfi
 		return;
 	}
 
+	// Log current entity scale
+	if (m_xParentEntity.HasComponent<Zenith_TransformComponent>())
+	{
+		Zenith_TransformComponent& xTransform = m_xParentEntity.GetComponent<Zenith_TransformComponent>();
+		Zenith_Maths::Vector3 xScale;
+		xTransform.GetScale(xScale);
+		Zenith_Log("%s Generating physics mesh with entity scale (%.3f, %.3f, %.3f)",
+			LOG_TAG_MODEL_PHYSICS, xScale.x, xScale.y, xScale.z);
+	}
+
 	// Generate the physics mesh
 	m_pxPhysicsMesh = Zenith_PhysicsMeshGenerator::GeneratePhysicsMeshWithConfig(xMeshGeometries, xConfig);
 
@@ -127,6 +137,14 @@ void Zenith_ModelComponent::GeneratePhysicsMeshWithConfig(const PhysicsMeshConfi
 			LOG_TAG_MODEL_PHYSICS,
 			m_pxPhysicsMesh->GetNumVerts(),
 			m_pxPhysicsMesh->GetNumIndices() / 3);
+		
+		// Log first vertex position for debugging
+		if (m_pxPhysicsMesh->GetNumVerts() > 0)
+		{
+			Zenith_Maths::Vector3& v0 = m_pxPhysicsMesh->m_pxPositions[0];
+			Zenith_Log("%s First vertex in model space: (%.3f, %.3f, %.3f)",
+				LOG_TAG_MODEL_PHYSICS, v0.x, v0.y, v0.z);
+		}
 	}
 	else
 	{
@@ -157,8 +175,14 @@ void Zenith_ModelComponent::DebugDrawPhysicsMesh()
 	}
 
 	Zenith_TransformComponent& xTransform = m_xParentEntity.GetComponent<Zenith_TransformComponent>();
+	Zenith_Maths::Vector3 xScale;
+	xTransform.GetScale(xScale);
+	
 	Zenith_Maths::Matrix4 xModelMatrix;
 	xTransform.BuildModelMatrix(xModelMatrix);
+
+	Zenith_Log("%s DebugDraw: Entity scale (%.3f, %.3f, %.3f), verts=%u",
+		LOG_TAG_MODEL_PHYSICS, xScale.x, xScale.y, xScale.z, m_pxPhysicsMesh->GetNumVerts());
 
 	// Draw the physics mesh
 	Zenith_PhysicsMeshGenerator::DebugDrawPhysicsMesh(m_pxPhysicsMesh, xModelMatrix, m_xDebugDrawColor);

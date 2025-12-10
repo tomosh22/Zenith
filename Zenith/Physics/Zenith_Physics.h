@@ -54,6 +54,7 @@ public:
 	static void SetLinearVelocity(JPH::Body* pxBody, const Zenith_Maths::Vector3& xVelocity);
 	static Zenith_Maths::Vector3 GetLinearVelocity(JPH::Body* pxBody);
 	static void SetAngularVelocity(JPH::Body* pxBody, const Zenith_Maths::Vector3& xVelocity);
+	static Zenith_Maths::Vector3 GetAngularVelocity(JPH::Body* pxBody);
 	static void AddForce(JPH::Body* pxBody, const Zenith_Maths::Vector3& xForce);
 	static void SetGravityEnabled(JPH::Body* pxBody, bool bEnabled);
 

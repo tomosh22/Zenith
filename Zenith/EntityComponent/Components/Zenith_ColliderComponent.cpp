@@ -142,16 +142,20 @@ void Zenith_ColliderComponent::AddCollider(CollisionVolumeType eVolumeType, Rigi
 			pxPhysicsMesh->GetNumIndices() / 3);
 
 		// Store mesh data for later cleanup (reuse TerrainMeshData structure)
+		// Apply transform scale to match visually rendered size
 		m_pxTerrainMeshData = new TerrainMeshData();
 		m_pxTerrainMeshData->m_uNumVertices = pxPhysicsMesh->m_uNumVerts;
 		m_pxTerrainMeshData->m_uNumIndices = pxPhysicsMesh->m_uNumIndices;
 
 		m_pxTerrainMeshData->m_pfVertices = new float[pxPhysicsMesh->m_uNumVerts * 3];
+		Zenith_Maths::Vector3 xScale;
+		xTrans.GetScale(xScale);
 		for (uint32_t i = 0; i < pxPhysicsMesh->m_uNumVerts; ++i)
 		{
-			m_pxTerrainMeshData->m_pfVertices[i * 3 + 0] = pxPhysicsMesh->m_pxPositions[i].x;
-			m_pxTerrainMeshData->m_pfVertices[i * 3 + 1] = pxPhysicsMesh->m_pxPositions[i].y;
-			m_pxTerrainMeshData->m_pfVertices[i * 3 + 2] = pxPhysicsMesh->m_pxPositions[i].z;
+			// Apply scale to match rendered geometry size
+			m_pxTerrainMeshData->m_pfVertices[i * 3 + 0] = pxPhysicsMesh->m_pxPositions[i].x * xScale.x;
+			m_pxTerrainMeshData->m_pfVertices[i * 3 + 1] = pxPhysicsMesh->m_pxPositions[i].y * xScale.y;
+			m_pxTerrainMeshData->m_pfVertices[i * 3 + 2] = pxPhysicsMesh->m_pxPositions[i].z * xScale.z;
 		}
 
 		m_pxTerrainMeshData->m_puIndices = new uint32_t[pxPhysicsMesh->m_uNumIndices];
@@ -159,15 +163,19 @@ void Zenith_ColliderComponent::AddCollider(CollisionVolumeType eVolumeType, Rigi
 
 		// Try to create as convex hull first (works for both dynamic and static bodies)
 		// Convex hulls are more efficient and work with dynamic bodies
+		// Apply scale to match rendered geometry size
 		JPH::Array<JPH::Vec3> xHullPoints;
 		for (uint32_t i = 0; i < pxPhysicsMesh->m_uNumVerts; ++i)
 		{
 			xHullPoints.push_back(JPH::Vec3(
-				pxPhysicsMesh->m_pxPositions[i].x,
-				pxPhysicsMesh->m_pxPositions[i].y,
-				pxPhysicsMesh->m_pxPositions[i].z
+				pxPhysicsMesh->m_pxPositions[i].x * xScale.x,
+				pxPhysicsMesh->m_pxPositions[i].y * xScale.y,
+				pxPhysicsMesh->m_pxPositions[i].z * xScale.z
 			));
 		}
+		
+		Zenith_Log("%s Creating convex hull with scale (%.3f, %.3f, %.3f), %u points",
+			LOG_TAG_COLLIDER, xScale.x, xScale.y, xScale.z, pxPhysicsMesh->m_uNumVerts);
 
 		JPH::ConvexHullShapeSettings xConvexSettings(xHullPoints);
 		JPH::Shape::ShapeResult xConvexResult = xConvexSettings.Create();
@@ -196,16 +204,15 @@ void Zenith_ColliderComponent::AddCollider(CollisionVolumeType eVolumeType, Rigi
 					for (int j = 0; j < 3; ++j)
 					{
 						uint32_t uIdx = pxPhysicsMesh->m_puIndices[i + j];
+						// Apply scale to match rendered geometry size
 						xTri.mV[j] = JPH::Float3(
-							pxPhysicsMesh->m_pxPositions[uIdx].x,
-							pxPhysicsMesh->m_pxPositions[uIdx].y,
-							pxPhysicsMesh->m_pxPositions[uIdx].z
+							pxPhysicsMesh->m_pxPositions[uIdx].x * xScale.x,
+							pxPhysicsMesh->m_pxPositions[uIdx].y * xScale.y,
+							pxPhysicsMesh->m_pxPositions[uIdx].z * xScale.z
 						);
 					}
 					xTriangles.push_back(xTri);
-				}
-
-				JPH::MeshShapeSettings xMeshSettings(xTriangles);
+				}				JPH::MeshShapeSettings xMeshSettings(xTriangles);
 				JPH::Shape::ShapeResult xMeshResult = xMeshSettings.Create();
 				if (xMeshResult.IsValid())
 				{
@@ -291,4 +298,49 @@ void Zenith_ColliderComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 	AddCollider(m_eVolumeType, m_eRigidBodyType);
 
 	// m_xParentEntity will be set by the entity deserialization system
+}
+
+void Zenith_ColliderComponent::RebuildCollider()
+{
+	// Store current velocity and other physics state if it's a dynamic body
+	Zenith_Maths::Vector3 xLinearVel(0.0f, 0.0f, 0.0f);
+	Zenith_Maths::Vector3 xAngularVel(0.0f, 0.0f, 0.0f);
+	bool bWasDynamic = (m_eRigidBodyType == RIGIDBODY_TYPE_DYNAMIC);
+	
+	if (bWasDynamic && m_pxRigidBody)
+	{
+		xLinearVel = Zenith_Physics::GetLinearVelocity(m_pxRigidBody);
+		xAngularVel = Zenith_Physics::GetAngularVelocity(m_pxRigidBody);
+	}
+
+	// Remove existing collider
+	if (m_xBodyID.IsInvalid() == false)
+	{
+		JPH::BodyInterface& xBodyInterface = Zenith_Physics::s_pxPhysicsSystem->GetBodyInterface();
+		xBodyInterface.RemoveBody(m_xBodyID);
+		xBodyInterface.DestroyBody(m_xBodyID);
+		m_xBodyID = JPH::BodyID();
+		m_pxRigidBody = nullptr;
+	}
+
+	// Clean up mesh data
+	if (m_pxTerrainMeshData != nullptr)
+	{
+		delete[] m_pxTerrainMeshData->m_pfVertices;
+		delete[] m_pxTerrainMeshData->m_puIndices;
+		delete m_pxTerrainMeshData;
+		m_pxTerrainMeshData = nullptr;
+	}
+
+	// Recreate collider with current transform (including new scale)
+	AddCollider(m_eVolumeType, m_eRigidBodyType);
+
+	// Restore velocity if it was a dynamic body
+	if (bWasDynamic && m_pxRigidBody)
+	{
+		Zenith_Physics::SetLinearVelocity(m_pxRigidBody, xLinearVel);
+		Zenith_Physics::SetAngularVelocity(m_pxRigidBody, xAngularVel);
+	}
+
+	Zenith_Log("%s Rebuilt collider after scale change", LOG_TAG_COLLIDER);
 }
