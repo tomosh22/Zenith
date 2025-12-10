@@ -155,11 +155,6 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Flux_Material& xMaterial0, Flux
 				Flux_MeshGeometry& xTerrainRenderMesh = Zenith_AssetHandler::GetMesh(strLODMeshName);
 
 				Flux_MeshGeometry::Combine(xRenderGeometry, xTerrainRenderMesh);
-				
-				if ((x * CHUNK_GRID_SIZE + y) % 256 == 0 || uLOD == 0)
-				{
-					Zenith_Log("Combined LOD%u chunk (%u,%u)", uLOD, x, y);
-				}
 
 				// Don't delete yet - we'll need these for BuildCullingData()
 			}
@@ -223,7 +218,6 @@ xPhysicsGeometry.m_ulReservedIndexDataSize = ulTotalIndexDataSize;
 			Flux_MeshGeometry& xTerrainPhysicsMesh = Zenith_AssetHandler::GetMesh(strPhysicsMeshName);
 
 			Flux_MeshGeometry::Combine(xPhysicsGeometry, xTerrainPhysicsMesh);
-			Zenith_Log("Combined %u %u", x, y);
 
 			Zenith_AssetHandler::DeleteMesh(strPhysicsMeshName);
 		}
@@ -435,33 +429,6 @@ void Zenith_TerrainComponent::UpdateChunkLODAllocations()
 	
 	xStreamMgr.BuildChunkDataForGPU(pxChunkData);
 	
-	// DEBUG: Log sample chunk data after streaming updates (first 5 updates, then every 100th)
-	if (s_uUpdateCount <= 5 || s_uUpdateCount % 100 == 0)
-	{
-		Zenith_Log("=== Chunk Data After Update #%u (cached=%d) ===", s_uUpdateCount, bUsedCachedBuffer ? 1 : 0);
-		
-		// Log chunk 0 (0,0) - far from camera at (2100, y, 1475)
-		const Zenith_TerrainChunkData& chunk0 = pxChunkData[0];
-		Zenith_Log("Chunk[0] (0,0) - FAR from camera:");
-		Zenith_Log("  LOD0: firstIndex=%u, indexCount=%u, vertexOffset=%u",
-			chunk0.m_axLODs[0].m_uFirstIndex, chunk0.m_axLODs[0].m_uIndexCount, chunk0.m_axLODs[0].m_uVertexOffset);
-		Zenith_Log("  LOD1: firstIndex=%u, indexCount=%u, vertexOffset=%u",
-			chunk0.m_axLODs[1].m_uFirstIndex, chunk0.m_axLODs[1].m_uIndexCount, chunk0.m_axLODs[1].m_uVertexOffset);
-		Zenith_Log("  LOD3: firstIndex=%u, indexCount=%u, vertexOffset=%u",
-			chunk0.m_axLODs[3].m_uFirstIndex, chunk0.m_axLODs[3].m_uIndexCount, chunk0.m_axLODs[3].m_uVertexOffset);
-		
-		// Log chunk near camera: (32, 23) = index 32*64+23 = 2071
-		uint32_t nearCameraIdx = 32 * CHUNK_GRID_SIZE + 23;
-		const Zenith_TerrainChunkData& chunkNear = pxChunkData[nearCameraIdx];
-		Zenith_Log("Chunk[%u] (32,23) - NEAR camera:", nearCameraIdx);
-		Zenith_Log("  LOD0: firstIndex=%u, indexCount=%u, vertexOffset=%u",
-			chunkNear.m_axLODs[0].m_uFirstIndex, chunkNear.m_axLODs[0].m_uIndexCount, chunkNear.m_axLODs[0].m_uVertexOffset);
-		Zenith_Log("  LOD1: firstIndex=%u, indexCount=%u, vertexOffset=%u",
-			chunkNear.m_axLODs[1].m_uFirstIndex, chunkNear.m_axLODs[1].m_uIndexCount, chunkNear.m_axLODs[1].m_uVertexOffset);
-		Zenith_Log("  LOD3: firstIndex=%u, indexCount=%u, vertexOffset=%u",
-			chunkNear.m_axLODs[3].m_uFirstIndex, chunkNear.m_axLODs[3].m_uIndexCount, chunkNear.m_axLODs[3].m_uVertexOffset);
-	}
-	
 	// CRITICAL: Use UploadBufferDataAtOffset which is synchronous (waits for GPU copy completion)
 	// The regular UploadBufferData is deferred and would not be visible to the compute shader
 	// that runs in the same frame
@@ -522,16 +489,6 @@ void Zenith_TerrainComponent::UpdateCullingAndLod(Flux_CommandList& xCmdList, co
 	// Add camera position for distance-based sorting and LOD selection
 	Zenith_Maths::Vector3 xCameraPos = Flux_Graphics::GetCameraPosition();
 	xCameraData.m_xCameraPosition = Zenith_Maths::Vector4(xCameraPos, 0.0f);
-	
-	// One-time debug log to verify camera position
-	static bool s_bLoggedCameraOnce = false;
-	static uint32_t s_uCameraLogFrames = 0;
-	if (!s_bLoggedCameraOnce || s_uCameraLogFrames < 5)
-	{
-		s_bLoggedCameraOnce = true;
-		s_uCameraLogFrames++;
-		Zenith_Log("UpdateCullingAndLod: Camera pos = (%.1f, %.1f, %.1f)", xCameraPos.x, xCameraPos.y, xCameraPos.z);
-	}
 
 	Flux_MemoryManager::UploadBufferData(m_xFrustumPlanesBuffer.GetBuffer().m_xVRAMHandle, &xCameraData, sizeof(Zenith_CameraDataGPU));
 

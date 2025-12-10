@@ -96,9 +96,6 @@ void Flux_Gizmos::Initialise()
 	GenerateRotationGizmoGeometry();
 	GenerateScaleGizmoGeometry();
 
-	Zenith_Log("Flux_Gizmos: Generated geometry - Translate:%d Rotate:%d Scale:%d", 
-		s_xTranslateGeometry.GetSize(), s_xRotateGeometry.GetSize(), s_xScaleGeometry.GetSize());
-
 #ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_DebugVariables::AddBoolean({"Editor", "Gizmos", "Render"}, dbg_bRenderGizmos);
 	Zenith_DebugVariables::AddFloat({"Editor", "Gizmos", "Alpha"}, dbg_fGizmoAlpha, 0.0f, 1.0f);
@@ -119,7 +116,6 @@ void Flux_Gizmos::Render(void*)
 {
 	if (!dbg_bRenderGizmos || !s_pxTargetEntity)
 	{
-		Zenith_Log("Gizmos: Early out - render=%d, target=%p", dbg_bRenderGizmos, s_pxTargetEntity);
 		return;
 	}
 
@@ -158,8 +154,6 @@ void Flux_Gizmos::Render(void*)
 		Zenith_Log("Gizmos: No geometry - mode=%d, size=%d", s_eMode, pxGeometry ? pxGeometry->GetSize() : 0);
 		return;
 	}
-
-	//Zenith_Log("Gizmos: Rendering %d components at pos(%.1f,%.1f,%.1f) scale=%.2f", pxGeometry->GetSize(), xEntityPos.x, xEntityPos.y, xEntityPos.z, s_fGizmoScale);
 
 	// Visualize gizmo interaction bounding boxes for debugging
 	Flux_Primitives::AddWireframeCube(xEntityPos + Zenith_Maths::Vector3(1, 0, 0) * GIZMO_ARROW_LENGTH * 0.5f * s_fGizmoScale,
@@ -257,8 +251,6 @@ void Flux_Gizmos::BeginInteraction(const Zenith_Maths::Vector3& rayOrigin, const
 	// Raycast against gizmo to find which component was clicked
 	float fDistance;
 	GizmoComponent eHitComponent = RaycastGizmo(rayOrigin, rayDir, fDistance);
-	
-	Zenith_Log("BeginInteraction: RaycastGizmo returned component=%d, distance=%.2f", (int)eHitComponent, fDistance);
 
 	if (eHitComponent != GizmoComponent::None)
 	{
@@ -274,13 +266,7 @@ void Flux_Gizmos::BeginInteraction(const Zenith_Maths::Vector3& rayOrigin, const
 			xTransform.GetPosition(s_xInitialEntityPosition);
 			xTransform.GetRotation(s_xInitialEntityRotation);
 			xTransform.GetScale(s_xInitialEntityScale);
-			
-			Zenith_Log("BeginInteraction: Started on component=%d", eHitComponent);
-		}
-	}
-	else
-	{
-		Zenith_Log("BeginInteraction: Raycast missed (component=None)");
+			}
 	}
 }
 
@@ -288,9 +274,6 @@ void Flux_Gizmos::UpdateInteraction(const Zenith_Maths::Vector3& rayOrigin, cons
 {
 	if (!s_bIsInteracting || !s_pxTargetEntity)
 		return;
-
-	Zenith_Log("UpdateInteraction: RayOrigin=(%.1f,%.1f,%.1f) RayDir=(%.2f,%.2f,%.2f)",
-		rayOrigin.x, rayOrigin.y, rayOrigin.z, rayDir.x, rayDir.y, rayDir.z);
 
 	// Apply transformation based on gizmo mode
 	switch (s_eMode)
@@ -620,10 +603,6 @@ GizmoComponent Flux_Gizmos::RaycastGizmo(const Zenith_Maths::Vector3& rayOrigin,
 	float worldCircleRadius = GIZMO_CIRCLE_RADIUS * s_fGizmoScale;
 	float worldCubeSize = GIZMO_CUBE_SIZE * s_fGizmoScale;
 
-	Zenith_Log("RaycastGizmo: GizmoPos=(%.1f,%.1f,%.1f), Scale=%.2f", xGizmoPos.x, xGizmoPos.y, xGizmoPos.z, s_fGizmoScale);
-	Zenith_Log("  RayOrigin=(%.1f,%.1f,%.1f), RayDir=(%.2f,%.2f,%.2f)", rayOrigin.x, rayOrigin.y, rayOrigin.z, rayDir.x, rayDir.y, rayDir.z);
-	Zenith_Log("  WorldThreshold=%.3f, WorldArrowLen=%.3f", worldInteractionThreshold, worldArrowLength);
-
 	float closestDistance = FLT_MAX;
 	GizmoComponent closestComponent = GizmoComponent::None;
 
@@ -745,7 +724,6 @@ void Flux_Gizmos::ApplyTranslation(const Zenith_Maths::Vector3& rayOrigin, const
 	// Check if ray is parallel to axis
 	if (glm::abs(denom) < 0.0001f)
 	{
-		Zenith_Log("ApplyTranslation: Ray parallel to axis (denom=%.6f), no movement", denom);
 		return;
 	}
 
@@ -757,18 +735,6 @@ void Flux_Gizmos::ApplyTranslation(const Zenith_Maths::Vector3& rayOrigin, const
 	
 	// Apply the movement
 	Zenith_Maths::Vector3 newPosition = s_xInitialEntityPosition + axis * delta_t;
-	
-	Zenith_Log("ApplyTranslation DEBUG:");
-	Zenith_Log("  InitialEntityPos=(%.2f,%.2f,%.2f)", s_xInitialEntityPosition.x, s_xInitialEntityPosition.y, s_xInitialEntityPosition.z);
-	Zenith_Log("  InteractionStartPos=(%.2f,%.2f,%.2f)", s_xInteractionStartPos.x, s_xInteractionStartPos.y, s_xInteractionStartPos.z);
-	Zenith_Log("  Axis=(%.2f,%.2f,%.2f)", axis.x, axis.y, axis.z);
-	Zenith_Log("  RayOrigin=(%.2f,%.2f,%.2f) RayDir=(%.2f,%.2f,%.2f)", rayOrigin.x, rayOrigin.y, rayOrigin.z, rayDir.x, rayDir.y, rayDir.z);
-	Zenith_Log("  t_initial=%.4f (click offset on axis)", t_initial);
-	Zenith_Log("  t_current=%.4f (current ray closest point)", t_current);
-	Zenith_Log("  delta_t=%.4f", delta_t);
-	Zenith_Log("  Math: a=%.4f, b=%.4f, c=%.4f, d=%.4f, e=%.4f, denom=%.6f", a, b, c, d, e, denom);
-	Zenith_Log("  NewPosition=(%.2f,%.2f,%.2f)", newPosition.x, newPosition.y, newPosition.z);
-	Zenith_Log("  TotalDelta=(%.2f,%.2f,%.2f)", newPosition.x - s_xInitialEntityPosition.x, newPosition.y - s_xInitialEntityPosition.y, newPosition.z - s_xInitialEntityPosition.z);
 	
 	xTransform.SetPosition(newPosition);
 }

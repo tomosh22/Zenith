@@ -10,10 +10,9 @@
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
-#include "Core/Zenith_Core.h"
+#include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "Input/Zenith_Input.h"
 #include "Flux/Flux_Graphics.h"
-#include "Flux/Flux_RenderTargets.h"
 #include "Vulkan/Zenith_Vulkan.h"
 
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
@@ -537,9 +536,18 @@ void Zenith_Editor::RenderPropertiesPanel()
 				ImGui::Text("Yaw: %.2f", camera.GetYaw());
 			}
 		}
+
+		if (pxSelectedEntity->HasComponent<Zenith_ModelComponent>())
+		{
+			if (ImGui::CollapsingHeader("Model", ImGuiTreeNodeFlags_DefaultOpen))
+			{
+				Zenith_ModelComponent& xModel = pxSelectedEntity->GetComponent<Zenith_ModelComponent>();
+
+				ImGui::Checkbox("Draw Physics Mesh", &xModel.m_bDebugDrawPhysicsMesh);
+			}
+		}
 		
 		// TODO: Add component editor for other component types
-		// - ModelComponent: Show model/material selection
 		// - ColliderComponent: Show collision shape settings
 		// - ScriptComponent: Show script assignment
 	}

@@ -1,6 +1,7 @@
 #include "Zenith.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
+#include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "Physics/Zenith_Physics.h"
 #include "DataStream/Zenith_DataStream.h"
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
@@ -12,7 +13,11 @@
 #include <Jolt/Physics/Collision/Shape/SphereShape.h>
 #include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
 #include <Jolt/Physics/Collision/Shape/MeshShape.h>
+#include <Jolt/Physics/Collision/Shape/ConvexHullShape.h>
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
+
+// Log tag for collider component operations
+static constexpr const char* LOG_TAG_COLLIDER = "[ColliderFromModel]";
 
 Zenith_ColliderComponent::Zenith_ColliderComponent(Zenith_Entity& xEntity) 
 	: m_xParentEntity(xEntity)
@@ -109,6 +114,111 @@ void Zenith_ColliderComponent::AddCollider(CollisionVolumeType eVolumeType, Rigi
 		JPH::MeshShapeSettings xMeshSettings(xTriangles);
 		JPH::Shape::ShapeResult xShapeResult = xMeshSettings.Create();
 		pxShape = xShapeResult.Get();
+	}
+	break;
+	case COLLISION_VOLUME_TYPE_MODEL_MESH:
+	{
+		Zenith_Assert(m_xParentEntity.HasComponent<Zenith_ModelComponent>(), "Can't have a model mesh collider without a model component");
+		Zenith_ModelComponent& xModel = m_xParentEntity.GetComponent<Zenith_ModelComponent>();
+
+		// Ensure physics mesh is generated
+		if (!xModel.HasPhysicsMesh())
+		{
+			Zenith_Log("%s Model does not have physics mesh, generating...", LOG_TAG_COLLIDER);
+			xModel.GeneratePhysicsMesh();
+		}
+
+		const Flux_MeshGeometry* pxPhysicsMesh = xModel.GetPhysicsMesh();
+		if (!pxPhysicsMesh || !pxPhysicsMesh->m_pxPositions || pxPhysicsMesh->GetNumVerts() < 3)
+		{
+			Zenith_Log("%s Invalid physics mesh, falling back to OBB collider", LOG_TAG_COLLIDER);
+			pxShape = new JPH::BoxShape(JPH::Vec3(xTrans.m_xScale.x, xTrans.m_xScale.y, xTrans.m_xScale.z));
+			break;
+		}
+
+		Zenith_Log("%s Creating collider from model physics mesh: %u verts, %u tris",
+			LOG_TAG_COLLIDER,
+			pxPhysicsMesh->GetNumVerts(),
+			pxPhysicsMesh->GetNumIndices() / 3);
+
+		// Store mesh data for later cleanup (reuse TerrainMeshData structure)
+		m_pxTerrainMeshData = new TerrainMeshData();
+		m_pxTerrainMeshData->m_uNumVertices = pxPhysicsMesh->m_uNumVerts;
+		m_pxTerrainMeshData->m_uNumIndices = pxPhysicsMesh->m_uNumIndices;
+
+		m_pxTerrainMeshData->m_pfVertices = new float[pxPhysicsMesh->m_uNumVerts * 3];
+		for (uint32_t i = 0; i < pxPhysicsMesh->m_uNumVerts; ++i)
+		{
+			m_pxTerrainMeshData->m_pfVertices[i * 3 + 0] = pxPhysicsMesh->m_pxPositions[i].x;
+			m_pxTerrainMeshData->m_pfVertices[i * 3 + 1] = pxPhysicsMesh->m_pxPositions[i].y;
+			m_pxTerrainMeshData->m_pfVertices[i * 3 + 2] = pxPhysicsMesh->m_pxPositions[i].z;
+		}
+
+		m_pxTerrainMeshData->m_puIndices = new uint32_t[pxPhysicsMesh->m_uNumIndices];
+		memcpy(m_pxTerrainMeshData->m_puIndices, pxPhysicsMesh->m_puIndices, pxPhysicsMesh->m_uNumIndices * sizeof(uint32_t));
+
+		// Try to create as convex hull first (works for both dynamic and static bodies)
+		// Convex hulls are more efficient and work with dynamic bodies
+		JPH::Array<JPH::Vec3> xHullPoints;
+		for (uint32_t i = 0; i < pxPhysicsMesh->m_uNumVerts; ++i)
+		{
+			xHullPoints.push_back(JPH::Vec3(
+				pxPhysicsMesh->m_pxPositions[i].x,
+				pxPhysicsMesh->m_pxPositions[i].y,
+				pxPhysicsMesh->m_pxPositions[i].z
+			));
+		}
+
+		JPH::ConvexHullShapeSettings xConvexSettings(xHullPoints);
+		JPH::Shape::ShapeResult xConvexResult = xConvexSettings.Create();
+		
+		if (xConvexResult.IsValid())
+		{
+			pxShape = xConvexResult.Get();
+			Zenith_Log("%s Created convex hull collider successfully", LOG_TAG_COLLIDER);
+		}
+		else
+		{
+			// Fall back to mesh shape (only works for static bodies)
+			Zenith_Log("%s Convex hull failed, falling back to mesh shape (static only)", LOG_TAG_COLLIDER);
+			
+			if (eRigidBodyType == RIGIDBODY_TYPE_DYNAMIC)
+			{
+				Zenith_Log("%s WARNING: Dynamic body requires convex shape, using box fallback", LOG_TAG_COLLIDER);
+				pxShape = new JPH::BoxShape(JPH::Vec3(xTrans.m_xScale.x, xTrans.m_xScale.y, xTrans.m_xScale.z));
+			}
+			else
+			{
+				JPH::TriangleList xTriangles;
+				for (uint32_t i = 0; i < pxPhysicsMesh->m_uNumIndices; i += 3)
+				{
+					JPH::Triangle xTri;
+					for (int j = 0; j < 3; ++j)
+					{
+						uint32_t uIdx = pxPhysicsMesh->m_puIndices[i + j];
+						xTri.mV[j] = JPH::Float3(
+							pxPhysicsMesh->m_pxPositions[uIdx].x,
+							pxPhysicsMesh->m_pxPositions[uIdx].y,
+							pxPhysicsMesh->m_pxPositions[uIdx].z
+						);
+					}
+					xTriangles.push_back(xTri);
+				}
+
+				JPH::MeshShapeSettings xMeshSettings(xTriangles);
+				JPH::Shape::ShapeResult xMeshResult = xMeshSettings.Create();
+				if (xMeshResult.IsValid())
+				{
+					pxShape = xMeshResult.Get();
+					Zenith_Log("%s Created mesh collider successfully", LOG_TAG_COLLIDER);
+				}
+				else
+				{
+					Zenith_Log("%s Mesh shape failed, using box fallback", LOG_TAG_COLLIDER);
+					pxShape = new JPH::BoxShape(JPH::Vec3(xTrans.m_xScale.x, xTrans.m_xScale.y, xTrans.m_xScale.z));
+				}
+			}
+		}
 	}
 	break;
 	}

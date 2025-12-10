@@ -574,6 +574,9 @@
     <ClCompile Include="..\..\..\Zenith\Physics\Zenith_Physics.cpp">
       <Filter>Zenith\Physics</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\..\Zenith\Physics\Zenith_PhysicsMeshGenerator.cpp">
+      <Filter>Zenith\Physics</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\..\Zenith\Profiling\Zenith_Profiling.cpp">
       <Filter>Zenith\Profiling</Filter>
     </ClCompile>
@@ -1920,7 +1923,13 @@
     <ClInclude Include="..\..\..\Zenith\Maths\Zenith_Maths.h">
       <Filter>Zenith\Maths</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\Maths\Zenith_Maths_Intersections.h">
+      <Filter>Zenith\Maths</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\..\Zenith\Physics\Zenith_Physics.h">
+      <Filter>Zenith\Physics</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\Physics\Zenith_PhysicsMeshGenerator.h">
       <Filter>Zenith\Physics</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\Zenith\Profiling\Zenith_Profiling.h">
@@ -1982,9 +1991,6 @@
     </ClInclude>
     <ClInclude Include="..\Test_State_MainMenu.h">
       <Filter>Games\Test</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\..\Zenith\Maths\Zenith_Maths_Intersections.h">
-      <Filter>Zenith\Maths</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>

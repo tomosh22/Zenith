@@ -184,8 +184,7 @@
       <AdditionalDependencies>glfw3_mt.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
-      <IgnoreSpecificDefaultLibraries>
-      </IgnoreSpecificDefaultLibraries>
+      <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
       <LargeAddressAware>true</LargeAddressAware>
       <MapFileName>output\win64\vs2022_debug_win64_false\test.map</MapFileName>
     </Link>
@@ -271,8 +270,7 @@
       <AdditionalDependencies>zenithtools.lib;assimp-vc143-mtd.lib;glfw3_mt.lib;opencv_world4100d.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
-      <IgnoreSpecificDefaultLibraries>
-      </IgnoreSpecificDefaultLibraries>
+      <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
       <LargeAddressAware>true</LargeAddressAware>
       <MapFileName>output\win64\vs2022_debug_win64_true\test.map</MapFileName>
     </Link>
@@ -358,8 +356,7 @@
       <AdditionalDependencies>glfw3_mt.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
-      <IgnoreSpecificDefaultLibraries>
-      </IgnoreSpecificDefaultLibraries>
+      <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
       <LargeAddressAware>true</LargeAddressAware>
       <MapFileName>output\win64\vs2022_release_win64_false\test.map</MapFileName>
     </Link>
@@ -445,8 +442,7 @@
       <AdditionalDependencies>zenithtools.lib;assimp-vc143-mt.lib;glfw3_mt.lib;opencv_world4100.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
-      <IgnoreSpecificDefaultLibraries>
-      </IgnoreSpecificDefaultLibraries>
+      <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
       <LargeAddressAware>true</LargeAddressAware>
       <MapFileName>output\win64\vs2022_release_win64_true\test.map</MapFileName>
     </Link>
@@ -883,6 +879,7 @@
     <ClInclude Include="..\..\..\Zenith\Maths\Zenith_Maths.h" />
     <ClInclude Include="..\..\..\Zenith\Maths\Zenith_Maths_Intersections.h" />
     <ClInclude Include="..\..\..\Zenith\Physics\Zenith_Physics.h" />
+    <ClInclude Include="..\..\..\Zenith\Physics\Zenith_PhysicsMeshGenerator.h" />
     <ClInclude Include="..\..\..\Zenith\Profiling\Zenith_Profiling.h" />
     <ClInclude Include="..\..\..\Zenith\StateMachine\Zenith_StateMachine.h" />
     <ClInclude Include="..\..\..\Zenith\TaskSystem\Zenith_TaskSystem.h" />
@@ -1809,6 +1806,7 @@
     <ClCompile Include="..\..\..\Zenith\Input\Zenith_Input.cpp" />
     <ClCompile Include="..\..\..\Zenith\Maths\Zenith_Maths.cpp" />
     <ClCompile Include="..\..\..\Zenith\Physics\Zenith_Physics.cpp" />
+    <ClCompile Include="..\..\..\Zenith\Physics\Zenith_PhysicsMeshGenerator.cpp" />
     <ClCompile Include="..\..\..\Zenith\Profiling\Zenith_Profiling.cpp" />
     <ClCompile Include="..\..\..\Zenith\StateMachine\Zenith_StateMachine.cpp" />
     <ClCompile Include="..\..\..\Zenith\TaskSystem\Zenith_TaskSystem.cpp" />

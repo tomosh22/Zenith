@@ -801,8 +801,9 @@ void Zenith_Vulkan_MemoryManager::FlushStagingBuffer()
 	s_uNextFreeStagingOffset = 0;
 }
 
-void Zenith_Vulkan_MemoryManager::HandleStagingBufferFull() {
-	Zenith_Log("Staging buffer full, flushing");
+void Zenith_Vulkan_MemoryManager::HandleStagingBufferFull()
+{
+	//Zenith_Log("Staging buffer full, flushing");
 	EndFrame(false);
 	BeginFrame();
 }

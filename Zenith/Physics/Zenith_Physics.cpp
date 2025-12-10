@@ -1,6 +1,7 @@
 #include "Zenith.h"
 #include "Physics/Zenith_Physics.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
+#include "EntityComponent/Components/Zenith_PhysicsMeshGenerator.h"
 #include "Zenith_OS_Include.h"
 
 JPH::TempAllocatorImpl* Zenith_Physics::s_pxTempAllocator = nullptr;
@@ -153,6 +154,8 @@ void Zenith_Physics::Update(float fDt)
 		s_pxPhysicsSystem->Update(static_cast<float>(s_fDesiredFramerate), 1, s_pxTempAllocator, s_pxJobSystem);
 		s_fTimestepAccumulator -= s_fDesiredFramerate;
 	}
+
+	Zenith_PhysicsMeshGenerator::DebugDrawAllPhysicsMeshes();
 }
 
 void Zenith_Physics::Reset()

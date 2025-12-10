@@ -38,7 +38,9 @@
       "Bash(powershell:*)",
       "Bash(\"C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\MSBuild\\Current\\Bin\\MSBuild.exe\" \"Games\\Test\\Build\\test_win64.vcxproj\" -p:Configuration=vs2022_Debug_Win64_True -p:Platform=x64 -t:ClCompile -p:SelectedFiles=\"Zenith\\Flux\\Gizmos\\Flux_Gizmos.cpp\" -verbosity:minimal)",
       "Bash(Select-String -Pattern \"(Flux_Gizmos|error)\" -Context 1)",
-      "Bash(Select-String -Pattern \"error\" -Context 0,2)"
+      "Bash(Select-String -Pattern \"error\" -Context 0,2)",
+      "Bash(\"C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\MSBuild\\Current\\Bin\\MSBuild.exe\" \"Games\\Test\\Build\\test_win64.vcxproj\" -p:Configuration=vs2022_Debug_Win64_True -p:Platform=x64 -t:ClCompile -p:SelectedFiles=\"Zenith\\EntityComponent\\Components\\Zenith_PhysicsMeshGenerator.cpp\" -verbosity:minimal)",
+      "Bash(\"C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\MSBuild\\Current\\Bin\\MSBuild.exe\" \"c:\\dev\\Zenith\\FluxCompiler\\FluxCompiler.vcxproj\" -p:Configuration=vs2022_Release_Win64_True -p:Platform=x64 -t:rebuild -verbosity:minimal)"
     ],
     "deny": [],
     "ask": []

@@ -1244,44 +1244,5 @@ void Flux_TerrainStreamingManager::BuildChunkDataForGPU(Zenith_TerrainChunkData*
 			if (xRes.m_aeStates[2] == Flux_TerrainLODResidencyState::RESIDENT) uLOD2Resident++;
 			if (xRes.m_aeStates[3] == Flux_TerrainLODResidencyState::RESIDENT) uLOD3Resident++;
 		}
-		Zenith_Log("=== LOD Residency Summary ===");
-		Zenith_Log("  LOD0 resident: %u chunks", uLOD0Resident);
-		Zenith_Log("  LOD1 resident: %u chunks", uLOD1Resident);
-		Zenith_Log("  LOD2 resident: %u chunks", uLOD2Resident);
-		Zenith_Log("  LOD3 resident: %u chunks (always)", uLOD3Resident);
-		
-		// Log a few sample chunks at different positions to verify mesh data differs
-		uint32_t sampleChunks[] = {0, 32, 63, 2048, 4095};
-		for (uint32_t i = 0; i < 5; ++i)
-		{
-			uint32_t idx = sampleChunks[i];
-			if (idx >= TOTAL_CHUNKS) continue;
-			
-			uint32_t cx = idx / CHUNK_GRID_SIZE;
-			uint32_t cy = idx % CHUNK_GRID_SIZE;
-			const Zenith_TerrainChunkData& chunk = pxChunkDataOut[idx];
-			const Flux_TerrainChunkResidency& xRes = m_axChunkResidency[idx];
-			
-			Zenith_Log("Chunk[%u] (%u,%u):", idx, cx, cy);
-			Zenith_Log("  AABB: min=(%.1f, %.1f, %.1f) max=(%.1f, %.1f, %.1f)",
-				chunk.m_xAABBMin.x, chunk.m_xAABBMin.y, chunk.m_xAABBMin.z,
-				chunk.m_xAABBMax.x, chunk.m_xAABBMax.y, chunk.m_xAABBMax.z);
-			
-			// Log mesh data for each LOD level
-			for (uint32_t lod = 0; lod < LOD_COUNT; ++lod)
-			{
-				const char* stateStr = "NOT_LOADED";
-				if (xRes.m_aeStates[lod] == Flux_TerrainLODResidencyState::RESIDENT) stateStr = "RESIDENT";
-				else if (xRes.m_aeStates[lod] == Flux_TerrainLODResidencyState::LOADING) stateStr = "LOADING";
-				else if (xRes.m_aeStates[lod] == Flux_TerrainLODResidencyState::QUEUED) stateStr = "QUEUED";
-				
-				Zenith_Log("  LOD%u [%s]: firstIndex=%u, indexCount=%u, vertexOffset=%u",
-					lod, stateStr,
-					chunk.m_axLODs[lod].m_uFirstIndex,
-					chunk.m_axLODs[lod].m_uIndexCount,
-					chunk.m_axLODs[lod].m_uVertexOffset);
-			}
-		}
-		Zenith_Log("=================================================");
 	}
 }

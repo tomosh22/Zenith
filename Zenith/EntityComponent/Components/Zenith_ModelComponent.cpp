@@ -1,7 +1,11 @@
 #include "Zenith.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
+#include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "DataStream/Zenith_DataStream.h"
+
+// Log tag for model component physics mesh operations
+static constexpr const char* LOG_TAG_MODEL_PHYSICS = "[ModelPhysics]";
 
 // Helper function to check if we should delete assets in the destructor
 // Returns false during scene loading to prevent deleting assets that will be reused
@@ -71,5 +75,91 @@ void Zenith_ModelComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 		}
 	}
 
+	// Generate physics mesh after deserializing if auto-generation is enabled
+	if (g_xPhysicsMeshConfig.m_bAutoGenerate && m_xMeshEntries.GetSize() > 0)
+	{
+		GeneratePhysicsMesh();
+	}
+
 	// m_xParentEntity will be set by the entity deserialization system
+}
+
+void Zenith_ModelComponent::GeneratePhysicsMesh(PhysicsMeshQuality eQuality)
+{
+	PhysicsMeshConfig xConfig = g_xPhysicsMeshConfig;
+	xConfig.m_eQuality = eQuality;
+	GeneratePhysicsMeshWithConfig(xConfig);
+}
+
+void Zenith_ModelComponent::GeneratePhysicsMeshWithConfig(const PhysicsMeshConfig& xConfig)
+{
+	// Clean up existing physics mesh
+	ClearPhysicsMesh();
+
+	if (m_xMeshEntries.GetSize() == 0)
+	{
+		Zenith_Log("%s Cannot generate physics mesh: no mesh entries", LOG_TAG_MODEL_PHYSICS);
+		return;
+	}
+
+	// Collect all mesh geometries
+	Zenith_Vector<Flux_MeshGeometry*> xMeshGeometries;
+	for (uint32_t i = 0; i < m_xMeshEntries.GetSize(); i++)
+	{
+		if (m_xMeshEntries.Get(i).m_pxGeometry)
+		{
+			xMeshGeometries.PushBack(m_xMeshEntries.Get(i).m_pxGeometry);
+		}
+	}
+
+	if (xMeshGeometries.GetSize() == 0)
+	{
+		Zenith_Log("%s Cannot generate physics mesh: no valid geometries", LOG_TAG_MODEL_PHYSICS);
+		return;
+	}
+
+	// Generate the physics mesh
+	m_pxPhysicsMesh = Zenith_PhysicsMeshGenerator::GeneratePhysicsMeshWithConfig(xMeshGeometries, xConfig);
+
+	if (m_pxPhysicsMesh)
+	{
+		Zenith_Log("%s Generated physics mesh for model: %u verts, %u tris",
+			LOG_TAG_MODEL_PHYSICS,
+			m_pxPhysicsMesh->GetNumVerts(),
+			m_pxPhysicsMesh->GetNumIndices() / 3);
+	}
+	else
+	{
+		Zenith_Log("%s Failed to generate physics mesh for model", LOG_TAG_MODEL_PHYSICS);
+	}
+}
+
+void Zenith_ModelComponent::ClearPhysicsMesh()
+{
+	if (m_pxPhysicsMesh)
+	{
+		delete m_pxPhysicsMesh;
+		m_pxPhysicsMesh = nullptr;
+	}
+}
+
+void Zenith_ModelComponent::DebugDrawPhysicsMesh()
+{
+	if (!m_bDebugDrawPhysicsMesh || !m_pxPhysicsMesh)
+	{
+		return;
+	}
+
+	// Get the transform matrix from the parent entity
+	if (!m_xParentEntity.HasComponent<Zenith_TransformComponent>())
+	{
+		return;
+	}
+
+	Zenith_TransformComponent& xTransform = m_xParentEntity.GetComponent<Zenith_TransformComponent>();
+	Zenith_Maths::Matrix4 xModelMatrix;
+	xTransform.BuildModelMatrix(xModelMatrix);
+
+	// Draw the physics mesh
+	Zenith_PhysicsMeshGenerator::DebugDrawPhysicsMesh(m_pxPhysicsMesh, xModelMatrix, m_xDebugDrawColor);
 }

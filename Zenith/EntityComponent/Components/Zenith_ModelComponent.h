@@ -5,6 +5,7 @@
 #include "Flux/Flux_Buffers.h"
 #include "Flux/Flux_Material.h"
 #include "AssetHandling/Zenith_AssetHandler.h"
+#include "Physics/Zenith_PhysicsMeshGenerator.h"
 
 class Zenith_ModelComponent
 {
@@ -48,6 +49,9 @@ public:
 				Zenith_AssetHandler::DeleteMesh(m_xCreatedMeshes.Get(u));
 			}
 		}
+
+		// Clean up physics mesh if it was generated
+		ClearPhysicsMesh();
 	}
 
 	// Serialization methods for Zenith_DataStream
@@ -226,6 +230,12 @@ public:
 				}
 			}
 		}
+
+		// Generate physics mesh from loaded meshes if auto-generation is enabled
+		if (g_xPhysicsMeshConfig.m_bAutoGenerate && m_xMeshEntries.GetSize() > 0)
+		{
+			GeneratePhysicsMesh();
+		}
 	}
 
 	void AddMeshEntry(Flux_MeshGeometry& xGeometry, Flux_Material& xMaterial) { m_xMeshEntries.PushBack({ &xGeometry, &xMaterial }); }
@@ -237,10 +247,32 @@ public:
 	const uint32_t GetNumMeshEntries() const { return m_xMeshEntries.GetSize(); }
 
 	Zenith_Entity GetParentEntity() const { return m_xParentEntity; }
-private:
+
+	// Physics mesh generation and access
+	void GeneratePhysicsMesh(PhysicsMeshQuality eQuality = PHYSICS_MESH_QUALITY_MEDIUM);
+	void GeneratePhysicsMeshWithConfig(const PhysicsMeshConfig& xConfig);
+	Flux_MeshGeometry* GetPhysicsMesh() const { return m_pxPhysicsMesh; }
+	bool HasPhysicsMesh() const { return m_pxPhysicsMesh != nullptr; }
+	void ClearPhysicsMesh();
+
+	// Debug drawing control
+	void SetDebugDrawPhysicsMesh(bool bEnable) { m_bDebugDrawPhysicsMesh = bEnable; }
+	bool GetDebugDrawPhysicsMesh() const { return m_bDebugDrawPhysicsMesh; }
+	void SetDebugDrawColor(const Zenith_Maths::Vector3& xColor) { m_xDebugDrawColor = xColor; }
+	const Zenith_Maths::Vector3& GetDebugDrawColor() const { return m_xDebugDrawColor; }
+
+	// Call this to render debug physics mesh visualization (call each frame when enabled)
+	void DebugDrawPhysicsMesh();
+
+//private:
 	Zenith_Entity m_xParentEntity;
 
 	Zenith_Vector<MeshEntry> m_xMeshEntries;
+	Flux_MeshGeometry* m_pxPhysicsMesh = nullptr;
+	
+	// Debug draw settings
+	bool m_bDebugDrawPhysicsMesh = true;
+	Zenith_Maths::Vector3 m_xDebugDrawColor = Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f); // Green
 	
 	// Track assets created by LoadMeshesFromDir so we can delete them in the destructor
 	Zenith_Vector<std::string> m_xCreatedTextures;
