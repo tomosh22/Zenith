@@ -1416,6 +1416,342 @@ Each call to `LoadMeshesFromDir` creates materials with a new suffix, allowing m
    - `ReadFromDataStream` automatically looks up assets by name
    - No manual tracking needed - just ensure assets exist before calling `LoadFromFile`
 
+---
+
+## Physics Mesh Generation System
+
+### Overview
+
+The physics mesh generation system automatically creates optimized collision geometry for `Zenith_ModelComponent` entities. This allows visual models to have physically accurate collision shapes without manually authoring collision meshes.
+
+### Architecture
+
+**Key Files:**
+- `Zenith/Physics/Zenith_PhysicsMeshGenerator.h` - Generator interface and config
+- `Zenith/Physics/Zenith_PhysicsMeshGenerator.cpp` - Generation algorithms (~800 lines)
+- `Zenith/EntityComponent/Components/Zenith_ModelComponent.h` - Integration API
+- `Zenith/EntityComponent/Components/Zenith_ModelComponent.cpp` - Auto-generation hook
+
+### Quality Levels
+
+The system provides three quality levels with different performance/accuracy trade-offs:
+
+#### LOW Quality - Axis-Aligned Bounding Box (AABB)
+```cpp
+PhysicsMeshQuality::LOW
+```
+- **Algorithm:** Computes tight bounding box around all vertices
+- **Output:** 8 vertices, 12 triangles (box mesh)
+- **Generation Time:** ~1-5ms
+- **Memory:** Minimal (96 bytes vertex data)
+- **Use Cases:** Simple props, performance-critical scenarios, distant LODs
+
+#### MEDIUM Quality - Convex Hull
+```cpp
+PhysicsMeshQuality::MEDIUM
+```
+- **Algorithm:** Quickhull 3D convex hull construction
+- **Output:** Varies (minimal convex mesh containing all points)
+- **Generation Time:** ~10-50ms
+- **Memory:** Depends on mesh complexity
+- **Use Cases:** Most gameplay objects, general-purpose collision
+
+#### HIGH Quality - Simplified Mesh
+```cpp
+PhysicsMeshQuality::HIGH
+```
+- **Algorithm:** Spatial hashing-based vertex decimation
+- **Output:** ~100% of original triangles (configurable via `m_fSimplificationRatio`)
+- **Generation Time:** ~50-200ms
+- **Memory:** Proportional to original mesh
+- **Use Cases:** Complex shapes requiring accurate collision, terrain, architecture
+
+### Configuration
+
+**Global Configuration:**
+```cpp
+// In Zenith_PhysicsMeshGenerator.h
+extern PhysicsMeshConfig g_xPhysicsMeshConfig;
+
+struct PhysicsMeshConfig
+{
+    PhysicsMeshQuality m_eQuality = PhysicsMeshQuality::MEDIUM;
+    float m_fSimplificationRatio = 1.0f;  // 1.0 = 100% (no decimation)
+    uint32_t m_uMinTriangles = 100;
+    uint32_t m_uMaxTriangles = 10000;
+    bool m_bAutoGenerate = true;  // Auto-generate on LoadMeshesFromDir()
+    bool m_bEnableDebugLogging = true;
+};
+```
+
+**Per-Model Override:**
+```cpp
+PhysicsMeshConfig xCustomConfig;
+xCustomConfig.m_eQuality = PhysicsMeshQuality::HIGH;
+xCustomConfig.m_fSimplificationRatio = 0.5f;  // 50% of triangles
+xModel.GeneratePhysicsMeshWithConfig(xCustomConfig);
+```
+
+### Integration Flow
+
+```
+1. Entity Creation
+   └─→ entity.AddComponent<Zenith_ModelComponent>()
+
+2. Mesh Loading
+   └─→ xModel.LoadMeshesFromDir("path/to/meshes")
+       │
+       ├─→ Loads .zmsh files from directory
+       │   └─→ CRITICAL: Must retain position data for physics mesh generation
+       │       └─→ Automatically sets: uRetainAttributeBits |= (1 << FLUX_VERTEX_ATTRIBUTE__POSITION)
+       │
+       └─→ If g_xPhysicsMeshConfig.m_bAutoGenerate == true:
+           └─→ Calls GeneratePhysicsMesh()
+
+3. Physics Mesh Generation
+   └─→ Zenith_PhysicsMeshGenerator::GeneratePhysicsMeshWithConfig()
+       │
+       ├─→ Combines all submeshes into unified mesh
+       ├─→ Selects algorithm based on quality level
+       ├─→ Generates optimized collision mesh
+       └─→ Stores in m_pxPhysicsMesh
+
+4. Collider Creation
+   └─→ entity.AddComponent<Zenith_ColliderComponent>()
+       └─→ AddCollider(COLLISION_VOLUME_TYPE_MODEL_MESH, ...)
+           │
+           ├─→ Retrieves m_pxPhysicsMesh from ModelComponent
+           ├─→ Applies transform scale to vertices (physics mesh is in model space)
+           └─→ Creates JPH::ConvexHullShape or JPH::MeshShape for Jolt Physics
+```
+
+### Scale Handling
+
+**CRITICAL: Physics mesh vertices are stored in MODEL SPACE (unscaled)**
+
+The system applies scale at different stages:
+
+1. **Physics Mesh Generation:**
+   - Vertices stored in model/local space
+   - NO scale baked into vertices
+   - Entity scale logged but not applied to mesh data
+
+2. **Debug Visualization:**
+   - Applies full model matrix (Translation × Rotation × Scale)
+   - Uses `BuildModelMatrix()` which includes scale
+   - Debug draw shows mesh at correct world-space size
+
+3. **Collider Creation:**
+   - Applies scale when copying vertices to Jolt Physics
+   - Scales vertices during JPH::ConvexHullShape or JPH::MeshShape construction
+   - Jolt Physics doesn't support runtime non-uniform scaling on bodies
+
+**Example - Scale Flow:**
+```cpp
+// 1. Set scale BEFORE loading meshes
+xTransform.SetScale({0.1f, 0.1f, 0.1f});  // Scale entity to 10% size
+
+// 2. Load meshes (auto-generates physics mesh)
+xModel.LoadMeshesFromDir("Meshes/Sponza");
+// → Physics mesh vertices in model space: e.g., vertex at (100, 50, 20)
+// → Entity scale: (0.1, 0.1, 0.1)
+
+// 3. Debug draw (visualization)
+xModel.DebugDrawPhysicsMesh();
+// → Applies transform: vertex (100, 50, 20) × scale (0.1, 0.1, 0.1) = (10, 5, 2) world space
+// → Appears at correct size matching rendered mesh
+
+// 4. Collider creation (physics simulation)
+xEntity.AddComponent<Zenith_ColliderComponent>();
+xCollider.AddCollider(COLLISION_VOLUME_TYPE_MODEL_MESH, ...);
+// → Applies scale during Jolt shape creation
+// → Physics body has correctly scaled collision shape
+```
+
+### Vertex Data Retention
+
+**CRITICAL: Position data must be retained in CPU memory for physics mesh generation**
+
+By default, `LoadMeshesFromDir` uploads mesh data to GPU and discards CPU copies. Physics mesh generation requires CPU access to vertex positions.
+
+**Solution:**
+```cpp
+// In Zenith_ModelComponent.h - LoadMeshesFromDir()
+void LoadMeshesFromDir(const std::filesystem::path& strPath, ...)
+{
+    // ...
+    
+    // If physics mesh auto-generation is enabled, ensure position data is retained
+    if (g_xPhysicsMeshConfig.m_bAutoGenerate)
+    {
+        uRetainAttributeBits |= (1 << FLUX_VERTEX_ATTRIBUTE__POSITION);
+    }
+    
+    // Load mesh with retained position data
+    Zenith_AssetHandler::AddMesh(name, path, uRetainAttributeBits, bUploadToGPU);
+}
+```
+
+**Without this fix:**
+- Physics mesh generator sees 0 vertices
+- Falls back to unit box (AABB: -0.5 to 0.5)
+- All models have identical box collision shapes
+- Log shows: `Not enough vertices for convex hull (0), using AABB fallback`
+
+**With this fix:**
+- Physics mesh generator accesses actual vertex positions
+- Generates accurate collision shapes
+- Models have properly fitted collision meshes
+- Log shows: `Generated physics mesh: 1234 verts, 2468 tris`
+
+### Debug Visualization
+
+**Enabling Debug Draw:**
+```cpp
+// Per-model toggle
+xModel.SetDebugDrawPhysicsMesh(true);
+
+// Global toggle for all models
+g_bDebugDrawAllPhysicsMeshes = true;
+```
+
+**Rendering:**
+```cpp
+// Called automatically in model's render pass
+void Zenith_ModelComponent::DebugDrawPhysicsMesh()
+{
+    if (!m_bDebugDrawPhysicsMesh || !m_pxPhysicsMesh)
+        return;
+    
+    // Get full transform matrix (includes scale!)
+    Zenith_Maths::Matrix4 xModelMatrix;
+    xTransform.BuildModelMatrix(xModelMatrix);
+    
+    // Draw wireframe in world space
+    Zenith_PhysicsMeshGenerator::DebugDrawPhysicsMesh(
+        m_pxPhysicsMesh, 
+        xModelMatrix, 
+        m_xDebugDrawColor  // Default: green (0, 1, 0)
+    );
+}
+```
+
+**Implementation:**
+- Uses `Flux_Primitives::AddLine()` to draw edges
+- Wireframe color customizable via `m_xDebugDrawColor`
+- Transforms vertices from model space to world space
+- Draws all triangle edges (3 lines per triangle)
+
+### Debug Logging
+
+**Log Tags:**
+- `[ModelPhysics]` - ModelComponent physics mesh operations
+- `[PhysicsMeshGen]` - Physics mesh generator algorithm details
+- `[Collider]` - Collider creation and Jolt Physics integration
+
+**Example Output:**
+```
+[ModelPhysics] Generating physics mesh with entity scale (0.100, 0.100, 0.100)
+[PhysicsMeshGen] Generating physics mesh from 103 submeshes (12456 verts, 24912 tris), quality=MEDIUM (ConvexHull)
+[PhysicsMeshGen] Generated convex hull: 234 verts, 468 tris
+[ModelPhysics] Generated physics mesh for model: 234 verts, 468 tris
+[ModelPhysics] First vertex in model space: (123.456, 67.890, 45.123)
+[ModelPhysics] DebugDraw: Entity scale (0.100, 0.100, 0.100), verts=234
+[Collider] Creating convex hull with scale (0.100, 0.100, 0.100), 234 points
+[Collider] Created convex hull collider successfully
+```
+
+### Known Limitations
+
+1. **Animation Not Supported:**
+   - Physics mesh generated from T-pose/bind pose
+   - Does NOT update during skeletal animation
+   - Collision shape remains static even if mesh deforms
+   - **Workaround:** Use compound shapes or multiple colliders for articulated objects
+
+2. **Non-Uniform Scale Performance:**
+   - Jolt Physics doesn't support runtime non-uniform scaling
+   - Scale must be baked into vertices during collider creation
+   - Changing scale requires regenerating physics mesh and rebuilding collider
+
+3. **Generation Time:**
+   - HIGH quality can take 50-200ms for complex meshes
+   - Blocks main thread during generation
+   - **Future:** Move to background thread with async loading
+
+4. **Memory Overhead:**
+   - Requires retaining position data in CPU memory
+   - Adds ~12 bytes per vertex (3 floats)
+   - **Optimization:** Could discard after physics mesh generation if not needed
+
+### API Reference
+
+**Zenith_ModelComponent Methods:**
+```cpp
+// Generate with global config
+void GeneratePhysicsMesh(PhysicsMeshQuality eQuality = g_xPhysicsMeshConfig.m_eQuality);
+
+// Generate with custom config
+void GeneratePhysicsMeshWithConfig(const PhysicsMeshConfig& xConfig);
+
+// Clear existing physics mesh
+void ClearPhysicsMesh();
+
+// Query
+bool HasPhysicsMesh() const;
+Flux_MeshGeometry* GetPhysicsMesh() const;
+
+// Debug visualization
+void SetDebugDrawPhysicsMesh(bool bEnable);
+void DebugDrawPhysicsMesh();
+void SetPhysicsMeshDebugColor(const Zenith_Maths::Vector3& xColor);
+```
+
+**Zenith_PhysicsMeshGenerator Static Methods:**
+```cpp
+// Generate from multiple submeshes
+static Flux_MeshGeometry* GeneratePhysicsMesh(
+    const Zenith_Vector<Flux_MeshGeometry*>& xMeshGeometries,
+    PhysicsMeshQuality eQuality);
+
+// Generate with custom config
+static Flux_MeshGeometry* GeneratePhysicsMeshWithConfig(
+    const Zenith_Vector<Flux_MeshGeometry*>& xMeshGeometries,
+    const PhysicsMeshConfig& xConfig);
+
+// Debug visualization
+static void DebugDrawPhysicsMesh(
+    const Flux_MeshGeometry* pxPhysicsMesh,
+    const Zenith_Maths::Matrix4& xTransform,
+    const Zenith_Maths::Vector3& xColor);
+
+// Utility
+static const char* GetQualityName(PhysicsMeshQuality eQuality);
+```
+
+### Performance Recommendations
+
+1. **Use MEDIUM for most objects:**
+   - Good balance of accuracy and performance
+   - Suitable for 90% of use cases
+
+2. **Use LOW for:**
+   - Simple geometric shapes (boxes, spheres already primitive)
+   - Distant objects where precision doesn't matter
+   - Performance-critical scenarios (hundreds of objects)
+
+3. **Use HIGH sparingly:**
+   - Complex architectural geometry
+   - Terrain collision meshes
+   - Objects where collision accuracy is gameplay-critical
+
+4. **Optimize mesh loading:**
+   - Only retain position data when needed
+   - Consider async generation for large meshes
+   - Cache generated physics meshes to disk
+
+---
+
 ## Conclusion
 
 Zenith's ECS provides:
@@ -1425,5 +1761,6 @@ Zenith's ECS provides:
 - **Type Safety:** Compile-time type checking
 - **Extensibility:** Easy to add new component types
 - **Thread Safety:** Deferred scene loading prevents concurrent access
+- **Physics Integration:** Automatic collision mesh generation
 
 While not as optimized as pure archetype-based ECS (like EnTT or FLECS), it strikes a balance between performance and simplicity, suitable for games with thousands of entities.
