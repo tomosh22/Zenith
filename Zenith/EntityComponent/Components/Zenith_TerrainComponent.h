@@ -65,17 +65,15 @@ public:
 
 	~Zenith_TerrainComponent();
 
-	// Static instance tracking for streaming manager lifecycle
-	static uint32_t GetInstanceCount() { return s_uInstanceCount; }
-
 private:
 	static uint32_t s_uInstanceCount;
 	static void IncrementInstanceCount();
 	static void DecrementInstanceCount();
 
 public:
+	const Flux_VertexBuffer& GetUnifiedVertexBuffer() const { return m_xUnifiedVertexBuffer; }
+	const Flux_IndexBuffer& GetUnifiedIndexBuffer() const { return m_xUnifiedIndexBuffer; }
 
-	const Flux_MeshGeometry& GetRenderMeshGeometry() const { return m_xRenderGeometryFacade; }
 	const Flux_MeshGeometry& GetPhysicsMeshGeometry() const { return *m_pxPhysicsGeometry; }
 	const Flux_Material& GetMaterial0() const { return *m_pxMaterial0; }
 	Flux_Material& GetMaterial0() { return *m_pxMaterial0; }
@@ -83,9 +81,6 @@ public:
 	Flux_Material& GetMaterial1() { return *m_pxMaterial1; }
 
 	Zenith_Entity GetParentEntity() const { return m_xParentEntity; }
-
-	const bool IsVisible(const float fVisibilityMultiplier, const Zenith_CameraComponent& xCam) const;
-
 	// Serialization methods for Zenith_DataStream
 	void WriteToDataStream(Zenith_DataStream& xStream) const;
 	void ReadFromDataStream(Zenith_DataStream& xStream);
@@ -164,10 +159,6 @@ private:
 	uint32_t m_uVertexStride = 0;
 	uint32_t m_uLOD3VertexCount = 0;   // Vertices reserved for LOD3 at buffer start
 	uint32_t m_uLOD3IndexCount = 0;    // Indices reserved for LOD3 at buffer start
-
-	// Facade mesh geometry that references this component's unified buffers
-	// This allows existing rendering code to work without changes
-	Flux_MeshGeometry m_xRenderGeometryFacade;
 
 	// ========== GPU-Driven Culling State ==========
 	bool m_bCullingResourcesInitialized = false;

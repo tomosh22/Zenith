@@ -235,10 +235,6 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Flux_Material& xMaterial0, Flux
 		m_uLOD3IndexCount
 	);
 
-	// Setup facade to reference our own unified buffers
-	m_xRenderGeometryFacade.m_xVertexBuffer = m_xUnifiedVertexBuffer;
-	m_xRenderGeometryFacade.m_xIndexBuffer = m_xUnifiedIndexBuffer;
-
 	Zenith_Log("Terrain render geometry facade setup complete (references component-owned buffers)");
 
 	// Initialize GPU culling resources for this terrain component
@@ -313,19 +309,6 @@ Zenith_TerrainComponent::~Zenith_TerrainComponent()
 	DecrementInstanceCount();
 }
 
-const bool Zenith_TerrainComponent::IsVisible(const float fVisibilityMultiplier, const Zenith_CameraComponent& xCam) const
-{
-	Zenith_Profiling::BeginProfile(ZENITH_PROFILE_INDEX__VISIBILITY_CHECK);
-	//#TO_TODO: this should be a camera frustum check against the terrain's encapsulating AABB
-	Zenith_Maths::Vector3 xCamPos;
-	xCam.GetPosition(xCamPos);
-	const Zenith_Maths::Vector2 xCamPos_2D(xCamPos.x, xCamPos.z);
-
-	bool bRet = true;//(glm::length(xCamPos_2D - GetPosition_2D()) < xCam.GetFarPlane() * 2 * fVisibilityMultiplier);
-	Zenith_Profiling::EndProfile(ZENITH_PROFILE_INDEX__VISIBILITY_CHECK);
-	return bRet;
-}
-
 void Zenith_TerrainComponent::WriteToDataStream(Zenith_DataStream& xStream) const
 {
 	// Get asset names from pointers
@@ -363,15 +346,6 @@ void Zenith_TerrainComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 			m_pxPhysicsGeometry = &Zenith_AssetHandler::GetMesh(strPhysicsGeometryName);
 			m_pxMaterial0 = &Zenith_AssetHandler::GetMaterial(strMaterial0Name);
 			m_pxMaterial1 = &Zenith_AssetHandler::GetMaterial(strMaterial1Name);
-
-			// Setup render geometry facade to reference this component's own unified buffers
-			// NOTE: Buffers are created in the full constructor, not the default constructor
-			// Deserialization path may need special handling if loading from saved scene
-			if (m_ulUnifiedVertexBufferSize > 0)
-			{
-				m_xRenderGeometryFacade.m_xVertexBuffer = m_xUnifiedVertexBuffer;
-				m_xRenderGeometryFacade.m_xIndexBuffer = m_xUnifiedIndexBuffer;
-			}
 		}
 		else
 		{
