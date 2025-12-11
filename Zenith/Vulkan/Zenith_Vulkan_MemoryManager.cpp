@@ -642,6 +642,124 @@ void Zenith_Vulkan_MemoryManager::UploadBufferData(Flux_VRAMHandle xBufferHandle
 	s_xMutex.Unlock();
 }
 
+void Zenith_Vulkan_MemoryManager::DestroyVertexBuffer(Flux_VertexBuffer& xBuffer)
+{
+	Flux_VRAMHandle xHandle = xBuffer.GetBuffer().m_xVRAMHandle;
+	if (!xHandle.IsValid())
+	{
+		return;
+	}
+
+	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xHandle);
+	if (pxVRAM)
+	{
+		QueueVRAMDeletion(pxVRAM, xHandle);
+	}
+	xBuffer.Reset();
+}
+
+void Zenith_Vulkan_MemoryManager::DestroyDynamicVertexBuffer(Flux_DynamicVertexBuffer& xBuffer)
+{
+	for (uint32_t u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
+	{
+		Flux_VRAMHandle xHandle = xBuffer.GetBufferForFrameInFlight(u).m_xVRAMHandle;
+		if (!xHandle.IsValid())
+		{
+			continue;
+		}
+
+		Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xHandle);
+		if (pxVRAM)
+		{
+			QueueVRAMDeletion(pxVRAM, xHandle);
+		}
+	}
+	xBuffer.Reset();
+}
+
+void Zenith_Vulkan_MemoryManager::DestroyIndexBuffer(Flux_IndexBuffer& xBuffer)
+{
+	Flux_VRAMHandle xHandle = xBuffer.GetBuffer().m_xVRAMHandle;
+	if (!xHandle.IsValid())
+	{
+		return;
+	}
+
+	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xHandle);
+	if (pxVRAM)
+	{
+		QueueVRAMDeletion(pxVRAM, xHandle);
+	}
+	xBuffer.Reset();
+}
+
+void Zenith_Vulkan_MemoryManager::DestroyConstantBuffer(Flux_ConstantBuffer& xBuffer)
+{
+	Flux_VRAMHandle xHandle = xBuffer.GetBuffer().m_xVRAMHandle;
+	if (!xHandle.IsValid())
+	{
+		return;
+	}
+
+	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xHandle);
+	if (pxVRAM)
+	{
+		QueueVRAMDeletion(pxVRAM, xHandle);
+	}
+	xBuffer.Reset();
+}
+
+void Zenith_Vulkan_MemoryManager::DestroyDynamicConstantBuffer(Flux_DynamicConstantBuffer& xBuffer)
+{
+	for (uint32_t u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
+	{
+		Flux_VRAMHandle xHandle = xBuffer.GetBufferForFrameInFlight(u).m_xVRAMHandle;
+		if (!xHandle.IsValid())
+		{
+			continue;
+		}
+
+		Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xHandle);
+		if (pxVRAM)
+		{
+			QueueVRAMDeletion(pxVRAM, xHandle);
+		}
+	}
+	xBuffer.Reset();
+}
+
+void Zenith_Vulkan_MemoryManager::DestroyIndirectBuffer(Flux_IndirectBuffer& xBuffer)
+{
+	Flux_VRAMHandle xHandle = xBuffer.GetBuffer().m_xVRAMHandle;
+	if (!xHandle.IsValid())
+	{
+		return;
+	}
+
+	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xHandle);
+	if (pxVRAM)
+	{
+		QueueVRAMDeletion(pxVRAM, xHandle);
+	}
+	xBuffer.Reset();
+}
+
+void Zenith_Vulkan_MemoryManager::DestroyReadWriteBuffer(Flux_ReadWriteBuffer& xBuffer)
+{
+	Flux_VRAMHandle xHandle = xBuffer.GetBuffer().m_xVRAMHandle;
+	if (!xHandle.IsValid())
+	{
+		return;
+	}
+
+	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xHandle);
+	if (pxVRAM)
+	{
+		QueueVRAMDeletion(pxVRAM, xHandle);
+	}
+	xBuffer.Reset();
+}
+
 void Zenith_Vulkan_MemoryManager::UploadBufferDataAtOffset(Flux_VRAMHandle xBufferHandle, const void* pData, size_t uSize, size_t uDestOffset)
 {
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();

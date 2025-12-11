@@ -50,6 +50,15 @@ public:
 	static void UploadBufferData(Flux_VRAMHandle xBufferHandle, const void* pData, size_t uSize);
 	static void UploadBufferDataAtOffset(Flux_VRAMHandle xBufferHandle, const void* pData, size_t uSize, size_t uDestOffset);
 
+	// Buffer destruction functions - queue VRAM for deferred deletion
+	static void DestroyVertexBuffer(Flux_VertexBuffer& xBuffer);
+	static void DestroyDynamicVertexBuffer(Flux_DynamicVertexBuffer& xBuffer);
+	static void DestroyIndexBuffer(Flux_IndexBuffer& xBuffer);
+	static void DestroyConstantBuffer(Flux_ConstantBuffer& xBuffer);
+	static void DestroyDynamicConstantBuffer(Flux_DynamicConstantBuffer& xBuffer);
+	static void DestroyIndirectBuffer(Flux_IndirectBuffer& xBuffer);
+	static void DestroyReadWriteBuffer(Flux_ReadWriteBuffer& xBuffer);
+
 	static Flux_VRAMHandle CreateBufferVRAM(const u_int uSize, const MemoryFlags eFlags, MemoryResidency eResidency);
 	static Flux_VRAMHandle CreateTextureVRAM(const void* pData, const Flux_SurfaceInfo& xInfo, bool bCreateMips);
 	static Flux_VRAMHandle CreateRenderTargetVRAM(const Flux_SurfaceInfo& xInfo);

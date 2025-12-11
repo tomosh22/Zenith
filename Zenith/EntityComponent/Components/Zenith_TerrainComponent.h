@@ -57,12 +57,23 @@ public:
 		, m_pxMaterial1(nullptr)
 		, m_bCullingResourcesInitialized(false)
 	{
+		IncrementInstanceCount();
 	};
 
 	// Full constructor for runtime creation
 	Zenith_TerrainComponent(Flux_Material& xMaterial0, Flux_Material& xMaterial1, Zenith_Entity& xEntity);
 
 	~Zenith_TerrainComponent();
+
+	// Static instance tracking for streaming manager lifecycle
+	static uint32_t GetInstanceCount() { return s_uInstanceCount; }
+
+private:
+	static uint32_t s_uInstanceCount;
+	static void IncrementInstanceCount();
+	static void DecrementInstanceCount();
+
+public:
 
 	const Flux_MeshGeometry& GetRenderMeshGeometry() const { return m_xRenderGeometryFacade; }
 	const Flux_MeshGeometry& GetPhysicsMeshGeometry() const { return *m_pxPhysicsGeometry; }
@@ -72,6 +83,18 @@ public:
 	Flux_Material& GetMaterial1() { return *m_pxMaterial1; }
 
 	Zenith_Entity GetParentEntity() const { return m_xParentEntity; }
+
+	// ========== Unified Buffer Access ==========
+	// These buffers contain LOD3 data at the start, followed by streaming space for LOD0-2
+	const Flux_VertexBuffer& GetUnifiedVertexBuffer() const { return m_xUnifiedVertexBuffer; }
+	const Flux_IndexBuffer& GetUnifiedIndexBuffer() const { return m_xUnifiedIndexBuffer; }
+	Flux_VertexBuffer& GetUnifiedVertexBuffer() { return m_xUnifiedVertexBuffer; }
+	Flux_IndexBuffer& GetUnifiedIndexBuffer() { return m_xUnifiedIndexBuffer; }
+	uint64_t GetUnifiedVertexBufferSize() const { return m_ulUnifiedVertexBufferSize; }
+	uint64_t GetUnifiedIndexBufferSize() const { return m_ulUnifiedIndexBufferSize; }
+	uint32_t GetVertexStride() const { return m_uVertexStride; }
+	uint32_t GetLOD3VertexCount() const { return m_uLOD3VertexCount; }
+	uint32_t GetLOD3IndexCount() const { return m_uLOD3IndexCount; }
 
 	const bool IsVisible(const float fVisibilityMultiplier, const Zenith_CameraComponent& xCam) const;
 
@@ -137,12 +160,24 @@ private:
 	Zenith_Entity m_xParentEntity;
 
 	//#TO not owning - just references to materials and physics geometry
-	// Render geometry now comes from Flux_TerrainStreamingManager
 	Flux_MeshGeometry* m_pxPhysicsGeometry = nullptr;
 	Flux_Material* m_pxMaterial0 = nullptr;
 	Flux_Material* m_pxMaterial1 = nullptr;
 
-	// Facade mesh geometry that references streaming manager's buffers
+	// ========== Unified Terrain Buffers (owned by this component) ==========
+	// Contains LOD3 (always-resident) data at the beginning, followed by streaming space for LOD0-2
+	// These buffers are registered with Flux_TerrainStreamingManager for LOD streaming
+	Flux_VertexBuffer m_xUnifiedVertexBuffer;
+	Flux_IndexBuffer m_xUnifiedIndexBuffer;
+	
+	// Buffer sizes and layout information
+	uint64_t m_ulUnifiedVertexBufferSize = 0;
+	uint64_t m_ulUnifiedIndexBufferSize = 0;
+	uint32_t m_uVertexStride = 0;
+	uint32_t m_uLOD3VertexCount = 0;   // Vertices reserved for LOD3 at buffer start
+	uint32_t m_uLOD3IndexCount = 0;    // Indices reserved for LOD3 at buffer start
+
+	// Facade mesh geometry that references this component's unified buffers
 	// This allows existing rendering code to work without changes
 	Flux_MeshGeometry m_xRenderGeometryFacade;
 

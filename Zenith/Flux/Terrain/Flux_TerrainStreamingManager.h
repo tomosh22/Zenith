@@ -55,6 +55,7 @@ public:
 	Flux_TerrainBufferAllocator();
 
 	void Initialize(uint32_t uTotalSize, const char* szDebugName);
+	void Reset();
 
 	// Attempt to allocate a block of the given size
 	// Returns offset on success, UINT32_MAX on failure
@@ -95,22 +96,27 @@ private:
 };
 
 // Central manager for terrain LOD streaming
+// All methods are static - no instantiation needed
 class Flux_TerrainStreamingManager
 {
 public:
+	Flux_TerrainStreamingManager() = delete;
+	~Flux_TerrainStreamingManager() = delete;
+
 	static void Initialize();
 	static void Shutdown();
 
-	static Flux_TerrainStreamingManager& Get() { return *s_pxInstance; }
+	static bool IsInitialized() { return s_bInitialized; }
 
 	// ========== Streaming API ==========
 
 	/**
 	 * Update streaming decisions based on current camera position
 	 * Called once per frame before terrain rendering
+	 * Early-outs if not initialized (no terrain components)
 	 * @param xCameraPos Current camera position for distance calculations
 	 */
-	void UpdateStreaming(const Zenith_Maths::Vector3& xCameraPos);
+	static void UpdateStreaming(const Zenith_Maths::Vector3& xCameraPos);
 
 	/**
 	 * Request a specific LOD for a chunk to be resident
@@ -121,7 +127,7 @@ public:
 	 * @param fPriority Priority score (lower = more important)
 	 * @return true if LOD is resident and ready to use
 	 */
-	bool RequestLOD(uint32_t uChunkX, uint32_t uChunkY, uint32_t uLODLevel, float fPriority);
+	static bool RequestLOD(uint32_t uChunkX, uint32_t uChunkY, uint32_t uLODLevel, float fPriority);
 
 	/**
 	 * Get the buffer offsets for a chunk's LOD if it's resident
@@ -131,12 +137,12 @@ public:
 	 * @param xAllocOut [out] Allocation info if resident
 	 * @return true if LOD is resident, false if need to fall back to LOD3
 	 */
-	bool GetLODAllocation(uint32_t uChunkX, uint32_t uChunkY, uint32_t uLODLevel, Flux_TerrainLODAllocation& xAllocOut) const;
+	static bool GetLODAllocation(uint32_t uChunkX, uint32_t uChunkY, uint32_t uLODLevel, Flux_TerrainLODAllocation& xAllocOut);
 
 	/**
 	 * Get residency state for a chunk's LOD
 	 */
-	Flux_TerrainLODResidencyState GetResidencyState(uint32_t uChunkX, uint32_t uChunkY, uint32_t uLODLevel) const;
+	static Flux_TerrainLODResidencyState GetResidencyState(uint32_t uChunkX, uint32_t uChunkY, uint32_t uLODLevel);
 
 	/**
 	 * Build chunk data array for GPU upload
@@ -144,34 +150,62 @@ public:
 	 * allocation info for all chunks and LODs
 	 * @param pxChunkDataOut [out] Array of TOTAL_CHUNKS chunk data structs
 	 */
-	void BuildChunkDataForGPU(Zenith_TerrainChunkData* pxChunkDataOut) const;
+	static void BuildChunkDataForGPU(Zenith_TerrainChunkData* pxChunkDataOut);
 
 	/**
 	 * Check if chunk data needs to be re-uploaded to GPU
 	 * Returns true if any LOD allocations have changed since last upload
 	 */
-	bool IsChunkDataDirty() const { return m_bChunkDataDirty; }
-	
+	static bool IsChunkDataDirty() { return s_bInitialized && s_bChunkDataDirty; }
+
 	/**
 	 * Mark chunk data as uploaded (clear dirty flag)
 	 */
-	void ClearChunkDataDirty() { m_bChunkDataDirty = false; }
-	
+	static void ClearChunkDataDirty() { s_bChunkDataDirty = false; }
+
 	/**
 	 * Get pre-allocated chunk data buffer for zero-allocation updates
 	 * Returns nullptr if not initialized
 	 */
-	Zenith_TerrainChunkData* GetCachedChunkDataBuffer() const { return m_pxCachedChunkData; }
+	static Zenith_TerrainChunkData* GetCachedChunkDataBuffer() { return s_pxCachedChunkData; }
 
 	// ========== Buffer Access ==========
 
 	/**
-	 * Get the unified terrain vertex/index buffers
+	 * Get the unified terrain vertex/index buffers from the registered component
 	 * These buffers contain both LOD3 (always-resident, at the beginning)
 	 * and streaming LOD0-2 data (dynamically allocated in the rest of the buffer)
+	 * Returns null references if no component is registered
 	 */
-	const Flux_VertexBuffer& GetTerrainVertexBuffer() const { return m_xUnifiedVertexBuffer; }
-	const Flux_IndexBuffer& GetTerrainIndexBuffer() const { return m_xUnifiedIndexBuffer; }
+	static const Flux_VertexBuffer* GetTerrainVertexBuffer();
+	static const Flux_IndexBuffer* GetTerrainIndexBuffer();
+
+	/**
+	 * Register a terrain component's unified buffers with the streaming manager
+	 * The component owns the buffers; the streaming manager uses them for LOD streaming
+	 * Only one component can be registered at a time
+	 * @param pxVertexBuffer Pointer to component's unified vertex buffer
+	 * @param pxIndexBuffer Pointer to component's unified index buffer
+	 * @param ulVertexBufferSize Total size of vertex buffer in bytes
+	 * @param ulIndexBufferSize Total size of index buffer in bytes
+	 * @param uVertexStride Bytes per vertex
+	 * @param uLOD3VertexCount Number of vertices in LOD3 region (at buffer start)
+	 * @param uLOD3IndexCount Number of indices in LOD3 region (at buffer start)
+	 */
+	static void RegisterTerrainBuffers(
+		Flux_VertexBuffer* pxVertexBuffer,
+		Flux_IndexBuffer* pxIndexBuffer,
+		uint64_t ulVertexBufferSize,
+		uint64_t ulIndexBufferSize,
+		uint32_t uVertexStride,
+		uint32_t uLOD3VertexCount,
+		uint32_t uLOD3IndexCount
+	);
+
+	/**
+	 * Unregister terrain buffers when component is destroyed
+	 */
+	static void UnregisterTerrainBuffers();
 
 	// ========== Debug / Stats ==========
 
@@ -189,45 +223,43 @@ public:
 		uint32_t m_uIndexFragments;              // Number of free blocks in index allocator
 	};
 
-	const StreamingStats& GetStats() const { return m_xStats; }
-	void LogStats() const;
+	static const StreamingStats& GetStats() { return s_xStats; }
+	static void LogStats();
 
 private:
-	Flux_TerrainStreamingManager() = default;
-	~Flux_TerrainStreamingManager() = default;
-
-	static Flux_TerrainStreamingManager* s_pxInstance;
+	// Initialization state
+	static bool s_bInitialized;
 
 	// Frame counter for LRU tracking
-	uint32_t m_uCurrentFrame = 0;
+	static uint32_t s_uCurrentFrame;
 
-	// ========== GPU Buffers ==========
+	// ========== GPU Buffers (owned by Zenith_TerrainComponent, referenced here) ==========
 
-	// Unified buffers containing both LOD3 (reserved at start) and streaming LOD0-2 data
-	Flux_VertexBuffer m_xUnifiedVertexBuffer;
-	Flux_IndexBuffer m_xUnifiedIndexBuffer;
+	// Pointers to the terrain component's unified buffers
+	// Contains LOD3 (reserved at start) and streaming LOD0-2 data
+	static Flux_VertexBuffer* s_pxUnifiedVertexBuffer;
+	static Flux_IndexBuffer* s_pxUnifiedIndexBuffer;
 
-	// Buffer sizes for bounds checking
-	uint64_t m_ulUnifiedVertexBufferSize;  // Total size in bytes
-	uint64_t m_ulUnifiedIndexBufferSize;   // Total size in bytes
-	uint32_t m_uVertexStride;              // Bytes per vertex
+	// Buffer sizes for bounds checking (cached from registration)
+	static uint64_t s_ulUnifiedVertexBufferSize;  // Total size in bytes
+	static uint64_t s_ulUnifiedIndexBufferSize;   // Total size in bytes
+	static uint32_t s_uVertexStride;              // Bytes per vertex
 
 	// Reserved space tracking for LOD3 (never evicted)
-	uint32_t m_uLOD3VertexCount;   // Number of vertices reserved for LOD3 at buffer start
-	uint32_t m_uLOD3IndexCount;     // Number of indices reserved for LOD3 at buffer start
+	static uint32_t s_uLOD3VertexCount;   // Number of vertices reserved for LOD3 at buffer start
+	static uint32_t s_uLOD3IndexCount;     // Number of indices reserved for LOD3 at buffer start
 
 	// ========== Allocation Tracking ==========
 
-	Flux_TerrainBufferAllocator m_xVertexAllocator;
-	Flux_TerrainBufferAllocator m_xIndexAllocator;
+	static Flux_TerrainBufferAllocator s_xVertexAllocator;
+	static Flux_TerrainBufferAllocator s_xIndexAllocator;
 
 	// Per-chunk residency state (64x64 = 4096 chunks)
-	Flux_TerrainChunkResidency m_axChunkResidency[TOTAL_CHUNKS];
+	static Flux_TerrainChunkResidency s_axChunkResidency[TOTAL_CHUNKS];
 
 	// Cached AABBs for all chunks (computed once, reused for all chunk data updates)
-	// Mutable because caching is an implementation detail that doesn't affect logical const-ness
-	mutable Zenith_AABB m_axChunkAABBs[TOTAL_CHUNKS];
-	mutable bool m_bAABBsCached = false;
+	static Zenith_AABB s_axChunkAABBs[TOTAL_CHUNKS];
+	static bool s_bAABBsCached;
 
 	// ========== Streaming Queue ==========
 
@@ -244,7 +276,7 @@ private:
 		}
 	};
 
-	std::priority_queue<StreamingRequest> m_xStreamingQueue;
+	static std::priority_queue<StreamingRequest> s_xStreamingQueue;
 
 	// ========== Eviction Candidates ==========
 
@@ -263,31 +295,31 @@ private:
 
 	// ========== Stats ==========
 
-	StreamingStats m_xStats;
+	static StreamingStats s_xStats;
 
 	// ========== Performance Optimization State ==========
 
 	// Camera position tracking for incremental updates
-	Zenith_Maths::Vector3 m_xLastCameraPos = Zenith_Maths::Vector3(FLT_MAX, FLT_MAX, FLT_MAX);
-	
+	static Zenith_Maths::Vector3 s_xLastCameraPos;
+
 	// Current desired LOD for each chunk (cached to avoid recomputation)
-	uint8_t m_auDesiredLOD[TOTAL_CHUNKS];
-	
+	static uint8_t s_auDesiredLOD[TOTAL_CHUNKS];
+
 	// Dirty flag - true when chunk data needs GPU re-upload
-	mutable bool m_bChunkDataDirty = true;
-	
+	static bool s_bChunkDataDirty;
+
 	// Pre-allocated chunk data buffer to avoid per-frame allocations
-	mutable Zenith_TerrainChunkData* m_pxCachedChunkData = nullptr;
-	
+	static Zenith_TerrainChunkData* s_pxCachedChunkData;
+
 	// Frame skip for streaming updates (not every frame needs full update)
-	uint32_t m_uStreamingUpdateInterval = 2;  // Process streaming every N frames
-	
+	static uint32_t s_uStreamingUpdateInterval;  // Process streaming every N frames
+
 	// Active chunk set - chunks within streaming consideration distance
 	// Avoids scanning all 4096 chunks every frame
-	std::vector<uint32_t> m_xActiveChunkIndices;
-	uint32_t m_uActiveChunkRadius = 16;  // Chunks in each direction from camera
-	int32_t m_iLastCameraChunkX = INT32_MIN;
-	int32_t m_iLastCameraChunkY = INT32_MIN;
+	static std::vector<uint32_t> s_xActiveChunkIndices;
+	static uint32_t s_uActiveChunkRadius;  // Chunks in each direction from camera
+	static int32_t s_iLastCameraChunkX;
+	static int32_t s_iLastCameraChunkY;
 
 	// ========== Internal Helpers ==========
 
@@ -295,7 +327,7 @@ private:
 	 * Process streaming queue and upload LOD mesh data to GPU
 	 * Called during UpdateStreaming()
 	 */
-	void ProcessStreamingQueue();
+	static void ProcessStreamingQueue();
 
 	/**
 	 * Evict one or more low-priority LODs to make space
@@ -303,7 +335,7 @@ private:
 	 * @param uIndexSpaceNeeded Indices needed
 	 * @return true if enough space was freed
 	 */
-	bool EvictToMakeSpace(uint32_t uVertexSpaceNeeded, uint32_t uIndexSpaceNeeded);
+	static bool EvictToMakeSpace(uint32_t uVertexSpaceNeeded, uint32_t uIndexSpaceNeeded);
 
 	/**
 	 * Stream in a specific chunk's LOD mesh data
@@ -314,43 +346,43 @@ private:
 	 * @param uIndexOffset Offset in streaming index buffer
 	 * @return true on success
 	 */
-	bool StreamInLOD(uint32_t uChunkIndex, uint32_t uLODLevel, uint32_t uVertexOffset, uint32_t uIndexOffset);
+	static bool StreamInLOD(uint32_t uChunkIndex, uint32_t uLODLevel, uint32_t uVertexOffset, uint32_t uIndexOffset);
 
 	/**
 	 * Evict a specific chunk's LOD from GPU memory
 	 * @param uChunkIndex Flat chunk index
 	 * @param uLODLevel LOD level to evict
 	 */
-	void EvictLOD(uint32_t uChunkIndex, uint32_t uLODLevel);
+	static void EvictLOD(uint32_t uChunkIndex, uint32_t uLODLevel);
 
 	/**
 	 * Build eviction candidate list from all resident high LODs
 	 * @param xCameraPos Current camera position for priority calculation
 	 */
-	std::vector<EvictionCandidate> BuildEvictionCandidates(const Zenith_Maths::Vector3& xCameraPos) const;
+	static std::vector<EvictionCandidate> BuildEvictionCandidates(const Zenith_Maths::Vector3& xCameraPos);
 
 	/**
 	 * Calculate chunk center position for distance calculations
 	 */
-	Zenith_Maths::Vector3 GetChunkCenter(uint32_t uChunkX, uint32_t uChunkY) const;
+	static Zenith_Maths::Vector3 GetChunkCenter(uint32_t uChunkX, uint32_t uChunkY);
 
 	/**
 	 * Rebuild the active chunk set based on camera position
 	 * Only chunks in this set are considered for LOD updates each frame
 	 */
-	void RebuildActiveChunkSet(int32_t iCameraChunkX, int32_t iCameraChunkY);
+	static void RebuildActiveChunkSet(int32_t iCameraChunkX, int32_t iCameraChunkY);
 
 	/**
 	 * Get chunk coords from world position
 	 */
-	void WorldPosToChunkCoords(const Zenith_Maths::Vector3& xWorldPos, int32_t& iChunkX, int32_t& iChunkY) const;
+	static void WorldPosToChunkCoords(const Zenith_Maths::Vector3& xWorldPos, int32_t& iChunkX, int32_t& iChunkY);
 
 	/**
 	 * Convert 2D chunk coords to flat index
 	 * NOTE: Uses x * DIMS + y to match the loop order (x outer, y inner) used throughout
 	 * the terrain streaming and combine code.
 	 */
-	inline uint32_t ChunkCoordsToIndex(uint32_t uChunkX, uint32_t uChunkY) const
+	static inline uint32_t ChunkCoordsToIndex(uint32_t uChunkX, uint32_t uChunkY)
 	{
 		return uChunkX * CHUNK_GRID_SIZE + uChunkY;
 	}
@@ -360,7 +392,7 @@ private:
 	 * Must be the inverse of ChunkCoordsToIndex: index = x * DIMS + y
 	 * So: x = index / DIMS, y = index % DIMS
 	 */
-	inline void ChunkIndexToCoords(uint32_t uChunkIndex, uint32_t& uChunkX, uint32_t& uChunkY) const
+	static inline void ChunkIndexToCoords(uint32_t uChunkIndex, uint32_t& uChunkX, uint32_t& uChunkY)
 	{
 		uChunkX = uChunkIndex / CHUNK_GRID_SIZE;
 		uChunkY = uChunkIndex % CHUNK_GRID_SIZE;

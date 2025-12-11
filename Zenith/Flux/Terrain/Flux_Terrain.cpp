@@ -209,7 +209,6 @@ void Flux_Terrain::SubmitRenderToGBufferTask()
 	s_uFrameCounter++;
 	
 	// Get all terrain components
-	Zenith_Vector<Zenith_TerrainComponent*> xAllTerrain;
 	g_xTerrainComponentsToRender.Clear();
 	Zenith_Scene::GetCurrentScene().GetAllOfComponentType<Zenith_TerrainComponent>(g_xTerrainComponentsToRender);
 
@@ -219,7 +218,7 @@ void Flux_Terrain::SubmitRenderToGBufferTask()
 	// Process streaming requests and evictions based on camera position
 	Zenith_Profiling::BeginProfile(ZENITH_PROFILE_INDEX__FLUX_TERRAIN_STREAMING);
 	Zenith_Maths::Vector3 xCameraPos = Flux_Graphics::GetCameraPosition();
-	Flux_TerrainStreamingManager::Get().UpdateStreaming(xCameraPos);
+	Flux_TerrainStreamingManager::UpdateStreaming(xCameraPos);
 	Zenith_Profiling::EndProfile(ZENITH_PROFILE_INDEX__FLUX_TERRAIN_STREAMING);
 
 	// ========== Update Chunk LOD Allocations ==========
@@ -258,7 +257,7 @@ void Flux_Terrain::SubmitRenderToGBufferTask()
 	// ========== Log Performance Metrics (periodic) ==========
 	if (dbg_bLogTerrainMetrics && (s_uFrameCounter % 120 == 0))
 	{
-		const Flux_TerrainStreamingManager::StreamingStats& xStats = Flux_TerrainStreamingManager::Get().GetStats();
+		const Flux_TerrainStreamingManager::StreamingStats& xStats = Flux_TerrainStreamingManager::GetStats();
 		Zenith_Log("=== Terrain Performance Metrics (Frame %u) ===", s_uFrameCounter);
 		Zenith_Log("  High-LOD chunks resident: %u", xStats.m_uHighLODChunksResident);
 		Zenith_Log("  Streaming vertex buffer: %u/%u MB (%.1f%%)", 
