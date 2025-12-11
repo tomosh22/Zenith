@@ -36,13 +36,7 @@ static constexpr uint32_t DBG_TRACKED_LOD = 0;
 bool Flux_TerrainStreamingManager::s_bInitialized = false;
 uint32_t Flux_TerrainStreamingManager::s_uCurrentFrame = 0;
 
-Flux_VertexBuffer* Flux_TerrainStreamingManager::s_pxUnifiedVertexBuffer = nullptr;
-Flux_IndexBuffer* Flux_TerrainStreamingManager::s_pxUnifiedIndexBuffer = nullptr;
-uint64_t Flux_TerrainStreamingManager::s_ulUnifiedVertexBufferSize = 0;
-uint64_t Flux_TerrainStreamingManager::s_ulUnifiedIndexBufferSize = 0;
-uint32_t Flux_TerrainStreamingManager::s_uVertexStride = 0;
-uint32_t Flux_TerrainStreamingManager::s_uLOD3VertexCount = 0;
-uint32_t Flux_TerrainStreamingManager::s_uLOD3IndexCount = 0;
+Zenith_TerrainComponent* Flux_TerrainStreamingManager::s_pxTerrainComponent = nullptr;
 
 Flux_TerrainBufferAllocator Flux_TerrainStreamingManager::s_xVertexAllocator;
 Flux_TerrainBufferAllocator Flux_TerrainStreamingManager::s_xIndexAllocator;
@@ -250,13 +244,7 @@ void Flux_TerrainStreamingManager::Initialize()
 	s_bChunkDataDirty = true;
 
 	// Reset buffer pointers (will be set by RegisterTerrainBuffers)
-	s_pxUnifiedVertexBuffer = nullptr;
-	s_pxUnifiedIndexBuffer = nullptr;
-	s_ulUnifiedVertexBufferSize = 0;
-	s_ulUnifiedIndexBufferSize = 0;
-	s_uVertexStride = 0;
-	s_uLOD3VertexCount = 0;
-	s_uLOD3IndexCount = 0;
+	s_pxTerrainComponent = nullptr;
 
 	// Clear chunk residency state (will be initialized when buffers are registered)
 	for (uint32_t i = 0; i < TOTAL_CHUNKS; ++i)
@@ -303,8 +291,7 @@ void Flux_TerrainStreamingManager::Shutdown()
 
 	// NOTE: Unified buffers are owned by Zenith_TerrainComponent, NOT destroyed here
 	// Just clear our pointers to them
-	s_pxUnifiedVertexBuffer = nullptr;
-	s_pxUnifiedIndexBuffer = nullptr;
+	s_pxTerrainComponent = nullptr;
 
 	Zenith_Log("Flux_TerrainStreamingManager - Buffer references cleared (buffers owned by terrain component)");
 
@@ -332,49 +319,21 @@ void Flux_TerrainStreamingManager::Shutdown()
 	Zenith_Log("Flux_TerrainStreamingManager shutdown complete");
 }
 
-const Flux_VertexBuffer* Flux_TerrainStreamingManager::GetTerrainVertexBuffer()
-{
-	return s_pxUnifiedVertexBuffer;
-}
 
-const Flux_IndexBuffer* Flux_TerrainStreamingManager::GetTerrainIndexBuffer()
-{
-	return s_pxUnifiedIndexBuffer;
-}
-
-void Flux_TerrainStreamingManager::RegisterTerrainBuffers(
-	Flux_VertexBuffer* pxVertexBuffer,
-	Flux_IndexBuffer* pxIndexBuffer,
-	uint64_t ulVertexBufferSize,
-	uint64_t ulIndexBufferSize,
-	uint32_t uVertexStride,
-	uint32_t uLOD3VertexCount,
-	uint32_t uLOD3IndexCount)
+void Flux_TerrainStreamingManager::RegisterTerrainBuffers(Zenith_TerrainComponent* pxTerrainComponent)
 {
 	Zenith_Log("==========================================================");
 	Zenith_Log("Flux_TerrainStreamingManager::RegisterTerrainBuffers()");
 	Zenith_Log("  Registering terrain component's unified buffers");
 	Zenith_Log("==========================================================");
 
-	// Store buffer pointers
-	s_pxUnifiedVertexBuffer = pxVertexBuffer;
-	s_pxUnifiedIndexBuffer = pxIndexBuffer;
-	s_ulUnifiedVertexBufferSize = ulVertexBufferSize;
-	s_ulUnifiedIndexBufferSize = ulIndexBufferSize;
-	s_uVertexStride = uVertexStride;
-	s_uLOD3VertexCount = uLOD3VertexCount;
-	s_uLOD3IndexCount = uLOD3IndexCount;
-
-	Zenith_Log("  LOD3 region: vertices [0, %u), indices [0, %u)", uLOD3VertexCount, uLOD3IndexCount);
-	Zenith_Log("  Vertex stride: %u bytes", uVertexStride);
-	Zenith_Log("  Total vertex buffer size: %llu bytes", ulVertexBufferSize);
-	Zenith_Log("  Total index buffer size: %llu bytes", ulIndexBufferSize);
+	s_pxTerrainComponent = pxTerrainComponent;
 
 	// ========== Initialize Allocators ==========
 	// Calculate allocator sizes for the streaming region (after LOD3)
 	// Allocators manage the streaming region only; offsets are relative to the start of streaming region
 	// When uploading, we add LOD3VertexCount/LOD3IndexCount to get absolute buffer offsets
-	const uint32_t uMaxStreamingVertices = static_cast<uint32_t>(STREAMING_VERTEX_BUFFER_SIZE / uVertexStride);
+	const uint32_t uMaxStreamingVertices = static_cast<uint32_t>(STREAMING_VERTEX_BUFFER_SIZE / s_pxTerrainComponent->m_uVertexStride);
 	const uint32_t uMaxStreamingIndices = static_cast<uint32_t>(STREAMING_INDEX_BUFFER_SIZE / sizeof(uint32_t));
 
 	s_xVertexAllocator.Initialize(uMaxStreamingVertices, "StreamingVertices");
@@ -383,7 +342,7 @@ void Flux_TerrainStreamingManager::RegisterTerrainBuffers(
 	Zenith_Log("Allocators initialized:");
 	Zenith_Log("  Streaming vertex capacity: %u vertices", uMaxStreamingVertices);
 	Zenith_Log("  Streaming index capacity: %u indices", uMaxStreamingIndices);
-	Zenith_Log("  Streaming region starts at: vertex %u, index %u", uLOD3VertexCount, uLOD3IndexCount);
+	Zenith_Log("  Streaming region starts at: vertex %u, index %u", s_pxTerrainComponent->m_uLOD3VertexCount, s_pxTerrainComponent->m_uLOD3IndexCount);
 
 	// ========== Initialize Chunk Residency State ==========
 	// Initialize all chunks: LOD3 is RESIDENT (in LOD3 buffer), LOD0-2 are NOT_LOADED
@@ -477,13 +436,7 @@ void Flux_TerrainStreamingManager::UnregisterTerrainBuffers()
 	Zenith_Log("Flux_TerrainStreamingManager::UnregisterTerrainBuffers()");
 
 	// Clear buffer pointers (component owns the actual buffers)
-	s_pxUnifiedVertexBuffer = nullptr;
-	s_pxUnifiedIndexBuffer = nullptr;
-	s_ulUnifiedVertexBufferSize = 0;
-	s_ulUnifiedIndexBufferSize = 0;
-	s_uVertexStride = 0;
-	s_uLOD3VertexCount = 0;
-	s_uLOD3IndexCount = 0;
+	s_pxTerrainComponent = nullptr;
 
 	// Reset allocators (streaming region no longer valid)
 	s_xVertexAllocator.Reset();
@@ -1061,8 +1014,8 @@ bool Flux_TerrainStreamingManager::StreamInLOD(uint32_t uChunkIndex, uint32_t uL
 	Flux_MeshGeometry& xChunkMesh = Zenith_AssetHandler::GetMesh(strChunkName);
 
 	// Calculate absolute offsets in unified buffer
-	const uint32_t uAbsoluteVertexOffset = s_uLOD3VertexCount + uVertexOffset;
-	const uint32_t uAbsoluteIndexOffset = s_uLOD3IndexCount + uIndexOffset;
+	const uint32_t uAbsoluteVertexOffset = s_pxTerrainComponent->m_uLOD3VertexCount + uVertexOffset;
+	const uint32_t uAbsoluteIndexOffset = s_pxTerrainComponent->m_uLOD3IndexCount + uIndexOffset;
 
 	// Calculate byte offsets and sizes
 	const uint32_t uVertexStride = xChunkMesh.m_xBufferLayout.GetStride();
@@ -1072,7 +1025,7 @@ bool Flux_TerrainStreamingManager::StreamInLOD(uint32_t uChunkIndex, uint32_t uL
 	const uint64_t ulIndexOffsetBytes = static_cast<uint64_t>(uAbsoluteIndexOffset) * sizeof(uint32_t);
 
 	// Bounds check
-	if (ulVertexOffsetBytes + ulVertexDataSize > s_ulUnifiedVertexBufferSize)
+	if (ulVertexOffsetBytes + ulVertexDataSize > s_pxTerrainComponent->m_ulUnifiedVertexBufferSize)
 	{
 		Zenith_Log("[Terrain] ERROR: Vertex upload exceeds buffer for chunk (%u,%u) %s",
 			uChunkX, uChunkY, GetLODName(uLODLevel));
@@ -1080,7 +1033,7 @@ bool Flux_TerrainStreamingManager::StreamInLOD(uint32_t uChunkIndex, uint32_t uL
 		return false;
 	}
 
-	if (ulIndexOffsetBytes + ulIndexDataSize > s_ulUnifiedIndexBufferSize)
+	if (ulIndexOffsetBytes + ulIndexDataSize > s_pxTerrainComponent->m_ulUnifiedIndexBufferSize)
 	{
 		Zenith_Log("[Terrain] ERROR: Index upload exceeds buffer for chunk (%u,%u) %s",
 			uChunkX, uChunkY, GetLODName(uLODLevel));
@@ -1088,24 +1041,16 @@ bool Flux_TerrainStreamingManager::StreamInLOD(uint32_t uChunkIndex, uint32_t uL
 		return false;
 	}
 
-	// Ensure buffers are registered before uploading
-	if (!s_pxUnifiedVertexBuffer || !s_pxUnifiedIndexBuffer)
-	{
-		Zenith_Log("[Terrain] ERROR: Cannot upload LOD data - buffers not registered");
-		Zenith_AssetHandler::DeleteMesh(strChunkName);
-		return false;
-	}
-
 	// Upload vertex and index data (synchronous)
 	Flux_MemoryManager::UploadBufferDataAtOffset(
-		s_pxUnifiedVertexBuffer->GetBuffer().m_xVRAMHandle,
+		s_pxTerrainComponent->GetUnifiedVertexBuffer().GetBuffer().m_xVRAMHandle,
 		xChunkMesh.m_pVertexData,
 		ulVertexDataSize,
 		ulVertexOffsetBytes
 	);
 
 	Flux_MemoryManager::UploadBufferDataAtOffset(
-		s_pxUnifiedIndexBuffer->GetBuffer().m_xVRAMHandle,
+		s_pxTerrainComponent->GetUnifiedIndexBuffer().GetBuffer().m_xVRAMHandle,
 		xChunkMesh.m_puIndices,
 		ulIndexDataSize,
 		ulIndexOffsetBytes
@@ -1143,8 +1088,8 @@ void Flux_TerrainStreamingManager::EvictLOD(uint32_t uChunkIndex, uint32_t uLODL
 
 	// Free allocations (convert absolute to relative offsets)
 	Flux_TerrainLODAllocation& xAlloc = xResidency.m_axAllocations[uLODLevel];
-	const uint32_t uRelativeVertexOffset = xAlloc.m_uVertexOffset - s_uLOD3VertexCount;
-	const uint32_t uRelativeIndexOffset = xAlloc.m_uIndexOffset - s_uLOD3IndexCount;
+	const uint32_t uRelativeVertexOffset = xAlloc.m_uVertexOffset - s_pxTerrainComponent->m_uLOD3VertexCount;
+	const uint32_t uRelativeIndexOffset = xAlloc.m_uIndexOffset - s_pxTerrainComponent->m_uLOD3IndexCount;
 	s_xVertexAllocator.Free(uRelativeVertexOffset, xAlloc.m_uVertexCount);
 	s_xIndexAllocator.Free(uRelativeIndexOffset, xAlloc.m_uIndexCount);
 

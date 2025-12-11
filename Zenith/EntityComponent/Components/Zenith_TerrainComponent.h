@@ -139,7 +139,7 @@ public:
 	 */
 	void UpdateChunkLODAllocations();
 
-private:
+//private:
 	Zenith_Entity m_xParentEntity;
 
 	//#TO not owning - just references to materials and physics geometry

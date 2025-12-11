@@ -225,15 +225,7 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Flux_Material& xMaterial0, Flux
 	Zenith_AssetHandler::DeleteMesh("Terrain_LOD3_Owned_0_0");
 
 	// ========== Register buffers with streaming manager ==========
-	Flux_TerrainStreamingManager::RegisterTerrainBuffers(
-		&m_xUnifiedVertexBuffer,
-		&m_xUnifiedIndexBuffer,
-		m_ulUnifiedVertexBufferSize,
-		m_ulUnifiedIndexBufferSize,
-		m_uVertexStride,
-		m_uLOD3VertexCount,
-		m_uLOD3IndexCount
-	);
+	Flux_TerrainStreamingManager::RegisterTerrainBuffers(this);
 
 	Zenith_Log("Terrain render geometry facade setup complete (references component-owned buffers)");
 
@@ -265,7 +257,7 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Flux_Material& xMaterial0, Flux
 	xPhysicsGeometry.m_ulReservedVertexDataSize = ulTotalVertexDataSize;
 
 	xPhysicsGeometry.m_puIndices = static_cast<Flux_MeshGeometry::IndexType*>(Zenith_MemoryManagement::Reallocate(xPhysicsGeometry.m_puIndices, ulTotalIndexDataSize));
-xPhysicsGeometry.m_ulReservedIndexDataSize = ulTotalIndexDataSize;
+	xPhysicsGeometry.m_ulReservedIndexDataSize = ulTotalIndexDataSize;
 
 	xPhysicsGeometry.m_pxPositions = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Reallocate(xPhysicsGeometry.m_pxPositions, ulTotalPositionDataSize));
 	xPhysicsGeometry.m_ulReservedPositionDataSize = ulTotalPositionDataSize;

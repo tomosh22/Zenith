@@ -14,6 +14,7 @@ using namespace Flux_TerrainConfig;
 // Forward declarations
 class Flux_MeshGeometry;
 struct Zenith_TerrainChunkData;
+class Zenith_TerrainComponent;
 
 // Residency state for a single LOD level of a terrain chunk
 enum class Flux_TerrainLODResidencyState : uint8_t
@@ -166,17 +167,6 @@ public:
 	 */
 	static Zenith_TerrainChunkData* GetCachedChunkDataBuffer() { return s_pxCachedChunkData; }
 
-	// ========== Buffer Access ==========
-
-	/**
-	 * Get the unified terrain vertex/index buffers from the registered component
-	 * These buffers contain both LOD3 (always-resident, at the beginning)
-	 * and streaming LOD0-2 data (dynamically allocated in the rest of the buffer)
-	 * Returns null references if no component is registered
-	 */
-	static const Flux_VertexBuffer* GetTerrainVertexBuffer();
-	static const Flux_IndexBuffer* GetTerrainIndexBuffer();
-
 	/**
 	 * Register a terrain component's unified buffers with the streaming manager
 	 * The component owns the buffers; the streaming manager uses them for LOD streaming
@@ -190,13 +180,7 @@ public:
 	 * @param uLOD3IndexCount Number of indices in LOD3 region (at buffer start)
 	 */
 	static void RegisterTerrainBuffers(
-		Flux_VertexBuffer* pxVertexBuffer,
-		Flux_IndexBuffer* pxIndexBuffer,
-		uint64_t ulVertexBufferSize,
-		uint64_t ulIndexBufferSize,
-		uint32_t uVertexStride,
-		uint32_t uLOD3VertexCount,
-		uint32_t uLOD3IndexCount
+		Zenith_TerrainComponent* pxTerrainComponent
 	);
 
 	/**
@@ -230,21 +214,7 @@ private:
 	// Frame counter for LRU tracking
 	static uint32_t s_uCurrentFrame;
 
-	// ========== GPU Buffers (owned by Zenith_TerrainComponent, referenced here) ==========
-
-	// Pointers to the terrain component's unified buffers
-	// Contains LOD3 (reserved at start) and streaming LOD0-2 data
-	static Flux_VertexBuffer* s_pxUnifiedVertexBuffer;
-	static Flux_IndexBuffer* s_pxUnifiedIndexBuffer;
-
-	// Buffer sizes for bounds checking (cached from registration)
-	static uint64_t s_ulUnifiedVertexBufferSize;  // Total size in bytes
-	static uint64_t s_ulUnifiedIndexBufferSize;   // Total size in bytes
-	static uint32_t s_uVertexStride;              // Bytes per vertex
-
-	// Reserved space tracking for LOD3 (never evicted)
-	static uint32_t s_uLOD3VertexCount;   // Number of vertices reserved for LOD3 at buffer start
-	static uint32_t s_uLOD3IndexCount;     // Number of indices reserved for LOD3 at buffer start
+	static Zenith_TerrainComponent* s_pxTerrainComponent;
 
 	// ========== Allocation Tracking ==========
 
