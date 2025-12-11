@@ -84,8 +84,10 @@ static constexpr uint64_t STREAMING_VERTEX_BUFFER_SIZE = STREAMING_VERTEX_BUFFER
 static constexpr uint64_t STREAMING_INDEX_BUFFER_SIZE = STREAMING_INDEX_BUFFER_BYTES;
 
 // Per-frame processing limits to avoid stalls
-static constexpr uint32_t MAX_UPLOADS_PER_FRAME = 4;
-static constexpr uint32_t MAX_EVICTIONS_PER_FRAME = 8;
+// Note: Higher upload count = more responsive streaming but potentially more frame stutter
+// 8 uploads/frame is a good balance for terrain chunks (~50-100KB each)
+static constexpr uint32_t MAX_UPLOADS_PER_FRAME = 8;
+static constexpr uint32_t MAX_EVICTIONS_PER_FRAME = 16;
 static constexpr uint32_t MAX_QUEUE_SIZE = 256;
 
 // ========== Optimization Tuning ==========

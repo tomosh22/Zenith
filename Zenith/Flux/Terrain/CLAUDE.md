@@ -162,6 +162,174 @@ Zenith_AssetHandler::AddMesh(strChunkName, strChunkPath.c_str(), 0);
 
 ---
 
+## Bug #6: "Fighting for Residency" - Stale Priority and Queue Bug (CRITICAL)
+
+**Symptom:** After moving camera far from spawn point:
+- Nearby terrain does NOT stream in
+- Distant terrain (near original spawn) repeatedly streams in and out
+- Appears as if chunks are "fighting for residency"
+
+**Root Cause (THREE separate issues):**
+
+1. **Stale Priority Values:**
+   - `m_afPriorities` stored distance when chunk was REQUESTED, not CURRENT distance
+   - When camera moved far away, old chunks kept their LOW priority (they were nearby when requested)
+   - Eviction calculated priority as: `framesSinceRequested + cachedDistanceSq`
+   - Old chunks had LOW cachedDistanceSq (from when they were near camera) even though they're now FAR
+   - New chunks also had LOW distance (they're actually near camera)
+   - System couldn't distinguish which chunks were truly far!
+
+2. **Queue Not Cleared on Camera Move:**
+   - Streaming queue is a priority queue sorted by distance (low = high priority)
+   - Old requests from spawn location had LOW distances (they were near camera then)
+   - When camera moved, old requests were still in queue
+   - Old requests processed before new requests (both had similar low distances)
+
+3. **No Proactive Eviction:**
+   - Chunks only evicted when allocation failed
+   - Buffer stayed full of old chunks
+   - New chunks couldn't get space without triggering eviction
+   - Eviction used stale priorities, potentially evicting new chunks instead of old!
+
+**The Cascade:**
+```
+1. Camera at spawn (0,0) - chunks at (0,0) stream in with distance ~0
+2. Camera moves to (2000, 0, 2000)
+3. Old chunks still have cached priority ~0 (stale from spawn time)
+4. New chunks request with priority ~0 (they're near camera now)
+5. Queue has: [old requests dist=0] + [new requests dist=0]
+6. System can't tell which is which!
+7. Old chunks evicted → immediately re-requested from queue → loaded → evicted...
+```
+
+**Fix Applied:**
+
+1. **Clear Queue on Camera Chunk Change:**
+```cpp
+if (iCameraChunkX != s_iLastCameraChunkX || iCameraChunkY != s_iLastCameraChunkY)
+{
+    // Clear stale requests - they're no longer relevant
+    while (!s_xStreamingQueue.empty())
+    {
+        StreamingRequest request = s_xStreamingQueue.top();
+        s_xStreamingQueue.pop();
+        // Reset state so they can be re-requested if still needed
+        s_axChunkResidency[request.m_uChunkIndex].m_aeStates[request.m_uLODLevel] =
+            Flux_TerrainLODResidencyState::NOT_LOADED;
+    }
+}
+```
+
+2. **Use CURRENT Distance for Eviction:**
+```cpp
+// OLD (buggy):
+candidate.m_fPriority = framesSinceRequested + xResidency.m_afPriorities[uLOD];
+
+// NEW (fixed):
+Zenith_Maths::Vector3 xChunkCenter = GetChunkCenter(uChunkX, uChunkY);
+float fCurrentDistanceSq = glm::distance2(s_xLastCameraPos, xChunkCenter);
+candidate.m_fPriority = fCurrentDistanceSq;  // Farthest chunks evicted first
+```
+
+3. **Proactive Eviction of Distant Chunks:**
+```cpp
+void ProactivelyEvictDistantChunks(const Zenith_Maths::Vector3& xCameraPos)
+{
+    // On camera chunk change, evict ALL chunks beyond streaming range
+    // This frees space BEFORE it's needed, preventing fighting
+    for (uint32_t i = 0; i < TOTAL_CHUNKS; ++i)
+    {
+        float fDistanceSq = glm::distance2(xCameraPos, GetChunkCenter(...));
+        const float fEvictionThreshold = LOD_MAX_DISTANCE_SQ[LOD2] * 1.5f;
+
+        if (fDistanceSq > fEvictionThreshold)
+            EvictLOD(i, uLOD);
+    }
+}
+```
+
+4. **Removed `m_afPriorities` Array Entirely:**
+   - No longer cache priorities - always calculate current distance when needed
+   - Simpler code, no stale data possible
+
+5. **Filter Queue Instead of Clearing (Follow-up Fix):**
+   - Original fix cleared entire queue on camera chunk change
+   - Problem: With only 4 uploads/frame, player movement kept resetting progress
+   - New approach: Keep requests for chunks still within range, remove only far chunks
+   ```cpp
+   // Filter queue - keep nearby, remove far
+   while (!s_xStreamingQueue.empty())
+   {
+       float fCurrentDistanceSq = glm::distance2(xCameraPos, GetChunkCenter(...));
+       if (fCurrentDistanceSq < LOD_MAX_DISTANCE_SQ[request.m_uLODLevel])
+       {
+           // Update priority and keep
+           request.m_fPriority = fCurrentDistanceSq;
+           xFilteredQueue.push(request);
+       }
+       else
+       {
+           // Request now irrelevant - reset state
+           s_axChunkResidency[...].m_aeStates[...] = NOT_LOADED;
+       }
+   }
+   ```
+
+6. **Increased Upload Rate:**
+   - MAX_UPLOADS_PER_FRAME: 4 → 8
+   - MAX_EVICTIONS_PER_FRAME: 8 → 16
+   - More responsive streaming, especially for moving cameras
+
+7. **Safe Eviction Policy (Final Fix - Regression):**
+   - **New Bug:** After fixes 1-6, chunks would switch FROM correct LOD TO LOD3 as camera moves closer
+   - **Root Cause:** `EvictToMakeSpace()` would evict ANY resident LOD to make room for new allocation
+     - Example: Camera at 500m from chunk, LOD1 resident (appropriate for 500m)
+     - System tries to stream LOD0 (higher detail)
+     - `EvictToMakeSpace()` evicts the working LOD1 to make room
+     - Allocation for LOD0 fails due to buffer fragmentation
+     - Result: Both LOD0 and LOD1 gone → falls back to LOD3
+   - **Solution:** Only evict chunks OUTSIDE their LOD's appropriate range
+   ```cpp
+   bool Flux_TerrainStreamingManager::EvictToMakeSpace(...)
+   {
+       for (each resident LOD)
+       {
+           float fCurrentDistanceSq = glm::distance2(s_xLastCameraPos, xChunkCenter);
+           float fLODMaxDistanceSq = LOD_MAX_DISTANCE_SQ[uLOD];
+           float fEvictionThreshold = fLODMaxDistanceSq * 1.2f;  // 20% hysteresis
+
+           // CRITICAL: Only evict if chunk is OUTSIDE this LOD's range
+           if (fCurrentDistanceSq > fEvictionThreshold)
+           {
+               // Safe to evict - this LOD not needed at this distance
+               candidates.push_back(candidate);
+           }
+           // Otherwise DON'T evict - this LOD is still appropriate!
+       }
+
+       if (candidates.empty())
+       {
+           // No safe candidates - all LODs still needed
+           // Return false rather than evict working data
+           return false;
+       }
+   }
+   ```
+   - **Result:** Chunks stay at correct LOD as camera approaches
+   - **Tradeoff:** In low-memory situations, system falls back to LOD3 more often rather than thrashing
+
+**Lesson:** In streaming systems:
+1. NEVER cache distance/priority - always compute from current state
+2. Filter queues on camera move, don't clear everything (preserves nearby requests)
+3. Proactively free resources when no longer needed, don't wait for allocation failures
+4. Mixing different scales in priority (frames + distance²) is confusing and error-prone
+5. Upload rate must be high enough to keep up with player movement speed
+6. **Safe eviction is critical:** Only evict data that's genuinely not needed (outside appropriate range)
+7. **Fail gracefully:** Return false rather than evict working data and risk making things worse
+8. **Fragmentation awareness:** When allocation might fail, preserve working state rather than gamble
+
+---
+
 # Architecture Deep Dive
 
 ## Component Interaction Diagram
@@ -1525,6 +1693,8 @@ When terrain LOD doesn't work:
 - [ ] Check absolute/relative offset conversion in `StreamInLOD` and `EvictLOD`
 - [ ] Check synchronous upload used (`UploadBufferDataAtOffset`)
 - [ ] Enable debug logging and check "Chunk X resident" count
+- [ ] Verify `EvictToMakeSpace()` only evicts chunks OUTSIDE their LOD range (fCurrentDistanceSq > fLODMaxDistanceSq * 1.2)
+- [ ] Check queue filtering preserves nearby requests on camera chunk change
 
 ---
 
@@ -1678,8 +1848,10 @@ Logs every 120 frames:
 
 ---
 
-**Last Updated:** 2025-12-04
+**Last Updated:** 2025-12-11
 **Author:** Terrain LOD Streaming System Debug Session
-**Status:** WORKING - All major bugs fixed
-**Status:** Production-Ready (Culling: CPU), Production-Ready (Streaming)
+**Status:** PRODUCTION-READY - All bugs fixed and verified working
+**Culling Status:** CPU-based frustum culling (Production-Ready)
+**Streaming Status:** Distance-based LOD streaming with safe eviction (Production-Ready)
+**Bug #6 Status:** RESOLVED - Fighting for residency, queue filtering, and safe eviction all fixed
 **GPU Optimization Pass:** December 2024 - Compute/Vertex/Fragment shader optimizations applied

@@ -265,7 +265,6 @@ void Flux_TerrainStreamingManager::Initialize()
 		{
 			s_axChunkResidency[i].m_aeStates[uLOD] = Flux_TerrainLODResidencyState::NOT_LOADED;
 			s_axChunkResidency[i].m_auLastRequestedFrame[uLOD] = 0;
-			s_axChunkResidency[i].m_afPriorities[uLOD] = FLT_MAX;
 		}
 	}
 
@@ -430,11 +429,9 @@ void Flux_TerrainStreamingManager::RegisterTerrainBuffers(
 			{
 				xResidency.m_aeStates[uLOD] = Flux_TerrainLODResidencyState::NOT_LOADED;
 				xResidency.m_auLastRequestedFrame[uLOD] = 0;
-				xResidency.m_afPriorities[uLOD] = FLT_MAX;
 			}
 
 			xResidency.m_auLastRequestedFrame[LOWEST_DETAIL_LOD] = 0;
-			xResidency.m_afPriorities[LOWEST_DETAIL_LOD] = FLT_MAX;
 		}
 	}
 
@@ -520,15 +517,14 @@ void Flux_TerrainStreamingManager::UpdateStreaming(const Zenith_Maths::Vector3& 
 	s_xStats.m_uStreamingRequestsThisFrame = 0;
 	s_xStats.m_uEvictionsThisFrame = 0;
 
-	// ========== Check if camera moved significantly ==========
-	const float fCameraMoveSq = glm::distance2(xCameraPos, s_xLastCameraPos);
-	const bool bCameraMovedSignificantly = (fCameraMoveSq > CAMERA_MOVE_THRESHOLD_SQ);
+	// Store camera position for eviction distance calculations
+	s_xLastCameraPos = xCameraPos;
 
 	// Get current camera chunk position
 	int32_t iCameraChunkX, iCameraChunkY;
 	WorldPosToChunkCoords(xCameraPos, iCameraChunkX, iCameraChunkY);
 
-	// ========== Rebuild active chunk set only when camera changes chunks ==========
+	// ========== Handle camera chunk change ==========
 	if (iCameraChunkX != s_iLastCameraChunkX || iCameraChunkY != s_iLastCameraChunkY)
 	{
 		RebuildActiveChunkSet(iCameraChunkX, iCameraChunkY);
@@ -536,76 +532,97 @@ void Flux_TerrainStreamingManager::UpdateStreaming(const Zenith_Maths::Vector3& 
 		s_iLastCameraChunkY = iCameraChunkY;
 		s_bChunkDataDirty = true;
 
+		// Filter the streaming queue - only keep requests for chunks that are still nearby
+		// This fixes the issue where clearing the entire queue would prevent nearby chunks
+		// from ever streaming in if the player keeps moving
+		std::priority_queue<StreamingRequest> xFilteredQueue;
+		uint32_t uRemovedCount = 0;
+
+		while (!s_xStreamingQueue.empty())
+		{
+			StreamingRequest request = s_xStreamingQueue.top();
+			s_xStreamingQueue.pop();
+
+			// Calculate current distance to this chunk
+			uint32_t uChunkX, uChunkY;
+			ChunkIndexToCoords(request.m_uChunkIndex, uChunkX, uChunkY);
+			Zenith_Maths::Vector3 xChunkCenter = GetChunkCenter(uChunkX, uChunkY);
+			float fCurrentDistanceSq = glm::distance2(xCameraPos, xChunkCenter);
+
+			// Keep request if chunk is still within streaming range for its LOD level
+			// Use the actual LOD threshold (not eviction threshold) to be more aggressive about keeping
+			if (fCurrentDistanceSq < LOD_MAX_DISTANCE_SQ[request.m_uLODLevel])
+			{
+				// Update priority with current distance and re-add to queue
+				request.m_fPriority = fCurrentDistanceSq;
+				xFilteredQueue.push(request);
+			}
+			else
+			{
+				// Request is now irrelevant - chunk is too far for this LOD
+				s_axChunkResidency[request.m_uChunkIndex].m_aeStates[request.m_uLODLevel] = Flux_TerrainLODResidencyState::NOT_LOADED;
+				uRemovedCount++;
+			}
+		}
+
+		s_xStreamingQueue = std::move(xFilteredQueue);
+
 		if (dbg_bLogTerrainStreaming)
 		{
-			Zenith_Log("[Terrain] Camera moved to chunk (%d,%d), active set: %zu chunks",
-				iCameraChunkX, iCameraChunkY, s_xActiveChunkIndices.size());
+			Zenith_Log("[Terrain] Camera moved to chunk (%d,%d), filtered queue (removed %u, kept %zu), active set: %zu chunks",
+				iCameraChunkX, iCameraChunkY, uRemovedCount, s_xStreamingQueue.size(), s_xActiveChunkIndices.size());
 		}
+
+		// Proactively evict chunks that are now far from camera
+		// This frees up space BEFORE we need it, preventing the "fighting for residency" bug
+		ProactivelyEvictDistantChunks(xCameraPos);
 	}
 
-	// ========== Process streaming on interval or significant camera move ==========
-	const bool bProcessStreaming = bCameraMovedSignificantly ||
-		(s_uCurrentFrame % STREAMING_UPDATE_INTERVAL == 0);
-
-	if (bProcessStreaming)
+	// ========== CPU-side LOD Selection and Streaming Requests ==========
+	// Process every frame for responsive streaming
+	for (uint32_t uActiveIdx = 0; uActiveIdx < s_xActiveChunkIndices.size(); ++uActiveIdx)
 	{
-		s_xLastCameraPos = xCameraPos;
+		const uint32_t uChunkIndex = s_xActiveChunkIndices[uActiveIdx];
+		uint32_t x, y;
+		ChunkIndexToCoords(uChunkIndex, x, y);
 
-		// ========== CPU-side LOD Selection and Streaming Requests ==========
-		// Use thresholds from Flux_TerrainConfig.h (single source of truth)
+		// Calculate distance from camera to chunk center
+		Zenith_Maths::Vector3 xChunkCenter = GetChunkCenter(x, y);
+		float fDistanceSq = glm::distance2(xCameraPos, xChunkCenter);
 
-		for (uint32_t uActiveIdx = 0; uActiveIdx < s_xActiveChunkIndices.size(); ++uActiveIdx)
+		// Determine desired LOD (simple threshold check, no hysteresis complexity)
+		uint8_t uNewLOD = static_cast<uint8_t>(LOD_ALWAYS_RESIDENT);
+		for (uint32_t iLOD = 0; iLOD < LOD_ALWAYS_RESIDENT; ++iLOD)
 		{
-			const uint32_t uChunkIndex = s_xActiveChunkIndices[uActiveIdx];
-			uint32_t x, y;
-			ChunkIndexToCoords(uChunkIndex, x, y);
-
-			// Calculate distance from camera to chunk center
-			Zenith_Maths::Vector3 xChunkCenter = GetChunkCenter(x, y);
-			float fDistanceSq = glm::distance2(xCameraPos, xChunkCenter);
-
-			// Determine desired LOD with hysteresis to prevent thrashing
-			uint8_t uCurrentLOD = s_auDesiredLOD[uChunkIndex];
-			uint8_t uNewLOD = static_cast<uint8_t>(LOD_ALWAYS_RESIDENT);
-
-			for (uint32_t iLOD = 0; iLOD < LOD_ALWAYS_RESIDENT; ++iLOD)
+			if (fDistanceSq < LOD_MAX_DISTANCE_SQ[iLOD])
 			{
-				float fThreshold = LOD_MAX_DISTANCE_SQ[iLOD];
-				// Apply hysteresis when downgrading (moving to lower detail)
-				if (uCurrentLOD <= iLOD)
-				{
-					fThreshold *= LOD_HYSTERESIS_FACTOR;
-				}
-
-				if (fDistanceSq < fThreshold)
-				{
-					uNewLOD = static_cast<uint8_t>(iLOD);
-					break;
-				}
+				uNewLOD = static_cast<uint8_t>(iLOD);
+				break;
 			}
+		}
 
-			// Update cached LOD if changed
-			if (uNewLOD != uCurrentLOD)
+		// Update cached LOD
+		uint8_t uOldLOD = s_auDesiredLOD[uChunkIndex];
+		if (uNewLOD != uOldLOD)
+		{
+			s_auDesiredLOD[uChunkIndex] = uNewLOD;
+			s_bChunkDataDirty = true;
+
+			if (dbg_bLogTerrainStateChanges)
 			{
-				s_auDesiredLOD[uChunkIndex] = uNewLOD;
-				s_bChunkDataDirty = true;
-
-				if (dbg_bLogTerrainStateChanges)
-				{
-					Zenith_Log("[Terrain] Chunk (%u,%u) LOD desire: %s -> %s (dist=%.0fm)",
-						x, y, GetLODName(uCurrentLOD), GetLODName(uNewLOD), sqrtf(fDistanceSq));
-				}
+				Zenith_Log("[Terrain] Chunk (%u,%u) LOD: %s -> %s (dist=%.0fm)",
+					x, y, GetLODName(uOldLOD), GetLODName(uNewLOD), sqrtf(fDistanceSq));
 			}
+		}
 
-			// Request streaming for non-always-resident LODs
-			if (uNewLOD < LOD_ALWAYS_RESIDENT)
-			{
-				RequestLOD(x, y, uNewLOD, fDistanceSq);
-			}
+		// Request streaming for non-always-resident LODs
+		if (uNewLOD < LOD_ALWAYS_RESIDENT)
+		{
+			RequestLOD(x, y, uNewLOD, fDistanceSq);
 		}
 	}
 
-	// Always process streaming queue to complete pending uploads
+	// Process streaming queue
 	ProcessStreamingQueue();
 
 	// ========== Update stats periodically ==========
@@ -649,9 +666,8 @@ bool Flux_TerrainStreamingManager::RequestLOD(uint32_t uChunkX, uint32_t uChunkY
 	uint32_t uChunkIndex = ChunkCoordsToIndex(uChunkX, uChunkY);
 	Flux_TerrainChunkResidency& xResidency = s_axChunkResidency[uChunkIndex];
 
-	// Update last requested frame and priority
+	// Update last requested frame
 	xResidency.m_auLastRequestedFrame[uLODLevel] = s_uCurrentFrame;
-	xResidency.m_afPriorities[uLODLevel] = fPriority;
 
 	Flux_TerrainLODResidencyState eState = xResidency.m_aeStates[uLODLevel];
 
@@ -879,12 +895,61 @@ void Flux_TerrainStreamingManager::ProcessStreamingQueue()
 	}
 }
 
+void Flux_TerrainStreamingManager::ProactivelyEvictDistantChunks(const Zenith_Maths::Vector3& xCameraPos)
+{
+	if (!s_bInitialized) return;
+
+	// Evict all resident high-LOD chunks that are now beyond their LOD's max distance
+	// This is called when camera changes chunk, so we clear out old data proactively
+	// rather than waiting for allocation failures
+
+	uint32_t uEvicted = 0;
+
+	for (uint32_t i = 0; i < TOTAL_CHUNKS; ++i)
+	{
+		Flux_TerrainChunkResidency& xResidency = s_axChunkResidency[i];
+
+		for (uint32_t uLOD = 0; uLOD < LOD_ALWAYS_RESIDENT; ++uLOD)
+		{
+			if (xResidency.m_aeStates[uLOD] != Flux_TerrainLODResidencyState::RESIDENT)
+				continue;
+
+			// Calculate CURRENT distance to this chunk
+			uint32_t uChunkX, uChunkY;
+			ChunkIndexToCoords(i, uChunkX, uChunkY);
+			Zenith_Maths::Vector3 xChunkCenter = GetChunkCenter(uChunkX, uChunkY);
+			float fDistanceSq = glm::distance2(xCameraPos, xChunkCenter);
+
+			// If this chunk is now beyond the streaming range for ANY high LOD,
+			// evict it. The threshold is the max distance for LOD2 (the farthest streaming LOD)
+			// with some margin to prevent thrashing
+			const float fEvictionThreshold = LOD_MAX_DISTANCE_SQ[LOD_ALWAYS_RESIDENT - 1] * 1.5f;
+
+			if (fDistanceSq > fEvictionThreshold)
+			{
+				EvictLOD(i, uLOD);
+				uEvicted++;
+				s_xStats.m_uEvictionsThisFrame++;
+			}
+		}
+	}
+
+	if (uEvicted > 0 && dbg_bLogTerrainEvictions)
+	{
+		Zenith_Log("[Terrain] Proactively evicted %u distant LODs", uEvicted);
+	}
+}
+
 bool Flux_TerrainStreamingManager::EvictToMakeSpace(uint32_t uVertexSpaceNeeded, uint32_t uIndexSpaceNeeded)
 {
 	if (!s_bInitialized) return false;
 
-	// Build eviction candidate list (all resident high LODs sorted by priority)
+	// Build eviction candidate list using CURRENT distances (not stale cached values)
+	// CRITICAL: Only evict chunks that are OUTSIDE their LOD's appropriate range
+	// This prevents the bug where we evict a working LOD, fail to allocate the new one
+	// due to fragmentation, and end up worse off than before (falling back to LOD3)
 	std::vector<EvictionCandidate> candidates;
+
 	for (uint32_t i = 0; i < TOTAL_CHUNKS; ++i)
 	{
 		Flux_TerrainChunkResidency& xResidency = s_axChunkResidency[i];
@@ -892,25 +957,49 @@ bool Flux_TerrainStreamingManager::EvictToMakeSpace(uint32_t uVertexSpaceNeeded,
 		{
 			if (xResidency.m_aeStates[uLOD] == Flux_TerrainLODResidencyState::RESIDENT)
 			{
-				EvictionCandidate candidate;
-				candidate.m_uChunkIndex = i;
-				candidate.m_uLODLevel = uLOD;
+				// Calculate CURRENT distance to camera
+				uint32_t uChunkX, uChunkY;
+				ChunkIndexToCoords(i, uChunkX, uChunkY);
+				Zenith_Maths::Vector3 xChunkCenter = GetChunkCenter(uChunkX, uChunkY);
+				float fCurrentDistanceSq = glm::distance2(s_xLastCameraPos, xChunkCenter);
 
-				// Higher value = more likely to evict (older and farther = evict first)
-				uint32_t uFramesSinceRequested = s_uCurrentFrame - xResidency.m_auLastRequestedFrame[uLOD];
-				candidate.m_fPriority = static_cast<float>(uFramesSinceRequested) + xResidency.m_afPriorities[uLOD];
+				// CRITICAL FIX: Only consider for eviction if this chunk is OUTSIDE
+				// the range where this LOD is appropriate.
+				// For example: If LOD0 is resident and chunk is at 500m (within LOD0 range of 632m),
+				// do NOT evict it! We'd lose useful data.
+				// Only evict LOD0 if chunk is beyond 632m (where LOD1 or lower should be used)
+				float fLODMaxDistanceSq = LOD_MAX_DISTANCE_SQ[uLOD];
 
-				candidates.push_back(candidate);
+				// Add some hysteresis to prevent thrashing at boundaries
+				float fEvictionThreshold = fLODMaxDistanceSq * 1.2f;
+
+				if (fCurrentDistanceSq > fEvictionThreshold)
+				{
+					// Chunk is beyond where this LOD is needed - safe to evict
+					EvictionCandidate candidate;
+					candidate.m_uChunkIndex = i;
+					candidate.m_uLODLevel = uLOD;
+					// Higher distance = higher eviction priority (evict far chunks first)
+					candidate.m_fPriority = fCurrentDistanceSq;
+
+					candidates.push_back(candidate);
+				}
 			}
 		}
 	}
 
 	if (candidates.empty())
 	{
+		// No safe eviction candidates - all resident LODs are still needed
+		// Let the caller fall back to LOD3 rather than evict working data
+		if (dbg_bLogTerrainEvictions)
+		{
+			Zenith_Log("[Terrain] EvictToMakeSpace: No safe candidates (all LODs still in range)");
+		}
 		return false;
 	}
 
-	// Sort by priority (highest = most likely to evict)
+	// Sort by distance - farthest chunks first
 	std::sort(candidates.begin(), candidates.end(), [](const EvictionCandidate& a, const EvictionCandidate& b) {
 		return a.m_fPriority > b.m_fPriority;
 	});

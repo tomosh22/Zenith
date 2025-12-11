@@ -43,9 +43,6 @@ struct Flux_TerrainChunkResidency
 	// Last frame this chunk was requested at each LOD
 	// Used for eviction heuristics (LRU-style)
 	uint32_t m_auLastRequestedFrame[LOD_COUNT];
-
-	// Priority score for each LOD (lower distance = higher priority)
-	float m_afPriorities[LOD_COUNT];
 };
 
 // Simple free-list allocator for buffer space
@@ -330,7 +327,15 @@ private:
 	static void ProcessStreamingQueue();
 
 	/**
+	 * Proactively evict all LODs that are now far from camera
+	 * Called when camera changes chunk to free up space before it's needed
+	 * @param xCameraPos Current camera position
+	 */
+	static void ProactivelyEvictDistantChunks(const Zenith_Maths::Vector3& xCameraPos);
+
+	/**
 	 * Evict one or more low-priority LODs to make space
+	 * Uses CURRENT distance to camera (not stale cached values)
 	 * @param uVertexSpaceNeeded Vertices needed
 	 * @param uIndexSpaceNeeded Indices needed
 	 * @return true if enough space was freed
