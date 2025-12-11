@@ -84,18 +84,6 @@ public:
 
 	Zenith_Entity GetParentEntity() const { return m_xParentEntity; }
 
-	// ========== Unified Buffer Access ==========
-	// These buffers contain LOD3 data at the start, followed by streaming space for LOD0-2
-	const Flux_VertexBuffer& GetUnifiedVertexBuffer() const { return m_xUnifiedVertexBuffer; }
-	const Flux_IndexBuffer& GetUnifiedIndexBuffer() const { return m_xUnifiedIndexBuffer; }
-	Flux_VertexBuffer& GetUnifiedVertexBuffer() { return m_xUnifiedVertexBuffer; }
-	Flux_IndexBuffer& GetUnifiedIndexBuffer() { return m_xUnifiedIndexBuffer; }
-	uint64_t GetUnifiedVertexBufferSize() const { return m_ulUnifiedVertexBufferSize; }
-	uint64_t GetUnifiedIndexBufferSize() const { return m_ulUnifiedIndexBufferSize; }
-	uint32_t GetVertexStride() const { return m_uVertexStride; }
-	uint32_t GetLOD3VertexCount() const { return m_uLOD3VertexCount; }
-	uint32_t GetLOD3IndexCount() const { return m_uLOD3IndexCount; }
-
 	const bool IsVisible(const float fVisibilityMultiplier, const Zenith_CameraComponent& xCam) const;
 
 	// Serialization methods for Zenith_DataStream
