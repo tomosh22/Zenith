@@ -114,6 +114,12 @@ void Zenith_DebugVariableTree::LeafNodeReadOnly<uint32_t>::ImGuiDisplay()
 }
 
 template<>
+void Zenith_DebugVariableTree::LeafNodeReadOnly<uint64_t>::ImGuiDisplay()
+{
+	ImGui::Text("%s: %llu", m_xName.back().c_str(), *m_pData);
+}
+
+template<>
 void Zenith_DebugVariableTree::LeafNodeReadOnly<float>::ImGuiDisplay()
 {
 	ImGui::Text("%s: %.3f", m_xName.back().c_str(), *m_pData);

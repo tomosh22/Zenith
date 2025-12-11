@@ -6,6 +6,7 @@
 
 #include "Zenith_Vulkan.h"
 
+#include "DebugVariables/Zenith_DebugVariables.h"
 #include "Flux/Flux_Buffers.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 
@@ -17,6 +18,10 @@ std::list<Zenith_Vulkan_MemoryManager::StagingMemoryAllocation> Zenith_Vulkan_Me
 std::list<Zenith_Vulkan_MemoryManager::PendingVRAMDeletion> Zenith_Vulkan_MemoryManager::s_xPendingDeletions;
 
 size_t Zenith_Vulkan_MemoryManager::s_uNextFreeStagingOffset = 0;
+
+u_int64 Zenith_Vulkan_MemoryManager::s_ulImageMemoryUsed = 0;
+u_int64 Zenith_Vulkan_MemoryManager::s_ulBufferMemoryUsed = 0;
+u_int64 Zenith_Vulkan_MemoryManager::s_ulMemoryUsed = 0;
 
 Zenith_Mutex Zenith_Vulkan_MemoryManager::s_xMutex;
 
@@ -73,6 +78,12 @@ void Zenith_Vulkan_MemoryManager::Initialise()
 	s_xCommandBuffer.Initialise(COMMANDTYPE_COPY);
 
 	InitialiseStagingBuffer();
+
+	#ifdef ZENITH_DEBUG_VARIABLES
+	Zenith_DebugVariables::AddUInt64_ReadOnly({ "Vulkan", "Memory Manager", "Image Memory Used" }, s_ulImageMemoryUsed);
+	Zenith_DebugVariables::AddUInt64_ReadOnly({ "Vulkan", "Memory Manager", "Buffer Memory Used" }, s_ulBufferMemoryUsed);
+	Zenith_DebugVariables::AddUInt64_ReadOnly({ "Vulkan", "Memory Manager", "Total Memory Used" }, s_ulMemoryUsed);
+	#endif
 
 	Zenith_Log("Vulkan memory manager initialised");
 }
@@ -1081,5 +1092,41 @@ void Zenith_Vulkan_MemoryManager::ProcessDeferredDeletions()
 		{
 			++it;
 		}
+	}
+}
+
+Zenith_Vulkan_VRAM::Zenith_Vulkan_VRAM(const vk::Image xImage, const VmaAllocation xAllocation, VmaAllocator xAllocator)
+	: m_xImage(xImage), m_xAllocation(xAllocation), m_xAllocator(xAllocator)
+{
+	Zenith_Vulkan_MemoryManager::IncreaseImageMemoryUsage(m_xAllocation->GetSize());
+	Zenith_Vulkan_MemoryManager::IncreaseMemoryUsage(m_xAllocation->GetSize());
+}
+
+Zenith_Vulkan_VRAM::Zenith_Vulkan_VRAM(const vk::Buffer xBuffer, const VmaAllocation xAllocation, VmaAllocator xAllocator, const u_int uSize)
+	: m_xBuffer(xBuffer), m_xAllocation(xAllocation), m_xAllocator(xAllocator), m_uBufferSize(uSize)
+{
+	Zenith_Vulkan_MemoryManager::IncreaseBufferMemoryUsage(m_xAllocation->GetSize());
+	Zenith_Vulkan_MemoryManager::IncreaseMemoryUsage(m_xAllocation->GetSize());
+}
+
+Zenith_Vulkan_VRAM::~Zenith_Vulkan_VRAM()
+{
+	if (m_xAllocation != VK_NULL_HANDLE && m_xAllocator != VK_NULL_HANDLE)
+	{
+		if (m_xImage != VK_NULL_HANDLE)
+		{
+			Zenith_Vulkan_MemoryManager::DecreaseImageMemoryUsage(m_xAllocation->GetSize());
+			vmaDestroyImage(m_xAllocator, m_xImage, m_xAllocation);
+		}
+		else if (m_xBuffer != VK_NULL_HANDLE)
+		{
+			Zenith_Vulkan_MemoryManager::DecreaseBufferMemoryUsage(m_xAllocation->GetSize());
+			vmaDestroyBuffer(m_xAllocator, m_xBuffer, m_xAllocation);
+		}
+		Zenith_Vulkan_MemoryManager::DecreaseMemoryUsage(m_xAllocation->GetSize());
+	}
+	else
+	{
+		Zenith_Assert(false, "Deleting dodgy allocation");
 	}
 }

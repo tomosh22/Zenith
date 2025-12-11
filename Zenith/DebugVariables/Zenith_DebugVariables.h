@@ -173,9 +173,14 @@ public:
 		Zenith_DebugVariableTree::LeafNodeWithRange<uint32_t, uint32_t>* pxLeaf = new Zenith_DebugVariableTree::LeafNodeWithRange<uint32_t, uint32_t>(xName, reinterpret_cast<uint32_t*>(&xVar), uMin, uMax);
 		s_xTree.AddLeafNode(pxLeaf, xName);
 	}
-	static void AddUInt32_ReadOnly(std::vector<std::string> xName, uint32_t& xVar, uint32_t uMin, uint32_t uMax)
+	static void AddUInt32_ReadOnly(std::vector<std::string> xName, uint32_t& xVar)
 	{
 		Zenith_DebugVariableTree::LeafNodeReadOnly<uint32_t>* pxLeaf = new Zenith_DebugVariableTree::LeafNodeReadOnly<uint32_t>(xName, &xVar);
+		s_xTree.AddLeafNode(pxLeaf, xName);
+	}
+	static void AddUInt64_ReadOnly(std::vector<std::string> xName, uint64_t& xVar)
+	{
+		Zenith_DebugVariableTree::LeafNodeReadOnly<uint64_t>* pxLeaf = new Zenith_DebugVariableTree::LeafNodeReadOnly<uint64_t>(xName, &xVar);
 		s_xTree.AddLeafNode(pxLeaf, xName);
 	}
 	static void AddFloat_ReadOnly(std::vector<std::string> xName, float& fVar)

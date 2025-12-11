@@ -70,6 +70,18 @@ public:
 	static void ProcessDeferredDeletions();
 
 	static void FlushStagingBuffer();
+
+	static void IncreaseImageMemoryUsage(u_int64 ulSize) { s_ulImageMemoryUsed += ulSize; }
+	static void DecreaseImageMemoryUsage(u_int64 ulSize) { s_ulImageMemoryUsed -= ulSize; }
+	static const u_int64* GetImageMemoryUsagePtr() { return &s_ulImageMemoryUsed; }
+
+	static void IncreaseBufferMemoryUsage(u_int64 ulSize) { s_ulBufferMemoryUsed += ulSize; }
+	static void DecreaseBufferMemoryUsage(u_int64 ulSize) { s_ulBufferMemoryUsed -= ulSize; }
+	static const u_int64* GetBufferMemoryUsagePtr() { return &s_ulBufferMemoryUsed; }
+
+	static void IncreaseMemoryUsage(u_int64 ulSize) { s_ulMemoryUsed += ulSize; }
+	static void DecreaseMemoryUsage(u_int64 ulSize) { s_ulMemoryUsed -= ulSize; }
+	static const u_int64* GetMemoryUsagePtr() { return &s_ulMemoryUsed; }
 private:
 
 	static void InitialiseStagingBuffer();
@@ -129,4 +141,8 @@ private:
 	static size_t s_uNextFreeStagingOffset;
 
 	static Zenith_Mutex s_xMutex;
+
+	static u_int64 s_ulImageMemoryUsed;
+	static u_int64 s_ulBufferMemoryUsed;
+	static u_int64 s_ulMemoryUsed;
 };

@@ -178,30 +178,11 @@ private:
 class Zenith_Vulkan_VRAM
 {
 public:
-	Zenith_Vulkan_VRAM(const vk::Image xImage, const VmaAllocation xAllocation, VmaAllocator xAllocator)
-		: m_xImage(xImage), m_xAllocation(xAllocation), m_xAllocator(xAllocator)
-	{
-	}
+	Zenith_Vulkan_VRAM(const vk::Image xImage, const VmaAllocation xAllocation, VmaAllocator xAllocator);
 
-	Zenith_Vulkan_VRAM(const vk::Buffer xBuffer, const VmaAllocation xAllocation, VmaAllocator xAllocator, const u_int uSize)
-		: m_xBuffer(xBuffer), m_xAllocation(xAllocation), m_xAllocator(xAllocator), m_uBufferSize(uSize)
-	{
-	}
+	Zenith_Vulkan_VRAM(const vk::Buffer xBuffer, const VmaAllocation xAllocation, VmaAllocator xAllocator, const u_int uSize);
 
-	~Zenith_Vulkan_VRAM()
-	{
-		if (m_xAllocation != VK_NULL_HANDLE && m_xAllocator != VK_NULL_HANDLE)
-		{
-			if (m_xImage != VK_NULL_HANDLE)
-			{
-				vmaDestroyImage(m_xAllocator, m_xImage, m_xAllocation);
-			}
-			else if ( m_xBuffer != VK_NULL_HANDLE)
-			{
-				vmaDestroyBuffer(m_xAllocator, m_xBuffer, m_xAllocation);
-			}
-		}
-	}
+	~Zenith_Vulkan_VRAM();
 
 	VmaAllocation GetAllocation() const { return m_xAllocation; }
 	vk::Image GetImage() const { return m_xImage; }
