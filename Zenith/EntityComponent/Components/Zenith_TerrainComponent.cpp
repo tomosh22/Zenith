@@ -109,6 +109,12 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Flux_Material& xMaterial0, Flux
 	// ========== Load and Combine LOD3 Chunks ==========
 	Zenith_Log("Loading LOD3 meshes for all %u chunks...", TOTAL_CHUNKS);
 
+	// Delete the base mesh if it exists from a previous component instance
+	if (Zenith_AssetHandler::MeshExists("Terrain_LOD3_Owned_0_0"))
+	{
+		Zenith_AssetHandler::DeleteMesh("Terrain_LOD3_Owned_0_0");
+	}
+
 	// Load first chunk to get buffer layout
 	Zenith_AssetHandler::AddMesh("Terrain_LOD3_Owned_0_0",
 		ASSETS_ROOT"Terrain/Render_LOD3_0_0.zmsh",

@@ -52,6 +52,7 @@ public:
 		m_xIndexBuffer.Reset();
 
 		m_uNumBones = 0;
+		m_xBoneNameToIdAndOffset.clear();
 	}
 
 	static void GenerateFullscreenQuad(Flux_MeshGeometry& xGeometryOut);
