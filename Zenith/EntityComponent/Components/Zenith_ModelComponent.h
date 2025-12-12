@@ -310,12 +310,12 @@ public:
 
 				if (ImGui::TreeNode("MeshEntry", "Mesh Entry %u", uMeshIdx))
 				{
-					// Material texture slots
-					RenderTextureSlot("Diffuse", xMaterial, TEXTURE_SLOT_DIFFUSE);
-					RenderTextureSlot("Normal", xMaterial, TEXTURE_SLOT_NORMAL);
-					RenderTextureSlot("Roughness/Metallic", xMaterial, TEXTURE_SLOT_ROUGHNESS_METALLIC);
-					RenderTextureSlot("Occlusion", xMaterial, TEXTURE_SLOT_OCCLUSION);
-					RenderTextureSlot("Emissive", xMaterial, TEXTURE_SLOT_EMISSIVE);
+					// Material texture slots - pass mesh index for material instancing
+					RenderTextureSlot("Diffuse", xMaterial, uMeshIdx, TEXTURE_SLOT_DIFFUSE);
+					RenderTextureSlot("Normal", xMaterial, uMeshIdx, TEXTURE_SLOT_NORMAL);
+					RenderTextureSlot("Roughness/Metallic", xMaterial, uMeshIdx, TEXTURE_SLOT_ROUGHNESS_METALLIC);
+					RenderTextureSlot("Occlusion", xMaterial, uMeshIdx, TEXTURE_SLOT_OCCLUSION);
+					RenderTextureSlot("Emissive", xMaterial, uMeshIdx, TEXTURE_SLOT_EMISSIVE);
 
 					ImGui::TreePop();
 				}
@@ -327,7 +327,7 @@ public:
 
 private:
 	// Helper to render a single texture slot with drag-drop target
-	void RenderTextureSlot(const char* szLabel, Flux_Material& xMaterial, TextureSlotType eSlot)
+	void RenderTextureSlot(const char* szLabel, Flux_Material& xMaterial, uint32_t uMeshIdx, TextureSlotType eSlot)
 	{
 		ImGui::PushID(szLabel);
 
@@ -372,8 +372,8 @@ private:
 				Zenith_Log("[ModelComponent] Texture dropped on %s: %s",
 					szLabel, pFilePayload->m_szFilePath);
 
-				// Load and assign texture
-				AssignTextureToSlot(pFilePayload->m_szFilePath, xMaterial, eSlot);
+				// Load and assign texture - creates new material instance to avoid modifying shared materials
+				AssignTextureToSlot(pFilePayload->m_szFilePath, uMeshIdx, eSlot);
 			}
 
 			ImGui::EndDragDropTarget();
@@ -389,7 +389,8 @@ private:
 	}
 
 	// Helper to load texture and assign to material slot
-	void AssignTextureToSlot(const char* szFilePath, Flux_Material& xMaterial, TextureSlotType eSlot)
+	// Note: This creates a new material instance for this mesh entry to avoid modifying shared materials
+	void AssignTextureToSlot(const char* szFilePath, uint32_t uMeshIdx, TextureSlotType eSlot)
 	{
 		std::filesystem::path xPath(szFilePath);
 		std::string strTextureName = xPath.stem().string();
@@ -406,32 +407,78 @@ private:
 			Zenith_Log("[ModelComponent] Loaded texture: %s", strTextureName.c_str());
 		}
 
-		// Get texture and assign to material
+		// Get the texture
 		Flux_Texture& xTexture = Zenith_AssetHandler::GetTexture(strTextureName);
 
+		// Get current material to copy its properties
+		Flux_Material* pxOldMaterial = m_xMeshEntries.Get(uMeshIdx).m_pxMaterial;
+
+		// Create a unique material name for this instance
+		static uint32_t s_uMaterialInstanceCounter = 0;
+		std::string strNewMaterialName = "EditorMaterial_" + std::to_string(reinterpret_cast<uintptr_t>(this))
+			+ "_" + std::to_string(uMeshIdx) + "_" + std::to_string(s_uMaterialInstanceCounter++);
+
+		// Create new material if it doesn't exist
+		if (!Zenith_AssetHandler::MaterialExists(strNewMaterialName))
+		{
+			Zenith_AssetHandler::AddMaterial(strNewMaterialName);
+			m_xCreatedMaterials.PushBack(strNewMaterialName);
+			Zenith_Log("[ModelComponent] Created new material instance: %s", strNewMaterialName.c_str());
+		}
+
+		// Get reference to new material and copy properties from old material
+		Flux_Material& xNewMaterial = Zenith_AssetHandler::GetMaterial(strNewMaterialName);
+
+		// Copy existing textures from old material to new material
+		if (pxOldMaterial)
+		{
+			const Flux_Texture* pxDiffuse = pxOldMaterial->GetDiffuse();
+			const Flux_Texture* pxNormal = pxOldMaterial->GetNormal();
+			const Flux_Texture* pxRoughMetal = pxOldMaterial->GetRoughnessMetallic();
+			const Flux_Texture* pxOcclusion = pxOldMaterial->GetOcclusion();
+			const Flux_Texture* pxEmissive = pxOldMaterial->GetEmissive();
+
+			if (pxDiffuse && pxDiffuse->m_xVRAMHandle.IsValid())
+				xNewMaterial.SetDiffuse(*pxDiffuse);
+			if (pxNormal && pxNormal->m_xVRAMHandle.IsValid())
+				xNewMaterial.SetNormal(*pxNormal);
+			if (pxRoughMetal && pxRoughMetal->m_xVRAMHandle.IsValid())
+				xNewMaterial.SetRoughnessMetallic(*pxRoughMetal);
+			if (pxOcclusion && pxOcclusion->m_xVRAMHandle.IsValid())
+				xNewMaterial.SetOcclusion(*pxOcclusion);
+			if (pxEmissive && pxEmissive->m_xVRAMHandle.IsValid())
+				xNewMaterial.SetEmissive(*pxEmissive);
+
+			xNewMaterial.SetBaseColor(pxOldMaterial->GetBaseColor());
+		}
+
+		// Now set the new texture on the appropriate slot
 		switch (eSlot)
 		{
 		case TEXTURE_SLOT_DIFFUSE:
-			xMaterial.SetDiffuse(xTexture);
+			xNewMaterial.SetDiffuse(xTexture);
 			Zenith_Log("[ModelComponent] Set diffuse texture: %s", strTextureName.c_str());
 			break;
 		case TEXTURE_SLOT_NORMAL:
-			xMaterial.SetNormal(xTexture);
+			xNewMaterial.SetNormal(xTexture);
 			Zenith_Log("[ModelComponent] Set normal texture: %s", strTextureName.c_str());
 			break;
 		case TEXTURE_SLOT_ROUGHNESS_METALLIC:
-			xMaterial.SetRoughnessMetallic(xTexture);
+			xNewMaterial.SetRoughnessMetallic(xTexture);
 			Zenith_Log("[ModelComponent] Set roughness/metallic texture: %s", strTextureName.c_str());
 			break;
 		case TEXTURE_SLOT_OCCLUSION:
-			xMaterial.SetOcclusion(xTexture);
+			xNewMaterial.SetOcclusion(xTexture);
 			Zenith_Log("[ModelComponent] Set occlusion texture: %s", strTextureName.c_str());
 			break;
 		case TEXTURE_SLOT_EMISSIVE:
-			xMaterial.SetEmissive(xTexture);
+			xNewMaterial.SetEmissive(xTexture);
 			Zenith_Log("[ModelComponent] Set emissive texture: %s", strTextureName.c_str());
 			break;
 		}
+
+		// Update the mesh entry to use the new material
+		m_xMeshEntries.Get(uMeshIdx).m_pxMaterial = &xNewMaterial;
 	}
 public:
 #endif
