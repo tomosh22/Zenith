@@ -23,6 +23,9 @@
 #include "backends/imgui_impl_vulkan.h"
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
 
+#include <filesystem>
+#include <algorithm>
+
 // Static member initialization
 EditorMode Zenith_Editor::s_eEditorMode = EditorMode::Stopped;
 EditorGizmoMode Zenith_Editor::s_eGizmoMode = EditorGizmoMode::Translate;
@@ -36,6 +39,11 @@ bool Zenith_Editor::s_bPendingSceneLoad = false;
 std::string Zenith_Editor::s_strPendingSceneLoadPath = "";
 bool Zenith_Editor::s_bPendingSceneSave = false;
 std::string Zenith_Editor::s_strPendingSceneSavePath = "";
+
+// Content Browser state
+std::string Zenith_Editor::s_strCurrentDirectory = ASSETS_ROOT;
+std::vector<ContentBrowserEntry> Zenith_Editor::s_xDirectoryContents;
+bool Zenith_Editor::s_bDirectoryNeedsRefresh = true;
 
 // Cache the ImGui descriptor set for the game viewport texture
 static vk::DescriptorSet s_xCachedGameTextureDescriptorSet = VK_NULL_HANDLE;
@@ -242,6 +250,7 @@ void Zenith_Editor::Render()
 	RenderHierarchyPanel();
 	RenderPropertiesPanel();
 	RenderViewport();
+	RenderContentBrowser();
 
 	// Render gizmos and overlays (after viewport so they appear on top)
 	RenderGizmos();
@@ -923,9 +932,9 @@ Zenith_Entity* Zenith_Editor::GetSelectedEntity()
 {
 	if (s_uSelectedEntityID == INVALID_ENTITY_ID)
 		return nullptr;
-	
+
 	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	
+
 	// Check if entity still exists in the scene
 	auto it = xScene.m_xEntityMap.find(s_uSelectedEntityID);
 	if (it == xScene.m_xEntityMap.end())
@@ -934,8 +943,197 @@ Zenith_Entity* Zenith_Editor::GetSelectedEntity()
 		s_uSelectedEntityID = INVALID_ENTITY_ID;
 		return nullptr;
 	}
-	
+
 	return &it->second;
+}
+
+//------------------------------------------------------------------------------
+// Content Browser Implementation
+//------------------------------------------------------------------------------
+
+void Zenith_Editor::RenderContentBrowser()
+{
+	ImGui::Begin("Content Browser");
+
+	// Refresh directory contents if needed
+	if (s_bDirectoryNeedsRefresh)
+	{
+		RefreshDirectoryContents();
+		s_bDirectoryNeedsRefresh = false;
+	}
+
+	// Navigation buttons
+	if (ImGui::Button("<- Back"))
+	{
+		NavigateToParent();
+	}
+	ImGui::SameLine();
+	if (ImGui::Button("Refresh"))
+	{
+		s_bDirectoryNeedsRefresh = true;
+	}
+	ImGui::SameLine();
+
+	// Display current path (truncated if too long)
+	std::string strDisplayPath = s_strCurrentDirectory;
+	if (strDisplayPath.length() > 50)
+	{
+		strDisplayPath = "..." + strDisplayPath.substr(strDisplayPath.length() - 47);
+	}
+	ImGui::Text("Path: %s", strDisplayPath.c_str());
+
+	ImGui::Separator();
+
+	// Display directory contents in a table/grid
+	float fPanelWidth = ImGui::GetContentRegionAvail().x;
+	float fCellSize = 80.0f;  // Size of each item cell
+	int iColumnCount = std::max(1, (int)(fPanelWidth / fCellSize));
+
+	if (ImGui::BeginTable("ContentBrowserTable", iColumnCount))
+	{
+		for (size_t i = 0; i < s_xDirectoryContents.size(); ++i)
+		{
+			const ContentBrowserEntry& xEntry = s_xDirectoryContents[i];
+
+			ImGui::TableNextColumn();
+			ImGui::PushID((int)i);
+
+			// Icon representation (using text for now)
+			const char* szIcon = xEntry.m_bIsDirectory ? "[DIR]" : "[FILE]";
+
+			ImGui::BeginGroup();
+
+			if (xEntry.m_bIsDirectory)
+			{
+				// Directory - click to enter
+				if (ImGui::Button(szIcon, ImVec2(fCellSize - 10, fCellSize - 30)))
+				{
+					NavigateToDirectory(xEntry.m_strFullPath);
+				}
+			}
+			else
+			{
+				// File - can be dragged
+				ImGui::Button(szIcon, ImVec2(fCellSize - 10, fCellSize - 30));
+
+				// Drag source for files
+				if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAllowNullID))
+				{
+					DragDropFilePayload xPayload;
+					strncpy(xPayload.m_szFilePath, xEntry.m_strFullPath.c_str(),
+						sizeof(xPayload.m_szFilePath) - 1);
+					xPayload.m_szFilePath[sizeof(xPayload.m_szFilePath) - 1] = '\0';
+
+					// Determine payload type based on extension
+					const char* szPayloadType = DRAGDROP_PAYLOAD_FILE_GENERIC;
+					if (xEntry.m_strExtension == ".ztx")
+					{
+						szPayloadType = DRAGDROP_PAYLOAD_TEXTURE_ZTX;
+					}
+					else if (xEntry.m_strExtension == ".zmsh")
+					{
+						szPayloadType = DRAGDROP_PAYLOAD_MESH_ZMSH;
+					}
+
+					ImGui::SetDragDropPayload(szPayloadType, &xPayload, sizeof(xPayload));
+
+					// Drag preview tooltip
+					ImGui::Text("Drag: %s", xEntry.m_strName.c_str());
+
+					ImGui::EndDragDropSource();
+
+					Zenith_Log("[ContentBrowser] Started dragging: %s", xEntry.m_strName.c_str());
+				}
+			}
+
+			// Display truncated filename below icon
+			std::string strDisplayName = xEntry.m_strName;
+			if (strDisplayName.length() > 10)
+			{
+				strDisplayName = strDisplayName.substr(0, 7) + "...";
+			}
+			ImGui::TextWrapped("%s", strDisplayName.c_str());
+
+			// Tooltip with full filename
+			if (ImGui::IsItemHovered())
+			{
+				ImGui::SetTooltip("%s", xEntry.m_strName.c_str());
+			}
+
+			ImGui::EndGroup();
+			ImGui::PopID();
+		}
+
+		ImGui::EndTable();
+	}
+
+	ImGui::End();
+}
+
+void Zenith_Editor::RefreshDirectoryContents()
+{
+	s_xDirectoryContents.clear();
+
+	try
+	{
+		for (const auto& xEntry : std::filesystem::directory_iterator(s_strCurrentDirectory))
+		{
+			ContentBrowserEntry xBrowserEntry;
+			xBrowserEntry.m_strFullPath = xEntry.path().string();
+			xBrowserEntry.m_strName = xEntry.path().filename().string();
+			xBrowserEntry.m_strExtension = xEntry.path().extension().string();
+			xBrowserEntry.m_bIsDirectory = xEntry.is_directory();
+
+			s_xDirectoryContents.push_back(xBrowserEntry);
+		}
+
+		// Sort: directories first, then files, alphabetically within each group
+		std::sort(s_xDirectoryContents.begin(), s_xDirectoryContents.end(),
+			[](const ContentBrowserEntry& a, const ContentBrowserEntry& b) {
+				if (a.m_bIsDirectory != b.m_bIsDirectory)
+					return a.m_bIsDirectory > b.m_bIsDirectory;
+				return a.m_strName < b.m_strName;
+			});
+
+		Zenith_Log("[ContentBrowser] Refreshed directory: %s (%zu items)",
+			s_strCurrentDirectory.c_str(), s_xDirectoryContents.size());
+	}
+	catch (const std::filesystem::filesystem_error& e)
+	{
+		Zenith_Log("[ContentBrowser] Error reading directory: %s", e.what());
+	}
+}
+
+void Zenith_Editor::NavigateToDirectory(const std::string& strPath)
+{
+	s_strCurrentDirectory = strPath;
+	s_bDirectoryNeedsRefresh = true;
+	Zenith_Log("[ContentBrowser] Navigated to: %s", strPath.c_str());
+}
+
+void Zenith_Editor::NavigateToParent()
+{
+	std::filesystem::path xPath(s_strCurrentDirectory);
+	std::filesystem::path xParent = xPath.parent_path();
+
+	// Don't navigate above ASSETS_ROOT
+	std::string strAssetsRoot = ASSETS_ROOT;
+	// Remove trailing slash if present for comparison
+	if (!strAssetsRoot.empty() && (strAssetsRoot.back() == '/' || strAssetsRoot.back() == '\\'))
+	{
+		strAssetsRoot.pop_back();
+	}
+
+	if (xParent.string().length() >= strAssetsRoot.length())
+	{
+		s_strCurrentDirectory = xParent.string();
+		s_bDirectoryNeedsRefresh = true;
+		Zenith_Log("[ContentBrowser] Navigated to parent: %s", s_strCurrentDirectory.c_str());
+	}
+	else
+	{
+		Zenith_Log("[ContentBrowser] Already at root directory");
+	}
 }
 
 #endif // ZENITH_TOOLS

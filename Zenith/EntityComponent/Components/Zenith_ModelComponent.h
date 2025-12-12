@@ -10,6 +10,8 @@
 #ifdef ZENITH_TOOLS
 #include "imgui.h"
 #include "EntityComponent/Zenith_ComponentRegistry.h"
+#include "Editor/Zenith_Editor.h"
+#include <filesystem>
 #endif
 
 class Zenith_ModelComponent
@@ -279,13 +281,159 @@ public:
 	//--------------------------------------------------------------------------
 	// Editor UI - Renders component properties in the Properties panel
 	//--------------------------------------------------------------------------
+
+	// Texture slot identifiers for material editing
+	enum TextureSlotType
+	{
+		TEXTURE_SLOT_DIFFUSE,
+		TEXTURE_SLOT_NORMAL,
+		TEXTURE_SLOT_ROUGHNESS_METALLIC,
+		TEXTURE_SLOT_OCCLUSION,
+		TEXTURE_SLOT_EMISSIVE
+	};
+
 	void RenderPropertiesPanel()
 	{
 		if (ImGui::CollapsingHeader("Model", ImGuiTreeNodeFlags_DefaultOpen))
 		{
 			ImGui::Checkbox("Draw Physics Mesh", &m_bDebugDrawPhysicsMesh);
+
+			ImGui::Separator();
+			ImGui::Text("Mesh Entries: %u", GetNumMeshEntries());
+
+			// Display each mesh entry with its material
+			for (uint32_t uMeshIdx = 0; uMeshIdx < GetNumMeshEntries(); ++uMeshIdx)
+			{
+				ImGui::PushID(uMeshIdx);
+
+				Flux_Material& xMaterial = GetMaterialAtIndex(uMeshIdx);
+
+				if (ImGui::TreeNode("MeshEntry", "Mesh Entry %u", uMeshIdx))
+				{
+					// Material texture slots
+					RenderTextureSlot("Diffuse", xMaterial, TEXTURE_SLOT_DIFFUSE);
+					RenderTextureSlot("Normal", xMaterial, TEXTURE_SLOT_NORMAL);
+					RenderTextureSlot("Roughness/Metallic", xMaterial, TEXTURE_SLOT_ROUGHNESS_METALLIC);
+					RenderTextureSlot("Occlusion", xMaterial, TEXTURE_SLOT_OCCLUSION);
+					RenderTextureSlot("Emissive", xMaterial, TEXTURE_SLOT_EMISSIVE);
+
+					ImGui::TreePop();
+				}
+
+				ImGui::PopID();
+			}
 		}
 	}
+
+private:
+	// Helper to render a single texture slot with drag-drop target
+	void RenderTextureSlot(const char* szLabel, Flux_Material& xMaterial, TextureSlotType eSlot)
+	{
+		ImGui::PushID(szLabel);
+
+		// Get current texture (if any)
+		const Flux_Texture* pxCurrentTexture = nullptr;
+		switch (eSlot)
+		{
+		case TEXTURE_SLOT_DIFFUSE:           pxCurrentTexture = xMaterial.GetDiffuse(); break;
+		case TEXTURE_SLOT_NORMAL:            pxCurrentTexture = xMaterial.GetNormal(); break;
+		case TEXTURE_SLOT_ROUGHNESS_METALLIC: pxCurrentTexture = xMaterial.GetRoughnessMetallic(); break;
+		case TEXTURE_SLOT_OCCLUSION:         pxCurrentTexture = xMaterial.GetOcclusion(); break;
+		case TEXTURE_SLOT_EMISSIVE:          pxCurrentTexture = xMaterial.GetEmissive(); break;
+		}
+
+		std::string strTextureName = "(none)";
+		if (pxCurrentTexture && pxCurrentTexture->m_xVRAMHandle.IsValid())
+		{
+			strTextureName = Zenith_AssetHandler::GetTextureName(pxCurrentTexture);
+			if (strTextureName.empty())
+			{
+				strTextureName = "(loaded)";
+			}
+		}
+
+		// Display slot label and current texture
+		ImGui::Text("%s:", szLabel);
+		ImGui::SameLine();
+
+		// Drop zone button
+		ImVec2 xButtonSize(150, 20);
+		ImGui::Button(strTextureName.c_str(), xButtonSize);
+
+		// Visual feedback when hovering with payload
+		if (ImGui::BeginDragDropTarget())
+		{
+			// Accept texture payloads
+			if (const ImGuiPayload* pPayload = ImGui::AcceptDragDropPayload(DRAGDROP_PAYLOAD_TEXTURE_ZTX))
+			{
+				const DragDropFilePayload* pFilePayload =
+					static_cast<const DragDropFilePayload*>(pPayload->Data);
+
+				Zenith_Log("[ModelComponent] Texture dropped on %s: %s",
+					szLabel, pFilePayload->m_szFilePath);
+
+				// Load and assign texture
+				AssignTextureToSlot(pFilePayload->m_szFilePath, xMaterial, eSlot);
+			}
+
+			ImGui::EndDragDropTarget();
+		}
+
+		// Tooltip
+		if (ImGui::IsItemHovered())
+		{
+			ImGui::SetTooltip("Drop a .ztx texture here\nCurrent: %s", strTextureName.c_str());
+		}
+
+		ImGui::PopID();
+	}
+
+	// Helper to load texture and assign to material slot
+	void AssignTextureToSlot(const char* szFilePath, Flux_Material& xMaterial, TextureSlotType eSlot)
+	{
+		std::filesystem::path xPath(szFilePath);
+		std::string strTextureName = xPath.stem().string();
+
+		// Check if texture already loaded
+		if (!Zenith_AssetHandler::TextureExists(strTextureName))
+		{
+			// Load texture from file
+			Zenith_AssetHandler::TextureData xTexData =
+				Zenith_AssetHandler::LoadTexture2DFromFile(szFilePath);
+			Zenith_AssetHandler::AddTexture(strTextureName, xTexData);
+			xTexData.FreeAllocatedData();
+
+			Zenith_Log("[ModelComponent] Loaded texture: %s", strTextureName.c_str());
+		}
+
+		// Get texture and assign to material
+		Flux_Texture& xTexture = Zenith_AssetHandler::GetTexture(strTextureName);
+
+		switch (eSlot)
+		{
+		case TEXTURE_SLOT_DIFFUSE:
+			xMaterial.SetDiffuse(xTexture);
+			Zenith_Log("[ModelComponent] Set diffuse texture: %s", strTextureName.c_str());
+			break;
+		case TEXTURE_SLOT_NORMAL:
+			xMaterial.SetNormal(xTexture);
+			Zenith_Log("[ModelComponent] Set normal texture: %s", strTextureName.c_str());
+			break;
+		case TEXTURE_SLOT_ROUGHNESS_METALLIC:
+			xMaterial.SetRoughnessMetallic(xTexture);
+			Zenith_Log("[ModelComponent] Set roughness/metallic texture: %s", strTextureName.c_str());
+			break;
+		case TEXTURE_SLOT_OCCLUSION:
+			xMaterial.SetOcclusion(xTexture);
+			Zenith_Log("[ModelComponent] Set occlusion texture: %s", strTextureName.c_str());
+			break;
+		case TEXTURE_SLOT_EMISSIVE:
+			xMaterial.SetEmissive(xTexture);
+			Zenith_Log("[ModelComponent] Set emissive texture: %s", strTextureName.c_str());
+			break;
+		}
+	}
+public:
 #endif
 
 //private:

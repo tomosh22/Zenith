@@ -5,6 +5,27 @@
 #include "Maths/Zenith_Maths.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include <vector>
+#include <string>
+
+// Drag-drop payload type identifiers (max 32 chars per ImGui)
+#define DRAGDROP_PAYLOAD_TEXTURE_ZTX  "ZENITH_TEXTURE_ZTX"
+#define DRAGDROP_PAYLOAD_MESH_ZMSH    "ZENITH_MESH_ZMSH"
+#define DRAGDROP_PAYLOAD_FILE_GENERIC "ZENITH_FILE_GENERIC"
+
+// Content browser file entry
+struct ContentBrowserEntry
+{
+	std::string m_strName;           // Display name (filename without path)
+	std::string m_strFullPath;       // Full absolute path
+	std::string m_strExtension;      // File extension (e.g., ".ztx")
+	bool m_bIsDirectory;             // true for folders, false for files
+};
+
+// Drag-drop payload data structure
+struct DragDropFilePayload
+{
+	char m_szFilePath[512];          // Absolute path to file
+};
 
 class Zenith_Entity;
 class Zenith_Scene;
@@ -55,17 +76,23 @@ private:
 	static void HandleObjectPicking();
 	static void RenderGizmos();
 	static void HandleGizmoInteraction();  // New method for Flux_Gizmos integration
-	
+
+	// Content Browser
+	static void RenderContentBrowser();
+	static void RefreshDirectoryContents();
+	static void NavigateToDirectory(const std::string& strPath);
+	static void NavigateToParent();
+
 	static EditorMode s_eEditorMode;
 	static EditorGizmoMode s_eGizmoMode;
 	static Zenith_EntityID s_uSelectedEntityID;  // Changed from pointer to ID
-	
+
 	// Viewport
 	static Zenith_Maths::Vector2 s_xViewportSize;
 	static Zenith_Maths::Vector2 s_xViewportPos;
 	static bool s_bViewportHovered;
 	static bool s_bViewportFocused;
-	
+
 	// Scene state backup (for play mode)
 	static Zenith_Scene* s_pxBackupScene;
 
@@ -74,6 +101,11 @@ private:
 	static std::string s_strPendingSceneLoadPath;
 	static bool s_bPendingSceneSave;
 	static std::string s_strPendingSceneSavePath;
+
+	// Content Browser state
+	static std::string s_strCurrentDirectory;
+	static std::vector<ContentBrowserEntry> s_xDirectoryContents;
+	static bool s_bDirectoryNeedsRefresh;
 };
 
 #endif // ZENITH_TOOLS
