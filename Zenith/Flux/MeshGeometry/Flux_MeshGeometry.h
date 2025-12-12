@@ -74,6 +74,8 @@ public:
 	const Flux_IndexBuffer& GetIndexBuffer() const { return m_xIndexBuffer; }
 	Flux_IndexBuffer& GetIndexBuffer() { return m_xIndexBuffer; }
 
+	const Flux_BufferLayout& GetBufferLayout() const { return m_xBufferLayout; }
+
 #ifdef ZENITH_TOOLS
 	void Export(const char* szFilename);
 #endif
@@ -82,6 +84,7 @@ public:
 private:
 #endif
 	friend class Zenith_ColliderComponent;
+	friend class Zenith_PhysicsMeshGenerator;
 	void GenerateLayoutAndVertexData();
 
 	void GenerateNormals();

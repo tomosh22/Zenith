@@ -6,7 +6,9 @@
 #include "Flux/StaticMeshes/Flux_StaticMeshes.h"
 #include "Flux/AnimatedMeshes/Flux_AnimatedMeshes.h"
 #include "Flux/Terrain/Flux_Terrain.h"
+#ifdef ZENITH_TOOLS
 #include "Flux/Gizmos/Flux_Gizmos.h"
+#endif
 #include "Flux/Primitives/Flux_Primitives.h"
 #include "Flux/DeferredShading/Flux_DeferredShading.h"
 #include "Flux/SSAO/Flux_SSAO.h"
@@ -32,17 +34,17 @@ void Flux::LateInitialise()
 {
 	Flux_MemoryManager::BeginFrame();
 	Flux_Swapchain::Initialise();
+	Flux_Graphics::Initialise();
 #ifdef ZENITH_TOOLS
 	Flux_PlatformAPI::InitialiseImGui();
+	Flux_Gizmos::Initialise();
 #endif
-	Flux_Graphics::Initialise();
 	Flux_Shadows::Initialise();
 	Flux_Skybox::Initialise();
 	Flux_StaticMeshes::Initialise();
 	Flux_AnimatedMeshes::Initialise();
 	Flux_Terrain::Initialise();
 	Flux_Primitives::Initialise();
-	Flux_Gizmos::Initialise();
 	Flux_DeferredShading::Initialise();
 	Flux_SSAO::Initialise();
 	Flux_Fog::Initialise();

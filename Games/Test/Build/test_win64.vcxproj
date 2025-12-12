@@ -814,7 +814,6 @@
     <ClInclude Include="..\..\..\Zenith\Flux\Flux_Types.h" />
     <ClInclude Include="..\..\..\Zenith\Flux\Fog\Flux_Fog.h" />
     <ClInclude Include="..\..\..\Zenith\Flux\Gizmos\Flux_Gizmos.h" />
-    <ClInclude Include="..\..\..\Zenith\Flux\ImGui\Flux_ImGui.h" />
     <ClInclude Include="..\..\..\Zenith\Flux\MeshAnimation\Flux_MeshAnimation.h" />
     <ClInclude Include="..\..\..\Zenith\Flux\MeshGeometry\Flux_MeshGeometry.h" />
     <ClInclude Include="..\..\..\Zenith\Flux\Particles\Flux_Particles.h" />
@@ -1787,7 +1786,6 @@
     <ClCompile Include="..\..\..\Zenith\Flux\Flux_RenderTargets.cpp" />
     <ClCompile Include="..\..\..\Zenith\Flux\Fog\Flux_Fog.cpp" />
     <ClCompile Include="..\..\..\Zenith\Flux\Gizmos\Flux_Gizmos.cpp" />
-    <ClCompile Include="..\..\..\Zenith\Flux\ImGui\Flux_ImGui.cpp" />
     <ClCompile Include="..\..\..\Zenith\Flux\MeshAnimation\Flux_MeshAnimation.cpp" />
     <ClCompile Include="..\..\..\Zenith\Flux\MeshGeometry\Flux_MeshGeometry.cpp" />
     <ClCompile Include="..\..\..\Zenith\Flux\Particles\Flux_Particles.cpp" />

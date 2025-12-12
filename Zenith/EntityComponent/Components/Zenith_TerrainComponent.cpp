@@ -123,7 +123,7 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Flux_Material& xMaterial0, Flux
 	Flux_MeshGeometry& xLOD3Geometry = Zenith_AssetHandler::GetMesh("Terrain_LOD3_Owned_0_0");
 
 	// Store vertex stride for buffer calculations
-	m_uVertexStride = xLOD3Geometry.m_xBufferLayout.GetStride();
+	m_uVertexStride = xLOD3Geometry.GetBufferLayout().GetStride();
 
 	// Pre-allocate for all LOD3 chunks
 	const uint64_t ulLOD3VertexDataSize = static_cast<uint64_t>(uLOD3TotalVerts) * m_uVertexStride;
@@ -174,11 +174,11 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Flux_Material& xMaterial0, Flux
 	}
 
 	Zenith_Log("LOD3 mesh combination complete: %u vertices, %u indices",
-		xLOD3Geometry.m_uNumVerts, xLOD3Geometry.m_uNumIndices);
+		xLOD3Geometry.GetNumVerts(), xLOD3Geometry.GetNumIndices());
 
 	// Store LOD3 counts
-	m_uLOD3VertexCount = xLOD3Geometry.m_uNumVerts;
-	m_uLOD3IndexCount = xLOD3Geometry.m_uNumIndices;
+	m_uLOD3VertexCount = xLOD3Geometry.GetNumVerts();
+	m_uLOD3IndexCount = xLOD3Geometry.GetNumIndices();
 
 	// ========== Initialize Unified Buffers (LOD3 + Streaming Space) ==========
 	const uint64_t ulLOD3VertexSize = xLOD3Geometry.GetVertexDataSize();
@@ -251,7 +251,7 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Flux_Material& xMaterial0, Flux
 
 	const u_int64 ulTotalVertexDataSize = xPhysicsGeometry.GetVertexDataSize() * TOTAL_CHUNKS;
 	const u_int64 ulTotalIndexDataSize = xPhysicsGeometry.GetIndexDataSize() * TOTAL_CHUNKS;
-	const u_int64 ulTotalPositionDataSize = xPhysicsGeometry.m_uNumVerts * sizeof(Zenith_Maths::Vector3) * TOTAL_CHUNKS;
+	const u_int64 ulTotalPositionDataSize = xPhysicsGeometry.GetNumVerts() * sizeof(Zenith_Maths::Vector3) * TOTAL_CHUNKS;
 
 	xPhysicsGeometry.m_pVertexData = static_cast<u_int8*>(Zenith_MemoryManagement::Reallocate(xPhysicsGeometry.m_pVertexData, ulTotalVertexDataSize));
 	xPhysicsGeometry.m_ulReservedVertexDataSize = ulTotalVertexDataSize;

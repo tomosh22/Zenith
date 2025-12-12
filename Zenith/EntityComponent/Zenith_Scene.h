@@ -8,12 +8,16 @@ concept Zenith_Component =
 // This matches the existing pattern where components store their parent entity
 std::is_constructible_v<T, Zenith_Entity&>&&
 // Component must be destructible
-std::is_destructible_v<T>&&
+std::is_destructible_v<T>
+	#ifdef ZENITH_TOOLS
+	&&
 // Component must have a RenderPropertiesPanel method for editor UI
 // This method is responsible for rendering the component's properties in ImGui
 	requires(T& t) { { t.RenderPropertiesPanel() } -> std::same_as<void>; }&&
 // Component must have a static RegisterWithEditor function for self-registration
-	requires() { { T::RegisterWithEditor() } -> std::same_as<void>; };
+	requires() { { T::RegisterWithEditor() } -> std::same_as<void>; }
+	#endif
+	;
 
 class Zenith_CameraComponent;
 class Zenith_Entity;

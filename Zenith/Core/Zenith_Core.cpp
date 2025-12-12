@@ -21,7 +21,6 @@
 #include "Flux/Text/Flux_Text.h"
 #include "Flux/ComputeTest/Flux_ComputeTest.h"
 #ifdef ZENITH_TOOLS
-#include "Flux/ImGui/Flux_ImGui.h"
 #include "Flux/Gizmos/Flux_Gizmos.h"
 
 // Forward declaration for editor
@@ -124,13 +123,13 @@ void RenderImGui()
 
 static void SubmitRenderTasks()
 {
-	Flux_ComputeTest::Run();  // Run compute test synchronously before other render tasks
+	Flux_ComputeTest::Run();
 	Flux_Shadows::SubmitRenderTask();
 	Flux_Skybox::SubmitRenderTask();
 	Flux_StaticMeshes::SubmitRenderToGBufferTask();
 	Flux_AnimatedMeshes::SubmitRenderTask();
 	Flux_Terrain::SubmitRenderToGBufferTask();
-	Flux_Primitives::SubmitRenderTask();  // Debug primitives - rendered after terrain
+	Flux_Primitives::SubmitRenderTask();
 	Flux_DeferredShading::SubmitRenderTask();
 	Flux_SSAO::SubmitRenderTask();
 	Flux_Fog::SubmitRenderTask();
@@ -139,11 +138,10 @@ static void SubmitRenderTasks()
 	Flux_Text::SubmitRenderTask();
 	Flux_Quads::SubmitRenderTask();
 	
-#ifdef ZENITH_TOOLS
-	// Submit ImGui rendering as the last render task before swapchain present
+	#ifdef ZENITH_TOOLS
+	//#TO calls Flux_Gizmos::SubmitRenderTask()
 	ZENITH_PROFILING_FUNCTION_WRAPPER(RenderImGui, ZENITH_PROFILE_INDEX__RENDER_IMGUI);
-	Flux_ImGui::SubmitRenderTask();
-#endif
+	#endif
 }
 
 static void WaitForRenderTasks()
@@ -153,7 +151,7 @@ static void WaitForRenderTasks()
 	Flux_StaticMeshes::WaitForRenderToGBufferTask();
 	Flux_AnimatedMeshes::WaitForRenderTask();
 	Flux_Terrain::WaitForRenderToGBufferTask();
-	Flux_Primitives::WaitForRenderTask();  // Debug primitives
+	Flux_Primitives::WaitForRenderTask();
 	Flux_DeferredShading::WaitForRenderTask();
 	Flux_SSAO::WaitForRenderTask();
 	Flux_Fog::WaitForRenderTask();
@@ -161,7 +159,9 @@ static void WaitForRenderTasks()
 	Flux_Particles::WaitForRenderTask();
 	Flux_Text::WaitForRenderTask();
 	Flux_Quads::WaitForRenderTask();
-	Flux_Gizmos::WaitForRenderTask();  // Editor gizmos
+	#ifdef ZENITH_TOOLS
+	Flux_Gizmos::WaitForRenderTask();
+	#endif
 }
 
 void Zenith_Core::Zenith_MainLoop()

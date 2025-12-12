@@ -275,7 +275,7 @@ public:
 	// Call this to render debug physics mesh visualization (call each frame when enabled)
 	void DebugDrawPhysicsMesh();
 
-#ifdef ZENITH_VULKAN
+#ifdef ZENITH_TOOLS
 	//--------------------------------------------------------------------------
 	// Editor UI - Renders component properties in the Properties panel
 	//--------------------------------------------------------------------------
