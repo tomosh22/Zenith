@@ -1,6 +1,19 @@
 #pragma once
 
 #include "Collections/Zenith_Vector.h"
+class Zenith_Entity;
+template<typename T>
+concept Zenith_Component =
+// Component must be constructible from an entity reference
+// This matches the existing pattern where components store their parent entity
+std::is_constructible_v<T, Zenith_Entity&>&&
+// Component must be destructible
+std::is_destructible_v<T>&&
+// Component must have a RenderPropertiesPanel method for editor UI
+// This method is responsible for rendering the component's properties in ImGui
+	requires(T& t) { { t.RenderPropertiesPanel() } -> std::same_as<void>; }&&
+// Component must have a static RegisterWithEditor function for self-registration
+	requires() { { T::RegisterWithEditor() } -> std::same_as<void>; };
 
 class Zenith_CameraComponent;
 class Zenith_Entity;
@@ -29,10 +42,24 @@ public:
 	class TypeIDGenerator
 	{
 	public:
-		template<typename T>
+		template<Zenith_Component T>
 		static TypeID GetTypeID()
 		{
 			static TypeID ls_uRet = s_uCounter++;
+			
+			#ifdef ZENITH_TOOLS
+			static bool ls_bRegistered = false;
+			static bool ls_bInRegistration = false;
+			
+			if (!ls_bRegistered && !ls_bInRegistration)
+			{
+				ls_bInRegistration = true;
+				T::RegisterWithEditor();
+				ls_bRegistered = true;
+				ls_bInRegistration = false;
+			}
+			#endif
+			
 			return ls_uRet;
 		}
 	private:

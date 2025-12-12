@@ -475,9 +475,6 @@
     <ClCompile Include="..\..\..\Zenith\EntityComponent\Components\Zenith_TransformComponent.cpp">
       <Filter>Zenith\EntityComponent\Components</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\Zenith\EntityComponent\Zenith_ComponentRegistration.cpp">
-      <Filter>Zenith\EntityComponent</Filter>
-    </ClCompile>
     <ClCompile Include="..\..\..\Zenith\EntityComponent\Zenith_ComponentRegistry.cpp">
       <Filter>Zenith\EntityComponent</Filter>
     </ClCompile>
@@ -1654,9 +1651,6 @@
       <Filter>Zenith\DebugVariables</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\Zenith\Editor\Zenith_Editor.h">
-      <Filter>Zenith\Editor</Filter>
-    </ClInclude>
-    <ClInclude Include="..\..\..\Zenith\Editor\Zenith_EditorLog.h">
       <Filter>Zenith\Editor</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\Zenith\Editor\Zenith_Gizmo.h">

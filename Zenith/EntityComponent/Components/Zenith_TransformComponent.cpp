@@ -9,9 +9,8 @@
 #include <Jolt/Physics/Body/Body.h>
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
 
-Zenith_TransformComponent::Zenith_TransformComponent(const std::string& strName, Zenith_Entity& xEntity)
-	: m_strName(strName)
-	, m_xParentEntity(xEntity)
+Zenith_TransformComponent::Zenith_TransformComponent(Zenith_Entity& xEntity)
+	: m_xParentEntity(xEntity)
 {
 }
 
@@ -146,8 +145,6 @@ void Zenith_TransformComponent::BuildModelMatrix(Zenith_Maths::Matrix4& xMatOut)
 
 void Zenith_TransformComponent::WriteToDataStream(Zenith_DataStream& xStream) const
 {
-	// Write name
-	xStream << m_strName;
 
 	// Write position, rotation, and scale
 	// Note: We get current values from physics if rigid body exists
@@ -166,8 +163,6 @@ void Zenith_TransformComponent::WriteToDataStream(Zenith_DataStream& xStream) co
 
 void Zenith_TransformComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 {
-	// Read name
-	xStream >> m_strName;
 
 	// Read position, rotation, and scale
 	xStream >> m_xPosition;

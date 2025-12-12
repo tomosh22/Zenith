@@ -788,7 +788,6 @@
     <ClInclude Include="..\..\..\Zenith\DataStream\Zenith_DataStream.h" />
     <ClInclude Include="..\..\..\Zenith\DebugVariables\Zenith_DebugVariables.h" />
     <ClInclude Include="..\..\..\Zenith\Editor\Zenith_Editor.h" />
-    <ClInclude Include="..\..\..\Zenith\Editor\Zenith_EditorLog.h" />
     <ClInclude Include="..\..\..\Zenith\Editor\Zenith_Gizmo.h" />
     <ClInclude Include="..\..\..\Zenith\Editor\Zenith_SelectionSystem.h" />
     <ClInclude Include="..\..\..\Zenith\EntityComponent\Components\Zenith_CameraComponent.h" />
@@ -1773,7 +1772,6 @@
     <ClCompile Include="..\..\..\Zenith\EntityComponent\Components\Zenith_TerrainComponent.cpp" />
     <ClCompile Include="..\..\..\Zenith\EntityComponent\Components\Zenith_TextComponent.cpp" />
     <ClCompile Include="..\..\..\Zenith\EntityComponent\Components\Zenith_TransformComponent.cpp" />
-    <ClCompile Include="..\..\..\Zenith\EntityComponent\Zenith_ComponentRegistration.cpp" />
     <ClCompile Include="..\..\..\Zenith\EntityComponent\Zenith_ComponentRegistry.cpp" />
     <ClCompile Include="..\..\..\Zenith\EntityComponent\Zenith_Entity.cpp" />
     <ClCompile Include="..\..\..\Zenith\EntityComponent\Zenith_Scene.cpp" />

@@ -7,6 +7,11 @@
 #include "AssetHandling/Zenith_AssetHandler.h"
 #include "Physics/Zenith_PhysicsMeshGenerator.h"
 
+#ifdef ZENITH_TOOLS
+#include "imgui.h"
+#include "EntityComponent/Zenith_ComponentRegistry.h"
+#endif
+
 class Zenith_ModelComponent
 {
 public:
@@ -270,6 +275,19 @@ public:
 	// Call this to render debug physics mesh visualization (call each frame when enabled)
 	void DebugDrawPhysicsMesh();
 
+#ifdef ZENITH_VULKAN
+	//--------------------------------------------------------------------------
+	// Editor UI - Renders component properties in the Properties panel
+	//--------------------------------------------------------------------------
+	void RenderPropertiesPanel()
+	{
+		if (ImGui::CollapsingHeader("Model", ImGuiTreeNodeFlags_DefaultOpen))
+		{
+			ImGui::Checkbox("Draw Physics Mesh", &m_bDebugDrawPhysicsMesh);
+		}
+	}
+#endif
+
 //private:
 	Zenith_Entity m_xParentEntity;
 
@@ -284,4 +302,13 @@ public:
 	Zenith_Vector<std::string> m_xCreatedTextures;
 	Zenith_Vector<std::string> m_xCreatedMaterials;
 	Zenith_Vector<std::string> m_xCreatedMeshes;
+
+public:
+#if defined(ZENITH_TOOLS) && defined(ZENITH_VULKAN)
+	// Static registration function called by ComponentRegistry::Initialise()
+	static void RegisterWithEditor()
+	{
+		Zenith_ComponentRegistry::Get().RegisterComponent<Zenith_ModelComponent>("Model");
+	}
+#endif
 };

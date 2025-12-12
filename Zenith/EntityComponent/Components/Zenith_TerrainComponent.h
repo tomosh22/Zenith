@@ -14,6 +14,10 @@ using namespace Flux_TerrainConfig;
 // Forward declarations
 class Flux_CommandList;
 
+#ifdef ZENITH_TOOLS
+#include "EntityComponent/Zenith_ComponentRegistry.h"
+#endif
+
 // LOD data for a single level
 struct Zenith_TerrainLODData
 {
@@ -173,4 +177,18 @@ public:
 	// Helper methods for culling
 	void BuildChunkData();
 	void ExtractFrustumPlanes(const Zenith_Maths::Matrix4& xViewProjMatrix, Zenith_FrustumPlaneGPU* pxOutPlanes);
+
+#ifdef ZENITH_TOOLS
+	// Editor UI
+	void RenderPropertiesPanel();
+#endif
+
+public:
+#ifdef ZENITH_TOOLS
+	// Static registration function called by ComponentRegistry::Initialise()
+	static void RegisterWithEditor()
+	{
+		Zenith_ComponentRegistry::Get().RegisterComponent<Zenith_TerrainComponent>("Terrain");
+	}
+#endif
 };

@@ -154,6 +154,7 @@ public class TestToolsProject : Project
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/../../../Tools/Middleware/opencv/sources/3rdparty/libpng");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/../../../Middleware/stb");
 		conf.IncludePaths.Add("[project.SharpmakeCsPath]/../../../Middleware");
+		conf.IncludePaths.Add("[project.SharpmakeCsPath]/../../../Middleware/imgui-docking");
 
 
 

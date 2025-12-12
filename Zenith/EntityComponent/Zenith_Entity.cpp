@@ -14,14 +14,14 @@ Zenith_Entity::Zenith_Entity(Zenith_Scene* pxScene, const std::string& strName)
 	, m_strName(strName)
 {
 		m_uEntityID = m_pxParentScene->CreateEntity();
-	AddComponent<Zenith_TransformComponent>(strName);
+	AddComponent<Zenith_TransformComponent>();
 	pxScene->m_xEntityMap.insert({ m_uEntityID, *this });
 }
 
 Zenith_Entity::Zenith_Entity(Zenith_Scene* pxScene, Zenith_EntityID uID, Zenith_EntityID uParentID, const std::string& strName) : m_pxParentScene(pxScene), m_uEntityID(uID), m_uParentEntityID(uParentID), m_strName(strName)
 {
 	m_uEntityID = uID;
-	AddComponent<Zenith_TransformComponent>(strName);
+	AddComponent<Zenith_TransformComponent>();
 	pxScene->m_xEntityMap.insert({ m_uEntityID, *this });
 }
 
@@ -30,7 +30,7 @@ void Zenith_Entity::Initialise(Zenith_Scene* pxScene, const std::string& strName
 	m_pxParentScene = pxScene;
 	m_strName = strName;
 	m_uEntityID = m_pxParentScene->CreateEntity();
-	AddComponent<Zenith_TransformComponent>(strName);
+	AddComponent<Zenith_TransformComponent>();
 	pxScene->m_xEntityMap.insert({ m_uEntityID, *this });
 }
 
@@ -40,7 +40,7 @@ void Zenith_Entity::Initialise(Zenith_Scene* pxScene, Zenith_EntityID uID, Zenit
 	m_strName = strName;
 	m_uParentEntityID = uParentID;
 	m_uEntityID = uID;
-	AddComponent<Zenith_TransformComponent>(strName);
+	AddComponent<Zenith_TransformComponent>();
 	pxScene->m_xEntityMap.insert({ m_uEntityID, *this });
 }
 

@@ -2,6 +2,11 @@
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "Physics/Zenith_Physics.h"
 
+#ifdef ZENITH_TOOLS
+#include "imgui.h"
+#include "EntityComponent/Zenith_ComponentRegistry.h"
+#endif
+
 namespace JPH
 {
 	class Body;
@@ -24,6 +29,20 @@ public:
 
 	void AddCollider(CollisionVolumeType eVolumeType, RigidBodyType eRigidBodyType);
 	void RebuildCollider(); // Rebuild collider with current transform (e.g., after scale change)
+
+#ifdef ZENITH_TOOLS
+	//--------------------------------------------------------------------------
+	// Editor UI - Renders component properties in the Properties panel
+	//--------------------------------------------------------------------------
+	void RenderPropertiesPanel()
+	{
+		if (ImGui::CollapsingHeader("Collider", ImGuiTreeNodeFlags_DefaultOpen))
+		{
+			ImGui::Text("Collider attached");
+			// TODO: Add collider shape editing UI
+		}
+	}
+#endif
 	
 private:
 	Zenith_Entity m_xParentEntity;
@@ -41,4 +60,13 @@ private:
 		uint32_t m_uNumIndices = 0;
 	};
 	TerrainMeshData* m_pxTerrainMeshData = nullptr;
+
+public:
+#ifdef ZENITH_TOOLS
+	// Static registration function called by ComponentRegistry::Initialise()
+	static void RegisterWithEditor()
+	{
+		Zenith_ComponentRegistry::Get().RegisterComponent<Zenith_ColliderComponent>("Collider");
+	}
+#endif
 };

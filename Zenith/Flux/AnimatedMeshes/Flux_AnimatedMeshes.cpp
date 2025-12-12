@@ -168,7 +168,7 @@ void Flux_AnimatedMeshes::RenderToShadowMap(Flux_CommandList& xCmdBuf)
 	{
 		Zenith_ModelComponent* pxModel = xIt.GetData();
 		//#TO_TODO: these 2 should probably be separate components
-		if (!pxModel->GetMeshGeometryAtIndex(0).GetNumBones())
+		if (!pxModel->GetNumMeshEntries() || !pxModel->GetMeshGeometryAtIndex(0).GetNumBones())
 		{
 			continue;
 		}

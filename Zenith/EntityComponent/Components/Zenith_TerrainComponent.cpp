@@ -558,3 +558,23 @@ void Zenith_TerrainComponent::UpdateCullingAndLod(Flux_CommandList& xCmdList, co
 	uint32_t uNumWorkgroups = (TOTAL_CHUNKS + 63) / 64;
 	xCmdList.AddCommand<Flux_CommandDispatch>(uNumWorkgroups, 1, 1);
 }
+
+#ifdef ZENITH_TOOLS
+#include "imgui.h"
+
+void Zenith_TerrainComponent::RenderPropertiesPanel()
+{
+	if (ImGui::CollapsingHeader("Terrain Component", ImGuiTreeNodeFlags_DefaultOpen))
+	{
+		ImGui::Text("Chunks: %d x %d", CHUNK_GRID_SIZE, CHUNK_GRID_SIZE);
+		ImGui::Text("Total Chunks: %d", TOTAL_CHUNKS);
+		ImGui::Text("LOD Count: %d", LOD_COUNT);
+		ImGui::Text("Vertex Buffer Size: %.2f MB", m_ulUnifiedVertexBufferSize / (1024.0f * 1024.0f));
+		ImGui::Text("Index Buffer Size: %.2f MB", m_ulUnifiedIndexBufferSize / (1024.0f * 1024.0f));
+		ImGui::Text("LOD3 Vertices: %u", m_uLOD3VertexCount);
+		ImGui::Text("LOD3 Indices: %u", m_uLOD3IndexCount);
+		bool bTemp = m_bCullingResourcesInitialized;
+		ImGui::Checkbox("Culling Resources Initialized", &bTemp);
+	}
+}
+#endif

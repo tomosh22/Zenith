@@ -8,9 +8,12 @@
 #include "Flux/Gizmos/Flux_Gizmos.h"
 #include "EntityComponent/Zenith_Entity.h"
 #include "EntityComponent/Zenith_Scene.h"
+#include "EntityComponent/Zenith_ComponentRegistry.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
+#include "EntityComponent/Components/Zenith_ColliderComponent.h"
+#include "EntityComponent/Components/Zenith_TextComponent.h"
 #include "Input/Zenith_Input.h"
 #include "Flux/Flux_Graphics.h"
 #include "Vulkan/Zenith_Vulkan.h"
@@ -56,7 +59,6 @@ void Zenith_Editor::Initialise()
 	// Initialize editor subsystems
 	Zenith_SelectionSystem::Initialise();
 	Zenith_Gizmo::Initialise();
-	Flux_Gizmos::Initialise();
 }
 
 void Zenith_Editor::Shutdown()
@@ -477,79 +479,94 @@ void Zenith_Editor::RenderPropertiesPanel()
 		
 		ImGui::Separator();
 		
-		// Transform component editing
-		if (pxSelectedEntity->HasComponent<Zenith_TransformComponent>())
-		{
-			if (ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen))
-			{
-				Zenith_TransformComponent& transform = pxSelectedEntity->GetComponent<Zenith_TransformComponent>();
-				
-				Zenith_Maths::Vector3 pos, scale;
-				Zenith_Maths::Quat rot;
-				transform.GetPosition(pos);
-				transform.GetRotation(rot);
-				transform.GetScale(scale);
-				
-				// Position editing
-				float position[3] = { pos.x, pos.y, pos.z };
-				if (ImGui::DragFloat3("Position", position, 0.1f))
-				{
-					transform.SetPosition({ position[0], position[1], position[2] });
-				}
-				
-				// Rotation editing - convert quaternion to Euler angles for UI
-				Zenith_Maths::Vector3 euler = glm::degrees(glm::eulerAngles(rot));
-				float rotation[3] = { euler.x, euler.y, euler.z };
-				if (ImGui::DragFloat3("Rotation", rotation, 1.0f))
-				{
-					Zenith_Maths::Vector3 newEuler = glm::radians(Zenith_Maths::Vector3(rotation[0], rotation[1], rotation[2]));
-					transform.SetRotation(Zenith_Maths::Quat(newEuler));
-				}
-				
-				// Scale editing
-				float scaleValues[3] = { scale.x, scale.y, scale.z };
-				if (ImGui::DragFloat3("Scale", scaleValues, 0.1f))
-				{
-					transform.SetScale({ scaleValues[0], scaleValues[1], scaleValues[2] });
-				}
-			}
-		}
+		//----------------------------------------------------------------------
+		// Component Properties Section
+		//----------------------------------------------------------------------
+		// Iterate over all registered components and render their properties
+		// if the selected entity has that component type.
+		// This replaces the previous manual component-by-component checks.
+		//----------------------------------------------------------------------
+		Zenith_ComponentRegistry& xRegistry = Zenith_ComponentRegistry::Get();
+		const auto& xEntries = xRegistry.GetEntries();
 		
-		// Camera component display (read-only for now as setters don't exist)
-		if (pxSelectedEntity->HasComponent<Zenith_CameraComponent>())
+		for (const Zenith_ComponentRegistryEntry& xEntry : xEntries)
 		{
-			if (ImGui::CollapsingHeader("Camera", ImGuiTreeNodeFlags_DefaultOpen))
+			// Check if entity has this component and render its properties panel
+			if (xEntry.m_fnHasComponent(*pxSelectedEntity))
 			{
-				Zenith_CameraComponent& camera = pxSelectedEntity->GetComponent<Zenith_CameraComponent>();
-				
-				// Display camera properties (read-only for now)
-				float fFOV = camera.GetFOV();
-				ImGui::Text("FOV: %.1f", fFOV);
-				
-				float fNear = camera.GetNearPlane();
-				ImGui::Text("Near Plane: %.3f", fNear);
-				
-				float fFar = camera.GetFarPlane();
-				ImGui::Text("Far Plane: %.1f", fFar);
-				
-				ImGui::Text("Pitch: %.2f", camera.GetPitch());
-				ImGui::Text("Yaw: %.2f", camera.GetYaw());
+				xEntry.m_fnRenderPropertiesPanel(*pxSelectedEntity);
 			}
 		}
 
-		if (pxSelectedEntity->HasComponent<Zenith_ModelComponent>())
+		//----------------------------------------------------------------------
+		// Add Component Section
+		//----------------------------------------------------------------------
+		ImGui::Separator();
+		ImGui::Spacing();
+		
+		// Center the button
+		float fButtonWidth = 200.0f;
+		float fWindowWidth = ImGui::GetWindowWidth();
+		ImGui::SetCursorPosX((fWindowWidth - fButtonWidth) * 0.5f);
+		
+		if (ImGui::Button("Add Component", ImVec2(fButtonWidth, 0)))
 		{
-			if (ImGui::CollapsingHeader("Model", ImGuiTreeNodeFlags_DefaultOpen))
-			{
-				Zenith_ModelComponent& xModel = pxSelectedEntity->GetComponent<Zenith_ModelComponent>();
-
-				ImGui::Checkbox("Draw Physics Mesh", &xModel.m_bDebugDrawPhysicsMesh);
-			}
+			ImGui::OpenPopup("AddComponentPopup");
+			Zenith_Log("[Editor] Add Component button clicked for Entity %u", s_uSelectedEntityID);
 		}
 		
-		// TODO: Add component editor for other component types
-		// - ColliderComponent: Show collision shape settings
-		// - ScriptComponent: Show script assignment
+		// Add Component popup menu
+		if (ImGui::BeginPopup("AddComponentPopup"))
+		{
+			bool bAnyAvailable = false;
+			
+			for (size_t i = 0; i < xEntries.size(); ++i)
+			{
+				const Zenith_ComponentRegistryEntry& xEntry = xEntries[i];
+				
+				// Check if entity already has this component
+				bool bHasComponent = xRegistry.EntityHasComponent(i, *pxSelectedEntity);
+				
+				if (bHasComponent)
+				{
+					// Show disabled/grayed out for components the entity already has
+					ImGui::BeginDisabled();
+					ImGui::MenuItem(xEntry.m_strDisplayName.c_str(), nullptr, false, false);
+					ImGui::EndDisabled();
+				}
+				else
+				{
+					bAnyAvailable = true;
+					if (ImGui::MenuItem(xEntry.m_strDisplayName.c_str()))
+					{
+						Zenith_Log("[Editor] User selected to add component: %s to Entity %u",
+							xEntry.m_strDisplayName.c_str(), s_uSelectedEntityID);
+						
+						// Add the component through the registry
+						bool bSuccess = xRegistry.TryAddComponent(i, *pxSelectedEntity);
+						
+						if (bSuccess)
+						{
+							Zenith_Log("[Editor] Successfully added %s component to Entity %u",
+								xEntry.m_strDisplayName.c_str(), s_uSelectedEntityID);
+						}
+						else
+						{
+							Zenith_Log("[Editor] ERROR: Failed to add %s component to Entity %u",
+								xEntry.m_strDisplayName.c_str(), s_uSelectedEntityID);
+						}
+					}
+				}
+			}
+			
+			// If all components are already added, show a message
+			if (!bAnyAvailable)
+			{
+				ImGui::TextDisabled("All available components already added");
+			}
+			
+			ImGui::EndPopup();
+		}
 	}
 	else
 	{

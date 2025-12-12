@@ -291,7 +291,8 @@ void Flux_Terrain::RenderToGBuffer(void*)
 
 	for (u_int u = 0; u < g_xTerrainComponentsToRender.GetSize(); u++)
 	{
-		Zenith_TerrainComponent* pxTerrain = g_xTerrainComponentsToRender.Get(u);
+		Zenith_TerrainComponent* const pxTerrain = g_xTerrainComponentsToRender.Get(u);
+		if(!pxTerrain->GetUnifiedVertexBuffer().GetBuffer().m_ulSize) continue;
 
 		// Bind per-frame constants and terrain constants (set 0)
 		g_xTerrainCommandList.AddCommand<Flux_CommandBeginBind>(0);

@@ -2,6 +2,11 @@
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
 
+#ifdef ZENITH_TOOLS
+#include "imgui.h"
+#include "EntityComponent/Zenith_ComponentRegistry.h"
+#endif
+
 class Zenith_CameraComponent
 {
 	friend class Zenith_ScriptComponent;
@@ -46,6 +51,30 @@ public:
 	const float GetFOV() const { return m_fFOV; }
 	const float GetAspectRatio() const { return m_fAspect; }
 
+#ifdef ZENITH_TOOLS
+	//--------------------------------------------------------------------------
+	// Editor UI - Renders component properties in the Properties panel
+	//--------------------------------------------------------------------------
+	void RenderPropertiesPanel()
+	{
+		if (ImGui::CollapsingHeader("Camera", ImGuiTreeNodeFlags_DefaultOpen))
+		{
+			// Display camera properties (read-only for now)
+			float fFOV = GetFOV();
+			ImGui::Text("FOV: %.1f", fFOV);
+			
+			float fNear = GetNearPlane();
+			ImGui::Text("Near Plane: %.3f", fNear);
+			
+			float fFar = GetFarPlane();
+			ImGui::Text("Far Plane: %.1f", fFar);
+			
+			ImGui::Text("Pitch: %.2f", GetPitch());
+			ImGui::Text("Yaw: %.2f", GetYaw());
+		}
+	}
+#endif
+
 private:
 	float m_fNear = 0;
 	float m_fFar = 0;
@@ -61,4 +90,13 @@ private:
 	CameraType m_eType = CAMERA_TYPE_MAX;
 
 	Zenith_Entity m_xParentEntity;
+
+public:
+#ifdef ZENITH_TOOLS
+	// Static registration function called by ComponentRegistry::Initialise()
+	static void RegisterWithEditor()
+	{
+		Zenith_ComponentRegistry::Get().RegisterComponent<Zenith_CameraComponent>("Camera");
+	}
+#endif
 };

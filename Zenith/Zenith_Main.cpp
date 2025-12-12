@@ -7,6 +7,7 @@
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "imgui.h"
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
+#include "Editor/Zenith_Editor.h"
 #endif
 #include "AssetHandling/Zenith_AssetHandler.h"
 #include "Physics/Zenith_Physics.h"
@@ -67,6 +68,7 @@ int main()
 	Flux::LateInitialise();
 
 #if defined ZENITH_TOOLS && defined ZENITH_DEBUG_VARIABLES
+	Zenith_Editor::Initialise();
 	Zenith_DebugVariables::AddButton({ "Export", "Meshes", "Export All Meshes" }, ExportAllMeshes);
 	Zenith_DebugVariables::AddButton({ "Export", "Textures", "Export All Textures" }, ExportAllTextures);
 	Zenith_DebugVariables::AddButton({ "Export", "Terrain", "Export Heightmap" }, ExportHeightmap);

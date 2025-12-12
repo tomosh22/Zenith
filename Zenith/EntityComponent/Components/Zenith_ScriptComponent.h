@@ -1,6 +1,10 @@
 #pragma once
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 
+#ifdef ZENITH_TOOLS
+#include "EntityComponent/Zenith_ComponentRegistry.h"
+#endif
+
 class Zenith_ScriptBehaviour {
 	friend class Zenith_ScriptComponent;
 public:
@@ -25,14 +29,29 @@ public:
 
 	Zenith_Entity m_xParentEntity;
 
-	void OnCreate() { m_pxScriptBehaviour->OnCreate(); }
-	void OnUpdate(float fDt) { m_pxScriptBehaviour->OnUpdate(fDt); }
+	void OnCreate() { if(m_pxScriptBehaviour) m_pxScriptBehaviour->OnCreate(); }
+	void OnUpdate(float fDt) { if(m_pxScriptBehaviour) m_pxScriptBehaviour->OnUpdate(fDt); }
 	//void OnCollision(Zenith_Entity xOther, Physics::CollisionEventType eCollisionType) { m_pxScriptBehaviour->OnCollision(xOther, eCollisionType); }
 
 	template<typename T>
-	void SetBehaviour() {
+	void SetBehaviour()
+	{
 		m_pxScriptBehaviour = new T(m_xParentEntity);
 	}
+
+#ifdef ZENITH_TOOLS
+	// Editor UI
+	void RenderPropertiesPanel();
+#endif
+
+public:
+#ifdef ZENITH_TOOLS
+	// Static registration function called by ComponentRegistry::Initialise()
+	static void RegisterWithEditor()
+	{
+		Zenith_ComponentRegistry::Get().RegisterComponent<Zenith_ScriptComponent>("Script");
+	}
+#endif
 };
 
 #if 0

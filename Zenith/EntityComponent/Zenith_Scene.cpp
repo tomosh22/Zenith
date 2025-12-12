@@ -265,7 +265,8 @@ void Zenith_Scene::Update(const float fDt)
 	s_xCurrentScene.GetAllOfComponentType<Zenith_ScriptComponent>(xScripts);
 	for (Zenith_Vector<Zenith_ScriptComponent*>::Iterator xIt(xScripts); !xIt.Done(); xIt.Next())
 	{
-		xIt.GetData()->OnUpdate(fDt);
+		Zenith_ScriptComponent* const pxScript = xIt.GetData();
+		pxScript->OnUpdate(fDt);
 	}
 	s_xCurrentScene.ReleaseMutex();
 
