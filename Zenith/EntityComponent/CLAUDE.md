@@ -405,29 +405,120 @@ private:
 ```cpp
 class Zenith_ScriptComponent {
 public:
-    void SetScript(Zenith_Script* script);
+    void SetBehaviour(Zenith_ScriptBehaviour* pBehaviour);
     void Update(float dt);
-    
+
+    // Serialization support (December 2024)
+    void WriteToDataStream(Zenith_DataStream& xStream) const;
+    void ReadFromDataStream(Zenith_DataStream& xStream);
+
 private:
-    Zenith_Script* m_pxScript;
+    Zenith_ScriptBehaviour* m_pxScriptBehaviour;
     Zenith_Entity m_xParentEntity;
 };
+```
 
-// User-defined script
-class MyScript : public Zenith_Script {
-    void OnCreate(Zenith_Entity& entity) override {
-        // Initialization
+#### Behavior Registry System (December 2024)
+
+ScriptComponents use a **factory pattern** to support serialization of polymorphic behaviors. The `Zenith_BehaviourRegistry` singleton maintains a mapping from behavior type names to factory functions.
+
+**Registry Architecture:**
+```cpp
+class Zenith_BehaviourRegistry {
+public:
+    using BehaviourFactoryFunc = Zenith_ScriptBehaviour* (*)(Zenith_Entity&);
+
+    static Zenith_BehaviourRegistry& Get() {
+        static Zenith_BehaviourRegistry s_xInstance;
+        return s_xInstance;
     }
-    
-    void OnUpdate(float dt, Zenith_Entity& entity) override {
+
+    void RegisterBehaviour(const char* szTypeName, BehaviourFactoryFunc fnFactory);
+    Zenith_ScriptBehaviour* CreateBehaviour(const char* szTypeName, Zenith_Entity& xEntity);
+
+private:
+    std::unordered_map<std::string, BehaviourFactoryFunc> m_xFactoryMap;
+};
+```
+
+**The ZENITH_BEHAVIOUR_TYPE_NAME Macro:**
+
+All behaviors that need serialization MUST include this macro:
+
+```cpp
+#define ZENITH_BEHAVIOUR_TYPE_NAME(TypeName) \
+    virtual const char* GetBehaviourTypeName() const override { return #TypeName; } \
+    static Zenith_ScriptBehaviour* CreateInstance(Zenith_Entity& xEntity) { return new TypeName(xEntity); } \
+    static void RegisterBehaviour() { Zenith_BehaviourRegistry::Get().RegisterBehaviour(#TypeName, &TypeName::CreateInstance); }
+```
+
+**What this provides:**
+1. `GetBehaviourTypeName()` - Returns the class name as a string (for serialization)
+2. `CreateInstance()` - Static factory function to create instances
+3. `RegisterBehaviour()` - Static function to register with the global registry
+
+**User-defined Behavior Example:**
+```cpp
+class PlayerController_Behaviour ZENITH_FINAL : public Zenith_ScriptBehaviour {
+public:
+    ZENITH_BEHAVIOUR_TYPE_NAME(PlayerController_Behaviour)
+
+    PlayerController_Behaviour(Zenith_Entity& xEntity) : Zenith_ScriptBehaviour(xEntity) {}
+
+    void OnCreate() override {
+        // Initialization - called after construction
+    }
+
+    void OnUpdate(float dt) override {
         // Per-frame logic
         if (Zenith_Input::IsKeyPressed(KEY_W)) {
-            auto& transform = entity.GetComponent<TransformComponent>();
+            auto& transform = m_xParentEntity.GetComponent<Zenith_TransformComponent>();
             transform.m_xPosition.z += 5.0f * dt;
         }
     }
 };
 ```
+
+**Registration (REQUIRED for serialization):**
+Behaviors MUST be registered before loading scenes that reference them:
+
+```cpp
+void OnGameStart() {
+    // Register all behaviors at startup
+    PlayerController_Behaviour::RegisterBehaviour();
+    EnemyAI_Behaviour::RegisterBehaviour();
+    // etc.
+}
+```
+
+**Serialization Flow:**
+```
+Save:
+1. WriteToDataStream() called on ScriptComponent
+2. Writes bool (has behavior?)
+3. If true, writes behavior type name string
+
+Load:
+1. ReadFromDataStream() called on ScriptComponent
+2. Reads bool (has behavior?)
+3. If true, reads type name string
+4. Looks up factory function in registry
+5. Calls factory to create new behavior instance
+6. Calls OnCreate() on the new behavior
+```
+
+**CRITICAL: Why This Was Needed (December 2024 Bug Fix)**
+
+Without the behavior registry, ScriptComponents were NOT serialized. This caused:
+- **First Play:** Works - behaviors attached at runtime
+- **Stop then Second Play:** Fails - scene restored from backup, but ScriptComponent deserialization couldn't recreate polymorphic behaviors
+
+The fix required:
+1. Adding the behavior registry factory pattern
+2. Adding the `ZENITH_BEHAVIOUR_TYPE_NAME` macro
+3. Implementing `WriteToDataStream`/`ReadFromDataStream` in ScriptComponent
+4. Adding ScriptComponent to entity/scene serialization lists
+5. Registering all game behaviors at startup
 
 ### Zenith_ColliderComponent
 
@@ -1222,13 +1313,16 @@ if (HasComponent<Zenith_TerrainComponent>())
     xComponentTypes.push_back("TerrainComponent");
 if (HasComponent<Zenith_ColliderComponent>())
     xComponentTypes.push_back("ColliderComponent");
+// ScriptComponent LAST - behaviors may depend on other components
+if (HasComponent<Zenith_ScriptComponent>())
+    xComponentTypes.push_back("ScriptComponent");
 ```
 
 **Correct load order:**
 ```
-Load order: Transform → Model → Camera → Text → Terrain → Collider
-                                                  ↑         ↑
-                                              Loaded 5th  Loaded 6th
+Load order: Transform → Model → Camera → Text → Terrain → Collider → Script
+                                                  ↑         ↑          ↑
+                                              Loaded 5th  Loaded 6th  Loaded 7th
 
   1. Transform ✅
   2. Model ✅
@@ -1239,6 +1333,9 @@ Load order: Transform → Model → Camera → Text → Terrain → Collider
               → Checks for TerrainComponent... ✅ EXISTS!
               → Uses terrain mesh data
               → ✅ SUCCESS!
+  7. Script → ReadFromDataStream() → BehaviourRegistry::CreateBehaviour()
+            → Behavior's OnCreate() may access other components
+            → All components exist ✅ SUCCESS!
 ```
 
 **General Rule:** When adding new components:
@@ -1248,8 +1345,12 @@ Load order: Transform → Model → Camera → Text → Terrain → Collider
 
 **Common Dependency Chains:**
 - `ColliderComponent` → depends on → `TerrainComponent` (for terrain colliders)
-- `ScriptComponent` → may depend on → any component (check script implementation)
+- `ScriptComponent` → may depend on → any component (behaviors access components in `OnCreate()`)
 - `ChildComponent` → would depend on → `ParentComponent` (hypothetical example)
+
+**ScriptComponent Notes (December 2024):**
+ScriptComponent serialization was added to fix play/stop restore issues in the editor.
+It uses a behavior registry factory pattern - see [ScriptComponent section](#zenith_scriptcomponent) above for details.
 
 ## Asset Lifetime Management and Scene Loading
 

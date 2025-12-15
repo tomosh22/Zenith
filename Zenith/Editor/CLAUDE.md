@@ -134,15 +134,79 @@ EditorMode::Playing  ──Pause──>  EditorMode::Paused
                     <──Resume──
 ```
 
-### Scene State Backup (TODO)
+### Scene State Backup (IMPLEMENTED)
 
-**Current Status:** Mode transitions work, but scene state is NOT preserved when stopping play mode.
+**Current Status:** Play/Stop mode transitions now correctly preserve and restore scene state.
 
-**Future Implementation:**
-The proper solution requires one of:
-1. **Scene::Clone()** - Deep copy all entities and components
-2. **Serialize to memory** - Most robust, uses existing serialization
-3. **Copy-on-write** - Track modified entities only
+**Implementation:**
+- **On Play:** Scene is serialized to a temporary backup file (`editor_backup.zscen`)
+- **On Stop:** Scene is restored from the backup file, deferred to next frame's `Update()`
+- **Uses existing serialization system** - `Zenith_Scene::SaveToFile()` and `LoadFromFile()`
+
+**Critical: Play/Stop Bug History (December 2024):**
+
+When the user clicks Play a second time (after Stop), two critical bugs were fixed:
+
+#### Bug #1: ScriptComponent Not Serialized
+
+**Symptom:** Camera doesn't respond to controls on second play; player controller doesn't work
+
+**Root Cause:** `ScriptComponent` was NOT in the list of serialized components in `Zenith_Entity.cpp`. When the scene was backed up, the `PlayerController_Behaviour` script was NOT saved. When restored, the script was gone.
+
+**Fix Applied:**
+1. Added `Zenith_BehaviourRegistry` - Factory pattern for recreating behaviors by type name
+2. Added `ZENITH_BEHAVIOUR_TYPE_NAME(TypeName)` macro - Provides type name and factory registration
+3. Added `WriteToDataStream`/`ReadFromDataStream` to `Zenith_ScriptComponent`
+4. Added ScriptComponent to serialization in `Zenith_Entity.cpp` and `Zenith_Scene.cpp`
+5. Behaviors register with `Zenith_BehaviourRegistry::Get().RegisterBehaviour()` at startup
+
+**Files Modified:**
+- [Zenith_ScriptComponent.h](../EntityComponent/Components/Zenith_ScriptComponent.h) - Added `Zenith_BehaviourRegistry`, `ZENITH_BEHAVIOUR_TYPE_NAME` macro, serialization methods
+- [Zenith_ScriptComponent.cpp](../EntityComponent/Components/Zenith_ScriptComponent.cpp) - Implemented `WriteToDataStream`/`ReadFromDataStream`
+- [Zenith_Entity.cpp](../EntityComponent/Zenith_Entity.cpp) - Added ScriptComponent to serialization
+- [Zenith_Scene.cpp](../EntityComponent/Zenith_Scene.cpp) - Added ScriptComponent to deserialization
+- [PlayerController_Behaviour.h](../../Games/Test/Components/PlayerController_Behaviour.h) - Added `ZENITH_BEHAVIOUR_TYPE_NAME(PlayerController_Behaviour)`
+- [SphereMovement_Behaviour.h](../../Games/Test/Components/SphereMovement_Behaviour.h) - Added macro to `HookesLaw_Behaviour`, `RotationBehaviour_Behaviour`
+- [Test_State_InGame.cpp](../../Games/Test/Test_State_InGame.cpp) - Added behavior registration at startup
+
+**How Behavior Serialization Works:**
+```cpp
+// 1. Behaviors declare their type name
+class PlayerController_Behaviour : public Zenith_ScriptBehaviour {
+    ZENITH_BEHAVIOUR_TYPE_NAME(PlayerController_Behaviour)  // Adds GetBehaviourTypeName() + factory
+    // ...
+};
+
+// 2. Behaviors register at startup
+void Test_State_InGame::OnEnter() {
+    PlayerController_Behaviour::RegisterBehaviour();  // Adds to factory registry
+    // ...
+}
+
+// 3. Serialization saves type name
+void Zenith_ScriptComponent::WriteToDataStream(Zenith_DataStream& xStream) const {
+    xStream << bHasBehaviour;
+    xStream << m_pxScriptBehaviour->GetBehaviourTypeName();  // "PlayerController_Behaviour"
+}
+
+// 4. Deserialization recreates behavior via factory
+void Zenith_ScriptComponent::ReadFromDataStream(Zenith_DataStream& xStream) {
+    xStream >> strTypeName;
+    m_pxScriptBehaviour = Zenith_BehaviourRegistry::Get().CreateBehaviour(strTypeName.c_str(), m_xParentEntity);
+    m_pxScriptBehaviour->OnCreate();
+}
+```
+
+#### Bug #2: TerrainComponent Physics Mesh Incomplete
+
+**Symptom:** Player falls through terrain on second play; terrain has no physics collision
+
+**Root Cause:** In `Zenith_TerrainComponent::ReadFromDataStream()`, only ONE physics chunk was loaded (`Physics_0_0.zmsh`), but the constructor combines ALL 4096 physics chunks (64×64 grid). The physics collider only covered a tiny portion of the terrain.
+
+**Fix Applied:** `ReadFromDataStream()` now loads and combines ALL physics chunks, identical to the constructor logic.
+
+**Files Modified:**
+- [Zenith_TerrainComponent.cpp](../EntityComponent/Components/Zenith_TerrainComponent.cpp) - `ReadFromDataStream()` now loads all 4096 physics chunks
 
 **Critical Consideration:**
 Entity pointers (like `s_pxSelectedEntity`) become invalid when the scene is reset. Always clear selection when stopping play mode.

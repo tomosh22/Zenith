@@ -96,7 +96,13 @@ The heart of Zenith's game object model. See [EntityComponent/CLAUDE.md](Zenith/
 - `Zenith_ModelComponent` - Renderable mesh
 - `Zenith_CameraComponent` - View/projection matrices
 - `Zenith_ColliderComponent` - Physics collision shapes
-- `Zenith_ScriptComponent` - Custom behavior attachment
+- `Zenith_ScriptComponent` - Custom behavior attachment (uses behavior registry for serialization)
+- `Zenith_TerrainComponent` - Heightmap-based terrain with 64×64 physics mesh chunks
+
+**ScriptComponent & Behavior Registry (December 2024):**
+ScriptComponent uses a factory pattern (`Zenith_BehaviourRegistry`) to serialize/deserialize polymorphic behaviors.
+All game behaviors must use the `ZENITH_BEHAVIOUR_TYPE_NAME(ClassName)` macro and register at startup.
+See [EntityComponent/CLAUDE.md - ScriptComponent](Zenith/EntityComponent/CLAUDE.md#zenith_scriptcomponent) for details.
 
 ### 2. Flux Renderer
 
@@ -571,9 +577,16 @@ The editor provides an ImGui-based interface for scene editing, entity manipulat
 `Zenith_Editor::Update()` is called at the start of each frame (before rendering) to:
 - Process deferred scene loads
 - Handle deferred entity deletions
+- Process play/stop state transitions (December 2024 fix)
 - Update editor state
 
 See "CRITICAL: Editor Update Timing" section above for threading details.
+
+**Play/Stop Mode (December 2024):**
+- **Play Button:** Saves current scene to backup DataStream, then transitions to playing state
+- **Stop Button:** Restores scene from backup DataStream
+- **CRITICAL:** All components must support serialization for play/stop to work correctly
+- See [Editor/CLAUDE.md - Play/Stop Bug History](Zenith/Editor/CLAUDE.md) for known issues and fixes
 
 ### 3D Gizmo System (Flux_Gizmos)
 
