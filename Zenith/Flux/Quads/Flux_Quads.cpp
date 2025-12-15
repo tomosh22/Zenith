@@ -65,6 +65,14 @@ void Flux_Quads::Initialise()
 	Zenith_Log("Flux_Quads initialised");
 }
 
+void Flux_Quads::Reset()
+{
+	// Reset command list to ensure no stale GPU resource references, including descriptor bindings
+	// This is called when the scene is reset (e.g., Play/Stop transitions in editor)
+	g_xCommandList.Reset(true);
+	Zenith_Log("Flux_Quads::Reset() - Reset command list");
+}
+
 void Flux_Quads::UploadInstanceData()
 {
 	Flux_MemoryManager::UploadBufferData(s_xInstanceBuffer.GetBuffer().m_xVRAMHandle, s_axQuadsToRender, sizeof(Quad) * s_uQuadRenderIndex);

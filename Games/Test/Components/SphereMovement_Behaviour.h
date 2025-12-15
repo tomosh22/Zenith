@@ -6,6 +6,9 @@ class HookesLaw_Behaviour ZENITH_FINAL : Zenith_ScriptBehaviour
 {
 	friend class Zenith_ScriptComponent;
 public:
+	// Serialization support - type name and factory registration
+	ZENITH_BEHAVIOUR_TYPE_NAME(HookesLaw_Behaviour)
+
 	HookesLaw_Behaviour() = delete;
 	HookesLaw_Behaviour(Zenith_Entity& xParentEntity);
 	~HookesLaw_Behaviour() = default;
@@ -25,6 +28,9 @@ class RotationBehaviour_Behaviour ZENITH_FINAL : Zenith_ScriptBehaviour
 {
 	friend class Zenith_ScriptComponent;
 public:
+	// Serialization support - type name and factory registration
+	ZENITH_BEHAVIOUR_TYPE_NAME(RotationBehaviour_Behaviour)
+
 	RotationBehaviour_Behaviour() = delete;
 	RotationBehaviour_Behaviour(Zenith_Entity& xParentEntity);
 	~RotationBehaviour_Behaviour() = default;

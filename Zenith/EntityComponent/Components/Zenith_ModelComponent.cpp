@@ -3,6 +3,7 @@
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "DataStream/Zenith_DataStream.h"
+#include "Flux/MeshAnimation/Flux_MeshAnimation.h"
 
 // Log tag for model component physics mesh operations
 static constexpr const char* LOG_TAG_MODEL_PHYSICS = "[ModelPhysics]";
@@ -20,22 +21,34 @@ void Zenith_ModelComponent::WriteToDataStream(Zenith_DataStream& xStream) const
 	u_int uNumEntries = m_xMeshEntries.GetSize();
 	xStream << uNumEntries;
 
-	// Write each mesh entry (as asset name references)
+	// Write each mesh entry using source paths for meshes
+	// Materials are recreated from mesh data on load
 	for (u_int u = 0; u < uNumEntries; u++)
 	{
 		const MeshEntry& xEntry = m_xMeshEntries.Get(u);
 
-		// Get asset names from pointers
-		std::string strMeshName = Zenith_AssetHandler::GetMeshName(xEntry.m_pxGeometry);
-		std::string strMaterialName = Zenith_AssetHandler::GetMaterialName(xEntry.m_pxMaterial);
+		// Get mesh source path (set when loaded from file via AddMeshFromFile)
+		std::string strMeshPath = xEntry.m_pxGeometry ? xEntry.m_pxGeometry->m_strSourcePath : "";
+		xStream << strMeshPath;
 
-		xStream << strMeshName;
-		xStream << strMaterialName;
+		// Serialize material base color (materials are recreated, textures must be loaded separately)
+		Zenith_Maths::Vector4 xBaseColor = xEntry.m_pxMaterial ? xEntry.m_pxMaterial->GetBaseColor() : Zenith_Maths::Vector4(1.f);
+		xStream << xBaseColor.x;
+		xStream << xBaseColor.y;
+		xStream << xBaseColor.z;
+		xStream << xBaseColor.w;
+
+		// Serialize animation path if animation exists
+		std::string strAnimPath = "";
+		if (xEntry.m_pxGeometry && xEntry.m_pxGeometry->m_pxAnimation)
+		{
+			strAnimPath = xEntry.m_pxGeometry->m_pxAnimation->GetSourcePath();
+		}
+		xStream << strAnimPath;
 	}
 
 	// Note: m_xCreatedTextures, m_xCreatedMaterials, m_xCreatedMeshes are not serialized
 	// These are runtime tracking arrays for cleanup purposes only
-	// The mesh entries themselves contain all necessary asset references
 }
 
 void Zenith_ModelComponent::ReadFromDataStream(Zenith_DataStream& xStream)
@@ -50,27 +63,51 @@ void Zenith_ModelComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 	// Read and reconstruct each mesh entry
 	for (u_int u = 0; u < uNumEntries; u++)
 	{
-		std::string strMeshName;
-		std::string strMaterialName;
+		std::string strMeshPath;
+		xStream >> strMeshPath;
 
-		xStream >> strMeshName;
-		xStream >> strMaterialName;
+		Zenith_Maths::Vector4 xBaseColor;
+		xStream >> xBaseColor.x;
+		xStream >> xBaseColor.y;
+		xStream >> xBaseColor.z;
+		xStream >> xBaseColor.w;
 
-		// Look up assets by name (they must already be loaded)
-		if (!strMeshName.empty() && !strMaterialName.empty())
+		// Read animation path (may be empty)
+		std::string strAnimPath;
+		xStream >> strAnimPath;
+
+		// Load mesh from source path
+		if (!strMeshPath.empty())
 		{
-			if (Zenith_AssetHandler::MeshExists(strMeshName) &&
-				Zenith_AssetHandler::MaterialExists(strMaterialName))
+			Flux_MeshGeometry* pxMesh = Zenith_AssetHandler::AddMeshFromFile(strMeshPath.c_str());
+			if (pxMesh)
 			{
-				Flux_MeshGeometry& xMesh = Zenith_AssetHandler::GetMesh(strMeshName);
-				Flux_Material& xMaterial = Zenith_AssetHandler::GetMaterial(strMaterialName);
-				AddMeshEntry(xMesh, xMaterial);
+				m_xCreatedMeshes.PushBack(pxMesh);
+
+				// Create a new material with the serialized base color
+				Flux_Material* pxMaterial = Zenith_AssetHandler::AddMaterial();
+				if (pxMaterial)
+				{
+					m_xCreatedMaterials.PushBack(pxMaterial);
+					pxMaterial->SetBaseColor(xBaseColor);
+					AddMeshEntry(*pxMesh, *pxMaterial);
+				}
+				else
+				{
+					Zenith_Log("[ModelComponent] Failed to create material during deserialization");
+					AddMeshEntry(*pxMesh, *Flux_Graphics::s_pxBlankMaterial);
+				}
+
+				// Recreate animation if path was serialized
+				if (!strAnimPath.empty() && pxMesh->GetNumBones() > 0)
+				{
+					Zenith_Log("[ModelComponent] Recreating animation from: %s", strAnimPath.c_str());
+					pxMesh->m_pxAnimation = new Flux_MeshAnimation(strAnimPath, *pxMesh);
+				}
 			}
 			else
 			{
-				// Asset not loaded - this is expected if assets haven't been loaded yet
-				// The scene loader should ensure assets are loaded before component deserialization
-				Zenith_Assert(false, "Referenced assets not found during ModelComponent deserialization");
+				Zenith_Log("[ModelComponent] Failed to load mesh from path: %s", strMeshPath.c_str());
 			}
 		}
 	}

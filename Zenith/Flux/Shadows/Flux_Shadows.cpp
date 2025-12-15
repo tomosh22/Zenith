@@ -81,6 +81,18 @@ void Flux_Shadows::Initialise()
 #endif
 }
 
+void Flux_Shadows::Reset()
+{
+	// Reset all cascade shadow map command lists to ensure no stale GPU resource references, including descriptor bindings
+	// This is called when the scene is reset (e.g., Play/Stop transitions in editor)
+	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
+	{
+		g_axCommandLists[u].Reset(true);
+	}
+
+	Zenith_Log("Flux_Shadows::Reset() - Reset %d shadow cascade command lists", ZENITH_FLUX_NUM_CSMS);
+}
+
 void Flux_Shadows::Render(void*)
 {
 	if (!dbg_bEnabled)

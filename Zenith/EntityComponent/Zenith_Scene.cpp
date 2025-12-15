@@ -7,7 +7,24 @@
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_TextComponent.h"
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
+#include "EntityComponent/Components/Zenith_ScriptComponent.h"
 #include "Flux/MeshAnimation/Flux_MeshAnimation.h"
+#include "Flux/Terrain/Flux_Terrain.h"
+#include "Flux/StaticMeshes/Flux_StaticMeshes.h"
+#include "Flux/AnimatedMeshes/Flux_AnimatedMeshes.h"
+#include "Flux/Shadows/Flux_Shadows.h"
+#include "Flux/Primitives/Flux_Primitives.h"
+#include "Flux/Text/Flux_Text.h"
+#include "Flux/Particles/Flux_Particles.h"
+#include "Flux/Skybox/Flux_Skybox.h"
+#include "Flux/DeferredShading/Flux_DeferredShading.h"
+#include "Flux/SSAO/Flux_SSAO.h"
+#include "Flux/Fog/Flux_Fog.h"
+#include "Flux/SDFs/Flux_SDFs.h"
+#include "Flux/Quads/Flux_Quads.h"
+#ifdef ZENITH_TOOLS
+#include "Flux/Gizmos/Flux_Gizmos.h"
+#endif
 #include "TaskSystem/Zenith_TaskSystem.h"
 #include "DataStream/Zenith_DataStream.h"
 
@@ -84,6 +101,36 @@ void Zenith_Scene::Reset()
 	m_pxMainCameraEntity = nullptr;
 }
 
+void Zenith_Scene::RemoveEntity(Zenith_EntityID uID)
+{
+	// Check if entity exists
+	auto it = m_xEntityMap.find(uID);
+	if (it == m_xEntityMap.end())
+	{
+		Zenith_Log("Warning: Attempted to remove non-existent entity %u", uID);
+		return;
+	}
+
+	// Clear the main camera reference if this is the camera entity
+	if (m_pxMainCameraEntity && m_pxMainCameraEntity->GetEntityID() == uID)
+	{
+		m_pxMainCameraEntity = nullptr;
+	}
+
+	// Clear component mappings for this entity
+	// Note: Component data remains in pools but becomes orphaned
+	// This is cleaned up on scene reset/reload
+	if (uID < m_xEntityComponents.GetSize())
+	{
+		m_xEntityComponents.Get(uID).clear();
+	}
+
+	// Remove from entity map
+	m_xEntityMap.erase(it);
+
+	Zenith_Log("Entity %u removed from scene", uID);
+}
+
 void Zenith_Scene::SaveToFile(const std::string& strFilename)
 {
 	Zenith_DataStream xStream;
@@ -120,7 +167,29 @@ void Zenith_Scene::LoadFromFile(const std::string& strFilename)
 	// assets that will be needed when deserializing the scene.
 	s_bIsLoadingScene = true;
 
-	// Clear the current scene
+	// CRITICAL: Reset Flux render systems BEFORE clearing the scene
+	// Command lists must be cleared before we destroy components/descriptors
+	// Otherwise command lists have dangling pointers to destroyed descriptors
+	// which causes access violations in UpdateDescriptorSets during IterateCommands
+	Flux_Terrain::Reset();
+	Flux_StaticMeshes::Reset();
+	Flux_AnimatedMeshes::Reset();
+	Flux_Shadows::Reset();  // Shadow cascades reference scene geometry
+	Flux_Primitives::Reset();
+	Flux_Text::Reset();
+	Flux_Particles::Reset();
+	Flux_Skybox::Reset();
+	Flux_DeferredShading::Reset();
+	Flux_SSAO::Reset();
+	Flux_Fog::Reset();
+	Flux_SDFs::Reset();
+	Flux_Quads::Reset();
+#ifdef ZENITH_TOOLS
+	Flux_Gizmos::Reset();   // Gizmos reference selected entity
+#endif
+
+	// Clear the current scene (destroys components and their descriptors)
+	// Safe now because command lists no longer reference them
 	Reset();
 
 	// Read file into data stream
@@ -234,6 +303,14 @@ void Zenith_Scene::LoadFromFile(const std::string& strFilename)
 				if (!xEntityInMap.HasComponent<Zenith_ColliderComponent>())
 				{
 					Zenith_ColliderComponent& xComponent = xEntityInMap.AddComponent<Zenith_ColliderComponent>();
+					xComponent.ReadFromDataStream(xStream);
+				}
+			}
+			else if (strComponentType == "ScriptComponent")
+			{
+				if (!xEntityInMap.HasComponent<Zenith_ScriptComponent>())
+				{
+					Zenith_ScriptComponent& xComponent = xEntityInMap.AddComponent<Zenith_ScriptComponent>();
 					xComponent.ReadFromDataStream(xStream);
 				}
 			}

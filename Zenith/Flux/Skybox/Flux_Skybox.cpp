@@ -49,9 +49,18 @@ void Flux_Skybox::Initialise()
 
 	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
 
-	s_xCubemapTexture = Zenith_AssetHandler::GetTexture("Cubemap");
+	// Use the global cubemap texture pointer set during initialization in Zenith_Main.cpp
+	s_xCubemapTexture = *Flux_Graphics::s_pxCubemapTexture;
 
 	Zenith_Log("Flux_Skybox initialised");
+}
+
+void Flux_Skybox::Reset()
+{
+	// Reset command list to ensure no stale GPU resource references, including descriptor bindings
+	// This is called when the scene is reset (e.g., Play/Stop transitions in editor)
+	g_xCommandList.Reset(true);
+	Zenith_Log("Flux_Skybox::Reset() - Reset command list");
 }
 
 void Flux_Skybox::SubmitRenderTask()

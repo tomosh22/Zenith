@@ -151,6 +151,9 @@ public:
 	void SaveToFile(const std::string& strFilename);
 	void LoadFromFile(const std::string& strFilename);
 
+	// Entity management
+	void RemoveEntity(Zenith_EntityID uID);
+
 	// Query methods
 	u_int GetEntityCount() const { return static_cast<u_int>(m_xEntityMap.size()); }
 

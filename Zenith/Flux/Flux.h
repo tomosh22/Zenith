@@ -66,6 +66,9 @@ struct Flux_Texture
 	Flux_VRAMHandle m_xVRAMHandle;
 
 	Flux_ShaderResourceView m_xSRV;
+
+	// Source path for serialization (set when loaded from file)
+	std::string m_strSourcePath;
 };
 
 struct Flux_Buffer
@@ -166,6 +169,15 @@ public:
 
 	static void AddResChangeCallback(void(*pfnCallback)()) { s_xResChangeCallbacks.push_back(pfnCallback); }
 	static void OnResChange();
+	
+	// Clear all pending command lists - call before scene transitions to prevent stale pointers
+	static void ClearPendingCommandLists()
+	{
+		for (u_int i = 0; i < RENDER_ORDER_MAX; i++)
+		{
+			s_xPendingCommandLists[i].Clear();
+		}
+	}
 	
 	// Public access to pending command lists for platform layer
 	static Zenith_Vector<std::pair<const Flux_CommandList*, Flux_TargetSetup>> s_xPendingCommandLists[RENDER_ORDER_MAX];

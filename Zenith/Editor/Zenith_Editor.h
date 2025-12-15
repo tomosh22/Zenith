@@ -30,6 +30,15 @@ struct DragDropFilePayload
 class Zenith_Entity;
 class Zenith_Scene;
 
+// Console log entry
+struct ConsoleLogEntry
+{
+	enum class LogLevel { Info, Warning, Error };
+	LogLevel m_eLevel;
+	std::string m_strMessage;
+	std::string m_strTimestamp;
+};
+
 enum class EditorMode
 {
 	Stopped,
@@ -49,7 +58,7 @@ class Zenith_Editor
 public:
 	static void Initialise();
 	static void Shutdown();
-	static void Update();
+	static bool Update();
 	static void Render();
 
 	// Editor state
@@ -67,7 +76,12 @@ public:
 	static EditorGizmoMode GetGizmoMode() { return s_eGizmoMode; }
 	static void SetGizmoMode(EditorGizmoMode eMode) { s_eGizmoMode = eMode; }
 
+	// Console log
+	static void AddLogMessage(const char* szMessage, ConsoleLogEntry::LogLevel eLevel = ConsoleLogEntry::LogLevel::Info);
+	static void ClearConsole();
+
 private:
+	static void RenderConsolePanel();
 	static void RenderMainMenuBar();
 	static void RenderToolbar();
 	static void RenderHierarchyPanel();
@@ -94,7 +108,9 @@ private:
 	static bool s_bViewportFocused;
 
 	// Scene state backup (for play mode)
-	static Zenith_Scene* s_pxBackupScene;
+	static Zenith_Scene* s_pxBackupScene;  // Legacy - unused
+	static bool s_bHasSceneBackup;
+	static std::string s_strBackupScenePath;
 
 	// Deferred scene operations (to avoid concurrent access during render tasks)
 	static bool s_bPendingSceneLoad;
@@ -106,6 +122,32 @@ private:
 	static std::string s_strCurrentDirectory;
 	static std::vector<ContentBrowserEntry> s_xDirectoryContents;
 	static bool s_bDirectoryNeedsRefresh;
+
+	// Console state
+	static std::vector<ConsoleLogEntry> s_xConsoleLogs;
+	static bool s_bConsoleAutoScroll;
+	static bool s_bShowConsoleInfo;
+	static bool s_bShowConsoleWarnings;
+	static bool s_bShowConsoleErrors;
+	static constexpr size_t MAX_CONSOLE_ENTRIES = 1000;
+
+	// Editor camera (separate from game camera, not part of entity/scene system)
+	static Zenith_Maths::Vector3 s_xEditorCameraPosition;
+	static double s_fEditorCameraPitch;
+	static double s_fEditorCameraYaw;
+	static Zenith_Entity* s_pxGameCameraEntity;  // Saved when entering play mode
+	static float s_fEditorCameraMoveSpeed;
+	static float s_fEditorCameraRotateSpeed;
+	static bool s_bEditorCameraInitialized;
+
+	// Editor camera control
+	static void InitializeEditorCamera();
+	static void UpdateEditorCamera(float fDt);
+	static void SwitchToEditorCamera();
+	static void SwitchToGameCamera();
+public:
+	// Get the active camera (editor or game depending on mode)
+	static Zenith_CameraComponent& GetActiveCamera();
 };
 
 #endif // ZENITH_TOOLS

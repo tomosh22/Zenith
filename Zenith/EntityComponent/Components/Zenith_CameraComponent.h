@@ -51,6 +51,10 @@ public:
 	const float GetFOV() const { return m_fFOV; }
 	const float GetAspectRatio() const { return m_fAspect; }
 
+	// Get parent entity
+	Zenith_Entity& GetParentEntity() { return m_xParentEntity; }
+	const Zenith_Entity& GetParentEntity() const { return m_xParentEntity; }
+
 #ifdef ZENITH_TOOLS
 	//--------------------------------------------------------------------------
 	// Editor UI - Renders component properties in the Properties panel

@@ -22,15 +22,7 @@
 #include "Flux/ComputeTest/Flux_ComputeTest.h"
 #ifdef ZENITH_TOOLS
 #include "Flux/Gizmos/Flux_Gizmos.h"
-
-// Forward declaration for editor
-class Zenith_Editor
-{
-public:
-	static void Update();
-	static void Render();
-};
-
+#include "Editor/Zenith_Editor.h"
 #endif
 #include "Input/Zenith_Input.h"
 #include "Physics/Zenith_Physics.h"
@@ -144,7 +136,10 @@ static void SubmitRenderTasks()
 	#endif
 }
 
-static void WaitForRenderTasks()
+// Public wrapper for WaitForRenderTasks
+// Used by editor to synchronize before scene transitions
+// bIncludeGizmos: If false, skips waiting for gizmo task (useful when called mid-frame before gizmo submission)
+void Zenith_Core::WaitForAllRenderTasks()
 {
 	Flux_Shadows::WaitForRenderTask();
 	Flux_Skybox::WaitForRenderTask();
@@ -179,27 +174,51 @@ void Zenith_Core::Zenith_MainLoop()
 		return;
 	}
 
+	bool bSubmitRenderWork = true;
 #ifdef ZENITH_TOOLS
 	// CRITICAL: Update editor BEFORE any game logic or rendering
 	// This is where deferred scene loads happen (from "Open Scene" menu)
 	// Must occur when no render tasks are active to avoid concurrent access to scene data
-	Zenith_Editor::Update();
+	bSubmitRenderWork = Zenith_Editor::Update();
+
+	// Skip physics and scene updates when editor is paused or stopped
+	// Only run game simulation when in Playing mode
+	bool bShouldUpdateGameLogic = (Zenith_Editor::GetEditorMode() == EditorMode::Playing);
+#else
+	bool bShouldUpdateGameLogic = true;
 #endif
 
-	ZENITH_PROFILING_FUNCTION_WRAPPER(Zenith_Physics::Update, ZENITH_PROFILE_INDEX__PHYSICS, Zenith_Core::GetDt());
-	ZENITH_PROFILING_FUNCTION_WRAPPER(Zenith_Scene::Update, ZENITH_PROFILE_INDEX__SCENE_UPDATE, Zenith_Core::GetDt());
+	if (bShouldUpdateGameLogic)
+	{
+		ZENITH_PROFILING_FUNCTION_WRAPPER(Zenith_Physics::Update, ZENITH_PROFILE_INDEX__PHYSICS, Zenith_Core::GetDt());
+		ZENITH_PROFILING_FUNCTION_WRAPPER(Zenith_Scene::Update, ZENITH_PROFILE_INDEX__SCENE_UPDATE, Zenith_Core::GetDt());
+	}
 	Flux_Graphics::UploadFrameConstants();
 
-	SubmitRenderTasks();
+	// Only submit render tasks if we're going to process them
+	// During scene transitions, bSubmitRenderWork is false and we skip rendering entirely
+	// to avoid building command lists with potentially incomplete scene state
+	if (bSubmitRenderWork)
+	{
+		SubmitRenderTasks();
+		WaitForAllRenderTasks();
+	}
 
-	WaitForRenderTasks();
-	Zenith_Scene::WaitForUpdateComplete();
+	// Only wait for scene update if we actually ran it
+	if (bShouldUpdateGameLogic)
+	{
+		Zenith_Scene::WaitForUpdateComplete();
+	}
 
+	// EndFrame prepares memory command buffer for submission and processes deferred deletions
+	// Deferred deletions use a frame counter (MAX_FRAMES_IN_FLIGHT) to ensure GPU has finished
+	// using resources before they are deleted
 	ZENITH_PROFILING_FUNCTION_WRAPPER(Flux_MemoryManager::EndFrame, ZENITH_PROFILE_INDEX__FLUX_MEMORY_MANAGER);
 
 	Zenith_MemoryManagement::EndFrame();
 
-	ZENITH_PROFILING_FUNCTION_WRAPPER(Flux_PlatformAPI::EndFrame, ZENITH_PROFILE_INDEX__FLUX_PLATFORMAPI_END_FRAME);
+	// Flux_PlatformAPI::EndFrame records render command buffers
+	ZENITH_PROFILING_FUNCTION_WRAPPER(Flux_PlatformAPI::EndFrame, ZENITH_PROFILE_INDEX__FLUX_PLATFORMAPI_END_FRAME, bSubmitRenderWork);
 
 	ZENITH_PROFILING_FUNCTION_WRAPPER(Flux_Swapchain::EndFrame, ZENITH_PROFILE_INDEX__FLUX_SWAPCHAIN_END_FRAME);
 }

@@ -12,6 +12,11 @@ public:
 	static void Zenith_MainLoop();
 	static void UpdateTimers();
 
+	// Wait for all render tasks to complete
+	// Used by editor to ensure render tasks finish before scene transitions
+	// bIncludeGizmos: If false, skips waiting for gizmo task (useful when called mid-frame)
+	static void WaitForAllRenderTasks();
+
 	//#TO_TODO: this should be private, currently set by main
 	static std::chrono::high_resolution_clock::time_point s_xLastFrameTime;
 private:

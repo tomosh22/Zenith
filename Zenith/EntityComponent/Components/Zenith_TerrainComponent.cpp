@@ -61,9 +61,13 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Flux_Material& xMaterial0, Flux
 
 #pragma region Render
 {
-	// ========== Calculate LOD3 Buffer Sizes ==========
-	// LOD3 is always resident for all chunks
-	// Calculate exact size needed for LOD3 across all chunks
+	// Initialize render resources (LOD3 meshes, unified buffers, culling)
+	// This is the same initialization performed during deserialization
+	InitializeRenderResources(xMaterial0, xMaterial1);
+
+	// NOTE: The following old code has been extracted into InitializeRenderResources()
+	// to allow reuse during deserialization
+	/*
 	const float fLOD3Density = 0.125f;
 
 	uint32_t uLOD3TotalVerts = 0;
@@ -109,18 +113,10 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Flux_Material& xMaterial0, Flux
 	// ========== Load and Combine LOD3 Chunks ==========
 	Zenith_Log("Loading LOD3 meshes for all %u chunks...", TOTAL_CHUNKS);
 
-	// Delete the base mesh if it exists from a previous component instance
-	if (Zenith_AssetHandler::MeshExists("Terrain_LOD3_Owned_0_0"))
-	{
-		Zenith_AssetHandler::DeleteMesh("Terrain_LOD3_Owned_0_0");
-	}
-
-	// Load first chunk to get buffer layout
-	Zenith_AssetHandler::AddMesh("Terrain_LOD3_Owned_0_0",
-		ASSETS_ROOT"Terrain/Render_LOD3_0_0.zmsh",
-		0);  // 0 = load all attributes
-
-	Flux_MeshGeometry& xLOD3Geometry = Zenith_AssetHandler::GetMesh("Terrain_LOD3_Owned_0_0");
+	// Load first chunk to get buffer layout (stored as owned pointer for later cleanup)
+	Flux_MeshGeometry* pxLOD3Geometry = Zenith_AssetHandler::AddMeshFromFile(
+		ASSETS_ROOT"Terrain/Render_LOD3_0_0.zmsh", 0);  // 0 = load all attributes
+	Flux_MeshGeometry& xLOD3Geometry = *pxLOD3Geometry;
 
 	// Store vertex stride for buffer calculations
 	m_uVertexStride = xLOD3Geometry.GetBufferLayout().GetStride();
@@ -150,7 +146,6 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Flux_Material& xMaterial0, Flux
 			if (x == 0 && y == 0)
 				continue;  // Already loaded
 
-			std::string strChunkName = "Terrain_LOD3_Owned_" + std::to_string(x) + "_" + std::to_string(y);
 			std::string strChunkPath = std::string(ASSETS_ROOT"Terrain/Render_LOD3_") + std::to_string(x) + "_" + std::to_string(y) + ".zmsh";
 
 			// Check if LOD3 file exists, fallback to LOD0 if not
@@ -161,10 +156,9 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Flux_Material& xMaterial0, Flux
 				strChunkPath = std::string(ASSETS_ROOT"Terrain/Render_") + std::to_string(x) + "_" + std::to_string(y) + ".zmsh";
 			}
 
-			Zenith_AssetHandler::AddMesh(strChunkName, strChunkPath.c_str(), 0);  // 0 = all attributes
-			Flux_MeshGeometry& xChunkMesh = Zenith_AssetHandler::GetMesh(strChunkName);
-			Flux_MeshGeometry::Combine(xLOD3Geometry, xChunkMesh);
-			Zenith_AssetHandler::DeleteMesh(strChunkName);
+			Flux_MeshGeometry* pxChunkMesh = Zenith_AssetHandler::AddMeshFromFile(strChunkPath.c_str(), 0);  // 0 = all attributes
+			Flux_MeshGeometry::Combine(xLOD3Geometry, *pxChunkMesh);
+			Zenith_AssetHandler::DeleteMesh(pxChunkMesh);
 
 			if ((x * CHUNK_GRID_SIZE + y) % 512 == 0)
 			{
@@ -222,7 +216,7 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Flux_Material& xMaterial0, Flux
 	Zenith_Log("  Streaming region starts at: vertex %u, index %u", m_uLOD3VertexCount, m_uLOD3IndexCount);
 
 	// Clean up LOD3 CPU data (no longer needed, data is in GPU buffer)
-	Zenith_AssetHandler::DeleteMesh("Terrain_LOD3_Owned_0_0");
+	Zenith_AssetHandler::DeleteMesh(pxLOD3Geometry);
 
 	// ========== Register buffers with streaming manager ==========
 	Flux_TerrainStreamingManager::RegisterTerrainBuffers(this);
@@ -232,22 +226,18 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Flux_Material& xMaterial0, Flux
 	// Initialize GPU culling resources for this terrain component
 	// This allocates GPU buffers and builds chunk AABB + LOD metadata
 	InitializeCullingResources();
+	*/
 }
 #pragma endregion
 
 #pragma region Physics
 {
-	for (uint32_t x = 0; x < CHUNK_GRID_SIZE; x++)
-	{
-		for (uint32_t y = 0; y < CHUNK_GRID_SIZE; y++)
-		{
-			std::string strSuffix = std::to_string(x) + "_" + std::to_string(y);
+	// Load first physics chunk
+	m_pxPhysicsGeometry = Zenith_AssetHandler::AddMeshFromFile(
+		ASSETS_ROOT"Terrain/Physics_0_0.zmsh",
+		1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__POSITION | 1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__NORMAL);
 
-			Zenith_AssetHandler::AddMesh("Terrain_Physics" + strSuffix, std::string(ASSETS_ROOT"Terrain/Physics_" + strSuffix + ".zmsh").c_str(), 1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__POSITION | 1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__NORMAL);
-		}
-	}
-
-	Flux_MeshGeometry& xPhysicsGeometry = Zenith_AssetHandler::GetMesh("Terrain_Physics0_0");
+	Flux_MeshGeometry& xPhysicsGeometry = *m_pxPhysicsGeometry;
 
 	const u_int64 ulTotalVertexDataSize = xPhysicsGeometry.GetVertexDataSize() * TOTAL_CHUNKS;
 	const u_int64 ulTotalIndexDataSize = xPhysicsGeometry.GetIndexDataSize() * TOTAL_CHUNKS;
@@ -262,22 +252,23 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Flux_Material& xMaterial0, Flux
 	xPhysicsGeometry.m_pxPositions = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Reallocate(xPhysicsGeometry.m_pxPositions, ulTotalPositionDataSize));
 	xPhysicsGeometry.m_ulReservedPositionDataSize = ulTotalPositionDataSize;
 
+	// Combine remaining physics chunks
 	for (uint32_t x = 0; x < CHUNK_GRID_SIZE; x++)
 	{
 		for (uint32_t y = 0; y < CHUNK_GRID_SIZE; y++)
 		{
 			if (x == 0 && y == 0) continue;
 
-			std::string strPhysicsMeshName = "Terrain_Physics" + std::to_string(x) + "_" + std::to_string(y);
-			Flux_MeshGeometry& xTerrainPhysicsMesh = Zenith_AssetHandler::GetMesh(strPhysicsMeshName);
+			std::string strPhysicsPath = std::string(ASSETS_ROOT"Terrain/Physics_") + std::to_string(x) + "_" + std::to_string(y) + ".zmsh";
+			Flux_MeshGeometry* pxTerrainPhysicsMesh = Zenith_AssetHandler::AddMeshFromFile(
+				strPhysicsPath.c_str(),
+				1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__POSITION | 1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__NORMAL);
 
-			Flux_MeshGeometry::Combine(xPhysicsGeometry, xTerrainPhysicsMesh);
+			Flux_MeshGeometry::Combine(xPhysicsGeometry, *pxTerrainPhysicsMesh);
 
-			Zenith_AssetHandler::DeleteMesh(strPhysicsMeshName);
+			Zenith_AssetHandler::DeleteMesh(pxTerrainPhysicsMesh);
 		}
 	}
-
-	m_pxPhysicsGeometry = &xPhysicsGeometry;
 }
 #pragma endregion
 }
@@ -295,7 +286,7 @@ Zenith_TerrainComponent::~Zenith_TerrainComponent()
 
 	Zenith_Log("Zenith_TerrainComponent - Unified terrain buffers destroyed");
 
-	Zenith_AssetHandler::DeleteMesh("Terrain_Physics0_0");
+	Zenith_AssetHandler::DeleteMesh(m_pxPhysicsGeometry);
 
 	// Decrement instance count - this may trigger streaming manager shutdown if last instance
 	DecrementInstanceCount();
@@ -303,50 +294,307 @@ Zenith_TerrainComponent::~Zenith_TerrainComponent()
 
 void Zenith_TerrainComponent::WriteToDataStream(Zenith_DataStream& xStream) const
 {
-	// Get asset names from pointers
-	// NOTE: Render geometry now managed by Flux_TerrainStreamingManager, not serialized
-	std::string strPhysicsGeometryName = Zenith_AssetHandler::GetMeshName(m_pxPhysicsGeometry);
-	std::string strMaterial0Name = Zenith_AssetHandler::GetMaterialName(m_pxMaterial0);
-	std::string strMaterial1Name = Zenith_AssetHandler::GetMaterialName(m_pxMaterial1);
+	// NOTE: Terrain component uses hardcoded paths for physics geometry during construction
+	// We serialize the source paths for reference, but reconstruction is handled by the constructor
+	std::string strPhysicsGeometryPath = m_pxPhysicsGeometry ? m_pxPhysicsGeometry->m_strSourcePath : "";
+	xStream << strPhysicsGeometryPath;
 
-	// Write asset names
-	xStream << strPhysicsGeometryName;
-	xStream << strMaterial0Name;
-	xStream << strMaterial1Name;
+	// Materials are passed in from outside - serialize base colors only
+	// Full material reconstruction happens at game load time
+	Zenith_Maths::Vector4 xMat0Color = m_pxMaterial0 ? m_pxMaterial0->GetBaseColor() : Zenith_Maths::Vector4(1.f);
+	Zenith_Maths::Vector4 xMat1Color = m_pxMaterial1 ? m_pxMaterial1->GetBaseColor() : Zenith_Maths::Vector4(1.f);
 
-	// m_xParentEntity reference is not serialized - will be restored during deserialization
+	xStream << xMat0Color.x;
+	xStream << xMat0Color.y;
+	xStream << xMat0Color.z;
+	xStream << xMat0Color.w;
+	xStream << xMat1Color.x;
+	xStream << xMat1Color.y;
+	xStream << xMat1Color.z;
+	xStream << xMat1Color.w;
 }
 
 void Zenith_TerrainComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 {
-	// Read asset names
-	std::string strPhysicsGeometryName;
-	std::string strMaterial0Name;
-	std::string strMaterial1Name;
-
-	xStream >> strPhysicsGeometryName;
-	xStream >> strMaterial0Name;
-	xStream >> strMaterial1Name;
-
-	// Look up assets by name (they must already be loaded)
-	if (!strPhysicsGeometryName.empty() && !strMaterial0Name.empty() && !strMaterial1Name.empty())
+	// Ensure streaming manager is initialized (may have been shut down after previous terrain was destroyed)
+	if (!Flux_TerrainStreamingManager::IsInitialized())
 	{
-		if (Zenith_AssetHandler::MeshExists(strPhysicsGeometryName) &&
-			Zenith_AssetHandler::MaterialExists(strMaterial0Name) &&
-			Zenith_AssetHandler::MaterialExists(strMaterial1Name))
+		Zenith_Log("ReadFromDataStream - Re-initializing streaming manager (was shut down)");
+		Flux_TerrainStreamingManager::Initialize();
+	}
+
+	// Read physics geometry path (for reference, but we load all chunks below)
+	std::string strPhysicsGeometryPath;
+	xStream >> strPhysicsGeometryPath;
+
+	// Load and combine ALL physics chunks, same as the full constructor
+	// This is necessary for terrain colliders to cover the entire terrain, not just the first chunk
+	if (m_pxPhysicsGeometry == nullptr)
+	{
+		Zenith_Log("Terrain deserialization: Loading and combining all physics chunks...");
+
+		// Load first physics chunk
+		m_pxPhysicsGeometry = Zenith_AssetHandler::AddMeshFromFile(
+			ASSETS_ROOT"Terrain/Physics_0_0.zmsh",
+			1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__POSITION | 1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__NORMAL);
+
+		Flux_MeshGeometry& xPhysicsGeometry = *m_pxPhysicsGeometry;
+
+		// Pre-allocate for all chunks (same calculation as constructor)
+		const u_int64 ulTotalVertexDataSize = xPhysicsGeometry.GetVertexDataSize() * TOTAL_CHUNKS;
+		const u_int64 ulTotalIndexDataSize = xPhysicsGeometry.GetIndexDataSize() * TOTAL_CHUNKS;
+		const u_int64 ulTotalPositionDataSize = xPhysicsGeometry.GetNumVerts() * sizeof(Zenith_Maths::Vector3) * TOTAL_CHUNKS;
+
+		xPhysicsGeometry.m_pVertexData = static_cast<u_int8*>(Zenith_MemoryManagement::Reallocate(xPhysicsGeometry.m_pVertexData, ulTotalVertexDataSize));
+		xPhysicsGeometry.m_ulReservedVertexDataSize = ulTotalVertexDataSize;
+
+		xPhysicsGeometry.m_puIndices = static_cast<Flux_MeshGeometry::IndexType*>(Zenith_MemoryManagement::Reallocate(xPhysicsGeometry.m_puIndices, ulTotalIndexDataSize));
+		xPhysicsGeometry.m_ulReservedIndexDataSize = ulTotalIndexDataSize;
+
+		xPhysicsGeometry.m_pxPositions = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Reallocate(xPhysicsGeometry.m_pxPositions, ulTotalPositionDataSize));
+		xPhysicsGeometry.m_ulReservedPositionDataSize = ulTotalPositionDataSize;
+
+		// Combine remaining physics chunks
+		for (uint32_t x = 0; x < CHUNK_GRID_SIZE; x++)
 		{
-			m_pxPhysicsGeometry = &Zenith_AssetHandler::GetMesh(strPhysicsGeometryName);
-			m_pxMaterial0 = &Zenith_AssetHandler::GetMaterial(strMaterial0Name);
-			m_pxMaterial1 = &Zenith_AssetHandler::GetMaterial(strMaterial1Name);
+			for (uint32_t y = 0; y < CHUNK_GRID_SIZE; y++)
+			{
+				if (x == 0 && y == 0) continue;  // Already loaded
+
+				std::string strPhysicsPath = std::string(ASSETS_ROOT"Terrain/Physics_") + std::to_string(x) + "_" + std::to_string(y) + ".zmsh";
+				Flux_MeshGeometry* pxTerrainPhysicsMesh = Zenith_AssetHandler::AddMeshFromFile(
+					strPhysicsPath.c_str(),
+					1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__POSITION | 1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__NORMAL);
+
+				Flux_MeshGeometry::Combine(xPhysicsGeometry, *pxTerrainPhysicsMesh);
+
+				Zenith_AssetHandler::DeleteMesh(pxTerrainPhysicsMesh);
+			}
 		}
-		else
+
+		Zenith_Log("Terrain deserialization: Physics mesh combined: %u vertices, %u indices",
+			xPhysicsGeometry.GetNumVerts(), xPhysicsGeometry.GetNumIndices());
+	}
+
+	// Read material base colors
+	Zenith_Maths::Vector4 xMat0Color, xMat1Color;
+	xStream >> xMat0Color.x;
+	xStream >> xMat0Color.y;
+	xStream >> xMat0Color.z;
+	xStream >> xMat0Color.w;
+	xStream >> xMat1Color.x;
+	xStream >> xMat1Color.y;
+	xStream >> xMat1Color.z;
+	xStream >> xMat1Color.w;
+
+	// Apply loaded colors to materials if they exist
+	// NOTE: m_pxMaterial0 and m_pxMaterial1 should be set by the entity system
+	// after component creation. This just applies serialized state.
+	if (m_pxMaterial0)
+	{
+		m_pxMaterial0->SetBaseColor(xMat0Color);
+	}
+	if (m_pxMaterial1)
+	{
+		m_pxMaterial1->SetBaseColor(xMat1Color);
+	}
+
+	// CRITICAL: Initialize render resources (LOD3 meshes, buffers, culling)
+	// This recreates the GPU resources that were destroyed when the old terrain component was deleted
+	// Note: This takes several seconds to load and combine all LOD3 meshes, which is expected
+	// when loading a scene
+	Zenith_Log("Terrain deserialization: Initializing render resources...");
+	
+	// Use blank material as fallback if materials not provided
+	// This ensures terrain is visible (though with default textures) rather than invisible
+	// The game code can set proper materials after scene load if needed
+	Flux_Material* pxMat0 = m_pxMaterial0 ? m_pxMaterial0 : Flux_Graphics::s_pxBlankMaterial;
+	Flux_Material* pxMat1 = m_pxMaterial1 ? m_pxMaterial1 : Flux_Graphics::s_pxBlankMaterial;
+	
+	if (pxMat0 && pxMat1)
+	{
+		InitializeRenderResources(*pxMat0, *pxMat1);
+		Zenith_Log("Terrain deserialization: Render resources initialized successfully");
+	}
+	else
+	{
+		Zenith_Log("ERROR: Terrain deserialization: Blank material not available!");
+	}
+}
+
+// ========== Render Resources Initialization ==========
+
+void Zenith_TerrainComponent::InitializeRenderResources(Flux_Material& xMaterial0, Flux_Material& xMaterial1)
+{
+	// Ensure streaming manager is initialized (may have been shut down after previous terrain was destroyed)
+	if (!Flux_TerrainStreamingManager::IsInitialized())
+	{
+		Zenith_Log("InitializeRenderResources - Re-initializing streaming manager (was shut down)");
+		Flux_TerrainStreamingManager::Initialize();
+	}
+
+	// Store material references
+	m_pxMaterial0 = &xMaterial0;
+	m_pxMaterial1 = &xMaterial1;
+
+	// Calculate expected LOD3 buffer requirements
+	const float fLOD3Density = 0.25f;  // 64x64 -> 16x16 vertices per chunk for LOD3
+	uint32_t uLOD3TotalVerts = 0;
+	uint32_t uLOD3TotalIndices = 0;
+
+	for (uint32_t z = 0; z < CHUNK_GRID_SIZE; ++z)
+	{
+		for (uint32_t x = 0; x < CHUNK_GRID_SIZE; ++x)
 		{
-			// Asset not loaded - this is expected if assets haven't been loaded yet
-			Zenith_Assert(false, "Referenced assets not found during TerrainComponent deserialization");
+			bool hasRightEdge = (x < CHUNK_GRID_SIZE - 1);
+			bool hasTopEdge = (z < CHUNK_GRID_SIZE - 1);
+
+			// Base vertices and indices per chunk (64x64 units)
+			uint32_t verts = (uint32_t)((CHUNK_SIZE_WORLD * fLOD3Density + 1) * (CHUNK_SIZE_WORLD * fLOD3Density + 1));
+			uint32_t indices = (uint32_t)((CHUNK_SIZE_WORLD * fLOD3Density) * (CHUNK_SIZE_WORLD * fLOD3Density) * 6);
+
+			// Edge stitching
+			if (hasRightEdge)
+			{
+				verts += (uint32_t)(CHUNK_SIZE_WORLD * fLOD3Density);
+				indices += (uint32_t)((CHUNK_SIZE_WORLD * fLOD3Density - 1) * 6);
+			}
+			if (hasTopEdge)
+			{
+				verts += (uint32_t)(CHUNK_SIZE_WORLD * fLOD3Density);
+				indices += (uint32_t)((CHUNK_SIZE_WORLD * fLOD3Density - 1) * 6);
+			}
+			if (hasRightEdge && hasTopEdge)
+			{
+				verts += 1;
+				indices += 6;
+			}
+
+			uLOD3TotalVerts += verts;
+			uLOD3TotalIndices += indices;
 		}
 	}
 
-	// m_xParentEntity will be set by the entity deserialization system
+	Zenith_Log("LOD3 (always-resident) buffer requirements:");
+	Zenith_Log("  Vertices: %u (%.2f MB)", uLOD3TotalVerts, (uLOD3TotalVerts * TERRAIN_VERTEX_STRIDE) / (1024.0f * 1024.0f));
+	Zenith_Log("  Indices: %u (%.2f MB)", uLOD3TotalIndices, (uLOD3TotalIndices * 4.0f) / (1024.0f * 1024.0f));
+
+	// ========== Load and Combine LOD3 Chunks ==========
+	Zenith_Log("Loading LOD3 meshes for all %u chunks...", TOTAL_CHUNKS);
+
+	// Load first chunk to get buffer layout (stored as owned pointer for later cleanup)
+	Flux_MeshGeometry* pxLOD3Geometry = Zenith_AssetHandler::AddMeshFromFile(
+		ASSETS_ROOT"Terrain/Render_LOD3_0_0.zmsh", 0);  // 0 = load all attributes
+	Flux_MeshGeometry& xLOD3Geometry = *pxLOD3Geometry;
+
+	// Store vertex stride for buffer calculations
+	m_uVertexStride = xLOD3Geometry.GetBufferLayout().GetStride();
+
+	// Pre-allocate for all LOD3 chunks
+	const uint64_t ulLOD3VertexDataSize = static_cast<uint64_t>(uLOD3TotalVerts) * m_uVertexStride;
+	const uint64_t ulLOD3IndexDataSize = static_cast<uint64_t>(uLOD3TotalIndices) * sizeof(Flux_MeshGeometry::IndexType);
+	const uint64_t ulLOD3PositionDataSize = static_cast<uint64_t>(uLOD3TotalVerts) * sizeof(Zenith_Maths::Vector3);
+
+	xLOD3Geometry.m_pVertexData = static_cast<u_int8*>(Zenith_MemoryManagement::Reallocate(xLOD3Geometry.m_pVertexData, ulLOD3VertexDataSize));
+	xLOD3Geometry.m_ulReservedVertexDataSize = ulLOD3VertexDataSize;
+
+	xLOD3Geometry.m_puIndices = static_cast<Flux_MeshGeometry::IndexType*>(Zenith_MemoryManagement::Reallocate(xLOD3Geometry.m_puIndices, ulLOD3IndexDataSize));
+	xLOD3Geometry.m_ulReservedIndexDataSize = ulLOD3IndexDataSize;
+
+	if (xLOD3Geometry.m_pxPositions)
+	{
+		xLOD3Geometry.m_pxPositions = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Reallocate(xLOD3Geometry.m_pxPositions, ulLOD3PositionDataSize));
+		xLOD3Geometry.m_ulReservedPositionDataSize = ulLOD3PositionDataSize;
+	}
+
+	// Combine all LOD3 chunks
+	for (uint32_t x = 0; x < CHUNK_GRID_SIZE; ++x)
+	{
+		for (uint32_t y = 0; y < CHUNK_GRID_SIZE; ++y)
+		{
+			if (x == 0 && y == 0)
+				continue;  // Already loaded
+
+			std::string strChunkPath = std::string(ASSETS_ROOT"Terrain/Render_LOD3_") + std::to_string(x) + "_" + std::to_string(y) + ".zmsh";
+
+			// Check if LOD3 file exists, fallback to LOD0 if not
+			std::ifstream lodFile(strChunkPath);
+			if (!lodFile.good())
+			{
+				Zenith_Log("WARNING: LOD3 not found for chunk (%u,%u), using LOD0 as fallback", x, y);
+				strChunkPath = std::string(ASSETS_ROOT"Terrain/Render_") + std::to_string(x) + "_" + std::to_string(y) + ".zmsh";
+			}
+
+			Flux_MeshGeometry* pxChunkMesh = Zenith_AssetHandler::AddMeshFromFile(strChunkPath.c_str(), 0);  // 0 = all attributes
+			Flux_MeshGeometry::Combine(xLOD3Geometry, *pxChunkMesh);
+			Zenith_AssetHandler::DeleteMesh(pxChunkMesh);
+
+			if ((x * CHUNK_GRID_SIZE + y) % 512 == 0)
+			{
+				Zenith_Log("  Combined LOD3 chunk (%u,%u)", x, y);
+			}
+		}
+	}
+
+	Zenith_Log("LOD3 mesh combination complete: %u vertices, %u indices",
+		xLOD3Geometry.GetNumVerts(), xLOD3Geometry.GetNumIndices());
+
+	// Store LOD3 counts
+	m_uLOD3VertexCount = xLOD3Geometry.GetNumVerts();
+	m_uLOD3IndexCount = xLOD3Geometry.GetNumIndices();
+
+	// ========== Initialize Unified Buffers (LOD3 + Streaming Space) ==========
+	const uint64_t ulLOD3VertexSize = xLOD3Geometry.GetVertexDataSize();
+	const uint64_t ulLOD3IndexSize = xLOD3Geometry.GetIndexDataSize();
+	const uint64_t ulUnifiedVertexSize = ulLOD3VertexSize + STREAMING_VERTEX_BUFFER_SIZE;
+	const uint64_t ulUnifiedIndexSize = ulLOD3IndexSize + STREAMING_INDEX_BUFFER_SIZE;
+
+	Zenith_Log("Initializing unified terrain buffers (owned by TerrainComponent):");
+	Zenith_Log("  Vertex buffer: %.2f MB LOD3 + %llu MB streaming = %.2f MB total",
+		ulLOD3VertexSize / (1024.0f * 1024.0f), STREAMING_VERTEX_BUFFER_SIZE_MB,
+		ulUnifiedVertexSize / (1024.0f * 1024.0f));
+	Zenith_Log("  Index buffer: %.2f MB LOD3 + %llu MB streaming = %.2f MB total",
+		ulLOD3IndexSize / (1024.0f * 1024.0f), STREAMING_INDEX_BUFFER_SIZE_MB,
+		ulUnifiedIndexSize / (1024.0f * 1024.0f));
+
+	// Allocate unified buffers with LOD3 data at the beginning
+	uint8_t* pUnifiedVertexData = new uint8_t[ulUnifiedVertexSize];
+	uint32_t* pUnifiedIndexData = new uint32_t[ulUnifiedIndexSize / sizeof(uint32_t)];
+
+	// Copy LOD3 data to beginning
+	memcpy(pUnifiedVertexData, xLOD3Geometry.m_pVertexData, ulLOD3VertexSize);
+	memcpy(pUnifiedIndexData, xLOD3Geometry.m_puIndices, ulLOD3IndexSize);
+
+	// Zero out streaming region
+	memset(pUnifiedVertexData + ulLOD3VertexSize, 0, STREAMING_VERTEX_BUFFER_SIZE);
+	memset(pUnifiedIndexData + (ulLOD3IndexSize / sizeof(uint32_t)), 0, STREAMING_INDEX_BUFFER_SIZE);
+
+	// Upload unified buffers to GPU (component owns these)
+	Flux_MemoryManager::InitialiseVertexBuffer(pUnifiedVertexData, ulUnifiedVertexSize, m_xUnifiedVertexBuffer);
+	Flux_MemoryManager::InitialiseIndexBuffer(pUnifiedIndexData, ulUnifiedIndexSize, m_xUnifiedIndexBuffer);
+
+	// Store buffer sizes
+	m_ulUnifiedVertexBufferSize = ulUnifiedVertexSize;
+	m_ulUnifiedIndexBufferSize = ulUnifiedIndexSize;
+
+	delete[] pUnifiedVertexData;
+	delete[] pUnifiedIndexData;
+
+	Zenith_Log("Unified terrain buffers uploaded to GPU");
+	Zenith_Log("  LOD3 region: vertices [0, %u), indices [0, %u)", m_uLOD3VertexCount, m_uLOD3IndexCount);
+	Zenith_Log("  Streaming region starts at: vertex %u, index %u", m_uLOD3VertexCount, m_uLOD3IndexCount);
+
+	// Clean up LOD3 CPU data (no longer needed, data is in GPU buffer)
+	Zenith_AssetHandler::DeleteMesh(pxLOD3Geometry);
+
+	// ========== Register buffers with streaming manager ==========
+	Flux_TerrainStreamingManager::RegisterTerrainBuffers(this);
+
+	Zenith_Log("Terrain render geometry facade setup complete (references component-owned buffers)");
+
+	// Initialize GPU culling resources for this terrain component
+	// This allocates GPU buffers and builds chunk AABB + LOD metadata
+	InitializeCullingResources();
 }
 
 // ========== GPU-Driven Culling Implementation ==========

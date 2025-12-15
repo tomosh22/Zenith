@@ -64,6 +64,14 @@ void Flux_SSAO::Initialise()
 	Zenith_Log("Flux_SSAO initialised");
 }
 
+void Flux_SSAO::Reset()
+{
+	// Reset command list to ensure no stale GPU resource references, including descriptor bindings
+	// This is called when the scene is reset (e.g., Play/Stop transitions in editor)
+	g_xCommandList.Reset(true);
+	Zenith_Log("Flux_SSAO::Reset() - Reset command list");
+}
+
 void Flux_SSAO::SubmitRenderTask()
 {
 	Zenith_TaskSystem::SubmitTask(&g_xRenderTask);

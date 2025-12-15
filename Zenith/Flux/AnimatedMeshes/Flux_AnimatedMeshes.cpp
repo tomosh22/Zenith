@@ -96,6 +96,15 @@ void Flux_AnimatedMeshes::Initialise()
 	Zenith_Log("Flux_AnimatedMeshes initialised");
 }
 
+void Flux_AnimatedMeshes::Reset()
+{
+	// Reset command list to ensure no stale GPU resource references, including descriptor bindings
+	// This is called when the scene is reset (e.g., Play/Stop transitions in editor)
+	g_xCommandList.Reset(true);
+
+	Zenith_Log("Flux_AnimatedMeshes::Reset() - Reset command list");
+}
+
 void Flux_AnimatedMeshes::SubmitRenderTask()
 {
 	Zenith_TaskSystem::SubmitTask(&g_xRenderTask);
@@ -175,6 +184,12 @@ void Flux_AnimatedMeshes::RenderToShadowMap(Flux_CommandList& xCmdBuf)
 		for (u_int uMesh = 0; uMesh < pxModel->GetNumMeshEntries(); uMesh++)
 		{
 			const Flux_MeshGeometry& xMesh = pxModel->GetMeshGeometryAtIndex(uMesh);
+			
+			// Skip meshes without valid animation data (can happen after scene reload)
+			if (!xMesh.GetNumBones() || !xMesh.m_pxAnimation)
+			{
+				continue;
+			}
 			
 			xCmdBuf.AddCommand<Flux_CommandSetVertexBuffer>(&xMesh.GetVertexBuffer());
 			xCmdBuf.AddCommand<Flux_CommandSetIndexBuffer>(&xMesh.GetIndexBuffer());

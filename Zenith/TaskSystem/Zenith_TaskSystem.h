@@ -34,9 +34,11 @@ public:
 
 	void WaitUntilComplete()
 	{
+		if(!m_bSubmitted) return;
 		Zenith_Profiling::BeginProfile(ZENITH_PROFILE_INDEX__WAIT_FOR_TASK_SYSTEM);
 		m_xSemaphore.Wait();
 		Zenith_Profiling::EndProfile(ZENITH_PROFILE_INDEX__WAIT_FOR_TASK_SYSTEM);
+		m_bSubmitted = false;
 	}
 
 	const Zenith_ProfileIndex GetProfileIndex() const
@@ -56,6 +58,9 @@ protected:
 	Zenith_Semaphore m_xSemaphore;
 	void* m_pData;
 	u_int m_uCompletedThreadID;
+
+	friend class Zenith_TaskSystem;
+	bool m_bSubmitted = false;
 };
 
 class Zenith_TaskArray : public Zenith_Task

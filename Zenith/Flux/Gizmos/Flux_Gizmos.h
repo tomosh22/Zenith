@@ -35,6 +35,7 @@ class Flux_Gizmos
 public:
 	static void Initialise();
 	static void Shutdown();
+	static void Reset();  // Clear state when scene resets (e.g., Play/Stop transitions)
 
 	// Rendering
 	static void Render(void*);

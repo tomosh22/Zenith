@@ -112,6 +112,23 @@ void Flux_Gizmos::Shutdown()
 	s_xScaleGeometry.Clear();
 }
 
+void Flux_Gizmos::Reset()
+{
+	// Reset command list to ensure no stale GPU resource references, including descriptor bindings
+	// This is called when the scene is reset (e.g., Play/Stop transitions in editor)
+	s_xCommandList.Reset(true);
+
+	// Clear target entity reference (will be invalid after scene reset)
+	s_pxTargetEntity = nullptr;
+
+	// Reset interaction state
+	s_eHoveredComponent = GizmoComponent::None;
+	s_eActiveComponent = GizmoComponent::None;
+	s_bIsInteracting = false;
+
+	Zenith_Log("Flux_Gizmos::Reset() - Reset command list and cleared entity reference");
+}
+
 void Flux_Gizmos::Render(void*)
 {
 	if (!dbg_bRenderGizmos || !s_pxTargetEntity)

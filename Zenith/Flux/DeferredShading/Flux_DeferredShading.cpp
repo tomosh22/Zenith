@@ -64,6 +64,14 @@ void Flux_DeferredShading::Initialise()
 	Zenith_Log("Flux_DeferredShading initialised");
 }
 
+void Flux_DeferredShading::Reset()
+{
+	// Reset command list to ensure no stale GPU resource references, including descriptor bindings
+	// This is called when the scene is reset (e.g., Play/Stop transitions in editor)
+	g_xCommandList.Reset(true);
+	Zenith_Log("Flux_DeferredShading::Reset() - Reset command list");
+}
+
 void Flux_DeferredShading::SubmitRenderTask()
 {
 	Zenith_TaskSystem::SubmitTask(&g_xRenderTask);

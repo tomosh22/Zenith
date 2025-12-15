@@ -9,6 +9,7 @@ class Flux_Shadows
 {
 public:
 	static void Initialise();
+	static void Reset();  // Clear state when scene resets (e.g., Play/Stop transitions)
 
 	static void Render(void*);
 

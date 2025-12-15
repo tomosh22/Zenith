@@ -1,5 +1,7 @@
 #pragma once
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
+#include <unordered_map>
+#include <string>
 
 #ifdef ZENITH_TOOLS
 #include "EntityComponent/Zenith_ComponentRegistry.h"
@@ -11,10 +13,58 @@ public:
 	virtual ~Zenith_ScriptBehaviour() {}
 	virtual void OnCreate() = 0;
 	virtual void OnUpdate(float fDt) = 0;
-	//virtual void OnCollision(Zenith_Entity xOther, Physics::CollisionEventType eCollisionType) = 0;
-	//virtual std::string GetBehaviourType() = 0;
+	// Return the unique type name for this behavior (used for serialization)
+	virtual const char* GetBehaviourTypeName() const = 0;
 	std::vector<Zenith_GUID> m_axGUIDRefs;
 };
+
+// Forward declaration
+class Zenith_DataStream;
+
+// Factory function type for creating behaviors
+typedef Zenith_ScriptBehaviour* (*BehaviourFactoryFunc)(Zenith_Entity&);
+
+// Behaviour registry for serialization support
+class Zenith_BehaviourRegistry
+{
+public:
+	static Zenith_BehaviourRegistry& Get()
+	{
+		static Zenith_BehaviourRegistry s_xInstance;
+		return s_xInstance;
+	}
+
+	// Register a behavior type with the factory
+	void RegisterBehaviour(const char* szTypeName, BehaviourFactoryFunc fnFactory)
+	{
+		m_xFactoryMap[szTypeName] = fnFactory;
+	}
+
+	// Create a behavior by type name
+	Zenith_ScriptBehaviour* CreateBehaviour(const char* szTypeName, Zenith_Entity& xEntity)
+	{
+		auto it = m_xFactoryMap.find(szTypeName);
+		if (it != m_xFactoryMap.end())
+		{
+			return it->second(xEntity);
+		}
+		return nullptr;
+	}
+
+	bool HasBehaviour(const char* szTypeName) const
+	{
+		return m_xFactoryMap.find(szTypeName) != m_xFactoryMap.end();
+	}
+
+private:
+	std::unordered_map<std::string, BehaviourFactoryFunc> m_xFactoryMap;
+};
+
+// Helper macro to define a behavior with serialization support
+#define ZENITH_BEHAVIOUR_TYPE_NAME(TypeName) \
+	virtual const char* GetBehaviourTypeName() const override { return #TypeName; } \
+	static Zenith_ScriptBehaviour* CreateInstance(Zenith_Entity& xEntity) { return new TypeName(xEntity); } \
+	static void RegisterBehaviour() { Zenith_BehaviourRegistry::Get().RegisterBehaviour(#TypeName, &TypeName::CreateInstance); }
 class Zenith_ScriptComponent
 {
 public:
@@ -38,6 +88,10 @@ public:
 	{
 		m_pxScriptBehaviour = new T(m_xParentEntity);
 	}
+
+	// Serialization methods for Zenith_DataStream
+	void WriteToDataStream(Zenith_DataStream& xStream) const;
+	void ReadFromDataStream(Zenith_DataStream& xStream);
 
 #ifdef ZENITH_TOOLS
 	// Editor UI

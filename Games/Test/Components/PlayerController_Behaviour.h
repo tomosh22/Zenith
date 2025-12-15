@@ -6,6 +6,9 @@ class PlayerController_Behaviour ZENITH_FINAL : Zenith_ScriptBehaviour
 {
 	friend class Zenith_ScriptComponent;
 public:
+	// Serialization support - type name and factory registration
+	ZENITH_BEHAVIOUR_TYPE_NAME(PlayerController_Behaviour)
+
 	static constexpr double s_dMoveSpeed = 20;
 	enum CameraType
 	{

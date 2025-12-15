@@ -2,6 +2,7 @@
 
 #include <cstdlib>
 #include <cstdint>
+#include <cstdarg>
 #include <set>
 #include <unordered_map>
 #include <map>
@@ -41,11 +42,36 @@ static_assert(sizeof(u_int64) == 8);
 
 #define ZENITH_LOG
 #ifdef ZENITH_LOG
+
+#ifdef ZENITH_TOOLS
+// Forward declare editor console function
+void Zenith_EditorAddLogMessage(const char* szMessage, int eLevel);
+
+// Helper to format and send to both printf and editor console
+inline void Zenith_LogImpl(int eLevel, const char* szFormat, ...)
+{
+	char buffer[2048];
+	va_list args;
+	va_start(args, szFormat);
+	vsnprintf(buffer, sizeof(buffer), szFormat, args);
+	va_end(args);
+	printf("%s\n", buffer);
+	Zenith_EditorAddLogMessage(buffer, eLevel);
+}
+
+#define Zenith_Log(...) Zenith_LogImpl(0, __VA_ARGS__)
+#define Zenith_Error(...) Zenith_LogImpl(2, __VA_ARGS__)
+#define Zenith_Warning(...) Zenith_LogImpl(1, __VA_ARGS__)
+#else
 #define Zenith_Log(...){printf(__VA_ARGS__);printf("\n");}
 #define Zenith_Error(...){printf(__VA_ARGS__);printf("\n");}
+#define Zenith_Warning(...){printf(__VA_ARGS__);printf("\n");}
+#endif
+
 #else
 #define Zenith_Log(...)
 #define Zenith_Error(...)
+#define Zenith_Warning(...)
 #endif
 
 #define ZENITH_ASSERT

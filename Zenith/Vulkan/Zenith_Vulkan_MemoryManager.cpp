@@ -113,6 +113,7 @@ void Zenith_Vulkan_MemoryManager::EndFrame(bool bDefer /*= true*/)
 	const u_int uNumAllocatedVRAMs = Zenith_Vulkan::s_xVRAMRegistry.size();
 
 	// Process deferred VRAM deletions
+	// Uses a frame counter (MAX_FRAMES_IN_FLIGHT) to ensure GPU has finished using resources
 	ProcessDeferredDeletions();
 
 	if (bDefer)
@@ -1153,7 +1154,9 @@ void Zenith_Vulkan_MemoryManager::QueueVRAMDeletion(Zenith_Vulkan_VRAM* pxVRAM, 
 	xDeletion.m_xDSV = xDSV;
 	xDeletion.m_xSRV = xSRV;
 	xDeletion.m_xUAV = xUAV;
-	xDeletion.m_uFramesRemaining = MAX_FRAMES_IN_FLIGHT;
+	// Wait MAX_FRAMES_IN_FLIGHT + 1 to ensure GPU has finished with resource
+	// +1 because the resource might still be in use by command buffers being built this frame
+	xDeletion.m_uFramesRemaining = MAX_FRAMES_IN_FLIGHT + 1;
 	s_xPendingDeletions.push_back(xDeletion);
 }
 

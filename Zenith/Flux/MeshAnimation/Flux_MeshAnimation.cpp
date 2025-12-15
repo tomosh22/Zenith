@@ -115,6 +115,7 @@ void Flux_MeshAnimation::CalculateBoneTransform(const Node* const pxNode, const 
 
 Flux_MeshAnimation::Flux_MeshAnimation(const std::string& strPath, Flux_MeshGeometry& xParentGeometry)
 	: m_xParentGeometry(xParentGeometry)
+	, m_strSourcePath(strPath)
 {
 	for (u_int u = 0; u < uMAX_BONES_PER_ANIM; u++)
 	{

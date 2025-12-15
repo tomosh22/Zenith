@@ -55,6 +55,14 @@ void Flux_Fog::Initialise()
 	Zenith_Log("Flux_Fog initialised");
 }
 
+void Flux_Fog::Reset()
+{
+	// Reset command list to ensure no stale GPU resource references, including descriptor bindings
+	// This is called when the scene is reset (e.g., Play/Stop transitions in editor)
+	g_xCommandList.Reset(true);
+	Zenith_Log("Flux_Fog::Reset() - Reset command list");
+}
+
 void Flux_Fog::SubmitRenderTask()
 {
 	Zenith_TaskSystem::SubmitTask(&g_xRenderTask);

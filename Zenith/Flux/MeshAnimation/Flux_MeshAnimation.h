@@ -137,6 +137,9 @@ public:
     Flux_MeshAnimation() = delete;
     Flux_MeshAnimation(const std::string& strPath, class Flux_MeshGeometry& xParentGeometry);
 
+    // Get the source file path for this animation (for serialization)
+    const std::string& GetSourcePath() const { return m_strSourcePath; }
+
     void Update(float fDt, bool bDebug = false)
     {
         m_fCurrentTimestamp += m_uTicksPerSecond * fDt;
@@ -155,6 +158,7 @@ public:
         std::unordered_map<std::string, AnimBone> m_xBones;
         class Flux_MeshGeometry& m_xParentGeometry;
         float m_fCurrentTimestamp = 0.0f;
+        std::string m_strSourcePath;  // File path for serialization
 
         Zenith_Maths::Matrix4 m_axAnimMatrices[uMAX_BONES_PER_ANIM];
         public:

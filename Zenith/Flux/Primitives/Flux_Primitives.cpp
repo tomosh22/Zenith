@@ -522,6 +522,14 @@ void Flux_Primitives::Initialise()
 	Zenith_Log("Flux_Primitives initialised");
 }
 
+void Flux_Primitives::Reset()
+{
+	// Reset command list to ensure no stale GPU resource references, including descriptor bindings
+	// This is called when the scene is reset (e.g., Play/Stop transitions in editor)
+	g_xCommandList.Reset(true);
+	Zenith_Log("Flux_Primitives::Reset() - Reset command list");
+}
+
 void Flux_Primitives::SubmitRenderTask()
 {
 	Zenith_TaskSystem::SubmitTask(&g_xRenderTask);

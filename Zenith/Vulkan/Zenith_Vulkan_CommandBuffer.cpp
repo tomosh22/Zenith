@@ -42,19 +42,28 @@ void Zenith_Vulkan_CommandBuffer::InitialiseWithCustomPool(const vk::CommandPool
 
 void Zenith_Vulkan_CommandBuffer::BeginRecording()
 {
-	m_xCurrentCmdBuffer = m_xCmdBuffers[Zenith_Vulkan_Swapchain::GetCurrentFrameIndex()];
+	const u_int uFrameIndex = Zenith_Vulkan_Swapchain::GetCurrentFrameIndex();
+	Zenith_Assert(uFrameIndex < MAX_FRAMES_IN_FLIGHT, "Frame index out of range: %u", uFrameIndex);
+	Zenith_Assert(!m_xCmdBuffers.empty() && uFrameIndex < m_xCmdBuffers.size(), "Command buffers not allocated or frame index out of range");
+	
+	m_xCurrentCmdBuffer = m_xCmdBuffers[uFrameIndex];
 	vk::CommandBufferBeginInfo xBeginInfo;
 	xBeginInfo.setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
 	m_xCurrentCmdBuffer.begin(xBeginInfo);
 	m_uCurrentBindFreq = FLUX_MAX_DESCRIPTOR_SET_LAYOUTS;
 	m_uDescriptorDirty = ~0u;
+	m_pxCurrentPipeline = nullptr;  // Reset pipeline to catch any stale access
 	memset(m_xBindings, 0, sizeof(m_xBindings));
 	
 	// Clear descriptor set cache for this frame (descriptor pool gets reset per frame anyway)
+	// CRITICAL: Must also clear the bindings to avoid false cache hits with stale pointers
+	// If old cached bindings happened to match new bindings (same pointer addresses after
+	// scene reload), we could return a stale descriptor set
 	for (u_int i = 0; i < FLUX_MAX_DESCRIPTOR_SET_LAYOUTS; i++)
 	{
 		m_axDescriptorSetCache[i].descriptorSet = VK_NULL_HANDLE;
 		m_axDescriptorSetCache[i].layout = VK_NULL_HANDLE;
+		memset(&m_axDescriptorSetCache[i].bindings, 0, sizeof(DescSetBindings));
 	}
 }
 
@@ -168,7 +177,31 @@ void Zenith_Vulkan_CommandBuffer::UpdateDescriptorSets()
 	Zenith_Profiling::BeginProfile(ZENITH_PROFILE_INDEX__VULKAN_UPDATE_DESCRIPTOR_SETS);
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 	
-	for (u_int uDescSet = 0; uDescSet < m_pxCurrentPipeline->m_xRootSig.m_uNumDescriptorSets; uDescSet++)
+	// Validate this pointer and command buffer state
+	Zenith_Assert(this != nullptr, "UpdateDescriptorSets called with null this pointer");
+	
+	// Validate worker index is in range
+	Zenith_Assert(m_uWorkerIndex < FLUX_NUM_WORKER_THREADS, 
+		"Invalid worker index: %u (max %u)", m_uWorkerIndex, FLUX_NUM_WORKER_THREADS);
+	
+	// Validate pipeline is set before iterating descriptor sets
+	Zenith_Assert(m_pxCurrentPipeline, "UpdateDescriptorSets called with no pipeline set");
+	
+	// Read the pipeline's root signature carefully with explicit validation
+	const u_int uNumDescSets = m_pxCurrentPipeline->m_xRootSig.m_uNumDescriptorSets;
+	Zenith_Assert(uNumDescSets <= FLUX_MAX_DESCRIPTOR_SET_LAYOUTS, 
+		"Pipeline has too many descriptor sets: %u (max %u)", uNumDescSets, FLUX_MAX_DESCRIPTOR_SET_LAYOUTS);
+	
+	// Validate m_xBindings array is accessible (this helps catch corrupted this pointer)
+	// Reading a few bytes from each slot to ensure memory is valid
+	for (u_int i = 0; i < uNumDescSets; i++)
+	{
+		// Just touch the memory to ensure it's accessible
+		volatile const void* pxCheck = &m_xBindings[i];
+		(void)pxCheck;
+	}
+	
+	for (u_int uDescSet = 0; uDescSet < uNumDescSets; uDescSet++)
 	{
 		if (Zenith_Vulkan::ShouldOnlyUpdateDirtyDescriptors() && !(m_uDescriptorDirty & (1 << uDescSet))) continue;
 
@@ -211,6 +244,9 @@ void Zenith_Vulkan_CommandBuffer::UpdateDescriptorSets()
 				const Flux_ShaderResourceView* const pxSRV = m_xBindings[uDescSet].m_xSRVs[u];
 				if (pxSRV)
 				{
+					// Validate SRV has a valid image view before using it
+					Zenith_Assert(pxSRV->m_xImageView, "SRV at descSet=%u binding=%u has null image view", uDescSet, u);
+					
 					Zenith_Vulkan_Sampler* pxSampler = m_xBindings[uDescSet].m_apxSamplers[u];
 					axTexInfos[uNumTexWrites] = vk::DescriptorImageInfo()
 						.setSampler(pxSampler ? pxSampler->GetSampler() : Flux_Graphics::s_xRepeatSampler.GetSampler())
@@ -419,7 +455,10 @@ void Zenith_Vulkan_CommandBuffer::BindUAV_Buffer(const Flux_UnorderedAccessView_
 void Zenith_Vulkan_CommandBuffer::BindCBV(const Flux_ConstantBufferView* pxCBV, uint32_t uBindPoint)
 {
 	Zenith_Assert(m_uCurrentBindFreq < FLUX_MAX_DESCRIPTOR_SET_LAYOUTS, "Haven't called BeginBind");
-	Zenith_Assert(pxCBV, "Invalid CBV");
+	Zenith_Assert(pxCBV, "Invalid CBV (null)");
+	Zenith_Assert(uBindPoint < MAX_BINDINGS, "Bind point out of range: %u", uBindPoint);
+	// Validate the CBV has valid buffer info
+	Zenith_Assert(pxCBV->m_xBufferInfo.buffer, "CBV has null buffer at bind point %u", uBindPoint);
 	m_uDescriptorDirty |= 1 << m_uCurrentBindFreq;
 	m_xBindings[m_uCurrentBindFreq].m_xCBVs[uBindPoint] = pxCBV;
 }

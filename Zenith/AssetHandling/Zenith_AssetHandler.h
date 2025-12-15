@@ -2,10 +2,36 @@
 #include "Flux/Flux.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "Flux/Flux_Material.h"
+
+/**
+ * Zenith_AssetHandler - Raw Pointer-Based Asset Management
+ *
+ * OWNERSHIP RULES:
+ * - All Add* functions allocate from internal pools and return raw pointers
+ * - Callers MUST hold onto returned pointers for later use
+ * - NO string-based registry - assets are accessed only via returned pointers
+ * - Delete* functions take pointers and return the asset to the pool
+ * - DestroyAllAssets() cleans up all assets at shutdown
+ *
+ * LIFECYCLE:
+ * - Create: Add*() -> returns raw pointer
+ * - Use: Caller stores and uses the pointer directly
+ * - Destroy: Delete*() or DestroyAllAssets()
+ *
+ * SERIALIZATION:
+ * - Flux_MeshGeometry stores m_strSourcePath when loaded from file
+ * - Serialization should save source paths, deserialization should reload
+ *
+ * THREAD SAFETY:
+ * - Not thread-safe by default
+ * - Callers must synchronize if using from multiple threads
+ */
 class Zenith_AssetHandler
 {
 public:
 	using AssetID = uint32_t;
+	static constexpr AssetID INVALID_ASSET_ID = ~0u;
+
 	Zenith_AssetHandler()
 	{
 #if 0
@@ -27,7 +53,7 @@ public:
 		Flux_SurfaceInfo xSurfaceInfo;
 		bool bCreateMips = false;
 		bool bIsCubemap = false;
-		
+
 		// Helper to free allocated memory
 		void FreeAllocatedData()
 		{
@@ -48,55 +74,130 @@ public:
 		}
 	};
 
+	//--------------------------------------------------------------------------
+	// File Loading (disk paths only, no in-memory string keys)
+	//--------------------------------------------------------------------------
 	static TextureData LoadTexture2DFromFile(const char* szPath);
 	static TextureData LoadTextureCubeFromFiles(const char* szPathPX, const char* szPathNX, const char* szPathPY, const char* szPathNY, const char* szPathPZ, const char* szPathNZ);
 
-	static Flux_Texture& AddTexture(const std::string& strName, const TextureData& xTextureData);
-	static Flux_MeshGeometry& AddMesh(const std::string& strName);
-	static Flux_MeshGeometry& AddMesh(const std::string& strName, const char* szPath, u_int uRetainAttributeBits = 0, const bool bUploadToGPU = true);
-	static Flux_Material& AddMaterial(const std::string& strName);
+	//--------------------------------------------------------------------------
+	// Asset Creation - Returns raw pointers, caller must store
+	//--------------------------------------------------------------------------
 
-	static Flux_Texture& GetTexture(const std::string& strName);
-	static Flux_Texture& TryGetTexture(const std::string& strName);
-	static bool TextureExists(const std::string& strName);
+	/**
+	 * Creates a texture from loaded texture data
+	 * @param xTextureData The texture data (loaded from file or procedural)
+	 * @return Raw pointer to the created texture, or nullptr on failure
+	 */
+	static Flux_Texture* AddTexture(const TextureData& xTextureData);
 
-	static Flux_MeshGeometry& GetMesh(const std::string& strName);
-	static Flux_MeshGeometry& TryGetMesh(const std::string& strName);
-	static bool MeshExists(const std::string& strName);
+	/**
+	 * Creates an empty mesh for manual setup
+	 * @return Raw pointer to the created mesh, or nullptr on failure
+	 */
+	static Flux_MeshGeometry* AddMesh();
 
-	static Flux_Material& GetMaterial(const std::string& strName);
-	static Flux_Material& TryGetMaterial(const std::string& strName);
-	static bool MaterialExists(const std::string& strName);
+	/**
+	 * Loads a mesh from file
+	 * @param szPath Path to the mesh file (stored in mesh for serialization)
+	 * @param uRetainAttributeBits Bitmask of attributes to retain in CPU memory
+	 * @param bUploadToGPU Whether to upload to GPU
+	 * @return Raw pointer to the loaded mesh, or nullptr on failure
+	 */
+	static Flux_MeshGeometry* AddMeshFromFile(const char* szPath, u_int uRetainAttributeBits = 0, const bool bUploadToGPU = true);
 
-	static void DeleteTexture(const std::string& strName);
-	static void DeleteMesh(const std::string& strName);
-	static void DeleteMaterial(const std::string& strName);
+	/**
+	 * Creates an empty material
+	 * @return Raw pointer to the created material, or nullptr on failure
+	 */
+	static Flux_Material* AddMaterial();
 
-	// Reverse lookup: get asset name from pointer (for serialization)
-	static std::string GetMeshName(const Flux_MeshGeometry* pxMesh);
-	static std::string GetMaterialName(const Flux_Material* pxMaterial);
-	static std::string GetTextureName(const Flux_Texture* pxTexture);
+	//--------------------------------------------------------------------------
+	// Asset Deletion - By pointer
+	//--------------------------------------------------------------------------
+
+	/**
+	 * Deletes a texture and returns its slot to the pool
+	 * @param pxTexture Pointer to the texture to delete
+	 */
+	static void DeleteTexture(Flux_Texture* pxTexture);
+
+	/**
+	 * Deletes a mesh and returns its slot to the pool
+	 * @param pxMesh Pointer to the mesh to delete
+	 */
+	static void DeleteMesh(Flux_MeshGeometry* pxMesh);
+
+	/**
+	 * Deletes a material and returns its slot to the pool
+	 * @param pxMaterial Pointer to the material to delete
+	 */
+	static void DeleteMaterial(Flux_Material* pxMaterial);
+
+	//--------------------------------------------------------------------------
+	// Bulk Operations
+	//--------------------------------------------------------------------------
+
+	/**
+	 * Destroys all assets - call at shutdown
+	 * Iterates through all pools and cleans up active assets
+	 */
+	static void DestroyAllAssets();
+
+	//--------------------------------------------------------------------------
+	// Diagnostics & Debugging
+	//--------------------------------------------------------------------------
+
+	/**
+	 * Enable/disable lifecycle logging for debugging
+	 */
+	static void EnableLifecycleLogging(bool bEnable);
+	static bool IsLifecycleLoggingEnabled() { return s_bLifecycleLoggingEnabled; }
+
+	/**
+	 * Get count of active (allocated) assets for leak detection
+	 */
+	static uint32_t GetActiveTextureCount();
+	static uint32_t GetActiveMeshCount();
+	static uint32_t GetActiveMaterialCount();
+
+	/**
+	 * Log all active assets (for debugging memory leaks)
+	 */
+	static void LogActiveAssets();
+
+	//--------------------------------------------------------------------------
+	// Pointer Validation (debug helpers)
+	//--------------------------------------------------------------------------
+
+	/**
+	 * Check if a pointer points to a valid, active asset
+	 */
+	static bool IsValidTexture(const Flux_Texture* pxTexture);
+	static bool IsValidMesh(const Flux_MeshGeometry* pxMesh);
+	static bool IsValidMaterial(const Flux_Material* pxMaterial);
 
 private:
+	// Asset pools - fixed-size arrays for all assets
+	static Flux_Texture* s_pxTextures;          // Array of ZENITH_MAX_TEXTURES
+	static Flux_MeshGeometry* s_pxMeshes;       // Array of ZENITH_MAX_MESHES
+	static Flux_Material* s_pxMaterials;        // Array of ZENITH_MAX_MATERIALS
 
-	//array of length ZENITH_MAX_TEXTURES
-	static Flux_Texture* s_pxTextures;
+	// Track which slots are in use (no string keys, just ID sets)
+	static std::unordered_set<AssetID> s_xUsedTextureIDs;
+	static std::unordered_set<AssetID> s_xUsedMeshIDs;
+	static std::unordered_set<AssetID> s_xUsedMaterialIDs;
+
+	// Slot allocation helpers
 	static AssetID GetNextFreeTextureSlot();
-
-	//array of length ZENITH_MAX_MESHES
-	static Flux_MeshGeometry* s_pxMeshes;
 	static AssetID GetNextFreeMeshSlot();
-
-	//array of length ZENITH_MAX_MATERIALS
-	static Flux_Material* s_pxMaterials;
 	static AssetID GetNextFreeMaterialSlot();
 
-	static std::unordered_map<std::string, AssetID> s_xTextureNameMap;
-	static std::unordered_set<AssetID>				s_xUsedTextureIDs;
+	// Pointer-to-ID conversion (for deletion)
+	static AssetID GetIDFromTexturePointer(const Flux_Texture* pxTexture);
+	static AssetID GetIDFromMeshPointer(const Flux_MeshGeometry* pxMesh);
+	static AssetID GetIDFromMaterialPointer(const Flux_Material* pxMaterial);
 
-	static std::unordered_map<std::string, AssetID> s_xMeshNameMap;
-	static std::unordered_set<AssetID>				s_xUsedMeshIDs;
-
-	static std::unordered_map<std::string, AssetID> s_xMaterialNameMap;
-	static std::unordered_set<AssetID>				s_xUsedMaterialIDs;
+	// Lifecycle logging flag
+	static bool s_bLifecycleLoggingEnabled;
 };

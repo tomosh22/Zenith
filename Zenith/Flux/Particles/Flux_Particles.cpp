@@ -63,20 +63,31 @@ void Flux_Particles::Initialise()
 	Flux_MemoryManager::InitialiseDynamicVertexBuffer(nullptr, s_uMaxParticles * sizeof(Particle), s_xInstanceBuffer, false);
 
 	Zenith_AssetHandler::TextureData xParticleTexData = Zenith_AssetHandler::LoadTexture2DFromFile("C:/dev/Zenith/Games/Test/Assets/Textures/particle.ztx");
-	Zenith_AssetHandler::AddTexture("Particle", xParticleTexData);
+	Zenith_AssetHandler::AddTexture(xParticleTexData);  // Created but not used currently
 	xParticleTexData.FreeAllocatedData();
-	
+
 	Zenith_AssetHandler::TextureData xParticleSwirlTexData = Zenith_AssetHandler::LoadTexture2DFromFile("C:/dev/Zenith/Games/Test/Assets/Textures/particleSwirl.ztx");
-	Zenith_AssetHandler::AddTexture("ParticleSwirl", xParticleSwirlTexData);
+	Flux_Texture* pxParticleSwirlTex = Zenith_AssetHandler::AddTexture(xParticleSwirlTexData);
 	xParticleSwirlTexData.FreeAllocatedData();
-	
-	s_xParticleTexture = Zenith_AssetHandler::GetTexture("ParticleSwirl");
+
+	if (pxParticleSwirlTex)
+	{
+		s_xParticleTexture = *pxParticleSwirlTex;
+	}
 
 #ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_DebugVariables::AddBoolean({ "Render", "Enable", "Particles" }, dbg_bEnable);
 #endif
 
 	Zenith_Log("Flux_Particles initialised");
+}
+
+void Flux_Particles::Reset()
+{
+	// Reset command list to ensure no stale GPU resource references, including descriptor bindings
+	// This is called when the scene is reset (e.g., Play/Stop transitions in editor)
+	g_xCommandList.Reset(true);
+	Zenith_Log("Flux_Particles::Reset() - Reset command list");
 }
 
 void UploadInstanceData()

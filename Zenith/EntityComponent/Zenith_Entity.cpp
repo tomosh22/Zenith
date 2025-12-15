@@ -7,6 +7,7 @@
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_TextComponent.h"
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
+#include "EntityComponent/Components/Zenith_ScriptComponent.h"
 #include "DataStream/Zenith_DataStream.h"
 
 Zenith_Entity::Zenith_Entity(Zenith_Scene* pxScene, const std::string& strName)
@@ -72,6 +73,9 @@ void Zenith_Entity::WriteToDataStream(Zenith_DataStream& xStream) const
 		xComponentTypes.push_back("TerrainComponent");
 	if (const_cast<Zenith_Entity*>(this)->HasComponent<Zenith_ColliderComponent>())
 		xComponentTypes.push_back("ColliderComponent");
+	// ScriptComponent should come after ColliderComponent as behaviors may reference it
+	if (const_cast<Zenith_Entity*>(this)->HasComponent<Zenith_ScriptComponent>())
+		xComponentTypes.push_back("ScriptComponent");
 
 	// Write the number of components
 	u_int uNumComponents = static_cast<u_int>(xComponentTypes.size());
@@ -106,6 +110,10 @@ void Zenith_Entity::WriteToDataStream(Zenith_DataStream& xStream) const
 		else if (strTypeName == "ColliderComponent")
 		{
 			const_cast<Zenith_Entity*>(this)->GetComponent<Zenith_ColliderComponent>().WriteToDataStream(xStream);
+		}
+		else if (strTypeName == "ScriptComponent")
+		{
+			const_cast<Zenith_Entity*>(this)->GetComponent<Zenith_ScriptComponent>().WriteToDataStream(xStream);
 		}
 	}
 }
@@ -173,6 +181,14 @@ void Zenith_Entity::ReadFromDataStream(Zenith_DataStream& xStream)
 			if (!HasComponent<Zenith_ColliderComponent>())
 			{
 				Zenith_ColliderComponent& xComponent = AddComponent<Zenith_ColliderComponent>();
+				xComponent.ReadFromDataStream(xStream);
+			}
+		}
+		else if (strComponentType == "ScriptComponent")
+		{
+			if (!HasComponent<Zenith_ScriptComponent>())
+			{
+				Zenith_ScriptComponent& xComponent = AddComponent<Zenith_ScriptComponent>();
 				xComponent.ReadFromDataStream(xStream);
 			}
 		}

@@ -33,6 +33,10 @@ public:
 	static Flux_MeshGeometry s_xBlankMesh;
 	static class Flux_Material* s_pxBlankMaterial;
 
+	// Global engine textures (set during initialization in Zenith_Main.cpp)
+	static Flux_Texture* s_pxCubemapTexture;
+	static Flux_Texture* s_pxWaterNormalTexture;
+
 	static TextureFormat GetMRTFormat(MRTIndex eIndex);
 	static TextureFormat s_aeMRTFormats[MRT_INDEX_COUNT];
 

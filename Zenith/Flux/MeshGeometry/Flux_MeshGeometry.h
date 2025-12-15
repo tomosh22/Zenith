@@ -53,6 +53,7 @@ public:
 
 		m_uNumBones = 0;
 		m_xBoneNameToIdAndOffset.clear();
+		m_strSourcePath.clear();
 	}
 
 	static void GenerateFullscreenQuad(Flux_MeshGeometry& xGeometryOut);
@@ -115,6 +116,9 @@ public:
 	float* m_pfBoneWeights = nullptr;
 
 	Zenith_Maths::Vector4 m_xMaterialColor = Zenith_Maths::Vector4(1.0f, 1.0f, 1.0f, 1.0f);
+
+	// Source path for serialization (set when loaded from file)
+	std::string m_strSourcePath;
 
 	u_int8* m_pVertexData = nullptr;
 

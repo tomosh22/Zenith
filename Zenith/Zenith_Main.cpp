@@ -10,6 +10,7 @@
 #include "Editor/Zenith_Editor.h"
 #endif
 #include "AssetHandling/Zenith_AssetHandler.h"
+#include "Flux/Flux_Graphics.h"
 #include "Physics/Zenith_Physics.h"
 #include "Profiling/Zenith_Profiling.h"
 #include "StateMachine/Zenith_StateMachine.h"
@@ -56,11 +57,11 @@ int main()
 			ASSETS_ROOT"Textures/Cubemap/pz.ztx",
 			ASSETS_ROOT"Textures/Cubemap/nz.ztx"
 		);
-		Zenith_AssetHandler::AddTexture("Cubemap", xCubemapTexData);
+		Flux_Graphics::s_pxCubemapTexture = Zenith_AssetHandler::AddTexture(xCubemapTexData);
 		xCubemapTexData.FreeAllocatedData();
-		
+
 		Zenith_AssetHandler::TextureData xWaterNormalTexData = Zenith_AssetHandler::LoadTexture2DFromFile(ASSETS_ROOT"Textures/water/normal.ztx");
-		Zenith_AssetHandler::AddTexture("Water_Normal", xWaterNormalTexData);
+		Flux_Graphics::s_pxWaterNormalTexture = Zenith_AssetHandler::AddTexture(xWaterNormalTexData);
 		xWaterNormalTexData.FreeAllocatedData();
 		Flux_MemoryManager::EndFrame(false);
 	}

@@ -31,6 +31,12 @@ public:
 	static void Initialise();
 
 	/**
+	 * Clear state when scene resets (e.g., Play/Stop transitions)
+	 * Resets command lists to prevent stale GPU resource references
+	 */
+	static void Reset();
+
+	/**
 	 * Submit the render task to the task system
 	 * Called once per frame from SubmitRenderTasks() in Zenith_Core.cpp
 	 */

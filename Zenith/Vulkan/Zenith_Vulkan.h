@@ -101,7 +101,11 @@ public:
 #endif
 
 	static void BeginFrame();
-	static void EndFrame();
+	static void EndFrame(bool bSubmitRenderWork);
+
+	// Wait for GPU to finish all work (blocks until idle)
+	// WARNING: This is expensive - only use for critical synchronization (scene transitions, shutdown, etc.)
+	static void WaitForGPUIdle();
 
 	static void RecordCommandBuffersTask(void* pData, u_int uInvocationIndex, u_int uNumInvocations);
 

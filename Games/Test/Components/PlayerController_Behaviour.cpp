@@ -7,11 +7,17 @@
 #include "Input/Zenith_Input.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "EntityComponent/Zenith_Entity.h"
+#include "AssetHandling/Zenith_AssetHandler.h"
+#include "Flux/Flux_Graphics.h"
 
 DEBUGVAR float dbg_fCamDistance = 25.f;
 
 static Zenith_Entity s_axBulletEntities[128];
 static u_int s_uCurrentBulletIndex = 0;
+
+// Cached assets for bullet spawning (loaded once on first use)
+static Flux_MeshGeometry* s_pxBulletMesh = nullptr;
+static Flux_Material* s_pxBulletMaterial = nullptr;
 
 PlayerController_Behaviour::PlayerController_Behaviour(Zenith_Entity& xParentEntity)
 	: m_xParentEntity(xParentEntity)
@@ -67,12 +73,19 @@ static void UpdateCameraRotation(Zenith_CameraComponent& xCamera)
 
 void PlayerController_Behaviour::Shoot()
 {
+	// Load bullet assets once on first use
+	if (!s_pxBulletMesh)
+	{
+		s_pxBulletMesh = Zenith_AssetHandler::AddMeshFromFile(ASSETS_ROOT"Meshes/sphereSmooth_Mesh0_Mat0.zmsh");
+		s_pxBulletMaterial = Zenith_AssetHandler::AddMaterial();
+	}
+
 	Zenith_Entity& xBulletEntity = s_axBulletEntities[s_uCurrentBulletIndex];
 	xBulletEntity.Initialise(&Zenith_Scene::GetCurrentScene(),"Bullet" + std::to_string(s_uCurrentBulletIndex));
 	s_uCurrentBulletIndex++;
 
 	Zenith_ModelComponent& xModel = xBulletEntity.AddComponent<Zenith_ModelComponent>();
-	xModel.AddMeshEntry(Zenith_AssetHandler::GetMesh("Sphere_Smooth"), Zenith_AssetHandler::GetMaterial("Rock"));
+	xModel.AddMeshEntry(*s_pxBulletMesh, *s_pxBulletMaterial);
 
 	Zenith_CameraComponent& xCamera = m_xParentEntity.GetComponent<Zenith_CameraComponent>();
 

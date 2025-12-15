@@ -211,27 +211,25 @@ void Flux_TerrainStreamingManager::RegisterTerrainBuffers(Zenith_TerrainComponen
 			Flux_TerrainChunkResidency& xResidency = s_axChunkResidency[uChunkIndex];
 
 			// Load LOD3 mesh to get vertex/index counts
-			std::string strChunkName = "Terrain_LOD3_Init_" + std::to_string(x) + "_" + std::to_string(y);
 			std::string strChunkPath = std::string(ASSETS_ROOT"Terrain/Render_LOD3_") + std::to_string(x) + "_" + std::to_string(y) + ".zmsh";
 
 			std::ifstream lodFile(strChunkPath);
 			if (!lodFile.good())
 				strChunkPath = std::string(ASSETS_ROOT"Terrain/Render_") + std::to_string(x) + "_" + std::to_string(y) + ".zmsh";
 
-			Zenith_AssetHandler::AddMesh(strChunkName, strChunkPath.c_str(), 1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__POSITION);
-			Flux_MeshGeometry& xChunkMesh = Zenith_AssetHandler::GetMesh(strChunkName);
+			Flux_MeshGeometry* pxChunkMesh = Zenith_AssetHandler::AddMeshFromFile(strChunkPath.c_str(), 1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__POSITION);
 
 			// Mark LOD3 as resident with its allocation info
 			xResidency.m_aeStates[LOD_LOWEST_DETAIL] = Flux_TerrainLODResidencyState::RESIDENT;
 			xResidency.m_axAllocations[LOD_LOWEST_DETAIL].m_uVertexOffset = uCurrentLOD3VertexOffset;
-			xResidency.m_axAllocations[LOD_LOWEST_DETAIL].m_uVertexCount = xChunkMesh.GetNumVerts();
+			xResidency.m_axAllocations[LOD_LOWEST_DETAIL].m_uVertexCount = pxChunkMesh->GetNumVerts();
 			xResidency.m_axAllocations[LOD_LOWEST_DETAIL].m_uIndexOffset = uCurrentLOD3IndexOffset;
-			xResidency.m_axAllocations[LOD_LOWEST_DETAIL].m_uIndexCount = xChunkMesh.GetNumIndices();
+			xResidency.m_axAllocations[LOD_LOWEST_DETAIL].m_uIndexCount = pxChunkMesh->GetNumIndices();
 
-			uCurrentLOD3VertexOffset += xChunkMesh.GetNumVerts();
-			uCurrentLOD3IndexOffset += xChunkMesh.GetNumIndices();
+			uCurrentLOD3VertexOffset += pxChunkMesh->GetNumVerts();
+			uCurrentLOD3IndexOffset += pxChunkMesh->GetNumIndices();
 
-			Zenith_AssetHandler::DeleteMesh(strChunkName);
+			Zenith_AssetHandler::DeleteMesh(pxChunkMesh);
 
 			// LOD0-2 start as NOT_LOADED
 			for (uint32_t uLOD = 0; uLOD < LOD_LOWEST_DETAIL; ++uLOD)
@@ -246,18 +244,16 @@ void Flux_TerrainStreamingManager::RegisterTerrainBuffers(Zenith_TerrainComponen
 		{
 			uint32_t uChunkIndex = ChunkCoordsToIndex(x, y);
 
-			std::string strChunkName = "Terrain_AABB_Init_" + std::to_string(x) + "_" + std::to_string(y);
 			std::string strChunkPath = std::string(ASSETS_ROOT"Terrain/Render_") + std::to_string(x) + "_" + std::to_string(y) + ".zmsh";
 
-			Zenith_AssetHandler::AddMesh(strChunkName, strChunkPath.c_str(), 1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__POSITION);
-			Flux_MeshGeometry& xChunkMesh = Zenith_AssetHandler::GetMesh(strChunkName);
+			Flux_MeshGeometry* pxChunkMesh = Zenith_AssetHandler::AddMeshFromFile(strChunkPath.c_str(), 1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__POSITION);
 
 			s_axChunkAABBs[uChunkIndex] = Zenith_FrustumCulling::GenerateAABBFromVertices(
-				xChunkMesh.m_pxPositions,
-				xChunkMesh.GetNumVerts()
+				pxChunkMesh->m_pxPositions,
+				pxChunkMesh->GetNumVerts()
 			);
 
-			Zenith_AssetHandler::DeleteMesh(strChunkName);
+			Zenith_AssetHandler::DeleteMesh(pxChunkMesh);
 		}
 	}
 	s_bAABBsCached = true;
@@ -406,7 +402,6 @@ bool Flux_TerrainStreamingManager::StreamInLOD(uint32_t uChunkIndex, uint32_t uL
 
 	// Build mesh file path
 	const char* LOD_SUFFIXES[3] = { "", "_LOD1", "_LOD2" };
-	std::string strChunkName = "Terrain_Stream_" + std::to_string(uLODLevel) + "_" + std::to_string(uChunkX) + "_" + std::to_string(uChunkY);
 	std::string strChunkPath = std::string(ASSETS_ROOT"Terrain/Render") + LOD_SUFFIXES[uLODLevel] + "_" + std::to_string(uChunkX) + "_" + std::to_string(uChunkY) + ".zmsh";
 
 	// Check if file exists
@@ -415,11 +410,12 @@ bool Flux_TerrainStreamingManager::StreamInLOD(uint32_t uChunkIndex, uint32_t uL
 		return false;
 
 	// Load mesh to get size requirements
-	Zenith_AssetHandler::AddMesh(strChunkName, strChunkPath.c_str(), 0);
-	Flux_MeshGeometry& xChunkMesh = Zenith_AssetHandler::GetMesh(strChunkName);
+	Flux_MeshGeometry* pxChunkMesh = Zenith_AssetHandler::AddMeshFromFile(strChunkPath.c_str(), 0);
+	if (!pxChunkMesh)
+		return false;
 
-	const uint32_t uNumVerts = xChunkMesh.GetNumVerts();
-	const uint32_t uNumIndices = xChunkMesh.GetNumIndices();
+	const uint32_t uNumVerts = pxChunkMesh->GetNumVerts();
+	const uint32_t uNumIndices = pxChunkMesh->GetNumIndices();
 
 	// Try to allocate space
 	uint32_t uVertexOffset = s_xVertexAllocator.Allocate(uNumVerts);
@@ -435,7 +431,7 @@ bool Flux_TerrainStreamingManager::StreamInLOD(uint32_t uChunkIndex, uint32_t uL
 
 		if (!EvictToMakeSpace(uNumVerts, uNumIndices, s_xLastCameraPos))
 		{
-			Zenith_AssetHandler::DeleteMesh(strChunkName);
+			Zenith_AssetHandler::DeleteMesh(pxChunkMesh);
 			return false;
 		}
 
@@ -450,7 +446,7 @@ bool Flux_TerrainStreamingManager::StreamInLOD(uint32_t uChunkIndex, uint32_t uL
 			if (uIndexOffset != UINT32_MAX)
 				s_xIndexAllocator.Free(uIndexOffset, uNumIndices);
 
-			Zenith_AssetHandler::DeleteMesh(strChunkName);
+			Zenith_AssetHandler::DeleteMesh(pxChunkMesh);
 			return false;
 		}
 	}
@@ -469,14 +465,14 @@ bool Flux_TerrainStreamingManager::StreamInLOD(uint32_t uChunkIndex, uint32_t uL
 	// Upload to GPU
 	Flux_MemoryManager::UploadBufferDataAtOffset(
 		s_pxTerrainComponent->GetUnifiedVertexBuffer().GetBuffer().m_xVRAMHandle,
-		xChunkMesh.m_pVertexData,
+		pxChunkMesh->m_pVertexData,
 		ulVertexDataSize,
 		ulVertexOffsetBytes
 	);
 
 	Flux_MemoryManager::UploadBufferDataAtOffset(
 		s_pxTerrainComponent->GetUnifiedIndexBuffer().GetBuffer().m_xVRAMHandle,
-		xChunkMesh.m_puIndices,
+		pxChunkMesh->m_puIndices,
 		ulIndexDataSize,
 		ulIndexOffsetBytes
 	);
@@ -489,7 +485,7 @@ bool Flux_TerrainStreamingManager::StreamInLOD(uint32_t uChunkIndex, uint32_t uL
 	xResidency.m_axAllocations[uLODLevel].m_uIndexCount = uNumIndices;
 	xResidency.m_aeStates[uLODLevel] = Flux_TerrainLODResidencyState::RESIDENT;
 
-	Zenith_AssetHandler::DeleteMesh(strChunkName);
+	Zenith_AssetHandler::DeleteMesh(pxChunkMesh);
 	return true;
 }
 

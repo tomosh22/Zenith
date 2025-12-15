@@ -178,6 +178,9 @@ public:
 	void BuildChunkData();
 	void ExtractFrustumPlanes(const Zenith_Maths::Matrix4& xViewProjMatrix, Zenith_FrustumPlaneGPU* pxOutPlanes);
 
+	// Helper method to initialize render resources (called by constructor and deserialization)
+	void InitializeRenderResources(Flux_Material& xMaterial0, Flux_Material& xMaterial1);
+
 #ifdef ZENITH_TOOLS
 	// Editor UI
 	void RenderPropertiesPanel();

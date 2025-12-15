@@ -150,7 +150,8 @@ void Flux_Terrain::Initialise()
 		Flux_PipelineBuilder::FromSpecification(s_xWaterPipeline, xPipelineSpec);
 	}
 
-	s_xWaterNormalTexture = Zenith_AssetHandler::GetTexture("Water_Normal");
+	// Use the global water normal texture pointer set during initialization in Zenith_Main.cpp
+	s_xWaterNormalTexture = *Flux_Graphics::s_pxWaterNormalTexture;
 
 	Flux_MemoryManager::InitialiseDynamicConstantBuffer(nullptr, sizeof(struct TerrainConstants
 		), s_xTerrainConstantsBuffer);
@@ -201,6 +202,19 @@ void Flux_Terrain::Initialise()
 	Flux_TerrainStreamingManager::Initialize();
 
 	Zenith_Log("Flux_Terrain initialised");
+}
+
+void Flux_Terrain::Reset()
+{
+	// Reset command lists to ensure no stale GPU resource references, including descriptor bindings
+	// This is called when the scene is reset (e.g., Play/Stop transitions in editor)
+	g_xTerrainCommandList.Reset(true);
+	s_xCullingCommandList.Reset(true);
+
+	// Clear cached terrain components (will be repopulated next frame)
+	g_xTerrainComponentsToRender.Clear();
+
+	Zenith_Log("Flux_Terrain::Reset() - Reset command lists and cleared cached terrain components");
 }
 
 void Flux_Terrain::SubmitRenderToGBufferTask()

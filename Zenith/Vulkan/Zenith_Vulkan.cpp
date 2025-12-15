@@ -374,7 +374,7 @@ void Zenith_Vulkan::RecordCommandBuffersTask(void* pData, u_int uInvocationIndex
 
 }
 
-void Zenith_Vulkan::EndFrame()
+void Zenith_Vulkan::EndFrame(bool bSubmitRenderWork)
 {
 	static_assert(RENDER_ORDER_MEMORY_UPDATE == 0u, "Memory update needs to come first");
 
@@ -407,8 +407,13 @@ void Zenith_Vulkan::EndFrame()
 
 	// Prepare frame work distribution in platform-independent layer
 	Flux_WorkDistribution xWorkDistribution;
-	if (!Flux::PrepareFrame(xWorkDistribution))
+	if (!bSubmitRenderWork || !Flux::PrepareFrame(xWorkDistribution))
 	{
+		// CRITICAL: Clear pending command lists even when skipping render work
+		// Without this, stale command list entries accumulate across frames and can
+		// cause access violations when those entries are processed in subsequent frames
+		// after scene resources have been destroyed and recreated
+		Flux::ClearPendingCommandLists();
 		return; // No work to do this frame
 	}
 	
@@ -426,10 +431,7 @@ void Zenith_Vulkan::EndFrame()
 	xRecordingTask.WaitUntilComplete();
 	
 	// Clear all pending command lists now that recording is complete
-	for (u_int i = 0; i < RENDER_ORDER_MAX; i++)
-	{
-		Flux::s_xPendingCommandLists[i].Clear();
-	}
+	Flux::ClearPendingCommandLists();
 	
 	// Submit all worker command buffers in order (0 to 7)
 	// This maintains correct render order since work is distributed contiguously
@@ -456,6 +458,16 @@ void Zenith_Vulkan::EndFrame()
 
 	//#TO_TODO: plug semaphore leak
 	//s_xDevice.destroySemaphore(xMemorySemaphore);
+}
+
+void Zenith_Vulkan::WaitForGPUIdle()
+{
+	// Wait for all GPU work to complete
+	// This is expensive (stalls the entire pipeline) but necessary for critical synchronization
+	// Use cases: scene transitions, shutdown, debugging
+	s_xDevice.waitIdle();
+
+	Zenith_Log("GPU idle wait completed");
 }
 
 void Zenith_Vulkan::CreateInstance()

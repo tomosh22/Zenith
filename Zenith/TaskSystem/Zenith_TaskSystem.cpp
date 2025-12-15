@@ -63,10 +63,12 @@ void Zenith_TaskSystem::SubmitTask(Zenith_Task* const pxTask)
 {
 	if (!dbg_bMultithreaded)
 	{
+		pxTask->m_bSubmitted = true;
 		pxTask->DoTask();
 		return;
 	}
 	g_xQueueMutex.Lock();
+	pxTask->m_bSubmitted = true;
 	g_xTaskQueue.Enqueue(pxTask);
 	g_xQueueMutex.Unlock();
 	g_pxWorkAvailableSem->Signal();
@@ -76,6 +78,7 @@ void Zenith_TaskSystem::SubmitTaskArray(Zenith_TaskArray* const pxTaskArray)
 {
 	if (!dbg_bMultithreaded)
 	{
+		pxTaskArray->m_bSubmitted = true;
 		// Execute all invocations sequentially in debug mode
 		for (u_int u = 0; u < pxTaskArray->GetNumInvocations(); u++)
 		{
@@ -96,6 +99,7 @@ void Zenith_TaskSystem::SubmitTaskArray(Zenith_TaskArray* const pxTaskArray)
 		const u_int uTasksForWorkers = uNumInvocations > 0 ? uNumInvocations - 1 : 0;
 		
 		g_xQueueMutex.Lock();
+		pxTaskArray->m_bSubmitted = true;
 		for (u_int u = 0; u < uTasksForWorkers; u++)
 		{
 			g_xTaskQueue.Enqueue(pxTaskArray);
@@ -118,6 +122,7 @@ void Zenith_TaskSystem::SubmitTaskArray(Zenith_TaskArray* const pxTaskArray)
 	{
 		// Original behavior: submit all tasks to worker threads
 		g_xQueueMutex.Lock();
+		pxTaskArray->m_bSubmitted = true;
 		for (u_int u = 0; u < uNumInvocations; u++)
 		{
 			g_xTaskQueue.Enqueue(pxTaskArray);

@@ -69,9 +69,12 @@ void Flux_Text::Initialise()
 	Flux_MemoryManager::InitialiseDynamicVertexBuffer(nullptr, s_uMaxCharsPerFrame * sizeof(TextVertex), s_xInstanceBuffer, bDeviceLocal);
 
 	Zenith_AssetHandler::TextureData xTexData = Zenith_AssetHandler::LoadTexture2DFromFile("C:/dev/Zenith/Zenith/Assets/FontAtlas.ztx");
-	Zenith_AssetHandler::AddTexture("Font_Atlas", xTexData);
+	Flux_Texture* pxFontAtlas = Zenith_AssetHandler::AddTexture(xTexData);
 	xTexData.FreeAllocatedData();
-	s_xFontAtlasTexture = Zenith_AssetHandler::GetTexture("Font_Atlas");
+	if (pxFontAtlas)
+	{
+		s_xFontAtlasTexture = *pxFontAtlas;
+	}
 
 #ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_DebugVariables::AddBoolean({ "Render", "Enable", "Text" }, dbg_bEnable);
@@ -79,6 +82,14 @@ void Flux_Text::Initialise()
 #endif
 
 	Zenith_Log("Flux_Text initialised");
+}
+
+void Flux_Text::Reset()
+{
+	// Reset command list to ensure no stale GPU resource references, including descriptor bindings
+	// This is called when the scene is reset (e.g., Play/Stop transitions in editor)
+	g_xCommandList.Reset(true);
+	Zenith_Log("Flux_Text::Reset() - Reset command list");
 }
 
 //#TO returns number of chars to render

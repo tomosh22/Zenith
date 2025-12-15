@@ -3,6 +3,22 @@
 #ifdef ZENITH_TOOLS
 
 #include "Zenith_Editor.h"
+
+// Bridge function called from Zenith_Log macro to add to editor console
+// NOTE: Must be defined after including Zenith_Editor.h
+void Zenith_EditorAddLogMessage(const char* szMessage, int eLevel)
+{
+	// Convert int to log level enum
+	ConsoleLogEntry::LogLevel xLevel = ConsoleLogEntry::LogLevel::Info;
+	switch (eLevel)
+	{
+	case 0: xLevel = ConsoleLogEntry::LogLevel::Info; break;
+	case 1: xLevel = ConsoleLogEntry::LogLevel::Warning; break;
+	case 2: xLevel = ConsoleLogEntry::LogLevel::Error; break;
+	}
+	Zenith_Editor::AddLogMessage(szMessage, xLevel);
+}
+
 #include "Zenith_SelectionSystem.h"
 #include "Zenith_Gizmo.h"
 #include "Flux/Gizmos/Flux_Gizmos.h"
@@ -26,6 +42,64 @@
 #include <filesystem>
 #include <algorithm>
 
+// Windows file dialog support
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
+#include <windows.h>
+#include <commdlg.h>
+#include <shobjidl.h>
+#pragma comment(lib, "Comdlg32.lib")
+
+// Helper function to show Windows Open File dialog
+// Returns empty string if cancelled
+static std::string ShowOpenFileDialog(const char* szFilter, const char* szDefaultExt)
+{
+	char szFilePath[MAX_PATH] = { 0 };
+
+	OPENFILENAMEA ofn = {};
+	ofn.lStructSize = sizeof(OPENFILENAMEA);
+	ofn.hwndOwner = nullptr;
+	ofn.lpstrFilter = szFilter;
+	ofn.lpstrFile = szFilePath;
+	ofn.nMaxFile = MAX_PATH;
+	ofn.lpstrDefExt = szDefaultExt;
+	ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+
+	if (GetOpenFileNameA(&ofn))
+	{
+		return std::string(szFilePath);
+	}
+	return "";
+}
+
+// Helper function to show Windows Save File dialog
+// Returns empty string if cancelled
+static std::string ShowSaveFileDialog(const char* szFilter, const char* szDefaultExt, const char* szDefaultFilename)
+{
+	char szFilePath[MAX_PATH] = { 0 };
+	if (szDefaultFilename)
+	{
+		strncpy(szFilePath, szDefaultFilename, MAX_PATH - 1);
+	}
+
+	OPENFILENAMEA ofn = {};
+	ofn.lStructSize = sizeof(OPENFILENAMEA);
+	ofn.hwndOwner = nullptr;
+	ofn.lpstrFilter = szFilter;
+	ofn.lpstrFile = szFilePath;
+	ofn.nMaxFile = MAX_PATH;
+	ofn.lpstrDefExt = szDefaultExt;
+	ofn.Flags = OFN_OVERWRITEPROMPT | OFN_NOCHANGEDIR;
+
+	if (GetSaveFileNameA(&ofn))
+	{
+		return std::string(szFilePath);
+	}
+	return "";
+}
+#endif // _WIN32
+
 // Static member initialization
 EditorMode Zenith_Editor::s_eEditorMode = EditorMode::Stopped;
 EditorGizmoMode Zenith_Editor::s_eGizmoMode = EditorGizmoMode::Translate;
@@ -35,6 +109,8 @@ Zenith_Maths::Vector2 Zenith_Editor::s_xViewportPos = { 0, 0 };
 bool Zenith_Editor::s_bViewportHovered = false;
 bool Zenith_Editor::s_bViewportFocused = false;
 Zenith_Scene* Zenith_Editor::s_pxBackupScene = nullptr;
+bool Zenith_Editor::s_bHasSceneBackup = false;
+std::string Zenith_Editor::s_strBackupScenePath = "";
 bool Zenith_Editor::s_bPendingSceneLoad = false;
 std::string Zenith_Editor::s_strPendingSceneLoadPath = "";
 bool Zenith_Editor::s_bPendingSceneSave = false;
@@ -44,6 +120,22 @@ std::string Zenith_Editor::s_strPendingSceneSavePath = "";
 std::string Zenith_Editor::s_strCurrentDirectory = ASSETS_ROOT;
 std::vector<ContentBrowserEntry> Zenith_Editor::s_xDirectoryContents;
 bool Zenith_Editor::s_bDirectoryNeedsRefresh = true;
+
+// Console state
+std::vector<ConsoleLogEntry> Zenith_Editor::s_xConsoleLogs;
+bool Zenith_Editor::s_bConsoleAutoScroll = true;
+bool Zenith_Editor::s_bShowConsoleInfo = true;
+bool Zenith_Editor::s_bShowConsoleWarnings = true;
+bool Zenith_Editor::s_bShowConsoleErrors = true;
+
+// Editor camera state (standalone, not part of entity/scene system)
+Zenith_Maths::Vector3 Zenith_Editor::s_xEditorCameraPosition = { 0, 100, 0 };
+double Zenith_Editor::s_fEditorCameraPitch = 0.0;
+double Zenith_Editor::s_fEditorCameraYaw = 0.0;
+Zenith_Entity* Zenith_Editor::s_pxGameCameraEntity = nullptr;
+float Zenith_Editor::s_fEditorCameraMoveSpeed = 50.0f;
+float Zenith_Editor::s_fEditorCameraRotateSpeed = 0.1f;
+bool Zenith_Editor::s_bEditorCameraInitialized = false;
 
 // Cache the ImGui descriptor set for the game viewport texture
 static vk::DescriptorSet s_xCachedGameTextureDescriptorSet = VK_NULL_HANDLE;
@@ -67,6 +159,9 @@ void Zenith_Editor::Initialise()
 	// Initialize editor subsystems
 	Zenith_SelectionSystem::Initialise();
 	Zenith_Gizmo::Initialise();
+
+	// Initialize editor camera
+	InitializeEditorCamera();
 }
 
 void Zenith_Editor::Shutdown()
@@ -93,13 +188,16 @@ void Zenith_Editor::Shutdown()
 		s_pxBackupScene = nullptr;
 	}
 
+	// Reset editor camera state
+	s_bEditorCameraInitialized = false;
+
 	// Shutdown editor subsystems
 	Flux_Gizmos::Shutdown();
 	Zenith_Gizmo::Shutdown();
 	Zenith_SelectionSystem::Shutdown();
 }
 
-void Zenith_Editor::Update()
+bool Zenith_Editor::Update()
 {
 	// CRITICAL: Handle pending scene operations FIRST, before any rendering
 	// This must happen here (not during RenderMainMenuBar) to avoid concurrent access
@@ -131,7 +229,7 @@ void Zenith_Editor::Update()
 
 	// Handle pending scene load
 	// Timeline when loading scene:
-	// 1. User clicks "Open Scene" in menu -> sets s_bPendingSceneLoad flag
+	// 1. User clicks "Open Scene" in menu OR "Stop" button -> sets s_bPendingSceneLoad flag
 	// 2. Frame continues, ImGui rendered, render tasks submitted and complete
 	// 3. Next frame starts -> Update() called BEFORE any rendering
 	// 4. Scene loaded here when no render tasks are accessing scene data
@@ -139,21 +237,59 @@ void Zenith_Editor::Update()
 	{
 		s_bPendingSceneLoad = false;
 
-		try
-		{
-			// Safe to load now - no render tasks are active
-			Zenith_Scene::GetCurrentScene().LoadFromFile(s_strPendingSceneLoadPath);
-			Zenith_Log("Scene loaded from %s", s_strPendingSceneLoadPath.c_str());
+		// CRITICAL: Wait for CPU render tasks AND GPU to finish before destroying scene resources
+		// Two-phase synchronization:
+		// 1. Wait for CPU-side render tasks (worker threads recording commands into command lists)
+		// 2. Wait for GPU to finish executing command buffers
+		// Without both, we get access violations when LoadFromFile resets command lists or destroys resources
+		Zenith_Log("Waiting for all render tasks to complete before loading scene...");
+		Zenith_Core::WaitForAllRenderTasks();  // CPU synchronization
 
-			// Clear selection as entity pointers are now invalid
-			ClearSelection();
-		}
-		catch (const std::exception& e)
+
+		Zenith_Log("Waiting for GPU to become idle before loading scene...");
+		Zenith_Vulkan::WaitForGPUIdle();  // GPU synchronization
+
+		// Force process any pending deferred deletions to ensure old descriptors are destroyed
+		// Without this, descriptor handles might collide between old/new scenes
+		Zenith_Log("Processing deferred resource deletions...");
+		for (u_int u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
 		{
-			Zenith_Log("Failed to load scene: %s", e.what());
+			Flux_MemoryManager::ProcessDeferredDeletions();
+		}
+
+		// CRITICAL: Clear any pending command lists before loading scene
+		// This prevents stale command list entries from previous frames that may
+		// contain pointers to resources that are about to be destroyed
+		Zenith_Log("Clearing pending command lists...");
+		Flux::ClearPendingCommandLists();
+
+		// Safe to load now - no render tasks active, GPU idle, old resources deleted
+		Zenith_Scene::GetCurrentScene().LoadFromFile(s_strPendingSceneLoadPath);
+		Zenith_Log("Scene loaded from %s", s_strPendingSceneLoadPath.c_str());
+
+		// Clear selection as entity pointers are now invalid
+		ClearSelection();
+
+		// If this was a backup scene restore (Play -> Stop transition), clean up
+		if (s_bHasSceneBackup && s_strPendingSceneLoadPath == s_strBackupScenePath)
+		{
+			// Delete the temporary backup file
+			std::filesystem::remove(s_strBackupScenePath);
+			s_bHasSceneBackup = false;
+			s_strBackupScenePath = "";
+			Zenith_Log("Backup scene file cleaned up");
+
+			// After restoring scene, initialize editor camera state from the game's camera
+			if (s_bEditorCameraInitialized)
+			{
+				SwitchToEditorCamera();
+				Zenith_Log("Editor camera state updated after scene restore");
+			}
 		}
 
 		s_strPendingSceneLoadPath.clear();
+
+		return false;
 	}
 
 	// Process deferred descriptor set deletions
@@ -174,8 +310,42 @@ void Zenith_Editor::Update()
 		}
 	}
 
+	// One-time initialization: copy game camera position to editor camera on first frame
+	// This happens after the game's OnEnter has set up the scene camera
+	static bool s_bFirstFrameAfterInit = true;
+	if (s_bFirstFrameAfterInit && s_eEditorMode == EditorMode::Stopped)
+	{
+		s_bFirstFrameAfterInit = false;
+
+		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+		if (xScene.m_pxMainCameraEntity)
+		{
+			// Initialize editor camera from game camera position
+			try
+			{
+				Zenith_CameraComponent& xGameCamera = xScene.m_pxMainCameraEntity->GetComponent<Zenith_CameraComponent>();
+				xGameCamera.GetPosition(s_xEditorCameraPosition);
+				s_fEditorCameraPitch = xGameCamera.GetPitch();
+				s_fEditorCameraYaw = xGameCamera.GetYaw();
+
+				// Save reference to game camera for later
+				s_pxGameCameraEntity = xScene.m_pxMainCameraEntity;
+
+				Zenith_Log("Editor camera synced from game camera at (%.1f, %.1f, %.1f)", 
+					s_xEditorCameraPosition.x, s_xEditorCameraPosition.y, s_xEditorCameraPosition.z);
+			}
+			catch (...)
+			{
+				Zenith_Log("Could not sync editor camera from game camera");
+			}
+		}
+	}
+
 	// Update bounding boxes for all entities (needed for selection)
 	Zenith_SelectionSystem::UpdateBoundingBoxes();
+
+	// Update editor camera controls (when not playing)
+	UpdateEditorCamera(1.0f / 60.0f);  // Assume 60fps for now, could use actual delta time
 
 	// Handle editor mode changes
 	if (s_eEditorMode == EditorMode::Playing)
@@ -215,6 +385,8 @@ void Zenith_Editor::Update()
 	{
 		HandleObjectPicking();
 	}
+
+	return true;
 }
 
 void Zenith_Editor::Render()
@@ -251,6 +423,7 @@ void Zenith_Editor::Render()
 	RenderPropertiesPanel();
 	RenderViewport();
 	RenderContentBrowser();
+	RenderConsolePanel();
 
 	// Render gizmos and overlays (after viewport so they appear on top)
 	RenderGizmos();
@@ -280,12 +453,22 @@ void Zenith_Editor::RenderMainMenuBar()
 				// Instead, we defer the load to the next frame's Update() call,
 				// which happens BEFORE any render tasks are submitted.
 
-				// For now, use a hardcoded path
-				// TODO: Implement native file dialog
+#ifdef _WIN32
+				std::string strFilePath = ShowOpenFileDialog(
+					"Zenith Scene Files (*.zscen)\0*.zscen\0All Files (*.*)\0*.*\0",
+					"zscen");
+				if (!strFilePath.empty())
+				{
+					s_strPendingSceneLoadPath = strFilePath;
+					s_bPendingSceneLoad = true;
+					Zenith_Log("Scene load queued: %s (will load next frame)", s_strPendingSceneLoadPath.c_str());
+				}
+#else
+				// Fallback for non-Windows platforms
 				s_strPendingSceneLoadPath = "scene.zscen";
 				s_bPendingSceneLoad = true;
-
 				Zenith_Log("Scene load queued: %s (will load next frame)", s_strPendingSceneLoadPath.c_str());
+#endif
 			}
 
 			if (ImGui::MenuItem("Save Scene", "Ctrl+S"))
@@ -300,12 +483,23 @@ void Zenith_Editor::RenderMainMenuBar()
 				// Instead, we defer the save to the next frame's Update() call,
 				// which happens BEFORE any render tasks are submitted.
 
-				// For now, use a hardcoded path
-				// TODO: Implement native file dialog
+#ifdef _WIN32
+				std::string strFilePath = ShowSaveFileDialog(
+					"Zenith Scene Files (*.zscen)\0*.zscen\0All Files (*.*)\0*.*\0",
+					"zscen",
+					"scene.zscen");
+				if (!strFilePath.empty())
+				{
+					s_strPendingSceneSavePath = strFilePath;
+					s_bPendingSceneSave = true;
+					Zenith_Log("Scene save queued: %s (will save next frame)", s_strPendingSceneSavePath.c_str());
+				}
+#else
+				// Fallback for non-Windows platforms
 				s_strPendingSceneSavePath = "scene.zscen";
 				s_bPendingSceneSave = true;
-
 				Zenith_Log("Scene save queued: %s (will save next frame)", s_strPendingSceneSavePath.c_str());
+#endif
 			}
 
 			ImGui::Separator();
@@ -451,8 +645,13 @@ void Zenith_Editor::RenderHierarchyPanel()
 		{
 			if (ImGui::MenuItem("Delete Entity"))
 			{
-				// TODO: Implement entity deletion
-				// Need to handle cleanup and deselection
+				// Clear selection if this entity is selected
+				if (s_uSelectedEntityID == entityID)
+				{
+					ClearSelection();
+				}
+				// Remove entity from scene
+				xScene.RemoveEntity(entityID);
 			}
 			ImGui::EndPopup();
 		}
@@ -462,8 +661,10 @@ void Zenith_Editor::RenderHierarchyPanel()
 	ImGui::Separator();
 	if (ImGui::Button("+ Create Entity"))
 	{
-		// TODO: Implement entity creation
-		// Create new entity with default name
+		// Create new entity with default name and TransformComponent
+		// The constructor handles adding to the scene and adding TransformComponent
+		Zenith_Entity xNewEntity(&xScene, "New Entity");
+		SelectEntity(xNewEntity.GetEntityID());
 	}
 
 	ImGui::End();
@@ -681,7 +882,7 @@ void Zenith_Editor::HandleObjectPicking()
 		return;
 
 	// Get camera matrices for ray casting
-	Zenith_CameraComponent& xCamera = Zenith_Scene::GetCurrentScene().GetMainCamera();
+	Zenith_CameraComponent& xCamera = GetActiveCamera();
 	Zenith_Maths::Matrix4 xViewMatrix, xProjMatrix;
 	xCamera.BuildViewMatrix(xViewMatrix);
 	xCamera.BuildProjectionMatrix(xProjMatrix);
@@ -752,7 +953,7 @@ void Zenith_Editor::HandleGizmoInteraction()
 		return;
 
 	// Get camera matrices for ray casting
-	Zenith_CameraComponent& xCamera = Zenith_Scene::GetCurrentScene().GetMainCamera();
+	Zenith_CameraComponent& xCamera = GetActiveCamera();
 	Zenith_Maths::Matrix4 xViewMatrix, xProjMatrix;
 	xCamera.BuildViewMatrix(xViewMatrix);
 	xCamera.BuildProjectionMatrix(xProjMatrix);
@@ -837,71 +1038,99 @@ void Zenith_Editor::SetEditorMode(EditorMode eMode)
 
 	// Handle mode transitions
 
-	// STOPPED -> PLAYING: Backup scene state
+	// STOPPED -> PLAYING: Backup scene state and switch to game camera
 	if (oldMode == EditorMode::Stopped && eMode == EditorMode::Playing)
 	{
 		Zenith_Log("Editor: Entering Play Mode");
 
-		// TODO: FULL IMPLEMENTATION NEEDED
-		// Currently this is a simplified implementation that does NOT preserve scene state
-		// A full implementation would need to:
-		// 1. Deep copy all entities and components to s_pxBackupScene
-		// 2. Preserve entity relationships, component data, and resource references
-		// 3. Handle pointers and references between entities
-		//
-		// RECOMMENDED APPROACHES:
-		// A) Implement Scene::Clone() with component-level copy constructors
-		// B) Use serialization/deserialization to memory (most robust)
-		// C) Implement copy-on-write for modified entities only
-		//
-		// For now, we'll just log the transition and let the game run
-		// When Stop is pressed, scene will NOT revert to pre-play state
+		// Generate backup file path in temp directory
+		s_strBackupScenePath = std::filesystem::temp_directory_path().string() + "/zenith_scene_backup.zscen";
 
-		s_pxBackupScene = nullptr;  // Placeholder - would store cloned scene here
+		// Save current scene state to backup file
+		// This is safe to do synchronously since we're only saving (not destroying/creating)
+		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+		xScene.SaveToFile(s_strBackupScenePath);
+		s_bHasSceneBackup = true;
 
-		Zenith_Log("WARNING: Scene state backup not yet implemented - changes during play will persist!");
+		Zenith_Log("Scene state backed up to: %s", s_strBackupScenePath.c_str());
+
+		// Find the game camera entity in the scene
+		// Look for an entity with a camera component that isn't the editor camera
+		Zenith_Vector<Zenith_CameraComponent*> xCameras;
+		xScene.GetAllOfComponentType<Zenith_CameraComponent>(xCameras);
+
+		s_pxGameCameraEntity = nullptr;
+		for (Zenith_Vector<Zenith_CameraComponent*>::Iterator xIt(xCameras); !xIt.Done(); xIt.Next())
+		{
+			Zenith_CameraComponent* pxCam = xIt.GetData();
+			Zenith_Entity* pxEntity = &pxCam->GetParentEntity();
+			// Just use the first camera we find (there should only be one game camera)
+			s_pxGameCameraEntity = pxEntity;
+			break;
+		}
+
+		if (s_pxGameCameraEntity)
+		{
+			// Switch to game camera for play mode
+			xScene.SetMainCameraEntity(*s_pxGameCameraEntity);
+			Zenith_Log("Switched to game camera: %s", s_pxGameCameraEntity->m_strName.c_str());
+		}
+		else
+		{
+			Zenith_Log("Warning: No game camera found, staying on editor camera");
+		}
 	}
 
-	// PLAYING/PAUSED -> STOPPED: Restore scene state
+	// PLAYING/PAUSED -> STOPPED: Restore scene state and switch to editor camera
 	else if (oldMode != EditorMode::Stopped && eMode == EditorMode::Stopped)
 	{
 		Zenith_Log("Editor: Stopping Play Mode");
 
-		// TODO: FULL IMPLEMENTATION NEEDED
-		// Currently this doesn't restore scene state
-		// A full implementation would:
-		// 1. Reset current scene: Zenith_Scene::GetCurrentScene().Reset()
-		// 2. Restore entities and components from s_pxBackupScene
-		// 3. Restore camera and selection references
-		// 4. Clean up backup scene
-		//
-		// For now, we just clean up and note that state wasn't restored
+		// CRITICAL: Defer scene restore to next frame's Update() call
+		// Loading scenes mid-frame causes issues:
+		// 1. New terrain components created during load
+		// 2. Same frame's SubmitRenderTasks tries to render them
+		// 3. But render systems haven't properly registered new components yet
+		// By deferring to Update(), the load happens BEFORE any rendering
 
+		if (s_bHasSceneBackup && !s_strBackupScenePath.empty())
+		{
+			// Queue the scene restore for next frame
+			s_bPendingSceneLoad = true;
+			s_strPendingSceneLoadPath = s_strBackupScenePath;
+
+			Zenith_Log("Scene restore queued for next frame: %s", s_strBackupScenePath.c_str());
+
+			// Note: We don't clear s_bHasSceneBackup or s_strBackupScenePath here
+			// They'll be cleared in Update() after the load completes
+		}
+		else
+		{
+			Zenith_Log("Warning: No scene backup available to restore");
+		}
+
+		// Legacy cleanup
 		if (s_pxBackupScene)
 		{
 			delete s_pxBackupScene;
 			s_pxBackupScene = nullptr;
 		}
 
-		// Clear selection as entity pointers may no longer be valid
-		// (In full implementation, we'd restore selection by EntityID)
-		ClearSelection();
-
-		Zenith_Log("Scene returned to edit mode (state preservation not yet implemented)");
+		// Clear the game camera reference since scene will be reloaded
+		s_pxGameCameraEntity = nullptr;
 	}
 
-	// PAUSED state - suspend scene updates
+	// PAUSED state - suspend scene updates but stay on game camera
 	else if (eMode == EditorMode::Paused)
 	{
-		Zenith_Log("Editor: Pausing");
-		// Scene updates will be skipped in main loop when paused
+		Zenith_Log("Editor: Pausing - physics and scene updates suspended");
+		// Stay on game camera during pause so player can see game state
 	}
 
 	// PAUSED -> PLAYING: Resume scene updates
 	else if (oldMode == EditorMode::Paused && eMode == EditorMode::Playing)
 	{
-		Zenith_Log("Editor: Resuming");
-		// Scene updates will resume in main loop
+		Zenith_Log("Editor: Resuming - physics and scene updates resumed");
 	}
 }
 
@@ -1134,6 +1363,299 @@ void Zenith_Editor::NavigateToParent()
 	{
 		Zenith_Log("[ContentBrowser] Already at root directory");
 	}
+}
+
+//------------------------------------------------------------------------------
+// Console Implementation
+//------------------------------------------------------------------------------
+
+void Zenith_Editor::AddLogMessage(const char* szMessage, ConsoleLogEntry::LogLevel eLevel)
+{
+	ConsoleLogEntry xEntry;
+	xEntry.m_eLevel = eLevel;
+	xEntry.m_strMessage = szMessage;
+
+	// Get current time for timestamp
+	auto now = std::chrono::system_clock::now();
+	auto time = std::chrono::system_clock::to_time_t(now);
+	char timeBuffer[32];
+	struct tm localTime;
+	localtime_s(&localTime, &time);
+	strftime(timeBuffer, sizeof(timeBuffer), "%H:%M:%S", &localTime);
+	xEntry.m_strTimestamp = timeBuffer;
+
+	s_xConsoleLogs.push_back(xEntry);
+
+	// Limit console entries
+	if (s_xConsoleLogs.size() > MAX_CONSOLE_ENTRIES)
+	{
+		s_xConsoleLogs.erase(s_xConsoleLogs.begin());
+	}
+}
+
+void Zenith_Editor::ClearConsole()
+{
+	s_xConsoleLogs.clear();
+}
+
+void Zenith_Editor::RenderConsolePanel()
+{
+	ImGui::Begin("Console");
+
+	// Toolbar
+	if (ImGui::Button("Clear"))
+	{
+		ClearConsole();
+	}
+	ImGui::SameLine();
+	ImGui::Checkbox("Auto-scroll", &s_bConsoleAutoScroll);
+	ImGui::SameLine();
+	ImGui::Separator();
+	ImGui::SameLine();
+
+	// Filter checkboxes
+	ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.7f, 0.7f, 0.7f, 1.0f));
+	ImGui::Checkbox("Info", &s_bShowConsoleInfo);
+	ImGui::PopStyleColor();
+	ImGui::SameLine();
+	ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 0.0f, 1.0f));
+	ImGui::Checkbox("Warnings", &s_bShowConsoleWarnings);
+	ImGui::PopStyleColor();
+	ImGui::SameLine();
+	ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.3f, 0.3f, 1.0f));
+	ImGui::Checkbox("Errors", &s_bShowConsoleErrors);
+	ImGui::PopStyleColor();
+
+	ImGui::Separator();
+
+	// Log entries
+	ImGui::BeginChild("ConsoleScrollRegion", ImVec2(0, 0), false, ImGuiWindowFlags_HorizontalScrollbar);
+
+	for (const auto& xEntry : s_xConsoleLogs)
+	{
+		// Filter by log level
+		bool bShow = false;
+		ImVec4 xColor;
+		switch (xEntry.m_eLevel)
+		{
+		case ConsoleLogEntry::LogLevel::Info:
+			bShow = s_bShowConsoleInfo;
+			xColor = ImVec4(0.7f, 0.7f, 0.7f, 1.0f);
+			break;
+		case ConsoleLogEntry::LogLevel::Warning:
+			bShow = s_bShowConsoleWarnings;
+			xColor = ImVec4(1.0f, 1.0f, 0.0f, 1.0f);
+			break;
+		case ConsoleLogEntry::LogLevel::Error:
+			bShow = s_bShowConsoleErrors;
+			xColor = ImVec4(1.0f, 0.3f, 0.3f, 1.0f);
+			break;
+		}
+
+		if (bShow)
+		{
+			ImGui::PushStyleColor(ImGuiCol_Text, xColor);
+			ImGui::TextUnformatted(("[" + xEntry.m_strTimestamp + "] " + xEntry.m_strMessage).c_str());
+			ImGui::PopStyleColor();
+		}
+	}
+
+	// Auto-scroll to bottom
+	if (s_bConsoleAutoScroll && ImGui::GetScrollY() >= ImGui::GetScrollMaxY())
+	{
+		ImGui::SetScrollHereY(1.0f);
+	}
+
+	ImGui::EndChild();
+	ImGui::End();
+}
+
+//------------------------------------------------------------------------------
+// Editor Camera System
+//------------------------------------------------------------------------------
+
+void Zenith_Editor::InitializeEditorCamera()
+{
+	if (s_bEditorCameraInitialized)
+		return;
+
+	// Initialize editor camera from scene's main camera if available
+	// Otherwise use default values
+	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+	if (xScene.m_pxMainCameraEntity)
+	{
+		try
+		{
+			Zenith_CameraComponent& xSceneCamera = xScene.m_pxMainCameraEntity->GetComponent<Zenith_CameraComponent>();
+			xSceneCamera.GetPosition(s_xEditorCameraPosition);
+			s_fEditorCameraPitch = xSceneCamera.GetPitch();
+			s_fEditorCameraYaw = xSceneCamera.GetYaw();
+			Zenith_Log("Editor camera initialized from scene camera position");
+		}
+		catch (...)
+		{
+			Zenith_Log("Scene camera not available, using default position");
+		}
+	}
+
+	s_bEditorCameraInitialized = true;
+	Zenith_Log("Editor camera initialized at position (%.1f, %.1f, %.1f)", s_xEditorCameraPosition.x, s_xEditorCameraPosition.y, s_xEditorCameraPosition.z);
+}
+
+void Zenith_Editor::UpdateEditorCamera(float fDt)
+{
+	if (!s_bEditorCameraInitialized)
+		return;
+
+	// Only update editor camera when in Stopped or Paused mode and viewport is focused
+	if (s_eEditorMode == EditorMode::Playing)
+		return;
+
+	if (!s_bViewportFocused)
+		return;
+
+	// Mouse look (Right click key held for camera rotation)
+	if (Zenith_Input::IsKeyDown(ZENITH_MOUSE_BUTTON_2))
+	{
+		Zenith_Maths::Vector2_64 xMouseDelta;
+		Zenith_Input::GetMouseDelta(xMouseDelta);
+
+		// Update yaw and pitch (values are stored in radians, matching camera component)
+		// Convert rotate speed from degrees to radians for consistency
+		const double fRotateSpeedRad = glm::radians(s_fEditorCameraRotateSpeed);
+		s_fEditorCameraYaw -= xMouseDelta.x * fRotateSpeedRad;
+		s_fEditorCameraPitch -= xMouseDelta.y * fRotateSpeedRad;
+
+		// Clamp pitch to prevent flipping (use radians like PlayerController_Behaviour)
+		s_fEditorCameraPitch = std::min(s_fEditorCameraPitch, glm::pi<double>() / 2.0);
+		s_fEditorCameraPitch = std::max(s_fEditorCameraPitch, -glm::pi<double>() / 2.0);
+
+		// Wrap yaw around 0 to 2π (like PlayerController_Behaviour)
+		if (s_fEditorCameraYaw < 0.0)
+		{
+			s_fEditorCameraYaw += Zenith_Maths::Pi * 2.0;
+		}
+		if (s_fEditorCameraYaw > Zenith_Maths::Pi * 2.0)
+		{
+			s_fEditorCameraYaw -= Zenith_Maths::Pi * 2.0;
+		}
+		// Yaw is already in radians, no conversion needed
+	}
+
+	// Speed modifier (shift = faster)
+	float fMoveSpeed = s_fEditorCameraMoveSpeed;
+	if (Zenith_Input::IsKeyDown(ZENITH_KEY_LEFT_SHIFT))
+		fMoveSpeed *= 3.0f;
+
+	// WASD movement (only when right click is held for FPS-style control)
+	// Movement uses only yaw (not pitch) to keep movement on horizontal plane
+	// This matches PlayerController_Behaviour behavior
+	if (Zenith_Input::IsKeyDown(ZENITH_MOUSE_BUTTON_2))
+	{
+		const double fYawRad = glm::radians(s_fEditorCameraYaw);
+		
+		if (Zenith_Input::IsKeyDown(ZENITH_KEY_W))
+		{
+			// Forward movement based on yaw only (stays level)
+			Zenith_Maths::Matrix4_64 xRotation = glm::rotate(-s_fEditorCameraYaw, Zenith_Maths::Vector3_64(0, 1, 0));
+			Zenith_Maths::Vector4_64 xResult = xRotation * Zenith_Maths::Vector4(0, 0, 1, 1);
+			s_xEditorCameraPosition += Zenith_Maths::Vector3(xResult) * fMoveSpeed * fDt;
+		}
+		if (Zenith_Input::IsKeyDown(ZENITH_KEY_S))
+		{
+			// Backward movement based on yaw only (stays level)
+			Zenith_Maths::Matrix4_64 xRotation = glm::rotate(-s_fEditorCameraYaw, Zenith_Maths::Vector3_64(0, 1, 0));
+			Zenith_Maths::Vector4_64 xResult = xRotation * Zenith_Maths::Vector4(0, 0, 1, 1);
+			s_xEditorCameraPosition -= Zenith_Maths::Vector3(xResult) * fMoveSpeed * fDt;
+		}
+		if (Zenith_Input::IsKeyDown(ZENITH_KEY_A))
+		{
+			// Left strafe based on yaw only (stays level)
+			Zenith_Maths::Matrix4_64 xRotation = glm::rotate(-s_fEditorCameraYaw, Zenith_Maths::Vector3_64(0, 1, 0));
+			Zenith_Maths::Vector4_64 xResult = xRotation * Zenith_Maths::Vector4(-1, 0, 0, 1);
+			s_xEditorCameraPosition += Zenith_Maths::Vector3(xResult) * fMoveSpeed * fDt;
+		}
+		if (Zenith_Input::IsKeyDown(ZENITH_KEY_D))
+		{
+			// Right strafe based on yaw only (stays level)
+			Zenith_Maths::Matrix4_64 xRotation = glm::rotate(-s_fEditorCameraYaw, Zenith_Maths::Vector3_64(0, 1, 0));
+			Zenith_Maths::Vector4_64 xResult = xRotation * Zenith_Maths::Vector4(-1, 0, 0, 1);
+			s_xEditorCameraPosition -= Zenith_Maths::Vector3(xResult) * fMoveSpeed * fDt;
+		}
+		if (Zenith_Input::IsKeyDown(ZENITH_KEY_Q))
+		{
+			// Vertical down (world space)
+			s_xEditorCameraPosition.y -= fMoveSpeed * fDt;
+		}
+		if (Zenith_Input::IsKeyDown(ZENITH_KEY_E))
+		{
+			// Vertical up (world space)
+			s_xEditorCameraPosition.y += fMoveSpeed * fDt;
+		}
+	}
+
+	// Apply editor camera state to the scene's main camera
+	// (In stopped/paused mode, the game camera is being controlled by editor values)
+	if (s_pxGameCameraEntity)
+	{
+		Zenith_CameraComponent& xCamera = s_pxGameCameraEntity->GetComponent<Zenith_CameraComponent>();
+		xCamera.SetPosition(s_xEditorCameraPosition);
+		xCamera.SetPitch(s_fEditorCameraPitch);
+		xCamera.SetYaw(s_fEditorCameraYaw);
+	}
+}
+
+void Zenith_Editor::SwitchToEditorCamera()
+{
+	if (!s_bEditorCameraInitialized)
+	{
+		Zenith_Log("Warning: Cannot switch to editor camera - not initialized");
+		return;
+	}
+
+	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+
+	// Save the game's current main camera entity
+	s_pxGameCameraEntity = xScene.m_pxMainCameraEntity;
+
+	// Copy game camera state to editor camera
+	if (s_pxGameCameraEntity)
+	{
+		try
+		{
+			Zenith_CameraComponent& xGameCamera = s_pxGameCameraEntity->GetComponent<Zenith_CameraComponent>();
+			xGameCamera.GetPosition(s_xEditorCameraPosition);
+			s_fEditorCameraPitch = xGameCamera.GetPitch();
+			s_fEditorCameraYaw = xGameCamera.GetYaw();
+		}
+		catch (...)
+		{
+			Zenith_Log("Warning: Could not copy game camera state to editor camera");
+		}
+	}
+
+	Zenith_Log("Switched to editor camera");
+}
+
+void Zenith_Editor::SwitchToGameCamera()
+{
+	if (!s_pxGameCameraEntity)
+	{
+		Zenith_Log("Warning: Cannot switch to game camera - no game camera saved");
+		return;
+	}
+
+	// Game camera is already the main camera in the scene
+	// We just stop applying editor camera overrides
+	Zenith_Log("Switched to game camera");
+}
+
+Zenith_CameraComponent& Zenith_Editor::GetActiveCamera()
+{
+	// Always return the scene's main camera
+	// In stopped/paused mode, UpdateEditorCamera applies editor values to it
+	// In playing mode, the game logic controls it
+	return Zenith_Scene::GetCurrentScene().GetMainCamera();
 }
 
 #endif // ZENITH_TOOLS

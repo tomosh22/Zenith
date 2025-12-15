@@ -24,6 +24,8 @@ Flux_Texture Flux_Graphics::s_xWhiteBlankTexture2D;
 Flux_Texture Flux_Graphics::s_xBlackBlankTexture2D;
 Flux_MeshGeometry Flux_Graphics::s_xBlankMesh;
 Flux_Material* Flux_Graphics::s_pxBlankMaterial;
+Flux_Texture* Flux_Graphics::s_pxCubemapTexture = nullptr;
+Flux_Texture* Flux_Graphics::s_pxWaterNormalTexture = nullptr;
 Flux_Graphics::FrameConstants Flux_Graphics::s_xFrameConstants;
 Flux_DescriptorSetLayout Flux_Graphics::s_xFrameConstantsLayout;
 
@@ -64,18 +66,20 @@ void Flux_Graphics::Initialise()
 	xWhiteTexData.xSurfaceInfo = xTexInfo;
 	xWhiteTexData.bCreateMips = false;
 	xWhiteTexData.bIsCubemap = false;
-	s_xWhiteBlankTexture2D = Zenith_AssetHandler::AddTexture("Flux Graphics White Blank Texture", xWhiteTexData);
+	Flux_Texture* pxWhiteTex = Zenith_AssetHandler::AddTexture(xWhiteTexData);
+	if (pxWhiteTex) s_xWhiteBlankTexture2D = *pxWhiteTex;
 
 	u_int8 aucBlackBlankTexData[] = { 0,0,0,0 };
-	
+
 	Zenith_AssetHandler::TextureData xBlackTexData;
 	xBlackTexData.pData = aucBlackBlankTexData;
 	xBlackTexData.xSurfaceInfo = xTexInfo;
 	xBlackTexData.bCreateMips = false;
 	xBlackTexData.bIsCubemap = false;
-	s_xBlackBlankTexture2D = Zenith_AssetHandler::AddTexture("Flux Graphics Black Blank Texture", xBlackTexData);
+	Flux_Texture* pxBlackTex = Zenith_AssetHandler::AddTexture(xBlackTexData);
+	if (pxBlackTex) s_xBlackBlankTexture2D = *pxBlackTex;
 
-	s_pxBlankMaterial = &Zenith_AssetHandler::AddMaterial("BlankMaterial");
+	s_pxBlankMaterial = Zenith_AssetHandler::AddMaterial();
 
 	Flux_MeshGeometry::GenerateFullscreenQuad(s_xQuadMesh);
 	Flux_MemoryManager::InitialiseVertexBuffer(s_xQuadMesh.GetVertexData(), s_xQuadMesh.GetVertexDataSize(), s_xQuadMesh.GetVertexBuffer());
