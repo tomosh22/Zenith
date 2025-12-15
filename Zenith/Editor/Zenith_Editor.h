@@ -7,9 +7,13 @@
 #include <vector>
 #include <string>
 
+// Forward declarations
+class Flux_MaterialAsset;
+
 // Drag-drop payload type identifiers (max 32 chars per ImGui)
 #define DRAGDROP_PAYLOAD_TEXTURE_ZTX  "ZENITH_TEXTURE_ZTX"
 #define DRAGDROP_PAYLOAD_MESH_ZMSH    "ZENITH_MESH_ZMSH"
+#define DRAGDROP_PAYLOAD_MATERIAL_ZMAT "ZENITH_MATERIAL_ZMAT"
 #define DRAGDROP_PAYLOAD_FILE_GENERIC "ZENITH_FILE_GENERIC"
 
 // Content browser file entry
@@ -79,6 +83,11 @@ public:
 	// Console log
 	static void AddLogMessage(const char* szMessage, ConsoleLogEntry::LogLevel eLevel = ConsoleLogEntry::LogLevel::Info);
 	static void ClearConsole();
+	
+	// Material Editor
+	static void SelectMaterial(Flux_MaterialAsset* pMaterial);
+	static void ClearMaterialSelection();
+	static Flux_MaterialAsset* GetSelectedMaterial() { return s_pxSelectedMaterial; }
 
 private:
 	static void RenderConsolePanel();
@@ -96,6 +105,12 @@ private:
 	static void RefreshDirectoryContents();
 	static void NavigateToDirectory(const std::string& strPath);
 	static void NavigateToParent();
+	
+	// Material Editor
+	static void RenderMaterialEditorPanel();
+	static void RenderMaterialTextureSlot(const char* szLabel, Flux_MaterialAsset* pMaterial,
+		const std::string& strCurrentPath,
+		void (*SetPathFunc)(Flux_MaterialAsset*, const std::string&));
 
 	static EditorMode s_eEditorMode;
 	static EditorGizmoMode s_eGizmoMode;
@@ -139,6 +154,10 @@ private:
 	static float s_fEditorCameraMoveSpeed;
 	static float s_fEditorCameraRotateSpeed;
 	static bool s_bEditorCameraInitialized;
+
+	// Material Editor state
+	static Flux_MaterialAsset* s_pxSelectedMaterial;
+	static bool s_bShowMaterialEditor;
 
 	// Editor camera control
 	static void InitializeEditorCamera();

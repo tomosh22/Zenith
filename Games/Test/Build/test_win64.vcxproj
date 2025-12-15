@@ -810,6 +810,7 @@
     <ClInclude Include="..\..\..\Zenith\Flux\Flux_Enums.h" />
     <ClInclude Include="..\..\..\Zenith\Flux\Flux_Graphics.h" />
     <ClInclude Include="..\..\..\Zenith\Flux\Flux_Material.h" />
+    <ClInclude Include="..\..\..\Zenith\Flux\Flux_MaterialAsset.h" />
     <ClInclude Include="..\..\..\Zenith\Flux\Flux_RenderTargets.h" />
     <ClInclude Include="..\..\..\Zenith\Flux\Flux_Types.h" />
     <ClInclude Include="..\..\..\Zenith\Flux\Fog\Flux_Fog.h" />
@@ -1783,6 +1784,7 @@
     <ClCompile Include="..\..\..\Zenith\Flux\Flux_CommandList.cpp" />
     <ClCompile Include="..\..\..\Zenith\Flux\Flux_Graphics.cpp" />
     <ClCompile Include="..\..\..\Zenith\Flux\Flux_Material.cpp" />
+    <ClCompile Include="..\..\..\Zenith\Flux\Flux_MaterialAsset.cpp" />
     <ClCompile Include="..\..\..\Zenith\Flux\Flux_RenderTargets.cpp" />
     <ClCompile Include="..\..\..\Zenith\Flux\Fog\Flux_Fog.cpp" />
     <ClCompile Include="..\..\..\Zenith\Flux\Gizmos\Flux_Gizmos.cpp" />

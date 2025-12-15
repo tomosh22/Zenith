@@ -8,6 +8,9 @@
 // Log tag for model component physics mesh operations
 static constexpr const char* LOG_TAG_MODEL_PHYSICS = "[ModelPhysics]";
 
+// Serialization version for ModelComponent
+static constexpr uint32_t MODEL_COMPONENT_SERIALIZE_VERSION = 2;
+
 // Helper function to check if we should delete assets in the destructor
 // Returns false during scene loading to prevent deleting assets that will be reused
 bool Zenith_ModelComponent_ShouldDeleteAssets()
@@ -17,12 +20,14 @@ bool Zenith_ModelComponent_ShouldDeleteAssets()
 
 void Zenith_ModelComponent::WriteToDataStream(Zenith_DataStream& xStream) const
 {
+	// Write serialization version
+	xStream << MODEL_COMPONENT_SERIALIZE_VERSION;
+	
 	// Write the number of mesh entries
 	u_int uNumEntries = m_xMeshEntries.GetSize();
 	xStream << uNumEntries;
 
-	// Write each mesh entry using source paths for meshes
-	// Materials are recreated from mesh data on load
+	// Write each mesh entry using source paths for meshes AND textures
 	for (u_int u = 0; u < uNumEntries; u++)
 	{
 		const MeshEntry& xEntry = m_xMeshEntries.Get(u);
@@ -31,12 +36,17 @@ void Zenith_ModelComponent::WriteToDataStream(Zenith_DataStream& xStream) const
 		std::string strMeshPath = xEntry.m_pxGeometry ? xEntry.m_pxGeometry->m_strSourcePath : "";
 		xStream << strMeshPath;
 
-		// Serialize material base color (materials are recreated, textures must be loaded separately)
-		Zenith_Maths::Vector4 xBaseColor = xEntry.m_pxMaterial ? xEntry.m_pxMaterial->GetBaseColor() : Zenith_Maths::Vector4(1.f);
-		xStream << xBaseColor.x;
-		xStream << xBaseColor.y;
-		xStream << xBaseColor.z;
-		xStream << xBaseColor.w;
+		// Serialize the entire material (includes base color AND texture paths)
+		if (xEntry.m_pxMaterial)
+		{
+			xEntry.m_pxMaterial->WriteToDataStream(xStream);
+		}
+		else
+		{
+			// Write empty material
+			Flux_Material xEmptyMat;
+			xEmptyMat.WriteToDataStream(xStream);
+		}
 
 		// Serialize animation path if animation exists
 		std::string strAnimPath = "";
@@ -56,6 +66,10 @@ void Zenith_ModelComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 	// Clear existing mesh entries
 	m_xMeshEntries.Clear();
 
+	// Read serialization version
+	uint32_t uVersion;
+	xStream >> uVersion;
+	
 	// Read the number of mesh entries
 	u_int uNumEntries;
 	xStream >> uNumEntries;
@@ -66,48 +80,99 @@ void Zenith_ModelComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 		std::string strMeshPath;
 		xStream >> strMeshPath;
 
-		Zenith_Maths::Vector4 xBaseColor;
-		xStream >> xBaseColor.x;
-		xStream >> xBaseColor.y;
-		xStream >> xBaseColor.z;
-		xStream >> xBaseColor.w;
-
-		// Read animation path (may be empty)
-		std::string strAnimPath;
-		xStream >> strAnimPath;
-
-		// Load mesh from source path
-		if (!strMeshPath.empty())
+		// Version 2+: Read full material with texture paths
+		if (uVersion >= 2)
 		{
-			Flux_MeshGeometry* pxMesh = Zenith_AssetHandler::AddMeshFromFile(strMeshPath.c_str());
-			if (pxMesh)
+			// Load mesh from source path
+			if (!strMeshPath.empty())
 			{
-				m_xCreatedMeshes.PushBack(pxMesh);
-
-				// Create a new material with the serialized base color
-				Flux_Material* pxMaterial = Zenith_AssetHandler::AddMaterial();
-				if (pxMaterial)
+				Flux_MeshGeometry* pxMesh = Zenith_AssetHandler::AddMeshFromFile(strMeshPath.c_str());
+				if (pxMesh)
 				{
-					m_xCreatedMaterials.PushBack(pxMaterial);
-					pxMaterial->SetBaseColor(xBaseColor);
-					AddMeshEntry(*pxMesh, *pxMaterial);
+					m_xCreatedMeshes.PushBack(pxMesh);
+
+					// Create a new material and read its data (including texture paths)
+					Flux_Material* pxMaterial = Zenith_AssetHandler::AddMaterial();
+					if (pxMaterial)
+					{
+						m_xCreatedMaterials.PushBack(pxMaterial);
+						pxMaterial->ReadFromDataStream(xStream);  // This reloads textures from paths!
+						AddMeshEntry(*pxMesh, *pxMaterial);
+					}
+					else
+					{
+						Zenith_Log("[ModelComponent] Failed to create material during deserialization");
+						// Still need to read material data to advance stream
+						Flux_Material xTempMat;
+						xTempMat.ReadFromDataStream(xStream);
+						AddMeshEntry(*pxMesh, *Flux_Graphics::s_pxBlankMaterial);
+					}
 				}
 				else
 				{
-					Zenith_Log("[ModelComponent] Failed to create material during deserialization");
-					AddMeshEntry(*pxMesh, *Flux_Graphics::s_pxBlankMaterial);
-				}
-
-				// Recreate animation if path was serialized
-				if (!strAnimPath.empty() && pxMesh->GetNumBones() > 0)
-				{
-					Zenith_Log("[ModelComponent] Recreating animation from: %s", strAnimPath.c_str());
-					pxMesh->m_pxAnimation = new Flux_MeshAnimation(strAnimPath, *pxMesh);
+					Zenith_Log("[ModelComponent] Failed to load mesh from path: %s", strMeshPath.c_str());
+					// Still need to read material data to advance stream
+					Flux_Material xTempMat;
+					xTempMat.ReadFromDataStream(xStream);
 				}
 			}
 			else
 			{
-				Zenith_Log("[ModelComponent] Failed to load mesh from path: %s", strMeshPath.c_str());
+				// Empty mesh path, still need to read material data
+				Flux_Material xTempMat;
+				xTempMat.ReadFromDataStream(xStream);
+			}
+		}
+		else
+		{
+			// Version 1: Legacy format with only base color
+			Zenith_Maths::Vector4 xBaseColor;
+			xStream >> xBaseColor.x;
+			xStream >> xBaseColor.y;
+			xStream >> xBaseColor.z;
+			xStream >> xBaseColor.w;
+
+			// Load mesh from source path
+			if (!strMeshPath.empty())
+			{
+				Flux_MeshGeometry* pxMesh = Zenith_AssetHandler::AddMeshFromFile(strMeshPath.c_str());
+				if (pxMesh)
+				{
+					m_xCreatedMeshes.PushBack(pxMesh);
+
+					// Create a new material with the serialized base color (no textures in v1)
+					Flux_Material* pxMaterial = Zenith_AssetHandler::AddMaterial();
+					if (pxMaterial)
+					{
+						m_xCreatedMaterials.PushBack(pxMaterial);
+						pxMaterial->SetBaseColor(xBaseColor);
+						AddMeshEntry(*pxMesh, *pxMaterial);
+					}
+					else
+					{
+						Zenith_Log("[ModelComponent] Failed to create material during deserialization");
+						AddMeshEntry(*pxMesh, *Flux_Graphics::s_pxBlankMaterial);
+					}
+				}
+				else
+				{
+					Zenith_Log("[ModelComponent] Failed to load mesh from path: %s", strMeshPath.c_str());
+				}
+			}
+		}
+
+		// Read animation path (common to all versions)
+		std::string strAnimPath;
+		xStream >> strAnimPath;
+
+		// Recreate animation if path was serialized (and mesh was loaded successfully)
+		if (!strAnimPath.empty() && m_xMeshEntries.GetSize() > 0)
+		{
+			MeshEntry& xEntry = m_xMeshEntries.Get(m_xMeshEntries.GetSize() - 1);
+			if (xEntry.m_pxGeometry && xEntry.m_pxGeometry->GetNumBones() > 0)
+			{
+				Zenith_Log("[ModelComponent] Recreating animation from: %s", strAnimPath.c_str());
+				xEntry.m_pxGeometry->m_pxAnimation = new Flux_MeshAnimation(strAnimPath, *xEntry.m_pxGeometry);
 			}
 		}
 	}

@@ -294,24 +294,35 @@ Zenith_TerrainComponent::~Zenith_TerrainComponent()
 
 void Zenith_TerrainComponent::WriteToDataStream(Zenith_DataStream& xStream) const
 {
+	// Serialization version
+	uint32_t uVersion = 2;
+	xStream << uVersion;
+	
 	// NOTE: Terrain component uses hardcoded paths for physics geometry during construction
 	// We serialize the source paths for reference, but reconstruction is handled by the constructor
 	std::string strPhysicsGeometryPath = m_pxPhysicsGeometry ? m_pxPhysicsGeometry->m_strSourcePath : "";
 	xStream << strPhysicsGeometryPath;
 
-	// Materials are passed in from outside - serialize base colors only
-	// Full material reconstruction happens at game load time
-	Zenith_Maths::Vector4 xMat0Color = m_pxMaterial0 ? m_pxMaterial0->GetBaseColor() : Zenith_Maths::Vector4(1.f);
-	Zenith_Maths::Vector4 xMat1Color = m_pxMaterial1 ? m_pxMaterial1->GetBaseColor() : Zenith_Maths::Vector4(1.f);
-
-	xStream << xMat0Color.x;
-	xStream << xMat0Color.y;
-	xStream << xMat0Color.z;
-	xStream << xMat0Color.w;
-	xStream << xMat1Color.x;
-	xStream << xMat1Color.y;
-	xStream << xMat1Color.z;
-	xStream << xMat1Color.w;
+	// Version 2: Serialize full materials with texture paths
+	if (m_pxMaterial0)
+	{
+		m_pxMaterial0->WriteToDataStream(xStream);
+	}
+	else
+	{
+		Flux_Material xEmptyMat;
+		xEmptyMat.WriteToDataStream(xStream);
+	}
+	
+	if (m_pxMaterial1)
+	{
+		m_pxMaterial1->WriteToDataStream(xStream);
+	}
+	else
+	{
+		Flux_Material xEmptyMat;
+		xEmptyMat.WriteToDataStream(xStream);
+	}
 }
 
 void Zenith_TerrainComponent::ReadFromDataStream(Zenith_DataStream& xStream)
@@ -323,6 +334,10 @@ void Zenith_TerrainComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 		Flux_TerrainStreamingManager::Initialize();
 	}
 
+	// Read serialization version
+	uint32_t uVersion;
+	xStream >> uVersion;
+	
 	// Read physics geometry path (for reference, but we load all chunks below)
 	std::string strPhysicsGeometryPath;
 	xStream >> strPhysicsGeometryPath;
@@ -376,27 +391,63 @@ void Zenith_TerrainComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 			xPhysicsGeometry.GetNumVerts(), xPhysicsGeometry.GetNumIndices());
 	}
 
-	// Read material base colors
-	Zenith_Maths::Vector4 xMat0Color, xMat1Color;
-	xStream >> xMat0Color.x;
-	xStream >> xMat0Color.y;
-	xStream >> xMat0Color.z;
-	xStream >> xMat0Color.w;
-	xStream >> xMat1Color.x;
-	xStream >> xMat1Color.y;
-	xStream >> xMat1Color.z;
-	xStream >> xMat1Color.w;
-
-	// Apply loaded colors to materials if they exist
-	// NOTE: m_pxMaterial0 and m_pxMaterial1 should be set by the entity system
-	// after component creation. This just applies serialized state.
-	if (m_pxMaterial0)
+	// Version 2+: Read full materials with texture paths
+	if (uVersion >= 2)
 	{
-		m_pxMaterial0->SetBaseColor(xMat0Color);
+		// Create materials if they don't exist
+		if (!m_pxMaterial0)
+		{
+			m_pxMaterial0 = Zenith_AssetHandler::AddMaterial();
+		}
+		if (!m_pxMaterial1)
+		{
+			m_pxMaterial1 = Zenith_AssetHandler::AddMaterial();
+		}
+		
+		// Read material data (this will also reload textures from paths)
+		if (m_pxMaterial0)
+		{
+			m_pxMaterial0->ReadFromDataStream(xStream);
+		}
+		else
+		{
+			// Skip material data if we couldn't create material
+			Flux_Material xTempMat;
+			xTempMat.ReadFromDataStream(xStream);
+		}
+		
+		if (m_pxMaterial1)
+		{
+			m_pxMaterial1->ReadFromDataStream(xStream);
+		}
+		else
+		{
+			Flux_Material xTempMat;
+			xTempMat.ReadFromDataStream(xStream);
+		}
 	}
-	if (m_pxMaterial1)
+	else
 	{
-		m_pxMaterial1->SetBaseColor(xMat1Color);
+		// Version 1: Legacy format with only base colors
+		Zenith_Maths::Vector4 xMat0Color, xMat1Color;
+		xStream >> xMat0Color.x;
+		xStream >> xMat0Color.y;
+		xStream >> xMat0Color.z;
+		xStream >> xMat0Color.w;
+		xStream >> xMat1Color.x;
+		xStream >> xMat1Color.y;
+		xStream >> xMat1Color.z;
+		xStream >> xMat1Color.w;
+
+		// Apply loaded colors to materials if they exist
+		if (m_pxMaterial0)
+		{
+			m_pxMaterial0->SetBaseColor(xMat0Color);
+		}
+		if (m_pxMaterial1)
+		{
+			m_pxMaterial1->SetBaseColor(xMat1Color);
+		}
 	}
 
 	// CRITICAL: Initialize render resources (LOD3 meshes, buffers, culling)

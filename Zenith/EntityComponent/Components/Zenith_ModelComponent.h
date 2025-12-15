@@ -117,6 +117,11 @@ public:
 
 		// Track materials created in this call (indexed by material index from filenames)
 		std::unordered_map<uint32_t, Flux_Material*> xMaterialMap;
+		
+		// Track texture paths per material index for serialization
+		std::unordered_map<uint32_t, std::string> xDiffusePathMap;
+		std::unordered_map<uint32_t, std::string> xNormalPathMap;
+		std::unordered_map<uint32_t, std::string> xRoughnessMetallicPathMap;
 
 		//#TO iterate over textures first to create materials
 		if (!pxOverrideMaterial)
@@ -136,6 +141,9 @@ public:
 						Zenith_Log("[ModelComponent] Failed to load texture: %s", strFilepath.c_str());
 						continue;
 					}
+					
+					// Store source path in texture for reference
+					pxTexture->m_strSourcePath = strFilepath;
 
 					m_xCreatedTextures.PushBack(pxTexture);
 
@@ -155,9 +163,11 @@ public:
 					Flux_Material* pxMat = xMaterialMap[uMatIndex];
 					if (!pxMat) continue;
 
+					// Set texture AND store path for serialization
 					if (strFilename.find("Diffuse") != std::string::npos)
 					{
-						pxMat->SetDiffuse(*pxTexture);
+						pxMat->SetDiffuseWithPath(*pxTexture, strFilepath);
+						xDiffusePathMap[uMatIndex] = strFilepath;
 					}
 					else if (strFilename.find("Specular") != std::string::npos)
 					{
@@ -177,7 +187,8 @@ public:
 					}
 					else if (strFilename.find("Normals") != std::string::npos)
 					{
-						pxMat->SetNormal(*pxTexture);
+						pxMat->SetNormalWithPath(*pxTexture, strFilepath);
+						xNormalPathMap[uMatIndex] = strFilepath;
 					}
 					else if (strFilename.find("Shininess") != std::string::npos)
 					{
@@ -201,7 +212,8 @@ public:
 					}
 					else if (strFilename.find("BaseColor") != std::string::npos)
 					{
-						pxMat->SetDiffuse(*pxTexture);
+						pxMat->SetDiffuseWithPath(*pxTexture, strFilepath);
+						xDiffusePathMap[uMatIndex] = strFilepath;
 					}
 					else if (strFilename.find("Normal_Camera") != std::string::npos)
 					{
@@ -209,11 +221,13 @@ public:
 					}
 					else if (strFilename.find("Metallic") != std::string::npos)
 					{
-						pxMat->SetRoughnessMetallic(*pxTexture);
+						pxMat->SetRoughnessMetallicWithPath(*pxTexture, strFilepath);
+						xRoughnessMetallicPathMap[uMatIndex] = strFilepath;
 					}
 					else if (strFilename.find("Roughness") != std::string::npos)
 					{
-						pxMat->SetRoughnessMetallic(*pxTexture);
+						pxMat->SetRoughnessMetallicWithPath(*pxTexture, strFilepath);
+						xRoughnessMetallicPathMap[uMatIndex] = strFilepath;
 					}
 					else if (strFilename.find("Occlusion") != std::string::npos)
 					{
@@ -356,21 +370,46 @@ private:
 	{
 		ImGui::PushID(szLabel);
 
-		// Get current texture (if any)
+		// Get current texture (if any) and its path
 		const Flux_Texture* pxCurrentTexture = nullptr;
+		std::string strCurrentPath;
 		switch (eSlot)
 		{
-		case TEXTURE_SLOT_DIFFUSE:           pxCurrentTexture = xMaterial.GetDiffuse(); break;
-		case TEXTURE_SLOT_NORMAL:            pxCurrentTexture = xMaterial.GetNormal(); break;
-		case TEXTURE_SLOT_ROUGHNESS_METALLIC: pxCurrentTexture = xMaterial.GetRoughnessMetallic(); break;
-		case TEXTURE_SLOT_OCCLUSION:         pxCurrentTexture = xMaterial.GetOcclusion(); break;
-		case TEXTURE_SLOT_EMISSIVE:          pxCurrentTexture = xMaterial.GetEmissive(); break;
+		case TEXTURE_SLOT_DIFFUSE:           
+			pxCurrentTexture = xMaterial.GetDiffuse(); 
+			strCurrentPath = xMaterial.GetDiffusePath();
+			break;
+		case TEXTURE_SLOT_NORMAL:            
+			pxCurrentTexture = xMaterial.GetNormal(); 
+			strCurrentPath = xMaterial.GetNormalPath();
+			break;
+		case TEXTURE_SLOT_ROUGHNESS_METALLIC: 
+			pxCurrentTexture = xMaterial.GetRoughnessMetallic(); 
+			strCurrentPath = xMaterial.GetRoughnessMetallicPath();
+			break;
+		case TEXTURE_SLOT_OCCLUSION:         
+			pxCurrentTexture = xMaterial.GetOcclusion(); 
+			strCurrentPath = xMaterial.GetOcclusionPath();
+			break;
+		case TEXTURE_SLOT_EMISSIVE:          
+			pxCurrentTexture = xMaterial.GetEmissive(); 
+			strCurrentPath = xMaterial.GetEmissivePath();
+			break;
 		}
 
 		std::string strTextureName = "(none)";
 		if (pxCurrentTexture && pxCurrentTexture->m_xVRAMHandle.IsValid())
 		{
-			strTextureName = "(loaded)";
+			// Show filename from path if available
+			if (!strCurrentPath.empty())
+			{
+				std::filesystem::path xPath(strCurrentPath);
+				strTextureName = xPath.filename().string();
+			}
+			else
+			{
+				strTextureName = "(loaded)";
+			}
 		}
 
 		// Display slot label and current texture
@@ -400,10 +439,17 @@ private:
 			ImGui::EndDragDropTarget();
 		}
 
-		// Tooltip
+		// Tooltip showing full path
 		if (ImGui::IsItemHovered())
 		{
-			ImGui::SetTooltip("Drop a .ztx texture here\nCurrent: %s", strTextureName.c_str());
+			if (!strCurrentPath.empty())
+			{
+				ImGui::SetTooltip("Drop a .ztx texture here\nPath: %s", strCurrentPath.c_str());
+			}
+			else
+			{
+				ImGui::SetTooltip("Drop a .ztx texture here\nCurrent: %s", strTextureName.c_str());
+			}
 		}
 
 		ImGui::PopID();
@@ -424,6 +470,9 @@ private:
 			Zenith_Log("[ModelComponent] Failed to load texture: %s", szFilePath);
 			return;
 		}
+		
+		// Store the source path in the texture
+		pxTexture->m_strSourcePath = szFilePath;
 
 		m_xCreatedTextures.PushBack(pxTexture);
 		Zenith_Log("[ModelComponent] Loaded texture from: %s", szFilePath);
@@ -442,7 +491,7 @@ private:
 		m_xCreatedMaterials.PushBack(pxNewMaterial);
 		Zenith_Log("[ModelComponent] Created new material instance");
 
-		// Copy existing textures from old material to new material
+		// Copy existing textures AND PATHS from old material to new material
 		if (pxOldMaterial)
 		{
 			const Flux_Texture* pxDiffuse = pxOldMaterial->GetDiffuse();
@@ -452,40 +501,41 @@ private:
 			const Flux_Texture* pxEmissive = pxOldMaterial->GetEmissive();
 
 			if (pxDiffuse && pxDiffuse->m_xVRAMHandle.IsValid())
-				pxNewMaterial->SetDiffuse(*pxDiffuse);
+				pxNewMaterial->SetDiffuseWithPath(*pxDiffuse, pxOldMaterial->GetDiffusePath());
 			if (pxNormal && pxNormal->m_xVRAMHandle.IsValid())
-				pxNewMaterial->SetNormal(*pxNormal);
+				pxNewMaterial->SetNormalWithPath(*pxNormal, pxOldMaterial->GetNormalPath());
 			if (pxRoughMetal && pxRoughMetal->m_xVRAMHandle.IsValid())
-				pxNewMaterial->SetRoughnessMetallic(*pxRoughMetal);
+				pxNewMaterial->SetRoughnessMetallicWithPath(*pxRoughMetal, pxOldMaterial->GetRoughnessMetallicPath());
 			if (pxOcclusion && pxOcclusion->m_xVRAMHandle.IsValid())
-				pxNewMaterial->SetOcclusion(*pxOcclusion);
+				pxNewMaterial->SetOcclusionWithPath(*pxOcclusion, pxOldMaterial->GetOcclusionPath());
 			if (pxEmissive && pxEmissive->m_xVRAMHandle.IsValid())
-				pxNewMaterial->SetEmissive(*pxEmissive);
+				pxNewMaterial->SetEmissiveWithPath(*pxEmissive, pxOldMaterial->GetEmissivePath());
 
 			pxNewMaterial->SetBaseColor(pxOldMaterial->GetBaseColor());
 		}
 
-		// Now set the new texture on the appropriate slot
+		// Now set the new texture on the appropriate slot WITH the path
+		std::string strPath(szFilePath);
 		switch (eSlot)
 		{
 		case TEXTURE_SLOT_DIFFUSE:
-			pxNewMaterial->SetDiffuse(*pxTexture);
+			pxNewMaterial->SetDiffuseWithPath(*pxTexture, strPath);
 			Zenith_Log("[ModelComponent] Set diffuse texture");
 			break;
 		case TEXTURE_SLOT_NORMAL:
-			pxNewMaterial->SetNormal(*pxTexture);
+			pxNewMaterial->SetNormalWithPath(*pxTexture, strPath);
 			Zenith_Log("[ModelComponent] Set normal texture");
 			break;
 		case TEXTURE_SLOT_ROUGHNESS_METALLIC:
-			pxNewMaterial->SetRoughnessMetallic(*pxTexture);
+			pxNewMaterial->SetRoughnessMetallicWithPath(*pxTexture, strPath);
 			Zenith_Log("[ModelComponent] Set roughness/metallic texture");
 			break;
 		case TEXTURE_SLOT_OCCLUSION:
-			pxNewMaterial->SetOcclusion(*pxTexture);
+			pxNewMaterial->SetOcclusionWithPath(*pxTexture, strPath);
 			Zenith_Log("[ModelComponent] Set occlusion texture");
 			break;
 		case TEXTURE_SLOT_EMISSIVE:
-			pxNewMaterial->SetEmissive(*pxTexture);
+			pxNewMaterial->SetEmissiveWithPath(*pxTexture, strPath);
 			Zenith_Log("[ModelComponent] Set emissive texture");
 			break;
 		}

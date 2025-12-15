@@ -85,8 +85,8 @@ static void LoadAssets()
 		xMetallicData.FreeAllocatedData();
 
 		s_pxBarrelMaterial = Zenith_AssetHandler::AddMaterial();
-		s_pxBarrelMaterial->SetDiffuse(*s_pxBarrelDiffuse);
-		s_pxBarrelMaterial->SetRoughnessMetallic(*s_pxBarrelMetallic);
+		s_pxBarrelMaterial->SetDiffuseWithPath(*s_pxBarrelDiffuse, ASSETS_ROOT"Meshes/barrel_Diffuse_0.ztx");
+		s_pxBarrelMaterial->SetRoughnessMetallicWithPath(*s_pxBarrelMetallic, ASSETS_ROOT"Meshes/barrel_Shininess_0.ztx");
 	}
 
 	// Crystal material
@@ -108,9 +108,9 @@ static void LoadAssets()
 		xMetallicData.FreeAllocatedData();
 
 		s_pxCrystalMaterial = Zenith_AssetHandler::AddMaterial();
-		s_pxCrystalMaterial->SetDiffuse(*s_pxCrystalDiffuse);
-		s_pxCrystalMaterial->SetNormal(*s_pxCrystalNormal);
-		s_pxCrystalMaterial->SetRoughnessMetallic(*s_pxCrystalRoughness);
+		s_pxCrystalMaterial->SetDiffuseWithPath(*s_pxCrystalDiffuse, ASSETS_ROOT"Textures/crystal2k/diffuse.ztx");
+		s_pxCrystalMaterial->SetNormalWithPath(*s_pxCrystalNormal, ASSETS_ROOT"Textures/crystal2k/normal.ztx");
+		s_pxCrystalMaterial->SetRoughnessMetallicWithPath(*s_pxCrystalRoughness, ASSETS_ROOT"Textures/crystal2k/roughness.ztx");
 	}
 
 	// MuddyGrass material
@@ -132,9 +132,9 @@ static void LoadAssets()
 		xMetallicData.FreeAllocatedData();
 
 		s_pxMuddyGrassMaterial = Zenith_AssetHandler::AddMaterial();
-		s_pxMuddyGrassMaterial->SetDiffuse(*s_pxMuddyGrassDiffuse);
-		s_pxMuddyGrassMaterial->SetNormal(*s_pxMuddyGrassNormal);
-		s_pxMuddyGrassMaterial->SetRoughnessMetallic(*s_pxMuddyGrassRoughness);
+		s_pxMuddyGrassMaterial->SetDiffuseWithPath(*s_pxMuddyGrassDiffuse, ASSETS_ROOT"Textures/muddyGrass2k/diffuse.ztx");
+		s_pxMuddyGrassMaterial->SetNormalWithPath(*s_pxMuddyGrassNormal, ASSETS_ROOT"Textures/muddyGrass2k/normal.ztx");
+		s_pxMuddyGrassMaterial->SetRoughnessMetallicWithPath(*s_pxMuddyGrassRoughness, ASSETS_ROOT"Textures/muddyGrass2k/roughness.ztx");
 	}
 
 	// SupplyCrate material
@@ -156,9 +156,9 @@ static void LoadAssets()
 		xMetallicData.FreeAllocatedData();
 
 		s_pxSupplyCrateMaterial = Zenith_AssetHandler::AddMaterial();
-		s_pxSupplyCrateMaterial->SetDiffuse(*s_pxSupplyCrateDiffuse);
-		s_pxSupplyCrateMaterial->SetNormal(*s_pxSupplyCrateNormal);
-		s_pxSupplyCrateMaterial->SetRoughnessMetallic(*s_pxSupplyCrateRoughness);
+		s_pxSupplyCrateMaterial->SetDiffuseWithPath(*s_pxSupplyCrateDiffuse, ASSETS_ROOT"Textures/supplyCrate2k/diffuse.ztx");
+		s_pxSupplyCrateMaterial->SetNormalWithPath(*s_pxSupplyCrateNormal, ASSETS_ROOT"Textures/supplyCrate2k/normal.ztx");
+		s_pxSupplyCrateMaterial->SetRoughnessMetallicWithPath(*s_pxSupplyCrateRoughness, ASSETS_ROOT"Textures/supplyCrate2k/roughness.ztx");
 	}
 
 	// Rock material
@@ -180,9 +180,9 @@ static void LoadAssets()
 		xMetallicData.FreeAllocatedData();
 
 		s_pxRockMaterial = Zenith_AssetHandler::AddMaterial();
-		s_pxRockMaterial->SetDiffuse(*s_pxRockDiffuse);
-		s_pxRockMaterial->SetNormal(*s_pxRockNormal);
-		s_pxRockMaterial->SetRoughnessMetallic(*s_pxRockRoughness);
+		s_pxRockMaterial->SetDiffuseWithPath(*s_pxRockDiffuse, ASSETS_ROOT"Textures/rock2k/diffuse.ztx");
+		s_pxRockMaterial->SetNormalWithPath(*s_pxRockNormal, ASSETS_ROOT"Textures/rock2k/normal.ztx");
+		s_pxRockMaterial->SetRoughnessMetallicWithPath(*s_pxRockRoughness, ASSETS_ROOT"Textures/rock2k/roughness.ztx");
 	}
 }
 
