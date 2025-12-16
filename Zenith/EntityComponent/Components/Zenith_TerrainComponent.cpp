@@ -287,6 +287,26 @@ Zenith_TerrainComponent::~Zenith_TerrainComponent()
 	Zenith_Log("Zenith_TerrainComponent - Unified terrain buffers destroyed");
 
 	Zenith_AssetHandler::DeleteMesh(m_pxPhysicsGeometry);
+	
+	// Clean up materials and textures if we own them (created during deserialization)
+	if (m_bOwnsMaterials)
+	{
+		Zenith_Log("Zenith_TerrainComponent - Cleaning up owned materials and textures");
+		
+		// Delete textures loaded by materials before deleting materials themselves
+		if (m_pxMaterial0)
+		{
+			m_pxMaterial0->DeleteLoadedTextures();
+			Zenith_AssetHandler::DeleteMaterial(m_pxMaterial0);
+			m_pxMaterial0 = nullptr;
+		}
+		if (m_pxMaterial1)
+		{
+			m_pxMaterial1->DeleteLoadedTextures();
+			Zenith_AssetHandler::DeleteMaterial(m_pxMaterial1);
+			m_pxMaterial1 = nullptr;
+		}
+	}
 
 	// Decrement instance count - this may trigger streaming manager shutdown if last instance
 	DecrementInstanceCount();
@@ -394,36 +414,54 @@ void Zenith_TerrainComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 	// Version 2+: Read full materials with texture paths
 	if (uVersion >= 2)
 	{
-		// Create materials if they don't exist
+		// Read material 0 data into temp to check for existing material
+		Flux_Material xTempMat0;
+		xTempMat0.ReadFromDataStream(xStream);
+		
+		// Read material 1 data into temp to check for existing material
+		Flux_Material xTempMat1;
+		xTempMat1.ReadFromDataStream(xStream);
+		
+		// Try to reuse existing material 0 by diffuse path
+		if (!xTempMat0.GetDiffusePath().empty())
+		{
+			m_pxMaterial0 = Zenith_AssetHandler::GetMaterialByDiffusePath(xTempMat0.GetDiffusePath());
+			if (m_pxMaterial0)
+			{
+				Zenith_Log("[TerrainComponent] Reusing existing material0 with diffuse: %s", xTempMat0.GetDiffusePath().c_str());
+			}
+		}
+		
+		// If no existing material found, create a new one
 		if (!m_pxMaterial0)
 		{
 			m_pxMaterial0 = Zenith_AssetHandler::AddMaterial();
+			if (m_pxMaterial0)
+			{
+				*m_pxMaterial0 = xTempMat0;
+				m_bOwnsMaterials = true;  // We created it, we own it
+			}
 		}
+		
+		// Try to reuse existing material 1 by diffuse path
+		if (!xTempMat1.GetDiffusePath().empty())
+		{
+			m_pxMaterial1 = Zenith_AssetHandler::GetMaterialByDiffusePath(xTempMat1.GetDiffusePath());
+			if (m_pxMaterial1)
+			{
+				Zenith_Log("[TerrainComponent] Reusing existing material1 with diffuse: %s", xTempMat1.GetDiffusePath().c_str());
+			}
+		}
+		
+		// If no existing material found, create a new one
 		if (!m_pxMaterial1)
 		{
 			m_pxMaterial1 = Zenith_AssetHandler::AddMaterial();
-		}
-		
-		// Read material data (this will also reload textures from paths)
-		if (m_pxMaterial0)
-		{
-			m_pxMaterial0->ReadFromDataStream(xStream);
-		}
-		else
-		{
-			// Skip material data if we couldn't create material
-			Flux_Material xTempMat;
-			xTempMat.ReadFromDataStream(xStream);
-		}
-		
-		if (m_pxMaterial1)
-		{
-			m_pxMaterial1->ReadFromDataStream(xStream);
-		}
-		else
-		{
-			Flux_Material xTempMat;
-			xTempMat.ReadFromDataStream(xStream);
+			if (m_pxMaterial1)
+			{
+				*m_pxMaterial1 = xTempMat1;
+				m_bOwnsMaterials = true;  // We created it, we own it
+			}
 		}
 	}
 	else

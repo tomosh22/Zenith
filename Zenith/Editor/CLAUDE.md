@@ -208,6 +208,68 @@ void Zenith_ScriptComponent::ReadFromDataStream(Zenith_DataStream& xStream) {
 **Files Modified:**
 - [Zenith_TerrainComponent.cpp](../EntityComponent/Components/Zenith_TerrainComponent.cpp) - `ReadFromDataStream()` now loads all 4096 physics chunks
 
+#### Bug #3: Blank Textures After Scene Reload (December 2024)
+
+**Symptom:** After pressing Stop in the editor, terrain and models render with blank white textures instead of their proper materials.
+
+**Root Cause:** Materials stored only GPU texture handles (`Flux_VRAMHandle`), not the original file paths. When a scene was serialized and reloaded:
+1. Material base color was saved/loaded correctly
+2. But texture GPU handles became invalid (old resources destroyed during scene reset)
+3. No paths were stored, so textures couldn't be reloaded
+4. `GetDiffuse()` returned `GetBlankTexture()` when the handle was invalid
+
+**Fix Applied (Multi-Part):**
+
+**Part 1: Path Storage in Flux_Material**
+- Added `m_strDiffusePath`, `m_strNormalPath`, etc. to `Flux_Material`
+- Added `SetDiffuseWithPath()`, `SetNormalWithPath()`, etc. that store both texture AND path
+- Added `WriteToDataStream()` / `ReadFromDataStream()` with version 2 format
+- Added `ReloadTexturesFromPaths()` called during deserialization
+
+**Part 2: Component Serialization Updates**
+- `Zenith_TerrainComponent::WriteToDataStream()` now serializes full materials (v2)
+- `Zenith_TerrainComponent::ReadFromDataStream()` creates materials and calls `ReadFromDataStream` on them
+- `Zenith_ModelComponent` updated similarly
+
+**Part 3: Game Code Updates**
+- `Test_State_InGame.cpp` updated to use `SetDiffuseWithPath()` instead of `SetDiffuse()`
+- Path passed to `SetDiffuseWithPath()` MUST match the file loaded (e.g., `ASSETS_ROOT"Textures/rock2k/diffuse.ztx"`)
+
+**Files Modified:**
+- [Flux_Material.h](../Flux/Flux_Material.h) - Added path storage, `SetWithPath` methods, serialization
+- [Flux_Material.cpp](../Flux/Flux_Material.cpp) - Implemented serialization, `ReloadTexturesFromPaths()`
+- [Zenith_TerrainComponent.cpp](../EntityComponent/Components/Zenith_TerrainComponent.cpp) - v2 serialization
+- [Zenith_ModelComponent.cpp](../EntityComponent/Components/Zenith_ModelComponent.cpp) - v2 serialization
+- [Test_State_InGame.cpp](../../Games/Test/Test_State_InGame.cpp) - Use `SetWithPath` methods
+
+**⚠️ LESSON LEARNED:** For any asset that needs to survive serialization, ALWAYS store the source path alongside the GPU handle. GPU handles are transient; paths are persistent.
+
+#### Bug #4: Texture Pool Exhaustion on Repeated Scene Reloads
+
+**Symptom:** After pressing Stop multiple times, assert fires: "Run out of texture slots"
+
+**Root Cause:** Textures created via `ReloadTexturesFromPaths()` during deserialization were never cleaned up. Each scene reload created NEW textures without deleting the old ones. The materials store textures BY VALUE (copy), not by pointer, so the original AssetHandler slot was never freed when components were destroyed.
+
+**Fix Applied:**
+
+1. **Flux_Material::DeleteLoadedTextures()** - New method that deletes textures by their source paths:
+   - Calls `Zenith_AssetHandler::DeleteTextureByPath()` for each texture slot with a valid path
+   - Clears the texture slots after deletion
+
+2. **Zenith_AssetHandler::DeleteTextureByPath(const std::string& strPath)** - New function that:
+   - Searches the texture pool for a texture matching the source path
+   - Deletes it via `DeleteTexture()` when found
+
+3. **Zenith_TerrainComponent** - Added `m_bOwnsMaterials` flag:
+   - Set to `true` when materials are created during `ReadFromDataStream()`
+   - Destructor calls `DeleteLoadedTextures()` and `DeleteMaterial()` only if `m_bOwnsMaterials` is true
+
+4. **Zenith_ModelComponent** - Updated destructor:
+   - Calls `DeleteLoadedTextures()` on each material in `m_xCreatedMaterials` before deleting it
+   - This ensures textures loaded during `ReadFromDataStream()` are properly cleaned up
+
+**Key Pattern:** When deserializing, materials call `ReloadTexturesFromPaths()` which allocates texture slots. These slots must be freed by calling `DeleteLoadedTextures()` before the material is deleted. Components must track whether they created the materials (ownership) vs received them from external code.
+
 **Critical Consideration:**
 Entity pointers (like `s_pxSelectedEntity`) become invalid when the scene is reset. Always clear selection when stopping play mode.
 

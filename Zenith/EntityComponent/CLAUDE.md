@@ -1517,6 +1517,20 @@ Each call to `LoadMeshesFromDir` creates materials with a new suffix, allowing m
    - `ReadFromDataStream` automatically looks up assets by name
    - No manual tracking needed - just ensure assets exist before calling `LoadFromFile`
 
+5. **Clean Up Textures from Deserialized Materials:**
+   - When `ReadFromDataStream` creates materials and calls `pxMaterial->ReadFromDataStream()`, textures are loaded from paths
+   - These textures allocate slots in `Zenith_AssetHandler` that MUST be freed
+   - **CRITICAL:** Call `pxMaterial->DeleteLoadedTextures()` BEFORE `DeleteMaterial()` in your destructor
+   - Example from `Zenith_ModelComponent`:
+     ```cpp
+     for (uint32_t u = 0; u < m_xCreatedMaterials.GetSize(); u++)
+     {
+         m_xCreatedMaterials.Get(u)->DeleteLoadedTextures();  // Free texture slots first!
+         Zenith_AssetHandler::DeleteMaterial(m_xCreatedMaterials.Get(u));
+     }
+     ```
+   - Failure to do this causes texture pool exhaustion on repeated scene reloads
+
 ---
 
 ## Physics Mesh Generation System

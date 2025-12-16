@@ -241,11 +241,23 @@ Runtime asset loading and management system.
 **Supported Formats:**
 - **Meshes:** Custom `.zmsh` format
 - **Textures:** Custom `.ztx` format
+- **Materials:** Custom `.zmat` format (December 2024)
 - **Animations:** Skeletal animation data
 
 **Asset Pipeline:**
 1. **Tools:** Convert from industry formats (FBX, PNG, etc.) to Zenith formats
 2. **Runtime:** Fast loading of pre-processed assets
+
+**Material System (December 2024):**
+Materials aggregate textures and must store texture **source paths** for scene reload to work.
+Use `SetDiffuseWithPath()` instead of `SetDiffuse()` when setting up materials.
+See [Flux/CLAUDE.md - Material System](Zenith/Flux/CLAUDE.md#flux-material-system-december-2024) for details.
+
+**Asset Lifecycle:**
+- Fixed-size pools: `ZENITH_MAX_TEXTURES`, `ZENITH_MAX_MESHES`, `ZENITH_MAX_MATERIALS`
+- Slot allocation tracked via `s_xUsedTextureIDs`, etc.
+- **⚠️ CRITICAL:** Assets created during scene deserialization MUST be cleaned up by component destructors
+- Use `Zenith_Scene::IsLoadingScene()` to check if cleanup should be skipped during reload
 
 ### 6. Profiling System
 

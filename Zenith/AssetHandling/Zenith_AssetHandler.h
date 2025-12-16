@@ -107,6 +107,13 @@ public:
 	static Flux_MeshGeometry* AddMeshFromFile(const char* szPath, u_int uRetainAttributeBits = 0, const bool bUploadToGPU = true);
 
 	/**
+	 * Finds a mesh by its source path (for reuse instead of creating duplicates)
+	 * @param strPath Source path to search for
+	 * @return Pointer to mesh if found, nullptr otherwise
+	 */
+	static Flux_MeshGeometry* GetMeshByPath(const std::string& strPath);
+
+	/**
 	 * Creates an empty material
 	 * @return Raw pointer to the created material, or nullptr on failure
 	 */
@@ -123,6 +130,20 @@ public:
 	static void DeleteTexture(Flux_Texture* pxTexture);
 
 	/**
+	 * Finds and deletes a texture by its source path
+	 * @param strPath Source path of the texture to delete
+	 * @return true if texture was found and deleted, false otherwise
+	 */
+	static bool DeleteTextureByPath(const std::string& strPath);
+
+	/**
+	 * Finds a texture by its source path (for reuse instead of creating duplicates)
+	 * @param strPath Source path to search for
+	 * @return Pointer to texture if found, nullptr otherwise
+	 */
+	static Flux_Texture* GetTextureByPath(const std::string& strPath);
+
+	/**
 	 * Deletes a mesh and returns its slot to the pool
 	 * @param pxMesh Pointer to the mesh to delete
 	 */
@@ -133,6 +154,13 @@ public:
 	 * @param pxMaterial Pointer to the material to delete
 	 */
 	static void DeleteMaterial(Flux_Material* pxMaterial);
+
+	/**
+	 * Finds a material by its diffuse texture path (for reuse instead of creating duplicates)
+	 * @param strDiffusePath Diffuse texture path to search for
+	 * @return Pointer to material if found, nullptr otherwise
+	 */
+	static Flux_Material* GetMaterialByDiffusePath(const std::string& strDiffusePath);
 
 	//--------------------------------------------------------------------------
 	// Bulk Operations

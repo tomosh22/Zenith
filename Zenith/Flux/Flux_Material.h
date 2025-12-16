@@ -126,6 +126,13 @@ public:
 	 * Call this after scene reload to restore textures
 	 */
 	void ReloadTexturesFromPaths();
+	
+	/**
+	 * Delete textures that were loaded via ReloadTexturesFromPaths
+	 * Call this before destroying the material to free texture slots
+	 * Only deletes textures that have source paths stored
+	 */
+	void DeleteLoadedTextures();
 
 private:
 	static const Flux_Texture* GetBlankTexture()

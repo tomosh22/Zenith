@@ -138,6 +138,48 @@ void Zenith_AssetHandler::DeleteTexture(Flux_Texture* pxTexture)
 	s_xUsedTextureIDs.erase(uID);
 }
 
+bool Zenith_AssetHandler::DeleteTextureByPath(const std::string& strPath)
+{
+	if (strPath.empty())
+	{
+		return false;
+	}
+
+	// Search for texture with matching source path
+	for (AssetID uID : s_xUsedTextureIDs)
+	{
+		Flux_Texture* pxTexture = &s_pxTextures[uID];
+		if (pxTexture->m_strSourcePath == strPath)
+		{
+			DeleteTexture(pxTexture);
+			return true;
+		}
+	}
+
+	Zenith_Log("%s WARNING: Texture not found by path: %s", ASSET_LOG_TAG, strPath.c_str());
+	return false;
+}
+
+Flux_Texture* Zenith_AssetHandler::GetTextureByPath(const std::string& strPath)
+{
+	if (strPath.empty())
+	{
+		return nullptr;
+	}
+
+	// Search for texture with matching source path
+	for (AssetID uID : s_xUsedTextureIDs)
+	{
+		Flux_Texture* pxTexture = &s_pxTextures[uID];
+		if (pxTexture->m_strSourcePath == strPath)
+		{
+			return pxTexture;
+		}
+	}
+
+	return nullptr;
+}
+
 //------------------------------------------------------------------------------
 // Texture File Loading
 //------------------------------------------------------------------------------
@@ -295,8 +337,40 @@ Flux_MeshGeometry* Zenith_AssetHandler::AddMesh()
 	return pxMesh;
 }
 
+Flux_MeshGeometry* Zenith_AssetHandler::GetMeshByPath(const std::string& strPath)
+{
+	if (strPath.empty())
+	{
+		return nullptr;
+	}
+
+	// Search for mesh with matching source path
+	for (AssetID uID : s_xUsedMeshIDs)
+	{
+		Flux_MeshGeometry* pxMesh = &s_pxMeshes[uID];
+		if (pxMesh->m_strSourcePath == strPath)
+		{
+			return pxMesh;
+		}
+	}
+
+	return nullptr;
+}
+
 Flux_MeshGeometry* Zenith_AssetHandler::AddMeshFromFile(const char* szPath, u_int uRetainAttributeBits /*= 0*/, const bool bUploadToGPU /*= true*/)
 {
+	// CRITICAL: Check if mesh already exists to avoid duplicates
+	// This prevents mesh pool exhaustion on repeated scene reloads
+	Flux_MeshGeometry* pxExisting = GetMeshByPath(szPath);
+	if (pxExisting)
+	{
+		if (s_bLifecycleLoggingEnabled)
+		{
+			Zenith_Log("%s Reusing existing mesh: %s", ASSET_LOG_TAG, szPath);
+		}
+		return pxExisting;
+	}
+
 	AssetID uID = GetNextFreeMeshSlot();
 	if (uID == INVALID_ASSET_ID)
 	{
@@ -411,6 +485,26 @@ void Zenith_AssetHandler::DeleteMaterial(Flux_Material* pxMaterial)
 	pxMaterial->Reset();
 
 	s_xUsedMaterialIDs.erase(uID);
+}
+
+Flux_Material* Zenith_AssetHandler::GetMaterialByDiffusePath(const std::string& strDiffusePath)
+{
+	if (strDiffusePath.empty())
+	{
+		return nullptr;
+	}
+
+	// Search for material with matching diffuse texture path
+	for (AssetID uID : s_xUsedMaterialIDs)
+	{
+		Flux_Material* pxMaterial = &s_pxMaterials[uID];
+		if (pxMaterial->GetDiffusePath() == strDiffusePath)
+		{
+			return pxMaterial;
+		}
+	}
+
+	return nullptr;
 }
 
 //------------------------------------------------------------------------------

@@ -63,12 +63,21 @@ void Flux_Material::ReadFromDataStream(Zenith_DataStream& xStream)
 
 void Flux_Material::ReloadTexturesFromPaths()
 {
-	// Helper lambda to load texture from path
+	// Helper lambda to load texture from path, or reuse existing one
 	auto LoadTexture = [](const std::string& strPath) -> Flux_Texture
 	{
 		if (strPath.empty())
 		{
 			return Flux_Texture{};
+		}
+		
+		// CRITICAL: Check if texture already exists to avoid duplicates
+		// This prevents texture pool exhaustion on repeated scene reloads
+		Flux_Texture* pExisting = Zenith_AssetHandler::GetTextureByPath(strPath);
+		if (pExisting)
+		{
+			Zenith_Log("%s Reusing existing texture: %s", LOG_TAG, strPath.c_str());
+			return *pExisting;
 		}
 		
 		Zenith_AssetHandler::TextureData xTexData = Zenith_AssetHandler::LoadTexture2DFromFile(strPath.c_str());
@@ -116,4 +125,24 @@ void Flux_Material::ReloadTexturesFromPaths()
 	{
 		m_xEmissive = LoadTexture(m_strEmissivePath);
 	}
+}
+
+void Flux_Material::DeleteLoadedTextures()
+{
+	// NOTE: With the texture reuse optimization in ReloadTexturesFromPaths(),
+	// textures may be shared across multiple materials and the original LoadAssets().
+	// We should NOT delete textures here as they may be referenced elsewhere.
+	// The original creators (e.g., LoadAssets() or the AssetHandler) own the textures.
+	//
+	// If a material was created fresh (not via deserialization with reuse),
+	// the caller should explicitly delete the textures they created.
+	
+	Zenith_Log("%s DeleteLoadedTextures called (no-op due to texture sharing)", LOG_TAG);
+	
+	// Clear our paths to indicate we don't own these textures
+	m_strDiffusePath.clear();
+	m_strNormalPath.clear();
+	m_strRoughnessMetallicPath.clear();
+	m_strOcclusionPath.clear();
+	m_strEmissivePath.clear();
 }

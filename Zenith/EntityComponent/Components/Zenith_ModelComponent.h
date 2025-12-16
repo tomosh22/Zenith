@@ -49,6 +49,10 @@ public:
 			}
 			for (uint32_t u = 0; u < m_xCreatedMaterials.GetSize(); u++)
 			{
+				// CRITICAL: Delete textures that were loaded by ReadFromDataStream->ReloadTexturesFromPaths()
+				// These textures are stored BY VALUE in the material, so we need to find the original
+				// AssetHandler slots by their source paths and delete them
+				m_xCreatedMaterials.Get(u)->DeleteLoadedTextures();
 				Zenith_AssetHandler::DeleteMaterial(m_xCreatedMaterials.Get(u));
 			}
 			for (uint32_t u = 0; u < m_xCreatedMeshes.GetSize(); u++)

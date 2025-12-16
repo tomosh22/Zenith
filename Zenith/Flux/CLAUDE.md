@@ -1293,3 +1293,111 @@ Flux provides a high-performance, platform-agnostic rendering abstraction that:
 - **Maintains flexibility** via render orders and target setups
 
 The architecture is designed for modern GPUs and multi-core CPUs, achieving near-optimal utilization of both.
+---
+
+## Flux Material System (December 2024)
+
+### Overview
+
+`Flux_Material` is the core material class used for rendering. Materials aggregate textures (diffuse, normal, roughness/metallic, occlusion, emissive) and properties (base color).
+
+### Key Files
+
+- **Flux_Material.h** - Material class definition with texture slots and path storage
+- **Flux_Material.cpp** - Serialization (`WriteToDataStream`, `ReadFromDataStream`) and texture reload logic
+- **Flux_MaterialAsset.h/cpp** - Asset management wrapper (registry, caching, .zmat file support)
+
+### Texture Path Storage (Critical for Scene Reload)
+
+**Problem Solved:** Before December 2024, materials only stored GPU texture handles, not file paths. When a scene was reloaded (e.g., pressing Stop in the editor), textures could not be reloaded because the paths were lost.
+
+**Solution:** Materials now store texture source paths alongside GPU handles.
+
+**Implementation:**
+```cpp
+// In Flux_Material.h
+class Flux_Material {
+    // GPU texture handles (for rendering)
+    Flux_Texture m_xDiffuse;
+    Flux_Texture m_xNormal;
+    // ...
+    
+    // Source paths (for serialization/reload)
+    std::string m_strDiffusePath;
+    std::string m_strNormalPath;
+    // ...
+};
+```
+
+**Texture Setter APIs:**
+```cpp
+// Legacy - sets texture only, NO path (avoid for persistent materials)
+void SetDiffuse(const Flux_Texture& xTexture);
+
+// Recommended - sets texture AND path (required for scene reload)
+void SetDiffuseWithPath(const Flux_Texture& xTexture, const std::string& strPath);
+```
+
+**⚠️ CRITICAL:** Always use `SetDiffuseWithPath()` (and similar `WithPath` variants) when setting up materials that need to survive scene serialization. The path MUST match the file used to load the texture.
+
+### Serialization Format (Version 2)
+
+```
+[Version: uint32]           // Currently 2
+[BaseColor: Vector4]        // RGBA
+[DiffusePath: string]       // Empty if no diffuse texture
+[NormalPath: string]
+[RoughnessMetallicPath: string]
+[OcclusionPath: string]
+[EmissivePath: string]
+```
+
+**Backward Compatibility:** Version 1 scenes only have base color; textures won't reload.
+
+### Texture Reload on Deserialization
+
+When `ReadFromDataStream()` reads version 2+, it automatically calls `ReloadTexturesFromPaths()`:
+
+```cpp
+void Flux_Material::ReloadTexturesFromPaths() {
+    if (!m_strDiffusePath.empty()) {
+        TextureData data = Zenith_AssetHandler::LoadTexture2DFromFile(m_strDiffusePath.c_str());
+        if (data.pData) {
+            Flux_Texture* pTex = Zenith_AssetHandler::AddTexture(data);
+            m_xDiffuse = *pTex;
+        }
+    }
+    // ... repeat for other texture slots
+}
+```
+
+### Memory Management (Scene Reload)
+
+**⚠️ CRITICAL BUG FIX (December 2024):**
+
+Textures loaded via `ReloadTexturesFromPaths()` must be tracked for cleanup. Without proper cleanup, reloading a scene repeatedly exhausts the texture pool (`ZENITH_MAX_TEXTURES`).
+
+**Solution:** Components that create materials during deserialization must:
+1. Track created materials with `m_bOwnsMaterials` flag
+2. Track created textures (stored in materials)
+3. Clean up both in destructor
+
+See `Zenith_TerrainComponent` and `Zenith_ModelComponent` for implementation.
+
+### Usage Example
+
+```cpp
+// Creating a material with proper path storage
+void SetupMaterial() {
+    // Load texture
+    auto texData = Zenith_AssetHandler::LoadTexture2DFromFile(ASSETS_ROOT"Textures/rock/diffuse.ztx");
+    Flux_Texture* pTex = Zenith_AssetHandler::AddTexture(texData);
+    texData.FreeAllocatedData();
+    
+    // Create material with path (REQUIRED for scene reload)
+    Flux_Material* pMat = Zenith_AssetHandler::AddMaterial();
+    pMat->SetDiffuseWithPath(*pTex, ASSETS_ROOT"Textures/rock/diffuse.ztx");
+    //                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    //                              Path MUST match the file loaded above!
+}
+```

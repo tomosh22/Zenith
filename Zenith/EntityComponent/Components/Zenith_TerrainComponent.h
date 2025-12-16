@@ -59,6 +59,7 @@ public:
 		, m_pxPhysicsGeometry(nullptr)
 		, m_pxMaterial0(nullptr)
 		, m_pxMaterial1(nullptr)
+		, m_bOwnsMaterials(false)
 		, m_bCullingResourcesInitialized(false)
 	{
 		IncrementInstanceCount();
@@ -150,6 +151,10 @@ public:
 	Flux_MeshGeometry* m_pxPhysicsGeometry = nullptr;
 	Flux_Material* m_pxMaterial0 = nullptr;
 	Flux_Material* m_pxMaterial1 = nullptr;
+	
+	// Ownership tracking: true if materials were created during deserialization
+	// (and their textures need to be cleaned up when the component is destroyed)
+	bool m_bOwnsMaterials = false;
 
 	// ========== Unified Terrain Buffers (owned by this component) ==========
 	// Contains LOD3 (always-resident) data at the beginning, followed by streaming space for LOD0-2
