@@ -37,7 +37,7 @@ int main()
 	//ExportHeightmap();
 
 	Zenith_Profiling::Initialise();
-	Zenith_Multithreading::RegisterThread();
+	Zenith_Multithreading::RegisterThread(true);
 	Zenith_MemoryManagement::Initialise();
 	Zenith_TaskSystem::Inititalise();
 	Zenith_UnitTests::RunAllTests();

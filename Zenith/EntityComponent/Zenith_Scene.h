@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Collections/Zenith_Vector.h"
+#include "Core/Multithreading/Zenith_Multithreading.h"
 #include <atomic>
 #include <mutex>
 
@@ -66,8 +67,9 @@ public:
 			
 			if (!ls_bRegistered && !ls_bInRegistration)
 			{
+				Zenith_Assert(Zenith_Multithreading::IsMainThread(), "TypeIDs must be registered on main thread");
 				ls_bInRegistration = true;
-			T::RegisterWithEditor();
+				T::RegisterWithEditor();
 				ls_bRegistered = true;
 				ls_bInRegistration = false;
 			}

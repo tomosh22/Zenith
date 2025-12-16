@@ -8,13 +8,18 @@ void Zenith_Multithreading::CreateThread(const char* szName, Zenith_ThreadFuncti
 	return Platform_CreateThread(szName, pfnFunc, pUserData);
 }
 
-void Zenith_Multithreading::RegisterThread()
+void Zenith_Multithreading::RegisterThread(const bool bMainThread /*= false*/)
 {
-	Platform_RegisterThread();
+	Platform_RegisterThread(bMainThread);
 	Zenith_Profiling::RegisterThread();
 }
 
 u_int Zenith_Multithreading::GetCurrentThreadID()
 {
 	return Platform_GetCurrentThreadID();
+}
+
+bool Zenith_Multithreading::IsMainThread()
+{
+	return Platform_IsMainThread();
 }

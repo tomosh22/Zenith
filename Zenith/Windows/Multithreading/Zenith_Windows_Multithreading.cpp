@@ -10,6 +10,7 @@
 
 thread_local static char tl_g_acThreadName[Zenith_Multithreading::uMAX_THREAD_NAME_LENGTH]{ 0 };
 thread_local static u_int tl_g_uThreadID = -1;
+static u_int g_uMainThreadID = -1;
 
 Zenith_Windows_Mutex::Zenith_Windows_Mutex()
 {
@@ -107,14 +108,23 @@ void Zenith_Multithreading::Platform_CreateThread(const char* szName, Zenith_Thr
 	CloseHandle(pHandle);
 }
 
-void Zenith_Multithreading::Platform_RegisterThread()
+void Zenith_Multithreading::Platform_RegisterThread(const bool bMainThread)
 {
 	static u_int ls_uThreadID = 0;
 	tl_g_uThreadID = ls_uThreadID++;
+	if (bMainThread)
+	{
+		g_uMainThreadID = tl_g_uThreadID;
+	}
 }
 
 u_int Zenith_Multithreading::Platform_GetCurrentThreadID()
 {
 	Zenith_Assert(tl_g_uThreadID != -1, "This thread hasn't been registered with RegisterThread");
 	return tl_g_uThreadID;
+}
+
+bool Zenith_Multithreading::Platform_IsMainThread()
+{
+	return tl_g_uThreadID == g_uMainThreadID;
 }
