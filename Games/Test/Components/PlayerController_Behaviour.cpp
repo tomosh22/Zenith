@@ -17,7 +17,7 @@ static u_int s_uCurrentBulletIndex = 0;
 
 // Cached assets for bullet spawning (loaded once on first use)
 static Flux_MeshGeometry* s_pxBulletMesh = nullptr;
-static Flux_Material* s_pxBulletMaterial = nullptr;
+static Flux_MaterialAsset* s_pxBulletMaterial = nullptr;
 
 PlayerController_Behaviour::PlayerController_Behaviour(Zenith_Entity& xParentEntity)
 	: m_xParentEntity(xParentEntity)
@@ -77,7 +77,7 @@ void PlayerController_Behaviour::Shoot()
 	if (!s_pxBulletMesh)
 	{
 		s_pxBulletMesh = Zenith_AssetHandler::AddMeshFromFile(ASSETS_ROOT"Meshes/sphereSmooth_Mesh0_Mat0.zmsh");
-		s_pxBulletMaterial = Zenith_AssetHandler::AddMaterial();
+		s_pxBulletMaterial = Flux_MaterialAsset::Create("BulletMaterial");
 	}
 
 	Zenith_Entity& xBulletEntity = s_axBulletEntities[s_uCurrentBulletIndex];

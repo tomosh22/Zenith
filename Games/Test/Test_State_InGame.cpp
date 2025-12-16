@@ -9,7 +9,7 @@
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_TextComponent.h"
 #include "AssetHandling/Zenith_AssetHandler.h"
-#include "Flux/Flux_Material.h"
+#include "Flux/Flux_MaterialAsset.h"
 #include "Flux/MeshAnimation/Flux_MeshAnimation.h"
 #include "Input/Zenith_Input.h"
 
@@ -41,31 +41,31 @@ static Flux_MeshGeometry* s_pxSphereSmoothMesh = nullptr;
 
 static Flux_Texture* s_pxBarrelDiffuse = nullptr;
 static Flux_Texture* s_pxBarrelMetallic = nullptr;
-static Flux_Material* s_pxBarrelMaterial = nullptr;
+static Flux_MaterialAsset* s_pxBarrelMaterial = nullptr;
 
 static Flux_Texture* s_pxCrystalDiffuse = nullptr;
 static Flux_Texture* s_pxCrystalNormal = nullptr;
 static Flux_Texture* s_pxCrystalRoughness = nullptr;
 static Flux_Texture* s_pxCrystalMetallic = nullptr;
-static Flux_Material* s_pxCrystalMaterial = nullptr;
+static Flux_MaterialAsset* s_pxCrystalMaterial = nullptr;
 
 static Flux_Texture* s_pxMuddyGrassDiffuse = nullptr;
 static Flux_Texture* s_pxMuddyGrassNormal = nullptr;
 static Flux_Texture* s_pxMuddyGrassRoughness = nullptr;
 static Flux_Texture* s_pxMuddyGrassMetallic = nullptr;
-static Flux_Material* s_pxMuddyGrassMaterial = nullptr;
+static Flux_MaterialAsset* s_pxMuddyGrassMaterial = nullptr;
 
 static Flux_Texture* s_pxSupplyCrateDiffuse = nullptr;
 static Flux_Texture* s_pxSupplyCrateNormal = nullptr;
 static Flux_Texture* s_pxSupplyCrateRoughness = nullptr;
 static Flux_Texture* s_pxSupplyCrateMetallic = nullptr;
-static Flux_Material* s_pxSupplyCrateMaterial = nullptr;
+static Flux_MaterialAsset* s_pxSupplyCrateMaterial = nullptr;
 
 static Flux_Texture* s_pxRockDiffuse = nullptr;
 static Flux_Texture* s_pxRockNormal = nullptr;
 static Flux_Texture* s_pxRockRoughness = nullptr;
 static Flux_Texture* s_pxRockMetallic = nullptr;
-static Flux_Material* s_pxRockMaterial = nullptr;
+static Flux_MaterialAsset* s_pxRockMaterial = nullptr;
 
 static void LoadAssets()
 {
@@ -84,9 +84,9 @@ static void LoadAssets()
 		s_pxBarrelMetallic = Zenith_AssetHandler::AddTexture(xMetallicData);
 		xMetallicData.FreeAllocatedData();
 
-		s_pxBarrelMaterial = Zenith_AssetHandler::AddMaterial();
-		s_pxBarrelMaterial->SetDiffuseWithPath(*s_pxBarrelDiffuse, ASSETS_ROOT"Meshes/barrel_Diffuse_0.ztx");
-		s_pxBarrelMaterial->SetRoughnessMetallicWithPath(*s_pxBarrelMetallic, ASSETS_ROOT"Meshes/barrel_Shininess_0.ztx");
+		s_pxBarrelMaterial = Flux_MaterialAsset::Create("BarrelMaterial");
+		s_pxBarrelMaterial->SetDiffuseTexturePath(ASSETS_ROOT"Meshes/barrel_Diffuse_0.ztx");
+		s_pxBarrelMaterial->SetRoughnessMetallicTexturePath(ASSETS_ROOT"Meshes/barrel_Shininess_0.ztx");
 	}
 
 	// Crystal material
@@ -107,10 +107,10 @@ static void LoadAssets()
 		s_pxCrystalMetallic = Zenith_AssetHandler::AddTexture(xMetallicData);
 		xMetallicData.FreeAllocatedData();
 
-		s_pxCrystalMaterial = Zenith_AssetHandler::AddMaterial();
-		s_pxCrystalMaterial->SetDiffuseWithPath(*s_pxCrystalDiffuse, ASSETS_ROOT"Textures/crystal2k/diffuse.ztx");
-		s_pxCrystalMaterial->SetNormalWithPath(*s_pxCrystalNormal, ASSETS_ROOT"Textures/crystal2k/normal.ztx");
-		s_pxCrystalMaterial->SetRoughnessMetallicWithPath(*s_pxCrystalRoughness, ASSETS_ROOT"Textures/crystal2k/roughness.ztx");
+		s_pxCrystalMaterial = Flux_MaterialAsset::Create("CrystalMaterial");
+		s_pxCrystalMaterial->SetDiffuseTexturePath(ASSETS_ROOT"Textures/crystal2k/diffuse.ztx");
+		s_pxCrystalMaterial->SetNormalTexturePath(ASSETS_ROOT"Textures/crystal2k/normal.ztx");
+		s_pxCrystalMaterial->SetRoughnessMetallicTexturePath(ASSETS_ROOT"Textures/crystal2k/roughness.ztx");
 	}
 
 	// MuddyGrass material
@@ -131,10 +131,10 @@ static void LoadAssets()
 		s_pxMuddyGrassMetallic = Zenith_AssetHandler::AddTexture(xMetallicData);
 		xMetallicData.FreeAllocatedData();
 
-		s_pxMuddyGrassMaterial = Zenith_AssetHandler::AddMaterial();
-		s_pxMuddyGrassMaterial->SetDiffuseWithPath(*s_pxMuddyGrassDiffuse, ASSETS_ROOT"Textures/muddyGrass2k/diffuse.ztx");
-		s_pxMuddyGrassMaterial->SetNormalWithPath(*s_pxMuddyGrassNormal, ASSETS_ROOT"Textures/muddyGrass2k/normal.ztx");
-		s_pxMuddyGrassMaterial->SetRoughnessMetallicWithPath(*s_pxMuddyGrassRoughness, ASSETS_ROOT"Textures/muddyGrass2k/roughness.ztx");
+		s_pxMuddyGrassMaterial = Flux_MaterialAsset::Create("MuddyGrassMaterial");
+		s_pxMuddyGrassMaterial->SetDiffuseTexturePath(ASSETS_ROOT"Textures/muddyGrass2k/diffuse.ztx");
+		s_pxMuddyGrassMaterial->SetNormalTexturePath(ASSETS_ROOT"Textures/muddyGrass2k/normal.ztx");
+		s_pxMuddyGrassMaterial->SetRoughnessMetallicTexturePath(ASSETS_ROOT"Textures/muddyGrass2k/roughness.ztx");
 	}
 
 	// SupplyCrate material
@@ -155,10 +155,10 @@ static void LoadAssets()
 		s_pxSupplyCrateMetallic = Zenith_AssetHandler::AddTexture(xMetallicData);
 		xMetallicData.FreeAllocatedData();
 
-		s_pxSupplyCrateMaterial = Zenith_AssetHandler::AddMaterial();
-		s_pxSupplyCrateMaterial->SetDiffuseWithPath(*s_pxSupplyCrateDiffuse, ASSETS_ROOT"Textures/supplyCrate2k/diffuse.ztx");
-		s_pxSupplyCrateMaterial->SetNormalWithPath(*s_pxSupplyCrateNormal, ASSETS_ROOT"Textures/supplyCrate2k/normal.ztx");
-		s_pxSupplyCrateMaterial->SetRoughnessMetallicWithPath(*s_pxSupplyCrateRoughness, ASSETS_ROOT"Textures/supplyCrate2k/roughness.ztx");
+		s_pxSupplyCrateMaterial = Flux_MaterialAsset::Create("SupplyCrateMaterial");
+		s_pxSupplyCrateMaterial->SetDiffuseTexturePath(ASSETS_ROOT"Textures/supplyCrate2k/diffuse.ztx");
+		s_pxSupplyCrateMaterial->SetNormalTexturePath(ASSETS_ROOT"Textures/supplyCrate2k/normal.ztx");
+		s_pxSupplyCrateMaterial->SetRoughnessMetallicTexturePath(ASSETS_ROOT"Textures/supplyCrate2k/roughness.ztx");
 	}
 
 	// Rock material
@@ -179,10 +179,10 @@ static void LoadAssets()
 		s_pxRockMetallic = Zenith_AssetHandler::AddTexture(xMetallicData);
 		xMetallicData.FreeAllocatedData();
 
-		s_pxRockMaterial = Zenith_AssetHandler::AddMaterial();
-		s_pxRockMaterial->SetDiffuseWithPath(*s_pxRockDiffuse, ASSETS_ROOT"Textures/rock2k/diffuse.ztx");
-		s_pxRockMaterial->SetNormalWithPath(*s_pxRockNormal, ASSETS_ROOT"Textures/rock2k/normal.ztx");
-		s_pxRockMaterial->SetRoughnessMetallicWithPath(*s_pxRockRoughness, ASSETS_ROOT"Textures/rock2k/roughness.ztx");
+		s_pxRockMaterial = Flux_MaterialAsset::Create("RockMaterial");
+		s_pxRockMaterial->SetDiffuseTexturePath(ASSETS_ROOT"Textures/rock2k/diffuse.ztx");
+		s_pxRockMaterial->SetNormalTexturePath(ASSETS_ROOT"Textures/rock2k/normal.ztx");
+		s_pxRockMaterial->SetRoughnessMetallicTexturePath(ASSETS_ROOT"Textures/rock2k/roughness.ztx");
 	}
 }
 
@@ -394,35 +394,35 @@ void Test_State_InGame::OnExit()
 	// Delete barrel assets
 	Zenith_AssetHandler::DeleteTexture(s_pxBarrelDiffuse);
 	Zenith_AssetHandler::DeleteTexture(s_pxBarrelMetallic);
-	Zenith_AssetHandler::DeleteMaterial(s_pxBarrelMaterial);
+	delete s_pxBarrelMaterial;
 
 	// Delete crystal assets
 	Zenith_AssetHandler::DeleteTexture(s_pxCrystalDiffuse);
 	Zenith_AssetHandler::DeleteTexture(s_pxCrystalNormal);
 	Zenith_AssetHandler::DeleteTexture(s_pxCrystalRoughness);
 	Zenith_AssetHandler::DeleteTexture(s_pxCrystalMetallic);
-	Zenith_AssetHandler::DeleteMaterial(s_pxCrystalMaterial);
+	delete s_pxCrystalMaterial;
 
 	// Delete muddy grass assets
 	Zenith_AssetHandler::DeleteTexture(s_pxMuddyGrassDiffuse);
 	Zenith_AssetHandler::DeleteTexture(s_pxMuddyGrassNormal);
 	Zenith_AssetHandler::DeleteTexture(s_pxMuddyGrassRoughness);
 	Zenith_AssetHandler::DeleteTexture(s_pxMuddyGrassMetallic);
-	Zenith_AssetHandler::DeleteMaterial(s_pxMuddyGrassMaterial);
+	delete s_pxMuddyGrassMaterial;
 
 	// Delete supply crate assets
 	Zenith_AssetHandler::DeleteTexture(s_pxSupplyCrateDiffuse);
 	Zenith_AssetHandler::DeleteTexture(s_pxSupplyCrateNormal);
 	Zenith_AssetHandler::DeleteTexture(s_pxSupplyCrateRoughness);
 	Zenith_AssetHandler::DeleteTexture(s_pxSupplyCrateMetallic);
-	Zenith_AssetHandler::DeleteMaterial(s_pxSupplyCrateMaterial);
+	delete s_pxSupplyCrateMaterial;
 
 	// Delete rock assets
 	Zenith_AssetHandler::DeleteTexture(s_pxRockDiffuse);
 	Zenith_AssetHandler::DeleteTexture(s_pxRockNormal);
 	Zenith_AssetHandler::DeleteTexture(s_pxRockRoughness);
 	Zenith_AssetHandler::DeleteTexture(s_pxRockMetallic);
-	Zenith_AssetHandler::DeleteMaterial(s_pxRockMaterial);
+	delete s_pxRockMaterial;
 
 	// Clear pointers
 	s_pxBarrelMesh = nullptr;

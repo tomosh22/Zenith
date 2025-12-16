@@ -151,15 +151,15 @@ void Flux_AnimatedMeshes::RenderToGBuffer(void*)
 			Zenith_Maths::Matrix4 xModelMatrix;
 			pxModel->GetParentEntity().GetComponent<Zenith_TransformComponent>().BuildModelMatrix(xModelMatrix);
 			g_xCommandList.AddCommand<Flux_CommandPushConstant>(&xModelMatrix, sizeof(xModelMatrix));
-			const Flux_Material& xMaterial = pxModel->GetMaterialAtIndex(uMesh);
+			Flux_MaterialAsset& xMaterial = pxModel->GetMaterialAtIndex(uMesh);
 
 			g_xCommandList.AddCommand<Flux_CommandBindCBV>(&xMesh.m_pxAnimation->m_xBoneBuffer.GetCBV(), 0);
 
-			g_xCommandList.AddCommand<Flux_CommandBindSRV>(&xMaterial.GetDiffuse()->m_xSRV, 1);
-			g_xCommandList.AddCommand<Flux_CommandBindSRV>(&xMaterial.GetNormal()->m_xSRV, 2);
-			g_xCommandList.AddCommand<Flux_CommandBindSRV>(&xMaterial.GetRoughnessMetallic()->m_xSRV, 3);
-			g_xCommandList.AddCommand<Flux_CommandBindSRV>(&xMaterial.GetOcclusion()->m_xSRV, 4);
-			g_xCommandList.AddCommand<Flux_CommandBindSRV>(&xMaterial.GetEmissive()->m_xSRV, 5);
+			g_xCommandList.AddCommand<Flux_CommandBindSRV>(&xMaterial.GetDiffuseTexture()->m_xSRV, 1);
+			g_xCommandList.AddCommand<Flux_CommandBindSRV>(&xMaterial.GetNormalTexture()->m_xSRV, 2);
+			g_xCommandList.AddCommand<Flux_CommandBindSRV>(&xMaterial.GetRoughnessMetallicTexture()->m_xSRV, 3);
+			g_xCommandList.AddCommand<Flux_CommandBindSRV>(&xMaterial.GetOcclusionTexture()->m_xSRV, 4);
+			g_xCommandList.AddCommand<Flux_CommandBindSRV>(&xMaterial.GetEmissiveTexture()->m_xSRV, 5);
 
 			g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(xMesh.GetNumIndices());
 		}

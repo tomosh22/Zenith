@@ -1,6 +1,5 @@
 #include "Zenith.h"
 #include "Flux/Flux_MaterialAsset.h"
-#include "Flux/Flux_Material.h"
 #include "Flux/Flux_Graphics.h"
 #include "AssetHandling/Zenith_AssetHandler.h"
 #include "DataStream/Zenith_DataStream.h"
@@ -450,36 +449,4 @@ void Flux_MaterialAsset::ReadFromDataStream(Zenith_DataStream& xStream)
 	
 	// Clear cached textures so they reload from new paths
 	UnloadTextures();
-}
-
-//------------------------------------------------------------------------------
-// Legacy Compatibility
-//------------------------------------------------------------------------------
-
-void Flux_MaterialAsset::PopulateLegacyMaterial(Flux_Material& xOutMaterial) const
-{
-	xOutMaterial.Reset();
-	xOutMaterial.SetBaseColor(m_xBaseColor);
-	
-	// Copy texture references (must be const_cast as legacy API takes non-const)
-	if (m_pxDiffuseTexture)
-	{
-		xOutMaterial.SetDiffuse(*m_pxDiffuseTexture);
-	}
-	if (m_pxNormalTexture)
-	{
-		xOutMaterial.SetNormal(*m_pxNormalTexture);
-	}
-	if (m_pxRoughnessMetallicTexture)
-	{
-		xOutMaterial.SetRoughnessMetallic(*m_pxRoughnessMetallicTexture);
-	}
-	if (m_pxOcclusionTexture)
-	{
-		xOutMaterial.SetOcclusion(*m_pxOcclusionTexture);
-	}
-	if (m_pxEmissiveTexture)
-	{
-		xOutMaterial.SetEmissive(*m_pxEmissiveTexture);
-	}
 }

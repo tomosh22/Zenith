@@ -23,7 +23,7 @@ Flux_DynamicConstantBuffer Flux_Graphics::s_xFrameConstantsBuffer;
 Flux_Texture Flux_Graphics::s_xWhiteBlankTexture2D;
 Flux_Texture Flux_Graphics::s_xBlackBlankTexture2D;
 Flux_MeshGeometry Flux_Graphics::s_xBlankMesh;
-Flux_Material* Flux_Graphics::s_pxBlankMaterial;
+Flux_MaterialAsset* Flux_Graphics::s_pxBlankMaterial;
 Flux_Texture* Flux_Graphics::s_pxCubemapTexture = nullptr;
 Flux_Texture* Flux_Graphics::s_pxWaterNormalTexture = nullptr;
 Flux_Graphics::FrameConstants Flux_Graphics::s_xFrameConstants;
@@ -79,7 +79,13 @@ void Flux_Graphics::Initialise()
 	Flux_Texture* pxBlackTex = Zenith_AssetHandler::AddTexture(xBlackTexData);
 	if (pxBlackTex) s_xBlackBlankTexture2D = *pxBlackTex;
 
-	s_pxBlankMaterial = Zenith_AssetHandler::AddMaterial();
+	// Create blank material for use as fallback throughout the engine
+	s_pxBlankMaterial = Flux_MaterialAsset::Create("BlankMaterial");
+	// Ensure it has white textures set
+	if (s_pxBlankMaterial)
+	{
+		// Material will use blank white textures by default (GetXXXTexture returns blank if path not set)
+	}
 
 	Flux_MeshGeometry::GenerateFullscreenQuad(s_xQuadMesh);
 	Flux_MemoryManager::InitialiseVertexBuffer(s_xQuadMesh.GetVertexData(), s_xQuadMesh.GetVertexDataSize(), s_xQuadMesh.GetVertexBuffer());

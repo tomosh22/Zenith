@@ -1,7 +1,7 @@
 #pragma once
 #include "Flux/Flux.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
-#include "Flux/Flux_Material.h"
+#include "Flux/Flux_MaterialAsset.h"
 
 /**
  * Zenith_AssetHandler - Raw Pointer-Based Asset Management
@@ -113,11 +113,8 @@ public:
 	 */
 	static Flux_MeshGeometry* GetMeshByPath(const std::string& strPath);
 
-	/**
-	 * Creates an empty material
-	 * @return Raw pointer to the created material, or nullptr on failure
-	 */
-	static Flux_Material* AddMaterial();
+	// NOTE: Materials are now managed by Flux_MaterialAsset::Create() and its static registry
+	// Material creation/deletion has been moved to Flux_MaterialAsset for better lifecycle management
 
 	//--------------------------------------------------------------------------
 	// Asset Deletion - By pointer
@@ -149,19 +146,6 @@ public:
 	 */
 	static void DeleteMesh(Flux_MeshGeometry* pxMesh);
 
-	/**
-	 * Deletes a material and returns its slot to the pool
-	 * @param pxMaterial Pointer to the material to delete
-	 */
-	static void DeleteMaterial(Flux_Material* pxMaterial);
-
-	/**
-	 * Finds a material by its diffuse texture path (for reuse instead of creating duplicates)
-	 * @param strDiffusePath Diffuse texture path to search for
-	 * @return Pointer to material if found, nullptr otherwise
-	 */
-	static Flux_Material* GetMaterialByDiffusePath(const std::string& strDiffusePath);
-
 	//--------------------------------------------------------------------------
 	// Bulk Operations
 	//--------------------------------------------------------------------------
@@ -187,7 +171,6 @@ public:
 	 */
 	static uint32_t GetActiveTextureCount();
 	static uint32_t GetActiveMeshCount();
-	static uint32_t GetActiveMaterialCount();
 
 	/**
 	 * Log all active assets (for debugging memory leaks)
@@ -203,28 +186,23 @@ public:
 	 */
 	static bool IsValidTexture(const Flux_Texture* pxTexture);
 	static bool IsValidMesh(const Flux_MeshGeometry* pxMesh);
-	static bool IsValidMaterial(const Flux_Material* pxMaterial);
 
 private:
 	// Asset pools - fixed-size arrays for all assets
 	static Flux_Texture* s_pxTextures;          // Array of ZENITH_MAX_TEXTURES
 	static Flux_MeshGeometry* s_pxMeshes;       // Array of ZENITH_MAX_MESHES
-	static Flux_Material* s_pxMaterials;        // Array of ZENITH_MAX_MATERIALS
 
 	// Track which slots are in use (no string keys, just ID sets)
 	static std::unordered_set<AssetID> s_xUsedTextureIDs;
 	static std::unordered_set<AssetID> s_xUsedMeshIDs;
-	static std::unordered_set<AssetID> s_xUsedMaterialIDs;
 
 	// Slot allocation helpers
 	static AssetID GetNextFreeTextureSlot();
 	static AssetID GetNextFreeMeshSlot();
-	static AssetID GetNextFreeMaterialSlot();
 
 	// Pointer-to-ID conversion (for deletion)
 	static AssetID GetIDFromTexturePointer(const Flux_Texture* pxTexture);
 	static AssetID GetIDFromMeshPointer(const Flux_MeshGeometry* pxMesh);
-	static AssetID GetIDFromMaterialPointer(const Flux_Material* pxMaterial);
 
 	// Lifecycle logging flag
 	static bool s_bLifecycleLoggingEnabled;

@@ -324,16 +324,16 @@ void Flux_Terrain::RenderToGBuffer(void*)
 		// Bind materials (set 1)
 		g_xTerrainCommandList.AddCommand<Flux_CommandBeginBind>(1);
 
-		const Flux_Material& xMaterial0 = pxTerrain->GetMaterial0();
-		const Flux_Material& xMaterial1 = pxTerrain->GetMaterial1();
+		Flux_MaterialAsset& xMaterial0 = pxTerrain->GetMaterial0();
+		Flux_MaterialAsset& xMaterial1 = pxTerrain->GetMaterial1();
 
-		g_xTerrainCommandList.AddCommand<Flux_CommandBindSRV>(&xMaterial0.GetDiffuse()->m_xSRV, 0);
-		g_xTerrainCommandList.AddCommand<Flux_CommandBindSRV>(&xMaterial0.GetNormal()->m_xSRV, 1);
-		g_xTerrainCommandList.AddCommand<Flux_CommandBindSRV>(&xMaterial0.GetRoughnessMetallic()->m_xSRV, 2);
+		g_xTerrainCommandList.AddCommand<Flux_CommandBindSRV>(&xMaterial0.GetDiffuseTexture()->m_xSRV, 0);
+		g_xTerrainCommandList.AddCommand<Flux_CommandBindSRV>(&xMaterial0.GetNormalTexture()->m_xSRV, 1);
+		g_xTerrainCommandList.AddCommand<Flux_CommandBindSRV>(&xMaterial0.GetRoughnessMetallicTexture()->m_xSRV, 2);
 
-		g_xTerrainCommandList.AddCommand<Flux_CommandBindSRV>(&xMaterial1.GetDiffuse()->m_xSRV, 3);
-		g_xTerrainCommandList.AddCommand<Flux_CommandBindSRV>(&xMaterial1.GetNormal()->m_xSRV, 4);
-		g_xTerrainCommandList.AddCommand<Flux_CommandBindSRV>(&xMaterial1.GetRoughnessMetallic()->m_xSRV, 5);
+		g_xTerrainCommandList.AddCommand<Flux_CommandBindSRV>(&xMaterial1.GetDiffuseTexture()->m_xSRV, 3);
+		g_xTerrainCommandList.AddCommand<Flux_CommandBindSRV>(&xMaterial1.GetNormalTexture()->m_xSRV, 4);
+		g_xTerrainCommandList.AddCommand<Flux_CommandBindSRV>(&xMaterial1.GetRoughnessMetallicTexture()->m_xSRV, 5);
 
 		// GPU-driven indirect rendering with front-to-back sorted visible chunks
 		// Each component uses its own indirect draw buffer and visible count buffer

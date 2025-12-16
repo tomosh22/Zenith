@@ -31,7 +31,7 @@ public:
 	static Flux_Texture s_xBlackBlankTexture2D;
 	
 	static Flux_MeshGeometry s_xBlankMesh;
-	static class Flux_Material* s_pxBlankMaterial;
+	static class Flux_MaterialAsset* s_pxBlankMaterial;
 
 	// Global engine textures (set during initialization in Zenith_Main.cpp)
 	static Flux_Texture* s_pxCubemapTexture;

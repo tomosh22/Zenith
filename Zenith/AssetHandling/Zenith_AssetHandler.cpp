@@ -5,12 +5,10 @@
 // Asset pools - fixed-size arrays
 Flux_Texture* Zenith_AssetHandler::s_pxTextures = new Flux_Texture[ZENITH_MAX_TEXTURES];
 Flux_MeshGeometry* Zenith_AssetHandler::s_pxMeshes = new Flux_MeshGeometry[ZENITH_MAX_MESHES];
-Flux_Material* Zenith_AssetHandler::s_pxMaterials = new Flux_Material[ZENITH_MAX_MATERIALS];
 
 // Used slot tracking (no string keys)
 std::unordered_set<Zenith_AssetHandler::AssetID> Zenith_AssetHandler::s_xUsedTextureIDs;
 std::unordered_set<Zenith_AssetHandler::AssetID> Zenith_AssetHandler::s_xUsedMeshIDs;
-std::unordered_set<Zenith_AssetHandler::AssetID> Zenith_AssetHandler::s_xUsedMaterialIDs;
 
 // Lifecycle logging
 bool Zenith_AssetHandler::s_bLifecycleLoggingEnabled = false;
@@ -429,73 +427,6 @@ void Zenith_AssetHandler::DeleteMesh(Flux_MeshGeometry* pxMesh)
 }
 
 //------------------------------------------------------------------------------
-// Material Creation and Deletion
-//------------------------------------------------------------------------------
-Flux_Material* Zenith_AssetHandler::AddMaterial()
-{
-	AssetID uID = GetNextFreeMaterialSlot();
-	if (uID == INVALID_ASSET_ID)
-	{
-		Zenith_Log("%s ERROR: Failed to allocate material - pool exhausted", ASSET_LOG_TAG);
-		return nullptr;
-	}
-
-	Flux_Material* pxMaterial = &s_pxMaterials[uID];
-	s_xUsedMaterialIDs.insert(uID);
-	LogAssetCreation("Material", uID, pxMaterial);
-
-	return pxMaterial;
-}
-
-void Zenith_AssetHandler::DeleteMaterial(Flux_Material* pxMaterial)
-{
-	if (!pxMaterial)
-	{
-		Zenith_Log("%s WARNING: Attempted to delete null material", ASSET_LOG_TAG);
-		return;
-	}
-
-	AssetID uID = GetIDFromMaterialPointer(pxMaterial);
-	if (uID == INVALID_ASSET_ID)
-	{
-		Zenith_Log("%s ERROR: Invalid material pointer in DeleteMaterial", ASSET_LOG_TAG);
-		return;
-	}
-
-	if (s_xUsedMaterialIDs.find(uID) == s_xUsedMaterialIDs.end())
-	{
-		Zenith_Log("%s WARNING: Material ID %u not in use", ASSET_LOG_TAG, uID);
-		return;
-	}
-
-	LogAssetDeletion("Material", uID, pxMaterial);
-
-	pxMaterial->Reset();
-
-	s_xUsedMaterialIDs.erase(uID);
-}
-
-Flux_Material* Zenith_AssetHandler::GetMaterialByDiffusePath(const std::string& strDiffusePath)
-{
-	if (strDiffusePath.empty())
-	{
-		return nullptr;
-	}
-
-	// Search for material with matching diffuse texture path
-	for (AssetID uID : s_xUsedMaterialIDs)
-	{
-		Flux_Material* pxMaterial = &s_pxMaterials[uID];
-		if (pxMaterial->GetDiffusePath() == strDiffusePath)
-		{
-			return pxMaterial;
-		}
-	}
-
-	return nullptr;
-}
-
-//------------------------------------------------------------------------------
 // Bulk Operations
 //------------------------------------------------------------------------------
 void Zenith_AssetHandler::DestroyAllAssets()
@@ -505,7 +436,6 @@ void Zenith_AssetHandler::DestroyAllAssets()
 	// Copy the sets because deletion modifies them
 	std::unordered_set<AssetID> xTexturesToDelete = s_xUsedTextureIDs;
 	std::unordered_set<AssetID> xMeshesToDelete = s_xUsedMeshIDs;
-	std::unordered_set<AssetID> xMaterialsToDelete = s_xUsedMaterialIDs;
 
 	for (AssetID uID : xTexturesToDelete)
 	{
@@ -517,10 +447,8 @@ void Zenith_AssetHandler::DestroyAllAssets()
 		DeleteMesh(&s_pxMeshes[uID]);
 	}
 
-	for (AssetID uID : xMaterialsToDelete)
-	{
-		DeleteMaterial(&s_pxMaterials[uID]);
-	}
+	// Materials are now managed by Flux_MaterialAsset::UnloadAll()
+	Flux_MaterialAsset::UnloadAll();
 
 	Zenith_Log("%s All assets destroyed", ASSET_LOG_TAG);
 }
@@ -544,17 +472,11 @@ uint32_t Zenith_AssetHandler::GetActiveMeshCount()
 	return static_cast<uint32_t>(s_xUsedMeshIDs.size());
 }
 
-uint32_t Zenith_AssetHandler::GetActiveMaterialCount()
-{
-	return static_cast<uint32_t>(s_xUsedMaterialIDs.size());
-}
-
 void Zenith_AssetHandler::LogActiveAssets()
 {
 	Zenith_Log("%s Active Asset Summary:", ASSET_LOG_TAG);
 	Zenith_Log("%s   Textures: %u", ASSET_LOG_TAG, GetActiveTextureCount());
 	Zenith_Log("%s   Meshes: %u", ASSET_LOG_TAG, GetActiveMeshCount());
-	Zenith_Log("%s   Materials: %u", ASSET_LOG_TAG, GetActiveMaterialCount());
 
 	if (s_bLifecycleLoggingEnabled)
 	{
@@ -571,13 +493,12 @@ void Zenith_AssetHandler::LogActiveAssets()
 			Zenith_Log("%s   ID=%u, ptr=%p, source=%s", ASSET_LOG_TAG, uID, pxMesh,
 				pxMesh->m_strSourcePath.empty() ? "(procedural)" : pxMesh->m_strSourcePath.c_str());
 		}
-
-		Zenith_Log("%s Active Material IDs:", ASSET_LOG_TAG);
-		for (AssetID uID : s_xUsedMaterialIDs)
-		{
-			Zenith_Log("%s   ID=%u, ptr=%p", ASSET_LOG_TAG, uID, &s_pxMaterials[uID]);
-		}
 	}
+
+	// Material logging is now handled by Flux_MaterialAsset
+	std::vector<std::string> xMaterialPaths;
+	Flux_MaterialAsset::GetAllLoadedMaterialPaths(xMaterialPaths);
+	Zenith_Log("%s   Materials (Flux_MaterialAsset): %u", ASSET_LOG_TAG, (uint32_t)xMaterialPaths.size());
 }
 
 //------------------------------------------------------------------------------
@@ -595,13 +516,6 @@ bool Zenith_AssetHandler::IsValidMesh(const Flux_MeshGeometry* pxMesh)
 	if (!pxMesh) return false;
 	AssetID uID = GetIDFromMeshPointer(pxMesh);
 	return uID != INVALID_ASSET_ID && s_xUsedMeshIDs.find(uID) != s_xUsedMeshIDs.end();
-}
-
-bool Zenith_AssetHandler::IsValidMaterial(const Flux_Material* pxMaterial)
-{
-	if (!pxMaterial) return false;
-	AssetID uID = GetIDFromMaterialPointer(pxMaterial);
-	return uID != INVALID_ASSET_ID && s_xUsedMaterialIDs.find(uID) != s_xUsedMaterialIDs.end();
 }
 
 //------------------------------------------------------------------------------
@@ -633,19 +547,6 @@ Zenith_AssetHandler::AssetID Zenith_AssetHandler::GetNextFreeMeshSlot()
 	return INVALID_ASSET_ID;
 }
 
-Zenith_AssetHandler::AssetID Zenith_AssetHandler::GetNextFreeMaterialSlot()
-{
-	for (AssetID u = 0; u < ZENITH_MAX_MATERIALS; u++)
-	{
-		if (s_xUsedMaterialIDs.find(u) == s_xUsedMaterialIDs.end())
-		{
-			return u;
-		}
-	}
-	Zenith_Assert(false, "Run out of material slots");
-	return INVALID_ASSET_ID;
-}
-
 //------------------------------------------------------------------------------
 // Pointer-to-ID Conversion
 //------------------------------------------------------------------------------
@@ -673,17 +574,4 @@ Zenith_AssetHandler::AssetID Zenith_AssetHandler::GetIDFromMeshPointer(const Flu
 	}
 
 	return static_cast<AssetID>(pxMesh - s_pxMeshes);
-}
-
-Zenith_AssetHandler::AssetID Zenith_AssetHandler::GetIDFromMaterialPointer(const Flux_Material* pxMaterial)
-{
-	if (!pxMaterial) return INVALID_ASSET_ID;
-
-	// Check if pointer is within the material array bounds
-	if (pxMaterial < s_pxMaterials || pxMaterial >= s_pxMaterials + ZENITH_MAX_MATERIALS)
-	{
-		return INVALID_ASSET_ID;
-	}
-
-	return static_cast<AssetID>(pxMaterial - s_pxMaterials);
 }

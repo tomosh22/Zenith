@@ -39,7 +39,7 @@ void Zenith_TerrainComponent::DecrementInstanceCount()
 	}
 }
 
-Zenith_TerrainComponent::Zenith_TerrainComponent(Flux_Material& xMaterial0, Flux_Material& xMaterial1, Zenith_Entity& xEntity)
+Zenith_TerrainComponent::Zenith_TerrainComponent(Flux_MaterialAsset& xMaterial0, Flux_MaterialAsset& xMaterial1, Zenith_Entity& xEntity)
 	: m_pxMaterial0(&xMaterial0)
 	, m_pxMaterial1(&xMaterial1)
 	, m_bCullingResourcesInitialized(false)
@@ -288,22 +288,21 @@ Zenith_TerrainComponent::~Zenith_TerrainComponent()
 
 	Zenith_AssetHandler::DeleteMesh(m_pxPhysicsGeometry);
 	
-	// Clean up materials and textures if we own them (created during deserialization)
+	// Clean up materials if we own them (created during deserialization)
 	if (m_bOwnsMaterials)
 	{
-		Zenith_Log("Zenith_TerrainComponent - Cleaning up owned materials and textures");
-		
-		// Delete textures loaded by materials before deleting materials themselves
+		Zenith_Log("Zenith_TerrainComponent - Cleaning up owned materials");
+
+		// Flux_MaterialAsset manages its own lifecycle
+		// We just need to delete the instances
 		if (m_pxMaterial0)
 		{
-			m_pxMaterial0->DeleteLoadedTextures();
-			Zenith_AssetHandler::DeleteMaterial(m_pxMaterial0);
+			delete m_pxMaterial0;
 			m_pxMaterial0 = nullptr;
 		}
 		if (m_pxMaterial1)
 		{
-			m_pxMaterial1->DeleteLoadedTextures();
-			Zenith_AssetHandler::DeleteMaterial(m_pxMaterial1);
+			delete m_pxMaterial1;
 			m_pxMaterial1 = nullptr;
 		}
 	}
@@ -330,18 +329,20 @@ void Zenith_TerrainComponent::WriteToDataStream(Zenith_DataStream& xStream) cons
 	}
 	else
 	{
-		Flux_Material xEmptyMat;
-		xEmptyMat.WriteToDataStream(xStream);
+		Flux_MaterialAsset* pxEmptyMat = Flux_MaterialAsset::Create("Empty");
+		pxEmptyMat->WriteToDataStream(xStream);
+		delete pxEmptyMat;
 	}
-	
+
 	if (m_pxMaterial1)
 	{
 		m_pxMaterial1->WriteToDataStream(xStream);
 	}
 	else
 	{
-		Flux_Material xEmptyMat;
-		xEmptyMat.WriteToDataStream(xStream);
+		Flux_MaterialAsset* pxEmptyMat = Flux_MaterialAsset::Create("Empty");
+		pxEmptyMat->WriteToDataStream(xStream);
+		delete pxEmptyMat;
 	}
 }
 
@@ -415,12 +416,12 @@ void Zenith_TerrainComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 	if (uVersion >= 2)
 	{
 		// Create fresh materials
-		m_pxMaterial0 = Zenith_AssetHandler::AddMaterial();
-		m_pxMaterial1 = Zenith_AssetHandler::AddMaterial();
-		
+		m_pxMaterial0 = Flux_MaterialAsset::Create("Terrain_Material0");
+		m_pxMaterial1 = Flux_MaterialAsset::Create("Terrain_Material1");
+
 		// Mark that we own these materials and their textures need cleanup
 		m_bOwnsMaterials = true;
-		
+
 		// Read material data (this will also load textures from paths)
 		if (m_pxMaterial0)
 		{
@@ -429,18 +430,20 @@ void Zenith_TerrainComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 		else
 		{
 			// Skip material data if we couldn't create material
-			Flux_Material xTempMat;
-			xTempMat.ReadFromDataStream(xStream);
+			Flux_MaterialAsset* pxTempMat = Flux_MaterialAsset::Create("Temp");
+			pxTempMat->ReadFromDataStream(xStream);
+			delete pxTempMat;
 		}
-		
+
 		if (m_pxMaterial1)
 		{
 			m_pxMaterial1->ReadFromDataStream(xStream);
 		}
 		else
 		{
-			Flux_Material xTempMat;
-			xTempMat.ReadFromDataStream(xStream);
+			Flux_MaterialAsset* pxTempMat = Flux_MaterialAsset::Create("Temp");
+			pxTempMat->ReadFromDataStream(xStream);
+			delete pxTempMat;
 		}
 	}
 	else
@@ -472,13 +475,13 @@ void Zenith_TerrainComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 	// Note: This takes several seconds to load and combine all LOD3 meshes, which is expected
 	// when loading a scene
 	Zenith_Log("Terrain deserialization: Initializing render resources...");
-	
+
 	// Use blank material as fallback if materials not provided
 	// This ensures terrain is visible (though with default textures) rather than invisible
 	// The game code can set proper materials after scene load if needed
-	Flux_Material* pxMat0 = m_pxMaterial0 ? m_pxMaterial0 : Flux_Graphics::s_pxBlankMaterial;
-	Flux_Material* pxMat1 = m_pxMaterial1 ? m_pxMaterial1 : Flux_Graphics::s_pxBlankMaterial;
-	
+	Flux_MaterialAsset* pxMat0 = m_pxMaterial0 ? m_pxMaterial0 : Flux_Graphics::s_pxBlankMaterial;
+	Flux_MaterialAsset* pxMat1 = m_pxMaterial1 ? m_pxMaterial1 : Flux_Graphics::s_pxBlankMaterial;
+
 	if (pxMat0 && pxMat1)
 	{
 		InitializeRenderResources(*pxMat0, *pxMat1);
@@ -492,7 +495,7 @@ void Zenith_TerrainComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 
 // ========== Render Resources Initialization ==========
 
-void Zenith_TerrainComponent::InitializeRenderResources(Flux_Material& xMaterial0, Flux_Material& xMaterial1)
+void Zenith_TerrainComponent::InitializeRenderResources(Flux_MaterialAsset& xMaterial0, Flux_MaterialAsset& xMaterial1)
 {
 	// Ensure streaming manager is initialized (may have been shut down after previous terrain was destroyed)
 	if (!Flux_TerrainStreamingManager::IsInitialized())

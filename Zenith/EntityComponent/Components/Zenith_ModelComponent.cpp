@@ -36,16 +36,17 @@ void Zenith_ModelComponent::WriteToDataStream(Zenith_DataStream& xStream) const
 		std::string strMeshPath = xEntry.m_pxGeometry ? xEntry.m_pxGeometry->m_strSourcePath : "";
 		xStream << strMeshPath;
 
-		// Serialize the entire material (includes base color AND texture paths)
+		// Serialize the entire material (Flux_MaterialAsset has WriteToDataStream)
 		if (xEntry.m_pxMaterial)
 		{
 			xEntry.m_pxMaterial->WriteToDataStream(xStream);
 		}
 		else
 		{
-			// Write empty material
-			Flux_Material xEmptyMat;
-			xEmptyMat.WriteToDataStream(xStream);
+			// Write empty material - create a temporary one
+			Flux_MaterialAsset* pxEmptyMat = Flux_MaterialAsset::Create("Empty");
+			pxEmptyMat->WriteToDataStream(xStream);
+			delete pxEmptyMat;
 		}
 
 		// Serialize animation path if animation exists
@@ -92,7 +93,7 @@ void Zenith_ModelComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 					m_xCreatedMeshes.PushBack(pxMesh);
 
 					// Create a new material and read its data (including texture paths)
-					Flux_Material* pxMaterial = Zenith_AssetHandler::AddMaterial();
+					Flux_MaterialAsset* pxMaterial = Flux_MaterialAsset::Create("Material_Deserialized");
 					if (pxMaterial)
 					{
 						m_xCreatedMaterials.PushBack(pxMaterial);
@@ -103,8 +104,9 @@ void Zenith_ModelComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 					{
 						Zenith_Log("[ModelComponent] Failed to create material during deserialization");
 						// Still need to read material data to advance stream
-						Flux_Material xTempMat;
-						xTempMat.ReadFromDataStream(xStream);
+						Flux_MaterialAsset* pxTempMat = Flux_MaterialAsset::Create("Temp");
+						pxTempMat->ReadFromDataStream(xStream);
+						delete pxTempMat;
 						AddMeshEntry(*pxMesh, *Flux_Graphics::s_pxBlankMaterial);
 					}
 				}
@@ -112,15 +114,17 @@ void Zenith_ModelComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 				{
 					Zenith_Log("[ModelComponent] Failed to load mesh from path: %s", strMeshPath.c_str());
 					// Still need to read material data to advance stream
-					Flux_Material xTempMat;
-					xTempMat.ReadFromDataStream(xStream);
+					Flux_MaterialAsset* pxTempMat = Flux_MaterialAsset::Create("Temp");
+					pxTempMat->ReadFromDataStream(xStream);
+					delete pxTempMat;
 				}
 			}
 			else
 			{
 				// Empty mesh path, still need to read material data
-				Flux_Material xTempMat;
-				xTempMat.ReadFromDataStream(xStream);
+				Flux_MaterialAsset* pxTempMat = Flux_MaterialAsset::Create("Temp");
+				pxTempMat->ReadFromDataStream(xStream);
+				delete pxTempMat;
 			}
 		}
 		else
@@ -141,7 +145,7 @@ void Zenith_ModelComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 					m_xCreatedMeshes.PushBack(pxMesh);
 
 					// Create a new material with the serialized base color (no textures in v1)
-					Flux_Material* pxMaterial = Zenith_AssetHandler::AddMaterial();
+					Flux_MaterialAsset* pxMaterial = Flux_MaterialAsset::Create("Material_Legacy");
 					if (pxMaterial)
 					{
 						m_xCreatedMaterials.PushBack(pxMaterial);
