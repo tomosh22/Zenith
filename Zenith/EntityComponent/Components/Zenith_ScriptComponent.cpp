@@ -55,8 +55,22 @@ void Zenith_ScriptComponent::RenderPropertiesPanel()
 	{
 		if (m_pxScriptBehaviour != nullptr)
 		{
-			ImGui::Text("Script behaviour attached");
+			ImGui::Text("Behaviour Type: %s", m_pxScriptBehaviour->GetBehaviourTypeName());
+			ImGui::Separator();
 			ImGui::Text("GUID References: %zu", m_pxScriptBehaviour->m_axGUIDRefs.size());
+
+			// Display GUID references if any
+			if (m_pxScriptBehaviour->m_axGUIDRefs.size() > 0)
+			{
+				if (ImGui::TreeNode("GUID References"))
+				{
+					for (size_t i = 0; i < m_pxScriptBehaviour->m_axGUIDRefs.size(); ++i)
+					{
+						ImGui::Text("[%zu] GUID: %llu", i, m_pxScriptBehaviour->m_axGUIDRefs[i].m_uGUID);
+					}
+					ImGui::TreePop();
+				}
+			}
 		}
 		else
 		{

@@ -184,8 +184,7 @@
       <AdditionalDependencies>glfw3_mt.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
-      <IgnoreSpecificDefaultLibraries>
-      </IgnoreSpecificDefaultLibraries>
+      <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
       <LargeAddressAware>true</LargeAddressAware>
       <MapFileName>output\win64\vs2022_debug_win64_false\test.map</MapFileName>
     </Link>
@@ -271,8 +270,7 @@
       <AdditionalDependencies>zenithtools.lib;assimp-vc143-mtd.lib;glfw3_mt.lib;opencv_world4100d.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
-      <IgnoreSpecificDefaultLibraries>
-      </IgnoreSpecificDefaultLibraries>
+      <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
       <LargeAddressAware>true</LargeAddressAware>
       <MapFileName>output\win64\vs2022_debug_win64_true\test.map</MapFileName>
     </Link>
@@ -358,8 +356,7 @@
       <AdditionalDependencies>glfw3_mt.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
-      <IgnoreSpecificDefaultLibraries>
-      </IgnoreSpecificDefaultLibraries>
+      <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
       <LargeAddressAware>true</LargeAddressAware>
       <MapFileName>output\win64\vs2022_release_win64_false\test.map</MapFileName>
     </Link>
@@ -445,8 +442,7 @@
       <AdditionalDependencies>zenithtools.lib;assimp-vc143-mt.lib;glfw3_mt.lib;opencv_world4100.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
-      <IgnoreSpecificDefaultLibraries>
-      </IgnoreSpecificDefaultLibraries>
+      <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
       <LargeAddressAware>true</LargeAddressAware>
       <MapFileName>output\win64\vs2022_release_win64_true\test.map</MapFileName>
     </Link>
@@ -883,7 +879,6 @@
     <ClInclude Include="..\..\..\Zenith\Physics\Zenith_Physics.h" />
     <ClInclude Include="..\..\..\Zenith\Physics\Zenith_PhysicsMeshGenerator.h" />
     <ClInclude Include="..\..\..\Zenith\Profiling\Zenith_Profiling.h" />
-    <ClInclude Include="..\..\..\Zenith\StateMachine\Zenith_StateMachine.h" />
     <ClInclude Include="..\..\..\Zenith\TaskSystem\Zenith_TaskSystem.h" />
     <ClInclude Include="..\..\..\Zenith\UnitTests\Zenith_EditorTests.h" />
     <ClInclude Include="..\..\..\Zenith\UnitTests\Zenith_UnitTests.h" />
@@ -900,8 +895,6 @@
     <ClInclude Include="..\..\..\Zenith\Windows\Zenith_Windows_Window.h" />
     <ClInclude Include="..\Components\PlayerController_Behaviour.h" />
     <ClInclude Include="..\Components\SphereMovement_Behaviour.h" />
-    <ClInclude Include="..\Test_State_InGame.h" />
-    <ClInclude Include="..\Test_State_MainMenu.h" />
   </ItemGroup>
   <ItemGroup>
     <Natvis Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Jolt.natvis" />
@@ -1808,7 +1801,6 @@
     <ClCompile Include="..\..\..\Zenith\Physics\Zenith_Physics.cpp" />
     <ClCompile Include="..\..\..\Zenith\Physics\Zenith_PhysicsMeshGenerator.cpp" />
     <ClCompile Include="..\..\..\Zenith\Profiling\Zenith_Profiling.cpp" />
-    <ClCompile Include="..\..\..\Zenith\StateMachine\Zenith_StateMachine.cpp" />
     <ClCompile Include="..\..\..\Zenith\TaskSystem\Zenith_TaskSystem.cpp" />
     <ClCompile Include="..\..\..\Zenith\UnitTests\Zenith_EditorTests.cpp" />
     <ClCompile Include="..\..\..\Zenith\UnitTests\Zenith_UnitTests.cpp" />
@@ -1824,8 +1816,7 @@
     <ClCompile Include="..\..\..\Zenith\Zenith_Main.cpp" />
     <ClCompile Include="..\Components\PlayerController_Behaviour.cpp" />
     <ClCompile Include="..\Components\SphereMovement_Behaviour.cpp" />
-    <ClCompile Include="..\Test_State_InGame.cpp" />
-    <ClCompile Include="..\Test_State_MainMenu.cpp" />
+    <ClCompile Include="Test.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

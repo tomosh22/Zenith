@@ -415,9 +415,11 @@ void Zenith_TerrainComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 	// Version 2+: Read full materials with texture paths
 	if (uVersion >= 2)
 	{
-		// Create fresh materials
-		m_pxMaterial0 = Flux_MaterialAsset::Create("Terrain_Material0");
-		m_pxMaterial1 = Flux_MaterialAsset::Create("Terrain_Material1");
+		// Create fresh materials with descriptive names including entity name
+		std::string strEntityName = m_xParentEntity.m_strName.empty() ?
+			("Entity_" + std::to_string(m_xParentEntity.GetEntityID())) : m_xParentEntity.m_strName;
+		m_pxMaterial0 = Flux_MaterialAsset::Create(strEntityName + "_Terrain_Mat0");
+		m_pxMaterial1 = Flux_MaterialAsset::Create(strEntityName + "_Terrain_Mat1");
 
 		// Mark that we own these materials and their textures need cleanup
 		m_bOwnsMaterials = true;
@@ -880,20 +882,192 @@ void Zenith_TerrainComponent::UpdateCullingAndLod(Flux_CommandList& xCmdList, co
 
 #ifdef ZENITH_TOOLS
 #include "imgui.h"
+#include "Editor/Zenith_Editor.h"
+#include <filesystem>
+
+// Helper to render a terrain material texture slot with drag-drop support
+static void RenderTerrainTextureSlot(const char* szLabel, Flux_MaterialAsset& xMaterial, int iSlotType)
+{
+	ImGui::PushID(szLabel);
+
+	// Get current texture path based on slot type
+	std::string strCurrentPath;
+	switch (iSlotType)
+	{
+	case 0: strCurrentPath = xMaterial.GetDiffuseTexturePath(); break;
+	case 1: strCurrentPath = xMaterial.GetNormalTexturePath(); break;
+	case 2: strCurrentPath = xMaterial.GetRoughnessMetallicTexturePath(); break;
+	case 3: strCurrentPath = xMaterial.GetOcclusionTexturePath(); break;
+	case 4: strCurrentPath = xMaterial.GetEmissiveTexturePath(); break;
+	}
+
+	std::string strTextureName = "(none)";
+	if (!strCurrentPath.empty())
+	{
+		std::filesystem::path xPath(strCurrentPath);
+		strTextureName = xPath.filename().string();
+	}
+
+	ImGui::Text("%s:", szLabel);
+	ImGui::SameLine();
+
+	// Drop zone button
+	ImVec2 xButtonSize(150, 20);
+	ImGui::Button(strTextureName.c_str(), xButtonSize);
+
+	// Drag-drop target for texture files
+	if (ImGui::BeginDragDropTarget())
+	{
+		if (const ImGuiPayload* pPayload = ImGui::AcceptDragDropPayload(DRAGDROP_PAYLOAD_TEXTURE_ZTX))
+		{
+			const DragDropFilePayload* pFilePayload =
+				static_cast<const DragDropFilePayload*>(pPayload->Data);
+
+			std::string strFilePath(pFilePayload->m_szFilePath);
+
+			// Set the texture path on the material
+			switch (iSlotType)
+			{
+			case 0: xMaterial.SetDiffuseTexturePath(strFilePath); break;
+			case 1: xMaterial.SetNormalTexturePath(strFilePath); break;
+			case 2: xMaterial.SetRoughnessMetallicTexturePath(strFilePath); break;
+			case 3: xMaterial.SetOcclusionTexturePath(strFilePath); break;
+			case 4: xMaterial.SetEmissiveTexturePath(strFilePath); break;
+			}
+
+			Zenith_Log("[TerrainComponent] Set %s texture: %s", szLabel, strFilePath.c_str());
+		}
+		ImGui::EndDragDropTarget();
+	}
+
+	// Tooltip
+	if (ImGui::IsItemHovered())
+	{
+		if (!strCurrentPath.empty())
+		{
+			ImGui::SetTooltip("Drop a .ztx texture here\nPath: %s", strCurrentPath.c_str());
+		}
+		else
+		{
+			ImGui::SetTooltip("Drop a .ztx texture here");
+		}
+	}
+
+	ImGui::PopID();
+}
 
 void Zenith_TerrainComponent::RenderPropertiesPanel()
 {
 	if (ImGui::CollapsingHeader("Terrain Component", ImGuiTreeNodeFlags_DefaultOpen))
 	{
-		ImGui::Text("Chunks: %d x %d", CHUNK_GRID_SIZE, CHUNK_GRID_SIZE);
-		ImGui::Text("Total Chunks: %d", TOTAL_CHUNKS);
-		ImGui::Text("LOD Count: %d", LOD_COUNT);
-		ImGui::Text("Vertex Buffer Size: %.2f MB", m_ulUnifiedVertexBufferSize / (1024.0f * 1024.0f));
-		ImGui::Text("Index Buffer Size: %.2f MB", m_ulUnifiedIndexBufferSize / (1024.0f * 1024.0f));
-		ImGui::Text("LOD3 Vertices: %u", m_uLOD3VertexCount);
-		ImGui::Text("LOD3 Indices: %u", m_uLOD3IndexCount);
-		bool bTemp = m_bCullingResourcesInitialized;
-		ImGui::Checkbox("Culling Resources Initialized", &bTemp);
+		// Terrain statistics
+		if (ImGui::TreeNode("Statistics"))
+		{
+			ImGui::Text("Chunks: %d x %d", CHUNK_GRID_SIZE, CHUNK_GRID_SIZE);
+			ImGui::Text("Total Chunks: %d", TOTAL_CHUNKS);
+			ImGui::Text("LOD Count: %d", LOD_COUNT);
+			ImGui::Text("Vertex Buffer Size: %.2f MB", m_ulUnifiedVertexBufferSize / (1024.0f * 1024.0f));
+			ImGui::Text("Index Buffer Size: %.2f MB", m_ulUnifiedIndexBufferSize / (1024.0f * 1024.0f));
+			ImGui::Text("LOD3 Vertices: %u", m_uLOD3VertexCount);
+			ImGui::Text("LOD3 Indices: %u", m_uLOD3IndexCount);
+			bool bTemp = m_bCullingResourcesInitialized;
+			ImGui::Checkbox("Culling Resources Initialized", &bTemp);
+			ImGui::TreePop();
+		}
+
+		ImGui::Separator();
+
+		// Material 0 editing
+		if (m_pxMaterial0)
+		{
+			if (ImGui::TreeNode("Material 0 (Base)"))
+			{
+				ImGui::Text("Name: %s", m_pxMaterial0->GetName().c_str());
+
+				// Base color
+				Zenith_Maths::Vector4 xBaseColor = m_pxMaterial0->GetBaseColor();
+				float fColor[4] = { xBaseColor.x, xBaseColor.y, xBaseColor.z, xBaseColor.w };
+				if (ImGui::ColorEdit4("Base Color##Mat0", fColor))
+				{
+					m_pxMaterial0->SetBaseColor({ fColor[0], fColor[1], fColor[2], fColor[3] });
+				}
+
+				// Material properties
+				float fMetallic = m_pxMaterial0->GetMetallic();
+				if (ImGui::SliderFloat("Metallic##Mat0", &fMetallic, 0.0f, 1.0f))
+				{
+					m_pxMaterial0->SetMetallic(fMetallic);
+				}
+
+				float fRoughness = m_pxMaterial0->GetRoughness();
+				if (ImGui::SliderFloat("Roughness##Mat0", &fRoughness, 0.0f, 1.0f))
+				{
+					m_pxMaterial0->SetRoughness(fRoughness);
+				}
+
+				// Texture slots
+				ImGui::Text("Textures:");
+				ImGui::PushID("Mat0Textures");
+				RenderTerrainTextureSlot("Diffuse", *m_pxMaterial0, 0);
+				RenderTerrainTextureSlot("Normal", *m_pxMaterial0, 1);
+				RenderTerrainTextureSlot("Roughness/Metallic", *m_pxMaterial0, 2);
+				RenderTerrainTextureSlot("Occlusion", *m_pxMaterial0, 3);
+				RenderTerrainTextureSlot("Emissive", *m_pxMaterial0, 4);
+				ImGui::PopID();
+
+				ImGui::TreePop();
+			}
+		}
+		else
+		{
+			ImGui::TextDisabled("Material 0: (not set)");
+		}
+
+		// Material 1 editing
+		if (m_pxMaterial1)
+		{
+			if (ImGui::TreeNode("Material 1 (Blend)"))
+			{
+				ImGui::Text("Name: %s", m_pxMaterial1->GetName().c_str());
+
+				// Base color
+				Zenith_Maths::Vector4 xBaseColor = m_pxMaterial1->GetBaseColor();
+				float fColor[4] = { xBaseColor.x, xBaseColor.y, xBaseColor.z, xBaseColor.w };
+				if (ImGui::ColorEdit4("Base Color##Mat1", fColor))
+				{
+					m_pxMaterial1->SetBaseColor({ fColor[0], fColor[1], fColor[2], fColor[3] });
+				}
+
+				// Material properties
+				float fMetallic = m_pxMaterial1->GetMetallic();
+				if (ImGui::SliderFloat("Metallic##Mat1", &fMetallic, 0.0f, 1.0f))
+				{
+					m_pxMaterial1->SetMetallic(fMetallic);
+				}
+
+				float fRoughness = m_pxMaterial1->GetRoughness();
+				if (ImGui::SliderFloat("Roughness##Mat1", &fRoughness, 0.0f, 1.0f))
+				{
+					m_pxMaterial1->SetRoughness(fRoughness);
+				}
+
+				// Texture slots
+				ImGui::Text("Textures:");
+				ImGui::PushID("Mat1Textures");
+				RenderTerrainTextureSlot("Diffuse", *m_pxMaterial1, 0);
+				RenderTerrainTextureSlot("Normal", *m_pxMaterial1, 1);
+				RenderTerrainTextureSlot("Roughness/Metallic", *m_pxMaterial1, 2);
+				RenderTerrainTextureSlot("Occlusion", *m_pxMaterial1, 3);
+				RenderTerrainTextureSlot("Emissive", *m_pxMaterial1, 4);
+				ImGui::PopID();
+
+				ImGui::TreePop();
+			}
+		}
+		else
+		{
+			ImGui::TextDisabled("Material 1: (not set)");
+		}
 	}
 }
 #endif

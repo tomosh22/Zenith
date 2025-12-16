@@ -76,6 +76,116 @@ void BoundingBox::Transform(const Zenith_Maths::Matrix4& transform)
 // Selection system implementation
 static std::unordered_map<Zenith_EntityID, BoundingBox> s_xEntityBoundingBoxes;
 
+// Helper: Ray-triangle intersection using Möller–Trumbore algorithm
+// Returns true if ray intersects triangle, with distance in outT
+static bool RayTriangleIntersect(
+	const Zenith_Maths::Vector3& rayOrigin,
+	const Zenith_Maths::Vector3& rayDir,
+	const Zenith_Maths::Vector3& v0,
+	const Zenith_Maths::Vector3& v1,
+	const Zenith_Maths::Vector3& v2,
+	float& outT)
+{
+	const float EPSILON = 0.0000001f;
+
+	Zenith_Maths::Vector3 edge1 = v1 - v0;
+	Zenith_Maths::Vector3 edge2 = v2 - v0;
+
+	Zenith_Maths::Vector3 h = Zenith_Maths::Cross(rayDir, edge2);
+	float a = Zenith_Maths::Dot(edge1, h);
+
+	// Ray is parallel to triangle
+	if (a > -EPSILON && a < EPSILON)
+		return false;
+
+	float f = 1.0f / a;
+	Zenith_Maths::Vector3 s = rayOrigin - v0;
+	float u = f * Zenith_Maths::Dot(s, h);
+
+	if (u < 0.0f || u > 1.0f)
+		return false;
+
+	Zenith_Maths::Vector3 q = Zenith_Maths::Cross(s, edge1);
+	float v = f * Zenith_Maths::Dot(rayDir, q);
+
+	if (v < 0.0f || u + v > 1.0f)
+		return false;
+
+	// Compute t to find intersection point
+	float t = f * Zenith_Maths::Dot(edge2, q);
+
+	if (t > EPSILON) // Ray intersection
+	{
+		outT = t;
+		return true;
+	}
+
+	// Line intersection but not ray
+	return false;
+}
+
+// Helper: Raycast against a single physics mesh
+// Returns true if hit, with distance in outDistance
+static bool RaycastPhysicsMesh(
+	const Zenith_Maths::Vector3& rayOrigin,
+	const Zenith_Maths::Vector3& rayDir,
+	const Flux_MeshGeometry* pxPhysicsMesh,
+	const Zenith_Maths::Matrix4& transform,
+	float& outDistance)
+{
+	if (!pxPhysicsMesh || !pxPhysicsMesh->m_pxPositions || !pxPhysicsMesh->m_puIndices)
+		return false;
+
+	if (pxPhysicsMesh->GetNumIndices() < 3)
+		return false;
+
+	bool bHit = false;
+	float fClosestDistance = std::numeric_limits<float>::max();
+
+	const uint32_t uNumTriangles = pxPhysicsMesh->GetNumIndices() / 3;
+
+	for (uint32_t t = 0; t < uNumTriangles; ++t)
+	{
+		// Get triangle indices
+		uint32_t i0 = pxPhysicsMesh->m_puIndices[t * 3 + 0];
+		uint32_t i1 = pxPhysicsMesh->m_puIndices[t * 3 + 1];
+		uint32_t i2 = pxPhysicsMesh->m_puIndices[t * 3 + 2];
+
+		// Get vertices in model space
+		Zenith_Maths::Vector3 v0 = pxPhysicsMesh->m_pxPositions[i0];
+		Zenith_Maths::Vector3 v1 = pxPhysicsMesh->m_pxPositions[i1];
+		Zenith_Maths::Vector3 v2 = pxPhysicsMesh->m_pxPositions[i2];
+
+		// Transform to world space
+		Zenith_Maths::Vector4 v0World = transform * Zenith_Maths::Vector4(v0, 1.0f);
+		Zenith_Maths::Vector4 v1World = transform * Zenith_Maths::Vector4(v1, 1.0f);
+		Zenith_Maths::Vector4 v2World = transform * Zenith_Maths::Vector4(v2, 1.0f);
+
+		Zenith_Maths::Vector3 v0w(v0World.x, v0World.y, v0World.z);
+		Zenith_Maths::Vector3 v1w(v1World.x, v1World.y, v1World.z);
+		Zenith_Maths::Vector3 v2w(v2World.x, v2World.y, v2World.z);
+
+		// Test ray-triangle intersection
+		float fDistance;
+		if (RayTriangleIntersect(rayOrigin, rayDir, v0w, v1w, v2w, fDistance))
+		{
+			if (fDistance < fClosestDistance)
+			{
+				fClosestDistance = fDistance;
+				bHit = true;
+			}
+		}
+	}
+
+	if (bHit)
+	{
+		outDistance = fClosestDistance;
+		return true;
+	}
+
+	return false;
+}
+
 void Zenith_SelectionSystem::Initialise()
 {
 	s_xEntityBoundingBoxes.clear();
@@ -143,35 +253,94 @@ BoundingBox Zenith_SelectionSystem::GetEntityBoundingBox(Zenith_Entity* pxEntity
 
 Zenith_EntityID Zenith_SelectionSystem::RaycastSelect(const Zenith_Maths::Vector3& rayOrigin, const Zenith_Maths::Vector3& rayDir)
 {
-	float closestDistance = std::numeric_limits<float>::max();
+	float fClosestDistance = std::numeric_limits<float>::max();
 	Zenith_EntityID uClosestEntityID = INVALID_ENTITY_ID;
-	
-	// Check all cached bounding boxes
-	for (auto& [uEntityID, xBoundingBox] : s_xEntityBoundingBoxes)
+
+	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+
+	// Get all model components for detailed raycasting
+	Zenith_Vector<Zenith_ModelComponent*> xModelComponents;
+	xScene.GetAllOfComponentType<Zenith_ModelComponent>(xModelComponents);
+
+	for (u_int i = 0; i < xModelComponents.GetSize(); ++i)
 	{
-		float distance;
-		if (xBoundingBox.Intersects(rayOrigin, rayDir, distance))
+		Zenith_ModelComponent* pxModel = xModelComponents.Get(i);
+		if (!pxModel)
+			continue;
+
+		Zenith_Entity xEntity = pxModel->GetParentEntity();
+		Zenith_EntityID uEntityID = xEntity.GetEntityID();
+
+		// First, do a quick AABB test to cull entities
+		auto it = s_xEntityBoundingBoxes.find(uEntityID);
+		if (it != s_xEntityBoundingBoxes.end())
 		{
-			if (distance < closestDistance)
+			float fBBoxDistance;
+			if (!it->second.Intersects(rayOrigin, rayDir, fBBoxDistance))
 			{
-				closestDistance = distance;
-				uClosestEntityID = uEntityID;
+				// AABB miss - skip detailed test
+				continue;
+			}
+
+			// AABB hit - early out if already further than closest hit
+			if (fBBoxDistance > fClosestDistance)
+				continue;
+		}
+
+		// Get transform matrix for this entity
+		if (!xEntity.HasComponent<Zenith_TransformComponent>())
+			continue;
+
+		Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
+		Zenith_Maths::Matrix4 xTransformMatrix;
+		xTransform.BuildModelMatrix(xTransformMatrix);
+
+		// Detailed triangle-level raycast against physics mesh
+		Flux_MeshGeometry* pxPhysicsMesh = pxModel->GetPhysicsMesh();
+		if (pxPhysicsMesh)
+		{
+			float fHitDistance;
+			if (RaycastPhysicsMesh(rayOrigin, rayDir, pxPhysicsMesh, xTransformMatrix, fHitDistance))
+			{
+				if (fHitDistance < fClosestDistance)
+				{
+					fClosestDistance = fHitDistance;
+					uClosestEntityID = uEntityID;
+				}
+			}
+		}
+		else
+		{
+			// Fallback: Use AABB-only selection if no physics mesh
+			// (Already passed AABB test above)
+			auto it = s_xEntityBoundingBoxes.find(uEntityID);
+			if (it != s_xEntityBoundingBoxes.end())
+			{
+				float fBBoxDistance;
+				if (it->second.Intersects(rayOrigin, rayDir, fBBoxDistance))
+				{
+					if (fBBoxDistance < fClosestDistance)
+					{
+						fClosestDistance = fBBoxDistance;
+						uClosestEntityID = uEntityID;
+					}
+				}
 			}
 		}
 	}
-	
+
 	return uClosestEntityID;
 }
 
 BoundingBox Zenith_SelectionSystem::CalculateBoundingBox(Zenith_Entity* pxEntity)
 {
 	BoundingBox xBoundingBox;
-	
+
 	if (!pxEntity)
 		return xBoundingBox;
-	
+
 	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	
+
 	// Check if entity has a model component
 	if (!xScene.EntityHasComponent<Zenith_ModelComponent>(pxEntity->GetEntityID()))
 	{
@@ -193,37 +362,57 @@ BoundingBox Zenith_SelectionSystem::CalculateBoundingBox(Zenith_Entity* pxEntity
 		//     xBoundingBox.m_xMin = pos - Vector3(0.5f);
 		//     xBoundingBox.m_xMax = pos + Vector3(0.5f);
 		// }
-		
+
 		return xBoundingBox;
 	}
-	
+
 	Zenith_ModelComponent& xModel = xScene.GetComponentFromEntity<Zenith_ModelComponent>(pxEntity->GetEntityID());
-	
+
 	// Initialize min/max to extreme values
 	// These will be updated as we process vertices
 	Zenith_Maths::Vector3 xMin(std::numeric_limits<float>::max());
 	Zenith_Maths::Vector3 xMax(std::numeric_limits<float>::lowest());
-	
-	// Iterate through all mesh entries in the model
-	// A model can contain multiple sub-meshes (LODs, parts, etc.)
-	for (u_int i = 0; i < xModel.GetNumMeshEntries(); ++i)
+
+	// CRITICAL: Use physics mesh for selection if available
+	// Physics mesh is optimized for raycasting and provides better selection accuracy
+	Flux_MeshGeometry* pxPhysicsMesh = xModel.GetPhysicsMesh();
+
+	if (pxPhysicsMesh && pxPhysicsMesh->m_pxPositions && pxPhysicsMesh->GetNumVerts() > 0)
 	{
-		Flux_MeshGeometry& xGeometry = xModel.GetMeshGeometryAtIndex(i);
-		
-		// Use the position array directly
-		// This is in model/local space, not world space
-		const Zenith_Maths::Vector3* pPositions = xGeometry.m_pxPositions;
-		const u_int uVertexCount = xGeometry.GetNumVerts();
-		
-		if (!pPositions || uVertexCount == 0)
-			continue;
-		
-		// Find min/max from positions
-		// This creates an axis-aligned bounding box in model space
+		// Use physics mesh for bounding box calculation
+		const Zenith_Maths::Vector3* pPositions = pxPhysicsMesh->m_pxPositions;
+		const u_int uVertexCount = pxPhysicsMesh->GetNumVerts();
+
 		for (u_int v = 0; v < uVertexCount; ++v)
 		{
 			xMin = glm::min(xMin, pPositions[v]);
 			xMax = glm::max(xMax, pPositions[v]);
+		}
+	}
+	else
+	{
+		// Fallback: Use render mesh if no physics mesh available
+		// Iterate through all mesh entries in the model
+		// A model can contain multiple sub-meshes (LODs, parts, etc.)
+		for (u_int i = 0; i < xModel.GetNumMeshEntries(); ++i)
+		{
+			Flux_MeshGeometry& xGeometry = xModel.GetMeshGeometryAtIndex(i);
+
+			// Use the position array directly
+			// This is in model/local space, not world space
+			const Zenith_Maths::Vector3* pPositions = xGeometry.m_pxPositions;
+			const u_int uVertexCount = xGeometry.GetNumVerts();
+
+			if (!pPositions || uVertexCount == 0)
+				continue;
+
+			// Find min/max from positions
+			// This creates an axis-aligned bounding box in model space
+			for (u_int v = 0; v < uVertexCount; ++v)
+			{
+				xMin = glm::min(xMin, pPositions[v]);
+				xMax = glm::max(xMax, pPositions[v]);
+			}
 		}
 	}
 	

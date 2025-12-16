@@ -9,8 +9,16 @@
 #include <algorithm>
 #include <cmath>
 
-// Global physics mesh configuration
-PhysicsMeshConfig g_xPhysicsMeshConfig;
+// Global physics mesh configuration - CRITICAL: Explicitly initialize to ensure defaults are set
+PhysicsMeshConfig g_xPhysicsMeshConfig = {
+	PHYSICS_MESH_QUALITY_HIGH,  // m_eQuality: Use high quality (full mesh geometry)
+	1.0f,                        // m_fSimplificationRatio: 1.0 = no simplification (exact match to render mesh)
+	100,                         // m_uMinTriangles
+	10000,                       // m_uMaxTriangles
+	true,                        // m_bAutoGenerate: Automatically generate physics meshes on load
+	true,                        // m_bDebugDraw: Enable debug visualization by default in editor
+	Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f)  // m_xDebugColor: Green
+};
 
 // Global debug flag for drawing all physics meshes
 bool g_bDebugDrawAllPhysicsMeshes = false;

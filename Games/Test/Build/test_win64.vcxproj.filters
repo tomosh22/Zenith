@@ -574,9 +574,6 @@
     <ClCompile Include="..\..\..\Zenith\Profiling\Zenith_Profiling.cpp">
       <Filter>Zenith\Profiling</Filter>
     </ClCompile>
-    <ClCompile Include="..\..\..\Zenith\StateMachine\Zenith_StateMachine.cpp">
-      <Filter>Zenith\StateMachine</Filter>
-    </ClCompile>
     <ClCompile Include="..\..\..\Zenith\TaskSystem\Zenith_TaskSystem.cpp">
       <Filter>Zenith\TaskSystem</Filter>
     </ClCompile>
@@ -622,11 +619,8 @@
     <ClCompile Include="..\Components\SphereMovement_Behaviour.cpp">
       <Filter>Games\Test\Components</Filter>
     </ClCompile>
-    <ClCompile Include="..\Test_State_InGame.cpp">
-      <Filter>Games\Test</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Test_State_MainMenu.cpp">
-      <Filter>Games\Test</Filter>
+    <ClCompile Include="Test.cpp">
+      <Filter>Games\Test\Build</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
@@ -1923,9 +1917,6 @@
     <ClInclude Include="..\..\..\Zenith\Profiling\Zenith_Profiling.h">
       <Filter>Zenith\Profiling</Filter>
     </ClInclude>
-    <ClInclude Include="..\..\..\Zenith\StateMachine\Zenith_StateMachine.h">
-      <Filter>Zenith\StateMachine</Filter>
-    </ClInclude>
     <ClInclude Include="..\..\..\Zenith\TaskSystem\Zenith_TaskSystem.h">
       <Filter>Zenith\TaskSystem</Filter>
     </ClInclude>
@@ -1974,12 +1965,6 @@
     <ClInclude Include="..\Components\SphereMovement_Behaviour.h">
       <Filter>Games\Test\Components</Filter>
     </ClInclude>
-    <ClInclude Include="..\Test_State_InGame.h">
-      <Filter>Games\Test</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Test_State_MainMenu.h">
-      <Filter>Games\Test</Filter>
-    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Natvis Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Jolt.natvis">
@@ -1992,6 +1977,9 @@
     </Filter>
     <Filter Include="Games\Test">
       <UniqueIdentifier>{cbfbdc38-e98c-599e-10d3-3282c5531581}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Games\Test\Build">
+      <UniqueIdentifier>{3d3e6911-9e5d-16d0-07af-c92f686499c6}</UniqueIdentifier>
     </Filter>
     <Filter Include="Games\Test\Components">
       <UniqueIdentifier>{fd8cca08-abd5-26f2-8676-431bb0783af1}</UniqueIdentifier>
@@ -2259,9 +2247,6 @@
     </Filter>
     <Filter Include="Zenith\Profiling">
       <UniqueIdentifier>{d5002f3f-e4fd-7c83-92af-8e2b645cf421}</UniqueIdentifier>
-    </Filter>
-    <Filter Include="Zenith\StateMachine">
-      <UniqueIdentifier>{5cba6f0c-0cde-b209-96a1-7b8acd44e41c}</UniqueIdentifier>
     </Filter>
     <Filter Include="Zenith\TaskSystem">
       <UniqueIdentifier>{b31c7fe8-c684-8849-62d1-797a55846f2c}</UniqueIdentifier>

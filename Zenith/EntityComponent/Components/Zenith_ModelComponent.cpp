@@ -87,13 +87,19 @@ void Zenith_ModelComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 			// Load mesh from source path
 			if (!strMeshPath.empty())
 			{
-				Flux_MeshGeometry* pxMesh = Zenith_AssetHandler::AddMeshFromFile(strMeshPath.c_str());
+				// CRITICAL: Retain position data for physics mesh generation
+				u_int uRetainFlags = (1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__POSITION);
+				Flux_MeshGeometry* pxMesh = Zenith_AssetHandler::AddMeshFromFile(strMeshPath.c_str(), uRetainFlags, true);
 				if (pxMesh)
 				{
 					m_xCreatedMeshes.PushBack(pxMesh);
 
-					// Create a new material and read its data (including texture paths)
-					Flux_MaterialAsset* pxMaterial = Flux_MaterialAsset::Create("Material_Deserialized");
+					// Create a new material with descriptive name including entity and mesh info
+					std::string strEntityName = m_xParentEntity.m_strName.empty() ?
+						("Entity_" + std::to_string(m_xParentEntity.GetEntityID())) : m_xParentEntity.m_strName;
+					std::filesystem::path xMeshPath(strMeshPath);
+					std::string strMatName = strEntityName + "_Model_" + xMeshPath.stem().string();
+					Flux_MaterialAsset* pxMaterial = Flux_MaterialAsset::Create(strMatName);
 					if (pxMaterial)
 					{
 						m_xCreatedMaterials.PushBack(pxMaterial);
@@ -139,13 +145,19 @@ void Zenith_ModelComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 			// Load mesh from source path
 			if (!strMeshPath.empty())
 			{
-				Flux_MeshGeometry* pxMesh = Zenith_AssetHandler::AddMeshFromFile(strMeshPath.c_str());
+				// CRITICAL: Retain position data for physics mesh generation
+				u_int uRetainFlags = (1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__POSITION);
+				Flux_MeshGeometry* pxMesh = Zenith_AssetHandler::AddMeshFromFile(strMeshPath.c_str(), uRetainFlags, true);
 				if (pxMesh)
 				{
 					m_xCreatedMeshes.PushBack(pxMesh);
 
-					// Create a new material with the serialized base color (no textures in v1)
-					Flux_MaterialAsset* pxMaterial = Flux_MaterialAsset::Create("Material_Legacy");
+					// Create a new material with descriptive name including entity and mesh info
+					std::string strEntityName = m_xParentEntity.m_strName.empty() ?
+						("Entity_" + std::to_string(m_xParentEntity.GetEntityID())) : m_xParentEntity.m_strName;
+					std::filesystem::path xMeshPath(strMeshPath);
+					std::string strMatName = strEntityName + "_Model_" + xMeshPath.stem().string() + "_Legacy";
+					Flux_MaterialAsset* pxMaterial = Flux_MaterialAsset::Create(strMatName);
 					if (pxMaterial)
 					{
 						m_xCreatedMaterials.PushBack(pxMaterial);
@@ -184,7 +196,26 @@ void Zenith_ModelComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 	// Generate physics mesh after deserializing if auto-generation is enabled
 	if (g_xPhysicsMeshConfig.m_bAutoGenerate && m_xMeshEntries.GetSize() > 0)
 	{
+		Zenith_Log("%s Auto-generating physics mesh for deserialized ModelComponent (entity: %s, meshes: %u)",
+			LOG_TAG_MODEL_PHYSICS, m_xParentEntity.m_strName.c_str(), m_xMeshEntries.GetSize());
 		GeneratePhysicsMesh();
+
+		if (m_pxPhysicsMesh)
+		{
+			Zenith_Log("%s Physics mesh generated successfully: %u verts, %u tris",
+				LOG_TAG_MODEL_PHYSICS, m_pxPhysicsMesh->GetNumVerts(), m_pxPhysicsMesh->GetNumIndices() / 3);
+		}
+		else
+		{
+			Zenith_Log("%s WARNING: Physics mesh generation failed!", LOG_TAG_MODEL_PHYSICS);
+		}
+	}
+	else
+	{
+		if (!g_xPhysicsMeshConfig.m_bAutoGenerate)
+		{
+			Zenith_Log("%s Physics mesh auto-generation is DISABLED", LOG_TAG_MODEL_PHYSICS);
+		}
 	}
 
 	// m_xParentEntity will be set by the entity deserialization system

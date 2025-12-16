@@ -644,6 +644,28 @@ void Zenith_Editor::RenderHierarchyPanel()
 		std::string strDisplayName = entity.m_strName.empty() ?
 			("Entity_" + std::to_string(entityID)) : entity.m_strName;
 
+		// Count components on this entity
+		uint32_t uComponentCount = 0;
+		std::string strComponentSummary;
+		Zenith_ComponentRegistry& xRegistry = Zenith_ComponentRegistry::Get();
+		const auto& xEntries = xRegistry.GetEntries();
+		for (const Zenith_ComponentRegistryEntry& xEntry : xEntries)
+		{
+			if (xEntry.m_fnHasComponent(entity))
+			{
+				if (uComponentCount > 0)
+					strComponentSummary += ", ";
+				strComponentSummary += xEntry.m_strDisplayName;
+				uComponentCount++;
+			}
+		}
+
+		// Add component count to display name
+		if (uComponentCount > 0)
+		{
+			strDisplayName += " [" + std::to_string(uComponentCount) + "]";
+		}
+
 		// Add unique ID to avoid ImGui label collisions
 		std::string strLabel = strDisplayName + "##" + std::to_string(entityID);
 
@@ -651,6 +673,12 @@ void Zenith_Editor::RenderHierarchyPanel()
 		{
 			// Select by EntityID for safer memory management
 			SelectEntity(entityID);
+		}
+
+		// Show component list in tooltip on hover
+		if (ImGui::IsItemHovered() && uComponentCount > 0)
+		{
+			ImGui::SetTooltip("Components: %s", strComponentSummary.c_str());
 		}
 
 		// Show context menu on right-click
@@ -1560,16 +1588,18 @@ void Zenith_Editor::RenderMaterialEditorPanel()
 	}
 	
 	ImGui::Separator();
-	
-	// Display loaded materials list
-	std::vector<std::string> loadedPaths;
-	Flux_MaterialAsset::GetAllLoadedMaterialPaths(loadedPaths);
-	
-	if (ImGui::CollapsingHeader("Loaded Materials", ImGuiTreeNodeFlags_DefaultOpen))
+
+	// Display ALL materials (both file-cached and runtime-created)
+	std::vector<Flux_MaterialAsset*> allMaterials;
+	Flux_MaterialAsset::GetAllMaterials(allMaterials);
+
+	if (ImGui::CollapsingHeader("All Materials", ImGuiTreeNodeFlags_DefaultOpen))
 	{
-		for (const std::string& strPath : loadedPaths)
+		ImGui::Text("Total: %zu materials", allMaterials.size());
+		ImGui::Separator();
+
+		for (Flux_MaterialAsset* pMat : allMaterials)
 		{
-			Flux_MaterialAsset* pMat = Flux_MaterialAsset::GetByPath(strPath);
 			if (pMat)
 			{
 				bool bIsSelected = (s_pxSelectedMaterial == pMat);
@@ -1578,15 +1608,36 @@ void Zenith_Editor::RenderMaterialEditorPanel()
 				{
 					strDisplayName += " *";  // Unsaved changes indicator
 				}
-				
+
+				// Show file path indicator for saved materials
+				if (!pMat->GetAssetPath().empty())
+				{
+					strDisplayName += " [saved]";
+				}
+
 				if (ImGui::Selectable(strDisplayName.c_str(), bIsSelected))
 				{
 					SelectMaterial(pMat);
 				}
+
+				// Tooltip with more details
+				if (ImGui::IsItemHovered())
+				{
+					std::string strTooltip = "Name: " + pMat->GetName();
+					if (!pMat->GetAssetPath().empty())
+					{
+						strTooltip += "\nPath: " + pMat->GetAssetPath();
+					}
+					else
+					{
+						strTooltip += "\n(Runtime-created, not saved to file)";
+					}
+					ImGui::SetTooltip("%s", strTooltip.c_str());
+				}
 			}
 		}
-		
-		if (loadedPaths.empty())
+
+		if (allMaterials.empty())
 		{
 			ImGui::TextDisabled("No materials loaded");
 		}

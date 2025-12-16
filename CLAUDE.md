@@ -178,6 +178,27 @@ Key pitfalls:
 - No Y-axis inversion in `ScreenToWorldRay()` - projection matrix handles it
 - `GIZMO_INTERACTION_LENGTH_MULTIPLIER` must be 1.0 (not larger)
 
+**Debug Primitives (Tools Build Only):**
+- **Location:** `Zenith/Flux/Primitives/`
+- **Purpose:** Immediate-mode debug rendering for spheres, cubes, lines, wireframes, etc.
+- **Render Pipeline:** Forward pass at `RENDER_ORDER_PRIMITIVES`, writes to GBuffer
+- **Usage:** `Flux_Primitives::AddLine(start, end, color, thickness)`
+- **Auto-clear:** Primitives cleared each frame after rendering
+- **Task-based:** Rendering submitted as separate task, executes on worker threads
+- **Use Cases:**
+  - Physics mesh visualization (green wireframe overlays)
+  - Gizmo rendering (3D transform manipulators)
+  - Debug drawing (collision shapes, rays, bounding boxes)
+- **Performance:** Batched into single draw call per primitive type per frame
+
+**Physics Mesh Visualization (December 2024):**
+- Physics meshes rendered as green wireframe via `Flux_Primitives::AddLine()`
+- Debug draw called from `Zenith_Core::Zenith_MainLoop()` before render tasks
+- Visible in all editor modes (Stopped/Paused/Playing)
+- Controlled by `g_xPhysicsMeshConfig.m_bDebugDraw` flag
+- Used for verifying physics mesh generation during scene deserialization
+- See [Editor/CLAUDE.md - Physics Mesh Debug Visualization](Zenith/Editor/CLAUDE.md#physics-mesh-debug-visualization)
+
 ### 3. Task System
 
 **Location:** `Zenith/TaskSystem/`

@@ -38,8 +38,38 @@ public:
 	{
 		if (ImGui::CollapsingHeader("Collider", ImGuiTreeNodeFlags_DefaultOpen))
 		{
-			ImGui::Text("Collider attached");
-			// TODO: Add collider shape editing UI
+			if (m_pxRigidBody)
+			{
+				ImGui::Text("Body ID: %u", m_xBodyID.GetIndexAndSequenceNumber());
+
+				// Display collision volume type
+				const char* szVolumeTypes[] = { "Box", "Sphere", "Capsule", "Mesh" };
+				if (m_eVolumeType < 4)
+				{
+					ImGui::Text("Volume Type: %s", szVolumeTypes[m_eVolumeType]);
+				}
+
+				// Display rigid body type
+				const char* szRigidBodyTypes[] = { "Static", "Dynamic" };
+				if (m_eRigidBodyType < 2)
+				{
+					ImGui::Text("Body Type: %s", szRigidBodyTypes[m_eRigidBodyType]);
+				}
+
+				// Display terrain mesh data info if present
+				if (m_pxTerrainMeshData)
+				{
+					ImGui::Separator();
+					ImGui::Text("Terrain Mesh Collider:");
+					ImGui::Text("  Vertices: %u", m_pxTerrainMeshData->m_uNumVertices);
+					ImGui::Text("  Indices: %u", m_pxTerrainMeshData->m_uNumIndices);
+					ImGui::Text("  Triangles: %u", m_pxTerrainMeshData->m_uNumIndices / 3);
+				}
+			}
+			else
+			{
+				ImGui::TextDisabled("No collider attached");
+			}
 		}
 	}
 #endif

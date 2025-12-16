@@ -13,7 +13,6 @@
 #include "Flux/Flux_Graphics.h"
 #include "Physics/Zenith_Physics.h"
 #include "Profiling/Zenith_Profiling.h"
-#include "StateMachine/Zenith_StateMachine.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
 #include "UnitTests/Zenith_UnitTests.h"
 
@@ -22,13 +21,6 @@ extern void ExportAllMeshes();
 extern void ExportAllTextures();
 extern void ExportHeightmap();
 #endif
-
-
-static bool s_bDVSTest0 = false;
-static bool s_bDVSTest1 = false;
-static bool s_bDVSTest2 = false;
-static bool s_bDVSTest3 = false;
-static Zenith_Maths::Vector3 s_xDVSTest4 = { 1,2,3 };
 
 int main()
 {
@@ -75,9 +67,13 @@ int main()
 	Zenith_DebugVariables::AddButton({ "Export", "Terrain", "Export Heightmap" }, ExportHeightmap);
 #endif
 
-	Zenith_StateMachine::Project_Initialise();
 	Flux_MemoryManager::BeginFrame();
-	Zenith_StateMachine::s_pxCurrentState->OnEnter();
+	extern void Project_RegisterScriptBehaviours();
+	extern void Project_LoadInitialScene();
+	Project_RegisterScriptBehaviours();
+
+	//#TO_TODO: Flux_Graphics::UploadFrameConstants crashes if we don't do this because there is no game camera
+	Project_LoadInitialScene();
 	Flux_MemoryManager::EndFrame(false);
 	Zenith_Core::s_xLastFrameTime = std::chrono::high_resolution_clock::now();
 
@@ -85,7 +81,7 @@ int main()
 	while (true)
 	{
 		Zenith_Profiling::BeginFrame();
-		Zenith_StateMachine::Update();
+		Zenith_Core::Zenith_MainLoop();
 		Zenith_Profiling::EndFrame();
 	}
 	__debugbreak();

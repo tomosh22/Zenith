@@ -77,9 +77,15 @@ public:
 	static void ReloadAll();
 	
 	/**
-	 * Get all loaded material paths for editor UI
+	 * Get all loaded material paths for editor UI (file-cached materials only)
 	 */
 	static void GetAllLoadedMaterialPaths(std::vector<std::string>& outPaths);
+
+	/**
+	 * Get all materials (both file-cached and runtime-created) for editor UI
+	 * Returns pointers to all materials that currently exist
+	 */
+	static void GetAllMaterials(std::vector<Flux_MaterialAsset*>& outMaterials);
 	
 	/**
 	 * Initialize the material system (call once at startup)
@@ -254,12 +260,16 @@ private:
 	
 	// Material cache by asset path
 	static std::unordered_map<std::string, Flux_MaterialAsset*> s_xMaterialCache;
-	
+
 	// Texture cache by path (shared across materials)
 	static std::unordered_map<std::string, Flux_Texture*> s_xTextureCache;
-	
+
 	// Next anonymous material ID (for unnamed materials)
 	static uint32_t s_uNextMaterialID;
+
+	// Registry of ALL materials (both file-cached and runtime-created)
+	// Used by editor to display all materials regardless of how they were created
+	static std::vector<Flux_MaterialAsset*> s_xAllMaterials;
 };
 
 // File extension for material assets

@@ -26,6 +26,7 @@
 #endif
 #include "Input/Zenith_Input.h"
 #include "Physics/Zenith_Physics.h"
+#include "Physics/Zenith_PhysicsMeshGenerator.h"
 #include "Profiling/Zenith_Profiling.h"
 #include "Zenith_OS_Include.h"
 
@@ -200,6 +201,12 @@ void Zenith_Core::Zenith_MainLoop()
 	// to avoid building command lists with potentially incomplete scene state
 	if (bSubmitRenderWork)
 	{
+		// Queue physics mesh debug visualization for rendering (independent of game logic)
+		// This allows viewing physics meshes in editor even when paused/stopped
+		#ifdef ZENITH_TOOLS
+		Zenith_PhysicsMeshGenerator::DebugDrawAllPhysicsMeshes();
+		#endif
+
 		SubmitRenderTasks();
 		WaitForAllRenderTasks();
 	}

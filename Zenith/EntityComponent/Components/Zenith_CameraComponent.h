@@ -63,18 +63,55 @@ public:
 	{
 		if (ImGui::CollapsingHeader("Camera", ImGuiTreeNodeFlags_DefaultOpen))
 		{
-			// Display camera properties (read-only for now)
-			float fFOV = GetFOV();
-			ImGui::Text("FOV: %.1f", fFOV);
-			
-			float fNear = GetNearPlane();
-			ImGui::Text("Near Plane: %.3f", fNear);
-			
-			float fFar = GetFarPlane();
-			ImGui::Text("Far Plane: %.1f", fFar);
-			
-			ImGui::Text("Pitch: %.2f", GetPitch());
-			ImGui::Text("Yaw: %.2f", GetYaw());
+			// Camera type
+			const char* szCameraTypes[] = { "Perspective", "Orthographic" };
+			if (m_eType < CAMERA_TYPE_MAX)
+			{
+				ImGui::Text("Type: %s", szCameraTypes[m_eType]);
+			}
+
+			ImGui::Separator();
+
+			// Editable camera properties for perspective camera
+			if (m_eType == CAMERA_TYPE_PERSPECTIVE)
+			{
+				// FOV editing
+				float fFOV = GetFOV();
+				if (ImGui::SliderFloat("FOV", &fFOV, 30.0f, 120.0f, "%.1f"))
+				{
+					m_fFOV = fFOV;
+				}
+
+				// Near plane editing
+				float fNear = GetNearPlane();
+				if (ImGui::DragFloat("Near Plane", &fNear, 0.01f, 0.001f, 10.0f, "%.3f"))
+				{
+					m_fNear = fNear;
+				}
+
+				// Far plane editing
+				float fFar = GetFarPlane();
+				if (ImGui::DragFloat("Far Plane", &fFar, 10.0f, 10.0f, 10000.0f, "%.1f"))
+				{
+					m_fFar = fFar;
+				}
+
+				ImGui::Separator();
+
+				// Pitch and yaw (read-only display, as they're controlled by scripts/input)
+				ImGui::Text("Pitch: %.2f degrees", GetPitch());
+				ImGui::Text("Yaw: %.2f degrees", GetYaw());
+
+				// Aspect ratio (read-only)
+				ImGui::Text("Aspect Ratio: %.3f", GetAspectRatio());
+			}
+
+			ImGui::Separator();
+
+			// Camera position (from position, read-only as it's usually controlled by scripts)
+			Zenith_Maths::Vector3 xPos;
+			GetPosition(xPos);
+			ImGui::Text("Position: (%.2f, %.2f, %.2f)", xPos.x, xPos.y, xPos.z);
 		}
 	}
 #endif

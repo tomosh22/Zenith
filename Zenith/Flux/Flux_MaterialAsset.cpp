@@ -3,11 +3,13 @@
 #include "Flux/Flux_Graphics.h"
 #include "AssetHandling/Zenith_AssetHandler.h"
 #include "DataStream/Zenith_DataStream.h"
+#include <algorithm>
 
 // Static member initialization
 std::unordered_map<std::string, Flux_MaterialAsset*> Flux_MaterialAsset::s_xMaterialCache;
 std::unordered_map<std::string, Flux_Texture*> Flux_MaterialAsset::s_xTextureCache;
 uint32_t Flux_MaterialAsset::s_uNextMaterialID = 1;
+std::vector<Flux_MaterialAsset*> Flux_MaterialAsset::s_xAllMaterials;
 
 static constexpr const char* LOG_TAG = "[MaterialAsset]";
 
@@ -29,7 +31,7 @@ void Flux_MaterialAsset::Shutdown()
 Flux_MaterialAsset* Flux_MaterialAsset::Create(const std::string& strName)
 {
 	Flux_MaterialAsset* pMaterial = new Flux_MaterialAsset();
-	
+
 	if (strName.empty())
 	{
 		pMaterial->m_strName = "Material_" + std::to_string(s_uNextMaterialID++);
@@ -38,11 +40,14 @@ Flux_MaterialAsset* Flux_MaterialAsset::Create(const std::string& strName)
 	{
 		pMaterial->m_strName = strName;
 	}
-	
+
 	pMaterial->m_bDirty = true;
-	
-	Zenith_Log("%s Created new material: %s", LOG_TAG, pMaterial->m_strName.c_str());
-	
+
+	// Register in the global material list for editor visibility
+	s_xAllMaterials.push_back(pMaterial);
+
+	Zenith_Log("%s Created new material: %s (total: %zu)", LOG_TAG, pMaterial->m_strName.c_str(), s_xAllMaterials.size());
+
 	return pMaterial;
 }
 
@@ -55,28 +60,31 @@ Flux_MaterialAsset* Flux_MaterialAsset::LoadFromFile(const std::string& strPath)
 		Zenith_Log("%s Returning cached material: %s", LOG_TAG, strPath.c_str());
 		return it->second;
 	}
-	
+
 	// Check if file exists before loading
 	if (!std::filesystem::exists(strPath))
 	{
 		Zenith_Log("%s ERROR: Material file not found: %s", LOG_TAG, strPath.c_str());
 		return nullptr;
 	}
-	
+
 	// Load from file
 	Zenith_DataStream xStream;
 	xStream.ReadFromFile(strPath.c_str());
-	
+
 	Flux_MaterialAsset* pMaterial = new Flux_MaterialAsset();
 	pMaterial->ReadFromDataStream(xStream);
 	pMaterial->m_strAssetPath = strPath;
 	pMaterial->m_bDirty = false;
-	
+
 	// Add to cache
 	s_xMaterialCache[strPath] = pMaterial;
-	
-	Zenith_Log("%s Loaded material from file: %s (name: %s)", LOG_TAG, strPath.c_str(), pMaterial->m_strName.c_str());
-	
+
+	// Register in the global material list for editor visibility
+	s_xAllMaterials.push_back(pMaterial);
+
+	Zenith_Log("%s Loaded material from file: %s (name: %s, total: %zu)", LOG_TAG, strPath.c_str(), pMaterial->m_strName.c_str(), s_xAllMaterials.size());
+
 	return pMaterial;
 }
 
@@ -103,14 +111,19 @@ void Flux_MaterialAsset::Unload(const std::string& strPath)
 
 void Flux_MaterialAsset::UnloadAll()
 {
-	Zenith_Log("%s Unloading all materials (%zu cached)", LOG_TAG, s_xMaterialCache.size());
-	
+	Zenith_Log("%s Unloading all materials (%zu cached, %zu total)", LOG_TAG, s_xMaterialCache.size(), s_xAllMaterials.size());
+
 	for (auto& pair : s_xMaterialCache)
 	{
 		delete pair.second;
 	}
 	s_xMaterialCache.clear();
-	
+
+	// Clear the global material list (materials were deleted above via cache)
+	// Note: Some materials in s_xAllMaterials may not be in the cache (runtime-created)
+	// Those will be cleaned up by component destructors
+	s_xAllMaterials.clear();
+
 	// Also clear texture cache
 	for (auto& pair : s_xTextureCache)
 	{
@@ -120,7 +133,7 @@ void Flux_MaterialAsset::UnloadAll()
 		}
 	}
 	s_xTextureCache.clear();
-	
+
 	Zenith_Log("%s All materials and textures unloaded", LOG_TAG);
 }
 
@@ -152,10 +165,24 @@ void Flux_MaterialAsset::GetAllLoadedMaterialPaths(std::vector<std::string>& out
 {
 	outPaths.clear();
 	outPaths.reserve(s_xMaterialCache.size());
-	
+
 	for (const auto& pair : s_xMaterialCache)
 	{
 		outPaths.push_back(pair.first);
+	}
+}
+
+void Flux_MaterialAsset::GetAllMaterials(std::vector<Flux_MaterialAsset*>& outMaterials)
+{
+	outMaterials.clear();
+	outMaterials.reserve(s_xAllMaterials.size());
+
+	for (Flux_MaterialAsset* pMaterial : s_xAllMaterials)
+	{
+		if (pMaterial)
+		{
+			outMaterials.push_back(pMaterial);
+		}
 	}
 }
 
@@ -170,6 +197,13 @@ Flux_MaterialAsset::Flux_MaterialAsset()
 Flux_MaterialAsset::~Flux_MaterialAsset()
 {
 	UnloadTextures();
+
+	// Remove from global material list
+	auto it = std::find(s_xAllMaterials.begin(), s_xAllMaterials.end(), this);
+	if (it != s_xAllMaterials.end())
+	{
+		s_xAllMaterials.erase(it);
+	}
 }
 
 void Flux_MaterialAsset::UnloadTextures()
