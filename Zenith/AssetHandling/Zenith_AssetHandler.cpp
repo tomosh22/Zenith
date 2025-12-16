@@ -359,18 +359,6 @@ Flux_MeshGeometry* Zenith_AssetHandler::GetMeshByPath(const std::string& strPath
 
 Flux_MeshGeometry* Zenith_AssetHandler::AddMeshFromFile(const char* szPath, u_int uRetainAttributeBits /*= 0*/, const bool bUploadToGPU /*= true*/)
 {
-	// CRITICAL: Check if mesh already exists to avoid duplicates
-	// This prevents mesh pool exhaustion on repeated scene reloads
-	Flux_MeshGeometry* pxExisting = GetMeshByPath(szPath);
-	if (pxExisting)
-	{
-		if (s_bLifecycleLoggingEnabled)
-		{
-			Zenith_Log("%s Reusing existing mesh: %s", ASSET_LOG_TAG, szPath);
-		}
-		return pxExisting;
-	}
-
 	AssetID uID = GetNextFreeMeshSlot();
 	if (uID == INVALID_ASSET_ID)
 	{

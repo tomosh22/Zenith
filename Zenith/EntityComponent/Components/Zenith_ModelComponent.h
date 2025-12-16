@@ -31,13 +31,7 @@ public:
 
 	~Zenith_ModelComponent()
 	{
-		// CRITICAL: Do NOT delete assets if we're loading a scene!
-		// When LoadFromFile calls Reset(), it destroys all existing components.
-		// If we delete assets here, they won't be available when deserializing
-		// the new components that reference the same assets.
-		//
-		// Forward declaration used here to avoid circular dependency with Zenith_Scene.h
-		// Implementation is in Zenith_ModelComponent.cpp where we can include Zenith_Scene.h
+		// Always clean up assets we created - they will be recreated fresh on scene reload
 		extern bool Zenith_ModelComponent_ShouldDeleteAssets();
 
 		if (Zenith_ModelComponent_ShouldDeleteAssets())

@@ -12,10 +12,10 @@ static constexpr const char* LOG_TAG_MODEL_PHYSICS = "[ModelPhysics]";
 static constexpr uint32_t MODEL_COMPONENT_SERIALIZE_VERSION = 2;
 
 // Helper function to check if we should delete assets in the destructor
-// Returns false during scene loading to prevent deleting assets that will be reused
+// Always returns true - assets should be properly cleaned up and recreated fresh on scene reload
 bool Zenith_ModelComponent_ShouldDeleteAssets()
 {
-	return !Zenith_Scene::IsLoadingScene();
+	return true;
 }
 
 void Zenith_ModelComponent::WriteToDataStream(Zenith_DataStream& xStream) const
@@ -83,10 +83,6 @@ void Zenith_ModelComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 		// Version 2+: Read full material with texture paths
 		if (uVersion >= 2)
 		{
-			// Read material data into a temporary to get texture paths
-			Flux_Material xTempMat;
-			xTempMat.ReadFromDataStream(xStream);
-			
 			// Load mesh from source path
 			if (!strMeshPath.empty())
 			{
@@ -95,44 +91,36 @@ void Zenith_ModelComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 				{
 					m_xCreatedMeshes.PushBack(pxMesh);
 
-					// Check if a material with the same diffuse path already exists
-					Flux_Material* pxMaterial = nullptr;
-					if (!xTempMat.GetDiffusePath().empty())
-					{
-						pxMaterial = Zenith_AssetHandler::GetMaterialByDiffusePath(xTempMat.GetDiffusePath());
-						if (pxMaterial)
-						{
-							Zenith_Log("[ModelComponent] Reusing existing material with diffuse: %s", xTempMat.GetDiffusePath().c_str());
-							// Don't track as created - we didn't create it, just reusing
-						}
-					}
-					
-					// If no existing material found, create a new one
-					if (!pxMaterial)
-					{
-						pxMaterial = Zenith_AssetHandler::AddMaterial();
-						if (pxMaterial)
-						{
-							// Copy data from temp material (textures already loaded/reused)
-							*pxMaterial = xTempMat;
-							m_xCreatedMaterials.PushBack(pxMaterial);
-						}
-					}
-					
+					// Create a new material and read its data (including texture paths)
+					Flux_Material* pxMaterial = Zenith_AssetHandler::AddMaterial();
 					if (pxMaterial)
 					{
+						m_xCreatedMaterials.PushBack(pxMaterial);
+						pxMaterial->ReadFromDataStream(xStream);  // This loads textures from paths
 						AddMeshEntry(*pxMesh, *pxMaterial);
 					}
 					else
 					{
 						Zenith_Log("[ModelComponent] Failed to create material during deserialization");
+						// Still need to read material data to advance stream
+						Flux_Material xTempMat;
+						xTempMat.ReadFromDataStream(xStream);
 						AddMeshEntry(*pxMesh, *Flux_Graphics::s_pxBlankMaterial);
 					}
 				}
 				else
 				{
 					Zenith_Log("[ModelComponent] Failed to load mesh from path: %s", strMeshPath.c_str());
+					// Still need to read material data to advance stream
+					Flux_Material xTempMat;
+					xTempMat.ReadFromDataStream(xStream);
 				}
+			}
+			else
+			{
+				// Empty mesh path, still need to read material data
+				Flux_Material xTempMat;
+				xTempMat.ReadFromDataStream(xStream);
 			}
 		}
 		else

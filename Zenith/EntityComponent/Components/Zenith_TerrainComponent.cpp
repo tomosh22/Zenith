@@ -414,54 +414,33 @@ void Zenith_TerrainComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 	// Version 2+: Read full materials with texture paths
 	if (uVersion >= 2)
 	{
-		// Read material 0 data into temp to check for existing material
-		Flux_Material xTempMat0;
-		xTempMat0.ReadFromDataStream(xStream);
+		// Create fresh materials
+		m_pxMaterial0 = Zenith_AssetHandler::AddMaterial();
+		m_pxMaterial1 = Zenith_AssetHandler::AddMaterial();
 		
-		// Read material 1 data into temp to check for existing material
-		Flux_Material xTempMat1;
-		xTempMat1.ReadFromDataStream(xStream);
+		// Mark that we own these materials and their textures need cleanup
+		m_bOwnsMaterials = true;
 		
-		// Try to reuse existing material 0 by diffuse path
-		if (!xTempMat0.GetDiffusePath().empty())
+		// Read material data (this will also load textures from paths)
+		if (m_pxMaterial0)
 		{
-			m_pxMaterial0 = Zenith_AssetHandler::GetMaterialByDiffusePath(xTempMat0.GetDiffusePath());
-			if (m_pxMaterial0)
-			{
-				Zenith_Log("[TerrainComponent] Reusing existing material0 with diffuse: %s", xTempMat0.GetDiffusePath().c_str());
-			}
+			m_pxMaterial0->ReadFromDataStream(xStream);
+		}
+		else
+		{
+			// Skip material data if we couldn't create material
+			Flux_Material xTempMat;
+			xTempMat.ReadFromDataStream(xStream);
 		}
 		
-		// If no existing material found, create a new one
-		if (!m_pxMaterial0)
+		if (m_pxMaterial1)
 		{
-			m_pxMaterial0 = Zenith_AssetHandler::AddMaterial();
-			if (m_pxMaterial0)
-			{
-				*m_pxMaterial0 = xTempMat0;
-				m_bOwnsMaterials = true;  // We created it, we own it
-			}
+			m_pxMaterial1->ReadFromDataStream(xStream);
 		}
-		
-		// Try to reuse existing material 1 by diffuse path
-		if (!xTempMat1.GetDiffusePath().empty())
+		else
 		{
-			m_pxMaterial1 = Zenith_AssetHandler::GetMaterialByDiffusePath(xTempMat1.GetDiffusePath());
-			if (m_pxMaterial1)
-			{
-				Zenith_Log("[TerrainComponent] Reusing existing material1 with diffuse: %s", xTempMat1.GetDiffusePath().c_str());
-			}
-		}
-		
-		// If no existing material found, create a new one
-		if (!m_pxMaterial1)
-		{
-			m_pxMaterial1 = Zenith_AssetHandler::AddMaterial();
-			if (m_pxMaterial1)
-			{
-				*m_pxMaterial1 = xTempMat1;
-				m_bOwnsMaterials = true;  // We created it, we own it
-			}
+			Flux_Material xTempMat;
+			xTempMat.ReadFromDataStream(xStream);
 		}
 	}
 	else
