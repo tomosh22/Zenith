@@ -120,6 +120,13 @@ public:
 		m_uSize = 0;
 	}
 
+	void PopBack()
+	{
+		Zenith_Assert(m_uSize > 0, "Cannot pop from empty vector");
+		m_pxData[m_uSize - 1].~T();
+		m_uSize--;
+	}
+
 	void Reserve(u_int uNewCapcacity)
 	{
 		if (uNewCapcacity <= m_uCapacity) return;

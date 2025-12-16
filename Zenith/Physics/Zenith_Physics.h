@@ -12,9 +12,13 @@
 #include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
 #include <Jolt/Physics/Body/BodyActivationListener.h>
+#include <Jolt/Physics/Body/BodyLockInterface.h>
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
+#include <vector>
+#include <mutex>
 
 class Zenith_CameraComponent;
+using Zenith_EntityID = u_int;
 
 enum CollisionVolumeType
 {
@@ -68,6 +72,14 @@ public:
 	static double s_fTimestepAccumulator;
 	static constexpr double s_fDesiredFramerate = 1.0 / 60.0;
 
+	// Deferred collision event for thread-safe processing
+	struct DeferredCollisionEvent
+	{
+		Zenith_EntityID uEntityID1;
+		Zenith_EntityID uEntityID2;
+		CollisionEventType eEventType;
+	};
+
 	class PhysicsContactListener : public JPH::ContactListener
 	{
 	public:
@@ -86,10 +98,17 @@ public:
 	};
 
 	static PhysicsContactListener s_xContactListener;
+	static void ProcessDeferredCollisionEvents();
 
 private:
 	static constexpr uint32_t s_uMaxBodies = 65536;
 	static constexpr uint32_t s_uNumBodyMutexes = 0; // 0 = auto-detect
 	static constexpr uint32_t s_uMaxBodyPairs = 65536;
 	static constexpr uint32_t s_uMaxContactConstraints = 10240;
+
+	// Thread-safe deferred event queue
+	static std::vector<DeferredCollisionEvent> s_xDeferredEvents;
+	static std::mutex s_xEventQueueMutex;
+
+	friend void QueueCollisionEventInternal(Zenith_EntityID, Zenith_EntityID, CollisionEventType);
 };

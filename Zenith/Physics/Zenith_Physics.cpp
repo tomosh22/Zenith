@@ -2,6 +2,9 @@
 #include "Physics/Zenith_Physics.h"
 #include "Physics/Zenith_PhysicsMeshGenerator.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
+#include "EntityComponent/Components/Zenith_ScriptComponent.h"
+#include "EntityComponent/Components/Zenith_ColliderComponent.h"
+#include "EntityComponent/Zenith_Scene.h"
 #include "Zenith_OS_Include.h"
 
 JPH::TempAllocatorImpl* Zenith_Physics::s_pxTempAllocator = nullptr;
@@ -9,6 +12,8 @@ JPH::JobSystemThreadPool* Zenith_Physics::s_pxJobSystem = nullptr;
 JPH::PhysicsSystem* Zenith_Physics::s_pxPhysicsSystem = nullptr;
 double Zenith_Physics::s_fTimestepAccumulator = 0;
 Zenith_Physics::PhysicsContactListener Zenith_Physics::s_xContactListener;
+std::vector<Zenith_Physics::DeferredCollisionEvent> Zenith_Physics::s_xDeferredEvents;
+std::mutex Zenith_Physics::s_xEventQueueMutex;
 
 static void TraceImpl(const char* inFMT, ...)
 {
@@ -121,6 +126,82 @@ static BPLayerInterfaceImpl s_xBroadPhaseLayerInterface;
 static ObjectVsBroadPhaseLayerFilterImpl s_xObjectVsBroadPhaseLayerFilter;
 static ObjectLayerPairFilterImpl s_xObjectLayerPairFilter;
 
+// Queue collision event for deferred processing on main thread
+// CRITICAL: This is called from Jolt worker threads, so it must be thread-safe
+static void QueueCollisionEventInternal(Zenith_EntityID uEntityID1, Zenith_EntityID uEntityID2, CollisionEventType eEventType)
+{
+	// Validate entity IDs (0 is invalid)
+	if (uEntityID1 == 0 || uEntityID2 == 0)
+		return;
+
+	Zenith_Physics::DeferredCollisionEvent xEvent;
+	xEvent.uEntityID1 = uEntityID1;
+	xEvent.uEntityID2 = uEntityID2;
+	xEvent.eEventType = eEventType;
+
+	std::lock_guard<std::mutex> xLock(Zenith_Physics::s_xEventQueueMutex);
+	Zenith_Physics::s_xDeferredEvents.push_back(xEvent);
+}
+
+void Zenith_Physics::ProcessDeferredCollisionEvents()
+{
+	// Swap out the events to minimize lock time
+	std::vector<DeferredCollisionEvent> xEventsToProcess;
+	{
+		std::lock_guard<std::mutex> xLock(s_xEventQueueMutex);
+		xEventsToProcess.swap(s_xDeferredEvents);
+	}
+
+	// Process all deferred events on the main thread (safe to access scene)
+	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+
+	for (const DeferredCollisionEvent& xEvent : xEventsToProcess)
+	{
+		// Check if entities still exist
+		if (!xScene.EntityExists(xEvent.uEntityID1) || !xScene.EntityExists(xEvent.uEntityID2))
+			continue;
+
+		Zenith_Entity xEntity1 = xScene.GetEntityFromID(xEvent.uEntityID1);
+		Zenith_Entity xEntity2 = xScene.GetEntityFromID(xEvent.uEntityID2);
+
+		// Dispatch to entity 1's script component
+		if (xEntity1.HasComponent<Zenith_ScriptComponent>())
+		{
+			Zenith_ScriptComponent& xScript1 = xEntity1.GetComponent<Zenith_ScriptComponent>();
+			switch (xEvent.eEventType)
+			{
+			case COLLISION_EVENT_TYPE_START:
+				xScript1.OnCollisionEnter(xEntity2);
+				break;
+			case COLLISION_EVENT_TYPE_STAY:
+				xScript1.OnCollisionStay(xEntity2);
+				break;
+			case COLLISION_EVENT_TYPE_EXIT:
+				xScript1.OnCollisionExit(xEvent.uEntityID2);
+				break;
+			}
+		}
+
+		// Dispatch to entity 2's script component
+		if (xEntity2.HasComponent<Zenith_ScriptComponent>())
+		{
+			Zenith_ScriptComponent& xScript2 = xEntity2.GetComponent<Zenith_ScriptComponent>();
+			switch (xEvent.eEventType)
+			{
+			case COLLISION_EVENT_TYPE_START:
+				xScript2.OnCollisionEnter(xEntity1);
+				break;
+			case COLLISION_EVENT_TYPE_STAY:
+				xScript2.OnCollisionStay(xEntity1);
+				break;
+			case COLLISION_EVENT_TYPE_EXIT:
+				xScript2.OnCollisionExit(xEvent.uEntityID1);
+				break;
+			}
+		}
+	}
+}
+
 void Zenith_Physics::Initialise()
 {
 	JPH::RegisterDefaultAllocator();
@@ -128,13 +209,16 @@ void Zenith_Physics::Initialise()
 	JPH::Trace = TraceImpl;
 	JPH_IF_ENABLE_ASSERTS(JPH::AssertFailed = AssertFailedImpl;)
 
-	JPH::Factory::sInstance = new JPH::Factory();
+		JPH::Factory::sInstance = new JPH::Factory();
 
 	JPH::RegisterTypes();
 
 	s_pxTempAllocator = new JPH::TempAllocatorImpl(10 * 1024 * 1024);
 
-	s_pxJobSystem = new JPH::JobSystemThreadPool(JPH::cMaxPhysicsJobs, JPH::cMaxPhysicsBarriers, std::thread::hardware_concurrency() - 1);
+	// Ensure we have at least 1 worker thread to avoid deadlock
+	// Jolt Physics requires worker threads to process physics jobs
+	uint32_t uNumThreads = std::max(1u, std::thread::hardware_concurrency() - 1);
+	s_pxJobSystem = new JPH::JobSystemThreadPool(JPH::cMaxPhysicsJobs, JPH::cMaxPhysicsBarriers, uNumThreads);
 
 	s_pxPhysicsSystem = new JPH::PhysicsSystem();
 	s_pxPhysicsSystem->Init(s_uMaxBodies, s_uNumBodyMutexes, s_uMaxBodyPairs, s_uMaxContactConstraints,
@@ -148,12 +232,16 @@ void Zenith_Physics::Initialise()
 void Zenith_Physics::Update(float fDt)
 {
 	s_fTimestepAccumulator += fDt;
-	
+
 	while (s_fTimestepAccumulator >= s_fDesiredFramerate)
 	{
 		s_pxPhysicsSystem->Update(static_cast<float>(s_fDesiredFramerate), 1, s_pxTempAllocator, s_pxJobSystem);
 		s_fTimestepAccumulator -= s_fDesiredFramerate;
 	}
+
+	// CRITICAL: Process deferred collision events AFTER physics update completes
+	// This ensures we're on the main thread and can safely access scene data
+	ProcessDeferredCollisionEvents();
 
 	Zenith_PhysicsMeshGenerator::DebugDrawAllPhysicsMeshes();
 }
@@ -279,30 +367,47 @@ void Zenith_Physics::PhysicsContactListener::OnContactAdded(
 	const JPH::Body& inBody1, const JPH::Body& inBody2,
 	const JPH::ContactManifold& inManifold, JPH::ContactSettings& ioSettings)
 {
-#if 0
-	// Handle contact start event
-	// You can access body user data like this:
-	// void* userData1 = inBody1.GetUserData();
-	// void* userData2 = inBody2.GetUserData();
-	
-	// Example: Trigger COLLISION_EVENT_TYPE_START callbacks
-#endif
+	// Queue event for deferred processing (thread-safe)
+	Zenith_EntityID uEntityID1 = static_cast<Zenith_EntityID>(inBody1.GetUserData());
+	Zenith_EntityID uEntityID2 = static_cast<Zenith_EntityID>(inBody2.GetUserData());
+	QueueCollisionEventInternal(uEntityID1, uEntityID2, COLLISION_EVENT_TYPE_START);
 }
 
 void Zenith_Physics::PhysicsContactListener::OnContactPersisted(
 	const JPH::Body& inBody1, const JPH::Body& inBody2,
 	const JPH::ContactManifold& inManifold, JPH::ContactSettings& ioSettings)
 {
-#if 0
-	// Handle contact stay event
-	// Example: Trigger COLLISION_EVENT_TYPE_STAY callbacks
-#endif
+	// Queue event for deferred processing (thread-safe)
+	Zenith_EntityID uEntityID1 = static_cast<Zenith_EntityID>(inBody1.GetUserData());
+	Zenith_EntityID uEntityID2 = static_cast<Zenith_EntityID>(inBody2.GetUserData());
+	QueueCollisionEventInternal(uEntityID1, uEntityID2, COLLISION_EVENT_TYPE_STAY);
 }
 
 void Zenith_Physics::PhysicsContactListener::OnContactRemoved(const JPH::SubShapeIDPair& inSubShapePair)
 {
-#if 0
-	// Handle contact exit event
-	// Example: Trigger COLLISION_EVENT_TYPE_EXIT callbacks
-#endif
+	// Queue event for deferred processing (thread-safe)
+	JPH::BodyID xBodyID1 = inSubShapePair.GetBody1ID();
+	JPH::BodyID xBodyID2 = inSubShapePair.GetBody2ID();
+
+	Zenith_EntityID uEntityID1 = 0;
+	Zenith_EntityID uEntityID2 = 0;
+
+	// CRITICAL: Use TryGetBody instead of BodyLockRead to avoid deadlock
+	// We're already inside a physics callback, so the bodies are locked by Jolt
+	const JPH::BodyLockInterface& xLockInterface = s_pxPhysicsSystem->GetBodyLockInterface();
+	
+	// TryGetBody doesn't acquire locks - safe to use in callbacks
+	const JPH::Body* pxBody1 = xLockInterface.TryGetBody(xBodyID1);
+	if (pxBody1)
+	{
+		uEntityID1 = static_cast<Zenith_EntityID>(pxBody1->GetUserData());
+	}
+
+	const JPH::Body* pxBody2 = xLockInterface.TryGetBody(xBodyID2);
+	if (pxBody2)
+	{
+		uEntityID2 = static_cast<Zenith_EntityID>(pxBody2->GetUserData());
+	}
+
+	QueueCollisionEventInternal(uEntityID1, uEntityID2, COLLISION_EVENT_TYPE_EXIT);
 }

@@ -86,7 +86,6 @@ Zenith_Scene::~Zenith_Scene() {
 
 void Zenith_Scene::Reset()
 {
-
 	for (Zenith_Vector<Zenith_ComponentPoolBase*>::Iterator xIt(m_xComponents); !xIt.Done(); xIt.Next())
 	{
 		Zenith_ComponentPoolBase* pxPool = xIt.GetData();
@@ -99,6 +98,7 @@ void Zenith_Scene::Reset()
 	m_xEntityComponents.Clear();
 	m_xEntityMap.clear();
 	m_pxMainCameraEntity = nullptr;
+	m_uNextEntityID = 1;  // Reset entity ID counter (0 is reserved as invalid)
 }
 
 void Zenith_Scene::RemoveEntity(Zenith_EntityID uID)
@@ -374,6 +374,10 @@ void Zenith_Scene::WaitForUpdateComplete()
 }
 
 Zenith_Entity Zenith_Scene::GetEntityByID(Zenith_EntityID uID) {
+	return m_xEntityMap.at(uID);
+}
+
+Zenith_Entity Zenith_Scene::GetEntityFromID(Zenith_EntityID uID) {
 	return m_xEntityMap.at(uID);
 }
 

@@ -13,6 +13,13 @@ public:
 	virtual ~Zenith_ScriptBehaviour() {}
 	virtual void OnCreate() = 0;
 	virtual void OnUpdate(float fDt) = 0;
+
+	// Physics collision callbacks - override to handle collision events
+	// xOther is the entity that was collided with
+	virtual void OnCollisionEnter(Zenith_Entity xOther) {}
+	virtual void OnCollisionStay(Zenith_Entity xOther) {}
+	virtual void OnCollisionExit(Zenith_EntityID uOtherID) {}  // Exit only gets ID since body may be destroyed
+
 	// Return the unique type name for this behavior (used for serialization)
 	virtual const char* GetBehaviourTypeName() const = 0;
 	std::vector<Zenith_GUID> m_axGUIDRefs;
@@ -81,7 +88,11 @@ public:
 
 	void OnCreate() { if(m_pxScriptBehaviour) m_pxScriptBehaviour->OnCreate(); }
 	void OnUpdate(float fDt) { if(m_pxScriptBehaviour) m_pxScriptBehaviour->OnUpdate(fDt); }
-	//void OnCollision(Zenith_Entity xOther, Physics::CollisionEventType eCollisionType) { m_pxScriptBehaviour->OnCollision(xOther, eCollisionType); }
+
+	// Physics collision event dispatch
+	void OnCollisionEnter(Zenith_Entity xOther) { if(m_pxScriptBehaviour) m_pxScriptBehaviour->OnCollisionEnter(xOther); }
+	void OnCollisionStay(Zenith_Entity xOther) { if(m_pxScriptBehaviour) m_pxScriptBehaviour->OnCollisionStay(xOther); }
+	void OnCollisionExit(Zenith_EntityID uOtherID) { if(m_pxScriptBehaviour) m_pxScriptBehaviour->OnCollisionExit(uOtherID); }
 
 	template<typename T>
 	void SetBehaviour()

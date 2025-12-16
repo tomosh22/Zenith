@@ -4,6 +4,7 @@
 
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Multithreading/Zenith_Multithreading.h"
+#include <thread>
 
 static constexpr u_int uMAX_TASKS = 128;
 
@@ -41,8 +42,14 @@ static void ThreadFunc(const void* pData)
 
 void Zenith_TaskSystem::Inititalise()
 {
-	//#TO_TODO: work this out properly
-	const u_int uNumThreads = 8;
+	// Use hardware thread count minus 1 (reserve main thread)
+	// Minimum of 1 worker thread, maximum of 16
+	constexpr u_int uMAX_TASK_THREADS = 16;
+	const u_int uHardwareThreads = std::thread::hardware_concurrency();
+	u_int uNumThreads = (uHardwareThreads > 1) ? (uHardwareThreads - 1) : 1;
+	if (uNumThreads > uMAX_TASK_THREADS) uNumThreads = uMAX_TASK_THREADS;
+
+	Zenith_Log("TaskSystem: Creating %u worker threads (hardware reports %u threads)", uNumThreads, uHardwareThreads);
 
 	g_pxWorkAvailableSem = new Zenith_Semaphore(0, uMAX_TASKS);
 	g_pxThreadsTerminatedSem = new Zenith_Semaphore(0, uNumThreads);

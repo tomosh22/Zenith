@@ -29,9 +29,29 @@ public:
 		return true;
 	}
 
-private:
+	// Inspection methods
+	u_int GetSize() const { return m_uCurrentSize; }
+	u_int GetCapacity() const { return uCapacity; }
+	bool IsEmpty() const { return m_uCurrentSize == 0; }
+	bool IsFull() const { return m_uCurrentSize == uCapacity; }
 
+	// Peek at front element without removing it
+	bool Peek(T& tOut) const
+	{
+		if (m_uCurrentSize == 0) return false;
+		tOut = m_atContents[m_uFront];
+		return true;
+	}
+
+	// Clear all elements
+	void Clear()
+	{
+		m_uCurrentSize = 0;
+		m_uFront = 0;
+	}
+
+private:
 	T m_atContents[uCapacity];
-	u_int m_uCurrentSize = -1;
-	u_int m_uFront = -1;
+	u_int m_uCurrentSize = 0;
+	u_int m_uFront = 0;
 };

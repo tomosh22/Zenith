@@ -139,6 +139,7 @@ public:
 	
 	//--------------------------------------------------------------------------
 	// Texture Paths (for serialization)
+	// NOTE: Setters load textures immediately to avoid threading issues during rendering
 	//--------------------------------------------------------------------------
 	
 	const std::string& GetDiffuseTexturePath() const { return m_strDiffuseTexturePath; }
@@ -157,7 +158,8 @@ public:
 	void SetEmissiveTexturePath(const std::string& strPath);
 	
 	//--------------------------------------------------------------------------
-	// Texture Accessors (loads on demand, returns blank if not set)
+	// Texture Accessors (returns loaded texture, or blank if not set)
+	// NOTE: Textures are loaded immediately when paths are set, not lazily
 	//--------------------------------------------------------------------------
 	
 	const Flux_Texture* GetDiffuseTexture();

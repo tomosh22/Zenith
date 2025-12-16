@@ -1,23 +1,8 @@
 #pragma once
 
 #include "Collections/Zenith_Vector.h"
-class Zenith_Entity;
-template<typename T>
-concept Zenith_Component =
-// Component must be constructible from an entity reference
-// This matches the existing pattern where components store their parent entity
-std::is_constructible_v<T, Zenith_Entity&>&&
-// Component must be destructible
-std::is_destructible_v<T>
-	#ifdef ZENITH_TOOLS
-	&&
-// Component must have a RenderPropertiesPanel method for editor UI
-// This method is responsible for rendering the component's properties in ImGui
-	requires(T& t) { { t.RenderPropertiesPanel() } -> std::same_as<void>; }&&
-// Component must have a static RegisterWithEditor function for self-registration
-	requires() { { T::RegisterWithEditor() } -> std::same_as<void>; }
-	#endif
-	;
+#include <atomic>
+#include <mutex>
 
 class Zenith_CameraComponent;
 class Zenith_Entity;
@@ -38,6 +23,30 @@ public:
 	Zenith_Vector<T> m_xData;
 };
 
+// Forward declare Zenith_Scene so Zenith_Entity can reference it
+class Zenith_Scene;
+
+// Include Zenith_Entity to get complete type definition for m_xEntityMap
+#include "EntityComponent/Zenith_Entity.h"
+
+// Define the component concept after Zenith_Entity is fully defined
+template<typename T>
+concept Zenith_Component =
+// Component must be constructible from an entity reference
+// This matches the existing pattern where components store their parent entity
+std::is_constructible_v<T, Zenith_Entity&>&&
+// Component must be destructible
+std::is_destructible_v<T>
+	#ifdef ZENITH_TOOLS
+	&&
+// Component must have a RenderPropertiesPanel method for editor UI
+// This method is responsible for rendering the component's properties in ImGui
+	requires(T& t) { { t.RenderPropertiesPanel() } -> std::same_as<void>; }&&
+// Component must have a static RegisterWithEditor function for self-registration
+	requires() { { T::RegisterWithEditor() } -> std::same_as<void>; }
+	#endif
+	;
+
 class Zenith_Scene
 {
 public:
@@ -50,7 +59,7 @@ public:
 		static TypeID GetTypeID()
 		{
 			static TypeID ls_uRet = s_uCounter++;
-			
+
 			#ifdef ZENITH_TOOLS
 			static bool ls_bRegistered = false;
 			static bool ls_bInRegistration = false;
@@ -58,12 +67,12 @@ public:
 			if (!ls_bRegistered && !ls_bInRegistration)
 			{
 				ls_bInRegistration = true;
-				T::RegisterWithEditor();
+			T::RegisterWithEditor();
 				ls_bRegistered = true;
 				ls_bInRegistration = false;
 			}
 			#endif
-			
+
 			return ls_uRet;
 		}
 	private:
@@ -85,12 +94,12 @@ public:
 
 	Zenith_EntityID CreateEntity()
 	{
-		static Zenith_EntityID ls_uCount = 1;
-		while (m_xEntityComponents.GetSize() <= ls_uCount)
+		// Entity ID counter per-scene (starts at 1 because 0 is reserved as invalid)
+		while (m_xEntityComponents.GetSize() <= m_uNextEntityID)
 		{
 			m_xEntityComponents.PushBack({});
 		}
-		return ls_uCount++;
+		return m_uNextEntityID++;
 	}
 
 	template<typename T, typename... Args>
@@ -156,6 +165,8 @@ public:
 
 	// Query methods
 	u_int GetEntityCount() const { return static_cast<u_int>(m_xEntityMap.size()); }
+	bool EntityExists(Zenith_EntityID uID) const { return m_xEntityMap.find(uID) != m_xEntityMap.end(); }
+	Zenith_Entity GetEntityFromID(Zenith_EntityID uID);
 
 	static void Update(const float fDt);
 	static void WaitForUpdateComplete();
@@ -205,6 +216,7 @@ private:
 	static Zenith_Scene s_xCurrentScene;
 	Zenith_Entity* m_pxMainCameraEntity;
 	Zenith_Mutex m_xMutex;
+	Zenith_EntityID m_uNextEntityID = 1;  // Starts at 1 (0 is reserved as invalid)
 
 	public:
 	//#TO type id is index into vector
@@ -213,3 +225,41 @@ private:
 	//#TO EntityID is index into vector
 	Zenith_Vector<std::unordered_map<Zenith_Scene::TypeID, u_int>> m_xEntityComponents;
 };
+
+// Zenith_Entity template implementations (placed here after Zenith_Scene is fully defined)
+template<typename T, typename... Args>
+T& Zenith_Entity::AddComponent(Args&&... args)
+{
+	Zenith_Assert(!HasComponent<T>(), "Already has this component");
+	return m_pxParentScene->CreateComponent<T>(m_uEntityID, std::forward<Args>(args)..., *this);
+}
+
+template<typename T, typename... Args>
+T& Zenith_Entity::AddOrReplaceComponent(Args&&... args)
+{
+	if (HasComponent<T>())
+	{
+		RemoveComponent<T>();
+	}
+	return AddComponent<T>(args);
+}
+
+template<typename T>
+bool Zenith_Entity::HasComponent() const
+{
+	return m_pxParentScene->EntityHasComponent<T>(m_uEntityID);
+}
+
+template<typename T>
+T& Zenith_Entity::GetComponent() const
+{
+	Zenith_Assert(HasComponent<T>(), "Doesn't have this component");
+	return m_pxParentScene->GetComponentFromEntity<T>(m_uEntityID);
+}
+
+template<typename T>
+void Zenith_Entity::RemoveComponent()
+{
+	Zenith_Assert(HasComponent<T>(), "Doesn't have this component");
+	m_pxParentScene->RemoveComponentFromEntity<T>(m_uEntityID);
+}

@@ -191,7 +191,8 @@ void Flux_MaterialAsset::SetDiffuseTexturePath(const std::string& strPath)
 	if (m_strDiffuseTexturePath != strPath)
 	{
 		m_strDiffuseTexturePath = strPath;
-		m_pxDiffuseTexture = nullptr;  // Will reload on next Get
+		// Load texture immediately to avoid threading issues during rendering
+		m_pxDiffuseTexture = LoadTextureFromPath(strPath);
 		m_bDirty = true;
 	}
 }
@@ -201,7 +202,8 @@ void Flux_MaterialAsset::SetNormalTexturePath(const std::string& strPath)
 	if (m_strNormalTexturePath != strPath)
 	{
 		m_strNormalTexturePath = strPath;
-		m_pxNormalTexture = nullptr;
+		// Load texture immediately to avoid threading issues during rendering
+		m_pxNormalTexture = LoadTextureFromPath(strPath);
 		m_bDirty = true;
 	}
 }
@@ -211,7 +213,8 @@ void Flux_MaterialAsset::SetRoughnessMetallicTexturePath(const std::string& strP
 	if (m_strRoughnessMetallicTexturePath != strPath)
 	{
 		m_strRoughnessMetallicTexturePath = strPath;
-		m_pxRoughnessMetallicTexture = nullptr;
+		// Load texture immediately to avoid threading issues during rendering
+		m_pxRoughnessMetallicTexture = LoadTextureFromPath(strPath);
 		m_bDirty = true;
 	}
 }
@@ -221,7 +224,8 @@ void Flux_MaterialAsset::SetOcclusionTexturePath(const std::string& strPath)
 	if (m_strOcclusionTexturePath != strPath)
 	{
 		m_strOcclusionTexturePath = strPath;
-		m_pxOcclusionTexture = nullptr;
+		// Load texture immediately to avoid threading issues during rendering
+		m_pxOcclusionTexture = LoadTextureFromPath(strPath);
 		m_bDirty = true;
 	}
 }
@@ -231,13 +235,16 @@ void Flux_MaterialAsset::SetEmissiveTexturePath(const std::string& strPath)
 	if (m_strEmissiveTexturePath != strPath)
 	{
 		m_strEmissiveTexturePath = strPath;
-		m_pxEmissiveTexture = nullptr;
+		// Load texture immediately to avoid threading issues during rendering
+		m_pxEmissiveTexture = LoadTextureFromPath(strPath);
 		m_bDirty = true;
 	}
 }
 
 //------------------------------------------------------------------------------
 // Texture Loading (with caching)
+// NOTE: This function is not thread-safe. Materials should be created and have
+// their textures set on the main thread during initialization, not from render threads.
 //------------------------------------------------------------------------------
 
 Flux_Texture* Flux_MaterialAsset::LoadTextureFromPath(const std::string& strPath)
@@ -281,46 +288,31 @@ Flux_Texture* Flux_MaterialAsset::LoadTextureFromPath(const std::string& strPath
 
 const Flux_Texture* Flux_MaterialAsset::GetDiffuseTexture()
 {
-	if (!m_pxDiffuseTexture && !m_strDiffuseTexturePath.empty())
-	{
-		m_pxDiffuseTexture = LoadTextureFromPath(m_strDiffuseTexturePath);
-	}
+	// Texture should already be loaded by SetDiffuseTexturePath
 	return m_pxDiffuseTexture ? m_pxDiffuseTexture : &Flux_Graphics::s_xWhiteBlankTexture2D;
 }
 
 const Flux_Texture* Flux_MaterialAsset::GetNormalTexture()
 {
-	if (!m_pxNormalTexture && !m_strNormalTexturePath.empty())
-	{
-		m_pxNormalTexture = LoadTextureFromPath(m_strNormalTexturePath);
-	}
+	// Texture should already be loaded by SetNormalTexturePath
 	return m_pxNormalTexture ? m_pxNormalTexture : &Flux_Graphics::s_xWhiteBlankTexture2D;
 }
 
 const Flux_Texture* Flux_MaterialAsset::GetRoughnessMetallicTexture()
 {
-	if (!m_pxRoughnessMetallicTexture && !m_strRoughnessMetallicTexturePath.empty())
-	{
-		m_pxRoughnessMetallicTexture = LoadTextureFromPath(m_strRoughnessMetallicTexturePath);
-	}
+	// Texture should already be loaded by SetRoughnessMetallicTexturePath
 	return m_pxRoughnessMetallicTexture ? m_pxRoughnessMetallicTexture : &Flux_Graphics::s_xWhiteBlankTexture2D;
 }
 
 const Flux_Texture* Flux_MaterialAsset::GetOcclusionTexture()
 {
-	if (!m_pxOcclusionTexture && !m_strOcclusionTexturePath.empty())
-	{
-		m_pxOcclusionTexture = LoadTextureFromPath(m_strOcclusionTexturePath);
-	}
+	// Texture should already be loaded by SetOcclusionTexturePath
 	return m_pxOcclusionTexture ? m_pxOcclusionTexture : &Flux_Graphics::s_xWhiteBlankTexture2D;
 }
 
 const Flux_Texture* Flux_MaterialAsset::GetEmissiveTexture()
 {
-	if (!m_pxEmissiveTexture && !m_strEmissiveTexturePath.empty())
-	{
-		m_pxEmissiveTexture = LoadTextureFromPath(m_strEmissiveTexturePath);
-	}
+	// Texture should already be loaded by SetEmissiveTexturePath
 	return m_pxEmissiveTexture ? m_pxEmissiveTexture : &Flux_Graphics::s_xWhiteBlankTexture2D;
 }
 
@@ -447,6 +439,10 @@ void Flux_MaterialAsset::ReadFromDataStream(Zenith_DataStream& xStream)
 	xStream >> m_strOcclusionTexturePath;
 	xStream >> m_strEmissiveTexturePath;
 	
-	// Clear cached textures so they reload from new paths
-	UnloadTextures();
+	// Load textures immediately from paths (prevents threading issues during rendering)
+	m_pxDiffuseTexture = LoadTextureFromPath(m_strDiffuseTexturePath);
+	m_pxNormalTexture = LoadTextureFromPath(m_strNormalTexturePath);
+	m_pxRoughnessMetallicTexture = LoadTextureFromPath(m_strRoughnessMetallicTexturePath);
+	m_pxOcclusionTexture = LoadTextureFromPath(m_strOcclusionTexturePath);
+	m_pxEmissiveTexture = LoadTextureFromPath(m_strEmissiveTexturePath);
 }
