@@ -132,6 +132,7 @@ private:
 	static std::string s_strPendingSceneLoadPath;
 	static bool s_bPendingSceneSave;
 	static std::string s_strPendingSceneSavePath;
+	static bool s_bPendingSceneReset;
 
 	// Content Browser state
 	static std::string s_strCurrentDirectory;
@@ -150,6 +151,9 @@ private:
 	static Zenith_Maths::Vector3 s_xEditorCameraPosition;
 	static double s_fEditorCameraPitch;
 	static double s_fEditorCameraYaw;
+	static float s_fEditorCameraFOV;
+	static float s_fEditorCameraNear;
+	static float s_fEditorCameraFar;
 	static Zenith_Entity* s_pxGameCameraEntity;  // Saved when entering play mode
 	static float s_fEditorCameraMoveSpeed;
 	static float s_fEditorCameraRotateSpeed;
@@ -165,8 +169,14 @@ private:
 	static void SwitchToEditorCamera();
 	static void SwitchToGameCamera();
 public:
-	// Get the active camera (editor or game depending on mode)
-	static Zenith_CameraComponent& GetActiveCamera();
+	// Camera data access for Flux_Graphics (delegates to appropriate camera based on mode)
+	static void BuildViewMatrix(Zenith_Maths::Matrix4& xOutMatrix);
+	static void BuildProjectionMatrix(Zenith_Maths::Matrix4& xOutMatrix);
+	static void GetCameraPosition(Zenith_Maths::Vector4& xOutPosition);
+	static float GetCameraNearPlane();
+	static float GetCameraFarPlane();
+	static float GetCameraFOV();
+	static float GetCameraAspectRatio();
 };
 
 #endif // ZENITH_TOOLS

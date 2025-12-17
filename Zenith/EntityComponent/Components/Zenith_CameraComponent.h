@@ -17,7 +17,7 @@ public:
 		CAMERA_TYPE_ORTHOGRAPHIC,
 		CAMERA_TYPE_MAX
 	};
-	Zenith_CameraComponent() = delete;
+	Zenith_CameraComponent() = default;
 	Zenith_CameraComponent(Zenith_Entity& xParentEntity);
 	~Zenith_CameraComponent() = default;
 	void InitialisePerspective(const Zenith_Maths::Vector3& xPos, const float fPitch, const float fYaw, const float fFOV, const float fNear, const float fFar, const float fAspectRatio);
@@ -128,7 +128,7 @@ private:
 	double m_fPitch = 0;
 	float m_fAspect = 0;
 	Zenith_Maths::Vector3 m_xPosition = { 0,0,0 };
-	CameraType m_eType = CAMERA_TYPE_MAX;
+	CameraType m_eType = CAMERA_TYPE_PERSPECTIVE;
 
 	Zenith_Entity m_xParentEntity;
 

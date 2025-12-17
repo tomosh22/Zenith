@@ -83,18 +83,8 @@ void RenderImGui()
 	// Also render the old debug tools window for backwards compatibility
 	ImGui::Begin("Zenith Tools");
 
-	const Zenith_CameraComponent& xCamera = Zenith_Scene::GetCurrentScene().GetMainCamera();
-
-	Zenith_Maths::Vector3 xCamPos;
-	xCamera.GetPosition(xCamPos);
-	std::string strCamPosText = "Camera Position: " + std::to_string(static_cast<int32_t>(xCamPos.x)) + " " + std::to_string(static_cast<int32_t>(xCamPos.y)) + " " + std::to_string(static_cast<int32_t>(xCamPos.z));
-
-	Zenith_Maths::Vector3 xFacingDir;
-	xCamera.GetFacingDir(xFacingDir);
-	std::string strCamDirText = "Camera Facing Dir: " + std::to_string(xFacingDir.x) + " " + std::to_string(xFacingDir.y) + " " + std::to_string(xFacingDir.z);
-
+	std::string strCamPosText = "Camera Position: " + std::to_string(static_cast<int32_t>(Flux_Graphics::s_xFrameConstants.m_xCamPos_Pad.x)) + " " + std::to_string(static_cast<int32_t>(Flux_Graphics::s_xFrameConstants.m_xCamPos_Pad.y)) + " " + std::to_string(static_cast<int32_t>(Flux_Graphics::s_xFrameConstants.m_xCamPos_Pad.z));
 	ImGui::Text(strCamPosText.c_str());
-	ImGui::Text(strCamDirText.c_str());
 
 	std::string strFpsText = "FPS: " + std::to_string(1.f / Zenith_Core::GetDt());
 	ImGui::Text(strFpsText.c_str());

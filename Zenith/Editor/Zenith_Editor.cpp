@@ -117,6 +117,7 @@ bool Zenith_Editor::s_bPendingSceneLoad = false;
 std::string Zenith_Editor::s_strPendingSceneLoadPath = "";
 bool Zenith_Editor::s_bPendingSceneSave = false;
 std::string Zenith_Editor::s_strPendingSceneSavePath = "";
+bool Zenith_Editor::s_bPendingSceneReset = false;
 
 // Content Browser state
 std::string Zenith_Editor::s_strCurrentDirectory = ASSETS_ROOT;
@@ -135,9 +136,20 @@ Flux_MaterialAsset* Zenith_Editor::s_pxSelectedMaterial = nullptr;
 bool Zenith_Editor::s_bShowMaterialEditor = true;
 
 // Editor camera state (standalone, not part of entity/scene system)
-Zenith_Maths::Vector3 Zenith_Editor::s_xEditorCameraPosition = { 0, 100, 0 };
-double Zenith_Editor::s_fEditorCameraPitch = 0.0;
-double Zenith_Editor::s_fEditorCameraYaw = 0.0;
+static constexpr Zenith_Maths::Vector3 xINITIAL_EDITOR_CAMERA_POSITION = { 0, 100, 0 };
+static constexpr float xINITIAL_EDITOR_CAMERA_PITCH = 0.f;
+static constexpr float xINITIAL_EDITOR_CAMERA_YAW = 0.f;
+static constexpr float xINITIAL_EDITOR_CAMERA_FOV = 45.f;
+static constexpr float xINITIAL_EDITOR_CAMERA_NEAR = 1.f;
+static constexpr float xINITIAL_EDITOR_CAMERA_FAR = 2000.f;
+
+
+Zenith_Maths::Vector3 Zenith_Editor::s_xEditorCameraPosition = xINITIAL_EDITOR_CAMERA_POSITION;
+double Zenith_Editor::s_fEditorCameraPitch = xINITIAL_EDITOR_CAMERA_PITCH;
+double Zenith_Editor::s_fEditorCameraYaw = xINITIAL_EDITOR_CAMERA_YAW;
+float Zenith_Editor::s_fEditorCameraFOV = xINITIAL_EDITOR_CAMERA_FOV;
+float Zenith_Editor::s_fEditorCameraNear = xINITIAL_EDITOR_CAMERA_NEAR;
+float Zenith_Editor::s_fEditorCameraFar = xINITIAL_EDITOR_CAMERA_FAR;
 Zenith_Entity* Zenith_Editor::s_pxGameCameraEntity = nullptr;
 float Zenith_Editor::s_fEditorCameraMoveSpeed = 50.0f;
 float Zenith_Editor::s_fEditorCameraRotateSpeed = 0.1f;
@@ -220,6 +232,54 @@ bool Zenith_Editor::Update()
 	// If render tasks are active while these operations occur, we risk:
 	// - Reading corrupted data during save (render tasks modifying while we read)
 	// - Crashes during load (destroying pools while render tasks access them)
+
+	// Handle pending scene reset
+	if (s_bPendingSceneReset)
+	{
+		s_bPendingSceneReset = false;
+
+		// CRITICAL: Wait for CPU render tasks AND GPU to finish before destroying scene resources
+		// This matches the synchronization used for scene loading
+		Zenith_Log("Waiting for all render tasks to complete before resetting scene...");
+		Zenith_Core::WaitForAllRenderTasks();
+
+		Zenith_Log("Waiting for GPU to become idle before resetting scene...");
+		Zenith_Vulkan::WaitForGPUIdle();
+
+		// Force process any pending deferred deletions
+		Zenith_Log("Processing deferred resource deletions...");
+		for (u_int u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
+		{
+			Flux_MemoryManager::ProcessDeferredDeletions();
+		}
+
+		// CRITICAL: Clear any pending command lists before resetting scene
+		Zenith_Log("Clearing pending command lists...");
+		Flux::ClearPendingCommandLists();
+
+		// Safe to reset now - no render tasks active, GPU idle, old resources deleted
+		Zenith_Scene::GetCurrentScene().Reset();
+		Zenith_Log("Scene reset complete");
+
+		// Clear selection as entity pointers are now invalid
+		ClearSelection();
+
+		// Clear game camera reference as it now points to deleted memory
+		s_pxGameCameraEntity = nullptr;
+
+		// Reset editor camera to initial state
+		s_xEditorCameraPosition = xINITIAL_EDITOR_CAMERA_POSITION;
+		s_fEditorCameraPitch = xINITIAL_EDITOR_CAMERA_PITCH;
+		s_fEditorCameraYaw = xINITIAL_EDITOR_CAMERA_YAW;
+		s_fEditorCameraFOV = xINITIAL_EDITOR_CAMERA_FOV;
+		s_fEditorCameraNear = xINITIAL_EDITOR_CAMERA_NEAR;
+		s_fEditorCameraFar = xINITIAL_EDITOR_CAMERA_FAR;
+
+		// Clear undo/redo history as entity IDs are now invalid
+		Zenith_UndoSystem::Clear();
+
+		return false;
+	}
 
 	// Handle pending scene save
 	if (s_bPendingSceneSave)
@@ -474,12 +534,17 @@ void Zenith_Editor::RenderMainMenuBar()
 		{
 			if (ImGui::MenuItem("New Scene"))
 			{
-				// Clear the current scene
-				Zenith_Scene::GetCurrentScene().Reset();
-				Zenith_Log("New scene created");
+				// CRITICAL: Do NOT reset the scene immediately here!
+				// This menu item is rendered during SubmitRenderTasks(), which means
+				// render tasks are currently active and may be accessing scene data.
+				// Resetting the scene now would destroy component pools and entities,
+				// causing crashes due to concurrent access.
+				//
+				// Instead, we defer the reset to the next frame's Update() call,
+				// which happens BEFORE any render tasks are submitted.
 
-				// Clear undo/redo history for new scene
-				Zenith_UndoSystem::Clear();
+				s_bPendingSceneReset = true;
+				Zenith_Log("Scene reset queued (will reset next frame)");
 			}
 
 			if (ImGui::MenuItem("Open Scene", "Ctrl+O"))
@@ -963,10 +1028,9 @@ void Zenith_Editor::HandleObjectPicking()
 		return;
 
 	// Get camera matrices for ray casting
-	Zenith_CameraComponent& xCamera = GetActiveCamera();
 	Zenith_Maths::Matrix4 xViewMatrix, xProjMatrix;
-	xCamera.BuildViewMatrix(xViewMatrix);
-	xCamera.BuildProjectionMatrix(xProjMatrix);
+	BuildViewMatrix(xViewMatrix);
+	BuildProjectionMatrix(xProjMatrix);
 
 	// Convert screen position to world-space ray
 	Zenith_Maths::Vector3 xRayDir = Zenith_Gizmo::ScreenToWorldRay(
@@ -978,8 +1042,9 @@ void Zenith_Editor::HandleObjectPicking()
 	);
 
 	// Ray origin is camera position
-	Zenith_Maths::Vector3 xRayOrigin;
-	xCamera.GetPosition(xRayOrigin);
+	Zenith_Maths::Vector4 xCameraPos;
+	GetCameraPosition(xCameraPos);
+	Zenith_Maths::Vector3 xRayOrigin(xCameraPos.x, xCameraPos.y, xCameraPos.z);
 
 	// Perform raycast to find entity under mouse - now returns EntityID
 	Zenith_EntityID uHitEntityID = Zenith_SelectionSystem::RaycastSelect(xRayOrigin, xRayDir);
@@ -1034,10 +1099,9 @@ void Zenith_Editor::HandleGizmoInteraction()
 		return;
 
 	// Get camera matrices for ray casting
-	Zenith_CameraComponent& xCamera = GetActiveCamera();
 	Zenith_Maths::Matrix4 xViewMatrix, xProjMatrix;
-	xCamera.BuildViewMatrix(xViewMatrix);
-	xCamera.BuildProjectionMatrix(xProjMatrix);
+	BuildViewMatrix(xViewMatrix);
+	BuildProjectionMatrix(xProjMatrix);
 
 	// Get mouse position
 	Zenith_Maths::Vector2_64 xGlobalMousePos;
@@ -1074,8 +1138,9 @@ void Zenith_Editor::HandleGizmoInteraction()
 	);
 
 	// Ray origin is camera position
-	Zenith_Maths::Vector3 xRayOrigin;
-	xCamera.GetPosition(xRayOrigin);
+	Zenith_Maths::Vector4 xCameraPos;
+	GetCameraPosition(xCameraPos);
+	Zenith_Maths::Vector3 xRayOrigin(xCameraPos.x, xCameraPos.y, xCameraPos.z);
 
 	// Handle mouse input for gizmo interaction
 	if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_MOUSE_BUTTON_LEFT))
@@ -1931,6 +1996,9 @@ void Zenith_Editor::InitializeEditorCamera()
 			xSceneCamera.GetPosition(s_xEditorCameraPosition);
 			s_fEditorCameraPitch = xSceneCamera.GetPitch();
 			s_fEditorCameraYaw = xSceneCamera.GetYaw();
+			s_fEditorCameraFOV = xSceneCamera.GetFOV();
+			s_fEditorCameraNear = xSceneCamera.GetNearPlane();
+			s_fEditorCameraFar = xSceneCamera.GetFarPlane();
 			Zenith_Log("Editor camera initialized from scene camera position");
 		}
 		catch (...)
@@ -2091,12 +2159,126 @@ void Zenith_Editor::SwitchToGameCamera()
 	Zenith_Log("Switched to game camera");
 }
 
-Zenith_CameraComponent& Zenith_Editor::GetActiveCamera()
+void Zenith_Editor::BuildViewMatrix(Zenith_Maths::Matrix4& xOutMatrix)
 {
-	// Always return the scene's main camera
-	// In stopped/paused mode, UpdateEditorCamera applies editor values to it
-	// In playing mode, the game logic controls it
-	return Zenith_Scene::GetCurrentScene().GetMainCamera();
+	// In Playing mode, use the scene's camera (game controls it)
+	if (s_eEditorMode == EditorMode::Playing)
+	{
+		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+		if (xScene.m_pxMainCameraEntity)
+		{
+			xScene.GetMainCamera().BuildViewMatrix(xOutMatrix);
+			return;
+		}
+	}
+	
+	// In Stopped/Paused mode (or no scene camera), build view matrix from editor state
+	// Use the same approach as Zenith_CameraComponent for consistency
+	Zenith_Maths::Matrix4_64 xPitchMat = glm::rotate(s_fEditorCameraPitch, glm::dvec3(1, 0, 0));
+	Zenith_Maths::Matrix4_64 xYawMat = glm::rotate(s_fEditorCameraYaw, glm::dvec3(0, 1, 0));
+	Zenith_Maths::Matrix4_64 xTransMat = glm::translate(-s_xEditorCameraPosition);
+	xOutMatrix = xPitchMat * xYawMat * xTransMat;
+}
+
+void Zenith_Editor::BuildProjectionMatrix(Zenith_Maths::Matrix4& xOutMatrix)
+{
+	// In Playing mode, use the scene's camera (game controls it)
+	if (s_eEditorMode == EditorMode::Playing)
+	{
+		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+		if (xScene.m_pxMainCameraEntity)
+		{
+			xScene.GetMainCamera().BuildProjectionMatrix(xOutMatrix);
+			return;
+		}
+	}
+	
+	// In Stopped/Paused mode (or no scene camera), build projection matrix from editor state
+	float fAspectRatio = s_xViewportSize.x / s_xViewportSize.y;
+	xOutMatrix = glm::perspective(glm::radians(s_fEditorCameraFOV), fAspectRatio, s_fEditorCameraNear, s_fEditorCameraFar);
+	// Flip Y for Vulkan coordinate system (same as CameraComponent)
+	xOutMatrix[1][1] *= -1;
+}
+
+void Zenith_Editor::GetCameraPosition(Zenith_Maths::Vector4& xOutPosition)
+{
+	// In Playing mode, use the scene's camera (game controls it)
+	if (s_eEditorMode == EditorMode::Playing)
+	{
+		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+		if (xScene.m_pxMainCameraEntity)
+		{
+			xScene.GetMainCamera().GetPosition(xOutPosition);
+			return;
+		}
+	}
+	
+	// In Stopped/Paused mode (or no scene camera), return editor position
+	xOutPosition = Zenith_Maths::Vector4(s_xEditorCameraPosition.x, s_xEditorCameraPosition.y, s_xEditorCameraPosition.z, 0.0f);
+}
+
+float Zenith_Editor::GetCameraNearPlane()
+{
+	// In Playing mode, use the scene's camera (game controls it)
+	if (s_eEditorMode == EditorMode::Playing)
+	{
+		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+		if (xScene.m_pxMainCameraEntity)
+		{
+			return xScene.GetMainCamera().GetNearPlane();
+		}
+	}
+	
+	// In Stopped/Paused mode (or no scene camera), return editor value
+	return s_fEditorCameraNear;
+}
+
+float Zenith_Editor::GetCameraFarPlane()
+{
+	// In Playing mode, use the scene's camera (game controls it)
+	if (s_eEditorMode == EditorMode::Playing)
+	{
+		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+		if (xScene.m_pxMainCameraEntity)
+		{
+			return xScene.GetMainCamera().GetFarPlane();
+		}
+	}
+	
+	// In Stopped/Paused mode (or no scene camera), return editor value
+	return s_fEditorCameraFar;
+}
+
+float Zenith_Editor::GetCameraFOV()
+{
+	// In Playing mode, use the scene's camera (game controls it)
+	if (s_eEditorMode == EditorMode::Playing)
+	{
+		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+		if (xScene.m_pxMainCameraEntity)
+		{
+			return xScene.GetMainCamera().GetFOV();
+		}
+	}
+	
+	// In Stopped/Paused mode (or no scene camera), return editor value
+	return s_fEditorCameraFOV;
+}
+
+float Zenith_Editor::GetCameraAspectRatio()
+{
+	// In Playing mode, use the scene's camera (game controls it)
+	if (s_eEditorMode == EditorMode::Playing)
+	{
+		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+		if (xScene.m_pxMainCameraEntity)
+		{
+			return xScene.GetMainCamera().GetAspectRatio();
+		}
+	}
+	
+	// In Stopped/Paused mode (or no scene camera), calculate from viewport
+	return s_xViewportSize.x / s_xViewportSize.y;
 }
 
 #endif // ZENITH_TOOLS
