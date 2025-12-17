@@ -790,6 +790,7 @@
     <ClInclude Include="..\..\..\Zenith\Editor\Zenith_Editor.h" />
     <ClInclude Include="..\..\..\Zenith\Editor\Zenith_Gizmo.h" />
     <ClInclude Include="..\..\..\Zenith\Editor\Zenith_SelectionSystem.h" />
+    <ClInclude Include="..\..\..\Zenith\Editor\Zenith_UndoSystem.h" />
     <ClInclude Include="..\..\..\Zenith\EntityComponent\Components\Zenith_CameraComponent.h" />
     <ClInclude Include="..\..\..\Zenith\EntityComponent\Components\Zenith_ColliderComponent.h" />
     <ClInclude Include="..\..\..\Zenith\EntityComponent\Components\Zenith_ModelComponent.h" />
@@ -1761,6 +1762,7 @@
     <ClCompile Include="..\..\..\Zenith\Editor\Zenith_Editor.cpp" />
     <ClCompile Include="..\..\..\Zenith\Editor\Zenith_Gizmo.cpp" />
     <ClCompile Include="..\..\..\Zenith\Editor\Zenith_SelectionSystem.cpp" />
+    <ClCompile Include="..\..\..\Zenith\Editor\Zenith_UndoSystem.cpp" />
     <ClCompile Include="..\..\..\Zenith\EntityComponent\Components\Zenith_CameraComponent.cpp" />
     <ClCompile Include="..\..\..\Zenith\EntityComponent\Components\Zenith_ColliderComponent.cpp" />
     <ClCompile Include="..\..\..\Zenith\EntityComponent\Components\Zenith_ModelComponent.cpp" />

@@ -22,6 +22,7 @@ void Zenith_EditorAddLogMessage(const char* szMessage, int eLevel)
 
 #include "Zenith_SelectionSystem.h"
 #include "Zenith_Gizmo.h"
+#include "Zenith_UndoSystem.h"
 #include "Flux/Gizmos/Flux_Gizmos.h"
 #include "EntityComponent/Zenith_Entity.h"
 #include "EntityComponent/Zenith_Scene.h"
@@ -282,6 +283,9 @@ bool Zenith_Editor::Update()
 		// Clear selection as entity pointers are now invalid
 		ClearSelection();
 
+		// Clear undo/redo history as entity IDs are now invalid
+		Zenith_UndoSystem::Clear();
+
 		// If this was a backup scene restore (Play -> Stop transition), clean up
 		if (s_bHasSceneBackup && s_strPendingSceneLoadPath == s_strBackupScenePath)
 		{
@@ -389,6 +393,26 @@ bool Zenith_Editor::Update()
 		}
 	}
 
+	// Handle undo/redo keyboard shortcuts (Ctrl+Z / Ctrl+Y)
+	// Check for Ctrl key being held down
+	bool bCtrlDown = Zenith_Input::IsKeyDown(ZENITH_KEY_LEFT_CONTROL) ||
+	                 Zenith_Input::IsKeyDown(ZENITH_KEY_RIGHT_CONTROL);
+
+	if (bCtrlDown)
+	{
+		// Ctrl+Z: Undo
+		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_Z))
+		{
+			Zenith_UndoSystem::Undo();
+		}
+
+		// Ctrl+Y: Redo
+		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_Y))
+		{
+			Zenith_UndoSystem::Redo();
+		}
+	}
+
 	// Handle gizmo interaction first (before object picking)
 	HandleGizmoInteraction();
 
@@ -453,6 +477,9 @@ void Zenith_Editor::RenderMainMenuBar()
 				// Clear the current scene
 				Zenith_Scene::GetCurrentScene().Reset();
 				Zenith_Log("New scene created");
+
+				// Clear undo/redo history for new scene
+				Zenith_UndoSystem::Clear();
 			}
 
 			if (ImGui::MenuItem("Open Scene", "Ctrl+O"))
@@ -529,16 +556,29 @@ void Zenith_Editor::RenderMainMenuBar()
 
 		if (ImGui::BeginMenu("Edit"))
 		{
-			if (ImGui::MenuItem("Undo", "Ctrl+Z"))
+			bool bCanUndo = Zenith_UndoSystem::CanUndo();
+			bool bCanRedo = Zenith_UndoSystem::CanRedo();
+
+			if (ImGui::MenuItem("Undo", "Ctrl+Z", false, bCanUndo))
 			{
-				// TODO: Implement undo system
-				Zenith_Log("Undo - Not yet implemented");
+				Zenith_UndoSystem::Undo();
 			}
 
-			if (ImGui::MenuItem("Redo", "Ctrl+Y"))
+			// Show tooltip with undo description
+			if (bCanUndo && ImGui::IsItemHovered())
 			{
-				// TODO: Implement redo system
-				Zenith_Log("Redo - Not yet implemented");
+				ImGui::SetTooltip("Undo: %s", Zenith_UndoSystem::GetUndoDescription());
+			}
+
+			if (ImGui::MenuItem("Redo", "Ctrl+Y", false, bCanRedo))
+			{
+				Zenith_UndoSystem::Redo();
+			}
+
+			// Show tooltip with redo description
+			if (bCanRedo && ImGui::IsItemHovered())
+			{
+				ImGui::SetTooltip("Redo: %s", Zenith_UndoSystem::GetRedoDescription());
 			}
 
 			ImGui::EndMenu();

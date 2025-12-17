@@ -454,6 +454,9 @@
     <ClCompile Include="..\..\..\Zenith\Editor\Zenith_SelectionSystem.cpp">
       <Filter>Zenith\Editor</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\..\Zenith\Editor\Zenith_UndoSystem.cpp">
+      <Filter>Zenith\Editor</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\..\Zenith\EntityComponent\Components\Zenith_CameraComponent.cpp">
       <Filter>Zenith\EntityComponent\Components</Filter>
     </ClCompile>
@@ -1648,6 +1651,9 @@
       <Filter>Zenith\Editor</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\Zenith\Editor\Zenith_SelectionSystem.h">
+      <Filter>Zenith\Editor</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\Editor\Zenith_UndoSystem.h">
       <Filter>Zenith\Editor</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\Zenith\EntityComponent\Components\Zenith_CameraComponent.h">
