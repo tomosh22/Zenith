@@ -22,7 +22,12 @@ enum Zenith_ProfileIndex
 	ZENITH_PROFILE_INDEX__FLUX_ANIMATED_MESHES,
 	ZENITH_PROFILE_INDEX__FLUX_TERRAIN,
 	ZENITH_PROFILE_INDEX__FLUX_TERRAIN_CULLING,
+
 	ZENITH_PROFILE_INDEX__FLUX_TERRAIN_STREAMING,
+	ZENITH_PROFILE_INDEX__FLUX_TERRAIN_STREAMING_STREAM_IN_LOD,
+	ZENITH_PROFILE_INDEX__FLUX_TERRAIN_STREAMING_EVICT,
+	ZENITH_PROFILE_INDEX__FLUX_TERRAIN_STREAMING_ALLOCATE,
+
 	ZENITH_PROFILE_INDEX__FLUX_PRIMITIVES,
 	ZENITH_PROFILE_INDEX__FLUX_WATER,
 	ZENITH_PROFILE_INDEX__FLUX_SSAO,
@@ -41,8 +46,12 @@ enum Zenith_ProfileIndex
 	ZENITH_PROFILE_INDEX__FLUX_ITERATE_COMMANDS,
 	ZENITH_PROFILE_INDEX__FLUX_RECORD_COMMAND_BUFFERS,
 
+	ZENITH_PROFILE_INDEX__FLUX_MESH_GEOMETRY_LOAD_FROM_FILE,
+
 	//#TO_TODO: rename these at runtime
 	ZENITH_PROFILE_INDEX__VULKAN_UPDATE_DESCRIPTOR_SETS,
+	ZENITH_PROFILE_INDEX__VULKAN_MEMORY_MANAGER_UPLOAD,
+	ZENITH_PROFILE_INDEX__VULKAN_MEMORY_MANAGER_FLUSH,
 	
 
 	ZENITH_PROFILE_INDEX__VISIBILITY_CHECK,
@@ -72,6 +81,9 @@ static const char* g_aszProfileNames[]
 	"Flux Terrain",
 	"Flux Terrain Culling",
 	"Flux Terrain Streaming",
+	"Flux Terrain Streaming Stream In LOD",
+	"Flux Terrain Streaming Evict",
+	"Flux Terrain Streaming Allocate",
 	"Flux Primitives",
 	"Flux Water",
 	"Flux SSAO",
@@ -88,8 +100,13 @@ static const char* g_aszProfileNames[]
 	"Flux PlatformAPI End Frame",
 	"Flux Iterate Commands",
 	"Flux Record Command Buffers",
+	"Flux Mesh Geometry Load From File",
+
 	//#TO_TODO: rename these at runtime
 	"Vulkan Update Descriptor Sets",
+	"Vulkan Memory Manager Upload",
+	"Vulkan Memory Manager Flush",
+
 	"Visibility Check",
 	#ifdef ZENITH_TOOLS
 	"ImGUI",
@@ -120,6 +137,23 @@ public:
 		std::chrono::time_point<std::chrono::high_resolution_clock> m_xEnd;
 		Zenith_ProfileIndex m_eIndex;
 		u_int m_uDepth;
+	};
+
+	class Scope
+	{
+	public:
+		Scope() = delete;
+		Scope(Zenith_ProfileIndex eIndex)
+			: m_eIndex(eIndex)
+		{
+			Zenith_Profiling::BeginProfile(eIndex);
+		}
+		~Scope()
+		{
+			Zenith_Profiling::EndProfile(m_eIndex);
+		}
+	private:
+		Zenith_ProfileIndex m_eIndex;
 	};
 
 	static void Initialise();

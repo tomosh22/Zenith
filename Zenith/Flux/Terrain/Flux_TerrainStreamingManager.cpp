@@ -68,6 +68,7 @@ void Flux_TerrainBufferAllocator::Reset()
 
 uint32_t Flux_TerrainBufferAllocator::Allocate(uint32_t uSize)
 {
+	Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__FLUX_TERRAIN_STREAMING_ALLOCATE);
 	if (uSize == 0 || uSize > m_uUnusedSpace)
 		return UINT32_MAX;
 
@@ -217,7 +218,8 @@ void Flux_TerrainStreamingManager::RegisterTerrainBuffers(Zenith_TerrainComponen
 			if (!lodFile.good())
 				strChunkPath = std::string(ASSETS_ROOT"Terrain/Render_") + std::to_string(x) + "_" + std::to_string(y) + ".zmsh";
 
-			Flux_MeshGeometry* pxChunkMesh = Zenith_AssetHandler::AddMeshFromFile(strChunkPath.c_str(), 1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__POSITION);
+			//false so we don't upload to GPU
+			Flux_MeshGeometry* pxChunkMesh = Zenith_AssetHandler::AddMeshFromFile(strChunkPath.c_str(), 1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__POSITION, false);
 
 			// Mark LOD3 as resident with its allocation info
 			xResidency.m_aeStates[LOD_LOWEST_DETAIL] = Flux_TerrainLODResidencyState::RESIDENT;
@@ -246,7 +248,8 @@ void Flux_TerrainStreamingManager::RegisterTerrainBuffers(Zenith_TerrainComponen
 
 			std::string strChunkPath = std::string(ASSETS_ROOT"Terrain/Render_") + std::to_string(x) + "_" + std::to_string(y) + ".zmsh";
 
-			Flux_MeshGeometry* pxChunkMesh = Zenith_AssetHandler::AddMeshFromFile(strChunkPath.c_str(), 1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__POSITION);
+			//false so we don't upload to GPU
+			Flux_MeshGeometry* pxChunkMesh = Zenith_AssetHandler::AddMeshFromFile(strChunkPath.c_str(), 1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__POSITION, false);
 
 			s_axChunkAABBs[uChunkIndex] = Zenith_FrustumCulling::GenerateAABBFromVertices(
 				pxChunkMesh->m_pxPositions,
@@ -394,6 +397,8 @@ uint32_t Flux_TerrainStreamingManager::CalculateDesiredLOD(float fDistanceSq)
 
 bool Flux_TerrainStreamingManager::StreamInLOD(uint32_t uChunkIndex, uint32_t uLODLevel)
 {
+	Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__FLUX_TERRAIN_STREAMING_STREAM_IN_LOD);
+
 	if (!s_bInitialized || !s_pxTerrainComponent)
 		return false;
 
@@ -409,8 +414,8 @@ bool Flux_TerrainStreamingManager::StreamInLOD(uint32_t uChunkIndex, uint32_t uL
 	if (!lodFile.good())
 		return false;
 
-	// Load mesh to get size requirements
-	Flux_MeshGeometry* pxChunkMesh = Zenith_AssetHandler::AddMeshFromFile(strChunkPath.c_str(), 0);
+	// Load mesh to get size requirements, false so we don't upload to GPU
+	Flux_MeshGeometry* pxChunkMesh = Zenith_AssetHandler::AddMeshFromFile(strChunkPath.c_str(), 0, false);
 	if (!pxChunkMesh)
 		return false;
 
@@ -512,6 +517,8 @@ void Flux_TerrainStreamingManager::EvictLOD(uint32_t uChunkIndex, uint32_t uLODL
 
 bool Flux_TerrainStreamingManager::EvictToMakeSpace(uint32_t uVertexSpaceNeeded, uint32_t uIndexSpaceNeeded, const Zenith_Maths::Vector3& xCameraPos)
 {
+	Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__FLUX_TERRAIN_STREAMING_EVICT);
+
 	// Build list of eviction candidates (resident LODs that are far from camera)
 	struct EvictionCandidate
 	{

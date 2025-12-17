@@ -589,6 +589,7 @@ vk::ImageView Zenith_Vulkan_MemoryManager::CreateUnorderedAccessView(Flux_VRAMHa
 
 void Zenith_Vulkan_MemoryManager::UploadBufferData(Flux_VRAMHandle xBufferHandle, const void* pData, size_t uSize)
 {
+	Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__VULKAN_MEMORY_MANAGER_UPLOAD);
 	s_xMutex.Lock();
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 
@@ -763,6 +764,8 @@ void Zenith_Vulkan_MemoryManager::DestroyReadWriteBuffer(Flux_ReadWriteBuffer& x
 
 void Zenith_Vulkan_MemoryManager::UploadBufferDataAtOffset(Flux_VRAMHandle xBufferHandle, const void* pData, size_t uSize, size_t uDestOffset)
 {
+	Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__VULKAN_MEMORY_MANAGER_UPLOAD);
+
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xBufferHandle);
 	const VmaAllocation& xAlloc = pxVRAM->GetAllocation();
@@ -835,6 +838,7 @@ void Zenith_Vulkan_MemoryManager::UploadBufferDataAtOffset(Flux_VRAMHandle xBuff
 
 void Zenith_Vulkan_MemoryManager::FlushStagingBuffer()
 {
+	Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__VULKAN_MEMORY_MANAGER_FLUSH);
 	for (auto it = s_xStagingAllocations.begin(); it != s_xStagingAllocations.end(); it++) {
 		StagingMemoryAllocation& xAlloc = *it;
 		if (xAlloc.m_eType == ALLOCATION_TYPE_BUFFER) {
@@ -940,6 +944,7 @@ void Zenith_Vulkan_MemoryManager::HandleStagingBufferFull()
 
 void Zenith_Vulkan_MemoryManager::UploadBufferDataChunked(vk::Buffer xDestBuffer, const void* pData, size_t uSize)
 {
+	Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__VULKAN_MEMORY_MANAGER_UPLOAD);
 	Zenith_Log("Uploading large buffer in chunks: %llu bytes (staging buffer size: %llu bytes)", uSize, g_uStagingPoolSize);
 
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
@@ -1000,6 +1005,7 @@ void Zenith_Vulkan_MemoryManager::UploadBufferDataChunked(vk::Buffer xDestBuffer
 
 void Zenith_Vulkan_MemoryManager::UploadTextureDataChunked(vk::Image xDestImage, const void* pData, size_t uSize, uint32_t uWidth, uint32_t uHeight, uint32_t uNumMips, uint32_t uNumLayers)
 {
+	Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__VULKAN_MEMORY_MANAGER_UPLOAD);
 	Zenith_Log("Uploading large texture in chunks: %llu bytes (staging buffer size: %llu bytes)", uSize, g_uStagingPoolSize);
 
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
