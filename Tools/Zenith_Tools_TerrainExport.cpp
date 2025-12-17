@@ -113,14 +113,14 @@ void GenerateFullTerrain(cv::Mat& xHeightmapImage, cv::Mat& xMaterialImage, Flux
 	xMesh.GenerateBitangents();
 }
 
-void ExportMesh(u_int uDensityDivisor, std::string strName)
+void ExportMesh(u_int uDensityDivisor, std::string strName, const std::string& strHeightmapPath, const std::string& strMaterialPath, const std::string& strOutputDir)
 {
 	Zenith_Assert((uDensityDivisor & (uDensityDivisor-1)) == 0, "Density divisor must be a power of 2");
 
 	float fDensity = 1.f / uDensityDivisor;
 
-	cv::Mat xHeightmap = cv::imread(std::string(GAME_ASSETS_DIR) + "Textures/Heightmaps/Test/gaeaHeight.tif", cv::IMREAD_ANYDEPTH);
-	cv::Mat xMaterialLerpMap = cv::imread(std::string(GAME_ASSETS_DIR) + "Textures/Heightmaps/Test/gaeaMaterial.tif", cv::IMREAD_ANYDEPTH);
+	cv::Mat xHeightmap = cv::imread(strHeightmapPath, cv::IMREAD_ANYDEPTH);
+	cv::Mat xMaterialLerpMap = cv::imread(strMaterialPath, cv::IMREAD_ANYDEPTH);
 
 	Zenith_Assert(!xHeightmap.empty(), "Invalid image");
 
@@ -407,7 +407,7 @@ void ExportMesh(u_int uDensityDivisor, std::string strName)
 			}
 
 			xSubMesh.GenerateLayoutAndVertexData();
-			xSubMesh.Export((std::string(GAME_ASSETS_DIR) + std::string("Terrain/") + strName + std::string("_") + std::to_string(x) + std::string("_") + std::to_string(z) + std::string(".zmsh")).c_str());
+			xSubMesh.Export((strOutputDir + strName + std::string("_") + std::to_string(x) + std::string("_") + std::to_string(z) + std::string(".zmsh")).c_str());
 
 			delete[] puRightEdgeIndices;
 			delete[] puTopEdgeIndices;
@@ -415,21 +415,36 @@ void ExportMesh(u_int uDensityDivisor, std::string strName)
 	}
 }
 
-void ExportHeightmap()
+void ExportHeightmapFromPaths(const std::string& strHeightmapPath, const std::string& strMaterialPath, const std::string& strOutputDir)
 {
+	Zenith_Log("ExportHeightmapFromPaths: Heightmap=%s, Material=%s, Output=%s", 
+		strHeightmapPath.c_str(), strMaterialPath.c_str(), strOutputDir.c_str());
+	
 	// Export full detail render meshes (LOD0)
-	ExportMesh(1, "Render");
+	ExportMesh(1, "Render", strHeightmapPath, strMaterialPath, strOutputDir);
 	
 	// Export LOD1 meshes (2x downsampled - skip every other vertex)
-	ExportMesh(2, "Render_LOD1");
+	ExportMesh(2, "Render_LOD1", strHeightmapPath, strMaterialPath, strOutputDir);
 	
 	// Export LOD2 meshes (4x downsampled - skip 3 out of 4 vertices)
-	ExportMesh(4, "Render_LOD2");
+	ExportMesh(4, "Render_LOD2", strHeightmapPath, strMaterialPath, strOutputDir);
 	
 	// Export LOD3 meshes (8x downsampled - skip 7 out of 8 vertices)
-	ExportMesh(8, "Render_LOD3");
+	ExportMesh(8, "Render_LOD3", strHeightmapPath, strMaterialPath, strOutputDir);
 	
 	// Export physics mesh (8x downsampled, already existed)
 	// Rename it to avoid confusion
-	ExportMesh(8, "Physics");
+	ExportMesh(8, "Physics", strHeightmapPath, strMaterialPath, strOutputDir);
+	
+	Zenith_Log("ExportHeightmapFromPaths: Export complete");
+}
+
+void ExportHeightmap()
+{
+	// Use default paths for backward compatibility
+	std::string strHeightmapPath = std::string(GAME_ASSETS_DIR) + "Textures/Heightmaps/Test/gaeaHeight.tif";
+	std::string strMaterialPath = std::string(GAME_ASSETS_DIR) + "Textures/Heightmaps/Test/gaeaMaterial.tif";
+	std::string strOutputDir = std::string(GAME_ASSETS_DIR) + "Terrain/";
+
+	ExportHeightmapFromPaths(strHeightmapPath, strMaterialPath, strOutputDir);
 }
