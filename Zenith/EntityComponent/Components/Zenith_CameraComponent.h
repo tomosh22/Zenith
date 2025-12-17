@@ -162,6 +162,8 @@ public:
 			ImGui::Separator();
 
 			// Camera position editing
+			// Use PushID to avoid ImGui ID collision with TransformComponent's Position field
+			ImGui::PushID("CameraPosition");
 			Zenith_Maths::Vector3 xPos;
 			GetPosition(xPos);
 			float afPos[3] = { static_cast<float>(xPos.x), static_cast<float>(xPos.y), static_cast<float>(xPos.z) };
@@ -169,6 +171,7 @@ public:
 			{
 				SetPosition({ afPos[0], afPos[1], afPos[2] });
 			}
+			ImGui::PopID();
 		}
 	}
 #endif

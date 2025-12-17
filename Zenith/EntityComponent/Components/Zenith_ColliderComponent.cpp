@@ -325,6 +325,11 @@ void Zenith_ColliderComponent::RebuildCollider()
 		xBodyInterface.DestroyBody(m_xBodyID);
 		m_xBodyID = JPH::BodyID();
 		m_pxRigidBody = nullptr;
+		
+		// Also clear the rigid body pointer in the transform component
+		// to prevent accessing dangling pointer when AddCollider calls GetPosition
+		Zenith_TransformComponent& xTransform = m_xParentEntity.GetComponent<Zenith_TransformComponent>();
+		xTransform.m_pxRigidBody = nullptr;
 	}
 
 	// Clean up mesh data
