@@ -218,6 +218,9 @@ void Zenith_Scene::LoadFromFile(const std::string& strFilename)
 	u_int uNumEntities;
 	xStream >> uNumEntities;
 
+	// Track the maximum entity ID to properly set m_uNextEntityID after loading
+	Zenith_EntityID uMaxEntityID = 0;
+
 	// Read and reconstruct each entity
 	for (u_int u = 0; u < uNumEntities; u++)
 	{
@@ -229,6 +232,12 @@ void Zenith_Scene::LoadFromFile(const std::string& strFilename)
 		xStream >> uEntityID;
 		xStream >> uParentID;
 		xStream >> strName;
+
+		// Track maximum entity ID
+		if (uEntityID > uMaxEntityID)
+		{
+			uMaxEntityID = uEntityID;
+		}
 
 		// Ensure m_xEntityComponents has space for this entity ID
 		while (m_xEntityComponents.GetSize() <= uEntityID)
@@ -317,6 +326,10 @@ void Zenith_Scene::LoadFromFile(const std::string& strFilename)
 		}
 	}
 
+	// Update m_uNextEntityID to be one more than the highest loaded entity ID
+	// This ensures newly created entities get unique IDs that don't collide with loaded entities
+	m_uNextEntityID = uMaxEntityID + 1;
+
 	// Read main camera entity ID
 	Zenith_EntityID uMainCameraID;
 	xStream >> uMainCameraID;
@@ -384,6 +397,11 @@ Zenith_Entity Zenith_Scene::GetEntityFromID(Zenith_EntityID uID) {
 void Zenith_Scene::SetMainCameraEntity(Zenith_Entity& xEntity)
 {
 	m_pxMainCameraEntity = &xEntity;
+}
+
+Zenith_Entity* Zenith_Scene::GetMainCameraEntity()
+{
+	return m_pxMainCameraEntity;
 }
 
 Zenith_CameraComponent& Zenith_Scene::GetMainCamera()

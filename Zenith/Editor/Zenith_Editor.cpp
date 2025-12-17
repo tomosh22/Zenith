@@ -1212,28 +1212,32 @@ void Zenith_Editor::SetEditorMode(EditorMode eMode)
 
 		Zenith_Log("Scene state backed up to: %s", s_strBackupScenePath.c_str());
 
-		// Find the game camera entity in the scene
-		// Look for an entity with a camera component that isn't the editor camera
-		Zenith_Vector<Zenith_CameraComponent*> xCameras;
-		xScene.GetAllOfComponentType<Zenith_CameraComponent>(xCameras);
+		// Check if a main camera has already been set via the editor
+		s_pxGameCameraEntity = xScene.GetMainCameraEntity();
 
-		s_pxGameCameraEntity = nullptr;
-		for (Zenith_Vector<Zenith_CameraComponent*>::Iterator xIt(xCameras); !xIt.Done(); xIt.Next())
+		// If no main camera is set, search for one
+		if (!s_pxGameCameraEntity)
 		{
-			Zenith_CameraComponent* pxCam = xIt.GetData();
-			Zenith_Entity* pxEntity = &pxCam->GetParentEntity();
-			// Just use the first camera we find (there should only be one game camera)
-			s_pxGameCameraEntity = pxEntity;
-			break;
-		}
+			Zenith_Vector<Zenith_CameraComponent*> xCameras;
+			xScene.GetAllOfComponentType<Zenith_CameraComponent>(xCameras);
 
-		if (s_pxGameCameraEntity)
-		{
-			// Switch to game camera for play mode
-			xScene.SetMainCameraEntity(*s_pxGameCameraEntity);
-			Zenith_Log("Switched to game camera: %s", s_pxGameCameraEntity->m_strName.c_str());
+			for (Zenith_Vector<Zenith_CameraComponent*>::Iterator xIt(xCameras); !xIt.Done(); xIt.Next())
+			{
+				Zenith_CameraComponent* pxCam = xIt.GetData();
+				Zenith_Entity* pxEntity = &pxCam->GetParentEntity();
+				// Just use the first camera we find (there should only be one game camera)
+				s_pxGameCameraEntity = pxEntity;
+				xScene.SetMainCameraEntity(*s_pxGameCameraEntity);
+				Zenith_Log("No main camera set, using first camera found: %s", s_pxGameCameraEntity->m_strName.c_str());
+				break;
+			}
 		}
 		else
+		{
+			Zenith_Log("Using existing main camera: %s", s_pxGameCameraEntity->m_strName.c_str());
+		}
+
+		if (!s_pxGameCameraEntity)
 		{
 			Zenith_Log("Warning: No game camera found, staying on editor camera");
 		}
@@ -2194,18 +2198,8 @@ void Zenith_Editor::BuildViewMatrix(Zenith_Maths::Matrix4& xOutMatrix)
 
 void Zenith_Editor::BuildProjectionMatrix(Zenith_Maths::Matrix4& xOutMatrix)
 {
-	// In Playing mode, use the scene's camera (game controls it)
-	if (s_eEditorMode == EditorMode::Playing)
-	{
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		if (xScene.m_pxMainCameraEntity)
-		{
-			xScene.GetMainCamera().BuildProjectionMatrix(xOutMatrix);
-			return;
-		}
-	}
+	Zenith_Assert(s_eEditorMode != EditorMode::Playing, "Should be going through scene camera if we are in playing mode");
 	
-	// In Stopped/Paused mode (or no scene camera), build projection matrix from editor state
 	float fAspectRatio = s_xViewportSize.x / s_xViewportSize.y;
 	xOutMatrix = glm::perspective(glm::radians(s_fEditorCameraFOV), fAspectRatio, s_fEditorCameraNear, s_fEditorCameraFar);
 	// Flip Y for Vulkan coordinate system (same as CameraComponent)

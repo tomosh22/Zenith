@@ -12,5 +12,5 @@ void Project_RegisterScriptBehaviours()
 
 void Project_LoadInitialScene()
 {
-	Zenith_Scene::GetCurrentScene().LoadFromFile(ASSETS_ROOT"Scenes/scene.zscen");
+	Zenith_Scene::GetCurrentScene().LoadFromFile(ASSETS_ROOT"Scenes/test_scene.zscen");
 }

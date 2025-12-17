@@ -2,6 +2,10 @@
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
 
+#ifdef ZENITH_TOOLS
+#include "imgui.h"
+#endif
+
 class PlayerController_Behaviour ZENITH_FINAL : Zenith_ScriptBehaviour
 {
 	friend class Zenith_ScriptComponent;
@@ -24,6 +28,15 @@ public:
 	void OnCreate() ZENITH_FINAL override {}
 
 	void Shoot();
+
+	// Editor UI for behavior-specific properties
+	void RenderPropertiesPanel() override
+	{
+#ifdef ZENITH_TOOLS
+		ImGui::Checkbox("Fly Camera Enabled", &m_bFlyCamEnabled);
+		ImGui::Text("Move Speed: %.1f", s_dMoveSpeed);
+#endif
+	}
 
 private:
 	bool m_bFlyCamEnabled = false;

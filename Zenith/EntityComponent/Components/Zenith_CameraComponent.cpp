@@ -133,6 +133,7 @@ void Zenith_CameraComponent::WriteToDataStream(Zenith_DataStream& xStream) const
 	xStream << m_fPitch;
 	xStream << m_fAspect;
 	xStream << m_xPosition;
+	xStream << m_eType;
 
 	// m_xParentEntity reference is not serialized - will be restored during deserialization
 }
@@ -156,6 +157,7 @@ void Zenith_CameraComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 	xStream >> m_fPitch;
 	xStream >> m_fAspect;
 	xStream >> m_xPosition;
+	xStream >> m_eType;
 
 	// m_xParentEntity will be set by the entity deserialization system
 }

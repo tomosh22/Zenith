@@ -324,3 +324,174 @@ void Zenith_ModelComponent::DebugDrawPhysicsMesh()
 	// Draw the physics mesh
 	Zenith_PhysicsMeshGenerator::DebugDrawPhysicsMesh(m_pxPhysicsMesh, xModelMatrix, m_xDebugDrawColor);
 }
+
+#ifdef ZENITH_TOOLS
+void Zenith_ModelComponent::RenderPropertiesPanel()
+{
+	if (ImGui::CollapsingHeader("Model", ImGuiTreeNodeFlags_DefaultOpen))
+	{
+		ImGui::Checkbox("Draw Physics Mesh", &m_bDebugDrawPhysicsMesh);
+
+		ImGui::Separator();
+
+		// Load meshes from directory
+		if (ImGui::TreeNode("Load Mesh"))
+		{
+			static char s_szMeshDirPath[512] = "";
+			ImGui::InputText("Directory Path", s_szMeshDirPath, sizeof(s_szMeshDirPath));
+			ImGui::SameLine();
+			if (ImGui::Button("Browse..."))
+			{
+				// Use Windows folder dialog
+#ifdef _WIN32
+				BROWSEINFOA bi = { 0 };
+				bi.lpszTitle = "Select Mesh Directory";
+				bi.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
+				LPITEMIDLIST pidl = SHBrowseForFolderA(&bi);
+				if (pidl != nullptr)
+				{
+					char szPath[MAX_PATH];
+					if (SHGetPathFromIDListA(pidl, szPath))
+					{
+						strncpy(s_szMeshDirPath, szPath, sizeof(s_szMeshDirPath) - 1);
+					}
+					CoTaskMemFree(pidl);
+				}
+#endif
+			}
+
+			if (ImGui::Button("Load Meshes from Directory"))
+			{
+				if (strlen(s_szMeshDirPath) > 0)
+				{
+					// Clear existing mesh entries
+					m_xMeshEntries.Clear();
+					// Clear created assets tracking
+					for (uint32_t u = 0; u < m_xCreatedTextures.GetSize(); u++)
+					{
+						Zenith_AssetHandler::DeleteTexture(m_xCreatedTextures.Get(u));
+					}
+					m_xCreatedTextures.Clear();
+					for (uint32_t u = 0; u < m_xCreatedMaterials.GetSize(); u++)
+					{
+						delete m_xCreatedMaterials.Get(u);
+					}
+					m_xCreatedMaterials.Clear();
+					for (uint32_t u = 0; u < m_xCreatedMeshes.GetSize(); u++)
+					{
+						Zenith_AssetHandler::DeleteMesh(m_xCreatedMeshes.Get(u));
+					}
+					m_xCreatedMeshes.Clear();
+
+					LoadMeshesFromDir(s_szMeshDirPath);
+					Zenith_Log("[ModelComponent] Loaded meshes from: %s", s_szMeshDirPath);
+				}
+			}
+
+			ImGui::TreePop();
+		}
+
+		// Animation loading section
+		if (GetNumMeshEntries() > 0 && ImGui::TreeNode("Animations"))
+		{
+			static char s_szAnimFilePath[512] = "";
+			ImGui::InputText("Animation File (.fbx/.gltf)", s_szAnimFilePath, sizeof(s_szAnimFilePath));
+
+			static int s_iTargetMeshIndex = 0;
+			int iMaxIndex = static_cast<int>(GetNumMeshEntries()) - 1;
+			ImGui::SliderInt("Target Mesh Index", &s_iTargetMeshIndex, 0, iMaxIndex);
+
+			if (ImGui::Button("Load Animation"))
+			{
+				if (strlen(s_szAnimFilePath) > 0 && s_iTargetMeshIndex >= 0 && s_iTargetMeshIndex < static_cast<int>(GetNumMeshEntries()))
+				{
+					Flux_MeshGeometry& xMesh = GetMeshGeometryAtIndex(s_iTargetMeshIndex);
+					if (xMesh.GetNumBones() > 0)
+					{
+						if (xMesh.m_pxAnimation)
+						{
+							delete xMesh.m_pxAnimation;
+						}
+						xMesh.m_pxAnimation = new Flux_MeshAnimation(s_szAnimFilePath, xMesh);
+						Zenith_Log("[ModelComponent] Loaded animation from: %s for mesh %d", s_szAnimFilePath, s_iTargetMeshIndex);
+					}
+					else
+					{
+						Zenith_Log("[ModelComponent] Cannot load animation: mesh %d has no bones", s_iTargetMeshIndex);
+					}
+				}
+			}
+
+			// Load animation for all meshes with bones
+			if (ImGui::Button("Load Animation for All Meshes"))
+			{
+				if (strlen(s_szAnimFilePath) > 0)
+				{
+					for (uint32_t u = 0; u < GetNumMeshEntries(); u++)
+					{
+						Flux_MeshGeometry& xMesh = GetMeshGeometryAtIndex(u);
+						if (xMesh.GetNumBones() > 0)
+						{
+							if (xMesh.m_pxAnimation)
+							{
+								delete xMesh.m_pxAnimation;
+							}
+							xMesh.m_pxAnimation = new Flux_MeshAnimation(s_szAnimFilePath, xMesh);
+							Zenith_Log("[ModelComponent] Loaded animation for mesh %u", u);
+						}
+					}
+				}
+			}
+
+			// Display current animation status per mesh
+			ImGui::Separator();
+			for (uint32_t u = 0; u < GetNumMeshEntries(); u++)
+			{
+				Flux_MeshGeometry& xMesh = GetMeshGeometryAtIndex(u);
+				if (xMesh.m_pxAnimation)
+				{
+					ImGui::Text("Mesh %u: Animation loaded (%s)", u, xMesh.m_pxAnimation->GetSourcePath().c_str());
+				}
+				else if (xMesh.GetNumBones() > 0)
+				{
+					ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "Mesh %u: Has %u bones, no animation", u, xMesh.GetNumBones());
+				}
+			}
+
+			ImGui::TreePop();
+		}
+
+		ImGui::Separator();
+		ImGui::Text("Mesh Entries: %u", GetNumMeshEntries());
+
+		// Display each mesh entry with its material
+		for (uint32_t uMeshIdx = 0; uMeshIdx < GetNumMeshEntries(); ++uMeshIdx)
+		{
+			ImGui::PushID(uMeshIdx);
+
+			Flux_MaterialAsset& xMaterial = GetMaterialAtIndex(uMeshIdx);
+
+			if (ImGui::TreeNode("MeshEntry", "Mesh Entry %u", uMeshIdx))
+			{
+				// Display mesh source path
+				Flux_MeshGeometry& xGeom = GetMeshGeometryAtIndex(uMeshIdx);
+				if (!xGeom.m_strSourcePath.empty())
+				{
+					ImGui::TextWrapped("Source: %s", xGeom.m_strSourcePath.c_str());
+				}
+
+				// Material texture slots - pass mesh index for material instancing
+				RenderTextureSlot("Diffuse", xMaterial, uMeshIdx, TEXTURE_SLOT_DIFFUSE);
+				RenderTextureSlot("Normal", xMaterial, uMeshIdx, TEXTURE_SLOT_NORMAL);
+				RenderTextureSlot("Roughness/Metallic", xMaterial, uMeshIdx, TEXTURE_SLOT_ROUGHNESS_METALLIC);
+				RenderTextureSlot("Occlusion", xMaterial, uMeshIdx, TEXTURE_SLOT_OCCLUSION);
+				RenderTextureSlot("Emissive", xMaterial, uMeshIdx, TEXTURE_SLOT_EMISSIVE);
+
+				ImGui::TreePop();
+			}
+
+			ImGui::PopID();
+		}
+	}
+}
+#endif

@@ -12,6 +12,11 @@
 #include "EntityComponent/Zenith_ComponentRegistry.h"
 #include "Editor/Zenith_Editor.h"
 #include <filesystem>
+#ifdef _WIN32
+#include <windows.h>
+#include <shlobj.h>
+#pragma comment(lib, "Shell32.lib")
+#endif
 #endif
 
 class Zenith_ModelComponent
@@ -328,38 +333,7 @@ public:
 		TEXTURE_SLOT_EMISSIVE
 	};
 
-	void RenderPropertiesPanel()
-	{
-		if (ImGui::CollapsingHeader("Model", ImGuiTreeNodeFlags_DefaultOpen))
-		{
-			ImGui::Checkbox("Draw Physics Mesh", &m_bDebugDrawPhysicsMesh);
-
-			ImGui::Separator();
-			ImGui::Text("Mesh Entries: %u", GetNumMeshEntries());
-
-			// Display each mesh entry with its material
-			for (uint32_t uMeshIdx = 0; uMeshIdx < GetNumMeshEntries(); ++uMeshIdx)
-			{
-				ImGui::PushID(uMeshIdx);
-
-				Flux_MaterialAsset& xMaterial = GetMaterialAtIndex(uMeshIdx);
-
-				if (ImGui::TreeNode("MeshEntry", "Mesh Entry %u", uMeshIdx))
-				{
-					// Material texture slots - pass mesh index for material instancing
-					RenderTextureSlot("Diffuse", xMaterial, uMeshIdx, TEXTURE_SLOT_DIFFUSE);
-					RenderTextureSlot("Normal", xMaterial, uMeshIdx, TEXTURE_SLOT_NORMAL);
-					RenderTextureSlot("Roughness/Metallic", xMaterial, uMeshIdx, TEXTURE_SLOT_ROUGHNESS_METALLIC);
-					RenderTextureSlot("Occlusion", xMaterial, uMeshIdx, TEXTURE_SLOT_OCCLUSION);
-					RenderTextureSlot("Emissive", xMaterial, uMeshIdx, TEXTURE_SLOT_EMISSIVE);
-
-					ImGui::TreePop();
-				}
-
-				ImGui::PopID();
-			}
-		}
-	}
+	void RenderPropertiesPanel();
 
 private:
 	// Helper to render a single texture slot with drag-drop target

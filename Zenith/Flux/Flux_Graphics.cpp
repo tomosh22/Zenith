@@ -151,35 +151,39 @@ void Flux_Graphics::InitialiseRenderTargets()
 void Flux_Graphics::UploadFrameConstants()
 {
 #ifdef ZENITH_TOOLS
-	// In tool builds, delegate all camera data to Zenith_Editor
-	Zenith_Editor::BuildViewMatrix(s_xFrameConstants.m_xViewMat);
-	Zenith_Editor::BuildProjectionMatrix(s_xFrameConstants.m_xProjMat);
-	if (dbg_bOverrideViewProjMat)
+	if(Zenith_Editor::GetEditorMode() != EditorMode::Playing)
 	{
-		s_xFrameConstants.m_xViewProjMat = Flux_Shadows::GetSunViewProjMatrix(dbg_uOverrideViewProjMatIndex);
+		Zenith_Editor::BuildViewMatrix(s_xFrameConstants.m_xViewMat);
+		Zenith_Editor::BuildProjectionMatrix(s_xFrameConstants.m_xProjMat);
+		if (dbg_bOverrideViewProjMat)
+		{
+			s_xFrameConstants.m_xViewProjMat = Flux_Shadows::GetSunViewProjMatrix(dbg_uOverrideViewProjMatIndex);
+		}
+		else
+		{
+			s_xFrameConstants.m_xViewProjMat = s_xFrameConstants.m_xProjMat * s_xFrameConstants.m_xViewMat;
+		}
+		s_xFrameConstants.m_xInvViewProjMat = glm::inverse(s_xFrameConstants.m_xViewProjMat);
+		Zenith_Editor::GetCameraPosition(s_xFrameConstants.m_xCamPos_Pad);
 	}
 	else
-	{
-		s_xFrameConstants.m_xViewProjMat = s_xFrameConstants.m_xProjMat * s_xFrameConstants.m_xViewMat;
-	}
-	s_xFrameConstants.m_xInvViewProjMat = glm::inverse(s_xFrameConstants.m_xViewProjMat);
-	Zenith_Editor::GetCameraPosition(s_xFrameConstants.m_xCamPos_Pad);
-#else
-	// In non-tool builds, use scene's main camera
-	Zenith_CameraComponent& xCamera = Zenith_Scene::GetCurrentScene().GetMainCamera();
-	xCamera.BuildViewMatrix(s_xFrameConstants.m_xViewMat);
-	xCamera.BuildProjectionMatrix(s_xFrameConstants.m_xProjMat);
-	if (dbg_bOverrideViewProjMat)
-	{
-		s_xFrameConstants.m_xViewProjMat = Flux_Shadows::GetSunViewProjMatrix(dbg_uOverrideViewProjMatIndex);
-	}
-	else
-	{
-		s_xFrameConstants.m_xViewProjMat = s_xFrameConstants.m_xProjMat * s_xFrameConstants.m_xViewMat;
-	}
-	s_xFrameConstants.m_xInvViewProjMat = glm::inverse(s_xFrameConstants.m_xViewProjMat);
-	xCamera.GetPosition(s_xFrameConstants.m_xCamPos_Pad);
 #endif
+	{
+		Zenith_CameraComponent& xCamera = Zenith_Scene::GetCurrentScene().GetMainCamera();
+		xCamera.BuildViewMatrix(s_xFrameConstants.m_xViewMat);
+		xCamera.BuildProjectionMatrix(s_xFrameConstants.m_xProjMat);
+		if (dbg_bOverrideViewProjMat)
+		{
+			s_xFrameConstants.m_xViewProjMat = Flux_Shadows::GetSunViewProjMatrix(dbg_uOverrideViewProjMatIndex);
+		}
+		else
+		{
+			s_xFrameConstants.m_xViewProjMat = s_xFrameConstants.m_xProjMat * s_xFrameConstants.m_xViewMat;
+		}
+		s_xFrameConstants.m_xInvViewProjMat = glm::inverse(s_xFrameConstants.m_xViewProjMat);
+		xCamera.GetPosition(s_xFrameConstants.m_xCamPos_Pad);
+	}
+
 	s_xFrameConstants.m_xSunDir_Pad = glm::normalize(Zenith_Maths::Vector4(dbg_SunDir.x, dbg_SunDir.y, dbg_SunDir.z, 0.));
 	s_xFrameConstants.m_xSunColour_Pad = { dbg_SunColour.x, dbg_SunColour.y, dbg_SunColour.z, dbg_SunColour.w };
 	int32_t iWidth, iHeight;

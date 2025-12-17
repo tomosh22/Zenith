@@ -178,6 +178,7 @@ public:
 	static Zenith_Scene& GetCurrentScene() { return s_xCurrentScene; }
 
 	void SetMainCameraEntity(Zenith_Entity& xEntity);
+	Zenith_Entity* GetMainCameraEntity();
 	Zenith_CameraComponent& GetMainCamera();
 
 	// Scene loading state (prevents asset deletion during Reset())

@@ -774,6 +774,12 @@ void Zenith_TerrainComponent::BuildChunkData()
 
 void Zenith_TerrainComponent::UpdateChunkLODAllocations()
 {
+	// CRITICAL: Skip if culling resources not initialized (e.g., terrain component added via editor but not yet set up)
+	if (!m_bCullingResourcesInitialized)
+	{
+		return;  // Terrain not ready for rendering yet
+	}
+
 	// OPTIMIZATION: Skip GPU upload if chunk data hasn't changed
 	if (!Flux_TerrainStreamingManager::IsChunkDataDirty())
 	{

@@ -14,6 +14,9 @@ void Zenith_ScriptComponent::WriteToDataStream(Zenith_DataStream& xStream) const
 		std::string strTypeName = m_pxScriptBehaviour->GetBehaviourTypeName();
 		xStream << strTypeName;
 
+		// Write behavior-specific parameters
+		m_pxScriptBehaviour->WriteParametersToDataStream(xStream);
+
 		Zenith_Log("ScriptComponent serialized with behaviour: %s", strTypeName.c_str());
 	}
 }
@@ -35,6 +38,9 @@ void Zenith_ScriptComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 
 		if (m_pxScriptBehaviour)
 		{
+			// Read behavior-specific parameters
+			m_pxScriptBehaviour->ReadParametersFromDataStream(xStream);
+
 			Zenith_Log("ScriptComponent deserialized and recreated behaviour: %s", strTypeName.c_str());
 			// Call OnCreate to initialize the behavior
 			m_pxScriptBehaviour->OnCreate();
@@ -53,15 +59,73 @@ void Zenith_ScriptComponent::RenderPropertiesPanel()
 {
 	if (ImGui::CollapsingHeader("Script Component", ImGuiTreeNodeFlags_DefaultOpen))
 	{
+		// Behavior selection dropdown
+		std::vector<std::string> xBehaviourNames = Zenith_BehaviourRegistry::Get().GetRegisteredBehaviourNames();
+		
+		if (xBehaviourNames.empty())
+		{
+			ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "No behaviours registered!");
+			ImGui::TextWrapped("Call YourBehaviour::RegisterBehaviour() at startup.");
+		}
+		else
+		{
+			// Build combo items
+			static int s_iSelectedBehaviourIndex = 0;
+			std::vector<const char*> xItems;
+			xItems.push_back("(None)");
+			for (const auto& name : xBehaviourNames)
+			{
+				xItems.push_back(name.c_str());
+			}
+
+			// Find current selection index
+			int iCurrentIndex = 0;
+			if (m_pxScriptBehaviour != nullptr)
+			{
+				const char* szCurrentName = m_pxScriptBehaviour->GetBehaviourTypeName();
+				for (size_t i = 0; i < xBehaviourNames.size(); ++i)
+				{
+					if (xBehaviourNames[i] == szCurrentName)
+					{
+						iCurrentIndex = static_cast<int>(i) + 1; // +1 because of "(None)" at index 0
+						break;
+					}
+				}
+			}
+
+			if (ImGui::Combo("Behaviour", &iCurrentIndex, xItems.data(), static_cast<int>(xItems.size())))
+			{
+				// Delete old behaviour
+				if (m_pxScriptBehaviour)
+				{
+					delete m_pxScriptBehaviour;
+					m_pxScriptBehaviour = nullptr;
+				}
+
+				// Create new behaviour
+				if (iCurrentIndex > 0)
+				{
+					const char* szSelectedName = xBehaviourNames[iCurrentIndex - 1].c_str();
+					m_pxScriptBehaviour = Zenith_BehaviourRegistry::Get().CreateBehaviour(szSelectedName, m_xParentEntity);
+					if (m_pxScriptBehaviour)
+					{
+						m_pxScriptBehaviour->OnCreate();
+						Zenith_Log("[ScriptComponent] Set behaviour to: %s", szSelectedName);
+					}
+				}
+			}
+		}
+
+		ImGui::Separator();
+
 		if (m_pxScriptBehaviour != nullptr)
 		{
-			ImGui::Text("Behaviour Type: %s", m_pxScriptBehaviour->GetBehaviourTypeName());
-			ImGui::Separator();
-			ImGui::Text("GUID References: %zu", m_pxScriptBehaviour->m_axGUIDRefs.size());
-
+			ImGui::Text("Active Behaviour: %s", m_pxScriptBehaviour->GetBehaviourTypeName());
+			
 			// Display GUID references if any
 			if (m_pxScriptBehaviour->m_axGUIDRefs.size() > 0)
 			{
+				ImGui::Text("GUID References: %zu", m_pxScriptBehaviour->m_axGUIDRefs.size());
 				if (ImGui::TreeNode("GUID References"))
 				{
 					for (size_t i = 0; i < m_pxScriptBehaviour->m_axGUIDRefs.size(); ++i)
@@ -71,10 +135,19 @@ void Zenith_ScriptComponent::RenderPropertiesPanel()
 					ImGui::TreePop();
 				}
 			}
+
+			ImGui::Separator();
+
+			// Render behavior-specific properties
+			if (ImGui::TreeNode("Behaviour Properties"))
+			{
+				m_pxScriptBehaviour->RenderPropertiesPanel();
+				ImGui::TreePop();
+			}
 		}
 		else
 		{
-			ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "No behaviour set (use SetBehaviour<T>())");
+			ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "No behaviour set");
 		}
 	}
 }

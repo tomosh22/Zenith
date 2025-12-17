@@ -22,6 +22,16 @@ public:
 
 	// Return the unique type name for this behavior (used for serialization)
 	virtual const char* GetBehaviourTypeName() const = 0;
+
+	// Editor UI - override to render behavior-specific properties
+	// Default implementation does nothing
+	virtual void RenderPropertiesPanel() {}
+
+	// Serialization of behavior-specific parameters
+	// Override these to save/load custom behavior state
+	virtual void WriteParametersToDataStream(Zenith_DataStream& xStream) const {}
+	virtual void ReadParametersFromDataStream(Zenith_DataStream& xStream) {}
+
 	std::vector<Zenith_GUID> m_axGUIDRefs;
 };
 
@@ -61,6 +71,17 @@ public:
 	bool HasBehaviour(const char* szTypeName) const
 	{
 		return m_xFactoryMap.find(szTypeName) != m_xFactoryMap.end();
+	}
+
+	// Get all registered behavior names
+	std::vector<std::string> GetRegisteredBehaviourNames() const
+	{
+		std::vector<std::string> xNames;
+		for (const auto& pair : m_xFactoryMap)
+		{
+			xNames.push_back(pair.first);
+		}
+		return xNames;
 	}
 
 private:
