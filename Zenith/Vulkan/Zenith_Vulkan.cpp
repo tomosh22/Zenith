@@ -381,8 +381,7 @@ void Zenith_Vulkan::EndFrame(bool bSubmitRenderWork)
 	vk::PipelineStageFlags eMemWaitStages = vk::PipelineStageFlagBits::eAllCommands;
 	vk::PipelineStageFlags eRenderWaitStages = vk::PipelineStageFlagBits::eAllCommands;
 
-	//#TO_TODO: stop making this every frame
-	vk::Semaphore xMemorySemaphore = s_xDevice.createSemaphore(vk::SemaphoreCreateInfo());
+	const vk::Semaphore& xMemorySemaphore = s_pxCurrentFrame->GetMemorySemaphore();
 
 	std::vector<vk::CommandBuffer> xPlatformMemoryCmdBufs;
 	if (s_pxMemoryUpdateCmdBuf)
@@ -392,12 +391,18 @@ void Zenith_Vulkan::EndFrame(bool bSubmitRenderWork)
 
 	}
 
+	// Prepare frame work distribution in platform-independent layer
+	// Do this BEFORE memory submit so we know whether to signal the semaphore
+	Flux_WorkDistribution xWorkDistribution;
+	const bool bHasRenderWork = bSubmitRenderWork && Flux::PrepareFrame(xWorkDistribution);
+
 	const bool bShouldWait = Zenith_Vulkan_Swapchain::ShouldWaitOnImageAvailableSemaphore();
 	vk::SubmitInfo xMemorySubmitInfo = vk::SubmitInfo()
 		.setCommandBufferCount(xPlatformMemoryCmdBufs.size())
 		.setPCommandBuffers(xPlatformMemoryCmdBufs.data())
-		.setPSignalSemaphores(&xMemorySemaphore)
-		.setSignalSemaphoreCount(1)
+		// Only signal semaphore if we have render work that will wait on it
+		.setPSignalSemaphores(bHasRenderWork ? &xMemorySemaphore : nullptr)
+		.setSignalSemaphoreCount(bHasRenderWork ? 1 : 0)
 		.setWaitDstStageMask(eMemWaitStages)
 		.setPWaitSemaphores(bShouldWait ? &Zenith_Vulkan_Swapchain::GetCurrentImageAvailableSemaphore() : nullptr)
 		.setWaitSemaphoreCount(bShouldWait);
@@ -405,9 +410,7 @@ void Zenith_Vulkan::EndFrame(bool bSubmitRenderWork)
 	//#TO_TODO: change this to copy queue, how do I make sure this finishes before graphics?
 	s_axQueues[COMMANDTYPE_GRAPHICS].submit(xMemorySubmitInfo, VK_NULL_HANDLE);
 
-	// Prepare frame work distribution in platform-independent layer
-	Flux_WorkDistribution xWorkDistribution;
-	if (!bSubmitRenderWork || !Flux::PrepareFrame(xWorkDistribution))
+	if (!bHasRenderWork)
 	{
 		// CRITICAL: Clear pending command lists even when skipping render work
 		// Without this, stale command list entries accumulate across frames and can
@@ -445,19 +448,20 @@ void Zenith_Vulkan::EndFrame(bool bSubmitRenderWork)
 	// Submit all recorded command buffers in correct order
 	if (!xCommandBuffersToSubmit.empty())
 	{
+		// Render submit waits on memory semaphore to ensure memory operations complete first
+		// This also consumes the semaphore signal so it can be re-signaled next frame
 		vk::SubmitInfo xRenderSubmitInfo = vk::SubmitInfo()
 			.setCommandBufferCount(xCommandBuffersToSubmit.size())
 			.setPCommandBuffers(xCommandBuffersToSubmit.data())
-			.setPWaitSemaphores(nullptr)
+			.setPWaitSemaphores(&xMemorySemaphore)
+			.setWaitSemaphoreCount(1)
+			.setWaitDstStageMask(eRenderWaitStages)
 			.setPSignalSemaphores(nullptr)
-			.setWaitSemaphoreCount(0)
 			.setSignalSemaphoreCount(0);
 
 		s_axQueues[COMMANDTYPE_GRAPHICS].submit(xRenderSubmitInfo, VK_NULL_HANDLE);
 	}
 
-	//#TO_TODO: plug semaphore leak
-	//s_xDevice.destroySemaphore(xMemorySemaphore);
 }
 
 void Zenith_Vulkan::WaitForGPUIdle()
@@ -917,6 +921,9 @@ void Zenith_Vulkan_PerFrame::Initialise()
 	vk::FenceCreateInfo xFenceInfo = vk::FenceCreateInfo()
 		.setFlags(vk::FenceCreateFlagBits::eSignaled);
 	m_xFence = Zenith_Vulkan::GetDevice().createFence(xFenceInfo);
+
+	// Create persistent semaphore for memory submit synchronization (fixes per-frame semaphore leak)
+	m_xMemorySemaphore = Zenith_Vulkan::GetDevice().createSemaphore(vk::SemaphoreCreateInfo());
 }
 
 void Zenith_Vulkan_PerFrame::BeginFrame()

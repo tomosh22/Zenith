@@ -107,7 +107,8 @@ public:
 	{
 		Zenith_Assert(uIndex < m_uSize, "Index out of range");
 		m_pxData[uIndex].~T();
-		memmove(m_pxData + uIndex, m_pxData + uIndex + 1, sizeof(T) * (m_uCapacity - uIndex - 1));
+		// Move remaining valid elements (use m_uSize, not m_uCapacity)
+		memmove(m_pxData + uIndex, m_pxData + uIndex + 1, sizeof(T) * (m_uSize - uIndex - 1));
 		m_uSize--;
 	}
 
@@ -195,7 +196,8 @@ private:
 		m_uSize = xOther.GetSize();
 		m_uCapacity = xOther.GetCapacity();
 
-		memcpy(m_pxData, xOther.m_pxData, sizeof(T) * m_uCapacity);
+		// Only copy valid elements (use m_uSize, not m_uCapacity) to avoid copying uninitialized data
+		memcpy(m_pxData, xOther.m_pxData, sizeof(T) * m_uSize);
 	}
 
 	T* m_pxData = nullptr;

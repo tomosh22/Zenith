@@ -37,6 +37,7 @@ public:
 	void Deallocate(T* const pxVal)
 	{
 		Zenith_Assert(pxVal >= m_pxData && pxVal < m_pxData + uCount, "Object wasn't allocated from this pool");
+		Zenith_Assert(m_uFreeCount < uCount, "Memory pool free list overflow - possible double-free");
 
 		pxVal->~T();
 		m_apxFreeList[m_uFreeCount++] = pxVal;
@@ -48,5 +49,5 @@ public:
 private:
 	T* m_pxData = nullptr;
 	T* m_apxFreeList[uCount]{nullptr};
-	u_int m_uFreeCount = -1;
+	u_int m_uFreeCount = 0; // Initialized properly in constructor
 };

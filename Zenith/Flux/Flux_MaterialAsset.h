@@ -257,7 +257,10 @@ private:
 	//--------------------------------------------------------------------------
 	// Static Registry
 	//--------------------------------------------------------------------------
-	
+
+	// Mutex for thread-safe access to static caches
+	static Zenith_Mutex s_xCacheMutex;
+
 	// Material cache by asset path
 	static std::unordered_map<std::string, Flux_MaterialAsset*> s_xMaterialCache;
 

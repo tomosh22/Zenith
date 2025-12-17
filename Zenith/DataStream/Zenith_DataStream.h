@@ -44,6 +44,7 @@ public:
 
 	void WriteData(const void* pData, uint64_t ulSize)
 	{
+		Zenith_Assert(pData != nullptr, "pData cannot be null");
 		uint64_t ulNewCursor = m_ulCursor + ulSize;
 		while (ulNewCursor > m_ulDataSize) Resize();
 		memcpy(static_cast<uint8_t*>(m_pData) + m_ulCursor, pData, ulSize);
@@ -52,9 +53,11 @@ public:
 
 	void ReadData(void* pData, uint64_t ulSize)
 	{
+		Zenith_Assert(pData != nullptr, "pData cannot be null");
+		Zenith_Assert(m_pData != nullptr, "Stream data is null");
+		Zenith_Assert(m_ulCursor + ulSize <= m_ulDataSize, "Reading past end of DataStream");
 		memcpy(pData, static_cast<uint8_t*>(m_pData) + m_ulCursor, ulSize);
 		m_ulCursor += ulSize;
-		Zenith_Assert(m_ulCursor <= m_ulDataSize, "Ran past end of DataStream");
 	}
 
 	template<typename T, std::enable_if_t<std::is_trivially_copyable<T>::value, int> = 0>
@@ -69,9 +72,10 @@ public:
 	template<typename T, std::enable_if_t<std::is_trivially_copyable<T>::value, int> = 0>
 	void operator>>(T& x)
 	{
+		Zenith_Assert(m_pData != nullptr, "Stream data is null");
+		Zenith_Assert(m_ulCursor + sizeof(T) <= m_ulDataSize, "Reading past end of DataStream");
 		memcpy(&x, static_cast<uint8_t*>(m_pData) + m_ulCursor, sizeof(T));
 		m_ulCursor += sizeof(T);
-		Zenith_Assert(m_ulCursor <= m_ulDataSize, "Ran past end of DataStream");
 	}
 
 	template<typename T, std::enable_if_t<!std::is_trivially_copyable<T>::value, int> = 0>

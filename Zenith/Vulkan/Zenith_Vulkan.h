@@ -24,8 +24,10 @@ public:
 	const vk::DescriptorPool& GetDescriptorPoolForWorkerIndex(u_int uWorkerIndex);
 	const vk::CommandPool& GetCommandPoolForWorkerIndex(u_int uWorkerIndex);
 	Zenith_Vulkan_CommandBuffer& GetWorkerCommandBuffer(u_int uWorkerIndex);
-	
+	const vk::Semaphore& GetMemorySemaphore() const { return m_xMemorySemaphore; }
+
 	vk::Fence m_xFence;
+	vk::Semaphore m_xMemorySemaphore;
 	
 	static constexpr u_int NUM_WORKER_THREADS = FLUX_NUM_WORKER_THREADS;
 	vk::DescriptorPool m_axDescriptorPools[NUM_WORKER_THREADS];

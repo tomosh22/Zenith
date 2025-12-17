@@ -1,4 +1,6 @@
 #include "Zenith.h"
+
+#include "Core/Multithreading/Zenith_Multithreading.h"
 #include "Flux/Flux_MaterialAsset.h"
 #include "Flux/Flux_Graphics.h"
 #include "AssetHandling/Zenith_AssetHandler.h"
@@ -6,6 +8,7 @@
 #include <algorithm>
 
 // Static member initialization
+Zenith_Mutex Flux_MaterialAsset::s_xCacheMutex;
 std::unordered_map<std::string, Flux_MaterialAsset*> Flux_MaterialAsset::s_xMaterialCache;
 std::unordered_map<std::string, Flux_Texture*> Flux_MaterialAsset::s_xTextureCache;
 uint32_t Flux_MaterialAsset::s_uNextMaterialID = 1;
@@ -30,6 +33,8 @@ void Flux_MaterialAsset::Shutdown()
 
 Flux_MaterialAsset* Flux_MaterialAsset::Create(const std::string& strName)
 {
+	Zenith_ScopedMutexLock xLock(s_xCacheMutex);
+
 	Flux_MaterialAsset* pMaterial = new Flux_MaterialAsset();
 
 	if (strName.empty())
@@ -53,6 +58,8 @@ Flux_MaterialAsset* Flux_MaterialAsset::Create(const std::string& strName)
 
 Flux_MaterialAsset* Flux_MaterialAsset::LoadFromFile(const std::string& strPath)
 {
+	Zenith_ScopedMutexLock xLock(s_xCacheMutex);
+
 	// Check cache first
 	auto it = s_xMaterialCache.find(strPath);
 	if (it != s_xMaterialCache.end())
@@ -90,6 +97,8 @@ Flux_MaterialAsset* Flux_MaterialAsset::LoadFromFile(const std::string& strPath)
 
 Flux_MaterialAsset* Flux_MaterialAsset::GetByPath(const std::string& strPath)
 {
+	Zenith_ScopedMutexLock xLock(s_xCacheMutex);
+
 	auto it = s_xMaterialCache.find(strPath);
 	if (it != s_xMaterialCache.end())
 	{
@@ -100,6 +109,8 @@ Flux_MaterialAsset* Flux_MaterialAsset::GetByPath(const std::string& strPath)
 
 void Flux_MaterialAsset::Unload(const std::string& strPath)
 {
+	Zenith_ScopedMutexLock xLock(s_xCacheMutex);
+
 	auto it = s_xMaterialCache.find(strPath);
 	if (it != s_xMaterialCache.end())
 	{
@@ -111,6 +122,8 @@ void Flux_MaterialAsset::Unload(const std::string& strPath)
 
 void Flux_MaterialAsset::UnloadAll()
 {
+	Zenith_ScopedMutexLock xLock(s_xCacheMutex);
+
 	Zenith_Log("%s Unloading all materials (%zu cached, %zu total)", LOG_TAG, s_xMaterialCache.size(), s_xAllMaterials.size());
 
 	for (auto& pair : s_xMaterialCache)
@@ -139,15 +152,17 @@ void Flux_MaterialAsset::UnloadAll()
 
 void Flux_MaterialAsset::ReloadAll()
 {
+	Zenith_ScopedMutexLock xLock(s_xCacheMutex);
+
 	Zenith_Log("%s Reloading all materials (%zu cached)", LOG_TAG, s_xMaterialCache.size());
-	
+
 	// Collect paths to reload
 	std::vector<std::string> paths;
 	for (const auto& pair : s_xMaterialCache)
 	{
 		paths.push_back(pair.first);
 	}
-	
+
 	// Reload each material (this will reload textures)
 	for (const std::string& strPath : paths)
 	{
@@ -157,12 +172,14 @@ void Flux_MaterialAsset::ReloadAll()
 			it->second->Reload();
 		}
 	}
-	
+
 	Zenith_Log("%s All materials reloaded", LOG_TAG);
 }
 
 void Flux_MaterialAsset::GetAllLoadedMaterialPaths(std::vector<std::string>& outPaths)
 {
+	Zenith_ScopedMutexLock xLock(s_xCacheMutex);
+
 	outPaths.clear();
 	outPaths.reserve(s_xMaterialCache.size());
 
@@ -174,6 +191,8 @@ void Flux_MaterialAsset::GetAllLoadedMaterialPaths(std::vector<std::string>& out
 
 void Flux_MaterialAsset::GetAllMaterials(std::vector<Flux_MaterialAsset*>& outMaterials)
 {
+	Zenith_ScopedMutexLock xLock(s_xCacheMutex);
+
 	outMaterials.clear();
 	outMaterials.reserve(s_xAllMaterials.size());
 

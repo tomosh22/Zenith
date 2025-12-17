@@ -15,7 +15,7 @@
 #include "TaskSystem/Zenith_TaskSystem.h"
 #include "Profiling/Zenith_Profiling.h"
 
-static Zenith_Task* g_pxRenderTask = nullptr;
+static Zenith_Task g_xRenderTask(ZENITH_PROFILE_INDEX__FLUX_TERRAIN, Flux_Terrain::RenderToGBuffer, nullptr);
 static Zenith_Vector<Zenith_TerrainComponent*> g_xTerrainComponentsToRender;
 
 static Flux_CommandList g_xTerrainCommandList("Terrain");
@@ -156,9 +156,6 @@ void Flux_Terrain::Initialise()
 	Flux_MemoryManager::InitialiseDynamicConstantBuffer(nullptr, sizeof(struct TerrainConstants
 		), s_xTerrainConstantsBuffer);
 
-	//#TO_TODO: delete this on shutdown
-	g_pxRenderTask = new Zenith_Task(ZENITH_PROFILE_INDEX__FLUX_TERRAIN, Flux_Terrain::RenderToGBuffer, nullptr);
-
 #ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_DebugVariables::AddBoolean({ "Render", "Enable", "Terrain" }, dbg_bEnableTerrain);
 	Zenith_DebugVariables::AddFloat({ "Render", "Terrain", "UV Scale" }, s_xTerrainConstants.m_fUVScale, 0., 10.);
@@ -280,12 +277,12 @@ void Flux_Terrain::SubmitRenderToGBufferTask()
 			xStats.m_uVertexFragments, xStats.m_uIndexFragments);
 	}
 
-	Zenith_TaskSystem::SubmitTask(g_pxRenderTask);
+	Zenith_TaskSystem::SubmitTask(&g_xRenderTask);
 }
 
 void Flux_Terrain::WaitForRenderToGBufferTask()
 {
-	g_pxRenderTask->WaitUntilComplete();
+	g_xRenderTask.WaitUntilComplete();
 }
 
 void Flux_Terrain::RenderToGBuffer(void*)

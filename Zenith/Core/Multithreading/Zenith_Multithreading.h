@@ -19,3 +19,13 @@ private:
 	static bool Platform_IsMainThread();
 
 };
+
+class Zenith_ScopedMutexLock
+{
+public:
+	Zenith_ScopedMutexLock() = delete;
+	Zenith_ScopedMutexLock(Zenith_Mutex& xMutex);
+	~Zenith_ScopedMutexLock();
+private:
+	Zenith_Mutex& m_xMutex;
+};

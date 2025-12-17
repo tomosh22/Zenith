@@ -284,17 +284,21 @@ bool Zenith_Vulkan_Swapchain::BeginFrame()
 
 	if (eResult == vk::Result::eErrorOutOfDateKHR)
 	{
-		//#TO_TODO: cleanup the rest, at least image views, probably other things
+		// Wait for GPU to finish using all resources before destroying them
+		// This prevents "semaphore in use" errors during window resize/maximize
+		Zenith_Vulkan::WaitForGPUIdle();
+
+		// Cleanup swapchain resources before recreation
 		for (u_int u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
 		{
 			Flux_MemoryManager::QueueImageViewDeletion(s_xImageViews[u]);
+			xDevice.destroySemaphore(s_axImageAvailableSemaphores[u]);
 		}
+		s_xImages.clear();
+		s_xImageViews.clear();
 		xDevice.destroySwapchainKHR(s_xSwapChain);
 		Initialise();
 		Flux::OnResChange();
-		//xDevice.resetFences(1, &Zenith_Vulkan::GetNextInFlightFence());
-		//s_uFrameIndex = (s_uFrameIndex + 1) % MAX_FRAMES_IN_FLIGHT;
-		//return false;
 	}
 	Zenith_Profiling::EndProfile(ZENITH_PROFILE_INDEX__FLUX_SWAPCHAIN_BEGIN_FRAME);
 	return true;
