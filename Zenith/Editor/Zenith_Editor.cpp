@@ -346,6 +346,9 @@ bool Zenith_Editor::Update()
 		// Clear undo/redo history as entity IDs are now invalid
 		Zenith_UndoSystem::Clear();
 
+		// Clear game camera entity pointer as it's now invalid (entity from old scene)
+		s_pxGameCameraEntity = nullptr;
+
 		// If this was a backup scene restore (Play -> Stop transition), clean up
 		if (s_bHasSceneBackup && s_strPendingSceneLoadPath == s_strBackupScenePath)
 		{
@@ -360,6 +363,15 @@ bool Zenith_Editor::Update()
 			{
 				SwitchToEditorCamera();
 				Zenith_Log("Editor camera state updated after scene restore");
+			}
+		}
+		else
+		{
+			// For regular scene loads, also sync editor camera with the new scene's camera (if it has one)
+			if (s_bEditorCameraInitialized)
+			{
+				SwitchToEditorCamera();
+				Zenith_Log("Editor camera synced with loaded scene");
 			}
 		}
 
