@@ -13,11 +13,18 @@ layout(location = 0) out vec2 o_xUV;
 
 void main()
 {
-	o_xUV = a_xUV/10. + a_xInstanceUV;
-	
-	vec2 xRoot = g_xRcpScreenDims * a_xInstanceTextRoot;
-	vec2 xPos = xRoot + a_fInstanceTextSize * g_xRcpScreenDims * (a_xPosition.xy + a_xInstancePosition);
+	// Flip V coordinate for Vulkan (Y=-1 is top, so we need V=0 at top)
+	o_xUV = vec2(a_xUV.x, 1.0 - a_xUV.y) / 10.0 + a_xInstanceUV;
 
-	xPos = xPos * 2.f - 1.f;
-	gl_Position = vec4(xPos, 0, 1);
+	// Transform quad from [-1,1] to [0,1] - makes each character a unit square
+	vec2 xQuadPos = a_xPosition.xy * 0.5 + 0.5;
+
+	// Calculate pixel position:
+	// - Text root (in pixels) + character offset + quad position, all scaled by text size
+	vec2 xPixelPos = vec2(a_xInstanceTextRoot) + a_fInstanceTextSize * (a_xInstancePosition + xQuadPos);
+
+	// Convert to Vulkan NDC: x,y in [-1,1] where (-1,-1) is top-left
+	vec2 xNDC = xPixelPos * g_xRcpScreenDims * 2.0 - 1.0;
+
+	gl_Position = vec4(xNDC, 0, 1);
 }

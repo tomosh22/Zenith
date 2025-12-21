@@ -169,6 +169,7 @@ public:
 	u_int GetEntityCount() const { return static_cast<u_int>(m_xEntityMap.size()); }
 	bool EntityExists(Zenith_EntityID uID) const { return m_xEntityMap.find(uID) != m_xEntityMap.end(); }
 	Zenith_Entity GetEntityFromID(Zenith_EntityID uID);
+	Zenith_Entity* FindEntityByName(const std::string& strName);
 
 	static void Update(const float fDt);
 	static void WaitForUpdateComplete();

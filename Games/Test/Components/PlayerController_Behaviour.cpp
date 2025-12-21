@@ -4,6 +4,8 @@
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
+#include "EntityComponent/Components/Zenith_UIComponent.h"
+#include "UI/Zenith_UI.h"
 #include "Input/Zenith_Input.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "EntityComponent/Zenith_Entity.h"
@@ -221,5 +223,194 @@ void PlayerController_Behaviour::OnUpdate(const float fDt)
 	if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_E))
 	{
 		Shoot();
+	}
+
+	// Inventory slot selection (keys 1-6)
+	for (int i = 0; i < s_iInventorySlots; i++)
+	{
+		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_1 + i))
+		{
+			SetSelectedSlot(i);
+		}
+	}
+
+	// Update compass based on camera yaw
+	UpdateCompassUI();
+
+	// Demo: take damage when pressing T, heal when pressing H
+	if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_T))
+	{
+		TakeDamage(10.0f);
+	}
+	if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_H))
+	{
+		Heal(15.0f);
+	}
+}
+
+// ========== UI Integration ==========
+
+void PlayerController_Behaviour::OnCreate()
+{
+	FindHUDElements();
+}
+
+void PlayerController_Behaviour::FindHUDElements()
+{
+	if (m_bUIInitialized)
+		return;
+
+	// Find the HUD entity by name
+	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+	Zenith_Entity* pxHUDEntity = xScene.FindEntityByName("RPG_HUD");
+	if (!pxHUDEntity)
+	{
+		Zenith_Log("[PlayerController] Could not find RPG_HUD entity");
+		return;
+	}
+
+	if (!pxHUDEntity->HasComponent<Zenith_UIComponent>())
+	{
+		Zenith_Log("[PlayerController] RPG_HUD entity has no UIComponent");
+		return;
+	}
+
+	Zenith_UIComponent& xUI = pxHUDEntity->GetComponent<Zenith_UIComponent>();
+
+	// Find health bar fill
+	m_pxHealthFill = xUI.FindElement<Zenith_UI::Zenith_UIRect>("HealthBar_Fill");
+
+	// Find compass text
+	m_pxCompassText = xUI.FindElement<Zenith_UI::Zenith_UIText>("CompassText");
+
+	// Find inventory slots
+	for (int i = 0; i < s_iInventorySlots; i++)
+	{
+		std::string strSlotName = "InventorySlot_" + std::to_string(i) + "_BG";
+		m_apxInventorySlots[i] = xUI.FindElement<Zenith_UI::Zenith_UIRect>(strSlotName);
+	}
+
+	m_bUIInitialized = true;
+	Zenith_Log("[PlayerController] UI elements initialized successfully");
+
+	// Initial UI update
+	UpdateHealthUI();
+	UpdateInventoryUI();
+}
+
+void PlayerController_Behaviour::UpdateHealthUI()
+{
+	if (!m_bUIInitialized)
+		FindHUDElements();
+
+	if (m_pxHealthFill)
+	{
+		float fHealthPercent = m_fHealth / s_fMaxHealth;
+		m_pxHealthFill->SetFillAmount(fHealthPercent);
+
+		// Change color based on health level
+		if (fHealthPercent > 0.6f)
+		{
+			m_pxHealthFill->SetColor({ 0.2f, 0.8f, 0.2f, 1.0f }); // Green
+		}
+		else if (fHealthPercent > 0.3f)
+		{
+			m_pxHealthFill->SetColor({ 0.9f, 0.7f, 0.1f, 1.0f }); // Yellow
+		}
+		else
+		{
+			m_pxHealthFill->SetColor({ 0.9f, 0.1f, 0.1f, 1.0f }); // Red
+		}
+	}
+}
+
+void PlayerController_Behaviour::UpdateCompassUI()
+{
+	if (!m_bUIInitialized)
+		FindHUDElements();
+
+	if (!m_pxCompassText)
+		return;
+
+	// Get camera yaw to determine facing direction
+	if (!m_xParentEntity.HasComponent<Zenith_CameraComponent>())
+		return;
+
+	Zenith_CameraComponent& xCamera = m_xParentEntity.GetComponent<Zenith_CameraComponent>();
+	double dYaw = xCamera.GetYaw();
+
+	// Normalize yaw to [0, 2*PI)
+	while (dYaw < 0) dYaw += Zenith_Maths::Pi * 2.0;
+	while (dYaw >= Zenith_Maths::Pi * 2.0) dYaw -= Zenith_Maths::Pi * 2.0;
+
+	// Convert to degrees
+	double dDegrees = dYaw * Zenith_Maths::RadToDeg;
+
+	// Determine cardinal direction
+	std::string strDirection;
+	if (dDegrees >= 337.5 || dDegrees < 22.5)
+		strDirection = "N";
+	else if (dDegrees >= 22.5 && dDegrees < 67.5)
+		strDirection = "NE";
+	else if (dDegrees >= 67.5 && dDegrees < 112.5)
+		strDirection = "E";
+	else if (dDegrees >= 112.5 && dDegrees < 157.5)
+		strDirection = "SE";
+	else if (dDegrees >= 157.5 && dDegrees < 202.5)
+		strDirection = "S";
+	else if (dDegrees >= 202.5 && dDegrees < 247.5)
+		strDirection = "SW";
+	else if (dDegrees >= 247.5 && dDegrees < 292.5)
+		strDirection = "W";
+	else
+		strDirection = "NW";
+
+	m_pxCompassText->SetText(strDirection);
+}
+
+void PlayerController_Behaviour::UpdateInventoryUI()
+{
+	if (!m_bUIInitialized)
+		FindHUDElements();
+
+	for (int i = 0; i < s_iInventorySlots; i++)
+	{
+		if (m_apxInventorySlots[i])
+		{
+			if (i == m_iSelectedSlot)
+			{
+				m_apxInventorySlots[i]->SetGlowEnabled(true);
+				m_apxInventorySlots[i]->SetGlowColor({ 1.0f, 0.8f, 0.2f, 0.6f });
+			}
+			else
+			{
+				m_apxInventorySlots[i]->SetGlowEnabled(false);
+			}
+		}
+	}
+}
+
+void PlayerController_Behaviour::SetHealth(float fHealth)
+{
+	m_fHealth = std::max(0.0f, std::min(fHealth, s_fMaxHealth));
+	UpdateHealthUI();
+}
+
+void PlayerController_Behaviour::TakeDamage(float fDamage)
+{
+	SetHealth(m_fHealth - fDamage);
+}
+
+void PlayerController_Behaviour::Heal(float fAmount)
+{
+	SetHealth(m_fHealth + fAmount);
+}
+
+void PlayerController_Behaviour::SetSelectedSlot(int iSlot)
+{
+	if (iSlot >= 0 && iSlot < s_iInventorySlots)
+	{
+		m_iSelectedSlot = iSlot;
+		UpdateInventoryUI();
 	}
 }

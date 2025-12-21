@@ -1,5 +1,6 @@
 #pragma once
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
+#include "EntityComponent/Components/Zenith_UIComponent.h"
 #include <unordered_map>
 #include <string>
 

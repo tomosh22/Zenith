@@ -446,7 +446,12 @@ bool Zenith_Editor::Update()
 	}
 
 	// Handle gizmo mode keyboard shortcuts (when viewport is focused and not playing)
-	if (s_bViewportFocused && s_eEditorMode != EditorMode::Playing)
+	if (s_eEditorMode == EditorMode::Playing)
+	{
+		return true;
+	}
+
+	if (s_bViewportFocused)
 	{
 		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_W))
 		{

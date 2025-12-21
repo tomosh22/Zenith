@@ -110,8 +110,9 @@ void Zenith_Multithreading::Platform_CreateThread(const char* szName, Zenith_Thr
 
 void Zenith_Multithreading::Platform_RegisterThread(const bool bMainThread)
 {
-	static u_int ls_uThreadID = 0;
-	tl_g_uThreadID = ls_uThreadID++;
+	// Thread-safe atomic counter to ensure unique IDs even when multiple threads register simultaneously
+	static std::atomic<u_int> ls_uThreadID{0};
+	tl_g_uThreadID = ls_uThreadID.fetch_add(1);
 	if (bMainThread)
 	{
 		g_uMainThreadID = tl_g_uThreadID;

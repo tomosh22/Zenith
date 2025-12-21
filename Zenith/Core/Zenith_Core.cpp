@@ -4,6 +4,7 @@
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
+#include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "Flux/Flux.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Skybox/Flux_Skybox.h"
@@ -196,6 +197,16 @@ void Zenith_Core::Zenith_MainLoop()
 		#ifdef ZENITH_TOOLS
 		Zenith_PhysicsMeshGenerator::DebugDrawAllPhysicsMeshes();
 		#endif
+
+		// Render UI components - submits to Flux_Quads and Flux_Text
+		// Must happen before SubmitRenderTasks() which submits those systems
+		Zenith_Vector<Zenith_UIComponent*> xUIComponents;
+		Zenith_Scene::GetCurrentScene().GetAllOfComponentType<Zenith_UIComponent>(xUIComponents);
+		for (Zenith_Vector<Zenith_UIComponent*>::Iterator xIt(xUIComponents); !xIt.Done(); xIt.Next())
+		{
+			Zenith_UIComponent* const pxUI = xIt.GetData();
+			pxUI->Render();
+		}
 
 		SubmitRenderTasks();
 		WaitForAllRenderTasks();

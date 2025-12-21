@@ -8,6 +8,7 @@
 #include "Flux/Flux_Buffers.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "EntityComponent/Components/Zenith_TextComponent.h"
+#include "UI/Zenith_UICanvas.h"
 #include "AssetHandling/Zenith_AssetHandler.h"
 #include "Zenith_OS_Include.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
@@ -164,8 +165,34 @@ uint32_t Flux_Text::UploadChars()
 			}
 		}
 
-		
+
 	}
+
+	// Process UI text entries from Zenith_UICanvas
+	std::vector<Zenith_UI::UITextEntry>& xUITextEntries = Zenith_UI::Zenith_UICanvas::GetPendingTextEntries();
+	for (const Zenith_UI::UITextEntry& xEntry : xUITextEntries)
+	{
+		for (uint32_t u = 0; u < xEntry.m_strText.size(); u++)
+		{
+			TextVertex xVertex;
+			xVertex.m_xTextRoot = { static_cast<uint32_t>(xEntry.m_xPosition.x), static_cast<uint32_t>(xEntry.m_xPosition.y) };
+			xVertex.m_fTextSize = xEntry.m_fSize;
+			const float fSpacing = xVertex.m_fTextSize / 200.f;
+			xVertex.m_xPos = Zenith_Maths::Vector2(u * fSpacing, 0.f);
+
+			char cChar = xEntry.m_strText.at(u);
+			const uint32_t uIndex = cChar - 32;
+
+			const Zenith_Maths::UVector2 xTextureOffsets = { (uIndex % 10), (uIndex / 10) };
+			xVertex.m_xUV = { xTextureOffsets.x, xTextureOffsets.y };
+			xVertex.m_xUV /= 10.f;
+			uCharCount++;
+
+			xVertices.PushBack(xVertex);
+		}
+	}
+	// Clear UI text entries after processing
+	Zenith_UI::Zenith_UICanvas::ClearPendingTextEntries();
 
 	Flux_MemoryManager::UploadBufferData(s_xInstanceBuffer.GetBuffer().m_xVRAMHandle, xVertices.GetDataPointer(), sizeof(TextVertex) * xVertices.GetSize());
 

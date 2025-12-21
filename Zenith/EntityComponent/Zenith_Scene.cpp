@@ -8,6 +8,7 @@
 #include "EntityComponent/Components/Zenith_TextComponent.h"
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
+#include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "Flux/MeshAnimation/Flux_MeshAnimation.h"
 #include "Flux/Terrain/Flux_Terrain.h"
 #include "Flux/StaticMeshes/Flux_StaticMeshes.h"
@@ -323,6 +324,14 @@ void Zenith_Scene::LoadFromFile(const std::string& strFilename)
 					xComponent.ReadFromDataStream(xStream);
 				}
 			}
+			else if (strComponentType == "UIComponent")
+			{
+				if (!xEntityInMap.HasComponent<Zenith_UIComponent>())
+				{
+					Zenith_UIComponent& xComponent = xEntityInMap.AddComponent<Zenith_UIComponent>();
+					xComponent.ReadFromDataStream(xStream);
+				}
+			}
 		}
 	}
 
@@ -360,6 +369,15 @@ void Zenith_Scene::Update(const float fDt)
 	}
 	s_xCurrentScene.ReleaseMutex();
 
+	// Update UI components after scripts (scripts can modify UI during their update)
+	Zenith_Vector<Zenith_UIComponent*> xUIComponents;
+	s_xCurrentScene.GetAllOfComponentType<Zenith_UIComponent>(xUIComponents);
+	for (Zenith_Vector<Zenith_UIComponent*>::Iterator xIt(xUIComponents); !xIt.Done(); xIt.Next())
+	{
+		Zenith_UIComponent* const pxUI = xIt.GetData();
+		pxUI->Update(fDt);
+	}
+
 	//#TO used to have this before script update but scripts can add new model components
 	//causing a vector resize which causes the animation update to read deallocate model memory
 	
@@ -392,6 +410,18 @@ Zenith_Entity Zenith_Scene::GetEntityByID(Zenith_EntityID uID) {
 
 Zenith_Entity Zenith_Scene::GetEntityFromID(Zenith_EntityID uID) {
 	return m_xEntityMap.at(uID);
+}
+
+Zenith_Entity* Zenith_Scene::FindEntityByName(const std::string& strName)
+{
+	for (auto& xPair : m_xEntityMap)
+	{
+		if (xPair.second.m_strName == strName)
+		{
+			return &xPair.second;
+		}
+	}
+	return nullptr;
 }
 
 void Zenith_Scene::SetMainCameraEntity(Zenith_Entity& xEntity)

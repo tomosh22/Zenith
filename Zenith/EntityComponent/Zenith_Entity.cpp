@@ -8,6 +8,7 @@
 #include "EntityComponent/Components/Zenith_TextComponent.h"
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
+#include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "DataStream/Zenith_DataStream.h"
 
 Zenith_Entity::Zenith_Entity(Zenith_Scene* pxScene, const std::string& strName)
@@ -114,6 +115,10 @@ void Zenith_Entity::WriteToDataStream(Zenith_DataStream& xStream) const
 		else if (strTypeName == "ScriptComponent")
 		{
 			const_cast<Zenith_Entity*>(this)->GetComponent<Zenith_ScriptComponent>().WriteToDataStream(xStream);
+		}
+		else if (strTypeName == "UIComponent")
+		{
+			const_cast<Zenith_Entity*>(this)->GetComponent<Zenith_UIComponent>().WriteToDataStream(xStream);
 		}
 	}
 }

@@ -14,6 +14,7 @@
 #include <filesystem>
 #include <list>
 #include <concepts>
+#include <atomic>
 
 using u_int = unsigned int;
 
@@ -131,9 +132,12 @@ struct std::hash<Zenith_GUID>
 	}
 };
 
-#define ZENITH_MAX_TEXTURES 1024
-#define ZENITH_MAX_MESHES 16384*2
-#define ZENITH_MAX_MATERIALS 1024
+// Asset limits - now defined in ZenithConfig.h for central documentation
+// These macros maintain backward compatibility with existing code
+#include "ZenithConfig.h"
+#define ZENITH_MAX_TEXTURES ZenithConfig::MAX_TEXTURES
+#define ZENITH_MAX_MESHES ZenithConfig::MAX_MESHES
+#define ZENITH_MAX_MATERIALS ZenithConfig::MAX_MATERIALS
 
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "Memory/Zenith_MemoryManagement.h"

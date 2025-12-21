@@ -1,10 +1,8 @@
 #pragma once
 
-#define MAX_FRAMES_IN_FLIGHT 2
-#define FLUX_MAX_TARGETS 8
-#define FLUX_MAX_DESCRIPTOR_BINDINGS 16
-#define FLUX_MAX_DESCRIPTOR_SET_LAYOUTS 5
-#define FLUX_NUM_WORKER_THREADS 8
+// Engine-wide configuration constants are now in ZenithConfig.h
+// This file includes them for backward compatibility with existing code
+#include "Core/ZenithConfig.h"
 
 enum CommandType
 {

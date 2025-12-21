@@ -14,6 +14,15 @@ layout (set = 1, binding = 0) uniform sampler2D g_axBindlessTextures[];
 
 void main()
 {
-	o_xColour = texture(g_axBindlessTextures[a_uTexture], a_xUV);
-	//o_xColour = vec4(1);
+	// Texture ID 0 means solid color (no texture sampling)
+	// This avoids requiring a valid texture in the bindless array for simple UI rects
+	if (a_uTexture == 0u)
+	{
+		o_xColour = a_xColour;
+	}
+	else
+	{
+		// For textured quads, multiply texture by vertex color for tinting support
+		o_xColour = texture(g_axBindlessTextures[a_uTexture], a_xUV) * a_xColour;
+	}
 }

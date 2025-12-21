@@ -478,6 +478,9 @@
     <ClCompile Include="..\..\..\Zenith\EntityComponent\Components\Zenith_TransformComponent.cpp">
       <Filter>Zenith\EntityComponent\Components</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\..\Zenith\EntityComponent\Components\Zenith_UIComponent.cpp">
+      <Filter>Zenith\EntityComponent\Components</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\..\Zenith\EntityComponent\Zenith_ComponentRegistry.cpp">
       <Filter>Zenith\EntityComponent</Filter>
     </ClCompile>
@@ -579,6 +582,21 @@
     </ClCompile>
     <ClCompile Include="..\..\..\Zenith\TaskSystem\Zenith_TaskSystem.cpp">
       <Filter>Zenith\TaskSystem</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\Zenith\UI\Zenith_UICanvas.cpp">
+      <Filter>Zenith\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\Zenith\UI\Zenith_UIElement.cpp">
+      <Filter>Zenith\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\Zenith\UI\Zenith_UIImage.cpp">
+      <Filter>Zenith\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\Zenith\UI\Zenith_UIRect.cpp">
+      <Filter>Zenith\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\Zenith\UI\Zenith_UIText.cpp">
+      <Filter>Zenith\UI</Filter>
     </ClCompile>
     <ClCompile Include="..\..\..\Zenith\UnitTests\Zenith_EditorTests.cpp">
       <Filter>Zenith\UnitTests</Filter>
@@ -1632,6 +1650,9 @@
     <ClInclude Include="..\..\..\Zenith\Core\Zenith.h">
       <Filter>Zenith\Core</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\Core\ZenithConfig.h">
+      <Filter>Zenith\Core</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\..\Zenith\Core\Zenith_Core.h">
       <Filter>Zenith\Core</Filter>
     </ClInclude>
@@ -1675,6 +1696,9 @@
       <Filter>Zenith\EntityComponent\Components</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\Zenith\EntityComponent\Components\Zenith_TransformComponent.h">
+      <Filter>Zenith\EntityComponent\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\EntityComponent\Components\Zenith_UIComponent.h">
       <Filter>Zenith\EntityComponent\Components</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\Zenith\EntityComponent\Zenith_ComponentRegistry.h">
@@ -1925,6 +1949,24 @@
     </ClInclude>
     <ClInclude Include="..\..\..\Zenith\TaskSystem\Zenith_TaskSystem.h">
       <Filter>Zenith\TaskSystem</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\UI\Zenith_UI.h">
+      <Filter>Zenith\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\UI\Zenith_UICanvas.h">
+      <Filter>Zenith\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\UI\Zenith_UIElement.h">
+      <Filter>Zenith\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\UI\Zenith_UIImage.h">
+      <Filter>Zenith\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\UI\Zenith_UIRect.h">
+      <Filter>Zenith\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\UI\Zenith_UIText.h">
+      <Filter>Zenith\UI</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\Zenith\UnitTests\Zenith_EditorTests.h">
       <Filter>Zenith\UnitTests</Filter>
@@ -2256,6 +2298,9 @@
     </Filter>
     <Filter Include="Zenith\TaskSystem">
       <UniqueIdentifier>{b31c7fe8-c684-8849-62d1-797a55846f2c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Zenith\UI">
+      <UniqueIdentifier>{8bcc9e5a-a2dd-e4a2-1742-9eb53ab29518}</UniqueIdentifier>
     </Filter>
     <Filter Include="Zenith\UnitTests">
       <UniqueIdentifier>{3d301829-0afe-f174-12f7-0ddf2f344d87}</UniqueIdentifier>

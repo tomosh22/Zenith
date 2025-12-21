@@ -783,6 +783,7 @@
     <ClInclude Include="..\..\..\Zenith\Core\Memory\Zenith_MemoryManagement_Enabled.h" />
     <ClInclude Include="..\..\..\Zenith\Core\Multithreading\Zenith_Multithreading.h" />
     <ClInclude Include="..\..\..\Zenith\Core\Zenith.h" />
+    <ClInclude Include="..\..\..\Zenith\Core\ZenithConfig.h" />
     <ClInclude Include="..\..\..\Zenith\Core\Zenith_Core.h" />
     <ClInclude Include="..\..\..\Zenith\Core\Zenith_String.h" />
     <ClInclude Include="..\..\..\Zenith\DataStream\Zenith_DataStream.h" />
@@ -798,6 +799,7 @@
     <ClInclude Include="..\..\..\Zenith\EntityComponent\Components\Zenith_TerrainComponent.h" />
     <ClInclude Include="..\..\..\Zenith\EntityComponent\Components\Zenith_TextComponent.h" />
     <ClInclude Include="..\..\..\Zenith\EntityComponent\Components\Zenith_TransformComponent.h" />
+    <ClInclude Include="..\..\..\Zenith\EntityComponent\Components\Zenith_UIComponent.h" />
     <ClInclude Include="..\..\..\Zenith\EntityComponent\Zenith_ComponentRegistry.h" />
     <ClInclude Include="..\..\..\Zenith\EntityComponent\Zenith_Entity.h" />
     <ClInclude Include="..\..\..\Zenith\EntityComponent\Zenith_Scene.h" />
@@ -881,6 +883,12 @@
     <ClInclude Include="..\..\..\Zenith\Physics\Zenith_PhysicsMeshGenerator.h" />
     <ClInclude Include="..\..\..\Zenith\Profiling\Zenith_Profiling.h" />
     <ClInclude Include="..\..\..\Zenith\TaskSystem\Zenith_TaskSystem.h" />
+    <ClInclude Include="..\..\..\Zenith\UI\Zenith_UI.h" />
+    <ClInclude Include="..\..\..\Zenith\UI\Zenith_UICanvas.h" />
+    <ClInclude Include="..\..\..\Zenith\UI\Zenith_UIElement.h" />
+    <ClInclude Include="..\..\..\Zenith\UI\Zenith_UIImage.h" />
+    <ClInclude Include="..\..\..\Zenith\UI\Zenith_UIRect.h" />
+    <ClInclude Include="..\..\..\Zenith\UI\Zenith_UIText.h" />
     <ClInclude Include="..\..\..\Zenith\UnitTests\Zenith_EditorTests.h" />
     <ClInclude Include="..\..\..\Zenith\UnitTests\Zenith_UnitTests.h" />
     <ClInclude Include="..\..\..\Zenith\Vulkan\Zenith_PlatformGraphics_Include.h" />
@@ -1770,6 +1778,7 @@
     <ClCompile Include="..\..\..\Zenith\EntityComponent\Components\Zenith_TerrainComponent.cpp" />
     <ClCompile Include="..\..\..\Zenith\EntityComponent\Components\Zenith_TextComponent.cpp" />
     <ClCompile Include="..\..\..\Zenith\EntityComponent\Components\Zenith_TransformComponent.cpp" />
+    <ClCompile Include="..\..\..\Zenith\EntityComponent\Components\Zenith_UIComponent.cpp" />
     <ClCompile Include="..\..\..\Zenith\EntityComponent\Zenith_ComponentRegistry.cpp" />
     <ClCompile Include="..\..\..\Zenith\EntityComponent\Zenith_Entity.cpp" />
     <ClCompile Include="..\..\..\Zenith\EntityComponent\Zenith_Scene.cpp" />
@@ -1804,6 +1813,11 @@
     <ClCompile Include="..\..\..\Zenith\Physics\Zenith_PhysicsMeshGenerator.cpp" />
     <ClCompile Include="..\..\..\Zenith\Profiling\Zenith_Profiling.cpp" />
     <ClCompile Include="..\..\..\Zenith\TaskSystem\Zenith_TaskSystem.cpp" />
+    <ClCompile Include="..\..\..\Zenith\UI\Zenith_UICanvas.cpp" />
+    <ClCompile Include="..\..\..\Zenith\UI\Zenith_UIElement.cpp" />
+    <ClCompile Include="..\..\..\Zenith\UI\Zenith_UIImage.cpp" />
+    <ClCompile Include="..\..\..\Zenith\UI\Zenith_UIRect.cpp" />
+    <ClCompile Include="..\..\..\Zenith\UI\Zenith_UIText.cpp" />
     <ClCompile Include="..\..\..\Zenith\UnitTests\Zenith_EditorTests.cpp" />
     <ClCompile Include="..\..\..\Zenith\UnitTests\Zenith_UnitTests.cpp" />
     <ClCompile Include="..\..\..\Zenith\Vulkan\Zenith_Vulkan.cpp" />
