@@ -12,7 +12,7 @@ class Zenith_DataStream;
  * Flux_MaterialAsset - A serializable material asset that references textures by path
  * 
  * This is the new material system designed to work like Unity/Unreal materials:
- * - Materials are assets that can be saved/loaded from disk (.zmat files)
+ * - Materials are assets that can be saved/loaded from disk (ZENITH_MATERIAL_EXT files)
  * - Textures are referenced by file path, not by raw GPU handles
  * - Materials are cached by path for reuse across the application
  * - Materials properly serialize and deserialize with full texture restoration
@@ -22,10 +22,10 @@ class Zenith_DataStream;
  *   Flux_MaterialAsset* pMat = Flux_MaterialAsset::Create("MyMaterial");
  *   pMat->SetDiffuseTexturePath("Assets/Textures/diffuse" ZENITH_TEXTURE_EXT);
  *   pMat->SetBaseColor(Vector4(1,1,1,1));
- *   pMat->SaveToFile("Assets/Materials/MyMaterial.zmat");
+ *   pMat->SaveToFile("Assets/Materials/MyMaterial" ZENITH_MATERIAL_EXT);
  * 
  *   // Load existing material
- *   Flux_MaterialAsset* pMat = Flux_MaterialAsset::LoadFromFile("Assets/Materials/MyMaterial.zmat");
+ *   Flux_MaterialAsset* pMat = Flux_MaterialAsset::LoadFromFile("Assets/Materials/MyMaterial" ZENITH_MATERIAL_EXT);
  * 
  *   // Get material for rendering (loads textures on demand)
  *   const Flux_Texture* pDiffuse = pMat->GetDiffuseTexture();
@@ -46,7 +46,7 @@ public:
 	
 	/**
 	 * Load a material from file, or return cached version if already loaded
-	 * @param strPath Path to .zmat file
+	 * @param strPath Path to ZENITH_MATERIAL_EXT file
 	 * @return Material asset, or nullptr on failure
 	 */
 	static Flux_MaterialAsset* LoadFromFile(const std::string& strPath);
@@ -274,9 +274,6 @@ private:
 	// Used by editor to display all materials regardless of how they were created
 	static std::vector<Flux_MaterialAsset*> s_xAllMaterials;
 };
-
-// File extension for material assets
-#define MATERIAL_ASSET_EXTENSION ".zmat"
 
 // Material file format version (increment when format changes)
 #define MATERIAL_FILE_VERSION 1

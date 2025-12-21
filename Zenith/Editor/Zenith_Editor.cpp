@@ -91,7 +91,7 @@ static std::string ShowSaveFileDialog(const char* szFilter, const char* szDefaul
 	ofn.lpstrFilter = szFilter;
 	ofn.lpstrFile = szFilePath;
 	ofn.nMaxFile = MAX_PATH;
-	ofn.lpstrDefExt = szDefaultExt;
+	ofn.lpstrDefExt = *szDefaultExt == '.' ? szDefaultExt+1 : szDefaultExt;
 	ofn.Flags = OFN_OVERWRITEPROMPT | OFN_NOCHANGEDIR;
 
 	if (GetSaveFileNameA(&ofn))
@@ -1430,9 +1430,9 @@ void Zenith_Editor::RenderContentBrowser()
 					{
 						szPayloadType = DRAGDROP_PAYLOAD_MESH;
 					}
-					else if (xEntry.m_strExtension == ".zmat")
+					else if (xEntry.m_strExtension == ZENITH_MATERIAL_EXT)
 					{
-						szPayloadType = DRAGDROP_PAYLOAD_MATERIAL_ZMAT;
+						szPayloadType = DRAGDROP_PAYLOAD_MATERIAL;
 					}
 
 					ImGui::SetDragDropPayload(szPayloadType, &xPayload, sizeof(xPayload));
@@ -1448,7 +1448,7 @@ void Zenith_Editor::RenderContentBrowser()
 				// Double-click to open material files in editor
 				if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0))
 				{
-					if (xEntry.m_strExtension == ".zmat")
+					if (xEntry.m_strExtension == ZENITH_MATERIAL_EXT)
 					{
 						Flux_MaterialAsset* pMaterial = Flux_MaterialAsset::LoadFromFile(xEntry.m_strFullPath);
 						if (pMaterial)
@@ -1695,8 +1695,8 @@ void Zenith_Editor::RenderMaterialEditorPanel()
 	{
 #ifdef _WIN32
 		std::string strFilePath = ShowOpenFileDialog(
-			"Zenith Material Files (*.zmat)\0*.zmat\0All Files (*.*)\0*.*\0",
-			"zmat");
+			"Zenith Material Files (*" ZENITH_MATERIAL_EXT ")\0 * " ZENITH_MATERIAL_EXT "\0All Files (*.*)\0 * .*\0",
+			ZENITH_MATERIAL_EXT);
 		if (!strFilePath.empty())
 		{
 			Flux_MaterialAsset* pMaterial = Flux_MaterialAsset::LoadFromFile(strFilePath);
@@ -1878,9 +1878,9 @@ void Zenith_Editor::RenderMaterialEditorPanel()
 				// Show save dialog for new material
 #ifdef _WIN32
 				std::string strFilePath = ShowSaveFileDialog(
-					"Zenith Material Files (*.zmat)\0*.zmat\0All Files (*.*)\0*.*\0",
-					"zmat",
-					(pMat->GetName() + ".zmat").c_str());
+					"Zenith Material Files (*" ZENITH_MATERIAL_EXT ")\0 * " ZENITH_MATERIAL_EXT "\0All Files (*.*)\0 * .*\0",
+					ZENITH_MATERIAL_EXT,
+					(pMat->GetName() + ZENITH_MATERIAL_EXT).c_str());
 				if (!strFilePath.empty())
 				{
 					if (pMat->SaveToFile(strFilePath))
@@ -1906,9 +1906,9 @@ void Zenith_Editor::RenderMaterialEditorPanel()
 		{
 #ifdef _WIN32
 			std::string strFilePath = ShowSaveFileDialog(
-				"Zenith Material Files (*.zmat)\0*.zmat\0All Files (*.*)\0*.*\0",
-				"zmat",
-				(pMat->GetName() + ".zmat").c_str());
+				"Zenith Material Files (*" ZENITH_MATERIAL_EXT ")\0 * " ZENITH_MATERIAL_EXT "\0All Files (*.*)\0 * .*\0",
+				ZENITH_MATERIAL_EXT,
+				(pMat->GetName() + ZENITH_MATERIAL_EXT).c_str());
 			if (!strFilePath.empty())
 			{
 				if (pMat->SaveToFile(strFilePath))

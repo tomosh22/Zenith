@@ -13,7 +13,7 @@ class Flux_MaterialAsset;
 // Drag-drop payload type identifiers (max 32 chars per ImGui)
 #define DRAGDROP_PAYLOAD_TEXTURE  "ZENITH_TEXTURE"
 #define DRAGDROP_PAYLOAD_MESH    "ZENITH_MESH"
-#define DRAGDROP_PAYLOAD_MATERIAL_ZMAT "ZENITH_MATERIAL_ZMAT"
+#define DRAGDROP_PAYLOAD_MATERIAL "ZENITH_MATERIAL"
 #define DRAGDROP_PAYLOAD_FILE_GENERIC "ZENITH_FILE_GENERIC"
 
 // Content browser file entry
