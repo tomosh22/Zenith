@@ -407,7 +407,7 @@ void ExportMesh(u_int uDensityDivisor, std::string strName, const std::string& s
 			}
 
 			xSubMesh.GenerateLayoutAndVertexData();
-			xSubMesh.Export((strOutputDir + strName + std::string("_") + std::to_string(x) + std::string("_") + std::to_string(z) + std::string(".zmsh")).c_str());
+			xSubMesh.Export((strOutputDir + strName + std::string("_") + std::to_string(x) + std::string("_") + std::to_string(z) + std::string(ZENITH_MESH_EXT)).c_str());
 
 			delete[] puRightEdgeIndices;
 			delete[] puTopEdgeIndices;

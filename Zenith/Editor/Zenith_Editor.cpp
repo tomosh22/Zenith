@@ -1426,9 +1426,9 @@ void Zenith_Editor::RenderContentBrowser()
 					{
 						szPayloadType = DRAGDROP_PAYLOAD_TEXTURE;
 					}
-					else if (xEntry.m_strExtension == ".zmsh")
+					else if (xEntry.m_strExtension == ZENITH_MESH_EXT)
 					{
-						szPayloadType = DRAGDROP_PAYLOAD_MESH_ZMSH;
+						szPayloadType = DRAGDROP_PAYLOAD_MESH;
 					}
 					else if (xEntry.m_strExtension == ".zmat")
 					{

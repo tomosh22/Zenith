@@ -8,11 +8,11 @@
  * This function generates all LOD levels (LOD0-LOD3) plus physics meshes for
  * the entire terrain grid. The resulting files follow the naming convention
  * required by Flux_TerrainStreamingManager:
- *   - Render_X_Y.zmsh      (LOD0, highest detail)
- *   - Render_LOD1_X_Y.zmsh (LOD1)
- *   - Render_LOD2_X_Y.zmsh (LOD2)
- *   - Render_LOD3_X_Y.zmsh (LOD3, lowest detail, always resident)
- *   - Physics_X_Y.zmsh     (Physics collision mesh)
+ *   - Render_X_Y ZENITH_MESH_EXT      (LOD0, highest detail)
+ *   - Render_LOD1_X_Y ZENITH_MESH_EXT (LOD1)
+ *   - Render_LOD2_X_Y ZENITH_MESH_EXT (LOD2)
+ *   - Render_LOD3_X_Y ZENITH_MESH_EXT (LOD3, lowest detail, always resident)
+ *   - Physics_X_Y ZENITH_MESH_EXT    (Physics collision mesh)
  * 
  * where X and Y are chunk coordinates in the 64x64 grid (0-63).
  * 

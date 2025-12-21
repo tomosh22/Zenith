@@ -246,7 +246,7 @@ public:
 		//#TO then iterate over meshes
 		for (auto& xFile : std::filesystem::directory_iterator(strPath))
 		{
-			if (xFile.path().extension() == ".zmsh")
+			if (xFile.path().extension() == ZENITH_MESH_EXT)
 			{
 				Flux_MeshGeometry* pxMesh = Zenith_AssetHandler::AddMeshFromFile(
 					xFile.path().string().c_str(), uRetainAttributeBits, bUploadToGPU);

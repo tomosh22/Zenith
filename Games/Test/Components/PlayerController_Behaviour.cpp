@@ -78,7 +78,7 @@ void PlayerController_Behaviour::Shoot()
 	// Load bullet assets once on first use
 	if (!s_pxBulletMesh)
 	{
-		s_pxBulletMesh = Zenith_AssetHandler::AddMeshFromFile(ASSETS_ROOT"Meshes/sphereSmooth_Mesh0_Mat0.zmsh");
+		s_pxBulletMesh = Zenith_AssetHandler::AddMeshFromFile(ASSETS_ROOT"Meshes/sphereSmooth_Mesh0_Mat0" ZENITH_MESH_EXT);
 		s_pxBulletMaterial = Flux_MaterialAsset::Create("BulletMaterial");
 	}
 

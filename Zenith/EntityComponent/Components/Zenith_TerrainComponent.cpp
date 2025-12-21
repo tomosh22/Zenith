@@ -115,7 +115,7 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Flux_MaterialAsset& xMaterial0,
 
 	// Load first chunk to get buffer layout (stored as owned pointer for later cleanup)
 	Flux_MeshGeometry* pxLOD3Geometry = Zenith_AssetHandler::AddMeshFromFile(
-		ASSETS_ROOT"Terrain/Render_LOD3_0_0.zmsh", 0);  // 0 = load all attributes
+		ASSETS_ROOT"Terrain/Render_LOD3_0_0" ZENITH_MESH_EXT, 0);  // 0 = load all attributes
 	Flux_MeshGeometry& xLOD3Geometry = *pxLOD3Geometry;
 
 	// Store vertex stride for buffer calculations
@@ -146,14 +146,14 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Flux_MaterialAsset& xMaterial0,
 			if (x == 0 && y == 0)
 				continue;  // Already loaded
 
-			std::string strChunkPath = std::string(ASSETS_ROOT"Terrain/Render_LOD3_") + std::to_string(x) + "_" + std::to_string(y) + ".zmsh";
+			std::string strChunkPath = std::string(ASSETS_ROOT"Terrain/Render_LOD3_") + std::to_string(x) + "_" + std::to_string(y) + ZENITH_MESH_EXT;
 
 			// Check if LOD3 file exists, fallback to LOD0 if not
 			std::ifstream lodFile(strChunkPath);
 			if (!lodFile.good())
 			{
 				Zenith_Log("WARNING: LOD3 not found for chunk (%u,%u), using LOD0 as fallback", x, y);
-				strChunkPath = std::string(ASSETS_ROOT"Terrain/Render_") + std::to_string(x) + "_" + std::to_string(y) + ".zmsh";
+				strChunkPath = std::string(ASSETS_ROOT"Terrain/Render_") + std::to_string(x) + "_" + std::to_string(y) + ZENITH_MESH_EXT;
 			}
 
 			Flux_MeshGeometry* pxChunkMesh = Zenith_AssetHandler::AddMeshFromFile(strChunkPath.c_str(), 0);  // 0 = all attributes
@@ -234,7 +234,7 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Flux_MaterialAsset& xMaterial0,
 {
 	// Load first physics chunk
 	m_pxPhysicsGeometry = Zenith_AssetHandler::AddMeshFromFile(
-		ASSETS_ROOT"Terrain/Physics_0_0.zmsh",
+		ASSETS_ROOT"Terrain/Physics_0_0" ZENITH_MESH_EXT,
 		1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__POSITION | 1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__NORMAL);
 
 	Flux_MeshGeometry& xPhysicsGeometry = *m_pxPhysicsGeometry;
@@ -259,7 +259,7 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Flux_MaterialAsset& xMaterial0,
 		{
 			if (x == 0 && y == 0) continue;
 
-			std::string strPhysicsPath = std::string(ASSETS_ROOT"Terrain/Physics_") + std::to_string(x) + "_" + std::to_string(y) + ".zmsh";
+			std::string strPhysicsPath = std::string(ASSETS_ROOT"Terrain/Physics_") + std::to_string(x) + "_" + std::to_string(y) + ZENITH_MESH_EXT;
 			Flux_MeshGeometry* pxTerrainPhysicsMesh = Zenith_AssetHandler::AddMeshFromFile(
 				strPhysicsPath.c_str(),
 				1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__POSITION | 1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__NORMAL);
@@ -371,7 +371,7 @@ void Zenith_TerrainComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 
 		// Load first physics chunk
 		m_pxPhysicsGeometry = Zenith_AssetHandler::AddMeshFromFile(
-			ASSETS_ROOT"Terrain/Physics_0_0.zmsh",
+			ASSETS_ROOT"Terrain/Physics_0_0" ZENITH_MESH_EXT,
 			1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__POSITION | 1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__NORMAL);
 
 		Flux_MeshGeometry& xPhysicsGeometry = *m_pxPhysicsGeometry;
@@ -397,7 +397,7 @@ void Zenith_TerrainComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 			{
 				if (x == 0 && y == 0) continue;  // Already loaded
 
-				std::string strPhysicsPath = std::string(ASSETS_ROOT"Terrain/Physics_") + std::to_string(x) + "_" + std::to_string(y) + ".zmsh";
+				std::string strPhysicsPath = std::string(ASSETS_ROOT"Terrain/Physics_") + std::to_string(x) + "_" + std::to_string(y) + ZENITH_MESH_EXT;
 				Flux_MeshGeometry* pxTerrainPhysicsMesh = Zenith_AssetHandler::AddMeshFromFile(
 					strPhysicsPath.c_str(),
 					1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__POSITION | 1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__NORMAL);
@@ -557,7 +557,7 @@ void Zenith_TerrainComponent::InitializeRenderResources(Flux_MaterialAsset& xMat
 
 	// Load first chunk to get buffer layout (stored as owned pointer for later cleanup)
 	Flux_MeshGeometry* pxLOD3Geometry = Zenith_AssetHandler::AddMeshFromFile(
-		ASSETS_ROOT"Terrain/Render_LOD3_0_0.zmsh", 0);  // 0 = load all attributes
+		ASSETS_ROOT"Terrain/Render_LOD3_0_0" ZENITH_MESH_EXT, 0);  // 0 = load all attributes
 	Flux_MeshGeometry& xLOD3Geometry = *pxLOD3Geometry;
 
 	// Store vertex stride for buffer calculations
@@ -588,14 +588,14 @@ void Zenith_TerrainComponent::InitializeRenderResources(Flux_MaterialAsset& xMat
 			if (x == 0 && y == 0)
 				continue;  // Already loaded
 
-			std::string strChunkPath = std::string(ASSETS_ROOT"Terrain/Render_LOD3_") + std::to_string(x) + "_" + std::to_string(y) + ".zmsh";
+			std::string strChunkPath = std::string(ASSETS_ROOT"Terrain/Render_LOD3_") + std::to_string(x) + "_" + std::to_string(y) + ZENITH_MESH_EXT;
 
 			// Check if LOD3 file exists, fallback to LOD0 if not
 			std::ifstream lodFile(strChunkPath);
 			if (!lodFile.good())
 			{
 				Zenith_Log("WARNING: LOD3 not found for chunk (%u,%u), using LOD0 as fallback", x, y);
-				strChunkPath = std::string(ASSETS_ROOT"Terrain/Render_") + std::to_string(x) + "_" + std::to_string(y) + ".zmsh";
+				strChunkPath = std::string(ASSETS_ROOT"Terrain/Render_") + std::to_string(x) + "_" + std::to_string(y) + ZENITH_MESH_EXT;
 			}
 
 			Flux_MeshGeometry* pxChunkMesh = Zenith_AssetHandler::AddMeshFromFile(strChunkPath.c_str(), 0);  // 0 = all attributes
@@ -1090,7 +1090,7 @@ void Zenith_TerrainComponent::RenderPropertiesPanel()
 						
 						// Load first physics chunk
 						m_pxPhysicsGeometry = Zenith_AssetHandler::AddMeshFromFile(
-							(strOutputDir + "Physics_0_0.zmsh").c_str(),
+							(strOutputDir + "Physics_0_0" ZENITH_MESH_EXT).c_str(),
 							1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__POSITION | 1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__NORMAL);
 
 						if (m_pxPhysicsGeometry)
@@ -1118,7 +1118,7 @@ void Zenith_TerrainComponent::RenderPropertiesPanel()
 								{
 									if (x == 0 && y == 0) continue;
 
-									std::string strPhysicsPath = strOutputDir + "Physics_" + std::to_string(x) + "_" + std::to_string(y) + ".zmsh";
+									std::string strPhysicsPath = strOutputDir + "Physics_" + std::to_string(x) + "_" + std::to_string(y) + ZENITH_MESH_EXT;
 									Flux_MeshGeometry* pxTerrainPhysicsMesh = Zenith_AssetHandler::AddMeshFromFile(
 										strPhysicsPath.c_str(),
 										1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__POSITION | 1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__NORMAL);

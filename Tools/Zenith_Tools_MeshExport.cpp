@@ -284,7 +284,7 @@ static void ProcessNode(aiNode* pxNode, const aiScene* pxScene, const std::strin
 		std::string strExportFilename = szExportFilenameOverride ? szExportFilenameOverride : strFilename;
 		size_t ulFindPos = strExportFilename.find(strExtension.c_str());
 		Zenith_Assert(ulFindPos != std::string::npos, "");
-		strExportFilename.replace(ulFindPos, strlen(strExtension.c_str()), "_Mesh" + std::to_string(uIndex++) + "_Mat" + std::to_string(pxAssimpMesh->mMaterialIndex) + ".zmsh");
+		strExportFilename.replace(ulFindPos, strlen(strExtension.c_str()), "_Mesh" + std::to_string(uIndex++) + "_Mat" + std::to_string(pxAssimpMesh->mMaterialIndex) + ZENITH_MESH_EXT);
 
 		ExportAssimpMesh(pxAssimpMesh, pxScene, strExportFilename);
 	}

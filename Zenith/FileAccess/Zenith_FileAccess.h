@@ -1,7 +1,8 @@
 #pragma once
 #include <fstream>
 
-#define ZENITH_TEXTURE_EXT ".ztxtr"
+#define ZENITH_TEXTURE_EXT	".ztxtr"
+#define ZENITH_MESH_EXT		".zmesh"
 
 #define ZENITH_MAX_PATH_LENGTH 1024
 
