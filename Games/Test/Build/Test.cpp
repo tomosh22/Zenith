@@ -18,7 +18,7 @@ void Project_LoadInitialScene()
 
 	// Create RPG HUD Entity
 	Zenith_Entity xHUDEntity;
-	xHUDEntity.Initialise(&Zenith_Scene::GetCurrentScene(), "RPG_HUD");
+	xHUDEntity.Initialise(&Zenith_Scene::GetCurrentScene(), "HUD");
 
 	Zenith_UIComponent& xUI = xHUDEntity.AddComponent<Zenith_UIComponent>();
 
@@ -45,7 +45,7 @@ void Project_LoadInitialScene()
 	Zenith_UI::Zenith_UIText* pxHealthLabel = xUI.CreateText("HealthLabel", "HP");
 	pxHealthLabel->SetAnchorAndPivot(Zenith_UI::AnchorPreset::BottomLeft);
 	pxHealthLabel->SetPosition(25, -85);
-	pxHealthLabel->SetFontSize(18);
+	pxHealthLabel->SetFontSize(80);
 	pxHealthLabel->SetColor({ 1.0f, 1.0f, 1.0f, 1.0f });
 
 	// ========== Compass (placeholder) ==========
@@ -62,7 +62,7 @@ void Project_LoadInitialScene()
 	pxCompassText->SetAnchorAndPivot(Zenith_UI::AnchorPreset::TopCenter);
 	pxCompassText->SetPosition(0, 28);
 	pxCompassText->SetSize(300, 24);  // Match background width and font height
-	pxCompassText->SetFontSize(24);
+	pxCompassText->SetFontSize(80);
 	pxCompassText->SetColor({ 1.0f, 0.9f, 0.6f, 1.0f });
 	pxCompassText->SetAlignment(Zenith_UI::TextAlignment::Center);
 	pxCompassText->SetVerticalAlignment(Zenith_UI::TextVerticalAlignment::Middle);
@@ -100,7 +100,7 @@ void Project_LoadInitialScene()
 		pxSlotNum->SetAnchorAndPivot(Zenith_UI::AnchorPreset::BottomCenter);
 		pxSlotNum->SetPosition(fSlotX + SLOT_SIZE / 2.0f, -90);
 		pxSlotNum->SetSize(SLOT_SIZE, 20);
-		pxSlotNum->SetFontSize(14);
+		pxSlotNum->SetFontSize(80);
 		pxSlotNum->SetColor({ 0.7f, 0.7f, 0.7f, 0.8f });
 		pxSlotNum->SetAlignment(Zenith_UI::TextAlignment::Center);
 		pxSlotNum->SetVerticalAlignment(Zenith_UI::TextVerticalAlignment::Middle);

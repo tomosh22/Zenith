@@ -262,16 +262,16 @@ void PlayerController_Behaviour::FindHUDElements()
 
 	// Find the HUD entity by name
 	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	Zenith_Entity* pxHUDEntity = xScene.FindEntityByName("RPG_HUD");
+	Zenith_Entity* pxHUDEntity = xScene.FindEntityByName("HUD");
 	if (!pxHUDEntity)
 	{
-		Zenith_Log("[PlayerController] Could not find RPG_HUD entity");
+		Zenith_Log("[PlayerController] Could not find HUD entity");
 		return;
 	}
 
 	if (!pxHUDEntity->HasComponent<Zenith_UIComponent>())
 	{
-		Zenith_Log("[PlayerController] RPG_HUD entity has no UIComponent");
+		Zenith_Log("[PlayerController] HUD entity has no UIComponent");
 		return;
 	}
 
