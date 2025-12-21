@@ -34,7 +34,7 @@
  *
  *   // Inventory icon
  *   auto* pxIcon = ui.CreateImage("Slot1");
- *   pxIcon->SetTexturePath("C:/path/to/icon.ztx");
+ *   pxIcon->SetTexturePath("C:/path/to/icon" ZENITH_TEXTURE_EXT);
  *   pxIcon->SetSize(64, 64);
  *
  * Coordinate System:

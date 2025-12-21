@@ -20,7 +20,7 @@ class Zenith_DataStream;
  * Usage:
  *   // Create a new material
  *   Flux_MaterialAsset* pMat = Flux_MaterialAsset::Create("MyMaterial");
- *   pMat->SetDiffuseTexturePath("Assets/Textures/diffuse.ztx");
+ *   pMat->SetDiffuseTexturePath("Assets/Textures/diffuse" ZENITH_TEXTURE_EXT);
  *   pMat->SetBaseColor(Vector4(1,1,1,1));
  *   pMat->SaveToFile("Assets/Materials/MyMaterial.zmat");
  * 

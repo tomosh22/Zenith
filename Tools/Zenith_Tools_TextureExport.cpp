@@ -123,7 +123,7 @@ void Zenith_Tools_TextureExport::ExportFromFile(std::string strFilename, const c
 	uint8_t* pData = stbi_load(strFilename.c_str(), &iWidth, &iHeight, &iNumChannels, STBI_rgb_alpha);
 
 	size_t ulFindPos = strFilename.find(szExtension);
-	strFilename.replace(ulFindPos, strlen(szExtension), "ztx");
+	strFilename.replace(ulFindPos-1, strlen(szExtension)+1, ZENITH_TEXTURE_EXT);
 
 	if (eCompression == TextureCompressionMode::Uncompressed)
 	{

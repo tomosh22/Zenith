@@ -24,9 +24,9 @@ extern void ExportHeightmap();
 
 int main()
 {
-	//ExportAllMeshes();
-	//ExportAllTextures();
-	//ExportHeightmap();
+	ExportAllMeshes();
+	ExportAllTextures();
+	ExportHeightmap();
 
 	Zenith_Profiling::Initialise();
 	Zenith_Multithreading::RegisterThread(true);
@@ -42,17 +42,17 @@ int main()
 		Flux_MemoryManager::BeginFrame();
 		//#TO_TODO: engine should have its own versions of these
 		Zenith_AssetHandler::TextureData xCubemapTexData = Zenith_AssetHandler::LoadTextureCubeFromFiles(
-			ASSETS_ROOT"Textures/Cubemap/px.ztx",
-			ASSETS_ROOT"Textures/Cubemap/nx.ztx",
-			ASSETS_ROOT"Textures/Cubemap/py.ztx",
-			ASSETS_ROOT"Textures/Cubemap/ny.ztx",
-			ASSETS_ROOT"Textures/Cubemap/pz.ztx",
-			ASSETS_ROOT"Textures/Cubemap/nz.ztx"
+			ASSETS_ROOT"Textures/Cubemap/px" ZENITH_TEXTURE_EXT,
+			ASSETS_ROOT"Textures/Cubemap/nx" ZENITH_TEXTURE_EXT,
+			ASSETS_ROOT"Textures/Cubemap/py" ZENITH_TEXTURE_EXT,
+			ASSETS_ROOT"Textures/Cubemap/ny" ZENITH_TEXTURE_EXT,
+			ASSETS_ROOT"Textures/Cubemap/pz" ZENITH_TEXTURE_EXT,
+			ASSETS_ROOT"Textures/Cubemap/nz" ZENITH_TEXTURE_EXT
 		);
 		Flux_Graphics::s_pxCubemapTexture = Zenith_AssetHandler::AddTexture(xCubemapTexData);
 		xCubemapTexData.FreeAllocatedData();
 
-		Zenith_AssetHandler::TextureData xWaterNormalTexData = Zenith_AssetHandler::LoadTexture2DFromFile(ASSETS_ROOT"Textures/water/normal.ztx");
+		Zenith_AssetHandler::TextureData xWaterNormalTexData = Zenith_AssetHandler::LoadTexture2DFromFile(ASSETS_ROOT"Textures/water/normal" ZENITH_TEXTURE_EXT);
 		Flux_Graphics::s_pxWaterNormalTexture = Zenith_AssetHandler::AddTexture(xWaterNormalTexData);
 		xWaterNormalTexData.FreeAllocatedData();
 		Flux_MemoryManager::EndFrame(false);

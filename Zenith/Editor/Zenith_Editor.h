@@ -11,7 +11,7 @@
 class Flux_MaterialAsset;
 
 // Drag-drop payload type identifiers (max 32 chars per ImGui)
-#define DRAGDROP_PAYLOAD_TEXTURE_ZTX  "ZENITH_TEXTURE_ZTX"
+#define DRAGDROP_PAYLOAD_TEXTURE  "ZENITH_TEXTURE"
 #define DRAGDROP_PAYLOAD_MESH_ZMSH    "ZENITH_MESH_ZMSH"
 #define DRAGDROP_PAYLOAD_MATERIAL_ZMAT "ZENITH_MATERIAL_ZMAT"
 #define DRAGDROP_PAYLOAD_FILE_GENERIC "ZENITH_FILE_GENERIC"
@@ -21,7 +21,7 @@ struct ContentBrowserEntry
 {
 	std::string m_strName;           // Display name (filename without path)
 	std::string m_strFullPath;       // Full absolute path
-	std::string m_strExtension;      // File extension (e.g., ".ztx")
+	std::string m_strExtension;      // File extension (e.g., ZENITH_TEXTURE_EXT)
 	bool m_bIsDirectory;             // true for folders, false for files
 };
 

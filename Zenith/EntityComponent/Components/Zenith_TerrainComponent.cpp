@@ -960,7 +960,7 @@ static void RenderTerrainTextureSlot(const char* szLabel, Flux_MaterialAsset& xM
 	// Drag-drop target for texture files
 	if (ImGui::BeginDragDropTarget())
 	{
-		if (const ImGuiPayload* pPayload = ImGui::AcceptDragDropPayload(DRAGDROP_PAYLOAD_TEXTURE_ZTX))
+		if (const ImGuiPayload* pPayload = ImGui::AcceptDragDropPayload(DRAGDROP_PAYLOAD_TEXTURE))
 		{
 			const DragDropFilePayload* pFilePayload =
 				static_cast<const DragDropFilePayload*>(pPayload->Data);
@@ -987,11 +987,11 @@ static void RenderTerrainTextureSlot(const char* szLabel, Flux_MaterialAsset& xM
 	{
 		if (!strCurrentPath.empty())
 		{
-			ImGui::SetTooltip("Drop a .ztx texture here\nPath: %s", strCurrentPath.c_str());
+			ImGui::SetTooltip("Drop a .ztxtr texture here\nPath: %s", strCurrentPath.c_str());
 		}
 		else
 		{
-			ImGui::SetTooltip("Drop a .ztx texture here");
+			ImGui::SetTooltip("Drop a .ztxtr texture here");
 		}
 	}
 

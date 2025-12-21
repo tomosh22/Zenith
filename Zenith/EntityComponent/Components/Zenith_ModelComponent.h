@@ -130,7 +130,7 @@ public:
 		{
 			for (auto& xFile : std::filesystem::directory_iterator(strPath))
 			{
-				if (xFile.path().extension() == ".ztx")
+				if (xFile.path().extension() == ZENITH_TEXTURE_EXT)
 				{
 					const std::string strFilepath = xFile.path().string();
 					const std::string strFilename = xFile.path().stem().string();
@@ -395,7 +395,7 @@ private:
 		if (ImGui::BeginDragDropTarget())
 		{
 			// Accept texture payloads
-			if (const ImGuiPayload* pPayload = ImGui::AcceptDragDropPayload(DRAGDROP_PAYLOAD_TEXTURE_ZTX))
+			if (const ImGuiPayload* pPayload = ImGui::AcceptDragDropPayload(DRAGDROP_PAYLOAD_TEXTURE))
 			{
 				const DragDropFilePayload* pFilePayload =
 					static_cast<const DragDropFilePayload*>(pPayload->Data);
@@ -415,11 +415,11 @@ private:
 		{
 			if (!strCurrentPath.empty())
 			{
-				ImGui::SetTooltip("Drop a .ztx texture here\nPath: %s", strCurrentPath.c_str());
+				ImGui::SetTooltip("Drop a .ztxtr texture here\nPath: %s", strCurrentPath.c_str());
 			}
 			else
 			{
-				ImGui::SetTooltip("Drop a .ztx texture here\nCurrent: %s", strTextureName.c_str());
+				ImGui::SetTooltip("Drop a .ztxtr texture here\nCurrent: %s", strTextureName.c_str());
 			}
 		}
 

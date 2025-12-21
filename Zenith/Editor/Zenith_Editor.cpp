@@ -1422,9 +1422,9 @@ void Zenith_Editor::RenderContentBrowser()
 
 					// Determine payload type based on extension
 					const char* szPayloadType = DRAGDROP_PAYLOAD_FILE_GENERIC;
-					if (xEntry.m_strExtension == ".ztx")
+					if (xEntry.m_strExtension == ZENITH_TEXTURE_EXT)
 					{
-						szPayloadType = DRAGDROP_PAYLOAD_TEXTURE_ZTX;
+						szPayloadType = DRAGDROP_PAYLOAD_TEXTURE;
 					}
 					else if (xEntry.m_strExtension == ".zmsh")
 					{
@@ -1959,7 +1959,7 @@ void Zenith_Editor::RenderMaterialTextureSlot(const char* szLabel, Flux_Material
 	// Drag-drop target
 	if (ImGui::BeginDragDropTarget())
 	{
-		if (const ImGuiPayload* pPayload = ImGui::AcceptDragDropPayload(DRAGDROP_PAYLOAD_TEXTURE_ZTX))
+		if (const ImGuiPayload* pPayload = ImGui::AcceptDragDropPayload(DRAGDROP_PAYLOAD_TEXTURE))
 		{
 			const DragDropFilePayload* pFilePayload =
 				static_cast<const DragDropFilePayload*>(pPayload->Data);
@@ -1975,11 +1975,11 @@ void Zenith_Editor::RenderMaterialTextureSlot(const char* szLabel, Flux_Material
 	{
 		if (!strCurrentPath.empty())
 		{
-			ImGui::SetTooltip("Path: %s\nDrop a .ztx texture here to change", strCurrentPath.c_str());
+			ImGui::SetTooltip("Path: %s\nDrop a .ztxtr texture here to change", strCurrentPath.c_str());
 		}
 		else
 		{
-			ImGui::SetTooltip("Drop a .ztx texture here");
+			ImGui::SetTooltip("Drop a .ztxtr texture here");
 		}
 	}
 	

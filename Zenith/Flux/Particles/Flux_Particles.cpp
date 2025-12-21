@@ -62,11 +62,11 @@ void Flux_Particles::Initialise()
 
 	Flux_MemoryManager::InitialiseDynamicVertexBuffer(nullptr, s_uMaxParticles * sizeof(Particle), s_xInstanceBuffer, false);
 
-	Zenith_AssetHandler::TextureData xParticleTexData = Zenith_AssetHandler::LoadTexture2DFromFile("C:/dev/Zenith/Games/Test/Assets/Textures/particle.ztx");
+	Zenith_AssetHandler::TextureData xParticleTexData = Zenith_AssetHandler::LoadTexture2DFromFile("C:/dev/Zenith/Games/Test/Assets/Textures/particle" ZENITH_TEXTURE_EXT);
 	Zenith_AssetHandler::AddTexture(xParticleTexData);  // Created but not used currently
 	xParticleTexData.FreeAllocatedData();
 
-	Zenith_AssetHandler::TextureData xParticleSwirlTexData = Zenith_AssetHandler::LoadTexture2DFromFile("C:/dev/Zenith/Games/Test/Assets/Textures/particleSwirl.ztx");
+	Zenith_AssetHandler::TextureData xParticleSwirlTexData = Zenith_AssetHandler::LoadTexture2DFromFile("C:/dev/Zenith/Games/Test/Assets/Textures/particleSwirl" ZENITH_TEXTURE_EXT);
 	Flux_Texture* pxParticleSwirlTex = Zenith_AssetHandler::AddTexture(xParticleSwirlTexData);
 	xParticleSwirlTexData.FreeAllocatedData();
 

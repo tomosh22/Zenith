@@ -82,7 +82,7 @@ void Flux_Text::Initialise()
 	constexpr bool bDeviceLocal = false;
 	Flux_MemoryManager::InitialiseDynamicVertexBuffer(nullptr, s_uMaxCharsPerFrame * sizeof(TextVertex), s_xInstanceBuffer, bDeviceLocal);
 
-	Zenith_AssetHandler::TextureData xTexData = Zenith_AssetHandler::LoadTexture2DFromFile("C:/dev/Zenith/Zenith/Assets/FontAtlas.ztx");
+	Zenith_AssetHandler::TextureData xTexData = Zenith_AssetHandler::LoadTexture2DFromFile("C:/dev/Zenith/Zenith/Assets/FontAtlas" ZENITH_TEXTURE_EXT);
 	Flux_Texture* pxFontAtlas = Zenith_AssetHandler::AddTexture(xTexData);
 	xTexData.FreeAllocatedData();
 	if (pxFontAtlas)
