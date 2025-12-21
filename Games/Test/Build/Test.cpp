@@ -61,9 +61,11 @@ void Project_LoadInitialScene()
 	Zenith_UI::Zenith_UIText* pxCompassText = xUI.CreateText("CompassText", "N");
 	pxCompassText->SetAnchorAndPivot(Zenith_UI::AnchorPreset::TopCenter);
 	pxCompassText->SetPosition(0, 28);
+	pxCompassText->SetSize(300, 24);  // Match background width and font height
 	pxCompassText->SetFontSize(24);
 	pxCompassText->SetColor({ 1.0f, 0.9f, 0.6f, 1.0f });
 	pxCompassText->SetAlignment(Zenith_UI::TextAlignment::Center);
+	pxCompassText->SetVerticalAlignment(Zenith_UI::TextVerticalAlignment::Middle);
 
 	// ========== Inventory Hotbar ==========
 	constexpr int INVENTORY_SLOTS = 6;
@@ -93,11 +95,14 @@ void Project_LoadInitialScene()
 			pxSlotBG->SetGlowColor({ 1.0f, 0.8f, 0.2f, 0.6f });
 		}
 
-		// Slot number
+		// Slot number - centered above the slot
 		Zenith_UI::Zenith_UIText* pxSlotNum = xUI.CreateText(strSlotName + "_Num", std::to_string(i + 1));
 		pxSlotNum->SetAnchorAndPivot(Zenith_UI::AnchorPreset::BottomCenter);
-		pxSlotNum->SetPosition(fSlotX + 8, -70);
+		pxSlotNum->SetPosition(fSlotX + SLOT_SIZE / 2.0f, -90);
+		pxSlotNum->SetSize(SLOT_SIZE, 20);
 		pxSlotNum->SetFontSize(14);
 		pxSlotNum->SetColor({ 0.7f, 0.7f, 0.7f, 0.8f });
+		pxSlotNum->SetAlignment(Zenith_UI::TextAlignment::Center);
+		pxSlotNum->SetVerticalAlignment(Zenith_UI::TextVerticalAlignment::Middle);
 	}
 }

@@ -11,6 +11,14 @@ namespace Zenith_UI {
 
 static constexpr uint32_t UI_TEXT_VERSION = 1;
 
+// Character width as fraction of height (typical monospace ratio is ~0.5-0.6)
+// Must match CHAR_ASPECT_RATIO in Flux_Text.vert and Flux_Text.cpp
+static constexpr float CHAR_ASPECT_RATIO = 0.5f;
+
+// Character spacing includes a small gap (10% of char width) for natural appearance
+// Must match CHAR_SPACING in Flux_Text.cpp
+static constexpr float CHAR_SPACING = CHAR_ASPECT_RATIO * 1.1f;
+
 Zenith_UIText::Zenith_UIText(const std::string& strText, const std::string& strName)
     : Zenith_UIElement(strName)
     , m_strText(strText)
@@ -29,14 +37,14 @@ void Zenith_UIText::Render(Zenith_UICanvas& xCanvas)
     float fWidth = xBounds.z - xBounds.x;
     float fHeight = xBounds.w - xBounds.y;
 
-    // Approximate character width based on font size (bitmap font has ~0.5 ratio)
-    float fCharWidth = m_fFontSize * 0.5f;
+    // Character spacing matches CHAR_SPACING used in shader (includes small gap for natural look)
+    float fCharWidth = m_fFontSize * CHAR_SPACING;
     float fTextWidth = m_strText.length() * fCharWidth;
     float fTextHeight = m_fFontSize;
 
     Zenith_Maths::Vector2 xTextPos = { fLeft, fTop };
 
-    // Horizontal alignment
+    // Horizontal alignment within element bounds
     switch (m_eAlignment)
     {
     case TextAlignment::Left:
@@ -50,7 +58,7 @@ void Zenith_UIText::Render(Zenith_UICanvas& xCanvas)
         break;
     }
 
-    // Vertical alignment
+    // Vertical alignment within element bounds
     switch (m_eVerticalAlignment)
     {
     case TextVerticalAlignment::Top:
@@ -110,13 +118,16 @@ void Zenith_UIText::RenderPropertiesPanel()
     // Render base properties
     Zenith_UIElement::RenderPropertiesPanel();
 
+    // Push unique ID scope for text properties
+    ImGui::PushID("UITextProps");
+
     ImGui::Separator();
-    ImGui::Text("Text Properties");
+    ImGui::Text("Text Element Properties");
 
     // Text content with multi-line support
     char szTextBuffer[1024];
     strncpy_s(szTextBuffer, m_strText.c_str(), sizeof(szTextBuffer) - 1);
-    if (ImGui::InputTextMultiline("Text", szTextBuffer, sizeof(szTextBuffer), ImVec2(-1, 60)))
+    if (ImGui::InputTextMultiline("Content", szTextBuffer, sizeof(szTextBuffer), ImVec2(-1, 60)))
     {
         m_strText = szTextBuffer;
     }
@@ -125,17 +136,19 @@ void Zenith_UIText::RenderPropertiesPanel()
 
     const char* szAlignments[] = { "Left", "Center", "Right" };
     int iAlign = static_cast<int>(m_eAlignment);
-    if (ImGui::Combo("Alignment", &iAlign, szAlignments, 3))
+    if (ImGui::Combo("H Align", &iAlign, szAlignments, 3))
     {
         m_eAlignment = static_cast<TextAlignment>(iAlign);
     }
 
     const char* szVAlignments[] = { "Top", "Middle", "Bottom" };
     int iVAlign = static_cast<int>(m_eVerticalAlignment);
-    if (ImGui::Combo("Vertical Alignment", &iVAlign, szVAlignments, 3))
+    if (ImGui::Combo("V Align", &iVAlign, szVAlignments, 3))
     {
         m_eVerticalAlignment = static_cast<TextVerticalAlignment>(iVAlign);
     }
+
+    ImGui::PopID();
 }
 #endif
 

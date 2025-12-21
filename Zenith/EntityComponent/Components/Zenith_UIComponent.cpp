@@ -122,15 +122,18 @@ void Zenith_UIComponent::RenderPropertiesPanel()
 {
     if (ImGui::CollapsingHeader("UI Component", ImGuiTreeNodeFlags_DefaultOpen))
     {
-        ImGui::Checkbox("Visible", &m_bVisible);
+        // Push unique ID scope for UIComponent to avoid conflicts with Entity properties
+        ImGui::PushID("UIComponent");
+
+        ImGui::Checkbox("Canvas Visible", &m_bVisible);
 
         ImGui::Separator();
 
-        // Add element buttons
+        // Add element buttons - use unique IDs to avoid conflicts with element type names
         ImGui::Text("Add Element:");
         ImGui::SameLine();
 
-        if (ImGui::Button("Text"))
+        if (ImGui::Button("+ Text"))
         {
             static int s_iTextCount = 0;
             std::string strName = "Text_" + std::to_string(s_iTextCount++);
@@ -140,7 +143,7 @@ void Zenith_UIComponent::RenderPropertiesPanel()
         }
         ImGui::SameLine();
 
-        if (ImGui::Button("Rect"))
+        if (ImGui::Button("+ Rect"))
         {
             static int s_iRectCount = 0;
             std::string strName = "Rect_" + std::to_string(s_iRectCount++);
@@ -151,7 +154,7 @@ void Zenith_UIComponent::RenderPropertiesPanel()
         }
         ImGui::SameLine();
 
-        if (ImGui::Button("Image"))
+        if (ImGui::Button("+ Image"))
         {
             static int s_iImageCount = 0;
             std::string strName = "Image_" + std::to_string(s_iImageCount++);
@@ -199,6 +202,8 @@ void Zenith_UIComponent::RenderPropertiesPanel()
                 m_pxSelectedElement->RenderPropertiesPanel();
             }
         }
+
+        ImGui::PopID(); // End UIComponent scope
     }
 }
 

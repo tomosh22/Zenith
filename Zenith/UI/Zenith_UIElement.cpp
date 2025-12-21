@@ -206,26 +206,30 @@ void Zenith_UIElement::ReadFromDataStream(Zenith_DataStream& xStream)
 #ifdef ZENITH_TOOLS
 void Zenith_UIElement::RenderPropertiesPanel()
 {
+    // Push unique ID scope for UI element properties to avoid conflicts with
+    // Entity/TransformComponent properties that use the same widget labels
+    ImGui::PushID("UIElement");
+
     ImGui::Text("Type: %s", GetTypeName(GetType()));
 
     char szNameBuffer[256];
     strncpy_s(szNameBuffer, m_strName.c_str(), sizeof(szNameBuffer) - 1);
-    if (ImGui::InputText("Name", szNameBuffer, sizeof(szNameBuffer)))
+    if (ImGui::InputText("Element Name", szNameBuffer, sizeof(szNameBuffer)))
     {
         m_strName = szNameBuffer;
     }
 
     ImGui::Separator();
-    ImGui::Text("Transform");
+    ImGui::Text("UI Transform");
 
     float fPos[2] = { m_xPosition.x, m_xPosition.y };
-    if (ImGui::DragFloat2("Position", fPos, 1.0f))
+    if (ImGui::DragFloat2("UI Position", fPos, 1.0f))
     {
         SetPosition(fPos[0], fPos[1]);
     }
 
     float fSize[2] = { m_xSize.x, m_xSize.y };
-    if (ImGui::DragFloat2("Size", fSize, 1.0f, 0.0f, 10000.0f))
+    if (ImGui::DragFloat2("UI Size", fSize, 1.0f, 0.0f, 10000.0f))
     {
         SetSize(fSize[0], fSize[1]);
     }
@@ -246,12 +250,14 @@ void Zenith_UIElement::RenderPropertiesPanel()
     ImGui::Text("Appearance");
 
     float fColor[4] = { m_xColor.x, m_xColor.y, m_xColor.z, m_xColor.w };
-    if (ImGui::ColorEdit4("Color", fColor))
+    if (ImGui::ColorEdit4("Element Color", fColor))
     {
         SetColor({ fColor[0], fColor[1], fColor[2], fColor[3] });
     }
 
-    ImGui::Checkbox("Visible", &m_bVisible);
+    ImGui::Checkbox("Element Visible", &m_bVisible);
+
+    ImGui::PopID();
 }
 #endif
 

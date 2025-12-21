@@ -21,12 +21,24 @@ static Flux_Shader s_xShader;
 static Flux_Pipeline s_xPipeline;
 
 static constexpr uint32_t s_uMaxCharsPerFrame = 65536;
+
+// Character width as fraction of height (typical monospace ratio is ~0.5-0.6)
+// Must match CHAR_ASPECT_RATIO in Flux_Text.vert
+static constexpr float CHAR_ASPECT_RATIO = 0.5f;
+
+// Character spacing includes a small gap (10% of char width) for natural appearance
+static constexpr float CHAR_SPACING = CHAR_ASPECT_RATIO * 1.1f;
+
+// Base text size for TextComponent entries (in pixels) - scaled by TextEntry::m_fScale
+static constexpr float TEXT_COMPONENT_BASE_SIZE = 32.0f;
+
 struct TextVertex
 {
 	Zenith_Maths::Vector2 m_xPos;
 	Zenith_Maths::Vector2 m_xUV;
 	Zenith_Maths::UVector2 m_xTextRoot;
 	float m_fTextSize;
+	Zenith_Maths::Vector4 m_xColour;
 };
 static Flux_DynamicVertexBuffer s_xInstanceBuffer;
 
@@ -48,6 +60,7 @@ void Flux_Text::Initialise()
 	xVertexDesc.m_xPerInstanceLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT2);//offset into font texture atlas
 	xVertexDesc.m_xPerInstanceLayout.GetElements().PushBack(SHADER_DATA_TYPE_UINT2);//text root
 	xVertexDesc.m_xPerInstanceLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT);//text size
+	xVertexDesc.m_xPerInstanceLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT4);//colour
 	xVertexDesc.m_xPerInstanceLayout.CalculateOffsetsAndStrides();
 
 	Flux_PipelineSpecification xPipelineSpec;
@@ -111,9 +124,10 @@ uint32_t Flux_Text::UploadChars()
 			{
 				TextVertex xVertex;
 				xVertex.m_xTextRoot = xText.m_xPosition;
-				xVertex.m_fTextSize = dbg_fTextSize;
-				const float fSpacing = xVertex.m_fTextSize / 200.f;
-				xVertex.m_xPos = Zenith_Maths::Vector2(u * fSpacing, 0.f);
+				xVertex.m_fTextSize = TEXT_COMPONENT_BASE_SIZE * xText.m_fScale;
+				// Character spacing includes small gap for natural appearance
+				xVertex.m_xPos = Zenith_Maths::Vector2(u * CHAR_SPACING, 0.f);
+				xVertex.m_xColour = { 1.f, 1.f, 1.f, 1.f }; // Default white
 
 				char cChar = xText.m_strText.at(u);
 
@@ -147,9 +161,10 @@ uint32_t Flux_Text::UploadChars()
 				int32_t iWindowWidth, iWindowHeight;
 				Zenith_Window::GetInstance()->GetSize(iWindowWidth, iWindowHeight);
 				xVertex.m_xTextRoot = { xScreenSpace.x * iWindowWidth, xScreenSpace.y * iWindowHeight};
-				xVertex.m_fTextSize = dbg_fTextSize;
-				const float fSpacing = xVertex.m_fTextSize / 200.f;
-				xVertex.m_xPos = Zenith_Maths::Vector2(u * fSpacing, 0.f);
+				xVertex.m_fTextSize = TEXT_COMPONENT_BASE_SIZE * xText.m_fScale;
+				// Character spacing includes small gap for natural appearance
+				xVertex.m_xPos = Zenith_Maths::Vector2(u * CHAR_SPACING, 0.f);
+				xVertex.m_xColour = { 1.f, 1.f, 1.f, 1.f }; // Default white
 
 				char cChar = xText.m_strText.at(u);
 
@@ -177,8 +192,9 @@ uint32_t Flux_Text::UploadChars()
 			TextVertex xVertex;
 			xVertex.m_xTextRoot = { static_cast<uint32_t>(xEntry.m_xPosition.x), static_cast<uint32_t>(xEntry.m_xPosition.y) };
 			xVertex.m_fTextSize = xEntry.m_fSize;
-			const float fSpacing = xVertex.m_fTextSize / 200.f;
-			xVertex.m_xPos = Zenith_Maths::Vector2(u * fSpacing, 0.f);
+			// Character spacing includes small gap for natural appearance
+			xVertex.m_xPos = Zenith_Maths::Vector2(u * CHAR_SPACING, 0.f);
+			xVertex.m_xColour = xEntry.m_xColor;
 
 			char cChar = xEntry.m_strText.at(u);
 			const uint32_t uIndex = cChar - 32;
