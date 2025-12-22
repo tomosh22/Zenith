@@ -3,7 +3,13 @@
 #include "Test/Components/SphereMovement_Behaviour.h"
 #include "Test/Components/PlayerController_Behaviour.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
+#include "EntityComponent/Components/Zenith_ModelComponent.h"
+#include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "UI/Zenith_UI.h"
+#include "Prefab/Zenith_Prefab.h"
+#include "AssetHandling/Zenith_AssetHandler.h"
+#include "Flux/Flux_MaterialAsset.h"
+#include <filesystem>
 
 void Project_RegisterScriptBehaviours()
 {
@@ -12,9 +18,48 @@ void Project_RegisterScriptBehaviours()
 	RotationBehaviour_Behaviour::RegisterBehaviour();
 }
 
+static void CreateBulletPrefabIfNotExists()
+{
+	const std::string strPrefabPath = ASSETS_ROOT"Prefabs/Bullet" ZENITH_PREFAB_EXT;
+
+	if (std::filesystem::exists(strPrefabPath))
+	{
+		Zenith_Log("[Test] Bullet prefab already exists: %s", strPrefabPath.c_str());
+		return;
+	}
+
+	std::filesystem::create_directories(ASSETS_ROOT"Prefabs");
+
+	Zenith_Entity xBulletTemplate;
+	xBulletTemplate.Initialise(&Zenith_Scene::GetCurrentScene(), "BulletTemplate");
+
+	Zenith_ModelComponent& xModel = xBulletTemplate.AddComponent<Zenith_ModelComponent>();
+	Flux_MeshGeometry* pxMesh = Zenith_AssetHandler::AddMeshFromFile(
+		ASSETS_ROOT"Meshes/sphereSmooth_Mesh0_Mat0" ZENITH_MESH_EXT);
+	Flux_MaterialAsset* pxMaterial = Flux_MaterialAsset::Create("BulletMaterial");
+	xModel.AddMeshEntry(*pxMesh, *pxMaterial);
+
+	Zenith_TransformComponent& xTrans = xBulletTemplate.GetComponent<Zenith_TransformComponent>();
+	xTrans.SetScale({ 1, 1, 1 });
+
+	Zenith_ColliderComponent& xCollider = xBulletTemplate.AddComponent<Zenith_ColliderComponent>();
+	xCollider.AddCollider(COLLISION_VOLUME_TYPE_SPHERE, RIGIDBODY_TYPE_DYNAMIC);
+
+	Zenith_Prefab xPrefab;
+	xPrefab.CreateFromEntity(xBulletTemplate, "Bullet");
+	xPrefab.SaveToFile(strPrefabPath);
+
+	Zenith_Scene::GetCurrentScene().RemoveEntity(xBulletTemplate.GetEntityID());
+
+	Zenith_Log("[Test] Created bullet prefab: %s", strPrefabPath.c_str());
+}
+
 void Project_LoadInitialScene()
 {
 	Zenith_Scene::GetCurrentScene().LoadFromFile(ASSETS_ROOT"Scenes/test_scene.zscen");
+
+	CreateBulletPrefabIfNotExists();
+	return;
 
 	// Create RPG HUD Entity
 	Zenith_Entity xHUDEntity;

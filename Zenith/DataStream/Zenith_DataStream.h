@@ -24,9 +24,48 @@ public:
 	{
 	}
 
+	// Move constructor
+	Zenith_DataStream(Zenith_DataStream&& other) noexcept
+		: m_bOwnsData(other.m_bOwnsData)
+		, m_ulDataSize(other.m_ulDataSize)
+		, m_ulCursor(other.m_ulCursor)
+		, m_pData(other.m_pData)
+	{
+		other.m_pData = nullptr;
+		other.m_bOwnsData = false;
+		other.m_ulDataSize = 0;
+		other.m_ulCursor = 0;
+	}
+
+	// Move assignment
+	Zenith_DataStream& operator=(Zenith_DataStream&& other) noexcept
+	{
+		if (this != &other)
+		{
+			if (m_bOwnsData && m_pData)
+			{
+				Zenith_MemoryManagement::Deallocate(m_pData);
+			}
+			m_pData = other.m_pData;
+			m_ulDataSize = other.m_ulDataSize;
+			m_ulCursor = other.m_ulCursor;
+			m_bOwnsData = other.m_bOwnsData;
+
+			other.m_pData = nullptr;
+			other.m_bOwnsData = false;
+			other.m_ulDataSize = 0;
+			other.m_ulCursor = 0;
+		}
+		return *this;
+	}
+
+	// Delete copy operations to prevent accidental double-free
+	Zenith_DataStream(const Zenith_DataStream&) = delete;
+	Zenith_DataStream& operator=(const Zenith_DataStream&) = delete;
+
 	~Zenith_DataStream()
 	{
-		if (m_bOwnsData)
+		if (m_bOwnsData && m_pData)
 		{
 			Zenith_MemoryManagement::Deallocate(m_pData);
 		}

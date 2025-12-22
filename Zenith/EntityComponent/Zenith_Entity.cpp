@@ -77,6 +77,8 @@ void Zenith_Entity::WriteToDataStream(Zenith_DataStream& xStream) const
 	// ScriptComponent should come after ColliderComponent as behaviors may reference it
 	if (const_cast<Zenith_Entity*>(this)->HasComponent<Zenith_ScriptComponent>())
 		xComponentTypes.push_back("ScriptComponent");
+	if (const_cast<Zenith_Entity*>(this)->HasComponent<Zenith_UIComponent>())
+		xComponentTypes.push_back("UIComponent");
 
 	// Write the number of components
 	u_int uNumComponents = static_cast<u_int>(xComponentTypes.size());

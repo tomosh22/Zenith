@@ -881,6 +881,7 @@
     <ClInclude Include="..\..\..\Zenith\Maths\Zenith_Maths_Intersections.h" />
     <ClInclude Include="..\..\..\Zenith\Physics\Zenith_Physics.h" />
     <ClInclude Include="..\..\..\Zenith\Physics\Zenith_PhysicsMeshGenerator.h" />
+    <ClInclude Include="..\..\..\Zenith\Prefab\Zenith_Prefab.h" />
     <ClInclude Include="..\..\..\Zenith\Profiling\Zenith_Profiling.h" />
     <ClInclude Include="..\..\..\Zenith\TaskSystem\Zenith_TaskSystem.h" />
     <ClInclude Include="..\..\..\Zenith\UI\Zenith_UI.h" />
@@ -1811,6 +1812,7 @@
     <ClCompile Include="..\..\..\Zenith\Maths\Zenith_Maths.cpp" />
     <ClCompile Include="..\..\..\Zenith\Physics\Zenith_Physics.cpp" />
     <ClCompile Include="..\..\..\Zenith\Physics\Zenith_PhysicsMeshGenerator.cpp" />
+    <ClCompile Include="..\..\..\Zenith\Prefab\Zenith_Prefab.cpp" />
     <ClCompile Include="..\..\..\Zenith\Profiling\Zenith_Profiling.cpp" />
     <ClCompile Include="..\..\..\Zenith\TaskSystem\Zenith_TaskSystem.cpp" />
     <ClCompile Include="..\..\..\Zenith\UI\Zenith_UICanvas.cpp" />

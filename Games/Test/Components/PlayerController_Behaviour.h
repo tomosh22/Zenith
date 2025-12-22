@@ -1,12 +1,15 @@
 #pragma once
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
+#include <string>
 
 #ifdef ZENITH_TOOLS
 #include "imgui.h"
+#include "Editor/Zenith_Editor.h"
 #endif
 
 class Zenith_UIComponent;
+class Zenith_Prefab;
 namespace Zenith_UI { class Zenith_UIRect; class Zenith_UIText; }
 
 class PlayerController_Behaviour ZENITH_FINAL : Zenith_ScriptBehaviour
@@ -35,6 +38,10 @@ public:
 
 	void Shoot();
 
+	// Prefab API
+	void SetBulletPrefabPath(const std::string& strPath);
+	const std::string& GetBulletPrefabPath() const { return m_strBulletPrefabPath; }
+
 	// Health API
 	void SetHealth(float fHealth);
 	float GetHealth() const { return m_fHealth; }
@@ -52,6 +59,23 @@ public:
 		ImGui::Checkbox("Fly Camera Enabled", &m_bFlyCamEnabled);
 		ImGui::Text("Move Speed: %.1f", s_dMoveSpeed);
 		ImGui::Separator();
+
+		// Bullet Prefab drag-drop
+		ImGui::Text("Bullet Prefab:");
+		std::string strDisplayPath = m_strBulletPrefabPath.empty() ? "(None - drag .zprfb here)" : m_strBulletPrefabPath;
+		ImGui::Button(strDisplayPath.c_str(), ImVec2(250, 20));
+		if (ImGui::BeginDragDropTarget())
+		{
+			if (const ImGuiPayload* pPayload = ImGui::AcceptDragDropPayload(DRAGDROP_PAYLOAD_PREFAB))
+			{
+				const DragDropFilePayload* pFilePayload =
+					static_cast<const DragDropFilePayload*>(pPayload->Data);
+				SetBulletPrefabPath(pFilePayload->m_szFilePath);
+			}
+			ImGui::EndDragDropTarget();
+		}
+		ImGui::Separator();
+
 		ImGui::Text("Health: %.1f / %.1f", m_fHealth, s_fMaxHealth);
 		if (ImGui::SliderFloat("##Health", &m_fHealth, 0.0f, s_fMaxHealth))
 		{
@@ -83,4 +107,8 @@ private:
 	Zenith_UI::Zenith_UIText* m_pxCompassText = nullptr;
 	Zenith_UI::Zenith_UIRect* m_apxInventorySlots[s_iInventorySlots] = {};
 	bool m_bUIInitialized = false;
+
+	// Bullet prefab (per-instance)
+	std::string m_strBulletPrefabPath = ASSETS_ROOT"Prefabs/Bullet" ZENITH_PREFAB_EXT;
+	Zenith_Prefab* m_pxBulletPrefab = nullptr;
 };

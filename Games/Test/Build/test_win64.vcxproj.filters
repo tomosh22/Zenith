@@ -577,6 +577,9 @@
     <ClCompile Include="..\..\..\Zenith\Physics\Zenith_PhysicsMeshGenerator.cpp">
       <Filter>Zenith\Physics</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\..\Zenith\Prefab\Zenith_Prefab.cpp">
+      <Filter>Zenith\Prefab</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\..\Zenith\Profiling\Zenith_Profiling.cpp">
       <Filter>Zenith\Profiling</Filter>
     </ClCompile>
@@ -1944,6 +1947,9 @@
     <ClInclude Include="..\..\..\Zenith\Physics\Zenith_PhysicsMeshGenerator.h">
       <Filter>Zenith\Physics</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\Prefab\Zenith_Prefab.h">
+      <Filter>Zenith\Prefab</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\..\Zenith\Profiling\Zenith_Profiling.h">
       <Filter>Zenith\Profiling</Filter>
     </ClInclude>
@@ -2292,6 +2298,9 @@
     </Filter>
     <Filter Include="Zenith\Physics">
       <UniqueIdentifier>{5ac8261e-3c4b-0ce4-a667-2e91565d611f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Zenith\Prefab">
+      <UniqueIdentifier>{d119d2e3-9eb2-85f9-668d-947e1899eadf}</UniqueIdentifier>
     </Filter>
     <Filter Include="Zenith\Profiling">
       <UniqueIdentifier>{d5002f3f-e4fd-7c83-92af-8e2b645cf421}</UniqueIdentifier>

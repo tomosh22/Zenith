@@ -1434,6 +1434,10 @@ void Zenith_Editor::RenderContentBrowser()
 					{
 						szPayloadType = DRAGDROP_PAYLOAD_MATERIAL;
 					}
+					else if (xEntry.m_strExtension == ZENITH_PREFAB_EXT)
+					{
+						szPayloadType = DRAGDROP_PAYLOAD_PREFAB;
+					}
 
 					ImGui::SetDragDropPayload(szPayloadType, &xPayload, sizeof(xPayload));
 

@@ -11,15 +11,12 @@
 #include "EntityComponent/Zenith_Entity.h"
 #include "AssetHandling/Zenith_AssetHandler.h"
 #include "Flux/Flux_Graphics.h"
+#include "Prefab/Zenith_Prefab.h"
 
 DEBUGVAR float dbg_fCamDistance = 25.f;
 
 static Zenith_Entity s_axBulletEntities[128];
 static u_int s_uCurrentBulletIndex = 0;
-
-// Cached assets for bullet spawning (loaded once on first use)
-static Flux_MeshGeometry* s_pxBulletMesh = nullptr;
-static Flux_MaterialAsset* s_pxBulletMaterial = nullptr;
 
 PlayerController_Behaviour::PlayerController_Behaviour(Zenith_Entity& xParentEntity)
 	: m_xParentEntity(xParentEntity)
@@ -75,39 +72,31 @@ static void UpdateCameraRotation(Zenith_CameraComponent& xCamera)
 
 void PlayerController_Behaviour::Shoot()
 {
-	// Load bullet assets once on first use
-	if (!s_pxBulletMesh)
+	if (!m_pxBulletPrefab)
 	{
-		s_pxBulletMesh = Zenith_AssetHandler::AddMeshFromFile(ASSETS_ROOT"Meshes/sphereSmooth_Mesh0_Mat0" ZENITH_MESH_EXT);
-		s_pxBulletMaterial = Flux_MaterialAsset::Create("BulletMaterial");
+		Zenith_Log("[PlayerController] Bullet prefab not loaded!");
+		return;
 	}
 
 	Zenith_Entity& xBulletEntity = s_axBulletEntities[s_uCurrentBulletIndex];
-	xBulletEntity.Initialise(&Zenith_Scene::GetCurrentScene(),"Bullet" + std::to_string(s_uCurrentBulletIndex));
-	s_uCurrentBulletIndex++;
+	xBulletEntity.Initialise(&Zenith_Scene::GetCurrentScene(), "Bullet" + std::to_string(s_uCurrentBulletIndex));
+	s_uCurrentBulletIndex = (s_uCurrentBulletIndex + 1) % 128;
 
-	Zenith_ModelComponent& xModel = xBulletEntity.AddComponent<Zenith_ModelComponent>();
-	xModel.AddMeshEntry(*s_pxBulletMesh, *s_pxBulletMaterial);
+	m_pxBulletPrefab->ApplyToEntity(xBulletEntity);
 
 	Zenith_CameraComponent& xCamera = m_xParentEntity.GetComponent<Zenith_CameraComponent>();
-
 	Zenith_Maths::Vector3 xFacingDir;
 	xCamera.GetFacingDir(xFacingDir);
 
 	Zenith_TransformComponent& xTrans = xBulletEntity.GetComponent<Zenith_TransformComponent>();
 	Zenith_Maths::Vector3 xPlayerPos;
 	m_xParentEntity.GetComponent<Zenith_TransformComponent>().GetPosition(xPlayerPos);
-	xFacingDir *= 10; //#TO_TODO: why isn't the * operator overload working?
-	xTrans.SetPosition(xPlayerPos + Zenith_Maths::Vector3(0,7,0) + xFacingDir);
-	xFacingDir /= 10;
-	xTrans.SetScale({ 1,1,1 });
 
-	//#TO I'm being lazy and using this as initial velocity
-	xFacingDir *= 50;
+	xTrans.SetPosition(xPlayerPos + Zenith_Maths::Vector3(0, 7, 0) + xFacingDir * 10.0f);
+	xTrans.SetScale({ 1, 1, 1 });
 
-	Zenith_ColliderComponent& xCollider = xBulletEntity.AddComponent<Zenith_ColliderComponent>();
-	xCollider.AddCollider(COLLISION_VOLUME_TYPE_SPHERE, RIGIDBODY_TYPE_DYNAMIC);
-	Zenith_Physics::SetLinearVelocity(xCollider.GetRigidBody(), xFacingDir);
+	Zenith_ColliderComponent& xCollider = xBulletEntity.GetComponent<Zenith_ColliderComponent>();
+	Zenith_Physics::SetLinearVelocity(xCollider.GetRigidBody(), xFacingDir * 50.0f);
 }
 
 void PlayerController_Behaviour::OnUpdate(const float fDt)
@@ -253,6 +242,44 @@ void PlayerController_Behaviour::OnUpdate(const float fDt)
 void PlayerController_Behaviour::OnCreate()
 {
 	FindHUDElements();
+	return;
+	if (!m_pxBulletPrefab && !m_strBulletPrefabPath.empty())
+	{
+		m_pxBulletPrefab = new Zenith_Prefab();
+		if (!m_pxBulletPrefab->LoadFromFile(m_strBulletPrefabPath))
+		{
+			Zenith_Log("[PlayerController] Failed to load bullet prefab: %s", m_strBulletPrefabPath.c_str());
+			delete m_pxBulletPrefab;
+			m_pxBulletPrefab = nullptr;
+		}
+	}
+}
+
+void PlayerController_Behaviour::SetBulletPrefabPath(const std::string& strPath)
+{
+	m_strBulletPrefabPath = strPath;
+
+	// Reload the prefab with the new path
+	if (m_pxBulletPrefab)
+	{
+		delete m_pxBulletPrefab;
+		m_pxBulletPrefab = nullptr;
+	}
+
+	if (!strPath.empty())
+	{
+		m_pxBulletPrefab = new Zenith_Prefab();
+		if (!m_pxBulletPrefab->LoadFromFile(strPath))
+		{
+			Zenith_Log("[PlayerController] Failed to load bullet prefab: %s", strPath.c_str());
+			delete m_pxBulletPrefab;
+			m_pxBulletPrefab = nullptr;
+		}
+		else
+		{
+			Zenith_Log("[PlayerController] Loaded bullet prefab: %s", strPath.c_str());
+		}
+	}
 }
 
 void PlayerController_Behaviour::FindHUDElements()
