@@ -9,6 +9,8 @@
 #include "Flux/Flux_CommandList.h"
 #include "Flux/Shadows/Flux_Shadows.h"
 #include "Flux/DeferredShading/Flux_DeferredShading.h"
+#include "Flux/Flux_ModelInstance.h"
+#include "Flux/MeshGeometry/Flux_MeshInstance.h"
 #include "AssetHandling/Zenith_AssetHandler.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
@@ -131,9 +133,89 @@ void Flux_StaticMeshes::RenderToGBuffer(void*)
 
 	g_xCommandList.AddCommand<Flux_CommandBeginBind>(1);
 
+	static bool s_bLoggedOnce = false;
 	for (Zenith_Vector<Zenith_ModelComponent*>::Iterator xIt(xModels); !xIt.Done(); xIt.Next())
 	{
 		Zenith_ModelComponent* pxModel = xIt.GetData();
+
+		// New model instance system - only render static meshes (no skeleton)
+		// Animated meshes with skeletons are rendered by Flux_AnimatedMeshes
+		Flux_ModelInstance* pxModelInstance = pxModel->GetModelInstance();
+		if (pxModelInstance)
+		{
+			// Check if this model should be rendered by the animated mesh renderer
+			// A model is animated if it has a skeleton AND at least one skinned mesh instance
+			bool bHasSkinnedMeshes = false;
+			if (pxModelInstance->HasSkeleton())
+			{
+				for (uint32_t uCheck = 0; uCheck < pxModelInstance->GetNumMeshes(); uCheck++)
+				{
+					if (pxModelInstance->GetSkinnedMeshInstance(uCheck) != nullptr)
+					{
+						bHasSkinnedMeshes = true;
+						break;
+					}
+				}
+			}
+
+			// Skip models that have a skeleton AND skinned mesh data - they are rendered by Flux_AnimatedMeshes
+			// Models with a skeleton but NO skinning data are rendered here using static mesh instances
+			if (pxModelInstance->HasSkeleton() && bHasSkinnedMeshes)
+			{
+				continue;
+			}
+
+			if (!s_bLoggedOnce)
+			{
+				Zenith_Log("[StaticMeshes] Rendering static model - meshes: %u", pxModelInstance->GetNumMeshes());
+				for (uint32_t uDbg = 0; uDbg < pxModelInstance->GetNumMeshes(); uDbg++)
+				{
+					Flux_MeshInstance* pxDbgMesh = pxModelInstance->GetMeshInstance(uDbg);
+					if (pxDbgMesh)
+					{
+						Zenith_Log("[StaticMeshes]   Mesh %u: %u verts, %u indices", uDbg, pxDbgMesh->GetNumVerts(), pxDbgMesh->GetNumIndices());
+					}
+					else
+					{
+						Zenith_Log("[StaticMeshes]   Mesh %u: NULL", uDbg);
+					}
+				}
+				s_bLoggedOnce = true;
+			}
+
+			Zenith_Maths::Matrix4 xModelMatrix;
+			pxModel->GetParentEntity().GetComponent<Zenith_TransformComponent>().BuildModelMatrix(xModelMatrix);
+
+			for (uint32_t uMesh = 0; uMesh < pxModelInstance->GetNumMeshes(); uMesh++)
+			{
+				Flux_MeshInstance* pxMeshInstance = pxModelInstance->GetMeshInstance(uMesh);
+				if (!pxMeshInstance)
+				{
+					continue;
+				}
+
+				g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&pxMeshInstance->GetVertexBuffer());
+				g_xCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&pxMeshInstance->GetIndexBuffer());
+				g_xCommandList.AddCommand<Flux_CommandPushConstant>(&xModelMatrix, sizeof(xModelMatrix));
+
+				Flux_MaterialAsset* pxMaterial = pxModelInstance->GetMaterial(uMesh);
+				if (!pxMaterial)
+				{
+					pxMaterial = Flux_Graphics::s_pxBlankMaterial;
+				}
+
+				g_xCommandList.AddCommand<Flux_CommandBindSRV>(&pxMaterial->GetDiffuseTexture()->m_xSRV, 0);
+				g_xCommandList.AddCommand<Flux_CommandBindSRV>(&pxMaterial->GetNormalTexture()->m_xSRV, 1);
+				g_xCommandList.AddCommand<Flux_CommandBindSRV>(&pxMaterial->GetRoughnessMetallicTexture()->m_xSRV, 2);
+				g_xCommandList.AddCommand<Flux_CommandBindSRV>(&pxMaterial->GetOcclusionTexture()->m_xSRV, 3);
+				g_xCommandList.AddCommand<Flux_CommandBindSRV>(&pxMaterial->GetEmissiveTexture()->m_xSRV, 4);
+
+				g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(pxMeshInstance->GetNumIndices());
+			}
+			continue;
+		}
+
+		// Legacy mesh entry system
 		//#TO_TODO: these 2 should probably be separate components
 		if (!pxModel->GetNumMeshEntries() || pxModel->GetMeshGeometryAtIndex(0).GetNumBones())
 		{
@@ -172,6 +254,54 @@ void Flux_StaticMeshes::RenderToShadowMap(Flux_CommandList& xCmdBuf)
 	for (Zenith_Vector<Zenith_ModelComponent*>::Iterator xIt(xModels); !xIt.Done(); xIt.Next())
 	{
 		Zenith_ModelComponent* pxModel = xIt.GetData();
+
+		// New model instance system - only render static meshes (no skeleton)
+		// Animated meshes with skeletons are rendered by Flux_AnimatedMeshes
+		Flux_ModelInstance* pxModelInstance = pxModel->GetModelInstance();
+		if (pxModelInstance)
+		{
+			// Check if this model should be rendered by the animated mesh renderer
+			// A model is animated if it has a skeleton AND at least one skinned mesh instance
+			bool bHasSkinnedMeshes = false;
+			if (pxModelInstance->HasSkeleton())
+			{
+				for (uint32_t uCheck = 0; uCheck < pxModelInstance->GetNumMeshes(); uCheck++)
+				{
+					if (pxModelInstance->GetSkinnedMeshInstance(uCheck) != nullptr)
+					{
+						bHasSkinnedMeshes = true;
+						break;
+					}
+				}
+			}
+
+			// Skip models that have a skeleton AND skinned mesh data - they are rendered by Flux_AnimatedMeshes
+			// Models with a skeleton but NO skinning data are rendered here using static mesh instances
+			if (pxModelInstance->HasSkeleton() && bHasSkinnedMeshes)
+			{
+				continue;
+			}
+
+			Zenith_Maths::Matrix4 xModelMatrix;
+			pxModel->GetParentEntity().GetComponent<Zenith_TransformComponent>().BuildModelMatrix(xModelMatrix);
+
+			for (uint32_t uMesh = 0; uMesh < pxModelInstance->GetNumMeshes(); uMesh++)
+			{
+				Flux_MeshInstance* pxMeshInstance = pxModelInstance->GetMeshInstance(uMesh);
+				if (!pxMeshInstance)
+				{
+					continue;
+				}
+
+				xCmdBuf.AddCommand<Flux_CommandSetVertexBuffer>(&pxMeshInstance->GetVertexBuffer());
+				xCmdBuf.AddCommand<Flux_CommandSetIndexBuffer>(&pxMeshInstance->GetIndexBuffer());
+				xCmdBuf.AddCommand<Flux_CommandPushConstant>(&xModelMatrix, sizeof(xModelMatrix));
+				xCmdBuf.AddCommand<Flux_CommandDrawIndexed>(pxMeshInstance->GetNumIndices());
+			}
+			continue;
+		}
+
+		// Legacy mesh entry system
 		//#TO_TODO: these 2 should probably be separate components
 		if (!pxModel->GetNumMeshEntries() || pxModel->GetMeshGeometryAtIndex(0).GetNumBones())
 		{

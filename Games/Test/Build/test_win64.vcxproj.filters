@@ -427,6 +427,15 @@
     <ClCompile Include="..\..\..\Zenith\AssetHandling\Zenith_AssetHandler.cpp">
       <Filter>Zenith\AssetHandling</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\..\Zenith\AssetHandling\Zenith_MeshAsset.cpp">
+      <Filter>Zenith\AssetHandling</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\Zenith\AssetHandling\Zenith_ModelAsset.cpp">
+      <Filter>Zenith\AssetHandling</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\Zenith\AssetHandling\Zenith_SkeletonAsset.cpp">
+      <Filter>Zenith\AssetHandling</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\..\Zenith\Core\Memory\Zenith_MemoryManagement.cpp">
       <Filter>Zenith\Core\Memory</Filter>
     </ClCompile>
@@ -444,6 +453,9 @@
     </ClCompile>
     <ClCompile Include="..\..\..\Zenith\DebugVariables\Zenith_DebugVariables.cpp">
       <Filter>Zenith\DebugVariables</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\Zenith\Editor\Zenith_AnimationStateMachineEditor.cpp">
+      <Filter>Zenith\Editor</Filter>
     </ClCompile>
     <ClCompile Include="..\..\..\Zenith\Editor\Zenith_Editor.cpp">
       <Filter>Zenith\Editor</Filter>
@@ -517,6 +529,9 @@
     <ClCompile Include="..\..\..\Zenith\Flux\Flux_MaterialAsset.cpp">
       <Filter>Zenith\Flux</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\..\Zenith\Flux\Flux_ModelInstance.cpp">
+      <Filter>Zenith\Flux</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\..\Zenith\Flux\Flux_RenderTargets.cpp">
       <Filter>Zenith\Flux</Filter>
     </ClCompile>
@@ -526,10 +541,34 @@
     <ClCompile Include="..\..\..\Zenith\Flux\Gizmos\Flux_Gizmos.cpp">
       <Filter>Zenith\Flux\Gizmos</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\..\Zenith\Flux\MeshAnimation\Flux_AnimationClip.cpp">
+      <Filter>Zenith\Flux\MeshAnimation</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\Zenith\Flux\MeshAnimation\Flux_AnimationController.cpp">
+      <Filter>Zenith\Flux\MeshAnimation</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\Zenith\Flux\MeshAnimation\Flux_AnimationStateMachine.cpp">
+      <Filter>Zenith\Flux\MeshAnimation</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\Zenith\Flux\MeshAnimation\Flux_BlendTree.cpp">
+      <Filter>Zenith\Flux\MeshAnimation</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\Zenith\Flux\MeshAnimation\Flux_BonePose.cpp">
+      <Filter>Zenith\Flux\MeshAnimation</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\Zenith\Flux\MeshAnimation\Flux_InverseKinematics.cpp">
+      <Filter>Zenith\Flux\MeshAnimation</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\..\Zenith\Flux\MeshAnimation\Flux_MeshAnimation.cpp">
       <Filter>Zenith\Flux\MeshAnimation</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\..\Zenith\Flux\MeshAnimation\Flux_SkeletonInstance.cpp">
+      <Filter>Zenith\Flux\MeshAnimation</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\..\Zenith\Flux\MeshGeometry\Flux_MeshGeometry.cpp">
+      <Filter>Zenith\Flux\MeshGeometry</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\..\Zenith\Flux\MeshGeometry\Flux_MeshInstance.cpp">
       <Filter>Zenith\Flux\MeshGeometry</Filter>
     </ClCompile>
     <ClCompile Include="..\..\..\Zenith\Flux\Particles\Flux_Particles.cpp">
@@ -1629,6 +1668,15 @@
     <ClInclude Include="..\..\..\Zenith\AssetHandling\Zenith_AssetHandler.h">
       <Filter>Zenith\AssetHandling</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\AssetHandling\Zenith_MeshAsset.h">
+      <Filter>Zenith\AssetHandling</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\AssetHandling\Zenith_ModelAsset.h">
+      <Filter>Zenith\AssetHandling</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\AssetHandling\Zenith_SkeletonAsset.h">
+      <Filter>Zenith\AssetHandling</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\..\Zenith\Collections\Zenith_CircularQueue.h">
       <Filter>Zenith\Collections</Filter>
     </ClInclude>
@@ -1667,6 +1715,9 @@
     </ClInclude>
     <ClInclude Include="..\..\..\Zenith\DebugVariables\Zenith_DebugVariables.h">
       <Filter>Zenith\DebugVariables</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\Editor\Zenith_AnimationStateMachineEditor.h">
+      <Filter>Zenith\Editor</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\Zenith\Editor\Zenith_Editor.h">
       <Filter>Zenith\Editor</Filter>
@@ -1743,6 +1794,9 @@
     <ClInclude Include="..\..\..\Zenith\Flux\Flux_MaterialAsset.h">
       <Filter>Zenith\Flux</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\Flux\Flux_ModelInstance.h">
+      <Filter>Zenith\Flux</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\..\Zenith\Flux\Flux_RenderTargets.h">
       <Filter>Zenith\Flux</Filter>
     </ClInclude>
@@ -1755,10 +1809,34 @@
     <ClInclude Include="..\..\..\Zenith\Flux\Gizmos\Flux_Gizmos.h">
       <Filter>Zenith\Flux\Gizmos</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\Flux\MeshAnimation\Flux_AnimationClip.h">
+      <Filter>Zenith\Flux\MeshAnimation</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\Flux\MeshAnimation\Flux_AnimationController.h">
+      <Filter>Zenith\Flux\MeshAnimation</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\Flux\MeshAnimation\Flux_AnimationStateMachine.h">
+      <Filter>Zenith\Flux\MeshAnimation</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\Flux\MeshAnimation\Flux_BlendTree.h">
+      <Filter>Zenith\Flux\MeshAnimation</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\Flux\MeshAnimation\Flux_BonePose.h">
+      <Filter>Zenith\Flux\MeshAnimation</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\Flux\MeshAnimation\Flux_InverseKinematics.h">
+      <Filter>Zenith\Flux\MeshAnimation</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\..\Zenith\Flux\MeshAnimation\Flux_MeshAnimation.h">
       <Filter>Zenith\Flux\MeshAnimation</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\Flux\MeshAnimation\Flux_SkeletonInstance.h">
+      <Filter>Zenith\Flux\MeshAnimation</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\..\Zenith\Flux\MeshGeometry\Flux_MeshGeometry.h">
+      <Filter>Zenith\Flux\MeshGeometry</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\Flux\MeshGeometry\Flux_MeshInstance.h">
       <Filter>Zenith\Flux\MeshGeometry</Filter>
     </ClInclude>
     <ClInclude Include="..\..\..\Zenith\Flux\Particles\Flux_Particles.h">

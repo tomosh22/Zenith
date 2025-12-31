@@ -24,7 +24,7 @@ extern void ExportHeightmap();
 
 int main()
 {
-	//ExportAllMeshes();
+	ExportAllMeshes();
 	//ExportAllTextures();
 	//ExportHeightmap();
 

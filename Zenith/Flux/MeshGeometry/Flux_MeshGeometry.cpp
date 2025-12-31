@@ -3,6 +3,8 @@
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "Flux/Flux.h"
 #include "DataStream/Zenith_DataStream.h"
+#include "Flux/MeshAnimation/Flux_MeshAnimation.h"
+#include "Flux/MeshAnimation/Flux_AnimationController.h"
 
 void Flux_MeshGeometry::GenerateFullscreenQuad(Flux_MeshGeometry& xGeometryOut)
 {
@@ -446,4 +448,28 @@ Zenith_Maths::Vector3 Flux_MeshGeometry::GenerateTangent(uint32_t a, uint32_t b,
 	Zenith_Maths::Vector3 biCross = glm::cross(xTangent, xNormal);
 
 	return std::move(Zenith_Maths::Vector3(xTangent.x, xTangent.y, xTangent.z));
+}
+
+const Flux_DynamicConstantBuffer* Flux_MeshGeometry::GetBoneBuffer() const
+{
+	// Only use new animation controller if it has actual animation content
+	// This prevents an empty controller from overriding the working legacy system
+	if (m_pxAnimationController && m_pxAnimationController->HasAnimationContent())
+	{
+		return &m_pxAnimationController->GetBoneBuffer();
+	}
+
+	// Fall back to legacy animation system
+	if (m_pxAnimation)
+	{
+		return &m_pxAnimation->m_xBoneBuffer;
+	}
+
+	// Last resort: return the controller's buffer even if empty (for meshes without legacy animation)
+	if (m_pxAnimationController)
+	{
+		return &m_pxAnimationController->GetBoneBuffer();
+	}
+
+	return nullptr;
 }

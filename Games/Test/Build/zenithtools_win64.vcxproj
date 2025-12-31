@@ -704,6 +704,7 @@
     <ClInclude Include="..\..\..\Tools\Zenith_Tools_TerrainExport.h" />
     <ClInclude Include="..\..\..\Tools\Zenith_Tools_TextureExport.h" />
     <ClInclude Include="..\..\..\Zenith\Flux\MeshGeometry\Flux_MeshGeometry.h" />
+    <ClInclude Include="..\..\..\Zenith\Flux\MeshGeometry\Flux_MeshInstance.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\..\Tools\Middleware\assimp\include\stb_vorbis.c" />
@@ -711,6 +712,7 @@
     <ClCompile Include="..\..\..\Tools\Zenith_Tools_TerrainExport.cpp" />
     <ClCompile Include="..\..\..\Tools\Zenith_Tools_TextureExport.cpp" />
     <ClCompile Include="..\..\..\Zenith\Flux\MeshGeometry\Flux_MeshGeometry.cpp" />
+    <ClCompile Include="..\..\..\Zenith\Flux\MeshGeometry\Flux_MeshInstance.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

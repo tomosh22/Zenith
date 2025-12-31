@@ -2,6 +2,9 @@
 #include "Flux/Flux_Types.h"
 #include "Flux/Flux_Buffers.h"
 
+// Forward declarations
+class Flux_AnimationController;
+
 #define MAX_BONES_PER_VERTEX 4
 
 class Flux_MeshGeometry
@@ -131,4 +134,14 @@ public:
 
 
 	class Flux_MeshAnimation* m_pxAnimation = nullptr;
+
+	// New animation system - AnimationController provides state machines, blending, and IK
+	// When both are present, prefer the new controller for rendering
+	Flux_AnimationController* m_pxAnimationController = nullptr;
+
+	// Check if this mesh has any animation system available
+	bool HasAnimation() const { return m_pxAnimation != nullptr || m_pxAnimationController != nullptr; }
+
+	// Get bone buffer for rendering - prefers new controller if available
+	const Flux_DynamicConstantBuffer* GetBoneBuffer() const;
 };

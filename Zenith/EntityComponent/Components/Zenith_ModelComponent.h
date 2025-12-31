@@ -7,6 +7,17 @@
 #include "AssetHandling/Zenith_AssetHandler.h"
 #include "Physics/Zenith_PhysicsMeshGenerator.h"
 
+// Forward declarations for new asset/instance system
+class Zenith_ModelAsset;
+class Flux_ModelInstance;
+class Flux_MeshInstance;
+class Flux_SkeletonInstance;
+
+// Forward declarations for animation system
+class Flux_AnimationController;
+class Flux_AnimationStateMachine;
+class Flux_IKSolver;
+
 #ifdef ZENITH_TOOLS
 #include "imgui.h"
 #include "EntityComponent/Zenith_ComponentRegistry.h"
@@ -23,6 +34,9 @@ class Zenith_ModelComponent
 {
 public:
 
+	//=========================================================================
+	// Legacy MeshEntry structure (kept for backward compatibility)
+	//=========================================================================
 	struct MeshEntry
 	{
 		Flux_MeshGeometry* m_pxGeometry;
@@ -34,42 +48,126 @@ public:
 	{
 	};
 
-	~Zenith_ModelComponent()
-	{
-		// Always clean up assets we created - they will be recreated fresh on scene reload
-		extern bool Zenith_ModelComponent_ShouldDeleteAssets();
+	~Zenith_ModelComponent();
 
-		if (Zenith_ModelComponent_ShouldDeleteAssets())
-		{
-			// Clean up any textures and materials that were created by LoadMeshesFromDir
-			for (uint32_t u = 0; u < m_xCreatedTextures.GetSize(); u++)
-			{
-				Zenith_AssetHandler::DeleteTexture(m_xCreatedTextures.Get(u));
-			}
-			for (uint32_t u = 0; u < m_xCreatedMaterials.GetSize(); u++)
-			{
-				// NOTE: Flux_MaterialAsset manages its own lifecycle
-				// Materials will be unloaded when the registry is cleared
-				// We just need to delete the material instance itself
-				delete m_xCreatedMaterials.Get(u);
-			}
-			for (uint32_t u = 0; u < m_xCreatedMeshes.GetSize(); u++)
-			{
-				Zenith_AssetHandler::DeleteMesh(m_xCreatedMeshes.Get(u));
-			}
-		}
+	//=========================================================================
+	// New Model Instance API (primary interface)
+	//=========================================================================
 
-		// Clean up physics mesh if it was generated
-		ClearPhysicsMesh();
-	}
+	/**
+	 * Load model from .zmodel file
+	 * Creates a Flux_ModelInstance from the asset
+	 * @param strPath Path to .zmodel file
+	 */
+	void LoadModel(const std::string& strPath);
 
-	// Serialization methods for Zenith_DataStream
+	/**
+	 * Clear the current model and release resources
+	 */
+	void ClearModel();
+
+	/**
+	 * Check if a model is loaded
+	 */
+	bool HasModel() const { return m_pxModelInstance != nullptr; }
+
+	/**
+	 * Get the model instance
+	 */
+	Flux_ModelInstance* GetModelInstance() const { return m_pxModelInstance; }
+
+	/**
+	 * Get the path to the loaded .zmodel file
+	 */
+	const std::string& GetModelPath() const { return m_strModelPath; }
+
+	//=========================================================================
+	// Rendering Helpers (work with both new and legacy systems)
+	//=========================================================================
+
+	/**
+	 * Get number of meshes in the model
+	 */
+	uint32_t GetNumMeshes() const;
+
+	/**
+	 * Get mesh instance at index (new system)
+	 * Returns nullptr if using legacy system
+	 */
+	Flux_MeshInstance* GetMeshInstance(uint32_t uIndex) const;
+
+	/**
+	 * Get material at index
+	 */
+	Flux_MaterialAsset* GetMaterial(uint32_t uIndex) const;
+
+	/**
+	 * Check if model has skeleton (is animated)
+	 */
+	bool HasSkeleton() const;
+
+	/**
+	 * Get skeleton instance (new system)
+	 * Returns nullptr if using legacy system or no skeleton
+	 */
+	Flux_SkeletonInstance* GetSkeletonInstance() const;
+
+	//=========================================================================
+	// Animation System Integration
+	//=========================================================================
+
+	/**
+	 * Get/create animation controller
+	 * Works with both new skeleton instance and legacy mesh geometry
+	 */
+	Flux_AnimationController* GetOrCreateAnimationController();
+
+	/**
+	 * Get animation controller (returns nullptr if not created)
+	 */
+	Flux_AnimationController* GetAnimationController() const { return m_pxAnimController; }
+
+	/**
+	 * Update animation (call each frame)
+	 */
+	void Update(float fDt);
+
+	// Animation convenience methods
+	void PlayAnimation(const std::string& strClipName, float fBlendTime = 0.15f);
+	void StopAnimations();
+	void SetAnimationsPaused(bool bPaused);
+	bool AreAnimationsPaused() const;
+	void SetAnimationPlaybackSpeed(float fSpeed);
+	float GetAnimationPlaybackSpeed() const;
+
+	// State machine parameter shortcuts
+	void SetAnimationFloat(const std::string& strName, float fValue);
+	void SetAnimationInt(const std::string& strName, int32_t iValue);
+	void SetAnimationBool(const std::string& strName, bool bValue);
+	void SetAnimationTrigger(const std::string& strName);
+
+	// IK target shortcuts
+	void SetIKTarget(const std::string& strChainName, const Zenith_Maths::Vector3& xPosition, float fWeight = 1.0f);
+	void ClearIKTarget(const std::string& strChainName);
+
+	// Set world matrix for IK (called automatically if TransformComponent exists)
+	void UpdateAnimationWorldMatrix();
+
+	//=========================================================================
+	// Serialization
+	//=========================================================================
+
 	void WriteToDataStream(Zenith_DataStream& xStream) const;
 	void ReadFromDataStream(Zenith_DataStream& xStream);
+
+	//=========================================================================
+	// Legacy API (kept for backward compatibility)
+	//=========================================================================
 
 	//#TO not the cleanest code in the world
 	//takes a filename in the form meshname_texturetype_materialindex (no extension)
 	//and returns materialindex, for example Assets/Meshes/foo_bar_5 would return 5
+	[[deprecated("Use LoadModel() instead")]]
 	static uint32_t GetMaterialIndexFromTextureName(const std::string& strFilename)
 	{
 		std::string strFileCopy(strFilename);
@@ -92,6 +190,7 @@ public:
 	}
 
 	//#TO does a similar thing to above, returns N from a filename in the format meshname_Mesh?_MatN
+	[[deprecated("Use LoadModel() instead")]]
 	static uint32_t GetMaterialIndexFromMeshName(const std::string& strFilename)
 	{
 		std::string strSubstr = strFilename.substr(strFilename.find("Mat") + 3);
@@ -105,204 +204,33 @@ public:
 		return uRet;
 	}
 
-	void LoadMeshesFromDir(const std::filesystem::path& strPath, Flux_MaterialAsset* const pxOverrideMaterial = nullptr, u_int uRetainAttributeBits = 0, const bool bUploadToGPU = true)
-	{
-		static u_int ls_uCount = 0;
-		ls_uCount++;
-		const std::string strLeaf = strPath.stem().string();
+	[[deprecated("Use LoadModel() instead")]]
+	void LoadMeshesFromDir(const std::filesystem::path& strPath, Flux_MaterialAsset* const pxOverrideMaterial = nullptr, u_int uRetainAttributeBits = 0, const bool bUploadToGPU = true);
 
-		// If physics mesh auto-generation is enabled, ensure position data is retained
-		if (g_xPhysicsMeshConfig.m_bAutoGenerate)
-		{
-			uRetainAttributeBits |= (1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__POSITION);
-		}
-
-		// Track materials created in this call (indexed by material index from filenames)
-		std::unordered_map<uint32_t, Flux_MaterialAsset*> xMaterialMap;
-		
-		// Track texture paths per material index for serialization
-		std::unordered_map<uint32_t, std::string> xDiffusePathMap;
-		std::unordered_map<uint32_t, std::string> xNormalPathMap;
-		std::unordered_map<uint32_t, std::string> xRoughnessMetallicPathMap;
-
-		//#TO iterate over textures first to create materials
-		if (!pxOverrideMaterial)
-		{
-			for (auto& xFile : std::filesystem::directory_iterator(strPath))
-			{
-				if (xFile.path().extension() == ZENITH_TEXTURE_EXT)
-				{
-					const std::string strFilepath = xFile.path().string();
-					const std::string strFilename = xFile.path().stem().string();
-					Zenith_AssetHandler::TextureData xTexData = Zenith_AssetHandler::LoadTexture2DFromFile(strFilepath.c_str());
-					Flux_Texture* pxTexture = Zenith_AssetHandler::AddTexture(xTexData);
-					xTexData.FreeAllocatedData();
-
-					if (!pxTexture)
-					{
-						Zenith_Log("[ModelComponent] Failed to load texture: %s", strFilepath.c_str());
-						continue;
-					}
-					
-					// Store source path in texture for reference
-					pxTexture->m_strSourcePath = strFilepath;
-
-					m_xCreatedTextures.PushBack(pxTexture);
-
-					const uint32_t uMatIndex = GetMaterialIndexFromTextureName(strFilename);
-
-					// Create material if not already created for this index
-					if (xMaterialMap.find(uMatIndex) == xMaterialMap.end())
-					{
-						Flux_MaterialAsset* pxMat = Flux_MaterialAsset::Create("Material_" + std::to_string(uMatIndex));
-						if (pxMat)
-						{
-							xMaterialMap[uMatIndex] = pxMat;
-							m_xCreatedMaterials.PushBack(pxMat);
-						}
-					}
-
-					Flux_MaterialAsset* pxMat = xMaterialMap[uMatIndex];
-					if (!pxMat) continue;
-
-					// Set texture paths (Flux_MaterialAsset loads textures on demand)
-					if (strFilename.find("Diffuse") != std::string::npos)
-					{
-						pxMat->SetDiffuseTexturePath(strFilepath);
-						xDiffusePathMap[uMatIndex] = strFilepath;
-					}
-					else if (strFilename.find("Specular") != std::string::npos)
-					{
-						Zenith_Assert(false, "Unhandled texture type");
-					}
-					else if (strFilename.find("Ambient") != std::string::npos)
-					{
-						Zenith_Assert(false, "Unhandled texture type");
-					}
-					else if (strFilename.find("Emissive") != std::string::npos)
-					{
-						pxMat->SetEmissiveTexturePath(strFilepath);
-					}
-					else if (strFilename.find("Height") != std::string::npos)
-					{
-						Zenith_Assert(false, "Unhandled texture type");
-					}
-					else if (strFilename.find("Normals") != std::string::npos)
-					{
-						pxMat->SetNormalTexturePath(strFilepath);
-						xNormalPathMap[uMatIndex] = strFilepath;
-					}
-					else if (strFilename.find("Shininess") != std::string::npos)
-					{
-						Zenith_Assert(false, "Unhandled texture type");
-					}
-					else if (strFilename.find("Opacity") != std::string::npos)
-					{
-						Zenith_Assert(false, "Unhandled texture type");
-					}
-					else if (strFilename.find("Displacement") != std::string::npos)
-					{
-						Zenith_Assert(false, "Unhandled texture type");
-					}
-					else if (strFilename.find("Lightmap") != std::string::npos)
-					{
-						Zenith_Assert(false, "Unhandled texture type");
-					}
-					else if (strFilename.find("Reflection") != std::string::npos)
-					{
-						Zenith_Assert(false, "Unhandled texture type");
-					}
-					else if (strFilename.find("BaseColor") != std::string::npos)
-					{
-						pxMat->SetDiffuseTexturePath(strFilepath);
-						xDiffusePathMap[uMatIndex] = strFilepath;
-					}
-					else if (strFilename.find("Normal_Camera") != std::string::npos)
-					{
-						Zenith_Assert(false, "Unhandled texture type");
-					}
-					else if (strFilename.find("Metallic") != std::string::npos)
-					{
-						pxMat->SetRoughnessMetallicTexturePath(strFilepath);
-						xRoughnessMetallicPathMap[uMatIndex] = strFilepath;
-					}
-					else if (strFilename.find("Roughness") != std::string::npos)
-					{
-						pxMat->SetRoughnessMetallicTexturePath(strFilepath);
-						xRoughnessMetallicPathMap[uMatIndex] = strFilepath;
-					}
-					else if (strFilename.find("Occlusion") != std::string::npos)
-					{
-						pxMat->SetOcclusionTexturePath(strFilepath);
-					}
-					else
-					{
-						Zenith_Assert(false, "Unhandled texture type");
-					}
-				}
-			}
-		}
-
-		//#TO then iterate over meshes
-		for (auto& xFile : std::filesystem::directory_iterator(strPath))
-		{
-			if (xFile.path().extension() == ZENITH_MESH_EXT)
-			{
-				Flux_MeshGeometry* pxMesh = Zenith_AssetHandler::AddMeshFromFile(
-					xFile.path().string().c_str(), uRetainAttributeBits, bUploadToGPU);
-
-				if (!pxMesh)
-				{
-					Zenith_Log("[ModelComponent] Failed to load mesh: %s", xFile.path().string().c_str());
-					continue;
-				}
-
-				m_xCreatedMeshes.PushBack(pxMesh);
-
-				const uint32_t uMatIndex = GetMaterialIndexFromMeshName(xFile.path().stem().string());
-
-				if (pxOverrideMaterial)
-				{
-					AddMeshEntry(*pxMesh, *pxOverrideMaterial);
-				}
-				else
-				{
-					// Find material by index
-					auto it = xMaterialMap.find(uMatIndex);
-					if (it != xMaterialMap.end() && it->second)
-					{
-						Flux_MaterialAsset* pxMat = it->second;
-						// Set the base color from the mesh's material color
-						pxMat->SetBaseColor(pxMesh->m_xMaterialColor);
-						AddMeshEntry(*pxMesh, *pxMat);
-					}
-					else
-					{
-						// No material found, use blank material
-						AddMeshEntry(*pxMesh, *Flux_Graphics::s_pxBlankMaterial);
-					}
-				}
-			}
-		}
-
-		// Generate physics mesh from loaded meshes if auto-generation is enabled
-		if (g_xPhysicsMeshConfig.m_bAutoGenerate && m_xMeshEntries.GetSize() > 0)
-		{
-			GeneratePhysicsMesh();
-		}
-	}
-
+	[[deprecated("Use new model instance API instead")]]
 	void AddMeshEntry(Flux_MeshGeometry& xGeometry, Flux_MaterialAsset& xMaterial) { m_xMeshEntries.PushBack({ &xGeometry, &xMaterial }); }
 
+	[[deprecated("Use GetMeshInstance() instead")]]
 	Flux_MeshGeometry& GetMeshGeometryAtIndex(const uint32_t uIndex) const { return *m_xMeshEntries.Get(uIndex).m_pxGeometry; }
+
+	[[deprecated("Use GetMaterial() instead")]]
 	const Flux_MaterialAsset& GetMaterialAtIndex(const uint32_t uIndex) const { return *m_xMeshEntries.Get(uIndex).m_pxMaterial; }
+
+	[[deprecated("Use GetMaterial() instead")]]
 	Flux_MaterialAsset& GetMaterialAtIndex(const uint32_t uIndex) { return *m_xMeshEntries.Get(uIndex).m_pxMaterial; }
 
+	[[deprecated("Use GetNumMeshes() instead")]]
 	const uint32_t GetNumMeshEntries() const { return m_xMeshEntries.GetSize(); }
 
 	Zenith_Entity GetParentEntity() const { return m_xParentEntity; }
 
-	// Physics mesh generation and access
+	// Check if using new model instance API vs legacy mesh entries
+	bool IsUsingModelInstance() const { return m_pxModelInstance != nullptr; }
+
+	//=========================================================================
+	// Physics Mesh
+	//=========================================================================
+
 	void GeneratePhysicsMesh(PhysicsMeshQuality eQuality = PHYSICS_MESH_QUALITY_MEDIUM);
 	void GeneratePhysicsMeshWithConfig(const PhysicsMeshConfig& xConfig);
 	Flux_MeshGeometry* GetPhysicsMesh() const { return m_pxPhysicsMesh; }
@@ -337,182 +265,38 @@ public:
 
 private:
 	// Helper to render a single texture slot with drag-drop target
-	void RenderTextureSlot(const char* szLabel, Flux_MaterialAsset& xMaterial, uint32_t uMeshIdx, TextureSlotType eSlot)
-	{
-		ImGui::PushID(szLabel);
-
-		// Get current texture (if any) and its path
-		const Flux_Texture* pxCurrentTexture = nullptr;
-		std::string strCurrentPath;
-		switch (eSlot)
-		{
-		case TEXTURE_SLOT_DIFFUSE:
-			pxCurrentTexture = xMaterial.GetDiffuseTexture();
-			strCurrentPath = xMaterial.GetDiffuseTexturePath();
-			break;
-		case TEXTURE_SLOT_NORMAL:
-			pxCurrentTexture = xMaterial.GetNormalTexture();
-			strCurrentPath = xMaterial.GetNormalTexturePath();
-			break;
-		case TEXTURE_SLOT_ROUGHNESS_METALLIC:
-			pxCurrentTexture = xMaterial.GetRoughnessMetallicTexture();
-			strCurrentPath = xMaterial.GetRoughnessMetallicTexturePath();
-			break;
-		case TEXTURE_SLOT_OCCLUSION:
-			pxCurrentTexture = xMaterial.GetOcclusionTexture();
-			strCurrentPath = xMaterial.GetOcclusionTexturePath();
-			break;
-		case TEXTURE_SLOT_EMISSIVE:
-			pxCurrentTexture = xMaterial.GetEmissiveTexture();
-			strCurrentPath = xMaterial.GetEmissiveTexturePath();
-			break;
-		}
-
-		std::string strTextureName = "(none)";
-		if (pxCurrentTexture && pxCurrentTexture->m_xVRAMHandle.IsValid())
-		{
-			// Show filename from path if available
-			if (!strCurrentPath.empty())
-			{
-				std::filesystem::path xPath(strCurrentPath);
-				strTextureName = xPath.filename().string();
-			}
-			else
-			{
-				strTextureName = "(loaded)";
-			}
-		}
-
-		// Display slot label and current texture
-		ImGui::Text("%s:", szLabel);
-		ImGui::SameLine();
-
-		// Drop zone button
-		ImVec2 xButtonSize(150, 20);
-		ImGui::Button(strTextureName.c_str(), xButtonSize);
-
-		// Visual feedback when hovering with payload
-		if (ImGui::BeginDragDropTarget())
-		{
-			// Accept texture payloads
-			if (const ImGuiPayload* pPayload = ImGui::AcceptDragDropPayload(DRAGDROP_PAYLOAD_TEXTURE))
-			{
-				const DragDropFilePayload* pFilePayload =
-					static_cast<const DragDropFilePayload*>(pPayload->Data);
-
-				Zenith_Log("[ModelComponent] Texture dropped on %s: %s",
-					szLabel, pFilePayload->m_szFilePath);
-
-				// Load and assign texture - creates new material instance to avoid modifying shared materials
-				AssignTextureToSlot(pFilePayload->m_szFilePath, uMeshIdx, eSlot);
-			}
-
-			ImGui::EndDragDropTarget();
-		}
-
-		// Tooltip showing full path
-		if (ImGui::IsItemHovered())
-		{
-			if (!strCurrentPath.empty())
-			{
-				ImGui::SetTooltip("Drop a .ztxtr texture here\nPath: %s", strCurrentPath.c_str());
-			}
-			else
-			{
-				ImGui::SetTooltip("Drop a .ztxtr texture here\nCurrent: %s", strTextureName.c_str());
-			}
-		}
-
-		ImGui::PopID();
-	}
+	void RenderTextureSlot(const char* szLabel, Flux_MaterialAsset& xMaterial, uint32_t uMeshIdx, TextureSlotType eSlot);
 
 	// Helper to load texture and assign to material slot
-	// Note: This creates a new material instance for this mesh entry to avoid modifying shared materials
-	void AssignTextureToSlot(const char* szFilePath, uint32_t uMeshIdx, TextureSlotType eSlot)
-	{
-		// Load texture from file
-		Zenith_AssetHandler::TextureData xTexData =
-			Zenith_AssetHandler::LoadTexture2DFromFile(szFilePath);
-		Flux_Texture* pxTexture = Zenith_AssetHandler::AddTexture(xTexData);
-		xTexData.FreeAllocatedData();
-
-		if (!pxTexture)
-		{
-			Zenith_Log("[ModelComponent] Failed to load texture: %s", szFilePath);
-			return;
-		}
-		
-		// Store the source path in the texture
-		pxTexture->m_strSourcePath = szFilePath;
-
-		m_xCreatedTextures.PushBack(pxTexture);
-		Zenith_Log("[ModelComponent] Loaded texture from: %s", szFilePath);
-
-		// Get current material to copy its properties
-		Flux_MaterialAsset* pxOldMaterial = m_xMeshEntries.Get(uMeshIdx).m_pxMaterial;
-
-		// Create new material instance
-		Flux_MaterialAsset* pxNewMaterial = Flux_MaterialAsset::Create("Material_" + std::to_string(uMeshIdx));
-		if (!pxNewMaterial)
-		{
-			Zenith_Log("[ModelComponent] Failed to create new material instance");
-			return;
-		}
-
-		m_xCreatedMaterials.PushBack(pxNewMaterial);
-		Zenith_Log("[ModelComponent] Created new material instance");
-
-		// Copy existing texture paths from old material to new material
-		if (pxOldMaterial)
-		{
-			if (!pxOldMaterial->GetDiffuseTexturePath().empty())
-				pxNewMaterial->SetDiffuseTexturePath(pxOldMaterial->GetDiffuseTexturePath());
-			if (!pxOldMaterial->GetNormalTexturePath().empty())
-				pxNewMaterial->SetNormalTexturePath(pxOldMaterial->GetNormalTexturePath());
-			if (!pxOldMaterial->GetRoughnessMetallicTexturePath().empty())
-				pxNewMaterial->SetRoughnessMetallicTexturePath(pxOldMaterial->GetRoughnessMetallicTexturePath());
-			if (!pxOldMaterial->GetOcclusionTexturePath().empty())
-				pxNewMaterial->SetOcclusionTexturePath(pxOldMaterial->GetOcclusionTexturePath());
-			if (!pxOldMaterial->GetEmissiveTexturePath().empty())
-				pxNewMaterial->SetEmissiveTexturePath(pxOldMaterial->GetEmissiveTexturePath());
-
-			pxNewMaterial->SetBaseColor(pxOldMaterial->GetBaseColor());
-		}
-
-		// Now set the new texture on the appropriate slot WITH the path
-		std::string strPath(szFilePath);
-		switch (eSlot)
-		{
-		case TEXTURE_SLOT_DIFFUSE:
-			pxNewMaterial->SetDiffuseTexturePath(strPath);
-			Zenith_Log("[ModelComponent] Set diffuse texture");
-			break;
-		case TEXTURE_SLOT_NORMAL:
-			pxNewMaterial->SetNormalTexturePath(strPath);
-			Zenith_Log("[ModelComponent] Set normal texture");
-			break;
-		case TEXTURE_SLOT_ROUGHNESS_METALLIC:
-			pxNewMaterial->SetRoughnessMetallicTexturePath(strPath);
-			Zenith_Log("[ModelComponent] Set roughness/metallic texture");
-			break;
-		case TEXTURE_SLOT_OCCLUSION:
-			pxNewMaterial->SetOcclusionTexturePath(strPath);
-			Zenith_Log("[ModelComponent] Set occlusion texture");
-			break;
-		case TEXTURE_SLOT_EMISSIVE:
-			pxNewMaterial->SetEmissiveTexturePath(strPath);
-			Zenith_Log("[ModelComponent] Set emissive texture");
-			break;
-		}
-
-		// Update the mesh entry to use the new material
-		m_xMeshEntries.Get(uMeshIdx).m_pxMaterial = pxNewMaterial;
-	}
+	void AssignTextureToSlot(const char* szFilePath, uint32_t uMeshIdx, TextureSlotType eSlot);
 public:
 #endif
 
+private:
+	// Helper to read legacy mesh entries from DataStream (used by both tools and non-tools builds)
+	void ReadLegacyMeshEntries(Zenith_DataStream& xStream, uint32_t uVersion);
+
+public:
+
 //private:
 	Zenith_Entity m_xParentEntity;
+
+	//=========================================================================
+	// New Model Instance System
+	//=========================================================================
+
+	// Single model instance (replaces m_xMeshEntries for new system)
+	Flux_ModelInstance* m_pxModelInstance = nullptr;
+
+	// Animation controller (moved from mesh to component level)
+	Flux_AnimationController* m_pxAnimController = nullptr;
+
+	// Path to the .zmodel file (for serialization)
+	std::string m_strModelPath;
+
+	//=========================================================================
+	// Legacy System (kept for backward compatibility)
+	//=========================================================================
 
 	Zenith_Vector<MeshEntry> m_xMeshEntries;
 	Flux_MeshGeometry* m_pxPhysicsMesh = nullptr;

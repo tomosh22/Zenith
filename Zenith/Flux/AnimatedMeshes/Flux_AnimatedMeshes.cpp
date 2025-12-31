@@ -1,12 +1,14 @@
 #include "Zenith.h"
 
 #include "Flux/AnimatedMeshes/Flux_AnimatedMeshes.h"
-#include "Flux/MeshAnimation/Flux_MeshAnimation.h"
 
 #include "Flux/Flux.h"
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_Buffers.h"
+#include "Flux/Flux_ModelInstance.h"
+#include "Flux/MeshGeometry/Flux_MeshInstance.h"
+#include "Flux/MeshAnimation/Flux_SkeletonInstance.h"
 #include "Flux/Shadows/Flux_Shadows.h"
 #include "Flux/DeferredShading/Flux_DeferredShading.h"
 #include "AssetHandling/Zenith_AssetHandler.h"
@@ -133,35 +135,77 @@ void Flux_AnimatedMeshes::RenderToGBuffer(void*)
 
 	g_xCommandList.AddCommand<Flux_CommandBeginBind>(1);
 
+	static bool s_bLoggedOnce = false;
 	for (Zenith_Vector<Zenith_ModelComponent*>::Iterator xIt(xModels); !xIt.Done(); xIt.Next())
 	{
-		Zenith_ModelComponent* pxModel = xIt.GetData();
-		for (uint32_t uMesh = 0; uMesh < pxModel->GetNumMeshEntries(); uMesh++)
+		Zenith_ModelComponent* pxModelComponent = xIt.GetData();
+
+		// Skip components without a model or skeleton (not animated)
+		if (!pxModelComponent->HasModel() || !pxModelComponent->HasSkeleton())
 		{
-			const Flux_MeshGeometry& xMesh = pxModel->GetMeshGeometryAtIndex(uMesh);
-			
-			if (!xMesh.GetNumBones() || !xMesh.m_pxAnimation)
+			continue;
+		}
+
+		Flux_ModelInstance* pxModelInstance = pxModelComponent->GetModelInstance();
+		Flux_SkeletonInstance* pxSkeleton = pxModelComponent->GetSkeletonInstance();
+
+		if (!pxModelInstance || !pxSkeleton)
+		{
+			continue;
+		}
+
+		if (!s_bLoggedOnce)
+		{
+			Zenith_Log("[AnimatedMeshes] Rendering animated model - meshes: %u", pxModelInstance->GetNumMeshes());
+			for (uint32_t uDbg = 0; uDbg < pxModelInstance->GetNumMeshes(); uDbg++)
+			{
+				Flux_MeshInstance* pxDbgMesh = pxModelInstance->GetSkinnedMeshInstance(uDbg);
+				if (pxDbgMesh)
+				{
+					Zenith_Log("[AnimatedMeshes]   SkinnedMesh %u: %u verts, %u indices", uDbg, pxDbgMesh->GetNumVerts(), pxDbgMesh->GetNumIndices());
+				}
+				else
+				{
+					Zenith_Log("[AnimatedMeshes]   SkinnedMesh %u: NULL (no skinning data)", uDbg);
+				}
+			}
+			s_bLoggedOnce = true;
+		}
+
+		// Get bone buffer from skeleton instance
+		const Flux_DynamicConstantBuffer& xBoneBuffer = pxSkeleton->GetBoneBuffer();
+
+		for (uint32_t uMesh = 0; uMesh < pxModelInstance->GetNumMeshes(); uMesh++)
+		{
+			// Use skinned mesh instance (104-byte format with bone indices/weights)
+			Flux_MeshInstance* pxMeshInstance = pxModelInstance->GetSkinnedMeshInstance(uMesh);
+			if (!pxMeshInstance)
 			{
 				continue;
 			}
-			
-			g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&xMesh.GetVertexBuffer());
-			g_xCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&xMesh.GetIndexBuffer());
+
+			g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&pxMeshInstance->GetVertexBuffer());
+			g_xCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&pxMeshInstance->GetIndexBuffer());
 
 			Zenith_Maths::Matrix4 xModelMatrix;
-			pxModel->GetParentEntity().GetComponent<Zenith_TransformComponent>().BuildModelMatrix(xModelMatrix);
+			pxModelComponent->GetParentEntity().GetComponent<Zenith_TransformComponent>().BuildModelMatrix(xModelMatrix);
 			g_xCommandList.AddCommand<Flux_CommandPushConstant>(&xModelMatrix, sizeof(xModelMatrix));
-			Flux_MaterialAsset& xMaterial = pxModel->GetMaterialAtIndex(uMesh);
 
-			g_xCommandList.AddCommand<Flux_CommandBindCBV>(&xMesh.m_pxAnimation->m_xBoneBuffer.GetCBV(), 0);
+			Flux_MaterialAsset* pxMaterial = pxModelInstance->GetMaterial(uMesh);
+			if (!pxMaterial)
+			{
+				pxMaterial = Flux_Graphics::s_pxBlankMaterial;
+			}
 
-			g_xCommandList.AddCommand<Flux_CommandBindSRV>(&xMaterial.GetDiffuseTexture()->m_xSRV, 1);
-			g_xCommandList.AddCommand<Flux_CommandBindSRV>(&xMaterial.GetNormalTexture()->m_xSRV, 2);
-			g_xCommandList.AddCommand<Flux_CommandBindSRV>(&xMaterial.GetRoughnessMetallicTexture()->m_xSRV, 3);
-			g_xCommandList.AddCommand<Flux_CommandBindSRV>(&xMaterial.GetOcclusionTexture()->m_xSRV, 4);
-			g_xCommandList.AddCommand<Flux_CommandBindSRV>(&xMaterial.GetEmissiveTexture()->m_xSRV, 5);
+			g_xCommandList.AddCommand<Flux_CommandBindCBV>(&xBoneBuffer.GetCBV(), 0);
 
-			g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(xMesh.GetNumIndices());
+			g_xCommandList.AddCommand<Flux_CommandBindSRV>(&pxMaterial->GetDiffuseTexture()->m_xSRV, 1);
+			g_xCommandList.AddCommand<Flux_CommandBindSRV>(&pxMaterial->GetNormalTexture()->m_xSRV, 2);
+			g_xCommandList.AddCommand<Flux_CommandBindSRV>(&pxMaterial->GetRoughnessMetallicTexture()->m_xSRV, 3);
+			g_xCommandList.AddCommand<Flux_CommandBindSRV>(&pxMaterial->GetOcclusionTexture()->m_xSRV, 4);
+			g_xCommandList.AddCommand<Flux_CommandBindSRV>(&pxMaterial->GetEmissiveTexture()->m_xSRV, 5);
+
+			g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(pxMeshInstance->GetNumIndices());
 		}
 	}
 
@@ -175,32 +219,44 @@ void Flux_AnimatedMeshes::RenderToShadowMap(Flux_CommandList& xCmdBuf)
 
 	for (Zenith_Vector<Zenith_ModelComponent*>::Iterator xIt(xModels); !xIt.Done(); xIt.Next())
 	{
-		Zenith_ModelComponent* pxModel = xIt.GetData();
-		//#TO_TODO: these 2 should probably be separate components
-		if (!pxModel->GetNumMeshEntries() || !pxModel->GetMeshGeometryAtIndex(0).GetNumBones())
+		Zenith_ModelComponent* pxModelComponent = xIt.GetData();
+
+		// Skip components without a model or skeleton (not animated)
+		if (!pxModelComponent->HasModel() || !pxModelComponent->HasSkeleton())
 		{
 			continue;
 		}
-		for (u_int uMesh = 0; uMesh < pxModel->GetNumMeshEntries(); uMesh++)
+
+		Flux_ModelInstance* pxModelInstance = pxModelComponent->GetModelInstance();
+		Flux_SkeletonInstance* pxSkeleton = pxModelComponent->GetSkeletonInstance();
+
+		if (!pxModelInstance || !pxSkeleton)
 		{
-			const Flux_MeshGeometry& xMesh = pxModel->GetMeshGeometryAtIndex(uMesh);
-			
-			// Skip meshes without valid animation data (can happen after scene reload)
-			if (!xMesh.GetNumBones() || !xMesh.m_pxAnimation)
+			continue;
+		}
+
+		// Get bone buffer from skeleton instance
+		const Flux_DynamicConstantBuffer& xBoneBuffer = pxSkeleton->GetBoneBuffer();
+
+		for (uint32_t uMesh = 0; uMesh < pxModelInstance->GetNumMeshes(); uMesh++)
+		{
+			// Use skinned mesh instance (104-byte format with bone indices/weights)
+			Flux_MeshInstance* pxMeshInstance = pxModelInstance->GetSkinnedMeshInstance(uMesh);
+			if (!pxMeshInstance)
 			{
 				continue;
 			}
-			
-			xCmdBuf.AddCommand<Flux_CommandSetVertexBuffer>(&xMesh.GetVertexBuffer());
-			xCmdBuf.AddCommand<Flux_CommandSetIndexBuffer>(&xMesh.GetIndexBuffer());
+
+			xCmdBuf.AddCommand<Flux_CommandSetVertexBuffer>(&pxMeshInstance->GetVertexBuffer());
+			xCmdBuf.AddCommand<Flux_CommandSetIndexBuffer>(&pxMeshInstance->GetIndexBuffer());
 
 			Zenith_Maths::Matrix4 xModelMatrix;
-			pxModel->GetParentEntity().GetComponent<Zenith_TransformComponent>().BuildModelMatrix(xModelMatrix);
+			pxModelComponent->GetParentEntity().GetComponent<Zenith_TransformComponent>().BuildModelMatrix(xModelMatrix);
 			xCmdBuf.AddCommand<Flux_CommandPushConstant>(&xModelMatrix, sizeof(xModelMatrix));
 
-			xCmdBuf.AddCommand<Flux_CommandBindCBV>(&xMesh.m_pxAnimation->m_xBoneBuffer.GetCBV(), 0);
+			xCmdBuf.AddCommand<Flux_CommandBindCBV>(&xBoneBuffer.GetCBV(), 0);
 
-			xCmdBuf.AddCommand<Flux_CommandDrawIndexed>(xMesh.GetNumIndices());
+			xCmdBuf.AddCommand<Flux_CommandDrawIndexed>(pxMeshInstance->GetNumIndices());
 		}
 	}
 }

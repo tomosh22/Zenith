@@ -23,6 +23,7 @@ void Zenith_EditorAddLogMessage(const char* szMessage, int eLevel)
 #include "Zenith_SelectionSystem.h"
 #include "Zenith_Gizmo.h"
 #include "Zenith_UndoSystem.h"
+#include "Zenith_AnimationStateMachineEditor.h"
 #include "Flux/Gizmos/Flux_Gizmos.h"
 #include "EntityComponent/Zenith_Entity.h"
 #include "EntityComponent/Zenith_Scene.h"
@@ -35,6 +36,8 @@ void Zenith_EditorAddLogMessage(const char* szMessage, int eLevel)
 #include "Input/Zenith_Input.h"
 #include "Flux/Flux_Graphics.h"
 #include "Vulkan/Zenith_Vulkan.h"
+#include "AssetHandling/Zenith_ModelAsset.h"
+#include "Flux/MeshAnimation/Flux_AnimationClip.h"
 
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "imgui.h"
@@ -180,6 +183,7 @@ void Zenith_Editor::Initialise()
 	// Initialize editor subsystems
 	Zenith_SelectionSystem::Initialise();
 	Zenith_Gizmo::Initialise();
+	// Zenith_AnimationStateMachineEditor::Initialize();  // TEMPORARILY DISABLED
 
 	// Initialize editor camera
 	InitializeEditorCamera();
@@ -217,6 +221,7 @@ void Zenith_Editor::Shutdown()
 	Flux_MaterialAsset::Shutdown();
 
 	// Shutdown editor subsystems
+	// Zenith_AnimationStateMachineEditor::Shutdown();  // TEMPORARILY DISABLED
 	Flux_Gizmos::Shutdown();
 	Zenith_Gizmo::Shutdown();
 	Zenith_SelectionSystem::Shutdown();
@@ -539,6 +544,9 @@ void Zenith_Editor::Render()
 	RenderConsolePanel();
 	RenderMaterialEditorPanel();
 
+	// Animation state machine editor
+	// Zenith_AnimationStateMachineEditor::Render();  // TEMPORARILY DISABLED
+
 	// Render gizmos and overlays (after viewport so they appear on top)
 	RenderGizmos();
 }
@@ -684,6 +692,13 @@ void Zenith_Editor::RenderMainMenuBar()
 			{
 				// TODO: Toggle console panel visibility
 				Zenith_Log("Toggle Console - Not yet implemented");
+			}
+
+			ImGui::Separator();
+
+			if (ImGui::MenuItem("Animation State Machine Editor"))
+			{
+				// Zenith_AnimationStateMachineEditor::Toggle();  // TEMPORARILY DISABLED
 			}
 
 			ImGui::EndMenu();
@@ -1438,6 +1453,14 @@ void Zenith_Editor::RenderContentBrowser()
 					{
 						szPayloadType = DRAGDROP_PAYLOAD_PREFAB;
 					}
+					else if (xEntry.m_strExtension == ZENITH_MODEL_EXT)
+					{
+						szPayloadType = DRAGDROP_PAYLOAD_MODEL;
+					}
+					else if (xEntry.m_strExtension == ZENITH_ANIMATION_EXT)
+					{
+						szPayloadType = DRAGDROP_PAYLOAD_ANIMATION;
+					}
 
 					ImGui::SetDragDropPayload(szPayloadType, &xPayload, sizeof(xPayload));
 
@@ -1445,8 +1468,6 @@ void Zenith_Editor::RenderContentBrowser()
 					ImGui::Text("Drag: %s", xEntry.m_strName.c_str());
 
 					ImGui::EndDragDropSource();
-
-					Zenith_Log("[ContentBrowser] Started dragging: %s", xEntry.m_strName.c_str());
 				}
 				
 				// Double-click to open material files in editor

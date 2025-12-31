@@ -10,6 +10,9 @@
     <ClCompile Include="..\..\..\Zenith\Flux\MeshGeometry\Flux_MeshGeometry.cpp">
       <Filter>Zenith\Flux\MeshGeometry</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\..\Zenith\Flux\MeshGeometry\Flux_MeshInstance.cpp">
+      <Filter>Zenith\Flux\MeshGeometry</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\..\Tools\Middleware\assimp\include\assimp\aabb.h">
@@ -1060,6 +1063,9 @@
     <ClInclude Include="..\..\..\Tools\Zenith_Tools_TerrainExport.h" />
     <ClInclude Include="..\..\..\Tools\Zenith_Tools_TextureExport.h" />
     <ClInclude Include="..\..\..\Zenith\Flux\MeshGeometry\Flux_MeshGeometry.h">
+      <Filter>Zenith\Flux\MeshGeometry</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\..\Zenith\Flux\MeshGeometry\Flux_MeshInstance.h">
       <Filter>Zenith\Flux\MeshGeometry</Filter>
     </ClInclude>
   </ItemGroup>

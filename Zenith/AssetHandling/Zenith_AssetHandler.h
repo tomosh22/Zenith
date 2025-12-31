@@ -2,6 +2,12 @@
 #include "Flux/Flux.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "Flux/Flux_MaterialAsset.h"
+#include "AssetHandling/Zenith_MeshAsset.h"
+#include "AssetHandling/Zenith_SkeletonAsset.h"
+#include "AssetHandling/Zenith_ModelAsset.h"
+#include "Flux/Flux_ModelInstance.h"
+#include "Flux/MeshGeometry/Flux_MeshInstance.h"
+#include "Flux/MeshAnimation/Flux_SkeletonInstance.h"
 
 /**
  * Zenith_AssetHandler - Raw Pointer-Based Asset Management
@@ -187,6 +193,108 @@ public:
 	static bool IsValidTexture(const Flux_Texture* pxTexture);
 	static bool IsValidMesh(const Flux_MeshGeometry* pxMesh);
 
+	//--------------------------------------------------------------------------
+	// New Asset System - Mesh/Skeleton/Model Assets and Instances
+	//--------------------------------------------------------------------------
+
+	/**
+	 * Load a mesh asset from file (cached - returns existing if already loaded)
+	 * @param strPath Path to .zmesh file
+	 * @return Loaded asset, or nullptr on failure
+	 */
+	static Zenith_MeshAsset* LoadMeshAsset(const std::string& strPath);
+
+	/**
+	 * Load a skeleton asset from file (cached - returns existing if already loaded)
+	 * @param strPath Path to .zskel file
+	 * @return Loaded asset, or nullptr on failure
+	 */
+	static Zenith_SkeletonAsset* LoadSkeletonAsset(const std::string& strPath);
+
+	/**
+	 * Load a model asset from file (cached - returns existing if already loaded)
+	 * @param strPath Path to .zmodel file
+	 * @return Loaded asset, or nullptr on failure
+	 */
+	static Zenith_ModelAsset* LoadModelAsset(const std::string& strPath);
+
+	/**
+	 * Create a mesh instance from asset (always creates new - caller owns lifetime)
+	 * @param pxAsset Source mesh asset
+	 * @return New mesh instance, or nullptr on failure
+	 */
+	static Flux_MeshInstance* CreateMeshInstance(Zenith_MeshAsset* pxAsset);
+
+	/**
+	 * Create a skeleton instance from asset (always creates new - caller owns lifetime)
+	 * @param pxAsset Source skeleton asset
+	 * @return New skeleton instance, or nullptr on failure
+	 */
+	static Flux_SkeletonInstance* CreateSkeletonInstance(Zenith_SkeletonAsset* pxAsset);
+
+	/**
+	 * Create a model instance from asset (always creates new - caller owns lifetime)
+	 * @param pxAsset Source model asset
+	 * @return New model instance, or nullptr on failure
+	 */
+	static Flux_ModelInstance* CreateModelInstance(Zenith_ModelAsset* pxAsset);
+
+	/**
+	 * High-level loader: loads model asset + creates instance (convenience function)
+	 * @param strPath Path to .zmodel file
+	 * @return New model instance, or nullptr on failure
+	 */
+	static Flux_ModelInstance* LoadAndCreateModelInstance(const std::string& strPath);
+
+	/**
+	 * Unload a mesh asset (decrements ref count, unloads when zero)
+	 * @param pxAsset Asset to unload
+	 */
+	static void UnloadMeshAsset(Zenith_MeshAsset* pxAsset);
+
+	/**
+	 * Unload a skeleton asset (decrements ref count, unloads when zero)
+	 * @param pxAsset Asset to unload
+	 */
+	static void UnloadSkeletonAsset(Zenith_SkeletonAsset* pxAsset);
+
+	/**
+	 * Unload a model asset (decrements ref count, unloads when zero)
+	 * @param pxAsset Asset to unload
+	 */
+	static void UnloadModelAsset(Zenith_ModelAsset* pxAsset);
+
+	/**
+	 * Destroy a mesh instance
+	 * @param pxInstance Instance to destroy (will be deleted)
+	 */
+	static void DestroyMeshInstance(Flux_MeshInstance* pxInstance);
+
+	/**
+	 * Destroy a skeleton instance
+	 * @param pxInstance Instance to destroy (will be deleted)
+	 */
+	static void DestroySkeletonInstance(Flux_SkeletonInstance* pxInstance);
+
+	/**
+	 * Destroy a model instance
+	 * @param pxInstance Instance to destroy (will be deleted)
+	 */
+	static void DestroyModelInstance(Flux_ModelInstance* pxInstance);
+
+	/**
+	 * Clear all new asset caches (called on scene reset)
+	 * Note: This also destroys the cached assets themselves
+	 */
+	static void ClearAllNewAssets();
+
+	/**
+	 * Get count of loaded new assets for diagnostics
+	 */
+	static uint32_t GetLoadedMeshAssetCount();
+	static uint32_t GetLoadedSkeletonAssetCount();
+	static uint32_t GetLoadedModelAssetCount();
+
 private:
 	// Asset pools - fixed-size arrays for all assets
 	static Flux_Texture* s_pxTextures;          // Array of ZENITH_MAX_TEXTURES
@@ -206,4 +314,13 @@ private:
 
 	// Lifecycle logging flag
 	static bool s_bLifecycleLoggingEnabled;
+
+	//--------------------------------------------------------------------------
+	// New Asset System - Path-to-Asset Caches
+	//--------------------------------------------------------------------------
+
+	// Cached asset maps (path -> asset pointer)
+	static std::unordered_map<std::string, Zenith_MeshAsset*> s_xLoadedMeshAssets;
+	static std::unordered_map<std::string, Zenith_SkeletonAsset*> s_xLoadedSkeletonAssets;
+	static std::unordered_map<std::string, Zenith_ModelAsset*> s_xLoadedModelAssets;
 };

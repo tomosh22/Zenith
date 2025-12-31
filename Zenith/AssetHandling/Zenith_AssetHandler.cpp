@@ -13,6 +13,11 @@ std::unordered_set<Zenith_AssetHandler::AssetID> Zenith_AssetHandler::s_xUsedMes
 // Lifecycle logging
 bool Zenith_AssetHandler::s_bLifecycleLoggingEnabled = false;
 
+// New asset system - path-to-asset caches
+std::unordered_map<std::string, Zenith_MeshAsset*> Zenith_AssetHandler::s_xLoadedMeshAssets;
+std::unordered_map<std::string, Zenith_SkeletonAsset*> Zenith_AssetHandler::s_xLoadedSkeletonAssets;
+std::unordered_map<std::string, Zenith_ModelAsset*> Zenith_AssetHandler::s_xLoadedModelAssets;
+
 //------------------------------------------------------------------------------
 // Lifecycle Logging Helpers
 //------------------------------------------------------------------------------
@@ -450,6 +455,9 @@ void Zenith_AssetHandler::DestroyAllAssets()
 	// Materials are now managed by Flux_MaterialAsset::UnloadAll()
 	Flux_MaterialAsset::UnloadAll();
 
+	// Clear new asset system caches
+	ClearAllNewAssets();
+
 	Zenith_Log("%s All assets destroyed", ASSET_LOG_TAG);
 }
 
@@ -499,6 +507,32 @@ void Zenith_AssetHandler::LogActiveAssets()
 	std::vector<std::string> xMaterialPaths;
 	Flux_MaterialAsset::GetAllLoadedMaterialPaths(xMaterialPaths);
 	Zenith_Log("%s   Materials (Flux_MaterialAsset): %u", ASSET_LOG_TAG, (uint32_t)xMaterialPaths.size());
+
+	// New asset system counts
+	Zenith_Log("%s   Mesh Assets: %u", ASSET_LOG_TAG, GetLoadedMeshAssetCount());
+	Zenith_Log("%s   Skeleton Assets: %u", ASSET_LOG_TAG, GetLoadedSkeletonAssetCount());
+	Zenith_Log("%s   Model Assets: %u", ASSET_LOG_TAG, GetLoadedModelAssetCount());
+
+	if (s_bLifecycleLoggingEnabled)
+	{
+		Zenith_Log("%s Loaded Mesh Assets:", ASSET_LOG_TAG);
+		for (const auto& xPair : s_xLoadedMeshAssets)
+		{
+			Zenith_Log("%s   %s -> ptr=%p", ASSET_LOG_TAG, xPair.first.c_str(), xPair.second);
+		}
+
+		Zenith_Log("%s Loaded Skeleton Assets:", ASSET_LOG_TAG);
+		for (const auto& xPair : s_xLoadedSkeletonAssets)
+		{
+			Zenith_Log("%s   %s -> ptr=%p", ASSET_LOG_TAG, xPair.first.c_str(), xPair.second);
+		}
+
+		Zenith_Log("%s Loaded Model Assets:", ASSET_LOG_TAG);
+		for (const auto& xPair : s_xLoadedModelAssets)
+		{
+			Zenith_Log("%s   %s -> ptr=%p", ASSET_LOG_TAG, xPair.first.c_str(), xPair.second);
+		}
+	}
 }
 
 //------------------------------------------------------------------------------
@@ -574,4 +608,386 @@ Zenith_AssetHandler::AssetID Zenith_AssetHandler::GetIDFromMeshPointer(const Flu
 	}
 
 	return static_cast<AssetID>(pxMesh - s_pxMeshes);
+}
+
+//------------------------------------------------------------------------------
+// New Asset System - Mesh/Skeleton/Model Assets and Instances
+//------------------------------------------------------------------------------
+
+Zenith_MeshAsset* Zenith_AssetHandler::LoadMeshAsset(const std::string& strPath)
+{
+	if (strPath.empty())
+	{
+		Zenith_Log("%s ERROR: Empty path passed to LoadMeshAsset", ASSET_LOG_TAG);
+		return nullptr;
+	}
+
+	// Check cache first
+	auto it = s_xLoadedMeshAssets.find(strPath);
+	if (it != s_xLoadedMeshAssets.end())
+	{
+		if (s_bLifecycleLoggingEnabled)
+		{
+			Zenith_Log("%s LoadMeshAsset: Cache hit for %s", ASSET_LOG_TAG, strPath.c_str());
+		}
+		return it->second;
+	}
+
+	// Load from file
+	Zenith_MeshAsset* pxAsset = Zenith_MeshAsset::LoadFromFile(strPath.c_str());
+	if (pxAsset)
+	{
+		s_xLoadedMeshAssets[strPath] = pxAsset;
+		if (s_bLifecycleLoggingEnabled)
+		{
+			Zenith_Log("%s LoadMeshAsset: Loaded %s, ptr=%p", ASSET_LOG_TAG, strPath.c_str(), pxAsset);
+		}
+	}
+	else
+	{
+		Zenith_Log("%s ERROR: Failed to load mesh asset from %s", ASSET_LOG_TAG, strPath.c_str());
+	}
+
+	return pxAsset;
+}
+
+Zenith_SkeletonAsset* Zenith_AssetHandler::LoadSkeletonAsset(const std::string& strPath)
+{
+	if (strPath.empty())
+	{
+		Zenith_Log("%s ERROR: Empty path passed to LoadSkeletonAsset", ASSET_LOG_TAG);
+		return nullptr;
+	}
+
+	// Check cache first
+	auto it = s_xLoadedSkeletonAssets.find(strPath);
+	if (it != s_xLoadedSkeletonAssets.end())
+	{
+		if (s_bLifecycleLoggingEnabled)
+		{
+			Zenith_Log("%s LoadSkeletonAsset: Cache hit for %s", ASSET_LOG_TAG, strPath.c_str());
+		}
+		return it->second;
+	}
+
+	// Load from file
+	Zenith_SkeletonAsset* pxAsset = Zenith_SkeletonAsset::LoadFromFile(strPath.c_str());
+	if (pxAsset)
+	{
+		s_xLoadedSkeletonAssets[strPath] = pxAsset;
+		if (s_bLifecycleLoggingEnabled)
+		{
+			Zenith_Log("%s LoadSkeletonAsset: Loaded %s, ptr=%p", ASSET_LOG_TAG, strPath.c_str(), pxAsset);
+		}
+	}
+	else
+	{
+		Zenith_Log("%s ERROR: Failed to load skeleton asset from %s", ASSET_LOG_TAG, strPath.c_str());
+	}
+
+	return pxAsset;
+}
+
+Zenith_ModelAsset* Zenith_AssetHandler::LoadModelAsset(const std::string& strPath)
+{
+	if (strPath.empty())
+	{
+		Zenith_Log("%s ERROR: Empty path passed to LoadModelAsset", ASSET_LOG_TAG);
+		return nullptr;
+	}
+
+	// Check cache first
+	auto it = s_xLoadedModelAssets.find(strPath);
+	if (it != s_xLoadedModelAssets.end())
+	{
+		if (s_bLifecycleLoggingEnabled)
+		{
+			Zenith_Log("%s LoadModelAsset: Cache hit for %s", ASSET_LOG_TAG, strPath.c_str());
+		}
+		return it->second;
+	}
+
+	// Load from file
+	Zenith_ModelAsset* pxAsset = Zenith_ModelAsset::LoadFromFile(strPath.c_str());
+	if (pxAsset)
+	{
+		s_xLoadedModelAssets[strPath] = pxAsset;
+		if (s_bLifecycleLoggingEnabled)
+		{
+			Zenith_Log("%s LoadModelAsset: Loaded %s, ptr=%p", ASSET_LOG_TAG, strPath.c_str(), pxAsset);
+		}
+	}
+	else
+	{
+		Zenith_Log("%s ERROR: Failed to load model asset from %s", ASSET_LOG_TAG, strPath.c_str());
+	}
+
+	return pxAsset;
+}
+
+Flux_MeshInstance* Zenith_AssetHandler::CreateMeshInstance(Zenith_MeshAsset* pxAsset)
+{
+	if (!pxAsset)
+	{
+		Zenith_Log("%s ERROR: Null asset passed to CreateMeshInstance", ASSET_LOG_TAG);
+		return nullptr;
+	}
+
+	Flux_MeshInstance* pxInstance = Flux_MeshInstance::CreateFromAsset(pxAsset);
+	if (pxInstance)
+	{
+		if (s_bLifecycleLoggingEnabled)
+		{
+			Zenith_Log("%s CreateMeshInstance: Created instance ptr=%p from asset ptr=%p", ASSET_LOG_TAG, pxInstance, pxAsset);
+		}
+	}
+	else
+	{
+		Zenith_Log("%s ERROR: Failed to create mesh instance from asset ptr=%p", ASSET_LOG_TAG, pxAsset);
+	}
+
+	return pxInstance;
+}
+
+Flux_SkeletonInstance* Zenith_AssetHandler::CreateSkeletonInstance(Zenith_SkeletonAsset* pxAsset)
+{
+	if (!pxAsset)
+	{
+		Zenith_Log("%s ERROR: Null asset passed to CreateSkeletonInstance", ASSET_LOG_TAG);
+		return nullptr;
+	}
+
+	Flux_SkeletonInstance* pxInstance = Flux_SkeletonInstance::CreateFromAsset(pxAsset);
+	if (pxInstance)
+	{
+		if (s_bLifecycleLoggingEnabled)
+		{
+			Zenith_Log("%s CreateSkeletonInstance: Created instance ptr=%p from asset ptr=%p", ASSET_LOG_TAG, pxInstance, pxAsset);
+		}
+	}
+	else
+	{
+		Zenith_Log("%s ERROR: Failed to create skeleton instance from asset ptr=%p", ASSET_LOG_TAG, pxAsset);
+	}
+
+	return pxInstance;
+}
+
+Flux_ModelInstance* Zenith_AssetHandler::CreateModelInstance(Zenith_ModelAsset* pxAsset)
+{
+	if (!pxAsset)
+	{
+		Zenith_Log("%s ERROR: Null asset passed to CreateModelInstance", ASSET_LOG_TAG);
+		return nullptr;
+	}
+
+	Flux_ModelInstance* pxInstance = Flux_ModelInstance::CreateFromAsset(pxAsset);
+	if (pxInstance)
+	{
+		if (s_bLifecycleLoggingEnabled)
+		{
+			Zenith_Log("%s CreateModelInstance: Created instance ptr=%p from asset ptr=%p", ASSET_LOG_TAG, pxInstance, pxAsset);
+		}
+	}
+	else
+	{
+		Zenith_Log("%s ERROR: Failed to create model instance from asset ptr=%p", ASSET_LOG_TAG, pxAsset);
+	}
+
+	return pxInstance;
+}
+
+Flux_ModelInstance* Zenith_AssetHandler::LoadAndCreateModelInstance(const std::string& strPath)
+{
+	Zenith_ModelAsset* pxAsset = LoadModelAsset(strPath);
+	if (!pxAsset)
+	{
+		return nullptr;
+	}
+
+	return CreateModelInstance(pxAsset);
+}
+
+void Zenith_AssetHandler::UnloadMeshAsset(Zenith_MeshAsset* pxAsset)
+{
+	if (!pxAsset)
+	{
+		Zenith_Log("%s WARNING: Attempted to unload null mesh asset", ASSET_LOG_TAG);
+		return;
+	}
+
+	// Find and remove from cache
+	for (auto it = s_xLoadedMeshAssets.begin(); it != s_xLoadedMeshAssets.end(); ++it)
+	{
+		if (it->second == pxAsset)
+		{
+			if (s_bLifecycleLoggingEnabled)
+			{
+				Zenith_Log("%s UnloadMeshAsset: Unloading %s, ptr=%p", ASSET_LOG_TAG, it->first.c_str(), pxAsset);
+			}
+			s_xLoadedMeshAssets.erase(it);
+			delete pxAsset;
+			return;
+		}
+	}
+
+	Zenith_Log("%s WARNING: Mesh asset ptr=%p not found in cache", ASSET_LOG_TAG, pxAsset);
+}
+
+void Zenith_AssetHandler::UnloadSkeletonAsset(Zenith_SkeletonAsset* pxAsset)
+{
+	if (!pxAsset)
+	{
+		Zenith_Log("%s WARNING: Attempted to unload null skeleton asset", ASSET_LOG_TAG);
+		return;
+	}
+
+	// Find and remove from cache
+	for (auto it = s_xLoadedSkeletonAssets.begin(); it != s_xLoadedSkeletonAssets.end(); ++it)
+	{
+		if (it->second == pxAsset)
+		{
+			if (s_bLifecycleLoggingEnabled)
+			{
+				Zenith_Log("%s UnloadSkeletonAsset: Unloading %s, ptr=%p", ASSET_LOG_TAG, it->first.c_str(), pxAsset);
+			}
+			s_xLoadedSkeletonAssets.erase(it);
+			delete pxAsset;
+			return;
+		}
+	}
+
+	Zenith_Log("%s WARNING: Skeleton asset ptr=%p not found in cache", ASSET_LOG_TAG, pxAsset);
+}
+
+void Zenith_AssetHandler::UnloadModelAsset(Zenith_ModelAsset* pxAsset)
+{
+	if (!pxAsset)
+	{
+		Zenith_Log("%s WARNING: Attempted to unload null model asset", ASSET_LOG_TAG);
+		return;
+	}
+
+	// Find and remove from cache
+	for (auto it = s_xLoadedModelAssets.begin(); it != s_xLoadedModelAssets.end(); ++it)
+	{
+		if (it->second == pxAsset)
+		{
+			if (s_bLifecycleLoggingEnabled)
+			{
+				Zenith_Log("%s UnloadModelAsset: Unloading %s, ptr=%p", ASSET_LOG_TAG, it->first.c_str(), pxAsset);
+			}
+			s_xLoadedModelAssets.erase(it);
+			delete pxAsset;
+			return;
+		}
+	}
+
+	Zenith_Log("%s WARNING: Model asset ptr=%p not found in cache", ASSET_LOG_TAG, pxAsset);
+}
+
+void Zenith_AssetHandler::DestroyMeshInstance(Flux_MeshInstance* pxInstance)
+{
+	if (!pxInstance)
+	{
+		Zenith_Log("%s WARNING: Attempted to destroy null mesh instance", ASSET_LOG_TAG);
+		return;
+	}
+
+	if (s_bLifecycleLoggingEnabled)
+	{
+		Zenith_Log("%s DestroyMeshInstance: Destroying ptr=%p", ASSET_LOG_TAG, pxInstance);
+	}
+
+	pxInstance->Destroy();
+	delete pxInstance;
+}
+
+void Zenith_AssetHandler::DestroySkeletonInstance(Flux_SkeletonInstance* pxInstance)
+{
+	if (!pxInstance)
+	{
+		Zenith_Log("%s WARNING: Attempted to destroy null skeleton instance", ASSET_LOG_TAG);
+		return;
+	}
+
+	if (s_bLifecycleLoggingEnabled)
+	{
+		Zenith_Log("%s DestroySkeletonInstance: Destroying ptr=%p", ASSET_LOG_TAG, pxInstance);
+	}
+
+	pxInstance->Destroy();
+	delete pxInstance;
+}
+
+void Zenith_AssetHandler::DestroyModelInstance(Flux_ModelInstance* pxInstance)
+{
+	if (!pxInstance)
+	{
+		Zenith_Log("%s WARNING: Attempted to destroy null model instance", ASSET_LOG_TAG);
+		return;
+	}
+
+	if (s_bLifecycleLoggingEnabled)
+	{
+		Zenith_Log("%s DestroyModelInstance: Destroying ptr=%p", ASSET_LOG_TAG, pxInstance);
+	}
+
+	pxInstance->Destroy();
+	delete pxInstance;
+}
+
+void Zenith_AssetHandler::ClearAllNewAssets()
+{
+	Zenith_Log("%s Clearing all new asset caches...", ASSET_LOG_TAG);
+
+	// Delete all mesh assets
+	for (auto& xPair : s_xLoadedMeshAssets)
+	{
+		if (s_bLifecycleLoggingEnabled)
+		{
+			Zenith_Log("%s   Deleting mesh asset: %s, ptr=%p", ASSET_LOG_TAG, xPair.first.c_str(), xPair.second);
+		}
+		delete xPair.second;
+	}
+	s_xLoadedMeshAssets.clear();
+
+	// Delete all skeleton assets
+	for (auto& xPair : s_xLoadedSkeletonAssets)
+	{
+		if (s_bLifecycleLoggingEnabled)
+		{
+			Zenith_Log("%s   Deleting skeleton asset: %s, ptr=%p", ASSET_LOG_TAG, xPair.first.c_str(), xPair.second);
+		}
+		delete xPair.second;
+	}
+	s_xLoadedSkeletonAssets.clear();
+
+	// Delete all model assets
+	for (auto& xPair : s_xLoadedModelAssets)
+	{
+		if (s_bLifecycleLoggingEnabled)
+		{
+			Zenith_Log("%s   Deleting model asset: %s, ptr=%p", ASSET_LOG_TAG, xPair.first.c_str(), xPair.second);
+		}
+		delete xPair.second;
+	}
+	s_xLoadedModelAssets.clear();
+
+	Zenith_Log("%s All new asset caches cleared", ASSET_LOG_TAG);
+}
+
+uint32_t Zenith_AssetHandler::GetLoadedMeshAssetCount()
+{
+	return static_cast<uint32_t>(s_xLoadedMeshAssets.size());
+}
+
+uint32_t Zenith_AssetHandler::GetLoadedSkeletonAssetCount()
+{
+	return static_cast<uint32_t>(s_xLoadedSkeletonAssets.size());
+}
+
+uint32_t Zenith_AssetHandler::GetLoadedModelAssetCount()
+{
+	return static_cast<uint32_t>(s_xLoadedModelAssets.size());
 }

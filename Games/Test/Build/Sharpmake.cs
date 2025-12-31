@@ -287,6 +287,7 @@ public class TestWindowsProject : Project
 		conf.Defines.Add("ZENITH_WINDOWS");
 		conf.Defines.Add("NOMINMAX");
 		conf.Defines.Add("ASSETS_ROOT=\"c:/dev/zenith/Games/Test/Assets/\"");
+		conf.Defines.Add("ENGINE_ASSETS_DIR=\"c:/dev/zenith/zenith/Assets/\"");
 		if(target.ToolsEnabled == ToolsEnabled.True)
 		{
 			conf.Defines.Add("ZENITH_TOOLS");

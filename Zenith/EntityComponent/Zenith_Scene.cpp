@@ -380,13 +380,21 @@ void Zenith_Scene::Update(const float fDt)
 
 	//#TO used to have this before script update but scripts can add new model components
 	//causing a vector resize which causes the animation update to read deallocate model memory
-	
+
 	g_xAnimationsToUpdate.Clear();
 	Zenith_Vector<Zenith_ModelComponent*> xModels;
 	s_xCurrentScene.GetAllOfComponentType<Zenith_ModelComponent>(xModels);
 	for (Zenith_Vector<Zenith_ModelComponent*>::Iterator xIt(xModels); !xIt.Done(); xIt.Next())
 	{
 		Zenith_ModelComponent* pxModel = xIt.GetData();
+
+		// New model instance system: Update the animation controller and skeleton
+		if (pxModel->IsUsingModelInstance())
+		{
+			pxModel->Update(fDt);
+		}
+
+		// Legacy system: Collect animations for parallel update task
 		for (u_int uMesh = 0; uMesh < pxModel->GetNumMeshEntries(); uMesh++)
 		{
 			if(Flux_MeshAnimation* pxAnim = pxModel->GetMeshGeometryAtIndex(uMesh).m_pxAnimation)

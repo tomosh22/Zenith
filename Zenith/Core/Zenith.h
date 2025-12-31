@@ -105,9 +105,11 @@ inline void Zenith_LogImpl(int eLevel, const char* szFormat, ...)
 //#define ZENITH_RAYTRACING
 
 using GUIDType = uint64_t;
-struct Zenith_GUID {
+struct Zenith_GUID
+{
 	static Zenith_GUID Invalid;
-	Zenith_GUID() {
+	Zenith_GUID()
+	{
 		for (uint64_t i = 0; i < sizeof(GUIDType) * 8; i++)
 			if (rand() > RAND_MAX / 2)
 				m_uGUID |= static_cast<GUIDType>(1u) << i;
@@ -115,7 +117,8 @@ struct Zenith_GUID {
 	Zenith_GUID(GUIDType uGuid) : m_uGUID(uGuid) {}
 	GUIDType m_uGUID = 0;
 
-	bool operator == (const Zenith_GUID& xOther) const {
+	bool operator == (const Zenith_GUID& xOther) const
+	{
 		return m_uGUID == xOther.m_uGUID;
 	}
 
