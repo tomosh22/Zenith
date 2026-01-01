@@ -12,9 +12,11 @@
 - `Flux_RenderTargets.h/cpp` - Render target management
 - `Flux_Types.h` - Type definitions
 
-### Render Passes (subdirectories)
+### Subdirectories
 - `StaticMeshes/` - Opaque geometry
-- `AnimatedMeshes/` - Skeletal animation
+- `AnimatedMeshes/` - Skeletal animation rendering
+- `MeshAnimation/` - Skeletal animation system (see MeshAnimation/CLAUDE.md)
+- `MeshGeometry/` - Mesh instance creation and management
 - `Terrain/` - Terrain rendering (see Terrain/CLAUDE.md)
 - `Shadows/` - Cascaded shadow maps
 - `DeferredShading/` - Deferred lighting
