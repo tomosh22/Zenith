@@ -2,12 +2,15 @@
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
+#include "EntityComponent/Zenith_ComponentMeta.h"
 #include "Physics/Zenith_Physics.h"
 #include "DataStream/Zenith_DataStream.h"
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include <Jolt/Jolt.h>
 #include <Jolt/Physics/Body/Body.h>
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
+
+ZENITH_REGISTER_COMPONENT(Zenith_TransformComponent, "Transform")
 
 Zenith_TransformComponent::Zenith_TransformComponent(Zenith_Entity& xEntity)
 	: m_xParentEntity(xEntity)

@@ -31,8 +31,8 @@ public:
 	Flux_MeshInstance& operator=(const Flux_MeshInstance&) = delete;
 
 	// Allow moves
-	Flux_MeshInstance(Flux_MeshInstance&& xOther) noexcept;
-	Flux_MeshInstance& operator=(Flux_MeshInstance&& xOther) noexcept;
+	Flux_MeshInstance(Flux_MeshInstance&& xOther);
+	Flux_MeshInstance& operator=(Flux_MeshInstance&& xOther);
 
 	/**
 	 * Factory method to create from asset

@@ -2,6 +2,7 @@
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Zenith_Scene.h"
+#include "EntityComponent/Zenith_ComponentMeta.h"
 #include "DataStream/Zenith_DataStream.h"
 #include "Flux/MeshAnimation/Flux_AnimationController.h"
 #include "Flux/Flux_ModelInstance.h"
@@ -9,6 +10,8 @@
 #include "Flux/MeshAnimation/Flux_SkeletonInstance.h"
 #include "AssetHandling/Zenith_ModelAsset.h"
 #include "Core/Zenith_Core.h"
+
+ZENITH_REGISTER_COMPONENT(Zenith_ModelComponent, "Model")
 
 // Log tag for model component operations
 static constexpr const char* LOG_TAG_MODEL = "[ModelComponent]";
@@ -497,8 +500,8 @@ void Zenith_ModelComponent::ReadLegacyMeshEntries(Zenith_DataStream& xStream, ui
 				{
 					m_xCreatedMeshes.PushBack(pxMesh);
 
-					std::string strEntityName = m_xParentEntity.m_strName.empty() ?
-						("Entity_" + std::to_string(m_xParentEntity.GetEntityID())) : m_xParentEntity.m_strName;
+					std::string strEntityName = m_xParentEntity.GetName().empty() ?
+						("Entity_" + std::to_string(m_xParentEntity.GetEntityID())) : m_xParentEntity.GetName();
 					std::filesystem::path xMeshPath(strMeshPath);
 					std::string strMatName = strEntityName + "_Model_" + xMeshPath.stem().string();
 					Flux_MaterialAsset* pxMaterial = Flux_MaterialAsset::Create(strMatName);
@@ -549,8 +552,8 @@ void Zenith_ModelComponent::ReadLegacyMeshEntries(Zenith_DataStream& xStream, ui
 				{
 					m_xCreatedMeshes.PushBack(pxMesh);
 
-					std::string strEntityName = m_xParentEntity.m_strName.empty() ?
-						("Entity_" + std::to_string(m_xParentEntity.GetEntityID())) : m_xParentEntity.m_strName;
+					std::string strEntityName = m_xParentEntity.GetName().empty() ?
+						("Entity_" + std::to_string(m_xParentEntity.GetEntityID())) : m_xParentEntity.GetName();
 					std::filesystem::path xMeshPath(strMeshPath);
 					std::string strMatName = strEntityName + "_Model_" + xMeshPath.stem().string() + "_Legacy";
 					Flux_MaterialAsset* pxMaterial = Flux_MaterialAsset::Create(strMatName);
@@ -592,7 +595,7 @@ void Zenith_ModelComponent::ReadLegacyMeshEntries(Zenith_DataStream& xStream, ui
 	if (g_xPhysicsMeshConfig.m_bAutoGenerate && m_xMeshEntries.GetSize() > 0)
 	{
 		Zenith_Log("%s Auto-generating physics mesh for deserialized ModelComponent (entity: %s, meshes: %u)",
-			LOG_TAG_MODEL_PHYSICS, m_xParentEntity.m_strName.c_str(), m_xMeshEntries.GetSize());
+			LOG_TAG_MODEL_PHYSICS, m_xParentEntity.GetName().c_str(), m_xMeshEntries.GetSize());
 		GeneratePhysicsMesh();
 
 		if (m_pxPhysicsMesh)

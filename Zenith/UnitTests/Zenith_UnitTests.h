@@ -40,6 +40,43 @@ private:
 	static void TestMeshAssetLoading();
 	static void TestBindPoseVertexPositions();
 	static void TestAnimatedVertexPositions();
+
+	// ECS bug fix tests (Phase 1)
+	static void TestComponentRemovalIndexUpdate();
+	static void TestComponentSwapAndPop();
+	static void TestMultipleComponentRemoval();
+	static void TestComponentRemovalWithManyEntities();
+	static void TestEntityIsTrivialSize();
+	static void TestEntityNameFromScene();
+	static void TestEntityCopyPreservesAccess();
+
+	// ECS reflection system tests (Phase 2)
+	static void TestComponentMetaRegistration();
+	static void TestComponentMetaSerialization();
+	static void TestComponentMetaDeserialization();
+	static void TestComponentMetaTypeIDConsistency();
+
+	// ECS lifecycle hooks tests (Phase 3)
+	static void TestLifecycleHookDetection();
+	static void TestLifecycleOnAwake();
+	static void TestLifecycleOnStart();
+	static void TestLifecycleOnUpdate();
+	static void TestLifecycleOnDestroy();
+	static void TestLifecycleDispatchOrder();
+
+	// ECS query system tests (Phase 4)
+	static void TestQuerySingleComponent();
+	static void TestQueryMultipleComponents();
+	static void TestQueryNoMatches();
+	static void TestQueryCount();
+	static void TestQueryFirstAndAny();
+
+	// ECS event system tests (Phase 5)
+	static void TestEventSubscribeDispatch();
+	static void TestEventUnsubscribe();
+	static void TestEventDeferredQueue();
+	static void TestEventMultipleSubscribers();
+	static void TestEventClearSubscriptions();
 };
 
 // Include editor tests separately as they are only available in ZENITH_TOOLS builds

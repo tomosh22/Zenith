@@ -95,7 +95,7 @@ Flux_MeshInstance::~Flux_MeshInstance()
 	Destroy();
 }
 
-Flux_MeshInstance::Flux_MeshInstance(Flux_MeshInstance&& xOther) noexcept
+Flux_MeshInstance::Flux_MeshInstance(Flux_MeshInstance&& xOther)
 	: m_xVertexBuffer(std::move(xOther.m_xVertexBuffer))
 	, m_xIndexBuffer(std::move(xOther.m_xIndexBuffer))
 	, m_xBufferLayout(std::move(xOther.m_xBufferLayout))
@@ -110,7 +110,7 @@ Flux_MeshInstance::Flux_MeshInstance(Flux_MeshInstance&& xOther) noexcept
 	xOther.m_bInitialized = false;
 }
 
-Flux_MeshInstance& Flux_MeshInstance::operator=(Flux_MeshInstance&& xOther) noexcept
+Flux_MeshInstance& Flux_MeshInstance::operator=(Flux_MeshInstance&& xOther)
 {
 	if (this != &xOther)
 	{

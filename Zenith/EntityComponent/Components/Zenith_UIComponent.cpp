@@ -1,9 +1,12 @@
 #include "Zenith.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
+#include "EntityComponent/Zenith_ComponentMeta.h"
 #include "UI/Zenith_UIText.h"
 #include "UI/Zenith_UIRect.h"
 #include "UI/Zenith_UIImage.h"
 #include "DataStream/Zenith_DataStream.h"
+
+ZENITH_REGISTER_COMPONENT(Zenith_UIComponent, "UI")
 
 Zenith_UIComponent::Zenith_UIComponent(Zenith_Entity& xParentEntity)
     : m_xParentEntity(xParentEntity)
@@ -14,6 +17,30 @@ Zenith_UIComponent::Zenith_UIComponent(Zenith_Entity& xParentEntity)
 Zenith_UIComponent::~Zenith_UIComponent()
 {
     // Canvas destructor handles cleanup of all elements
+}
+
+Zenith_UIComponent::Zenith_UIComponent(Zenith_UIComponent&& xOther)
+    : m_xParentEntity(xOther.m_xParentEntity)
+    , m_xCanvas(std::move(xOther.m_xCanvas))
+    , m_bVisible(xOther.m_bVisible)
+#ifdef ZENITH_TOOLS
+    , m_pxSelectedElement(xOther.m_pxSelectedElement)
+#endif
+{
+}
+
+Zenith_UIComponent& Zenith_UIComponent::operator=(Zenith_UIComponent&& xOther)
+{
+    if (this != &xOther)
+    {
+        m_xParentEntity = xOther.m_xParentEntity;
+        m_xCanvas = std::move(xOther.m_xCanvas);
+        m_bVisible = xOther.m_bVisible;
+#ifdef ZENITH_TOOLS
+        m_pxSelectedElement = xOther.m_pxSelectedElement;
+#endif
+    }
+    return *this;
 }
 
 Zenith_UI::Zenith_UIText* Zenith_UIComponent::CreateText(const std::string& strName, const std::string& strText)

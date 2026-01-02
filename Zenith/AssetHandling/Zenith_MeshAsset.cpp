@@ -62,7 +62,7 @@ Zenith_MeshAsset::~Zenith_MeshAsset()
 	Reset();
 }
 
-Zenith_MeshAsset::Zenith_MeshAsset(Zenith_MeshAsset&& xOther) noexcept
+Zenith_MeshAsset::Zenith_MeshAsset(Zenith_MeshAsset&& xOther)
 {
 	m_xPositions = std::move(xOther.m_xPositions);
 	m_xNormals = std::move(xOther.m_xNormals);
@@ -86,7 +86,7 @@ Zenith_MeshAsset::Zenith_MeshAsset(Zenith_MeshAsset&& xOther) noexcept
 	xOther.m_uNumIndices = 0;
 }
 
-Zenith_MeshAsset& Zenith_MeshAsset::operator=(Zenith_MeshAsset&& xOther) noexcept
+Zenith_MeshAsset& Zenith_MeshAsset::operator=(Zenith_MeshAsset&& xOther)
 {
 	if (this != &xOther)
 	{

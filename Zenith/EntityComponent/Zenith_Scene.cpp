@@ -2,13 +2,11 @@
 
 #include "EntityComponent/Zenith_Entity.h"
 #include "EntityComponent/Zenith_Scene.h"
-#include "EntityComponent/Components/Zenith_CameraComponent.h"
-#include "EntityComponent/Components/Zenith_ModelComponent.h"
-#include "EntityComponent/Components/Zenith_ColliderComponent.h"
-#include "EntityComponent/Components/Zenith_TextComponent.h"
-#include "EntityComponent/Components/Zenith_TerrainComponent.h"
+#include "EntityComponent/Zenith_ComponentMeta.h"
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
+#include "EntityComponent/Components/Zenith_ModelComponent.h"
+#include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "Flux/MeshAnimation/Flux_MeshAnimation.h"
 #include "Flux/Terrain/Flux_Terrain.h"
 #include "Flux/StaticMeshes/Flux_StaticMeshes.h"
@@ -31,6 +29,10 @@
 
 Zenith_Scene Zenith_Scene::s_xCurrentScene;
 bool Zenith_Scene::s_bIsLoadingScene = false;
+
+// Force link ScriptComponent to ensure its static registration runs
+// This is needed because linker may not include translation units with no referenced symbols
+namespace { struct ForceScriptComponentLink { ForceScriptComponentLink() { Zenith_ScriptComponent_ForceLink(); } } s_xForceLink; }
 
 static Zenith_TaskArray* g_pxAnimUpdateTask = nullptr;
 static Zenith_Vector<Flux_MeshAnimation*> g_xAnimationsToUpdate;
@@ -118,13 +120,12 @@ void Zenith_Scene::RemoveEntity(Zenith_EntityID uID)
 		m_uMainCameraEntity = INVALID_ENTITY_ID;
 	}
 
-	// Clear component mappings for this entity
-	// Note: Component data remains in pools but becomes orphaned
-	// This is cleaned up on scene reset/reload
-	if (uID < m_xEntityComponents.GetSize())
-	{
-		m_xEntityComponents.Get(uID).clear();
-	}
+	// Remove all components from the entity (calls OnDestroy and removes from pools)
+	Zenith_Entity& xEntity = it->second;
+	Zenith_ComponentMetaRegistry::Get().RemoveAllComponents(xEntity);
+
+	// Remove entity name
+	m_xEntityNames.erase(uID);
 
 	// Remove from entity map
 	m_xEntityMap.erase(it);
@@ -255,84 +256,8 @@ void Zenith_Scene::LoadFromFile(const std::string& strFilename)
 		// (The constructor made a copy, so we need to work with that copy)
 		Zenith_Entity& xEntityInMap = m_xEntityMap.at(uEntityID);
 
-		// Now read the components
-		u_int uNumComponents;
-		xStream >> uNumComponents;
-
-		for (u_int c = 0; c < uNumComponents; c++)
-		{
-			std::string strComponentType;
-			xStream >> strComponentType;
-
-			// Deserialize component based on type
-			// CRITICAL: Work with xEntityInMap, not the local xEntity variable!
-			// NOTE: The order here doesn't matter since we read the type from the stream,
-			// but for consistency with Zenith_Entity.cpp, we match the serialization order
-			if (strComponentType == "TransformComponent")
-			{
-				if (xEntityInMap.HasComponent<Zenith_TransformComponent>())
-				{
-					xEntityInMap.GetComponent<Zenith_TransformComponent>().ReadFromDataStream(xStream);
-				}
-			}
-			else if (strComponentType == "ModelComponent")
-			{
-				if (!xEntityInMap.HasComponent<Zenith_ModelComponent>())
-				{
-					Zenith_ModelComponent& xComponent = xEntityInMap.AddComponent<Zenith_ModelComponent>();
-					xComponent.ReadFromDataStream(xStream);
-				}
-			}
-			else if (strComponentType == "CameraComponent")
-			{
-				if (!xEntityInMap.HasComponent<Zenith_CameraComponent>())
-				{
-					Zenith_CameraComponent& xComponent = xEntityInMap.AddComponent<Zenith_CameraComponent>();
-					xComponent.ReadFromDataStream(xStream);
-				}
-			}
-			else if (strComponentType == "TextComponent")
-			{
-				if (!xEntityInMap.HasComponent<Zenith_TextComponent>())
-				{
-					Zenith_TextComponent& xComponent = xEntityInMap.AddComponent<Zenith_TextComponent>();
-					xComponent.ReadFromDataStream(xStream);
-				}
-			}
-			// TerrainComponent MUST be deserialized before ColliderComponent
-			else if (strComponentType == "TerrainComponent")
-			{
-				if (!xEntityInMap.HasComponent<Zenith_TerrainComponent>())
-				{
-					Zenith_TerrainComponent& xComponent = xEntityInMap.AddComponent<Zenith_TerrainComponent>();
-					xComponent.ReadFromDataStream(xStream);
-				}
-			}
-			else if (strComponentType == "ColliderComponent")
-			{
-				if (!xEntityInMap.HasComponent<Zenith_ColliderComponent>())
-				{
-					Zenith_ColliderComponent& xComponent = xEntityInMap.AddComponent<Zenith_ColliderComponent>();
-					xComponent.ReadFromDataStream(xStream);
-				}
-			}
-			else if (strComponentType == "ScriptComponent")
-			{
-				if (!xEntityInMap.HasComponent<Zenith_ScriptComponent>())
-				{
-					Zenith_ScriptComponent& xComponent = xEntityInMap.AddComponent<Zenith_ScriptComponent>();
-					xComponent.ReadFromDataStream(xStream);
-				}
-			}
-			else if (strComponentType == "UIComponent")
-			{
-				if (!xEntityInMap.HasComponent<Zenith_UIComponent>())
-				{
-					Zenith_UIComponent& xComponent = xEntityInMap.AddComponent<Zenith_UIComponent>();
-					xComponent.ReadFromDataStream(xStream);
-				}
-			}
-		}
+		// Deserialize all components using the ComponentMeta registry
+		Zenith_ComponentMetaRegistry::Get().DeserializeEntityComponents(xEntityInMap, xStream);
 	}
 
 	// Update m_uNextEntityID to be one more than the highest loaded entity ID
@@ -420,11 +345,27 @@ Zenith_Entity Zenith_Scene::GetEntityFromID(Zenith_EntityID uID) {
 	return m_xEntityMap.at(uID);
 }
 
+const std::string& Zenith_Scene::GetEntityName(Zenith_EntityID uID) const
+{
+	static const std::string s_strEmpty;
+	auto xIt = m_xEntityNames.find(uID);
+	if (xIt != m_xEntityNames.end())
+	{
+		return xIt->second;
+	}
+	return s_strEmpty;
+}
+
+void Zenith_Scene::SetEntityName(Zenith_EntityID uID, const std::string& strName)
+{
+	m_xEntityNames[uID] = strName;
+}
+
 Zenith_Entity* Zenith_Scene::FindEntityByName(const std::string& strName)
 {
 	for (auto& xPair : m_xEntityMap)
 	{
-		if (xPair.second.m_strName == strName)
+		if (GetEntityName(xPair.first) == strName)
 		{
 			return &xPair.second;
 		}

@@ -188,12 +188,4 @@ private:
 	};
 	TerrainMeshData* m_pxTerrainMeshData = nullptr;
 
-public:
-#ifdef ZENITH_TOOLS
-	// Static registration function called by ComponentRegistry::Initialise()
-	static void RegisterWithEditor()
-	{
-		Zenith_ComponentRegistry::Get().RegisterComponent<Zenith_ColliderComponent>("Collider");
-	}
-#endif
 };

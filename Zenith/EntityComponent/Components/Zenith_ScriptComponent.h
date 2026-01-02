@@ -8,6 +8,9 @@
 #include "EntityComponent/Zenith_ComponentRegistry.h"
 #endif
 
+// Force link function - call from Zenith_Scene.cpp to ensure static registration runs
+void Zenith_ScriptComponent_ForceLink();
+
 class Zenith_ScriptBehaviour {
 	friend class Zenith_ScriptComponent;
 public:
@@ -131,14 +134,6 @@ public:
 	void RenderPropertiesPanel();
 #endif
 
-public:
-#ifdef ZENITH_TOOLS
-	// Static registration function called by ComponentRegistry::Initialise()
-	static void RegisterWithEditor()
-	{
-		Zenith_ComponentRegistry::Get().RegisterComponent<Zenith_ScriptComponent>("Script");
-	}
-#endif
 };
 
 #if 0

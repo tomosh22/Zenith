@@ -22,6 +22,7 @@ class Zenith_ComponentPool : public Zenith_ComponentPoolBase
 {
 public:
 	Zenith_Vector<T> m_xData;
+	Zenith_Vector<Zenith_EntityID> m_xOwningEntities;  // Parallel array tracking which entity owns each component
 };
 
 // Forward declare Zenith_Scene so Zenith_Entity can reference it
@@ -42,11 +43,12 @@ std::is_destructible_v<T>
 	&&
 // Component must have a RenderPropertiesPanel method for editor UI
 // This method is responsible for rendering the component's properties in ImGui
-	requires(T& t) { { t.RenderPropertiesPanel() } -> std::same_as<void>; }&&
-// Component must have a static RegisterWithEditor function for self-registration
-	requires() { { T::RegisterWithEditor() } -> std::same_as<void>; }
+	requires(T& t) { { t.RenderPropertiesPanel() } -> std::same_as<void>; }
 	#endif
 	;
+
+// Forward declaration for query system
+template<typename... Ts> class Zenith_Query;
 
 class Zenith_Scene
 {
@@ -60,21 +62,8 @@ public:
 		static TypeID GetTypeID()
 		{
 			static TypeID ls_uRet = s_uCounter++;
-
-			#ifdef ZENITH_TOOLS
-			static bool ls_bRegistered = false;
-			static bool ls_bInRegistration = false;
-			
-			if (!ls_bRegistered && !ls_bInRegistration)
-			{
-				Zenith_Assert(Zenith_Multithreading::IsMainThread(), "TypeIDs must be registered on main thread");
-				ls_bInRegistration = true;
-				T::RegisterWithEditor();
-				ls_bRegistered = true;
-				ls_bInRegistration = false;
-			}
-			#endif
-
+			// Editor registration is now handled by ZENITH_REGISTER_COMPONENT macro
+			// which registers with both ComponentMeta and ComponentRegistry
 			return ls_uRet;
 		}
 	private:
@@ -107,10 +96,10 @@ public:
 	template<typename T, typename... Args>
 	T& CreateComponent(Zenith_EntityID uID, Args&&... args)
 	{
-		
 		Zenith_ComponentPool<T>* const pxPool = GetComponentPool<T>();
 		u_int uIndex = pxPool->m_xData.GetSize();
 		pxPool->m_xData.EmplaceBack(std::forward<Args>(args)...);
+		pxPool->m_xOwningEntities.PushBack(uID);  // Track which entity owns this component
 
 		const Zenith_Scene::TypeID uTypeID = Zenith_Scene::TypeIDGenerator::GetTypeID<T>();
 		std::unordered_map<Zenith_Scene::TypeID, u_int>& xComponentsForThisEntity = m_xEntityComponents.Get(uID);
@@ -144,9 +133,26 @@ public:
 	{
 		const Zenith_Scene::TypeID uTypeID = Zenith_Scene::TypeIDGenerator::GetTypeID<T>();
 		std::unordered_map<Zenith_Scene::TypeID, u_int>& xComponentsForThisEntity = m_xEntityComponents.Get(uID);
-		const u_int uIndex = xComponentsForThisEntity.at(uTypeID);
+		const u_int uRemovedIndex = xComponentsForThisEntity.at(uTypeID);
 		xComponentsForThisEntity.erase(uTypeID);
-		GetComponentPool<T>()->m_xData.Remove(uIndex);
+
+		Zenith_ComponentPool<T>* pxPool = GetComponentPool<T>();
+		const u_int uLastIndex = pxPool->m_xData.GetSize() - 1;
+
+		if (uRemovedIndex != uLastIndex)
+		{
+			// Swap with last element using move semantics
+			pxPool->m_xData.Get(uRemovedIndex) = std::move(pxPool->m_xData.Get(uLastIndex));
+
+			// Update the entity that owned the moved component
+			Zenith_EntityID uMovedEntityID = pxPool->m_xOwningEntities.Get(uLastIndex);
+			m_xEntityComponents.Get(uMovedEntityID)[uTypeID] = uRemovedIndex;
+			pxPool->m_xOwningEntities.Get(uRemovedIndex) = uMovedEntityID;
+		}
+
+		pxPool->m_xData.PopBack();
+		pxPool->m_xOwningEntities.PopBack();
+		return true;
 	}
 
 	template<typename T>
@@ -157,6 +163,12 @@ public:
 			xOut.PushBack(&xIt.GetData());
 		}
 	}
+
+	// Multi-component query - returns a query object for fluent iteration
+	// Usage: scene.Query<ComponentA, ComponentB>().ForEach([](Zenith_EntityID, ComponentA&, ComponentB&) { ... });
+	// Implementation in Zenith_Query.h (must include after this header)
+	template<typename... Ts>
+	Zenith_Query<Ts...> Query();
 
 	// Serialization methods
 	void SaveToFile(const std::string& strFilename);
@@ -170,6 +182,10 @@ public:
 	bool EntityExists(Zenith_EntityID uID) const { return m_xEntityMap.find(uID) != m_xEntityMap.end(); }
 	Zenith_Entity GetEntityFromID(Zenith_EntityID uID);
 	Zenith_Entity* FindEntityByName(const std::string& strName);
+
+	// Entity name accessors (names stored in scene, not entity)
+	const std::string& GetEntityName(Zenith_EntityID uID) const;
+	void SetEntityName(Zenith_EntityID uID, const std::string& strName);
 
 	static void Update(const float fDt);
 	static void WaitForUpdateComplete();
@@ -217,6 +233,7 @@ private:
 	}
 
 	std::unordered_map<Zenith_EntityID, Zenith_Entity> m_xEntityMap;
+	std::unordered_map<Zenith_EntityID, std::string> m_xEntityNames;  // Entity name storage (moved from Zenith_Entity)
 	static Zenith_Scene s_xCurrentScene;
 	Zenith_EntityID m_uMainCameraEntity = -1;
 	Zenith_Mutex m_xMutex;

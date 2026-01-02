@@ -35,7 +35,7 @@ void Zenith_ModelAsset::MeshMaterialBinding::ReadFromDataStream(Zenith_DataStrea
 // Move Constructor / Assignment
 //------------------------------------------------------------------------------
 
-Zenith_ModelAsset::Zenith_ModelAsset(Zenith_ModelAsset&& xOther) noexcept
+Zenith_ModelAsset::Zenith_ModelAsset(Zenith_ModelAsset&& xOther)
 {
 	m_strName = std::move(xOther.m_strName);
 	m_xMeshBindings = std::move(xOther.m_xMeshBindings);
@@ -44,7 +44,7 @@ Zenith_ModelAsset::Zenith_ModelAsset(Zenith_ModelAsset&& xOther) noexcept
 	m_strSourcePath = std::move(xOther.m_strSourcePath);
 }
 
-Zenith_ModelAsset& Zenith_ModelAsset::operator=(Zenith_ModelAsset&& xOther) noexcept
+Zenith_ModelAsset& Zenith_ModelAsset::operator=(Zenith_ModelAsset&& xOther)
 {
 	if (this != &xOther)
 	{

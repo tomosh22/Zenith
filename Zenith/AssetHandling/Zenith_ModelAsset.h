@@ -48,8 +48,8 @@ public:
 	Zenith_ModelAsset& operator=(const Zenith_ModelAsset&) = delete;
 
 	// Allow moves
-	Zenith_ModelAsset(Zenith_ModelAsset&& xOther) noexcept;
-	Zenith_ModelAsset& operator=(Zenith_ModelAsset&& xOther) noexcept;
+	Zenith_ModelAsset(Zenith_ModelAsset&& xOther);
+	Zenith_ModelAsset& operator=(Zenith_ModelAsset&& xOther);
 
 	//--------------------------------------------------------------------------
 	// Loading and Saving

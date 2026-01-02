@@ -311,12 +311,4 @@ public:
 	Zenith_Vector<Flux_MaterialAsset*> m_xCreatedMaterials;
 	Zenith_Vector<Flux_MeshGeometry*> m_xCreatedMeshes;
 
-public:
-#if defined(ZENITH_TOOLS) && defined(ZENITH_VULKAN)
-	// Static registration function called by ComponentRegistry::Initialise()
-	static void RegisterWithEditor()
-	{
-		Zenith_ComponentRegistry::Get().RegisterComponent<Zenith_ModelComponent>("Model");
-	}
-#endif
 };

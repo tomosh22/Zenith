@@ -42,8 +42,8 @@ public:
 	Zenith_MeshAsset& operator=(const Zenith_MeshAsset&) = delete;
 
 	// Allow moves
-	Zenith_MeshAsset(Zenith_MeshAsset&& xOther) noexcept;
-	Zenith_MeshAsset& operator=(Zenith_MeshAsset&& xOther) noexcept;
+	Zenith_MeshAsset(Zenith_MeshAsset&& xOther);
+	Zenith_MeshAsset& operator=(Zenith_MeshAsset&& xOther);
 
 	//--------------------------------------------------------------------------
 	// Loading and Saving

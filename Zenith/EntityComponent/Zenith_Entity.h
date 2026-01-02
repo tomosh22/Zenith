@@ -36,9 +36,10 @@ public:
 	void ReadFromDataStream(Zenith_DataStream& xStream);
 
 	Zenith_EntityID m_uParentEntityID = -1;
-	std::string m_strName;
+
+	// Name accessors (name stored in scene, not entity)
+	const std::string& GetName() const;
+	void SetName(const std::string& strName);
 private:
 	Zenith_EntityID m_uEntityID;
-
-	bool m_bInitialised = false;
 };

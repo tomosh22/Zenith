@@ -32,7 +32,10 @@ void Zenith_EditorAddLogMessage(const char* szMessage, int eLevel)
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
+#include "EntityComponent/Components/Zenith_TerrainComponent.h"
+#include "EntityComponent/Components/Zenith_ScriptComponent.h"
 #include "EntityComponent/Components/Zenith_TextComponent.h"
+#include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "Input/Zenith_Input.h"
 #include "Flux/Flux_Graphics.h"
 #include "Vulkan/Zenith_Vulkan.h"
@@ -773,6 +776,9 @@ void Zenith_Editor::RenderHierarchyPanel()
 	// Get reference to current scene
 	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
 
+	// Track entity to delete (defer deletion to avoid iterator invalidation)
+	Zenith_EntityID uEntityToDelete = INVALID_ENTITY_ID;
+
 	// Iterate through all entities in the scene
 	for (auto& [entityID, entity] : xScene.m_xEntityMap)
 	{
@@ -781,8 +787,8 @@ void Zenith_Editor::RenderHierarchyPanel()
 
 		// Create selectable item for entity
 		// Use entity name if available, otherwise show ID
-		std::string strDisplayName = entity.m_strName.empty() ?
-			("Entity_" + std::to_string(entityID)) : entity.m_strName;
+		std::string strDisplayName = entity.GetName().empty() ?
+			("Entity_" + std::to_string(entityID)) : entity.GetName();
 
 		// Count components on this entity
 		uint32_t uComponentCount = 0;
@@ -831,11 +837,22 @@ void Zenith_Editor::RenderHierarchyPanel()
 				{
 					ClearSelection();
 				}
-				// Remove entity from scene
-				xScene.RemoveEntity(entityID);
+				// Mark for deferred deletion (can't modify map while iterating)
+				uEntityToDelete = entityID;
 			}
 			ImGui::EndPopup();
 		}
+	}
+
+	// Perform deferred entity deletion
+	if (uEntityToDelete != INVALID_ENTITY_ID)
+	{
+		// Reset game camera entity if we're deleting it
+		if (uEntityToDelete == s_uGameCameraEntity)
+		{
+			s_uGameCameraEntity = INVALID_ENTITY_ID;
+		}
+		xScene.RemoveEntity(uEntityToDelete);
 	}
 
 	// Add button to create new entity
@@ -861,11 +878,11 @@ void Zenith_Editor::RenderPropertiesPanel()
 	{
 		// Entity name editing
 		char nameBuffer[256];
-		strncpy(nameBuffer, pxSelectedEntity->m_strName.c_str(), sizeof(nameBuffer));
+		strncpy(nameBuffer, pxSelectedEntity->GetName().c_str(), sizeof(nameBuffer));
 		nameBuffer[sizeof(nameBuffer) - 1] = '\0';
 		if (ImGui::InputText("Name", nameBuffer, sizeof(nameBuffer)))
 		{
-			pxSelectedEntity->m_strName = nameBuffer;
+			pxSelectedEntity->SetName(nameBuffer);
 		}
 		
 		ImGui::Separator();

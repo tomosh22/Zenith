@@ -46,6 +46,61 @@ Zenith_UICanvas::~Zenith_UICanvas()
     }
 }
 
+Zenith_UICanvas::Zenith_UICanvas(Zenith_UICanvas&& xOther)
+    : m_xAllElements(std::move(xOther.m_xAllElements))
+    , m_xRootElements(std::move(xOther.m_xRootElements))
+    , m_xSize(xOther.m_xSize)
+    , m_xReferenceResolution(xOther.m_xReferenceResolution)
+    , m_fScaleFactor(xOther.m_fScaleFactor)
+{
+    // Update element canvas pointers to point to this canvas
+    for (Zenith_UIElement* pxElement : m_xAllElements)
+    {
+        if (pxElement)
+        {
+            pxElement->m_pxCanvas = this;
+        }
+    }
+
+    // If the other canvas was the primary canvas, transfer that role
+    if (s_pxPrimaryCanvas == &xOther)
+    {
+        s_pxPrimaryCanvas = this;
+    }
+}
+
+Zenith_UICanvas& Zenith_UICanvas::operator=(Zenith_UICanvas&& xOther)
+{
+    if (this != &xOther)
+    {
+        // Clear existing elements
+        Clear();
+
+        // Transfer ownership
+        m_xAllElements = std::move(xOther.m_xAllElements);
+        m_xRootElements = std::move(xOther.m_xRootElements);
+        m_xSize = xOther.m_xSize;
+        m_xReferenceResolution = xOther.m_xReferenceResolution;
+        m_fScaleFactor = xOther.m_fScaleFactor;
+
+        // Update element canvas pointers
+        for (Zenith_UIElement* pxElement : m_xAllElements)
+        {
+            if (pxElement)
+            {
+                pxElement->m_pxCanvas = this;
+            }
+        }
+
+        // Handle primary canvas transfer
+        if (s_pxPrimaryCanvas == &xOther)
+        {
+            s_pxPrimaryCanvas = this;
+        }
+    }
+    return *this;
+}
+
 void Zenith_UICanvas::AddElement(Zenith_UIElement* pxElement)
 {
     if (pxElement)

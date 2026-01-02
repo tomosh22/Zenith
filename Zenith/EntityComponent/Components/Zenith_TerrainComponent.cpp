@@ -1,6 +1,7 @@
 #include "Zenith.h"
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
+#include "EntityComponent/Zenith_ComponentMeta.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Profiling/Zenith_Profiling.h"
 #include "DataStream/Zenith_DataStream.h"
@@ -9,6 +10,8 @@
 #include "Flux/Terrain/Flux_TerrainStreamingManager.h"
 #include "Vulkan/Zenith_Vulkan_MemoryManager.h"
 #include <fstream>
+
+ZENITH_REGISTER_COMPONENT(Zenith_TerrainComponent, "Terrain")
 
 // LOD distance thresholds from unified config (distance squared)
 // Used for debug visualization - actual thresholds are in Flux_TerrainConfig.h
@@ -416,8 +419,8 @@ void Zenith_TerrainComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 	if (uVersion >= 2)
 	{
 		// Create fresh materials with descriptive names including entity name
-		std::string strEntityName = m_xParentEntity.m_strName.empty() ?
-			("Entity_" + std::to_string(m_xParentEntity.GetEntityID())) : m_xParentEntity.m_strName;
+		std::string strEntityName = m_xParentEntity.GetName().empty() ?
+			("Entity_" + std::to_string(m_xParentEntity.GetEntityID())) : m_xParentEntity.GetName();
 		m_pxMaterial0 = Flux_MaterialAsset::Create(strEntityName + "_Terrain_Mat0");
 		m_pxMaterial1 = Flux_MaterialAsset::Create(strEntityName + "_Terrain_Mat1");
 
@@ -1076,8 +1079,8 @@ void Zenith_TerrainComponent::RenderPropertiesPanel()
 					Zenith_Log("[TerrainComponent] Export complete. Initializing terrain...");
 					
 					// Create blank materials for initial rendering
-					std::string strEntityName = m_xParentEntity.m_strName.empty() ?
-						("Entity_" + std::to_string(m_xParentEntity.GetEntityID())) : m_xParentEntity.m_strName;
+					std::string strEntityName = m_xParentEntity.GetName().empty() ?
+						("Entity_" + std::to_string(m_xParentEntity.GetEntityID())) : m_xParentEntity.GetName();
 					
 					m_pxMaterial0 = Flux_MaterialAsset::Create(strEntityName + "_Terrain_Mat0");
 					m_pxMaterial1 = Flux_MaterialAsset::Create(strEntityName + "_Terrain_Mat1");

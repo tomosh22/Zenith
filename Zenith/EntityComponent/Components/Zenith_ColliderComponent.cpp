@@ -2,6 +2,7 @@
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
+#include "EntityComponent/Zenith_ComponentMeta.h"
 #include "Physics/Zenith_Physics.h"
 #include "DataStream/Zenith_DataStream.h"
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
@@ -15,6 +16,8 @@
 #include <Jolt/Physics/Collision/Shape/MeshShape.h>
 #include <Jolt/Physics/Collision/Shape/ConvexHullShape.h>
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
+
+ZENITH_REGISTER_COMPONENT(Zenith_ColliderComponent, "Collider")
 
 // Log tag for collider component operations
 static constexpr const char* LOG_TAG_COLLIDER = "[ColliderFromModel]";

@@ -55,8 +55,8 @@ public:
 	Zenith_SkeletonAsset& operator=(const Zenith_SkeletonAsset&) = delete;
 
 	// Allow moves
-	Zenith_SkeletonAsset(Zenith_SkeletonAsset&& xOther) noexcept;
-	Zenith_SkeletonAsset& operator=(Zenith_SkeletonAsset&& xOther) noexcept;
+	Zenith_SkeletonAsset(Zenith_SkeletonAsset&& xOther);
+	Zenith_SkeletonAsset& operator=(Zenith_SkeletonAsset&& xOther);
 
 	//--------------------------------------------------------------------------
 	// Loading and Saving

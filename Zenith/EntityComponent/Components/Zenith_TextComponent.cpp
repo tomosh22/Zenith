@@ -1,9 +1,12 @@
 #include "Zenith.h"
 
 #include "EntityComponent/Components/Zenith_TextComponent.h"
+#include "EntityComponent/Zenith_ComponentMeta.h"
 #include "Input/Zenith_Input.h"
 #include "Zenith_OS_Include.h"
 #include "DataStream/Zenith_DataStream.h"
+
+ZENITH_REGISTER_COMPONENT(Zenith_TextComponent, "Text")
 
 Zenith_TextComponent::Zenith_TextComponent(Zenith_Entity& xParentEntity)
 	: m_xParentEntity(xParentEntity)

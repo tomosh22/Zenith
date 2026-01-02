@@ -28,8 +28,8 @@ public:
 	Flux_SkeletonInstance& operator=(const Flux_SkeletonInstance&) = delete;
 
 	// Allow moves
-	Flux_SkeletonInstance(Flux_SkeletonInstance&& xOther) noexcept;
-	Flux_SkeletonInstance& operator=(Flux_SkeletonInstance&& xOther) noexcept;
+	Flux_SkeletonInstance(Flux_SkeletonInstance&& xOther);
+	Flux_SkeletonInstance& operator=(Flux_SkeletonInstance&& xOther);
 
 	/**
 	 * Factory method - create instance from skeleton asset

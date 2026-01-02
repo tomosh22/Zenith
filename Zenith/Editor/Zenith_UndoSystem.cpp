@@ -290,7 +290,7 @@ Zenith_UndoCommand_DeleteEntity::Zenith_UndoCommand_DeleteEntity(Zenith_EntityID
 
 	// Capture entity state before deletion
 	Zenith_Entity xEntity = xScene.GetEntityFromID(m_uEntityID);
-	m_strName = xEntity.m_strName;
+	m_strName = xEntity.GetName();
 
 	// TODO: Serialize full entity state (all components)
 	// For now, we just capture the name

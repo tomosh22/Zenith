@@ -19,7 +19,7 @@ public:
 		CopyFromOther(xOther);
 	}
 
-	Zenith_Vector(Zenith_Vector&& xOther) noexcept
+	Zenith_Vector(Zenith_Vector&& xOther)
 	: m_pxData(xOther.m_pxData)
 	, m_uSize(xOther.m_uSize)
 	, m_uCapacity(xOther.m_uCapacity)
@@ -37,7 +37,7 @@ public:
 		return *this;
 	}
 
-	Zenith_Vector& operator=(Zenith_Vector&& xOther) noexcept
+	Zenith_Vector& operator=(Zenith_Vector&& xOther)
 	{
 		Clear();
 		Zenith_MemoryManagement::Deallocate(m_pxData);

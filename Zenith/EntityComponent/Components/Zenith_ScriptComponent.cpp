@@ -1,6 +1,13 @@
 #include "Zenith.h"
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
+#include "EntityComponent/Zenith_ComponentMeta.h"
 #include "DataStream/Zenith_DataStream.h"
+
+ZENITH_REGISTER_COMPONENT(Zenith_ScriptComponent, "Script")
+
+// Force link function - ensures this translation unit is included by the linker
+// Called from Zenith_Scene.cpp to guarantee static initializer runs
+void Zenith_ScriptComponent_ForceLink() {}
 
 void Zenith_ScriptComponent::WriteToDataStream(Zenith_DataStream& xStream) const
 {

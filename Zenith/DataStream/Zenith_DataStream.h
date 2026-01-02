@@ -25,7 +25,7 @@ public:
 	}
 
 	// Move constructor
-	Zenith_DataStream(Zenith_DataStream&& other) noexcept
+	Zenith_DataStream(Zenith_DataStream&& other)
 		: m_bOwnsData(other.m_bOwnsData)
 		, m_ulDataSize(other.m_ulDataSize)
 		, m_ulCursor(other.m_ulCursor)
@@ -38,7 +38,7 @@ public:
 	}
 
 	// Move assignment
-	Zenith_DataStream& operator=(Zenith_DataStream&& other) noexcept
+	Zenith_DataStream& operator=(Zenith_DataStream&& other)
 	{
 		if (this != &other)
 		{

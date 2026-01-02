@@ -39,6 +39,10 @@ public:
     Zenith_UICanvas(const Zenith_UICanvas&) = delete;
     Zenith_UICanvas& operator=(const Zenith_UICanvas&) = delete;
 
+    // Allow moving (for component pool swap-and-pop)
+    Zenith_UICanvas(Zenith_UICanvas&& xOther);
+    Zenith_UICanvas& operator=(Zenith_UICanvas&& xOther);
+
     // ========== Initialization ==========
 
     static void Initialise();

@@ -14,8 +14,8 @@ public:
 	Zenith_Prefab(const Zenith_Prefab&) = delete;
 	Zenith_Prefab& operator=(const Zenith_Prefab&) = delete;
 
-	Zenith_Prefab(Zenith_Prefab&& other) noexcept;
-	Zenith_Prefab& operator=(Zenith_Prefab&& other) noexcept;
+	Zenith_Prefab(Zenith_Prefab&& other);
+	Zenith_Prefab& operator=(Zenith_Prefab&& other);
 
 	bool CreateFromEntity(const Zenith_Entity& xEntity, const std::string& strPrefabName);
 

@@ -43,6 +43,14 @@ public:
     Zenith_UIComponent(Zenith_Entity& xParentEntity);
     ~Zenith_UIComponent();
 
+    // Prevent copying (UICanvas is non-copyable)
+    Zenith_UIComponent(const Zenith_UIComponent&) = delete;
+    Zenith_UIComponent& operator=(const Zenith_UIComponent&) = delete;
+
+    // Allow moving (for component pool swap-and-pop)
+    Zenith_UIComponent(Zenith_UIComponent&& xOther);
+    Zenith_UIComponent& operator=(Zenith_UIComponent&& xOther);
+
     // ========== Element Creation ==========
 
     Zenith_UI::Zenith_UIText* CreateText(const std::string& strName, const std::string& strText = "");
@@ -93,11 +101,6 @@ public:
 
 #ifdef ZENITH_TOOLS
     void RenderPropertiesPanel();
-
-    static void RegisterWithEditor()
-    {
-        Zenith_ComponentRegistry::Get().RegisterComponent<Zenith_UIComponent>("UI");
-    }
 
 private:
     void RenderElementTree(Zenith_UI::Zenith_UIElement* pxElement, int iDepth);

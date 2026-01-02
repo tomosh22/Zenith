@@ -1,14 +1,8 @@
 #include "Zenith.h"
 #include "Prefab/Zenith_Prefab.h"
-#include "EntityComponent/Components/Zenith_TransformComponent.h"
-#include "EntityComponent/Components/Zenith_ModelComponent.h"
-#include "EntityComponent/Components/Zenith_CameraComponent.h"
-#include "EntityComponent/Components/Zenith_ColliderComponent.h"
-#include "EntityComponent/Components/Zenith_TextComponent.h"
-#include "EntityComponent/Components/Zenith_TerrainComponent.h"
-#include "EntityComponent/Components/Zenith_ScriptComponent.h"
+#include "EntityComponent/Zenith_ComponentMeta.h"
 
-Zenith_Prefab::Zenith_Prefab(Zenith_Prefab&& other) noexcept
+Zenith_Prefab::Zenith_Prefab(Zenith_Prefab&& other)
 	: m_strName(std::move(other.m_strName))
 	, m_xComponentData(std::move(other.m_xComponentData))
 	, m_bIsValid(other.m_bIsValid)
@@ -16,7 +10,7 @@ Zenith_Prefab::Zenith_Prefab(Zenith_Prefab&& other) noexcept
 	other.m_bIsValid = false;
 }
 
-Zenith_Prefab& Zenith_Prefab::operator=(Zenith_Prefab&& other) noexcept
+Zenith_Prefab& Zenith_Prefab::operator=(Zenith_Prefab&& other)
 {
 	if (this != &other)
 	{
@@ -48,59 +42,8 @@ bool Zenith_Prefab::CreateFromEntity(const Zenith_Entity& xEntity, const std::st
 
 void Zenith_Prefab::SerializeComponents(Zenith_Entity& xEntity)
 {
-	std::vector<std::string> xComponentTypes;
-
-	if (xEntity.HasComponent<Zenith_TransformComponent>())
-		xComponentTypes.push_back("TransformComponent");
-	if (xEntity.HasComponent<Zenith_ModelComponent>())
-		xComponentTypes.push_back("ModelComponent");
-	if (xEntity.HasComponent<Zenith_CameraComponent>())
-		xComponentTypes.push_back("CameraComponent");
-	if (xEntity.HasComponent<Zenith_TextComponent>())
-		xComponentTypes.push_back("TextComponent");
-	if (xEntity.HasComponent<Zenith_TerrainComponent>())
-		xComponentTypes.push_back("TerrainComponent");
-	if (xEntity.HasComponent<Zenith_ColliderComponent>())
-		xComponentTypes.push_back("ColliderComponent");
-	if (xEntity.HasComponent<Zenith_ScriptComponent>())
-		xComponentTypes.push_back("ScriptComponent");
-
-	u_int uNumComponents = static_cast<u_int>(xComponentTypes.size());
-	m_xComponentData << uNumComponents;
-
-	for (const std::string& strTypeName : xComponentTypes)
-	{
-		m_xComponentData << strTypeName;
-
-		if (strTypeName == "TransformComponent")
-		{
-			xEntity.GetComponent<Zenith_TransformComponent>().WriteToDataStream(m_xComponentData);
-		}
-		else if (strTypeName == "ModelComponent")
-		{
-			xEntity.GetComponent<Zenith_ModelComponent>().WriteToDataStream(m_xComponentData);
-		}
-		else if (strTypeName == "CameraComponent")
-		{
-			xEntity.GetComponent<Zenith_CameraComponent>().WriteToDataStream(m_xComponentData);
-		}
-		else if (strTypeName == "TextComponent")
-		{
-			xEntity.GetComponent<Zenith_TextComponent>().WriteToDataStream(m_xComponentData);
-		}
-		else if (strTypeName == "TerrainComponent")
-		{
-			xEntity.GetComponent<Zenith_TerrainComponent>().WriteToDataStream(m_xComponentData);
-		}
-		else if (strTypeName == "ColliderComponent")
-		{
-			xEntity.GetComponent<Zenith_ColliderComponent>().WriteToDataStream(m_xComponentData);
-		}
-		else if (strTypeName == "ScriptComponent")
-		{
-			xEntity.GetComponent<Zenith_ScriptComponent>().WriteToDataStream(m_xComponentData);
-		}
-	}
+	// Use the ComponentMeta registry to serialize all components
+	Zenith_ComponentMetaRegistry::Get().SerializeEntityComponents(xEntity, m_xComponentData);
 }
 
 bool Zenith_Prefab::SaveToFile(const std::string& strFilePath) const
@@ -178,80 +121,16 @@ bool Zenith_Prefab::ApplyToEntity(Zenith_Entity& xEntity) const
 
 void Zenith_Prefab::DeserializeComponents(Zenith_Entity& xEntity) const
 {
-	Zenith_DataStream xReadStream;
-	xReadStream.ReadFromFile("");
-
 	Zenith_DataStream& xStream = const_cast<Zenith_DataStream&>(m_xComponentData);
 	xStream.SetCursor(0);
 
+	// Skip the header (magic, version, name)
 	u_int uMagic, uVersion;
 	std::string strName;
 	xStream >> uMagic;
 	xStream >> uVersion;
 	xStream >> strName;
 
-	u_int uNumComponents;
-	xStream >> uNumComponents;
-
-	for (u_int c = 0; c < uNumComponents; c++)
-	{
-		std::string strComponentType;
-		xStream >> strComponentType;
-
-		if (strComponentType == "TransformComponent")
-		{
-			if (xEntity.HasComponent<Zenith_TransformComponent>())
-			{
-				xEntity.GetComponent<Zenith_TransformComponent>().ReadFromDataStream(xStream);
-			}
-		}
-		else if (strComponentType == "ModelComponent")
-		{
-			if (!xEntity.HasComponent<Zenith_ModelComponent>())
-			{
-				xEntity.AddComponent<Zenith_ModelComponent>();
-			}
-			xEntity.GetComponent<Zenith_ModelComponent>().ReadFromDataStream(xStream);
-		}
-		else if (strComponentType == "CameraComponent")
-		{
-			if (!xEntity.HasComponent<Zenith_CameraComponent>())
-			{
-				xEntity.AddComponent<Zenith_CameraComponent>();
-			}
-			xEntity.GetComponent<Zenith_CameraComponent>().ReadFromDataStream(xStream);
-		}
-		else if (strComponentType == "TextComponent")
-		{
-			if (!xEntity.HasComponent<Zenith_TextComponent>())
-			{
-				xEntity.AddComponent<Zenith_TextComponent>();
-			}
-			xEntity.GetComponent<Zenith_TextComponent>().ReadFromDataStream(xStream);
-		}
-		else if (strComponentType == "TerrainComponent")
-		{
-			if (!xEntity.HasComponent<Zenith_TerrainComponent>())
-			{
-				xEntity.AddComponent<Zenith_TerrainComponent>();
-			}
-			xEntity.GetComponent<Zenith_TerrainComponent>().ReadFromDataStream(xStream);
-		}
-		else if (strComponentType == "ColliderComponent")
-		{
-			if (!xEntity.HasComponent<Zenith_ColliderComponent>())
-			{
-				xEntity.AddComponent<Zenith_ColliderComponent>();
-			}
-			xEntity.GetComponent<Zenith_ColliderComponent>().ReadFromDataStream(xStream);
-		}
-		else if (strComponentType == "ScriptComponent")
-		{
-			if (!xEntity.HasComponent<Zenith_ScriptComponent>())
-			{
-				xEntity.AddComponent<Zenith_ScriptComponent>();
-			}
-			xEntity.GetComponent<Zenith_ScriptComponent>().ReadFromDataStream(xStream);
-		}
-	}
+	// Use the ComponentMeta registry to deserialize all components
+	Zenith_ComponentMetaRegistry::Get().DeserializeEntityComponents(xEntity, xStream);
 }

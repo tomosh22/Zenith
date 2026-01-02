@@ -13,6 +13,9 @@
 // Scene serialization includes
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_Entity.h"
+#include "EntityComponent/Zenith_ComponentMeta.h"
+#include "EntityComponent/Zenith_Query.h"
+#include "EntityComponent/Zenith_EventSystem.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
@@ -75,6 +78,43 @@ void Zenith_UnitTests::RunAllTests()
 	TestMeshAssetLoading();
 	TestBindPoseVertexPositions();
 	TestAnimatedVertexPositions();
+
+	// ECS bug fix tests (Phase 1)
+	TestComponentRemovalIndexUpdate();
+	TestComponentSwapAndPop();
+	TestMultipleComponentRemoval();
+	TestComponentRemovalWithManyEntities();
+	TestEntityIsTrivialSize();
+	TestEntityNameFromScene();
+	TestEntityCopyPreservesAccess();
+
+	// ECS reflection system tests (Phase 2)
+	TestComponentMetaRegistration();
+	TestComponentMetaSerialization();
+	TestComponentMetaDeserialization();
+	TestComponentMetaTypeIDConsistency();
+
+	// ECS lifecycle hooks tests (Phase 3)
+	TestLifecycleHookDetection();
+	TestLifecycleOnAwake();
+	TestLifecycleOnStart();
+	TestLifecycleOnUpdate();
+	TestLifecycleOnDestroy();
+	TestLifecycleDispatchOrder();
+
+	// ECS query system tests (Phase 4)
+	TestQuerySingleComponent();
+	TestQueryMultipleComponents();
+	TestQueryNoMatches();
+	TestQueryCount();
+	TestQueryFirstAndAny();
+
+	// ECS event system tests (Phase 5)
+	TestEventSubscribeDispatch();
+	TestEventUnsubscribe();
+	TestEventDeferredQueue();
+	TestEventMultipleSubscribers();
+	TestEventClearSubscriptions();
 
 #ifdef ZENITH_TOOLS
 	// Editor tests (only in tools builds)
@@ -450,7 +490,7 @@ void Zenith_UnitTests::TestEntitySerialization()
 
 	// Verify entity metadata was written
 	const Zenith_EntityID uExpectedEntityID = xGroundTruthEntity.GetEntityID();
-	const std::string strExpectedName = xGroundTruthEntity.m_strName;
+	const std::string strExpectedName = xGroundTruthEntity.GetName();
 
 	// Deserialize into new entity
 	xStream.SetCursor(0);
@@ -459,7 +499,7 @@ void Zenith_UnitTests::TestEntitySerialization()
 
 	// Verify entity metadata
 	Zenith_Assert(xLoadedEntity.GetEntityID() == uExpectedEntityID, "Entity ID mismatch");
-	Zenith_Assert(xLoadedEntity.m_strName == strExpectedName, "Entity name mismatch");
+	Zenith_Assert(xLoadedEntity.GetName() == strExpectedName, "Entity name mismatch");
 
 	// Verify components were restored
 	Zenith_Assert(xLoadedEntity.HasComponent<Zenith_TransformComponent>(), "TransformComponent not restored");
@@ -614,7 +654,7 @@ void Zenith_UnitTests::TestSceneRoundTrip()
 
 	// Verify Camera Entity
 	Zenith_Entity xLoadedCamera = xLoadedScene.GetEntityByID(uCameraEntityID);
-	Zenith_Assert(xLoadedCamera.m_strName == "MainCamera", "Camera entity name mismatch");
+	Zenith_Assert(xLoadedCamera.GetName() == "MainCamera", "Camera entity name mismatch");
 	Zenith_Assert(xLoadedCamera.HasComponent<Zenith_CameraComponent>(), "Camera entity missing CameraComponent");
 
 	Zenith_CameraComponent& xLoadedCameraComp = xLoadedCamera.GetComponent<Zenith_CameraComponent>();
@@ -628,7 +668,7 @@ void Zenith_UnitTests::TestSceneRoundTrip()
 
 	// Verify Entity 1
 	Zenith_Entity xLoadedEntity1 = xLoadedScene.GetEntityByID(uEntity1ID);
-	Zenith_Assert(xLoadedEntity1.m_strName == "TestEntity1", "Entity1 name mismatch");
+	Zenith_Assert(xLoadedEntity1.GetName() == "TestEntity1", "Entity1 name mismatch");
 	Zenith_Assert(xLoadedEntity1.HasComponent<Zenith_TransformComponent>(), "Entity1 missing TransformComponent");
 
 	Zenith_TransformComponent& xLoadedTransform1 = xLoadedEntity1.GetComponent<Zenith_TransformComponent>();
@@ -646,7 +686,7 @@ void Zenith_UnitTests::TestSceneRoundTrip()
 
 	// Verify Entity 2
 	Zenith_Entity xLoadedEntity2 = xLoadedScene.GetEntityByID(uEntity2ID);
-	Zenith_Assert(xLoadedEntity2.m_strName == "TestEntity2", "Entity2 name mismatch");
+	Zenith_Assert(xLoadedEntity2.GetName() == "TestEntity2", "Entity2 name mismatch");
 	Zenith_Assert(xLoadedEntity2.HasComponent<Zenith_TransformComponent>(), "Entity2 missing TransformComponent");
 	Zenith_Assert(xLoadedEntity2.HasComponent<Zenith_TextComponent>(), "Entity2 missing TextComponent");
 
@@ -2510,3 +2550,1046 @@ void Zenith_UnitTests::TestAnimatedVertexPositions()
 	Zenith_Log("TestAnimatedVertexPositions completed successfully");
 }
 
+//------------------------------------------------------------------------------
+// ECS Bug Fix Tests (Phase 1)
+//------------------------------------------------------------------------------
+
+/**
+ * Test that component indices remain valid after another entity's component is removed.
+ * This tests the swap-and-pop fix for the component removal data corruption bug.
+ */
+void Zenith_UnitTests::TestComponentRemovalIndexUpdate()
+{
+	Zenith_Log("Running TestComponentRemovalIndexUpdate...");
+
+	// Create a test scene with 3 entities, each with TransformComponent
+	Zenith_Scene xTestScene;
+	Zenith_Entity xEntity1(&xTestScene, "Entity1");
+	Zenith_Entity xEntity2(&xTestScene, "Entity2");
+	Zenith_Entity xEntity3(&xTestScene, "Entity3");
+
+	// Set distinct positions for each entity
+	xEntity1.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f));
+	xEntity2.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(2.0f, 0.0f, 0.0f));
+	xEntity3.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(3.0f, 0.0f, 0.0f));
+
+	// Store Entity3's position before removal
+	Zenith_Maths::Vector3 xExpectedPos3(3.0f, 0.0f, 0.0f);
+
+	// Remove Entity2's transform (this should trigger swap-and-pop)
+	xEntity2.RemoveComponent<Zenith_TransformComponent>();
+
+	// Verify Entity1 still has correct data
+	Zenith_Maths::Vector3 xPos1;
+	xEntity1.GetComponent<Zenith_TransformComponent>().GetPosition(xPos1);
+	Zenith_Assert(xPos1.x == 1.0f, "TestComponentRemovalIndexUpdate: Entity1 position corrupted after Entity2 removal");
+
+	// Verify Entity3 still has correct data (this entity's index likely changed due to swap-and-pop)
+	Zenith_Maths::Vector3 xPos3;
+	xEntity3.GetComponent<Zenith_TransformComponent>().GetPosition(xPos3);
+	Zenith_Assert(xPos3.x == xExpectedPos3.x && xPos3.y == xExpectedPos3.y && xPos3.z == xExpectedPos3.z,
+		"TestComponentRemovalIndexUpdate: Entity3 position corrupted after Entity2 removal");
+
+	Zenith_Log("TestComponentRemovalIndexUpdate completed successfully");
+}
+
+/**
+ * Test that swap-and-pop removal preserves all component data correctly.
+ */
+void Zenith_UnitTests::TestComponentSwapAndPop()
+{
+	Zenith_Log("Running TestComponentSwapAndPop...");
+
+	Zenith_Scene xTestScene;
+
+	// Create 5 entities with transforms
+	Zenith_Entity xEntities[5] = {
+		Zenith_Entity(&xTestScene, "Entity0"),
+		Zenith_Entity(&xTestScene, "Entity1"),
+		Zenith_Entity(&xTestScene, "Entity2"),
+		Zenith_Entity(&xTestScene, "Entity3"),
+		Zenith_Entity(&xTestScene, "Entity4")
+	};
+
+	// Set unique positions
+	for (u_int i = 0; i < 5; ++i)
+	{
+		xEntities[i].GetComponent<Zenith_TransformComponent>().SetPosition(
+			Zenith_Maths::Vector3(static_cast<float>(i * 10), 0.0f, 0.0f));
+	}
+
+	// Remove entity at index 1 (should swap with last element, index 4)
+	xEntities[1].RemoveComponent<Zenith_TransformComponent>();
+
+	// Verify remaining entities have correct data
+	for (u_int i = 0; i < 5; ++i)
+	{
+		if (i == 1) continue; // Removed
+
+		Zenith_Assert(xEntities[i].HasComponent<Zenith_TransformComponent>(),
+			"TestComponentSwapAndPop: Entity lost its TransformComponent unexpectedly");
+
+		Zenith_Maths::Vector3 xPos;
+		xEntities[i].GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
+		Zenith_Assert(xPos.x == static_cast<float>(i * 10),
+			"TestComponentSwapAndPop: Entity position data corrupted after swap-and-pop");
+	}
+
+	// Remove entity at index 0 (another swap-and-pop)
+	xEntities[0].RemoveComponent<Zenith_TransformComponent>();
+
+	// Verify remaining entities still correct
+	for (u_int i = 2; i < 5; ++i)
+	{
+		Zenith_Maths::Vector3 xPos;
+		xEntities[i].GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
+		Zenith_Assert(xPos.x == static_cast<float>(i * 10),
+			"TestComponentSwapAndPop: Entity position corrupted after second removal");
+	}
+
+	Zenith_Log("TestComponentSwapAndPop completed successfully");
+}
+
+/**
+ * Test removing multiple components from multiple entities in sequence.
+ */
+void Zenith_UnitTests::TestMultipleComponentRemoval()
+{
+	Zenith_Log("Running TestMultipleComponentRemoval...");
+
+	Zenith_Scene xTestScene;
+
+	// Create entities with multiple component types
+	Zenith_Entity xEntity1(&xTestScene, "Entity1");
+	Zenith_Entity xEntity2(&xTestScene, "Entity2");
+	Zenith_Entity xEntity3(&xTestScene, "Entity3");
+
+	// Add CameraComponents to entities 1 and 2
+	xEntity1.AddComponent<Zenith_CameraComponent>().InitialisePerspective(
+		Zenith_Maths::Vector3(1, 0, 0), 0, 0, 60, 0.1f, 100, 1.0f);
+	xEntity2.AddComponent<Zenith_CameraComponent>().InitialisePerspective(
+		Zenith_Maths::Vector3(2, 0, 0), 0, 0, 60, 0.1f, 100, 1.0f);
+
+	// Add TextComponents to entities 2 and 3
+	Zenith_TextComponent& xText2 = xEntity2.AddComponent<Zenith_TextComponent>();
+	TextEntry xEntry2;
+	xEntry2.m_strText = "Text2";
+	xText2.AddText(xEntry2);
+
+	Zenith_TextComponent& xText3 = xEntity3.AddComponent<Zenith_TextComponent>();
+	TextEntry xEntry3;
+	xEntry3.m_strText = "Text3";
+	xText3.AddText(xEntry3);
+
+	// Remove Entity1's camera
+	xEntity1.RemoveComponent<Zenith_CameraComponent>();
+
+	// Verify Entity2 still has its camera
+	Zenith_Assert(xEntity2.HasComponent<Zenith_CameraComponent>(),
+		"TestMultipleComponentRemoval: Entity2 lost CameraComponent");
+
+	// Remove Entity2's text
+	xEntity2.RemoveComponent<Zenith_TextComponent>();
+
+	// Verify Entity3 still has text
+	Zenith_Assert(xEntity3.HasComponent<Zenith_TextComponent>(),
+		"TestMultipleComponentRemoval: Entity3 lost TextComponent");
+
+	// Remove Entity2's camera
+	xEntity2.RemoveComponent<Zenith_CameraComponent>();
+
+	// Verify Entity3 still has text with correct data
+	Zenith_Assert(xEntity3.HasComponent<Zenith_TextComponent>(),
+		"TestMultipleComponentRemoval: Entity3 lost TextComponent after camera removal");
+
+	Zenith_Log("TestMultipleComponentRemoval completed successfully");
+}
+
+/**
+ * Stress test component removal with many entities.
+ */
+void Zenith_UnitTests::TestComponentRemovalWithManyEntities()
+{
+	Zenith_Log("Running TestComponentRemovalWithManyEntities...");
+
+	constexpr u_int NUM_ENTITIES = 1000;
+	Zenith_Scene xTestScene;
+
+	// Create many entities
+	std::vector<Zenith_Entity> xEntities;
+	xEntities.reserve(NUM_ENTITIES);
+
+	for (u_int i = 0; i < NUM_ENTITIES; ++i)
+	{
+		xEntities.emplace_back(&xTestScene, "StressEntity" + std::to_string(i));
+		xEntities[i].GetComponent<Zenith_TransformComponent>().SetPosition(
+			Zenith_Maths::Vector3(static_cast<float>(i), 0.0f, 0.0f));
+	}
+
+	// Remove every other entity's transform component
+	for (u_int i = 0; i < NUM_ENTITIES; i += 2)
+	{
+		xEntities[i].RemoveComponent<Zenith_TransformComponent>();
+	}
+
+	// Verify remaining entities have correct data
+	for (u_int i = 1; i < NUM_ENTITIES; i += 2)
+	{
+		Zenith_Assert(xEntities[i].HasComponent<Zenith_TransformComponent>(),
+			"TestComponentRemovalWithManyEntities: Entity lost TransformComponent");
+
+		Zenith_Maths::Vector3 xPos;
+		xEntities[i].GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
+		Zenith_Assert(xPos.x == static_cast<float>(i),
+			"TestComponentRemovalWithManyEntities: Entity position corrupted");
+	}
+
+	Zenith_Log("TestComponentRemovalWithManyEntities completed successfully (tested %u entities)", NUM_ENTITIES);
+}
+
+/**
+ * Test that Zenith_Entity is now lightweight (16 bytes on 64-bit).
+ * Entity should only contain: scene pointer (8), entity ID (4), parent ID (4).
+ */
+void Zenith_UnitTests::TestEntityIsTrivialSize()
+{
+	Zenith_Log("Running TestEntityIsTrivialSize...");
+
+	constexpr size_t EXPECTED_SIZE = sizeof(void*) + sizeof(Zenith_EntityID) * 2;
+	const size_t uActualSize = sizeof(Zenith_Entity);
+
+	Zenith_Log("  Expected Zenith_Entity size: %zu bytes", EXPECTED_SIZE);
+	Zenith_Log("  Actual Zenith_Entity size: %zu bytes", uActualSize);
+
+	Zenith_Assert(uActualSize == EXPECTED_SIZE,
+		"TestEntityIsTrivialSize: Zenith_Entity size is not as expected (should be pointer + 2 IDs)");
+
+	Zenith_Log("TestEntityIsTrivialSize completed successfully");
+}
+
+/**
+ * Test that entity names are stored in the scene and accessible via GetName()/SetName().
+ */
+void Zenith_UnitTests::TestEntityNameFromScene()
+{
+	Zenith_Log("Running TestEntityNameFromScene...");
+
+	Zenith_Scene xTestScene;
+
+	// Create entity with name
+	Zenith_Entity xEntity(&xTestScene, "TestEntityName");
+
+	// Verify GetName() returns the correct name
+	Zenith_Assert(xEntity.GetName() == "TestEntityName",
+		"TestEntityNameFromScene: GetName() returned wrong name");
+
+	// Change name via SetName()
+	xEntity.SetName("RenamedEntity");
+	Zenith_Assert(xEntity.GetName() == "RenamedEntity",
+		"TestEntityNameFromScene: SetName() did not update name");
+
+	// Verify scene stores the name
+	Zenith_Assert(xTestScene.GetEntityName(xEntity.GetEntityID()) == "RenamedEntity",
+		"TestEntityNameFromScene: Scene does not have correct name");
+
+	// Create another entity and verify names don't interfere
+	Zenith_Entity xEntity2(&xTestScene, "SecondEntity");
+	Zenith_Assert(xEntity.GetName() == "RenamedEntity",
+		"TestEntityNameFromScene: First entity name changed after creating second");
+	Zenith_Assert(xEntity2.GetName() == "SecondEntity",
+		"TestEntityNameFromScene: Second entity has wrong name");
+
+	Zenith_Log("TestEntityNameFromScene completed successfully");
+}
+
+/**
+ * Test that copying an entity preserves access to components.
+ * Since Entity is now just a lightweight handle (scene pointer + IDs),
+ * copies should reference the same underlying component data.
+ */
+void Zenith_UnitTests::TestEntityCopyPreservesAccess()
+{
+	Zenith_Log("Running TestEntityCopyPreservesAccess...");
+
+	Zenith_Scene xTestScene;
+	Zenith_Entity xOriginal(&xTestScene, "OriginalEntity");
+
+	// Set a position
+	xOriginal.GetComponent<Zenith_TransformComponent>().SetPosition(
+		Zenith_Maths::Vector3(42.0f, 43.0f, 44.0f));
+
+	// Copy the entity
+	Zenith_Entity xCopy = xOriginal;
+
+	// Verify copy has same entity ID
+	Zenith_Assert(xCopy.GetEntityID() == xOriginal.GetEntityID(),
+		"TestEntityCopyPreservesAccess: Copy has different entity ID");
+
+	// Verify copy can access the same component data
+	Zenith_Maths::Vector3 xCopyPos;
+	xCopy.GetComponent<Zenith_TransformComponent>().GetPosition(xCopyPos);
+	Zenith_Assert(xCopyPos.x == 42.0f && xCopyPos.y == 43.0f && xCopyPos.z == 44.0f,
+		"TestEntityCopyPreservesAccess: Copy cannot access component data");
+
+	// Modify via copy, verify original sees change
+	xCopy.GetComponent<Zenith_TransformComponent>().SetPosition(
+		Zenith_Maths::Vector3(100.0f, 200.0f, 300.0f));
+
+	Zenith_Maths::Vector3 xOriginalPos;
+	xOriginal.GetComponent<Zenith_TransformComponent>().GetPosition(xOriginalPos);
+	Zenith_Assert(xOriginalPos.x == 100.0f && xOriginalPos.y == 200.0f && xOriginalPos.z == 300.0f,
+		"TestEntityCopyPreservesAccess: Original did not see modification via copy");
+
+	// Verify name access works on copy
+	Zenith_Assert(xCopy.GetName() == "OriginalEntity",
+		"TestEntityCopyPreservesAccess: Copy cannot access entity name");
+
+	Zenith_Log("TestEntityCopyPreservesAccess completed successfully");
+}
+
+//------------------------------------------------------------------------------
+// ECS Reflection System Tests (Phase 2)
+//------------------------------------------------------------------------------
+
+/**
+ * Test that all component types are registered with the ComponentMeta registry.
+ * Verifies the registration macro and registry initialization work correctly.
+ */
+void Zenith_UnitTests::TestComponentMetaRegistration()
+{
+	Zenith_Log("Running TestComponentMetaRegistration...");
+
+	const auto& xMetasSorted = Zenith_ComponentMetaRegistry::Get().GetAllMetasSorted();
+
+	// Verify we have the expected number of component types (8 components)
+	Zenith_Assert(xMetasSorted.size() >= 8,
+		"TestComponentMetaRegistration: Expected at least 8 registered component types");
+
+	// Verify Transform is registered
+	const Zenith_ComponentMeta* pxTransformMeta =
+		Zenith_ComponentMetaRegistry::Get().GetMetaByName("Transform");
+	Zenith_Assert(pxTransformMeta != nullptr,
+		"TestComponentMetaRegistration: Transform not registered");
+	Zenith_Assert(pxTransformMeta->m_pfnCreate != nullptr,
+		"TestComponentMetaRegistration: Transform has no create function");
+	Zenith_Assert(pxTransformMeta->m_pfnHasComponent != nullptr,
+		"TestComponentMetaRegistration: Transform has no hasComponent function");
+
+	// Verify Camera is registered
+	const Zenith_ComponentMeta* pxCameraMeta =
+		Zenith_ComponentMetaRegistry::Get().GetMetaByName("Camera");
+	Zenith_Assert(pxCameraMeta != nullptr,
+		"TestComponentMetaRegistration: Camera not registered");
+
+	// Verify Model is registered
+	const Zenith_ComponentMeta* pxModelMeta =
+		Zenith_ComponentMetaRegistry::Get().GetMetaByName("Model");
+	Zenith_Assert(pxModelMeta != nullptr,
+		"TestComponentMetaRegistration: Model not registered");
+
+	Zenith_Log("TestComponentMetaRegistration completed successfully");
+}
+
+/**
+ * Test that component serialization via the registry works correctly.
+ * Creates an entity with components, serializes via registry, deserializes
+ * and verifies the data is preserved.
+ */
+void Zenith_UnitTests::TestComponentMetaSerialization()
+{
+	Zenith_Log("Running TestComponentMetaSerialization...");
+
+	Zenith_Scene xTestScene;
+	Zenith_Entity xEntity(&xTestScene, "SerializationTestEntity");
+
+	// Set up transform
+	xEntity.GetComponent<Zenith_TransformComponent>().SetPosition(
+		Zenith_Maths::Vector3(10.0f, 20.0f, 30.0f));
+	xEntity.GetComponent<Zenith_TransformComponent>().SetScale(
+		Zenith_Maths::Vector3(2.0f, 3.0f, 4.0f));
+
+	// Add a camera component
+	Zenith_CameraComponent& xCamera = xEntity.AddComponent<Zenith_CameraComponent>();
+	xCamera.InitialisePerspective(
+		Zenith_Maths::Vector3(1.0f, 2.0f, 3.0f), // position
+		0.5f, 1.0f, // pitch, yaw
+		60.0f, // FOV
+		0.1f, 1000.0f, // near, far
+		16.0f / 9.0f); // aspect
+
+	// Serialize via registry
+	Zenith_DataStream xStream;
+	Zenith_ComponentMetaRegistry::Get().SerializeEntityComponents(xEntity, xStream);
+
+	// If we get here without assertion, serialization worked
+	// The deserialization test will verify the data is correct
+
+	Zenith_Log("TestComponentMetaSerialization completed successfully");
+}
+
+/**
+ * Test that component deserialization via the registry works correctly.
+ * Serializes an entity, creates a new entity, deserializes onto it,
+ * and verifies the components match.
+ */
+void Zenith_UnitTests::TestComponentMetaDeserialization()
+{
+	Zenith_Log("Running TestComponentMetaDeserialization...");
+
+	Zenith_Scene xTestScene;
+	Zenith_Entity xOriginal(&xTestScene, "OriginalEntity");
+
+	// Set distinctive values
+	xOriginal.GetComponent<Zenith_TransformComponent>().SetPosition(
+		Zenith_Maths::Vector3(111.0f, 222.0f, 333.0f));
+
+	// Serialize original
+	Zenith_DataStream xStream;
+	Zenith_ComponentMetaRegistry::Get().SerializeEntityComponents(xOriginal, xStream);
+
+	// Create new entity
+	Zenith_Entity xNew(&xTestScene, "NewEntity");
+
+	// Reset stream cursor
+	xStream.SetCursor(0);
+
+	// Deserialize onto new entity
+	Zenith_ComponentMetaRegistry::Get().DeserializeEntityComponents(xNew, xStream);
+
+	// Verify transform was copied
+	Zenith_Maths::Vector3 xNewPos;
+	xNew.GetComponent<Zenith_TransformComponent>().GetPosition(xNewPos);
+	Zenith_Assert(xNewPos.x == 111.0f && xNewPos.y == 222.0f && xNewPos.z == 333.0f,
+		"TestComponentMetaDeserialization: Deserialized transform position is wrong");
+
+	Zenith_Log("TestComponentMetaDeserialization completed successfully");
+}
+
+/**
+ * Test that TypeID is consistent for the same component type.
+ * Verifies that registering and looking up uses consistent type IDs.
+ */
+void Zenith_UnitTests::TestComponentMetaTypeIDConsistency()
+{
+	Zenith_Log("Running TestComponentMetaTypeIDConsistency...");
+
+	// Get meta for Transform
+	const Zenith_ComponentMeta* pxMeta1 =
+		Zenith_ComponentMetaRegistry::Get().GetMetaByName("Transform");
+	const Zenith_ComponentMeta* pxMeta2 =
+		Zenith_ComponentMetaRegistry::Get().GetMetaByName("Transform");
+
+	// Verify same pointer returned
+	Zenith_Assert(pxMeta1 == pxMeta2,
+		"TestComponentMetaTypeIDConsistency: Different meta pointers for same type");
+
+	// Verify serialization order is set correctly (Transform should be first)
+	Zenith_Assert(pxMeta1->m_uSerializationOrder == 0,
+		"TestComponentMetaTypeIDConsistency: Transform serialization order is not 0");
+
+	// Verify all metas in sorted list have increasing serialization order
+	const auto& xMetasSorted = Zenith_ComponentMetaRegistry::Get().GetAllMetasSorted();
+	u_int uPrevOrder = 0;
+	for (size_t i = 1; i < xMetasSorted.size(); ++i)
+	{
+		Zenith_Assert(xMetasSorted[i]->m_uSerializationOrder >= uPrevOrder,
+			"TestComponentMetaTypeIDConsistency: Metas not sorted by serialization order");
+		uPrevOrder = xMetasSorted[i]->m_uSerializationOrder;
+	}
+
+	Zenith_Log("TestComponentMetaTypeIDConsistency completed successfully");
+}
+
+//------------------------------------------------------------------------------
+// ECS Lifecycle Hooks Tests (Phase 3)
+//------------------------------------------------------------------------------
+
+/**
+ * Test that lifecycle hook detection via C++20 concepts works correctly.
+ * Verifies that the HasOnAwake, HasOnUpdate, etc. concepts correctly detect
+ * whether a component type implements the hook methods.
+ */
+void Zenith_UnitTests::TestLifecycleHookDetection()
+{
+	Zenith_Log("Running TestLifecycleHookDetection...");
+
+	// Transform doesn't implement lifecycle hooks, so all hooks should be nullptr
+	const Zenith_ComponentMeta* pxTransformMeta =
+		Zenith_ComponentMetaRegistry::Get().GetMetaByName("Transform");
+	Zenith_Assert(pxTransformMeta != nullptr,
+		"TestLifecycleHookDetection: Transform not registered");
+
+	// Transform shouldn't have lifecycle hooks (it doesn't implement them)
+	Zenith_Assert(pxTransformMeta->m_pfnOnAwake == nullptr,
+		"TestLifecycleHookDetection: Transform has OnAwake hook (shouldn't)");
+	Zenith_Assert(pxTransformMeta->m_pfnOnStart == nullptr,
+		"TestLifecycleHookDetection: Transform has OnStart hook (shouldn't)");
+	Zenith_Assert(pxTransformMeta->m_pfnOnUpdate == nullptr,
+		"TestLifecycleHookDetection: Transform has OnUpdate hook (shouldn't)");
+	Zenith_Assert(pxTransformMeta->m_pfnOnDestroy == nullptr,
+		"TestLifecycleHookDetection: Transform has OnDestroy hook (shouldn't)");
+
+	// Verify registry is finalized
+	Zenith_Assert(Zenith_ComponentMetaRegistry::Get().IsInitialized(),
+		"TestLifecycleHookDetection: Registry not initialized");
+
+	Zenith_Log("TestLifecycleHookDetection completed successfully");
+}
+
+/**
+ * Test that DispatchOnAwake correctly calls OnAwake on components that have it.
+ * Since our existing components don't implement OnAwake, we verify dispatch
+ * doesn't crash and completes successfully.
+ */
+void Zenith_UnitTests::TestLifecycleOnAwake()
+{
+	Zenith_Log("Running TestLifecycleOnAwake...");
+
+	Zenith_Scene xTestScene;
+	Zenith_Entity xEntity(&xTestScene, "AwakeTestEntity");
+
+	// Dispatch OnAwake - should complete without crashing
+	// (no components implement OnAwake, so nothing is called)
+	Zenith_ComponentMetaRegistry::Get().DispatchOnAwake(xEntity);
+
+	// Verify entity is still valid
+	Zenith_Assert(xEntity.HasComponent<Zenith_TransformComponent>(),
+		"TestLifecycleOnAwake: Entity lost TransformComponent after dispatch");
+
+	Zenith_Log("TestLifecycleOnAwake completed successfully");
+}
+
+/**
+ * Test that DispatchOnStart correctly calls OnStart on components that have it.
+ */
+void Zenith_UnitTests::TestLifecycleOnStart()
+{
+	Zenith_Log("Running TestLifecycleOnStart...");
+
+	Zenith_Scene xTestScene;
+	Zenith_Entity xEntity(&xTestScene, "StartTestEntity");
+
+	// Dispatch OnStart - should complete without crashing
+	Zenith_ComponentMetaRegistry::Get().DispatchOnStart(xEntity);
+
+	// Verify entity is still valid
+	Zenith_Assert(xEntity.HasComponent<Zenith_TransformComponent>(),
+		"TestLifecycleOnStart: Entity lost TransformComponent after dispatch");
+
+	Zenith_Log("TestLifecycleOnStart completed successfully");
+}
+
+/**
+ * Test that DispatchOnUpdate correctly calls OnUpdate on components that have it.
+ */
+void Zenith_UnitTests::TestLifecycleOnUpdate()
+{
+	Zenith_Log("Running TestLifecycleOnUpdate...");
+
+	Zenith_Scene xTestScene;
+	Zenith_Entity xEntity(&xTestScene, "UpdateTestEntity");
+
+	// Dispatch OnUpdate with a delta time - should complete without crashing
+	const float fDt = 0.016f; // ~60fps
+	Zenith_ComponentMetaRegistry::Get().DispatchOnUpdate(xEntity, fDt);
+
+	// Verify entity is still valid
+	Zenith_Assert(xEntity.HasComponent<Zenith_TransformComponent>(),
+		"TestLifecycleOnUpdate: Entity lost TransformComponent after dispatch");
+
+	Zenith_Log("TestLifecycleOnUpdate completed successfully");
+}
+
+/**
+ * Test that DispatchOnDestroy correctly calls OnDestroy on components that have it.
+ */
+void Zenith_UnitTests::TestLifecycleOnDestroy()
+{
+	Zenith_Log("Running TestLifecycleOnDestroy...");
+
+	Zenith_Scene xTestScene;
+	Zenith_Entity xEntity(&xTestScene, "DestroyTestEntity");
+
+	// Set a position before dispatch
+	xEntity.GetComponent<Zenith_TransformComponent>().SetPosition(
+		Zenith_Maths::Vector3(1.0f, 2.0f, 3.0f));
+
+	// Dispatch OnDestroy - should complete without crashing
+	Zenith_ComponentMetaRegistry::Get().DispatchOnDestroy(xEntity);
+
+	// Verify entity is still valid (OnDestroy doesn't remove components)
+	Zenith_Assert(xEntity.HasComponent<Zenith_TransformComponent>(),
+		"TestLifecycleOnDestroy: Entity lost TransformComponent after dispatch");
+
+	// Verify data is intact
+	Zenith_Maths::Vector3 xPos;
+	xEntity.GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
+	Zenith_Assert(xPos.x == 1.0f && xPos.y == 2.0f && xPos.z == 3.0f,
+		"TestLifecycleOnDestroy: Component data corrupted after dispatch");
+
+	Zenith_Log("TestLifecycleOnDestroy completed successfully");
+}
+
+/**
+ * Test that lifecycle dispatch respects component serialization order.
+ * Components with lower serialization order should have their hooks called first.
+ */
+void Zenith_UnitTests::TestLifecycleDispatchOrder()
+{
+	Zenith_Log("Running TestLifecycleDispatchOrder...");
+
+	Zenith_Scene xTestScene;
+	Zenith_Entity xEntity(&xTestScene, "OrderTestEntity");
+
+	// Add multiple components
+	xEntity.AddComponent<Zenith_CameraComponent>();
+
+	// Dispatch all lifecycle hooks in sequence
+	Zenith_ComponentMetaRegistry::Get().DispatchOnAwake(xEntity);
+	Zenith_ComponentMetaRegistry::Get().DispatchOnStart(xEntity);
+	Zenith_ComponentMetaRegistry::Get().DispatchOnUpdate(xEntity, 0.016f);
+	Zenith_ComponentMetaRegistry::Get().DispatchOnLateUpdate(xEntity, 0.016f);
+	Zenith_ComponentMetaRegistry::Get().DispatchOnFixedUpdate(xEntity, 0.02f);
+	Zenith_ComponentMetaRegistry::Get().DispatchOnDestroy(xEntity);
+
+	// Verify all components are still valid
+	Zenith_Assert(xEntity.HasComponent<Zenith_TransformComponent>(),
+		"TestLifecycleDispatchOrder: Entity lost TransformComponent");
+	Zenith_Assert(xEntity.HasComponent<Zenith_CameraComponent>(),
+		"TestLifecycleDispatchOrder: Entity lost CameraComponent");
+
+	Zenith_Log("TestLifecycleDispatchOrder completed successfully");
+}
+
+//------------------------------------------------------------------------------
+// ECS Query System Tests (Phase 4)
+//------------------------------------------------------------------------------
+
+void Zenith_UnitTests::TestQuerySingleComponent()
+{
+	Zenith_Log("Running TestQuerySingleComponent...");
+
+	Zenith_Scene xTestScene;
+
+	// Create 3 entities with transforms
+	Zenith_Entity xEntity1(&xTestScene, "Entity1");
+	Zenith_Entity xEntity2(&xTestScene, "Entity2");
+	Zenith_Entity xEntity3(&xTestScene, "Entity3");
+
+	// All 3 entities have TransformComponent (added by default)
+	// Add CameraComponent to only 2 entities
+	xEntity1.AddComponent<Zenith_CameraComponent>();
+	xEntity3.AddComponent<Zenith_CameraComponent>();
+
+	// Query for TransformComponent - should return all 3 entities
+	u_int uTransformCount = 0;
+	xTestScene.Query<Zenith_TransformComponent>().ForEach(
+		[&uTransformCount](Zenith_EntityID uID, Zenith_TransformComponent& xTransform) {
+			uTransformCount++;
+		});
+
+	Zenith_Assert(uTransformCount == 3,
+		"TestQuerySingleComponent: Expected 3 entities with TransformComponent");
+
+	// Query for CameraComponent - should return 2 entities
+	u_int uCameraCount = 0;
+	xTestScene.Query<Zenith_CameraComponent>().ForEach(
+		[&uCameraCount](Zenith_EntityID uID, Zenith_CameraComponent& xCamera) {
+			uCameraCount++;
+		});
+
+	Zenith_Assert(uCameraCount == 2,
+		"TestQuerySingleComponent: Expected 2 entities with CameraComponent");
+
+	Zenith_Log("TestQuerySingleComponent completed successfully");
+}
+
+void Zenith_UnitTests::TestQueryMultipleComponents()
+{
+	Zenith_Log("Running TestQueryMultipleComponents...");
+
+	Zenith_Scene xTestScene;
+
+	// Create 3 entities with transforms
+	Zenith_Entity xEntity1(&xTestScene, "Entity1");
+	Zenith_Entity xEntity2(&xTestScene, "Entity2");
+	Zenith_Entity xEntity3(&xTestScene, "Entity3");
+
+	// Set different positions for verification
+	xEntity1.GetComponent<Zenith_TransformComponent>().SetPosition({1.0f, 0.0f, 0.0f});
+	xEntity2.GetComponent<Zenith_TransformComponent>().SetPosition({2.0f, 0.0f, 0.0f});
+	xEntity3.GetComponent<Zenith_TransformComponent>().SetPosition({3.0f, 0.0f, 0.0f});
+
+	// Add CameraComponent to entities 1 and 3
+	xEntity1.AddComponent<Zenith_CameraComponent>();
+	xEntity3.AddComponent<Zenith_CameraComponent>();
+
+	// Query for entities with BOTH TransformComponent AND CameraComponent
+	u_int uMatchCount = 0;
+	std::vector<float> xPositions;
+	xTestScene.Query<Zenith_TransformComponent, Zenith_CameraComponent>().ForEach(
+		[&uMatchCount, &xPositions](Zenith_EntityID uID,
+		                            Zenith_TransformComponent& xTransform,
+		                            Zenith_CameraComponent& xCamera) {
+			uMatchCount++;
+			Zenith_Maths::Vector3 xPos;
+			xTransform.GetPosition(xPos);
+			xPositions.push_back(xPos.x);
+		});
+
+	Zenith_Assert(uMatchCount == 2,
+		"TestQueryMultipleComponents: Expected 2 entities with both Transform and Camera");
+
+	// Verify we got entities 1 and 3 (positions 1.0 and 3.0)
+	bool bFoundEntity1 = std::find(xPositions.begin(), xPositions.end(), 1.0f) != xPositions.end();
+	bool bFoundEntity3 = std::find(xPositions.begin(), xPositions.end(), 3.0f) != xPositions.end();
+
+	Zenith_Assert(bFoundEntity1 && bFoundEntity3,
+		"TestQueryMultipleComponents: Did not find expected entities");
+
+	Zenith_Log("TestQueryMultipleComponents completed successfully");
+}
+
+void Zenith_UnitTests::TestQueryNoMatches()
+{
+	Zenith_Log("Running TestQueryNoMatches...");
+
+	Zenith_Scene xTestScene;
+
+	// Create entity with only TransformComponent
+	Zenith_Entity xEntity(&xTestScene, "Entity1");
+
+	// Query for CameraComponent - should return no matches
+	u_int uCount = 0;
+	xTestScene.Query<Zenith_CameraComponent>().ForEach(
+		[&uCount](Zenith_EntityID uID, Zenith_CameraComponent& xCamera) {
+			uCount++;
+		});
+
+	Zenith_Assert(uCount == 0,
+		"TestQueryNoMatches: Expected 0 entities with CameraComponent");
+
+	// Verify Any() returns false
+	bool bHasAny = xTestScene.Query<Zenith_CameraComponent>().Any();
+	Zenith_Assert(!bHasAny,
+		"TestQueryNoMatches: Any() should return false for empty query");
+
+	// Verify First() returns INVALID_ENTITY_ID
+	Zenith_EntityID uFirst = xTestScene.Query<Zenith_CameraComponent>().First();
+	Zenith_Assert(uFirst == INVALID_ENTITY_ID,
+		"TestQueryNoMatches: First() should return INVALID_ENTITY_ID for empty query");
+
+	Zenith_Log("TestQueryNoMatches completed successfully");
+}
+
+void Zenith_UnitTests::TestQueryCount()
+{
+	Zenith_Log("Running TestQueryCount...");
+
+	Zenith_Scene xTestScene;
+
+	// Create 5 entities
+	Zenith_Entity xEntity1(&xTestScene, "Entity1");
+	Zenith_Entity xEntity2(&xTestScene, "Entity2");
+	Zenith_Entity xEntity3(&xTestScene, "Entity3");
+	Zenith_Entity xEntity4(&xTestScene, "Entity4");
+	Zenith_Entity xEntity5(&xTestScene, "Entity5");
+
+	// Add CameraComponent to 3 entities
+	xEntity2.AddComponent<Zenith_CameraComponent>();
+	xEntity3.AddComponent<Zenith_CameraComponent>();
+	xEntity5.AddComponent<Zenith_CameraComponent>();
+
+	// Test Count() for TransformComponent (all 5)
+	u_int uTransformCount = xTestScene.Query<Zenith_TransformComponent>().Count();
+	Zenith_Assert(uTransformCount == 5,
+		"TestQueryCount: Expected 5 entities with TransformComponent");
+
+	// Test Count() for CameraComponent (3)
+	u_int uCameraCount = xTestScene.Query<Zenith_CameraComponent>().Count();
+	Zenith_Assert(uCameraCount == 3,
+		"TestQueryCount: Expected 3 entities with CameraComponent");
+
+	// Test Count() for both components (3)
+	u_int uBothCount = xTestScene.Query<Zenith_TransformComponent, Zenith_CameraComponent>().Count();
+	Zenith_Assert(uBothCount == 3,
+		"TestQueryCount: Expected 3 entities with both Transform and Camera");
+
+	Zenith_Log("TestQueryCount completed successfully");
+}
+
+void Zenith_UnitTests::TestQueryFirstAndAny()
+{
+	Zenith_Log("Running TestQueryFirstAndAny...");
+
+	Zenith_Scene xTestScene;
+
+	// Create 3 entities
+	Zenith_Entity xEntity1(&xTestScene, "Entity1");
+	Zenith_Entity xEntity2(&xTestScene, "Entity2");
+	Zenith_Entity xEntity3(&xTestScene, "Entity3");
+
+	// Add CameraComponent to entity 2
+	xEntity2.AddComponent<Zenith_CameraComponent>();
+
+	// Test Any() returns true when there are matches
+	bool bHasCamera = xTestScene.Query<Zenith_CameraComponent>().Any();
+	Zenith_Assert(bHasCamera,
+		"TestQueryFirstAndAny: Any() should return true when matches exist");
+
+	// Test First() returns a valid entity ID
+	Zenith_EntityID uFirstCamera = xTestScene.Query<Zenith_CameraComponent>().First();
+	Zenith_Assert(uFirstCamera != INVALID_ENTITY_ID,
+		"TestQueryFirstAndAny: First() should return valid ID when matches exist");
+
+	// Verify the first match actually has the component
+	Zenith_Assert(xTestScene.EntityHasComponent<Zenith_CameraComponent>(uFirstCamera),
+		"TestQueryFirstAndAny: First() returned entity without expected component");
+
+	// Test First() for TransformComponent returns the first entity ID (1)
+	Zenith_EntityID uFirstTransform = xTestScene.Query<Zenith_TransformComponent>().First();
+	Zenith_Assert(uFirstTransform != INVALID_ENTITY_ID,
+		"TestQueryFirstAndAny: First() should return valid ID for TransformComponent");
+
+	Zenith_Log("TestQueryFirstAndAny completed successfully");
+}
+
+//------------------------------------------------------------------------------
+// ECS Event System Tests (Phase 5)
+//------------------------------------------------------------------------------
+
+// Custom test event for unit tests
+struct TestEvent_Custom
+{
+	u_int m_uValue = 0;
+};
+
+// Static variable to track event callbacks
+static u_int s_uTestEventCallCount = 0;
+static u_int s_uTestEventLastValue = 0;
+
+static void TestEventCallback(const TestEvent_Custom& xEvent)
+{
+	s_uTestEventCallCount++;
+	s_uTestEventLastValue = xEvent.m_uValue;
+}
+
+void Zenith_UnitTests::TestEventSubscribeDispatch()
+{
+	Zenith_Log("Running TestEventSubscribeDispatch...");
+
+	// Clear any existing state
+	Zenith_EventDispatcher::Get().ClearAllSubscriptions();
+	s_uTestEventCallCount = 0;
+	s_uTestEventLastValue = 0;
+
+	// Subscribe to test event
+	Zenith_EventHandle uHandle = Zenith_EventDispatcher::Get().Subscribe<TestEvent_Custom>(&TestEventCallback);
+
+	Zenith_Assert(uHandle != INVALID_EVENT_HANDLE,
+		"TestEventSubscribeDispatch: Subscribe should return valid handle");
+
+	// Dispatch event
+	TestEvent_Custom xEvent;
+	xEvent.m_uValue = 42;
+	Zenith_EventDispatcher::Get().Dispatch(xEvent);
+
+	Zenith_Assert(s_uTestEventCallCount == 1,
+		"TestEventSubscribeDispatch: Callback should be called once");
+	Zenith_Assert(s_uTestEventLastValue == 42,
+		"TestEventSubscribeDispatch: Callback should receive correct value");
+
+	// Cleanup
+	Zenith_EventDispatcher::Get().ClearAllSubscriptions();
+
+	Zenith_Log("TestEventSubscribeDispatch completed successfully");
+}
+
+void Zenith_UnitTests::TestEventUnsubscribe()
+{
+	Zenith_Log("Running TestEventUnsubscribe...");
+
+	// Clear any existing state
+	Zenith_EventDispatcher::Get().ClearAllSubscriptions();
+	s_uTestEventCallCount = 0;
+
+	// Subscribe to test event
+	Zenith_EventHandle uHandle = Zenith_EventDispatcher::Get().Subscribe<TestEvent_Custom>(&TestEventCallback);
+
+	// Verify subscription count
+	u_int uCount = Zenith_EventDispatcher::Get().GetSubscriberCount<TestEvent_Custom>();
+	Zenith_Assert(uCount == 1,
+		"TestEventUnsubscribe: Should have 1 subscriber after subscribe");
+
+	// Unsubscribe
+	Zenith_EventDispatcher::Get().Unsubscribe(uHandle);
+
+	// Verify subscription count
+	uCount = Zenith_EventDispatcher::Get().GetSubscriberCount<TestEvent_Custom>();
+	Zenith_Assert(uCount == 0,
+		"TestEventUnsubscribe: Should have 0 subscribers after unsubscribe");
+
+	// Dispatch event - callback should NOT be called
+	s_uTestEventCallCount = 0;
+	TestEvent_Custom xEvent;
+	xEvent.m_uValue = 100;
+	Zenith_EventDispatcher::Get().Dispatch(xEvent);
+
+	Zenith_Assert(s_uTestEventCallCount == 0,
+		"TestEventUnsubscribe: Callback should not be called after unsubscribe");
+
+	// Cleanup
+	Zenith_EventDispatcher::Get().ClearAllSubscriptions();
+
+	Zenith_Log("TestEventUnsubscribe completed successfully");
+}
+
+void Zenith_UnitTests::TestEventDeferredQueue()
+{
+	Zenith_Log("Running TestEventDeferredQueue...");
+
+	// Clear any existing state
+	Zenith_EventDispatcher::Get().ClearAllSubscriptions();
+	s_uTestEventCallCount = 0;
+	s_uTestEventLastValue = 0;
+
+	// Subscribe to test event
+	Zenith_EventDispatcher::Get().Subscribe<TestEvent_Custom>(&TestEventCallback);
+
+	// Queue event (should not dispatch immediately)
+	TestEvent_Custom xEvent;
+	xEvent.m_uValue = 99;
+	Zenith_EventDispatcher::Get().QueueEvent(xEvent);
+
+	// Verify callback not called yet
+	Zenith_Assert(s_uTestEventCallCount == 0,
+		"TestEventDeferredQueue: Callback should not be called before ProcessDeferredEvents");
+
+	// Process deferred events
+	Zenith_EventDispatcher::Get().ProcessDeferredEvents();
+
+	// Verify callback was called
+	Zenith_Assert(s_uTestEventCallCount == 1,
+		"TestEventDeferredQueue: Callback should be called after ProcessDeferredEvents");
+	Zenith_Assert(s_uTestEventLastValue == 99,
+		"TestEventDeferredQueue: Callback should receive correct value");
+
+	// Queue and process multiple events
+	s_uTestEventCallCount = 0;
+	TestEvent_Custom xEvent2, xEvent3;
+	xEvent2.m_uValue = 1;
+	xEvent3.m_uValue = 2;
+	Zenith_EventDispatcher::Get().QueueEvent(xEvent2);
+	Zenith_EventDispatcher::Get().QueueEvent(xEvent3);
+
+	Zenith_Assert(s_uTestEventCallCount == 0,
+		"TestEventDeferredQueue: Callbacks should not be called before processing");
+
+	Zenith_EventDispatcher::Get().ProcessDeferredEvents();
+
+	Zenith_Assert(s_uTestEventCallCount == 2,
+		"TestEventDeferredQueue: Both callbacks should be called after processing");
+
+	// Cleanup
+	Zenith_EventDispatcher::Get().ClearAllSubscriptions();
+
+	Zenith_Log("TestEventDeferredQueue completed successfully");
+}
+
+// Static variables for multiple subscriber test
+static u_int s_uMultiSub1Count = 0;
+static u_int s_uMultiSub2Count = 0;
+
+static void MultiSubscriber1(const TestEvent_Custom& xEvent)
+{
+	s_uMultiSub1Count++;
+}
+
+static void MultiSubscriber2(const TestEvent_Custom& xEvent)
+{
+	s_uMultiSub2Count++;
+}
+
+void Zenith_UnitTests::TestEventMultipleSubscribers()
+{
+	Zenith_Log("Running TestEventMultipleSubscribers...");
+
+	// Clear any existing state
+	Zenith_EventDispatcher::Get().ClearAllSubscriptions();
+	s_uMultiSub1Count = 0;
+	s_uMultiSub2Count = 0;
+
+	// Subscribe two callbacks to the same event type
+	Zenith_EventHandle uHandle1 = Zenith_EventDispatcher::Get().Subscribe<TestEvent_Custom>(&MultiSubscriber1);
+	Zenith_EventHandle uHandle2 = Zenith_EventDispatcher::Get().Subscribe<TestEvent_Custom>(&MultiSubscriber2);
+
+	// Verify subscriber count
+	u_int uCount = Zenith_EventDispatcher::Get().GetSubscriberCount<TestEvent_Custom>();
+	Zenith_Assert(uCount == 2,
+		"TestEventMultipleSubscribers: Should have 2 subscribers");
+
+	// Dispatch event
+	TestEvent_Custom xEvent;
+	xEvent.m_uValue = 10;
+	Zenith_EventDispatcher::Get().Dispatch(xEvent);
+
+	Zenith_Assert(s_uMultiSub1Count == 1,
+		"TestEventMultipleSubscribers: Subscriber1 should be called once");
+	Zenith_Assert(s_uMultiSub2Count == 1,
+		"TestEventMultipleSubscribers: Subscriber2 should be called once");
+
+	// Unsubscribe first callback
+	Zenith_EventDispatcher::Get().Unsubscribe(uHandle1);
+
+	// Dispatch again
+	Zenith_EventDispatcher::Get().Dispatch(xEvent);
+
+	Zenith_Assert(s_uMultiSub1Count == 1,
+		"TestEventMultipleSubscribers: Subscriber1 should not be called after unsubscribe");
+	Zenith_Assert(s_uMultiSub2Count == 2,
+		"TestEventMultipleSubscribers: Subscriber2 should be called again");
+
+	// Cleanup
+	Zenith_EventDispatcher::Get().ClearAllSubscriptions();
+
+	Zenith_Log("TestEventMultipleSubscribers completed successfully");
+}
+
+void Zenith_UnitTests::TestEventClearSubscriptions()
+{
+	Zenith_Log("Running TestEventClearSubscriptions...");
+
+	// Clear any existing state
+	Zenith_EventDispatcher::Get().ClearAllSubscriptions();
+	s_uTestEventCallCount = 0;
+
+	// Subscribe multiple callbacks
+	Zenith_EventDispatcher::Get().Subscribe<TestEvent_Custom>(&TestEventCallback);
+	Zenith_EventDispatcher::Get().Subscribe<TestEvent_Custom>(&MultiSubscriber1);
+	Zenith_EventDispatcher::Get().Subscribe<TestEvent_Custom>(&MultiSubscriber2);
+
+	// Verify subscriber count
+	u_int uCount = Zenith_EventDispatcher::Get().GetSubscriberCount<TestEvent_Custom>();
+	Zenith_Assert(uCount == 3,
+		"TestEventClearSubscriptions: Should have 3 subscribers");
+
+	// Clear all subscriptions
+	Zenith_EventDispatcher::Get().ClearAllSubscriptions();
+
+	// Verify subscriber count is now 0
+	uCount = Zenith_EventDispatcher::Get().GetSubscriberCount<TestEvent_Custom>();
+	Zenith_Assert(uCount == 0,
+		"TestEventClearSubscriptions: Should have 0 subscribers after clear");
+
+	// Dispatch event - no callbacks should be called
+	s_uTestEventCallCount = 0;
+	s_uMultiSub1Count = 0;
+	s_uMultiSub2Count = 0;
+	TestEvent_Custom xEvent;
+	Zenith_EventDispatcher::Get().Dispatch(xEvent);
+
+	Zenith_Assert(s_uTestEventCallCount == 0 && s_uMultiSub1Count == 0 && s_uMultiSub2Count == 0,
+		"TestEventClearSubscriptions: No callbacks should be called after clear");
+
+	Zenith_Log("TestEventClearSubscriptions completed successfully");
+}

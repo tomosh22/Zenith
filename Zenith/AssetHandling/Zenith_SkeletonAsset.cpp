@@ -61,14 +61,14 @@ void Zenith_SkeletonAsset::Bone::ReadFromDataStream(Zenith_DataStream& xStream, 
 // Move Constructor / Assignment
 //------------------------------------------------------------------------------
 
-Zenith_SkeletonAsset::Zenith_SkeletonAsset(Zenith_SkeletonAsset&& xOther) noexcept
+Zenith_SkeletonAsset::Zenith_SkeletonAsset(Zenith_SkeletonAsset&& xOther)
 {
 	m_xBones = std::move(xOther.m_xBones);
 	m_xBoneNameToIndex = std::move(xOther.m_xBoneNameToIndex);
 	m_strSourcePath = std::move(xOther.m_strSourcePath);
 }
 
-Zenith_SkeletonAsset& Zenith_SkeletonAsset::operator=(Zenith_SkeletonAsset&& xOther) noexcept
+Zenith_SkeletonAsset& Zenith_SkeletonAsset::operator=(Zenith_SkeletonAsset&& xOther)
 {
 	if (this != &xOther)
 	{

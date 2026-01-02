@@ -76,10 +76,6 @@ public:
 		}
 	}
 
-	static void RegisterWithEditor()
-	{
-		Zenith_ComponentRegistry::Get().RegisterComponent<Zenith_TransformComponent>("Transform");
-	}
 #endif
 
 private:

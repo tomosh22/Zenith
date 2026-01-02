@@ -14,7 +14,7 @@ Flux_SkeletonInstance::~Flux_SkeletonInstance()
 //=============================================================================
 // Move Constructor
 //=============================================================================
-Flux_SkeletonInstance::Flux_SkeletonInstance(Flux_SkeletonInstance&& xOther) noexcept
+Flux_SkeletonInstance::Flux_SkeletonInstance(Flux_SkeletonInstance&& xOther)
 	: m_pxSourceSkeleton(xOther.m_pxSourceSkeleton)
 	, m_uNumBones(xOther.m_uNumBones)
 	, m_xBoneBuffer(std::move(xOther.m_xBoneBuffer))
@@ -39,7 +39,7 @@ Flux_SkeletonInstance::Flux_SkeletonInstance(Flux_SkeletonInstance&& xOther) noe
 //=============================================================================
 // Move Assignment
 //=============================================================================
-Flux_SkeletonInstance& Flux_SkeletonInstance::operator=(Flux_SkeletonInstance&& xOther) noexcept
+Flux_SkeletonInstance& Flux_SkeletonInstance::operator=(Flux_SkeletonInstance&& xOther)
 {
 	if (this != &xOther)
 	{

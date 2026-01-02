@@ -2126,6 +2126,8 @@
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_TransformComponent.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_UIComponent.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_ComponentRegistry.cpp" />
+    <ClCompile Include="..\Zenith\EntityComponent\Zenith_ComponentMeta.cpp" />
+    <ClCompile Include="..\Zenith\EntityComponent\Zenith_EventSystem.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_Entity.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_Scene.cpp" />
     <ClCompile Include="..\Zenith\FileAccess\Zenith_FileAccess.cpp" />
