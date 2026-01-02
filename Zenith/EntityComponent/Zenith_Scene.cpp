@@ -98,7 +98,7 @@ void Zenith_Scene::Reset()
 	m_xComponents.Clear();
 	m_xEntityComponents.Clear();
 	m_xEntityMap.clear();
-	m_pxMainCameraEntity = nullptr;
+	m_uMainCameraEntity = INVALID_ENTITY_ID;
 	m_uNextEntityID = 1;  // Reset entity ID counter (0 is reserved as invalid)
 }
 
@@ -113,9 +113,9 @@ void Zenith_Scene::RemoveEntity(Zenith_EntityID uID)
 	}
 
 	// Clear the main camera reference if this is the camera entity
-	if (m_pxMainCameraEntity && m_pxMainCameraEntity->GetEntityID() == uID)
+	if (m_uMainCameraEntity != INVALID_ENTITY_ID && m_uMainCameraEntity == uID)
 	{
-		m_pxMainCameraEntity = nullptr;
+		m_uMainCameraEntity = INVALID_ENTITY_ID;
 	}
 
 	// Clear component mappings for this entity
@@ -154,7 +154,7 @@ void Zenith_Scene::SaveToFile(const std::string& strFilename)
 	}
 
 	// Write main camera entity ID (if exists)
-	Zenith_EntityID uMainCameraID = (m_pxMainCameraEntity != nullptr) ? m_pxMainCameraEntity->GetEntityID() : static_cast<Zenith_EntityID>(-1);
+	Zenith_EntityID uMainCameraID = (m_uMainCameraEntity != INVALID_ENTITY_ID) ? m_uMainCameraEntity : INVALID_ENTITY_ID;
 	xStream << uMainCameraID;
 
 	// Write to file
@@ -349,7 +349,7 @@ void Zenith_Scene::LoadFromFile(const std::string& strFilename)
 		auto it = m_xEntityMap.find(uMainCameraID);
 		if (it != m_xEntityMap.end())
 		{
-			m_pxMainCameraEntity = &it->second;
+			m_uMainCameraEntity = it->second.GetEntityID();
 		}
 	}
 
@@ -432,17 +432,17 @@ Zenith_Entity* Zenith_Scene::FindEntityByName(const std::string& strName)
 	return nullptr;
 }
 
-void Zenith_Scene::SetMainCameraEntity(Zenith_Entity& xEntity)
+void Zenith_Scene::SetMainCameraEntity(Zenith_EntityID uEntity)
 {
-	m_pxMainCameraEntity = &xEntity;
+	m_uMainCameraEntity = uEntity;
 }
 
-Zenith_Entity* Zenith_Scene::GetMainCameraEntity()
+Zenith_EntityID Zenith_Scene::GetMainCameraEntity()
 {
-	return m_pxMainCameraEntity;
+	return m_uMainCameraEntity;
 }
 
 Zenith_CameraComponent& Zenith_Scene::GetMainCamera()
 {
-	return m_pxMainCameraEntity->GetComponent<Zenith_CameraComponent>();
+	return GetEntityFromID(m_uMainCameraEntity).GetComponent<Zenith_CameraComponent>();
 }

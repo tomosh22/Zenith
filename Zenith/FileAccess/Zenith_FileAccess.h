@@ -1,5 +1,4 @@
 #pragma once
-#include <fstream>
 
 #define ZENITH_TEXTURE_EXT		".ztxtr"
 #define ZENITH_MESH_EXT			".zmesh"
@@ -8,44 +7,23 @@
 
 #define ZENITH_MAX_PATH_LENGTH 1024
 
+// Platform-agnostic file access interface
+// Implementations in platform-specific files:
+// - Zenith/Windows/FileAccess/Zenith_Windows_FileAccess.cpp
+// - Zenith/Android/FileAccess/Zenith_Android_FileAccess.cpp
+
 namespace Zenith_FileAccess
 {
-	static char* ReadFile(const char* szFilename)
-	{
-		std::ifstream xFile(szFilename, std::ios::ate | std::ios::binary);
-		Zenith_Assert(xFile.is_open(), "Failed to open file");
+	// Initialize platform-specific file access (e.g., set Android AAssetManager)
+	void InitialisePlatform(void* pPlatformData);
 
-		uint64_t ulFileSize = xFile.tellg();
-		char* pcRet = static_cast<char*>(Zenith_MemoryManagement::Allocate(ulFileSize));
-		xFile.seekg(0);
-		xFile.read(pcRet, ulFileSize);
-		xFile.close();
-		return pcRet;
-	}
+	// Read file into allocated memory (caller must free with FreeFileData)
+	char* ReadFile(const char* szFilename);
+	char* ReadFile(const char* szFilename, uint64_t& ulSize);
 
-	static char* ReadFile(const char* szFilename, uint64_t& ulSize)
-	{
-		std::ifstream xFile(szFilename, std::ios::ate | std::ios::binary);
-		Zenith_Assert(xFile.is_open(), "Failed to open file %s", szFilename);
+	// Free data returned by ReadFile
+	void FreeFileData(char* pData);
 
-		ulSize = xFile.tellg();
-		char* pcRet = static_cast<char*>(Zenith_MemoryManagement::Allocate(ulSize));
-		xFile.seekg(0);
-		xFile.read(pcRet, ulSize);
-		xFile.close();
-		return pcRet;
-	}
-
-	static void WriteFile(const char* szFilename, const void* const pData, const uint64_t ulSize)
-	{
-		char acFixedFilename[ZENITH_MAX_PATH_LENGTH]{0};
-		strncpy(acFixedFilename, szFilename, strlen(szFilename));
-		Zenith_StringUtil::ReplaceAllChars(acFixedFilename, '\\', '/');
-
-		std::ofstream xFile(acFixedFilename, std::ios::trunc | std::ios::binary);
-		Zenith_Assert(xFile.is_open(), "Failed to open file");
-
-		xFile.write(static_cast<const char*>(pData), ulSize);
-		xFile.close();
-	}
+	// Write data to file (tools-only on Android, uses filesystem)
+	void WriteFile(const char* szFilename, const void* const pData, const uint64_t ulSize);
 }

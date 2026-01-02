@@ -19,7 +19,7 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectGuid>{DAEC2C38-F410-1E54-77AB-FCCFF5AF391A}</ProjectGuid>
+    <ProjectGuid>{F455B0FD-7B47-8A84-84DB-CDEB5851CAB5}</ProjectGuid>
     <DefaultLanguage>en-US</DefaultLanguage>
     <RootNamespace>Test</RootNamespace>
     <ProjectName>Test</ProjectName>
@@ -105,10 +105,10 @@
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">
     <ClCompile>
-      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <WarningLevel>Level4</WarningLevel>
       <Optimization>Disabled</Optimization>
-      <PreprocessorDefinitions>ASSETS_ROOT="c:/dev/zenith/Games/Test/Assets/";ENGINE_ASSETS_DIR="c:/dev/zenith/zenith/Assets/";NOMINMAX;SHADER_SOURCE_ROOT="C:/dev/Zenith/Zenith/Flux/Shaders/";WIN64;ZENITH_DEBUG;ZENITH_VULKAN;ZENITH_WINDOWS;_CONSOLE;_DEBUG;%(PreprocessorDefinitions);$(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>ENGINE_ASSETS_DIR="c:/dev/zenith/Zenith/Assets/";GAME_ASSETS_DIR="c:/dev/zenith/Games/Test/Assets/";GLM_ENABLE_EXPERIMENTAL;NOMINMAX;SHADER_SOURCE_ROOT="c:/dev/zenith/Zenith/Flux/Shaders/";WIN64;ZENITH_DEBUG;ZENITH_ROOT="c:/dev/zenith/";ZENITH_VULKAN;ZENITH_WINDOWS;_CONSOLE;_DEBUG;%(PreprocessorDefinitions);$(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>..\..;..;..\..\..\middleware;..\..\..\middleware\glfw-3.4.bin.win64\include;..\..\..\middleware\glm-master;..\..\..\middleware\imgui-docking;..\..\..\middleware\joltphysics-5.4.0;..\..\..\middleware\stb;..\..\..\middleware\vma;..\..\..\middleware\vulkansdk\1.3.280.0\include;..\..\..\zenith;..\..\..\zenith\core;..\..\..\zenith\vulkan;..\..\..\zenith\windows</AdditionalIncludeDirectories>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <SuppressStartupBanner>true</SuppressStartupBanner>
@@ -150,8 +150,6 @@
       <CallingConvention>Cdecl</CallingConvention>
       <CompileAs>Default</CompileAs>
       <AdditionalOptions>/Zc:__cplusplus</AdditionalOptions>
-      <PrecompiledHeaderFile>Zenith.h</PrecompiledHeaderFile>
-      <PrecompiledHeaderOutputFile>obj\win64\vs2022_debug_win64_false\Test.pch</PrecompiledHeaderOutputFile>
       <ProgramDatabaseFileName>obj\win64\vs2022_debug_win64_false\test_compiler.pdb</ProgramDatabaseFileName>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
     </ClCompile>
@@ -160,7 +158,7 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <OutputFile>output\win64\vs2022_debug_win64_false\test.exe</OutputFile>
       <ShowProgress>NotSet</ShowProgress>
-      <AdditionalLibraryDirectories>..\..\..\middleware\glfw-3.4.bin.win64\lib-vc2022;..\..\..\middleware\vulkansdk\1.3.280.0\lib</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>..\..\..\build\output\win64\vs2022_debug_win64_false;..\..\..\middleware\glfw-3.4.bin.win64\lib-vc2022;..\..\..\middleware\vulkansdk\1.3.280.0\lib</AdditionalLibraryDirectories>
       <ProgramDatabaseFile>output\win64\vs2022_debug_win64_false\test.pdb</ProgramDatabaseFile>
       <GenerateMapFile>true</GenerateMapFile>
       <MapExports>false</MapExports>
@@ -181,7 +179,7 @@
       <Profile>false</Profile>
       <CLRImageType>Default</CLRImageType>
       <LinkErrorReporting>PromptImmediately</LinkErrorReporting>
-      <AdditionalDependencies>glfw3_mt.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>zenith.lib;glfw3_mt.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
       <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
@@ -191,11 +189,11 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">
     <ClCompile>
-      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <WarningLevel>Level4</WarningLevel>
       <Optimization>Disabled</Optimization>
-      <PreprocessorDefinitions>ASSETS_ROOT="c:/dev/zenith/Games/Test/Assets/";ENGINE_ASSETS_DIR="c:/dev/zenith/zenith/Assets/";NOMINMAX;SHADER_SOURCE_ROOT="C:/dev/Zenith/Zenith/Flux/Shaders/";WIN64;ZENITH_DEBUG;ZENITH_TOOLS;ZENITH_VULKAN;ZENITH_WINDOWS;_CONSOLE;_DEBUG;%(PreprocessorDefinitions);$(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>..\..;..;..\..\..\middleware;..\..\..\middleware\glfw-3.4.bin.win64\include;..\..\..\middleware\glm-master;..\..\..\middleware\imgui-docking;..\..\..\middleware\joltphysics-5.4.0;..\..\..\middleware\stb;..\..\..\middleware\vma;..\..\..\middleware\vulkansdk\1.3.280.0\include;..\..\..\tools\middleware;..\..\..\tools\middleware\assimp\include;..\..\..\tools\middleware\opencv\build\include;..\..\..\tools\middleware\opencv\build\include\opencv2;..\..\..\tools\middleware\opencv\sources\3rdparty\libjpeg;..\..\..\tools\middleware\opencv\sources\3rdparty\libpng;..\..\..\tools\middleware\opencv\sources\3rdparty\libtiff;..\..\..\tools\middleware\opencv\sources\3rdparty\openjpeg\openjp2;..\..\..\tools\middleware\opencv\sources\cmake\templates;..\..\..\tools\middleware\opencv\sources\include;..\..\..\tools\middleware\opencv\sources\modules\core\include;..\..\..\tools\middleware\opencv\sources\modules\ts\include;..\..\..\zenith;..\..\..\zenith\core;..\..\..\zenith\vulkan;..\..\..\zenith\windows</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>ENGINE_ASSETS_DIR="c:/dev/zenith/Zenith/Assets/";GAME_ASSETS_DIR="c:/dev/zenith/Games/Test/Assets/";GLM_ENABLE_EXPERIMENTAL;NOMINMAX;SHADER_SOURCE_ROOT="c:/dev/zenith/Zenith/Flux/Shaders/";WIN64;ZENITH_DEBUG;ZENITH_ROOT="c:/dev/zenith/";ZENITH_VULKAN;ZENITH_WINDOWS;_CONSOLE;_DEBUG;%(PreprocessorDefinitions);$(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>..\..;..;..\..\..\middleware;..\..\..\middleware\glfw-3.4.bin.win64\include;..\..\..\middleware\glm-master;..\..\..\middleware\imgui-docking;..\..\..\middleware\joltphysics-5.4.0;..\..\..\middleware\stb;..\..\..\middleware\vma;..\..\..\middleware\vulkansdk\1.3.280.0\include;..\..\..\tools\middleware;..\..\..\tools\middleware\assimp\include;..\..\..\tools\middleware\opencv\build\include;..\..\..\tools\middleware\opencv\build\include\opencv2;..\..\..\zenith;..\..\..\zenith\core;..\..\..\zenith\vulkan;..\..\..\zenith\windows</AdditionalIncludeDirectories>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <TreatWarningAsError>false</TreatWarningAsError>
@@ -236,8 +234,6 @@
       <CallingConvention>Cdecl</CallingConvention>
       <CompileAs>Default</CompileAs>
       <AdditionalOptions>/Zc:__cplusplus</AdditionalOptions>
-      <PrecompiledHeaderFile>Zenith.h</PrecompiledHeaderFile>
-      <PrecompiledHeaderOutputFile>obj\win64\vs2022_debug_win64_true\Test.pch</PrecompiledHeaderOutputFile>
       <ProgramDatabaseFileName>obj\win64\vs2022_debug_win64_true\test_compiler.pdb</ProgramDatabaseFileName>
       <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
     </ClCompile>
@@ -246,7 +242,7 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <OutputFile>output\win64\vs2022_debug_win64_true\test.exe</OutputFile>
       <ShowProgress>NotSet</ShowProgress>
-      <AdditionalLibraryDirectories>output\win64\vs2022_debug_win64_true;..\..\..\middleware\glfw-3.4.bin.win64\lib-vc2022;..\..\..\middleware\vulkansdk\1.3.280.0\lib;..\..\..\tools\middleware\assimp\lib;..\..\..\tools\middleware\opencv\build\x64\vc16\lib</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>..\..\..\build\output\win64\vs2022_debug_win64_true;..\..\..\middleware\glfw-3.4.bin.win64\lib-vc2022;..\..\..\middleware\vulkansdk\1.3.280.0\lib;..\..\..\tools\middleware\assimp\lib;..\..\..\tools\middleware\opencv\build\x64\vc16\lib</AdditionalLibraryDirectories>
       <ProgramDatabaseFile>output\win64\vs2022_debug_win64_true\test.pdb</ProgramDatabaseFile>
       <GenerateMapFile>true</GenerateMapFile>
       <MapExports>false</MapExports>
@@ -267,7 +263,7 @@
       <Profile>false</Profile>
       <CLRImageType>Default</CLRImageType>
       <LinkErrorReporting>PromptImmediately</LinkErrorReporting>
-      <AdditionalDependencies>zenithtools.lib;assimp-vc143-mtd.lib;glfw3_mt.lib;opencv_world4100d.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>zenith.lib;assimp-vc143-mtd.lib;glfw3_mt.lib;opencv_world4100d.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
       <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
@@ -277,10 +273,10 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">
     <ClCompile>
-      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <WarningLevel>Level4</WarningLevel>
       <Optimization>Full</Optimization>
-      <PreprocessorDefinitions>ASSETS_ROOT="c:/dev/zenith/Games/Test/Assets/";ENGINE_ASSETS_DIR="c:/dev/zenith/zenith/Assets/";NDEBUG;NOMINMAX;SHADER_SOURCE_ROOT="C:/dev/Zenith/Zenith/Flux/Shaders/";WIN64;ZENITH_VULKAN;ZENITH_WINDOWS;_CONSOLE;%(PreprocessorDefinitions);$(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>ENGINE_ASSETS_DIR="c:/dev/zenith/Zenith/Assets/";GAME_ASSETS_DIR="c:/dev/zenith/Games/Test/Assets/";GLM_ENABLE_EXPERIMENTAL;NDEBUG;NOMINMAX;SHADER_SOURCE_ROOT="c:/dev/zenith/Zenith/Flux/Shaders/";WIN64;ZENITH_ROOT="c:/dev/zenith/";ZENITH_VULKAN;ZENITH_WINDOWS;_CONSOLE;%(PreprocessorDefinitions);$(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>..\..;..;..\..\..\middleware;..\..\..\middleware\glfw-3.4.bin.win64\include;..\..\..\middleware\glm-master;..\..\..\middleware\imgui-docking;..\..\..\middleware\joltphysics-5.4.0;..\..\..\middleware\stb;..\..\..\middleware\vma;..\..\..\middleware\vulkansdk\1.3.280.0\include;..\..\..\zenith;..\..\..\zenith\core;..\..\..\zenith\vulkan;..\..\..\zenith\windows</AdditionalIncludeDirectories>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <SuppressStartupBanner>true</SuppressStartupBanner>
@@ -322,8 +318,6 @@
       <CallingConvention>Cdecl</CallingConvention>
       <CompileAs>Default</CompileAs>
       <AdditionalOptions>/Zc:__cplusplus</AdditionalOptions>
-      <PrecompiledHeaderFile>Zenith.h</PrecompiledHeaderFile>
-      <PrecompiledHeaderOutputFile>obj\win64\vs2022_release_win64_false\Test.pch</PrecompiledHeaderOutputFile>
       <ProgramDatabaseFileName>obj\win64\vs2022_release_win64_false\test_compiler.pdb</ProgramDatabaseFileName>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
     </ClCompile>
@@ -332,7 +326,7 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <OutputFile>output\win64\vs2022_release_win64_false\test.exe</OutputFile>
       <ShowProgress>NotSet</ShowProgress>
-      <AdditionalLibraryDirectories>..\..\..\middleware\glfw-3.4.bin.win64\lib-vc2022;..\..\..\middleware\vulkansdk\1.3.280.0\lib</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>..\..\..\build\output\win64\vs2022_release_win64_false;..\..\..\middleware\glfw-3.4.bin.win64\lib-vc2022;..\..\..\middleware\vulkansdk\1.3.280.0\lib</AdditionalLibraryDirectories>
       <ProgramDatabaseFile>output\win64\vs2022_release_win64_false\test.pdb</ProgramDatabaseFile>
       <GenerateMapFile>true</GenerateMapFile>
       <MapExports>false</MapExports>
@@ -353,7 +347,7 @@
       <Profile>false</Profile>
       <CLRImageType>Default</CLRImageType>
       <LinkErrorReporting>PromptImmediately</LinkErrorReporting>
-      <AdditionalDependencies>glfw3_mt.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>zenith.lib;glfw3_mt.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
       <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
@@ -363,11 +357,11 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">
     <ClCompile>
-      <PrecompiledHeader>Use</PrecompiledHeader>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <WarningLevel>Level4</WarningLevel>
       <Optimization>Full</Optimization>
-      <PreprocessorDefinitions>ASSETS_ROOT="c:/dev/zenith/Games/Test/Assets/";ENGINE_ASSETS_DIR="c:/dev/zenith/zenith/Assets/";NDEBUG;NOMINMAX;SHADER_SOURCE_ROOT="C:/dev/Zenith/Zenith/Flux/Shaders/";WIN64;ZENITH_TOOLS;ZENITH_VULKAN;ZENITH_WINDOWS;_CONSOLE;%(PreprocessorDefinitions);$(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>..\..;..;..\..\..\middleware;..\..\..\middleware\glfw-3.4.bin.win64\include;..\..\..\middleware\glm-master;..\..\..\middleware\imgui-docking;..\..\..\middleware\joltphysics-5.4.0;..\..\..\middleware\stb;..\..\..\middleware\vma;..\..\..\middleware\vulkansdk\1.3.280.0\include;..\..\..\tools\middleware;..\..\..\tools\middleware\assimp\include;..\..\..\tools\middleware\opencv\build\include;..\..\..\tools\middleware\opencv\build\include\opencv2;..\..\..\tools\middleware\opencv\sources\3rdparty\libjpeg;..\..\..\tools\middleware\opencv\sources\3rdparty\libpng;..\..\..\tools\middleware\opencv\sources\3rdparty\libtiff;..\..\..\tools\middleware\opencv\sources\3rdparty\openjpeg\openjp2;..\..\..\tools\middleware\opencv\sources\cmake\templates;..\..\..\tools\middleware\opencv\sources\include;..\..\..\tools\middleware\opencv\sources\modules\core\include;..\..\..\tools\middleware\opencv\sources\modules\ts\include;..\..\..\zenith;..\..\..\zenith\core;..\..\..\zenith\vulkan;..\..\..\zenith\windows</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>ENGINE_ASSETS_DIR="c:/dev/zenith/Zenith/Assets/";GAME_ASSETS_DIR="c:/dev/zenith/Games/Test/Assets/";GLM_ENABLE_EXPERIMENTAL;NDEBUG;NOMINMAX;SHADER_SOURCE_ROOT="c:/dev/zenith/Zenith/Flux/Shaders/";WIN64;ZENITH_ROOT="c:/dev/zenith/";ZENITH_VULKAN;ZENITH_WINDOWS;_CONSOLE;%(PreprocessorDefinitions);$(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>..\..;..;..\..\..\middleware;..\..\..\middleware\glfw-3.4.bin.win64\include;..\..\..\middleware\glm-master;..\..\..\middleware\imgui-docking;..\..\..\middleware\joltphysics-5.4.0;..\..\..\middleware\stb;..\..\..\middleware\vma;..\..\..\middleware\vulkansdk\1.3.280.0\include;..\..\..\tools\middleware;..\..\..\tools\middleware\assimp\include;..\..\..\tools\middleware\opencv\build\include;..\..\..\tools\middleware\opencv\build\include\opencv2;..\..\..\zenith;..\..\..\zenith\core;..\..\..\zenith\vulkan;..\..\..\zenith\windows</AdditionalIncludeDirectories>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <TreatWarningAsError>false</TreatWarningAsError>
@@ -408,8 +402,6 @@
       <CallingConvention>Cdecl</CallingConvention>
       <CompileAs>Default</CompileAs>
       <AdditionalOptions>/Zc:__cplusplus</AdditionalOptions>
-      <PrecompiledHeaderFile>Zenith.h</PrecompiledHeaderFile>
-      <PrecompiledHeaderOutputFile>obj\win64\vs2022_release_win64_true\Test.pch</PrecompiledHeaderOutputFile>
       <ProgramDatabaseFileName>obj\win64\vs2022_release_win64_true\test_compiler.pdb</ProgramDatabaseFileName>
       <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
     </ClCompile>
@@ -418,7 +410,7 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <OutputFile>output\win64\vs2022_release_win64_true\test.exe</OutputFile>
       <ShowProgress>NotSet</ShowProgress>
-      <AdditionalLibraryDirectories>output\win64\vs2022_release_win64_true;..\..\..\middleware\glfw-3.4.bin.win64\lib-vc2022;..\..\..\middleware\vulkansdk\1.3.280.0\lib;..\..\..\tools\middleware\assimp\lib;..\..\..\tools\middleware\opencv\build\x64\vc16\lib</AdditionalLibraryDirectories>
+      <AdditionalLibraryDirectories>..\..\..\build\output\win64\vs2022_release_win64_true;..\..\..\middleware\glfw-3.4.bin.win64\lib-vc2022;..\..\..\middleware\vulkansdk\1.3.280.0\lib;..\..\..\tools\middleware\assimp\lib;..\..\..\tools\middleware\opencv\build\x64\vc16\lib</AdditionalLibraryDirectories>
       <ProgramDatabaseFile>output\win64\vs2022_release_win64_true\test.pdb</ProgramDatabaseFile>
       <GenerateMapFile>true</GenerateMapFile>
       <MapExports>false</MapExports>
@@ -439,7 +431,7 @@
       <Profile>false</Profile>
       <CLRImageType>Default</CLRImageType>
       <LinkErrorReporting>PromptImmediately</LinkErrorReporting>
-      <AdditionalDependencies>zenithtools.lib;assimp-vc143-mt.lib;glfw3_mt.lib;opencv_world4100.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>zenith.lib;assimp-vc143-mt.lib;glfw3_mt.lib;opencv_world4100.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
       <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
@@ -448,1426 +440,20 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="..\..\..\Middleware\glfw-3.4.bin.WIN64\include\GLFW\glfw3.h" />
-    <ClInclude Include="..\..\..\Middleware\glfw-3.4.bin.WIN64\include\GLFW\glfw3native.h" />
-    <ClInclude Include="..\..\..\Middleware\imgui-docking\backends\imgui_impl_glfw.h" />
-    <ClInclude Include="..\..\..\Middleware\imgui-docking\backends\imgui_impl_metal.h" />
-    <ClInclude Include="..\..\..\Middleware\imgui-docking\backends\imgui_impl_osx.h" />
-    <ClInclude Include="..\..\..\Middleware\imgui-docking\backends\imgui_impl_vulkan.h" />
-    <ClInclude Include="..\..\..\Middleware\imgui-docking\backends\imgui_impl_win32.h" />
-    <ClInclude Include="..\..\..\Middleware\imgui-docking\backends\sdlgpu3\shader.frag" />
-    <ClInclude Include="..\..\..\Middleware\imgui-docking\backends\sdlgpu3\shader.vert" />
-    <ClInclude Include="..\..\..\Middleware\imgui-docking\backends\vulkan\glsl_shader.frag" />
-    <ClInclude Include="..\..\..\Middleware\imgui-docking\backends\vulkan\glsl_shader.vert" />
-    <ClInclude Include="..\..\..\Middleware\imgui-docking\imconfig.h" />
-    <ClInclude Include="..\..\..\Middleware\imgui-docking\imgui.h" />
-    <ClInclude Include="..\..\..\Middleware\imgui-docking\imgui_internal.h" />
-    <ClInclude Include="..\..\..\Middleware\imgui-docking\imstb_rectpack.h" />
-    <ClInclude Include="..\..\..\Middleware\imgui-docking\imstb_textedit.h" />
-    <ClInclude Include="..\..\..\Middleware\imgui-docking\imstb_truetype.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Assets\Shaders\DX\VertexConstants.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Assets\Shaders\MTL\VertexConstants.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Assets\Shaders\VK\FontPixelShader.frag" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Assets\Shaders\VK\FontVertexShader.vert" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Assets\Shaders\VK\LinePixelShader.frag" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Assets\Shaders\VK\LineVertexShader.vert" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Assets\Shaders\VK\TriangleDepthPixelShader.frag" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Assets\Shaders\VK\TriangleDepthVertexShader.vert" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Assets\Shaders\VK\TrianglePixelShader.frag" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Assets\Shaders\VK\TriangleVertexShader.vert" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Assets\Shaders\VK\UIPixelShader.frag" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Assets\Shaders\VK\UIPixelShaderUntextured.frag" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Assets\Shaders\VK\UIVertexShader.vert" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Assets\Shaders\VK\VertexConstants.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\AABBTree\AABBTreeBuilder.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\AABBTree\AABBTreeToBuffer.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\AABBTree\NodeCodec\NodeCodecQuadTreeHalfFloat.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\AABBTree\TriangleCodec\TriangleCodecIndexed8BitPackSOA4Flags.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\ConfigurationString.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Core\ARMNeon.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Core\Array.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Core\Atomics.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Core\BinaryHeap.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Core\ByteBuffer.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Core\Color.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Core\Core.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Core\Factory.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Core\FixedSizeFreeList.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Core\FPControlWord.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Core\FPException.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Core\FPFlushDenormals.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Core\HashCombine.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Core\HashTable.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Core\InsertionSort.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Core\IssueReporting.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Core\JobSystem.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Core\JobSystemSingleThreaded.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Core\JobSystemThreadPool.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Core\JobSystemWithBarrier.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Core\LinearCurve.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Core\LockFreeHashMap.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Core\Memory.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Core\Mutex.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Core\MutexArray.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Core\NonCopyable.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Core\Profiler.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Core\QuickSort.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Core\Reference.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Core\Result.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Core\RTTI.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Core\ScopeExit.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Core\Semaphore.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Core\StaticArray.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Core\STLAlignedAllocator.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Core\STLAllocator.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Core\STLLocalAllocator.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Core\STLTempAllocator.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Core\StreamIn.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Core\StreamOut.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Core\StreamUtils.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Core\StreamWrapper.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Core\StridedPtr.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Core\StringTools.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Core\TempAllocator.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Core\TickCounter.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Core\UnorderedMap.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Core\UnorderedSet.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\AABox.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\AABox4.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\ClipPoly.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\ClosestPoint.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\ConvexHullBuilder.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\ConvexHullBuilder2D.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\ConvexSupport.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\Ellipse.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\EPAConvexHullBuilder.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\EPAPenetrationDepth.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\GJKClosestPoint.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\IndexedTriangle.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\Indexify.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\MortonCode.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\OrientedBox.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\Plane.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\RayAABox.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\RayCapsule.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\RayCylinder.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\RaySphere.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\RayTriangle.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\Sphere.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\Triangle.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Jolt.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Math\BVec16.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Math\DMat44.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Double3.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Math\DVec3.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Math\DynMatrix.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Math\EigenValueSymmetric.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Math\FindRoot.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Float2.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Float3.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Float4.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Math\GaussianElimination.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Math\HalfFloat.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Mat44.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Math.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Math\MathTypes.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Matrix.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Quat.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Real.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Swizzle.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Trigonometry.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Math\UVec4.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Vec3.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Vec4.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Vector.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\GetPrimitiveTypeOfType.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\ObjectStream.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\ObjectStreamBinaryIn.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\ObjectStreamBinaryOut.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\ObjectStreamIn.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\ObjectStreamOut.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\ObjectStreamTextIn.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\ObjectStreamTextOut.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\ObjectStreamTypes.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\SerializableAttribute.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\SerializableAttributeEnum.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\SerializableAttributeTyped.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\SerializableObject.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\TypeDeclarations.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\AllowedDOFs.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\Body.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\BodyAccess.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\BodyActivationListener.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\BodyCreationSettings.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\BodyFilter.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\BodyID.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\BodyInterface.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\BodyLock.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\BodyLockInterface.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\BodyLockMulti.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\BodyManager.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\BodyPair.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\BodyType.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\MassProperties.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\MotionProperties.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\MotionQuality.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\MotionType.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Character\Character.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Character\CharacterBase.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Character\CharacterID.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Character\CharacterVirtual.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\AABoxCast.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\ActiveEdgeMode.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\ActiveEdges.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\BackFaceMode.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\BroadPhase\BroadPhase.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\BroadPhase\BroadPhaseBruteForce.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\BroadPhase\BroadPhaseLayer.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\BroadPhase\BroadPhaseLayerInterfaceMask.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\BroadPhase\BroadPhaseLayerInterfaceTable.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\BroadPhase\BroadPhaseQuadTree.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\BroadPhase\BroadPhaseQuery.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\BroadPhase\ObjectVsBroadPhaseLayerFilterMask.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\BroadPhase\ObjectVsBroadPhaseLayerFilterTable.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\BroadPhase\QuadTree.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CastConvexVsTriangles.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CastResult.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CastSphereVsTriangles.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CollectFacesMode.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CollideConvexVsTriangles.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CollidePointResult.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CollideShape.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CollideShapeVsShapePerLeaf.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CollideSoftBodyVertexIterator.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CollideSoftBodyVerticesVsTriangles.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CollideSphereVsTriangles.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CollisionCollector.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CollisionCollectorImpl.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CollisionDispatch.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CollisionGroup.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\ContactListener.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\EstimateCollisionResponse.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\GroupFilter.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\GroupFilterTable.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\InternalEdgeRemovingCollector.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\ManifoldBetweenTwoFaces.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\NarrowPhaseQuery.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\NarrowPhaseStats.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\ObjectLayer.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\ObjectLayerPairFilterMask.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\ObjectLayerPairFilterTable.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\PhysicsMaterial.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\PhysicsMaterialSimple.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\RayCast.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\ShapeCast.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\ShapeFilter.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\BoxShape.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\CapsuleShape.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\CompoundShape.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\CompoundShapeVisitors.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\ConvexHullShape.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\ConvexShape.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\CylinderShape.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\DecoratedShape.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\EmptyShape.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\GetTrianglesContext.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\HeightFieldShape.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\MeshShape.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\MutableCompoundShape.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\OffsetCenterOfMassShape.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\PlaneShape.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\PolyhedronSubmergedVolumeCalculator.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\RotatedTranslatedShape.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\ScaledShape.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\ScaleHelpers.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\Shape.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\SphereShape.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\StaticCompoundShape.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\SubShapeID.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\SubShapeIDPair.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\TaperedCapsuleShape.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\TaperedCylinderShape.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\TriangleShape.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\SimShapeFilter.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\SimShapeFilterWrapper.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\SortReverseAndStore.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\TransformedShape.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\CalculateSolverSteps.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ConeConstraint.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\Constraint.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ConstraintManager.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ConstraintPart\AngleConstraintPart.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ConstraintPart\AxisConstraintPart.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ConstraintPart\DualAxisConstraintPart.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ConstraintPart\GearConstraintPart.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ConstraintPart\HingeRotationConstraintPart.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ConstraintPart\IndependentAxisConstraintPart.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ConstraintPart\PointConstraintPart.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ConstraintPart\RackAndPinionConstraintPart.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ConstraintPart\RotationEulerConstraintPart.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ConstraintPart\RotationQuatConstraintPart.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ConstraintPart\SpringPart.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ConstraintPart\SwingTwistConstraintPart.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ContactConstraintManager.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\DistanceConstraint.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\FixedConstraint.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\GearConstraint.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\HingeConstraint.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\MotorSettings.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\PathConstraint.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\PathConstraintPath.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\PathConstraintPathHermite.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\PointConstraint.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\PulleyConstraint.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\RackAndPinionConstraint.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\SixDOFConstraint.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\SliderConstraint.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\SpringSettings.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\SwingTwistConstraint.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\TwoBodyConstraint.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\DeterminismLog.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\EActivation.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\EPhysicsUpdateError.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\IslandBuilder.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\LargeIslandSplitter.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\PhysicsLock.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\PhysicsScene.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\PhysicsSettings.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\PhysicsStepListener.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\PhysicsSystem.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\PhysicsUpdateContext.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Ragdoll\Ragdoll.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\SoftBody\SoftBodyContactListener.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\SoftBody\SoftBodyCreationSettings.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\SoftBody\SoftBodyManifold.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\SoftBody\SoftBodyMotionProperties.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\SoftBody\SoftBodyShape.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\SoftBody\SoftBodySharedSettings.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\SoftBody\SoftBodyUpdateContext.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\SoftBody\SoftBodyVertex.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\StateRecorder.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\StateRecorderImpl.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\MotorcycleController.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\TrackedVehicleController.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\VehicleAntiRollBar.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\VehicleCollisionTester.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\VehicleConstraint.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\VehicleController.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\VehicleDifferential.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\VehicleEngine.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\VehicleTrack.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\VehicleTransmission.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\Wheel.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\WheeledVehicleController.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\RegisterTypes.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Renderer\DebugRenderer.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Renderer\DebugRendererPlayback.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Renderer\DebugRendererRecorder.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Renderer\DebugRendererSimple.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Skeleton\SkeletalAnimation.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Skeleton\Skeleton.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Skeleton\SkeletonMapper.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Skeleton\SkeletonPose.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\TriangleSplitter\TriangleSplitter.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\TriangleSplitter\TriangleSplitterBinning.h" />
-    <ClInclude Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\TriangleSplitter\TriangleSplitterMean.h" />
-    <ClInclude Include="..\..\..\Middleware\stb\stb_dxt.h" />
-    <ClInclude Include="..\..\..\Middleware\stb\stb_image.h" />
-    <ClInclude Include="..\..\..\Middleware\vma\vk_mem_alloc.h" />
-    <ClInclude Include="..\..\..\Zenith\AssetHandling\Zenith_AssetHandler.h" />
-    <ClInclude Include="..\..\..\Zenith\AssetHandling\Zenith_MeshAsset.h" />
-    <ClInclude Include="..\..\..\Zenith\AssetHandling\Zenith_ModelAsset.h" />
-    <ClInclude Include="..\..\..\Zenith\AssetHandling\Zenith_SkeletonAsset.h" />
-    <ClInclude Include="..\..\..\Zenith\Collections\Zenith_CircularQueue.h" />
-    <ClInclude Include="..\..\..\Zenith\Collections\Zenith_MemoryPool.h" />
-    <ClInclude Include="..\..\..\Zenith\Collections\Zenith_Vector.h" />
-    <ClInclude Include="..\..\..\Zenith\Core\Memory\Zenith_MemoryManagement.h" />
-    <ClInclude Include="..\..\..\Zenith\Core\Memory\Zenith_MemoryManagement_Disabled.h" />
-    <ClInclude Include="..\..\..\Zenith\Core\Memory\Zenith_MemoryManagement_Enabled.h" />
-    <ClInclude Include="..\..\..\Zenith\Core\Multithreading\Zenith_Multithreading.h" />
-    <ClInclude Include="..\..\..\Zenith\Core\Zenith.h" />
-    <ClInclude Include="..\..\..\Zenith\Core\ZenithConfig.h" />
-    <ClInclude Include="..\..\..\Zenith\Core\Zenith_Core.h" />
-    <ClInclude Include="..\..\..\Zenith\Core\Zenith_String.h" />
-    <ClInclude Include="..\..\..\Zenith\DataStream\Zenith_DataStream.h" />
-    <ClInclude Include="..\..\..\Zenith\DebugVariables\Zenith_DebugVariables.h" />
-    <ClInclude Include="..\..\..\Zenith\Editor\Zenith_AnimationStateMachineEditor.h" />
-    <ClInclude Include="..\..\..\Zenith\Editor\Zenith_Editor.h" />
-    <ClInclude Include="..\..\..\Zenith\Editor\Zenith_Gizmo.h" />
-    <ClInclude Include="..\..\..\Zenith\Editor\Zenith_SelectionSystem.h" />
-    <ClInclude Include="..\..\..\Zenith\Editor\Zenith_UndoSystem.h" />
-    <ClInclude Include="..\..\..\Zenith\EntityComponent\Components\Zenith_CameraComponent.h" />
-    <ClInclude Include="..\..\..\Zenith\EntityComponent\Components\Zenith_ColliderComponent.h" />
-    <ClInclude Include="..\..\..\Zenith\EntityComponent\Components\Zenith_ModelComponent.h" />
-    <ClInclude Include="..\..\..\Zenith\EntityComponent\Components\Zenith_ScriptComponent.h" />
-    <ClInclude Include="..\..\..\Zenith\EntityComponent\Components\Zenith_TerrainComponent.h" />
-    <ClInclude Include="..\..\..\Zenith\EntityComponent\Components\Zenith_TextComponent.h" />
-    <ClInclude Include="..\..\..\Zenith\EntityComponent\Components\Zenith_TransformComponent.h" />
-    <ClInclude Include="..\..\..\Zenith\EntityComponent\Components\Zenith_UIComponent.h" />
-    <ClInclude Include="..\..\..\Zenith\EntityComponent\Zenith_ComponentRegistry.h" />
-    <ClInclude Include="..\..\..\Zenith\EntityComponent\Zenith_Entity.h" />
-    <ClInclude Include="..\..\..\Zenith\EntityComponent\Zenith_Scene.h" />
-    <ClInclude Include="..\..\..\Zenith\FileAccess\Zenith_FileAccess.h" />
-    <ClInclude Include="..\..\..\Zenith\Flux\AnimatedMeshes\Flux_AnimatedMeshes.h" />
-    <ClInclude Include="..\..\..\Zenith\Flux\ComputeTest\Flux_ComputeTest.h" />
-    <ClInclude Include="..\..\..\Zenith\Flux\DeferredShading\Flux_DeferredShading.h" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Flux.h" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Flux_Buffers.h" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Flux_CommandList.h" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Flux_Enums.h" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Flux_Graphics.h" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Flux_MaterialAsset.h" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Flux_ModelInstance.h" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Flux_RenderTargets.h" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Flux_Types.h" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Fog\Flux_Fog.h" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Gizmos\Flux_Gizmos.h" />
-    <ClInclude Include="..\..\..\Zenith\Flux\MeshAnimation\Flux_AnimationClip.h" />
-    <ClInclude Include="..\..\..\Zenith\Flux\MeshAnimation\Flux_AnimationController.h" />
-    <ClInclude Include="..\..\..\Zenith\Flux\MeshAnimation\Flux_AnimationStateMachine.h" />
-    <ClInclude Include="..\..\..\Zenith\Flux\MeshAnimation\Flux_BlendTree.h" />
-    <ClInclude Include="..\..\..\Zenith\Flux\MeshAnimation\Flux_BonePose.h" />
-    <ClInclude Include="..\..\..\Zenith\Flux\MeshAnimation\Flux_InverseKinematics.h" />
-    <ClInclude Include="..\..\..\Zenith\Flux\MeshAnimation\Flux_MeshAnimation.h" />
-    <ClInclude Include="..\..\..\Zenith\Flux\MeshAnimation\Flux_SkeletonInstance.h" />
-    <ClInclude Include="..\..\..\Zenith\Flux\MeshGeometry\Flux_MeshGeometry.h" />
-    <ClInclude Include="..\..\..\Zenith\Flux\MeshGeometry\Flux_MeshInstance.h" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Particles\Flux_Particles.h" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Primitives\Flux_Primitives.h" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Quads\Flux_Quads.h" />
-    <ClInclude Include="..\..\..\Zenith\Flux\SDFs\Flux_SDFs.h" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\AnimatedMeshes\Flux_AnimatedMeshes_FragCommon.fxh" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\AnimatedMeshes\Flux_AnimatedMeshes_ToGBuffer.frag" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\AnimatedMeshes\Flux_AnimatedMeshes_ToGBuffer.vert" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\AnimatedMeshes\Flux_AnimatedMeshes_ToShadowmap.frag" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\AnimatedMeshes\Flux_AnimatedMeshes_ToShadowmap.vert" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\AnimatedMeshes\Flux_AnimatedMeshes_VertCommon.fxh" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Common.fxh" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\ComputeTest\ComputeTest.comp" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\ComputeTest\ComputeTest_Display.frag" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\ComputeTest\ComputeTest_Display.vert" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\DeferredShading\Flux_DeferredShading.frag" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Flux_Fullscreen_UV.vert" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Flux_TexturedQuad.frag" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Fog\Flux_Fog.frag" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\GBufferCommon.fxh" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Gizmos\Flux_Gizmos.frag" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Gizmos\Flux_Gizmos.vert" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Particles\Flux_Particles.frag" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Particles\Flux_Particles.vert" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Primitives\Flux_Primitives.frag" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Primitives\Flux_Primitives.vert" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Quads\Flux_Quads.frag" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Quads\Flux_Quads.vert" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\SDFs\Flux_SDFs.frag" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Skybox\Flux_Skybox.frag" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\SSAO\Flux_SSAO.frag" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\StaticMeshes\Flux_StaticMeshes_FragCommon.fxh" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\StaticMeshes\Flux_StaticMeshes_ToGBuffer.frag" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\StaticMeshes\Flux_StaticMeshes_ToGBuffer.vert" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\StaticMeshes\Flux_StaticMeshes_ToShadowmap.frag" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\StaticMeshes\Flux_StaticMeshes_ToShadowmap.vert" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\StaticMeshes\Flux_StaticMeshes_VertCommon.fxh" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Terrain\Flux_TerrainCulling.comp" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Terrain\Flux_Terrain_FragCommon.fxh" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Terrain\Flux_Terrain_ToGBuffer.frag" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Terrain\Flux_Terrain_ToGBuffer.vert" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Terrain\Flux_Terrain_ToShadowmap.frag" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Terrain\Flux_Terrain_ToShadowmap.vert" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Terrain\Flux_Terrain_VertCommon.fxh" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Text\Flux_Text.frag" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Text\Flux_Text.vert" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Water\Flux_Water.frag" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Shaders\Water\Flux_Water.vert" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Shadows\Flux_Shadows.h" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Skybox\Flux_Skybox.h" />
-    <ClInclude Include="..\..\..\Zenith\Flux\SSAO\Flux_SSAO.h" />
-    <ClInclude Include="..\..\..\Zenith\Flux\StaticMeshes\Flux_StaticMeshes.h" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Terrain\Flux_Terrain.h" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Terrain\Flux_TerrainConfig.h" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Terrain\Flux_TerrainStreamingManager.h" />
-    <ClInclude Include="..\..\..\Zenith\Flux\Text\Flux_Text.h" />
-    <ClInclude Include="..\..\..\Zenith\Input\Zenith_Input.h" />
-    <ClInclude Include="..\..\..\Zenith\Input\Zenith_KeyCodes.h" />
-    <ClInclude Include="..\..\..\Zenith\Maths\Zenith_FrustumCulling.h" />
-    <ClInclude Include="..\..\..\Zenith\Maths\Zenith_Maths.h" />
-    <ClInclude Include="..\..\..\Zenith\Maths\Zenith_Maths_Intersections.h" />
-    <ClInclude Include="..\..\..\Zenith\Physics\Zenith_Physics.h" />
-    <ClInclude Include="..\..\..\Zenith\Physics\Zenith_PhysicsMeshGenerator.h" />
-    <ClInclude Include="..\..\..\Zenith\Prefab\Zenith_Prefab.h" />
-    <ClInclude Include="..\..\..\Zenith\Profiling\Zenith_Profiling.h" />
-    <ClInclude Include="..\..\..\Zenith\TaskSystem\Zenith_TaskSystem.h" />
-    <ClInclude Include="..\..\..\Zenith\UI\Zenith_UI.h" />
-    <ClInclude Include="..\..\..\Zenith\UI\Zenith_UICanvas.h" />
-    <ClInclude Include="..\..\..\Zenith\UI\Zenith_UIElement.h" />
-    <ClInclude Include="..\..\..\Zenith\UI\Zenith_UIImage.h" />
-    <ClInclude Include="..\..\..\Zenith\UI\Zenith_UIRect.h" />
-    <ClInclude Include="..\..\..\Zenith\UI\Zenith_UIText.h" />
-    <ClInclude Include="..\..\..\Zenith\UnitTests\Zenith_EditorTests.h" />
-    <ClInclude Include="..\..\..\Zenith\UnitTests\Zenith_UnitTests.h" />
-    <ClInclude Include="..\..\..\Zenith\Vulkan\Zenith_PlatformGraphics_Include.h" />
-    <ClInclude Include="..\..\..\Zenith\Vulkan\Zenith_Vulkan.h" />
-    <ClInclude Include="..\..\..\Zenith\Vulkan\Zenith_Vulkan_Buffer.h" />
-    <ClInclude Include="..\..\..\Zenith\Vulkan\Zenith_Vulkan_CommandBuffer.h" />
-    <ClInclude Include="..\..\..\Zenith\Vulkan\Zenith_Vulkan_MemoryManager.h" />
-    <ClInclude Include="..\..\..\Zenith\Vulkan\Zenith_Vulkan_Pipeline.h" />
-    <ClInclude Include="..\..\..\Zenith\Vulkan\Zenith_Vulkan_Swapchain.h" />
-    <ClInclude Include="..\..\..\Zenith\Vulkan\Zenith_Vulkan_Texture.h" />
-    <ClInclude Include="..\..\..\Zenith\Windows\Multithreading\Zenith_Windows_Multithreading.h" />
-    <ClInclude Include="..\..\..\Zenith\Windows\Zenith_OS_Include.h" />
-    <ClInclude Include="..\..\..\Zenith\Windows\Zenith_Windows_Window.h" />
     <ClInclude Include="..\Components\PlayerController_Behaviour.h" />
     <ClInclude Include="..\Components\SphereMovement_Behaviour.h" />
   </ItemGroup>
   <ItemGroup>
-    <Natvis Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Jolt.natvis" />
-  </ItemGroup>
-  <ItemGroup>
-    <ClCompile Include="..\..\..\Middleware\imgui-docking\backends\imgui_impl_glfw.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\imgui-docking\backends\imgui_impl_vulkan.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\imgui-docking\backends\imgui_impl_win32.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\imgui-docking\imgui.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\imgui-docking\imgui_demo.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\imgui-docking\imgui_draw.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\imgui-docking\imgui_tables.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\imgui-docking\imgui_widgets.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\AABBTree\AABBTreeBuilder.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Core\Color.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Core\Factory.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Core\IssueReporting.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Core\JobSystemSingleThreaded.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Core\JobSystemThreadPool.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Core\JobSystemWithBarrier.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Core\LinearCurve.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Core\Memory.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Core\Profiler.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Core\RTTI.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Core\Semaphore.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Core\StringTools.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Core\TickCounter.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\ConvexHullBuilder.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\ConvexHullBuilder2D.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\Indexify.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Geometry\OrientedBox.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Math\Vec3.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\ObjectStream.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\ObjectStreamBinaryIn.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\ObjectStreamBinaryOut.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\ObjectStreamIn.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\ObjectStreamOut.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\ObjectStreamTextIn.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\ObjectStreamTextOut.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\SerializableObject.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\ObjectStream\TypeDeclarations.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\Body.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\BodyCreationSettings.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\BodyInterface.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\BodyManager.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\MassProperties.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Body\MotionProperties.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Character\Character.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Character\CharacterBase.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Character\CharacterVirtual.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\BroadPhase\BroadPhase.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\BroadPhase\BroadPhaseBruteForce.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\BroadPhase\BroadPhaseQuadTree.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\BroadPhase\QuadTree.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CastConvexVsTriangles.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CastSphereVsTriangles.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CollideConvexVsTriangles.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CollideSphereVsTriangles.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CollisionDispatch.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\CollisionGroup.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\EstimateCollisionResponse.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\GroupFilter.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\GroupFilterTable.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\ManifoldBetweenTwoFaces.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\NarrowPhaseQuery.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\NarrowPhaseStats.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\PhysicsMaterial.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\PhysicsMaterialSimple.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\BoxShape.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\CapsuleShape.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\CompoundShape.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\ConvexHullShape.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\ConvexShape.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\CylinderShape.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\DecoratedShape.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\EmptyShape.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\HeightFieldShape.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\MeshShape.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\MutableCompoundShape.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\OffsetCenterOfMassShape.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\PlaneShape.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\RotatedTranslatedShape.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\ScaledShape.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\Shape.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\SphereShape.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\StaticCompoundShape.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\TaperedCapsuleShape.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\TaperedCylinderShape.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\Shape\TriangleShape.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Collision\TransformedShape.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ConeConstraint.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\Constraint.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ConstraintManager.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\ContactConstraintManager.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\DistanceConstraint.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\FixedConstraint.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\GearConstraint.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\HingeConstraint.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\MotorSettings.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\PathConstraint.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\PathConstraintPath.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\PathConstraintPathHermite.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\PointConstraint.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\PulleyConstraint.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\RackAndPinionConstraint.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\SixDOFConstraint.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\SliderConstraint.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\SpringSettings.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\SwingTwistConstraint.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Constraints\TwoBodyConstraint.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\DeterminismLog.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\IslandBuilder.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\LargeIslandSplitter.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\PhysicsScene.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\PhysicsSystem.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\PhysicsUpdateContext.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Ragdoll\Ragdoll.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\SoftBody\SoftBodyCreationSettings.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\SoftBody\SoftBodyMotionProperties.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\SoftBody\SoftBodyShape.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\SoftBody\SoftBodySharedSettings.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\StateRecorderImpl.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\MotorcycleController.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\TrackedVehicleController.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\VehicleAntiRollBar.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\VehicleCollisionTester.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\VehicleConstraint.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\VehicleController.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\VehicleDifferential.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\VehicleEngine.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\VehicleTrack.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\VehicleTransmission.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\Wheel.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Physics\Vehicle\WheeledVehicleController.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\RegisterTypes.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Renderer\DebugRenderer.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Renderer\DebugRendererPlayback.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Renderer\DebugRendererRecorder.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Renderer\DebugRendererSimple.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Skeleton\SkeletalAnimation.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Skeleton\Skeleton.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Skeleton\SkeletonMapper.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\Skeleton\SkeletonPose.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\TriangleSplitter\TriangleSplitter.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\TriangleSplitter\TriangleSplitterBinning.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Middleware\JoltPhysics-5.4.0\Jolt\TriangleSplitter\TriangleSplitterMean.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Zenith\AssetHandling\Zenith_AssetHandler.cpp" />
-    <ClCompile Include="..\..\..\Zenith\AssetHandling\Zenith_MeshAsset.cpp" />
-    <ClCompile Include="..\..\..\Zenith\AssetHandling\Zenith_ModelAsset.cpp" />
-    <ClCompile Include="..\..\..\Zenith\AssetHandling\Zenith_SkeletonAsset.cpp" />
-    <ClCompile Include="..\..\..\Zenith\Core\Memory\Zenith_MemoryManagement.cpp" />
-    <ClCompile Include="..\..\..\Zenith\Core\Multithreading\Zenith_Multithreading.cpp" />
-    <ClCompile Include="..\..\..\Zenith\Core\Zenith.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">Create</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">Create</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">Create</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">Create</PrecompiledHeader>
-    </ClCompile>
-    <ClCompile Include="..\..\..\Zenith\Core\Zenith_Core.cpp" />
-    <ClCompile Include="..\..\..\Zenith\DataStream\Zenith_DataStream.cpp" />
-    <ClCompile Include="..\..\..\Zenith\DebugVariables\Zenith_DebugVariables.cpp" />
-    <ClCompile Include="..\..\..\Zenith\Editor\Zenith_AnimationStateMachineEditor.cpp" />
-    <ClCompile Include="..\..\..\Zenith\Editor\Zenith_Editor.cpp" />
-    <ClCompile Include="..\..\..\Zenith\Editor\Zenith_Gizmo.cpp" />
-    <ClCompile Include="..\..\..\Zenith\Editor\Zenith_SelectionSystem.cpp" />
-    <ClCompile Include="..\..\..\Zenith\Editor\Zenith_UndoSystem.cpp" />
-    <ClCompile Include="..\..\..\Zenith\EntityComponent\Components\Zenith_CameraComponent.cpp" />
-    <ClCompile Include="..\..\..\Zenith\EntityComponent\Components\Zenith_ColliderComponent.cpp" />
-    <ClCompile Include="..\..\..\Zenith\EntityComponent\Components\Zenith_ModelComponent.cpp" />
-    <ClCompile Include="..\..\..\Zenith\EntityComponent\Components\Zenith_ScriptComponent.cpp" />
-    <ClCompile Include="..\..\..\Zenith\EntityComponent\Components\Zenith_TerrainComponent.cpp" />
-    <ClCompile Include="..\..\..\Zenith\EntityComponent\Components\Zenith_TextComponent.cpp" />
-    <ClCompile Include="..\..\..\Zenith\EntityComponent\Components\Zenith_TransformComponent.cpp" />
-    <ClCompile Include="..\..\..\Zenith\EntityComponent\Components\Zenith_UIComponent.cpp" />
-    <ClCompile Include="..\..\..\Zenith\EntityComponent\Zenith_ComponentRegistry.cpp" />
-    <ClCompile Include="..\..\..\Zenith\EntityComponent\Zenith_Entity.cpp" />
-    <ClCompile Include="..\..\..\Zenith\EntityComponent\Zenith_Scene.cpp" />
-    <ClCompile Include="..\..\..\Zenith\FileAccess\Zenith_FileAccess.cpp" />
-    <ClCompile Include="..\..\..\Zenith\Flux\AnimatedMeshes\Flux_AnimatedMeshes.cpp" />
-    <ClCompile Include="..\..\..\Zenith\Flux\ComputeTest\Flux_ComputeTest.cpp" />
-    <ClCompile Include="..\..\..\Zenith\Flux\DeferredShading\Flux_DeferredShading.cpp" />
-    <ClCompile Include="..\..\..\Zenith\Flux\Flux.cpp" />
-    <ClCompile Include="..\..\..\Zenith\Flux\Flux_Buffers.cpp" />
-    <ClCompile Include="..\..\..\Zenith\Flux\Flux_CommandList.cpp" />
-    <ClCompile Include="..\..\..\Zenith\Flux\Flux_Graphics.cpp" />
-    <ClCompile Include="..\..\..\Zenith\Flux\Flux_MaterialAsset.cpp" />
-    <ClCompile Include="..\..\..\Zenith\Flux\Flux_ModelInstance.cpp" />
-    <ClCompile Include="..\..\..\Zenith\Flux\Flux_RenderTargets.cpp" />
-    <ClCompile Include="..\..\..\Zenith\Flux\Fog\Flux_Fog.cpp" />
-    <ClCompile Include="..\..\..\Zenith\Flux\Gizmos\Flux_Gizmos.cpp" />
-    <ClCompile Include="..\..\..\Zenith\Flux\MeshAnimation\Flux_AnimationClip.cpp" />
-    <ClCompile Include="..\..\..\Zenith\Flux\MeshAnimation\Flux_AnimationController.cpp" />
-    <ClCompile Include="..\..\..\Zenith\Flux\MeshAnimation\Flux_AnimationStateMachine.cpp" />
-    <ClCompile Include="..\..\..\Zenith\Flux\MeshAnimation\Flux_BlendTree.cpp" />
-    <ClCompile Include="..\..\..\Zenith\Flux\MeshAnimation\Flux_BonePose.cpp" />
-    <ClCompile Include="..\..\..\Zenith\Flux\MeshAnimation\Flux_InverseKinematics.cpp" />
-    <ClCompile Include="..\..\..\Zenith\Flux\MeshAnimation\Flux_MeshAnimation.cpp" />
-    <ClCompile Include="..\..\..\Zenith\Flux\MeshAnimation\Flux_SkeletonInstance.cpp" />
-    <ClCompile Include="..\..\..\Zenith\Flux\MeshGeometry\Flux_MeshGeometry.cpp" />
-    <ClCompile Include="..\..\..\Zenith\Flux\MeshGeometry\Flux_MeshInstance.cpp" />
-    <ClCompile Include="..\..\..\Zenith\Flux\Particles\Flux_Particles.cpp" />
-    <ClCompile Include="..\..\..\Zenith\Flux\Primitives\Flux_Primitives.cpp" />
-    <ClCompile Include="..\..\..\Zenith\Flux\Quads\Flux_Quads.cpp" />
-    <ClCompile Include="..\..\..\Zenith\Flux\SDFs\Flux_SDFs.cpp" />
-    <ClCompile Include="..\..\..\Zenith\Flux\Shadows\Flux_Shadows.cpp" />
-    <ClCompile Include="..\..\..\Zenith\Flux\Skybox\Flux_Skybox.cpp" />
-    <ClCompile Include="..\..\..\Zenith\Flux\SSAO\Flux_SSAO.cpp" />
-    <ClCompile Include="..\..\..\Zenith\Flux\StaticMeshes\Flux_StaticMeshes.cpp" />
-    <ClCompile Include="..\..\..\Zenith\Flux\Terrain\Flux_Terrain.cpp" />
-    <ClCompile Include="..\..\..\Zenith\Flux\Terrain\Flux_TerrainStreamingManager.cpp" />
-    <ClCompile Include="..\..\..\Zenith\Flux\Text\Flux_Text.cpp" />
-    <ClCompile Include="..\..\..\Zenith\Input\Zenith_Input.cpp" />
-    <ClCompile Include="..\..\..\Zenith\Maths\Zenith_Maths.cpp" />
-    <ClCompile Include="..\..\..\Zenith\Physics\Zenith_Physics.cpp" />
-    <ClCompile Include="..\..\..\Zenith\Physics\Zenith_PhysicsMeshGenerator.cpp" />
-    <ClCompile Include="..\..\..\Zenith\Prefab\Zenith_Prefab.cpp" />
-    <ClCompile Include="..\..\..\Zenith\Profiling\Zenith_Profiling.cpp" />
-    <ClCompile Include="..\..\..\Zenith\TaskSystem\Zenith_TaskSystem.cpp" />
-    <ClCompile Include="..\..\..\Zenith\UI\Zenith_UICanvas.cpp" />
-    <ClCompile Include="..\..\..\Zenith\UI\Zenith_UIElement.cpp" />
-    <ClCompile Include="..\..\..\Zenith\UI\Zenith_UIImage.cpp" />
-    <ClCompile Include="..\..\..\Zenith\UI\Zenith_UIRect.cpp" />
-    <ClCompile Include="..\..\..\Zenith\UI\Zenith_UIText.cpp" />
-    <ClCompile Include="..\..\..\Zenith\UnitTests\Zenith_EditorTests.cpp" />
-    <ClCompile Include="..\..\..\Zenith\UnitTests\Zenith_UnitTests.cpp" />
-    <ClCompile Include="..\..\..\Zenith\Vulkan\Zenith_Vulkan.cpp" />
-    <ClCompile Include="..\..\..\Zenith\Vulkan\Zenith_Vulkan_Buffer.cpp" />
-    <ClCompile Include="..\..\..\Zenith\Vulkan\Zenith_Vulkan_CommandBuffer.cpp" />
-    <ClCompile Include="..\..\..\Zenith\Vulkan\Zenith_Vulkan_MemoryManager.cpp" />
-    <ClCompile Include="..\..\..\Zenith\Vulkan\Zenith_Vulkan_Pipeline.cpp" />
-    <ClCompile Include="..\..\..\Zenith\Vulkan\Zenith_Vulkan_Swapchain.cpp" />
-    <ClCompile Include="..\..\..\Zenith\Vulkan\Zenith_Vulkan_Texture.cpp" />
-    <ClCompile Include="..\..\..\Zenith\Windows\Multithreading\Zenith_Windows_Multithreading.cpp" />
-    <ClCompile Include="..\..\..\Zenith\Windows\Zenith_Windows_Window.cpp" />
-    <ClCompile Include="..\..\..\Zenith\Zenith_Main.cpp" />
     <ClCompile Include="..\Components\PlayerController_Behaviour.cpp" />
     <ClCompile Include="..\Components\SphereMovement_Behaviour.cpp" />
-    <ClCompile Include="Test.cpp" />
+    <ClCompile Include="..\Test.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
   <ItemGroup>
-    <ProjectReference Include="zenithtools_win64.vcxproj">
-      <Project>{633DCFD2-75BF-C5CC-376E-41A7753B4988}</Project>
+    <ProjectReference Include="..\..\..\build\zenith_win64.vcxproj">
+      <Project>{11BEC1C0-98B7-E167-86B0-B8D5D8D10E27}</Project>
       <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
       <LinkLibraryDependencies>false</LinkLibraryDependencies>
     </ProjectReference>

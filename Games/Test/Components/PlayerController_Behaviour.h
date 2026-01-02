@@ -109,6 +109,6 @@ private:
 	bool m_bUIInitialized = false;
 
 	// Bullet prefab (per-instance)
-	std::string m_strBulletPrefabPath = ASSETS_ROOT"Prefabs/Bullet" ZENITH_PREFAB_EXT;
+	std::string m_strBulletPrefabPath = GAME_ASSETS_DIR"Prefabs/Bullet" ZENITH_PREFAB_EXT;
 	Zenith_Prefab* m_pxBulletPrefab = nullptr;
 };

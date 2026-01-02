@@ -157,7 +157,7 @@ private:
 	static float s_fEditorCameraFOV;
 	static float s_fEditorCameraNear;
 	static float s_fEditorCameraFar;
-	static Zenith_Entity* s_pxGameCameraEntity;  // Saved when entering play mode
+	static Zenith_EntityID s_uGameCameraEntity;  // Saved when entering play mode
 	static float s_fEditorCameraMoveSpeed;
 	static float s_fEditorCameraRotateSpeed;
 	static bool s_bEditorCameraInitialized;

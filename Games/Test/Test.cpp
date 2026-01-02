@@ -1,10 +1,26 @@
 #include "Zenith.h"
 
+// Returns the project name - used by Tools code to construct asset paths
+// The build system provides ZENITH_ROOT, and paths are constructed as:
+// ZENITH_ROOT + "Games/" + Project_GetName() + "/Assets/"
+const char* Project_GetName()
+{
+	return "Test";
+}
+
+// Returns the game assets directory - called by Zenith engine code
+// GAME_ASSETS_DIR is defined by the build system for each game
+const char* Project_GetGameAssetsDirectory()
+{
+	return GAME_ASSETS_DIR;
+}
+
 #include "Test/Components/SphereMovement_Behaviour.h"
 #include "Test/Components/PlayerController_Behaviour.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
+#include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "UI/Zenith_UI.h"
 #include "Prefab/Zenith_Prefab.h"
 #include "AssetHandling/Zenith_AssetHandler.h"
@@ -20,7 +36,7 @@ void Project_RegisterScriptBehaviours()
 
 static void CreateBulletPrefabIfNotExists()
 {
-	const std::string strPrefabPath = ASSETS_ROOT"Prefabs/Bullet" ZENITH_PREFAB_EXT;
+	const std::string strPrefabPath = GAME_ASSETS_DIR"Prefabs/Bullet" ZENITH_PREFAB_EXT;
 
 	if (std::filesystem::exists(strPrefabPath))
 	{
@@ -28,14 +44,14 @@ static void CreateBulletPrefabIfNotExists()
 		return;
 	}
 
-	std::filesystem::create_directories(ASSETS_ROOT"Prefabs");
+	std::filesystem::create_directories(GAME_ASSETS_DIR"Prefabs");
 
 	Zenith_Entity xBulletTemplate;
 	xBulletTemplate.Initialise(&Zenith_Scene::GetCurrentScene(), "BulletTemplate");
 
 	Zenith_ModelComponent& xModel = xBulletTemplate.AddComponent<Zenith_ModelComponent>();
 	Flux_MeshGeometry* pxMesh = Zenith_AssetHandler::AddMeshFromFile(
-		ASSETS_ROOT"Meshes/sphereSmooth_Mesh0_Mat0" ZENITH_MESH_EXT);
+		GAME_ASSETS_DIR"Meshes/sphereSmooth_Mesh0_Mat0" ZENITH_MESH_EXT);
 	Flux_MaterialAsset* pxMaterial = Flux_MaterialAsset::Create("BulletMaterial");
 	xModel.AddMeshEntry(*pxMesh, *pxMaterial);
 
@@ -56,11 +72,17 @@ static void CreateBulletPrefabIfNotExists()
 
 void Project_LoadInitialScene()
 {
-	//Zenith_Scene::GetCurrentScene().LoadFromFile(ASSETS_ROOT"Scenes/test_scene.zscen");
+	//Zenith_Scene::GetCurrentScene().LoadFromFile(GAME_ASSETS_DIR"Scenes/test_scene.zscen");
 	Zenith_Scene::GetCurrentScene().Reset();
 
 	CreateBulletPrefabIfNotExists();
-	return;
+
+	// Entity 1: Camera
+	Zenith_Entity xCameraEntity;
+	xCameraEntity.Initialise(&Zenith_Scene::GetCurrentScene(), "Camera");
+	Zenith_CameraComponent& xCamera = xCameraEntity.AddComponent<Zenith_CameraComponent>();
+	xCamera.InitialisePerspective(Zenith_Maths::Vector3(0.0f, 10.0f, 20.0f), 0.0f, 0.0f, 60.0f, 0.1f, 1000.0f, 16.0f / 9.0f);
+	Zenith_Scene::GetCurrentScene().SetMainCameraEntity(xCameraEntity.GetEntityID());
 
 	// Create RPG HUD Entity
 	Zenith_Entity xHUDEntity;

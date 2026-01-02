@@ -19,7 +19,7 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectGuid>{7F1F4151-ED3F-D813-DDEA-5CA5477FB34B}</ProjectGuid>
+    <ProjectGuid>{1D9D3DA8-4BF0-B588-C7B8-08CC083FF800}</ProjectGuid>
     <DefaultLanguage>en-US</DefaultLanguage>
     <RootNamespace>FluxCompiler</RootNamespace>
     <ProjectName>FluxCompiler</ProjectName>
@@ -108,7 +108,7 @@
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <WarningLevel>Level4</WarningLevel>
       <Optimization>Disabled</Optimization>
-      <PreprocessorDefinitions>GLM_ENABLE_EXPERIMENTAL;SHADER_SOURCE_ROOT="C:/dev/Zenith/Zenith/Flux/Shaders/";WIN64;_CONSOLE;_DEBUG;%(PreprocessorDefinitions);$(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>GLM_ENABLE_EXPERIMENTAL;SHADER_SOURCE_ROOT="c:\dev\zenith\build/../Zenith/Flux/Shaders/";WIN64;_CONSOLE;_DEBUG;%(PreprocessorDefinitions);$(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>..\middleware\glfw-3.4.bin.win64\include;..\middleware\glm-master;..\zenith;..\zenith\core;..\zenith\windows</AdditionalIncludeDirectories>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <SuppressStartupBanner>true</SuppressStartupBanner>
@@ -191,7 +191,7 @@
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <WarningLevel>Level4</WarningLevel>
       <Optimization>Disabled</Optimization>
-      <PreprocessorDefinitions>GLM_ENABLE_EXPERIMENTAL;SHADER_SOURCE_ROOT="C:/dev/Zenith/Zenith/Flux/Shaders/";WIN64;_CONSOLE;_DEBUG;%(PreprocessorDefinitions);$(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>GLM_ENABLE_EXPERIMENTAL;SHADER_SOURCE_ROOT="c:\dev\zenith\build/../Zenith/Flux/Shaders/";WIN64;_CONSOLE;_DEBUG;%(PreprocessorDefinitions);$(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>..\middleware\glfw-3.4.bin.win64\include;..\middleware\glm-master;..\zenith;..\zenith\core;..\zenith\windows</AdditionalIncludeDirectories>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <SuppressStartupBanner>true</SuppressStartupBanner>
@@ -274,7 +274,7 @@
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <WarningLevel>Level4</WarningLevel>
       <Optimization>Full</Optimization>
-      <PreprocessorDefinitions>GLM_ENABLE_EXPERIMENTAL;NDEBUG;SHADER_SOURCE_ROOT="C:/dev/Zenith/Zenith/Flux/Shaders/";WIN64;_CONSOLE;%(PreprocessorDefinitions);$(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>GLM_ENABLE_EXPERIMENTAL;NDEBUG;SHADER_SOURCE_ROOT="c:\dev\zenith\build/../Zenith/Flux/Shaders/";WIN64;_CONSOLE;%(PreprocessorDefinitions);$(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>..\middleware\glfw-3.4.bin.win64\include;..\middleware\glm-master;..\zenith;..\zenith\core;..\zenith\windows</AdditionalIncludeDirectories>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <SuppressStartupBanner>true</SuppressStartupBanner>
@@ -357,7 +357,7 @@
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <WarningLevel>Level4</WarningLevel>
       <Optimization>Full</Optimization>
-      <PreprocessorDefinitions>GLM_ENABLE_EXPERIMENTAL;NDEBUG;SHADER_SOURCE_ROOT="C:/dev/Zenith/Zenith/Flux/Shaders/";WIN64;_CONSOLE;%(PreprocessorDefinitions);$(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>GLM_ENABLE_EXPERIMENTAL;NDEBUG;SHADER_SOURCE_ROOT="c:\dev\zenith\build/../Zenith/Flux/Shaders/";WIN64;_CONSOLE;%(PreprocessorDefinitions);$(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>..\middleware\glfw-3.4.bin.win64\include;..\middleware\glm-master;..\zenith;..\zenith\core;..\zenith\windows</AdditionalIncludeDirectories>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <SuppressStartupBanner>true</SuppressStartupBanner>

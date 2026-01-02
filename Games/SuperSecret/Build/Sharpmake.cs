@@ -259,7 +259,7 @@ public class TestWindowsProject : Project
 		conf.Defines.Add("ZENITH_VULKAN");
 		conf.Defines.Add("ZENITH_WINDOWS");
 		conf.Defines.Add("NOMINMAX");
-		conf.Defines.Add("ASSETS_ROOT=\"c:/dev/zenith/Games/" + Name + "/Assets/\"");
+		conf.Defines.Add("GAME_ASSETS_DIR=\"c:/dev/zenith/Games/" + Name + "/Assets/\"");
 		if(target.ToolsEnabled == ToolsEnabled.True)
 		{
 			conf.Defines.Add("ZENITH_TOOLS");

@@ -489,7 +489,7 @@ void Zenith_UnitTests::TestSceneSerialization()
 	Zenith_Entity xCameraEntity(&xGroundTruthScene, "MainCamera");
 	Zenith_CameraComponent& xCamera = xCameraEntity.AddComponent<Zenith_CameraComponent>();
 	xCamera.InitialisePerspective(Zenith_Maths::Vector3(0.0f, 10.0f, 20.0f), 0.0f, 0.0f, 60.0f, 0.1f, 1000.0f, 16.0f / 9.0f);
-	xGroundTruthScene.SetMainCameraEntity(xCameraEntity);
+	xGroundTruthScene.SetMainCameraEntity(xCameraEntity.GetEntityID());
 
 	// Entity 2: Transform only
 	Zenith_Entity xEntity1(&xGroundTruthScene, "TestEntity1");
@@ -550,7 +550,7 @@ void Zenith_UnitTests::TestSceneRoundTrip()
 	const float fCameraYaw = 1.57f;
 	const float fCameraFOV = 75.0f;
 	xCamera.InitialisePerspective(xCameraPos, fCameraPitch, fCameraYaw, fCameraFOV, 0.1f, 1000.0f, 16.0f / 9.0f);
-	xGroundTruthScene.SetMainCameraEntity(xCameraEntity);
+	xGroundTruthScene.SetMainCameraEntity(xCameraEntity.GetEntityID());
 
 	// Create Entity 2: Transform with precise values
 	Zenith_Entity xEntity1(&xGroundTruthScene, "TestEntity1");

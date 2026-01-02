@@ -36,6 +36,7 @@ static_assert(sizeof(u_int64) == 8);
 #include "Zenith_Core.h"
 
 #include "Zenith_OS_Include.h"
+#include "Zenith_DebugBreak.h"
 
 #ifdef ZENITH_WINDOWS
 #include <Windows.h>
@@ -77,7 +78,7 @@ inline void Zenith_LogImpl(int eLevel, const char* szFormat, ...)
 
 #define ZENITH_ASSERT
 #ifdef ZENITH_ASSERT
-#define Zenith_Assert(x,...)if(!(x)){Zenith_Error("Assertion failed: " __VA_ARGS__);__debugbreak();}
+#define Zenith_Assert(x,...)if(!(x)){Zenith_Error("Assertion failed: " __VA_ARGS__);Zenith_DebugBreak();}
 #else
 #define Zenith_Assert(x, ...)
 #endif
@@ -101,7 +102,7 @@ inline void Zenith_LogImpl(int eLevel, const char* szFormat, ...)
 
 #define COUNT_OF(x) sizeof(x) / sizeof(x[0])
 
-#define STUBBED __debugbreak();
+#define STUBBED Zenith_DebugBreak();
 //#define ZENITH_RAYTRACING
 
 using GUIDType = uint64_t;
@@ -134,6 +135,8 @@ struct std::hash<Zenith_GUID>
 		return std::hash<GUIDType>()(xGUID.m_uGUID);
 	}
 };
+
+extern const char* Project_GetGameAssetsDirectory();
 
 // Asset limits - now defined in ZenithConfig.h for central documentation
 // These macros maintain backward compatibility with existing code

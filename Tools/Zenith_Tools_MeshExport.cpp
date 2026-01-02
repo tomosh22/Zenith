@@ -4,6 +4,21 @@
 #include "Zenith.h"
 #include "Zenith_Tools_TextureExport.h"
 
+// Extern function that must be implemented by game projects - returns just the project name (e.g., "Test")
+// Paths are constructed using ZENITH_ROOT (defined by build system) + project name
+extern const char* Project_GetName();
+
+// Helper functions to construct asset paths from project name
+static std::string GetGameAssetsDirectory()
+{
+	return std::string(ZENITH_ROOT) + "Games/" + Project_GetName() + "/Assets/";
+}
+
+static std::string GetEngineAssetsDirectory()
+{
+	return std::string(ZENITH_ROOT) + "Zenith/Assets/";
+}
+
 #include "AssetHandling/Zenith_MeshAsset.h"
 #include "AssetHandling/Zenith_SkeletonAsset.h"
 #include "AssetHandling/Zenith_ModelAsset.h"
@@ -907,7 +922,7 @@ static void Export(const std::string& strFilename, const std::string& strExtensi
 //------------------------------------------------------------------------------
 void ExportAllMeshes()
 {
-	for (auto& xFile : std::filesystem::recursive_directory_iterator(GAME_ASSETS_DIR))
+	for (auto& xFile : std::filesystem::recursive_directory_iterator(GetGameAssetsDirectory()))
 	{
 		const wchar_t* wszFilename = xFile.path().c_str();
 		size_t ulLength = wcslen(wszFilename);
@@ -946,7 +961,7 @@ void ExportAllMeshes()
 		delete[] szFilename;
 	}
 
-	for (auto& xFile : std::filesystem::recursive_directory_iterator(ENGINE_ASSETS_DIR))
+	for (auto& xFile : std::filesystem::recursive_directory_iterator(GetEngineAssetsDirectory()))
 	{
 		const wchar_t* wszFilename = xFile.path().c_str();
 		size_t ulLength = wcslen(wszFilename);

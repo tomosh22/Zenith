@@ -178,8 +178,8 @@ public:
 
 	static Zenith_Scene& GetCurrentScene() { return s_xCurrentScene; }
 
-	void SetMainCameraEntity(Zenith_Entity& xEntity);
-	Zenith_Entity* GetMainCameraEntity();
+	void SetMainCameraEntity(Zenith_EntityID uEntity);
+	Zenith_EntityID GetMainCameraEntity();
 	Zenith_CameraComponent& GetMainCamera();
 
 	// Scene loading state (prevents asset deletion during Reset())
@@ -218,7 +218,7 @@ private:
 
 	std::unordered_map<Zenith_EntityID, Zenith_Entity> m_xEntityMap;
 	static Zenith_Scene s_xCurrentScene;
-	Zenith_Entity* m_pxMainCameraEntity;
+	Zenith_EntityID m_uMainCameraEntity = -1;
 	Zenith_Mutex m_xMutex;
 	Zenith_EntityID m_uNextEntityID = 1;  // Starts at 1 (0 is reserved as invalid)
 

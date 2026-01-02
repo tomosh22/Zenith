@@ -81,9 +81,9 @@ public:
 			// Set as Main Camera button
 			Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
 			bool bIsMainCamera = false;
-			if (xScene.GetMainCameraEntity() != nullptr)
+			if (xScene.GetMainCameraEntity() != INVALID_ENTITY_ID)
 			{
-				bIsMainCamera = (xScene.GetMainCameraEntity()->GetEntityID() == m_xParentEntity.GetEntityID());
+				bIsMainCamera = (xScene.GetMainCameraEntity() == m_xParentEntity.GetEntityID());
 			}
 
 			if (bIsMainCamera)
@@ -94,7 +94,7 @@ public:
 			{
 				if (ImGui::Button("Set as Main Camera"))
 				{
-					xScene.SetMainCameraEntity(m_xParentEntity);
+					xScene.SetMainCameraEntity(m_xParentEntity.GetEntityID());
 					Zenith_Log("Set entity '%s' as main camera", m_xParentEntity.m_strName.c_str());
 				}
 			}

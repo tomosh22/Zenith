@@ -1,0 +1,720 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="vs2022_Debug_Win64_False|x64">
+      <Configuration>vs2022_Debug_Win64_False</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="vs2022_Debug_Win64_True|x64">
+      <Configuration>vs2022_Debug_Win64_True</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="vs2022_Release_Win64_False|x64">
+      <Configuration>vs2022_Release_Win64_False</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="vs2022_Release_Win64_True|x64">
+      <Configuration>vs2022_Release_Win64_True</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{633DCFD2-75BF-C5CC-376E-41A7753B4988}</ProjectGuid>
+    <DefaultLanguage>en-US</DefaultLanguage>
+    <RootNamespace>ZenithTools</RootNamespace>
+    <ProjectName>ZenithTools</ProjectName>
+  </PropertyGroup>
+  <PropertyGroup Label="Globals">
+    <WindowsTargetPlatformVersion>10.0.19041.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <CharacterSet>MultiByte</CharacterSet>
+    <WholeProgramOptimization>false</WholeProgramOptimization>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <CharacterSet>MultiByte</CharacterSet>
+    <WholeProgramOptimization>false</WholeProgramOptimization>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <CharacterSet>MultiByte</CharacterSet>
+    <WholeProgramOptimization>false</WholeProgramOptimization>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'" Label="Configuration">
+    <ConfigurationType>StaticLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <CharacterSet>MultiByte</CharacterSet>
+    <WholeProgramOptimization>false</WholeProgramOptimization>
+    <PlatformToolset>v143</PlatformToolset>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">
+    <TargetName>zenithtools</TargetName>
+    <OutDir>output\win64\vs2022_debug_win64_false\</OutDir>
+    <IntDir>obj\win64\vs2022_debug_win64_false\</IntDir>
+    <TargetExt>.lib</TargetExt>
+    <GenerateManifest>true</GenerateManifest>
+    <LinkIncremental>false</LinkIncremental>
+    <OutputFile>output\win64\vs2022_debug_win64_false\zenithtools.lib</OutputFile>
+    <IgnoreImportLibrary>false</IgnoreImportLibrary>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">
+    <TargetName>zenithtools</TargetName>
+    <OutDir>output\win64\vs2022_debug_win64_true\</OutDir>
+    <IntDir>obj\win64\vs2022_debug_win64_true\</IntDir>
+    <TargetExt>.lib</TargetExt>
+    <GenerateManifest>true</GenerateManifest>
+    <LinkIncremental>false</LinkIncremental>
+    <OutputFile>output\win64\vs2022_debug_win64_true\zenithtools.lib</OutputFile>
+    <IgnoreImportLibrary>false</IgnoreImportLibrary>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">
+    <TargetName>zenithtools</TargetName>
+    <OutDir>output\win64\vs2022_release_win64_false\</OutDir>
+    <IntDir>obj\win64\vs2022_release_win64_false\</IntDir>
+    <TargetExt>.lib</TargetExt>
+    <GenerateManifest>true</GenerateManifest>
+    <LinkIncremental>false</LinkIncremental>
+    <OutputFile>output\win64\vs2022_release_win64_false\zenithtools.lib</OutputFile>
+    <IgnoreImportLibrary>false</IgnoreImportLibrary>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">
+    <TargetName>zenithtools</TargetName>
+    <OutDir>output\win64\vs2022_release_win64_true\</OutDir>
+    <IntDir>obj\win64\vs2022_release_win64_true\</IntDir>
+    <TargetExt>.lib</TargetExt>
+    <GenerateManifest>true</GenerateManifest>
+    <LinkIncremental>false</LinkIncremental>
+    <OutputFile>output\win64\vs2022_release_win64_true\zenithtools.lib</OutputFile>
+    <IgnoreImportLibrary>false</IgnoreImportLibrary>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">
+    <ClCompile>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <WarningLevel>Level4</WarningLevel>
+      <Optimization>Disabled</Optimization>
+      <PreprocessorDefinitions>ENGINE_ASSETS_DIR="c:/dev/zenith/Zenith/Assets/";GAME_ASSETS_DIR="./Assets/";GLM_ENABLE_EXPERIMENTAL;NOMINMAX;OPENDDLPARSER_BUILD;WIN64;ZENITH_DEBUG;ZENITH_TOOLS;ZENITH_VULKAN;ZENITH_WINDOWS;_DEBUG;_LIB;__OPENCV_BUILD;%(PreprocessorDefinitions);$(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>..\middleware;..\middleware\glfw-3.4.bin.win64\include;..\middleware\glm-master;..\middleware\imgui-docking;..\middleware\stb;..\middleware\vulkansdk\1.3.280.0\include;..\tools\middleware;..\tools\middleware\assimp\include;..\tools\middleware\opencv\build\include;..\tools\middleware\opencv\build\include\opencv2;..\tools\middleware\opencv\sources\3rdparty\libjpeg;..\tools\middleware\opencv\sources\3rdparty\libpng;..\tools\middleware\opencv\sources\3rdparty\libtiff;..\tools\middleware\opencv\sources\3rdparty\openjpeg\openjp2;..\tools\middleware\opencv\sources\cmake\templates;..\tools\middleware\opencv\sources\include;..\tools\middleware\opencv\sources\modules\core\include;..\tools\middleware\opencv\sources\modules\ts\include;..\zenith;..\zenith\core;..\zenith\vulkan;..\zenith\windows</AdditionalIncludeDirectories>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <TreatWarningAsError>false</TreatWarningAsError>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <UseUnicodeForAssemblerListing>false</UseUnicodeForAssemblerListing>
+      <InlineFunctionExpansion>OnlyExplicitInline</InlineFunctionExpansion>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <FavorSizeOrSpeed>Neither</FavorSizeOrSpeed>
+      <OmitFramePointers>false</OmitFramePointers>
+      <EnableFiberSafeOptimizations>false</EnableFiberSafeOptimizations>
+      <WholeProgramOptimization>false</WholeProgramOptimization>
+      <UndefineAllPreprocessorDefinitions>false</UndefineAllPreprocessorDefinitions>
+      <IgnoreStandardIncludePath>false</IgnoreStandardIncludePath>
+      <PreprocessToFile>false</PreprocessToFile>
+      <PreprocessSuppressLineNumbers>false</PreprocessSuppressLineNumbers>
+      <PreprocessKeepComments>false</PreprocessKeepComments>
+      <StringPooling>true</StringPooling>
+      <ExceptionHandling>false</ExceptionHandling>
+      <SmallerTypeCheck>false</SmallerTypeCheck>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+      <StructMemberAlignment>Default</StructMemberAlignment>
+      <BufferSecurityCheck>true</BufferSecurityCheck>
+      <FunctionLevelLinking>false</FunctionLevelLinking>
+      <EnableEnhancedInstructionSet>NotSet</EnableEnhancedInstructionSet>
+      <FloatingPointModel>Fast</FloatingPointModel>
+      <FloatingPointExceptions>false</FloatingPointExceptions>
+      <DisableLanguageExtensions>false</DisableLanguageExtensions>
+      <TreatWChar_tAsBuiltInType>true</TreatWChar_tAsBuiltInType>
+      <ForceConformanceInForLoopScope>true</ForceConformanceInForLoopScope>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <OpenMPSupport>false</OpenMPSupport>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <ExpandAttributedSource>false</ExpandAttributedSource>
+      <AssemblerOutput>NoListing</AssemblerOutput>
+      <GenerateXMLDocumentationFiles>false</GenerateXMLDocumentationFiles>
+      <BrowseInformation>false</BrowseInformation>
+      <CallingConvention>Cdecl</CallingConvention>
+      <CompileAs>Default</CompileAs>
+      <AdditionalOptions>/Zc:__cplusplus</AdditionalOptions>
+      <ProgramDatabaseFileName>obj\win64\vs2022_debug_win64_false\zenithtools_compiler.pdb</ProgramDatabaseFileName>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+    </ClCompile>
+    <Link>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <EnableCOMDATFolding>false</EnableCOMDATFolding>
+      <OptimizeReferences>false</OptimizeReferences>
+    </Link>
+    <Lib>
+      <TargetMachine>MachineX64</TargetMachine>
+      <SubSystem/>
+      <LinkTimeCodeGeneration>false</LinkTimeCodeGeneration>
+      <OutputFile>output\win64\vs2022_debug_win64_false\zenithtools.lib</OutputFile>
+    </Lib>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">
+    <ClCompile>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <WarningLevel>Level4</WarningLevel>
+      <Optimization>Disabled</Optimization>
+      <PreprocessorDefinitions>ENGINE_ASSETS_DIR="c:/dev/zenith/Zenith/Assets/";GAME_ASSETS_DIR="./Assets/";GLM_ENABLE_EXPERIMENTAL;NOMINMAX;OPENDDLPARSER_BUILD;WIN64;ZENITH_DEBUG;ZENITH_TOOLS;ZENITH_VULKAN;ZENITH_WINDOWS;_DEBUG;_LIB;__OPENCV_BUILD;%(PreprocessorDefinitions);$(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>..\middleware;..\middleware\glfw-3.4.bin.win64\include;..\middleware\glm-master;..\middleware\imgui-docking;..\middleware\stb;..\middleware\vulkansdk\1.3.280.0\include;..\tools\middleware;..\tools\middleware\assimp\include;..\tools\middleware\opencv\build\include;..\tools\middleware\opencv\build\include\opencv2;..\tools\middleware\opencv\sources\3rdparty\libjpeg;..\tools\middleware\opencv\sources\3rdparty\libpng;..\tools\middleware\opencv\sources\3rdparty\libtiff;..\tools\middleware\opencv\sources\3rdparty\openjpeg\openjp2;..\tools\middleware\opencv\sources\cmake\templates;..\tools\middleware\opencv\sources\include;..\tools\middleware\opencv\sources\modules\core\include;..\tools\middleware\opencv\sources\modules\ts\include;..\zenith;..\zenith\core;..\zenith\vulkan;..\zenith\windows</AdditionalIncludeDirectories>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <TreatWarningAsError>false</TreatWarningAsError>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <UseUnicodeForAssemblerListing>false</UseUnicodeForAssemblerListing>
+      <InlineFunctionExpansion>OnlyExplicitInline</InlineFunctionExpansion>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <FavorSizeOrSpeed>Neither</FavorSizeOrSpeed>
+      <OmitFramePointers>false</OmitFramePointers>
+      <EnableFiberSafeOptimizations>false</EnableFiberSafeOptimizations>
+      <WholeProgramOptimization>false</WholeProgramOptimization>
+      <UndefineAllPreprocessorDefinitions>false</UndefineAllPreprocessorDefinitions>
+      <IgnoreStandardIncludePath>false</IgnoreStandardIncludePath>
+      <PreprocessToFile>false</PreprocessToFile>
+      <PreprocessSuppressLineNumbers>false</PreprocessSuppressLineNumbers>
+      <PreprocessKeepComments>false</PreprocessKeepComments>
+      <StringPooling>true</StringPooling>
+      <ExceptionHandling>false</ExceptionHandling>
+      <SmallerTypeCheck>false</SmallerTypeCheck>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+      <StructMemberAlignment>Default</StructMemberAlignment>
+      <BufferSecurityCheck>true</BufferSecurityCheck>
+      <FunctionLevelLinking>false</FunctionLevelLinking>
+      <EnableEnhancedInstructionSet>NotSet</EnableEnhancedInstructionSet>
+      <FloatingPointModel>Fast</FloatingPointModel>
+      <FloatingPointExceptions>false</FloatingPointExceptions>
+      <DisableLanguageExtensions>false</DisableLanguageExtensions>
+      <TreatWChar_tAsBuiltInType>true</TreatWChar_tAsBuiltInType>
+      <ForceConformanceInForLoopScope>true</ForceConformanceInForLoopScope>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <OpenMPSupport>false</OpenMPSupport>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <ExpandAttributedSource>false</ExpandAttributedSource>
+      <AssemblerOutput>NoListing</AssemblerOutput>
+      <GenerateXMLDocumentationFiles>false</GenerateXMLDocumentationFiles>
+      <BrowseInformation>false</BrowseInformation>
+      <CallingConvention>Cdecl</CallingConvention>
+      <CompileAs>Default</CompileAs>
+      <AdditionalOptions>/Zc:__cplusplus</AdditionalOptions>
+      <ProgramDatabaseFileName>obj\win64\vs2022_debug_win64_true\zenithtools_compiler.pdb</ProgramDatabaseFileName>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
+    </ClCompile>
+    <Link>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <EnableCOMDATFolding>false</EnableCOMDATFolding>
+      <OptimizeReferences>false</OptimizeReferences>
+    </Link>
+    <Lib>
+      <TargetMachine>MachineX64</TargetMachine>
+      <SubSystem/>
+      <LinkTimeCodeGeneration>false</LinkTimeCodeGeneration>
+      <OutputFile>output\win64\vs2022_debug_win64_true\zenithtools.lib</OutputFile>
+    </Lib>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">
+    <ClCompile>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <WarningLevel>Level4</WarningLevel>
+      <Optimization>Full</Optimization>
+      <PreprocessorDefinitions>ENGINE_ASSETS_DIR="c:/dev/zenith/Zenith/Assets/";GAME_ASSETS_DIR="./Assets/";GLM_ENABLE_EXPERIMENTAL;NDEBUG;NOMINMAX;OPENDDLPARSER_BUILD;WIN64;ZENITH_TOOLS;ZENITH_VULKAN;ZENITH_WINDOWS;_LIB;__OPENCV_BUILD;%(PreprocessorDefinitions);$(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>..\middleware;..\middleware\glfw-3.4.bin.win64\include;..\middleware\glm-master;..\middleware\imgui-docking;..\middleware\stb;..\middleware\vulkansdk\1.3.280.0\include;..\tools\middleware;..\tools\middleware\assimp\include;..\tools\middleware\opencv\build\include;..\tools\middleware\opencv\build\include\opencv2;..\tools\middleware\opencv\sources\3rdparty\libjpeg;..\tools\middleware\opencv\sources\3rdparty\libpng;..\tools\middleware\opencv\sources\3rdparty\libtiff;..\tools\middleware\opencv\sources\3rdparty\openjpeg\openjp2;..\tools\middleware\opencv\sources\cmake\templates;..\tools\middleware\opencv\sources\include;..\tools\middleware\opencv\sources\modules\core\include;..\tools\middleware\opencv\sources\modules\ts\include;..\zenith;..\zenith\core;..\zenith\vulkan;..\zenith\windows</AdditionalIncludeDirectories>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <TreatWarningAsError>false</TreatWarningAsError>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <UseUnicodeForAssemblerListing>false</UseUnicodeForAssemblerListing>
+      <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <OmitFramePointers>false</OmitFramePointers>
+      <EnableFiberSafeOptimizations>false</EnableFiberSafeOptimizations>
+      <WholeProgramOptimization>false</WholeProgramOptimization>
+      <UndefineAllPreprocessorDefinitions>false</UndefineAllPreprocessorDefinitions>
+      <IgnoreStandardIncludePath>false</IgnoreStandardIncludePath>
+      <PreprocessToFile>false</PreprocessToFile>
+      <PreprocessSuppressLineNumbers>false</PreprocessSuppressLineNumbers>
+      <PreprocessKeepComments>false</PreprocessKeepComments>
+      <StringPooling>true</StringPooling>
+      <ExceptionHandling>false</ExceptionHandling>
+      <SmallerTypeCheck>false</SmallerTypeCheck>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <StructMemberAlignment>Default</StructMemberAlignment>
+      <BufferSecurityCheck>false</BufferSecurityCheck>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <EnableEnhancedInstructionSet>NotSet</EnableEnhancedInstructionSet>
+      <FloatingPointModel>Fast</FloatingPointModel>
+      <FloatingPointExceptions>false</FloatingPointExceptions>
+      <DisableLanguageExtensions>false</DisableLanguageExtensions>
+      <TreatWChar_tAsBuiltInType>true</TreatWChar_tAsBuiltInType>
+      <ForceConformanceInForLoopScope>true</ForceConformanceInForLoopScope>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <OpenMPSupport>false</OpenMPSupport>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <ExpandAttributedSource>false</ExpandAttributedSource>
+      <AssemblerOutput>NoListing</AssemblerOutput>
+      <GenerateXMLDocumentationFiles>false</GenerateXMLDocumentationFiles>
+      <BrowseInformation>false</BrowseInformation>
+      <CallingConvention>Cdecl</CallingConvention>
+      <CompileAs>Default</CompileAs>
+      <AdditionalOptions>/Zc:__cplusplus</AdditionalOptions>
+      <ProgramDatabaseFileName>obj\win64\vs2022_release_win64_false\zenithtools_compiler.pdb</ProgramDatabaseFileName>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+    </ClCompile>
+    <Link>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+    </Link>
+    <Lib>
+      <TargetMachine>MachineX64</TargetMachine>
+      <SubSystem/>
+      <LinkTimeCodeGeneration>false</LinkTimeCodeGeneration>
+      <OutputFile>output\win64\vs2022_release_win64_false\zenithtools.lib</OutputFile>
+    </Lib>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">
+    <ClCompile>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <WarningLevel>Level4</WarningLevel>
+      <Optimization>Full</Optimization>
+      <PreprocessorDefinitions>ENGINE_ASSETS_DIR="c:/dev/zenith/Zenith/Assets/";GAME_ASSETS_DIR="./Assets/";GLM_ENABLE_EXPERIMENTAL;NDEBUG;NOMINMAX;OPENDDLPARSER_BUILD;WIN64;ZENITH_TOOLS;ZENITH_VULKAN;ZENITH_WINDOWS;_LIB;__OPENCV_BUILD;%(PreprocessorDefinitions);$(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>..\middleware;..\middleware\glfw-3.4.bin.win64\include;..\middleware\glm-master;..\middleware\imgui-docking;..\middleware\stb;..\middleware\vulkansdk\1.3.280.0\include;..\tools\middleware;..\tools\middleware\assimp\include;..\tools\middleware\opencv\build\include;..\tools\middleware\opencv\build\include\opencv2;..\tools\middleware\opencv\sources\3rdparty\libjpeg;..\tools\middleware\opencv\sources\3rdparty\libpng;..\tools\middleware\opencv\sources\3rdparty\libtiff;..\tools\middleware\opencv\sources\3rdparty\openjpeg\openjp2;..\tools\middleware\opencv\sources\cmake\templates;..\tools\middleware\opencv\sources\include;..\tools\middleware\opencv\sources\modules\core\include;..\tools\middleware\opencv\sources\modules\ts\include;..\zenith;..\zenith\core;..\zenith\vulkan;..\zenith\windows</AdditionalIncludeDirectories>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <TreatWarningAsError>false</TreatWarningAsError>
+      <MultiProcessorCompilation>true</MultiProcessorCompilation>
+      <UseUnicodeForAssemblerListing>false</UseUnicodeForAssemblerListing>
+      <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <FavorSizeOrSpeed>Speed</FavorSizeOrSpeed>
+      <OmitFramePointers>false</OmitFramePointers>
+      <EnableFiberSafeOptimizations>false</EnableFiberSafeOptimizations>
+      <WholeProgramOptimization>false</WholeProgramOptimization>
+      <UndefineAllPreprocessorDefinitions>false</UndefineAllPreprocessorDefinitions>
+      <IgnoreStandardIncludePath>false</IgnoreStandardIncludePath>
+      <PreprocessToFile>false</PreprocessToFile>
+      <PreprocessSuppressLineNumbers>false</PreprocessSuppressLineNumbers>
+      <PreprocessKeepComments>false</PreprocessKeepComments>
+      <StringPooling>true</StringPooling>
+      <ExceptionHandling>false</ExceptionHandling>
+      <SmallerTypeCheck>false</SmallerTypeCheck>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+      <StructMemberAlignment>Default</StructMemberAlignment>
+      <BufferSecurityCheck>false</BufferSecurityCheck>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <EnableEnhancedInstructionSet>NotSet</EnableEnhancedInstructionSet>
+      <FloatingPointModel>Fast</FloatingPointModel>
+      <FloatingPointExceptions>false</FloatingPointExceptions>
+      <DisableLanguageExtensions>false</DisableLanguageExtensions>
+      <TreatWChar_tAsBuiltInType>true</TreatWChar_tAsBuiltInType>
+      <ForceConformanceInForLoopScope>true</ForceConformanceInForLoopScope>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <OpenMPSupport>false</OpenMPSupport>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+      <ExpandAttributedSource>false</ExpandAttributedSource>
+      <AssemblerOutput>NoListing</AssemblerOutput>
+      <GenerateXMLDocumentationFiles>false</GenerateXMLDocumentationFiles>
+      <BrowseInformation>false</BrowseInformation>
+      <CallingConvention>Cdecl</CallingConvention>
+      <CompileAs>Default</CompileAs>
+      <AdditionalOptions>/Zc:__cplusplus</AdditionalOptions>
+      <ProgramDatabaseFileName>obj\win64\vs2022_release_win64_true\zenithtools_compiler.pdb</ProgramDatabaseFileName>
+      <RuntimeLibrary>MultiThreaded</RuntimeLibrary>
+    </ClCompile>
+    <Link>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+    </Link>
+    <Lib>
+      <TargetMachine>MachineX64</TargetMachine>
+      <SubSystem/>
+      <LinkTimeCodeGeneration>false</LinkTimeCodeGeneration>
+      <OutputFile>output\win64\vs2022_release_win64_true\zenithtools.lib</OutputFile>
+    </Lib>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\aabb.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\ai_assert.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\anim.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\AssertHandler.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\BaseImporter.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\Bitmap.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\BlobIOSystem.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\ByteSwapper.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\camera.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\cexport.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\cfileio.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\cimport.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\ColladaMetaData.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\color4.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\commonMetaData.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\Compiler\poppack1.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\Compiler\pstdint.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\Compiler\pushpack1.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\config.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\CreateAnimMesh.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\DefaultIOStream.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\DefaultIOSystem.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\defs.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\Exceptional.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\fast_atof.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\GenericProperty.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\GltfMaterial.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\Hash.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\importerdesc.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\IOStreamBuffer.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\light.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\LineSplitter.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\LogAux.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\material.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\MathFunctions.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\matrix3x3.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\matrix4x4.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\MemoryIOWrapper.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\mesh.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\metadata.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\ObjMaterial.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\ParsingUtils.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\pbrmaterial.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\postprocess.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\Profiler.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\qnan.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\quaternion.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\RemoveComments.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\scene.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\SceneCombiner.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\SGSpatialSort.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\SkeletonMeshBuilder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\SmallVector.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\SmoothingGroups.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\SpatialSort.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\StandardShapes.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\StreamReader.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\StreamWriter.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\StringComparison.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\StringUtils.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\Subdivision.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\texture.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\TinyFormatter.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\types.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\vector2.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\vector3.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\version.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\Vertex.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\XmlParser.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\XMLTools.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\assimp\ZipArchiveIOSystem.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\animation\keyframe_animation.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\animation\keyframe_animation_decoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\animation\keyframe_animation_encoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\attributes\attribute_octahedron_transform.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\attributes\attribute_quantization_transform.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\attributes\attribute_transform.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\attributes\attribute_transform_data.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\attributes\attribute_transform_type.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\attributes\geometry_attribute.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\attributes\geometry_indices.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\attributes\point_attribute.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\attributes\attributes_decoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\attributes\attributes_decoder_interface.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\attributes\attributes_encoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\attributes\kd_tree_attributes_decoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\attributes\kd_tree_attributes_encoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\attributes\kd_tree_attributes_shared.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\attributes\linear_sequencer.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\attributes\mesh_attribute_indices_encoding_data.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\attributes\normal_compression_utils.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\attributes\points_sequencer.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\attributes\point_d_vector.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\attributes\prediction_schemes\mesh_prediction_scheme_constrained_multi_parallelogram_decoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\attributes\prediction_schemes\mesh_prediction_scheme_constrained_multi_parallelogram_encoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\attributes\prediction_schemes\mesh_prediction_scheme_constrained_multi_parallelogram_shared.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\attributes\prediction_schemes\mesh_prediction_scheme_data.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\attributes\prediction_schemes\mesh_prediction_scheme_decoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\attributes\prediction_schemes\mesh_prediction_scheme_encoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\attributes\prediction_schemes\mesh_prediction_scheme_geometric_normal_decoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\attributes\prediction_schemes\mesh_prediction_scheme_geometric_normal_encoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\attributes\prediction_schemes\mesh_prediction_scheme_geometric_normal_predictor_area.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\attributes\prediction_schemes\mesh_prediction_scheme_geometric_normal_predictor_base.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\attributes\prediction_schemes\mesh_prediction_scheme_multi_parallelogram_decoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\attributes\prediction_schemes\mesh_prediction_scheme_multi_parallelogram_encoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\attributes\prediction_schemes\mesh_prediction_scheme_parallelogram_encoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\attributes\prediction_schemes\mesh_prediction_scheme_parallelogram_shared.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\attributes\prediction_schemes\mesh_prediction_scheme_tex_coords_decoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\attributes\prediction_schemes\mesh_prediction_scheme_tex_coords_encoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\attributes\prediction_schemes\mesh_prediction_scheme_tex_coords_portable_decoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\attributes\prediction_schemes\mesh_prediction_scheme_tex_coords_portable_encoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\attributes\prediction_schemes\mesh_prediction_scheme_tex_coords_portable_predictor.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\attributes\prediction_schemes\prediction_scheme_decoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\attributes\prediction_schemes\prediction_scheme_decoder_factory.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\attributes\prediction_schemes\prediction_scheme_decoder_interface.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\attributes\prediction_schemes\prediction_scheme_decoding_transform.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\attributes\prediction_schemes\prediction_scheme_delta_decoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\attributes\prediction_schemes\prediction_scheme_delta_encoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\attributes\prediction_schemes\prediction_scheme_encoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\attributes\prediction_schemes\prediction_scheme_encoder_factory.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\attributes\prediction_schemes\prediction_scheme_encoder_interface.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\attributes\prediction_schemes\prediction_scheme_encoding_transform.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\attributes\prediction_schemes\prediction_scheme_factory.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\attributes\prediction_schemes\prediction_scheme_interface.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\attributes\prediction_schemes\prediction_scheme_normal_octahedron_canonicalized_decoding_transform.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\attributes\prediction_schemes\prediction_scheme_normal_octahedron_canonicalized_encoding_transform.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\attributes\prediction_schemes\prediction_scheme_normal_octahedron_canonicalized_transform_base.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\attributes\prediction_schemes\prediction_scheme_normal_octahedron_decoding_transform.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\attributes\prediction_schemes\prediction_scheme_normal_octahedron_encoding_transform.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\attributes\prediction_schemes\prediction_scheme_normal_octahedron_transform_base.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\attributes\prediction_schemes\prediction_scheme_wrap_decoding_transform.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\attributes\prediction_schemes\prediction_scheme_wrap_encoding_transform.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\attributes\prediction_schemes\prediction_scheme_wrap_transform_base.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\attributes\sequential_attribute_decoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\attributes\sequential_attribute_decoders_controller.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\attributes\sequential_attribute_encoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\attributes\sequential_attribute_encoders_controller.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\attributes\sequential_integer_attribute_decoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\attributes\sequential_integer_attribute_encoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\attributes\sequential_normal_attribute_decoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\attributes\sequential_normal_attribute_encoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\attributes\sequential_quantization_attribute_decoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\attributes\sequential_quantization_attribute_encoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\bit_coders\adaptive_rans_bit_coding_shared.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\bit_coders\adaptive_rans_bit_decoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\bit_coders\adaptive_rans_bit_encoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\bit_coders\direct_bit_decoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\bit_coders\direct_bit_encoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\bit_coders\folded_integer_bit_decoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\bit_coders\folded_integer_bit_encoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\bit_coders\rans_bit_decoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\bit_coders\rans_bit_encoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\bit_coders\symbol_bit_decoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\bit_coders\symbol_bit_encoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\config\compression_shared.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\config\decoder_options.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\config\draco_options.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\config\encoder_options.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\config\encoding_features.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\decode.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\draco_compression_options.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\encode.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\encode_base.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\entropy\ans.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\entropy\rans_symbol_coding.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\entropy\rans_symbol_decoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\entropy\rans_symbol_encoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\entropy\shannon_entropy.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\entropy\symbol_decoding.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\entropy\symbol_encoding.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\expert_encode.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\mesh\mesh_decoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\mesh\mesh_edgebreaker_decoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\mesh\mesh_edgebreaker_decoder_impl.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\mesh\mesh_edgebreaker_decoder_impl_interface.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\mesh\mesh_edgebreaker_encoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\mesh\mesh_edgebreaker_encoder_impl.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\mesh\mesh_edgebreaker_encoder_impl_interface.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\mesh\mesh_edgebreaker_shared.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\mesh\mesh_edgebreaker_traversal_decoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\mesh\mesh_edgebreaker_traversal_encoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\mesh\mesh_edgebreaker_traversal_predictive_decoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\mesh\mesh_edgebreaker_traversal_predictive_encoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\mesh\mesh_edgebreaker_traversal_valence_decoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\mesh\mesh_edgebreaker_traversal_valence_encoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\mesh\mesh_encoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\mesh\mesh_sequential_decoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\mesh\mesh_sequential_encoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\mesh\traverser\depth_first_traverser.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\mesh\traverser\max_prediction_degree_traverser.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\mesh\traverser\mesh_attribute_indices_encoding_observer.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\mesh\traverser\mesh_traversal_sequencer.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\mesh\traverser\traverser_base.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\point_cloud\algorithms\dynamic_integer_points_kd_tree_decoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\point_cloud\algorithms\dynamic_integer_points_kd_tree_encoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\point_cloud\algorithms\float_points_tree_decoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\point_cloud\algorithms\float_points_tree_encoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\point_cloud\algorithms\point_cloud_compression_method.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\point_cloud\algorithms\point_cloud_types.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\point_cloud\algorithms\quantize_points_3.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\point_cloud\algorithms\queuing_policy.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\point_cloud\point_cloud_decoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\point_cloud\point_cloud_encoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\point_cloud\point_cloud_kd_tree_decoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\point_cloud\point_cloud_kd_tree_encoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\point_cloud\point_cloud_sequential_decoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\compression\point_cloud\point_cloud_sequential_encoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\core\bit_utils.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\core\bounding_box.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\core\constants.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\core\cycle_timer.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\core\data_buffer.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\core\decoder_buffer.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\core\divide.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\core\draco_index_type.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\core\draco_index_type_vector.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\core\draco_types.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\core\draco_version.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\core\encoder_buffer.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\core\hash_utils.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\core\macros.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\core\math_utils.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\core\options.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\core\quantization_utils.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\core\status.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\core\status_or.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\core\varint_decoding.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\core\varint_encoding.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\core\vector_d.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\draco_features.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\io\file_reader_factory.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\io\file_reader_interface.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\io\file_utils.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\io\file_writer_factory.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\io\file_writer_interface.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\io\file_writer_utils.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\io\mesh_io.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\io\obj_decoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\io\obj_encoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\io\parser_utils.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\io\ply_decoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\io\ply_encoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\io\ply_property_reader.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\io\ply_property_writer.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\io\ply_reader.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\io\point_cloud_io.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\io\stdio_file_reader.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\io\stdio_file_writer.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\io\stl_decoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\io\stl_encoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\mesh\corner_table.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\mesh\corner_table_iterators.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\mesh\mesh.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\mesh\mesh_are_equivalent.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\mesh\mesh_attribute_corner_table.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\mesh\mesh_cleanup.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\mesh\mesh_features.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\mesh\mesh_indices.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\mesh\mesh_misc_functions.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\mesh\mesh_stripifier.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\mesh\triangle_soup_mesh_builder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\mesh\valence_cache.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\metadata\geometry_metadata.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\metadata\metadata.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\metadata\metadata_decoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\metadata\metadata_encoder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\metadata\property_attribute.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\metadata\property_table.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\metadata\structural_metadata.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\metadata\structural_metadata_schema.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\point_cloud\point_cloud.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\draco\point_cloud\point_cloud_builder.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\kubazip\zip\zip.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\poly2tri\common\dll_symbol.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\poly2tri\common\shapes.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\poly2tri\common\utils.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\poly2tri\poly2tri.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\poly2tri\sweep\advancing_front.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\poly2tri\sweep\cdt.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\poly2tri\sweep\sweep.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\poly2tri\sweep\sweep_context.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\rapidjson\allocators.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\rapidjson\cursorstreamwrapper.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\rapidjson\document.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\rapidjson\encodedstream.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\rapidjson\encodings.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\rapidjson\error\en.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\rapidjson\error\error.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\rapidjson\filereadstream.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\rapidjson\filewritestream.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\rapidjson\fwd.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\rapidjson\internal\biginteger.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\rapidjson\internal\clzll.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\rapidjson\internal\diyfp.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\rapidjson\internal\dtoa.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\rapidjson\internal\ieee754.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\rapidjson\internal\itoa.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\rapidjson\internal\meta.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\rapidjson\internal\pow10.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\rapidjson\internal\regex.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\rapidjson\internal\stack.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\rapidjson\internal\strfunc.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\rapidjson\internal\strtod.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\rapidjson\internal\swap.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\rapidjson\istreamwrapper.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\rapidjson\memorybuffer.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\rapidjson\memorystream.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\rapidjson\msinttypes\inttypes.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\rapidjson\msinttypes\stdint.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\rapidjson\ostreamwrapper.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\rapidjson\pointer.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\rapidjson\prettywriter.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\rapidjson\rapidjson.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\rapidjson\reader.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\rapidjson\schema.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\rapidjson\stream.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\rapidjson\stringbuffer.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\rapidjson\uri.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\rapidjson\writer.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\stb_connected_components.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\stb_c_lexer.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\stb_divide.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\stb_ds.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\stb_dxt.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\stb_easy_font.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\stb_herringbone_wang_tile.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\stb_hexwave.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\stb_image.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\stb_image_resize2.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\stb_image_write.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\stb_include.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\stb_leakcheck.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\stb_perlin.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\stb_rect_pack.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\stb_sprintf.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\stb_textedit.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\stb_tilemap_editor.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\stb_truetype.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\stb_voxel_render.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\utf8cpp\utf8.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\utf8cpp\utf8\checked.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\utf8cpp\utf8\core.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\utf8cpp\utf8\cpp11.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\utf8cpp\utf8\cpp17.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\utf8cpp\utf8\cpp20.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\utf8cpp\utf8\unchecked.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\zconf.h" />
+    <ClInclude Include="..\Tools\Middleware\assimp\include\zlib.h" />
+    <ClInclude Include="..\Tools\Zenith_Tools_MeshExport.h" />
+    <ClInclude Include="..\Tools\Zenith_Tools_TerrainExport.h" />
+    <ClInclude Include="..\Tools\Zenith_Tools_TextureExport.h" />
+    <ClInclude Include="..\Zenith\Flux\MeshGeometry\Flux_MeshGeometry.h" />
+    <ClInclude Include="..\Zenith\Flux\MeshGeometry\Flux_MeshInstance.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="..\Tools\Middleware\assimp\include\stb_vorbis.c" />
+    <ClCompile Include="..\Tools\Zenith_Tools_MeshExport.cpp" />
+    <ClCompile Include="..\Tools\Zenith_Tools_TerrainExport.cpp" />
+    <ClCompile Include="..\Tools\Zenith_Tools_TextureExport.cpp" />
+    <ClCompile Include="..\Zenith\Flux\MeshGeometry\Flux_MeshGeometry.cpp" />
+    <ClCompile Include="..\Zenith\Flux\MeshGeometry\Flux_MeshInstance.cpp" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+</Project>

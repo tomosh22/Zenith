@@ -1,5 +1,15 @@
 #include "Zenith.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
+
+// Extern function that must be implemented by game projects - returns just the project name (e.g., "Test")
+// Paths are constructed using ZENITH_ROOT (defined by build system) + project name
+extern const char* Project_GetName();
+
+// Helper function to construct game assets path from project name
+static std::string GetGameAssetsDirectory()
+{
+	return std::string(ZENITH_ROOT) + "Games/" + Project_GetName() + "/Assets/";
+}
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include <opencv2/opencv.hpp>
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
@@ -442,9 +452,10 @@ void ExportHeightmapFromPaths(const std::string& strHeightmapPath, const std::st
 void ExportHeightmap()
 {
 	// Use default paths for backward compatibility
-	std::string strHeightmapPath = std::string(GAME_ASSETS_DIR) + "Textures/Heightmaps/Test/gaeaHeight.tif";
-	std::string strMaterialPath = std::string(GAME_ASSETS_DIR) + "Textures/Heightmaps/Test/gaeaMaterial.tif";
-	std::string strOutputDir = std::string(GAME_ASSETS_DIR) + "Terrain/";
+	std::string strAssetsDir = GetGameAssetsDirectory();
+	std::string strHeightmapPath = strAssetsDir + "Textures/Heightmaps/Test/gaeaHeight.tif";
+	std::string strMaterialPath = strAssetsDir + "Textures/Heightmaps/Test/gaeaMaterial.tif";
+	std::string strOutputDir = strAssetsDir + "Terrain/";
 
 	ExportHeightmapFromPaths(strHeightmapPath, strMaterialPath, strOutputDir);
 }

@@ -700,37 +700,19 @@
     <ClInclude Include="..\..\..\Tools\Middleware\assimp\include\utf8cpp\utf8\unchecked.h" />
     <ClInclude Include="..\..\..\Tools\Middleware\assimp\include\zconf.h" />
     <ClInclude Include="..\..\..\Tools\Middleware\assimp\include\zlib.h" />
-    <ClInclude Include="..\..\..\Tools\Middleware\imgui-1.91.0\backends\imgui_impl_glfw.h" />
-    <ClInclude Include="..\..\..\Tools\Middleware\imgui-1.91.0\backends\imgui_impl_metal.h" />
-    <ClInclude Include="..\..\..\Tools\Middleware\imgui-1.91.0\backends\imgui_impl_osx.h" />
-    <ClInclude Include="..\..\..\Tools\Middleware\imgui-1.91.0\backends\imgui_impl_vulkan.h" />
-    <ClInclude Include="..\..\..\Tools\Middleware\imgui-1.91.0\backends\imgui_impl_win32.h" />
-    <ClInclude Include="..\..\..\Tools\Middleware\imgui-1.91.0\imconfig.h" />
-    <ClInclude Include="..\..\..\Tools\Middleware\imgui-1.91.0\imgui.h" />
-    <ClInclude Include="..\..\..\Tools\Middleware\imgui-1.91.0\imgui_internal.h" />
-    <ClInclude Include="..\..\..\Tools\Middleware\imgui-1.91.0\imstb_rectpack.h" />
-    <ClInclude Include="..\..\..\Tools\Middleware\imgui-1.91.0\imstb_textedit.h" />
-    <ClInclude Include="..\..\..\Tools\Middleware\imgui-1.91.0\imstb_truetype.h" />
-    <ClInclude Include="..\..\..\Tools\Middleware\stb\stb_image.h" />
     <ClInclude Include="..\..\..\Tools\Zenith_Tools_MeshExport.h" />
     <ClInclude Include="..\..\..\Tools\Zenith_Tools_TerrainExport.h" />
     <ClInclude Include="..\..\..\Tools\Zenith_Tools_TextureExport.h" />
     <ClInclude Include="..\..\..\Zenith\Flux\MeshGeometry\Flux_MeshGeometry.h" />
+    <ClInclude Include="..\..\..\Zenith\Flux\MeshGeometry\Flux_MeshInstance.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\..\Tools\Middleware\assimp\include\stb_vorbis.c" />
-    <ClCompile Include="..\..\..\Tools\Middleware\imgui-1.91.0\backends\imgui_impl_glfw.cpp" />
-    <ClCompile Include="..\..\..\Tools\Middleware\imgui-1.91.0\backends\imgui_impl_vulkan.cpp" />
-    <ClCompile Include="..\..\..\Tools\Middleware\imgui-1.91.0\backends\imgui_impl_win32.cpp" />
-    <ClCompile Include="..\..\..\Tools\Middleware\imgui-1.91.0\imgui.cpp" />
-    <ClCompile Include="..\..\..\Tools\Middleware\imgui-1.91.0\imgui_demo.cpp" />
-    <ClCompile Include="..\..\..\Tools\Middleware\imgui-1.91.0\imgui_draw.cpp" />
-    <ClCompile Include="..\..\..\Tools\Middleware\imgui-1.91.0\imgui_tables.cpp" />
-    <ClCompile Include="..\..\..\Tools\Middleware\imgui-1.91.0\imgui_widgets.cpp" />
     <ClCompile Include="..\..\..\Tools\Zenith_Tools_MeshExport.cpp" />
     <ClCompile Include="..\..\..\Tools\Zenith_Tools_TerrainExport.cpp" />
     <ClCompile Include="..\..\..\Tools\Zenith_Tools_TextureExport.cpp" />
     <ClCompile Include="..\..\..\Zenith\Flux\MeshGeometry\Flux_MeshGeometry.cpp" />
+    <ClCompile Include="..\..\..\Zenith\Flux\MeshGeometry\Flux_MeshInstance.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

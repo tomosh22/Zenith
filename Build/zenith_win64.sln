@@ -1,0 +1,45 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "FluxCompiler", "..\FluxCompiler\fluxcompiler_win64.vcxproj", "{1D9D3DA8-4BF0-B588-C7B8-08CC083FF800}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Test", "..\Games\Test\Build\test_win64.vcxproj", "{F455B0FD-7B47-8A84-84DB-CDEB5851CAB5}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Zenith", "zenith_win64.vcxproj", "{11BEC1C0-98B7-E167-86B0-B8D5D8D10E27}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		vs2022_Debug_Win64_False|x64 = vs2022_Debug_Win64_False|x64
+		vs2022_Debug_Win64_True|x64 = vs2022_Debug_Win64_True|x64
+		vs2022_Release_Win64_False|x64 = vs2022_Release_Win64_False|x64
+		vs2022_Release_Win64_True|x64 = vs2022_Release_Win64_True|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{1D9D3DA8-4BF0-B588-C7B8-08CC083FF800}.vs2022_Debug_Win64_False|x64.ActiveCfg = vs2022_Debug_Win64_False|x64
+		{1D9D3DA8-4BF0-B588-C7B8-08CC083FF800}.vs2022_Debug_Win64_False|x64.Build.0 = vs2022_Debug_Win64_False|x64
+		{1D9D3DA8-4BF0-B588-C7B8-08CC083FF800}.vs2022_Debug_Win64_True|x64.ActiveCfg = vs2022_Debug_Win64_True|x64
+		{1D9D3DA8-4BF0-B588-C7B8-08CC083FF800}.vs2022_Debug_Win64_True|x64.Build.0 = vs2022_Debug_Win64_True|x64
+		{1D9D3DA8-4BF0-B588-C7B8-08CC083FF800}.vs2022_Release_Win64_False|x64.ActiveCfg = vs2022_Release_Win64_False|x64
+		{1D9D3DA8-4BF0-B588-C7B8-08CC083FF800}.vs2022_Release_Win64_False|x64.Build.0 = vs2022_Release_Win64_False|x64
+		{1D9D3DA8-4BF0-B588-C7B8-08CC083FF800}.vs2022_Release_Win64_True|x64.ActiveCfg = vs2022_Release_Win64_True|x64
+		{1D9D3DA8-4BF0-B588-C7B8-08CC083FF800}.vs2022_Release_Win64_True|x64.Build.0 = vs2022_Release_Win64_True|x64
+		{F455B0FD-7B47-8A84-84DB-CDEB5851CAB5}.vs2022_Debug_Win64_False|x64.ActiveCfg = vs2022_Debug_Win64_False|x64
+		{F455B0FD-7B47-8A84-84DB-CDEB5851CAB5}.vs2022_Debug_Win64_False|x64.Build.0 = vs2022_Debug_Win64_False|x64
+		{F455B0FD-7B47-8A84-84DB-CDEB5851CAB5}.vs2022_Debug_Win64_True|x64.ActiveCfg = vs2022_Debug_Win64_True|x64
+		{F455B0FD-7B47-8A84-84DB-CDEB5851CAB5}.vs2022_Debug_Win64_True|x64.Build.0 = vs2022_Debug_Win64_True|x64
+		{F455B0FD-7B47-8A84-84DB-CDEB5851CAB5}.vs2022_Release_Win64_False|x64.ActiveCfg = vs2022_Release_Win64_False|x64
+		{F455B0FD-7B47-8A84-84DB-CDEB5851CAB5}.vs2022_Release_Win64_False|x64.Build.0 = vs2022_Release_Win64_False|x64
+		{F455B0FD-7B47-8A84-84DB-CDEB5851CAB5}.vs2022_Release_Win64_True|x64.ActiveCfg = vs2022_Release_Win64_True|x64
+		{F455B0FD-7B47-8A84-84DB-CDEB5851CAB5}.vs2022_Release_Win64_True|x64.Build.0 = vs2022_Release_Win64_True|x64
+		{11BEC1C0-98B7-E167-86B0-B8D5D8D10E27}.vs2022_Debug_Win64_False|x64.ActiveCfg = vs2022_Debug_Win64_False|x64
+		{11BEC1C0-98B7-E167-86B0-B8D5D8D10E27}.vs2022_Debug_Win64_False|x64.Build.0 = vs2022_Debug_Win64_False|x64
+		{11BEC1C0-98B7-E167-86B0-B8D5D8D10E27}.vs2022_Debug_Win64_True|x64.ActiveCfg = vs2022_Debug_Win64_True|x64
+		{11BEC1C0-98B7-E167-86B0-B8D5D8D10E27}.vs2022_Debug_Win64_True|x64.Build.0 = vs2022_Debug_Win64_True|x64
+		{11BEC1C0-98B7-E167-86B0-B8D5D8D10E27}.vs2022_Release_Win64_False|x64.ActiveCfg = vs2022_Release_Win64_False|x64
+		{11BEC1C0-98B7-E167-86B0-B8D5D8D10E27}.vs2022_Release_Win64_False|x64.Build.0 = vs2022_Release_Win64_False|x64
+		{11BEC1C0-98B7-E167-86B0-B8D5D8D10E27}.vs2022_Release_Win64_True|x64.ActiveCfg = vs2022_Release_Win64_True|x64
+		{11BEC1C0-98B7-E167-86B0-B8D5D8D10E27}.vs2022_Release_Win64_True|x64.Build.0 = vs2022_Release_Win64_True|x64
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal

@@ -1,0 +1,36 @@
+sharpmake 0.62.0
+  arguments: /sources(Sharpmake_Common.cs,Sharpmake_Zenith.cs,Sharpmake_FluxCompiler.cs,Sharpmake_Games.cs)
+  directory: C:\dev\Zenith\Build
+  platform: win64 - Microsoft Windows 10.0.26100
+  compiled with framework: .NET 6.0
+  running on framework: .NET 6.0.33
+
+[ERROR]C:\Users\tomos\AppData\Local\Temp\9c170397b1244d3f9132c515a16e6ec1.tmp.sharpmake.cs(13,78): error CS0103: The name 'Sharpmake_Common' does not exist in the current context
+[ERROR]C:\Users\tomos\AppData\Local\Temp\9c170397b1244d3f9132c515a16e6ec1.tmp.sharpmake.cs(13,98): error CS0103: The name 'Sharpmake_Zenith' does not exist in the current context
+[ERROR]C:\Users\tomos\AppData\Local\Temp\9c170397b1244d3f9132c515a16e6ec1.tmp.sharpmake.cs(13,118): error CS0103: The name 'Sharpmake_FluxCompiler' does not exist in the current context
+[ERROR]C:\Users\tomos\AppData\Local\Temp\9c170397b1244d3f9132c515a16e6ec1.tmp.sharpmake.cs(13,144): error CS0103: The name 'Sharpmake_Games' does not exist in the current context
+[ERROR]
+Error:
+Command line option '/sources' have invalid parameters '(Sharpmake_Common.cs,Sharpmake_Zenith.cs,Sharpmake_FluxCompiler.cs,Sharpmake_Games.cs)', maybe not compatible with '(System.String[] files)'
+	C:\Users\tomos\AppData\Local\Temp\9c170397b1244d3f9132c515a16e6ec1.tmp.sharpmake.cs(13,78): error CS0103: The name 'Sharpmake_Common' does not exist in the current context
+C:\Users\tomos\AppData\Local\Temp\9c170397b1244d3f9132c515a16e6ec1.tmp.sharpmake.cs(13,98): error CS0103: The name 'Sharpmake_Zenith' does not exist in the current context
+C:\Users\tomos\AppData\Local\Temp\9c170397b1244d3f9132c515a16e6ec1.tmp.sharpmake.cs(13,118): error CS0103: The name 'Sharpmake_FluxCompiler' does not exist in the current context
+C:\Users\tomos\AppData\Local\Temp\9c170397b1244d3f9132c515a16e6ec1.tmp.sharpmake.cs(13,144): error CS0103: The name 'Sharpmake_Games' does not exist in the current context
+
+
+	While running C:\dev\Zenith\Sharpmake\Sharpmake.Application.exe
+	@01/01/2026 23:52:19: Exception message:
+	Command line option '/sources' have invalid parameters '(Sharpmake_Common.cs,Sharpmake_Zenith.cs,Sharpmake_FluxCompiler.cs,Sharpmake_Games.cs)', maybe not compatible with '(System.String[] files)'
+	C:\Users\tomos\AppData\Local\Temp\9c170397b1244d3f9132c515a16e6ec1.tmp.sharpmake.cs(13,78): error CS0103: The name 'Sharpmake_Common' does not exist in the current context
+C:\Users\tomos\AppData\Local\Temp\9c170397b1244d3f9132c515a16e6ec1.tmp.sharpmake.cs(13,98): error CS0103: The name 'Sharpmake_Zenith' does not exist in the current context
+C:\Users\tomos\AppData\Local\Temp\9c170397b1244d3f9132c515a16e6ec1.tmp.sharpmake.cs(13,118): error CS0103: The name 'Sharpmake_FluxCompiler' does not exist in the current context
+C:\Users\tomos\AppData\Local\Temp\9c170397b1244d3f9132c515a16e6ec1.tmp.sharpmake.cs(13,144): error CS0103: The name 'Sharpmake_Games' does not exist in the current context
+
+
+
+	Stack trace:
+	Root stack trace:
+   at Sharpmake.CommandLine.Execute(Type type, Object instance, String commandLine, String[] namespaces)
+   at Sharpmake.Application.Program.Main()
+
+5 errors, 0 warnings

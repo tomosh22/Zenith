@@ -186,7 +186,7 @@ Renders game scene as ImGui texture with interaction handling:
 ### Content Browser
 
 File browser for asset discovery and drag-drop:
-- **Navigation:** Directory tree starting at ASSETS_ROOT
+- **Navigation:** Directory tree starting at GAME_ASSETS_DIR
 - **Sorting:** Directories first, then alphabetically by name
 - **Display:** Icons + filenames, double-click to enter directories
 - **Drag-Drop:** Supports Texture, Mesh, Material, Prefab payloads

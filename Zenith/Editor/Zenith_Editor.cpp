@@ -123,7 +123,7 @@ std::string Zenith_Editor::s_strPendingSceneSavePath = "";
 bool Zenith_Editor::s_bPendingSceneReset = false;
 
 // Content Browser state
-std::string Zenith_Editor::s_strCurrentDirectory = ASSETS_ROOT;
+std::string Zenith_Editor::s_strCurrentDirectory;
 std::vector<ContentBrowserEntry> Zenith_Editor::s_xDirectoryContents;
 bool Zenith_Editor::s_bDirectoryNeedsRefresh = true;
 
@@ -153,7 +153,7 @@ double Zenith_Editor::s_fEditorCameraYaw = xINITIAL_EDITOR_CAMERA_YAW;
 float Zenith_Editor::s_fEditorCameraFOV = xINITIAL_EDITOR_CAMERA_FOV;
 float Zenith_Editor::s_fEditorCameraNear = xINITIAL_EDITOR_CAMERA_NEAR;
 float Zenith_Editor::s_fEditorCameraFar = xINITIAL_EDITOR_CAMERA_FAR;
-Zenith_Entity* Zenith_Editor::s_pxGameCameraEntity = nullptr;
+Zenith_EntityID Zenith_Editor::s_uGameCameraEntity = INVALID_ENTITY_ID;
 float Zenith_Editor::s_fEditorCameraMoveSpeed = 50.0f;
 float Zenith_Editor::s_fEditorCameraRotateSpeed = 0.1f;
 bool Zenith_Editor::s_bEditorCameraInitialized = false;
@@ -173,6 +173,9 @@ static std::vector<PendingDescriptorSetDeletion> s_xPendingDeletions;
 
 void Zenith_Editor::Initialise()
 {
+	// Initialize content browser to game assets directory
+	s_strCurrentDirectory = Project_GetGameAssetsDirectory();
+
 	s_eEditorMode = EditorMode::Stopped;
 	s_uSelectedEntityID = INVALID_ENTITY_ID;
 	s_eGizmoMode = EditorGizmoMode::Translate;
@@ -270,7 +273,7 @@ bool Zenith_Editor::Update()
 		ClearSelection();
 
 		// Clear game camera reference as it now points to deleted memory
-		s_pxGameCameraEntity = nullptr;
+		s_uGameCameraEntity = INVALID_ENTITY_ID;
 
 		// Reset editor camera to initial state
 		s_xEditorCameraPosition = xINITIAL_EDITOR_CAMERA_POSITION;
@@ -352,7 +355,7 @@ bool Zenith_Editor::Update()
 		Zenith_UndoSystem::Clear();
 
 		// Clear game camera entity pointer as it's now invalid (entity from old scene)
-		s_pxGameCameraEntity = nullptr;
+		s_uGameCameraEntity = INVALID_ENTITY_ID;
 
 		// If this was a backup scene restore (Play -> Stop transition), clean up
 		if (s_bHasSceneBackup && s_strPendingSceneLoadPath == s_strBackupScenePath)
@@ -411,18 +414,18 @@ bool Zenith_Editor::Update()
 		s_bFirstFrameAfterInit = false;
 
 		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		if (xScene.m_pxMainCameraEntity)
+		if (xScene.m_uMainCameraEntity != INVALID_ENTITY_ID)
 		{
 			// Initialize editor camera from game camera position
 			try
 			{
-				Zenith_CameraComponent& xGameCamera = xScene.m_pxMainCameraEntity->GetComponent<Zenith_CameraComponent>();
+				Zenith_CameraComponent& xGameCamera = xScene.GetEntityByID(xScene.m_uMainCameraEntity).GetComponent<Zenith_CameraComponent>();
 				xGameCamera.GetPosition(s_xEditorCameraPosition);
 				s_fEditorCameraPitch = xGameCamera.GetPitch();
 				s_fEditorCameraYaw = xGameCamera.GetYaw();
 
 				// Save reference to game camera for later
-				s_pxGameCameraEntity = xScene.m_pxMainCameraEntity;
+				s_uGameCameraEntity = xScene.m_uMainCameraEntity;
 
 				Zenith_Log("Editor camera synced from game camera at (%.1f, %.1f, %.1f)", 
 					s_xEditorCameraPosition.x, s_xEditorCameraPosition.y, s_xEditorCameraPosition.z);
@@ -1233,10 +1236,10 @@ void Zenith_Editor::SetEditorMode(EditorMode eMode)
 		Zenith_Log("Scene state backed up to: %s", s_strBackupScenePath.c_str());
 
 		// Check if a main camera has already been set via the editor
-		s_pxGameCameraEntity = xScene.GetMainCameraEntity();
+		s_uGameCameraEntity = xScene.GetMainCameraEntity();
 
 		// If no main camera is set, search for one
-		if (!s_pxGameCameraEntity)
+		if (s_uGameCameraEntity == INVALID_ENTITY_ID)
 		{
 			Zenith_Vector<Zenith_CameraComponent*> xCameras;
 			xScene.GetAllOfComponentType<Zenith_CameraComponent>(xCameras);
@@ -1246,20 +1249,10 @@ void Zenith_Editor::SetEditorMode(EditorMode eMode)
 				Zenith_CameraComponent* pxCam = xIt.GetData();
 				Zenith_Entity* pxEntity = &pxCam->GetParentEntity();
 				// Just use the first camera we find (there should only be one game camera)
-				s_pxGameCameraEntity = pxEntity;
-				xScene.SetMainCameraEntity(*s_pxGameCameraEntity);
-				Zenith_Log("No main camera set, using first camera found: %s", s_pxGameCameraEntity->m_strName.c_str());
+				s_uGameCameraEntity = pxEntity->GetEntityID();
+				xScene.SetMainCameraEntity(s_uGameCameraEntity);
 				break;
 			}
-		}
-		else
-		{
-			Zenith_Log("Using existing main camera: %s", s_pxGameCameraEntity->m_strName.c_str());
-		}
-
-		if (!s_pxGameCameraEntity)
-		{
-			Zenith_Log("Warning: No game camera found, staying on editor camera");
 		}
 	}
 
@@ -1299,7 +1292,7 @@ void Zenith_Editor::SetEditorMode(EditorMode eMode)
 		}
 
 		// Clear the game camera reference since scene will be reloaded
-		s_pxGameCameraEntity = nullptr;
+		s_uGameCameraEntity = INVALID_ENTITY_ID;
 	}
 
 	// PAUSED state - suspend scene updates but stay on game camera
@@ -1554,8 +1547,8 @@ void Zenith_Editor::NavigateToParent()
 	std::filesystem::path xPath(s_strCurrentDirectory);
 	std::filesystem::path xParent = xPath.parent_path();
 
-	// Don't navigate above ASSETS_ROOT
-	std::string strAssetsRoot = ASSETS_ROOT;
+	// Don't navigate above game assets directory
+	std::string strAssetsRoot = Project_GetGameAssetsDirectory();
 	// Remove trailing slash if present for comparison
 	if (!strAssetsRoot.empty() && (strAssetsRoot.back() == '/' || strAssetsRoot.back() == '\\'))
 	{
@@ -2034,11 +2027,11 @@ void Zenith_Editor::InitializeEditorCamera()
 	// Initialize editor camera from scene's main camera if available
 	// Otherwise use default values
 	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	if (xScene.m_pxMainCameraEntity)
+	if (xScene.m_uMainCameraEntity != INVALID_ENTITY_ID)
 	{
 		try
 		{
-			Zenith_CameraComponent& xSceneCamera = xScene.m_pxMainCameraEntity->GetComponent<Zenith_CameraComponent>();
+			Zenith_CameraComponent& xSceneCamera = xScene.GetMainCamera();
 			xSceneCamera.GetPosition(s_xEditorCameraPosition);
 			s_fEditorCameraPitch = xSceneCamera.GetPitch();
 			s_fEditorCameraYaw = xSceneCamera.GetYaw();
@@ -2151,9 +2144,9 @@ void Zenith_Editor::UpdateEditorCamera(float fDt)
 
 	// Apply editor camera state to the scene's main camera
 	// (In stopped/paused mode, the game camera is being controlled by editor values)
-	if (s_pxGameCameraEntity)
+	if (s_uGameCameraEntity != INVALID_ENTITY_ID)
 	{
-		Zenith_CameraComponent& xCamera = s_pxGameCameraEntity->GetComponent<Zenith_CameraComponent>();
+		Zenith_CameraComponent& xCamera = Zenith_Scene::GetCurrentScene().GetEntityByID(s_uGameCameraEntity).GetComponent<Zenith_CameraComponent>();
 		xCamera.SetPosition(s_xEditorCameraPosition);
 		xCamera.SetPitch(s_fEditorCameraPitch);
 		xCamera.SetYaw(s_fEditorCameraYaw);
@@ -2171,14 +2164,14 @@ void Zenith_Editor::SwitchToEditorCamera()
 	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
 
 	// Save the game's current main camera entity
-	s_pxGameCameraEntity = xScene.m_pxMainCameraEntity;
+	s_uGameCameraEntity = xScene.m_uMainCameraEntity;
 
 	// Copy game camera state to editor camera
-	if (s_pxGameCameraEntity)
+	if (s_uGameCameraEntity != INVALID_ENTITY_ID)
 	{
 		try
 		{
-			Zenith_CameraComponent& xGameCamera = s_pxGameCameraEntity->GetComponent<Zenith_CameraComponent>();
+			Zenith_CameraComponent& xGameCamera = xScene.GetEntityByID(s_uGameCameraEntity).GetComponent<Zenith_CameraComponent>();
 			xGameCamera.GetPosition(s_xEditorCameraPosition);
 			s_fEditorCameraPitch = xGameCamera.GetPitch();
 			s_fEditorCameraYaw = xGameCamera.GetYaw();
@@ -2194,7 +2187,7 @@ void Zenith_Editor::SwitchToEditorCamera()
 
 void Zenith_Editor::SwitchToGameCamera()
 {
-	if (!s_pxGameCameraEntity)
+	if (s_uGameCameraEntity == INVALID_ENTITY_ID)
 	{
 		Zenith_Log("Warning: Cannot switch to game camera - no game camera saved");
 		return;
@@ -2211,7 +2204,7 @@ void Zenith_Editor::BuildViewMatrix(Zenith_Maths::Matrix4& xOutMatrix)
 	if (s_eEditorMode == EditorMode::Playing)
 	{
 		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		if (xScene.m_pxMainCameraEntity)
+		if (xScene.m_uMainCameraEntity != INVALID_ENTITY_ID)
 		{
 			xScene.GetMainCamera().BuildViewMatrix(xOutMatrix);
 			return;
@@ -2242,7 +2235,7 @@ void Zenith_Editor::GetCameraPosition(Zenith_Maths::Vector4& xOutPosition)
 	if (s_eEditorMode == EditorMode::Playing)
 	{
 		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		if (xScene.m_pxMainCameraEntity)
+		if (xScene.m_uMainCameraEntity != INVALID_ENTITY_ID)
 		{
 			xScene.GetMainCamera().GetPosition(xOutPosition);
 			return;
@@ -2259,7 +2252,7 @@ float Zenith_Editor::GetCameraNearPlane()
 	if (s_eEditorMode == EditorMode::Playing)
 	{
 		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		if (xScene.m_pxMainCameraEntity)
+		if (xScene.m_uMainCameraEntity != INVALID_ENTITY_ID)
 		{
 			return xScene.GetMainCamera().GetNearPlane();
 		}
@@ -2275,7 +2268,7 @@ float Zenith_Editor::GetCameraFarPlane()
 	if (s_eEditorMode == EditorMode::Playing)
 	{
 		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		if (xScene.m_pxMainCameraEntity)
+		if (xScene.m_uMainCameraEntity != INVALID_ENTITY_ID)
 		{
 			return xScene.GetMainCamera().GetFarPlane();
 		}
@@ -2291,7 +2284,7 @@ float Zenith_Editor::GetCameraFOV()
 	if (s_eEditorMode == EditorMode::Playing)
 	{
 		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		if (xScene.m_pxMainCameraEntity)
+		if (xScene.m_uMainCameraEntity != INVALID_ENTITY_ID)
 		{
 			return xScene.GetMainCamera().GetFOV();
 		}
@@ -2307,7 +2300,7 @@ float Zenith_Editor::GetCameraAspectRatio()
 	if (s_eEditorMode == EditorMode::Playing)
 	{
 		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		if (xScene.m_pxMainCameraEntity)
+		if (xScene.m_uMainCameraEntity != INVALID_ENTITY_ID)
 		{
 			return xScene.GetMainCamera().GetAspectRatio();
 		}

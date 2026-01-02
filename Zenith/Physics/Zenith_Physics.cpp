@@ -31,7 +31,7 @@ static bool AssertFailedImpl(const char* inExpression, const char* inMessage, co
 {
 	std::cout << inFile << ":" << inLine << ": (" << inExpression << ") " << (inMessage != nullptr ? inMessage : "") << std::endl;
 
-	__debugbreak();
+	Zenith_DebugBreak();
 	return true;
 };
 #endif

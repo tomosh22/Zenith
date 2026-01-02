@@ -35,16 +35,16 @@ static const char* g_aszTextureNames[SUPERSECRET_TEXTURE_INDEX__COUNT]
 
 static const char* g_aszTextureFilenames[SUPERSECRET_TEXTURE_INDEX__COUNT]
 {
-	ASSETS_ROOT"Textures/player0.ztx",
+	GAME_ASSETS_DIR"Textures/player0.ztx",
 
-	ASSETS_ROOT"Textures/ground_main.ztx",
-	ASSETS_ROOT"Textures/long_grass.ztx",
-	ASSETS_ROOT"Textures/pavement_center.ztx",
-	ASSETS_ROOT"Textures/pavement_edges.ztx",
-	ASSETS_ROOT"Textures/tree_ground.ztx",
-	ASSETS_ROOT"Textures/tree_base.ztx",
-	ASSETS_ROOT"Textures/tree_main.ztx",
-	ASSETS_ROOT"Textures/light_ground_edges.ztx",
+	GAME_ASSETS_DIR"Textures/ground_main.ztx",
+	GAME_ASSETS_DIR"Textures/long_grass.ztx",
+	GAME_ASSETS_DIR"Textures/pavement_center.ztx",
+	GAME_ASSETS_DIR"Textures/pavement_edges.ztx",
+	GAME_ASSETS_DIR"Textures/tree_ground.ztx",
+	GAME_ASSETS_DIR"Textures/tree_base.ztx",
+	GAME_ASSETS_DIR"Textures/tree_main.ztx",
+	GAME_ASSETS_DIR"Textures/light_ground_edges.ztx",
 };
 
 class SuperSecret_State_InGame ZENITH_FINAL : public Zenith_State

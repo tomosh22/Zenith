@@ -1,0 +1,25 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Test", "..\Games\Test\Build\test_agde.vcxproj", "{9FFC01B2-501D-0CCE-4F4B-22C8ED521E89}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Zenith", "zenith_agde.vcxproj", "{F83CFCD6-A014-178D-D9F6-2D4FDA358FCD}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a = arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a
+		arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a = arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{9FFC01B2-501D-0CCE-4F4B-22C8ED521E89}.arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a.ActiveCfg = arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a
+		{9FFC01B2-501D-0CCE-4F4B-22C8ED521E89}.arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a.Build.0 = arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a
+		{9FFC01B2-501D-0CCE-4F4B-22C8ED521E89}.arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a.ActiveCfg = arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a
+		{9FFC01B2-501D-0CCE-4F4B-22C8ED521E89}.arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a.Build.0 = arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a
+		{F83CFCD6-A014-178D-D9F6-2D4FDA358FCD}.arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a.ActiveCfg = arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a
+		{F83CFCD6-A014-178D-D9F6-2D4FDA358FCD}.arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a.Build.0 = arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a
+		{F83CFCD6-A014-178D-D9F6-2D4FDA358FCD}.arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a.ActiveCfg = arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a
+		{F83CFCD6-A014-178D-D9F6-2D4FDA358FCD}.arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a.Build.0 = arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal

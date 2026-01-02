@@ -1,4 +1,17 @@
 #include "Zenith.h"
+
+// Returns the project name - used by Tools code to construct asset paths
+const char* Project_GetName()
+{
+	return "SuperSecret";
+}
+
+// Returns the game assets directory - called by Zenith engine code
+const char* Project_GetGameAssetsDirectory()
+{
+	return GAME_ASSETS_DIR;
+}
+
 #include "SuperSecret/SuperSecret_State_InGame.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_Entity.h"
@@ -92,7 +105,7 @@ void SuperSecret_State_InGame::OnEnter()
 	
 
 	uint64_t ulSize;
-	char* pcData = Zenith_FileAccess::ReadFile(ASSETS_ROOT"Maps/map0.txt", ulSize);
+	char* pcData = Zenith_FileAccess::ReadFile(GAME_ASSETS_DIR"Maps/map0.txt", ulSize);
 	Zenith_DataStream xStream(pcData, ulSize);
 	
 	xStream >> g_uMapWidth;
@@ -135,7 +148,7 @@ void SuperSecret_State_InGame::OnUpdate()
 			xStream << s_axMap[u];
 		}
 
-		xStream.WriteToFile(ASSETS_ROOT"Maps/map0.txt");
+		xStream.WriteToFile(GAME_ASSETS_DIR"Maps/map0.txt");
 	}
 
 	Zenith_Core::Zenith_MainLoop();

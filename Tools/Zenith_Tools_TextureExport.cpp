@@ -1,5 +1,20 @@
 #include "Zenith.h"
 #include "Zenith_Tools_TextureExport.h"
+
+// Extern function that must be implemented by game projects - returns just the project name (e.g., "Test")
+// Paths are constructed using ZENITH_ROOT (defined by build system) + project name
+extern const char* Project_GetName();
+
+// Helper functions to construct asset paths from project name
+static std::string GetGameAssetsDirectory()
+{
+	return std::string(ZENITH_ROOT) + "Games/" + Project_GetName() + "/Assets/";
+}
+
+static std::string GetEngineAssetsDirectory()
+{
+	return std::string(ZENITH_ROOT) + "Zenith/Assets/";
+}
 #include "Flux/Flux.h"
 #define STB_IMAGE_IMPLEMENTATION
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
@@ -232,11 +247,12 @@ void ExportTexture(const std::filesystem::directory_entry& xFile)
 
 void ExportAllTextures()
 {
-	for (const std::filesystem::directory_entry& xFile : std::filesystem::recursive_directory_iterator(GAME_ASSETS_DIR"Textures"))
+	std::string strGameTexturesDir = GetGameAssetsDirectory() + "Textures";
+	for (const std::filesystem::directory_entry& xFile : std::filesystem::recursive_directory_iterator(strGameTexturesDir))
 	{
 		ExportTexture(xFile);
 	}
-	for (const std::filesystem::directory_entry& xFile : std::filesystem::recursive_directory_iterator(ENGINE_ASSETS_DIR))
+	for (const std::filesystem::directory_entry& xFile : std::filesystem::recursive_directory_iterator(GetEngineAssetsDirectory()))
 	{
 		ExportTexture(xFile);
 	}

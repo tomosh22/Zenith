@@ -1,6 +1,7 @@
 #include "Zenith.h"
 
 #include "Vulkan/Zenith_Vulkan.h"
+#include "Vulkan/Zenith_Vulkan_Platform.h"
 #include "Flux/Flux.h"
 #include "Flux/Flux_Enums.h"
 #include "Flux/Flux_Graphics.h"
@@ -483,16 +484,8 @@ void Zenith_Vulkan::CreateInstance()
 		.setEngineVersion(VK_MAKE_VERSION(1, 0, 0))
 		.setApiVersion(VK_API_VERSION_1_3);
 
-#ifdef ZENITH_WINDOWS
-	uint32_t uGLFWExtensionCount = 0;
-	const char** pszGLFWExtensions = glfwGetRequiredInstanceExtensions(&uGLFWExtensionCount);
-	std::vector<const char*> xExtensions(pszGLFWExtensions, pszGLFWExtensions + uGLFWExtensionCount);
-#ifdef ZENITH_DEBUG
-	xExtensions.push_back(VK_EXT_DEBUG_UTILS_EXTENSION_NAME);
-#endif
-#else
-#error #TO_TODO: vulkan with not windows
-#endif
+	// Get platform-specific Vulkan extensions
+	std::vector<const char*> xExtensions = Zenith_Vulkan_Platform::GetRequiredInstanceExtensions();
 
 	vk::InstanceCreateInfo xInstanceInfo = vk::InstanceCreateInfo()
 		.setPApplicationInfo(&xAppInfo)
@@ -515,7 +508,7 @@ VKAPI_ATTR vk::Bool32 VKAPI_CALL Zenith_Vulkan::DebugCallback(vk::DebugUtilsMess
 	{
 		Zenith_Error("%s%s", "Zenith_Vulkan::DebugCallback: ", pxCallbackData->pMessage);
 	}
-		__debugbreak();
+		Zenith_DebugBreak();
 	return VK_FALSE;
 }
 
@@ -543,8 +536,8 @@ void Zenith_Vulkan::CreateDebugMessenger()
 
 void Zenith_Vulkan::CreateSurface()
 {
-	GLFWwindow* pxWindow = Zenith_Window::GetInstance()->GetNativeWindow();
-	glfwCreateWindowSurface(s_xInstance, pxWindow, nullptr, (VkSurfaceKHR*)&s_xSurface);
+	// Use platform abstraction for surface creation
+	s_xSurface = Zenith_Vulkan_Platform::CreateSurface(s_xInstance);
 
 	Zenith_Log("Vulkan surface created");
 }
