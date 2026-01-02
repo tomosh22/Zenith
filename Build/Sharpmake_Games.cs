@@ -8,7 +8,7 @@ using System.IO;
 public class GameProject : ZenithBaseProject
 {
 	// The name of the game - override in derived classes or set before generation
-	public virtual string GameName => "Test";
+	public virtual string GameName => "Sokoban";
 
 	public GameProject()
 	{
@@ -88,7 +88,7 @@ public class GameProject : ZenithBaseProject
 [Sharpmake.Generate]
 public class TestGameProject : GameProject
 {
-	public override string GameName => "Test";
+	public override string GameName => "Sokoban";
 
 	public TestGameProject() : base()
 	{

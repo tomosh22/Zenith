@@ -123,6 +123,7 @@ public:
 	void SetBehaviour()
 	{
 		m_pxScriptBehaviour = new T(m_xParentEntity);
+		m_pxScriptBehaviour->OnCreate();
 	}
 
 	// Serialization methods for Zenith_DataStream

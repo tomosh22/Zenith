@@ -526,10 +526,16 @@
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_UIComponent.cpp">
       <Filter>EntityComponent\Components</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\EntityComponent\Zenith_ComponentMeta.cpp">
+      <Filter>EntityComponent</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_ComponentRegistry.cpp">
       <Filter>EntityComponent</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_Entity.cpp">
+      <Filter>EntityComponent</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\EntityComponent\Zenith_EventSystem.cpp">
       <Filter>EntityComponent</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_Scene.cpp">
@@ -2839,10 +2845,19 @@
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_UIComponent.h">
       <Filter>EntityComponent\Components</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\EntityComponent\Zenith_ComponentMeta.h">
+      <Filter>EntityComponent</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_ComponentRegistry.h">
       <Filter>EntityComponent</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_Entity.h">
+      <Filter>EntityComponent</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\EntityComponent\Zenith_EventSystem.h">
+      <Filter>EntityComponent</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\EntityComponent\Zenith_Query.h">
       <Filter>EntityComponent</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_Scene.h">

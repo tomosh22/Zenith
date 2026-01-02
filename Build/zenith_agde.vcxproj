@@ -835,8 +835,11 @@
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_TextComponent.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_TransformComponent.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_UIComponent.h" />
+    <ClInclude Include="..\Zenith\EntityComponent\Zenith_ComponentMeta.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_ComponentRegistry.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_Entity.h" />
+    <ClInclude Include="..\Zenith\EntityComponent\Zenith_EventSystem.h" />
+    <ClInclude Include="..\Zenith\EntityComponent\Zenith_Query.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_Scene.h" />
     <ClInclude Include="..\Zenith\FileAccess\Zenith_FileAccess.h" />
     <ClInclude Include="..\Zenith\Flux\AnimatedMeshes\Flux_AnimatedMeshes.h" />
@@ -1585,8 +1588,10 @@
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_TextComponent.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_TransformComponent.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_UIComponent.cpp" />
+    <ClCompile Include="..\Zenith\EntityComponent\Zenith_ComponentMeta.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_ComponentRegistry.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_Entity.cpp" />
+    <ClCompile Include="..\Zenith\EntityComponent\Zenith_EventSystem.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_Scene.cpp" />
     <ClCompile Include="..\Zenith\FileAccess\Zenith_FileAccess.cpp" />
     <ClCompile Include="..\Zenith\Flux\AnimatedMeshes\Flux_AnimatedMeshes.cpp" />
