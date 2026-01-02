@@ -39,9 +39,8 @@ void Project_LoadInitialScene()
 	xScene.SetMainCameraEntity(xCameraEntity.GetEntityID());
 
 	Zenith_Entity xSokobanEntity(&xScene, "SokobanGame");
-	xSokobanEntity.AddComponent<Zenith_ScriptComponent>().SetBehaviour<Sokoban_Behaviour>();
 
-	// UI Setup
+	// UI Setup - must be done before setting behaviour so UpdateUIPositions() works
 	static constexpr uint32_t s_uGridOffsetX = 100;
 	static constexpr uint32_t s_uGridOffsetY = 100;
 	static constexpr uint32_t s_uGridSize = 8;
@@ -107,4 +106,7 @@ void Project_LoadInitialScene()
 	pxWin->SetPosition(static_cast<float>(s_uTextStartX), static_cast<float>(s_uTextStartY) + s_fLineHeight * 14);
 	pxWin->SetFontSize(s_fBaseTextSize * 4.2f);
 	pxWin->SetColor(Zenith_Maths::Vector4(0.2f, 1.f, 0.2f, 1.f));
+
+	// Add script component last so OnCreate() can access the UI elements
+	xSokobanEntity.AddComponent<Zenith_ScriptComponent>().SetBehaviour<Sokoban_Behaviour>();
 }
