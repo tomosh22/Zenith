@@ -147,9 +147,6 @@ class Sokoban_Behaviour ZENITH_FINAL : Zenith_ScriptBehaviour
 public:
 	ZENITH_BEHAVIOUR_TYPE_NAME(Sokoban_Behaviour)
 
-	static constexpr uint32_t s_uTileSize = 64;
-	static constexpr uint32_t s_uGridOffsetX = 100;
-	static constexpr uint32_t s_uGridOffsetY = 100;
 	static constexpr uint32_t s_uMaxGridCells = s_uMaxGridSize * s_uMaxGridSize;
 
 	Sokoban_Behaviour() = delete;
@@ -201,7 +198,6 @@ public:
 		else if (!m_bWon)
 		{
 			HandleKeyboardInput();
-			HandleMouseInput();
 		}
 		Update3DVisuals();
 	}
@@ -325,43 +321,6 @@ private:
 		{
 			ResetLevel();
 		}
-	}
-
-	void HandleMouseInput()
-	{
-		if (m_bAnimating) return;
-
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_MOUSE_BUTTON_LEFT))
-		{
-			SokobanDirection eDir = GetDirectionFromMouse();
-			if (eDir != SOKOBAN_DIR_NONE)
-			{
-				TryMove(eDir);
-			}
-		}
-	}
-
-	SokobanDirection GetDirectionFromMouse() const
-	{
-		Zenith_Maths::Vector2_64 xMousePos;
-		Zenith_Input::GetMousePosition(xMousePos);
-
-		float fPlayerCenterX = static_cast<float>(s_uGridOffsetX + m_uPlayerX * s_uTileSize) + s_uTileSize * 0.5f;
-		float fPlayerCenterY = static_cast<float>(s_uGridOffsetY + m_uPlayerY * s_uTileSize) + s_uTileSize * 0.5f;
-
-		float fDeltaX = static_cast<float>(xMousePos.x) - fPlayerCenterX;
-		float fDeltaY = static_cast<float>(xMousePos.y) - fPlayerCenterY;
-
-		if (fabs(fDeltaX) > fabs(fDeltaY))
-		{
-			return (fDeltaX > 0) ? SOKOBAN_DIR_RIGHT : SOKOBAN_DIR_LEFT;
-		}
-		else if (fabs(fDeltaY) > fabs(fDeltaX))
-		{
-			return (fDeltaY > 0) ? SOKOBAN_DIR_DOWN : SOKOBAN_DIR_UP;
-		}
-
-		return SOKOBAN_DIR_NONE;
 	}
 
 	// ========================================================================
@@ -1114,32 +1073,7 @@ private:
 	// ========================================================================
 	void UpdateUIPositions()
 	{
-		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
-		{
-			return;
-		}
-
-		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
-
-		// Calculate text X position based on grid size
-		uint32_t uGridPixelWidth = m_uGridWidth * s_uTileSize;
-		float fTextStartX = static_cast<float>(s_uGridOffsetX + uGridPixelWidth + 50);
-
-		// Update all text elements' X position
-		const char* aElementNames[] = {
-			"Title", "ControlsHeader", "MoveInstr", "MouseInstr", "ResetInstr",
-			"GoalHeader", "GoalDesc", "Status", "Progress", "WinText", "MinMoves"
-		};
-
-		for (const char* szName : aElementNames)
-		{
-			Zenith_UI::Zenith_UIText* pxText = xUI.FindElement<Zenith_UI::Zenith_UIText>(szName);
-			if (pxText)
-			{
-				Zenith_Maths::Vector2 xPos = pxText->GetPosition();
-				pxText->SetPosition(fTextStartX, xPos.y);
-			}
-		}
+		// UI elements use anchor system (TopRight) so no position updates needed
 	}
 
 	void UpdateStatusText()
