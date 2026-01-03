@@ -52,7 +52,10 @@
       "Bash(\"C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\MSBuild\\Current\\Bin\\MSBuild.exe\" \"Games\\Test\\Build\\test_win64.vcxproj\" -p:Configuration=vs2022_Debug_Win64_True -p:Platform=x64 -t:ClCompile -p:SelectedFiles=\"Zenith\\Flux\\Shadows\\Flux_Shadows.cpp;Zenith\\EntityComponent\\Zenith_Scene.cpp\" -verbosity:minimal)",
       "Bash(\"C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\MSBuild\\Current\\Bin\\MSBuild.exe\" \"Games\\Test\\Build\\test_win64.vcxproj\" -p:Configuration=vs2022_Debug_Win64_True -p:Platform=x64 -t:ClCompile -p:SelectedFiles=\"Zenith\\Flux\\Shadows\\Flux_Shadows.cpp\" -verbosity:minimal)",
       "Bash(Select-String -Pattern \"(error|warning C)\" -Context 0,2)",
-      "Bash(\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\MSBuild\\\\Current\\\\Bin\\\\MSBuild.exe\" \"c:\\\\dev\\\\Zenith\\\\Games\\\\Sokoban\\\\Build\\\\sokoban_win64.vcxproj\" -p:Configuration=vs2022_Debug_Win64_True -p:Platform=x64 -verbosity:minimal)"
+      "Bash(\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\MSBuild\\\\Current\\\\Bin\\\\MSBuild.exe\" \"c:\\\\dev\\\\Zenith\\\\Games\\\\Sokoban\\\\Build\\\\sokoban_win64.vcxproj\" -p:Configuration=vs2022_Debug_Win64_True -p:Platform=x64 -verbosity:minimal)",
+      "Bash(Select-Object -First 30)",
+      "Bash(Sharpmake_Build.bat)",
+      "Bash(\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\MSBuild\\\\Current\\\\Bin\\\\MSBuild.exe\" \"c:\\\\dev\\\\Zenith\\\\Games\\\\Sokoban\\\\Build\\\\sokoban_win64.vcxproj\" -p:Configuration=vs2022_Debug_Win64_True -p:Platform=x64 -t:rebuild -verbosity:minimal)"
     ],
     "deny": [],
     "ask": []

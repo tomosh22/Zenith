@@ -17,7 +17,24 @@
 
 #ifdef ZENITH_TOOLS
 #include "imgui.h"
+#include "Editor/Zenith_Editor.h"
+#include <filesystem>
 #endif
+
+// ============================================================================
+// Sokoban Resources - Global access (like Unity's Resources system)
+// Defined in Sokoban.cpp, initialized in Project_RegisterScriptBehaviours
+// ============================================================================
+namespace Sokoban
+{
+	extern Flux_MeshGeometry* g_pxCubeGeometry;
+	extern Flux_MaterialAsset* g_pxFloorMaterial;
+	extern Flux_MaterialAsset* g_pxWallMaterial;
+	extern Flux_MaterialAsset* g_pxBoxMaterial;
+	extern Flux_MaterialAsset* g_pxBoxOnTargetMaterial;
+	extern Flux_MaterialAsset* g_pxPlayerMaterial;
+	extern Flux_MaterialAsset* g_pxTargetMaterial;
+}
 
 // ============================================================================
 // CONFIGURATION CONSTANTS - Modify these to tune gameplay
@@ -34,91 +51,6 @@ static constexpr float s_fFloorHeight = 0.1f;
 static constexpr float s_fWallHeight = 0.8f;
 static constexpr float s_fBoxHeight = 0.5f;
 static constexpr float s_fPlayerHeight = 0.5f;
-// ============================================================================
-
-// ============================================================================
-// STATIC RESOURCES - Shared geometry, textures, and materials
-// ============================================================================
-static Flux_MeshGeometry* s_pxCubeGeometry = nullptr;
-
-// 1x1 pixel textures for each tile type
-static Flux_Texture* s_pxFloorTexture = nullptr;
-static Flux_Texture* s_pxWallTexture = nullptr;
-static Flux_Texture* s_pxBoxTexture = nullptr;
-static Flux_Texture* s_pxBoxOnTargetTexture = nullptr;
-static Flux_Texture* s_pxPlayerTexture = nullptr;
-static Flux_Texture* s_pxTargetTexture = nullptr;
-
-// Materials using the textures
-static Flux_MaterialAsset* s_pxFloorMaterial = nullptr;
-static Flux_MaterialAsset* s_pxWallMaterial = nullptr;
-static Flux_MaterialAsset* s_pxBoxMaterial = nullptr;
-static Flux_MaterialAsset* s_pxBoxOnTargetMaterial = nullptr;
-static Flux_MaterialAsset* s_pxPlayerMaterial = nullptr;
-static Flux_MaterialAsset* s_pxTargetMaterial = nullptr;
-static bool s_bStaticResourcesInitialized = false;
-
-// Helper to create a 1x1 colored texture
-static Flux_Texture* CreateColoredTexture(uint8_t r, uint8_t g, uint8_t b, uint8_t a = 255)
-{
-	Flux_SurfaceInfo xTexInfo;
-	xTexInfo.m_eFormat = TEXTURE_FORMAT_RGBA8_UNORM;
-	xTexInfo.m_uWidth = 1;
-	xTexInfo.m_uHeight = 1;
-	xTexInfo.m_uDepth = 1;
-	xTexInfo.m_uNumMips = 1;
-	xTexInfo.m_uNumLayers = 1;
-	xTexInfo.m_uMemoryFlags = 1 << MEMORY_FLAGS__SHADER_READ;
-
-	uint8_t aucPixelData[] = { r, g, b, a };
-
-	Zenith_AssetHandler::TextureData xTexData;
-	xTexData.pData = aucPixelData;
-	xTexData.xSurfaceInfo = xTexInfo;
-	xTexData.bCreateMips = false;
-	xTexData.bIsCubemap = false;
-
-	return Zenith_AssetHandler::AddTexture(xTexData);
-}
-
-static void InitializeStaticResources()
-{
-	if (s_bStaticResourcesInitialized)
-		return;
-
-	// Create shared cube geometry using engine's built-in generator
-	s_pxCubeGeometry = new Flux_MeshGeometry();
-	Flux_MeshGeometry::GenerateUnitCube(*s_pxCubeGeometry);
-
-	// Create 1x1 pixel textures for each tile type
-	s_pxFloorTexture = CreateColoredTexture(77, 77, 89);           // Dark gray floor (0.3, 0.3, 0.35)
-	s_pxWallTexture = CreateColoredTexture(102, 64, 38);           // Brown walls (0.4, 0.25, 0.15)
-	s_pxBoxTexture = CreateColoredTexture(204, 128, 51);           // Orange box (0.8, 0.5, 0.2)
-	s_pxBoxOnTargetTexture = CreateColoredTexture(51, 204, 51);    // Green box on target (0.2, 0.8, 0.2)
-	s_pxPlayerTexture = CreateColoredTexture(51, 102, 230);        // Blue player (0.2, 0.4, 0.9)
-	s_pxTargetTexture = CreateColoredTexture(51, 153, 51);         // Green target (0.2, 0.6, 0.2)
-
-	// Create materials and assign textures
-	s_pxFloorMaterial = Flux_MaterialAsset::Create("SokobanFloor");
-	s_pxFloorMaterial->SetDiffuseTexture(s_pxFloorTexture);
-
-	s_pxWallMaterial = Flux_MaterialAsset::Create("SokobanWall");
-	s_pxWallMaterial->SetDiffuseTexture(s_pxWallTexture);
-
-	s_pxBoxMaterial = Flux_MaterialAsset::Create("SokobanBox");
-	s_pxBoxMaterial->SetDiffuseTexture(s_pxBoxTexture);
-
-	s_pxBoxOnTargetMaterial = Flux_MaterialAsset::Create("SokobanBoxOnTarget");
-	s_pxBoxOnTargetMaterial->SetDiffuseTexture(s_pxBoxOnTargetTexture);
-
-	s_pxPlayerMaterial = Flux_MaterialAsset::Create("SokobanPlayer");
-	s_pxPlayerMaterial->SetDiffuseTexture(s_pxPlayerTexture);
-
-	s_pxTargetMaterial = Flux_MaterialAsset::Create("SokobanTarget");
-	s_pxTargetMaterial->SetDiffuseTexture(s_pxTargetTexture);
-
-	s_bStaticResourcesInitialized = true;
-}
 // ============================================================================
 
 enum SokobanTileType
@@ -185,7 +117,23 @@ public:
 
 	void OnCreate() ZENITH_FINAL override
 	{
-		InitializeStaticResources();
+		// Get default resources from namespace if not serialized/assigned
+		// (like Unity's Awake getting references from prefab or Resources)
+		if (!m_pxCubeGeometry)
+			m_pxCubeGeometry = Sokoban::g_pxCubeGeometry;
+		if (!m_pxFloorMaterial)
+			m_pxFloorMaterial = Sokoban::g_pxFloorMaterial;
+		if (!m_pxWallMaterial)
+			m_pxWallMaterial = Sokoban::g_pxWallMaterial;
+		if (!m_pxBoxMaterial)
+			m_pxBoxMaterial = Sokoban::g_pxBoxMaterial;
+		if (!m_pxBoxOnTargetMaterial)
+			m_pxBoxOnTargetMaterial = Sokoban::g_pxBoxOnTargetMaterial;
+		if (!m_pxPlayerMaterial)
+			m_pxPlayerMaterial = Sokoban::g_pxPlayerMaterial;
+		if (!m_pxTargetMaterial)
+			m_pxTargetMaterial = Sokoban::g_pxTargetMaterial;
+
 		GenerateRandomLevel();
 	}
 
@@ -223,14 +171,184 @@ public:
 		ImGui::Text("Controls:");
 		ImGui::Text("  WASD / Arrow Keys: Move");
 		ImGui::Text("  R: Reset Level");
-		ImGui::Text("  Mouse Click: Move toward click");
+
+		ImGui::Separator();
+		if (ImGui::CollapsingHeader("Visual Assets", ImGuiTreeNodeFlags_DefaultOpen))
+		{
+			// Cube Geometry slot
+			RenderMeshSlot("Cube Mesh", m_pxCubeGeometry);
+
+			ImGui::Separator();
+
+			// Material slots
+			RenderMaterialSlot("Floor Material", m_pxFloorMaterial);
+			RenderMaterialSlot("Wall Material", m_pxWallMaterial);
+			RenderMaterialSlot("Box Material", m_pxBoxMaterial);
+			RenderMaterialSlot("Box On Target", m_pxBoxOnTargetMaterial);
+			RenderMaterialSlot("Player Material", m_pxPlayerMaterial);
+			RenderMaterialSlot("Target Material", m_pxTargetMaterial);
+		}
 #endif
 	}
 
-	void WriteParametersToDataStream(Zenith_DataStream& xStream) const override {}
-	void ReadParametersFromDataStream(Zenith_DataStream& xStream) override {}
+	void WriteParametersToDataStream(Zenith_DataStream& xStream) const override
+	{
+		// Version for future compatibility
+		const uint32_t uVersion = 1;
+		xStream << uVersion;
+
+		// Mesh - serialize source path (empty for procedural geometry)
+		std::string strMeshPath = (m_pxCubeGeometry && !m_pxCubeGeometry->m_strSourcePath.empty())
+			? m_pxCubeGeometry->m_strSourcePath : "";
+		xStream << strMeshPath;
+
+		// Materials - serialize each one
+		auto WriteMaterial = [&xStream](Flux_MaterialAsset* pxMat)
+		{
+			if (pxMat)
+			{
+				pxMat->WriteToDataStream(xStream);
+			}
+			else
+			{
+				Flux_MaterialAsset* pxEmpty = Flux_MaterialAsset::Create("Empty");
+				pxEmpty->WriteToDataStream(xStream);
+				delete pxEmpty;
+			}
+		};
+
+		WriteMaterial(m_pxFloorMaterial);
+		WriteMaterial(m_pxWallMaterial);
+		WriteMaterial(m_pxBoxMaterial);
+		WriteMaterial(m_pxBoxOnTargetMaterial);
+		WriteMaterial(m_pxPlayerMaterial);
+		WriteMaterial(m_pxTargetMaterial);
+	}
+
+	void ReadParametersFromDataStream(Zenith_DataStream& xStream) override
+	{
+		uint32_t uVersion;
+		xStream >> uVersion;
+
+		if (uVersion >= 1)
+		{
+			// Mesh - load from path or use default
+			std::string strMeshPath;
+			xStream >> strMeshPath;
+
+			if (!strMeshPath.empty())
+			{
+				m_pxCubeGeometry = Zenith_AssetHandler::AddMeshFromFile(strMeshPath.c_str(), 0, true);
+			}
+			// If path is empty or load failed, OnCreate() will use default
+
+			// Materials - load each one
+			auto ReadMaterial = [&xStream](Flux_MaterialAsset*& pxMat, const char* szName)
+			{
+				Flux_MaterialAsset* pxLoaded = Flux_MaterialAsset::Create(szName);
+				pxLoaded->ReadFromDataStream(xStream);
+				pxMat = pxLoaded;
+			};
+
+			ReadMaterial(m_pxFloorMaterial, "Sokoban_Floor");
+			ReadMaterial(m_pxWallMaterial, "Sokoban_Wall");
+			ReadMaterial(m_pxBoxMaterial, "Sokoban_Box");
+			ReadMaterial(m_pxBoxOnTargetMaterial, "Sokoban_BoxOnTarget");
+			ReadMaterial(m_pxPlayerMaterial, "Sokoban_Player");
+			ReadMaterial(m_pxTargetMaterial, "Sokoban_Target");
+		}
+	}
 
 private:
+	// ========================================================================
+	// Editor UI Helpers
+	// ========================================================================
+#ifdef ZENITH_TOOLS
+	void RenderMaterialSlot(const char* szLabel, Flux_MaterialAsset*& pxMaterial)
+	{
+		ImGui::PushID(szLabel);
+
+		std::string strMaterialName = pxMaterial ? pxMaterial->GetName() : "(none)";
+
+		ImGui::Text("%s:", szLabel);
+		ImGui::SameLine();
+
+		ImVec2 xButtonSize(150, 20);
+		ImGui::Button(strMaterialName.c_str(), xButtonSize);
+
+		if (ImGui::BeginDragDropTarget())
+		{
+			if (const ImGuiPayload* pPayload = ImGui::AcceptDragDropPayload(DRAGDROP_PAYLOAD_MATERIAL))
+			{
+				const DragDropFilePayload* pFilePayload =
+					static_cast<const DragDropFilePayload*>(pPayload->Data);
+
+				Zenith_Log("[Sokoban] Material dropped on %s: %s", szLabel, pFilePayload->m_szFilePath);
+
+				// Load the material from file
+				Flux_MaterialAsset* pxNewMaterial = Flux_MaterialAsset::LoadFromFile(pFilePayload->m_szFilePath);
+				if (pxNewMaterial)
+				{
+					pxMaterial = pxNewMaterial;
+				}
+			}
+			ImGui::EndDragDropTarget();
+		}
+
+		if (ImGui::IsItemHovered())
+		{
+			ImGui::SetTooltip("Drop a .zmat material file here");
+		}
+
+		ImGui::PopID();
+	}
+
+	void RenderMeshSlot(const char* szLabel, Flux_MeshGeometry*& pxMesh)
+	{
+		ImGui::PushID(szLabel);
+
+		std::string strMeshName = pxMesh ? "(loaded)" : "(none)";
+		if (pxMesh && !pxMesh->m_strSourcePath.empty())
+		{
+			std::filesystem::path xPath(pxMesh->m_strSourcePath);
+			strMeshName = xPath.filename().string();
+		}
+
+		ImGui::Text("%s:", szLabel);
+		ImGui::SameLine();
+
+		ImVec2 xButtonSize(150, 20);
+		ImGui::Button(strMeshName.c_str(), xButtonSize);
+
+		if (ImGui::BeginDragDropTarget())
+		{
+			if (const ImGuiPayload* pPayload = ImGui::AcceptDragDropPayload(DRAGDROP_PAYLOAD_MESH))
+			{
+				const DragDropFilePayload* pFilePayload =
+					static_cast<const DragDropFilePayload*>(pPayload->Data);
+
+				Zenith_Log("[Sokoban] Mesh dropped on %s: %s", szLabel, pFilePayload->m_szFilePath);
+
+				// Load the mesh from file
+				Flux_MeshGeometry* pxNewMesh = Zenith_AssetHandler::AddMeshFromFile(
+					pFilePayload->m_szFilePath, 0, true);
+				if (pxNewMesh)
+				{
+					pxMesh = pxNewMesh;
+				}
+			}
+			ImGui::EndDragDropTarget();
+		}
+
+		if (ImGui::IsItemHovered())
+		{
+			ImGui::SetTooltip("Drop a .zmesh mesh file here");
+		}
+
+		ImGui::PopID();
+	}
+#endif
+
 	// ========================================================================
 	// Animation System
 	// ========================================================================
@@ -460,20 +578,20 @@ private:
 	Flux_MaterialAsset* GetMaterialForTile(uint32_t uIndex, bool bIsBox = false, bool bIsPlayer = false) const
 	{
 		if (bIsPlayer)
-			return s_pxPlayerMaterial;
+			return m_pxPlayerMaterial;
 
 		if (bIsBox)
 		{
-			return m_abTargets[uIndex] ? s_pxBoxOnTargetMaterial : s_pxBoxMaterial;
+			return m_abTargets[uIndex] ? m_pxBoxOnTargetMaterial : m_pxBoxMaterial;
 		}
 
 		if (m_aeTiles[uIndex] == SOKOBAN_TILE_WALL)
-			return s_pxWallMaterial;
+			return m_pxWallMaterial;
 
 		if (m_abTargets[uIndex])
-			return s_pxTargetMaterial;
+			return m_pxTargetMaterial;
 
-		return s_pxFloorMaterial;
+		return m_pxFloorMaterial;
 	}
 
 	// Get height for a tile type
@@ -535,7 +653,7 @@ private:
 				xTransform.SetScale({s_fTileScale, fHeight, s_fTileScale});
 
 				Zenith_ModelComponent& xModel = xTileEntity.AddComponent<Zenith_ModelComponent>();
-				xModel.AddMeshEntry(*s_pxCubeGeometry, *GetMaterialForTile(uIndex));
+				xModel.AddMeshEntry(*m_pxCubeGeometry, *GetMaterialForTile(uIndex));
 
 				m_axTileEntityIDs.push_back(xTileEntity.GetEntityID());
 			}
@@ -559,7 +677,7 @@ private:
 					xTransform.SetScale({s_fTileScale * 0.8f, s_fBoxHeight, s_fTileScale * 0.8f});
 
 					Zenith_ModelComponent& xModel = xBoxEntity.AddComponent<Zenith_ModelComponent>();
-					xModel.AddMeshEntry(*s_pxCubeGeometry, *GetMaterialForTile(uIndex, true));
+					xModel.AddMeshEntry(*m_pxCubeGeometry, *GetMaterialForTile(uIndex, true));
 
 					m_axBoxEntityIDs.push_back(xBoxEntity.GetEntityID());
 				}
@@ -578,7 +696,7 @@ private:
 			xTransform.SetScale({s_fTileScale * 0.7f, s_fPlayerHeight, s_fTileScale * 0.7f});
 
 			Zenith_ModelComponent& xModel = xPlayerEntity.AddComponent<Zenith_ModelComponent>();
-			xModel.AddMeshEntry(*s_pxCubeGeometry, *s_pxPlayerMaterial);
+			xModel.AddMeshEntry(*m_pxCubeGeometry, *m_pxPlayerMaterial);
 
 			m_uPlayerEntityID = xPlayerEntity.GetEntityID();
 		}
@@ -1187,4 +1305,14 @@ private:
 	std::vector<Zenith_EntityID> m_axTileEntityIDs;
 	std::vector<Zenith_EntityID> m_axBoxEntityIDs;
 	Zenith_EntityID m_uPlayerEntityID = 0;
+
+public:
+	// Resource pointers (set by Sokoban.cpp, or by editor/serialization)
+	Flux_MeshGeometry* m_pxCubeGeometry = nullptr;
+	Flux_MaterialAsset* m_pxFloorMaterial = nullptr;
+	Flux_MaterialAsset* m_pxWallMaterial = nullptr;
+	Flux_MaterialAsset* m_pxBoxMaterial = nullptr;
+	Flux_MaterialAsset* m_pxBoxOnTargetMaterial = nullptr;
+	Flux_MaterialAsset* m_pxPlayerMaterial = nullptr;
+	Flux_MaterialAsset* m_pxTargetMaterial = nullptr;
 };

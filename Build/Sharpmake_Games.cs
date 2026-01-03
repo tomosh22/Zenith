@@ -69,6 +69,12 @@ public class GameProject : ZenithBaseProject
 			conf.Defines.Add($"SHADER_SOURCE_ROOT=\"{shaderSourceRoot}\"");
 		}
 
+		// Enable tools for game projects when ToolsEnabled is True
+		if (target.ToolsEnabled == ToolsEnabled.True && target.Platform == Platform.win64)
+		{
+			conf.Defines.Add("ZENITH_TOOLS");
+		}
+
 		// Output executable
 		if (target.Platform == Platform.win64)
 		{

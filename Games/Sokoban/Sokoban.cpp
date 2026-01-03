@@ -4,6 +4,92 @@
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
+#include "Flux/MeshGeometry/Flux_MeshGeometry.h"
+#include "Flux/Flux_MaterialAsset.h"
+#include "AssetHandling/Zenith_AssetHandler.h"
+
+// ============================================================================
+// Sokoban Resources - Global access for behaviours
+// ============================================================================
+namespace Sokoban
+{
+	Flux_MeshGeometry* g_pxCubeGeometry = nullptr;
+	Flux_MaterialAsset* g_pxFloorMaterial = nullptr;
+	Flux_MaterialAsset* g_pxWallMaterial = nullptr;
+	Flux_MaterialAsset* g_pxBoxMaterial = nullptr;
+	Flux_MaterialAsset* g_pxBoxOnTargetMaterial = nullptr;
+	Flux_MaterialAsset* g_pxPlayerMaterial = nullptr;
+	Flux_MaterialAsset* g_pxTargetMaterial = nullptr;
+}
+
+static Flux_Texture* s_pxFloorTexture = nullptr;
+static Flux_Texture* s_pxWallTexture = nullptr;
+static Flux_Texture* s_pxBoxTexture = nullptr;
+static Flux_Texture* s_pxBoxOnTargetTexture = nullptr;
+static Flux_Texture* s_pxPlayerTexture = nullptr;
+static Flux_Texture* s_pxTargetTexture = nullptr;
+static bool s_bResourcesInitialized = false;
+
+static Flux_Texture* CreateColoredTexture(uint8_t uR, uint8_t uG, uint8_t uB)
+{
+	Flux_SurfaceInfo xTexInfo;
+	xTexInfo.m_eFormat = TEXTURE_FORMAT_RGBA8_UNORM;
+	xTexInfo.m_uWidth = 1;
+	xTexInfo.m_uHeight = 1;
+	xTexInfo.m_uDepth = 1;
+	xTexInfo.m_uNumMips = 1;
+	xTexInfo.m_uNumLayers = 1;
+	xTexInfo.m_uMemoryFlags = 1 << MEMORY_FLAGS__SHADER_READ;
+
+	uint8_t aucPixelData[] = { uR, uG, uB, 255 };
+
+	Zenith_AssetHandler::TextureData xTexData;
+	xTexData.pData = aucPixelData;
+	xTexData.xSurfaceInfo = xTexInfo;
+	xTexData.bCreateMips = false;
+	xTexData.bIsCubemap = false;
+
+	return Zenith_AssetHandler::AddTexture(xTexData);
+}
+
+static void InitializeSokobanResources()
+{
+	if (s_bResourcesInitialized)
+		return;
+
+	using namespace Sokoban;
+
+	g_pxCubeGeometry = new Flux_MeshGeometry();
+	Flux_MeshGeometry::GenerateUnitCube(*g_pxCubeGeometry);
+
+	s_pxFloorTexture = CreateColoredTexture(77, 77, 89);
+	s_pxWallTexture = CreateColoredTexture(102, 64, 38);
+	s_pxBoxTexture = CreateColoredTexture(204, 128, 51);
+	s_pxBoxOnTargetTexture = CreateColoredTexture(51, 204, 51);
+	s_pxPlayerTexture = CreateColoredTexture(51, 102, 230);
+	s_pxTargetTexture = CreateColoredTexture(51, 153, 51);
+
+	g_pxFloorMaterial = Flux_MaterialAsset::Create("SokobanFloor");
+	g_pxFloorMaterial->SetDiffuseTexture(s_pxFloorTexture);
+
+	g_pxWallMaterial = Flux_MaterialAsset::Create("SokobanWall");
+	g_pxWallMaterial->SetDiffuseTexture(s_pxWallTexture);
+
+	g_pxBoxMaterial = Flux_MaterialAsset::Create("SokobanBox");
+	g_pxBoxMaterial->SetDiffuseTexture(s_pxBoxTexture);
+
+	g_pxBoxOnTargetMaterial = Flux_MaterialAsset::Create("SokobanBoxOnTarget");
+	g_pxBoxOnTargetMaterial->SetDiffuseTexture(s_pxBoxOnTargetTexture);
+
+	g_pxPlayerMaterial = Flux_MaterialAsset::Create("SokobanPlayer");
+	g_pxPlayerMaterial->SetDiffuseTexture(s_pxPlayerTexture);
+
+	g_pxTargetMaterial = Flux_MaterialAsset::Create("SokobanTarget");
+	g_pxTargetMaterial->SetDiffuseTexture(s_pxTargetTexture);
+
+	s_bResourcesInitialized = true;
+}
+// ============================================================================
 
 const char* Project_GetName()
 {
@@ -17,6 +103,9 @@ const char* Project_GetGameAssetsDirectory()
 
 void Project_RegisterScriptBehaviours()
 {
+	// Initialize resources at startup (like Unity's [RuntimeInitializeOnLoadMethod])
+	InitializeSokobanResources();
+
 	Sokoban_Behaviour::RegisterBehaviour();
 }
 
@@ -107,6 +196,9 @@ void Project_LoadInitialScene()
 	pxWin->SetFontSize(s_fBaseTextSize * 4.2f);
 	pxWin->SetColor(Zenith_Maths::Vector4(0.2f, 1.f, 0.2f, 1.f));
 
-	// Add script component last so OnCreate() can access the UI elements
-	xSokobanEntity.AddComponent<Zenith_ScriptComponent>().SetBehaviour<Sokoban_Behaviour>();
+	// Add script component with Sokoban behaviour
+	// Resources are automatically obtained from Sokoban:: namespace in OnCreate()
+	// (like Unity where MonoBehaviours get their references during Awake)
+	Zenith_ScriptComponent& xScript = xSokobanEntity.AddComponent<Zenith_ScriptComponent>();
+	xScript.SetBehaviour<Sokoban_Behaviour>();
 }

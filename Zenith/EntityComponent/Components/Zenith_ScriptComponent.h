@@ -126,6 +126,12 @@ public:
 		m_pxScriptBehaviour->OnCreate();
 	}
 
+	template<typename T>
+	T* GetBehaviour()
+	{
+		return static_cast<T*>(m_pxScriptBehaviour);
+	}
+
 	// Serialization methods for Zenith_DataStream
 	void WriteToDataStream(Zenith_DataStream& xStream) const;
 	void ReadFromDataStream(Zenith_DataStream& xStream);
