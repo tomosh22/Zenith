@@ -490,9 +490,9 @@ private:
 	// Convert grid coordinates to world position
 	Zenith_Maths::Vector3 GridToWorld(float fGridX, float fGridY, float fHeight) const
 	{
-		// Center grid at origin
+		// Center grid at origin, negate Z to match camera orientation
 		float fWorldX = fGridX - static_cast<float>(m_uGridWidth) * 0.5f;
-		float fWorldZ = fGridY - static_cast<float>(m_uGridHeight) * 0.5f;
+		float fWorldZ = static_cast<float>(m_uGridHeight) * 0.5f - fGridY;
 		return {fWorldX, fHeight * 0.5f, fWorldZ};
 	}
 

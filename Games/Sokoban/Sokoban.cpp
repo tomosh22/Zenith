@@ -31,7 +31,7 @@ void Project_LoadInitialScene()
 	xCamera.InitialisePerspective(
 		Zenith_Maths::Vector3(0.f, 12.f, 0.f),  // Position: 12 up, centered
 		-1.5f,  // Pitch: -1.5 radians (nearly straight down)
-		0.f,    // No yaw
+		0.f,    // Yaw: 0 degrees
 		glm::radians(45.f),   // FOV: 45 degrees
 		0.1f,
 		1000.f,
