@@ -3,6 +3,7 @@
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
+#include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "Input/Zenith_Input.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
@@ -697,6 +698,51 @@ private:
 		}
 	}
 
+	// Reposition camera to fit the grid in view
+	void RepositionCamera()
+	{
+		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+		Zenith_EntityID uCameraEntityID = xScene.GetMainCameraEntity();
+		if (uCameraEntityID == INVALID_ENTITY_ID || !xScene.EntityExists(uCameraEntityID))
+			return;
+
+		Zenith_Entity xCameraEntity = xScene.GetEntityByID(uCameraEntityID);
+		if (!xCameraEntity.HasComponent<Zenith_CameraComponent>())
+			return;
+
+		Zenith_CameraComponent& xCamera = xCameraEntity.GetComponent<Zenith_CameraComponent>();
+
+		// Get camera parameters
+		float fFOV = xCamera.GetFOV();
+		float fAspectRatio = xCamera.GetAspectRatio();
+
+		// Calculate grid world dimensions (each tile is 1 unit)
+		float fGridWorldWidth = static_cast<float>(m_uGridWidth);
+		float fGridWorldHeight = static_cast<float>(m_uGridHeight);
+
+		// Add padding (10% margin on each side)
+		float fPadding = 1.2f;
+		fGridWorldWidth *= fPadding;
+		fGridWorldHeight *= fPadding;
+
+		// For a camera looking straight down (pitch ≈ -90°):
+		// Vertical visible distance = 2 * height * tan(FOV/2)
+		// Horizontal visible distance = vertical * aspectRatio
+		float fHalfFOVTan = tan(fFOV * 0.5f);
+
+		// Calculate required height to fit grid in view
+		// For vertical fit: height = gridHeight / (2 * tan(FOV/2))
+		// For horizontal fit: height = gridWidth / (2 * tan(FOV/2) * aspectRatio)
+		float fHeightForVertical = fGridWorldHeight / (2.0f * fHalfFOVTan);
+		float fHeightForHorizontal = fGridWorldWidth / (2.0f * fHalfFOVTan * fAspectRatio);
+
+		// Use the larger of the two to ensure both dimensions fit
+		float fRequiredHeight = std::max(fHeightForVertical, fHeightForHorizontal);
+
+		// Update camera position (keep X and Z at 0, adjust Y height)
+		xCamera.SetPosition(Zenith_Maths::Vector3(0.f, fRequiredHeight, 0.f));
+	}
+
 	// Legacy helper kept for compatibility
 	Zenith_Maths::Vector4 GetTileColor(SokobanTileType eTile) const
 	{
@@ -902,6 +948,7 @@ private:
 			{
 				m_uMinMoves = static_cast<uint32_t>(iMinMoves);
 				Create3DLevel();
+				RepositionCamera();
 				UpdateUIPositions();
 				UpdateStatusText();
 				return;
@@ -914,6 +961,7 @@ private:
 		m_uMinMoves = SolveLevel();
 		if (m_uMinMoves < 0) m_uMinMoves = 0;
 		Create3DLevel();
+		RepositionCamera();
 		UpdateUIPositions();
 		UpdateStatusText();
 	}
