@@ -114,6 +114,7 @@ void Zenith_Vulkan_CommandBuffer::EndAndCpuWait(bool bEndPass)
 template<typename T>
 void BindVertexBufferImpl(vk::CommandBuffer& cmdBuffer, const T& xVertexBuffer, uint32_t uBindPoint)
 {
+	Zenith_Assert(xVertexBuffer.GetBuffer().m_xVRAMHandle.IsValid(), "Vertex buffer has invalid VRAM handle - did you forget to upload to GPU?");
 	const vk::Buffer xBuffer = Zenith_Vulkan::GetVRAM(xVertexBuffer.GetBuffer().m_xVRAMHandle)->GetBuffer();
 	vk::DeviceSize offset = 0;
 	cmdBuffer.bindVertexBuffers(uBindPoint, 1, &xBuffer, &offset);
@@ -131,6 +132,7 @@ void Zenith_Vulkan_CommandBuffer::SetVertexBuffer(const Flux_DynamicVertexBuffer
 
 void Zenith_Vulkan_CommandBuffer::SetIndexBuffer(const Flux_IndexBuffer& xIndexBuffer)
 {
+	Zenith_Assert(xIndexBuffer.GetBuffer().m_xVRAMHandle.IsValid(), "Index buffer has invalid VRAM handle - did you forget to upload to GPU?");
 	const vk::Buffer xBuffer = Zenith_Vulkan::GetVRAM(xIndexBuffer.GetBuffer().m_xVRAMHandle)->GetBuffer();
 	static_assert(std::is_same<Flux_MeshGeometry::IndexType, uint32_t>(), "#TO_TODO: stop hardcoding type");
 	m_xCurrentCmdBuffer.bindIndexBuffer(xBuffer, 0, vk::IndexType::eUint32);

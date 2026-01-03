@@ -150,7 +150,14 @@ public:
 	
 	const std::string& GetDiffuseTexturePath() const { return m_strDiffuseTexturePath; }
 	void SetDiffuseTexturePath(const std::string& strPath);
-	
+
+	/**
+	 * Directly set a diffuse texture (for procedurally generated textures)
+	 * The texture must remain valid for the lifetime of this material
+	 * @param pTexture Pointer to texture (not owned by material)
+	 */
+	void SetDiffuseTexture(Flux_Texture* pTexture) { m_pxDiffuseTexture = pTexture; m_bDirty = true; }
+
 	const std::string& GetNormalTexturePath() const { return m_strNormalTexturePath; }
 	void SetNormalTexturePath(const std::string& strPath);
 	

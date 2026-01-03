@@ -27,11 +27,12 @@ void Project_LoadInitialScene()
 
 	Zenith_Entity xCameraEntity(&xScene, "MainCamera");
 	Zenith_CameraComponent& xCamera = xCameraEntity.AddComponent<Zenith_CameraComponent>();
+	// Top-down 3D view: camera directly above the grid, looking straight down
 	xCamera.InitialisePerspective(
-		Zenith_Maths::Vector3(0.f, 0.f, -10.f),
-		0.f,
-		0.f,
-		45.f,
+		Zenith_Maths::Vector3(0.f, 12.f, 0.f),  // Position: 12 up, centered
+		-1.5f,  // Pitch: -1.5 radians (nearly straight down)
+		0.f,    // No yaw
+		glm::radians(45.f),   // FOV: 45 degrees
 		0.1f,
 		1000.f,
 		16.f / 9.f

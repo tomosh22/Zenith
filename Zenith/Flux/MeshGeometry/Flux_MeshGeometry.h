@@ -61,6 +61,7 @@ public:
 
 	static void GenerateFullscreenQuad(Flux_MeshGeometry& xGeometryOut);
 	static void GenerateFullscreenQuad(Flux_MeshGeometry& xGeometryOut, Zenith_Maths::Matrix4 xTransform);
+	static void GenerateUnitCube(Flux_MeshGeometry& xGeometryOut);
 	static void LoadFromFile(const char* szPath, Flux_MeshGeometry& xGeometryOut, u_int uRetainAttributeBits = 0, const bool bUploadToGPU = true);
 	static void Combine(Flux_MeshGeometry& xDst, const Flux_MeshGeometry& xSrc);
 

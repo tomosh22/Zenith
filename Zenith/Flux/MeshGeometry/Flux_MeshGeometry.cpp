@@ -65,6 +65,121 @@ void Flux_MeshGeometry::GenerateFullscreenQuad(Flux_MeshGeometry& xGeometryOut, 
 	xGeometryOut.GenerateLayoutAndVertexData();
 }
 
+void Flux_MeshGeometry::GenerateUnitCube(Flux_MeshGeometry& xGeometryOut)
+{
+	// 24 vertices (4 per face for proper normals)
+	// 36 indices (6 faces * 2 triangles * 3 indices)
+	xGeometryOut.m_uNumVerts = 24;
+	xGeometryOut.m_uNumIndices = 36;
+
+	xGeometryOut.m_pxPositions = new Zenith_Maths::Vector3[24];
+	xGeometryOut.m_pxUVs = new Zenith_Maths::Vector2[24];
+	xGeometryOut.m_pxNormals = new Zenith_Maths::Vector3[24];
+	xGeometryOut.m_pxTangents = new Zenith_Maths::Vector3[24];
+	xGeometryOut.m_pxBitangents = new Zenith_Maths::Vector3[24];
+	xGeometryOut.m_pxColors = new Zenith_Maths::Vector4[24];
+	xGeometryOut.m_puIndices = new IndexType[36];
+
+	uint32_t uVert = 0;
+	uint32_t uIdx = 0;
+
+	// Helper to add a face with 4 vertices and 6 indices
+	auto AddFace = [&](
+		const Zenith_Maths::Vector3& p0, const Zenith_Maths::Vector3& p1,
+		const Zenith_Maths::Vector3& p2, const Zenith_Maths::Vector3& p3,
+		const Zenith_Maths::Vector3& normal,
+		const Zenith_Maths::Vector3& tangent,
+		const Zenith_Maths::Vector3& bitangent)
+	{
+		uint32_t uBase = uVert;
+
+		// 4 vertices per face
+		xGeometryOut.m_pxPositions[uVert] = p0;
+		xGeometryOut.m_pxNormals[uVert] = normal;
+		xGeometryOut.m_pxTangents[uVert] = tangent;
+		xGeometryOut.m_pxBitangents[uVert] = bitangent;
+		xGeometryOut.m_pxUVs[uVert] = { 0.f, 0.f };
+		xGeometryOut.m_pxColors[uVert] = { 1.f, 1.f, 1.f, 1.f };
+		uVert++;
+
+		xGeometryOut.m_pxPositions[uVert] = p1;
+		xGeometryOut.m_pxNormals[uVert] = normal;
+		xGeometryOut.m_pxTangents[uVert] = tangent;
+		xGeometryOut.m_pxBitangents[uVert] = bitangent;
+		xGeometryOut.m_pxUVs[uVert] = { 1.f, 0.f };
+		xGeometryOut.m_pxColors[uVert] = { 1.f, 1.f, 1.f, 1.f };
+		uVert++;
+
+		xGeometryOut.m_pxPositions[uVert] = p2;
+		xGeometryOut.m_pxNormals[uVert] = normal;
+		xGeometryOut.m_pxTangents[uVert] = tangent;
+		xGeometryOut.m_pxBitangents[uVert] = bitangent;
+		xGeometryOut.m_pxUVs[uVert] = { 0.f, 1.f };
+		xGeometryOut.m_pxColors[uVert] = { 1.f, 1.f, 1.f, 1.f };
+		uVert++;
+
+		xGeometryOut.m_pxPositions[uVert] = p3;
+		xGeometryOut.m_pxNormals[uVert] = normal;
+		xGeometryOut.m_pxTangents[uVert] = tangent;
+		xGeometryOut.m_pxBitangents[uVert] = bitangent;
+		xGeometryOut.m_pxUVs[uVert] = { 1.f, 1.f };
+		xGeometryOut.m_pxColors[uVert] = { 1.f, 1.f, 1.f, 1.f };
+		uVert++;
+
+		// Two triangles with counter-clockwise winding for Vulkan: 0-2-1 and 1-2-3
+		xGeometryOut.m_puIndices[uIdx++] = uBase + 0;
+		xGeometryOut.m_puIndices[uIdx++] = uBase + 2;
+		xGeometryOut.m_puIndices[uIdx++] = uBase + 1;
+		xGeometryOut.m_puIndices[uIdx++] = uBase + 1;
+		xGeometryOut.m_puIndices[uIdx++] = uBase + 2;
+		xGeometryOut.m_puIndices[uIdx++] = uBase + 3;
+	};
+
+	// Unit cube from -0.5 to 0.5 on each axis
+	// +Z face (front)
+	AddFace(
+		{ -0.5f, -0.5f,  0.5f }, {  0.5f, -0.5f,  0.5f },
+		{ -0.5f,  0.5f,  0.5f }, {  0.5f,  0.5f,  0.5f },
+		{ 0.f, 0.f, 1.f }, { 1.f, 0.f, 0.f }, { 0.f, 1.f, 0.f }
+	);
+	// -Z face (back)
+	AddFace(
+		{  0.5f, -0.5f, -0.5f }, { -0.5f, -0.5f, -0.5f },
+		{  0.5f,  0.5f, -0.5f }, { -0.5f,  0.5f, -0.5f },
+		{ 0.f, 0.f, -1.f }, { -1.f, 0.f, 0.f }, { 0.f, 1.f, 0.f }
+	);
+	// +Y face (top)
+	AddFace(
+		{ -0.5f,  0.5f,  0.5f }, {  0.5f,  0.5f,  0.5f },
+		{ -0.5f,  0.5f, -0.5f }, {  0.5f,  0.5f, -0.5f },
+		{ 0.f, 1.f, 0.f }, { 1.f, 0.f, 0.f }, { 0.f, 0.f, -1.f }
+	);
+	// -Y face (bottom)
+	AddFace(
+		{ -0.5f, -0.5f, -0.5f }, {  0.5f, -0.5f, -0.5f },
+		{ -0.5f, -0.5f,  0.5f }, {  0.5f, -0.5f,  0.5f },
+		{ 0.f, -1.f, 0.f }, { 1.f, 0.f, 0.f }, { 0.f, 0.f, 1.f }
+	);
+	// +X face (right)
+	AddFace(
+		{  0.5f, -0.5f,  0.5f }, {  0.5f, -0.5f, -0.5f },
+		{  0.5f,  0.5f,  0.5f }, {  0.5f,  0.5f, -0.5f },
+		{ 1.f, 0.f, 0.f }, { 0.f, 0.f, -1.f }, { 0.f, 1.f, 0.f }
+	);
+	// -X face (left)
+	AddFace(
+		{ -0.5f, -0.5f, -0.5f }, { -0.5f, -0.5f,  0.5f },
+		{ -0.5f,  0.5f, -0.5f }, { -0.5f,  0.5f,  0.5f },
+		{ -1.f, 0.f, 0.f }, { 0.f, 0.f, 1.f }, { 0.f, 1.f, 0.f }
+	);
+
+	xGeometryOut.GenerateLayoutAndVertexData();
+
+	// Upload to GPU
+	Flux_MemoryManager::InitialiseVertexBuffer(xGeometryOut.GetVertexData(), xGeometryOut.GetVertexDataSize(), xGeometryOut.m_xVertexBuffer);
+	Flux_MemoryManager::InitialiseIndexBuffer(xGeometryOut.GetIndexData(), xGeometryOut.GetIndexDataSize(), xGeometryOut.m_xIndexBuffer);
+}
+
 ShaderDataType StringToShaderDataType(const std::string& strString)
 {
 	if (strString == "Float") return SHADER_DATA_TYPE_FLOAT;

@@ -101,16 +101,8 @@ class Flux_CommandSetVertexBuffer
 public:
 	static constexpr Flux_CommandType m_eType = FLUX_COMMANDTYPE__SET_VERTEX_BUFFER;
 
-	Flux_CommandSetVertexBuffer(const Flux_VertexBuffer* const pxVertexBuffer, const u_int uBindPoint = 0)
-	: m_pxVertexBuffer(pxVertexBuffer)
-	, m_pxDynamicVertexBuffer(nullptr)
-	, m_uBindPoint(uBindPoint)
-	{}
-	Flux_CommandSetVertexBuffer(const Flux_DynamicVertexBuffer* const pxDynamicVertexBuffer, const u_int uBindPoint = 0)
-	: m_pxVertexBuffer(nullptr)
-	, m_pxDynamicVertexBuffer(pxDynamicVertexBuffer)
-	, m_uBindPoint(uBindPoint)
-	{}
+	Flux_CommandSetVertexBuffer(const Flux_VertexBuffer* const pxVertexBuffer, const u_int uBindPoint = 0);
+	Flux_CommandSetVertexBuffer(const Flux_DynamicVertexBuffer* const pxDynamicVertexBuffer, const u_int uBindPoint = 0);
 	void operator()(Flux_CommandBuffer* pxCmdBuf)
 	{
 		if(m_pxVertexBuffer)
@@ -134,7 +126,7 @@ class Flux_CommandSetIndexBuffer
 public:
 	static constexpr Flux_CommandType m_eType = FLUX_COMMANDTYPE__SET_INDEX_BUFFER;
 
-	Flux_CommandSetIndexBuffer(const Flux_IndexBuffer* const pxIndexBuffer) : m_pxIndexBuffer(pxIndexBuffer) {}
+	Flux_CommandSetIndexBuffer(const Flux_IndexBuffer* const pxIndexBuffer);
 	void operator()(Flux_CommandBuffer* pxCmdBuf)
 	{
 		pxCmdBuf->SetIndexBuffer(*m_pxIndexBuffer);

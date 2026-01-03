@@ -2,8 +2,12 @@
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
+#include "EntityComponent/Components/Zenith_ModelComponent.h"
+#include "EntityComponent/Zenith_Scene.h"
 #include "Input/Zenith_Input.h"
-#include "Flux/Quads/Flux_Quads.h"
+#include "Flux/MeshGeometry/Flux_MeshGeometry.h"
+#include "Flux/Flux_MaterialAsset.h"
+#include "AssetHandling/Zenith_AssetHandler.h"
 
 #include <random>
 #include <queue>
@@ -24,6 +28,96 @@ static constexpr uint32_t s_uMinBoxes = 2;
 static constexpr uint32_t s_uMaxBoxes = 5;
 static constexpr uint32_t s_uMinMovesSolution = 5;  // Minimum moves for a valid level
 static constexpr uint32_t s_uMaxSolverStates = 100000;  // Limit solver state space
+static constexpr float s_fTileScale = 0.9f;  // Scale of tiles (gap between them)
+static constexpr float s_fFloorHeight = 0.1f;
+static constexpr float s_fWallHeight = 0.8f;
+static constexpr float s_fBoxHeight = 0.5f;
+static constexpr float s_fPlayerHeight = 0.5f;
+// ============================================================================
+
+// ============================================================================
+// STATIC RESOURCES - Shared geometry, textures, and materials
+// ============================================================================
+static Flux_MeshGeometry* s_pxCubeGeometry = nullptr;
+
+// 1x1 pixel textures for each tile type
+static Flux_Texture* s_pxFloorTexture = nullptr;
+static Flux_Texture* s_pxWallTexture = nullptr;
+static Flux_Texture* s_pxBoxTexture = nullptr;
+static Flux_Texture* s_pxBoxOnTargetTexture = nullptr;
+static Flux_Texture* s_pxPlayerTexture = nullptr;
+static Flux_Texture* s_pxTargetTexture = nullptr;
+
+// Materials using the textures
+static Flux_MaterialAsset* s_pxFloorMaterial = nullptr;
+static Flux_MaterialAsset* s_pxWallMaterial = nullptr;
+static Flux_MaterialAsset* s_pxBoxMaterial = nullptr;
+static Flux_MaterialAsset* s_pxBoxOnTargetMaterial = nullptr;
+static Flux_MaterialAsset* s_pxPlayerMaterial = nullptr;
+static Flux_MaterialAsset* s_pxTargetMaterial = nullptr;
+static bool s_bStaticResourcesInitialized = false;
+
+// Helper to create a 1x1 colored texture
+static Flux_Texture* CreateColoredTexture(uint8_t r, uint8_t g, uint8_t b, uint8_t a = 255)
+{
+	Flux_SurfaceInfo xTexInfo;
+	xTexInfo.m_eFormat = TEXTURE_FORMAT_RGBA8_UNORM;
+	xTexInfo.m_uWidth = 1;
+	xTexInfo.m_uHeight = 1;
+	xTexInfo.m_uDepth = 1;
+	xTexInfo.m_uNumMips = 1;
+	xTexInfo.m_uNumLayers = 1;
+	xTexInfo.m_uMemoryFlags = 1 << MEMORY_FLAGS__SHADER_READ;
+
+	uint8_t aucPixelData[] = { r, g, b, a };
+
+	Zenith_AssetHandler::TextureData xTexData;
+	xTexData.pData = aucPixelData;
+	xTexData.xSurfaceInfo = xTexInfo;
+	xTexData.bCreateMips = false;
+	xTexData.bIsCubemap = false;
+
+	return Zenith_AssetHandler::AddTexture(xTexData);
+}
+
+static void InitializeStaticResources()
+{
+	if (s_bStaticResourcesInitialized)
+		return;
+
+	// Create shared cube geometry using engine's built-in generator
+	s_pxCubeGeometry = new Flux_MeshGeometry();
+	Flux_MeshGeometry::GenerateUnitCube(*s_pxCubeGeometry);
+
+	// Create 1x1 pixel textures for each tile type
+	s_pxFloorTexture = CreateColoredTexture(77, 77, 89);           // Dark gray floor (0.3, 0.3, 0.35)
+	s_pxWallTexture = CreateColoredTexture(102, 64, 38);           // Brown walls (0.4, 0.25, 0.15)
+	s_pxBoxTexture = CreateColoredTexture(204, 128, 51);           // Orange box (0.8, 0.5, 0.2)
+	s_pxBoxOnTargetTexture = CreateColoredTexture(51, 204, 51);    // Green box on target (0.2, 0.8, 0.2)
+	s_pxPlayerTexture = CreateColoredTexture(51, 102, 230);        // Blue player (0.2, 0.4, 0.9)
+	s_pxTargetTexture = CreateColoredTexture(51, 153, 51);         // Green target (0.2, 0.6, 0.2)
+
+	// Create materials and assign textures
+	s_pxFloorMaterial = Flux_MaterialAsset::Create("SokobanFloor");
+	s_pxFloorMaterial->SetDiffuseTexture(s_pxFloorTexture);
+
+	s_pxWallMaterial = Flux_MaterialAsset::Create("SokobanWall");
+	s_pxWallMaterial->SetDiffuseTexture(s_pxWallTexture);
+
+	s_pxBoxMaterial = Flux_MaterialAsset::Create("SokobanBox");
+	s_pxBoxMaterial->SetDiffuseTexture(s_pxBoxTexture);
+
+	s_pxBoxOnTargetMaterial = Flux_MaterialAsset::Create("SokobanBoxOnTarget");
+	s_pxBoxOnTargetMaterial->SetDiffuseTexture(s_pxBoxOnTargetTexture);
+
+	s_pxPlayerMaterial = Flux_MaterialAsset::Create("SokobanPlayer");
+	s_pxPlayerMaterial->SetDiffuseTexture(s_pxPlayerTexture);
+
+	s_pxTargetMaterial = Flux_MaterialAsset::Create("SokobanTarget");
+	s_pxTargetMaterial->SetDiffuseTexture(s_pxTargetTexture);
+
+	s_bStaticResourcesInitialized = true;
+}
 // ============================================================================
 
 enum SokobanTileType
@@ -93,6 +187,7 @@ public:
 
 	void OnCreate() ZENITH_FINAL override
 	{
+		InitializeStaticResources();
 		GenerateRandomLevel();
 	}
 
@@ -107,7 +202,7 @@ public:
 			HandleKeyboardInput();
 			HandleMouseInput();
 		}
-		RenderGame();
+		Update3DVisuals();
 	}
 
 	void RenderPropertiesPanel() override
@@ -389,27 +484,104 @@ private:
 	}
 
 	// ========================================================================
-	// Rendering
+	// 3D Rendering
 	// ========================================================================
-	void RenderGame()
+
+	// Convert grid coordinates to world position
+	Zenith_Maths::Vector3 GridToWorld(float fGridX, float fGridY, float fHeight) const
 	{
-		// Render tiles and targets
+		// Center grid at origin
+		float fWorldX = fGridX - static_cast<float>(m_uGridWidth) * 0.5f;
+		float fWorldZ = fGridY - static_cast<float>(m_uGridHeight) * 0.5f;
+		return {fWorldX, fHeight * 0.5f, fWorldZ};
+	}
+
+	// Get material for a tile at given index
+	Flux_MaterialAsset* GetMaterialForTile(uint32_t uIndex, bool bIsBox = false, bool bIsPlayer = false) const
+	{
+		if (bIsPlayer)
+			return s_pxPlayerMaterial;
+
+		if (bIsBox)
+		{
+			return m_abTargets[uIndex] ? s_pxBoxOnTargetMaterial : s_pxBoxMaterial;
+		}
+
+		if (m_aeTiles[uIndex] == SOKOBAN_TILE_WALL)
+			return s_pxWallMaterial;
+
+		if (m_abTargets[uIndex])
+			return s_pxTargetMaterial;
+
+		return s_pxFloorMaterial;
+	}
+
+	// Get height for a tile type
+	float GetTileHeight(uint32_t uIndex) const
+	{
+		if (m_aeTiles[uIndex] == SOKOBAN_TILE_WALL)
+			return s_fWallHeight;
+		return s_fFloorHeight;
+	}
+
+	// Destroy all 3D entities
+	void Destroy3DLevel()
+	{
+		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+
+		for (Zenith_EntityID uID : m_axTileEntityIDs)
+		{
+			if (xScene.EntityExists(uID))
+				xScene.RemoveEntity(uID);
+		}
+		m_axTileEntityIDs.clear();
+
+		for (Zenith_EntityID uID : m_axBoxEntityIDs)
+		{
+			if (xScene.EntityExists(uID))
+				xScene.RemoveEntity(uID);
+		}
+		m_axBoxEntityIDs.clear();
+
+		if (m_uPlayerEntityID != 0 && xScene.EntityExists(m_uPlayerEntityID))
+		{
+			xScene.RemoveEntity(m_uPlayerEntityID);
+			m_uPlayerEntityID = 0;
+		}
+	}
+
+	// Create all 3D entities for the current level
+	void Create3DLevel()
+	{
+		// Destroy old entities first
+		Destroy3DLevel();
+
+		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+
+		// Create floor and wall tiles
 		for (uint32_t uY = 0; uY < m_uGridHeight; uY++)
 		{
 			for (uint32_t uX = 0; uX < m_uGridWidth; uX++)
 			{
 				uint32_t uIndex = uY * m_uGridWidth + uX;
 
-				RenderTile(uX, uY, m_aeTiles[uIndex]);
+				Zenith_Entity xTileEntity(&xScene, "Tile");
 
-				if (m_abTargets[uIndex] && m_aeTiles[uIndex] != SOKOBAN_TILE_WALL)
-				{
-					RenderTargetMarker(uX, uY);
-				}
+				float fHeight = GetTileHeight(uIndex);
+				Zenith_Maths::Vector3 xPos = GridToWorld(static_cast<float>(uX), static_cast<float>(uY), fHeight);
+
+				Zenith_TransformComponent& xTransform = xTileEntity.GetComponent<Zenith_TransformComponent>();
+				xTransform.SetPosition(xPos);
+				xTransform.SetScale({s_fTileScale, fHeight, s_fTileScale});
+
+				Zenith_ModelComponent& xModel = xTileEntity.AddComponent<Zenith_ModelComponent>();
+				xModel.AddMeshEntry(*s_pxCubeGeometry, *GetMaterialForTile(uIndex));
+
+				m_axTileEntityIDs.push_back(xTileEntity.GetEntityID());
 			}
 		}
 
-		// Render boxes (non-animating)
+		// Create box entities
 		for (uint32_t uY = 0; uY < m_uGridHeight; uY++)
 		{
 			for (uint32_t uX = 0; uX < m_uGridWidth; uX++)
@@ -417,151 +589,115 @@ private:
 				uint32_t uIndex = uY * m_uGridWidth + uX;
 				if (m_abBoxes[uIndex])
 				{
-					// Skip the animating box - we'll render it separately
-					if (m_bBoxAnimating && uX == m_uAnimBoxToX && uY == m_uAnimBoxToY)
-					{
-						continue;
-					}
-					SokobanTileType eBoxType = m_abTargets[uIndex]
-						? SOKOBAN_TILE_BOX_ON_TARGET
-						: SOKOBAN_TILE_BOX;
-					RenderTile(uX, uY, eBoxType);
+					Zenith_Entity xBoxEntity(&xScene, "Box");
+
+					Zenith_Maths::Vector3 xPos = GridToWorld(static_cast<float>(uX), static_cast<float>(uY), s_fBoxHeight);
+					xPos.y += s_fFloorHeight;  // Sit on top of floor
+
+					Zenith_TransformComponent& xTransform = xBoxEntity.GetComponent<Zenith_TransformComponent>();
+					xTransform.SetPosition(xPos);
+					xTransform.SetScale({s_fTileScale * 0.8f, s_fBoxHeight, s_fTileScale * 0.8f});
+
+					Zenith_ModelComponent& xModel = xBoxEntity.AddComponent<Zenith_ModelComponent>();
+					xModel.AddMeshEntry(*s_pxCubeGeometry, *GetMaterialForTile(uIndex, true));
+
+					m_axBoxEntityIDs.push_back(xBoxEntity.GetEntityID());
 				}
 			}
 		}
 
-		// Render animating box
-		if (m_bBoxAnimating)
+		// Create player entity
 		{
-			uint32_t uToIndex = m_uAnimBoxToY * m_uGridWidth + m_uAnimBoxToX;
-			SokobanTileType eBoxType = m_abTargets[uToIndex]
-				? SOKOBAN_TILE_BOX_ON_TARGET
-				: SOKOBAN_TILE_BOX;
-			RenderTileAtPosition(m_fBoxVisualX, m_fBoxVisualY, eBoxType);
+			Zenith_Entity xPlayerEntity(&xScene, "Player");
+
+			Zenith_Maths::Vector3 xPos = GridToWorld(static_cast<float>(m_uPlayerX), static_cast<float>(m_uPlayerY), s_fPlayerHeight);
+			xPos.y += s_fFloorHeight;  // Sit on top of floor
+
+			Zenith_TransformComponent& xTransform = xPlayerEntity.GetComponent<Zenith_TransformComponent>();
+			xTransform.SetPosition(xPos);
+			xTransform.SetScale({s_fTileScale * 0.7f, s_fPlayerHeight, s_fTileScale * 0.7f});
+
+			Zenith_ModelComponent& xModel = xPlayerEntity.AddComponent<Zenith_ModelComponent>();
+			xModel.AddMeshEntry(*s_pxCubeGeometry, *s_pxPlayerMaterial);
+
+			m_uPlayerEntityID = xPlayerEntity.GetEntityID();
 		}
 
-		// Render player
-		RenderPlayer();
+		// Initialize visual positions
+		m_fPlayerVisualX = static_cast<float>(m_uPlayerX);
+		m_fPlayerVisualY = static_cast<float>(m_uPlayerY);
+	}
 
-		if (m_bWon)
+	// Update 3D entity positions (called every frame)
+	void Update3DVisuals()
+	{
+		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+
+		// Update player position
+		if (m_uPlayerEntityID != 0 && xScene.EntityExists(m_uPlayerEntityID))
 		{
-			RenderWinMessage();
+			Zenith_Entity xPlayer = xScene.GetEntityByID(m_uPlayerEntityID);
+			if (xPlayer.HasComponent<Zenith_TransformComponent>())
+			{
+				Zenith_TransformComponent& xTransform = xPlayer.GetComponent<Zenith_TransformComponent>();
+
+				float fVisualX = m_bAnimating ? m_fPlayerVisualX : static_cast<float>(m_uPlayerX);
+				float fVisualY = m_bAnimating ? m_fPlayerVisualY : static_cast<float>(m_uPlayerY);
+
+				Zenith_Maths::Vector3 xPos = GridToWorld(fVisualX, fVisualY, s_fPlayerHeight);
+				xPos.y += s_fFloorHeight;
+				xTransform.SetPosition(xPos);
+			}
+		}
+
+		// Update box entities
+		// Rebuild box entity list based on current game state
+		// This handles boxes moving to new positions after push
+		size_t uBoxIdx = 0;
+		for (uint32_t uY = 0; uY < m_uGridHeight; uY++)
+		{
+			for (uint32_t uX = 0; uX < m_uGridWidth; uX++)
+			{
+				uint32_t uIndex = uY * m_uGridWidth + uX;
+				if (m_abBoxes[uIndex] && uBoxIdx < m_axBoxEntityIDs.size())
+				{
+					Zenith_EntityID uBoxID = m_axBoxEntityIDs[uBoxIdx];
+					if (xScene.EntityExists(uBoxID))
+					{
+						Zenith_Entity xBox = xScene.GetEntityByID(uBoxID);
+						if (xBox.HasComponent<Zenith_TransformComponent>())
+						{
+							Zenith_TransformComponent& xTransform = xBox.GetComponent<Zenith_TransformComponent>();
+
+							float fVisualX = static_cast<float>(uX);
+							float fVisualY = static_cast<float>(uY);
+
+							// If this is the animating box, use visual position
+							if (m_bBoxAnimating && uX == m_uAnimBoxToX && uY == m_uAnimBoxToY)
+							{
+								fVisualX = m_fBoxVisualX;
+								fVisualY = m_fBoxVisualY;
+							}
+
+							Zenith_Maths::Vector3 xPos = GridToWorld(fVisualX, fVisualY, s_fBoxHeight);
+							xPos.y += s_fFloorHeight;
+							xTransform.SetPosition(xPos);
+
+							// Update material based on whether box is on target
+							if (xBox.HasComponent<Zenith_ModelComponent>())
+							{
+								// Note: Material change would require recreating mesh entry
+								// For now, boxes keep their initial material
+							}
+						}
+					}
+					uBoxIdx++;
+				}
+			}
 		}
 	}
 
-	void RenderTile(uint32_t uGridX, uint32_t uGridY, SokobanTileType eTile)
-	{
-		uint32_t uScreenX = s_uGridOffsetX + uGridX * s_uTileSize;
-		uint32_t uScreenY = s_uGridOffsetY + uGridY * s_uTileSize;
-
-		Zenith_Maths::Vector4 xColor = GetTileColor(eTile);
-
-		uint32_t uPadding = 2;
-
-		Flux_Quads::Quad xQuad(
-			Zenith_Maths::UVector4(
-				uScreenX + uPadding,
-				uScreenY + uPadding,
-				s_uTileSize - uPadding * 2,
-				s_uTileSize - uPadding * 2
-			),
-			xColor,
-			0,
-			Zenith_Maths::Vector2(1.0f, 0.0f)
-		);
-
-		Flux_Quads::UploadQuad(xQuad);
-	}
-
-	void RenderTileAtPosition(float fGridX, float fGridY, SokobanTileType eTile)
-	{
-		uint32_t uScreenX = s_uGridOffsetX + static_cast<uint32_t>(fGridX * s_uTileSize);
-		uint32_t uScreenY = s_uGridOffsetY + static_cast<uint32_t>(fGridY * s_uTileSize);
-
-		Zenith_Maths::Vector4 xColor = GetTileColor(eTile);
-
-		uint32_t uPadding = 2;
-
-		Flux_Quads::Quad xQuad(
-			Zenith_Maths::UVector4(
-				uScreenX + uPadding,
-				uScreenY + uPadding,
-				s_uTileSize - uPadding * 2,
-				s_uTileSize - uPadding * 2
-			),
-			xColor,
-			0,
-			Zenith_Maths::Vector2(1.0f, 0.0f)
-		);
-
-		Flux_Quads::UploadQuad(xQuad);
-	}
-
-	void RenderTargetMarker(uint32_t uGridX, uint32_t uGridY)
-	{
-		uint32_t uScreenX = s_uGridOffsetX + uGridX * s_uTileSize;
-		uint32_t uScreenY = s_uGridOffsetY + uGridY * s_uTileSize;
-
-		uint32_t uMarkerSize = 16;
-		uint32_t uOffset = (s_uTileSize - uMarkerSize) / 2;
-
-		Flux_Quads::Quad xQuad(
-			Zenith_Maths::UVector4(
-				uScreenX + uOffset,
-				uScreenY + uOffset,
-				uMarkerSize,
-				uMarkerSize
-			),
-			GetTileColor(SOKOBAN_TILE_TARGET),
-			0,
-			Zenith_Maths::Vector2(1.0f, 0.0f)
-		);
-
-		Flux_Quads::UploadQuad(xQuad);
-	}
-
-	void RenderPlayer()
-	{
-		float fGridX = m_bAnimating ? m_fPlayerVisualX : static_cast<float>(m_uPlayerX);
-		float fGridY = m_bAnimating ? m_fPlayerVisualY : static_cast<float>(m_uPlayerY);
-
-		uint32_t uScreenX = s_uGridOffsetX + static_cast<uint32_t>(fGridX * s_uTileSize);
-		uint32_t uScreenY = s_uGridOffsetY + static_cast<uint32_t>(fGridY * s_uTileSize);
-
-		uint32_t uPlayerPadding = 8;
-
-		Flux_Quads::Quad xQuad(
-			Zenith_Maths::UVector4(
-				uScreenX + uPlayerPadding,
-				uScreenY + uPlayerPadding,
-				s_uTileSize - uPlayerPadding * 2,
-				s_uTileSize - uPlayerPadding * 2
-			),
-			GetTileColor(SOKOBAN_TILE_PLAYER),
-			0,
-			Zenith_Maths::Vector2(1.0f, 0.0f)
-		);
-
-		Flux_Quads::UploadQuad(xQuad);
-	}
-
-	void RenderWinMessage()
-	{
-		uint32_t uMsgWidth = 300;
-		uint32_t uMsgHeight = 60;
-		uint32_t uMsgX = s_uGridOffsetX + (m_uGridWidth * s_uTileSize - uMsgWidth) / 2;
-		uint32_t uMsgY = s_uGridOffsetY + (m_uGridHeight * s_uTileSize - uMsgHeight) / 2;
-
-		Flux_Quads::Quad xQuad(
-			Zenith_Maths::UVector4(uMsgX, uMsgY, uMsgWidth, uMsgHeight),
-			Zenith_Maths::Vector4(0.1f, 0.7f, 0.1f, 0.9f),
-			0,
-			Zenith_Maths::Vector2(1.0f, 0.0f)
-		);
-
-		Flux_Quads::UploadQuad(xQuad);
-	}
-
+	// Legacy helper kept for compatibility
 	Zenith_Maths::Vector4 GetTileColor(SokobanTileType eTile) const
 	{
 		switch (eTile)
@@ -765,6 +901,7 @@ private:
 			if (iMinMoves >= static_cast<int32_t>(s_uMinMovesSolution))
 			{
 				m_uMinMoves = static_cast<uint32_t>(iMinMoves);
+				Create3DLevel();
 				UpdateUIPositions();
 				UpdateStatusText();
 				return;
@@ -776,6 +913,7 @@ private:
 		GenerateFallbackLevel();
 		m_uMinMoves = SolveLevel();
 		if (m_uMinMoves < 0) m_uMinMoves = 0;
+		Create3DLevel();
 		UpdateUIPositions();
 		UpdateStatusText();
 	}
@@ -1062,4 +1200,9 @@ private:
 
 	// Random number generator
 	std::mt19937 m_xRng;
+
+	// 3D rendering entities
+	std::vector<Zenith_EntityID> m_axTileEntityIDs;
+	std::vector<Zenith_EntityID> m_axBoxEntityIDs;
+	Zenith_EntityID m_uPlayerEntityID = 0;
 };
