@@ -23,7 +23,7 @@ Zenith_UIElement::~Zenith_UIElement()
 {
     // Children are NOT owned by parent - canvas owns all elements
     // Just clear the vector, don't delete
-    m_xChildren.clear();
+    m_xChildren.Clear();
 }
 
 const char* Zenith_UIElement::GetTypeName(UIElementType eType)
@@ -57,28 +57,27 @@ void Zenith_UIElement::AddChild(Zenith_UIElement* pxChild)
         pxChild->m_pxParent = this;
         pxChild->m_pxCanvas = m_pxCanvas;
         pxChild->m_bTransformDirty = true;
-        m_xChildren.push_back(pxChild);
+        m_xChildren.PushBack(pxChild);
     }
 }
 
 void Zenith_UIElement::RemoveChild(Zenith_UIElement* pxChild)
 {
-    auto it = std::remove(m_xChildren.begin(), m_xChildren.end(), pxChild);
-    m_xChildren.erase(it, m_xChildren.end());
+    m_xChildren.EraseValue(pxChild);
     // Note: Does not delete - canvas owns all elements
 }
 
 void Zenith_UIElement::ClearChildren()
 {
     // Note: Does not delete - canvas owns all elements
-    m_xChildren.clear();
+    m_xChildren.Clear();
 }
 
 Zenith_UIElement* Zenith_UIElement::GetChild(size_t uIndex) const
 {
-    if (uIndex < m_xChildren.size())
+    if (uIndex < m_xChildren.GetSize())
     {
-        return m_xChildren[uIndex];
+        return m_xChildren.Get(static_cast<u_int>(uIndex));
     }
     return nullptr;
 }
@@ -126,8 +125,9 @@ void Zenith_UIElement::RecalculateScreenBounds() const
 
 void Zenith_UIElement::Update(float fDt)
 {
-    for (auto* pxChild : m_xChildren)
+    for (Zenith_Vector<Zenith_UIElement*>::Iterator xIt(m_xChildren); !xIt.Done(); xIt.Next())
     {
+        Zenith_UIElement* pxChild = xIt.GetData();
         if (pxChild && pxChild->IsVisible())
         {
             pxChild->Update(fDt);
@@ -140,8 +140,9 @@ void Zenith_UIElement::Render(Zenith_UICanvas& xCanvas)
     if (!m_bVisible)
         return;
 
-    for (auto* pxChild : m_xChildren)
+    for (Zenith_Vector<Zenith_UIElement*>::Iterator xIt(m_xChildren); !xIt.Done(); xIt.Next())
     {
+        Zenith_UIElement* pxChild = xIt.GetData();
         if (pxChild && pxChild->IsVisible())
         {
             pxChild->Render(xCanvas);

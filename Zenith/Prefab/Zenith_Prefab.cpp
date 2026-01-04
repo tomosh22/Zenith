@@ -30,10 +30,11 @@ void Zenith_PropertyOverride::ReadFromDataStream(Zenith_DataStream& xStream)
 	if (uSize > 0)
 	{
 		m_xValue = Zenith_DataStream();
-		std::vector<uint8_t> xBuffer(uSize);
-		xStream.Read(xBuffer.data(), uSize);
-		m_xValue.Write(xBuffer.data(), uSize);
+		uint8_t* pBuffer = static_cast<uint8_t*>(Zenith_MemoryManagement::Allocate(uSize));
+		xStream.Read(pBuffer, uSize);
+		m_xValue.Write(pBuffer, uSize);
 		m_xValue.SetCursor(0);
+		Zenith_MemoryManagement::Deallocate(pBuffer);
 	}
 }
 
@@ -131,7 +132,7 @@ bool Zenith_Prefab::CreateAsVariant(const PrefabRef& xBasePrefab, const std::str
 {
 	if (!xBasePrefab.IsSet())
 	{
-		Zenith_Log("[Prefab] Cannot create variant without base prefab");
+		Zenith_Error(LOG_CATEGORY_PREFAB, "Cannot create variant without base prefab");
 		return false;
 	}
 
@@ -157,7 +158,7 @@ bool Zenith_Prefab::SaveToFile(const std::string& strFilePath) const
 {
 	if (!m_bIsValid)
 	{
-		Zenith_Log("[Prefab] Cannot save invalid prefab");
+		Zenith_Error(LOG_CATEGORY_PREFAB, "Cannot save invalid prefab");
 		return false;
 	}
 
@@ -205,7 +206,7 @@ bool Zenith_Prefab::SaveToFile(const std::string& strFilePath) const
 	}
 
 	xOutput.WriteToFile(strFilePath.c_str());
-	Zenith_Log("[Prefab] Saved prefab '%s' to %s (GUID: %s, variant: %s)",
+	Zenith_Log(LOG_CATEGORY_PREFAB, "Saved prefab '%s' to %s (GUID: %s, variant: %s)",
 		m_strName.c_str(), strFilePath.c_str(), m_xGUID.ToString().c_str(),
 		bIsVariant ? "yes" : "no");
 	return true;
@@ -228,13 +229,13 @@ bool Zenith_Prefab::LoadFromFile(const std::string& strFilePath)
 
 	if (uMagic != PREFAB_MAGIC)
 	{
-		Zenith_Log("[Prefab] Invalid prefab file format: %s", strFilePath.c_str());
+		Zenith_Error(LOG_CATEGORY_PREFAB, "Invalid prefab file format: %s", strFilePath.c_str());
 		return false;
 	}
 
 	if (uVersion != PREFAB_VERSION)
 	{
-		Zenith_Log("[Prefab] ERROR: Unsupported prefab version %u (expected %u). Please re-export the prefab: %s", uVersion, PREFAB_VERSION, strFilePath.c_str());
+		Zenith_Error(LOG_CATEGORY_PREFAB, "Unsupported prefab version %u (expected %u). Please re-export the prefab: %s", uVersion, PREFAB_VERSION, strFilePath.c_str());
 		return false;
 	}
 
@@ -279,15 +280,16 @@ bool Zenith_Prefab::LoadFromFile(const std::string& strFilePath)
 		if (uDataSize > 0)
 		{
 			m_xComponentData = Zenith_DataStream();
-			std::vector<uint8_t> xBuffer(uDataSize);
-			xInput.Read(xBuffer.data(), uDataSize);
-			m_xComponentData.Write(xBuffer.data(), uDataSize);
+			uint8_t* pBuffer = static_cast<uint8_t*>(Zenith_MemoryManagement::Allocate(uDataSize));
+			xInput.Read(pBuffer, uDataSize);
+			m_xComponentData.Write(pBuffer, uDataSize);
 			m_xComponentData.SetCursor(0);
+			Zenith_MemoryManagement::Deallocate(pBuffer);
 		}
 	}
 
 	m_bIsValid = true;
-	Zenith_Log("[Prefab] Loaded prefab '%s' from %s (GUID: %s)",
+	Zenith_Log(LOG_CATEGORY_PREFAB, "Loaded prefab '%s' from %s (GUID: %s)",
 		m_strName.c_str(), strFilePath.c_str(), m_xGUID.ToString().c_str());
 	return true;
 }
@@ -296,7 +298,7 @@ Zenith_Entity Zenith_Prefab::Instantiate(Zenith_Scene* pxScene, const std::strin
 {
 	if (!m_bIsValid || !pxScene)
 	{
-		Zenith_Log("[Prefab] Cannot instantiate invalid prefab or null scene");
+		Zenith_Error(LOG_CATEGORY_PREFAB, "Cannot instantiate invalid prefab or null scene");
 		return Zenith_Entity();
 	}
 
@@ -312,7 +314,7 @@ bool Zenith_Prefab::ApplyToEntity(Zenith_Entity& xEntity) const
 {
 	if (!m_bIsValid)
 	{
-		Zenith_Log("[Prefab] Cannot apply invalid prefab");
+		Zenith_Error(LOG_CATEGORY_PREFAB, "Cannot apply invalid prefab");
 		return false;
 	}
 

@@ -22,7 +22,7 @@ uint32_t Zenith_TerrainComponent::s_uInstanceCount = 0;
 void Zenith_TerrainComponent::IncrementInstanceCount()
 {
 	s_uInstanceCount++;
-	Zenith_Log("Zenith_TerrainComponent instance count: %u (incremented)", s_uInstanceCount);
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "Zenith_TerrainComponent instance count: %u (incremented)", s_uInstanceCount);
 }
 
 void Zenith_TerrainComponent::DecrementInstanceCount()
@@ -30,13 +30,13 @@ void Zenith_TerrainComponent::DecrementInstanceCount()
 	if (s_uInstanceCount > 0)
 	{
 		s_uInstanceCount--;
-		Zenith_Log("Zenith_TerrainComponent instance count: %u (decremented)", s_uInstanceCount);
+		Zenith_Log(LOG_CATEGORY_TERRAIN, "Zenith_TerrainComponent instance count: %u (decremented)", s_uInstanceCount);
 
 		// When the last terrain component is destroyed, shut down the streaming manager
 		// to free the unified vertex/index buffers
 		if (s_uInstanceCount == 0)
 		{
-			Zenith_Log("Last Zenith_TerrainComponent destroyed - shutting down streaming manager");
+			Zenith_Log(LOG_CATEGORY_TERRAIN, "Last Zenith_TerrainComponent destroyed - shutting down streaming manager");
 			Flux_TerrainStreamingManager::Shutdown();
 		}
 	}
@@ -58,7 +58,7 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Flux_MaterialAsset& xMaterial0,
 	// Ensure streaming manager is initialized (may have been shut down after previous terrain was destroyed)
 	if (!Flux_TerrainStreamingManager::IsInitialized())
 	{
-		Zenith_Log("Zenith_TerrainComponent - Re-initializing streaming manager (was shut down)");
+		Zenith_Log(LOG_CATEGORY_TERRAIN, "Zenith_TerrainComponent - Re-initializing streaming manager (was shut down)");
 		Flux_TerrainStreamingManager::Initialize();
 	}
 
@@ -109,12 +109,12 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Flux_MaterialAsset& xMaterial0,
 		}
 	}
 
-	Zenith_Log("LOD3 (always-resident) buffer requirements:");
-	Zenith_Log("  Vertices: %u (%.2f MB)", uLOD3TotalVerts, (uLOD3TotalVerts * TERRAIN_VERTEX_STRIDE) / (1024.0f * 1024.0f));
-	Zenith_Log("  Indices: %u (%.2f MB)", uLOD3TotalIndices, (uLOD3TotalIndices * 4.0f) / (1024.0f * 1024.0f));
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "LOD3 (always-resident) buffer requirements:");
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "Vertices: %u (%.2f MB)", uLOD3TotalVerts, (uLOD3TotalVerts * TERRAIN_VERTEX_STRIDE) / (1024.0f * 1024.0f));
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "Indices: %u (%.2f MB)", uLOD3TotalIndices, (uLOD3TotalIndices * 4.0f) / (1024.0f * 1024.0f));
 
 	// ========== Load and Combine LOD3 Chunks ==========
-	Zenith_Log("Loading LOD3 meshes for all %u chunks...", TOTAL_CHUNKS);
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "Loading LOD3 meshes for all %u chunks...", TOTAL_CHUNKS);
 
 	// Load first chunk to get buffer layout (stored as owned pointer for later cleanup)
 	Flux_MeshGeometry* pxLOD3Geometry = Zenith_AssetHandler::AddMeshFromFile(
@@ -155,7 +155,7 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Flux_MaterialAsset& xMaterial0,
 			std::ifstream lodFile(strChunkPath);
 			if (!lodFile.good())
 			{
-				Zenith_Log("WARNING: LOD3 not found for chunk (%u,%u), using LOD0 as fallback", x, y);
+				Zenith_Log(LOG_CATEGORY_TERRAIN, "WARNING: LOD3 not found for chunk (%u,%u), using LOD0 as fallback", x, y);
 				strChunkPath = GetGameAssetsDir() + "Terrain/Render_" + std::to_string(x) + "_" + std::to_string(y) + ZENITH_MESH_EXT;
 			}
 
@@ -165,12 +165,12 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Flux_MaterialAsset& xMaterial0,
 
 			if ((x * CHUNK_GRID_SIZE + y) % 512 == 0)
 			{
-				Zenith_Log("  Combined LOD3 chunk (%u,%u)", x, y);
+				Zenith_Log(LOG_CATEGORY_TERRAIN, "Combined LOD3 chunk (%u,%u)", x, y);
 			}
 		}
 	}
 
-	Zenith_Log("LOD3 mesh combination complete: %u vertices, %u indices",
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "LOD3 mesh combination complete: %u vertices, %u indices",
 		xLOD3Geometry.GetNumVerts(), xLOD3Geometry.GetNumIndices());
 
 	// Store LOD3 counts
@@ -183,11 +183,11 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Flux_MaterialAsset& xMaterial0,
 	const uint64_t ulUnifiedVertexSize = ulLOD3VertexSize + STREAMING_VERTEX_BUFFER_SIZE;
 	const uint64_t ulUnifiedIndexSize = ulLOD3IndexSize + STREAMING_INDEX_BUFFER_SIZE;
 
-	Zenith_Log("Initializing unified terrain buffers (owned by TerrainComponent):");
-	Zenith_Log("  Vertex buffer: %.2f MB LOD3 + %llu MB streaming = %.2f MB total",
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "Initializing unified terrain buffers (owned by TerrainComponent):");
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "Vertex buffer: %.2f MB LOD3 + %llu MB streaming = %.2f MB total",
 		ulLOD3VertexSize / (1024.0f * 1024.0f), STREAMING_VERTEX_BUFFER_SIZE_MB,
 		ulUnifiedVertexSize / (1024.0f * 1024.0f));
-	Zenith_Log("  Index buffer: %.2f MB LOD3 + %llu MB streaming = %.2f MB total",
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "Index buffer: %.2f MB LOD3 + %llu MB streaming = %.2f MB total",
 		ulLOD3IndexSize / (1024.0f * 1024.0f), STREAMING_INDEX_BUFFER_SIZE_MB,
 		ulUnifiedIndexSize / (1024.0f * 1024.0f));
 
@@ -214,9 +214,9 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Flux_MaterialAsset& xMaterial0,
 	delete[] pUnifiedVertexData;
 	delete[] pUnifiedIndexData;
 
-	Zenith_Log("Unified terrain buffers uploaded to GPU");
-	Zenith_Log("  LOD3 region: vertices [0, %u), indices [0, %u)", m_uLOD3VertexCount, m_uLOD3IndexCount);
-	Zenith_Log("  Streaming region starts at: vertex %u, index %u", m_uLOD3VertexCount, m_uLOD3IndexCount);
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "Unified terrain buffers uploaded to GPU");
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "LOD3 region: vertices [0, %u), indices [0, %u)", m_uLOD3VertexCount, m_uLOD3IndexCount);
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "Streaming region starts at: vertex %u, index %u", m_uLOD3VertexCount, m_uLOD3IndexCount);
 
 	// Clean up LOD3 CPU data (no longer needed, data is in GPU buffer)
 	Zenith_AssetHandler::DeleteMesh(pxLOD3Geometry);
@@ -224,7 +224,7 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Flux_MaterialAsset& xMaterial0,
 	// ========== Register buffers with streaming manager ==========
 	Flux_TerrainStreamingManager::RegisterTerrainBuffers(this);
 
-	Zenith_Log("Terrain render geometry facade setup complete (references component-owned buffers)");
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "Terrain render geometry facade setup complete (references component-owned buffers)");
 
 	// Initialize GPU culling resources for this terrain component
 	// This allocates GPU buffers and builds chunk AABB + LOD metadata
@@ -287,14 +287,14 @@ Zenith_TerrainComponent::~Zenith_TerrainComponent()
 	Flux_MemoryManager::DestroyVertexBuffer(m_xUnifiedVertexBuffer);
 	Flux_MemoryManager::DestroyIndexBuffer(m_xUnifiedIndexBuffer);
 
-	Zenith_Log("Zenith_TerrainComponent - Unified terrain buffers destroyed");
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "Zenith_TerrainComponent - Unified terrain buffers destroyed");
 
 	Zenith_AssetHandler::DeleteMesh(m_pxPhysicsGeometry);
 	
 	// Clean up materials if we own them (created during deserialization)
 	if (m_bOwnsMaterials)
 	{
-		Zenith_Log("Zenith_TerrainComponent - Cleaning up owned materials");
+		Zenith_Log(LOG_CATEGORY_TERRAIN, "Zenith_TerrainComponent - Cleaning up owned materials");
 
 		// Flux_MaterialAsset manages its own lifecycle
 		// We just need to delete the instances
@@ -354,7 +354,7 @@ void Zenith_TerrainComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 	// Ensure streaming manager is initialized (may have been shut down after previous terrain was destroyed)
 	if (!Flux_TerrainStreamingManager::IsInitialized())
 	{
-		Zenith_Log("ReadFromDataStream - Re-initializing streaming manager (was shut down)");
+		Zenith_Log(LOG_CATEGORY_TERRAIN, "ReadFromDataStream - Re-initializing streaming manager (was shut down)");
 		Flux_TerrainStreamingManager::Initialize();
 	}
 
@@ -370,7 +370,7 @@ void Zenith_TerrainComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 	// This is necessary for terrain colliders to cover the entire terrain, not just the first chunk
 	if (m_pxPhysicsGeometry == nullptr)
 	{
-		Zenith_Log("Terrain deserialization: Loading and combining all physics chunks...");
+		Zenith_Log(LOG_CATEGORY_TERRAIN, "Terrain deserialization: Loading and combining all physics chunks...");
 
 		// Load first physics chunk
 		m_pxPhysicsGeometry = Zenith_AssetHandler::AddMeshFromFile(
@@ -411,7 +411,7 @@ void Zenith_TerrainComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 			}
 		}
 
-		Zenith_Log("Terrain deserialization: Physics mesh combined: %u vertices, %u indices",
+		Zenith_Log(LOG_CATEGORY_TERRAIN, "Terrain deserialization: Physics mesh combined: %u vertices, %u indices",
 			xPhysicsGeometry.GetNumVerts(), xPhysicsGeometry.GetNumIndices());
 	}
 
@@ -479,7 +479,7 @@ void Zenith_TerrainComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 	// This recreates the GPU resources that were destroyed when the old terrain component was deleted
 	// Note: This takes several seconds to load and combine all LOD3 meshes, which is expected
 	// when loading a scene
-	Zenith_Log("Terrain deserialization: Initializing render resources...");
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "Terrain deserialization: Initializing render resources...");
 
 	// Use blank material as fallback if materials not provided
 	// This ensures terrain is visible (though with default textures) rather than invisible
@@ -490,11 +490,11 @@ void Zenith_TerrainComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 	if (pxMat0 && pxMat1)
 	{
 		InitializeRenderResources(*pxMat0, *pxMat1);
-		Zenith_Log("Terrain deserialization: Render resources initialized successfully");
+		Zenith_Log(LOG_CATEGORY_TERRAIN, "Terrain deserialization: Render resources initialized successfully");
 	}
 	else
 	{
-		Zenith_Log("ERROR: Terrain deserialization: Blank material not available!");
+		Zenith_Log(LOG_CATEGORY_TERRAIN, "ERROR: Terrain deserialization: Blank material not available!");
 	}
 }
 
@@ -505,7 +505,7 @@ void Zenith_TerrainComponent::InitializeRenderResources(Flux_MaterialAsset& xMat
 	// Ensure streaming manager is initialized (may have been shut down after previous terrain was destroyed)
 	if (!Flux_TerrainStreamingManager::IsInitialized())
 	{
-		Zenith_Log("InitializeRenderResources - Re-initializing streaming manager (was shut down)");
+		Zenith_Log(LOG_CATEGORY_TERRAIN, "InitializeRenderResources - Re-initializing streaming manager (was shut down)");
 		Flux_TerrainStreamingManager::Initialize();
 	}
 
@@ -551,12 +551,12 @@ void Zenith_TerrainComponent::InitializeRenderResources(Flux_MaterialAsset& xMat
 		}
 	}
 
-	Zenith_Log("LOD3 (always-resident) buffer requirements:");
-	Zenith_Log("  Vertices: %u (%.2f MB)", uLOD3TotalVerts, (uLOD3TotalVerts * TERRAIN_VERTEX_STRIDE) / (1024.0f * 1024.0f));
-	Zenith_Log("  Indices: %u (%.2f MB)", uLOD3TotalIndices, (uLOD3TotalIndices * 4.0f) / (1024.0f * 1024.0f));
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "LOD3 (always-resident) buffer requirements:");
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "Vertices: %u (%.2f MB)", uLOD3TotalVerts, (uLOD3TotalVerts * TERRAIN_VERTEX_STRIDE) / (1024.0f * 1024.0f));
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "Indices: %u (%.2f MB)", uLOD3TotalIndices, (uLOD3TotalIndices * 4.0f) / (1024.0f * 1024.0f));
 
 	// ========== Load and Combine LOD3 Chunks ==========
-	Zenith_Log("Loading LOD3 meshes for all %u chunks...", TOTAL_CHUNKS);
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "Loading LOD3 meshes for all %u chunks...", TOTAL_CHUNKS);
 
 	// Load first chunk to get buffer layout (stored as owned pointer for later cleanup)
 	Flux_MeshGeometry* pxLOD3Geometry = Zenith_AssetHandler::AddMeshFromFile(
@@ -597,7 +597,7 @@ void Zenith_TerrainComponent::InitializeRenderResources(Flux_MaterialAsset& xMat
 			std::ifstream lodFile(strChunkPath);
 			if (!lodFile.good())
 			{
-				Zenith_Log("WARNING: LOD3 not found for chunk (%u,%u), using LOD0 as fallback", x, y);
+				Zenith_Log(LOG_CATEGORY_TERRAIN, "WARNING: LOD3 not found for chunk (%u,%u), using LOD0 as fallback", x, y);
 				strChunkPath = std::string(Project_GetGameAssetsDirectory()) + "Terrain/Render_" + std::to_string(x) + "_" + std::to_string(y) + ZENITH_MESH_EXT;
 			}
 
@@ -607,12 +607,12 @@ void Zenith_TerrainComponent::InitializeRenderResources(Flux_MaterialAsset& xMat
 
 			if ((x * CHUNK_GRID_SIZE + y) % 512 == 0)
 			{
-				Zenith_Log("  Combined LOD3 chunk (%u,%u)", x, y);
+				Zenith_Log(LOG_CATEGORY_TERRAIN, "Combined LOD3 chunk (%u,%u)", x, y);
 			}
 		}
 	}
 
-	Zenith_Log("LOD3 mesh combination complete: %u vertices, %u indices",
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "LOD3 mesh combination complete: %u vertices, %u indices",
 		xLOD3Geometry.GetNumVerts(), xLOD3Geometry.GetNumIndices());
 
 	// Store LOD3 counts
@@ -625,11 +625,11 @@ void Zenith_TerrainComponent::InitializeRenderResources(Flux_MaterialAsset& xMat
 	const uint64_t ulUnifiedVertexSize = ulLOD3VertexSize + STREAMING_VERTEX_BUFFER_SIZE;
 	const uint64_t ulUnifiedIndexSize = ulLOD3IndexSize + STREAMING_INDEX_BUFFER_SIZE;
 
-	Zenith_Log("Initializing unified terrain buffers (owned by TerrainComponent):");
-	Zenith_Log("  Vertex buffer: %.2f MB LOD3 + %llu MB streaming = %.2f MB total",
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "Initializing unified terrain buffers (owned by TerrainComponent):");
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "Vertex buffer: %.2f MB LOD3 + %llu MB streaming = %.2f MB total",
 		ulLOD3VertexSize / (1024.0f * 1024.0f), STREAMING_VERTEX_BUFFER_SIZE_MB,
 		ulUnifiedVertexSize / (1024.0f * 1024.0f));
-	Zenith_Log("  Index buffer: %.2f MB LOD3 + %llu MB streaming = %.2f MB total",
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "Index buffer: %.2f MB LOD3 + %llu MB streaming = %.2f MB total",
 		ulLOD3IndexSize / (1024.0f * 1024.0f), STREAMING_INDEX_BUFFER_SIZE_MB,
 		ulUnifiedIndexSize / (1024.0f * 1024.0f));
 
@@ -656,9 +656,9 @@ void Zenith_TerrainComponent::InitializeRenderResources(Flux_MaterialAsset& xMat
 	delete[] pUnifiedVertexData;
 	delete[] pUnifiedIndexData;
 
-	Zenith_Log("Unified terrain buffers uploaded to GPU");
-	Zenith_Log("  LOD3 region: vertices [0, %u), indices [0, %u)", m_uLOD3VertexCount, m_uLOD3IndexCount);
-	Zenith_Log("  Streaming region starts at: vertex %u, index %u", m_uLOD3VertexCount, m_uLOD3IndexCount);
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "Unified terrain buffers uploaded to GPU");
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "LOD3 region: vertices [0, %u), indices [0, %u)", m_uLOD3VertexCount, m_uLOD3IndexCount);
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "Streaming region starts at: vertex %u, index %u", m_uLOD3VertexCount, m_uLOD3IndexCount);
 
 	// Clean up LOD3 CPU data (no longer needed, data is in GPU buffer)
 	Zenith_AssetHandler::DeleteMesh(pxLOD3Geometry);
@@ -666,7 +666,7 @@ void Zenith_TerrainComponent::InitializeRenderResources(Flux_MaterialAsset& xMat
 	// ========== Register buffers with streaming manager ==========
 	Flux_TerrainStreamingManager::RegisterTerrainBuffers(this);
 
-	Zenith_Log("Terrain render geometry facade setup complete (references component-owned buffers)");
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "Terrain render geometry facade setup complete (references component-owned buffers)");
 
 	// Initialize GPU culling resources for this terrain component
 	// This allocates GPU buffers and builds chunk AABB + LOD metadata
@@ -683,7 +683,7 @@ void Zenith_TerrainComponent::InitializeCullingResources()
 		return;
 	}
 
-	Zenith_Log("Zenith_TerrainComponent::InitializeCullingResources() - Setting up GPU-driven terrain culling with LOD support");
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "Zenith_TerrainComponent::InitializeCullingResources() - Setting up GPU-driven terrain culling with LOD support");
 
 	// ========== CREATE GPU BUFFERS ==========
 
@@ -728,8 +728,8 @@ void Zenith_TerrainComponent::InitializeCullingResources()
 
 	m_bCullingResourcesInitialized = true;
 
-	Zenith_Log("Zenith_TerrainComponent - Culling resources initialized with %u terrain chunks, %u LOD levels", TOTAL_CHUNKS, LOD_COUNT);
-	Zenith_Log("Zenith_TerrainComponent - LOD distances: LOD0<%.1f, LOD1<%.1f, LOD2<%.1f, LOD3<inf",
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "Zenith_TerrainComponent - Culling resources initialized with %u terrain chunks, %u LOD levels", TOTAL_CHUNKS, LOD_COUNT);
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "Zenith_TerrainComponent - LOD distances: LOD0<%.1f, LOD1<%.1f, LOD2<%.1f, LOD3<inf",
 		sqrtf(LOD_DISTANCE_SQ[0]), sqrtf(LOD_DISTANCE_SQ[1]), sqrtf(LOD_DISTANCE_SQ[2]));
 }
 
@@ -747,20 +747,20 @@ void Zenith_TerrainComponent::DestroyCullingResources()
 	Flux_MemoryManager::DestroyIndirectBuffer(m_xVisibleCountBuffer);
 	Flux_MemoryManager::DestroyReadWriteBuffer(m_xLODLevelBuffer);
 
-	Zenith_Log("Zenith_TerrainComponent - Culling resources destroyed");
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "Zenith_TerrainComponent - Culling resources destroyed");
 
 	m_bCullingResourcesInitialized = false;
 }
 
 void Zenith_TerrainComponent::BuildChunkData()
 {
-	Zenith_Log("Zenith_TerrainComponent::BuildChunkData() - Building chunk data using streaming manager");
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "Zenith_TerrainComponent::BuildChunkData() - Building chunk data using streaming manager");
 
 	// Get chunk data from streaming manager (includes AABBs and current LOD allocations)
 	Zenith_TerrainChunkData* pxChunkData = new Zenith_TerrainChunkData[TOTAL_CHUNKS];
 	Flux_TerrainStreamingManager::BuildChunkDataForGPU(pxChunkData);
 
-	Zenith_Log("Zenith_TerrainComponent - Chunk data retrieved from streaming manager for %u chunks", TOTAL_CHUNKS);
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "Zenith_TerrainComponent - Chunk data retrieved from streaming manager for %u chunks", TOTAL_CHUNKS);
 
 	// Upload chunk data to GPU
 	Flux_MemoryManager::InitialiseReadWriteBuffer(
@@ -772,7 +772,7 @@ void Zenith_TerrainComponent::BuildChunkData()
 	// Cleanup CPU data
 	delete[] pxChunkData;
 
-	Zenith_Log("Zenith_TerrainComponent - Chunk data with %u LOD levels uploaded to GPU", LOD_COUNT);
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "Zenith_TerrainComponent - Chunk data with %u LOD levels uploaded to GPU", LOD_COUNT);
 }
 
 void Zenith_TerrainComponent::UpdateChunkLODAllocations()
@@ -844,7 +844,7 @@ void Zenith_TerrainComponent::UpdateCullingAndLod(Flux_CommandList& xCmdList, co
 {
 	if (!m_bCullingResourcesInitialized)
 	{
-		Zenith_Log("ERROR: Zenith_TerrainComponent::UpdateCullingAndLod() called before InitializeCullingResources()");
+		Zenith_Log(LOG_CATEGORY_TERRAIN, "ERROR: Zenith_TerrainComponent::UpdateCullingAndLod() called before InitializeCullingResources()");
 		return;
 	}
 
@@ -980,7 +980,7 @@ static void RenderTerrainTextureSlot(const char* szLabel, Flux_MaterialAsset& xM
 			case 4: xMaterial.SetEmissiveTexturePath(strFilePath); break;
 			}
 
-			Zenith_Log("[TerrainComponent] Set %s texture: %s", szLabel, strFilePath.c_str());
+			Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Set %s texture: %s", szLabel, strFilePath.c_str());
 		}
 		ImGui::EndDragDropTarget();
 	}
@@ -1029,7 +1029,7 @@ void Zenith_TerrainComponent::RenderPropertiesPanel()
 					{
 						strncpy(s_szHeightmapPath, strPath.c_str(), sizeof(s_szHeightmapPath) - 1);
 						s_szHeightmapPath[sizeof(s_szHeightmapPath) - 1] = '\0';
-						Zenith_Log("[TerrainComponent] Selected heightmap: %s", s_szHeightmapPath);
+						Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Selected heightmap: %s", s_szHeightmapPath);
 					}
 				}
 
@@ -1046,7 +1046,7 @@ void Zenith_TerrainComponent::RenderPropertiesPanel()
 					{
 						strncpy(s_szMaterialPath, strPath.c_str(), sizeof(s_szMaterialPath) - 1);
 						s_szMaterialPath[sizeof(s_szMaterialPath) - 1] = '\0';
-						Zenith_Log("[TerrainComponent] Selected material texture: %s", s_szMaterialPath);
+						Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Selected material texture: %s", s_szMaterialPath);
 					}
 				}
 
@@ -1067,16 +1067,16 @@ void Zenith_TerrainComponent::RenderPropertiesPanel()
 					s_bTerrainExportInProgress = true;
 					s_strTerrainExportStatus = "Exporting terrain meshes...";
 					
-					Zenith_Log("[TerrainComponent] Starting terrain export...");
-					Zenith_Log("[TerrainComponent]   Heightmap: %s", s_szHeightmapPath);
-					Zenith_Log("[TerrainComponent]   Material: %s", s_szMaterialPath);
-					Zenith_Log("[TerrainComponent]   Output: %s", strOutputDir.c_str());
+					Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Starting terrain export...");
+					Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent]   Heightmap: %s", s_szHeightmapPath);
+					Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent]   Material: %s", s_szMaterialPath);
+					Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent]   Output: %s", strOutputDir.c_str());
 					
 					// Perform the terrain export
 					ExportHeightmapFromPaths(s_szHeightmapPath, s_szMaterialPath, strOutputDir);
 					
 					s_strTerrainExportStatus = "Export complete. Initializing terrain...";
-					Zenith_Log("[TerrainComponent] Export complete. Initializing terrain...");
+					Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Export complete. Initializing terrain...");
 					
 					// Create blank materials for initial rendering
 					std::string strEntityName = m_xParentEntity.GetName().empty() ?
@@ -1089,7 +1089,7 @@ void Zenith_TerrainComponent::RenderPropertiesPanel()
 					// Load physics geometry (same as constructor/deserialization)
 					if (m_pxPhysicsGeometry == nullptr)
 					{
-						Zenith_Log("[TerrainComponent] Loading and combining all physics chunks...");
+						Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Loading and combining all physics chunks...");
 						
 						// Load first physics chunk
 						m_pxPhysicsGeometry = Zenith_AssetHandler::AddMeshFromFile(
@@ -1134,7 +1134,7 @@ void Zenith_TerrainComponent::RenderPropertiesPanel()
 								}
 							}
 
-							Zenith_Log("[TerrainComponent] Physics mesh combined: %u vertices, %u indices",
+							Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Physics mesh combined: %u vertices, %u indices",
 								xPhysicsGeometry.GetNumVerts(), xPhysicsGeometry.GetNumIndices());
 						}
 					}
@@ -1144,7 +1144,7 @@ void Zenith_TerrainComponent::RenderPropertiesPanel()
 					
 					s_bTerrainExportInProgress = false;
 					s_strTerrainExportStatus = "Terrain created successfully!";
-					Zenith_Log("[TerrainComponent] Terrain creation complete!");
+					Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Terrain creation complete!");
 				}
 				
 				if (!bCanCreate)

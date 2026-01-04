@@ -99,7 +99,7 @@ bool Zenith_AssetMeta::LoadFromFile(const std::string& strMetaPath)
 	xStream >> uMagic;
 	if (uMagic != META_MAGIC)
 	{
-		Zenith_Log("Error: Invalid meta file magic number in %s", strMetaPath.c_str());
+		Zenith_Error(LOG_CATEGORY_ASSET, "Invalid meta file magic number in %s", strMetaPath.c_str());
 		return false;
 	}
 
@@ -108,7 +108,7 @@ bool Zenith_AssetMeta::LoadFromFile(const std::string& strMetaPath)
 	xStream >> uVersion;
 	if (uVersion > META_VERSION)
 	{
-		Zenith_Log("Error: Unsupported meta file version %u in %s", uVersion, strMetaPath.c_str());
+		Zenith_Error(LOG_CATEGORY_ASSET, "Unsupported meta file version %u in %s", uVersion, strMetaPath.c_str());
 		return false;
 	}
 

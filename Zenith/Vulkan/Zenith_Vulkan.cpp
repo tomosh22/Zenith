@@ -472,7 +472,7 @@ void Zenith_Vulkan::WaitForGPUIdle()
 	// Use cases: scene transitions, shutdown, debugging
 	s_xDevice.waitIdle();
 
-	Zenith_Log("GPU idle wait completed");
+	Zenith_Log(LOG_CATEGORY_VULKAN, "GPU idle wait completed");
 }
 
 void Zenith_Vulkan::CreateInstance()
@@ -499,14 +499,14 @@ void Zenith_Vulkan::CreateInstance()
 #endif
 	s_xInstance = vk::createInstance(xInstanceInfo);
 
-	Zenith_Log("Vulkan instance created");
+	Zenith_Log(LOG_CATEGORY_VULKAN, "Vulkan instance created");
 }
 
 VKAPI_ATTR vk::Bool32 VKAPI_CALL Zenith_Vulkan::DebugCallback(vk::DebugUtilsMessageSeverityFlagBitsEXT eMessageSeverity, vk::DebugUtilsMessageTypeFlagsEXT eMessageType, const vk::DebugUtilsMessengerCallbackDataEXT* pxCallbackData, void* pUserData)
 {
 	if (eMessageSeverity >= vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning)
 	{
-		Zenith_Error("%s%s", "Zenith_Vulkan::DebugCallback: ", pxCallbackData->pMessage);
+		Zenith_Error(LOG_CATEGORY_VULKAN, "%s%s", "Zenith_Vulkan::DebugCallback: ", pxCallbackData->pMessage);
 	}
 		Zenith_DebugBreak();
 	return VK_FALSE;
@@ -530,7 +530,7 @@ void Zenith_Vulkan::CreateDebugMessenger()
 		vk::DispatchLoaderDynamic(s_xInstance, vkGetInstanceProcAddr)
 	);
 
-	Zenith_Log("Vulkan debug messenger created");
+	Zenith_Log(LOG_CATEGORY_VULKAN, "Vulkan debug messenger created");
 }
 #endif
 
@@ -539,14 +539,14 @@ void Zenith_Vulkan::CreateSurface()
 	// Use platform abstraction for surface creation
 	s_xSurface = Zenith_Vulkan_Platform::CreateSurface(s_xInstance);
 
-	Zenith_Log("Vulkan surface created");
+	Zenith_Log(LOG_CATEGORY_VULKAN, "Vulkan surface created");
 }
 
 void Zenith_Vulkan::CreatePhysicalDevice()
 {
 	uint32_t uNumDevices;
 	s_xInstance.enumeratePhysicalDevices(&uNumDevices, nullptr);
-	Zenith_Log("%u physical vulkan devices to choose from", uNumDevices);
+	Zenith_Log(LOG_CATEGORY_VULKAN, "%u physical vulkan devices to choose from", uNumDevices);
 	std::vector<vk::PhysicalDevice> xDevices;
 	xDevices.resize(uNumDevices);
 	s_xInstance.enumeratePhysicalDevices(&uNumDevices, xDevices.data());
@@ -566,7 +566,7 @@ void Zenith_Vulkan::CreatePhysicalDevice()
 	s_xGPUCapabilties.m_uMaxFramebufferWidth = xProps.limits.maxFramebufferWidth;
 	s_xGPUCapabilties.m_uMaxFramebufferHeight = xProps.limits.maxFramebufferHeight;
 
-	Zenith_Log("Vulkan physical device created");
+	Zenith_Log(LOG_CATEGORY_VULKAN, "Vulkan physical device created");
 }
 
 void Zenith_Vulkan::CreateQueueFamilies()
@@ -608,7 +608,7 @@ void Zenith_Vulkan::CreateQueueFamilies()
 		Zenith_Assert(s_auQueueIndices[uType] != UINT32_MAX, "Couldn't find queue index");
 	}
 
-	Zenith_Log("Vulkan queue families created");
+	Zenith_Log(LOG_CATEGORY_VULKAN, "Vulkan queue families created");
 }
 
 void Zenith_Vulkan::CreateDevice()
@@ -679,7 +679,7 @@ void Zenith_Vulkan::CreateDevice()
 		s_axQueues[i] = s_xDevice.getQueue(s_auQueueIndices[i], 0);
 	}
 
-	Zenith_Log("Vulkan device created");
+	Zenith_Log(LOG_CATEGORY_VULKAN, "Vulkan device created");
 }
 
 void Zenith_Vulkan::CreateCommandPools()
@@ -691,7 +691,7 @@ void Zenith_Vulkan::CreateCommandPools()
 	
 	// Note: Worker thread command pools are now created per-frame in Zenith_Vulkan_PerFrame::Initialise()
 
-	Zenith_Log("Vulkan command pools created");
+	Zenith_Log(LOG_CATEGORY_VULKAN, "Vulkan command pools created");
 }
 
 void Zenith_Vulkan::CreateDefaultDescriptorPool()
@@ -719,7 +719,7 @@ void Zenith_Vulkan::CreateDefaultDescriptorPool()
 
 	s_xDefaultDescriptorPool = s_xDevice.createDescriptorPool(xPoolInfo);
 
-	Zenith_Log("Vulkan default descriptor pool created");
+	Zenith_Log(LOG_CATEGORY_VULKAN, "Vulkan default descriptor pool created");
 }
 
 void Zenith_Vulkan::CreateBindlessTexturesDescriptorPool()
@@ -737,7 +737,7 @@ void Zenith_Vulkan::CreateBindlessTexturesDescriptorPool()
 
 	s_xBindlessTexturesDescriptorPool = s_xDevice.createDescriptorPool(xPoolInfo);
 
-	Zenith_Log("Vulkan bindless textures descriptor pool created");
+	Zenith_Log(LOG_CATEGORY_VULKAN, "Vulkan bindless textures descriptor pool created");
 
 	vk::DescriptorSetLayoutBinding xBind = vk::DescriptorSetLayoutBinding()
 		.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
@@ -791,7 +791,7 @@ void Zenith_Vulkan::InitialiseImGui()
 
 	s_xImGuiDescriptorPool = s_xDevice.createDescriptorPool(xImGuiPoolInfo);
 	
-	Zenith_Log("ImGui dedicated descriptor pool created");
+	Zenith_Log(LOG_CATEGORY_EDITOR, "ImGui dedicated descriptor pool created");
 
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();

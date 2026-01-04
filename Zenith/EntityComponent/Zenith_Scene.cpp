@@ -110,7 +110,7 @@ void Zenith_Scene::RemoveEntity(Zenith_EntityID uID)
 	auto it = m_xEntityMap.find(uID);
 	if (it == m_xEntityMap.end())
 	{
-		Zenith_Log("Warning: Attempted to remove non-existent entity %u", uID);
+		Zenith_Warning(LOG_CATEGORY_SCENE, "Attempted to remove non-existent entity %u", uID);
 		return;
 	}
 
@@ -130,7 +130,7 @@ void Zenith_Scene::RemoveEntity(Zenith_EntityID uID)
 	// Remove from entity map
 	m_xEntityMap.erase(it);
 
-	Zenith_Log("Entity %u removed from scene", uID);
+	Zenith_Log(LOG_CATEGORY_SCENE, "Entity %u removed from scene", uID);
 }
 
 void Zenith_Scene::SaveToFile(const std::string& strFilename)
@@ -223,7 +223,7 @@ void Zenith_Scene::LoadFromFile(const std::string& strFilename)
 
 	if (uVersion < SCENE_VERSION_MIN_SUPPORTED)
 	{
-		Zenith_Log("[Scene] ERROR: Unsupported legacy scene format version %u. Please re-export the scene.", uVersion);
+		Zenith_Error(LOG_CATEGORY_SCENE, "[Scene] Unsupported legacy scene format version %u. Please re-export the scene.", uVersion);
 		return;
 	}
 

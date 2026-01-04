@@ -275,7 +275,7 @@ void Flux_MeshGeometry::Combine(Flux_MeshGeometry& xDst, const Flux_MeshGeometry
 	if(xDst.m_ulReservedVertexDataSize < xDst.GetVertexDataSize() + xSrc.GetVertexDataSize())
 	{
 		u_int64 newSize = xDst.GetVertexDataSize() + xSrc.GetVertexDataSize();
-		Zenith_Log("WARNING: Vertex buffer reallocation required! Reserved: %llu, Needed: %llu", xDst.m_ulReservedVertexDataSize, newSize);
+		Zenith_Log(LOG_CATEGORY_MESH, "WARNING: Vertex buffer reallocation required! Reserved: %llu, Needed: %llu", xDst.m_ulReservedVertexDataSize, newSize);
 		xDst.m_pVertexData = static_cast<u_int8*>(Zenith_MemoryManagement::Reallocate(xDst.m_pVertexData, newSize));
 		xDst.m_ulReservedVertexDataSize = newSize;
 	}
@@ -284,7 +284,7 @@ void Flux_MeshGeometry::Combine(Flux_MeshGeometry& xDst, const Flux_MeshGeometry
 	if(xDst.m_ulReservedIndexDataSize < xDst.GetIndexDataSize() + xSrc.GetIndexDataSize())
 	{
 		u_int64 newSize = xDst.GetIndexDataSize() + xSrc.GetIndexDataSize();
-		Zenith_Log("WARNING: Index buffer reallocation required! Reserved: %llu, Needed: %llu", xDst.m_ulReservedIndexDataSize, newSize);
+		Zenith_Log(LOG_CATEGORY_MESH, "WARNING: Index buffer reallocation required! Reserved: %llu, Needed: %llu", xDst.m_ulReservedIndexDataSize, newSize);
 		xDst.m_puIndices = static_cast<Flux_MeshGeometry::IndexType*>(Zenith_MemoryManagement::Reallocate(xDst.m_puIndices, newSize));
 		xDst.m_ulReservedIndexDataSize = newSize;
 	}
@@ -299,7 +299,7 @@ void Flux_MeshGeometry::Combine(Flux_MeshGeometry& xDst, const Flux_MeshGeometry
 		if(xDst.m_ulReservedPositionDataSize < (xDst.m_uNumVerts + xSrc.m_uNumVerts) * sizeof(Zenith_Maths::Vector3))
 		{
 			u_int64 newSize = (xDst.m_uNumVerts + xSrc.m_uNumVerts) * sizeof(Zenith_Maths::Vector3);
-			Zenith_Log("WARNING: Position buffer reallocation required! Reserved: %llu, Needed: %llu", xDst.m_ulReservedPositionDataSize, newSize);
+			Zenith_Log(LOG_CATEGORY_MESH, "WARNING: Position buffer reallocation required! Reserved: %llu, Needed: %llu", xDst.m_ulReservedPositionDataSize, newSize);
 			xDst.m_pxPositions = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Reallocate(xDst.m_pxPositions, newSize));
 			xDst.m_ulReservedPositionDataSize = newSize;
 		}

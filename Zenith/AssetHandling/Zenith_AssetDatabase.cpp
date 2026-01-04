@@ -26,7 +26,7 @@ void Zenith_AssetDatabase::Initialize(const std::string& strProjectRoot)
 
 	if (s_bInitialized)
 	{
-		Zenith_Log("AssetDatabase already initialized, call Shutdown first");
+		Zenith_Log(LOG_CATEGORY_ASSET, "AssetDatabase already initialized, call Shutdown first");
 		return;
 	}
 
@@ -38,7 +38,7 @@ void Zenith_AssetDatabase::Initialize(const std::string& strProjectRoot)
 	s_xDependencies.clear();
 	s_xDependents.clear();
 
-	Zenith_Log("AssetDatabase initialized with root: %s", s_strProjectRoot.c_str());
+	Zenith_Log(LOG_CATEGORY_ASSET, "AssetDatabase initialized with root: %s", s_strProjectRoot.c_str());
 }
 
 void Zenith_AssetDatabase::Shutdown()
@@ -53,7 +53,7 @@ void Zenith_AssetDatabase::Shutdown()
 	s_strProjectRoot.clear();
 	s_bInitialized = false;
 
-	Zenith_Log("AssetDatabase shutdown");
+	Zenith_Log(LOG_CATEGORY_ASSET, "AssetDatabase shutdown");
 }
 
 bool Zenith_AssetDatabase::IsInitialized()
@@ -120,16 +120,16 @@ Zenith_AssetType Zenith_AssetDatabase::GetAssetType(const Zenith_AssetGUID& xGUI
 	return Zenith_AssetType::UNKNOWN;
 }
 
-void Zenith_AssetDatabase::GetAssetsByType(Zenith_AssetType eType, std::vector<Zenith_AssetGUID>& xOutGUIDs)
+void Zenith_AssetDatabase::GetAssetsByType(Zenith_AssetType eType, Zenith_Vector<Zenith_AssetGUID>& xOutGUIDs)
 {
 	Zenith_ScopedMutexLock xLock(s_xMutex);
 
-	xOutGUIDs.clear();
+	xOutGUIDs.Clear();
 	for (const auto& xPair : s_xAssetsByGUID)
 	{
 		if (xPair.second.m_xMeta.m_eAssetType == eType)
 		{
-			xOutGUIDs.push_back(xPair.first);
+			xOutGUIDs.PushBack(xPair.first);
 		}
 	}
 }
@@ -241,35 +241,35 @@ void Zenith_AssetDatabase::ClearDependencies(const Zenith_AssetGUID& xAsset)
 	}
 }
 
-std::vector<Zenith_AssetGUID> Zenith_AssetDatabase::GetDependencies(const Zenith_AssetGUID& xAsset)
+Zenith_Vector<Zenith_AssetGUID> Zenith_AssetDatabase::GetDependencies(const Zenith_AssetGUID& xAsset)
 {
 	Zenith_ScopedMutexLock xLock(s_xMutex);
 
-	std::vector<Zenith_AssetGUID> xResult;
+	Zenith_Vector<Zenith_AssetGUID> xResult;
 	auto xIt = s_xDependencies.find(xAsset);
 	if (xIt != s_xDependencies.end())
 	{
-		xResult.reserve(xIt->second.size());
+		xResult.Reserve(static_cast<u_int>(xIt->second.size()));
 		for (const auto& xDep : xIt->second)
 		{
-			xResult.push_back(xDep);
+			xResult.PushBack(xDep);
 		}
 	}
 	return xResult;
 }
 
-std::vector<Zenith_AssetGUID> Zenith_AssetDatabase::GetDependents(const Zenith_AssetGUID& xAsset)
+Zenith_Vector<Zenith_AssetGUID> Zenith_AssetDatabase::GetDependents(const Zenith_AssetGUID& xAsset)
 {
 	Zenith_ScopedMutexLock xLock(s_xMutex);
 
-	std::vector<Zenith_AssetGUID> xResult;
+	Zenith_Vector<Zenith_AssetGUID> xResult;
 	auto xIt = s_xDependents.find(xAsset);
 	if (xIt != s_xDependents.end())
 	{
-		xResult.reserve(xIt->second.size());
+		xResult.Reserve(static_cast<u_int>(xIt->second.size()));
 		for (const auto& xDep : xIt->second)
 		{
-			xResult.push_back(xDep);
+			xResult.PushBack(xDep);
 		}
 	}
 	return xResult;
@@ -331,21 +331,21 @@ void Zenith_AssetDatabase::ReloadAsset(const Zenith_AssetGUID& xGUID)
 		return;
 	}
 
-	Zenith_Log("AssetDatabase: Reloading asset %s", xGUID.ToString().c_str());
+	Zenith_Log(LOG_CATEGORY_ASSET, "Reloading asset %s", xGUID.ToString().c_str());
 
 	// Notify registered callbacks
-	std::vector<ReloadCallback> xCallbacksCopy;
+	Zenith_Vector<ReloadCallback> xCallbacksCopy;
 	{
 		Zenith_ScopedMutexLock xLock(s_xMutex);
 		for (const auto& xPair : s_xReloadCallbacks)
 		{
-			xCallbacksCopy.push_back(xPair.second);
+			xCallbacksCopy.PushBack(xPair.second);
 		}
 	}
 
-	for (const auto& pfnCallback : xCallbacksCopy)
+	for (Zenith_Vector<ReloadCallback>::Iterator xIt(xCallbacksCopy); !xIt.Done(); xIt.Next())
 	{
-		pfnCallback(xGUID);
+		xIt.GetData()(xGUID);
 	}
 
 	// Notify dependent assets
@@ -354,12 +354,12 @@ void Zenith_AssetDatabase::ReloadAsset(const Zenith_AssetGUID& xGUID)
 
 void Zenith_AssetDatabase::NotifyDependents(const Zenith_AssetGUID& xGUID)
 {
-	std::vector<Zenith_AssetGUID> xDependentsList = GetDependents(xGUID);
+	Zenith_Vector<Zenith_AssetGUID> xDependentsList = GetDependents(xGUID);
 
-	for (const auto& xDependent : xDependentsList)
+	for (Zenith_Vector<Zenith_AssetGUID>::Iterator xIt(xDependentsList); !xIt.Done(); xIt.Next())
 	{
-		Zenith_Log("AssetDatabase: Cascading reload to dependent %s", xDependent.ToString().c_str());
-		ReloadAsset(xDependent);
+		Zenith_Log(LOG_CATEGORY_ASSET, "Cascading reload to dependent %s", xIt.GetData().ToString().c_str());
+		ReloadAsset(xIt.GetData());
 	}
 }
 
@@ -393,7 +393,7 @@ bool Zenith_AssetDatabase::IsAssetFile(const std::string& strPath)
 
 void Zenith_AssetDatabase::ScanDirectory(const std::string& strDirectory)
 {
-	Zenith_Log("AssetDatabase: Scanning directory: %s", strDirectory.c_str());
+	Zenith_Log(LOG_CATEGORY_ASSET, "Scanning directory: %s", strDirectory.c_str());
 
 	// Note: Implementation would recursively scan the directory,
 	// load or create .zmeta files, and register assets
@@ -407,7 +407,7 @@ void Zenith_AssetDatabase::RefreshProject()
 		return;
 	}
 
-	Zenith_Log("AssetDatabase: Refreshing project");
+	Zenith_Log(LOG_CATEGORY_ASSET, "Refreshing project");
 	ScanDirectory(s_strProjectRoot);
 }
 
@@ -424,7 +424,7 @@ Zenith_AssetGUID Zenith_AssetDatabase::ImportAsset(const std::string& strAssetPa
 	Zenith_AssetMeta xMeta;
 	if (!xMeta.CreateForAsset(strAssetPath, s_strProjectRoot))
 	{
-		Zenith_Log("AssetDatabase: Failed to create meta for: %s", strAssetPath.c_str());
+		Zenith_Error(LOG_CATEGORY_ASSET, "Failed to create meta for: %s", strAssetPath.c_str());
 		return Zenith_AssetGUID::INVALID;
 	}
 
@@ -432,14 +432,14 @@ Zenith_AssetGUID Zenith_AssetDatabase::ImportAsset(const std::string& strAssetPa
 	std::string strMetaPath = Zenith_AssetMeta::GetMetaPath(strAssetPath);
 	if (!xMeta.SaveToFile(strMetaPath))
 	{
-		Zenith_Log("AssetDatabase: Failed to save meta file: %s", strMetaPath.c_str());
+		Zenith_Error(LOG_CATEGORY_ASSET, "Failed to save meta file: %s", strMetaPath.c_str());
 		return Zenith_AssetGUID::INVALID;
 	}
 
 	// Register the asset
 	RegisterAsset(xMeta);
 
-	Zenith_Log("AssetDatabase: Imported asset: %s -> %s", strAssetPath.c_str(), xMeta.m_xGUID.ToString().c_str());
+	Zenith_Log(LOG_CATEGORY_ASSET, "Imported asset: %s -> %s", strAssetPath.c_str(), xMeta.m_xGUID.ToString().c_str());
 	return xMeta.m_xGUID;
 }
 
@@ -463,7 +463,7 @@ bool Zenith_AssetDatabase::MoveAsset(const Zenith_AssetGUID& xGUID, const std::s
 	// Update meta
 	xIt->second.m_xMeta.m_strAssetPath = strNewPath;
 
-	Zenith_Log("AssetDatabase: Moved asset %s -> %s", strOldNormalized.c_str(), strNewNormalized.c_str());
+	Zenith_Log(LOG_CATEGORY_ASSET, "Moved asset %s -> %s", strOldNormalized.c_str(), strNewNormalized.c_str());
 	return true;
 }
 

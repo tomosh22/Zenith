@@ -70,10 +70,10 @@ void Zenith_ComponentMetaRegistry::FinalizeRegistration()
 
 	m_bInitialized = true;
 
-	Zenith_Log("[ComponentMetaRegistry] Finalized with %u component types:", static_cast<u_int>(m_xMetasSorted.size()));
+	Zenith_Log(LOG_CATEGORY_ECS, "[ComponentMetaRegistry] Finalized with %u component types:", static_cast<u_int>(m_xMetasSorted.size()));
 	for (const auto* pxMeta : m_xMetasSorted)
 	{
-		Zenith_Log("  [%u] %s", pxMeta->m_uSerializationOrder, pxMeta->m_strTypeName.c_str());
+		Zenith_Log(LOG_CATEGORY_ECS, "  [%u] %s", pxMeta->m_uSerializationOrder, pxMeta->m_strTypeName.c_str());
 	}
 }
 
@@ -142,7 +142,7 @@ void Zenith_ComponentMetaRegistry::DeserializeEntityComponents(Zenith_Entity& xE
 		}
 		else
 		{
-			Zenith_Log("[ComponentMetaRegistry] WARNING: Unknown component type '%s' during deserialization", strComponentType.c_str());
+			Zenith_Log(LOG_CATEGORY_ECS, "[ComponentMetaRegistry] WARNING: Unknown component type '%s' during deserialization", strComponentType.c_str());
 			// Cannot skip unknown component data - this will corrupt the stream
 			// In a full implementation, we would store component data size to allow skipping
 		}

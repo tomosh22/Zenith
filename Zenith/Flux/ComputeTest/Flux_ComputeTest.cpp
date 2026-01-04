@@ -20,7 +20,7 @@ static Zenith_Vulkan_RootSig g_xComputeRootSig;
 
 void Flux_ComputeTest::Initialise()
 {
-	Zenith_Log("Flux_ComputeTest::Initialise() - Starting");
+	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_ComputeTest::Initialise() - Starting");
 	
 	// Create output texture for compute shader (RGBA8, storage image)
 	Flux_RenderAttachmentBuilder xBuilder;
@@ -34,7 +34,7 @@ void Flux_ComputeTest::Initialise()
 	// ========== COMPUTE PIPELINE SETUP ==========
 	g_xComputeShader.InitialiseCompute("ComputeTest/ComputeTest.comp");
 	
-	Zenith_Log("Flux_ComputeTest - Loaded compute shader");
+	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_ComputeTest - Loaded compute shader");
 	
 	// Build compute root signature
 	Flux_PipelineLayout xComputeLayout;
@@ -51,7 +51,7 @@ void Flux_ComputeTest::Initialise()
 	
 	g_xComputePipeline.m_xRootSig = g_xComputeRootSig;
 	
-	Zenith_Log("Flux_ComputeTest - Built compute pipeline");
+	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_ComputeTest - Built compute pipeline");
 	
 #ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_DebugVariables::AddTexture({ "Compute Test", "Output Texture" }, g_xComputeOutput.m_pxSRV);
@@ -82,7 +82,7 @@ void Flux_ComputeTest::RunComputePass()
 	static bool bFirstRun = true;
 	if (bFirstRun)
 	{
-		Zenith_Log("Flux_ComputeTest - Submitted compute command list");
+		Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_ComputeTest - Submitted compute command list");
 		bFirstRun = false;
 	}
 }

@@ -52,7 +52,7 @@ void Flux_IKChain::ResolveBoneIndices(const Flux_MeshGeometry& xGeometry)
 		}
 		else
 		{
-			Zenith_Log("[IK] Warning: Bone '%s' not found in skeleton", strName.c_str());
+			Zenith_Log(LOG_CATEGORY_ANIMATION, "[IK] Warning: Bone '%s' not found in skeleton", strName.c_str());
 			m_xBoneIndices.push_back(~0u);  // Invalid index
 		}
 	}

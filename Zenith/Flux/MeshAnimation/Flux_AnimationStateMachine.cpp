@@ -320,9 +320,9 @@ bool Flux_StateTransition::CanTransition(const Flux_AnimationParameters& xParams
 	}
 
 	// All conditions must be true (AND logic)
-	for (const auto& xCondition : m_xConditions)
+	for (Zenith_Vector<Flux_TransitionCondition>::Iterator xIt(m_xConditions); !xIt.Done(); xIt.Next())
 	{
-		if (!xCondition.Evaluate(xParams))
+		if (!xIt.GetData().Evaluate(xParams))
 			return false;
 	}
 
@@ -338,11 +338,11 @@ void Flux_StateTransition::WriteToDataStream(Zenith_DataStream& xStream) const
 	xStream << m_bInterruptible;
 	xStream << m_iPriority;
 
-	uint32_t uNumConditions = static_cast<uint32_t>(m_xConditions.size());
+	uint32_t uNumConditions = m_xConditions.GetSize();
 	xStream << uNumConditions;
-	for (const auto& xCondition : m_xConditions)
+	for (Zenith_Vector<Flux_TransitionCondition>::Iterator xIt(m_xConditions); !xIt.Done(); xIt.Next())
 	{
-		xCondition.WriteToDataStream(xStream);
+		xIt.GetData().WriteToDataStream(xStream);
 	}
 }
 
@@ -357,10 +357,13 @@ void Flux_StateTransition::ReadFromDataStream(Zenith_DataStream& xStream)
 
 	uint32_t uNumConditions = 0;
 	xStream >> uNumConditions;
-	m_xConditions.resize(uNumConditions);
+	m_xConditions.Clear();
+	m_xConditions.Reserve(uNumConditions);
 	for (uint32_t i = 0; i < uNumConditions; ++i)
 	{
-		m_xConditions[i].ReadFromDataStream(xStream);
+		Flux_TransitionCondition xCondition;
+		xCondition.ReadFromDataStream(xStream);
+		m_xConditions.PushBack(xCondition);
 	}
 }
 
@@ -379,19 +382,27 @@ Flux_AnimationState::~Flux_AnimationState()
 
 void Flux_AnimationState::AddTransition(const Flux_StateTransition& xTransition)
 {
-	m_xTransitions.push_back(xTransition);
+	m_xTransitions.PushBack(xTransition);
 
-	// Sort by priority (higher first)
-	std::sort(m_xTransitions.begin(), m_xTransitions.end(),
-		[](const Flux_StateTransition& a, const Flux_StateTransition& b) {
-			return a.m_iPriority > b.m_iPriority;
-		});
+	// Sort by priority (higher first) using simple bubble sort
+	for (u_int i = 0; i < m_xTransitions.GetSize(); ++i)
+	{
+		for (u_int j = i + 1; j < m_xTransitions.GetSize(); ++j)
+		{
+			if (m_xTransitions.Get(j).m_iPriority > m_xTransitions.Get(i).m_iPriority)
+			{
+				Flux_StateTransition xTemp = m_xTransitions.Get(i);
+				m_xTransitions.Get(i) = m_xTransitions.Get(j);
+				m_xTransitions.Get(j) = xTemp;
+			}
+		}
+	}
 }
 
 void Flux_AnimationState::RemoveTransition(size_t uIndex)
 {
-	if (uIndex < m_xTransitions.size())
-		m_xTransitions.erase(m_xTransitions.begin() + uIndex);
+	if (uIndex < m_xTransitions.GetSize())
+		m_xTransitions.Remove(static_cast<u_int>(uIndex));
 }
 
 const Flux_StateTransition* Flux_AnimationState::CheckTransitions(const Flux_AnimationParameters& xParams) const
@@ -399,10 +410,10 @@ const Flux_StateTransition* Flux_AnimationState::CheckTransitions(const Flux_Ani
 	float fNormalizedTime = m_pxBlendTree ? m_pxBlendTree->GetNormalizedTime() : 0.0f;
 
 	// Check transitions in priority order
-	for (const auto& xTransition : m_xTransitions)
+	for (u_int i = 0; i < m_xTransitions.GetSize(); ++i)
 	{
-		if (xTransition.CanTransition(xParams, fNormalizedTime))
-			return &xTransition;
+		if (m_xTransitions.Get(i).CanTransition(xParams, fNormalizedTime))
+			return &m_xTransitions.Get(i);
 	}
 
 	return nullptr;
@@ -431,11 +442,11 @@ void Flux_AnimationState::WriteToDataStream(Zenith_DataStream& xStream) const
 	}
 
 	// Transitions
-	uint32_t uNumTransitions = static_cast<uint32_t>(m_xTransitions.size());
+	uint32_t uNumTransitions = m_xTransitions.GetSize();
 	xStream << uNumTransitions;
-	for (const auto& xTransition : m_xTransitions)
+	for (Zenith_Vector<Flux_StateTransition>::Iterator xIt(m_xTransitions); !xIt.Done(); xIt.Next())
 	{
-		xTransition.WriteToDataStream(xStream);
+		xIt.GetData().WriteToDataStream(xStream);
 	}
 }
 
@@ -465,10 +476,13 @@ void Flux_AnimationState::ReadFromDataStream(Zenith_DataStream& xStream)
 	// Transitions
 	uint32_t uNumTransitions = 0;
 	xStream >> uNumTransitions;
-	m_xTransitions.resize(uNumTransitions);
+	m_xTransitions.Clear();
+	m_xTransitions.Reserve(uNumTransitions);
 	for (uint32_t i = 0; i < uNumTransitions; ++i)
 	{
-		m_xTransitions[i].ReadFromDataStream(xStream);
+		Flux_StateTransition xTransition;
+		xTransition.ReadFromDataStream(xStream);
+		m_xTransitions.PushBack(xTransition);
 	}
 }
 
@@ -722,7 +736,7 @@ Flux_AnimationStateMachine* Flux_AnimationStateMachine::LoadFromFile(const std::
 	std::ifstream xFile(strPath, std::ios::binary);
 	if (!xFile.is_open())
 	{
-		Zenith_Log("[AnimationStateMachine] Failed to open file: %s", strPath.c_str());
+		Zenith_Log(LOG_CATEGORY_ANIMATION, "[AnimationStateMachine] Failed to open file: %s", strPath.c_str());
 		return nullptr;
 	}
 
@@ -731,15 +745,16 @@ Flux_AnimationStateMachine* Flux_AnimationStateMachine::LoadFromFile(const std::
 	size_t uSize = xFile.tellg();
 	xFile.seekg(0, std::ios::beg);
 
-	std::vector<char> xBuffer(uSize);
-	xFile.read(xBuffer.data(), uSize);
+	char* pBuffer = static_cast<char*>(Zenith_MemoryManagement::Allocate(uSize));
+	xFile.read(pBuffer, uSize);
 	xFile.close();
 
-	Zenith_DataStream xStream(xBuffer.data(), uSize);
+	Zenith_DataStream xStream(pBuffer, uSize);
 
 	Flux_AnimationStateMachine* pxStateMachine = new Flux_AnimationStateMachine();
 	pxStateMachine->ReadFromDataStream(xStream);
 
+	Zenith_MemoryManagement::Deallocate(pBuffer);
 	return pxStateMachine;
 }
 

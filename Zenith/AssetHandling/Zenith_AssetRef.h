@@ -66,7 +66,7 @@ public:
 		std::string strPath = Zenith_AssetDatabase::GetPathFromGUID(m_xGUID);
 		if (strPath.empty())
 		{
-			Zenith_Log("AssetRef: Failed to resolve GUID %s", m_xGUID.ToString().c_str());
+			Zenith_Log(LOG_CATEGORY_ASSET, "AssetRef: Failed to resolve GUID %s", m_xGUID.ToString().c_str());
 			return nullptr;
 		}
 
@@ -139,7 +139,7 @@ public:
 		Zenith_AssetGUID xGUID = Zenith_AssetDatabase::GetGUIDFromPath(strPath);
 		if (!xGUID.IsValid())
 		{
-			Zenith_Log("AssetRef: No GUID found for path %s", strPath.c_str());
+			Zenith_Log(LOG_CATEGORY_ASSET, "AssetRef: No GUID found for path %s", strPath.c_str());
 			return false;
 		}
 		SetGUID(xGUID);

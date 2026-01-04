@@ -67,7 +67,7 @@ void Zenith_EditorTests::TestBoundingBoxIntersection()
 		Zenith_Assert(!bHit, "Ray pointing away should miss");
 	}
 	
-	Zenith_Log("[EditorTests] TestBoundingBoxIntersection passed");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "[EditorTests] TestBoundingBoxIntersection passed");
 }
 
 void Zenith_EditorTests::TestSelectionSystemEmptyScene()
@@ -84,7 +84,7 @@ void Zenith_EditorTests::TestSelectionSystemEmptyScene()
 	
 	Zenith_SelectionSystem::Shutdown();
 	
-	Zenith_Log("[EditorTests] TestSelectionSystemEmptyScene passed");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "[EditorTests] TestSelectionSystemEmptyScene passed");
 }
 
 void Zenith_EditorTests::TestInvalidEntityID()
@@ -99,7 +99,7 @@ void Zenith_EditorTests::TestInvalidEntityID()
 	validID = 1;
 	Zenith_Assert(validID != INVALID_ENTITY_ID, "Valid entity ID should not equal INVALID_ENTITY_ID");
 	
-	Zenith_Log("[EditorTests] TestInvalidEntityID passed");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "[EditorTests] TestInvalidEntityID passed");
 }
 
 void Zenith_EditorTests::TestTransformRoundTrip()
@@ -137,7 +137,7 @@ void Zenith_EditorTests::TestTransformRoundTrip()
 	float dotProduct = glm::dot(testRot, retrievedRot);
 	Zenith_Assert(std::abs(std::abs(dotProduct) - 1.0f) < 0.0001f, "Rotation round trip failed");
 
-	Zenith_Log("[EditorTests] TestTransformRoundTrip passed");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "[EditorTests] TestTransformRoundTrip passed");
 }
 
 //------------------------------------------------------------------------------
@@ -146,7 +146,7 @@ void Zenith_EditorTests::TestTransformRoundTrip()
 
 void Zenith_EditorTests::TestMultiSelectSingle()
 {
-	Zenith_Log("Running TestMultiSelectSingle...");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestMultiSelectSingle...");
 
 	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
 
@@ -169,12 +169,12 @@ void Zenith_EditorTests::TestMultiSelectSingle()
 
 	Zenith_Editor::ClearSelection();
 
-	Zenith_Log("[EditorTests] TestMultiSelectSingle passed");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "[EditorTests] TestMultiSelectSingle passed");
 }
 
 void Zenith_EditorTests::TestMultiSelectCtrlClick()
 {
-	Zenith_Log("Running TestMultiSelectCtrlClick...");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestMultiSelectCtrlClick...");
 
 	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
 
@@ -210,12 +210,12 @@ void Zenith_EditorTests::TestMultiSelectCtrlClick()
 
 	Zenith_Editor::ClearSelection();
 
-	Zenith_Log("[EditorTests] TestMultiSelectCtrlClick passed");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "[EditorTests] TestMultiSelectCtrlClick passed");
 }
 
 void Zenith_EditorTests::TestMultiSelectClear()
 {
-	Zenith_Log("Running TestMultiSelectClear...");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestMultiSelectClear...");
 
 	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
 
@@ -238,12 +238,12 @@ void Zenith_EditorTests::TestMultiSelectClear()
 	Zenith_Assert(!Zenith_Editor::IsSelected(uEntityID1), "First entity should not be selected");
 	Zenith_Assert(!Zenith_Editor::IsSelected(uEntityID2), "Second entity should not be selected");
 
-	Zenith_Log("[EditorTests] TestMultiSelectClear passed");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "[EditorTests] TestMultiSelectClear passed");
 }
 
 void Zenith_EditorTests::TestMultiSelectAfterEntityDelete()
 {
-	Zenith_Log("Running TestMultiSelectAfterEntityDelete...");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestMultiSelectAfterEntityDelete...");
 
 	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
 
@@ -268,7 +268,7 @@ void Zenith_EditorTests::TestMultiSelectAfterEntityDelete()
 
 	Zenith_Editor::ClearSelection();
 
-	Zenith_Log("[EditorTests] TestMultiSelectAfterEntityDelete passed");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "[EditorTests] TestMultiSelectAfterEntityDelete passed");
 }
 
 #endif // ZENITH_TOOLS

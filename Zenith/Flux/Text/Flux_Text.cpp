@@ -95,7 +95,7 @@ void Flux_Text::Initialise()
 	Zenith_DebugVariables::AddFloat({ "Text", "Size" }, dbg_fTextSize, 0, 1000);
 #endif
 
-	Zenith_Log("Flux_Text initialised");
+	Zenith_Log(LOG_CATEGORY_TEXT, "Flux_Text initialised");
 }
 
 void Flux_Text::Reset()
@@ -103,7 +103,7 @@ void Flux_Text::Reset()
 	// Reset command list to ensure no stale GPU resource references, including descriptor bindings
 	// This is called when the scene is reset (e.g., Play/Stop transitions in editor)
 	g_xCommandList.Reset(true);
-	Zenith_Log("Flux_Text::Reset() - Reset command list");
+	Zenith_Log(LOG_CATEGORY_TEXT, "Flux_Text::Reset() - Reset command list");
 }
 
 //#TO returns number of chars to render
@@ -184,9 +184,10 @@ uint32_t Flux_Text::UploadChars()
 	}
 
 	// Process UI text entries from Zenith_UICanvas
-	std::vector<Zenith_UI::UITextEntry>& xUITextEntries = Zenith_UI::Zenith_UICanvas::GetPendingTextEntries();
-	for (const Zenith_UI::UITextEntry& xEntry : xUITextEntries)
+	Zenith_Vector<Zenith_UI::UITextEntry>& xUITextEntries = Zenith_UI::Zenith_UICanvas::GetPendingTextEntries();
+	for (Zenith_Vector<Zenith_UI::UITextEntry>::Iterator xIt(xUITextEntries); !xIt.Done(); xIt.Next())
 	{
+		const Zenith_UI::UITextEntry& xEntry = xIt.GetData();
 		for (uint32_t u = 0; u < xEntry.m_strText.size(); u++)
 		{
 			TextVertex xVertex;

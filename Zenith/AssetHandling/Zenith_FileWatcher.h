@@ -3,7 +3,7 @@
 #include <string>
 #include <functional>
 #include <unordered_map>
-#include <vector>
+#include "Collections/Zenith_Vector.h"
 #include "Core/Zenith_GUID.h"
 #include "Core/Multithreading/Zenith_Multithreading.h"
 
@@ -146,7 +146,7 @@ private:
 	static std::string s_strWatchPath;
 
 	// Event queue (thread-safe)
-	static std::vector<FileChangeEvent> s_xPendingEvents;
+	static Zenith_Vector<FileChangeEvent> s_xPendingEvents;
 	static Zenith_Mutex s_xEventMutex;
 
 	// Callbacks

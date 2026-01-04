@@ -438,13 +438,13 @@ Flux_AnimationClip* Flux_AnimationClip::LoadFromFile(const std::string& strPath)
 
 	if (!pxScene || !pxScene->mRootNode)
 	{
-		Zenith_Log("[AnimationClip] Failed to load animation from: %s", strPath.c_str());
+		Zenith_Log(LOG_CATEGORY_ANIMATION, "[AnimationClip] Failed to load animation from: %s", strPath.c_str());
 		return nullptr;
 	}
 
 	if (pxScene->mNumAnimations == 0)
 	{
-		Zenith_Log("[AnimationClip] No animations found in: %s", strPath.c_str());
+		Zenith_Log(LOG_CATEGORY_ANIMATION, "[AnimationClip] No animations found in: %s", strPath.c_str());
 		return nullptr;
 	}
 
@@ -472,7 +472,7 @@ void Flux_AnimationClip::Export(const std::string& strPath) const
 	WriteToDataStream(xStream);
 	xStream.WriteToFile(strPath.c_str());
 
-	Zenith_Log("[AnimationClip] Exported animation '%s' to: %s", m_xMetadata.m_strName.c_str(), strPath.c_str());
+	Zenith_Log(LOG_CATEGORY_ANIMATION, "[AnimationClip] Exported animation '%s' to: %s", m_xMetadata.m_strName.c_str(), strPath.c_str());
 }
 
 const Flux_BoneChannel* Flux_AnimationClip::GetBoneChannel(const std::string& strBoneName) const
@@ -648,7 +648,7 @@ void Flux_AnimationClipCollection::LoadFromFile(const std::string& strPath)
 
 	if (!pxScene || !pxScene->mRootNode)
 	{
-		Zenith_Log("[AnimationClipCollection] Failed to load file: %s", strPath.c_str());
+		Zenith_Log(LOG_CATEGORY_ANIMATION, "[AnimationClipCollection] Failed to load file: %s", strPath.c_str());
 		return;
 	}
 
@@ -668,7 +668,7 @@ void Flux_AnimationClipCollection::LoadFromFile(const std::string& strPath)
 		AddClip(pxClip);
 	}
 
-	Zenith_Log("[AnimationClipCollection] Loaded %u animations from: %s",
+	Zenith_Log(LOG_CATEGORY_ANIMATION, "[AnimationClipCollection] Loaded %u animations from: %s",
 		pxScene->mNumAnimations, strPath.c_str());
 }
 

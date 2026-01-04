@@ -85,7 +85,7 @@ void Zenith_Vulkan_MemoryManager::Initialise()
 	Zenith_DebugVariables::AddUInt64_ReadOnly({ "Vulkan", "Memory Manager", "Total Memory Used" }, s_ulMemoryUsed);
 	#endif
 
-	Zenith_Log("Vulkan memory manager initialised");
+	Zenith_Log(LOG_CATEGORY_VULKAN, "Vulkan memory manager initialised");
 }
 
 void Zenith_Vulkan_MemoryManager::Shutdown()
@@ -945,7 +945,7 @@ void Zenith_Vulkan_MemoryManager::HandleStagingBufferFull()
 void Zenith_Vulkan_MemoryManager::UploadBufferDataChunked(vk::Buffer xDestBuffer, const void* pData, size_t uSize)
 {
 	Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__VULKAN_MEMORY_MANAGER_UPLOAD);
-	Zenith_Log("Uploading large buffer in chunks: %llu bytes (staging buffer size: %llu bytes)", uSize, g_uStagingPoolSize);
+	Zenith_Log(LOG_CATEGORY_VULKAN, "Uploading large buffer in chunks: %llu bytes (staging buffer size: %llu bytes)", uSize, g_uStagingPoolSize);
 
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 	const uint8_t* pSrcData = static_cast<const uint8_t*>(pData);
@@ -1000,13 +1000,13 @@ void Zenith_Vulkan_MemoryManager::UploadBufferDataChunked(vk::Buffer xDestBuffer
 		s_xMutex.Unlock();
 	}
 
-	Zenith_Log("Chunked buffer upload complete");
+	Zenith_Log(LOG_CATEGORY_VULKAN, "Chunked buffer upload complete");
 }
 
 void Zenith_Vulkan_MemoryManager::UploadTextureDataChunked(vk::Image xDestImage, const void* pData, size_t uSize, uint32_t uWidth, uint32_t uHeight, uint32_t uNumMips, uint32_t uNumLayers)
 {
 	Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__VULKAN_MEMORY_MANAGER_UPLOAD);
-	Zenith_Log("Uploading large texture in chunks: %llu bytes (staging buffer size: %llu bytes)", uSize, g_uStagingPoolSize);
+	Zenith_Log(LOG_CATEGORY_VULKAN, "Uploading large texture in chunks: %llu bytes (staging buffer size: %llu bytes)", uSize, g_uStagingPoolSize);
 
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 	const uint8_t* pSrcData = static_cast<const uint8_t*>(pData);
@@ -1141,7 +1141,7 @@ void Zenith_Vulkan_MemoryManager::UploadTextureDataChunked(vk::Image xDestImage,
 	// Restart command buffer for next operations
 	s_xCommandBuffer.BeginRecording();
 
-	Zenith_Log("Chunked texture upload complete");
+	Zenith_Log(LOG_CATEGORY_VULKAN, "Chunked texture upload complete");
 }
 
 void Zenith_Vulkan_MemoryManager::QueueVRAMDeletion(Zenith_Vulkan_VRAM* pxVRAM, const Flux_VRAMHandle xHandle, 

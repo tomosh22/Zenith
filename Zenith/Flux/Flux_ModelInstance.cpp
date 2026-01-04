@@ -25,7 +25,7 @@ Flux_ModelInstance* Flux_ModelInstance::CreateFromAsset(Zenith_ModelAsset* pxAss
 {
 	if (!pxAsset)
 	{
-		Zenith_Log("[ModelInstance] Cannot create instance from null asset");
+		Zenith_Log(LOG_CATEGORY_MESH, "[ModelInstance] Cannot create instance from null asset");
 		return nullptr;
 	}
 
@@ -45,12 +45,12 @@ Flux_ModelInstance* Flux_ModelInstance::CreateFromAsset(Zenith_ModelAsset* pxAss
 
 			if (!pxInstance->m_pxSkeleton)
 			{
-				Zenith_Log("[ModelInstance] Failed to create skeleton instance from: %s", strSkeletonPath.c_str());
+				Zenith_Log(LOG_CATEGORY_MESH, "[ModelInstance] Failed to create skeleton instance from: %s", strSkeletonPath.c_str());
 			}
 		}
 		else
 		{
-			Zenith_Log("[ModelInstance] Failed to load skeleton: %s", strSkeletonPath.c_str());
+			Zenith_Log(LOG_CATEGORY_MESH, "[ModelInstance] Failed to load skeleton: %s", strSkeletonPath.c_str());
 		}
 	}
 
@@ -67,7 +67,7 @@ Flux_ModelInstance* Flux_ModelInstance::CreateFromAsset(Zenith_ModelAsset* pxAss
 		Zenith_MeshAsset* pxMeshAsset = Zenith_MeshAsset::LoadFromFile(strMeshPath.c_str());
 		if (!pxMeshAsset)
 		{
-			Zenith_Log("[ModelInstance] Failed to load mesh: %s", strMeshPath.c_str());
+			Zenith_Log(LOG_CATEGORY_MESH, "[ModelInstance] Failed to load mesh: %s", strMeshPath.c_str());
 			continue;
 		}
 		pxInstance->m_xLoadedMeshAssets.PushBack(pxMeshAsset);
@@ -77,7 +77,7 @@ Flux_ModelInstance* Flux_ModelInstance::CreateFromAsset(Zenith_ModelAsset* pxAss
 		Flux_MeshInstance* pxMeshInstance = Flux_MeshInstance::CreateFromAsset(pxMeshAsset, pxInstance->m_pxLoadedSkeletonAsset);
 		if (!pxMeshInstance)
 		{
-			Zenith_Log("[ModelInstance] Failed to create mesh instance from: %s", strMeshPath.c_str());
+			Zenith_Log(LOG_CATEGORY_MESH, "[ModelInstance] Failed to create mesh instance from: %s", strMeshPath.c_str());
 			continue;
 		}
 		pxInstance->m_xMeshInstances.PushBack(pxMeshInstance);
@@ -96,7 +96,7 @@ Flux_ModelInstance* Flux_ModelInstance::CreateFromAsset(Zenith_ModelAsset* pxAss
 				}
 				else
 				{
-					Zenith_Log("[ModelInstance] Failed to create skinned mesh instance from: %s", strMeshPath.c_str());
+					Zenith_Log(LOG_CATEGORY_MESH, "[ModelInstance] Failed to create skinned mesh instance from: %s", strMeshPath.c_str());
 					// Push nullptr to keep indices in sync
 					pxInstance->m_xSkinnedMeshInstances.PushBack(nullptr);
 				}
@@ -117,7 +117,7 @@ Flux_ModelInstance* Flux_ModelInstance::CreateFromAsset(Zenith_ModelAsset* pxAss
 
 			if (!pxMaterial)
 			{
-				Zenith_Log("[ModelInstance] Failed to load material: %s", strMaterialPath.c_str());
+				Zenith_Log(LOG_CATEGORY_MESH, "[ModelInstance] Failed to load material: %s", strMaterialPath.c_str());
 				// Use blank material as fallback
 				pxMaterial = Flux_Graphics::s_pxBlankMaterial;
 			}
@@ -132,7 +132,7 @@ Flux_ModelInstance* Flux_ModelInstance::CreateFromAsset(Zenith_ModelAsset* pxAss
 		}
 	}
 
-	Zenith_Log("[ModelInstance] Created instance with %u meshes, %u materials%s",
+	Zenith_Log(LOG_CATEGORY_MESH, "[ModelInstance] Created instance with %u meshes, %u materials%s",
 		pxInstance->GetNumMeshes(),
 		pxInstance->GetNumMaterials(),
 		pxInstance->HasSkeleton() ? ", with skeleton" : "");

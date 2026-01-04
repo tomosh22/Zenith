@@ -283,7 +283,7 @@ private:
 				const DragDropFilePayload* pFilePayload =
 					static_cast<const DragDropFilePayload*>(pPayload->Data);
 
-				Zenith_Log("[Sokoban] Material dropped on %s: %s", szLabel, pFilePayload->m_szFilePath);
+				Zenith_Log(LOG_CATEGORY_GAMEPLAY, "Material dropped on %s: %s", szLabel, pFilePayload->m_szFilePath);
 
 				// Load the material from file
 				Flux_MaterialAsset* pxNewMaterial = Flux_MaterialAsset::LoadFromFile(pFilePayload->m_szFilePath);
@@ -327,7 +327,7 @@ private:
 				const DragDropFilePayload* pFilePayload =
 					static_cast<const DragDropFilePayload*>(pPayload->Data);
 
-				Zenith_Log("[Sokoban] Mesh dropped on %s: %s", szLabel, pFilePayload->m_szFilePath);
+				Zenith_Log(LOG_CATEGORY_GAMEPLAY, "Mesh dropped on %s: %s", szLabel, pFilePayload->m_szFilePath);
 
 				// Load the mesh from file
 				Flux_MeshGeometry* pxNewMesh = Zenith_AssetHandler::AddMeshFromFile(
@@ -1033,7 +1033,7 @@ private:
 		}
 
 		// If we failed to generate a solvable level, use fallback
-		Zenith_Log("Warning: Failed to generate solvable level after %d attempts, using fallback", iMaxAttempts);
+		Zenith_Warning(LOG_CATEGORY_GAMEPLAY, "Failed to generate solvable level after %d attempts, using fallback", iMaxAttempts);
 		GenerateFallbackLevel();
 		m_uMinMoves = SolveLevel();
 		if (m_uMinMoves < 0) m_uMinMoves = 0;

@@ -12,7 +12,7 @@ JPH::JobSystemThreadPool* Zenith_Physics::s_pxJobSystem = nullptr;
 JPH::PhysicsSystem* Zenith_Physics::s_pxPhysicsSystem = nullptr;
 double Zenith_Physics::s_fTimestepAccumulator = 0;
 Zenith_Physics::PhysicsContactListener Zenith_Physics::s_xContactListener;
-std::vector<Zenith_Physics::DeferredCollisionEvent> Zenith_Physics::s_xDeferredEvents;
+Zenith_Vector<Zenith_Physics::DeferredCollisionEvent> Zenith_Physics::s_xDeferredEvents;
 std::mutex Zenith_Physics::s_xEventQueueMutex;
 
 static void TraceImpl(const char* inFMT, ...)
@@ -140,23 +140,24 @@ static void QueueCollisionEventInternal(Zenith_EntityID uEntityID1, Zenith_Entit
 	xEvent.eEventType = eEventType;
 
 	std::lock_guard<std::mutex> xLock(Zenith_Physics::s_xEventQueueMutex);
-	Zenith_Physics::s_xDeferredEvents.push_back(xEvent);
+	Zenith_Physics::s_xDeferredEvents.PushBack(xEvent);
 }
 
 void Zenith_Physics::ProcessDeferredCollisionEvents()
 {
 	// Swap out the events to minimize lock time
-	std::vector<DeferredCollisionEvent> xEventsToProcess;
+	Zenith_Vector<DeferredCollisionEvent> xEventsToProcess;
 	{
 		std::lock_guard<std::mutex> xLock(s_xEventQueueMutex);
-		xEventsToProcess.swap(s_xDeferredEvents);
+		xEventsToProcess = std::move(s_xDeferredEvents);
 	}
 
 	// Process all deferred events on the main thread (safe to access scene)
 	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
 
-	for (const DeferredCollisionEvent& xEvent : xEventsToProcess)
+	for (Zenith_Vector<DeferredCollisionEvent>::Iterator xIt(xEventsToProcess); !xIt.Done(); xIt.Next())
 	{
+		const DeferredCollisionEvent& xEvent = xIt.GetData();
 		// Check if entities still exist
 		if (!xScene.EntityExists(xEvent.uEntityID1) || !xScene.EntityExists(xEvent.uEntityID2))
 			continue;

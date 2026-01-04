@@ -10,6 +10,8 @@ private:
 	static void TestMemoryManagement();
 	static void TestProfiling();
 	static void TestVector();
+	static void TestVectorFind();
+	static void TestVectorErase();
 	static void TestMemoryPool();
 
 	// Scene serialization tests

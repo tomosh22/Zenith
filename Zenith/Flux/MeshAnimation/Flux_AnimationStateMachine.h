@@ -2,6 +2,7 @@
 #include "Flux_BonePose.h"
 #include "Flux_BlendTree.h"
 #include "DataStream/Zenith_DataStream.h"
+#include "Collections/Zenith_Vector.h"
 #include <unordered_map>
 #include <functional>
 #include <variant>
@@ -124,7 +125,7 @@ struct Flux_TransitionCondition
 struct Flux_StateTransition
 {
 	std::string m_strTargetStateName;
-	std::vector<Flux_TransitionCondition> m_xConditions;  // All must be true (AND logic)
+	Zenith_Vector<Flux_TransitionCondition> m_xConditions;  // All must be true (AND logic)
 
 	float m_fTransitionDuration = 0.15f;   // Blend time in seconds
 	float m_fExitTime = -1.0f;             // Normalized time to exit (-1 = any time)
@@ -161,8 +162,8 @@ public:
 	// Transitions
 	void AddTransition(const Flux_StateTransition& xTransition);
 	void RemoveTransition(size_t uIndex);
-	const std::vector<Flux_StateTransition>& GetTransitions() const { return m_xTransitions; }
-	std::vector<Flux_StateTransition>& GetTransitions() { return m_xTransitions; }
+	const Zenith_Vector<Flux_StateTransition>& GetTransitions() const { return m_xTransitions; }
+	Zenith_Vector<Flux_StateTransition>& GetTransitions() { return m_xTransitions; }
 
 	// Find highest priority transition that can trigger
 	const Flux_StateTransition* CheckTransitions(const Flux_AnimationParameters& xParams) const;
@@ -184,7 +185,7 @@ public:
 private:
 	std::string m_strName;
 	Flux_BlendTreeNode* m_pxBlendTree = nullptr;
-	std::vector<Flux_StateTransition> m_xTransitions;
+	Zenith_Vector<Flux_StateTransition> m_xTransitions;
 };
 
 //=============================================================================

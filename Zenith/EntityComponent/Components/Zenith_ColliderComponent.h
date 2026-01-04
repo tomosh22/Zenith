@@ -58,7 +58,7 @@ public:
 				{
 					AddCollider(static_cast<CollisionVolumeType>(s_iSelectedVolumeType), 
 					            static_cast<RigidBodyType>(s_iSelectedRigidBodyType));
-					Zenith_Log("[ColliderComponent] Added %s collider (%s)", 
+					Zenith_Log(LOG_CATEGORY_PHYSICS, "[ColliderComponent] Added %s collider (%s)", 
 					           szVolumeTypes[s_iSelectedVolumeType], 
 					           szRigidBodyTypes[s_iSelectedRigidBodyType]);
 				}
@@ -91,7 +91,7 @@ public:
 					if (ImGui::Checkbox("Gravity Enabled", &s_bGravityEnabled))
 					{
 						Zenith_Physics::SetGravityEnabled(m_pxRigidBody, s_bGravityEnabled);
-						Zenith_Log("[ColliderComponent] Gravity %s", s_bGravityEnabled ? "enabled" : "disabled");
+						Zenith_Log(LOG_CATEGORY_PHYSICS, "[ColliderComponent] Gravity %s", s_bGravityEnabled ? "enabled" : "disabled");
 					}
 				}
 
@@ -138,7 +138,7 @@ public:
 						// Create new collider
 						AddCollider(static_cast<CollisionVolumeType>(s_iNewVolumeType), 
 						            static_cast<RigidBodyType>(s_iNewRigidBodyType));
-						Zenith_Log("[ColliderComponent] Rebuilt collider: %s (%s)", 
+						Zenith_Log(LOG_CATEGORY_PHYSICS, "[ColliderComponent] Rebuilt collider: %s (%s)", 
 						           szVolumeTypes[s_iNewVolumeType], 
 						           szRigidBodyTypes[s_iNewRigidBodyType]);
 					}
@@ -164,7 +164,7 @@ public:
 						delete m_pxTerrainMeshData;
 						m_pxTerrainMeshData = nullptr;
 					}
-					Zenith_Log("[ColliderComponent] Removed collider");
+					Zenith_Log(LOG_CATEGORY_PHYSICS, "[ColliderComponent] Removed collider");
 				}
 			}
 		}

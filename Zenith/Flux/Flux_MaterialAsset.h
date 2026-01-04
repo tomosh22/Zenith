@@ -5,7 +5,7 @@
 #include "Core/Multithreading/Zenith_Multithreading.h"
 #include <string>
 #include <unordered_map>
-#include <vector>
+#include "Collections/Zenith_Vector.h"
 
 // Forward declarations - avoid heavy Vulkan includes in header
 struct Flux_Texture;
@@ -82,13 +82,13 @@ public:
 	/**
 	 * Get all loaded material paths for editor UI (file-cached materials only)
 	 */
-	static void GetAllLoadedMaterialPaths(std::vector<std::string>& outPaths);
+	static void GetAllLoadedMaterialPaths(Zenith_Vector<std::string>& outPaths);
 
 	/**
 	 * Get all materials (both file-cached and runtime-created) for editor UI
 	 * Returns pointers to all materials that currently exist
 	 */
-	static void GetAllMaterials(std::vector<Flux_MaterialAsset*>& outMaterials);
+	static void GetAllMaterials(Zenith_Vector<Flux_MaterialAsset*>& outMaterials);
 	
 	/**
 	 * Initialize the material system (call once at startup)
@@ -292,7 +292,7 @@ private:
 
 	// Registry of ALL materials (both file-cached and runtime-created)
 	// Used by editor to display all materials regardless of how they were created
-	static std::vector<Flux_MaterialAsset*> s_xAllMaterials;
+	static Zenith_Vector<Flux_MaterialAsset*> s_xAllMaterials;
 };
 
 // Material file format version (increment when format changes)

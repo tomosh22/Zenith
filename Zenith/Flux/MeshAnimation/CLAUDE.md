@@ -90,5 +90,5 @@ MeshAnimation/
 
 ## Constants
 
-- `MAX_BONES = 128` - Maximum bones per skeleton
-- `BONES_PER_VERTEX_LIMIT = 4` - Maximum bone influences per vertex
+- `MAX_BONES = 100` - Maximum bones per skeleton (in Flux_SkeletonInstance.h, must match shader)
+- `BONES_PER_VERTEX_LIMIT = 4` - Maximum bone influences per vertex (defined in AssetHandling/Zenith_MeshAsset.h)

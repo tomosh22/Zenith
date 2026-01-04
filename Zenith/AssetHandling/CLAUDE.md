@@ -104,7 +104,7 @@ worldPos = skinningMatrix * meshLocalPos
 
 ## Known Limitations
 
-- Maximum 128 bones per skeleton
+- Maximum 100 bones per skeleton at runtime (Flux_SkeletonInstance limit, matches shader's bone array size)
 - Maximum 4 bone influences per vertex
 - Blender exports with Armature nodes may have a ~90 degree rotation offset due to Z-up to Y-up conversion that isn't fully compensated in the current pipeline
 

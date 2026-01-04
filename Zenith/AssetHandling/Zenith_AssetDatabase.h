@@ -1,10 +1,10 @@
 #pragma once
 #include "Core/Zenith_GUID.h"
 #include "AssetHandling/Zenith_AssetMeta.h"
+#include "Collections/Zenith_Vector.h"
 #include <string>
 #include <unordered_map>
 #include <unordered_set>
-#include <vector>
 #include <functional>
 
 /**
@@ -96,7 +96,7 @@ public:
 	/**
 	 * Get all assets of a specific type
 	 */
-	static void GetAssetsByType(Zenith_AssetType eType, std::vector<Zenith_AssetGUID>& xOutGUIDs);
+	static void GetAssetsByType(Zenith_AssetType eType, Zenith_Vector<Zenith_AssetGUID>& xOutGUIDs);
 
 	//--------------------------------------------------------------------------
 	// Asset Import/Registration
@@ -179,14 +179,14 @@ public:
 	 * @param xAsset The asset to query
 	 * @return Vector of GUIDs this asset depends on
 	 */
-	static std::vector<Zenith_AssetGUID> GetDependencies(const Zenith_AssetGUID& xAsset);
+	static Zenith_Vector<Zenith_AssetGUID> GetDependencies(const Zenith_AssetGUID& xAsset);
 
 	/**
 	 * Get all assets that depend on this asset
 	 * @param xAsset The asset to query
 	 * @return Vector of GUIDs that depend on this asset
 	 */
-	static std::vector<Zenith_AssetGUID> GetDependents(const Zenith_AssetGUID& xAsset);
+	static Zenith_Vector<Zenith_AssetGUID> GetDependents(const Zenith_AssetGUID& xAsset);
 
 	//--------------------------------------------------------------------------
 	// Hot-Reload

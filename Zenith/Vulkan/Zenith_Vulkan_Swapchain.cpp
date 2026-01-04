@@ -265,7 +265,7 @@ void Zenith_Vulkan_Swapchain::Initialise()
 
 	InitialiseCopyToFramebufferCommands();
 
-	Zenith_Log("Vulkan swapchain initialised");
+	Zenith_Log(LOG_CATEGORY_VULKAN, "Vulkan swapchain initialised");
 
 	//#TO_TODO: this is very hacky, Initialise gets called whenever we need to recreate the swapchain, e.g on resize, this should only be called once
 #ifdef ZENITH_DEBUG_VARIABLES

@@ -101,7 +101,7 @@ void Flux_Gizmos::Initialise()
 	Zenith_DebugVariables::AddFloat({"Editor", "Gizmos", "Alpha"}, dbg_fGizmoAlpha, 0.0f, 1.0f);
 #endif
 
-	Zenith_Log("Flux_Gizmos initialised");
+	Zenith_Log(LOG_CATEGORY_GIZMOS, "Flux_Gizmos initialised");
 }
 
 void Flux_Gizmos::Shutdown()
@@ -126,7 +126,7 @@ void Flux_Gizmos::Reset()
 	s_eActiveComponent = GizmoComponent::None;
 	s_bIsInteracting = false;
 
-	Zenith_Log("Flux_Gizmos::Reset() - Reset command list and cleared entity reference");
+	Zenith_Log(LOG_CATEGORY_GIZMOS, "Flux_Gizmos::Reset() - Reset command list and cleared entity reference");
 }
 
 void Flux_Gizmos::Render(void*)
@@ -140,7 +140,7 @@ void Flux_Gizmos::Render(void*)
 	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
 	if (!xScene.EntityHasComponent<Zenith_TransformComponent>(s_pxTargetEntity->GetEntityID()))
 	{
-		Zenith_Log("Gizmos: Entity has no transform component");
+		Zenith_Log(LOG_CATEGORY_GIZMOS, "Gizmos: Entity has no transform component");
 		return;
 	}
 
@@ -168,7 +168,7 @@ void Flux_Gizmos::Render(void*)
 
 	if (!pxGeometry || pxGeometry->GetSize() == 0)
 	{
-		Zenith_Log("Gizmos: No geometry - mode=%d, size=%d", s_eMode, pxGeometry ? pxGeometry->GetSize() : 0);
+		Zenith_Log(LOG_CATEGORY_GIZMOS, "Gizmos: No geometry - mode=%d, size=%d", s_eMode, pxGeometry ? pxGeometry->GetSize() : 0);
 		return;
 	}
 
@@ -261,7 +261,7 @@ void Flux_Gizmos::BeginInteraction(const Zenith_Maths::Vector3& rayOrigin, const
 {
 	if (!s_pxTargetEntity)
 	{
-		Zenith_Log("BeginInteraction: No target entity");
+		Zenith_Log(LOG_CATEGORY_GIZMOS, "BeginInteraction: No target entity");
 		return;
 	}
 

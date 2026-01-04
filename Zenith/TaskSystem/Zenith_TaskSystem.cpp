@@ -49,7 +49,7 @@ void Zenith_TaskSystem::Inititalise()
 	u_int uNumThreads = (uHardwareThreads > 1) ? (uHardwareThreads - 1) : 1;
 	if (uNumThreads > uMAX_TASK_THREADS) uNumThreads = uMAX_TASK_THREADS;
 
-	Zenith_Log("TaskSystem: Creating %u worker threads (hardware reports %u threads)", uNumThreads, uHardwareThreads);
+	Zenith_Log(LOG_CATEGORY_TASKSYSTEM, "Creating %u worker threads (hardware reports %u threads)", uNumThreads, uHardwareThreads);
 
 	g_pxWorkAvailableSem = new Zenith_Semaphore(0, uMAX_TASKS);
 	g_pxThreadsTerminatedSem = new Zenith_Semaphore(0, uNumThreads);

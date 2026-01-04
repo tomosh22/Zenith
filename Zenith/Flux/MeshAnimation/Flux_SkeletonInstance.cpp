@@ -77,19 +77,19 @@ Flux_SkeletonInstance* Flux_SkeletonInstance::CreateFromAsset(Zenith_SkeletonAss
 {
 	if (!pxAsset)
 	{
-		Zenith_Error("[Flux_SkeletonInstance] Cannot create instance from null skeleton asset");
+		Zenith_Error(LOG_CATEGORY_ANIMATION, "Cannot create instance from null skeleton asset");
 		return nullptr;
 	}
 
 	if (pxAsset->GetNumBones() == 0)
 	{
-		Zenith_Error("[Flux_SkeletonInstance] Cannot create instance from skeleton with 0 bones");
+		Zenith_Error(LOG_CATEGORY_ANIMATION, "Cannot create instance from skeleton with 0 bones");
 		return nullptr;
 	}
 
 	if (pxAsset->GetNumBones() > MAX_BONES)
 	{
-		Zenith_Error("[Flux_SkeletonInstance] Skeleton has %u bones, max is %u",
+		Zenith_Error(LOG_CATEGORY_ANIMATION, "Skeleton has %u bones, max is %u",
 			pxAsset->GetNumBones(), MAX_BONES);
 		return nullptr;
 	}
@@ -132,15 +132,15 @@ Flux_SkeletonInstance* Flux_SkeletonInstance::CreateFromAsset(Zenith_SkeletonAss
 		pxInstance->ComputeSkinningMatrices();
 	}
 
-	Zenith_Log("[Flux_SkeletonInstance] Created instance with %u bones", pxInstance->m_uNumBones);
+	Zenith_Log(LOG_CATEGORY_ANIMATION, "[Flux_SkeletonInstance] Created instance with %u bones", pxInstance->m_uNumBones);
 
 	// Debug: log first bone's skinning matrix (should be close to identity for bind pose)
 	if (pxInstance->m_uNumBones > 0)
 	{
 		const Zenith_Maths::Matrix4& xSkinMat = pxInstance->m_axSkinningMatrices[0];
-		Zenith_Log("[Flux_SkeletonInstance]   Bone 0 skinning matrix row0: (%.3f, %.3f, %.3f, %.3f)",
+		Zenith_Log(LOG_CATEGORY_ANIMATION, "[Flux_SkeletonInstance]   Bone 0 skinning matrix row0: (%.3f, %.3f, %.3f, %.3f)",
 			xSkinMat[0][0], xSkinMat[1][0], xSkinMat[2][0], xSkinMat[3][0]);
-		Zenith_Log("[Flux_SkeletonInstance]   Bone 0 skinning matrix row3 (translation): (%.3f, %.3f, %.3f, %.3f)",
+		Zenith_Log(LOG_CATEGORY_ANIMATION, "[Flux_SkeletonInstance]   Bone 0 skinning matrix row3 (translation): (%.3f, %.3f, %.3f, %.3f)",
 			xSkinMat[0][3], xSkinMat[1][3], xSkinMat[2][3], xSkinMat[3][3]);
 	}
 
@@ -192,7 +192,7 @@ void Flux_SkeletonInstance::SetBoneLocalTransform(uint32_t uBoneIndex,
 {
 	if (uBoneIndex >= m_uNumBones || uBoneIndex >= MAX_BONES)
 	{
-		Zenith_Warning("[Flux_SkeletonInstance] SetBoneLocalTransform: bone index %u out of range (max %u)",
+		Zenith_Warning(LOG_CATEGORY_ANIMATION, "[Flux_SkeletonInstance] SetBoneLocalTransform: bone index %u out of range (max %u)",
 			uBoneIndex, m_uNumBones);
 		return;
 	}
@@ -369,13 +369,13 @@ void Flux_SkeletonInstance::ComputeSkinningMatrices()
 			float fSkinScaleY = glm::length(Zenith_Maths::Vector3(m_axSkinningMatrices[i][1]));
 			float fSkinScaleZ = glm::length(Zenith_Maths::Vector3(m_axSkinningMatrices[i][2]));
 
-			Zenith_Log("[ComputeSkinning] Bone %u '%s':", i, xBone.m_strName.c_str());
-			Zenith_Log("  LocalScale input: (%.3f, %.3f, %.3f)", m_axLocalScales[i].x, m_axLocalScales[i].y, m_axLocalScales[i].z);
-			Zenith_Log("  LocalTrans scale (from cols): (%.3f, %.3f, %.3f)", fLocalScaleX, fLocalScaleY, fLocalScaleZ);
-			Zenith_Log("  ModelSpace scale (from cols): (%.3f, %.3f, %.3f)", fModelScaleX, fModelScaleY, fModelScaleZ);
-			Zenith_Log("  InvBindPose scale (from cols): (%.3f, %.3f, %.3f)", fInvBindScaleX, fInvBindScaleY, fInvBindScaleZ);
-			Zenith_Log("  Skinning scale (from cols): (%.3f, %.3f, %.3f)", fSkinScaleX, fSkinScaleY, fSkinScaleZ);
-			Zenith_Log("  Skinning translation: (%.3f, %.3f, %.3f)",
+			Zenith_Log(LOG_CATEGORY_ANIMATION, "[ComputeSkinning] Bone %u '%s':", i, xBone.m_strName.c_str());
+			Zenith_Log(LOG_CATEGORY_ANIMATION, "  LocalScale input: (%.3f, %.3f, %.3f)", m_axLocalScales[i].x, m_axLocalScales[i].y, m_axLocalScales[i].z);
+			Zenith_Log(LOG_CATEGORY_ANIMATION, "  LocalTrans scale (from cols): (%.3f, %.3f, %.3f)", fLocalScaleX, fLocalScaleY, fLocalScaleZ);
+			Zenith_Log(LOG_CATEGORY_ANIMATION, "  ModelSpace scale (from cols): (%.3f, %.3f, %.3f)", fModelScaleX, fModelScaleY, fModelScaleZ);
+			Zenith_Log(LOG_CATEGORY_ANIMATION, "  InvBindPose scale (from cols): (%.3f, %.3f, %.3f)", fInvBindScaleX, fInvBindScaleY, fInvBindScaleZ);
+			Zenith_Log(LOG_CATEGORY_ANIMATION, "  Skinning scale (from cols): (%.3f, %.3f, %.3f)", fSkinScaleX, fSkinScaleY, fSkinScaleZ);
+			Zenith_Log(LOG_CATEGORY_ANIMATION, "  Skinning translation: (%.3f, %.3f, %.3f)",
 				m_axSkinningMatrices[i][3][0], m_axSkinningMatrices[i][3][1], m_axSkinningMatrices[i][3][2]);
 		}
 	}
@@ -399,7 +399,7 @@ void Flux_SkeletonInstance::UploadToGPU()
 {
 	if (!m_bGPUResourcesInitialized)
 	{
-		Zenith_Warning("[Flux_SkeletonInstance] UploadToGPU called but GPU resources not initialized");
+		Zenith_Warning(LOG_CATEGORY_ANIMATION, "[Flux_SkeletonInstance] UploadToGPU called but GPU resources not initialized");
 		return;
 	}
 
@@ -417,7 +417,7 @@ void Flux_SkeletonInstance::UploadToAllFrameBuffers()
 {
 	if (!m_bGPUResourcesInitialized)
 	{
-		Zenith_Warning("[Flux_SkeletonInstance] UploadToAllFrameBuffers called but GPU resources not initialized");
+		Zenith_Warning(LOG_CATEGORY_ANIMATION, "[Flux_SkeletonInstance] UploadToAllFrameBuffers called but GPU resources not initialized");
 		return;
 	}
 

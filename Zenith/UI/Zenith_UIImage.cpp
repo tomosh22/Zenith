@@ -56,7 +56,7 @@ void Zenith_UIImage::LoadTexture()
         }
         else
         {
-            Zenith_Log("[UIImage] Failed to load texture: %s", m_strTexturePath.c_str());
+            Zenith_Log(LOG_CATEGORY_UI, "[UIImage] Failed to load texture: %s", m_strTexturePath.c_str());
         }
     }
 }

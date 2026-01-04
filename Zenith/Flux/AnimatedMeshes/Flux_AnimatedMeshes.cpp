@@ -95,7 +95,7 @@ void Flux_AnimatedMeshes::Initialise()
 	Zenith_DebugVariables::AddBoolean({ "Render", "Enable", "Animated Meshes" }, dbg_bEnable);
 #endif
 
-	Zenith_Log("Flux_AnimatedMeshes initialised");
+	Zenith_Log(LOG_CATEGORY_ANIMATION, "Flux_AnimatedMeshes initialised");
 }
 
 void Flux_AnimatedMeshes::Reset()
@@ -104,7 +104,7 @@ void Flux_AnimatedMeshes::Reset()
 	// This is called when the scene is reset (e.g., Play/Stop transitions in editor)
 	g_xCommandList.Reset(true);
 
-	Zenith_Log("Flux_AnimatedMeshes::Reset() - Reset command list");
+	Zenith_Log(LOG_CATEGORY_ANIMATION, "Flux_AnimatedMeshes::Reset() - Reset command list");
 }
 
 void Flux_AnimatedMeshes::SubmitRenderTask()
@@ -156,17 +156,17 @@ void Flux_AnimatedMeshes::RenderToGBuffer(void*)
 
 		if (!s_bLoggedOnce)
 		{
-			Zenith_Log("[AnimatedMeshes] Rendering animated model - meshes: %u", pxModelInstance->GetNumMeshes());
+			Zenith_Log(LOG_CATEGORY_RENDERER, "Rendering animated model - meshes: %u", pxModelInstance->GetNumMeshes());
 			for (uint32_t uDbg = 0; uDbg < pxModelInstance->GetNumMeshes(); uDbg++)
 			{
 				Flux_MeshInstance* pxDbgMesh = pxModelInstance->GetSkinnedMeshInstance(uDbg);
 				if (pxDbgMesh)
 				{
-					Zenith_Log("[AnimatedMeshes]   SkinnedMesh %u: %u verts, %u indices", uDbg, pxDbgMesh->GetNumVerts(), pxDbgMesh->GetNumIndices());
+					Zenith_Log(LOG_CATEGORY_RENDERER, "  SkinnedMesh %u: %u verts, %u indices", uDbg, pxDbgMesh->GetNumVerts(), pxDbgMesh->GetNumIndices());
 				}
 				else
 				{
-					Zenith_Log("[AnimatedMeshes]   SkinnedMesh %u: NULL (no skinning data)", uDbg);
+					Zenith_Log(LOG_CATEGORY_RENDERER, "  SkinnedMesh %u: NULL (no skinning data)", uDbg);
 				}
 			}
 			s_bLoggedOnce = true;

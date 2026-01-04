@@ -427,7 +427,7 @@ void ExportMesh(u_int uDensityDivisor, std::string strName, const std::string& s
 
 void ExportHeightmapFromPaths(const std::string& strHeightmapPath, const std::string& strMaterialPath, const std::string& strOutputDir)
 {
-	Zenith_Log("ExportHeightmapFromPaths: Heightmap=%s, Material=%s, Output=%s", 
+	Zenith_Log(LOG_CATEGORY_TOOLS, "ExportHeightmapFromPaths: Heightmap=%s, Material=%s, Output=%s",
 		strHeightmapPath.c_str(), strMaterialPath.c_str(), strOutputDir.c_str());
 	
 	// Export full detail render meshes (LOD0)
@@ -446,7 +446,7 @@ void ExportHeightmapFromPaths(const std::string& strHeightmapPath, const std::st
 	// Rename it to avoid confusion
 	ExportMesh(8, "Physics", strHeightmapPath, strMaterialPath, strOutputDir);
 	
-	Zenith_Log("ExportHeightmapFromPaths: Export complete");
+	Zenith_Log(LOG_CATEGORY_TOOLS, "ExportHeightmapFromPaths: Export complete");
 }
 
 void ExportHeightmap()

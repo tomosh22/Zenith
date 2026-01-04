@@ -192,7 +192,7 @@ void Zenith_Tools_TextureExport::ExportFromDataCompressed(const void* pRGBAData,
 	case TextureCompressionMode::BC5:
 		// BC3 and BC5 not yet implemented - fall through to BC1 for now
 		CompressToBC1(static_cast<const uint8_t*>(pRGBAData), pCompressedData, iWidth, iHeight, false);
-		Zenith_Log("Warning: BC3/BC5 compression not yet implemented, using BC1");
+		Zenith_Warning(LOG_CATEGORY_TOOLS, "BC3/BC5 compression not yet implemented, using BC1");
 		eFormat = TEXTURE_FORMAT_BC1_RGB_UNORM;
 		break;
 	default:
@@ -215,7 +215,7 @@ void Zenith_Tools_TextureExport::ExportFromDataCompressed(const void* pRGBAData,
 	// Log compression stats
 	const size_t ulUncompressedSize = iWidth * iHeight * 4;
 	const float fCompressionRatio = static_cast<float>(ulUncompressedSize) / static_cast<float>(ulCompressedSize);
-	Zenith_Log("Compressed texture %s: %dx%d, %.1f:1 compression ratio", strFilename.c_str(), iWidth, iHeight, fCompressionRatio);
+	Zenith_Log(LOG_CATEGORY_TOOLS, "Compressed texture %s: %dx%d, %.1f:1 compression ratio", strFilename.c_str(), iWidth, iHeight, fCompressionRatio);
 }
 
 void ExportTexture(const std::filesystem::directory_entry& xFile)

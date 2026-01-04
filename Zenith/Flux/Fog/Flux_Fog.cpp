@@ -52,7 +52,7 @@ void Flux_Fog::Initialise()
 	Zenith_DebugVariables::AddFloat({ "Render", "Fog", "Density" }, dbg_xConstants.m_xColour_Falloff.w, 0., 0.02);
 #endif
 
-	Zenith_Log("Flux_Fog initialised");
+	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Fog initialised");
 }
 
 void Flux_Fog::Reset()
@@ -60,7 +60,7 @@ void Flux_Fog::Reset()
 	// Reset command list to ensure no stale GPU resource references, including descriptor bindings
 	// This is called when the scene is reset (e.g., Play/Stop transitions in editor)
 	g_xCommandList.Reset(true);
-	Zenith_Log("Flux_Fog::Reset() - Reset command list");
+	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Fog::Reset() - Reset command list");
 }
 
 void Flux_Fog::SubmitRenderTask()

@@ -23,7 +23,7 @@ Flux_Texture* Zenith_AssetRef<Flux_Texture>::LoadAsset(const std::string& strPat
 	Zenith_AssetHandler::TextureData xTexData = Zenith_AssetHandler::LoadTexture2DFromFile(strPath.c_str());
 	if (!xTexData.pData)
 	{
-		Zenith_Log("AssetRef: Failed to load texture from %s", strPath.c_str());
+		Zenith_Error(LOG_CATEGORY_ASSET, "Failed to load texture from %s", strPath.c_str());
 		return nullptr;
 	}
 
@@ -33,7 +33,7 @@ Flux_Texture* Zenith_AssetRef<Flux_Texture>::LoadAsset(const std::string& strPat
 
 	if (!pxTexture)
 	{
-		Zenith_Log("AssetRef: Failed to create texture from %s", strPath.c_str());
+		Zenith_Error(LOG_CATEGORY_ASSET, "Failed to create texture from %s", strPath.c_str());
 		return nullptr;
 	}
 
@@ -56,7 +56,7 @@ Flux_MaterialAsset* Zenith_AssetRef<Flux_MaterialAsset>::LoadAsset(const std::st
 	Flux_MaterialAsset* pxMaterial = Flux_MaterialAsset::LoadFromFile(strPath);
 	if (!pxMaterial)
 	{
-		Zenith_Log("AssetRef: Failed to load material from %s", strPath.c_str());
+		Zenith_Error(LOG_CATEGORY_ASSET, "Failed to load material from %s", strPath.c_str());
 		return nullptr;
 	}
 
@@ -95,7 +95,7 @@ Flux_MeshGeometry* Zenith_AssetRef<Flux_MeshGeometry>::LoadAsset(const std::stri
 
 	if (pxMesh->GetNumVerts() == 0)
 	{
-		Zenith_Log("AssetRef: Failed to load mesh from %s", strPath.c_str());
+		Zenith_Error(LOG_CATEGORY_ASSET, "Failed to load mesh from %s", strPath.c_str());
 		delete pxMesh;
 		return nullptr;
 	}
@@ -139,7 +139,7 @@ Zenith_ModelAsset* Zenith_AssetRef<Zenith_ModelAsset>::LoadAsset(const std::stri
 	Zenith_ModelAsset* pxModel = new Zenith_ModelAsset();
 	if (!pxModel->LoadFromFile(strPath.c_str()))
 	{
-		Zenith_Log("AssetRef: Failed to load model from %s", strPath.c_str());
+		Zenith_Log(LOG_CATEGORY_ASSET, "Failed to load model from %s", strPath.c_str());
 		delete pxModel;
 		return nullptr;
 	}
@@ -183,7 +183,7 @@ Zenith_Prefab* Zenith_AssetRef<Zenith_Prefab>::LoadAsset(const std::string& strP
 	Zenith_Prefab* pxPrefab = new Zenith_Prefab();
 	if (!pxPrefab->LoadFromFile(strPath))
 	{
-		Zenith_Log("AssetRef: Failed to load prefab from %s", strPath.c_str());
+		Zenith_Log(LOG_CATEGORY_ASSET, "Failed to load prefab from %s", strPath.c_str());
 		delete pxPrefab;
 		return nullptr;
 	}

@@ -61,7 +61,7 @@ void Flux_DeferredShading::Initialise()
 	Zenith_DebugVariables::AddBoolean({ "Render", "Shadows", "Visualise CSMs" }, dbg_bVisualiseCSMs);
 	#endif
 
-	Zenith_Log("Flux_DeferredShading initialised");
+	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_DeferredShading initialised");
 }
 
 void Flux_DeferredShading::Reset()
@@ -69,7 +69,7 @@ void Flux_DeferredShading::Reset()
 	// Reset command list to ensure no stale GPU resource references, including descriptor bindings
 	// This is called when the scene is reset (e.g., Play/Stop transitions in editor)
 	g_xCommandList.Reset(true);
-	Zenith_Log("Flux_DeferredShading::Reset() - Reset command list");
+	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_DeferredShading::Reset() - Reset command list");
 }
 
 void Flux_DeferredShading::SubmitRenderTask()

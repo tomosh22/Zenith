@@ -1,8 +1,8 @@
 #pragma once
 
 #include "Maths/Zenith_Maths.h"
+#include "Collections/Zenith_Vector.h"
 #include <string>
-#include <vector>
 
 class Zenith_DataStream;
 
@@ -127,8 +127,8 @@ public:
     void ClearChildren();
 
     Zenith_UIElement* GetParent() const { return m_pxParent; }
-    const std::vector<Zenith_UIElement*>& GetChildren() const { return m_xChildren; }
-    size_t GetChildCount() const { return m_xChildren.size(); }
+    const Zenith_Vector<Zenith_UIElement*>& GetChildren() const { return m_xChildren; }
+    size_t GetChildCount() const { return m_xChildren.GetSize(); }
     Zenith_UIElement* GetChild(size_t uIndex) const;
 
     // ========== Computed Values ==========
@@ -175,7 +175,7 @@ protected:
 
     // Hierarchy - raw pointers, canvas owns all elements
     Zenith_UIElement* m_pxParent = nullptr;
-    std::vector<Zenith_UIElement*> m_xChildren;
+    Zenith_Vector<Zenith_UIElement*> m_xChildren;
 
     // Cached bounds
     mutable bool m_bTransformDirty = true;

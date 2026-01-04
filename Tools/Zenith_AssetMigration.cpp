@@ -9,8 +9,6 @@
 // Static member initialization
 Zenith_AssetMigration::MigrationStats Zenith_AssetMigration::s_xLastStats;
 
-// Log tag
-static constexpr const char* LOG_TAG = "[AssetMigration]";
 
 // Asset file extensions
 static const std::vector<std::string> s_xAssetExtensions = {
@@ -39,7 +37,7 @@ uint32_t Zenith_AssetMigration::GenerateMetaFiles(const std::string& strProjectR
 		}
 	}
 
-	Zenith_Log("%s Generated %u meta files", LOG_TAG, uGenerated);
+	Zenith_Log(LOG_CATEGORY_TOOLS, " Generated %u meta files", uGenerated);
 	return uGenerated;
 }
 
@@ -52,7 +50,7 @@ bool Zenith_AssetMigration::GenerateMetaFile(const std::string& strAssetPath)
 
 	if (!std::filesystem::exists(strAssetPath))
 	{
-		Zenith_Log("%s Asset file does not exist: %s", LOG_TAG, strAssetPath.c_str());
+		Zenith_Log(LOG_CATEGORY_TOOLS, " Asset file does not exist: %s", strAssetPath.c_str());
 		return false;
 	}
 
@@ -73,8 +71,8 @@ bool Zenith_AssetMigration::GenerateMetaFile(const std::string& strAssetPath)
 	std::string strMetaPath = Zenith_AssetMeta::GetMetaPath(strAssetPath);
 	if (xMeta.SaveToFile(strMetaPath))
 	{
-		Zenith_Log("%s Created meta file: %s (GUID: %s)",
-			LOG_TAG, strMetaPath.c_str(), xMeta.m_xGUID.ToString().c_str());
+		Zenith_Log(LOG_CATEGORY_TOOLS, "Created meta file: %s (GUID: %s)",
+			strMetaPath.c_str(), xMeta.m_xGUID.ToString().c_str());
 		return true;
 	}
 
@@ -110,7 +108,7 @@ bool Zenith_AssetMigration::MigrateSceneFile(const std::string& strScenePath)
 {
 	if (!SceneNeedsMigration(strScenePath))
 	{
-		Zenith_Log("%s Scene does not need migration: %s", LOG_TAG, strScenePath.c_str());
+		Zenith_Log(LOG_CATEGORY_TOOLS, " Scene does not need migration: %s", strScenePath.c_str());
 		return true;
 	}
 
@@ -118,14 +116,14 @@ bool Zenith_AssetMigration::MigrateSceneFile(const std::string& strScenePath)
 	std::string strBackup = CreateBackup(strScenePath);
 	if (strBackup.empty())
 	{
-		Zenith_Log("%s Failed to create backup for: %s", LOG_TAG, strScenePath.c_str());
+		Zenith_Log(LOG_CATEGORY_TOOLS, " Failed to create backup for: %s", strScenePath.c_str());
 		return false;
 	}
 
 	// Scene migration is handled by the scene load/save code
 	// Loading an old scene and saving it will automatically migrate it
-	Zenith_Log("%s Scene migration for %s should be handled by loading and re-saving",
-		LOG_TAG, strScenePath.c_str());
+	Zenith_Log(LOG_CATEGORY_TOOLS, "Scene migration for %s should be handled by loading and re-saving",
+		strScenePath.c_str());
 
 	s_xLastStats.m_uScenesModified++;
 	return true;
@@ -160,7 +158,7 @@ bool Zenith_AssetMigration::MigrateMaterialFile(const std::string& strMaterialPa
 {
 	if (!MaterialNeedsMigration(strMaterialPath))
 	{
-		Zenith_Log("%s Material does not need migration: %s", LOG_TAG, strMaterialPath.c_str());
+		Zenith_Log(LOG_CATEGORY_TOOLS, " Material does not need migration: %s", strMaterialPath.c_str());
 		return true;
 	}
 
@@ -168,14 +166,14 @@ bool Zenith_AssetMigration::MigrateMaterialFile(const std::string& strMaterialPa
 	std::string strBackup = CreateBackup(strMaterialPath);
 	if (strBackup.empty())
 	{
-		Zenith_Log("%s Failed to create backup for: %s", LOG_TAG, strMaterialPath.c_str());
+		Zenith_Log(LOG_CATEGORY_TOOLS, " Failed to create backup for: %s", strMaterialPath.c_str());
 		return false;
 	}
 
 	// Material migration is handled by Flux_MaterialAsset load/save code
 	// Loading an old material and saving it will automatically migrate it
-	Zenith_Log("%s Material migration for %s should be handled by loading and re-saving",
-		LOG_TAG, strMaterialPath.c_str());
+	Zenith_Log(LOG_CATEGORY_TOOLS, "Material migration for %s should be handled by loading and re-saving",
+		strMaterialPath.c_str());
 
 	s_xLastStats.m_uMaterialsModified++;
 	return true;
@@ -210,7 +208,7 @@ bool Zenith_AssetMigration::MigrateModelFile(const std::string& strModelPath)
 {
 	if (!ModelNeedsMigration(strModelPath))
 	{
-		Zenith_Log("%s Model does not need migration: %s", LOG_TAG, strModelPath.c_str());
+		Zenith_Log(LOG_CATEGORY_TOOLS, " Model does not need migration: %s", strModelPath.c_str());
 		return true;
 	}
 
@@ -218,12 +216,12 @@ bool Zenith_AssetMigration::MigrateModelFile(const std::string& strModelPath)
 	std::string strBackup = CreateBackup(strModelPath);
 	if (strBackup.empty())
 	{
-		Zenith_Log("%s Failed to create backup for: %s", LOG_TAG, strModelPath.c_str());
+		Zenith_Log(LOG_CATEGORY_TOOLS, " Failed to create backup for: %s", strModelPath.c_str());
 		return false;
 	}
 
-	Zenith_Log("%s Model migration for %s should be handled by loading and re-saving",
-		LOG_TAG, strModelPath.c_str());
+	Zenith_Log(LOG_CATEGORY_TOOLS, "Model migration for %s should be handled by loading and re-saving",
+		strModelPath.c_str());
 
 	s_xLastStats.m_uModelsModified++;
 	return true;
@@ -258,7 +256,7 @@ bool Zenith_AssetMigration::MigratePrefabFile(const std::string& strPrefabPath)
 {
 	if (!PrefabNeedsMigration(strPrefabPath))
 	{
-		Zenith_Log("%s Prefab does not need migration: %s", LOG_TAG, strPrefabPath.c_str());
+		Zenith_Log(LOG_CATEGORY_TOOLS, " Prefab does not need migration: %s", strPrefabPath.c_str());
 		return true;
 	}
 
@@ -266,12 +264,12 @@ bool Zenith_AssetMigration::MigratePrefabFile(const std::string& strPrefabPath)
 	std::string strBackup = CreateBackup(strPrefabPath);
 	if (strBackup.empty())
 	{
-		Zenith_Log("%s Failed to create backup for: %s", LOG_TAG, strPrefabPath.c_str());
+		Zenith_Log(LOG_CATEGORY_TOOLS, " Failed to create backup for: %s", strPrefabPath.c_str());
 		return false;
 	}
 
-	Zenith_Log("%s Prefab migration for %s should be handled by loading and re-saving",
-		LOG_TAG, strPrefabPath.c_str());
+	Zenith_Log(LOG_CATEGORY_TOOLS, "Prefab migration for %s should be handled by loading and re-saving",
+		strPrefabPath.c_str());
 
 	s_xLastStats.m_uPrefabsModified++;
 	return true;
@@ -286,19 +284,19 @@ bool Zenith_AssetMigration::MigrateProject(const std::string& strProjectRoot, bo
 	// Reset stats
 	s_xLastStats = MigrationStats();
 
-	Zenith_Log("%s Starting project migration for: %s%s",
-		LOG_TAG, strProjectRoot.c_str(), bDryRun ? " (DRY RUN)" : "");
+	Zenith_Log(LOG_CATEGORY_TOOLS, "Starting project migration for: %s%s",
+		strProjectRoot.c_str(), bDryRun ? " (DRY RUN)" : "");
 
 	if (!std::filesystem::exists(strProjectRoot))
 	{
-		Zenith_Log("%s Project root does not exist: %s", LOG_TAG, strProjectRoot.c_str());
+		Zenith_Log(LOG_CATEGORY_TOOLS, " Project root does not exist: %s", strProjectRoot.c_str());
 		s_xLastStats.m_xErrorMessages.push_back("Project root does not exist");
 		s_xLastStats.m_uErrors++;
 		return false;
 	}
 
 	// Step 1: Generate meta files for all assets
-	Zenith_Log("%s Step 1: Generating meta files...", LOG_TAG);
+	Zenith_Log(LOG_CATEGORY_TOOLS, " Step 1: Generating meta files...");
 	std::vector<std::string> xAssetPaths;
 	GetAllAssetFiles(strProjectRoot, xAssetPaths);
 
@@ -308,7 +306,7 @@ bool Zenith_AssetMigration::MigrateProject(const std::string& strProjectRoot, bo
 		{
 			if (bDryRun)
 			{
-				Zenith_Log("%s [DRY RUN] Would generate meta file for: %s", LOG_TAG, strPath.c_str());
+				Zenith_Log(LOG_CATEGORY_TOOLS, " [DRY RUN] Would generate meta file for: %s", strPath.c_str());
 				s_xLastStats.m_uMetaFilesGenerated++;
 			}
 			else
@@ -327,7 +325,7 @@ bool Zenith_AssetMigration::MigrateProject(const std::string& strProjectRoot, bo
 	}
 
 	// Step 2: Migrate scenes
-	Zenith_Log("%s Step 2: Checking scenes for migration...", LOG_TAG);
+	Zenith_Log(LOG_CATEGORY_TOOLS, " Step 2: Checking scenes for migration...");
 	for (const std::string& strPath : xAssetPaths)
 	{
 		if (strPath.ends_with(".zscn"))
@@ -336,7 +334,7 @@ bool Zenith_AssetMigration::MigrateProject(const std::string& strProjectRoot, bo
 			{
 				if (bDryRun)
 				{
-					Zenith_Log("%s [DRY RUN] Would migrate scene: %s", LOG_TAG, strPath.c_str());
+					Zenith_Log(LOG_CATEGORY_TOOLS, " [DRY RUN] Would migrate scene: %s", strPath.c_str());
 					s_xLastStats.m_uScenesModified++;
 				}
 				else
@@ -348,7 +346,7 @@ bool Zenith_AssetMigration::MigrateProject(const std::string& strProjectRoot, bo
 	}
 
 	// Step 3: Migrate materials
-	Zenith_Log("%s Step 3: Checking materials for migration...", LOG_TAG);
+	Zenith_Log(LOG_CATEGORY_TOOLS, " Step 3: Checking materials for migration...");
 	for (const std::string& strPath : xAssetPaths)
 	{
 		if (strPath.ends_with(".zmtrl"))
@@ -357,7 +355,7 @@ bool Zenith_AssetMigration::MigrateProject(const std::string& strProjectRoot, bo
 			{
 				if (bDryRun)
 				{
-					Zenith_Log("%s [DRY RUN] Would migrate material: %s", LOG_TAG, strPath.c_str());
+					Zenith_Log(LOG_CATEGORY_TOOLS, " [DRY RUN] Would migrate material: %s", strPath.c_str());
 					s_xLastStats.m_uMaterialsModified++;
 				}
 				else
@@ -369,7 +367,7 @@ bool Zenith_AssetMigration::MigrateProject(const std::string& strProjectRoot, bo
 	}
 
 	// Step 4: Migrate models
-	Zenith_Log("%s Step 4: Checking models for migration...", LOG_TAG);
+	Zenith_Log(LOG_CATEGORY_TOOLS, " Step 4: Checking models for migration...");
 	for (const std::string& strPath : xAssetPaths)
 	{
 		if (strPath.ends_with(".zmodel"))
@@ -378,7 +376,7 @@ bool Zenith_AssetMigration::MigrateProject(const std::string& strProjectRoot, bo
 			{
 				if (bDryRun)
 				{
-					Zenith_Log("%s [DRY RUN] Would migrate model: %s", LOG_TAG, strPath.c_str());
+					Zenith_Log(LOG_CATEGORY_TOOLS, " [DRY RUN] Would migrate model: %s", strPath.c_str());
 					s_xLastStats.m_uModelsModified++;
 				}
 				else
@@ -390,7 +388,7 @@ bool Zenith_AssetMigration::MigrateProject(const std::string& strProjectRoot, bo
 	}
 
 	// Step 5: Migrate prefabs
-	Zenith_Log("%s Step 5: Checking prefabs for migration...", LOG_TAG);
+	Zenith_Log(LOG_CATEGORY_TOOLS, " Step 5: Checking prefabs for migration...");
 	for (const std::string& strPath : xAssetPaths)
 	{
 		if (strPath.ends_with(".zprefab"))
@@ -399,7 +397,7 @@ bool Zenith_AssetMigration::MigrateProject(const std::string& strProjectRoot, bo
 			{
 				if (bDryRun)
 				{
-					Zenith_Log("%s [DRY RUN] Would migrate prefab: %s", LOG_TAG, strPath.c_str());
+					Zenith_Log(LOG_CATEGORY_TOOLS, " [DRY RUN] Would migrate prefab: %s", strPath.c_str());
 					s_xLastStats.m_uPrefabsModified++;
 				}
 				else
@@ -411,13 +409,13 @@ bool Zenith_AssetMigration::MigrateProject(const std::string& strProjectRoot, bo
 	}
 
 	// Report results
-	Zenith_Log("%s Migration complete. Results:", LOG_TAG);
-	Zenith_Log("%s   Meta files generated: %u", LOG_TAG, s_xLastStats.m_uMetaFilesGenerated);
-	Zenith_Log("%s   Scenes modified: %u", LOG_TAG, s_xLastStats.m_uScenesModified);
-	Zenith_Log("%s   Materials modified: %u", LOG_TAG, s_xLastStats.m_uMaterialsModified);
-	Zenith_Log("%s   Models modified: %u", LOG_TAG, s_xLastStats.m_uModelsModified);
-	Zenith_Log("%s   Prefabs modified: %u", LOG_TAG, s_xLastStats.m_uPrefabsModified);
-	Zenith_Log("%s   Errors: %u", LOG_TAG, s_xLastStats.m_uErrors);
+	Zenith_Log(LOG_CATEGORY_TOOLS, " Migration complete. Results:");
+	Zenith_Log(LOG_CATEGORY_TOOLS, "   Meta files generated: %u", s_xLastStats.m_uMetaFilesGenerated);
+	Zenith_Log(LOG_CATEGORY_TOOLS, "   Scenes modified: %u", s_xLastStats.m_uScenesModified);
+	Zenith_Log(LOG_CATEGORY_TOOLS, "   Materials modified: %u", s_xLastStats.m_uMaterialsModified);
+	Zenith_Log(LOG_CATEGORY_TOOLS, "   Models modified: %u", s_xLastStats.m_uModelsModified);
+	Zenith_Log(LOG_CATEGORY_TOOLS, "   Prefabs modified: %u", s_xLastStats.m_uPrefabsModified);
+	Zenith_Log(LOG_CATEGORY_TOOLS, "   Errors: %u", s_xLastStats.m_uErrors);
 
 	return s_xLastStats.m_uErrors == 0;
 }
@@ -448,12 +446,12 @@ std::string Zenith_AssetMigration::CreateBackup(const std::string& strFilePath)
 	try
 	{
 		std::filesystem::copy_file(strFilePath, strBackupPath);
-		Zenith_Log("%s Created backup: %s", LOG_TAG, strBackupPath.c_str());
+		Zenith_Log(LOG_CATEGORY_TOOLS, " Created backup: %s", strBackupPath.c_str());
 		return strBackupPath;
 	}
 	catch (const std::exception& e)
 	{
-		Zenith_Log("%s Failed to create backup: %s", LOG_TAG, e.what());
+		Zenith_Log(LOG_CATEGORY_TOOLS, " Failed to create backup: %s", e.what());
 		return "";
 	}
 }

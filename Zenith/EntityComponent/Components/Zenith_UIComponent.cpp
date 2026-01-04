@@ -11,7 +11,7 @@ ZENITH_REGISTER_COMPONENT(Zenith_UIComponent, "UI")
 Zenith_UIComponent::Zenith_UIComponent(Zenith_Entity& xParentEntity)
     : m_xParentEntity(xParentEntity)
 {
-    Zenith_Log("[UIComponent] Created for entity %u", xParentEntity.GetEntityID());
+    Zenith_Log(LOG_CATEGORY_UI, "[UIComponent] Created for entity %u", xParentEntity.GetEntityID());
 }
 
 Zenith_UIComponent::~Zenith_UIComponent()
@@ -195,15 +195,16 @@ void Zenith_UIComponent::RenderPropertiesPanel()
         // Element hierarchy
         ImGui::Text("Elements (%zu):", m_xCanvas.GetElementCount());
 
-        const auto& xElements = m_xCanvas.GetElements();
-        if (xElements.empty())
+        const Zenith_Vector<Zenith_UI::Zenith_UIElement*>& xElements = m_xCanvas.GetElements();
+        if (xElements.GetSize() == 0)
         {
             ImGui::TextDisabled("No UI elements");
         }
         else
         {
-            for (Zenith_UI::Zenith_UIElement* pxElement : xElements)
+            for (Zenith_Vector<Zenith_UI::Zenith_UIElement*>::Iterator xIt(xElements); !xIt.Done(); xIt.Next())
             {
+                Zenith_UI::Zenith_UIElement* pxElement = xIt.GetData();
                 if (pxElement)
                 {
                     RenderElementTree(pxElement, 0);
@@ -299,9 +300,10 @@ void Zenith_UIComponent::RenderElementTree(Zenith_UI::Zenith_UIElement* pxElemen
     }
 
     // Recurse into children
-    for (Zenith_UI::Zenith_UIElement* pxChild : pxElement->GetChildren())
+    const Zenith_Vector<Zenith_UI::Zenith_UIElement*>& xChildren = pxElement->GetChildren();
+    for (Zenith_Vector<Zenith_UI::Zenith_UIElement*>::Iterator xIt(xChildren); !xIt.Done(); xIt.Next())
     {
-        RenderElementTree(pxChild, iDepth + 1);
+        RenderElementTree(xIt.GetData(), iDepth + 1);
     }
 
     if (iDepth > 0)

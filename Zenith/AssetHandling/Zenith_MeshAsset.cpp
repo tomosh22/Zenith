@@ -130,7 +130,7 @@ Zenith_MeshAsset* Zenith_MeshAsset::LoadFromFile(const char* szPath)
 	pxAsset->m_strSourcePath = szPath;
 
 	// Debug: Log mesh bounds and first few vertex positions
-	Zenith_Log("[MeshAsset] Loaded %s: %u verts, bounds=(%.2f,%.2f,%.2f)-(%.2f,%.2f,%.2f)",
+	Zenith_Log(LOG_CATEGORY_MESH, "Loaded %s: %u verts, bounds=(%.2f,%.2f,%.2f)-(%.2f,%.2f,%.2f)",
 		szPath, pxAsset->GetNumVerts(),
 		pxAsset->m_xBoundsMin.x, pxAsset->m_xBoundsMin.y, pxAsset->m_xBoundsMin.z,
 		pxAsset->m_xBoundsMax.x, pxAsset->m_xBoundsMax.y, pxAsset->m_xBoundsMax.z);
@@ -139,7 +139,7 @@ Zenith_MeshAsset* Zenith_MeshAsset::LoadFromFile(const char* szPath)
 	for (uint32_t i = 0; i < 3 && i < pxAsset->m_xPositions.GetSize(); i++)
 	{
 		const Zenith_Maths::Vector3& xPos = pxAsset->m_xPositions.Get(i);
-		Zenith_Log("  Vertex %u: pos=(%.3f, %.3f, %.3f)", i, xPos.x, xPos.y, xPos.z);
+		Zenith_Log(LOG_CATEGORY_MESH, "  Vertex %u: pos=(%.3f, %.3f, %.3f)", i, xPos.x, xPos.y, xPos.z);
 	}
 
 	return pxAsset;
@@ -220,7 +220,7 @@ void Zenith_MeshAsset::ReadFromDataStream(Zenith_DataStream& xStream)
 
 	if (uVersion != ZENITH_MESH_ASSET_VERSION)
 	{
-		Zenith_Log("[MeshAsset] Version mismatch: expected %u, got %u", ZENITH_MESH_ASSET_VERSION, uVersion);
+		Zenith_Log(LOG_CATEGORY_MESH, "Version mismatch: expected %u, got %u", ZENITH_MESH_ASSET_VERSION, uVersion);
 	}
 
 	// Counts

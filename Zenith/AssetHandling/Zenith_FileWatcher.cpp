@@ -13,7 +13,7 @@
 bool Zenith_FileWatcher::s_bInitialized = false;
 bool Zenith_FileWatcher::s_bPaused = false;
 std::string Zenith_FileWatcher::s_strWatchPath;
-std::vector<FileChangeEvent> Zenith_FileWatcher::s_xPendingEvents;
+Zenith_Vector<FileChangeEvent> Zenith_FileWatcher::s_xPendingEvents;
 Zenith_Mutex Zenith_FileWatcher::s_xEventMutex;
 std::unordered_map<uint32_t, Zenith_FileWatcher::ChangeCallback> Zenith_FileWatcher::s_xCallbacks;
 uint32_t Zenith_FileWatcher::s_uNextCallbackHandle = 1;
@@ -27,8 +27,6 @@ void* Zenith_FileWatcher::s_hWatchThread = nullptr;
 bool Zenith_FileWatcher::s_bWatchThreadRunning = false;
 #endif
 
-// Log tag
-static constexpr const char* LOG_TAG = "[FileWatcher]";
 
 //=============================================================================
 // Lifecycle
@@ -38,13 +36,13 @@ void Zenith_FileWatcher::Initialize(const std::string& strWatchPath)
 {
 	if (s_bInitialized)
 	{
-		Zenith_Log("%s Already initialized", LOG_TAG);
+		Zenith_Log(LOG_CATEGORY_ASSET, "FileWatcher already initialized");
 		return;
 	}
 
 	s_strWatchPath = strWatchPath;
 	s_bPaused = false;
-	s_xPendingEvents.clear();
+	s_xPendingEvents.Clear();
 	s_xFileModTimes.clear();
 
 	// Build initial file modification time cache
@@ -54,7 +52,7 @@ void Zenith_FileWatcher::Initialize(const std::string& strWatchPath)
 	Platform_StartWatching();
 
 	s_bInitialized = true;
-	Zenith_Log("%s Initialized for path: %s", LOG_TAG, strWatchPath.c_str());
+	Zenith_Log(LOG_CATEGORY_ASSET, "FileWatcher initialized for path: %s", strWatchPath.c_str());
 }
 
 void Zenith_FileWatcher::Shutdown()
@@ -68,7 +66,7 @@ void Zenith_FileWatcher::Shutdown()
 
 	{
 		Zenith_ScopedMutexLock xLock(s_xEventMutex);
-		s_xPendingEvents.clear();
+		s_xPendingEvents.Clear();
 	}
 
 	{
@@ -80,7 +78,7 @@ void Zenith_FileWatcher::Shutdown()
 	s_strWatchPath.clear();
 	s_bInitialized = false;
 
-	Zenith_Log("%s Shutdown complete", LOG_TAG);
+	Zenith_Log(LOG_CATEGORY_ASSET, "FileWatcher shutdown complete");
 }
 
 //=============================================================================
@@ -145,13 +143,13 @@ void Zenith_FileWatcher::ForceRescan()
 		}
 	}
 
-	Zenith_Log("%s Scanned %zu files", LOG_TAG, s_xFileModTimes.size());
+	Zenith_Log(LOG_CATEGORY_ASSET, "FileWatcher scanned %zu files", s_xFileModTimes.size());
 }
 
 void Zenith_FileWatcher::SetPaused(bool bPaused)
 {
 	s_bPaused = bPaused;
-	Zenith_Log("%s %s", LOG_TAG, bPaused ? "Paused" : "Resumed");
+	Zenith_Log(LOG_CATEGORY_ASSET, "FileWatcher %s", bPaused ? "paused" : "resumed");
 }
 
 //=============================================================================
@@ -163,8 +161,9 @@ void Zenith_FileWatcher::EnqueueEvent(const FileChangeEvent& xEvent)
 	Zenith_ScopedMutexLock xLock(s_xEventMutex);
 
 	// Debounce: Check if we already have a similar event pending
-	for (auto& xPending : s_xPendingEvents)
+	for (Zenith_Vector<FileChangeEvent>::Iterator xIt(s_xPendingEvents); !xIt.Done(); xIt.Next())
 	{
+		FileChangeEvent& xPending = xIt.GetData();
 		if (xPending.m_strPath == xEvent.m_strPath && xPending.m_eType == xEvent.m_eType)
 		{
 			// Update timestamp instead of adding duplicate
@@ -173,40 +172,39 @@ void Zenith_FileWatcher::EnqueueEvent(const FileChangeEvent& xEvent)
 		}
 	}
 
-	s_xPendingEvents.push_back(xEvent);
+	s_xPendingEvents.PushBack(xEvent);
 }
 
 void Zenith_FileWatcher::ProcessEvents()
 {
-	std::vector<FileChangeEvent> xEventsToProcess;
+	Zenith_Vector<FileChangeEvent> xEventsToProcess;
 
 	{
 		Zenith_ScopedMutexLock xLock(s_xEventMutex);
 		xEventsToProcess = std::move(s_xPendingEvents);
-		s_xPendingEvents.clear();
 	}
 
-	for (const auto& xEvent : xEventsToProcess)
+	for (Zenith_Vector<FileChangeEvent>::Iterator xIt(xEventsToProcess); !xIt.Done(); xIt.Next())
 	{
-		NotifyCallbacks(xEvent);
+		NotifyCallbacks(xIt.GetData());
 	}
 }
 
 void Zenith_FileWatcher::NotifyCallbacks(const FileChangeEvent& xEvent)
 {
-	std::vector<ChangeCallback> xCallbacksCopy;
+	Zenith_Vector<ChangeCallback> xCallbacksCopy;
 
 	{
 		Zenith_ScopedMutexLock xLock(s_xCallbackMutex);
 		for (const auto& xPair : s_xCallbacks)
 		{
-			xCallbacksCopy.push_back(xPair.second);
+			xCallbacksCopy.PushBack(xPair.second);
 		}
 	}
 
-	for (const auto& pfnCallback : xCallbacksCopy)
+	for (Zenith_Vector<ChangeCallback>::Iterator xIt(xCallbacksCopy); !xIt.Done(); xIt.Next())
 	{
-		pfnCallback(xEvent);
+		xIt.GetData()(xEvent);
 	}
 }
 
@@ -266,7 +264,7 @@ void Zenith_FileWatcher::WatchThreadFunc(const void* pUserData)
 
 	if (xOverlapped.hEvent == nullptr)
 	{
-		Zenith_Log("%s Failed to create event", LOG_TAG);
+		Zenith_Log(LOG_CATEGORY_ASSET, "FileWatcher failed to create event");
 		return;
 	}
 
@@ -295,7 +293,7 @@ void Zenith_FileWatcher::WatchThreadFunc(const void* pUserData)
 			DWORD dwError = GetLastError();
 			if (dwError != ERROR_IO_PENDING)
 			{
-				Zenith_Log("%s ReadDirectoryChangesW failed: %u", LOG_TAG, dwError);
+				Zenith_Log(LOG_CATEGORY_ASSET, "FileWatcher ReadDirectoryChangesW failed: %u", dwError);
 				break;
 			}
 		}
@@ -392,7 +390,7 @@ void Zenith_FileWatcher::Platform_StartWatching()
 
 	if (s_hDirectory == INVALID_HANDLE_VALUE)
 	{
-		Zenith_Log("%s Failed to open directory for watching: %u", LOG_TAG, GetLastError());
+		Zenith_Log(LOG_CATEGORY_ASSET, "FileWatcher failed to open directory for watching: %u", GetLastError());
 		return;
 	}
 
@@ -400,7 +398,7 @@ void Zenith_FileWatcher::Platform_StartWatching()
 	s_bWatchThreadRunning = true;
 	Zenith_Multithreading::CreateThread("FileWatcher", WatchThreadFunc, nullptr);
 
-	Zenith_Log("%s Windows file watcher started", LOG_TAG);
+	Zenith_Log(LOG_CATEGORY_ASSET, "Windows file watcher started");
 }
 
 void Zenith_FileWatcher::Platform_StopWatching()
@@ -417,7 +415,7 @@ void Zenith_FileWatcher::Platform_StopWatching()
 	// Give thread time to exit
 	Sleep(200);
 
-	Zenith_Log("%s Windows file watcher stopped", LOG_TAG);
+	Zenith_Log(LOG_CATEGORY_ASSET, "Windows file watcher stopped");
 }
 
 void Zenith_FileWatcher::Platform_CheckForChanges()
@@ -434,7 +432,7 @@ void Zenith_FileWatcher::Platform_CheckForChanges()
 
 void Zenith_FileWatcher::Platform_StartWatching()
 {
-	Zenith_Log("%s Using polling-based file watcher", LOG_TAG);
+	Zenith_Log(LOG_CATEGORY_ASSET, "Using polling-based file watcher");
 }
 
 void Zenith_FileWatcher::Platform_StopWatching()

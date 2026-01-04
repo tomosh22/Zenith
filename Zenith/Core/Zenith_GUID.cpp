@@ -38,7 +38,7 @@ Zenith_AssetGUID Zenith_AssetGUID::Generate()
 	}
 	else
 	{
-		Zenith_Log("Warning: CoCreateGuid failed, using random fallback");
+		Zenith_Warning(LOG_CATEGORY_CORE, "CoCreateGuid failed, using random fallback");
 		// Fallback to random (less unique but still usable)
 		std::random_device rd;
 		std::mt19937_64 gen(rd());

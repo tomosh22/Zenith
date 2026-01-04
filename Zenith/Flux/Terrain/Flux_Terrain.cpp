@@ -168,10 +168,10 @@ void Flux_Terrain::Initialise()
 
 	// ========== Initialize GPU-Driven Terrain Culling Compute Pipeline ==========
 	// Moved from Flux_TerrainCulling::Initialise() to centralize pipeline ownership
-	Zenith_Log("Flux_Terrain - Initializing terrain culling compute pipeline");
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "Flux_Terrain - Initializing terrain culling compute pipeline");
 
 	s_xCullingShader.InitialiseCompute("Terrain/Flux_TerrainCulling.comp");
-	Zenith_Log("Flux_Terrain - Loaded terrain culling compute shader");
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "Flux_Terrain - Loaded terrain culling compute shader");
 
 	// Build compute root signature
 	Flux_PipelineLayout xCullingLayout;
@@ -193,12 +193,12 @@ void Flux_Terrain::Initialise()
 
 	s_xCullingPipeline.m_xRootSig = s_xCullingRootSig;
 
-	Zenith_Log("Flux_Terrain - Built terrain culling compute pipeline");
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "Flux_Terrain - Built terrain culling compute pipeline");
 
 	// ========== Initialize Terrain Streaming Manager ==========
 	Flux_TerrainStreamingManager::Initialize();
 
-	Zenith_Log("Flux_Terrain initialised");
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "Flux_Terrain initialised");
 }
 
 void Flux_Terrain::Reset()
@@ -211,7 +211,7 @@ void Flux_Terrain::Reset()
 	// Clear cached terrain components (will be repopulated next frame)
 	g_xTerrainComponentsToRender.Clear();
 
-	Zenith_Log("Flux_Terrain::Reset() - Reset command lists and cleared cached terrain components");
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "Flux_Terrain::Reset() - Reset command lists and cleared cached terrain components");
 }
 
 void Flux_Terrain::SubmitRenderToGBufferTask()
@@ -265,15 +265,15 @@ void Flux_Terrain::SubmitRenderToGBufferTask()
 	if (dbg_bLogTerrainMetrics && (s_uFrameCounter % 120 == 0))
 	{
 		const Flux_TerrainStreamingManager::StreamingStats& xStats = Flux_TerrainStreamingManager::GetStats();
-		Zenith_Log("=== Terrain Performance Metrics (Frame %u) ===", s_uFrameCounter);
-		Zenith_Log("  High-LOD chunks resident: %u", xStats.m_uHighLODChunksResident);
-		Zenith_Log("  Streaming vertex buffer: %u/%u MB (%.1f%%)", 
+		Zenith_Log(LOG_CATEGORY_TERRAIN, "=== Terrain Performance Metrics (Frame %u) ===", s_uFrameCounter);
+		Zenith_Log(LOG_CATEGORY_TERRAIN, "  High-LOD chunks resident: %u", xStats.m_uHighLODChunksResident);
+		Zenith_Log(LOG_CATEGORY_TERRAIN, "  Streaming vertex buffer: %u/%u MB (%.1f%%)",
 			xStats.m_uVertexBufferUsedMB, xStats.m_uVertexBufferTotalMB,
 			(xStats.m_uVertexBufferUsedMB * 100.0f) / xStats.m_uVertexBufferTotalMB);
-		Zenith_Log("  Streaming index buffer: %u/%u MB (%.1f%%)",
+		Zenith_Log(LOG_CATEGORY_TERRAIN, "  Streaming index buffer: %u/%u MB (%.1f%%)",
 			xStats.m_uIndexBufferUsedMB, xStats.m_uIndexBufferTotalMB,
 			(xStats.m_uIndexBufferUsedMB * 100.0f) / xStats.m_uIndexBufferTotalMB);
-		Zenith_Log("  Buffer fragmentation: %u vertex blocks, %u index blocks",
+		Zenith_Log(LOG_CATEGORY_TERRAIN, "  Buffer fragmentation: %u vertex blocks, %u index blocks",
 			xStats.m_uVertexFragments, xStats.m_uIndexFragments);
 	}
 

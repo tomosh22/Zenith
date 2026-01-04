@@ -12,18 +12,18 @@ static constexpr uint32_t UI_CANVAS_VERSION = 1;
 
 // Static member initialization
 Zenith_UICanvas* Zenith_UICanvas::s_pxPrimaryCanvas = nullptr;
-std::vector<UITextEntry> Zenith_UICanvas::s_xPendingTextEntries;
+Zenith_Vector<UITextEntry> Zenith_UICanvas::s_xPendingTextEntries;
 
 void Zenith_UICanvas::Initialise()
 {
-    Zenith_Log("Zenith_UICanvas system initialized");
+    Zenith_Log(LOG_CATEGORY_UI, "Zenith_UICanvas system initialized");
 }
 
 void Zenith_UICanvas::Shutdown()
 {
     s_pxPrimaryCanvas = nullptr;
-    s_xPendingTextEntries.clear();
-    Zenith_Log("Zenith_UICanvas system shutdown");
+    s_xPendingTextEntries.Clear();
+    Zenith_Log(LOG_CATEGORY_UI, "Zenith_UICanvas system shutdown");
 }
 
 Zenith_UICanvas::Zenith_UICanvas()
@@ -54,8 +54,9 @@ Zenith_UICanvas::Zenith_UICanvas(Zenith_UICanvas&& xOther)
     , m_fScaleFactor(xOther.m_fScaleFactor)
 {
     // Update element canvas pointers to point to this canvas
-    for (Zenith_UIElement* pxElement : m_xAllElements)
+    for (Zenith_Vector<Zenith_UIElement*>::Iterator xIt(m_xAllElements); !xIt.Done(); xIt.Next())
     {
+        Zenith_UIElement* pxElement = xIt.GetData();
         if (pxElement)
         {
             pxElement->m_pxCanvas = this;
@@ -84,8 +85,9 @@ Zenith_UICanvas& Zenith_UICanvas::operator=(Zenith_UICanvas&& xOther)
         m_fScaleFactor = xOther.m_fScaleFactor;
 
         // Update element canvas pointers
-        for (Zenith_UIElement* pxElement : m_xAllElements)
+        for (Zenith_Vector<Zenith_UIElement*>::Iterator xIt(m_xAllElements); !xIt.Done(); xIt.Next())
         {
+            Zenith_UIElement* pxElement = xIt.GetData();
             if (pxElement)
             {
                 pxElement->m_pxCanvas = this;
@@ -109,8 +111,8 @@ void Zenith_UICanvas::AddElement(Zenith_UIElement* pxElement)
         pxElement->m_pxCanvas = this;
         pxElement->m_bTransformDirty = true;
 
-        m_xAllElements.push_back(pxElement);
-        m_xRootElements.push_back(pxElement);
+        m_xAllElements.PushBack(pxElement);
+        m_xRootElements.PushBack(pxElement);
     }
 }
 
@@ -120,12 +122,10 @@ void Zenith_UICanvas::RemoveElement(Zenith_UIElement* pxElement)
         return;
 
     // Remove from root elements
-    auto rootIt = std::remove(m_xRootElements.begin(), m_xRootElements.end(), pxElement);
-    m_xRootElements.erase(rootIt, m_xRootElements.end());
+    m_xRootElements.EraseValue(pxElement);
 
     // Remove from all elements and delete
-    auto allIt = std::remove(m_xAllElements.begin(), m_xAllElements.end(), pxElement);
-    m_xAllElements.erase(allIt, m_xAllElements.end());
+    m_xAllElements.EraseValue(pxElement);
 
     delete pxElement;
 }
@@ -133,20 +133,20 @@ void Zenith_UICanvas::RemoveElement(Zenith_UIElement* pxElement)
 void Zenith_UICanvas::Clear()
 {
     // Delete all elements
-    for (Zenith_UIElement* pxElement : m_xAllElements)
+    for (Zenith_Vector<Zenith_UIElement*>::Iterator xIt(m_xAllElements); !xIt.Done(); xIt.Next())
     {
-        delete pxElement;
+        delete xIt.GetData();
     }
 
-    m_xAllElements.clear();
-    m_xRootElements.clear();
+    m_xAllElements.Clear();
+    m_xRootElements.Clear();
 }
 
 Zenith_UIElement* Zenith_UICanvas::FindElement(const std::string& strName) const
 {
-    for (Zenith_UIElement* pxElement : m_xRootElements)
+    for (Zenith_Vector<Zenith_UIElement*>::Iterator xIt(m_xRootElements); !xIt.Done(); xIt.Next())
     {
-        Zenith_UIElement* pxFound = FindElementRecursive(pxElement, strName);
+        Zenith_UIElement* pxFound = FindElementRecursive(xIt.GetData(), strName);
         if (pxFound)
         {
             return pxFound;
@@ -163,9 +163,10 @@ Zenith_UIElement* Zenith_UICanvas::FindElementRecursive(Zenith_UIElement* pxElem
     if (pxElement->GetName() == strName)
         return pxElement;
 
-    for (Zenith_UIElement* pxChild : pxElement->GetChildren())
+    const Zenith_Vector<Zenith_UIElement*>& xChildren = pxElement->GetChildren();
+    for (Zenith_Vector<Zenith_UIElement*>::Iterator xIt(xChildren); !xIt.Done(); xIt.Next())
     {
-        Zenith_UIElement* pxFound = FindElementRecursive(pxChild, strName);
+        Zenith_UIElement* pxFound = FindElementRecursive(xIt.GetData(), strName);
         if (pxFound)
         {
             return pxFound;
@@ -179,8 +180,9 @@ void Zenith_UICanvas::Update(float fDt)
 {
     UpdateSize();
 
-    for (Zenith_UIElement* pxElement : m_xRootElements)
+    for (Zenith_Vector<Zenith_UIElement*>::Iterator xIt(m_xRootElements); !xIt.Done(); xIt.Next())
     {
+        Zenith_UIElement* pxElement = xIt.GetData();
         if (pxElement && pxElement->IsVisible())
         {
             pxElement->Update(fDt);
@@ -194,8 +196,9 @@ void Zenith_UICanvas::Render()
     // This is necessary because Update() may not be called every frame
     UpdateSize();
 
-    for (Zenith_UIElement* pxElement : m_xRootElements)
+    for (Zenith_Vector<Zenith_UIElement*>::Iterator xIt(m_xRootElements); !xIt.Done(); xIt.Next())
     {
+        Zenith_UIElement* pxElement = xIt.GetData();
         if (pxElement && pxElement->IsVisible())
         {
             pxElement->Render(*this);
@@ -217,8 +220,9 @@ void Zenith_UICanvas::UpdateSize()
         m_fScaleFactor = m_xSize.y / m_xReferenceResolution.y;
 
         // Mark all elements as transform dirty
-        for (Zenith_UIElement* pxElement : m_xAllElements)
+        for (Zenith_Vector<Zenith_UIElement*>::Iterator xIt(m_xAllElements); !xIt.Done(); xIt.Next())
         {
+            Zenith_UIElement* pxElement = xIt.GetData();
             if (pxElement)
             {
                 pxElement->m_bTransformDirty = true;
@@ -293,7 +297,7 @@ void Zenith_UICanvas::SubmitText(const std::string& strText, const Zenith_Maths:
     xEntry.m_fSize = fSize;
     xEntry.m_xColor = xColor;
 
-    s_xPendingTextEntries.push_back(xEntry);
+    s_xPendingTextEntries.PushBack(xEntry);
 }
 
 void Zenith_UICanvas::WriteToDataStream(Zenith_DataStream& xStream) const
@@ -301,12 +305,13 @@ void Zenith_UICanvas::WriteToDataStream(Zenith_DataStream& xStream) const
     xStream << UI_CANVAS_VERSION;
 
     // Write number of root elements
-    uint32_t uNumElements = static_cast<uint32_t>(m_xRootElements.size());
+    uint32_t uNumElements = static_cast<uint32_t>(m_xRootElements.GetSize());
     xStream << uNumElements;
 
     // Write each root element (they will write their children)
-    for (const Zenith_UIElement* pxElement : m_xRootElements)
+    for (Zenith_Vector<Zenith_UIElement*>::Iterator xIt(m_xRootElements); !xIt.Done(); xIt.Next())
     {
+        const Zenith_UIElement* pxElement = xIt.GetData();
         if (pxElement)
         {
             // Write type first so we can create correct type on load
@@ -368,7 +373,7 @@ void Zenith_UICanvas::ReadFromDataStream(Zenith_DataStream& xStream)
                 {
                     pxChild->ReadFromDataStream(xStream);
                     pxElement->AddChild(pxChild);
-                    m_xAllElements.push_back(pxChild);
+                    m_xAllElements.PushBack(pxChild);
                 }
             }
 

@@ -13,9 +13,6 @@
 
 ZENITH_REGISTER_COMPONENT(Zenith_ModelComponent, "Model")
 
-// Log tag for model component operations
-static constexpr const char* LOG_TAG_MODEL = "[ModelComponent]";
-static constexpr const char* LOG_TAG_MODEL_PHYSICS = "[ModelPhysics]";
 
 // Serialization version for ModelComponent
 // Version 3: New model instance system with .zmodel path
@@ -42,7 +39,7 @@ Zenith_ModelComponent::~Zenith_ModelComponent()
 
 void Zenith_ModelComponent::LoadModel(const std::string& strPath)
 {
-	Zenith_Log("%s LoadModel called with path: %s", LOG_TAG_MODEL, strPath.c_str());
+	Zenith_Log(LOG_CATEGORY_MESH, "LoadModel called with path: %s", strPath.c_str());
 
 	// Clear any existing model
 	ClearModel();
@@ -51,19 +48,19 @@ void Zenith_ModelComponent::LoadModel(const std::string& strPath)
 	Zenith_ModelAsset* pxAsset = Zenith_ModelAsset::LoadFromFile(strPath.c_str());
 	if (!pxAsset)
 	{
-		Zenith_Log("%s ERROR: Failed to load model asset from: %s", LOG_TAG_MODEL, strPath.c_str());
+		Zenith_Error(LOG_CATEGORY_MESH, "Failed to load model asset from: %s", strPath.c_str());
 		return;
 	}
 
-	Zenith_Log("%s Model asset loaded: %s (meshes: %u, has skeleton: %s)",
-		LOG_TAG_MODEL, pxAsset->GetName().c_str(), pxAsset->GetNumMeshes(),
+	Zenith_Log(LOG_CATEGORY_MESH, "Model asset loaded: %s (meshes: %u, has skeleton: %s)",
+		pxAsset->GetName().c_str(), pxAsset->GetNumMeshes(),
 		pxAsset->HasSkeleton() ? "yes" : "no");
 
 	// Create model instance from asset
 	m_pxModelInstance = Flux_ModelInstance::CreateFromAsset(pxAsset);
 	if (!m_pxModelInstance)
 	{
-		Zenith_Log("%s ERROR: Failed to create model instance from asset: %s", LOG_TAG_MODEL, strPath.c_str());
+		Zenith_Error(LOG_CATEGORY_MESH, "Failed to create model instance from asset: %s", strPath.c_str());
 		delete pxAsset;
 		return;
 	}
@@ -78,21 +75,21 @@ void Zenith_ModelComponent::LoadModel(const std::string& strPath)
 	}
 
 	// Detailed logging for debugging
-	Zenith_Log("%s SUCCESS: Loaded model from: %s", LOG_TAG_MODEL, strPath.c_str());
-	Zenith_Log("%s   Meshes: %u", LOG_TAG_MODEL, m_pxModelInstance->GetNumMeshes());
-	Zenith_Log("%s   Materials: %u", LOG_TAG_MODEL, m_pxModelInstance->GetNumMaterials());
-	Zenith_Log("%s   Has Skeleton: %s", LOG_TAG_MODEL, m_pxModelInstance->HasSkeleton() ? "yes (animated mesh renderer)" : "no (static mesh renderer)");
+	Zenith_Log(LOG_CATEGORY_MESH, "SUCCESS: Loaded model from: %s", strPath.c_str());
+	Zenith_Log(LOG_CATEGORY_MESH, "  Meshes: %u", m_pxModelInstance->GetNumMeshes());
+	Zenith_Log(LOG_CATEGORY_MESH, "  Materials: %u", m_pxModelInstance->GetNumMaterials());
+	Zenith_Log(LOG_CATEGORY_MESH, "  Has Skeleton: %s", m_pxModelInstance->HasSkeleton() ? "yes (animated mesh renderer)" : "no (static mesh renderer)");
 
 	for (uint32_t u = 0; u < m_pxModelInstance->GetNumMeshes(); u++)
 	{
 		Flux_MeshInstance* pxMesh = m_pxModelInstance->GetMeshInstance(u);
 		if (pxMesh)
 		{
-			Zenith_Log("%s   Mesh %u: %u verts, %u indices", LOG_TAG_MODEL, u, pxMesh->GetNumVerts(), pxMesh->GetNumIndices());
+			Zenith_Log(LOG_CATEGORY_MESH, "  Mesh %u: %u verts, %u indices", u, pxMesh->GetNumVerts(), pxMesh->GetNumIndices());
 		}
 		else
 		{
-			Zenith_Log("%s   Mesh %u: NULL", LOG_TAG_MODEL, u);
+			Zenith_Log(LOG_CATEGORY_MESH, "  Mesh %u: NULL", u);
 		}
 	}
 
@@ -202,12 +199,12 @@ Flux_AnimationController* Zenith_ModelComponent::GetOrCreateAnimationController(
 		if (pxSkeleton)
 		{
 			m_pxAnimController->Initialize(pxSkeleton);
-			Zenith_Log("%s Created animation controller for model instance (bones: %u)",
-				LOG_TAG_MODEL, pxSkeleton->GetNumBones());
+			Zenith_Log(LOG_CATEGORY_ANIMATION, "Created animation controller for model instance (bones: %u)",
+				pxSkeleton->GetNumBones());
 		}
 		else
 		{
-			Zenith_Log("%s Model has skeleton but GetSkeletonInstance() returned null", LOG_TAG_MODEL);
+			Zenith_Log(LOG_CATEGORY_ANIMATION, "Model has skeleton but GetSkeletonInstance() returned null");
 		}
 	}
 	else if (m_xMeshEntries.GetSize() > 0)
@@ -219,8 +216,8 @@ Flux_AnimationController* Zenith_ModelComponent::GetOrCreateAnimationController(
 			if (pxGeometry && pxGeometry->GetNumBones() > 0)
 			{
 				m_pxAnimController->Initialize(pxGeometry);
-				Zenith_Log("%s Created animation controller for legacy mesh (bones: %u)",
-					LOG_TAG_MODEL, pxGeometry->GetNumBones());
+				Zenith_Log(LOG_CATEGORY_ANIMATION, "Created animation controller for legacy mesh (bones: %u)",
+					pxGeometry->GetNumBones());
 				break;
 			}
 		}
@@ -433,7 +430,7 @@ void Zenith_ModelComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 
 	if (uVersion < MODEL_COMPONENT_SERIALIZE_VERSION_GUID)
 	{
-		Zenith_Log("%s ERROR: Unsupported legacy format version %u. Please re-save the scene.", LOG_TAG_MODEL, uVersion);
+		Zenith_Error(LOG_CATEGORY_MESH, "Unsupported legacy format version %u. Please re-save the scene.", uVersion);
 		return;
 	}
 
@@ -456,7 +453,7 @@ void Zenith_ModelComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 			}
 			else
 			{
-				Zenith_Log("%s Failed to resolve model GUID to path", LOG_TAG_MODEL);
+				Zenith_Error(LOG_CATEGORY_MESH, "Failed to resolve model GUID to path");
 			}
 		}
 	}
@@ -487,7 +484,7 @@ void Zenith_ModelComponent::GeneratePhysicsMeshWithConfig(const PhysicsMeshConfi
 		// New system: Get geometries from mesh instances
 		// TODO: Flux_MeshInstance needs to provide access to geometry or position data
 		// For now, physics mesh generation is not supported with new system
-		Zenith_Log("%s Physics mesh generation not yet implemented for new model instance system", LOG_TAG_MODEL_PHYSICS);
+		Zenith_Log(LOG_CATEGORY_PHYSICS, "Physics mesh generation not yet implemented for new model instance system");
 		return;
 	}
 	else
@@ -495,7 +492,7 @@ void Zenith_ModelComponent::GeneratePhysicsMeshWithConfig(const PhysicsMeshConfi
 		// Legacy system
 		if (m_xMeshEntries.GetSize() == 0)
 		{
-			Zenith_Log("%s Cannot generate physics mesh: no mesh entries", LOG_TAG_MODEL_PHYSICS);
+			Zenith_Error(LOG_CATEGORY_PHYSICS, "Cannot generate physics mesh: no mesh entries");
 			return;
 		}
 
@@ -509,7 +506,7 @@ void Zenith_ModelComponent::GeneratePhysicsMeshWithConfig(const PhysicsMeshConfi
 
 		if (xMeshGeometries.GetSize() == 0)
 		{
-			Zenith_Log("%s Cannot generate physics mesh: no valid geometries", LOG_TAG_MODEL_PHYSICS);
+			Zenith_Error(LOG_CATEGORY_PHYSICS, "Cannot generate physics mesh: no valid geometries");
 			return;
 		}
 	}
@@ -520,8 +517,8 @@ void Zenith_ModelComponent::GeneratePhysicsMeshWithConfig(const PhysicsMeshConfi
 		Zenith_TransformComponent& xTransform = m_xParentEntity.GetComponent<Zenith_TransformComponent>();
 		Zenith_Maths::Vector3 xScale;
 		xTransform.GetScale(xScale);
-		Zenith_Log("%s Generating physics mesh with entity scale (%.3f, %.3f, %.3f)",
-			LOG_TAG_MODEL_PHYSICS, xScale.x, xScale.y, xScale.z);
+		Zenith_Log(LOG_CATEGORY_PHYSICS, "Generating physics mesh with entity scale (%.3f, %.3f, %.3f)",
+			xScale.x, xScale.y, xScale.z);
 	}
 
 	// Generate the physics mesh
@@ -529,21 +526,20 @@ void Zenith_ModelComponent::GeneratePhysicsMeshWithConfig(const PhysicsMeshConfi
 
 	if (m_pxPhysicsMesh)
 	{
-		Zenith_Log("%s Generated physics mesh for model: %u verts, %u tris",
-			LOG_TAG_MODEL_PHYSICS,
+		Zenith_Log(LOG_CATEGORY_PHYSICS, "Generated physics mesh for model: %u verts, %u tris",
 			m_pxPhysicsMesh->GetNumVerts(),
 			m_pxPhysicsMesh->GetNumIndices() / 3);
 
 		if (m_pxPhysicsMesh->GetNumVerts() > 0)
 		{
 			Zenith_Maths::Vector3& v0 = m_pxPhysicsMesh->m_pxPositions[0];
-			Zenith_Log("%s First vertex in model space: (%.3f, %.3f, %.3f)",
-				LOG_TAG_MODEL_PHYSICS, v0.x, v0.y, v0.z);
+			Zenith_Log(LOG_CATEGORY_PHYSICS, "First vertex in model space: (%.3f, %.3f, %.3f)",
+				v0.x, v0.y, v0.z);
 		}
 	}
 	else
 	{
-		Zenith_Log("%s Failed to generate physics mesh for model", LOG_TAG_MODEL_PHYSICS);
+		Zenith_Error(LOG_CATEGORY_PHYSICS, "Failed to generate physics mesh for model");
 	}
 }
 
@@ -575,8 +571,8 @@ void Zenith_ModelComponent::DebugDrawPhysicsMesh()
 	Zenith_Maths::Matrix4 xModelMatrix;
 	xTransform.BuildModelMatrix(xModelMatrix);
 
-	Zenith_Log("%s DebugDraw: Entity scale (%.3f, %.3f, %.3f), verts=%u",
-		LOG_TAG_MODEL_PHYSICS, xScale.x, xScale.y, xScale.z, m_pxPhysicsMesh->GetNumVerts());
+	Zenith_Log(LOG_CATEGORY_PHYSICS, "DebugDraw: Entity scale (%.3f, %.3f, %.3f), verts=%u",
+		xScale.x, xScale.y, xScale.z, m_pxPhysicsMesh->GetNumVerts());
 
 	Zenith_PhysicsMeshGenerator::DebugDrawPhysicsMesh(m_pxPhysicsMesh, xModelMatrix, m_xDebugDrawColor);
 }
@@ -643,8 +639,8 @@ void Zenith_ModelComponent::RenderTextureSlot(const char* szLabel, Flux_Material
 			const DragDropFilePayload* pFilePayload =
 				static_cast<const DragDropFilePayload*>(pPayload->Data);
 
-			Zenith_Log("%s Texture dropped on %s: %s",
-				LOG_TAG_MODEL, szLabel, pFilePayload->m_szFilePath);
+			Zenith_Log(LOG_CATEGORY_MESH, "Texture dropped on %s: %s",
+				szLabel, pFilePayload->m_szFilePath);
 
 			AssignTextureToSlot(pFilePayload->m_szFilePath, uMeshIdx, eSlot);
 		}
@@ -676,23 +672,23 @@ void Zenith_ModelComponent::AssignTextureToSlot(const char* szFilePath, uint32_t
 
 	if (!pxTexture)
 	{
-		Zenith_Log("%s Failed to load texture: %s", LOG_TAG_MODEL, szFilePath);
+		Zenith_Error(LOG_CATEGORY_MESH, "Failed to load texture: %s", szFilePath);
 		return;
 	}
 
 	pxTexture->m_strSourcePath = szFilePath;
-	Zenith_Log("%s Loaded texture from: %s", LOG_TAG_MODEL, szFilePath);
+	Zenith_Log(LOG_CATEGORY_MESH, "Loaded texture from: %s", szFilePath);
 
 	Flux_MaterialAsset* pxOldMaterial = m_xMeshEntries.Get(uMeshIdx).m_pxMaterial;
 
 	Flux_MaterialAsset* pxNewMaterial = Flux_MaterialAsset::Create("Material_" + std::to_string(uMeshIdx));
 	if (!pxNewMaterial)
 	{
-		Zenith_Log("%s Failed to create new material instance", LOG_TAG_MODEL);
+		Zenith_Error(LOG_CATEGORY_MATERIAL, "Failed to create new material instance");
 		return;
 	}
 
-	Zenith_Log("%s Created new material instance", LOG_TAG_MODEL);
+	Zenith_Log(LOG_CATEGORY_MATERIAL, "Created new material instance");
 
 	if (pxOldMaterial)
 	{
@@ -715,23 +711,23 @@ void Zenith_ModelComponent::AssignTextureToSlot(const char* szFilePath, uint32_t
 	{
 	case TEXTURE_SLOT_DIFFUSE:
 		pxNewMaterial->SetDiffuseTexturePath(strPath);
-		Zenith_Log("%s Set diffuse texture", LOG_TAG_MODEL);
+		Zenith_Log(LOG_CATEGORY_MATERIAL, "Set diffuse texture");
 		break;
 	case TEXTURE_SLOT_NORMAL:
 		pxNewMaterial->SetNormalTexturePath(strPath);
-		Zenith_Log("%s Set normal texture", LOG_TAG_MODEL);
+		Zenith_Log(LOG_CATEGORY_MATERIAL, "Set normal texture");
 		break;
 	case TEXTURE_SLOT_ROUGHNESS_METALLIC:
 		pxNewMaterial->SetRoughnessMetallicTexturePath(strPath);
-		Zenith_Log("%s Set roughness/metallic texture", LOG_TAG_MODEL);
+		Zenith_Log(LOG_CATEGORY_MATERIAL, "Set roughness/metallic texture");
 		break;
 	case TEXTURE_SLOT_OCCLUSION:
 		pxNewMaterial->SetOcclusionTexturePath(strPath);
-		Zenith_Log("%s Set occlusion texture", LOG_TAG_MODEL);
+		Zenith_Log(LOG_CATEGORY_MATERIAL, "Set occlusion texture");
 		break;
 	case TEXTURE_SLOT_EMISSIVE:
 		pxNewMaterial->SetEmissiveTexturePath(strPath);
-		Zenith_Log("%s Set emissive texture", LOG_TAG_MODEL);
+		Zenith_Log(LOG_CATEGORY_MATERIAL, "Set emissive texture");
 		break;
 	}
 
@@ -787,7 +783,7 @@ void Zenith_ModelComponent::RenderPropertiesPanel()
 					const DragDropFilePayload* pFilePayload =
 						static_cast<const DragDropFilePayload*>(pPayload->Data);
 
-					Zenith_Log("%s Model dropped: %s", LOG_TAG_MODEL, pFilePayload->m_szFilePath);
+					Zenith_Log(LOG_CATEGORY_MESH, "Model dropped: %s", pFilePayload->m_szFilePath);
 					LoadModel(pFilePayload->m_szFilePath);
 				}
 				ImGui::EndDragDropTarget();
@@ -837,7 +833,7 @@ void Zenith_ModelComponent::RenderPropertiesPanel()
 						const DragDropFilePayload* pFilePayload =
 							static_cast<const DragDropFilePayload*>(pPayload->Data);
 
-						Zenith_Log("%s Animation dropped: %s", LOG_TAG_MODEL, pFilePayload->m_szFilePath);
+						Zenith_Log(LOG_CATEGORY_ANIMATION, "Animation dropped: %s", pFilePayload->m_szFilePath);
 
 						Flux_AnimationController* pxController = GetOrCreateAnimationController();
 						if (pxController)
@@ -846,11 +842,11 @@ void Zenith_ModelComponent::RenderPropertiesPanel()
 							if (pxClip)
 							{
 								pxController->GetClipCollection().AddClip(pxClip);
-								Zenith_Log("%s Loaded animation: %s", LOG_TAG_MODEL, pxClip->GetName().c_str());
+								Zenith_Log(LOG_CATEGORY_ANIMATION, "Loaded animation: %s", pxClip->GetName().c_str());
 							}
 							else
 							{
-								Zenith_Log("%s Failed to load animation from: %s", LOG_TAG_MODEL, pFilePayload->m_szFilePath);
+								Zenith_Error(LOG_CATEGORY_ANIMATION, "Failed to load animation from: %s", pFilePayload->m_szFilePath);
 							}
 						}
 					}
@@ -878,11 +874,11 @@ void Zenith_ModelComponent::RenderPropertiesPanel()
 							if (pxClip)
 							{
 								pxController->GetClipCollection().AddClip(pxClip);
-								Zenith_Log("[ModelComponent] Loaded animation from: %s", s_szAnimPath);
+								Zenith_Log(LOG_CATEGORY_ANIMATION, "Loaded animation from: %s", s_szAnimPath);
 							}
 							else
 							{
-								Zenith_Log("[ModelComponent] Failed to load animation from: %s", s_szAnimPath);
+								Zenith_Error(LOG_CATEGORY_ANIMATION, "Failed to load animation from: %s", s_szAnimPath);
 							}
 						}
 					}
@@ -929,7 +925,7 @@ void Zenith_ModelComponent::RenderPropertiesPanel()
 							if (ImGui::Button(pxClip->GetName().c_str()))
 							{
 								pxController->PlayClip(pxClip->GetName());
-								Zenith_Log("[ModelComponent] Playing animation: %s", pxClip->GetName().c_str());
+								Zenith_Log(LOG_CATEGORY_ANIMATION, "Playing animation: %s", pxClip->GetName().c_str());
 							}
 							ImGui::SameLine();
 							ImGui::Text("(%.2fs)", pxClip->GetDuration());
@@ -1002,11 +998,11 @@ void Zenith_ModelComponent::RenderPropertiesPanel()
 							delete xMesh.m_pxAnimation;
 						}
 						xMesh.m_pxAnimation = new Flux_MeshAnimation(s_szAnimFilePath, xMesh);
-						Zenith_Log("%s Loaded animation from: %s for mesh %d", LOG_TAG_MODEL, s_szAnimFilePath, s_iTargetMeshIndex);
+						Zenith_Log(LOG_CATEGORY_ANIMATION, "Loaded animation from: %s for mesh %d", s_szAnimFilePath, s_iTargetMeshIndex);
 					}
 					else
 					{
-						Zenith_Log("%s Cannot load animation: mesh %d has no bones", LOG_TAG_MODEL, s_iTargetMeshIndex);
+						Zenith_Error(LOG_CATEGORY_ANIMATION, "Cannot load animation: mesh %d has no bones", s_iTargetMeshIndex);
 					}
 				}
 			}
@@ -1025,7 +1021,7 @@ void Zenith_ModelComponent::RenderPropertiesPanel()
 								delete xMesh.m_pxAnimation;
 							}
 							xMesh.m_pxAnimation = new Flux_MeshAnimation(s_szAnimFilePath, xMesh);
-							Zenith_Log("%s Loaded animation for mesh %u", LOG_TAG_MODEL, u);
+							Zenith_Log(LOG_CATEGORY_ANIMATION, "Loaded animation for mesh %u", u);
 						}
 					}
 				}

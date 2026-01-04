@@ -64,7 +64,7 @@ void Flux_AnimationController::Initialize(Flux_SkeletonInstance* pxSkeleton)
 		// We don't need to create one here - the skeleton instance will be updated
 		// and use its existing buffer for rendering
 
-		Zenith_Log("[AnimationController] Initialized with skeleton instance (%u bones)", uNumBones);
+		Zenith_Log(LOG_CATEGORY_ANIMATION, "[AnimationController] Initialized with skeleton instance (%u bones)", uNumBones);
 	}
 }
 
@@ -222,12 +222,12 @@ void Flux_AnimationController::UpdateWithSkeletonInstance(float fDt)
 			static bool s_bLoggedScales = false;
 			if (!s_bLoggedScales)
 			{
-				Zenith_Log("[AnimationController] Scale values after sampling:");
+				Zenith_Log(LOG_CATEGORY_ANIMATION, "[AnimationController] Scale values after sampling:");
 				for (uint32_t i = 0; i < uNumBones && i < 5; ++i)
 				{
 					const Flux_BoneLocalPose& xLocalPose = m_xOutputPose.GetLocalPose(i);
 					const Zenith_SkeletonAsset::Bone& xBone = m_pxSkeletonAsset->GetBone(i);
-					Zenith_Log("  [%u] '%s': scale=(%.3f, %.3f, %.3f), bindScale=(%.3f, %.3f, %.3f)",
+					Zenith_Log(LOG_CATEGORY_ANIMATION, "  [%u] '%s': scale=(%.3f, %.3f, %.3f), bindScale=(%.3f, %.3f, %.3f)",
 						i, xBone.m_strName.c_str(),
 						xLocalPose.m_xScale.x, xLocalPose.m_xScale.y, xLocalPose.m_xScale.z,
 						xBone.m_xBindScale.x, xBone.m_xBindScale.y, xBone.m_xBindScale.z);
@@ -340,7 +340,7 @@ void Flux_AnimationController::PlayClip(const std::string& strClipName, float fB
 	Flux_AnimationClip* pxClip = m_xClipCollection.GetClip(strClipName);
 	if (!pxClip)
 	{
-		Zenith_Log("[AnimationController] Clip not found: %s", strClipName.c_str());
+		Zenith_Log(LOG_CATEGORY_ANIMATION, "[AnimationController] Clip not found: %s", strClipName.c_str());
 		return;
 	}
 

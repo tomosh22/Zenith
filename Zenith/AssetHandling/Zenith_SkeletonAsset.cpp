@@ -93,12 +93,12 @@ Zenith_SkeletonAsset* Zenith_SkeletonAsset::LoadFromFile(const char* szPath)
 	pxAsset->m_strSourcePath = szPath;
 
 	// Debug logging for skeleton
-	Zenith_Log("[SkeletonAsset] Loaded %s with %u bones:", szPath, pxAsset->GetNumBones());
+	Zenith_Log(LOG_CATEGORY_ANIMATION, "Loaded %s with %u bones:", szPath, pxAsset->GetNumBones());
 	for (uint32_t u = 0; u < pxAsset->GetNumBones(); u++)
 	{
 		const Bone& xBone = pxAsset->GetBone(u);
 		Zenith_Maths::Vector3 xBindPos = Zenith_Maths::Vector3(xBone.m_xBindPoseModel[3]);
-		Zenith_Log("  [%u] '%s' parent=%d, BindPoseModel translation=(%.2f, %.2f, %.2f)",
+		Zenith_Log(LOG_CATEGORY_ANIMATION, "  [%u] '%s' parent=%d, BindPoseModel translation=(%.2f, %.2f, %.2f)",
 			u, xBone.m_strName.c_str(), xBone.m_iParentIndex,
 			xBindPos.x, xBindPos.y, xBindPos.z);
 	}
@@ -139,7 +139,7 @@ void Zenith_SkeletonAsset::ReadFromDataStream(Zenith_DataStream& xStream)
 
 	if (uVersion != ZENITH_SKELETON_ASSET_VERSION)
 	{
-		Zenith_Log("[SkeletonAsset] Version mismatch: expected %u, got %u", ZENITH_SKELETON_ASSET_VERSION, uVersion);
+		Zenith_Log(LOG_CATEGORY_ANIMATION, "Version mismatch: expected %u, got %u", ZENITH_SKELETON_ASSET_VERSION, uVersion);
 	}
 
 	// Bone count

@@ -123,7 +123,7 @@ static void ExportAssimpMesh(
 	}
 	xMeshAsset.m_xMaterialColor = xMaterialColor;
 
-	Zenith_Log("MESH_EXPORT: Exporting mesh to %s (Verts: %u, Indices: %u, Bones: %u, VertexColors: %s, MaterialColor: %.2f,%.2f,%.2f)",
+	Zenith_Log(LOG_CATEGORY_TOOLS, "MESH_EXPORT: Exporting mesh to %s (Verts: %u, Indices: %u, Bones: %u, VertexColors: %s, MaterialColor: %.2f,%.2f,%.2f)",
 		strOutFilename.c_str(), uNumVerts, uNumIndices, pxAssimpMesh->mNumBones,
 		bHasVertexColors ? "Yes" : "No", xMaterialColor.r, xMaterialColor.g, xMaterialColor.b);
 
@@ -168,7 +168,7 @@ static void ExportAssimpMesh(
 			Zenith_Maths::Matrix4 xAdjustedInvBindPose = xOriginalInvBindPose * xInverseMeshNodeWorldTransform;
 			xBoneNameToInvBindPose[pxBone->mName.C_Str()] = xAdjustedInvBindPose;
 
-			Zenith_Log("MESH_EXPORT:   Bone '%s' inverse bind pose adjusted for baked mesh transform", pxBone->mName.C_Str());
+			Zenith_Log(LOG_CATEGORY_TOOLS, "MESH_EXPORT:   Bone '%s' inverse bind pose adjusted for baked mesh transform", pxBone->mName.C_Str());
 
 			// Register bone name for skeleton extraction
 			if (xBoneNameToIndex.find(pxBone->mName.C_Str()) == xBoneNameToIndex.end())
@@ -184,7 +184,7 @@ static void ExportAssimpMesh(
 		{
 			if (puVertexBoneCount[uVert] > kBonesPerVertexLimit)
 			{
-				Zenith_Log("Mesh has vertices with more than BONES_PER_VERTEX_LIMIT bone influences");
+				Zenith_Log(LOG_CATEGORY_TOOLS, "Mesh has vertices with more than BONES_PER_VERTEX_LIMIT bone influences");
 				delete[] puVertexBoneCount;
 				return;
 			}
@@ -204,7 +204,7 @@ static void ExportAssimpMesh(
 	// Calculate normal matrix (inverse transpose of upper 3x3) for transforming normals
 	Zenith_Maths::Matrix3 xNormalMatrix = glm::transpose(glm::inverse(Zenith_Maths::Matrix3(xMeshNodeWorldTransform)));
 
-	Zenith_Log("MESH_EXPORT:   Baking mesh node transform into vertices");
+	Zenith_Log(LOG_CATEGORY_TOOLS, "MESH_EXPORT:   Baking mesh node transform into vertices");
 
 	// Add vertex data
 	for (u_int i = 0; i < pxAssimpMesh->mNumVertices; i++)
@@ -360,7 +360,7 @@ static void ExportAssimpMesh(
 		const aiFace& xFace = pxAssimpMesh->mFaces[i];
 		if (xFace.mNumIndices != 3)
 		{
-			Zenith_Log("Face is not a triangle, aborting");
+			Zenith_Log(LOG_CATEGORY_TOOLS, "Face is not a triangle, aborting");
 			return;
 		}
 
@@ -379,7 +379,7 @@ static void ExportAssimpMesh(
 	// Export to file
 	xMeshAsset.Export(strOutFilename.c_str());
 
-	Zenith_Log("MESH_EXPORT: Successfully exported %s", strOutFilename.c_str());
+	Zenith_Log(LOG_CATEGORY_TOOLS, "MESH_EXPORT: Successfully exported %s", strOutFilename.c_str());
 }
 
 //------------------------------------------------------------------------------
@@ -490,7 +490,7 @@ static void CollectBoneDataFromNode(
 
 		if (iParentSkeletonIndex == Zenith_SkeletonAsset::INVALID_BONE_INDEX)
 		{
-			Zenith_Log("SKELETON_BUILD: Root bone '%s' - using local transform (no ancestor baking)", strNodeName.c_str());
+			Zenith_Log(LOG_CATEGORY_TOOLS, "SKELETON_BUILD: Root bone '%s' - using local transform (no ancestor baking)", strNodeName.c_str());
 		}
 
 		// Decompose to TRS
@@ -575,7 +575,7 @@ static void BuildBoneHierarchyFromNode(
 		}
 	}
 
-	Zenith_Log("SKELETON_BUILD: Built skeleton with %u bones in mesh index order", uNumBones);
+	Zenith_Log(LOG_CATEGORY_TOOLS, "SKELETON_BUILD: Built skeleton with %u bones in mesh index order", uNumBones);
 }
 
 //------------------------------------------------------------------------------
@@ -608,7 +608,7 @@ static void ExtractSkeleton(
 	// Export
 	xSkelAsset.Export(strSkeletonPath.c_str());
 
-	Zenith_Log("SKELETON_EXPORT: Successfully exported %s (%u bones)",
+	Zenith_Log(LOG_CATEGORY_TOOLS, "SKELETON_EXPORT: Successfully exported %s (%u bones)",
 		strSkeletonPath.c_str(), xSkelAsset.GetNumBones());
 }
 
@@ -781,11 +781,11 @@ static void ExtractAnimations(
 {
 	if (pxScene->mNumAnimations == 0)
 	{
-		Zenith_Log("ANIM_EXPORT: No animations found in scene");
+		Zenith_Log(LOG_CATEGORY_TOOLS, "ANIM_EXPORT: No animations found in scene");
 		return;
 	}
 
-	Zenith_Log("ANIM_EXPORT: Found %u animations", pxScene->mNumAnimations);
+	Zenith_Log(LOG_CATEGORY_TOOLS, "ANIM_EXPORT: Found %u animations", pxScene->mNumAnimations);
 
 	for (uint32_t uAnim = 0; uAnim < pxScene->mNumAnimations; uAnim++)
 	{
@@ -817,7 +817,7 @@ static void ExtractAnimations(
 		// Export the animation
 		xClip.Export(strAnimPath);
 
-		Zenith_Log("ANIM_EXPORT: Exported '%s' to %s (Duration: %.2fs, Channels: %u)",
+		Zenith_Log(LOG_CATEGORY_TOOLS, "ANIM_EXPORT: Exported '%s' to %s (Duration: %.2fs, Channels: %u)",
 			pxAnim->mName.C_Str(),
 			strAnimPath.c_str(),
 			xClip.GetDuration(),
@@ -839,8 +839,8 @@ static void Export(const std::string& strFilename, const std::string& strExtensi
 
 	if (!pxScene)
 	{
-		Zenith_Log("Null mesh scene %s", strFilename.c_str());
-		Zenith_Log("Assimp error %s", importer.GetErrorString() ? importer.GetErrorString() : "no error");
+		Zenith_Log(LOG_CATEGORY_TOOLS, "Null mesh scene %s", strFilename.c_str());
+		Zenith_Log(LOG_CATEGORY_TOOLS, "Assimp error %s", importer.GetErrorString() ? importer.GetErrorString() : "no error");
 		return;
 	}
 
@@ -913,7 +913,7 @@ static void Export(const std::string& strFilename, const std::string& strExtensi
 	std::string strModelPath = strBaseName + ZENITH_MODEL_EXT;
 	xModelAsset.Export(strModelPath.c_str());
 
-	Zenith_Log("MODEL_EXPORT: Successfully exported %s (Meshes: %zu, Skeleton: %s)",
+	Zenith_Log(LOG_CATEGORY_TOOLS, "MODEL_EXPORT: Successfully exported %s (Meshes: %zu, Skeleton: %s)",
 		strModelPath.c_str(), xExportedMeshes.size(), bHasSkeleton ? "Yes" : "No");
 }
 

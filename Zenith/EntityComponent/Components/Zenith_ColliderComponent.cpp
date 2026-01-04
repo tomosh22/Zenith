@@ -19,9 +19,6 @@
 
 ZENITH_REGISTER_COMPONENT(Zenith_ColliderComponent, "Collider")
 
-// Log tag for collider component operations
-static constexpr const char* LOG_TAG_COLLIDER = "[ColliderFromModel]";
-
 Zenith_ColliderComponent::Zenith_ColliderComponent(Zenith_Entity& xEntity) 
 	: m_xParentEntity(xEntity)
 	, m_xBodyID(JPH::BodyID())
@@ -127,20 +124,19 @@ void Zenith_ColliderComponent::AddCollider(CollisionVolumeType eVolumeType, Rigi
 		// Ensure physics mesh is generated
 		if (!xModel.HasPhysicsMesh())
 		{
-			Zenith_Log("%s Model does not have physics mesh, generating...", LOG_TAG_COLLIDER);
+			Zenith_Log(LOG_CATEGORY_PHYSICS, " Model does not have physics mesh, generating...");
 			xModel.GeneratePhysicsMesh();
 		}
 
 		const Flux_MeshGeometry* pxPhysicsMesh = xModel.GetPhysicsMesh();
 		if (!pxPhysicsMesh || !pxPhysicsMesh->m_pxPositions || pxPhysicsMesh->GetNumVerts() < 3)
 		{
-			Zenith_Log("%s Invalid physics mesh, falling back to OBB collider", LOG_TAG_COLLIDER);
+			Zenith_Log(LOG_CATEGORY_PHYSICS, " Invalid physics mesh, falling back to OBB collider");
 			pxShape = new JPH::BoxShape(JPH::Vec3(xTrans.m_xScale.x, xTrans.m_xScale.y, xTrans.m_xScale.z));
 			break;
 		}
 
-		Zenith_Log("%s Creating collider from model physics mesh: %u verts, %u tris",
-			LOG_TAG_COLLIDER,
+		Zenith_Log(LOG_CATEGORY_PHYSICS, "Creating collider from model physics mesh: %u verts, %u tris",
 			pxPhysicsMesh->GetNumVerts(),
 			pxPhysicsMesh->GetNumIndices() / 3);
 
@@ -177,8 +173,8 @@ void Zenith_ColliderComponent::AddCollider(CollisionVolumeType eVolumeType, Rigi
 			));
 		}
 		
-		Zenith_Log("%s Creating convex hull with scale (%.3f, %.3f, %.3f), %u points",
-			LOG_TAG_COLLIDER, xScale.x, xScale.y, xScale.z, pxPhysicsMesh->m_uNumVerts);
+		Zenith_Log(LOG_CATEGORY_PHYSICS, "Creating convex hull with scale (%.3f, %.3f, %.3f), %u points",
+			xScale.x, xScale.y, xScale.z, pxPhysicsMesh->m_uNumVerts);
 
 		JPH::ConvexHullShapeSettings xConvexSettings(xHullPoints);
 		JPH::Shape::ShapeResult xConvexResult = xConvexSettings.Create();
@@ -186,16 +182,16 @@ void Zenith_ColliderComponent::AddCollider(CollisionVolumeType eVolumeType, Rigi
 		if (xConvexResult.IsValid())
 		{
 			pxShape = xConvexResult.Get();
-			Zenith_Log("%s Created convex hull collider successfully", LOG_TAG_COLLIDER);
+			Zenith_Log(LOG_CATEGORY_PHYSICS, " Created convex hull collider successfully");
 		}
 		else
 		{
 			// Fall back to mesh shape (only works for static bodies)
-			Zenith_Log("%s Convex hull failed, falling back to mesh shape (static only)", LOG_TAG_COLLIDER);
+			Zenith_Log(LOG_CATEGORY_PHYSICS, " Convex hull failed, falling back to mesh shape (static only)");
 			
 			if (eRigidBodyType == RIGIDBODY_TYPE_DYNAMIC)
 			{
-				Zenith_Log("%s WARNING: Dynamic body requires convex shape, using box fallback", LOG_TAG_COLLIDER);
+				Zenith_Log(LOG_CATEGORY_PHYSICS, " WARNING: Dynamic body requires convex shape, using box fallback");
 				pxShape = new JPH::BoxShape(JPH::Vec3(xTrans.m_xScale.x, xTrans.m_xScale.y, xTrans.m_xScale.z));
 			}
 			else
@@ -220,11 +216,11 @@ void Zenith_ColliderComponent::AddCollider(CollisionVolumeType eVolumeType, Rigi
 				if (xMeshResult.IsValid())
 				{
 					pxShape = xMeshResult.Get();
-					Zenith_Log("%s Created mesh collider successfully", LOG_TAG_COLLIDER);
+					Zenith_Log(LOG_CATEGORY_PHYSICS, " Created mesh collider successfully");
 				}
 				else
 				{
-					Zenith_Log("%s Mesh shape failed, using box fallback", LOG_TAG_COLLIDER);
+					Zenith_Log(LOG_CATEGORY_PHYSICS, " Mesh shape failed, using box fallback");
 					pxShape = new JPH::BoxShape(JPH::Vec3(xTrans.m_xScale.x, xTrans.m_xScale.y, xTrans.m_xScale.z));
 				}
 			}
@@ -354,5 +350,5 @@ void Zenith_ColliderComponent::RebuildCollider()
 		Zenith_Physics::SetAngularVelocity(m_pxRigidBody, xAngularVel);
 	}
 
-	Zenith_Log("%s Rebuilt collider after scale change", LOG_TAG_COLLIDER);
+	Zenith_Log(LOG_CATEGORY_PHYSICS, " Rebuilt collider after scale change");
 }

@@ -46,7 +46,7 @@ Zenith_Window::Zenith_Window(const char* szTitle, uint32_t uWidth, uint32_t uHei
 	glfwSetKeyCallback(m_pxNativeWindow, KeyCallback);
 	glfwSetMouseButtonCallback(m_pxNativeWindow, MouseCallback);
 
-	Zenith_Log("Window created");
+	Zenith_Log(LOG_CATEGORY_WINDOW, "Window created");
 }
 
 Zenith_Window::~Zenith_Window()

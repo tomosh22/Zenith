@@ -62,7 +62,7 @@ void Flux_Quads::Initialise()
 	Zenith_DebugVariables::AddBoolean({ "Render", "Enable", "Quads" }, dbg_bEnable);
 #endif
 
-	Zenith_Log("Flux_Quads initialised");
+	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Quads initialised");
 }
 
 void Flux_Quads::Reset()
@@ -70,7 +70,7 @@ void Flux_Quads::Reset()
 	// Reset command list to ensure no stale GPU resource references, including descriptor bindings
 	// This is called when the scene is reset (e.g., Play/Stop transitions in editor)
 	g_xCommandList.Reset(true);
-	Zenith_Log("Flux_Quads::Reset() - Reset command list");
+	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Quads::Reset() - Reset command list");
 }
 
 void Flux_Quads::UploadInstanceData()

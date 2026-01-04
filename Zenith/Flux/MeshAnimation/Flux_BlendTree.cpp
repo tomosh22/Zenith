@@ -24,7 +24,7 @@ Flux_BlendTreeNode* Flux_BlendTreeNode::CreateFromTypeName(const std::string& st
 	if (strTypeName == "Select")
 		return new Flux_BlendTreeNode_Select();
 
-	Zenith_Log("[BlendTree] Unknown node type: %s", strTypeName.c_str());
+	Zenith_Log(LOG_CATEGORY_ANIMATION, "[BlendTree] Unknown node type: %s", strTypeName.c_str());
 	return nullptr;
 }
 

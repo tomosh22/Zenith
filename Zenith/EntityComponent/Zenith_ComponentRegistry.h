@@ -103,14 +103,14 @@ public:
 		{
 			if (xEntity.HasComponent<T>())
 			{
-				Zenith_Log("[ComponentRegistry] Cannot add %s: Entity %u already has this component",
+				Zenith_Error(LOG_CATEGORY_ECS, "Cannot add %s: Entity %u already has this component",
 					typeid(T).name(), xEntity.GetEntityID());
 				return false;
 			}
 			
 			xEntity.AddComponent<T>();
-			Zenith_Log("[ComponentRegistry] Added %s to Entity %u (TypeID: %u)",
-				typeid(T).name(), xEntity.GetEntityID(), 
+			Zenith_Log(LOG_CATEGORY_ECS, "Added %s to Entity %u (TypeID: %u)",
+				typeid(T).name(), xEntity.GetEntityID(),
 				Zenith_Scene::TypeIDGenerator::GetTypeID<T>());
 			return true;
 		};
@@ -133,7 +133,7 @@ public:
 		
 		m_xEntries.push_back(xEntry);
 		
-		Zenith_Log("[ComponentRegistry] Registered component: %s (TypeID: %u)",
+		Zenith_Log(LOG_CATEGORY_ECS, "Registered component: %s (TypeID: %u)",
 			strDisplayName.c_str(), xEntry.m_uTypeID);
 	}
 	
@@ -162,7 +162,7 @@ public:
 	{
 		if (uIndex >= m_xEntries.size())
 		{
-			Zenith_Log("[ComponentRegistry] ERROR: Invalid component index %zu", uIndex);
+			Zenith_Error(LOG_CATEGORY_ECS, "Invalid component index %zu", uIndex);
 			return false;
 		}
 		
@@ -171,7 +171,7 @@ public:
 		// Check for duplicate
 		if (xEntry.m_fnHasComponent(xEntity))
 		{
-			Zenith_Log("[ComponentRegistry] Cannot add %s to Entity %u: already has this component",
+			Zenith_Error(LOG_CATEGORY_ECS, "Cannot add %s to Entity %u: already has this component",
 				xEntry.m_strDisplayName.c_str(), xEntity.GetEntityID());
 			return false;
 		}
@@ -181,12 +181,12 @@ public:
 		
 		if (bSuccess)
 		{
-			Zenith_Log("[ComponentRegistry] Successfully added %s to Entity %u",
+			Zenith_Log(LOG_CATEGORY_ECS, "Successfully added %s to Entity %u",
 				xEntry.m_strDisplayName.c_str(), xEntity.GetEntityID());
 		}
 		else
 		{
-			Zenith_Log("[ComponentRegistry] ERROR: Failed to add %s to Entity %u",
+			Zenith_Error(LOG_CATEGORY_ECS, "Failed to add %s to Entity %u",
 				xEntry.m_strDisplayName.c_str(), xEntity.GetEntityID());
 		}
 		
@@ -225,14 +225,14 @@ public:
 	//--------------------------------------------------------------------------
 	void LogRegisteredComponents() const
 	{
-		Zenith_Log("[ComponentRegistry] === Registered Components ===");
+		Zenith_Log(LOG_CATEGORY_ECS, "=== Registered Components ===");
 		for (size_t i = 0; i < m_xEntries.size(); ++i)
 		{
 			const auto& xEntry = m_xEntries[i];
-			Zenith_Log("[ComponentRegistry]   [%zu] %s (TypeID: %u)",
+			Zenith_Log(LOG_CATEGORY_ECS, "  [%zu] %s (TypeID: %u)",
 				i, xEntry.m_strDisplayName.c_str(), xEntry.m_uTypeID);
 		}
-		Zenith_Log("[ComponentRegistry] === Total: %zu components ===", m_xEntries.size());
+		Zenith_Log(LOG_CATEGORY_ECS, "=== Total: %zu components ===", m_xEntries.size());
 	}
 
 private:

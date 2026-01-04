@@ -7,7 +7,7 @@
 
 // Bridge function called from Zenith_Log macro to add to editor console
 // NOTE: Must be defined after including Zenith_Editor.h
-void Zenith_EditorAddLogMessage(const char* szMessage, int eLevel)
+void Zenith_EditorAddLogMessage(const char* szMessage, int eLevel, Zenith_LogCategory eCategory)
 {
 	// Convert int to log level enum
 	ConsoleLogEntry::LogLevel xLevel = ConsoleLogEntry::LogLevel::Info;
@@ -17,7 +17,7 @@ void Zenith_EditorAddLogMessage(const char* szMessage, int eLevel)
 	case 1: xLevel = ConsoleLogEntry::LogLevel::Warning; break;
 	case 2: xLevel = ConsoleLogEntry::LogLevel::Error; break;
 	}
-	Zenith_Editor::AddLogMessage(szMessage, xLevel);
+	Zenith_Editor::AddLogMessage(szMessage, xLevel, eCategory);
 }
 
 #include "Zenith_SelectionSystem.h"
@@ -143,6 +143,7 @@ bool Zenith_Editor::s_bConsoleAutoScroll = true;
 bool Zenith_Editor::s_bShowConsoleInfo = true;
 bool Zenith_Editor::s_bShowConsoleWarnings = true;
 bool Zenith_Editor::s_bShowConsoleErrors = true;
+std::bitset<LOG_CATEGORY_COUNT> Zenith_Editor::s_xCategoryFilters = std::bitset<LOG_CATEGORY_COUNT>().set();
 
 // Material Editor state
 Flux_MaterialAsset* Zenith_Editor::s_pxSelectedMaterial = nullptr;
@@ -254,26 +255,26 @@ bool Zenith_Editor::Update()
 
 		// CRITICAL: Wait for CPU render tasks AND GPU to finish before destroying scene resources
 		// This matches the synchronization used for scene loading
-		Zenith_Log("Waiting for all render tasks to complete before resetting scene...");
+		Zenith_Log(LOG_CATEGORY_EDITOR, "Waiting for all render tasks to complete before resetting scene...");
 		Zenith_Core::WaitForAllRenderTasks();
 
-		Zenith_Log("Waiting for GPU to become idle before resetting scene...");
+		Zenith_Log(LOG_CATEGORY_EDITOR, "Waiting for GPU to become idle before resetting scene...");
 		Zenith_Vulkan::WaitForGPUIdle();
 
 		// Force process any pending deferred deletions
-		Zenith_Log("Processing deferred resource deletions...");
+		Zenith_Log(LOG_CATEGORY_EDITOR, "Processing deferred resource deletions...");
 		for (u_int u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
 		{
 			Flux_MemoryManager::ProcessDeferredDeletions();
 		}
 
 		// CRITICAL: Clear any pending command lists before resetting scene
-		Zenith_Log("Clearing pending command lists...");
+		Zenith_Log(LOG_CATEGORY_EDITOR, "Clearing pending command lists...");
 		Flux::ClearPendingCommandLists();
 
 		// Safe to reset now - no render tasks active, GPU idle, old resources deleted
 		Zenith_Scene::GetCurrentScene().Reset();
-		Zenith_Log("Scene reset complete");
+		Zenith_Log(LOG_CATEGORY_EDITOR, "Scene reset complete");
 
 		// Clear selection as entity pointers are now invalid
 		ClearSelection();
@@ -304,11 +305,11 @@ bool Zenith_Editor::Update()
 		{
 			// Safe to save now - no render tasks are accessing scene data
 			Zenith_Scene::GetCurrentScene().SaveToFile(s_strPendingSceneSavePath);
-			Zenith_Log("Scene saved to %s", s_strPendingSceneSavePath.c_str());
+			Zenith_Log(LOG_CATEGORY_EDITOR, "Scene saved to %s", s_strPendingSceneSavePath.c_str());
 		}
 		catch (const std::exception& e)
 		{
-			Zenith_Log("Failed to save scene: %s", e.what());
+			Zenith_Log(LOG_CATEGORY_EDITOR, "Failed to save scene: %s", e.what());
 		}
 
 		s_strPendingSceneSavePath.clear();
@@ -329,16 +330,16 @@ bool Zenith_Editor::Update()
 		// 1. Wait for CPU-side render tasks (worker threads recording commands into command lists)
 		// 2. Wait for GPU to finish executing command buffers
 		// Without both, we get access violations when LoadFromFile resets command lists or destroys resources
-		Zenith_Log("Waiting for all render tasks to complete before loading scene...");
+		Zenith_Log(LOG_CATEGORY_EDITOR, "Waiting for all render tasks to complete before loading scene...");
 		Zenith_Core::WaitForAllRenderTasks();  // CPU synchronization
 
 
-		Zenith_Log("Waiting for GPU to become idle before loading scene...");
+		Zenith_Log(LOG_CATEGORY_EDITOR, "Waiting for GPU to become idle before loading scene...");
 		Zenith_Vulkan::WaitForGPUIdle();  // GPU synchronization
 
 		// Force process any pending deferred deletions to ensure old descriptors are destroyed
 		// Without this, descriptor handles might collide between old/new scenes
-		Zenith_Log("Processing deferred resource deletions...");
+		Zenith_Log(LOG_CATEGORY_EDITOR, "Processing deferred resource deletions...");
 		for (u_int u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
 		{
 			Flux_MemoryManager::ProcessDeferredDeletions();
@@ -347,12 +348,12 @@ bool Zenith_Editor::Update()
 		// CRITICAL: Clear any pending command lists before loading scene
 		// This prevents stale command list entries from previous frames that may
 		// contain pointers to resources that are about to be destroyed
-		Zenith_Log("Clearing pending command lists...");
+		Zenith_Log(LOG_CATEGORY_EDITOR, "Clearing pending command lists...");
 		Flux::ClearPendingCommandLists();
 
 		// Safe to load now - no render tasks active, GPU idle, old resources deleted
 		Zenith_Scene::GetCurrentScene().LoadFromFile(s_strPendingSceneLoadPath);
-		Zenith_Log("Scene loaded from %s", s_strPendingSceneLoadPath.c_str());
+		Zenith_Log(LOG_CATEGORY_EDITOR, "Scene loaded from %s", s_strPendingSceneLoadPath.c_str());
 
 		// Clear selection as entity pointers are now invalid
 		ClearSelection();
@@ -370,13 +371,13 @@ bool Zenith_Editor::Update()
 			std::filesystem::remove(s_strBackupScenePath);
 			s_bHasSceneBackup = false;
 			s_strBackupScenePath = "";
-			Zenith_Log("Backup scene file cleaned up");
+			Zenith_Log(LOG_CATEGORY_EDITOR, "Backup scene file cleaned up");
 
 			// After restoring scene, initialize editor camera state from the game's camera
 			if (s_bEditorCameraInitialized)
 			{
 				SwitchToEditorCamera();
-				Zenith_Log("Editor camera state updated after scene restore");
+				Zenith_Log(LOG_CATEGORY_EDITOR, "Editor camera state updated after scene restore");
 			}
 		}
 		else
@@ -385,7 +386,7 @@ bool Zenith_Editor::Update()
 			if (s_bEditorCameraInitialized)
 			{
 				SwitchToEditorCamera();
-				Zenith_Log("Editor camera synced with loaded scene");
+				Zenith_Log(LOG_CATEGORY_EDITOR, "Editor camera synced with loaded scene");
 			}
 		}
 
@@ -433,12 +434,12 @@ bool Zenith_Editor::Update()
 				// Save reference to game camera for later
 				s_uGameCameraEntity = xScene.m_uMainCameraEntity;
 
-				Zenith_Log("Editor camera synced from game camera at (%.1f, %.1f, %.1f)", 
+				Zenith_Log(LOG_CATEGORY_EDITOR, "Editor camera synced from game camera at (%.1f, %.1f, %.1f)", 
 					s_xEditorCameraPosition.x, s_xEditorCameraPosition.y, s_xEditorCameraPosition.z);
 			}
 			catch (...)
 			{
-				Zenith_Log("Could not sync editor camera from game camera");
+				Zenith_Log(LOG_CATEGORY_EDITOR, "Could not sync editor camera from game camera");
 			}
 		}
 	}
@@ -578,7 +579,7 @@ void Zenith_Editor::RenderMainMenuBar()
 				// which happens BEFORE any render tasks are submitted.
 
 				s_bPendingSceneReset = true;
-				Zenith_Log("Scene reset queued (will reset next frame)");
+				Zenith_Log(LOG_CATEGORY_EDITOR, "Scene reset queued (will reset next frame)");
 			}
 
 			if (ImGui::MenuItem("Open Scene", "Ctrl+O"))
@@ -600,13 +601,13 @@ void Zenith_Editor::RenderMainMenuBar()
 				{
 					s_strPendingSceneLoadPath = strFilePath;
 					s_bPendingSceneLoad = true;
-					Zenith_Log("Scene load queued: %s (will load next frame)", s_strPendingSceneLoadPath.c_str());
+					Zenith_Log(LOG_CATEGORY_EDITOR, "Scene load queued: %s (will load next frame)", s_strPendingSceneLoadPath.c_str());
 				}
 #else
 				// Fallback for non-Windows platforms
 				s_strPendingSceneLoadPath = "scene.zscen";
 				s_bPendingSceneLoad = true;
-				Zenith_Log("Scene load queued: %s (will load next frame)", s_strPendingSceneLoadPath.c_str());
+				Zenith_Log(LOG_CATEGORY_EDITOR, "Scene load queued: %s (will load next frame)", s_strPendingSceneLoadPath.c_str());
 #endif
 			}
 
@@ -631,13 +632,13 @@ void Zenith_Editor::RenderMainMenuBar()
 				{
 					s_strPendingSceneSavePath = strFilePath;
 					s_bPendingSceneSave = true;
-					Zenith_Log("Scene save queued: %s (will save next frame)", s_strPendingSceneSavePath.c_str());
+					Zenith_Log(LOG_CATEGORY_EDITOR, "Scene save queued: %s (will save next frame)", s_strPendingSceneSavePath.c_str());
 				}
 #else
 				// Fallback for non-Windows platforms
 				s_strPendingSceneSavePath = "scene.zscen";
 				s_bPendingSceneSave = true;
-				Zenith_Log("Scene save queued: %s (will save next frame)", s_strPendingSceneSavePath.c_str());
+				Zenith_Log(LOG_CATEGORY_EDITOR, "Scene save queued: %s (will save next frame)", s_strPendingSceneSavePath.c_str());
 #endif
 			}
 
@@ -647,7 +648,7 @@ void Zenith_Editor::RenderMainMenuBar()
 			{
 				// TODO: Implement graceful shutdown
 				// Would trigger application exit
-				Zenith_Log("Exit - Not yet implemented");
+				Zenith_Log(LOG_CATEGORY_EDITOR, "Exit - Not yet implemented");
 			}
 
 			ImGui::EndMenu();
@@ -688,19 +689,19 @@ void Zenith_Editor::RenderMainMenuBar()
 			if (ImGui::MenuItem("Hierarchy"))
 			{
 				// TODO: Toggle hierarchy panel visibility
-				Zenith_Log("Toggle Hierarchy - Not yet implemented");
+				Zenith_Log(LOG_CATEGORY_EDITOR, "Toggle Hierarchy - Not yet implemented");
 			}
 
 			if (ImGui::MenuItem("Properties"))
 			{
 				// TODO: Toggle properties panel visibility
-				Zenith_Log("Toggle Properties - Not yet implemented");
+				Zenith_Log(LOG_CATEGORY_EDITOR, "Toggle Properties - Not yet implemented");
 			}
 
 			if (ImGui::MenuItem("Console"))
 			{
 				// TODO: Toggle console panel visibility
-				Zenith_Log("Toggle Console - Not yet implemented");
+				Zenith_Log(LOG_CATEGORY_EDITOR, "Toggle Console - Not yet implemented");
 			}
 
 			ImGui::Separator();
@@ -1057,7 +1058,7 @@ void Zenith_Editor::RenderPropertiesPanel()
 		if (ImGui::Button("Add Component", ImVec2(fButtonWidth, 0)))
 		{
 			ImGui::OpenPopup("AddComponentPopup");
-			Zenith_Log("[Editor] Add Component button clicked for Entity %u", s_uPrimarySelectedEntityID);
+			Zenith_Log(LOG_CATEGORY_EDITOR, "[Editor] Add Component button clicked for Entity %u", s_uPrimarySelectedEntityID);
 		}
 		
 		// Add Component popup menu
@@ -1084,7 +1085,7 @@ void Zenith_Editor::RenderPropertiesPanel()
 					bAnyAvailable = true;
 					if (ImGui::MenuItem(xEntry.m_strDisplayName.c_str()))
 					{
-						Zenith_Log("[Editor] User selected to add component: %s to Entity %u",
+						Zenith_Log(LOG_CATEGORY_EDITOR, "[Editor] User selected to add component: %s to Entity %u",
 							xEntry.m_strDisplayName.c_str(), s_uPrimarySelectedEntityID);
 
 						// Add the component through the registry
@@ -1092,12 +1093,12 @@ void Zenith_Editor::RenderPropertiesPanel()
 
 						if (bSuccess)
 						{
-							Zenith_Log("[Editor] Successfully added %s component to Entity %u",
+							Zenith_Log(LOG_CATEGORY_EDITOR, "[Editor] Successfully added %s component to Entity %u",
 								xEntry.m_strDisplayName.c_str(), s_uPrimarySelectedEntityID);
 						}
 						else
 						{
-							Zenith_Log("[Editor] ERROR: Failed to add %s component to Entity %u",
+							Zenith_Log(LOG_CATEGORY_EDITOR, "[Editor] ERROR: Failed to add %s component to Entity %u",
 								xEntry.m_strDisplayName.c_str(), s_uPrimarySelectedEntityID);
 						}
 					}
@@ -1307,7 +1308,7 @@ void Zenith_Editor::HandleGizmoInteraction()
 	{
 		if (++s_iFrameCounter % 60 == 0) // Log every 60 frames
 		{
-			Zenith_Log("Mouse: Global=(%.1f,%.1f), Viewport=(%.1f,%.1f)",
+			Zenith_Log(LOG_CATEGORY_EDITOR, "Mouse: Global=(%.1f,%.1f), Viewport=(%.1f,%.1f)",
 				xGlobalMousePos.x, xGlobalMousePos.y,
 				xViewportMousePos.x, xViewportMousePos.y);
 		}
@@ -1334,9 +1335,9 @@ void Zenith_Editor::HandleGizmoInteraction()
 	// Handle mouse input for gizmo interaction
 	if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_MOUSE_BUTTON_LEFT))
 	{
-		Zenith_Log("Mouse left pressed - viewport hovered=%d, selected=%zu", s_bViewportHovered, s_xSelectedEntityIDs.size());
+		Zenith_Log(LOG_CATEGORY_EDITOR, "Mouse left pressed - viewport hovered=%d, selected=%zu", s_bViewportHovered, s_xSelectedEntityIDs.size());
 		Flux_Gizmos::BeginInteraction(xRayOrigin, xRayDir);
-		Zenith_Log("After BeginInteraction: IsInteracting=%d", Flux_Gizmos::IsInteracting());
+		Zenith_Log(LOG_CATEGORY_EDITOR, "After BeginInteraction: IsInteracting=%d", Flux_Gizmos::IsInteracting());
 	}
 	
 	// Update interaction while dragging (can happen same frame as BeginInteraction)
@@ -1345,12 +1346,12 @@ void Zenith_Editor::HandleGizmoInteraction()
 	
 	if (bIsKeyDown || bIsInteracting)
 	{
-		Zenith_Log("Check UpdateInteraction: IsKeyDown=%d, IsInteracting=%d", bIsKeyDown, bIsInteracting);
+		Zenith_Log(LOG_CATEGORY_EDITOR, "Check UpdateInteraction: IsKeyDown=%d, IsInteracting=%d", bIsKeyDown, bIsInteracting);
 	}
 	
 	if (bIsKeyDown && bIsInteracting)
 	{
-		Zenith_Log("Calling UpdateInteraction: ViewportMouse=(%.1f,%.1f)",
+		Zenith_Log(LOG_CATEGORY_EDITOR, "Calling UpdateInteraction: ViewportMouse=(%.1f,%.1f)",
 			xViewportMousePos.x, xViewportMousePos.y);
 		Flux_Gizmos::UpdateInteraction(xRayOrigin, xRayDir);
 	}
@@ -1358,7 +1359,7 @@ void Zenith_Editor::HandleGizmoInteraction()
 	// End interaction when mouse released
 	if (!Zenith_Input::IsKeyDown(ZENITH_MOUSE_BUTTON_LEFT) && Flux_Gizmos::IsInteracting())
 	{
-		Zenith_Log("Ending interaction");
+		Zenith_Log(LOG_CATEGORY_EDITOR, "Ending interaction");
 		Flux_Gizmos::EndInteraction();
 	}
 }
@@ -1376,7 +1377,7 @@ void Zenith_Editor::SetEditorMode(EditorMode eMode)
 	// STOPPED -> PLAYING: Backup scene state and switch to game camera
 	if (oldMode == EditorMode::Stopped && eMode == EditorMode::Playing)
 	{
-		Zenith_Log("Editor: Entering Play Mode");
+		Zenith_Log(LOG_CATEGORY_EDITOR, "Editor: Entering Play Mode");
 
 		// Generate backup file path in temp directory
 		s_strBackupScenePath = std::filesystem::temp_directory_path().string() + "/zenith_scene_backup.zscen";
@@ -1387,7 +1388,7 @@ void Zenith_Editor::SetEditorMode(EditorMode eMode)
 		xScene.SaveToFile(s_strBackupScenePath);
 		s_bHasSceneBackup = true;
 
-		Zenith_Log("Scene state backed up to: %s", s_strBackupScenePath.c_str());
+		Zenith_Log(LOG_CATEGORY_EDITOR, "Scene state backed up to: %s", s_strBackupScenePath.c_str());
 
 		// Check if a main camera has already been set via the editor
 		s_uGameCameraEntity = xScene.GetMainCameraEntity();
@@ -1413,7 +1414,7 @@ void Zenith_Editor::SetEditorMode(EditorMode eMode)
 	// PLAYING/PAUSED -> STOPPED: Restore scene state and switch to editor camera
 	else if (oldMode != EditorMode::Stopped && eMode == EditorMode::Stopped)
 	{
-		Zenith_Log("Editor: Stopping Play Mode");
+		Zenith_Log(LOG_CATEGORY_EDITOR, "Editor: Stopping Play Mode");
 
 		// CRITICAL: Defer scene restore to next frame's Update() call
 		// Loading scenes mid-frame causes issues:
@@ -1428,14 +1429,14 @@ void Zenith_Editor::SetEditorMode(EditorMode eMode)
 			s_bPendingSceneLoad = true;
 			s_strPendingSceneLoadPath = s_strBackupScenePath;
 
-			Zenith_Log("Scene restore queued for next frame: %s", s_strBackupScenePath.c_str());
+			Zenith_Log(LOG_CATEGORY_EDITOR, "Scene restore queued for next frame: %s", s_strBackupScenePath.c_str());
 
 			// Note: We don't clear s_bHasSceneBackup or s_strBackupScenePath here
 			// They'll be cleared in Update() after the load completes
 		}
 		else
 		{
-			Zenith_Log("Warning: No scene backup available to restore");
+			Zenith_Log(LOG_CATEGORY_EDITOR, "Warning: No scene backup available to restore");
 		}
 
 		// Clear the game camera reference since scene will be reloaded
@@ -1445,14 +1446,14 @@ void Zenith_Editor::SetEditorMode(EditorMode eMode)
 	// PAUSED state - suspend scene updates but stay on game camera
 	else if (eMode == EditorMode::Paused)
 	{
-		Zenith_Log("Editor: Pausing - physics and scene updates suspended");
+		Zenith_Log(LOG_CATEGORY_EDITOR, "Editor: Pausing - physics and scene updates suspended");
 		// Stay on game camera during pause so player can see game state
 	}
 
 	// PAUSED -> PLAYING: Resume scene updates
 	else if (oldMode == EditorMode::Paused && eMode == EditorMode::Playing)
 	{
-		Zenith_Log("Editor: Resuming - physics and scene updates resumed");
+		Zenith_Log(LOG_CATEGORY_EDITOR, "Editor: Resuming - physics and scene updates resumed");
 	}
 }
 
@@ -1483,7 +1484,7 @@ void Zenith_Editor::SelectEntity(Zenith_EntityID uEntityID, bool bAddToSelection
 	s_uPrimarySelectedEntityID = uEntityID;
 	s_uLastClickedEntityID = uEntityID;
 
-	Zenith_Log("Editor: Selected entity %u (total: %zu)", uEntityID, s_xSelectedEntityIDs.size());
+	Zenith_Log(LOG_CATEGORY_EDITOR, "Editor: Selected entity %u (total: %zu)", uEntityID, s_xSelectedEntityIDs.size());
 
 	// Update Flux_Gizmos target entity (primary selection)
 	Zenith_Entity* pxEntity = GetSelectedEntity();
@@ -1526,7 +1527,7 @@ void Zenith_Editor::SelectRange(Zenith_EntityID uEndEntityID)
 	s_uPrimarySelectedEntityID = uEndEntityID;
 	// Keep s_uLastClickedEntityID unchanged for further range selections
 
-	Zenith_Log("Editor: Range selected %zu entities", s_xSelectedEntityIDs.size());
+	Zenith_Log(LOG_CATEGORY_EDITOR, "Editor: Range selected %zu entities", s_xSelectedEntityIDs.size());
 
 	// Update Flux_Gizmos target entity
 	Zenith_Entity* pxEntity = GetSelectedEntity();
@@ -1556,7 +1557,7 @@ void Zenith_Editor::ToggleEntitySelection(Zenith_EntityID uEntityID)
 				INVALID_ENTITY_ID : *s_xSelectedEntityIDs.begin();
 		}
 
-		Zenith_Log("Editor: Deselected entity %u (total: %zu)", uEntityID, s_xSelectedEntityIDs.size());
+		Zenith_Log(LOG_CATEGORY_EDITOR, "Editor: Deselected entity %u (total: %zu)", uEntityID, s_xSelectedEntityIDs.size());
 	}
 	else
 	{
@@ -1564,7 +1565,7 @@ void Zenith_Editor::ToggleEntitySelection(Zenith_EntityID uEntityID)
 		s_xSelectedEntityIDs.insert(uEntityID);
 		s_uPrimarySelectedEntityID = uEntityID;
 
-		Zenith_Log("Editor: Added entity %u to selection (total: %zu)", uEntityID, s_xSelectedEntityIDs.size());
+		Zenith_Log(LOG_CATEGORY_EDITOR, "Editor: Added entity %u to selection (total: %zu)", uEntityID, s_xSelectedEntityIDs.size());
 	}
 
 	// Update last clicked for range selection
@@ -1910,7 +1911,7 @@ void Zenith_Editor::RenderContentBrowser()
 						}
 						else
 						{
-							Zenith_Log("[ContentBrowser] Cannot delete non-empty folder");
+							Zenith_Log(LOG_CATEGORY_EDITOR, "[ContentBrowser] Cannot delete non-empty folder");
 						}
 					}
 				}
@@ -1967,12 +1968,12 @@ void Zenith_Editor::RefreshDirectoryContents()
 				return a.m_strName < b.m_strName;
 			});
 
-		Zenith_Log("[ContentBrowser] Refreshed directory: %s (%zu items)",
+		Zenith_Log(LOG_CATEGORY_EDITOR, "[ContentBrowser] Refreshed directory: %s (%zu items)",
 			s_strCurrentDirectory.c_str(), s_xDirectoryContents.size());
 	}
 	catch (const std::filesystem::filesystem_error& e)
 	{
-		Zenith_Log("[ContentBrowser] Error reading directory: %s", e.what());
+		Zenith_Log(LOG_CATEGORY_EDITOR, "[ContentBrowser] Error reading directory: %s", e.what());
 	}
 }
 
@@ -1980,7 +1981,7 @@ void Zenith_Editor::NavigateToDirectory(const std::string& strPath)
 {
 	s_strCurrentDirectory = strPath;
 	s_bDirectoryNeedsRefresh = true;
-	Zenith_Log("[ContentBrowser] Navigated to: %s", strPath.c_str());
+	Zenith_Log(LOG_CATEGORY_EDITOR, "[ContentBrowser] Navigated to: %s", strPath.c_str());
 }
 
 void Zenith_Editor::NavigateToParent()
@@ -2000,11 +2001,11 @@ void Zenith_Editor::NavigateToParent()
 	{
 		s_strCurrentDirectory = xParent.string();
 		s_bDirectoryNeedsRefresh = true;
-		Zenith_Log("[ContentBrowser] Navigated to parent: %s", s_strCurrentDirectory.c_str());
+		Zenith_Log(LOG_CATEGORY_EDITOR, "[ContentBrowser] Navigated to parent: %s", s_strCurrentDirectory.c_str());
 	}
 	else
 	{
-		Zenith_Log("[ContentBrowser] Already at root directory");
+		Zenith_Log(LOG_CATEGORY_EDITOR, "[ContentBrowser] Already at root directory");
 	}
 }
 
@@ -2012,10 +2013,11 @@ void Zenith_Editor::NavigateToParent()
 // Console Implementation
 //------------------------------------------------------------------------------
 
-void Zenith_Editor::AddLogMessage(const char* szMessage, ConsoleLogEntry::LogLevel eLevel)
+void Zenith_Editor::AddLogMessage(const char* szMessage, ConsoleLogEntry::LogLevel eLevel, Zenith_LogCategory eCategory)
 {
 	ConsoleLogEntry xEntry;
 	xEntry.m_eLevel = eLevel;
+	xEntry.m_eCategory = eCategory;
 	xEntry.m_strMessage = szMessage;
 
 	// Get current time for timestamp
@@ -2068,6 +2070,37 @@ void Zenith_Editor::RenderConsolePanel()
 	ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.3f, 0.3f, 1.0f));
 	ImGui::Checkbox("Errors", &s_bShowConsoleErrors);
 	ImGui::PopStyleColor();
+	ImGui::SameLine();
+	ImGui::Separator();
+	ImGui::SameLine();
+
+	// Category filter dropdown
+	if (ImGui::Button("Categories..."))
+	{
+		ImGui::OpenPopup("CategoryFilterPopup");
+	}
+	if (ImGui::BeginPopup("CategoryFilterPopup"))
+	{
+		if (ImGui::Button("All"))
+		{
+			s_xCategoryFilters.set();
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("None"))
+		{
+			s_xCategoryFilters.reset();
+		}
+		ImGui::Separator();
+		for (u_int8 i = 0; i < LOG_CATEGORY_COUNT; ++i)
+		{
+			bool bEnabled = s_xCategoryFilters.test(i);
+			if (ImGui::Checkbox(Zenith_LogCategoryNames[i], &bEnabled))
+			{
+				s_xCategoryFilters.set(i, bEnabled);
+			}
+		}
+		ImGui::EndPopup();
+	}
 
 	ImGui::Separator();
 
@@ -2093,6 +2126,12 @@ void Zenith_Editor::RenderConsolePanel()
 			bShow = s_bShowConsoleErrors;
 			xColor = ImVec4(1.0f, 0.3f, 0.3f, 1.0f);
 			break;
+		}
+
+		// Also filter by category
+		if (bShow && !s_xCategoryFilters.test(static_cast<size_t>(xEntry.m_eCategory)))
+		{
+			bShow = false;
 		}
 
 		if (bShow)
@@ -2123,7 +2162,7 @@ void Zenith_Editor::SelectMaterial(Flux_MaterialAsset* pMaterial)
 	s_bShowMaterialEditor = true;
 	if (pMaterial)
 	{
-		Zenith_Log("[Editor] Selected material: %s", pMaterial->GetName().c_str());
+		Zenith_Log(LOG_CATEGORY_EDITOR, "[Editor] Selected material: %s", pMaterial->GetName().c_str());
 	}
 }
 
@@ -2144,7 +2183,7 @@ void Zenith_Editor::RenderMaterialEditorPanel()
 	{
 		Flux_MaterialAsset* pNewMaterial = Flux_MaterialAsset::Create();
 		SelectMaterial(pNewMaterial);
-		Zenith_Log("[MaterialEditor] Created new material: %s", pNewMaterial->GetName().c_str());
+		Zenith_Log(LOG_CATEGORY_EDITOR, "[MaterialEditor] Created new material: %s", pNewMaterial->GetName().c_str());
 	}
 	
 	ImGui::SameLine();
@@ -2162,11 +2201,11 @@ void Zenith_Editor::RenderMaterialEditorPanel()
 			if (pMaterial)
 			{
 				SelectMaterial(pMaterial);
-				Zenith_Log("[MaterialEditor] Loaded material: %s", strFilePath.c_str());
+				Zenith_Log(LOG_CATEGORY_EDITOR, "[MaterialEditor] Loaded material: %s", strFilePath.c_str());
 			}
 			else
 			{
-				Zenith_Log("[MaterialEditor] ERROR: Failed to load material: %s", strFilePath.c_str());
+				Zenith_Log(LOG_CATEGORY_EDITOR, "[MaterialEditor] ERROR: Failed to load material: %s", strFilePath.c_str());
 			}
 		}
 #endif
@@ -2175,16 +2214,17 @@ void Zenith_Editor::RenderMaterialEditorPanel()
 	ImGui::Separator();
 
 	// Display ALL materials (both file-cached and runtime-created)
-	std::vector<Flux_MaterialAsset*> allMaterials;
+	Zenith_Vector<Flux_MaterialAsset*> allMaterials;
 	Flux_MaterialAsset::GetAllMaterials(allMaterials);
 
 	if (ImGui::CollapsingHeader("All Materials", ImGuiTreeNodeFlags_DefaultOpen))
 	{
-		ImGui::Text("Total: %zu materials", allMaterials.size());
+		ImGui::Text("Total: %u materials", allMaterials.GetSize());
 		ImGui::Separator();
 
-		for (Flux_MaterialAsset* pMat : allMaterials)
+		for (Zenith_Vector<Flux_MaterialAsset*>::Iterator xIt(allMaterials); !xIt.Done(); xIt.Next())
 		{
+			Flux_MaterialAsset* pMat = xIt.GetData();
 			if (pMat)
 			{
 				bool bIsSelected = (s_pxSelectedMaterial == pMat);
@@ -2222,7 +2262,7 @@ void Zenith_Editor::RenderMaterialEditorPanel()
 			}
 		}
 
-		if (allMaterials.empty())
+		if (allMaterials.GetSize() == 0)
 		{
 			ImGui::TextDisabled("No materials loaded");
 		}
@@ -2344,7 +2384,7 @@ void Zenith_Editor::RenderMaterialEditorPanel()
 				{
 					if (pMat->SaveToFile(strFilePath))
 					{
-						Zenith_Log("[MaterialEditor] Saved material to: %s", strFilePath.c_str());
+						Zenith_Log(LOG_CATEGORY_EDITOR, "[MaterialEditor] Saved material to: %s", strFilePath.c_str());
 					}
 				}
 #endif
@@ -2354,7 +2394,7 @@ void Zenith_Editor::RenderMaterialEditorPanel()
 				// Save to existing path
 				if (pMat->SaveToFile(pMat->GetAssetPath()))
 				{
-					Zenith_Log("[MaterialEditor] Saved material: %s", pMat->GetAssetPath().c_str());
+					Zenith_Log(LOG_CATEGORY_EDITOR, "[MaterialEditor] Saved material: %s", pMat->GetAssetPath().c_str());
 				}
 			}
 		}
@@ -2372,7 +2412,7 @@ void Zenith_Editor::RenderMaterialEditorPanel()
 			{
 				if (pMat->SaveToFile(strFilePath))
 				{
-					Zenith_Log("[MaterialEditor] Saved material to: %s", strFilePath.c_str());
+					Zenith_Log(LOG_CATEGORY_EDITOR, "[MaterialEditor] Saved material to: %s", strFilePath.c_str());
 				}
 			}
 #endif
@@ -2383,7 +2423,7 @@ void Zenith_Editor::RenderMaterialEditorPanel()
 		if (ImGui::Button("Reload"))
 		{
 			pMat->Reload();
-			Zenith_Log("[MaterialEditor] Reloaded material: %s", pMat->GetName().c_str());
+			Zenith_Log(LOG_CATEGORY_EDITOR, "[MaterialEditor] Reloaded material: %s", pMat->GetName().c_str());
 		}
 	}
 	else
@@ -2424,7 +2464,7 @@ void Zenith_Editor::RenderMaterialTextureSlot(const char* szLabel, Flux_Material
 				static_cast<const DragDropFilePayload*>(pPayload->Data);
 			
 			SetPathFunc(pMaterial, pFilePayload->m_szFilePath);
-			Zenith_Log("[MaterialEditor] Set %s texture: %s", szLabel, pFilePayload->m_szFilePath);
+			Zenith_Log(LOG_CATEGORY_EDITOR, "[MaterialEditor] Set %s texture: %s", szLabel, pFilePayload->m_szFilePath);
 		}
 		ImGui::EndDragDropTarget();
 	}
@@ -2449,7 +2489,7 @@ void Zenith_Editor::RenderMaterialTextureSlot(const char* szLabel, Flux_Material
 		if (ImGui::SmallButton("X"))
 		{
 			SetPathFunc(pMaterial, "");
-			Zenith_Log("[MaterialEditor] Cleared %s texture", szLabel);
+			Zenith_Log(LOG_CATEGORY_EDITOR, "[MaterialEditor] Cleared %s texture", szLabel);
 		}
 	}
 	
@@ -2479,16 +2519,16 @@ void Zenith_Editor::InitializeEditorCamera()
 			s_fEditorCameraFOV = xSceneCamera.GetFOV();
 			s_fEditorCameraNear = xSceneCamera.GetNearPlane();
 			s_fEditorCameraFar = xSceneCamera.GetFarPlane();
-			Zenith_Log("Editor camera initialized from scene camera position");
+			Zenith_Log(LOG_CATEGORY_EDITOR, "Editor camera initialized from scene camera position");
 		}
 		catch (...)
 		{
-			Zenith_Log("Scene camera not available, using default position");
+			Zenith_Log(LOG_CATEGORY_EDITOR, "Scene camera not available, using default position");
 		}
 	}
 
 	s_bEditorCameraInitialized = true;
-	Zenith_Log("Editor camera initialized at position (%.1f, %.1f, %.1f)", s_xEditorCameraPosition.x, s_xEditorCameraPosition.y, s_xEditorCameraPosition.z);
+	Zenith_Log(LOG_CATEGORY_EDITOR, "Editor camera initialized at position (%.1f, %.1f, %.1f)", s_xEditorCameraPosition.x, s_xEditorCameraPosition.y, s_xEditorCameraPosition.z);
 }
 
 void Zenith_Editor::UpdateEditorCamera(float fDt)
@@ -2598,7 +2638,7 @@ void Zenith_Editor::SwitchToEditorCamera()
 {
 	if (!s_bEditorCameraInitialized)
 	{
-		Zenith_Log("Warning: Cannot switch to editor camera - not initialized");
+		Zenith_Log(LOG_CATEGORY_EDITOR, "Warning: Cannot switch to editor camera - not initialized");
 		return;
 	}
 
@@ -2619,24 +2659,24 @@ void Zenith_Editor::SwitchToEditorCamera()
 		}
 		catch (...)
 		{
-			Zenith_Log("Warning: Could not copy game camera state to editor camera");
+			Zenith_Log(LOG_CATEGORY_EDITOR, "Warning: Could not copy game camera state to editor camera");
 		}
 	}
 
-	Zenith_Log("Switched to editor camera");
+	Zenith_Log(LOG_CATEGORY_EDITOR, "Switched to editor camera");
 }
 
 void Zenith_Editor::SwitchToGameCamera()
 {
 	if (s_uGameCameraEntity == INVALID_ENTITY_ID)
 	{
-		Zenith_Log("Warning: Cannot switch to game camera - no game camera saved");
+		Zenith_Log(LOG_CATEGORY_EDITOR, "Warning: Cannot switch to game camera - no game camera saved");
 		return;
 	}
 
 	// Game camera is already the main camera in the scene
 	// We just stop applying editor camera overrides
-	Zenith_Log("Switched to game camera");
+	Zenith_Log(LOG_CATEGORY_EDITOR, "Switched to game camera");
 }
 
 void Zenith_Editor::BuildViewMatrix(Zenith_Maths::Matrix4& xOutMatrix)

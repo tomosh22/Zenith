@@ -127,7 +127,7 @@ void Flux_TerrainStreamingManager::Initialize()
 	if (s_bInitialized)
 		return;
 
-	Zenith_Log("Flux_TerrainStreamingManager::Initialize()");
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "Flux_TerrainStreamingManager::Initialize()");
 
 	// Initialize stats
 	s_xStats = StreamingStats();
@@ -162,7 +162,7 @@ void Flux_TerrainStreamingManager::Initialize()
 #endif
 
 	s_bInitialized = true;
-	Zenith_Log("Flux_TerrainStreamingManager initialized");
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "Flux_TerrainStreamingManager initialized");
 }
 
 void Flux_TerrainStreamingManager::Shutdown()
@@ -170,7 +170,7 @@ void Flux_TerrainStreamingManager::Shutdown()
 	if (!s_bInitialized)
 		return;
 
-	Zenith_Log("Flux_TerrainStreamingManager::Shutdown()");
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "Flux_TerrainStreamingManager::Shutdown()");
 
 	s_pxTerrainComponent = nullptr;
 
@@ -189,7 +189,7 @@ void Flux_TerrainStreamingManager::Shutdown()
 
 void Flux_TerrainStreamingManager::RegisterTerrainBuffers(Zenith_TerrainComponent* pxTerrainComponent)
 {
-	Zenith_Log("Flux_TerrainStreamingManager::RegisterTerrainBuffers()");
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "Flux_TerrainStreamingManager::RegisterTerrainBuffers()");
 
 	s_pxTerrainComponent = pxTerrainComponent;
 
@@ -261,7 +261,7 @@ void Flux_TerrainStreamingManager::RegisterTerrainBuffers(Zenith_TerrainComponen
 	}
 	s_bAABBsCached = true;
 
-	Zenith_Log("Terrain buffers registered: LOD3 resident for all %u chunks", TOTAL_CHUNKS);
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "Terrain buffers registered: LOD3 resident for all %u chunks", TOTAL_CHUNKS);
 }
 
 void Flux_TerrainStreamingManager::UnregisterTerrainBuffers()
@@ -299,7 +299,7 @@ void Flux_TerrainStreamingManager::UpdateStreaming(const Zenith_Maths::Vector3& 
 		s_bChunkDataDirty = true;
 
 		if (dbg_bLogTerrainStreaming)
-			Zenith_Log("[Terrain] Camera moved to chunk (%d,%d), active set: %zu chunks",
+			Zenith_Log(LOG_CATEGORY_TERRAIN, "[Terrain] Camera moved to chunk (%d,%d), active set: %zu chunks",
 				iCameraChunkX, iCameraChunkY, s_xActiveChunkIndices.size());
 	}
 
@@ -330,7 +330,7 @@ void Flux_TerrainStreamingManager::UpdateStreaming(const Zenith_Maths::Vector3& 
 				s_bChunkDataDirty = true;
 
 				if (dbg_bLogTerrainStreaming)
-					Zenith_Log("[Terrain] Streamed in chunk (%u,%u) %s", uChunkX, uChunkY, GetLODName(uDesiredLOD));
+					Zenith_Log(LOG_CATEGORY_TERRAIN, "[Terrain] Streamed in chunk (%u,%u) %s", uChunkX, uChunkY, GetLODName(uDesiredLOD));
 			}
 		}
 	}
@@ -359,7 +359,7 @@ void Flux_TerrainStreamingManager::UpdateStreaming(const Zenith_Maths::Vector3& 
 				s_bChunkDataDirty = true;
 
 				if (dbg_bLogTerrainStreaming)
-					Zenith_Log("[Terrain] Evicted chunk (%u,%u) %s (dist=%.0f, threshold=%.0f)",
+					Zenith_Log(LOG_CATEGORY_TERRAIN, "[Terrain] Evicted chunk (%u,%u) %s (dist=%.0f, threshold=%.0f)",
 						uChunkX, uChunkY, GetLODName(uLOD), sqrtf(fDistanceSq), sqrtf(fEvictionThreshold));
 			}
 		}

@@ -26,7 +26,7 @@ static Zenith_Maths::Vector3 ApplyBindPoseSkinning(
 	bool bLogThis = (s_uDebugVertexLogCount < s_uMaxDebugVertexLogs);
 	if (bLogThis)
 	{
-		Zenith_Log("[ApplyBindPoseSkinning] Vertex %u: OrigPos=(%.3f, %.3f, %.3f), BoneIdx=(%u,%u,%u,%u), Weights=(%.3f,%.3f,%.3f,%.3f)",
+		Zenith_Log(LOG_CATEGORY_MESH, "[ApplyBindPoseSkinning] Vertex %u: OrigPos=(%.3f, %.3f, %.3f), BoneIdx=(%u,%u,%u,%u), Weights=(%.3f,%.3f,%.3f,%.3f)",
 			s_uDebugVertexLogCount, xOriginalPos.x, xOriginalPos.y, xOriginalPos.z,
 			xBoneIndices.x, xBoneIndices.y, xBoneIndices.z, xBoneIndices.w,
 			xBoneWeights.x, xBoneWeights.y, xBoneWeights.z, xBoneWeights.w);
@@ -45,7 +45,7 @@ static Zenith_Maths::Vector3 ApplyBindPoseSkinning(
 		{
 			if (bLogThis)
 			{
-				Zenith_Log("[ApplyBindPoseSkinning]   Bone %u out of range (skeleton has %u bones)", uBoneIndex, pxSkeleton->GetNumBones());
+				Zenith_Log(LOG_CATEGORY_MESH, "[ApplyBindPoseSkinning]   Bone %u out of range (skeleton has %u bones)", uBoneIndex, pxSkeleton->GetNumBones());
 			}
 			continue;
 		}
@@ -63,7 +63,7 @@ static Zenith_Maths::Vector3 ApplyBindPoseSkinning(
 		if (bLogThis)
 		{
 			Zenith_Maths::Vector3 xBoneBindPos = Zenith_Maths::Vector3(xBone.m_xBindPoseModel[3]);
-			Zenith_Log("[ApplyBindPoseSkinning]   Bone[%u] '%s': BindPoseModelTrans=(%.3f,%.3f,%.3f), Transformed=(%.3f,%.3f,%.3f)",
+			Zenith_Log(LOG_CATEGORY_MESH, "[ApplyBindPoseSkinning]   Bone[%u] '%s': BindPoseModelTrans=(%.3f,%.3f,%.3f), Transformed=(%.3f,%.3f,%.3f)",
 				uBoneIndex, xBone.m_strName.c_str(),
 				xBoneBindPos.x, xBoneBindPos.y, xBoneBindPos.z,
 				xTransformed.x, xTransformed.y, xTransformed.z);
@@ -75,7 +75,7 @@ static Zenith_Maths::Vector3 ApplyBindPoseSkinning(
 	{
 		if (bLogThis)
 		{
-			Zenith_Log("[ApplyBindPoseSkinning]   No valid bones contributed, returning original pos");
+			Zenith_Log(LOG_CATEGORY_MESH, "[ApplyBindPoseSkinning]   No valid bones contributed, returning original pos");
 		}
 		s_uDebugVertexLogCount++;
 		return xOriginalPos;
@@ -83,7 +83,7 @@ static Zenith_Maths::Vector3 ApplyBindPoseSkinning(
 
 	if (bLogThis)
 	{
-		Zenith_Log("[ApplyBindPoseSkinning]   Result: (%.3f, %.3f, %.3f)", xSkinnedPos.x, xSkinnedPos.y, xSkinnedPos.z);
+		Zenith_Log(LOG_CATEGORY_MESH, "[ApplyBindPoseSkinning]   Result: (%.3f, %.3f, %.3f)", xSkinnedPos.x, xSkinnedPos.y, xSkinnedPos.z);
 		s_uDebugVertexLogCount++;
 	}
 
@@ -145,7 +145,7 @@ Flux_MeshInstance* Flux_MeshInstance::CreateFromAsset(Zenith_MeshAsset* pxAsset)
 
 	if (uNumVerts == 0 || uNumIndices == 0)
 	{
-		Zenith_Warning("Cannot create mesh instance from empty asset");
+		Zenith_Warning(LOG_CATEGORY_RENDERER, "Cannot create mesh instance from empty asset");
 		return nullptr;
 	}
 
@@ -299,13 +299,13 @@ Flux_MeshInstance* Flux_MeshInstance::CreateSkinnedFromAsset(Zenith_MeshAsset* p
 
 	if (uNumVerts == 0 || uNumIndices == 0)
 	{
-		Zenith_Warning("Cannot create skinned mesh instance from empty asset");
+		Zenith_Warning(LOG_CATEGORY_RENDERER, "Cannot create skinned mesh instance from empty asset");
 		return nullptr;
 	}
 
 	if (!pxAsset->HasSkinning())
 	{
-		Zenith_Warning("Cannot create skinned mesh instance from asset without skinning data, use CreateFromAsset() instead");
+		Zenith_Warning(LOG_CATEGORY_RENDERER, "Cannot create skinned mesh instance from asset without skinning data, use CreateFromAsset() instead");
 		return nullptr;
 	}
 
@@ -313,14 +313,14 @@ Flux_MeshInstance* Flux_MeshInstance::CreateSkinnedFromAsset(Zenith_MeshAsset* p
 	static bool s_bLoggedSkinningData = false;
 	if (!s_bLoggedSkinningData)
 	{
-		Zenith_Log("[MeshInstance] Creating skinned mesh: %u verts, %u indices", uNumVerts, uNumIndices);
+		Zenith_Log(LOG_CATEGORY_MESH, "[MeshInstance] Creating skinned mesh: %u verts, %u indices", uNumVerts, uNumIndices);
 
 		// Log first vertex's skinning data
 		if (pxAsset->m_xBoneIndices.GetSize() > 0 && pxAsset->m_xBoneWeights.GetSize() > 0)
 		{
 			const glm::uvec4& xIdx = pxAsset->m_xBoneIndices.Get(0);
 			const glm::vec4& xWgt = pxAsset->m_xBoneWeights.Get(0);
-			Zenith_Log("[MeshInstance]   Vertex 0: BoneIdx=(%u,%u,%u,%u) Weights=(%.3f,%.3f,%.3f,%.3f)",
+			Zenith_Log(LOG_CATEGORY_MESH, "[MeshInstance]   Vertex 0: BoneIdx=(%u,%u,%u,%u) Weights=(%.3f,%.3f,%.3f,%.3f)",
 				xIdx.x, xIdx.y, xIdx.z, xIdx.w,
 				xWgt.x, xWgt.y, xWgt.z, xWgt.w);
 		}
@@ -329,7 +329,7 @@ Flux_MeshInstance* Flux_MeshInstance::CreateSkinnedFromAsset(Zenith_MeshAsset* p
 		if (pxAsset->m_xPositions.GetSize() > 0)
 		{
 			const Zenith_Maths::Vector3& xPos = pxAsset->m_xPositions.Get(0);
-			Zenith_Log("[MeshInstance]   Vertex 0: Position=(%.3f,%.3f,%.3f)", xPos.x, xPos.y, xPos.z);
+			Zenith_Log(LOG_CATEGORY_MESH, "[MeshInstance]   Vertex 0: Position=(%.3f,%.3f,%.3f)", xPos.x, xPos.y, xPos.z);
 		}
 
 		s_bLoggedSkinningData = true;
@@ -475,14 +475,14 @@ Flux_MeshInstance* Flux_MeshInstance::CreateFromAsset(Zenith_MeshAsset* pxAsset,
 	// If no skeleton or mesh doesn't have skinning, delegate to the simple version
 	if (!pxSkeleton || !pxAsset->HasSkinning())
 	{
-		Zenith_Log("[MeshInstance] CreateFromAsset: No skeleton or no skinning, delegating to simple version");
+		Zenith_Log(LOG_CATEGORY_MESH, "[MeshInstance] CreateFromAsset: No skeleton or no skinning, delegating to simple version");
 		return CreateFromAsset(pxAsset);
 	}
 
 	// Reset debug counter for new mesh
 	s_uDebugVertexLogCount = 0;
 
-	Zenith_Log("[MeshInstance] CreateFromAsset with skeleton: %u bones, mesh has %u verts",
+	Zenith_Log(LOG_CATEGORY_MESH, "[MeshInstance] CreateFromAsset with skeleton: %u bones, mesh has %u verts",
 		pxSkeleton->GetNumBones(), pxAsset->GetNumVerts());
 
 	const uint32_t uNumVerts = pxAsset->GetNumVerts();
@@ -490,7 +490,7 @@ Flux_MeshInstance* Flux_MeshInstance::CreateFromAsset(Zenith_MeshAsset* pxAsset,
 
 	if (uNumVerts == 0 || uNumIndices == 0)
 	{
-		Zenith_Warning("Cannot create mesh instance from empty asset");
+		Zenith_Warning(LOG_CATEGORY_RENDERER, "Cannot create mesh instance from empty asset");
 		return nullptr;
 	}
 

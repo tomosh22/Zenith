@@ -74,7 +74,7 @@ void PlayerController_Behaviour::Shoot()
 {
 	if (!m_pxBulletPrefab)
 	{
-		Zenith_Log("[PlayerController] Bullet prefab not loaded!");
+		Zenith_Log(LOG_CATEGORY_GAMEPLAY, "[PlayerController] Bullet prefab not loaded!");
 		return;
 	}
 
@@ -248,7 +248,7 @@ void PlayerController_Behaviour::OnCreate()
 		m_pxBulletPrefab = new Zenith_Prefab();
 		if (!m_pxBulletPrefab->LoadFromFile(m_strBulletPrefabPath))
 		{
-			Zenith_Log("[PlayerController] Failed to load bullet prefab: %s", m_strBulletPrefabPath.c_str());
+			Zenith_Log(LOG_CATEGORY_GAMEPLAY, "[PlayerController] Failed to load bullet prefab: %s", m_strBulletPrefabPath.c_str());
 			delete m_pxBulletPrefab;
 			m_pxBulletPrefab = nullptr;
 		}
@@ -271,13 +271,13 @@ void PlayerController_Behaviour::SetBulletPrefabPath(const std::string& strPath)
 		m_pxBulletPrefab = new Zenith_Prefab();
 		if (!m_pxBulletPrefab->LoadFromFile(strPath))
 		{
-			Zenith_Log("[PlayerController] Failed to load bullet prefab: %s", strPath.c_str());
+			Zenith_Log(LOG_CATEGORY_GAMEPLAY, "[PlayerController] Failed to load bullet prefab: %s", strPath.c_str());
 			delete m_pxBulletPrefab;
 			m_pxBulletPrefab = nullptr;
 		}
 		else
 		{
-			Zenith_Log("[PlayerController] Loaded bullet prefab: %s", strPath.c_str());
+			Zenith_Log(LOG_CATEGORY_GAMEPLAY, "[PlayerController] Loaded bullet prefab: %s", strPath.c_str());
 		}
 	}
 }
@@ -292,13 +292,13 @@ void PlayerController_Behaviour::FindHUDElements()
 	Zenith_Entity* pxHUDEntity = xScene.FindEntityByName("HUD");
 	if (!pxHUDEntity)
 	{
-		Zenith_Log("[PlayerController] Could not find HUD entity");
+		Zenith_Log(LOG_CATEGORY_GAMEPLAY, "[PlayerController] Could not find HUD entity");
 		return;
 	}
 
 	if (!pxHUDEntity->HasComponent<Zenith_UIComponent>())
 	{
-		Zenith_Log("[PlayerController] HUD entity has no UIComponent");
+		Zenith_Log(LOG_CATEGORY_GAMEPLAY, "[PlayerController] HUD entity has no UIComponent");
 		return;
 	}
 
@@ -318,7 +318,7 @@ void PlayerController_Behaviour::FindHUDElements()
 	}
 
 	m_bUIInitialized = true;
-	Zenith_Log("[PlayerController] UI elements initialized successfully");
+	Zenith_Log(LOG_CATEGORY_GAMEPLAY, "[PlayerController] UI elements initialized successfully");
 
 	// Initial UI update
 	UpdateHealthUI();

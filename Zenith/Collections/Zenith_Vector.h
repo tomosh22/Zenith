@@ -113,12 +113,57 @@ public:
 
 	T* GetDataPointer() const {return m_pxData;}
 
+	u_int Find(const T& xValue) const
+	{
+		for (u_int u = 0; u < m_uSize; u++)
+		{
+			if (m_pxData[u] == xValue) return u;
+		}
+		return m_uSize;
+	}
+
+	template<typename Predicate>
+	u_int FindIf(Predicate pfnPredicate) const
+	{
+		for (u_int u = 0; u < m_uSize; u++)
+		{
+			if (pfnPredicate(m_pxData[u])) return u;
+		}
+		return m_uSize;
+	}
+
+	bool Contains(const T& xValue) const { return Find(xValue) != m_uSize; }
+
+	bool Erase(u_int uIndex)
+	{
+		if (uIndex >= m_uSize) return false;
+		Remove(uIndex);
+		return true;
+	}
+
+	bool EraseValue(const T& xValue)
+	{
+		u_int uIndex = Find(xValue);
+		if (uIndex != m_uSize)
+		{
+			Remove(uIndex);
+			return true;
+		}
+		return false;
+	}
+
 	void Remove(u_int uIndex)
 	{
 		Zenith_Assert(uIndex < m_uSize, "Index out of range");
 		m_pxData[uIndex].~T();
-		// Move remaining valid elements (use m_uSize, not m_uCapacity)
-		memmove(m_pxData + uIndex, m_pxData + uIndex + 1, sizeof(T) * (m_uSize - uIndex - 1));
+		// Move remaining valid elements using move semantics for proper handling of non-trivial types
+		for (u_int u = uIndex; u < m_uSize - 1; u++)
+		{
+			#include "Memory/Zenith_MemoryManagement_Disabled.h"
+			new (&m_pxData[u]) T(std::move(m_pxData[u + 1]));
+			#include "Memory/Zenith_MemoryManagement_Enabled.h"
+			m_pxData[u + 1].~T();
+		}
 		m_uSize--;
 	}
 
@@ -138,12 +183,22 @@ public:
 		m_uSize--;
 	}
 
-	void Reserve(u_int uNewCapcacity)
+	void Reserve(u_int uNewCapacity)
 	{
-		if (uNewCapcacity <= m_uCapacity) return;
+		if (uNewCapacity <= m_uCapacity) return;
 
-		m_pxData = static_cast<T*>(Zenith_MemoryManagement::Reallocate(m_pxData, sizeof(T) * uNewCapcacity));
-		m_uCapacity = uNewCapcacity;
+		// Allocate new buffer and move construct existing elements for proper handling of non-trivial types
+		T* pNewData = static_cast<T*>(Zenith_MemoryManagement::Allocate(uNewCapacity * sizeof(T)));
+		for (u_int u = 0; u < m_uSize; u++)
+		{
+			#include "Memory/Zenith_MemoryManagement_Disabled.h"
+			new (&pNewData[u]) T(std::move(m_pxData[u]));
+			#include "Memory/Zenith_MemoryManagement_Enabled.h"
+			m_pxData[u].~T();
+		}
+		Zenith_MemoryManagement::Deallocate(m_pxData);
+		m_pxData = pNewData;
+		m_uCapacity = uNewCapacity;
 	}
 
 	void ReadFromDataStream(Zenith_DataStream& xStream)
@@ -206,8 +261,13 @@ private:
 		m_uSize = xOther.GetSize();
 		m_uCapacity = xOther.GetCapacity();
 
-		// Only copy valid elements (use m_uSize, not m_uCapacity) to avoid copying uninitialized data
-		memcpy(m_pxData, xOther.m_pxData, sizeof(T) * m_uSize);
+		// Use placement new with copy construction for proper handling of non-trivial types (e.g. std::string)
+		for (u_int u = 0; u < m_uSize; u++)
+		{
+			#include "Memory/Zenith_MemoryManagement_Disabled.h"
+			new (&m_pxData[u]) T(xOther.m_pxData[u]);
+			#include "Memory/Zenith_MemoryManagement_Enabled.h"
+		}
 	}
 
 	T* m_pxData = nullptr;

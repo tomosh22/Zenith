@@ -114,7 +114,7 @@ void Flux_Graphics::Initialise()
 
 	s_xFrameConstantsLayout.m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;
 
-	Zenith_Log("Flux_Graphics Initialised");
+	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Graphics Initialised");
 }
 
 void Flux_Graphics::InitialiseRenderTargets()

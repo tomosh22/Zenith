@@ -93,7 +93,7 @@ void Flux_StaticMeshes::Initialise()
 	Zenith_DebugVariables::AddBoolean({ "Render", "Enable", "Static Meshes" }, dbg_bEnable);
 #endif
 
-	Zenith_Log("Flux_StaticMeshes initialised");
+	Zenith_Log(LOG_CATEGORY_MESH, "Flux_StaticMeshes initialised");
 }
 
 void Flux_StaticMeshes::Reset()
@@ -102,7 +102,7 @@ void Flux_StaticMeshes::Reset()
 	// This is called when the scene is reset (e.g., Play/Stop transitions in editor)
 	g_xCommandList.Reset(true);
 
-	Zenith_Log("Flux_StaticMeshes::Reset() - Reset command list");
+	Zenith_Log(LOG_CATEGORY_MESH, "Flux_StaticMeshes::Reset() - Reset command list");
 }
 
 void Flux_StaticMeshes::SubmitRenderToGBufferTask()
@@ -167,17 +167,17 @@ void Flux_StaticMeshes::RenderToGBuffer(void*)
 
 			if (!s_bLoggedOnce)
 			{
-				Zenith_Log("[StaticMeshes] Rendering static model - meshes: %u", pxModelInstance->GetNumMeshes());
+				Zenith_Log(LOG_CATEGORY_RENDERER, "[StaticMeshes] Rendering static model - meshes: %u", pxModelInstance->GetNumMeshes());
 				for (uint32_t uDbg = 0; uDbg < pxModelInstance->GetNumMeshes(); uDbg++)
 				{
 					Flux_MeshInstance* pxDbgMesh = pxModelInstance->GetMeshInstance(uDbg);
 					if (pxDbgMesh)
 					{
-						Zenith_Log("[StaticMeshes]   Mesh %u: %u verts, %u indices", uDbg, pxDbgMesh->GetNumVerts(), pxDbgMesh->GetNumIndices());
+						Zenith_Log(LOG_CATEGORY_RENDERER, "[StaticMeshes]   Mesh %u: %u verts, %u indices", uDbg, pxDbgMesh->GetNumVerts(), pxDbgMesh->GetNumIndices());
 					}
 					else
 					{
-						Zenith_Log("[StaticMeshes]   Mesh %u: NULL", uDbg);
+						Zenith_Log(LOG_CATEGORY_RENDERER, "[StaticMeshes]   Mesh %u: NULL", uDbg);
 					}
 				}
 				s_bLoggedOnce = true;

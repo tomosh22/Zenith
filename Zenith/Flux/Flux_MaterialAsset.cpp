@@ -13,9 +13,8 @@ Zenith_Mutex Flux_MaterialAsset::s_xCacheMutex;
 std::unordered_map<std::string, Flux_MaterialAsset*> Flux_MaterialAsset::s_xMaterialCache;
 std::unordered_map<std::string, Flux_Texture*> Flux_MaterialAsset::s_xTextureCache;
 uint32_t Flux_MaterialAsset::s_uNextMaterialID = 1;
-std::vector<Flux_MaterialAsset*> Flux_MaterialAsset::s_xAllMaterials;
+Zenith_Vector<Flux_MaterialAsset*> Flux_MaterialAsset::s_xAllMaterials;
 
-static constexpr const char* LOG_TAG = "[MaterialAsset]";
 
 //------------------------------------------------------------------------------
 // Static Registry Methods
@@ -23,13 +22,13 @@ static constexpr const char* LOG_TAG = "[MaterialAsset]";
 
 void Flux_MaterialAsset::Initialize()
 {
-	Zenith_Log("%s Material asset system initialized", LOG_TAG);
+	Zenith_Log(LOG_CATEGORY_MATERIAL, "Material asset system initialized");
 }
 
 void Flux_MaterialAsset::Shutdown()
 {
 	UnloadAll();
-	Zenith_Log("%s Material asset system shut down", LOG_TAG);
+	Zenith_Log(LOG_CATEGORY_MATERIAL, "Material asset system shut down");
 }
 
 Flux_MaterialAsset* Flux_MaterialAsset::Create(const std::string& strName)
@@ -50,9 +49,9 @@ Flux_MaterialAsset* Flux_MaterialAsset::Create(const std::string& strName)
 	pMaterial->m_bDirty = true;
 
 	// Register in the global material list for editor visibility
-	s_xAllMaterials.push_back(pMaterial);
+	s_xAllMaterials.PushBack(pMaterial);
 
-	Zenith_Log("%s Created new material: %s (total: %zu)", LOG_TAG, pMaterial->m_strName.c_str(), s_xAllMaterials.size());
+	Zenith_Log(LOG_CATEGORY_MATERIAL, "Created new material: %s (total: %u)", pMaterial->m_strName.c_str(), s_xAllMaterials.GetSize());
 
 	return pMaterial;
 }
@@ -65,14 +64,14 @@ Flux_MaterialAsset* Flux_MaterialAsset::LoadFromFile(const std::string& strPath)
 	auto it = s_xMaterialCache.find(strPath);
 	if (it != s_xMaterialCache.end())
 	{
-		Zenith_Log("%s Returning cached material: %s", LOG_TAG, strPath.c_str());
+		Zenith_Log(LOG_CATEGORY_MATERIAL, "Returning cached material: %s", strPath.c_str());
 		return it->second;
 	}
 
 	// Check if file exists before loading
 	if (!std::filesystem::exists(strPath))
 	{
-		Zenith_Log("%s ERROR: Material file not found: %s", LOG_TAG, strPath.c_str());
+		Zenith_Error(LOG_CATEGORY_MATERIAL, "Material file not found: %s", strPath.c_str());
 		return nullptr;
 	}
 
@@ -89,9 +88,9 @@ Flux_MaterialAsset* Flux_MaterialAsset::LoadFromFile(const std::string& strPath)
 	s_xMaterialCache[strPath] = pMaterial;
 
 	// Register in the global material list for editor visibility
-	s_xAllMaterials.push_back(pMaterial);
+	s_xAllMaterials.PushBack(pMaterial);
 
-	Zenith_Log("%s Loaded material from file: %s (name: %s, total: %zu)", LOG_TAG, strPath.c_str(), pMaterial->m_strName.c_str(), s_xAllMaterials.size());
+	Zenith_Log(LOG_CATEGORY_MATERIAL, "Loaded material from file: %s (name: %s, total: %u)", strPath.c_str(), pMaterial->m_strName.c_str(), s_xAllMaterials.GetSize());
 
 	return pMaterial;
 }
@@ -115,7 +114,7 @@ void Flux_MaterialAsset::Unload(const std::string& strPath)
 	auto it = s_xMaterialCache.find(strPath);
 	if (it != s_xMaterialCache.end())
 	{
-		Zenith_Log("%s Unloading material: %s", LOG_TAG, strPath.c_str());
+		Zenith_Log(LOG_CATEGORY_MATERIAL, "Unloading material: %s", strPath.c_str());
 		delete it->second;
 		s_xMaterialCache.erase(it);
 	}
@@ -125,7 +124,7 @@ void Flux_MaterialAsset::UnloadAll()
 {
 	Zenith_ScopedMutexLock xLock(s_xCacheMutex);
 
-	Zenith_Log("%s Unloading all materials (%zu cached, %zu total)", LOG_TAG, s_xMaterialCache.size(), s_xAllMaterials.size());
+	Zenith_Log(LOG_CATEGORY_MATERIAL, "Unloading all materials (%zu cached, %u total)", s_xMaterialCache.size(), s_xAllMaterials.GetSize());
 
 	for (auto& pair : s_xMaterialCache)
 	{
@@ -136,7 +135,7 @@ void Flux_MaterialAsset::UnloadAll()
 	// Clear the global material list (materials were deleted above via cache)
 	// Note: Some materials in s_xAllMaterials may not be in the cache (runtime-created)
 	// Those will be cleaned up by component destructors
-	s_xAllMaterials.clear();
+	s_xAllMaterials.Clear();
 
 	// Also clear texture cache
 	for (auto& pair : s_xTextureCache)
@@ -148,25 +147,26 @@ void Flux_MaterialAsset::UnloadAll()
 	}
 	s_xTextureCache.clear();
 
-	Zenith_Log("%s All materials and textures unloaded", LOG_TAG);
+	Zenith_Log(LOG_CATEGORY_MATERIAL, "All materials and textures unloaded");
 }
 
 void Flux_MaterialAsset::ReloadAll()
 {
 	Zenith_ScopedMutexLock xLock(s_xCacheMutex);
 
-	Zenith_Log("%s Reloading all materials (%zu cached)", LOG_TAG, s_xMaterialCache.size());
+	Zenith_Log(LOG_CATEGORY_MATERIAL, "Reloading all materials (%zu cached)", s_xMaterialCache.size());
 
 	// Collect paths to reload
-	std::vector<std::string> paths;
+	Zenith_Vector<std::string> paths;
 	for (const auto& pair : s_xMaterialCache)
 	{
-		paths.push_back(pair.first);
+		paths.PushBack(pair.first);
 	}
 
 	// Reload each material (this will reload textures)
-	for (const std::string& strPath : paths)
+	for (Zenith_Vector<std::string>::Iterator xIt(paths); !xIt.Done(); xIt.Next())
 	{
+		const std::string& strPath = xIt.GetData();
 		auto it = s_xMaterialCache.find(strPath);
 		if (it != s_xMaterialCache.end())
 		{
@@ -174,34 +174,35 @@ void Flux_MaterialAsset::ReloadAll()
 		}
 	}
 
-	Zenith_Log("%s All materials reloaded", LOG_TAG);
+	Zenith_Log(LOG_CATEGORY_MATERIAL, "All materials reloaded");
 }
 
-void Flux_MaterialAsset::GetAllLoadedMaterialPaths(std::vector<std::string>& outPaths)
+void Flux_MaterialAsset::GetAllLoadedMaterialPaths(Zenith_Vector<std::string>& outPaths)
 {
 	Zenith_ScopedMutexLock xLock(s_xCacheMutex);
 
-	outPaths.clear();
-	outPaths.reserve(s_xMaterialCache.size());
+	outPaths.Clear();
+	outPaths.Reserve(static_cast<u_int>(s_xMaterialCache.size()));
 
 	for (const auto& pair : s_xMaterialCache)
 	{
-		outPaths.push_back(pair.first);
+		outPaths.PushBack(pair.first);
 	}
 }
 
-void Flux_MaterialAsset::GetAllMaterials(std::vector<Flux_MaterialAsset*>& outMaterials)
+void Flux_MaterialAsset::GetAllMaterials(Zenith_Vector<Flux_MaterialAsset*>& outMaterials)
 {
 	Zenith_ScopedMutexLock xLock(s_xCacheMutex);
 
-	outMaterials.clear();
-	outMaterials.reserve(s_xAllMaterials.size());
+	outMaterials.Clear();
+	outMaterials.Reserve(s_xAllMaterials.GetSize());
 
-	for (Flux_MaterialAsset* pMaterial : s_xAllMaterials)
+	for (Zenith_Vector<Flux_MaterialAsset*>::Iterator xIt(s_xAllMaterials); !xIt.Done(); xIt.Next())
 	{
+		Flux_MaterialAsset* pMaterial = xIt.GetData();
 		if (pMaterial)
 		{
-			outMaterials.push_back(pMaterial);
+			outMaterials.PushBack(pMaterial);
 		}
 	}
 }
@@ -219,11 +220,7 @@ Flux_MaterialAsset::~Flux_MaterialAsset()
 	UnloadTextures();
 
 	// Remove from global material list
-	auto it = std::find(s_xAllMaterials.begin(), s_xAllMaterials.end(), this);
-	if (it != s_xAllMaterials.end())
-	{
-		s_xAllMaterials.erase(it);
-	}
+	s_xAllMaterials.EraseValue(this);
 }
 
 void Flux_MaterialAsset::UnloadTextures()
@@ -445,7 +442,7 @@ Flux_Texture* Flux_MaterialAsset::LoadTextureFromPath(const std::string& strPath
 	Zenith_AssetHandler::TextureData xTexData = Zenith_AssetHandler::LoadTexture2DFromFile(strPath.c_str());
 	if (!xTexData.pData)
 	{
-		Zenith_Log("%s ERROR: Failed to load texture: %s", LOG_TAG, strPath.c_str());
+		Zenith_Error(LOG_CATEGORY_MATERIAL, "Failed to load texture: %s", strPath.c_str());
 		return nullptr;
 	}
 	
@@ -456,7 +453,7 @@ Flux_Texture* Flux_MaterialAsset::LoadTextureFromPath(const std::string& strPath
 	{
 		pTexture->m_strSourcePath = strPath;
 		s_xTextureCache[strPath] = pTexture;
-		Zenith_Log("%s Loaded texture: %s", LOG_TAG, strPath.c_str());
+		Zenith_Log(LOG_CATEGORY_MATERIAL, "Loaded texture: %s", strPath.c_str());
 	}
 	
 	return pTexture;
@@ -516,7 +513,7 @@ bool Flux_MaterialAsset::SaveToFile(const std::string& strPath)
 		s_xMaterialCache[strPath] = this;
 	}
 	
-	Zenith_Log("%s Saved material to: %s", LOG_TAG, strPath.c_str());
+	Zenith_Log(LOG_CATEGORY_MATERIAL, "Saved material to: %s", strPath.c_str());
 	return true;
 }
 
@@ -524,11 +521,11 @@ void Flux_MaterialAsset::Reload()
 {
 	if (m_strAssetPath.empty())
 	{
-		Zenith_Log("%s Cannot reload material without asset path", LOG_TAG);
+		Zenith_Error(LOG_CATEGORY_MATERIAL, "Cannot reload material without asset path");
 		return;
 	}
 	
-	Zenith_Log("%s Reloading material: %s", LOG_TAG, m_strAssetPath.c_str());
+	Zenith_Log(LOG_CATEGORY_MATERIAL, "Reloading material: %s", m_strAssetPath.c_str());
 	
 	// Clear cached textures so they reload
 	UnloadTextures();
@@ -536,7 +533,7 @@ void Flux_MaterialAsset::Reload()
 	// Reload from file
 	if (!std::filesystem::exists(m_strAssetPath))
 	{
-		Zenith_Log("%s ERROR: Material file not found: %s", LOG_TAG, m_strAssetPath.c_str());
+		Zenith_Error(LOG_CATEGORY_MATERIAL, "Material file not found: %s", m_strAssetPath.c_str());
 		return;
 	}
 	
@@ -588,8 +585,8 @@ void Flux_MaterialAsset::ReadFromDataStream(Zenith_DataStream& xStream)
 
 	if (uVersion != MATERIAL_FILE_VERSION)
 	{
-		Zenith_Log("%s ERROR: Unsupported material version %u (expected %u). Please re-export the material.",
-			LOG_TAG, uVersion, MATERIAL_FILE_VERSION);
+		Zenith_Error(LOG_CATEGORY_MATERIAL, "Unsupported material version %u (expected %u). Please re-export the material.",
+			uVersion, MATERIAL_FILE_VERSION);
 		return;
 	}
 

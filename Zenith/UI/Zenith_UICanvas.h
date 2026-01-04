@@ -2,7 +2,7 @@
 
 #include "UI/Zenith_UIElement.h"
 #include "Maths/Zenith_Maths.h"
-#include <vector>
+#include "Collections/Zenith_Vector.h"
 #include <string>
 
 class Zenith_DataStream;
@@ -60,8 +60,8 @@ public:
     void Clear();
 
     // Get root elements (not including children)
-    const std::vector<Zenith_UIElement*>& GetElements() const { return m_xRootElements; }
-    size_t GetElementCount() const { return m_xRootElements.size(); }
+    const Zenith_Vector<Zenith_UIElement*>& GetElements() const { return m_xRootElements; }
+    size_t GetElementCount() const { return m_xRootElements.GetSize(); }
 
     // Find element by name (searches entire hierarchy)
     Zenith_UIElement* FindElement(const std::string& strName) const;
@@ -95,8 +95,8 @@ public:
     void SubmitText(const std::string& strText, const Zenith_Maths::Vector2& xPosition, float fSize, const Zenith_Maths::Vector4& xColor = {1,1,1,1});
 
     // Get pending text entries (for Flux_Text to process)
-    static std::vector<UITextEntry>& GetPendingTextEntries() { return s_xPendingTextEntries; }
-    static void ClearPendingTextEntries() { s_xPendingTextEntries.clear(); }
+    static Zenith_Vector<UITextEntry>& GetPendingTextEntries() { return s_xPendingTextEntries; }
+    static void ClearPendingTextEntries() { s_xPendingTextEntries.Clear(); }
 
     // ========== Serialization ==========
 
@@ -108,10 +108,10 @@ private:
     void UpdateSize();
 
     // All elements owned by canvas (flat list for ownership/deletion)
-    std::vector<Zenith_UIElement*> m_xAllElements;
+    Zenith_Vector<Zenith_UIElement*> m_xAllElements;
 
     // Root elements (top-level, not children of other elements)
-    std::vector<Zenith_UIElement*> m_xRootElements;
+    Zenith_Vector<Zenith_UIElement*> m_xRootElements;
 
     // Canvas dimensions
     Zenith_Maths::Vector2 m_xSize = { 1920.0f, 1080.0f };
@@ -122,7 +122,7 @@ private:
     static Zenith_UICanvas* s_pxPrimaryCanvas;
 
     // Static text entries for Flux_Text integration
-    static std::vector<UITextEntry> s_xPendingTextEntries;
+    static Zenith_Vector<UITextEntry> s_xPendingTextEntries;
 };
 
 } // namespace Zenith_UI

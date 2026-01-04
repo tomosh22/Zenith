@@ -35,7 +35,7 @@ void Zenith_UndoSystem::Execute(Zenith_UndoCommand* pCommand)
 	// Enforce stack size limit
 	EnforceStackLimit();
 
-	Zenith_Log("[UndoSystem] Executed: %s (Undo stack: %u, Redo stack: %u)",
+	Zenith_Log(LOG_CATEGORY_EDITOR, "[UndoSystem] Executed: %s (Undo stack: %u, Redo stack: %u)",
 		pCommand->GetDescription(),
 		static_cast<u_int>(s_xUndoStack.size()),
 		static_cast<u_int>(s_xRedoStack.size()));
@@ -45,7 +45,7 @@ void Zenith_UndoSystem::Undo()
 {
 	if (!CanUndo())
 	{
-		Zenith_Log("[UndoSystem] Cannot undo - stack is empty");
+		Zenith_Log(LOG_CATEGORY_EDITOR, "[UndoSystem] Cannot undo - stack is empty");
 		return;
 	}
 
@@ -59,7 +59,7 @@ void Zenith_UndoSystem::Undo()
 	// Move to redo stack
 	s_xRedoStack.push_back(std::move(pCommand));
 
-	Zenith_Log("[UndoSystem] Undone: %s (Undo stack: %u, Redo stack: %u)",
+	Zenith_Log(LOG_CATEGORY_EDITOR, "[UndoSystem] Undone: %s (Undo stack: %u, Redo stack: %u)",
 		s_xRedoStack.back()->GetDescription(),
 		static_cast<u_int>(s_xUndoStack.size()),
 		static_cast<u_int>(s_xRedoStack.size()));
@@ -69,7 +69,7 @@ void Zenith_UndoSystem::Redo()
 {
 	if (!CanRedo())
 	{
-		Zenith_Log("[UndoSystem] Cannot redo - stack is empty");
+		Zenith_Log(LOG_CATEGORY_EDITOR, "[UndoSystem] Cannot redo - stack is empty");
 		return;
 	}
 
@@ -83,7 +83,7 @@ void Zenith_UndoSystem::Redo()
 	// Move to undo stack
 	s_xUndoStack.push_back(std::move(pCommand));
 
-	Zenith_Log("[UndoSystem] Redone: %s (Undo stack: %u, Redo stack: %u)",
+	Zenith_Log(LOG_CATEGORY_EDITOR, "[UndoSystem] Redone: %s (Undo stack: %u, Redo stack: %u)",
 		s_xUndoStack.back()->GetDescription(),
 		static_cast<u_int>(s_xUndoStack.size()),
 		static_cast<u_int>(s_xRedoStack.size()));
@@ -119,7 +119,7 @@ void Zenith_UndoSystem::Clear()
 {
 	s_xUndoStack.clear();
 	s_xRedoStack.clear();
-	Zenith_Log("[UndoSystem] Cleared all undo/redo history");
+	Zenith_Log(LOG_CATEGORY_EDITOR, "[UndoSystem] Cleared all undo/redo history");
 }
 
 void Zenith_UndoSystem::EnforceStackLimit()
@@ -161,7 +161,7 @@ void Zenith_UndoCommand_TransformEdit::Execute()
 	// Verify entity still exists
 	if (!xScene.EntityExists(m_uEntityID))
 	{
-		Zenith_Log("[UndoSystem] WARNING: Entity %u no longer exists, cannot execute transform edit", m_uEntityID);
+		Zenith_Log(LOG_CATEGORY_EDITOR, "[UndoSystem] WARNING: Entity %u no longer exists, cannot execute transform edit", m_uEntityID);
 		return;
 	}
 
@@ -169,7 +169,7 @@ void Zenith_UndoCommand_TransformEdit::Execute()
 
 	if (!xEntity.HasComponent<Zenith_TransformComponent>())
 	{
-		Zenith_Log("[UndoSystem] WARNING: Entity %u has no TransformComponent, cannot execute transform edit", m_uEntityID);
+		Zenith_Log(LOG_CATEGORY_EDITOR, "[UndoSystem] WARNING: Entity %u has no TransformComponent, cannot execute transform edit", m_uEntityID);
 		return;
 	}
 
@@ -186,7 +186,7 @@ void Zenith_UndoCommand_TransformEdit::Undo()
 	// Verify entity still exists
 	if (!xScene.EntityExists(m_uEntityID))
 	{
-		Zenith_Log("[UndoSystem] WARNING: Entity %u no longer exists, cannot undo transform edit", m_uEntityID);
+		Zenith_Log(LOG_CATEGORY_EDITOR, "[UndoSystem] WARNING: Entity %u no longer exists, cannot undo transform edit", m_uEntityID);
 		return;
 	}
 
@@ -194,7 +194,7 @@ void Zenith_UndoCommand_TransformEdit::Undo()
 
 	if (!xEntity.HasComponent<Zenith_TransformComponent>())
 	{
-		Zenith_Log("[UndoSystem] WARNING: Entity %u has no TransformComponent, cannot undo transform edit", m_uEntityID);
+		Zenith_Log(LOG_CATEGORY_EDITOR, "[UndoSystem] WARNING: Entity %u has no TransformComponent, cannot undo transform edit", m_uEntityID);
 		return;
 	}
 
@@ -241,8 +241,8 @@ void Zenith_UndoCommand_CreateEntity::Execute()
 	// For now, we just track the creation/deletion state
 	// A full implementation would serialize/deserialize all components
 
-	Zenith_Log("[UndoSystem] WARNING: CreateEntity command execute() - entity recreation not fully implemented");
-	Zenith_Log("[UndoSystem] Entity %u (%s) marked as created", m_uEntityID, m_strName.c_str());
+	Zenith_Log(LOG_CATEGORY_EDITOR, "[UndoSystem] WARNING: CreateEntity command execute() - entity recreation not fully implemented");
+	Zenith_Log(LOG_CATEGORY_EDITOR, "[UndoSystem] Entity %u (%s) marked as created", m_uEntityID, m_strName.c_str());
 
 	m_bCreated = true;
 }
@@ -254,7 +254,7 @@ void Zenith_UndoCommand_CreateEntity::Undo()
 	// Verify entity exists
 	if (!xScene.EntityExists(m_uEntityID))
 	{
-		Zenith_Log("[UndoSystem] WARNING: Entity %u does not exist, cannot undo creation", m_uEntityID);
+		Zenith_Log(LOG_CATEGORY_EDITOR, "[UndoSystem] WARNING: Entity %u does not exist, cannot undo creation", m_uEntityID);
 		return;
 	}
 
@@ -262,7 +262,7 @@ void Zenith_UndoCommand_CreateEntity::Undo()
 	xScene.RemoveEntity(m_uEntityID);
 	m_bCreated = false;
 
-	Zenith_Log("[UndoSystem] Removed entity %u (%s)", m_uEntityID, m_strName.c_str());
+	Zenith_Log(LOG_CATEGORY_EDITOR, "[UndoSystem] Removed entity %u (%s)", m_uEntityID, m_strName.c_str());
 }
 
 const char* Zenith_UndoCommand_CreateEntity::GetDescription() const
@@ -283,7 +283,7 @@ Zenith_UndoCommand_DeleteEntity::Zenith_UndoCommand_DeleteEntity(Zenith_EntityID
 	// Verify entity exists
 	if (!xScene.EntityExists(m_uEntityID))
 	{
-		Zenith_Log("[UndoSystem] WARNING: Entity %u does not exist, cannot capture state for deletion", m_uEntityID);
+		Zenith_Log(LOG_CATEGORY_EDITOR, "[UndoSystem] WARNING: Entity %u does not exist, cannot capture state for deletion", m_uEntityID);
 		m_strName = "Unknown";
 		return;
 	}
@@ -297,7 +297,7 @@ Zenith_UndoCommand_DeleteEntity::Zenith_UndoCommand_DeleteEntity(Zenith_EntityID
 	// A full implementation would use Zenith_DataStream to serialize the entity
 	m_strSerializedState = "";
 
-	Zenith_Log("[UndoSystem] Captured state for entity %u (%s) before deletion", m_uEntityID, m_strName.c_str());
+	Zenith_Log(LOG_CATEGORY_EDITOR, "[UndoSystem] Captured state for entity %u (%s) before deletion", m_uEntityID, m_strName.c_str());
 }
 
 void Zenith_UndoCommand_DeleteEntity::Execute()
@@ -307,7 +307,7 @@ void Zenith_UndoCommand_DeleteEntity::Execute()
 	// Verify entity exists
 	if (!xScene.EntityExists(m_uEntityID))
 	{
-		Zenith_Log("[UndoSystem] WARNING: Entity %u does not exist, cannot delete", m_uEntityID);
+		Zenith_Log(LOG_CATEGORY_EDITOR, "[UndoSystem] WARNING: Entity %u does not exist, cannot delete", m_uEntityID);
 		return;
 	}
 
@@ -315,7 +315,7 @@ void Zenith_UndoCommand_DeleteEntity::Execute()
 	xScene.RemoveEntity(m_uEntityID);
 	m_bDeleted = true;
 
-	Zenith_Log("[UndoSystem] Deleted entity %u (%s)", m_uEntityID, m_strName.c_str());
+	Zenith_Log(LOG_CATEGORY_EDITOR, "[UndoSystem] Deleted entity %u (%s)", m_uEntityID, m_strName.c_str());
 }
 
 void Zenith_UndoCommand_DeleteEntity::Undo()
@@ -325,15 +325,15 @@ void Zenith_UndoCommand_DeleteEntity::Undo()
 	// Check if entity already exists (shouldn't happen)
 	if (xScene.EntityExists(m_uEntityID))
 	{
-		Zenith_Log("[UndoSystem] WARNING: Entity %u already exists, cannot undo deletion", m_uEntityID);
+		Zenith_Log(LOG_CATEGORY_EDITOR, "[UndoSystem] WARNING: Entity %u already exists, cannot undo deletion", m_uEntityID);
 		return;
 	}
 
 	// Recreate entity from serialized state
 	// TODO: Deserialize full entity state
 	// For now, we just log a warning
-	Zenith_Log("[UndoSystem] WARNING: DeleteEntity undo() - entity recreation not fully implemented");
-	Zenith_Log("[UndoSystem] Entity %u (%s) would be recreated here", m_uEntityID, m_strName.c_str());
+	Zenith_Log(LOG_CATEGORY_EDITOR, "[UndoSystem] WARNING: DeleteEntity undo() - entity recreation not fully implemented");
+	Zenith_Log(LOG_CATEGORY_EDITOR, "[UndoSystem] Entity %u (%s) would be recreated here", m_uEntityID, m_strName.c_str());
 
 	m_bDeleted = false;
 }

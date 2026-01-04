@@ -61,7 +61,7 @@ void Flux_SSAO::Initialise()
 	Zenith_DebugVariables::AddFloat({ "Render", "SSAO", "Kernel Size" }, dbg_xConstants.m_fKernelSize, 16.f, 64.f);
 #endif
 
-	Zenith_Log("Flux_SSAO initialised");
+	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_SSAO initialised");
 }
 
 void Flux_SSAO::Reset()
@@ -69,7 +69,7 @@ void Flux_SSAO::Reset()
 	// Reset command list to ensure no stale GPU resource references, including descriptor bindings
 	// This is called when the scene is reset (e.g., Play/Stop transitions in editor)
 	g_xCommandList.Reset(true);
-	Zenith_Log("Flux_SSAO::Reset() - Reset command list");
+	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_SSAO::Reset() - Reset command list");
 }
 
 void Flux_SSAO::SubmitRenderTask()

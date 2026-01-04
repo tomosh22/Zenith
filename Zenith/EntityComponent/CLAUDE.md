@@ -4,7 +4,7 @@
 
 ### Core
 - `Zenith_Scene.h/cpp` - Scene management, component pools, entity-component mapping
-- `Zenith_Entity.h/cpp` - Entity wrapper class (16 bytes: scene pointer + entity ID + parent ID)
+- `Zenith_Entity.h/cpp` - Entity wrapper class (scene pointer + entity ID + parent ID + child entity vector)
 - `Zenith_ComponentMeta.h/cpp` - Component reflection/registration system with type-erased operations
 - `Zenith_ComponentRegistry.h/cpp` - Component type registration for editor UI
 - `Zenith_Query.h` - Multi-component entity queries
@@ -23,7 +23,7 @@
 ## Architecture
 
 ### Entity
-Lightweight 16-byte wrapper around scene pointer, entity ID, and parent entity ID. Entity names are stored in the scene (not the entity) via `GetName()`/`SetName()` accessors that delegate to the scene. This design keeps entities trivially copyable and cache-friendly.
+Wrapper around scene pointer, entity ID, parent entity ID, and child entity ID vector. Entity names are stored in the scene (not the entity) via `GetName()`/`SetName()` accessors that delegate to the scene.
 
 ### Scene
 Static singleton storing all entities and component pools. Components of same type stored in contiguous `Zenith_Vector` for cache-friendly iteration. Scene serialization uses `Zenith_DataStream` with `.zscn` file extension.

@@ -84,12 +84,12 @@ Zenith_ModelAsset* Zenith_ModelAsset::LoadFromFile(const char* szPath)
 	pxAsset->ReadFromDataStream(xStream);
 	pxAsset->m_strSourcePath = szPath;
 
-	Zenith_Log("[ModelAsset] Loaded '%s' from %s with %u mesh bindings",
+	Zenith_Log(LOG_CATEGORY_ASSET, "Loaded model asset '%s' from %s with %u mesh bindings",
 		pxAsset->m_strName.c_str(), szPath, pxAsset->GetNumMeshes());
 
 	for (uint32_t u = 0; u < pxAsset->GetNumMeshes(); u++)
 	{
-		Zenith_Log("[ModelAsset]   Mesh %u: %s", u, pxAsset->GetMeshBinding(u).GetMeshPath().c_str());
+		Zenith_Log(LOG_CATEGORY_ASSET, "  Mesh %u: %s", u, pxAsset->GetMeshBinding(u).GetMeshPath().c_str());
 	}
 
 	return pxAsset;
@@ -97,12 +97,12 @@ Zenith_ModelAsset* Zenith_ModelAsset::LoadFromFile(const char* szPath)
 
 void Zenith_ModelAsset::Export(const char* szPath) const
 {
-	Zenith_Log("[ModelAsset] Exporting '%s' to %s with %u mesh bindings",
+	Zenith_Log(LOG_CATEGORY_ASSET, "Exporting model asset '%s' to %s with %u mesh bindings",
 		m_strName.c_str(), szPath, GetNumMeshes());
 
 	for (uint32_t u = 0; u < GetNumMeshes(); u++)
 	{
-		Zenith_Log("[ModelAsset]   Mesh %u: %s", u, m_xMeshBindings.Get(u).GetMeshPath().c_str());
+		Zenith_Log(LOG_CATEGORY_ASSET, "  Mesh %u: %s", u, m_xMeshBindings.Get(u).GetMeshPath().c_str());
 	}
 
 	Zenith_DataStream xStream;
@@ -153,7 +153,7 @@ void Zenith_ModelAsset::ReadFromDataStream(Zenith_DataStream& xStream)
 
 	if (uVersion != ZENITH_MODEL_ASSET_VERSION)
 	{
-		Zenith_Log("[ModelAsset] ERROR: Unsupported version %u (expected %u). Please re-export the asset.", uVersion, ZENITH_MODEL_ASSET_VERSION);
+		Zenith_Log(LOG_CATEGORY_ASSET, "ERROR: Unsupported model asset version %u (expected %u). Please re-export the asset.", uVersion, ZENITH_MODEL_ASSET_VERSION);
 		return;
 	}
 

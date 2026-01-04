@@ -79,7 +79,7 @@ void Flux_Particles::Initialise()
 	Zenith_DebugVariables::AddBoolean({ "Render", "Enable", "Particles" }, dbg_bEnable);
 #endif
 
-	Zenith_Log("Flux_Particles initialised");
+	Zenith_Log(LOG_CATEGORY_PARTICLES, "Flux_Particles initialised");
 }
 
 void Flux_Particles::Reset()
@@ -87,7 +87,7 @@ void Flux_Particles::Reset()
 	// Reset command list to ensure no stale GPU resource references, including descriptor bindings
 	// This is called when the scene is reset (e.g., Play/Stop transitions in editor)
 	g_xCommandList.Reset(true);
-	Zenith_Log("Flux_Particles::Reset() - Reset command list");
+	Zenith_Log(LOG_CATEGORY_PARTICLES, "Flux_Particles::Reset() - Reset command list");
 }
 
 void UploadInstanceData()

@@ -198,7 +198,7 @@ void Flux_SkeletonPose::SampleFromClip(const Flux_AnimationClip& xClip,
 	static bool s_bLoggedBoneNames = false;
 	if (!s_bLoggedBoneNames)
 	{
-		Zenith_Log("[SampleFromClip] Animation '%s' has %zu bone channels, skeleton has %u bones",
+		Zenith_Log(LOG_CATEGORY_ANIMATION, "[SampleFromClip] Animation '%s' has %zu bone channels, skeleton has %u bones",
 			xClip.GetName().c_str(),
 			xClip.GetBoneChannels().size(),
 			xSkeleton.GetNumBones());
@@ -211,20 +211,20 @@ void Flux_SkeletonPose::SampleFromClip(const Flux_AnimationClip& xClip,
 			if (it != xSkeleton.m_xBoneNameToIndex.end())
 			{
 				uMatchCount++;
-				Zenith_Log("[SampleFromClip]   MATCH: '%s' -> bone %u", strBoneName.c_str(), it->second);
+				Zenith_Log(LOG_CATEGORY_ANIMATION, "[SampleFromClip]   MATCH: '%s' -> bone %u", strBoneName.c_str(), it->second);
 			}
 			else
 			{
-				Zenith_Log("[SampleFromClip]   NO MATCH: '%s'", strBoneName.c_str());
+				Zenith_Log(LOG_CATEGORY_ANIMATION, "[SampleFromClip]   NO MATCH: '%s'", strBoneName.c_str());
 			}
 		}
-		Zenith_Log("[SampleFromClip] Total matches: %u/%zu", uMatchCount, xClip.GetBoneChannels().size());
+		Zenith_Log(LOG_CATEGORY_ANIMATION, "[SampleFromClip] Total matches: %u/%zu", uMatchCount, xClip.GetBoneChannels().size());
 
 		// Also log skeleton bone names for comparison
-		Zenith_Log("[SampleFromClip] Skeleton bone names:");
+		Zenith_Log(LOG_CATEGORY_ANIMATION, "[SampleFromClip] Skeleton bone names:");
 		for (uint32_t u = 0; u < xSkeleton.GetNumBones(); u++)
 		{
-			Zenith_Log("[SampleFromClip]   [%u] '%s'", u, xSkeleton.GetBone(u).m_strName.c_str());
+			Zenith_Log(LOG_CATEGORY_ANIMATION, "[SampleFromClip]   [%u] '%s'", u, xSkeleton.GetBone(u).m_strName.c_str());
 		}
 
 		s_bLoggedBoneNames = true;

@@ -7,7 +7,7 @@
 
 ## Overview
 
-Work-stealing task system for parallelizing CPU work across worker threads. Uses lock-free circular queue and semaphore synchronization.
+Work-stealing task system for parallelizing CPU work across worker threads. Uses circular queue with mutex protection and semaphore synchronization.
 
 ## Core Classes
 
@@ -29,9 +29,9 @@ Task system dynamically creates `min(hardware_concurrency - 1, 16)` threads at i
 ## Related Components
 
 - `Zenith_Multithreading` in `Core/Multithreading/` - Thread registration and ID tracking
-- `Zenith_Mutex` in `Windows/Multithreading/` - Platform mutex wrapper
-- `Zenith_Semaphore` in `Windows/Multithreading/` - Platform semaphore wrapper
-- `Zenith_CircularQueue` in `Collections/` - Lock-free queue implementation
+- `Zenith_Mutex` - Platform mutex wrapper (alias defined in `Windows/Zenith_OS_Include.h`, implementation in `Windows/Multithreading/`)
+- `Zenith_Semaphore` - Platform semaphore wrapper (alias defined in `Windows/Zenith_OS_Include.h`, implementation in `Windows/Multithreading/`)
+- `Zenith_CircularQueue` in `Collections/` - Circular queue implementation (not thread-safe, requires external synchronization)
 
 ## Key Concepts
 

@@ -90,7 +90,7 @@ void Flux_Shadows::Reset()
 		g_axCommandLists[u].Reset(true);
 	}
 
-	Zenith_Log("Flux_Shadows::Reset() - Reset %d shadow cascade command lists", ZENITH_FLUX_NUM_CSMS);
+	Zenith_Log(LOG_CATEGORY_SHADOWS, "Flux_Shadows::Reset() - Reset %d shadow cascade command lists", ZENITH_FLUX_NUM_CSMS);
 }
 
 void Flux_Shadows::Render(void*)

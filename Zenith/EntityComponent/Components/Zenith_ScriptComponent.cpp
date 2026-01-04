@@ -24,7 +24,7 @@ void Zenith_ScriptComponent::WriteToDataStream(Zenith_DataStream& xStream) const
 		// Write behavior-specific parameters
 		m_pxScriptBehaviour->WriteParametersToDataStream(xStream);
 
-		Zenith_Log("ScriptComponent serialized with behaviour: %s", strTypeName.c_str());
+		Zenith_Log(LOG_CATEGORY_ECS, "ScriptComponent serialized with behaviour: %s", strTypeName.c_str());
 	}
 }
 
@@ -48,13 +48,13 @@ void Zenith_ScriptComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 			// Read behavior-specific parameters
 			m_pxScriptBehaviour->ReadParametersFromDataStream(xStream);
 
-			Zenith_Log("ScriptComponent deserialized and recreated behaviour: %s", strTypeName.c_str());
+			Zenith_Log(LOG_CATEGORY_ECS, "ScriptComponent deserialized and recreated behaviour: %s", strTypeName.c_str());
 			// Call OnCreate to initialize the behavior
 			m_pxScriptBehaviour->OnCreate();
 		}
 		else
 		{
-			Zenith_Log("WARNING: ScriptComponent could not recreate behaviour '%s' - not registered in Zenith_BehaviourRegistry", strTypeName.c_str());
+			Zenith_Log(LOG_CATEGORY_ECS, "WARNING: ScriptComponent could not recreate behaviour '%s' - not registered in Zenith_BehaviourRegistry", strTypeName.c_str());
 		}
 	}
 }
@@ -117,7 +117,7 @@ void Zenith_ScriptComponent::RenderPropertiesPanel()
 					if (m_pxScriptBehaviour)
 					{
 						m_pxScriptBehaviour->OnCreate();
-						Zenith_Log("[ScriptComponent] Set behaviour to: %s", szSelectedName);
+						Zenith_Log(LOG_CATEGORY_ECS, "[ScriptComponent] Set behaviour to: %s", szSelectedName);
 					}
 				}
 			}

@@ -7,6 +7,7 @@
 #include <vector>
 #include <string>
 #include <unordered_set>
+#include <bitset>
 
 // Forward declarations
 class Flux_MaterialAsset;
@@ -43,6 +44,7 @@ struct ConsoleLogEntry
 {
 	enum class LogLevel { Info, Warning, Error };
 	LogLevel m_eLevel;
+	Zenith_LogCategory m_eCategory;
 	std::string m_strMessage;
 	std::string m_strTimestamp;
 };
@@ -153,7 +155,7 @@ public:
 	static void SetGizmoMode(EditorGizmoMode eMode) { s_eGizmoMode = eMode; }
 
 	// Console log
-	static void AddLogMessage(const char* szMessage, ConsoleLogEntry::LogLevel eLevel = ConsoleLogEntry::LogLevel::Info);
+	static void AddLogMessage(const char* szMessage, ConsoleLogEntry::LogLevel eLevel, Zenith_LogCategory eCategory);
 	static void ClearConsole();
 	
 	// Material Editor
@@ -226,6 +228,7 @@ private:
 	static bool s_bShowConsoleInfo;
 	static bool s_bShowConsoleWarnings;
 	static bool s_bShowConsoleErrors;
+	static std::bitset<LOG_CATEGORY_COUNT> s_xCategoryFilters;
 	static constexpr size_t MAX_CONSOLE_ENTRIES = 1000;
 
 	// Editor camera (separate from game camera, not part of entity/scene system)

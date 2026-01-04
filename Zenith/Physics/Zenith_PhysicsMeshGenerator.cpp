@@ -23,9 +23,6 @@ PhysicsMeshConfig g_xPhysicsMeshConfig = {
 // Global debug flag for drawing all physics meshes
 bool g_bDebugDrawAllPhysicsMeshes = false;
 
-// Log tag for physics mesh generation
-static constexpr const char* LOG_TAG_PHYSICS_MESH = "[PhysicsMeshGen]";
-
 const char* Zenith_PhysicsMeshGenerator::GetQualityName(PhysicsMeshQuality eQuality)
 {
 	switch (eQuality)
@@ -53,7 +50,7 @@ Flux_MeshGeometry* Zenith_PhysicsMeshGenerator::GeneratePhysicsMeshWithConfig(
 	// Validate input
 	if (xMeshGeometries.GetSize() == 0)
 	{
-		Zenith_Log("%s No meshes provided for physics mesh generation", LOG_TAG_PHYSICS_MESH);
+		Zenith_Log(LOG_CATEGORY_PHYSICS, " No meshes provided for physics mesh generation");
 		return nullptr;
 	}
 
@@ -70,8 +67,7 @@ Flux_MeshGeometry* Zenith_PhysicsMeshGenerator::GeneratePhysicsMeshWithConfig(
 		}
 	}
 
-	Zenith_Log("%s Generating physics mesh from %u submeshes (%u verts, %u tris), quality=%s",
-		LOG_TAG_PHYSICS_MESH,
+	Zenith_Log(LOG_CATEGORY_PHYSICS, " Generating physics mesh from %u submeshes (%u verts, %u tris), quality=%s",
 		xMeshGeometries.GetSize(),
 		uTotalSourceVerts,
 		uTotalSourceTris,
@@ -94,27 +90,25 @@ Flux_MeshGeometry* Zenith_PhysicsMeshGenerator::GeneratePhysicsMeshWithConfig(
 		break;
 
 	default:
-		Zenith_Log("%s Unknown quality level %d, falling back to AABB", LOG_TAG_PHYSICS_MESH, xConfig.m_eQuality);
+		Zenith_Log(LOG_CATEGORY_PHYSICS, " Unknown quality level %d, falling back to AABB", xConfig.m_eQuality);
 		pxResult = GenerateAABBMesh(xMeshGeometries);
 		break;
 	}
 
 	if (pxResult)
 	{
-		Zenith_Log("%s Generated physics mesh: %u verts, %u tris",
-			LOG_TAG_PHYSICS_MESH,
-			pxResult->GetNumVerts(),
+		Zenith_Log(LOG_CATEGORY_PHYSICS, " Generated physics mesh: %u verts, %u tris",
+				pxResult->GetNumVerts(),
 			pxResult->GetNumIndices() / 3);
 	}
 	else
 	{
-		Zenith_Log("%s Failed to generate physics mesh, attempting AABB fallback", LOG_TAG_PHYSICS_MESH);
+		Zenith_Log(LOG_CATEGORY_PHYSICS, " Failed to generate physics mesh, attempting AABB fallback");
 		pxResult = GenerateAABBMesh(xMeshGeometries);
 		if (pxResult)
 		{
-			Zenith_Log("%s AABB fallback succeeded: %u verts, %u tris",
-				LOG_TAG_PHYSICS_MESH,
-				pxResult->GetNumVerts(),
+			Zenith_Log(LOG_CATEGORY_PHYSICS, " AABB fallback succeeded: %u verts, %u tris",
+						pxResult->GetNumVerts(),
 				pxResult->GetNumIndices() / 3);
 		}
 	}
@@ -350,13 +344,12 @@ Flux_MeshGeometry* Zenith_PhysicsMeshGenerator::GenerateAABBMesh(
 	// Validate AABB
 	if (xMin.x > xMax.x || xMin.y > xMax.y || xMin.z > xMax.z)
 	{
-		Zenith_Log("%s Invalid AABB computed, using unit box", LOG_TAG_PHYSICS_MESH);
+		Zenith_Log(LOG_CATEGORY_PHYSICS, " Invalid AABB computed, using unit box");
 		xMin = Zenith_Maths::Vector3(-0.5f, -0.5f, -0.5f);
 		xMax = Zenith_Maths::Vector3(0.5f, 0.5f, 0.5f);
 	}
 
-	Zenith_Log("%s AABB bounds: (%.2f, %.2f, %.2f) to (%.2f, %.2f, %.2f)",
-		LOG_TAG_PHYSICS_MESH,
+	Zenith_Log(LOG_CATEGORY_PHYSICS, " AABB bounds: (%.2f, %.2f, %.2f) to (%.2f, %.2f, %.2f)",
 		xMin.x, xMin.y, xMin.z,
 		xMax.x, xMax.y, xMax.z);
 
@@ -372,8 +365,8 @@ Flux_MeshGeometry* Zenith_PhysicsMeshGenerator::GenerateConvexHullMesh(
 
 	if (xAllPositions.GetSize() < 4)
 	{
-		Zenith_Log("%s Not enough vertices for convex hull (%u), using AABB fallback",
-			LOG_TAG_PHYSICS_MESH, xAllPositions.GetSize());
+		Zenith_Log(LOG_CATEGORY_PHYSICS, " Not enough vertices for convex hull (%u), using AABB fallback",
+xAllPositions.GetSize());
 		return GenerateAABBMesh(xMeshGeometries);
 	}
 
@@ -421,14 +414,14 @@ Flux_MeshGeometry* Zenith_PhysicsMeshGenerator::GenerateConvexHullMesh(
 	// If we have fewer than 4 unique points, add some intermediate points
 	if (xHullPoints.GetSize() < 4)
 	{
-		Zenith_Log("%s Only %u unique extreme points, using AABB fallback",
-			LOG_TAG_PHYSICS_MESH, xHullPoints.GetSize());
+		Zenith_Log(LOG_CATEGORY_PHYSICS, " Only %u unique extreme points, using AABB fallback",
+xHullPoints.GetSize());
 		return GenerateAABBMesh(xMeshGeometries);
 	}
 
 	// Instead of using a simplified box approach, use decimation on all vertices
 	// to create a better approximation that follows the mesh shape
-	Zenith_Log("%s Using simplified mesh approach for better hull approximation", LOG_TAG_PHYSICS_MESH);
+	Zenith_Log(LOG_CATEGORY_PHYSICS, " Using simplified mesh approach for better hull approximation");
 	
 	// Use a moderate simplification ratio for convex hull quality
 	PhysicsMeshConfig xHullConfig;
@@ -606,12 +599,12 @@ Flux_MeshGeometry* Zenith_PhysicsMeshGenerator::GenerateSimplifiedMesh(
 		const Flux_MeshGeometry* pxMesh = xMeshGeometries.Get(m);
 		if (!pxMesh || !pxMesh->m_pxPositions || !pxMesh->m_puIndices)
 		{
-			Zenith_Log("%s Skipping invalid mesh geometry %u", LOG_TAG_PHYSICS_MESH, m);
+			Zenith_Log(LOG_CATEGORY_PHYSICS, " Skipping invalid mesh geometry %u", m);
 			continue;
 		}
 
-		Zenith_Log("%s Collecting mesh %u: %u verts, %u indices", 
-			LOG_TAG_PHYSICS_MESH, m, pxMesh->GetNumVerts(), pxMesh->GetNumIndices());
+		Zenith_Log(LOG_CATEGORY_PHYSICS, " Collecting mesh %u: %u verts, %u indices", 
+m, pxMesh->GetNumVerts(), pxMesh->GetNumIndices());
 
 		for (uint32_t v = 0; v < pxMesh->GetNumVerts(); v++)
 		{
@@ -626,12 +619,12 @@ Flux_MeshGeometry* Zenith_PhysicsMeshGenerator::GenerateSimplifiedMesh(
 		uVertexOffset += pxMesh->GetNumVerts();
 	}
 
-	Zenith_Log("%s Total collected: %u vertices, %u indices from %u meshes",
-		LOG_TAG_PHYSICS_MESH, xAllPositions.GetSize(), xAllIndices.GetSize(), xMeshGeometries.GetSize());
+	Zenith_Log(LOG_CATEGORY_PHYSICS, " Total collected: %u vertices, %u indices from %u meshes",
+xAllPositions.GetSize(), xAllIndices.GetSize(), xMeshGeometries.GetSize());
 
 	if (xAllPositions.GetSize() == 0 || xAllIndices.GetSize() < 3)
 	{
-		Zenith_Log("%s No valid geometry for simplified mesh, using AABB fallback", LOG_TAG_PHYSICS_MESH);
+		Zenith_Log(LOG_CATEGORY_PHYSICS, " No valid geometry for simplified mesh, using AABB fallback");
 		return GenerateAABBMesh(xMeshGeometries);
 	}
 
@@ -661,8 +654,8 @@ Flux_MeshGeometry* Zenith_PhysicsMeshGenerator::GenerateSimplifiedMesh(
 	// Skip decimation if ratio is 1.0 (no simplification desired)
 	if (xConfig.m_fSimplificationRatio >= 1.0f)
 	{
-		Zenith_Log("%s Skipping decimation (ratio=1.0): using full mesh with %u vertices, %u triangles",
-			LOG_TAG_PHYSICS_MESH, xAllPositions.GetSize(), uSourceTriCount);
+		Zenith_Log(LOG_CATEGORY_PHYSICS, " Skipping decimation (ratio=1.0): using full mesh with %u vertices, %u triangles",
+xAllPositions.GetSize(), uSourceTriCount);
 		return CreateMeshFromData(xAllPositions, xAllIndices);
 	}
 
@@ -679,7 +672,7 @@ Flux_MeshGeometry* Zenith_PhysicsMeshGenerator::GenerateSimplifiedMesh(
 		uint32_t uCurrentTriCount = xCurrentIndices.GetSize() / 3;
 		if (uCurrentTriCount <= uTargetTriCount)
 		{
-			Zenith_Log("%s Decimation complete: reached target tri count %u", LOG_TAG_PHYSICS_MESH, uCurrentTriCount);
+			Zenith_Log(LOG_CATEGORY_PHYSICS, " Decimation complete: reached target tri count %u", uCurrentTriCount);
 			break;
 		}
 
@@ -688,8 +681,8 @@ Flux_MeshGeometry* Zenith_PhysicsMeshGenerator::GenerateSimplifiedMesh(
 
 		DecimateVertices(xCurrentPositions, xCurrentIndices, xDecimatedPositions, xDecimatedIndices, fCellSize);
 
-		Zenith_Log("%s Decimation iter %d (cell size %.4f): %u -> %u verts, %u -> %u tris",
-			LOG_TAG_PHYSICS_MESH, iter, fCellSize,
+		Zenith_Log(LOG_CATEGORY_PHYSICS, " Decimation iter %d (cell size %.4f): %u -> %u verts, %u -> %u tris",
+iter, fCellSize,
 			xCurrentPositions.GetSize(), xDecimatedPositions.GetSize(),
 			xCurrentIndices.GetSize() / 3, xDecimatedIndices.GetSize() / 3);
 
@@ -700,7 +693,7 @@ Flux_MeshGeometry* Zenith_PhysicsMeshGenerator::GenerateSimplifiedMesh(
 		}
 		else
 		{
-			Zenith_Log("%s Decimation produced invalid geometry, stopping", LOG_TAG_PHYSICS_MESH);
+			Zenith_Log(LOG_CATEGORY_PHYSICS, " Decimation produced invalid geometry, stopping");
 			break;
 		}
 
@@ -710,12 +703,11 @@ Flux_MeshGeometry* Zenith_PhysicsMeshGenerator::GenerateSimplifiedMesh(
 	// Ensure we have valid geometry
 	if (xCurrentPositions.GetSize() < 3 || xCurrentIndices.GetSize() < 3)
 	{
-		Zenith_Log("%s Decimation produced invalid geometry, using convex hull fallback", LOG_TAG_PHYSICS_MESH);
+		Zenith_Log(LOG_CATEGORY_PHYSICS, " Decimation produced invalid geometry, using convex hull fallback");
 		return GenerateConvexHullMesh(xMeshGeometries);
 	}
 
-	Zenith_Log("%s Simplified mesh: %u -> %u vertices, %u -> %u triangles",
-		LOG_TAG_PHYSICS_MESH,
+	Zenith_Log(LOG_CATEGORY_PHYSICS, " Simplified mesh: %u -> %u vertices, %u -> %u triangles",
 		xAllPositions.GetSize(), xCurrentPositions.GetSize(),
 		xAllIndices.GetSize() / 3, xCurrentIndices.GetSize() / 3);
 
@@ -780,7 +772,7 @@ void Zenith_PhysicsMeshGenerator::DebugDrawAllPhysicsMeshes()
 	// Log once when debug draw is first enabled
 	if ((g_bDebugDrawAllPhysicsMeshes || g_xPhysicsMeshConfig.m_bDebugDraw) && !ls_bLoggedOnce)
 	{
-		Zenith_Log("[PhysicsDebugDraw] Debug drawing physics meshes for %u/%u model components",
+		Zenith_Log(LOG_CATEGORY_PHYSICS, "[PhysicsDebugDraw] Debug drawing physics meshes for %u/%u model components",
 			uDrawnCount, xModels.GetSize());
 		ls_bLoggedOnce = true;
 	}

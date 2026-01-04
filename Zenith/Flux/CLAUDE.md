@@ -16,7 +16,6 @@
 - `StaticMeshes/` - Opaque geometry
 - `AnimatedMeshes/` - Skeletal animation rendering
 - `MeshAnimation/` - Skeletal animation system (see MeshAnimation/CLAUDE.md)
-- `MeshGeometry/` - Mesh instance creation and management
 - `Terrain/` - Terrain rendering (see Terrain/CLAUDE.md)
 - `Shadows/` - Cascaded shadow maps
 - `DeferredShading/` - Deferred lighting

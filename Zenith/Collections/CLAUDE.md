@@ -18,11 +18,11 @@ Custom iterator pattern: construct iterator with vector, call `Done()` to check 
 
 Fixed-capacity object pool for frequent alloc/dealloc scenarios. Template parameters specify element type and compile-time capacity. Pre-allocates single contiguous block with free-list tracking. O(1) allocation and deallocation. In-place construction via placement new. Validates pointers on deallocate with bounds checking and double-free detection.
 
-Non-copyable, non-movable. Ideal for frequently recycled objects like tasks, entities, command buffers.
+Non-copyable. Ideal for frequently recycled objects like tasks, entities, command buffers.
 
 ## Zenith_CircularQueue<T, uCapacity>
 
-Fixed-capacity FIFO queue with circular buffer. Template parameter specifies compile-time capacity. Stack-allocated buffer. O(1) enqueue/dequeue using modulo arithmetic for wrapping. Methods return bool for success/failure (no exceptions). Suitable for lock-free scenarios and real-time systems.
+Fixed-capacity FIFO queue with circular buffer. Template parameter specifies compile-time capacity. Stack-allocated buffer. O(1) enqueue/dequeue using modulo arithmetic for wrapping. Methods return bool for success/failure (no exceptions). Not thread-safe - requires external synchronization for multi-threaded use.
 
 ## Container Selection
 
@@ -30,7 +30,7 @@ Fixed-capacity FIFO queue with circular buffer. Template parameter specifies com
 |-----------|----------|--------|----------|
 | Vector | Dynamic | Exponential | General-purpose dynamic arrays |
 | MemoryPool | Fixed | None | Object recycling, known max count |
-| CircularQueue | Fixed | None | Lock-free FIFO, producer-consumer |
+| CircularQueue | Fixed | None | FIFO queue, producer-consumer (with external sync) |
 
 ## Key Concepts
 

@@ -18,7 +18,7 @@
 #include <Jolt/Physics/Body/BodyActivationListener.h>
 #include <Jolt/Physics/Body/BodyLockInterface.h>
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
-#include <vector>
+#include "Collections/Zenith_Vector.h"
 #include <mutex>
 
 class Zenith_CameraComponent;
@@ -88,7 +88,7 @@ private:
 	static constexpr uint32_t s_uMaxContactConstraints = 10240;
 
 	// Thread-safe deferred event queue
-	static std::vector<DeferredCollisionEvent> s_xDeferredEvents;
+	static Zenith_Vector<DeferredCollisionEvent> s_xDeferredEvents;
 	static std::mutex s_xEventQueueMutex;
 
 	friend void QueueCollisionEventInternal(Zenith_EntityID, Zenith_EntityID, CollisionEventType);

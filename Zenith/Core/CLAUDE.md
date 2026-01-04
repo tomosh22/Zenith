@@ -18,8 +18,8 @@ Engine core utilities, configuration, and main loop.
 
 Precompiled header included by all .cpp files. Provides:
 - Type aliases: `u_int`, `u_int8/16/32/64`
-- Logging macros: `Zenith_Log()`, `Zenith_Error()`, `Zenith_Warning()`
-- Debug assertion: `Zenith_Assert(condition, message)` - breaks in debug builds
+- Logging macros: `Zenith_Log(eCategory, ...)`, `Zenith_Error(eCategory, ...)`, `Zenith_Warning(eCategory, ...)` - require `Zenith_LogCategory` enum as first parameter
+- Debug assertion: `Zenith_Assert(condition, ...)` - breaks in debug builds, supports variadic message arguments
 - GUID system: 64-bit unique identifiers, hashable for use in containers
 
 ## Zenith_Core
@@ -49,7 +49,7 @@ Central configuration avoiding magic numbers scattered in code.
 
 Location: `Memory/Zenith_MemoryManagement.h/cpp`
 
-Custom memory allocator with optional leak detection. Overloads global `new`/`delete` operators. When `ZENITH_MEMORY_MANAGEMENT_ENABLED` defined, tracks file/line of allocations. Currently delegates to standard `malloc`/`realloc`/free` but provides hook point for custom allocators.
+Memory allocation abstraction layer. Overloads global `new`/`delete` operators. Currently delegates to standard `malloc`/`realloc`/`free` but provides hook point for custom allocators. File/line tracking is stubbed but not yet implemented.
 
 ## Multithreading
 

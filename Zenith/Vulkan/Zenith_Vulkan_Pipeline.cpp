@@ -783,6 +783,6 @@ void Zenith_Vulkan_ComputePipelineBuilder::Build(Zenith_Vulkan_Pipeline& pipelin
 	
 	if (result != vk::Result::eSuccess)
 	{
-		Zenith_Error("Failed to create compute pipeline");
+		Zenith_Error(LOG_CATEGORY_VULKAN, "Failed to create compute pipeline");
 	}
 }

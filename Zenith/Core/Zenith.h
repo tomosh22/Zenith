@@ -42,43 +42,93 @@ static_assert(sizeof(u_int64) == 8);
 #include <Windows.h>
 #endif
 
+// Log categories for categorized logging output
+enum Zenith_LogCategory : u_int8
+{
+	LOG_CATEGORY_GENERAL = 0,   // Uncategorized / fallback
+	LOG_CATEGORY_CORE,          // Main loop, config, memory
+	LOG_CATEGORY_SCENE,         // Scene management, entity lifecycle
+	LOG_CATEGORY_ECS,           // Component registry, component operations
+	LOG_CATEGORY_ASSET,         // Asset loading, caching, database
+	LOG_CATEGORY_VULKAN,        // Vulkan backend operations
+	LOG_CATEGORY_RENDERER,      // Flux renderer core
+	LOG_CATEGORY_MESH,          // Mesh instances, geometry
+	LOG_CATEGORY_ANIMATION,     // Animation clips, state machines, IK
+	LOG_CATEGORY_TERRAIN,       // Terrain rendering, streaming
+	LOG_CATEGORY_SHADOWS,       // Shadow mapping
+	LOG_CATEGORY_GIZMOS,        // Editor gizmos
+	LOG_CATEGORY_PARTICLES,     // Particle system
+	LOG_CATEGORY_TEXT,          // Text/font rendering
+	LOG_CATEGORY_MATERIAL,      // Material assets
+	LOG_CATEGORY_PHYSICS,       // Jolt physics integration
+	LOG_CATEGORY_TASKSYSTEM,    // Task parallelism
+	LOG_CATEGORY_EDITOR,        // Editor UI, panels
+	LOG_CATEGORY_PREFAB,        // Prefab system
+	LOG_CATEGORY_UI,            // UI system
+	LOG_CATEGORY_INPUT,         // Input handling
+	LOG_CATEGORY_WINDOW,        // Window/platform
+	LOG_CATEGORY_TOOLS,         // Asset export, migration
+	LOG_CATEGORY_UNITTEST,      // Unit test output
+	LOG_CATEGORY_GAMEPLAY,      // Game-specific logs
+
+	LOG_CATEGORY_COUNT
+};
+
+inline constexpr const char* Zenith_LogCategoryNames[LOG_CATEGORY_COUNT] = {
+	"General", "Core", "Scene", "ECS", "Asset", "Vulkan", "Renderer",
+	"Mesh", "Animation", "Terrain", "Shadows", "Gizmos", "Particles",
+	"Text", "Material", "Physics", "TaskSystem", "Editor", "Prefab",
+	"UI", "Input", "Window", "Tools", "UnitTest", "Gameplay"
+};
+
+inline const char* Zenith_GetLogCategoryName(Zenith_LogCategory eCategory)
+{
+	return (eCategory < LOG_CATEGORY_COUNT) ? Zenith_LogCategoryNames[eCategory] : "Unknown";
+}
+
 #define ZENITH_LOG
 #ifdef ZENITH_LOG
 
 #ifdef ZENITH_TOOLS
 // Forward declare editor console function
-void Zenith_EditorAddLogMessage(const char* szMessage, int eLevel);
+void Zenith_EditorAddLogMessage(const char* szMessage, int eLevel, Zenith_LogCategory eCategory);
 
 // Helper to format and send to both printf and editor console
-inline void Zenith_LogImpl(int eLevel, const char* szFormat, ...)
+inline void Zenith_LogImpl(Zenith_LogCategory eCategory, int eLevel, const char* szFormat, ...)
 {
 	char buffer[2048];
+	char prefixedBuffer[2112];
+
 	va_list args;
 	va_start(args, szFormat);
 	vsnprintf(buffer, sizeof(buffer), szFormat, args);
 	va_end(args);
-	printf("%s\n", buffer);
-	Zenith_EditorAddLogMessage(buffer, eLevel);
+
+	snprintf(prefixedBuffer, sizeof(prefixedBuffer), "[%s] %s",
+		Zenith_GetLogCategoryName(eCategory), buffer);
+
+	printf("%s\n", prefixedBuffer);
+	Zenith_EditorAddLogMessage(prefixedBuffer, eLevel, eCategory);
 }
 
-#define Zenith_Log(...) Zenith_LogImpl(0, __VA_ARGS__)
-#define Zenith_Error(...) Zenith_LogImpl(2, __VA_ARGS__)
-#define Zenith_Warning(...) Zenith_LogImpl(1, __VA_ARGS__)
+#define Zenith_Log(eCategory, ...) Zenith_LogImpl(eCategory, 0, __VA_ARGS__)
+#define Zenith_Error(eCategory, ...) Zenith_LogImpl(eCategory, 2, __VA_ARGS__)
+#define Zenith_Warning(eCategory, ...) Zenith_LogImpl(eCategory, 1, __VA_ARGS__)
 #else
-#define Zenith_Log(...){printf(__VA_ARGS__);printf("\n");}
-#define Zenith_Error(...){printf(__VA_ARGS__);printf("\n");}
-#define Zenith_Warning(...){printf(__VA_ARGS__);printf("\n");}
+#define Zenith_Log(eCategory, ...) { printf("[%s] ", Zenith_GetLogCategoryName(eCategory)); printf(__VA_ARGS__); printf("\n"); }
+#define Zenith_Error(eCategory, ...) { printf("[%s] ", Zenith_GetLogCategoryName(eCategory)); printf(__VA_ARGS__); printf("\n"); }
+#define Zenith_Warning(eCategory, ...) { printf("[%s] ", Zenith_GetLogCategoryName(eCategory)); printf(__VA_ARGS__); printf("\n"); }
 #endif
 
 #else
-#define Zenith_Log(...)
-#define Zenith_Error(...)
-#define Zenith_Warning(...)
+#define Zenith_Log(eCategory, ...)
+#define Zenith_Error(eCategory, ...)
+#define Zenith_Warning(eCategory, ...)
 #endif
 
 #define ZENITH_ASSERT
 #ifdef ZENITH_ASSERT
-#define Zenith_Assert(x,...)if(!(x)){Zenith_Error("Assertion failed: " __VA_ARGS__);Zenith_DebugBreak();}
+#define Zenith_Assert(x,...)if(!(x)){Zenith_Error(LOG_CATEGORY_CORE, "Assertion failed: " __VA_ARGS__);Zenith_DebugBreak();}
 #else
 #define Zenith_Assert(x, ...)
 #endif
