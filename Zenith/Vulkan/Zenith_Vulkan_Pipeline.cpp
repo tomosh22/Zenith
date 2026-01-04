@@ -292,7 +292,6 @@ Zenith_Vulkan_PipelineBuilder::Zenith_Vulkan_PipelineBuilder()
 
 Zenith_Vulkan_Pipeline::~Zenith_Vulkan_Pipeline()
 {
-	STUBBED
 }
 
 Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithDepthState(vk::CompareOp op, bool depthEnabled, bool writeEnabled, bool stencilEnabled)

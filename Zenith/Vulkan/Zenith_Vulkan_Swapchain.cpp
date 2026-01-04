@@ -79,13 +79,22 @@ static vk::SurfaceFormatKHR ChooseSwapSurfaceFormat(const std::vector<vk::Surfac
 
 static vk::Extent2D ChooseSwapExtent(const vk::SurfaceCapabilitiesKHR& xCapabilities)
 {
+	GLFWwindow* pxWindow = Zenith_Window::GetInstance()->GetNativeWindow();
+	int32_t iExtentWidth, iExtentHeight;
+	glfwGetFramebufferSize(pxWindow, &iExtentWidth, &iExtentHeight);
+
+	// Wait for non-zero framebuffer size (can be 0 during monitor transitions or minimization)
+	while (iExtentWidth == 0 || iExtentHeight == 0)
+	{
+		glfwGetFramebufferSize(pxWindow, &iExtentWidth, &iExtentHeight);
+		glfwWaitEvents();
+	}
+
 	if (xCapabilities.currentExtent.width != std::numeric_limits <uint32_t>::max())
 	{
 		return xCapabilities.currentExtent;
 	}
-	int32_t iExtentWidth, iExtentHeight;
-	GLFWwindow* pxWindow = Zenith_Window::GetInstance()->GetNativeWindow();
-	glfwGetFramebufferSize(pxWindow, &iExtentWidth, &iExtentHeight);
+
 	vk::Extent2D xExtent = { static_cast<uint32_t>(iExtentWidth),static_cast<uint32_t>(iExtentHeight) };
 	xExtent.width = Zenith_Maths::Clamp(xExtent.width, xCapabilities.minImageExtent.width, xCapabilities.maxImageExtent.width);
 	xExtent.height = Zenith_Maths::Clamp(xExtent.height, xCapabilities.minImageExtent.height, xCapabilities.maxImageExtent.height);

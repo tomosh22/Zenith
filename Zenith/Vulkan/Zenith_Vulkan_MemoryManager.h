@@ -11,7 +11,7 @@ class Zenith_Vulkan_VRAM;
 class Flux_VertexBuffer;
 class Flux_DynamicVertexBuffer;
 class Flux_IndexBuffer;
-class Flux_SurfaceInfo;
+struct Flux_SurfaceInfo;
 class Flux_VRAMHandle;
 class Flux_DynamicConstantBuffer;
 class Flux_ConstantBuffer;

@@ -16,7 +16,7 @@ class Zenith_Vulkan_Pipeline;
 class Zenith_Vulkan_Sampler;
 struct Flux_TargetSetup;
 struct Flux_Buffer;
-struct Flux_ReadWriteBuffer;
+class Flux_ReadWriteBuffer;
 struct Flux_ConstantBufferView;
 struct Flux_ShaderResourceView;
 struct Flux_UnorderedAccessView_Texture;

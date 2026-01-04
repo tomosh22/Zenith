@@ -1,4 +1,8 @@
 #pragma once
+
+// Include forward declarations and enums
+#include "Physics/Zenith_Physics_Fwd.h"
+
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include <Jolt/Jolt.h>
 #include <Jolt/RegisterTypes.h>
@@ -19,29 +23,6 @@
 
 class Zenith_CameraComponent;
 using Zenith_EntityID = u_int;
-
-enum CollisionVolumeType
-{
-	COLLISION_VOLUME_TYPE_AABB,
-	COLLISION_VOLUME_TYPE_OBB,
-	COLLISION_VOLUME_TYPE_SPHERE,
-	COLLISION_VOLUME_TYPE_CAPSULE,
-	COLLISION_VOLUME_TYPE_TERRAIN,
-	COLLISION_VOLUME_TYPE_MODEL_MESH  // Uses physics mesh from Zenith_ModelComponent
-};
-
-enum CollisionEventType
-{
-	COLLISION_EVENT_TYPE_START,
-	COLLISION_EVENT_TYPE_EXIT,
-	COLLISION_EVENT_TYPE_STAY
-};
-
-enum RigidBodyType
-{
-	RIGIDBODY_TYPE_DYNAMIC,
-	RIGIDBODY_TYPE_STATIC
-};
 
 class Zenith_Physics
 {

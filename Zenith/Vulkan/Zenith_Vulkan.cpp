@@ -1064,3 +1064,35 @@ vk::AttachmentStoreOp Zenith_Vulkan::ConvertToVkStoreAction(StoreAction eAction)
 		Zenith_Assert(false, "Invalid action");
 	}
 }
+
+vk::Format Zenith_Vulkan::ShaderDataTypeToVulkanFormat(ShaderDataType t)
+{
+	switch (t)
+	{
+	case SHADER_DATA_TYPE_FLOAT:	return vk::Format::eR32Sfloat;
+	case SHADER_DATA_TYPE_FLOAT2:	return vk::Format::eR32G32Sfloat;
+	case SHADER_DATA_TYPE_FLOAT3:	return vk::Format::eR32G32B32Sfloat;
+	case SHADER_DATA_TYPE_FLOAT4:	return vk::Format::eR32G32B32A32Sfloat;
+	case SHADER_DATA_TYPE_INT:		return vk::Format::eR32Sint;
+	case SHADER_DATA_TYPE_INT2:		return vk::Format::eR32G32Sint;
+	case SHADER_DATA_TYPE_INT3:		return vk::Format::eR32G32B32Sint;
+	case SHADER_DATA_TYPE_INT4:		return vk::Format::eR32G32B32A32Sint;
+	case SHADER_DATA_TYPE_UINT:		return vk::Format::eR32Uint;
+	case SHADER_DATA_TYPE_UINT2:	return vk::Format::eR32G32Uint;
+	case SHADER_DATA_TYPE_UINT3:	return vk::Format::eR32G32B32Uint;
+	case SHADER_DATA_TYPE_UINT4:	return vk::Format::eR32G32B32A32Uint;
+	default:
+		Zenith_Assert(false, "Unknown shader data type");
+		return vk::Format::eUndefined;
+	}
+}
+
+vk::DescriptorSet Zenith_Vulkan::CreateDescriptorSet(const vk::DescriptorSetLayout& xLayout, const vk::DescriptorPool& xPool)
+{
+	vk::DescriptorSetAllocateInfo xInfo = vk::DescriptorSetAllocateInfo()
+		.setDescriptorPool(xPool)
+		.setDescriptorSetCount(1)
+		.setPSetLayouts(&xLayout);
+
+	return (s_xDevice.allocateDescriptorSets(xInfo)[0]);
+}

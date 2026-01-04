@@ -79,12 +79,10 @@ int main()
 	Flux_MemoryManager::EndFrame(false);
 	Zenith_Core::s_xLastFrameTime = std::chrono::high_resolution_clock::now();
 
-	//#TO_TODO: exit properly
-	while (true)
+	while (!Zenith_Window::GetInstance()->ShouldClose())
 	{
 		Zenith_Profiling::BeginFrame();
 		Zenith_Core::Zenith_MainLoop();
 		Zenith_Profiling::EndFrame();
 	}
-	Zenith_DebugBreak();
 }

@@ -25,6 +25,8 @@ public:
 
 	void BeginFrame();
 
+	bool ShouldClose() const { return glfwWindowShouldClose(m_pxNativeWindow); }
+
 	void ToggleCaptureCursor();
 	void EnableCaptureCursor();
 	void DisableCaptureCursor();

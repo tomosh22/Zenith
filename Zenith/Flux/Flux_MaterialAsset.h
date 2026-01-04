@@ -1,12 +1,14 @@
 #pragma once
-#include "Flux/Flux.h"
-#include "Flux/Flux_Graphics.h"
+
 #include "Maths/Zenith_Maths.h"
 #include "AssetHandling/Zenith_AssetRef.h"
+#include "Core/Multithreading/Zenith_Multithreading.h"
 #include <string>
 #include <unordered_map>
+#include <vector>
 
-// Forward declarations
+// Forward declarations - avoid heavy Vulkan includes in header
+struct Flux_Texture;
 class Zenith_DataStream;
 
 /**
