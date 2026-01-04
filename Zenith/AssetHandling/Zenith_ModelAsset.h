@@ -1,9 +1,10 @@
 #pragma once
 #include "Collections/Zenith_Vector.h"
 #include "DataStream/Zenith_DataStream.h"
+#include "AssetHandling/Zenith_AssetRef.h"
 #include <string>
 
-#define ZENITH_MODEL_ASSET_VERSION 1
+#define ZENITH_MODEL_ASSET_VERSION 2
 #define ZENITH_MODEL_EXT ".zmodel"
 
 // Forward declarations
@@ -23,18 +24,23 @@ class Flux_MaterialAsset;
  * This follows the Unity/Unreal pattern where a "Model" or "FBX import" produces
  * a bundle that can be instantiated multiple times in the scene.
  *
- * File path references are used (not GUIDs) for simplicity.
+ * Uses GUID-based asset references for robust asset tracking.
  */
 class Zenith_ModelAsset
 {
 public:
 	/**
 	 * MeshMaterialBinding - Associates a mesh with its materials
+	 * Uses GUID-based references for robust asset tracking.
 	 */
 	struct MeshMaterialBinding
 	{
-		std::string m_strMeshPath;
-		Zenith_Vector<std::string> m_strMaterialPaths;  // One per submesh
+		MeshRef m_xMesh;                          // Reference to mesh geometry
+		Zenith_Vector<MaterialRef> m_xMaterials;  // One per submesh
+
+		// Path accessors (resolve GUIDs via AssetDatabase)
+		std::string GetMeshPath() const { return m_xMesh.GetPath(); }
+		std::string GetMaterialPath(uint32_t uIndex) const;
 
 		void WriteToDataStream(Zenith_DataStream& xStream) const;
 		void ReadFromDataStream(Zenith_DataStream& xStream);
@@ -100,9 +106,15 @@ public:
 	void SetName(const std::string& strName) { m_strName = strName; }
 
 	/**
-	 * Add a mesh with its materials
+	 * Add a mesh with its materials (GUID-based)
 	 */
-	void AddMesh(const std::string& strMeshPath, const Zenith_Vector<std::string>& xMaterialPaths);
+	void AddMesh(const MeshRef& xMesh, const Zenith_Vector<MaterialRef>& xMaterials);
+
+	/**
+	 * Add a mesh with its materials (path-based, for tools)
+	 * Paths are resolved to GUIDs via AssetDatabase
+	 */
+	void AddMeshByPath(const std::string& strMeshPath, const Zenith_Vector<std::string>& xMaterialPaths);
 
 	/**
 	 * Set the skeleton path (for animated models)

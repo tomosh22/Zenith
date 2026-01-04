@@ -60,11 +60,14 @@ Flux_ModelInstance* Flux_ModelInstance::CreateFromAsset(Zenith_ModelAsset* pxAss
 	{
 		const Zenith_ModelAsset::MeshMaterialBinding& xBinding = pxAsset->GetMeshBinding(uMeshIdx);
 
+		// Get mesh path from the MeshRef
+		std::string strMeshPath = xBinding.GetMeshPath();
+
 		// Load the mesh asset
-		Zenith_MeshAsset* pxMeshAsset = Zenith_MeshAsset::LoadFromFile(xBinding.m_strMeshPath.c_str());
+		Zenith_MeshAsset* pxMeshAsset = Zenith_MeshAsset::LoadFromFile(strMeshPath.c_str());
 		if (!pxMeshAsset)
 		{
-			Zenith_Log("[ModelInstance] Failed to load mesh: %s", xBinding.m_strMeshPath.c_str());
+			Zenith_Log("[ModelInstance] Failed to load mesh: %s", strMeshPath.c_str());
 			continue;
 		}
 		pxInstance->m_xLoadedMeshAssets.PushBack(pxMeshAsset);
@@ -74,7 +77,7 @@ Flux_ModelInstance* Flux_ModelInstance::CreateFromAsset(Zenith_ModelAsset* pxAss
 		Flux_MeshInstance* pxMeshInstance = Flux_MeshInstance::CreateFromAsset(pxMeshAsset, pxInstance->m_pxLoadedSkeletonAsset);
 		if (!pxMeshInstance)
 		{
-			Zenith_Log("[ModelInstance] Failed to create mesh instance from: %s", xBinding.m_strMeshPath.c_str());
+			Zenith_Log("[ModelInstance] Failed to create mesh instance from: %s", strMeshPath.c_str());
 			continue;
 		}
 		pxInstance->m_xMeshInstances.PushBack(pxMeshInstance);
@@ -93,7 +96,7 @@ Flux_ModelInstance* Flux_ModelInstance::CreateFromAsset(Zenith_ModelAsset* pxAss
 				}
 				else
 				{
-					Zenith_Log("[ModelInstance] Failed to create skinned mesh instance from: %s", xBinding.m_strMeshPath.c_str());
+					Zenith_Log("[ModelInstance] Failed to create skinned mesh instance from: %s", strMeshPath.c_str());
 					// Push nullptr to keep indices in sync
 					pxInstance->m_xSkinnedMeshInstances.PushBack(nullptr);
 				}
@@ -106,10 +109,10 @@ Flux_ModelInstance* Flux_ModelInstance::CreateFromAsset(Zenith_ModelAsset* pxAss
 		}
 
 		// Load materials for this mesh
-		uint32_t uNumMaterials = static_cast<uint32_t>(xBinding.m_strMaterialPaths.GetSize());
+		uint32_t uNumMaterials = static_cast<uint32_t>(xBinding.m_xMaterials.GetSize());
 		for (uint32_t uMatIdx = 0; uMatIdx < uNumMaterials; uMatIdx++)
 		{
-			const std::string& strMaterialPath = xBinding.m_strMaterialPaths.Get(uMatIdx);
+			std::string strMaterialPath = xBinding.GetMaterialPath(uMatIdx);
 			Flux_MaterialAsset* pxMaterial = Flux_MaterialAsset::LoadFromFile(strMaterialPath);
 
 			if (!pxMaterial)

@@ -81,6 +81,26 @@ public:
 		m_ulCursor = ulCursor;
 	}
 
+	uint64_t GetCursor() const
+	{
+		return m_ulCursor;
+	}
+
+	uint64_t GetSize() const
+	{
+		return m_ulDataSize;
+	}
+
+	const void* GetData() const
+	{
+		return m_pData;
+	}
+
+	void* GetData()
+	{
+		return m_pData;
+	}
+
 	void WriteData(const void* pData, uint64_t ulSize)
 	{
 		Zenith_Assert(pData != nullptr, "pData cannot be null");
@@ -90,6 +110,11 @@ public:
 		m_ulCursor = ulNewCursor;
 	}
 
+	void Write(const void* pData, uint64_t ulSize)
+	{
+		WriteData(pData, ulSize);
+	}
+
 	void ReadData(void* pData, uint64_t ulSize)
 	{
 		Zenith_Assert(pData != nullptr, "pData cannot be null");
@@ -97,6 +122,11 @@ public:
 		Zenith_Assert(m_ulCursor + ulSize <= m_ulDataSize, "Reading past end of DataStream");
 		memcpy(pData, static_cast<uint8_t*>(m_pData) + m_ulCursor, ulSize);
 		m_ulCursor += ulSize;
+	}
+
+	void Read(void* pData, uint64_t ulSize)
+	{
+		ReadData(pData, ulSize);
 	}
 
 	template<typename T, std::enable_if_t<std::is_trivially_copyable<T>::value, int> = 0>

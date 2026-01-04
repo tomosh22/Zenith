@@ -5,6 +5,7 @@
 #include "Flux/Flux_Buffers.h"
 #include "Flux/Flux_MaterialAsset.h"
 #include "AssetHandling/Zenith_AssetHandler.h"
+#include "AssetHandling/Zenith_AssetRef.h"
 #include "Physics/Zenith_PhysicsMeshGenerator.h"
 
 // Forward declarations for new asset/instance system
@@ -35,7 +36,7 @@ class Zenith_ModelComponent
 public:
 
 	//=========================================================================
-	// Legacy MeshEntry structure (kept for backward compatibility)
+	// MeshEntry structure (for procedural mesh construction)
 	//=========================================================================
 	struct MeshEntry
 	{
@@ -82,7 +83,7 @@ public:
 	const std::string& GetModelPath() const { return m_strModelPath; }
 
 	//=========================================================================
-	// Rendering Helpers (work with both new and legacy systems)
+	// Rendering Helpers
 	//=========================================================================
 
 	/**
@@ -91,8 +92,8 @@ public:
 	uint32_t GetNumMeshes() const;
 
 	/**
-	 * Get mesh instance at index (new system)
-	 * Returns nullptr if using legacy system
+	 * Get mesh instance at index
+	 * Returns nullptr if using procedural mesh entries
 	 */
 	Flux_MeshInstance* GetMeshInstance(uint32_t uIndex) const;
 
@@ -107,8 +108,8 @@ public:
 	bool HasSkeleton() const;
 
 	/**
-	 * Get skeleton instance (new system)
-	 * Returns nullptr if using legacy system or no skeleton
+	 * Get skeleton instance
+	 * Returns nullptr if using procedural mesh entries or no skeleton
 	 */
 	Flux_SkeletonInstance* GetSkeletonInstance() const;
 
@@ -118,7 +119,6 @@ public:
 
 	/**
 	 * Get/create animation controller
-	 * Works with both new skeleton instance and legacy mesh geometry
 	 */
 	Flux_AnimationController* GetOrCreateAnimationController();
 
@@ -161,70 +161,25 @@ public:
 	void ReadFromDataStream(Zenith_DataStream& xStream);
 
 	//=========================================================================
-	// Legacy API (kept for backward compatibility)
+	// Procedural Mesh API
 	//=========================================================================
 
-	//#TO not the cleanest code in the world
-	//takes a filename in the form meshname_texturetype_materialindex (no extension)
-	//and returns materialindex, for example Assets/Meshes/foo_bar_5 would return 5
-	[[deprecated("Use LoadModel() instead")]]
-	static uint32_t GetMaterialIndexFromTextureName(const std::string& strFilename)
-	{
-		std::string strFileCopy(strFilename);
-		const uint32_t uLength = strFileCopy.size();
-		char* szFileCopy = new char[uLength+1];
-		strncpy(szFileCopy, strFileCopy.c_str(), uLength);
-		szFileCopy[uLength] = '\0';
-
-		std::string strTruncated(szFileCopy);
-		size_t ulUnderscorePos = strTruncated.find("_");
-		Zenith_Assert(ulUnderscorePos != std::string::npos, "Should have found an underscore");
-		while (ulUnderscorePos != std::string::npos)
-		{
-			strTruncated = strTruncated.substr(ulUnderscorePos + 1, strTruncated.size());
-			ulUnderscorePos = strTruncated.find("_");
-		}
-
-		delete[] szFileCopy;
-		return std::stoi(strTruncated.c_str());
-	}
-
-	//#TO does a similar thing to above, returns N from a filename in the format meshname_Mesh?_MatN
-	[[deprecated("Use LoadModel() instead")]]
-	static uint32_t GetMaterialIndexFromMeshName(const std::string& strFilename)
-	{
-		std::string strSubstr = strFilename.substr(strFilename.find("Mat") + 3);
-		const uint32_t uLength = strSubstr.size();
-		char* szFileCopy = new char[uLength+1];
-		strncpy(szFileCopy, strSubstr.c_str(), uLength);
-		szFileCopy[uLength] = '\0';
-
-		uint32_t uRet = std::atoi(szFileCopy);
-		delete[] szFileCopy;
-		return uRet;
-	}
-
-	[[deprecated("Use LoadModel() instead")]]
-	void LoadMeshesFromDir(const std::filesystem::path& strPath, Flux_MaterialAsset* const pxOverrideMaterial = nullptr, u_int uRetainAttributeBits = 0, const bool bUploadToGPU = true);
-
-	[[deprecated("Use new model instance API instead")]]
+	/**
+	 * Add a mesh entry for procedural/runtime mesh construction.
+	 * Use this when building models programmatically from already-loaded geometry and materials.
+	 * For loading assets from files, use LoadModel() with a .zmodel asset instead.
+	 */
 	void AddMeshEntry(Flux_MeshGeometry& xGeometry, Flux_MaterialAsset& xMaterial) { m_xMeshEntries.PushBack({ &xGeometry, &xMaterial }); }
 
-	[[deprecated("Use GetMeshInstance() instead")]]
+	// Mesh entry accessors (for procedural mesh system)
 	Flux_MeshGeometry& GetMeshGeometryAtIndex(const uint32_t uIndex) const { return *m_xMeshEntries.Get(uIndex).m_pxGeometry; }
-
-	[[deprecated("Use GetMaterial() instead")]]
 	const Flux_MaterialAsset& GetMaterialAtIndex(const uint32_t uIndex) const { return *m_xMeshEntries.Get(uIndex).m_pxMaterial; }
-
-	[[deprecated("Use GetMaterial() instead")]]
 	Flux_MaterialAsset& GetMaterialAtIndex(const uint32_t uIndex) { return *m_xMeshEntries.Get(uIndex).m_pxMaterial; }
-
-	[[deprecated("Use GetNumMeshes() instead")]]
-	const uint32_t GetNumMeshEntries() const { return m_xMeshEntries.GetSize(); }
+	uint32_t GetNumMeshEntries() const { return m_xMeshEntries.GetSize(); }
 
 	Zenith_Entity GetParentEntity() const { return m_xParentEntity; }
 
-	// Check if using new model instance API vs legacy mesh entries
+	// Check if using model instance API vs procedural mesh entries
 	bool IsUsingModelInstance() const { return m_pxModelInstance != nullptr; }
 
 	//=========================================================================
@@ -272,12 +227,6 @@ private:
 public:
 #endif
 
-private:
-	// Helper to read legacy mesh entries from DataStream (used by both tools and non-tools builds)
-	void ReadLegacyMeshEntries(Zenith_DataStream& xStream, uint32_t uVersion);
-
-public:
-
 //private:
 	Zenith_Entity m_xParentEntity;
 
@@ -291,11 +240,14 @@ public:
 	// Animation controller (moved from mesh to component level)
 	Flux_AnimationController* m_pxAnimController = nullptr;
 
-	// Path to the .zmodel file (for serialization)
+	// GUID-based reference to the .zmodel asset (primary)
+	ModelRef m_xModel;
+
+	// Path to the .zmodel file (cached from GUID resolution)
 	std::string m_strModelPath;
 
 	//=========================================================================
-	// Legacy System (kept for backward compatibility)
+	// Procedural Mesh System
 	//=========================================================================
 
 	Zenith_Vector<MeshEntry> m_xMeshEntries;
@@ -304,11 +256,5 @@ public:
 	// Debug draw settings
 	bool m_bDebugDrawPhysicsMesh = true;
 	Zenith_Maths::Vector3 m_xDebugDrawColor = Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f); // Green
-
-	// Track assets created by LoadMeshesFromDir so we can delete them in the destructor
-	// Uses raw pointers for direct lifecycle management
-	Zenith_Vector<Flux_Texture*> m_xCreatedTextures;
-	Zenith_Vector<Flux_MaterialAsset*> m_xCreatedMaterials;
-	Zenith_Vector<Flux_MeshGeometry*> m_xCreatedMeshes;
 
 };

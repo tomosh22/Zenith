@@ -1030,13 +1030,18 @@
     <ClInclude Include="..\Tools\Middleware\assimp\include\utf8cpp\utf8\unchecked.h" />
     <ClInclude Include="..\Tools\Middleware\assimp\include\zconf.h" />
     <ClInclude Include="..\Tools\Middleware\assimp\include\zlib.h" />
+    <ClInclude Include="..\Tools\Zenith_AssetMigration.h" />
     <ClInclude Include="..\Tools\Zenith_Tools_MeshExport.h" />
     <ClInclude Include="..\Tools\Zenith_Tools_TerrainExport.h" />
     <ClInclude Include="..\Tools\Zenith_Tools_TextureExport.h" />
     <ClInclude Include="..\Zenith\Android\Multithreading\Zenith_Android_Multithreading.h" />
     <ClInclude Include="..\Zenith\Android\Zenith_Android_Window.h" />
     <ClInclude Include="..\Zenith\Android\Zenith_OS_Include.h" />
+    <ClInclude Include="..\Zenith\AssetHandling\Zenith_AssetDatabase.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_AssetHandler.h" />
+    <ClInclude Include="..\Zenith\AssetHandling\Zenith_AssetMeta.h" />
+    <ClInclude Include="..\Zenith\AssetHandling\Zenith_AssetRef.h" />
+    <ClInclude Include="..\Zenith\AssetHandling\Zenith_FileWatcher.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_MeshAsset.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_ModelAsset.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_SkeletonAsset.h" />
@@ -1050,6 +1055,7 @@
     <ClInclude Include="..\Zenith\Core\Zenith.h" />
     <ClInclude Include="..\Zenith\Core\ZenithConfig.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_Core.h" />
+    <ClInclude Include="..\Zenith\Core\Zenith_GUID.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_String.h" />
     <ClInclude Include="..\Zenith\DataStream\Zenith_DataStream.h" />
     <ClInclude Include="..\Zenith\DebugVariables\Zenith_DebugVariables.h" />
@@ -2046,6 +2052,12 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">true</ExcludedFromBuild>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="..\Tools\Zenith_AssetMigration.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">true</ExcludedFromBuild>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">true</ExcludedFromBuild>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="..\Tools\Zenith_Tools_MeshExport.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">true</ExcludedFromBuild>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
@@ -2100,7 +2112,11 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
+    <ClCompile Include="..\Zenith\AssetHandling\Zenith_AssetDatabase.cpp" />
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_AssetHandler.cpp" />
+    <ClCompile Include="..\Zenith\AssetHandling\Zenith_AssetMeta.cpp" />
+    <ClCompile Include="..\Zenith\AssetHandling\Zenith_AssetRef.cpp" />
+    <ClCompile Include="..\Zenith\AssetHandling\Zenith_FileWatcher.cpp" />
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_MeshAsset.cpp" />
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_ModelAsset.cpp" />
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_SkeletonAsset.cpp" />
@@ -2113,6 +2129,7 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">Create</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="..\Zenith\Core\Zenith_Core.cpp" />
+    <ClCompile Include="..\Zenith\Core\Zenith_GUID.cpp" />
     <ClCompile Include="..\Zenith\DataStream\Zenith_DataStream.cpp" />
     <ClCompile Include="..\Zenith\DebugVariables\Zenith_DebugVariables.cpp" />
     <ClCompile Include="..\Zenith\Editor\Zenith_AnimationStateMachineEditor.cpp" />

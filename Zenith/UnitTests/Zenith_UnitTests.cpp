@@ -38,6 +38,13 @@
 #include "AssetHandling/Zenith_MeshAsset.h"
 #include "AssetHandling/Zenith_SkeletonAsset.h"
 
+// GUID and asset system includes
+#include "Core/Zenith_GUID.h"
+#include "AssetHandling/Zenith_AssetMeta.h"
+#include "AssetHandling/Zenith_AssetDatabase.h"
+#include "AssetHandling/Zenith_AssetRef.h"
+#include "Prefab/Zenith_Prefab.h"
+
 #ifdef ZENITH_TOOLS
 #include "UnitTests/Zenith_EditorTests.h"
 #endif
@@ -115,6 +122,48 @@ void Zenith_UnitTests::RunAllTests()
 	TestEventDeferredQueue();
 	TestEventMultipleSubscribers();
 	TestEventClearSubscriptions();
+
+	// GUID system tests
+	TestGUIDGeneration();
+	TestGUIDStringRoundTrip();
+	TestGUIDSerializationRoundTrip();
+	TestGUIDComparisonOperators();
+	TestGUIDHashDistribution();
+	TestGUIDInvalidDetection();
+
+	// Asset meta file tests
+	TestAssetMetaSaveLoadRoundTrip();
+	TestAssetMetaVersionCompatibility();
+	TestAssetMetaImportSettings();
+	TestAssetMetaGetMetaPath();
+
+	// Asset database tests
+	TestAssetDatabaseGUIDToPath();
+	TestAssetDatabasePathToGUID();
+	TestAssetDatabaseDependencyTracking();
+	TestAssetDatabaseDependentLookup();
+
+	// Asset reference tests
+	TestAssetRefGUIDStorage();
+	TestAssetRefSerializationRoundTrip();
+	TestAssetRefFromPath();
+	TestAssetRefInvalidHandling();
+
+	// Entity hierarchy tests
+	TestEntityAddChild();
+	TestEntityRemoveChild();
+	TestEntityGetChildren();
+	TestEntityReparenting();
+	TestEntityChildCleanupOnDelete();
+	TestEntityHierarchySerialization();
+
+	// Prefab system tests
+	TestPrefabCreateFromEntity();
+	TestPrefabInstantiation();
+	TestPrefabSaveLoadRoundTrip();
+	TestPrefabOverrides();
+	TestPrefabVariantCreation();
+	TestPrefabNestedPrefabs();
 
 #ifdef ZENITH_TOOLS
 	// Editor tests (only in tools builds)
@@ -2748,21 +2797,24 @@ void Zenith_UnitTests::TestComponentRemovalWithManyEntities()
 }
 
 /**
- * Test that Zenith_Entity is now lightweight (16 bytes on 64-bit).
- * Entity should only contain: scene pointer (8), entity ID (4), parent ID (4).
+ * Test that Zenith_Entity is lightweight.
+ * Entity should only contain: scene pointer (8), entity ID (4), parent ID (4), child list vector.
+ * Zenith_Vector has: pointer (8) + size (4) + capacity (4) = 16 bytes
+ * Total: 8 + 4 + 4 + 16 = 32 bytes on 64-bit
  */
 void Zenith_UnitTests::TestEntityIsTrivialSize()
 {
 	Zenith_Log("Running TestEntityIsTrivialSize...");
 
-	constexpr size_t EXPECTED_SIZE = sizeof(void*) + sizeof(Zenith_EntityID) * 2;
+	// Scene pointer + entity ID + parent ID + child vector (pointer + 2 u_ints)
+	constexpr size_t EXPECTED_SIZE = sizeof(void*) + sizeof(Zenith_EntityID) * 2 + sizeof(Zenith_Vector<Zenith_EntityID>);
 	const size_t uActualSize = sizeof(Zenith_Entity);
 
 	Zenith_Log("  Expected Zenith_Entity size: %zu bytes", EXPECTED_SIZE);
 	Zenith_Log("  Actual Zenith_Entity size: %zu bytes", uActualSize);
 
 	Zenith_Assert(uActualSize == EXPECTED_SIZE,
-		"TestEntityIsTrivialSize: Zenith_Entity size is not as expected (should be pointer + 2 IDs)");
+		"TestEntityIsTrivialSize: Zenith_Entity size is not as expected");
 
 	Zenith_Log("TestEntityIsTrivialSize completed successfully");
 }
@@ -3592,4 +3644,942 @@ void Zenith_UnitTests::TestEventClearSubscriptions()
 		"TestEventClearSubscriptions: No callbacks should be called after clear");
 
 	Zenith_Log("TestEventClearSubscriptions completed successfully");
+}
+
+//=============================================================================
+// GUID System Tests
+//=============================================================================
+
+void Zenith_UnitTests::TestGUIDGeneration()
+{
+	Zenith_Log("Running TestGUIDGeneration...");
+
+	// Generate multiple GUIDs and ensure they're all unique
+	constexpr uint32_t uNumGUIDs = 100;
+	std::vector<Zenith_AssetGUID> xGUIDs;
+	xGUIDs.reserve(uNumGUIDs);
+
+	for (uint32_t u = 0; u < uNumGUIDs; ++u)
+	{
+		Zenith_AssetGUID xGUID = Zenith_AssetGUID::Generate();
+		Zenith_Assert(xGUID.IsValid(), "TestGUIDGeneration: Generated GUID should be valid");
+
+		// Check uniqueness against all previously generated GUIDs
+		for (const auto& xExisting : xGUIDs)
+		{
+			Zenith_Assert(xGUID != xExisting, "TestGUIDGeneration: Generated GUIDs should be unique");
+		}
+		xGUIDs.push_back(xGUID);
+	}
+
+	Zenith_Log("TestGUIDGeneration completed successfully");
+}
+
+void Zenith_UnitTests::TestGUIDStringRoundTrip()
+{
+	Zenith_Log("Running TestGUIDStringRoundTrip...");
+
+	// Generate a GUID, convert to string, parse back, compare
+	Zenith_AssetGUID xOriginal = Zenith_AssetGUID::Generate();
+	std::string strGUID = xOriginal.ToString();
+
+	// String should be in format "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"
+	Zenith_Assert(strGUID.length() == 36, "TestGUIDStringRoundTrip: String should be 36 characters");
+	Zenith_Assert(strGUID[8] == '-' && strGUID[13] == '-' && strGUID[18] == '-' && strGUID[23] == '-',
+		"TestGUIDStringRoundTrip: String should have dashes at correct positions");
+
+	Zenith_AssetGUID xParsed = Zenith_AssetGUID::FromString(strGUID);
+	Zenith_Assert(xParsed.IsValid(), "TestGUIDStringRoundTrip: Parsed GUID should be valid");
+	Zenith_Assert(xOriginal == xParsed, "TestGUIDStringRoundTrip: Round-trip should produce identical GUID");
+
+	// Test invalid string
+	Zenith_AssetGUID xInvalid = Zenith_AssetGUID::FromString("not-a-valid-guid");
+	Zenith_Assert(!xInvalid.IsValid(), "TestGUIDStringRoundTrip: Invalid string should produce invalid GUID");
+
+	Zenith_Log("TestGUIDStringRoundTrip completed successfully");
+}
+
+void Zenith_UnitTests::TestGUIDSerializationRoundTrip()
+{
+	Zenith_Log("Running TestGUIDSerializationRoundTrip...");
+
+	Zenith_AssetGUID xOriginal = Zenith_AssetGUID::Generate();
+
+	// Write to data stream
+	Zenith_DataStream xStream;
+	xStream << xOriginal;
+
+	// Read back
+	xStream.SetCursor(0);
+	Zenith_AssetGUID xDeserialized;
+	xStream >> xDeserialized;
+
+	Zenith_Assert(xOriginal == xDeserialized,
+		"TestGUIDSerializationRoundTrip: Deserialized GUID should match original");
+
+	Zenith_Log("TestGUIDSerializationRoundTrip completed successfully");
+}
+
+void Zenith_UnitTests::TestGUIDComparisonOperators()
+{
+	Zenith_Log("Running TestGUIDComparisonOperators...");
+
+	Zenith_AssetGUID xGUID1 = Zenith_AssetGUID::Generate();
+	Zenith_AssetGUID xGUID2 = Zenith_AssetGUID::Generate();
+	Zenith_AssetGUID xGUID1Copy = xGUID1;
+
+	// Equality
+	Zenith_Assert(xGUID1 == xGUID1Copy, "TestGUIDComparisonOperators: Same GUID should be equal");
+	Zenith_Assert(!(xGUID1 != xGUID1Copy), "TestGUIDComparisonOperators: Same GUID != should be false");
+
+	// Inequality
+	Zenith_Assert(xGUID1 != xGUID2, "TestGUIDComparisonOperators: Different GUIDs should not be equal");
+
+	// Less than (for ordering)
+	bool bLess1 = xGUID1 < xGUID2;
+	bool bLess2 = xGUID2 < xGUID1;
+	Zenith_Assert(bLess1 != bLess2 || xGUID1 == xGUID2,
+		"TestGUIDComparisonOperators: Exactly one should be less (unless equal)");
+
+	Zenith_Log("TestGUIDComparisonOperators completed successfully");
+}
+
+void Zenith_UnitTests::TestGUIDHashDistribution()
+{
+	Zenith_Log("Running TestGUIDHashDistribution...");
+
+	// Generate many GUIDs and hash them, check for reasonable distribution
+	std::unordered_set<size_t> xHashes;
+	constexpr uint32_t uNumGUIDs = 1000;
+
+	for (uint32_t u = 0; u < uNumGUIDs; ++u)
+	{
+		Zenith_AssetGUID xGUID = Zenith_AssetGUID::Generate();
+		size_t ulHash = std::hash<Zenith_AssetGUID>{}(xGUID);
+		xHashes.insert(ulHash);
+	}
+
+	// With good distribution, we should have very few collisions
+	// Allow up to 5% collision rate (950+ unique hashes)
+	Zenith_Assert(xHashes.size() >= 950,
+		"TestGUIDHashDistribution: Hash distribution should have minimal collisions");
+
+	Zenith_Log("TestGUIDHashDistribution completed successfully");
+}
+
+void Zenith_UnitTests::TestGUIDInvalidDetection()
+{
+	Zenith_Log("Running TestGUIDInvalidDetection...");
+
+	// Default constructed should be invalid
+	Zenith_AssetGUID xDefault;
+	Zenith_Assert(!xDefault.IsValid(), "TestGUIDInvalidDetection: Default GUID should be invalid");
+
+	// INVALID constant should be invalid
+	Zenith_Assert(!Zenith_AssetGUID::INVALID.IsValid(), "TestGUIDInvalidDetection: INVALID should be invalid");
+
+	// Generated should be valid
+	Zenith_AssetGUID xGenerated = Zenith_AssetGUID::Generate();
+	Zenith_Assert(xGenerated.IsValid(), "TestGUIDInvalidDetection: Generated GUID should be valid");
+
+	// Explicit zero construction
+	Zenith_AssetGUID xZero(0, 0);
+	Zenith_Assert(!xZero.IsValid(), "TestGUIDInvalidDetection: Zero GUID should be invalid");
+
+	Zenith_Log("TestGUIDInvalidDetection completed successfully");
+}
+
+//=============================================================================
+// Asset Meta File Tests
+//=============================================================================
+
+void Zenith_UnitTests::TestAssetMetaSaveLoadRoundTrip()
+{
+	Zenith_Log("Running TestAssetMetaSaveLoadRoundTrip...");
+
+	// Create a meta with test data
+	Zenith_AssetMeta xOriginal;
+	xOriginal.m_xGUID = Zenith_AssetGUID::Generate();
+	xOriginal.m_strAssetPath = "TestAssets/test_texture.ztex";
+	xOriginal.m_ulLastModifiedTime = 12345678;
+	xOriginal.m_eAssetType = Zenith_AssetType::TEXTURE;
+
+	// Save to temp file
+	std::string strTempPath = "TestAssets/test_meta_roundtrip.zmeta";
+
+	// Ensure directory exists
+	std::filesystem::create_directories("TestAssets");
+
+	bool bSaved = xOriginal.SaveToFile(strTempPath);
+	Zenith_Assert(bSaved, "TestAssetMetaSaveLoadRoundTrip: Save should succeed");
+
+	// Load back
+	Zenith_AssetMeta xLoaded;
+	bool bLoaded = xLoaded.LoadFromFile(strTempPath);
+	Zenith_Assert(bLoaded, "TestAssetMetaSaveLoadRoundTrip: Load should succeed");
+
+	// Verify fields
+	Zenith_Assert(xOriginal.m_xGUID == xLoaded.m_xGUID,
+		"TestAssetMetaSaveLoadRoundTrip: GUID should match");
+	Zenith_Assert(xOriginal.m_strAssetPath == xLoaded.m_strAssetPath,
+		"TestAssetMetaSaveLoadRoundTrip: Asset path should match");
+	Zenith_Assert(xOriginal.m_ulLastModifiedTime == xLoaded.m_ulLastModifiedTime,
+		"TestAssetMetaSaveLoadRoundTrip: Modification time should match");
+	Zenith_Assert(xOriginal.m_eAssetType == xLoaded.m_eAssetType,
+		"TestAssetMetaSaveLoadRoundTrip: Asset type should match");
+
+	// Cleanup
+	std::filesystem::remove(strTempPath);
+
+	Zenith_Log("TestAssetMetaSaveLoadRoundTrip completed successfully");
+}
+
+void Zenith_UnitTests::TestAssetMetaVersionCompatibility()
+{
+	Zenith_Log("Running TestAssetMetaVersionCompatibility...");
+
+	// This test ensures the meta file format includes version info
+	Zenith_AssetMeta xMeta;
+	xMeta.m_xGUID = Zenith_AssetGUID::Generate();
+	xMeta.m_strAssetPath = "TestAssets/version_test.ztex";
+	xMeta.m_eAssetType = Zenith_AssetType::TEXTURE;
+
+	std::string strPath = "TestAssets/version_test.zmeta";
+	std::filesystem::create_directories("TestAssets");
+
+	xMeta.SaveToFile(strPath);
+
+	// Load and verify it works (version is embedded in file)
+	Zenith_AssetMeta xLoaded;
+	bool bLoaded = xLoaded.LoadFromFile(strPath);
+	Zenith_Assert(bLoaded, "TestAssetMetaVersionCompatibility: Should load current version");
+
+	std::filesystem::remove(strPath);
+
+	Zenith_Log("TestAssetMetaVersionCompatibility completed successfully");
+}
+
+void Zenith_UnitTests::TestAssetMetaImportSettings()
+{
+	Zenith_Log("Running TestAssetMetaImportSettings...");
+
+	// Test texture import settings
+	Zenith_AssetMeta xTextureMeta;
+	xTextureMeta.m_xGUID = Zenith_AssetGUID::Generate();
+	xTextureMeta.m_strAssetPath = "TestAssets/import_test.ztex";
+	xTextureMeta.m_eAssetType = Zenith_AssetType::TEXTURE;
+
+	xTextureMeta.m_xTextureSettings.m_bGenerateMipmaps = true;
+	xTextureMeta.m_xTextureSettings.m_bSRGB = false;
+
+	std::string strPath = "TestAssets/import_settings_test.zmeta";
+	std::filesystem::create_directories("TestAssets");
+
+	xTextureMeta.SaveToFile(strPath);
+
+	Zenith_AssetMeta xLoaded;
+	xLoaded.LoadFromFile(strPath);
+
+	Zenith_Assert(xLoaded.m_xTextureSettings.m_bGenerateMipmaps == xTextureMeta.m_xTextureSettings.m_bGenerateMipmaps,
+		"TestAssetMetaImportSettings: GenerateMipmaps should match");
+	Zenith_Assert(xLoaded.m_xTextureSettings.m_bSRGB == xTextureMeta.m_xTextureSettings.m_bSRGB,
+		"TestAssetMetaImportSettings: SRGB should match");
+
+	std::filesystem::remove(strPath);
+
+	Zenith_Log("TestAssetMetaImportSettings completed successfully");
+}
+
+void Zenith_UnitTests::TestAssetMetaGetMetaPath()
+{
+	Zenith_Log("Running TestAssetMetaGetMetaPath...");
+
+	// Test meta path generation
+	std::string strAssetPath = "Assets/Textures/diffuse.ztex";
+	std::string strMetaPath = Zenith_AssetMeta::GetMetaPath(strAssetPath);
+
+	Zenith_Assert(strMetaPath == "Assets/Textures/diffuse.ztex.zmeta",
+		"TestAssetMetaGetMetaPath: Meta path should append .zmeta");
+
+	// Test with different extensions
+	std::string strMaterialPath = "Assets/Materials/test.zmtrl";
+	std::string strMaterialMetaPath = Zenith_AssetMeta::GetMetaPath(strMaterialPath);
+	Zenith_Assert(strMaterialMetaPath == "Assets/Materials/test.zmtrl.zmeta",
+		"TestAssetMetaGetMetaPath: Should work with any extension");
+
+	Zenith_Log("TestAssetMetaGetMetaPath completed successfully");
+}
+
+//=============================================================================
+// Asset Database Tests
+//=============================================================================
+
+void Zenith_UnitTests::TestAssetDatabaseGUIDToPath()
+{
+	Zenith_Log("Running TestAssetDatabaseGUIDToPath...");
+
+	// Create a test meta and register it
+	Zenith_AssetMeta xMeta;
+	xMeta.m_xGUID = Zenith_AssetGUID::Generate();
+	xMeta.m_strAssetPath = "TestAssets/db_test_asset.ztex";
+	xMeta.m_eAssetType = Zenith_AssetType::TEXTURE;
+
+	// Initialize database if not already
+	bool bWasInitialized = Zenith_AssetDatabase::IsInitialized();
+	if (!bWasInitialized)
+	{
+		Zenith_AssetDatabase::Initialize("TestAssets/");
+	}
+
+	// Register the asset
+	Zenith_AssetDatabase::RegisterAsset(xMeta);
+
+	// Look up by GUID
+	std::string strPath = Zenith_AssetDatabase::GetPathFromGUID(xMeta.m_xGUID);
+	Zenith_Assert(!strPath.empty(), "TestAssetDatabaseGUIDToPath: Should find registered asset");
+
+	// Unregister
+	Zenith_AssetDatabase::UnregisterAsset(xMeta.m_xGUID);
+
+	// Should not find after unregister
+	strPath = Zenith_AssetDatabase::GetPathFromGUID(xMeta.m_xGUID);
+	Zenith_Assert(strPath.empty(), "TestAssetDatabaseGUIDToPath: Should not find unregistered asset");
+
+	if (!bWasInitialized)
+	{
+		Zenith_AssetDatabase::Shutdown();
+	}
+
+	Zenith_Log("TestAssetDatabaseGUIDToPath completed successfully");
+}
+
+void Zenith_UnitTests::TestAssetDatabasePathToGUID()
+{
+	Zenith_Log("Running TestAssetDatabasePathToGUID...");
+
+	Zenith_AssetMeta xMeta;
+	xMeta.m_xGUID = Zenith_AssetGUID::Generate();
+	xMeta.m_strAssetPath = "TestAssets/path_lookup_test.ztex";
+	xMeta.m_eAssetType = Zenith_AssetType::TEXTURE;
+
+	bool bWasInitialized = Zenith_AssetDatabase::IsInitialized();
+	if (!bWasInitialized)
+	{
+		Zenith_AssetDatabase::Initialize("TestAssets/");
+	}
+
+	Zenith_AssetDatabase::RegisterAsset(xMeta);
+
+	// Look up by path
+	Zenith_AssetGUID xFoundGUID = Zenith_AssetDatabase::GetGUIDFromPath("TestAssets/path_lookup_test.ztex");
+	Zenith_Assert(xFoundGUID.IsValid(), "TestAssetDatabasePathToGUID: Should find by path");
+	Zenith_Assert(xFoundGUID == xMeta.m_xGUID, "TestAssetDatabasePathToGUID: GUID should match");
+
+	// Test case insensitivity on Windows
+#ifdef _WIN32
+	Zenith_AssetGUID xUpperGUID = Zenith_AssetDatabase::GetGUIDFromPath("TESTASSETS/PATH_LOOKUP_TEST.ZTEX");
+	Zenith_Assert(xUpperGUID == xMeta.m_xGUID,
+		"TestAssetDatabasePathToGUID: Should be case-insensitive on Windows");
+#endif
+
+	Zenith_AssetDatabase::UnregisterAsset(xMeta.m_xGUID);
+
+	if (!bWasInitialized)
+	{
+		Zenith_AssetDatabase::Shutdown();
+	}
+
+	Zenith_Log("TestAssetDatabasePathToGUID completed successfully");
+}
+
+void Zenith_UnitTests::TestAssetDatabaseDependencyTracking()
+{
+	Zenith_Log("Running TestAssetDatabaseDependencyTracking...");
+
+	bool bWasInitialized = Zenith_AssetDatabase::IsInitialized();
+	if (!bWasInitialized)
+	{
+		Zenith_AssetDatabase::Initialize("TestAssets/");
+	}
+
+	Zenith_AssetGUID xMaterialGUID = Zenith_AssetGUID::Generate();
+	Zenith_AssetGUID xTextureGUID = Zenith_AssetGUID::Generate();
+
+	// Register dependency: material depends on texture
+	Zenith_AssetDatabase::RegisterDependency(xMaterialGUID, xTextureGUID);
+
+	// Get dependencies
+	std::vector<Zenith_AssetGUID> xDeps = Zenith_AssetDatabase::GetDependencies(xMaterialGUID);
+	Zenith_Assert(xDeps.size() == 1, "TestAssetDatabaseDependencyTracking: Should have 1 dependency");
+	Zenith_Assert(xDeps[0] == xTextureGUID, "TestAssetDatabaseDependencyTracking: Dependency should be texture");
+
+	// Unregister dependency
+	Zenith_AssetDatabase::UnregisterDependency(xMaterialGUID, xTextureGUID);
+	xDeps = Zenith_AssetDatabase::GetDependencies(xMaterialGUID);
+	Zenith_Assert(xDeps.empty(), "TestAssetDatabaseDependencyTracking: Should have no dependencies after unregister");
+
+	if (!bWasInitialized)
+	{
+		Zenith_AssetDatabase::Shutdown();
+	}
+
+	Zenith_Log("TestAssetDatabaseDependencyTracking completed successfully");
+}
+
+void Zenith_UnitTests::TestAssetDatabaseDependentLookup()
+{
+	Zenith_Log("Running TestAssetDatabaseDependentLookup...");
+
+	bool bWasInitialized = Zenith_AssetDatabase::IsInitialized();
+	if (!bWasInitialized)
+	{
+		Zenith_AssetDatabase::Initialize("TestAssets/");
+	}
+
+	Zenith_AssetGUID xTextureGUID = Zenith_AssetGUID::Generate();
+	Zenith_AssetGUID xMaterial1GUID = Zenith_AssetGUID::Generate();
+	Zenith_AssetGUID xMaterial2GUID = Zenith_AssetGUID::Generate();
+
+	// Two materials depend on the same texture
+	Zenith_AssetDatabase::RegisterDependency(xMaterial1GUID, xTextureGUID);
+	Zenith_AssetDatabase::RegisterDependency(xMaterial2GUID, xTextureGUID);
+
+	// Get dependents of texture
+	std::vector<Zenith_AssetGUID> xDependents = Zenith_AssetDatabase::GetDependents(xTextureGUID);
+	Zenith_Assert(xDependents.size() == 2, "TestAssetDatabaseDependentLookup: Should have 2 dependents");
+
+	// Clear dependencies
+	Zenith_AssetDatabase::ClearDependencies(xMaterial1GUID);
+	Zenith_AssetDatabase::ClearDependencies(xMaterial2GUID);
+
+	if (!bWasInitialized)
+	{
+		Zenith_AssetDatabase::Shutdown();
+	}
+
+	Zenith_Log("TestAssetDatabaseDependentLookup completed successfully");
+}
+
+//=============================================================================
+// Asset Reference Tests
+//=============================================================================
+
+void Zenith_UnitTests::TestAssetRefGUIDStorage()
+{
+	Zenith_Log("Running TestAssetRefGUIDStorage...");
+
+	Zenith_AssetGUID xTestGUID = Zenith_AssetGUID::Generate();
+
+	TextureRef xRef;
+	Zenith_Assert(!xRef.IsSet(), "TestAssetRefGUIDStorage: Default ref should not be set");
+
+	xRef.SetGUID(xTestGUID);
+	Zenith_Assert(xRef.IsSet(), "TestAssetRefGUIDStorage: Should be set after SetGUID");
+	Zenith_Assert(xRef.GetGUID() == xTestGUID, "TestAssetRefGUIDStorage: GUID should match");
+
+	xRef.Clear();
+	Zenith_Assert(!xRef.IsSet(), "TestAssetRefGUIDStorage: Should not be set after Clear");
+
+	Zenith_Log("TestAssetRefGUIDStorage completed successfully");
+}
+
+void Zenith_UnitTests::TestAssetRefSerializationRoundTrip()
+{
+	Zenith_Log("Running TestAssetRefSerializationRoundTrip...");
+
+	Zenith_AssetGUID xTestGUID = Zenith_AssetGUID::Generate();
+	MaterialRef xOriginal;
+	xOriginal.SetGUID(xTestGUID);
+
+	// Write to stream
+	Zenith_DataStream xStream;
+	xOriginal.WriteToDataStream(xStream);
+
+	// Read back
+	xStream.SetCursor(0);
+	MaterialRef xLoaded;
+	xLoaded.ReadFromDataStream(xStream);
+
+	Zenith_Assert(xOriginal.GetGUID() == xLoaded.GetGUID(),
+		"TestAssetRefSerializationRoundTrip: GUIDs should match after round-trip");
+
+	Zenith_Log("TestAssetRefSerializationRoundTrip completed successfully");
+}
+
+void Zenith_UnitTests::TestAssetRefFromPath()
+{
+	Zenith_Log("Running TestAssetRefFromPath...");
+
+	// Register a test asset in the database
+	bool bWasInitialized = Zenith_AssetDatabase::IsInitialized();
+	if (!bWasInitialized)
+	{
+		Zenith_AssetDatabase::Initialize("TestAssets/");
+	}
+
+	Zenith_AssetMeta xMeta;
+	xMeta.m_xGUID = Zenith_AssetGUID::Generate();
+	xMeta.m_strAssetPath = "TestAssets/ref_from_path_test.zmtrl";
+	xMeta.m_eAssetType = Zenith_AssetType::MATERIAL;
+	Zenith_AssetDatabase::RegisterAsset(xMeta);
+
+	// Create ref from path
+	MaterialRef xRef;
+	bool bFound = xRef.SetFromPath("TestAssets/ref_from_path_test.zmtrl");
+	Zenith_Assert(bFound, "TestAssetRefFromPath: Should find registered asset");
+	Zenith_Assert(xRef.GetGUID() == xMeta.m_xGUID, "TestAssetRefFromPath: GUID should match");
+
+	// Try non-existent path
+	MaterialRef xBadRef;
+	bFound = xBadRef.SetFromPath("TestAssets/does_not_exist.zmtrl");
+	Zenith_Assert(!bFound, "TestAssetRefFromPath: Should not find non-existent asset");
+	Zenith_Assert(!xBadRef.IsSet(), "TestAssetRefFromPath: Bad ref should not be set");
+
+	Zenith_AssetDatabase::UnregisterAsset(xMeta.m_xGUID);
+
+	if (!bWasInitialized)
+	{
+		Zenith_AssetDatabase::Shutdown();
+	}
+
+	Zenith_Log("TestAssetRefFromPath completed successfully");
+}
+
+void Zenith_UnitTests::TestAssetRefInvalidHandling()
+{
+	Zenith_Log("Running TestAssetRefInvalidHandling...");
+
+	TextureRef xRef;
+
+	// Default ref should return nullptr
+	Flux_Texture* pTexture = xRef.Get();
+	Zenith_Assert(pTexture == nullptr, "TestAssetRefInvalidHandling: Invalid ref should return nullptr");
+
+	// Arrow operator on invalid ref should return nullptr
+	// (We can't test dereferencing nullptr, but we can verify Get returns nullptr)
+	Zenith_Assert(xRef.operator->() == nullptr,
+		"TestAssetRefInvalidHandling: Arrow operator should return nullptr for invalid ref");
+
+	// Bool conversion
+	Zenith_Assert(!static_cast<bool>(xRef), "TestAssetRefInvalidHandling: Bool should be false for invalid ref");
+
+	// Set to valid GUID that doesn't exist in database - Get should still return nullptr
+	xRef.SetGUID(Zenith_AssetGUID::Generate());
+	Zenith_Assert(xRef.IsSet(), "TestAssetRefInvalidHandling: Should be set with any valid GUID");
+	// Note: We can't test Get() here without the database being properly set up with the asset
+
+	Zenith_Log("TestAssetRefInvalidHandling completed successfully");
+}
+
+//------------------------------------------------------------------------------
+// Entity Hierarchy Tests
+//------------------------------------------------------------------------------
+
+void Zenith_UnitTests::TestEntityAddChild()
+{
+	Zenith_Log("Running TestEntityAddChild...");
+
+	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+
+	// Create parent and child entities
+	Zenith_Entity xParent(&xScene, "TestParent");
+	Zenith_Entity xChild(&xScene, "TestChild");
+
+	Zenith_EntityID uParentID = xParent.GetEntityID();
+	Zenith_EntityID uChildID = xChild.GetEntityID();
+
+	// Initially, both should have no children (use GetEntityRef since child lists are stored in scene's map)
+	Zenith_Assert(xScene.GetEntityRef(uParentID).GetChildCount() == 0, "TestEntityAddChild: Parent should have no children initially");
+	Zenith_Assert(!xScene.GetEntityRef(uParentID).HasChildren(), "TestEntityAddChild: HasChildren should be false");
+
+	// Add child using SetParent (must use ref from scene to modify the actual entity)
+	xScene.GetEntityRef(uChildID).SetParent(uParentID);
+
+	// Verify parent-child relationship (use refs from scene to see updated state)
+	Zenith_Entity& xChildRef = xScene.GetEntityRef(uChildID);
+	Zenith_Entity& xParentRef = xScene.GetEntityRef(uParentID);
+
+	Zenith_Assert(xChildRef.GetParentEntityID() == uParentID, "TestEntityAddChild: Child should have parent ID set");
+	Zenith_Assert(xChildRef.HasParent(), "TestEntityAddChild: Child HasParent should be true");
+	Zenith_Assert(xParentRef.GetChildCount() == 1, "TestEntityAddChild: Parent should have 1 child");
+	Zenith_Assert(xParentRef.HasChildren(), "TestEntityAddChild: Parent HasChildren should be true");
+	Zenith_Assert(xParentRef.GetChildren().Get(0) == uChildID, "TestEntityAddChild: Parent's child should be correct ID");
+
+	Zenith_Log("TestEntityAddChild completed successfully");
+}
+
+void Zenith_UnitTests::TestEntityRemoveChild()
+{
+	Zenith_Log("Running TestEntityRemoveChild...");
+
+	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+
+	// Create parent and child entities
+	Zenith_Entity xParent(&xScene, "TestParent2");
+	Zenith_Entity xChild(&xScene, "TestChild2");
+
+	Zenith_EntityID uParentID = xParent.GetEntityID();
+	Zenith_EntityID uChildID = xChild.GetEntityID();
+
+	// Set parent (use ref from scene)
+	xScene.GetEntityRef(uChildID).SetParent(uParentID);
+	Zenith_Assert(xScene.GetEntityRef(uParentID).GetChildCount() == 1, "TestEntityRemoveChild: Parent should have 1 child");
+
+	// Remove parent (unparent child)
+	xScene.GetEntityRef(uChildID).SetParent(INVALID_ENTITY_ID);
+
+	// Verify relationship is broken (use refs from scene)
+	Zenith_Entity& xChildRef = xScene.GetEntityRef(uChildID);
+	Zenith_Entity& xParentRef = xScene.GetEntityRef(uParentID);
+
+	Zenith_Assert(!xChildRef.HasParent(), "TestEntityRemoveChild: Child should no longer have parent");
+	Zenith_Assert(xChildRef.GetParentEntityID() == INVALID_ENTITY_ID, "TestEntityRemoveChild: Child parent ID should be INVALID");
+	Zenith_Assert(xParentRef.GetChildCount() == 0, "TestEntityRemoveChild: Parent should have no children");
+	Zenith_Assert(!xParentRef.HasChildren(), "TestEntityRemoveChild: Parent HasChildren should be false");
+
+	Zenith_Log("TestEntityRemoveChild completed successfully");
+}
+
+void Zenith_UnitTests::TestEntityGetChildren()
+{
+	Zenith_Log("Running TestEntityGetChildren...");
+
+	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+
+	// Create parent with multiple children
+	Zenith_Entity xParent(&xScene, "TestParent3");
+	Zenith_Entity xChild1(&xScene, "TestChild3a");
+	Zenith_Entity xChild2(&xScene, "TestChild3b");
+	Zenith_Entity xChild3(&xScene, "TestChild3c");
+
+	Zenith_EntityID uParentID = xParent.GetEntityID();
+	Zenith_EntityID uChild1ID = xChild1.GetEntityID();
+	Zenith_EntityID uChild2ID = xChild2.GetEntityID();
+	Zenith_EntityID uChild3ID = xChild3.GetEntityID();
+
+	// Add all children (use refs from scene)
+	xScene.GetEntityRef(uChild1ID).SetParent(uParentID);
+	xScene.GetEntityRef(uChild2ID).SetParent(uParentID);
+	xScene.GetEntityRef(uChild3ID).SetParent(uParentID);
+
+	// Verify all children are tracked (use ref from scene)
+	Zenith_Entity& xParentRef = xScene.GetEntityRef(uParentID);
+	Zenith_Assert(xParentRef.GetChildCount() == 3, "TestEntityGetChildren: Parent should have 3 children");
+
+	const Zenith_Vector<Zenith_EntityID>& xChildren = xParentRef.GetChildren();
+	bool bFoundChild1 = false, bFoundChild2 = false, bFoundChild3 = false;
+	for (u_int i = 0; i < xChildren.GetSize(); i++)
+	{
+		if (xChildren.Get(i) == uChild1ID) bFoundChild1 = true;
+		if (xChildren.Get(i) == uChild2ID) bFoundChild2 = true;
+		if (xChildren.Get(i) == uChild3ID) bFoundChild3 = true;
+	}
+	Zenith_Assert(bFoundChild1 && bFoundChild2 && bFoundChild3, "TestEntityGetChildren: All children should be in list");
+
+	Zenith_Log("TestEntityGetChildren completed successfully");
+}
+
+void Zenith_UnitTests::TestEntityReparenting()
+{
+	Zenith_Log("Running TestEntityReparenting...");
+
+	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+
+	// Create entities for reparenting test
+	Zenith_Entity xParentA(&xScene, "ParentA");
+	Zenith_Entity xParentB(&xScene, "ParentB");
+	Zenith_Entity xChild(&xScene, "ReparentChild");
+
+	Zenith_EntityID uParentAID = xParentA.GetEntityID();
+	Zenith_EntityID uParentBID = xParentB.GetEntityID();
+	Zenith_EntityID uChildID = xChild.GetEntityID();
+
+	// Parent to A (use refs from scene)
+	xScene.GetEntityRef(uChildID).SetParent(uParentAID);
+	Zenith_Assert(xScene.GetEntityRef(uParentAID).GetChildCount() == 1, "TestEntityReparenting: ParentA should have 1 child");
+	Zenith_Assert(xScene.GetEntityRef(uParentBID).GetChildCount() == 0, "TestEntityReparenting: ParentB should have 0 children");
+	Zenith_Assert(xScene.GetEntityRef(uChildID).GetParentEntityID() == uParentAID, "TestEntityReparenting: Child should be parented to A");
+
+	// Reparent to B
+	xScene.GetEntityRef(uChildID).SetParent(uParentBID);
+	Zenith_Assert(xScene.GetEntityRef(uParentAID).GetChildCount() == 0, "TestEntityReparenting: ParentA should now have 0 children");
+	Zenith_Assert(xScene.GetEntityRef(uParentBID).GetChildCount() == 1, "TestEntityReparenting: ParentB should now have 1 child");
+	Zenith_Assert(xScene.GetEntityRef(uChildID).GetParentEntityID() == uParentBID, "TestEntityReparenting: Child should be parented to B");
+
+	Zenith_Log("TestEntityReparenting completed successfully");
+}
+
+void Zenith_UnitTests::TestEntityChildCleanupOnDelete()
+{
+	Zenith_Log("Running TestEntityChildCleanupOnDelete...");
+
+	// Note: This test documents expected behavior for entity deletion
+	// In a real implementation, deleting a parent would need to handle children
+	// For now we just verify the API works correctly
+
+	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+
+	Zenith_Entity xParent(&xScene, "DeleteParent");
+	Zenith_Entity xChild(&xScene, "DeleteChild");
+
+	Zenith_EntityID uParentID = xParent.GetEntityID();
+	Zenith_EntityID uChildID = xChild.GetEntityID();
+
+	// Set parent (use ref from scene)
+	xScene.GetEntityRef(uChildID).SetParent(uParentID);
+
+	Zenith_Assert(xScene.GetEntityRef(uParentID).GetChildCount() == 1, "TestEntityChildCleanupOnDelete: Should have child");
+
+	// Unparent before any deletion (good practice)
+	xScene.GetEntityRef(uChildID).SetParent(INVALID_ENTITY_ID);
+	Zenith_Assert(xScene.GetEntityRef(uParentID).GetChildCount() == 0, "TestEntityChildCleanupOnDelete: Should have no children after unparent");
+
+	Zenith_Log("TestEntityChildCleanupOnDelete completed successfully");
+}
+
+void Zenith_UnitTests::TestEntityHierarchySerialization()
+{
+	Zenith_Log("Running TestEntityHierarchySerialization...");
+
+	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+
+	// Create hierarchy
+	Zenith_Entity xParent(&xScene, "SerializeParent");
+	Zenith_Entity xChild(&xScene, "SerializeChild");
+
+	Zenith_EntityID uParentID = xParent.GetEntityID();
+	Zenith_EntityID uChildID = xChild.GetEntityID();
+
+	// Set parent using scene ref (modifies the correct entity in scene's map)
+	xScene.GetEntityRef(uChildID).SetParent(uParentID);
+
+	// Serialize parent entity from scene's map
+	Zenith_DataStream xStream(256);
+	xScene.GetEntityRef(uParentID).WriteToDataStream(xStream);
+
+	// Reset and read back
+	xStream.SetCursor(0);
+	Zenith_Entity xLoadedParent;
+	xLoadedParent.m_pxParentScene = &xScene;
+	xLoadedParent.ReadFromDataStream(xStream);
+
+	// Children are stored in scene, so parent ID should serialize
+	// The parent's child list is rebuilt when children are loaded and call SetParent
+	Zenith_Assert(xLoadedParent.IsRoot(), "TestEntityHierarchySerialization: Loaded parent should be root");
+
+	// Serialize child entity from scene's map
+	Zenith_DataStream xChildStream(256);
+	xScene.GetEntityRef(uChildID).WriteToDataStream(xChildStream);
+
+	xChildStream.SetCursor(0);
+	Zenith_Entity xLoadedChild;
+	xLoadedChild.m_pxParentScene = &xScene;
+	xLoadedChild.ReadFromDataStream(xChildStream);
+
+	Zenith_Assert(xLoadedChild.GetParentEntityID() == uParentID,
+		"TestEntityHierarchySerialization: Loaded child should have parent ID preserved");
+
+	Zenith_Log("TestEntityHierarchySerialization completed successfully");
+}
+
+//------------------------------------------------------------------------------
+// Prefab System Tests
+//------------------------------------------------------------------------------
+
+void Zenith_UnitTests::TestPrefabCreateFromEntity()
+{
+	Zenith_Log("Running TestPrefabCreateFromEntity...");
+
+	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+
+	// Create an entity with a transform component
+	Zenith_Entity xEntity(&xScene, "PrefabSource");
+	Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
+	xTransform.SetPosition(Zenith_Maths::Vector3(10.0f, 20.0f, 30.0f));
+	xTransform.SetScale(Zenith_Maths::Vector3(2.0f, 2.0f, 2.0f));
+
+	// Create prefab from entity
+	Zenith_Prefab xPrefab;
+	bool bSuccess = xPrefab.CreateFromEntity(xEntity, "TestPrefab");
+
+	Zenith_Assert(bSuccess, "TestPrefabCreateFromEntity: CreateFromEntity should succeed");
+	Zenith_Assert(xPrefab.IsValid(), "TestPrefabCreateFromEntity: Prefab should be valid");
+	Zenith_Assert(xPrefab.GetName() == "TestPrefab", "TestPrefabCreateFromEntity: Prefab name should match");
+
+	Zenith_Log("TestPrefabCreateFromEntity completed successfully");
+}
+
+void Zenith_UnitTests::TestPrefabInstantiation()
+{
+	Zenith_Log("Running TestPrefabInstantiation...");
+
+	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+
+	// Create source entity
+	Zenith_Entity xSource(&xScene, "InstantiateSource");
+	Zenith_TransformComponent& xTransform = xSource.GetComponent<Zenith_TransformComponent>();
+	xTransform.SetPosition(Zenith_Maths::Vector3(5.0f, 10.0f, 15.0f));
+
+	// Create prefab
+	Zenith_Prefab xPrefab;
+	xPrefab.CreateFromEntity(xSource, "InstantiatePrefab");
+
+	// Instantiate prefab
+	Zenith_Entity xInstance = xPrefab.Instantiate(&xScene, "PrefabInstance");
+
+	// Verify instance has the transform values from prefab
+	Zenith_Assert(xInstance.HasComponent<Zenith_TransformComponent>(),
+		"TestPrefabInstantiation: Instance should have transform component");
+
+	Zenith_TransformComponent& xInstanceTransform = xInstance.GetComponent<Zenith_TransformComponent>();
+	Zenith_Maths::Vector3 xPos;
+	xInstanceTransform.GetPosition(xPos);
+
+	// Position should match source
+	Zenith_Assert(std::abs(xPos.x - 5.0f) < 0.001f &&
+	              std::abs(xPos.y - 10.0f) < 0.001f &&
+	              std::abs(xPos.z - 15.0f) < 0.001f,
+		"TestPrefabInstantiation: Instance position should match prefab source");
+
+	Zenith_Log("TestPrefabInstantiation completed successfully");
+}
+
+void Zenith_UnitTests::TestPrefabSaveLoadRoundTrip()
+{
+	Zenith_Log("Running TestPrefabSaveLoadRoundTrip...");
+
+	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+
+	// Create source entity
+	Zenith_Entity xSource(&xScene, "RoundTripSource");
+	Zenith_TransformComponent& xTransform = xSource.GetComponent<Zenith_TransformComponent>();
+	xTransform.SetPosition(Zenith_Maths::Vector3(100.0f, 200.0f, 300.0f));
+
+	// Create and save prefab
+	Zenith_Prefab xPrefab;
+	xPrefab.CreateFromEntity(xSource, "RoundTripPrefab");
+	xPrefab.SetGUID(Zenith_AssetGUID::Generate());
+
+	std::string strTempPath = "test_roundtrip.zpfb";
+	bool bSaved = xPrefab.SaveToFile(strTempPath);
+	Zenith_Assert(bSaved, "TestPrefabSaveLoadRoundTrip: Save should succeed");
+
+	// Load prefab
+	Zenith_Prefab xLoadedPrefab;
+	bool bLoaded = xLoadedPrefab.LoadFromFile(strTempPath);
+	Zenith_Assert(bLoaded, "TestPrefabSaveLoadRoundTrip: Load should succeed");
+	Zenith_Assert(xLoadedPrefab.IsValid(), "TestPrefabSaveLoadRoundTrip: Loaded prefab should be valid");
+	Zenith_Assert(xLoadedPrefab.GetName() == "RoundTripPrefab",
+		"TestPrefabSaveLoadRoundTrip: Loaded prefab name should match");
+
+	// Instantiate loaded prefab
+	Zenith_Entity xInstance = xLoadedPrefab.Instantiate(&xScene, "LoadedInstance");
+	Zenith_TransformComponent& xInstanceTransform = xInstance.GetComponent<Zenith_TransformComponent>();
+	Zenith_Maths::Vector3 xPos;
+	xInstanceTransform.GetPosition(xPos);
+
+	Zenith_Assert(std::abs(xPos.x - 100.0f) < 0.001f &&
+	              std::abs(xPos.y - 200.0f) < 0.001f &&
+	              std::abs(xPos.z - 300.0f) < 0.001f,
+		"TestPrefabSaveLoadRoundTrip: Instance position should match original");
+
+	// Cleanup temp file
+	std::filesystem::remove(strTempPath);
+
+	Zenith_Log("TestPrefabSaveLoadRoundTrip completed successfully");
+}
+
+void Zenith_UnitTests::TestPrefabOverrides()
+{
+	Zenith_Log("Running TestPrefabOverrides...");
+
+	Zenith_Prefab xPrefab;
+
+	// Add an override
+	Zenith_PropertyOverride xOverride;
+	xOverride.m_strComponentName = "Transform";
+	xOverride.m_strPropertyPath = "Position.x";
+	xOverride.m_xValue << 42.0f;
+
+	xPrefab.AddOverride(std::move(xOverride));
+
+	// Verify override was added
+	const Zenith_Vector<Zenith_PropertyOverride>& xOverrides = xPrefab.GetOverrides();
+	Zenith_Assert(xOverrides.GetSize() == 1, "TestPrefabOverrides: Should have 1 override");
+	Zenith_Assert(xOverrides.Get(0).m_strComponentName == "Transform",
+		"TestPrefabOverrides: Override component name should match");
+	Zenith_Assert(xOverrides.Get(0).m_strPropertyPath == "Position.x",
+		"TestPrefabOverrides: Override property path should match");
+
+	// Add another override with same path (should replace)
+	Zenith_PropertyOverride xOverride2;
+	xOverride2.m_strComponentName = "Transform";
+	xOverride2.m_strPropertyPath = "Position.x";
+	xOverride2.m_xValue << 99.0f;
+
+	xPrefab.AddOverride(std::move(xOverride2));
+
+	// Should still be 1 override (replaced)
+	Zenith_Assert(xPrefab.GetOverrides().GetSize() == 1,
+		"TestPrefabOverrides: Should still have 1 override after replace");
+
+	// Clear overrides
+	xPrefab.ClearOverrides();
+	Zenith_Assert(xPrefab.GetOverrides().GetSize() == 0,
+		"TestPrefabOverrides: Should have 0 overrides after clear");
+
+	Zenith_Log("TestPrefabOverrides completed successfully");
+}
+
+void Zenith_UnitTests::TestPrefabVariantCreation()
+{
+	Zenith_Log("Running TestPrefabVariantCreation...");
+
+	// Create a base prefab reference (mock - not actually loaded)
+	PrefabRef xBasePrefabRef;
+	Zenith_AssetGUID xBaseGUID = Zenith_AssetGUID::Generate();
+	xBasePrefabRef.SetGUID(xBaseGUID);
+
+	// Create a variant prefab
+	Zenith_Prefab xVariant;
+	bool bSuccess = xVariant.CreateAsVariant(xBasePrefabRef, "VariantPrefab");
+
+	Zenith_Assert(bSuccess, "TestPrefabVariantCreation: CreateAsVariant should succeed");
+	Zenith_Assert(xVariant.IsVariant(), "TestPrefabVariantCreation: Should be marked as variant");
+	Zenith_Assert(xVariant.GetBasePrefab().IsSet(), "TestPrefabVariantCreation: Should have base prefab set");
+	Zenith_Assert(xVariant.GetBasePrefab().GetGUID() == xBaseGUID,
+		"TestPrefabVariantCreation: Base prefab GUID should match");
+
+	Zenith_Log("TestPrefabVariantCreation completed successfully");
+}
+
+void Zenith_UnitTests::TestPrefabNestedPrefabs()
+{
+	Zenith_Log("Running TestPrefabNestedPrefabs...");
+
+	Zenith_Prefab xPrefab;
+
+	// Create a nested prefab instance
+	Zenith_NestedPrefabInstance xNested;
+	xNested.m_strLocalName = "NestedChild";
+	xNested.m_xPrefab.SetGUID(Zenith_AssetGUID::Generate());
+
+	// Add an override to the nested instance
+	Zenith_PropertyOverride xNestedOverride;
+	xNestedOverride.m_strComponentName = "Transform";
+	xNestedOverride.m_strPropertyPath = "Scale";
+	xNestedOverride.m_xValue << Zenith_Maths::Vector3(2.0f, 2.0f, 2.0f);
+	xNested.m_xOverrides.PushBack(std::move(xNestedOverride));
+
+	xPrefab.AddNestedPrefab(std::move(xNested));
+
+	// Verify nested prefab was added
+	const Zenith_Vector<Zenith_NestedPrefabInstance>& xNestedPrefabs = xPrefab.GetNestedPrefabs();
+	Zenith_Assert(xNestedPrefabs.GetSize() == 1, "TestPrefabNestedPrefabs: Should have 1 nested prefab");
+	Zenith_Assert(xNestedPrefabs.Get(0).m_strLocalName == "NestedChild",
+		"TestPrefabNestedPrefabs: Nested prefab name should match");
+	Zenith_Assert(xNestedPrefabs.Get(0).m_xOverrides.GetSize() == 1,
+		"TestPrefabNestedPrefabs: Nested prefab should have 1 override");
+
+	Zenith_Log("TestPrefabNestedPrefabs completed successfully");
 }

@@ -6,6 +6,7 @@
 #include "EntityComponent/Zenith_Scene.h"
 #include <vector>
 #include <string>
+#include <unordered_set>
 
 // Forward declarations
 class Flux_MaterialAsset;
@@ -72,13 +73,81 @@ public:
 	static EditorMode GetEditorMode() { return s_eEditorMode; }
 	static void SetEditorMode(EditorMode eMode);
 	
-	// Object selection - now uses EntityID for safer memory management
-	static void SelectEntity(Zenith_EntityID uEntityID);
+	//--------------------------------------------------------------------------
+	// Multi-Select System
+	//--------------------------------------------------------------------------
+
+	/**
+	 * Select an entity
+	 * @param uEntityID Entity to select
+	 * @param bAddToSelection If true, add to existing selection (Ctrl+click). If false, replace selection.
+	 */
+	static void SelectEntity(Zenith_EntityID uEntityID, bool bAddToSelection = false);
+
+	/**
+	 * Select a range of entities (for Shift+click in hierarchy)
+	 * Selects all entities between the last selected and the specified entity
+	 * @param uEndEntityID The end point of the range selection
+	 */
+	static void SelectRange(Zenith_EntityID uEndEntityID);
+
+	/**
+	 * Toggle selection state of an entity (Ctrl+click)
+	 * If selected, deselect. If not selected, add to selection.
+	 */
+	static void ToggleEntitySelection(Zenith_EntityID uEntityID);
+
+	/**
+	 * Clear all selected entities
+	 */
 	static void ClearSelection();
-	static Zenith_EntityID GetSelectedEntityID() { return s_uSelectedEntityID; }
-	static Zenith_Entity* GetSelectedEntity();  // Helper to safely get entity from ID
-	static bool HasSelection() { return s_uSelectedEntityID != INVALID_ENTITY_ID; }
-	
+
+	/**
+	 * Check if a specific entity is selected
+	 */
+	static bool IsSelected(Zenith_EntityID uEntityID);
+
+	/**
+	 * Get the primary selected entity ID (first in selection, or last clicked)
+	 * Returns INVALID_ENTITY_ID if no selection
+	 */
+	static Zenith_EntityID GetSelectedEntityID() { return s_uPrimarySelectedEntityID; }
+
+	/**
+	 * Get the primary selected entity (for backwards compatibility and property panel)
+	 */
+	static Zenith_Entity* GetSelectedEntity();
+
+	/**
+	 * Get all selected entity IDs
+	 */
+	static const std::unordered_set<Zenith_EntityID>& GetSelectedEntityIDs() { return s_xSelectedEntityIDs; }
+
+	/**
+	 * Get the number of selected entities
+	 */
+	static size_t GetSelectionCount() { return s_xSelectedEntityIDs.size(); }
+
+	/**
+	 * Check if any entities are selected
+	 */
+	static bool HasSelection() { return !s_xSelectedEntityIDs.empty(); }
+
+	/**
+	 * Check if multiple entities are selected
+	 */
+	static bool HasMultiSelection() { return s_xSelectedEntityIDs.size() > 1; }
+
+	/**
+	 * Get the last clicked entity ID (for range selection)
+	 */
+	static Zenith_EntityID GetLastClickedEntityID() { return s_uLastClickedEntityID; }
+
+	/**
+	 * Remove an entity from selection
+	 */
+	static void DeselectEntity(Zenith_EntityID uEntityID);
+
 	// Gizmo
 	static EditorGizmoMode GetGizmoMode() { return s_eGizmoMode; }
 	static void SetGizmoMode(EditorGizmoMode eMode) { s_eGizmoMode = eMode; }
@@ -97,6 +166,8 @@ private:
 	static void RenderMainMenuBar();
 	static void RenderToolbar();
 	static void RenderHierarchyPanel();
+	static void RenderEntityTreeNode(Zenith_Scene& xScene, Zenith_Entity& xEntity,
+		Zenith_EntityID& uEntityToDelete, Zenith_EntityID& uDraggedEntityID, Zenith_EntityID& uDropTargetEntityID);
 	static void RenderPropertiesPanel();
 	static void RenderViewport();
 	static void HandleObjectPicking();
@@ -117,7 +188,11 @@ private:
 
 	static EditorMode s_eEditorMode;
 	static EditorGizmoMode s_eGizmoMode;
-	static Zenith_EntityID s_uSelectedEntityID;  // Changed from pointer to ID
+
+	// Multi-select state
+	static std::unordered_set<Zenith_EntityID> s_xSelectedEntityIDs;
+	static Zenith_EntityID s_uPrimarySelectedEntityID;  // The "primary" selection for property panel
+	static Zenith_EntityID s_uLastClickedEntityID;      // For range selection (shift+click)
 
 	// Viewport
 	static Zenith_Maths::Vector2 s_xViewportSize;
@@ -126,7 +201,6 @@ private:
 	static bool s_bViewportFocused;
 
 	// Scene state backup (for play mode)
-	static Zenith_Scene* s_pxBackupScene;  // Legacy - unused
 	static bool s_bHasSceneBackup;
 	static std::string s_strBackupScenePath;
 
@@ -140,7 +214,11 @@ private:
 	// Content Browser state
 	static std::string s_strCurrentDirectory;
 	static std::vector<ContentBrowserEntry> s_xDirectoryContents;
+	static std::vector<ContentBrowserEntry> s_xFilteredContents;  // After search/filter applied
 	static bool s_bDirectoryNeedsRefresh;
+	static char s_szSearchBuffer[256];  // Search text input buffer
+	static int s_iAssetTypeFilter;      // 0 = All, then asset types
+	static int s_iSelectedContentIndex; // Currently selected item for context menu
 
 	// Console state
 	static std::vector<ConsoleLogEntry> s_xConsoleLogs;

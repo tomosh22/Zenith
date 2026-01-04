@@ -8,7 +8,7 @@
 #define MAX_BINDINGS 16
 
 class Flux_VertexBuffer;
-class Flux_Texture;
+struct Flux_Texture;
 class Flux_DynamicVertexBuffer;
 class Flux_IndirectBuffer;
 class Flux_IndexBuffer;

@@ -1,33 +1,47 @@
 #include "Zenith.h"
 #include "AssetHandling/Zenith_ModelAsset.h"
+#include "AssetHandling/Zenith_AssetDatabase.h"
 
 //------------------------------------------------------------------------------
 // MeshMaterialBinding Serialization
 //------------------------------------------------------------------------------
 
+std::string Zenith_ModelAsset::MeshMaterialBinding::GetMaterialPath(uint32_t uIndex) const
+{
+	if (uIndex >= m_xMaterials.GetSize())
+	{
+		return "";
+	}
+	return m_xMaterials.Get(uIndex).GetPath();
+}
+
 void Zenith_ModelAsset::MeshMaterialBinding::WriteToDataStream(Zenith_DataStream& xStream) const
 {
-	xStream << m_strMeshPath;
+	// Write mesh GUID
+	m_xMesh.WriteToDataStream(xStream);
 
-	uint32_t uNumMaterials = static_cast<uint32_t>(m_strMaterialPaths.GetSize());
+	// Write material GUIDs
+	uint32_t uNumMaterials = static_cast<uint32_t>(m_xMaterials.GetSize());
 	xStream << uNumMaterials;
 	for (uint32_t u = 0; u < uNumMaterials; u++)
 	{
-		xStream << m_strMaterialPaths.Get(u);
+		m_xMaterials.Get(u).WriteToDataStream(xStream);
 	}
 }
 
 void Zenith_ModelAsset::MeshMaterialBinding::ReadFromDataStream(Zenith_DataStream& xStream)
 {
-	xStream >> m_strMeshPath;
+	// Read mesh GUID
+	m_xMesh.ReadFromDataStream(xStream);
 
+	// Read material GUIDs
 	uint32_t uNumMaterials;
 	xStream >> uNumMaterials;
 	for (uint32_t u = 0; u < uNumMaterials; u++)
 	{
-		std::string strPath;
-		xStream >> strPath;
-		m_strMaterialPaths.PushBack(strPath);
+		MaterialRef xMatRef;
+		xMatRef.ReadFromDataStream(xStream);
+		m_xMaterials.PushBack(xMatRef);
 	}
 }
 
@@ -75,7 +89,7 @@ Zenith_ModelAsset* Zenith_ModelAsset::LoadFromFile(const char* szPath)
 
 	for (uint32_t u = 0; u < pxAsset->GetNumMeshes(); u++)
 	{
-		Zenith_Log("[ModelAsset]   Mesh %u: %s", u, pxAsset->GetMeshBinding(u).m_strMeshPath.c_str());
+		Zenith_Log("[ModelAsset]   Mesh %u: %s", u, pxAsset->GetMeshBinding(u).GetMeshPath().c_str());
 	}
 
 	return pxAsset;
@@ -88,7 +102,7 @@ void Zenith_ModelAsset::Export(const char* szPath) const
 
 	for (uint32_t u = 0; u < GetNumMeshes(); u++)
 	{
-		Zenith_Log("[ModelAsset]   Mesh %u: %s", u, m_xMeshBindings.Get(u).m_strMeshPath.c_str());
+		Zenith_Log("[ModelAsset]   Mesh %u: %s", u, m_xMeshBindings.Get(u).GetMeshPath().c_str());
 	}
 
 	Zenith_DataStream xStream;
@@ -139,7 +153,8 @@ void Zenith_ModelAsset::ReadFromDataStream(Zenith_DataStream& xStream)
 
 	if (uVersion != ZENITH_MODEL_ASSET_VERSION)
 	{
-		Zenith_Log("[ModelAsset] Version mismatch: expected %u, got %u", ZENITH_MODEL_ASSET_VERSION, uVersion);
+		Zenith_Log("[ModelAsset] ERROR: Unsupported version %u (expected %u). Please re-export the asset.", uVersion, ZENITH_MODEL_ASSET_VERSION);
+		return;
 	}
 
 	// Name
@@ -178,11 +193,26 @@ void Zenith_ModelAsset::ReadFromDataStream(Zenith_DataStream& xStream)
 // Model Building
 //------------------------------------------------------------------------------
 
-void Zenith_ModelAsset::AddMesh(const std::string& strMeshPath, const Zenith_Vector<std::string>& xMaterialPaths)
+void Zenith_ModelAsset::AddMesh(const MeshRef& xMesh, const Zenith_Vector<MaterialRef>& xMaterials)
 {
 	MeshMaterialBinding xBinding;
-	xBinding.m_strMeshPath = strMeshPath;
-	xBinding.m_strMaterialPaths = xMaterialPaths;
+	xBinding.m_xMesh = xMesh;
+	xBinding.m_xMaterials = xMaterials;
+	m_xMeshBindings.PushBack(std::move(xBinding));
+}
+
+void Zenith_ModelAsset::AddMeshByPath(const std::string& strMeshPath, const Zenith_Vector<std::string>& xMaterialPaths)
+{
+	MeshMaterialBinding xBinding;
+	xBinding.m_xMesh.SetFromPath(strMeshPath);
+
+	for (u_int u = 0; u < xMaterialPaths.GetSize(); ++u)
+	{
+		MaterialRef xMatRef;
+		xMatRef.SetFromPath(xMaterialPaths.Get(u));
+		xBinding.m_xMaterials.PushBack(xMatRef);
+	}
+
 	m_xMeshBindings.PushBack(std::move(xBinding));
 }
 

@@ -24,14 +24,15 @@ extern void ExportHeightmap();
 
 int main()
 {
+	Zenith_Profiling::Initialise();
+	Zenith_Multithreading::RegisterThread(true);
+
 #ifdef ZENITH_TOOLS
 	ExportAllMeshes();
-	//ExportAllTextures();
+	ExportAllTextures();
 	//ExportHeightmap();
 #endif
 
-	Zenith_Profiling::Initialise();
-	Zenith_Multithreading::RegisterThread(true);
 	Zenith_MemoryManagement::Initialise();
 	Zenith_TaskSystem::Inititalise();
 	Zenith_UnitTests::RunAllTests();

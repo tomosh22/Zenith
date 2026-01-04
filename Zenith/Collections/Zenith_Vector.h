@@ -72,6 +72,16 @@ public:
 		m_uSize++;
 	}
 
+	void PushBack(T&& xValue)
+	{
+		while (m_uSize >= m_uCapacity) Resize();
+
+		#include "Memory/Zenith_MemoryManagement_Disabled.h"
+		new (&m_pxData[m_uSize]) T(std::move(xValue));
+		#include "Memory/Zenith_MemoryManagement_Enabled.h"
+		m_uSize++;
+	}
+
 	template<typename... Args>
 	void EmplaceBack(Args&&... args)
 	{

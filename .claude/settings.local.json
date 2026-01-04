@@ -55,7 +55,17 @@
       "Bash(\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\MSBuild\\\\Current\\\\Bin\\\\MSBuild.exe\" \"c:\\\\dev\\\\Zenith\\\\Games\\\\Sokoban\\\\Build\\\\sokoban_win64.vcxproj\" -p:Configuration=vs2022_Debug_Win64_True -p:Platform=x64 -verbosity:minimal)",
       "Bash(Select-Object -First 30)",
       "Bash(Sharpmake_Build.bat)",
-      "Bash(\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\MSBuild\\\\Current\\\\Bin\\\\MSBuild.exe\" \"c:\\\\dev\\\\Zenith\\\\Games\\\\Sokoban\\\\Build\\\\sokoban_win64.vcxproj\" -p:Configuration=vs2022_Debug_Win64_True -p:Platform=x64 -t:rebuild -verbosity:minimal)"
+      "Bash(\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\MSBuild\\\\Current\\\\Bin\\\\MSBuild.exe\" \"c:\\\\dev\\\\Zenith\\\\Games\\\\Sokoban\\\\Build\\\\sokoban_win64.vcxproj\" -p:Configuration=vs2022_Debug_Win64_True -p:Platform=x64 -t:rebuild -verbosity:minimal)",
+      "Bash(echo:*)",
+      "Bash(\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\MSBuild\\\\Current\\\\Bin\\\\MSBuild.exe\" \"c:\\\\dev\\\\Zenith\\\\Games\\\\Test\\\\Build\\\\test_win64.vcxproj\" -p:Configuration=vs2022_Debug_Win64_True -p:Platform=x64 -t:rebuild -verbosity:minimal)",
+      "Bash(\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\MSBuild\\\\Current\\\\Bin\\\\MSBuild.exe\" \"c:\\\\dev\\\\Zenith\\\\build\\\\zenith_win64.vcxproj\" -p:Configuration=vs2022_Debug_Win64_True -p:Platform=x64 -t:ClCompile -p:SelectedFiles=\"Zenith\\\\AssetHandling\\\\Zenith_AssetRef.cpp\" -verbosity:minimal)",
+      "Bash(\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\MSBuild\\\\Current\\\\Bin\\\\MSBuild.exe\" \"c:\\\\dev\\\\Zenith\\\\build\\\\zenith_win64.vcxproj\" -p:Configuration=vs2022_Debug_Win64_True -p:Platform=x64 -t:rebuild -verbosity:normal)",
+      "Bash(Select-String -Pattern \"\\(Zenith_AssetRef|error\\)\" -Context 0,2)",
+      "Bash(\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\MSBuild\\\\Current\\\\Bin\\\\MSBuild.exe\":*)",
+      "Bash(Select-Object -Last 15)",
+      "Bash(Select-String -Pattern \"\\(error|warning C|Build succeeded|Build FAILED\\)\" -Context 0,2)",
+      "Bash(Select-String -Pattern \"error|Build succeeded|Build FAILED\" -Context 0,2)",
+      "Bash(\"c:\\\\dev\\\\Zenith\\\\Games\\\\Sokoban\\\\Build\\\\output\\\\win64\\\\vs2022_debug_win64_true\\\\sokoban.exe\")"
     ],
     "deny": [],
     "ask": []

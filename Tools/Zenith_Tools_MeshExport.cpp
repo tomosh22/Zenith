@@ -906,7 +906,7 @@ static void Export(const std::string& strFilename, const std::string& strExtensi
 		Zenith_Vector<std::string> xMaterialPaths;
 		// For now, we don't export material files (keep existing texture export logic)
 		// Material paths would be added here when material export is implemented
-		xModelAsset.AddMesh(xMeshInfo.m_strMeshPath, xMaterialPaths);
+		xModelAsset.AddMeshByPath(xMeshInfo.m_strMeshPath, xMaterialPaths);
 	}
 
 	// Export model asset

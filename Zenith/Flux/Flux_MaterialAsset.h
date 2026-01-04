@@ -2,6 +2,7 @@
 #include "Flux/Flux.h"
 #include "Flux/Flux_Graphics.h"
 #include "Maths/Zenith_Maths.h"
+#include "AssetHandling/Zenith_AssetRef.h"
 #include <string>
 #include <unordered_map>
 
@@ -144,11 +145,32 @@ public:
 	void SetAlphaCutoff(float fCutoff) { m_fAlphaCutoff = fCutoff; m_bDirty = true; }
 	
 	//--------------------------------------------------------------------------
-	// Texture Paths (for serialization)
-	// NOTE: Setters load textures immediately to avoid threading issues during rendering
+	// Texture References (GUID-based)
+	// Primary way to reference textures - survives asset moves/renames
 	//--------------------------------------------------------------------------
-	
-	const std::string& GetDiffuseTexturePath() const { return m_strDiffuseTexturePath; }
+
+	const TextureRef& GetDiffuseTextureRef() const { return m_xDiffuseTextureRef; }
+	void SetDiffuseTextureRef(const TextureRef& xRef);
+
+	const TextureRef& GetNormalTextureRef() const { return m_xNormalTextureRef; }
+	void SetNormalTextureRef(const TextureRef& xRef);
+
+	const TextureRef& GetRoughnessMetallicTextureRef() const { return m_xRoughnessMetallicTextureRef; }
+	void SetRoughnessMetallicTextureRef(const TextureRef& xRef);
+
+	const TextureRef& GetOcclusionTextureRef() const { return m_xOcclusionTextureRef; }
+	void SetOcclusionTextureRef(const TextureRef& xRef);
+
+	const TextureRef& GetEmissiveTextureRef() const { return m_xEmissiveTextureRef; }
+	void SetEmissiveTextureRef(const TextureRef& xRef);
+
+	//--------------------------------------------------------------------------
+	// Texture Paths (for compatibility and editor UI)
+	// NOTE: Setters load textures immediately to avoid threading issues during rendering
+	// NOTE: These now convert paths to GUIDs internally
+	//--------------------------------------------------------------------------
+
+	std::string GetDiffuseTexturePath() const;
 	void SetDiffuseTexturePath(const std::string& strPath);
 
 	/**
@@ -158,16 +180,16 @@ public:
 	 */
 	void SetDiffuseTexture(Flux_Texture* pTexture) { m_pxDiffuseTexture = pTexture; m_bDirty = true; }
 
-	const std::string& GetNormalTexturePath() const { return m_strNormalTexturePath; }
+	std::string GetNormalTexturePath() const;
 	void SetNormalTexturePath(const std::string& strPath);
-	
-	const std::string& GetRoughnessMetallicTexturePath() const { return m_strRoughnessMetallicTexturePath; }
+
+	std::string GetRoughnessMetallicTexturePath() const;
 	void SetRoughnessMetallicTexturePath(const std::string& strPath);
-	
-	const std::string& GetOcclusionTexturePath() const { return m_strOcclusionTexturePath; }
+
+	std::string GetOcclusionTexturePath() const;
 	void SetOcclusionTexturePath(const std::string& strPath);
-	
-	const std::string& GetEmissiveTexturePath() const { return m_strEmissiveTexturePath; }
+
+	std::string GetEmissiveTexturePath() const;
 	void SetEmissiveTexturePath(const std::string& strPath);
 	
 	//--------------------------------------------------------------------------
@@ -213,17 +235,6 @@ public:
 	 */
 	void ReadFromDataStream(Zenith_DataStream& xStream);
 	
-	//--------------------------------------------------------------------------
-	// Legacy Compatibility - For existing code that uses Flux_Material
-	//--------------------------------------------------------------------------
-	
-	/**
-	 * Get the legacy Flux_Material struct populated with current textures
-	 * Note: This creates a copy - textures must be loaded first via Get*Texture() calls
-	 * @deprecated Use Flux_MaterialAsset directly instead
-	 */
-	void PopulateLegacyMaterial(class Flux_Material& xOutMaterial) const;
-
 private:
 	// Load a texture from path, with caching
 	Flux_Texture* LoadTextureFromPath(const std::string& strPath);
@@ -244,14 +255,14 @@ private:
 	bool m_bTransparent = false;
 	float m_fAlphaCutoff = 0.5f;
 	
-	// Texture paths (serialized)
-	std::string m_strDiffuseTexturePath;
-	std::string m_strNormalTexturePath;
-	std::string m_strRoughnessMetallicTexturePath;
-	std::string m_strOcclusionTexturePath;
-	std::string m_strEmissiveTexturePath;
-	
-	// Cached loaded textures (owned by this material)
+	// Texture references (GUID-based, serialized)
+	TextureRef m_xDiffuseTextureRef;
+	TextureRef m_xNormalTextureRef;
+	TextureRef m_xRoughnessMetallicTextureRef;
+	TextureRef m_xOcclusionTextureRef;
+	TextureRef m_xEmissiveTextureRef;
+
+	// Cached loaded textures (may come from TextureRef or procedural)
 	Flux_Texture* m_pxDiffuseTexture = nullptr;
 	Flux_Texture* m_pxNormalTexture = nullptr;
 	Flux_Texture* m_pxRoughnessMetallicTexture = nullptr;
@@ -283,4 +294,5 @@ private:
 };
 
 // Material file format version (increment when format changes)
-#define MATERIAL_FILE_VERSION 1
+// Version 2: GUID-based texture references via TextureRef
+#define MATERIAL_FILE_VERSION 2

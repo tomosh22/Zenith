@@ -26,4 +26,7 @@ namespace Zenith_FileAccess
 
 	// Write data to file (tools-only on Android, uses filesystem)
 	void WriteFile(const char* szFilename, const void* const pData, const uint64_t ulSize);
+
+	// Check if a file exists
+	bool FileExists(const char* szFilename);
 }

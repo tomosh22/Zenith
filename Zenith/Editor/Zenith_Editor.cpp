@@ -111,12 +111,15 @@ static std::string ShowSaveFileDialog(const char* szFilter, const char* szDefaul
 // Static member initialization
 EditorMode Zenith_Editor::s_eEditorMode = EditorMode::Stopped;
 EditorGizmoMode Zenith_Editor::s_eGizmoMode = EditorGizmoMode::Translate;
-Zenith_EntityID Zenith_Editor::s_uSelectedEntityID = INVALID_ENTITY_ID;
+
+// Multi-select state
+std::unordered_set<Zenith_EntityID> Zenith_Editor::s_xSelectedEntityIDs;
+Zenith_EntityID Zenith_Editor::s_uPrimarySelectedEntityID = INVALID_ENTITY_ID;
+Zenith_EntityID Zenith_Editor::s_uLastClickedEntityID = INVALID_ENTITY_ID;
 Zenith_Maths::Vector2 Zenith_Editor::s_xViewportSize = { 1280, 720 };
 Zenith_Maths::Vector2 Zenith_Editor::s_xViewportPos = { 0, 0 };
 bool Zenith_Editor::s_bViewportHovered = false;
 bool Zenith_Editor::s_bViewportFocused = false;
-Zenith_Scene* Zenith_Editor::s_pxBackupScene = nullptr;
 bool Zenith_Editor::s_bHasSceneBackup = false;
 std::string Zenith_Editor::s_strBackupScenePath = "";
 bool Zenith_Editor::s_bPendingSceneLoad = false;
@@ -128,7 +131,11 @@ bool Zenith_Editor::s_bPendingSceneReset = false;
 // Content Browser state
 std::string Zenith_Editor::s_strCurrentDirectory;
 std::vector<ContentBrowserEntry> Zenith_Editor::s_xDirectoryContents;
+std::vector<ContentBrowserEntry> Zenith_Editor::s_xFilteredContents;
 bool Zenith_Editor::s_bDirectoryNeedsRefresh = true;
+char Zenith_Editor::s_szSearchBuffer[256] = "";
+int Zenith_Editor::s_iAssetTypeFilter = 0;
+int Zenith_Editor::s_iSelectedContentIndex = -1;
 
 // Console state
 std::vector<ConsoleLogEntry> Zenith_Editor::s_xConsoleLogs;
@@ -180,7 +187,9 @@ void Zenith_Editor::Initialise()
 	s_strCurrentDirectory = Project_GetGameAssetsDirectory();
 
 	s_eEditorMode = EditorMode::Stopped;
-	s_uSelectedEntityID = INVALID_ENTITY_ID;
+	s_xSelectedEntityIDs.clear();
+	s_uPrimarySelectedEntityID = INVALID_ENTITY_ID;
+	s_uLastClickedEntityID = INVALID_ENTITY_ID;
 	s_eGizmoMode = EditorGizmoMode::Translate;
 
 	// Initialize material system
@@ -211,12 +220,6 @@ void Zenith_Editor::Shutdown()
 		ImGui_ImplVulkan_RemoveTexture(s_xCachedGameTextureDescriptorSet);
 		s_xCachedGameTextureDescriptorSet = VK_NULL_HANDLE;
 		s_xCachedImageView = VK_NULL_HANDLE;
-	}
-
-	if (s_pxBackupScene)
-	{
-		delete s_pxBackupScene;
-		s_pxBackupScene = nullptr;
 	}
 
 	// Reset editor camera state
@@ -766,6 +769,148 @@ void Zenith_Editor::RenderToolbar()
 	ImGui::End();
 }
 
+// Helper function to render a single entity in the hierarchy tree
+void Zenith_Editor::RenderEntityTreeNode(Zenith_Scene& xScene, Zenith_Entity& xEntity, Zenith_EntityID& uEntityToDelete, Zenith_EntityID& uDraggedEntityID, Zenith_EntityID& uDropTargetEntityID)
+{
+	Zenith_EntityID uEntityID = xEntity.GetEntityID();
+	bool bIsSelected = Zenith_Editor::IsSelected(uEntityID);
+	bool bHasChildren = xEntity.HasChildren();
+
+	// Build display name
+	std::string strDisplayName = xEntity.GetName().empty() ?
+		("Entity_" + std::to_string(uEntityID)) : xEntity.GetName();
+
+	// Count components for display
+	uint32_t uComponentCount = 0;
+	std::string strComponentSummary;
+	Zenith_ComponentRegistry& xRegistry = Zenith_ComponentRegistry::Get();
+	const auto& xEntries = xRegistry.GetEntries();
+	for (const Zenith_ComponentRegistryEntry& xEntry : xEntries)
+	{
+		if (xEntry.m_fnHasComponent(xEntity))
+		{
+			if (uComponentCount > 0)
+				strComponentSummary += ", ";
+			strComponentSummary += xEntry.m_strDisplayName;
+			uComponentCount++;
+		}
+	}
+
+	if (uComponentCount > 0)
+	{
+		strDisplayName += " [" + std::to_string(uComponentCount) + "]";
+	}
+
+	// Tree node flags
+	ImGuiTreeNodeFlags eFlags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth;
+	if (bIsSelected)
+	{
+		eFlags |= ImGuiTreeNodeFlags_Selected;
+	}
+	if (!bHasChildren)
+	{
+		eFlags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
+	}
+
+	// Render tree node
+	bool bNodeOpen = ImGui::TreeNodeEx((void*)(uintptr_t)uEntityID, eFlags, "%s", strDisplayName.c_str());
+
+	// Handle selection on click
+	if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen())
+	{
+		bool bCtrlHeld = ImGui::GetIO().KeyCtrl;
+		bool bShiftHeld = ImGui::GetIO().KeyShift;
+
+		if (bShiftHeld && Zenith_Editor::GetLastClickedEntityID() != INVALID_ENTITY_ID)
+		{
+			Zenith_Editor::SelectRange(uEntityID);
+		}
+		else if (bCtrlHeld)
+		{
+			Zenith_Editor::ToggleEntitySelection(uEntityID);
+		}
+		else
+		{
+			Zenith_Editor::SelectEntity(uEntityID, false);
+		}
+	}
+
+	// Drag source for reparenting
+	if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_None))
+	{
+		ImGui::SetDragDropPayload("HIERARCHY_ENTITY", &uEntityID, sizeof(Zenith_EntityID));
+		ImGui::Text("Move: %s", xEntity.GetName().c_str());
+		uDraggedEntityID = uEntityID;
+		ImGui::EndDragDropSource();
+	}
+
+	// Drop target for reparenting
+	if (ImGui::BeginDragDropTarget())
+	{
+		if (const ImGuiPayload* pPayload = ImGui::AcceptDragDropPayload("HIERARCHY_ENTITY"))
+		{
+			Zenith_EntityID uSourceEntityID = *(const Zenith_EntityID*)pPayload->Data;
+			// Set as child of this entity
+			uDropTargetEntityID = uEntityID;
+			uDraggedEntityID = uSourceEntityID;
+		}
+		ImGui::EndDragDropTarget();
+	}
+
+	// Show component list in tooltip on hover
+	if (ImGui::IsItemHovered() && uComponentCount > 0)
+	{
+		ImGui::SetTooltip("Components: %s", strComponentSummary.c_str());
+	}
+
+	// Context menu
+	if (ImGui::BeginPopupContextItem())
+	{
+		if (ImGui::MenuItem("Create Child Entity"))
+		{
+			Zenith_Entity xNewEntity(&xScene, "New Child");
+			xNewEntity.SetParent(uEntityID);
+			Zenith_Editor::SelectEntity(xNewEntity.GetEntityID());
+		}
+
+		if (xEntity.HasParent())
+		{
+			if (ImGui::MenuItem("Unparent"))
+			{
+				xEntity.SetParent(static_cast<Zenith_EntityID>(-1));
+			}
+		}
+
+		ImGui::Separator();
+
+		if (ImGui::MenuItem("Delete Entity"))
+		{
+			if (Zenith_Editor::IsSelected(uEntityID))
+			{
+				Zenith_Editor::DeselectEntity(uEntityID);
+			}
+			uEntityToDelete = uEntityID;
+		}
+		ImGui::EndPopup();
+	}
+
+	// Recursively render children if node is open and has children
+	if (bNodeOpen && bHasChildren)
+	{
+		const Zenith_Vector<Zenith_EntityID>& xChildren = xEntity.GetChildren();
+		for (u_int u = 0; u < xChildren.GetSize(); ++u)
+		{
+			Zenith_EntityID uChildID = xChildren.Get(u);
+			auto xChildIt = xScene.m_xEntityMap.find(uChildID);
+			if (xChildIt != xScene.m_xEntityMap.end())
+			{
+				RenderEntityTreeNode(xScene, xChildIt->second, uEntityToDelete, uDraggedEntityID, uDropTargetEntityID);
+			}
+		}
+		ImGui::TreePop();
+	}
+}
+
 void Zenith_Editor::RenderHierarchyPanel()
 {
 	ImGui::Begin("Hierarchy");
@@ -773,81 +918,75 @@ void Zenith_Editor::RenderHierarchyPanel()
 	ImGui::Text("Scene Entities:");
 	ImGui::Separator();
 
-	// Get reference to current scene
 	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
 
-	// Track entity to delete (defer deletion to avoid iterator invalidation)
+	// Track entity to delete and drag/drop targets
 	Zenith_EntityID uEntityToDelete = INVALID_ENTITY_ID;
+	Zenith_EntityID uDraggedEntityID = INVALID_ENTITY_ID;
+	Zenith_EntityID uDropTargetEntityID = INVALID_ENTITY_ID;
 
-	// Iterate through all entities in the scene
+	// Render only root entities (entities without parents)
 	for (auto& [entityID, entity] : xScene.m_xEntityMap)
 	{
-		// Check if this entity is currently selected
-		bool bIsSelected = (s_uSelectedEntityID == entityID);
-
-		// Create selectable item for entity
-		// Use entity name if available, otherwise show ID
-		std::string strDisplayName = entity.GetName().empty() ?
-			("Entity_" + std::to_string(entityID)) : entity.GetName();
-
-		// Count components on this entity
-		uint32_t uComponentCount = 0;
-		std::string strComponentSummary;
-		Zenith_ComponentRegistry& xRegistry = Zenith_ComponentRegistry::Get();
-		const auto& xEntries = xRegistry.GetEntries();
-		for (const Zenith_ComponentRegistryEntry& xEntry : xEntries)
+		if (!entity.HasParent())
 		{
-			if (xEntry.m_fnHasComponent(entity))
+			RenderEntityTreeNode(xScene, entity, uEntityToDelete, uDraggedEntityID, uDropTargetEntityID);
+		}
+	}
+
+	// Drop target for root level (unparent)
+	ImGui::Dummy(ImVec2(0, 20));
+	if (ImGui::BeginDragDropTarget())
+	{
+		if (const ImGuiPayload* pPayload = ImGui::AcceptDragDropPayload("HIERARCHY_ENTITY"))
+		{
+			Zenith_EntityID uSourceEntityID = *(const Zenith_EntityID*)pPayload->Data;
+			auto xSourceIt = xScene.m_xEntityMap.find(uSourceEntityID);
+			if (xSourceIt != xScene.m_xEntityMap.end())
 			{
-				if (uComponentCount > 0)
-					strComponentSummary += ", ";
-				strComponentSummary += xEntry.m_strDisplayName;
-				uComponentCount++;
+				xSourceIt->second.SetParent(static_cast<Zenith_EntityID>(-1));
 			}
 		}
+		ImGui::EndDragDropTarget();
+	}
 
-		// Add component count to display name
-		if (uComponentCount > 0)
+	// Handle reparenting from drag-drop
+	if (uDraggedEntityID != INVALID_ENTITY_ID && uDropTargetEntityID != INVALID_ENTITY_ID)
+	{
+		auto xDraggedIt = xScene.m_xEntityMap.find(uDraggedEntityID);
+		if (xDraggedIt != xScene.m_xEntityMap.end() && uDraggedEntityID != uDropTargetEntityID)
 		{
-			strDisplayName += " [" + std::to_string(uComponentCount) + "]";
-		}
-
-		// Add unique ID to avoid ImGui label collisions
-		std::string strLabel = strDisplayName + "##" + std::to_string(entityID);
-
-		if (ImGui::Selectable(strLabel.c_str(), bIsSelected))
-		{
-			// Select by EntityID for safer memory management
-			SelectEntity(entityID);
-		}
-
-		// Show component list in tooltip on hover
-		if (ImGui::IsItemHovered() && uComponentCount > 0)
-		{
-			ImGui::SetTooltip("Components: %s", strComponentSummary.c_str());
-		}
-
-		// Show context menu on right-click
-		if (ImGui::BeginPopupContextItem())
-		{
-			if (ImGui::MenuItem("Delete Entity"))
+			// Prevent creating circular parent-child relationships
+			bool bIsAncestor = false;
+			Zenith_EntityID uCheckID = uDropTargetEntityID;
+			while (uCheckID != static_cast<Zenith_EntityID>(-1))
 			{
-				// Clear selection if this entity is selected
-				if (s_uSelectedEntityID == entityID)
+				if (uCheckID == uDraggedEntityID)
 				{
-					ClearSelection();
+					bIsAncestor = true;
+					break;
 				}
-				// Mark for deferred deletion (can't modify map while iterating)
-				uEntityToDelete = entityID;
+				auto xCheckIt = xScene.m_xEntityMap.find(uCheckID);
+				if (xCheckIt != xScene.m_xEntityMap.end())
+				{
+					uCheckID = xCheckIt->second.GetParentEntityID();
+				}
+				else
+				{
+					break;
+				}
 			}
-			ImGui::EndPopup();
+
+			if (!bIsAncestor)
+			{
+				xDraggedIt->second.SetParent(uDropTargetEntityID);
+			}
 		}
 	}
 
 	// Perform deferred entity deletion
 	if (uEntityToDelete != INVALID_ENTITY_ID)
 	{
-		// Reset game camera entity if we're deleting it
 		if (uEntityToDelete == s_uGameCameraEntity)
 		{
 			s_uGameCameraEntity = INVALID_ENTITY_ID;
@@ -859,8 +998,6 @@ void Zenith_Editor::RenderHierarchyPanel()
 	ImGui::Separator();
 	if (ImGui::Button("+ Create Entity"))
 	{
-		// Create new entity with default name and TransformComponent
-		// The constructor handles adding to the scene and adding TransformComponent
 		Zenith_Entity xNewEntity(&xScene, "New Entity");
 		SelectEntity(xNewEntity.GetEntityID());
 	}
@@ -920,7 +1057,7 @@ void Zenith_Editor::RenderPropertiesPanel()
 		if (ImGui::Button("Add Component", ImVec2(fButtonWidth, 0)))
 		{
 			ImGui::OpenPopup("AddComponentPopup");
-			Zenith_Log("[Editor] Add Component button clicked for Entity %u", s_uSelectedEntityID);
+			Zenith_Log("[Editor] Add Component button clicked for Entity %u", s_uPrimarySelectedEntityID);
 		}
 		
 		// Add Component popup menu
@@ -948,20 +1085,20 @@ void Zenith_Editor::RenderPropertiesPanel()
 					if (ImGui::MenuItem(xEntry.m_strDisplayName.c_str()))
 					{
 						Zenith_Log("[Editor] User selected to add component: %s to Entity %u",
-							xEntry.m_strDisplayName.c_str(), s_uSelectedEntityID);
-						
+							xEntry.m_strDisplayName.c_str(), s_uPrimarySelectedEntityID);
+
 						// Add the component through the registry
 						bool bSuccess = xRegistry.TryAddComponent(i, *pxSelectedEntity);
-						
+
 						if (bSuccess)
 						{
 							Zenith_Log("[Editor] Successfully added %s component to Entity %u",
-								xEntry.m_strDisplayName.c_str(), s_uSelectedEntityID);
+								xEntry.m_strDisplayName.c_str(), s_uPrimarySelectedEntityID);
 						}
 						else
 						{
 							Zenith_Log("[Editor] ERROR: Failed to add %s component to Entity %u",
-								xEntry.m_strDisplayName.c_str(), s_uSelectedEntityID);
+								xEntry.m_strDisplayName.c_str(), s_uPrimarySelectedEntityID);
 						}
 					}
 				}
@@ -1143,7 +1280,7 @@ void Zenith_Editor::RenderGizmos()
 void Zenith_Editor::HandleGizmoInteraction()
 {
 	// Only handle gizmo interaction when viewport is hovered and entity selected
-	if (!s_bViewportHovered || s_uSelectedEntityID == INVALID_ENTITY_ID)
+	if (!s_bViewportHovered || !HasSelection())
 		return;
 
 	// Only handle in Stopped or Paused mode
@@ -1197,7 +1334,7 @@ void Zenith_Editor::HandleGizmoInteraction()
 	// Handle mouse input for gizmo interaction
 	if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_MOUSE_BUTTON_LEFT))
 	{
-		Zenith_Log("Mouse left pressed - viewport hovered=%d, selected=%d", s_bViewportHovered, s_uSelectedEntityID);
+		Zenith_Log("Mouse left pressed - viewport hovered=%d, selected=%zu", s_bViewportHovered, s_xSelectedEntityIDs.size());
 		Flux_Gizmos::BeginInteraction(xRayOrigin, xRayDir);
 		Zenith_Log("After BeginInteraction: IsInteracting=%d", Flux_Gizmos::IsInteracting());
 	}
@@ -1301,13 +1438,6 @@ void Zenith_Editor::SetEditorMode(EditorMode eMode)
 			Zenith_Log("Warning: No scene backup available to restore");
 		}
 
-		// Legacy cleanup
-		if (s_pxBackupScene)
-		{
-			delete s_pxBackupScene;
-			s_pxBackupScene = nullptr;
-		}
-
 		// Clear the game camera reference since scene will be reloaded
 		s_uGameCameraEntity = INVALID_ENTITY_ID;
 	}
@@ -1326,42 +1456,169 @@ void Zenith_Editor::SetEditorMode(EditorMode eMode)
 	}
 }
 
-void Zenith_Editor::SelectEntity(Zenith_EntityID uEntityID)
+//------------------------------------------------------------------------------
+// Multi-Select System Implementation
+//------------------------------------------------------------------------------
+
+void Zenith_Editor::SelectEntity(Zenith_EntityID uEntityID, bool bAddToSelection)
 {
-	s_uSelectedEntityID = uEntityID;
-	
-	if (uEntityID != INVALID_ENTITY_ID)
+	if (uEntityID == INVALID_ENTITY_ID)
 	{
-		Zenith_Log("Editor: Selected entity %u", uEntityID);
-		
-		// Update Flux_Gizmos target entity
-		Zenith_Entity* pxEntity = GetSelectedEntity();
-		if (pxEntity)
+		return;
+	}
+
+	if (bAddToSelection)
+	{
+		// Add to existing selection
+		s_xSelectedEntityIDs.insert(uEntityID);
+	}
+	else
+	{
+		// Replace selection
+		s_xSelectedEntityIDs.clear();
+		s_xSelectedEntityIDs.insert(uEntityID);
+	}
+
+	// Update primary selection and last clicked
+	s_uPrimarySelectedEntityID = uEntityID;
+	s_uLastClickedEntityID = uEntityID;
+
+	Zenith_Log("Editor: Selected entity %u (total: %zu)", uEntityID, s_xSelectedEntityIDs.size());
+
+	// Update Flux_Gizmos target entity (primary selection)
+	Zenith_Entity* pxEntity = GetSelectedEntity();
+	if (pxEntity)
+	{
+		Flux_Gizmos::SetTargetEntity(pxEntity);
+	}
+}
+
+void Zenith_Editor::SelectRange(Zenith_EntityID uEndEntityID)
+{
+	if (s_uLastClickedEntityID == INVALID_ENTITY_ID || uEndEntityID == INVALID_ENTITY_ID)
+	{
+		// No start point for range, just select the end entity
+		SelectEntity(uEndEntityID, false);
+		return;
+	}
+
+	// For range selection, we need to select all entities "between" start and end
+	// Since entity IDs may not be contiguous, we iterate through the entity map
+	// and select all entities with IDs in the range [min(start,end), max(start,end)]
+	Zenith_EntityID uStart = std::min(s_uLastClickedEntityID, uEndEntityID);
+	Zenith_EntityID uEnd = std::max(s_uLastClickedEntityID, uEndEntityID);
+
+	// Clear existing selection for shift+click (standard behavior)
+	s_xSelectedEntityIDs.clear();
+
+	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+
+	// Select all entities in the ID range that exist in the scene
+	for (auto& [entityID, entity] : xScene.m_xEntityMap)
+	{
+		if (entityID >= uStart && entityID <= uEnd)
 		{
-			Flux_Gizmos::SetTargetEntity(pxEntity);
+			s_xSelectedEntityIDs.insert(entityID);
 		}
 	}
+
+	// Update primary selection to the end entity
+	s_uPrimarySelectedEntityID = uEndEntityID;
+	// Keep s_uLastClickedEntityID unchanged for further range selections
+
+	Zenith_Log("Editor: Range selected %zu entities", s_xSelectedEntityIDs.size());
+
+	// Update Flux_Gizmos target entity
+	Zenith_Entity* pxEntity = GetSelectedEntity();
+	if (pxEntity)
+	{
+		Flux_Gizmos::SetTargetEntity(pxEntity);
+	}
+}
+
+void Zenith_Editor::ToggleEntitySelection(Zenith_EntityID uEntityID)
+{
+	if (uEntityID == INVALID_ENTITY_ID)
+	{
+		return;
+	}
+
+	auto it = s_xSelectedEntityIDs.find(uEntityID);
+	if (it != s_xSelectedEntityIDs.end())
+	{
+		// Already selected - deselect
+		s_xSelectedEntityIDs.erase(it);
+
+		// Update primary selection if we just removed it
+		if (s_uPrimarySelectedEntityID == uEntityID)
+		{
+			s_uPrimarySelectedEntityID = s_xSelectedEntityIDs.empty() ?
+				INVALID_ENTITY_ID : *s_xSelectedEntityIDs.begin();
+		}
+
+		Zenith_Log("Editor: Deselected entity %u (total: %zu)", uEntityID, s_xSelectedEntityIDs.size());
+	}
+	else
+	{
+		// Not selected - add to selection
+		s_xSelectedEntityIDs.insert(uEntityID);
+		s_uPrimarySelectedEntityID = uEntityID;
+
+		Zenith_Log("Editor: Added entity %u to selection (total: %zu)", uEntityID, s_xSelectedEntityIDs.size());
+	}
+
+	// Update last clicked for range selection
+	s_uLastClickedEntityID = uEntityID;
+
+	// Update Flux_Gizmos target entity
+	Zenith_Entity* pxEntity = GetSelectedEntity();
+	Flux_Gizmos::SetTargetEntity(pxEntity);
 }
 
 void Zenith_Editor::ClearSelection()
 {
-	s_uSelectedEntityID = INVALID_ENTITY_ID;
+	s_xSelectedEntityIDs.clear();
+	s_uPrimarySelectedEntityID = INVALID_ENTITY_ID;
+	s_uLastClickedEntityID = INVALID_ENTITY_ID;
 	Flux_Gizmos::SetTargetEntity(nullptr);
+}
+
+void Zenith_Editor::DeselectEntity(Zenith_EntityID uEntityID)
+{
+	s_xSelectedEntityIDs.erase(uEntityID);
+
+	// Update primary selection if we deselected it
+	if (s_uPrimarySelectedEntityID == uEntityID)
+	{
+		s_uPrimarySelectedEntityID = s_xSelectedEntityIDs.empty() ?
+			INVALID_ENTITY_ID : *s_xSelectedEntityIDs.begin();
+	}
+
+	// Update gizmo target
+	Zenith_Entity* pxEntity = GetSelectedEntity();
+	Flux_Gizmos::SetTargetEntity(pxEntity);
+}
+
+bool Zenith_Editor::IsSelected(Zenith_EntityID uEntityID)
+{
+	return s_xSelectedEntityIDs.find(uEntityID) != s_xSelectedEntityIDs.end();
 }
 
 Zenith_Entity* Zenith_Editor::GetSelectedEntity()
 {
-	if (s_uSelectedEntityID == INVALID_ENTITY_ID)
+	if (s_uPrimarySelectedEntityID == INVALID_ENTITY_ID)
 		return nullptr;
 
 	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
 
 	// Check if entity still exists in the scene
-	auto it = xScene.m_xEntityMap.find(s_uSelectedEntityID);
+	auto it = xScene.m_xEntityMap.find(s_uPrimarySelectedEntityID);
 	if (it == xScene.m_xEntityMap.end())
 	{
-		// Entity no longer exists - clear selection
-		s_uSelectedEntityID = INVALID_ENTITY_ID;
+		// Entity no longer exists - remove from selection
+		s_xSelectedEntityIDs.erase(s_uPrimarySelectedEntityID);
+		s_uPrimarySelectedEntityID = s_xSelectedEntityIDs.empty() ?
+			INVALID_ENTITY_ID : *s_xSelectedEntityIDs.begin();
 		return nullptr;
 	}
 
@@ -1403,7 +1660,105 @@ void Zenith_Editor::RenderContentBrowser()
 	}
 	ImGui::Text("Path: %s", strDisplayPath.c_str());
 
+	// Search and Filter bar
 	ImGui::Separator();
+
+	// Search input
+	ImGui::SetNextItemWidth(200.0f);
+	bool bSearchChanged = ImGui::InputTextWithHint("##Search", "Search...", s_szSearchBuffer, sizeof(s_szSearchBuffer));
+
+	ImGui::SameLine();
+
+	// Asset type filter dropdown
+	const char* aszFilterTypes[] = { "All Types", "Textures", "Materials", "Meshes", "Models", "Prefabs", "Scenes", "Animations" };
+	ImGui::SetNextItemWidth(120.0f);
+	bool bFilterChanged = ImGui::Combo("##TypeFilter", &s_iAssetTypeFilter, aszFilterTypes, IM_ARRAYSIZE(aszFilterTypes));
+
+	// Apply filtering
+	if (bSearchChanged || bFilterChanged || s_xFilteredContents.empty())
+	{
+		s_xFilteredContents.clear();
+		std::string strSearch(s_szSearchBuffer);
+
+		// Convert search to lowercase for case-insensitive matching
+		std::transform(strSearch.begin(), strSearch.end(), strSearch.begin(), ::tolower);
+
+		for (const auto& xEntry : s_xDirectoryContents)
+		{
+			// Search filter
+			if (!strSearch.empty())
+			{
+				std::string strNameLower = xEntry.m_strName;
+				std::transform(strNameLower.begin(), strNameLower.end(), strNameLower.begin(), ::tolower);
+				if (strNameLower.find(strSearch) == std::string::npos)
+				{
+					continue;
+				}
+			}
+
+			// Type filter (directories always pass)
+			if (s_iAssetTypeFilter > 0 && !xEntry.m_bIsDirectory)
+			{
+				bool bPassFilter = false;
+				switch (s_iAssetTypeFilter)
+				{
+				case 1: bPassFilter = (xEntry.m_strExtension == ZENITH_TEXTURE_EXT); break;
+				case 2: bPassFilter = (xEntry.m_strExtension == ZENITH_MATERIAL_EXT); break;
+				case 3: bPassFilter = (xEntry.m_strExtension == ZENITH_MESH_EXT); break;
+				case 4: bPassFilter = (xEntry.m_strExtension == ZENITH_MODEL_EXT); break;
+				case 5: bPassFilter = (xEntry.m_strExtension == ZENITH_PREFAB_EXT); break;
+				case 6: bPassFilter = (xEntry.m_strExtension == ".zscn"); break;
+				case 7: bPassFilter = (xEntry.m_strExtension == ZENITH_ANIMATION_EXT); break;
+				}
+				if (!bPassFilter)
+				{
+					continue;
+				}
+			}
+
+			s_xFilteredContents.push_back(xEntry);
+		}
+	}
+
+	ImGui::Separator();
+
+	// Context menu for creating new assets (right-click on empty area)
+	if (ImGui::BeginPopupContextWindow("ContentBrowserContextMenu", ImGuiPopupFlags_MouseButtonRight | ImGuiPopupFlags_NoOpenOverItems))
+	{
+		if (ImGui::BeginMenu("Create"))
+		{
+			if (ImGui::MenuItem("Folder"))
+			{
+				// Create new folder
+				std::string strNewFolder = s_strCurrentDirectory + "/NewFolder";
+				int iCounter = 1;
+				while (std::filesystem::exists(strNewFolder))
+				{
+					strNewFolder = s_strCurrentDirectory + "/NewFolder" + std::to_string(iCounter++);
+				}
+				std::filesystem::create_directory(strNewFolder);
+				s_bDirectoryNeedsRefresh = true;
+			}
+			if (ImGui::MenuItem("Material"))
+			{
+				// Create new material
+				std::string strNewMaterial = s_strCurrentDirectory + "/NewMaterial" + ZENITH_MATERIAL_EXT;
+				int iCounter = 1;
+				while (std::filesystem::exists(strNewMaterial))
+				{
+					strNewMaterial = s_strCurrentDirectory + "/NewMaterial" + std::to_string(iCounter++) + ZENITH_MATERIAL_EXT;
+				}
+				Flux_MaterialAsset* pxNewMat = Flux_MaterialAsset::Create("NewMaterial");
+				if (pxNewMat)
+				{
+					pxNewMat->SaveToFile(strNewMaterial);
+					s_bDirectoryNeedsRefresh = true;
+				}
+			}
+			ImGui::EndMenu();
+		}
+		ImGui::EndPopup();
+	}
 
 	// Display directory contents in a table/grid
 	float fPanelWidth = ImGui::GetContentRegionAvail().x;
@@ -1412,15 +1767,27 @@ void Zenith_Editor::RenderContentBrowser()
 
 	if (ImGui::BeginTable("ContentBrowserTable", iColumnCount))
 	{
-		for (size_t i = 0; i < s_xDirectoryContents.size(); ++i)
+		for (size_t i = 0; i < s_xFilteredContents.size(); ++i)
 		{
-			const ContentBrowserEntry& xEntry = s_xDirectoryContents[i];
+			const ContentBrowserEntry& xEntry = s_xFilteredContents[i];
 
 			ImGui::TableNextColumn();
 			ImGui::PushID((int)i);
 
 			// Icon representation (using text for now)
 			const char* szIcon = xEntry.m_bIsDirectory ? "[DIR]" : "[FILE]";
+
+			// File type specific icons
+			if (!xEntry.m_bIsDirectory)
+			{
+				if (xEntry.m_strExtension == ZENITH_TEXTURE_EXT) szIcon = "[TEX]";
+				else if (xEntry.m_strExtension == ZENITH_MATERIAL_EXT) szIcon = "[MAT]";
+				else if (xEntry.m_strExtension == ZENITH_MESH_EXT) szIcon = "[MSH]";
+				else if (xEntry.m_strExtension == ZENITH_MODEL_EXT) szIcon = "[MDL]";
+				else if (xEntry.m_strExtension == ZENITH_PREFAB_EXT) szIcon = "[PRE]";
+				else if (xEntry.m_strExtension == ".zscn") szIcon = "[SCN]";
+				else if (xEntry.m_strExtension == ZENITH_ANIMATION_EXT) szIcon = "[ANM]";
+			}
 
 			ImGui::BeginGroup();
 
@@ -1479,7 +1846,7 @@ void Zenith_Editor::RenderContentBrowser()
 
 					ImGui::EndDragDropSource();
 				}
-				
+
 				// Double-click to open material files in editor
 				if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0))
 				{
@@ -1492,6 +1859,62 @@ void Zenith_Editor::RenderContentBrowser()
 						}
 					}
 				}
+			}
+
+			// Context menu for individual items
+			if (ImGui::BeginPopupContextItem())
+			{
+				if (ImGui::MenuItem("Show in Explorer"))
+				{
+#ifdef _WIN32
+					std::string strCmd = "explorer /select,\"" + xEntry.m_strFullPath + "\"";
+					system(strCmd.c_str());
+#endif
+				}
+				if (!xEntry.m_bIsDirectory)
+				{
+					if (ImGui::MenuItem("Delete"))
+					{
+						if (std::filesystem::remove(xEntry.m_strFullPath))
+						{
+							// Also try to remove the .zmeta file
+							std::string strMetaPath = xEntry.m_strFullPath + ".zmeta";
+							std::filesystem::remove(strMetaPath);
+							s_bDirectoryNeedsRefresh = true;
+						}
+					}
+					if (ImGui::MenuItem("Duplicate"))
+					{
+						std::filesystem::path xPath(xEntry.m_strFullPath);
+						std::string strNewPath = xPath.parent_path().string() + "/" +
+							xPath.stem().string() + "_copy" + xPath.extension().string();
+						int iCounter = 1;
+						while (std::filesystem::exists(strNewPath))
+						{
+							strNewPath = xPath.parent_path().string() + "/" +
+								xPath.stem().string() + "_copy" + std::to_string(iCounter++) + xPath.extension().string();
+						}
+						std::filesystem::copy(xEntry.m_strFullPath, strNewPath);
+						s_bDirectoryNeedsRefresh = true;
+					}
+				}
+				else
+				{
+					if (ImGui::MenuItem("Delete Folder"))
+					{
+						// Only delete empty folders for safety
+						if (std::filesystem::is_empty(xEntry.m_strFullPath))
+						{
+							std::filesystem::remove(xEntry.m_strFullPath);
+							s_bDirectoryNeedsRefresh = true;
+						}
+						else
+						{
+							Zenith_Log("[ContentBrowser] Cannot delete non-empty folder");
+						}
+					}
+				}
+				ImGui::EndPopup();
 			}
 
 			// Display truncated filename below icon
@@ -1521,6 +1944,7 @@ void Zenith_Editor::RenderContentBrowser()
 void Zenith_Editor::RefreshDirectoryContents()
 {
 	s_xDirectoryContents.clear();
+	s_xFilteredContents.clear();
 
 	try
 	{

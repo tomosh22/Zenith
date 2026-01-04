@@ -78,4 +78,22 @@ namespace Zenith_FileAccess
 		xFile.write(static_cast<const char*>(pData), ulSize);
 		xFile.close();
 	}
+
+	bool FileExists(const char* szFilename)
+	{
+		// Try AAssetManager first (APK assets)
+		if (s_pxAssetManager)
+		{
+			AAsset* pxAsset = AAssetManager_open(s_pxAssetManager, szFilename, AASSET_MODE_STREAMING);
+			if (pxAsset)
+			{
+				AAsset_close(pxAsset);
+				return true;
+			}
+		}
+
+		// Fall back to filesystem check
+		std::ifstream xFile(szFilename);
+		return xFile.good();
+	}
 }

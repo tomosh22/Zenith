@@ -54,4 +54,10 @@ namespace Zenith_FileAccess
 		xFile.write(static_cast<const char*>(pData), ulSize);
 		xFile.close();
 	}
+
+	bool FileExists(const char* szFilename)
+	{
+		std::ifstream xFile(szFilename);
+		return xFile.good();
+	}
 }

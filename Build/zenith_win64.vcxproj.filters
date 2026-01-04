@@ -430,6 +430,9 @@
     <ClCompile Include="..\Tools\Middleware\assimp\include\stb_vorbis.c">
       <Filter>Tools\Middleware\assimp\include</Filter>
     </ClCompile>
+    <ClCompile Include="..\Tools\Zenith_AssetMigration.cpp">
+      <Filter>Tools</Filter>
+    </ClCompile>
     <ClCompile Include="..\Tools\Zenith_Tools_MeshExport.cpp">
       <Filter>Tools</Filter>
     </ClCompile>
@@ -457,7 +460,19 @@
     <ClCompile Include="..\Zenith\Android\Zenith_Android_Window.cpp">
       <Filter>Android</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\AssetHandling\Zenith_AssetDatabase.cpp">
+      <Filter>AssetHandling</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_AssetHandler.cpp">
+      <Filter>AssetHandling</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\AssetHandling\Zenith_AssetMeta.cpp">
+      <Filter>AssetHandling</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\AssetHandling\Zenith_AssetRef.cpp">
+      <Filter>AssetHandling</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\AssetHandling\Zenith_FileWatcher.cpp">
       <Filter>AssetHandling</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_MeshAsset.cpp">
@@ -479,6 +494,9 @@
       <Filter>Core</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\Core\Zenith_Core.cpp">
+      <Filter>Core</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Core\Zenith_GUID.cpp">
       <Filter>Core</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\DataStream\Zenith_DataStream.cpp">
@@ -2737,6 +2755,9 @@
     <ClInclude Include="..\Tools\Middleware\assimp\include\zlib.h">
       <Filter>Tools\Middleware\assimp\include</Filter>
     </ClInclude>
+    <ClInclude Include="..\Tools\Zenith_AssetMigration.h">
+      <Filter>Tools</Filter>
+    </ClInclude>
     <ClInclude Include="..\Tools\Zenith_Tools_MeshExport.h">
       <Filter>Tools</Filter>
     </ClInclude>
@@ -2755,7 +2776,19 @@
     <ClInclude Include="..\Zenith\Android\Zenith_OS_Include.h">
       <Filter>Android</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\AssetHandling\Zenith_AssetDatabase.h">
+      <Filter>AssetHandling</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_AssetHandler.h">
+      <Filter>AssetHandling</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\AssetHandling\Zenith_AssetMeta.h">
+      <Filter>AssetHandling</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\AssetHandling\Zenith_AssetRef.h">
+      <Filter>AssetHandling</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\AssetHandling\Zenith_FileWatcher.h">
       <Filter>AssetHandling</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_MeshAsset.h">
@@ -2795,6 +2828,9 @@
       <Filter>Core</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Core\Zenith_Core.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Core\Zenith_GUID.h">
       <Filter>Core</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Core\Zenith_String.h">

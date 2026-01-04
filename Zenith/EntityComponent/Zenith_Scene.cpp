@@ -138,10 +138,11 @@ void Zenith_Scene::SaveToFile(const std::string& strFilename)
 	Zenith_DataStream xStream;
 
 	// Write file header and version
-	const u_int uMagicNumber = 0x5A53434E; // "ZSCN" in hex
-	const u_int uVersion = 1;
-	xStream << uMagicNumber;
-	xStream << uVersion;
+	// Version 3: Entity hierarchy with child IDs
+	static constexpr u_int SCENE_MAGIC = 0x5A53434E; // "ZSCN" in hex
+	static constexpr u_int SCENE_VERSION = 3;
+	xStream << SCENE_MAGIC;
+	xStream << SCENE_VERSION;
 
 	// Write the number of entities
 	u_int uNumEntities = static_cast<u_int>(m_xEntityMap.size());
@@ -204,17 +205,29 @@ void Zenith_Scene::LoadFromFile(const std::string& strFilename)
 	xStream >> uMagicNumber;
 	xStream >> uVersion;
 
-	if (uMagicNumber != 0x5A53434E) // "ZSCN"
+	static constexpr u_int SCENE_MAGIC = 0x5A53434E; // "ZSCN"
+	static constexpr u_int SCENE_VERSION_CURRENT = 3;
+	static constexpr u_int SCENE_VERSION_MIN_SUPPORTED = 3;
+
+	if (uMagicNumber != SCENE_MAGIC)
 	{
 		Zenith_Assert(false, "Invalid scene file format");
 		return;
 	}
 
-	if (uVersion != 1)
+	if (uVersion > SCENE_VERSION_CURRENT)
 	{
-		Zenith_Assert(false, "Unsupported scene file version");
+		Zenith_Assert(false, "Unsupported scene file version (newer than current)");
 		return;
 	}
+
+	if (uVersion < SCENE_VERSION_MIN_SUPPORTED)
+	{
+		Zenith_Log("[Scene] ERROR: Unsupported legacy scene format version %u. Please re-export the scene.", uVersion);
+		return;
+	}
+
+	// Current format (v3): Entity hierarchy with child IDs and GUID asset refs
 
 	// Read the number of entities
 	u_int uNumEntities;
@@ -234,6 +247,16 @@ void Zenith_Scene::LoadFromFile(const std::string& strFilename)
 		xStream >> uEntityID;
 		xStream >> uParentID;
 		xStream >> strName;
+
+		// Read child entity IDs
+		uint32_t uChildCount = 0;
+		xStream >> uChildCount;
+		// Read and discard child IDs - we'll rebuild from parent IDs after loading
+		for (uint32_t i = 0; i < uChildCount; ++i)
+		{
+			Zenith_EntityID uChildID;
+			xStream >> uChildID;
+		}
 
 		// Track maximum entity ID
 		if (uEntityID > uMaxEntityID)
@@ -258,6 +281,20 @@ void Zenith_Scene::LoadFromFile(const std::string& strFilename)
 
 		// Deserialize all components using the ComponentMeta registry
 		Zenith_ComponentMetaRegistry::Get().DeserializeEntityComponents(xEntityInMap, xStream);
+	}
+
+	// Rebuild child lists from parent IDs (ensures consistency)
+	for (auto& pair : m_xEntityMap)
+	{
+		Zenith_Entity& xEntity = pair.second;
+		if (xEntity.HasParent())
+		{
+			auto xParentIt = m_xEntityMap.find(xEntity.GetParentEntityID());
+			if (xParentIt != m_xEntityMap.end())
+			{
+				xParentIt->second.AddChild(xEntity.GetEntityID());
+			}
+		}
 	}
 
 	// Update m_uNextEntityID to be one more than the highest loaded entity ID

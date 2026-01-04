@@ -77,6 +77,48 @@ private:
 	static void TestEventDeferredQueue();
 	static void TestEventMultipleSubscribers();
 	static void TestEventClearSubscriptions();
+
+	// GUID system tests
+	static void TestGUIDGeneration();
+	static void TestGUIDStringRoundTrip();
+	static void TestGUIDSerializationRoundTrip();
+	static void TestGUIDComparisonOperators();
+	static void TestGUIDHashDistribution();
+	static void TestGUIDInvalidDetection();
+
+	// Asset meta file tests
+	static void TestAssetMetaSaveLoadRoundTrip();
+	static void TestAssetMetaVersionCompatibility();
+	static void TestAssetMetaImportSettings();
+	static void TestAssetMetaGetMetaPath();
+
+	// Asset database tests
+	static void TestAssetDatabaseGUIDToPath();
+	static void TestAssetDatabasePathToGUID();
+	static void TestAssetDatabaseDependencyTracking();
+	static void TestAssetDatabaseDependentLookup();
+
+	// Asset reference tests
+	static void TestAssetRefGUIDStorage();
+	static void TestAssetRefSerializationRoundTrip();
+	static void TestAssetRefFromPath();
+	static void TestAssetRefInvalidHandling();
+
+	// Entity hierarchy tests
+	static void TestEntityAddChild();
+	static void TestEntityRemoveChild();
+	static void TestEntityGetChildren();
+	static void TestEntityReparenting();
+	static void TestEntityChildCleanupOnDelete();
+	static void TestEntityHierarchySerialization();
+
+	// Prefab system tests
+	static void TestPrefabCreateFromEntity();
+	static void TestPrefabInstantiation();
+	static void TestPrefabSaveLoadRoundTrip();
+	static void TestPrefabOverrides();
+	static void TestPrefabVariantCreation();
+	static void TestPrefabNestedPrefabs();
 };
 
 // Include editor tests separately as they are only available in ZENITH_TOOLS builds
