@@ -1,0 +1,165 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="17.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a">
+      <Configuration>arm64_v8a_vs2022_Debug_Agde_False</Configuration>
+      <Platform>Android-arm64-v8a</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a">
+      <Configuration>arm64_v8a_vs2022_Release_Agde_False</Configuration>
+      <Platform>Android-arm64-v8a</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{39E7AD6A-8D34-F3BA-C0FE-11075EE221B3}</ProjectGuid>
+    <DefaultLanguage>en-US</DefaultLanguage>
+    <RootNamespace>Exploration</RootNamespace>
+    <ProjectName>Exploration</ProjectName>
+  </PropertyGroup>
+  <PropertyGroup Label="Globals" Condition="'$(Platform)'=='Android-arm64-v8a' Or '$(Platform)'=='Android-x86_64' Or '$(Platform)'=='Android-armeabi-v7a' Or '$(Platform)'=='Android-x86'">
+    <PlatformToolset>Clang</PlatformToolset>
+  </PropertyGroup>
+  <PropertyGroup Label="Globals">
+    <WindowsTargetPlatformVersion>10.0.19041.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <UseOfStl>cpp_shared</UseOfStl>
+    <ThumbMode>Disabled</ThumbMode>
+    <LinkTimeOptimization>None</LinkTimeOptimization>
+    <ClangLinkType>lld</ClangLinkType>
+    <CppLanguageStandard>cpp11</CppLanguageStandard>
+    <CLanguageStandard>c11</CLanguageStandard>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'" Label="Configuration">
+    <ConfigurationType>DynamicLibrary</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <UseOfStl>cpp_shared</UseOfStl>
+    <ThumbMode>Disabled</ThumbMode>
+    <LinkTimeOptimization>None</LinkTimeOptimization>
+    <ClangLinkType>lld</ClangLinkType>
+    <CppLanguageStandard>cpp11</CppLanguageStandard>
+    <CLanguageStandard>c11</CLanguageStandard>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">
+    <TargetName>libexploration</TargetName>
+    <OutDir>$(ProjectDir)output\agde\arm64_v8a_vs2022_debug_agde_false\</OutDir>
+    <IntDir>obj\agde\arm64_v8a_vs2022_debug_agde_false\</IntDir>
+    <TargetExt>.so</TargetExt>
+    <OutputFile>output\agde\arm64_v8a_vs2022_debug_agde_false\libexploration.so</OutputFile>
+    <IncludePath>$(AndroidNdkDirectory)\sources\android</IncludePath>
+    <NativeBuildBackend>MultiToolTaskMSBuild</NativeBuildBackend>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">
+    <TargetName>libexploration</TargetName>
+    <OutDir>$(ProjectDir)output\agde\arm64_v8a_vs2022_release_agde_false\</OutDir>
+    <IntDir>obj\agde\arm64_v8a_vs2022_release_agde_false\</IntDir>
+    <TargetExt>.so</TargetExt>
+    <OutputFile>output\agde\arm64_v8a_vs2022_release_agde_false\libexploration.so</OutputFile>
+    <IncludePath>$(AndroidNdkDirectory)\sources\android</IncludePath>
+    <NativeBuildBackend>MultiToolTaskMSBuild</NativeBuildBackend>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">
+    <ClCompile>
+      <WarningLevel>EnableFormatWarnings</WarningLevel>
+      <Optimization>Disabled</Optimization>
+      <PreprocessorDefinitions>ENGINE_ASSETS_DIR="c:/dev/zenith/Zenith/Assets/";GAME_ASSETS_DIR="c:/dev/zenith/Games/Exploration/Assets/";GLM_ENABLE_EXPERIMENTAL;NOMINMAX;ZENITH_ANDROID;ZENITH_DEBUG;ZENITH_ROOT="c:/dev/zenith/";ZENITH_VULKAN;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>..\..;..;..\..\..\middleware;..\..\..\middleware\glm-master;..\..\..\middleware\imgui-docking;..\..\..\middleware\joltphysics-5.4.0;..\..\..\middleware\stb;..\..\..\middleware\vma;..\..\..\zenith;..\..\..\zenith\android;..\..\..\zenith\core;..\..\..\zenith\vulkan;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <ClangDebugInformationFormat>FullDebug</ClangDebugInformationFormat>
+      <FloatABI>Default</FloatABI>
+      <OmitFramePointers>false</OmitFramePointers>
+      <UndefineAllPreprocessorDefinitions>false</UndefineAllPreprocessorDefinitions>
+      <ExceptionHandling>Disabled</ExceptionHandling>
+      <StackProtectionLevel>Strong</StackProtectionLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <DataLevelLinking>true</DataLevelLinking>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <AssemblerOutput>NoListing</AssemblerOutput>
+      <CompileAs>Default</CompileAs>
+      <UnwindTables>true</UnwindTables>
+      <AddressSignificanceTable>false</AddressSignificanceTable>
+      <ClangDiagnosticsFormat>MSVC</ClangDiagnosticsFormat>
+      <PositionIndependentCode>true</PositionIndependentCode>
+    </ClCompile>
+    <Link>
+      <DebuggerSymbolInformation>true</DebuggerSymbolInformation>
+      <OutputFile>output\agde\arm64_v8a_vs2022_debug_agde_false\libexploration.so</OutputFile>
+      <AdditionalLibraryDirectories>$(StlLibraryPath);..\..\..\build\output\agde\arm64_v8a_vs2022_debug_agde_false;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>-l:libzenith.a;%(AdditionalDependencies);</AdditionalDependencies>
+      <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
+      <GenerateMapFile>output\agde\arm64_v8a_vs2022_debug_agde_false\libexploration.map</GenerateMapFile>
+      <IncrementalLink>false</IncrementalLink>
+      <FunctionBinding>true</FunctionBinding>
+      <NoExecStackRequired>true</NoExecStackRequired>
+      <UnresolvedSymbolReferences>true</UnresolvedSymbolReferences>
+      <Relocation>true</Relocation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">
+    <ClCompile>
+      <WarningLevel>EnableFormatWarnings</WarningLevel>
+      <Optimization>MaxSpeed</Optimization>
+      <PreprocessorDefinitions>ENGINE_ASSETS_DIR="c:/dev/zenith/Zenith/Assets/";GAME_ASSETS_DIR="c:/dev/zenith/Games/Exploration/Assets/";GLM_ENABLE_EXPERIMENTAL;NDEBUG;NOMINMAX;ZENITH_ANDROID;ZENITH_ROOT="c:/dev/zenith/";ZENITH_VULKAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>..\..;..;..\..\..\middleware;..\..\..\middleware\glm-master;..\..\..\middleware\imgui-docking;..\..\..\middleware\joltphysics-5.4.0;..\..\..\middleware\stb;..\..\..\middleware\vma;..\..\..\zenith;..\..\..\zenith\android;..\..\..\zenith\core;..\..\..\zenith\vulkan;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <ClangDebugInformationFormat>FullDebug</ClangDebugInformationFormat>
+      <FloatABI>Default</FloatABI>
+      <OmitFramePointers>false</OmitFramePointers>
+      <UndefineAllPreprocessorDefinitions>false</UndefineAllPreprocessorDefinitions>
+      <ExceptionHandling>Disabled</ExceptionHandling>
+      <StackProtectionLevel>Strong</StackProtectionLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <DataLevelLinking>true</DataLevelLinking>
+      <RuntimeTypeInfo>false</RuntimeTypeInfo>
+      <AssemblerOutput>NoListing</AssemblerOutput>
+      <CompileAs>Default</CompileAs>
+      <UnwindTables>true</UnwindTables>
+      <AddressSignificanceTable>false</AddressSignificanceTable>
+      <ClangDiagnosticsFormat>MSVC</ClangDiagnosticsFormat>
+      <PositionIndependentCode>true</PositionIndependentCode>
+    </ClCompile>
+    <Link>
+      <DebuggerSymbolInformation>true</DebuggerSymbolInformation>
+      <OutputFile>output\agde\arm64_v8a_vs2022_release_agde_false\libexploration.so</OutputFile>
+      <AdditionalLibraryDirectories>$(StlLibraryPath);..\..\..\build\output\agde\arm64_v8a_vs2022_release_agde_false;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>-l:libzenith.a;%(AdditionalDependencies);</AdditionalDependencies>
+      <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
+      <GenerateMapFile>output\agde\arm64_v8a_vs2022_release_agde_false\libexploration.map</GenerateMapFile>
+      <IncrementalLink>false</IncrementalLink>
+      <FunctionBinding>true</FunctionBinding>
+      <NoExecStackRequired>true</NoExecStackRequired>
+      <UnresolvedSymbolReferences>true</UnresolvedSymbolReferences>
+      <Relocation>true</Relocation>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClInclude Include="..\Components\Exploration_AsyncLoader.h" />
+    <ClInclude Include="..\Components\Exploration_AtmosphereController.h" />
+    <ClInclude Include="..\Components\Exploration_Behaviour.h" />
+    <ClInclude Include="..\Components\Exploration_Config.h" />
+    <ClInclude Include="..\Components\Exploration_PlayerController.h" />
+    <ClInclude Include="..\Components\Exploration_TerrainExplorer.h" />
+    <ClInclude Include="..\Components\Exploration_UIManager.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="..\Exploration.cpp" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\..\build\zenith_agde.vcxproj">
+      <Project>{F83CFCD6-A014-178D-D9F6-2D4FDA358FCD}</Project>
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
+  </ItemGroup>
+</Project>

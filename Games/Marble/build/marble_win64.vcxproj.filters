@@ -7,7 +7,25 @@
     <ClInclude Include="..\Components\Marble_Behaviour.h">
       <Filter>Components</Filter>
     </ClInclude>
+    <ClInclude Include="..\Components\Marble_CameraFollow.h">
+      <Filter>Components</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Components\Marble_CollectibleSystem.h">
+      <Filter>Components</Filter>
+    </ClInclude>
     <ClInclude Include="..\Components\Marble_Config.h">
+      <Filter>Components</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Components\Marble_Input.h">
+      <Filter>Components</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Components\Marble_LevelGenerator.h">
+      <Filter>Components</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Components\Marble_PhysicsController.h">
+      <Filter>Components</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Components\Marble_UIManager.h">
       <Filter>Components</Filter>
     </ClInclude>
   </ItemGroup>

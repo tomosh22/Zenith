@@ -113,3 +113,51 @@ public class MarbleGameProject : GameProject
 		// Marble-specific configuration if needed
 	}
 }
+
+// Runner game project - Animation + Terrain showcase
+[Sharpmake.Generate]
+public class RunnerGameProject : GameProject
+{
+	public override string GameName => "Runner";
+
+	public RunnerGameProject() : base()
+	{
+		// Runner-specific configuration if needed
+	}
+}
+
+// Combat game project - Animation + Events + IK showcase
+[Sharpmake.Generate]
+public class CombatGameProject : GameProject
+{
+	public override string GameName => "Combat";
+
+	public CombatGameProject() : base()
+	{
+		// Combat-specific configuration if needed
+	}
+}
+
+// Exploration game project - Terrain + Atmosphere showcase
+[Sharpmake.Generate]
+public class ExplorationGameProject : GameProject
+{
+	public override string GameName => "Exploration";
+
+	public ExplorationGameProject() : base()
+	{
+		// Exploration-specific configuration if needed
+	}
+}
+
+// Survival game project - Task System + Multi-Feature showcase
+[Sharpmake.Generate]
+public class SurvivalGameProject : GameProject
+{
+	public override string GameName => "Survival";
+
+	public SurvivalGameProject() : base()
+	{
+		// Survival-specific configuration if needed
+	}
+}

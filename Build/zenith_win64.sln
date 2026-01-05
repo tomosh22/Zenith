@@ -1,10 +1,18 @@
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Combat", "..\Games\Combat\build\combat_win64.vcxproj", "{19FF9295-5CA7-AD0E-181D-F2B242060690}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Exploration", "..\Games\Exploration\build\exploration_win64.vcxproj", "{5F241163-C637-2B7E-9F56-06B99F55A28A}"
+EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "FluxCompiler", "..\FluxCompiler\fluxcompiler_win64.vcxproj", "{1D9D3DA8-4BF0-B588-C7B8-08CC083FF800}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Marble", "..\Games\Marble\build\marble_win64.vcxproj", "{9D25C12F-FF1B-3963-2355-32BAEBF90D9A}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Runner", "..\Games\Runner\build\runner_win64.vcxproj", "{565A18B3-933D-983B-7814-D98F99B39CC7}"
+EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Sokoban", "..\Games\Sokoban\Build\sokoban_win64.vcxproj", "{0CB1856A-F3B3-0D25-65A6-EF743537AB4E}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Survival", "..\Games\Survival\build\survival_win64.vcxproj", "{4663B976-FAB1-3C31-0EBB-D9B2196186B2}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Zenith", "zenith_win64.vcxproj", "{11BEC1C0-98B7-E167-86B0-B8D5D8D10E27}"
 EndProject
@@ -16,6 +24,22 @@ Global
 		vs2022_Release_Win64_True|x64 = vs2022_Release_Win64_True|x64
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{19FF9295-5CA7-AD0E-181D-F2B242060690}.vs2022_Debug_Win64_False|x64.ActiveCfg = vs2022_Debug_Win64_False|x64
+		{19FF9295-5CA7-AD0E-181D-F2B242060690}.vs2022_Debug_Win64_False|x64.Build.0 = vs2022_Debug_Win64_False|x64
+		{19FF9295-5CA7-AD0E-181D-F2B242060690}.vs2022_Debug_Win64_True|x64.ActiveCfg = vs2022_Debug_Win64_True|x64
+		{19FF9295-5CA7-AD0E-181D-F2B242060690}.vs2022_Debug_Win64_True|x64.Build.0 = vs2022_Debug_Win64_True|x64
+		{19FF9295-5CA7-AD0E-181D-F2B242060690}.vs2022_Release_Win64_False|x64.ActiveCfg = vs2022_Release_Win64_False|x64
+		{19FF9295-5CA7-AD0E-181D-F2B242060690}.vs2022_Release_Win64_False|x64.Build.0 = vs2022_Release_Win64_False|x64
+		{19FF9295-5CA7-AD0E-181D-F2B242060690}.vs2022_Release_Win64_True|x64.ActiveCfg = vs2022_Release_Win64_True|x64
+		{19FF9295-5CA7-AD0E-181D-F2B242060690}.vs2022_Release_Win64_True|x64.Build.0 = vs2022_Release_Win64_True|x64
+		{5F241163-C637-2B7E-9F56-06B99F55A28A}.vs2022_Debug_Win64_False|x64.ActiveCfg = vs2022_Debug_Win64_False|x64
+		{5F241163-C637-2B7E-9F56-06B99F55A28A}.vs2022_Debug_Win64_False|x64.Build.0 = vs2022_Debug_Win64_False|x64
+		{5F241163-C637-2B7E-9F56-06B99F55A28A}.vs2022_Debug_Win64_True|x64.ActiveCfg = vs2022_Debug_Win64_True|x64
+		{5F241163-C637-2B7E-9F56-06B99F55A28A}.vs2022_Debug_Win64_True|x64.Build.0 = vs2022_Debug_Win64_True|x64
+		{5F241163-C637-2B7E-9F56-06B99F55A28A}.vs2022_Release_Win64_False|x64.ActiveCfg = vs2022_Release_Win64_False|x64
+		{5F241163-C637-2B7E-9F56-06B99F55A28A}.vs2022_Release_Win64_False|x64.Build.0 = vs2022_Release_Win64_False|x64
+		{5F241163-C637-2B7E-9F56-06B99F55A28A}.vs2022_Release_Win64_True|x64.ActiveCfg = vs2022_Release_Win64_True|x64
+		{5F241163-C637-2B7E-9F56-06B99F55A28A}.vs2022_Release_Win64_True|x64.Build.0 = vs2022_Release_Win64_True|x64
 		{1D9D3DA8-4BF0-B588-C7B8-08CC083FF800}.vs2022_Debug_Win64_False|x64.ActiveCfg = vs2022_Debug_Win64_False|x64
 		{1D9D3DA8-4BF0-B588-C7B8-08CC083FF800}.vs2022_Debug_Win64_False|x64.Build.0 = vs2022_Debug_Win64_False|x64
 		{1D9D3DA8-4BF0-B588-C7B8-08CC083FF800}.vs2022_Debug_Win64_True|x64.ActiveCfg = vs2022_Debug_Win64_True|x64
@@ -32,6 +56,14 @@ Global
 		{9D25C12F-FF1B-3963-2355-32BAEBF90D9A}.vs2022_Release_Win64_False|x64.Build.0 = vs2022_Release_Win64_False|x64
 		{9D25C12F-FF1B-3963-2355-32BAEBF90D9A}.vs2022_Release_Win64_True|x64.ActiveCfg = vs2022_Release_Win64_True|x64
 		{9D25C12F-FF1B-3963-2355-32BAEBF90D9A}.vs2022_Release_Win64_True|x64.Build.0 = vs2022_Release_Win64_True|x64
+		{565A18B3-933D-983B-7814-D98F99B39CC7}.vs2022_Debug_Win64_False|x64.ActiveCfg = vs2022_Debug_Win64_False|x64
+		{565A18B3-933D-983B-7814-D98F99B39CC7}.vs2022_Debug_Win64_False|x64.Build.0 = vs2022_Debug_Win64_False|x64
+		{565A18B3-933D-983B-7814-D98F99B39CC7}.vs2022_Debug_Win64_True|x64.ActiveCfg = vs2022_Debug_Win64_True|x64
+		{565A18B3-933D-983B-7814-D98F99B39CC7}.vs2022_Debug_Win64_True|x64.Build.0 = vs2022_Debug_Win64_True|x64
+		{565A18B3-933D-983B-7814-D98F99B39CC7}.vs2022_Release_Win64_False|x64.ActiveCfg = vs2022_Release_Win64_False|x64
+		{565A18B3-933D-983B-7814-D98F99B39CC7}.vs2022_Release_Win64_False|x64.Build.0 = vs2022_Release_Win64_False|x64
+		{565A18B3-933D-983B-7814-D98F99B39CC7}.vs2022_Release_Win64_True|x64.ActiveCfg = vs2022_Release_Win64_True|x64
+		{565A18B3-933D-983B-7814-D98F99B39CC7}.vs2022_Release_Win64_True|x64.Build.0 = vs2022_Release_Win64_True|x64
 		{0CB1856A-F3B3-0D25-65A6-EF743537AB4E}.vs2022_Debug_Win64_False|x64.ActiveCfg = vs2022_Debug_Win64_False|x64
 		{0CB1856A-F3B3-0D25-65A6-EF743537AB4E}.vs2022_Debug_Win64_False|x64.Build.0 = vs2022_Debug_Win64_False|x64
 		{0CB1856A-F3B3-0D25-65A6-EF743537AB4E}.vs2022_Debug_Win64_True|x64.ActiveCfg = vs2022_Debug_Win64_True|x64
@@ -40,6 +72,14 @@ Global
 		{0CB1856A-F3B3-0D25-65A6-EF743537AB4E}.vs2022_Release_Win64_False|x64.Build.0 = vs2022_Release_Win64_False|x64
 		{0CB1856A-F3B3-0D25-65A6-EF743537AB4E}.vs2022_Release_Win64_True|x64.ActiveCfg = vs2022_Release_Win64_True|x64
 		{0CB1856A-F3B3-0D25-65A6-EF743537AB4E}.vs2022_Release_Win64_True|x64.Build.0 = vs2022_Release_Win64_True|x64
+		{4663B976-FAB1-3C31-0EBB-D9B2196186B2}.vs2022_Debug_Win64_False|x64.ActiveCfg = vs2022_Debug_Win64_False|x64
+		{4663B976-FAB1-3C31-0EBB-D9B2196186B2}.vs2022_Debug_Win64_False|x64.Build.0 = vs2022_Debug_Win64_False|x64
+		{4663B976-FAB1-3C31-0EBB-D9B2196186B2}.vs2022_Debug_Win64_True|x64.ActiveCfg = vs2022_Debug_Win64_True|x64
+		{4663B976-FAB1-3C31-0EBB-D9B2196186B2}.vs2022_Debug_Win64_True|x64.Build.0 = vs2022_Debug_Win64_True|x64
+		{4663B976-FAB1-3C31-0EBB-D9B2196186B2}.vs2022_Release_Win64_False|x64.ActiveCfg = vs2022_Release_Win64_False|x64
+		{4663B976-FAB1-3C31-0EBB-D9B2196186B2}.vs2022_Release_Win64_False|x64.Build.0 = vs2022_Release_Win64_False|x64
+		{4663B976-FAB1-3C31-0EBB-D9B2196186B2}.vs2022_Release_Win64_True|x64.ActiveCfg = vs2022_Release_Win64_True|x64
+		{4663B976-FAB1-3C31-0EBB-D9B2196186B2}.vs2022_Release_Win64_True|x64.Build.0 = vs2022_Release_Win64_True|x64
 		{11BEC1C0-98B7-E167-86B0-B8D5D8D10E27}.vs2022_Debug_Win64_False|x64.ActiveCfg = vs2022_Debug_Win64_False|x64
 		{11BEC1C0-98B7-E167-86B0-B8D5D8D10E27}.vs2022_Debug_Win64_False|x64.Build.0 = vs2022_Debug_Win64_False|x64
 		{11BEC1C0-98B7-E167-86B0-B8D5D8D10E27}.vs2022_Debug_Win64_True|x64.ActiveCfg = vs2022_Debug_Win64_True|x64

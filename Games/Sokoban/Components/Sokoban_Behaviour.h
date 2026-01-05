@@ -1,4 +1,24 @@
 #pragma once
+/**
+ * Sokoban_Behaviour.h - Main game coordinator
+ *
+ * Demonstrates: Zenith_ScriptBehaviour lifecycle hooks
+ *
+ * This is the main behavior that coordinates all game systems:
+ * - Input handling (Sokoban_Input.h)
+ * - Game logic (Sokoban_GridLogic.h)
+ * - 3D rendering (Sokoban_Rendering.h)
+ * - Level generation (Sokoban_LevelGenerator.h)
+ * - Level validation (Sokoban_Solver.h)
+ * - UI updates (Sokoban_UIManager.h)
+ *
+ * Key lifecycle hooks:
+ * - OnAwake()  - Called at RUNTIME creation only
+ * - OnStart()  - Called before first OnUpdate
+ * - OnUpdate() - Called every frame
+ * - RenderPropertiesPanel() - Editor UI (tools build)
+ */
+
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
@@ -10,10 +30,15 @@
 #include "Flux/Flux_MaterialAsset.h"
 #include "AssetHandling/Zenith_AssetHandler.h"
 
+// Include extracted modules
+#include "Sokoban_Input.h"
+#include "Sokoban_GridLogic.h"
+#include "Sokoban_Rendering.h"
+#include "Sokoban_LevelGenerator.h"
+#include "Sokoban_Solver.h"
+#include "Sokoban_UIManager.h"
+
 #include <random>
-#include <queue>
-#include <unordered_set>
-#include <algorithm>
 
 #ifdef ZENITH_TOOLS
 #include "imgui.h"
@@ -37,56 +62,29 @@ namespace Sokoban
 	extern Flux_MaterialAsset* g_pxPlayerMaterial;
 	extern Flux_MaterialAsset* g_pxTargetMaterial;
 
-	// Prefabs for runtime instantiation
 	extern Zenith_Prefab* g_pxTilePrefab;
 	extern Zenith_Prefab* g_pxBoxPrefab;
 	extern Zenith_Prefab* g_pxPlayerPrefab;
 }
 
+// Note: SokobanTileType and SokobanDirection enums are defined in Sokoban_GridLogic.h
+
 // ============================================================================
-// CONFIGURATION CONSTANTS - Modify these to tune gameplay
+// Configuration Constants
 // ============================================================================
-static constexpr uint32_t s_uMinGridSize = 8;
-static constexpr uint32_t s_uMaxGridSize = 16;
+static constexpr uint32_t s_uMaxGridSizeConfig = 16;
 static constexpr float s_fAnimationDuration = 0.1f;
-static constexpr uint32_t s_uMinBoxes = 2;
-static constexpr uint32_t s_uMaxBoxes = 5;
-static constexpr uint32_t s_uMinMovesSolution = 5;  // Minimum moves for a valid level
-static constexpr uint32_t s_uMaxSolverStates = 100000;  // Limit solver state space
-static constexpr float s_fTileScale = 0.9f;  // Scale of tiles (gap between them)
-static constexpr float s_fFloorHeight = 0.1f;
-static constexpr float s_fWallHeight = 0.8f;
-static constexpr float s_fBoxHeight = 0.5f;
-static constexpr float s_fPlayerHeight = 0.5f;
+
 // ============================================================================
-
-enum SokobanTileType
-{
-	SOKOBAN_TILE_FLOOR,
-	SOKOBAN_TILE_WALL,
-	SOKOBAN_TILE_TARGET,
-	SOKOBAN_TILE_BOX,
-	SOKOBAN_TILE_BOX_ON_TARGET,
-	SOKOBAN_TILE_PLAYER,
-	SOKOBAN_TILE_COUNT
-};
-
-enum SokobanDirection
-{
-	SOKOBAN_DIR_UP,
-	SOKOBAN_DIR_DOWN,
-	SOKOBAN_DIR_LEFT,
-	SOKOBAN_DIR_RIGHT,
-	SOKOBAN_DIR_NONE
-};
-
+// Main Behavior Class
+// ============================================================================
 class Sokoban_Behaviour ZENITH_FINAL : Zenith_ScriptBehaviour
 {
 	friend class Zenith_ScriptComponent;
 public:
 	ZENITH_BEHAVIOUR_TYPE_NAME(Sokoban_Behaviour)
 
-	static constexpr uint32_t s_uMaxGridCells = s_uMaxGridSize * s_uMaxGridSize;
+	static constexpr uint32_t s_uMaxGridCells = s_uMaxGridSizeConfig * s_uMaxGridSizeConfig;
 
 	Sokoban_Behaviour() = delete;
 	Sokoban_Behaviour(Zenith_Entity& xParentEntity)
@@ -119,17 +117,21 @@ public:
 		memset(m_abTargets, false, sizeof(m_abTargets));
 		memset(m_abBoxes, false, sizeof(m_abBoxes));
 	}
+
 	~Sokoban_Behaviour() = default;
 
+	// ========================================================================
+	// Lifecycle Hooks - Called by engine
+	// ========================================================================
+
 	/**
-	 * OnAwake - Lifecycle hook.
-	 * Called when behavior is attached at RUNTIME (not during scene loading).
-	 * Use for: Getting asset references, procedural generation.
+	 * OnAwake - Called when behavior is attached at RUNTIME
+	 * NOT called during scene loading/deserialization.
+	 * Use for: Initial resource setup, procedural generation.
 	 */
 	void OnAwake() ZENITH_FINAL override
 	{
-		// Always use properly-initialized global resources
-		// Deserialized materials from backup restore may not have GPU resources (textures) loaded
+		// Use global resources (initialized in Sokoban.cpp)
 		m_pxCubeGeometry = Sokoban::g_pxCubeGeometry;
 		m_pxFloorMaterial = Sokoban::g_pxFloorMaterial;
 		m_pxWallMaterial = Sokoban::g_pxWallMaterial;
@@ -138,22 +140,26 @@ public:
 		m_pxPlayerMaterial = Sokoban::g_pxPlayerMaterial;
 		m_pxTargetMaterial = Sokoban::g_pxTargetMaterial;
 
-		GenerateRandomLevel();
+		GenerateNewLevel();
 	}
 
 	/**
-	 * OnStart - Lifecycle hook.
-	 * Called before first update, for ALL entities (including loaded ones).
-	 * Can be used for initialization that depends on other components being ready.
+	 * OnStart - Called before first OnUpdate, for ALL entities
+	 * Called even for entities loaded from scene file.
+	 * Use for: Late initialization that depends on other components.
 	 */
 	void OnStart() ZENITH_FINAL override
 	{
-		if (m_uPlayerEntityID == 0)
+		if (m_xRenderer.GetPlayerEntityID() == 0)
 		{
-			GenerateRandomLevel();
+			GenerateNewLevel();
 		}
 	}
 
+	/**
+	 * OnUpdate - Called every frame
+	 * Main game loop: input -> logic -> animation -> rendering
+	 */
 	void OnUpdate(const float fDt) ZENITH_FINAL override
 	{
 		if (m_bAnimating)
@@ -162,11 +168,15 @@ public:
 		}
 		else if (!m_bWon)
 		{
-			HandleKeyboardInput();
+			HandleInput();
 		}
-		Update3DVisuals();
+		UpdateVisuals();
 	}
 
+	/**
+	 * RenderPropertiesPanel - Editor UI (tools build only)
+	 * Renders ImGui controls for debugging and configuration.
+	 */
 	void RenderPropertiesPanel() override
 	{
 #ifdef ZENITH_TOOLS
@@ -175,29 +185,30 @@ public:
 		ImGui::Text("Grid Size: %u x %u", m_uGridWidth, m_uGridHeight);
 		ImGui::Text("Moves: %u", m_uMoveCount);
 		ImGui::Text("Min Moves: %u", m_uMinMoves);
-		ImGui::Text("Boxes on targets: %u / %u", CountBoxesOnTargets(), m_uTargetCount);
+		ImGui::Text("Boxes on targets: %u / %u",
+			Sokoban_GridLogic::CountBoxesOnTargets(m_abBoxes, m_abTargets, m_uGridWidth * m_uGridHeight),
+			m_uTargetCount);
+
 		if (m_bWon)
 		{
 			ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "LEVEL COMPLETE!");
 		}
-		if (ImGui::Button("Reset Level"))
+
+		if (ImGui::Button("New Level"))
 		{
-			ResetLevel();
+			GenerateNewLevel();
 		}
+
 		ImGui::Separator();
 		ImGui::Text("Controls:");
 		ImGui::Text("  WASD / Arrow Keys: Move");
-		ImGui::Text("  R: Reset Level");
+		ImGui::Text("  R: New Level");
 
 		ImGui::Separator();
 		if (ImGui::CollapsingHeader("Visual Assets", ImGuiTreeNodeFlags_DefaultOpen))
 		{
-			// Cube Geometry slot
 			RenderMeshSlot("Cube Mesh", m_pxCubeGeometry);
-
 			ImGui::Separator();
-
-			// Material slots
 			RenderMaterialSlot("Floor Material", m_pxFloorMaterial);
 			RenderMaterialSlot("Wall Material", m_pxWallMaterial);
 			RenderMaterialSlot("Box Material", m_pxBoxMaterial);
@@ -208,18 +219,21 @@ public:
 #endif
 	}
 
+	// ========================================================================
+	// Serialization - Save/load behavior state
+	// ========================================================================
+
 	void WriteParametersToDataStream(Zenith_DataStream& xStream) const override
 	{
-		// Version for future compatibility
 		const uint32_t uVersion = 1;
 		xStream << uVersion;
 
-		// Mesh - serialize source path (empty for procedural geometry)
+		// Mesh path
 		std::string strMeshPath = (m_pxCubeGeometry && !m_pxCubeGeometry->m_strSourcePath.empty())
 			? m_pxCubeGeometry->m_strSourcePath : "";
 		xStream << strMeshPath;
 
-		// Materials - serialize each one
+		// Materials
 		auto WriteMaterial = [&xStream](Flux_MaterialAsset* pxMat)
 		{
 			if (pxMat)
@@ -249,17 +263,13 @@ public:
 
 		if (uVersion >= 1)
 		{
-			// Mesh - load from path or use default
 			std::string strMeshPath;
 			xStream >> strMeshPath;
-
 			if (!strMeshPath.empty())
 			{
 				m_pxCubeGeometry = Zenith_AssetHandler::AddMeshFromFile(strMeshPath.c_str(), 0, true);
 			}
-			// If path is empty or load failed, OnCreate() will use default
 
-			// Materials - load each one
 			auto ReadMaterial = [&xStream](Flux_MaterialAsset*& pxMat, const char* szName)
 			{
 				Flux_MaterialAsset* pxLoaded = Flux_MaterialAsset::Create(szName);
@@ -278,93 +288,77 @@ public:
 
 private:
 	// ========================================================================
-	// Editor UI Helpers
+	// Input Handling
 	// ========================================================================
-#ifdef ZENITH_TOOLS
-	void RenderMaterialSlot(const char* szLabel, Flux_MaterialAsset*& pxMaterial)
+	void HandleInput()
 	{
-		ImGui::PushID(szLabel);
+		if (m_bAnimating) return;
 
-		std::string strMaterialName = pxMaterial ? pxMaterial->GetName() : "(none)";
-
-		ImGui::Text("%s:", szLabel);
-		ImGui::SameLine();
-
-		ImVec2 xButtonSize(150, 20);
-		ImGui::Button(strMaterialName.c_str(), xButtonSize);
-
-		if (ImGui::BeginDragDropTarget())
+		// Check for reset
+		if (Sokoban_Input::WasResetPressed())
 		{
-			if (const ImGuiPayload* pPayload = ImGui::AcceptDragDropPayload(DRAGDROP_PAYLOAD_MATERIAL))
-			{
-				const DragDropFilePayload* pFilePayload =
-					static_cast<const DragDropFilePayload*>(pPayload->Data);
-
-				Zenith_Log(LOG_CATEGORY_GAMEPLAY, "Material dropped on %s: %s", szLabel, pFilePayload->m_szFilePath);
-
-				// Load the material from file
-				Flux_MaterialAsset* pxNewMaterial = Flux_MaterialAsset::LoadFromFile(pFilePayload->m_szFilePath);
-				if (pxNewMaterial)
-				{
-					pxMaterial = pxNewMaterial;
-				}
-			}
-			ImGui::EndDragDropTarget();
+			GenerateNewLevel();
+			return;
 		}
 
-		if (ImGui::IsItemHovered())
+		// Check for movement
+		SokobanDirection eDir = Sokoban_Input::GetInputDirection();
+		if (eDir != SOKOBAN_DIR_NONE)
 		{
-			ImGui::SetTooltip("Drop a .zmat material file here");
+			TryMove(eDir);
 		}
-
-		ImGui::PopID();
 	}
 
-	void RenderMeshSlot(const char* szLabel, Flux_MeshGeometry*& pxMesh)
+	// ========================================================================
+	// Movement Logic
+	// ========================================================================
+	bool TryMove(SokobanDirection eDir)
 	{
-		ImGui::PushID(szLabel);
+		if (m_bAnimating) return false;
 
-		std::string strMeshName = pxMesh ? "(loaded)" : "(none)";
-		if (pxMesh && !pxMesh->m_strSourcePath.empty())
+		// Check if move is valid using grid logic module
+		if (!Sokoban_GridLogic::CanMove(m_aeTiles, m_abBoxes, m_uPlayerX, m_uPlayerY,
+			m_uGridWidth, m_uGridHeight, eDir))
 		{
-			std::filesystem::path xPath(pxMesh->m_strSourcePath);
-			strMeshName = xPath.filename().string();
+			return false;
 		}
 
-		ImGui::Text("%s:", szLabel);
-		ImGui::SameLine();
+		int32_t iDeltaX, iDeltaY;
+		Sokoban_GridLogic::GetDirectionDelta(eDir, iDeltaX, iDeltaY);
 
-		ImVec2 xButtonSize(150, 20);
-		ImGui::Button(strMeshName.c_str(), xButtonSize);
+		uint32_t uOldX = m_uPlayerX;
+		uint32_t uOldY = m_uPlayerY;
+		uint32_t uNewX = m_uPlayerX + iDeltaX;
+		uint32_t uNewY = m_uPlayerY + iDeltaY;
+		uint32_t uNewIndex = uNewY * m_uGridWidth + uNewX;
 
-		if (ImGui::BeginDragDropTarget())
+		bool bPushingBox = false;
+		uint32_t uBoxDestX = 0, uBoxDestY = 0;
+
+		// Check if pushing a box
+		if (m_abBoxes[uNewIndex])
 		{
-			if (const ImGuiPayload* pPayload = ImGui::AcceptDragDropPayload(DRAGDROP_PAYLOAD_MESH))
-			{
-				const DragDropFilePayload* pFilePayload =
-					static_cast<const DragDropFilePayload*>(pPayload->Data);
-
-				Zenith_Log(LOG_CATEGORY_GAMEPLAY, "Mesh dropped on %s: %s", szLabel, pFilePayload->m_szFilePath);
-
-				// Load the mesh from file
-				Flux_MeshGeometry* pxNewMesh = Zenith_AssetHandler::AddMeshFromFile(
-					pFilePayload->m_szFilePath, 0, true);
-				if (pxNewMesh)
-				{
-					pxMesh = pxNewMesh;
-				}
-			}
-			ImGui::EndDragDropTarget();
+			bPushingBox = true;
+			uBoxDestX = uNewX + iDeltaX;
+			uBoxDestY = uNewY + iDeltaY;
+			Sokoban_GridLogic::PushBox(m_abBoxes, uNewX, uNewY, m_uGridWidth, eDir);
 		}
 
-		if (ImGui::IsItemHovered())
+		// Update player position
+		m_uPlayerX = uNewX;
+		m_uPlayerY = uNewY;
+		m_uMoveCount++;
+
+		// Start animation
+		StartAnimation(uOldX, uOldY, uNewX, uNewY);
+		if (bPushingBox)
 		{
-			ImGui::SetTooltip("Drop a .zmesh mesh file here");
+			StartBoxAnimation(uNewX, uNewY, uBoxDestX, uBoxDestY);
 		}
 
-		ImGui::PopID();
+		UpdateUI();
+		return true;
 	}
-#endif
 
 	// ========================================================================
 	// Animation System
@@ -381,8 +375,10 @@ private:
 		// Lerp box position if pushing
 		if (m_bBoxAnimating)
 		{
-			m_fBoxVisualX = static_cast<float>(m_uAnimBoxFromX) + (static_cast<float>(m_uAnimBoxToX) - static_cast<float>(m_uAnimBoxFromX)) * fProgress;
-			m_fBoxVisualY = static_cast<float>(m_uAnimBoxFromY) + (static_cast<float>(m_uAnimBoxToY) - static_cast<float>(m_uAnimBoxFromY)) * fProgress;
+			m_fBoxVisualX = static_cast<float>(m_uAnimBoxFromX) +
+				(static_cast<float>(m_uAnimBoxToX) - static_cast<float>(m_uAnimBoxFromX)) * fProgress;
+			m_fBoxVisualY = static_cast<float>(m_uAnimBoxFromY) +
+				(static_cast<float>(m_uAnimBoxToY) - static_cast<float>(m_uAnimBoxFromY)) * fProgress;
 		}
 
 		// Animation complete
@@ -393,10 +389,11 @@ private:
 			m_fPlayerVisualX = static_cast<float>(m_uPlayerTargetX);
 			m_fPlayerVisualY = static_cast<float>(m_uPlayerTargetY);
 
-			if (CheckWinCondition())
+			if (Sokoban_GridLogic::CheckWinCondition(m_abBoxes, m_abTargets,
+				m_uGridWidth * m_uGridHeight, m_uTargetCount))
 			{
 				m_bWon = true;
-				UpdateStatusText();
+				UpdateUI();
 			}
 		}
 	}
@@ -425,862 +422,169 @@ private:
 	}
 
 	// ========================================================================
-	// Input Handling
+	// Visual Updates
 	// ========================================================================
-	void HandleKeyboardInput()
+	void UpdateVisuals()
 	{
-		if (m_bAnimating) return;
+		float fVisualX = m_bAnimating ? m_fPlayerVisualX : static_cast<float>(m_uPlayerX);
+		float fVisualY = m_bAnimating ? m_fPlayerVisualY : static_cast<float>(m_uPlayerY);
+		m_xRenderer.UpdatePlayerPosition(fVisualX, fVisualY);
 
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_UP) ||
-			Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_W))
-		{
-			TryMove(SOKOBAN_DIR_UP);
-		}
-		else if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_DOWN) ||
-			Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_S))
-		{
-			TryMove(SOKOBAN_DIR_DOWN);
-		}
-		else if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_LEFT) ||
-			Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_A))
-		{
-			TryMove(SOKOBAN_DIR_LEFT);
-		}
-		else if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_RIGHT) ||
-			Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_D))
-		{
-			TryMove(SOKOBAN_DIR_RIGHT);
-		}
-
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_R))
-		{
-			ResetLevel();
-		}
+		m_xRenderer.UpdateBoxPositions(m_abBoxes, m_uGridWidth, m_uGridHeight,
+			m_bBoxAnimating, m_uAnimBoxToX, m_uAnimBoxToY, m_fBoxVisualX, m_fBoxVisualY);
 	}
 
 	// ========================================================================
-	// Movement Logic
+	// Level Generation
 	// ========================================================================
-	bool TryMove(SokobanDirection eDir)
+	void GenerateNewLevel()
 	{
-		if (m_bAnimating) return false;
+		// Reset state
+		m_uMoveCount = 0;
+		m_bWon = false;
+		m_bAnimating = false;
 
-		int32_t iDeltaX = 0, iDeltaY = 0;
-		switch (eDir)
+		// Use level generator module
+		Sokoban_LevelGenerator::LevelData xData;
+		xData.aeTiles = m_aeTiles;
+		xData.abTargets = m_abTargets;
+		xData.abBoxes = m_abBoxes;
+
+		// Try to generate a solvable level
+		for (int i = 0; i < 1000; i++)
 		{
-		case SOKOBAN_DIR_UP:    iDeltaY = -1; break;
-		case SOKOBAN_DIR_DOWN:  iDeltaY = 1;  break;
-		case SOKOBAN_DIR_LEFT:  iDeltaX = -1; break;
-		case SOKOBAN_DIR_RIGHT: iDeltaX = 1;  break;
-		default: return false;
-		}
+			Sokoban_LevelGenerator::GenerateLevelAttempt(xData, m_xRng);
 
-		uint32_t uNewX = m_uPlayerX + iDeltaX;
-		uint32_t uNewY = m_uPlayerY + iDeltaY;
+			m_uGridWidth = xData.uGridWidth;
+			m_uGridHeight = xData.uGridHeight;
+			m_uPlayerX = xData.uPlayerX;
+			m_uPlayerY = xData.uPlayerY;
+			m_uTargetCount = xData.uTargetCount;
 
-		if (uNewX >= m_uGridWidth || uNewY >= m_uGridHeight)
-		{
-			return false;
-		}
+			// Validate with solver
+			int32_t iMinMoves = Sokoban_Solver::SolveLevel(
+				m_aeTiles, m_abBoxes, m_abTargets,
+				m_uPlayerX, m_uPlayerY, m_uGridWidth, m_uGridHeight);
 
-		uint32_t uNewIndex = uNewY * m_uGridWidth + uNewX;
-
-		if (m_aeTiles[uNewIndex] == SOKOBAN_TILE_WALL)
-		{
-			return false;
-		}
-
-		uint32_t uOldX = m_uPlayerX;
-		uint32_t uOldY = m_uPlayerY;
-		bool bPushingBox = false;
-		uint32_t uBoxDestX = 0, uBoxDestY = 0;
-
-		if (m_abBoxes[uNewIndex])
-		{
-			if (!CanPushBox(uNewX, uNewY, eDir))
+			if (iMinMoves >= 5) // Minimum complexity
 			{
-				return false;
+				m_uMinMoves = static_cast<uint32_t>(iMinMoves);
+				break;
 			}
-			bPushingBox = true;
-			uBoxDestX = uNewX + iDeltaX;
-			uBoxDestY = uNewY + iDeltaY;
-			PushBox(uNewX, uNewY, eDir);
-		}
-
-		m_uPlayerX = uNewX;
-		m_uPlayerY = uNewY;
-		m_uMoveCount++;
-
-		// Start animation
-		StartAnimation(uOldX, uOldY, uNewX, uNewY);
-		if (bPushingBox)
-		{
-			StartBoxAnimation(uNewX, uNewY, uBoxDestX, uBoxDestY);
-		}
-
-		UpdateStatusText();
-		return true;
-	}
-
-	bool CanPushBox(uint32_t uBoxX, uint32_t uBoxY, SokobanDirection eDir) const
-	{
-		int32_t iDeltaX = 0, iDeltaY = 0;
-		switch (eDir)
-		{
-		case SOKOBAN_DIR_UP:    iDeltaY = -1; break;
-		case SOKOBAN_DIR_DOWN:  iDeltaY = 1;  break;
-		case SOKOBAN_DIR_LEFT:  iDeltaX = -1; break;
-		case SOKOBAN_DIR_RIGHT: iDeltaX = 1;  break;
-		default: return false;
-		}
-
-		uint32_t uDestX = uBoxX + iDeltaX;
-		uint32_t uDestY = uBoxY + iDeltaY;
-
-		if (uDestX >= m_uGridWidth || uDestY >= m_uGridHeight)
-		{
-			return false;
-		}
-
-		uint32_t uDestIndex = uDestY * m_uGridWidth + uDestX;
-
-		if (m_aeTiles[uDestIndex] == SOKOBAN_TILE_WALL)
-		{
-			return false;
-		}
-
-		if (m_abBoxes[uDestIndex])
-		{
-			return false;
-		}
-
-		return true;
-	}
-
-	void PushBox(uint32_t uFromX, uint32_t uFromY, SokobanDirection eDir)
-	{
-		int32_t iDeltaX = 0, iDeltaY = 0;
-		switch (eDir)
-		{
-		case SOKOBAN_DIR_UP:    iDeltaY = -1; break;
-		case SOKOBAN_DIR_DOWN:  iDeltaY = 1;  break;
-		case SOKOBAN_DIR_LEFT:  iDeltaX = -1; break;
-		case SOKOBAN_DIR_RIGHT: iDeltaX = 1;  break;
-		default: return;
-		}
-
-		uint32_t uFromIndex = uFromY * m_uGridWidth + uFromX;
-		uint32_t uToX = uFromX + iDeltaX;
-		uint32_t uToY = uFromY + iDeltaY;
-		uint32_t uToIndex = uToY * m_uGridWidth + uToX;
-
-		m_abBoxes[uFromIndex] = false;
-		m_abBoxes[uToIndex] = true;
-	}
-
-	// ========================================================================
-	// 3D Rendering
-	// ========================================================================
-
-	// Convert grid coordinates to world position
-	Zenith_Maths::Vector3 GridToWorld(float fGridX, float fGridY, float fHeight) const
-	{
-		// Center grid at origin, negate Z to match camera orientation
-		float fWorldX = fGridX - static_cast<float>(m_uGridWidth) * 0.5f;
-		float fWorldZ = static_cast<float>(m_uGridHeight) * 0.5f - fGridY;
-		return {fWorldX, fHeight * 0.5f, fWorldZ};
-	}
-
-	// Get material for a tile at given index
-	Flux_MaterialAsset* GetMaterialForTile(uint32_t uIndex, bool bIsBox = false, bool bIsPlayer = false) const
-	{
-		if (bIsPlayer)
-			return m_pxPlayerMaterial;
-
-		if (bIsBox)
-		{
-			return m_abTargets[uIndex] ? m_pxBoxOnTargetMaterial : m_pxBoxMaterial;
-		}
-
-		if (m_aeTiles[uIndex] == SOKOBAN_TILE_WALL)
-			return m_pxWallMaterial;
-
-		if (m_abTargets[uIndex])
-			return m_pxTargetMaterial;
-
-		return m_pxFloorMaterial;
-	}
-
-	// Get height for a tile type
-	float GetTileHeight(uint32_t uIndex) const
-	{
-		if (m_aeTiles[uIndex] == SOKOBAN_TILE_WALL)
-			return s_fWallHeight;
-		return s_fFloorHeight;
-	}
-
-	// Destroy all 3D entities
-	void Destroy3DLevel()
-	{
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-
-		for (Zenith_EntityID uID : m_axTileEntityIDs)
-		{
-			if (xScene.EntityExists(uID))
-				Zenith_Scene::Destroy(uID);
-		}
-		m_axTileEntityIDs.clear();
-
-		for (Zenith_EntityID uID : m_axBoxEntityIDs)
-		{
-			if (xScene.EntityExists(uID))
-				Zenith_Scene::Destroy(uID);
-		}
-		m_axBoxEntityIDs.clear();
-
-		if (m_uPlayerEntityID != 0 && xScene.EntityExists(m_uPlayerEntityID))
-		{
-			Zenith_Scene::Destroy(m_uPlayerEntityID);
-			m_uPlayerEntityID = 0;
-		}
-	}
-
-	// Create all 3D entities for the current level
-	void Create3DLevel()
-	{
-		// Destroy old entities first
-		Destroy3DLevel();
-
-		// Create floor and wall tiles using prefab-based Instantiate
-		for (uint32_t uY = 0; uY < m_uGridHeight; uY++)
-		{
-			for (uint32_t uX = 0; uX < m_uGridWidth; uX++)
-			{
-				uint32_t uIndex = uY * m_uGridWidth + uX;
-
-				float fHeight = GetTileHeight(uIndex);
-				Zenith_Maths::Vector3 xPos = GridToWorld(static_cast<float>(uX), static_cast<float>(uY), fHeight);
-
-				// Prefab-based Instantiate
-				Zenith_Entity xTileEntity = Zenith_Scene::Instantiate(*Sokoban::g_pxTilePrefab, "Tile");
-
-				Zenith_TransformComponent& xTransform = xTileEntity.GetComponent<Zenith_TransformComponent>();
-				xTransform.SetPosition(xPos);
-				xTransform.SetScale({s_fTileScale, fHeight, s_fTileScale});
-
-				Zenith_ModelComponent& xModel = xTileEntity.AddComponent<Zenith_ModelComponent>();
-				xModel.AddMeshEntry(*m_pxCubeGeometry, *GetMaterialForTile(uIndex));
-
-				m_axTileEntityIDs.push_back(xTileEntity.GetEntityID());
-			}
-		}
-
-		// Create box entities using prefab-based Instantiate
-		for (uint32_t uY = 0; uY < m_uGridHeight; uY++)
-		{
-			for (uint32_t uX = 0; uX < m_uGridWidth; uX++)
-			{
-				uint32_t uIndex = uY * m_uGridWidth + uX;
-				if (m_abBoxes[uIndex])
-				{
-					Zenith_Maths::Vector3 xPos = GridToWorld(static_cast<float>(uX), static_cast<float>(uY), s_fBoxHeight);
-					xPos.y += s_fFloorHeight;  // Sit on top of floor
-
-					// Prefab-based Instantiate
-					Zenith_Entity xBoxEntity = Zenith_Scene::Instantiate(*Sokoban::g_pxBoxPrefab, "Box");
-
-					Zenith_TransformComponent& xTransform = xBoxEntity.GetComponent<Zenith_TransformComponent>();
-					xTransform.SetPosition(xPos);
-					xTransform.SetScale({s_fTileScale * 0.8f, s_fBoxHeight, s_fTileScale * 0.8f});
-
-					Zenith_ModelComponent& xModel = xBoxEntity.AddComponent<Zenith_ModelComponent>();
-					xModel.AddMeshEntry(*m_pxCubeGeometry, *GetMaterialForTile(uIndex, true));
-
-					m_axBoxEntityIDs.push_back(xBoxEntity.GetEntityID());
-				}
-			}
-		}
-
-		// Create player entity using prefab-based Instantiate
-		{
-			Zenith_Maths::Vector3 xPos = GridToWorld(static_cast<float>(m_uPlayerX), static_cast<float>(m_uPlayerY), s_fPlayerHeight);
-			xPos.y += s_fFloorHeight;  // Sit on top of floor
-
-			// Prefab-based Instantiate
-			Zenith_Entity xPlayerEntity = Zenith_Scene::Instantiate(*Sokoban::g_pxPlayerPrefab, "Player");
-
-			Zenith_TransformComponent& xTransform = xPlayerEntity.GetComponent<Zenith_TransformComponent>();
-			xTransform.SetPosition(xPos);
-			xTransform.SetScale({s_fTileScale * 0.7f, s_fPlayerHeight, s_fTileScale * 0.7f});
-
-			Zenith_ModelComponent& xModel = xPlayerEntity.AddComponent<Zenith_ModelComponent>();
-			xModel.AddMeshEntry(*m_pxCubeGeometry, *m_pxPlayerMaterial);
-
-			m_uPlayerEntityID = xPlayerEntity.GetEntityID();
 		}
 
 		// Initialize visual positions
 		m_fPlayerVisualX = static_cast<float>(m_uPlayerX);
 		m_fPlayerVisualY = static_cast<float>(m_uPlayerY);
-	}
 
-	// Update 3D entity positions (called every frame)
-	void Update3DVisuals()
-	{
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-
-		// Update player position
-		if (m_uPlayerEntityID != 0 && xScene.EntityExists(m_uPlayerEntityID))
-		{
-			Zenith_Entity xPlayer = xScene.GetEntityByID(m_uPlayerEntityID);
-			if (xPlayer.HasComponent<Zenith_TransformComponent>())
-			{
-				Zenith_TransformComponent& xTransform = xPlayer.GetComponent<Zenith_TransformComponent>();
-
-				float fVisualX = m_bAnimating ? m_fPlayerVisualX : static_cast<float>(m_uPlayerX);
-				float fVisualY = m_bAnimating ? m_fPlayerVisualY : static_cast<float>(m_uPlayerY);
-
-				Zenith_Maths::Vector3 xPos = GridToWorld(fVisualX, fVisualY, s_fPlayerHeight);
-				xPos.y += s_fFloorHeight;
-				xTransform.SetPosition(xPos);
-			}
-		}
-
-		// Update box entities
-		// Rebuild box entity list based on current game state
-		// This handles boxes moving to new positions after push
-		size_t uBoxIdx = 0;
-		for (uint32_t uY = 0; uY < m_uGridHeight; uY++)
-		{
-			for (uint32_t uX = 0; uX < m_uGridWidth; uX++)
-			{
-				uint32_t uIndex = uY * m_uGridWidth + uX;
-				if (m_abBoxes[uIndex] && uBoxIdx < m_axBoxEntityIDs.size())
-				{
-					Zenith_EntityID uBoxID = m_axBoxEntityIDs[uBoxIdx];
-					if (xScene.EntityExists(uBoxID))
-					{
-						Zenith_Entity xBox = xScene.GetEntityByID(uBoxID);
-						if (xBox.HasComponent<Zenith_TransformComponent>())
-						{
-							Zenith_TransformComponent& xTransform = xBox.GetComponent<Zenith_TransformComponent>();
-
-							float fVisualX = static_cast<float>(uX);
-							float fVisualY = static_cast<float>(uY);
-
-							// If this is the animating box, use visual position
-							if (m_bBoxAnimating && uX == m_uAnimBoxToX && uY == m_uAnimBoxToY)
-							{
-								fVisualX = m_fBoxVisualX;
-								fVisualY = m_fBoxVisualY;
-							}
-
-							Zenith_Maths::Vector3 xPos = GridToWorld(fVisualX, fVisualY, s_fBoxHeight);
-							xPos.y += s_fFloorHeight;
-							xTransform.SetPosition(xPos);
-
-							// Update material based on whether box is on target
-							if (xBox.HasComponent<Zenith_ModelComponent>())
-							{
-								// Note: Material change would require recreating mesh entry
-								// For now, boxes keep their initial material
-							}
-						}
-					}
-					uBoxIdx++;
-				}
-			}
-		}
-	}
-
-	// Reposition camera to fit the grid in view
-	void RepositionCamera()
-	{
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		Zenith_EntityID uCameraEntityID = xScene.GetMainCameraEntity();
-		if (uCameraEntityID == INVALID_ENTITY_ID || !xScene.EntityExists(uCameraEntityID))
-			return;
-
-		Zenith_Entity xCameraEntity = xScene.GetEntityByID(uCameraEntityID);
-		if (!xCameraEntity.HasComponent<Zenith_CameraComponent>())
-			return;
-
-		Zenith_CameraComponent& xCamera = xCameraEntity.GetComponent<Zenith_CameraComponent>();
-
-		// Get camera parameters
-		float fFOV = xCamera.GetFOV();
-		float fAspectRatio = xCamera.GetAspectRatio();
-
-		// Calculate grid world dimensions (each tile is 1 unit)
-		float fGridWorldWidth = static_cast<float>(m_uGridWidth);
-		float fGridWorldHeight = static_cast<float>(m_uGridHeight);
-
-		// Add padding (10% margin on each side)
-		float fPadding = 1.2f;
-		fGridWorldWidth *= fPadding;
-		fGridWorldHeight *= fPadding;
-
-		// For a camera looking straight down (pitch ≈ -90°):
-		// Vertical visible distance = 2 * height * tan(FOV/2)
-		// Horizontal visible distance = vertical * aspectRatio
-		float fHalfFOVTan = tan(fFOV * 0.5f);
-
-		// Calculate required height to fit grid in view
-		// For vertical fit: height = gridHeight / (2 * tan(FOV/2))
-		// For horizontal fit: height = gridWidth / (2 * tan(FOV/2) * aspectRatio)
-		float fHeightForVertical = fGridWorldHeight / (2.0f * fHalfFOVTan);
-		float fHeightForHorizontal = fGridWorldWidth / (2.0f * fHalfFOVTan * fAspectRatio);
-
-		// Use the larger of the two to ensure both dimensions fit
-		float fRequiredHeight = std::max(fHeightForVertical, fHeightForHorizontal);
-
-		// Update camera position (keep X and Z at 0, adjust Y height)
-		xCamera.SetPosition(Zenith_Maths::Vector3(0.f, fRequiredHeight, 0.f));
-	}
-
-	// Legacy helper kept for compatibility
-	Zenith_Maths::Vector4 GetTileColor(SokobanTileType eTile) const
-	{
-		switch (eTile)
-		{
-		case SOKOBAN_TILE_FLOOR:
-			return Zenith_Maths::Vector4(0.3f, 0.3f, 0.35f, 1.0f);
-		case SOKOBAN_TILE_WALL:
-			return Zenith_Maths::Vector4(0.15f, 0.1f, 0.08f, 1.0f);
-		case SOKOBAN_TILE_TARGET:
-			return Zenith_Maths::Vector4(0.2f, 0.6f, 0.2f, 1.0f);
-		case SOKOBAN_TILE_BOX:
-			return Zenith_Maths::Vector4(0.8f, 0.5f, 0.2f, 1.0f);
-		case SOKOBAN_TILE_BOX_ON_TARGET:
-			return Zenith_Maths::Vector4(0.2f, 0.8f, 0.2f, 1.0f);
-		case SOKOBAN_TILE_PLAYER:
-			return Zenith_Maths::Vector4(0.2f, 0.4f, 0.9f, 1.0f);
-		default:
-			return Zenith_Maths::Vector4(1.0f, 0.0f, 1.0f, 1.0f);
-		}
-	}
-
-	// ========================================================================
-	// Sokoban Solver (BFS)
-	// ========================================================================
-	struct SolverState
-	{
-		uint32_t uPlayerX;
-		uint32_t uPlayerY;
-		std::vector<uint32_t> axBoxPositions;  // Sorted box positions as indices
-
-		bool operator==(const SolverState& xOther) const
-		{
-			return uPlayerX == xOther.uPlayerX &&
-				   uPlayerY == xOther.uPlayerY &&
-				   axBoxPositions == xOther.axBoxPositions;
-		}
-	};
-
-	struct SolverStateHash
-	{
-		size_t operator()(const SolverState& xState) const
-		{
-			size_t uHash = std::hash<uint32_t>()(xState.uPlayerX);
-			uHash ^= std::hash<uint32_t>()(xState.uPlayerY) << 1;
-			for (uint32_t uPos : xState.axBoxPositions)
-			{
-				uHash ^= std::hash<uint32_t>()(uPos) + 0x9e3779b9 + (uHash << 6) + (uHash >> 2);
-			}
-			return uHash;
-		}
-	};
-
-	int32_t SolveLevel() const
-	{
-		// Create initial state
-		SolverState xInitialState;
-		xInitialState.uPlayerX = m_uPlayerX;
-		xInitialState.uPlayerY = m_uPlayerY;
-
-		for (uint32_t i = 0; i < m_uGridWidth * m_uGridHeight; i++)
-		{
-			if (m_abBoxes[i])
-			{
-				xInitialState.axBoxPositions.push_back(i);
-			}
-		}
-		std::sort(xInitialState.axBoxPositions.begin(), xInitialState.axBoxPositions.end());
-
-		// Check if already solved
-		if (IsStateSolved(xInitialState))
-		{
-			return 0;
-		}
-
-		// BFS
-		std::queue<std::pair<SolverState, int32_t>> xQueue;
-		std::unordered_set<SolverState, SolverStateHash> xVisited;
-
-		xQueue.push({xInitialState, 0});
-		xVisited.insert(xInitialState);
-
-		int32_t aDeltaX[] = {0, 0, -1, 1};
-		int32_t aDeltaY[] = {-1, 1, 0, 0};
-
-		while (!xQueue.empty() && xVisited.size() < s_uMaxSolverStates)
-		{
-			auto [xCurrentState, iMoves] = xQueue.front();
-			xQueue.pop();
-
-			for (int iDir = 0; iDir < 4; iDir++)
-			{
-				int32_t iNewX = static_cast<int32_t>(xCurrentState.uPlayerX) + aDeltaX[iDir];
-				int32_t iNewY = static_cast<int32_t>(xCurrentState.uPlayerY) + aDeltaY[iDir];
-
-				if (iNewX < 0 || iNewY < 0 ||
-					static_cast<uint32_t>(iNewX) >= m_uGridWidth ||
-					static_cast<uint32_t>(iNewY) >= m_uGridHeight)
-				{
-					continue;
-				}
-
-				uint32_t uNewIndex = iNewY * m_uGridWidth + iNewX;
-
-				// Can't walk into walls
-				if (m_aeTiles[uNewIndex] == SOKOBAN_TILE_WALL)
-				{
-					continue;
-				}
-
-				// Check if there's a box at the new position
-				auto it = std::find(xCurrentState.axBoxPositions.begin(),
-									xCurrentState.axBoxPositions.end(),
-									uNewIndex);
-
-				SolverState xNewState = xCurrentState;
-				xNewState.uPlayerX = iNewX;
-				xNewState.uPlayerY = iNewY;
-
-				if (it != xCurrentState.axBoxPositions.end())
-				{
-					// There's a box, try to push it
-					int32_t iBoxNewX = iNewX + aDeltaX[iDir];
-					int32_t iBoxNewY = iNewY + aDeltaY[iDir];
-
-					if (iBoxNewX < 0 || iBoxNewY < 0 ||
-						static_cast<uint32_t>(iBoxNewX) >= m_uGridWidth ||
-						static_cast<uint32_t>(iBoxNewY) >= m_uGridHeight)
-					{
-						continue;
-					}
-
-					uint32_t uBoxNewIndex = iBoxNewY * m_uGridWidth + iBoxNewX;
-
-					// Can't push into wall
-					if (m_aeTiles[uBoxNewIndex] == SOKOBAN_TILE_WALL)
-					{
-						continue;
-					}
-
-					// Can't push into another box
-					if (std::find(xCurrentState.axBoxPositions.begin(),
-								  xCurrentState.axBoxPositions.end(),
-								  uBoxNewIndex) != xCurrentState.axBoxPositions.end())
-					{
-						continue;
-					}
-
-					// Update box position in new state
-					xNewState.axBoxPositions.erase(
-						std::find(xNewState.axBoxPositions.begin(),
-								  xNewState.axBoxPositions.end(),
-								  uNewIndex));
-					xNewState.axBoxPositions.push_back(uBoxNewIndex);
-					std::sort(xNewState.axBoxPositions.begin(), xNewState.axBoxPositions.end());
-				}
-
-				if (xVisited.find(xNewState) != xVisited.end())
-				{
-					continue;
-				}
-
-				if (IsStateSolved(xNewState))
-				{
-					return iMoves + 1;
-				}
-
-				xVisited.insert(xNewState);
-				xQueue.push({xNewState, iMoves + 1});
-			}
-		}
-
-		return -1;  // Unsolvable or too complex
-	}
-
-	bool IsStateSolved(const SolverState& xState) const
-	{
-		for (uint32_t uBoxPos : xState.axBoxPositions)
-		{
-			if (!m_abTargets[uBoxPos])
-			{
-				return false;
-			}
-		}
-		return !xState.axBoxPositions.empty();
-	}
-
-	// ========================================================================
-	// Random Level Generation
-	// ========================================================================
-	void GenerateRandomLevel()
-	{
-		int iAttempts = 0;
-		const int iMaxAttempts = 1000;
-
-		while (iAttempts < iMaxAttempts)
-		{
-			iAttempts++;
-			GenerateRandomLevelAttempt();
-
-			int32_t iMinMoves = SolveLevel();
-			if (iMinMoves >= static_cast<int32_t>(s_uMinMovesSolution))
-			{
-				m_uMinMoves = static_cast<uint32_t>(iMinMoves);
-				Create3DLevel();
-				RepositionCamera();
-				UpdateUIPositions();
-				UpdateStatusText();
-				return;
-			}
-		}
-
-		// If we failed to generate a solvable level, use fallback
-		Zenith_Warning(LOG_CATEGORY_GAMEPLAY, "Failed to generate solvable level after %d attempts, using fallback", iMaxAttempts);
-		GenerateFallbackLevel();
-		m_uMinMoves = SolveLevel();
-		if (m_uMinMoves < 0) m_uMinMoves = 0;
-		Create3DLevel();
-		RepositionCamera();
-		UpdateUIPositions();
-		UpdateStatusText();
-	}
-
-	void GenerateRandomLevelAttempt()
-	{
-		std::uniform_int_distribution<uint32_t> xSizeDist(s_uMinGridSize, s_uMaxGridSize);
-		std::uniform_int_distribution<uint32_t> xBoxDist(s_uMinBoxes, s_uMaxBoxes);
-
-		m_uGridWidth = xSizeDist(m_xRng);
-		m_uGridHeight = xSizeDist(m_xRng);
-
-		// Clear arrays
-		memset(m_aeTiles, 0, sizeof(m_aeTiles));
-		memset(m_abTargets, false, sizeof(m_abTargets));
-		memset(m_abBoxes, false, sizeof(m_abBoxes));
-		m_uMoveCount = 0;
-		m_bWon = false;
-		m_bAnimating = false;
-
-		// Fill with walls on border, floor inside
-		for (uint32_t uY = 0; uY < m_uGridHeight; uY++)
-		{
-			for (uint32_t uX = 0; uX < m_uGridWidth; uX++)
-			{
-				uint32_t uIndex = uY * m_uGridWidth + uX;
-				if (uX == 0 || uY == 0 || uX == m_uGridWidth - 1 || uY == m_uGridHeight - 1)
-				{
-					m_aeTiles[uIndex] = SOKOBAN_TILE_WALL;
-				}
-				else
-				{
-					m_aeTiles[uIndex] = SOKOBAN_TILE_FLOOR;
-				}
-			}
-		}
-
-		// Collect inner floor positions
-		std::vector<uint32_t> axFloorPositions;
-		for (uint32_t uY = 1; uY < m_uGridHeight - 1; uY++)
-		{
-			for (uint32_t uX = 1; uX < m_uGridWidth - 1; uX++)
-			{
-				axFloorPositions.push_back(uY * m_uGridWidth + uX);
-			}
-		}
-
-		// Add random internal walls (10-20% of inner cells)
-		uint32_t uInnerCells = (m_uGridWidth - 2) * (m_uGridHeight - 2);
-		std::uniform_int_distribution<uint32_t> xWallPctDist(10, 20);
-		uint32_t uWallCount = (uInnerCells * xWallPctDist(m_xRng)) / 100;
-
-		std::shuffle(axFloorPositions.begin(), axFloorPositions.end(), m_xRng);
-
-		for (uint32_t i = 0; i < uWallCount && i < axFloorPositions.size(); i++)
-		{
-			m_aeTiles[axFloorPositions[i]] = SOKOBAN_TILE_WALL;
-		}
-
-		// Recollect floor positions (excluding walls)
-		axFloorPositions.clear();
-		for (uint32_t uY = 1; uY < m_uGridHeight - 1; uY++)
-		{
-			for (uint32_t uX = 1; uX < m_uGridWidth - 1; uX++)
-			{
-				uint32_t uIndex = uY * m_uGridWidth + uX;
-				if (m_aeTiles[uIndex] == SOKOBAN_TILE_FLOOR)
-				{
-					axFloorPositions.push_back(uIndex);
-				}
-			}
-		}
-
-		if (axFloorPositions.size() < s_uMaxBoxes * 2 + 1)
-		{
-			// Not enough space, this attempt will fail
-			return;
-		}
-
-		std::shuffle(axFloorPositions.begin(), axFloorPositions.end(), m_xRng);
-
-		// Place targets and boxes
-		uint32_t uNumBoxes = xBoxDist(m_xRng);
-		uNumBoxes = std::min(uNumBoxes, static_cast<uint32_t>(axFloorPositions.size() / 2));
-		m_uTargetCount = uNumBoxes;
-
-		uint32_t uPlaceIndex = 0;
-
-		// Place targets
-		for (uint32_t i = 0; i < uNumBoxes; i++)
-		{
-			m_abTargets[axFloorPositions[uPlaceIndex++]] = true;
-		}
-
-		// Place boxes (on non-target floors)
-		for (uint32_t i = 0; i < uNumBoxes; i++)
-		{
-			m_abBoxes[axFloorPositions[uPlaceIndex++]] = true;
-		}
-
-		// Place player
-		m_uPlayerX = axFloorPositions[uPlaceIndex] % m_uGridWidth;
-		m_uPlayerY = axFloorPositions[uPlaceIndex] / m_uGridWidth;
-	}
-
-	void GenerateFallbackLevel()
-	{
-		// Simple known-solvable 8x8 level
-		m_uGridWidth = 8;
-		m_uGridHeight = 8;
-
-		memset(m_aeTiles, 0, sizeof(m_aeTiles));
-		memset(m_abTargets, false, sizeof(m_abTargets));
-		memset(m_abBoxes, false, sizeof(m_abBoxes));
-		m_uMoveCount = 0;
-		m_bWon = false;
-		m_bAnimating = false;
-
-		// Border walls
-		for (uint32_t uY = 0; uY < m_uGridHeight; uY++)
-		{
-			for (uint32_t uX = 0; uX < m_uGridWidth; uX++)
-			{
-				uint32_t uIndex = uY * m_uGridWidth + uX;
-				if (uX == 0 || uY == 0 || uX == m_uGridWidth - 1 || uY == m_uGridHeight - 1)
-				{
-					m_aeTiles[uIndex] = SOKOBAN_TILE_WALL;
-				}
-				else
-				{
-					m_aeTiles[uIndex] = SOKOBAN_TILE_FLOOR;
-				}
-			}
-		}
-
-		// Simple layout with 2 boxes
-		m_abTargets[2 * 8 + 5] = true;  // Target at (5, 2)
-		m_abTargets[5 * 8 + 5] = true;  // Target at (5, 5)
-		m_uTargetCount = 2;
-
-		m_abBoxes[3 * 8 + 3] = true;    // Box at (3, 3)
-		m_abBoxes[4 * 8 + 4] = true;    // Box at (4, 4)
-
-		m_uPlayerX = 2;
-		m_uPlayerY = 2;
+		// Create 3D entities using renderer module
+		m_xRenderer.Create3DLevel(
+			m_uGridWidth, m_uGridHeight,
+			m_aeTiles, m_abBoxes, m_abTargets,
+			m_uPlayerX, m_uPlayerY,
+			Sokoban::g_pxTilePrefab, Sokoban::g_pxBoxPrefab, Sokoban::g_pxPlayerPrefab,
+			m_pxCubeGeometry,
+			m_pxFloorMaterial, m_pxWallMaterial, m_pxTargetMaterial,
+			m_pxBoxMaterial, m_pxBoxOnTargetMaterial, m_pxPlayerMaterial);
+
+		m_xRenderer.RepositionCamera(m_uGridWidth, m_uGridHeight);
+		UpdateUI();
 	}
 
 	// ========================================================================
 	// UI Management
 	// ========================================================================
-	void UpdateUIPositions()
-	{
-		// UI elements use anchor system (TopRight) so no position updates needed
-	}
-
-	void UpdateStatusText()
+	void UpdateUI()
 	{
 		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
-		{
 			return;
-		}
 
 		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+		uint32_t uBoxesOnTargets = Sokoban_GridLogic::CountBoxesOnTargets(
+			m_abBoxes, m_abTargets, m_uGridWidth * m_uGridHeight);
 
-		Zenith_UI::Zenith_UIText* pxStatus = xUI.FindElement<Zenith_UI::Zenith_UIText>("Status");
-		if (pxStatus)
-		{
-			char acBuffer[64];
-			snprintf(acBuffer, sizeof(acBuffer), "Moves: %u", m_uMoveCount);
-			pxStatus->SetText(acBuffer);
-		}
-
-		Zenith_UI::Zenith_UIText* pxProgress = xUI.FindElement<Zenith_UI::Zenith_UIText>("Progress");
-		if (pxProgress)
-		{
-			char acBuffer[64];
-			snprintf(acBuffer, sizeof(acBuffer), "Boxes: %u / %u", CountBoxesOnTargets(), m_uTargetCount);
-			pxProgress->SetText(acBuffer);
-		}
-
-		Zenith_UI::Zenith_UIText* pxWin = xUI.FindElement<Zenith_UI::Zenith_UIText>("WinText");
-		if (pxWin)
-		{
-			pxWin->SetText(m_bWon ? "LEVEL COMPLETE!" : "");
-		}
-
-		Zenith_UI::Zenith_UIText* pxMinMoves = xUI.FindElement<Zenith_UI::Zenith_UIText>("MinMoves");
-		if (pxMinMoves)
-		{
-			char acBuffer[64];
-			snprintf(acBuffer, sizeof(acBuffer), "Min Moves: %u", m_uMinMoves);
-			pxMinMoves->SetText(acBuffer);
-		}
+		Sokoban_UIManager::UpdateStatusText(xUI, m_uMoveCount, uBoxesOnTargets,
+			m_uTargetCount, m_uMinMoves, m_bWon);
 	}
 
-	void ResetLevel()
+	// ========================================================================
+	// Editor Helpers
+	// ========================================================================
+#ifdef ZENITH_TOOLS
+	void RenderMaterialSlot(const char* szLabel, Flux_MaterialAsset*& pxMaterial)
 	{
-		GenerateRandomLevel();
-	}
+		ImGui::PushID(szLabel);
+		std::string strMaterialName = pxMaterial ? pxMaterial->GetName() : "(none)";
+		ImGui::Text("%s:", szLabel);
+		ImGui::SameLine();
+		ImVec2 xButtonSize(150, 20);
+		ImGui::Button(strMaterialName.c_str(), xButtonSize);
 
-	bool CheckWinCondition() const
-	{
-		return CountBoxesOnTargets() == m_uTargetCount && m_uTargetCount > 0;
-	}
-
-	uint32_t CountBoxesOnTargets() const
-	{
-		uint32_t uCount = 0;
-		for (uint32_t i = 0; i < m_uGridWidth * m_uGridHeight; i++)
+		if (ImGui::BeginDragDropTarget())
 		{
-			if (m_abBoxes[i] && m_abTargets[i])
+			if (const ImGuiPayload* pPayload = ImGui::AcceptDragDropPayload(DRAGDROP_PAYLOAD_MATERIAL))
 			{
-				uCount++;
+				const DragDropFilePayload* pFilePayload =
+					static_cast<const DragDropFilePayload*>(pPayload->Data);
+				Flux_MaterialAsset* pxNewMaterial = Flux_MaterialAsset::LoadFromFile(pFilePayload->m_szFilePath);
+				if (pxNewMaterial)
+				{
+					pxMaterial = pxNewMaterial;
+				}
 			}
+			ImGui::EndDragDropTarget();
 		}
-		return uCount;
+
+		if (ImGui::IsItemHovered())
+		{
+			ImGui::SetTooltip("Drop a .zmat material file here");
+		}
+		ImGui::PopID();
 	}
+
+	void RenderMeshSlot(const char* szLabel, Flux_MeshGeometry*& pxMesh)
+	{
+		ImGui::PushID(szLabel);
+		std::string strMeshName = pxMesh ? "(loaded)" : "(none)";
+		if (pxMesh && !pxMesh->m_strSourcePath.empty())
+		{
+			std::filesystem::path xPath(pxMesh->m_strSourcePath);
+			strMeshName = xPath.filename().string();
+		}
+		ImGui::Text("%s:", szLabel);
+		ImGui::SameLine();
+		ImVec2 xButtonSize(150, 20);
+		ImGui::Button(strMeshName.c_str(), xButtonSize);
+
+		if (ImGui::BeginDragDropTarget())
+		{
+			if (const ImGuiPayload* pPayload = ImGui::AcceptDragDropPayload(DRAGDROP_PAYLOAD_MESH))
+			{
+				const DragDropFilePayload* pFilePayload =
+					static_cast<const DragDropFilePayload*>(pPayload->Data);
+				Flux_MeshGeometry* pxNewMesh = Zenith_AssetHandler::AddMeshFromFile(
+					pFilePayload->m_szFilePath, 0, true);
+				if (pxNewMesh)
+				{
+					pxMesh = pxNewMesh;
+				}
+			}
+			ImGui::EndDragDropTarget();
+		}
+
+		if (ImGui::IsItemHovered())
+		{
+			ImGui::SetTooltip("Drop a .zmesh mesh file here");
+		}
+		ImGui::PopID();
+	}
+#endif
 
 	// ========================================================================
 	// Member Variables
 	// ========================================================================
-	// Note: m_xParentEntity is inherited from Zenith_ScriptBehaviour base class
 
-	// Grid state - sized for max possible grid
+	// Grid state
 	uint32_t m_uGridWidth;
 	uint32_t m_uGridHeight;
 	SokobanTileType m_aeTiles[s_uMaxGridCells];
@@ -1319,13 +623,11 @@ private:
 	// Random number generator
 	std::mt19937 m_xRng;
 
-	// 3D rendering entities
-	std::vector<Zenith_EntityID> m_axTileEntityIDs;
-	std::vector<Zenith_EntityID> m_axBoxEntityIDs;
-	Zenith_EntityID m_uPlayerEntityID = 0;
+	// Renderer module instance
+	Sokoban_Renderer m_xRenderer;
 
 public:
-	// Resource pointers (set by Sokoban.cpp, or by editor/serialization)
+	// Resource pointers
 	Flux_MeshGeometry* m_pxCubeGeometry = nullptr;
 	Flux_MaterialAsset* m_pxFloorMaterial = nullptr;
 	Flux_MaterialAsset* m_pxWallMaterial = nullptr;

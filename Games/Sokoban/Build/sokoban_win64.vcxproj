@@ -442,6 +442,12 @@
   <ItemGroup>
     <ClInclude Include="..\Components\Sokoban_Behaviour.h" />
     <ClInclude Include="..\Components\Sokoban_Config.h" />
+    <ClInclude Include="..\Components\Sokoban_GridLogic.h" />
+    <ClInclude Include="..\Components\Sokoban_Input.h" />
+    <ClInclude Include="..\Components\Sokoban_LevelGenerator.h" />
+    <ClInclude Include="..\Components\Sokoban_Rendering.h" />
+    <ClInclude Include="..\Components\Sokoban_Solver.h" />
+    <ClInclude Include="..\Components\Sokoban_UIManager.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\Sokoban.cpp" />

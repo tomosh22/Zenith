@@ -441,7 +441,13 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="..\Components\Marble_Behaviour.h" />
+    <ClInclude Include="..\Components\Marble_CameraFollow.h" />
+    <ClInclude Include="..\Components\Marble_CollectibleSystem.h" />
     <ClInclude Include="..\Components\Marble_Config.h" />
+    <ClInclude Include="..\Components\Marble_Input.h" />
+    <ClInclude Include="..\Components\Marble_LevelGenerator.h" />
+    <ClInclude Include="..\Components\Marble_PhysicsController.h" />
+    <ClInclude Include="..\Components\Marble_UIManager.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\Marble.cpp" />

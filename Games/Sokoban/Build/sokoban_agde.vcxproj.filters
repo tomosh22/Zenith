@@ -10,6 +10,24 @@
     <ClInclude Include="..\Components\Sokoban_Config.h">
       <Filter>Components</Filter>
     </ClInclude>
+    <ClInclude Include="..\Components\Sokoban_GridLogic.h">
+      <Filter>Components</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Components\Sokoban_Input.h">
+      <Filter>Components</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Components\Sokoban_LevelGenerator.h">
+      <Filter>Components</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Components\Sokoban_Rendering.h">
+      <Filter>Components</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Components\Sokoban_Solver.h">
+      <Filter>Components</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Components\Sokoban_UIManager.h">
+      <Filter>Components</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Components">

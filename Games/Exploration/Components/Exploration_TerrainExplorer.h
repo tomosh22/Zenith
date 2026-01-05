@@ -1,0 +1,254 @@
+#pragma once
+/**
+ * Exploration_TerrainExplorer.h - Terrain interaction and observation
+ *
+ * Demonstrates:
+ * - Terrain height sampling for player placement
+ * - Streaming state observation for debug display
+ * - Chunk position tracking
+ * - LOD distance visualization
+ *
+ * Engine APIs used:
+ * - Zenith_TerrainComponent
+ * - Flux_TerrainStreamingManager
+ * - Flux_TerrainConfig
+ */
+
+#include "EntityComponent/Components/Zenith_TerrainComponent.h"
+#include "Flux/Terrain/Flux_TerrainConfig.h"
+#include "Flux/Terrain/Flux_TerrainStreamingManager.h"
+#include "Maths/Zenith_Maths.h"
+
+#include <cmath>
+#include <algorithm>
+
+namespace Exploration_TerrainExplorer
+{
+	using namespace Flux_TerrainConfig;
+
+	// ========================================================================
+	// Terrain Info Structure
+	// ========================================================================
+	struct TerrainInfo
+	{
+		float m_fHeight = 0.0f;               // Height at current position
+		int32_t m_iChunkX = 0;                // Current chunk X coordinate
+		int32_t m_iChunkY = 0;                // Current chunk Y coordinate
+		uint32_t m_uCurrentLOD = 3;           // LOD level at current position
+		bool m_bOnTerrain = true;             // Whether position is within terrain bounds
+	};
+
+	// ========================================================================
+	// Streaming Stats Structure
+	// ========================================================================
+	struct StreamingStats
+	{
+		uint32_t m_uHighLODChunksResident = 0;
+		uint32_t m_uStreamsThisFrame = 0;
+		uint32_t m_uEvictionsThisFrame = 0;
+		float m_fVertexBufferUsageMB = 0.0f;
+		float m_fVertexBufferTotalMB = 0.0f;
+		float m_fIndexBufferUsageMB = 0.0f;
+		float m_fIndexBufferTotalMB = 0.0f;
+	};
+
+	/**
+	 * Convert world position to chunk coordinates
+	 */
+	inline void WorldPosToChunkCoords(const Zenith_Maths::Vector3& xWorldPos, int32_t& iChunkX, int32_t& iChunkY)
+	{
+		// Terrain is centered at origin, so offset by half terrain size
+		float fOffsetX = xWorldPos.x + TERRAIN_SIZE * 0.5f;
+		float fOffsetZ = xWorldPos.z + TERRAIN_SIZE * 0.5f;
+
+		iChunkX = static_cast<int32_t>(std::floor(fOffsetX / CHUNK_SIZE_WORLD));
+		iChunkY = static_cast<int32_t>(std::floor(fOffsetZ / CHUNK_SIZE_WORLD));
+	}
+
+	/**
+	 * Check if chunk coordinates are valid
+	 */
+	inline bool IsChunkValid(int32_t iChunkX, int32_t iChunkY)
+	{
+		return iChunkX >= 0 && iChunkX < static_cast<int32_t>(CHUNK_GRID_SIZE) &&
+		       iChunkY >= 0 && iChunkY < static_cast<int32_t>(CHUNK_GRID_SIZE);
+	}
+
+	/**
+	 * Get terrain height at a world XZ position
+	 * This is a simplified sampling - in a real implementation you'd sample
+	 * the actual heightmap data or use physics raycasting.
+	 *
+	 * @param fWorldX World X coordinate
+	 * @param fWorldZ World Z coordinate
+	 * @return Estimated terrain height (simplified procedural for demo)
+	 */
+	inline float GetTerrainHeightAt(float fWorldX, float fWorldZ)
+	{
+		// Simplified procedural height for demo purposes
+		// In a real implementation, you would:
+		// 1. Sample the terrain heightmap texture
+		// 2. Or use physics raycast against terrain collider
+		// 3. Or query the terrain component's physics mesh
+
+		// Simple multi-octave noise approximation
+		float fHeight = 0.0f;
+
+		// Large hills
+		float fFreq1 = 0.001f;
+		fHeight += std::sin(fWorldX * fFreq1) * std::cos(fWorldZ * fFreq1) * 50.0f;
+
+		// Medium features
+		float fFreq2 = 0.005f;
+		fHeight += std::sin(fWorldX * fFreq2 + 1.3f) * std::cos(fWorldZ * fFreq2 + 0.7f) * 20.0f;
+
+		// Small details
+		float fFreq3 = 0.02f;
+		fHeight += std::sin(fWorldX * fFreq3 + 2.1f) * std::cos(fWorldZ * fFreq3 + 1.4f) * 5.0f;
+
+		// Add base height to keep most terrain above water level
+		fHeight += 30.0f;
+
+		// Clamp to reasonable terrain bounds
+		fHeight = std::max(0.0f, fHeight);
+
+		return fHeight;
+	}
+
+	/**
+	 * Get comprehensive terrain information at a position
+	 */
+	inline TerrainInfo GetTerrainInfo(const Zenith_Maths::Vector3& xWorldPos)
+	{
+		TerrainInfo xInfo;
+
+		// Get chunk coordinates
+		WorldPosToChunkCoords(xWorldPos, xInfo.m_iChunkX, xInfo.m_iChunkY);
+
+		// Check if on terrain
+		xInfo.m_bOnTerrain = IsChunkValid(xInfo.m_iChunkX, xInfo.m_iChunkY);
+
+		// Get height
+		xInfo.m_fHeight = GetTerrainHeightAt(xWorldPos.x, xWorldPos.z);
+
+		// Calculate LOD level based on distance from terrain center
+		// (This is a simplification - actual LOD is per-chunk based on camera distance)
+		float fDistFromCenterSq = xWorldPos.x * xWorldPos.x + xWorldPos.z * xWorldPos.z;
+		xInfo.m_uCurrentLOD = SelectLOD(fDistFromCenterSq);
+
+		return xInfo;
+	}
+
+	/**
+	 * Get streaming statistics from the terrain system
+	 */
+	inline StreamingStats GetStreamingStats()
+	{
+		StreamingStats xStats;
+
+		if (Flux_TerrainStreamingManager::IsInitialized())
+		{
+			const auto& xEngineStats = Flux_TerrainStreamingManager::GetStats();
+			xStats.m_uHighLODChunksResident = xEngineStats.m_uHighLODChunksResident;
+			xStats.m_uStreamsThisFrame = xEngineStats.m_uStreamsThisFrame;
+			xStats.m_uEvictionsThisFrame = xEngineStats.m_uEvictionsThisFrame;
+			xStats.m_fVertexBufferUsageMB = static_cast<float>(xEngineStats.m_uVertexBufferUsedMB);
+			xStats.m_fVertexBufferTotalMB = static_cast<float>(xEngineStats.m_uVertexBufferTotalMB);
+			xStats.m_fIndexBufferUsageMB = static_cast<float>(xEngineStats.m_uIndexBufferUsedMB);
+			xStats.m_fIndexBufferTotalMB = static_cast<float>(xEngineStats.m_uIndexBufferTotalMB);
+		}
+
+		return xStats;
+	}
+
+	/**
+	 * Get LOD residency state for a specific chunk
+	 */
+	inline uint32_t GetChunkResidentLOD(int32_t iChunkX, int32_t iChunkY)
+	{
+		if (!IsChunkValid(iChunkX, iChunkY))
+			return LOD_ALWAYS_RESIDENT;
+
+		if (!Flux_TerrainStreamingManager::IsInitialized())
+			return LOD_ALWAYS_RESIDENT;
+
+		// Check which LODs are resident, return highest quality
+		for (uint32_t uLOD = 0; uLOD < LOD_COUNT; ++uLOD)
+		{
+			if (Flux_TerrainStreamingManager::GetResidencyState(
+					static_cast<uint32_t>(iChunkX),
+					static_cast<uint32_t>(iChunkY),
+					uLOD) == Flux_TerrainLODResidencyState::RESIDENT)
+			{
+				return uLOD;
+			}
+		}
+
+		return LOD_ALWAYS_RESIDENT;
+	}
+
+	/**
+	 * Calculate distance to chunk center
+	 */
+	inline float GetDistanceToChunk(const Zenith_Maths::Vector3& xWorldPos, int32_t iChunkX, int32_t iChunkY)
+	{
+		// Calculate chunk center in world space
+		float fChunkCenterX = (static_cast<float>(iChunkX) + 0.5f) * CHUNK_SIZE_WORLD - TERRAIN_SIZE * 0.5f;
+		float fChunkCenterZ = (static_cast<float>(iChunkY) + 0.5f) * CHUNK_SIZE_WORLD - TERRAIN_SIZE * 0.5f;
+
+		float fDx = xWorldPos.x - fChunkCenterX;
+		float fDz = xWorldPos.z - fChunkCenterZ;
+
+		return std::sqrt(fDx * fDx + fDz * fDz);
+	}
+
+	/**
+	 * Get terrain bounds
+	 */
+	inline void GetTerrainBounds(Zenith_Maths::Vector3& xMin, Zenith_Maths::Vector3& xMax)
+	{
+		float fHalfSize = TERRAIN_SIZE * 0.5f;
+		xMin = Zenith_Maths::Vector3(-fHalfSize, 0.0f, -fHalfSize);
+		xMax = Zenith_Maths::Vector3(fHalfSize, MAX_TERRAIN_HEIGHT, fHalfSize);
+	}
+
+	/**
+	 * Clamp position to terrain bounds
+	 */
+	inline Zenith_Maths::Vector3 ClampToTerrainBounds(const Zenith_Maths::Vector3& xPos)
+	{
+		float fHalfSize = TERRAIN_SIZE * 0.5f;
+		float fMargin = 50.0f;  // Keep player slightly inside bounds
+
+		Zenith_Maths::Vector3 xClamped = xPos;
+		xClamped.x = std::clamp(xClamped.x, -fHalfSize + fMargin, fHalfSize - fMargin);
+		xClamped.z = std::clamp(xClamped.z, -fHalfSize + fMargin, fHalfSize - fMargin);
+
+		return xClamped;
+	}
+
+	/**
+	 * Get LOD name string for display
+	 */
+	inline const char* GetLODDisplayName(uint32_t uLOD)
+	{
+		return GetLODName(uLOD);
+	}
+
+	/**
+	 * Get total terrain chunk count
+	 */
+	inline uint32_t GetTotalChunkCount()
+	{
+		return TOTAL_CHUNKS;
+	}
+
+	/**
+	 * Get terrain size in world units
+	 */
+	inline float GetTerrainSize()
+	{
+		return TERRAIN_SIZE;
+	}
+
+} // namespace Exploration_TerrainExplorer
