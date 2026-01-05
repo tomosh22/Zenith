@@ -84,11 +84,7 @@ const std::vector<const Zenith_ComponentMeta*>& Zenith_ComponentMetaRegistry::Ge
 
 void Zenith_ComponentMetaRegistry::SerializeEntityComponents(Zenith_Entity& xEntity, Zenith_DataStream& xStream) const
 {
-	// Auto-finalize on first use if not already done
-	if (!m_bInitialized)
-	{
-		const_cast<Zenith_ComponentMetaRegistry*>(this)->FinalizeRegistration();
-	}
+	EnsureInitialized();
 
 	// Collect all components the entity has (in serialization order)
 	std::vector<const Zenith_ComponentMeta*> xComponentsToSerialize;
@@ -105,35 +101,47 @@ void Zenith_ComponentMetaRegistry::SerializeEntityComponents(Zenith_Entity& xEnt
 	u_int uNumComponents = static_cast<u_int>(xComponentsToSerialize.size());
 	xStream << uNumComponents;
 
-	// Write each component's type name and data
+	// Write each component's type name and data with size prefix for forward compatibility
 	for (const Zenith_ComponentMeta* pxMeta : xComponentsToSerialize)
 	{
 		xStream << pxMeta->m_strTypeName;
 
+		// Write size placeholder, serialize, then go back and write actual size
+		uint64_t ulSizePos = xStream.GetCursor();
+		u_int uPlaceholder = 0;
+		xStream << uPlaceholder;
+
+		uint64_t ulDataStart = xStream.GetCursor();
 		if (pxMeta->m_pfnSerialize)
 		{
 			pxMeta->m_pfnSerialize(xEntity, xStream);
 		}
+		uint64_t ulDataEnd = xStream.GetCursor();
+
+		// Write actual size
+		u_int uActualSize = static_cast<u_int>(ulDataEnd - ulDataStart);
+		xStream.SetCursor(ulSizePos);
+		xStream << uActualSize;
+		xStream.SetCursor(ulDataEnd);
 	}
 }
 
 void Zenith_ComponentMetaRegistry::DeserializeEntityComponents(Zenith_Entity& xEntity, Zenith_DataStream& xStream) const
 {
-	// Auto-finalize on first use if not already done
-	if (!m_bInitialized)
-	{
-		const_cast<Zenith_ComponentMetaRegistry*>(this)->FinalizeRegistration();
-	}
+	EnsureInitialized();
 
 	// Read component count
 	u_int uNumComponents;
 	xStream >> uNumComponents;
 
-	// Read each component
+	// Read each component (with size prefix for forward compatibility)
 	for (u_int i = 0; i < uNumComponents; ++i)
 	{
 		std::string strComponentType;
 		xStream >> strComponentType;
+
+		u_int uComponentDataSize;
+		xStream >> uComponentDataSize;
 
 		const Zenith_ComponentMeta* pxMeta = GetMetaByName(strComponentType);
 		if (pxMeta && pxMeta->m_pfnDeserialize)
@@ -142,9 +150,8 @@ void Zenith_ComponentMetaRegistry::DeserializeEntityComponents(Zenith_Entity& xE
 		}
 		else
 		{
-			Zenith_Log(LOG_CATEGORY_ECS, "[ComponentMetaRegistry] WARNING: Unknown component type '%s' during deserialization", strComponentType.c_str());
-			// Cannot skip unknown component data - this will corrupt the stream
-			// In a full implementation, we would store component data size to allow skipping
+			Zenith_Log(LOG_CATEGORY_ECS, "[ComponentMetaRegistry] WARNING: Unknown component type '%s', skipping %u bytes", strComponentType.c_str(), uComponentDataSize);
+			xStream.SkipBytes(uComponentDataSize);
 		}
 	}
 }
@@ -155,10 +162,7 @@ void Zenith_ComponentMetaRegistry::DeserializeEntityComponents(Zenith_Entity& xE
 
 void Zenith_ComponentMetaRegistry::RemoveAllComponents(Zenith_Entity& xEntity) const
 {
-	if (!m_bInitialized)
-	{
-		const_cast<Zenith_ComponentMetaRegistry*>(this)->FinalizeRegistration();
-	}
+	EnsureInitialized();
 
 	// Dispatch OnDestroy first (in reverse order - last added, first destroyed)
 	for (auto xIt = m_xMetasSorted.rbegin(); xIt != m_xMetasSorted.rend(); ++xIt)
@@ -187,130 +191,82 @@ void Zenith_ComponentMetaRegistry::RemoveAllComponents(Zenith_Entity& xEntity) c
 
 void Zenith_ComponentMetaRegistry::DispatchOnAwake(Zenith_Entity& xEntity) const
 {
-	if (!m_bInitialized)
-	{
-		const_cast<Zenith_ComponentMetaRegistry*>(this)->FinalizeRegistration();
-	}
-
+	EnsureInitialized();
 	for (const Zenith_ComponentMeta* pxMeta : m_xMetasSorted)
 	{
 		if (pxMeta->m_pfnOnAwake && pxMeta->m_pfnHasComponent && pxMeta->m_pfnHasComponent(xEntity))
-		{
 			pxMeta->m_pfnOnAwake(xEntity);
-		}
 	}
 }
 
 void Zenith_ComponentMetaRegistry::DispatchOnStart(Zenith_Entity& xEntity) const
 {
-	if (!m_bInitialized)
-	{
-		const_cast<Zenith_ComponentMetaRegistry*>(this)->FinalizeRegistration();
-	}
-
+	EnsureInitialized();
 	for (const Zenith_ComponentMeta* pxMeta : m_xMetasSorted)
 	{
 		if (pxMeta->m_pfnOnStart && pxMeta->m_pfnHasComponent && pxMeta->m_pfnHasComponent(xEntity))
-		{
 			pxMeta->m_pfnOnStart(xEntity);
-		}
 	}
 }
 
 void Zenith_ComponentMetaRegistry::DispatchOnEnable(Zenith_Entity& xEntity) const
 {
-	if (!m_bInitialized)
-	{
-		const_cast<Zenith_ComponentMetaRegistry*>(this)->FinalizeRegistration();
-	}
-
+	EnsureInitialized();
 	for (const Zenith_ComponentMeta* pxMeta : m_xMetasSorted)
 	{
 		if (pxMeta->m_pfnOnEnable && pxMeta->m_pfnHasComponent && pxMeta->m_pfnHasComponent(xEntity))
-		{
 			pxMeta->m_pfnOnEnable(xEntity);
-		}
 	}
 }
 
 void Zenith_ComponentMetaRegistry::DispatchOnDisable(Zenith_Entity& xEntity) const
 {
-	if (!m_bInitialized)
-	{
-		const_cast<Zenith_ComponentMetaRegistry*>(this)->FinalizeRegistration();
-	}
-
+	EnsureInitialized();
 	for (const Zenith_ComponentMeta* pxMeta : m_xMetasSorted)
 	{
 		if (pxMeta->m_pfnOnDisable && pxMeta->m_pfnHasComponent && pxMeta->m_pfnHasComponent(xEntity))
-		{
 			pxMeta->m_pfnOnDisable(xEntity);
-		}
 	}
 }
 
 void Zenith_ComponentMetaRegistry::DispatchOnUpdate(Zenith_Entity& xEntity, float fDt) const
 {
-	if (!m_bInitialized)
-	{
-		const_cast<Zenith_ComponentMetaRegistry*>(this)->FinalizeRegistration();
-	}
-
+	EnsureInitialized();
 	for (const Zenith_ComponentMeta* pxMeta : m_xMetasSorted)
 	{
 		if (pxMeta->m_pfnOnUpdate && pxMeta->m_pfnHasComponent && pxMeta->m_pfnHasComponent(xEntity))
-		{
 			pxMeta->m_pfnOnUpdate(xEntity, fDt);
-		}
 	}
 }
 
 void Zenith_ComponentMetaRegistry::DispatchOnLateUpdate(Zenith_Entity& xEntity, float fDt) const
 {
-	if (!m_bInitialized)
-	{
-		const_cast<Zenith_ComponentMetaRegistry*>(this)->FinalizeRegistration();
-	}
-
+	EnsureInitialized();
 	for (const Zenith_ComponentMeta* pxMeta : m_xMetasSorted)
 	{
 		if (pxMeta->m_pfnOnLateUpdate && pxMeta->m_pfnHasComponent && pxMeta->m_pfnHasComponent(xEntity))
-		{
 			pxMeta->m_pfnOnLateUpdate(xEntity, fDt);
-		}
 	}
 }
 
 void Zenith_ComponentMetaRegistry::DispatchOnFixedUpdate(Zenith_Entity& xEntity, float fDt) const
 {
-	if (!m_bInitialized)
-	{
-		const_cast<Zenith_ComponentMetaRegistry*>(this)->FinalizeRegistration();
-	}
-
+	EnsureInitialized();
 	for (const Zenith_ComponentMeta* pxMeta : m_xMetasSorted)
 	{
 		if (pxMeta->m_pfnOnFixedUpdate && pxMeta->m_pfnHasComponent && pxMeta->m_pfnHasComponent(xEntity))
-		{
 			pxMeta->m_pfnOnFixedUpdate(xEntity, fDt);
-		}
 	}
 }
 
 void Zenith_ComponentMetaRegistry::DispatchOnDestroy(Zenith_Entity& xEntity) const
 {
-	if (!m_bInitialized)
-	{
-		const_cast<Zenith_ComponentMetaRegistry*>(this)->FinalizeRegistration();
-	}
-
+	EnsureInitialized();
 	// Dispatch in reverse order for destruction (last added, first destroyed)
 	for (auto xIt = m_xMetasSorted.rbegin(); xIt != m_xMetasSorted.rend(); ++xIt)
 	{
 		const Zenith_ComponentMeta* pxMeta = *xIt;
 		if (pxMeta->m_pfnOnDestroy && pxMeta->m_pfnHasComponent && pxMeta->m_pfnHasComponent(xEntity))
-		{
 			pxMeta->m_pfnOnDestroy(xEntity);
-		}
 	}
 }

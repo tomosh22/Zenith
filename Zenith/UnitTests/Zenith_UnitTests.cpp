@@ -99,7 +99,6 @@ void Zenith_UnitTests::RunAllTests()
 	TestComponentSwapAndPop();
 	TestMultipleComponentRemoval();
 	TestComponentRemovalWithManyEntities();
-	TestEntityIsTrivialSize();
 	TestEntityNameFromScene();
 	TestEntityCopyPreservesAccess();
 
@@ -3030,30 +3029,6 @@ void Zenith_UnitTests::TestComponentRemovalWithManyEntities()
 }
 
 /**
- * Test that Zenith_Entity is lightweight.
- * Entity should only contain: scene pointer (8), entity ID (4), parent ID (4), child list vector, transient flag.
- * Zenith_Vector has: pointer (8) + size (4) + capacity (4) = 16 bytes
- * m_bTransient (bool) takes 1 byte but is padded to 8 bytes for alignment
- * Total: 8 + 4 + 4 + 16 + 8 = 40 bytes on 64-bit
- */
-void Zenith_UnitTests::TestEntityIsTrivialSize()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestEntityIsTrivialSize...");
-
-	// Scene pointer + entity ID + parent ID + child vector + transient flag (with alignment padding)
-	constexpr size_t EXPECTED_SIZE = sizeof(void*) + sizeof(Zenith_EntityID) * 2 + sizeof(Zenith_Vector<Zenith_EntityID>) + sizeof(void*);
-	const size_t uActualSize = sizeof(Zenith_Entity);
-
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Expected Zenith_Entity size: %zu bytes", EXPECTED_SIZE);
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Actual Zenith_Entity size: %zu bytes", uActualSize);
-
-	Zenith_Assert(uActualSize == EXPECTED_SIZE,
-		"TestEntityIsTrivialSize: Zenith_Entity size is not as expected");
-
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestEntityIsTrivialSize completed successfully");
-}
-
-/**
  * Test that entity names are stored in the scene and accessible via GetName()/SetName().
  */
 void Zenith_UnitTests::TestEntityNameFromScene()
@@ -3074,9 +3049,9 @@ void Zenith_UnitTests::TestEntityNameFromScene()
 	Zenith_Assert(xEntity.GetName() == "RenamedEntity",
 		"TestEntityNameFromScene: SetName() did not update name");
 
-	// Verify scene stores the name
-	Zenith_Assert(xTestScene.GetEntityName(xEntity.GetEntityID()) == "RenamedEntity",
-		"TestEntityNameFromScene: Scene does not have correct name");
+	// Verify name is accessible through the scene's entity map
+	Zenith_Assert(xTestScene.GetEntityRef(xEntity.GetEntityID()).GetName() == "RenamedEntity",
+		"TestEntityNameFromScene: Entity in scene map does not have correct name");
 
 	// Create another entity and verify names don't interfere
 	Zenith_Entity xEntity2(&xTestScene, "SecondEntity");

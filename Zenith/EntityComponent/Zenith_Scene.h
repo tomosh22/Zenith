@@ -212,9 +212,6 @@ public:
 	Zenith_Entity& GetEntityRef(Zenith_EntityID uID) { return m_xEntityMap.at(uID); }
 	Zenith_Entity* FindEntityByName(const std::string& strName);
 
-	// Entity name accessors (names stored in scene, not entity)
-	const std::string& GetEntityName(Zenith_EntityID uID) const;
-	void SetEntityName(Zenith_EntityID uID, const std::string& strName);
 
 	static void Update(const float fDt);
 	static void WaitForUpdateComplete();
@@ -237,6 +234,7 @@ private:
 	static bool s_bIsLoadingScene;
 	static bool s_bIsPrefabInstantiating;
 	friend class Zenith_Entity;
+	template<typename... Ts> friend class Zenith_Query;
 #ifdef ZENITH_TOOLS
 	friend class Zenith_Editor;
 	friend class Zenith_SelectionSystem;
@@ -267,7 +265,6 @@ private:
 	}
 
 	std::unordered_map<Zenith_EntityID, Zenith_Entity> m_xEntityMap;
-	std::unordered_map<Zenith_EntityID, std::string> m_xEntityNames;  // Entity name storage (moved from Zenith_Entity)
 	std::unordered_set<Zenith_EntityID> m_xEntitiesStarted;  // Tracks which entities have had OnStart called
 	static Zenith_Scene s_xCurrentScene;
 	static float s_fFixedTimeAccumulator;  // Accumulator for fixed timestep updates

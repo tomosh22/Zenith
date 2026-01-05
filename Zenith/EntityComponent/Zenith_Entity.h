@@ -95,9 +95,24 @@ public:
 	 */
 	bool IsRoot() const { return !HasParent(); }
 
-	// Name accessors (name stored in scene, not entity)
-	const std::string& GetName() const;
+	// Name accessors
+	const std::string& GetName() const { return m_strName; }
 	void SetName(const std::string& strName);
+
+	//--------------------------------------------------------------------------
+	// Enabled State (Unity-like SetActive)
+	//--------------------------------------------------------------------------
+
+	/**
+	 * Check if this entity is enabled. Disabled entities skip Update/FixedUpdate.
+	 */
+	bool IsEnabled() const { return m_bEnabled; }
+
+	/**
+	 * Enable or disable this entity. Calls OnEnable/OnDisable on all components.
+	 * Disabled entities do not receive Update, FixedUpdate, or LateUpdate calls.
+	 */
+	void SetEnabled(bool bEnabled);
 
 	//--------------------------------------------------------------------------
 	// Transient Entity (not saved to scene)
@@ -118,5 +133,7 @@ public:
 private:
 	Zenith_EntityID m_uEntityID;
 	Zenith_Vector<Zenith_EntityID> m_xChildEntityIDs;
+	std::string m_strName;
+	bool m_bEnabled = true;    // Default: enabled. Disabled entities skip updates.
 	bool m_bTransient = true;  // Default: transient (not saved). Scene loading and editor set this to false for persistent entities.
 };

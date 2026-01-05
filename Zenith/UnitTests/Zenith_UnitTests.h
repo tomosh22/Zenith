@@ -49,7 +49,6 @@ private:
 	static void TestComponentSwapAndPop();
 	static void TestMultipleComponentRemoval();
 	static void TestComponentRemovalWithManyEntities();
-	static void TestEntityIsTrivialSize();
 	static void TestEntityNameFromScene();
 	static void TestEntityCopyPreservesAccess();
 

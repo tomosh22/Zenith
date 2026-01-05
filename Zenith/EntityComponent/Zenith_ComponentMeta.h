@@ -153,6 +153,14 @@ public:
 private:
 	Zenith_ComponentMetaRegistry() = default;
 
+	void EnsureInitialized() const
+	{
+		if (!m_bInitialized)
+		{
+			const_cast<Zenith_ComponentMetaRegistry*>(this)->FinalizeRegistration();
+		}
+	}
+
 	std::unordered_map<std::string, Zenith_ComponentMeta> m_xMetaByName;
 	std::vector<const Zenith_ComponentMeta*> m_xMetasSorted;
 	bool m_bInitialized = false;

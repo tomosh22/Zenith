@@ -7,10 +7,10 @@
 
 Zenith_Entity::Zenith_Entity(Zenith_Scene* pxScene, const std::string& strName)
 	: m_pxParentScene(pxScene)
+	, m_strName(strName)
 {
 	m_uEntityID = m_pxParentScene->CreateEntity();
 	Zenith_Assert(pxScene->m_xEntityComponents.Get(m_uEntityID).empty(), "Entity ID %u already has components - registry not cleared or ID collision", m_uEntityID);
-	pxScene->SetEntityName(m_uEntityID, strName);
 	AddComponent<Zenith_TransformComponent>();
 	// m_bTransient defaults to true (transient). Call SetTransient(false) for persistent entities.
 	pxScene->m_xEntityMap.insert({ m_uEntityID, *this });
@@ -20,10 +20,10 @@ Zenith_Entity::Zenith_Entity(Zenith_Scene* pxScene, Zenith_EntityID uID, Zenith_
 	: m_pxParentScene(pxScene)
 	, m_uEntityID(uID)
 	, m_uParentEntityID(uParentID)
+	, m_strName(strName)
 	, m_bTransient(false)  // Loaded entities are persistent (will be saved back to disk)
 {
 	Zenith_Assert(pxScene->m_xEntityComponents.Get(m_uEntityID).empty(), "Entity ID %u already has components - registry not cleared or ID collision", m_uEntityID);
-	pxScene->SetEntityName(m_uEntityID, strName);
 	AddComponent<Zenith_TransformComponent>();
 	pxScene->m_xEntityMap.insert({ m_uEntityID, *this });
 }
@@ -31,9 +31,9 @@ Zenith_Entity::Zenith_Entity(Zenith_Scene* pxScene, Zenith_EntityID uID, Zenith_
 void Zenith_Entity::Initialise(Zenith_Scene* pxScene, const std::string& strName)
 {
 	m_pxParentScene = pxScene;
+	m_strName = strName;
 	m_uEntityID = m_pxParentScene->CreateEntity();
 	Zenith_Assert(pxScene->m_xEntityComponents.Get(m_uEntityID).empty(), "Entity ID %u already has components - registry not cleared or ID collision", m_uEntityID);
-	pxScene->SetEntityName(m_uEntityID, strName);
 	AddComponent<Zenith_TransformComponent>();
 	// m_bTransient defaults to true (transient). Call SetTransient(false) for persistent entities.
 	pxScene->m_xEntityMap.insert({ m_uEntityID, *this });
@@ -44,21 +44,49 @@ void Zenith_Entity::Initialise(Zenith_Scene* pxScene, Zenith_EntityID uID, Zenit
 	m_pxParentScene = pxScene;
 	m_uParentEntityID = uParentID;
 	m_uEntityID = uID;
+	m_strName = strName;
 	m_bTransient = false;  // Loaded entities are persistent (will be saved back to disk)
 	Zenith_Assert(pxScene->m_xEntityComponents.Get(m_uEntityID).empty(), "Entity ID %u already has components - registry not cleared or ID collision", m_uEntityID);
-	pxScene->SetEntityName(m_uEntityID, strName);
 	AddComponent<Zenith_TransformComponent>();
 	pxScene->m_xEntityMap.insert({ m_uEntityID, *this });
 }
 
-const std::string& Zenith_Entity::GetName() const
-{
-	return m_pxParentScene->GetEntityName(m_uEntityID);
-}
-
 void Zenith_Entity::SetName(const std::string& strName)
 {
-	m_pxParentScene->SetEntityName(m_uEntityID, strName);
+	m_strName = strName;
+	// Also update the copy in the entity map
+	auto xIt = m_pxParentScene->m_xEntityMap.find(m_uEntityID);
+	if (xIt != m_pxParentScene->m_xEntityMap.end() && &xIt->second != this)
+	{
+		xIt->second.m_strName = strName;
+	}
+}
+
+void Zenith_Entity::SetEnabled(bool bEnabled)
+{
+	if (m_bEnabled == bEnabled)
+	{
+		return;
+	}
+
+	m_bEnabled = bEnabled;
+
+	// Dispatch OnEnable or OnDisable to all components
+	if (m_bEnabled)
+	{
+		Zenith_ComponentMetaRegistry::Get().DispatchOnEnable(*this);
+	}
+	else
+	{
+		Zenith_ComponentMetaRegistry::Get().DispatchOnDisable(*this);
+	}
+
+	// Also update the copy in the entity map
+	auto xIt = m_pxParentScene->m_xEntityMap.find(m_uEntityID);
+	if (xIt != m_pxParentScene->m_xEntityMap.end() && &xIt->second != this)
+	{
+		xIt->second.m_bEnabled = bEnabled;
+	}
 }
 
 //------------------------------------------------------------------------------
@@ -134,15 +162,12 @@ void Zenith_Entity::WriteToDataStream(Zenith_DataStream& xStream) const
 	// Write entity metadata
 	xStream << m_uEntityID;
 	xStream << m_uParentEntityID;
-	xStream << GetName();
+	xStream << m_strName;
 
-	// Write child entity IDs
-	uint32_t uChildCount = static_cast<uint32_t>(m_xChildEntityIDs.GetSize());
+	// Child hierarchy is rebuilt from parent IDs on load, so we don't serialize children
+	// Write placeholder count for backward compatibility with scene format
+	uint32_t uChildCount = 0;
 	xStream << uChildCount;
-	for (u_int u = 0; u < m_xChildEntityIDs.GetSize(); ++u)
-	{
-		xStream << m_xChildEntityIDs.Get(u);
-	}
 
 	// Serialize all components using the ComponentMeta registry
 	Zenith_ComponentMetaRegistry::Get().SerializeEntityComponents(
@@ -154,20 +179,16 @@ void Zenith_Entity::ReadFromDataStream(Zenith_DataStream& xStream)
 	// Read entity metadata
 	xStream >> m_uEntityID;
 	xStream >> m_uParentEntityID;
-	std::string strName;
-	xStream >> strName;
-	SetName(strName);
+	xStream >> m_strName;
 
-	// Read child entity IDs
+	// Skip child IDs (backward compatibility) - children are rebuilt from parent IDs
 	uint32_t uChildCount = 0;
 	xStream >> uChildCount;
-	m_xChildEntityIDs.Clear();
-	m_xChildEntityIDs.Reserve(uChildCount);
 	for (uint32_t i = 0; i < uChildCount; ++i)
 	{
 		Zenith_EntityID uChildID;
 		xStream >> uChildID;
-		m_xChildEntityIDs.PushBack(uChildID);
+		// Discarded - hierarchy rebuilt from parent IDs
 	}
 
 	// Deserialize all components using the ComponentMeta registry

@@ -170,9 +170,6 @@ void Zenith_Scene::RemoveEntity(Zenith_EntityID uID)
 	Zenith_Entity& xEntity = it->second;
 	Zenith_ComponentMetaRegistry::Get().RemoveAllComponents(xEntity);
 
-	// Remove entity name
-	m_xEntityNames.erase(uID);
-
 	// Remove from started tracking
 	m_xEntitiesStarted.erase(uID);
 
@@ -408,6 +405,7 @@ void Zenith_Scene::Update(const float fDt)
 	{
 		for (auto& [uID, xEntity] : s_xCurrentScene.m_xEntityMap)
 		{
+			if (!xEntity.IsEnabled()) continue;
 			xRegistry.DispatchOnFixedUpdate(xEntity, FIXED_TIMESTEP);
 		}
 		s_fFixedTimeAccumulator -= FIXED_TIMESTEP;
@@ -416,12 +414,14 @@ void Zenith_Scene::Update(const float fDt)
 	// 3. OnUpdate (every frame)
 	for (auto& [uID, xEntity] : s_xCurrentScene.m_xEntityMap)
 	{
+		if (!xEntity.IsEnabled()) continue;
 		xRegistry.DispatchOnUpdate(xEntity, fDt);
 	}
 
 	// 4. OnLateUpdate (after all OnUpdate calls)
 	for (auto& [uID, xEntity] : s_xCurrentScene.m_xEntityMap)
 	{
+		if (!xEntity.IsEnabled()) continue;
 		xRegistry.DispatchOnLateUpdate(xEntity, fDt);
 	}
 
@@ -472,27 +472,11 @@ Zenith_Entity Zenith_Scene::GetEntityFromID(Zenith_EntityID uID) {
 	return m_xEntityMap.at(uID);
 }
 
-const std::string& Zenith_Scene::GetEntityName(Zenith_EntityID uID) const
-{
-	static const std::string s_strEmpty;
-	auto xIt = m_xEntityNames.find(uID);
-	if (xIt != m_xEntityNames.end())
-	{
-		return xIt->second;
-	}
-	return s_strEmpty;
-}
-
-void Zenith_Scene::SetEntityName(Zenith_EntityID uID, const std::string& strName)
-{
-	m_xEntityNames[uID] = strName;
-}
-
 Zenith_Entity* Zenith_Scene::FindEntityByName(const std::string& strName)
 {
 	for (auto& xPair : m_xEntityMap)
 	{
-		if (GetEntityName(xPair.first) == strName)
+		if (xPair.second.GetName() == strName)
 		{
 			return &xPair.second;
 		}

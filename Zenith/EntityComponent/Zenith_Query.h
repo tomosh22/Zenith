@@ -31,25 +31,9 @@ public:
 	template<typename Func>
 	void ForEach(Func&& fn)
 	{
-		// Iterate through entity components map to find matching entities
-		for (u_int uEntityIdx = 0; uEntityIdx < m_pxScene->m_xEntityComponents.GetSize(); ++uEntityIdx)
+		// Iterate m_xEntityMap (only valid entities) for O(num_entities) instead of O(max_entity_id)
+		for (auto& [uEntityID, xEntity] : m_pxScene->m_xEntityMap)
 		{
-			const auto& xComponentMap = m_pxScene->m_xEntityComponents.Get(uEntityIdx);
-			if (xComponentMap.empty())
-			{
-				continue;
-			}
-
-			// Check if this entity has all required component types
-			// Note: We need to find the actual entity ID from the component pool
-			// Since m_xEntityComponents is indexed by entity ID, uEntityIdx IS the entity ID
-			Zenith_EntityID uEntityID = static_cast<Zenith_EntityID>(uEntityIdx);
-
-			if (!m_pxScene->EntityExists(uEntityID))
-			{
-				continue;
-			}
-
 			if (HasAllComponents<Ts...>(uEntityID))
 			{
 				fn(uEntityID, m_pxScene->GetComponentFromEntity<Ts>(uEntityID)...);
@@ -68,17 +52,14 @@ public:
 	// First - returns the first matching entity ID, or INVALID_ENTITY_ID if none
 	Zenith_EntityID First()
 	{
-		Zenith_EntityID uResult = INVALID_ENTITY_ID;
-		for (u_int uEntityIdx = 0; uEntityIdx < m_pxScene->m_xEntityComponents.GetSize(); ++uEntityIdx)
+		for (auto& [uEntityID, xEntity] : m_pxScene->m_xEntityMap)
 		{
-			Zenith_EntityID uEntityID = static_cast<Zenith_EntityID>(uEntityIdx);
-			if (m_pxScene->EntityExists(uEntityID) && HasAllComponents<Ts...>(uEntityID))
+			if (HasAllComponents<Ts...>(uEntityID))
 			{
-				uResult = uEntityID;
-				break;
+				return uEntityID;
 			}
 		}
-		return uResult;
+		return INVALID_ENTITY_ID;
 	}
 
 	// Any - returns true if at least one entity matches the query
