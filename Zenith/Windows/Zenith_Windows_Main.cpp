@@ -20,6 +20,7 @@
 extern void ExportAllMeshes();
 extern void ExportAllTextures();
 extern void ExportHeightmap();
+extern void ExportDefaultFontAtlas();
 #endif
 
 
@@ -29,6 +30,7 @@ int main()
 	ExportAllMeshes();
 	//ExportAllTextures();
 	//ExportHeightmap();
+	ExportDefaultFontAtlas();  // Generate font atlas from TTF
 #endif
 
 	Zenith_Profiling::Initialise();
@@ -67,6 +69,7 @@ int main()
 	Zenith_DebugVariables::AddButton({ "Export", "Meshes", "Export All Meshes" }, ExportAllMeshes);
 	Zenith_DebugVariables::AddButton({ "Export", "Textures", "Export All Textures" }, ExportAllTextures);
 	Zenith_DebugVariables::AddButton({ "Export", "Terrain", "Export Heightmap" }, ExportHeightmap);
+	Zenith_DebugVariables::AddButton({ "Export", "Font", "Export Font Atlas" }, ExportDefaultFontAtlas);
 #endif
 
 	Flux_MemoryManager::BeginFrame();

@@ -13,14 +13,13 @@ void main()
 {
 	vec4 xTexColour = texture(g_xTexture, a_xUV);
 
-	// BC1 compression doesn't preserve alpha - transparent areas become black
-	// Discard nearly black pixels to simulate transparency
-	float fLuminance = dot(xTexColour.rgb, vec3(0.299, 0.587, 0.114));
-	if (fLuminance < 0.1)
+	// Discard fully transparent pixels
+	if (xTexColour.a < 0.01)
 	{
 		discard;
 	}
 
 	// Apply text color tint (white text * color = colored text)
-	o_xColour = vec4(xTexColour.rgb * a_xColour.rgb, a_xColour.a);
+	// Shadow areas (black in RGB) will show through as dark, text areas (white) take the tint
+	o_xColour = vec4(xTexColour.rgb * a_xColour.rgb, xTexColour.a * a_xColour.a);
 }

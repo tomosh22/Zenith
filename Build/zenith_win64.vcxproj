@@ -1031,6 +1031,7 @@
     <ClInclude Include="..\Tools\Middleware\assimp\include\zconf.h" />
     <ClInclude Include="..\Tools\Middleware\assimp\include\zlib.h" />
     <ClInclude Include="..\Tools\Zenith_AssetMigration.h" />
+    <ClInclude Include="..\Tools\Zenith_Tools_FontExport.h" />
     <ClInclude Include="..\Tools\Zenith_Tools_MeshExport.h" />
     <ClInclude Include="..\Tools\Zenith_Tools_TerrainExport.h" />
     <ClInclude Include="..\Tools\Zenith_Tools_TextureExport.h" />
@@ -2057,6 +2058,12 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="..\Tools\Zenith_AssetMigration.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">true</ExcludedFromBuild>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">true</ExcludedFromBuild>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Tools\Zenith_Tools_FontExport.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">true</ExcludedFromBuild>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">true</ExcludedFromBuild>

@@ -20,6 +20,7 @@
 extern void ExportAllMeshes();
 extern void ExportAllTextures();
 extern void ExportHeightmap();
+extern void ExportDefaultFontAtlas();
 #endif
 
 int main()
@@ -31,6 +32,7 @@ int main()
 	ExportAllMeshes();
 	ExportAllTextures();
 	//ExportHeightmap();
+	ExportDefaultFontAtlas();
 #endif
 
 	Zenith_MemoryManagement::Initialise();

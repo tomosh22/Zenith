@@ -26,8 +26,8 @@ static constexpr uint32_t s_uMaxCharsPerFrame = 65536;
 // Must match CHAR_ASPECT_RATIO in Flux_Text.vert
 static constexpr float CHAR_ASPECT_RATIO = 0.5f;
 
-// Character spacing includes a small gap (10% of char width) for natural appearance
-static constexpr float CHAR_SPACING = CHAR_ASPECT_RATIO * 1.1f;
+// Character spacing
+static constexpr float CHAR_SPACING = CHAR_ASPECT_RATIO * 0.5f;
 
 // Base text size for TextComponent entries (in pixels) - scaled by TextEntry::m_fScale
 static constexpr float TEXT_COMPONENT_BASE_SIZE = 32.0f;

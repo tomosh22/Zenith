@@ -25,12 +25,15 @@ public class FluxCompilerProject : ZenithBaseProject
 	public void ConfigureAll(Configuration conf, ZenithTarget target)
 	{
 		conf.ProjectFileName = "[project.Name]_[target.Platform]";
-		conf.ProjectPath = RootPath + "/FluxCompiler";
+		conf.ProjectPath = @"[project.SharpmakeCsPath]/../FluxCompiler";
 
 		conf.Options.Add(Options.Vc.Compiler.CppLanguageStandard.CPP20);
 
+		// Zenith root path - absolute path computed from Sharpmake location
+		string zenithRoot = Path.GetFullPath(Path.Combine(SharpmakeCsPath, "..")).Replace('\\', '/');
+
 		// Shader source path - using forward slashes for compatibility
-		string shaderSourceRoot = (RootPath + "/Zenith/Flux/Shaders/").Replace('\\', '/');
+		string shaderSourceRoot = zenithRoot + "/Zenith/Flux/Shaders/";
 		conf.Defines.Add($"SHADER_SOURCE_ROOT=\"{shaderSourceRoot}\"");
 		conf.Defines.Add("GLM_ENABLE_EXPERIMENTAL");
 

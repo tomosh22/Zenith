@@ -433,6 +433,9 @@
     <ClCompile Include="..\Tools\Zenith_AssetMigration.cpp">
       <Filter>Tools</Filter>
     </ClCompile>
+    <ClCompile Include="..\Tools\Zenith_Tools_FontExport.cpp">
+      <Filter>Tools</Filter>
+    </ClCompile>
     <ClCompile Include="..\Tools\Zenith_Tools_MeshExport.cpp">
       <Filter>Tools</Filter>
     </ClCompile>
@@ -2762,6 +2765,9 @@
       <Filter>Tools\Middleware\assimp\include</Filter>
     </ClInclude>
     <ClInclude Include="..\Tools\Zenith_AssetMigration.h">
+      <Filter>Tools</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Tools\Zenith_Tools_FontExport.h">
       <Filter>Tools</Filter>
     </ClInclude>
     <ClInclude Include="..\Tools\Zenith_Tools_MeshExport.h">

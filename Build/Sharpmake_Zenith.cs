@@ -114,7 +114,8 @@ public class ZenithProject : ZenithBaseProject
 		conf.IncludePaths.Add(RootPath + "/Middleware/imgui-docking");
 
 		// Zenith root path - absolute path computed from Sharpmake location
-		string zenithRoot = new DirectoryInfo(SharpmakeCsPath).Parent.FullName.Replace('\\', '/');
+		// Use Path.GetFullPath to canonicalize and remove ".." components
+		string zenithRoot = Path.GetFullPath(Path.Combine(SharpmakeCsPath, "..")).Replace('\\', '/');
 
 		// Asset paths use absolute paths so they work regardless of working directory
 		string engineAssetRoot = zenithRoot + "/Zenith/Assets/";
