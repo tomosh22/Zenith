@@ -8,11 +8,6 @@
 #include "EntityComponent/Zenith_ComponentRegistry.h"
 #endif
 
-namespace JPH
-{
-	class Body;
-}
-
 class Zenith_TransformComponent
 {
 public:
@@ -32,7 +27,6 @@ public:
 	void GetScale(Zenith_Maths::Vector3& xScale);
 
 	Zenith_Maths::Vector3 m_xScale = { 1.,1.,1. };
-	JPH::Body* m_pxRigidBody = nullptr;
 
 	void BuildModelMatrix(Zenith_Maths::Matrix4& xMatOut);
 
@@ -79,8 +73,6 @@ public:
 #endif
 
 private:
-	friend class Zenith_ColliderComponent;
-	
 	Zenith_Maths::Vector3 m_xPosition = { 0.0, 0.0, 0.0 };
 	Zenith_Maths::Quat m_xRotation = { 1.0, 0.0, 0.0, 0.0 };
 

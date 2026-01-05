@@ -146,6 +146,7 @@ public class ZenithSolution : Solution
 
 		conf.AddProject<ZenithProject>(target);
 		conf.AddProject<TestGameProject>(target);
+		conf.AddProject<MarbleGameProject>(target);
 
 		// FluxCompiler is Windows-only
 		if (target.Platform == Platform.win64)

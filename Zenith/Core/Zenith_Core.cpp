@@ -29,6 +29,7 @@
 #include "Physics/Zenith_Physics.h"
 #include "Physics/Zenith_PhysicsMeshGenerator.h"
 #include "Profiling/Zenith_Profiling.h"
+#include "AssetHandling/Zenith_AsyncAssetLoader.h"
 #include "Zenith_OS_Include.h"
 
 float Zenith_Core::s_fDt = 0.f;
@@ -158,6 +159,9 @@ void Zenith_Core::Zenith_MainLoop()
 	UpdateTimers();
 	Zenith_Input::BeginFrame();
 	Zenith_Window::GetInstance()->BeginFrame();
+
+	// Process async asset load callbacks on main thread
+	Zenith_AsyncAssetLoader::ProcessCompletedLoads();
 
 	Flux_MemoryManager::BeginFrame();
 	if (!Flux_Swapchain::BeginFrame())

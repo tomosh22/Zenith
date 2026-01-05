@@ -99,7 +99,24 @@ public:
 	const std::string& GetName() const;
 	void SetName(const std::string& strName);
 
+	//--------------------------------------------------------------------------
+	// Transient Entity (not saved to scene)
+	//--------------------------------------------------------------------------
+
+	/**
+	 * Mark entity as transient - it will NOT be saved when scene is serialized.
+	 * Use this for procedurally generated entities at runtime.
+	 * Runtime-instantiated objects that aren't saved to scene.
+	 */
+	void SetTransient(bool bTransient) { m_bTransient = bTransient; }
+
+	/**
+	 * Check if this entity is transient (not serialized)
+	 */
+	bool IsTransient() const { return m_bTransient; }
+
 private:
 	Zenith_EntityID m_uEntityID;
 	Zenith_Vector<Zenith_EntityID> m_xChildEntityIDs;
+	bool m_bTransient = false;  // If true, entity is NOT saved during serialization
 };

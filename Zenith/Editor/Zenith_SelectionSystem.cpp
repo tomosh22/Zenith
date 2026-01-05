@@ -448,68 +448,12 @@ BoundingBox Zenith_SelectionSystem::CalculateBoundingBox(Zenith_Entity* pxEntity
 
 void Zenith_SelectionSystem::RenderBoundingBoxes()
 {
-	// TODO: Implement debug rendering of all bounding boxes
-	// This is useful for debugging selection and seeing entity bounds
-	//
-	// IMPLEMENTATION APPROACH:
-	// 1. Iterate through s_xEntityBoundingBoxes map
-	// 2. For each bounding box:
-	//    a. Get the 8 corners of the box
-	//    b. Draw 12 edges as lines (wireframe cube)
-	//    c. Use debug color (e.g., yellow for all, green for selected)
-	//
-	// RENDERING OPTIONS:
-	// 
-	// OPTION 1: ImGui Overlay (Simplest for prototyping)
-	// - Project each corner to screen space using camera matrices
-	// - Use ImGui::GetForegroundDrawList()->AddLine()
-	// - Pros: Easy to implement, no 3D rendering setup
-	// - Cons: Lines don't respect depth, may look confusing
-	//
-	// OPTION 2: Debug Line Renderer (Better)
-	// - Integrate with or create a debug line rendering system
-	// - Submit line primitives to rendering pipeline
-	// - Render with depth testing in 3D
-	// - Pros: Proper 3D visualization
-	// - Cons: Requires debug rendering infrastructure
-	//
-	// OPTION 3: Flux Command List (Most integrated)
-	// - Use Flux command list to submit line geometry
-	// - Create simple line shader if needed
-	// - Pros: Integrates with existing rendering system
-	// - Cons: More complex setup
-	//
-	// RECOMMENDED: Start with ImGui overlay, migrate to debug renderer later
+	// STUB: Requires implementation for debug rendering of all bounding boxes
 }
 
 void Zenith_SelectionSystem::RenderSelectedBoundingBox(Zenith_Entity* pxEntity)
 {
-	// TODO: Implement debug rendering of selected entity's bounding box
-	// Similar to RenderBoundingBoxes() but only for one entity
-	//
-	// IMPLEMENTATION:
-	// 1. Get bounding box for selected entity
-	// 2. Render wireframe box with highlight color (e.g., yellow/orange)
-	// 3. Optionally make lines thicker for visibility
-	//
-	// USAGE:
-	// Call from Zenith_Editor::RenderGizmos() after gizmo rendering
-	// to provide visual feedback of selected object
-	//
-	// EXAMPLE PSEUDO-CODE:
-	// if (!pxEntity) return;
-	// BoundingBox box = GetEntityBoundingBox(pxEntity);
-	// 
-	// // Get 8 corners
-	// Vector3 corners[8] = {
-	//     {box.m_xMin.x, box.m_xMin.y, box.m_xMin.z},
-	//     {box.m_xMax.x, box.m_xMin.y, box.m_xMin.z},
-	//     // ... other 6 corners
-	// };
-	//
-	// // Draw 12 edges
-	// DrawLine3D(corners[0], corners[1], Color::Yellow);
-	// // ... other 11 edges
+	// STUB: Requires implementation for debug rendering of selected entity bounding box
 }
 
 #endif // ZENITH_TOOLS

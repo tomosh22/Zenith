@@ -1,6 +1,7 @@
 #include "Zenith.h"
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
 #include "EntityComponent/Zenith_ComponentMeta.h"
+#include "EntityComponent/Zenith_Scene.h"
 #include "DataStream/Zenith_DataStream.h"
 
 ZENITH_REGISTER_COMPONENT(Zenith_ScriptComponent, "Script")
@@ -45,12 +46,17 @@ void Zenith_ScriptComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 
 		if (m_pxScriptBehaviour)
 		{
+			// Set the parent entity reference
+			m_pxScriptBehaviour->m_xParentEntity = m_xParentEntity;
+
 			// Read behavior-specific parameters
 			m_pxScriptBehaviour->ReadParametersFromDataStream(xStream);
 
 			Zenith_Log(LOG_CATEGORY_ECS, "ScriptComponent deserialized and recreated behaviour: %s", strTypeName.c_str());
-			// Call OnCreate to initialize the behavior
-			m_pxScriptBehaviour->OnCreate();
+
+			// OnAwake is ONLY called at runtime when behavior is attached.
+			// NOT called during scene deserialization.
+			// OnStart will be called by Zenith_Scene on the first frame for ALL entities.
 		}
 		else
 		{
@@ -116,7 +122,8 @@ void Zenith_ScriptComponent::RenderPropertiesPanel()
 					m_pxScriptBehaviour = Zenith_BehaviourRegistry::Get().CreateBehaviour(szSelectedName, m_xParentEntity);
 					if (m_pxScriptBehaviour)
 					{
-						m_pxScriptBehaviour->OnCreate();
+						m_pxScriptBehaviour->m_xParentEntity = m_xParentEntity;
+						m_pxScriptBehaviour->OnAwake();
 						Zenith_Log(LOG_CATEGORY_ECS, "[ScriptComponent] Set behaviour to: %s", szSelectedName);
 					}
 				}

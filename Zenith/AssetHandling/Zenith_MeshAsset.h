@@ -12,7 +12,7 @@
  * and in CPU memory. It contains no GPU resources and can be shared between
  * multiple runtime instances.
  *
- * The split between Asset (data) and Instance (GPU) follows Unity/Unreal patterns:
+ * Split between Asset (data) and Instance (GPU):
  * - Asset: Loadable, serializable, shareable data
  * - Instance: GPU-uploaded, per-entity runtime state
  */

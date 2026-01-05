@@ -12,6 +12,7 @@ private:
 	static void TestVector();
 	static void TestVectorFind();
 	static void TestVectorErase();
+	static void TestVectorZeroCapacityResize();
 	static void TestMemoryPool();
 
 	// Scene serialization tests
@@ -121,6 +122,18 @@ private:
 	static void TestPrefabOverrides();
 	static void TestPrefabVariantCreation();
 	static void TestPrefabNestedPrefabs();
+
+	// Async asset loading tests
+	static void TestAsyncLoadState();
+	static void TestAsyncLoadRequest();
+	static void TestAsyncLoadCompletion();
+	static void TestAssetRefAsyncAPI();
+
+	// DataAsset system tests
+	static void TestDataAssetRegistration();
+	static void TestDataAssetCreateAndSave();
+	static void TestDataAssetLoad();
+	static void TestDataAssetRoundTrip();
 };
 
 // Include editor tests separately as they are only available in ZENITH_TOOLS builds

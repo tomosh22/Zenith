@@ -48,6 +48,8 @@ enum Zenith_ProfileIndex
 
 	ZENITH_PROFILE_INDEX__FLUX_MESH_GEOMETRY_LOAD_FROM_FILE,
 
+	ZENITH_PROFILE_INDEX__ASSET_LOAD,
+
 	//#TO_TODO: rename these at runtime
 	ZENITH_PROFILE_INDEX__VULKAN_UPDATE_DESCRIPTOR_SETS,
 	ZENITH_PROFILE_INDEX__VULKAN_MEMORY_MANAGER_UPLOAD,
@@ -101,6 +103,8 @@ static const char* g_aszProfileNames[]
 	"Flux Iterate Commands",
 	"Flux Record Command Buffers",
 	"Flux Mesh Geometry Load From File",
+
+	"Asset Load",
 
 	//#TO_TODO: rename these at runtime
 	"Vulkan Update Descriptor Sets",

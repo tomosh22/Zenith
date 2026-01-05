@@ -252,7 +252,7 @@ private:
 
 	void Resize()
 	{
-		Reserve(m_uCapacity * 2);
+		Reserve(m_uCapacity == 0 ? uDEFAULT_INITIAL_COUNT : m_uCapacity * 2);
 	}
 
 	void CopyFromOther(const Zenith_Vector& xOther)

@@ -26,9 +26,15 @@
 #endif
 #include "TaskSystem/Zenith_TaskSystem.h"
 #include "DataStream/Zenith_DataStream.h"
+#include "Prefab/Zenith_Prefab.h"
 
 Zenith_Scene Zenith_Scene::s_xCurrentScene;
 bool Zenith_Scene::s_bIsLoadingScene = false;
+bool Zenith_Scene::s_bIsPrefabInstantiating = false;
+bool Zenith_Scene::s_bIsPrefabCreationMode = false;
+float Zenith_Scene::s_fFixedTimeAccumulator = 0.0f;
+
+static constexpr float FIXED_TIMESTEP = 1.0f / 60.0f;  // 60 Hz fixed update
 
 // Force link ScriptComponent to ensure its static registration runs
 // This is needed because linker may not include translation units with no referenced symbols
@@ -100,9 +106,50 @@ void Zenith_Scene::Reset()
 	m_xComponents.Clear();
 	m_xEntityComponents.Clear();
 	m_xEntityMap.clear();
+	m_xEntitiesStarted.clear();  // Clear started tracking
 	m_uMainCameraEntity = INVALID_ENTITY_ID;
 	m_uNextEntityID = 1;  // Reset entity ID counter (0 is reserved as invalid)
 }
+
+void Zenith_Scene::Destroy(Zenith_Entity& xEntity)
+{
+	Destroy(xEntity.GetEntityID());
+}
+
+void Zenith_Scene::Destroy(Zenith_EntityID uEntityID)
+{
+	s_xCurrentScene.RemoveEntity(uEntityID);
+}
+
+Zenith_Entity Zenith_Scene::Instantiate(const Zenith_Prefab& xPrefab, const std::string& strName)
+{
+	std::string strEntityName = strName.empty() ? xPrefab.GetName() : strName;
+	// Set flag to allow entity creation during prefab instantiation
+	s_bIsPrefabInstantiating = true;
+	Zenith_Entity xEntity = xPrefab.Instantiate(&s_xCurrentScene, strEntityName);
+	s_bIsPrefabInstantiating = false;
+	return xEntity;
+}
+
+Zenith_Entity Zenith_Scene::Instantiate(const Zenith_Prefab& xPrefab, const Zenith_Maths::Vector3& xPosition, const std::string& strName)
+{
+	Zenith_Entity xEntity = Instantiate(xPrefab, strName);
+	xEntity.GetComponent<Zenith_TransformComponent>().SetPosition(xPosition);
+	return xEntity;
+}
+
+Zenith_Entity Zenith_Scene::Instantiate(const Zenith_Prefab& xPrefab, const Zenith_Maths::Vector3& xPosition, const Zenith_Maths::Quat& xRotation, const std::string& strName)
+{
+	Zenith_Entity xEntity = Instantiate(xPrefab, strName);
+	Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
+	xTransform.SetPosition(xPosition);
+	xTransform.SetRotation(xRotation);
+	return xEntity;
+}
+
+//------------------------------------------------------------------------------
+// Entity Management
+//------------------------------------------------------------------------------
 
 void Zenith_Scene::RemoveEntity(Zenith_EntityID uID)
 {
@@ -127,6 +174,9 @@ void Zenith_Scene::RemoveEntity(Zenith_EntityID uID)
 	// Remove entity name
 	m_xEntityNames.erase(uID);
 
+	// Remove from started tracking
+	m_xEntitiesStarted.erase(uID);
+
 	// Remove from entity map
 	m_xEntityMap.erase(it);
 
@@ -144,14 +194,26 @@ void Zenith_Scene::SaveToFile(const std::string& strFilename)
 	xStream << SCENE_MAGIC;
 	xStream << SCENE_VERSION;
 
-	// Write the number of entities
-	u_int uNumEntities = static_cast<u_int>(m_xEntityMap.size());
+	// Count non-transient entities (transient entities are not saved)
+	u_int uNumEntities = 0;
+	for (auto& pair : m_xEntityMap)
+	{
+		if (!pair.second.IsTransient())
+		{
+			uNumEntities++;
+		}
+	}
 	xStream << uNumEntities;
 
-	// Write each entity
+	// Write each non-transient entity
 	for (auto& pair : m_xEntityMap)
 	{
 		Zenith_Entity& xEntity = pair.second;
+		// Skip transient entities (runtime-created, not saved to scene)
+		if (xEntity.IsTransient())
+		{
+			continue;
+		}
 		xEntity.WriteToDataStream(xStream);
 	}
 
@@ -258,10 +320,14 @@ void Zenith_Scene::LoadFromFile(const std::string& strFilename)
 			xStream >> uChildID;
 		}
 
-		// Track maximum entity ID
+		// Track maximum entity ID and update m_uNextEntityID immediately
+		// This is critical because OnCreate() may be called during DeserializeEntityComponents,
+		// which could create new entities. If m_uNextEntityID isn't updated yet, those new
+		// entities would get IDs that collide with entities being deserialized.
 		if (uEntityID > uMaxEntityID)
 		{
 			uMaxEntityID = uEntityID;
+			m_uNextEntityID = uMaxEntityID + 1;
 		}
 
 		// Ensure m_xEntityComponents has space for this entity ID
@@ -322,26 +388,49 @@ void Zenith_Scene::LoadFromFile(const std::string& strFilename)
 void Zenith_Scene::Update(const float fDt)
 {
 	s_xCurrentScene.AcquireMutex();
-	Zenith_Vector<Zenith_ScriptComponent*> xScripts;
-	s_xCurrentScene.GetAllOfComponentType<Zenith_ScriptComponent>(xScripts);
-	for (Zenith_Vector<Zenith_ScriptComponent*>::Iterator xIt(xScripts); !xIt.Done(); xIt.Next())
+
+	Zenith_ComponentMetaRegistry& xRegistry = Zenith_ComponentMetaRegistry::Get();
+
+	// 1. OnStart for new entities (entities not yet started)
+	for (auto& [uID, xEntity] : s_xCurrentScene.m_xEntityMap)
 	{
-		Zenith_ScriptComponent* const pxScript = xIt.GetData();
-		pxScript->OnUpdate(fDt);
+		if (s_xCurrentScene.m_xEntitiesStarted.find(uID) == s_xCurrentScene.m_xEntitiesStarted.end())
+		{
+			xRegistry.DispatchOnStart(xEntity);
+			s_xCurrentScene.m_xEntitiesStarted.insert(uID);
+		}
 	}
+
+	// 2. OnFixedUpdate (physics timestep - 60Hz)
+	s_fFixedTimeAccumulator += fDt;
+	while (s_fFixedTimeAccumulator >= FIXED_TIMESTEP)
+	{
+		for (auto& [uID, xEntity] : s_xCurrentScene.m_xEntityMap)
+		{
+			xRegistry.DispatchOnFixedUpdate(xEntity, FIXED_TIMESTEP);
+		}
+		s_fFixedTimeAccumulator -= FIXED_TIMESTEP;
+	}
+
+	// 3. OnUpdate (every frame)
+	for (auto& [uID, xEntity] : s_xCurrentScene.m_xEntityMap)
+	{
+		xRegistry.DispatchOnUpdate(xEntity, fDt);
+	}
+
+	// 4. OnLateUpdate (after all OnUpdate calls)
+	for (auto& [uID, xEntity] : s_xCurrentScene.m_xEntityMap)
+	{
+		xRegistry.DispatchOnLateUpdate(xEntity, fDt);
+	}
+
 	s_xCurrentScene.ReleaseMutex();
 
-	// Update UI components after scripts (scripts can modify UI during their update)
-	Zenith_Vector<Zenith_UIComponent*> xUIComponents;
-	s_xCurrentScene.GetAllOfComponentType<Zenith_UIComponent>(xUIComponents);
-	for (Zenith_Vector<Zenith_UIComponent*>::Iterator xIt(xUIComponents); !xIt.Done(); xIt.Next())
-	{
-		Zenith_UIComponent* const pxUI = xIt.GetData();
-		pxUI->Update(fDt);
-	}
-
-	//#TO used to have this before script update but scripts can add new model components
-	//causing a vector resize which causes the animation update to read deallocate model memory
+	// ===========================================================================
+	// Animation Update (parallel task system)
+	// ===========================================================================
+	// Note: This runs after script updates to avoid vector resize issues
+	// when scripts add new model components
 
 	g_xAnimationsToUpdate.Clear();
 	Zenith_Vector<Zenith_ModelComponent*> xModels;

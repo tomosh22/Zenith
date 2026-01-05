@@ -2,6 +2,7 @@
 #include "AssetHandling/Zenith_AssetRef.h"
 #include "AssetHandling/Zenith_AssetHandler.h"
 #include "AssetHandling/Zenith_ModelAsset.h"
+#include "AssetHandling/Zenith_AsyncAssetLoader.h"
 #include "Flux/Flux.h"
 #include "Flux/Flux_MaterialAsset.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
@@ -240,4 +241,138 @@ namespace Zenith_AssetRefInternal
 		ClearPrefabCache();
 		// Note: Textures and Materials have their own cache systems
 	}
+}
+
+//--------------------------------------------------------------------------
+// Async Loading Method Implementations
+//--------------------------------------------------------------------------
+
+// Texture
+template<>
+void Zenith_AssetRef<Flux_Texture>::LoadAsync(
+	AssetLoadCompleteFn pfnOnComplete,
+	void* pxUserData,
+	AssetLoadFailFn pfnOnFail)
+{
+	Zenith_AsyncAssetLoader::LoadAsync<Flux_Texture>(m_xGUID, pfnOnComplete, pxUserData, pfnOnFail);
+}
+
+template<>
+bool Zenith_AssetRef<Flux_Texture>::IsReady() const
+{
+	if (m_pxCached != nullptr)
+		return true;
+	return Zenith_AsyncAssetLoader::GetLoadState(m_xGUID) == AssetLoadState::LOADED;
+}
+
+template<>
+AssetLoadState Zenith_AssetRef<Flux_Texture>::GetLoadState() const
+{
+	if (m_pxCached != nullptr)
+		return AssetLoadState::LOADED;
+	return Zenith_AsyncAssetLoader::GetLoadState(m_xGUID);
+}
+
+// Material
+template<>
+void Zenith_AssetRef<Flux_MaterialAsset>::LoadAsync(
+	AssetLoadCompleteFn pfnOnComplete,
+	void* pxUserData,
+	AssetLoadFailFn pfnOnFail)
+{
+	Zenith_AsyncAssetLoader::LoadAsync<Flux_MaterialAsset>(m_xGUID, pfnOnComplete, pxUserData, pfnOnFail);
+}
+
+template<>
+bool Zenith_AssetRef<Flux_MaterialAsset>::IsReady() const
+{
+	if (m_pxCached != nullptr)
+		return true;
+	return Zenith_AsyncAssetLoader::GetLoadState(m_xGUID) == AssetLoadState::LOADED;
+}
+
+template<>
+AssetLoadState Zenith_AssetRef<Flux_MaterialAsset>::GetLoadState() const
+{
+	if (m_pxCached != nullptr)
+		return AssetLoadState::LOADED;
+	return Zenith_AsyncAssetLoader::GetLoadState(m_xGUID);
+}
+
+// Mesh
+template<>
+void Zenith_AssetRef<Flux_MeshGeometry>::LoadAsync(
+	AssetLoadCompleteFn pfnOnComplete,
+	void* pxUserData,
+	AssetLoadFailFn pfnOnFail)
+{
+	Zenith_AsyncAssetLoader::LoadAsync<Flux_MeshGeometry>(m_xGUID, pfnOnComplete, pxUserData, pfnOnFail);
+}
+
+template<>
+bool Zenith_AssetRef<Flux_MeshGeometry>::IsReady() const
+{
+	if (m_pxCached != nullptr)
+		return true;
+	return Zenith_AsyncAssetLoader::GetLoadState(m_xGUID) == AssetLoadState::LOADED;
+}
+
+template<>
+AssetLoadState Zenith_AssetRef<Flux_MeshGeometry>::GetLoadState() const
+{
+	if (m_pxCached != nullptr)
+		return AssetLoadState::LOADED;
+	return Zenith_AsyncAssetLoader::GetLoadState(m_xGUID);
+}
+
+// Model
+template<>
+void Zenith_AssetRef<Zenith_ModelAsset>::LoadAsync(
+	AssetLoadCompleteFn pfnOnComplete,
+	void* pxUserData,
+	AssetLoadFailFn pfnOnFail)
+{
+	Zenith_AsyncAssetLoader::LoadAsync<Zenith_ModelAsset>(m_xGUID, pfnOnComplete, pxUserData, pfnOnFail);
+}
+
+template<>
+bool Zenith_AssetRef<Zenith_ModelAsset>::IsReady() const
+{
+	if (m_pxCached != nullptr)
+		return true;
+	return Zenith_AsyncAssetLoader::GetLoadState(m_xGUID) == AssetLoadState::LOADED;
+}
+
+template<>
+AssetLoadState Zenith_AssetRef<Zenith_ModelAsset>::GetLoadState() const
+{
+	if (m_pxCached != nullptr)
+		return AssetLoadState::LOADED;
+	return Zenith_AsyncAssetLoader::GetLoadState(m_xGUID);
+}
+
+// Prefab
+template<>
+void Zenith_AssetRef<Zenith_Prefab>::LoadAsync(
+	AssetLoadCompleteFn pfnOnComplete,
+	void* pxUserData,
+	AssetLoadFailFn pfnOnFail)
+{
+	Zenith_AsyncAssetLoader::LoadAsync<Zenith_Prefab>(m_xGUID, pfnOnComplete, pxUserData, pfnOnFail);
+}
+
+template<>
+bool Zenith_AssetRef<Zenith_Prefab>::IsReady() const
+{
+	if (m_pxCached != nullptr)
+		return true;
+	return Zenith_AsyncAssetLoader::GetLoadState(m_xGUID) == AssetLoadState::LOADED;
+}
+
+template<>
+AssetLoadState Zenith_AssetRef<Zenith_Prefab>::GetLoadState() const
+{
+	if (m_pxCached != nullptr)
+		return AssetLoadState::LOADED;
+	return Zenith_AsyncAssetLoader::GetLoadState(m_xGUID);
 }

@@ -23,7 +23,6 @@ void Zenith_EditorAddLogMessage(const char* szMessage, int eLevel, Zenith_LogCat
 #include "Zenith_SelectionSystem.h"
 #include "Zenith_Gizmo.h"
 #include "Zenith_UndoSystem.h"
-#include "Zenith_AnimationStateMachineEditor.h"
 #include "Flux/Gizmos/Flux_Gizmos.h"
 #include "EntityComponent/Zenith_Entity.h"
 #include "EntityComponent/Zenith_Scene.h"

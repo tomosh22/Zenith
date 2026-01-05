@@ -11,10 +11,10 @@
     </ProjectConfiguration>
   </ItemGroup>
   <PropertyGroup Label="Globals">
-    <ProjectGuid>{8AB3480A-ED9C-389C-2D59-1873CBEF23BD}</ProjectGuid>
+    <ProjectGuid>{B32F9A8D-1A91-87F3-12BA-56509F05A93B}</ProjectGuid>
     <DefaultLanguage>en-US</DefaultLanguage>
-    <RootNamespace>Sokoban</RootNamespace>
-    <ProjectName>Sokoban</ProjectName>
+    <RootNamespace>Marble</RootNamespace>
+    <ProjectName>Marble</ProjectName>
   </PropertyGroup>
   <PropertyGroup Label="Globals" Condition="'$(Platform)'=='Android-arm64-v8a' Or '$(Platform)'=='Android-x86_64' Or '$(Platform)'=='Android-armeabi-v7a' Or '$(Platform)'=='Android-x86'">
     <PlatformToolset>Clang</PlatformToolset>
@@ -51,20 +51,20 @@
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">
-    <TargetName>libsokoban</TargetName>
+    <TargetName>libmarble</TargetName>
     <OutDir>$(ProjectDir)output\agde\arm64_v8a_vs2022_debug_agde_false\</OutDir>
     <IntDir>obj\agde\arm64_v8a_vs2022_debug_agde_false\</IntDir>
     <TargetExt>.so</TargetExt>
-    <OutputFile>output\agde\arm64_v8a_vs2022_debug_agde_false\libsokoban.so</OutputFile>
+    <OutputFile>output\agde\arm64_v8a_vs2022_debug_agde_false\libmarble.so</OutputFile>
     <IncludePath>$(AndroidNdkDirectory)\sources\android</IncludePath>
     <NativeBuildBackend>MultiToolTaskMSBuild</NativeBuildBackend>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">
-    <TargetName>libsokoban</TargetName>
+    <TargetName>libmarble</TargetName>
     <OutDir>$(ProjectDir)output\agde\arm64_v8a_vs2022_release_agde_false\</OutDir>
     <IntDir>obj\agde\arm64_v8a_vs2022_release_agde_false\</IntDir>
     <TargetExt>.so</TargetExt>
-    <OutputFile>output\agde\arm64_v8a_vs2022_release_agde_false\libsokoban.so</OutputFile>
+    <OutputFile>output\agde\arm64_v8a_vs2022_release_agde_false\libmarble.so</OutputFile>
     <IncludePath>$(AndroidNdkDirectory)\sources\android</IncludePath>
     <NativeBuildBackend>MultiToolTaskMSBuild</NativeBuildBackend>
   </PropertyGroup>
@@ -72,7 +72,7 @@
     <ClCompile>
       <WarningLevel>EnableFormatWarnings</WarningLevel>
       <Optimization>Disabled</Optimization>
-      <PreprocessorDefinitions>ENGINE_ASSETS_DIR="c:/dev/zenith/Zenith/Assets/";GAME_ASSETS_DIR="c:/dev/zenith/Games/Sokoban/Assets/";GLM_ENABLE_EXPERIMENTAL;NOMINMAX;ZENITH_ANDROID;ZENITH_DEBUG;ZENITH_ROOT="c:/dev/zenith/";ZENITH_VULKAN;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>ENGINE_ASSETS_DIR="c:/dev/zenith/Zenith/Assets/";GAME_ASSETS_DIR="c:/dev/zenith/Games/Marble/Assets/";GLM_ENABLE_EXPERIMENTAL;NOMINMAX;ZENITH_ANDROID;ZENITH_DEBUG;ZENITH_ROOT="c:/dev/zenith/";ZENITH_VULKAN;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>..\..;..;..\..\..\middleware;..\..\..\middleware\glm-master;..\..\..\middleware\imgui-docking;..\..\..\middleware\joltphysics-5.4.0;..\..\..\middleware\stb;..\..\..\middleware\vma;..\..\..\zenith;..\..\..\zenith\android;..\..\..\zenith\core;..\..\..\zenith\vulkan;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <ClangDebugInformationFormat>FullDebug</ClangDebugInformationFormat>
       <FloatABI>Default</FloatABI>
@@ -92,11 +92,11 @@
     </ClCompile>
     <Link>
       <DebuggerSymbolInformation>true</DebuggerSymbolInformation>
-      <OutputFile>output\agde\arm64_v8a_vs2022_debug_agde_false\libsokoban.so</OutputFile>
+      <OutputFile>output\agde\arm64_v8a_vs2022_debug_agde_false\libmarble.so</OutputFile>
       <AdditionalLibraryDirectories>$(StlLibraryPath);..\..\..\build\output\agde\arm64_v8a_vs2022_debug_agde_false;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>-l:libzenith.a;%(AdditionalDependencies);</AdditionalDependencies>
       <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
-      <GenerateMapFile>output\agde\arm64_v8a_vs2022_debug_agde_false\libsokoban.map</GenerateMapFile>
+      <GenerateMapFile>output\agde\arm64_v8a_vs2022_debug_agde_false\libmarble.map</GenerateMapFile>
       <IncrementalLink>false</IncrementalLink>
       <FunctionBinding>true</FunctionBinding>
       <NoExecStackRequired>true</NoExecStackRequired>
@@ -108,7 +108,7 @@
     <ClCompile>
       <WarningLevel>EnableFormatWarnings</WarningLevel>
       <Optimization>MaxSpeed</Optimization>
-      <PreprocessorDefinitions>ENGINE_ASSETS_DIR="c:/dev/zenith/Zenith/Assets/";GAME_ASSETS_DIR="c:/dev/zenith/Games/Sokoban/Assets/";GLM_ENABLE_EXPERIMENTAL;NDEBUG;NOMINMAX;ZENITH_ANDROID;ZENITH_ROOT="c:/dev/zenith/";ZENITH_VULKAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>ENGINE_ASSETS_DIR="c:/dev/zenith/Zenith/Assets/";GAME_ASSETS_DIR="c:/dev/zenith/Games/Marble/Assets/";GLM_ENABLE_EXPERIMENTAL;NDEBUG;NOMINMAX;ZENITH_ANDROID;ZENITH_ROOT="c:/dev/zenith/";ZENITH_VULKAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <AdditionalIncludeDirectories>..\..;..;..\..\..\middleware;..\..\..\middleware\glm-master;..\..\..\middleware\imgui-docking;..\..\..\middleware\joltphysics-5.4.0;..\..\..\middleware\stb;..\..\..\middleware\vma;..\..\..\zenith;..\..\..\zenith\android;..\..\..\zenith\core;..\..\..\zenith\vulkan;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <ClangDebugInformationFormat>FullDebug</ClangDebugInformationFormat>
       <FloatABI>Default</FloatABI>
@@ -128,11 +128,11 @@
     </ClCompile>
     <Link>
       <DebuggerSymbolInformation>true</DebuggerSymbolInformation>
-      <OutputFile>output\agde\arm64_v8a_vs2022_release_agde_false\libsokoban.so</OutputFile>
+      <OutputFile>output\agde\arm64_v8a_vs2022_release_agde_false\libmarble.so</OutputFile>
       <AdditionalLibraryDirectories>$(StlLibraryPath);..\..\..\build\output\agde\arm64_v8a_vs2022_release_agde_false;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
       <AdditionalDependencies>-l:libzenith.a;%(AdditionalDependencies);</AdditionalDependencies>
       <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
-      <GenerateMapFile>output\agde\arm64_v8a_vs2022_release_agde_false\libsokoban.map</GenerateMapFile>
+      <GenerateMapFile>output\agde\arm64_v8a_vs2022_release_agde_false\libmarble.map</GenerateMapFile>
       <IncrementalLink>false</IncrementalLink>
       <FunctionBinding>true</FunctionBinding>
       <NoExecStackRequired>true</NoExecStackRequired>
@@ -141,11 +141,11 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClInclude Include="..\Components\Sokoban_Behaviour.h" />
-    <ClInclude Include="..\Components\Sokoban_Config.h" />
+    <ClInclude Include="..\Components\Marble_Behaviour.h" />
+    <ClInclude Include="..\Components\Marble_Config.h" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\Sokoban.cpp" />
+    <ClCompile Include="..\Marble.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

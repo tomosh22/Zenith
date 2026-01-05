@@ -472,6 +472,15 @@
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_AssetRef.cpp">
       <Filter>AssetHandling</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\AssetHandling\Zenith_AsyncAssetLoader.cpp">
+      <Filter>AssetHandling</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\AssetHandling\Zenith_DataAsset.cpp">
+      <Filter>AssetHandling</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\AssetHandling\Zenith_DataAssetManager.cpp">
+      <Filter>AssetHandling</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_FileWatcher.cpp">
       <Filter>AssetHandling</Filter>
     </ClCompile>
@@ -504,9 +513,6 @@
     </ClCompile>
     <ClCompile Include="..\Zenith\DebugVariables\Zenith_DebugVariables.cpp">
       <Filter>DebugVariables</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Zenith\Editor\Zenith_AnimationStateMachineEditor.cpp">
-      <Filter>Editor</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\Editor\Zenith_Editor.cpp">
       <Filter>Editor</Filter>
@@ -2788,6 +2794,15 @@
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_AssetRef.h">
       <Filter>AssetHandling</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\AssetHandling\Zenith_AsyncAssetLoader.h">
+      <Filter>AssetHandling</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\AssetHandling\Zenith_DataAsset.h">
+      <Filter>AssetHandling</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\AssetHandling\Zenith_DataAssetManager.h">
+      <Filter>AssetHandling</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_FileWatcher.h">
       <Filter>AssetHandling</Filter>
     </ClInclude>
@@ -2841,9 +2856,6 @@
     </ClInclude>
     <ClInclude Include="..\Zenith\DebugVariables\Zenith_DebugVariables.h">
       <Filter>DebugVariables</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\Editor\Zenith_AnimationStateMachineEditor.h">
-      <Filter>Editor</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Editor\Zenith_Editor.h">
       <Filter>Editor</Filter>
@@ -2921,6 +2933,9 @@
       <Filter>Flux</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Flux_Enums.h">
+      <Filter>Flux</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Flux_Fwd.h">
       <Filter>Flux</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Flux_Graphics.h">
@@ -3158,6 +3173,9 @@
       <Filter>Physics</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Physics\Zenith_PhysicsMeshGenerator.h">
+      <Filter>Physics</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Physics\Zenith_Physics_Fwd.h">
       <Filter>Physics</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Prefab\Zenith_Prefab.h">

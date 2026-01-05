@@ -69,7 +69,8 @@
       "Bash(Select-String -Pattern \"error\" -Context 0,1)",
       "Bash(Select-Object -First 40)",
       "Bash(\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\MSBuild\\\\Current\\\\Bin\\\\MSBuild.exe\" \"c:\\\\dev\\\\Zenith\\\\Games\\\\Sokoban\\\\Build\\\\sokoban_win64.vcxproj\" -p:Configuration=vs2022_Debug_Win64_True -p:Platform=x64 -t:clean)",
-      "Bash(\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\MSBuild\\\\Current\\\\Bin\\\\MSBuild.exe\" \"c:\\\\dev\\\\Zenith\\\\build\\\\zenith_win64.vcxproj\" -p:Configuration=vs2022_Debug_Win64_True -p:Platform=x64 -t:rebuild -verbosity:minimal)"
+      "Bash(\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\MSBuild\\\\Current\\\\Bin\\\\MSBuild.exe\" \"c:\\\\dev\\\\Zenith\\\\build\\\\zenith_win64.vcxproj\" -p:Configuration=vs2022_Debug_Win64_True -p:Platform=x64 -t:rebuild -verbosity:minimal)",
+      "Bash(\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\MSBuild\\\\Current\\\\Bin\\\\MSBuild.exe\" \"c:\\\\dev\\\\Zenith\\\\Games\\\\Marble\\\\Build\\\\marble_win64.vcxproj\" -p:Configuration=vs2022_Debug_Win64_True -p:Platform=x64 -verbosity:minimal)"
     ],
     "deny": [],
     "ask": []

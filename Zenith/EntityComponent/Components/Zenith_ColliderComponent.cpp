@@ -19,10 +19,63 @@
 
 ZENITH_REGISTER_COMPONENT(Zenith_ColliderComponent, "Collider")
 
-Zenith_ColliderComponent::Zenith_ColliderComponent(Zenith_Entity& xEntity) 
+Zenith_ColliderComponent::Zenith_ColliderComponent(Zenith_Entity& xEntity)
 	: m_xParentEntity(xEntity)
 	, m_xBodyID(JPH::BodyID())
 {
+}
+
+Zenith_ColliderComponent::Zenith_ColliderComponent(Zenith_ColliderComponent&& xOther) noexcept
+	: m_xParentEntity(xOther.m_xParentEntity)
+	, m_pxRigidBody(xOther.m_pxRigidBody)
+	, m_xBodyID(xOther.m_xBodyID)
+	, m_eVolumeType(xOther.m_eVolumeType)
+	, m_eRigidBodyType(xOther.m_eRigidBodyType)
+	, m_pxTerrainMeshData(xOther.m_pxTerrainMeshData)
+{
+	// Nullify source so its destructor doesn't destroy the physics body
+	xOther.m_pxRigidBody = nullptr;
+	xOther.m_xBodyID = JPH::BodyID();  // Reset to invalid
+	xOther.m_pxTerrainMeshData = nullptr;
+}
+
+Zenith_ColliderComponent& Zenith_ColliderComponent::operator=(Zenith_ColliderComponent&& xOther) noexcept
+{
+	if (this != &xOther)
+	{
+		// Clean up our existing physics body first
+		if (m_xBodyID.IsInvalid() == false)
+		{
+			JPH::BodyInterface& xBodyInterface = Zenith_Physics::s_pxPhysicsSystem->GetBodyInterface();
+			xBodyInterface.RemoveBody(m_xBodyID);
+			xBodyInterface.DestroyBody(m_xBodyID);
+		}
+		if (m_pxTerrainMeshData != nullptr)
+		{
+			delete[] m_pxTerrainMeshData->m_pfVertices;
+			delete[] m_pxTerrainMeshData->m_puIndices;
+			delete m_pxTerrainMeshData;
+		}
+
+		// Take ownership from source
+		m_xParentEntity = xOther.m_xParentEntity;
+		m_pxRigidBody = xOther.m_pxRigidBody;
+		m_xBodyID = xOther.m_xBodyID;
+		m_eVolumeType = xOther.m_eVolumeType;
+		m_eRigidBodyType = xOther.m_eRigidBodyType;
+		m_pxTerrainMeshData = xOther.m_pxTerrainMeshData;
+
+		// Nullify source
+		xOther.m_pxRigidBody = nullptr;
+		xOther.m_xBodyID = JPH::BodyID();
+		xOther.m_pxTerrainMeshData = nullptr;
+	}
+	return *this;
+}
+
+bool Zenith_ColliderComponent::HasValidBody() const
+{
+	return !m_xBodyID.IsInvalid();
 }
 
 Zenith_ColliderComponent::~Zenith_ColliderComponent() 
@@ -51,13 +104,27 @@ void Zenith_ColliderComponent::AddCollider(CollisionVolumeType eVolumeType, Rigi
 	m_eVolumeType = eVolumeType;
 	m_eRigidBodyType = eRigidBodyType;
 
+	// Get scale and ensure it's valid (non-zero, positive) for shape creation
+	Zenith_Maths::Vector3 xScale = xTrans.m_xScale;
+	const float fMinScale = 0.001f;
+	if (xScale.x < fMinScale) xScale.x = fMinScale;
+	if (xScale.y < fMinScale) xScale.y = fMinScale;
+	if (xScale.z < fMinScale) xScale.z = fMinScale;
+
 	JPH::RefConst<JPH::Shape> pxShape;
 
-	switch (eVolumeType) 
+	switch (eVolumeType)
 	{
+	case COLLISION_VOLUME_TYPE_AABB:
+	{
+		// AABB uses BoxShape but ignores entity rotation (always axis-aligned)
+		pxShape = new JPH::BoxShape(JPH::Vec3(xScale.x, xScale.y, xScale.z));
+	}
+	break;
 	case COLLISION_VOLUME_TYPE_OBB:
 	{
-		pxShape = new JPH::BoxShape(JPH::Vec3(xTrans.m_xScale.x, xTrans.m_xScale.y, xTrans.m_xScale.z));
+		// OBB uses BoxShape and respects entity rotation
+		pxShape = new JPH::BoxShape(JPH::Vec3(xScale.x, xScale.y, xScale.z));
 	}
 	break;
 	case COLLISION_VOLUME_TYPE_SPHERE:
@@ -229,16 +296,29 @@ void Zenith_ColliderComponent::AddCollider(CollisionVolumeType eVolumeType, Rigi
 	break;
 	}
 
+	// Ensure shape was created
+	if (pxShape == nullptr)
+	{
+		Zenith_Log(LOG_CATEGORY_PHYSICS, "ERROR: Failed to create shape for volume type %d", static_cast<int>(eVolumeType));
+		Zenith_Assert(false, "Failed to create physics shape - unhandled volume type?");
+		return;
+	}
+
 	Zenith_Maths::Vector3 xPos;
 	Zenith_Maths::Quat xRot;
 	xTrans.GetPosition(xPos);
 	xTrans.GetRotation(xRot);
 
 	JPH::Vec3 xJoltPos(xPos.x, xPos.y, xPos.z);
-	JPH::Quat xJoltRot(xRot.x, xRot.y, xRot.z, xRot.w);
 
-	JPH::EMotionType eMotionType = (eRigidBodyType == RIGIDBODY_TYPE_DYNAMIC) 
-		? JPH::EMotionType::Dynamic 
+	// AABB colliders are always axis-aligned (identity rotation)
+	// OBB and other colliders use the entity's rotation
+	JPH::Quat xJoltRot = (eVolumeType == COLLISION_VOLUME_TYPE_AABB)
+		? JPH::Quat::sIdentity()
+		: JPH::Quat(xRot.x, xRot.y, xRot.z, xRot.w);
+
+	JPH::EMotionType eMotionType = (eRigidBodyType == RIGIDBODY_TYPE_DYNAMIC)
+		? JPH::EMotionType::Dynamic
 		: JPH::EMotionType::Static;
 
 	JPH::ObjectLayer uObjectLayer = (eRigidBodyType == RIGIDBODY_TYPE_DYNAMIC) ? 1 : 0; // MOVING : NON_MOVING
@@ -264,7 +344,6 @@ void Zenith_ColliderComponent::AddCollider(CollisionVolumeType eVolumeType, Rigi
 	if (xLock.Succeeded())
 	{
 		m_pxRigidBody = &xLock.GetBody();
-		xTrans.m_pxRigidBody = m_pxRigidBody;
 
 		// Store entity ID as user data so we can retrieve it during collision callbacks
 		// Use uintptr_t to safely store the ID (which is a u_int/uint32)
@@ -310,10 +389,10 @@ void Zenith_ColliderComponent::RebuildCollider()
 	Zenith_Maths::Vector3 xAngularVel(0.0f, 0.0f, 0.0f);
 	bool bWasDynamic = (m_eRigidBodyType == RIGIDBODY_TYPE_DYNAMIC);
 	
-	if (bWasDynamic && m_pxRigidBody)
+	if (bWasDynamic && HasValidBody())
 	{
-		xLinearVel = Zenith_Physics::GetLinearVelocity(m_pxRigidBody);
-		xAngularVel = Zenith_Physics::GetAngularVelocity(m_pxRigidBody);
+		xLinearVel = Zenith_Physics::GetLinearVelocity(m_xBodyID);
+		xAngularVel = Zenith_Physics::GetAngularVelocity(m_xBodyID);
 	}
 
 	// Remove existing collider
@@ -324,11 +403,6 @@ void Zenith_ColliderComponent::RebuildCollider()
 		xBodyInterface.DestroyBody(m_xBodyID);
 		m_xBodyID = JPH::BodyID();
 		m_pxRigidBody = nullptr;
-		
-		// Also clear the rigid body pointer in the transform component
-		// to prevent accessing dangling pointer when AddCollider calls GetPosition
-		Zenith_TransformComponent& xTransform = m_xParentEntity.GetComponent<Zenith_TransformComponent>();
-		xTransform.m_pxRigidBody = nullptr;
 	}
 
 	// Clean up mesh data
@@ -344,10 +418,10 @@ void Zenith_ColliderComponent::RebuildCollider()
 	AddCollider(m_eVolumeType, m_eRigidBodyType);
 
 	// Restore velocity if it was a dynamic body
-	if (bWasDynamic && m_pxRigidBody)
+	if (bWasDynamic && HasValidBody())
 	{
-		Zenith_Physics::SetLinearVelocity(m_pxRigidBody, xLinearVel);
-		Zenith_Physics::SetAngularVelocity(m_pxRigidBody, xAngularVel);
+		Zenith_Physics::SetLinearVelocity(m_xBodyID, xLinearVel);
+		Zenith_Physics::SetAngularVelocity(m_xBodyID, xAngularVel);
 	}
 
 	Zenith_Log(LOG_CATEGORY_PHYSICS, " Rebuilt collider after scale change");

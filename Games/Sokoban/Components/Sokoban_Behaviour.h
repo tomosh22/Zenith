@@ -22,9 +22,11 @@
 #endif
 
 // ============================================================================
-// Sokoban Resources - Global access (like Unity's Resources system)
+// Sokoban Resources - Global access
 // Defined in Sokoban.cpp, initialized in Project_RegisterScriptBehaviours
 // ============================================================================
+class Zenith_Prefab;
+
 namespace Sokoban
 {
 	extern Flux_MeshGeometry* g_pxCubeGeometry;
@@ -34,6 +36,11 @@ namespace Sokoban
 	extern Flux_MaterialAsset* g_pxBoxOnTargetMaterial;
 	extern Flux_MaterialAsset* g_pxPlayerMaterial;
 	extern Flux_MaterialAsset* g_pxTargetMaterial;
+
+	// Prefabs for runtime instantiation
+	extern Zenith_Prefab* g_pxTilePrefab;
+	extern Zenith_Prefab* g_pxBoxPrefab;
+	extern Zenith_Prefab* g_pxPlayerPrefab;
 }
 
 // ============================================================================
@@ -83,8 +90,7 @@ public:
 
 	Sokoban_Behaviour() = delete;
 	Sokoban_Behaviour(Zenith_Entity& xParentEntity)
-		: m_xParentEntity(xParentEntity)
-		, m_uGridWidth(8)
+		: m_uGridWidth(8)
 		, m_uGridHeight(8)
 		, m_uPlayerX(0)
 		, m_uPlayerY(0)
@@ -115,10 +121,14 @@ public:
 	}
 	~Sokoban_Behaviour() = default;
 
-	void OnCreate() ZENITH_FINAL override
+	/**
+	 * OnAwake - Lifecycle hook.
+	 * Called when behavior is attached at RUNTIME (not during scene loading).
+	 * Use for: Getting asset references, procedural generation.
+	 */
+	void OnAwake() ZENITH_FINAL override
 	{
 		// Get default resources from namespace if not serialized/assigned
-		// (like Unity's Awake getting references from prefab or Resources)
 		if (!m_pxCubeGeometry)
 			m_pxCubeGeometry = Sokoban::g_pxCubeGeometry;
 		if (!m_pxFloorMaterial)
@@ -135,6 +145,20 @@ public:
 			m_pxTargetMaterial = Sokoban::g_pxTargetMaterial;
 
 		GenerateRandomLevel();
+	}
+
+	/**
+	 * OnStart - Lifecycle hook.
+	 * Called before first update, for ALL entities (including loaded ones).
+	 * Can be used for initialization that depends on other components being ready.
+	 */
+	void OnStart() ZENITH_FINAL override
+	{
+		// Resources loaded from serialization - generate level on Start instead of Awake
+		if (m_uPlayerEntityID == 0)
+		{
+			GenerateRandomLevel();
+		}
 	}
 
 	void OnUpdate(const float fDt) ZENITH_FINAL override
@@ -610,20 +634,20 @@ private:
 		for (Zenith_EntityID uID : m_axTileEntityIDs)
 		{
 			if (xScene.EntityExists(uID))
-				xScene.RemoveEntity(uID);
+				Zenith_Scene::Destroy(uID);
 		}
 		m_axTileEntityIDs.clear();
 
 		for (Zenith_EntityID uID : m_axBoxEntityIDs)
 		{
 			if (xScene.EntityExists(uID))
-				xScene.RemoveEntity(uID);
+				Zenith_Scene::Destroy(uID);
 		}
 		m_axBoxEntityIDs.clear();
 
 		if (m_uPlayerEntityID != 0 && xScene.EntityExists(m_uPlayerEntityID))
 		{
-			xScene.RemoveEntity(m_uPlayerEntityID);
+			Zenith_Scene::Destroy(m_uPlayerEntityID);
 			m_uPlayerEntityID = 0;
 		}
 	}
@@ -634,19 +658,18 @@ private:
 		// Destroy old entities first
 		Destroy3DLevel();
 
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-
-		// Create floor and wall tiles
+		// Create floor and wall tiles using prefab-based Instantiate
 		for (uint32_t uY = 0; uY < m_uGridHeight; uY++)
 		{
 			for (uint32_t uX = 0; uX < m_uGridWidth; uX++)
 			{
 				uint32_t uIndex = uY * m_uGridWidth + uX;
 
-				Zenith_Entity xTileEntity(&xScene, "Tile");
-
 				float fHeight = GetTileHeight(uIndex);
 				Zenith_Maths::Vector3 xPos = GridToWorld(static_cast<float>(uX), static_cast<float>(uY), fHeight);
+
+				// Prefab-based Instantiate
+				Zenith_Entity xTileEntity = Zenith_Scene::Instantiate(*Sokoban::g_pxTilePrefab, "Tile");
 
 				Zenith_TransformComponent& xTransform = xTileEntity.GetComponent<Zenith_TransformComponent>();
 				xTransform.SetPosition(xPos);
@@ -659,7 +682,7 @@ private:
 			}
 		}
 
-		// Create box entities
+		// Create box entities using prefab-based Instantiate
 		for (uint32_t uY = 0; uY < m_uGridHeight; uY++)
 		{
 			for (uint32_t uX = 0; uX < m_uGridWidth; uX++)
@@ -667,10 +690,11 @@ private:
 				uint32_t uIndex = uY * m_uGridWidth + uX;
 				if (m_abBoxes[uIndex])
 				{
-					Zenith_Entity xBoxEntity(&xScene, "Box");
-
 					Zenith_Maths::Vector3 xPos = GridToWorld(static_cast<float>(uX), static_cast<float>(uY), s_fBoxHeight);
 					xPos.y += s_fFloorHeight;  // Sit on top of floor
+
+					// Prefab-based Instantiate
+					Zenith_Entity xBoxEntity = Zenith_Scene::Instantiate(*Sokoban::g_pxBoxPrefab, "Box");
 
 					Zenith_TransformComponent& xTransform = xBoxEntity.GetComponent<Zenith_TransformComponent>();
 					xTransform.SetPosition(xPos);
@@ -684,12 +708,13 @@ private:
 			}
 		}
 
-		// Create player entity
+		// Create player entity using prefab-based Instantiate
 		{
-			Zenith_Entity xPlayerEntity(&xScene, "Player");
-
 			Zenith_Maths::Vector3 xPos = GridToWorld(static_cast<float>(m_uPlayerX), static_cast<float>(m_uPlayerY), s_fPlayerHeight);
 			xPos.y += s_fFloorHeight;  // Sit on top of floor
+
+			// Prefab-based Instantiate
+			Zenith_Entity xPlayerEntity = Zenith_Scene::Instantiate(*Sokoban::g_pxPlayerPrefab, "Player");
 
 			Zenith_TransformComponent& xTransform = xPlayerEntity.GetComponent<Zenith_TransformComponent>();
 			xTransform.SetPosition(xPos);
@@ -1260,7 +1285,7 @@ private:
 	// ========================================================================
 	// Member Variables
 	// ========================================================================
-	Zenith_Entity m_xParentEntity;
+	// Note: m_xParentEntity is inherited from Zenith_ScriptBehaviour base class
 
 	// Grid state - sized for max possible grid
 	uint32_t m_uGridWidth;

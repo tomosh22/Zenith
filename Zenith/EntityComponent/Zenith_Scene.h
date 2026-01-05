@@ -4,6 +4,7 @@
 #include "Core/Multithreading/Zenith_Multithreading.h"
 #include <atomic>
 #include <mutex>
+#include <unordered_set>
 
 class Zenith_CameraComponent;
 class Zenith_Entity;
@@ -177,6 +178,61 @@ public:
 	// Entity management
 	void RemoveEntity(Zenith_EntityID uID);
 
+	//--------------------------------------------------------------------------
+	// Instantiate (runtime entity creation)
+	// IMPORTANT: Entities can ONLY be created via Instantiate with a prefab,
+	// or during scene loading. Direct entity construction is not allowed.
+	//--------------------------------------------------------------------------
+
+	/**
+	 * Instantiate a prefab.
+	 */
+	static Zenith_Entity Instantiate(const class Zenith_Prefab& xPrefab, const std::string& strName = "");
+
+	/**
+	 * Instantiate a prefab with position.
+	 */
+	static Zenith_Entity Instantiate(const class Zenith_Prefab& xPrefab, const Zenith_Maths::Vector3& xPosition, const std::string& strName = "");
+
+	/**
+	 * Instantiate a prefab with position and rotation.
+	 */
+	static Zenith_Entity Instantiate(const class Zenith_Prefab& xPrefab, const Zenith_Maths::Vector3& xPosition, const Zenith_Maths::Quat& xRotation, const std::string& strName = "");
+
+	/**
+	 * Destroy an entity (removes it from the scene).
+	 */
+	static void Destroy(Zenith_Entity& xEntity);
+	static void Destroy(Zenith_EntityID uEntityID);
+
+	//--------------------------------------------------------------------------
+	// Prefab Creation Mode
+	// Call BeginPrefabCreation/EndPrefabCreation to allow creating template
+	// entities for prefabs during initialization.
+	//--------------------------------------------------------------------------
+
+	/**
+	 * Enter prefab creation mode - allows direct entity construction.
+	 * Use this during game initialization to create template entities for prefabs.
+	 */
+	static void BeginPrefabCreation() { s_bIsPrefabCreationMode = true; }
+
+	/**
+	 * Exit prefab creation mode.
+	 */
+	static void EndPrefabCreation() { s_bIsPrefabCreationMode = false; }
+
+	/**
+	 * Check if currently in prefab creation mode.
+	 */
+	static bool IsPrefabCreationMode() { return s_bIsPrefabCreationMode; }
+
+	/**
+	 * Check if entity creation is currently allowed.
+	 * Returns true during: scene loading, prefab instantiation, or prefab creation mode.
+	 */
+	static bool IsEntityCreationAllowed() { return s_bIsLoadingScene || s_bIsPrefabInstantiating || s_bIsPrefabCreationMode; }
+
 	// Query methods
 	u_int GetEntityCount() const { return static_cast<u_int>(m_xEntityMap.size()); }
 	bool EntityExists(Zenith_EntityID uID) const { return m_xEntityMap.find(uID) != m_xEntityMap.end(); }
@@ -201,8 +257,14 @@ public:
 
 	// Scene loading state (prevents asset deletion during Reset())
 	static bool IsLoadingScene() { return s_bIsLoadingScene; }
+
+	// Prefab instantiation state (allows entity creation during prefab instantiate)
+	static void SetPrefabInstantiating(bool b) { s_bIsPrefabInstantiating = b; }
+
 private:
 	static bool s_bIsLoadingScene;
+	static bool s_bIsPrefabInstantiating;
+	static bool s_bIsPrefabCreationMode;
 	friend class Zenith_Entity;
 #ifdef ZENITH_TOOLS
 	friend class Zenith_Editor;
@@ -235,7 +297,9 @@ private:
 
 	std::unordered_map<Zenith_EntityID, Zenith_Entity> m_xEntityMap;
 	std::unordered_map<Zenith_EntityID, std::string> m_xEntityNames;  // Entity name storage (moved from Zenith_Entity)
+	std::unordered_set<Zenith_EntityID> m_xEntitiesStarted;  // Tracks which entities have had OnStart called
 	static Zenith_Scene s_xCurrentScene;
+	static float s_fFixedTimeAccumulator;  // Accumulator for fixed timestep updates
 	Zenith_EntityID m_uMainCameraEntity = -1;
 	Zenith_Mutex m_xMutex;
 	Zenith_EntityID m_uNextEntityID = 1;  // Starts at 1 (0 is reserved as invalid)

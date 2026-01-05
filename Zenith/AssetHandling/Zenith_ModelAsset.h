@@ -21,7 +21,7 @@ class Flux_MaterialAsset;
  * - Optional skeleton for animated models
  * - Optional animation clips
  *
- * This follows the Unity/Unreal pattern where a "Model" or "FBX import" produces
+ * "Model" or "FBX import" produces
  * a bundle that can be instantiated multiple times in the scene.
  *
  * Uses GUID-based asset references for robust asset tracking.

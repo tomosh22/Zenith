@@ -5,6 +5,13 @@
 
 class Zenith_DataStream;
 
+// Forward declare load state (defined in Zenith_AsyncAssetLoader.h)
+enum class AssetLoadState : uint8_t;
+
+// Callback function types for async loading
+using AssetLoadCompleteFn = void(*)(void* pxAsset, void* pxUserData);
+using AssetLoadFailFn = void(*)(const char* szError, void* pxUserData);
+
 /**
  * Zenith_AssetRef<T> - Type-safe reference to an asset by GUID
  *
@@ -107,6 +114,43 @@ public:
 	{
 		return m_pxCached != nullptr;
 	}
+
+	//--------------------------------------------------------------------------
+	// Async Loading API
+	//--------------------------------------------------------------------------
+
+	/**
+	 * Start async loading of the asset
+	 * @param pfnOnComplete Callback when load completes (receives asset pointer)
+	 * @param pxUserData User data passed to callback
+	 * @param pfnOnFail Optional callback on failure
+	 */
+	void LoadAsync(
+		AssetLoadCompleteFn pfnOnComplete = nullptr,
+		void* pxUserData = nullptr,
+		AssetLoadFailFn pfnOnFail = nullptr);
+
+	/**
+	 * Non-blocking get - returns nullptr if not yet loaded
+	 * Use this in update loops when waiting for async load
+	 * @return Asset pointer if loaded, nullptr otherwise
+	 */
+	T* TryGet() const
+	{
+		return m_pxCached;
+	}
+
+	/**
+	 * Check if the asset is ready to use (fully loaded)
+	 * @return true if asset is loaded and ready
+	 */
+	bool IsReady() const;
+
+	/**
+	 * Get the current load state of the asset
+	 * @return Current AssetLoadState
+	 */
+	AssetLoadState GetLoadState() const;
 
 	/**
 	 * Get the GUID of the referenced asset

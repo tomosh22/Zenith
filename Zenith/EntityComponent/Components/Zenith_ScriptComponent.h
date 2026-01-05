@@ -15,8 +15,34 @@ class Zenith_ScriptBehaviour {
 	friend class Zenith_ScriptComponent;
 public:
 	virtual ~Zenith_ScriptBehaviour() {}
-	virtual void OnCreate() = 0;
-	virtual void OnUpdate(float fDt) = 0;
+
+	//--------------------------------------------------------------------------
+	// Lifecycle Hooks
+	//--------------------------------------------------------------------------
+
+	/**
+	 * OnAwake - Called when behavior is first created/attached at RUNTIME.
+	 * NOT called during scene deserialization.
+	 * Use for: Initializing references, setting up state, procedural generation.
+	 */
+	virtual void OnAwake() {}
+
+	/**
+	 * OnStart - Called before the first OnUpdate, after all OnAwake calls.
+	 * Called for ALL entities including those loaded from scene files.
+	 * Use for: Initialization that depends on other components being ready.
+	 */
+	virtual void OnStart() {}
+
+	/**
+	 * OnUpdate - Called every frame.
+	 */
+	virtual void OnUpdate(float fDt) {}
+
+	/**
+	 * OnDestroy - Called when behavior is destroyed.
+	 */
+	virtual void OnDestroy() {}
 
 	// Physics collision callbacks - override to handle collision events
 	// xOther is the entity that was collided with
@@ -36,7 +62,12 @@ public:
 	virtual void WriteParametersToDataStream(Zenith_DataStream& xStream) const {}
 	virtual void ReadParametersFromDataStream(Zenith_DataStream& xStream) {}
 
+	Zenith_Entity& GetEntity() { return m_xParentEntity; }
+
 	std::vector<Zenith_GUID> m_axGUIDRefs;
+
+protected:
+	Zenith_Entity m_xParentEntity;
 };
 
 // Forward declaration
@@ -103,27 +134,54 @@ public:
 
 	Zenith_ScriptComponent(Zenith_Entity& xEntity) : m_xParentEntity(xEntity) {};
 	~Zenith_ScriptComponent() {
-		delete m_pxScriptBehaviour;
+		if (m_pxScriptBehaviour)
+		{
+			m_pxScriptBehaviour->OnDestroy();
+			delete m_pxScriptBehaviour;
+		}
 	}
-	//void Serialize(std::ofstream& xOut);
 
 	Zenith_ScriptBehaviour* m_pxScriptBehaviour = nullptr;
 
 	Zenith_Entity m_xParentEntity;
 
-	void OnCreate() { if(m_pxScriptBehaviour) m_pxScriptBehaviour->OnCreate(); }
+	/**
+	 * OnAwake - Called at RUNTIME when behavior is attached.
+	 * NOT called during scene deserialization.
+	 */
+	void OnAwake() { if(m_pxScriptBehaviour) m_pxScriptBehaviour->OnAwake(); }
+
+	/**
+	 * OnStart - Called before first update, for ALL entities (including loaded ones).
+	 * This is dispatched by Zenith_Scene during the first frame an entity is active.
+	 */
+	void OnStart() { if(m_pxScriptBehaviour) m_pxScriptBehaviour->OnStart(); }
+
+	/**
+	 * OnUpdate - Called every frame.
+	 */
 	void OnUpdate(float fDt) { if(m_pxScriptBehaviour) m_pxScriptBehaviour->OnUpdate(fDt); }
+
+	/**
+	 * OnDestroy - Called when component is destroyed.
+	 */
+	void OnDestroy() { if(m_pxScriptBehaviour) m_pxScriptBehaviour->OnDestroy(); }
 
 	// Physics collision event dispatch
 	void OnCollisionEnter(Zenith_Entity xOther) { if(m_pxScriptBehaviour) m_pxScriptBehaviour->OnCollisionEnter(xOther); }
 	void OnCollisionStay(Zenith_Entity xOther) { if(m_pxScriptBehaviour) m_pxScriptBehaviour->OnCollisionStay(xOther); }
 	void OnCollisionExit(Zenith_EntityID uOtherID) { if(m_pxScriptBehaviour) m_pxScriptBehaviour->OnCollisionExit(uOtherID); }
 
+	/**
+	 * SetBehaviour - Attach a behaviour to this component at runtime.
+	 * Calls OnAwake() immediately.
+	 */
 	template<typename T>
 	void SetBehaviour()
 	{
 		m_pxScriptBehaviour = new T(m_xParentEntity);
-		m_pxScriptBehaviour->OnCreate();
+		m_pxScriptBehaviour->m_xParentEntity = m_xParentEntity;
+		m_pxScriptBehaviour->OnAwake();
 	}
 
 	template<typename T>

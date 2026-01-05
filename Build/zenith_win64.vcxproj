@@ -1041,6 +1041,9 @@
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_AssetHandler.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_AssetMeta.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_AssetRef.h" />
+    <ClInclude Include="..\Zenith\AssetHandling\Zenith_AsyncAssetLoader.h" />
+    <ClInclude Include="..\Zenith\AssetHandling\Zenith_DataAsset.h" />
+    <ClInclude Include="..\Zenith\AssetHandling\Zenith_DataAssetManager.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_FileWatcher.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_MeshAsset.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_ModelAsset.h" />
@@ -1059,7 +1062,6 @@
     <ClInclude Include="..\Zenith\Core\Zenith_String.h" />
     <ClInclude Include="..\Zenith\DataStream\Zenith_DataStream.h" />
     <ClInclude Include="..\Zenith\DebugVariables\Zenith_DebugVariables.h" />
-    <ClInclude Include="..\Zenith\Editor\Zenith_AnimationStateMachineEditor.h" />
     <ClInclude Include="..\Zenith\Editor\Zenith_Editor.h" />
     <ClInclude Include="..\Zenith\Editor\Zenith_Gizmo.h" />
     <ClInclude Include="..\Zenith\Editor\Zenith_SelectionSystem.h" />
@@ -1086,6 +1088,7 @@
     <ClInclude Include="..\Zenith\Flux\Flux_Buffers.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_CommandList.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_Enums.h" />
+    <ClInclude Include="..\Zenith\Flux\Flux_Fwd.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_Graphics.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_MaterialAsset.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_ModelInstance.h" />
@@ -1165,6 +1168,7 @@
     <ClInclude Include="..\Zenith\Maths\Zenith_Maths_Intersections.h" />
     <ClInclude Include="..\Zenith\Physics\Zenith_Physics.h" />
     <ClInclude Include="..\Zenith\Physics\Zenith_PhysicsMeshGenerator.h" />
+    <ClInclude Include="..\Zenith\Physics\Zenith_Physics_Fwd.h" />
     <ClInclude Include="..\Zenith\Prefab\Zenith_Prefab.h" />
     <ClInclude Include="..\Zenith\Profiling\Zenith_Profiling.h" />
     <ClInclude Include="..\Zenith\TaskSystem\Zenith_TaskSystem.h" />
@@ -2116,6 +2120,9 @@
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_AssetHandler.cpp" />
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_AssetMeta.cpp" />
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_AssetRef.cpp" />
+    <ClCompile Include="..\Zenith\AssetHandling\Zenith_AsyncAssetLoader.cpp" />
+    <ClCompile Include="..\Zenith\AssetHandling\Zenith_DataAsset.cpp" />
+    <ClCompile Include="..\Zenith\AssetHandling\Zenith_DataAssetManager.cpp" />
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_FileWatcher.cpp" />
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_MeshAsset.cpp" />
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_ModelAsset.cpp" />
@@ -2132,7 +2139,6 @@
     <ClCompile Include="..\Zenith\Core\Zenith_GUID.cpp" />
     <ClCompile Include="..\Zenith\DataStream\Zenith_DataStream.cpp" />
     <ClCompile Include="..\Zenith\DebugVariables\Zenith_DebugVariables.cpp" />
-    <ClCompile Include="..\Zenith\Editor\Zenith_AnimationStateMachineEditor.cpp" />
     <ClCompile Include="..\Zenith\Editor\Zenith_Editor.cpp" />
     <ClCompile Include="..\Zenith\Editor\Zenith_Gizmo.cpp" />
     <ClCompile Include="..\Zenith\Editor\Zenith_SelectionSystem.cpp" />

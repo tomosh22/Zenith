@@ -184,49 +184,7 @@ bool Zenith_Gizmo::HandleRotateGizmo(
 	const Zenith_Maths::Vector2& viewportPos,
 	const Zenith_Maths::Vector2& viewportSize)
 {
-	// TODO: Implement rotate gizmo interaction
-	// Similar state machine to translate gizmo but with rotation math
-	//
-	// VISUAL REPRESENTATION:
-	// - Three colored rings/circles around the object
-	// - X axis = red ring in YZ plane
-	// - Y axis = green ring in XZ plane  
-	// - Z axis = blue ring in XY plane
-	//
-	// INTERACTION:
-	// 1. Mouse hover detection
-	//    - Check distance from mouse to each ring arc
-	//    - Highlight hovered ring
-	//
-	// 2. Rotation calculation when dragging:
-	//    a. Project mouse movement onto rotation plane
-	//    b. Calculate angle from starting position
-	//    c. Convert angle to quaternion rotation
-	//    d. Apply to entity's rotation component
-	//
-	// MATHEMATICAL APPROACH:
-	// 1. When click starts, store:
-	//    - Initial entity rotation (quaternion)
-	//    - Initial mouse position
-	//    - Rotation plane (based on active axis)
-	//
-	// 2. During drag:
-	//    - Project current mouse to rotation plane
-	//    - Calculate vector from gizmo center to projected mouse pos
-	//    - Calculate angle between start vector and current vector
-	//    - Create rotation quaternion from axis and angle
-	//    - Multiply with initial rotation
-	//    - Apply to entity
-	//
-	// 3. Snapping:
-	//    - If enabled, snap angle to nearest s_fSnapValue degrees
-	//    - Common values: 15�, 45�, 90�
-	//
-	// QUATERNION MATH REMINDER:
-	// - Rotation around axis: quat = (axis * sin(angle/2), cos(angle/2))
-	// - Combine rotations: q_final = q_new * q_initial
-	// - Always normalize after operations
-	
+	// STUB: Requires implementation for rotate gizmo interaction
 	return false;
 }
 
@@ -237,50 +195,7 @@ bool Zenith_Gizmo::HandleScaleGizmo(
 	const Zenith_Maths::Vector2& viewportPos,
 	const Zenith_Maths::Vector2& viewportSize)
 {
-	// TODO: Implement scale gizmo interaction
-	// Similar to translate but modifies scale instead of position
-	//
-	// VISUAL REPRESENTATION:
-	// - Three colored lines with small cubes/boxes at the ends
-	// - X axis = red line with red cube
-	// - Y axis = green line with green cube
-	// - Z axis = blue line with blue cube
-	// - Optional: White cube at center for uniform scaling
-	//
-	// SCALING BEHAVIOR:
-	// 1. Dragging on an axis scales along that axis only
-	//    - Moving mouse away from center = increase scale
-	//    - Moving mouse toward center = decrease scale
-	//
-	// 2. Uniform scaling (if implemented):
-	//    - Click on center cube
-	//    - Scale all three axes equally
-	//
-	// CALCULATION:
-	// 1. When drag starts:
-	//    - Store initial scale vector
-	//    - Store initial mouse position
-	//    - Store mouse distance from gizmo center
-	//
-	// 2. During drag:
-	//    - Calculate current mouse distance from gizmo center
-	//    - Scale factor = current_distance / initial_distance
-	//    - newScale = initialScale * scaleFactor (for active axis only)
-	//
-	// 3. Constraints:
-	//    - Minimum scale (prevent negative/zero scale)
-	//    - Suggested minimum: 0.01 or 0.001
-	//    - Maximum scale (optional, prevent extreme values)
-	//
-	// 4. Snapping:
-	//    - Snap to nearest s_fSnapValue increment
-	//    - Common values: 0.1, 0.25, 0.5
-	//
-	// ALTERNATIVE APPROACH (Mouse delta based):
-	// - Calculate mouse movement delta (current - start)
-	// - Convert delta to scale multiplier
-	// - More intuitive for some users
-	
+	// STUB: Requires implementation for scale gizmo interaction
 	return false;
 }
 
@@ -383,48 +298,7 @@ void Zenith_Gizmo::RenderRotateGizmo(
 	const Zenith_Maths::Matrix4& viewMatrix,
 	const Zenith_Maths::Matrix4& projMatrix)
 {
-	// TODO: Implement rotate gizmo rendering
-	// Draw three colored circles/rings representing rotation axes
-	//
-	// GIZMO COMPONENTS:
-	// 1. Three circles (rings):
-	//    - X axis: Red circle in YZ plane
-	//    - Y axis: Green circle in XZ plane
-	//    - Z axis: Blue circle in XY plane
-	//
-	// 2. Optional: View-aligned circle for screen-space rotation
-	//
-	// RENDERING APPROACH:
-	// 1. Generate circle vertices:
-	//    - Create points around circumference
-	//    - Number of segments: 32-64 for smooth appearance
-	//    - radius = constant screen size (like translate gizmo)
-	//
-	// 2. For each axis:
-	//    - Generate circle in appropriate plane
-	//    - Project points to screen space
-	//    - Connect points with lines
-	//
-	// 3. Visibility handling:
-	//    - Back-facing parts of circles should be dimmer or dashed
-	//    - Front-facing parts at full brightness
-	//    - Can check point normal dot camera direction
-	//
-	// PSEUDO-CODE for X-axis circle (YZ plane):
-	// for (int i = 0; i < numSegments; i++)
-	// {
-	//     float angle1 = (i / numSegments) * 2 * PI;
-	//     float angle2 = ((i + 1) / numSegments) * 2 * PI;
-	//     
-	//     Vector3 p1 = position + Vector3(0, cos(angle1), sin(angle1)) * radius;
-	//     Vector3 p2 = position + Vector3(0, cos(angle2), sin(angle2)) * radius;
-	//     
-	//     Vector2 screen1 = WorldToScreen(p1);
-	//     Vector2 screen2 = WorldToScreen(p2);
-	//     
-	//     Color c = (active == X) ? BRIGHT_RED : RED;
-	//     drawList->AddLine(screen1, screen2, c, 2.0f);
-	// }
+	// STUB: Requires implementation for rotate gizmo rendering
 }
 
 void Zenith_Gizmo::RenderScaleGizmo(
@@ -432,43 +306,7 @@ void Zenith_Gizmo::RenderScaleGizmo(
 	const Zenith_Maths::Matrix4& viewMatrix,
 	const Zenith_Maths::Matrix4& projMatrix)
 {
-	// TODO: Implement scale gizmo rendering
-	// Draw three colored lines with boxes/cubes at the ends
-	//
-	// GIZMO COMPONENTS:
-	// 1. Three lines:
-	//    - X axis: Red line
-	//    - Y axis: Green line
-	//    - Z axis: Blue line
-	//
-	// 2. End caps (boxes/cubes):
-	//    - Small cube at the end of each line
-	//    - Same color as the line
-	//    - Larger when hovered/active
-	//
-	// 3. Optional: Center cube for uniform scaling
-	//    - White or gray
-	//    - Scales all axes together
-	//
-	// RENDERING:
-	// Similar to translate gizmo but with boxes instead of arrows
-	//
-	// PSEUDO-CODE for X axis:
-	// Vector3 lineEnd = position + Vector3(gizmoSize, 0, 0);
-	// Vector2 screenStart = WorldToScreen(position);
-	// Vector2 screenEnd = WorldToScreen(lineEnd);
-	// 
-	// // Draw line
-	// drawList->AddLine(screenStart, screenEnd, RED, 2.0f);
-	// 
-	// // Draw cube at end
-	// // Can draw as filled square in screen space or actual 3D cube
-	// float cubeSize = 8.0f; // Screen space pixels
-	// drawList->AddRectFilled(
-	//     screenEnd - Vector2(cubeSize/2),
-	//     screenEnd + Vector2(cubeSize/2),
-	//     RED
-	// );
+	// STUB: Requires implementation for scale gizmo rendering
 }
 
 Zenith_Maths::Vector3 Zenith_Gizmo::ScreenToWorldRay(

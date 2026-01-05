@@ -14,7 +14,7 @@ class Zenith_DataStream;
 /**
  * Flux_MaterialAsset - A serializable material asset that references textures by path
  * 
- * This is the new material system designed to work like Unity/Unreal materials:
+ * This is the new material system:
  * - Materials are assets that can be saved/loaded from disk (ZENITH_MATERIAL_EXT files)
  * - Textures are referenced by file path, not by raw GPU handles
  * - Materials are cached by path for reuse across the application

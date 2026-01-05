@@ -19,7 +19,7 @@ public:
 	~HookesLaw_Behaviour() = default;
 
 	void OnUpdate(const float fDt) ZENITH_FINAL override;
-	void OnCreate() ZENITH_FINAL override {}
+	void OnAwake() ZENITH_FINAL override {}
 
 	void SetDesiredPosition(const Zenith_Maths::Vector3& xPos) { m_xDesiredPosition = xPos; }
 	const Zenith_Maths::Vector3& GetDesiredPosition() const { return m_xDesiredPosition; }
@@ -69,7 +69,7 @@ public:
 	~RotationBehaviour_Behaviour() = default;
 
 	void OnUpdate(const float fDt) ZENITH_FINAL override;
-	void OnCreate() ZENITH_FINAL override {}
+	void OnAwake() ZENITH_FINAL override {}
 
 	void SetAngularVel(const Zenith_Maths::Vector3& xVel) { m_xAngularVel = xVel; }
 	const Zenith_Maths::Vector3& GetAngularVel() const { return m_xAngularVel; }

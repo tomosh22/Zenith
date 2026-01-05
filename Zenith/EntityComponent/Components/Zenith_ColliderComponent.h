@@ -20,11 +20,21 @@ public:
 	Zenith_ColliderComponent(Zenith_Entity& xEntity);
 	~Zenith_ColliderComponent();
 
+	// Move constructor - transfers ownership of physics body
+	// Critical for component pool reallocation to not destroy bodies
+	Zenith_ColliderComponent(Zenith_ColliderComponent&& xOther) noexcept;
+	Zenith_ColliderComponent& operator=(Zenith_ColliderComponent&& xOther) noexcept;
+
+	// Delete copy operations - physics bodies shouldn't be copied
+	Zenith_ColliderComponent(const Zenith_ColliderComponent&) = delete;
+	Zenith_ColliderComponent& operator=(const Zenith_ColliderComponent&) = delete;
+
 	// Serialization methods for Zenith_DataStream
 	void WriteToDataStream(Zenith_DataStream& xStream) const;
 	void ReadFromDataStream(Zenith_DataStream& xStream);
 
-	JPH::Body* GetRigidBody() const { return m_pxRigidBody; }
+	const JPH::BodyID& GetBodyID() const { return m_xBodyID; }
+	bool HasValidBody() const;
 	Zenith_EntityID GetEntityID() { return m_xParentEntity.GetEntityID(); }
 
 	void AddCollider(CollisionVolumeType eVolumeType, RigidBodyType eRigidBodyType);
@@ -90,7 +100,7 @@ public:
 					static bool s_bGravityEnabled = true;
 					if (ImGui::Checkbox("Gravity Enabled", &s_bGravityEnabled))
 					{
-						Zenith_Physics::SetGravityEnabled(m_pxRigidBody, s_bGravityEnabled);
+						Zenith_Physics::SetGravityEnabled(m_xBodyID, s_bGravityEnabled);
 						Zenith_Log(LOG_CATEGORY_PHYSICS, "[ColliderComponent] Gravity %s", s_bGravityEnabled ? "enabled" : "disabled");
 					}
 				}

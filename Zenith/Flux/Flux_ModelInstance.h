@@ -17,8 +17,8 @@ class Flux_MaterialAsset;
  * - Materials for each mesh
  * - Optional skeleton instance for animated models
  *
- * The separation between Asset (data definition) and Instance (runtime state) follows
- * the Unity/Unreal pattern where assets are shared data and instances are per-entity state.
+ * Asset (data definition) and Instance (runtime state)
+ * Assets are shared data and instances are per-entity state.
  *
  * Usage:
  *   // Create from asset

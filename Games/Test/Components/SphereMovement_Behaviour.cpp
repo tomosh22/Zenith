@@ -19,7 +19,7 @@ void HookesLaw_Behaviour::OnUpdate(const float fDt)
 	xPosDelta = m_xDesiredPosition - xPosDelta;
 
 	Zenith_ColliderComponent& xCollider = m_xParentEntity.GetComponent<Zenith_ColliderComponent>();
-	Zenith_Physics::AddForce(xCollider.GetRigidBody(), xPosDelta);
+	Zenith_Physics::AddForce(xCollider.GetBodyID(), xPosDelta);
 }
 
 RotationBehaviour_Behaviour::RotationBehaviour_Behaviour(Zenith_Entity& xParentEntity)
@@ -30,6 +30,6 @@ RotationBehaviour_Behaviour::RotationBehaviour_Behaviour(Zenith_Entity& xParentE
 void RotationBehaviour_Behaviour::OnUpdate(const float fDt)
 {
 	Zenith_ColliderComponent& xCollider = m_xParentEntity.GetComponent<Zenith_ColliderComponent>();
-	Zenith_Physics::SetAngularVelocity(xCollider.GetRigidBody(), m_xAngularVel);
-	Zenith_Physics::SetLinearVelocity(xCollider.GetRigidBody(), Zenith_Maths::Vector3(0.0, 0.0, 0.0));
+	Zenith_Physics::SetAngularVelocity(xCollider.GetBodyID(), m_xAngularVel);
+	Zenith_Physics::SetLinearVelocity(xCollider.GetBodyID(), Zenith_Maths::Vector3(0.0, 0.0, 0.0));
 }

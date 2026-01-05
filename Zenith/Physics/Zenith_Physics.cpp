@@ -290,15 +290,6 @@ Zenith_Physics::RaycastInfo Zenith_Physics::BuildRayFromMouse(Zenith_CameraCompo
 	double fX = xMousePos.x;
 	double fY = xMousePos.y;
 
-#if 0//def ZENITH_TOOLS
-	//accounting for extra padding from imgui border
-	fX -= 10;
-	fY -= 45;
-
-	//#TO_TODO: what happens on window resize?
-	fX /= (float)VCE_GAME_WIDTH / float(VCE_GAME_WIDTH + VCE_EDITOR_ADDITIONAL_WIDTH);
-	fY /= (float)VCE_GAME_HEIGHT / float(VCE_GAME_HEIGHT + VCE_EDITOR_ADDITIONAL_HEIGHT);
-#endif
 
 	glm::vec3 xNearPos = { fX, fY, 0.0f };
 	glm::vec3 xFarPos = { fX, fY, 1.0f };
@@ -315,46 +306,59 @@ Zenith_Physics::RaycastInfo Zenith_Physics::BuildRayFromMouse(Zenith_CameraCompo
 	return xInfo;
 }
 
-void Zenith_Physics::SetLinearVelocity(JPH::Body* pxBody, const Zenith_Maths::Vector3& xVelocity)
+void Zenith_Physics::SetLinearVelocity(const JPH::BodyID& xBodyID, const Zenith_Maths::Vector3& xVelocity)
 {
-	if (!pxBody) return;
+	if (xBodyID.IsInvalid()) return;
 	JPH::BodyInterface& xBodyInterface = s_pxPhysicsSystem->GetBodyInterface();
-	xBodyInterface.SetLinearVelocity(pxBody->GetID(), JPH::Vec3(xVelocity.x, xVelocity.y, xVelocity.z));
+	xBodyInterface.SetLinearVelocity(xBodyID, JPH::Vec3(xVelocity.x, xVelocity.y, xVelocity.z));
 }
 
-Zenith_Maths::Vector3 Zenith_Physics::GetLinearVelocity(JPH::Body* pxBody)
+Zenith_Maths::Vector3 Zenith_Physics::GetLinearVelocity(const JPH::BodyID& xBodyID)
 {
-	if (!pxBody) return Zenith_Maths::Vector3(0, 0, 0);
-	JPH::Vec3 xVel = pxBody->GetLinearVelocity();
+	if (xBodyID.IsInvalid()) return Zenith_Maths::Vector3(0, 0, 0);
+	JPH::BodyInterface& xBodyInterface = s_pxPhysicsSystem->GetBodyInterfaceNoLock();
+	JPH::Vec3 xVel = xBodyInterface.GetLinearVelocity(xBodyID);
 	return Zenith_Maths::Vector3(xVel.GetX(), xVel.GetY(), xVel.GetZ());
 }
 
-void Zenith_Physics::SetAngularVelocity(JPH::Body* pxBody, const Zenith_Maths::Vector3& xVelocity)
+void Zenith_Physics::SetAngularVelocity(const JPH::BodyID& xBodyID, const Zenith_Maths::Vector3& xVelocity)
 {
-	if (!pxBody) return;
+	if (xBodyID.IsInvalid()) return;
 	JPH::BodyInterface& xBodyInterface = s_pxPhysicsSystem->GetBodyInterface();
-	xBodyInterface.SetAngularVelocity(pxBody->GetID(), JPH::Vec3(xVelocity.x, xVelocity.y, xVelocity.z));
+	xBodyInterface.SetAngularVelocity(xBodyID, JPH::Vec3(xVelocity.x, xVelocity.y, xVelocity.z));
 }
 
-Zenith_Maths::Vector3 Zenith_Physics::GetAngularVelocity(JPH::Body* pxBody)
+Zenith_Maths::Vector3 Zenith_Physics::GetAngularVelocity(const JPH::BodyID& xBodyID)
 {
-	if (!pxBody) return Zenith_Maths::Vector3(0, 0, 0);
-	JPH::Vec3 xVel = pxBody->GetAngularVelocity();
+	if (xBodyID.IsInvalid()) return Zenith_Maths::Vector3(0, 0, 0);
+	JPH::BodyInterface& xBodyInterface = s_pxPhysicsSystem->GetBodyInterfaceNoLock();
+	JPH::Vec3 xVel = xBodyInterface.GetAngularVelocity(xBodyID);
 	return Zenith_Maths::Vector3(xVel.GetX(), xVel.GetY(), xVel.GetZ());
 }
 
-void Zenith_Physics::AddForce(JPH::Body* pxBody, const Zenith_Maths::Vector3& xForce)
+void Zenith_Physics::AddForce(const JPH::BodyID& xBodyID, const Zenith_Maths::Vector3& xForce)
 {
-	if (!pxBody) return;
+	if (xBodyID.IsInvalid()) return;
 	JPH::BodyInterface& xBodyInterface = s_pxPhysicsSystem->GetBodyInterface();
-	xBodyInterface.AddForce(pxBody->GetID(), JPH::Vec3(xForce.x, xForce.y, xForce.z));
+	// CRITICAL: Activate the body first - sleeping bodies ignore forces
+	xBodyInterface.ActivateBody(xBodyID);
+	xBodyInterface.AddForce(xBodyID, JPH::Vec3(xForce.x, xForce.y, xForce.z));
 }
 
-void Zenith_Physics::SetGravityEnabled(JPH::Body* pxBody, bool bEnabled)
+void Zenith_Physics::AddImpulse(const JPH::BodyID& xBodyID, const Zenith_Maths::Vector3& xImpulse)
 {
-	if (!pxBody) return;
+	if (xBodyID.IsInvalid()) return;
 	JPH::BodyInterface& xBodyInterface = s_pxPhysicsSystem->GetBodyInterface();
-	xBodyInterface.SetGravityFactor(pxBody->GetID(), bEnabled ? 1.0f : 0.0f);
+	// Activate the body and apply instant velocity change
+	xBodyInterface.ActivateBody(xBodyID);
+	xBodyInterface.AddLinearVelocity(xBodyID, JPH::Vec3(xImpulse.x, xImpulse.y, xImpulse.z));
+}
+
+void Zenith_Physics::SetGravityEnabled(const JPH::BodyID& xBodyID, bool bEnabled)
+{
+	if (xBodyID.IsInvalid()) return;
+	JPH::BodyInterface& xBodyInterface = s_pxPhysicsSystem->GetBodyInterface();
+	xBodyInterface.SetGravityFactor(xBodyID, bEnabled ? 1.0f : 0.0f);
 }
 
 JPH::ValidateResult Zenith_Physics::PhysicsContactListener::OnContactValidate(

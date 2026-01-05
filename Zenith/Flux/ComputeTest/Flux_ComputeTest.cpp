@@ -89,22 +89,7 @@ void Flux_ComputeTest::RunComputePass()
 
 void Flux_ComputeTest::RunDisplayPass()
 {
-	// TODO: Implement display pass - currently disabled
-	/*
-	g_xDisplayCommandList.Reset(true);
-	g_xDisplayCommandList.AddCommand<Flux_CommandSetPipeline>(&g_xDisplayPipeline);
-	g_xDisplayCommandList.AddCommand<Flux_CommandBeginBind>(0);
-	g_xDisplayCommandList.AddCommand<Flux_CommandBindTexture>(&g_xComputeOutputTexture, 0);
-	
-	// Draw fullscreen triangle (3 vertices) - need to transition back to GENERAL for next compute pass
-	g_xDisplayCommandList.AddCommand<Flux_CommandImageBarrier>(
-		&g_xComputeOutputTexture,
-		(uint32_t)vk::ImageLayout::eShaderReadOnlyOptimal,
-		(uint32_t)vk::ImageLayout::eGeneral
-	);
-	
-	Flux::SubmitCommandList(&g_xDisplayCommandList, g_xDisplayTargetSetup, RENDER_ORDER_COMPUTE_TEST);
-	*/
+	// STUB: Requires implementation once Flux_CommandDraw is properly available
 }
 
 Flux_RenderAttachment& Flux_ComputeTest::GetComputeOutputTexture()

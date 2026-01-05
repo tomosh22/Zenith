@@ -8,9 +8,25 @@
 Zenith_Entity::Zenith_Entity(Zenith_Scene* pxScene, const std::string& strName)
 	: m_pxParentScene(pxScene)
 {
+	// Entities can only be created via:
+	// 1. Scene loading (deserialization)
+	// 2. Prefab instantiation (Zenith_Scene::Instantiate)
+	// 3. Prefab creation mode (BeginPrefabCreation/EndPrefabCreation)
+	Zenith_Assert(Zenith_Scene::IsEntityCreationAllowed(),
+		"Entity creation not allowed! Use Zenith_Scene::Instantiate(prefab) to create entities at runtime. "
+		"Direct entity construction is only allowed during scene loading or prefab creation mode.");
+
 	m_uEntityID = m_pxParentScene->CreateEntity();
+	Zenith_Assert(pxScene->m_xEntityComponents.Get(m_uEntityID).empty(), "Entity ID %u already has components - registry not cleared or ID collision", m_uEntityID);
 	pxScene->SetEntityName(m_uEntityID, strName);
 	AddComponent<Zenith_TransformComponent>();
+
+	// Runtime-created entities are automatically transient.
+	// EXCEPT: Entities created during prefab creation mode (initial scene setup) should be persistent.
+	// Prefab creation mode is used for Project_LoadInitialScene and similar setup code.
+	// Prefab instantiation (runtime spawning) still creates transient entities.
+	m_bTransient = !Zenith_Scene::IsPrefabCreationMode();
+
 	pxScene->m_xEntityMap.insert({ m_uEntityID, *this });
 }
 
@@ -19,6 +35,7 @@ Zenith_Entity::Zenith_Entity(Zenith_Scene* pxScene, Zenith_EntityID uID, Zenith_
 	, m_uEntityID(uID)
 	, m_uParentEntityID(uParentID)
 {
+	Zenith_Assert(pxScene->m_xEntityComponents.Get(m_uEntityID).empty(), "Entity ID %u already has components - registry not cleared or ID collision", m_uEntityID);
 	pxScene->SetEntityName(m_uEntityID, strName);
 	AddComponent<Zenith_TransformComponent>();
 	pxScene->m_xEntityMap.insert({ m_uEntityID, *this });
@@ -26,10 +43,24 @@ Zenith_Entity::Zenith_Entity(Zenith_Scene* pxScene, Zenith_EntityID uID, Zenith_
 
 void Zenith_Entity::Initialise(Zenith_Scene* pxScene, const std::string& strName)
 {
+	// Entities can only be created via:
+	// 1. Scene loading (deserialization)
+	// 2. Prefab instantiation (Zenith_Scene::Instantiate)
+	// 3. Prefab creation mode (BeginPrefabCreation/EndPrefabCreation)
+	Zenith_Assert(Zenith_Scene::IsEntityCreationAllowed(),
+		"Entity creation not allowed! Use Zenith_Scene::Instantiate(prefab) to create entities at runtime. "
+		"Direct entity construction is only allowed during scene loading or prefab creation mode.");
+
 	m_pxParentScene = pxScene;
 	m_uEntityID = m_pxParentScene->CreateEntity();
+	Zenith_Assert(pxScene->m_xEntityComponents.Get(m_uEntityID).empty(), "Entity ID %u already has components - registry not cleared or ID collision", m_uEntityID);
 	pxScene->SetEntityName(m_uEntityID, strName);
 	AddComponent<Zenith_TransformComponent>();
+
+	// Runtime-created entities are automatically transient.
+	// EXCEPT: Entities created during prefab creation mode (initial scene setup) should be persistent.
+	m_bTransient = !Zenith_Scene::IsPrefabCreationMode();
+
 	pxScene->m_xEntityMap.insert({ m_uEntityID, *this });
 }
 
@@ -38,6 +69,7 @@ void Zenith_Entity::Initialise(Zenith_Scene* pxScene, Zenith_EntityID uID, Zenit
 	m_pxParentScene = pxScene;
 	m_uParentEntityID = uParentID;
 	m_uEntityID = uID;
+	Zenith_Assert(pxScene->m_xEntityComponents.Get(m_uEntityID).empty(), "Entity ID %u already has components - registry not cleared or ID collision", m_uEntityID);
 	pxScene->SetEntityName(m_uEntityID, strName);
 	AddComponent<Zenith_TransformComponent>();
 	pxScene->m_xEntityMap.insert({ m_uEntityID, *this });

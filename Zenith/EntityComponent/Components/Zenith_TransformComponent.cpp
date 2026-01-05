@@ -22,30 +22,38 @@ Zenith_TransformComponent::~Zenith_TransformComponent() {
 
 void Zenith_TransformComponent::SetPosition(const Zenith_Maths::Vector3 xPos)
 {
-	if (m_pxRigidBody)
+	// Check if entity has a physics body via ColliderComponent
+	// Use BodyInterface with BodyID for thread-safe access
+	if (m_xParentEntity.HasComponent<Zenith_ColliderComponent>())
 	{
-		JPH::BodyInterface& xBodyInterface = Zenith_Physics::s_pxPhysicsSystem->GetBodyInterface();
-		JPH::Vec3 xJoltPos(xPos.x, xPos.y, xPos.z);
-		xBodyInterface.SetPosition(m_pxRigidBody->GetID(), xJoltPos, JPH::EActivation::Activate);
+		Zenith_ColliderComponent& xCollider = m_xParentEntity.GetComponent<Zenith_ColliderComponent>();
+		if (xCollider.HasValidBody())
+		{
+			JPH::BodyInterface& xBodyInterface = Zenith_Physics::s_pxPhysicsSystem->GetBodyInterface();
+			JPH::Vec3 xJoltPos(xPos.x, xPos.y, xPos.z);
+			xBodyInterface.SetPosition(xCollider.GetBodyID(), xJoltPos, JPH::EActivation::Activate);
+			return;
+		}
 	}
-	else
-	{
-		m_xPosition = xPos;
-	}
+	m_xPosition = xPos;
 }
 
 void Zenith_TransformComponent::SetRotation(const Zenith_Maths::Quat xRot)
 {
-	if (m_pxRigidBody)
+	// Check if entity has a physics body via ColliderComponent
+	// Use BodyInterface with BodyID for thread-safe access
+	if (m_xParentEntity.HasComponent<Zenith_ColliderComponent>())
 	{
-		JPH::BodyInterface& xBodyInterface = Zenith_Physics::s_pxPhysicsSystem->GetBodyInterface();
-		JPH::Quat xJoltRot(xRot.x, xRot.y, xRot.z, xRot.w);
-		xBodyInterface.SetRotation(m_pxRigidBody->GetID(), xJoltRot, JPH::EActivation::Activate);
+		Zenith_ColliderComponent& xCollider = m_xParentEntity.GetComponent<Zenith_ColliderComponent>();
+		if (xCollider.HasValidBody())
+		{
+			JPH::BodyInterface& xBodyInterface = Zenith_Physics::s_pxPhysicsSystem->GetBodyInterface();
+			JPH::Quat xJoltRot(xRot.x, xRot.y, xRot.z, xRot.w);
+			xBodyInterface.SetRotation(xCollider.GetBodyID(), xJoltRot, JPH::EActivation::Activate);
+			return;
+		}
 	}
-	else
-	{
-		m_xRotation = xRot;
-	}
+	m_xRotation = xRot;
 }
 
 void Zenith_TransformComponent::SetScale(const Zenith_Maths::Vector3 xScale)
@@ -78,33 +86,49 @@ void Zenith_TransformComponent::SetScale(const Zenith_Maths::Vector3 xScale)
 
 void Zenith_TransformComponent::GetPosition(Zenith_Maths::Vector3& xPos)
 {
-	if (m_pxRigidBody)
+	// Check if entity has a physics body via ColliderComponent
+	// Use BodyInterface with BodyID for thread-safe access
+	if (m_xParentEntity.HasComponent<Zenith_ColliderComponent>())
 	{
-		JPH::Vec3 xJoltPos = m_pxRigidBody->GetPosition();
-		xPos.x = xJoltPos.GetX();
-		xPos.y = xJoltPos.GetY();
-		xPos.z = xJoltPos.GetZ();
+		Zenith_ColliderComponent& xCollider = m_xParentEntity.GetComponent<Zenith_ColliderComponent>();
+		if (xCollider.HasValidBody())
+		{
+			// Use BodyInterface for safe access - never access Body pointer directly
+			JPH::BodyInterface& xBodyInterface = Zenith_Physics::s_pxPhysicsSystem->GetBodyInterfaceNoLock();
+			JPH::Vec3 xJoltPos = xBodyInterface.GetPosition(xCollider.GetBodyID());
+			xPos.x = xJoltPos.GetX();
+			xPos.y = xJoltPos.GetY();
+			xPos.z = xJoltPos.GetZ();
+			return;
+		}
+		else
+		{
+			// Collider exists but body is invalid - fall through to m_xPosition
+		}
 	}
-	else
-	{
-		xPos = m_xPosition;
-	}
+	xPos = m_xPosition;
 }
 
 void Zenith_TransformComponent::GetRotation(Zenith_Maths::Quat& xRot)
 {
-	if (m_pxRigidBody)
+	// Check if entity has a physics body via ColliderComponent
+	// Use BodyInterface with BodyID for thread-safe access
+	if (m_xParentEntity.HasComponent<Zenith_ColliderComponent>())
 	{
-		JPH::Quat xJoltRot = m_pxRigidBody->GetRotation();
-		xRot.x = xJoltRot.GetX();
-		xRot.y = xJoltRot.GetY();
-		xRot.z = xJoltRot.GetZ();
-		xRot.w = xJoltRot.GetW();
+		Zenith_ColliderComponent& xCollider = m_xParentEntity.GetComponent<Zenith_ColliderComponent>();
+		if (xCollider.HasValidBody())
+		{
+			// Use BodyInterface for safe access - never access Body pointer directly
+			JPH::BodyInterface& xBodyInterface = Zenith_Physics::s_pxPhysicsSystem->GetBodyInterfaceNoLock();
+			JPH::Quat xJoltRot = xBodyInterface.GetRotation(xCollider.GetBodyID());
+			xRot.x = xJoltRot.GetX();
+			xRot.y = xJoltRot.GetY();
+			xRot.z = xJoltRot.GetZ();
+			xRot.w = xJoltRot.GetW();
+			return;
+		}
 	}
-	else
-	{
-		xRot = m_xRotation;
-	}
+	xRot = m_xRotation;
 }
 
 void Zenith_TransformComponent::GetScale(Zenith_Maths::Vector3& xScale)
@@ -160,7 +184,7 @@ void Zenith_TransformComponent::WriteToDataStream(Zenith_DataStream& xStream) co
 	xStream << xRot;
 	xStream << m_xScale;
 
-	// Note: m_pxRigidBody is not serialized as it's a runtime-only physics handle
+	// Note: Physics state is managed by ColliderComponent and accessed via BodyInterface
 	// Physics will be reconstructed from ColliderComponent on load
 }
 
@@ -172,5 +196,5 @@ void Zenith_TransformComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 	xStream >> m_xRotation;
 	xStream >> m_xScale;
 
-	// m_pxRigidBody remains nullptr - will be set by ColliderComponent if needed
+	// Physics state is accessed via ColliderComponent and BodyInterface when needed
 }

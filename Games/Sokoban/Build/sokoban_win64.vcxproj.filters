@@ -7,6 +7,9 @@
     <ClInclude Include="..\Components\Sokoban_Behaviour.h">
       <Filter>Components</Filter>
     </ClInclude>
+    <ClInclude Include="..\Components\Sokoban_Config.h">
+      <Filter>Components</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Components">

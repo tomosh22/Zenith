@@ -101,3 +101,15 @@ public class TestGameProject : GameProject
 		// Test-specific configuration if needed
 	}
 }
+
+// Marble game project - physics showcase
+[Sharpmake.Generate]
+public class MarbleGameProject : GameProject
+{
+	public override string GameName => "Marble";
+
+	public MarbleGameProject() : base()
+	{
+		// Marble-specific configuration if needed
+	}
+}

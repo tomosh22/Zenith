@@ -1,12 +1,16 @@
 #include "Zenith.h"
 
 #include "Sokoban/Components/Sokoban_Behaviour.h"
+#include "Sokoban/Components/Sokoban_Config.h"
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
+#include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "Flux/Flux_MaterialAsset.h"
 #include "AssetHandling/Zenith_AssetHandler.h"
+#include "AssetHandling/Zenith_DataAssetManager.h"
+#include "Prefab/Zenith_Prefab.h"
 
 // ============================================================================
 // Sokoban Resources - Global access for behaviours
@@ -20,6 +24,11 @@ namespace Sokoban
 	Flux_MaterialAsset* g_pxBoxOnTargetMaterial = nullptr;
 	Flux_MaterialAsset* g_pxPlayerMaterial = nullptr;
 	Flux_MaterialAsset* g_pxTargetMaterial = nullptr;
+
+	// Prefabs for runtime instantiation
+	Zenith_Prefab* g_pxTilePrefab = nullptr;
+	Zenith_Prefab* g_pxBoxPrefab = nullptr;
+	Zenith_Prefab* g_pxPlayerPrefab = nullptr;
 }
 
 static Flux_Texture* s_pxFloorTexture = nullptr;
@@ -87,6 +96,47 @@ static void InitializeSokobanResources()
 	g_pxTargetMaterial = Flux_MaterialAsset::Create("SokobanTarget");
 	g_pxTargetMaterial->SetDiffuseTexture(s_pxTargetTexture);
 
+	// Create prefabs for runtime instantiation
+	// Note: Prefabs don't include ModelComponent because material varies by tile type
+	// The behaviour adds ModelComponent with correct material at instantiation
+	Zenith_Scene::BeginPrefabCreation();
+	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+
+	// Tile prefab - basic entity (ModelComponent added at runtime with correct material)
+	{
+		Zenith_Entity xTileTemplate(&xScene, "TileTemplate");
+		// No ModelComponent - added by behaviour with appropriate material
+
+		g_pxTilePrefab = new Zenith_Prefab();
+		g_pxTilePrefab->CreateFromEntity(xTileTemplate, "Tile");
+
+		Zenith_Scene::Destroy(xTileTemplate);
+	}
+
+	// Box prefab - basic entity
+	{
+		Zenith_Entity xBoxTemplate(&xScene, "BoxTemplate");
+		// No ModelComponent - added by behaviour with appropriate material
+
+		g_pxBoxPrefab = new Zenith_Prefab();
+		g_pxBoxPrefab->CreateFromEntity(xBoxTemplate, "Box");
+
+		Zenith_Scene::Destroy(xBoxTemplate);
+	}
+
+	// Player prefab - basic entity
+	{
+		Zenith_Entity xPlayerTemplate(&xScene, "PlayerTemplate");
+		// No ModelComponent - added by behaviour with player material
+
+		g_pxPlayerPrefab = new Zenith_Prefab();
+		g_pxPlayerPrefab->CreateFromEntity(xPlayerTemplate, "Player");
+
+		Zenith_Scene::Destroy(xPlayerTemplate);
+	}
+
+	Zenith_Scene::EndPrefabCreation();
+
 	s_bResourcesInitialized = true;
 }
 // ============================================================================
@@ -103,8 +153,11 @@ const char* Project_GetGameAssetsDirectory()
 
 void Project_RegisterScriptBehaviours()
 {
-	// Initialize resources at startup (like Unity's [RuntimeInitializeOnLoadMethod])
+	// Initialize resources at startup
 	InitializeSokobanResources();
+
+	// Register DataAsset types
+	RegisterSokobanDataAssets();
 
 	Sokoban_Behaviour::RegisterBehaviour();
 }
@@ -113,6 +166,9 @@ void Project_LoadInitialScene()
 {
 	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
 	xScene.Reset();
+
+	// Enter prefab creation mode for initial scene setup
+	Zenith_Scene::BeginPrefabCreation();
 
 	Zenith_Entity xCameraEntity(&xScene, "MainCamera");
 	Zenith_CameraComponent& xCamera = xCameraEntity.AddComponent<Zenith_CameraComponent>();
@@ -198,7 +254,9 @@ void Project_LoadInitialScene()
 
 	// Add script component with Sokoban behaviour
 	// Resources are automatically obtained from Sokoban:: namespace in OnCreate()
-	// (like Unity where MonoBehaviours get their references during Awake)
 	Zenith_ScriptComponent& xScript = xSokobanEntity.AddComponent<Zenith_ScriptComponent>();
 	xScript.SetBehaviour<Sokoban_Behaviour>();
+
+	// Exit prefab creation mode
+	Zenith_Scene::EndPrefabCreation();
 }

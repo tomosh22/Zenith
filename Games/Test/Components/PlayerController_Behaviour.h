@@ -34,7 +34,7 @@ public:
 	~PlayerController_Behaviour() = default;
 
 	void OnUpdate(const float fDt) ZENITH_FINAL override;
-	void OnCreate() ZENITH_FINAL override;
+	void OnAwake() ZENITH_FINAL override;
 
 	void Shoot();
 

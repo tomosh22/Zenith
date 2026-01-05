@@ -36,12 +36,14 @@ public:
 	static void Reset();
 	static void Shutdown();
 
-	static void SetLinearVelocity(JPH::Body* pxBody, const Zenith_Maths::Vector3& xVelocity);
-	static Zenith_Maths::Vector3 GetLinearVelocity(JPH::Body* pxBody);
-	static void SetAngularVelocity(JPH::Body* pxBody, const Zenith_Maths::Vector3& xVelocity);
-	static Zenith_Maths::Vector3 GetAngularVelocity(JPH::Body* pxBody);
-	static void AddForce(JPH::Body* pxBody, const Zenith_Maths::Vector3& xForce);
-	static void SetGravityEnabled(JPH::Body* pxBody, bool bEnabled);
+	// Physics body manipulation - use BodyID for thread-safe access
+	static void SetLinearVelocity(const JPH::BodyID& xBodyID, const Zenith_Maths::Vector3& xVelocity);
+	static Zenith_Maths::Vector3 GetLinearVelocity(const JPH::BodyID& xBodyID);
+	static void SetAngularVelocity(const JPH::BodyID& xBodyID, const Zenith_Maths::Vector3& xVelocity);
+	static Zenith_Maths::Vector3 GetAngularVelocity(const JPH::BodyID& xBodyID);
+	static void AddForce(const JPH::BodyID& xBodyID, const Zenith_Maths::Vector3& xForce);
+	static void AddImpulse(const JPH::BodyID& xBodyID, const Zenith_Maths::Vector3& xImpulse);
+	static void SetGravityEnabled(const JPH::BodyID& xBodyID, bool bEnabled);
 
 	struct RaycastInfo
 	{
