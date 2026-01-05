@@ -172,7 +172,9 @@ public:
 	Zenith_Query<Ts...> Query();
 
 	// Serialization methods
-	void SaveToFile(const std::string& strFilename);
+	// bIncludeTransient: when true, saves ALL entities (including transient ones).
+	// Use true for editor backup (Play/Stop), false for normal scene saving.
+	void SaveToFile(const std::string& strFilename, bool bIncludeTransient = false);
 	void LoadFromFile(const std::string& strFilename);
 
 	// Entity management
@@ -180,22 +182,20 @@ public:
 
 	//--------------------------------------------------------------------------
 	// Instantiate (runtime entity creation)
-	// IMPORTANT: Entities can ONLY be created via Instantiate with a prefab,
-	// or during scene loading. Direct entity construction is not allowed.
 	//--------------------------------------------------------------------------
 
 	/**
-	 * Instantiate a prefab.
+	 * Instantiate a prefab. The resulting entity is transient (not saved with scene).
 	 */
 	static Zenith_Entity Instantiate(const class Zenith_Prefab& xPrefab, const std::string& strName = "");
 
 	/**
-	 * Instantiate a prefab with position.
+	 * Instantiate a prefab with position. The resulting entity is transient.
 	 */
 	static Zenith_Entity Instantiate(const class Zenith_Prefab& xPrefab, const Zenith_Maths::Vector3& xPosition, const std::string& strName = "");
 
 	/**
-	 * Instantiate a prefab with position and rotation.
+	 * Instantiate a prefab with position and rotation. The resulting entity is transient.
 	 */
 	static Zenith_Entity Instantiate(const class Zenith_Prefab& xPrefab, const Zenith_Maths::Vector3& xPosition, const Zenith_Maths::Quat& xRotation, const std::string& strName = "");
 
@@ -204,34 +204,6 @@ public:
 	 */
 	static void Destroy(Zenith_Entity& xEntity);
 	static void Destroy(Zenith_EntityID uEntityID);
-
-	//--------------------------------------------------------------------------
-	// Prefab Creation Mode
-	// Call BeginPrefabCreation/EndPrefabCreation to allow creating template
-	// entities for prefabs during initialization.
-	//--------------------------------------------------------------------------
-
-	/**
-	 * Enter prefab creation mode - allows direct entity construction.
-	 * Use this during game initialization to create template entities for prefabs.
-	 */
-	static void BeginPrefabCreation() { s_bIsPrefabCreationMode = true; }
-
-	/**
-	 * Exit prefab creation mode.
-	 */
-	static void EndPrefabCreation() { s_bIsPrefabCreationMode = false; }
-
-	/**
-	 * Check if currently in prefab creation mode.
-	 */
-	static bool IsPrefabCreationMode() { return s_bIsPrefabCreationMode; }
-
-	/**
-	 * Check if entity creation is currently allowed.
-	 * Returns true during: scene loading, prefab instantiation, or prefab creation mode.
-	 */
-	static bool IsEntityCreationAllowed() { return s_bIsLoadingScene || s_bIsPrefabInstantiating || s_bIsPrefabCreationMode; }
 
 	// Query methods
 	u_int GetEntityCount() const { return static_cast<u_int>(m_xEntityMap.size()); }
@@ -264,7 +236,6 @@ public:
 private:
 	static bool s_bIsLoadingScene;
 	static bool s_bIsPrefabInstantiating;
-	static bool s_bIsPrefabCreationMode;
 	friend class Zenith_Entity;
 #ifdef ZENITH_TOOLS
 	friend class Zenith_Editor;

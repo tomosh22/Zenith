@@ -27,6 +27,7 @@ void Zenith_EditorAddLogMessage(const char* szMessage, int eLevel, Zenith_LogCat
 #include "EntityComponent/Zenith_Entity.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_ComponentRegistry.h"
+#include "EntityComponent/Zenith_ComponentMeta.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
@@ -371,6 +372,19 @@ bool Zenith_Editor::Update()
 			s_bHasSceneBackup = false;
 			s_strBackupScenePath = "";
 			Zenith_Log(LOG_CATEGORY_EDITOR, "Backup scene file cleaned up");
+
+			// CRITICAL: Dispatch full lifecycle for all entities after backup restore
+			// In Stopped mode, Scene::Update() is not called, so lifecycle hooks would never run.
+			// Must dispatch OnAwake (which calls OnCreate to set up resources), OnEnable, then OnStart.
+			// This allows behaviours (like Sokoban_Behaviour) to initialize and regenerate transient entities.
+			Zenith_Scene& xRestoredScene = Zenith_Scene::GetCurrentScene();
+			for (auto& [uID, xEntity] : xRestoredScene.m_xEntityMap)
+			{
+				Zenith_ComponentMetaRegistry::Get().DispatchOnAwake(xEntity);
+				Zenith_ComponentMetaRegistry::Get().DispatchOnEnable(xEntity);
+				Zenith_ComponentMetaRegistry::Get().DispatchOnStart(xEntity);
+			}
+			Zenith_Log(LOG_CATEGORY_EDITOR, "Full lifecycle dispatched for all entities after backup restore");
 
 			// After restoring scene, initialize editor camera state from the game's camera
 			if (s_bEditorCameraInitialized)
@@ -869,6 +883,7 @@ void Zenith_Editor::RenderEntityTreeNode(Zenith_Scene& xScene, Zenith_Entity& xE
 		if (ImGui::MenuItem("Create Child Entity"))
 		{
 			Zenith_Entity xNewEntity(&xScene, "New Child");
+			xScene.GetEntityRef(xNewEntity.GetEntityID()).SetTransient(false);  // Editor-created entities are persistent
 			xNewEntity.SetParent(uEntityID);
 			Zenith_Editor::SelectEntity(xNewEntity.GetEntityID());
 		}
@@ -999,6 +1014,7 @@ void Zenith_Editor::RenderHierarchyPanel()
 	if (ImGui::Button("+ Create Entity"))
 	{
 		Zenith_Entity xNewEntity(&xScene, "New Entity");
+		xScene.GetEntityRef(xNewEntity.GetEntityID()).SetTransient(false);  // Editor-created entities are persistent
 		SelectEntity(xNewEntity.GetEntityID());
 	}
 
@@ -1381,10 +1397,13 @@ void Zenith_Editor::SetEditorMode(EditorMode eMode)
 		// Generate backup file path in temp directory
 		s_strBackupScenePath = std::filesystem::temp_directory_path().string() + "/zenith_scene_backup.zscen";
 
-		// Save current scene state to backup file
-		// This is safe to do synchronously since we're only saving (not destroying/creating)
+		// Save current scene state to backup file (persistent entities only)
+		// Transient entities are NOT included because:
+		// 1. They often have runtime-only resources (procedural meshes) that can't be serialized
+		// 2. Behaviour scripts will regenerate them in OnStart (which runs after restore)
+		// 3. Including them causes duplicate entities after OnStart regenerates
 		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		xScene.SaveToFile(s_strBackupScenePath);
+		xScene.SaveToFile(s_strBackupScenePath, false);
 		s_bHasSceneBackup = true;
 
 		Zenith_Log(LOG_CATEGORY_EDITOR, "Scene state backed up to: %s", s_strBackupScenePath.c_str());

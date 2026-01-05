@@ -194,7 +194,6 @@ static void InitializeMarbleResources()
 	// Note: Prefabs are lightweight templates with only TransformComponent
 	// ModelComponent and ColliderComponent are added AFTER setting position/scale
 	// (ColliderComponent creates physics bodies - must be added after transform is set)
-	Zenith_Scene::BeginPrefabCreation();
 	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
 
 	// Ball prefab - basic entity (ModelComponent and ColliderComponent added at runtime)
@@ -237,8 +236,6 @@ static void InitializeMarbleResources()
 		Zenith_Scene::Destroy(xCollectibleTemplate);
 	}
 
-	Zenith_Scene::EndPrefabCreation();
-
 	s_bResourcesInitialized = true;
 }
 
@@ -271,11 +268,9 @@ void Project_LoadInitialScene()
 	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
 	xScene.Reset();
 
-	// Enter prefab creation mode for initial scene setup
-	Zenith_Scene::BeginPrefabCreation();
-
 	// Create camera entity
 	Zenith_Entity xCameraEntity(&xScene, "MainCamera");
+	xScene.GetEntityRef(xCameraEntity.GetEntityID()).SetTransient(false);  // Persistent - will be saved to scene
 	Zenith_CameraComponent& xCamera = xCameraEntity.AddComponent<Zenith_CameraComponent>();
 	xCamera.InitialisePerspective(
 		Zenith_Maths::Vector3(0.f, 8.f, -12.f),  // Position: behind and above
@@ -290,6 +285,7 @@ void Project_LoadInitialScene()
 
 	// Create main game entity
 	Zenith_Entity xMarbleEntity(&xScene, "MarbleGame");
+	xScene.GetEntityRef(xMarbleEntity.GetEntityID()).SetTransient(false);  // Persistent - will be saved to scene
 
 	// UI Setup - anchored to top-left corner
 	static constexpr float s_fMarginLeft = 30.f;
@@ -342,6 +338,8 @@ void Project_LoadInitialScene()
 	Zenith_ScriptComponent& xScript = xMarbleEntity.AddComponent<Zenith_ScriptComponent>();
 	xScript.SetBehaviour<Marble_Behaviour>();
 
-	// Exit prefab creation mode
-	Zenith_Scene::EndPrefabCreation();
+	// Save the scene file
+	std::string strScenePath = std::string(GAME_ASSETS_DIR) + "/Scenes/Marble.zscn";
+	std::filesystem::create_directories(std::string(GAME_ASSETS_DIR) + "/Scenes");
+	xScene.SaveToFile(strScenePath);
 }

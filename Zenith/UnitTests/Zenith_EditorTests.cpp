@@ -108,7 +108,6 @@ void Zenith_EditorTests::TestTransformRoundTrip()
 	// This is important for property panel editing
 
 	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	Zenith_Scene::BeginPrefabCreation();
 
 	// Create a test entity
 	Zenith_Entity xEntity(&xScene, "TestEntity");
@@ -138,7 +137,6 @@ void Zenith_EditorTests::TestTransformRoundTrip()
 	float dotProduct = glm::dot(testRot, retrievedRot);
 	Zenith_Assert(std::abs(std::abs(dotProduct) - 1.0f) < 0.0001f, "Rotation round trip failed");
 
-	Zenith_Scene::EndPrefabCreation();
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "[EditorTests] TestTransformRoundTrip passed");
 }
 
@@ -151,7 +149,6 @@ void Zenith_EditorTests::TestMultiSelectSingle()
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestMultiSelectSingle...");
 
 	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	Zenith_Scene::BeginPrefabCreation();
 
 	// Create a test entity
 	Zenith_Entity xEntity(&xScene, "MultiSelectEntity1");
@@ -172,7 +169,6 @@ void Zenith_EditorTests::TestMultiSelectSingle()
 
 	Zenith_Editor::ClearSelection();
 
-	Zenith_Scene::EndPrefabCreation();
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "[EditorTests] TestMultiSelectSingle passed");
 }
 
@@ -181,7 +177,6 @@ void Zenith_EditorTests::TestMultiSelectCtrlClick()
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestMultiSelectCtrlClick...");
 
 	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	Zenith_Scene::BeginPrefabCreation();
 
 	// Create test entities
 	Zenith_Entity xEntity1(&xScene, "CtrlClickEntity1");
@@ -215,7 +210,6 @@ void Zenith_EditorTests::TestMultiSelectCtrlClick()
 
 	Zenith_Editor::ClearSelection();
 
-	Zenith_Scene::EndPrefabCreation();
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "[EditorTests] TestMultiSelectCtrlClick passed");
 }
 
@@ -224,7 +218,6 @@ void Zenith_EditorTests::TestMultiSelectClear()
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestMultiSelectClear...");
 
 	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	Zenith_Scene::BeginPrefabCreation();
 
 	// Create and select multiple entities
 	Zenith_Entity xEntity1(&xScene, "ClearEntity1");
@@ -245,7 +238,6 @@ void Zenith_EditorTests::TestMultiSelectClear()
 	Zenith_Assert(!Zenith_Editor::IsSelected(uEntityID1), "First entity should not be selected");
 	Zenith_Assert(!Zenith_Editor::IsSelected(uEntityID2), "Second entity should not be selected");
 
-	Zenith_Scene::EndPrefabCreation();
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "[EditorTests] TestMultiSelectClear passed");
 }
 
@@ -254,7 +246,6 @@ void Zenith_EditorTests::TestMultiSelectAfterEntityDelete()
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestMultiSelectAfterEntityDelete...");
 
 	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	Zenith_Scene::BeginPrefabCreation();
 
 	// Create entities
 	Zenith_Entity xEntity1(&xScene, "DeleteTestEntity1");
@@ -277,7 +268,6 @@ void Zenith_EditorTests::TestMultiSelectAfterEntityDelete()
 
 	Zenith_Editor::ClearSelection();
 
-	Zenith_Scene::EndPrefabCreation();
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "[EditorTests] TestMultiSelectAfterEntityDelete passed");
 }
 

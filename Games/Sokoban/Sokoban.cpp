@@ -99,7 +99,6 @@ static void InitializeSokobanResources()
 	// Create prefabs for runtime instantiation
 	// Note: Prefabs don't include ModelComponent because material varies by tile type
 	// The behaviour adds ModelComponent with correct material at instantiation
-	Zenith_Scene::BeginPrefabCreation();
 	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
 
 	// Tile prefab - basic entity (ModelComponent added at runtime with correct material)
@@ -135,8 +134,6 @@ static void InitializeSokobanResources()
 		Zenith_Scene::Destroy(xPlayerTemplate);
 	}
 
-	Zenith_Scene::EndPrefabCreation();
-
 	s_bResourcesInitialized = true;
 }
 // ============================================================================
@@ -167,10 +164,8 @@ void Project_LoadInitialScene()
 	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
 	xScene.Reset();
 
-	// Enter prefab creation mode for initial scene setup
-	Zenith_Scene::BeginPrefabCreation();
-
 	Zenith_Entity xCameraEntity(&xScene, "MainCamera");
+	xScene.GetEntityRef(xCameraEntity.GetEntityID()).SetTransient(false);  // Persistent - will be saved to scene
 	Zenith_CameraComponent& xCamera = xCameraEntity.AddComponent<Zenith_CameraComponent>();
 	// Top-down 3D view: camera directly above the grid, looking straight down
 	xCamera.InitialisePerspective(
@@ -185,6 +180,7 @@ void Project_LoadInitialScene()
 	xScene.SetMainCameraEntity(xCameraEntity.GetEntityID());
 
 	Zenith_Entity xSokobanEntity(&xScene, "SokobanGame");
+	xScene.GetEntityRef(xSokobanEntity.GetEntityID()).SetTransient(false);  // Persistent - will be saved to scene
 
 	// UI Setup - anchored to top-right corner of screen
 	static constexpr float s_fMarginRight = 30.f;  // Offset from right edge
@@ -257,6 +253,8 @@ void Project_LoadInitialScene()
 	Zenith_ScriptComponent& xScript = xSokobanEntity.AddComponent<Zenith_ScriptComponent>();
 	xScript.SetBehaviour<Sokoban_Behaviour>();
 
-	// Exit prefab creation mode
-	Zenith_Scene::EndPrefabCreation();
+	// Save the scene file
+	std::string strScenePath = std::string(GAME_ASSETS_DIR) + "/Scenes/Sokoban.zscn";
+	std::filesystem::create_directories(std::string(GAME_ASSETS_DIR) + "/Scenes");
+	xScene.SaveToFile(strScenePath);
 }

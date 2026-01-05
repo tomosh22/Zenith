@@ -31,7 +31,6 @@
 Zenith_Scene Zenith_Scene::s_xCurrentScene;
 bool Zenith_Scene::s_bIsLoadingScene = false;
 bool Zenith_Scene::s_bIsPrefabInstantiating = false;
-bool Zenith_Scene::s_bIsPrefabCreationMode = false;
 float Zenith_Scene::s_fFixedTimeAccumulator = 0.0f;
 
 static constexpr float FIXED_TIMESTEP = 1.0f / 60.0f;  // 60 Hz fixed update
@@ -183,7 +182,7 @@ void Zenith_Scene::RemoveEntity(Zenith_EntityID uID)
 	Zenith_Log(LOG_CATEGORY_SCENE, "Entity %u removed from scene", uID);
 }
 
-void Zenith_Scene::SaveToFile(const std::string& strFilename)
+void Zenith_Scene::SaveToFile(const std::string& strFilename, bool bIncludeTransient)
 {
 	Zenith_DataStream xStream;
 
@@ -194,23 +193,25 @@ void Zenith_Scene::SaveToFile(const std::string& strFilename)
 	xStream << SCENE_MAGIC;
 	xStream << SCENE_VERSION;
 
-	// Count non-transient entities (transient entities are not saved)
+	// Count entities to save
+	// When bIncludeTransient is false: only save non-transient entities (normal scene save)
+	// When bIncludeTransient is true: save ALL entities (editor backup for Play/Stop)
 	u_int uNumEntities = 0;
 	for (auto& pair : m_xEntityMap)
 	{
-		if (!pair.second.IsTransient())
+		if (bIncludeTransient || !pair.second.IsTransient())
 		{
 			uNumEntities++;
 		}
 	}
 	xStream << uNumEntities;
 
-	// Write each non-transient entity
+	// Write entities
 	for (auto& pair : m_xEntityMap)
 	{
 		Zenith_Entity& xEntity = pair.second;
-		// Skip transient entities (runtime-created, not saved to scene)
-		if (xEntity.IsTransient())
+		// Skip transient entities unless bIncludeTransient is true
+		if (!bIncludeTransient && xEntity.IsTransient())
 		{
 			continue;
 		}

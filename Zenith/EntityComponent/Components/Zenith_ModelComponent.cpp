@@ -457,7 +457,30 @@ void Zenith_ModelComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 			}
 		}
 	}
-	// else: bUsingModelInstance is false means procedural mesh entries which are not serialized
+	else
+	{
+		// Legacy system: Read mesh entry data to keep stream aligned
+		// Note: Procedural meshes can't be reconstructed from serialized data -
+		// they must be regenerated at runtime (e.g., by behaviour scripts)
+		u_int uNumEntries;
+		xStream >> uNumEntries;
+
+		for (u_int u = 0; u < uNumEntries; u++)
+		{
+			// Read and discard mesh path
+			std::string strMeshPath;
+			xStream >> strMeshPath;
+
+			// Read and discard material data
+			Flux_MaterialAsset* pxTempMat = Flux_MaterialAsset::Create("Temp");
+			pxTempMat->ReadFromDataStream(xStream);
+			delete pxTempMat;
+
+			// Read and discard animation path
+			std::string strAnimPath;
+			xStream >> strAnimPath;
+		}
+	}
 }
 
 //=============================================================================

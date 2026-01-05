@@ -118,5 +118,5 @@ public:
 private:
 	Zenith_EntityID m_uEntityID;
 	Zenith_Vector<Zenith_EntityID> m_xChildEntityIDs;
-	bool m_bTransient = false;  // If true, entity is NOT saved during serialization
+	bool m_bTransient = true;  // Default: transient (not saved). Scene loading and editor set this to false for persistent entities.
 };

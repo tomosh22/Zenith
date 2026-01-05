@@ -128,21 +128,15 @@ public:
 	 */
 	void OnAwake() ZENITH_FINAL override
 	{
-		// Get default resources from namespace if not serialized/assigned
-		if (!m_pxCubeGeometry)
-			m_pxCubeGeometry = Sokoban::g_pxCubeGeometry;
-		if (!m_pxFloorMaterial)
-			m_pxFloorMaterial = Sokoban::g_pxFloorMaterial;
-		if (!m_pxWallMaterial)
-			m_pxWallMaterial = Sokoban::g_pxWallMaterial;
-		if (!m_pxBoxMaterial)
-			m_pxBoxMaterial = Sokoban::g_pxBoxMaterial;
-		if (!m_pxBoxOnTargetMaterial)
-			m_pxBoxOnTargetMaterial = Sokoban::g_pxBoxOnTargetMaterial;
-		if (!m_pxPlayerMaterial)
-			m_pxPlayerMaterial = Sokoban::g_pxPlayerMaterial;
-		if (!m_pxTargetMaterial)
-			m_pxTargetMaterial = Sokoban::g_pxTargetMaterial;
+		// Always use properly-initialized global resources
+		// Deserialized materials from backup restore may not have GPU resources (textures) loaded
+		m_pxCubeGeometry = Sokoban::g_pxCubeGeometry;
+		m_pxFloorMaterial = Sokoban::g_pxFloorMaterial;
+		m_pxWallMaterial = Sokoban::g_pxWallMaterial;
+		m_pxBoxMaterial = Sokoban::g_pxBoxMaterial;
+		m_pxBoxOnTargetMaterial = Sokoban::g_pxBoxOnTargetMaterial;
+		m_pxPlayerMaterial = Sokoban::g_pxPlayerMaterial;
+		m_pxTargetMaterial = Sokoban::g_pxTargetMaterial;
 
 		GenerateRandomLevel();
 	}
@@ -154,7 +148,6 @@ public:
 	 */
 	void OnStart() ZENITH_FINAL override
 	{
-		// Resources loaded from serialization - generate level on Start instead of Awake
 		if (m_uPlayerEntityID == 0)
 		{
 			GenerateRandomLevel();

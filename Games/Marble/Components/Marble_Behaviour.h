@@ -88,21 +88,15 @@ public:
 	 */
 	void OnAwake() ZENITH_FINAL override
 	{
-		// Get resources from namespace
-		if (!m_pxSphereGeometry)
-			m_pxSphereGeometry = Marble::g_pxSphereGeometry;
-		if (!m_pxCubeGeometry)
-			m_pxCubeGeometry = Marble::g_pxCubeGeometry;
-		if (!m_pxBallMaterial)
-			m_pxBallMaterial = Marble::g_pxBallMaterial;
-		if (!m_pxPlatformMaterial)
-			m_pxPlatformMaterial = Marble::g_pxPlatformMaterial;
-		if (!m_pxGoalMaterial)
-			m_pxGoalMaterial = Marble::g_pxGoalMaterial;
-		if (!m_pxCollectibleMaterial)
-			m_pxCollectibleMaterial = Marble::g_pxCollectibleMaterial;
-		if (!m_pxFloorMaterial)
-			m_pxFloorMaterial = Marble::g_pxFloorMaterial;
+		// Always use properly-initialized global resources
+		// Deserialized materials from backup restore may not have GPU resources (textures) loaded
+		m_pxSphereGeometry = Marble::g_pxSphereGeometry;
+		m_pxCubeGeometry = Marble::g_pxCubeGeometry;
+		m_pxBallMaterial = Marble::g_pxBallMaterial;
+		m_pxPlatformMaterial = Marble::g_pxPlatformMaterial;
+		m_pxGoalMaterial = Marble::g_pxGoalMaterial;
+		m_pxCollectibleMaterial = Marble::g_pxCollectibleMaterial;
+		m_pxFloorMaterial = Marble::g_pxFloorMaterial;
 
 		GenerateLevel();
 	}
@@ -114,7 +108,6 @@ public:
 	 */
 	void OnStart() ZENITH_FINAL override
 	{
-		// Resources loaded from serialization - generate level on Start instead of Awake
 		if (m_uBallEntityID == 0)
 		{
 			GenerateLevel();
