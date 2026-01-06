@@ -7,10 +7,12 @@
 #include <unordered_set>
 
 class Zenith_CameraComponent;
-class Zenith_Entity;
 
-using Zenith_EntityID = u_int;
-constexpr Zenith_EntityID INVALID_ENTITY_ID = static_cast<Zenith_EntityID>(-1);
+// Forward declare Zenith_Scene so Zenith_Entity can reference it
+class Zenith_Scene;
+
+// Include Zenith_Entity to get complete EntityID type definition (must come before ComponentPool)
+#include "EntityComponent/Zenith_Entity.h"
 
 class Zenith_ComponentPoolBase
 {
@@ -25,12 +27,6 @@ public:
 	Zenith_Vector<T> m_xData;
 	Zenith_Vector<Zenith_EntityID> m_xOwningEntities;  // Parallel array tracking which entity owns each component
 };
-
-// Forward declare Zenith_Scene so Zenith_Entity can reference it
-class Zenith_Scene;
-
-// Include Zenith_Entity to get complete type definition for m_xEntityMap
-#include "EntityComponent/Zenith_Entity.h"
 
 // Define the component concept after Zenith_Entity is fully defined
 template<typename T>
@@ -86,24 +82,57 @@ public:
 
 	Zenith_EntityID CreateEntity()
 	{
-		// Entity ID counter per-scene (starts at 1 because 0 is reserved as invalid)
-		while (m_xEntityComponents.GetSize() <= m_uNextEntityID)
+		uint32_t uIndex;
+		uint32_t uGeneration;
+
+		if (m_xFreeIndices.GetSize() > 0)
+		{
+			// Reuse a slot from free list
+			uIndex = m_xFreeIndices.GetBack();
+			m_xFreeIndices.PopBack();
+
+			Zenith_EntitySlot& xSlot = m_xEntitySlots.Get(uIndex);
+			xSlot.m_uGeneration++;  // Increment to invalidate old references
+			uGeneration = xSlot.m_uGeneration;
+			xSlot.m_bOccupied = true;
+			xSlot.m_bMarkedForDestruction = false;
+		}
+		else
+		{
+			// Allocate new slot
+			uIndex = m_xEntitySlots.GetSize();
+			uGeneration = 1;  // Start at 1 (generation 0 is always invalid)
+
+			Zenith_EntitySlot xNewSlot;
+			xNewSlot.m_uGeneration = uGeneration;
+			xNewSlot.m_bOccupied = true;
+			xNewSlot.m_bMarkedForDestruction = false;
+			m_xEntitySlots.PushBack(std::move(xNewSlot));
+		}
+
+		// Ensure component mapping has space for this index
+		while (m_xEntityComponents.GetSize() <= uIndex)
 		{
 			m_xEntityComponents.PushBack({});
 		}
-		return m_uNextEntityID++;
+
+		Zenith_EntityID xNewID = { uIndex, uGeneration };
+		m_xActiveEntities.PushBack(xNewID);
+		return xNewID;
 	}
 
 	template<typename T, typename... Args>
-	T& CreateComponent(Zenith_EntityID uID, Args&&... args)
+	T& CreateComponent(Zenith_EntityID xID, Args&&... args)
 	{
+		Zenith_Assert(EntityExists(xID), "CreateComponent: Entity (idx=%u, gen=%u) is stale or invalid", xID.m_uIndex, xID.m_uGeneration);
+
 		Zenith_ComponentPool<T>* const pxPool = GetComponentPool<T>();
 		u_int uIndex = pxPool->m_xData.GetSize();
 		pxPool->m_xData.EmplaceBack(std::forward<Args>(args)...);
-		pxPool->m_xOwningEntities.PushBack(uID);  // Track which entity owns this component
+		pxPool->m_xOwningEntities.PushBack(xID);  // Track which entity owns this component
 
 		const Zenith_Scene::TypeID uTypeID = Zenith_Scene::TypeIDGenerator::GetTypeID<T>();
-		std::unordered_map<Zenith_Scene::TypeID, u_int>& xComponentsForThisEntity = m_xEntityComponents.Get(uID);
+		std::unordered_map<Zenith_Scene::TypeID, u_int>& xComponentsForThisEntity = m_xEntityComponents.Get(xID.m_uIndex);
 		Zenith_Assert(xComponentsForThisEntity.find(uTypeID) == xComponentsForThisEntity.end(), "This component already has this entity");
 
 		xComponentsForThisEntity[uTypeID] = uIndex;
@@ -113,27 +142,32 @@ public:
 	}
 
 	template<typename T>
-	bool EntityHasComponent(Zenith_EntityID uID)
+	bool EntityHasComponent(Zenith_EntityID xID) const
 	{
+		if (!EntityExists(xID)) return false;
 		const Zenith_Scene::TypeID uTypeID = Zenith_Scene::TypeIDGenerator::GetTypeID<T>();
-		std::unordered_map<Zenith_Scene::TypeID, u_int>& xComponentsForThisEntity = m_xEntityComponents.Get(uID);
+		const std::unordered_map<Zenith_Scene::TypeID, u_int>& xComponentsForThisEntity = m_xEntityComponents.Get(xID.m_uIndex);
 		return xComponentsForThisEntity.contains(uTypeID);
 	}
 
 	template<typename T>
-	T& GetComponentFromEntity(Zenith_EntityID uID)
+	T& GetComponentFromEntity(Zenith_EntityID xID)
 	{
+		Zenith_Assert(EntityExists(xID), "GetComponentFromEntity: Entity (idx=%u, gen=%u) is stale or invalid", xID.m_uIndex, xID.m_uGeneration);
+		Zenith_Assert(EntityHasComponent<T>(xID), "GetComponentFromEntity: Entity %u does not have requested component type", xID.m_uIndex);
 		const Zenith_Scene::TypeID uTypeID = Zenith_Scene::TypeIDGenerator::GetTypeID<T>();
-		std::unordered_map<Zenith_Scene::TypeID, u_int>& xComponentsForThisEntity = m_xEntityComponents.Get(uID);
+		std::unordered_map<Zenith_Scene::TypeID, u_int>& xComponentsForThisEntity = m_xEntityComponents.Get(xID.m_uIndex);
 		const u_int uIndex = xComponentsForThisEntity.at(uTypeID);
 		return GetComponentPool<T>()->m_xData.Get(uIndex);
 	}
 
 	template<typename T>
-	bool RemoveComponentFromEntity(Zenith_EntityID uID)
+	bool RemoveComponentFromEntity(Zenith_EntityID xID)
 	{
+		Zenith_Assert(EntityExists(xID), "RemoveComponentFromEntity: Entity (idx=%u, gen=%u) is stale or invalid", xID.m_uIndex, xID.m_uGeneration);
+		Zenith_Assert(EntityHasComponent<T>(xID), "RemoveComponentFromEntity: Entity %u does not have component to remove", xID.m_uIndex);
 		const Zenith_Scene::TypeID uTypeID = Zenith_Scene::TypeIDGenerator::GetTypeID<T>();
-		std::unordered_map<Zenith_Scene::TypeID, u_int>& xComponentsForThisEntity = m_xEntityComponents.Get(uID);
+		std::unordered_map<Zenith_Scene::TypeID, u_int>& xComponentsForThisEntity = m_xEntityComponents.Get(xID.m_uIndex);
 		const u_int uRemovedIndex = xComponentsForThisEntity.at(uTypeID);
 		xComponentsForThisEntity.erase(uTypeID);
 
@@ -146,9 +180,10 @@ public:
 			pxPool->m_xData.Get(uRemovedIndex) = std::move(pxPool->m_xData.Get(uLastIndex));
 
 			// Update the entity that owned the moved component
-			Zenith_EntityID uMovedEntityID = pxPool->m_xOwningEntities.Get(uLastIndex);
-			m_xEntityComponents.Get(uMovedEntityID)[uTypeID] = uRemovedIndex;
-			pxPool->m_xOwningEntities.Get(uRemovedIndex) = uMovedEntityID;
+			Zenith_EntityID xMovedEntityID = pxPool->m_xOwningEntities.Get(uLastIndex);
+			Zenith_Assert(EntityExists(xMovedEntityID), "RemoveComponentFromEntity: Moved entity is stale");
+			m_xEntityComponents.Get(xMovedEntityID.m_uIndex)[uTypeID] = uRemovedIndex;
+			pxPool->m_xOwningEntities.Get(uRemovedIndex) = xMovedEntityID;
 		}
 
 		pxPool->m_xData.PopBack();
@@ -200,18 +235,66 @@ public:
 	static Zenith_Entity Instantiate(const class Zenith_Prefab& xPrefab, const Zenith_Maths::Vector3& xPosition, const Zenith_Maths::Quat& xRotation, const std::string& strName = "");
 
 	/**
-	 * Destroy an entity (removes it from the scene).
+	 * Destroy an entity (Unity-style deferred destruction at end of frame).
+	 * Children are also marked for destruction.
 	 */
 	static void Destroy(Zenith_Entity& xEntity);
 	static void Destroy(Zenith_EntityID uEntityID);
 
+	/**
+	 * Immediately destroy an entity (current-frame destruction for editor/tests).
+	 */
+	static void DestroyImmediate(Zenith_Entity& xEntity);
+	static void DestroyImmediate(Zenith_EntityID uEntityID);
+
+	/**
+	 * Check if an entity is marked for destruction.
+	 */
+	bool IsMarkedForDestruction(Zenith_EntityID uEntityID) const;
+
+	/**
+	 * Process pending destructions (called at end of Update).
+	 */
+	void ProcessPendingDestructions();
+
+	/**
+	 * Check if currently in Update loop (for deferred creation tracking).
+	 */
+	bool IsUpdating() const { return m_bIsUpdating; }
+
+	/**
+	 * Register an entity as created during Update (won't receive callbacks this frame).
+	 */
+	void RegisterCreatedDuringUpdate(Zenith_EntityID uID) { if (m_bIsUpdating) m_xCreatedDuringUpdate.insert(uID); }
+
+	/**
+	 * Check if entity was created during current Update frame.
+	 */
+	bool WasCreatedDuringUpdate(Zenith_EntityID uID) const { return m_xCreatedDuringUpdate.count(uID) > 0; }
+
 	// Query methods
-	u_int GetEntityCount() const { return static_cast<u_int>(m_xEntityMap.size()); }
-	bool EntityExists(Zenith_EntityID uID) const { return m_xEntityMap.find(uID) != m_xEntityMap.end(); }
-	Zenith_Entity GetEntityFromID(Zenith_EntityID uID);
-	Zenith_Entity& GetEntityRef(Zenith_EntityID uID) { return m_xEntityMap.at(uID); }
+	u_int GetEntityCount() const { return m_xActiveEntities.GetSize(); }
+	const Zenith_Vector<Zenith_EntityID>& GetActiveEntities() const { return m_xActiveEntities; }
+
+	// Check if entity exists AND is valid (generation matches)
+	bool EntityExists(Zenith_EntityID xID) const
+	{
+		if (!xID.IsValid()) return false;
+		if (xID.m_uIndex >= m_xEntitySlots.GetSize()) return false;
+		const Zenith_EntitySlot& xSlot = m_xEntitySlots.Get(xID.m_uIndex);
+		return xSlot.m_bOccupied && xSlot.m_uGeneration == xID.m_uGeneration;
+	}
+
+	Zenith_Entity GetEntityFromID(Zenith_EntityID xID);
+	Zenith_Entity& GetEntityRef(Zenith_EntityID xID);
 	Zenith_Entity* FindEntityByName(const std::string& strName);
 
+	// Safe entity lookup - returns nullptr if entity doesn't exist or is stale
+	Zenith_Entity* TryGetEntity(Zenith_EntityID xID)
+	{
+		if (!EntityExists(xID)) return nullptr;
+		return &m_xEntitySlots.Get(xID.m_uIndex).m_xEntity;
+	}
 
 	static void Update(const float fDt);
 	static void WaitForUpdateComplete();
@@ -223,12 +306,26 @@ public:
 	void SetMainCameraEntity(Zenith_EntityID uEntity);
 	Zenith_EntityID GetMainCameraEntity();
 	Zenith_CameraComponent& GetMainCamera();
+	Zenith_CameraComponent* TryGetMainCamera();  // Safe version - returns nullptr if no valid camera
 
 	// Scene loading state (prevents asset deletion during Reset())
 	static bool IsLoadingScene() { return s_bIsLoadingScene; }
 
 	// Prefab instantiation state (allows entity creation during prefab instantiate)
 	static void SetPrefabInstantiating(bool b) { s_bIsPrefabInstantiating = b; }
+
+	/**
+	 * DispatchFullLifecycleInit - Safely dispatch OnAwake, OnEnable, OnStart to all entities
+	 *
+	 * CRITICAL: This method handles entity creation during callbacks safely by:
+	 * 1. Copying entity IDs before iteration (prevents vector reference invalidation)
+	 * 2. Using separate loops for each lifecycle stage (prevents dangling entity references)
+	 * 3. Re-fetching entity references before each callback
+	 *
+	 * Use this instead of manually iterating and dispatching lifecycle callbacks.
+	 * Called by: Editor (after backup restore), and any code needing full entity init.
+	 */
+	static void DispatchFullLifecycleInit();
 
 private:
 	static bool s_bIsLoadingScene;
@@ -264,13 +361,34 @@ private:
 		return static_cast<Zenith_ComponentPool<T>*>(pxPoolBase);
 	}
 
-	std::unordered_map<Zenith_EntityID, Zenith_Entity> m_xEntityMap;
+	//--------------------------------------------------------------------------
+	// Slot-based Entity Storage (Generation Counter System)
+	//--------------------------------------------------------------------------
+	struct Zenith_EntitySlot
+	{
+		Zenith_Entity m_xEntity;
+		uint32_t m_uGeneration = 0;
+		bool m_bOccupied = false;
+		bool m_bMarkedForDestruction = false;
+	};
+
+	Zenith_Vector<Zenith_EntitySlot> m_xEntitySlots;      // Dense array of entity slots
+	Zenith_Vector<uint32_t> m_xFreeIndices;               // Free list for slot recycling
+	Zenith_Vector<Zenith_EntityID> m_xActiveEntities;     // Active entity IDs for iteration
 	std::unordered_set<Zenith_EntityID> m_xEntitiesStarted;  // Tracks which entities have had OnStart called
 	static Zenith_Scene s_xCurrentScene;
 	static float s_fFixedTimeAccumulator;  // Accumulator for fixed timestep updates
-	Zenith_EntityID m_uMainCameraEntity = -1;
+	Zenith_EntityID m_xMainCameraEntity = INVALID_ENTITY_ID;
 	Zenith_Mutex m_xMutex;
-	Zenith_EntityID m_uNextEntityID = 1;  // Starts at 1 (0 is reserved as invalid)
+
+	// Deferred destruction tracking (Unity-style)
+	Zenith_Vector<Zenith_EntityID> m_xPendingDestruction;
+	std::unordered_set<Zenith_EntityID> m_xPendingDestructionSet;
+
+	// Deferred creation tracking - entities created during Update() are tracked
+	// so they don't receive callbacks (OnStart, OnUpdate, etc.) until next frame
+	bool m_bIsUpdating = false;
+	std::unordered_set<Zenith_EntityID> m_xCreatedDuringUpdate;
 
 	public:
 	//#TO type id is index into vector
@@ -285,7 +403,7 @@ template<typename T, typename... Args>
 T& Zenith_Entity::AddComponent(Args&&... args)
 {
 	Zenith_Assert(!HasComponent<T>(), "Already has this component");
-	return m_pxParentScene->CreateComponent<T>(m_uEntityID, std::forward<Args>(args)..., *this);
+	return m_pxParentScene->CreateComponent<T>(m_xEntityID, std::forward<Args>(args)..., *this);
 }
 
 template<typename T, typename... Args>
@@ -301,19 +419,19 @@ T& Zenith_Entity::AddOrReplaceComponent(Args&&... args)
 template<typename T>
 bool Zenith_Entity::HasComponent() const
 {
-	return m_pxParentScene->EntityHasComponent<T>(m_uEntityID);
+	return m_pxParentScene->EntityHasComponent<T>(m_xEntityID);
 }
 
 template<typename T>
 T& Zenith_Entity::GetComponent() const
 {
 	Zenith_Assert(HasComponent<T>(), "Doesn't have this component");
-	return m_pxParentScene->GetComponentFromEntity<T>(m_uEntityID);
+	return m_pxParentScene->GetComponentFromEntity<T>(m_xEntityID);
 }
 
 template<typename T>
 void Zenith_Entity::RemoveComponent()
 {
 	Zenith_Assert(HasComponent<T>(), "Doesn't have this component");
-	m_pxParentScene->RemoveComponentFromEntity<T>(m_uEntityID);
+	m_pxParentScene->RemoveComponentFromEntity<T>(m_xEntityID);
 }

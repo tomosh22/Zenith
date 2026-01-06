@@ -119,7 +119,7 @@ public:
 	 */
 	void OnStart() ZENITH_FINAL override
 	{
-		if (m_xLevelEntities.uBallEntityID == 0)
+		if (!m_xLevelEntities.uBallEntityID.IsValid())
 		{
 			GenerateLevel();
 		}
@@ -227,7 +227,7 @@ private:
 	void HandleInput(float fDt)
 	{
 		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		if (m_xLevelEntities.uBallEntityID == 0 || !xScene.EntityExists(m_xLevelEntities.uBallEntityID))
+		if (!m_xLevelEntities.uBallEntityID.IsValid() || !xScene.EntityExists(m_xLevelEntities.uBallEntityID))
 			return;
 
 		Zenith_Entity xBall = xScene.GetEntityByID(m_xLevelEntities.uBallEntityID);
@@ -265,7 +265,7 @@ private:
 	void CheckFallCondition()
 	{
 		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		if (m_xLevelEntities.uBallEntityID == 0 || !xScene.EntityExists(m_xLevelEntities.uBallEntityID))
+		if (!m_xLevelEntities.uBallEntityID.IsValid() || !xScene.EntityExists(m_xLevelEntities.uBallEntityID))
 			return;
 
 		Zenith_Entity xBall = xScene.GetEntityByID(m_xLevelEntities.uBallEntityID);
@@ -284,7 +284,7 @@ private:
 	void UpdateCamera(float fDt)
 	{
 		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		if (m_xLevelEntities.uBallEntityID == 0 || !xScene.EntityExists(m_xLevelEntities.uBallEntityID))
+		if (!m_xLevelEntities.uBallEntityID.IsValid() || !xScene.EntityExists(m_xLevelEntities.uBallEntityID))
 			return;
 
 		Zenith_EntityID uCamID = xScene.GetMainCameraEntity();
@@ -307,7 +307,7 @@ private:
 	void HandleCollectibles(float fDt)
 	{
 		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		if (m_xLevelEntities.uBallEntityID == 0 || !xScene.EntityExists(m_xLevelEntities.uBallEntityID))
+		if (!m_xLevelEntities.uBallEntityID.IsValid() || !xScene.EntityExists(m_xLevelEntities.uBallEntityID))
 			return;
 
 		Zenith_Entity xBall = xScene.GetEntityByID(m_xLevelEntities.uBallEntityID);

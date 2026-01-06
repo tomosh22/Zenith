@@ -86,8 +86,14 @@ unsigned long ThreadInit(void* pParams)
 	Zenith_Multithreading::RegisterThread();
 	const ThreadParams* pxParams = static_cast<const ThreadParams*>(pParams);
 	memcpy(tl_g_acThreadName, pxParams->m_szName, strnlen(pxParams->m_szName, Zenith_Multithreading::uMAX_THREAD_NAME_LENGTH));
+
+	// Copy function and user data before signaling - after Signal() the stack
+	// containing pxParams may be destroyed by the calling thread
+	Zenith_ThreadFunction pfnFunc = pxParams->m_pfnFunc;
+	const void* pUserData = pxParams->m_pUserData;
+
 	pxParams->m_pxSemaphore->Signal();
-	pxParams->m_pfnFunc(pxParams->m_pUserData);
+	pfnFunc(pUserData);
 	return 0;
 }
 

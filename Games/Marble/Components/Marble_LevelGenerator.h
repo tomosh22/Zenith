@@ -43,8 +43,8 @@ public:
 	 */
 	struct LevelEntities
 	{
-		Zenith_EntityID uBallEntityID = 0;
-		Zenith_EntityID uGoalEntityID = 0;
+		Zenith_EntityID uBallEntityID = INVALID_ENTITY_ID;
+		Zenith_EntityID uGoalEntityID = INVALID_ENTITY_ID;
 		std::vector<Zenith_EntityID> axPlatformEntityIDs;
 		std::vector<Zenith_EntityID> axCollectibleEntityIDs;
 	};
@@ -124,10 +124,10 @@ public:
 	{
 		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
 
-		if (xEntities.uBallEntityID != 0 && xScene.EntityExists(xEntities.uBallEntityID))
+		if (xEntities.uBallEntityID.IsValid() && xScene.EntityExists(xEntities.uBallEntityID))
 		{
 			Zenith_Scene::Destroy(xEntities.uBallEntityID);
-			xEntities.uBallEntityID = 0;
+			xEntities.uBallEntityID = INVALID_ENTITY_ID;
 		}
 
 		for (Zenith_EntityID uID : xEntities.axPlatformEntityIDs)
@@ -144,10 +144,10 @@ public:
 		}
 		xEntities.axCollectibleEntityIDs.clear();
 
-		if (xEntities.uGoalEntityID != 0 && xScene.EntityExists(xEntities.uGoalEntityID))
+		if (xEntities.uGoalEntityID.IsValid() && xScene.EntityExists(xEntities.uGoalEntityID))
 		{
 			Zenith_Scene::Destroy(xEntities.uGoalEntityID);
-			xEntities.uGoalEntityID = 0;
+			xEntities.uGoalEntityID = INVALID_ENTITY_ID;
 		}
 	}
 

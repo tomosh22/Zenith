@@ -61,7 +61,7 @@ public:
 	// ========================================================================
 	struct TerrainChunk
 	{
-		Zenith_EntityID m_uEntityID = 0;
+		Zenith_EntityID m_uEntityID = INVALID_ENTITY_ID;
 		float m_fStartZ = 0.0f;
 		float m_fEndZ = 0.0f;
 		float m_fHeight = 0.0f;  // Y offset for terrain variation
@@ -90,7 +90,7 @@ public:
 		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
 		for (auto& xChunk : s_axChunks)
 		{
-			if (xChunk.m_uEntityID != 0 && xScene.EntityExists(xChunk.m_uEntityID))
+			if (xChunk.m_uEntityID.IsValid() && xScene.EntityExists(xChunk.m_uEntityID))
 			{
 				Zenith_Scene::Destroy(xChunk.m_uEntityID);
 			}
@@ -130,7 +130,7 @@ public:
 		float fDespawnThreshold = fPlayerZ - s_xConfig.m_fChunkLength * 2.0f;
 		while (!s_axChunks.empty() && s_axChunks.front().m_fEndZ < fDespawnThreshold)
 		{
-			if (s_axChunks.front().m_uEntityID != 0 && xScene.EntityExists(s_axChunks.front().m_uEntityID))
+			if (s_axChunks.front().m_uEntityID.IsValid() && xScene.EntityExists(s_axChunks.front().m_uEntityID))
 			{
 				Zenith_Scene::Destroy(s_axChunks.front().m_uEntityID);
 			}

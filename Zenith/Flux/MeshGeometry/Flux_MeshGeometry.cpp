@@ -276,7 +276,13 @@ void Flux_MeshGeometry::Combine(Flux_MeshGeometry& xDst, const Flux_MeshGeometry
 	{
 		u_int64 newSize = xDst.GetVertexDataSize() + xSrc.GetVertexDataSize();
 		Zenith_Log(LOG_CATEGORY_MESH, "WARNING: Vertex buffer reallocation required! Reserved: %llu, Needed: %llu", xDst.m_ulReservedVertexDataSize, newSize);
-		xDst.m_pVertexData = static_cast<u_int8*>(Zenith_MemoryManagement::Reallocate(xDst.m_pVertexData, newSize));
+		u_int8* pNewData = static_cast<u_int8*>(Zenith_MemoryManagement::Reallocate(xDst.m_pVertexData, newSize));
+		if (pNewData == nullptr)
+		{
+			Zenith_Error(LOG_CATEGORY_MESH, "Vertex buffer reallocation failed");
+			return;
+		}
+		xDst.m_pVertexData = pNewData;
 		xDst.m_ulReservedVertexDataSize = newSize;
 	}
 	memcpy(xDst.m_pVertexData + xDst.GetVertexDataSize(), xSrc.m_pVertexData, xSrc.GetVertexDataSize());
@@ -285,7 +291,13 @@ void Flux_MeshGeometry::Combine(Flux_MeshGeometry& xDst, const Flux_MeshGeometry
 	{
 		u_int64 newSize = xDst.GetIndexDataSize() + xSrc.GetIndexDataSize();
 		Zenith_Log(LOG_CATEGORY_MESH, "WARNING: Index buffer reallocation required! Reserved: %llu, Needed: %llu", xDst.m_ulReservedIndexDataSize, newSize);
-		xDst.m_puIndices = static_cast<Flux_MeshGeometry::IndexType*>(Zenith_MemoryManagement::Reallocate(xDst.m_puIndices, newSize));
+		Flux_MeshGeometry::IndexType* pNewIndices = static_cast<Flux_MeshGeometry::IndexType*>(Zenith_MemoryManagement::Reallocate(xDst.m_puIndices, newSize));
+		if (pNewIndices == nullptr)
+		{
+			Zenith_Error(LOG_CATEGORY_MESH, "Index buffer reallocation failed");
+			return;
+		}
+		xDst.m_puIndices = pNewIndices;
 		xDst.m_ulReservedIndexDataSize = newSize;
 	}
 	memcpy(xDst.m_puIndices + xDst.m_uNumIndices, xSrc.m_puIndices, xSrc.GetIndexDataSize());
@@ -300,7 +312,13 @@ void Flux_MeshGeometry::Combine(Flux_MeshGeometry& xDst, const Flux_MeshGeometry
 		{
 			u_int64 newSize = (xDst.m_uNumVerts + xSrc.m_uNumVerts) * sizeof(Zenith_Maths::Vector3);
 			Zenith_Log(LOG_CATEGORY_MESH, "WARNING: Position buffer reallocation required! Reserved: %llu, Needed: %llu", xDst.m_ulReservedPositionDataSize, newSize);
-			xDst.m_pxPositions = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Reallocate(xDst.m_pxPositions, newSize));
+			Zenith_Maths::Vector3* pNewPositions = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Reallocate(xDst.m_pxPositions, newSize));
+			if (pNewPositions == nullptr)
+			{
+				Zenith_Error(LOG_CATEGORY_MESH, "Position buffer reallocation failed");
+				return;
+			}
+			xDst.m_pxPositions = pNewPositions;
 			xDst.m_ulReservedPositionDataSize = newSize;
 		}
 		memcpy(xDst.m_pxPositions + xDst.m_uNumVerts, xSrc.m_pxPositions, xSrc.m_uNumVerts * sizeof(Zenith_Maths::Vector3));
@@ -308,31 +326,66 @@ void Flux_MeshGeometry::Combine(Flux_MeshGeometry& xDst, const Flux_MeshGeometry
 
 	if (xDst.m_pxNormals)
 	{
-		xDst.m_pxNormals = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Reallocate(xDst.m_pxNormals, (xDst.m_uNumVerts + xSrc.m_uNumVerts) * sizeof(Zenith_Maths::Vector3)));
+		u_int64 newSize = (xDst.m_uNumVerts + xSrc.m_uNumVerts) * sizeof(Zenith_Maths::Vector3);
+		Zenith_Maths::Vector3* pNewNormals = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Reallocate(xDst.m_pxNormals, newSize));
+		if (pNewNormals == nullptr)
+		{
+			Zenith_Error(LOG_CATEGORY_MESH, "Normal buffer reallocation failed");
+			return;
+		}
+		xDst.m_pxNormals = pNewNormals;
 		memcpy(xDst.m_pxNormals + xDst.m_uNumVerts, xSrc.m_pxNormals, xSrc.m_uNumVerts * sizeof(Zenith_Maths::Vector3));
 	}
 
 	if (xDst.m_pxTangents)
 	{
-		xDst.m_pxTangents = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Reallocate(xDst.m_pxTangents, (xDst.m_uNumVerts + xSrc.m_uNumVerts) * sizeof(Zenith_Maths::Vector3)));
+		u_int64 newSize = (xDst.m_uNumVerts + xSrc.m_uNumVerts) * sizeof(Zenith_Maths::Vector3);
+		Zenith_Maths::Vector3* pNewTangents = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Reallocate(xDst.m_pxTangents, newSize));
+		if (pNewTangents == nullptr)
+		{
+			Zenith_Error(LOG_CATEGORY_MESH, "Tangent buffer reallocation failed");
+			return;
+		}
+		xDst.m_pxTangents = pNewTangents;
 		memcpy(xDst.m_pxTangents + xDst.m_uNumVerts, xSrc.m_pxTangents, xSrc.m_uNumVerts * sizeof(Zenith_Maths::Vector3));
 	}
 
 	if (xDst.m_pxBitangents)
 	{
-		xDst.m_pxBitangents = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Reallocate(xDst.m_pxBitangents, (xDst.m_uNumVerts + xSrc.m_uNumVerts) * sizeof(Zenith_Maths::Vector3)));
+		u_int64 newSize = (xDst.m_uNumVerts + xSrc.m_uNumVerts) * sizeof(Zenith_Maths::Vector3);
+		Zenith_Maths::Vector3* pNewBitangents = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Reallocate(xDst.m_pxBitangents, newSize));
+		if (pNewBitangents == nullptr)
+		{
+			Zenith_Error(LOG_CATEGORY_MESH, "Bitangent buffer reallocation failed");
+			return;
+		}
+		xDst.m_pxBitangents = pNewBitangents;
 		memcpy(xDst.m_pxBitangents + xDst.m_uNumVerts, xSrc.m_pxBitangents, xSrc.m_uNumVerts * sizeof(Zenith_Maths::Vector3));
 	}
 
 	if (xDst.m_pxColors)
 	{
-		xDst.m_pxColors = static_cast<Zenith_Maths::Vector4*>(Zenith_MemoryManagement::Reallocate(xDst.m_pxColors, (xDst.m_uNumVerts + xSrc.m_uNumVerts) * sizeof(Zenith_Maths::Vector4)));
+		u_int64 newSize = (xDst.m_uNumVerts + xSrc.m_uNumVerts) * sizeof(Zenith_Maths::Vector4);
+		Zenith_Maths::Vector4* pNewColors = static_cast<Zenith_Maths::Vector4*>(Zenith_MemoryManagement::Reallocate(xDst.m_pxColors, newSize));
+		if (pNewColors == nullptr)
+		{
+			Zenith_Error(LOG_CATEGORY_MESH, "Color buffer reallocation failed");
+			return;
+		}
+		xDst.m_pxColors = pNewColors;
 		memcpy(xDst.m_pxColors + xDst.m_uNumVerts, xSrc.m_pxColors, xSrc.m_uNumVerts * sizeof(Zenith_Maths::Vector4));
 	}
 
 	if (xDst.m_pfMaterialLerps)
 	{
-		xDst.m_pfMaterialLerps = static_cast<float*>(Zenith_MemoryManagement::Reallocate(xDst.m_pfMaterialLerps, (xDst.m_uNumVerts + xSrc.m_uNumVerts) * sizeof(float)));
+		u_int64 newSize = (xDst.m_uNumVerts + xSrc.m_uNumVerts) * sizeof(float);
+		float* pNewMaterialLerps = static_cast<float*>(Zenith_MemoryManagement::Reallocate(xDst.m_pfMaterialLerps, newSize));
+		if (pNewMaterialLerps == nullptr)
+		{
+			Zenith_Error(LOG_CATEGORY_MESH, "MaterialLerps buffer reallocation failed");
+			return;
+		}
+		xDst.m_pfMaterialLerps = pNewMaterialLerps;
 		memcpy(xDst.m_pfMaterialLerps + xDst.m_uNumVerts, xSrc.m_pfMaterialLerps, xSrc.m_uNumVerts * sizeof(float));
 	}
 

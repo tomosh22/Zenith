@@ -1,19 +1,69 @@
 #pragma once
 
 #include "Collections/Zenith_Vector.h"
+#include <cstdint>
+#include <functional>
 
 class Zenith_Scene;
 class Zenith_DataStream;
-using Zenith_EntityID = unsigned int;
+
+//--------------------------------------------------------------------------
+// Zenith_EntityID - Unity-style entity identifier with generation counter
+// The index identifies the slot in entity storage.
+// The generation detects stale references (incremented on slot reuse).
+//--------------------------------------------------------------------------
+struct Zenith_EntityID
+{
+	uint32_t m_uIndex = INVALID_INDEX;
+	uint32_t m_uGeneration = 0;
+
+	// Pack into single 64-bit value for efficient hashing/comparison
+	uint64_t GetPacked() const { return (static_cast<uint64_t>(m_uGeneration) << 32) | m_uIndex; }
+
+	static Zenith_EntityID FromPacked(uint64_t ulPacked)
+	{
+		return { static_cast<uint32_t>(ulPacked), static_cast<uint32_t>(ulPacked >> 32) };
+	}
+
+	bool operator==(const Zenith_EntityID& xOther) const
+	{
+		return m_uIndex == xOther.m_uIndex && m_uGeneration == xOther.m_uGeneration;
+	}
+
+	bool operator!=(const Zenith_EntityID& xOther) const { return !(*this == xOther); }
+
+	// Check if this ID could potentially be valid (not the invalid sentinel)
+	bool IsValid() const { return m_uIndex != INVALID_INDEX; }
+
+	static constexpr uint32_t INVALID_INDEX = 0xFFFFFFFF;
+};
+
+// Sentinel value for invalid entity references
+static constexpr Zenith_EntityID INVALID_ENTITY_ID = { Zenith_EntityID::INVALID_INDEX, 0 };
+
+// Hash specialization for use in unordered_map/unordered_set
+namespace std
+{
+	template<>
+	struct hash<Zenith_EntityID>
+	{
+		size_t operator()(const Zenith_EntityID& xID) const
+		{
+			return std::hash<uint64_t>{}(xID.GetPacked());
+		}
+	};
+}
+
+class Zenith_TransformComponent;
 
 class Zenith_Entity
 {
 public:
 	Zenith_Entity() = default;
 	Zenith_Entity(Zenith_Scene* pxScene, const std::string& strName);
-	Zenith_Entity(Zenith_Scene* pxScene, Zenith_EntityID xGUID, Zenith_EntityID uParentID, const std::string& strName);
+	Zenith_Entity(Zenith_Scene* pxScene, Zenith_EntityID uID, const std::string& strName);
 	void Initialise(Zenith_Scene* pxScene, const std::string& strName);
-	void Initialise(Zenith_Scene* pxScene, Zenith_EntityID xGUID, Zenith_EntityID uParentID, const std::string& strName);
+	void Initialise(Zenith_Scene* pxScene, Zenith_EntityID uID, const std::string& strName);
 
 	template<typename T, typename... Args>
 	T& AddComponent(Args&&... args);
@@ -30,7 +80,7 @@ public:
 	template<typename T>
 	void RemoveComponent();
 
-	Zenith_EntityID GetEntityID() { return m_uEntityID; }
+	Zenith_EntityID GetEntityID() const { return m_xEntityID; }
 	class Zenith_Scene* m_pxParentScene;
 
 	// Serialization methods for Zenith_DataStream
@@ -38,62 +88,17 @@ public:
 	void ReadFromDataStream(Zenith_DataStream& xStream);
 
 	//--------------------------------------------------------------------------
-	// Parent/Child Hierarchy
+	// Parent/Child Hierarchy (delegates to TransformComponent)
 	//--------------------------------------------------------------------------
 
-	Zenith_EntityID m_uParentEntityID = static_cast<Zenith_EntityID>(-1);
-
-	/**
-	 * Get the parent entity ID
-	 * @return Parent entity ID, or -1 if no parent (root entity)
-	 */
-	Zenith_EntityID GetParentEntityID() const { return m_uParentEntityID; }
-
-	/**
-	 * Check if this entity has a parent
-	 */
-	bool HasParent() const { return m_uParentEntityID != static_cast<Zenith_EntityID>(-1); }
-
-	/**
-	 * Set the parent entity
-	 * Updates both this entity's parent and the parent's child list
-	 * @param uParentID Parent entity ID, or -1 to unparent
-	 */
+	Zenith_EntityID GetParentEntityID() const;
+	bool HasParent() const;
 	void SetParent(Zenith_EntityID uParentID);
-
-	/**
-	 * Add a child entity to this entity's child list
-	 * Called automatically by SetParent - usually don't call directly
-	 * @param uChildID Child entity ID to add
-	 */
-	void AddChild(Zenith_EntityID uChildID);
-
-	/**
-	 * Remove a child entity from this entity's child list
-	 * Called automatically by SetParent - usually don't call directly
-	 * @param uChildID Child entity ID to remove
-	 */
-	void RemoveChild(Zenith_EntityID uChildID);
-
-	/**
-	 * Get all child entity IDs
-	 */
-	const Zenith_Vector<Zenith_EntityID>& GetChildren() const { return m_xChildEntityIDs; }
-
-	/**
-	 * Check if this entity has any children
-	 */
-	bool HasChildren() const { return m_xChildEntityIDs.GetSize() > 0; }
-
-	/**
-	 * Get the number of children
-	 */
-	uint32_t GetChildCount() const { return static_cast<uint32_t>(m_xChildEntityIDs.GetSize()); }
-
-	/**
-	 * Check if this is a root entity (no parent)
-	 */
-	bool IsRoot() const { return !HasParent(); }
+	Zenith_Vector<Zenith_EntityID> GetChildEntityIDs() const;
+	bool HasChildren() const;
+	uint32_t GetChildCount() const;
+	bool IsRoot() const;
+	Zenith_TransformComponent& GetTransform();
 
 	// Name accessors
 	const std::string& GetName() const { return m_strName; }
@@ -123,7 +128,7 @@ public:
 	 * Use this for procedurally generated entities at runtime.
 	 * Runtime-instantiated objects that aren't saved to scene.
 	 */
-	void SetTransient(bool bTransient) { m_bTransient = bTransient; }
+	void SetTransient(bool bTransient);
 
 	/**
 	 * Check if this entity is transient (not serialized)
@@ -131,8 +136,7 @@ public:
 	bool IsTransient() const { return m_bTransient; }
 
 private:
-	Zenith_EntityID m_uEntityID;
-	Zenith_Vector<Zenith_EntityID> m_xChildEntityIDs;
+	Zenith_EntityID m_xEntityID;
 	std::string m_strName;
 	bool m_bEnabled = true;    // Default: enabled. Disabled entities skip updates.
 	bool m_bTransient = true;  // Default: transient (not saved). Scene loading and editor set this to false for persistent entities.

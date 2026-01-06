@@ -90,15 +90,18 @@ void Zenith_EditorTests::TestSelectionSystemEmptyScene()
 void Zenith_EditorTests::TestInvalidEntityID()
 {
 	// Test that INVALID_ENTITY_ID constant is properly defined
-	Zenith_Assert(INVALID_ENTITY_ID == static_cast<Zenith_EntityID>(-1), "INVALID_ENTITY_ID should be -1");
-	
+	Zenith_Assert(!INVALID_ENTITY_ID.IsValid(), "INVALID_ENTITY_ID should not be valid");
+	Zenith_Assert(INVALID_ENTITY_ID.m_uIndex == Zenith_EntityID::INVALID_INDEX, "INVALID_ENTITY_ID index should be INVALID_INDEX");
+
 	// Test that a valid entity ID is not equal to INVALID_ENTITY_ID
-	Zenith_EntityID validID = 0;
+	Zenith_EntityID validID = { 0, 1 };  // Index 0, generation 1
 	Zenith_Assert(validID != INVALID_ENTITY_ID, "Valid entity ID should not equal INVALID_ENTITY_ID");
-	
-	validID = 1;
+	Zenith_Assert(validID.IsValid(), "Valid entity ID should be valid");
+
+	validID = { 1, 1 };  // Index 1, generation 1
 	Zenith_Assert(validID != INVALID_ENTITY_ID, "Valid entity ID should not equal INVALID_ENTITY_ID");
-	
+	Zenith_Assert(validID.IsValid(), "Valid entity ID should be valid");
+
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "[EditorTests] TestInvalidEntityID passed");
 }
 

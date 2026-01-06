@@ -377,13 +377,7 @@ bool Zenith_Editor::Update()
 			// In Stopped mode, Scene::Update() is not called, so lifecycle hooks would never run.
 			// Must dispatch OnAwake (which calls OnCreate to set up resources), OnEnable, then OnStart.
 			// This allows behaviours (like Sokoban_Behaviour) to initialize and regenerate transient entities.
-			Zenith_Scene& xRestoredScene = Zenith_Scene::GetCurrentScene();
-			for (auto& [uID, xEntity] : xRestoredScene.m_xEntityMap)
-			{
-				Zenith_ComponentMetaRegistry::Get().DispatchOnAwake(xEntity);
-				Zenith_ComponentMetaRegistry::Get().DispatchOnEnable(xEntity);
-				Zenith_ComponentMetaRegistry::Get().DispatchOnStart(xEntity);
-			}
+			Zenith_Scene::DispatchFullLifecycleInit();
 			Zenith_Log(LOG_CATEGORY_EDITOR, "Full lifecycle dispatched for all entities after backup restore");
 
 			// After restoring scene, initialize editor camera state from the game's camera
@@ -434,23 +428,24 @@ bool Zenith_Editor::Update()
 		s_bFirstFrameAfterInit = false;
 
 		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		if (xScene.m_uMainCameraEntity != INVALID_ENTITY_ID)
+		if (xScene.m_xMainCameraEntity != INVALID_ENTITY_ID)
 		{
 			// Initialize editor camera from game camera position
-			try
+			Zenith_Entity* pxCameraEntity = xScene.TryGetEntity(xScene.m_xMainCameraEntity);
+			if (pxCameraEntity != nullptr && pxCameraEntity->HasComponent<Zenith_CameraComponent>())
 			{
-				Zenith_CameraComponent& xGameCamera = xScene.GetEntityByID(xScene.m_uMainCameraEntity).GetComponent<Zenith_CameraComponent>();
+				Zenith_CameraComponent& xGameCamera = pxCameraEntity->GetComponent<Zenith_CameraComponent>();
 				xGameCamera.GetPosition(s_xEditorCameraPosition);
 				s_fEditorCameraPitch = xGameCamera.GetPitch();
 				s_fEditorCameraYaw = xGameCamera.GetYaw();
 
 				// Save reference to game camera for later
-				s_uGameCameraEntity = xScene.m_uMainCameraEntity;
+				s_uGameCameraEntity = xScene.m_xMainCameraEntity;
 
-				Zenith_Log(LOG_CATEGORY_EDITOR, "Editor camera synced from game camera at (%.1f, %.1f, %.1f)", 
+				Zenith_Log(LOG_CATEGORY_EDITOR, "Editor camera synced from game camera at (%.1f, %.1f, %.1f)",
 					s_xEditorCameraPosition.x, s_xEditorCameraPosition.y, s_xEditorCameraPosition.z);
 			}
-			catch (...)
+			else
 			{
 				Zenith_Log(LOG_CATEGORY_EDITOR, "Could not sync editor camera from game camera");
 			}
@@ -792,7 +787,7 @@ void Zenith_Editor::RenderEntityTreeNode(Zenith_Scene& xScene, Zenith_Entity& xE
 
 	// Build display name
 	std::string strDisplayName = xEntity.GetName().empty() ?
-		("Entity_" + std::to_string(uEntityID)) : xEntity.GetName();
+		("Entity_" + std::to_string(uEntityID.m_uIndex)) : xEntity.GetName();
 
 	// Count components for display
 	uint32_t uComponentCount = 0;
@@ -827,7 +822,7 @@ void Zenith_Editor::RenderEntityTreeNode(Zenith_Scene& xScene, Zenith_Entity& xE
 	}
 
 	// Render tree node
-	bool bNodeOpen = ImGui::TreeNodeEx((void*)(uintptr_t)uEntityID, eFlags, "%s", strDisplayName.c_str());
+	bool bNodeOpen = ImGui::TreeNodeEx((void*)(uintptr_t)uEntityID.GetPacked(), eFlags, "%s", strDisplayName.c_str());
 
 	// Handle selection on click
 	if (ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen())
@@ -892,7 +887,7 @@ void Zenith_Editor::RenderEntityTreeNode(Zenith_Scene& xScene, Zenith_Entity& xE
 		{
 			if (ImGui::MenuItem("Unparent"))
 			{
-				xEntity.SetParent(static_cast<Zenith_EntityID>(-1));
+				xEntity.SetParent(INVALID_ENTITY_ID);
 			}
 		}
 
@@ -912,14 +907,13 @@ void Zenith_Editor::RenderEntityTreeNode(Zenith_Scene& xScene, Zenith_Entity& xE
 	// Recursively render children if node is open and has children
 	if (bNodeOpen && bHasChildren)
 	{
-		const Zenith_Vector<Zenith_EntityID>& xChildren = xEntity.GetChildren();
+		Zenith_Vector<Zenith_EntityID> xChildren = xEntity.GetChildEntityIDs();
 		for (u_int u = 0; u < xChildren.GetSize(); ++u)
 		{
-			Zenith_EntityID uChildID = xChildren.Get(u);
-			auto xChildIt = xScene.m_xEntityMap.find(uChildID);
-			if (xChildIt != xScene.m_xEntityMap.end())
+			Zenith_EntityID xChildID = xChildren.Get(u);
+			if (xScene.EntityExists(xChildID))
 			{
-				RenderEntityTreeNode(xScene, xChildIt->second, uEntityToDelete, uDraggedEntityID, uDropTargetEntityID);
+				RenderEntityTreeNode(xScene, xScene.GetEntityRef(xChildID), uEntityToDelete, uDraggedEntityID, uDropTargetEntityID);
 			}
 		}
 		ImGui::TreePop();
@@ -941,11 +935,17 @@ void Zenith_Editor::RenderHierarchyPanel()
 	Zenith_EntityID uDropTargetEntityID = INVALID_ENTITY_ID;
 
 	// Render only root entities (entities without parents)
-	for (auto& [entityID, entity] : xScene.m_xEntityMap)
+	const Zenith_Vector<Zenith_EntityID>& xActiveEntities = xScene.GetActiveEntities();
+	for (u_int u = 0; u < xActiveEntities.GetSize(); ++u)
 	{
-		if (!entity.HasParent())
+		Zenith_EntityID xEntityID = xActiveEntities.Get(u);
+		if (xScene.EntityExists(xEntityID))
 		{
-			RenderEntityTreeNode(xScene, entity, uEntityToDelete, uDraggedEntityID, uDropTargetEntityID);
+			Zenith_Entity& xEntity = xScene.GetEntityRef(xEntityID);
+			if (!xEntity.HasParent())
+			{
+				RenderEntityTreeNode(xScene, xEntity, uEntityToDelete, uDraggedEntityID, uDropTargetEntityID);
+			}
 		}
 	}
 
@@ -955,36 +955,33 @@ void Zenith_Editor::RenderHierarchyPanel()
 	{
 		if (const ImGuiPayload* pPayload = ImGui::AcceptDragDropPayload("HIERARCHY_ENTITY"))
 		{
-			Zenith_EntityID uSourceEntityID = *(const Zenith_EntityID*)pPayload->Data;
-			auto xSourceIt = xScene.m_xEntityMap.find(uSourceEntityID);
-			if (xSourceIt != xScene.m_xEntityMap.end())
+			Zenith_EntityID xSourceEntityID = *(const Zenith_EntityID*)pPayload->Data;
+			if (xScene.EntityExists(xSourceEntityID))
 			{
-				xSourceIt->second.SetParent(static_cast<Zenith_EntityID>(-1));
+				xScene.GetEntityRef(xSourceEntityID).SetParent(INVALID_ENTITY_ID);
 			}
 		}
 		ImGui::EndDragDropTarget();
 	}
 
 	// Handle reparenting from drag-drop
-	if (uDraggedEntityID != INVALID_ENTITY_ID && uDropTargetEntityID != INVALID_ENTITY_ID)
+	if (uDraggedEntityID.IsValid() && uDropTargetEntityID.IsValid())
 	{
-		auto xDraggedIt = xScene.m_xEntityMap.find(uDraggedEntityID);
-		if (xDraggedIt != xScene.m_xEntityMap.end() && uDraggedEntityID != uDropTargetEntityID)
+		if (xScene.EntityExists(uDraggedEntityID) && uDraggedEntityID != uDropTargetEntityID)
 		{
 			// Prevent creating circular parent-child relationships
 			bool bIsAncestor = false;
-			Zenith_EntityID uCheckID = uDropTargetEntityID;
-			while (uCheckID != static_cast<Zenith_EntityID>(-1))
+			Zenith_EntityID xCheckID = uDropTargetEntityID;
+			while (xCheckID.IsValid())
 			{
-				if (uCheckID == uDraggedEntityID)
+				if (xCheckID == uDraggedEntityID)
 				{
 					bIsAncestor = true;
 					break;
 				}
-				auto xCheckIt = xScene.m_xEntityMap.find(uCheckID);
-				if (xCheckIt != xScene.m_xEntityMap.end())
+				if (xScene.EntityExists(xCheckID))
 				{
-					uCheckID = xCheckIt->second.GetParentEntityID();
+					xCheckID = xScene.GetEntityRef(xCheckID).GetParentEntityID();
 				}
 				else
 				{
@@ -994,7 +991,7 @@ void Zenith_Editor::RenderHierarchyPanel()
 
 			if (!bIsAncestor)
 			{
-				xDraggedIt->second.SetParent(uDropTargetEntityID);
+				xScene.GetEntityRef(uDraggedEntityID).SetParent(uDropTargetEntityID);
 			}
 		}
 	}
@@ -1522,22 +1519,24 @@ void Zenith_Editor::SelectRange(Zenith_EntityID uEndEntityID)
 	}
 
 	// For range selection, we need to select all entities "between" start and end
-	// Since entity IDs may not be contiguous, we iterate through the entity map
-	// and select all entities with IDs in the range [min(start,end), max(start,end)]
-	Zenith_EntityID uStart = std::min(s_uLastClickedEntityID, uEndEntityID);
-	Zenith_EntityID uEnd = std::max(s_uLastClickedEntityID, uEndEntityID);
+	// Since entity IDs may not be contiguous, we iterate through the active entities
+	// and select all entities with indices in the range [min(start,end), max(start,end)]
+	uint32_t uStartIndex = std::min(s_uLastClickedEntityID.m_uIndex, uEndEntityID.m_uIndex);
+	uint32_t uEndIndex = std::max(s_uLastClickedEntityID.m_uIndex, uEndEntityID.m_uIndex);
 
 	// Clear existing selection for shift+click (standard behavior)
 	s_xSelectedEntityIDs.clear();
 
 	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
 
-	// Select all entities in the ID range that exist in the scene
-	for (auto& [entityID, entity] : xScene.m_xEntityMap)
+	// Select all entities in the index range that exist in the scene
+	const Zenith_Vector<Zenith_EntityID>& xActiveEntities = xScene.GetActiveEntities();
+	for (u_int u = 0; u < xActiveEntities.GetSize(); ++u)
 	{
-		if (entityID >= uStart && entityID <= uEnd)
+		Zenith_EntityID xEntityID = xActiveEntities.Get(u);
+		if (xEntityID.m_uIndex >= uStartIndex && xEntityID.m_uIndex <= uEndIndex)
 		{
-			s_xSelectedEntityIDs.insert(entityID);
+			s_xSelectedEntityIDs.insert(xEntityID);
 		}
 	}
 
@@ -1631,8 +1630,7 @@ Zenith_Entity* Zenith_Editor::GetSelectedEntity()
 	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
 
 	// Check if entity still exists in the scene
-	auto it = xScene.m_xEntityMap.find(s_uPrimarySelectedEntityID);
-	if (it == xScene.m_xEntityMap.end())
+	if (!xScene.EntityExists(s_uPrimarySelectedEntityID))
 	{
 		// Entity no longer exists - remove from selection
 		s_xSelectedEntityIDs.erase(s_uPrimarySelectedEntityID);
@@ -1641,7 +1639,7 @@ Zenith_Entity* Zenith_Editor::GetSelectedEntity()
 		return nullptr;
 	}
 
-	return &it->second;
+	return &xScene.GetEntityRef(s_uPrimarySelectedEntityID);
 }
 
 //------------------------------------------------------------------------------
@@ -2526,7 +2524,7 @@ void Zenith_Editor::InitializeEditorCamera()
 	// Initialize editor camera from scene's main camera if available
 	// Otherwise use default values
 	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	if (xScene.m_uMainCameraEntity != INVALID_ENTITY_ID)
+	if (xScene.m_xMainCameraEntity != INVALID_ENTITY_ID)
 	{
 		try
 		{
@@ -2645,10 +2643,14 @@ void Zenith_Editor::UpdateEditorCamera(float fDt)
 	// (In stopped/paused mode, the game camera is being controlled by editor values)
 	if (s_uGameCameraEntity != INVALID_ENTITY_ID)
 	{
-		Zenith_CameraComponent& xCamera = Zenith_Scene::GetCurrentScene().GetEntityByID(s_uGameCameraEntity).GetComponent<Zenith_CameraComponent>();
-		xCamera.SetPosition(s_xEditorCameraPosition);
-		xCamera.SetPitch(s_fEditorCameraPitch);
-		xCamera.SetYaw(s_fEditorCameraYaw);
+		Zenith_Entity* pxCameraEntity = Zenith_Scene::GetCurrentScene().TryGetEntity(s_uGameCameraEntity);
+		if (pxCameraEntity != nullptr && pxCameraEntity->HasComponent<Zenith_CameraComponent>())
+		{
+			Zenith_CameraComponent& xCamera = pxCameraEntity->GetComponent<Zenith_CameraComponent>();
+			xCamera.SetPosition(s_xEditorCameraPosition);
+			xCamera.SetPitch(s_fEditorCameraPitch);
+			xCamera.SetYaw(s_fEditorCameraYaw);
+		}
 	}
 }
 
@@ -2663,19 +2665,20 @@ void Zenith_Editor::SwitchToEditorCamera()
 	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
 
 	// Save the game's current main camera entity
-	s_uGameCameraEntity = xScene.m_uMainCameraEntity;
+	s_uGameCameraEntity = xScene.m_xMainCameraEntity;
 
 	// Copy game camera state to editor camera
 	if (s_uGameCameraEntity != INVALID_ENTITY_ID)
 	{
-		try
+		Zenith_Entity* pxEntity = xScene.TryGetEntity(s_uGameCameraEntity);
+		if (pxEntity != nullptr && pxEntity->HasComponent<Zenith_CameraComponent>())
 		{
-			Zenith_CameraComponent& xGameCamera = xScene.GetEntityByID(s_uGameCameraEntity).GetComponent<Zenith_CameraComponent>();
+			Zenith_CameraComponent& xGameCamera = pxEntity->GetComponent<Zenith_CameraComponent>();
 			xGameCamera.GetPosition(s_xEditorCameraPosition);
 			s_fEditorCameraPitch = xGameCamera.GetPitch();
 			s_fEditorCameraYaw = xGameCamera.GetYaw();
 		}
-		catch (...)
+		else
 		{
 			Zenith_Log(LOG_CATEGORY_EDITOR, "Warning: Could not copy game camera state to editor camera");
 		}
@@ -2703,7 +2706,7 @@ void Zenith_Editor::BuildViewMatrix(Zenith_Maths::Matrix4& xOutMatrix)
 	if (s_eEditorMode == EditorMode::Playing)
 	{
 		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		if (xScene.m_uMainCameraEntity != INVALID_ENTITY_ID)
+		if (xScene.m_xMainCameraEntity != INVALID_ENTITY_ID)
 		{
 			xScene.GetMainCamera().BuildViewMatrix(xOutMatrix);
 			return;
@@ -2734,7 +2737,7 @@ void Zenith_Editor::GetCameraPosition(Zenith_Maths::Vector4& xOutPosition)
 	if (s_eEditorMode == EditorMode::Playing)
 	{
 		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		if (xScene.m_uMainCameraEntity != INVALID_ENTITY_ID)
+		if (xScene.m_xMainCameraEntity != INVALID_ENTITY_ID)
 		{
 			xScene.GetMainCamera().GetPosition(xOutPosition);
 			return;
@@ -2751,7 +2754,7 @@ float Zenith_Editor::GetCameraNearPlane()
 	if (s_eEditorMode == EditorMode::Playing)
 	{
 		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		if (xScene.m_uMainCameraEntity != INVALID_ENTITY_ID)
+		if (xScene.m_xMainCameraEntity != INVALID_ENTITY_ID)
 		{
 			return xScene.GetMainCamera().GetNearPlane();
 		}
@@ -2767,7 +2770,7 @@ float Zenith_Editor::GetCameraFarPlane()
 	if (s_eEditorMode == EditorMode::Playing)
 	{
 		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		if (xScene.m_uMainCameraEntity != INVALID_ENTITY_ID)
+		if (xScene.m_xMainCameraEntity != INVALID_ENTITY_ID)
 		{
 			return xScene.GetMainCamera().GetFarPlane();
 		}
@@ -2783,7 +2786,7 @@ float Zenith_Editor::GetCameraFOV()
 	if (s_eEditorMode == EditorMode::Playing)
 	{
 		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		if (xScene.m_uMainCameraEntity != INVALID_ENTITY_ID)
+		if (xScene.m_xMainCameraEntity != INVALID_ENTITY_ID)
 		{
 			return xScene.GetMainCamera().GetFOV();
 		}
@@ -2799,7 +2802,7 @@ float Zenith_Editor::GetCameraAspectRatio()
 	if (s_eEditorMode == EditorMode::Playing)
 	{
 		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		if (xScene.m_uMainCameraEntity != INVALID_ENTITY_ID)
+		if (xScene.m_xMainCameraEntity != INVALID_ENTITY_ID)
 		{
 			return xScene.GetMainCamera().GetAspectRatio();
 		}

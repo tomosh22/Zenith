@@ -17,6 +17,7 @@ public:
 		, m_xSemaphore(0, 1)
 		, m_pData(pData)
 		, m_uCompletedThreadID(-1)
+		, m_bSubmitted(false)
 	{
 
 	}
@@ -34,11 +35,17 @@ public:
 
 	void WaitUntilComplete()
 	{
-		if(!m_bSubmitted) return;
+		if (!m_bSubmitted.load(std::memory_order_acquire)) return;
 		Zenith_Profiling::BeginProfile(ZENITH_PROFILE_INDEX__WAIT_FOR_TASK_SYSTEM);
 		m_xSemaphore.Wait();
 		Zenith_Profiling::EndProfile(ZENITH_PROFILE_INDEX__WAIT_FOR_TASK_SYSTEM);
-		m_bSubmitted = false;
+		m_bSubmitted.store(false, std::memory_order_release);
+	}
+
+	// Reset for task reuse (call after WaitUntilComplete)
+	void Reset()
+	{
+		Zenith_Assert(!m_bSubmitted.load(), "Cannot reset a submitted task - wait first");
 	}
 
 	const Zenith_ProfileIndex GetProfileIndex() const
@@ -60,7 +67,7 @@ protected:
 	u_int m_uCompletedThreadID;
 
 	friend class Zenith_TaskSystem;
-	bool m_bSubmitted = false;
+	std::atomic<bool> m_bSubmitted;  // Thread-safe submitted flag
 };
 
 class Zenith_TaskArray : public Zenith_Task
@@ -75,7 +82,7 @@ public:
 		, m_uInvocationCounter(0)
 		, m_uCompletionCounter(0)
 	{
-
+		Zenith_Assert(uNumInvocations > 0, "TaskArray must have at least 1 invocation");
 	}
 
 	virtual void DoTask() override
@@ -98,6 +105,7 @@ public:
 
 	void Reset()
 	{
+		Zenith_Assert(!m_bSubmitted.load(), "Cannot reset a submitted task - wait first");
 		m_uInvocationCounter.store(0);
 		m_uCompletionCounter.store(0);
 	}
@@ -125,6 +133,7 @@ class Zenith_TaskSystem
 {
 public:
 	static void Inititalise();
+	static void Shutdown();
 
 	static void SubmitTask(Zenith_Task* const pxTask);
 	static void SubmitTaskArray(Zenith_TaskArray* const pxTaskArray);

@@ -8,6 +8,7 @@ Flux_CommandSetVertexBuffer::Flux_CommandSetVertexBuffer(const Flux_VertexBuffer
 	, m_pxDynamicVertexBuffer(nullptr)
 	, m_uBindPoint(uBindPoint)
 {
+	Zenith_Assert(pxVertexBuffer != nullptr, "Vertex buffer is null");
 	Zenith_Assert(pxVertexBuffer->GetBuffer().m_xVRAMHandle.IsValid(), "Vertex buffer has invalid VRAM handle - did you forget to upload to GPU?");
 }
 
@@ -16,11 +17,13 @@ Flux_CommandSetVertexBuffer::Flux_CommandSetVertexBuffer(const Flux_DynamicVerte
 	, m_pxDynamicVertexBuffer(pxDynamicVertexBuffer)
 	, m_uBindPoint(uBindPoint)
 {
+	Zenith_Assert(pxDynamicVertexBuffer != nullptr, "Dynamic vertex buffer is null");
 	Zenith_Assert(pxDynamicVertexBuffer->GetBuffer().m_xVRAMHandle.IsValid(), "Dynamic vertex buffer has invalid VRAM handle - did you forget to upload to GPU?");
 }
 
 Flux_CommandSetIndexBuffer::Flux_CommandSetIndexBuffer(const Flux_IndexBuffer* const pxIndexBuffer)
 	: m_pxIndexBuffer(pxIndexBuffer)
 {
+	Zenith_Assert(pxIndexBuffer != nullptr, "Index buffer is null");
 	Zenith_Assert(pxIndexBuffer->GetBuffer().m_xVRAMHandle.IsValid(), "Index buffer has invalid VRAM handle - did you forget to upload to GPU?");
 }

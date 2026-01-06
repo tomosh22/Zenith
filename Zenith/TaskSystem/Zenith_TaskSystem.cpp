@@ -13,6 +13,7 @@ static Zenith_Semaphore* g_pxWorkAvailableSem = nullptr;
 static Zenith_Semaphore* g_pxThreadsTerminatedSem = nullptr;
 static Zenith_Mutex g_xQueueMutex;
 static bool g_bTerminateThreads = false;
+static u_int g_uNumWorkerThreads = 0;
 
 DEBUGVAR bool dbg_bMultithreaded = true;
 
@@ -49,6 +50,8 @@ void Zenith_TaskSystem::Inititalise()
 	u_int uNumThreads = (uHardwareThreads > 1) ? (uHardwareThreads - 1) : 1;
 	if (uNumThreads > uMAX_TASK_THREADS) uNumThreads = uMAX_TASK_THREADS;
 
+	g_uNumWorkerThreads = uNumThreads;  // Store for Shutdown
+
 	Zenith_Log(LOG_CATEGORY_TASKSYSTEM, "Creating %u worker threads (hardware reports %u threads)", uNumThreads, uHardwareThreads);
 
 	g_pxWorkAvailableSem = new Zenith_Semaphore(0, uMAX_TASKS);
@@ -66,16 +69,54 @@ void Zenith_TaskSystem::Inititalise()
 #endif
 }
 
+void Zenith_TaskSystem::Shutdown()
+{
+	if (g_pxWorkAvailableSem == nullptr)
+	{
+		return;  // Not initialized
+	}
+
+	Zenith_Log(LOG_CATEGORY_TASKSYSTEM, "Shutting down task system...");
+
+	// Signal all workers to terminate
+	g_bTerminateThreads = true;
+
+	// Wake up all waiting workers so they can check the terminate flag
+	for (u_int u = 0; u < g_uNumWorkerThreads; u++)
+	{
+		g_pxWorkAvailableSem->Signal();
+	}
+
+	// Wait for all workers to terminate
+	for (u_int u = 0; u < g_uNumWorkerThreads; u++)
+	{
+		g_pxThreadsTerminatedSem->Wait();
+	}
+
+	// Clean up resources
+	delete g_pxWorkAvailableSem;
+	delete g_pxThreadsTerminatedSem;
+	g_pxWorkAvailableSem = nullptr;
+	g_pxThreadsTerminatedSem = nullptr;
+	g_uNumWorkerThreads = 0;
+
+	Zenith_Log(LOG_CATEGORY_TASKSYSTEM, "Task system shutdown complete");
+}
+
 void Zenith_TaskSystem::SubmitTask(Zenith_Task* const pxTask)
 {
+	Zenith_Assert(pxTask != nullptr, "SubmitTask: Task is null");
+	Zenith_Assert(!pxTask->m_bSubmitted.load(std::memory_order_acquire),
+		"SubmitTask: Task already submitted - call WaitUntilComplete before resubmitting");
+
 	if (!dbg_bMultithreaded)
 	{
-		pxTask->m_bSubmitted = true;
+		pxTask->m_bSubmitted.store(true, std::memory_order_release);
 		pxTask->DoTask();
 		return;
 	}
 	g_xQueueMutex.Lock();
-	pxTask->m_bSubmitted = true;
+	pxTask->m_bSubmitted.store(true, std::memory_order_release);
 	g_xTaskQueue.Enqueue(pxTask);
 	g_xQueueMutex.Unlock();
 	g_pxWorkAvailableSem->Signal();
@@ -83,9 +124,13 @@ void Zenith_TaskSystem::SubmitTask(Zenith_Task* const pxTask)
 
 void Zenith_TaskSystem::SubmitTaskArray(Zenith_TaskArray* const pxTaskArray)
 {
+	Zenith_Assert(pxTaskArray != nullptr, "SubmitTaskArray: TaskArray is null");
+	Zenith_Assert(!pxTaskArray->m_bSubmitted.load(std::memory_order_acquire),
+		"SubmitTaskArray: TaskArray already submitted - call WaitUntilComplete before resubmitting");
+
 	if (!dbg_bMultithreaded)
 	{
-		pxTaskArray->m_bSubmitted = true;
+		pxTaskArray->m_bSubmitted.store(true, std::memory_order_release);
 		// Execute all invocations sequentially in debug mode
 		for (u_int u = 0; u < pxTaskArray->GetNumInvocations(); u++)
 		{
@@ -104,9 +149,9 @@ void Zenith_TaskSystem::SubmitTaskArray(Zenith_TaskArray* const pxTaskArray)
 	{
 		// Submit (N-1) tasks to worker threads, submitting thread will do the last one
 		const u_int uTasksForWorkers = uNumInvocations > 0 ? uNumInvocations - 1 : 0;
-		
+
 		g_xQueueMutex.Lock();
-		pxTaskArray->m_bSubmitted = true;
+		pxTaskArray->m_bSubmitted.store(true, std::memory_order_release);
 		for (u_int u = 0; u < uTasksForWorkers; u++)
 		{
 			g_xTaskQueue.Enqueue(pxTaskArray);
@@ -129,7 +174,7 @@ void Zenith_TaskSystem::SubmitTaskArray(Zenith_TaskArray* const pxTaskArray)
 	{
 		// Original behavior: submit all tasks to worker threads
 		g_xQueueMutex.Lock();
-		pxTaskArray->m_bSubmitted = true;
+		pxTaskArray->m_bSubmitted.store(true, std::memory_order_release);
 		for (u_int u = 0; u < uNumInvocations; u++)
 		{
 			g_xTaskQueue.Enqueue(pxTaskArray);

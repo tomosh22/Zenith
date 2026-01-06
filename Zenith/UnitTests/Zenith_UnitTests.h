@@ -65,6 +65,8 @@ private:
 	static void TestLifecycleOnUpdate();
 	static void TestLifecycleOnDestroy();
 	static void TestLifecycleDispatchOrder();
+	static void TestLifecycleEntityCreationDuringCallback();
+	static void TestDispatchFullLifecycleInit();
 
 	// ECS query system tests (Phase 4)
 	static void TestQuerySingleComponent();
@@ -113,6 +115,12 @@ private:
 	static void TestEntityReparenting();
 	static void TestEntityChildCleanupOnDelete();
 	static void TestEntityHierarchySerialization();
+
+	// ECS safety tests (circular hierarchy, deferred creation, camera safety)
+	static void TestCircularHierarchyPrevention();
+	static void TestSelfParentingPrevention();
+	static void TestTryGetMainCameraWhenNotSet();
+	static void TestDeepHierarchyBuildModelMatrix();
 
 	// Prefab system tests
 	static void TestPrefabCreateFromEntity();

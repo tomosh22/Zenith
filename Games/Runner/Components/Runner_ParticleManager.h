@@ -56,7 +56,7 @@ public:
 	// ========================================================================
 	struct Particle
 	{
-		Zenith_EntityID m_uEntityID = 0;
+		Zenith_EntityID m_uEntityID = INVALID_ENTITY_ID;
 		Zenith_Maths::Vector3 m_xPosition;
 		Zenith_Maths::Vector3 m_xVelocity;
 		float m_fLifetime = 0.0f;
@@ -89,7 +89,7 @@ public:
 		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
 		for (auto& xParticle : s_axParticles)
 		{
-			if (xParticle.m_uEntityID != 0 && xScene.EntityExists(xParticle.m_uEntityID))
+			if (xParticle.m_uEntityID.IsValid() && xScene.EntityExists(xParticle.m_uEntityID))
 			{
 				Zenith_Scene::Destroy(xParticle.m_uEntityID);
 			}
@@ -124,7 +124,7 @@ public:
 			if (it->m_fLifetime >= it->m_fMaxLifetime)
 			{
 				// Destroy expired particle
-				if (it->m_uEntityID != 0 && xScene.EntityExists(it->m_uEntityID))
+				if (it->m_uEntityID.IsValid() && xScene.EntityExists(it->m_uEntityID))
 				{
 					Zenith_Scene::Destroy(it->m_uEntityID);
 				}
@@ -287,7 +287,7 @@ private:
 	{
 		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
 
-		if (xParticle.m_uEntityID == 0 || !xScene.EntityExists(xParticle.m_uEntityID))
+		if (!xParticle.m_uEntityID.IsValid() || !xScene.EntityExists(xParticle.m_uEntityID))
 		{
 			return;
 		}

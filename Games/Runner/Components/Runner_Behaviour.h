@@ -117,7 +117,7 @@ public:
 	 */
 	void OnStart() ZENITH_FINAL override
 	{
-		if (m_uCharacterEntityID == 0)
+		if (!m_uCharacterEntityID.IsValid())
 		{
 			InitializeGame();
 		}
@@ -161,7 +161,7 @@ public:
 		// ====================================================================
 
 		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		if (m_uCharacterEntityID == 0 || !xScene.EntityExists(m_uCharacterEntityID))
+		if (!m_uCharacterEntityID.IsValid() || !xScene.EntityExists(m_uCharacterEntityID))
 		{
 			return;
 		}
@@ -374,10 +374,10 @@ private:
 	{
 		// Destroy character
 		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		if (m_uCharacterEntityID != 0 && xScene.EntityExists(m_uCharacterEntityID))
+		if (m_uCharacterEntityID.IsValid() && xScene.EntityExists(m_uCharacterEntityID))
 		{
 			Zenith_Scene::Destroy(m_uCharacterEntityID);
-			m_uCharacterEntityID = 0;
+			m_uCharacterEntityID = INVALID_ENTITY_ID;
 		}
 
 		// Reset all systems
@@ -485,7 +485,7 @@ private:
 	uint32_t m_uScore;
 	uint32_t m_uHighScore;
 
-	Zenith_EntityID m_uCharacterEntityID = 0;
+	Zenith_EntityID m_uCharacterEntityID = INVALID_ENTITY_ID;
 
 	// Random number generator
 	std::mt19937 m_xRng;

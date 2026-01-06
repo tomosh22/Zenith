@@ -150,7 +150,7 @@ public:
 	 */
 	void OnStart() ZENITH_FINAL override
 	{
-		if (m_xRenderer.GetPlayerEntityID() == 0)
+		if (!m_xRenderer.GetPlayerEntityID().IsValid())
 		{
 			GenerateNewLevel();
 		}

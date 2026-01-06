@@ -346,8 +346,8 @@ void Zenith_ColliderComponent::AddCollider(CollisionVolumeType eVolumeType, Rigi
 		m_pxRigidBody = &xLock.GetBody();
 
 		// Store entity ID as user data so we can retrieve it during collision callbacks
-		// Use uintptr_t to safely store the ID (which is a u_int/uint32)
-		m_pxRigidBody->SetUserData(static_cast<uint64_t>(m_xParentEntity.GetEntityID()));
+		// Use packed 64-bit representation of EntityID (index + generation)
+		m_pxRigidBody->SetUserData(m_xParentEntity.GetEntityID().GetPacked());
 	}
 }
 

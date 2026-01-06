@@ -115,6 +115,8 @@ void Zenith_UnitTests::RunAllTests()
 	TestLifecycleOnUpdate();
 	TestLifecycleOnDestroy();
 	TestLifecycleDispatchOrder();
+	TestLifecycleEntityCreationDuringCallback();
+	TestDispatchFullLifecycleInit();
 
 	// ECS query system tests (Phase 4)
 	TestQuerySingleComponent();
@@ -163,6 +165,12 @@ void Zenith_UnitTests::RunAllTests()
 	TestEntityReparenting();
 	TestEntityChildCleanupOnDelete();
 	TestEntityHierarchySerialization();
+
+	// ECS safety tests (circular hierarchy, camera safety)
+	TestCircularHierarchyPrevention();
+	TestSelfParentingPrevention();
+	TestTryGetMainCameraWhenNotSet();
+	TestDeepHierarchyBuildModelMatrix();
 
 	// Prefab system tests
 	TestPrefabCreateFromEntity();
@@ -758,16 +766,16 @@ void Zenith_UnitTests::TestEntitySerialization()
 	xGroundTruthEntity.WriteToDataStream(xStream);
 
 	// Verify entity metadata was written
-	const Zenith_EntityID uExpectedEntityID = xGroundTruthEntity.GetEntityID();
 	const std::string strExpectedName = xGroundTruthEntity.GetName();
 
 	// Deserialize into new entity
+	// Note: The new entity gets its own fresh EntityID from the scene's slot system
+	// ReadFromDataStream only loads component data and name, not the ID
 	xStream.SetCursor(0);
 	Zenith_Entity xLoadedEntity(&xTestScene, "PlaceholderName");
 	xLoadedEntity.ReadFromDataStream(xStream);
 
-	// Verify entity metadata
-	Zenith_Assert(xLoadedEntity.GetEntityID() == uExpectedEntityID, "Entity ID mismatch");
+	// Verify entity name was restored (EntityID is assigned by scene, not serialized)
 	Zenith_Assert(xLoadedEntity.GetName() == strExpectedName, "Entity name mismatch");
 
 	// Verify components were restored
@@ -3422,6 +3430,134 @@ void Zenith_UnitTests::TestLifecycleDispatchOrder()
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestLifecycleDispatchOrder completed successfully");
 }
 
+/**
+ * Test that creating entities during lifecycle callbacks doesn't cause crashes.
+ *
+ * This tests the scenario that caused the editor Play->Stop crash:
+ * When a lifecycle callback (OnAwake, OnStart, etc.) creates new entities,
+ * the m_xEntitySlots vector may reallocate, invalidating any held references.
+ *
+ * The fix was to:
+ * 1. Copy entity IDs before iteration (not hold a reference to the vector)
+ * 2. Use separate loops for each lifecycle stage
+ * 3. Re-fetch entity references before each callback
+ */
+void Zenith_UnitTests::TestLifecycleEntityCreationDuringCallback()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestLifecycleEntityCreationDuringCallback...");
+
+	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+
+	// Store initial entity count
+	const u_int uInitialCount = xScene.GetEntityCount();
+
+	// Create initial entity
+	Zenith_Entity xInitialEntity(&xScene, "InitialEntity");
+	Zenith_EntityID xInitialID = xInitialEntity.GetEntityID();
+
+	// Copy entity IDs to prevent iterator invalidation (the safe pattern)
+	Zenith_Vector<Zenith_EntityID> xEntityIDs;
+	xEntityIDs.Reserve(xScene.GetActiveEntities().GetSize());
+	for (u_int u = 0; u < xScene.GetActiveEntities().GetSize(); ++u)
+	{
+		xEntityIDs.PushBack(xScene.GetActiveEntities().Get(u));
+	}
+
+	// Simulate what OnAwake might do: create more entities
+	// This should NOT crash because we're iterating over a copy of IDs
+	for (u_int u = 0; u < xEntityIDs.GetSize(); ++u)
+	{
+		Zenith_EntityID xEntityID = xEntityIDs.Get(u);
+		if (xScene.EntityExists(xEntityID))
+		{
+			// Re-fetch entity reference (critical for safety)
+			Zenith_Entity& xEntity = xScene.GetEntityRef(xEntityID);
+
+			// Simulate OnAwake creating multiple new entities
+			// This will cause m_xEntitySlots to reallocate
+			for (u_int i = 0; i < 10; ++i)
+			{
+				Zenith_Entity xNewEntity(&xScene, "CreatedDuringCallback_" + std::to_string(i));
+				// The xEntity reference might now be dangling if we didn't re-fetch
+			}
+
+			// Re-fetch again before next use (demonstrates the safe pattern)
+			Zenith_Entity& xEntityRefreshed = xScene.GetEntityRef(xEntityID);
+
+			// Verify the entity is still accessible
+			Zenith_Assert(xEntityRefreshed.HasComponent<Zenith_TransformComponent>(),
+				"TestLifecycleEntityCreationDuringCallback: Entity lost TransformComponent after sibling creation");
+		}
+	}
+
+	// Verify original entity is still valid
+	Zenith_Assert(xScene.EntityExists(xInitialID),
+		"TestLifecycleEntityCreationDuringCallback: Initial entity was invalidated");
+	Zenith_Assert(xScene.GetEntityRef(xInitialID).GetName() == "InitialEntity",
+		"TestLifecycleEntityCreationDuringCallback: Initial entity name corrupted");
+
+	// Verify entities were created (proves reallocation happened)
+	Zenith_Assert(xScene.GetEntityCount() > uInitialCount + 1,
+		"TestLifecycleEntityCreationDuringCallback: New entities were not created");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestLifecycleEntityCreationDuringCallback completed successfully");
+}
+
+/**
+ * Test that Zenith_Scene::DispatchFullLifecycleInit works correctly.
+ *
+ * This is the shared helper function that both the editor and other code
+ * should use to dispatch lifecycle callbacks safely.
+ */
+void Zenith_UnitTests::TestDispatchFullLifecycleInit()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestDispatchFullLifecycleInit...");
+
+	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+
+	// Store initial count (may have entities from previous tests)
+	const u_int uInitialCount = xScene.GetEntityCount();
+
+	// Create several entities
+	Zenith_Entity xEntity1(&xScene, "LifecycleInitEntity1");
+	Zenith_Entity xEntity2(&xScene, "LifecycleInitEntity2");
+	Zenith_Entity xEntity3(&xScene, "LifecycleInitEntity3");
+
+	Zenith_EntityID xID1 = xEntity1.GetEntityID();
+	Zenith_EntityID xID2 = xEntity2.GetEntityID();
+	Zenith_EntityID xID3 = xEntity3.GetEntityID();
+
+	// Call the shared lifecycle init function
+	// This should NOT crash even if callbacks create new entities
+	Zenith_Scene::DispatchFullLifecycleInit();
+
+	// Verify all original entities are still valid and accessible
+	Zenith_Assert(xScene.EntityExists(xID1),
+		"TestDispatchFullLifecycleInit: Entity1 was invalidated");
+	Zenith_Assert(xScene.EntityExists(xID2),
+		"TestDispatchFullLifecycleInit: Entity2 was invalidated");
+	Zenith_Assert(xScene.EntityExists(xID3),
+		"TestDispatchFullLifecycleInit: Entity3 was invalidated");
+
+	// Verify entities are still accessible with correct data
+	Zenith_Assert(xScene.GetEntityRef(xID1).GetName() == "LifecycleInitEntity1",
+		"TestDispatchFullLifecycleInit: Entity1 name corrupted");
+	Zenith_Assert(xScene.GetEntityRef(xID2).GetName() == "LifecycleInitEntity2",
+		"TestDispatchFullLifecycleInit: Entity2 name corrupted");
+	Zenith_Assert(xScene.GetEntityRef(xID3).GetName() == "LifecycleInitEntity3",
+		"TestDispatchFullLifecycleInit: Entity3 name corrupted");
+
+	// Verify components are intact
+	Zenith_Assert(xScene.GetEntityRef(xID1).HasComponent<Zenith_TransformComponent>(),
+		"TestDispatchFullLifecycleInit: Entity1 lost TransformComponent");
+	Zenith_Assert(xScene.GetEntityRef(xID2).HasComponent<Zenith_TransformComponent>(),
+		"TestDispatchFullLifecycleInit: Entity2 lost TransformComponent");
+	Zenith_Assert(xScene.GetEntityRef(xID3).HasComponent<Zenith_TransformComponent>(),
+		"TestDispatchFullLifecycleInit: Entity3 lost TransformComponent");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestDispatchFullLifecycleInit completed successfully");
+}
+
 //------------------------------------------------------------------------------
 // ECS Query System Tests (Phase 4)
 //------------------------------------------------------------------------------
@@ -4412,7 +4548,7 @@ void Zenith_UnitTests::TestEntityAddChild()
 	Zenith_Assert(xChildRef.HasParent(), "TestEntityAddChild: Child HasParent should be true");
 	Zenith_Assert(xParentRef.GetChildCount() == 1, "TestEntityAddChild: Parent should have 1 child");
 	Zenith_Assert(xParentRef.HasChildren(), "TestEntityAddChild: Parent HasChildren should be true");
-	Zenith_Assert(xParentRef.GetChildren().Get(0) == uChildID, "TestEntityAddChild: Parent's child should be correct ID");
+	Zenith_Assert(xParentRef.GetChildEntityIDs().Get(0) == uChildID, "TestEntityAddChild: Parent's child should be correct ID");
 
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestEntityAddChild completed successfully");
 }
@@ -4475,7 +4611,7 @@ void Zenith_UnitTests::TestEntityGetChildren()
 	Zenith_Entity& xParentRef = xScene.GetEntityRef(uParentID);
 	Zenith_Assert(xParentRef.GetChildCount() == 3, "TestEntityGetChildren: Parent should have 3 children");
 
-	const Zenith_Vector<Zenith_EntityID>& xChildren = xParentRef.GetChildren();
+	Zenith_Vector<Zenith_EntityID> xChildren = xParentRef.GetChildEntityIDs();
 	bool bFoundChild1 = false, bFoundChild2 = false, bFoundChild3 = false;
 	for (u_int i = 0; i < xChildren.GetSize(); i++)
 	{
@@ -4567,9 +4703,10 @@ void Zenith_UnitTests::TestEntityHierarchySerialization()
 	xScene.GetEntityRef(uParentID).WriteToDataStream(xStream);
 
 	// Reset and read back
+	// Note: Must create a valid entity in scene first, as deserialization
+	// calls AddComponent which requires a valid EntityID in the scene
 	xStream.SetCursor(0);
-	Zenith_Entity xLoadedParent;
-	xLoadedParent.m_pxParentScene = &xScene;
+	Zenith_Entity xLoadedParent(&xScene, "TempParent");
 	xLoadedParent.ReadFromDataStream(xStream);
 
 	// Children are stored in scene, so parent ID should serialize
@@ -4580,13 +4717,17 @@ void Zenith_UnitTests::TestEntityHierarchySerialization()
 	Zenith_DataStream xChildStream(256);
 	xScene.GetEntityRef(uChildID).WriteToDataStream(xChildStream);
 
+	// Create entity in scene before deserializing
 	xChildStream.SetCursor(0);
-	Zenith_Entity xLoadedChild;
-	xLoadedChild.m_pxParentScene = &xScene;
+	Zenith_Entity xLoadedChild(&xScene, "TempChild");
 	xLoadedChild.ReadFromDataStream(xChildStream);
 
-	Zenith_Assert(xLoadedChild.GetParentEntityID() == uParentID,
-		"TestEntityHierarchySerialization: Loaded child should have parent ID preserved");
+	// Standalone entity deserialization stores the parent's file index in PendingParentFileIndex
+	// The actual parent relationship is only rebuilt during full scene loading
+	// So we verify the pending index matches the original parent's index
+	Zenith_TransformComponent& xLoadedChildTransform = xLoadedChild.GetComponent<Zenith_TransformComponent>();
+	Zenith_Assert(xLoadedChildTransform.GetPendingParentFileIndex() == uParentID.m_uIndex,
+		"TestEntityHierarchySerialization: Loaded child should have parent file index preserved");
 
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestEntityHierarchySerialization completed successfully");
 }
@@ -4991,4 +5132,150 @@ void Zenith_UnitTests::TestDataAssetRoundTrip()
 	std::filesystem::remove("TestData");
 
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestDataAssetRoundTrip completed successfully");
+}
+
+//=============================================================================
+// ECS Safety Tests (Circular Hierarchy, Camera Safety)
+//=============================================================================
+
+void Zenith_UnitTests::TestCircularHierarchyPrevention()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestCircularHierarchyPrevention...");
+
+	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+
+	// Create A -> B -> C hierarchy
+	Zenith_Entity xA(&xScene, "CircularTestA");
+	Zenith_Entity xB(&xScene, "CircularTestB");
+	Zenith_Entity xC(&xScene, "CircularTestC");
+
+	Zenith_EntityID uA = xA.GetEntityID();
+	Zenith_EntityID uB = xB.GetEntityID();
+	Zenith_EntityID uC = xC.GetEntityID();
+
+	// Set up hierarchy: A -> B -> C
+	xScene.GetEntityRef(uB).SetParent(uA);  // B is child of A
+	xScene.GetEntityRef(uC).SetParent(uB);  // C is child of B
+
+	// Verify initial hierarchy
+	Zenith_Assert(xScene.GetEntityRef(uB).HasParent(), "TestCircularHierarchyPrevention: B should have parent");
+	Zenith_Assert(xScene.GetEntityRef(uB).GetParentEntityID() == uA, "TestCircularHierarchyPrevention: B's parent should be A");
+	Zenith_Assert(xScene.GetEntityRef(uC).GetParentEntityID() == uB, "TestCircularHierarchyPrevention: C's parent should be B");
+
+	// Try to parent A to C (would create cycle: A -> B -> C -> A)
+	// This should be rejected by the circular hierarchy check
+	xScene.GetEntityRef(uA).SetParent(uC);
+
+	// A should still be root (circular parenting rejected)
+	Zenith_Assert(!xScene.GetEntityRef(uA).HasParent(), "TestCircularHierarchyPrevention: Circular parent should be rejected - A should remain root");
+
+	// Clean up
+	Zenith_Scene::DestroyImmediate(uC);
+	Zenith_Scene::DestroyImmediate(uB);
+	Zenith_Scene::DestroyImmediate(uA);
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestCircularHierarchyPrevention completed successfully");
+}
+
+void Zenith_UnitTests::TestSelfParentingPrevention()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestSelfParentingPrevention...");
+
+	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+
+	// Create an entity
+	Zenith_Entity xEntity(&xScene, "SelfParentTest");
+	Zenith_EntityID uEntityID = xEntity.GetEntityID();
+
+	// Verify initially root
+	Zenith_Assert(!xScene.GetEntityRef(uEntityID).HasParent(), "TestSelfParentingPrevention: Entity should start as root");
+
+	// Try to parent entity to itself
+	xScene.GetEntityRef(uEntityID).SetParent(uEntityID);
+
+	// Should still be root (self-parenting rejected)
+	Zenith_Assert(!xScene.GetEntityRef(uEntityID).HasParent(), "TestSelfParentingPrevention: Self-parenting should be rejected");
+
+	// Clean up
+	Zenith_Scene::DestroyImmediate(uEntityID);
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestSelfParentingPrevention completed successfully");
+}
+
+void Zenith_UnitTests::TestTryGetMainCameraWhenNotSet()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestTryGetMainCameraWhenNotSet...");
+
+	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+
+	// Remember current camera if any
+	Zenith_EntityID uPreviousCamera = xScene.GetMainCameraEntity();
+
+	// Clear main camera
+	xScene.SetMainCameraEntity(INVALID_ENTITY_ID);
+
+	// TryGetMainCamera should return nullptr when no camera is set
+	Zenith_CameraComponent* pxCamera = xScene.TryGetMainCamera();
+	Zenith_Assert(pxCamera == nullptr, "TestTryGetMainCameraWhenNotSet: TryGetMainCamera should return nullptr when no camera set");
+
+	// Restore previous camera
+	if (uPreviousCamera != INVALID_ENTITY_ID && xScene.EntityExists(uPreviousCamera))
+	{
+		xScene.SetMainCameraEntity(uPreviousCamera);
+	}
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestTryGetMainCameraWhenNotSet completed successfully");
+}
+
+void Zenith_UnitTests::TestDeepHierarchyBuildModelMatrix()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestDeepHierarchyBuildModelMatrix...");
+
+	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+
+	// Create a hierarchy with multiple levels (not too deep - just testing it works)
+	constexpr u_int DEPTH = 10;
+	Zenith_Vector<Zenith_EntityID> xEntityIDs;
+
+	// Create root
+	Zenith_Entity xRoot(&xScene, "DeepHierarchyRoot");
+	xEntityIDs.PushBack(xRoot.GetEntityID());
+
+	// Create children
+	for (u_int u = 1; u < DEPTH; ++u)
+	{
+		std::string strName = "DeepHierarchyChild" + std::to_string(u);
+		Zenith_Entity xChild(&xScene, strName);
+		Zenith_EntityID uChildID = xChild.GetEntityID();
+		xEntityIDs.PushBack(uChildID);
+
+		// Parent to previous entity
+		Zenith_EntityID uParentID = xEntityIDs.Get(u - 1);
+		xScene.GetEntityRef(uChildID).SetParent(uParentID);
+	}
+
+	// Verify depth
+	u_int uActualDepth = 0;
+	Zenith_EntityID uCurrent = xEntityIDs.Get(DEPTH - 1);  // Deepest entity
+	while (xScene.EntityExists(uCurrent) && xScene.GetEntityRef(uCurrent).HasParent())
+	{
+		uActualDepth++;
+		uCurrent = xScene.GetEntityRef(uCurrent).GetParentEntityID();
+	}
+	Zenith_Assert(uActualDepth == DEPTH - 1, "TestDeepHierarchyBuildModelMatrix: Hierarchy depth should be %u, got %u", DEPTH - 1, uActualDepth);
+
+	// BuildModelMatrix should work without infinite loop
+	Zenith_Maths::Matrix4 xMatrix;
+	Zenith_EntityID uDeepestID = xEntityIDs.Get(DEPTH - 1);
+	xScene.GetEntityRef(uDeepestID).GetComponent<Zenith_TransformComponent>().BuildModelMatrix(xMatrix);
+
+	// If we get here without hanging, the test passed
+
+	// Clean up (destroy from deepest to root)
+	for (int i = static_cast<int>(DEPTH) - 1; i >= 0; --i)
+	{
+		Zenith_Scene::DestroyImmediate(xEntityIDs.Get(i));
+	}
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestDeepHierarchyBuildModelMatrix completed successfully");
 }

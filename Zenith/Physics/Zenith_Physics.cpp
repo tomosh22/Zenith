@@ -128,15 +128,15 @@ static ObjectLayerPairFilterImpl s_xObjectLayerPairFilter;
 
 // Queue collision event for deferred processing on main thread
 // CRITICAL: This is called from Jolt worker threads, so it must be thread-safe
-static void QueueCollisionEventInternal(Zenith_EntityID uEntityID1, Zenith_EntityID uEntityID2, CollisionEventType eEventType)
+static void QueueCollisionEventInternal(Zenith_EntityID xEntityID1, Zenith_EntityID xEntityID2, CollisionEventType eEventType)
 {
-	// Validate entity IDs (0 is invalid)
-	if (uEntityID1 == 0 || uEntityID2 == 0)
+	// Validate entity IDs
+	if (!xEntityID1.IsValid() || !xEntityID2.IsValid())
 		return;
 
 	Zenith_Physics::DeferredCollisionEvent xEvent;
-	xEvent.uEntityID1 = uEntityID1;
-	xEvent.uEntityID2 = uEntityID2;
+	xEvent.uEntityID1 = xEntityID1;
+	xEvent.uEntityID2 = xEntityID2;
 	xEvent.eEventType = eEventType;
 
 	std::lock_guard<std::mutex> xLock(Zenith_Physics::s_xEventQueueMutex);
@@ -373,9 +373,9 @@ void Zenith_Physics::PhysicsContactListener::OnContactAdded(
 	const JPH::ContactManifold& inManifold, JPH::ContactSettings& ioSettings)
 {
 	// Queue event for deferred processing (thread-safe)
-	Zenith_EntityID uEntityID1 = static_cast<Zenith_EntityID>(inBody1.GetUserData());
-	Zenith_EntityID uEntityID2 = static_cast<Zenith_EntityID>(inBody2.GetUserData());
-	QueueCollisionEventInternal(uEntityID1, uEntityID2, COLLISION_EVENT_TYPE_START);
+	Zenith_EntityID xEntityID1 = Zenith_EntityID::FromPacked(inBody1.GetUserData());
+	Zenith_EntityID xEntityID2 = Zenith_EntityID::FromPacked(inBody2.GetUserData());
+	QueueCollisionEventInternal(xEntityID1, xEntityID2, COLLISION_EVENT_TYPE_START);
 }
 
 void Zenith_Physics::PhysicsContactListener::OnContactPersisted(
@@ -383,9 +383,9 @@ void Zenith_Physics::PhysicsContactListener::OnContactPersisted(
 	const JPH::ContactManifold& inManifold, JPH::ContactSettings& ioSettings)
 {
 	// Queue event for deferred processing (thread-safe)
-	Zenith_EntityID uEntityID1 = static_cast<Zenith_EntityID>(inBody1.GetUserData());
-	Zenith_EntityID uEntityID2 = static_cast<Zenith_EntityID>(inBody2.GetUserData());
-	QueueCollisionEventInternal(uEntityID1, uEntityID2, COLLISION_EVENT_TYPE_STAY);
+	Zenith_EntityID xEntityID1 = Zenith_EntityID::FromPacked(inBody1.GetUserData());
+	Zenith_EntityID xEntityID2 = Zenith_EntityID::FromPacked(inBody2.GetUserData());
+	QueueCollisionEventInternal(xEntityID1, xEntityID2, COLLISION_EVENT_TYPE_STAY);
 }
 
 void Zenith_Physics::PhysicsContactListener::OnContactRemoved(const JPH::SubShapeIDPair& inSubShapePair)
@@ -394,25 +394,25 @@ void Zenith_Physics::PhysicsContactListener::OnContactRemoved(const JPH::SubShap
 	JPH::BodyID xBodyID1 = inSubShapePair.GetBody1ID();
 	JPH::BodyID xBodyID2 = inSubShapePair.GetBody2ID();
 
-	Zenith_EntityID uEntityID1 = 0;
-	Zenith_EntityID uEntityID2 = 0;
+	Zenith_EntityID xEntityID1 = INVALID_ENTITY_ID;
+	Zenith_EntityID xEntityID2 = INVALID_ENTITY_ID;
 
 	// CRITICAL: Use TryGetBody instead of BodyLockRead to avoid deadlock
 	// We're already inside a physics callback, so the bodies are locked by Jolt
 	const JPH::BodyLockInterface& xLockInterface = s_pxPhysicsSystem->GetBodyLockInterface();
-	
+
 	// TryGetBody doesn't acquire locks - safe to use in callbacks
 	const JPH::Body* pxBody1 = xLockInterface.TryGetBody(xBodyID1);
 	if (pxBody1)
 	{
-		uEntityID1 = static_cast<Zenith_EntityID>(pxBody1->GetUserData());
+		xEntityID1 = Zenith_EntityID::FromPacked(pxBody1->GetUserData());
 	}
 
 	const JPH::Body* pxBody2 = xLockInterface.TryGetBody(xBodyID2);
 	if (pxBody2)
 	{
-		uEntityID2 = static_cast<Zenith_EntityID>(pxBody2->GetUserData());
+		xEntityID2 = Zenith_EntityID::FromPacked(pxBody2->GetUserData());
 	}
 
-	QueueCollisionEventInternal(uEntityID1, uEntityID2, COLLISION_EVENT_TYPE_EXIT);
+	QueueCollisionEventInternal(xEntityID1, xEntityID2, COLLISION_EVENT_TYPE_EXIT);
 }

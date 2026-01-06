@@ -371,8 +371,16 @@ public:
 	{
 		while (m_uCursor + sizeof(CommandType_T) + sizeof(Flux_CommandType) > m_uCapacity)
 		{
-			m_uCapacity *= 2;
-			m_pcData = static_cast<u_int8*>(Zenith_MemoryManagement::Reallocate(m_pcData, m_uCapacity));
+			u_int uNewCapacity = m_uCapacity * 2;
+			u_int8* pNewData = static_cast<u_int8*>(Zenith_MemoryManagement::Reallocate(m_pcData, uNewCapacity));
+			if (pNewData == nullptr)
+			{
+				Zenith_Assert(false, "Command list reallocation failed for %s - out of memory", m_szName);
+				Zenith_Error(LOG_CATEGORY_RENDERER, "Command list reallocation failed for %s", m_szName);
+				return; // Skip command rather than crash in release
+			}
+			m_pcData = pNewData;
+			m_uCapacity = uNewCapacity;
 		}
 
 		*reinterpret_cast<Flux_CommandType*>(&m_pcData[m_uCursor]) = CommandType_T::m_eType;

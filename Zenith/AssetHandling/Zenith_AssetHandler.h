@@ -93,24 +93,24 @@ public:
 	/**
 	 * Creates a texture from loaded texture data
 	 * @param xTextureData The texture data (loaded from file or procedural)
-	 * @return Raw pointer to the created texture, or nullptr on failure
+	 * @return Raw pointer to the created texture, or nullptr on failure (pool exhausted)
 	 */
-	static Flux_Texture* AddTexture(const TextureData& xTextureData);
+	[[nodiscard]] static Flux_Texture* AddTexture(const TextureData& xTextureData);
 
 	/**
 	 * Creates an empty mesh for manual setup
-	 * @return Raw pointer to the created mesh, or nullptr on failure
+	 * @return Raw pointer to the created mesh, or nullptr on failure (pool exhausted)
 	 */
-	static Flux_MeshGeometry* AddMesh();
+	[[nodiscard]] static Flux_MeshGeometry* AddMesh();
 
 	/**
 	 * Loads a mesh from file
 	 * @param szPath Path to the mesh file (stored in mesh for serialization)
 	 * @param uRetainAttributeBits Bitmask of attributes to retain in CPU memory
 	 * @param bUploadToGPU Whether to upload to GPU
-	 * @return Raw pointer to the loaded mesh, or nullptr on failure
+	 * @return Raw pointer to the loaded mesh, or nullptr on failure (pool exhausted)
 	 */
-	static Flux_MeshGeometry* AddMeshFromFile(const char* szPath, u_int uRetainAttributeBits = 0, const bool bUploadToGPU = true);
+	[[nodiscard]] static Flux_MeshGeometry* AddMeshFromFile(const char* szPath, u_int uRetainAttributeBits = 0, const bool bUploadToGPU = true);
 
 	/**
 	 * Finds a mesh by its source path (for reuse instead of creating duplicates)

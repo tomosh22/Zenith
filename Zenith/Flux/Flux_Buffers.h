@@ -26,14 +26,32 @@ public:
 			xBuffer = Flux_Buffer();
 		}
 	}
-	const Flux_Buffer& GetBuffer() const { return m_axBuffers[Flux_Swapchain::GetCurrentFrameIndex()]; }
-	Flux_Buffer& GetBuffer() { return m_axBuffers[Flux_Swapchain::GetCurrentFrameIndex()]; }
+	const Flux_Buffer& GetBuffer() const
+	{
+		const u_int uIndex = Flux_Swapchain::GetCurrentFrameIndex();
+		Zenith_Assert(uIndex < MAX_FRAMES_IN_FLIGHT, "Frame index %u out of bounds (max %u)", uIndex, MAX_FRAMES_IN_FLIGHT);
+		return m_axBuffers[uIndex];
+	}
+	Flux_Buffer& GetBuffer()
+	{
+		const u_int uIndex = Flux_Swapchain::GetCurrentFrameIndex();
+		Zenith_Assert(uIndex < MAX_FRAMES_IN_FLIGHT, "Frame index %u out of bounds (max %u)", uIndex, MAX_FRAMES_IN_FLIGHT);
+		return m_axBuffers[uIndex];
+	}
 
-	const Flux_Buffer& GetBufferForFrameInFlight(const u_int uFrame) const { return m_axBuffers[uFrame]; }
-	Flux_Buffer& GetBufferForFrameInFlight(const u_int uFrame) { return m_axBuffers[uFrame]; }
+	const Flux_Buffer& GetBufferForFrameInFlight(const u_int uFrame) const
+	{
+		Zenith_Assert(uFrame < MAX_FRAMES_IN_FLIGHT, "Frame index %u out of bounds (max %u)", uFrame, MAX_FRAMES_IN_FLIGHT);
+		return m_axBuffers[uFrame];
+	}
+	Flux_Buffer& GetBufferForFrameInFlight(const u_int uFrame)
+	{
+		Zenith_Assert(uFrame < MAX_FRAMES_IN_FLIGHT, "Frame index %u out of bounds (max %u)", uFrame, MAX_FRAMES_IN_FLIGHT);
+		return m_axBuffers[uFrame];
+	}
 private:
 	Flux_Buffer m_axBuffers[MAX_FRAMES_IN_FLIGHT];
-	
+
 };
 
 class Flux_IndexBuffer
@@ -78,15 +96,42 @@ public:
 		}
 	}
 
-	const Flux_Buffer& GetBuffer() const { return m_axBuffers[Flux_Swapchain::GetCurrentFrameIndex()]; }
-	Flux_Buffer& GetBuffer() { return m_axBuffers[Flux_Swapchain::GetCurrentFrameIndex()]; }
+	const Flux_Buffer& GetBuffer() const
+	{
+		const u_int uIndex = Flux_Swapchain::GetCurrentFrameIndex();
+		Zenith_Assert(uIndex < MAX_FRAMES_IN_FLIGHT, "Frame index %u out of bounds (max %u)", uIndex, MAX_FRAMES_IN_FLIGHT);
+		return m_axBuffers[uIndex];
+	}
+	Flux_Buffer& GetBuffer()
+	{
+		const u_int uIndex = Flux_Swapchain::GetCurrentFrameIndex();
+		Zenith_Assert(uIndex < MAX_FRAMES_IN_FLIGHT, "Frame index %u out of bounds (max %u)", uIndex, MAX_FRAMES_IN_FLIGHT);
+		return m_axBuffers[uIndex];
+	}
 
-	const Flux_ConstantBufferView& GetCBV() const { return m_axCBVs[Flux_Swapchain::GetCurrentFrameIndex()]; }
+	const Flux_ConstantBufferView& GetCBV() const
+	{
+		const u_int uIndex = Flux_Swapchain::GetCurrentFrameIndex();
+		Zenith_Assert(uIndex < MAX_FRAMES_IN_FLIGHT, "Frame index %u out of bounds (max %u)", uIndex, MAX_FRAMES_IN_FLIGHT);
+		return m_axCBVs[uIndex];
+	}
 
-	const Flux_Buffer& GetBufferForFrameInFlight(const u_int uFrame) const { return m_axBuffers[uFrame]; }
-	Flux_Buffer& GetBufferForFrameInFlight(const u_int uFrame) { return m_axBuffers[uFrame]; }
+	const Flux_Buffer& GetBufferForFrameInFlight(const u_int uFrame) const
+	{
+		Zenith_Assert(uFrame < MAX_FRAMES_IN_FLIGHT, "Frame index %u out of bounds (max %u)", uFrame, MAX_FRAMES_IN_FLIGHT);
+		return m_axBuffers[uFrame];
+	}
+	Flux_Buffer& GetBufferForFrameInFlight(const u_int uFrame)
+	{
+		Zenith_Assert(uFrame < MAX_FRAMES_IN_FLIGHT, "Frame index %u out of bounds (max %u)", uFrame, MAX_FRAMES_IN_FLIGHT);
+		return m_axBuffers[uFrame];
+	}
 
-	Flux_ConstantBufferView& GetCBVForFrameInFlight(const u_int uFrame) { return m_axCBVs[uFrame]; }
+	Flux_ConstantBufferView& GetCBVForFrameInFlight(const u_int uFrame)
+	{
+		Zenith_Assert(uFrame < MAX_FRAMES_IN_FLIGHT, "Frame index %u out of bounds (max %u)", uFrame, MAX_FRAMES_IN_FLIGHT);
+		return m_axCBVs[uFrame];
+	}
 private:
 	Flux_Buffer m_axBuffers[MAX_FRAMES_IN_FLIGHT];
 	Flux_ConstantBufferView m_axCBVs[MAX_FRAMES_IN_FLIGHT];

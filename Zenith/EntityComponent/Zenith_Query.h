@@ -31,12 +31,17 @@ public:
 	template<typename Func>
 	void ForEach(Func&& fn)
 	{
-		// Iterate m_xEntityMap (only valid entities) for O(num_entities) instead of O(max_entity_id)
-		for (auto& [uEntityID, xEntity] : m_pxScene->m_xEntityMap)
+		// Iterate m_xActiveEntities for O(num_entities)
+		for (u_int u = 0; u < m_pxScene->m_xActiveEntities.GetSize(); ++u)
 		{
-			if (HasAllComponents<Ts...>(uEntityID))
+			Zenith_EntityID xEntityID = m_pxScene->m_xActiveEntities.Get(u);
+
+			// Skip entities pending destruction (Unity-style)
+			if (m_pxScene->IsMarkedForDestruction(xEntityID)) continue;
+
+			if (HasAllComponents<Ts...>(xEntityID))
 			{
-				fn(uEntityID, m_pxScene->GetComponentFromEntity<Ts>(uEntityID)...);
+				fn(xEntityID, m_pxScene->GetComponentFromEntity<Ts>(xEntityID)...);
 			}
 		}
 	}
@@ -52,11 +57,16 @@ public:
 	// First - returns the first matching entity ID, or INVALID_ENTITY_ID if none
 	Zenith_EntityID First()
 	{
-		for (auto& [uEntityID, xEntity] : m_pxScene->m_xEntityMap)
+		for (u_int u = 0; u < m_pxScene->m_xActiveEntities.GetSize(); ++u)
 		{
-			if (HasAllComponents<Ts...>(uEntityID))
+			Zenith_EntityID xEntityID = m_pxScene->m_xActiveEntities.Get(u);
+
+			// Skip entities pending destruction
+			if (m_pxScene->IsMarkedForDestruction(xEntityID)) continue;
+
+			if (HasAllComponents<Ts...>(xEntityID))
 			{
-				return uEntityID;
+				return xEntityID;
 			}
 		}
 		return INVALID_ENTITY_ID;
@@ -65,15 +75,15 @@ public:
 	// Any - returns true if at least one entity matches the query
 	bool Any()
 	{
-		return First() != INVALID_ENTITY_ID;
+		return First().IsValid();
 	}
 
 private:
 	// Helper to check if entity has all component types using fold expression
 	template<typename... Us>
-	bool HasAllComponents(Zenith_EntityID uEntityID)
+	bool HasAllComponents(Zenith_EntityID xEntityID)
 	{
-		return (m_pxScene->EntityHasComponent<Us>(uEntityID) && ...);
+		return (m_pxScene->EntityHasComponent<Us>(xEntityID) && ...);
 	}
 
 	Zenith_Scene* m_pxScene;

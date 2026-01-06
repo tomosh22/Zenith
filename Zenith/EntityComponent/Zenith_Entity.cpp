@@ -9,67 +9,95 @@ Zenith_Entity::Zenith_Entity(Zenith_Scene* pxScene, const std::string& strName)
 	: m_pxParentScene(pxScene)
 	, m_strName(strName)
 {
-	m_uEntityID = m_pxParentScene->CreateEntity();
-	Zenith_Assert(pxScene->m_xEntityComponents.Get(m_uEntityID).empty(), "Entity ID %u already has components - registry not cleared or ID collision", m_uEntityID);
+	Zenith_Assert(pxScene != nullptr, "Entity created with null scene");
+
+	// CreateEntity now allocates a slot and returns a generation-aware ID
+	m_xEntityID = m_pxParentScene->CreateEntity();
+	Zenith_Assert(pxScene->m_xEntityComponents.Get(m_xEntityID.m_uIndex).empty(),
+		"Entity slot %u already has components - registry not cleared or ID collision", m_xEntityID.m_uIndex);
+
+	// Store this entity in the slot
+	pxScene->m_xEntitySlots.Get(m_xEntityID.m_uIndex).m_xEntity = *this;
+
 	AddComponent<Zenith_TransformComponent>();
 	// m_bTransient defaults to true (transient). Call SetTransient(false) for persistent entities.
-	pxScene->m_xEntityMap.insert({ m_uEntityID, *this });
+
+	// Track entities created during Update() - they won't receive callbacks until next frame
+	pxScene->RegisterCreatedDuringUpdate(m_xEntityID);
 }
 
-Zenith_Entity::Zenith_Entity(Zenith_Scene* pxScene, Zenith_EntityID uID, Zenith_EntityID uParentID, const std::string& strName)
+Zenith_Entity::Zenith_Entity(Zenith_Scene* pxScene, Zenith_EntityID xID, const std::string& strName)
 	: m_pxParentScene(pxScene)
-	, m_uEntityID(uID)
-	, m_uParentEntityID(uParentID)
+	, m_xEntityID(xID)
 	, m_strName(strName)
 	, m_bTransient(false)  // Loaded entities are persistent (will be saved back to disk)
 {
-	Zenith_Assert(pxScene->m_xEntityComponents.Get(m_uEntityID).empty(), "Entity ID %u already has components - registry not cleared or ID collision", m_uEntityID);
+	Zenith_Assert(pxScene != nullptr, "Entity created with null scene");
+	Zenith_Assert(pxScene->m_xEntityComponents.Get(m_xEntityID.m_uIndex).empty(),
+		"Entity slot %u already has components - registry not cleared or ID collision", m_xEntityID.m_uIndex);
+
+	// Store this entity in the slot
+	pxScene->m_xEntitySlots.Get(m_xEntityID.m_uIndex).m_xEntity = *this;
+
 	AddComponent<Zenith_TransformComponent>();
-	pxScene->m_xEntityMap.insert({ m_uEntityID, *this });
 }
 
 void Zenith_Entity::Initialise(Zenith_Scene* pxScene, const std::string& strName)
 {
+	Zenith_Assert(pxScene != nullptr, "Entity initialised with null scene");
+
 	m_pxParentScene = pxScene;
 	m_strName = strName;
-	m_uEntityID = m_pxParentScene->CreateEntity();
-	Zenith_Assert(pxScene->m_xEntityComponents.Get(m_uEntityID).empty(), "Entity ID %u already has components - registry not cleared or ID collision", m_uEntityID);
+	m_xEntityID = m_pxParentScene->CreateEntity();
+	Zenith_Assert(pxScene->m_xEntityComponents.Get(m_xEntityID.m_uIndex).empty(),
+		"Entity slot %u already has components - registry not cleared or ID collision", m_xEntityID.m_uIndex);
+
+	// Store this entity in the slot
+	pxScene->m_xEntitySlots.Get(m_xEntityID.m_uIndex).m_xEntity = *this;
+
 	AddComponent<Zenith_TransformComponent>();
 	// m_bTransient defaults to true (transient). Call SetTransient(false) for persistent entities.
-	pxScene->m_xEntityMap.insert({ m_uEntityID, *this });
 }
 
-void Zenith_Entity::Initialise(Zenith_Scene* pxScene, Zenith_EntityID uID, Zenith_EntityID uParentID, const std::string& strName)
+void Zenith_Entity::Initialise(Zenith_Scene* pxScene, Zenith_EntityID xID, const std::string& strName)
 {
+	Zenith_Assert(pxScene != nullptr, "Entity initialised with null scene");
+
 	m_pxParentScene = pxScene;
-	m_uParentEntityID = uParentID;
-	m_uEntityID = uID;
+	m_xEntityID = xID;
 	m_strName = strName;
 	m_bTransient = false;  // Loaded entities are persistent (will be saved back to disk)
-	Zenith_Assert(pxScene->m_xEntityComponents.Get(m_uEntityID).empty(), "Entity ID %u already has components - registry not cleared or ID collision", m_uEntityID);
+	Zenith_Assert(pxScene->m_xEntityComponents.Get(m_xEntityID.m_uIndex).empty(),
+		"Entity slot %u already has components - registry not cleared or ID collision", m_xEntityID.m_uIndex);
+
 	AddComponent<Zenith_TransformComponent>();
-	pxScene->m_xEntityMap.insert({ m_uEntityID, *this });
 }
 
 void Zenith_Entity::SetName(const std::string& strName)
 {
+	Zenith_Assert(m_pxParentScene != nullptr, "SetName: Entity has no parent scene");
+	Zenith_Assert(m_pxParentScene->EntityExists(m_xEntityID), "SetName: Entity (idx=%u, gen=%u) not found in scene",
+		m_xEntityID.m_uIndex, m_xEntityID.m_uGeneration);
+
 	m_strName = strName;
-	// Also update the copy in the entity map
-	auto xIt = m_pxParentScene->m_xEntityMap.find(m_uEntityID);
-	if (xIt != m_pxParentScene->m_xEntityMap.end() && &xIt->second != this)
-	{
-		xIt->second.m_strName = strName;
-	}
+	// Also update the slot's copy of this entity
+	m_pxParentScene->m_xEntitySlots.Get(m_xEntityID.m_uIndex).m_xEntity.m_strName = strName;
 }
 
 void Zenith_Entity::SetEnabled(bool bEnabled)
 {
+	Zenith_Assert(m_pxParentScene != nullptr, "SetEnabled: Entity has no parent scene");
+	Zenith_Assert(m_pxParentScene->EntityExists(m_xEntityID), "SetEnabled: Entity (idx=%u, gen=%u) not found in scene",
+		m_xEntityID.m_uIndex, m_xEntityID.m_uGeneration);
+
 	if (m_bEnabled == bEnabled)
 	{
 		return;
 	}
 
 	m_bEnabled = bEnabled;
+	// Also update the slot's copy of this entity
+	m_pxParentScene->m_xEntitySlots.Get(m_xEntityID.m_uIndex).m_xEntity.m_bEnabled = bEnabled;
 
 	// Dispatch OnEnable or OnDisable to all components
 	if (m_bEnabled)
@@ -80,77 +108,75 @@ void Zenith_Entity::SetEnabled(bool bEnabled)
 	{
 		Zenith_ComponentMetaRegistry::Get().DispatchOnDisable(*this);
 	}
+}
 
-	// Also update the copy in the entity map
-	auto xIt = m_pxParentScene->m_xEntityMap.find(m_uEntityID);
-	if (xIt != m_pxParentScene->m_xEntityMap.end() && &xIt->second != this)
+void Zenith_Entity::SetTransient(bool bTransient)
+{
+	m_bTransient = bTransient;
+	// Also update the slot's copy of this entity (if valid)
+	if (m_pxParentScene != nullptr && m_pxParentScene->EntityExists(m_xEntityID))
 	{
-		xIt->second.m_bEnabled = bEnabled;
+		m_pxParentScene->m_xEntitySlots.Get(m_xEntityID.m_uIndex).m_xEntity.m_bTransient = bTransient;
 	}
 }
 
 //------------------------------------------------------------------------------
-// Parent/Child Hierarchy
+// Parent/Child Hierarchy (delegates to TransformComponent)
 //------------------------------------------------------------------------------
 
-void Zenith_Entity::SetParent(Zenith_EntityID uParentID)
+Zenith_EntityID Zenith_Entity::GetParentEntityID() const
 {
-	// No change needed
-	if (m_uParentEntityID == uParentID)
+	const Zenith_TransformComponent& xTransform = GetComponent<Zenith_TransformComponent>();
+	if (xTransform.GetParent() == nullptr) return INVALID_ENTITY_ID;
+	return xTransform.GetParent()->GetEntity().GetEntityID();
+}
+
+bool Zenith_Entity::HasParent() const
+{
+	return GetComponent<Zenith_TransformComponent>().HasParent();
+}
+
+void Zenith_Entity::SetParent(Zenith_EntityID xParentID)
+{
+	Zenith_TransformComponent& xTransform = GetComponent<Zenith_TransformComponent>();
+	if (!xParentID.IsValid())
 	{
-		return;
+		xTransform.SetParent(nullptr);
 	}
-
-	// Remove from old parent's child list
-	if (HasParent())
+	else
 	{
-		auto xIt = m_pxParentScene->m_xEntityMap.find(m_uParentEntityID);
-		if (xIt != m_pxParentScene->m_xEntityMap.end())
-		{
-			xIt->second.RemoveChild(m_uEntityID);
-		}
-	}
-
-	// Update parent reference
-	m_uParentEntityID = uParentID;
-
-	// Add to new parent's child list
-	if (HasParent())
-	{
-		auto xIt = m_pxParentScene->m_xEntityMap.find(m_uParentEntityID);
-		if (xIt != m_pxParentScene->m_xEntityMap.end())
-		{
-			xIt->second.AddChild(m_uEntityID);
-		}
+		Zenith_Assert(m_pxParentScene->EntityExists(xParentID), "SetParent: Parent entity (idx=%u, gen=%u) does not exist",
+			xParentID.m_uIndex, xParentID.m_uGeneration);
+		Zenith_Entity& xParent = m_pxParentScene->GetEntityRef(xParentID);
+		xTransform.SetParent(&xParent.GetComponent<Zenith_TransformComponent>());
 	}
 }
 
-void Zenith_Entity::AddChild(Zenith_EntityID uChildID)
+Zenith_Vector<Zenith_EntityID> Zenith_Entity::GetChildEntityIDs() const
 {
-	// Check if already a child
-	for (u_int u = 0; u < m_xChildEntityIDs.GetSize(); ++u)
-	{
-		if (m_xChildEntityIDs.Get(u) == uChildID)
-		{
-			return;  // Already a child
-		}
-	}
-
-	m_xChildEntityIDs.PushBack(uChildID);
+	// Return a copy of the child entity IDs from the transform component
+	const Zenith_TransformComponent& xTransform = GetComponent<Zenith_TransformComponent>();
+	return xTransform.GetChildEntityIDs();
 }
 
-void Zenith_Entity::RemoveChild(Zenith_EntityID uChildID)
+bool Zenith_Entity::HasChildren() const
 {
-	for (u_int u = 0; u < m_xChildEntityIDs.GetSize(); ++u)
-	{
-		if (m_xChildEntityIDs.Get(u) == uChildID)
-		{
-			// Swap and pop for O(1) removal
-			m_xChildEntityIDs.Get(u) = m_xChildEntityIDs.GetBack();
-			m_xChildEntityIDs.PopBack();
-			return;
-		}
-	}
+	return GetComponent<Zenith_TransformComponent>().GetChildCount() > 0;
+}
+
+uint32_t Zenith_Entity::GetChildCount() const
+{
+	return GetComponent<Zenith_TransformComponent>().GetChildCount();
+}
+
+bool Zenith_Entity::IsRoot() const
+{
+	return GetComponent<Zenith_TransformComponent>().IsRoot();
+}
+
+Zenith_TransformComponent& Zenith_Entity::GetTransform()
+{
+	return GetComponent<Zenith_TransformComponent>();
 }
 
 //------------------------------------------------------------------------------
@@ -159,15 +185,9 @@ void Zenith_Entity::RemoveChild(Zenith_EntityID uChildID)
 
 void Zenith_Entity::WriteToDataStream(Zenith_DataStream& xStream) const
 {
-	// Write entity metadata
-	xStream << m_uEntityID;
-	xStream << m_uParentEntityID;
+	// Write entity index only (generation is runtime-only for stale detection)
+	xStream << m_xEntityID.m_uIndex;
 	xStream << m_strName;
-
-	// Child hierarchy is rebuilt from parent IDs on load, so we don't serialize children
-	// Write placeholder count for backward compatibility with scene format
-	uint32_t uChildCount = 0;
-	xStream << uChildCount;
 
 	// Serialize all components using the ComponentMeta registry
 	Zenith_ComponentMetaRegistry::Get().SerializeEntityComponents(
@@ -176,21 +196,15 @@ void Zenith_Entity::WriteToDataStream(Zenith_DataStream& xStream) const
 
 void Zenith_Entity::ReadFromDataStream(Zenith_DataStream& xStream)
 {
-	// Read entity metadata
-	xStream >> m_uEntityID;
-	xStream >> m_uParentEntityID;
+	// Read entity index - generation will be assigned fresh on load
+	uint32_t uFileIndex;
+	xStream >> uFileIndex;
 	xStream >> m_strName;
 
-	// Skip child IDs (backward compatibility) - children are rebuilt from parent IDs
-	uint32_t uChildCount = 0;
-	xStream >> uChildCount;
-	for (uint32_t i = 0; i < uChildCount; ++i)
-	{
-		Zenith_EntityID uChildID;
-		xStream >> uChildID;
-		// Discarded - hierarchy rebuilt from parent IDs
-	}
+	// Note: m_xEntityID is set by the scene during loading, not here
+	// (old format support - scene handles ID assignment now)
 
 	// Deserialize all components using the ComponentMeta registry
+	// (TransformComponent reads pending parent ID - hierarchy rebuilt after all entities loaded)
 	Zenith_ComponentMetaRegistry::Get().DeserializeEntityComponents(*this, xStream);
 }

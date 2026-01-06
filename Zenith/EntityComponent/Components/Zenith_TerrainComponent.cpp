@@ -420,7 +420,7 @@ void Zenith_TerrainComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 	{
 		// Create fresh materials with descriptive names including entity name
 		std::string strEntityName = m_xParentEntity.GetName().empty() ?
-			("Entity_" + std::to_string(m_xParentEntity.GetEntityID())) : m_xParentEntity.GetName();
+			("Entity_" + std::to_string(m_xParentEntity.GetEntityID().m_uIndex)) : m_xParentEntity.GetName();
 		m_pxMaterial0 = Flux_MaterialAsset::Create(strEntityName + "_Terrain_Mat0");
 		m_pxMaterial1 = Flux_MaterialAsset::Create(strEntityName + "_Terrain_Mat1");
 
@@ -1080,7 +1080,7 @@ void Zenith_TerrainComponent::RenderPropertiesPanel()
 					
 					// Create blank materials for initial rendering
 					std::string strEntityName = m_xParentEntity.GetName().empty() ?
-						("Entity_" + std::to_string(m_xParentEntity.GetEntityID())) : m_xParentEntity.GetName();
+						("Entity_" + std::to_string(m_xParentEntity.GetEntityID().m_uIndex)) : m_xParentEntity.GetName();
 					
 					m_pxMaterial0 = Flux_MaterialAsset::Create(strEntityName + "_Terrain_Mat0");
 					m_pxMaterial1 = Flux_MaterialAsset::Create(strEntityName + "_Terrain_Mat1");

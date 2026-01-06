@@ -59,15 +59,17 @@ static void AsyncLoadTaskFunction(void* pData)
 	}
 
 	// Queue completed load for main thread processing
-	Zenith_AsyncAssetLoader::s_xCompletedMutex.Lock();
-	Zenith_AsyncAssetLoader::s_xCompletedLoads.PushBack(xCompleted);
-	Zenith_AsyncAssetLoader::s_xCompletedMutex.Unlock();
+	{
+		Zenith_ScopedMutexLock xLock(Zenith_AsyncAssetLoader::s_xCompletedMutex);
+		Zenith_AsyncAssetLoader::s_xCompletedLoads.PushBack(xCompleted);
+	}
 
 	// Update load state
-	Zenith_AsyncAssetLoader::s_xStateMutex.Lock();
-	Zenith_AsyncAssetLoader::s_xLoadStates[xRequest.m_xGUID] =
-		xCompleted.m_bSuccess ? AssetLoadState::LOADED : AssetLoadState::FAILED;
-	Zenith_AsyncAssetLoader::s_xStateMutex.Unlock();
+	{
+		Zenith_ScopedMutexLock xLock(Zenith_AsyncAssetLoader::s_xStateMutex);
+		Zenith_AsyncAssetLoader::s_xLoadStates[xRequest.m_xGUID] =
+			xCompleted.m_bSuccess ? AssetLoadState::LOADED : AssetLoadState::FAILED;
+	}
 
 	// Clean up task data
 	delete pxTaskData;
@@ -82,13 +84,14 @@ void Zenith_AsyncAssetLoader::ProcessCompletedLoads()
 	// Move completed loads to local vector to minimize lock time
 	Zenith_Vector<CompletedLoad> xLocalCompleted;
 
-	s_xCompletedMutex.Lock();
-	for (u_int i = 0; i < s_xCompletedLoads.GetSize(); ++i)
 	{
-		xLocalCompleted.PushBack(s_xCompletedLoads.Get(i));
+		Zenith_ScopedMutexLock xLock(s_xCompletedMutex);
+		for (u_int i = 0; i < s_xCompletedLoads.GetSize(); ++i)
+		{
+			xLocalCompleted.PushBack(s_xCompletedLoads.Get(i));
+		}
+		s_xCompletedLoads.Clear();
 	}
-	s_xCompletedLoads.Clear();
-	s_xCompletedMutex.Unlock();
 
 	// Dispatch callbacks on main thread
 	for (u_int i = 0; i < xLocalCompleted.GetSize(); ++i)
@@ -115,26 +118,21 @@ void Zenith_AsyncAssetLoader::ProcessCompletedLoads()
 
 AssetLoadState Zenith_AsyncAssetLoader::GetLoadState(const Zenith_AssetGUID& xGUID)
 {
-	s_xStateMutex.Lock();
+	Zenith_ScopedMutexLock xLock(s_xStateMutex);
 	auto xIt = s_xLoadStates.find(xGUID);
-	AssetLoadState eState = (xIt != s_xLoadStates.end()) ? xIt->second : AssetLoadState::UNLOADED;
-	s_xStateMutex.Unlock();
-	return eState;
+	return (xIt != s_xLoadStates.end()) ? xIt->second : AssetLoadState::UNLOADED;
 }
 
 bool Zenith_AsyncAssetLoader::HasPendingLoads()
 {
-	s_xPendingMutex.Lock();
-	bool bHasPending = s_xPendingLoads.GetSize() > 0;
-	s_xPendingMutex.Unlock();
-	return bHasPending;
+	Zenith_ScopedMutexLock xLock(s_xPendingMutex);
+	return s_xPendingLoads.GetSize() > 0;
 }
 
 void Zenith_AsyncAssetLoader::CancelAllPendingLoads()
 {
-	s_xPendingMutex.Lock();
+	Zenith_ScopedMutexLock xLock(s_xPendingMutex);
 	s_xPendingLoads.Clear();
-	s_xPendingMutex.Unlock();
 
 	// Note: Tasks already submitted cannot be cancelled
 	// They will complete but their callbacks will be ignored

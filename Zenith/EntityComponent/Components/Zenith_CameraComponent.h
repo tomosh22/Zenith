@@ -177,16 +177,17 @@ public:
 #endif
 
 private:
-	float m_fNear = 0;
-	float m_fFar = 0;
-	float m_fLeft = 0;
-	float m_fRight = 0;
-	float m_fTop = 0;
-	float m_fBottom = 0;
-	float m_fFOV = 0;
+	// Safe defaults to prevent division by zero / NaN in BuildProjectionMatrix
+	float m_fNear = 0.1f;           // Near plane must be > 0
+	float m_fFar = 1000.0f;         // Far plane must be > near
+	float m_fLeft = -1.0f;          // Orthographic defaults
+	float m_fRight = 1.0f;
+	float m_fTop = 1.0f;
+	float m_fBottom = -1.0f;
+	float m_fFOV = 60.0f;           // Field of view in degrees
 	double m_fYaw = 0;
 	double m_fPitch = 0;
-	float m_fAspect = 0;
+	float m_fAspect = 16.0f / 9.0f; // Common aspect ratio
 	Zenith_Maths::Vector3 m_xPosition = { 0,0,0 };
 	CameraType m_eType = CAMERA_TYPE_PERSPECTIVE;
 

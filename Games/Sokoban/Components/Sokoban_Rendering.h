@@ -243,10 +243,10 @@ public:
 		}
 		m_axBoxEntityIDs.clear();
 
-		if (m_uPlayerEntityID != 0 && xScene.EntityExists(m_uPlayerEntityID))
+		if (m_uPlayerEntityID.IsValid() && xScene.EntityExists(m_uPlayerEntityID))
 		{
 			Zenith_Scene::Destroy(m_uPlayerEntityID);
-			m_uPlayerEntityID = 0;
+			m_uPlayerEntityID = INVALID_ENTITY_ID;
 		}
 	}
 
@@ -257,7 +257,7 @@ public:
 	{
 		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
 
-		if (m_uPlayerEntityID != 0 && xScene.EntityExists(m_uPlayerEntityID))
+		if (m_uPlayerEntityID.IsValid() && xScene.EntityExists(m_uPlayerEntityID))
 		{
 			Zenith_Entity xPlayer = xScene.GetEntityByID(m_uPlayerEntityID);
 			if (xPlayer.HasComponent<Zenith_TransformComponent>())
@@ -377,5 +377,5 @@ private:
 	uint32_t m_uGridHeight = 0;
 	std::vector<Zenith_EntityID> m_axTileEntityIDs;
 	std::vector<Zenith_EntityID> m_axBoxEntityIDs;
-	Zenith_EntityID m_uPlayerEntityID = 0;
+	Zenith_EntityID m_uPlayerEntityID = INVALID_ENTITY_ID;
 };

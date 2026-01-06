@@ -56,7 +56,7 @@ public:
 	// ========================================================================
 	struct Collectible
 	{
-		Zenith_EntityID m_uEntityID = 0;
+		Zenith_EntityID m_uEntityID = INVALID_ENTITY_ID;
 		Zenith_Maths::Vector3 m_xBasePosition;
 		int32_t m_iLane = 0;
 		bool m_bCollected = false;
@@ -70,7 +70,7 @@ public:
 
 	struct Obstacle
 	{
-		Zenith_EntityID m_uEntityID = 0;
+		Zenith_EntityID m_uEntityID = INVALID_ENTITY_ID;
 		Zenith_Maths::Vector3 m_xPosition;
 		Zenith_Maths::Vector3 m_xSize;
 		int32_t m_iLane = 0;
@@ -119,7 +119,7 @@ public:
 
 		for (auto& xColl : s_axCollectibles)
 		{
-			if (xColl.m_uEntityID != 0 && xScene.EntityExists(xColl.m_uEntityID))
+			if (xColl.m_uEntityID.IsValid() && xScene.EntityExists(xColl.m_uEntityID))
 			{
 				Zenith_Scene::Destroy(xColl.m_uEntityID);
 			}
@@ -128,7 +128,7 @@ public:
 
 		for (auto& xObs : s_axObstacles)
 		{
-			if (xObs.m_uEntityID != 0 && xScene.EntityExists(xObs.m_uEntityID))
+			if (xObs.m_uEntityID.IsValid() && xScene.EntityExists(xObs.m_uEntityID))
 			{
 				Zenith_Scene::Destroy(xObs.m_uEntityID);
 			}
@@ -170,7 +170,7 @@ public:
 
 		for (auto& xColl : s_axCollectibles)
 		{
-			if (xColl.m_bCollected || xColl.m_uEntityID == 0)
+			if (xColl.m_bCollected || !xColl.m_uEntityID.IsValid())
 			{
 				continue;
 			}
@@ -197,7 +197,7 @@ public:
 
 				// Destroy entity
 				Zenith_Scene::Destroy(xColl.m_uEntityID);
-				xColl.m_uEntityID = 0;
+				xColl.m_uEntityID = INVALID_ENTITY_ID;
 			}
 		}
 
@@ -409,7 +409,7 @@ private:
 
 		for (auto& xColl : s_axCollectibles)
 		{
-			if (xColl.m_bCollected || xColl.m_uEntityID == 0)
+			if (xColl.m_bCollected || !xColl.m_uEntityID.IsValid())
 			{
 				continue;
 			}
@@ -449,7 +449,7 @@ private:
 		{
 			if (it->m_xBasePosition.z < fRemoveThreshold)
 			{
-				if (it->m_uEntityID != 0 && xScene.EntityExists(it->m_uEntityID))
+				if (it->m_uEntityID.IsValid() && xScene.EntityExists(it->m_uEntityID))
 				{
 					Zenith_Scene::Destroy(it->m_uEntityID);
 				}
@@ -466,7 +466,7 @@ private:
 		{
 			if (it->m_xPosition.z < fRemoveThreshold)
 			{
-				if (it->m_uEntityID != 0 && xScene.EntityExists(it->m_uEntityID))
+				if (it->m_uEntityID.IsValid() && xScene.EntityExists(it->m_uEntityID))
 				{
 					Zenith_Scene::Destroy(it->m_uEntityID);
 				}
