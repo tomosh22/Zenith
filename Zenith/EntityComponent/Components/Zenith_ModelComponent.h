@@ -51,6 +51,14 @@ public:
 
 	~Zenith_ModelComponent();
 
+	// Move semantics - required for component pool operations
+	Zenith_ModelComponent(Zenith_ModelComponent&& xOther) noexcept;
+	Zenith_ModelComponent& operator=(Zenith_ModelComponent&& xOther) noexcept;
+
+	// Disable copy semantics - component should only be moved
+	Zenith_ModelComponent(const Zenith_ModelComponent&) = delete;
+	Zenith_ModelComponent& operator=(const Zenith_ModelComponent&) = delete;
+
 	//=========================================================================
 	// New Model Instance API (primary interface)
 	//=========================================================================

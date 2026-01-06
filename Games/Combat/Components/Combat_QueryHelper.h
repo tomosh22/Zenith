@@ -64,7 +64,7 @@ public:
 		if (!xScene.EntityExists(uEntityID))
 			return false;
 
-		const std::string& strName = xScene.GetEntityRef(uEntityID).GetName();
+		const std::string& strName = xScene.GetEntity(uEntityID).GetName();
 		return strName.find(s_szPlayerPrefix) == 0;
 	}
 
@@ -77,7 +77,7 @@ public:
 		if (!xScene.EntityExists(uEntityID))
 			return false;
 
-		const std::string& strName = xScene.GetEntityRef(uEntityID).GetName();
+		const std::string& strName = xScene.GetEntity(uEntityID).GetName();
 		return strName.find(s_szEnemyPrefix) == 0;
 	}
 
@@ -90,7 +90,7 @@ public:
 		if (!xScene.EntityExists(uEntityID))
 			return false;
 
-		const std::string& strName = xScene.GetEntityRef(uEntityID).GetName();
+		const std::string& strName = xScene.GetEntity(uEntityID).GetName();
 		return strName.find(s_szArenaPrefix) == 0;
 	}
 

@@ -270,7 +270,7 @@ void Project_LoadInitialScene()
 
 	// Create camera entity
 	Zenith_Entity xCameraEntity(&xScene, "MainCamera");
-	xScene.GetEntityRef(xCameraEntity.GetEntityID()).SetTransient(false);  // Persistent - will be saved to scene
+	xCameraEntity.SetTransient(false);  // Persistent - will be saved to scene
 	Zenith_CameraComponent& xCamera = xCameraEntity.AddComponent<Zenith_CameraComponent>();
 	xCamera.InitialisePerspective(
 		Zenith_Maths::Vector3(0.f, 8.f, -12.f),  // Position: behind and above
@@ -285,7 +285,7 @@ void Project_LoadInitialScene()
 
 	// Create main game entity
 	Zenith_Entity xMarbleEntity(&xScene, "MarbleGame");
-	xScene.GetEntityRef(xMarbleEntity.GetEntityID()).SetTransient(false);  // Persistent - will be saved to scene
+	xMarbleEntity.SetTransient(false);  // Persistent - will be saved to scene
 
 	// UI Setup - anchored to top-left corner
 	static constexpr float s_fMarginLeft = 30.f;

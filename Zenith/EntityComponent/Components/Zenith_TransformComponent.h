@@ -138,7 +138,8 @@ void Zenith_TransformComponent::ForEachChild(Func&& func)
 		Zenith_EntityID uChildID = m_xChildEntityIDs.Get(u);
 		if (xScene.EntityExists(uChildID))
 		{
-			Zenith_TransformComponent& xChildTransform = xScene.GetEntityRef(uChildID).GetComponent<Zenith_TransformComponent>();
+			Zenith_Entity xChildEntity = xScene.GetEntity(uChildID);
+			Zenith_TransformComponent& xChildTransform = xChildEntity.GetComponent<Zenith_TransformComponent>();
 			func(xChildTransform);
 		}
 	}

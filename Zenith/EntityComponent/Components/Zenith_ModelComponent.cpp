@@ -34,6 +34,53 @@ Zenith_ModelComponent::~Zenith_ModelComponent()
 }
 
 //=============================================================================
+// Move Semantics - Required for component pool operations
+//=============================================================================
+Zenith_ModelComponent::Zenith_ModelComponent(Zenith_ModelComponent&& xOther) noexcept
+	: m_xParentEntity(xOther.m_xParentEntity)
+	, m_pxModelInstance(xOther.m_pxModelInstance)
+	, m_pxAnimController(xOther.m_pxAnimController)
+	, m_xModel(std::move(xOther.m_xModel))
+	, m_strModelPath(std::move(xOther.m_strModelPath))
+	, m_xMeshEntries(std::move(xOther.m_xMeshEntries))
+	, m_pxPhysicsMesh(xOther.m_pxPhysicsMesh)
+	, m_bDebugDrawPhysicsMesh(xOther.m_bDebugDrawPhysicsMesh)
+	, m_xDebugDrawColor(xOther.m_xDebugDrawColor)
+{
+	// Nullify source pointers so its destructor doesn't delete our resources
+	xOther.m_pxModelInstance = nullptr;
+	xOther.m_pxAnimController = nullptr;
+	xOther.m_pxPhysicsMesh = nullptr;
+}
+
+Zenith_ModelComponent& Zenith_ModelComponent::operator=(Zenith_ModelComponent&& xOther) noexcept
+{
+	if (this != &xOther)
+	{
+		// Release our existing resources
+		ClearModel();
+		ClearPhysicsMesh();
+
+		// Take ownership from source
+		m_xParentEntity = xOther.m_xParentEntity;
+		m_pxModelInstance = xOther.m_pxModelInstance;
+		m_pxAnimController = xOther.m_pxAnimController;
+		m_xModel = std::move(xOther.m_xModel);
+		m_strModelPath = std::move(xOther.m_strModelPath);
+		m_xMeshEntries = std::move(xOther.m_xMeshEntries);
+		m_pxPhysicsMesh = xOther.m_pxPhysicsMesh;
+		m_bDebugDrawPhysicsMesh = xOther.m_bDebugDrawPhysicsMesh;
+		m_xDebugDrawColor = xOther.m_xDebugDrawColor;
+
+		// Nullify source pointers
+		xOther.m_pxModelInstance = nullptr;
+		xOther.m_pxAnimController = nullptr;
+		xOther.m_pxPhysicsMesh = nullptr;
+	}
+	return *this;
+}
+
+//=============================================================================
 // New Model Instance API
 //=============================================================================
 

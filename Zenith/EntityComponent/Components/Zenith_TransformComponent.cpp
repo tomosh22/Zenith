@@ -37,7 +37,8 @@ Zenith_TransformComponent* Zenith_TransformComponent::GetParent() const
 		return nullptr;
 	}
 
-	return &xScene.GetEntityRef(m_xParentEntityID).GetComponent<Zenith_TransformComponent>();
+	Zenith_Entity xParentEntity = xScene.GetEntity(m_xParentEntityID);
+	return &xParentEntity.GetComponent<Zenith_TransformComponent>();
 }
 
 Zenith_TransformComponent* Zenith_TransformComponent::GetChildAt(uint32_t uIndex) const
@@ -54,7 +55,8 @@ Zenith_TransformComponent* Zenith_TransformComponent::GetChildAt(uint32_t uIndex
 		return nullptr;
 	}
 
-	return &xScene.GetEntityRef(uChildID).GetComponent<Zenith_TransformComponent>();
+	Zenith_Entity xChildEntity = xScene.GetEntity(uChildID);
+	return &xChildEntity.GetComponent<Zenith_TransformComponent>();
 }
 
 void Zenith_TransformComponent::SetParent(Zenith_TransformComponent* pxParent)
@@ -91,7 +93,7 @@ bool Zenith_TransformComponent::IsDescendantOf(Zenith_EntityID uAncestorID) cons
 			return false;
 		}
 
-		uCurrentID = xScene.GetEntityRef(uCurrentID).GetComponent<Zenith_TransformComponent>().m_xParentEntityID;
+		uCurrentID = xScene.GetEntity(uCurrentID).GetComponent<Zenith_TransformComponent>().m_xParentEntityID;
 		++uDepth;
 	}
 
@@ -118,7 +120,7 @@ void Zenith_TransformComponent::SetParentByID(Zenith_EntityID uNewParentID)
 		// Cannot parent to a descendant (would create cycle)
 		if (xScene.EntityExists(uNewParentID))
 		{
-			Zenith_TransformComponent& xProposedParent = xScene.GetEntityRef(uNewParentID).GetComponent<Zenith_TransformComponent>();
+			Zenith_TransformComponent& xProposedParent = xScene.GetEntity(uNewParentID).GetComponent<Zenith_TransformComponent>();
 			if (xProposedParent.IsDescendantOf(uMyEntityID))
 			{
 				Zenith_Warning(LOG_CATEGORY_ECS, "Cannot parent entity %u to %u - would create circular hierarchy", uMyEntityID, uNewParentID);
@@ -136,7 +138,7 @@ void Zenith_TransformComponent::SetParentByID(Zenith_EntityID uNewParentID)
 	// Remove from old parent's children
 	if (m_xParentEntityID != INVALID_ENTITY_ID && xScene.EntityExists(m_xParentEntityID))
 	{
-		Zenith_TransformComponent& xOldParent = xScene.GetEntityRef(m_xParentEntityID).GetComponent<Zenith_TransformComponent>();
+		Zenith_TransformComponent& xOldParent = xScene.GetEntity(m_xParentEntityID).GetComponent<Zenith_TransformComponent>();
 		xOldParent.m_xChildEntityIDs.EraseValue(uMyEntityID);
 	}
 
@@ -145,7 +147,7 @@ void Zenith_TransformComponent::SetParentByID(Zenith_EntityID uNewParentID)
 	// Add to new parent's children
 	if (m_xParentEntityID != INVALID_ENTITY_ID && xScene.EntityExists(m_xParentEntityID))
 	{
-		Zenith_TransformComponent& xNewParent = xScene.GetEntityRef(m_xParentEntityID).GetComponent<Zenith_TransformComponent>();
+		Zenith_TransformComponent& xNewParent = xScene.GetEntity(m_xParentEntityID).GetComponent<Zenith_TransformComponent>();
 		xNewParent.m_xChildEntityIDs.PushBack(uMyEntityID);
 	}
 }
@@ -166,7 +168,7 @@ void Zenith_TransformComponent::DetachAllChildren()
 		if (xScene.EntityExists(uChildID))
 		{
 			// Tell the child to detach from parent (this also removes from our list)
-			Zenith_TransformComponent& xChildTransform = xScene.GetEntityRef(uChildID).GetComponent<Zenith_TransformComponent>();
+			Zenith_TransformComponent& xChildTransform = xScene.GetEntity(uChildID).GetComponent<Zenith_TransformComponent>();
 			// If child's parent isn't us (inconsistent state), just clear their parent
 			// and remove from our list manually
 			if (xChildTransform.m_xParentEntityID == m_xParentEntity.GetEntityID())
@@ -327,7 +329,7 @@ void Zenith_TransformComponent::BuildModelMatrix(Zenith_Maths::Matrix4& xMatOut)
 			break; // Safety break even in release builds
 		}
 
-		Zenith_TransformComponent& xParentTransform = xScene.GetEntityRef(uParentID).GetComponent<Zenith_TransformComponent>();
+		Zenith_TransformComponent& xParentTransform = xScene.GetEntity(uParentID).GetComponent<Zenith_TransformComponent>();
 
 		Zenith_Maths::Vector3 xParentPos;
 		Zenith_Maths::Quat xParentRot;

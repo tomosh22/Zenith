@@ -2,6 +2,7 @@
 #include "Core/Zenith_GUID.h"
 #include "AssetHandling/Zenith_AssetDatabase.h"
 #include <string>
+#include <atomic>
 
 class Zenith_DataStream;
 
@@ -48,12 +49,51 @@ public:
 
 	explicit Zenith_AssetRef(const Zenith_AssetGUID& xGUID)
 		: m_xGUID(xGUID)
-		, m_pxCached(nullptr)
+		, m_pxCached{nullptr}
 	{
+	}
+
+	// Copy constructor - atomics aren't copyable, so we load the value
+	Zenith_AssetRef(const Zenith_AssetRef& xOther)
+		: m_xGUID(xOther.m_xGUID)
+		, m_pxCached{xOther.m_pxCached.load(std::memory_order_acquire)}
+	{
+	}
+
+	// Copy assignment
+	Zenith_AssetRef& operator=(const Zenith_AssetRef& xOther)
+	{
+		if (this != &xOther)
+		{
+			m_xGUID = xOther.m_xGUID;
+			m_pxCached.store(xOther.m_pxCached.load(std::memory_order_acquire), std::memory_order_release);
+		}
+		return *this;
+	}
+
+	// Move constructor
+	Zenith_AssetRef(Zenith_AssetRef&& xOther) noexcept
+		: m_xGUID(std::move(xOther.m_xGUID))
+		, m_pxCached{xOther.m_pxCached.load(std::memory_order_acquire)}
+	{
+		xOther.m_pxCached.store(nullptr, std::memory_order_release);
+	}
+
+	// Move assignment
+	Zenith_AssetRef& operator=(Zenith_AssetRef&& xOther) noexcept
+	{
+		if (this != &xOther)
+		{
+			m_xGUID = std::move(xOther.m_xGUID);
+			m_pxCached.store(xOther.m_pxCached.load(std::memory_order_acquire), std::memory_order_release);
+			xOther.m_pxCached.store(nullptr, std::memory_order_release);
+		}
+		return *this;
 	}
 
 	/**
 	 * Get the referenced asset, loading if necessary
+	 * Thread-safe: uses atomic operations to prevent data races
 	 * @return Pointer to the asset, or nullptr if not found/loaded
 	 */
 	T* Get() const
@@ -63,10 +103,11 @@ public:
 			return nullptr;
 		}
 
-		// Return cached pointer if still valid
-		if (m_pxCached != nullptr)
+		// Fast path - check if already cached (atomic acquire for visibility)
+		T* pCached = m_pxCached.load(std::memory_order_acquire);
+		if (pCached != nullptr)
 		{
-			return m_pxCached;
+			return pCached;
 		}
 
 		// Resolve GUID to path
@@ -78,9 +119,27 @@ public:
 		}
 
 		// Load the asset - implementation depends on asset type
-		// This is a template specialization point
-		m_pxCached = LoadAsset(strPath);
-		return m_pxCached;
+		// Most LoadAsset implementations have their own internal caches with mutex protection
+		T* pLoaded = LoadAsset(strPath);
+		if (pLoaded == nullptr)
+		{
+			return nullptr;
+		}
+
+		// Try to atomically cache the result
+		// If another thread beat us, use their cached value (they loaded from the same cache)
+		T* pExpected = nullptr;
+		if (m_pxCached.compare_exchange_strong(pExpected, pLoaded, std::memory_order_release, std::memory_order_acquire))
+		{
+			// We won the race - our loaded asset is now cached
+			return pLoaded;
+		}
+		else
+		{
+			// Another thread cached first - return their value
+			// Note: pExpected now contains the value that was in m_pxCached
+			return pExpected;
+		}
 	}
 
 	/**
@@ -112,7 +171,7 @@ public:
 	 */
 	bool IsLoaded() const
 	{
-		return m_pxCached != nullptr;
+		return m_pxCached.load(std::memory_order_acquire) != nullptr;
 	}
 
 	//--------------------------------------------------------------------------
@@ -137,7 +196,7 @@ public:
 	 */
 	T* TryGet() const
 	{
-		return m_pxCached;
+		return m_pxCached.load(std::memory_order_acquire);
 	}
 
 	/**
@@ -168,7 +227,7 @@ public:
 		if (m_xGUID != xGUID)
 		{
 			m_xGUID = xGUID;
-			m_pxCached = nullptr;  // Invalidate cache
+			m_pxCached.store(nullptr, std::memory_order_release);  // Invalidate cache
 		}
 	}
 
@@ -209,7 +268,7 @@ public:
 	void Clear()
 	{
 		m_xGUID = Zenith_AssetGUID::INVALID;
-		m_pxCached = nullptr;
+		m_pxCached.store(nullptr, std::memory_order_release);
 	}
 
 	/**
@@ -218,7 +277,7 @@ public:
 	 */
 	void InvalidateCache()
 	{
-		m_pxCached = nullptr;
+		m_pxCached.store(nullptr, std::memory_order_release);
 	}
 
 	/**
@@ -227,7 +286,7 @@ public:
 	 */
 	void SetCachedPointer(T* pAsset)
 	{
-		m_pxCached = pAsset;
+		m_pxCached.store(pAsset, std::memory_order_release);
 	}
 
 	// Comparison operators
@@ -250,7 +309,7 @@ public:
 	void ReadFromDataStream(Zenith_DataStream& xStream)
 	{
 		xStream >> m_xGUID;
-		m_pxCached = nullptr;  // Invalidate cache after load
+		m_pxCached.store(nullptr, std::memory_order_release);  // Invalidate cache after load
 	}
 
 private:
@@ -261,7 +320,7 @@ private:
 	T* LoadAsset(const std::string& strPath) const;
 
 	Zenith_AssetGUID m_xGUID;
-	mutable T* m_pxCached = nullptr;
+	mutable std::atomic<T*> m_pxCached{nullptr};  // Thread-safe cached pointer
 };
 
 //--------------------------------------------------------------------------

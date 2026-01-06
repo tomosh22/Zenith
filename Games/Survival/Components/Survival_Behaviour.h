@@ -576,7 +576,7 @@ private:
 		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
 
 		Zenith_Entity xGround(&xScene, "Ground");
-		xScene.GetEntityRef(xGround.GetEntityID()).SetTransient(true);
+		xGround.SetTransient(true);
 
 		Zenith_TransformComponent& xTransform = xGround.GetComponent<Zenith_TransformComponent>();
 		xTransform.SetPosition(Zenith_Maths::Vector3(0.f, -0.5f, 0.f));

@@ -135,7 +135,7 @@ void Zenith_Scene::Destroy(Zenith_EntityID xEntityID)
 	s_xCurrentScene.m_xPendingDestructionSet.insert(xEntityID);
 
 	// Also mark all children recursively (using EntityIDs - safe against pool relocations)
-	Zenith_Entity& xEntity = s_xCurrentScene.GetEntityRef(xEntityID);
+	Zenith_Entity xEntity = s_xCurrentScene.GetEntity(xEntityID);
 	Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
 	const Zenith_Vector<Zenith_EntityID>& xChildIDs = xTransform.GetChildEntityIDs();
 	for (u_int u = 0; u < xChildIDs.GetSize(); ++u)
@@ -174,7 +174,7 @@ void Zenith_Scene::ProcessPendingDestructions()
 		if (EntityExists(xEntityID))
 		{
 			// Detach from parent before destruction
-			Zenith_Entity& xEntity = GetEntityRef(xEntityID);
+			Zenith_Entity xEntity = GetEntity(xEntityID);
 			xEntity.GetComponent<Zenith_TransformComponent>().DetachFromParent();
 
 			RemoveEntity(xEntityID);
@@ -233,7 +233,8 @@ void Zenith_Scene::RemoveEntity(Zenith_EntityID xID)
 	}
 
 	// Remove all components from the entity (calls OnDestroy and removes from pools)
-	Zenith_ComponentMetaRegistry::Get().RemoveAllComponents(xSlot.m_xEntity);
+	Zenith_Entity xEntity(this, xID);
+	Zenith_ComponentMetaRegistry::Get().RemoveAllComponents(xEntity);
 
 	// Clear component mapping for this slot
 	m_xEntityComponents.Get(xID.m_uIndex).clear();
@@ -270,8 +271,8 @@ void Zenith_Scene::SaveToFile(const std::string& strFilename, bool bIncludeTrans
 	for (u_int u = 0; u < m_xActiveEntities.GetSize(); ++u)
 	{
 		Zenith_EntityID xID = m_xActiveEntities.Get(u);
-		Zenith_Entity& xEntity = m_xEntitySlots.Get(xID.m_uIndex).m_xEntity;
-		if (bIncludeTransient || !xEntity.IsTransient())
+		const Zenith_EntitySlot& xSlot = m_xEntitySlots.Get(xID.m_uIndex);
+		if (bIncludeTransient || !xSlot.m_bTransient)
 		{
 			uNumEntities++;
 		}
@@ -282,12 +283,13 @@ void Zenith_Scene::SaveToFile(const std::string& strFilename, bool bIncludeTrans
 	for (u_int u = 0; u < m_xActiveEntities.GetSize(); ++u)
 	{
 		Zenith_EntityID xID = m_xActiveEntities.Get(u);
-		Zenith_Entity& xEntity = m_xEntitySlots.Get(xID.m_uIndex).m_xEntity;
+		const Zenith_EntitySlot& xSlot = m_xEntitySlots.Get(xID.m_uIndex);
 		// Skip transient entities unless bIncludeTransient is true
-		if (!bIncludeTransient && xEntity.IsTransient())
+		if (!bIncludeTransient && xSlot.m_bTransient)
 		{
 			continue;
 		}
+		Zenith_Entity xEntity(this, xID);
 		xEntity.WriteToDataStream(xStream);
 	}
 
@@ -410,18 +412,23 @@ void Zenith_Scene::LoadFromFile(const std::string& strFilename)
 		Zenith_EntityID xNewID = CreateEntity();
 		xFileIndexToNewID[uFileIndex] = xNewID;
 
-		// Initialize the entity in its slot
+		// Set entity state directly in the slot
 		Zenith_EntitySlot& xSlot = m_xEntitySlots.Get(xNewID.m_uIndex);
-		xSlot.m_xEntity.Initialise(this, xNewID, strName);
-		xSlot.m_xEntity.SetTransient(false);  // Loaded entities are persistent
+		xSlot.m_strName = strName;
+		xSlot.m_bEnabled = true;
+		xSlot.m_bTransient = false;  // Loaded entities are persistent
+
+		// Create entity handle and add TransformComponent
+		Zenith_Entity xEntity(this, xNewID);
+		xEntity.AddComponent<Zenith_TransformComponent>();
 
 		// Deserialize components
-		Zenith_ComponentMetaRegistry::Get().DeserializeEntityComponents(xSlot.m_xEntity, xStream);
+		Zenith_ComponentMetaRegistry::Get().DeserializeEntityComponents(xEntity, xStream);
 
 		// For v3 files: parent ID was in entity, store pending parent index
 		if (uVersion == 3 && uFileParentIndex != Zenith_EntityID::INVALID_INDEX)
 		{
-			Zenith_TransformComponent& xTransform = xSlot.m_xEntity.GetComponent<Zenith_TransformComponent>();
+			Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
 			// Store file index temporarily - will be resolved after all entities loaded
 			xTransform.SetPendingParentFileIndex(uFileParentIndex);
 		}
@@ -431,7 +438,7 @@ void Zenith_Scene::LoadFromFile(const std::string& strFilename)
 	for (u_int u = 0; u < m_xActiveEntities.GetSize(); ++u)
 	{
 		Zenith_EntityID xID = m_xActiveEntities.Get(u);
-		Zenith_Entity& xEntity = m_xEntitySlots.Get(xID.m_uIndex).m_xEntity;
+		Zenith_Entity xEntity = GetEntity(xID);
 		Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
 
 		// Get the pending parent file index (set during deserialization)
@@ -526,7 +533,7 @@ void Zenith_Scene::Update(const float fDt)
 
 		if (s_xCurrentScene.m_xEntitiesStarted.find(uID) == s_xCurrentScene.m_xEntitiesStarted.end())
 		{
-			Zenith_Entity& xEntity = s_xCurrentScene.GetEntityRef(uID);
+			Zenith_Entity xEntity = s_xCurrentScene.GetEntity(uID);
 			xRegistry.DispatchOnStart(xEntity);
 			s_xCurrentScene.m_xEntitiesStarted.insert(uID);
 		}
@@ -542,7 +549,7 @@ void Zenith_Scene::Update(const float fDt)
 			if (!s_xCurrentScene.EntityExists(uID)) continue;
 			if (s_xCurrentScene.WasCreatedDuringUpdate(uID)) continue;
 
-			Zenith_Entity& xEntity = s_xCurrentScene.GetEntityRef(uID);
+			Zenith_Entity xEntity = s_xCurrentScene.GetEntity(uID);
 			if (!xEntity.IsEnabled()) continue;
 			xRegistry.DispatchOnFixedUpdate(xEntity, FIXED_TIMESTEP);
 		}
@@ -556,7 +563,7 @@ void Zenith_Scene::Update(const float fDt)
 		if (!s_xCurrentScene.EntityExists(uID)) continue;
 		if (s_xCurrentScene.WasCreatedDuringUpdate(uID)) continue;
 
-		Zenith_Entity& xEntity = s_xCurrentScene.GetEntityRef(uID);
+		Zenith_Entity xEntity = s_xCurrentScene.GetEntity(uID);
 		if (!xEntity.IsEnabled()) continue;
 		xRegistry.DispatchOnUpdate(xEntity, fDt);
 	}
@@ -568,7 +575,7 @@ void Zenith_Scene::Update(const float fDt)
 		if (!s_xCurrentScene.EntityExists(uID)) continue;
 		if (s_xCurrentScene.WasCreatedDuringUpdate(uID)) continue;
 
-		Zenith_Entity& xEntity = s_xCurrentScene.GetEntityRef(uID);
+		Zenith_Entity xEntity = s_xCurrentScene.GetEntity(uID);
 		if (!xEntity.IsEnabled()) continue;
 		xRegistry.DispatchOnLateUpdate(xEntity, fDt);
 	}
@@ -633,8 +640,8 @@ void Zenith_Scene::DispatchFullLifecycleInit()
 		xEntityIDs.PushBack(s_xCurrentScene.m_xActiveEntities.Get(u));
 	}
 
-	// Dispatch lifecycle callbacks in separate passes, re-fetching entity each time
-	// to handle potential vector reallocation from entity creation
+	// Dispatch lifecycle callbacks in separate passes
+	// Entity handles are now lightweight - no need to worry about vector reallocation
 
 	// 1. OnAwake - Called when entity is first created/initialized
 	for (u_int u = 0; u < xEntityIDs.GetSize(); ++u)
@@ -642,7 +649,7 @@ void Zenith_Scene::DispatchFullLifecycleInit()
 		Zenith_EntityID xEntityID = xEntityIDs.Get(u);
 		if (s_xCurrentScene.EntityExists(xEntityID))
 		{
-			Zenith_Entity& xEntity = s_xCurrentScene.GetEntityRef(xEntityID);
+			Zenith_Entity xEntity = s_xCurrentScene.GetEntity(xEntityID);
 			xRegistry.DispatchOnAwake(xEntity);
 		}
 	}
@@ -653,7 +660,7 @@ void Zenith_Scene::DispatchFullLifecycleInit()
 		Zenith_EntityID xEntityID = xEntityIDs.Get(u);
 		if (s_xCurrentScene.EntityExists(xEntityID))
 		{
-			Zenith_Entity& xEntity = s_xCurrentScene.GetEntityRef(xEntityID);
+			Zenith_Entity xEntity = s_xCurrentScene.GetEntity(xEntityID);
 			xRegistry.DispatchOnEnable(xEntity);
 		}
 	}
@@ -664,53 +671,46 @@ void Zenith_Scene::DispatchFullLifecycleInit()
 		Zenith_EntityID xEntityID = xEntityIDs.Get(u);
 		if (s_xCurrentScene.EntityExists(xEntityID))
 		{
-			Zenith_Entity& xEntity = s_xCurrentScene.GetEntityRef(xEntityID);
+			Zenith_Entity xEntity = s_xCurrentScene.GetEntity(xEntityID);
 			xRegistry.DispatchOnStart(xEntity);
 		}
 	}
 }
 
-Zenith_Entity Zenith_Scene::GetEntityByID(Zenith_EntityID xID) {
-	Zenith_Assert(xID.IsValid(), "GetEntityByID: Invalid entity ID");
-	Zenith_Assert(EntityExists(xID), "GetEntityByID: Entity (idx=%u, gen=%u) does not exist", xID.m_uIndex, xID.m_uGeneration);
-	return m_xEntitySlots.Get(xID.m_uIndex).m_xEntity;
-}
+//------------------------------------------------------------------------------
+// Entity Handle Creation
+//------------------------------------------------------------------------------
 
-Zenith_Entity Zenith_Scene::GetEntityFromID(Zenith_EntityID xID) {
-	Zenith_Assert(xID.IsValid(), "GetEntityFromID: Invalid entity ID");
-	Zenith_Assert(EntityExists(xID), "GetEntityFromID: Entity (idx=%u, gen=%u) does not exist", xID.m_uIndex, xID.m_uGeneration);
-	return m_xEntitySlots.Get(xID.m_uIndex).m_xEntity;
-}
-
-Zenith_Entity& Zenith_Scene::GetEntityRef(Zenith_EntityID xID)
+Zenith_Entity Zenith_Scene::GetEntity(Zenith_EntityID xID)
 {
-	Zenith_Assert(xID.IsValid(), "GetEntityRef: Invalid entity ID");
-	Zenith_Assert(EntityExists(xID), "GetEntityRef: Entity (idx=%u, gen=%u) does not exist", xID.m_uIndex, xID.m_uGeneration);
-	return m_xEntitySlots.Get(xID.m_uIndex).m_xEntity;
+	Zenith_Assert(xID.IsValid(), "GetEntity: Invalid entity ID");
+	Zenith_Assert(EntityExists(xID), "GetEntity: Entity (idx=%u, gen=%u) does not exist", xID.m_uIndex, xID.m_uGeneration);
+	return Zenith_Entity(this, xID);
 }
 
-Zenith_Entity* Zenith_Scene::FindEntityByName(const std::string& strName)
+Zenith_Entity Zenith_Scene::FindEntityByName(const std::string& strName)
 {
 	for (u_int u = 0; u < m_xActiveEntities.GetSize(); ++u)
 	{
 		Zenith_EntityID xID = m_xActiveEntities.Get(u);
-		Zenith_Entity& xEntity = m_xEntitySlots.Get(xID.m_uIndex).m_xEntity;
-		if (xEntity.GetName() == strName)
+		const Zenith_EntitySlot& xSlot = m_xEntitySlots.Get(xID.m_uIndex);
+		if (xSlot.m_strName == strName)
 		{
-			return &xEntity;
+			return Zenith_Entity(this, xID);
 		}
 	}
-	return nullptr;
+	return Zenith_Entity();  // Return invalid handle
 }
 
-void Zenith_Scene::SetMainCameraEntity(Zenith_EntityID xEntity)
+void Zenith_Scene::SetMainCameraEntity(Zenith_EntityID xEntityID)
 {
-	if (xEntity.IsValid())
+	if (xEntityID.IsValid())
 	{
-		Zenith_Assert(EntityExists(xEntity), "SetMainCameraEntity: Entity (idx=%u, gen=%u) does not exist", xEntity.m_uIndex, xEntity.m_uGeneration);
-		Zenith_Assert(GetEntityRef(xEntity).HasComponent<Zenith_CameraComponent>(), "SetMainCameraEntity: Entity does not have CameraComponent");
+		Zenith_Assert(EntityExists(xEntityID), "SetMainCameraEntity: Entity (idx=%u, gen=%u) does not exist", xEntityID.m_uIndex, xEntityID.m_uGeneration);
+		Zenith_Entity xEntity = GetEntity(xEntityID);
+		Zenith_Assert(xEntity.HasComponent<Zenith_CameraComponent>(), "SetMainCameraEntity: Entity does not have CameraComponent");
 	}
-	m_xMainCameraEntity = xEntity;
+	m_xMainCameraEntity = xEntityID;
 }
 
 Zenith_EntityID Zenith_Scene::GetMainCameraEntity()
@@ -725,26 +725,27 @@ Zenith_CameraComponent* Zenith_Scene::TryGetMainCamera()
 		return nullptr;
 	}
 
-	Zenith_Entity* pxEntity = TryGetEntity(m_xMainCameraEntity);
-	if (pxEntity == nullptr)
+	if (!EntityExists(m_xMainCameraEntity))
 	{
 		// Entity was destroyed or stale - clear reference
 		m_xMainCameraEntity = INVALID_ENTITY_ID;
 		return nullptr;
 	}
 
-	if (!pxEntity->HasComponent<Zenith_CameraComponent>())
+	Zenith_Entity xEntity = GetEntity(m_xMainCameraEntity);
+	if (!xEntity.HasComponent<Zenith_CameraComponent>())
 	{
 		Zenith_Warning(LOG_CATEGORY_SCENE, "Main camera entity does not have CameraComponent");
 		return nullptr;
 	}
 
-	return &pxEntity->GetComponent<Zenith_CameraComponent>();
+	return &xEntity.GetComponent<Zenith_CameraComponent>();
 }
 
 Zenith_CameraComponent& Zenith_Scene::GetMainCamera()
 {
 	Zenith_Assert(m_xMainCameraEntity.IsValid(), "GetMainCamera: No main camera set");
 	Zenith_Assert(EntityExists(m_xMainCameraEntity), "GetMainCamera: Main camera entity no longer exists");
-	return GetEntityRef(m_xMainCameraEntity).GetComponent<Zenith_CameraComponent>();
+	Zenith_Entity xEntity = GetEntity(m_xMainCameraEntity);
+	return xEntity.GetComponent<Zenith_CameraComponent>();
 }

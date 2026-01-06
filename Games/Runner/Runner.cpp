@@ -461,7 +461,7 @@ void Project_LoadInitialScene()
 
 	// Create camera entity
 	Zenith_Entity xCameraEntity(&xScene, "MainCamera");
-	xScene.GetEntityRef(xCameraEntity.GetEntityID()).SetTransient(false);
+	xCameraEntity.SetTransient(false);
 	Zenith_CameraComponent& xCamera = xCameraEntity.AddComponent<Zenith_CameraComponent>();
 	xCamera.InitialisePerspective(
 		Zenith_Maths::Vector3(0.f, 4.f, -8.f),   // Position: behind and above
@@ -476,7 +476,7 @@ void Project_LoadInitialScene()
 
 	// Create main game entity
 	Zenith_Entity xRunnerEntity(&xScene, "RunnerGame");
-	xScene.GetEntityRef(xRunnerEntity.GetEntityID()).SetTransient(false);
+	xRunnerEntity.SetTransient(false);
 
 	// UI Setup
 	static constexpr float s_fMarginLeft = 30.f;

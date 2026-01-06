@@ -141,6 +141,39 @@ public:
 		}
 	}
 
+	// Move semantics - required for component pool operations
+	Zenith_ScriptComponent(Zenith_ScriptComponent&& xOther) noexcept
+		: m_pxScriptBehaviour(xOther.m_pxScriptBehaviour)
+		, m_xParentEntity(xOther.m_xParentEntity)
+	{
+		xOther.m_pxScriptBehaviour = nullptr;  // Nullify source
+	}
+
+	Zenith_ScriptComponent& operator=(Zenith_ScriptComponent&& xOther) noexcept
+	{
+		if (this != &xOther)
+		{
+			// Clean up our existing behaviour
+			if (m_pxScriptBehaviour)
+			{
+				m_pxScriptBehaviour->OnDestroy();
+				delete m_pxScriptBehaviour;
+			}
+
+			// Take ownership from source
+			m_pxScriptBehaviour = xOther.m_pxScriptBehaviour;
+			m_xParentEntity = xOther.m_xParentEntity;
+
+			// Nullify source
+			xOther.m_pxScriptBehaviour = nullptr;
+		}
+		return *this;
+	}
+
+	// Disable copy semantics - component should only be moved
+	Zenith_ScriptComponent(const Zenith_ScriptComponent&) = delete;
+	Zenith_ScriptComponent& operator=(const Zenith_ScriptComponent&) = delete;
+
 	Zenith_ScriptBehaviour* m_pxScriptBehaviour = nullptr;
 
 	Zenith_Entity m_xParentEntity;

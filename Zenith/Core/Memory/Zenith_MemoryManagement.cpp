@@ -20,12 +20,23 @@ void Zenith_MemoryManagement::Initialise()
 
 void* Zenith_MemoryManagement::Allocate(size_t ullSize)
 {
-	return malloc(ullSize);
+	void* pResult = malloc(ullSize);
+	if (pResult == nullptr && ullSize > 0)
+	{
+		Zenith_Error(LOG_CATEGORY_CORE, "Memory allocation failed: %zu bytes", ullSize);
+	}
+	return pResult;
 }
 
 void* Zenith_MemoryManagement::Reallocate(void* p, size_t ullSize)
 {
-	return realloc(p, ullSize);
+	void* pResult = realloc(p, ullSize);
+	if (pResult == nullptr && ullSize > 0)
+	{
+		Zenith_Error(LOG_CATEGORY_CORE, "Memory reallocation failed: %zu bytes", ullSize);
+		// Note: original 'p' is still valid on realloc failure
+	}
+	return pResult;
 }
 
 void Zenith_MemoryManagement::Deallocate(void* p)

@@ -67,6 +67,24 @@ public:
 		inline static TypeID s_uCounter = 0;
 	};
 
+	//--------------------------------------------------------------------------
+	// Slot-based Entity Storage (Generation Counter System)
+	// Entity state is stored HERE (single source of truth).
+	// Zenith_Entity is now a lightweight handle that delegates to this slot.
+	//--------------------------------------------------------------------------
+	struct Zenith_EntitySlot
+	{
+		// Entity state (single source of truth)
+		std::string m_strName;
+		bool m_bEnabled = true;
+		bool m_bTransient = true;  // Default: transient (not saved)
+
+		// Slot metadata
+		uint32_t m_uGeneration = 0;
+		bool m_bOccupied = false;
+		bool m_bMarkedForDestruction = false;
+	};
+
 	Zenith_Scene();
 	~Zenith_Scene();
 	void Reset();
@@ -285,21 +303,47 @@ public:
 		return xSlot.m_bOccupied && xSlot.m_uGeneration == xID.m_uGeneration;
 	}
 
-	Zenith_Entity GetEntityFromID(Zenith_EntityID xID);
-	Zenith_Entity& GetEntityRef(Zenith_EntityID xID);
-	Zenith_Entity* FindEntityByName(const std::string& strName);
+	// Create a lightweight entity handle from an ID
+	// Note: The returned Zenith_Entity is a handle, not a reference to stored data
+	Zenith_Entity GetEntity(Zenith_EntityID xID);
 
-	// Safe entity lookup - returns nullptr if entity doesn't exist or is stale
+	// Try to get an entity - returns nullptr if entity doesn't exist
+	// Note: Returns pointer to static entity handle, valid until next TryGetEntity call
 	Zenith_Entity* TryGetEntity(Zenith_EntityID xID)
 	{
-		if (!EntityExists(xID)) return nullptr;
-		return &m_xEntitySlots.Get(xID.m_uIndex).m_xEntity;
+		if (!EntityExists(xID))
+		{
+			return nullptr;
+		}
+		static Zenith_Entity s_xTempEntity;
+		s_xTempEntity = Zenith_Entity(this, xID);
+		return &s_xTempEntity;
+	}
+
+	// Legacy compatibility - same as GetEntity but with old name
+	Zenith_Entity GetEntityFromID(Zenith_EntityID xID) { return GetEntity(xID); }
+
+	// Find entity by name - returns invalid entity if not found
+	Zenith_Entity FindEntityByName(const std::string& strName);
+
+	// Direct slot access for internal use and serialization
+	Zenith_EntitySlot& GetSlot(Zenith_EntityID xID)
+	{
+		Zenith_Assert(EntityExists(xID), "GetSlot: Entity (idx=%u, gen=%u) is invalid", xID.m_uIndex, xID.m_uGeneration);
+		return m_xEntitySlots.Get(xID.m_uIndex);
+	}
+
+	const Zenith_EntitySlot& GetSlot(Zenith_EntityID xID) const
+	{
+		Zenith_Assert(EntityExists(xID), "GetSlot: Entity (idx=%u, gen=%u) is invalid", xID.m_uIndex, xID.m_uGeneration);
+		return m_xEntitySlots.Get(xID.m_uIndex);
 	}
 
 	static void Update(const float fDt);
 	static void WaitForUpdateComplete();
 
-	Zenith_Entity GetEntityByID(Zenith_EntityID ulGuid);
+	// Legacy alias - use GetEntity instead
+	Zenith_Entity GetEntityByID(Zenith_EntityID xID) { return GetEntity(xID); }
 
 	static Zenith_Scene& GetCurrentScene() { return s_xCurrentScene; }
 
@@ -361,17 +405,6 @@ private:
 		return static_cast<Zenith_ComponentPool<T>*>(pxPoolBase);
 	}
 
-	//--------------------------------------------------------------------------
-	// Slot-based Entity Storage (Generation Counter System)
-	//--------------------------------------------------------------------------
-	struct Zenith_EntitySlot
-	{
-		Zenith_Entity m_xEntity;
-		uint32_t m_uGeneration = 0;
-		bool m_bOccupied = false;
-		bool m_bMarkedForDestruction = false;
-	};
-
 	Zenith_Vector<Zenith_EntitySlot> m_xEntitySlots;      // Dense array of entity slots
 	Zenith_Vector<uint32_t> m_xFreeIndices;               // Free list for slot recycling
 	Zenith_Vector<Zenith_EntityID> m_xActiveEntities;     // Active entity IDs for iteration
@@ -402,7 +435,9 @@ private:
 template<typename T, typename... Args>
 T& Zenith_Entity::AddComponent(Args&&... args)
 {
-	Zenith_Assert(!HasComponent<T>(), "Already has this component");
+	Zenith_Assert(m_pxParentScene != nullptr, "AddComponent: Entity has no scene");
+	Zenith_Assert(m_pxParentScene->EntityExists(m_xEntityID), "AddComponent: Entity (idx=%u, gen=%u) is stale", m_xEntityID.m_uIndex, m_xEntityID.m_uGeneration);
+	Zenith_Assert(!HasComponent<T>(), "AddComponent: Entity already has this component type");
 	return m_pxParentScene->CreateComponent<T>(m_xEntityID, std::forward<Args>(args)..., *this);
 }
 
@@ -419,19 +454,24 @@ T& Zenith_Entity::AddOrReplaceComponent(Args&&... args)
 template<typename T>
 bool Zenith_Entity::HasComponent() const
 {
+	Zenith_Assert(m_pxParentScene != nullptr, "HasComponent: Entity has no scene");
 	return m_pxParentScene->EntityHasComponent<T>(m_xEntityID);
 }
 
 template<typename T>
 T& Zenith_Entity::GetComponent() const
 {
-	Zenith_Assert(HasComponent<T>(), "Doesn't have this component");
+	Zenith_Assert(m_pxParentScene != nullptr, "GetComponent: Entity has no scene");
+	Zenith_Assert(m_pxParentScene->EntityExists(m_xEntityID), "GetComponent: Entity (idx=%u, gen=%u) is stale", m_xEntityID.m_uIndex, m_xEntityID.m_uGeneration);
+	Zenith_Assert(HasComponent<T>(), "GetComponent: Entity does not have this component type");
 	return m_pxParentScene->GetComponentFromEntity<T>(m_xEntityID);
 }
 
 template<typename T>
 void Zenith_Entity::RemoveComponent()
 {
-	Zenith_Assert(HasComponent<T>(), "Doesn't have this component");
+	Zenith_Assert(m_pxParentScene != nullptr, "RemoveComponent: Entity has no scene");
+	Zenith_Assert(m_pxParentScene->EntityExists(m_xEntityID), "RemoveComponent: Entity (idx=%u, gen=%u) is stale", m_xEntityID.m_uIndex, m_xEntityID.m_uGeneration);
+	Zenith_Assert(HasComponent<T>(), "RemoveComponent: Entity does not have this component type");
 	m_pxParentScene->RemoveComponentFromEntity<T>(m_xEntityID);
 }

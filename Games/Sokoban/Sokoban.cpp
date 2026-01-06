@@ -165,7 +165,7 @@ void Project_LoadInitialScene()
 	xScene.Reset();
 
 	Zenith_Entity xCameraEntity(&xScene, "MainCamera");
-	xScene.GetEntityRef(xCameraEntity.GetEntityID()).SetTransient(false);  // Persistent - will be saved to scene
+	xCameraEntity.SetTransient(false);  // Persistent - will be saved to scene
 	Zenith_CameraComponent& xCamera = xCameraEntity.AddComponent<Zenith_CameraComponent>();
 	// Top-down 3D view: camera directly above the grid, looking straight down
 	xCamera.InitialisePerspective(
@@ -180,7 +180,7 @@ void Project_LoadInitialScene()
 	xScene.SetMainCameraEntity(xCameraEntity.GetEntityID());
 
 	Zenith_Entity xSokobanEntity(&xScene, "SokobanGame");
-	xScene.GetEntityRef(xSokobanEntity.GetEntityID()).SetTransient(false);  // Persistent - will be saved to scene
+	xSokobanEntity.SetTransient(false);  // Persistent - will be saved to scene
 
 	// UI Setup - anchored to top-right corner of screen
 	static constexpr float s_fMarginRight = 30.f;  // Offset from right edge

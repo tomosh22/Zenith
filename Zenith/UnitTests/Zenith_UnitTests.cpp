@@ -805,20 +805,20 @@ void Zenith_UnitTests::TestSceneSerialization()
 
 	// Entity 1: Camera
 	Zenith_Entity xCameraEntity(&xGroundTruthScene, "MainCamera");
-	xGroundTruthScene.GetEntityRef(xCameraEntity.GetEntityID()).SetTransient(false);  // Mark as persistent in scene's map
+	xCameraEntity.SetTransient(false);  // Mark as persistent in scene's map
 	Zenith_CameraComponent& xCamera = xCameraEntity.AddComponent<Zenith_CameraComponent>();
 	xCamera.InitialisePerspective(Zenith_Maths::Vector3(0.0f, 10.0f, 20.0f), 0.0f, 0.0f, 60.0f, 0.1f, 1000.0f, 16.0f / 9.0f);
 	xGroundTruthScene.SetMainCameraEntity(xCameraEntity.GetEntityID());
 
 	// Entity 2: Transform only
 	Zenith_Entity xEntity1(&xGroundTruthScene, "TestEntity1");
-	xGroundTruthScene.GetEntityRef(xEntity1.GetEntityID()).SetTransient(false);  // Mark as persistent in scene's map
+	xEntity1.SetTransient(false);  // Mark as persistent in scene's map
 	Zenith_TransformComponent& xTransform1 = xEntity1.GetComponent<Zenith_TransformComponent>();
 	xTransform1.SetPosition(Zenith_Maths::Vector3(5.0f, 0.0f, 0.0f));
 
 	// Entity 3: Transform + Text
 	Zenith_Entity xEntity2(&xGroundTruthScene, "TestEntity2");
-	xGroundTruthScene.GetEntityRef(xEntity2.GetEntityID()).SetTransient(false);  // Mark as persistent in scene's map
+	xEntity2.SetTransient(false);  // Mark as persistent in scene's map
 	Zenith_TransformComponent& xTransform2 = xEntity2.GetComponent<Zenith_TransformComponent>();
 	xTransform2.SetPosition(Zenith_Maths::Vector3(-5.0f, 0.0f, 0.0f));
 	Zenith_TextComponent& xText = xEntity2.AddComponent<Zenith_TextComponent>();
@@ -869,7 +869,7 @@ void Zenith_UnitTests::TestSceneRoundTrip()
 	// Create Entity 1: Camera with specific properties
 	Zenith_Entity xCameraEntity(&xGroundTruthScene, "MainCamera");
 	const Zenith_EntityID uCameraEntityID = xCameraEntity.GetEntityID();
-	xGroundTruthScene.GetEntityRef(uCameraEntityID).SetTransient(false);  // Mark as persistent in scene's map
+	xCameraEntity.SetTransient(false);  // Mark as persistent in scene's map
 	Zenith_CameraComponent& xCamera = xCameraEntity.AddComponent<Zenith_CameraComponent>();
 	const Zenith_Maths::Vector3 xCameraPos(0.0f, 10.0f, 20.0f);
 	const float fCameraPitch = 0.3f;
@@ -881,7 +881,7 @@ void Zenith_UnitTests::TestSceneRoundTrip()
 	// Create Entity 2: Transform with precise values
 	Zenith_Entity xEntity1(&xGroundTruthScene, "TestEntity1");
 	const Zenith_EntityID uEntity1ID = xEntity1.GetEntityID();
-	xGroundTruthScene.GetEntityRef(uEntity1ID).SetTransient(false);  // Mark as persistent in scene's map
+	xEntity1.SetTransient(false);  // Mark as persistent in scene's map
 	Zenith_TransformComponent& xTransform1 = xEntity1.GetComponent<Zenith_TransformComponent>();
 	const Zenith_Maths::Vector3 xEntity1Pos(5.0f, 3.0f, -2.0f);
 	const Zenith_Maths::Quat xEntity1Rot(0.5f, 0.5f, 0.5f, 0.5f);
@@ -893,7 +893,7 @@ void Zenith_UnitTests::TestSceneRoundTrip()
 	// Create Entity 3: Transform + Text
 	Zenith_Entity xEntity2(&xGroundTruthScene, "TestEntity2");
 	const Zenith_EntityID uEntity2ID = xEntity2.GetEntityID();
-	xGroundTruthScene.GetEntityRef(uEntity2ID).SetTransient(false);  // Mark as persistent in scene's map
+	xEntity2.SetTransient(false);  // Mark as persistent in scene's map
 	Zenith_TransformComponent& xTransform2 = xEntity2.GetComponent<Zenith_TransformComponent>();
 	const Zenith_Maths::Vector3 xEntity2Pos(-5.0f, 0.0f, 10.0f);
 	xTransform2.SetPosition(xEntity2Pos);
@@ -3057,9 +3057,9 @@ void Zenith_UnitTests::TestEntityNameFromScene()
 	Zenith_Assert(xEntity.GetName() == "RenamedEntity",
 		"TestEntityNameFromScene: SetName() did not update name");
 
-	// Verify name is accessible through the scene's entity map
-	Zenith_Assert(xTestScene.GetEntityRef(xEntity.GetEntityID()).GetName() == "RenamedEntity",
-		"TestEntityNameFromScene: Entity in scene map does not have correct name");
+	// Verify name is accessible through the scene's entity API
+	Zenith_Assert(xTestScene.GetEntity(xEntity.GetEntityID()).GetName() == "RenamedEntity",
+		"TestEntityNameFromScene: Entity in scene does not have correct name");
 
 	// Create another entity and verify names don't interfere
 	Zenith_Entity xEntity2(&xTestScene, "SecondEntity");
@@ -3470,19 +3470,19 @@ void Zenith_UnitTests::TestLifecycleEntityCreationDuringCallback()
 		Zenith_EntityID xEntityID = xEntityIDs.Get(u);
 		if (xScene.EntityExists(xEntityID))
 		{
-			// Re-fetch entity reference (critical for safety)
-			Zenith_Entity& xEntity = xScene.GetEntityRef(xEntityID);
+			// Get entity handle (lightweight - safe to use after pool reallocation)
+			Zenith_Entity xEntity = xScene.GetEntity(xEntityID);
 
 			// Simulate OnAwake creating multiple new entities
 			// This will cause m_xEntitySlots to reallocate
 			for (u_int i = 0; i < 10; ++i)
 			{
 				Zenith_Entity xNewEntity(&xScene, "CreatedDuringCallback_" + std::to_string(i));
-				// The xEntity reference might now be dangling if we didn't re-fetch
+				// Entity handles are safe - they don't hold pointers into the pool
 			}
 
-			// Re-fetch again before next use (demonstrates the safe pattern)
-			Zenith_Entity& xEntityRefreshed = xScene.GetEntityRef(xEntityID);
+			// Entity handle still valid after pool reallocation (lightweight handle pattern)
+			Zenith_Entity xEntityRefreshed = xScene.GetEntity(xEntityID);
 
 			// Verify the entity is still accessible
 			Zenith_Assert(xEntityRefreshed.HasComponent<Zenith_TransformComponent>(),
@@ -3493,7 +3493,7 @@ void Zenith_UnitTests::TestLifecycleEntityCreationDuringCallback()
 	// Verify original entity is still valid
 	Zenith_Assert(xScene.EntityExists(xInitialID),
 		"TestLifecycleEntityCreationDuringCallback: Initial entity was invalidated");
-	Zenith_Assert(xScene.GetEntityRef(xInitialID).GetName() == "InitialEntity",
+	Zenith_Assert(xScene.GetEntity(xInitialID).GetName() == "InitialEntity",
 		"TestLifecycleEntityCreationDuringCallback: Initial entity name corrupted");
 
 	// Verify entities were created (proves reallocation happened)
@@ -3540,19 +3540,19 @@ void Zenith_UnitTests::TestDispatchFullLifecycleInit()
 		"TestDispatchFullLifecycleInit: Entity3 was invalidated");
 
 	// Verify entities are still accessible with correct data
-	Zenith_Assert(xScene.GetEntityRef(xID1).GetName() == "LifecycleInitEntity1",
+	Zenith_Assert(xScene.GetEntity(xID1).GetName() == "LifecycleInitEntity1",
 		"TestDispatchFullLifecycleInit: Entity1 name corrupted");
-	Zenith_Assert(xScene.GetEntityRef(xID2).GetName() == "LifecycleInitEntity2",
+	Zenith_Assert(xScene.GetEntity(xID2).GetName() == "LifecycleInitEntity2",
 		"TestDispatchFullLifecycleInit: Entity2 name corrupted");
-	Zenith_Assert(xScene.GetEntityRef(xID3).GetName() == "LifecycleInitEntity3",
+	Zenith_Assert(xScene.GetEntity(xID3).GetName() == "LifecycleInitEntity3",
 		"TestDispatchFullLifecycleInit: Entity3 name corrupted");
 
 	// Verify components are intact
-	Zenith_Assert(xScene.GetEntityRef(xID1).HasComponent<Zenith_TransformComponent>(),
+	Zenith_Assert(xScene.GetEntity(xID1).HasComponent<Zenith_TransformComponent>(),
 		"TestDispatchFullLifecycleInit: Entity1 lost TransformComponent");
-	Zenith_Assert(xScene.GetEntityRef(xID2).HasComponent<Zenith_TransformComponent>(),
+	Zenith_Assert(xScene.GetEntity(xID2).HasComponent<Zenith_TransformComponent>(),
 		"TestDispatchFullLifecycleInit: Entity2 lost TransformComponent");
-	Zenith_Assert(xScene.GetEntityRef(xID3).HasComponent<Zenith_TransformComponent>(),
+	Zenith_Assert(xScene.GetEntity(xID3).HasComponent<Zenith_TransformComponent>(),
 		"TestDispatchFullLifecycleInit: Entity3 lost TransformComponent");
 
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestDispatchFullLifecycleInit completed successfully");
@@ -4533,16 +4533,16 @@ void Zenith_UnitTests::TestEntityAddChild()
 	Zenith_EntityID uParentID = xParent.GetEntityID();
 	Zenith_EntityID uChildID = xChild.GetEntityID();
 
-	// Initially, both should have no children (use GetEntityRef since child lists are stored in scene's map)
-	Zenith_Assert(xScene.GetEntityRef(uParentID).GetChildCount() == 0, "TestEntityAddChild: Parent should have no children initially");
-	Zenith_Assert(!xScene.GetEntityRef(uParentID).HasChildren(), "TestEntityAddChild: HasChildren should be false");
+	// Initially, both should have no children
+	Zenith_Assert(xParent.GetChildCount() == 0, "TestEntityAddChild: Parent should have no children initially");
+	Zenith_Assert(!xParent.HasChildren(), "TestEntityAddChild: HasChildren should be false");
 
-	// Add child using SetParent (must use ref from scene to modify the actual entity)
-	xScene.GetEntityRef(uChildID).SetParent(uParentID);
+	// Add child using SetParent
+	xChild.SetParent(uParentID);
 
-	// Verify parent-child relationship (use refs from scene to see updated state)
-	Zenith_Entity& xChildRef = xScene.GetEntityRef(uChildID);
-	Zenith_Entity& xParentRef = xScene.GetEntityRef(uParentID);
+	// Verify parent-child relationship (Entity handles delegate to single source of truth)
+	Zenith_Entity xChildRef = xScene.GetEntity(uChildID);
+	Zenith_Entity xParentRef = xScene.GetEntity(uParentID);
 
 	Zenith_Assert(xChildRef.GetParentEntityID() == uParentID, "TestEntityAddChild: Child should have parent ID set");
 	Zenith_Assert(xChildRef.HasParent(), "TestEntityAddChild: Child HasParent should be true");
@@ -4566,16 +4566,16 @@ void Zenith_UnitTests::TestEntityRemoveChild()
 	Zenith_EntityID uParentID = xParent.GetEntityID();
 	Zenith_EntityID uChildID = xChild.GetEntityID();
 
-	// Set parent (use ref from scene)
-	xScene.GetEntityRef(uChildID).SetParent(uParentID);
-	Zenith_Assert(xScene.GetEntityRef(uParentID).GetChildCount() == 1, "TestEntityRemoveChild: Parent should have 1 child");
+	// Set parent
+	xChild.SetParent(uParentID);
+	Zenith_Assert(xParent.GetChildCount() == 1, "TestEntityRemoveChild: Parent should have 1 child");
 
 	// Remove parent (unparent child)
-	xScene.GetEntityRef(uChildID).SetParent(INVALID_ENTITY_ID);
+	xChild.SetParent(INVALID_ENTITY_ID);
 
-	// Verify relationship is broken (use refs from scene)
-	Zenith_Entity& xChildRef = xScene.GetEntityRef(uChildID);
-	Zenith_Entity& xParentRef = xScene.GetEntityRef(uParentID);
+	// Verify relationship is broken
+	Zenith_Entity xChildRef = xScene.GetEntity(uChildID);
+	Zenith_Entity xParentRef = xScene.GetEntity(uParentID);
 
 	Zenith_Assert(!xChildRef.HasParent(), "TestEntityRemoveChild: Child should no longer have parent");
 	Zenith_Assert(xChildRef.GetParentEntityID() == INVALID_ENTITY_ID, "TestEntityRemoveChild: Child parent ID should be INVALID");
@@ -4602,13 +4602,13 @@ void Zenith_UnitTests::TestEntityGetChildren()
 	Zenith_EntityID uChild2ID = xChild2.GetEntityID();
 	Zenith_EntityID uChild3ID = xChild3.GetEntityID();
 
-	// Add all children (use refs from scene)
-	xScene.GetEntityRef(uChild1ID).SetParent(uParentID);
-	xScene.GetEntityRef(uChild2ID).SetParent(uParentID);
-	xScene.GetEntityRef(uChild3ID).SetParent(uParentID);
+	// Add all children
+	xChild1.SetParent(uParentID);
+	xChild2.SetParent(uParentID);
+	xChild3.SetParent(uParentID);
 
-	// Verify all children are tracked (use ref from scene)
-	Zenith_Entity& xParentRef = xScene.GetEntityRef(uParentID);
+	// Verify all children are tracked
+	Zenith_Entity xParentRef = xScene.GetEntity(uParentID);
 	Zenith_Assert(xParentRef.GetChildCount() == 3, "TestEntityGetChildren: Parent should have 3 children");
 
 	Zenith_Vector<Zenith_EntityID> xChildren = xParentRef.GetChildEntityIDs();
@@ -4639,17 +4639,17 @@ void Zenith_UnitTests::TestEntityReparenting()
 	Zenith_EntityID uParentBID = xParentB.GetEntityID();
 	Zenith_EntityID uChildID = xChild.GetEntityID();
 
-	// Parent to A (use refs from scene)
-	xScene.GetEntityRef(uChildID).SetParent(uParentAID);
-	Zenith_Assert(xScene.GetEntityRef(uParentAID).GetChildCount() == 1, "TestEntityReparenting: ParentA should have 1 child");
-	Zenith_Assert(xScene.GetEntityRef(uParentBID).GetChildCount() == 0, "TestEntityReparenting: ParentB should have 0 children");
-	Zenith_Assert(xScene.GetEntityRef(uChildID).GetParentEntityID() == uParentAID, "TestEntityReparenting: Child should be parented to A");
+	// Parent to A
+	xChild.SetParent(uParentAID);
+	Zenith_Assert(xParentA.GetChildCount() == 1, "TestEntityReparenting: ParentA should have 1 child");
+	Zenith_Assert(xParentB.GetChildCount() == 0, "TestEntityReparenting: ParentB should have 0 children");
+	Zenith_Assert(xChild.GetParentEntityID() == uParentAID, "TestEntityReparenting: Child should be parented to A");
 
 	// Reparent to B
-	xScene.GetEntityRef(uChildID).SetParent(uParentBID);
-	Zenith_Assert(xScene.GetEntityRef(uParentAID).GetChildCount() == 0, "TestEntityReparenting: ParentA should now have 0 children");
-	Zenith_Assert(xScene.GetEntityRef(uParentBID).GetChildCount() == 1, "TestEntityReparenting: ParentB should now have 1 child");
-	Zenith_Assert(xScene.GetEntityRef(uChildID).GetParentEntityID() == uParentBID, "TestEntityReparenting: Child should be parented to B");
+	xChild.SetParent(uParentBID);
+	Zenith_Assert(xParentA.GetChildCount() == 0, "TestEntityReparenting: ParentA should now have 0 children");
+	Zenith_Assert(xParentB.GetChildCount() == 1, "TestEntityReparenting: ParentB should now have 1 child");
+	Zenith_Assert(xChild.GetParentEntityID() == uParentBID, "TestEntityReparenting: Child should be parented to B");
 
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestEntityReparenting completed successfully");
 }
@@ -4670,14 +4670,14 @@ void Zenith_UnitTests::TestEntityChildCleanupOnDelete()
 	Zenith_EntityID uParentID = xParent.GetEntityID();
 	Zenith_EntityID uChildID = xChild.GetEntityID();
 
-	// Set parent (use ref from scene)
-	xScene.GetEntityRef(uChildID).SetParent(uParentID);
+	// Set parent
+	xChild.SetParent(uParentID);
 
-	Zenith_Assert(xScene.GetEntityRef(uParentID).GetChildCount() == 1, "TestEntityChildCleanupOnDelete: Should have child");
+	Zenith_Assert(xParent.GetChildCount() == 1, "TestEntityChildCleanupOnDelete: Should have child");
 
 	// Unparent before any deletion (good practice)
-	xScene.GetEntityRef(uChildID).SetParent(INVALID_ENTITY_ID);
-	Zenith_Assert(xScene.GetEntityRef(uParentID).GetChildCount() == 0, "TestEntityChildCleanupOnDelete: Should have no children after unparent");
+	xChild.SetParent(INVALID_ENTITY_ID);
+	Zenith_Assert(xParent.GetChildCount() == 0, "TestEntityChildCleanupOnDelete: Should have no children after unparent");
 
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestEntityChildCleanupOnDelete completed successfully");
 }
@@ -4695,12 +4695,12 @@ void Zenith_UnitTests::TestEntityHierarchySerialization()
 	Zenith_EntityID uParentID = xParent.GetEntityID();
 	Zenith_EntityID uChildID = xChild.GetEntityID();
 
-	// Set parent using scene ref (modifies the correct entity in scene's map)
-	xScene.GetEntityRef(uChildID).SetParent(uParentID);
+	// Set parent
+	xChild.SetParent(uParentID);
 
-	// Serialize parent entity from scene's map
+	// Serialize parent entity
 	Zenith_DataStream xStream(256);
-	xScene.GetEntityRef(uParentID).WriteToDataStream(xStream);
+	xParent.WriteToDataStream(xStream);
 
 	// Reset and read back
 	// Note: Must create a valid entity in scene first, as deserialization
@@ -4713,9 +4713,9 @@ void Zenith_UnitTests::TestEntityHierarchySerialization()
 	// The parent's child list is rebuilt when children are loaded and call SetParent
 	Zenith_Assert(xLoadedParent.IsRoot(), "TestEntityHierarchySerialization: Loaded parent should be root");
 
-	// Serialize child entity from scene's map
+	// Serialize child entity
 	Zenith_DataStream xChildStream(256);
-	xScene.GetEntityRef(uChildID).WriteToDataStream(xChildStream);
+	xChild.WriteToDataStream(xChildStream);
 
 	// Create entity in scene before deserializing
 	xChildStream.SetCursor(0);
@@ -5154,20 +5154,20 @@ void Zenith_UnitTests::TestCircularHierarchyPrevention()
 	Zenith_EntityID uC = xC.GetEntityID();
 
 	// Set up hierarchy: A -> B -> C
-	xScene.GetEntityRef(uB).SetParent(uA);  // B is child of A
-	xScene.GetEntityRef(uC).SetParent(uB);  // C is child of B
+	xB.SetParent(uA);  // B is child of A
+	xC.SetParent(uB);  // C is child of B
 
 	// Verify initial hierarchy
-	Zenith_Assert(xScene.GetEntityRef(uB).HasParent(), "TestCircularHierarchyPrevention: B should have parent");
-	Zenith_Assert(xScene.GetEntityRef(uB).GetParentEntityID() == uA, "TestCircularHierarchyPrevention: B's parent should be A");
-	Zenith_Assert(xScene.GetEntityRef(uC).GetParentEntityID() == uB, "TestCircularHierarchyPrevention: C's parent should be B");
+	Zenith_Assert(xB.HasParent(), "TestCircularHierarchyPrevention: B should have parent");
+	Zenith_Assert(xB.GetParentEntityID() == uA, "TestCircularHierarchyPrevention: B's parent should be A");
+	Zenith_Assert(xC.GetParentEntityID() == uB, "TestCircularHierarchyPrevention: C's parent should be B");
 
 	// Try to parent A to C (would create cycle: A -> B -> C -> A)
 	// This should be rejected by the circular hierarchy check
-	xScene.GetEntityRef(uA).SetParent(uC);
+	xA.SetParent(uC);
 
 	// A should still be root (circular parenting rejected)
-	Zenith_Assert(!xScene.GetEntityRef(uA).HasParent(), "TestCircularHierarchyPrevention: Circular parent should be rejected - A should remain root");
+	Zenith_Assert(!xA.HasParent(), "TestCircularHierarchyPrevention: Circular parent should be rejected - A should remain root");
 
 	// Clean up
 	Zenith_Scene::DestroyImmediate(uC);
@@ -5188,13 +5188,13 @@ void Zenith_UnitTests::TestSelfParentingPrevention()
 	Zenith_EntityID uEntityID = xEntity.GetEntityID();
 
 	// Verify initially root
-	Zenith_Assert(!xScene.GetEntityRef(uEntityID).HasParent(), "TestSelfParentingPrevention: Entity should start as root");
+	Zenith_Assert(!xEntity.HasParent(), "TestSelfParentingPrevention: Entity should start as root");
 
 	// Try to parent entity to itself
-	xScene.GetEntityRef(uEntityID).SetParent(uEntityID);
+	xEntity.SetParent(uEntityID);
 
 	// Should still be root (self-parenting rejected)
-	Zenith_Assert(!xScene.GetEntityRef(uEntityID).HasParent(), "TestSelfParentingPrevention: Self-parenting should be rejected");
+	Zenith_Assert(!xEntity.HasParent(), "TestSelfParentingPrevention: Self-parenting should be rejected");
 
 	// Clean up
 	Zenith_Scene::DestroyImmediate(uEntityID);
@@ -5251,23 +5251,23 @@ void Zenith_UnitTests::TestDeepHierarchyBuildModelMatrix()
 
 		// Parent to previous entity
 		Zenith_EntityID uParentID = xEntityIDs.Get(u - 1);
-		xScene.GetEntityRef(uChildID).SetParent(uParentID);
+		xChild.SetParent(uParentID);
 	}
 
 	// Verify depth
 	u_int uActualDepth = 0;
 	Zenith_EntityID uCurrent = xEntityIDs.Get(DEPTH - 1);  // Deepest entity
-	while (xScene.EntityExists(uCurrent) && xScene.GetEntityRef(uCurrent).HasParent())
+	while (xScene.EntityExists(uCurrent) && xScene.GetEntity(uCurrent).HasParent())
 	{
 		uActualDepth++;
-		uCurrent = xScene.GetEntityRef(uCurrent).GetParentEntityID();
+		uCurrent = xScene.GetEntity(uCurrent).GetParentEntityID();
 	}
 	Zenith_Assert(uActualDepth == DEPTH - 1, "TestDeepHierarchyBuildModelMatrix: Hierarchy depth should be %u, got %u", DEPTH - 1, uActualDepth);
 
 	// BuildModelMatrix should work without infinite loop
 	Zenith_Maths::Matrix4 xMatrix;
 	Zenith_EntityID uDeepestID = xEntityIDs.Get(DEPTH - 1);
-	xScene.GetEntityRef(uDeepestID).GetComponent<Zenith_TransformComponent>().BuildModelMatrix(xMatrix);
+	xScene.GetEntity(uDeepestID).GetComponent<Zenith_TransformComponent>().BuildModelMatrix(xMatrix);
 
 	// If we get here without hanging, the test passed
 

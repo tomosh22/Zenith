@@ -779,7 +779,7 @@ void Zenith_Editor::RenderToolbar()
 }
 
 // Helper function to render a single entity in the hierarchy tree
-void Zenith_Editor::RenderEntityTreeNode(Zenith_Scene& xScene, Zenith_Entity& xEntity, Zenith_EntityID& uEntityToDelete, Zenith_EntityID& uDraggedEntityID, Zenith_EntityID& uDropTargetEntityID)
+void Zenith_Editor::RenderEntityTreeNode(Zenith_Scene& xScene, Zenith_Entity xEntity, Zenith_EntityID& uEntityToDelete, Zenith_EntityID& uDraggedEntityID, Zenith_EntityID& uDropTargetEntityID)
 {
 	Zenith_EntityID uEntityID = xEntity.GetEntityID();
 	bool bIsSelected = Zenith_Editor::IsSelected(uEntityID);
@@ -878,7 +878,7 @@ void Zenith_Editor::RenderEntityTreeNode(Zenith_Scene& xScene, Zenith_Entity& xE
 		if (ImGui::MenuItem("Create Child Entity"))
 		{
 			Zenith_Entity xNewEntity(&xScene, "New Child");
-			xScene.GetEntityRef(xNewEntity.GetEntityID()).SetTransient(false);  // Editor-created entities are persistent
+			xNewEntity.SetTransient(false);  // Editor-created entities are persistent
 			xNewEntity.SetParent(uEntityID);
 			Zenith_Editor::SelectEntity(xNewEntity.GetEntityID());
 		}
@@ -913,7 +913,7 @@ void Zenith_Editor::RenderEntityTreeNode(Zenith_Scene& xScene, Zenith_Entity& xE
 			Zenith_EntityID xChildID = xChildren.Get(u);
 			if (xScene.EntityExists(xChildID))
 			{
-				RenderEntityTreeNode(xScene, xScene.GetEntityRef(xChildID), uEntityToDelete, uDraggedEntityID, uDropTargetEntityID);
+				RenderEntityTreeNode(xScene, xScene.GetEntity(xChildID), uEntityToDelete, uDraggedEntityID, uDropTargetEntityID);
 			}
 		}
 		ImGui::TreePop();
@@ -941,7 +941,7 @@ void Zenith_Editor::RenderHierarchyPanel()
 		Zenith_EntityID xEntityID = xActiveEntities.Get(u);
 		if (xScene.EntityExists(xEntityID))
 		{
-			Zenith_Entity& xEntity = xScene.GetEntityRef(xEntityID);
+			Zenith_Entity xEntity = xScene.GetEntity(xEntityID);
 			if (!xEntity.HasParent())
 			{
 				RenderEntityTreeNode(xScene, xEntity, uEntityToDelete, uDraggedEntityID, uDropTargetEntityID);
@@ -958,7 +958,7 @@ void Zenith_Editor::RenderHierarchyPanel()
 			Zenith_EntityID xSourceEntityID = *(const Zenith_EntityID*)pPayload->Data;
 			if (xScene.EntityExists(xSourceEntityID))
 			{
-				xScene.GetEntityRef(xSourceEntityID).SetParent(INVALID_ENTITY_ID);
+				xScene.GetEntity(xSourceEntityID).SetParent(INVALID_ENTITY_ID);
 			}
 		}
 		ImGui::EndDragDropTarget();
@@ -981,7 +981,7 @@ void Zenith_Editor::RenderHierarchyPanel()
 				}
 				if (xScene.EntityExists(xCheckID))
 				{
-					xCheckID = xScene.GetEntityRef(xCheckID).GetParentEntityID();
+					xCheckID = xScene.GetEntity(xCheckID).GetParentEntityID();
 				}
 				else
 				{
@@ -991,7 +991,7 @@ void Zenith_Editor::RenderHierarchyPanel()
 
 			if (!bIsAncestor)
 			{
-				xScene.GetEntityRef(uDraggedEntityID).SetParent(uDropTargetEntityID);
+				xScene.GetEntity(uDraggedEntityID).SetParent(uDropTargetEntityID);
 			}
 		}
 	}
@@ -1011,7 +1011,7 @@ void Zenith_Editor::RenderHierarchyPanel()
 	if (ImGui::Button("+ Create Entity"))
 	{
 		Zenith_Entity xNewEntity(&xScene, "New Entity");
-		xScene.GetEntityRef(xNewEntity.GetEntityID()).SetTransient(false);  // Editor-created entities are persistent
+		xNewEntity.SetTransient(false);  // Editor-created entities are persistent
 		SelectEntity(xNewEntity.GetEntityID());
 	}
 
@@ -1639,7 +1639,10 @@ Zenith_Entity* Zenith_Editor::GetSelectedEntity()
 		return nullptr;
 	}
 
-	return &xScene.GetEntityRef(s_uPrimarySelectedEntityID);
+	// Return pointer to static entity handle (valid until next call)
+	static Zenith_Entity s_xSelectedEntity;
+	s_xSelectedEntity = xScene.GetEntity(s_uPrimarySelectedEntityID);
+	return &s_xSelectedEntity;
 }
 
 //------------------------------------------------------------------------------

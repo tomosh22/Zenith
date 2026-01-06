@@ -120,6 +120,20 @@ public:
 		Zenith_Assert(pData != nullptr, "pData cannot be null");
 		Zenith_Assert(m_pData != nullptr, "Stream data is null");
 		Zenith_Assert(m_ulCursor + ulSize <= m_ulDataSize, "Reading past end of DataStream");
+
+		// Runtime safety checks (execute in all builds, not just debug)
+		if (pData == nullptr || m_pData == nullptr)
+		{
+			Zenith_Error(LOG_CATEGORY_CORE, "DataStream::ReadData: null pointer");
+			return;
+		}
+		if (m_ulCursor + ulSize > m_ulDataSize)
+		{
+			Zenith_Error(LOG_CATEGORY_CORE, "DataStream::ReadData: buffer overflow (cursor=%llu, size=%llu, dataSize=%llu)",
+				m_ulCursor, ulSize, m_ulDataSize);
+			return;
+		}
+
 		memcpy(pData, static_cast<uint8_t*>(m_pData) + m_ulCursor, ulSize);
 		m_ulCursor += ulSize;
 	}
@@ -143,6 +157,20 @@ public:
 	{
 		Zenith_Assert(m_pData != nullptr, "Stream data is null");
 		Zenith_Assert(m_ulCursor + sizeof(T) <= m_ulDataSize, "Reading past end of DataStream");
+
+		// Runtime safety checks (execute in all builds, not just debug)
+		if (m_pData == nullptr)
+		{
+			Zenith_Error(LOG_CATEGORY_CORE, "DataStream::operator>>: null data pointer");
+			return;
+		}
+		if (m_ulCursor + sizeof(T) > m_ulDataSize)
+		{
+			Zenith_Error(LOG_CATEGORY_CORE, "DataStream::operator>>: buffer overflow (cursor=%llu, typeSize=%zu, dataSize=%llu)",
+				m_ulCursor, sizeof(T), m_ulDataSize);
+			return;
+		}
+
 		memcpy(&x, static_cast<uint8_t*>(m_pData) + m_ulCursor, sizeof(T));
 		m_ulCursor += sizeof(T);
 	}

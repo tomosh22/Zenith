@@ -344,7 +344,7 @@ void Project_LoadInitialScene()
 	// Create Camera Entity
 	// ========================================================================
 	Zenith_Entity xCameraEntity(&xScene, "MainCamera");
-	xScene.GetEntityRef(xCameraEntity.GetEntityID()).SetTransient(false);
+	xCameraEntity.SetTransient(false);
 
 	Zenith_CameraComponent& xCamera = xCameraEntity.AddComponent<Zenith_CameraComponent>();
 
@@ -369,7 +369,7 @@ void Project_LoadInitialScene()
 	// Create Main Game Entity (with UI and behavior)
 	// ========================================================================
 	Zenith_Entity xGameEntity(&xScene, "ExplorationGame");
-	xScene.GetEntityRef(xGameEntity.GetEntityID()).SetTransient(false);
+	xGameEntity.SetTransient(false);
 
 	// Add UI component for HUD
 	xGameEntity.AddComponent<Zenith_UIComponent>();
@@ -388,7 +388,7 @@ void Project_LoadInitialScene()
 		Zenith_Log(LOG_CATEGORY_TERRAIN, "[Exploration] Creating terrain entity...");
 
 		Zenith_Entity xTerrainEntity(&xScene, "Terrain");
-		xScene.GetEntityRef(xTerrainEntity.GetEntityID()).SetTransient(false);
+		xTerrainEntity.SetTransient(false);
 
 		// Add terrain component with materials
 		// Note: AddComponent automatically passes entity as last arg
@@ -411,7 +411,7 @@ void Project_LoadInitialScene()
 		Zenith_Log(LOG_CATEGORY_TERRAIN, "[Exploration] Found pre-generated terrain, creating terrain entity...");
 
 		Zenith_Entity xTerrainEntity(&xScene, "Terrain");
-		xScene.GetEntityRef(xTerrainEntity.GetEntityID()).SetTransient(false);
+		xTerrainEntity.SetTransient(false);
 
 		xTerrainEntity.AddComponent<Zenith_TerrainComponent>(
 			*g_pxTerrainMaterial0,

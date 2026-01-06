@@ -260,7 +260,7 @@ void Zenith_AssetRef<Flux_Texture>::LoadAsync(
 template<>
 bool Zenith_AssetRef<Flux_Texture>::IsReady() const
 {
-	if (m_pxCached != nullptr)
+	if (m_pxCached.load(std::memory_order_acquire) != nullptr)
 		return true;
 	return Zenith_AsyncAssetLoader::GetLoadState(m_xGUID) == AssetLoadState::LOADED;
 }
@@ -268,7 +268,7 @@ bool Zenith_AssetRef<Flux_Texture>::IsReady() const
 template<>
 AssetLoadState Zenith_AssetRef<Flux_Texture>::GetLoadState() const
 {
-	if (m_pxCached != nullptr)
+	if (m_pxCached.load(std::memory_order_acquire) != nullptr)
 		return AssetLoadState::LOADED;
 	return Zenith_AsyncAssetLoader::GetLoadState(m_xGUID);
 }
@@ -286,7 +286,7 @@ void Zenith_AssetRef<Flux_MaterialAsset>::LoadAsync(
 template<>
 bool Zenith_AssetRef<Flux_MaterialAsset>::IsReady() const
 {
-	if (m_pxCached != nullptr)
+	if (m_pxCached.load(std::memory_order_acquire) != nullptr)
 		return true;
 	return Zenith_AsyncAssetLoader::GetLoadState(m_xGUID) == AssetLoadState::LOADED;
 }
@@ -294,7 +294,7 @@ bool Zenith_AssetRef<Flux_MaterialAsset>::IsReady() const
 template<>
 AssetLoadState Zenith_AssetRef<Flux_MaterialAsset>::GetLoadState() const
 {
-	if (m_pxCached != nullptr)
+	if (m_pxCached.load(std::memory_order_acquire) != nullptr)
 		return AssetLoadState::LOADED;
 	return Zenith_AsyncAssetLoader::GetLoadState(m_xGUID);
 }
@@ -312,7 +312,7 @@ void Zenith_AssetRef<Flux_MeshGeometry>::LoadAsync(
 template<>
 bool Zenith_AssetRef<Flux_MeshGeometry>::IsReady() const
 {
-	if (m_pxCached != nullptr)
+	if (m_pxCached.load(std::memory_order_acquire) != nullptr)
 		return true;
 	return Zenith_AsyncAssetLoader::GetLoadState(m_xGUID) == AssetLoadState::LOADED;
 }
@@ -320,7 +320,7 @@ bool Zenith_AssetRef<Flux_MeshGeometry>::IsReady() const
 template<>
 AssetLoadState Zenith_AssetRef<Flux_MeshGeometry>::GetLoadState() const
 {
-	if (m_pxCached != nullptr)
+	if (m_pxCached.load(std::memory_order_acquire) != nullptr)
 		return AssetLoadState::LOADED;
 	return Zenith_AsyncAssetLoader::GetLoadState(m_xGUID);
 }
@@ -338,7 +338,7 @@ void Zenith_AssetRef<Zenith_ModelAsset>::LoadAsync(
 template<>
 bool Zenith_AssetRef<Zenith_ModelAsset>::IsReady() const
 {
-	if (m_pxCached != nullptr)
+	if (m_pxCached.load(std::memory_order_acquire) != nullptr)
 		return true;
 	return Zenith_AsyncAssetLoader::GetLoadState(m_xGUID) == AssetLoadState::LOADED;
 }
@@ -346,7 +346,7 @@ bool Zenith_AssetRef<Zenith_ModelAsset>::IsReady() const
 template<>
 AssetLoadState Zenith_AssetRef<Zenith_ModelAsset>::GetLoadState() const
 {
-	if (m_pxCached != nullptr)
+	if (m_pxCached.load(std::memory_order_acquire) != nullptr)
 		return AssetLoadState::LOADED;
 	return Zenith_AsyncAssetLoader::GetLoadState(m_xGUID);
 }
@@ -364,7 +364,7 @@ void Zenith_AssetRef<Zenith_Prefab>::LoadAsync(
 template<>
 bool Zenith_AssetRef<Zenith_Prefab>::IsReady() const
 {
-	if (m_pxCached != nullptr)
+	if (m_pxCached.load(std::memory_order_acquire) != nullptr)
 		return true;
 	return Zenith_AsyncAssetLoader::GetLoadState(m_xGUID) == AssetLoadState::LOADED;
 }
@@ -372,7 +372,7 @@ bool Zenith_AssetRef<Zenith_Prefab>::IsReady() const
 template<>
 AssetLoadState Zenith_AssetRef<Zenith_Prefab>::GetLoadState() const
 {
-	if (m_pxCached != nullptr)
+	if (m_pxCached.load(std::memory_order_acquire) != nullptr)
 		return AssetLoadState::LOADED;
 	return Zenith_AsyncAssetLoader::GetLoadState(m_xGUID);
 }

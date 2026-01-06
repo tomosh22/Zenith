@@ -290,20 +290,20 @@ void PlayerController_Behaviour::FindHUDElements()
 
 	// Find the HUD entity by name
 	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	Zenith_Entity* pxHUDEntity = xScene.FindEntityByName("HUD");
-	if (!pxHUDEntity)
+	Zenith_Entity xHUDEntity = xScene.FindEntityByName("HUD");
+	if (!xHUDEntity.IsValid())
 	{
 		Zenith_Log(LOG_CATEGORY_GAMEPLAY, "[PlayerController] Could not find HUD entity");
 		return;
 	}
 
-	if (!pxHUDEntity->HasComponent<Zenith_UIComponent>())
+	if (!xHUDEntity.HasComponent<Zenith_UIComponent>())
 	{
 		Zenith_Log(LOG_CATEGORY_GAMEPLAY, "[PlayerController] HUD entity has no UIComponent");
 		return;
 	}
 
-	Zenith_UIComponent& xUI = pxHUDEntity->GetComponent<Zenith_UIComponent>();
+	Zenith_UIComponent& xUI = xHUDEntity.GetComponent<Zenith_UIComponent>();
 
 	// Find health bar fill
 	m_pxHealthFill = xUI.FindElement<Zenith_UI::Zenith_UIRect>("HealthBar_Fill");

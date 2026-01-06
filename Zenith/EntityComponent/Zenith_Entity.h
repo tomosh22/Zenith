@@ -56,14 +56,62 @@ namespace std
 
 class Zenith_TransformComponent;
 
+/**
+ * Zenith_Entity - Lightweight handle to an entity in the scene
+ *
+ * This is a VALUE TYPE that can be freely copied. It only holds:
+ * - A pointer to the scene
+ * - The entity ID (index + generation)
+ *
+ * All entity state (name, enabled, transient) is stored in the scene's
+ * EntitySlot and accessed through this handle. This eliminates the
+ * synchronization bugs that occurred when entity state was duplicated.
+ *
+ * Usage:
+ *   Zenith_Entity xEntity = scene.GetEntity(entityID);
+ *   xEntity.SetName("MyEntity");  // Modifies slot directly
+ *   xEntity.SetEnabled(false);    // Modifies slot directly
+ */
 class Zenith_Entity
 {
 public:
-	Zenith_Entity() = default;
+	// Default constructor - creates an invalid entity handle
+	Zenith_Entity()
+		: m_pxParentScene(nullptr)
+		, m_xEntityID(INVALID_ENTITY_ID)
+	{
+	}
+
+	// Construct a handle from scene and ID (used internally by Scene::GetEntity)
+	Zenith_Entity(Zenith_Scene* pxScene, Zenith_EntityID xID)
+		: m_pxParentScene(pxScene)
+		, m_xEntityID(xID)
+	{
+	}
+
+	// Create a NEW entity in the scene with the given name
 	Zenith_Entity(Zenith_Scene* pxScene, const std::string& strName);
-	Zenith_Entity(Zenith_Scene* pxScene, Zenith_EntityID uID, const std::string& strName);
+
+	// Create a NEW entity with a specific ID (for scene loading)
+	Zenith_Entity(Zenith_Scene* pxScene, Zenith_EntityID xID, const std::string& strName);
+
+	// Initialize an invalid entity handle to create a new entity
 	void Initialise(Zenith_Scene* pxScene, const std::string& strName);
-	void Initialise(Zenith_Scene* pxScene, Zenith_EntityID uID, const std::string& strName);
+	void Initialise(Zenith_Scene* pxScene, Zenith_EntityID xID, const std::string& strName);
+
+	//--------------------------------------------------------------------------
+	// Validity Check
+	//--------------------------------------------------------------------------
+
+	/**
+	 * Check if this entity handle is valid (points to an existing entity)
+	 * Returns false if: scene is null, ID is invalid, or entity was destroyed
+	 */
+	bool IsValid() const;
+
+	//--------------------------------------------------------------------------
+	// Component Operations (unchanged API)
+	//--------------------------------------------------------------------------
 
 	template<typename T, typename... Args>
 	T& AddComponent(Args&&... args);
@@ -80,12 +128,36 @@ public:
 	template<typename T>
 	void RemoveComponent();
 
-	Zenith_EntityID GetEntityID() const { return m_xEntityID; }
-	class Zenith_Scene* m_pxParentScene;
+	//--------------------------------------------------------------------------
+	// Entity State Accessors (delegate to EntitySlot)
+	//--------------------------------------------------------------------------
 
-	// Serialization methods for Zenith_DataStream
-	void WriteToDataStream(Zenith_DataStream& xStream) const;
-	void ReadFromDataStream(Zenith_DataStream& xStream);
+	Zenith_EntityID GetEntityID() const { return m_xEntityID; }
+	Zenith_Scene* GetScene() const { return m_pxParentScene; }
+
+	// Name accessors - delegate to EntitySlot
+	const std::string& GetName() const;
+	void SetName(const std::string& strName);
+
+	/**
+	 * Check if this entity is enabled. Disabled entities skip Update/FixedUpdate.
+	 */
+	bool IsEnabled() const;
+
+	/**
+	 * Enable or disable this entity. Calls OnEnable/OnDisable on all components.
+	 */
+	void SetEnabled(bool bEnabled);
+
+	/**
+	 * Check if this entity is transient (not serialized to scene file)
+	 */
+	bool IsTransient() const;
+
+	/**
+	 * Mark entity as transient - it will NOT be saved when scene is serialized.
+	 */
+	void SetTransient(bool bTransient);
 
 	//--------------------------------------------------------------------------
 	// Parent/Child Hierarchy (delegates to TransformComponent)
@@ -100,44 +172,28 @@ public:
 	bool IsRoot() const;
 	Zenith_TransformComponent& GetTransform();
 
-	// Name accessors
-	const std::string& GetName() const { return m_strName; }
-	void SetName(const std::string& strName);
+	// Serialization methods for Zenith_DataStream
+	void WriteToDataStream(Zenith_DataStream& xStream) const;
+	void ReadFromDataStream(Zenith_DataStream& xStream);
 
 	//--------------------------------------------------------------------------
-	// Enabled State (Unity-like SetActive)
+	// Comparison Operators
 	//--------------------------------------------------------------------------
 
-	/**
-	 * Check if this entity is enabled. Disabled entities skip Update/FixedUpdate.
-	 */
-	bool IsEnabled() const { return m_bEnabled; }
+	bool operator==(const Zenith_Entity& xOther) const
+	{
+		return m_xEntityID == xOther.m_xEntityID && m_pxParentScene == xOther.m_pxParentScene;
+	}
 
-	/**
-	 * Enable or disable this entity. Calls OnEnable/OnDisable on all components.
-	 * Disabled entities do not receive Update, FixedUpdate, or LateUpdate calls.
-	 */
-	void SetEnabled(bool bEnabled);
+	bool operator!=(const Zenith_Entity& xOther) const
+	{
+		return !(*this == xOther);
+	}
 
-	//--------------------------------------------------------------------------
-	// Transient Entity (not saved to scene)
-	//--------------------------------------------------------------------------
-
-	/**
-	 * Mark entity as transient - it will NOT be saved when scene is serialized.
-	 * Use this for procedurally generated entities at runtime.
-	 * Runtime-instantiated objects that aren't saved to scene.
-	 */
-	void SetTransient(bool bTransient);
-
-	/**
-	 * Check if this entity is transient (not serialized)
-	 */
-	bool IsTransient() const { return m_bTransient; }
+	// Legacy: public access to scene pointer for compatibility
+	// TODO: Make this private once all code uses GetScene()
+	Zenith_Scene* m_pxParentScene = nullptr;
 
 private:
 	Zenith_EntityID m_xEntityID;
-	std::string m_strName;
-	bool m_bEnabled = true;    // Default: enabled. Disabled entities skip updates.
-	bool m_bTransient = true;  // Default: transient (not saved). Scene loading and editor set this to false for persistent entities.
 };

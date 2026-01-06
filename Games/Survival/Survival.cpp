@@ -452,7 +452,7 @@ void Project_LoadInitialScene()
 
 	// Create camera entity - third-person perspective behind player
 	Zenith_Entity xCameraEntity(&xScene, "MainCamera");
-	xScene.GetEntityRef(xCameraEntity.GetEntityID()).SetTransient(false);
+	xCameraEntity.SetTransient(false);
 	Zenith_CameraComponent& xCamera = xCameraEntity.AddComponent<Zenith_CameraComponent>();
 	xCamera.InitialisePerspective(
 		Zenith_Maths::Vector3(0.f, 10.f, -15.f),  // Position: behind and above
@@ -467,7 +467,7 @@ void Project_LoadInitialScene()
 
 	// Create main game entity
 	Zenith_Entity xSurvivalEntity(&xScene, "SurvivalGame");
-	xScene.GetEntityRef(xSurvivalEntity.GetEntityID()).SetTransient(false);
+	xSurvivalEntity.SetTransient(false);
 
 	// UI Setup
 	static constexpr float s_fMarginLeft = 30.f;

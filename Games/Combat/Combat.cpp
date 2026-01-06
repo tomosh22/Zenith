@@ -292,7 +292,7 @@ void Project_LoadInitialScene()
 
 	// Create camera entity
 	Zenith_Entity xCameraEntity(&xScene, "MainCamera");
-	xScene.GetEntityRef(xCameraEntity.GetEntityID()).SetTransient(false);
+	xCameraEntity.SetTransient(false);
 	Zenith_CameraComponent& xCamera = xCameraEntity.AddComponent<Zenith_CameraComponent>();
 	xCamera.InitialisePerspective(
 		Zenith_Maths::Vector3(0.0f, 12.0f, -15.0f),  // Position: above and behind
@@ -307,7 +307,7 @@ void Project_LoadInitialScene()
 
 	// Create main game entity
 	Zenith_Entity xCombatEntity(&xScene, "CombatGame");
-	xScene.GetEntityRef(xCombatEntity.GetEntityID()).SetTransient(false);
+	xCombatEntity.SetTransient(false);
 
 	// UI Setup
 	static constexpr float s_fMarginLeft = 30.0f;
