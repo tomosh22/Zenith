@@ -87,7 +87,7 @@ public:
 	static constexpr uint32_t s_uMaxGridCells = s_uMaxGridSizeConfig * s_uMaxGridSizeConfig;
 
 	Sokoban_Behaviour() = delete;
-	Sokoban_Behaviour(Zenith_Entity& xParentEntity)
+	Sokoban_Behaviour(Zenith_Entity& /*xParentEntity*/)
 		: m_uGridWidth(8)
 		, m_uGridHeight(8)
 		, m_uPlayerX(0)

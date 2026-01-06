@@ -178,22 +178,22 @@ bool Zenith_Gizmo::HandleTranslateGizmo(
 }
 
 bool Zenith_Gizmo::HandleRotateGizmo(
-	Zenith_Entity* pxEntity,
-	const Zenith_Maths::Matrix4& viewMatrix,
-	const Zenith_Maths::Matrix4& projMatrix,
-	const Zenith_Maths::Vector2& viewportPos,
-	const Zenith_Maths::Vector2& viewportSize)
+	Zenith_Entity* /*pxEntity*/,
+	const Zenith_Maths::Matrix4& /*viewMatrix*/,
+	const Zenith_Maths::Matrix4& /*projMatrix*/,
+	const Zenith_Maths::Vector2& /*viewportPos*/,
+	const Zenith_Maths::Vector2& /*viewportSize*/)
 {
 	// STUB: Requires implementation for rotate gizmo interaction
 	return false;
 }
 
 bool Zenith_Gizmo::HandleScaleGizmo(
-	Zenith_Entity* pxEntity,
-	const Zenith_Maths::Matrix4& viewMatrix,
-	const Zenith_Maths::Matrix4& projMatrix,
-	const Zenith_Maths::Vector2& viewportPos,
-	const Zenith_Maths::Vector2& viewportSize)
+	Zenith_Entity* /*pxEntity*/,
+	const Zenith_Maths::Matrix4& /*viewMatrix*/,
+	const Zenith_Maths::Matrix4& /*projMatrix*/,
+	const Zenith_Maths::Vector2& /*viewportPos*/,
+	const Zenith_Maths::Vector2& /*viewportSize*/)
 {
 	// STUB: Requires implementation for scale gizmo interaction
 	return false;
@@ -294,17 +294,17 @@ void Zenith_Gizmo::RenderTranslateGizmo(
 }
 
 void Zenith_Gizmo::RenderRotateGizmo(
-	const Zenith_Maths::Vector3& position,
-	const Zenith_Maths::Matrix4& viewMatrix,
-	const Zenith_Maths::Matrix4& projMatrix)
+	const Zenith_Maths::Vector3& /*position*/,
+	const Zenith_Maths::Matrix4& /*viewMatrix*/,
+	const Zenith_Maths::Matrix4& /*projMatrix*/)
 {
 	// STUB: Requires implementation for rotate gizmo rendering
 }
 
 void Zenith_Gizmo::RenderScaleGizmo(
-	const Zenith_Maths::Vector3& position,
-	const Zenith_Maths::Matrix4& viewMatrix,
-	const Zenith_Maths::Matrix4& projMatrix)
+	const Zenith_Maths::Vector3& /*position*/,
+	const Zenith_Maths::Matrix4& /*viewMatrix*/,
+	const Zenith_Maths::Matrix4& /*projMatrix*/)
 {
 	// STUB: Requires implementation for scale gizmo rendering
 }

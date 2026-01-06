@@ -23,26 +23,6 @@ static std::string GetEngineAssetsDirectory()
 #include "stb/stb_dxt.h"
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
 
-static std::string ShaderDataTypeToString(ShaderDataType eType)
-{
-	switch (eType)
-	{
-	case SHADER_DATA_TYPE_FLOAT:
-		return "Float";
-	case SHADER_DATA_TYPE_FLOAT2:
-		return "Float2";
-	case SHADER_DATA_TYPE_FLOAT3:
-		return "Float3";
-	case SHADER_DATA_TYPE_FLOAT4:
-		return "Float4";
-	case SHADER_DATA_TYPE_UINT4:
-		return "UInt4";
-	default:
-		Zenith_Assert(false, "Unknown data type");
-		return "";
-	}
-}
-
 bool Zenith_Tools_TextureExport::IsCompressedFormat(TextureFormat eFormat)
 {
 	return eFormat == TEXTURE_FORMAT_BC1_RGB_UNORM ||
@@ -220,11 +200,7 @@ void Zenith_Tools_TextureExport::ExportFromDataCompressed(const void* pRGBAData,
 
 void ExportTexture(const std::filesystem::directory_entry& xFile)
 {
-	const wchar_t* wszFilename = xFile.path().c_str();
-	size_t ulLength = wcslen(wszFilename);
-	char* szFilename = new char[ulLength + 1];
-	wcstombs(szFilename, wszFilename, ulLength);
-	szFilename[ulLength] = '\0';
+	std::string strFilename = xFile.path().string();
 
 	const char* aszExtensions[] =
 	{
@@ -234,15 +210,12 @@ void ExportTexture(const std::filesystem::directory_entry& xFile)
 	};
 	for (const char* szExt : aszExtensions)
 	{
-		if (!strcmp(szFilename + strlen(szFilename) - strlen(szExt), szExt))
+		if (!strcmp(strFilename.c_str() + strFilename.length() - strlen(szExt), szExt))
 		{
-			std::string strFilename(szFilename);
 			// Use BC1 compression by default for better performance
 			Zenith_Tools_TextureExport::ExportFromFile(strFilename, szExt, TextureCompressionMode::BC1);
 		}
 	}
-	
-	delete[] szFilename;
 }
 
 void ExportAllTextures()

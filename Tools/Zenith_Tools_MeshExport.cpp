@@ -434,29 +434,6 @@ struct BoneNodeData
 	Zenith_Maths::Vector3 xScale = Zenith_Maths::Vector3(1);
 };
 
-// Helper: Calculate the accumulated transform from non-bone ancestors
-// This is used when a bone becomes a skeleton root but has non-bone ancestors
-static Zenith_Maths::Matrix4 CalculateNonBoneAncestorTransform(
-	aiNode* pxNode,
-	const std::unordered_map<std::string, uint32_t>& xBoneNameToMeshBoneIndex)
-{
-	Zenith_Maths::Matrix4 xAccumulated = glm::identity<Zenith_Maths::Matrix4>();
-
-	aiNode* pxParent = pxNode->mParent;
-	while (pxParent != nullptr)
-	{
-		// Stop if we hit a bone - we only want non-bone ancestors
-		if (xBoneNameToMeshBoneIndex.find(pxParent->mName.C_Str()) != xBoneNameToMeshBoneIndex.end())
-			break;
-
-		// Accumulate this non-bone ancestor's transform
-		xAccumulated = AssimpToGLM(pxParent->mTransformation) * xAccumulated;
-		pxParent = pxParent->mParent;
-	}
-
-	return xAccumulated;
-}
-
 // Recursive function to collect bone data from scene graph
 static void CollectBoneDataFromNode(
 	aiNode* pxNode,
@@ -544,7 +521,7 @@ static void CollectBoneDataFromNode(
 
 static void BuildBoneHierarchyFromNode(
 	aiNode* pxNode,
-	const aiScene* pxScene,
+	const aiScene* /*pxScene*/,
 	Zenith_SkeletonAsset* pxSkelAsset,
 	const std::unordered_map<std::string, uint32_t>& xBoneNameToMeshBoneIndex,
 	const std::unordered_map<std::string, Zenith_Maths::Matrix4>& xBoneNameToInvBindPose,
@@ -739,40 +716,6 @@ static void ExportMaterialTextures(const aiMaterial* pxMat, const aiScene* pxSce
 }
 
 //------------------------------------------------------------------------------
-// Collect bone info from all meshes for skeleton extraction
-//------------------------------------------------------------------------------
-static void CollectBoneInfo(
-	const aiScene* pxScene,
-	std::unordered_map<std::string, uint32_t>& xBoneNameToIndex,
-	std::unordered_map<std::string, Zenith_Maths::Matrix4>& xBoneNameToInvBindPose)
-{
-	for (uint32_t uMesh = 0; uMesh < pxScene->mNumMeshes; uMesh++)
-	{
-		const aiMesh* pxMesh = pxScene->mMeshes[uMesh];
-		for (uint32_t uBone = 0; uBone < pxMesh->mNumBones; uBone++)
-		{
-			const aiBone* pxBone = pxMesh->mBones[uBone];
-			std::string strBoneName = pxBone->mName.C_Str();
-
-			if (xBoneNameToIndex.find(strBoneName) == xBoneNameToIndex.end())
-			{
-				uint32_t uIndex = static_cast<uint32_t>(xBoneNameToIndex.size());
-				xBoneNameToIndex[strBoneName] = uIndex;
-
-				// Store inverse bind pose
-				const aiMatrix4x4& xAssimpMat = pxBone->mOffsetMatrix;
-				Zenith_Maths::Matrix4 xMat;
-				xMat[0][0] = xAssimpMat.a1; xMat[1][0] = xAssimpMat.a2; xMat[2][0] = xAssimpMat.a3; xMat[3][0] = xAssimpMat.a4;
-				xMat[0][1] = xAssimpMat.b1; xMat[1][1] = xAssimpMat.b2; xMat[2][1] = xAssimpMat.b3; xMat[3][1] = xAssimpMat.b4;
-				xMat[0][2] = xAssimpMat.c1; xMat[1][2] = xAssimpMat.c2; xMat[2][2] = xAssimpMat.c3; xMat[3][2] = xAssimpMat.c4;
-				xMat[0][3] = xAssimpMat.d1; xMat[1][3] = xAssimpMat.d2; xMat[2][3] = xAssimpMat.d3; xMat[3][3] = xAssimpMat.d4;
-				xBoneNameToInvBindPose[strBoneName] = xMat;
-			}
-		}
-	}
-}
-
-//------------------------------------------------------------------------------
 // Extract and export animations from scene
 //------------------------------------------------------------------------------
 static void ExtractAnimations(
@@ -924,79 +867,59 @@ void ExportAllMeshes()
 {
 	for (auto& xFile : std::filesystem::recursive_directory_iterator(GetGameAssetsDirectory()))
 	{
-		const wchar_t* wszFilename = xFile.path().c_str();
-		size_t ulLength = wcslen(wszFilename);
-		char* szFilename = new char[ulLength + 1];
-		wcstombs(szFilename, wszFilename, ulLength);
-		szFilename[ulLength] = '\0';
+		std::string strFilename = xFile.path().string();
 
 		// Avoid trying to export C++ IR files (.obj)
-		if (!strstr(szFilename, "Assets"))
+		if (strFilename.find("Assets") == std::string::npos)
 		{
-			delete[] szFilename;
 			continue;
 		}
 
 		// Is this a gltf
-		if (!strcmp(szFilename + strlen(szFilename) - strlen(".gltf"), ".gltf"))
+		if (strFilename.length() >= 5 && strFilename.substr(strFilename.length() - 5) == ".gltf")
 		{
-			std::string strFilename(szFilename);
 			Export(strFilename, ".gltf");
 		}
 
 		// Is this an fbx
-		if (!strcmp(szFilename + strlen(szFilename) - strlen(".fbx"), ".fbx"))
+		if (strFilename.length() >= 4 && strFilename.substr(strFilename.length() - 4) == ".fbx")
 		{
-			std::string strFilename(szFilename);
 			Export(strFilename, ".fbx");
 		}
 
 		// Is this an obj
-		if (!strcmp(szFilename + strlen(szFilename) - strlen(".obj"), ".obj"))
+		if (strFilename.length() >= 4 && strFilename.substr(strFilename.length() - 4) == ".obj")
 		{
-			std::string strFilename(szFilename);
 			Export(strFilename, ".obj");
 		}
-
-		delete[] szFilename;
 	}
 
 	for (auto& xFile : std::filesystem::recursive_directory_iterator(GetEngineAssetsDirectory()))
 	{
-		const wchar_t* wszFilename = xFile.path().c_str();
-		size_t ulLength = wcslen(wszFilename);
-		char* szFilename = new char[ulLength + 1];
-		wcstombs(szFilename, wszFilename, ulLength);
-		szFilename[ulLength] = '\0';
+		std::string strFilename = xFile.path().string();
 
 		// Avoid trying to export C++ IR files (.obj)
-		if (!strstr(szFilename, "Assets"))
+		if (strFilename.find("Assets") == std::string::npos)
 		{
-			delete[] szFilename;
 			continue;
 		}
 
 		// Is this a gltf
-		if (!strcmp(szFilename + strlen(szFilename) - strlen(".gltf"), ".gltf"))
+		if (strFilename.length() >= 5 && strFilename.substr(strFilename.length() - 5) == ".gltf")
 		{
-			std::string strFilename(szFilename);
 			Export(strFilename, ".gltf");
 		}
 
 		// Is this an fbx
-		if (!strcmp(szFilename + strlen(szFilename) - strlen(".fbx"), ".fbx"))
+		if (strFilename.length() >= 4 && strFilename.substr(strFilename.length() - 4) == ".fbx")
 		{
-			std::string strFilename(szFilename);
 			Export(strFilename, ".fbx");
 		}
 
 		// Is this an obj
-		if (!strcmp(szFilename + strlen(szFilename) - strlen(".obj"), ".obj"))
+		if (strFilename.length() >= 4 && strFilename.substr(strFilename.length() - 4) == ".obj")
 		{
-			std::string strFilename(szFilename);
 			Export(strFilename, ".obj");
 		}
-
-		delete[] szFilename;
 	}
 }

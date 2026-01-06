@@ -16,7 +16,7 @@ public:
 		, m_pfnFunc(pfnFunc)
 		, m_xSemaphore(0, 1)
 		, m_pData(pData)
-		, m_uCompletedThreadID(-1)
+		, m_uCompletedThreadID(UINT32_MAX)
 		, m_bSubmitted(false)
 	{
 

@@ -45,7 +45,7 @@ struct Flux_BufferElement
 	uint32_t m_uSize;
 	ShaderDataType m_eType;
 
-	Flux_BufferElement(ShaderDataType type, bool normalized = false, bool instanced = false, unsigned int divisor = 0, void* data = nullptr, unsigned int numEntries = 0) : m_eType(type), m_uSize(Flux_ShaderDataTypeSize(type)), m_uOffset(0)
+	Flux_BufferElement(ShaderDataType type, bool /*normalized*/ = false, bool /*instanced*/ = false, unsigned int /*divisor*/ = 0, void* /*data*/ = nullptr, unsigned int /*numEntries*/ = 0) : m_eType(type), m_uSize(Flux_ShaderDataTypeSize(type)), m_uOffset(0)
 	{
 	}
 

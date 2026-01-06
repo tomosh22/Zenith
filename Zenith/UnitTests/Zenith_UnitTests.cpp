@@ -3897,12 +3897,12 @@ void Zenith_UnitTests::TestEventDeferredQueue()
 static u_int s_uMultiSub1Count = 0;
 static u_int s_uMultiSub2Count = 0;
 
-static void MultiSubscriber1(const TestEvent_Custom& xEvent)
+static void MultiSubscriber1(const TestEvent_Custom& /*xEvent*/)
 {
 	s_uMultiSub1Count++;
 }
 
-static void MultiSubscriber2(const TestEvent_Custom& xEvent)
+static void MultiSubscriber2(const TestEvent_Custom& /*xEvent*/)
 {
 	s_uMultiSub2Count++;
 }

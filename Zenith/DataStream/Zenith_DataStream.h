@@ -191,7 +191,7 @@ public:
 	template<typename T>
 	void operator<<(const std::vector<T>& xVec)
 	{
-		const u_int uSize = xVec.size();
+		const u_int uSize = static_cast<u_int>(xVec.size());
 		*this << uSize;
 		for (const T& x : xVec) *this << x;
 	}
@@ -228,7 +228,7 @@ public:
 #pragma region std::string
 	void operator<<(const std::string& str)
 	{
-		const u_int uLength = str.length();
+		const u_int uLength = static_cast<u_int>(str.length());
 		*this << uLength;
 		for (u_int u = 0; u < uLength; u++) *this << str.at(u);
 	}

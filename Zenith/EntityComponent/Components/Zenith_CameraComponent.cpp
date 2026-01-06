@@ -104,9 +104,9 @@ void Zenith_CameraComponent::GetPosition(Zenith_Maths::Vector3& xOut)
 
 void Zenith_CameraComponent::GetFacingDir(Zenith_Maths::Vector3& xOut) const
 {
-	xOut.z = cos(m_fYaw) * cos(m_fPitch);
-	xOut.x = -sin(m_fYaw) * cos(m_fPitch);
-	xOut.y = sin(m_fPitch);
+	xOut.z = glm::cos(m_fYaw) * glm::cos(m_fPitch);
+	xOut.x = -glm::sin(m_fYaw) * glm::cos(m_fPitch);
+	xOut.y = glm::sin(m_fPitch);
 	glm::normalize(xOut);
 }
 

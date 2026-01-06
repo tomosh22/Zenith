@@ -75,6 +75,7 @@ static vk::SurfaceFormatKHR ChooseSwapSurfaceFormat(const std::vector<vk::Surfac
 		}
 	}
 	Zenith_Assert(false, "b8g8r8a8_srgb not supported");
+	return xAvailableFormats[0];
 }
 
 static vk::Extent2D ChooseSwapExtent(const vk::SurfaceCapabilitiesKHR& xCapabilities)
@@ -111,6 +112,7 @@ static vk::PresentModeKHR ChooseSwapPresentMode(const std::vector<vk::PresentMod
 		}
 	}
 	Zenith_Assert(false, "fifo not supported");
+	return vk::PresentModeKHR::eFifo;
 }
 
 Zenith_Vulkan_Swapchain::~Zenith_Vulkan_Swapchain()

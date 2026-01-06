@@ -4,7 +4,7 @@
 #include "Maths/Zenith_Maths.h"
 #include <string>
 
-class Flux_Texture;
+struct Flux_Texture;
 
 /**
  * Zenith_UIImage - Textured image widget

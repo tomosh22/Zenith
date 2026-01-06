@@ -7,7 +7,7 @@
 
 // Helper template for writing vertex arrays
 template<typename T>
-static void WriteVertexArray(Zenith_DataStream& xStream, const Zenith_Vector<T>& xArray, const char* szName)
+static void WriteVertexArray(Zenith_DataStream& xStream, const Zenith_Vector<T>& xArray, const char* /*szName*/)
 {
 	bool bHasData = xArray.GetSize() > 0;
 	xStream << bHasData;

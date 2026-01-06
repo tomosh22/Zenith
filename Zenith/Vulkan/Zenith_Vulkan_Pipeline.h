@@ -71,7 +71,7 @@ public:
 	vk::PipelineLayout m_xLayout;
 	vk::DescriptorSetLayout m_axDescSetLayouts[FLUX_MAX_DESCRIPTOR_BINDINGS];
 	DescriptorType m_axDescriptorTypes[FLUX_MAX_DESCRIPTOR_BINDINGS][FLUX_MAX_DESCRIPTOR_BINDINGS];
-	u_int m_uNumDescriptorSets = -1;
+	u_int m_uNumDescriptorSets = UINT32_MAX;
 };
 
 class Zenith_Vulkan_Pipeline

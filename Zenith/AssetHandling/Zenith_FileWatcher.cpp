@@ -255,7 +255,7 @@ uint64_t Zenith_FileWatcher::GetFileModificationTime(const std::string& strPath)
 
 #ifdef _WIN32
 
-void Zenith_FileWatcher::WatchThreadFunc(const void* pUserData)
+void Zenith_FileWatcher::WatchThreadFunc(const void* /*pUserData*/)
 {
 	constexpr DWORD BUFFER_SIZE = 32768;
 	char acBuffer[BUFFER_SIZE];

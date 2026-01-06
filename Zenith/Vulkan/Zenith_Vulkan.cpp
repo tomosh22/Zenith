@@ -1026,6 +1026,7 @@ vk::Format Zenith_Vulkan::ConvertToVkFormat_Colour(TextureFormat eFormat) {
 		return vk::Format::eBc7UnormBlock;
 	default:
 		Zenith_Assert(false, "Invalid format");
+		return vk::Format::eUndefined;
 	}
 }
 
@@ -1036,6 +1037,7 @@ vk::Format Zenith_Vulkan::ConvertToVkFormat_DepthStencil(TextureFormat eFormat) 
 		return vk::Format::eD32Sfloat;
 	default:
 		Zenith_Assert(false, "Invalid format");
+		return vk::Format::eUndefined;
 	}
 }
 
@@ -1050,6 +1052,7 @@ vk::AttachmentLoadOp Zenith_Vulkan::ConvertToVkLoadAction(LoadAction eAction) {
 		return vk::AttachmentLoadOp::eLoad;
 	default:
 		Zenith_Assert(false, "Invalid action");
+		return vk::AttachmentLoadOp::eDontCare;
 	}
 }
 
@@ -1062,6 +1065,7 @@ vk::AttachmentStoreOp Zenith_Vulkan::ConvertToVkStoreAction(StoreAction eAction)
 		return vk::AttachmentStoreOp::eStore;
 	default:
 		Zenith_Assert(false, "Invalid action");
+		return vk::AttachmentStoreOp::eDontCare;
 	}
 }
 

@@ -224,7 +224,7 @@ private:
 	// ========================================================================
 	// Input and Physics (delegates to modules)
 	// ========================================================================
-	void HandleInput(float fDt)
+	void HandleInput(float /*fDt*/)
 	{
 		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
 		if (!m_xLevelEntities.uBallEntityID.IsValid() || !xScene.EntityExists(m_xLevelEntities.uBallEntityID))

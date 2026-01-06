@@ -37,7 +37,7 @@ public:
 	/**
 	 * OnUpdate - Called every frame.
 	 */
-	virtual void OnUpdate(float fDt) {}
+	virtual void OnUpdate(float /*fDt*/) {}
 
 	/**
 	 * OnDestroy - Called when behavior is destroyed.
@@ -46,9 +46,9 @@ public:
 
 	// Physics collision callbacks - override to handle collision events
 	// xOther is the entity that was collided with
-	virtual void OnCollisionEnter(Zenith_Entity xOther) {}
-	virtual void OnCollisionStay(Zenith_Entity xOther) {}
-	virtual void OnCollisionExit(Zenith_EntityID uOtherID) {}  // Exit only gets ID since body may be destroyed
+	virtual void OnCollisionEnter(Zenith_Entity /*xOther*/) {}
+	virtual void OnCollisionStay(Zenith_Entity /*xOther*/) {}
+	virtual void OnCollisionExit(Zenith_EntityID /*uOtherID*/) {}  // Exit only gets ID since body may be destroyed
 
 	// Return the unique type name for this behavior (used for serialization)
 	virtual const char* GetBehaviourTypeName() const = 0;
@@ -59,8 +59,8 @@ public:
 
 	// Serialization of behavior-specific parameters
 	// Override these to save/load custom behavior state
-	virtual void WriteParametersToDataStream(Zenith_DataStream& xStream) const {}
-	virtual void ReadParametersFromDataStream(Zenith_DataStream& xStream) {}
+	virtual void WriteParametersToDataStream(Zenith_DataStream& /*xStream*/) const {}
+	virtual void ReadParametersFromDataStream(Zenith_DataStream& /*xStream*/) {}
 
 	Zenith_Entity& GetEntity() { return m_xParentEntity; }
 
