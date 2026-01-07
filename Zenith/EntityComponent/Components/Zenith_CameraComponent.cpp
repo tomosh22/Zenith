@@ -107,7 +107,7 @@ void Zenith_CameraComponent::GetFacingDir(Zenith_Maths::Vector3& xOut) const
 	xOut.z = glm::cos(m_fYaw) * glm::cos(m_fPitch);
 	xOut.x = -glm::sin(m_fYaw) * glm::cos(m_fPitch);
 	xOut.y = glm::sin(m_fPitch);
-	glm::normalize(xOut);
+	xOut = glm::normalize(xOut);  // Must assign result back
 }
 
 Zenith_Maths::Vector3 Zenith_CameraComponent::GetUpDir()
@@ -136,7 +136,7 @@ void Zenith_CameraComponent::WriteToDataStream(Zenith_DataStream& xStream) const
 	xStream << m_fPitch;
 	xStream << m_fAspect;
 	xStream << m_xPosition;
-	xStream << m_eType;
+	// Note: m_eType already written at start - do NOT write again (was causing data corruption)
 
 	// m_xParentEntity reference is not serialized - will be restored during deserialization
 }
@@ -160,7 +160,7 @@ void Zenith_CameraComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 	xStream >> m_fPitch;
 	xStream >> m_fAspect;
 	xStream >> m_xPosition;
-	xStream >> m_eType;
+	// Note: m_eType already read at start - do NOT read again (was causing data corruption)
 
 	// m_xParentEntity will be set by the entity deserialization system
 }

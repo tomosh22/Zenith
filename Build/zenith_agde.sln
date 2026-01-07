@@ -12,6 +12,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Sokoban", "..\Games\Sokoban
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Survival", "..\Games\Survival\build\survival_agde.vcxproj", "{5690C120-3098-0B9F-5FFF-A76A52CCEC17}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "TilePuzzle", "..\Games\TilePuzzle\build\tilepuzzle_agde.vcxproj", "{859D3022-6E91-B39D-58C6-DFE5EA13FEAA}"
+EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Zenith", "zenith_agde.vcxproj", "{F83CFCD6-A014-178D-D9F6-2D4FDA358FCD}"
 EndProject
 Global
@@ -44,6 +46,10 @@ Global
 		{5690C120-3098-0B9F-5FFF-A76A52CCEC17}.arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a.Build.0 = arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a
 		{5690C120-3098-0B9F-5FFF-A76A52CCEC17}.arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a.ActiveCfg = arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a
 		{5690C120-3098-0B9F-5FFF-A76A52CCEC17}.arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a.Build.0 = arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a
+		{859D3022-6E91-B39D-58C6-DFE5EA13FEAA}.arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a.ActiveCfg = arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a
+		{859D3022-6E91-B39D-58C6-DFE5EA13FEAA}.arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a.Build.0 = arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a
+		{859D3022-6E91-B39D-58C6-DFE5EA13FEAA}.arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a.ActiveCfg = arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a
+		{859D3022-6E91-B39D-58C6-DFE5EA13FEAA}.arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a.Build.0 = arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a
 		{F83CFCD6-A014-178D-D9F6-2D4FDA358FCD}.arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a.ActiveCfg = arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a
 		{F83CFCD6-A014-178D-D9F6-2D4FDA358FCD}.arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a.Build.0 = arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a
 		{F83CFCD6-A014-178D-D9F6-2D4FDA358FCD}.arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a.ActiveCfg = arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a

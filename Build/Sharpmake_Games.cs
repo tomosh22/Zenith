@@ -161,3 +161,15 @@ public class SurvivalGameProject : GameProject
 		// Survival-specific configuration if needed
 	}
 }
+
+// TilePuzzle game project - Sliding puzzle with colored shapes and cats
+[Sharpmake.Generate]
+public class TilePuzzleGameProject : GameProject
+{
+	public override string GameName => "TilePuzzle";
+
+	public TilePuzzleGameProject() : base()
+	{
+		// TilePuzzle-specific configuration if needed
+	}
+}

@@ -14,6 +14,20 @@ private:
 	static void TestVectorErase();
 	static void TestVectorZeroCapacityResize();
 	static void TestMemoryPool();
+	static void TestMemoryPoolExhaustion();
+
+	// CircularQueue tests
+	static void TestCircularQueueBasic();
+	static void TestCircularQueueWrapping();
+	static void TestCircularQueueFull();
+	static void TestCircularQueueNonPOD();
+
+	// Vector edge case tests
+	static void TestVectorSelfAssignment();
+	static void TestVectorRemoveSwap();
+
+	// DataStream edge case tests
+	static void TestDataStreamBoundsCheck();
 
 	// Scene serialization tests
 	static void TestSceneSerialization();
@@ -121,6 +135,8 @@ private:
 	static void TestSelfParentingPrevention();
 	static void TestTryGetMainCameraWhenNotSet();
 	static void TestDeepHierarchyBuildModelMatrix();
+	static void TestLocalSceneDestruction();
+	static void TestLocalSceneWithHierarchy();
 
 	// Prefab system tests
 	static void TestPrefabCreateFromEntity();

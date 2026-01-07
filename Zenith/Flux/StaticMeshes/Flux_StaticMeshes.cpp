@@ -203,6 +203,7 @@ void Flux_StaticMeshes::RenderToGBuffer(void*)
 				{
 					pxMaterial = Flux_Graphics::s_pxBlankMaterial;
 				}
+				Zenith_Assert(pxMaterial != nullptr, "Material is null and blank material fallback also null");
 
 				g_xCommandList.AddCommand<Flux_CommandBindSRV>(&pxMaterial->GetDiffuseTexture()->m_xSRV, 0);
 				g_xCommandList.AddCommand<Flux_CommandBindSRV>(&pxMaterial->GetNormalTexture()->m_xSRV, 1);

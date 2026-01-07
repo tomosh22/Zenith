@@ -109,9 +109,9 @@ public:
 	{
 		uint32_t uOffset = 0;
 		m_uStride = 0;
-		for (Zenith_Vector<Flux_BufferElement>::Iterator xIt(m_xElements); !xIt.Done(); xIt.Next())
+		for (u_int u = 0; u < m_xElements.GetSize(); ++u)
 		{
-			Flux_BufferElement& xElement = xIt.GetData();
+			Flux_BufferElement& xElement = m_xElements.Get(u);
 			xElement.m_uOffset = uOffset;
 			uOffset += xElement.m_uSize;
 			m_uStride += xElement.m_uSize;

@@ -14,6 +14,7 @@ public:
 		, m_ulCursor(0)
 		, m_pData(Zenith_MemoryManagement::Allocate(ulSize))
 	{
+		Zenith_Assert(m_pData != nullptr, "DataStream: Failed to allocate %llu bytes", ulSize);
 	}
 
 	Zenith_DataStream(void* pData, uint64_t ulSize)
@@ -73,12 +74,18 @@ public:
 
 	void SkipBytes(const u_int uNumBytes)
 	{
-		m_ulCursor += uNumBytes;
+		Zenith_Assert(m_ulCursor + uNumBytes <= m_ulDataSize,
+			"SkipBytes: Would skip past end of stream (cursor=%llu, skip=%u, size=%llu)",
+			m_ulCursor, uNumBytes, m_ulDataSize);
+		// Clamp to valid range in release builds for safety
+		m_ulCursor = (std::min)(m_ulCursor + uNumBytes, m_ulDataSize);
 	}
 
 	void SetCursor(uint64_t ulCursor)
 	{
-		m_ulCursor = ulCursor;
+		Zenith_Assert(ulCursor <= m_ulDataSize, "SetCursor: cursor %llu exceeds data size %llu", ulCursor, m_ulDataSize);
+		// Clamp to valid range in release builds for safety
+		m_ulCursor = (ulCursor > m_ulDataSize) ? m_ulDataSize : ulCursor;
 	}
 
 	uint64_t GetCursor() const
@@ -105,7 +112,17 @@ public:
 	{
 		Zenith_Assert(pData != nullptr, "pData cannot be null");
 		uint64_t ulNewCursor = m_ulCursor + ulSize;
-		while (ulNewCursor > m_ulDataSize) Resize();
+		while (ulNewCursor > m_ulDataSize)
+		{
+			uint64_t ulOldSize = m_ulDataSize;
+			Resize();
+			// Check if Resize actually grew the buffer - prevents infinite loop on allocation failure
+			if (m_ulDataSize == ulOldSize)
+			{
+				Zenith_Error(LOG_CATEGORY_CORE, "DataStream::WriteData: Resize failed, cannot write %llu bytes", ulSize);
+				return;
+			}
+		}
 		memcpy(static_cast<uint8_t*>(m_pData) + m_ulCursor, pData, ulSize);
 		m_ulCursor = ulNewCursor;
 	}
@@ -147,7 +164,16 @@ public:
 	void operator<<(const T& x)
 	{
 		uint64_t ulNewCursor = m_ulCursor + sizeof(T);
-		while (ulNewCursor > m_ulDataSize) Resize();
+		while (ulNewCursor > m_ulDataSize)
+		{
+			uint64_t ulOldSize = m_ulDataSize;
+			Resize();
+			if (m_ulDataSize == ulOldSize)
+			{
+				Zenith_Error(LOG_CATEGORY_CORE, "DataStream::operator<<: Resize failed");
+				return;
+			}
+		}
 		memcpy(static_cast<uint8_t*>(m_pData) + m_ulCursor, &x, sizeof(T));
 		m_ulCursor = ulNewCursor;
 	}
@@ -200,6 +226,13 @@ public:
 	{
 		u_int uSize;
 		*this >> uSize;
+
+		// Sanity check to prevent OOM from corrupted data
+		constexpr u_int uMAX_REASONABLE_SIZE = 100000000;
+		Zenith_Assert(uSize <= uMAX_REASONABLE_SIZE,
+			"std::vector deserialization: Size %u exceeds reasonable limit", uSize);
+		if (uSize > uMAX_REASONABLE_SIZE) return;
+
 		xVec.reserve(uSize);
 		for (u_int u = 0; u < uSize; u++)
 		{
@@ -230,7 +263,11 @@ public:
 	{
 		const u_int uLength = static_cast<u_int>(str.length());
 		*this << uLength;
-		for (u_int u = 0; u < uLength; u++) *this << str.at(u);
+		// Write string data in bulk for efficiency
+		if (uLength > 0)
+		{
+			WriteData(str.data(), uLength);
+		}
 	}
 	template<>
 	void operator>>(std::string& str)
@@ -238,13 +275,31 @@ public:
 		str.clear();
 		u_int uLength;
 		*this >> uLength;
-		for (u_int u = 0; u < uLength; u++)
+
+		if (uLength == 0) return;
+
+		// Maximum string length to prevent OOM from corrupted data
+		constexpr u_int uMAX_STRING_LENGTH = 1024 * 1024;  // 1 MB limit
+		if (uLength > uMAX_STRING_LENGTH)
 		{
-			char c[2];
-			*this >> c[0];
-			c[1] = '\0';
-			str.append(c);
+			Zenith_Error(LOG_CATEGORY_CORE, "DataStream string length %u exceeds maximum %u - possible corruption",
+				uLength, uMAX_STRING_LENGTH);
+			return;
 		}
+
+		// Bounds check before reading
+		Zenith_Assert(m_ulCursor + uLength <= m_ulDataSize, "String read would exceed DataStream bounds");
+		if (m_ulCursor + uLength > m_ulDataSize)
+		{
+			Zenith_Error(LOG_CATEGORY_CORE, "DataStream string read overflow: cursor=%llu, length=%u, dataSize=%llu",
+				m_ulCursor, uLength, m_ulDataSize);
+			return;
+		}
+
+		// Read string data in bulk - O(n) instead of O(n^2)
+		str.resize(uLength);
+		memcpy(str.data(), static_cast<uint8_t*>(m_pData) + m_ulCursor, uLength);
+		m_ulCursor += uLength;
 	}
 #pragma endregion
 
@@ -264,6 +319,13 @@ public:
 	{
 		u_int uCount;
 		*this >> uCount;
+
+		// Sanity check to prevent OOM from corrupted data
+		constexpr u_int uMAX_REASONABLE_SIZE = 100000000;
+		Zenith_Assert(uCount <= uMAX_REASONABLE_SIZE,
+			"std::unordered_map deserialization: Count %u exceeds reasonable limit", uCount);
+		if (uCount > uMAX_REASONABLE_SIZE) return;
+
 		for (u_int u = 0; u < uCount; u++)
 		{
 			T1 xFirst;
@@ -277,10 +339,25 @@ public:
 
 	void ReadFromFile(const char* szFilename)
 	{
+		Zenith_Assert(szFilename != nullptr && szFilename[0] != '\0',
+			"ReadFromFile: Invalid filename");
+
 		m_pData = Zenith_FileAccess::ReadFile(szFilename, m_ulDataSize);
+
+		Zenith_Assert(m_pData != nullptr || m_ulDataSize == 0,
+			"ReadFromFile: Failed to read file '%s'", szFilename);
+
+		m_bOwnsData = true;
+		m_ulCursor = 0;
 	}
+
 	void WriteToFile(const char* szFilename)
 	{
+		Zenith_Assert(szFilename != nullptr && szFilename[0] != '\0',
+			"WriteToFile: Invalid filename");
+		Zenith_Assert(m_pData != nullptr || m_ulCursor == 0,
+			"WriteToFile: No data to write");
+
 		Zenith_FileAccess::WriteFile(szFilename, m_pData, m_ulCursor);
 	}
 
@@ -293,8 +370,19 @@ private:
 			return;
 		}
 
-		m_ulDataSize *= 2;
-		m_pData = Zenith_MemoryManagement::Reallocate(m_pData, m_ulDataSize);
+		uint64_t ulNewSize = m_ulDataSize * 2;
+		void* pNewData = Zenith_MemoryManagement::Reallocate(m_pData, ulNewSize);
+
+		Zenith_Assert(pNewData != nullptr, "DataStream::Resize: Failed to reallocate from %llu to %llu bytes",
+			m_ulDataSize, ulNewSize);
+
+		if (pNewData != nullptr)
+		{
+			m_pData = pNewData;
+			m_ulDataSize = ulNewSize;
+		}
+		// Note: If reallocation fails, m_pData remains valid at original size
+		// Write operations will continue to try to resize and eventually fail
 	}
 	static constexpr u_int uDEFAULT_INITIAL_SIZE = 1024;
 

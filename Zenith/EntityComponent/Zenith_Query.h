@@ -28,13 +28,30 @@ public:
 
 	// ForEach - iterate over all entities that have all queried component types
 	// Callback signature: void(Zenith_EntityID, T1&, T2&, ...)
+	// NOTE: Safe against entity creation/destruction during iteration via snapshot
 	template<typename Func>
 	void ForEach(Func&& fn)
 	{
-		// Iterate m_xActiveEntities for O(num_entities)
-		for (u_int u = 0; u < m_pxScene->m_xActiveEntities.GetSize(); ++u)
+		// Snapshot entity IDs before iteration to prevent invalidation
+		// if callback creates/destroys entities
+		// Lock mutex during snapshot to prevent race with concurrent modifications
+		Zenith_Vector<Zenith_EntityID> xSnapshot;
 		{
-			Zenith_EntityID xEntityID = m_pxScene->m_xActiveEntities.Get(u);
+			Zenith_ScopedMutexLock xLock(m_pxScene->m_xMutex);
+			xSnapshot.Reserve(m_pxScene->m_xActiveEntities.GetSize());
+			for (u_int u = 0; u < m_pxScene->m_xActiveEntities.GetSize(); ++u)
+			{
+				xSnapshot.PushBack(m_pxScene->m_xActiveEntities.Get(u));
+			}
+		}
+
+		// Iterate snapshot (no lock held - callback may modify scene)
+		for (u_int u = 0; u < xSnapshot.GetSize(); ++u)
+		{
+			Zenith_EntityID xEntityID = xSnapshot.Get(u);
+
+			// Skip entities that were destroyed during iteration
+			if (!m_pxScene->EntityExists(xEntityID)) continue;
 
 			// Skip entities pending destruction (Unity-style)
 			if (m_pxScene->IsMarkedForDestruction(xEntityID)) continue;
@@ -57,9 +74,20 @@ public:
 	// First - returns the first matching entity ID, or INVALID_ENTITY_ID if none
 	Zenith_EntityID First()
 	{
-		for (u_int u = 0; u < m_pxScene->m_xActiveEntities.GetSize(); ++u)
+		// Snapshot to prevent invalidation if entities are created during iteration
+		Zenith_Vector<Zenith_EntityID> xSnapshot;
 		{
-			Zenith_EntityID xEntityID = m_pxScene->m_xActiveEntities.Get(u);
+			Zenith_ScopedMutexLock xLock(m_pxScene->m_xMutex);
+			xSnapshot.Reserve(m_pxScene->m_xActiveEntities.GetSize());
+			for (u_int u = 0; u < m_pxScene->m_xActiveEntities.GetSize(); ++u)
+			{
+				xSnapshot.PushBack(m_pxScene->m_xActiveEntities.Get(u));
+			}
+		}
+
+		for (u_int u = 0; u < xSnapshot.GetSize(); ++u)
+		{
+			Zenith_EntityID xEntityID = xSnapshot.Get(u);
 
 			// Skip entities pending destruction
 			if (m_pxScene->IsMarkedForDestruction(xEntityID)) continue;

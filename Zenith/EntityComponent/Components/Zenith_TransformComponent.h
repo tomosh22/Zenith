@@ -39,7 +39,13 @@ public:
 	void SetParentByID(Zenith_EntityID uParentID);
 
 	// Returns parent transform, or nullptr if no parent or parent entity doesn't exist
-	Zenith_TransformComponent* GetParent() const;
+	// NOTE: Named "Try" to indicate it may return nullptr - always check return value
+	Zenith_TransformComponent* TryGetParent() const;
+
+	// Returns parent entity by value (safe - no dangling pointers)
+	// Check IsValid() on returned entity before use
+	Zenith_Entity GetParentEntity() const;
+
 	Zenith_EntityID GetParentEntityID() const { return m_xParentEntityID; }
 
 	// Pending parent file index (for scene loading - maps old file index to new EntityID)
@@ -58,18 +64,27 @@ public:
 	void ForEachChild(Func&& func);
 
 	// Get child transform by index (returns nullptr if invalid)
-	Zenith_TransformComponent* GetChildAt(uint32_t uIndex) const;
+	// NOTE: Named "Try" to indicate it may return nullptr - always check return value
+	Zenith_TransformComponent* TryGetChildAt(uint32_t uIndex) const;
+
+	// Returns child entity by value (safe - no dangling pointers)
+	// Check IsValid() on returned entity before use
+	Zenith_Entity GetChildEntityAt(uint32_t uIndex) const;
 
 	bool HasParent() const { return m_xParentEntityID.IsValid(); }
 	bool IsRoot() const { return !m_xParentEntityID.IsValid(); }
 	void DetachFromParent();
 	void DetachAllChildren();
-	Zenith_Entity& GetEntity() { return m_xParentEntity; }
-	const Zenith_Entity& GetEntity() const { return m_xParentEntity; }
+	Zenith_Entity& GetEntity() { return m_xOwningEntity; }
+	const Zenith_Entity& GetEntity() const { return m_xOwningEntity; }
 
 	// Hierarchy safety: Check if this transform is a descendant of the given entity
 	// Used to prevent circular hierarchies (e.g., parenting A to its own child)
 	bool IsDescendantOf(Zenith_EntityID uAncestorID) const;
+
+	// Unsafe version for internal use when scene mutex is already held
+	// ONLY call this when you already hold Zenith_Scene::m_xMutex!
+	bool IsDescendantOfUnsafe(Zenith_EntityID uAncestorID, Zenith_Scene& xScene) const;
 
 
 #ifdef ZENITH_TOOLS
@@ -117,10 +132,12 @@ private:
 	Zenith_Maths::Vector3 m_xPosition = { 0.0, 0.0, 0.0 };
 	Zenith_Maths::Quat m_xRotation = { 1.0, 0.0, 0.0, 0.0 };
 
-	Zenith_Entity m_xParentEntity;
+	// The entity that owns this component (NOT the hierarchy parent)
+	Zenith_Entity m_xOwningEntity;
 
 	// Parent-child hierarchy (Unity-style) - uses EntityIDs for pointer safety
 	// EntityIDs survive component pool relocations (swap-and-pop removal)
+	// NOTE: This is the HIERARCHY parent, not the owning entity above
 	Zenith_EntityID m_xParentEntityID = INVALID_ENTITY_ID;
 	Zenith_Vector<Zenith_EntityID> m_xChildEntityIDs;
 
@@ -133,9 +150,20 @@ template<typename Func>
 void Zenith_TransformComponent::ForEachChild(Func&& func)
 {
 	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+
+	// Copy child IDs to local vector to prevent invalidation during iteration
+	// This fixes the case where the callback modifies the child list (e.g., reparenting)
+	Zenith_Vector<Zenith_EntityID> xChildIDsCopy;
+	xChildIDsCopy.Reserve(m_xChildEntityIDs.GetSize());
 	for (u_int u = 0; u < m_xChildEntityIDs.GetSize(); ++u)
 	{
-		Zenith_EntityID uChildID = m_xChildEntityIDs.Get(u);
+		xChildIDsCopy.PushBack(m_xChildEntityIDs.Get(u));
+	}
+
+	// Now iterate the copy safely
+	for (u_int u = 0; u < xChildIDsCopy.GetSize(); ++u)
+	{
+		Zenith_EntityID uChildID = xChildIDsCopy.Get(u);
 		if (xScene.EntityExists(uChildID))
 		{
 			Zenith_Entity xChildEntity = xScene.GetEntity(uChildID);

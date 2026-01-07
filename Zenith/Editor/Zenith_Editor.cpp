@@ -431,10 +431,10 @@ bool Zenith_Editor::Update()
 		if (xScene.m_xMainCameraEntity != INVALID_ENTITY_ID)
 		{
 			// Initialize editor camera from game camera position
-			Zenith_Entity* pxCameraEntity = xScene.TryGetEntity(xScene.m_xMainCameraEntity);
-			if (pxCameraEntity != nullptr && pxCameraEntity->HasComponent<Zenith_CameraComponent>())
+			Zenith_Entity xCameraEntity = xScene.TryGetEntity(xScene.m_xMainCameraEntity);
+			if (xCameraEntity.IsValid() && xCameraEntity.HasComponent<Zenith_CameraComponent>())
 			{
-				Zenith_CameraComponent& xGameCamera = pxCameraEntity->GetComponent<Zenith_CameraComponent>();
+				Zenith_CameraComponent& xGameCamera = xCameraEntity.GetComponent<Zenith_CameraComponent>();
 				xGameCamera.GetPosition(s_xEditorCameraPosition);
 				s_fEditorCameraPitch = xGameCamera.GetPitch();
 				s_fEditorCameraYaw = xGameCamera.GetYaw();
@@ -2646,10 +2646,10 @@ void Zenith_Editor::UpdateEditorCamera(float fDt)
 	// (In stopped/paused mode, the game camera is being controlled by editor values)
 	if (s_uGameCameraEntity != INVALID_ENTITY_ID)
 	{
-		Zenith_Entity* pxCameraEntity = Zenith_Scene::GetCurrentScene().TryGetEntity(s_uGameCameraEntity);
-		if (pxCameraEntity != nullptr && pxCameraEntity->HasComponent<Zenith_CameraComponent>())
+		Zenith_Entity xCameraEntity = Zenith_Scene::GetCurrentScene().TryGetEntity(s_uGameCameraEntity);
+		if (xCameraEntity.IsValid() && xCameraEntity.HasComponent<Zenith_CameraComponent>())
 		{
-			Zenith_CameraComponent& xCamera = pxCameraEntity->GetComponent<Zenith_CameraComponent>();
+			Zenith_CameraComponent& xCamera = xCameraEntity.GetComponent<Zenith_CameraComponent>();
 			xCamera.SetPosition(s_xEditorCameraPosition);
 			xCamera.SetPitch(s_fEditorCameraPitch);
 			xCamera.SetYaw(s_fEditorCameraYaw);
@@ -2673,10 +2673,10 @@ void Zenith_Editor::SwitchToEditorCamera()
 	// Copy game camera state to editor camera
 	if (s_uGameCameraEntity != INVALID_ENTITY_ID)
 	{
-		Zenith_Entity* pxEntity = xScene.TryGetEntity(s_uGameCameraEntity);
-		if (pxEntity != nullptr && pxEntity->HasComponent<Zenith_CameraComponent>())
+		Zenith_Entity xEntity = xScene.TryGetEntity(s_uGameCameraEntity);
+		if (xEntity.IsValid() && xEntity.HasComponent<Zenith_CameraComponent>())
 		{
-			Zenith_CameraComponent& xGameCamera = pxEntity->GetComponent<Zenith_CameraComponent>();
+			Zenith_CameraComponent& xGameCamera = xEntity.GetComponent<Zenith_CameraComponent>();
 			xGameCamera.GetPosition(s_xEditorCameraPosition);
 			s_fEditorCameraPitch = xGameCamera.GetPitch();
 			s_fEditorCameraYaw = xGameCamera.GetYaw();

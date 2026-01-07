@@ -66,6 +66,8 @@ void Flux::OnResChange()
 
 bool Flux::PrepareFrame(Flux_WorkDistribution& xOutDistribution)
 {
+	static_assert(FLUX_NUM_WORKER_THREADS > 0, "FLUX_NUM_WORKER_THREADS must be positive");
+
 	xOutDistribution.Clear();
 	
 	// Count total commands across all render orders
@@ -124,11 +126,14 @@ bool Flux::PrepareFrame(Flux_WorkDistribution& xOutDistribution)
 	}
 	
 	// Finalize the last thread's range (end is exclusive, so point to start of next render order)
+	Zenith_Assert(uCurrentThreadIndex < FLUX_NUM_WORKER_THREADS,
+		"PrepareFrame: Thread index %u out of bounds (max %u)", uCurrentThreadIndex, FLUX_NUM_WORKER_THREADS);
+
 	if (uCurrentThreadIndex < FLUX_NUM_WORKER_THREADS)
 	{
 		xOutDistribution.auEndRenderOrder[uCurrentThreadIndex] = RENDER_ORDER_MAX;
 		xOutDistribution.auEndIndex[uCurrentThreadIndex] = 0;
 	}
-	
+
 	return true;
 }

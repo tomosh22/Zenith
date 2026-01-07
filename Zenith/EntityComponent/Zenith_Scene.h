@@ -7,6 +7,7 @@
 #include <unordered_set>
 
 class Zenith_CameraComponent;
+class Zenith_TransformComponent;
 
 // Forward declare Zenith_Scene so Zenith_Entity can reference it
 class Zenith_Scene;
@@ -20,12 +21,45 @@ public:
 	virtual ~Zenith_ComponentPoolBase() = default;
 };
 
+// Unity-style component handle with generation counter for detecting stale references
+template<typename T>
+struct Zenith_ComponentHandle
+{
+	uint32_t m_uIndex = UINT32_MAX;
+	uint32_t m_uGeneration = 0;
+
+	bool IsValid() const { return m_uIndex != UINT32_MAX; }
+	static Zenith_ComponentHandle Invalid() { return { UINT32_MAX, 0 }; }
+
+	bool operator==(const Zenith_ComponentHandle& xOther) const
+	{
+		return m_uIndex == xOther.m_uIndex && m_uGeneration == xOther.m_uGeneration;
+	}
+	bool operator!=(const Zenith_ComponentHandle& xOther) const { return !(*this == xOther); }
+};
+
 template<typename T>
 class Zenith_ComponentPool : public Zenith_ComponentPoolBase
 {
 public:
 	Zenith_Vector<T> m_xData;
 	Zenith_Vector<Zenith_EntityID> m_xOwningEntities;  // Parallel array tracking which entity owns each component
+	Zenith_Vector<uint32_t> m_xGenerations;            // Generation counter per slot for stale reference detection
+	Zenith_Vector<uint32_t> m_xFreeIndices;            // Recycled slot indices for reuse
+
+	// Check if a slot is currently occupied (not freed)
+	bool IsSlotOccupied(uint32_t uIndex) const
+	{
+		if (uIndex >= m_xOwningEntities.GetSize()) return false;
+		return m_xOwningEntities.Get(uIndex).IsValid();
+	}
+
+	// Get current generation for a slot
+	uint32_t GetGeneration(uint32_t uIndex) const
+	{
+		Zenith_Assert(uIndex < m_xGenerations.GetSize(), "GetGeneration: Invalid component index %u", uIndex);
+		return m_xGenerations.Get(uIndex);
+	}
 };
 
 // Define the component concept after Zenith_Entity is fully defined
@@ -89,6 +123,9 @@ public:
 	~Zenith_Scene();
 	void Reset();
 
+	// Check if scene is being destroyed/reset - components should skip cleanup if true
+	bool IsBeingDestroyed() const { return m_bIsBeingDestroyed; }
+
 	void AcquireMutex()
 	{
 		m_xMutex.Lock();
@@ -111,6 +148,12 @@ public:
 
 			Zenith_EntitySlot& xSlot = m_xEntitySlots.Get(uIndex);
 			xSlot.m_uGeneration++;  // Increment to invalidate old references
+			// Skip generation 0 (reserved for invalid) to prevent overflow wraparound bugs
+			if (xSlot.m_uGeneration == 0)
+			{
+				xSlot.m_uGeneration = 1;
+				Zenith_Warning(LOG_CATEGORY_ECS, "Entity slot %u generation wrapped - very long-running session", uIndex);
+			}
 			uGeneration = xSlot.m_uGeneration;
 			xSlot.m_bOccupied = true;
 			xSlot.m_bMarkedForDestruction = false;
@@ -145,18 +188,42 @@ public:
 		Zenith_Assert(EntityExists(xID), "CreateComponent: Entity (idx=%u, gen=%u) is stale or invalid", xID.m_uIndex, xID.m_uGeneration);
 
 		Zenith_ComponentPool<T>* const pxPool = GetComponentPool<T>();
-		u_int uIndex = pxPool->m_xData.GetSize();
-		pxPool->m_xData.EmplaceBack(std::forward<Args>(args)...);
-		pxPool->m_xOwningEntities.PushBack(xID);  // Track which entity owns this component
+
+		u_int uIndex;
+		uint32_t uGeneration;
+
+		if (pxPool->m_xFreeIndices.GetSize() > 0)
+		{
+			// Reuse a recycled slot
+			uIndex = pxPool->m_xFreeIndices.GetBack();
+			pxPool->m_xFreeIndices.PopBack();
+
+			// Increment generation to invalidate old handles (skip 0, reserved for invalid)
+			uGeneration = pxPool->m_xGenerations.Get(uIndex) + 1;
+			if (uGeneration == 0) uGeneration = 1;
+			pxPool->m_xGenerations.Get(uIndex) = uGeneration;
+
+			// Construct in-place at recycled slot
+			new (&pxPool->m_xData.Get(uIndex)) T(std::forward<Args>(args)...);
+			pxPool->m_xOwningEntities.Get(uIndex) = xID;
+		}
+		else
+		{
+			// Allocate new slot
+			uIndex = pxPool->m_xData.GetSize();
+			uGeneration = 1;  // Start at 1 (generation 0 is invalid)
+			pxPool->m_xData.EmplaceBack(std::forward<Args>(args)...);
+			pxPool->m_xOwningEntities.PushBack(xID);
+			pxPool->m_xGenerations.PushBack(uGeneration);
+		}
 
 		const Zenith_Scene::TypeID uTypeID = Zenith_Scene::TypeIDGenerator::GetTypeID<T>();
 		std::unordered_map<Zenith_Scene::TypeID, u_int>& xComponentsForThisEntity = m_xEntityComponents.Get(xID.m_uIndex);
-		Zenith_Assert(xComponentsForThisEntity.find(uTypeID) == xComponentsForThisEntity.end(), "This component already has this entity");
+		Zenith_Assert(xComponentsForThisEntity.find(uTypeID) == xComponentsForThisEntity.end(), "Entity already has this component type");
 
 		xComponentsForThisEntity[uTypeID] = uIndex;
 
-		T& xRet = GetComponentFromPool<T>(uIndex);
-		return xRet;
+		return pxPool->m_xData.Get(uIndex);
 	}
 
 	template<typename T>
@@ -184,38 +251,85 @@ public:
 	{
 		Zenith_Assert(EntityExists(xID), "RemoveComponentFromEntity: Entity (idx=%u, gen=%u) is stale or invalid", xID.m_uIndex, xID.m_uGeneration);
 		Zenith_Assert(EntityHasComponent<T>(xID), "RemoveComponentFromEntity: Entity %u does not have component to remove", xID.m_uIndex);
+
 		const Zenith_Scene::TypeID uTypeID = Zenith_Scene::TypeIDGenerator::GetTypeID<T>();
 		std::unordered_map<Zenith_Scene::TypeID, u_int>& xComponentsForThisEntity = m_xEntityComponents.Get(xID.m_uIndex);
 		const u_int uRemovedIndex = xComponentsForThisEntity.at(uTypeID);
 		xComponentsForThisEntity.erase(uTypeID);
 
 		Zenith_ComponentPool<T>* pxPool = GetComponentPool<T>();
-		const u_int uLastIndex = pxPool->m_xData.GetSize() - 1;
 
-		if (uRemovedIndex != uLastIndex)
-		{
-			// Swap with last element using move semantics
-			pxPool->m_xData.Get(uRemovedIndex) = std::move(pxPool->m_xData.Get(uLastIndex));
+		// Call destructor on removed component
+		pxPool->m_xData.Get(uRemovedIndex).~T();
 
-			// Update the entity that owned the moved component
-			Zenith_EntityID xMovedEntityID = pxPool->m_xOwningEntities.Get(uLastIndex);
-			Zenith_Assert(EntityExists(xMovedEntityID), "RemoveComponentFromEntity: Moved entity is stale");
-			m_xEntityComponents.Get(xMovedEntityID.m_uIndex)[uTypeID] = uRemovedIndex;
-			pxPool->m_xOwningEntities.Get(uRemovedIndex) = xMovedEntityID;
-		}
+		// CRITICAL: Reconstruct component in-place to prevent double-destruction bug
+		// When the pool is destroyed later, Zenith_Vector::Clear() will destruct all elements.
+		// If we don't reconstruct here, the already-destructed component's members
+		// (like Zenith_Vector) will have invalid pointers, causing crash in Deallocate.
+		// Use a dummy invalid entity - the component won't be used, just needs valid memory state.
+		Zenith_Entity xDummyEntity;
+		new (&pxPool->m_xData.Get(uRemovedIndex)) T(xDummyEntity);
 
-		pxPool->m_xData.PopBack();
-		pxPool->m_xOwningEntities.PopBack();
+		// Mark slot as free - owning entity becomes INVALID to indicate unused slot
+		// Component indices remain stable (no swap-and-pop), fixing dangling pointer issues
+		pxPool->m_xOwningEntities.Get(uRemovedIndex) = INVALID_ENTITY_ID;
+
+		// Add to free list for reuse (generation will be incremented on next allocation)
+		pxPool->m_xFreeIndices.PushBack(uRemovedIndex);
+
 		return true;
 	}
 
 	template<typename T>
 	void GetAllOfComponentType(Zenith_Vector<T*>& xOut)
 	{
-		for (typename Zenith_Vector<T>::Iterator xIt(GetComponentPool<T>()->m_xData); !xIt.Done(); xIt.Next())
+		Zenith_ComponentPool<T>* pxPool = GetComponentPool<T>();
+		// Manual iteration to skip freed slots (where owning entity is INVALID)
+		for (u_int u = 0; u < pxPool->m_xData.GetSize(); u++)
 		{
-			xOut.PushBack(&xIt.GetData());
+			if (pxPool->m_xOwningEntities.Get(u).IsValid())
+			{
+				xOut.PushBack(&pxPool->m_xData.Get(u));
+			}
 		}
+	}
+
+	// Validate a component handle - checks if generation matches (detects stale references)
+	template<typename T>
+	bool IsComponentHandleValid(const Zenith_ComponentHandle<T>& xHandle) const
+	{
+		if (!xHandle.IsValid()) return false;
+		Zenith_ComponentPool<T>* pxPool = const_cast<Zenith_Scene*>(this)->GetComponentPool<T>();
+		if (xHandle.m_uIndex >= pxPool->m_xGenerations.GetSize()) return false;
+		if (pxPool->m_xGenerations.Get(xHandle.m_uIndex) != xHandle.m_uGeneration) return false;
+		// Also verify slot is occupied (not freed)
+		return pxPool->m_xOwningEntities.Get(xHandle.m_uIndex).IsValid();
+	}
+
+	// Safely get component from handle - asserts if stale, returns nullptr on failure
+	template<typename T>
+	T* TryGetComponentFromHandle(const Zenith_ComponentHandle<T>& xHandle)
+	{
+		Zenith_Assert(IsComponentHandleValid(xHandle),
+			"TryGetComponentFromHandle: Stale component handle (idx=%u, gen=%u)",
+			xHandle.m_uIndex, xHandle.m_uGeneration);
+
+		if (!IsComponentHandleValid(xHandle)) return nullptr;
+		return &GetComponentPool<T>()->m_xData.Get(xHandle.m_uIndex);
+	}
+
+	// Get component handle for an entity's component (for storing safe references)
+	template<typename T>
+	Zenith_ComponentHandle<T> GetComponentHandle(Zenith_EntityID xID)
+	{
+		Zenith_Assert(EntityExists(xID), "GetComponentHandle: Entity is stale");
+		Zenith_Assert(EntityHasComponent<T>(xID), "GetComponentHandle: Entity lacks component");
+
+		const Zenith_Scene::TypeID uTypeID = Zenith_Scene::TypeIDGenerator::GetTypeID<T>();
+		const u_int uIndex = m_xEntityComponents.Get(xID.m_uIndex).at(uTypeID);
+		const uint32_t uGeneration = GetComponentPool<T>()->m_xGenerations.Get(uIndex);
+
+		return Zenith_ComponentHandle<T>{ uIndex, uGeneration };
 	}
 
 	// Multi-component query - returns a query object for fluent iteration
@@ -295,7 +409,16 @@ public:
 	const Zenith_Vector<Zenith_EntityID>& GetActiveEntities() const { return m_xActiveEntities; }
 
 	// Check if entity exists AND is valid (generation matches)
+	// Thread-safe version - acquires mutex for safe cross-thread access
 	bool EntityExists(Zenith_EntityID xID) const
+	{
+		Zenith_ScopedMutexLock xLock(m_xMutex);
+		return EntityExistsUnsafe(xID);
+	}
+
+	// Unsafe version for internal use when mutex is already held
+	// ONLY call this when you already hold m_xMutex!
+	bool EntityExistsUnsafe(Zenith_EntityID xID) const
 	{
 		if (!xID.IsValid()) return false;
 		if (xID.m_uIndex >= m_xEntitySlots.GetSize()) return false;
@@ -307,17 +430,15 @@ public:
 	// Note: The returned Zenith_Entity is a handle, not a reference to stored data
 	Zenith_Entity GetEntity(Zenith_EntityID xID);
 
-	// Try to get an entity - returns nullptr if entity doesn't exist
-	// Note: Returns pointer to static entity handle, valid until next TryGetEntity call
-	Zenith_Entity* TryGetEntity(Zenith_EntityID xID)
+	// Try to get an entity - returns invalid entity handle if entity doesn't exist
+	// Caller should check IsValid() on returned entity
+	Zenith_Entity TryGetEntity(Zenith_EntityID xID)
 	{
 		if (!EntityExists(xID))
 		{
-			return nullptr;
+			return Zenith_Entity();
 		}
-		static Zenith_Entity s_xTempEntity;
-		s_xTempEntity = Zenith_Entity(this, xID);
-		return &s_xTempEntity;
+		return Zenith_Entity(this, xID);
 	}
 
 	// Legacy compatibility - same as GetEntity but with old name
@@ -372,9 +493,20 @@ public:
 	static void DispatchFullLifecycleInit();
 
 private:
+	// RAII guard for scene loading flag - ensures flag is cleared even on early returns/asserts
+	class SceneLoadingGuard
+	{
+	public:
+		SceneLoadingGuard() { Zenith_Scene::s_bIsLoadingScene = true; }
+		~SceneLoadingGuard() { Zenith_Scene::s_bIsLoadingScene = false; }
+		SceneLoadingGuard(const SceneLoadingGuard&) = delete;
+		SceneLoadingGuard& operator=(const SceneLoadingGuard&) = delete;
+	};
+
 	static bool s_bIsLoadingScene;
 	static bool s_bIsPrefabInstantiating;
 	friend class Zenith_Entity;
+	friend class Zenith_TransformComponent;  // For mutex access in hierarchy operations
 	template<typename... Ts> friend class Zenith_Query;
 #ifdef ZENITH_TOOLS
 	friend class Zenith_Editor;
@@ -412,7 +544,7 @@ private:
 	static Zenith_Scene s_xCurrentScene;
 	static float s_fFixedTimeAccumulator;  // Accumulator for fixed timestep updates
 	Zenith_EntityID m_xMainCameraEntity = INVALID_ENTITY_ID;
-	Zenith_Mutex m_xMutex;
+	mutable Zenith_Mutex m_xMutex;  // Mutable to allow locking in const methods
 
 	// Deferred destruction tracking (Unity-style)
 	Zenith_Vector<Zenith_EntityID> m_xPendingDestruction;
@@ -422,6 +554,9 @@ private:
 	// so they don't receive callbacks (OnStart, OnUpdate, etc.) until next frame
 	bool m_bIsUpdating = false;
 	std::unordered_set<Zenith_EntityID> m_xCreatedDuringUpdate;
+
+	// Flag to indicate scene is being destroyed/reset - components should skip cleanup
+	bool m_bIsBeingDestroyed = false;
 
 	public:
 	//#TO type id is index into vector
@@ -465,6 +600,15 @@ T& Zenith_Entity::GetComponent() const
 	Zenith_Assert(m_pxParentScene->EntityExists(m_xEntityID), "GetComponent: Entity (idx=%u, gen=%u) is stale", m_xEntityID.m_uIndex, m_xEntityID.m_uGeneration);
 	Zenith_Assert(HasComponent<T>(), "GetComponent: Entity does not have this component type");
 	return m_pxParentScene->GetComponentFromEntity<T>(m_xEntityID);
+}
+
+template<typename T>
+T* Zenith_Entity::TryGetComponent() const
+{
+	if (m_pxParentScene == nullptr) return nullptr;
+	if (!m_pxParentScene->EntityExists(m_xEntityID)) return nullptr;
+	if (!HasComponent<T>()) return nullptr;
+	return &m_pxParentScene->GetComponentFromEntity<T>(m_xEntityID);
 }
 
 template<typename T>

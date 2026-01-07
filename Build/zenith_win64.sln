@@ -14,6 +14,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Sokoban", "..\Games\Sokoban
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Survival", "..\Games\Survival\build\survival_win64.vcxproj", "{4663B976-FAB1-3C31-0EBB-D9B2196186B2}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "TilePuzzle", "..\Games\TilePuzzle\build\tilepuzzle_win64.vcxproj", "{78C0F8EE-8A17-9782-FF4F-62239661C592}"
+EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Zenith", "zenith_win64.vcxproj", "{11BEC1C0-98B7-E167-86B0-B8D5D8D10E27}"
 EndProject
 Global
@@ -80,6 +82,14 @@ Global
 		{4663B976-FAB1-3C31-0EBB-D9B2196186B2}.vs2022_Release_Win64_False|x64.Build.0 = vs2022_Release_Win64_False|x64
 		{4663B976-FAB1-3C31-0EBB-D9B2196186B2}.vs2022_Release_Win64_True|x64.ActiveCfg = vs2022_Release_Win64_True|x64
 		{4663B976-FAB1-3C31-0EBB-D9B2196186B2}.vs2022_Release_Win64_True|x64.Build.0 = vs2022_Release_Win64_True|x64
+		{78C0F8EE-8A17-9782-FF4F-62239661C592}.vs2022_Debug_Win64_False|x64.ActiveCfg = vs2022_Debug_Win64_False|x64
+		{78C0F8EE-8A17-9782-FF4F-62239661C592}.vs2022_Debug_Win64_False|x64.Build.0 = vs2022_Debug_Win64_False|x64
+		{78C0F8EE-8A17-9782-FF4F-62239661C592}.vs2022_Debug_Win64_True|x64.ActiveCfg = vs2022_Debug_Win64_True|x64
+		{78C0F8EE-8A17-9782-FF4F-62239661C592}.vs2022_Debug_Win64_True|x64.Build.0 = vs2022_Debug_Win64_True|x64
+		{78C0F8EE-8A17-9782-FF4F-62239661C592}.vs2022_Release_Win64_False|x64.ActiveCfg = vs2022_Release_Win64_False|x64
+		{78C0F8EE-8A17-9782-FF4F-62239661C592}.vs2022_Release_Win64_False|x64.Build.0 = vs2022_Release_Win64_False|x64
+		{78C0F8EE-8A17-9782-FF4F-62239661C592}.vs2022_Release_Win64_True|x64.ActiveCfg = vs2022_Release_Win64_True|x64
+		{78C0F8EE-8A17-9782-FF4F-62239661C592}.vs2022_Release_Win64_True|x64.Build.0 = vs2022_Release_Win64_True|x64
 		{11BEC1C0-98B7-E167-86B0-B8D5D8D10E27}.vs2022_Debug_Win64_False|x64.ActiveCfg = vs2022_Debug_Win64_False|x64
 		{11BEC1C0-98B7-E167-86B0-B8D5D8D10E27}.vs2022_Debug_Win64_False|x64.Build.0 = vs2022_Debug_Win64_False|x64
 		{11BEC1C0-98B7-E167-86B0-B8D5D8D10E27}.vs2022_Debug_Win64_True|x64.ActiveCfg = vs2022_Debug_Win64_True|x64

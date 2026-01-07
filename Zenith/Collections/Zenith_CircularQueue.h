@@ -1,8 +1,25 @@
 #pragma once
 
+/**
+ * Zenith_CircularQueue - Fixed-capacity FIFO queue
+ *
+ * THREAD SAFETY: This container is NOT thread-safe.
+ * All operations must be synchronized externally when accessed from multiple threads.
+ *
+ * DO NOT use IsFull()/IsEmpty()/GetSize() for flow control without holding a lock.
+ * These methods have TOCTOU (time-of-check-to-time-of-use) issues in concurrent code.
+ * Always use Enqueue/Dequeue return values under lock for correctness.
+ *
+ * Example usage with external synchronization:
+ *   mutex.Lock();
+ *   bool bSuccess = queue.Enqueue(item);
+ *   mutex.Unlock();
+ */
 template<typename T, u_int uCapacity>
 class Zenith_CircularQueue
 {
+	static_assert(uCapacity > 0, "CircularQueue capacity must be at least 1");
+
 public:
 
 	Zenith_CircularQueue()
@@ -13,16 +30,24 @@ public:
 
 	bool Enqueue(const T& tAdd)
 	{
+		Zenith_Assert(m_uCurrentSize <= uCapacity, "CircularQueue: Size exceeds capacity - corruption detected");
 		if (m_uCurrentSize == uCapacity) return false;
-		m_atContents[(m_uFront + m_uCurrentSize++) % uCapacity] = tAdd;
+		// Compute index before modulo to prevent integer overflow
+		// (m_uFront + m_uCurrentSize could overflow if both are large)
+		u_int uIndex = (m_uFront % uCapacity + m_uCurrentSize % uCapacity) % uCapacity;
+		m_atContents[uIndex] = tAdd;
+		m_uCurrentSize++;
 		return true;
 	}
 
 	bool Dequeue(T& tOut)
 	{
+		Zenith_Assert(m_uFront < uCapacity, "CircularQueue: Front index out of bounds - corruption detected");
 		if (m_uCurrentSize == 0) return false;
 
-		tOut = m_atContents[m_uFront];
+		tOut = std::move(m_atContents[m_uFront]);  // Move for efficiency
+		m_atContents[m_uFront].~T();  // Destroy to release resources for non-POD types
+		new (&m_atContents[m_uFront]) T();  // Reconstruct to valid state
 		m_uFront = (m_uFront + 1) % uCapacity;
 		m_uCurrentSize--;
 
@@ -43,9 +68,17 @@ public:
 		return true;
 	}
 
-	// Clear all elements
+	// Clear all elements - properly destroys objects for non-POD types
 	void Clear()
 	{
+		// Call destructor on each element, then placement-new default construct
+		// This properly releases resources held by non-POD types
+		for (u_int u = 0; u < m_uCurrentSize; u++)
+		{
+			u_int uIdx = (m_uFront + u) % uCapacity;
+			m_atContents[uIdx].~T();
+			new (&m_atContents[uIdx]) T();  // Reconstruct in valid state for reuse
+		}
 		m_uCurrentSize = 0;
 		m_uFront = 0;
 	}

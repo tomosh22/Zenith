@@ -165,8 +165,7 @@ void Zenith_Entity::SetTransient(bool bTransient)
 Zenith_EntityID Zenith_Entity::GetParentEntityID() const
 {
 	const Zenith_TransformComponent& xTransform = GetComponent<Zenith_TransformComponent>();
-	if (xTransform.GetParent() == nullptr) return INVALID_ENTITY_ID;
-	return xTransform.GetParent()->GetEntity().GetEntityID();
+	return xTransform.GetParentEntityID();
 }
 
 bool Zenith_Entity::HasParent() const
@@ -176,6 +175,9 @@ bool Zenith_Entity::HasParent() const
 
 void Zenith_Entity::SetParent(Zenith_EntityID xParentID)
 {
+	Zenith_Assert(IsValid(), "SetParent: Entity handle is invalid (idx=%u, gen=%u)",
+		m_xEntityID.m_uIndex, m_xEntityID.m_uGeneration);
+
 	Zenith_TransformComponent& xTransform = GetComponent<Zenith_TransformComponent>();
 	if (!xParentID.IsValid())
 	{

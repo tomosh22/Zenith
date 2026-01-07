@@ -19,13 +19,28 @@ public:
 		, m_uCompletedThreadID(UINT32_MAX)
 		, m_bSubmitted(false)
 	{
-
+		// Note: pfnFunc can be nullptr for Zenith_TaskArray which uses m_pfnArrayFunc instead
 	}
+
+protected:
+	// Protected constructor for derived classes that don't use m_pfnFunc
+	Zenith_Task(Zenith_ProfileIndex eProfileIndex, void* pData)
+		: m_eProfileIndex(eProfileIndex)
+		, m_pfnFunc(nullptr)
+		, m_xSemaphore(0, 1)
+		, m_pData(pData)
+		, m_uCompletedThreadID(UINT32_MAX)
+		, m_bSubmitted(false)
+	{
+	}
+
+public:
 
 	virtual ~Zenith_Task() = default;
 
 	virtual void DoTask()
 	{
+		Zenith_Assert(m_pfnFunc != nullptr, "DoTask: Task function pointer is null");
 		Zenith_Profiling::BeginProfile(m_eProfileIndex);
 		m_pfnFunc(m_pData);
 		Zenith_Profiling::EndProfile(m_eProfileIndex);
@@ -75,13 +90,14 @@ class Zenith_TaskArray : public Zenith_Task
 public:
 	Zenith_TaskArray() = delete;
 	Zenith_TaskArray(Zenith_ProfileIndex eProfileIndex, Zenith_TaskArrayFunction pfnFunc, void* pData, u_int uNumInvocations, bool bSubmittingThreadJoins = false)
-		: Zenith_Task(eProfileIndex, nullptr, pData)
+		: Zenith_Task(eProfileIndex, pData)  // Use protected constructor (no pfnFunc)
 		, m_pfnArrayFunc(pfnFunc)
 		, m_uNumInvocations(uNumInvocations)
 		, m_bSubmittingThreadJoins(bSubmittingThreadJoins)
 		, m_uInvocationCounter(0)
 		, m_uCompletionCounter(0)
 	{
+		Zenith_Assert(pfnFunc != nullptr, "TaskArray function pointer cannot be null");
 		Zenith_Assert(uNumInvocations > 0, "TaskArray must have at least 1 invocation");
 	}
 

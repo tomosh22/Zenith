@@ -2,6 +2,7 @@
 
 #include "UnitTests/Zenith_UnitTests.h"
 
+#include "Collections/Zenith_CircularQueue.h"
 #include "Collections/Zenith_MemoryPool.h"
 #include "Collections/Zenith_Vector.h"
 #include "DataStream/Zenith_DataStream.h"
@@ -64,6 +65,20 @@ void Zenith_UnitTests::RunAllTests()
 	TestVectorErase();
 	TestVectorZeroCapacityResize();
 	TestMemoryPool();
+	TestMemoryPoolExhaustion();
+
+	// CircularQueue tests
+	TestCircularQueueBasic();
+	TestCircularQueueWrapping();
+	TestCircularQueueFull();
+	TestCircularQueueNonPOD();
+
+	// Vector edge case tests (from defensive review)
+	TestVectorSelfAssignment();
+	TestVectorRemoveSwap();
+
+	// DataStream edge case tests (from defensive review)
+	TestDataStreamBoundsCheck();
 
 	// Scene serialization tests
 	TestComponentSerialization();
@@ -171,6 +186,8 @@ void Zenith_UnitTests::RunAllTests()
 	TestSelfParentingPrevention();
 	TestTryGetMainCameraWhenNotSet();
 	TestDeepHierarchyBuildModelMatrix();
+	TestLocalSceneDestruction();
+	TestLocalSceneWithHierarchy();
 
 	// Prefab system tests
 	TestPrefabCreateFromEntity();
@@ -597,6 +614,355 @@ void Zenith_UnitTests::TestMemoryPool()
 	}
 
 	Zenith_Assert(MemoryPoolTest::s_uCount == uPOOL_SIZE / 4);
+}
+
+void Zenith_UnitTests::TestMemoryPoolExhaustion()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestMemoryPoolExhaustion...");
+
+	constexpr u_int uPOOL_SIZE = 4;
+	Zenith_MemoryPool<u_int, uPOOL_SIZE> xPool;
+
+	// Allocate all slots
+	u_int* apxSlots[uPOOL_SIZE];
+	for (u_int u = 0; u < uPOOL_SIZE; u++)
+	{
+		apxSlots[u] = xPool.Allocate(u);
+		Zenith_Assert(apxSlots[u] != nullptr, "Allocation %u should succeed", u);
+	}
+
+	// Pool should be full
+	Zenith_Assert(xPool.IsFull(), "Pool should be full after allocating all slots");
+
+	// Next allocation should return nullptr (graceful exhaustion)
+	u_int* pxOverflow = xPool.Allocate(999u);
+	Zenith_Assert(pxOverflow == nullptr, "Pool exhaustion should return nullptr, not crash");
+
+	// Deallocate one and verify we can allocate again
+	xPool.Deallocate(apxSlots[0]);
+	Zenith_Assert(!xPool.IsFull(), "Pool should not be full after deallocation");
+
+	u_int* pxReuse = xPool.Allocate(42u);
+	Zenith_Assert(pxReuse != nullptr, "Should be able to allocate after deallocation");
+	Zenith_Assert(*pxReuse == 42, "Reused slot should have correct value");
+
+	// Cleanup remaining allocations
+	for (u_int u = 1; u < uPOOL_SIZE; u++)
+	{
+		xPool.Deallocate(apxSlots[u]);
+	}
+	xPool.Deallocate(pxReuse);
+
+	Zenith_Assert(xPool.IsEmpty(), "Pool should be empty after deallocating all");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestMemoryPoolExhaustion PASSED");
+}
+
+// ============================================================================
+// CIRCULAR QUEUE TESTS
+// ============================================================================
+
+void Zenith_UnitTests::TestCircularQueueBasic()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestCircularQueueBasic...");
+
+	constexpr u_int uCAPACITY = 8;
+	Zenith_CircularQueue<u_int, uCAPACITY> xQueue;
+
+	// Initial state
+	Zenith_Assert(xQueue.IsEmpty(), "Queue should start empty");
+	Zenith_Assert(!xQueue.IsFull(), "Queue should not start full");
+	Zenith_Assert(xQueue.GetSize() == 0, "Queue should have size 0");
+	Zenith_Assert(xQueue.GetCapacity() == uCAPACITY, "Queue capacity should be %u", uCAPACITY);
+
+	// Enqueue and dequeue
+	for (u_int u = 0; u < uCAPACITY / 2; u++)
+	{
+		bool bEnqueued = xQueue.Enqueue(u * 10);
+		Zenith_Assert(bEnqueued, "Enqueue %u should succeed", u);
+		Zenith_Assert(xQueue.GetSize() == u + 1, "Size should be %u", u + 1);
+	}
+
+	u_int uVal = 0;
+	for (u_int u = 0; u < uCAPACITY / 2; u++)
+	{
+		bool bDequeued = xQueue.Dequeue(uVal);
+		Zenith_Assert(bDequeued, "Dequeue %u should succeed", u);
+		Zenith_Assert(uVal == u * 10, "Dequeued value should be %u, got %u", u * 10, uVal);
+	}
+
+	Zenith_Assert(xQueue.IsEmpty(), "Queue should be empty after dequeue all");
+
+	// Test Peek
+	xQueue.Enqueue(123u);
+	bool bPeeked = xQueue.Peek(uVal);
+	Zenith_Assert(bPeeked, "Peek should succeed");
+	Zenith_Assert(uVal == 123, "Peek should return front value");
+	Zenith_Assert(xQueue.GetSize() == 1, "Peek should not remove element");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestCircularQueueBasic PASSED");
+}
+
+void Zenith_UnitTests::TestCircularQueueWrapping()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestCircularQueueWrapping...");
+
+	constexpr u_int uCAPACITY = 4;
+	Zenith_CircularQueue<u_int, uCAPACITY> xQueue;
+
+	// Fill the queue
+	for (u_int u = 0; u < uCAPACITY; u++)
+	{
+		xQueue.Enqueue(u);
+	}
+
+	// Remove half
+	u_int uVal = 0;
+	for (u_int u = 0; u < uCAPACITY / 2; u++)
+	{
+		xQueue.Dequeue(uVal);
+	}
+
+	// Now front pointer is at index 2, add more to test wrapping
+	// This specifically tests the integer overflow fix in Enqueue
+	for (u_int u = 0; u < uCAPACITY / 2; u++)
+	{
+		bool bEnqueued = xQueue.Enqueue(100 + u);
+		Zenith_Assert(bEnqueued, "Enqueue after wrap should succeed");
+	}
+
+	Zenith_Assert(xQueue.IsFull(), "Queue should be full after wrapping");
+
+	// Verify FIFO order is maintained across wrap
+	u_int auExpected[] = { 2, 3, 100, 101 };  // Original 2,3 + new 100,101
+	for (u_int u = 0; u < uCAPACITY; u++)
+	{
+		bool bDequeued = xQueue.Dequeue(uVal);
+		Zenith_Assert(bDequeued, "Dequeue %u should succeed", u);
+		Zenith_Assert(uVal == auExpected[u], "Value %u should be %u, got %u", u, auExpected[u], uVal);
+	}
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestCircularQueueWrapping PASSED");
+}
+
+void Zenith_UnitTests::TestCircularQueueFull()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestCircularQueueFull...");
+
+	constexpr u_int uCAPACITY = 4;
+	Zenith_CircularQueue<u_int, uCAPACITY> xQueue;
+
+	// Fill to capacity
+	for (u_int u = 0; u < uCAPACITY; u++)
+	{
+		bool bEnqueued = xQueue.Enqueue(u);
+		Zenith_Assert(bEnqueued, "Enqueue within capacity should succeed");
+	}
+
+	Zenith_Assert(xQueue.IsFull(), "Queue should be full");
+	Zenith_Assert(xQueue.GetSize() == uCAPACITY, "Size should equal capacity");
+
+	// Attempt to enqueue when full - should fail gracefully
+	bool bOverflow = xQueue.Enqueue(999u);
+	Zenith_Assert(!bOverflow, "Enqueue when full should return false");
+	Zenith_Assert(xQueue.GetSize() == uCAPACITY, "Size should remain at capacity");
+
+	// Dequeue from empty queue should fail
+	xQueue.Clear();
+	Zenith_Assert(xQueue.IsEmpty(), "Queue should be empty after Clear");
+
+	u_int uVal = 0;
+	bool bUnderflow = xQueue.Dequeue(uVal);
+	Zenith_Assert(!bUnderflow, "Dequeue from empty should return false");
+
+	// Peek from empty should fail
+	bool bPeekEmpty = xQueue.Peek(uVal);
+	Zenith_Assert(!bPeekEmpty, "Peek from empty should return false");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestCircularQueueFull PASSED");
+}
+
+// Helper class for testing non-POD destructor behavior
+class TestDestructorCounter
+{
+public:
+	static u_int s_uDestructorCallCount;
+	static void ResetCounter() { s_uDestructorCallCount = 0; }
+
+	int m_iValue = 0;
+
+	TestDestructorCounter() = default;
+	TestDestructorCounter(int iVal) : m_iValue(iVal) {}
+	TestDestructorCounter(const TestDestructorCounter& other) : m_iValue(other.m_iValue) {}
+	TestDestructorCounter(TestDestructorCounter&& other) noexcept : m_iValue(other.m_iValue) { other.m_iValue = -1; }
+	TestDestructorCounter& operator=(const TestDestructorCounter& other) { m_iValue = other.m_iValue; return *this; }
+	TestDestructorCounter& operator=(TestDestructorCounter&& other) noexcept { m_iValue = other.m_iValue; other.m_iValue = -1; return *this; }
+	~TestDestructorCounter() { s_uDestructorCallCount++; }
+};
+u_int TestDestructorCounter::s_uDestructorCallCount = 0;
+
+void Zenith_UnitTests::TestCircularQueueNonPOD()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestCircularQueueNonPOD...");
+
+	TestDestructorCounter::ResetCounter();
+
+	{
+		Zenith_CircularQueue<TestDestructorCounter, 4> xQueue;
+
+		// Enqueue elements
+		xQueue.Enqueue(TestDestructorCounter(1));
+		xQueue.Enqueue(TestDestructorCounter(2));
+		xQueue.Enqueue(TestDestructorCounter(3));
+
+		Zenith_Assert(xQueue.GetSize() == 3, "Queue should have 3 elements");
+
+		// Dequeue and verify destructor was called
+		u_int uPreDequeueCount = TestDestructorCounter::s_uDestructorCallCount;
+		TestDestructorCounter xOut;
+		bool bSuccess = xQueue.Dequeue(xOut);
+		Zenith_Assert(bSuccess, "Dequeue should succeed");
+		Zenith_Assert(xOut.m_iValue == 1, "Dequeued value should be 1");
+		// After dequeue: destructor called on slot + reconstruct creates new object
+		// The slot's destructor should have been called
+		Zenith_Assert(TestDestructorCounter::s_uDestructorCallCount > uPreDequeueCount,
+			"Destructor should be called during Dequeue for non-POD types");
+
+		// Clear and verify all destructors called
+		uPreDequeueCount = TestDestructorCounter::s_uDestructorCallCount;
+		xQueue.Clear();
+		Zenith_Assert(xQueue.IsEmpty(), "Queue should be empty after Clear");
+		Zenith_Assert(TestDestructorCounter::s_uDestructorCallCount > uPreDequeueCount,
+			"Destructors should be called during Clear");
+	}
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestCircularQueueNonPOD PASSED");
+}
+
+void Zenith_UnitTests::TestVectorSelfAssignment()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestVectorSelfAssignment...");
+
+	// Test copy self-assignment
+	{
+		Zenith_Vector<int> xVec;
+		xVec.PushBack(1);
+		xVec.PushBack(2);
+		xVec.PushBack(3);
+
+		// Self-assignment should be a no-op, not crash
+		xVec = xVec;
+
+		Zenith_Assert(xVec.GetSize() == 3, "Size should be unchanged after self-assignment");
+		Zenith_Assert(xVec.Get(0) == 1, "Element 0 should be unchanged");
+		Zenith_Assert(xVec.Get(1) == 2, "Element 1 should be unchanged");
+		Zenith_Assert(xVec.Get(2) == 3, "Element 2 should be unchanged");
+	}
+
+	// Test move self-assignment
+	{
+		Zenith_Vector<int> xVec;
+		xVec.PushBack(10);
+		xVec.PushBack(20);
+
+		// Move self-assignment should also be safe
+		xVec = std::move(xVec);
+
+		Zenith_Assert(xVec.GetSize() == 2, "Size should be unchanged after move self-assignment");
+		Zenith_Assert(xVec.Get(0) == 10, "Element 0 should be unchanged");
+		Zenith_Assert(xVec.Get(1) == 20, "Element 1 should be unchanged");
+	}
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestVectorSelfAssignment PASSED");
+}
+
+void Zenith_UnitTests::TestVectorRemoveSwap()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestVectorRemoveSwap...");
+
+	// Test basic RemoveSwap
+	{
+		Zenith_Vector<int> xVec;
+		xVec.PushBack(1);
+		xVec.PushBack(2);
+		xVec.PushBack(3);
+		xVec.PushBack(4);
+
+		// Remove element at index 0 - last element (4) should be swapped in
+		xVec.RemoveSwap(0);
+
+		Zenith_Assert(xVec.GetSize() == 3, "Size should be 3 after RemoveSwap");
+		Zenith_Assert(xVec.Get(0) == 4, "Element at index 0 should be swapped from end");
+		Zenith_Assert(xVec.Get(1) == 2, "Element at index 1 should be unchanged");
+		Zenith_Assert(xVec.Get(2) == 3, "Element at index 2 should be unchanged");
+	}
+
+	// Test RemoveSwap on last element (no swap needed)
+	{
+		Zenith_Vector<int> xVec;
+		xVec.PushBack(1);
+		xVec.PushBack(2);
+		xVec.PushBack(3);
+
+		// Remove last element
+		xVec.RemoveSwap(2);
+
+		Zenith_Assert(xVec.GetSize() == 2, "Size should be 2 after RemoveSwap on last");
+		Zenith_Assert(xVec.Get(0) == 1, "Element 0 unchanged");
+		Zenith_Assert(xVec.Get(1) == 2, "Element 1 unchanged");
+	}
+
+	// Test EraseValueSwap
+	{
+		Zenith_Vector<int> xVec;
+		xVec.PushBack(10);
+		xVec.PushBack(20);
+		xVec.PushBack(30);
+
+		bool bErased = xVec.EraseValueSwap(20);
+		Zenith_Assert(bErased, "EraseValueSwap should return true for existing value");
+		Zenith_Assert(xVec.GetSize() == 2, "Size should be 2");
+		Zenith_Assert(xVec.Contains(10), "Should still contain 10");
+		Zenith_Assert(xVec.Contains(30), "Should still contain 30");
+		Zenith_Assert(!xVec.Contains(20), "Should NOT contain 20");
+
+		bool bNotErased = xVec.EraseValueSwap(999);
+		Zenith_Assert(!bNotErased, "EraseValueSwap should return false for non-existent value");
+	}
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestVectorRemoveSwap PASSED");
+}
+
+void Zenith_UnitTests::TestDataStreamBoundsCheck()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestDataStreamBoundsCheck...");
+
+	// Test SkipBytes bounds checking
+	{
+		Zenith_DataStream xStream(100);
+
+		// Write some data
+		u_int uVal = 42;
+		xStream << uVal;
+
+		// Reset cursor and read
+		xStream.SetCursor(0);
+		u_int uRead;
+		xStream >> uRead;
+		Zenith_Assert(uRead == 42, "Read value should match written value");
+
+		// Test valid skip
+		xStream.SetCursor(0);
+		xStream.SkipBytes(sizeof(u_int));
+		Zenith_Assert(xStream.GetCursor() == sizeof(u_int), "Cursor should advance by skip amount");
+
+		// Test skip to exactly end (valid edge case)
+		xStream.SetCursor(96);
+		xStream.SkipBytes(4);  // Should clamp to size (100)
+		Zenith_Assert(xStream.GetCursor() <= xStream.GetSize(), "Cursor should not exceed data size");
+	}
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestDataStreamBoundsCheck PASSED");
 }
 
 // ============================================================================
@@ -5278,4 +5644,76 @@ void Zenith_UnitTests::TestDeepHierarchyBuildModelMatrix()
 	}
 
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestDeepHierarchyBuildModelMatrix completed successfully");
+}
+
+/**
+ * Test that local scene destruction doesn't crash.
+ * This tests the fix for TransformComponent destructor accessing the wrong scene
+ * when a local test scene is destroyed (not s_xCurrentScene).
+ */
+void Zenith_UnitTests::TestLocalSceneDestruction()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestLocalSceneDestruction...");
+
+	// Create a local scene (separate from s_xCurrentScene)
+	{
+		Zenith_Scene xTestScene;
+
+		// Create some entities with transforms
+		Zenith_Entity xEntity1(&xTestScene, "LocalEntity1");
+		Zenith_Entity xEntity2(&xTestScene, "LocalEntity2");
+		Zenith_Entity xEntity3(&xTestScene, "LocalEntity3");
+
+		// Set some positions to verify data is valid
+		xEntity1.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f));
+		xEntity2.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(2.0f, 0.0f, 0.0f));
+		xEntity3.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(3.0f, 0.0f, 0.0f));
+
+		// xTestScene goes out of scope here - destructor should NOT crash
+		// The bug was: TransformComponent::~TransformComponent called GetCurrentScene()
+		// which returned the global scene, not xTestScene, causing memory corruption
+	}
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestLocalSceneDestruction completed successfully");
+}
+
+/**
+ * Test that local scene destruction with parent-child hierarchy doesn't crash.
+ * This is a more complex test that includes hierarchy relationships.
+ */
+void Zenith_UnitTests::TestLocalSceneWithHierarchy()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestLocalSceneWithHierarchy...");
+
+	{
+		Zenith_Scene xTestScene;
+
+		// Create parent entity
+		Zenith_Entity xParent(&xTestScene, "Parent");
+		xParent.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(0.0f, 10.0f, 0.0f));
+
+		// Create child entities
+		Zenith_Entity xChild1(&xTestScene, "Child1");
+		Zenith_Entity xChild2(&xTestScene, "Child2");
+
+		// Set up hierarchy - children parented to parent
+		xChild1.GetComponent<Zenith_TransformComponent>().SetParent(
+			&xParent.GetComponent<Zenith_TransformComponent>());
+		xChild2.GetComponent<Zenith_TransformComponent>().SetParent(
+			&xParent.GetComponent<Zenith_TransformComponent>());
+
+		// Verify hierarchy was set up correctly
+		Zenith_Assert(xChild1.GetComponent<Zenith_TransformComponent>().HasParent(),
+			"TestLocalSceneWithHierarchy: Child1 should have parent");
+		Zenith_Assert(xChild2.GetComponent<Zenith_TransformComponent>().HasParent(),
+			"TestLocalSceneWithHierarchy: Child2 should have parent");
+		Zenith_Assert(xParent.GetComponent<Zenith_TransformComponent>().GetChildCount() == 2,
+			"TestLocalSceneWithHierarchy: Parent should have 2 children");
+
+		// xTestScene goes out of scope - destructor should handle hierarchy cleanup safely
+		// Without the fix, DetachFromParent/DetachAllChildren would crash trying to
+		// access the global scene instead of xTestScene
+	}
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestLocalSceneWithHierarchy completed successfully");
 }

@@ -95,6 +95,11 @@ Zenith_Scene::~Zenith_Scene() {
 
 void Zenith_Scene::Reset()
 {
+	// Set flag BEFORE destroying components - this tells component destructors
+	// to skip hierarchy cleanup (which would try to acquire mutexes and access
+	// scene data that may be in an inconsistent state or destroyed).
+	m_bIsBeingDestroyed = true;
+
 	for (Zenith_Vector<Zenith_ComponentPoolBase*>::Iterator xIt(m_xComponents); !xIt.Done(); xIt.Next())
 	{
 		Zenith_ComponentPoolBase* pxPool = xIt.GetData();
@@ -114,6 +119,9 @@ void Zenith_Scene::Reset()
 	m_xCreatedDuringUpdate.clear();  // Clear deferred creation tracking
 	m_bIsUpdating = false;
 	m_xMainCameraEntity = INVALID_ENTITY_ID;
+
+	// Reset flag in case scene is reused (e.g., loading a new scene)
+	m_bIsBeingDestroyed = false;
 }
 
 void Zenith_Scene::Destroy(Zenith_Entity& xEntity)
@@ -303,10 +311,11 @@ void Zenith_Scene::SaveToFile(const std::string& strFilename, bool bIncludeTrans
 
 void Zenith_Scene::LoadFromFile(const std::string& strFilename)
 {
-	// CRITICAL: Set loading flag BEFORE Reset() to prevent asset deletion
+	// CRITICAL: RAII guard sets loading flag BEFORE Reset() to prevent asset deletion
 	// During Reset(), component destructors check this flag to avoid deleting
 	// assets that will be needed when deserializing the scene.
-	s_bIsLoadingScene = true;
+	// The RAII guard ensures the flag is cleared even on early returns or assertions.
+	SceneLoadingGuard xLoadGuard;
 
 	// CRITICAL: Reset Flux render systems BEFORE clearing the scene
 	// Command lists must be cleared before we destroy components/descriptors
@@ -500,8 +509,7 @@ void Zenith_Scene::LoadFromFile(const std::string& strFilename)
 		}
 	}
 
-	// Clear loading flag - scene deserialization complete
-	s_bIsLoadingScene = false;
+	// Note: Loading flag is automatically cleared by SceneLoadingGuard destructor
 }
 
 void Zenith_Scene::Update(const float fDt)

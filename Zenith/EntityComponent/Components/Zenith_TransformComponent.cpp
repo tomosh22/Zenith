@@ -13,18 +13,60 @@
 ZENITH_REGISTER_COMPONENT(Zenith_TransformComponent, "Transform")
 
 Zenith_TransformComponent::Zenith_TransformComponent(Zenith_Entity& xEntity)
-	: m_xParentEntity(xEntity)
+	: m_xOwningEntity(xEntity)
 {
 }
 
 Zenith_TransformComponent::~Zenith_TransformComponent()
 {
-	// Detach from parent and children on destruction
+	// Skip hierarchy cleanup if entity's scene is not the current scene
+	// This happens when:
+	// 1. A local test scene is being destroyed (not s_xCurrentScene)
+	// 2. The scene is null (shouldn't happen but defensive check)
+	//
+	// During normal entity removal via Scene::RemoveEntity or ProcessPendingDestructions,
+	// hierarchy cleanup is handled explicitly before component destruction.
+	// The destructor cleanup is only needed for edge cases where a TransformComponent
+	// is removed individually without going through the scene's removal path.
+
+	Zenith_Scene* pxOwningScene = m_xOwningEntity.m_pxParentScene;
+	if (pxOwningScene == nullptr)
+	{
+		// No scene - can't do hierarchy operations, just let member destructors run
+		return;
+	}
+
+	// Check if the scene is being destroyed/reset - skip all cleanup to avoid
+	// acquiring mutexes and accessing scene data during destruction.
+	// This prevents crashes during static destruction when profiling data may be gone.
+	if (pxOwningScene->IsBeingDestroyed())
+	{
+		return;
+	}
+
+	// Check if this entity's scene is the current active scene
+	// If not, we're likely in a test scenario with a local scene being destroyed
+	if (pxOwningScene != &Zenith_Scene::GetCurrentScene())
+	{
+		// Different scene - skip hierarchy cleanup to avoid accessing wrong scene data
+		return;
+	}
+
+	// Check if the entity still exists in its scene
+	// During scene destruction, entity slots may be cleared before component pools
+	Zenith_EntityID xMyID = m_xOwningEntity.GetEntityID();
+	if (!pxOwningScene->EntityExists(xMyID))
+	{
+		// Entity no longer valid - skip hierarchy cleanup
+		return;
+	}
+
+	// Safe to perform hierarchy cleanup
 	DetachFromParent();
 	DetachAllChildren();
 }
 
-Zenith_TransformComponent* Zenith_TransformComponent::GetParent() const
+Zenith_TransformComponent* Zenith_TransformComponent::TryGetParent() const
 {
 	if (m_xParentEntityID == INVALID_ENTITY_ID)
 	{
@@ -32,16 +74,36 @@ Zenith_TransformComponent* Zenith_TransformComponent::GetParent() const
 	}
 
 	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	if (!xScene.EntityExists(m_xParentEntityID))
+
+	// Use scoped mutex lock to prevent TOCTOU between existence check and access
+	Zenith_ScopedMutexLock xLock(xScene.m_xMutex);
+
+	if (!xScene.EntityExistsUnsafe(m_xParentEntityID))
 	{
 		return nullptr;
 	}
 
-	Zenith_Entity xParentEntity = xScene.GetEntity(m_xParentEntityID);
-	return &xParentEntity.GetComponent<Zenith_TransformComponent>();
+	// Access component pool directly - safer than via temporary entity
+	return &xScene.GetComponentFromEntity<Zenith_TransformComponent>(m_xParentEntityID);
 }
 
-Zenith_TransformComponent* Zenith_TransformComponent::GetChildAt(uint32_t uIndex) const
+Zenith_Entity Zenith_TransformComponent::GetParentEntity() const
+{
+	if (m_xParentEntityID == INVALID_ENTITY_ID)
+	{
+		return Zenith_Entity();
+	}
+
+	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+	if (!xScene.EntityExists(m_xParentEntityID))
+	{
+		return Zenith_Entity();
+	}
+
+	return xScene.GetEntity(m_xParentEntityID);
+}
+
+Zenith_TransformComponent* Zenith_TransformComponent::TryGetChildAt(uint32_t uIndex) const
 {
 	if (uIndex >= m_xChildEntityIDs.GetSize())
 	{
@@ -55,8 +117,25 @@ Zenith_TransformComponent* Zenith_TransformComponent::GetChildAt(uint32_t uIndex
 		return nullptr;
 	}
 
-	Zenith_Entity xChildEntity = xScene.GetEntity(uChildID);
-	return &xChildEntity.GetComponent<Zenith_TransformComponent>();
+	// Access component pool directly - safer than via temporary entity
+	return &xScene.GetComponentFromEntity<Zenith_TransformComponent>(uChildID);
+}
+
+Zenith_Entity Zenith_TransformComponent::GetChildEntityAt(uint32_t uIndex) const
+{
+	if (uIndex >= m_xChildEntityIDs.GetSize())
+	{
+		return Zenith_Entity();
+	}
+
+	Zenith_EntityID uChildID = m_xChildEntityIDs.Get(uIndex);
+	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+	if (!xScene.EntityExists(uChildID))
+	{
+		return Zenith_Entity();
+	}
+
+	return xScene.GetEntity(uChildID);
 }
 
 void Zenith_TransformComponent::SetParent(Zenith_TransformComponent* pxParent)
@@ -73,7 +152,14 @@ bool Zenith_TransformComponent::IsDescendantOf(Zenith_EntityID uAncestorID) cons
 		return false;
 	}
 
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+	// Use the owning entity's scene, not GetCurrentScene()
+	// This allows hierarchy operations to work correctly on local/test scenes
+	Zenith_Scene* pxScene = m_xOwningEntity.m_pxParentScene;
+	if (pxScene == nullptr)
+	{
+		return false;
+	}
+	Zenith_Scene& xScene = *pxScene;
 	Zenith_EntityID uCurrentID = m_xParentEntityID;
 
 	// Walk up the parent chain looking for the ancestor
@@ -97,6 +183,51 @@ bool Zenith_TransformComponent::IsDescendantOf(Zenith_EntityID uAncestorID) cons
 		++uDepth;
 	}
 
+	// If we hit MAX_DEPTH, likely circular reference or corrupted hierarchy
+	if (uDepth >= MAX_HIERARCHY_DEPTH)
+	{
+		Zenith_Error(LOG_CATEGORY_ECS, "IsDescendantOf: Max hierarchy depth %u exceeded for entity %u - possible circular reference",
+			MAX_HIERARCHY_DEPTH, m_xOwningEntity.GetEntityID().m_uIndex);
+	}
+
+	return false;
+}
+
+bool Zenith_TransformComponent::IsDescendantOfUnsafe(Zenith_EntityID uAncestorID, Zenith_Scene& xScene) const
+{
+	// Unsafe version - assumes caller holds xScene.m_xMutex
+	// Used by SetParentByID to avoid recursive locking
+
+	if (uAncestorID == INVALID_ENTITY_ID)
+	{
+		return false;
+	}
+
+	Zenith_EntityID uCurrentID = m_xParentEntityID;
+
+	// Walk up the parent chain looking for the ancestor
+	constexpr u_int MAX_HIERARCHY_DEPTH = 1000;
+	u_int uDepth = 0;
+
+	while (uCurrentID != INVALID_ENTITY_ID && uDepth < MAX_HIERARCHY_DEPTH)
+	{
+		if (uCurrentID == uAncestorID)
+		{
+			return true;
+		}
+
+		if (!xScene.EntityExistsUnsafe(uCurrentID))
+		{
+			return false;
+		}
+
+		uCurrentID = xScene.GetComponentFromEntity<Zenith_TransformComponent>(uCurrentID).m_xParentEntityID;
+		++uDepth;
+	}
+
+	Zenith_Assert(uDepth < MAX_HIERARCHY_DEPTH,
+		"IsDescendantOfUnsafe: Max depth exceeded - possible circular reference");
+
 	return false;
 }
 
@@ -104,8 +235,20 @@ void Zenith_TransformComponent::SetParentByID(Zenith_EntityID uNewParentID)
 {
 	if (m_xParentEntityID == uNewParentID) return;
 
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	Zenith_EntityID uMyEntityID = m_xParentEntity.GetEntityID();
+	// Use the owning entity's scene, not GetCurrentScene()
+	// This allows hierarchy operations to work correctly on local/test scenes
+	Zenith_Scene* pxScene = m_xOwningEntity.m_pxParentScene;
+	if (pxScene == nullptr)
+	{
+		Zenith_Warning(LOG_CATEGORY_ECS, "SetParentByID: Entity has no scene");
+		return;
+	}
+	Zenith_Scene& xScene = *pxScene;
+
+	// Acquire scene mutex for entire operation - prevents TOCTOU races
+	Zenith_ScopedMutexLock xLock(xScene.m_xMutex);
+
+	Zenith_EntityID uMyEntityID = m_xOwningEntity.GetEntityID();
 
 	// CIRCULAR HIERARCHY CHECKS (Unity-style safety)
 	if (uNewParentID != INVALID_ENTITY_ID)
@@ -113,41 +256,43 @@ void Zenith_TransformComponent::SetParentByID(Zenith_EntityID uNewParentID)
 		// Cannot parent to self
 		if (uNewParentID == uMyEntityID)
 		{
-			Zenith_Warning(LOG_CATEGORY_ECS, "Cannot parent entity %u to itself", uMyEntityID);
+			Zenith_Warning(LOG_CATEGORY_ECS, "Cannot parent entity %u to itself", uMyEntityID.m_uIndex);
 			return;
 		}
 
 		// Cannot parent to a descendant (would create cycle)
-		if (xScene.EntityExists(uNewParentID))
+		if (xScene.EntityExistsUnsafe(uNewParentID))
 		{
-			Zenith_TransformComponent& xProposedParent = xScene.GetEntity(uNewParentID).GetComponent<Zenith_TransformComponent>();
-			if (xProposedParent.IsDescendantOf(uMyEntityID))
+			Zenith_TransformComponent& xProposedParent = xScene.GetComponentFromEntity<Zenith_TransformComponent>(uNewParentID);
+			if (xProposedParent.IsDescendantOfUnsafe(uMyEntityID, xScene))
 			{
-				Zenith_Warning(LOG_CATEGORY_ECS, "Cannot parent entity %u to %u - would create circular hierarchy", uMyEntityID, uNewParentID);
+				Zenith_Warning(LOG_CATEGORY_ECS, "Cannot parent entity %u to %u - would create circular hierarchy",
+					uMyEntityID.m_uIndex, uNewParentID.m_uIndex);
 				return;
 			}
 		}
 		else
 		{
 			// Parent entity doesn't exist
-			Zenith_Warning(LOG_CATEGORY_ECS, "Cannot parent entity %u to non-existent entity %u", uMyEntityID, uNewParentID);
+			Zenith_Warning(LOG_CATEGORY_ECS, "Cannot parent entity %u to non-existent entity %u",
+				uMyEntityID.m_uIndex, uNewParentID.m_uIndex);
 			return;
 		}
 	}
 
-	// Remove from old parent's children
-	if (m_xParentEntityID != INVALID_ENTITY_ID && xScene.EntityExists(m_xParentEntityID))
+	// Remove from old parent's children (use unsafe methods since we hold lock)
+	if (m_xParentEntityID != INVALID_ENTITY_ID && xScene.EntityExistsUnsafe(m_xParentEntityID))
 	{
-		Zenith_TransformComponent& xOldParent = xScene.GetEntity(m_xParentEntityID).GetComponent<Zenith_TransformComponent>();
+		Zenith_TransformComponent& xOldParent = xScene.GetComponentFromEntity<Zenith_TransformComponent>(m_xParentEntityID);
 		xOldParent.m_xChildEntityIDs.EraseValue(uMyEntityID);
 	}
 
 	m_xParentEntityID = uNewParentID;
 
 	// Add to new parent's children
-	if (m_xParentEntityID != INVALID_ENTITY_ID && xScene.EntityExists(m_xParentEntityID))
+	if (m_xParentEntityID != INVALID_ENTITY_ID && xScene.EntityExistsUnsafe(m_xParentEntityID))
 	{
-		Zenith_TransformComponent& xNewParent = xScene.GetEntity(m_xParentEntityID).GetComponent<Zenith_TransformComponent>();
+		Zenith_TransformComponent& xNewParent = xScene.GetComponentFromEntity<Zenith_TransformComponent>(m_xParentEntityID);
 		xNewParent.m_xChildEntityIDs.PushBack(uMyEntityID);
 	}
 }
@@ -159,7 +304,16 @@ void Zenith_TransformComponent::DetachFromParent()
 
 void Zenith_TransformComponent::DetachAllChildren()
 {
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+	// Use the owning entity's scene, not GetCurrentScene()
+	// This allows hierarchy operations to work correctly on local/test scenes
+	Zenith_Scene* pxScene = m_xOwningEntity.m_pxParentScene;
+	if (pxScene == nullptr)
+	{
+		// No scene - just clear our list directly
+		m_xChildEntityIDs.Clear();
+		return;
+	}
+	Zenith_Scene& xScene = *pxScene;
 
 	// Process all children - always remove from our list after processing
 	while (m_xChildEntityIDs.GetSize() > 0)
@@ -171,7 +325,7 @@ void Zenith_TransformComponent::DetachAllChildren()
 			Zenith_TransformComponent& xChildTransform = xScene.GetEntity(uChildID).GetComponent<Zenith_TransformComponent>();
 			// If child's parent isn't us (inconsistent state), just clear their parent
 			// and remove from our list manually
-			if (xChildTransform.m_xParentEntityID == m_xParentEntity.GetEntityID())
+			if (xChildTransform.m_xParentEntityID == m_xOwningEntity.GetEntityID())
 			{
 				xChildTransform.SetParentByID(INVALID_ENTITY_ID);
 				// SetParentByID removes from our children list, so continue
@@ -187,9 +341,9 @@ void Zenith_TransformComponent::SetPosition(const Zenith_Maths::Vector3 xPos)
 {
 	// Check if entity has a physics body via ColliderComponent
 	// Use BodyInterface with BodyID for thread-safe access
-	if (m_xParentEntity.HasComponent<Zenith_ColliderComponent>())
+	if (m_xOwningEntity.HasComponent<Zenith_ColliderComponent>() && Zenith_Physics::s_pxPhysicsSystem != nullptr)
 	{
-		Zenith_ColliderComponent& xCollider = m_xParentEntity.GetComponent<Zenith_ColliderComponent>();
+		Zenith_ColliderComponent& xCollider = m_xOwningEntity.GetComponent<Zenith_ColliderComponent>();
 		if (xCollider.HasValidBody())
 		{
 			JPH::BodyInterface& xBodyInterface = Zenith_Physics::s_pxPhysicsSystem->GetBodyInterface();
@@ -205,9 +359,9 @@ void Zenith_TransformComponent::SetRotation(const Zenith_Maths::Quat xRot)
 {
 	// Check if entity has a physics body via ColliderComponent
 	// Use BodyInterface with BodyID for thread-safe access
-	if (m_xParentEntity.HasComponent<Zenith_ColliderComponent>())
+	if (m_xOwningEntity.HasComponent<Zenith_ColliderComponent>() && Zenith_Physics::s_pxPhysicsSystem != nullptr)
 	{
-		Zenith_ColliderComponent& xCollider = m_xParentEntity.GetComponent<Zenith_ColliderComponent>();
+		Zenith_ColliderComponent& xCollider = m_xOwningEntity.GetComponent<Zenith_ColliderComponent>();
 		if (xCollider.HasValidBody())
 		{
 			JPH::BodyInterface& xBodyInterface = Zenith_Physics::s_pxPhysicsSystem->GetBodyInterface();
@@ -230,9 +384,9 @@ void Zenith_TransformComponent::SetScale(const Zenith_Maths::Vector3 xScale)
 	m_xScale = xScale;
 
 	// If entity has a model component, regenerate physics mesh with new baked scale
-	if (m_xParentEntity.HasComponent<Zenith_ModelComponent>())
+	if (m_xOwningEntity.HasComponent<Zenith_ModelComponent>())
 	{
-		Zenith_ModelComponent& xModel = m_xParentEntity.GetComponent<Zenith_ModelComponent>();
+		Zenith_ModelComponent& xModel = m_xOwningEntity.GetComponent<Zenith_ModelComponent>();
 		if (xModel.HasPhysicsMesh())
 		{
 			xModel.GeneratePhysicsMesh();
@@ -240,9 +394,9 @@ void Zenith_TransformComponent::SetScale(const Zenith_Maths::Vector3 xScale)
 	}
 
 	// If entity has a collider component, rebuild it to reflect new scale
-	if (m_xParentEntity.HasComponent<Zenith_ColliderComponent>())
+	if (m_xOwningEntity.HasComponent<Zenith_ColliderComponent>())
 	{
-		Zenith_ColliderComponent& xCollider = m_xParentEntity.GetComponent<Zenith_ColliderComponent>();
+		Zenith_ColliderComponent& xCollider = m_xOwningEntity.GetComponent<Zenith_ColliderComponent>();
 		xCollider.RebuildCollider();
 	}
 }
@@ -251,9 +405,9 @@ void Zenith_TransformComponent::GetPosition(Zenith_Maths::Vector3& xPos)
 {
 	// Check if entity has a physics body via ColliderComponent
 	// Use BodyInterface with BodyID for thread-safe access
-	if (m_xParentEntity.HasComponent<Zenith_ColliderComponent>())
+	if (m_xOwningEntity.HasComponent<Zenith_ColliderComponent>() && Zenith_Physics::s_pxPhysicsSystem != nullptr)
 	{
-		Zenith_ColliderComponent& xCollider = m_xParentEntity.GetComponent<Zenith_ColliderComponent>();
+		Zenith_ColliderComponent& xCollider = m_xOwningEntity.GetComponent<Zenith_ColliderComponent>();
 		if (xCollider.HasValidBody())
 		{
 			// Use BodyInterface for safe access - never access Body pointer directly
@@ -276,9 +430,9 @@ void Zenith_TransformComponent::GetRotation(Zenith_Maths::Quat& xRot)
 {
 	// Check if entity has a physics body via ColliderComponent
 	// Use BodyInterface with BodyID for thread-safe access
-	if (m_xParentEntity.HasComponent<Zenith_ColliderComponent>())
+	if (m_xOwningEntity.HasComponent<Zenith_ColliderComponent>() && Zenith_Physics::s_pxPhysicsSystem != nullptr)
 	{
-		Zenith_ColliderComponent& xCollider = m_xParentEntity.GetComponent<Zenith_ColliderComponent>();
+		Zenith_ColliderComponent& xCollider = m_xOwningEntity.GetComponent<Zenith_ColliderComponent>();
 		if (xCollider.HasValidBody())
 		{
 			// Use BodyInterface for safe access - never access Body pointer directly
@@ -318,12 +472,20 @@ void Zenith_TransformComponent::BuildModelMatrix(Zenith_Maths::Matrix4& xMatOut)
 
 	// Depth limit to catch any circular references that slip through
 	// (should never happen with SetParentByID checks, but safety first)
-	constexpr u_int MAX_HIERARCHY_DEPTH = 1000;
+	constexpr u_int SOFT_HIERARCHY_DEPTH = 100;   // Warning threshold
+	constexpr u_int MAX_HIERARCHY_DEPTH = 1000;   // Hard limit
 	u_int uDepth = 0;
 
 	while (uParentID != INVALID_ENTITY_ID && xScene.EntityExists(uParentID))
 	{
-		Zenith_Assert(uDepth < MAX_HIERARCHY_DEPTH, "BuildModelMatrix: Exceeded max hierarchy depth %u - possible circular reference for entity %u", MAX_HIERARCHY_DEPTH, m_xParentEntity.GetEntityID());
+		// Soft warning at 100 levels - unusual but not necessarily broken
+		if (uDepth == SOFT_HIERARCHY_DEPTH)
+		{
+			Zenith_Warning(LOG_CATEGORY_ECS, "BuildModelMatrix: Entity %u has deep hierarchy (%u levels) - consider flattening",
+				m_xOwningEntity.GetEntityID().m_uIndex, uDepth);
+		}
+
+		Zenith_Assert(uDepth < MAX_HIERARCHY_DEPTH, "BuildModelMatrix: Exceeded max hierarchy depth %u - possible circular reference for entity %u", MAX_HIERARCHY_DEPTH, m_xOwningEntity.GetEntityID().m_uIndex);
 		if (uDepth >= MAX_HIERARCHY_DEPTH)
 		{
 			break; // Safety break even in release builds

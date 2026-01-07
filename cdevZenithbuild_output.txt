@@ -1,0 +1,28 @@
+MSBuild version 17.11.9+a69bbaaf5 for .NET Framework
+
+  Zenith_Editor.cpp
+c:\dev\Zenith\Zenith\Editor\Zenith_Editor.cpp(56,9): warning C4005: 'NOMINMAX': macro redefinition [c:\dev\Zenith\build\zenith_win64.vcxproj]
+  (compiling source file '/Zenith/Editor/Zenith_Editor.cpp')
+      c:\dev\Zenith\Zenith\Editor\Zenith_Editor.cpp(56,9):
+      'NOMINMAX' previously declared on the command line
+  
+c:\dev\Zenith\Zenith\Editor\Zenith_Editor.cpp(91,3): warning C4996: 'strncpy': This function or variable may be unsafe. Consider using strncpy_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [c:\dev\Zenith\build\zenith_win64.vcxproj]
+  (compiling source file '/Zenith/Editor/Zenith_Editor.cpp')
+  
+c:\dev\Zenith\Zenith\Editor\Zenith_Editor.cpp(1031,3): warning C4996: 'strncpy': This function or variable may be unsafe. Consider using strncpy_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [c:\dev\Zenith\build\zenith_win64.vcxproj]
+  (compiling source file '/Zenith/Editor/Zenith_Editor.cpp')
+  
+c:\dev\Zenith\Zenith\Editor\Zenith_Editor.cpp(1831,6): warning C4996: 'strncpy': This function or variable may be unsafe. Consider using strncpy_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [c:\dev\Zenith\build\zenith_win64.vcxproj]
+  (compiling source file '/Zenith/Editor/Zenith_Editor.cpp')
+  
+c:\dev\Zenith\Zenith\Editor\Zenith_Editor.cpp(2312,3): warning C4996: 'strncpy': This function or variable may be unsafe. Consider using strncpy_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details. [c:\dev\Zenith\build\zenith_win64.vcxproj]
+  (compiling source file '/Zenith/Editor/Zenith_Editor.cpp')
+  
+c:\dev\Zenith\Zenith\Editor\Zenith_Editor.cpp(2603,16): warning C4189: 'fYawRad': local variable is initialized but not referenced [c:\dev\Zenith\build\zenith_win64.vcxproj]
+  (compiling source file '/Zenith/Editor/Zenith_Editor.cpp')
+  
+c:\dev\Zenith\Zenith\Editor\Zenith_Editor.cpp(2676,27): error C2440: 'initializing': cannot convert from 'Zenith_Entity' to 'Zenith_Entity *' [c:\dev\Zenith\build\zenith_win64.vcxproj]
+  (compiling source file '/Zenith/Editor/Zenith_Editor.cpp')
+      c:\dev\Zenith\Zenith\Editor\Zenith_Editor.cpp(2676,27):
+      No user-defined-conversion operator available that can perform this conversion, or the operator cannot be called
+  

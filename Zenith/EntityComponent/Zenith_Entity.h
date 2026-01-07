@@ -125,6 +125,10 @@ public:
 	template<typename T>
 	T& GetComponent() const;
 
+	// Safe component accessor - returns nullptr if entity invalid or component doesn't exist
+	template<typename T>
+	T* TryGetComponent() const;
+
 	template<typename T>
 	void RemoveComponent();
 

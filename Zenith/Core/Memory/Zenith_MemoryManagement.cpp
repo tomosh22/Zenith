@@ -58,14 +58,27 @@ void* operator new(size_t ullSize, const std::nothrow_t&)
 	return Zenith_MemoryManagement::Allocate(ullSize);
 }
 
-void* operator new(size_t ullSize, std::align_val_t)
+void* operator new(size_t ullSize, std::align_val_t eAlign)
 {
-	return Zenith_MemoryManagement::Allocate(ullSize);
+#ifdef ZENITH_WINDOWS
+	void* pResult = _aligned_malloc(ullSize, static_cast<size_t>(eAlign));
+#else
+	void* pResult = aligned_alloc(static_cast<size_t>(eAlign), ullSize);
+#endif
+	if (pResult == nullptr && ullSize > 0)
+	{
+		Zenith_Error(LOG_CATEGORY_CORE, "Aligned memory allocation failed: %zu bytes, alignment %zu", ullSize, static_cast<size_t>(eAlign));
+	}
+	return pResult;
 }
 
-void* operator new(size_t ullSize, std::align_val_t, const std::nothrow_t&)
+void* operator new(size_t ullSize, std::align_val_t eAlign, const std::nothrow_t&)
 {
-	return Zenith_MemoryManagement::Allocate(ullSize);
+#ifdef ZENITH_WINDOWS
+	return _aligned_malloc(ullSize, static_cast<size_t>(eAlign));
+#else
+	return aligned_alloc(static_cast<size_t>(eAlign), ullSize);
+#endif
 }
 
 void* operator new(size_t ullSize, const int32_t iLine, const char* szFile)
@@ -83,14 +96,27 @@ void* operator new[](size_t ullSize, const std::nothrow_t&)
 	return Zenith_MemoryManagement::Allocate(ullSize);
 }
 
-void* operator new[](size_t ullSize, std::align_val_t)
+void* operator new[](size_t ullSize, std::align_val_t eAlign)
 {
-	return Zenith_MemoryManagement::Allocate(ullSize);
+#ifdef ZENITH_WINDOWS
+	void* pResult = _aligned_malloc(ullSize, static_cast<size_t>(eAlign));
+#else
+	void* pResult = aligned_alloc(static_cast<size_t>(eAlign), ullSize);
+#endif
+	if (pResult == nullptr && ullSize > 0)
+	{
+		Zenith_Error(LOG_CATEGORY_CORE, "Aligned array allocation failed: %zu bytes, alignment %zu", ullSize, static_cast<size_t>(eAlign));
+	}
+	return pResult;
 }
 
-void* operator new[](size_t ullSize, std::align_val_t, const std::nothrow_t&)
+void* operator new[](size_t ullSize, std::align_val_t eAlign, const std::nothrow_t&)
 {
-	return Zenith_MemoryManagement::Allocate(ullSize);
+#ifdef ZENITH_WINDOWS
+	return _aligned_malloc(ullSize, static_cast<size_t>(eAlign));
+#else
+	return aligned_alloc(static_cast<size_t>(eAlign), ullSize);
+#endif
 }
 
 void* operator new[](size_t ullSize, const int32_t iLine, const char* szFile)
@@ -116,4 +142,41 @@ void operator delete[](void* p)
 void operator delete[](void* p, const std::nothrow_t&)
 {
 	Zenith_MemoryManagement::Deallocate(p);
+}
+
+// Aligned delete operators - must use _aligned_free on Windows
+void operator delete(void* p, std::align_val_t) noexcept
+{
+#ifdef ZENITH_WINDOWS
+	_aligned_free(p);
+#else
+	free(p);
+#endif
+}
+
+void operator delete(void* p, std::align_val_t, const std::nothrow_t&) noexcept
+{
+#ifdef ZENITH_WINDOWS
+	_aligned_free(p);
+#else
+	free(p);
+#endif
+}
+
+void operator delete[](void* p, std::align_val_t) noexcept
+{
+#ifdef ZENITH_WINDOWS
+	_aligned_free(p);
+#else
+	free(p);
+#endif
+}
+
+void operator delete[](void* p, std::align_val_t, const std::nothrow_t&) noexcept
+{
+#ifdef ZENITH_WINDOWS
+	_aligned_free(p);
+#else
+	free(p);
+#endif
 }

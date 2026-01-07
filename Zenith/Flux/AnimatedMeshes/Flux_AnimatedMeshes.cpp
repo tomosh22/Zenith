@@ -196,6 +196,7 @@ void Flux_AnimatedMeshes::RenderToGBuffer(void*)
 			{
 				pxMaterial = Flux_Graphics::s_pxBlankMaterial;
 			}
+			Zenith_Assert(pxMaterial != nullptr, "Material is null and blank material fallback also null");
 
 			g_xCommandList.AddCommand<Flux_CommandBindCBV>(&xBoneBuffer.GetCBV(), 0);
 

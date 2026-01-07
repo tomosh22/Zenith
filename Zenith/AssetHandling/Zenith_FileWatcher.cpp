@@ -161,9 +161,9 @@ void Zenith_FileWatcher::EnqueueEvent(const FileChangeEvent& xEvent)
 	Zenith_ScopedMutexLock xLock(s_xEventMutex);
 
 	// Debounce: Check if we already have a similar event pending
-	for (Zenith_Vector<FileChangeEvent>::Iterator xIt(s_xPendingEvents); !xIt.Done(); xIt.Next())
+	for (u_int u = 0; u < s_xPendingEvents.GetSize(); ++u)
 	{
-		FileChangeEvent& xPending = xIt.GetData();
+		FileChangeEvent& xPending = s_xPendingEvents.Get(u);
 		if (xPending.m_strPath == xEvent.m_strPath && xPending.m_eType == xEvent.m_eType)
 		{
 			// Update timestamp instead of adding duplicate

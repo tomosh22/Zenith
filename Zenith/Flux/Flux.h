@@ -157,11 +157,17 @@ public:
 
 	static void SubmitCommandList(const Flux_CommandList* pxCmdList, const Flux_TargetSetup& xTargetSetup, RenderOrder eOrder)
 	{
+		Zenith_Assert(pxCmdList != nullptr, "SubmitCommandList: Command list is null");
+		Zenith_Assert(eOrder < RENDER_ORDER_MAX, "SubmitCommandList: Invalid render order %u", eOrder);
+
+		// Note: xTargetSetup.m_pxDepthStencil is a non-owning pointer that must outlive the frame
+		// Caller is responsible for ensuring depth stencil attachment remains valid
+
 		static Zenith_Mutex ls_xMutex;
 		ls_xMutex.Lock();
 		s_xPendingCommandLists[eOrder].PushBack({pxCmdList, xTargetSetup});
 		ls_xMutex.Unlock();
-		}
+	}
 	
 	// Prepare frame for rendering - distributes work across worker threads
 	// Returns false if there is no work to do

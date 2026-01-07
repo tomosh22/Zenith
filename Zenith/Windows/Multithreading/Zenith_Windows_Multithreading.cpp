@@ -42,6 +42,7 @@ void Zenith_Windows_Mutex::Unlock()
 Zenith_Windows_Semaphore::Zenith_Windows_Semaphore(u_int uInitialValue, u_int uMaxValue)
 {
 	m_xHandle = CreateSemaphore(NULL, uInitialValue, uMaxValue, NULL);
+	Zenith_Assert(m_xHandle != NULL, "CreateSemaphore failed with error %lu", GetLastError());
 }
 
 Zenith_Windows_Semaphore::~Zenith_Windows_Semaphore()
@@ -75,41 +76,42 @@ bool Zenith_Windows_Semaphore::Signal()
 
 struct ThreadParams
 {
-	Zenith_Windows_Semaphore* m_pxSemaphore;
 	Zenith_ThreadFunction m_pfnFunc;
 	const void* m_pUserData;
-	const char* m_szName;
+	char m_acName[Zenith_Multithreading::uMAX_THREAD_NAME_LENGTH];
 };
 
 unsigned long ThreadInit(void* pParams)
 {
 	Zenith_Multithreading::RegisterThread();
-	const ThreadParams* pxParams = static_cast<const ThreadParams*>(pParams);
-	memcpy(tl_g_acThreadName, pxParams->m_szName, strnlen(pxParams->m_szName, Zenith_Multithreading::uMAX_THREAD_NAME_LENGTH));
 
-	// Copy function and user data before signaling - after Signal() the stack
-	// containing pxParams may be destroyed by the calling thread
+	// Take ownership of heap-allocated params - we are responsible for deleting
+	ThreadParams* pxParams = static_cast<ThreadParams*>(pParams);
+
+	// Copy data to local/thread-local storage
+	memcpy(tl_g_acThreadName, pxParams->m_acName, Zenith_Multithreading::uMAX_THREAD_NAME_LENGTH);
 	Zenith_ThreadFunction pfnFunc = pxParams->m_pfnFunc;
 	const void* pUserData = pxParams->m_pUserData;
 
-	pxParams->m_pxSemaphore->Signal();
+	// Delete heap-allocated params now that we've copied everything
+	delete pxParams;
+
+	// Call the thread function
 	pfnFunc(pUserData);
 	return 0;
 }
 
 void Zenith_Multithreading::Platform_CreateThread(const char* szName, Zenith_ThreadFunction pfnFunc, const void* pUserData)
 {
-	Zenith_Windows_Semaphore xSemaphore(0, 1);
+	// Allocate params on heap - new thread takes ownership and deletes
+	ThreadParams* pxParams = new ThreadParams;
+	pxParams->m_pfnFunc = pfnFunc;
+	pxParams->m_pUserData = pUserData;
+	strncpy(pxParams->m_acName, szName, Zenith_Multithreading::uMAX_THREAD_NAME_LENGTH - 1);
+	pxParams->m_acName[Zenith_Multithreading::uMAX_THREAD_NAME_LENGTH - 1] = '\0';
 
-	ThreadParams xParams;
-	xParams.m_pxSemaphore = &xSemaphore;
-	xParams.m_pfnFunc = pfnFunc;
-	xParams.m_pUserData = pUserData;
-	xParams.m_szName = szName;
-
-	HANDLE pHandle = ::CreateThread(NULL, 128 * 1024, ThreadInit, &xParams, 0, NULL);
-
-	xSemaphore.Wait();
+	HANDLE pHandle = ::CreateThread(NULL, 128 * 1024, ThreadInit, pxParams, 0, NULL);
+	Zenith_Assert(pHandle != NULL, "CreateThread failed with error %lu", GetLastError());
 
 	CloseHandle(pHandle);
 }
