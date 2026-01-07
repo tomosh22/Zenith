@@ -361,7 +361,9 @@ void Flux_IKSolver::ApplyConstraints(std::vector<Zenith_Maths::Vector3>& xPositi
 	// For now, this is a simplified implementation
 	// A full implementation would properly handle each constraint type
 
-	for (size_t i = 0; i < xChain.m_xJointConstraints.size() && i < xPositions.size(); ++i)
+	// Loop must also check bone lengths bounds (m_xBoneLengths.size() == m_xBoneIndices.size() - 1)
+	const size_t uMaxIndex = std::min({xChain.m_xJointConstraints.size(), xPositions.size(), xChain.m_xBoneLengths.size()});
+	for (size_t i = 0; i < uMaxIndex; ++i)
 	{
 		const Flux_JointConstraint& xConstraint = xChain.m_xJointConstraints[i];
 
@@ -370,7 +372,7 @@ void Flux_IKSolver::ApplyConstraints(std::vector<Zenith_Maths::Vector3>& xPositi
 		case Flux_JointConstraint::ConstraintType::Hinge:
 		{
 			// Project movement onto plane perpendicular to hinge axis
-			if (i > 0 && i < xPositions.size() - 1)
+			if (i > 0 && i + 1 < xPositions.size())
 			{
 				Zenith_Maths::Vector3 xBoneDir = xPositions[i + 1] - xPositions[i];
 				Zenith_Maths::Vector3 xAxis = xConstraint.m_xHingeAxis;
@@ -391,7 +393,7 @@ void Flux_IKSolver::ApplyConstraints(std::vector<Zenith_Maths::Vector3>& xPositi
 		case Flux_JointConstraint::ConstraintType::BallSocket:
 		{
 			// Limit angle from original direction
-			if (i > 0 && i < xPositions.size() - 1)
+			if (i > 0 && i + 1 < xPositions.size() && i < xChain.m_xBoneIndices.size())
 			{
 				uint32_t uBoneIdx = xChain.m_xBoneIndices[i];
 				if (uBoneIdx != ~0u)
@@ -513,6 +515,22 @@ Zenith_Maths::Quat RotationBetweenVectors(const Zenith_Maths::Vector3& xFrom,
 
 	Zenith_Maths::Vector3 xAxis = glm::cross(xFromNorm, xToNorm);
 	float s = std::sqrt((1.0f + fDot) * 2.0f);
+
+	// Prevent division by zero/near-zero which causes Inf quaternion components
+	// This handles edge cases where fDot is very close to -1.0 but above threshold
+	constexpr float fMinS = 1e-5f;
+	if (s < fMinS)
+	{
+		// Fallback to 180-degree rotation around an arbitrary axis
+		Zenith_Maths::Vector3 xFallbackAxis = glm::cross(Zenith_Maths::Vector3(1, 0, 0), xFromNorm);
+		if (glm::length(xFallbackAxis) < 0.0001f)
+		{
+			xFallbackAxis = glm::cross(Zenith_Maths::Vector3(0, 1, 0), xFromNorm);
+		}
+		xFallbackAxis = glm::normalize(xFallbackAxis);
+		return glm::angleAxis(3.14159265f, xFallbackAxis);
+	}
+
 	float invS = 1.0f / s;
 
 	return Zenith_Maths::Quat(s * 0.5f, xAxis.x * invS, xAxis.y * invS, xAxis.z * invS);

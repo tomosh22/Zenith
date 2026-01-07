@@ -180,9 +180,28 @@ public:
 	void AddMeshEntry(Flux_MeshGeometry& xGeometry, Flux_MaterialAsset& xMaterial) { m_xMeshEntries.PushBack({ &xGeometry, &xMaterial }); }
 
 	// Mesh entry accessors (for procedural mesh system)
-	Flux_MeshGeometry& GetMeshGeometryAtIndex(const uint32_t uIndex) const { return *m_xMeshEntries.Get(uIndex).m_pxGeometry; }
-	const Flux_MaterialAsset& GetMaterialAtIndex(const uint32_t uIndex) const { return *m_xMeshEntries.Get(uIndex).m_pxMaterial; }
-	Flux_MaterialAsset& GetMaterialAtIndex(const uint32_t uIndex) { return *m_xMeshEntries.Get(uIndex).m_pxMaterial; }
+	// Note: These assert that pointers are valid - callers should check entry validity first
+	Flux_MeshGeometry& GetMeshGeometryAtIndex(const uint32_t uIndex) const
+	{
+		Zenith_Assert(uIndex < m_xMeshEntries.GetSize(), "GetMeshGeometryAtIndex: Index %u out of bounds (size=%u)", uIndex, m_xMeshEntries.GetSize());
+		Flux_MeshGeometry* pxGeometry = m_xMeshEntries.Get(uIndex).m_pxGeometry;
+		Zenith_Assert(pxGeometry != nullptr, "GetMeshGeometryAtIndex: Geometry pointer is null at index %u", uIndex);
+		return *pxGeometry;
+	}
+	const Flux_MaterialAsset& GetMaterialAtIndex(const uint32_t uIndex) const
+	{
+		Zenith_Assert(uIndex < m_xMeshEntries.GetSize(), "GetMaterialAtIndex: Index %u out of bounds (size=%u)", uIndex, m_xMeshEntries.GetSize());
+		const Flux_MaterialAsset* pxMaterial = m_xMeshEntries.Get(uIndex).m_pxMaterial;
+		Zenith_Assert(pxMaterial != nullptr, "GetMaterialAtIndex: Material pointer is null at index %u", uIndex);
+		return *pxMaterial;
+	}
+	Flux_MaterialAsset& GetMaterialAtIndex(const uint32_t uIndex)
+	{
+		Zenith_Assert(uIndex < m_xMeshEntries.GetSize(), "GetMaterialAtIndex: Index %u out of bounds (size=%u)", uIndex, m_xMeshEntries.GetSize());
+		Flux_MaterialAsset* pxMaterial = m_xMeshEntries.Get(uIndex).m_pxMaterial;
+		Zenith_Assert(pxMaterial != nullptr, "GetMaterialAtIndex: Material pointer is null at index %u", uIndex);
+		return *pxMaterial;
+	}
 	uint32_t GetNumMeshEntries() const { return m_xMeshEntries.GetSize(); }
 
 	Zenith_Entity GetParentEntity() const { return m_xParentEntity; }

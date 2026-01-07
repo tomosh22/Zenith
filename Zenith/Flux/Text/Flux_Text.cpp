@@ -131,8 +131,15 @@ uint32_t Flux_Text::UploadChars()
 
 				char cChar = xText.m_strText.at(u);
 
+				// Skip non-printable characters (ASCII < 32) to prevent index underflow
+				// Font atlas starts at space (ASCII 32), so characters below that are invalid
+				if (cChar < 32 || cChar > 126)
+				{
+					continue;
+				}
+
 				//#TO font atlas starts at unicode 20, we take away 11 to shift where we sample up/left one character, and take off one more to account for off by one error
-				const uint32_t uIndex = cChar - 32;
+				const uint32_t uIndex = static_cast<uint32_t>(cChar - 32);
 
 				const Zenith_Maths::UVector2 xTextureOffsets = { (uIndex % 10), (uIndex / 10) };
 				xVertex.m_xUV = { xTextureOffsets.x, xTextureOffsets.y };
@@ -168,8 +175,15 @@ uint32_t Flux_Text::UploadChars()
 
 				char cChar = xText.m_strText.at(u);
 
+				// Skip non-printable characters (ASCII < 32) to prevent index underflow
+				// Font atlas starts at space (ASCII 32), so characters below that are invalid
+				if (cChar < 32 || cChar > 126)
+				{
+					continue;
+				}
+
 				//#TO font atlas starts at unicode 20, we take away 11 to shift where we sample up/left one character, and take off one more to account for off by one error
-				const uint32_t uIndex = cChar - 32;
+				const uint32_t uIndex = static_cast<uint32_t>(cChar - 32);
 
 				const Zenith_Maths::UVector2 xTextureOffsets = { (uIndex % 10), (uIndex / 10) };
 				xVertex.m_xUV = { xTextureOffsets.x, xTextureOffsets.y };
@@ -198,7 +212,15 @@ uint32_t Flux_Text::UploadChars()
 			xVertex.m_xColour = xEntry.m_xColor;
 
 			char cChar = xEntry.m_strText.at(u);
-			const uint32_t uIndex = cChar - 32;
+
+			// Skip non-printable characters (ASCII < 32) to prevent index underflow
+			// Font atlas starts at space (ASCII 32), so characters below that are invalid
+			if (cChar < 32 || cChar > 126)
+			{
+				continue;
+			}
+
+			const uint32_t uIndex = static_cast<uint32_t>(cChar - 32);
 
 			const Zenith_Maths::UVector2 xTextureOffsets = { (uIndex % 10), (uIndex / 10) };
 			xVertex.m_xUV = { xTextureOffsets.x, xTextureOffsets.y };

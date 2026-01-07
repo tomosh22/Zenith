@@ -189,7 +189,11 @@ void Flux_Graphics::UploadFrameConstants()
 	int32_t iWidth, iHeight;
 	Zenith_Window::GetInstance()->GetSize(iWidth, iHeight);
 	s_xFrameConstants.m_xScreenDims = { static_cast<uint32_t>(iWidth), static_cast<uint32_t>(iHeight) };
-	s_xFrameConstants.m_xRcpScreenDims = { 1.f / s_xFrameConstants.m_xScreenDims.x, 1.f / s_xFrameConstants.m_xScreenDims.y };
+	// Prevent division by zero when window is minimized or has zero dimensions
+	s_xFrameConstants.m_xRcpScreenDims = {
+		(s_xFrameConstants.m_xScreenDims.x > 0) ? 1.f / s_xFrameConstants.m_xScreenDims.x : 1.f,
+		(s_xFrameConstants.m_xScreenDims.y > 0) ? 1.f / s_xFrameConstants.m_xScreenDims.y : 1.f
+	};
 	s_xFrameConstants.m_uQuadUtilisationAnalysis = dbg_bQuadUtilisationAnalysis;
 	s_xFrameConstants.m_uTargetPixelsPerTri = dbg_uTargetPixelsPerTri;
 	Flux_MemoryManager::UploadBufferData(s_xFrameConstantsBuffer.GetBuffer().m_xVRAMHandle, &s_xFrameConstants, sizeof(FrameConstants));

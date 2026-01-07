@@ -27,11 +27,15 @@ void Flux_BoneLocalPose::FromMatrix(const Zenith_Maths::Matrix4& xMatrix)
 	m_xScale.y = glm::length(Zenith_Maths::Vector3(xMatrix[1]));
 	m_xScale.z = glm::length(Zenith_Maths::Vector3(xMatrix[2]));
 
+	// Minimum scale to prevent division by zero and NaN propagation
+	constexpr float fMinScale = 1e-6f;
+
 	// Extract rotation by removing scale
+	// Use safe division to prevent NaN from degenerate matrices
 	Zenith_Maths::Matrix3 xRotMat;
-	xRotMat[0] = Zenith_Maths::Vector3(xMatrix[0]) / m_xScale.x;
-	xRotMat[1] = Zenith_Maths::Vector3(xMatrix[1]) / m_xScale.y;
-	xRotMat[2] = Zenith_Maths::Vector3(xMatrix[2]) / m_xScale.z;
+	xRotMat[0] = Zenith_Maths::Vector3(xMatrix[0]) / std::max(m_xScale.x, fMinScale);
+	xRotMat[1] = Zenith_Maths::Vector3(xMatrix[1]) / std::max(m_xScale.y, fMinScale);
+	xRotMat[2] = Zenith_Maths::Vector3(xMatrix[2]) / std::max(m_xScale.z, fMinScale);
 
 	m_xRotation = glm::quat_cast(xRotMat);
 }

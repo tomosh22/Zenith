@@ -125,6 +125,13 @@ Zenith_MeshAsset* Zenith_MeshAsset::LoadFromFile(const char* szPath)
 	Zenith_DataStream xStream;
 	xStream.ReadFromFile(szPath);
 
+	// Validate file was loaded successfully
+	if (!xStream.IsValid())
+	{
+		Zenith_Error(LOG_CATEGORY_MESH, "LoadFromFile: Failed to read file '%s'", szPath);
+		return nullptr;
+	}
+
 	Zenith_MeshAsset* pxAsset = new Zenith_MeshAsset();
 	pxAsset->ReadFromDataStream(xStream);
 	pxAsset->m_strSourcePath = szPath;

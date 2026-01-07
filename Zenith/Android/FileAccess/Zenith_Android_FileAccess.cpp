@@ -64,7 +64,9 @@ namespace Zenith_FileAccess
 	{
 		// Writing is only supported to external storage, not APK assets
 		char acFixedFilename[ZENITH_MAX_PATH_LENGTH]{ 0 };
-		strncpy(acFixedFilename, szFilename, strlen(szFilename));
+		// Use destination buffer size, not source string length, to prevent buffer overflow
+		strncpy(acFixedFilename, szFilename, ZENITH_MAX_PATH_LENGTH - 1);
+		acFixedFilename[ZENITH_MAX_PATH_LENGTH - 1] = '\0';  // Ensure null termination
 		Zenith_StringUtil::ReplaceAllChars(acFixedFilename, '\\', '/');
 
 		std::ofstream xFile(acFixedFilename, std::ios::trunc | std::ios::binary);

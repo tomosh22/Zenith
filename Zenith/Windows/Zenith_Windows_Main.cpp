@@ -15,6 +15,8 @@
 #include "Profiling/Zenith_Profiling.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
 #include "UnitTests/Zenith_UnitTests.h"
+#include "Vulkan/Zenith_Vulkan.h"
+#include "Vulkan/Zenith_Vulkan_MemoryManager.h"
 
 #ifdef ZENITH_TOOLS
 extern void ExportAllMeshes();
@@ -26,6 +28,11 @@ extern void ExportDefaultFontAtlas();
 
 int main()
 {
+	Zenith_Profiling::Initialise();
+	Zenith_Multithreading::RegisterThread(true);
+	Zenith_TaskSystem::Inititalise();
+	Zenith_UnitTests::RunAllTests();
+
 #ifdef ZENITH_TOOLS
 	ExportAllMeshes();
 	//ExportAllTextures();
@@ -33,11 +40,8 @@ int main()
 	ExportDefaultFontAtlas();  // Generate font atlas from TTF
 #endif
 
-	Zenith_Profiling::Initialise();
-	Zenith_Multithreading::RegisterThread(true);
 	Zenith_MemoryManagement::Initialise();
-	Zenith_TaskSystem::Inititalise();
-	Zenith_UnitTests::RunAllTests();
+
 	Zenith_Window::Inititalise("Zenith", 1280, 720);
 	Flux::EarlyInitialise();
 	Zenith_Physics::Initialise();
@@ -88,4 +92,32 @@ int main()
 		Zenith_Core::Zenith_MainLoop();
 		Zenith_Profiling::EndFrame();
 	}
+
+	//--------------------------------------------------------------------------
+	// Shutdown sequence - reverse order of initialization
+	// Critical: Must wait for GPU before destroying resources it's using
+	//--------------------------------------------------------------------------
+	Zenith_Log(LOG_CATEGORY_CORE, "Beginning shutdown sequence...");
+
+	// 1. Wait for GPU to finish all pending work
+	Zenith_Vulkan::WaitForGPUIdle();
+
+#ifdef ZENITH_TOOLS
+	// 2. Shutdown editor (processes pending deletions, cleans up editor state)
+	Zenith_Editor::Shutdown();
+#endif
+
+	// 3. Shutdown physics system
+	Zenith_Physics::Shutdown();
+
+	// 4. Shutdown Vulkan memory manager (destroys VMA allocator)
+	Zenith_Vulkan_MemoryManager::Shutdown();
+
+	// 5. Shutdown task system (terminates worker threads)
+	Zenith_TaskSystem::Shutdown();
+
+	// 6. Cleanup window (destructor handles GLFW termination)
+	delete Zenith_Window::GetInstance();
+
+	Zenith_Log(LOG_CATEGORY_CORE, "Shutdown complete");
 }

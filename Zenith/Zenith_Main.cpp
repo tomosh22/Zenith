@@ -15,6 +15,8 @@
 #include "Profiling/Zenith_Profiling.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
 #include "UnitTests/Zenith_UnitTests.h"
+#include "Vulkan/Zenith_Vulkan.h"
+#include "Vulkan/Zenith_Vulkan_MemoryManager.h"
 
 #ifdef ZENITH_TOOLS
 extern void ExportAllMeshes();
@@ -23,21 +25,23 @@ extern void ExportHeightmap();
 extern void ExportDefaultFontAtlas();
 #endif
 
+
 int main()
 {
 	Zenith_Profiling::Initialise();
 	Zenith_Multithreading::RegisterThread(true);
+	Zenith_TaskSystem::Inititalise();
+	Zenith_UnitTests::RunAllTests();
 
 #ifdef ZENITH_TOOLS
 	ExportAllMeshes();
-	ExportAllTextures();
+	//ExportAllTextures();
 	//ExportHeightmap();
-	ExportDefaultFontAtlas();
+	ExportDefaultFontAtlas();  // Generate font atlas from TTF
 #endif
-
+	
 	Zenith_MemoryManagement::Initialise();
-	Zenith_TaskSystem::Inititalise();
-	Zenith_UnitTests::RunAllTests();
+	
 	Zenith_Window::Inititalise("Zenith", 1280, 720);
 	Flux::EarlyInitialise();
 	Zenith_Physics::Initialise();
@@ -45,7 +49,6 @@ int main()
 	//#TO_TODO: move somewhere sensible
 	{
 		Flux_MemoryManager::BeginFrame();
-		//#TO_TODO: engine should have its own versions of these
 		Zenith_AssetHandler::TextureData xCubemapTexData = Zenith_AssetHandler::LoadTextureCubeFromFiles(
 			ENGINE_ASSETS_DIR"Textures/Cubemap/px" ZENITH_TEXTURE_EXT,
 			ENGINE_ASSETS_DIR"Textures/Cubemap/nx" ZENITH_TEXTURE_EXT,
@@ -57,7 +60,7 @@ int main()
 		Flux_Graphics::s_pxCubemapTexture = Zenith_AssetHandler::AddTexture(xCubemapTexData);
 		xCubemapTexData.FreeAllocatedData();
 
-		Zenith_AssetHandler::TextureData xWaterNormalTexData = Zenith_AssetHandler::LoadTexture2DFromFile(ENGINE_ASSETS_DIR"Textures/Water/normal" ZENITH_TEXTURE_EXT);
+		Zenith_AssetHandler::TextureData xWaterNormalTexData = Zenith_AssetHandler::LoadTexture2DFromFile(ENGINE_ASSETS_DIR"Textures/water/normal" ZENITH_TEXTURE_EXT);
 		Flux_Graphics::s_pxWaterNormalTexture = Zenith_AssetHandler::AddTexture(xWaterNormalTexData);
 		xWaterNormalTexData.FreeAllocatedData();
 		Flux_MemoryManager::EndFrame(false);
@@ -70,6 +73,7 @@ int main()
 	Zenith_DebugVariables::AddButton({ "Export", "Meshes", "Export All Meshes" }, ExportAllMeshes);
 	Zenith_DebugVariables::AddButton({ "Export", "Textures", "Export All Textures" }, ExportAllTextures);
 	Zenith_DebugVariables::AddButton({ "Export", "Terrain", "Export Heightmap" }, ExportHeightmap);
+	Zenith_DebugVariables::AddButton({ "Export", "Font", "Export Font Atlas" }, ExportDefaultFontAtlas);
 #endif
 
 	Flux_MemoryManager::BeginFrame();
@@ -88,4 +92,32 @@ int main()
 		Zenith_Core::Zenith_MainLoop();
 		Zenith_Profiling::EndFrame();
 	}
+
+	//--------------------------------------------------------------------------
+	// Shutdown sequence - reverse order of initialization
+	// Critical: Must wait for GPU before destroying resources it's using
+	//--------------------------------------------------------------------------
+	Zenith_Log(LOG_CATEGORY_CORE, "Beginning shutdown sequence...");
+
+	// 1. Wait for GPU to finish all pending work
+	Zenith_Vulkan::WaitForGPUIdle();
+
+#ifdef ZENITH_TOOLS
+	// 2. Shutdown editor (processes pending deletions, cleans up editor state)
+	Zenith_Editor::Shutdown();
+#endif
+
+	// 3. Shutdown physics system
+	Zenith_Physics::Shutdown();
+
+	// 4. Shutdown Vulkan memory manager (destroys VMA allocator)
+	Zenith_Vulkan_MemoryManager::Shutdown();
+
+	// 5. Shutdown task system (terminates worker threads)
+	Zenith_TaskSystem::Shutdown();
+
+	// 6. Cleanup window (destructor handles GLFW termination)
+	delete Zenith_Window::GetInstance();
+
+	Zenith_Log(LOG_CATEGORY_CORE, "Shutdown complete");
 }

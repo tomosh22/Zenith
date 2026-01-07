@@ -18,13 +18,13 @@ public:
 	void WriteToDataStream(Zenith_DataStream& xStream) const;
 	void ReadFromDataStream(Zenith_DataStream& xStream);
 
-	void SetPosition(const Zenith_Maths::Vector3 xPos);
-	void SetRotation(const Zenith_Maths::Quat xRot);
-	void SetScale(const Zenith_Maths::Vector3 xScale);
+	void SetPosition(const Zenith_Maths::Vector3& xPos);
+	void SetRotation(const Zenith_Maths::Quat& xRot);
+	void SetScale(const Zenith_Maths::Vector3& xScale);
 
 	void GetPosition(Zenith_Maths::Vector3& xPos);
 	void GetRotation(Zenith_Maths::Quat& xRot);
-	void GetScale(Zenith_Maths::Vector3& xScale);
+	void GetScale(Zenith_Maths::Vector3& xScale) const;
 
 	Zenith_Maths::Vector3 m_xScale = { 1.,1.,1. };
 

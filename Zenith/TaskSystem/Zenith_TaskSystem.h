@@ -57,10 +57,13 @@ public:
 		m_bSubmitted.store(false, std::memory_order_release);
 	}
 
-	// Reset for task reuse (call after WaitUntilComplete)
+	// Reset for task reuse
+	// NOTE: For simple tasks, no-op since there are no counters to reset
+	// The m_bSubmitted flag is automatically reset by WaitUntilComplete
 	void Reset()
 	{
-		Zenith_Assert(!m_bSubmitted.load(), "Cannot reset a submitted task - wait first");
+		// No counters to reset for simple tasks
+		// m_bSubmitted is reset in WaitUntilComplete
 	}
 
 	const Zenith_ProfileIndex GetProfileIndex() const
@@ -119,11 +122,13 @@ public:
 		}
 	}
 
+	// Reset counters for task reuse
+	// NOTE: Called by TaskSystem after successfully claiming m_bSubmitted flag
+	// The assertion on m_bSubmitted is now handled by TaskSystem's compare_exchange
 	void Reset()
 	{
-		Zenith_Assert(!m_bSubmitted.load(), "Cannot reset a submitted task - wait first");
-		m_uInvocationCounter.store(0);
-		m_uCompletionCounter.store(0);
+		m_uInvocationCounter.store(0, std::memory_order_release);
+		m_uCompletionCounter.store(0, std::memory_order_release);
 	}
 
 	const u_int GetNumInvocations() const

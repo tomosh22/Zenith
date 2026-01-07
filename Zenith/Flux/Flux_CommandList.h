@@ -68,6 +68,12 @@ public:
 	: m_uSize(uSize)
 	{
 		Zenith_Assert(uSize < uMAX_SIZE, "Push constant too big");
+		// Runtime guard for release builds - prevent buffer overflow
+		if (uSize >= uMAX_SIZE)
+		{
+			m_uSize = 0;
+			return;
+		}
 		memcpy(m_acData, pData, uSize);
 	}
 	void operator()(Flux_CommandBuffer* pxCmdBuf)

@@ -337,7 +337,7 @@ void Zenith_TransformComponent::DetachAllChildren()
 	}
 }
 
-void Zenith_TransformComponent::SetPosition(const Zenith_Maths::Vector3 xPos)
+void Zenith_TransformComponent::SetPosition(const Zenith_Maths::Vector3& xPos)
 {
 	// Check if entity has a physics body via ColliderComponent
 	// Use BodyInterface with BodyID for thread-safe access
@@ -355,7 +355,7 @@ void Zenith_TransformComponent::SetPosition(const Zenith_Maths::Vector3 xPos)
 	m_xPosition = xPos;
 }
 
-void Zenith_TransformComponent::SetRotation(const Zenith_Maths::Quat xRot)
+void Zenith_TransformComponent::SetRotation(const Zenith_Maths::Quat& xRot)
 {
 	// Check if entity has a physics body via ColliderComponent
 	// Use BodyInterface with BodyID for thread-safe access
@@ -373,7 +373,7 @@ void Zenith_TransformComponent::SetRotation(const Zenith_Maths::Quat xRot)
 	m_xRotation = xRot;
 }
 
-void Zenith_TransformComponent::SetScale(const Zenith_Maths::Vector3 xScale)
+void Zenith_TransformComponent::SetScale(const Zenith_Maths::Vector3& xScale)
 {
 	// Check if scale actually changed
 	if (m_xScale.x == xScale.x && m_xScale.y == xScale.y && m_xScale.z == xScale.z)
@@ -448,7 +448,7 @@ void Zenith_TransformComponent::GetRotation(Zenith_Maths::Quat& xRot)
 	xRot = m_xRotation;
 }
 
-void Zenith_TransformComponent::GetScale(Zenith_Maths::Vector3& xScale)
+void Zenith_TransformComponent::GetScale(Zenith_Maths::Vector3& xScale) const
 {
 	xScale = m_xScale;
 }

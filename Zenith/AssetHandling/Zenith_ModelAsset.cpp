@@ -80,6 +80,13 @@ Zenith_ModelAsset* Zenith_ModelAsset::LoadFromFile(const char* szPath)
 	Zenith_DataStream xStream;
 	xStream.ReadFromFile(szPath);
 
+	// Validate file was loaded successfully
+	if (!xStream.IsValid())
+	{
+		Zenith_Error(LOG_CATEGORY_ASSET, "LoadFromFile: Failed to read model file '%s'", szPath);
+		return nullptr;
+	}
+
 	Zenith_ModelAsset* pxAsset = new Zenith_ModelAsset();
 	pxAsset->ReadFromDataStream(xStream);
 	pxAsset->m_strSourcePath = szPath;

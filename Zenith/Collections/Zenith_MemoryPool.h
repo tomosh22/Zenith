@@ -77,15 +77,35 @@ public:
 		Zenith_Assert(pxVal != nullptr, "MemoryPool::Deallocate: Attempted to deallocate null pointer");
 		if (pxVal == nullptr) return;
 
+		// Bounds check (runtime protection)
 		Zenith_Assert(pxVal >= m_pxData && pxVal < m_pxData + uCount,
 			"MemoryPool::Deallocate: Object at %p wasn't allocated from this pool (range %p-%p)",
 			static_cast<const void*>(pxVal), static_cast<const void*>(m_pxData), static_cast<const void*>(m_pxData + uCount));
+		if (pxVal < m_pxData || pxVal >= m_pxData + uCount)
+		{
+			Zenith_Error(LOG_CATEGORY_CORE, "MemoryPool::Deallocate: Invalid pointer - not from this pool");
+			return;
+		}
+
+		// Free count overflow protection (prevents corruption on double-free in release builds)
 		Zenith_Assert(m_uFreeCount < uCount, "Memory pool free list overflow - possible double-free");
+		if (m_uFreeCount >= uCount)
+		{
+			Zenith_Error(LOG_CATEGORY_CORE, "MemoryPool::Deallocate: Free list overflow - pool is full, possible double-free");
+			return;
+		}
 
 		u_int uIndex = static_cast<u_int>(pxVal - m_pxData);
-		Zenith_Assert(m_abAllocated[uIndex], "Memory pool slot not allocated - possible double-free");
-		m_abAllocated[uIndex] = false;
 
+		// Double-free detection (runtime protection)
+		Zenith_Assert(m_abAllocated[uIndex], "Memory pool slot not allocated - possible double-free");
+		if (!m_abAllocated[uIndex])
+		{
+			Zenith_Error(LOG_CATEGORY_CORE, "MemoryPool::Deallocate: Slot %u not allocated - double-free detected", uIndex);
+			return;
+		}
+
+		m_abAllocated[uIndex] = false;
 		pxVal->~T();
 		m_apxFreeList[m_uFreeCount++] = pxVal;
 	}

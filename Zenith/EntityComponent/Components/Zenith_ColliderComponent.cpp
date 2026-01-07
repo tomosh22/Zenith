@@ -129,15 +129,26 @@ void Zenith_ColliderComponent::AddCollider(CollisionVolumeType eVolumeType, Rigi
 	break;
 	case COLLISION_VOLUME_TYPE_SPHERE:
 	{
-		float fRadius = glm::length(xTrans.m_xScale);
+		// Sphere uses the maximum scale component as radius
+		// (using glm::length was incorrect - it computes vector magnitude, not max component)
+		float fRadius = std::max({ xScale.x, xScale.y, xScale.z });
 		pxShape = new JPH::SphereShape(fRadius);
 	}
 	break;
 	case COLLISION_VOLUME_TYPE_CAPSULE:
 	{
-		float fRadius = glm::length(xTrans.m_xScale);
-		float fHeight = fRadius * 2.0f;
-		pxShape = new JPH::CapsuleShape(fHeight * 0.5f, fRadius);
+		// Capsule extends along Y axis (vertical orientation)
+		// Radius is based on horizontal extents (X and Z)
+		// Half-height is the cylindrical portion's half-length (Y scale minus radius for cap)
+		float fRadius = std::max(xScale.x, xScale.z);
+		// Ensure half-height is non-negative (if Y <= radius, we get a sphere-like capsule)
+		float fHalfHeight = std::max(fMinScale, xScale.y - fRadius);
+		if (xScale.y <= fRadius)
+		{
+			// Y scale is smaller than radius - use Y as half-height to prevent degenerate capsule
+			fHalfHeight = fMinScale;
+		}
+		pxShape = new JPH::CapsuleShape(fHalfHeight, fRadius);
 	}
 	break;
 	case COLLISION_VOLUME_TYPE_TERRAIN:

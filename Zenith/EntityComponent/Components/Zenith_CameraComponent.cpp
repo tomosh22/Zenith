@@ -38,9 +38,22 @@ void Zenith_CameraComponent::BuildProjectionMatrix(Zenith_Maths::Matrix4& xOut) 
 	switch (m_eType)
 	{
 	case CAMERA_TYPE_PERSPECTIVE:
-		xOut = Zenith_Maths::PerspectiveProjection(m_fFOV, m_fAspect, m_fNear, m_fFar);
+	{
+		// Clamp parameters to safe values to prevent NaN/Infinity from GLM
+		constexpr float fMinAspect = 0.0001f;
+		constexpr float fMinNear = 0.001f;
+		constexpr float fMinFOV = 0.01f;
+		constexpr float fNearFarGap = 0.1f;
+
+		float fSafeAspect = glm::max(m_fAspect, fMinAspect);
+		float fSafeNear = glm::max(m_fNear, fMinNear);
+		float fSafeFar = glm::max(m_fFar, fSafeNear + fNearFarGap);
+		float fSafeFOV = glm::max(m_fFOV, fMinFOV);
+
+		xOut = Zenith_Maths::PerspectiveProjection(fSafeFOV, fSafeAspect, fSafeNear, fSafeFar);
 		xOut[1][1] *= -1;
 		break;
+	}
 	case CAMERA_TYPE_ORTHOGRAPHIC:
 		xOut = Zenith_Maths::OrthographicProjection(m_fLeft, m_fRight, m_fBottom, m_fTop, m_fNear, m_fFar);
 		break;
@@ -56,7 +69,14 @@ Zenith_Maths::Vector3 Zenith_CameraComponent::ScreenSpaceToWorldSpace(Zenith_Mat
 	//#TO_TODO: adjust for viewport not taking up whole window in editor mode
 	int32_t iWidth, iHeight;
 	pxWindow->GetSize(iWidth, iHeight);
-	Zenith_Maths::Vector2 xScreenSize = { static_cast<uint32_t>(iWidth), static_cast<uint32_t>(iHeight) };
+
+	// Guard against zero screen size (minimized window)
+	if (iWidth <= 0 || iHeight <= 0)
+	{
+		return Zenith_Maths::Vector3(0.0f);
+	}
+
+	Zenith_Maths::Vector2 xScreenSize = { static_cast<float>(iWidth), static_cast<float>(iHeight) };
 
 	Zenith_Maths::Matrix4 xViewMat;
 	Zenith_Maths::Matrix4 xProjMat;
@@ -72,6 +92,13 @@ Zenith_Maths::Vector3 Zenith_CameraComponent::ScreenSpaceToWorldSpace(Zenith_Mat
 	};
 
 	Zenith_Maths::Vector4 xWorldSpacePreDivide = xInvViewProj * xClipSpace;
+
+	// Guard against perspective division by near-zero w (degenerate matrix)
+	constexpr float fMinW = 1e-6f;
+	if (fabsf(xWorldSpacePreDivide.w) < fMinW)
+	{
+		return Zenith_Maths::Vector3(0.0f);
+	}
 
 	Zenith_Maths::Vector3 xWorldSpace = {
 		xWorldSpacePreDivide.x / xWorldSpacePreDivide.w,

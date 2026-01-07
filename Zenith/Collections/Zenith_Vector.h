@@ -44,9 +44,50 @@ public:
 	Zenith_Vector& operator=(const Zenith_Vector& xOther)
 	{
 		if (this == &xOther) return *this;  // Self-assignment check - prevents use-after-free
+
+		// Exception-safe copy assignment using copy-and-swap idiom:
+		// 1. Create a temporary copy (may throw on allocation failure)
+		// 2. Swap with temporary (noexcept operation)
+		// 3. Temporary destructor cleans up old data
+		// This ensures strong exception guarantee: if allocation fails, *this is unchanged
+
+		// Allocate new buffer first - if this fails, *this remains valid
+		T* pNewData = nullptr;
+		u_int uNewCapacity = xOther.GetCapacity();
+		u_int uNewSize = xOther.GetSize();
+
+		if (uNewCapacity > 0)
+		{
+			constexpr u_int uMAX_SAFE_CAPACITY = UINT_MAX / sizeof(T);
+			Zenith_Assert(uNewCapacity <= uMAX_SAFE_CAPACITY,
+				"operator=: capacity %u would overflow", uNewCapacity);
+			if (uNewCapacity > uMAX_SAFE_CAPACITY) return *this;  // Fail gracefully
+
+			pNewData = static_cast<T*>(Zenith_MemoryManagement::Allocate(uNewCapacity * sizeof(T)));
+			if (pNewData == nullptr)
+			{
+				Zenith_Assert(false, "operator=: allocation failed for capacity %u", uNewCapacity);
+				return *this;  // Fail gracefully - *this unchanged
+			}
+
+			// Copy construct elements into new buffer
+			for (u_int u = 0; u < uNewSize; u++)
+			{
+				#include "Memory/Zenith_MemoryManagement_Disabled.h"
+				new (&pNewData[u]) T(xOther.m_pxData[u]);
+				#include "Memory/Zenith_MemoryManagement_Enabled.h"
+			}
+		}
+
+		// New buffer successfully created - now safe to destroy old data
 		Clear();
 		Zenith_MemoryManagement::Deallocate(m_pxData);
-		CopyFromOther(xOther);
+
+		// Take ownership of new data
+		m_pxData = pNewData;
+		m_uSize = uNewSize;
+		m_uCapacity = uNewCapacity;
+
 		return *this;
 	}
 
@@ -325,8 +366,9 @@ public:
 			// Check stream has remaining data
 			if (xStream.GetCursor() >= xStream.GetSize())
 			{
-				Zenith_Error(LOG_CATEGORY_CORE, "ReadFromDataStream: Premature end of stream at element %u of %u", u, uSize);
-				break;
+				Zenith_Error(LOG_CATEGORY_CORE, "ReadFromDataStream: Premature end of stream at element %u of %u - clearing partial data", u, uSize);
+				Clear();  // Clear partial data to prevent inconsistent state
+				return;
 			}
 			T x;
 			xStream >> x;

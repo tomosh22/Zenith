@@ -32,9 +32,16 @@ public:
 	{
 		Zenith_Assert(m_uCurrentSize <= uCapacity, "CircularQueue: Size exceeds capacity - corruption detected");
 		if (m_uCurrentSize == uCapacity) return false;
-		// Compute index before modulo to prevent integer overflow
-		// (m_uFront + m_uCurrentSize could overflow if both are large)
-		u_int uIndex = (m_uFront % uCapacity + m_uCurrentSize % uCapacity) % uCapacity;
+
+		// CRITICAL FIX: Safe modulo arithmetic to prevent integer overflow
+		// Since m_uFront and m_uCurrentSize are both < uCapacity after their modulos,
+		// their sum is guaranteed < 2*uCapacity, making the final modulo safe
+		// This avoids overflow when m_uFront + m_uCurrentSize > UINT_MAX
+		u_int uFrontPos = m_uFront % uCapacity;  // Always < uCapacity
+		u_int uAddOffset = m_uCurrentSize % uCapacity;  // Always < uCapacity
+		// uFrontPos + uAddOffset is now guaranteed < 2*uCapacity, no overflow possible
+		u_int uIndex = (uFrontPos + uAddOffset) % uCapacity;
+
 		m_atContents[uIndex] = tAdd;
 		m_uCurrentSize++;
 		return true;

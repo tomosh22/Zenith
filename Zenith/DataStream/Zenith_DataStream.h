@@ -98,6 +98,13 @@ public:
 		return m_ulDataSize;
 	}
 
+	// Returns true if the stream contains valid data (non-null pointer and non-zero size)
+	// Use this after ReadFromFile() to verify the file was loaded successfully
+	bool IsValid() const
+	{
+		return m_pData != nullptr && m_ulDataSize > 0;
+	}
+
 	const void* GetData() const
 	{
 		return m_pData;

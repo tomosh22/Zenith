@@ -68,8 +68,11 @@ Zenith_Maths::Vector3 Flux_RootMotion::SamplePositionDelta(float fTime) const
 	{
 		if (fTime < m_xPositionDeltas[i + 1].second)
 		{
-			float t = (fTime - m_xPositionDeltas[i].second) /
-				(m_xPositionDeltas[i + 1].second - m_xPositionDeltas[i].second);
+			float fTimeDelta = m_xPositionDeltas[i + 1].second - m_xPositionDeltas[i].second;
+			// Guard against division by zero (identical keyframe timestamps)
+			if (fTimeDelta <= 0.0f)
+				return m_xPositionDeltas[i].first;
+			float t = (fTime - m_xPositionDeltas[i].second) / fTimeDelta;
 			return glm::mix(m_xPositionDeltas[i].first, m_xPositionDeltas[i + 1].first, t);
 		}
 	}
@@ -90,8 +93,11 @@ Zenith_Maths::Quat Flux_RootMotion::SampleRotationDelta(float fTime) const
 	{
 		if (fTime < m_xRotationDeltas[i + 1].second)
 		{
-			float t = (fTime - m_xRotationDeltas[i].second) /
-				(m_xRotationDeltas[i + 1].second - m_xRotationDeltas[i].second);
+			float fTimeDelta = m_xRotationDeltas[i + 1].second - m_xRotationDeltas[i].second;
+			// Guard against division by zero (identical keyframe timestamps)
+			if (fTimeDelta <= 0.0f)
+				return m_xRotationDeltas[i].first;
+			float t = (fTime - m_xRotationDeltas[i].second) / fTimeDelta;
 			return glm::slerp(m_xRotationDeltas[i].first, m_xRotationDeltas[i + 1].first, t);
 		}
 	}

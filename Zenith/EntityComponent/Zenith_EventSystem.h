@@ -4,6 +4,7 @@
 #include <vector>
 #include <mutex>
 #include <functional>
+#include <atomic>
 #include "EntityComponent/Zenith_Scene.h"
 
 //------------------------------------------------------------------------------
@@ -209,7 +210,7 @@ private:
 	std::vector<std::unique_ptr<Zenith_EventBase>> m_xDeferredEvents;
 	std::mutex m_xDeferredMutex;
 
-	Zenith_EventHandle m_uNextHandle = 1;
+	std::atomic<Zenith_EventHandle> m_uNextHandle{1};
 };
 
 //------------------------------------------------------------------------------
@@ -226,7 +227,7 @@ template<typename TEvent>
 Zenith_EventHandle Zenith_EventDispatcher::Subscribe(void(*pfnCallback)(const TEvent&))
 {
 	const u_int uEventTypeID = Zenith_EventTypeID::GetID<TEvent>();
-	const Zenith_EventHandle uHandle = m_uNextHandle++;
+	const Zenith_EventHandle uHandle = m_uNextHandle.fetch_add(1, std::memory_order_relaxed);
 
 	Subscription xSub;
 	xSub.m_uEventTypeID = uEventTypeID;
@@ -242,7 +243,7 @@ template<typename TEvent, typename TCallback>
 Zenith_EventHandle Zenith_EventDispatcher::SubscribeLambda(TCallback&& xCallback)
 {
 	const u_int uEventTypeID = Zenith_EventTypeID::GetID<TEvent>();
-	const Zenith_EventHandle uHandle = m_uNextHandle++;
+	const Zenith_EventHandle uHandle = m_uNextHandle.fetch_add(1, std::memory_order_relaxed);
 
 	Subscription xSub;
 	xSub.m_uEventTypeID = uEventTypeID;

@@ -29,6 +29,8 @@
 #include "DataStream/Zenith_DataStream.h"
 #include "Prefab/Zenith_Prefab.h"
 
+#include <mutex>
+
 Zenith_Scene Zenith_Scene::s_xCurrentScene;
 bool Zenith_Scene::s_bIsLoadingScene = false;
 bool Zenith_Scene::s_bIsPrefabInstantiating = false;
@@ -42,6 +44,7 @@ namespace { struct ForceScriptComponentLink { ForceScriptComponentLink() { Zenit
 
 static Zenith_TaskArray* g_pxAnimUpdateTask = nullptr;
 static Zenith_Vector<Flux_MeshAnimation*> g_xAnimationsToUpdate;
+static std::once_flag g_xAnimTaskInitFlag;
 
 enum class ComponentType {
 	Transform,
@@ -77,16 +80,14 @@ void AnimUpdateTask(void*, u_int uInvocationIndex, u_int uNumInvocations)
 
 Zenith_Scene::Zenith_Scene()
 {
-	//#TO_TODO: don't like this, need some sort of global init
-	static bool ls_bOnce = true;
-	if (ls_bOnce)
-	{
-		ls_bOnce = false;
+	// Thread-safe one-time initialization using std::call_once
+	// This replaces the previous ls_bOnce pattern which had a data race
+	std::call_once(g_xAnimTaskInitFlag, []() {
 		// Create task array with 4 invocations for parallel processing
 		// Enable submitting thread joining to utilize the main thread
 		g_pxAnimUpdateTask = new Zenith_TaskArray(ZENITH_PROFILE_INDEX__ANIMATION, AnimUpdateTask, nullptr, 4, true);
-		atexit([]() {delete g_pxAnimUpdateTask; });
-	}
+		atexit([]() { delete g_pxAnimUpdateTask; });
+	});
 }
 
 Zenith_Scene::~Zenith_Scene() {
@@ -410,11 +411,18 @@ void Zenith_Scene::LoadFromFile(const std::string& strFilename)
 			xStream >> uFileIndex;
 			xStream >> strName;
 		}
-		else // uVersion == 5
+		else if (uVersion == 5)
 		{
 			// v5 format: Same as v4 (parent in Transform)
 			xStream >> uFileIndex;
 			xStream >> strName;
+		}
+		else
+		{
+			// This should be unreachable - the version check at the top of LoadFromFile()
+			// ensures uVersion is in the valid range. If we get here, it means a new
+			// version was added without updating this entity parsing code.
+			Zenith_Assert(false, "LoadFromFile: Unhandled scene version %u - update entity parsing code", uVersion);
 		}
 
 		// Create entity with fresh generation

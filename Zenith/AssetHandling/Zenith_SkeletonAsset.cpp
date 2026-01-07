@@ -88,6 +88,13 @@ Zenith_SkeletonAsset* Zenith_SkeletonAsset::LoadFromFile(const char* szPath)
 	Zenith_DataStream xStream;
 	xStream.ReadFromFile(szPath);
 
+	// Validate file was loaded successfully
+	if (!xStream.IsValid())
+	{
+		Zenith_Error(LOG_CATEGORY_ANIMATION, "LoadFromFile: Failed to read skeleton file '%s'", szPath);
+		return nullptr;
+	}
+
 	Zenith_SkeletonAsset* pxAsset = new Zenith_SkeletonAsset();
 	pxAsset->ReadFromDataStream(xStream);
 	pxAsset->m_strSourcePath = szPath;

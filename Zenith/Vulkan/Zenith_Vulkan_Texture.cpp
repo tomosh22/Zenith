@@ -7,6 +7,17 @@
 
 void Zenith_Vulkan_Texture::Reset()
 {
+	// Clear handles to mark texture as invalid
+	// Note: Actual GPU memory cleanup is handled by Zenith_Vulkan_MemoryManager
+	// through the deferred deletion system (QueueVRAMDeletion)
+	m_xImage = VK_NULL_HANDLE;
+	m_xImageView = VK_NULL_HANDLE;
+	m_xAllocation = VK_NULL_HANDLE;
+	m_uNumMips = 0;
+	m_uWidth = 0;
+	m_uHeight = 0;
+	m_uNumLayers = 0;
+	m_eFormat = vk::Format::eUndefined;
 }
 
 vk::Format Zenith_Vulkan_Texture::ConvertToVkFormat_Colour(TextureFormat eFormat) {

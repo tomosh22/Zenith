@@ -15,6 +15,7 @@
 #include <list>
 #include <concepts>
 #include <atomic>
+#include <random>
 
 using u_int = unsigned int;
 
@@ -159,12 +160,24 @@ using GUIDType = uint64_t;
 struct Zenith_GUID
 {
 	static Zenith_GUID Invalid;
+
+	// Thread-safe GUID generation using proper random number generation
+	// Uses thread_local RNG to avoid data races and ensure high-quality randomness
 	Zenith_GUID()
 	{
-		for (uint64_t i = 0; i < sizeof(GUIDType) * 8; i++)
-			if (rand() > RAND_MAX / 2)
-				m_uGUID |= static_cast<GUIDType>(1u) << i;
+		// Thread-local RNG ensures thread safety without locks
+		// std::random_device provides entropy for seeding
+		// std::mt19937_64 provides high-quality 64-bit random numbers
+		thread_local std::mt19937_64 s_xGenerator([]() {
+			std::random_device xRd;
+			// Seed with multiple values for better entropy
+			std::seed_seq xSeed{xRd(), xRd(), xRd(), xRd()};
+			return std::mt19937_64(xSeed);
+		}());
+
+		m_uGUID = s_xGenerator();
 	}
+
 	Zenith_GUID(GUIDType uGuid) : m_uGUID(uGuid) {}
 	GUIDType m_uGUID = 0;
 
@@ -173,7 +186,7 @@ struct Zenith_GUID
 		return m_uGUID == xOther.m_uGUID;
 	}
 
-	operator uint64_t() { return m_uGUID; }
+	operator uint64_t() const { return m_uGUID; }
 	operator uint32_t() = delete;
 };
 

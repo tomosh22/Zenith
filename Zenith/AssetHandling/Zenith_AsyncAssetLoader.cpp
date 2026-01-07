@@ -20,6 +20,7 @@ Zenith_Mutex Zenith_AsyncAssetLoader::s_xStateMutex;
 struct AsyncLoadTaskData
 {
 	Zenith_AsyncAssetLoader::LoadRequest m_xRequest;
+	Zenith_Task* m_pxTask;  // Pointer to task for cleanup
 };
 
 static void AsyncLoadTaskFunction(void* pData)
@@ -71,8 +72,10 @@ static void AsyncLoadTaskFunction(void* pData)
 			xCompleted.m_bSuccess ? AssetLoadState::LOADED : AssetLoadState::FAILED;
 	}
 
-	// Clean up task data
+	// Clean up task and task data
+	Zenith_Task* pxTask = pxTaskData->m_pxTask;
 	delete pxTaskData;
+	delete pxTask;
 }
 
 //------------------------------------------------------------------------------
@@ -152,10 +155,10 @@ void Zenith_AsyncAssetLoader::SubmitLoadRequest(const LoadRequest& xRequest)
 		pxTaskData
 	);
 
-	Zenith_TaskSystem::SubmitTask(pxTask);
+	// Store task pointer in data so it can be deleted when task completes
+	pxTaskData->m_pxTask = pxTask;
 
-	// Note: The task will be deleted when it completes
-	// This is a simplification - a more robust system would pool tasks
+	Zenith_TaskSystem::SubmitTask(pxTask);
 }
 
 //------------------------------------------------------------------------------

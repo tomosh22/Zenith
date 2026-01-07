@@ -36,7 +36,14 @@ namespace Zenith_Maths::Intersections
 		const Zenith_Maths::Vector3 xBoxMin = xAABBCenter - Zenith_Maths::Vector3(fHalf);
 		const Zenith_Maths::Vector3 xBoxMax = xAABBCenter + Zenith_Maths::Vector3(fHalf);
 
-		const Zenith_Maths::Vector3 xInvDir = 1.0f / xRayDir;
+		// Safe inverse direction - avoid infinity by using large value for near-zero components
+		constexpr float fMinDir = 1e-6f;
+		constexpr float fMaxInv = 1e6f;
+		const Zenith_Maths::Vector3 xInvDir = Zenith_Maths::Vector3(
+			(fabsf(xRayDir.x) > fMinDir) ? 1.0f / xRayDir.x : ((xRayDir.x >= 0.0f) ? fMaxInv : -fMaxInv),
+			(fabsf(xRayDir.y) > fMinDir) ? 1.0f / xRayDir.y : ((xRayDir.y >= 0.0f) ? fMaxInv : -fMaxInv),
+			(fabsf(xRayDir.z) > fMinDir) ? 1.0f / xRayDir.z : ((xRayDir.z >= 0.0f) ? fMaxInv : -fMaxInv)
+		);
 		const Zenith_Maths::Vector3 xT0 = (xBoxMin - xRayOrigin) * xInvDir;
 		const Zenith_Maths::Vector3 xT1 = (xBoxMax - xRayOrigin) * xInvDir;
 
@@ -58,7 +65,7 @@ namespace Zenith_Maths::Intersections
 	{
 		// Ray-cylinder intersection (finite cylinder along axis from origin)
 		// Ray: P = rayOrigin + t * rayDir
-		// Cylinder: |P - (P·axis)*axis|² = radius², 0 <= P·axis <= arrowLength
+		// Cylinder: |P - (Pï¿½axis)*axis|ï¿½ = radiusï¿½, 0 <= Pï¿½axis <= arrowLength
 
 		const float fDotAxisDir = glm::dot(xAxis, xRayDir);
 		const float fDotAxisOrigin = glm::dot(xAxis, xRayOrigin);

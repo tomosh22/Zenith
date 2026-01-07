@@ -631,14 +631,45 @@ void Flux_Primitives::Render(void*)
 		return;
 	}
 
-	// Early-out if no primitives queued
-	if (g_xSphereInstances.GetSize() == 0 &&
-		g_xCubeInstances.GetSize() == 0 &&
-		g_xLineInstances.GetSize() == 0 &&
-		g_xCapsuleInstances.GetSize() == 0 &&
-		g_xCylinderInstances.GetSize() == 0)
+	// Make local copies of instance data under lock to avoid data race
+	// (Add*() functions can be called from other threads while Render() iterates)
+	Zenith_Vector<SphereInstance> xLocalSphereInstances;
+	Zenith_Vector<CubeInstance> xLocalCubeInstances;
+	Zenith_Vector<LineInstance> xLocalLineInstances;
+	Zenith_Vector<CapsuleInstance> xLocalCapsuleInstances;
+	Zenith_Vector<CylinderInstance> xLocalCylinderInstances;
+
 	{
-		return;
+		Zenith_ScopedMutexLock xLock(g_xInstanceMutex);
+
+		// Early-out if no primitives queued (check under lock)
+		if (g_xSphereInstances.GetSize() == 0 &&
+			g_xCubeInstances.GetSize() == 0 &&
+			g_xLineInstances.GetSize() == 0 &&
+			g_xCapsuleInstances.GetSize() == 0 &&
+			g_xCylinderInstances.GetSize() == 0)
+		{
+			return;
+		}
+
+		// Copy all instance data - this is fast for typical counts
+		for (u_int i = 0; i < g_xSphereInstances.GetSize(); ++i)
+			xLocalSphereInstances.PushBack(g_xSphereInstances.Get(i));
+		for (u_int i = 0; i < g_xCubeInstances.GetSize(); ++i)
+			xLocalCubeInstances.PushBack(g_xCubeInstances.Get(i));
+		for (u_int i = 0; i < g_xLineInstances.GetSize(); ++i)
+			xLocalLineInstances.PushBack(g_xLineInstances.Get(i));
+		for (u_int i = 0; i < g_xCapsuleInstances.GetSize(); ++i)
+			xLocalCapsuleInstances.PushBack(g_xCapsuleInstances.Get(i));
+		for (u_int i = 0; i < g_xCylinderInstances.GetSize(); ++i)
+			xLocalCylinderInstances.PushBack(g_xCylinderInstances.Get(i));
+
+		// Clear global instances now that we have local copies
+		g_xSphereInstances.Clear();
+		g_xCubeInstances.Clear();
+		g_xLineInstances.Clear();
+		g_xCapsuleInstances.Clear();
+		g_xCylinderInstances.Clear();
 	}
 
 	g_xCommandList.Reset(false);  // Don't clear GBuffer targets (other geometry already rendered)
@@ -648,15 +679,15 @@ void Flux_Primitives::Render(void*)
 	g_xCommandList.AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
 
 	// ========== RENDER SPHERES ==========
-	if (g_xSphereInstances.GetSize() > 0)
+	if (xLocalSphereInstances.GetSize() > 0)
 	{
 		g_xCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xPrimitivesPipeline);
 		g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&s_xSphereVertexBuffer);
 		g_xCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&s_xSphereIndexBuffer);
 
-		for (u_int i = 0; i < g_xSphereInstances.GetSize(); ++i)
+		for (u_int i = 0; i < xLocalSphereInstances.GetSize(); ++i)
 		{
-			const SphereInstance& xInstance = g_xSphereInstances.Get(i);
+			const SphereInstance& xInstance = xLocalSphereInstances.Get(i);
 
 			// Build model matrix: translate to center, scale by radius
 			Zenith_Maths::Matrix4 xModelMatrix = Zenith_Maths::Translate(Zenith_Maths::Matrix4(1.0f), xInstance.m_xCenter);
@@ -673,11 +704,11 @@ void Flux_Primitives::Render(void*)
 	}
 
 	// ========== RENDER CUBES ==========
-	if (g_xCubeInstances.GetSize() > 0)
+	if (xLocalCubeInstances.GetSize() > 0)
 	{
-		for (u_int i = 0; i < g_xCubeInstances.GetSize(); ++i)
+		for (u_int i = 0; i < xLocalCubeInstances.GetSize(); ++i)
 		{
-			const CubeInstance& xInstance = g_xCubeInstances.Get(i);
+			const CubeInstance& xInstance = xLocalCubeInstances.Get(i);
 
 			// Set pipeline based on wireframe flag
 			if (xInstance.m_bWireframe)
@@ -707,20 +738,28 @@ void Flux_Primitives::Render(void*)
 	}
 
 	// ========== RENDER LINES ==========
-	if (g_xLineInstances.GetSize() > 0)
+	if (xLocalLineInstances.GetSize() > 0)
 	{
 		g_xCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xPrimitivesPipeline);
 		g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&s_xLineVertexBuffer);
 		g_xCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&s_xLineIndexBuffer);
 
-		for (u_int i = 0; i < g_xLineInstances.GetSize(); ++i)
+		for (u_int i = 0; i < xLocalLineInstances.GetSize(); ++i)
 		{
-			const LineInstance& xInstance = g_xLineInstances.Get(i);
+			const LineInstance& xInstance = xLocalLineInstances.Get(i);
 
 			// Build model matrix to transform unit line (0, -1, 0) -> (0, 1, 0) to start -> end
 			Zenith_Maths::Vector3 xDirection = xInstance.m_xEnd - xInstance.m_xStart;
 			float fLength = Zenith_Maths::Length(xDirection);
-			Zenith_Maths::Vector3 xNormalizedDir = Zenith_Maths::Normalize(xDirection);
+
+			// Skip degenerate lines (zero length) to prevent NaN from normalization
+			constexpr float fMinLength = 1e-6f;
+			if (fLength < fMinLength)
+			{
+				continue;
+			}
+
+			Zenith_Maths::Vector3 xNormalizedDir = xDirection / fLength;  // Safe: fLength >= fMinLength
 
 			// Compute rotation to align (0, 1, 0) with xNormalizedDir
 			Zenith_Maths::Vector3 xUp(0, 1, 0);
@@ -751,20 +790,28 @@ void Flux_Primitives::Render(void*)
 	}
 
 	// ========== RENDER CAPSULES ==========
-	if (g_xCapsuleInstances.GetSize() > 0)
+	if (xLocalCapsuleInstances.GetSize() > 0)
 	{
 		g_xCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xPrimitivesPipeline);
 		g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&s_xCapsuleVertexBuffer);
 		g_xCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&s_xCapsuleIndexBuffer);
 
-		for (u_int i = 0; i < g_xCapsuleInstances.GetSize(); ++i)
+		for (u_int i = 0; i < xLocalCapsuleInstances.GetSize(); ++i)
 		{
-			const CapsuleInstance& xInstance = g_xCapsuleInstances.Get(i);
+			const CapsuleInstance& xInstance = xLocalCapsuleInstances.Get(i);
 
 			// Build model matrix to align unit capsule (Y-axis) with start->end
 			Zenith_Maths::Vector3 xDirection = xInstance.m_xEnd - xInstance.m_xStart;
 			float fLength = Zenith_Maths::Length(xDirection);
-			Zenith_Maths::Vector3 xNormalizedDir = Zenith_Maths::Normalize(xDirection);
+
+			// Skip degenerate capsules (zero length) to prevent NaN from normalization
+			constexpr float fMinLength = 1e-6f;
+			if (fLength < fMinLength)
+			{
+				continue;
+			}
+
+			Zenith_Maths::Vector3 xNormalizedDir = xDirection / fLength;  // Safe: fLength >= fMinLength
 
 			Zenith_Maths::Vector3 xUp(0, 1, 0);
 			Zenith_Maths::Quaternion xRotation;
@@ -795,20 +842,27 @@ void Flux_Primitives::Render(void*)
 	}
 
 	// ========== RENDER CYLINDERS ==========
-	if (g_xCylinderInstances.GetSize() > 0)
+	if (xLocalCylinderInstances.GetSize() > 0)
 	{
 		g_xCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xPrimitivesPipeline);
 		g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&s_xCylinderVertexBuffer);
 		g_xCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&s_xCylinderIndexBuffer);
 
-		for (u_int i = 0; i < g_xCylinderInstances.GetSize(); ++i)
+		for (u_int i = 0; i < xLocalCylinderInstances.GetSize(); ++i)
 		{
-			const CylinderInstance& xInstance = g_xCylinderInstances.Get(i);
+			const CylinderInstance& xInstance = xLocalCylinderInstances.Get(i);
 
 			// Build model matrix to align unit cylinder (Y-axis) with start->end
 			Zenith_Maths::Vector3 xDirection = xInstance.m_xEnd - xInstance.m_xStart;
 			float fLength = Zenith_Maths::Length(xDirection);
-			Zenith_Maths::Vector3 xNormalizedDir = Zenith_Maths::Normalize(xDirection);
+
+			// Skip degenerate cylinders where start == end (would cause NaN from normalization)
+			constexpr float fMinLength = 1e-6f;
+			if (fLength < fMinLength)
+			{
+				continue;
+			}
+			Zenith_Maths::Vector3 xNormalizedDir = xDirection / fLength;
 
 			Zenith_Maths::Vector3 xUp(0, 1, 0);
 			Zenith_Maths::Quaternion xRotation;
@@ -841,6 +895,5 @@ void Flux_Primitives::Render(void*)
 	// Submit command list to GBuffer target at RENDER_ORDER_PRIMITIVES
 	Flux::SubmitCommandList(&g_xCommandList, Flux_Graphics::s_xMRTTarget, RENDER_ORDER_PRIMITIVES);
 
-	// Clear instances for next frame
-	Clear();
+	// Note: Instances already cleared inside the lock above
 }

@@ -85,7 +85,10 @@ static void* ThreadInit(void* pParams)
 {
 	Zenith_Multithreading::RegisterThread();
 	const ThreadParams* pxParams = static_cast<const ThreadParams*>(pParams);
-	memcpy(tl_g_acThreadName, pxParams->m_szName, strnlen(pxParams->m_szName, Zenith_Multithreading::uMAX_THREAD_NAME_LENGTH));
+	// Copy thread name with guaranteed null termination
+	size_t uNameLen = strnlen(pxParams->m_szName, Zenith_Multithreading::uMAX_THREAD_NAME_LENGTH - 1);
+	memcpy(tl_g_acThreadName, pxParams->m_szName, uNameLen);
+	tl_g_acThreadName[uNameLen] = '\0';
 	pxParams->m_pxSemaphore->Signal();
 	pxParams->m_pfnFunc(pxParams->m_pUserData);
 	return nullptr;

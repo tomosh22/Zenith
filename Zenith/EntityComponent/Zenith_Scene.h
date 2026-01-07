@@ -571,8 +571,19 @@ template<typename T, typename... Args>
 T& Zenith_Entity::AddComponent(Args&&... args)
 {
 	Zenith_Assert(m_pxParentScene != nullptr, "AddComponent: Entity has no scene");
-	Zenith_Assert(m_pxParentScene->EntityExists(m_xEntityID), "AddComponent: Entity (idx=%u, gen=%u) is stale", m_xEntityID.m_uIndex, m_xEntityID.m_uGeneration);
-	Zenith_Assert(!HasComponent<T>(), "AddComponent: Entity already has this component type");
+
+	// ATOMIC OPERATION: Hold lock for entire check-and-add sequence
+	// Prevents TOCTOU race between EntityExists/HasComponent and CreateComponent
+	Zenith_ScopedMutexLock xLock(m_pxParentScene->m_xMutex);
+
+	Zenith_Assert(m_pxParentScene->EntityExistsUnsafe(m_xEntityID), "AddComponent: Entity (idx=%u, gen=%u) is stale", m_xEntityID.m_uIndex, m_xEntityID.m_uGeneration);
+
+	// Inline HasComponent check under same lock
+	const Zenith_Scene::TypeID uTypeID = Zenith_Scene::TypeIDGenerator::GetTypeID<T>();
+	const std::unordered_map<Zenith_Scene::TypeID, u_int>& xComponentsForThisEntity =
+		m_pxParentScene->m_xEntityComponents.Get(m_xEntityID.m_uIndex);
+	Zenith_Assert(!xComponentsForThisEntity.contains(uTypeID), "AddComponent: Entity already has this component type");
+
 	return m_pxParentScene->CreateComponent<T>(m_xEntityID, std::forward<Args>(args)..., *this);
 }
 
@@ -597,25 +608,61 @@ template<typename T>
 T& Zenith_Entity::GetComponent() const
 {
 	Zenith_Assert(m_pxParentScene != nullptr, "GetComponent: Entity has no scene");
-	Zenith_Assert(m_pxParentScene->EntityExists(m_xEntityID), "GetComponent: Entity (idx=%u, gen=%u) is stale", m_xEntityID.m_uIndex, m_xEntityID.m_uGeneration);
-	Zenith_Assert(HasComponent<T>(), "GetComponent: Entity does not have this component type");
-	return m_pxParentScene->GetComponentFromEntity<T>(m_xEntityID);
+
+	// ATOMIC OPERATION: Hold lock for entire check-and-get sequence
+	// Prevents TOCTOU race between EntityExists/HasComponent and GetComponent
+	Zenith_ScopedMutexLock xLock(m_pxParentScene->m_xMutex);
+
+	Zenith_Assert(m_pxParentScene->EntityExistsUnsafe(m_xEntityID), "GetComponent: Entity (idx=%u, gen=%u) is stale", m_xEntityID.m_uIndex, m_xEntityID.m_uGeneration);
+
+	// Inline HasComponent check under same lock
+	const Zenith_Scene::TypeID uTypeID = Zenith_Scene::TypeIDGenerator::GetTypeID<T>();
+	const std::unordered_map<Zenith_Scene::TypeID, u_int>& xComponentsForThisEntity =
+		m_pxParentScene->m_xEntityComponents.Get(m_xEntityID.m_uIndex);
+	Zenith_Assert(xComponentsForThisEntity.contains(uTypeID), "GetComponent: Entity does not have this component type");
+
+	const u_int uIndex = xComponentsForThisEntity.at(uTypeID);
+	return m_pxParentScene->GetComponentPool<T>()->m_xData.Get(uIndex);
 }
 
 template<typename T>
 T* Zenith_Entity::TryGetComponent() const
 {
 	if (m_pxParentScene == nullptr) return nullptr;
-	if (!m_pxParentScene->EntityExists(m_xEntityID)) return nullptr;
-	if (!HasComponent<T>()) return nullptr;
-	return &m_pxParentScene->GetComponentFromEntity<T>(m_xEntityID);
+
+	// ATOMIC OPERATION: Hold lock for entire check-and-get sequence
+	// Prevents TOCTOU race between EntityExists/HasComponent and GetComponent
+	Zenith_ScopedMutexLock xLock(m_pxParentScene->m_xMutex);
+
+	if (!m_pxParentScene->EntityExistsUnsafe(m_xEntityID)) return nullptr;
+
+	// Inline HasComponent check under same lock
+	const Zenith_Scene::TypeID uTypeID = Zenith_Scene::TypeIDGenerator::GetTypeID<T>();
+	const std::unordered_map<Zenith_Scene::TypeID, u_int>& xComponentsForThisEntity =
+		m_pxParentScene->m_xEntityComponents.Get(m_xEntityID.m_uIndex);
+	if (!xComponentsForThisEntity.contains(uTypeID)) return nullptr;
+
+	// Get component under same lock
+	const u_int uIndex = xComponentsForThisEntity.at(uTypeID);
+	return &m_pxParentScene->GetComponentPool<T>()->m_xData.Get(uIndex);
 }
 
 template<typename T>
 void Zenith_Entity::RemoveComponent()
 {
 	Zenith_Assert(m_pxParentScene != nullptr, "RemoveComponent: Entity has no scene");
-	Zenith_Assert(m_pxParentScene->EntityExists(m_xEntityID), "RemoveComponent: Entity (idx=%u, gen=%u) is stale", m_xEntityID.m_uIndex, m_xEntityID.m_uGeneration);
-	Zenith_Assert(HasComponent<T>(), "RemoveComponent: Entity does not have this component type");
+
+	// ATOMIC OPERATION: Hold lock for entire check-and-remove sequence
+	// Prevents TOCTOU race between EntityExists/HasComponent and RemoveComponent
+	Zenith_ScopedMutexLock xLock(m_pxParentScene->m_xMutex);
+
+	Zenith_Assert(m_pxParentScene->EntityExistsUnsafe(m_xEntityID), "RemoveComponent: Entity (idx=%u, gen=%u) is stale", m_xEntityID.m_uIndex, m_xEntityID.m_uGeneration);
+
+	// Inline HasComponent check under same lock
+	const Zenith_Scene::TypeID uTypeID = Zenith_Scene::TypeIDGenerator::GetTypeID<T>();
+	const std::unordered_map<Zenith_Scene::TypeID, u_int>& xComponentsForThisEntity =
+		m_pxParentScene->m_xEntityComponents.Get(m_xEntityID.m_uIndex);
+	Zenith_Assert(xComponentsForThisEntity.contains(uTypeID), "RemoveComponent: Entity does not have this component type");
+
 	m_pxParentScene->RemoveComponentFromEntity<T>(m_xEntityID);
 }

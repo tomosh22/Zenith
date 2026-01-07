@@ -76,17 +76,49 @@ void Zenith_Vulkan_Shader::InitialiseCompute(const std::string& strCompute)
 Zenith_Vulkan_Shader::~Zenith_Vulkan_Shader()
 {
 	const vk::Device xDevice = Zenith_Vulkan::GetDevice();
-	xDevice.destroyShaderModule(m_xVertShaderModule);
-	xDevice.destroyShaderModule(m_xFragShaderModule);
-	xDevice.destroyShaderModule(m_xTescShaderModule);
-	xDevice.destroyShaderModule(m_xTeseShaderModule);
-	xDevice.destroyShaderModule(m_xCompShaderModule);
+
+	// Only destroy shader modules that were actually created
+	// VK_NULL_HANDLE check prevents destroying uninitialized handles
+	if (m_xVertShaderModule)
+	{
+		xDevice.destroyShaderModule(m_xVertShaderModule);
+		m_xVertShaderModule = VK_NULL_HANDLE;
+	}
+	if (m_xFragShaderModule)
+	{
+		xDevice.destroyShaderModule(m_xFragShaderModule);
+		m_xFragShaderModule = VK_NULL_HANDLE;
+	}
+	if (m_xTescShaderModule)
+	{
+		xDevice.destroyShaderModule(m_xTescShaderModule);
+		m_xTescShaderModule = VK_NULL_HANDLE;
+	}
+	if (m_xTeseShaderModule)
+	{
+		xDevice.destroyShaderModule(m_xTeseShaderModule);
+		m_xTeseShaderModule = VK_NULL_HANDLE;
+	}
+	if (m_xCompShaderModule)
+	{
+		xDevice.destroyShaderModule(m_xCompShaderModule);
+		m_xCompShaderModule = VK_NULL_HANDLE;
+	}
+
+	// Safe to delete nullptr in C++, but explicit for clarity
 	delete[] m_pcVertShaderCode;
 	delete[] m_pcFragShaderCode;
 	delete[] m_pcTescShaderCode;
 	delete[] m_pcTeseShaderCode;
 	delete[] m_pcCompShaderCode;
 	delete[] m_xInfos;
+
+	m_pcVertShaderCode = nullptr;
+	m_pcFragShaderCode = nullptr;
+	m_pcTescShaderCode = nullptr;
+	m_pcTeseShaderCode = nullptr;
+	m_pcCompShaderCode = nullptr;
+	m_xInfos = nullptr;
 }
 
 void Zenith_Vulkan_Shader::FillShaderStageCreateInfo(vk::GraphicsPipelineCreateInfo& xPipelineCreateInfo) const
@@ -292,6 +324,38 @@ Zenith_Vulkan_PipelineBuilder::Zenith_Vulkan_PipelineBuilder()
 
 Zenith_Vulkan_Pipeline::~Zenith_Vulkan_Pipeline()
 {
+	const vk::Device xDevice = Zenith_Vulkan::GetDevice();
+
+	// Destroy pipeline if valid
+	if (m_xPipeline)
+	{
+		xDevice.destroyPipeline(m_xPipeline);
+		m_xPipeline = VK_NULL_HANDLE;
+	}
+
+	// Destroy render pass if valid
+	if (m_xRenderPass)
+	{
+		xDevice.destroyRenderPass(m_xRenderPass);
+		m_xRenderPass = VK_NULL_HANDLE;
+	}
+
+	// Destroy root signature resources
+	if (m_xRootSig.m_xLayout)
+	{
+		xDevice.destroyPipelineLayout(m_xRootSig.m_xLayout);
+		m_xRootSig.m_xLayout = VK_NULL_HANDLE;
+	}
+
+	// Destroy descriptor set layouts
+	for (u_int u = 0; u < m_xRootSig.m_uNumDescriptorSets && u < FLUX_MAX_DESCRIPTOR_BINDINGS; u++)
+	{
+		if (m_xRootSig.m_axDescSetLayouts[u])
+		{
+			xDevice.destroyDescriptorSetLayout(m_xRootSig.m_axDescSetLayouts[u]);
+			m_xRootSig.m_axDescSetLayouts[u] = VK_NULL_HANDLE;
+		}
+	}
 }
 
 Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithDepthState(vk::CompareOp op, bool depthEnabled, bool writeEnabled, bool stencilEnabled)

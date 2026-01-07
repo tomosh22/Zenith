@@ -316,7 +316,10 @@ void Zenith_Physics::SetLinearVelocity(const JPH::BodyID& xBodyID, const Zenith_
 Zenith_Maths::Vector3 Zenith_Physics::GetLinearVelocity(const JPH::BodyID& xBodyID)
 {
 	if (xBodyID.IsInvalid()) return Zenith_Maths::Vector3(0, 0, 0);
-	JPH::BodyInterface& xBodyInterface = s_pxPhysicsSystem->GetBodyInterfaceNoLock();
+	// CRITICAL FIX: Use locked interface for thread safety
+	// GetBodyInterfaceNoLock() was unsafe when physics simulation runs on worker threads
+	// The setter uses GetBodyInterface() so the getter must match for consistency
+	JPH::BodyInterface& xBodyInterface = s_pxPhysicsSystem->GetBodyInterface();
 	JPH::Vec3 xVel = xBodyInterface.GetLinearVelocity(xBodyID);
 	return Zenith_Maths::Vector3(xVel.GetX(), xVel.GetY(), xVel.GetZ());
 }
@@ -331,7 +334,8 @@ void Zenith_Physics::SetAngularVelocity(const JPH::BodyID& xBodyID, const Zenith
 Zenith_Maths::Vector3 Zenith_Physics::GetAngularVelocity(const JPH::BodyID& xBodyID)
 {
 	if (xBodyID.IsInvalid()) return Zenith_Maths::Vector3(0, 0, 0);
-	JPH::BodyInterface& xBodyInterface = s_pxPhysicsSystem->GetBodyInterfaceNoLock();
+	// CRITICAL FIX: Use locked interface for thread safety (matches setter)
+	JPH::BodyInterface& xBodyInterface = s_pxPhysicsSystem->GetBodyInterface();
 	JPH::Vec3 xVel = xBodyInterface.GetAngularVelocity(xBodyID);
 	return Zenith_Maths::Vector3(xVel.GetX(), xVel.GetY(), xVel.GetZ());
 }
@@ -339,6 +343,9 @@ Zenith_Maths::Vector3 Zenith_Physics::GetAngularVelocity(const JPH::BodyID& xBod
 void Zenith_Physics::AddForce(const JPH::BodyID& xBodyID, const Zenith_Maths::Vector3& xForce)
 {
 	if (xBodyID.IsInvalid()) return;
+	Zenith_Assert(s_pxPhysicsSystem != nullptr, "AddForce: Physics system not initialized");
+	if (!s_pxPhysicsSystem) return;  // Defensive check for release builds
+
 	JPH::BodyInterface& xBodyInterface = s_pxPhysicsSystem->GetBodyInterface();
 	// CRITICAL: Activate the body first - sleeping bodies ignore forces
 	xBodyInterface.ActivateBody(xBodyID);
@@ -348,6 +355,9 @@ void Zenith_Physics::AddForce(const JPH::BodyID& xBodyID, const Zenith_Maths::Ve
 void Zenith_Physics::AddImpulse(const JPH::BodyID& xBodyID, const Zenith_Maths::Vector3& xImpulse)
 {
 	if (xBodyID.IsInvalid()) return;
+	Zenith_Assert(s_pxPhysicsSystem != nullptr, "AddImpulse: Physics system not initialized");
+	if (!s_pxPhysicsSystem) return;  // Defensive check for release builds
+
 	JPH::BodyInterface& xBodyInterface = s_pxPhysicsSystem->GetBodyInterface();
 	// Activate the body and apply instant velocity change
 	xBodyInterface.ActivateBody(xBodyID);

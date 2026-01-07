@@ -173,21 +173,19 @@ void Zenith_TaskSystem::SubmitTaskArray(Zenith_TaskArray* const pxTaskArray)
 	Zenith_Assert(g_bInitialized.load(std::memory_order_acquire), "SubmitTaskArray: TaskSystem not initialized");
 	Zenith_Assert(g_pxWorkAvailableSem != nullptr, "SubmitTaskArray: Semaphore is null");
 
-	// Reset counters BEFORE setting submitted flag to prevent race condition
-	// where workers start executing before counters are reset
-	// Note: If already submitted, Reset will assert - we check that next
-	if (!pxTaskArray->m_bSubmitted.load(std::memory_order_acquire))
-	{
-		pxTaskArray->Reset();
-	}
-
-	// Atomic check-and-set for double-submit prevention (fixes TOCTOU race)
+	// ATOMIC check-and-set for double-submit prevention
+	// Reset counters AFTER successfully claiming the task to prevent TOCTOU race
+	// where another thread could reset counters while workers are executing
 	bool bExpected = false;
 	if (!pxTaskArray->m_bSubmitted.compare_exchange_strong(bExpected, true, std::memory_order_acq_rel))
 	{
 		Zenith_Assert(false, "SubmitTaskArray: TaskArray already submitted - call WaitUntilComplete before resubmitting");
 		return;
 	}
+
+	// Reset counters AFTER successfully claiming the submitted flag
+	// This is now safe because no other thread can submit until WaitUntilComplete resets m_bSubmitted
+	pxTaskArray->Reset();
 
 	if (!dbg_bMultithreaded)
 	{

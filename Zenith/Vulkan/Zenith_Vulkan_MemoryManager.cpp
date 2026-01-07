@@ -291,9 +291,15 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateBufferVRAM(const u_int uSize,
 
 	const vk::BufferCreateInfo::NativeType xBufferInfo_Native = xBufferInfo;
 
-	VkBuffer xBuffer;
-	VmaAllocation xAllocation;
-	vmaCreateBuffer(s_xAllocator, &xBufferInfo_Native, &xAllocInfo, &xBuffer, &xAllocation, nullptr);
+	VkBuffer xBuffer = VK_NULL_HANDLE;
+	VmaAllocation xAllocation = VK_NULL_HANDLE;
+	VkResult eResult = vmaCreateBuffer(s_xAllocator, &xBufferInfo_Native, &xAllocInfo, &xBuffer, &xAllocation, nullptr);
+	Zenith_Assert(eResult == VK_SUCCESS, "vmaCreateBuffer failed with result %d", static_cast<int>(eResult));
+	if (eResult != VK_SUCCESS)
+	{
+		// Return invalid handle on allocation failure
+		return Flux_VRAMHandle();
+	}
 
 	Zenith_Vulkan_VRAM* pxVRAM = new Zenith_Vulkan_VRAM(vk::Buffer(xBuffer), xAllocation, s_xAllocator, uSize);
 	Flux_VRAMHandle xHandle = Zenith_Vulkan::RegisterVRAM(pxVRAM);
@@ -351,10 +357,16 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateRenderTargetVRAM(const Flux_S
 	xAllocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
 
 	const vk::ImageCreateInfo::NativeType xImageInfo_Native = xImageInfo;
-	
-	VkImage xImage;
-	VmaAllocation xAllocation;
-	vmaCreateImage(s_xAllocator, &xImageInfo_Native, &xAllocInfo, &xImage, &xAllocation, nullptr);
+
+	VkImage xImage = VK_NULL_HANDLE;
+	VmaAllocation xAllocation = VK_NULL_HANDLE;
+	VkResult eResult = vmaCreateImage(s_xAllocator, &xImageInfo_Native, &xAllocInfo, &xImage, &xAllocation, nullptr);
+	Zenith_Assert(eResult == VK_SUCCESS, "vmaCreateImage failed with result %d", static_cast<int>(eResult));
+	if (eResult != VK_SUCCESS)
+	{
+		// Return invalid handle on allocation failure
+		return Flux_VRAMHandle();
+	}
 
 	Zenith_Vulkan_VRAM* pxVRAM = new Zenith_Vulkan_VRAM(vk::Image(xImage), xAllocation, s_xAllocator);
 	Flux_VRAMHandle xHandle = Zenith_Vulkan::RegisterVRAM(pxVRAM);
@@ -363,7 +375,7 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateRenderTargetVRAM(const Flux_S
 	{
 		Zenith_Assert(xInfo.m_eFormat == TEXTURE_FORMAT_D32_SFLOAT, "#TO_TODO: layouts for just depth without stencil");
 	}
-	
+
 	ImageTransitionBarrier(vk::Image(xImage), vk::ImageLayout::eUndefined, eInitialLayout, eAspectFlags, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands);
 
 	return xHandle;
@@ -404,10 +416,16 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateTextureVRAM(const void* pData
 	xAllocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
 
 	const vk::ImageCreateInfo::NativeType xImageInfo_Native = xImageInfo;
-	
-	VkImage xImage;
-	VmaAllocation xAllocation;
-	vmaCreateImage(s_xAllocator, &xImageInfo_Native, &xAllocInfo, &xImage, &xAllocation, nullptr);
+
+	VkImage xImage = VK_NULL_HANDLE;
+	VmaAllocation xAllocation = VK_NULL_HANDLE;
+	VkResult eResult = vmaCreateImage(s_xAllocator, &xImageInfo_Native, &xAllocInfo, &xImage, &xAllocation, nullptr);
+	Zenith_Assert(eResult == VK_SUCCESS, "vmaCreateImage failed with result %d", static_cast<int>(eResult));
+	if (eResult != VK_SUCCESS)
+	{
+		// Return invalid handle on allocation failure
+		return Flux_VRAMHandle();
+	}
 
 	Zenith_Vulkan_VRAM* pxVRAM = new Zenith_Vulkan_VRAM(vk::Image(xImage), xAllocation, s_xAllocator);
 	Flux_VRAMHandle xHandle = Zenith_Vulkan::RegisterVRAM(pxVRAM);
@@ -490,7 +508,9 @@ vk::ImageView Zenith_Vulkan_MemoryManager::CreateRenderTargetView(Flux_VRAMHandl
 {
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xVRAMHandle);
-	
+	Zenith_Assert(pxVRAM != nullptr, "GetVRAM returned null in CreateRenderTargetView");
+	if (!pxVRAM) return VK_NULL_HANDLE;  // Safety guard for release builds
+
 	vk::Format xFormat = Zenith_Vulkan::ConvertToVkFormat_Colour(xInfo.m_eFormat);
 	
 	const bool bIsCube = xInfo.m_uNumLayers == 6;
@@ -515,7 +535,9 @@ vk::ImageView Zenith_Vulkan_MemoryManager::CreateDepthStencilView(Flux_VRAMHandl
 {
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xVRAMHandle);
-	
+	Zenith_Assert(pxVRAM != nullptr, "GetVRAM returned null in CreateDepthStencilView");
+	if (!pxVRAM) return VK_NULL_HANDLE;  // Safety guard for release builds
+
 	vk::Format xFormat = Zenith_Vulkan::ConvertToVkFormat_DepthStencil(xInfo.m_eFormat);
 	
 	const bool bIsCube = xInfo.m_uNumLayers == 6;
@@ -540,7 +562,9 @@ vk::ImageView Zenith_Vulkan_MemoryManager::CreateShaderResourceView(Flux_VRAMHan
 {
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xVRAMHandle);
-	
+	Zenith_Assert(pxVRAM != nullptr, "GetVRAM returned null in CreateShaderResourceView");
+	if (!pxVRAM) return VK_NULL_HANDLE;  // Safety guard for release builds
+
 	const bool bIsDepth = xInfo.m_eFormat > TEXTURE_FORMAT_DEPTH_STENCIL_BEGIN && xInfo.m_eFormat < TEXTURE_FORMAT_DEPTH_STENCIL_END;
 	vk::Format xFormat = bIsDepth ? Zenith_Vulkan::ConvertToVkFormat_DepthStencil(xInfo.m_eFormat) : Zenith_Vulkan::ConvertToVkFormat_Colour(xInfo.m_eFormat);
 	
@@ -566,7 +590,9 @@ vk::ImageView Zenith_Vulkan_MemoryManager::CreateUnorderedAccessView(Flux_VRAMHa
 {
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xVRAMHandle);
-	
+	Zenith_Assert(pxVRAM != nullptr, "GetVRAM returned null in CreateUnorderedAccessView");
+	if (!pxVRAM) return VK_NULL_HANDLE;  // Safety guard for release builds
+
 	vk::Format xFormat = Zenith_Vulkan::ConvertToVkFormat_Colour(xInfo.m_eFormat);
 	
 	const bool bIsCube = xInfo.m_uNumLayers == 6;
@@ -594,6 +620,12 @@ void Zenith_Vulkan_MemoryManager::UploadBufferData(Flux_VRAMHandle xBufferHandle
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 
 	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xBufferHandle);
+	Zenith_Assert(pxVRAM != nullptr, "GetVRAM returned null in UploadBufferData");
+	if (!pxVRAM)
+	{
+		s_xMutex.Unlock();
+		return;  // Safety guard for release builds
+	}
 	const VmaAllocation& xAlloc = pxVRAM->GetAllocation();
 	VkMemoryPropertyFlags eMemoryProps;
 	vmaGetAllocationMemoryProperties(s_xAllocator, xAlloc, &eMemoryProps);
@@ -768,6 +800,8 @@ void Zenith_Vulkan_MemoryManager::UploadBufferDataAtOffset(Flux_VRAMHandle xBuff
 
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xBufferHandle);
+	Zenith_Assert(pxVRAM != nullptr, "GetVRAM returned null in UploadBufferDataAtOffset");
+	if (!pxVRAM) return;  // Safety guard for release builds
 	const VmaAllocation& xAlloc = pxVRAM->GetAllocation();
 	VkMemoryPropertyFlags eMemoryProps;
 	vmaGetAllocationMemoryProperties(s_xAllocator, xAlloc, &eMemoryProps);

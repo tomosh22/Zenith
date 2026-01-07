@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cassert>
+
 #ifdef ZENITH_VULKAN
 #define GLFW_INCLUDE_VULKAN
 #endif
@@ -21,7 +23,11 @@ public:
 
 	GLFWwindow* GetNativeWindow() const { return m_pxNativeWindow; }
 
-	static Zenith_Window* GetInstance() { return s_pxInstance; }
+	static Zenith_Window* GetInstance()
+	{
+		assert(s_pxInstance != nullptr && "Zenith_Window::GetInstance() called before Inititalise()");
+		return s_pxInstance;
+	}
 
 	void BeginFrame();
 

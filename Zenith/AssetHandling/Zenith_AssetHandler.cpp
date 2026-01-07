@@ -195,6 +195,13 @@ Zenith_AssetHandler::TextureData Zenith_AssetHandler::LoadTexture2DFromFile(cons
 	Zenith_DataStream xStream;
 	xStream.ReadFromFile(szPath);
 
+	// Validate file was loaded successfully
+	if (!xStream.IsValid())
+	{
+		Zenith_Error(LOG_CATEGORY_ASSET, "LoadTexture2DFromFile: Failed to read file '%s'", szPath);
+		return TextureData();
+	}
+
 	xStream >> uWidth;
 	xStream >> uHeight;
 	xStream >> uDepth;
@@ -262,6 +269,21 @@ Zenith_AssetHandler::TextureData Zenith_AssetHandler::LoadTextureCubeFromFiles(c
 	{
 		Zenith_DataStream xStream;
 		xStream.ReadFromFile(aszPaths[u]);
+
+		// Validate file was loaded successfully
+		if (!xStream.IsValid())
+		{
+			Zenith_Error(LOG_CATEGORY_ASSET, "LoadTextureCubeFromFiles: Failed to read face %u from '%s'", u, aszPaths[u]);
+			// Clean up already allocated faces
+			for (uint32_t j = 0; j < u; j++)
+			{
+				if (apDatas[j])
+				{
+					Zenith_MemoryManagement::Deallocate(apDatas[j]);
+				}
+			}
+			return TextureData();
+		}
 
 		TextureFormat eFaceFormat;
 

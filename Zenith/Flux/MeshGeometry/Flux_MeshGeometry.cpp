@@ -308,9 +308,11 @@ void Flux_MeshGeometry::Combine(Flux_MeshGeometry& xDst, const Flux_MeshGeometry
 
 	if (xDst.m_pxPositions)
 	{
-		if(xDst.m_ulReservedPositionDataSize < (xDst.m_uNumVerts + xSrc.m_uNumVerts) * sizeof(Zenith_Maths::Vector3))
+		// Cast to u_int64 before addition to prevent uint32_t overflow
+		u_int64 ulTotalVerts = static_cast<u_int64>(xDst.m_uNumVerts) + xSrc.m_uNumVerts;
+		if(xDst.m_ulReservedPositionDataSize < ulTotalVerts * sizeof(Zenith_Maths::Vector3))
 		{
-			u_int64 newSize = (xDst.m_uNumVerts + xSrc.m_uNumVerts) * sizeof(Zenith_Maths::Vector3);
+			u_int64 newSize = ulTotalVerts * sizeof(Zenith_Maths::Vector3);
 			Zenith_Log(LOG_CATEGORY_MESH, "WARNING: Position buffer reallocation required! Reserved: %llu, Needed: %llu", xDst.m_ulReservedPositionDataSize, newSize);
 			Zenith_Maths::Vector3* pNewPositions = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Reallocate(xDst.m_pxPositions, newSize));
 			if (pNewPositions == nullptr)
@@ -326,7 +328,8 @@ void Flux_MeshGeometry::Combine(Flux_MeshGeometry& xDst, const Flux_MeshGeometry
 
 	if (xDst.m_pxNormals)
 	{
-		u_int64 newSize = (xDst.m_uNumVerts + xSrc.m_uNumVerts) * sizeof(Zenith_Maths::Vector3);
+		// Cast to u_int64 before addition to prevent uint32_t overflow
+		u_int64 newSize = (static_cast<u_int64>(xDst.m_uNumVerts) + xSrc.m_uNumVerts) * sizeof(Zenith_Maths::Vector3);
 		Zenith_Maths::Vector3* pNewNormals = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Reallocate(xDst.m_pxNormals, newSize));
 		if (pNewNormals == nullptr)
 		{
@@ -339,7 +342,8 @@ void Flux_MeshGeometry::Combine(Flux_MeshGeometry& xDst, const Flux_MeshGeometry
 
 	if (xDst.m_pxTangents)
 	{
-		u_int64 newSize = (xDst.m_uNumVerts + xSrc.m_uNumVerts) * sizeof(Zenith_Maths::Vector3);
+		// Cast to u_int64 before addition to prevent uint32_t overflow
+		u_int64 newSize = (static_cast<u_int64>(xDst.m_uNumVerts) + xSrc.m_uNumVerts) * sizeof(Zenith_Maths::Vector3);
 		Zenith_Maths::Vector3* pNewTangents = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Reallocate(xDst.m_pxTangents, newSize));
 		if (pNewTangents == nullptr)
 		{
@@ -352,7 +356,8 @@ void Flux_MeshGeometry::Combine(Flux_MeshGeometry& xDst, const Flux_MeshGeometry
 
 	if (xDst.m_pxBitangents)
 	{
-		u_int64 newSize = (xDst.m_uNumVerts + xSrc.m_uNumVerts) * sizeof(Zenith_Maths::Vector3);
+		// Cast to u_int64 before addition to prevent uint32_t overflow
+		u_int64 newSize = (static_cast<u_int64>(xDst.m_uNumVerts) + xSrc.m_uNumVerts) * sizeof(Zenith_Maths::Vector3);
 		Zenith_Maths::Vector3* pNewBitangents = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Reallocate(xDst.m_pxBitangents, newSize));
 		if (pNewBitangents == nullptr)
 		{
@@ -365,7 +370,8 @@ void Flux_MeshGeometry::Combine(Flux_MeshGeometry& xDst, const Flux_MeshGeometry
 
 	if (xDst.m_pxColors)
 	{
-		u_int64 newSize = (xDst.m_uNumVerts + xSrc.m_uNumVerts) * sizeof(Zenith_Maths::Vector4);
+		// Cast to u_int64 before addition to prevent uint32_t overflow
+		u_int64 newSize = (static_cast<u_int64>(xDst.m_uNumVerts) + xSrc.m_uNumVerts) * sizeof(Zenith_Maths::Vector4);
 		Zenith_Maths::Vector4* pNewColors = static_cast<Zenith_Maths::Vector4*>(Zenith_MemoryManagement::Reallocate(xDst.m_pxColors, newSize));
 		if (pNewColors == nullptr)
 		{
@@ -378,7 +384,8 @@ void Flux_MeshGeometry::Combine(Flux_MeshGeometry& xDst, const Flux_MeshGeometry
 
 	if (xDst.m_pfMaterialLerps)
 	{
-		u_int64 newSize = (xDst.m_uNumVerts + xSrc.m_uNumVerts) * sizeof(float);
+		// Cast to u_int64 before addition to prevent uint32_t overflow
+		u_int64 newSize = (static_cast<u_int64>(xDst.m_uNumVerts) + xSrc.m_uNumVerts) * sizeof(float);
 		float* pNewMaterialLerps = static_cast<float*>(Zenith_MemoryManagement::Reallocate(xDst.m_pfMaterialLerps, newSize));
 		if (pNewMaterialLerps == nullptr)
 		{

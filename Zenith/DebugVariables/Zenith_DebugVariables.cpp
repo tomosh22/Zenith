@@ -170,6 +170,12 @@ void Zenith_DebugVariableTree::TryAddNode(Node* pxNodeToAdd, Node* pxNode, std::
 void Zenith_DebugVariableTree::AddLeafNode(LeafNodeBase* pxLeafNode, std::vector<std::string>& xSplits)
 {
 	Node* pxParent = m_pxRoot;
+	// Guard against underflow when xSplits.size() is 0 or 1
+	if (xSplits.size() < 2)
+	{
+		pxParent->m_xLeaves.push_back(pxLeafNode);
+		return;
+	}
 	for (uint32_t u = 0; u < xSplits.size() - 1; u++)
 	{
 		Node* pxNodeToAdd = new Node;

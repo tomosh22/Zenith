@@ -115,7 +115,10 @@ template<typename T>
 void BindVertexBufferImpl(vk::CommandBuffer& cmdBuffer, const T& xVertexBuffer, uint32_t uBindPoint)
 {
 	Zenith_Assert(xVertexBuffer.GetBuffer().m_xVRAMHandle.IsValid(), "Vertex buffer has invalid VRAM handle - did you forget to upload to GPU?");
-	const vk::Buffer xBuffer = Zenith_Vulkan::GetVRAM(xVertexBuffer.GetBuffer().m_xVRAMHandle)->GetBuffer();
+	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xVertexBuffer.GetBuffer().m_xVRAMHandle);
+	Zenith_Assert(pxVRAM != nullptr, "GetVRAM returned null for vertex buffer");
+	if (!pxVRAM) return;  // Safety guard for release builds
+	const vk::Buffer xBuffer = pxVRAM->GetBuffer();
 	vk::DeviceSize offset = 0;
 	cmdBuffer.bindVertexBuffers(uBindPoint, 1, &xBuffer, &offset);
 }
@@ -133,7 +136,10 @@ void Zenith_Vulkan_CommandBuffer::SetVertexBuffer(const Flux_DynamicVertexBuffer
 void Zenith_Vulkan_CommandBuffer::SetIndexBuffer(const Flux_IndexBuffer& xIndexBuffer)
 {
 	Zenith_Assert(xIndexBuffer.GetBuffer().m_xVRAMHandle.IsValid(), "Index buffer has invalid VRAM handle - did you forget to upload to GPU?");
-	const vk::Buffer xBuffer = Zenith_Vulkan::GetVRAM(xIndexBuffer.GetBuffer().m_xVRAMHandle)->GetBuffer();
+	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xIndexBuffer.GetBuffer().m_xVRAMHandle);
+	Zenith_Assert(pxVRAM != nullptr, "GetVRAM returned null for index buffer");
+	if (!pxVRAM) return;  // Safety guard for release builds
+	const vk::Buffer xBuffer = pxVRAM->GetBuffer();
 	static_assert(std::is_same<Flux_MeshGeometry::IndexType, uint32_t>(), "#TO_TODO: stop hardcoding type");
 	m_xCurrentCmdBuffer.bindIndexBuffer(xBuffer, 0, vk::IndexType::eUint32);
 }
@@ -350,7 +356,10 @@ void Zenith_Vulkan_CommandBuffer::DrawIndexedIndirect(const Flux_IndirectBuffer*
 	if (Zenith_Vulkan::ShouldSubmitDrawCalls())
 	{
 		UpdateDescriptorSets();
-		const vk::Buffer xIndirectBuffer = Zenith_Vulkan::GetVRAM(pxIndirectBuffer->GetBuffer().m_xVRAMHandle)->GetBuffer();
+		Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(pxIndirectBuffer->GetBuffer().m_xVRAMHandle);
+		Zenith_Assert(pxVRAM != nullptr, "GetVRAM returned null for indirect buffer");
+		if (!pxVRAM) return;  // Safety guard for release builds
+		const vk::Buffer xIndirectBuffer = pxVRAM->GetBuffer();
 		m_xCurrentCmdBuffer.drawIndexedIndirect(xIndirectBuffer, uOffset, uDrawCount, uStride);
 	}
 }
@@ -360,8 +369,12 @@ void Zenith_Vulkan_CommandBuffer::DrawIndexedIndirectCount(const Flux_IndirectBu
 	if (Zenith_Vulkan::ShouldSubmitDrawCalls())
 	{
 		UpdateDescriptorSets();
-		const vk::Buffer xIndirectBuffer = Zenith_Vulkan::GetVRAM(pxIndirectBuffer->GetBuffer().m_xVRAMHandle)->GetBuffer();
-		const vk::Buffer xCountBuffer = Zenith_Vulkan::GetVRAM(pxCountBuffer->GetBuffer().m_xVRAMHandle)->GetBuffer();
+		Zenith_Vulkan_VRAM* pxIndirectVRAM = Zenith_Vulkan::GetVRAM(pxIndirectBuffer->GetBuffer().m_xVRAMHandle);
+		Zenith_Vulkan_VRAM* pxCountVRAM = Zenith_Vulkan::GetVRAM(pxCountBuffer->GetBuffer().m_xVRAMHandle);
+		Zenith_Assert(pxIndirectVRAM != nullptr && pxCountVRAM != nullptr, "GetVRAM returned null for indirect/count buffer");
+		if (!pxIndirectVRAM || !pxCountVRAM) return;  // Safety guard for release builds
+		const vk::Buffer xIndirectBuffer = pxIndirectVRAM->GetBuffer();
+		const vk::Buffer xCountBuffer = pxCountVRAM->GetBuffer();
 		m_xCurrentCmdBuffer.drawIndexedIndirectCount(xIndirectBuffer, uIndirectOffset, xCountBuffer, uCountOffset, uMaxDrawCount, uStride);
 	}
 }
@@ -678,26 +691,30 @@ void Zenith_Vulkan_CommandBuffer::Dispatch(uint32_t uGroupCountX, uint32_t uGrou
 
 void Zenith_Vulkan_CommandBuffer::ImageBarrier(Flux_Texture* pxTexture, uint32_t uOldLayout, uint32_t uNewLayout)
 {
+	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(pxTexture->m_xVRAMHandle);
+	Zenith_Assert(pxVRAM != nullptr, "GetVRAM returned null for texture in ImageBarrier");
+	if (!pxVRAM) return;  // Safety guard for release builds
+
 	vk::ImageLayout eOldLayout = static_cast<vk::ImageLayout>(uOldLayout);
 	vk::ImageLayout eNewLayout = static_cast<vk::ImageLayout>(uNewLayout);
-	
+
 	vk::PipelineStageFlags eSrcStage = vk::PipelineStageFlagBits::eComputeShader;
 	vk::PipelineStageFlags eDstStage = vk::PipelineStageFlagBits::eFragmentShader;
 	vk::AccessFlags eSrcAccess = vk::AccessFlagBits::eShaderWrite;
 	vk::AccessFlags eDstAccess = vk::AccessFlagBits::eShaderRead;
-	
+
 	if (eOldLayout == vk::ImageLayout::eUndefined)
 	{
 		eSrcStage = vk::PipelineStageFlagBits::eTopOfPipe;
 		eSrcAccess = {};
 	}
-	
+
 	vk::ImageMemoryBarrier barrier = vk::ImageMemoryBarrier()
 		.setOldLayout(eOldLayout)
 		.setNewLayout(eNewLayout)
 		.setSrcQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
 		.setDstQueueFamilyIndex(VK_QUEUE_FAMILY_IGNORED)
-		.setImage(Zenith_Vulkan::GetVRAM(pxTexture->m_xVRAMHandle)->GetImage())
+		.setImage(pxVRAM->GetImage())
 		.setSubresourceRange(vk::ImageSubresourceRange()
 			.setAspectMask(vk::ImageAspectFlagBits::eColor)
 			.setBaseMipLevel(0)
@@ -706,7 +723,7 @@ void Zenith_Vulkan_CommandBuffer::ImageBarrier(Flux_Texture* pxTexture, uint32_t
 			.setLayerCount(1))
 		.setSrcAccessMask(eSrcAccess)
 		.setDstAccessMask(eDstAccess);
-	
+
 	m_xCurrentCmdBuffer.pipelineBarrier(
 		eSrcStage, eDstStage,
 		{}, 0, nullptr, 0, nullptr, 1, &barrier);
