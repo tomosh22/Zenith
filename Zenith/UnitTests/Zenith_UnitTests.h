@@ -58,6 +58,22 @@ private:
 	static void TestBindPoseVertexPositions();
 	static void TestAnimatedVertexPositions();
 
+	// Stick figure animation tests
+	static void TestStickFigureSkeletonCreation();
+	static void TestStickFigureMeshCreation();
+	static void TestStickFigureIdleAnimation();
+	static void TestStickFigureWalkAnimation();
+	static void TestStickFigureRunAnimation();
+	static void TestStickFigureAnimationBlending();
+
+	// Stick figure IK tests
+	static void TestStickFigureArmIK();
+	static void TestStickFigureLegIK();
+	static void TestStickFigureIKWithAnimation();
+
+	// Stick figure asset export
+	static void TestStickFigureAssetExport();
+
 	// ECS bug fix tests (Phase 1)
 	static void TestComponentRemovalIndexUpdate();
 	static void TestComponentSwapAndPop();

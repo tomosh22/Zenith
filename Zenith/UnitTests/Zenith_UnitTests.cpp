@@ -209,6 +209,22 @@ void Zenith_UnitTests::RunAllTests()
 	TestDataAssetLoad();
 	TestDataAssetRoundTrip();
 
+	// Stick figure animation tests
+	TestStickFigureSkeletonCreation();
+	TestStickFigureMeshCreation();
+	TestStickFigureIdleAnimation();
+	TestStickFigureWalkAnimation();
+	TestStickFigureRunAnimation();
+	TestStickFigureAnimationBlending();
+
+	// Stick figure IK tests
+	TestStickFigureArmIK();
+	TestStickFigureLegIK();
+	TestStickFigureIKWithAnimation();
+
+	// Stick figure asset export (creates reusable assets for game projects)
+	TestStickFigureAssetExport();
+
 #ifdef ZENITH_TOOLS
 	// Editor tests (only in tools builds)
 	Zenith_EditorTests::RunAllTests();
@@ -3203,6 +3219,757 @@ void Zenith_UnitTests::TestAnimatedVertexPositions()
 	delete pxSkelInst;
 
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAnimatedVertexPositions completed successfully");
+}
+
+//------------------------------------------------------------------------------
+// Stick Figure Animation Tests - Helper Functions
+//------------------------------------------------------------------------------
+
+// Bone indices for stick figure skeleton
+static constexpr uint32_t STICK_BONE_ROOT = 0;
+static constexpr uint32_t STICK_BONE_SPINE = 1;
+static constexpr uint32_t STICK_BONE_NECK = 2;
+static constexpr uint32_t STICK_BONE_HEAD = 3;
+static constexpr uint32_t STICK_BONE_LEFT_UPPER_ARM = 4;
+static constexpr uint32_t STICK_BONE_LEFT_LOWER_ARM = 5;
+static constexpr uint32_t STICK_BONE_LEFT_HAND = 6;
+static constexpr uint32_t STICK_BONE_RIGHT_UPPER_ARM = 7;
+static constexpr uint32_t STICK_BONE_RIGHT_LOWER_ARM = 8;
+static constexpr uint32_t STICK_BONE_RIGHT_HAND = 9;
+static constexpr uint32_t STICK_BONE_LEFT_UPPER_LEG = 10;
+static constexpr uint32_t STICK_BONE_LEFT_LOWER_LEG = 11;
+static constexpr uint32_t STICK_BONE_LEFT_FOOT = 12;
+static constexpr uint32_t STICK_BONE_RIGHT_UPPER_LEG = 13;
+static constexpr uint32_t STICK_BONE_RIGHT_LOWER_LEG = 14;
+static constexpr uint32_t STICK_BONE_RIGHT_FOOT = 15;
+static constexpr uint32_t STICK_BONE_COUNT = 16;
+
+// Cube geometry constants
+static const Zenith_Maths::Vector3 s_axCubeOffsets[8] = {
+	{-0.05f, -0.05f, -0.05f}, // 0: left-bottom-back
+	{ 0.05f, -0.05f, -0.05f}, // 1: right-bottom-back
+	{ 0.05f,  0.05f, -0.05f}, // 2: right-top-back
+	{-0.05f,  0.05f, -0.05f}, // 3: left-top-back
+	{-0.05f, -0.05f,  0.05f}, // 4: left-bottom-front
+	{ 0.05f, -0.05f,  0.05f}, // 5: right-bottom-front
+	{ 0.05f,  0.05f,  0.05f}, // 6: right-top-front
+	{-0.05f,  0.05f,  0.05f}, // 7: left-top-front
+};
+
+static const uint32_t s_auCubeIndices[36] = {
+	// Back face
+	0, 2, 1, 0, 3, 2,
+	// Front face
+	4, 5, 6, 4, 6, 7,
+	// Left face
+	0, 4, 7, 0, 7, 3,
+	// Right face
+	1, 2, 6, 1, 6, 5,
+	// Bottom face
+	0, 1, 5, 0, 5, 4,
+	// Top face
+	3, 7, 6, 3, 6, 2,
+};
+
+/**
+ * Create a 16-bone humanoid stick figure skeleton
+ */
+static Zenith_SkeletonAsset* CreateStickFigureSkeleton()
+{
+	Zenith_SkeletonAsset* pxSkel = new Zenith_SkeletonAsset();
+	const Zenith_Maths::Quat xIdentity = glm::identity<Zenith_Maths::Quat>();
+	const Zenith_Maths::Vector3 xUnitScale(1.0f);
+
+	// Root (at origin)
+	pxSkel->AddBone("Root", -1, Zenith_Maths::Vector3(0, 0, 0), xIdentity, xUnitScale);
+
+	// Spine (up from root)
+	pxSkel->AddBone("Spine", STICK_BONE_ROOT, Zenith_Maths::Vector3(0, 0.5f, 0), xIdentity, xUnitScale);
+
+	// Neck (up from spine)
+	pxSkel->AddBone("Neck", STICK_BONE_SPINE, Zenith_Maths::Vector3(0, 0.7f, 0), xIdentity, xUnitScale);
+
+	// Head (up from neck)
+	pxSkel->AddBone("Head", STICK_BONE_NECK, Zenith_Maths::Vector3(0, 0.2f, 0), xIdentity, xUnitScale);
+
+	// Left arm chain
+	pxSkel->AddBone("LeftUpperArm", STICK_BONE_SPINE, Zenith_Maths::Vector3(-0.3f, 0.6f, 0), xIdentity, xUnitScale);
+	pxSkel->AddBone("LeftLowerArm", STICK_BONE_LEFT_UPPER_ARM, Zenith_Maths::Vector3(0, -0.4f, 0), xIdentity, xUnitScale);
+	pxSkel->AddBone("LeftHand", STICK_BONE_LEFT_LOWER_ARM, Zenith_Maths::Vector3(0, -0.3f, 0), xIdentity, xUnitScale);
+
+	// Right arm chain
+	pxSkel->AddBone("RightUpperArm", STICK_BONE_SPINE, Zenith_Maths::Vector3(0.3f, 0.6f, 0), xIdentity, xUnitScale);
+	pxSkel->AddBone("RightLowerArm", STICK_BONE_RIGHT_UPPER_ARM, Zenith_Maths::Vector3(0, -0.4f, 0), xIdentity, xUnitScale);
+	pxSkel->AddBone("RightHand", STICK_BONE_RIGHT_LOWER_ARM, Zenith_Maths::Vector3(0, -0.3f, 0), xIdentity, xUnitScale);
+
+	// Left leg chain
+	pxSkel->AddBone("LeftUpperLeg", STICK_BONE_ROOT, Zenith_Maths::Vector3(-0.15f, 0, 0), xIdentity, xUnitScale);
+	pxSkel->AddBone("LeftLowerLeg", STICK_BONE_LEFT_UPPER_LEG, Zenith_Maths::Vector3(0, -0.5f, 0), xIdentity, xUnitScale);
+	pxSkel->AddBone("LeftFoot", STICK_BONE_LEFT_LOWER_LEG, Zenith_Maths::Vector3(0, -0.5f, 0), xIdentity, xUnitScale);
+
+	// Right leg chain
+	pxSkel->AddBone("RightUpperLeg", STICK_BONE_ROOT, Zenith_Maths::Vector3(0.15f, 0, 0), xIdentity, xUnitScale);
+	pxSkel->AddBone("RightLowerLeg", STICK_BONE_RIGHT_UPPER_LEG, Zenith_Maths::Vector3(0, -0.5f, 0), xIdentity, xUnitScale);
+	pxSkel->AddBone("RightFoot", STICK_BONE_RIGHT_LOWER_LEG, Zenith_Maths::Vector3(0, -0.5f, 0), xIdentity, xUnitScale);
+
+	pxSkel->ComputeBindPoseMatrices();
+	return pxSkel;
+}
+
+/**
+ * Create a cube mesh for the stick figure, with one cube per bone
+ */
+static Zenith_MeshAsset* CreateStickFigureMesh(const Zenith_SkeletonAsset* pxSkeleton)
+{
+	Zenith_MeshAsset* pxMesh = new Zenith_MeshAsset();
+	const uint32_t uVertsPerBone = 8;
+	const uint32_t uIndicesPerBone = 36;
+	pxMesh->Reserve(STICK_BONE_COUNT * uVertsPerBone, STICK_BONE_COUNT * uIndicesPerBone);
+
+	// Add a cube at each bone position
+	for (uint32_t uBone = 0; uBone < STICK_BONE_COUNT; uBone++)
+	{
+		const Zenith_SkeletonAsset::Bone& xBone = pxSkeleton->GetBone(uBone);
+		// Get world position from bind pose model matrix
+		Zenith_Maths::Vector3 xBoneWorldPos = Zenith_Maths::Vector3(xBone.m_xBindPoseModel[3]);
+
+		uint32_t uBaseVertex = pxMesh->GetNumVerts();
+
+		// Add 8 cube vertices
+		for (int i = 0; i < 8; i++)
+		{
+			Zenith_Maths::Vector3 xPos = xBoneWorldPos + s_axCubeOffsets[i];
+			pxMesh->AddVertex(xPos,
+				Zenith_Maths::Vector3(0, 1, 0), // Normal placeholder
+				Zenith_Maths::Vector2(0, 0));   // UV
+			pxMesh->SetVertexSkinning(
+				uBaseVertex + i,
+				glm::uvec4(uBone, 0, 0, 0),
+				glm::vec4(1.0f, 0.0f, 0.0f, 0.0f));
+		}
+
+		// Add 12 triangles (36 indices)
+		for (int i = 0; i < 36; i += 3)
+		{
+			pxMesh->AddTriangle(
+				uBaseVertex + s_auCubeIndices[i],
+				uBaseVertex + s_auCubeIndices[i + 1],
+				uBaseVertex + s_auCubeIndices[i + 2]);
+		}
+	}
+
+	pxMesh->AddSubmesh(0, STICK_BONE_COUNT * uIndicesPerBone, 0);
+	pxMesh->ComputeBounds();
+	return pxMesh;
+}
+
+/**
+ * Create a 2-second idle animation (subtle breathing motion)
+ */
+static Flux_AnimationClip* CreateIdleAnimation()
+{
+	Flux_AnimationClip* pxClip = new Flux_AnimationClip();
+	pxClip->SetName("Idle");
+	pxClip->SetDuration(2.0f);
+	pxClip->SetTicksPerSecond(24);
+	pxClip->SetLooping(true);
+
+	// Spine breathing motion
+	{
+		Flux_BoneChannel xChannel;
+		xChannel.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(0, 0.5f, 0));
+		xChannel.AddPositionKeyframe(24.0f, Zenith_Maths::Vector3(0, 0.52f, 0));
+		xChannel.AddPositionKeyframe(48.0f, Zenith_Maths::Vector3(0, 0.5f, 0));
+		xChannel.SortKeyframes();
+		pxClip->AddBoneChannel("Spine", std::move(xChannel));
+	}
+
+	return pxClip;
+}
+
+/**
+ * Create a 1-second walk animation
+ */
+static Flux_AnimationClip* CreateWalkAnimation()
+{
+	Flux_AnimationClip* pxClip = new Flux_AnimationClip();
+	pxClip->SetName("Walk");
+	pxClip->SetDuration(1.0f);
+	pxClip->SetTicksPerSecond(24);
+	pxClip->SetLooping(true);
+
+	const Zenith_Maths::Vector3 xZAxis(0, 0, 1);
+
+	// Left Upper Leg rotation
+	{
+		Flux_BoneChannel xChannel;
+		xChannel.AddRotationKeyframe(0.0f, glm::angleAxis(glm::radians(30.0f), xZAxis));
+		xChannel.AddRotationKeyframe(12.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(24.0f, glm::angleAxis(glm::radians(-30.0f), xZAxis));
+		xChannel.SortKeyframes();
+		pxClip->AddBoneChannel("LeftUpperLeg", std::move(xChannel));
+	}
+
+	// Right Upper Leg rotation (opposite phase)
+	{
+		Flux_BoneChannel xChannel;
+		xChannel.AddRotationKeyframe(0.0f, glm::angleAxis(glm::radians(-30.0f), xZAxis));
+		xChannel.AddRotationKeyframe(12.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(24.0f, glm::angleAxis(glm::radians(30.0f), xZAxis));
+		xChannel.SortKeyframes();
+		pxClip->AddBoneChannel("RightUpperLeg", std::move(xChannel));
+	}
+
+	// Left Upper Arm swing (opposite to leg)
+	{
+		Flux_BoneChannel xChannel;
+		xChannel.AddRotationKeyframe(0.0f, glm::angleAxis(glm::radians(-20.0f), xZAxis));
+		xChannel.AddRotationKeyframe(12.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(24.0f, glm::angleAxis(glm::radians(20.0f), xZAxis));
+		xChannel.SortKeyframes();
+		pxClip->AddBoneChannel("LeftUpperArm", std::move(xChannel));
+	}
+
+	// Right Upper Arm swing
+	{
+		Flux_BoneChannel xChannel;
+		xChannel.AddRotationKeyframe(0.0f, glm::angleAxis(glm::radians(20.0f), xZAxis));
+		xChannel.AddRotationKeyframe(12.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(24.0f, glm::angleAxis(glm::radians(-20.0f), xZAxis));
+		xChannel.SortKeyframes();
+		pxClip->AddBoneChannel("RightUpperArm", std::move(xChannel));
+	}
+
+	return pxClip;
+}
+
+/**
+ * Create a 0.5-second run animation (more exaggerated than walk)
+ */
+static Flux_AnimationClip* CreateRunAnimation()
+{
+	Flux_AnimationClip* pxClip = new Flux_AnimationClip();
+	pxClip->SetName("Run");
+	pxClip->SetDuration(0.5f);
+	pxClip->SetTicksPerSecond(24);
+	pxClip->SetLooping(true);
+
+	const Zenith_Maths::Vector3 xZAxis(0, 0, 1);
+
+	// Left Upper Leg rotation (more exaggerated: 45 degrees)
+	{
+		Flux_BoneChannel xChannel;
+		xChannel.AddRotationKeyframe(0.0f, glm::angleAxis(glm::radians(45.0f), xZAxis));
+		xChannel.AddRotationKeyframe(6.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(12.0f, glm::angleAxis(glm::radians(-45.0f), xZAxis));
+		xChannel.SortKeyframes();
+		pxClip->AddBoneChannel("LeftUpperLeg", std::move(xChannel));
+	}
+
+	// Right Upper Leg rotation (opposite phase)
+	{
+		Flux_BoneChannel xChannel;
+		xChannel.AddRotationKeyframe(0.0f, glm::angleAxis(glm::radians(-45.0f), xZAxis));
+		xChannel.AddRotationKeyframe(6.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(12.0f, glm::angleAxis(glm::radians(45.0f), xZAxis));
+		xChannel.SortKeyframes();
+		pxClip->AddBoneChannel("RightUpperLeg", std::move(xChannel));
+	}
+
+	// Left Upper Arm swing (more exaggerated: 35 degrees)
+	{
+		Flux_BoneChannel xChannel;
+		xChannel.AddRotationKeyframe(0.0f, glm::angleAxis(glm::radians(-35.0f), xZAxis));
+		xChannel.AddRotationKeyframe(6.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(12.0f, glm::angleAxis(glm::radians(35.0f), xZAxis));
+		xChannel.SortKeyframes();
+		pxClip->AddBoneChannel("LeftUpperArm", std::move(xChannel));
+	}
+
+	// Right Upper Arm swing
+	{
+		Flux_BoneChannel xChannel;
+		xChannel.AddRotationKeyframe(0.0f, glm::angleAxis(glm::radians(35.0f), xZAxis));
+		xChannel.AddRotationKeyframe(6.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(12.0f, glm::angleAxis(glm::radians(-35.0f), xZAxis));
+		xChannel.SortKeyframes();
+		pxClip->AddBoneChannel("RightUpperArm", std::move(xChannel));
+	}
+
+	return pxClip;
+}
+
+//------------------------------------------------------------------------------
+// Stick Figure Animation Tests
+//------------------------------------------------------------------------------
+
+void Zenith_UnitTests::TestStickFigureSkeletonCreation()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestStickFigureSkeletonCreation...");
+
+	Zenith_SkeletonAsset* pxSkel = CreateStickFigureSkeleton();
+
+	// Verify bone count
+	Zenith_Assert(pxSkel->GetNumBones() == STICK_BONE_COUNT, "Expected 16 bones");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Skeleton has %u bones", pxSkel->GetNumBones());
+
+	// Verify bone names exist
+	Zenith_Assert(pxSkel->HasBone("Root"), "Missing Root bone");
+	Zenith_Assert(pxSkel->HasBone("Spine"), "Missing Spine bone");
+	Zenith_Assert(pxSkel->HasBone("Head"), "Missing Head bone");
+	Zenith_Assert(pxSkel->HasBone("LeftUpperArm"), "Missing LeftUpperArm bone");
+	Zenith_Assert(pxSkel->HasBone("LeftFoot"), "Missing LeftFoot bone");
+
+	// Verify parent hierarchy
+	Zenith_Assert(pxSkel->GetBone(STICK_BONE_ROOT).m_iParentIndex == -1, "Root should have no parent");
+	Zenith_Assert(pxSkel->GetBone(STICK_BONE_SPINE).m_iParentIndex == STICK_BONE_ROOT, "Spine parent should be Root");
+	Zenith_Assert(pxSkel->GetBone(STICK_BONE_HEAD).m_iParentIndex == STICK_BONE_NECK, "Head parent should be Neck");
+	Zenith_Assert(pxSkel->GetBone(STICK_BONE_LEFT_HAND).m_iParentIndex == STICK_BONE_LEFT_LOWER_ARM, "LeftHand parent should be LeftLowerArm");
+
+	// Verify bind pose world positions
+	Zenith_Maths::Vector3 xHeadPos = Zenith_Maths::Vector3(pxSkel->GetBone(STICK_BONE_HEAD).m_xBindPoseModel[3]);
+	Zenith_Assert(Vec3Equals(xHeadPos, Zenith_Maths::Vector3(0, 1.4f, 0), 0.01f), "Head world position mismatch");
+
+	Zenith_Maths::Vector3 xLeftFootPos = Zenith_Maths::Vector3(pxSkel->GetBone(STICK_BONE_LEFT_FOOT).m_xBindPoseModel[3]);
+	Zenith_Assert(Vec3Equals(xLeftFootPos, Zenith_Maths::Vector3(-0.15f, -1.0f, 0), 0.01f), "LeftFoot world position mismatch");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Head world position: (%.2f, %.2f, %.2f)", xHeadPos.x, xHeadPos.y, xHeadPos.z);
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  LeftFoot world position: (%.2f, %.2f, %.2f)", xLeftFootPos.x, xLeftFootPos.y, xLeftFootPos.z);
+
+	delete pxSkel;
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestStickFigureSkeletonCreation completed successfully");
+}
+
+void Zenith_UnitTests::TestStickFigureMeshCreation()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestStickFigureMeshCreation...");
+
+	Zenith_SkeletonAsset* pxSkel = CreateStickFigureSkeleton();
+	Zenith_MeshAsset* pxMesh = CreateStickFigureMesh(pxSkel);
+
+	// Verify vertex/index counts
+	const uint32_t uExpectedVerts = STICK_BONE_COUNT * 8;  // 128
+	const uint32_t uExpectedIndices = STICK_BONE_COUNT * 36;  // 576
+
+	Zenith_Assert(pxMesh->GetNumVerts() == uExpectedVerts, "Expected 128 vertices");
+	Zenith_Assert(pxMesh->GetNumIndices() == uExpectedIndices, "Expected 576 indices");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Mesh has %u vertices and %u indices", pxMesh->GetNumVerts(), pxMesh->GetNumIndices());
+
+	// Verify skinning weights
+	Zenith_Assert(pxMesh->m_xBoneIndices.GetSize() == uExpectedVerts, "Bone indices count mismatch");
+	Zenith_Assert(pxMesh->m_xBoneWeights.GetSize() == uExpectedVerts, "Bone weights count mismatch");
+
+	// Check that each vertex is 100% weighted to one bone
+	for (uint32_t v = 0; v < uExpectedVerts; v++)
+	{
+		const glm::vec4& xWeights = pxMesh->m_xBoneWeights.Get(v);
+		Zenith_Assert(FloatEquals(xWeights.x, 1.0f, 0.001f), "Vertex weight should be 1.0");
+		Zenith_Assert(FloatEquals(xWeights.y, 0.0f, 0.001f), "Secondary weight should be 0.0");
+	}
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  All vertices have correct skinning weights");
+
+	// Verify bounds
+	Zenith_Assert(pxMesh->GetBoundsMin().y < -0.9f, "Bounds min Y should be below -0.9");
+	Zenith_Assert(pxMesh->GetBoundsMax().y > 1.3f, "Bounds max Y should be above 1.3");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Bounds: min=(%.2f, %.2f, %.2f), max=(%.2f, %.2f, %.2f)",
+		pxMesh->GetBoundsMin().x, pxMesh->GetBoundsMin().y, pxMesh->GetBoundsMin().z,
+		pxMesh->GetBoundsMax().x, pxMesh->GetBoundsMax().y, pxMesh->GetBoundsMax().z);
+
+	delete pxMesh;
+	delete pxSkel;
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestStickFigureMeshCreation completed successfully");
+}
+
+void Zenith_UnitTests::TestStickFigureIdleAnimation()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestStickFigureIdleAnimation...");
+
+	Zenith_SkeletonAsset* pxSkel = CreateStickFigureSkeleton();
+	Flux_AnimationClip* pxClip = CreateIdleAnimation();
+
+	Zenith_Assert(pxClip->GetName() == "Idle", "Animation name should be 'Idle'");
+	Zenith_Assert(FloatEquals(pxClip->GetDuration(), 2.0f, 0.01f), "Duration should be 2.0 seconds");
+	Zenith_Assert(pxClip->GetTicksPerSecond() == 24, "Ticks per second should be 24");
+	Zenith_Assert(pxClip->HasBoneChannel("Spine"), "Should have Spine bone channel");
+
+	// Sample spine position at different times
+	const Flux_BoneChannel* pxSpineChannel = pxClip->GetBoneChannel("Spine");
+	Zenith_Assert(pxSpineChannel != nullptr, "Spine channel should exist");
+
+	// t=0: position should be (0, 0.5, 0)
+	Zenith_Maths::Vector3 xPos0 = pxSpineChannel->SamplePosition(0.0f);
+	Zenith_Assert(Vec3Equals(xPos0, Zenith_Maths::Vector3(0, 0.5f, 0), 0.01f), "Spine position at t=0 mismatch");
+
+	// t=24 ticks (1 second): position should be (0, 0.52, 0)
+	Zenith_Maths::Vector3 xPos1 = pxSpineChannel->SamplePosition(24.0f);
+	Zenith_Assert(Vec3Equals(xPos1, Zenith_Maths::Vector3(0, 0.52f, 0), 0.01f), "Spine position at t=1s mismatch");
+
+	// t=12 ticks (0.5 seconds): position should be interpolated to (0, 0.51, 0)
+	Zenith_Maths::Vector3 xPos05 = pxSpineChannel->SamplePosition(12.0f);
+	Zenith_Assert(Vec3Equals(xPos05, Zenith_Maths::Vector3(0, 0.51f, 0), 0.01f), "Spine position at t=0.5s mismatch");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Spine Y at t=0: %.3f, t=0.5s: %.3f, t=1s: %.3f",
+		xPos0.y, xPos05.y, xPos1.y);
+
+	delete pxClip;
+	delete pxSkel;
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestStickFigureIdleAnimation completed successfully");
+}
+
+void Zenith_UnitTests::TestStickFigureWalkAnimation()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestStickFigureWalkAnimation...");
+
+	Zenith_SkeletonAsset* pxSkel = CreateStickFigureSkeleton();
+	Flux_AnimationClip* pxClip = CreateWalkAnimation();
+
+	Zenith_Assert(pxClip->GetName() == "Walk", "Animation name should be 'Walk'");
+	Zenith_Assert(FloatEquals(pxClip->GetDuration(), 1.0f, 0.01f), "Duration should be 1.0 second");
+
+	// Verify left upper leg rotation at t=0 (should be 30 degrees around Z)
+	const Flux_BoneChannel* pxLeftLegChannel = pxClip->GetBoneChannel("LeftUpperLeg");
+	Zenith_Assert(pxLeftLegChannel != nullptr, "LeftUpperLeg channel should exist");
+
+	Zenith_Maths::Quat xExpected30 = glm::angleAxis(glm::radians(30.0f), Zenith_Maths::Vector3(0, 0, 1));
+	Zenith_Maths::Quat xSampled = pxLeftLegChannel->SampleRotation(0.0f);
+	Zenith_Assert(QuatEquals(xSampled, xExpected30, 0.01f), "LeftUpperLeg rotation at t=0 should be 30 deg");
+
+	// Verify right upper leg is opposite phase at t=0 (-30 degrees)
+	const Flux_BoneChannel* pxRightLegChannel = pxClip->GetBoneChannel("RightUpperLeg");
+	Zenith_Assert(pxRightLegChannel != nullptr, "RightUpperLeg channel should exist");
+
+	Zenith_Maths::Quat xExpectedMinus30 = glm::angleAxis(glm::radians(-30.0f), Zenith_Maths::Vector3(0, 0, 1));
+	Zenith_Maths::Quat xSampledRight = pxRightLegChannel->SampleRotation(0.0f);
+	Zenith_Assert(QuatEquals(xSampledRight, xExpectedMinus30, 0.01f), "RightUpperLeg rotation at t=0 should be -30 deg");
+
+	// Verify arm swing
+	const Flux_BoneChannel* pxLeftArmChannel = pxClip->GetBoneChannel("LeftUpperArm");
+	Zenith_Assert(pxLeftArmChannel != nullptr, "LeftUpperArm channel should exist");
+
+	Zenith_Maths::Quat xExpectedArm = glm::angleAxis(glm::radians(-20.0f), Zenith_Maths::Vector3(0, 0, 1));
+	Zenith_Maths::Quat xSampledArm = pxLeftArmChannel->SampleRotation(0.0f);
+	Zenith_Assert(QuatEquals(xSampledArm, xExpectedArm, 0.01f), "LeftUpperArm rotation at t=0 should be -20 deg");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Walk animation keyframes verified");
+
+	delete pxClip;
+	delete pxSkel;
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestStickFigureWalkAnimation completed successfully");
+}
+
+void Zenith_UnitTests::TestStickFigureRunAnimation()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestStickFigureRunAnimation...");
+
+	Zenith_SkeletonAsset* pxSkel = CreateStickFigureSkeleton();
+	Flux_AnimationClip* pxClip = CreateRunAnimation();
+
+	Zenith_Assert(pxClip->GetName() == "Run", "Animation name should be 'Run'");
+	Zenith_Assert(FloatEquals(pxClip->GetDuration(), 0.5f, 0.01f), "Duration should be 0.5 seconds");
+
+	// Verify left upper leg rotation at t=0 (should be 45 degrees - more exaggerated)
+	const Flux_BoneChannel* pxLeftLegChannel = pxClip->GetBoneChannel("LeftUpperLeg");
+	Zenith_Assert(pxLeftLegChannel != nullptr, "LeftUpperLeg channel should exist");
+
+	Zenith_Maths::Quat xExpected45 = glm::angleAxis(glm::radians(45.0f), Zenith_Maths::Vector3(0, 0, 1));
+	Zenith_Maths::Quat xSampled = pxLeftLegChannel->SampleRotation(0.0f);
+	Zenith_Assert(QuatEquals(xSampled, xExpected45, 0.01f), "LeftUpperLeg rotation at t=0 should be 45 deg");
+
+	// Verify arm swing (35 degrees - more exaggerated than walk)
+	const Flux_BoneChannel* pxLeftArmChannel = pxClip->GetBoneChannel("LeftUpperArm");
+	Zenith_Assert(pxLeftArmChannel != nullptr, "LeftUpperArm channel should exist");
+
+	Zenith_Maths::Quat xExpectedArm = glm::angleAxis(glm::radians(-35.0f), Zenith_Maths::Vector3(0, 0, 1));
+	Zenith_Maths::Quat xSampledArm = pxLeftArmChannel->SampleRotation(0.0f);
+	Zenith_Assert(QuatEquals(xSampledArm, xExpectedArm, 0.01f), "LeftUpperArm rotation at t=0 should be -35 deg");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Run animation keyframes verified (more exaggerated than walk)");
+
+	delete pxClip;
+	delete pxSkel;
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestStickFigureRunAnimation completed successfully");
+}
+
+void Zenith_UnitTests::TestStickFigureAnimationBlending()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestStickFigureAnimationBlending...");
+
+	Zenith_SkeletonAsset* pxSkel = CreateStickFigureSkeleton();
+	Flux_AnimationClip* pxWalkClip = CreateWalkAnimation();
+	Flux_AnimationClip* pxRunClip = CreateRunAnimation();
+
+	// Initialize skeleton poses
+	Flux_SkeletonPose xWalkPose;
+	xWalkPose.Initialize(STICK_BONE_COUNT);
+	xWalkPose.SampleFromClip(*pxWalkClip, 0.0f, *pxSkel);
+
+	Flux_SkeletonPose xRunPose;
+	xRunPose.Initialize(STICK_BONE_COUNT);
+	xRunPose.SampleFromClip(*pxRunClip, 0.0f, *pxSkel);
+
+	// Get Walk and Run rotations for LeftUpperLeg
+	const Flux_BoneLocalPose& xWalkLegPose = xWalkPose.GetLocalPose(STICK_BONE_LEFT_UPPER_LEG);
+	const Flux_BoneLocalPose& xRunLegPose = xRunPose.GetLocalPose(STICK_BONE_LEFT_UPPER_LEG);
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Walk leg rotation: (%.3f, %.3f, %.3f, %.3f)",
+		xWalkLegPose.m_xRotation.w, xWalkLegPose.m_xRotation.x, xWalkLegPose.m_xRotation.y, xWalkLegPose.m_xRotation.z);
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Run leg rotation: (%.3f, %.3f, %.3f, %.3f)",
+		xRunLegPose.m_xRotation.w, xRunLegPose.m_xRotation.x, xRunLegPose.m_xRotation.y, xRunLegPose.m_xRotation.z);
+
+	// Test blending at different factors
+	float afBlendFactors[] = {0.0f, 0.25f, 0.5f, 0.75f, 1.0f};
+	for (float fBlend : afBlendFactors)
+	{
+		Flux_SkeletonPose xBlendedPose;
+		xBlendedPose.Initialize(STICK_BONE_COUNT);
+		Flux_SkeletonPose::Blend(xBlendedPose, xWalkPose, xRunPose, fBlend);
+
+		// Verify blended rotation
+		const Flux_BoneLocalPose& xBlendedLeg = xBlendedPose.GetLocalPose(STICK_BONE_LEFT_UPPER_LEG);
+		Zenith_Maths::Quat xExpected = glm::slerp(xWalkLegPose.m_xRotation, xRunLegPose.m_xRotation, fBlend);
+
+		Zenith_Assert(QuatEquals(xBlendedLeg.m_xRotation, xExpected, 0.01f),
+			"Blended rotation mismatch at factor %.2f", fBlend);
+
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "  Blend %.2f: leg rotation verified", fBlend);
+	}
+
+	delete pxRunClip;
+	delete pxWalkClip;
+	delete pxSkel;
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestStickFigureAnimationBlending completed successfully");
+}
+
+//------------------------------------------------------------------------------
+// Stick Figure IK Tests
+//------------------------------------------------------------------------------
+
+void Zenith_UnitTests::TestStickFigureArmIK()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestStickFigureArmIK...");
+
+	Zenith_SkeletonAsset* pxSkel = CreateStickFigureSkeleton();
+	Flux_IKSolver xSolver;
+
+	// Create arm IK chains
+	Flux_IKChain xLeftArm = Flux_IKSolver::CreateArmChain("LeftArm", "LeftUpperArm", "LeftLowerArm", "LeftHand");
+	Flux_IKChain xRightArm = Flux_IKSolver::CreateArmChain("RightArm", "RightUpperArm", "RightLowerArm", "RightHand");
+
+	xSolver.AddChain(xLeftArm);
+	xSolver.AddChain(xRightArm);
+
+	Zenith_Assert(xSolver.HasChain("LeftArm"), "Solver should have LeftArm chain");
+	Zenith_Assert(xSolver.HasChain("RightArm"), "Solver should have RightArm chain");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Created arm IK chains");
+
+	// Test setting targets
+	Flux_IKTarget xTarget;
+	xTarget.m_xPosition = Zenith_Maths::Vector3(0, 1.0f, 0.5f);
+	xTarget.m_fWeight = 1.0f;
+	xTarget.m_bEnabled = true;
+
+	xSolver.SetTarget("LeftArm", xTarget);
+	Zenith_Assert(xSolver.HasTarget("LeftArm"), "Solver should have LeftArm target");
+
+	const Flux_IKTarget* pxStoredTarget = xSolver.GetTarget("LeftArm");
+	Zenith_Assert(pxStoredTarget != nullptr, "Should be able to retrieve target");
+	Zenith_Assert(Vec3Equals(pxStoredTarget->m_xPosition, xTarget.m_xPosition, 0.001f), "Target position mismatch");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  IK target set and retrieved successfully");
+
+	// Clear target
+	xSolver.ClearTarget("LeftArm");
+	Zenith_Assert(!xSolver.HasTarget("LeftArm"), "Target should be cleared");
+
+	delete pxSkel;
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestStickFigureArmIK completed successfully");
+}
+
+void Zenith_UnitTests::TestStickFigureLegIK()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestStickFigureLegIK...");
+
+	Zenith_SkeletonAsset* pxSkel = CreateStickFigureSkeleton();
+	Flux_IKSolver xSolver;
+
+	// Create leg IK chains
+	Flux_IKChain xLeftLeg = Flux_IKSolver::CreateLegChain("LeftLeg", "LeftUpperLeg", "LeftLowerLeg", "LeftFoot");
+	Flux_IKChain xRightLeg = Flux_IKSolver::CreateLegChain("RightLeg", "RightUpperLeg", "RightLowerLeg", "RightFoot");
+
+	xSolver.AddChain(xLeftLeg);
+	xSolver.AddChain(xRightLeg);
+
+	Zenith_Assert(xSolver.HasChain("LeftLeg"), "Solver should have LeftLeg chain");
+	Zenith_Assert(xSolver.HasChain("RightLeg"), "Solver should have RightLeg chain");
+
+	// Verify chain bone count
+	const Flux_IKChain* pxLeftLegChain = xSolver.GetChain("LeftLeg");
+	Zenith_Assert(pxLeftLegChain != nullptr, "Should be able to retrieve LeftLeg chain");
+	Zenith_Assert(pxLeftLegChain->m_xBoneNames.size() == 3, "Leg chain should have 3 bones");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Leg IK chains created with %zu bones each", pxLeftLegChain->m_xBoneNames.size());
+
+	// Test setting targets for both legs
+	Flux_IKTarget xLeftTarget;
+	xLeftTarget.m_xPosition = Zenith_Maths::Vector3(-0.15f, -0.8f, 0.2f);
+	xLeftTarget.m_fWeight = 1.0f;
+	xLeftTarget.m_bEnabled = true;
+
+	Flux_IKTarget xRightTarget;
+	xRightTarget.m_xPosition = Zenith_Maths::Vector3(0.15f, -0.9f, -0.1f);
+	xRightTarget.m_fWeight = 1.0f;
+	xRightTarget.m_bEnabled = true;
+
+	xSolver.SetTarget("LeftLeg", xLeftTarget);
+	xSolver.SetTarget("RightLeg", xRightTarget);
+
+	Zenith_Assert(xSolver.HasTarget("LeftLeg"), "Solver should have LeftLeg target");
+	Zenith_Assert(xSolver.HasTarget("RightLeg"), "Solver should have RightLeg target");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Both leg targets set successfully");
+
+	delete pxSkel;
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestStickFigureLegIK completed successfully");
+}
+
+void Zenith_UnitTests::TestStickFigureIKWithAnimation()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestStickFigureIKWithAnimation...");
+
+	Zenith_SkeletonAsset* pxSkel = CreateStickFigureSkeleton();
+	Flux_AnimationClip* pxWalkClip = CreateWalkAnimation();
+	Flux_IKSolver xSolver;
+
+	// Set up leg IK
+	Flux_IKChain xLeftLeg = Flux_IKSolver::CreateLegChain("LeftLeg", "LeftUpperLeg", "LeftLowerLeg", "LeftFoot");
+	xSolver.AddChain(xLeftLeg);
+
+	// Sample walk animation at mid-stride
+	Flux_SkeletonPose xAnimPose;
+	xAnimPose.Initialize(STICK_BONE_COUNT);
+	float fMidStride = 0.5f * pxWalkClip->GetTicksPerSecond(); // 12 ticks
+	xAnimPose.SampleFromClip(*pxWalkClip, fMidStride, *pxSkel);
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Sampled walk animation at mid-stride (t=0.5s)");
+
+	// Set IK target
+	Flux_IKTarget xFootTarget;
+	xFootTarget.m_xPosition = Zenith_Maths::Vector3(-0.15f, -0.9f, 0.1f);
+	xFootTarget.m_fWeight = 1.0f;
+	xFootTarget.m_bEnabled = true;
+
+	xSolver.SetTarget("LeftLeg", xFootTarget);
+
+	// Test different blend weights
+	for (float fWeight : {0.0f, 0.5f, 1.0f})
+	{
+		Flux_IKTarget xWeightedTarget = xFootTarget;
+		xWeightedTarget.m_fWeight = fWeight;
+		xSolver.SetTarget("LeftLeg", xWeightedTarget);
+
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "  IK weight %.1f: target set", fWeight);
+	}
+
+	delete pxWalkClip;
+	delete pxSkel;
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestStickFigureIKWithAnimation completed successfully");
+}
+
+//------------------------------------------------------------------------------
+// Stick Figure Asset Export Test
+//------------------------------------------------------------------------------
+
+void Zenith_UnitTests::TestStickFigureAssetExport()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestStickFigureAssetExport...");
+
+	// Create all assets
+	Zenith_SkeletonAsset* pxSkel = CreateStickFigureSkeleton();
+	Zenith_MeshAsset* pxMesh = CreateStickFigureMesh(pxSkel);
+	Flux_AnimationClip* pxIdleClip = CreateIdleAnimation();
+	Flux_AnimationClip* pxWalkClip = CreateWalkAnimation();
+	Flux_AnimationClip* pxRunClip = CreateRunAnimation();
+
+	// Create output directory
+	std::string strOutputDir = std::string(ENGINE_ASSETS_DIR) + "Meshes/StickFigure/";
+	std::filesystem::create_directories(strOutputDir);
+
+	// Export skeleton
+	std::string strSkelPath = strOutputDir + "StickFigure.zskel";
+	pxSkel->Export(strSkelPath.c_str());
+	Zenith_Assert(std::filesystem::exists(strSkelPath), "Skeleton file should exist after export");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Exported skeleton to: %s", strSkelPath.c_str());
+
+	// Set skeleton path on mesh before export
+	pxMesh->SetSkeletonPath("Meshes/StickFigure/StickFigure.zskel");
+
+	// Export mesh
+	std::string strMeshPath = strOutputDir + "StickFigure.zmesh";
+	pxMesh->Export(strMeshPath.c_str());
+	Zenith_Assert(std::filesystem::exists(strMeshPath), "Mesh file should exist after export");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Exported mesh to: %s", strMeshPath.c_str());
+
+	// Export animations
+	std::string strIdlePath = strOutputDir + "StickFigure_Idle.zanim";
+	pxIdleClip->Export(strIdlePath);
+	Zenith_Assert(std::filesystem::exists(strIdlePath), "Idle animation file should exist after export");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Exported idle animation to: %s", strIdlePath.c_str());
+
+	std::string strWalkPath = strOutputDir + "StickFigure_Walk.zanim";
+	pxWalkClip->Export(strWalkPath);
+	Zenith_Assert(std::filesystem::exists(strWalkPath), "Walk animation file should exist after export");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Exported walk animation to: %s", strWalkPath.c_str());
+
+	std::string strRunPath = strOutputDir + "StickFigure_Run.zanim";
+	pxRunClip->Export(strRunPath);
+	Zenith_Assert(std::filesystem::exists(strRunPath), "Run animation file should exist after export");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Exported run animation to: %s", strRunPath.c_str());
+
+	// Reload and verify skeleton
+	Zenith_SkeletonAsset* pxReloadedSkel = Zenith_AssetHandler::LoadSkeletonAsset(strSkelPath);
+	Zenith_Assert(pxReloadedSkel != nullptr, "Should be able to reload skeleton");
+	Zenith_Assert(pxReloadedSkel->GetNumBones() == STICK_BONE_COUNT, "Reloaded skeleton should have 16 bones");
+	Zenith_Assert(pxReloadedSkel->HasBone("LeftUpperArm"), "Reloaded skeleton should have LeftUpperArm bone");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Reloaded skeleton verified: %u bones", pxReloadedSkel->GetNumBones());
+
+	// Reload and verify mesh
+	Zenith_MeshAsset* pxReloadedMesh = Zenith_AssetHandler::LoadMeshAsset(strMeshPath);
+	Zenith_Assert(pxReloadedMesh != nullptr, "Should be able to reload mesh");
+	Zenith_Assert(pxReloadedMesh->GetNumVerts() == pxMesh->GetNumVerts(), "Reloaded mesh vertex count mismatch");
+	Zenith_Assert(pxReloadedMesh->GetNumIndices() == pxMesh->GetNumIndices(), "Reloaded mesh index count mismatch");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Reloaded mesh verified: %u verts, %u indices",
+		pxReloadedMesh->GetNumVerts(), pxReloadedMesh->GetNumIndices());
+
+	// Reload and verify animations
+	Flux_AnimationClip* pxReloadedIdle = Flux_AnimationClip::LoadFromZanimFile(strIdlePath);
+	Zenith_Assert(pxReloadedIdle != nullptr, "Should be able to reload idle animation");
+	Zenith_Assert(pxReloadedIdle->GetName() == "Idle", "Reloaded idle animation name mismatch");
+	Zenith_Assert(FloatEquals(pxReloadedIdle->GetDuration(), 2.0f, 0.01f), "Reloaded idle duration mismatch");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Reloaded idle animation verified: duration=%.1fs", pxReloadedIdle->GetDuration());
+
+	Flux_AnimationClip* pxReloadedWalk = Flux_AnimationClip::LoadFromZanimFile(strWalkPath);
+	Zenith_Assert(pxReloadedWalk != nullptr, "Should be able to reload walk animation");
+	Zenith_Assert(pxReloadedWalk->GetName() == "Walk", "Reloaded walk animation name mismatch");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Reloaded walk animation verified");
+
+	Flux_AnimationClip* pxReloadedRun = Flux_AnimationClip::LoadFromZanimFile(strRunPath);
+	Zenith_Assert(pxReloadedRun != nullptr, "Should be able to reload run animation");
+	Zenith_Assert(pxReloadedRun->GetName() == "Run", "Reloaded run animation name mismatch");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Reloaded run animation verified");
+
+	// Cleanup
+	delete pxReloadedRun;
+	delete pxReloadedWalk;
+	delete pxReloadedIdle;
+	delete pxRunClip;
+	delete pxWalkClip;
+	delete pxIdleClip;
+	delete pxMesh;
+	delete pxSkel;
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestStickFigureAssetExport completed successfully");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Assets available at: %s", strOutputDir.c_str());
 }
 
 //------------------------------------------------------------------------------

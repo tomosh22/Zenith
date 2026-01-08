@@ -278,12 +278,15 @@ void Zenith_SkeletonAsset::ComputeBindPoseRecursive(uint32_t uBoneIndex, const Z
 {
 	Bone& xBone = m_xBones.Get(uBoneIndex);
 
-	// All bones in the skeleton should have m_bHasAssimpInverseBindPose = true
-	// because we only export actual bones (not non-bone ancestors like Armature)
-	Zenith_Assert(xBone.m_bHasAssimpInverseBindPose, "Bone should have Assimp inverse bind pose");
-
 	// Compute model-space bind pose from TRS hierarchy
 	xBone.m_xBindPoseModel = xParentModelPose * xBone.m_xBindPoseLocal;
+
+	// For programmatically created bones without Assimp inverse bind pose,
+	// compute it from the model-space bind pose
+	if (!xBone.m_bHasAssimpInverseBindPose)
+	{
+		xBone.m_xInverseBindPose = glm::inverse(xBone.m_xBindPoseModel);
+	}
 
 	// IMPORTANT: Do NOT overwrite m_xBindPosition/Rotation/Scale here!
 	// These were set from scene graph node transforms in AddBone(), and that's

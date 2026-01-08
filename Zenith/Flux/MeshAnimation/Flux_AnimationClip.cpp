@@ -409,6 +409,29 @@ void Flux_BoneChannel::ReadFromDataStream(Zenith_DataStream& xStream)
 	}
 }
 
+void Flux_BoneChannel::AddPositionKeyframe(float fTimeTicks, const Zenith_Maths::Vector3& xPosition)
+{
+	m_xPositions.emplace_back(xPosition, fTimeTicks);
+}
+
+void Flux_BoneChannel::AddRotationKeyframe(float fTimeTicks, const Zenith_Maths::Quat& xRotation)
+{
+	m_xRotations.emplace_back(xRotation, fTimeTicks);
+}
+
+void Flux_BoneChannel::AddScaleKeyframe(float fTimeTicks, const Zenith_Maths::Vector3& xScale)
+{
+	m_xScales.emplace_back(xScale, fTimeTicks);
+}
+
+void Flux_BoneChannel::SortKeyframes()
+{
+	auto sortByTime = [](const auto& a, const auto& b) { return a.second < b.second; };
+	std::sort(m_xPositions.begin(), m_xPositions.end(), sortByTime);
+	std::sort(m_xRotations.begin(), m_xRotations.end(), sortByTime);
+	std::sort(m_xScales.begin(), m_xScales.end(), sortByTime);
+}
+
 //=============================================================================
 // Flux_AnimationClip
 //=============================================================================
@@ -508,6 +531,12 @@ void Flux_AnimationClip::RemoveEvent(size_t uIndex)
 {
 	if (uIndex < m_xEvents.size())
 		m_xEvents.erase(m_xEvents.begin() + uIndex);
+}
+
+void Flux_AnimationClip::AddBoneChannel(const std::string& strBoneName, Flux_BoneChannel&& xChannel)
+{
+	xChannel.SetBoneName(strBoneName);
+	m_xBoneChannels.emplace(strBoneName, std::move(xChannel));
 }
 
 void Flux_AnimationClip::WriteToDataStream(Zenith_DataStream& xStream) const

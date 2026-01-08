@@ -51,6 +51,16 @@ public:
 	void WriteToDataStream(Zenith_DataStream& xStream) const;
 	void ReadFromDataStream(Zenith_DataStream& xStream);
 
+	//-------------------------------------------------------------------------
+	// Programmatic keyframe construction (for procedural animations/tests)
+	//-------------------------------------------------------------------------
+
+	void SetBoneName(const std::string& strName) { m_strBoneName = strName; }
+	void AddPositionKeyframe(float fTimeTicks, const Zenith_Maths::Vector3& xPosition);
+	void AddRotationKeyframe(float fTimeTicks, const Zenith_Maths::Quat& xRotation);
+	void AddScaleKeyframe(float fTimeTicks, const Zenith_Maths::Vector3& xScale);
+	void SortKeyframes();
+
 private:
 	friend class Flux_AnimationClip;
 
@@ -143,6 +153,14 @@ public:
 	const Flux_BoneChannel* GetBoneChannel(const std::string& strBoneName) const;
 	bool HasBoneChannel(const std::string& strBoneName) const;
 	const std::unordered_map<std::string, Flux_BoneChannel>& GetBoneChannels() const { return m_xBoneChannels; }
+
+	//-------------------------------------------------------------------------
+	// Programmatic clip construction (for procedural animations/tests)
+	//-------------------------------------------------------------------------
+
+	void AddBoneChannel(const std::string& strBoneName, Flux_BoneChannel&& xChannel);
+	void SetDuration(float fDurationSeconds) { m_xMetadata.m_fDuration = fDurationSeconds; }
+	void SetTicksPerSecond(uint32_t uTicksPerSecond) { m_xMetadata.m_uTicksPerSecond = uTicksPerSecond; }
 
 	// Events
 	const std::vector<Flux_AnimationEvent>& GetEvents() const { return m_xEvents; }
