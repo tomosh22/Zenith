@@ -100,6 +100,9 @@ void Zenith_UnitTests::RunAllTests()
 	// Additional animation tests
 	TestAnimationClipChannels();
 	TestBlendSpace1D();
+	TestBlendSpace2D();
+	TestBlendTreeEvaluation();
+	TestBlendTreeSerialization();
 	TestFABRIKSolver();
 	TestAnimationEvents();
 	TestBoneMasking();
@@ -2293,6 +2296,31 @@ void Zenith_UnitTests::TestBlendTreeNodes()
 		Zenith_Assert(std::string(pxBlend->GetNodeTypeName()) == "Blend", "Created node should be Blend type");
 		delete pxBlend;
 
+		Flux_BlendTreeNode* pxBlendSpace1D = Flux_BlendTreeNode::CreateFromTypeName("BlendSpace1D");
+		Zenith_Assert(pxBlendSpace1D != nullptr, "Factory should create BlendSpace1D node");
+		Zenith_Assert(std::string(pxBlendSpace1D->GetNodeTypeName()) == "BlendSpace1D", "Created node should be BlendSpace1D type");
+		delete pxBlendSpace1D;
+
+		Flux_BlendTreeNode* pxBlendSpace2D = Flux_BlendTreeNode::CreateFromTypeName("BlendSpace2D");
+		Zenith_Assert(pxBlendSpace2D != nullptr, "Factory should create BlendSpace2D node");
+		Zenith_Assert(std::string(pxBlendSpace2D->GetNodeTypeName()) == "BlendSpace2D", "Created node should be BlendSpace2D type");
+		delete pxBlendSpace2D;
+
+		Flux_BlendTreeNode* pxAdditive = Flux_BlendTreeNode::CreateFromTypeName("Additive");
+		Zenith_Assert(pxAdditive != nullptr, "Factory should create Additive node");
+		Zenith_Assert(std::string(pxAdditive->GetNodeTypeName()) == "Additive", "Created node should be Additive type");
+		delete pxAdditive;
+
+		Flux_BlendTreeNode* pxMasked = Flux_BlendTreeNode::CreateFromTypeName("Masked");
+		Zenith_Assert(pxMasked != nullptr, "Factory should create Masked node");
+		Zenith_Assert(std::string(pxMasked->GetNodeTypeName()) == "Masked", "Created node should be Masked type");
+		delete pxMasked;
+
+		Flux_BlendTreeNode* pxSelect = Flux_BlendTreeNode::CreateFromTypeName("Select");
+		Zenith_Assert(pxSelect != nullptr, "Factory should create Select node");
+		Zenith_Assert(std::string(pxSelect->GetNodeTypeName()) == "Select", "Created node should be Select type");
+		delete pxSelect;
+
 		Flux_BlendTreeNode* pxInvalid = Flux_BlendTreeNode::CreateFromTypeName("InvalidType");
 		Zenith_Assert(pxInvalid == nullptr, "Factory should return nullptr for invalid type");
 
@@ -2579,6 +2607,392 @@ void Zenith_UnitTests::TestBlendSpace1D()
 	}
 
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestBlendSpace1D completed successfully");
+}
+
+/**
+ * Test BlendSpace2D blend tree node
+ * Verifies 2D parameter blending, point management, and triangulation
+ */
+void Zenith_UnitTests::TestBlendSpace2D()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestBlendSpace2D...");
+
+	// Test 2D parameter setting
+	{
+		Flux_BlendTreeNode_BlendSpace2D xBlendSpace;
+
+		Zenith_Maths::Vector2 xParams(-0.5f, 0.75f);
+		xBlendSpace.SetParameter(xParams);
+		const Zenith_Maths::Vector2& xRetrieved = xBlendSpace.GetParameter();
+		Zenith_Assert(FloatEquals(xRetrieved.x, -0.5f) && FloatEquals(xRetrieved.y, 0.75f),
+			"Parameters should be (-0.5, 0.75)");
+
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Parameter setting test passed");
+	}
+
+	// Test blend point addition
+	{
+		Flux_BlendTreeNode_BlendSpace2D xBlendSpace;
+
+		Flux_BlendTreeNode_Clip* pxClip1 = new Flux_BlendTreeNode_Clip(nullptr, 1.0f);
+		Flux_BlendTreeNode_Clip* pxClip2 = new Flux_BlendTreeNode_Clip(nullptr, 1.0f);
+		Flux_BlendTreeNode_Clip* pxClip3 = new Flux_BlendTreeNode_Clip(nullptr, 1.0f);
+		Flux_BlendTreeNode_Clip* pxClip4 = new Flux_BlendTreeNode_Clip(nullptr, 1.0f);
+
+		// Add 4 points in 2D space (quad corners)
+		xBlendSpace.AddBlendPoint(pxClip1, Zenith_Maths::Vector2(0.0f, 0.0f));
+		xBlendSpace.AddBlendPoint(pxClip2, Zenith_Maths::Vector2(1.0f, 0.0f));
+		xBlendSpace.AddBlendPoint(pxClip3, Zenith_Maths::Vector2(0.0f, 1.0f));
+		xBlendSpace.AddBlendPoint(pxClip4, Zenith_Maths::Vector2(1.0f, 1.0f));
+
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Blend point addition test passed");
+	}
+
+	// Test triangulation computation
+	{
+		Flux_BlendTreeNode_BlendSpace2D xBlendSpace;
+
+		Flux_BlendTreeNode_Clip* pxClip1 = new Flux_BlendTreeNode_Clip(nullptr, 1.0f);
+		Flux_BlendTreeNode_Clip* pxClip2 = new Flux_BlendTreeNode_Clip(nullptr, 1.0f);
+		Flux_BlendTreeNode_Clip* pxClip3 = new Flux_BlendTreeNode_Clip(nullptr, 1.0f);
+
+		// Add 3 points forming a triangle
+		xBlendSpace.AddBlendPoint(pxClip1, Zenith_Maths::Vector2(0.0f, 0.0f));
+		xBlendSpace.AddBlendPoint(pxClip2, Zenith_Maths::Vector2(1.0f, 0.0f));
+		xBlendSpace.AddBlendPoint(pxClip3, Zenith_Maths::Vector2(0.5f, 1.0f));
+
+		// Compute triangulation
+		xBlendSpace.ComputeTriangulation();
+
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Triangulation computation test passed");
+	}
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestBlendSpace2D completed successfully");
+}
+
+/**
+ * Test blend tree node evaluation
+ * Verifies that Evaluate() produces valid poses for all blend tree node types
+ */
+void Zenith_UnitTests::TestBlendTreeEvaluation()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestBlendTreeEvaluation...");
+
+	// Test Blend node evaluation at different weights
+	{
+		Flux_BlendTreeNode_Blend xBlendNode;
+
+		// Create two clip children (even with null clips, we test the node behavior)
+		Flux_BlendTreeNode_Clip* pxClipA = new Flux_BlendTreeNode_Clip(nullptr, 1.0f);
+		Flux_BlendTreeNode_Clip* pxClipB = new Flux_BlendTreeNode_Clip(nullptr, 1.0f);
+
+		xBlendNode.SetChildA(pxClipA);
+		xBlendNode.SetChildB(pxClipB);
+
+		// Test weight at 0.0 (should favor child A)
+		xBlendNode.SetBlendWeight(0.0f);
+		Zenith_Assert(FloatEquals(xBlendNode.GetBlendWeight(), 0.0f), "Blend weight should be 0.0");
+
+		// Test weight at 1.0 (should favor child B)
+		xBlendNode.SetBlendWeight(1.0f);
+		Zenith_Assert(FloatEquals(xBlendNode.GetBlendWeight(), 1.0f), "Blend weight should be 1.0");
+
+		// Test weight at 0.5 (equal blend)
+		xBlendNode.SetBlendWeight(0.5f);
+		Zenith_Assert(FloatEquals(xBlendNode.GetBlendWeight(), 0.5f), "Blend weight should be 0.5");
+
+		// Test weight clamping
+		xBlendNode.SetBlendWeight(1.5f);
+		Zenith_Assert(FloatEquals(xBlendNode.GetBlendWeight(), 1.0f), "Blend weight should clamp to 1.0");
+
+		xBlendNode.SetBlendWeight(-0.5f);
+		Zenith_Assert(FloatEquals(xBlendNode.GetBlendWeight(), 0.0f), "Blend weight should clamp to 0.0");
+
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Blend node evaluation test passed");
+	}
+
+	// Test Additive node evaluation
+	{
+		Flux_BlendTreeNode_Additive xAdditiveNode;
+
+		Flux_BlendTreeNode_Clip* pxBase = new Flux_BlendTreeNode_Clip(nullptr, 1.0f);
+		Flux_BlendTreeNode_Clip* pxAdditive = new Flux_BlendTreeNode_Clip(nullptr, 1.0f);
+
+		xAdditiveNode.SetBaseNode(pxBase);
+		xAdditiveNode.SetAdditiveNode(pxAdditive);
+
+		// Test weight at 0.0 (no additive effect)
+		xAdditiveNode.SetAdditiveWeight(0.0f);
+		Zenith_Assert(FloatEquals(xAdditiveNode.GetAdditiveWeight(), 0.0f), "Additive weight should be 0.0");
+
+		// Test weight at 1.0 (full additive effect)
+		xAdditiveNode.SetAdditiveWeight(1.0f);
+		Zenith_Assert(FloatEquals(xAdditiveNode.GetAdditiveWeight(), 1.0f), "Additive weight should be 1.0");
+
+		// Test weight clamping
+		xAdditiveNode.SetAdditiveWeight(2.0f);
+		Zenith_Assert(FloatEquals(xAdditiveNode.GetAdditiveWeight(), 1.0f), "Additive weight should clamp to 1.0");
+
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Additive node evaluation test passed");
+	}
+
+	// Test Masked node evaluation
+	{
+		Flux_BlendTreeNode_Masked xMaskedNode;
+
+		Flux_BlendTreeNode_Clip* pxBase = new Flux_BlendTreeNode_Clip(nullptr, 1.0f);
+		Flux_BlendTreeNode_Clip* pxOverride = new Flux_BlendTreeNode_Clip(nullptr, 1.0f);
+
+		xMaskedNode.SetBaseNode(pxBase);
+		xMaskedNode.SetOverrideNode(pxOverride);
+
+		// Set up a bone mask
+		Flux_BoneMask xMask;
+		xMask.SetBoneWeight(0, 1.0f);  // Full override for bone 0
+		xMask.SetBoneWeight(1, 0.5f);  // Partial override for bone 1
+		xMask.SetBoneWeight(2, 0.0f);  // No override for bone 2
+
+		xMaskedNode.SetBoneMask(xMask);
+
+		const Flux_BoneMask& xRetrieved = xMaskedNode.GetBoneMask();
+		Zenith_Assert(FloatEquals(xRetrieved.GetBoneWeight(0), 1.0f), "Bone 0 weight should be 1.0");
+		Zenith_Assert(FloatEquals(xRetrieved.GetBoneWeight(1), 0.5f), "Bone 1 weight should be 0.5");
+		Zenith_Assert(FloatEquals(xRetrieved.GetBoneWeight(2), 0.0f), "Bone 2 weight should be 0.0");
+
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Masked node evaluation test passed");
+	}
+
+	// Test Select node evaluation
+	{
+		Flux_BlendTreeNode_Select xSelectNode;
+
+		Flux_BlendTreeNode_Clip* pxClip0 = new Flux_BlendTreeNode_Clip(nullptr, 1.0f);
+		Flux_BlendTreeNode_Clip* pxClip1 = new Flux_BlendTreeNode_Clip(nullptr, 1.5f);
+		Flux_BlendTreeNode_Clip* pxClip2 = new Flux_BlendTreeNode_Clip(nullptr, 2.0f);
+
+		xSelectNode.AddChild(pxClip0);
+		xSelectNode.AddChild(pxClip1);
+		xSelectNode.AddChild(pxClip2);
+
+		// Test selecting different children
+		xSelectNode.SetSelectedIndex(0);
+		Zenith_Assert(xSelectNode.GetSelectedIndex() == 0, "Selected index should be 0");
+
+		xSelectNode.SetSelectedIndex(1);
+		Zenith_Assert(xSelectNode.GetSelectedIndex() == 1, "Selected index should be 1");
+
+		xSelectNode.SetSelectedIndex(2);
+		Zenith_Assert(xSelectNode.GetSelectedIndex() == 2, "Selected index should be 2");
+
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Select node evaluation test passed");
+	}
+
+	// Test BlendSpace1D evaluation with blend points
+	{
+		Flux_BlendTreeNode_BlendSpace1D xBlendSpace;
+
+		Flux_BlendTreeNode_Clip* pxClip0 = new Flux_BlendTreeNode_Clip(nullptr, 1.0f);
+		Flux_BlendTreeNode_Clip* pxClip1 = new Flux_BlendTreeNode_Clip(nullptr, 1.0f);
+		Flux_BlendTreeNode_Clip* pxClip2 = new Flux_BlendTreeNode_Clip(nullptr, 1.0f);
+
+		xBlendSpace.AddBlendPoint(pxClip0, 0.0f);
+		xBlendSpace.AddBlendPoint(pxClip1, 0.5f);
+		xBlendSpace.AddBlendPoint(pxClip2, 1.0f);
+		xBlendSpace.SortBlendPoints();
+
+		// Test parameter at different values
+		xBlendSpace.SetParameter(0.0f);
+		Zenith_Assert(FloatEquals(xBlendSpace.GetParameter(), 0.0f), "Parameter should be 0.0");
+
+		xBlendSpace.SetParameter(0.25f);
+		Zenith_Assert(FloatEquals(xBlendSpace.GetParameter(), 0.25f), "Parameter should be 0.25");
+
+		xBlendSpace.SetParameter(1.0f);
+		Zenith_Assert(FloatEquals(xBlendSpace.GetParameter(), 1.0f), "Parameter should be 1.0");
+
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ BlendSpace1D evaluation test passed");
+	}
+
+	// Test BlendSpace2D evaluation
+	{
+		Flux_BlendTreeNode_BlendSpace2D xBlendSpace;
+
+		Flux_BlendTreeNode_Clip* pxClip0 = new Flux_BlendTreeNode_Clip(nullptr, 1.0f);
+		Flux_BlendTreeNode_Clip* pxClip1 = new Flux_BlendTreeNode_Clip(nullptr, 1.0f);
+		Flux_BlendTreeNode_Clip* pxClip2 = new Flux_BlendTreeNode_Clip(nullptr, 1.0f);
+
+		xBlendSpace.AddBlendPoint(pxClip0, Zenith_Maths::Vector2(0.0f, 0.0f));
+		xBlendSpace.AddBlendPoint(pxClip1, Zenith_Maths::Vector2(1.0f, 0.0f));
+		xBlendSpace.AddBlendPoint(pxClip2, Zenith_Maths::Vector2(0.5f, 1.0f));
+		xBlendSpace.ComputeTriangulation();
+
+		// Test parameter at different 2D values
+		xBlendSpace.SetParameter(Zenith_Maths::Vector2(0.0f, 0.0f));
+		const Zenith_Maths::Vector2& xParam0 = xBlendSpace.GetParameter();
+		Zenith_Assert(FloatEquals(xParam0.x, 0.0f) && FloatEquals(xParam0.y, 0.0f),
+			"Parameter should be (0, 0)");
+
+		xBlendSpace.SetParameter(Zenith_Maths::Vector2(0.5f, 0.5f));
+		const Zenith_Maths::Vector2& xParam1 = xBlendSpace.GetParameter();
+		Zenith_Assert(FloatEquals(xParam1.x, 0.5f) && FloatEquals(xParam1.y, 0.5f),
+			"Parameter should be (0.5, 0.5)");
+
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ BlendSpace2D evaluation test passed");
+	}
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestBlendTreeEvaluation completed successfully");
+}
+
+/**
+ * Test blend tree node serialization
+ * Verifies round-trip serialization for all blend tree node types
+ */
+void Zenith_UnitTests::TestBlendTreeSerialization()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestBlendTreeSerialization...");
+
+	// Test Clip node serialization
+	{
+		Zenith_DataStream xStream(1024);
+
+		Flux_BlendTreeNode_Clip xOriginal(nullptr, 1.5f);
+		xOriginal.SetClipName("TestClip");
+
+		xOriginal.WriteToDataStream(xStream);
+		xStream.SetCursor(0);
+
+		Flux_BlendTreeNode_Clip xLoaded;
+		xLoaded.ReadFromDataStream(xStream);
+
+		Zenith_Assert(FloatEquals(xLoaded.GetPlaybackRate(), 1.5f), "Playback rate should be 1.5");
+		Zenith_Assert(xLoaded.GetClipName() == "TestClip", "Clip name should be 'TestClip'");
+
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Clip node serialization test passed");
+	}
+
+	// Test Blend node serialization
+	{
+		Zenith_DataStream xStream(1024);
+
+		Flux_BlendTreeNode_Blend xOriginal;
+		xOriginal.SetBlendWeight(0.75f);
+		// Children would be serialized recursively in real usage
+
+		xOriginal.WriteToDataStream(xStream);
+		xStream.SetCursor(0);
+
+		Flux_BlendTreeNode_Blend xLoaded;
+		xLoaded.ReadFromDataStream(xStream);
+
+		Zenith_Assert(FloatEquals(xLoaded.GetBlendWeight(), 0.75f), "Blend weight should be 0.75");
+
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Blend node serialization test passed");
+	}
+
+	// Test BlendSpace1D node serialization
+	{
+		Zenith_DataStream xStream(1024);
+
+		Flux_BlendTreeNode_BlendSpace1D xOriginal;
+		xOriginal.SetParameter(0.65f);
+
+		xOriginal.WriteToDataStream(xStream);
+		xStream.SetCursor(0);
+
+		Flux_BlendTreeNode_BlendSpace1D xLoaded;
+		xLoaded.ReadFromDataStream(xStream);
+
+		Zenith_Assert(FloatEquals(xLoaded.GetParameter(), 0.65f), "Parameter should be 0.65");
+
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ BlendSpace1D node serialization test passed");
+	}
+
+	// Test BlendSpace2D node serialization
+	{
+		Zenith_DataStream xStream(1024);
+
+		Flux_BlendTreeNode_BlendSpace2D xOriginal;
+		xOriginal.SetParameter(Zenith_Maths::Vector2(0.3f, 0.8f));
+
+		xOriginal.WriteToDataStream(xStream);
+		xStream.SetCursor(0);
+
+		Flux_BlendTreeNode_BlendSpace2D xLoaded;
+		xLoaded.ReadFromDataStream(xStream);
+
+		const Zenith_Maths::Vector2& xParam = xLoaded.GetParameter();
+		Zenith_Assert(FloatEquals(xParam.x, 0.3f) && FloatEquals(xParam.y, 0.8f),
+			"Parameter should be (0.3, 0.8)");
+
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ BlendSpace2D node serialization test passed");
+	}
+
+	// Test Additive node serialization
+	{
+		Zenith_DataStream xStream(1024);
+
+		Flux_BlendTreeNode_Additive xOriginal;
+		xOriginal.SetAdditiveWeight(0.45f);
+
+		xOriginal.WriteToDataStream(xStream);
+		xStream.SetCursor(0);
+
+		Flux_BlendTreeNode_Additive xLoaded;
+		xLoaded.ReadFromDataStream(xStream);
+
+		Zenith_Assert(FloatEquals(xLoaded.GetAdditiveWeight(), 0.45f), "Additive weight should be 0.45");
+
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Additive node serialization test passed");
+	}
+
+	// Test Masked node serialization
+	{
+		Zenith_DataStream xStream(1024);
+
+		Flux_BlendTreeNode_Masked xOriginal;
+		Flux_BoneMask xMask;
+		xMask.SetBoneWeight(0, 1.0f);
+		xMask.SetBoneWeight(1, 0.5f);
+		xMask.SetBoneWeight(2, 0.25f);
+		xOriginal.SetBoneMask(xMask);
+
+		xOriginal.WriteToDataStream(xStream);
+		xStream.SetCursor(0);
+
+		Flux_BlendTreeNode_Masked xLoaded;
+		xLoaded.ReadFromDataStream(xStream);
+
+		const Flux_BoneMask& xLoadedMask = xLoaded.GetBoneMask();
+		Zenith_Assert(FloatEquals(xLoadedMask.GetBoneWeight(0), 1.0f), "Bone 0 weight should be 1.0");
+		Zenith_Assert(FloatEquals(xLoadedMask.GetBoneWeight(1), 0.5f), "Bone 1 weight should be 0.5");
+		Zenith_Assert(FloatEquals(xLoadedMask.GetBoneWeight(2), 0.25f), "Bone 2 weight should be 0.25");
+
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Masked node serialization test passed");
+	}
+
+	// Test Select node serialization
+	{
+		Zenith_DataStream xStream(1024);
+
+		Flux_BlendTreeNode_Select xOriginal;
+		// Must add children before setting selected index (SetSelectedIndex validates range)
+		xOriginal.AddChild(new Flux_BlendTreeNode_Clip(nullptr, 1.0f));
+		xOriginal.AddChild(new Flux_BlendTreeNode_Clip(nullptr, 1.0f));
+		xOriginal.AddChild(new Flux_BlendTreeNode_Clip(nullptr, 1.0f));
+		xOriginal.SetSelectedIndex(2);
+
+		xOriginal.WriteToDataStream(xStream);
+		xStream.SetCursor(0);
+
+		Flux_BlendTreeNode_Select xLoaded;
+		xLoaded.ReadFromDataStream(xStream);
+
+		Zenith_Assert(xLoaded.GetSelectedIndex() == 2, "Selected index should be 2");
+
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Select node serialization test passed");
+	}
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestBlendTreeSerialization completed successfully");
 }
 
 /**

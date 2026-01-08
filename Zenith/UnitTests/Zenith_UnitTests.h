@@ -49,6 +49,9 @@ private:
 	// Additional animation tests
 	static void TestAnimationClipChannels();
 	static void TestBlendSpace1D();
+	static void TestBlendSpace2D();
+	static void TestBlendTreeEvaluation();
+	static void TestBlendTreeSerialization();
 	static void TestFABRIKSolver();
 	static void TestAnimationEvents();
 	static void TestBoneMasking();

@@ -14,6 +14,7 @@
  */
 
 #include "Flux/MeshAnimation/Flux_AnimationStateMachine.h"
+#include "Flux/MeshAnimation/Flux_BlendTree.h"
 #include "Maths/Zenith_Maths.h"
 #include "Combat_PlayerController.h"
 
@@ -51,6 +52,16 @@ namespace CombatAnimParams
 	static constexpr const char* DODGE_TRIGGER = "DodgeTrigger";
 	static constexpr const char* HIT_TRIGGER = "HitTrigger";
 	static constexpr const char* DEATH_TRIGGER = "DeathTrigger";
+
+	// BlendSpace2D parameters for movement direction
+	static constexpr const char* MOVE_X = "MoveX";
+	static constexpr const char* MOVE_Y = "MoveY";
+
+	// Additive blend parameters for hit reactions
+	static constexpr const char* HIT_STRENGTH = "HitStrength";
+
+	// Masked blend parameters for upper/lower body split
+	static constexpr const char* UPPER_BODY_WEIGHT = "UpperBodyWeight";
 }
 
 // ============================================================================
@@ -95,10 +106,34 @@ public:
 		m_xParameters.AddTrigger(CombatAnimParams::HIT_TRIGGER);
 		m_xParameters.AddTrigger(CombatAnimParams::DEATH_TRIGGER);
 
+		// Set up blend tree parameters
+		m_xParameters.AddFloat(CombatAnimParams::MOVE_X, 0.0f);
+		m_xParameters.AddFloat(CombatAnimParams::MOVE_Y, 0.0f);
+		m_xParameters.AddFloat(CombatAnimParams::HIT_STRENGTH, 0.0f);
+		m_xParameters.AddFloat(CombatAnimParams::UPPER_BODY_WEIGHT, 0.0f);
+
 		// Set initial state
 		m_strCurrentState = CombatAnimStates::IDLE;
 		m_fStateTime = 0.0f;
 		m_fNormalizedTime = 0.0f;
+
+		// Initialize blend trees
+		InitializeBlendTrees();
+	}
+
+	/**
+	 * Shutdown - Clean up blend tree resources
+	 */
+	void Shutdown()
+	{
+		delete m_pxMovementBlendSpace;
+		delete m_pxHitReactionAdditive;
+		delete m_pxUpperBodyMask;
+		delete m_pxAttackSelector;
+		m_pxMovementBlendSpace = nullptr;
+		m_pxHitReactionAdditive = nullptr;
+		m_pxUpperBodyMask = nullptr;
+		m_pxAttackSelector = nullptr;
 	}
 
 	/**
@@ -411,6 +446,119 @@ private:
 	}
 
 	// ========================================================================
+	// Blend Tree Initialization
+	// ========================================================================
+
+	/**
+	 * InitializeBlendTrees - Set up all blend tree nodes
+	 *
+	 * Demonstrates usage of all 4 unused blend tree variants:
+	 * - BlendSpace2D: Movement direction blending (strafe + forward/back)
+	 * - Select: Attack combo variations
+	 * - Additive: Hit reaction layered on base animation
+	 * - Masked: Upper body attacks while lower body walks
+	 */
+	void InitializeBlendTrees()
+	{
+		// ----------------------------------------------------------------
+		// BlendSpace2D - Movement direction blending
+		// Used for 8-directional movement: combines strafe (X) and forward/back (Y)
+		// ----------------------------------------------------------------
+		m_pxMovementBlendSpace = new Flux_BlendTreeNode_BlendSpace2D();
+
+		// Add blend points for 4 cardinal directions
+		// In a real game, these would have actual animation clips
+		Flux_BlendTreeNode_Clip* pxForward = new Flux_BlendTreeNode_Clip(nullptr, 1.0f);
+		Flux_BlendTreeNode_Clip* pxBackward = new Flux_BlendTreeNode_Clip(nullptr, 1.0f);
+		Flux_BlendTreeNode_Clip* pxLeft = new Flux_BlendTreeNode_Clip(nullptr, 1.0f);
+		Flux_BlendTreeNode_Clip* pxRight = new Flux_BlendTreeNode_Clip(nullptr, 1.0f);
+
+		m_pxMovementBlendSpace->AddBlendPoint(pxForward, Zenith_Maths::Vector2(0.0f, 1.0f));   // Forward
+		m_pxMovementBlendSpace->AddBlendPoint(pxBackward, Zenith_Maths::Vector2(0.0f, -1.0f)); // Backward
+		m_pxMovementBlendSpace->AddBlendPoint(pxLeft, Zenith_Maths::Vector2(-1.0f, 0.0f));     // Left strafe
+		m_pxMovementBlendSpace->AddBlendPoint(pxRight, Zenith_Maths::Vector2(1.0f, 0.0f));     // Right strafe
+		m_pxMovementBlendSpace->ComputeTriangulation();
+
+		// ----------------------------------------------------------------
+		// Select - Attack combo variations
+		// Selects one of 3 attack animations based on combo index
+		// ----------------------------------------------------------------
+		m_pxAttackSelector = new Flux_BlendTreeNode_Select();
+
+		// Add 3 attack variations (combo chain)
+		Flux_BlendTreeNode_Clip* pxAttack1 = new Flux_BlendTreeNode_Clip(nullptr, 1.0f);
+		Flux_BlendTreeNode_Clip* pxAttack2 = new Flux_BlendTreeNode_Clip(nullptr, 1.0f);
+		Flux_BlendTreeNode_Clip* pxAttack3 = new Flux_BlendTreeNode_Clip(nullptr, 1.0f);
+
+		m_pxAttackSelector->AddChild(pxAttack1);  // Index 0: Light Attack 1
+		m_pxAttackSelector->AddChild(pxAttack2);  // Index 1: Light Attack 2
+		m_pxAttackSelector->AddChild(pxAttack3);  // Index 2: Light Attack 3
+
+		// ----------------------------------------------------------------
+		// Additive - Hit reaction layer
+		// Layers hit stagger animation on top of base movement/attack
+		// ----------------------------------------------------------------
+		Flux_BlendTreeNode_Clip* pxBaseIdle = new Flux_BlendTreeNode_Clip(nullptr, 1.0f);
+		Flux_BlendTreeNode_Clip* pxHitReaction = new Flux_BlendTreeNode_Clip(nullptr, 1.0f);
+
+		m_pxHitReactionAdditive = new Flux_BlendTreeNode_Additive(pxBaseIdle, pxHitReaction, 0.0f);
+
+		// ----------------------------------------------------------------
+		// Masked - Upper/Lower body split
+		// Allows attacking while walking (upper body attack, lower body walk)
+		// ----------------------------------------------------------------
+		Flux_BlendTreeNode_Clip* pxWalkBase = new Flux_BlendTreeNode_Clip(nullptr, 1.0f);
+		Flux_BlendTreeNode_Clip* pxAttackOverride = new Flux_BlendTreeNode_Clip(nullptr, 1.0f);
+
+		// Set up upper body mask (spine, arms, head would have weight 1.0)
+		Flux_BoneMask xUpperBodyMask;
+		xUpperBodyMask.SetBoneWeight(0, 1.0f);  // Spine
+		xUpperBodyMask.SetBoneWeight(1, 1.0f);  // Chest
+		xUpperBodyMask.SetBoneWeight(2, 1.0f);  // Left Shoulder
+		xUpperBodyMask.SetBoneWeight(3, 1.0f);  // Left Arm
+		xUpperBodyMask.SetBoneWeight(4, 1.0f);  // Right Shoulder
+		xUpperBodyMask.SetBoneWeight(5, 1.0f);  // Right Arm
+		xUpperBodyMask.SetBoneWeight(6, 0.0f);  // Hips (lower body, no mask)
+		xUpperBodyMask.SetBoneWeight(7, 0.0f);  // Left Leg
+		xUpperBodyMask.SetBoneWeight(8, 0.0f);  // Right Leg
+
+		m_pxUpperBodyMask = new Flux_BlendTreeNode_Masked(pxWalkBase, pxAttackOverride, xUpperBodyMask);
+	}
+
+	/**
+	 * UpdateBlendTrees - Update blend tree parameters based on game state
+	 */
+	void UpdateBlendTrees(const Combat_PlayerController& xPlayer)
+	{
+		// Update BlendSpace2D with movement direction
+		Zenith_Maths::Vector3 xMoveDir = xPlayer.GetMoveDirection();
+		m_pxMovementBlendSpace->SetParameter(Zenith_Maths::Vector2(xMoveDir.x, xMoveDir.z));
+
+		// Update Select with attack combo index
+		int32_t iAttackIndex = m_xParameters.GetInt(CombatAnimParams::ATTACK_INDEX);
+		if (iAttackIndex >= 1 && iAttackIndex <= 3)
+		{
+			m_pxAttackSelector->SetSelectedIndex(iAttackIndex - 1);  // Convert 1-3 to 0-2
+		}
+
+		// Update Additive weight based on hit state
+		bool bIsHit = m_xParameters.GetBool(CombatAnimParams::IS_HIT);
+		float fHitStrength = bIsHit ? 1.0f : 0.0f;
+		m_pxHitReactionAdditive->SetAdditiveWeight(fHitStrength);
+
+		// Update Masked weight based on attacking while moving
+		bool bIsAttacking = m_xParameters.GetBool(CombatAnimParams::IS_ATTACKING);
+		float fSpeed = m_xParameters.GetFloat(CombatAnimParams::SPEED);
+		bool bAttackWhileMoving = bIsAttacking && fSpeed > m_fIdleToWalkThreshold;
+
+		// Update stored parameters for reference
+		m_xParameters.SetFloat(CombatAnimParams::MOVE_X, xMoveDir.x);
+		m_xParameters.SetFloat(CombatAnimParams::MOVE_Y, xMoveDir.z);
+		m_xParameters.SetFloat(CombatAnimParams::HIT_STRENGTH, fHitStrength);
+		m_xParameters.SetFloat(CombatAnimParams::UPPER_BODY_WEIGHT, bAttackWhileMoving ? 1.0f : 0.0f);
+	}
+
+	// ========================================================================
 	// Data
 	// ========================================================================
 
@@ -421,4 +569,10 @@ private:
 	float m_fStateTime = 0.0f;
 	float m_fNormalizedTime = 0.0f;
 	float m_fTransitionProgress = 1.0f;
+
+	// Blend tree nodes demonstrating all 4 unused variants
+	Flux_BlendTreeNode_BlendSpace2D* m_pxMovementBlendSpace = nullptr;  // Movement direction
+	Flux_BlendTreeNode_Additive* m_pxHitReactionAdditive = nullptr;     // Hit reaction layer
+	Flux_BlendTreeNode_Masked* m_pxUpperBodyMask = nullptr;             // Upper/lower body split
+	Flux_BlendTreeNode_Select* m_pxAttackSelector = nullptr;            // Attack combo selection
 };
