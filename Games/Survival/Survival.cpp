@@ -445,6 +445,11 @@ void Project_RegisterScriptBehaviours()
 	Survival_Behaviour::RegisterBehaviour();
 }
 
+void Project_Shutdown()
+{
+	// Survival has no resources that need explicit cleanup
+}
+
 void Project_LoadInitialScene()
 {
 	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();

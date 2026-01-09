@@ -159,6 +159,11 @@ void Project_RegisterScriptBehaviours()
 	Sokoban_Behaviour::RegisterBehaviour();
 }
 
+void Project_Shutdown()
+{
+	// Sokoban has no resources that need explicit cleanup
+}
+
 void Project_LoadInitialScene()
 {
 	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();

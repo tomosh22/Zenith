@@ -152,6 +152,7 @@ public:
 	~Flux() = delete;
 	static void EarlyInitialise();
 	static void LateInitialise();
+	static void Shutdown();
 
 	static const uint32_t GetFrameCounter() { return s_uFrameCounter; }
 

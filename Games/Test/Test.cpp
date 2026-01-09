@@ -34,6 +34,11 @@ void Project_RegisterScriptBehaviours()
 	RotationBehaviour_Behaviour::RegisterBehaviour();
 }
 
+void Project_Shutdown()
+{
+	// Test game has no resources that need explicit cleanup
+}
+
 void Project_LoadInitialScene()
 {
 	Zenith_Scene::GetCurrentScene().Reset();

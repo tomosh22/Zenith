@@ -10,6 +10,7 @@ public:
 
 	static void Initialise();
 	static void InitialiseRenderTargets();
+	static void Shutdown();
 
 	static void UploadFrameConstants();
 

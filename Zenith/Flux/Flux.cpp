@@ -56,6 +56,30 @@ void Flux::LateInitialise()
 	Flux_MemoryManager::EndFrame(false);
 }
 
+void Flux::Shutdown()
+{
+	// Shutdown Flux subsystems (vertex/index/constant buffers, render attachments)
+	// Order is reverse of initialization where dependencies exist
+	Flux_ComputeTest::Shutdown();
+	Flux_Text::Shutdown();
+	Flux_Quads::Shutdown();
+	Flux_Particles::Shutdown();
+	Flux_SDFs::Shutdown();
+	Flux_Primitives::Shutdown();
+	Flux_Terrain::Shutdown();
+	Flux_Shadows::Shutdown();
+
+#ifdef ZENITH_TOOLS
+	Flux_Gizmos::Shutdown();
+	Flux_PlatformAPI::ShutdownImGui();
+#endif
+
+	// Shutdown core graphics (render targets, depth buffer, quad mesh, frame constants)
+	Flux_Graphics::Shutdown();
+
+	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux shut down");
+}
+
 void Flux::OnResChange()
 {
 	for (void(*pfnCallback)() : s_xResChangeCallbacks)

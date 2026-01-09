@@ -266,3 +266,42 @@ float Flux_Graphics::GetAspectRatio()
 	return Zenith_Scene::GetCurrentScene().GetMainCamera().GetAspectRatio();
 #endif
 }
+
+void Flux_Graphics::Shutdown()
+{
+	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Graphics shutting down...");
+
+	// Helper lambda to destroy a render attachment's VRAM and views
+	auto DestroyRenderAttachment = [](Flux_RenderAttachment& xAttachment)
+	{
+		if (xAttachment.m_xVRAMHandle.IsValid())
+		{
+			Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xAttachment.m_xVRAMHandle);
+			Flux_MemoryManager::QueueVRAMDeletion(pxVRAM, xAttachment.m_xVRAMHandle,
+				xAttachment.m_pxRTV.m_xImageView, xAttachment.m_pxDSV.m_xImageView,
+				xAttachment.m_pxSRV.m_xImageView, xAttachment.m_pxUAV.m_xImageView);
+			xAttachment.m_xVRAMHandle = Flux_VRAMHandle();
+		}
+	};
+
+	// Destroy MRT render targets
+	for (uint32_t u = 0; u < MRT_INDEX_COUNT; u++)
+	{
+		DestroyRenderAttachment(s_xMRTTarget.m_axColourAttachments[u]);
+	}
+
+	// Destroy final render target
+	DestroyRenderAttachment(s_xFinalRenderTarget.m_axColourAttachments[0]);
+
+	// Destroy depth buffer
+	DestroyRenderAttachment(s_xDepthBuffer);
+
+	// Destroy quad mesh buffers
+	Flux_MemoryManager::DestroyVertexBuffer(s_xQuadMesh.GetVertexBuffer());
+	Flux_MemoryManager::DestroyIndexBuffer(s_xQuadMesh.GetIndexBuffer());
+
+	// Destroy frame constants buffer
+	Flux_MemoryManager::DestroyDynamicConstantBuffer(s_xFrameConstantsBuffer);
+
+	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Graphics shut down");
+}

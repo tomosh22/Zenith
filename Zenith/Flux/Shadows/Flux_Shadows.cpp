@@ -93,6 +93,25 @@ void Flux_Shadows::Reset()
 	Zenith_Log(LOG_CATEGORY_SHADOWS, "Flux_Shadows::Reset() - Reset %d shadow cascade command lists", ZENITH_FLUX_NUM_CSMS);
 }
 
+void Flux_Shadows::Shutdown()
+{
+	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
+	{
+		// Destroy CSM render attachment
+		if (g_axCSMs[u].m_xVRAMHandle.IsValid())
+		{
+			Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(g_axCSMs[u].m_xVRAMHandle);
+			Flux_MemoryManager::QueueVRAMDeletion(pxVRAM, g_axCSMs[u].m_xVRAMHandle,
+				g_axCSMs[u].m_pxRTV.m_xImageView, g_axCSMs[u].m_pxDSV.m_xImageView,
+				g_axCSMs[u].m_pxSRV.m_xImageView, g_axCSMs[u].m_pxUAV.m_xImageView);
+			g_axCSMs[u].m_xVRAMHandle = Flux_VRAMHandle();
+		}
+
+		// Destroy shadow matrix buffer
+		Flux_MemoryManager::DestroyDynamicConstantBuffer(g_xShadowMatrixBuffers[u]);
+	}
+}
+
 void Flux_Shadows::Render(void*)
 {
 	if (!dbg_bEnabled)

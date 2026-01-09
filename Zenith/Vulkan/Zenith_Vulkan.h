@@ -71,6 +71,7 @@ public:
 	static vk::DescriptorPool s_xImGuiDescriptorPool;
 	static void InitialiseImGui();
 	static void InitialiseImGuiRenderPass();
+	static void ShutdownImGui();
 	static void ImGuiBeginFrame();
 	static const vk::DescriptorPool& GetImGuiDescriptorPool() { return s_xImGuiDescriptorPool; }
 #endif

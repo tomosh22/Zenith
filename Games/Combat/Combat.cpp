@@ -49,6 +49,47 @@ static Flux_Texture* s_pxWallTexture = nullptr;
 static bool s_bResourcesInitialized = false;
 
 // ============================================================================
+// Resource Cleanup (called at shutdown)
+// ============================================================================
+static void CleanupCombatResources()
+{
+	using namespace Combat;
+
+	if (!s_bResourcesInitialized)
+		return;
+
+	// Delete prefabs
+	delete g_pxPlayerPrefab;
+	g_pxPlayerPrefab = nullptr;
+	delete g_pxEnemyPrefab;
+	g_pxEnemyPrefab = nullptr;
+	delete g_pxArenaPrefab;
+	g_pxArenaPrefab = nullptr;
+
+	// Delete model asset
+	delete g_pxStickFigureModelAsset;
+	g_pxStickFigureModelAsset = nullptr;
+
+	// Cleanup mesh geometries - destructor handles GPU buffer cleanup
+	if (g_pxStickFigureGeometry && g_pxStickFigureGeometry != g_pxCapsuleGeometry)
+	{
+		delete g_pxStickFigureGeometry;
+	}
+	g_pxStickFigureGeometry = nullptr;
+
+	delete g_pxCapsuleGeometry;
+	g_pxCapsuleGeometry = nullptr;
+
+	delete g_pxCubeGeometry;
+	g_pxCubeGeometry = nullptr;
+
+	// Note: Textures and materials are cleaned up by Zenith_AssetHandler::DestroyAllAssets()
+
+	s_bResourcesInitialized = false;
+	Zenith_Log(LOG_CATEGORY_ASSET, "[Combat] Resources cleaned up");
+}
+
+// ============================================================================
 // Procedural Texture Generation
 // ============================================================================
 static Flux_Texture* CreateColoredTexture(uint8_t uR, uint8_t uG, uint8_t uB)
@@ -333,6 +374,11 @@ void Project_RegisterScriptBehaviours()
 
 	// Register behaviors
 	Combat_Behaviour::RegisterBehaviour();
+}
+
+void Project_Shutdown()
+{
+	CleanupCombatResources();
 }
 
 void Project_LoadInitialScene()

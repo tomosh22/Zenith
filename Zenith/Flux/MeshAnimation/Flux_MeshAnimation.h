@@ -136,6 +136,7 @@ public:
 
     Flux_MeshAnimation() = delete;
     Flux_MeshAnimation(const std::string& strPath, class Flux_MeshGeometry& xParentGeometry);
+    ~Flux_MeshAnimation();
 
     // Get the source file path for this animation (for serialization)
     const std::string& GetSourcePath() const { return m_strSourcePath; }

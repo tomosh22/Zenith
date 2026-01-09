@@ -70,6 +70,12 @@ void Flux_SDFs::Reset()
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_SDFs::Reset() - Reset command list");
 }
 
+void Flux_SDFs::Shutdown()
+{
+	Flux_MemoryManager::DestroyDynamicConstantBuffer(s_xSpheresBuffer);
+	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_SDFs shut down");
+}
+
 void UploadSpheres()
 {
 	s_axSphereData.m_uNumSpheres = 2;

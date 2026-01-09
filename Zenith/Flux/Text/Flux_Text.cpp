@@ -106,6 +106,12 @@ void Flux_Text::Reset()
 	Zenith_Log(LOG_CATEGORY_TEXT, "Flux_Text::Reset() - Reset command list");
 }
 
+void Flux_Text::Shutdown()
+{
+	Flux_MemoryManager::DestroyDynamicVertexBuffer(s_xInstanceBuffer);
+	Zenith_Log(LOG_CATEGORY_TEXT, "Flux_Text shut down");
+}
+
 //#TO returns number of chars to render
 uint32_t Flux_Text::UploadChars()
 {

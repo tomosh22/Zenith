@@ -6,6 +6,7 @@ class Flux_ComputeTest
 {
 public:
 	static void Initialise();
+	static void Shutdown();
 	static void Run();
 	static Flux_RenderAttachment& GetComputeOutputTexture();
 

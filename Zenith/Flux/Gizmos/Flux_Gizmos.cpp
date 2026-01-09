@@ -106,10 +106,22 @@ void Flux_Gizmos::Initialise()
 
 void Flux_Gizmos::Shutdown()
 {
-	// Clear geometry buffers (Flux_VertexBuffer and Flux_IndexBuffer handle their own cleanup)
-	s_xTranslateGeometry.Clear();
-	s_xRotateGeometry.Clear();
-	s_xScaleGeometry.Clear();
+	// Destroy GPU buffers for all gizmo geometry
+	auto DestroyGeometryBuffers = [](Zenith_Vector<GizmoGeometry>& xGeometry)
+	{
+		for (uint32_t i = 0; i < xGeometry.GetSize(); ++i)
+		{
+			Flux_MemoryManager::DestroyVertexBuffer(xGeometry.Get(i).m_xVertexBuffer);
+			Flux_MemoryManager::DestroyIndexBuffer(xGeometry.Get(i).m_xIndexBuffer);
+		}
+		xGeometry.Clear();
+	};
+
+	DestroyGeometryBuffers(s_xTranslateGeometry);
+	DestroyGeometryBuffers(s_xRotateGeometry);
+	DestroyGeometryBuffers(s_xScaleGeometry);
+
+	Zenith_Log(LOG_CATEGORY_GIZMOS, "Flux_Gizmos shut down");
 }
 
 void Flux_Gizmos::Reset()

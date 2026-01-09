@@ -73,6 +73,12 @@ void Flux_Quads::Reset()
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Quads::Reset() - Reset command list");
 }
 
+void Flux_Quads::Shutdown()
+{
+	Flux_MemoryManager::DestroyDynamicVertexBuffer(s_xInstanceBuffer);
+	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Quads shut down");
+}
+
 void Flux_Quads::UploadInstanceData()
 {
 	Flux_MemoryManager::UploadBufferData(s_xInstanceBuffer.GetBuffer().m_xVRAMHandle, s_axQuadsToRender, sizeof(Quad) * s_uQuadRenderIndex);

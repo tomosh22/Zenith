@@ -332,6 +332,11 @@ void Project_RegisterScriptBehaviours()
 	Exploration_Behaviour::RegisterBehaviour();
 }
 
+void Project_Shutdown()
+{
+	// Exploration has no resources that need explicit cleanup
+}
+
 void Project_LoadInitialScene()
 {
 	using namespace Exploration;

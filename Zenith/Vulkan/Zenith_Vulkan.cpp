@@ -870,6 +870,25 @@ void Zenith_Vulkan::ImGuiBeginFrame()
 #endif
 	ImGui::NewFrame();
 }
+
+void Zenith_Vulkan::ShutdownImGui()
+{
+	// Wait for GPU to finish before destroying ImGui resources
+	s_xDevice.waitIdle();
+
+	// Shutdown ImGui backends
+	ImGui_ImplVulkan_Shutdown();
+#ifdef ZENITH_WINDOWS
+	ImGui_ImplGlfw_Shutdown();
+#endif
+	ImGui::DestroyContext();
+
+	// Destroy ImGui Vulkan resources
+	s_xDevice.destroyRenderPass(s_xImGuiRenderPass);
+	s_xDevice.destroyDescriptorPool(s_xImGuiDescriptorPool);
+
+	Zenith_Log(LOG_CATEGORY_EDITOR, "ImGui shut down");
+}
 #endif
 
 void Zenith_Vulkan_PerFrame::Initialise()

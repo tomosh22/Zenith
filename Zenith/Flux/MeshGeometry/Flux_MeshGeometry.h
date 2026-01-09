@@ -50,8 +50,17 @@ public:
 		if(m_pxColors) delete[] m_pxColors;
 		if(m_pfMaterialLerps) delete[] m_pfMaterialLerps;
 
+		// Destroy GPU buffers if they were allocated
+		if (m_xVertexBuffer.GetBuffer().m_xVRAMHandle.IsValid())
+		{
+			Flux_MemoryManager::DestroyVertexBuffer(m_xVertexBuffer);
+		}
 		m_xVertexBuffer.Reset();
 
+		if (m_xIndexBuffer.GetBuffer().m_xVRAMHandle.IsValid())
+		{
+			Flux_MemoryManager::DestroyIndexBuffer(m_xIndexBuffer);
+		}
 		m_xIndexBuffer.Reset();
 
 		m_uNumBones = 0;

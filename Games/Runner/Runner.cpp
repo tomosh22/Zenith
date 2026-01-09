@@ -454,6 +454,11 @@ void Project_RegisterScriptBehaviours()
 	Runner_Behaviour::RegisterBehaviour();
 }
 
+void Project_Shutdown()
+{
+	// Runner has no resources that need explicit cleanup
+}
+
 void Project_LoadInitialScene()
 {
 	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();

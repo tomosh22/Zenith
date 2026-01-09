@@ -39,6 +39,11 @@ void Zenith_StateMachine::Project_Initialise()
 	s_pxCurrentState = new SuperSecret_State_InGame;
 }
 
+// Stub implementations for standard project interface
+void Project_RegisterScriptBehaviours() {}
+void Project_Shutdown() {}
+void Project_LoadInitialScene() {}
+
 static Zenith_Entity s_xController;
 static Zenith_Entity s_xPlayer0;
 

@@ -31,6 +31,12 @@ public:
 	static void Initialise();
 
 	/**
+	 * Shutdown the primitives renderer
+	 * Destroys all GPU resources (vertex/index buffers)
+	 */
+	static void Shutdown();
+
+	/**
 	 * Clear state when scene resets (e.g., Play/Stop transitions)
 	 * Resets command lists to prevent stale GPU resource references
 	 */

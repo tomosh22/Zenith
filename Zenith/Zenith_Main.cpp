@@ -2,6 +2,7 @@
 #include "Core/Zenith_Core.h"
 #include "Zenith_OS_Include.h"
 #include "Flux/Flux.h"
+#include "Flux/Flux_Graphics.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #ifdef ZENITH_TOOLS
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
@@ -12,7 +13,6 @@
 #include "AssetHandling/Zenith_AssetHandler.h"
 #include "AssetHandling/Zenith_AssetDatabase.h"
 #include "EntityComponent/Zenith_Scene.h"
-#include "Flux/Flux_Graphics.h"
 #include "Physics/Zenith_Physics.h"
 #include "Profiling/Zenith_Profiling.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
@@ -120,10 +120,16 @@ int main()
 	// 4. Shutdown physics system
 	Zenith_Physics::Shutdown();
 
-	// 5. Shutdown Vulkan memory manager (destroys VMA allocator)
+	// 5. Destroy all assets (textures, meshes, materials)
+	Zenith_AssetHandler::DestroyAllAssets();
+
+	// 6. Shutdown Flux (all subsystems + graphics)
+	Flux::Shutdown();
+
+	// 7. Shutdown Vulkan memory manager (destroys VMA allocator)
 	Zenith_Vulkan_MemoryManager::Shutdown();
 
-	// 6. Shutdown task system (terminates worker threads)
+	// 8. Shutdown task system (terminates worker threads)
 	Zenith_TaskSystem::Shutdown();
 
 	// 6. Cleanup window (destructor handles GLFW termination)

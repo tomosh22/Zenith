@@ -214,6 +214,12 @@ void Flux_Terrain::Reset()
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "Flux_Terrain::Reset() - Reset command lists and cleared cached terrain components");
 }
 
+void Flux_Terrain::Shutdown()
+{
+	Flux_MemoryManager::DestroyDynamicConstantBuffer(s_xTerrainConstantsBuffer);
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "Flux_Terrain shut down");
+}
+
 void Flux_Terrain::SubmitRenderToGBufferTask()
 {
 	s_uFrameCounter++;

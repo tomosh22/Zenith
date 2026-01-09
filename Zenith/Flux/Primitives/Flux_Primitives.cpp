@@ -530,6 +530,27 @@ void Flux_Primitives::Reset()
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Primitives::Reset() - Reset command list");
 }
 
+void Flux_Primitives::Shutdown()
+{
+	// Destroy all vertex and index buffers
+	Flux_MemoryManager::DestroyVertexBuffer(s_xSphereVertexBuffer);
+	Flux_MemoryManager::DestroyIndexBuffer(s_xSphereIndexBuffer);
+
+	Flux_MemoryManager::DestroyVertexBuffer(s_xCubeVertexBuffer);
+	Flux_MemoryManager::DestroyIndexBuffer(s_xCubeIndexBuffer);
+
+	Flux_MemoryManager::DestroyVertexBuffer(s_xCapsuleVertexBuffer);
+	Flux_MemoryManager::DestroyIndexBuffer(s_xCapsuleIndexBuffer);
+
+	Flux_MemoryManager::DestroyVertexBuffer(s_xCylinderVertexBuffer);
+	Flux_MemoryManager::DestroyIndexBuffer(s_xCylinderIndexBuffer);
+
+	Flux_MemoryManager::DestroyVertexBuffer(s_xLineVertexBuffer);
+	Flux_MemoryManager::DestroyIndexBuffer(s_xLineIndexBuffer);
+
+	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Primitives shut down");
+}
+
 void Flux_Primitives::SubmitRenderTask()
 {
 	Zenith_TaskSystem::SubmitTask(&g_xRenderTask);

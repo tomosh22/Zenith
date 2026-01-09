@@ -90,6 +90,12 @@ void Flux_Particles::Reset()
 	Zenith_Log(LOG_CATEGORY_PARTICLES, "Flux_Particles::Reset() - Reset command list");
 }
 
+void Flux_Particles::Shutdown()
+{
+	Flux_MemoryManager::DestroyDynamicVertexBuffer(s_xInstanceBuffer);
+	Zenith_Log(LOG_CATEGORY_PARTICLES, "Flux_Particles shut down");
+}
+
 void UploadInstanceData()
 {
 	Particle axParticles[] =

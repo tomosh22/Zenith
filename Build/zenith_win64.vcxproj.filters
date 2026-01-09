@@ -751,7 +751,6 @@
     <ClCompile Include="..\Zenith\Windows\Zenith_Windows_Window.cpp">
       <Filter>Windows</Filter>
     </ClCompile>
-    <ClCompile Include="..\Zenith\Zenith_Main.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\Middleware\imgui-docking\backends\imgui_impl_android.h">
