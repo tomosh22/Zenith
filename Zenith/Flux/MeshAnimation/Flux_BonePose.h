@@ -110,6 +110,10 @@ public:
 		float fTime,
 		const Zenith_SkeletonAsset& xSkeleton);
 
+	// Initialize local poses from skeleton's bind pose
+	// Call this before SampleFromClip to ensure non-animated bones have correct bind pose values
+	void InitFromBindPose(const Zenith_SkeletonAsset& xSkeleton);
+
 	// Compute model-space matrices from local poses using skeleton hierarchy
 	// Must be called after setting local poses and before computing skinning matrices
 	void ComputeModelSpaceMatrices(const struct Flux_MeshAnimation::Node& xRootNode,

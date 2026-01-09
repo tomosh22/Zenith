@@ -9,7 +9,6 @@
 #include <functional>
 
 // Forward declarations
-class Flux_MeshGeometry;
 class Flux_SkeletonInstance;
 class Zenith_SkeletonAsset;
 
@@ -39,14 +38,11 @@ public:
 	Flux_AnimationController(Flux_AnimationController&& xOther) noexcept;
 	Flux_AnimationController& operator=(Flux_AnimationController&& xOther) noexcept;
 
-	// Initialize with a mesh (legacy system - required for bone data)
-	void Initialize(Flux_MeshGeometry* pxGeometry);
-
-	// Initialize with a skeleton instance (new model instance system)
+	// Initialize with a skeleton instance
 	void Initialize(Flux_SkeletonInstance* pxSkeleton);
 
 	// Check if initialized
-	bool IsInitialized() const { return m_pxGeometry != nullptr || m_pxSkeletonInstance != nullptr; }
+	bool IsInitialized() const { return m_pxSkeletonInstance != nullptr; }
 
 	// Get the number of bones from either system
 	uint32_t GetNumBones() const;
@@ -195,13 +191,10 @@ private:
 	// Upload bone matrices to GPU
 	void UploadToGPU();
 
-	// Update path for skeleton instance (new model instance system)
+	// Update path for skeleton instance
 	void UpdateWithSkeletonInstance(float fDt);
 
-	// The mesh geometry we're animating (legacy system)
-	Flux_MeshGeometry* m_pxGeometry = nullptr;
-
-	// The skeleton instance we're animating (new model instance system)
+	// The skeleton instance we're animating
 	Flux_SkeletonInstance* m_pxSkeletonInstance = nullptr;
 
 	// Skeleton asset for bone hierarchy info when using skeleton instance

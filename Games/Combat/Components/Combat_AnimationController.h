@@ -62,25 +62,7 @@ public:
 	// ========================================================================
 
 	/**
-	 * Initialize - Set up the animation controller with mesh geometry
-	 */
-	void Initialize(Flux_MeshGeometry* pxGeometry)
-	{
-		if (!pxGeometry)
-			return;
-
-		m_pxGeometry = pxGeometry;
-		m_xController.Initialize(pxGeometry);
-
-		// Load animation clips
-		LoadAnimationClips();
-
-		// Set up state machine
-		SetupStateMachine();
-	}
-
-	/**
-	 * Initialize - Set up the animation controller with skeleton instance (for model instance system)
+	 * Initialize - Set up the animation controller with skeleton instance
 	 */
 	void Initialize(Flux_SkeletonInstance* pxSkeleton)
 	{
@@ -113,6 +95,10 @@ public:
 		{
 			m_xController.GetStateMachine().SetState(CombatAnimStates::IDLE);
 		}
+		// Reset state tracking
+		m_bWasAttacking = false;
+		m_bWasHit = false;
+		m_bWasDead = false;
 	}
 
 	// ========================================================================
@@ -178,33 +164,45 @@ public:
 	void UpdateForEnemy(float fSpeed, bool bIsAttacking, bool bIsHit, bool bIsDead, float fDt)
 	{
 		if (!m_xController.IsInitialized())
+		{
+			Zenith_Log(LOG_CATEGORY_ANIMATION, "[Enemy] Controller not initialized!");
 			return;
+		}
 
 		m_xController.SetFloat(CombatAnimParams::SPEED, fSpeed);
 
-		// Handle state triggers
-		static bool s_bWasAttacking = false;
-		static bool s_bWasHit = false;
-		static bool s_bWasDead = false;
-
-		if (bIsDead && !s_bWasDead)
+		// Handle state triggers (per-instance tracking, not static!)
+		if (bIsDead && !m_bWasDead)
 		{
+			Zenith_Log(LOG_CATEGORY_ANIMATION, "[Enemy] Triggering Death");
 			TriggerDeath();
 		}
-		else if (bIsHit && !s_bWasHit)
+		else if (bIsHit && !m_bWasHit)
 		{
+			Zenith_Log(LOG_CATEGORY_ANIMATION, "[Enemy] Triggering Hit");
 			TriggerHit();
 		}
-		else if (bIsAttacking && !s_bWasAttacking)
+		else if (bIsAttacking && !m_bWasAttacking)
 		{
+			Zenith_Log(LOG_CATEGORY_ANIMATION, "[Enemy] Triggering Attack, current state: %s, speed: %.2f",
+				GetCurrentState().c_str(), fSpeed);
 			TriggerAttack(1);
 		}
 
-		s_bWasAttacking = bIsAttacking;
-		s_bWasHit = bIsHit;
-		s_bWasDead = bIsDead;
+		m_bWasAttacking = bIsAttacking;
+		m_bWasHit = bIsHit;
+		m_bWasDead = bIsDead;
 
 		m_xController.Update(fDt);
+
+		// Debug: Log state changes (per-instance tracking)
+		const std::string& strCurrentState = GetCurrentState();
+		if (strCurrentState != m_strLastState)
+		{
+			Zenith_Log(LOG_CATEGORY_ANIMATION, "[Enemy] Animation state changed: %s -> %s",
+				m_strLastState.c_str(), strCurrentState.c_str());
+			m_strLastState = strCurrentState;
+		}
 	}
 
 	// ========================================================================
@@ -214,6 +212,13 @@ public:
 	void TriggerAttack(int32_t iComboIndex)
 	{
 		// Attack trigger is consumed and handles combo chaining via exit time
+		if (!m_xController.HasStateMachine())
+		{
+			Zenith_Log(LOG_CATEGORY_ANIMATION, "[Enemy] TriggerAttack: NO STATE MACHINE!");
+			return;
+		}
+		Zenith_Log(LOG_CATEGORY_ANIMATION, "[Enemy] TriggerAttack: Setting trigger, has SM: %d",
+			m_xController.HasStateMachine());
 		m_xController.SetTrigger(CombatAnimParams::ATTACK_TRIGGER);
 	}
 
@@ -548,5 +553,12 @@ private:
 	// ========================================================================
 
 	Flux_AnimationController m_xController;
-	Flux_MeshGeometry* m_pxGeometry = nullptr;
+
+	// Per-instance state tracking for enemy updates (NOT static!)
+	bool m_bWasAttacking = false;
+	bool m_bWasHit = false;
+	bool m_bWasDead = false;
+
+	// Per-instance state change tracking for debug logging
+	std::string m_strLastState;
 };

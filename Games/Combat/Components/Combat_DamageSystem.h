@@ -384,9 +384,10 @@ private:
 
 		// Apply knockback with resistance
 		float fFinalForce = fForce * (1.0f - fResistance);
-		if (fFinalForce > 0.0f)
+		float fLen = glm::length(xDirection);
+		if (fFinalForce > 0.0f && fLen > 0.001f)
 		{
-			Zenith_Maths::Vector3 xImpulse = glm::normalize(xDirection) * fFinalForce;
+			Zenith_Maths::Vector3 xImpulse = (xDirection / fLen) * fFinalForce;
 			xImpulse.y = fFinalForce * 0.3f;  // Add slight upward component
 			Zenith_Physics::AddImpulse(xCollider.GetBodyID(), xImpulse);
 		}

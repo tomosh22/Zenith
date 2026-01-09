@@ -371,6 +371,71 @@ void Zenith_Physics::SetGravityEnabled(const JPH::BodyID& xBodyID, bool bEnabled
 	xBodyInterface.SetGravityFactor(xBodyID, bEnabled ? 1.0f : 0.0f);
 }
 
+void Zenith_Physics::LockRotation(const JPH::BodyID& xBodyID, bool bLockX, bool bLockY, bool bLockZ)
+{
+	if (xBodyID.IsInvalid()) return;
+	Zenith_Assert(s_pxPhysicsSystem != nullptr, "LockRotation: Physics system not initialized");
+	if (!s_pxPhysicsSystem) return;
+
+	JPH::BodyLockWrite xLock(s_pxPhysicsSystem->GetBodyLockInterface(), xBodyID);
+	if (xLock.Succeeded())
+	{
+		JPH::Body& xBody = xLock.GetBody();
+		if (xBody.IsDynamic())
+		{
+			JPH::MotionProperties* pxMotion = xBody.GetMotionProperties();
+
+			// Step 1: Zero out angular velocity on locked axes
+			JPH::Vec3 xAngVel = pxMotion->GetAngularVelocity();
+			if (bLockX) xAngVel.SetX(0.0f);
+			if (bLockY) xAngVel.SetY(0.0f);
+			if (bLockZ) xAngVel.SetZ(0.0f);
+			pxMotion->SetAngularVelocity(xAngVel);
+
+			// Step 2: Set inverse inertia to zero on locked axes to prevent angular acceleration
+			JPH::Vec3 xInvInertia = pxMotion->GetInverseInertiaDiagonal();
+			if (bLockX) xInvInertia.SetX(0.0f);
+			if (bLockY) xInvInertia.SetY(0.0f);
+			if (bLockZ) xInvInertia.SetZ(0.0f);
+			pxMotion->SetInverseInertia(xInvInertia, pxMotion->GetInertiaRotation());
+
+			// Step 3: Reset rotation to upright (keep only Y rotation)
+			// This fixes any tilt that already occurred
+			if (bLockX && bLockZ)
+			{
+				JPH::Quat xRot = xBody.GetRotation();
+				// Extract yaw (Y rotation) and create new quaternion with only Y rotation
+				JPH::Vec3 xForward = xRot.RotateAxisZ();
+				float fYaw = JPH::ATan2(xForward.GetX(), xForward.GetZ());
+				JPH::Quat xUprightRot = JPH::Quat::sRotation(JPH::Vec3::sAxisY(), fYaw);
+				// Use NoLock interface since we already hold the body lock
+				s_pxPhysicsSystem->GetBodyInterfaceNoLock().SetRotation(xBodyID, xUprightRot, JPH::EActivation::DontActivate);
+			}
+		}
+	}
+}
+
+void Zenith_Physics::EnforceUpright(const JPH::BodyID& xBodyID)
+{
+	if (xBodyID.IsInvalid()) return;
+	if (!s_pxPhysicsSystem) return;
+
+	JPH::BodyInterface& xBodyInterface = s_pxPhysicsSystem->GetBodyInterface();
+
+	// Zero out angular velocity on X and Z axes (keep Y rotation allowed)
+	JPH::Vec3 xAngVel = xBodyInterface.GetAngularVelocity(xBodyID);
+	xAngVel.SetX(0.0f);
+	xAngVel.SetZ(0.0f);
+	xBodyInterface.SetAngularVelocity(xBodyID, xAngVel);
+
+	// Reset rotation to upright (preserve only Y rotation/yaw)
+	JPH::Quat xRot = xBodyInterface.GetRotation(xBodyID);
+	JPH::Vec3 xForward = xRot.RotateAxisZ();
+	float fYaw = JPH::ATan2(xForward.GetX(), xForward.GetZ());
+	JPH::Quat xUprightRot = JPH::Quat::sRotation(JPH::Vec3::sAxisY(), fYaw);
+	xBodyInterface.SetRotation(xBodyID, xUprightRot, JPH::EActivation::DontActivate);
+}
+
 JPH::ValidateResult Zenith_Physics::PhysicsContactListener::OnContactValidate(
 	const JPH::Body& inBody1, const JPH::Body& inBody2,
 	JPH::RVec3Arg inBaseOffset, const JPH::CollideShapeResult& inCollisionResult)

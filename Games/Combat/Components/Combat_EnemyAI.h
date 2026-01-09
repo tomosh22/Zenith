@@ -45,8 +45,8 @@ struct Combat_EnemyConfig
 	float m_fMoveSpeed = 3.0f;
 	float m_fRotationSpeed = 8.0f;
 	float m_fDetectionRange = 15.0f;
-	float m_fAttackRange = 1.5f;
-	float m_fChaseStopDistance = 1.2f;
+	float m_fAttackRange = 1.2f;  // Melee attack range
+	float m_fChaseStopDistance = 0.8f;  // Stop just inside attack range
 	float m_fAttackDamage = 15.0f;
 	float m_fAttackDuration = 0.4f;
 	float m_fAttackCooldown = 1.5f;
@@ -78,6 +78,11 @@ public:
 		if (pxSkeleton)
 		{
 			m_xAnimController.Initialize(pxSkeleton);
+			Zenith_Log(LOG_CATEGORY_ANIMATION, "[Enemy %u] Animation controller initialized with skeleton", uEntityID.m_uIndex);
+		}
+		else
+		{
+			Zenith_Log(LOG_CATEGORY_ANIMATION, "[Enemy %u] WARNING: No skeleton provided, animation will not work!", uEntityID.m_uIndex);
 		}
 		m_xIKController.SetFootIKEnabled(true);
 		m_xIKController.SetLookAtIKEnabled(true);
@@ -123,6 +128,16 @@ public:
 			return;
 
 		Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
+
+		// Enforce upright orientation every frame (collision impulses can still tip characters)
+		if (xEntity.HasComponent<Zenith_ColliderComponent>())
+		{
+			Zenith_ColliderComponent& xCollider = xEntity.GetComponent<Zenith_ColliderComponent>();
+			if (xCollider.HasValidBody())
+			{
+				Zenith_Physics::EnforceUpright(xCollider.GetBodyID());
+			}
+		}
 
 		// Check if dead via damage system
 		if (Combat_DamageSystem::IsDead(m_uEntityID))
@@ -238,8 +253,18 @@ private:
 		float fDist = glm::distance(xMyPos, xTargetPos);
 
 		// Check if in attack range
+		static float s_fLogTimer = 0.0f;
+		s_fLogTimer += fDt;
+		if (s_fLogTimer > 1.0f)
+		{
+			Zenith_Log(LOG_CATEGORY_ANIMATION, "[Enemy %u] Chase: dist=%.2f, attackRange=%.2f, cooldown=%.2f",
+				m_uEntityID.m_uIndex, fDist, m_xConfig.m_fAttackRange, m_fAttackCooldownTimer);
+			s_fLogTimer = 0.0f;
+		}
+
 		if (fDist <= m_xConfig.m_fAttackRange && m_fAttackCooldownTimer <= 0.0f)
 		{
+			Zenith_Log(LOG_CATEGORY_ANIMATION, "[Enemy %u] Starting attack! dist=%.2f", m_uEntityID.m_uIndex, fDist);
 			StartAttack();
 			return;
 		}
@@ -249,24 +274,28 @@ private:
 		{
 			Zenith_Maths::Vector3 xDirection = xTargetPos - xMyPos;
 			xDirection.y = 0.0f;
-			xDirection = glm::normalize(xDirection);
-
-			// Apply movement via physics
-			if (xEntity.HasComponent<Zenith_ColliderComponent>())
+			float fLen = glm::length(xDirection);
+			if (fLen > 0.001f)
 			{
-				Zenith_ColliderComponent& xCollider = xEntity.GetComponent<Zenith_ColliderComponent>();
-				if (xCollider.HasValidBody())
+				xDirection = xDirection / fLen;
+
+				// Apply movement via physics
+				if (xEntity.HasComponent<Zenith_ColliderComponent>())
 				{
-					Zenith_Maths::Vector3 xVelocity = xDirection * m_xConfig.m_fMoveSpeed;
-					xVelocity.y = Zenith_Physics::GetLinearVelocity(xCollider.GetBodyID()).y;
-					Zenith_Physics::SetLinearVelocity(xCollider.GetBodyID(), xVelocity);
+					Zenith_ColliderComponent& xCollider = xEntity.GetComponent<Zenith_ColliderComponent>();
+					if (xCollider.HasValidBody())
+					{
+						Zenith_Maths::Vector3 xVelocity = xDirection * m_xConfig.m_fMoveSpeed;
+						xVelocity.y = Zenith_Physics::GetLinearVelocity(xCollider.GetBodyID()).y;
+						Zenith_Physics::SetLinearVelocity(xCollider.GetBodyID(), xVelocity);
+					}
 				}
+
+				// Rotate towards player
+				RotateTowards(xTransform, xDirection, fDt);
+
+				m_fCurrentSpeed = m_xConfig.m_fMoveSpeed;
 			}
-
-			// Rotate towards player
-			RotateTowards(xTransform, xDirection, fDt);
-
-			m_fCurrentSpeed = m_xConfig.m_fMoveSpeed;
 		}
 		else
 		{
@@ -384,9 +413,12 @@ public:
 	 */
 	void RegisterEnemy(Zenith_EntityID uEntityID, const Combat_EnemyConfig& xConfig, Flux_SkeletonInstance* pxSkeleton = nullptr)
 	{
+		Zenith_Log(LOG_CATEGORY_ANIMATION, "[EnemyManager] RegisterEnemy %u, skeleton=%p, vector size before=%zu",
+			uEntityID.m_uIndex, pxSkeleton, m_axEnemies.size());
 		Combat_EnemyAI xAI;
 		xAI.Initialize(uEntityID, xConfig, pxSkeleton);
 		m_axEnemies.push_back(std::move(xAI));
+		Zenith_Log(LOG_CATEGORY_ANIMATION, "[EnemyManager] After push_back, vector size=%zu", m_axEnemies.size());
 	}
 
 	/**
@@ -394,25 +426,37 @@ public:
 	 */
 	void Update(float fDt)
 	{
+		static float s_fLogTimer = 0.0f;
+		s_fLogTimer += fDt;
+		bool bLogThisFrame = s_fLogTimer > 2.0f;
+		if (bLogThisFrame)
+		{
+			Zenith_Log(LOG_CATEGORY_ANIMATION, "[EnemyManager] Updating %zu enemies", m_axEnemies.size());
+			s_fLogTimer = 0.0f;
+		}
+
 		for (Combat_EnemyAI& xEnemy : m_axEnemies)
 		{
+			if (bLogThisFrame)
+			{
+				Zenith_Log(LOG_CATEGORY_ANIMATION, "[EnemyManager] Enemy %u state=%d", xEnemy.GetEntityID().m_uIndex, (int)xEnemy.GetState());
+			}
 			xEnemy.Update(fDt);
 		}
+
+		// Process deferred hit stuns AFTER update loop completes
+		// This avoids nested iteration over m_axEnemies which can cause crashes
+		ProcessDeferredHitStuns();
 	}
 
 	/**
-	 * TriggerHitStunForEntity - Notify enemy of damage
+	 * TriggerHitStunForEntity - Queue enemy for hit stun (deferred processing)
+	 * Note: This is called during damage events which may occur during Update iteration.
+	 * We defer processing to avoid nested iteration over m_axEnemies.
 	 */
 	void TriggerHitStunForEntity(Zenith_EntityID uEntityID)
 	{
-		for (Combat_EnemyAI& xEnemy : m_axEnemies)
-		{
-			if (xEnemy.GetEntityID() == uEntityID)
-			{
-				xEnemy.TriggerHitStun();
-				break;
-			}
-		}
+		m_axDeferredHitStuns.push_back(uEntityID);
 	}
 
 	/**
@@ -435,6 +479,7 @@ public:
 	void Reset()
 	{
 		m_axEnemies.clear();
+		m_axDeferredHitStuns.clear();
 	}
 
 	/**
@@ -444,5 +489,25 @@ public:
 	const std::vector<Combat_EnemyAI>& GetEnemies() const { return m_axEnemies; }
 
 private:
+	/**
+	 * ProcessDeferredHitStuns - Apply queued hit stuns after Update completes
+	 */
+	void ProcessDeferredHitStuns()
+	{
+		for (Zenith_EntityID uEntityID : m_axDeferredHitStuns)
+		{
+			for (Combat_EnemyAI& xEnemy : m_axEnemies)
+			{
+				if (xEnemy.GetEntityID() == uEntityID)
+				{
+					xEnemy.TriggerHitStun();
+					break;
+				}
+			}
+		}
+		m_axDeferredHitStuns.clear();
+	}
+
 	std::vector<Combat_EnemyAI> m_axEnemies;
+	std::vector<Zenith_EntityID> m_axDeferredHitStuns;
 };

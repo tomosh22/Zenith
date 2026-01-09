@@ -241,7 +241,7 @@ Flux_AnimationController* Zenith_ModelComponent::GetOrCreateAnimationController(
 
 	if (m_pxModelInstance && m_pxModelInstance->HasSkeleton())
 	{
-		// Initialize with skeleton instance for new model instance system
+		// Initialize with skeleton instance
 		Flux_SkeletonInstance* pxSkeleton = m_pxModelInstance->GetSkeletonInstance();
 		if (pxSkeleton)
 		{
@@ -252,21 +252,6 @@ Flux_AnimationController* Zenith_ModelComponent::GetOrCreateAnimationController(
 		else
 		{
 			Zenith_Log(LOG_CATEGORY_ANIMATION, "Model has skeleton but GetSkeletonInstance() returned null");
-		}
-	}
-	else if (m_xMeshEntries.GetSize() > 0)
-	{
-		// Legacy: Initialize with first mesh that has bones
-		for (uint32_t u = 0; u < m_xMeshEntries.GetSize(); u++)
-		{
-			Flux_MeshGeometry* pxGeometry = m_xMeshEntries.Get(u).m_pxGeometry;
-			if (pxGeometry && pxGeometry->GetNumBones() > 0)
-			{
-				m_pxAnimController->Initialize(pxGeometry);
-				Zenith_Log(LOG_CATEGORY_ANIMATION, "Created animation controller for legacy mesh (bones: %u)",
-					pxGeometry->GetNumBones());
-				break;
-			}
 		}
 	}
 

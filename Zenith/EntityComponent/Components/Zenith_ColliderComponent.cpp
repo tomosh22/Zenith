@@ -137,16 +137,27 @@ void Zenith_ColliderComponent::AddCollider(CollisionVolumeType eVolumeType, Rigi
 	break;
 	case COLLISION_VOLUME_TYPE_CAPSULE:
 	{
-		// Capsule extends along Y axis (vertical orientation)
-		// Radius is based on horizontal extents (X and Z)
-		// Half-height is the cylindrical portion's half-length (Y scale minus radius for cap)
-		float fRadius = std::max(xScale.x, xScale.z);
-		// Ensure half-height is non-negative (if Y <= radius, we get a sphere-like capsule)
-		float fHalfHeight = std::max(fMinScale, xScale.y - fRadius);
-		if (xScale.y <= fRadius)
+		float fRadius, fHalfHeight;
+
+		if (m_bUseExplicitCapsuleDimensions)
 		{
-			// Y scale is smaller than radius - use Y as half-height to prevent degenerate capsule
-			fHalfHeight = fMinScale;
+			// Use explicitly specified dimensions
+			fRadius = m_fExplicitCapsuleRadius;
+			fHalfHeight = m_fExplicitCapsuleHalfHeight;
+		}
+		else
+		{
+			// Capsule extends along Y axis (vertical orientation)
+			// Radius is based on horizontal extents (X and Z)
+			// Half-height is the cylindrical portion's half-length (Y scale minus radius for cap)
+			fRadius = std::max(xScale.x, xScale.z);
+			// Ensure half-height is non-negative (if Y <= radius, we get a sphere-like capsule)
+			fHalfHeight = std::max(fMinScale, xScale.y - fRadius);
+			if (xScale.y <= fRadius)
+			{
+				// Y scale is smaller than radius - use Y as half-height to prevent degenerate capsule
+				fHalfHeight = fMinScale;
+			}
 		}
 		pxShape = new JPH::CapsuleShape(fHalfHeight, fRadius);
 	}
@@ -360,6 +371,17 @@ void Zenith_ColliderComponent::AddCollider(CollisionVolumeType eVolumeType, Rigi
 		// Use packed 64-bit representation of EntityID (index + generation)
 		m_pxRigidBody->SetUserData(m_xParentEntity.GetEntityID().GetPacked());
 	}
+}
+
+void Zenith_ColliderComponent::AddCapsuleCollider(float fRadius, float fHalfHeight, RigidBodyType eRigidBodyType)
+{
+	// Store explicit dimensions
+	m_fExplicitCapsuleRadius = fRadius;
+	m_fExplicitCapsuleHalfHeight = fHalfHeight;
+	m_bUseExplicitCapsuleDimensions = true;
+
+	// Delegate to AddCollider which will use the explicit dimensions
+	AddCollider(COLLISION_VOLUME_TYPE_CAPSULE, eRigidBodyType);
 }
 
 void Zenith_ColliderComponent::WriteToDataStream(Zenith_DataStream& xStream) const

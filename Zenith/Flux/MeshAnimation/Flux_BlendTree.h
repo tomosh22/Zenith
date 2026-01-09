@@ -7,7 +7,6 @@
 #include <functional>
 
 // Forward declarations
-class Flux_MeshGeometry;
 class Flux_AnimationClipCollection;
 class Zenith_SkeletonAsset;
 
@@ -20,12 +19,7 @@ class Flux_BlendTreeNode
 public:
 	virtual ~Flux_BlendTreeNode() = default;
 
-	// Evaluate this node and output a pose (legacy mesh geometry path)
-	virtual void Evaluate(float fDt,
-		Flux_SkeletonPose& xOutPose,
-		const Flux_MeshGeometry& xGeometry) = 0;
-
-	// Evaluate this node using skeleton asset (model instance path)
+	// Evaluate this node and output a pose
 	virtual void Evaluate(float fDt,
 		Flux_SkeletonPose& xOutPose,
 		const Zenith_SkeletonAsset& xSkeleton) = 0;
@@ -59,10 +53,6 @@ class Flux_BlendTreeNode_Clip : public Flux_BlendTreeNode
 public:
 	Flux_BlendTreeNode_Clip() = default;
 	Flux_BlendTreeNode_Clip(Flux_AnimationClip* pxClip, float fPlaybackRate = 1.0f);
-
-	void Evaluate(float fDt,
-		Flux_SkeletonPose& xOutPose,
-		const Flux_MeshGeometry& xGeometry) override;
 
 	void Evaluate(float fDt,
 		Flux_SkeletonPose& xOutPose,
@@ -114,10 +104,6 @@ public:
 
 	void Evaluate(float fDt,
 		Flux_SkeletonPose& xOutPose,
-		const Flux_MeshGeometry& xGeometry) override;
-
-	void Evaluate(float fDt,
-		Flux_SkeletonPose& xOutPose,
 		const Zenith_SkeletonAsset& xSkeleton) override;
 
 	float GetNormalizedTime() const override;
@@ -166,10 +152,6 @@ public:
 
 	void Evaluate(float fDt,
 		Flux_SkeletonPose& xOutPose,
-		const Flux_MeshGeometry& xGeometry) override;
-
-	void Evaluate(float fDt,
-		Flux_SkeletonPose& xOutPose,
 		const Zenith_SkeletonAsset& xSkeleton) override;
 
 	float GetNormalizedTime() const override;
@@ -215,10 +197,6 @@ public:
 
 	Flux_BlendTreeNode_BlendSpace2D() = default;
 	~Flux_BlendTreeNode_BlendSpace2D();
-
-	void Evaluate(float fDt,
-		Flux_SkeletonPose& xOutPose,
-		const Flux_MeshGeometry& xGeometry) override;
 
 	void Evaluate(float fDt,
 		Flux_SkeletonPose& xOutPose,
@@ -276,10 +254,6 @@ public:
 
 	void Evaluate(float fDt,
 		Flux_SkeletonPose& xOutPose,
-		const Flux_MeshGeometry& xGeometry) override;
-
-	void Evaluate(float fDt,
-		Flux_SkeletonPose& xOutPose,
 		const Zenith_SkeletonAsset& xSkeleton) override;
 
 	float GetNormalizedTime() const override;
@@ -323,10 +297,6 @@ public:
 
 	void Evaluate(float fDt,
 		Flux_SkeletonPose& xOutPose,
-		const Flux_MeshGeometry& xGeometry) override;
-
-	void Evaluate(float fDt,
-		Flux_SkeletonPose& xOutPose,
 		const Zenith_SkeletonAsset& xSkeleton) override;
 
 	float GetNormalizedTime() const override;
@@ -365,10 +335,6 @@ class Flux_BlendTreeNode_Select : public Flux_BlendTreeNode
 public:
 	Flux_BlendTreeNode_Select() = default;
 	~Flux_BlendTreeNode_Select();
-
-	void Evaluate(float fDt,
-		Flux_SkeletonPose& xOutPose,
-		const Flux_MeshGeometry& xGeometry) override;
 
 	void Evaluate(float fDt,
 		Flux_SkeletonPose& xOutPose,

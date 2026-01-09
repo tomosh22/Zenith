@@ -44,6 +44,8 @@ public:
 	static void AddForce(const JPH::BodyID& xBodyID, const Zenith_Maths::Vector3& xForce);
 	static void AddImpulse(const JPH::BodyID& xBodyID, const Zenith_Maths::Vector3& xImpulse);
 	static void SetGravityEnabled(const JPH::BodyID& xBodyID, bool bEnabled);
+	static void LockRotation(const JPH::BodyID& xBodyID, bool bLockX, bool bLockY, bool bLockZ);
+	static void EnforceUpright(const JPH::BodyID& xBodyID); // Call every frame to keep body upright
 
 	struct RaycastInfo
 	{

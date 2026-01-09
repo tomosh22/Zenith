@@ -48,6 +48,11 @@ public:
 
 	const std::string& GetBoneName() const { return m_strBoneName; }
 
+	// Check if channel has keyframes for each component
+	bool HasPositionKeyframes() const { return !m_xPositions.empty(); }
+	bool HasRotationKeyframes() const { return !m_xRotations.empty(); }
+	bool HasScaleKeyframes() const { return !m_xScales.empty(); }
+
 	void WriteToDataStream(Zenith_DataStream& xStream) const;
 	void ReadFromDataStream(Zenith_DataStream& xStream);
 

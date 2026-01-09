@@ -38,6 +38,7 @@ public:
 	Zenith_EntityID GetEntityID() { return m_xParentEntity.GetEntityID(); }
 
 	void AddCollider(CollisionVolumeType eVolumeType, RigidBodyType eRigidBodyType);
+	void AddCapsuleCollider(float fRadius, float fHalfHeight, RigidBodyType eRigidBodyType);
 	void RebuildCollider(); // Rebuild collider with current transform (e.g., after scale change)
 
 #ifdef ZENITH_TOOLS
@@ -188,6 +189,11 @@ private:
 
 	CollisionVolumeType m_eVolumeType;
 	RigidBodyType m_eRigidBodyType;
+
+	// Explicit capsule dimensions (used when AddCapsuleCollider is called)
+	float m_fExplicitCapsuleRadius = 0.0f;
+	float m_fExplicitCapsuleHalfHeight = 0.0f;
+	bool m_bUseExplicitCapsuleDimensions = false;
 
 	struct TerrainMeshData
 	{

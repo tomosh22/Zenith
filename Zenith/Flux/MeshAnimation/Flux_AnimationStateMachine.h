@@ -8,7 +8,6 @@
 #include <variant>
 
 // Forward declarations
-class Flux_MeshGeometry;
 class Flux_AnimationClipCollection;
 class Zenith_SkeletonAsset;
 
@@ -226,11 +225,6 @@ public:
 	// Returns the resulting skeleton pose
 	void Update(float fDt,
 		Flux_SkeletonPose& xOutPose,
-		const Flux_MeshGeometry& xGeometry);
-
-	// Update using skeleton asset (for model instance system)
-	void Update(float fDt,
-		Flux_SkeletonPose& xOutPose,
 		const Zenith_SkeletonAsset& xSkeleton);
 
 	// Check if currently in a transition
@@ -255,7 +249,6 @@ public:
 
 private:
 	void StartTransition(const Flux_StateTransition& xTransition);
-	void UpdateTransition(float fDt, const Flux_MeshGeometry& xGeometry);
 	void UpdateTransition(float fDt, const Zenith_SkeletonAsset& xSkeleton);
 	void CompleteTransition();
 

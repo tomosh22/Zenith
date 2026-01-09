@@ -1,6 +1,5 @@
 #include "Zenith.h"
 #include "Flux_BlendTree.h"
-#include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "AssetHandling/Zenith_SkeletonAsset.h"
 #include "Core/Zenith_Core.h"
 #include <algorithm>
@@ -43,40 +42,6 @@ Flux_BlendTreeNode_Clip::Flux_BlendTreeNode_Clip(Flux_AnimationClip* pxClip, flo
 
 void Flux_BlendTreeNode_Clip::Evaluate(float fDt,
 	Flux_SkeletonPose& xOutPose,
-	const Flux_MeshGeometry& xGeometry)
-{
-	if (!m_pxClip)
-	{
-		// No clip, output identity pose
-		xOutPose.Reset();
-		return;
-	}
-
-	// Advance time
-	m_fCurrentTimestamp += fDt * m_fPlaybackRate;
-
-	// Handle looping
-	float fDuration = m_pxClip->GetDuration();
-	if (fDuration > 0.0f)
-	{
-		if (m_pxClip->IsLooping())
-		{
-			m_fCurrentTimestamp = fmod(m_fCurrentTimestamp, fDuration);
-			if (m_fCurrentTimestamp < 0.0f)
-				m_fCurrentTimestamp += fDuration;
-		}
-		else
-		{
-			m_fCurrentTimestamp = glm::clamp(m_fCurrentTimestamp, 0.0f, fDuration);
-		}
-	}
-
-	// Sample the clip
-	xOutPose.SampleFromClip(*m_pxClip, m_fCurrentTimestamp, xGeometry);
-}
-
-void Flux_BlendTreeNode_Clip::Evaluate(float fDt,
-	Flux_SkeletonPose& xOutPose,
 	const Zenith_SkeletonAsset& xSkeleton)
 {
 	if (!m_pxClip)
@@ -107,19 +72,10 @@ void Flux_BlendTreeNode_Clip::Evaluate(float fDt,
 
 	// Initialize output pose with bind pose values from skeleton
 	// This ensures bones WITHOUT animation channels keep their bind pose
-	// instead of getting identity values
-	uint32_t uNumBones = xSkeleton.GetNumBones();
-	for (uint32_t i = 0; i < uNumBones && i < FLUX_MAX_BONES; ++i)
-	{
-		const Zenith_SkeletonAsset::Bone& xBone = xSkeleton.GetBone(i);
-		Flux_BoneLocalPose& xPose = xOutPose.GetLocalPose(i);
-		xPose.m_xPosition = xBone.m_xBindPosition;
-		xPose.m_xRotation = xBone.m_xBindRotation;
-		xPose.m_xScale = xBone.m_xBindScale;
-	}
+	// SampleFromClip will only update components that have keyframes
+	xOutPose.InitFromBindPose(xSkeleton);
 
-	// Sample the clip using skeleton asset for bone mapping
-	// This overwrites bind pose values for bones that have animation channels
+	// Sample the clip - only components with keyframes will be overwritten
 	xOutPose.SampleFromClip(*m_pxClip, m_fCurrentTimestamp, xSkeleton);
 }
 
@@ -181,25 +137,6 @@ Flux_BlendTreeNode_Blend::~Flux_BlendTreeNode_Blend()
 {
 	delete m_pxChildA;
 	delete m_pxChildB;
-}
-
-void Flux_BlendTreeNode_Blend::Evaluate(float fDt,
-	Flux_SkeletonPose& xOutPose,
-	const Flux_MeshGeometry& xGeometry)
-{
-	// Evaluate both children
-	if (m_pxChildA)
-		m_pxChildA->Evaluate(fDt, m_xPoseA, xGeometry);
-	else
-		m_xPoseA.Reset();
-
-	if (m_pxChildB)
-		m_pxChildB->Evaluate(fDt, m_xPoseB, xGeometry);
-	else
-		m_xPoseB.Reset();
-
-	// Blend results
-	Flux_SkeletonPose::Blend(xOutPose, m_xPoseA, m_xPoseB, m_fBlendWeight);
 }
 
 void Flux_BlendTreeNode_Blend::Evaluate(float fDt,
@@ -327,72 +264,6 @@ void Flux_BlendTreeNode_BlendSpace1D::SortBlendPoints()
 		[](const BlendPoint& a, const BlendPoint& b) {
 			return a.m_fPosition < b.m_fPosition;
 		});
-}
-
-void Flux_BlendTreeNode_BlendSpace1D::Evaluate(float fDt,
-	Flux_SkeletonPose& xOutPose,
-	const Flux_MeshGeometry& xGeometry)
-{
-	if (m_xBlendPoints.empty())
-	{
-		xOutPose.Reset();
-		return;
-	}
-
-	if (m_xBlendPoints.size() == 1)
-	{
-		if (m_xBlendPoints[0].m_pxNode)
-			m_xBlendPoints[0].m_pxNode->Evaluate(fDt, xOutPose, xGeometry);
-		return;
-	}
-
-	// Find the two blend points to interpolate between
-	size_t uLowerIdx = 0;
-	size_t uUpperIdx = m_xBlendPoints.size() - 1;
-
-	for (size_t i = 0; i < m_xBlendPoints.size() - 1; ++i)
-	{
-		if (m_fParameter >= m_xBlendPoints[i].m_fPosition &&
-			m_fParameter <= m_xBlendPoints[i + 1].m_fPosition)
-		{
-			uLowerIdx = i;
-			uUpperIdx = i + 1;
-			break;
-		}
-	}
-
-	// Clamp to edges
-	if (m_fParameter <= m_xBlendPoints[0].m_fPosition)
-	{
-		if (m_xBlendPoints[0].m_pxNode)
-			m_xBlendPoints[0].m_pxNode->Evaluate(fDt, xOutPose, xGeometry);
-		return;
-	}
-
-	if (m_fParameter >= m_xBlendPoints.back().m_fPosition)
-	{
-		if (m_xBlendPoints.back().m_pxNode)
-			m_xBlendPoints.back().m_pxNode->Evaluate(fDt, xOutPose, xGeometry);
-		return;
-	}
-
-	// Evaluate both points
-	if (m_xBlendPoints[uLowerIdx].m_pxNode)
-		m_xBlendPoints[uLowerIdx].m_pxNode->Evaluate(fDt, m_xPoseA, xGeometry);
-	else
-		m_xPoseA.Reset();
-
-	if (m_xBlendPoints[uUpperIdx].m_pxNode)
-		m_xBlendPoints[uUpperIdx].m_pxNode->Evaluate(fDt, m_xPoseB, xGeometry);
-	else
-		m_xPoseB.Reset();
-
-	// Calculate blend factor
-	float fRange = m_xBlendPoints[uUpperIdx].m_fPosition - m_xBlendPoints[uLowerIdx].m_fPosition;
-	float fBlend = (fRange > 0.0f) ?
-		(m_fParameter - m_xBlendPoints[uLowerIdx].m_fPosition) / fRange : 0.0f;
-
-	Flux_SkeletonPose::Blend(xOutPose, m_xPoseA, m_xPoseB, fBlend);
 }
 
 void Flux_BlendTreeNode_BlendSpace1D::Evaluate(float fDt,
@@ -672,91 +543,6 @@ void Flux_BlendTreeNode_BlendSpace2D::FindNearestPoints(const Zenith_Maths::Vect
 
 void Flux_BlendTreeNode_BlendSpace2D::Evaluate(float fDt,
 	Flux_SkeletonPose& xOutPose,
-	const Flux_MeshGeometry& xGeometry)
-{
-	if (m_xBlendPoints.empty())
-	{
-		xOutPose.Reset();
-		return;
-	}
-
-	if (m_xBlendPoints.size() == 1)
-	{
-		if (m_xBlendPoints[0].m_pxNode)
-			m_xBlendPoints[0].m_pxNode->Evaluate(fDt, xOutPose, xGeometry);
-		return;
-	}
-
-	// Try to find containing triangle
-	uint32_t idx0, idx1, idx2;
-	float w0, w1, w2;
-
-	if (FindContainingTriangle(m_xParameter, idx0, idx1, idx2, w0, w1, w2))
-	{
-		// Ensure temp poses array is big enough
-		m_xTempPoses.resize(3);
-
-		// Evaluate the three vertices
-		if (m_xBlendPoints[idx0].m_pxNode)
-			m_xBlendPoints[idx0].m_pxNode->Evaluate(fDt, m_xTempPoses[0], xGeometry);
-		else
-			m_xTempPoses[0].Reset();
-
-		if (m_xBlendPoints[idx1].m_pxNode)
-			m_xBlendPoints[idx1].m_pxNode->Evaluate(fDt, m_xTempPoses[1], xGeometry);
-		else
-			m_xTempPoses[1].Reset();
-
-		if (m_xBlendPoints[idx2].m_pxNode)
-			m_xBlendPoints[idx2].m_pxNode->Evaluate(fDt, m_xTempPoses[2], xGeometry);
-		else
-			m_xTempPoses[2].Reset();
-
-		// Blend with barycentric weights
-		Flux_SkeletonPose xTemp;
-		Flux_SkeletonPose::Blend(xTemp, m_xTempPoses[0], m_xTempPoses[1], w1 / (w0 + w1 + 0.0001f));
-		Flux_SkeletonPose::Blend(xOutPose, xTemp, m_xTempPoses[2], w2);
-	}
-	else
-	{
-		// Fallback: use inverse distance weighting
-		std::vector<std::pair<size_t, float>> xWeights;
-		FindNearestPoints(m_xParameter, xWeights);
-
-		if (xWeights.empty())
-		{
-			xOutPose.Reset();
-			return;
-		}
-
-		m_xTempPoses.resize(xWeights.size());
-
-		// Evaluate all weighted points
-		for (size_t i = 0; i < xWeights.size(); ++i)
-		{
-			size_t idx = xWeights[i].first;
-			if (m_xBlendPoints[idx].m_pxNode)
-				m_xBlendPoints[idx].m_pxNode->Evaluate(fDt, m_xTempPoses[i], xGeometry);
-			else
-				m_xTempPoses[i].Reset();
-		}
-
-		// Blend based on weights
-		xOutPose.CopyFrom(m_xTempPoses[0]);
-		float fAccumWeight = xWeights[0].second;
-
-		for (size_t i = 1; i < xWeights.size(); ++i)
-		{
-			float fNewWeight = xWeights[i].second;
-			float fBlend = fNewWeight / (fAccumWeight + fNewWeight);
-			Flux_SkeletonPose::Blend(xOutPose, xOutPose, m_xTempPoses[i], fBlend);
-			fAccumWeight += fNewWeight;
-		}
-	}
-}
-
-void Flux_BlendTreeNode_BlendSpace2D::Evaluate(float fDt,
-	Flux_SkeletonPose& xOutPose,
 	const Zenith_SkeletonAsset& xSkeleton)
 {
 	if (m_xBlendPoints.empty())
@@ -948,26 +734,6 @@ Flux_BlendTreeNode_Additive::~Flux_BlendTreeNode_Additive()
 
 void Flux_BlendTreeNode_Additive::Evaluate(float fDt,
 	Flux_SkeletonPose& xOutPose,
-	const Flux_MeshGeometry& xGeometry)
-{
-	// Evaluate base
-	if (m_pxBaseNode)
-		m_pxBaseNode->Evaluate(fDt, m_xBasePose, xGeometry);
-	else
-		m_xBasePose.Reset();
-
-	// Evaluate additive
-	if (m_pxAdditiveNode)
-		m_pxAdditiveNode->Evaluate(fDt, m_xAdditivePose, xGeometry);
-	else
-		m_xAdditivePose.Reset();
-
-	// Apply additive blend
-	Flux_SkeletonPose::AdditiveBlend(xOutPose, m_xBasePose, m_xAdditivePose, m_fAdditiveWeight);
-}
-
-void Flux_BlendTreeNode_Additive::Evaluate(float fDt,
-	Flux_SkeletonPose& xOutPose,
 	const Zenith_SkeletonAsset& xSkeleton)
 {
 	// Evaluate base
@@ -1067,26 +833,6 @@ Flux_BlendTreeNode_Masked::~Flux_BlendTreeNode_Masked()
 {
 	delete m_pxBaseNode;
 	delete m_pxOverrideNode;
-}
-
-void Flux_BlendTreeNode_Masked::Evaluate(float fDt,
-	Flux_SkeletonPose& xOutPose,
-	const Flux_MeshGeometry& xGeometry)
-{
-	// Evaluate base
-	if (m_pxBaseNode)
-		m_pxBaseNode->Evaluate(fDt, m_xBasePose, xGeometry);
-	else
-		m_xBasePose.Reset();
-
-	// Evaluate override
-	if (m_pxOverrideNode)
-		m_pxOverrideNode->Evaluate(fDt, m_xOverridePose, xGeometry);
-	else
-		m_xOverridePose.Reset();
-
-	// Apply masked blend
-	Flux_SkeletonPose::MaskedBlend(xOutPose, m_xBasePose, m_xOverridePose, m_xBoneMask.GetWeights());
 }
 
 void Flux_BlendTreeNode_Masked::Evaluate(float fDt,
@@ -1209,22 +955,6 @@ void Flux_BlendTreeNode_Select::SetSelectedIndex(int32_t iIndex)
 				m_xChildren[m_iSelectedIndex]->Reset();
 		}
 	}
-}
-
-void Flux_BlendTreeNode_Select::Evaluate(float fDt,
-	Flux_SkeletonPose& xOutPose,
-	const Flux_MeshGeometry& xGeometry)
-{
-	if (m_iSelectedIndex >= 0 && m_iSelectedIndex < static_cast<int32_t>(m_xChildren.size()))
-	{
-		if (m_xChildren[m_iSelectedIndex])
-		{
-			m_xChildren[m_iSelectedIndex]->Evaluate(fDt, xOutPose, xGeometry);
-			return;
-		}
-	}
-
-	xOutPose.Reset();
 }
 
 void Flux_BlendTreeNode_Select::Evaluate(float fDt,

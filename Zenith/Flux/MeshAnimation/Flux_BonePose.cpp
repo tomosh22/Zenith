@@ -183,9 +183,14 @@ void Flux_SkeletonPose::SampleFromClip(const Flux_AnimationClip& xClip,
 			uint32_t uBoneIndex = it->second.first;
 			if (uBoneIndex < FLUX_MAX_BONES)
 			{
-				m_axLocalPoses[uBoneIndex].m_xPosition = xChannel.SamplePosition(fTimeInTicks);
-				m_axLocalPoses[uBoneIndex].m_xRotation = xChannel.SampleRotation(fTimeInTicks);
-				m_axLocalPoses[uBoneIndex].m_xScale = xChannel.SampleScale(fTimeInTicks);
+				// Only update components that have keyframes in the animation
+				// This preserves bind pose values for components not animated
+				if (xChannel.HasPositionKeyframes())
+					m_axLocalPoses[uBoneIndex].m_xPosition = xChannel.SamplePosition(fTimeInTicks);
+				if (xChannel.HasRotationKeyframes())
+					m_axLocalPoses[uBoneIndex].m_xRotation = xChannel.SampleRotation(fTimeInTicks);
+				if (xChannel.HasScaleKeyframes())
+					m_axLocalPoses[uBoneIndex].m_xScale = xChannel.SampleScale(fTimeInTicks);
 			}
 		}
 	}
@@ -247,11 +252,31 @@ void Flux_SkeletonPose::SampleFromClip(const Flux_AnimationClip& xClip,
 			uint32_t uBoneIndex = it->second;
 			if (uBoneIndex < FLUX_MAX_BONES)
 			{
-				m_axLocalPoses[uBoneIndex].m_xPosition = xChannel.SamplePosition(fTimeInTicks);
-				m_axLocalPoses[uBoneIndex].m_xRotation = xChannel.SampleRotation(fTimeInTicks);
-				m_axLocalPoses[uBoneIndex].m_xScale = xChannel.SampleScale(fTimeInTicks);
+				// Only update components that have keyframes in the animation
+				// This preserves bind pose values for components not animated
+				if (xChannel.HasPositionKeyframes())
+					m_axLocalPoses[uBoneIndex].m_xPosition = xChannel.SamplePosition(fTimeInTicks);
+				if (xChannel.HasRotationKeyframes())
+					m_axLocalPoses[uBoneIndex].m_xRotation = xChannel.SampleRotation(fTimeInTicks);
+				if (xChannel.HasScaleKeyframes())
+					m_axLocalPoses[uBoneIndex].m_xScale = xChannel.SampleScale(fTimeInTicks);
 			}
 		}
+	}
+}
+
+void Flux_SkeletonPose::InitFromBindPose(const Zenith_SkeletonAsset& xSkeleton)
+{
+	uint32_t uNumBones = xSkeleton.GetNumBones();
+	m_uNumBones = std::min(uNumBones, (uint32_t)FLUX_MAX_BONES);
+
+	// Initialize each bone's local pose from the skeleton's bind pose
+	for (uint32_t i = 0; i < m_uNumBones; ++i)
+	{
+		const Zenith_SkeletonAsset::Bone& xBone = xSkeleton.GetBone(i);
+		m_axLocalPoses[i].m_xPosition = xBone.m_xBindPosition;
+		m_axLocalPoses[i].m_xRotation = xBone.m_xBindRotation;
+		m_axLocalPoses[i].m_xScale = xBone.m_xBindScale;
 	}
 }
 

@@ -4057,44 +4057,53 @@ static Flux_AnimationClip* CreateWalkAnimation()
 	pxClip->SetTicksPerSecond(24);
 	pxClip->SetLooping(true);
 
-	const Zenith_Maths::Vector3 xZAxis(0, 0, 1);
+	// Use X axis for forward/backward leg and arm swing
+	const Zenith_Maths::Vector3 xXAxis(1, 0, 0);
 
-	// Left Upper Leg rotation
+	// Left Upper Leg rotation (full cycle: forward -> neutral -> back -> neutral -> forward)
 	{
 		Flux_BoneChannel xChannel;
-		xChannel.AddRotationKeyframe(0.0f, glm::angleAxis(glm::radians(30.0f), xZAxis));
-		xChannel.AddRotationKeyframe(12.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.AddRotationKeyframe(24.0f, glm::angleAxis(glm::radians(-30.0f), xZAxis));
+		xChannel.AddRotationKeyframe(0.0f, glm::angleAxis(glm::radians(30.0f), xXAxis));
+		xChannel.AddRotationKeyframe(6.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(12.0f, glm::angleAxis(glm::radians(-30.0f), xXAxis));
+		xChannel.AddRotationKeyframe(18.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(24.0f, glm::angleAxis(glm::radians(30.0f), xXAxis));
 		xChannel.SortKeyframes();
 		pxClip->AddBoneChannel("LeftUpperLeg", std::move(xChannel));
 	}
 
-	// Right Upper Leg rotation (opposite phase)
+	// Right Upper Leg rotation (opposite phase - full cycle)
 	{
 		Flux_BoneChannel xChannel;
-		xChannel.AddRotationKeyframe(0.0f, glm::angleAxis(glm::radians(-30.0f), xZAxis));
-		xChannel.AddRotationKeyframe(12.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.AddRotationKeyframe(24.0f, glm::angleAxis(glm::radians(30.0f), xZAxis));
+		xChannel.AddRotationKeyframe(0.0f, glm::angleAxis(glm::radians(-30.0f), xXAxis));
+		xChannel.AddRotationKeyframe(6.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(12.0f, glm::angleAxis(glm::radians(30.0f), xXAxis));
+		xChannel.AddRotationKeyframe(18.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(24.0f, glm::angleAxis(glm::radians(-30.0f), xXAxis));
 		xChannel.SortKeyframes();
 		pxClip->AddBoneChannel("RightUpperLeg", std::move(xChannel));
 	}
 
-	// Left Upper Arm swing (opposite to leg)
+	// Left Upper Arm swing (opposite to leg - full cycle)
 	{
 		Flux_BoneChannel xChannel;
-		xChannel.AddRotationKeyframe(0.0f, glm::angleAxis(glm::radians(-20.0f), xZAxis));
-		xChannel.AddRotationKeyframe(12.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.AddRotationKeyframe(24.0f, glm::angleAxis(glm::radians(20.0f), xZAxis));
+		xChannel.AddRotationKeyframe(0.0f, glm::angleAxis(glm::radians(-20.0f), xXAxis));
+		xChannel.AddRotationKeyframe(6.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(12.0f, glm::angleAxis(glm::radians(20.0f), xXAxis));
+		xChannel.AddRotationKeyframe(18.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(24.0f, glm::angleAxis(glm::radians(-20.0f), xXAxis));
 		xChannel.SortKeyframes();
 		pxClip->AddBoneChannel("LeftUpperArm", std::move(xChannel));
 	}
 
-	// Right Upper Arm swing
+	// Right Upper Arm swing (full cycle)
 	{
 		Flux_BoneChannel xChannel;
-		xChannel.AddRotationKeyframe(0.0f, glm::angleAxis(glm::radians(20.0f), xZAxis));
-		xChannel.AddRotationKeyframe(12.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.AddRotationKeyframe(24.0f, glm::angleAxis(glm::radians(-20.0f), xZAxis));
+		xChannel.AddRotationKeyframe(0.0f, glm::angleAxis(glm::radians(20.0f), xXAxis));
+		xChannel.AddRotationKeyframe(6.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(12.0f, glm::angleAxis(glm::radians(-20.0f), xXAxis));
+		xChannel.AddRotationKeyframe(18.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(24.0f, glm::angleAxis(glm::radians(20.0f), xXAxis));
 		xChannel.SortKeyframes();
 		pxClip->AddBoneChannel("RightUpperArm", std::move(xChannel));
 	}
@@ -4113,44 +4122,53 @@ static Flux_AnimationClip* CreateRunAnimation()
 	pxClip->SetTicksPerSecond(24);
 	pxClip->SetLooping(true);
 
-	const Zenith_Maths::Vector3 xZAxis(0, 0, 1);
+	// Use X axis for forward/backward leg and arm swing
+	const Zenith_Maths::Vector3 xXAxis(1, 0, 0);
 
-	// Left Upper Leg rotation (more exaggerated: 45 degrees)
+	// Left Upper Leg rotation (full cycle: 45 degrees)
 	{
 		Flux_BoneChannel xChannel;
-		xChannel.AddRotationKeyframe(0.0f, glm::angleAxis(glm::radians(45.0f), xZAxis));
-		xChannel.AddRotationKeyframe(6.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.AddRotationKeyframe(12.0f, glm::angleAxis(glm::radians(-45.0f), xZAxis));
+		xChannel.AddRotationKeyframe(0.0f, glm::angleAxis(glm::radians(45.0f), xXAxis));
+		xChannel.AddRotationKeyframe(3.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(6.0f, glm::angleAxis(glm::radians(-45.0f), xXAxis));
+		xChannel.AddRotationKeyframe(9.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(12.0f, glm::angleAxis(glm::radians(45.0f), xXAxis));
 		xChannel.SortKeyframes();
 		pxClip->AddBoneChannel("LeftUpperLeg", std::move(xChannel));
 	}
 
-	// Right Upper Leg rotation (opposite phase)
+	// Right Upper Leg rotation (opposite phase - full cycle)
 	{
 		Flux_BoneChannel xChannel;
-		xChannel.AddRotationKeyframe(0.0f, glm::angleAxis(glm::radians(-45.0f), xZAxis));
-		xChannel.AddRotationKeyframe(6.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.AddRotationKeyframe(12.0f, glm::angleAxis(glm::radians(45.0f), xZAxis));
+		xChannel.AddRotationKeyframe(0.0f, glm::angleAxis(glm::radians(-45.0f), xXAxis));
+		xChannel.AddRotationKeyframe(3.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(6.0f, glm::angleAxis(glm::radians(45.0f), xXAxis));
+		xChannel.AddRotationKeyframe(9.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(12.0f, glm::angleAxis(glm::radians(-45.0f), xXAxis));
 		xChannel.SortKeyframes();
 		pxClip->AddBoneChannel("RightUpperLeg", std::move(xChannel));
 	}
 
-	// Left Upper Arm swing (more exaggerated: 35 degrees)
+	// Left Upper Arm swing (full cycle: 35 degrees)
 	{
 		Flux_BoneChannel xChannel;
-		xChannel.AddRotationKeyframe(0.0f, glm::angleAxis(glm::radians(-35.0f), xZAxis));
-		xChannel.AddRotationKeyframe(6.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.AddRotationKeyframe(12.0f, glm::angleAxis(glm::radians(35.0f), xZAxis));
+		xChannel.AddRotationKeyframe(0.0f, glm::angleAxis(glm::radians(-35.0f), xXAxis));
+		xChannel.AddRotationKeyframe(3.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(6.0f, glm::angleAxis(glm::radians(35.0f), xXAxis));
+		xChannel.AddRotationKeyframe(9.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(12.0f, glm::angleAxis(glm::radians(-35.0f), xXAxis));
 		xChannel.SortKeyframes();
 		pxClip->AddBoneChannel("LeftUpperArm", std::move(xChannel));
 	}
 
-	// Right Upper Arm swing
+	// Right Upper Arm swing (full cycle)
 	{
 		Flux_BoneChannel xChannel;
-		xChannel.AddRotationKeyframe(0.0f, glm::angleAxis(glm::radians(35.0f), xZAxis));
-		xChannel.AddRotationKeyframe(6.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.AddRotationKeyframe(12.0f, glm::angleAxis(glm::radians(-35.0f), xZAxis));
+		xChannel.AddRotationKeyframe(0.0f, glm::angleAxis(glm::radians(35.0f), xXAxis));
+		xChannel.AddRotationKeyframe(3.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(6.0f, glm::angleAxis(glm::radians(-35.0f), xXAxis));
+		xChannel.AddRotationKeyframe(9.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(12.0f, glm::angleAxis(glm::radians(35.0f), xXAxis));
 		xChannel.SortKeyframes();
 		pxClip->AddBoneChannel("RightUpperArm", std::move(xChannel));
 	}
@@ -4589,11 +4607,11 @@ void Zenith_UnitTests::TestStickFigureWalkAnimation()
 	Zenith_Assert(pxClip->GetName() == "Walk", "Animation name should be 'Walk'");
 	Zenith_Assert(FloatEquals(pxClip->GetDuration(), 1.0f, 0.01f), "Duration should be 1.0 second");
 
-	// Verify left upper leg rotation at t=0 (should be 30 degrees around Z)
+	// Verify left upper leg rotation at t=0 (should be 30 degrees around X for forward/backward swing)
 	const Flux_BoneChannel* pxLeftLegChannel = pxClip->GetBoneChannel("LeftUpperLeg");
 	Zenith_Assert(pxLeftLegChannel != nullptr, "LeftUpperLeg channel should exist");
 
-	Zenith_Maths::Quat xExpected30 = glm::angleAxis(glm::radians(30.0f), Zenith_Maths::Vector3(0, 0, 1));
+	Zenith_Maths::Quat xExpected30 = glm::angleAxis(glm::radians(30.0f), Zenith_Maths::Vector3(1, 0, 0));
 	Zenith_Maths::Quat xSampled = pxLeftLegChannel->SampleRotation(0.0f);
 	Zenith_Assert(QuatEquals(xSampled, xExpected30, 0.01f), "LeftUpperLeg rotation at t=0 should be 30 deg");
 
@@ -4601,7 +4619,7 @@ void Zenith_UnitTests::TestStickFigureWalkAnimation()
 	const Flux_BoneChannel* pxRightLegChannel = pxClip->GetBoneChannel("RightUpperLeg");
 	Zenith_Assert(pxRightLegChannel != nullptr, "RightUpperLeg channel should exist");
 
-	Zenith_Maths::Quat xExpectedMinus30 = glm::angleAxis(glm::radians(-30.0f), Zenith_Maths::Vector3(0, 0, 1));
+	Zenith_Maths::Quat xExpectedMinus30 = glm::angleAxis(glm::radians(-30.0f), Zenith_Maths::Vector3(1, 0, 0));
 	Zenith_Maths::Quat xSampledRight = pxRightLegChannel->SampleRotation(0.0f);
 	Zenith_Assert(QuatEquals(xSampledRight, xExpectedMinus30, 0.01f), "RightUpperLeg rotation at t=0 should be -30 deg");
 
@@ -4609,7 +4627,7 @@ void Zenith_UnitTests::TestStickFigureWalkAnimation()
 	const Flux_BoneChannel* pxLeftArmChannel = pxClip->GetBoneChannel("LeftUpperArm");
 	Zenith_Assert(pxLeftArmChannel != nullptr, "LeftUpperArm channel should exist");
 
-	Zenith_Maths::Quat xExpectedArm = glm::angleAxis(glm::radians(-20.0f), Zenith_Maths::Vector3(0, 0, 1));
+	Zenith_Maths::Quat xExpectedArm = glm::angleAxis(glm::radians(-20.0f), Zenith_Maths::Vector3(1, 0, 0));
 	Zenith_Maths::Quat xSampledArm = pxLeftArmChannel->SampleRotation(0.0f);
 	Zenith_Assert(QuatEquals(xSampledArm, xExpectedArm, 0.01f), "LeftUpperArm rotation at t=0 should be -20 deg");
 
@@ -4630,19 +4648,19 @@ void Zenith_UnitTests::TestStickFigureRunAnimation()
 	Zenith_Assert(pxClip->GetName() == "Run", "Animation name should be 'Run'");
 	Zenith_Assert(FloatEquals(pxClip->GetDuration(), 0.5f, 0.01f), "Duration should be 0.5 seconds");
 
-	// Verify left upper leg rotation at t=0 (should be 45 degrees - more exaggerated)
+	// Verify left upper leg rotation at t=0 (should be 45 degrees around X - more exaggerated)
 	const Flux_BoneChannel* pxLeftLegChannel = pxClip->GetBoneChannel("LeftUpperLeg");
 	Zenith_Assert(pxLeftLegChannel != nullptr, "LeftUpperLeg channel should exist");
 
-	Zenith_Maths::Quat xExpected45 = glm::angleAxis(glm::radians(45.0f), Zenith_Maths::Vector3(0, 0, 1));
+	Zenith_Maths::Quat xExpected45 = glm::angleAxis(glm::radians(45.0f), Zenith_Maths::Vector3(1, 0, 0));
 	Zenith_Maths::Quat xSampled = pxLeftLegChannel->SampleRotation(0.0f);
 	Zenith_Assert(QuatEquals(xSampled, xExpected45, 0.01f), "LeftUpperLeg rotation at t=0 should be 45 deg");
 
-	// Verify arm swing (35 degrees - more exaggerated than walk)
+	// Verify arm swing (35 degrees around X - more exaggerated than walk)
 	const Flux_BoneChannel* pxLeftArmChannel = pxClip->GetBoneChannel("LeftUpperArm");
 	Zenith_Assert(pxLeftArmChannel != nullptr, "LeftUpperArm channel should exist");
 
-	Zenith_Maths::Quat xExpectedArm = glm::angleAxis(glm::radians(-35.0f), Zenith_Maths::Vector3(0, 0, 1));
+	Zenith_Maths::Quat xExpectedArm = glm::angleAxis(glm::radians(-35.0f), Zenith_Maths::Vector3(1, 0, 0));
 	Zenith_Maths::Quat xSampledArm = pxLeftArmChannel->SampleRotation(0.0f);
 	Zenith_Assert(QuatEquals(xSampledArm, xExpectedArm, 0.01f), "LeftUpperArm rotation at t=0 should be -35 deg");
 
@@ -4884,20 +4902,21 @@ void Zenith_UnitTests::TestStateMachineUpdateLoop()
 
 	xStateMachine.SetDefaultState("Idle");
 
-	// Create dummy geometry and pose for Update calls
-	Flux_MeshGeometry xGeometry;
+	// Create dummy skeleton and pose for Update calls
+	Zenith_SkeletonAsset xSkeleton;
+	xSkeleton.AddBone("Root", -1, Zenith_Maths::Vector3(0.0f), Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f), Zenith_Maths::Vector3(1.0f));
 	Flux_SkeletonPose xPose;
 	xPose.Initialize(1);
 
 	// Initial update - should be in Idle
-	xStateMachine.Update(0.016f, xPose, xGeometry);
+	xStateMachine.Update(0.016f, xPose, xSkeleton);
 	Zenith_Assert(xStateMachine.GetCurrentStateName() == "Idle",
 		"Should start in Idle state");
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Initial state is Idle");
 
 	// Set Speed > 0.1, update - transition should start
 	xStateMachine.GetParameters().SetFloat("Speed", 0.5f);
-	xStateMachine.Update(0.016f, xPose, xGeometry);
+	xStateMachine.Update(0.016f, xPose, xSkeleton);
 
 	Zenith_Assert(xStateMachine.IsTransitioning() == true,
 		"Should be transitioning after condition met");
@@ -4906,7 +4925,7 @@ void Zenith_UnitTests::TestStateMachineUpdateLoop()
 	// Continue updating until transition completes
 	for (int i = 0; i < 20; ++i)
 	{
-		xStateMachine.Update(0.016f, xPose, xGeometry);
+		xStateMachine.Update(0.016f, xPose, xSkeleton);
 	}
 
 	Zenith_Assert(xStateMachine.GetCurrentStateName() == "Walk",
@@ -4922,7 +4941,8 @@ void Zenith_UnitTests::TestTriggerConsumptionInTransitions()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestTriggerConsumptionInTransitions...");
 
-	Flux_MeshGeometry xGeometry;
+	Zenith_SkeletonAsset xSkeleton;
+	xSkeleton.AddBone("Root", -1, Zenith_Maths::Vector3(0.0f), Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f), Zenith_Maths::Vector3(1.0f));
 	Flux_SkeletonPose xPose;
 	xPose.Initialize(1);
 
@@ -4946,14 +4966,14 @@ void Zenith_UnitTests::TestTriggerConsumptionInTransitions()
 	xStateMachine.SetDefaultState("Idle");
 
 	// Initial state
-	xStateMachine.Update(0.016f, xPose, xGeometry);
+	xStateMachine.Update(0.016f, xPose, xSkeleton);
 	Zenith_Assert(xStateMachine.GetCurrentStateName() == "Idle", "Should start in Idle");
 
 	// Set trigger
 	xStateMachine.GetParameters().SetTrigger("Attack");
 
 	// Update - trigger should be consumed and transition should start
-	xStateMachine.Update(0.016f, xPose, xGeometry);
+	xStateMachine.Update(0.016f, xPose, xSkeleton);
 	Zenith_Assert(xStateMachine.IsTransitioning() == true,
 		"Transition should start after trigger set");
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Transition started on trigger");
@@ -5005,7 +5025,8 @@ void Zenith_UnitTests::TestTransitionPriority()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestTransitionPriority...");
 
-	Flux_MeshGeometry xGeometry;
+	Zenith_SkeletonAsset xSkeleton;
+	xSkeleton.AddBone("Root", -1, Zenith_Maths::Vector3(0.0f), Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f), Zenith_Maths::Vector3(1.0f));
 	Flux_SkeletonPose xPose;
 	xPose.Initialize(1);
 
@@ -5055,16 +5076,16 @@ void Zenith_UnitTests::TestTransitionPriority()
 
 	// Set both conditions true - Attack should win due to priority
 	xStateMachine.SetDefaultState("Idle");
-	xStateMachine.Update(0.016f, xPose, xGeometry);
+	xStateMachine.Update(0.016f, xPose, xSkeleton);
 
 	xStateMachine.GetParameters().SetFloat("Speed", 0.5f);
 	xStateMachine.GetParameters().SetTrigger("Attack");
 
-	xStateMachine.Update(0.016f, xPose, xGeometry);
+	xStateMachine.Update(0.016f, xPose, xSkeleton);
 
 	// Complete the transition
 	for (int i = 0; i < 10; ++i)
-		xStateMachine.Update(0.016f, xPose, xGeometry);
+		xStateMachine.Update(0.016f, xPose, xSkeleton);
 
 	Zenith_Assert(xStateMachine.GetCurrentStateName() == "Attack",
 		"Higher priority transition (Attack) should be chosen over Walk");
@@ -5077,7 +5098,8 @@ void Zenith_UnitTests::TestStateLifecycleCallbacks()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestStateLifecycleCallbacks...");
 
-	Flux_MeshGeometry xGeometry;
+	Zenith_SkeletonAsset xSkeleton;
+	xSkeleton.AddBone("Root", -1, Zenith_Maths::Vector3(0.0f), Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f), Zenith_Maths::Vector3(1.0f));
 	Flux_SkeletonPose xPose;
 	xPose.Initialize(1);
 
@@ -5118,7 +5140,7 @@ void Zenith_UnitTests::TestStateLifecycleCallbacks()
 
 	// Test OnUpdate
 	bUpdateCalled = false;
-	xStateMachine.Update(0.016f, xPose, xGeometry);
+	xStateMachine.Update(0.016f, xPose, xSkeleton);
 	Zenith_Assert(bUpdateCalled == true, "OnUpdate should be called during Update");
 	Zenith_Assert(FloatEquals(fUpdateDt, 0.016f, 0.001f), "OnUpdate should receive delta time");
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] OnUpdate called with correct delta time");
@@ -5126,7 +5148,7 @@ void Zenith_UnitTests::TestStateLifecycleCallbacks()
 	// Test OnExit via transition
 	bExitCalled = false;
 	xStateMachine.GetParameters().SetTrigger("Next");
-	xStateMachine.Update(0.016f, xPose, xGeometry);
+	xStateMachine.Update(0.016f, xPose, xSkeleton);
 	Zenith_Assert(bExitCalled == true, "OnExit should be called when starting transition");
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] OnExit called on transition");
 
@@ -5137,7 +5159,8 @@ void Zenith_UnitTests::TestMultipleTransitionConditions()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestMultipleTransitionConditions...");
 
-	Flux_MeshGeometry xGeometry;
+	Zenith_SkeletonAsset xSkeleton;
+	xSkeleton.AddBone("Root", -1, Zenith_Maths::Vector3(0.0f), Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f), Zenith_Maths::Vector3(1.0f));
 	Flux_SkeletonPose xPose;
 	xPose.Initialize(1);
 
@@ -5172,12 +5195,12 @@ void Zenith_UnitTests::TestMultipleTransitionConditions()
 	xStateMachine.SetDefaultState("Idle");
 
 	// Initial update
-	xStateMachine.Update(0.016f, xPose, xGeometry);
+	xStateMachine.Update(0.016f, xPose, xSkeleton);
 
 	// Only Speed true - should NOT transition
 	xStateMachine.GetParameters().SetFloat("Speed", 10.0f);
 	xStateMachine.GetParameters().SetBool("IsGrounded", false);
-	xStateMachine.Update(0.016f, xPose, xGeometry);
+	xStateMachine.Update(0.016f, xPose, xSkeleton);
 
 	Zenith_Assert(xStateMachine.GetCurrentStateName() == "Idle",
 		"Should stay in Idle when only Speed condition met");
@@ -5186,7 +5209,7 @@ void Zenith_UnitTests::TestMultipleTransitionConditions()
 	// Only IsGrounded true - should NOT transition
 	xStateMachine.GetParameters().SetFloat("Speed", 2.0f);
 	xStateMachine.GetParameters().SetBool("IsGrounded", true);
-	xStateMachine.Update(0.016f, xPose, xGeometry);
+	xStateMachine.Update(0.016f, xPose, xSkeleton);
 
 	Zenith_Assert(xStateMachine.GetCurrentStateName() == "Idle",
 		"Should stay in Idle when only IsGrounded condition met");
@@ -5195,7 +5218,7 @@ void Zenith_UnitTests::TestMultipleTransitionConditions()
 	// Both conditions true - SHOULD transition
 	xStateMachine.GetParameters().SetFloat("Speed", 10.0f);
 	xStateMachine.GetParameters().SetBool("IsGrounded", true);
-	xStateMachine.Update(0.016f, xPose, xGeometry);
+	xStateMachine.Update(0.016f, xPose, xSkeleton);
 
 	Zenith_Assert(xStateMachine.IsTransitioning() == true,
 		"Should start transition when ALL conditions met");
@@ -5203,7 +5226,7 @@ void Zenith_UnitTests::TestMultipleTransitionConditions()
 
 	// Complete transition
 	for (int i = 0; i < 10; ++i)
-		xStateMachine.Update(0.016f, xPose, xGeometry);
+		xStateMachine.Update(0.016f, xPose, xSkeleton);
 
 	Zenith_Assert(xStateMachine.GetCurrentStateName() == "Run",
 		"Should be in Run state after transition");

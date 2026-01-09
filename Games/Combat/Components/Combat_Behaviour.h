@@ -24,6 +24,7 @@
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
+#include "EntityComponent/Components/Zenith_TextComponent.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_EventSystem.h"
 #include "Input/Zenith_Input.h"
@@ -32,6 +33,7 @@
 #include "AssetHandling/Zenith_ModelAsset.h"
 #include "Prefab/Zenith_Prefab.h"
 #include "Maths/Zenith_Maths.h"
+#include "Flux/Quads/Flux_Quads.h"
 
 // Include combat modules
 #include "Combat_Config.h"
@@ -116,17 +118,19 @@ public:
 		Combat_DamageSystem::Initialize();
 
 		// Subscribe to damage events for hit reactions
+		// IMPORTANT: Use static queues to avoid captured 'this' pointer issues
+		// The lambda only adds to the queue; processing happens in OnUpdate where 'this' is valid
 		m_uDamageEventHandle = Zenith_EventDispatcher::Get().SubscribeLambda<Combat_DamageEvent>(
-			[this](const Combat_DamageEvent& xEvent)
+			[](const Combat_DamageEvent& xEvent)
 			{
-				OnDamageEvent(xEvent);
+				s_axDeferredDamageEvents.push_back(xEvent);
 			});
 
 		// Subscribe to death events
 		m_uDeathEventHandle = Zenith_EventDispatcher::Get().SubscribeLambda<Combat_DeathEvent>(
-			[this](const Combat_DeathEvent& xEvent)
+			[](const Combat_DeathEvent& xEvent)
 			{
-				OnDeathEvent(xEvent);
+				s_axDeferredDeathEvents.push_back(xEvent);
 			});
 
 		// Store resource pointers
@@ -203,6 +207,10 @@ public:
 		// Update enemies
 		m_xEnemyManager.Update(fDt);
 
+		// Process deferred damage/death events AFTER updates complete
+		// Events are queued during updates to avoid re-entrancy issues with captured 'this'
+		ProcessDeferredEvents();
+
 		// Update combo timer
 		UpdateComboTimer(fDt);
 
@@ -214,6 +222,9 @@ public:
 
 		// Update UI
 		UpdateUI();
+
+		// Update animation state labels and health bars above entities
+		UpdateEntityOverheadDisplay();
 	}
 
 	void RenderPropertiesPanel() override
@@ -321,7 +332,7 @@ private:
 		Zenith_Entity xPlayer = Zenith_Scene::Instantiate(*Combat::g_pxPlayerPrefab, "Player");
 
 		Zenith_TransformComponent& xTransform = xPlayer.GetComponent<Zenith_TransformComponent>();
-		xTransform.SetPosition(Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
+		xTransform.SetPosition(Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));  // Start above floor
 		xTransform.SetScale(Zenith_Maths::Vector3(1.0f, 1.0f, 1.0f));  // Stick figure at unit scale
 
 		Zenith_ModelComponent& xModel = xPlayer.AddComponent<Zenith_ModelComponent>();
@@ -351,8 +362,13 @@ private:
 			Zenith_Log(LOG_CATEGORY_ANIMATION, "[Combat] Player using fallback mesh entry (no animation)");
 		}
 
-		xPlayer.AddComponent<Zenith_ColliderComponent>()
-			.AddCollider(COLLISION_VOLUME_TYPE_CAPSULE, RIGIDBODY_TYPE_DYNAMIC);
+		// Use explicit capsule dimensions for humanoid character
+		// Radius 0.3 (shoulder width / 2), HalfHeight 0.6 (total height ~1.8 with caps)
+		Zenith_ColliderComponent& xCollider = xPlayer.AddComponent<Zenith_ColliderComponent>();
+		xCollider.AddCapsuleCollider(0.3f, 0.6f, RIGIDBODY_TYPE_DYNAMIC);
+
+		// Lock X and Z rotation to prevent character from tipping over
+		Zenith_Physics::LockRotation(xCollider.GetBodyID(), true, false, true);
 
 		m_xLevelEntities.m_uPlayerEntityID = xPlayer.GetEntityID();
 
@@ -368,11 +384,6 @@ private:
 				m_xPlayerAnimController.Initialize(pxSkeleton);
 				Zenith_Log(LOG_CATEGORY_ANIMATION, "[Combat] Player animation controller initialized with skeleton instance");
 			}
-		}
-		else
-		{
-			// Fallback to mesh geometry
-			m_xPlayerAnimController.Initialize(m_pxStickFigureGeometry);
 		}
 
 		// Initialize hit detection
@@ -399,7 +410,7 @@ private:
 			Zenith_Entity xEnemy = Zenith_Scene::Instantiate(*Combat::g_pxEnemyPrefab, szName);
 
 			Zenith_TransformComponent& xTransform = xEnemy.GetComponent<Zenith_TransformComponent>();
-			xTransform.SetPosition(Zenith_Maths::Vector3(fX, 0.0f, fZ));
+			xTransform.SetPosition(Zenith_Maths::Vector3(fX, 1.0f, fZ));  // Start above floor
 			xTransform.SetScale(Zenith_Maths::Vector3(0.9f, 0.9f, 0.9f));  // Slightly smaller than player
 
 			Zenith_ModelComponent& xModel = xEnemy.AddComponent<Zenith_ModelComponent>();
@@ -423,8 +434,12 @@ private:
 				xModel.AddMeshEntry(*m_pxStickFigureGeometry, *m_pxEnemyMaterial);
 			}
 
-			xEnemy.AddComponent<Zenith_ColliderComponent>()
-				.AddCollider(COLLISION_VOLUME_TYPE_CAPSULE, RIGIDBODY_TYPE_DYNAMIC);
+			// Use explicit capsule dimensions for humanoid enemy (slightly smaller than player)
+			Zenith_ColliderComponent& xCollider = xEnemy.AddComponent<Zenith_ColliderComponent>();
+			xCollider.AddCapsuleCollider(0.27f, 0.54f, RIGIDBODY_TYPE_DYNAMIC);
+
+			// Lock X and Z rotation to prevent character from tipping over
+			Zenith_Physics::LockRotation(xCollider.GetBodyID(), true, false, true);
 
 			m_xLevelEntities.m_axEnemyEntityIDs.push_back(xEnemy.GetEntityID());
 
@@ -435,10 +450,12 @@ private:
 			Combat_EnemyConfig xConfig;
 			xConfig.m_fMoveSpeed = 3.0f;
 			xConfig.m_fAttackDamage = 15.0f;
-			xConfig.m_fAttackRange = 1.5f;
+			xConfig.m_fAttackRange = 1.2f;  // Melee attack range (capsule combined radius ~0.57)
 			xConfig.m_fAttackCooldown = 1.5f;
 
 			Flux_SkeletonInstance* pxSkeleton = xModel.HasSkeleton() ? xModel.GetSkeletonInstance() : nullptr;
+			Zenith_Log(LOG_CATEGORY_ANIMATION, "[Combat] Spawning enemy %u: hasSkel=%d, skelPtr=%p, bUsingModel=%d",
+				xEnemy.GetEntityID().m_uIndex, xModel.HasSkeleton(), pxSkeleton, bUsingEnemyModel);
 			m_xEnemyManager.RegisterEnemy(xEnemy.GetEntityID(), xConfig, pxSkeleton);
 		}
 	}
@@ -460,6 +477,12 @@ private:
 
 		Zenith_TransformComponent& xTransform = xPlayer.GetComponent<Zenith_TransformComponent>();
 		Zenith_ColliderComponent& xCollider = xPlayer.GetComponent<Zenith_ColliderComponent>();
+
+		// Enforce upright orientation every frame (collision impulses can still tip characters)
+		if (xCollider.HasValidBody())
+		{
+			Zenith_Physics::EnforceUpright(xCollider.GetBodyID());
+		}
 
 		// Check if player is dead
 		if (Combat_DamageSystem::IsDead(m_xLevelEntities.m_uPlayerEntityID))
@@ -517,6 +540,28 @@ private:
 	// ========================================================================
 	// Event Handlers
 	// ========================================================================
+
+	/**
+	 * ProcessDeferredEvents - Process damage and death events queued during updates
+	 * This is called from OnUpdate where 'this' is guaranteed valid, avoiding
+	 * issues with captured 'this' pointers in event callbacks becoming stale.
+	 */
+	void ProcessDeferredEvents()
+	{
+		// Process damage events
+		for (const Combat_DamageEvent& xEvent : s_axDeferredDamageEvents)
+		{
+			OnDamageEvent(xEvent);
+		}
+		s_axDeferredDamageEvents.clear();
+
+		// Process death events
+		for (const Combat_DeathEvent& xEvent : s_axDeferredDeathEvents)
+		{
+			OnDeathEvent(xEvent);
+		}
+		s_axDeferredDeathEvents.clear();
+	}
 
 	void OnDamageEvent(const Combat_DamageEvent& xEvent)
 	{
@@ -638,6 +683,10 @@ private:
 		// Reset enemy manager
 		m_xEnemyManager.Reset();
 
+		// Clear deferred event queues
+		s_axDeferredDamageEvents.clear();
+		s_axDeferredDeathEvents.clear();
+
 		// Reset player systems
 		m_xPlayerController.Reset();
 		m_xPlayerAnimController.Reset();
@@ -717,6 +766,239 @@ private:
 	}
 
 	// ========================================================================
+	// Animation State Labels
+	// ========================================================================
+
+	void UpdateAnimationStateLabels()
+	{
+		// Get or add TextComponent to parent entity
+		if (!m_xParentEntity.HasComponent<Zenith_TextComponent>())
+		{
+			m_xParentEntity.AddComponent<Zenith_TextComponent>();
+		}
+		Zenith_TextComponent& xText = m_xParentEntity.GetComponent<Zenith_TextComponent>();
+
+		// Clear previous frame's text entries
+		xText.ClearWorldText();
+
+		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+
+		// Height offset above entity
+		static constexpr float fTextHeightOffset = 2.2f;
+
+		// Player animation state label
+		if (xScene.EntityExists(m_xLevelEntities.m_uPlayerEntityID))
+		{
+			Zenith_Entity xPlayer = xScene.GetEntity(m_xLevelEntities.m_uPlayerEntityID);
+			if (xPlayer.HasComponent<Zenith_TransformComponent>())
+			{
+				Zenith_Maths::Vector3 xPos;
+				xPlayer.GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
+				xPos.y += fTextHeightOffset;
+
+				const std::string& strState = m_xPlayerAnimController.GetCurrentState();
+				TextEntry_World xEntry;
+				xEntry.m_strText = "Player: " + strState;
+				xEntry.m_xPosition = xPos;
+				xEntry.m_fScale = 0.5f;
+				xText.AddText_World(xEntry);
+			}
+		}
+
+		// Enemy animation state labels
+		for (const Combat_EnemyAI& xEnemy : m_xEnemyManager.GetEnemies())
+		{
+			Zenith_EntityID uEnemyID = xEnemy.GetEntityID();
+			if (!xScene.EntityExists(uEnemyID))
+				continue;
+
+			Zenith_Entity xEnemyEntity = xScene.GetEntity(uEnemyID);
+			if (!xEnemyEntity.HasComponent<Zenith_TransformComponent>())
+				continue;
+
+			Zenith_Maths::Vector3 xPos;
+			xEnemyEntity.GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
+			xPos.y += fTextHeightOffset;
+
+			const std::string& strState = xEnemy.GetAnimController().GetCurrentState();
+			TextEntry_World xEntry;
+			xEntry.m_strText = strState;
+			xEntry.m_xPosition = xPos;
+			xEntry.m_fScale = 0.5f;
+			xText.AddText_World(xEntry);
+		}
+	}
+
+	// ========================================================================
+	// Health Bar Rendering
+	// ========================================================================
+
+	/**
+	 * WorldToScreen - Project a world position to screen-space pixel coordinates
+	 * @param xWorldPos World position to project
+	 * @param xViewMatrix Camera view matrix
+	 * @param xProjMatrix Camera projection matrix
+	 * @param xScreenPos Output screen position in pixels
+	 * @return true if position is in front of camera, false if behind
+	 */
+	bool WorldToScreen(const Zenith_Maths::Vector3& xWorldPos,
+		const Zenith_Maths::Matrix4& xViewMatrix,
+		const Zenith_Maths::Matrix4& xProjMatrix,
+		Zenith_Maths::Vector2& xScreenPos)
+	{
+		Zenith_Maths::Vector4 xClipPos = xProjMatrix * xViewMatrix * Zenith_Maths::Vector4(xWorldPos, 1.0f);
+
+		// Behind camera check
+		if (xClipPos.w <= 0.0f)
+			return false;
+
+		// Perspective divide to NDC
+		Zenith_Maths::Vector3 xNDC = Zenith_Maths::Vector3(xClipPos) / xClipPos.w;
+
+		// NDC to screen coordinates (Y=0 at bottom for Flux_Quads)
+		int32_t iWidth, iHeight;
+		Zenith_Window::GetInstance()->GetSize(iWidth, iHeight);
+		xScreenPos.x = (xNDC.x * 0.5f + 0.5f) * static_cast<float>(iWidth);
+		xScreenPos.y = (xNDC.y * 0.5f + 0.5f) * static_cast<float>(iHeight);
+
+		return true;
+	}
+
+	/**
+	 * RenderHealthBarQuad - Render a health bar at screen position using Flux_Quads
+	 * @param xScreenPos Screen position (center of bar)
+	 * @param fHealthPercent Health percentage (0-1)
+	 * @param uBarWidth Width in pixels
+	 * @param uBarHeight Height in pixels
+	 */
+	void RenderHealthBarQuad(const Zenith_Maths::Vector2& xScreenPos, float fHealthPercent, uint32_t uBarWidth = 60, uint32_t uBarHeight = 8)
+	{
+		fHealthPercent = glm::clamp(fHealthPercent, 0.0f, 1.0f);
+
+		uint32_t uX = static_cast<uint32_t>(xScreenPos.x - uBarWidth / 2);
+		uint32_t uY = static_cast<uint32_t>(xScreenPos.y);
+
+		// Background bar (dark grey)
+		Flux_Quads::Quad xBgQuad;
+		xBgQuad.m_xPosition_Size = Zenith_Maths::UVector4(uX, uY, uBarWidth, uBarHeight);
+		xBgQuad.m_xColour = Zenith_Maths::Vector4(0.15f, 0.15f, 0.15f, 0.9f);
+		xBgQuad.m_uTexture = 0;  // No texture
+		xBgQuad.m_xUVMult_UVAdd = Zenith_Maths::Vector2(0.0f, 0.0f);
+		Flux_Quads::UploadQuad(xBgQuad);
+
+		// Foreground bar (colored by health)
+		if (fHealthPercent > 0.0f)
+		{
+			uint32_t uFgWidth = static_cast<uint32_t>(uBarWidth * fHealthPercent);
+			if (uFgWidth > 0)
+			{
+				// Color based on health percentage
+				Zenith_Maths::Vector4 xFgColor;
+				if (fHealthPercent > 0.6f)
+				{
+					xFgColor = Zenith_Maths::Vector4(0.2f, 0.9f, 0.2f, 1.0f);  // Green
+				}
+				else if (fHealthPercent > 0.3f)
+				{
+					xFgColor = Zenith_Maths::Vector4(0.9f, 0.8f, 0.2f, 1.0f);  // Yellow
+				}
+				else
+				{
+					xFgColor = Zenith_Maths::Vector4(0.9f, 0.2f, 0.2f, 1.0f);  // Red
+				}
+
+				Flux_Quads::Quad xFgQuad;
+				xFgQuad.m_xPosition_Size = Zenith_Maths::UVector4(uX + 1, uY + 1, uFgWidth - 2, uBarHeight - 2);
+				xFgQuad.m_xColour = xFgColor;
+				xFgQuad.m_uTexture = 0;
+				xFgQuad.m_xUVMult_UVAdd = Zenith_Maths::Vector2(0.0f, 0.0f);
+				Flux_Quads::UploadQuad(xFgQuad);
+			}
+		}
+	}
+
+	/**
+	 * UpdateHealthBars - Render health bars above all entities using Flux_Quads
+	 */
+	void UpdateHealthBars()
+	{
+		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+
+		// Get camera matrices for world-to-screen projection
+		Zenith_EntityID uCamID = xScene.GetMainCameraEntity();
+		if (uCamID == INVALID_ENTITY_ID)
+			return;
+
+		Zenith_Entity xCamEntity = xScene.GetEntity(uCamID);
+		if (!xCamEntity.HasComponent<Zenith_CameraComponent>())
+			return;
+
+		Zenith_CameraComponent& xCamera = xCamEntity.GetComponent<Zenith_CameraComponent>();
+
+		Zenith_Maths::Matrix4 xViewMatrix, xProjMatrix;
+		xCamera.BuildViewMatrix(xViewMatrix);
+		xCamera.BuildProjectionMatrix(xProjMatrix);
+
+		// Health bar offset above entity
+		static constexpr float fBarHeightOffset = 2.3f;
+
+		// Player health bar
+		if (xScene.EntityExists(m_xLevelEntities.m_uPlayerEntityID))
+		{
+			Zenith_Entity xPlayer = xScene.GetEntity(m_xLevelEntities.m_uPlayerEntityID);
+			if (xPlayer.HasComponent<Zenith_TransformComponent>())
+			{
+				Zenith_Maths::Vector3 xWorldPos;
+				xPlayer.GetComponent<Zenith_TransformComponent>().GetPosition(xWorldPos);
+				xWorldPos.y += fBarHeightOffset;
+
+				Zenith_Maths::Vector2 xScreenPos;
+				if (WorldToScreen(xWorldPos, xViewMatrix, xProjMatrix, xScreenPos))
+				{
+					float fHealthPercent = Combat_DamageSystem::GetHealthPercent(m_xLevelEntities.m_uPlayerEntityID);
+					RenderHealthBarQuad(xScreenPos, fHealthPercent, 80, 10);  // Larger bar for player
+				}
+			}
+		}
+
+		// Enemy health bars
+		for (const Combat_EnemyAI& xEnemy : m_xEnemyManager.GetEnemies())
+		{
+			Zenith_EntityID uEnemyID = xEnemy.GetEntityID();
+			if (!xScene.EntityExists(uEnemyID))
+				continue;
+
+			// Skip dead enemies
+			if (!xEnemy.IsAlive())
+				continue;
+
+			Zenith_Entity xEnemyEntity = xScene.GetEntity(uEnemyID);
+			if (!xEnemyEntity.HasComponent<Zenith_TransformComponent>())
+				continue;
+
+			Zenith_Maths::Vector3 xWorldPos;
+			xEnemyEntity.GetComponent<Zenith_TransformComponent>().GetPosition(xWorldPos);
+			xWorldPos.y += fBarHeightOffset;
+
+			Zenith_Maths::Vector2 xScreenPos;
+			if (WorldToScreen(xWorldPos, xViewMatrix, xProjMatrix, xScreenPos))
+			{
+				float fHealthPercent = Combat_DamageSystem::GetHealthPercent(uEnemyID);
+				RenderHealthBarQuad(xScreenPos, fHealthPercent, 60, 8);
+			}
+		}
+	}
+
+	/**
+	 * UpdateEntityOverheadDisplay - Update animation labels and health bars
+	 */
+	void UpdateEntityOverheadDisplay()
+	{
+		UpdateAnimationStateLabels();
+		UpdateHealthBars();
+	}
+
+	// ========================================================================
 	// Member Variables
 	// ========================================================================
 
@@ -742,6 +1024,11 @@ private:
 	// Event handles
 	Zenith_EventHandle m_uDamageEventHandle = INVALID_EVENT_HANDLE;
 	Zenith_EventHandle m_uDeathEventHandle = INVALID_EVENT_HANDLE;
+
+	// Static event queues for deferred processing
+	// These are static so lambda callbacks don't need to capture 'this'
+	static inline std::vector<Combat_DamageEvent> s_axDeferredDamageEvents;
+	static inline std::vector<Combat_DeathEvent> s_axDeferredDeathEvents;
 
 public:
 	// Resource pointers (set in OnAwake from globals)

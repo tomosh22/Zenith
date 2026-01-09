@@ -1,6 +1,5 @@
 #include "Zenith.h"
 #include "Flux_AnimationController.h"
-#include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "Flux/MeshAnimation/Flux_SkeletonInstance.h"
 #include "AssetHandling/Zenith_SkeletonAsset.h"
 #include "Vulkan/Zenith_Vulkan_MemoryManager.h"
@@ -26,8 +25,7 @@ Flux_AnimationController::~Flux_AnimationController()
 }
 
 Flux_AnimationController::Flux_AnimationController(Flux_AnimationController&& xOther) noexcept
-	: m_pxGeometry(xOther.m_pxGeometry)
-	, m_pxSkeletonInstance(xOther.m_pxSkeletonInstance)
+	: m_pxSkeletonInstance(xOther.m_pxSkeletonInstance)
 	, m_pxSkeletonAsset(xOther.m_pxSkeletonAsset)
 	, m_xClipCollection(std::move(xOther.m_xClipCollection))
 	, m_pxStateMachine(xOther.m_pxStateMachine)
@@ -47,7 +45,6 @@ Flux_AnimationController::Flux_AnimationController(Flux_AnimationController&& xO
 	xOther.m_pxIKSolver = nullptr;
 	xOther.m_pxDirectPlayNode = nullptr;
 	xOther.m_pxDirectTransition = nullptr;
-	xOther.m_pxGeometry = nullptr;
 	xOther.m_pxSkeletonInstance = nullptr;
 	xOther.m_pxSkeletonAsset = nullptr;
 }
@@ -63,7 +60,6 @@ Flux_AnimationController& Flux_AnimationController::operator=(Flux_AnimationCont
 		delete m_pxDirectTransition;
 
 		// Transfer non-owned pointers
-		m_pxGeometry = xOther.m_pxGeometry;
 		m_pxSkeletonInstance = xOther.m_pxSkeletonInstance;
 		m_pxSkeletonAsset = xOther.m_pxSkeletonAsset;
 
@@ -88,33 +84,10 @@ Flux_AnimationController& Flux_AnimationController::operator=(Flux_AnimationCont
 		xOther.m_pxIKSolver = nullptr;
 		xOther.m_pxDirectPlayNode = nullptr;
 		xOther.m_pxDirectTransition = nullptr;
-		xOther.m_pxGeometry = nullptr;
 		xOther.m_pxSkeletonInstance = nullptr;
 		xOther.m_pxSkeletonAsset = nullptr;
 	}
 	return *this;
-}
-
-void Flux_AnimationController::Initialize(Flux_MeshGeometry* pxGeometry)
-{
-	m_pxGeometry = pxGeometry;
-
-	if (m_pxGeometry)
-	{
-		// Initialize pose with number of bones
-		m_xOutputPose.Initialize(m_pxGeometry->GetNumBones());
-
-		// Create bone buffer if geometry has bones
-		if (m_pxGeometry->GetNumBones() > 0)
-		{
-			Flux_MemoryManager::InitialiseDynamicConstantBuffer(nullptr, FLUX_MAX_BONES * sizeof(Zenith_Maths::Matrix4), m_xBoneBuffer);
-
-			// CRITICAL: Upload identity matrices to GPU immediately
-			// Without this, the bone buffer contains uninitialized data and the mesh
-			// will render incorrectly (collapsed/invisible) until an animation is played
-			UploadToGPU();
-		}
-	}
 }
 
 void Flux_AnimationController::Initialize(Flux_SkeletonInstance* pxSkeleton)
@@ -140,10 +113,6 @@ void Flux_AnimationController::Initialize(Flux_SkeletonInstance* pxSkeleton)
 
 uint32_t Flux_AnimationController::GetNumBones() const
 {
-	if (m_pxGeometry)
-	{
-		return m_pxGeometry->GetNumBones();
-	}
 	if (m_pxSkeletonInstance)
 	{
 		return m_pxSkeletonInstance->GetNumBones();
@@ -161,81 +130,19 @@ bool Flux_AnimationController::HasAnimationContent() const
 
 void Flux_AnimationController::Update(float fDt)
 {
-	// Need either geometry (legacy) or skeleton instance (new system)
-	if ((!m_pxGeometry && !m_pxSkeletonInstance) || m_bPaused)
+	if (!m_pxSkeletonInstance || !m_pxSkeletonAsset || m_bPaused)
 		return;
 
 	fDt *= m_fPlaybackSpeed;
 
 	float fPrevTime = m_fLastEventCheckTime;
 
-	// Use skeleton instance path if available (new model instance system)
-	if (m_pxSkeletonInstance && m_pxSkeletonAsset)
-	{
-		UpdateWithSkeletonInstance(fDt);
-
-		// Process animation events
-		float fCurrentTime = m_pxDirectPlayNode ? m_pxDirectPlayNode->GetNormalizedTime() : 0.0f;
-		ProcessEvents(fPrevTime, fCurrentTime);
-		m_fLastEventCheckTime = fCurrentTime;
-		return;
-	}
-
-	// Legacy path using Flux_MeshGeometry
-	// Update animation source (state machine or direct playback)
-	if (m_pxStateMachine)
-	{
-		m_pxStateMachine->Update(fDt, m_xOutputPose, *m_pxGeometry);
-	}
-	else if (m_pxDirectPlayNode)
-	{
-		// Handle direct clip playback with optional transition
-		if (m_pxDirectTransition && !m_pxDirectTransition->IsComplete())
-		{
-			m_pxDirectTransition->Update(fDt);
-
-			Flux_SkeletonPose xTargetPose;
-			m_pxDirectPlayNode->Evaluate(fDt, xTargetPose, *m_pxGeometry);
-			m_pxDirectTransition->Blend(m_xOutputPose, xTargetPose);
-
-			if (m_pxDirectTransition->IsComplete())
-			{
-				delete m_pxDirectTransition;
-				m_pxDirectTransition = nullptr;
-			}
-		}
-		else
-		{
-			m_pxDirectPlayNode->Evaluate(fDt, m_xOutputPose, *m_pxGeometry);
-		}
-	}
-	else
-	{
-		// No animation source - reset to bind pose
-		m_xOutputPose.Reset();
-	}
-
-	// Apply IK after animation
-	if (m_pxIKSolver)
-	{
-		// Compute model space matrices first (required for IK)
-		// Note: This requires access to the skeleton hierarchy
-		// For now, we use flat computation
-		m_xOutputPose.ComputeModelSpaceMatricesFlat(*m_pxGeometry);
-
-		m_pxIKSolver->Solve(m_xOutputPose, *m_pxGeometry, m_xWorldMatrix);
-	}
-
-	// Compute final skinning matrices
-	m_xOutputPose.ComputeSkinningMatrices(*m_pxGeometry);
+	UpdateWithSkeletonInstance(fDt);
 
 	// Process animation events
 	float fCurrentTime = m_pxDirectPlayNode ? m_pxDirectPlayNode->GetNormalizedTime() : 0.0f;
 	ProcessEvents(fPrevTime, fCurrentTime);
 	m_fLastEventCheckTime = fCurrentTime;
-
-	// Upload to GPU
-	UploadToGPU();
 }
 
 void Flux_AnimationController::UpdateWithSkeletonInstance(float fDt)
@@ -541,29 +448,22 @@ void Flux_AnimationController::ProcessEvents(float fPrevTime, float fCurrentTime
 
 void Flux_AnimationController::UploadToGPU()
 {
-	if (!m_pxGeometry || m_pxGeometry->GetNumBones() == 0)
-		return;
-
-	const Zenith_Maths::Matrix4* pxMatrices = m_xOutputPose.GetSkinningMatrices();
-	Flux_MemoryManager::UploadBufferData(
-		m_xBoneBuffer.GetBuffer().m_xVRAMHandle,
-		pxMatrices,
-		FLUX_MAX_BONES * sizeof(Zenith_Maths::Matrix4)
-	);
+	// GPU upload is now handled by Flux_SkeletonInstance::UploadToGPU()
+	// which is called from UpdateWithSkeletonInstance()
 }
 
 #ifdef ZENITH_TOOLS
 void Flux_AnimationController::DebugDraw(bool bShowBones, bool bShowIKTargets)
 {
-	if (!m_pxGeometry)
+	if (!m_pxSkeletonInstance)
 		return;
 
 	// Draw bones
 	if (bShowBones)
 	{
-		// Would need access to skeleton hierarchy to draw bone connections
-		// For now, draw bone positions as spheres
-		for (uint32_t i = 0; i < m_pxGeometry->GetNumBones() && i < FLUX_MAX_BONES; ++i)
+		// Draw bone positions as spheres
+		uint32_t uNumBones = m_pxSkeletonInstance->GetNumBones();
+		for (uint32_t i = 0; i < uNumBones && i < FLUX_MAX_BONES; ++i)
 		{
 			Zenith_Maths::Vector3 xPos = Zenith_Maths::Vector3(m_xOutputPose.GetModelSpaceMatrix(i)[3]);
 			xPos = Zenith_Maths::Vector3(m_xWorldMatrix * Zenith_Maths::Vector4(xPos, 1.0f));
@@ -664,14 +564,7 @@ void Flux_AnimationController::ReadFromDataStream(Zenith_DataStream& xStream)
 		m_pxIKSolver = new Flux_IKSolver();
 		m_pxIKSolver->ReadFromDataStream(xStream);
 
-		// Resolve bone indices when geometry is available
-		if (m_pxGeometry)
-		{
-			for (auto& xPair : const_cast<std::unordered_map<std::string, Flux_IKChain>&>(m_pxIKSolver->GetChains()))
-			{
-				xPair.second.ResolveBoneIndices(*m_pxGeometry);
-			}
-		}
+		// Note: Bone indices will be resolved when skeleton instance is set via Initialize()
 	}
 
 	// Direct play clip
@@ -696,9 +589,9 @@ void Flux_AnimationController::ReadFromDataStream(Zenith_DataStream& xStream)
 		}
 	}
 
-	// Re-initialize pose if geometry is set
-	if (m_pxGeometry)
+	// Re-initialize pose if skeleton instance is set
+	if (m_pxSkeletonInstance)
 	{
-		m_xOutputPose.Initialize(m_pxGeometry->GetNumBones());
+		m_xOutputPose.Initialize(m_pxSkeletonInstance->GetNumBones());
 	}
 }

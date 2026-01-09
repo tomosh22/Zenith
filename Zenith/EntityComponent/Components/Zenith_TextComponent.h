@@ -60,6 +60,7 @@ public:
 
 	void AddText(TextEntry& xEntry);
 	void AddText_World(TextEntry_World& xEntry);
+	void ClearWorldText() { m_xEntries_World.clear(); }
 
 	// Serialization methods for Zenith_DataStream
 	void WriteToDataStream(Zenith_DataStream& xStream) const;

@@ -1,6 +1,5 @@
 #include "Zenith.h"
 #include "Flux_AnimationStateMachine.h"
-#include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "AssetHandling/Zenith_SkeletonAsset.h"
 #include "Core/Zenith_Core.h"
 #include <algorithm>
@@ -594,66 +593,6 @@ void Flux_AnimationStateMachine::SetState(const std::string& strStateName)
 
 void Flux_AnimationStateMachine::Update(float fDt,
 	Flux_SkeletonPose& xOutPose,
-	const Flux_MeshGeometry& xGeometry)
-{
-	// Initialize to default state if needed
-	if (!m_pxCurrentState && !m_strDefaultStateName.empty())
-	{
-		SetState(m_strDefaultStateName);
-	}
-
-	if (!m_pxCurrentState)
-	{
-		xOutPose.Reset();
-		return;
-	}
-
-	// Check for new transitions (only if not already transitioning)
-	if (!m_pxActiveTransition)
-	{
-		const Flux_StateTransition* pxTransition = m_pxCurrentState->CheckTransitions(m_xParameters);
-		if (pxTransition)
-		{
-			StartTransition(*pxTransition);
-		}
-	}
-
-	// Update transition if active
-	if (m_pxActiveTransition)
-	{
-		UpdateTransition(fDt, xGeometry);
-
-		if (m_pxActiveTransition->IsComplete())
-		{
-			CompleteTransition();
-		}
-		else
-		{
-			// Continue blending
-			m_pxActiveTransition->Blend(xOutPose, m_xTargetPose);
-			return;
-		}
-	}
-
-	// Normal state update
-	if (m_pxCurrentState->GetBlendTree())
-	{
-		m_pxCurrentState->GetBlendTree()->Evaluate(fDt, m_xCurrentPose, xGeometry);
-	}
-	else
-	{
-		m_xCurrentPose.Reset();
-	}
-
-	// Call update callback
-	if (m_pxCurrentState->m_fnOnUpdate)
-		m_pxCurrentState->m_fnOnUpdate(fDt);
-
-	xOutPose.CopyFrom(m_xCurrentPose);
-}
-
-void Flux_AnimationStateMachine::Update(float fDt,
-	Flux_SkeletonPose& xOutPose,
 	const Zenith_SkeletonAsset& xSkeleton)
 {
 	// Initialize to default state if needed
@@ -736,25 +675,6 @@ void Flux_AnimationStateMachine::StartTransition(const Flux_StateTransition& xTr
 	// Call enter callback on target state
 	if (m_pxTransitionTargetState->m_fnOnEnter)
 		m_pxTransitionTargetState->m_fnOnEnter();
-}
-
-void Flux_AnimationStateMachine::UpdateTransition(float fDt, const Flux_MeshGeometry& xGeometry)
-{
-	if (!m_pxActiveTransition || !m_pxTransitionTargetState)
-		return;
-
-	// Update transition timer
-	m_pxActiveTransition->Update(fDt);
-
-	// Evaluate target state
-	if (m_pxTransitionTargetState->GetBlendTree())
-	{
-		m_pxTransitionTargetState->GetBlendTree()->Evaluate(fDt, m_xTargetPose, xGeometry);
-	}
-	else
-	{
-		m_xTargetPose.Reset();
-	}
 }
 
 void Flux_AnimationStateMachine::UpdateTransition(float fDt, const Zenith_SkeletonAsset& xSkeleton)
