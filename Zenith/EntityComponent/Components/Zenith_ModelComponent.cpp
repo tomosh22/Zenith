@@ -662,23 +662,23 @@ void Zenith_ModelComponent::RenderTextureSlot(const char* szLabel, Flux_Material
 	{
 	case TEXTURE_SLOT_DIFFUSE:
 		pxCurrentTexture = xMaterial.GetDiffuseTexture();
-		strCurrentPath = xMaterial.GetDiffuseTexturePath();
+		strCurrentPath = xMaterial.GetDiffuseTextureRef().GetPath();
 		break;
 	case TEXTURE_SLOT_NORMAL:
 		pxCurrentTexture = xMaterial.GetNormalTexture();
-		strCurrentPath = xMaterial.GetNormalTexturePath();
+		strCurrentPath = xMaterial.GetNormalTextureRef().GetPath();
 		break;
 	case TEXTURE_SLOT_ROUGHNESS_METALLIC:
 		pxCurrentTexture = xMaterial.GetRoughnessMetallicTexture();
-		strCurrentPath = xMaterial.GetRoughnessMetallicTexturePath();
+		strCurrentPath = xMaterial.GetRoughnessMetallicTextureRef().GetPath();
 		break;
 	case TEXTURE_SLOT_OCCLUSION:
 		pxCurrentTexture = xMaterial.GetOcclusionTexture();
-		strCurrentPath = xMaterial.GetOcclusionTexturePath();
+		strCurrentPath = xMaterial.GetOcclusionTextureRef().GetPath();
 		break;
 	case TEXTURE_SLOT_EMISSIVE:
 		pxCurrentTexture = xMaterial.GetEmissiveTexture();
-		strCurrentPath = xMaterial.GetEmissiveTexturePath();
+		strCurrentPath = xMaterial.GetEmissiveTextureRef().GetPath();
 		break;
 	}
 
@@ -762,41 +762,42 @@ void Zenith_ModelComponent::AssignTextureToSlot(const char* szFilePath, uint32_t
 
 	if (pxOldMaterial)
 	{
-		if (!pxOldMaterial->GetDiffuseTexturePath().empty())
-			pxNewMaterial->SetDiffuseTexturePath(pxOldMaterial->GetDiffuseTexturePath());
-		if (!pxOldMaterial->GetNormalTexturePath().empty())
-			pxNewMaterial->SetNormalTexturePath(pxOldMaterial->GetNormalTexturePath());
-		if (!pxOldMaterial->GetRoughnessMetallicTexturePath().empty())
-			pxNewMaterial->SetRoughnessMetallicTexturePath(pxOldMaterial->GetRoughnessMetallicTexturePath());
-		if (!pxOldMaterial->GetOcclusionTexturePath().empty())
-			pxNewMaterial->SetOcclusionTexturePath(pxOldMaterial->GetOcclusionTexturePath());
-		if (!pxOldMaterial->GetEmissiveTexturePath().empty())
-			pxNewMaterial->SetEmissiveTexturePath(pxOldMaterial->GetEmissiveTexturePath());
+		if (!pxOldMaterial->GetDiffuseTextureRef().GetPath().empty())
+			pxNewMaterial->SetDiffuseTextureRef(pxOldMaterial->GetDiffuseTextureRef());
+		if (!pxOldMaterial->GetNormalTextureRef().GetPath().empty())
+			pxNewMaterial->SetNormalTextureRef(pxOldMaterial->GetNormalTextureRef());
+		if (!pxOldMaterial->GetRoughnessMetallicTextureRef().GetPath().empty())
+			pxNewMaterial->SetRoughnessMetallicTextureRef(pxOldMaterial->GetRoughnessMetallicTextureRef());
+		if (!pxOldMaterial->GetOcclusionTextureRef().GetPath().empty())
+			pxNewMaterial->SetOcclusionTextureRef(pxOldMaterial->GetOcclusionTextureRef());
+		if (!pxOldMaterial->GetEmissiveTextureRef().GetPath().empty())
+			pxNewMaterial->SetEmissiveTextureRef(pxOldMaterial->GetEmissiveTextureRef());
 
 		pxNewMaterial->SetBaseColor(pxOldMaterial->GetBaseColor());
 	}
 
-	std::string strPath(szFilePath);
+	TextureRef xRef;
+	xRef.SetFromPath(szFilePath);
 	switch (eSlot)
 	{
 	case TEXTURE_SLOT_DIFFUSE:
-		pxNewMaterial->SetDiffuseTexturePath(strPath);
+		pxNewMaterial->SetDiffuseTextureRef(xRef);
 		Zenith_Log(LOG_CATEGORY_MATERIAL, "Set diffuse texture");
 		break;
 	case TEXTURE_SLOT_NORMAL:
-		pxNewMaterial->SetNormalTexturePath(strPath);
+		pxNewMaterial->SetNormalTextureRef(xRef);
 		Zenith_Log(LOG_CATEGORY_MATERIAL, "Set normal texture");
 		break;
 	case TEXTURE_SLOT_ROUGHNESS_METALLIC:
-		pxNewMaterial->SetRoughnessMetallicTexturePath(strPath);
+		pxNewMaterial->SetRoughnessMetallicTextureRef(xRef);
 		Zenith_Log(LOG_CATEGORY_MATERIAL, "Set roughness/metallic texture");
 		break;
 	case TEXTURE_SLOT_OCCLUSION:
-		pxNewMaterial->SetOcclusionTexturePath(strPath);
+		pxNewMaterial->SetOcclusionTextureRef(xRef);
 		Zenith_Log(LOG_CATEGORY_MATERIAL, "Set occlusion texture");
 		break;
 	case TEXTURE_SLOT_EMISSIVE:
-		pxNewMaterial->SetEmissiveTexturePath(strPath);
+		pxNewMaterial->SetEmissiveTextureRef(xRef);
 		Zenith_Log(LOG_CATEGORY_MATERIAL, "Set emissive texture");
 		break;
 	}

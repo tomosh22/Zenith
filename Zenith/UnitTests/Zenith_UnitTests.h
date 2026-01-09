@@ -56,6 +56,14 @@ private:
 	static void TestAnimationEvents();
 	static void TestBoneMasking();
 
+	// Animation state machine integration tests
+	static void TestStateMachineUpdateLoop();
+	static void TestTriggerConsumptionInTransitions();
+	static void TestExitTimeTransitions();
+	static void TestTransitionPriority();
+	static void TestStateLifecycleCallbacks();
+	static void TestMultipleTransitionConditions();
+
 	// Asset pipeline tests
 	static void TestMeshAssetLoading();
 	static void TestBindPoseVertexPositions();
@@ -163,7 +171,6 @@ private:
 	static void TestPrefabSaveLoadRoundTrip();
 	static void TestPrefabOverrides();
 	static void TestPrefabVariantCreation();
-	static void TestPrefabNestedPrefabs();
 
 	// Async asset loading tests
 	static void TestAsyncLoadState();

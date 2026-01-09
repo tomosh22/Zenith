@@ -162,8 +162,8 @@ void Zenith_Physics::ProcessDeferredCollisionEvents()
 		if (!xScene.EntityExists(xEvent.uEntityID1) || !xScene.EntityExists(xEvent.uEntityID2))
 			continue;
 
-		Zenith_Entity xEntity1 = xScene.GetEntityFromID(xEvent.uEntityID1);
-		Zenith_Entity xEntity2 = xScene.GetEntityFromID(xEvent.uEntityID2);
+		Zenith_Entity xEntity1 = xScene.GetEntity(xEvent.uEntityID1);
+		Zenith_Entity xEntity2 = xScene.GetEntity(xEvent.uEntityID2);
 
 		// Dispatch to entity 1's script component
 		if (xEntity1.HasComponent<Zenith_ScriptComponent>())

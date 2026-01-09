@@ -118,6 +118,14 @@ public:
 	Flux_MaterialAsset* GetMaterial(uint32_t uIndex) const;
 
 	/**
+	 * Override material at the specified index
+	 * Useful for runtime material changes like procedural/colored materials
+	 * @param uIndex Material index (0 to GetNumMaterials()-1)
+	 * @param pxMaterial Material to set (not owned by model instance)
+	 */
+	void SetMaterial(uint32_t uIndex, Flux_MaterialAsset* pxMaterial);
+
+	/**
 	 * Check if this model has a skeleton (is animated)
 	 */
 	bool HasSkeleton() const { return m_pxSkeleton != nullptr; }

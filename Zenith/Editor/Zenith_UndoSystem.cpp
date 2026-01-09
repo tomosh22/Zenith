@@ -165,7 +165,7 @@ void Zenith_UndoCommand_TransformEdit::Execute()
 		return;
 	}
 
-	Zenith_Entity xEntity = xScene.GetEntityFromID(m_uEntityID);
+	Zenith_Entity xEntity = xScene.GetEntity(m_uEntityID);
 
 	if (!xEntity.HasComponent<Zenith_TransformComponent>())
 	{
@@ -190,7 +190,7 @@ void Zenith_UndoCommand_TransformEdit::Undo()
 		return;
 	}
 
-	Zenith_Entity xEntity = xScene.GetEntityFromID(m_uEntityID);
+	Zenith_Entity xEntity = xScene.GetEntity(m_uEntityID);
 
 	if (!xEntity.HasComponent<Zenith_TransformComponent>())
 	{
@@ -289,7 +289,7 @@ Zenith_UndoCommand_DeleteEntity::Zenith_UndoCommand_DeleteEntity(Zenith_EntityID
 	}
 
 	// Capture entity state before deletion
-	Zenith_Entity xEntity = xScene.GetEntityFromID(m_uEntityID);
+	Zenith_Entity xEntity = xScene.GetEntity(m_uEntityID);
 	m_strName = xEntity.GetName();
 
 	// TODO: Serialize full entity state (all components)

@@ -166,7 +166,7 @@ public:
 			return;
 		}
 
-		Zenith_Entity xCharacter = xScene.GetEntityByID(m_uCharacterEntityID);
+		Zenith_Entity xCharacter = xScene.GetEntity(m_uCharacterEntityID);
 		Zenith_TransformComponent& xTransform = xCharacter.GetComponent<Zenith_TransformComponent>();
 
 		// Get terrain height at player position
@@ -422,7 +422,7 @@ private:
 			return;
 		}
 
-		Zenith_Entity xCamEntity = xScene.GetEntityByID(uCamID);
+		Zenith_Entity xCamEntity = xScene.GetEntity(uCamID);
 		Zenith_CameraComponent& xCamera = xCamEntity.GetComponent<Zenith_CameraComponent>();
 
 		// Camera follows behind and above player

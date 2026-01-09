@@ -61,7 +61,7 @@ void Flux_ComputeTest::Initialise()
 void Flux_ComputeTest::Run()
 {
 	RunComputePass();
-	// TODO: Implement display pass once we can properly construct Flux_CommandDraw
+	// TODO: Implement display pass (requires fullscreen quad setup)
 	//RunDisplayPass();
 }
 
@@ -89,7 +89,7 @@ void Flux_ComputeTest::RunComputePass()
 
 void Flux_ComputeTest::RunDisplayPass()
 {
-	// STUB: Requires implementation once Flux_CommandDraw is properly available
+	// STUB: Requires fullscreen quad vertex buffer and display pipeline setup
 }
 
 Flux_RenderAttachment& Flux_ComputeTest::GetComputeOutputTexture()

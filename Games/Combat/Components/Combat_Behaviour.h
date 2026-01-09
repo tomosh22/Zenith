@@ -29,6 +29,7 @@
 #include "Input/Zenith_Input.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "Flux/Flux_MaterialAsset.h"
+#include "AssetHandling/Zenith_ModelAsset.h"
 #include "Prefab/Zenith_Prefab.h"
 #include "Maths/Zenith_Maths.h"
 
@@ -58,6 +59,9 @@ namespace Combat
 {
 	extern Flux_MeshGeometry* g_pxCapsuleGeometry;
 	extern Flux_MeshGeometry* g_pxCubeGeometry;
+	extern Flux_MeshGeometry* g_pxStickFigureGeometry;  // Animated humanoid mesh (skinned)
+	extern Zenith_ModelAsset* g_pxStickFigureModelAsset;  // Model asset with skeleton
+	extern std::string g_strStickFigureModelPath;  // Path to model asset for LoadModelFromFile
 	extern Flux_MaterialAsset* g_pxPlayerMaterial;
 	extern Flux_MaterialAsset* g_pxEnemyMaterial;
 	extern Flux_MaterialAsset* g_pxArenaMaterial;
@@ -128,6 +132,7 @@ public:
 		// Store resource pointers
 		m_pxCapsuleGeometry = Combat::g_pxCapsuleGeometry;
 		m_pxCubeGeometry = Combat::g_pxCubeGeometry;
+		m_pxStickFigureGeometry = Combat::g_pxStickFigureGeometry;
 		m_pxPlayerMaterial = Combat::g_pxPlayerMaterial;
 		m_pxEnemyMaterial = Combat::g_pxEnemyMaterial;
 		m_pxArenaMaterial = Combat::g_pxArenaMaterial;
@@ -142,7 +147,7 @@ public:
 		m_xPlayerController.m_fMoveSpeed = 5.0f;
 		m_xPlayerController.m_fLightAttackDuration = 0.3f;
 		m_xPlayerController.m_fHeavyAttackDuration = 0.6f;
-		m_xPlayerAnimController.Initialize();
+		// Animation controller is now initialized in SpawnPlayer with mesh geometry
 		m_xPlayerHitDetection.SetOwner(m_xLevelEntities.m_uPlayerEntityID);
 	}
 
@@ -316,11 +321,35 @@ private:
 		Zenith_Entity xPlayer = Zenith_Scene::Instantiate(*Combat::g_pxPlayerPrefab, "Player");
 
 		Zenith_TransformComponent& xTransform = xPlayer.GetComponent<Zenith_TransformComponent>();
-		xTransform.SetPosition(Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
-		xTransform.SetScale(Zenith_Maths::Vector3(0.8f, 2.0f, 0.8f));  // Capsule proportions
+		xTransform.SetPosition(Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
+		xTransform.SetScale(Zenith_Maths::Vector3(1.0f, 1.0f, 1.0f));  // Stick figure at unit scale
 
 		Zenith_ModelComponent& xModel = xPlayer.AddComponent<Zenith_ModelComponent>();
-		xModel.AddMeshEntry(*m_pxCapsuleGeometry, *m_pxPlayerMaterial);
+
+		// Use model instance system with skeleton for animated rendering
+		bool bUsingModelInstance = false;
+		if (!Combat::g_strStickFigureModelPath.empty())
+		{
+			xModel.LoadModel(Combat::g_strStickFigureModelPath);
+			// Check if model loaded successfully with a skeleton
+			if (xModel.GetModelInstance() && xModel.HasSkeleton())
+			{
+				xModel.GetModelInstance()->SetMaterial(0, m_pxPlayerMaterial);
+				bUsingModelInstance = true;
+				Zenith_Log(LOG_CATEGORY_ANIMATION, "[Combat] Player using model instance with skeleton");
+			}
+			else
+			{
+				Zenith_Log(LOG_CATEGORY_ANIMATION, "[Combat] Model loaded but no skeleton/skinned meshes, falling back");
+			}
+		}
+
+		// Fallback to mesh entry if model instance failed
+		if (!bUsingModelInstance)
+		{
+			xModel.AddMeshEntry(*m_pxStickFigureGeometry, *m_pxPlayerMaterial);
+			Zenith_Log(LOG_CATEGORY_ANIMATION, "[Combat] Player using fallback mesh entry (no animation)");
+		}
 
 		xPlayer.AddComponent<Zenith_ColliderComponent>()
 			.AddCollider(COLLISION_VOLUME_TYPE_CAPSULE, RIGIDBODY_TYPE_DYNAMIC);
@@ -329,6 +358,22 @@ private:
 
 		// Register with damage system
 		Combat_DamageSystem::RegisterEntity(xPlayer.GetEntityID(), 100.0f, 0.2f);
+
+		// Initialize animation controller - use skeleton instance if available
+		if (xModel.HasSkeleton())
+		{
+			Flux_SkeletonInstance* pxSkeleton = xModel.GetSkeletonInstance();
+			if (pxSkeleton)
+			{
+				m_xPlayerAnimController.Initialize(pxSkeleton);
+				Zenith_Log(LOG_CATEGORY_ANIMATION, "[Combat] Player animation controller initialized with skeleton instance");
+			}
+		}
+		else
+		{
+			// Fallback to mesh geometry
+			m_xPlayerAnimController.Initialize(m_pxStickFigureGeometry);
+		}
 
 		// Initialize hit detection
 		m_xPlayerHitDetection.SetOwner(xPlayer.GetEntityID());
@@ -354,11 +399,29 @@ private:
 			Zenith_Entity xEnemy = Zenith_Scene::Instantiate(*Combat::g_pxEnemyPrefab, szName);
 
 			Zenith_TransformComponent& xTransform = xEnemy.GetComponent<Zenith_TransformComponent>();
-			xTransform.SetPosition(Zenith_Maths::Vector3(fX, 1.0f, fZ));
-			xTransform.SetScale(Zenith_Maths::Vector3(0.7f, 1.8f, 0.7f));  // Slightly smaller than player
+			xTransform.SetPosition(Zenith_Maths::Vector3(fX, 0.0f, fZ));
+			xTransform.SetScale(Zenith_Maths::Vector3(0.9f, 0.9f, 0.9f));  // Slightly smaller than player
 
 			Zenith_ModelComponent& xModel = xEnemy.AddComponent<Zenith_ModelComponent>();
-			xModel.AddMeshEntry(*m_pxCapsuleGeometry, *m_pxEnemyMaterial);
+
+			// Use model instance system with skeleton for animated rendering
+			bool bUsingEnemyModel = false;
+			if (!Combat::g_strStickFigureModelPath.empty())
+			{
+				xModel.LoadModel(Combat::g_strStickFigureModelPath);
+				// Check if model loaded successfully with a skeleton
+				if (xModel.GetModelInstance() && xModel.HasSkeleton())
+				{
+					xModel.GetModelInstance()->SetMaterial(0, m_pxEnemyMaterial);
+					bUsingEnemyModel = true;
+				}
+			}
+
+			// Fallback to mesh entry if model instance failed
+			if (!bUsingEnemyModel)
+			{
+				xModel.AddMeshEntry(*m_pxStickFigureGeometry, *m_pxEnemyMaterial);
+			}
 
 			xEnemy.AddComponent<Zenith_ColliderComponent>()
 				.AddCollider(COLLISION_VOLUME_TYPE_CAPSULE, RIGIDBODY_TYPE_DYNAMIC);
@@ -368,13 +431,15 @@ private:
 			// Register with damage system
 			Combat_DamageSystem::RegisterEntity(xEnemy.GetEntityID(), 50.0f, 0.0f);
 
-			// Register with enemy manager
+			// Register with enemy manager - pass skeleton instance if available
 			Combat_EnemyConfig xConfig;
 			xConfig.m_fMoveSpeed = 3.0f;
 			xConfig.m_fAttackDamage = 15.0f;
 			xConfig.m_fAttackRange = 1.5f;
 			xConfig.m_fAttackCooldown = 1.5f;
-			m_xEnemyManager.RegisterEnemy(xEnemy.GetEntityID(), xConfig);
+
+			Flux_SkeletonInstance* pxSkeleton = xModel.HasSkeleton() ? xModel.GetSkeletonInstance() : nullptr;
+			m_xEnemyManager.RegisterEnemy(xEnemy.GetEntityID(), xConfig, pxSkeleton);
 		}
 	}
 
@@ -388,7 +453,7 @@ private:
 		if (!xScene.EntityExists(m_xLevelEntities.m_uPlayerEntityID))
 			return;
 
-		Zenith_Entity xPlayer = xScene.GetEntityByID(m_xLevelEntities.m_uPlayerEntityID);
+		Zenith_Entity xPlayer = xScene.GetEntity(m_xLevelEntities.m_uPlayerEntityID);
 		if (!xPlayer.HasComponent<Zenith_TransformComponent>() ||
 			!xPlayer.HasComponent<Zenith_ColliderComponent>())
 			return;
@@ -487,7 +552,7 @@ private:
 		if (uCamID == INVALID_ENTITY_ID)
 			return;
 
-		Zenith_Entity xCamEntity = xScene.GetEntityByID(uCamID);
+		Zenith_Entity xCamEntity = xScene.GetEntity(uCamID);
 		if (!xCamEntity.HasComponent<Zenith_CameraComponent>())
 			return;
 
@@ -497,7 +562,7 @@ private:
 		Zenith_Maths::Vector3 xPlayerPos(0.0f);
 		if (xScene.EntityExists(m_xLevelEntities.m_uPlayerEntityID))
 		{
-			Zenith_Entity xPlayer = xScene.GetEntityByID(m_xLevelEntities.m_uPlayerEntityID);
+			Zenith_Entity xPlayer = xScene.GetEntity(m_xLevelEntities.m_uPlayerEntityID);
 			xPlayer.GetComponent<Zenith_TransformComponent>().GetPosition(xPlayerPos);
 		}
 
@@ -682,6 +747,7 @@ public:
 	// Resource pointers (set in OnAwake from globals)
 	Flux_MeshGeometry* m_pxCapsuleGeometry = nullptr;
 	Flux_MeshGeometry* m_pxCubeGeometry = nullptr;
+	Flux_MeshGeometry* m_pxStickFigureGeometry = nullptr;  // Animated character mesh
 	Flux_MaterialAsset* m_pxPlayerMaterial = nullptr;
 	Flux_MaterialAsset* m_pxEnemyMaterial = nullptr;
 	Flux_MaterialAsset* m_pxArenaMaterial = nullptr;

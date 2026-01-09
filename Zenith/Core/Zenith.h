@@ -109,6 +109,7 @@ inline void Zenith_LogImpl(Zenith_LogCategory eCategory, int eLevel, const char*
 		Zenith_GetLogCategoryName(eCategory), buffer);
 
 	printf("%s\n", prefixedBuffer);
+	fflush(stdout);
 	Zenith_EditorAddLogMessage(prefixedBuffer, eLevel, eCategory);
 }
 

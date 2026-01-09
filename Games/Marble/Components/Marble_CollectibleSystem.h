@@ -75,7 +75,7 @@ public:
 				continue;
 			}
 
-			Zenith_Entity xColl = xScene.GetEntityByID(uCollID);
+			Zenith_Entity xColl = xScene.GetEntity(uCollID);
 			Zenith_Maths::Vector3 xCollPos;
 			xColl.GetComponent<Zenith_TransformComponent>().GetPosition(xCollPos);
 
@@ -113,7 +113,7 @@ public:
 			if (!xScene.EntityExists(uID))
 				continue;
 
-			Zenith_Entity xColl = xScene.GetEntityByID(uID);
+			Zenith_Entity xColl = xScene.GetEntity(uID);
 			Zenith_TransformComponent& xTransform = xColl.GetComponent<Zenith_TransformComponent>();
 
 			// Get current rotation, add Y rotation, set back

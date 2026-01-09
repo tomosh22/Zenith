@@ -74,7 +74,7 @@ static void InitialiseEngine()
 	Project_LoadInitialScene();
 	Flux_MemoryManager::EndFrame(false);
 
-	Zenith_Core::s_xLastFrameTime = std::chrono::high_resolution_clock::now();
+	Zenith_Core::g_xLastFrameTime = std::chrono::high_resolution_clock::now();
 
 	s_bEngineInitialised = true;
 	LOGI("Zenith Engine initialised successfully");

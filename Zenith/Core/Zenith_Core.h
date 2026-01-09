@@ -1,25 +1,32 @@
 #pragma once
 
-class Zenith_Core
+// Zenith_Core namespace - provides global frame timing and main loop
+// Note: Converted from static-only class to namespace for idiomatic C++
+// (classes should have instance state; use namespaces for grouping related functions)
+namespace Zenith_Core
 {
-public:
-	static void SetDt(const float fDt) { s_fDt = fDt; }
-	static float GetDt() { return s_fDt; }
+	// Frame timing accessors (inline for performance)
+	inline void SetDt(const float fDt);
+	inline float GetDt();
+	inline void AddTimePassed(const float fDt);
+	inline float GetTimePassed();
 
-	static void AddTimePassed(const float fDt) { s_fTimePassed += fDt; }
-	static float GetTimePassed() { return s_fTimePassed; }
-
-	static void Zenith_MainLoop();
-	static void UpdateTimers();
+	// Main loop and render synchronization
+	void Zenith_MainLoop();
+	void UpdateTimers();
 
 	// Wait for all render tasks to complete
 	// Used by editor to ensure render tasks finish before scene transitions
-	// bIncludeGizmos: If false, skips waiting for gizmo task (useful when called mid-frame)
-	static void WaitForAllRenderTasks();
+	void WaitForAllRenderTasks();
 
-	//#TO_TODO: this should be private, currently set by main
-	static std::chrono::high_resolution_clock::time_point s_xLastFrameTime;
-private:
-	static float s_fDt;
-	static float s_fTimePassed;
-};
+	// Frame timing state (definitions in Zenith_Core.cpp)
+	extern float g_fDt;
+	extern float g_fTimePassed;
+	extern std::chrono::high_resolution_clock::time_point g_xLastFrameTime;
+
+	// Inline implementations
+	inline void SetDt(const float fDt) { g_fDt = fDt; }
+	inline float GetDt() { return g_fDt; }
+	inline void AddTimePassed(const float fDt) { g_fTimePassed += fDt; }
+	inline float GetTimePassed() { return g_fTimePassed; }
+}

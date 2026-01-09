@@ -72,3 +72,17 @@ Provides `Zenith_ScopedMutexLock` RAII wrapper for locking.
 **Tools-Only Code:** Editor features wrapped in `#ifdef ZENITH_TOOLS` to exclude from shipping builds.
 
 **Type Safety:** Sized integer types (`u_int32`, `u_int64`) with static assertions prevent platform-specific bugs.
+
+## Design Rationale
+
+### Why Zenith_Core Is a Namespace, Not a Class
+
+`Zenith_Core` was converted from a static-only class to a namespace. This is idiomatic C++:
+
+1. **Classes Should Have Instance State**: A class with only static members is semantically a namespace disguised as a class. In C++, namespaces exist specifically for grouping related functions and data.
+
+2. **No Instantiation Concerns**: A static-only class can technically be instantiated (without effect). A namespace cannot be instantiated, which better reflects intent.
+
+3. **Same Usage Syntax**: The conversion is transparent to callers - `Zenith_Core::GetDt()` works identically whether `Zenith_Core` is a class or namespace.
+
+4. **Variable Naming**: Changed from `s_` (static member) prefix to `g_` (global) prefix following the codebase naming conventions, since namespace-scope variables are essentially globals.

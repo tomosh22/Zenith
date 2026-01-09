@@ -22,19 +22,6 @@ struct Zenith_PropertyOverride
 	void ReadFromDataStream(Zenith_DataStream& xStream);
 };
 
-/**
- * NestedPrefabInstance - A prefab contained within another prefab
- */
-struct Zenith_NestedPrefabInstance
-{
-	PrefabRef m_xPrefab;                                    // Reference to nested prefab
-	std::string m_strLocalName;                             // Name within parent prefab
-	Zenith_Vector<Zenith_PropertyOverride> m_xOverrides;    // Local overrides
-
-	void WriteToDataStream(Zenith_DataStream& xStream) const;
-	void ReadFromDataStream(Zenith_DataStream& xStream);
-};
-
 class Zenith_Prefab
 {
 public:
@@ -103,20 +90,6 @@ public:
 	void ClearOverrides() { m_xOverrides.Clear(); }
 
 	//--------------------------------------------------------------------------
-	// Nested Prefabs
-	//--------------------------------------------------------------------------
-
-	/**
-	 * Add a nested prefab instance (takes ownership via move)
-	 */
-	void AddNestedPrefab(Zenith_NestedPrefabInstance xNested);
-
-	/**
-	 * Get all nested prefab instances
-	 */
-	const Zenith_Vector<Zenith_NestedPrefabInstance>& GetNestedPrefabs() const { return m_xNestedPrefabs; }
-
-	//--------------------------------------------------------------------------
 	// Accessors
 	//--------------------------------------------------------------------------
 
@@ -135,9 +108,6 @@ private:
 	// Variant support
 	PrefabRef m_xBasePrefab;
 	Zenith_Vector<Zenith_PropertyOverride> m_xOverrides;
-
-	// Nested prefab support
-	Zenith_Vector<Zenith_NestedPrefabInstance> m_xNestedPrefabs;
 
 	// Prefab format version
 	static constexpr u_int PREFAB_VERSION = 2;

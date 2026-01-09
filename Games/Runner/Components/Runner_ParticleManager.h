@@ -303,7 +303,7 @@ private:
 		float fScale = xParticle.m_fSize * (1.0f - fLifeRatio * 0.5f);
 
 		// Update entity
-		Zenith_Entity xEntity = xScene.GetEntityByID(xParticle.m_uEntityID);
+		Zenith_Entity xEntity = xScene.GetEntity(xParticle.m_uEntityID);
 		Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
 		xTransform.SetPosition(xParticle.m_xPosition);
 		xTransform.SetScale(Zenith_Maths::Vector3(fScale));

@@ -197,6 +197,14 @@ public:
 	Flux_AnimationClipCollection() = default;
 	~Flux_AnimationClipCollection();
 
+	// Non-copyable - owns dynamically allocated clips
+	Flux_AnimationClipCollection(const Flux_AnimationClipCollection&) = delete;
+	Flux_AnimationClipCollection& operator=(const Flux_AnimationClipCollection&) = delete;
+
+	// Moveable - transfers ownership of clips
+	Flux_AnimationClipCollection(Flux_AnimationClipCollection&& xOther) noexcept;
+	Flux_AnimationClipCollection& operator=(Flux_AnimationClipCollection&& xOther) noexcept;
+
 	// Add/remove clips
 	void AddClip(Flux_AnimationClip* pxClip);
 	void RemoveClip(const std::string& strName);

@@ -230,7 +230,7 @@ private:
 		if (!m_xLevelEntities.uBallEntityID.IsValid() || !xScene.EntityExists(m_xLevelEntities.uBallEntityID))
 			return;
 
-		Zenith_Entity xBall = xScene.GetEntityByID(m_xLevelEntities.uBallEntityID);
+		Zenith_Entity xBall = xScene.GetEntity(m_xLevelEntities.uBallEntityID);
 		if (!xBall.HasComponent<Zenith_ColliderComponent>())
 			return;
 
@@ -241,7 +241,7 @@ private:
 		if (uCamID == INVALID_ENTITY_ID || !xScene.EntityExists(uCamID))
 			return;
 
-		Zenith_Entity xCamEntity = xScene.GetEntityByID(uCamID);
+		Zenith_Entity xCamEntity = xScene.GetEntity(uCamID);
 		Zenith_CameraComponent& xCamera = xCamEntity.GetComponent<Zenith_CameraComponent>();
 
 		// Get positions for input calculation
@@ -268,7 +268,7 @@ private:
 		if (!m_xLevelEntities.uBallEntityID.IsValid() || !xScene.EntityExists(m_xLevelEntities.uBallEntityID))
 			return;
 
-		Zenith_Entity xBall = xScene.GetEntityByID(m_xLevelEntities.uBallEntityID);
+		Zenith_Entity xBall = xScene.GetEntity(m_xLevelEntities.uBallEntityID);
 		Zenith_Maths::Vector3 xBallPos;
 		xBall.GetComponent<Zenith_TransformComponent>().GetPosition(xBallPos);
 
@@ -291,8 +291,8 @@ private:
 		if (uCamID == INVALID_ENTITY_ID || !xScene.EntityExists(uCamID))
 			return;
 
-		Zenith_Entity xBall = xScene.GetEntityByID(m_xLevelEntities.uBallEntityID);
-		Zenith_Entity xCamEntity = xScene.GetEntityByID(uCamID);
+		Zenith_Entity xBall = xScene.GetEntity(m_xLevelEntities.uBallEntityID);
+		Zenith_Entity xCamEntity = xScene.GetEntity(uCamID);
 
 		Zenith_Maths::Vector3 xBallPos;
 		xBall.GetComponent<Zenith_TransformComponent>().GetPosition(xBallPos);
@@ -310,7 +310,7 @@ private:
 		if (!m_xLevelEntities.uBallEntityID.IsValid() || !xScene.EntityExists(m_xLevelEntities.uBallEntityID))
 			return;
 
-		Zenith_Entity xBall = xScene.GetEntityByID(m_xLevelEntities.uBallEntityID);
+		Zenith_Entity xBall = xScene.GetEntity(m_xLevelEntities.uBallEntityID);
 		Zenith_Maths::Vector3 xBallPos;
 		xBall.GetComponent<Zenith_TransformComponent>().GetPosition(xBallPos);
 

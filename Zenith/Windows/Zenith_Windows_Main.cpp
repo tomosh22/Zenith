@@ -84,7 +84,7 @@ int main()
 	//#TO_TODO: Flux_Graphics::UploadFrameConstants crashes if we don't do this because there is no game camera
 	Project_LoadInitialScene();
 	Flux_MemoryManager::EndFrame(false);
-	Zenith_Core::s_xLastFrameTime = std::chrono::high_resolution_clock::now();
+	Zenith_Core::g_xLastFrameTime = std::chrono::high_resolution_clock::now();
 
 	while (!Zenith_Window::GetInstance()->ShouldClose())
 	{

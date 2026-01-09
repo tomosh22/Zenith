@@ -10,6 +10,7 @@
 #include "Editor/Zenith_Editor.h"
 #endif
 #include "AssetHandling/Zenith_AssetHandler.h"
+#include "AssetHandling/Zenith_AssetDatabase.h"
 #include "Flux/Flux_Graphics.h"
 #include "Physics/Zenith_Physics.h"
 #include "Profiling/Zenith_Profiling.h"
@@ -76,6 +77,9 @@ int main()
 	Zenith_DebugVariables::AddButton({ "Export", "Font", "Export Font Atlas" }, ExportDefaultFontAtlas);
 #endif
 
+	// Initialize asset database for GUID-based asset references
+	Zenith_AssetDatabase::Initialize(ENGINE_ASSETS_DIR);
+
 	Flux_MemoryManager::BeginFrame();
 	extern void Project_RegisterScriptBehaviours();
 	extern void Project_LoadInitialScene();
@@ -84,7 +88,7 @@ int main()
 	//#TO_TODO: Flux_Graphics::UploadFrameConstants crashes if we don't do this because there is no game camera
 	Project_LoadInitialScene();
 	Flux_MemoryManager::EndFrame(false);
-	Zenith_Core::s_xLastFrameTime = std::chrono::high_resolution_clock::now();
+	Zenith_Core::g_xLastFrameTime = std::chrono::high_resolution_clock::now();
 
 	while (!Zenith_Window::GetInstance()->ShouldClose())
 	{

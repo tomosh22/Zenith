@@ -79,6 +79,7 @@ public:
 	// ========================================================================
 
 	Combat_PlayerState GetState() const { return m_eState; }
+	bool WasStateChangedThisFrame() const { return m_bStateChangedThisFrame; }
 	bool IsAttacking() const
 	{
 		return m_eState == Combat_PlayerState::LIGHT_ATTACK_1 ||
@@ -131,6 +132,8 @@ public:
 	void Update(Zenith_TransformComponent& xTransform, Zenith_ColliderComponent& xCollider, float fDt)
 	{
 		m_bAttackJustStarted = false;
+		m_bStateChangedThisFrame = false;
+		m_ePreviousState = m_eState;
 
 		// Update timers
 		UpdateTimers(fDt);
@@ -162,6 +165,9 @@ public:
 			// No updates when dead
 			break;
 		}
+
+		// Track state changes
+		m_bStateChangedThisFrame = (m_eState != m_ePreviousState);
 	}
 
 	/**
@@ -508,6 +514,7 @@ private:
 	// ========================================================================
 
 	Combat_PlayerState m_eState = Combat_PlayerState::IDLE;
+	Combat_PlayerState m_ePreviousState = Combat_PlayerState::IDLE;
 	Combat_AttackType m_eCurrentAttackType = Combat_AttackType::NONE;
 
 	float m_fStateTimer = 0.0f;
@@ -517,6 +524,7 @@ private:
 	uint32_t m_uComboCount = 0;
 	bool m_bComboWindowOpen = false;
 	bool m_bAttackJustStarted = false;
+	bool m_bStateChangedThisFrame = false;
 
 	Zenith_Maths::Vector3 m_xMoveDirection = Zenith_Maths::Vector3(0.0f);
 	Zenith_Maths::Vector3 m_xFacingDirection = Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f);

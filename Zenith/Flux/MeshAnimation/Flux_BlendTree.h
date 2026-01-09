@@ -9,6 +9,7 @@
 // Forward declarations
 class Flux_MeshGeometry;
 class Flux_AnimationClipCollection;
+class Zenith_SkeletonAsset;
 
 //=============================================================================
 // Flux_BlendTreeNode
@@ -19,10 +20,15 @@ class Flux_BlendTreeNode
 public:
 	virtual ~Flux_BlendTreeNode() = default;
 
-	// Evaluate this node and output a pose
+	// Evaluate this node and output a pose (legacy mesh geometry path)
 	virtual void Evaluate(float fDt,
 		Flux_SkeletonPose& xOutPose,
 		const Flux_MeshGeometry& xGeometry) = 0;
+
+	// Evaluate this node using skeleton asset (model instance path)
+	virtual void Evaluate(float fDt,
+		Flux_SkeletonPose& xOutPose,
+		const Zenith_SkeletonAsset& xSkeleton) = 0;
 
 	// Get normalized time progress [0-1] (for exit time conditions)
 	virtual float GetNormalizedTime() const = 0;
@@ -57,6 +63,10 @@ public:
 	void Evaluate(float fDt,
 		Flux_SkeletonPose& xOutPose,
 		const Flux_MeshGeometry& xGeometry) override;
+
+	void Evaluate(float fDt,
+		Flux_SkeletonPose& xOutPose,
+		const Zenith_SkeletonAsset& xSkeleton) override;
 
 	float GetNormalizedTime() const override;
 	void Reset() override;
@@ -106,6 +116,10 @@ public:
 		Flux_SkeletonPose& xOutPose,
 		const Flux_MeshGeometry& xGeometry) override;
 
+	void Evaluate(float fDt,
+		Flux_SkeletonPose& xOutPose,
+		const Zenith_SkeletonAsset& xSkeleton) override;
+
 	float GetNormalizedTime() const override;
 	void Reset() override;
 	bool IsFinished() const override;
@@ -154,6 +168,10 @@ public:
 		Flux_SkeletonPose& xOutPose,
 		const Flux_MeshGeometry& xGeometry) override;
 
+	void Evaluate(float fDt,
+		Flux_SkeletonPose& xOutPose,
+		const Zenith_SkeletonAsset& xSkeleton) override;
+
 	float GetNormalizedTime() const override;
 	void Reset() override;
 
@@ -201,6 +219,10 @@ public:
 	void Evaluate(float fDt,
 		Flux_SkeletonPose& xOutPose,
 		const Flux_MeshGeometry& xGeometry) override;
+
+	void Evaluate(float fDt,
+		Flux_SkeletonPose& xOutPose,
+		const Zenith_SkeletonAsset& xSkeleton) override;
 
 	float GetNormalizedTime() const override;
 	void Reset() override;
@@ -256,6 +278,10 @@ public:
 		Flux_SkeletonPose& xOutPose,
 		const Flux_MeshGeometry& xGeometry) override;
 
+	void Evaluate(float fDt,
+		Flux_SkeletonPose& xOutPose,
+		const Zenith_SkeletonAsset& xSkeleton) override;
+
 	float GetNormalizedTime() const override;
 	void Reset() override;
 
@@ -299,6 +325,10 @@ public:
 		Flux_SkeletonPose& xOutPose,
 		const Flux_MeshGeometry& xGeometry) override;
 
+	void Evaluate(float fDt,
+		Flux_SkeletonPose& xOutPose,
+		const Zenith_SkeletonAsset& xSkeleton) override;
+
 	float GetNormalizedTime() const override;
 	void Reset() override;
 
@@ -339,6 +369,10 @@ public:
 	void Evaluate(float fDt,
 		Flux_SkeletonPose& xOutPose,
 		const Flux_MeshGeometry& xGeometry) override;
+
+	void Evaluate(float fDt,
+		Flux_SkeletonPose& xOutPose,
+		const Zenith_SkeletonAsset& xSkeleton) override;
 
 	float GetNormalizedTime() const override;
 	void Reset() override;

@@ -10,6 +10,7 @@
 // Forward declarations
 class Flux_MeshGeometry;
 class Flux_AnimationClipCollection;
+class Zenith_SkeletonAsset;
 
 //=============================================================================
 // Flux_AnimationParameters
@@ -227,6 +228,11 @@ public:
 		Flux_SkeletonPose& xOutPose,
 		const Flux_MeshGeometry& xGeometry);
 
+	// Update using skeleton asset (for model instance system)
+	void Update(float fDt,
+		Flux_SkeletonPose& xOutPose,
+		const Zenith_SkeletonAsset& xSkeleton);
+
 	// Check if currently in a transition
 	bool IsTransitioning() const { return m_pxActiveTransition != nullptr; }
 
@@ -250,6 +256,7 @@ public:
 private:
 	void StartTransition(const Flux_StateTransition& xTransition);
 	void UpdateTransition(float fDt, const Flux_MeshGeometry& xGeometry);
+	void UpdateTransition(float fDt, const Zenith_SkeletonAsset& xSkeleton);
 	void CompleteTransition();
 
 	std::string m_strName;

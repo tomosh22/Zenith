@@ -441,9 +441,6 @@ public:
 		return Zenith_Entity(this, xID);
 	}
 
-	// Legacy compatibility - same as GetEntity but with old name
-	Zenith_Entity GetEntityFromID(Zenith_EntityID xID) { return GetEntity(xID); }
-
 	// Find entity by name - returns invalid entity if not found
 	Zenith_Entity FindEntityByName(const std::string& strName);
 
@@ -462,9 +459,6 @@ public:
 
 	static void Update(const float fDt);
 	static void WaitForUpdateComplete();
-
-	// Legacy alias - use GetEntity instead
-	Zenith_Entity GetEntityByID(Zenith_EntityID xID) { return GetEntity(xID); }
 
 	static Zenith_Scene& GetCurrentScene() { return s_xCurrentScene; }
 

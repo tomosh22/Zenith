@@ -25,6 +25,76 @@ Flux_AnimationController::~Flux_AnimationController()
 	delete m_pxDirectTransition;
 }
 
+Flux_AnimationController::Flux_AnimationController(Flux_AnimationController&& xOther) noexcept
+	: m_pxGeometry(xOther.m_pxGeometry)
+	, m_pxSkeletonInstance(xOther.m_pxSkeletonInstance)
+	, m_pxSkeletonAsset(xOther.m_pxSkeletonAsset)
+	, m_xClipCollection(std::move(xOther.m_xClipCollection))
+	, m_pxStateMachine(xOther.m_pxStateMachine)
+	, m_pxIKSolver(xOther.m_pxIKSolver)
+	, m_xOutputPose(std::move(xOther.m_xOutputPose))
+	, m_bPaused(xOther.m_bPaused)
+	, m_fPlaybackSpeed(xOther.m_fPlaybackSpeed)
+	, m_pxDirectPlayNode(xOther.m_pxDirectPlayNode)
+	, m_pxDirectTransition(xOther.m_pxDirectTransition)
+	, m_xBoneBuffer(std::move(xOther.m_xBoneBuffer))
+	, m_xWorldMatrix(xOther.m_xWorldMatrix)
+	, m_fnEventCallback(std::move(xOther.m_fnEventCallback))
+	, m_fLastEventCheckTime(xOther.m_fLastEventCheckTime)
+{
+	// Null out moved-from object's owned pointers to prevent double-delete
+	xOther.m_pxStateMachine = nullptr;
+	xOther.m_pxIKSolver = nullptr;
+	xOther.m_pxDirectPlayNode = nullptr;
+	xOther.m_pxDirectTransition = nullptr;
+	xOther.m_pxGeometry = nullptr;
+	xOther.m_pxSkeletonInstance = nullptr;
+	xOther.m_pxSkeletonAsset = nullptr;
+}
+
+Flux_AnimationController& Flux_AnimationController::operator=(Flux_AnimationController&& xOther) noexcept
+{
+	if (this != &xOther)
+	{
+		// Delete our owned resources
+		delete m_pxStateMachine;
+		delete m_pxIKSolver;
+		delete m_pxDirectPlayNode;
+		delete m_pxDirectTransition;
+
+		// Transfer non-owned pointers
+		m_pxGeometry = xOther.m_pxGeometry;
+		m_pxSkeletonInstance = xOther.m_pxSkeletonInstance;
+		m_pxSkeletonAsset = xOther.m_pxSkeletonAsset;
+
+		// Move value types
+		m_xClipCollection = std::move(xOther.m_xClipCollection);
+		m_xOutputPose = std::move(xOther.m_xOutputPose);
+		m_bPaused = xOther.m_bPaused;
+		m_fPlaybackSpeed = xOther.m_fPlaybackSpeed;
+		m_xBoneBuffer = std::move(xOther.m_xBoneBuffer);
+		m_xWorldMatrix = xOther.m_xWorldMatrix;
+		m_fnEventCallback = std::move(xOther.m_fnEventCallback);
+		m_fLastEventCheckTime = xOther.m_fLastEventCheckTime;
+
+		// Transfer owned pointers
+		m_pxStateMachine = xOther.m_pxStateMachine;
+		m_pxIKSolver = xOther.m_pxIKSolver;
+		m_pxDirectPlayNode = xOther.m_pxDirectPlayNode;
+		m_pxDirectTransition = xOther.m_pxDirectTransition;
+
+		// Null out moved-from object's owned pointers
+		xOther.m_pxStateMachine = nullptr;
+		xOther.m_pxIKSolver = nullptr;
+		xOther.m_pxDirectPlayNode = nullptr;
+		xOther.m_pxDirectTransition = nullptr;
+		xOther.m_pxGeometry = nullptr;
+		xOther.m_pxSkeletonInstance = nullptr;
+		xOther.m_pxSkeletonAsset = nullptr;
+	}
+	return *this;
+}
+
 void Flux_AnimationController::Initialize(Flux_MeshGeometry* pxGeometry)
 {
 	m_pxGeometry = pxGeometry;
@@ -173,7 +243,30 @@ void Flux_AnimationController::UpdateWithSkeletonInstance(float fDt)
 	// This path handles animation for the new model instance system
 	// using Flux_SkeletonInstance instead of Flux_MeshGeometry
 
-	// Handle direct clip playback (simplified - no state machine support yet for skeleton instance)
+	// Handle state machine if present (takes priority)
+	if (m_pxStateMachine)
+	{
+		// Update state machine using skeleton asset
+		m_pxStateMachine->Update(fDt, m_xOutputPose, *m_pxSkeletonAsset);
+
+		// Apply the output pose to the skeleton instance
+		uint32_t uNumBones = m_pxSkeletonInstance->GetNumBones();
+		for (uint32_t i = 0; i < uNumBones && i < FLUX_MAX_BONES; ++i)
+		{
+			const Flux_BoneLocalPose& xLocalPose = m_xOutputPose.GetLocalPose(i);
+			m_pxSkeletonInstance->SetBoneLocalTransform(i,
+				xLocalPose.m_xPosition,
+				xLocalPose.m_xRotation,
+				xLocalPose.m_xScale);
+		}
+
+		// Have skeleton instance compute skinning matrices and upload to GPU
+		m_pxSkeletonInstance->ComputeSkinningMatrices();
+		m_pxSkeletonInstance->UploadToGPU();
+		return;
+	}
+
+	// Handle direct clip playback
 	if (m_pxDirectPlayNode)
 	{
 		Flux_AnimationClip* pxClip = m_pxDirectPlayNode->GetClip();
@@ -264,17 +357,39 @@ const Zenith_Maths::Matrix4* Flux_AnimationController::GetSkinningMatrices() con
 
 Flux_AnimationClip* Flux_AnimationController::AddClipFromFile(const std::string& strPath)
 {
-	Flux_AnimationClip* pxClip = Flux_AnimationClip::LoadFromFile(strPath);
-	if (pxClip)
-	{
-		m_xClipCollection.AddClip(pxClip);
+	Flux_AnimationClip* pxClip = nullptr;
 
-		// Resolve clip references in state machine
-		if (m_pxStateMachine)
+	// Check file extension to determine loader
+	size_t ulDotPos = strPath.rfind('.');
+	if (ulDotPos != std::string::npos)
+	{
+		std::string strExt = strPath.substr(ulDotPos);
+		if (strExt == ".zanim")
 		{
-			m_pxStateMachine->ResolveClipReferences(&m_xClipCollection);
+			pxClip = Flux_AnimationClip::LoadFromZanimFile(strPath);
+		}
+		else
+		{
+			// Use Assimp for other formats (fbx, dae, etc.)
+			pxClip = Flux_AnimationClip::LoadFromFile(strPath);
 		}
 	}
+	else
+	{
+		// No extension - try Assimp
+		pxClip = Flux_AnimationClip::LoadFromFile(strPath);
+	}
+
+	Zenith_Assert(pxClip != nullptr, "Failed to load animation clip from: %s", strPath.c_str());
+
+	m_xClipCollection.AddClip(pxClip);
+
+	// Resolve clip references in state machine
+	if (m_pxStateMachine)
+	{
+		m_pxStateMachine->ResolveClipReferences(&m_xClipCollection);
+	}
+
 	return pxClip;
 }
 

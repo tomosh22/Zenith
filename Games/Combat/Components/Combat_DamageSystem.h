@@ -308,7 +308,7 @@ public:
 			Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
 			if (xScene.EntityExists(uTargetID))
 			{
-				Zenith_Entity xEntity = xScene.GetEntityByID(uTargetID);
+				Zenith_Entity xEntity = xScene.GetEntity(uTargetID);
 				if (xEntity.HasComponent<Zenith_TransformComponent>())
 				{
 					xEntity.GetComponent<Zenith_TransformComponent>().GetPosition(xDeathPos);
@@ -374,7 +374,7 @@ private:
 		if (!xScene.EntityExists(uEntityID))
 			return;
 
-		Zenith_Entity xEntity = xScene.GetEntityByID(uEntityID);
+		Zenith_Entity xEntity = xScene.GetEntity(uEntityID);
 		if (!xEntity.HasComponent<Zenith_ColliderComponent>())
 			return;
 

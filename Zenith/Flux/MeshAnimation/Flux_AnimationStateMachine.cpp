@@ -1,6 +1,7 @@
 #include "Zenith.h"
 #include "Flux_AnimationStateMachine.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
+#include "AssetHandling/Zenith_SkeletonAsset.h"
 #include "Core/Zenith_Core.h"
 #include <algorithm>
 #include <fstream>
@@ -607,9 +608,8 @@ void Flux_AnimationStateMachine::Update(float fDt,
 		return;
 	}
 
-	// Check for new transitions (only if not already transitioning, or if interruptible)
-	if (!m_pxActiveTransition ||
-		(m_pxActiveTransition && m_pxTransitionTargetState))
+	// Check for new transitions (only if not already transitioning)
+	if (!m_pxActiveTransition)
 	{
 		const Flux_StateTransition* pxTransition = m_pxCurrentState->CheckTransitions(m_xParameters);
 		if (pxTransition)
@@ -639,6 +639,66 @@ void Flux_AnimationStateMachine::Update(float fDt,
 	if (m_pxCurrentState->GetBlendTree())
 	{
 		m_pxCurrentState->GetBlendTree()->Evaluate(fDt, m_xCurrentPose, xGeometry);
+	}
+	else
+	{
+		m_xCurrentPose.Reset();
+	}
+
+	// Call update callback
+	if (m_pxCurrentState->m_fnOnUpdate)
+		m_pxCurrentState->m_fnOnUpdate(fDt);
+
+	xOutPose.CopyFrom(m_xCurrentPose);
+}
+
+void Flux_AnimationStateMachine::Update(float fDt,
+	Flux_SkeletonPose& xOutPose,
+	const Zenith_SkeletonAsset& xSkeleton)
+{
+	// Initialize to default state if needed
+	if (!m_pxCurrentState && !m_strDefaultStateName.empty())
+	{
+		SetState(m_strDefaultStateName);
+	}
+
+	if (!m_pxCurrentState)
+	{
+		xOutPose.Reset();
+		return;
+	}
+
+	// Check for new transitions (only if not already transitioning)
+	if (!m_pxActiveTransition)
+	{
+		const Flux_StateTransition* pxTransition = m_pxCurrentState->CheckTransitions(m_xParameters);
+		if (pxTransition)
+		{
+			StartTransition(*pxTransition);
+		}
+	}
+
+	// Update transition if active
+	if (m_pxActiveTransition)
+	{
+		UpdateTransition(fDt, xSkeleton);
+
+		if (m_pxActiveTransition->IsComplete())
+		{
+			CompleteTransition();
+		}
+		else
+		{
+			// Continue blending
+			m_pxActiveTransition->Blend(xOutPose, m_xTargetPose);
+			return;
+		}
+	}
+
+	// Normal state update
+	if (m_pxCurrentState->GetBlendTree())
+	{
+		m_pxCurrentState->GetBlendTree()->Evaluate(fDt, m_xCurrentPose, xSkeleton);
 	}
 	else
 	{
@@ -697,6 +757,25 @@ void Flux_AnimationStateMachine::UpdateTransition(float fDt, const Flux_MeshGeom
 	}
 }
 
+void Flux_AnimationStateMachine::UpdateTransition(float fDt, const Zenith_SkeletonAsset& xSkeleton)
+{
+	if (!m_pxActiveTransition || !m_pxTransitionTargetState)
+		return;
+
+	// Update transition timer
+	m_pxActiveTransition->Update(fDt);
+
+	// Evaluate target state
+	if (m_pxTransitionTargetState->GetBlendTree())
+	{
+		m_pxTransitionTargetState->GetBlendTree()->Evaluate(fDt, m_xTargetPose, xSkeleton);
+	}
+	else
+	{
+		m_xTargetPose.Reset();
+	}
+}
+
 void Flux_AnimationStateMachine::CompleteTransition()
 {
 	if (!m_pxTransitionTargetState)
@@ -717,14 +796,14 @@ void Flux_AnimationStateMachine::ResolveClipReferences(Flux_AnimationClipCollect
 	// Recursively resolve clip references in all blend trees
 	for (auto& xPair : m_xStates)
 	{
-		if (xPair.second->GetBlendTree())
+		Flux_BlendTreeNode* pxBlendTree = xPair.second->GetBlendTree();
+		if (pxBlendTree)
 		{
-			// For now, only handle clip nodes directly
-			// A more complete implementation would recursively visit all nodes
-			Flux_BlendTreeNode_Clip* pxClipNode =
-				dynamic_cast<Flux_BlendTreeNode_Clip*>(xPair.second->GetBlendTree());
-			if (pxClipNode)
+			// Use type name check instead of dynamic_cast to avoid RTTI issues
+			// across compilation units
+			if (strcmp(pxBlendTree->GetNodeTypeName(), "Clip") == 0)
 			{
+				Flux_BlendTreeNode_Clip* pxClipNode = static_cast<Flux_BlendTreeNode_Clip*>(pxBlendTree);
 				pxClipNode->ResolveClip(pxCollection);
 			}
 		}

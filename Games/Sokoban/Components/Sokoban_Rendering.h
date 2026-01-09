@@ -259,7 +259,7 @@ public:
 
 		if (m_uPlayerEntityID.IsValid() && xScene.EntityExists(m_uPlayerEntityID))
 		{
-			Zenith_Entity xPlayer = xScene.GetEntityByID(m_uPlayerEntityID);
+			Zenith_Entity xPlayer = xScene.GetEntity(m_uPlayerEntityID);
 			if (xPlayer.HasComponent<Zenith_TransformComponent>())
 			{
 				Zenith_TransformComponent& xTransform = xPlayer.GetComponent<Zenith_TransformComponent>();
@@ -298,7 +298,7 @@ public:
 					Zenith_EntityID uBoxID = m_axBoxEntityIDs[uBoxIdx];
 					if (xScene.EntityExists(uBoxID))
 					{
-						Zenith_Entity xBox = xScene.GetEntityByID(uBoxID);
+						Zenith_Entity xBox = xScene.GetEntity(uBoxID);
 						if (xBox.HasComponent<Zenith_TransformComponent>())
 						{
 							Zenith_TransformComponent& xTransform = xBox.GetComponent<Zenith_TransformComponent>();
@@ -340,7 +340,7 @@ public:
 		if (uCameraEntityID == INVALID_ENTITY_ID || !xScene.EntityExists(uCameraEntityID))
 			return;
 
-		Zenith_Entity xCameraEntity = xScene.GetEntityByID(uCameraEntityID);
+		Zenith_Entity xCameraEntity = xScene.GetEntity(uCameraEntityID);
 		if (!xCameraEntity.HasComponent<Zenith_CameraComponent>())
 			return;
 

@@ -93,7 +93,7 @@ public:
 		if (!xScene.EntityExists(uPlayerEntityID))
 			return;
 
-		Zenith_Entity xPlayer = xScene.GetEntityByID(uPlayerEntityID);
+		Zenith_Entity xPlayer = xScene.GetEntity(uPlayerEntityID);
 		if (!xPlayer.HasComponent<Zenith_TransformComponent>())
 			return;
 
@@ -175,7 +175,7 @@ public:
 		if (!xScene.EntityExists(uPlayerEntityID))
 			return Zenith_Maths::Vector3(0.f);
 
-		Zenith_Entity xPlayer = xScene.GetEntityByID(uPlayerEntityID);
+		Zenith_Entity xPlayer = xScene.GetEntity(uPlayerEntityID);
 		if (!xPlayer.HasComponent<Zenith_TransformComponent>())
 			return Zenith_Maths::Vector3(0.f);
 
@@ -195,8 +195,8 @@ public:
 		if (!xScene.EntityExists(uPlayerEntityID) || !xScene.EntityExists(uTargetEntityID))
 			return FLT_MAX;
 
-		Zenith_Entity xPlayer = xScene.GetEntityByID(uPlayerEntityID);
-		Zenith_Entity xTarget = xScene.GetEntityByID(uTargetEntityID);
+		Zenith_Entity xPlayer = xScene.GetEntity(uPlayerEntityID);
+		Zenith_Entity xTarget = xScene.GetEntity(uTargetEntityID);
 
 		if (!xPlayer.HasComponent<Zenith_TransformComponent>() ||
 			!xTarget.HasComponent<Zenith_TransformComponent>())
@@ -245,8 +245,8 @@ public:
 			!xScene.EntityExists(uCamID))
 			return;
 
-		Zenith_Entity xPlayer = xScene.GetEntityByID(uPlayerEntityID);
-		Zenith_Entity xCamEntity = xScene.GetEntityByID(uCamID);
+		Zenith_Entity xPlayer = xScene.GetEntity(uPlayerEntityID);
+		Zenith_Entity xCamEntity = xScene.GetEntity(uCamID);
 
 		if (!xPlayer.HasComponent<Zenith_TransformComponent>())
 			return;
@@ -295,7 +295,7 @@ public:
 		if (uCamID == INVALID_ENTITY_ID || !xScene.EntityExists(uCamID))
 			return Zenith_Maths::Vector3(0.f);
 
-		Zenith_Entity xCamEntity = xScene.GetEntityByID(uCamID);
+		Zenith_Entity xCamEntity = xScene.GetEntity(uCamID);
 		Zenith_CameraComponent& xCamera = xCamEntity.GetComponent<Zenith_CameraComponent>();
 
 		Zenith_Maths::Vector3 xPos;

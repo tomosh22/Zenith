@@ -39,39 +39,6 @@ void Zenith_PropertyOverride::ReadFromDataStream(Zenith_DataStream& xStream)
 }
 
 //=============================================================================
-// NestedPrefabInstance Implementation
-//=============================================================================
-
-void Zenith_NestedPrefabInstance::WriteToDataStream(Zenith_DataStream& xStream) const
-{
-	m_xPrefab.WriteToDataStream(xStream);
-	xStream << m_strLocalName;
-
-	u_int uNumOverrides = m_xOverrides.GetSize();
-	xStream << uNumOverrides;
-	for (u_int i = 0; i < uNumOverrides; i++)
-	{
-		m_xOverrides.Get(i).WriteToDataStream(xStream);
-	}
-}
-
-void Zenith_NestedPrefabInstance::ReadFromDataStream(Zenith_DataStream& xStream)
-{
-	m_xPrefab.ReadFromDataStream(xStream);
-	xStream >> m_strLocalName;
-
-	u_int uNumOverrides;
-	xStream >> uNumOverrides;
-	m_xOverrides.Clear();
-	for (u_int i = 0; i < uNumOverrides; i++)
-	{
-		Zenith_PropertyOverride xOverride;
-		xOverride.ReadFromDataStream(xStream);
-		m_xOverrides.PushBack(std::move(xOverride));
-	}
-}
-
-//=============================================================================
 // Zenith_Prefab Implementation
 //=============================================================================
 
@@ -82,7 +49,6 @@ Zenith_Prefab::Zenith_Prefab(Zenith_Prefab&& other)
 	, m_bIsValid(other.m_bIsValid)
 	, m_xBasePrefab(std::move(other.m_xBasePrefab))
 	, m_xOverrides(std::move(other.m_xOverrides))
-	, m_xNestedPrefabs(std::move(other.m_xNestedPrefabs))
 {
 	other.m_bIsValid = false;
 	other.m_xGUID = Zenith_AssetGUID::INVALID;
@@ -98,7 +64,6 @@ Zenith_Prefab& Zenith_Prefab::operator=(Zenith_Prefab&& other)
 		m_bIsValid = other.m_bIsValid;
 		m_xBasePrefab = std::move(other.m_xBasePrefab);
 		m_xOverrides = std::move(other.m_xOverrides);
-		m_xNestedPrefabs = std::move(other.m_xNestedPrefabs);
 		other.m_bIsValid = false;
 		other.m_xGUID = Zenith_AssetGUID::INVALID;
 	}
@@ -111,7 +76,6 @@ bool Zenith_Prefab::CreateFromEntity(const Zenith_Entity& xEntity, const std::st
 	m_xGUID = Zenith_AssetGUID::Generate();
 	m_bIsValid = false;
 	m_xOverrides.Clear();
-	m_xNestedPrefabs.Clear();
 	m_xBasePrefab.Clear();
 
 	m_xComponentData = Zenith_DataStream();
@@ -140,7 +104,6 @@ bool Zenith_Prefab::CreateAsVariant(const PrefabRef& xBasePrefab, const std::str
 	m_xGUID = Zenith_AssetGUID::Generate();
 	m_xBasePrefab = xBasePrefab;
 	m_xOverrides.Clear();
-	m_xNestedPrefabs.Clear();
 	m_xComponentData = Zenith_DataStream();
 
 	// Variants don't store component data - they inherit from base
@@ -186,14 +149,6 @@ bool Zenith_Prefab::SaveToFile(const std::string& strFilePath) const
 		m_xOverrides.Get(i).WriteToDataStream(xOutput);
 	}
 
-	// Write nested prefabs
-	u_int uNumNested = m_xNestedPrefabs.GetSize();
-	xOutput << uNumNested;
-	for (u_int i = 0; i < uNumNested; i++)
-	{
-		m_xNestedPrefabs.Get(i).WriteToDataStream(xOutput);
-	}
-
 	// Write component data (only for non-variants)
 	if (!bIsVariant)
 	{
@@ -216,7 +171,6 @@ bool Zenith_Prefab::LoadFromFile(const std::string& strFilePath)
 {
 	m_bIsValid = false;
 	m_xOverrides.Clear();
-	m_xNestedPrefabs.Clear();
 	m_xBasePrefab.Clear();
 
 	Zenith_DataStream xInput;
@@ -260,16 +214,6 @@ bool Zenith_Prefab::LoadFromFile(const std::string& strFilePath)
 		Zenith_PropertyOverride xOverride;
 		xOverride.ReadFromDataStream(xInput);
 		m_xOverrides.PushBack(std::move(xOverride));
-	}
-
-	// Read nested prefabs
-	u_int uNumNested;
-	xInput >> uNumNested;
-	for (u_int i = 0; i < uNumNested; i++)
-	{
-		Zenith_NestedPrefabInstance xNested;
-		xNested.ReadFromDataStream(xInput);
-		m_xNestedPrefabs.PushBack(std::move(xNested));
 	}
 
 	// Read component data (only for non-variants)
@@ -360,9 +304,4 @@ void Zenith_Prefab::AddOverride(Zenith_PropertyOverride xOverride)
 
 	// Add new override
 	m_xOverrides.PushBack(std::move(xOverride));
-}
-
-void Zenith_Prefab::AddNestedPrefab(Zenith_NestedPrefabInstance xNested)
-{
-	m_xNestedPrefabs.PushBack(std::move(xNested));
 }

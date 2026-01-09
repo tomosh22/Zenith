@@ -167,33 +167,15 @@ public:
 	void SetEmissiveTextureRef(const TextureRef& xRef);
 
 	//--------------------------------------------------------------------------
-	// Texture Paths (for compatibility and editor UI)
-	// NOTE: Setters load textures immediately to avoid threading issues during rendering
-	// NOTE: These now convert paths to GUIDs internally
+	// Direct Texture Setters (for procedurally generated textures)
+	// The texture must remain valid for the lifetime of this material
 	//--------------------------------------------------------------------------
-
-	std::string GetDiffuseTexturePath() const;
-	void SetDiffuseTexturePath(const std::string& strPath);
-
-	/**
-	 * Directly set a diffuse texture (for procedurally generated textures)
-	 * The texture must remain valid for the lifetime of this material
-	 * @param pTexture Pointer to texture (not owned by material)
-	 */
 	void SetDiffuseTexture(Flux_Texture* pTexture) { m_pxDiffuseTexture = pTexture; m_bDirty = true; }
+	void SetNormalTexture(Flux_Texture* pTexture) { m_pxNormalTexture = pTexture; m_bDirty = true; }
+	void SetRoughnessMetallicTexture(Flux_Texture* pTexture) { m_pxRoughnessMetallicTexture = pTexture; m_bDirty = true; }
+	void SetOcclusionTexture(Flux_Texture* pTexture) { m_pxOcclusionTexture = pTexture; m_bDirty = true; }
+	void SetEmissiveTexture(Flux_Texture* pTexture) { m_pxEmissiveTexture = pTexture; m_bDirty = true; }
 
-	std::string GetNormalTexturePath() const;
-	void SetNormalTexturePath(const std::string& strPath);
-
-	std::string GetRoughnessMetallicTexturePath() const;
-	void SetRoughnessMetallicTexturePath(const std::string& strPath);
-
-	std::string GetOcclusionTexturePath() const;
-	void SetOcclusionTexturePath(const std::string& strPath);
-
-	std::string GetEmissiveTexturePath() const;
-	void SetEmissiveTexturePath(const std::string& strPath);
-	
 	//--------------------------------------------------------------------------
 	// Texture Accessors (returns loaded texture, or blank if not set)
 	// NOTE: Textures are loaded immediately when paths are set, not lazily

@@ -16,6 +16,7 @@
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "Physics/Zenith_Physics.h"
 #include "Maths/Zenith_Maths.h"
+#include "Flux/MeshAnimation/Flux_SkeletonInstance.h"
 #include "Combat_QueryHelper.h"
 #include "Combat_DamageSystem.h"
 #include "Combat_HitDetection.h"
@@ -66,7 +67,7 @@ public:
 	// Initialization
 	// ========================================================================
 
-	void Initialize(Zenith_EntityID uEntityID, const Combat_EnemyConfig& xConfig)
+	void Initialize(Zenith_EntityID uEntityID, const Combat_EnemyConfig& xConfig, Flux_SkeletonInstance* pxSkeleton = nullptr)
 	{
 		m_uEntityID = uEntityID;
 		m_xConfig = xConfig;
@@ -74,7 +75,10 @@ public:
 
 		// Initialize subsystems
 		m_xHitDetection.SetOwner(uEntityID);
-		m_xAnimController.Initialize();
+		if (pxSkeleton)
+		{
+			m_xAnimController.Initialize(pxSkeleton);
+		}
 		m_xIKController.SetFootIKEnabled(true);
 		m_xIKController.SetLookAtIKEnabled(true);
 	}
@@ -114,7 +118,7 @@ public:
 		if (!xScene.EntityExists(m_uEntityID))
 			return;
 
-		Zenith_Entity xEntity = xScene.GetEntityByID(m_uEntityID);
+		Zenith_Entity xEntity = xScene.GetEntity(m_uEntityID);
 		if (!xEntity.HasComponent<Zenith_TransformComponent>())
 			return;
 
@@ -378,11 +382,11 @@ public:
 	/**
 	 * RegisterEnemy - Add an enemy to the manager
 	 */
-	void RegisterEnemy(Zenith_EntityID uEntityID, const Combat_EnemyConfig& xConfig)
+	void RegisterEnemy(Zenith_EntityID uEntityID, const Combat_EnemyConfig& xConfig, Flux_SkeletonInstance* pxSkeleton = nullptr)
 	{
 		Combat_EnemyAI xAI;
-		xAI.Initialize(uEntityID, xConfig);
-		m_axEnemies.push_back(xAI);
+		xAI.Initialize(uEntityID, xConfig, pxSkeleton);
+		m_axEnemies.push_back(std::move(xAI));
 	}
 
 	/**

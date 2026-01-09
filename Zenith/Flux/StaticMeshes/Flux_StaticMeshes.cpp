@@ -218,7 +218,7 @@ void Flux_StaticMeshes::RenderToGBuffer(void*)
 
 		// Legacy mesh entry system
 		//#TO_TODO: these 2 should probably be separate components
-		if (!pxModel->GetNumMeshEntries() || pxModel->GetMeshGeometryAtIndex(0).GetNumBones())
+		if (!pxModel->GetNumMeshEntries())
 		{
 			continue;
 		}
@@ -304,7 +304,7 @@ void Flux_StaticMeshes::RenderToShadowMap(Flux_CommandList& xCmdBuf)
 
 		// Legacy mesh entry system
 		//#TO_TODO: these 2 should probably be separate components
-		if (!pxModel->GetNumMeshEntries() || pxModel->GetMeshGeometryAtIndex(0).GetNumBones())
+		if (!pxModel->GetNumMeshEntries())
 		{
 			continue;
 		}

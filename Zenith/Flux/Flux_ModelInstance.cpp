@@ -228,6 +228,16 @@ Flux_MaterialAsset* Flux_ModelInstance::GetMaterial(uint32_t uIndex) const
 	return m_xMaterials.Get(uIndex);
 }
 
+void Flux_ModelInstance::SetMaterial(uint32_t uIndex, Flux_MaterialAsset* pxMaterial)
+{
+	// Ensure array has enough elements
+	while (m_xMaterials.GetSize() <= uIndex)
+	{
+		m_xMaterials.PushBack(nullptr);
+	}
+	m_xMaterials.Get(uIndex) = pxMaterial;
+}
+
 //------------------------------------------------------------------------------
 // Animation
 //------------------------------------------------------------------------------

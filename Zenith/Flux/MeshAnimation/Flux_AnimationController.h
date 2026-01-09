@@ -31,6 +31,14 @@ public:
 	Flux_AnimationController();
 	~Flux_AnimationController();
 
+	// Non-copyable - owns dynamically allocated state machine, IK solver, etc.
+	Flux_AnimationController(const Flux_AnimationController&) = delete;
+	Flux_AnimationController& operator=(const Flux_AnimationController&) = delete;
+
+	// Moveable - transfers ownership of owned pointers
+	Flux_AnimationController(Flux_AnimationController&& xOther) noexcept;
+	Flux_AnimationController& operator=(Flux_AnimationController&& xOther) noexcept;
+
 	// Initialize with a mesh (legacy system - required for bone data)
 	void Initialize(Flux_MeshGeometry* pxGeometry);
 

@@ -210,7 +210,7 @@ public:
 			if (!xScene.EntityExists(xNode.m_uEntityID))
 				continue;
 
-			Zenith_Entity xEntity = xScene.GetEntityByID(xNode.m_uEntityID);
+			Zenith_Entity xEntity = xScene.GetEntity(xNode.m_uEntityID);
 			if (!xEntity.HasComponent<Zenith_TransformComponent>())
 				continue;
 

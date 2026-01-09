@@ -35,6 +35,9 @@
 #include "Flux/MeshAnimation/Flux_AnimationController.h"
 #include "Flux/MeshAnimation/Flux_SkeletonInstance.h"
 
+// Mesh geometry include (for exporting runtime-format meshes)
+#include "Flux/MeshGeometry/Flux_MeshGeometry.h"
+
 // Asset pipeline includes
 #include "AssetHandling/Zenith_MeshAsset.h"
 #include "AssetHandling/Zenith_SkeletonAsset.h"
@@ -106,6 +109,14 @@ void Zenith_UnitTests::RunAllTests()
 	TestFABRIKSolver();
 	TestAnimationEvents();
 	TestBoneMasking();
+
+	// Animation state machine integration tests
+	TestStateMachineUpdateLoop();
+	TestTriggerConsumptionInTransitions();
+	TestExitTimeTransitions();
+	TestTransitionPriority();
+	TestStateLifecycleCallbacks();
+	TestMultipleTransitionConditions();
 
 	// Asset pipeline tests
 	TestMeshAssetLoading();
@@ -198,7 +209,6 @@ void Zenith_UnitTests::RunAllTests()
 	TestPrefabSaveLoadRoundTrip();
 	TestPrefabOverrides();
 	TestPrefabVariantCreation();
-	TestPrefabNestedPrefabs();
 
 	// Async asset loading tests
 	TestAsyncLoadState();
@@ -1326,7 +1336,7 @@ void Zenith_UnitTests::TestSceneRoundTrip()
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Entity count verified (%u entities)", uGroundTruthEntityCount);
 
 	// Verify Camera Entity
-	Zenith_Entity xLoadedCamera = xLoadedScene.GetEntityByID(uCameraEntityID);
+	Zenith_Entity xLoadedCamera = xLoadedScene.GetEntity(uCameraEntityID);
 	Zenith_Assert(xLoadedCamera.GetName() == "MainCamera", "Camera entity name mismatch");
 	Zenith_Assert(xLoadedCamera.HasComponent<Zenith_CameraComponent>(), "Camera entity missing CameraComponent");
 
@@ -1340,7 +1350,7 @@ void Zenith_UnitTests::TestSceneRoundTrip()
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Camera entity verified");
 
 	// Verify Entity 1
-	Zenith_Entity xLoadedEntity1 = xLoadedScene.GetEntityByID(uEntity1ID);
+	Zenith_Entity xLoadedEntity1 = xLoadedScene.GetEntity(uEntity1ID);
 	Zenith_Assert(xLoadedEntity1.GetName() == "TestEntity1", "Entity1 name mismatch");
 	Zenith_Assert(xLoadedEntity1.HasComponent<Zenith_TransformComponent>(), "Entity1 missing TransformComponent");
 
@@ -1358,7 +1368,7 @@ void Zenith_UnitTests::TestSceneRoundTrip()
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Entity1 verified");
 
 	// Verify Entity 2
-	Zenith_Entity xLoadedEntity2 = xLoadedScene.GetEntityByID(uEntity2ID);
+	Zenith_Entity xLoadedEntity2 = xLoadedScene.GetEntity(uEntity2ID);
 	Zenith_Assert(xLoadedEntity2.GetName() == "TestEntity2", "Entity2 name mismatch");
 	Zenith_Assert(xLoadedEntity2.HasComponent<Zenith_TransformComponent>(), "Entity2 missing TransformComponent");
 	Zenith_Assert(xLoadedEntity2.HasComponent<Zenith_TextComponent>(), "Entity2 missing TextComponent");
@@ -3733,6 +3743,28 @@ static Zenith_SkeletonAsset* CreateStickFigureSkeleton()
 /**
  * Create a cube mesh for the stick figure, with one cube per bone
  */
+// Per-bone scale factors for humanoid proportions (half-extents in X, Y, Z)
+// Bones: 0=Root, 1=Spine, 2=Neck, 3=Head, 4-6=LeftArm, 7-9=RightArm, 10-12=LeftLeg, 13-15=RightLeg
+// Skeleton positions: Root=Y:0, Spine=Y:0.5, Neck=Y:1.2, Head=Y:1.4, Arms=Y:1.1, Legs=Y:0/-0.5/-1.0
+static const Zenith_Maths::Vector3 s_axBoneScales[STICK_BONE_COUNT] = {
+	{0.10f, 0.06f, 0.06f},  // 0: Root (pelvis) - small hip joint at Y=0
+	{0.18f, 0.65f, 0.10f},  // 1: Spine (torso) - centered at Y=0.5, spans Y=-0.15 to Y=1.15 (reaches arms/neck)
+	{0.05f, 0.10f, 0.05f},  // 2: Neck - thin, at Y=1.2
+	{0.12f, 0.12f, 0.10f},  // 3: Head - round, large, at Y=1.4
+	{0.05f, 0.20f, 0.05f},  // 4: LeftUpperArm - at Y=1.1
+	{0.04f, 0.18f, 0.04f},  // 5: LeftLowerArm
+	{0.04f, 0.06f, 0.02f},  // 6: LeftHand
+	{0.05f, 0.20f, 0.05f},  // 7: RightUpperArm - at Y=1.1
+	{0.04f, 0.18f, 0.04f},  // 8: RightLowerArm
+	{0.04f, 0.06f, 0.02f},  // 9: RightHand
+	{0.07f, 0.25f, 0.07f},  // 10: LeftUpperLeg - at Y=0
+	{0.05f, 0.25f, 0.05f},  // 11: LeftLowerLeg - at Y=-0.5
+	{0.05f, 0.03f, 0.10f},  // 12: LeftFoot - at Y=-1.0
+	{0.07f, 0.25f, 0.07f},  // 13: RightUpperLeg
+	{0.05f, 0.25f, 0.05f},  // 14: RightLowerLeg
+	{0.05f, 0.03f, 0.10f},  // 15: RightFoot
+};
+
 static Zenith_MeshAsset* CreateStickFigureMesh(const Zenith_SkeletonAsset* pxSkeleton)
 {
 	Zenith_MeshAsset* pxMesh = new Zenith_MeshAsset();
@@ -3740,22 +3772,33 @@ static Zenith_MeshAsset* CreateStickFigureMesh(const Zenith_SkeletonAsset* pxSke
 	const uint32_t uIndicesPerBone = 36;
 	pxMesh->Reserve(STICK_BONE_COUNT * uVertsPerBone, STICK_BONE_COUNT * uIndicesPerBone);
 
-	// Add a cube at each bone position
+	// Add a scaled cube at each bone position
 	for (uint32_t uBone = 0; uBone < STICK_BONE_COUNT; uBone++)
 	{
 		const Zenith_SkeletonAsset::Bone& xBone = pxSkeleton->GetBone(uBone);
 		// Get world position from bind pose model matrix
 		Zenith_Maths::Vector3 xBoneWorldPos = Zenith_Maths::Vector3(xBone.m_xBindPoseModel[3]);
 
+		// Get per-bone scale
+		Zenith_Maths::Vector3 xScale = s_axBoneScales[uBone];
+
 		uint32_t uBaseVertex = pxMesh->GetNumVerts();
 
-		// Add 8 cube vertices
+		// Add 8 cube vertices with per-bone scaling
 		for (int i = 0; i < 8; i++)
 		{
-			Zenith_Maths::Vector3 xPos = xBoneWorldPos + s_axCubeOffsets[i];
-			pxMesh->AddVertex(xPos,
-				Zenith_Maths::Vector3(0, 1, 0), // Normal placeholder
-				Zenith_Maths::Vector2(0, 0));   // UV
+			// Scale the cube offsets by the bone's scale factors
+			Zenith_Maths::Vector3 xScaledOffset = s_axCubeOffsets[i] * 2.0f; // Base offsets are ±0.05, so *2 = ±0.1 (unit cube from -0.1 to 0.1)
+			xScaledOffset.x *= xScale.x * 10.0f; // Scale to actual size
+			xScaledOffset.y *= xScale.y * 10.0f;
+			xScaledOffset.z *= xScale.z * 10.0f;
+
+			Zenith_Maths::Vector3 xPos = xBoneWorldPos + xScaledOffset;
+
+			// Calculate proper face normal based on vertex position
+			Zenith_Maths::Vector3 xNormal = glm::normalize(s_axCubeOffsets[i]);
+
+			pxMesh->AddVertex(xPos, xNormal, Zenith_Maths::Vector2(0, 0));
 			pxMesh->SetVertexSkinning(
 				uBaseVertex + i,
 				glm::uvec4(uBone, 0, 0, 0),
@@ -3775,6 +3818,208 @@ static Zenith_MeshAsset* CreateStickFigureMesh(const Zenith_SkeletonAsset* pxSke
 	pxMesh->AddSubmesh(0, STICK_BONE_COUNT * uIndicesPerBone, 0);
 	pxMesh->ComputeBounds();
 	return pxMesh;
+}
+
+/**
+ * Convert a Zenith_MeshAsset to Flux_MeshGeometry format for runtime use
+ * This creates the GPU-ready format that Flux_MeshGeometry::LoadFromFile expects
+ */
+static Flux_MeshGeometry* CreateFluxMeshGeometry(const Zenith_MeshAsset* pxMeshAsset, const Zenith_SkeletonAsset* pxSkeleton)
+{
+	Flux_MeshGeometry* pxGeometry = new Flux_MeshGeometry();
+
+	const uint32_t uNumVerts = pxMeshAsset->GetNumVerts();
+	const uint32_t uNumIndices = pxMeshAsset->GetNumIndices();
+	const uint32_t uNumBones = pxSkeleton->GetNumBones();
+
+	pxGeometry->m_uNumVerts = uNumVerts;
+	pxGeometry->m_uNumIndices = uNumIndices;
+	pxGeometry->m_uNumBones = uNumBones;
+	pxGeometry->m_xMaterialColor = pxMeshAsset->m_xMaterialColor;
+
+	// Copy positions
+	pxGeometry->m_pxPositions = new Zenith_Maths::Vector3[uNumVerts];
+	for (uint32_t i = 0; i < uNumVerts; i++)
+	{
+		pxGeometry->m_pxPositions[i] = pxMeshAsset->m_xPositions.Get(i);
+	}
+
+	// Copy normals
+	if (pxMeshAsset->m_xNormals.GetSize() > 0)
+	{
+		pxGeometry->m_pxNormals = new Zenith_Maths::Vector3[uNumVerts];
+		for (uint32_t i = 0; i < uNumVerts; i++)
+		{
+			pxGeometry->m_pxNormals[i] = pxMeshAsset->m_xNormals.Get(i);
+		}
+	}
+
+	// Copy UVs
+	if (pxMeshAsset->m_xUVs.GetSize() > 0)
+	{
+		pxGeometry->m_pxUVs = new Zenith_Maths::Vector2[uNumVerts];
+		for (uint32_t i = 0; i < uNumVerts; i++)
+		{
+			pxGeometry->m_pxUVs[i] = pxMeshAsset->m_xUVs.Get(i);
+		}
+	}
+
+	// Copy tangents
+	if (pxMeshAsset->m_xTangents.GetSize() > 0)
+	{
+		pxGeometry->m_pxTangents = new Zenith_Maths::Vector3[uNumVerts];
+		for (uint32_t i = 0; i < uNumVerts; i++)
+		{
+			pxGeometry->m_pxTangents[i] = pxMeshAsset->m_xTangents.Get(i);
+		}
+	}
+
+	// Copy colors
+	if (pxMeshAsset->m_xColors.GetSize() > 0)
+	{
+		pxGeometry->m_pxColors = new Zenith_Maths::Vector4[uNumVerts];
+		for (uint32_t i = 0; i < uNumVerts; i++)
+		{
+			pxGeometry->m_pxColors[i] = pxMeshAsset->m_xColors.Get(i);
+		}
+	}
+
+	// Copy indices
+	pxGeometry->m_puIndices = new Flux_MeshGeometry::IndexType[uNumIndices];
+	for (uint32_t i = 0; i < uNumIndices; i++)
+	{
+		pxGeometry->m_puIndices[i] = pxMeshAsset->m_xIndices.Get(i);
+	}
+
+	// Copy bone IDs (flatten uvec4 to uint32_t array)
+	if (pxMeshAsset->m_xBoneIndices.GetSize() > 0)
+	{
+		pxGeometry->m_puBoneIDs = new uint32_t[uNumVerts * MAX_BONES_PER_VERTEX];
+		for (uint32_t v = 0; v < uNumVerts; v++)
+		{
+			const glm::uvec4& xIndices = pxMeshAsset->m_xBoneIndices.Get(v);
+			pxGeometry->m_puBoneIDs[v * MAX_BONES_PER_VERTEX + 0] = xIndices.x;
+			pxGeometry->m_puBoneIDs[v * MAX_BONES_PER_VERTEX + 1] = xIndices.y;
+			pxGeometry->m_puBoneIDs[v * MAX_BONES_PER_VERTEX + 2] = xIndices.z;
+			pxGeometry->m_puBoneIDs[v * MAX_BONES_PER_VERTEX + 3] = xIndices.w;
+		}
+	}
+
+	// Copy bone weights (flatten vec4 to float array)
+	if (pxMeshAsset->m_xBoneWeights.GetSize() > 0)
+	{
+		pxGeometry->m_pfBoneWeights = new float[uNumVerts * MAX_BONES_PER_VERTEX];
+		for (uint32_t v = 0; v < uNumVerts; v++)
+		{
+			const glm::vec4& xWeights = pxMeshAsset->m_xBoneWeights.Get(v);
+			pxGeometry->m_pfBoneWeights[v * MAX_BONES_PER_VERTEX + 0] = xWeights.x;
+			pxGeometry->m_pfBoneWeights[v * MAX_BONES_PER_VERTEX + 1] = xWeights.y;
+			pxGeometry->m_pfBoneWeights[v * MAX_BONES_PER_VERTEX + 2] = xWeights.z;
+			pxGeometry->m_pfBoneWeights[v * MAX_BONES_PER_VERTEX + 3] = xWeights.w;
+		}
+	}
+
+	// Build bone name to ID and offset matrix map from skeleton
+	for (uint32_t b = 0; b < uNumBones; b++)
+	{
+		const Zenith_SkeletonAsset::Bone& xBone = pxSkeleton->GetBone(b);
+		// The offset matrix transforms from mesh space to bone space (inverse bind pose)
+		Zenith_Maths::Matrix4 xOffsetMat = glm::inverse(xBone.m_xBindPoseModel);
+		pxGeometry->m_xBoneNameToIdAndOffset[xBone.m_strName] = std::make_pair(b, xOffsetMat);
+	}
+
+	// Generate buffer layout and interleaved vertex data
+	pxGeometry->GenerateLayoutAndVertexData();
+
+	return pxGeometry;
+}
+
+/**
+ * Create a static version of the mesh geometry WITHOUT bone data
+ * This is for static rendering (72-byte vertices) that works with the static mesh shader
+ */
+static Flux_MeshGeometry* CreateStaticFluxMeshGeometry(const Zenith_MeshAsset* pxMeshAsset)
+{
+	Flux_MeshGeometry* pxGeometry = new Flux_MeshGeometry();
+
+	const uint32_t uNumVerts = pxMeshAsset->GetNumVerts();
+	const uint32_t uNumIndices = pxMeshAsset->GetNumIndices();
+
+	pxGeometry->m_uNumVerts = uNumVerts;
+	pxGeometry->m_uNumIndices = uNumIndices;
+	pxGeometry->m_uNumBones = 0;  // No bones for static mesh
+	pxGeometry->m_xMaterialColor = pxMeshAsset->m_xMaterialColor;
+
+	// Copy positions
+	pxGeometry->m_pxPositions = new Zenith_Maths::Vector3[uNumVerts];
+	for (uint32_t i = 0; i < uNumVerts; i++)
+	{
+		pxGeometry->m_pxPositions[i] = pxMeshAsset->m_xPositions.Get(i);
+	}
+
+	// Copy normals (or generate default up vector)
+	pxGeometry->m_pxNormals = new Zenith_Maths::Vector3[uNumVerts];
+	for (uint32_t i = 0; i < uNumVerts; i++)
+	{
+		if (pxMeshAsset->m_xNormals.GetSize() > 0)
+			pxGeometry->m_pxNormals[i] = pxMeshAsset->m_xNormals.Get(i);
+		else
+			pxGeometry->m_pxNormals[i] = Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f);
+	}
+
+	// Copy UVs (or generate default zero)
+	pxGeometry->m_pxUVs = new Zenith_Maths::Vector2[uNumVerts];
+	for (uint32_t i = 0; i < uNumVerts; i++)
+	{
+		if (pxMeshAsset->m_xUVs.GetSize() > 0)
+			pxGeometry->m_pxUVs[i] = pxMeshAsset->m_xUVs.Get(i);
+		else
+			pxGeometry->m_pxUVs[i] = Zenith_Maths::Vector2(0.0f, 0.0f);
+	}
+
+	// Copy tangents (or generate default)
+	pxGeometry->m_pxTangents = new Zenith_Maths::Vector3[uNumVerts];
+	for (uint32_t i = 0; i < uNumVerts; i++)
+	{
+		if (pxMeshAsset->m_xTangents.GetSize() > 0)
+			pxGeometry->m_pxTangents[i] = pxMeshAsset->m_xTangents.Get(i);
+		else
+			pxGeometry->m_pxTangents[i] = Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f);
+	}
+
+	// Copy bitangents (or generate default)
+	pxGeometry->m_pxBitangents = new Zenith_Maths::Vector3[uNumVerts];
+	for (uint32_t i = 0; i < uNumVerts; i++)
+	{
+		if (pxMeshAsset->m_xBitangents.GetSize() > 0)
+			pxGeometry->m_pxBitangents[i] = pxMeshAsset->m_xBitangents.Get(i);
+		else
+			pxGeometry->m_pxBitangents[i] = Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f);
+	}
+
+	// Copy colors (or generate default white)
+	pxGeometry->m_pxColors = new Zenith_Maths::Vector4[uNumVerts];
+	for (uint32_t i = 0; i < uNumVerts; i++)
+	{
+		if (pxMeshAsset->m_xColors.GetSize() > 0)
+			pxGeometry->m_pxColors[i] = pxMeshAsset->m_xColors.Get(i);
+		else
+			pxGeometry->m_pxColors[i] = Zenith_Maths::Vector4(1.0f, 1.0f, 1.0f, 1.0f);
+	}
+
+	// Copy indices
+	pxGeometry->m_puIndices = new Flux_MeshGeometry::IndexType[uNumIndices];
+	for (uint32_t i = 0; i < uNumIndices; i++)
+	{
+		pxGeometry->m_puIndices[i] = pxMeshAsset->m_xIndices.Get(i);
+	}
+
+	// NO bone IDs or weights - this is a static mesh
+
+	// Generate buffer layout and interleaved vertex data
+	pxGeometry->GenerateLayoutAndVertexData();
+
+	return pxGeometry;
 }
 
 /**
@@ -3906,6 +4151,310 @@ static Flux_AnimationClip* CreateRunAnimation()
 		xChannel.AddRotationKeyframe(0.0f, glm::angleAxis(glm::radians(35.0f), xZAxis));
 		xChannel.AddRotationKeyframe(6.0f, glm::identity<Zenith_Maths::Quat>());
 		xChannel.AddRotationKeyframe(12.0f, glm::angleAxis(glm::radians(-35.0f), xZAxis));
+		xChannel.SortKeyframes();
+		pxClip->AddBoneChannel("RightUpperArm", std::move(xChannel));
+	}
+
+	return pxClip;
+}
+
+/**
+ * Create a 0.4-second Attack1 animation (quick jab with right arm)
+ */
+static Flux_AnimationClip* CreateAttack1Animation()
+{
+	Flux_AnimationClip* pxClip = new Flux_AnimationClip();
+	pxClip->SetName("Attack1");
+	pxClip->SetDuration(0.4f);
+	pxClip->SetTicksPerSecond(24);
+	pxClip->SetLooping(false);
+
+	const Zenith_Maths::Vector3 xXAxis(1, 0, 0);
+	const Zenith_Maths::Vector3 xYAxis(0, 1, 0);
+
+	// Right arm jab forward (rotate around X axis to punch forward)
+	{
+		Flux_BoneChannel xChannel;
+		xChannel.AddRotationKeyframe(0.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(3.0f, glm::angleAxis(glm::radians(-45.0f), xXAxis));  // Windup back
+		xChannel.AddRotationKeyframe(6.0f, glm::angleAxis(glm::radians(60.0f), xXAxis));   // Punch forward
+		xChannel.AddRotationKeyframe(10.0f, glm::identity<Zenith_Maths::Quat>());          // Return
+		xChannel.SortKeyframes();
+		pxClip->AddBoneChannel("RightUpperArm", std::move(xChannel));
+	}
+
+	// Slight spine lean forward during punch
+	{
+		Flux_BoneChannel xChannel;
+		xChannel.AddRotationKeyframe(0.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(5.0f, glm::angleAxis(glm::radians(15.0f), xXAxis));   // Lean forward
+		xChannel.AddRotationKeyframe(10.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.SortKeyframes();
+		pxClip->AddBoneChannel("Spine", std::move(xChannel));
+	}
+
+	return pxClip;
+}
+
+/**
+ * Create a 0.4-second Attack2 animation (cross swing with left arm)
+ */
+static Flux_AnimationClip* CreateAttack2Animation()
+{
+	Flux_AnimationClip* pxClip = new Flux_AnimationClip();
+	pxClip->SetName("Attack2");
+	pxClip->SetDuration(0.4f);
+	pxClip->SetTicksPerSecond(24);
+	pxClip->SetLooping(false);
+
+	const Zenith_Maths::Vector3 xXAxis(1, 0, 0);
+	const Zenith_Maths::Vector3 xYAxis(0, 1, 0);
+
+	// Left arm swing across body
+	{
+		Flux_BoneChannel xChannel;
+		xChannel.AddRotationKeyframe(0.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(3.0f, glm::angleAxis(glm::radians(-30.0f), xYAxis));  // Pull back
+		xChannel.AddRotationKeyframe(6.0f, glm::angleAxis(glm::radians(75.0f), xYAxis));   // Swing across
+		xChannel.AddRotationKeyframe(10.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.SortKeyframes();
+		pxClip->AddBoneChannel("LeftUpperArm", std::move(xChannel));
+	}
+
+	// Right arm pull back for balance
+	{
+		Flux_BoneChannel xChannel;
+		xChannel.AddRotationKeyframe(0.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(5.0f, glm::angleAxis(glm::radians(-25.0f), xXAxis));
+		xChannel.AddRotationKeyframe(10.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.SortKeyframes();
+		pxClip->AddBoneChannel("RightUpperArm", std::move(xChannel));
+	}
+
+	// Spine twist left during swing
+	{
+		Flux_BoneChannel xChannel;
+		xChannel.AddRotationKeyframe(0.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(5.0f, glm::angleAxis(glm::radians(-20.0f), xYAxis));  // Twist left
+		xChannel.AddRotationKeyframe(10.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.SortKeyframes();
+		pxClip->AddBoneChannel("Spine", std::move(xChannel));
+	}
+
+	return pxClip;
+}
+
+/**
+ * Create a 0.5-second Attack3 animation (heavy overhead swing)
+ */
+static Flux_AnimationClip* CreateAttack3Animation()
+{
+	Flux_AnimationClip* pxClip = new Flux_AnimationClip();
+	pxClip->SetName("Attack3");
+	pxClip->SetDuration(0.5f);
+	pxClip->SetTicksPerSecond(24);
+	pxClip->SetLooping(false);
+
+	const Zenith_Maths::Vector3 xXAxis(1, 0, 0);
+	const Zenith_Maths::Vector3 xZAxis(0, 0, 1);
+
+	// Both arms raise up then swing down
+	{
+		Flux_BoneChannel xChannel;
+		xChannel.AddRotationKeyframe(0.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(4.0f, glm::angleAxis(glm::radians(-120.0f), xXAxis));  // Arms up
+		xChannel.AddRotationKeyframe(8.0f, glm::angleAxis(glm::radians(60.0f), xXAxis));    // Slam down
+		xChannel.AddRotationKeyframe(12.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.SortKeyframes();
+		pxClip->AddBoneChannel("RightUpperArm", std::move(xChannel));
+	}
+
+	{
+		Flux_BoneChannel xChannel;
+		xChannel.AddRotationKeyframe(0.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(4.0f, glm::angleAxis(glm::radians(-120.0f), xXAxis));  // Arms up
+		xChannel.AddRotationKeyframe(8.0f, glm::angleAxis(glm::radians(60.0f), xXAxis));    // Slam down
+		xChannel.AddRotationKeyframe(12.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.SortKeyframes();
+		pxClip->AddBoneChannel("LeftUpperArm", std::move(xChannel));
+	}
+
+	// Spine lean back then forward during slam
+	{
+		Flux_BoneChannel xChannel;
+		xChannel.AddRotationKeyframe(0.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(4.0f, glm::angleAxis(glm::radians(-20.0f), xXAxis));  // Lean back
+		xChannel.AddRotationKeyframe(8.0f, glm::angleAxis(glm::radians(30.0f), xXAxis));   // Lean forward
+		xChannel.AddRotationKeyframe(12.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.SortKeyframes();
+		pxClip->AddBoneChannel("Spine", std::move(xChannel));
+	}
+
+	// Root position - slight hop forward
+	{
+		Flux_BoneChannel xChannel;
+		xChannel.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(0, 0, 0));
+		xChannel.AddPositionKeyframe(6.0f, Zenith_Maths::Vector3(0, 0.1f, 0.15f));  // Hop up/forward
+		xChannel.AddPositionKeyframe(12.0f, Zenith_Maths::Vector3(0, 0, 0.1f));     // Land forward
+		xChannel.SortKeyframes();
+		pxClip->AddBoneChannel("Root", std::move(xChannel));
+	}
+
+	return pxClip;
+}
+
+/**
+ * Create a 0.5-second Dodge animation (quick sidestep)
+ */
+static Flux_AnimationClip* CreateDodgeAnimation()
+{
+	Flux_AnimationClip* pxClip = new Flux_AnimationClip();
+	pxClip->SetName("Dodge");
+	pxClip->SetDuration(0.5f);
+	pxClip->SetTicksPerSecond(24);
+	pxClip->SetLooping(false);
+
+	const Zenith_Maths::Vector3 xXAxis(1, 0, 0);
+	const Zenith_Maths::Vector3 xZAxis(0, 0, 1);
+
+	// Root translation - sidestep right
+	{
+		Flux_BoneChannel xChannel;
+		xChannel.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(0, 0, 0));
+		xChannel.AddPositionKeyframe(6.0f, Zenith_Maths::Vector3(0.5f, -0.2f, 0));   // Dodge right, crouch
+		xChannel.AddPositionKeyframe(12.0f, Zenith_Maths::Vector3(0.8f, 0, 0));      // Land
+		xChannel.SortKeyframes();
+		pxClip->AddBoneChannel("Root", std::move(xChannel));
+	}
+
+	// Spine lean into dodge
+	{
+		Flux_BoneChannel xChannel;
+		xChannel.AddRotationKeyframe(0.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(6.0f, glm::angleAxis(glm::radians(30.0f), xZAxis));  // Lean right
+		xChannel.AddRotationKeyframe(12.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.SortKeyframes();
+		pxClip->AddBoneChannel("Spine", std::move(xChannel));
+	}
+
+	// Legs - right leg step out
+	{
+		Flux_BoneChannel xChannel;
+		xChannel.AddRotationKeyframe(0.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(6.0f, glm::angleAxis(glm::radians(-30.0f), xZAxis));  // Step out
+		xChannel.AddRotationKeyframe(12.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.SortKeyframes();
+		pxClip->AddBoneChannel("RightUpperLeg", std::move(xChannel));
+	}
+
+	return pxClip;
+}
+
+/**
+ * Create a 0.3-second Hit animation (stagger backward)
+ */
+static Flux_AnimationClip* CreateHitAnimation()
+{
+	Flux_AnimationClip* pxClip = new Flux_AnimationClip();
+	pxClip->SetName("Hit");
+	pxClip->SetDuration(0.3f);
+	pxClip->SetTicksPerSecond(24);
+	pxClip->SetLooping(false);
+
+	const Zenith_Maths::Vector3 xXAxis(1, 0, 0);
+
+	// Root stagger backward
+	{
+		Flux_BoneChannel xChannel;
+		xChannel.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(0, 0, 0));
+		xChannel.AddPositionKeyframe(4.0f, Zenith_Maths::Vector3(0, 0, -0.3f));   // Knocked back
+		xChannel.AddPositionKeyframe(7.0f, Zenith_Maths::Vector3(0, 0, -0.2f));   // Recover slightly
+		xChannel.SortKeyframes();
+		pxClip->AddBoneChannel("Root", std::move(xChannel));
+	}
+
+	// Spine lean backward from impact
+	{
+		Flux_BoneChannel xChannel;
+		xChannel.AddRotationKeyframe(0.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(3.0f, glm::angleAxis(glm::radians(-25.0f), xXAxis));  // Lean back
+		xChannel.AddRotationKeyframe(7.0f, glm::identity<Zenith_Maths::Quat>());           // Recover
+		xChannel.SortKeyframes();
+		pxClip->AddBoneChannel("Spine", std::move(xChannel));
+	}
+
+	// Head snap back
+	{
+		Flux_BoneChannel xChannel;
+		xChannel.AddRotationKeyframe(0.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(2.0f, glm::angleAxis(glm::radians(-30.0f), xXAxis));  // Head back
+		xChannel.AddRotationKeyframe(7.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.SortKeyframes();
+		pxClip->AddBoneChannel("Head", std::move(xChannel));
+	}
+
+	return pxClip;
+}
+
+/**
+ * Create a 1.0-second Death animation (fall over)
+ */
+static Flux_AnimationClip* CreateDeathAnimation()
+{
+	Flux_AnimationClip* pxClip = new Flux_AnimationClip();
+	pxClip->SetName("Death");
+	pxClip->SetDuration(1.0f);
+	pxClip->SetTicksPerSecond(24);
+	pxClip->SetLooping(false);
+
+	const Zenith_Maths::Vector3 xXAxis(1, 0, 0);
+	const Zenith_Maths::Vector3 xZAxis(0, 0, 1);
+
+	// Root drops down and backward
+	{
+		Flux_BoneChannel xChannel;
+		xChannel.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(0, 0, 0));
+		xChannel.AddPositionKeyframe(12.0f, Zenith_Maths::Vector3(0, -0.3f, -0.2f));   // Start falling
+		xChannel.AddPositionKeyframe(24.0f, Zenith_Maths::Vector3(0, -1.0f, -0.4f));   // On ground
+		xChannel.SortKeyframes();
+		pxClip->AddBoneChannel("Root", std::move(xChannel));
+	}
+
+	// Spine collapses backward
+	{
+		Flux_BoneChannel xChannel;
+		xChannel.AddRotationKeyframe(0.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(12.0f, glm::angleAxis(glm::radians(-45.0f), xXAxis));  // Falling back
+		xChannel.AddRotationKeyframe(24.0f, glm::angleAxis(glm::radians(-90.0f), xXAxis));  // Flat on back
+		xChannel.SortKeyframes();
+		pxClip->AddBoneChannel("Spine", std::move(xChannel));
+	}
+
+	// Head goes limp
+	{
+		Flux_BoneChannel xChannel;
+		xChannel.AddRotationKeyframe(0.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(12.0f, glm::angleAxis(glm::radians(-30.0f), xXAxis));
+		xChannel.AddRotationKeyframe(24.0f, glm::angleAxis(glm::radians(-20.0f), xXAxis));  // Resting
+		xChannel.SortKeyframes();
+		pxClip->AddBoneChannel("Head", std::move(xChannel));
+	}
+
+	// Arms fall limp
+	{
+		Flux_BoneChannel xChannel;
+		xChannel.AddRotationKeyframe(0.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(12.0f, glm::angleAxis(glm::radians(45.0f), xZAxis));
+		xChannel.AddRotationKeyframe(24.0f, glm::angleAxis(glm::radians(60.0f), xZAxis));  // Spread out
+		xChannel.SortKeyframes();
+		pxClip->AddBoneChannel("LeftUpperArm", std::move(xChannel));
+	}
+
+	{
+		Flux_BoneChannel xChannel;
+		xChannel.AddRotationKeyframe(0.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(12.0f, glm::angleAxis(glm::radians(-45.0f), xZAxis));
+		xChannel.AddRotationKeyframe(24.0f, glm::angleAxis(glm::radians(-60.0f), xZAxis));  // Spread out
 		xChannel.SortKeyframes();
 		pxClip->AddBoneChannel("RightUpperArm", std::move(xChannel));
 	}
@@ -4291,6 +4840,379 @@ void Zenith_UnitTests::TestStickFigureIKWithAnimation()
 }
 
 //------------------------------------------------------------------------------
+// Animation State Machine Integration Tests
+//------------------------------------------------------------------------------
+
+void Zenith_UnitTests::TestStateMachineUpdateLoop()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestStateMachineUpdateLoop...");
+
+	// Create state machine with Idle and Walk states
+	Flux_AnimationStateMachine xStateMachine("TestSM");
+	xStateMachine.GetParameters().AddFloat("Speed", 0.0f);
+
+	Flux_AnimationState* pxIdle = xStateMachine.AddState("Idle");
+	Flux_AnimationState* pxWalk = xStateMachine.AddState("Walk");
+
+	// Add transition: Idle -> Walk when Speed > 0.1
+	Flux_StateTransition xIdleToWalk;
+	xIdleToWalk.m_strTargetStateName = "Walk";
+	xIdleToWalk.m_fTransitionDuration = 0.2f;
+
+	Flux_TransitionCondition xSpeedCond;
+	xSpeedCond.m_strParameterName = "Speed";
+	xSpeedCond.m_eCompareOp = Flux_TransitionCondition::CompareOp::Greater;
+	xSpeedCond.m_eParamType = Flux_AnimationParameters::ParamType::Float;
+	xSpeedCond.m_fThreshold = 0.1f;
+	xIdleToWalk.m_xConditions.PushBack(xSpeedCond);
+
+	pxIdle->AddTransition(xIdleToWalk);
+
+	// Add transition: Walk -> Idle when Speed <= 0.1
+	Flux_StateTransition xWalkToIdle;
+	xWalkToIdle.m_strTargetStateName = "Idle";
+	xWalkToIdle.m_fTransitionDuration = 0.2f;
+
+	Flux_TransitionCondition xSlowCond;
+	xSlowCond.m_strParameterName = "Speed";
+	xSlowCond.m_eCompareOp = Flux_TransitionCondition::CompareOp::LessEqual;
+	xSlowCond.m_eParamType = Flux_AnimationParameters::ParamType::Float;
+	xSlowCond.m_fThreshold = 0.1f;
+	xWalkToIdle.m_xConditions.PushBack(xSlowCond);
+
+	pxWalk->AddTransition(xWalkToIdle);
+
+	xStateMachine.SetDefaultState("Idle");
+
+	// Create dummy geometry and pose for Update calls
+	Flux_MeshGeometry xGeometry;
+	Flux_SkeletonPose xPose;
+	xPose.Initialize(1);
+
+	// Initial update - should be in Idle
+	xStateMachine.Update(0.016f, xPose, xGeometry);
+	Zenith_Assert(xStateMachine.GetCurrentStateName() == "Idle",
+		"Should start in Idle state");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Initial state is Idle");
+
+	// Set Speed > 0.1, update - transition should start
+	xStateMachine.GetParameters().SetFloat("Speed", 0.5f);
+	xStateMachine.Update(0.016f, xPose, xGeometry);
+
+	Zenith_Assert(xStateMachine.IsTransitioning() == true,
+		"Should be transitioning after condition met");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Transition started when Speed > 0.1");
+
+	// Continue updating until transition completes
+	for (int i = 0; i < 20; ++i)
+	{
+		xStateMachine.Update(0.016f, xPose, xGeometry);
+	}
+
+	Zenith_Assert(xStateMachine.GetCurrentStateName() == "Walk",
+		"Should be in Walk state after transition completes");
+	Zenith_Assert(xStateMachine.IsTransitioning() == false,
+		"Transition should be complete");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Arrived at Walk state after transition");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestStateMachineUpdateLoop completed successfully");
+}
+
+void Zenith_UnitTests::TestTriggerConsumptionInTransitions()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestTriggerConsumptionInTransitions...");
+
+	Flux_MeshGeometry xGeometry;
+	Flux_SkeletonPose xPose;
+	xPose.Initialize(1);
+
+	Flux_AnimationStateMachine xStateMachine("TestSM");
+	xStateMachine.GetParameters().AddTrigger("Attack");
+
+	Flux_AnimationState* pxIdle = xStateMachine.AddState("Idle");
+	xStateMachine.AddState("Attack");
+
+	// Idle -> Attack on AttackTrigger
+	Flux_StateTransition xTrans;
+	xTrans.m_strTargetStateName = "Attack";
+	xTrans.m_fTransitionDuration = 0.1f;
+
+	Flux_TransitionCondition xTriggerCond;
+	xTriggerCond.m_strParameterName = "Attack";
+	xTriggerCond.m_eParamType = Flux_AnimationParameters::ParamType::Trigger;
+	xTrans.m_xConditions.PushBack(xTriggerCond);
+
+	pxIdle->AddTransition(xTrans);
+	xStateMachine.SetDefaultState("Idle");
+
+	// Initial state
+	xStateMachine.Update(0.016f, xPose, xGeometry);
+	Zenith_Assert(xStateMachine.GetCurrentStateName() == "Idle", "Should start in Idle");
+
+	// Set trigger
+	xStateMachine.GetParameters().SetTrigger("Attack");
+
+	// Update - trigger should be consumed and transition should start
+	xStateMachine.Update(0.016f, xPose, xGeometry);
+	Zenith_Assert(xStateMachine.IsTransitioning() == true,
+		"Transition should start after trigger set");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Transition started on trigger");
+
+	// Trigger should be consumed - trying to consume again should return false
+	Zenith_Assert(xStateMachine.GetParameters().ConsumeTrigger("Attack") == false,
+		"Trigger should have been consumed by transition");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Trigger was consumed");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestTriggerConsumptionInTransitions completed successfully");
+}
+
+void Zenith_UnitTests::TestExitTimeTransitions()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestExitTimeTransitions...");
+
+	// Test the CanTransition method with exit time
+	Flux_AnimationParameters xParams;
+
+	Flux_StateTransition xTrans;
+	xTrans.m_strTargetStateName = "Idle";
+	xTrans.m_fTransitionDuration = 0.1f;
+	xTrans.m_bHasExitTime = true;
+	xTrans.m_fExitTime = 0.8f;
+	// No other conditions - should auto-transition at exit time
+
+	// Test before exit time
+	bool bCanTransBefore = xTrans.CanTransition(xParams, 0.5f);
+	Zenith_Assert(bCanTransBefore == false,
+		"Should not transition before exit time (0.5 < 0.8)");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Cannot transition before exit time");
+
+	// Test at exit time
+	bool bCanTransAt = xTrans.CanTransition(xParams, 0.8f);
+	Zenith_Assert(bCanTransAt == true,
+		"Should transition at exit time (0.8 >= 0.8)");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Can transition at exit time");
+
+	// Test after exit time
+	bool bCanTransAfter = xTrans.CanTransition(xParams, 0.95f);
+	Zenith_Assert(bCanTransAfter == true,
+		"Should transition after exit time (0.95 >= 0.8)");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Can transition after exit time");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestExitTimeTransitions completed successfully");
+}
+
+void Zenith_UnitTests::TestTransitionPriority()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestTransitionPriority...");
+
+	Flux_MeshGeometry xGeometry;
+	Flux_SkeletonPose xPose;
+	xPose.Initialize(1);
+
+	Flux_AnimationStateMachine xStateMachine("TestSM");
+	xStateMachine.GetParameters().AddFloat("Speed", 0.0f);
+	xStateMachine.GetParameters().AddTrigger("Attack");
+
+	Flux_AnimationState* pxIdle = xStateMachine.AddState("Idle");
+	xStateMachine.AddState("Walk");
+	xStateMachine.AddState("Attack");
+
+	// Add two transitions from Idle:
+	// 1. Idle -> Walk (Speed > 0.1) - low priority
+	// 2. Idle -> Attack (AttackTrigger) - high priority
+
+	Flux_StateTransition xToWalk;
+	xToWalk.m_strTargetStateName = "Walk";
+	xToWalk.m_fTransitionDuration = 0.1f;
+	xToWalk.m_iPriority = 0;  // Low priority
+
+	Flux_TransitionCondition xSpeedCond;
+	xSpeedCond.m_strParameterName = "Speed";
+	xSpeedCond.m_eCompareOp = Flux_TransitionCondition::CompareOp::Greater;
+	xSpeedCond.m_eParamType = Flux_AnimationParameters::ParamType::Float;
+	xSpeedCond.m_fThreshold = 0.1f;
+	xToWalk.m_xConditions.PushBack(xSpeedCond);
+
+	Flux_StateTransition xToAttack;
+	xToAttack.m_strTargetStateName = "Attack";
+	xToAttack.m_fTransitionDuration = 0.05f;
+	xToAttack.m_iPriority = 10;  // High priority
+
+	Flux_TransitionCondition xAttackCond;
+	xAttackCond.m_strParameterName = "Attack";
+	xAttackCond.m_eParamType = Flux_AnimationParameters::ParamType::Trigger;
+	xToAttack.m_xConditions.PushBack(xAttackCond);
+
+	// Add in reverse priority order to verify sorting
+	pxIdle->AddTransition(xToWalk);
+	pxIdle->AddTransition(xToAttack);
+
+	// Verify transitions are sorted by priority
+	const Zenith_Vector<Flux_StateTransition>& xTransitions = pxIdle->GetTransitions();
+	Zenith_Assert(xTransitions.Get(0).m_iPriority >= xTransitions.Get(1).m_iPriority,
+		"Transitions should be sorted by priority (higher first)");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Transitions sorted by priority");
+
+	// Set both conditions true - Attack should win due to priority
+	xStateMachine.SetDefaultState("Idle");
+	xStateMachine.Update(0.016f, xPose, xGeometry);
+
+	xStateMachine.GetParameters().SetFloat("Speed", 0.5f);
+	xStateMachine.GetParameters().SetTrigger("Attack");
+
+	xStateMachine.Update(0.016f, xPose, xGeometry);
+
+	// Complete the transition
+	for (int i = 0; i < 10; ++i)
+		xStateMachine.Update(0.016f, xPose, xGeometry);
+
+	Zenith_Assert(xStateMachine.GetCurrentStateName() == "Attack",
+		"Higher priority transition (Attack) should be chosen over Walk");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Higher priority transition won");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestTransitionPriority completed successfully");
+}
+
+void Zenith_UnitTests::TestStateLifecycleCallbacks()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestStateLifecycleCallbacks...");
+
+	Flux_MeshGeometry xGeometry;
+	Flux_SkeletonPose xPose;
+	xPose.Initialize(1);
+
+	bool bEnterCalled = false;
+	bool bExitCalled = false;
+	bool bUpdateCalled = false;
+	float fUpdateDt = 0.0f;
+
+	Flux_AnimationStateMachine xStateMachine("TestSM");
+	xStateMachine.GetParameters().AddTrigger("Next");
+
+	Flux_AnimationState* pxStateA = xStateMachine.AddState("StateA");
+	xStateMachine.AddState("StateB");
+
+	// Set up callbacks on StateA
+	pxStateA->m_fnOnEnter = [&bEnterCalled]() { bEnterCalled = true; };
+	pxStateA->m_fnOnExit = [&bExitCalled]() { bExitCalled = true; };
+	pxStateA->m_fnOnUpdate = [&bUpdateCalled, &fUpdateDt](float fDt) {
+		bUpdateCalled = true;
+		fUpdateDt = fDt;
+	};
+
+	// StateA -> StateB on trigger
+	Flux_StateTransition xTrans;
+	xTrans.m_strTargetStateName = "StateB";
+	xTrans.m_fTransitionDuration = 0.05f;
+
+	Flux_TransitionCondition xCond;
+	xCond.m_strParameterName = "Next";
+	xCond.m_eParamType = Flux_AnimationParameters::ParamType::Trigger;
+	xTrans.m_xConditions.PushBack(xCond);
+	pxStateA->AddTransition(xTrans);
+
+	// Test OnEnter via SetState
+	xStateMachine.SetState("StateA");
+	Zenith_Assert(bEnterCalled == true, "OnEnter should be called on SetState");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] OnEnter called on SetState");
+
+	// Test OnUpdate
+	bUpdateCalled = false;
+	xStateMachine.Update(0.016f, xPose, xGeometry);
+	Zenith_Assert(bUpdateCalled == true, "OnUpdate should be called during Update");
+	Zenith_Assert(FloatEquals(fUpdateDt, 0.016f, 0.001f), "OnUpdate should receive delta time");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] OnUpdate called with correct delta time");
+
+	// Test OnExit via transition
+	bExitCalled = false;
+	xStateMachine.GetParameters().SetTrigger("Next");
+	xStateMachine.Update(0.016f, xPose, xGeometry);
+	Zenith_Assert(bExitCalled == true, "OnExit should be called when starting transition");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] OnExit called on transition");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestStateLifecycleCallbacks completed successfully");
+}
+
+void Zenith_UnitTests::TestMultipleTransitionConditions()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestMultipleTransitionConditions...");
+
+	Flux_MeshGeometry xGeometry;
+	Flux_SkeletonPose xPose;
+	xPose.Initialize(1);
+
+	Flux_AnimationStateMachine xStateMachine("TestSM");
+	xStateMachine.GetParameters().AddFloat("Speed", 0.0f);
+	xStateMachine.GetParameters().AddBool("IsGrounded", true);
+
+	Flux_AnimationState* pxIdle = xStateMachine.AddState("Idle");
+	xStateMachine.AddState("Run");
+
+	// Idle -> Run requires BOTH Speed > 5.0 AND IsGrounded == true
+	Flux_StateTransition xTrans;
+	xTrans.m_strTargetStateName = "Run";
+	xTrans.m_fTransitionDuration = 0.1f;
+
+	Flux_TransitionCondition xSpeedCond;
+	xSpeedCond.m_strParameterName = "Speed";
+	xSpeedCond.m_eCompareOp = Flux_TransitionCondition::CompareOp::Greater;
+	xSpeedCond.m_eParamType = Flux_AnimationParameters::ParamType::Float;
+	xSpeedCond.m_fThreshold = 5.0f;
+
+	Flux_TransitionCondition xGroundedCond;
+	xGroundedCond.m_strParameterName = "IsGrounded";
+	xGroundedCond.m_eCompareOp = Flux_TransitionCondition::CompareOp::Equal;
+	xGroundedCond.m_eParamType = Flux_AnimationParameters::ParamType::Bool;
+	xGroundedCond.m_bThreshold = true;
+
+	xTrans.m_xConditions.PushBack(xSpeedCond);
+	xTrans.m_xConditions.PushBack(xGroundedCond);
+
+	pxIdle->AddTransition(xTrans);
+	xStateMachine.SetDefaultState("Idle");
+
+	// Initial update
+	xStateMachine.Update(0.016f, xPose, xGeometry);
+
+	// Only Speed true - should NOT transition
+	xStateMachine.GetParameters().SetFloat("Speed", 10.0f);
+	xStateMachine.GetParameters().SetBool("IsGrounded", false);
+	xStateMachine.Update(0.016f, xPose, xGeometry);
+
+	Zenith_Assert(xStateMachine.GetCurrentStateName() == "Idle",
+		"Should stay in Idle when only Speed condition met");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] No transition when only Speed > 5");
+
+	// Only IsGrounded true - should NOT transition
+	xStateMachine.GetParameters().SetFloat("Speed", 2.0f);
+	xStateMachine.GetParameters().SetBool("IsGrounded", true);
+	xStateMachine.Update(0.016f, xPose, xGeometry);
+
+	Zenith_Assert(xStateMachine.GetCurrentStateName() == "Idle",
+		"Should stay in Idle when only IsGrounded condition met");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] No transition when only IsGrounded true");
+
+	// Both conditions true - SHOULD transition
+	xStateMachine.GetParameters().SetFloat("Speed", 10.0f);
+	xStateMachine.GetParameters().SetBool("IsGrounded", true);
+	xStateMachine.Update(0.016f, xPose, xGeometry);
+
+	Zenith_Assert(xStateMachine.IsTransitioning() == true,
+		"Should start transition when ALL conditions met");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Transition started when all conditions met");
+
+	// Complete transition
+	for (int i = 0; i < 10; ++i)
+		xStateMachine.Update(0.016f, xPose, xGeometry);
+
+	Zenith_Assert(xStateMachine.GetCurrentStateName() == "Run",
+		"Should be in Run state after transition");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Arrived at Run state");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestMultipleTransitionConditions completed successfully");
+}
+
+//------------------------------------------------------------------------------
 // Stick Figure Asset Export Test
 //------------------------------------------------------------------------------
 
@@ -4304,6 +5226,12 @@ void Zenith_UnitTests::TestStickFigureAssetExport()
 	Flux_AnimationClip* pxIdleClip = CreateIdleAnimation();
 	Flux_AnimationClip* pxWalkClip = CreateWalkAnimation();
 	Flux_AnimationClip* pxRunClip = CreateRunAnimation();
+	Flux_AnimationClip* pxAttack1Clip = CreateAttack1Animation();
+	Flux_AnimationClip* pxAttack2Clip = CreateAttack2Animation();
+	Flux_AnimationClip* pxAttack3Clip = CreateAttack3Animation();
+	Flux_AnimationClip* pxDodgeClip = CreateDodgeAnimation();
+	Flux_AnimationClip* pxHitClip = CreateHitAnimation();
+	Flux_AnimationClip* pxDeathClip = CreateDeathAnimation();
 
 	// Create output directory
 	std::string strOutputDir = std::string(ENGINE_ASSETS_DIR) + "Meshes/StickFigure/";
@@ -4318,11 +5246,31 @@ void Zenith_UnitTests::TestStickFigureAssetExport()
 	// Set skeleton path on mesh before export
 	pxMesh->SetSkeletonPath("Meshes/StickFigure/StickFigure.zskel");
 
-	// Export mesh
+	// Export mesh in Zenith_MeshAsset format (for asset pipeline)
+	std::string strMeshAssetPath = strOutputDir + "StickFigure.zasset";
+	pxMesh->Export(strMeshAssetPath.c_str());
+	Zenith_Assert(std::filesystem::exists(strMeshAssetPath), "Mesh asset file should exist after export");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Exported mesh asset to: %s", strMeshAssetPath.c_str());
+
+#ifdef ZENITH_TOOLS
+	// Export mesh in Flux_MeshGeometry format (for runtime loading)
+	// This is the format that Flux_MeshGeometry::LoadFromFile expects
+	Flux_MeshGeometry* pxFluxGeometry = CreateFluxMeshGeometry(pxMesh, pxSkel);
 	std::string strMeshPath = strOutputDir + "StickFigure.zmesh";
-	pxMesh->Export(strMeshPath.c_str());
-	Zenith_Assert(std::filesystem::exists(strMeshPath), "Mesh file should exist after export");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Exported mesh to: %s", strMeshPath.c_str());
+	pxFluxGeometry->Export(strMeshPath.c_str());
+	Zenith_Assert(std::filesystem::exists(strMeshPath), "Mesh geometry file should exist after export");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Exported mesh geometry to: %s", strMeshPath.c_str());
+	delete pxFluxGeometry;
+
+	// Export static mesh (without bone data) for static mesh rendering
+	// This uses the 72-byte vertex format compatible with the static mesh shader
+	Flux_MeshGeometry* pxStaticGeometry = CreateStaticFluxMeshGeometry(pxMesh);
+	std::string strStaticMeshPath = strOutputDir + "StickFigure_Static.zmesh";
+	pxStaticGeometry->Export(strStaticMeshPath.c_str());
+	Zenith_Assert(std::filesystem::exists(strStaticMeshPath), "Static mesh geometry file should exist after export");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Exported static mesh geometry to: %s", strStaticMeshPath.c_str());
+	delete pxStaticGeometry;
+#endif
 
 	// Export animations
 	std::string strIdlePath = strOutputDir + "StickFigure_Idle.zanim";
@@ -4340,6 +5288,37 @@ void Zenith_UnitTests::TestStickFigureAssetExport()
 	Zenith_Assert(std::filesystem::exists(strRunPath), "Run animation file should exist after export");
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Exported run animation to: %s", strRunPath.c_str());
 
+	// Export combat animations
+	std::string strAttack1Path = strOutputDir + "StickFigure_Attack1.zanim";
+	pxAttack1Clip->Export(strAttack1Path);
+	Zenith_Assert(std::filesystem::exists(strAttack1Path), "Attack1 animation file should exist after export");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Exported attack1 animation to: %s", strAttack1Path.c_str());
+
+	std::string strAttack2Path = strOutputDir + "StickFigure_Attack2.zanim";
+	pxAttack2Clip->Export(strAttack2Path);
+	Zenith_Assert(std::filesystem::exists(strAttack2Path), "Attack2 animation file should exist after export");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Exported attack2 animation to: %s", strAttack2Path.c_str());
+
+	std::string strAttack3Path = strOutputDir + "StickFigure_Attack3.zanim";
+	pxAttack3Clip->Export(strAttack3Path);
+	Zenith_Assert(std::filesystem::exists(strAttack3Path), "Attack3 animation file should exist after export");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Exported attack3 animation to: %s", strAttack3Path.c_str());
+
+	std::string strDodgePath = strOutputDir + "StickFigure_Dodge.zanim";
+	pxDodgeClip->Export(strDodgePath);
+	Zenith_Assert(std::filesystem::exists(strDodgePath), "Dodge animation file should exist after export");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Exported dodge animation to: %s", strDodgePath.c_str());
+
+	std::string strHitPath = strOutputDir + "StickFigure_Hit.zanim";
+	pxHitClip->Export(strHitPath);
+	Zenith_Assert(std::filesystem::exists(strHitPath), "Hit animation file should exist after export");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Exported hit animation to: %s", strHitPath.c_str());
+
+	std::string strDeathPath = strOutputDir + "StickFigure_Death.zanim";
+	pxDeathClip->Export(strDeathPath);
+	Zenith_Assert(std::filesystem::exists(strDeathPath), "Death animation file should exist after export");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Exported death animation to: %s", strDeathPath.c_str());
+
 	// Reload and verify skeleton
 	Zenith_SkeletonAsset* pxReloadedSkel = Zenith_AssetHandler::LoadSkeletonAsset(strSkelPath);
 	Zenith_Assert(pxReloadedSkel != nullptr, "Should be able to reload skeleton");
@@ -4347,13 +5326,24 @@ void Zenith_UnitTests::TestStickFigureAssetExport()
 	Zenith_Assert(pxReloadedSkel->HasBone("LeftUpperArm"), "Reloaded skeleton should have LeftUpperArm bone");
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Reloaded skeleton verified: %u bones", pxReloadedSkel->GetNumBones());
 
-	// Reload and verify mesh
-	Zenith_MeshAsset* pxReloadedMesh = Zenith_AssetHandler::LoadMeshAsset(strMeshPath);
-	Zenith_Assert(pxReloadedMesh != nullptr, "Should be able to reload mesh");
+	// Reload and verify mesh asset format
+	Zenith_MeshAsset* pxReloadedMesh = Zenith_AssetHandler::LoadMeshAsset(strMeshAssetPath);
+	Zenith_Assert(pxReloadedMesh != nullptr, "Should be able to reload mesh asset");
 	Zenith_Assert(pxReloadedMesh->GetNumVerts() == pxMesh->GetNumVerts(), "Reloaded mesh vertex count mismatch");
 	Zenith_Assert(pxReloadedMesh->GetNumIndices() == pxMesh->GetNumIndices(), "Reloaded mesh index count mismatch");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Reloaded mesh verified: %u verts, %u indices",
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Reloaded mesh asset verified: %u verts, %u indices",
 		pxReloadedMesh->GetNumVerts(), pxReloadedMesh->GetNumIndices());
+
+#ifdef ZENITH_TOOLS
+	// Reload and verify Flux_MeshGeometry format
+	Flux_MeshGeometry xReloadedGeometry;
+	Flux_MeshGeometry::LoadFromFile((strOutputDir + "StickFigure.zmesh").c_str(), xReloadedGeometry, 0, false);
+	Zenith_Assert(xReloadedGeometry.GetNumVerts() == pxMesh->GetNumVerts(), "Reloaded geometry vertex count mismatch");
+	Zenith_Assert(xReloadedGeometry.GetNumIndices() == pxMesh->GetNumIndices(), "Reloaded geometry index count mismatch");
+	Zenith_Assert(xReloadedGeometry.GetNumBones() == pxSkel->GetNumBones(), "Reloaded geometry bone count mismatch");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Reloaded mesh geometry verified: %u verts, %u indices, %u bones",
+		xReloadedGeometry.GetNumVerts(), xReloadedGeometry.GetNumIndices(), xReloadedGeometry.GetNumBones());
+#endif
 
 	// Reload and verify animations
 	Flux_AnimationClip* pxReloadedIdle = Flux_AnimationClip::LoadFromZanimFile(strIdlePath);
@@ -4376,6 +5366,12 @@ void Zenith_UnitTests::TestStickFigureAssetExport()
 	delete pxReloadedRun;
 	delete pxReloadedWalk;
 	delete pxReloadedIdle;
+	delete pxDeathClip;
+	delete pxHitClip;
+	delete pxDodgeClip;
+	delete pxAttack3Clip;
+	delete pxAttack2Clip;
+	delete pxAttack1Clip;
 	delete pxRunClip;
 	delete pxWalkClip;
 	delete pxIdleClip;
@@ -6448,37 +7444,6 @@ void Zenith_UnitTests::TestPrefabVariantCreation()
 		"TestPrefabVariantCreation: Base prefab GUID should match");
 
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestPrefabVariantCreation completed successfully");
-}
-
-void Zenith_UnitTests::TestPrefabNestedPrefabs()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestPrefabNestedPrefabs...");
-
-	Zenith_Prefab xPrefab;
-
-	// Create a nested prefab instance
-	Zenith_NestedPrefabInstance xNested;
-	xNested.m_strLocalName = "NestedChild";
-	xNested.m_xPrefab.SetGUID(Zenith_AssetGUID::Generate());
-
-	// Add an override to the nested instance
-	Zenith_PropertyOverride xNestedOverride;
-	xNestedOverride.m_strComponentName = "Transform";
-	xNestedOverride.m_strPropertyPath = "Scale";
-	xNestedOverride.m_xValue << Zenith_Maths::Vector3(2.0f, 2.0f, 2.0f);
-	xNested.m_xOverrides.PushBack(std::move(xNestedOverride));
-
-	xPrefab.AddNestedPrefab(std::move(xNested));
-
-	// Verify nested prefab was added
-	const Zenith_Vector<Zenith_NestedPrefabInstance>& xNestedPrefabs = xPrefab.GetNestedPrefabs();
-	Zenith_Assert(xNestedPrefabs.GetSize() == 1, "TestPrefabNestedPrefabs: Should have 1 nested prefab");
-	Zenith_Assert(xNestedPrefabs.Get(0).m_strLocalName == "NestedChild",
-		"TestPrefabNestedPrefabs: Nested prefab name should match");
-	Zenith_Assert(xNestedPrefabs.Get(0).m_xOverrides.GetSize() == 1,
-		"TestPrefabNestedPrefabs: Nested prefab should have 1 override");
-
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestPrefabNestedPrefabs completed successfully");
 }
 
 //==============================================================================

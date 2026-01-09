@@ -465,17 +465,8 @@ Flux_AnimationClip* Flux_AnimationClip::LoadFromFile(const std::string& strPath)
 		aiProcess_ValidateDataStructure
 	);
 
-	if (!pxScene || !pxScene->mRootNode)
-	{
-		Zenith_Log(LOG_CATEGORY_ANIMATION, "[AnimationClip] Failed to load animation from: %s", strPath.c_str());
-		return nullptr;
-	}
-
-	if (pxScene->mNumAnimations == 0)
-	{
-		Zenith_Log(LOG_CATEGORY_ANIMATION, "[AnimationClip] No animations found in: %s", strPath.c_str());
-		return nullptr;
-	}
+	Zenith_Assert(pxScene && pxScene->mRootNode, "Failed to load animation from: %s", strPath.c_str());
+	Zenith_Assert(pxScene->mNumAnimations > 0, "No animations found in: %s", strPath.c_str());
 
 	Flux_AnimationClip* pxClip = new Flux_AnimationClip();
 	pxClip->LoadFromAssimp(pxScene->mAnimations[0], pxScene->mRootNode);
@@ -605,6 +596,33 @@ void Flux_AnimationClip::ReadFromDataStream(Zenith_DataStream& xStream)
 Flux_AnimationClipCollection::~Flux_AnimationClipCollection()
 {
 	Clear();
+}
+
+Flux_AnimationClipCollection::Flux_AnimationClipCollection(Flux_AnimationClipCollection&& xOther) noexcept
+	: m_xClipsByName(std::move(xOther.m_xClipsByName))
+	, m_xClips(std::move(xOther.m_xClips))
+{
+	// Clear the moved-from object's containers to prevent double-delete
+	xOther.m_xClipsByName.clear();
+	xOther.m_xClips.clear();
+}
+
+Flux_AnimationClipCollection& Flux_AnimationClipCollection::operator=(Flux_AnimationClipCollection&& xOther) noexcept
+{
+	if (this != &xOther)
+	{
+		// Delete our existing clips
+		Clear();
+
+		// Take ownership of the other's clips
+		m_xClipsByName = std::move(xOther.m_xClipsByName);
+		m_xClips = std::move(xOther.m_xClips);
+
+		// Clear the moved-from object's containers to prevent double-delete
+		xOther.m_xClipsByName.clear();
+		xOther.m_xClips.clear();
+	}
+	return *this;
 }
 
 void Flux_AnimationClipCollection::AddClip(Flux_AnimationClip* pxClip)

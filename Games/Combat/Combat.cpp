@@ -10,12 +10,16 @@
 #include "EntityComponent/Zenith_EventSystem.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "Flux/Flux_MaterialAsset.h"
+#include "Flux/Flux_ModelInstance.h"
 #include "Flux/Flux.h"
 #include "AssetHandling/Zenith_AssetHandler.h"
+#include "AssetHandling/Zenith_AssetDatabase.h"
 #include "AssetHandling/Zenith_DataAssetManager.h"
+#include "AssetHandling/Zenith_ModelAsset.h"
 #include "Prefab/Zenith_Prefab.h"
 
 #include <cmath>
+#include <filesystem>
 
 // ============================================================================
 // Combat Resources - Global access for behaviours
@@ -24,6 +28,9 @@ namespace Combat
 {
 	Flux_MeshGeometry* g_pxCapsuleGeometry = nullptr;
 	Flux_MeshGeometry* g_pxCubeGeometry = nullptr;
+	Flux_MeshGeometry* g_pxStickFigureGeometry = nullptr;  // Animated character mesh (skinned)
+	Zenith_ModelAsset* g_pxStickFigureModelAsset = nullptr;  // Model asset with skeleton for animated rendering
+	std::string g_strStickFigureModelPath;  // Path to model asset file
 	Flux_MaterialAsset* g_pxPlayerMaterial = nullptr;
 	Flux_MaterialAsset* g_pxEnemyMaterial = nullptr;
 	Flux_MaterialAsset* g_pxArenaMaterial = nullptr;
@@ -209,6 +216,49 @@ static void InitializeCombatResources()
 	// Create cube geometry (for arena)
 	g_pxCubeGeometry = new Flux_MeshGeometry();
 	Flux_MeshGeometry::GenerateUnitCube(*g_pxCubeGeometry);
+
+	// Load stick figure mesh (skinned version with bone data for animated rendering)
+	std::string strStickFigureMeshGeomPath = std::string(ENGINE_ASSETS_DIR) + "Meshes/StickFigure/StickFigure.zmesh";  // Flux_MeshGeometry format
+	std::string strStickFigureMeshAssetPath = std::string(ENGINE_ASSETS_DIR) + "Meshes/StickFigure/StickFigure.zasset";  // Zenith_MeshAsset format
+	std::string strStickFigureSkeletonPath = std::string(ENGINE_ASSETS_DIR) + "Meshes/StickFigure/StickFigure.zskel";
+
+	g_pxStickFigureGeometry = new Flux_MeshGeometry();
+	if (std::filesystem::exists(strStickFigureMeshAssetPath) && std::filesystem::exists(strStickFigureSkeletonPath))
+	{
+		// Load the mesh geometry for fallback
+		if (std::filesystem::exists(strStickFigureMeshGeomPath))
+		{
+			Flux_MeshGeometry::LoadFromFile(strStickFigureMeshGeomPath.c_str(), *g_pxStickFigureGeometry);
+			Zenith_Log(LOG_CATEGORY_MESH, "[Combat] Loaded stick figure mesh from %s", strStickFigureMeshGeomPath.c_str());
+		}
+
+		// Import mesh asset into AssetDatabase
+		Zenith_AssetGUID xMeshGUID = Zenith_AssetDatabase::ImportAsset(strStickFigureMeshAssetPath);
+		if (!xMeshGUID.IsValid())
+		{
+			Zenith_Log(LOG_CATEGORY_MESH, "[Combat] Warning: Failed to import mesh asset");
+		}
+
+		// Create model asset
+		g_pxStickFigureModelAsset = new Zenith_ModelAsset();
+		g_pxStickFigureModelAsset->SetName("StickFigure");
+		g_pxStickFigureModelAsset->SetSkeletonPath(strStickFigureSkeletonPath);
+
+		Zenith_Vector<std::string> xEmptyMaterials;
+		g_pxStickFigureModelAsset->AddMeshByPath(strStickFigureMeshAssetPath, xEmptyMaterials);
+
+		// Export model asset
+		g_strStickFigureModelPath = std::string(ENGINE_ASSETS_DIR) + "Meshes/StickFigure/StickFigure.zmodel";
+		g_pxStickFigureModelAsset->Export(g_strStickFigureModelPath.c_str());
+		Zenith_Log(LOG_CATEGORY_MESH, "[Combat] Created model asset at %s", g_strStickFigureModelPath.c_str());
+	}
+	else
+	{
+		Zenith_Log(LOG_CATEGORY_MESH, "[Combat] Stick figure assets not found, using capsule");
+		delete g_pxStickFigureGeometry;
+		g_pxStickFigureGeometry = g_pxCapsuleGeometry;
+		g_strStickFigureModelPath.clear();
+	}
 
 	// Create textures (procedural single-color pixels)
 	s_pxPlayerTexture = CreateColoredTexture(51, 102, 230);    // Blue player

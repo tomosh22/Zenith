@@ -76,16 +76,43 @@ skinningMatrix = modelSpaceTransform * inverseBindPose
 6. **Upload:** Skinning matrices uploaded to GPU constant buffer
 7. **Render:** Animated mesh shader samples bone matrices for vertex skinning
 
+## Animation State Machine
+
+### Flux_AnimationStateMachine
+High-level animation control using a state-based model (Flux_AnimationStateMachine.h/cpp).
+
+**Components:**
+- **States** (`Flux_AnimationState`): Named states with blend trees and outgoing transitions
+- **Transitions** (`Flux_StateTransition`): Rules for changing states with conditions, duration, and priority
+- **Parameters** (`Flux_AnimationParameters`): Float, Int, Bool, and Trigger values used in transition conditions
+- **Conditions** (`Flux_TransitionCondition`): Comparisons (Greater, Less, Equal, etc.) against parameters
+
+**Key Design Decisions:**
+
+1. **Transitions Only Checked When Not Transitioning**: The `Update()` method only checks for new transitions when `m_pxActiveTransition == nullptr`. This prevents:
+   - Same transition being restarted every frame (causing transitions to never complete)
+   - Lower priority transitions from interrupting higher priority ones
+
+2. **Trigger Consumption**: Trigger parameters are consumed (reset to false) when evaluated. This ensures one-shot transitions.
+
+3. **Exit Time Transitions**: Transitions with `m_bHasExitTime = true` only fire after the source animation reaches `m_fExitTime` (normalized 0-1).
+
+4. **Priority Ordering**: Transitions are sorted by priority (highest first). When checking transitions, the first valid one wins.
+
+**Common Pitfall - Transition Restart Bug:**
+If transitions are checked during an active transition AND the transition condition is still true (e.g., Speed > 0.1 remains true), calling `StartTransition()` will restart the transition, resetting elapsed time. The fix is to only check transitions when not already transitioning.
+
 ## File Structure
 
 ```
 MeshAnimation/
-  Flux_AnimationClip.h/cpp       - Animation keyframe storage
-  Flux_AnimationController.h/cpp - Playback control
-  Flux_SkeletonInstance.h/cpp    - Runtime skeleton state
-  Flux_BonePose.h/cpp            - Bone transform utilities
-  Flux_BlendTree.h/cpp           - Animation blending
-  Flux_InverseKinematics.h/cpp   - IK solving
+  Flux_AnimationClip.h/cpp           - Animation keyframe storage
+  Flux_AnimationController.h/cpp     - Playback control
+  Flux_AnimationStateMachine.h/cpp   - State machine for animation control
+  Flux_SkeletonInstance.h/cpp        - Runtime skeleton state
+  Flux_BonePose.h/cpp                - Bone transform utilities
+  Flux_BlendTree.h/cpp               - Animation blending
+  Flux_InverseKinematics.h/cpp       - IK solving
 ```
 
 ## Constants

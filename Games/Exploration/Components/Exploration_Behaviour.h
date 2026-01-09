@@ -122,7 +122,7 @@ public:
 		if (uCamID == INVALID_ENTITY_ID || !xScene.EntityExists(uCamID))
 			return;
 
-		Zenith_Entity xCamEntity = xScene.GetEntityByID(uCamID);
+		Zenith_Entity xCamEntity = xScene.GetEntity(uCamID);
 		if (!xCamEntity.HasComponent<Zenith_CameraComponent>())
 			return;
 

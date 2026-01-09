@@ -939,11 +939,11 @@ static void RenderTerrainTextureSlot(const char* szLabel, Flux_MaterialAsset& xM
 	std::string strCurrentPath;
 	switch (iSlotType)
 	{
-	case 0: strCurrentPath = xMaterial.GetDiffuseTexturePath(); break;
-	case 1: strCurrentPath = xMaterial.GetNormalTexturePath(); break;
-	case 2: strCurrentPath = xMaterial.GetRoughnessMetallicTexturePath(); break;
-	case 3: strCurrentPath = xMaterial.GetOcclusionTexturePath(); break;
-	case 4: strCurrentPath = xMaterial.GetEmissiveTexturePath(); break;
+	case 0: strCurrentPath = xMaterial.GetDiffuseTextureRef().GetPath(); break;
+	case 1: strCurrentPath = xMaterial.GetNormalTextureRef().GetPath(); break;
+	case 2: strCurrentPath = xMaterial.GetRoughnessMetallicTextureRef().GetPath(); break;
+	case 3: strCurrentPath = xMaterial.GetOcclusionTextureRef().GetPath(); break;
+	case 4: strCurrentPath = xMaterial.GetEmissiveTextureRef().GetPath(); break;
 	}
 
 	std::string strTextureName = "(none)";
@@ -971,13 +971,15 @@ static void RenderTerrainTextureSlot(const char* szLabel, Flux_MaterialAsset& xM
 			std::string strFilePath(pFilePayload->m_szFilePath);
 
 			// Set the texture path on the material
+			TextureRef xRef;
+			xRef.SetFromPath(strFilePath);
 			switch (iSlotType)
 			{
-			case 0: xMaterial.SetDiffuseTexturePath(strFilePath); break;
-			case 1: xMaterial.SetNormalTexturePath(strFilePath); break;
-			case 2: xMaterial.SetRoughnessMetallicTexturePath(strFilePath); break;
-			case 3: xMaterial.SetOcclusionTexturePath(strFilePath); break;
-			case 4: xMaterial.SetEmissiveTexturePath(strFilePath); break;
+			case 0: xMaterial.SetDiffuseTextureRef(xRef); break;
+			case 1: xMaterial.SetNormalTextureRef(xRef); break;
+			case 2: xMaterial.SetRoughnessMetallicTextureRef(xRef); break;
+			case 3: xMaterial.SetOcclusionTextureRef(xRef); break;
+			case 4: xMaterial.SetEmissiveTextureRef(xRef); break;
 			}
 
 			Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Set %s texture: %s", szLabel, strFilePath.c_str());

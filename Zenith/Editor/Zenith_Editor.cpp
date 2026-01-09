@@ -2375,16 +2375,16 @@ void Zenith_Editor::RenderMaterialEditorPanel()
 		ImGui::Text("Textures");
 		
 		// Texture slots with drag-drop support
-		RenderMaterialTextureSlot("Diffuse", pMat, pMat->GetDiffuseTexturePath(),
-			[](Flux_MaterialAsset* p, const std::string& s) { p->SetDiffuseTexturePath(s); });
-		RenderMaterialTextureSlot("Normal", pMat, pMat->GetNormalTexturePath(),
-			[](Flux_MaterialAsset* p, const std::string& s) { p->SetNormalTexturePath(s); });
-		RenderMaterialTextureSlot("Roughness/Metallic", pMat, pMat->GetRoughnessMetallicTexturePath(),
-			[](Flux_MaterialAsset* p, const std::string& s) { p->SetRoughnessMetallicTexturePath(s); });
-		RenderMaterialTextureSlot("Occlusion", pMat, pMat->GetOcclusionTexturePath(),
-			[](Flux_MaterialAsset* p, const std::string& s) { p->SetOcclusionTexturePath(s); });
-		RenderMaterialTextureSlot("Emissive", pMat, pMat->GetEmissiveTexturePath(),
-			[](Flux_MaterialAsset* p, const std::string& s) { p->SetEmissiveTexturePath(s); });
+		RenderMaterialTextureSlot("Diffuse", pMat, pMat->GetDiffuseTextureRef().GetPath(),
+			[](Flux_MaterialAsset* p, const std::string& s) { TextureRef xRef; xRef.SetFromPath(s); p->SetDiffuseTextureRef(xRef); });
+		RenderMaterialTextureSlot("Normal", pMat, pMat->GetNormalTextureRef().GetPath(),
+			[](Flux_MaterialAsset* p, const std::string& s) { TextureRef xRef; xRef.SetFromPath(s); p->SetNormalTextureRef(xRef); });
+		RenderMaterialTextureSlot("Roughness/Metallic", pMat, pMat->GetRoughnessMetallicTextureRef().GetPath(),
+			[](Flux_MaterialAsset* p, const std::string& s) { TextureRef xRef; xRef.SetFromPath(s); p->SetRoughnessMetallicTextureRef(xRef); });
+		RenderMaterialTextureSlot("Occlusion", pMat, pMat->GetOcclusionTextureRef().GetPath(),
+			[](Flux_MaterialAsset* p, const std::string& s) { TextureRef xRef; xRef.SetFromPath(s); p->SetOcclusionTextureRef(xRef); });
+		RenderMaterialTextureSlot("Emissive", pMat, pMat->GetEmissiveTextureRef().GetPath(),
+			[](Flux_MaterialAsset* p, const std::string& s) { TextureRef xRef; xRef.SetFromPath(s); p->SetEmissiveTextureRef(xRef); });
 		
 		ImGui::Separator();
 		

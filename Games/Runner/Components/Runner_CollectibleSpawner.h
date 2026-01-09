@@ -181,7 +181,7 @@ public:
 				continue;
 			}
 
-			Zenith_Entity xEntity = xScene.GetEntityByID(xColl.m_uEntityID);
+			Zenith_Entity xEntity = xScene.GetEntity(xColl.m_uEntityID);
 			Zenith_Maths::Vector3 xCollPos;
 			xEntity.GetComponent<Zenith_TransformComponent>().GetPosition(xCollPos);
 
@@ -419,7 +419,7 @@ private:
 				continue;
 			}
 
-			Zenith_Entity xEntity = xScene.GetEntityByID(xColl.m_uEntityID);
+			Zenith_Entity xEntity = xScene.GetEntity(xColl.m_uEntityID);
 			Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
 
 			// Bob up and down

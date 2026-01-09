@@ -476,7 +476,7 @@ private:
 
 						// Hide the cat entity
 						Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-						Zenith_Entity xCatEntity = xScene.GetEntityByID(xCat.uEntityID);
+						Zenith_Entity xCatEntity = xScene.GetEntity(xCat.uEntityID);
 						if (xCatEntity.IsValid())
 						{
 							Zenith_Scene::Destroy(xCatEntity);
@@ -606,7 +606,7 @@ private:
 		// Destroy floor entities
 		for (auto uID : m_axFloorEntityIDs)
 		{
-			Zenith_Entity xEntity = xScene.GetEntityByID(uID);
+			Zenith_Entity xEntity = xScene.GetEntity(uID);
 			if (xEntity.IsValid())
 			{
 				Zenith_Scene::Destroy(xEntity);
@@ -619,7 +619,7 @@ private:
 		{
 			for (auto uID : xShape.axCubeEntityIDs)
 			{
-				Zenith_Entity xEntity = xScene.GetEntityByID(uID);
+				Zenith_Entity xEntity = xScene.GetEntity(uID);
 				if (xEntity.IsValid())
 				{
 					Zenith_Scene::Destroy(xEntity);
@@ -631,7 +631,7 @@ private:
 		// Destroy cat entities
 		for (auto& xCat : m_xCurrentLevel.axCats)
 		{
-			Zenith_Entity xEntity = xScene.GetEntityByID(xCat.uEntityID);
+			Zenith_Entity xEntity = xScene.GetEntity(xCat.uEntityID);
 			if (xEntity.IsValid())
 			{
 				Zenith_Scene::Destroy(xEntity);
@@ -641,7 +641,7 @@ private:
 		// Destroy cursor
 		if (m_uCursorEntityID.IsValid())
 		{
-			Zenith_Entity xCursor = xScene.GetEntityByID(m_uCursorEntityID);
+			Zenith_Entity xCursor = xScene.GetEntity(m_uCursorEntityID);
 			if (xCursor.IsValid())
 			{
 				Zenith_Scene::Destroy(xCursor);
@@ -665,7 +665,7 @@ private:
 			// Update all cube entities in the shape
 			for (size_t i = 0; i < xShape.axCubeEntityIDs.size(); ++i)
 			{
-				Zenith_Entity xCube = xScene.GetEntityByID(xShape.axCubeEntityIDs[i]);
+				Zenith_Entity xCube = xScene.GetEntity(xShape.axCubeEntityIDs[i]);
 				if (xCube.IsValid())
 				{
 					const TilePuzzleCellOffset& xOffset = xShape.pxDefinition->axCells[i];
@@ -680,7 +680,7 @@ private:
 		}
 
 		// Update cursor position
-		Zenith_Entity xCursor = xScene.GetEntityByID(m_uCursorEntityID);
+		Zenith_Entity xCursor = xScene.GetEntity(m_uCursorEntityID);
 		if (xCursor.IsValid())
 		{
 			Zenith_TransformComponent& xTransform = xCursor.GetComponent<Zenith_TransformComponent>();

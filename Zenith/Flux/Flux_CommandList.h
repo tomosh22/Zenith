@@ -229,6 +229,8 @@ class Flux_CommandDraw
 public:
 	static constexpr Flux_CommandType m_eType = FLUX_COMMANDTYPE__DRAW;
 
+	Flux_CommandDraw(u_int uNumVerts) : m_uNumVerts(uNumVerts) {}
+
 	void operator()(Flux_CommandBuffer* pxCmdBuf)
 	{
 		pxCmdBuf->Draw(m_uNumVerts);

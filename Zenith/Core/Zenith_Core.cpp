@@ -32,9 +32,10 @@
 #include "AssetHandling/Zenith_AsyncAssetLoader.h"
 #include "Zenith_OS_Include.h"
 
-float Zenith_Core::s_fDt = 0.f;
-float Zenith_Core::s_fTimePassed = 0.f;
-std::chrono::high_resolution_clock::time_point Zenith_Core::s_xLastFrameTime;
+// Namespace variable definitions
+float Zenith_Core::g_fDt = 0.f;
+float Zenith_Core::g_fTimePassed = 0.f;
+std::chrono::high_resolution_clock::time_point Zenith_Core::g_xLastFrameTime;
 
 
 
@@ -42,8 +43,8 @@ void Zenith_Core::UpdateTimers()
 {
 	std::chrono::high_resolution_clock::time_point xCurrentTime = std::chrono::high_resolution_clock::now();
 
-	Zenith_Core::SetDt(std::chrono::duration_cast<std::chrono::nanoseconds>(xCurrentTime - s_xLastFrameTime).count() / 1.e9);
-	s_xLastFrameTime = xCurrentTime;
+	Zenith_Core::SetDt(std::chrono::duration_cast<std::chrono::nanoseconds>(xCurrentTime - g_xLastFrameTime).count() / 1.e9);
+	g_xLastFrameTime = xCurrentTime;
 
 	Zenith_Core::AddTimePassed(Zenith_Core::GetDt());
 }

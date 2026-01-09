@@ -138,3 +138,33 @@ Callbacks: `OnCreate()`, `OnUpdate(float)`, `OnCollisionEnter(entity)`, `OnColli
 - Event system provides thread-safe `QueueEvent()` for cross-thread event dispatch
 
 **Entity Lifecycle:** Entities can have parent-child relationships via `m_uParentEntityID` member.
+
+## Design Rationale
+
+### Why Entity Is a Class, Not a POD Struct
+
+The `Zenith_Entity` class may appear over-engineered at first glance since it's a "thin wrapper" that delegates most operations to the Scene. However, this design is intentional:
+
+1. **Entity Creation Constructors Do Real Work**: The constructors allocate entity slots, register entities with the scene, set initial state, and auto-add TransformComponent. This is not trivial delegation.
+
+2. **Validation and Lifecycle Dispatch**: Methods like `SetEnabled()` include validation (`IsValid()` checks) and dispatch lifecycle events (`OnEnable`/`OnDisable`) to all components. This encapsulates complex logic.
+
+3. **Clean API Over Scattered Functions**: The class provides a clean object-oriented API (`entity.GetName()`, `entity.AddComponent<T>()`) vs verbose free functions (`GetEntityName(scene, id)`). This improves code readability throughout the codebase.
+
+4. **Value Semantics with Handle Pattern**: The class is intentionally a lightweight handle (scene pointer + ID) that can be freely copied. The documentation explicitly states this is a "VALUE TYPE."
+
+5. **Serialization Support**: The `WriteToDataStream`/`ReadFromDataStream` methods encapsulate entity serialization, keeping DataStream logic cohesive.
+
+Converting to a POD struct would scatter entity logic across the codebase, lose the clean OOP API, and not significantly reduce complexity - just move it elsewhere.
+
+### Why Event System Uses Virtual Inheritance
+
+The `Zenith_EventSystem` callback hierarchy (`Zenith_CallbackBase` → `Zenith_CallbackWrapper<T>`) serves a legitimate purpose:
+
+1. **Type Erasure for Deferred Queue**: The deferred event queue (`m_xDeferredEvents`) stores different event types. Type erasure requires polymorphism - either virtual dispatch or `std::function` (which uses virtual dispatch internally).
+
+2. **Subscription Storage**: Subscriptions are stored by handle in an `unordered_map`. Different event types have different callback signatures, requiring type erasure to store them uniformly.
+
+3. **No Performance Benefit from std::function**: Replacing with `std::function<void(const void*)>` would just substitute explicit virtual dispatch with implicit virtual dispatch. The overhead is equivalent.
+
+4. **Current Design Is Type-Safe**: The callback wrappers know the exact event type at compile time, preserving type safety within the wrapper while providing runtime polymorphism for storage.

@@ -252,7 +252,7 @@ private:
 			if (!xScene.EntityExists(uPlatformID))
 				continue;
 
-			Zenith_Entity xPlatform = xScene.GetEntityByID(uPlatformID);
+			Zenith_Entity xPlatform = xScene.GetEntity(uPlatformID);
 			Zenith_Maths::Vector3 xPlatPos, xPlatScale;
 			xPlatform.GetComponent<Zenith_TransformComponent>().GetPosition(xPlatPos);
 			xPlatform.GetComponent<Zenith_TransformComponent>().GetScale(xPlatScale);

@@ -128,7 +128,7 @@ public:
 			return Zenith_Maths::Vector3(0.0f);
 
 		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		Zenith_Entity xPlayer = xScene.GetEntityByID(uPlayerID);
+		Zenith_Entity xPlayer = xScene.GetEntity(uPlayerID);
 
 		Zenith_Maths::Vector3 xPos;
 		xPlayer.GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
@@ -291,7 +291,7 @@ public:
 		if (!xScene.EntityExists(uEntityID))
 			return false;
 
-		Zenith_Entity xEntity = xScene.GetEntityByID(uEntityID);
+		Zenith_Entity xEntity = xScene.GetEntity(uEntityID);
 		if (!xEntity.HasComponent<Zenith_TransformComponent>())
 			return false;
 
