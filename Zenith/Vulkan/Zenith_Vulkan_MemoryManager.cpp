@@ -90,7 +90,51 @@ void Zenith_Vulkan_MemoryManager::Initialise()
 
 void Zenith_Vulkan_MemoryManager::Shutdown()
 {
+	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
+
+	// Drain all pending deletions by calling ProcessDeferredDeletions enough times
+	// Deletions are queued with MAX_FRAMES_IN_FLIGHT + 1 frames remaining
+	for (u_int i = 0; i < MAX_FRAMES_IN_FLIGHT + 1; i++)
+	{
+		ProcessDeferredDeletions();
+	}
+
+	// Destroy all remaining VRAM allocations that weren't explicitly freed
+	// This handles game resources that weren't cleaned up before shutdown
+	std::vector<Zenith_Vulkan_VRAM*>& xVRAMRegistry = Zenith_Vulkan::s_xVRAMRegistry;
+	u_int uLeakedAllocations = 0;
+	for (size_t i = 0; i < xVRAMRegistry.size(); i++)
+	{
+		if (xVRAMRegistry[i] != nullptr)
+		{
+			uLeakedAllocations++;
+			delete xVRAMRegistry[i];
+			xVRAMRegistry[i] = nullptr;
+		}
+	}
+	if (uLeakedAllocations > 0)
+	{
+		Zenith_Log(LOG_CATEGORY_VULKAN, "Warning: Cleaned up %u leaked VRAM allocations during shutdown", uLeakedAllocations);
+	}
+	xVRAMRegistry.clear();
+
+	// Destroy staging buffer
+	if (s_xStagingBuffer)
+	{
+		xDevice.destroyBuffer(s_xStagingBuffer);
+		s_xStagingBuffer = nullptr;
+	}
+	if (s_xStagingMem)
+	{
+		xDevice.freeMemory(s_xStagingMem);
+		s_xStagingMem = nullptr;
+	}
+
+	// Destroy VMA allocator
 	vmaDestroyAllocator(s_xAllocator);
+	s_xAllocator = nullptr;
+
+	Zenith_Log(LOG_CATEGORY_VULKAN, "Vulkan memory manager shut down");
 }
 
 Zenith_Vulkan_CommandBuffer& Zenith_Vulkan_MemoryManager::GetCommandBuffer() {

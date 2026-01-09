@@ -10,6 +10,7 @@
 #include "Editor/Zenith_Editor.h"
 #endif
 #include "AssetHandling/Zenith_AssetHandler.h"
+#include "EntityComponent/Zenith_Scene.h"
 #include "Flux/Flux_Graphics.h"
 #include "Physics/Zenith_Physics.h"
 #include "Profiling/Zenith_Profiling.h"
@@ -107,13 +108,18 @@ int main()
 	Zenith_Editor::Shutdown();
 #endif
 
-	// 3. Shutdown physics system
+	// 3. Reset scene to release all resources before subsystem shutdown
+	// Must happen before physics (colliders need to remove bodies) and before
+	// memory manager (model/mesh components hold VRAM handles)
+	Zenith_Scene::GetCurrentScene().Reset();
+
+	// 4. Shutdown physics system
 	Zenith_Physics::Shutdown();
 
-	// 4. Shutdown Vulkan memory manager (destroys VMA allocator)
+	// 5. Shutdown Vulkan memory manager (destroys VMA allocator)
 	Zenith_Vulkan_MemoryManager::Shutdown();
 
-	// 5. Shutdown task system (terminates worker threads)
+	// 6. Shutdown task system (terminates worker threads)
 	Zenith_TaskSystem::Shutdown();
 
 	// 6. Cleanup window (destructor handles GLFW termination)
