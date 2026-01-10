@@ -246,11 +246,11 @@ void Zenith_Vulkan_Swapchain::Initialise()
 		//#TO_TODO: stop hardcoding swapchain colour format
 		s_axTargetSetups[u].m_axColourAttachments[0].m_xSurfaceInfo.m_eFormat = TEXTURE_FORMAT_BGRA8_SRGB;
 		
-		// Create views for swapchain images
-		s_axTargetSetups[u].m_axColourAttachments[0].m_pxSRV.m_xImageView = s_xImageViews[u];
+		// Create views for swapchain images - register with handle system for consistency
+		s_axTargetSetups[u].m_axColourAttachments[0].m_pxSRV.m_xImageViewHandle = Zenith_Vulkan_MemoryManager::RegisterImageView(s_xImageViews[u]);
 		s_axTargetSetups[u].m_axColourAttachments[0].m_pxSRV.m_xVRAMHandle.SetValue(UINT32_MAX);
-		
-		s_axTargetSetups[u].m_axColourAttachments[0].m_pxRTV.m_xImageView = s_xImageViews[u];
+
+		s_axTargetSetups[u].m_axColourAttachments[0].m_pxRTV.m_xImageViewHandle = Zenith_Vulkan_MemoryManager::RegisterImageView(s_xImageViews[u]);
 		s_axTargetSetups[u].m_axColourAttachments[0].m_pxRTV.m_xVRAMHandle.SetValue(UINT32_MAX);
 	}
 	
@@ -302,7 +302,7 @@ bool Zenith_Vulkan_Swapchain::BeginFrame()
 		// Cleanup swapchain resources before recreation
 		for (u_int u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
 		{
-			Flux_MemoryManager::QueueImageViewDeletion(s_xImageViews[u]);
+			// Destroy image views directly - GPU is already idle so no deferred deletion needed`nxDevice.destroyImageView(s_xImageViews[u]);
 			xDevice.destroySemaphore(s_axImageAvailableSemaphores[u]);
 		}
 		s_xImages.clear();
@@ -394,7 +394,7 @@ void Zenith_Vulkan_Swapchain::EndFrame()
 	{
 		// Bind final render target using SRV
 		Flux_ShaderResourceView& xSRV = Flux_Graphics::s_xFinalRenderTarget.m_axColourAttachments[0].m_pxSRV;
-		if (xSRV.m_xImageView != VK_NULL_HANDLE)
+		if (xSRV.m_xImageViewHandle.IsValid())
 		{
 			s_xCopyToFramebufferCmd.BindSRV(&xSRV, 0);
 		}

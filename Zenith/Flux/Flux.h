@@ -17,33 +17,34 @@ struct Flux_SurfaceInfo
 };
 
 // View structures for Direct3D-style resource views
+// Use opaque handles to abstract away Vulkan types from Flux layer
 struct Flux_ShaderResourceView {
-	vk::ImageView m_xImageView = VK_NULL_HANDLE;
+	Flux_ImageViewHandle m_xImageViewHandle;
 	Flux_VRAMHandle m_xVRAMHandle;
 };
 
-struct Flux_UnorderedAccessView_Texture{
-	vk::ImageView m_xImageView = VK_NULL_HANDLE;
+struct Flux_UnorderedAccessView_Texture {
+	Flux_ImageViewHandle m_xImageViewHandle;
 	Flux_VRAMHandle m_xVRAMHandle;
 };
 
 struct Flux_UnorderedAccessView_Buffer {
-	vk::DescriptorBufferInfo m_xBufferInfo;
+	Flux_BufferDescriptorHandle m_xBufferDescHandle;
 	Flux_VRAMHandle m_xVRAMHandle;
 };
 
 struct Flux_RenderTargetView {
-	vk::ImageView m_xImageView = VK_NULL_HANDLE;
+	Flux_ImageViewHandle m_xImageViewHandle;
 	Flux_VRAMHandle m_xVRAMHandle;
 };
 
 struct Flux_DepthStencilView {
-	vk::ImageView m_xImageView = VK_NULL_HANDLE;
+	Flux_ImageViewHandle m_xImageViewHandle;
 	Flux_VRAMHandle m_xVRAMHandle;
 };
 
 struct Flux_ConstantBufferView {
-	vk::DescriptorBufferInfo m_xBufferInfo;
+	Flux_BufferDescriptorHandle m_xBufferDescHandle;
 	Flux_VRAMHandle m_xVRAMHandle;
 };
 

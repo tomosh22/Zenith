@@ -8,7 +8,6 @@
 #include "AssetHandling/Zenith_AssetHandler.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Terrain/Flux_TerrainStreamingManager.h"
-#include "Vulkan/Zenith_Vulkan_MemoryManager.h"
 #include <fstream>
 
 ZENITH_REGISTER_COMPONENT(Zenith_TerrainComponent, "Terrain")
@@ -861,4 +860,4 @@ void Zenith_TerrainComponent::UpdateCullingAndLod(Flux_CommandList& xCmdList, co
 	uint32_t uNumWorkgroups = (TOTAL_CHUNKS + 63) / 64;
 	xCmdList.AddCommand<Flux_CommandDispatch>(uNumWorkgroups, 1, 1);
 }
-// Editor code for RenderPropertiesPanel is in Zenith_TerrainComponent_Editor.cpp
+// Editor code for RenderPropertiesPanel is in Zenith_TerrainComponent_Editor.cpp// Editor code for RenderPropertiesPanel is in Zenith_TerrainComponent_Editor.cpp

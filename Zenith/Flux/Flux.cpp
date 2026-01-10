@@ -77,6 +77,9 @@ void Flux::Shutdown()
 	// Shutdown core graphics (render targets, depth buffer, quad mesh, frame constants)
 	Flux_Graphics::Shutdown();
 
+	// Shutdown memory manager (VMA allocator, handle registries)
+	Flux_MemoryManager::Shutdown();
+
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux shut down");
 }
 

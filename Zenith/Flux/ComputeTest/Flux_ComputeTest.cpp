@@ -64,8 +64,8 @@ void Flux_ComputeTest::Shutdown()
 	{
 		Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(g_xComputeOutput.m_xVRAMHandle);
 		Flux_MemoryManager::QueueVRAMDeletion(pxVRAM, g_xComputeOutput.m_xVRAMHandle,
-			g_xComputeOutput.m_pxRTV.m_xImageView, g_xComputeOutput.m_pxDSV.m_xImageView,
-			g_xComputeOutput.m_pxSRV.m_xImageView, g_xComputeOutput.m_pxUAV.m_xImageView);
+			g_xComputeOutput.m_pxRTV.m_xImageViewHandle, g_xComputeOutput.m_pxDSV.m_xImageViewHandle,
+			g_xComputeOutput.m_pxSRV.m_xImageViewHandle, g_xComputeOutput.m_pxUAV.m_xImageViewHandle);
 		g_xComputeOutput.m_xVRAMHandle = Flux_VRAMHandle();
 	}
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_ComputeTest shut down");

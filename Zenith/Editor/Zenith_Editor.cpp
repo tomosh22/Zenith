@@ -38,7 +38,7 @@ void Zenith_EditorAddLogMessage(const char* szMessage, int eLevel, Zenith_LogCat
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "Input/Zenith_Input.h"
 #include "Flux/Flux_Graphics.h"
-#include "Vulkan/Zenith_Vulkan.h"
+#include "Flux/Flux_ImGuiIntegration.h"
 #include "AssetHandling/Zenith_ModelAsset.h"
 #include "Flux/MeshAnimation/Flux_AnimationClip.h"
 
@@ -53,7 +53,6 @@ void Zenith_EditorAddLogMessage(const char* szMessage, int eLevel, Zenith_LogCat
 
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "imgui.h"
-#include "backends/imgui_impl_vulkan.h"
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
 
 #include <filesystem>
@@ -160,14 +159,14 @@ bool Zenith_Editor::s_bShowMaterialEditor = true;
 
 // Editor camera state is defined in Zenith_EditorCamera.cpp
 
-// Cache the ImGui descriptor set for the game viewport texture
-static vk::DescriptorSet s_xCachedGameTextureDescriptorSet = VK_NULL_HANDLE;
-static vk::ImageView s_xCachedImageView = VK_NULL_HANDLE;
+// Cache the ImGui texture handle for the game viewport texture
+static Flux_ImGuiTextureHandle s_xCachedGameTextureHandle;
+static Flux_ImageViewHandle s_xCachedImageViewHandle;
 
-// Deferred deletion queue for descriptor sets
-// Vulkan requires waiting for GPU to finish using resources before freeing them
-// (PendingDescriptorSetDeletion struct is defined in Zenith_EditorPanel_Viewport.h)
-static std::vector<PendingDescriptorSetDeletion> s_xPendingDeletions;
+// Deferred deletion queue for ImGui textures
+// GPU requires waiting for resources to finish before freeing them
+// (PendingImGuiTextureDeletion struct is defined in Zenith_EditorPanel_Viewport.h)
+static std::vector<PendingImGuiTextureDeletion> s_xPendingDeletions;
 
 void Zenith_Editor::Initialise()
 {
@@ -198,16 +197,16 @@ void Zenith_Editor::Shutdown()
 	// At shutdown, we can safely assume all GPU work is done or will be waited for
 	for (auto& pending : s_xPendingDeletions)
 	{
-		ImGui_ImplVulkan_RemoveTexture(pending.descriptorSet);
+		Flux_ImGuiIntegration::UnregisterTexture(pending.xHandle, 0); // Immediate deletion at shutdown
 	}
 	s_xPendingDeletions.clear();
 
-	// Free the cached ImGui descriptor set
-	if (s_xCachedGameTextureDescriptorSet != VK_NULL_HANDLE)
+	// Free the cached ImGui texture handle
+	if (s_xCachedGameTextureHandle.IsValid())
 	{
-		ImGui_ImplVulkan_RemoveTexture(s_xCachedGameTextureDescriptorSet);
-		s_xCachedGameTextureDescriptorSet = VK_NULL_HANDLE;
-		s_xCachedImageView = VK_NULL_HANDLE;
+		Flux_ImGuiIntegration::UnregisterTexture(s_xCachedGameTextureHandle, 0); // Immediate deletion at shutdown
+		s_xCachedGameTextureHandle.Invalidate();
+		s_xCachedImageViewHandle = Flux_ImageViewHandle();
 	}
 
 	// Reset editor camera state
@@ -246,7 +245,7 @@ bool Zenith_Editor::Update()
 		Zenith_Core::WaitForAllRenderTasks();
 
 		Zenith_Log(LOG_CATEGORY_EDITOR, "Waiting for GPU to become idle before resetting scene...");
-		Zenith_Vulkan::WaitForGPUIdle();
+		Flux_PlatformAPI::WaitForGPUIdle();
 
 		// Force process any pending deferred deletions
 		Zenith_Log(LOG_CATEGORY_EDITOR, "Processing deferred resource deletions...");
@@ -317,7 +316,7 @@ bool Zenith_Editor::Update()
 
 
 		Zenith_Log(LOG_CATEGORY_EDITOR, "Waiting for GPU to become idle before loading scene...");
-		Zenith_Vulkan::WaitForGPUIdle();  // GPU synchronization
+		Flux_PlatformAPI::WaitForGPUIdle();  // GPU synchronization
 
 		// Force process any pending deferred deletions to ensure old descriptors are destroyed
 		// Without this, descriptor handles might collide between old/new scenes
@@ -384,20 +383,20 @@ bool Zenith_Editor::Update()
 		return false;
 	}
 
-	// Process deferred descriptor set deletions
+	// Process deferred ImGui texture deletions
 	// We wait N frames before freeing to ensure GPU has finished using them
 	for (auto it = s_xPendingDeletions.begin(); it != s_xPendingDeletions.end(); )
 	{
-		if (it->framesUntilDeletion == 0)
+		if (it->uFramesUntilDeletion == 0)
 		{
-			// Safe to delete now - GPU has finished with this descriptor set
-			ImGui_ImplVulkan_RemoveTexture(it->descriptorSet);
+			// Safe to delete now - GPU has finished with this texture
+			Flux_ImGuiIntegration::UnregisterTexture(it->xHandle, 0);
 			it = s_xPendingDeletions.erase(it);
 		}
 		else
 		{
 			// Decrement frame counter
-			it->framesUntilDeletion--;
+			it->uFramesUntilDeletion--;
 			++it;
 		}
 	}
@@ -730,8 +729,8 @@ void Zenith_Editor::RenderViewport()
 		s_xViewportPos,
 		s_bViewportHovered,
 		s_bViewportFocused,
-		s_xCachedGameTextureDescriptorSet,
-		s_xCachedImageView,
+		s_xCachedGameTextureHandle,
+		s_xCachedImageViewHandle,
 		s_xPendingDeletions
 	};
 	Zenith_EditorPanelViewport::Render(xState);

@@ -16,6 +16,36 @@ private:
 	u_int m_uVRAMHandle = UINT32_MAX;
 };
 
+// Opaque handle to an image view (SRV/RTV/DSV/UAV)
+// Follows the same registry pattern as Flux_VRAMHandle
+class Flux_ImageViewHandle
+{
+public:
+	Flux_ImageViewHandle() = default;
+
+	void SetValue(const u_int uVal) { m_uHandle = uVal; }
+
+	u_int AsUInt() const { return m_uHandle; }
+	bool IsValid() const { return m_uHandle != UINT32_MAX; }
+private:
+	u_int m_uHandle = UINT32_MAX;
+};
+
+// Opaque handle to buffer descriptor info (CBV/UAV buffers)
+// Follows the same registry pattern as Flux_VRAMHandle
+class Flux_BufferDescriptorHandle
+{
+public:
+	Flux_BufferDescriptorHandle() = default;
+
+	void SetValue(const u_int uVal) { m_uHandle = uVal; }
+
+	u_int AsUInt() const { return m_uHandle; }
+	bool IsValid() const { return m_uHandle != UINT32_MAX; }
+private:
+	u_int m_uHandle = UINT32_MAX;
+};
+
 static uint32_t Flux_ShaderDataTypeSize(ShaderDataType t)
 {
 	switch (t)

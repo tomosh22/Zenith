@@ -278,8 +278,8 @@ void Flux_Graphics::Shutdown()
 		{
 			Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xAttachment.m_xVRAMHandle);
 			Flux_MemoryManager::QueueVRAMDeletion(pxVRAM, xAttachment.m_xVRAMHandle,
-				xAttachment.m_pxRTV.m_xImageView, xAttachment.m_pxDSV.m_xImageView,
-				xAttachment.m_pxSRV.m_xImageView, xAttachment.m_pxUAV.m_xImageView);
+				xAttachment.m_pxRTV.m_xImageViewHandle, xAttachment.m_pxDSV.m_xImageViewHandle,
+				xAttachment.m_pxSRV.m_xImageViewHandle, xAttachment.m_pxUAV.m_xImageViewHandle);
 			xAttachment.m_xVRAMHandle = Flux_VRAMHandle();
 		}
 	};

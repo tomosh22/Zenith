@@ -102,8 +102,8 @@ void Flux_Shadows::Shutdown()
 		{
 			Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(g_axCSMs[u].m_xVRAMHandle);
 			Flux_MemoryManager::QueueVRAMDeletion(pxVRAM, g_axCSMs[u].m_xVRAMHandle,
-				g_axCSMs[u].m_pxRTV.m_xImageView, g_axCSMs[u].m_pxDSV.m_xImageView,
-				g_axCSMs[u].m_pxSRV.m_xImageView, g_axCSMs[u].m_pxUAV.m_xImageView);
+				g_axCSMs[u].m_pxRTV.m_xImageViewHandle, g_axCSMs[u].m_pxDSV.m_xImageViewHandle,
+				g_axCSMs[u].m_pxSRV.m_xImageViewHandle, g_axCSMs[u].m_pxUAV.m_xImageViewHandle);
 			g_axCSMs[u].m_xVRAMHandle = Flux_VRAMHandle();
 		}
 

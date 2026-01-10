@@ -604,9 +604,9 @@ vk::Framebuffer Zenith_Vulkan_Pipeline::TargetSetupToFramebuffer(Flux_TargetSetu
 
 	vk::ImageView axAttachments[FLUX_MAX_TARGETS];
 	for (uint32_t i = 0; i < uNumColourAttachments; i++)
-		axAttachments[i] = xTargetSetup.m_axColourAttachments[i].m_pxRTV.m_xImageView;
+		axAttachments[i] = Zenith_Vulkan_MemoryManager::GetImageView(xTargetSetup.m_axColourAttachments[i].m_pxRTV.m_xImageViewHandle);
 	if (bHasDepth)
-		axAttachments[uNumAttachments - 1] = xTargetSetup.m_pxDepthStencil->m_pxDSV.m_xImageView;
+		axAttachments[uNumAttachments - 1] = Zenith_Vulkan_MemoryManager::GetImageView(xTargetSetup.m_pxDepthStencil->m_pxDSV.m_xImageViewHandle);
 
 	vk::FramebufferCreateInfo framebufferInfo = vk::FramebufferCreateInfo()
 		.setRenderPass(xPass)

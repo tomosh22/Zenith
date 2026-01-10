@@ -91,9 +91,7 @@ Flux_Texture* Zenith_AssetHandler::AddTexture(const TextureData& xTextureData)
 	}
 
 	// Create and store SRV
-	Flux_ShaderResourceView xSRV;
-	xSRV.m_xVRAMHandle = xVRAMHandle;
-	xSRV.m_xImageView = Flux_MemoryManager::CreateShaderResourceView(xVRAMHandle, xTextureData.xSurfaceInfo);
+	Flux_ShaderResourceView xSRV = Flux_MemoryManager::CreateShaderResourceView(xVRAMHandle, xTextureData.xSurfaceInfo);
 
 	Flux_Texture* pxTexture = &s_pxTextures[uID];
 	pxTexture->m_xSurfaceInfo = xTextureData.xSurfaceInfo;
@@ -132,7 +130,7 @@ void Zenith_AssetHandler::DeleteTexture(Flux_Texture* pxTexture)
 	Zenith_Assert(pxTexture->m_xVRAMHandle.IsValid(), "Deleting invalid texture");
 
 	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(pxTexture->m_xVRAMHandle);
-	Flux_MemoryManager::QueueVRAMDeletion(pxVRAM, pxTexture->m_xVRAMHandle, pxTexture->m_xSRV.m_xImageView);
+	Flux_MemoryManager::QueueVRAMDeletion(pxVRAM, pxTexture->m_xVRAMHandle, pxTexture->m_xSRV.m_xImageViewHandle);
 
 	// Clear the texture data
 	*pxTexture = Flux_Texture();

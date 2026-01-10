@@ -83,7 +83,7 @@ void Zenith_DebugVariableTree::LeafNode<const Flux_ShaderResourceView>::ImGuiDis
 
 	vk::DescriptorImageInfo xImageInfo = vk::DescriptorImageInfo()
 		.setSampler(Flux_Graphics::s_xRepeatSampler.GetSampler())
-		.setImageView(m_pData->m_xImageView)
+		.setImageView(Zenith_Vulkan_MemoryManager::GetImageView(m_pData->m_xImageViewHandle))
 		.setImageLayout(vk::ImageLayout::eShaderReadOnlyOptimal);
 
 	vk::WriteDescriptorSet xImageWriteInfo = vk::WriteDescriptorSet()

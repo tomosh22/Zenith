@@ -751,6 +751,9 @@
     <ClCompile Include="..\Zenith\Vulkan\Zenith_Vulkan_CommandBuffer.cpp">
       <Filter>Vulkan</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\Vulkan\Zenith_Vulkan_ImGuiIntegration.cpp">
+      <Filter>Vulkan</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Vulkan\Zenith_Vulkan_MemoryManager.cpp">
       <Filter>Vulkan</Filter>
     </ClCompile>
@@ -3002,6 +3005,9 @@
       <Filter>Flux</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Flux_Graphics.h">
+      <Filter>Flux</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Flux_ImGuiIntegration.h">
       <Filter>Flux</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Flux_MaterialAsset.h">

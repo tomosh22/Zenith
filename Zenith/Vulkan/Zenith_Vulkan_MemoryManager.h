@@ -6,6 +6,7 @@
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
 
 #include "Flux/Flux_Types.h"
+#include "Flux/Flux.h"
 
 class Zenith_Vulkan_VRAM;
 class Flux_VertexBuffer;
@@ -63,19 +64,28 @@ public:
 	static Flux_VRAMHandle CreateTextureVRAM(const void* pData, const Flux_SurfaceInfo& xInfo, bool bCreateMips);
 	static Flux_VRAMHandle CreateRenderTargetVRAM(const Flux_SurfaceInfo& xInfo);
 
-	// View creation functions
-	static vk::ImageView CreateRenderTargetView(Flux_VRAMHandle xVRAMHandle, const Flux_SurfaceInfo& xInfo, uint32_t uMipLevel = 0);
-	static vk::ImageView CreateDepthStencilView(Flux_VRAMHandle xVRAMHandle, const Flux_SurfaceInfo& xInfo, uint32_t uMipLevel = 0);
-	static vk::ImageView CreateShaderResourceView(Flux_VRAMHandle xVRAMHandle, const Flux_SurfaceInfo& xInfo, uint32_t uBaseMip = 0, uint32_t uMipCount = 1);
-	static vk::ImageView CreateUnorderedAccessView(Flux_VRAMHandle xVRAMHandlee, const Flux_SurfaceInfo& xInfo, uint32_t uMipLevel = 0);
+	// View creation functions - return Flux view structs with abstract handles
+	static Flux_RenderTargetView CreateRenderTargetView(Flux_VRAMHandle xVRAMHandle, const Flux_SurfaceInfo& xInfo, uint32_t uMipLevel = 0);
+	static Flux_DepthStencilView CreateDepthStencilView(Flux_VRAMHandle xVRAMHandle, const Flux_SurfaceInfo& xInfo, uint32_t uMipLevel = 0);
+	static Flux_ShaderResourceView CreateShaderResourceView(Flux_VRAMHandle xVRAMHandle, const Flux_SurfaceInfo& xInfo, uint32_t uBaseMip = 0, uint32_t uMipCount = 1);
+	static Flux_UnorderedAccessView_Texture CreateUnorderedAccessView(Flux_VRAMHandle xVRAMHandle, const Flux_SurfaceInfo& xInfo, uint32_t uMipLevel = 0);
+
+	// Handle registry system for abstracting Vulkan types from Flux layer
+	static Flux_ImageViewHandle RegisterImageView(vk::ImageView xView);
+	static vk::ImageView GetImageView(Flux_ImageViewHandle xHandle);
+	static void ReleaseImageViewHandle(Flux_ImageViewHandle xHandle);
+
+	static Flux_BufferDescriptorHandle RegisterBufferDescriptor(const vk::DescriptorBufferInfo& xInfo);
+	static vk::DescriptorBufferInfo GetBufferDescriptor(Flux_BufferDescriptorHandle xHandle);
+	static void ReleaseBufferDescriptorHandle(Flux_BufferDescriptorHandle xHandle);
 
 	static Zenith_Vulkan_CommandBuffer& GetCommandBuffer();
 
-	// Deferred deletion system
-	static void QueueVRAMDeletion(Zenith_Vulkan_VRAM* pxVRAM, const Flux_VRAMHandle xHandle, 
-		vk::ImageView xRTV = VK_NULL_HANDLE, vk::ImageView xDSV = VK_NULL_HANDLE, 
-		vk::ImageView xSRV = VK_NULL_HANDLE, vk::ImageView xUAV = VK_NULL_HANDLE);
-	static void QueueImageViewDeletion(vk::ImageView xImageView);
+	// Deferred deletion system - accepts abstract handles to keep Vulkan types internal
+	static void QueueVRAMDeletion(Zenith_Vulkan_VRAM* pxVRAM, const Flux_VRAMHandle xHandle,
+		Flux_ImageViewHandle xRTV = Flux_ImageViewHandle(), Flux_ImageViewHandle xDSV = Flux_ImageViewHandle(),
+		Flux_ImageViewHandle xSRV = Flux_ImageViewHandle(), Flux_ImageViewHandle xUAV = Flux_ImageViewHandle());
+	static void QueueImageViewDeletion(Flux_ImageViewHandle xImageViewHandle);
 	static void ProcessDeferredDeletions();
 
 	static void FlushStagingBuffer();
@@ -132,12 +142,12 @@ private:
 		Zenith_Vulkan_VRAM* m_pxVRAM;
 		Flux_VRAMHandle m_xHandle;
 		uint32_t m_uFramesRemaining;
-		
-		// Image views that need to be destroyed
-		vk::ImageView m_xRTV = VK_NULL_HANDLE;
-		vk::ImageView m_xDSV = VK_NULL_HANDLE;
-		vk::ImageView m_xSRV = VK_NULL_HANDLE;
-		vk::ImageView m_xUAV = VK_NULL_HANDLE;
+
+		// Image view handles that need to be destroyed
+		Flux_ImageViewHandle m_xRTV;
+		Flux_ImageViewHandle m_xDSV;
+		Flux_ImageViewHandle m_xSRV;
+		Flux_ImageViewHandle m_xUAV;
 	};
 	static std::list<PendingVRAMDeletion> s_xPendingDeletions;
 
@@ -154,4 +164,10 @@ private:
 	static u_int64 s_ulImageMemoryUsed;
 	static u_int64 s_ulBufferMemoryUsed;
 	static u_int64 s_ulMemoryUsed;
+
+	// Handle registry for abstracting Vulkan types
+	static std::vector<vk::ImageView> s_xImageViewRegistry;
+	static std::vector<u_int> s_xFreeImageViewHandles;
+	static std::vector<vk::DescriptorBufferInfo> s_xBufferDescriptorRegistry;
+	static std::vector<u_int> s_xFreeBufferDescHandles;
 };

@@ -16,8 +16,6 @@
 #include "Profiling/Zenith_Profiling.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
 #include "UnitTests/Zenith_UnitTests.h"
-#include "Vulkan/Zenith_Vulkan.h"
-#include "Vulkan/Zenith_Vulkan_MemoryManager.h"
 
 #ifdef ZENITH_TOOLS
 extern void ExportAllMeshes();
@@ -101,7 +99,7 @@ int main()
 	Zenith_Log(LOG_CATEGORY_CORE, "Beginning shutdown sequence...");
 
 	// 1. Wait for GPU to finish all pending work
-	Zenith_Vulkan::WaitForGPUIdle();
+	Flux_PlatformAPI::WaitForGPUIdle();
 
 #ifdef ZENITH_TOOLS
 	// 2. Shutdown editor (processes pending deletions, cleans up editor state)
@@ -123,16 +121,13 @@ int main()
 	// 6. Destroy all assets (textures, meshes, materials)
 	Zenith_AssetHandler::DestroyAllAssets();
 
-	// 7. Shutdown Flux (all subsystems + graphics)
+	// 7. Shutdown Flux (all subsystems + graphics + memory manager)
 	Flux::Shutdown();
 
-	// 8. Shutdown Vulkan memory manager (destroys VMA allocator)
-	Zenith_Vulkan_MemoryManager::Shutdown();
-
-	// 9. Shutdown task system (terminates worker threads)
+	// 8. Shutdown task system (terminates worker threads)
 	Zenith_TaskSystem::Shutdown();
 
-	// 10. Cleanup window (destructor handles GLFW termination)
+	// 9. Cleanup window (destructor handles GLFW termination)
 	delete Zenith_Window::GetInstance();
 
 	Zenith_Log(LOG_CATEGORY_CORE, "Shutdown complete");

@@ -11,8 +11,8 @@ void Flux_RenderAttachmentBuilder::BuildColour(Flux_RenderAttachment& xAttachmen
 	{
 		Zenith_Vulkan_VRAM* pxOldVRAM = Zenith_Vulkan::GetVRAM(xAttachment.m_xVRAMHandle);
 		Flux_MemoryManager::QueueVRAMDeletion(pxOldVRAM, xAttachment.m_xVRAMHandle,
-			xAttachment.m_pxRTV.m_xImageView, VK_NULL_HANDLE, 
-			xAttachment.m_pxSRV.m_xImageView, xAttachment.m_pxUAV.m_xImageView);
+			xAttachment.m_pxRTV.m_xImageViewHandle, Flux_ImageViewHandle(),
+			xAttachment.m_pxSRV.m_xImageViewHandle, xAttachment.m_pxUAV.m_xImageViewHandle);
 	}
 
 	Flux_SurfaceInfo xInfo;
@@ -26,20 +26,17 @@ void Flux_RenderAttachmentBuilder::BuildColour(Flux_RenderAttachment& xAttachmen
 	// Create actual target VRAM and store it in registry
 	xAttachment.m_xVRAMHandle = Flux_MemoryManager::CreateRenderTargetVRAM(xInfo);
 	xAttachment.m_xSurfaceInfo = xInfo;
-	
-	// Create RTV with mips
-	xAttachment.m_pxRTV.m_xImageView = Flux_MemoryManager::CreateRenderTargetView(xAttachment.m_xVRAMHandle, xInfo, 0);
-	xAttachment.m_pxRTV.m_xVRAMHandle = xAttachment.m_xVRAMHandle;
 
-	// Create SRV with mips
-	xAttachment.m_pxSRV.m_xImageView = Flux_MemoryManager::CreateShaderResourceView(xAttachment.m_xVRAMHandle, xInfo, 0, xInfo.m_uNumMips);
-	xAttachment.m_pxSRV.m_xVRAMHandle = xAttachment.m_xVRAMHandle;
+	// Create RTV
+	xAttachment.m_pxRTV = Flux_MemoryManager::CreateRenderTargetView(xAttachment.m_xVRAMHandle, xInfo, 0);
 
-	// Create UAV with mips if requested by memory flags
+	// Create SRV
+	xAttachment.m_pxSRV = Flux_MemoryManager::CreateShaderResourceView(xAttachment.m_xVRAMHandle, xInfo, 0, xInfo.m_uNumMips);
+
+	// Create UAV if requested by memory flags
 	if (m_uMemoryFlags & MEMORY_FLAGS__UNORDERED_ACCESS)
 	{
-		xAttachment.m_pxUAV.m_xImageView = Flux_MemoryManager::CreateUnorderedAccessView(xAttachment.m_xVRAMHandle, xInfo, 0);
-		xAttachment.m_pxUAV.m_xVRAMHandle = xAttachment.m_xVRAMHandle;
+		xAttachment.m_pxUAV = Flux_MemoryManager::CreateUnorderedAccessView(xAttachment.m_xVRAMHandle, xInfo, 0);
 	}
 }
 
@@ -50,8 +47,8 @@ void Flux_RenderAttachmentBuilder::BuildDepthStencil(Flux_RenderAttachment& xAtt
 	{
 		Zenith_Vulkan_VRAM* pxOldVRAM = Zenith_Vulkan::GetVRAM(xAttachment.m_xVRAMHandle);
 		Flux_MemoryManager::QueueVRAMDeletion(pxOldVRAM, xAttachment.m_xVRAMHandle,
-			VK_NULL_HANDLE, xAttachment.m_pxDSV.m_xImageView, 
-			xAttachment.m_pxSRV.m_xImageView, VK_NULL_HANDLE);
+			Flux_ImageViewHandle(), xAttachment.m_pxDSV.m_xImageViewHandle,
+			xAttachment.m_pxSRV.m_xImageViewHandle, Flux_ImageViewHandle());
 	}
 
 	Flux_SurfaceInfo xInfo;
@@ -66,12 +63,11 @@ void Flux_RenderAttachmentBuilder::BuildDepthStencil(Flux_RenderAttachment& xAtt
 	xAttachment.m_xVRAMHandle = Flux_MemoryManager::CreateRenderTargetVRAM(xInfo);
 	xAttachment.m_xSurfaceInfo = xInfo;
 
-	// Create DSV with mips
-	xAttachment.m_pxDSV.m_xImageView = Flux_MemoryManager::CreateDepthStencilView(xAttachment.m_xVRAMHandle, xInfo, 0);
-	xAttachment.m_pxDSV.m_xVRAMHandle = xAttachment.m_xVRAMHandle;
+	// Create DSV
+	xAttachment.m_pxDSV = Flux_MemoryManager::CreateDepthStencilView(xAttachment.m_xVRAMHandle, xInfo, 0);
 
-	xAttachment.m_pxSRV.m_xImageView = Flux_MemoryManager::CreateShaderResourceView(xAttachment.m_xVRAMHandle, xInfo, 0, xInfo.m_uNumMips);
-	xAttachment.m_pxSRV.m_xVRAMHandle = xAttachment.m_xVRAMHandle;
+	// Create SRV
+	xAttachment.m_pxSRV = Flux_MemoryManager::CreateShaderResourceView(xAttachment.m_xVRAMHandle, xInfo, 0, xInfo.m_uNumMips);
 }
 
 void Flux_TargetSetup::AssignDepthStencil(Flux_RenderAttachment* pxDS)

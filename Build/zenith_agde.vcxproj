@@ -869,6 +869,7 @@
     <ClInclude Include="..\Zenith\Flux\Flux_Enums.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_Fwd.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_Graphics.h" />
+    <ClInclude Include="..\Zenith\Flux\Flux_ImGuiIntegration.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_MaterialAsset.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_ModelInstance.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_RenderTargets.h" />
@@ -1710,6 +1711,7 @@
     <ClCompile Include="..\Zenith\Vulkan\Zenith_Vulkan.cpp" />
     <ClCompile Include="..\Zenith\Vulkan\Zenith_Vulkan_Buffer.cpp" />
     <ClCompile Include="..\Zenith\Vulkan\Zenith_Vulkan_CommandBuffer.cpp" />
+    <ClCompile Include="..\Zenith\Vulkan\Zenith_Vulkan_ImGuiIntegration.cpp" />
     <ClCompile Include="..\Zenith\Vulkan\Zenith_Vulkan_MemoryManager.cpp" />
     <ClCompile Include="..\Zenith\Vulkan\Zenith_Vulkan_Pipeline.cpp" />
     <ClCompile Include="..\Zenith\Vulkan\Zenith_Vulkan_Swapchain.cpp" />

@@ -74,7 +74,8 @@
       "Bash(\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\MSBuild\\\\Current\\\\Bin\\\\MSBuild.exe\" \"c:\\\\dev\\\\Zenith\\\\Games\\\\Test\\\\Build\\\\test_win64.vcxproj\" -p:Configuration=vs2022_Debug_Win64_True -p:Platform=x64 -t:ClCompile -p:SelectedFiles=\"Zenith\\\\EntityComponent\\\\Components\\\\Zenith_TransformComponent.cpp;Zenith\\\\EntityComponent\\\\Zenith_Scene.cpp;Zenith\\\\EntityComponent\\\\Zenith_Entity.cpp\" -verbosity:minimal)",
       "Bash(\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\MSBuild\\\\Current\\\\Bin\\\\MSBuild.exe\" \"c:\\\\dev\\\\Zenith\\\\Games\\\\Combat\\\\Build\\\\combat_win64.vcxproj\" -p:Configuration=vs2022_Debug_Win64_True -p:Platform=x64 -verbosity:minimal)",
       "Bash(\"c:\\\\dev\\\\Zenith\\\\Games\\\\Combat\\\\Build\\\\output\\\\win64\\\\vs2022_debug_win64_true\\\\combat.exe\")",
-      "Bash(\"/c/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe\" \"Games/Test/Build/test_win64.vcxproj\" -p:Configuration=vs2022_Debug_Win64_True -p:Platform=x64 -verbosity:minimal)"
+      "Bash(\"/c/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe\" \"Games/Test/Build/test_win64.vcxproj\" -p:Configuration=vs2022_Debug_Win64_True -p:Platform=x64 -verbosity:minimal)",
+      "Bash(ls:*)"
     ],
     "deny": [],
     "ask": []

@@ -154,7 +154,7 @@ void Zenith_Vulkan_CommandBuffer::TransitionUAVs(vk::ImageLayout eOldLayout, vk:
 		for (u_int i = 0; i < MAX_BINDINGS; i++)
 		{
 			const Flux_UnorderedAccessView_Texture* pxUAV = m_xBindings[uDescSet].m_xUAV_Textures[i];
-			if (!pxUAV || !pxUAV->m_xImageView) continue;
+			if (!pxUAV || !pxUAV->m_xImageViewHandle.IsValid()) continue;
 
 			Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(pxUAV->m_xVRAMHandle);
 			Zenith_Assert(pxVRAM, "Invalid VRAM for UAV");
@@ -253,12 +253,12 @@ void Zenith_Vulkan_CommandBuffer::UpdateDescriptorSets()
 				if (pxSRV)
 				{
 					// Validate SRV has a valid image view before using it
-					Zenith_Assert(pxSRV->m_xImageView, "SRV at descSet=%u binding=%u has null image view", uDescSet, u);
-					
+					Zenith_Assert(pxSRV->m_xImageViewHandle.IsValid(), "SRV at descSet=%u binding=%u has null image view", uDescSet, u);
+
 					Zenith_Vulkan_Sampler* pxSampler = m_xBindings[uDescSet].m_apxSamplers[u];
 					axTexInfos[uNumTexWrites] = vk::DescriptorImageInfo()
 						.setSampler(pxSampler ? pxSampler->GetSampler() : Flux_Graphics::s_xRepeatSampler.GetSampler())
-						.setImageView(pxSRV->m_xImageView)
+						.setImageView(Zenith_Vulkan_MemoryManager::GetImageView(pxSRV->m_xImageViewHandle))
 						.setImageLayout(vk::ImageLayout::eShaderReadOnlyOptimal);
 					
 					axWrites[uNumWrites++] = vk::WriteDescriptorSet()
@@ -274,7 +274,7 @@ void Zenith_Vulkan_CommandBuffer::UpdateDescriptorSets()
 				if (pxUAV_Texture)
 				{
 					axTexInfos[uNumTexWrites] = vk::DescriptorImageInfo()
-						.setImageView(pxUAV_Texture->m_xImageView)
+						.setImageView(Zenith_Vulkan_MemoryManager::GetImageView(pxUAV_Texture->m_xImageViewHandle))
 						.setImageLayout(vk::ImageLayout::eGeneral);
 
 					axWrites[uNumWrites++] = vk::WriteDescriptorSet()
@@ -289,7 +289,7 @@ void Zenith_Vulkan_CommandBuffer::UpdateDescriptorSets()
 				const Flux_UnorderedAccessView_Buffer* const pxUAV_Buffer = m_xBindings[uDescSet].m_xUAV_Buffers[u];
 				if (pxUAV_Buffer)
 				{
-					axBufferInfos[uNumBufferWrites] = pxUAV_Buffer->m_xBufferInfo;
+					axBufferInfos[uNumBufferWrites] = Zenith_Vulkan_MemoryManager::GetBufferDescriptor(pxUAV_Buffer->m_xBufferDescHandle);
 					vk::DescriptorType eBufferType = vk::DescriptorType::eStorageBuffer;
 					axWrites[uNumWrites++] = vk::WriteDescriptorSet()
 						.setDescriptorType(eBufferType)
@@ -303,7 +303,7 @@ void Zenith_Vulkan_CommandBuffer::UpdateDescriptorSets()
 				const Flux_ConstantBufferView* const pxCBV = m_xBindings[uDescSet].m_xCBVs[u];
 				if (pxCBV)
 				{
-					axBufferInfos[uNumBufferWrites] = pxCBV->m_xBufferInfo;
+					axBufferInfos[uNumBufferWrites] = Zenith_Vulkan_MemoryManager::GetBufferDescriptor(pxCBV->m_xBufferDescHandle);
 					vk::DescriptorType eBufferType = (eType == DESCRIPTOR_TYPE_STORAGE_BUFFER)
 						? vk::DescriptorType::eStorageBuffer
 						: vk::DescriptorType::eUniformBuffer;
@@ -443,7 +443,7 @@ void Zenith_Vulkan_CommandBuffer::SetPipeline(Zenith_Vulkan_Pipeline* pxPipeline
 void Zenith_Vulkan_CommandBuffer::BindSRV(const Flux_ShaderResourceView* pxSRV, uint32_t uBindPoint, Zenith_Vulkan_Sampler* pxSampler /*= nullptr*/)
 {
 	Zenith_Assert(m_uCurrentBindFreq < FLUX_MAX_DESCRIPTOR_SET_LAYOUTS, "Haven't called BeginBind");
-	Zenith_Assert(pxSRV && pxSRV->m_xImageView, "Invalid SRV");
+	Zenith_Assert(pxSRV && pxSRV->m_xImageViewHandle.IsValid(), "Invalid SRV");
 	m_uDescriptorDirty |= 1 << m_uCurrentBindFreq;
 	m_xBindings[m_uCurrentBindFreq].m_xSRVs[uBindPoint] = pxSRV;
 	m_xBindings[m_uCurrentBindFreq].m_apxSamplers[uBindPoint] = pxSampler;
@@ -452,7 +452,7 @@ void Zenith_Vulkan_CommandBuffer::BindSRV(const Flux_ShaderResourceView* pxSRV, 
 void Zenith_Vulkan_CommandBuffer::BindUAV_Texture(const Flux_UnorderedAccessView_Texture* pxUAV, uint32_t uBindPoint)
 {
 	Zenith_Assert(m_uCurrentBindFreq < FLUX_MAX_DESCRIPTOR_SET_LAYOUTS, "Haven't called BeginBind");
-	Zenith_Assert(pxUAV && pxUAV->m_xImageView, "Invalid UAV");
+	Zenith_Assert(pxUAV && pxUAV->m_xImageViewHandle.IsValid(), "Invalid UAV");
 	m_uDescriptorDirty |= 1 << m_uCurrentBindFreq;
 	m_xBindings[m_uCurrentBindFreq].m_xUAV_Textures[uBindPoint] = pxUAV;
 	m_xBindings[m_uCurrentBindFreq].m_apxSamplers[uBindPoint] = nullptr;
@@ -473,7 +473,7 @@ void Zenith_Vulkan_CommandBuffer::BindCBV(const Flux_ConstantBufferView* pxCBV, 
 	Zenith_Assert(pxCBV, "Invalid CBV (null)");
 	Zenith_Assert(uBindPoint < MAX_BINDINGS, "Bind point out of range: %u", uBindPoint);
 	// Validate the CBV has valid buffer info
-	Zenith_Assert(pxCBV->m_xBufferInfo.buffer, "CBV has null buffer at bind point %u", uBindPoint);
+	Zenith_Assert(pxCBV->m_xBufferDescHandle.IsValid(), "CBV has invalid buffer descriptor at bind point %u", uBindPoint);
 	m_uDescriptorDirty |= 1 << m_uCurrentBindFreq;
 	m_xBindings[m_uCurrentBindFreq].m_xCBVs[uBindPoint] = pxCBV;
 }
@@ -600,7 +600,7 @@ void Zenith_Vulkan_CommandBuffer::Dispatch(uint32_t uGroupCountX, uint32_t uGrou
 		for (u_int i = 0; i < MAX_BINDINGS; i++)
 		{
 			const Flux_UnorderedAccessView_Texture* pxUAV = m_xBindings[uDescSet].m_xUAV_Textures[i];
-			if (!pxUAV || !pxUAV->m_xImageView) continue;
+			if (!pxUAV || !pxUAV->m_xImageViewHandle.IsValid()) continue;
 
 			Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(pxUAV->m_xVRAMHandle);
 			Zenith_Assert(pxVRAM, "Invalid VRAM for UAV");
@@ -642,7 +642,7 @@ void Zenith_Vulkan_CommandBuffer::Dispatch(uint32_t uGroupCountX, uint32_t uGrou
 		{
 			// Image UAVs: transition back to shader read
 			const Flux_UnorderedAccessView_Texture* pxUAV_Texture = m_xBindings[uDescSet].m_xUAV_Textures[i];
-			if (pxUAV_Texture && pxUAV_Texture->m_xImageView)
+			if (pxUAV_Texture && pxUAV_Texture->m_xImageViewHandle.IsValid())
 			{
 				Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(pxUAV_Texture->m_xVRAMHandle);
 				Zenith_Assert(pxVRAM, "Invalid VRAM for image UAV");
