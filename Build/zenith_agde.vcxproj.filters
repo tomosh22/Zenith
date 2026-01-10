@@ -520,13 +520,28 @@
     <ClCompile Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Console.cpp">
       <Filter>Editor\Panels</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_ContentBrowser.cpp">
+      <Filter>Editor\Panels</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Hierarchy.cpp">
+      <Filter>Editor\Panels</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_MaterialEditor.cpp">
       <Filter>Editor\Panels</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Properties.cpp">
       <Filter>Editor\Panels</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Toolbar.cpp">
+      <Filter>Editor\Panels</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Viewport.cpp">
+      <Filter>Editor\Panels</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Editor\Zenith_Editor.cpp">
+      <Filter>Editor</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Editor\Zenith_EditorCamera.cpp">
       <Filter>Editor</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\Editor\Zenith_Gizmo.cpp">
@@ -545,6 +560,9 @@
       <Filter>EntityComponent\Components</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_ModelComponent.cpp">
+      <Filter>EntityComponent\Components</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_ModelComponent_Editor.cpp">
       <Filter>EntityComponent\Components</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_ScriptComponent.cpp">
@@ -2881,10 +2899,22 @@
     <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Console.h">
       <Filter>Editor\Panels</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_ContentBrowser.h">
+      <Filter>Editor\Panels</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Hierarchy.h">
       <Filter>Editor\Panels</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_MaterialEditor.h">
+      <Filter>Editor\Panels</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Properties.h">
+      <Filter>Editor\Panels</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Toolbar.h">
+      <Filter>Editor\Panels</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Viewport.h">
       <Filter>Editor\Panels</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Editor\Zenith_Editor.h">

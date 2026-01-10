@@ -235,43 +235,7 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Flux_MaterialAsset& xMaterial0,
 
 #pragma region Physics
 {
-	// Load first physics chunk
-	m_pxPhysicsGeometry = Zenith_AssetHandler::AddMeshFromFile(
-		(std::string(Project_GetGameAssetsDirectory()) + "Terrain/Physics_0_0" ZENITH_MESH_EXT).c_str(),
-		1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__POSITION | 1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__NORMAL);
-
-	Flux_MeshGeometry& xPhysicsGeometry = *m_pxPhysicsGeometry;
-
-	const u_int64 ulTotalVertexDataSize = xPhysicsGeometry.GetVertexDataSize() * TOTAL_CHUNKS;
-	const u_int64 ulTotalIndexDataSize = xPhysicsGeometry.GetIndexDataSize() * TOTAL_CHUNKS;
-	const u_int64 ulTotalPositionDataSize = xPhysicsGeometry.GetNumVerts() * sizeof(Zenith_Maths::Vector3) * TOTAL_CHUNKS;
-
-	xPhysicsGeometry.m_pVertexData = static_cast<u_int8*>(Zenith_MemoryManagement::Reallocate(xPhysicsGeometry.m_pVertexData, ulTotalVertexDataSize));
-	xPhysicsGeometry.m_ulReservedVertexDataSize = ulTotalVertexDataSize;
-
-	xPhysicsGeometry.m_puIndices = static_cast<Flux_MeshGeometry::IndexType*>(Zenith_MemoryManagement::Reallocate(xPhysicsGeometry.m_puIndices, ulTotalIndexDataSize));
-	xPhysicsGeometry.m_ulReservedIndexDataSize = ulTotalIndexDataSize;
-
-	xPhysicsGeometry.m_pxPositions = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Reallocate(xPhysicsGeometry.m_pxPositions, ulTotalPositionDataSize));
-	xPhysicsGeometry.m_ulReservedPositionDataSize = ulTotalPositionDataSize;
-
-	// Combine remaining physics chunks
-	for (uint32_t x = 0; x < CHUNK_GRID_SIZE; x++)
-	{
-		for (uint32_t y = 0; y < CHUNK_GRID_SIZE; y++)
-		{
-			if (x == 0 && y == 0) continue;
-
-			std::string strPhysicsPath = std::string(Project_GetGameAssetsDirectory()) + "Terrain/Physics_" + std::to_string(x) + "_" + std::to_string(y) + ZENITH_MESH_EXT;
-			Flux_MeshGeometry* pxTerrainPhysicsMesh = Zenith_AssetHandler::AddMeshFromFile(
-				strPhysicsPath.c_str(),
-				1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__POSITION | 1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__NORMAL);
-
-			Flux_MeshGeometry::Combine(xPhysicsGeometry, *pxTerrainPhysicsMesh);
-
-			Zenith_AssetHandler::DeleteMesh(pxTerrainPhysicsMesh);
-		}
-	}
+	LoadCombinedPhysicsGeometry();
 }
 #pragma endregion
 }
@@ -368,52 +332,7 @@ void Zenith_TerrainComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 
 	// Load and combine ALL physics chunks, same as the full constructor
 	// This is necessary for terrain colliders to cover the entire terrain, not just the first chunk
-	if (m_pxPhysicsGeometry == nullptr)
-	{
-		Zenith_Log(LOG_CATEGORY_TERRAIN, "Terrain deserialization: Loading and combining all physics chunks...");
-
-		// Load first physics chunk
-		m_pxPhysicsGeometry = Zenith_AssetHandler::AddMeshFromFile(
-			(std::string(Project_GetGameAssetsDirectory()) + "Terrain/Physics_0_0" ZENITH_MESH_EXT).c_str(),
-			1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__POSITION | 1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__NORMAL);
-
-		Flux_MeshGeometry& xPhysicsGeometry = *m_pxPhysicsGeometry;
-
-		// Pre-allocate for all chunks (same calculation as constructor)
-		const u_int64 ulTotalVertexDataSize = xPhysicsGeometry.GetVertexDataSize() * TOTAL_CHUNKS;
-		const u_int64 ulTotalIndexDataSize = xPhysicsGeometry.GetIndexDataSize() * TOTAL_CHUNKS;
-		const u_int64 ulTotalPositionDataSize = xPhysicsGeometry.GetNumVerts() * sizeof(Zenith_Maths::Vector3) * TOTAL_CHUNKS;
-
-		xPhysicsGeometry.m_pVertexData = static_cast<u_int8*>(Zenith_MemoryManagement::Reallocate(xPhysicsGeometry.m_pVertexData, ulTotalVertexDataSize));
-		xPhysicsGeometry.m_ulReservedVertexDataSize = ulTotalVertexDataSize;
-
-		xPhysicsGeometry.m_puIndices = static_cast<Flux_MeshGeometry::IndexType*>(Zenith_MemoryManagement::Reallocate(xPhysicsGeometry.m_puIndices, ulTotalIndexDataSize));
-		xPhysicsGeometry.m_ulReservedIndexDataSize = ulTotalIndexDataSize;
-
-		xPhysicsGeometry.m_pxPositions = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Reallocate(xPhysicsGeometry.m_pxPositions, ulTotalPositionDataSize));
-		xPhysicsGeometry.m_ulReservedPositionDataSize = ulTotalPositionDataSize;
-
-		// Combine remaining physics chunks
-		for (uint32_t x = 0; x < CHUNK_GRID_SIZE; x++)
-		{
-			for (uint32_t y = 0; y < CHUNK_GRID_SIZE; y++)
-			{
-				if (x == 0 && y == 0) continue;  // Already loaded
-
-				std::string strPhysicsPath = std::string(Project_GetGameAssetsDirectory()) + "Terrain/Physics_" + std::to_string(x) + "_" + std::to_string(y) + ZENITH_MESH_EXT;
-				Flux_MeshGeometry* pxTerrainPhysicsMesh = Zenith_AssetHandler::AddMeshFromFile(
-					strPhysicsPath.c_str(),
-					1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__POSITION | 1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__NORMAL);
-
-				Flux_MeshGeometry::Combine(xPhysicsGeometry, *pxTerrainPhysicsMesh);
-
-				Zenith_AssetHandler::DeleteMesh(pxTerrainPhysicsMesh);
-			}
-		}
-
-		Zenith_Log(LOG_CATEGORY_TERRAIN, "Terrain deserialization: Physics mesh combined: %u vertices, %u indices",
-			xPhysicsGeometry.GetNumVerts(), xPhysicsGeometry.GetNumIndices());
-	}
+	LoadCombinedPhysicsGeometry();
 
 	// Version 2+: Read full materials with texture paths
 	if (uVersion >= 2)
@@ -671,6 +590,60 @@ void Zenith_TerrainComponent::InitializeRenderResources(Flux_MaterialAsset& xMat
 	// Initialize GPU culling resources for this terrain component
 	// This allocates GPU buffers and builds chunk AABB + LOD metadata
 	InitializeCullingResources();
+}
+
+// ========== Physics Geometry Loading ==========
+
+void Zenith_TerrainComponent::LoadCombinedPhysicsGeometry()
+{
+	if (m_pxPhysicsGeometry != nullptr)
+	{
+		return;  // Already loaded
+	}
+
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "Loading and combining all physics chunks...");
+
+	// Load first physics chunk
+	m_pxPhysicsGeometry = Zenith_AssetHandler::AddMeshFromFile(
+		(std::string(Project_GetGameAssetsDirectory()) + "Terrain/Physics_0_0" ZENITH_MESH_EXT).c_str(),
+		1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__POSITION | 1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__NORMAL);
+
+	Flux_MeshGeometry& xPhysicsGeometry = *m_pxPhysicsGeometry;
+
+	// Pre-allocate for all chunks
+	const u_int64 ulTotalVertexDataSize = xPhysicsGeometry.GetVertexDataSize() * TOTAL_CHUNKS;
+	const u_int64 ulTotalIndexDataSize = xPhysicsGeometry.GetIndexDataSize() * TOTAL_CHUNKS;
+	const u_int64 ulTotalPositionDataSize = xPhysicsGeometry.GetNumVerts() * sizeof(Zenith_Maths::Vector3) * TOTAL_CHUNKS;
+
+	xPhysicsGeometry.m_pVertexData = static_cast<u_int8*>(Zenith_MemoryManagement::Reallocate(xPhysicsGeometry.m_pVertexData, ulTotalVertexDataSize));
+	xPhysicsGeometry.m_ulReservedVertexDataSize = ulTotalVertexDataSize;
+
+	xPhysicsGeometry.m_puIndices = static_cast<Flux_MeshGeometry::IndexType*>(Zenith_MemoryManagement::Reallocate(xPhysicsGeometry.m_puIndices, ulTotalIndexDataSize));
+	xPhysicsGeometry.m_ulReservedIndexDataSize = ulTotalIndexDataSize;
+
+	xPhysicsGeometry.m_pxPositions = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Reallocate(xPhysicsGeometry.m_pxPositions, ulTotalPositionDataSize));
+	xPhysicsGeometry.m_ulReservedPositionDataSize = ulTotalPositionDataSize;
+
+	// Combine remaining physics chunks
+	for (uint32_t x = 0; x < CHUNK_GRID_SIZE; x++)
+	{
+		for (uint32_t y = 0; y < CHUNK_GRID_SIZE; y++)
+		{
+			if (x == 0 && y == 0) continue;  // Already loaded
+
+			std::string strPhysicsPath = std::string(Project_GetGameAssetsDirectory()) + "Terrain/Physics_" + std::to_string(x) + "_" + std::to_string(y) + ZENITH_MESH_EXT;
+			Flux_MeshGeometry* pxTerrainPhysicsMesh = Zenith_AssetHandler::AddMeshFromFile(
+				strPhysicsPath.c_str(),
+				1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__POSITION | 1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__NORMAL);
+
+			Flux_MeshGeometry::Combine(xPhysicsGeometry, *pxTerrainPhysicsMesh);
+
+			Zenith_AssetHandler::DeleteMesh(pxTerrainPhysicsMesh);
+		}
+	}
+
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "Physics mesh combined: %u vertices, %u indices",
+		xPhysicsGeometry.GetNumVerts(), xPhysicsGeometry.GetNumIndices());
 }
 
 // ========== GPU-Driven Culling Implementation ==========

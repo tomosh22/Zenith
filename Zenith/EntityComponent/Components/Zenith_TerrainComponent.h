@@ -186,6 +186,9 @@ public:
 	// Helper method to initialize render resources (called by constructor and deserialization)
 	void InitializeRenderResources(Flux_MaterialAsset& xMaterial0, Flux_MaterialAsset& xMaterial1);
 
+	// Helper method to load and combine all physics chunks
+	void LoadCombinedPhysicsGeometry();
+
 #ifdef ZENITH_TOOLS
 	// Editor UI
 	void RenderPropertiesPanel();

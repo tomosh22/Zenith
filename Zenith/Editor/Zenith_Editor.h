@@ -250,6 +250,7 @@ private:
 	static void UpdateEditorCamera(float fDt);
 	static void SwitchToEditorCamera();
 	static void SwitchToGameCamera();
+	static void ResetEditorCameraToDefaults();
 public:
 	// Camera data access for Flux_Graphics (delegates to appropriate camera based on mode)
 	static void BuildViewMatrix(Zenith_Maths::Matrix4& xOutMatrix);
