@@ -6,8 +6,10 @@
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
+#include "EntityComponent/Components/Zenith_ParticleEmitterComponent.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "Flux/Flux_MaterialAsset.h"
+#include "Flux/Particles/Flux_ParticleEmitterConfig.h"
 #include "AssetHandling/Zenith_AssetHandler.h"
 #include "AssetHandling/Zenith_DataAssetManager.h"
 #include "Prefab/Zenith_Prefab.h"
@@ -29,6 +31,10 @@ namespace Sokoban
 	Zenith_Prefab* g_pxTilePrefab = nullptr;
 	Zenith_Prefab* g_pxBoxPrefab = nullptr;
 	Zenith_Prefab* g_pxPlayerPrefab = nullptr;
+
+	// Particle effects
+	Flux_ParticleEmitterConfig* g_pxDustConfig = nullptr;
+	Zenith_EntityID g_uDustEmitterID = INVALID_ENTITY_ID;
 }
 
 static Flux_Texture* s_pxFloorTexture = nullptr;
@@ -161,7 +167,10 @@ void Project_RegisterScriptBehaviours()
 
 void Project_Shutdown()
 {
-	// Sokoban has no resources that need explicit cleanup
+	// Clean up particle config
+	delete Sokoban::g_pxDustConfig;
+	Sokoban::g_pxDustConfig = nullptr;
+	Sokoban::g_uDustEmitterID = INVALID_ENTITY_ID;
 }
 
 void Project_LoadInitialScene()
@@ -252,6 +261,34 @@ void Project_LoadInitialScene()
 	SetupTopRightText(pxWin, s_fLineHeight * 13);
 	pxWin->SetFontSize(s_fBaseTextSize * 4.2f);
 	pxWin->SetColor(Zenith_Maths::Vector4(0.2f, 1.f, 0.2f, 1.f));
+
+	// Create dust trail particle config programmatically
+	Sokoban::g_pxDustConfig = new Flux_ParticleEmitterConfig();
+	Sokoban::g_pxDustConfig->m_fSpawnRate = 30.0f;              // Continuous while moving
+	Sokoban::g_pxDustConfig->m_uBurstCount = 0;                 // Not burst mode
+	Sokoban::g_pxDustConfig->m_uMaxParticles = 128;
+	Sokoban::g_pxDustConfig->m_fLifetimeMin = 0.3f;
+	Sokoban::g_pxDustConfig->m_fLifetimeMax = 0.6f;
+	Sokoban::g_pxDustConfig->m_fSpeedMin = 0.5f;
+	Sokoban::g_pxDustConfig->m_fSpeedMax = 1.5f;
+	Sokoban::g_pxDustConfig->m_fSpreadAngleDegrees = 60.0f;
+	Sokoban::g_pxDustConfig->m_xGravity = Zenith_Maths::Vector3(0.0f, -1.0f, 0.0f);  // Light settling
+	Sokoban::g_pxDustConfig->m_fDrag = 2.0f;
+	Sokoban::g_pxDustConfig->m_xColorStart = Zenith_Maths::Vector4(0.6f, 0.5f, 0.4f, 0.6f);  // Brown
+	Sokoban::g_pxDustConfig->m_xColorEnd = Zenith_Maths::Vector4(0.6f, 0.5f, 0.4f, 0.0f);    // Transparent
+	Sokoban::g_pxDustConfig->m_fSizeStart = 0.15f;
+	Sokoban::g_pxDustConfig->m_fSizeEnd = 0.25f;              // Expand as dissipate
+	Sokoban::g_pxDustConfig->m_bUseGPUCompute = false;        // CPU for simple effect
+
+	// Register config for scene restore after editor Play/Stop
+	Flux_ParticleEmitterConfig::Register("Sokoban_DustTrail", Sokoban::g_pxDustConfig);
+
+	// Create particle emitter entity for dust
+	Zenith_Entity xDustEmitter(&xScene, "DustEmitter");
+	xDustEmitter.SetTransient(false);
+	Zenith_ParticleEmitterComponent& xEmitter = xDustEmitter.AddComponent<Zenith_ParticleEmitterComponent>();
+	xEmitter.SetConfig(Sokoban::g_pxDustConfig);
+	Sokoban::g_uDustEmitterID = xDustEmitter.GetEntityID();
 
 	// Add script component with Sokoban behaviour
 	// Resources are automatically obtained from Sokoban:: namespace in OnCreate()

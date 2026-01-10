@@ -1,6 +1,9 @@
 #include "Zenith.h"
 
 #include "Flux/Particles/Flux_Particles.h"
+#include "Flux/Particles/Flux_ParticleData.h"
+#include "Flux/Particles/Flux_ParticleEmitterConfig.h"
+#include "Flux/Particles/Flux_ParticleGPU.h"
 
 #include "Flux/Flux.h"
 #include "Flux/Flux_RenderTargets.h"
@@ -8,7 +11,8 @@
 #include "Flux/Flux_Buffers.h"
 #include "AssetHandling/Zenith_AssetHandler.h"
 #include "EntityComponent/Zenith_Scene.h"
-//#include "EntityComponent/Components/Zenith_ParticleSystemComponent.h"
+#include "EntityComponent/Zenith_Query.h"
+#include "EntityComponent/Components/Zenith_ParticleEmitterComponent.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
 
@@ -23,13 +27,12 @@ static Flux_DynamicVertexBuffer s_xInstanceBuffer;
 
 DEBUGVAR bool dbg_bEnable = true;
 
-static constexpr uint32_t s_uMaxParticles = 1024;
+// Maximum particles across all emitters
+static constexpr uint32_t s_uMaxParticles = 4096;
 
-struct Particle
-{
-	Zenith_Maths::Vector4 m_xPosition_Radius;
-	Zenith_Maths::Vector4 m_xColour;
-};
+// CPU-side instance buffer for staging particle render data
+static Flux_ParticleInstance s_axCPUInstances[s_uMaxParticles];
+static uint32_t s_uInstanceCount = 0;
 
 static Flux_Texture s_xParticleTexture;
 
@@ -42,8 +45,9 @@ void Flux_Particles::Initialise()
 	xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT3);
 	xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT2);
 	xVertexDesc.m_xPerVertexLayout.CalculateOffsetsAndStrides();
-	xVertexDesc.m_xPerInstanceLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT4);//position radius
-	xVertexDesc.m_xPerInstanceLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT4);//colour
+	// Instance data: position+size (float4), color (float4)
+	xVertexDesc.m_xPerInstanceLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT4);
+	xVertexDesc.m_xPerInstanceLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT4);
 	xVertexDesc.m_xPerInstanceLayout.CalculateOffsetsAndStrides();
 
 	Flux_PipelineSpecification xPipelineSpec;
@@ -58,14 +62,17 @@ void Flux_Particles::Initialise()
 
 	xPipelineSpec.m_bDepthWriteEnabled = false;
 
+	// Enable alpha blending
+	xPipelineSpec.m_axBlendStates[0].m_bBlendEnabled = true;
+	xPipelineSpec.m_axBlendStates[0].m_eSrcBlendFactor = BLEND_FACTOR_SRCALPHA;
+	xPipelineSpec.m_axBlendStates[0].m_eDstBlendFactor = BLEND_FACTOR_ONEMINUSSRCALPHA;
+
 	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
 
-	Flux_MemoryManager::InitialiseDynamicVertexBuffer(nullptr, s_uMaxParticles * sizeof(Particle), s_xInstanceBuffer, false);
+	// Allocate instance buffer for max particles
+	Flux_MemoryManager::InitialiseDynamicVertexBuffer(nullptr, s_uMaxParticles * sizeof(Flux_ParticleInstance), s_xInstanceBuffer, false);
 
-	Zenith_AssetHandler::TextureData xParticleTexData = Zenith_AssetHandler::LoadTexture2DFromFile("C:/dev/Zenith/Games/Test/Assets/Textures/particle" ZENITH_TEXTURE_EXT);
-	Zenith_AssetHandler::AddTexture(xParticleTexData);  // Created but not used currently
-	xParticleTexData.FreeAllocatedData();
-
+	// Load default particle texture
 	Zenith_AssetHandler::TextureData xParticleSwirlTexData = Zenith_AssetHandler::LoadTexture2DFromFile("C:/dev/Zenith/Games/Test/Assets/Textures/particleSwirl" ZENITH_TEXTURE_EXT);
 	Flux_Texture* pxParticleSwirlTex = Zenith_AssetHandler::AddTexture(xParticleSwirlTexData);
 	xParticleSwirlTexData.FreeAllocatedData();
@@ -79,15 +86,15 @@ void Flux_Particles::Initialise()
 	Zenith_DebugVariables::AddBoolean({ "Render", "Enable", "Particles" }, dbg_bEnable);
 #endif
 
-	Zenith_Log(LOG_CATEGORY_PARTICLES, "Flux_Particles initialised");
+	Zenith_Log(LOG_CATEGORY_PARTICLES, "Flux_Particles initialised (max %u particles)", s_uMaxParticles);
 }
 
 void Flux_Particles::Reset()
 {
-	// Reset command list to ensure no stale GPU resource references, including descriptor bindings
-	// This is called when the scene is reset (e.g., Play/Stop transitions in editor)
+	// Reset command list to ensure no stale GPU resource references
 	g_xCommandList.Reset(true);
-	Zenith_Log(LOG_CATEGORY_PARTICLES, "Flux_Particles::Reset() - Reset command list");
+	s_uInstanceCount = 0;
+	Zenith_Log(LOG_CATEGORY_PARTICLES, "Flux_Particles::Reset()");
 }
 
 void Flux_Particles::Shutdown()
@@ -96,16 +103,50 @@ void Flux_Particles::Shutdown()
 	Zenith_Log(LOG_CATEGORY_PARTICLES, "Flux_Particles shut down");
 }
 
-void UploadInstanceData()
+static void UpdateEmittersAndBuildInstanceBuffer(float fDt)
 {
-	Particle axParticles[] =
-	{
-		{{2000,500 + sin(Zenith_Core::GetTimePassed()) * 200, 1500,300.}, {1.,0.,0.,1.}},
-		{{2100,500 + sin(Zenith_Core::GetTimePassed()) * 200, 1600,300.}, {0.,1.,0.,1.}},
-		{{2200,500 + sin(Zenith_Core::GetTimePassed()) * 200, 1700,300.}, {0.,0.,1.,1.}},
-	};
+	s_uInstanceCount = 0;
 
-	Flux_MemoryManager::UploadBufferData(s_xInstanceBuffer.GetBuffer().m_xVRAMHandle, axParticles, sizeof(axParticles));
+	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+
+	// Query all particle emitter components
+	xScene.Query<Zenith_ParticleEmitterComponent>()
+		.ForEach([fDt](Zenith_EntityID, Zenith_ParticleEmitterComponent& xEmitter)
+		{
+			// Update ALL emitters (handles spawning for both CPU and GPU)
+			xEmitter.Update(fDt);
+
+			// Only build instance buffer for CPU emitters
+			// GPU emitters have their instances built by the compute shader
+			if (xEmitter.UsesGPUCompute())
+			{
+				return;
+			}
+
+			// Copy alive particles to instance buffer
+			const Zenith_Vector<Flux_Particle>& axParticles = xEmitter.GetParticles();
+			uint32_t uAliveCount = xEmitter.GetAliveCount();
+
+			for (uint32_t i = 0; i < uAliveCount && s_uInstanceCount < s_uMaxParticles; ++i)
+			{
+				s_axCPUInstances[s_uInstanceCount] = Flux_ParticleInstance::FromParticle(axParticles.Get(i));
+				s_uInstanceCount++;
+			}
+		});
+}
+
+static void UploadInstanceData()
+{
+	if (s_uInstanceCount == 0)
+	{
+		return;
+	}
+
+	Flux_MemoryManager::UploadBufferData(
+		s_xInstanceBuffer.GetBuffer().m_xVRAMHandle,
+		s_axCPUInstances,
+		s_uInstanceCount * sizeof(Flux_ParticleInstance)
+	);
 }
 
 void Flux_Particles::SubmitRenderTask()
@@ -125,21 +166,48 @@ void Flux_Particles::Render(void*)
 		return;
 	}
 
+	// Update all emitters (both CPU and GPU) and build the CPU instance buffer
+	float fDt = Zenith_Core::GetDt();
+	UpdateEmittersAndBuildInstanceBuffer(fDt);
+
+	// GPU compute dispatch is disabled until GPU particle rendering is implemented.
+	// GPU emitters will fall back to CPU simulation in the component's SetConfig.
+	// if (Flux_ParticleGPU::HasGPUEmitters())
+	// {
+	// 	Flux_ParticleGPU::DispatchCompute();
+	// }
+
+	// Upload CPU instance data to GPU
 	UploadInstanceData();
 
-	g_xCommandList.Reset(false);
+	// Render CPU particles
+	if (s_uInstanceCount > 0)
+	{
+		g_xCommandList.Reset(false);
 
-	g_xCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xPipeline);
+		g_xCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xPipeline);
 
-	g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer(), 0);
-	g_xCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
-	g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&s_xInstanceBuffer, 1);
+		g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer(), 0);
+		g_xCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
+		g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&s_xInstanceBuffer, 1);
 
-	g_xCommandList.AddCommand<Flux_CommandBeginBind>(0);
-	g_xCommandList.AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
-	g_xCommandList.AddCommand<Flux_CommandBindSRV>(&s_xParticleTexture.m_xSRV, 1);
+		g_xCommandList.AddCommand<Flux_CommandBeginBind>(0);
+		g_xCommandList.AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
+		g_xCommandList.AddCommand<Flux_CommandBindSRV>(&s_xParticleTexture.m_xSRV, 1);
 
-	g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(6, 3);
+		// Draw CPU particles (6 indices per quad, s_uInstanceCount instances)
+		g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(6, s_uInstanceCount);
 
-	Flux::SubmitCommandList(&g_xCommandList, Flux_Graphics::s_xFinalRenderTarget, RENDER_ORDER_PARTICLES);
+		Flux::SubmitCommandList(&g_xCommandList, Flux_Graphics::s_xFinalRenderTarget, RENDER_ORDER_PARTICLES);
+	}
+
+	// TODO: GPU particle rendering requires using the compute output buffer as a vertex buffer.
+	// The current abstraction doesn't support Flux_ReadWriteBuffer as instance data.
+	// Options to implement:
+	// 1. Add a Flux_VertexStorageBuffer type that can be used for both compute and vertex input
+	// 2. Use indirect drawing with the storage buffer
+	// 3. Read back GPU instances and copy to CPU buffer (defeats purpose of GPU particles)
+	//
+	// For now, GPU compute is disabled until rendering is implemented.
+	// GPU emitters will fall back to CPU simulation.
 }

@@ -34,7 +34,6 @@ void Zenith_EditorAddLogMessage(const char* szMessage, int eLevel, Zenith_LogCat
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
-#include "EntityComponent/Components/Zenith_TextComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "Input/Zenith_Input.h"
 #include "Flux/Flux_Graphics.h"

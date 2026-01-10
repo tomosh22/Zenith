@@ -1,0 +1,145 @@
+#version 450
+
+// GPU Particle Update Compute Shader
+// Updates particle simulation state and generates render instances
+//
+// Particle Layout (96 bytes, std430):
+//   vec4 positionAge;      // xyz=position, w=age
+//   vec4 velocityLifetime; // xyz=velocity, w=lifetime
+//   vec4 colorStart;       // rgba
+//   vec4 colorEnd;         // rgba
+//   vec4 sizeRotation;     // x=sizeStart, y=sizeEnd, z=rotation, w=rotationSpeed
+//   vec4 padding;          // reserved
+//
+// Render Instance (32 bytes):
+//   vec4 positionSize;     // xyz=position, w=size
+//   vec4 color;            // rgba
+
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+// Particle data structure (must match Flux_Particle in C++)
+struct Particle
+{
+	vec4 positionAge;      // xyz=position, w=age
+	vec4 velocityLifetime; // xyz=velocity, w=lifetime
+	vec4 colorStart;       // rgba
+	vec4 colorEnd;         // rgba
+	vec4 sizeRotation;     // x=sizeStart, y=sizeEnd, z=rotation, w=rotationSpeed
+	vec4 padding;          // reserved for future use
+};
+
+// Render instance (must match Flux_ParticleInstance in C++)
+struct RenderInstance
+{
+	vec4 positionSize;     // xyz=position, w=size
+	vec4 color;            // rgba
+};
+
+// Push constants
+layout(push_constant) uniform PushConstants
+{
+	float deltaTime;
+	uint particleCount;
+	float pad0;
+	float pad1;
+	vec4 gravity;  // xyz=gravity, w=drag
+} pc;
+
+// Input: current frame particles (read)
+layout(std430, set = 0, binding = 0) readonly buffer InputParticles
+{
+	Particle particlesIn[];
+};
+
+// Output: next frame particles (write)
+layout(std430, set = 0, binding = 1) writeonly buffer OutputParticles
+{
+	Particle particlesOut[];
+};
+
+// Output: render instances for drawing
+layout(std430, set = 0, binding = 2) writeonly buffer InstanceBuffer
+{
+	RenderInstance instances[];
+};
+
+// Output: atomic counter for alive particles
+layout(std430, set = 0, binding = 3) buffer CounterBuffer
+{
+	uint aliveCount;
+};
+
+void main()
+{
+	uint idx = gl_GlobalInvocationID.x;
+
+	// Bounds check
+	if (idx >= pc.particleCount)
+		return;
+
+	// Load particle data
+	Particle p = particlesIn[idx];
+
+	// Check if particle is alive
+	float age = p.positionAge.w;
+	float lifetime = p.velocityLifetime.w;
+
+	if (age >= lifetime)
+	{
+		// Particle is dead - skip it
+		// Write a dead particle to output (will be ignored/overwritten)
+		particlesOut[idx] = p;
+		return;
+	}
+
+	// Update age
+	age += pc.deltaTime;
+	p.positionAge.w = age;
+
+	// Update velocity (apply gravity and drag)
+	vec3 velocity = p.velocityLifetime.xyz;
+	velocity += pc.gravity.xyz * pc.deltaTime;
+
+	float drag = pc.gravity.w;
+	if (drag > 0.0)
+	{
+		velocity *= (1.0 - drag * pc.deltaTime);
+	}
+	p.velocityLifetime.xyz = velocity;
+
+	// Update position
+	p.positionAge.xyz += velocity * pc.deltaTime;
+
+	// Update rotation
+	float rotation = p.sizeRotation.z;
+	float rotationSpeed = p.sizeRotation.w;
+	p.sizeRotation.z = rotation + rotationSpeed * pc.deltaTime;
+
+	// Write updated particle to output buffer
+	particlesOut[idx] = p;
+
+	// Check if still alive after update
+	if (age >= lifetime)
+	{
+		// Just died this frame, don't render
+		return;
+	}
+
+	// Generate render instance
+	float normalizedAge = age / lifetime;
+
+	// Interpolate color
+	vec4 color = mix(p.colorStart, p.colorEnd, normalizedAge);
+
+	// Interpolate size
+	float sizeStart = p.sizeRotation.x;
+	float sizeEnd = p.sizeRotation.y;
+	float size = mix(sizeStart, sizeEnd, normalizedAge);
+
+	// Atomically allocate render instance slot
+	uint instanceIdx = atomicAdd(aliveCount, 1);
+
+	// Write render instance
+	instances[instanceIdx].positionSize = vec4(p.positionAge.xyz, size);
+	instances[instanceIdx].color = color;
+}

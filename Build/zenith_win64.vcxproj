@@ -1079,9 +1079,9 @@
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_CameraComponent.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_ColliderComponent.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_ModelComponent.h" />
+    <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_ParticleEmitterComponent.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_ScriptComponent.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_TerrainComponent.h" />
-    <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_TextComponent.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_TransformComponent.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_UIComponent.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_ComponentMeta.h" />
@@ -1117,6 +1117,9 @@
     <ClInclude Include="..\Zenith\Flux\MeshAnimation\Flux_SkeletonInstance.h" />
     <ClInclude Include="..\Zenith\Flux\MeshGeometry\Flux_MeshGeometry.h" />
     <ClInclude Include="..\Zenith\Flux\MeshGeometry\Flux_MeshInstance.h" />
+    <ClInclude Include="..\Zenith\Flux\Particles\Flux_ParticleData.h" />
+    <ClInclude Include="..\Zenith\Flux\Particles\Flux_ParticleEmitterConfig.h" />
+    <ClInclude Include="..\Zenith\Flux\Particles\Flux_ParticleGPU.h" />
     <ClInclude Include="..\Zenith\Flux\Particles\Flux_Particles.h" />
     <ClInclude Include="..\Zenith\Flux\Primitives\Flux_Primitives.h" />
     <ClInclude Include="..\Zenith\Flux\Quads\Flux_Quads.h" />
@@ -1140,6 +1143,7 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\Gizmos\Flux_Gizmos.vert" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Particles\Flux_Particles.frag" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Particles\Flux_Particles.vert" />
+    <ClInclude Include="..\Zenith\Flux\Shaders\Particles\Flux_ParticleUpdate.comp" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Primitives\Flux_Primitives.frag" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Primitives\Flux_Primitives.vert" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Quads\Flux_Quads.frag" />
@@ -2172,10 +2176,10 @@
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_ColliderComponent.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_ModelComponent.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_ModelComponent_Editor.cpp" />
+    <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_ParticleEmitterComponent.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_ScriptComponent.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_TerrainComponent.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_TerrainComponent_Editor.cpp" />
-    <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_TextComponent.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_TransformComponent.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_UIComponent.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_ComponentMeta.cpp" />
@@ -2206,6 +2210,8 @@
     <ClCompile Include="..\Zenith\Flux\MeshAnimation\Flux_SkeletonInstance.cpp" />
     <ClCompile Include="..\Zenith\Flux\MeshGeometry\Flux_MeshGeometry.cpp" />
     <ClCompile Include="..\Zenith\Flux\MeshGeometry\Flux_MeshInstance.cpp" />
+    <ClCompile Include="..\Zenith\Flux\Particles\Flux_ParticleEmitterConfig.cpp" />
+    <ClCompile Include="..\Zenith\Flux\Particles\Flux_ParticleGPU.cpp" />
     <ClCompile Include="..\Zenith\Flux\Particles\Flux_Particles.cpp" />
     <ClCompile Include="..\Zenith\Flux\Primitives\Flux_Primitives.cpp" />
     <ClCompile Include="..\Zenith\Flux\Quads\Flux_Quads.cpp" />

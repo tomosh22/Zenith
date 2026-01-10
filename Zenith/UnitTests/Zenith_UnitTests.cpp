@@ -21,7 +21,6 @@
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
-#include "EntityComponent/Components/Zenith_TextComponent.h"
 #include "AssetHandling/Zenith_AssetHandler.h"
 #include "Physics/Zenith_Physics.h"
 #include <filesystem>
@@ -1093,40 +1092,6 @@ void Zenith_UnitTests::TestComponentSerialization()
 		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ CameraComponent serialization passed");
 	}
 
-	// Test TextComponent
-	{
-		Zenith_Entity xEntity(&xTestScene, "TestTextEntity");
-		Zenith_TextComponent& xText = xEntity.AddComponent<Zenith_TextComponent>();
-
-		// Set ground truth data
-		TextEntry xEntry2D;
-		xEntry2D.m_strText = "Test 2D Text";
-		xEntry2D.m_xPosition = Zenith_Maths::Vector2(100.0f, 200.0f);
-		xEntry2D.m_fScale = 1.5f;
-		xText.AddText(xEntry2D);
-
-		TextEntry_World xEntry3D;
-		xEntry3D.m_strText = "Test 3D Text";
-		xEntry3D.m_xPosition = Zenith_Maths::Vector3(10.0f, 20.0f, 30.0f);
-		xEntry3D.m_fScale = 2.0f;
-		xText.AddText_World(xEntry3D);
-
-		// Serialize
-		Zenith_DataStream xStream;
-		xText.WriteToDataStream(xStream);
-
-		// Deserialize into new component
-		xStream.SetCursor(0);
-		Zenith_Entity xEntity2(&xTestScene, "TestTextEntity2");
-		Zenith_TextComponent& xText2 = xEntity2.AddComponent<Zenith_TextComponent>();
-		xText2.ReadFromDataStream(xStream);
-
-		// Verify - we'd need friend access or public getters for full verification
-		// For now, just verify deserialization doesn't crash
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ TextComponent serialization passed");
-	}
-
-
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestComponentSerialization completed successfully");
 }
 
@@ -1211,16 +1176,11 @@ void Zenith_UnitTests::TestSceneSerialization()
 	Zenith_TransformComponent& xTransform1 = xEntity1.GetComponent<Zenith_TransformComponent>();
 	xTransform1.SetPosition(Zenith_Maths::Vector3(5.0f, 0.0f, 0.0f));
 
-	// Entity 3: Transform + Text
+	// Entity 2: Transform only
 	Zenith_Entity xEntity2(&xGroundTruthScene, "TestEntity2");
 	xEntity2.SetTransient(false);  // Mark as persistent in scene's map
 	Zenith_TransformComponent& xTransform2 = xEntity2.GetComponent<Zenith_TransformComponent>();
 	xTransform2.SetPosition(Zenith_Maths::Vector3(-5.0f, 0.0f, 0.0f));
-	Zenith_TextComponent& xText = xEntity2.AddComponent<Zenith_TextComponent>();
-	TextEntry xTextEntry;
-	xTextEntry.m_strText = "Test Scene Text";
-	xTextEntry.m_xPosition = Zenith_Maths::Vector2(0.0f, 0.0f);
-	xText.AddText(xTextEntry);
 
 	// Save scene to file
 	const std::string strTestScenePath = "unit_test_scene.zscen";
@@ -1285,19 +1245,13 @@ void Zenith_UnitTests::TestSceneRoundTrip()
 	xTransform1.SetRotation(xEntity1Rot);
 	xTransform1.SetScale(xEntity1Scale);
 
-	// Create Entity 3: Transform + Text
+	// Create Entity 2: Transform only
 	Zenith_Entity xEntity2(&xGroundTruthScene, "TestEntity2");
 	const Zenith_EntityID uEntity2ID = xEntity2.GetEntityID();
 	xEntity2.SetTransient(false);  // Mark as persistent in scene's map
 	Zenith_TransformComponent& xTransform2 = xEntity2.GetComponent<Zenith_TransformComponent>();
 	const Zenith_Maths::Vector3 xEntity2Pos(-5.0f, 0.0f, 10.0f);
 	xTransform2.SetPosition(xEntity2Pos);
-	Zenith_TextComponent& xText = xEntity2.AddComponent<Zenith_TextComponent>();
-	TextEntry xTextEntry;
-	xTextEntry.m_strText = "RoundTrip Test";
-	xTextEntry.m_xPosition = Zenith_Maths::Vector2(100.0f, 200.0f);
-	xTextEntry.m_fScale = 1.5f;
-	xText.AddText(xTextEntry);
 
 	const u_int uGroundTruthEntityCount = 3;
 
@@ -1371,7 +1325,6 @@ void Zenith_UnitTests::TestSceneRoundTrip()
 	Zenith_Entity xLoadedEntity2 = xLoadedScene.GetEntity(uEntity2ID);
 	Zenith_Assert(xLoadedEntity2.GetName() == "TestEntity2", "Entity2 name mismatch");
 	Zenith_Assert(xLoadedEntity2.HasComponent<Zenith_TransformComponent>(), "Entity2 missing TransformComponent");
-	Zenith_Assert(xLoadedEntity2.HasComponent<Zenith_TextComponent>(), "Entity2 missing TextComponent");
 
 	Zenith_TransformComponent& xLoadedTransform2 = xLoadedEntity2.GetComponent<Zenith_TransformComponent>();
 	Zenith_Maths::Vector3 xLoadedPos2;
@@ -5525,16 +5478,9 @@ void Zenith_UnitTests::TestMultipleComponentRemoval()
 	xEntity2.AddComponent<Zenith_CameraComponent>().InitialisePerspective(
 		Zenith_Maths::Vector3(2, 0, 0), 0, 0, 60, 0.1f, 100, 1.0f);
 
-	// Add TextComponents to entities 2 and 3
-	Zenith_TextComponent& xText2 = xEntity2.AddComponent<Zenith_TextComponent>();
-	TextEntry xEntry2;
-	xEntry2.m_strText = "Text2";
-	xText2.AddText(xEntry2);
-
-	Zenith_TextComponent& xText3 = xEntity3.AddComponent<Zenith_TextComponent>();
-	TextEntry xEntry3;
-	xEntry3.m_strText = "Text3";
-	xText3.AddText(xEntry3);
+	// Add ColliderComponents to entities 2 and 3 (as second component type to test)
+	xEntity2.AddComponent<Zenith_ColliderComponent>();
+	xEntity3.AddComponent<Zenith_ColliderComponent>();
 
 	// Remove Entity1's camera
 	xEntity1.RemoveComponent<Zenith_CameraComponent>();
@@ -5543,19 +5489,19 @@ void Zenith_UnitTests::TestMultipleComponentRemoval()
 	Zenith_Assert(xEntity2.HasComponent<Zenith_CameraComponent>(),
 		"TestMultipleComponentRemoval: Entity2 lost CameraComponent");
 
-	// Remove Entity2's text
-	xEntity2.RemoveComponent<Zenith_TextComponent>();
+	// Remove Entity2's collider
+	xEntity2.RemoveComponent<Zenith_ColliderComponent>();
 
-	// Verify Entity3 still has text
-	Zenith_Assert(xEntity3.HasComponent<Zenith_TextComponent>(),
-		"TestMultipleComponentRemoval: Entity3 lost TextComponent");
+	// Verify Entity3 still has collider
+	Zenith_Assert(xEntity3.HasComponent<Zenith_ColliderComponent>(),
+		"TestMultipleComponentRemoval: Entity3 lost ColliderComponent");
 
 	// Remove Entity2's camera
 	xEntity2.RemoveComponent<Zenith_CameraComponent>();
 
-	// Verify Entity3 still has text with correct data
-	Zenith_Assert(xEntity3.HasComponent<Zenith_TextComponent>(),
-		"TestMultipleComponentRemoval: Entity3 lost TextComponent after camera removal");
+	// Verify Entity3 still has collider with correct data
+	Zenith_Assert(xEntity3.HasComponent<Zenith_ColliderComponent>(),
+		"TestMultipleComponentRemoval: Entity3 lost ColliderComponent after camera removal");
 
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestMultipleComponentRemoval completed successfully");
 }

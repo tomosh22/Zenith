@@ -7,7 +7,6 @@
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_Buffers.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
-#include "EntityComponent/Components/Zenith_TextComponent.h"
 #include "UI/Zenith_UICanvas.h"
 #include "AssetHandling/Zenith_AssetHandler.h"
 #include "Zenith_OS_Include.h"
@@ -28,9 +27,6 @@ static constexpr float fCHAR_ASPECT_RATIO = 0.5f;
 
 // Character spacing
 static constexpr float fCHAR_SPACING = fCHAR_ASPECT_RATIO * 0.5f;
-
-// Base text size for TextComponent entries (in pixels) - scaled by TextEntry::m_fScale
-static constexpr float fTEXT_COMPONENT_BASE_SIZE = 32.0f;
 
 struct TextVertex
 {
@@ -115,93 +111,8 @@ void Flux_Text::Shutdown()
 //#TO returns number of chars to render
 uint32_t Flux_Text::UploadChars()
 {
-	Zenith_Vector<Zenith_TextComponent*> xComponents;
 	Zenith_Vector<TextVertex> xVertices(s_uMaxCharsPerFrame);
-	Zenith_Scene::GetCurrentScene().GetAllOfComponentType<Zenith_TextComponent>(xComponents);
-
 	uint32_t uCharCount = 0;
-	for (Zenith_Vector<Zenith_TextComponent*>::Iterator xIt(xComponents); !xIt.Done(); xIt.Next())
-	{
-		Zenith_TextComponent* pxComponent = xIt.GetData();
-
-		for (TextEntry& xText : pxComponent->m_xEntries)
-		{
-			for (uint32_t u = 0; u < xText.m_strText.size(); u++)
-			{
-				TextVertex xVertex;
-				xVertex.m_xTextRoot = xText.m_xPosition;
-				xVertex.m_fTextSize = fTEXT_COMPONENT_BASE_SIZE * xText.m_fScale;
-				// Character spacing includes small gap for natural appearance
-				xVertex.m_xPos = Zenith_Maths::Vector2(u * fCHAR_SPACING, 0.f);
-				xVertex.m_xColour = { 1.f, 1.f, 1.f, 1.f }; // Default white
-
-				char cChar = xText.m_strText.at(u);
-
-				// Skip non-printable characters (ASCII < 32) to prevent index underflow
-				// Font atlas starts at space (ASCII 32), so characters below that are invalid
-				if (cChar < 32 || cChar > 126)
-				{
-					continue;
-				}
-
-				//#TO font atlas starts at unicode 20, we take away 11 to shift where we sample up/left one character, and take off one more to account for off by one error
-				const uint32_t uIndex = static_cast<uint32_t>(cChar - 32);
-
-				const Zenith_Maths::UVector2 xTextureOffsets = { (uIndex % 10), (uIndex / 10) };
-				xVertex.m_xUV = { xTextureOffsets.x, xTextureOffsets.y };
-				xVertex.m_xUV /= 10.f;
-				uCharCount++;
-
-				xVertices.PushBack(xVertex);
-			}
-		}
-
-		for (TextEntry_World& xText : pxComponent->m_xEntries_World)
-		{
-			for (uint32_t u = 0; u < xText.m_strText.size(); u++)
-			{
-				TextVertex xVertex;
-				Zenith_Maths::Vector4 xTextRoot(xText.m_xPosition.x, xText.m_xPosition.y, xText.m_xPosition.z, 1);
-				Zenith_Maths::Vector4 xClipSpace = Flux_Graphics::GetViewProjMatrix() * xTextRoot;
-				Zenith_Maths::Vector4 xScreenSpace = xClipSpace / xClipSpace.w;
-				if (xScreenSpace.x > 1 || xScreenSpace.x < -1 ||
-					xScreenSpace.y > 1 || xScreenSpace.y < -1 ||
-					xScreenSpace.z > 1 || xScreenSpace.z < -1)
-				{
-					continue;
-				}
-				xScreenSpace = (xScreenSpace + Zenith_Maths::Vector4(1.f)) / Zenith_Maths::Vector4(2.f);
-				int32_t iWindowWidth, iWindowHeight;
-				Zenith_Window::GetInstance()->GetSize(iWindowWidth, iWindowHeight);
-				xVertex.m_xTextRoot = { xScreenSpace.x * iWindowWidth, xScreenSpace.y * iWindowHeight};
-				xVertex.m_fTextSize = fTEXT_COMPONENT_BASE_SIZE * xText.m_fScale;
-				// Character spacing includes small gap for natural appearance
-				xVertex.m_xPos = Zenith_Maths::Vector2(u * fCHAR_SPACING, 0.f);
-				xVertex.m_xColour = { 1.f, 1.f, 1.f, 1.f }; // Default white
-
-				char cChar = xText.m_strText.at(u);
-
-				// Skip non-printable characters (ASCII < 32) to prevent index underflow
-				// Font atlas starts at space (ASCII 32), so characters below that are invalid
-				if (cChar < 32 || cChar > 126)
-				{
-					continue;
-				}
-
-				//#TO font atlas starts at unicode 20, we take away 11 to shift where we sample up/left one character, and take off one more to account for off by one error
-				const uint32_t uIndex = static_cast<uint32_t>(cChar - 32);
-
-				const Zenith_Maths::UVector2 xTextureOffsets = { (uIndex % 10), (uIndex / 10) };
-				xVertex.m_xUV = { xTextureOffsets.x, xTextureOffsets.y };
-				xVertex.m_xUV /= 10.f;
-				uCharCount++;
-
-				xVertices.PushBack(xVertex);
-			}
-		}
-
-
-	}
 
 	// Process UI text entries from Zenith_UICanvas
 	Zenith_Vector<Zenith_UI::UITextEntry>& xUITextEntries = Zenith_UI::Zenith_UICanvas::GetPendingTextEntries();

@@ -17,7 +17,6 @@
 - `Zenith_ColliderComponent` - Physics collision shapes (Jolt Physics)
 - `Zenith_TerrainComponent` - Heightmap-based terrain
 - `Zenith_ScriptComponent` - Custom behavior attachment
-- `Zenith_TextComponent` - 2D text rendering
 - `Zenith_UIComponent` - UI element support
 
 ## Architecture

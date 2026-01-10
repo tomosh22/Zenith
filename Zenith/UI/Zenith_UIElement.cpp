@@ -205,6 +205,33 @@ void Zenith_UIElement::ReadFromDataStream(Zenith_DataStream& xStream)
 }
 
 #ifdef ZENITH_TOOLS
+
+// Helper to detect current anchor preset from anchor/pivot values
+// Returns preset index (0-8) or -1 for custom values
+static int DetectAnchorPreset(const Zenith_Maths::Vector2& xAnchor, const Zenith_Maths::Vector2& xPivot)
+{
+    constexpr float fEpsilon = 0.001f;
+
+    auto fApproxEqual = [fEpsilon](float a, float b) { return std::abs(a - b) < fEpsilon; };
+    auto xApproxEqual = [&fApproxEqual](const Zenith_Maths::Vector2& a, const Zenith_Maths::Vector2& b)
+    {
+        return fApproxEqual(a.x, b.x) && fApproxEqual(a.y, b.y);
+    };
+
+    // Only match if anchor == pivot (as SetAnchorAndPivot sets both to same value)
+    if (!xApproxEqual(xAnchor, xPivot))
+        return -1;
+
+    for (int i = 0; i < static_cast<int>(AnchorPreset::StretchAll); ++i)
+    {
+        Zenith_Maths::Vector2 xPresetValue = AnchorPresetToValue(static_cast<AnchorPreset>(i));
+        if (xApproxEqual(xAnchor, xPresetValue))
+            return i;
+    }
+
+    return -1;
+}
+
 void Zenith_UIElement::RenderPropertiesPanel()
 {
     // Push unique ID scope for UI element properties to avoid conflicts with
@@ -222,6 +249,24 @@ void Zenith_UIElement::RenderPropertiesPanel()
 
     ImGui::Separator();
     ImGui::Text("UI Transform");
+
+    // Anchor preset dropdown
+    const char* szPresets[] = {
+        "Top Left", "Top Center", "Top Right",
+        "Middle Left", "Center", "Middle Right",
+        "Bottom Left", "Bottom Center", "Bottom Right",
+        "Custom"
+    };
+    int iCurrentPreset = DetectAnchorPreset(m_xAnchor, m_xPivot);
+    int iComboIndex = (iCurrentPreset >= 0) ? iCurrentPreset : 9; // 9 = "Custom"
+
+    if (ImGui::Combo("Anchor Preset", &iComboIndex, szPresets, 10))
+    {
+        if (iComboIndex < 9) // Not "Custom"
+        {
+            SetAnchorAndPivot(static_cast<AnchorPreset>(iComboIndex));
+        }
+    }
 
     float fPos[2] = { m_xPosition.x, m_xPosition.y };
     if (ImGui::DragFloat2("UI Position", fPos, 1.0f))

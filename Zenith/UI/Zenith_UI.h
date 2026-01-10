@@ -47,9 +47,6 @@
  *   - Anchor: Point on parent (0-1 normalized)
  *   - Pivot: Point on this element (0-1 normalized)
  *   - Position: Offset from anchor in pixels
- *
- * NOTE: Zenith_TextComponent is deprecated. Use Zenith_UIComponent with
- *       Zenith_UIText elements instead for in-game UI text.
  */
 
 #include "UI/Zenith_UICanvas.h"

@@ -24,6 +24,7 @@
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
+#include "EntityComponent/Components/Zenith_ParticleEmitterComponent.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "Input/Zenith_Input.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
@@ -51,6 +52,7 @@
 // Defined in Sokoban.cpp, initialized in Project_RegisterScriptBehaviours
 // ============================================================================
 class Zenith_Prefab;
+class Flux_ParticleEmitterConfig;
 
 namespace Sokoban
 {
@@ -65,6 +67,10 @@ namespace Sokoban
 	extern Zenith_Prefab* g_pxTilePrefab;
 	extern Zenith_Prefab* g_pxBoxPrefab;
 	extern Zenith_Prefab* g_pxPlayerPrefab;
+
+	// Particle effects
+	extern Flux_ParticleEmitterConfig* g_pxDustConfig;
+	extern Zenith_EntityID g_uDustEmitterID;
 }
 
 // Note: SokobanTileType and SokobanDirection enums are defined in Sokoban_GridLogic.h
@@ -379,6 +385,9 @@ private:
 				(static_cast<float>(m_uAnimBoxToX) - static_cast<float>(m_uAnimBoxFromX)) * fProgress;
 			m_fBoxVisualY = static_cast<float>(m_uAnimBoxFromY) +
 				(static_cast<float>(m_uAnimBoxToY) - static_cast<float>(m_uAnimBoxFromY)) * fProgress;
+
+			// Emit dust particles while box is moving
+			UpdateDustParticles(fDt);
 		}
 
 		// Animation complete
@@ -389,12 +398,74 @@ private:
 			m_fPlayerVisualX = static_cast<float>(m_uPlayerTargetX);
 			m_fPlayerVisualY = static_cast<float>(m_uPlayerTargetY);
 
+			// Stop dust emission
+			StopDustParticles();
+
 			if (Sokoban_GridLogic::CheckWinCondition(m_abBoxes, m_abTargets,
 				m_uGridWidth * m_uGridHeight, m_uTargetCount))
 			{
 				m_bWon = true;
 				UpdateUI();
 			}
+		}
+	}
+
+	void UpdateDustParticles(float /*fDt*/)
+	{
+		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+
+		if (Sokoban::g_uDustEmitterID == INVALID_ENTITY_ID ||
+			!xScene.EntityExists(Sokoban::g_uDustEmitterID))
+		{
+			return;
+		}
+
+		Zenith_Entity xEmitterEntity = xScene.GetEntity(Sokoban::g_uDustEmitterID);
+		if (!xEmitterEntity.HasComponent<Zenith_ParticleEmitterComponent>())
+		{
+			return;
+		}
+
+		Zenith_ParticleEmitterComponent& xEmitter = xEmitterEntity.GetComponent<Zenith_ParticleEmitterComponent>();
+
+		// Calculate box world position (using the same calculation as Sokoban_Rendering)
+		float fOffsetX = -static_cast<float>(m_uGridWidth) * 0.5f + 0.5f;
+		float fOffsetZ = -static_cast<float>(m_uGridHeight) * 0.5f + 0.5f;
+		Zenith_Maths::Vector3 xBoxPos(
+			m_fBoxVisualX + fOffsetX,
+			0.1f,  // At floor level
+			m_fBoxVisualY + fOffsetZ
+		);
+
+		// Calculate movement direction for dust
+		Zenith_Maths::Vector3 xMoveDir(
+			static_cast<float>(m_uAnimBoxToX) - static_cast<float>(m_uAnimBoxFromX),
+			0.0f,
+			static_cast<float>(m_uAnimBoxToY) - static_cast<float>(m_uAnimBoxFromY)
+		);
+
+		// Dust emits perpendicular to movement, at floor level
+		Zenith_Maths::Vector3 xDustDir = Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f);
+
+		xEmitter.SetEmitPosition(xBoxPos);
+		xEmitter.SetEmitDirection(xDustDir);
+		xEmitter.SetEmitting(true);
+	}
+
+	void StopDustParticles()
+	{
+		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+
+		if (Sokoban::g_uDustEmitterID == INVALID_ENTITY_ID ||
+			!xScene.EntityExists(Sokoban::g_uDustEmitterID))
+		{
+			return;
+		}
+
+		Zenith_Entity xEmitterEntity = xScene.GetEntity(Sokoban::g_uDustEmitterID);
+		if (xEmitterEntity.HasComponent<Zenith_ParticleEmitterComponent>())
+		{
+			xEmitterEntity.GetComponent<Zenith_ParticleEmitterComponent>().SetEmitting(false);
 		}
 	}
 

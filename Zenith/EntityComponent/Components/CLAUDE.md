@@ -12,7 +12,6 @@ This directory contains all component types for the Entity-Component System.
 | `Zenith_ColliderComponent` | Physics collision shapes (Jolt integration) |
 | `Zenith_TerrainComponent` | Heightmap-based terrain with streaming |
 | `Zenith_ScriptComponent` | Custom behavior attachment via ScriptBehaviour |
-| `Zenith_TextComponent` | 2D text rendering |
 | `Zenith_UIComponent` | UI element support |
 
 ## Creating a New Component

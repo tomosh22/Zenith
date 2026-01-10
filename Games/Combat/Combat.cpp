@@ -7,11 +7,13 @@
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
+#include "EntityComponent/Components/Zenith_ParticleEmitterComponent.h"
 #include "EntityComponent/Zenith_EventSystem.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "Flux/Flux_MaterialAsset.h"
 #include "Flux/Flux_ModelInstance.h"
 #include "Flux/Flux.h"
+#include "Flux/Particles/Flux_ParticleEmitterConfig.h"
 #include "AssetHandling/Zenith_AssetHandler.h"
 #include "AssetHandling/Zenith_AssetDatabase.h"
 #include "AssetHandling/Zenith_DataAssetManager.h"
@@ -28,6 +30,7 @@ namespace Combat
 {
 	Flux_MeshGeometry* g_pxCapsuleGeometry = nullptr;
 	Flux_MeshGeometry* g_pxCubeGeometry = nullptr;
+	Flux_MeshGeometry* g_pxConeGeometry = nullptr;  // Cone mesh for candles
 	Flux_MeshGeometry* g_pxStickFigureGeometry = nullptr;  // Animated character mesh (skinned)
 	Zenith_ModelAsset* g_pxStickFigureModelAsset = nullptr;  // Model asset with skeleton for animated rendering
 	std::string g_strStickFigureModelPath;  // Path to model asset file
@@ -35,17 +38,25 @@ namespace Combat
 	Flux_MaterialAsset* g_pxEnemyMaterial = nullptr;
 	Flux_MaterialAsset* g_pxArenaMaterial = nullptr;
 	Flux_MaterialAsset* g_pxWallMaterial = nullptr;
+	Flux_MaterialAsset* g_pxCandleMaterial = nullptr;  // Cream color for candles
 
 	// Prefabs for runtime instantiation
 	Zenith_Prefab* g_pxPlayerPrefab = nullptr;
 	Zenith_Prefab* g_pxEnemyPrefab = nullptr;
 	Zenith_Prefab* g_pxArenaPrefab = nullptr;
+	Zenith_Prefab* g_pxArenaWallPrefab = nullptr;  // Wall segment with candle and flame
+
+	// Particle effects
+	Flux_ParticleEmitterConfig* g_pxHitSparkConfig = nullptr;
+	Zenith_EntityID g_uHitSparkEmitterID = INVALID_ENTITY_ID;
+	Flux_ParticleEmitterConfig* g_pxFlameConfig = nullptr;  // Candle flame particles
 }
 
 static Flux_Texture* s_pxPlayerTexture = nullptr;
 static Flux_Texture* s_pxEnemyTexture = nullptr;
 static Flux_Texture* s_pxArenaTexture = nullptr;
 static Flux_Texture* s_pxWallTexture = nullptr;
+static Flux_Texture* s_pxCandleTexture = nullptr;
 static bool s_bResourcesInitialized = false;
 
 // ============================================================================
@@ -58,6 +69,14 @@ static void CleanupCombatResources()
 	if (!s_bResourcesInitialized)
 		return;
 
+	// Delete particle configs
+	delete g_pxHitSparkConfig;
+	g_pxHitSparkConfig = nullptr;
+	g_uHitSparkEmitterID = INVALID_ENTITY_ID;
+
+	delete g_pxFlameConfig;
+	g_pxFlameConfig = nullptr;
+
 	// Delete prefabs
 	delete g_pxPlayerPrefab;
 	g_pxPlayerPrefab = nullptr;
@@ -65,6 +84,8 @@ static void CleanupCombatResources()
 	g_pxEnemyPrefab = nullptr;
 	delete g_pxArenaPrefab;
 	g_pxArenaPrefab = nullptr;
+	delete g_pxArenaWallPrefab;
+	g_pxArenaWallPrefab = nullptr;
 
 	// Delete model asset
 	delete g_pxStickFigureModelAsset;
@@ -82,6 +103,9 @@ static void CleanupCombatResources()
 
 	delete g_pxCubeGeometry;
 	g_pxCubeGeometry = nullptr;
+
+	delete g_pxConeGeometry;
+	g_pxConeGeometry = nullptr;
 
 	// Note: Textures and materials are cleaned up by Zenith_AssetHandler::DestroyAllAssets()
 
@@ -241,6 +265,100 @@ static void GenerateCapsule(Flux_MeshGeometry& xGeometryOut, float fRadius, floa
 }
 
 // ============================================================================
+// Procedural Cone Geometry Generation (for candles)
+// ============================================================================
+static void GenerateCone(Flux_MeshGeometry& xGeometryOut, float fRadius, float fHeight, uint32_t uSlices)
+{
+	// A cone has vertices around the base, plus the apex and base center
+	uint32_t uNumVerts = uSlices + 2;  // Base ring + apex + base center
+	uint32_t uNumIndices = uSlices * 6;  // Side triangles + base triangles
+
+	xGeometryOut.m_uNumVerts = uNumVerts;
+	xGeometryOut.m_uNumIndices = uNumIndices;
+	xGeometryOut.m_pxPositions = new Zenith_Maths::Vector3[uNumVerts];
+	xGeometryOut.m_pxNormals = new Zenith_Maths::Vector3[uNumVerts];
+	xGeometryOut.m_pxUVs = new Zenith_Maths::Vector2[uNumVerts];
+	xGeometryOut.m_pxTangents = new Zenith_Maths::Vector3[uNumVerts];
+	xGeometryOut.m_pxBitangents = new Zenith_Maths::Vector3[uNumVerts];
+	xGeometryOut.m_pxColors = new Zenith_Maths::Vector4[uNumVerts];
+	xGeometryOut.m_puIndices = new Flux_MeshGeometry::IndexType[uNumIndices];
+
+	// Generate base ring vertices (indices 0 to uSlices-1)
+	for (uint32_t i = 0; i < uSlices; i++)
+	{
+		float fTheta = static_cast<float>(i) / static_cast<float>(uSlices) * 2.0f * 3.14159265f;
+		float fX = cos(fTheta) * fRadius;
+		float fZ = sin(fTheta) * fRadius;
+
+		xGeometryOut.m_pxPositions[i] = Zenith_Maths::Vector3(fX, 0.0f, fZ);
+
+		// Normal points outward and slightly up
+		float fNormalY = fRadius / fHeight;
+		Zenith_Maths::Vector3 xNormal = glm::normalize(Zenith_Maths::Vector3(cos(fTheta), fNormalY, sin(fTheta)));
+		xGeometryOut.m_pxNormals[i] = xNormal;
+
+		xGeometryOut.m_pxUVs[i] = Zenith_Maths::Vector2(
+			static_cast<float>(i) / static_cast<float>(uSlices),
+			0.0f
+		);
+
+		xGeometryOut.m_pxTangents[i] = Zenith_Maths::Vector3(-sin(fTheta), 0.0f, cos(fTheta));
+		xGeometryOut.m_pxBitangents[i] = glm::cross(xNormal, xGeometryOut.m_pxTangents[i]);
+		xGeometryOut.m_pxColors[i] = Zenith_Maths::Vector4(1.0f, 1.0f, 1.0f, 1.0f);
+	}
+
+	// Apex vertex (index uSlices)
+	uint32_t uApexIdx = uSlices;
+	xGeometryOut.m_pxPositions[uApexIdx] = Zenith_Maths::Vector3(0.0f, fHeight, 0.0f);
+	xGeometryOut.m_pxNormals[uApexIdx] = Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f);
+	xGeometryOut.m_pxUVs[uApexIdx] = Zenith_Maths::Vector2(0.5f, 1.0f);
+	xGeometryOut.m_pxTangents[uApexIdx] = Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f);
+	xGeometryOut.m_pxBitangents[uApexIdx] = Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f);
+	xGeometryOut.m_pxColors[uApexIdx] = Zenith_Maths::Vector4(1.0f, 1.0f, 1.0f, 1.0f);
+
+	// Base center vertex (index uSlices+1)
+	uint32_t uBaseCenterIdx = uSlices + 1;
+	xGeometryOut.m_pxPositions[uBaseCenterIdx] = Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f);
+	xGeometryOut.m_pxNormals[uBaseCenterIdx] = Zenith_Maths::Vector3(0.0f, -1.0f, 0.0f);
+	xGeometryOut.m_pxUVs[uBaseCenterIdx] = Zenith_Maths::Vector2(0.5f, 0.5f);
+	xGeometryOut.m_pxTangents[uBaseCenterIdx] = Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f);
+	xGeometryOut.m_pxBitangents[uBaseCenterIdx] = Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f);
+	xGeometryOut.m_pxColors[uBaseCenterIdx] = Zenith_Maths::Vector4(1.0f, 1.0f, 1.0f, 1.0f);
+
+	// Generate indices
+	uint32_t uIdxIdx = 0;
+
+	// Side triangles (connect base ring to apex)
+	for (uint32_t i = 0; i < uSlices; i++)
+	{
+		uint32_t uNext = (i + 1) % uSlices;
+
+		// Side triangle (counter-clockwise for Vulkan when viewed from outside)
+		xGeometryOut.m_puIndices[uIdxIdx++] = i;
+		xGeometryOut.m_puIndices[uIdxIdx++] = uApexIdx;
+		xGeometryOut.m_puIndices[uIdxIdx++] = uNext;
+	}
+
+	// Base triangles (connect base ring to center)
+	for (uint32_t i = 0; i < uSlices; i++)
+	{
+		uint32_t uNext = (i + 1) % uSlices;
+
+		// Base triangle (counter-clockwise when viewed from below)
+		xGeometryOut.m_puIndices[uIdxIdx++] = uNext;
+		xGeometryOut.m_puIndices[uIdxIdx++] = uBaseCenterIdx;
+		xGeometryOut.m_puIndices[uIdxIdx++] = i;
+	}
+
+	// Generate buffer layout and vertex data
+	xGeometryOut.GenerateLayoutAndVertexData();
+
+	// Upload to GPU
+	Flux_MemoryManager::InitialiseVertexBuffer(xGeometryOut.GetVertexData(), xGeometryOut.GetVertexDataSize(), xGeometryOut.m_xVertexBuffer);
+	Flux_MemoryManager::InitialiseIndexBuffer(xGeometryOut.GetIndexData(), xGeometryOut.GetIndexDataSize(), xGeometryOut.m_xIndexBuffer);
+}
+
+// ============================================================================
 // Resource Initialization
 // ============================================================================
 static void InitializeCombatResources()
@@ -257,6 +375,10 @@ static void InitializeCombatResources()
 	// Create cube geometry (for arena)
 	g_pxCubeGeometry = new Flux_MeshGeometry();
 	Flux_MeshGeometry::GenerateUnitCube(*g_pxCubeGeometry);
+
+	// Create cone geometry (for candles on walls)
+	g_pxConeGeometry = new Flux_MeshGeometry();
+	GenerateCone(*g_pxConeGeometry, 0.08f, 0.25f, 12);
 
 	// Load stick figure mesh (skinned version with bone data for animated rendering)
 	std::string strStickFigureMeshGeomPath = std::string(ENGINE_ASSETS_DIR) + "Meshes/StickFigure/StickFigure.zmesh";  // Flux_MeshGeometry format
@@ -306,6 +428,7 @@ static void InitializeCombatResources()
 	s_pxEnemyTexture = CreateColoredTexture(204, 51, 51);      // Red enemies
 	s_pxArenaTexture = CreateColoredTexture(77, 77, 89);       // Gray arena floor
 	s_pxWallTexture = CreateColoredTexture(102, 64, 38);       // Brown walls
+	s_pxCandleTexture = CreateColoredTexture(240, 220, 180);   // Cream candle color
 
 	// Create materials
 	g_pxPlayerMaterial = Flux_MaterialAsset::Create("CombatPlayer");
@@ -319,6 +442,29 @@ static void InitializeCombatResources()
 
 	g_pxWallMaterial = Flux_MaterialAsset::Create("CombatWall");
 	g_pxWallMaterial->SetDiffuseTexture(s_pxWallTexture);
+
+	g_pxCandleMaterial = Flux_MaterialAsset::Create("CombatCandle");
+	g_pxCandleMaterial->SetDiffuseTexture(s_pxCandleTexture);
+
+	// Create flame particle config for wall candles
+	g_pxFlameConfig = new Flux_ParticleEmitterConfig();
+	g_pxFlameConfig->m_fSpawnRate = 15.0f;                    // Continuous flame
+	g_pxFlameConfig->m_uBurstCount = 0;
+	g_pxFlameConfig->m_uMaxParticles = 32;                    // Small per candle
+	g_pxFlameConfig->m_fLifetimeMin = 0.3f;
+	g_pxFlameConfig->m_fLifetimeMax = 0.6f;
+	g_pxFlameConfig->m_fSpeedMin = 0.5f;
+	g_pxFlameConfig->m_fSpeedMax = 1.5f;
+	g_pxFlameConfig->m_fSpreadAngleDegrees = 15.0f;           // Mostly upward
+	g_pxFlameConfig->m_xEmitDirection = Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f);
+	g_pxFlameConfig->m_xGravity = Zenith_Maths::Vector3(0.0f, 0.5f, 0.0f);  // Rise up
+	g_pxFlameConfig->m_fDrag = 1.0f;
+	g_pxFlameConfig->m_xColorStart = Zenith_Maths::Vector4(1.0f, 0.8f, 0.2f, 1.0f);  // Yellow-orange
+	g_pxFlameConfig->m_xColorEnd = Zenith_Maths::Vector4(1.0f, 0.3f, 0.0f, 0.0f);    // Red->transparent
+	g_pxFlameConfig->m_fSizeStart = 0.08f;
+	g_pxFlameConfig->m_fSizeEnd = 0.02f;
+	g_pxFlameConfig->m_bUseGPUCompute = false;
+	Flux_ParticleEmitterConfig::Register("Combat_Flame", g_pxFlameConfig);
 
 	// Create prefabs for runtime instantiation
 	// Note: Prefabs are lightweight templates - components added after transform is set
@@ -340,12 +486,32 @@ static void InitializeCombatResources()
 		Zenith_Scene::Destroy(xEnemyTemplate);
 	}
 
-	// Arena prefab
+	// Arena prefab (for floor)
 	{
 		Zenith_Entity xArenaTemplate(&xScene, "ArenaTemplate");
 		g_pxArenaPrefab = new Zenith_Prefab();
 		g_pxArenaPrefab->CreateFromEntity(xArenaTemplate, "Arena");
 		Zenith_Scene::Destroy(xArenaTemplate);
+	}
+
+	// ArenaWall prefab with collider and particle emitter
+	// NOTE: ModelComponent is NOT included because mesh/material pointers don't serialize.
+	// ModelComponent is added after instantiation in CreateArena().
+	{
+		Zenith_Entity xWallTemplate(&xScene, "ArenaWallTemplate");
+
+		// Add ColliderComponent for wall collision
+		xWallTemplate.AddComponent<Zenith_ColliderComponent>()
+			.AddCollider(COLLISION_VOLUME_TYPE_AABB, RIGIDBODY_TYPE_STATIC);
+
+		// Add ParticleEmitterComponent for candle flame
+		Zenith_ParticleEmitterComponent& xEmitter = xWallTemplate.AddComponent<Zenith_ParticleEmitterComponent>();
+		xEmitter.SetConfig(g_pxFlameConfig);
+		xEmitter.SetEmitting(true);
+
+		g_pxArenaWallPrefab = new Zenith_Prefab();
+		g_pxArenaWallPrefab->CreateFromEntity(xWallTemplate, "ArenaWall");
+		Zenith_Scene::Destroy(xWallTemplate);
 	}
 
 	s_bResourcesInitialized = true;
@@ -474,6 +640,34 @@ void Project_LoadInitialScene()
 	pxStatus->SetAlignment(Zenith_UI::TextAlignment::Center);
 	pxStatus->SetFontSize(s_fBaseTextSize * 8.0f);
 	pxStatus->SetColor(Zenith_Maths::Vector4(0.2f, 1.0f, 0.2f, 1.0f));
+
+	// Create hit spark particle config programmatically
+	Combat::g_pxHitSparkConfig = new Flux_ParticleEmitterConfig();
+	Combat::g_pxHitSparkConfig->m_uBurstCount = 20;
+	Combat::g_pxHitSparkConfig->m_fSpawnRate = 0.0f;              // Burst only, not continuous
+	Combat::g_pxHitSparkConfig->m_uMaxParticles = 256;
+	Combat::g_pxHitSparkConfig->m_fLifetimeMin = 0.2f;
+	Combat::g_pxHitSparkConfig->m_fLifetimeMax = 0.4f;
+	Combat::g_pxHitSparkConfig->m_fSpeedMin = 8.0f;
+	Combat::g_pxHitSparkConfig->m_fSpeedMax = 15.0f;
+	Combat::g_pxHitSparkConfig->m_fSpreadAngleDegrees = 60.0f;
+	Combat::g_pxHitSparkConfig->m_xGravity = Zenith_Maths::Vector3(0.0f, -5.0f, 0.0f);
+	Combat::g_pxHitSparkConfig->m_fDrag = 2.0f;
+	Combat::g_pxHitSparkConfig->m_xColorStart = Zenith_Maths::Vector4(1.0f, 0.6f, 0.1f, 1.0f);  // Orange
+	Combat::g_pxHitSparkConfig->m_xColorEnd = Zenith_Maths::Vector4(1.0f, 1.0f, 0.2f, 0.0f);    // Yellow->transparent
+	Combat::g_pxHitSparkConfig->m_fSizeStart = 0.3f;
+	Combat::g_pxHitSparkConfig->m_fSizeEnd = 0.1f;
+	Combat::g_pxHitSparkConfig->m_bUseGPUCompute = false;         // CPU for small bursts
+
+	// Register config for scene restore after editor Play/Stop
+	Flux_ParticleEmitterConfig::Register("Combat_HitSpark", Combat::g_pxHitSparkConfig);
+
+	// Create particle emitter entity for hit sparks
+	Zenith_Entity xHitSparkEmitter(&xScene, "HitSparkEmitter");
+	xHitSparkEmitter.SetTransient(false);
+	Zenith_ParticleEmitterComponent& xEmitter = xHitSparkEmitter.AddComponent<Zenith_ParticleEmitterComponent>();
+	xEmitter.SetConfig(Combat::g_pxHitSparkConfig);
+	Combat::g_uHitSparkEmitterID = xHitSparkEmitter.GetEntityID();
 
 	// Add script component with Combat behaviour
 	Zenith_ScriptComponent& xScript = xCombatEntity.AddComponent<Zenith_ScriptComponent>();

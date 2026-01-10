@@ -24,7 +24,7 @@
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
-#include "EntityComponent/Components/Zenith_TextComponent.h"
+#include "EntityComponent/Components/Zenith_ParticleEmitterComponent.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_EventSystem.h"
 #include "Input/Zenith_Input.h"
@@ -57,10 +57,13 @@
 // Defined in Combat.cpp, initialized in Project_RegisterScriptBehaviours
 // ============================================================================
 
+class Flux_ParticleEmitterConfig;
+
 namespace Combat
 {
 	extern Flux_MeshGeometry* g_pxCapsuleGeometry;
 	extern Flux_MeshGeometry* g_pxCubeGeometry;
+	extern Flux_MeshGeometry* g_pxConeGeometry;  // Cone mesh for candles
 	extern Flux_MeshGeometry* g_pxStickFigureGeometry;  // Animated humanoid mesh (skinned)
 	extern Zenith_ModelAsset* g_pxStickFigureModelAsset;  // Model asset with skeleton
 	extern std::string g_strStickFigureModelPath;  // Path to model asset for LoadModelFromFile
@@ -68,10 +71,17 @@ namespace Combat
 	extern Flux_MaterialAsset* g_pxEnemyMaterial;
 	extern Flux_MaterialAsset* g_pxArenaMaterial;
 	extern Flux_MaterialAsset* g_pxWallMaterial;
+	extern Flux_MaterialAsset* g_pxCandleMaterial;  // Cream color for candles
 
 	extern Zenith_Prefab* g_pxPlayerPrefab;
 	extern Zenith_Prefab* g_pxEnemyPrefab;
 	extern Zenith_Prefab* g_pxArenaPrefab;
+	extern Zenith_Prefab* g_pxArenaWallPrefab;  // Wall segment with candle and flame
+
+	// Particle effects
+	extern Flux_ParticleEmitterConfig* g_pxHitSparkConfig;
+	extern Zenith_EntityID g_uHitSparkEmitterID;
+	extern Flux_ParticleEmitterConfig* g_pxFlameConfig;  // Candle flame particles
 }
 
 // ============================================================================
@@ -285,7 +295,7 @@ private:
 		static constexpr float s_fArenaWallHeight = 2.0f;
 		static constexpr uint32_t s_uWallSegments = 24;
 
-		// Create floor
+		// Create floor (still uses basic arena prefab)
 		Zenith_Entity xFloor = Zenith_Scene::Instantiate(*Combat::g_pxArenaPrefab, "ArenaFloor");
 
 		Zenith_TransformComponent& xFloorTransform = xFloor.GetComponent<Zenith_TransformComponent>();
@@ -300,14 +310,19 @@ private:
 
 		m_xLevelEntities.m_uArenaFloorEntityID = xFloor.GetEntityID();
 
-		// Create wall segments
+		// Create wall segments directly (not using prefab)
+		// Prefab instantiation was causing ModelComponent transform issues
+		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
 		for (uint32_t i = 0; i < s_uWallSegments; i++)
 		{
 			float fAngle = (static_cast<float>(i) / s_uWallSegments) * 6.28318f;
 			float fX = cos(fAngle) * s_fArenaRadius;
 			float fZ = sin(fAngle) * s_fArenaRadius;
 
-			Zenith_Entity xWall = Zenith_Scene::Instantiate(*Combat::g_pxArenaPrefab, "ArenaWall");
+			// Create wall entity directly
+			char szName[32];
+			snprintf(szName, sizeof(szName), "ArenaWall_%u", i);
+			Zenith_Entity xWall(&xScene, szName);
 
 			Zenith_TransformComponent& xWallTransform = xWall.GetComponent<Zenith_TransformComponent>();
 			xWallTransform.SetPosition(Zenith_Maths::Vector3(fX, s_fArenaWallHeight * 0.5f, fZ));
@@ -317,11 +332,23 @@ private:
 			float fYaw = fAngle + 1.5708f;  // 90 degrees
 			xWallTransform.SetRotation(glm::angleAxis(fYaw, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f)));
 
-			Zenith_ModelComponent& xWallModel = xWall.AddComponent<Zenith_ModelComponent>();
-			xWallModel.AddMeshEntry(*m_pxCubeGeometry, *m_pxWallMaterial);
+			// Add ModelComponent with wall cube and candle cone
+			Zenith_ModelComponent& xModel = xWall.AddComponent<Zenith_ModelComponent>();
+			xModel.AddMeshEntry(*m_pxCubeGeometry, *m_pxWallMaterial);
+			xModel.AddMeshEntry(*Combat::g_pxConeGeometry, *Combat::g_pxCandleMaterial);
 
+			// Add ColliderComponent for wall collision
 			xWall.AddComponent<Zenith_ColliderComponent>()
 				.AddCollider(COLLISION_VOLUME_TYPE_AABB, RIGIDBODY_TYPE_STATIC);
+
+			// Add ParticleEmitterComponent for candle flame
+			Zenith_ParticleEmitterComponent& xEmitter = xWall.AddComponent<Zenith_ParticleEmitterComponent>();
+			xEmitter.SetConfig(Combat::g_pxFlameConfig);
+			xEmitter.SetEmitting(true);
+			// Position flame at top of wall segment
+			Zenith_Maths::Vector3 xFlamePos(fX, s_fArenaWallHeight + 0.1f, fZ);
+			xEmitter.SetEmitPosition(xFlamePos);
+			xEmitter.SetEmitDirection(Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
 
 			m_xLevelEntities.m_axArenaWallEntityIDs.push_back(xWall.GetEntityID());
 		}
@@ -575,6 +602,50 @@ private:
 			// Trigger hit stun on enemies
 			m_xEnemyManager.TriggerHitStunForEntity(xEvent.m_uTargetEntityID);
 		}
+
+		// Spawn hit spark particles at the hit location
+		SpawnHitParticles(xEvent);
+	}
+
+	void SpawnHitParticles(const Combat_DamageEvent& xEvent)
+	{
+		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+
+		// Use hit point from the event, or fall back to target position
+		Zenith_Maths::Vector3 xHitPos = xEvent.m_xHitPoint;
+		if (glm::length(xHitPos) < 0.001f && xScene.EntityExists(xEvent.m_uTargetEntityID))
+		{
+			Zenith_Entity xTarget = xScene.GetEntity(xEvent.m_uTargetEntityID);
+			if (xTarget.HasComponent<Zenith_TransformComponent>())
+			{
+				xTarget.GetComponent<Zenith_TransformComponent>().GetPosition(xHitPos);
+				xHitPos.y += 1.0f;  // Offset to chest height
+			}
+		}
+
+		// Use hit direction from the event
+		Zenith_Maths::Vector3 xHitDir = xEvent.m_xHitDirection;
+		if (glm::length(xHitDir) < 0.001f)
+		{
+			xHitDir = Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f);  // Default up
+		}
+
+		// Spawn particles at the hit emitter
+		if (Combat::g_uHitSparkEmitterID != INVALID_ENTITY_ID &&
+			xScene.EntityExists(Combat::g_uHitSparkEmitterID))
+		{
+			Zenith_Entity xEmitterEntity = xScene.GetEntity(Combat::g_uHitSparkEmitterID);
+			if (xEmitterEntity.HasComponent<Zenith_ParticleEmitterComponent>())
+			{
+				Zenith_ParticleEmitterComponent& xEmitter = xEmitterEntity.GetComponent<Zenith_ParticleEmitterComponent>();
+				xEmitter.SetEmitPosition(xHitPos);
+				xEmitter.SetEmitDirection(xHitDir);
+
+				// Scale particle count based on damage (more damage = more particles)
+				uint32_t uCount = static_cast<uint32_t>(10 + xEvent.m_fDamage * 0.5f);
+				xEmitter.Emit(uCount);
+			}
+		}
 	}
 
 	void OnDeathEvent(const Combat_DeathEvent& xEvent)
@@ -766,67 +837,13 @@ private:
 	}
 
 	// ========================================================================
-	// Animation State Labels
+	// Animation State Labels (disabled - Zenith_TextComponent removed)
 	// ========================================================================
 
 	void UpdateAnimationStateLabels()
 	{
-		// Get or add TextComponent to parent entity
-		if (!m_xParentEntity.HasComponent<Zenith_TextComponent>())
-		{
-			m_xParentEntity.AddComponent<Zenith_TextComponent>();
-		}
-		Zenith_TextComponent& xText = m_xParentEntity.GetComponent<Zenith_TextComponent>();
-
-		// Clear previous frame's text entries
-		xText.ClearWorldText();
-
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-
-		// Height offset above entity
-		static constexpr float fTextHeightOffset = 2.2f;
-
-		// Player animation state label
-		if (xScene.EntityExists(m_xLevelEntities.m_uPlayerEntityID))
-		{
-			Zenith_Entity xPlayer = xScene.GetEntity(m_xLevelEntities.m_uPlayerEntityID);
-			if (xPlayer.HasComponent<Zenith_TransformComponent>())
-			{
-				Zenith_Maths::Vector3 xPos;
-				xPlayer.GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
-				xPos.y += fTextHeightOffset;
-
-				const std::string& strState = m_xPlayerAnimController.GetCurrentState();
-				TextEntry_World xEntry;
-				xEntry.m_strText = "Player: " + strState;
-				xEntry.m_xPosition = xPos;
-				xEntry.m_fScale = 0.5f;
-				xText.AddText_World(xEntry);
-			}
-		}
-
-		// Enemy animation state labels
-		for (const Combat_EnemyAI& xEnemy : m_xEnemyManager.GetEnemies())
-		{
-			Zenith_EntityID uEnemyID = xEnemy.GetEntityID();
-			if (!xScene.EntityExists(uEnemyID))
-				continue;
-
-			Zenith_Entity xEnemyEntity = xScene.GetEntity(uEnemyID);
-			if (!xEnemyEntity.HasComponent<Zenith_TransformComponent>())
-				continue;
-
-			Zenith_Maths::Vector3 xPos;
-			xEnemyEntity.GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
-			xPos.y += fTextHeightOffset;
-
-			const std::string& strState = xEnemy.GetAnimController().GetCurrentState();
-			TextEntry_World xEntry;
-			xEntry.m_strText = strState;
-			xEntry.m_xPosition = xPos;
-			xEntry.m_fScale = 0.5f;
-			xText.AddText_World(xEntry);
-		}
+		// Disabled: Zenith_TextComponent has been removed from the engine.
+		// Animation state labels were debug-only features.
 	}
 
 	// ========================================================================

@@ -565,6 +565,9 @@
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_ModelComponent_Editor.cpp">
       <Filter>EntityComponent\Components</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_ParticleEmitterComponent.cpp">
+      <Filter>EntityComponent\Components</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_ScriptComponent.cpp">
       <Filter>EntityComponent\Components</Filter>
     </ClCompile>
@@ -572,9 +575,6 @@
       <Filter>EntityComponent\Components</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_TerrainComponent_Editor.cpp">
-      <Filter>EntityComponent\Components</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_TextComponent.cpp">
       <Filter>EntityComponent\Components</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_TransformComponent.cpp">
@@ -666,6 +666,12 @@
     </ClCompile>
     <ClCompile Include="..\Zenith\Flux\MeshGeometry\Flux_MeshInstance.cpp">
       <Filter>Flux\MeshGeometry</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Flux\Particles\Flux_ParticleEmitterConfig.cpp">
+      <Filter>Flux\Particles</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Flux\Particles\Flux_ParticleGPU.cpp">
+      <Filter>Flux\Particles</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\Flux\Particles\Flux_Particles.cpp">
       <Filter>Flux\Particles</Filter>
@@ -2944,13 +2950,13 @@
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_ModelComponent.h">
       <Filter>EntityComponent\Components</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_ParticleEmitterComponent.h">
+      <Filter>EntityComponent\Components</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_ScriptComponent.h">
       <Filter>EntityComponent\Components</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_TerrainComponent.h">
-      <Filter>EntityComponent\Components</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_TextComponent.h">
       <Filter>EntityComponent\Components</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_TransformComponent.h">
@@ -3058,6 +3064,15 @@
     <ClInclude Include="..\Zenith\Flux\MeshGeometry\Flux_MeshInstance.h">
       <Filter>Flux\MeshGeometry</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Particles\Flux_ParticleData.h">
+      <Filter>Flux\Particles</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Particles\Flux_ParticleEmitterConfig.h">
+      <Filter>Flux\Particles</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Particles\Flux_ParticleGPU.h">
+      <Filter>Flux\Particles</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Particles\Flux_Particles.h">
       <Filter>Flux\Particles</Filter>
     </ClInclude>
@@ -3125,6 +3140,9 @@
       <Filter>Flux\Shaders\Particles</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\Particles\Flux_Particles.vert">
+      <Filter>Flux\Shaders\Particles</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Particles\Flux_ParticleUpdate.comp">
       <Filter>Flux\Shaders\Particles</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\Primitives\Flux_Primitives.frag">
