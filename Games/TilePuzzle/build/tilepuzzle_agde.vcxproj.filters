@@ -7,6 +7,12 @@
     <ClInclude Include="..\Components\TilePuzzle_Behaviour.h">
       <Filter>Components</Filter>
     </ClInclude>
+    <ClInclude Include="..\Components\TilePuzzle_LevelGenerator.h">
+      <Filter>Components</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Components\TilePuzzle_Solver.h">
+      <Filter>Components</Filter>
+    </ClInclude>
     <ClInclude Include="..\Components\TilePuzzle_Types.h">
       <Filter>Components</Filter>
     </ClInclude>

@@ -517,6 +517,15 @@
     <ClCompile Include="..\Zenith\DebugVariables\Zenith_DebugVariables.cpp">
       <Filter>DebugVariables</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Console.cpp">
+      <Filter>Editor\Panels</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Hierarchy.cpp">
+      <Filter>Editor\Panels</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Properties.cpp">
+      <Filter>Editor\Panels</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Editor\Zenith_Editor.cpp">
       <Filter>Editor</Filter>
     </ClCompile>
@@ -542,6 +551,9 @@
       <Filter>EntityComponent\Components</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_TerrainComponent.cpp">
+      <Filter>EntityComponent\Components</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_TerrainComponent_Editor.cpp">
       <Filter>EntityComponent\Components</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_TextComponent.cpp">
@@ -2863,7 +2875,22 @@
     <ClInclude Include="..\Zenith\DebugVariables\Zenith_DebugVariables.h">
       <Filter>DebugVariables</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel.h">
+      <Filter>Editor\Panels</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Console.h">
+      <Filter>Editor\Panels</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Hierarchy.h">
+      <Filter>Editor\Panels</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Properties.h">
+      <Filter>Editor\Panels</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Editor\Zenith_Editor.h">
+      <Filter>Editor</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Editor\Zenith_EditorState.h">
       <Filter>Editor</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Editor\Zenith_Gizmo.h">
@@ -3296,6 +3323,9 @@
     </Filter>
     <Filter Include="Editor">
       <UniqueIdentifier>{427f4a34-b77f-6165-0ef9-6eb7bce95257}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Editor\Panels">
+      <UniqueIdentifier>{e444eb57-a0ac-2092-cd72-a3862bab4b59}</UniqueIdentifier>
     </Filter>
     <Filter Include="EntityComponent">
       <UniqueIdentifier>{fb074e82-fc50-1734-a1f4-c2d75046a32e}</UniqueIdentifier>

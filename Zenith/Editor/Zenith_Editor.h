@@ -168,8 +168,6 @@ private:
 	static void RenderMainMenuBar();
 	static void RenderToolbar();
 	static void RenderHierarchyPanel();
-	static void RenderEntityTreeNode(Zenith_Scene& xScene, Zenith_Entity xEntity,
-		Zenith_EntityID& uEntityToDelete, Zenith_EntityID& uDraggedEntityID, Zenith_EntityID& uDropTargetEntityID);
 	static void RenderPropertiesPanel();
 	static void RenderViewport();
 	static void HandleObjectPicking();

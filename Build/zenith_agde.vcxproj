@@ -832,7 +832,12 @@
     <ClInclude Include="..\Zenith\Core\Zenith_String.h" />
     <ClInclude Include="..\Zenith\DataStream\Zenith_DataStream.h" />
     <ClInclude Include="..\Zenith\DebugVariables\Zenith_DebugVariables.h" />
+    <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel.h" />
+    <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Console.h" />
+    <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Hierarchy.h" />
+    <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Properties.h" />
     <ClInclude Include="..\Zenith\Editor\Zenith_Editor.h" />
+    <ClInclude Include="..\Zenith\Editor\Zenith_EditorState.h" />
     <ClInclude Include="..\Zenith\Editor\Zenith_Gizmo.h" />
     <ClInclude Include="..\Zenith\Editor\Zenith_SelectionSystem.h" />
     <ClInclude Include="..\Zenith\Editor\Zenith_UndoSystem.h" />
@@ -1587,6 +1592,18 @@
     <ClCompile Include="..\Zenith\Core\Zenith_GUID.cpp" />
     <ClCompile Include="..\Zenith\DataStream\Zenith_DataStream.cpp" />
     <ClCompile Include="..\Zenith\DebugVariables\Zenith_DebugVariables.cpp" />
+    <ClCompile Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Console.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Hierarchy.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Properties.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Editor\Zenith_Editor.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
@@ -1608,6 +1625,7 @@
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_ModelComponent.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_ScriptComponent.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_TerrainComponent.cpp" />
+    <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_TerrainComponent_Editor.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_TextComponent.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_TransformComponent.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_UIComponent.cpp" />

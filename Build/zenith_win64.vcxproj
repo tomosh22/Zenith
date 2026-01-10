@@ -162,7 +162,7 @@
     </Link>
     <Lib>
       <TargetMachine>MachineX64</TargetMachine>
-      <SubSystem />
+      <SubSystem/>
       <LinkTimeCodeGeneration>false</LinkTimeCodeGeneration>
       <OutputFile>output\win64\vs2022_debug_win64_false\zenith.lib</OutputFile>
     </Lib>
@@ -226,7 +226,7 @@
     </Link>
     <Lib>
       <TargetMachine>MachineX64</TargetMachine>
-      <SubSystem />
+      <SubSystem/>
       <LinkTimeCodeGeneration>false</LinkTimeCodeGeneration>
       <OutputFile>output\win64\vs2022_debug_win64_true\zenith.lib</OutputFile>
     </Lib>
@@ -290,7 +290,7 @@
     </Link>
     <Lib>
       <TargetMachine>MachineX64</TargetMachine>
-      <SubSystem />
+      <SubSystem/>
       <LinkTimeCodeGeneration>false</LinkTimeCodeGeneration>
       <OutputFile>output\win64\vs2022_release_win64_false\zenith.lib</OutputFile>
     </Lib>
@@ -354,7 +354,7 @@
     </Link>
     <Lib>
       <TargetMachine>MachineX64</TargetMachine>
-      <SubSystem />
+      <SubSystem/>
       <LinkTimeCodeGeneration>false</LinkTimeCodeGeneration>
       <OutputFile>output\win64\vs2022_release_win64_true\zenith.lib</OutputFile>
     </Lib>
@@ -1063,7 +1063,12 @@
     <ClInclude Include="..\Zenith\Core\Zenith_String.h" />
     <ClInclude Include="..\Zenith\DataStream\Zenith_DataStream.h" />
     <ClInclude Include="..\Zenith\DebugVariables\Zenith_DebugVariables.h" />
+    <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel.h" />
+    <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Console.h" />
+    <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Hierarchy.h" />
+    <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Properties.h" />
     <ClInclude Include="..\Zenith\Editor\Zenith_Editor.h" />
+    <ClInclude Include="..\Zenith\Editor\Zenith_EditorState.h" />
     <ClInclude Include="..\Zenith\Editor\Zenith_Gizmo.h" />
     <ClInclude Include="..\Zenith\Editor\Zenith_SelectionSystem.h" />
     <ClInclude Include="..\Zenith\Editor\Zenith_UndoSystem.h" />
@@ -2146,6 +2151,9 @@
     <ClCompile Include="..\Zenith\Core\Zenith_GUID.cpp" />
     <ClCompile Include="..\Zenith\DataStream\Zenith_DataStream.cpp" />
     <ClCompile Include="..\Zenith\DebugVariables\Zenith_DebugVariables.cpp" />
+    <ClCompile Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Console.cpp" />
+    <ClCompile Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Hierarchy.cpp" />
+    <ClCompile Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Properties.cpp" />
     <ClCompile Include="..\Zenith\Editor\Zenith_Editor.cpp" />
     <ClCompile Include="..\Zenith\Editor\Zenith_Gizmo.cpp" />
     <ClCompile Include="..\Zenith\Editor\Zenith_SelectionSystem.cpp" />
@@ -2155,6 +2163,7 @@
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_ModelComponent.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_ScriptComponent.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_TerrainComponent.cpp" />
+    <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_TerrainComponent_Editor.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_TextComponent.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_TransformComponent.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_UIComponent.cpp" />
@@ -2224,6 +2233,7 @@
     <ClCompile Include="..\Zenith\Windows\Zenith_Windows_DebugBreak.cpp" />
     <ClCompile Include="..\Zenith\Windows\Zenith_Windows_Main.cpp" />
     <ClCompile Include="..\Zenith\Windows\Zenith_Windows_Window.cpp" />
+    <ClCompile Include="..\Zenith\Zenith_Main.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

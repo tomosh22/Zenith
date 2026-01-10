@@ -1,0 +1,136 @@
+#include "Zenith.h"
+
+#ifdef ZENITH_TOOLS
+
+#include "Zenith_EditorPanel_Properties.h"
+#include "EntityComponent/Zenith_ComponentRegistry.h"
+
+#include "Memory/Zenith_MemoryManagement_Disabled.h"
+#include "imgui.h"
+#include "Memory/Zenith_MemoryManagement_Enabled.h"
+
+//=============================================================================
+// Properties Panel Implementation
+//
+// Displays properties for the selected entity and allows adding components.
+//=============================================================================
+
+namespace Zenith_EditorPanelProperties
+{
+
+void Render(Zenith_Entity* pxSelectedEntity, Zenith_EntityID uPrimarySelectedEntityID)
+{
+	ImGui::Begin("Properties");
+
+	if (pxSelectedEntity)
+	{
+		// Entity name editing
+		char nameBuffer[256];
+		strncpy(nameBuffer, pxSelectedEntity->GetName().c_str(), sizeof(nameBuffer));
+		nameBuffer[sizeof(nameBuffer) - 1] = '\0';
+		if (ImGui::InputText("Name", nameBuffer, sizeof(nameBuffer)))
+		{
+			pxSelectedEntity->SetName(nameBuffer);
+		}
+
+		ImGui::Separator();
+
+		//----------------------------------------------------------------------
+		// Component Properties Section
+		//----------------------------------------------------------------------
+		// Iterate over all registered components and render their properties
+		// if the selected entity has that component type.
+		//----------------------------------------------------------------------
+		Zenith_ComponentRegistry& xRegistry = Zenith_ComponentRegistry::Get();
+		const auto& xEntries = xRegistry.GetEntries();
+
+		for (const Zenith_ComponentRegistryEntry& xEntry : xEntries)
+		{
+			// Check if entity has this component and render its properties panel
+			if (xEntry.m_fnHasComponent(*pxSelectedEntity))
+			{
+				xEntry.m_fnRenderPropertiesPanel(*pxSelectedEntity);
+			}
+		}
+
+		//----------------------------------------------------------------------
+		// Add Component Section
+		//----------------------------------------------------------------------
+		ImGui::Separator();
+		ImGui::Spacing();
+
+		// Center the button
+		float fButtonWidth = 200.0f;
+		float fWindowWidth = ImGui::GetWindowWidth();
+		ImGui::SetCursorPosX((fWindowWidth - fButtonWidth) * 0.5f);
+
+		if (ImGui::Button("Add Component", ImVec2(fButtonWidth, 0)))
+		{
+			ImGui::OpenPopup("AddComponentPopup");
+			Zenith_Log(LOG_CATEGORY_EDITOR, "[Editor] Add Component button clicked for Entity %u", uPrimarySelectedEntityID);
+		}
+
+		// Add Component popup menu
+		if (ImGui::BeginPopup("AddComponentPopup"))
+		{
+			bool bAnyAvailable = false;
+
+			for (size_t i = 0; i < xEntries.size(); ++i)
+			{
+				const Zenith_ComponentRegistryEntry& xEntry = xEntries[i];
+
+				// Check if entity already has this component
+				bool bHasComponent = xRegistry.EntityHasComponent(i, *pxSelectedEntity);
+
+				if (bHasComponent)
+				{
+					// Show disabled/grayed out for components the entity already has
+					ImGui::BeginDisabled();
+					ImGui::MenuItem(xEntry.m_strDisplayName.c_str(), nullptr, false, false);
+					ImGui::EndDisabled();
+				}
+				else
+				{
+					bAnyAvailable = true;
+					if (ImGui::MenuItem(xEntry.m_strDisplayName.c_str()))
+					{
+						Zenith_Log(LOG_CATEGORY_EDITOR, "[Editor] User selected to add component: %s to Entity %u",
+							xEntry.m_strDisplayName.c_str(), uPrimarySelectedEntityID);
+
+						// Add the component through the registry
+						bool bSuccess = xRegistry.TryAddComponent(i, *pxSelectedEntity);
+
+						if (bSuccess)
+						{
+							Zenith_Log(LOG_CATEGORY_EDITOR, "[Editor] Successfully added %s component to Entity %u",
+								xEntry.m_strDisplayName.c_str(), uPrimarySelectedEntityID);
+						}
+						else
+						{
+							Zenith_Log(LOG_CATEGORY_EDITOR, "[Editor] ERROR: Failed to add %s component to Entity %u",
+								xEntry.m_strDisplayName.c_str(), uPrimarySelectedEntityID);
+						}
+					}
+				}
+			}
+
+			// If all components are already added, show a message
+			if (!bAnyAvailable)
+			{
+				ImGui::TextDisabled("All available components already added");
+			}
+
+			ImGui::EndPopup();
+		}
+	}
+	else
+	{
+		ImGui::Text("No entity selected");
+	}
+
+	ImGui::End();
+}
+
+} // namespace Zenith_EditorPanelProperties
+
+#endif // ZENITH_TOOLS
