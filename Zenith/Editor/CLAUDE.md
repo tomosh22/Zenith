@@ -113,6 +113,23 @@ Three execution states control editor behavior:
 - New terrain components created during load wouldn't be registered with streaming manager
 - Load must happen BEFORE SubmitRenderTasks() for proper component initialization
 
+### Static State in Game Behaviours
+
+**CRITICAL:** Static variables in game behaviours persist across Play/Stop/Play cycles because the executable is not reloaded. Game behaviours MUST manually reset all static state in `OnAwake()`.
+
+**What Must Be Reset:**
+- Static containers (vectors, maps) holding entity IDs or game state
+- Static system instances (damage systems, enemy managers, etc.)
+- Static event subscriptions - unsubscribe old handles before resubscribing to prevent accumulation
+
+**Symptoms of Stale Static State:**
+- First play works correctly, subsequent plays behave differently
+- Event handlers fire multiple times (orphaned subscriptions accumulate)
+- Systems reference invalid entity IDs from previous session
+- Health/damage systems report entities as dead when they shouldn't be
+
+See `Combat_Behaviour::OnAwake()` for a reference implementation.
+
 ## UI Panel System
 
 ### Docking Layout

@@ -45,7 +45,7 @@ struct Combat_EnemyConfig
 	float m_fMoveSpeed = 3.0f;
 	float m_fRotationSpeed = 8.0f;
 	float m_fDetectionRange = 15.0f;
-	float m_fAttackRange = 1.2f;  // Melee attack range
+	float m_fAttackRange = 1.5f;  // Accounts for physics collision settling distance
 	float m_fChaseStopDistance = 0.8f;  // Stop just inside attack range
 	float m_fAttackDamage = 15.0f;
 	float m_fAttackDuration = 0.4f;
@@ -253,18 +253,11 @@ private:
 		float fDist = glm::distance(xMyPos, xTargetPos);
 
 		// Check if in attack range
-		static float s_fLogTimer = 0.0f;
-		s_fLogTimer += fDt;
-		if (s_fLogTimer > 1.0f)
-		{
-			Zenith_Log(LOG_CATEGORY_ANIMATION, "[Enemy %u] Chase: dist=%.2f, attackRange=%.2f, cooldown=%.2f",
-				m_uEntityID.m_uIndex, fDist, m_xConfig.m_fAttackRange, m_fAttackCooldownTimer);
-			s_fLogTimer = 0.0f;
-		}
+		bool bInRange = fDist <= m_xConfig.m_fAttackRange;
+		bool bCooldownReady = m_fAttackCooldownTimer <= 0.0f;
 
-		if (fDist <= m_xConfig.m_fAttackRange && m_fAttackCooldownTimer <= 0.0f)
+		if (bInRange && bCooldownReady)
 		{
-			Zenith_Log(LOG_CATEGORY_ANIMATION, "[Enemy %u] Starting attack! dist=%.2f", m_uEntityID.m_uIndex, fDist);
 			StartAttack();
 			return;
 		}
@@ -373,10 +366,16 @@ private:
 		Zenith_Maths::Quat xCurrentRot;
 		xTransform.GetRotation(xCurrentRot);
 
+		// Ensure current rotation is normalized (can drift due to physics)
+		xCurrentRot = glm::normalize(xCurrentRot);
+
 		float fTargetYaw = atan2(xTargetDir.x, xTargetDir.z);
 		Zenith_Maths::Quat xTargetRot = glm::angleAxis(fTargetYaw, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
 
 		Zenith_Maths::Quat xNewRot = glm::slerp(xCurrentRot, xTargetRot, fDt * m_xConfig.m_fRotationSpeed);
+
+		// Normalize to prevent drift accumulation and Jolt assertions
+		xNewRot = glm::normalize(xNewRot);
 		xTransform.SetRotation(xNewRot);
 	}
 

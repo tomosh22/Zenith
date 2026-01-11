@@ -10,6 +10,7 @@
 #include "Flux/MeshAnimation/Flux_SkeletonInstance.h"
 #include "AssetHandling/Zenith_ModelAsset.h"
 #include "Core/Zenith_Core.h"
+#include <filesystem>
 
 ZENITH_REGISTER_COMPONENT(Zenith_ModelComponent, "Model")
 
@@ -17,7 +18,9 @@ ZENITH_REGISTER_COMPONENT(Zenith_ModelComponent, "Model")
 // Serialization version for ModelComponent
 // Version 3: New model instance system with .zmodel path
 // Version 4: GUID-based model references
-static constexpr uint32_t MODEL_COMPONENT_SERIALIZE_VERSION = 4;
+// Version 5: Material overrides for model instance
+static constexpr uint32_t MODEL_COMPONENT_SERIALIZE_VERSION = 5;
+static constexpr uint32_t MODEL_COMPONENT_SERIALIZE_VERSION_MATERIALS = 5;
 static constexpr uint32_t MODEL_COMPONENT_SERIALIZE_VERSION_GUID = 4;
 static constexpr uint32_t MODEL_COMPONENT_SERIALIZE_VERSION_PATH = 3;
 
@@ -86,16 +89,34 @@ Zenith_ModelComponent& Zenith_ModelComponent::operator=(Zenith_ModelComponent&& 
 
 void Zenith_ModelComponent::LoadModel(const std::string& strPath)
 {
-	Zenith_Log(LOG_CATEGORY_MESH, "LoadModel called with path: %s", strPath.c_str());
+	// Make a local copy of the path before any operations that might invalidate it.
+	// This is necessary because callers may pass m_strModelPath, which gets cleared
+	// by ClearModel() below.
+	std::string strLocalPath = strPath;
+
+	Zenith_Log(LOG_CATEGORY_MESH, "LoadModel called with path: %s", strLocalPath.c_str());
+
+	// Early-out if path is empty or invalid
+	if (strLocalPath.empty())
+	{
+		Zenith_Error(LOG_CATEGORY_MESH, "LoadModel called with empty path");
+		return;
+	}
+
+	if (!std::filesystem::exists(strLocalPath))
+	{
+		Zenith_Error(LOG_CATEGORY_MESH, "LoadModel: File does not exist: %s", strLocalPath.c_str());
+		return;
+	}
 
 	// Clear any existing model
 	ClearModel();
 
 	// Load model asset from file
-	Zenith_ModelAsset* pxAsset = Zenith_ModelAsset::LoadFromFile(strPath.c_str());
+	Zenith_ModelAsset* pxAsset = Zenith_ModelAsset::LoadFromFile(strLocalPath.c_str());
 	if (!pxAsset)
 	{
-		Zenith_Error(LOG_CATEGORY_MESH, "Failed to load model asset from: %s", strPath.c_str());
+		Zenith_Error(LOG_CATEGORY_MESH, "Failed to load model asset from: %s", strLocalPath.c_str());
 		return;
 	}
 
@@ -107,22 +128,22 @@ void Zenith_ModelComponent::LoadModel(const std::string& strPath)
 	m_pxModelInstance = Flux_ModelInstance::CreateFromAsset(pxAsset);
 	if (!m_pxModelInstance)
 	{
-		Zenith_Error(LOG_CATEGORY_MESH, "Failed to create model instance from asset: %s", strPath.c_str());
+		Zenith_Error(LOG_CATEGORY_MESH, "Failed to create model instance from asset: %s", strLocalPath.c_str());
 		delete pxAsset;
 		return;
 	}
 
 	// Store path for serialization
-	m_strModelPath = strPath;
+	m_strModelPath = strLocalPath;
 
 	// Also populate GUID reference if not already set
 	if (!m_xModel.IsSet())
 	{
-		m_xModel.SetFromPath(strPath);
+		m_xModel.SetFromPath(strLocalPath);
 	}
 
 	// Detailed logging for debugging
-	Zenith_Log(LOG_CATEGORY_MESH, "SUCCESS: Loaded model from: %s", strPath.c_str());
+	Zenith_Log(LOG_CATEGORY_MESH, "SUCCESS: Loaded model from: %s", strLocalPath.c_str());
 	Zenith_Log(LOG_CATEGORY_MESH, "  Meshes: %u", m_pxModelInstance->GetNumMeshes());
 	Zenith_Log(LOG_CATEGORY_MESH, "  Materials: %u", m_pxModelInstance->GetNumMaterials());
 	Zenith_Log(LOG_CATEGORY_MESH, "  Has Skeleton: %s", m_pxModelInstance->HasSkeleton() ? "yes (animated mesh renderer)" : "no (static mesh renderer)");
@@ -410,7 +431,25 @@ void Zenith_ModelComponent::WriteToDataStream(Zenith_DataStream& xStream) const
 		// Version 4+: Write model GUID
 		m_xModel.WriteToDataStream(xStream);
 
-		// TODO: Serialize animation controller state if needed
+		// Version 5+: Write material overrides
+		uint32_t uNumMaterials = m_pxModelInstance ? m_pxModelInstance->GetNumMaterials() : 0;
+		xStream << uNumMaterials;
+
+		for (uint32_t u = 0; u < uNumMaterials; u++)
+		{
+			Flux_MaterialAsset* pxMaterial = m_pxModelInstance->GetMaterial(u);
+			if (pxMaterial)
+			{
+				pxMaterial->WriteToDataStream(xStream);
+			}
+			else
+			{
+				// Write empty material placeholder
+				Flux_MaterialAsset* pxEmptyMat = Flux_MaterialAsset::Create("Empty");
+				pxEmptyMat->WriteToDataStream(xStream);
+				delete pxEmptyMat;
+			}
+		}
 	}
 	else
 	{
@@ -488,29 +527,60 @@ void Zenith_ModelComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 				Zenith_Error(LOG_CATEGORY_MESH, "Failed to resolve model GUID to path");
 			}
 		}
+
+		// Version 5+: Read and apply material overrides
+		if (uVersion >= MODEL_COMPONENT_SERIALIZE_VERSION_MATERIALS)
+		{
+			uint32_t uNumMaterials = 0;
+			xStream >> uNumMaterials;
+
+			for (uint32_t u = 0; u < uNumMaterials; u++)
+			{
+				Flux_MaterialAsset* pxMaterial = Flux_MaterialAsset::Create("LoadedMaterial");
+				pxMaterial->ReadFromDataStream(xStream);
+
+				// Apply material to model instance if it was loaded successfully
+				if (m_pxModelInstance && u < m_pxModelInstance->GetNumMaterials())
+				{
+					m_pxModelInstance->SetMaterial(u, pxMaterial);
+				}
+			}
+		}
 	}
 	else
 	{
-		// Legacy system: Read mesh entry data to keep stream aligned
-		// Note: Procedural meshes can't be reconstructed from serialized data -
-		// they must be regenerated at runtime (e.g., by behaviour scripts)
+		// Legacy system: Read mesh entries with file paths
+		// Meshes are loaded from their source paths if available
 		u_int uNumEntries;
 		xStream >> uNumEntries;
 
 		for (u_int u = 0; u < uNumEntries; u++)
 		{
-			// Read and discard mesh path
+			// Read mesh path
 			std::string strMeshPath;
 			xStream >> strMeshPath;
 
-			// Read and discard material data
-			Flux_MaterialAsset* pxTempMat = Flux_MaterialAsset::Create("Temp");
-			pxTempMat->ReadFromDataStream(xStream);
-			delete pxTempMat;
+			// Read material data
+			Flux_MaterialAsset* pxMaterial = Flux_MaterialAsset::Create("Material");
+			pxMaterial->ReadFromDataStream(xStream);
 
-			// Read and discard animation path
+			// Read animation path (for future use)
 			std::string strAnimPath;
 			xStream >> strAnimPath;
+
+			// If mesh path is set, load the mesh from file
+			if (!strMeshPath.empty() && std::filesystem::exists(strMeshPath))
+			{
+				Flux_MeshGeometry* pxGeometry = new Flux_MeshGeometry();
+				Flux_MeshGeometry::LoadFromFile(strMeshPath.c_str(), *pxGeometry);
+				pxGeometry->m_strSourcePath = strMeshPath;  // Preserve path for future serialization
+				m_xMeshEntries.PushBack({ pxGeometry, pxMaterial });
+			}
+			else
+			{
+				// No valid mesh path - material is orphaned, delete it
+				delete pxMaterial;
+			}
 		}
 	}
 }

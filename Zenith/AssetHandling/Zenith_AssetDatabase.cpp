@@ -413,33 +413,52 @@ void Zenith_AssetDatabase::RefreshProject()
 
 Zenith_AssetGUID Zenith_AssetDatabase::ImportAsset(const std::string& strAssetPath)
 {
-	// Check if asset already exists
+	// Check if asset already exists in memory
 	Zenith_AssetGUID xExistingGUID = GetGUIDFromPath(strAssetPath);
 	if (xExistingGUID.IsValid())
 	{
 		return xExistingGUID;
 	}
 
-	// Create new meta file
+	// Check if .zmeta file already exists on disk (from a previous run)
 	Zenith_AssetMeta xMeta;
-	if (!xMeta.CreateForAsset(strAssetPath, s_strProjectRoot))
+	std::string strMetaPath = Zenith_AssetMeta::GetMetaPath(strAssetPath);
+	if (Zenith_AssetMeta::MetaFileExists(strAssetPath))
 	{
-		Zenith_Error(LOG_CATEGORY_ASSET, "Failed to create meta for: %s", strAssetPath.c_str());
-		return Zenith_AssetGUID::INVALID;
+		// Load existing meta file to preserve the GUID
+		if (!xMeta.LoadFromFile(strMetaPath))
+		{
+			Zenith_Error(LOG_CATEGORY_ASSET, "Failed to load existing meta file: %s", strMetaPath.c_str());
+			return Zenith_AssetGUID::INVALID;
+		}
+		Zenith_Log(LOG_CATEGORY_ASSET, "Loaded existing meta for: %s -> %s", strAssetPath.c_str(), xMeta.m_xGUID.ToString().c_str());
+	}
+	else
+	{
+		// Create new meta file
+		if (!xMeta.CreateForAsset(strAssetPath, s_strProjectRoot))
+		{
+			Zenith_Error(LOG_CATEGORY_ASSET, "Failed to create meta for: %s", strAssetPath.c_str());
+			return Zenith_AssetGUID::INVALID;
+		}
+
+		// Save meta file
+		if (!xMeta.SaveToFile(strMetaPath))
+		{
+			Zenith_Error(LOG_CATEGORY_ASSET, "Failed to save meta file: %s", strMetaPath.c_str());
+			return Zenith_AssetGUID::INVALID;
+		}
+		Zenith_Log(LOG_CATEGORY_ASSET, "Created new meta for: %s -> %s", strAssetPath.c_str(), xMeta.m_xGUID.ToString().c_str());
 	}
 
-	// Save meta file
-	std::string strMetaPath = Zenith_AssetMeta::GetMetaPath(strAssetPath);
-	if (!xMeta.SaveToFile(strMetaPath))
-	{
-		Zenith_Error(LOG_CATEGORY_ASSET, "Failed to save meta file: %s", strMetaPath.c_str());
-		return Zenith_AssetGUID::INVALID;
-	}
+	// Use the absolute path passed to ImportAsset for registration and lookups.
+	// The meta file stores a relative path for portability, but at runtime we need
+	// absolute paths for file system operations.
+	xMeta.m_strAssetPath = strAssetPath;
 
 	// Register the asset
 	RegisterAsset(xMeta);
 
-	Zenith_Log(LOG_CATEGORY_ASSET, "Imported asset: %s -> %s", strAssetPath.c_str(), xMeta.m_xGUID.ToString().c_str());
 	return xMeta.m_xGUID;
 }
 

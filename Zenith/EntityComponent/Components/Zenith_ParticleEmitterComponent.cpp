@@ -300,7 +300,7 @@ static Zenith_Maths::Vector3 GetRandomDirectionInCone(const Zenith_Maths::Vector
 void Zenith_ParticleEmitterComponent::WriteToDataStream(Zenith_DataStream& xStream) const
 {
 	// Version for forward compatibility
-	uint32_t uVersion = 2;
+	uint32_t uVersion = 3;
 	xStream << uVersion;
 
 	// State
@@ -309,6 +309,15 @@ void Zenith_ParticleEmitterComponent::WriteToDataStream(Zenith_DataStream& xStre
 	// Config name for registry lookup on scene restore
 	std::string strConfigName = (m_pxConfig != nullptr) ? m_pxConfig->GetRegisteredName() : "";
 	xStream << strConfigName;
+
+	// Version 3+: Position override data
+	xStream << m_bUsePositionOverride;
+	xStream << m_xOverridePosition.x;
+	xStream << m_xOverridePosition.y;
+	xStream << m_xOverridePosition.z;
+	xStream << m_xOverrideDirection.x;
+	xStream << m_xOverrideDirection.y;
+	xStream << m_xOverrideDirection.z;
 }
 
 void Zenith_ParticleEmitterComponent::ReadFromDataStream(Zenith_DataStream& xStream)
@@ -335,6 +344,18 @@ void Zenith_ParticleEmitterComponent::ReadFromDataStream(Zenith_DataStream& xStr
 				SetConfig(pxConfig);
 			}
 		}
+	}
+
+	if (uVersion >= 3)
+	{
+		// Position override data
+		xStream >> m_bUsePositionOverride;
+		xStream >> m_xOverridePosition.x;
+		xStream >> m_xOverridePosition.y;
+		xStream >> m_xOverridePosition.z;
+		xStream >> m_xOverrideDirection.x;
+		xStream >> m_xOverrideDirection.y;
+		xStream >> m_xOverrideDirection.z;
 	}
 }
 

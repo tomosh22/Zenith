@@ -136,6 +136,14 @@ Callbacks: `OnCreate()`, `OnUpdate(float)`, `OnCollisionEnter(entity)`, `OnColli
 - Scene modifications during rendering handled via deferred operations
 - Event system provides thread-safe `QueueEvent()` for cross-thread event dispatch
 
+**Scene Loading Reset Order:**
+When `Zenith_Scene::LoadFromFile()` loads a scene, systems are reset in this order:
+1. Flux render systems (Terrain, StaticMeshes, AnimatedMeshes, etc.)
+2. `Scene::Reset()` - Destroys all entities and their components
+3. `Zenith_Physics::Reset()` - Clears physics world
+
+The physics reset MUST come AFTER scene reset because collider component destructors need the physics world to exist to remove their bodies. See [Physics/CLAUDE.md](../Physics/CLAUDE.md) for details.
+
 **Entity Lifecycle:** Entities can have parent-child relationships via `m_uParentEntityID` member.
 
 ## Design Rationale

@@ -124,20 +124,42 @@ public:
 
 	void OnAwake() ZENITH_FINAL override
 	{
-		// Initialize damage system
+		// Initialize damage system (resets health data for new play session)
 		Combat_DamageSystem::Initialize();
+
+		// Clear stale state from previous play sessions
+		// This is critical for Play/Stop/Play cycles in the editor
+		m_xEnemyManager.Reset();
+		m_xLevelEntities = Combat_LevelEntities();  // Reset to default state
+
+		// Clear any stale events from previous sessions
+		s_axDeferredDamageEvents.clear();
+		s_axDeferredDeathEvents.clear();
+
+		// Unsubscribe old event handles to prevent orphaned subscriptions
+		// (can happen after Play/Stop cycle recreates the behaviour)
+		if (s_uDamageEventHandle != INVALID_EVENT_HANDLE)
+		{
+			Zenith_EventDispatcher::Get().Unsubscribe(s_uDamageEventHandle);
+			s_uDamageEventHandle = INVALID_EVENT_HANDLE;
+		}
+		if (s_uDeathEventHandle != INVALID_EVENT_HANDLE)
+		{
+			Zenith_EventDispatcher::Get().Unsubscribe(s_uDeathEventHandle);
+			s_uDeathEventHandle = INVALID_EVENT_HANDLE;
+		}
 
 		// Subscribe to damage events for hit reactions
 		// IMPORTANT: Use static queues to avoid captured 'this' pointer issues
 		// The lambda only adds to the queue; processing happens in OnUpdate where 'this' is valid
-		m_uDamageEventHandle = Zenith_EventDispatcher::Get().SubscribeLambda<Combat_DamageEvent>(
+		s_uDamageEventHandle = Zenith_EventDispatcher::Get().SubscribeLambda<Combat_DamageEvent>(
 			[](const Combat_DamageEvent& xEvent)
 			{
 				s_axDeferredDamageEvents.push_back(xEvent);
 			});
 
 		// Subscribe to death events
-		m_uDeathEventHandle = Zenith_EventDispatcher::Get().SubscribeLambda<Combat_DeathEvent>(
+		s_uDeathEventHandle = Zenith_EventDispatcher::Get().SubscribeLambda<Combat_DeathEvent>(
 			[](const Combat_DeathEvent& xEvent)
 			{
 				s_axDeferredDeathEvents.push_back(xEvent);
@@ -152,26 +174,41 @@ public:
 		m_pxArenaMaterial = Combat::g_pxArenaMaterial;
 		m_pxWallMaterial = Combat::g_pxWallMaterial;
 
-		// Create the arena and spawn entities
-		CreateArena();
-		SpawnPlayer();
+		// Find pre-created entities by name (created in Project_LoadInitialScene)
+		FindSceneEntities();
+
+		// Spawn enemies (still dynamic)
 		SpawnEnemies();
+
+		// Log initialization state for debugging
+		Zenith_Log(LOG_CATEGORY_ANIMATION, "[Combat] OnAwake complete: playerID=%u, enemyCount=%zu, managerSize=%zu",
+			m_xLevelEntities.m_uPlayerEntityID.m_uIndex,
+			m_xLevelEntities.m_axEnemyEntityIDs.size(),
+			m_xEnemyManager.GetEnemies().size());
 
 		// Initialize player systems
 		m_xPlayerController.m_fMoveSpeed = 5.0f;
 		m_xPlayerController.m_fLightAttackDuration = 0.3f;
 		m_xPlayerController.m_fHeavyAttackDuration = 0.6f;
-		// Animation controller is now initialized in SpawnPlayer with mesh geometry
+
+		// Initialize animation controller if player has skeleton
+		InitializePlayerAnimation();
+
 		m_xPlayerHitDetection.SetOwner(m_xLevelEntities.m_uPlayerEntityID);
 	}
 
 	void OnStart() ZENITH_FINAL override
 	{
-		// Ensure level is created if loaded from scene
+		// Ensure entities are found if loaded from scene
 		if (m_xLevelEntities.m_uPlayerEntityID == INVALID_ENTITY_ID)
 		{
-			CreateArena();
-			SpawnPlayer();
+			FindSceneEntities();
+			InitializePlayerAnimation();
+		}
+
+		// Spawn enemies if not already done
+		if (m_xLevelEntities.m_axEnemyEntityIDs.empty())
+		{
 			SpawnEnemies();
 		}
 	}
@@ -286,123 +323,53 @@ public:
 
 private:
 	// ========================================================================
-	// Arena Creation
+	// Entity Lookup (find pre-created entities from Project_LoadInitialScene)
 	// ========================================================================
 
-	void CreateArena()
+	void FindSceneEntities()
 	{
-		static constexpr float s_fArenaRadius = 15.0f;
-		static constexpr float s_fArenaWallHeight = 2.0f;
 		static constexpr uint32_t s_uWallSegments = 24;
 
-		// Create floor (still uses basic arena prefab)
-		Zenith_Entity xFloor = Zenith_Scene::Instantiate(*Combat::g_pxArenaPrefab, "ArenaFloor");
+		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
 
-		Zenith_TransformComponent& xFloorTransform = xFloor.GetComponent<Zenith_TransformComponent>();
-		xFloorTransform.SetPosition(Zenith_Maths::Vector3(0.0f, -0.5f, 0.0f));
-		xFloorTransform.SetScale(Zenith_Maths::Vector3(s_fArenaRadius * 2.0f, 1.0f, s_fArenaRadius * 2.0f));
+		// Find player entity
+		Zenith_Entity xPlayer = xScene.FindEntityByName("Player");
+		Zenith_Assert(xPlayer.IsValid(), "Player entity not found in scene - ensure scene was saved after Project_LoadInitialScene created entities");
+		m_xLevelEntities.m_uPlayerEntityID = xPlayer.GetEntityID();
+		Combat_DamageSystem::RegisterEntity(xPlayer.GetEntityID(), 100.0f, 0.2f);
 
-		Zenith_ModelComponent& xFloorModel = xFloor.AddComponent<Zenith_ModelComponent>();
-		xFloorModel.AddMeshEntry(*m_pxCubeGeometry, *m_pxArenaMaterial);
+		// Verify player is properly registered
+		bool bPlayerIsDead = Combat_DamageSystem::IsDead(xPlayer.GetEntityID());
+		Zenith_Log(LOG_CATEGORY_ANIMATION, "[Combat] FindSceneEntities: playerID=%u, isDead=%d (should be 0)",
+			xPlayer.GetEntityID().m_uIndex, bPlayerIsDead);
 
-		xFloor.AddComponent<Zenith_ColliderComponent>()
-			.AddCollider(COLLISION_VOLUME_TYPE_AABB, RIGIDBODY_TYPE_STATIC);
-
+		// Find arena floor
+		Zenith_Entity xFloor = xScene.FindEntityByName("ArenaFloor");
+		Zenith_Assert(xFloor.IsValid(), "ArenaFloor entity not found in scene");
 		m_xLevelEntities.m_uArenaFloorEntityID = xFloor.GetEntityID();
 
-		// Create wall segments directly (not using prefab)
-		// Prefab instantiation was causing ModelComponent transform issues
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+		// Find walls
 		for (uint32_t i = 0; i < s_uWallSegments; i++)
 		{
-			float fAngle = (static_cast<float>(i) / s_uWallSegments) * 6.28318f;
-			float fX = cos(fAngle) * s_fArenaRadius;
-			float fZ = sin(fAngle) * s_fArenaRadius;
-
-			// Create wall entity directly
 			char szName[32];
 			snprintf(szName, sizeof(szName), "ArenaWall_%u", i);
-			Zenith_Entity xWall(&xScene, szName);
-
-			Zenith_TransformComponent& xWallTransform = xWall.GetComponent<Zenith_TransformComponent>();
-			xWallTransform.SetPosition(Zenith_Maths::Vector3(fX, s_fArenaWallHeight * 0.5f, fZ));
-			xWallTransform.SetScale(Zenith_Maths::Vector3(2.0f, s_fArenaWallHeight, 1.0f));
-
-			// Rotate to face center
-			float fYaw = fAngle + 1.5708f;  // 90 degrees
-			xWallTransform.SetRotation(glm::angleAxis(fYaw, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f)));
-
-			// Add ModelComponent with wall cube and candle cone
-			Zenith_ModelComponent& xModel = xWall.AddComponent<Zenith_ModelComponent>();
-			xModel.AddMeshEntry(*m_pxCubeGeometry, *m_pxWallMaterial);
-			xModel.AddMeshEntry(*Combat::g_pxConeGeometry, *Combat::g_pxCandleMaterial);
-
-			// Add ColliderComponent for wall collision
-			xWall.AddComponent<Zenith_ColliderComponent>()
-				.AddCollider(COLLISION_VOLUME_TYPE_AABB, RIGIDBODY_TYPE_STATIC);
-
-			// Add ParticleEmitterComponent for candle flame
-			Zenith_ParticleEmitterComponent& xEmitter = xWall.AddComponent<Zenith_ParticleEmitterComponent>();
-			xEmitter.SetConfig(Combat::g_pxFlameConfig);
-			xEmitter.SetEmitting(true);
-			// Position flame at top of wall segment
-			Zenith_Maths::Vector3 xFlamePos(fX, s_fArenaWallHeight + 0.1f, fZ);
-			xEmitter.SetEmitPosition(xFlamePos);
-			xEmitter.SetEmitDirection(Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
-
+			Zenith_Entity xWall = xScene.FindEntityByName(szName);
+			Zenith_Assert(xWall.IsValid(), "ArenaWall entity not found in scene: %s", szName);
 			m_xLevelEntities.m_axArenaWallEntityIDs.push_back(xWall.GetEntityID());
 		}
 	}
 
-	void SpawnPlayer()
+	void InitializePlayerAnimation()
 	{
-		Zenith_Entity xPlayer = Zenith_Scene::Instantiate(*Combat::g_pxPlayerPrefab, "Player");
+		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+		if (!xScene.EntityExists(m_xLevelEntities.m_uPlayerEntityID))
+			return;
 
-		Zenith_TransformComponent& xTransform = xPlayer.GetComponent<Zenith_TransformComponent>();
-		xTransform.SetPosition(Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));  // Start above floor
-		xTransform.SetScale(Zenith_Maths::Vector3(1.0f, 1.0f, 1.0f));  // Stick figure at unit scale
+		Zenith_Entity xPlayer = xScene.GetEntity(m_xLevelEntities.m_uPlayerEntityID);
+		if (!xPlayer.HasComponent<Zenith_ModelComponent>())
+			return;
 
-		Zenith_ModelComponent& xModel = xPlayer.AddComponent<Zenith_ModelComponent>();
-
-		// Use model instance system with skeleton for animated rendering
-		bool bUsingModelInstance = false;
-		if (!Combat::g_strStickFigureModelPath.empty())
-		{
-			xModel.LoadModel(Combat::g_strStickFigureModelPath);
-			// Check if model loaded successfully with a skeleton
-			if (xModel.GetModelInstance() && xModel.HasSkeleton())
-			{
-				xModel.GetModelInstance()->SetMaterial(0, m_pxPlayerMaterial);
-				bUsingModelInstance = true;
-				Zenith_Log(LOG_CATEGORY_ANIMATION, "[Combat] Player using model instance with skeleton");
-			}
-			else
-			{
-				Zenith_Log(LOG_CATEGORY_ANIMATION, "[Combat] Model loaded but no skeleton/skinned meshes, falling back");
-			}
-		}
-
-		// Fallback to mesh entry if model instance failed
-		if (!bUsingModelInstance)
-		{
-			xModel.AddMeshEntry(*m_pxStickFigureGeometry, *m_pxPlayerMaterial);
-			Zenith_Log(LOG_CATEGORY_ANIMATION, "[Combat] Player using fallback mesh entry (no animation)");
-		}
-
-		// Use explicit capsule dimensions for humanoid character
-		// Radius 0.3 (shoulder width / 2), HalfHeight 0.6 (total height ~1.8 with caps)
-		Zenith_ColliderComponent& xCollider = xPlayer.AddComponent<Zenith_ColliderComponent>();
-		xCollider.AddCapsuleCollider(0.3f, 0.6f, RIGIDBODY_TYPE_DYNAMIC);
-
-		// Lock X and Z rotation to prevent character from tipping over
-		Zenith_Physics::LockRotation(xCollider.GetBodyID(), true, false, true);
-
-		m_xLevelEntities.m_uPlayerEntityID = xPlayer.GetEntityID();
-
-		// Register with damage system
-		Combat_DamageSystem::RegisterEntity(xPlayer.GetEntityID(), 100.0f, 0.2f);
-
-		// Initialize animation controller - use skeleton instance if available
+		Zenith_ModelComponent& xModel = xPlayer.GetComponent<Zenith_ModelComponent>();
 		if (xModel.HasSkeleton())
 		{
 			Flux_SkeletonInstance* pxSkeleton = xModel.GetSkeletonInstance();
@@ -412,9 +379,6 @@ private:
 				Zenith_Log(LOG_CATEGORY_ANIMATION, "[Combat] Player animation controller initialized with skeleton instance");
 			}
 		}
-
-		// Initialize hit detection
-		m_xPlayerHitDetection.SetOwner(xPlayer.GetEntityID());
 	}
 
 	void SpawnEnemies()
@@ -477,7 +441,7 @@ private:
 			Combat_EnemyConfig xConfig;
 			xConfig.m_fMoveSpeed = 3.0f;
 			xConfig.m_fAttackDamage = 15.0f;
-			xConfig.m_fAttackRange = 1.2f;  // Melee attack range (capsule combined radius ~0.57)
+			xConfig.m_fAttackRange = 1.5f;  // Accounts for physics collision settling distance
 			xConfig.m_fAttackCooldown = 1.5f;
 
 			Flux_SkeletonInstance* pxSkeleton = xModel.HasSkeleton() ? xModel.GetSkeletonInstance() : nullptr;
@@ -745,11 +709,12 @@ private:
 
 	void ResetGame()
 	{
-		// Destroy all level entities
-		DestroyLevel();
+		// Destroy only enemies (arena and player are persistent)
+		DestroyEnemies();
 
-		// Reset damage system
+		// Reset damage system and re-register player
 		Combat_DamageSystem::Reset();
+		Combat_DamageSystem::RegisterEntity(m_xLevelEntities.m_uPlayerEntityID, 100.0f, 0.2f);
 
 		// Reset enemy manager
 		m_xEnemyManager.Reset();
@@ -764,51 +729,34 @@ private:
 		m_xPlayerIKController.Reset();
 		m_xPlayerHitDetection.DeactivateHitbox();
 
+		// Reset player position
+		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+		if (xScene.EntityExists(m_xLevelEntities.m_uPlayerEntityID))
+		{
+			Zenith_Entity xPlayer = xScene.GetEntity(m_xLevelEntities.m_uPlayerEntityID);
+			xPlayer.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
+		}
+
 		// Reset game state
 		m_eGameState = Combat_GameState::PLAYING;
 		m_uComboCount = 0;
 		m_fComboTimer = 0.0f;
 
-		// Recreate level
-		CreateArena();
-		SpawnPlayer();
+		// Respawn enemies
 		SpawnEnemies();
 	}
 
-	void DestroyLevel()
+	void DestroyEnemies()
 	{
 		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
 
-		// Destroy player
-		if (m_xLevelEntities.m_uPlayerEntityID != INVALID_ENTITY_ID &&
-			xScene.EntityExists(m_xLevelEntities.m_uPlayerEntityID))
-		{
-			Zenith_Scene::Destroy(m_xLevelEntities.m_uPlayerEntityID);
-		}
-		m_xLevelEntities.m_uPlayerEntityID = INVALID_ENTITY_ID;
-
-		// Destroy enemies
+		// Destroy enemies only (player and arena are persistent)
 		for (Zenith_EntityID uID : m_xLevelEntities.m_axEnemyEntityIDs)
 		{
 			if (xScene.EntityExists(uID))
 				Zenith_Scene::Destroy(uID);
 		}
 		m_xLevelEntities.m_axEnemyEntityIDs.clear();
-
-		// Destroy arena
-		if (m_xLevelEntities.m_uArenaFloorEntityID != INVALID_ENTITY_ID &&
-			xScene.EntityExists(m_xLevelEntities.m_uArenaFloorEntityID))
-		{
-			Zenith_Scene::Destroy(m_xLevelEntities.m_uArenaFloorEntityID);
-		}
-		m_xLevelEntities.m_uArenaFloorEntityID = INVALID_ENTITY_ID;
-
-		for (Zenith_EntityID uID : m_xLevelEntities.m_axArenaWallEntityIDs)
-		{
-			if (xScene.EntityExists(uID))
-				Zenith_Scene::Destroy(uID);
-		}
-		m_xLevelEntities.m_axArenaWallEntityIDs.clear();
 	}
 
 	// ========================================================================
@@ -1038,9 +986,9 @@ private:
 	// Enemy manager
 	Combat_EnemyManager m_xEnemyManager;
 
-	// Event handles
-	Zenith_EventHandle m_uDamageEventHandle = INVALID_EVENT_HANDLE;
-	Zenith_EventHandle m_uDeathEventHandle = INVALID_EVENT_HANDLE;
+	// Static event handles (persist across behaviour instances for proper cleanup)
+	static inline Zenith_EventHandle s_uDamageEventHandle = INVALID_EVENT_HANDLE;
+	static inline Zenith_EventHandle s_uDeathEventHandle = INVALID_EVENT_HANDLE;
 
 	// Static event queues for deferred processing
 	// These are static so lambda callbacks don't need to capture 'this'

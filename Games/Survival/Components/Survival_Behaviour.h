@@ -134,8 +134,13 @@ public:
 		// Subscribe to events
 		SubscribeToEvents();
 
-		// Generate the world
-		GenerateWorld();
+		// Find pre-created entities and populate resource manager
+		FindSceneEntities();
+		PopulateResourceManagerFromScene();
+
+		// Reset inventory and crafting for fresh start
+		m_xInventory.Reset();
+		m_xCrafting.CancelCrafting();
 	}
 
 	/**
@@ -143,9 +148,11 @@ public:
 	 */
 	void OnStart() ZENITH_FINAL override
 	{
+		// Ensure entities are found if loaded from scene
 		if (m_uPlayerEntityID == INVALID_ENTITY_ID)
 		{
-			GenerateWorld();
+			FindSceneEntities();
+			PopulateResourceManagerFromScene();
 		}
 	}
 
@@ -515,248 +522,145 @@ private:
 	}
 
 	// ========================================================================
-	// World Generation
+	// Entity Lookup (find pre-created entities from Project_LoadInitialScene)
 	// ========================================================================
 
-	void GenerateWorld()
-	{
-		DestroyWorld();
-
-		// Create ground plane
-		CreateGround();
-
-		// Create player
-		CreatePlayer();
-
-		// Create resource nodes
-		CreateResourceNodes();
-
-		// Reset inventory and crafting
-		m_xInventory.Reset();
-		m_xCrafting.CancelCrafting();
-	}
-
-	void DestroyWorld()
+	void FindSceneEntities()
 	{
 		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
 
-		// Destroy player
-		if (m_uPlayerEntityID != INVALID_ENTITY_ID && xScene.EntityExists(m_uPlayerEntityID))
-		{
-			Zenith_Scene::Destroy(m_uPlayerEntityID);
-			m_uPlayerEntityID = INVALID_ENTITY_ID;
-		}
+		// Find player entity
+		Zenith_Entity xPlayer = xScene.FindEntityByName("Player");
+		Zenith_Assert(xPlayer.IsValid(), "Player entity not found in scene - ensure scene was saved after Project_LoadInitialScene created entities");
+		m_uPlayerEntityID = xPlayer.GetEntityID();
 
-		// Destroy ground
-		if (m_uGroundEntityID != INVALID_ENTITY_ID && xScene.EntityExists(m_uGroundEntityID))
-		{
-			Zenith_Scene::Destroy(m_uGroundEntityID);
-			m_uGroundEntityID = INVALID_ENTITY_ID;
-		}
+		// Find ground entity
+		Zenith_Entity xGround = xScene.FindEntityByName("Ground");
+		Zenith_Assert(xGround.IsValid(), "Ground entity not found in scene");
+		m_uGroundEntityID = xGround.GetEntityID();
+	}
 
-		// Destroy all resource node entities
-		m_xResourceManager.ForEach([&xScene](Survival_ResourceNodeData& xNode, uint32_t uIndex)
+	void PopulateResourceManagerFromScene()
+	{
+		static constexpr uint32_t s_uTreeCount = 15;
+		static constexpr uint32_t s_uRockCount = 10;
+		static constexpr uint32_t s_uBerryCount = 8;
+
+		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+
+		// Find and register all tree entities
+		for (uint32_t i = 0; i < s_uTreeCount; i++)
 		{
-			if (xScene.EntityExists(xNode.m_uEntityID))
+			char szName[32];
+			snprintf(szName, sizeof(szName), "Tree_%u", i);
+			Zenith_Entity xTree = xScene.FindEntityByName(szName);
+			if (xTree.IsValid())
 			{
-				Zenith_Scene::Destroy(xNode.m_uEntityID);
-			}
-		});
+				Zenith_TransformComponent& xTransform = xTree.GetComponent<Zenith_TransformComponent>();
+				Zenith_Maths::Vector3 xPos;
+				xTransform.GetPosition(xPos);
+				Zenith_Maths::Vector3 xScale;
+				xTransform.GetScale(xScale);
 
-		m_xResourceManager.Clear();
+				Survival_ResourceNodeData xNode;
+				xNode.m_uEntityID = xTree.GetEntityID();
+				xNode.m_eResourceType = RESOURCE_TYPE_TREE;
+				xNode.m_eYieldType = ITEM_TYPE_WOOD;
+				xNode.m_uMaxHits = 3;
+				xNode.m_uCurrentHits = 3;
+				xNode.m_uYieldAmount = 3;
+				xNode.m_fRespawnDuration = 30.f;
+				xNode.m_xPosition = Zenith_Maths::Vector3(xPos.x, 0.f, xPos.z);
+				xNode.m_xOriginalScale = xScale;
+
+				m_xResourceManager.AddNode(xNode);
+			}
+		}
+
+		// Find and register all rock entities
+		for (uint32_t i = 0; i < s_uRockCount; i++)
+		{
+			char szName[32];
+			snprintf(szName, sizeof(szName), "Rock_%u", i);
+			Zenith_Entity xRock = xScene.FindEntityByName(szName);
+			if (xRock.IsValid())
+			{
+				Zenith_TransformComponent& xTransform = xRock.GetComponent<Zenith_TransformComponent>();
+				Zenith_Maths::Vector3 xPos;
+				xTransform.GetPosition(xPos);
+				Zenith_Maths::Vector3 xScale;
+				xTransform.GetScale(xScale);
+
+				Survival_ResourceNodeData xNode;
+				xNode.m_uEntityID = xRock.GetEntityID();
+				xNode.m_eResourceType = RESOURCE_TYPE_ROCK;
+				xNode.m_eYieldType = ITEM_TYPE_STONE;
+				xNode.m_uMaxHits = 4;
+				xNode.m_uCurrentHits = 4;
+				xNode.m_uYieldAmount = 2;
+				xNode.m_fRespawnDuration = 45.f;
+				xNode.m_xPosition = Zenith_Maths::Vector3(xPos.x, 0.f, xPos.z);
+				xNode.m_xOriginalScale = xScale;
+
+				m_xResourceManager.AddNode(xNode);
+			}
+		}
+
+		// Find and register all berry bush entities
+		for (uint32_t i = 0; i < s_uBerryCount; i++)
+		{
+			char szName[32];
+			snprintf(szName, sizeof(szName), "BerryBush_%u", i);
+			Zenith_Entity xBush = xScene.FindEntityByName(szName);
+			if (xBush.IsValid())
+			{
+				Zenith_TransformComponent& xTransform = xBush.GetComponent<Zenith_TransformComponent>();
+				Zenith_Maths::Vector3 xPos;
+				xTransform.GetPosition(xPos);
+				Zenith_Maths::Vector3 xScale;
+				xTransform.GetScale(xScale);
+
+				Survival_ResourceNodeData xNode;
+				xNode.m_uEntityID = xBush.GetEntityID();
+				xNode.m_eResourceType = RESOURCE_TYPE_BERRY_BUSH;
+				xNode.m_eYieldType = ITEM_TYPE_BERRIES;
+				xNode.m_uMaxHits = 1;
+				xNode.m_uCurrentHits = 1;
+				xNode.m_uYieldAmount = 5;
+				xNode.m_fRespawnDuration = 20.f;
+				xNode.m_xPosition = Zenith_Maths::Vector3(xPos.x, 0.f, xPos.z);
+				xNode.m_xOriginalScale = xScale;
+
+				m_xResourceManager.AddNode(xNode);
+			}
+		}
 	}
 
 	void ResetGame()
 	{
-		GenerateWorld();
-	}
-
-	void CreateGround()
-	{
+		// Reset player position
 		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-
-		Zenith_Entity xGround(&xScene, "Ground");
-		xGround.SetTransient(true);
-
-		Zenith_TransformComponent& xTransform = xGround.GetComponent<Zenith_TransformComponent>();
-		xTransform.SetPosition(Zenith_Maths::Vector3(0.f, -0.5f, 0.f));
-		xTransform.SetScale(Zenith_Maths::Vector3(100.f, 1.f, 100.f));
-
-		Zenith_ModelComponent& xModel = xGround.AddComponent<Zenith_ModelComponent>();
-		xModel.AddMeshEntry(*Survival::g_pxCubeGeometry, *Survival::g_pxGroundMaterial);
-
-		m_uGroundEntityID = xGround.GetEntityID();
-	}
-
-	void CreatePlayer()
-	{
-		Zenith_Entity xPlayer = Zenith_Scene::Instantiate(*Survival::g_pxPlayerPrefab, "Player");
-
-		Zenith_TransformComponent& xTransform = xPlayer.GetComponent<Zenith_TransformComponent>();
-		xTransform.SetPosition(Zenith_Maths::Vector3(0.f, s_fPlayerHeight * 0.5f, 0.f));
-		xTransform.SetScale(Zenith_Maths::Vector3(1.f));
-
-		Zenith_ModelComponent& xModel = xPlayer.AddComponent<Zenith_ModelComponent>();
-		xModel.AddMeshEntry(*Survival::g_pxCapsuleGeometry, *Survival::g_pxPlayerMaterial);
-
-		m_uPlayerEntityID = xPlayer.GetEntityID();
-	}
-
-	void CreateResourceNodes()
-	{
-		// Configuration
-		const uint32_t uTreeCount = 15;
-		const uint32_t uRockCount = 10;
-		const uint32_t uBerryCount = 8;
-		const float fWorldRadius = 40.f;
-		const float fMinDistance = 5.f;
-
-		std::vector<Zenith_Maths::Vector3> axPositions;
-
-		// Random distributions
-		std::uniform_real_distribution<float> xAngleDist(0.f, 6.28318f);
-		std::uniform_real_distribution<float> xRadiusDist(8.f, fWorldRadius);
-
-		auto GeneratePosition = [&]() -> Zenith_Maths::Vector3
+		if (xScene.EntityExists(m_uPlayerEntityID))
 		{
-			for (int iTry = 0; iTry < 50; iTry++)
-			{
-				float fAngle = xAngleDist(m_xRng);
-				float fRadius = xRadiusDist(m_xRng);
-				Zenith_Maths::Vector3 xPos(
-					cos(fAngle) * fRadius,
-					0.f,
-					sin(fAngle) * fRadius
-				);
-
-				// Check distance from existing positions
-				bool bValid = true;
-				for (const auto& xExisting : axPositions)
-				{
-					if (glm::distance(xPos, xExisting) < fMinDistance)
-					{
-						bValid = false;
-						break;
-					}
-				}
-
-				if (bValid)
-				{
-					axPositions.push_back(xPos);
-					return xPos;
-				}
-			}
-			// Fallback
-			float fAngle = xAngleDist(m_xRng);
-			float fRadius = xRadiusDist(m_xRng);
-			return Zenith_Maths::Vector3(cos(fAngle) * fRadius, 0.f, sin(fAngle) * fRadius);
-		};
-
-		// Create trees
-		for (uint32_t i = 0; i < uTreeCount; i++)
-		{
-			Zenith_Maths::Vector3 xPos = GeneratePosition();
-			CreateTreeNode(xPos);
+			Zenith_Entity xPlayer = xScene.GetEntity(m_uPlayerEntityID);
+			xPlayer.GetComponent<Zenith_TransformComponent>().SetPosition(
+				Zenith_Maths::Vector3(0.f, s_fPlayerHeight * 0.5f, 0.f));
 		}
 
-		// Create rocks
-		for (uint32_t i = 0; i < uRockCount; i++)
+		// Reset all resource nodes to full health
+		m_xResourceManager.ForEach([](Survival_ResourceNodeData& xNode, uint32_t uIndex)
 		{
-			Zenith_Maths::Vector3 xPos = GeneratePosition();
-			CreateRockNode(xPos);
-		}
+			xNode.m_bDepleted = false;
+			xNode.m_uCurrentHits = xNode.m_uMaxHits;
+			xNode.m_fRespawnTimer = 0.f;
+		});
 
-		// Create berry bushes
-		for (uint32_t i = 0; i < uBerryCount; i++)
-		{
-			Zenith_Maths::Vector3 xPos = GeneratePosition();
-			CreateBerryBushNode(xPos);
-		}
-	}
+		// Update visuals to show full health
+		m_xResourceManager.UpdateNodeVisuals();
 
-	void CreateTreeNode(const Zenith_Maths::Vector3& xPos)
-	{
-		Zenith_Entity xTree = Zenith_Scene::Instantiate(*Survival::g_pxTreePrefab, "Tree");
-
-		// Tree: tall, narrow
-		Zenith_Maths::Vector3 xScale(1.5f, 4.f, 1.5f);
-
-		Zenith_TransformComponent& xTransform = xTree.GetComponent<Zenith_TransformComponent>();
-		xTransform.SetPosition(xPos + Zenith_Maths::Vector3(0.f, xScale.y * 0.5f, 0.f));
-		xTransform.SetScale(xScale);
-
-		Zenith_ModelComponent& xModel = xTree.AddComponent<Zenith_ModelComponent>();
-		xModel.AddMeshEntry(*Survival::g_pxCubeGeometry, *Survival::g_pxTreeMaterial);
-
-		// Register with resource manager
-		Survival_ResourceNodeData xNode;
-		xNode.m_uEntityID = xTree.GetEntityID();
-		xNode.m_eResourceType = RESOURCE_TYPE_TREE;
-		xNode.m_eYieldType = ITEM_TYPE_WOOD;
-		xNode.m_uMaxHits = 3;
-		xNode.m_uCurrentHits = 3;
-		xNode.m_uYieldAmount = 3;
-		xNode.m_fRespawnDuration = 30.f;
-		xNode.m_xPosition = xPos;
-		xNode.m_xOriginalScale = xScale;
-
-		m_xResourceManager.AddNode(xNode);
-	}
-
-	void CreateRockNode(const Zenith_Maths::Vector3& xPos)
-	{
-		Zenith_Entity xRock = Zenith_Scene::Instantiate(*Survival::g_pxRockPrefab, "Rock");
-
-		// Rock: spherical
-		Zenith_Maths::Vector3 xScale(2.f, 1.5f, 2.f);
-
-		Zenith_TransformComponent& xTransform = xRock.GetComponent<Zenith_TransformComponent>();
-		xTransform.SetPosition(xPos + Zenith_Maths::Vector3(0.f, xScale.y * 0.5f, 0.f));
-		xTransform.SetScale(xScale);
-
-		Zenith_ModelComponent& xModel = xRock.AddComponent<Zenith_ModelComponent>();
-		xModel.AddMeshEntry(*Survival::g_pxSphereGeometry, *Survival::g_pxRockMaterial);
-
-		Survival_ResourceNodeData xNode;
-		xNode.m_uEntityID = xRock.GetEntityID();
-		xNode.m_eResourceType = RESOURCE_TYPE_ROCK;
-		xNode.m_eYieldType = ITEM_TYPE_STONE;
-		xNode.m_uMaxHits = 4;
-		xNode.m_uCurrentHits = 4;
-		xNode.m_uYieldAmount = 2;
-		xNode.m_fRespawnDuration = 45.f;
-		xNode.m_xPosition = xPos;
-		xNode.m_xOriginalScale = xScale;
-
-		m_xResourceManager.AddNode(xNode);
-	}
-
-	void CreateBerryBushNode(const Zenith_Maths::Vector3& xPos)
-	{
-		Zenith_Entity xBush = Zenith_Scene::Instantiate(*Survival::g_pxBerryBushPrefab, "BerryBush");
-
-		// Berry bush: small, round
-		Zenith_Maths::Vector3 xScale(1.2f, 1.f, 1.2f);
-
-		Zenith_TransformComponent& xTransform = xBush.GetComponent<Zenith_TransformComponent>();
-		xTransform.SetPosition(xPos + Zenith_Maths::Vector3(0.f, xScale.y * 0.5f, 0.f));
-		xTransform.SetScale(xScale);
-
-		Zenith_ModelComponent& xModel = xBush.AddComponent<Zenith_ModelComponent>();
-		xModel.AddMeshEntry(*Survival::g_pxSphereGeometry, *Survival::g_pxBerryMaterial);
-
-		Survival_ResourceNodeData xNode;
-		xNode.m_uEntityID = xBush.GetEntityID();
-		xNode.m_eResourceType = RESOURCE_TYPE_BERRY_BUSH;
-		xNode.m_eYieldType = ITEM_TYPE_BERRIES;
-		xNode.m_uMaxHits = 1;
-		xNode.m_uCurrentHits = 1;
-		xNode.m_uYieldAmount = 5;
-		xNode.m_fRespawnDuration = 20.f;
-		xNode.m_xPosition = xPos;
-		xNode.m_xOriginalScale = xScale;
-
-		m_xResourceManager.AddNode(xNode);
+		// Reset inventory and crafting
+		m_xInventory.Reset();
+		m_xCrafting.CancelCrafting();
 	}
 
 	// ========================================================================

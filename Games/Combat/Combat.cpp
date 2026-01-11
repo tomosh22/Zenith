@@ -9,6 +9,7 @@
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_ParticleEmitterComponent.h"
 #include "EntityComponent/Zenith_EventSystem.h"
+#include "Physics/Zenith_Physics.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "Flux/Flux_MaterialAsset.h"
 #include "Flux/Flux_ModelInstance.h"
@@ -52,11 +53,6 @@ namespace Combat
 	Flux_ParticleEmitterConfig* g_pxFlameConfig = nullptr;  // Candle flame particles
 }
 
-static Flux_Texture* s_pxPlayerTexture = nullptr;
-static Flux_Texture* s_pxEnemyTexture = nullptr;
-static Flux_Texture* s_pxArenaTexture = nullptr;
-static Flux_Texture* s_pxWallTexture = nullptr;
-static Flux_Texture* s_pxCandleTexture = nullptr;
 static bool s_bResourcesInitialized = false;
 
 // ============================================================================
@@ -116,26 +112,35 @@ static void CleanupCombatResources()
 // ============================================================================
 // Procedural Texture Generation
 // ============================================================================
-static Flux_Texture* CreateColoredTexture(uint8_t uR, uint8_t uG, uint8_t uB)
-{
-	Flux_SurfaceInfo xTexInfo;
-	xTexInfo.m_eFormat = TEXTURE_FORMAT_RGBA8_UNORM;
-	xTexInfo.m_uWidth = 1;
-	xTexInfo.m_uHeight = 1;
-	xTexInfo.m_uDepth = 1;
-	xTexInfo.m_uNumMips = 1;
-	xTexInfo.m_uNumLayers = 1;
-	xTexInfo.m_uMemoryFlags = 1 << MEMORY_FLAGS__SHADER_READ;
 
+// Export a 1x1 colored texture to disk and return a TextureRef with its GUID
+static TextureRef ExportColoredTexture(const std::string& strPath, uint8_t uR, uint8_t uG, uint8_t uB)
+{
+	// Create texture data
 	uint8_t aucPixelData[] = { uR, uG, uB, 255 };
 
-	Zenith_AssetHandler::TextureData xTexData;
-	xTexData.pData = aucPixelData;
-	xTexData.xSurfaceInfo = xTexInfo;
-	xTexData.bCreateMips = false;
-	xTexData.bIsCubemap = false;
+	// Write to .ztex file format (same as Zenith_Tools_TextureExport::ExportFromData)
+	Zenith_DataStream xStream;
+	xStream << (int32_t)1;  // width
+	xStream << (int32_t)1;  // height
+	xStream << (int32_t)1;  // depth
+	xStream << (TextureFormat)TEXTURE_FORMAT_RGBA8_UNORM;
+	xStream << (size_t)4;   // data size (1x1x4 bytes)
+	xStream.WriteData(aucPixelData, 4);
+	xStream.WriteToFile(strPath.c_str());
 
-	return Zenith_AssetHandler::AddTexture(xTexData);
+	// Import into asset database to get GUID
+	Zenith_AssetGUID xGUID = Zenith_AssetDatabase::ImportAsset(strPath);
+	if (!xGUID.IsValid())
+	{
+		Zenith_Error(LOG_CATEGORY_ASSET, "[Combat] Failed to import texture: %s", strPath.c_str());
+		return TextureRef();
+	}
+
+	// Create TextureRef with the GUID
+	TextureRef xRef;
+	xRef.SetGUID(xGUID);
+	return xRef;
 }
 
 // ============================================================================
@@ -368,17 +373,36 @@ static void InitializeCombatResources()
 
 	using namespace Combat;
 
+	// Create directory for procedural meshes
+	std::string strMeshDir = std::string(GAME_ASSETS_DIR) + "/Meshes";
+	std::filesystem::create_directories(strMeshDir);
+
 	// Create capsule geometry (for characters)
 	g_pxCapsuleGeometry = new Flux_MeshGeometry();
 	GenerateCapsule(*g_pxCapsuleGeometry, 0.5f, 1.0f, 16, 16);
+#ifdef ZENITH_TOOLS
+	std::string strCapsulePath = strMeshDir + "/Capsule.zmesh";
+	g_pxCapsuleGeometry->Export(strCapsulePath.c_str());
+	g_pxCapsuleGeometry->m_strSourcePath = strCapsulePath;
+#endif
 
 	// Create cube geometry (for arena)
 	g_pxCubeGeometry = new Flux_MeshGeometry();
 	Flux_MeshGeometry::GenerateUnitCube(*g_pxCubeGeometry);
+#ifdef ZENITH_TOOLS
+	std::string strCubePath = strMeshDir + "/Cube.zmesh";
+	g_pxCubeGeometry->Export(strCubePath.c_str());
+	g_pxCubeGeometry->m_strSourcePath = strCubePath;
+#endif
 
 	// Create cone geometry (for candles on walls)
 	g_pxConeGeometry = new Flux_MeshGeometry();
 	GenerateCone(*g_pxConeGeometry, 0.08f, 0.25f, 12);
+#ifdef ZENITH_TOOLS
+	std::string strConePath = strMeshDir + "/Cone.zmesh";
+	g_pxConeGeometry->Export(strConePath.c_str());
+	g_pxConeGeometry->m_strSourcePath = strConePath;
+#endif
 
 	// Load stick figure mesh (skinned version with bone data for animated rendering)
 	std::string strStickFigureMeshGeomPath = std::string(ENGINE_ASSETS_DIR) + "Meshes/StickFigure/StickFigure.zmesh";  // Flux_MeshGeometry format
@@ -414,6 +438,13 @@ static void InitializeCombatResources()
 		g_strStickFigureModelPath = std::string(ENGINE_ASSETS_DIR) + "Meshes/StickFigure/StickFigure.zmodel";
 		g_pxStickFigureModelAsset->Export(g_strStickFigureModelPath.c_str());
 		Zenith_Log(LOG_CATEGORY_MESH, "[Combat] Created model asset at %s", g_strStickFigureModelPath.c_str());
+
+		// Import model asset into database so it can be resolved after scene restore
+		Zenith_AssetGUID xModelGUID = Zenith_AssetDatabase::ImportAsset(g_strStickFigureModelPath);
+		if (!xModelGUID.IsValid())
+		{
+			Zenith_Log(LOG_CATEGORY_MESH, "[Combat] Warning: Failed to import model asset into database");
+		}
 	}
 	else
 	{
@@ -423,28 +454,32 @@ static void InitializeCombatResources()
 		g_strStickFigureModelPath.clear();
 	}
 
-	// Create textures (procedural single-color pixels)
-	s_pxPlayerTexture = CreateColoredTexture(51, 102, 230);    // Blue player
-	s_pxEnemyTexture = CreateColoredTexture(204, 51, 51);      // Red enemies
-	s_pxArenaTexture = CreateColoredTexture(77, 77, 89);       // Gray arena floor
-	s_pxWallTexture = CreateColoredTexture(102, 64, 38);       // Brown walls
-	s_pxCandleTexture = CreateColoredTexture(240, 220, 180);   // Cream candle color
+	// Create textures directory
+	std::string strTexturesDir = std::string(GAME_ASSETS_DIR) + "/Textures";
+	std::filesystem::create_directories(strTexturesDir);
 
-	// Create materials
+	// Export procedural textures to disk and get TextureRefs
+	TextureRef xPlayerTextureRef = ExportColoredTexture(strTexturesDir + "/Player.ztex", 51, 102, 230);    // Blue player
+	TextureRef xEnemyTextureRef = ExportColoredTexture(strTexturesDir + "/Enemy.ztex", 204, 51, 51);       // Red enemies
+	TextureRef xArenaTextureRef = ExportColoredTexture(strTexturesDir + "/Arena.ztex", 77, 77, 89);        // Gray arena floor
+	TextureRef xWallTextureRef = ExportColoredTexture(strTexturesDir + "/Wall.ztex", 102, 64, 38);         // Brown walls
+	TextureRef xCandleTextureRef = ExportColoredTexture(strTexturesDir + "/Candle.ztex", 240, 220, 180);   // Cream candle color
+
+	// Create materials with TextureRefs (properly serializable)
 	g_pxPlayerMaterial = Flux_MaterialAsset::Create("CombatPlayer");
-	g_pxPlayerMaterial->SetDiffuseTexture(s_pxPlayerTexture);
+	g_pxPlayerMaterial->SetDiffuseTextureRef(xPlayerTextureRef);
 
 	g_pxEnemyMaterial = Flux_MaterialAsset::Create("CombatEnemy");
-	g_pxEnemyMaterial->SetDiffuseTexture(s_pxEnemyTexture);
+	g_pxEnemyMaterial->SetDiffuseTextureRef(xEnemyTextureRef);
 
 	g_pxArenaMaterial = Flux_MaterialAsset::Create("CombatArena");
-	g_pxArenaMaterial->SetDiffuseTexture(s_pxArenaTexture);
+	g_pxArenaMaterial->SetDiffuseTextureRef(xArenaTextureRef);
 
 	g_pxWallMaterial = Flux_MaterialAsset::Create("CombatWall");
-	g_pxWallMaterial->SetDiffuseTexture(s_pxWallTexture);
+	g_pxWallMaterial->SetDiffuseTextureRef(xWallTextureRef);
 
 	g_pxCandleMaterial = Flux_MaterialAsset::Create("CombatCandle");
-	g_pxCandleMaterial->SetDiffuseTexture(s_pxCandleTexture);
+	g_pxCandleMaterial->SetDiffuseTextureRef(xCandleTextureRef);
 
 	// Create flame particle config for wall candles
 	g_pxFlameConfig = new Flux_ParticleEmitterConfig();
@@ -668,6 +703,105 @@ void Project_LoadInitialScene()
 	Zenith_ParticleEmitterComponent& xEmitter = xHitSparkEmitter.AddComponent<Zenith_ParticleEmitterComponent>();
 	xEmitter.SetConfig(Combat::g_pxHitSparkConfig);
 	Combat::g_uHitSparkEmitterID = xHitSparkEmitter.GetEntityID();
+
+	// ========================================================================
+	// Create Arena
+	// ========================================================================
+	static constexpr float s_fArenaRadius = 15.0f;
+	static constexpr float s_fArenaWallHeight = 2.0f;
+	static constexpr uint32_t s_uWallSegments = 24;
+
+	// Create arena floor
+	Zenith_Entity xFloor = Zenith_Scene::Instantiate(*Combat::g_pxArenaPrefab, "ArenaFloor");
+	xFloor.SetTransient(false);
+
+	Zenith_TransformComponent& xFloorTransform = xFloor.GetComponent<Zenith_TransformComponent>();
+	xFloorTransform.SetPosition(Zenith_Maths::Vector3(0.0f, -0.5f, 0.0f));
+	xFloorTransform.SetScale(Zenith_Maths::Vector3(s_fArenaRadius * 2.0f, 1.0f, s_fArenaRadius * 2.0f));
+
+	Zenith_ModelComponent& xFloorModel = xFloor.AddComponent<Zenith_ModelComponent>();
+	xFloorModel.AddMeshEntry(*Combat::g_pxCubeGeometry, *Combat::g_pxArenaMaterial);
+
+	xFloor.AddComponent<Zenith_ColliderComponent>()
+		.AddCollider(COLLISION_VOLUME_TYPE_AABB, RIGIDBODY_TYPE_STATIC);
+
+	// Create wall segments
+	for (uint32_t i = 0; i < s_uWallSegments; i++)
+	{
+		float fAngle = (static_cast<float>(i) / s_uWallSegments) * 6.28318f;
+		float fX = cos(fAngle) * s_fArenaRadius;
+		float fZ = sin(fAngle) * s_fArenaRadius;
+
+		char szName[32];
+		snprintf(szName, sizeof(szName), "ArenaWall_%u", i);
+		Zenith_Entity xWall(&xScene, szName);
+		xWall.SetTransient(false);
+
+		Zenith_TransformComponent& xWallTransform = xWall.GetComponent<Zenith_TransformComponent>();
+		xWallTransform.SetPosition(Zenith_Maths::Vector3(fX, s_fArenaWallHeight * 0.5f, fZ));
+		xWallTransform.SetScale(Zenith_Maths::Vector3(2.0f, s_fArenaWallHeight, 1.0f));
+
+		// Rotate to face center
+		float fYaw = fAngle + 1.5708f;  // 90 degrees
+		xWallTransform.SetRotation(glm::angleAxis(fYaw, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f)));
+
+		// Add ModelComponent with wall cube and candle cone
+		Zenith_ModelComponent& xWallModel = xWall.AddComponent<Zenith_ModelComponent>();
+		xWallModel.AddMeshEntry(*Combat::g_pxCubeGeometry, *Combat::g_pxWallMaterial);
+		xWallModel.AddMeshEntry(*Combat::g_pxConeGeometry, *Combat::g_pxCandleMaterial);
+
+		// Add ColliderComponent for wall collision
+		xWall.AddComponent<Zenith_ColliderComponent>()
+			.AddCollider(COLLISION_VOLUME_TYPE_AABB, RIGIDBODY_TYPE_STATIC);
+
+		// Add ParticleEmitterComponent for candle flame
+		Zenith_ParticleEmitterComponent& xFlameEmitter = xWall.AddComponent<Zenith_ParticleEmitterComponent>();
+		xFlameEmitter.SetConfig(Combat::g_pxFlameConfig);
+		xFlameEmitter.SetEmitting(true);
+		// Position flame at top of wall segment
+		Zenith_Maths::Vector3 xFlamePos(fX, s_fArenaWallHeight + 0.1f, fZ);
+		xFlameEmitter.SetEmitPosition(xFlamePos);
+		xFlameEmitter.SetEmitDirection(Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
+	}
+
+	// ========================================================================
+	// Create Player
+	// ========================================================================
+	Zenith_Entity xPlayer = Zenith_Scene::Instantiate(*Combat::g_pxPlayerPrefab, "Player");
+	xPlayer.SetTransient(false);
+
+	Zenith_TransformComponent& xPlayerTransform = xPlayer.GetComponent<Zenith_TransformComponent>();
+	xPlayerTransform.SetPosition(Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));  // Start above floor
+	xPlayerTransform.SetScale(Zenith_Maths::Vector3(1.0f, 1.0f, 1.0f));  // Stick figure at unit scale
+
+	Zenith_ModelComponent& xPlayerModel = xPlayer.AddComponent<Zenith_ModelComponent>();
+
+	// Use model instance system with skeleton for animated rendering
+	bool bUsingModelInstance = false;
+	if (!Combat::g_strStickFigureModelPath.empty())
+	{
+		xPlayerModel.LoadModel(Combat::g_strStickFigureModelPath);
+		// Check if model loaded successfully with a skeleton
+		if (xPlayerModel.GetModelInstance() && xPlayerModel.HasSkeleton())
+		{
+			xPlayerModel.GetModelInstance()->SetMaterial(0, Combat::g_pxPlayerMaterial);
+			bUsingModelInstance = true;
+		}
+	}
+
+	// Fallback to mesh entry if model instance failed
+	if (!bUsingModelInstance)
+	{
+		xPlayerModel.AddMeshEntry(*Combat::g_pxStickFigureGeometry, *Combat::g_pxPlayerMaterial);
+	}
+
+	// Use explicit capsule dimensions for humanoid character
+	// Radius 0.3 (shoulder width / 2), HalfHeight 0.6 (total height ~1.8 with caps)
+	Zenith_ColliderComponent& xPlayerCollider = xPlayer.AddComponent<Zenith_ColliderComponent>();
+	xPlayerCollider.AddCapsuleCollider(0.3f, 0.6f, RIGIDBODY_TYPE_DYNAMIC);
+
+	// Lock X and Z rotation to prevent character from tipping over
+	Zenith_Physics::LockRotation(xPlayerCollider.GetBodyID(), true, false, true);
 
 	// Add script component with Combat behaviour
 	Zenith_ScriptComponent& xScript = xCombatEntity.AddComponent<Zenith_ScriptComponent>();

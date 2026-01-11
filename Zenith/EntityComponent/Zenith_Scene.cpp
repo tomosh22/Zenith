@@ -25,6 +25,7 @@
 #ifdef ZENITH_TOOLS
 #include "Flux/Gizmos/Flux_Gizmos.h"
 #endif
+#include "Physics/Zenith_Physics.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
 #include "DataStream/Zenith_DataStream.h"
 #include "Prefab/Zenith_Prefab.h"
@@ -341,7 +342,12 @@ void Zenith_Scene::LoadFromFile(const std::string& strFilename)
 
 	// Clear the current scene (destroys components and their descriptors)
 	// Safe now because command lists no longer reference them
+	// Note: This destroys collider components which remove their bodies from physics
 	Reset();
+
+	// Reset physics world to clear any stale bodies that weren't properly cleaned up
+	// Must happen AFTER scene Reset() so collider destructors can remove their bodies first
+	Zenith_Physics::Reset();
 
 	// Read file into data stream
 	Zenith_DataStream xStream;

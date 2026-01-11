@@ -11,10 +11,14 @@
 #include "Flux/Flux_MaterialAsset.h"
 #include "Flux/Flux.h"
 #include "AssetHandling/Zenith_AssetHandler.h"
+#include "AssetHandling/Zenith_AssetDatabase.h"
 #include "AssetHandling/Zenith_DataAssetManager.h"
 #include "Prefab/Zenith_Prefab.h"
 
 #include <cmath>
+#include <random>
+#include <vector>
+#include <filesystem>
 
 // ============================================================================
 // Survival Resources - Global access for behaviours
@@ -43,38 +47,40 @@ namespace Survival
 	Zenith_Prefab* g_pxDroppedItemPrefab = nullptr;
 }
 
-static Flux_Texture* s_pxPlayerTexture = nullptr;
-static Flux_Texture* s_pxGroundTexture = nullptr;
-static Flux_Texture* s_pxTreeTexture = nullptr;
-static Flux_Texture* s_pxRockTexture = nullptr;
-static Flux_Texture* s_pxBerryTexture = nullptr;
-static Flux_Texture* s_pxWoodTexture = nullptr;
-static Flux_Texture* s_pxStoneTexture = nullptr;
 static bool s_bResourcesInitialized = false;
 
 // ============================================================================
 // Procedural Texture Generation
 // ============================================================================
-static Flux_Texture* CreateColoredTexture(uint8_t uR, uint8_t uG, uint8_t uB)
-{
-	Flux_SurfaceInfo xTexInfo;
-	xTexInfo.m_eFormat = TEXTURE_FORMAT_RGBA8_UNORM;
-	xTexInfo.m_uWidth = 1;
-	xTexInfo.m_uHeight = 1;
-	xTexInfo.m_uDepth = 1;
-	xTexInfo.m_uNumMips = 1;
-	xTexInfo.m_uNumLayers = 1;
-	xTexInfo.m_uMemoryFlags = 1 << MEMORY_FLAGS__SHADER_READ;
 
+// Export a 1x1 colored texture to disk and return a TextureRef with its GUID
+static TextureRef ExportColoredTexture(const std::string& strPath, uint8_t uR, uint8_t uG, uint8_t uB)
+{
+	// Create texture data
 	uint8_t aucPixelData[] = { uR, uG, uB, 255 };
 
-	Zenith_AssetHandler::TextureData xTexData;
-	xTexData.pData = aucPixelData;
-	xTexData.xSurfaceInfo = xTexInfo;
-	xTexData.bCreateMips = false;
-	xTexData.bIsCubemap = false;
+	// Write to .ztex file format (same as Zenith_Tools_TextureExport::ExportFromData)
+	Zenith_DataStream xStream;
+	xStream << (int32_t)1;  // width
+	xStream << (int32_t)1;  // height
+	xStream << (int32_t)1;  // depth
+	xStream << (TextureFormat)TEXTURE_FORMAT_RGBA8_UNORM;
+	xStream << (size_t)4;   // data size (1x1x4 bytes)
+	xStream.WriteData(aucPixelData, 4);
+	xStream.WriteToFile(strPath.c_str());
 
-	return Zenith_AssetHandler::AddTexture(xTexData);
+	// Import into asset database to get GUID
+	Zenith_AssetGUID xGUID = Zenith_AssetDatabase::ImportAsset(strPath);
+	if (!xGUID.IsValid())
+	{
+		Zenith_Error(LOG_CATEGORY_ASSET, "[Survival] Failed to import texture: %s", strPath.c_str());
+		return TextureRef();
+	}
+
+	// Create TextureRef with the GUID
+	TextureRef xRef;
+	xRef.SetGUID(xGUID);
+	return xRef;
 }
 
 // ============================================================================
@@ -334,46 +340,69 @@ static void InitializeSurvivalResources()
 
 	using namespace Survival;
 
+	// Create directory for procedural meshes
+	std::string strMeshDir = std::string(GAME_ASSETS_DIR) + "/Meshes";
+	std::filesystem::create_directories(strMeshDir);
+
 	// Create geometries
 	g_pxCubeGeometry = new Flux_MeshGeometry();
 	Flux_MeshGeometry::GenerateUnitCube(*g_pxCubeGeometry);
+#ifdef ZENITH_TOOLS
+	std::string strCubePath = strMeshDir + "/Cube.zmesh";
+	g_pxCubeGeometry->Export(strCubePath.c_str());
+	g_pxCubeGeometry->m_strSourcePath = strCubePath;
+#endif
 
 	g_pxSphereGeometry = new Flux_MeshGeometry();
 	GenerateUVSphere(*g_pxSphereGeometry, 0.5f, 16, 12);
+#ifdef ZENITH_TOOLS
+	std::string strSpherePath = strMeshDir + "/Sphere.zmesh";
+	g_pxSphereGeometry->Export(strSpherePath.c_str());
+	g_pxSphereGeometry->m_strSourcePath = strSpherePath;
+#endif
 
 	g_pxCapsuleGeometry = new Flux_MeshGeometry();
 	GenerateCapsule(*g_pxCapsuleGeometry, 0.3f, 1.6f, 12, 6);
+#ifdef ZENITH_TOOLS
+	std::string strCapsulePath = strMeshDir + "/Capsule.zmesh";
+	g_pxCapsuleGeometry->Export(strCapsulePath.c_str());
+	g_pxCapsuleGeometry->m_strSourcePath = strCapsulePath;
+#endif
 
-	// Create textures (procedural single-color pixels)
-	s_pxPlayerTexture = CreateColoredTexture(51, 102, 230);      // Blue player
-	s_pxGroundTexture = CreateColoredTexture(90, 70, 50);        // Brown ground
-	s_pxTreeTexture = CreateColoredTexture(40, 120, 40);         // Green tree
-	s_pxRockTexture = CreateColoredTexture(120, 120, 130);       // Gray rock
-	s_pxBerryTexture = CreateColoredTexture(200, 50, 80);        // Red berries
-	s_pxWoodTexture = CreateColoredTexture(139, 90, 43);         // Brown wood
-	s_pxStoneTexture = CreateColoredTexture(100, 100, 110);      // Gray stone item
+	// Create textures directory
+	std::string strTexturesDir = std::string(GAME_ASSETS_DIR) + "/Textures";
+	std::filesystem::create_directories(strTexturesDir);
 
-	// Create materials
+	// Export procedural textures to disk and get TextureRefs
+	TextureRef xPlayerTextureRef = ExportColoredTexture(strTexturesDir + "/Player.ztex", 51, 102, 230);      // Blue player
+	TextureRef xGroundTextureRef = ExportColoredTexture(strTexturesDir + "/Ground.ztex", 90, 70, 50);        // Brown ground
+	TextureRef xTreeTextureRef = ExportColoredTexture(strTexturesDir + "/Tree.ztex", 40, 120, 40);           // Green tree
+	TextureRef xRockTextureRef = ExportColoredTexture(strTexturesDir + "/Rock.ztex", 120, 120, 130);         // Gray rock
+	TextureRef xBerryTextureRef = ExportColoredTexture(strTexturesDir + "/Berry.ztex", 200, 50, 80);         // Red berries
+	TextureRef xWoodTextureRef = ExportColoredTexture(strTexturesDir + "/Wood.ztex", 139, 90, 43);           // Brown wood
+	TextureRef xStoneTextureRef = ExportColoredTexture(strTexturesDir + "/Stone.ztex", 100, 100, 110);       // Gray stone item
+
+	// Create materials with TextureRefs (properly serializable)
 	g_pxPlayerMaterial = Flux_MaterialAsset::Create("SurvivalPlayer");
-	g_pxPlayerMaterial->SetDiffuseTexture(s_pxPlayerTexture);
+	g_pxPlayerMaterial->SetDiffuseTextureRef(xPlayerTextureRef);
 
 	g_pxGroundMaterial = Flux_MaterialAsset::Create("SurvivalGround");
-	g_pxGroundMaterial->SetDiffuseTexture(s_pxGroundTexture);
+	g_pxGroundMaterial->SetDiffuseTextureRef(xGroundTextureRef);
 
 	g_pxTreeMaterial = Flux_MaterialAsset::Create("SurvivalTree");
-	g_pxTreeMaterial->SetDiffuseTexture(s_pxTreeTexture);
+	g_pxTreeMaterial->SetDiffuseTextureRef(xTreeTextureRef);
 
 	g_pxRockMaterial = Flux_MaterialAsset::Create("SurvivalRock");
-	g_pxRockMaterial->SetDiffuseTexture(s_pxRockTexture);
+	g_pxRockMaterial->SetDiffuseTextureRef(xRockTextureRef);
 
 	g_pxBerryMaterial = Flux_MaterialAsset::Create("SurvivalBerry");
-	g_pxBerryMaterial->SetDiffuseTexture(s_pxBerryTexture);
+	g_pxBerryMaterial->SetDiffuseTextureRef(xBerryTextureRef);
 
 	g_pxWoodMaterial = Flux_MaterialAsset::Create("SurvivalWood");
-	g_pxWoodMaterial->SetDiffuseTexture(s_pxWoodTexture);
+	g_pxWoodMaterial->SetDiffuseTextureRef(xWoodTextureRef);
 
 	g_pxStoneMaterial = Flux_MaterialAsset::Create("SurvivalStone");
-	g_pxStoneMaterial->SetDiffuseTexture(s_pxStoneTexture);
+	g_pxStoneMaterial->SetDiffuseTextureRef(xStoneTextureRef);
 
 	// Create prefabs for runtime instantiation
 	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
@@ -583,6 +612,135 @@ void Project_LoadInitialScene()
 	// Add script component with Survival behaviour
 	Zenith_ScriptComponent& xScript = xSurvivalEntity.AddComponent<Zenith_ScriptComponent>();
 	xScript.SetBehaviour<Survival_Behaviour>();
+
+	// ========================================================================
+	// Create Ground
+	// ========================================================================
+	Zenith_Entity xGround(&xScene, "Ground");
+	xGround.SetTransient(false);
+
+	Zenith_TransformComponent& xGroundTransform = xGround.GetComponent<Zenith_TransformComponent>();
+	xGroundTransform.SetPosition(Zenith_Maths::Vector3(0.f, -0.5f, 0.f));
+	xGroundTransform.SetScale(Zenith_Maths::Vector3(100.f, 1.f, 100.f));
+
+	Zenith_ModelComponent& xGroundModel = xGround.AddComponent<Zenith_ModelComponent>();
+	xGroundModel.AddMeshEntry(*Survival::g_pxCubeGeometry, *Survival::g_pxGroundMaterial);
+
+	// ========================================================================
+	// Create Player
+	// ========================================================================
+	static constexpr float s_fPlayerHeightLocal = 1.6f;
+
+	Zenith_Entity xPlayer = Zenith_Scene::Instantiate(*Survival::g_pxPlayerPrefab, "Player");
+	xPlayer.SetTransient(false);
+
+	Zenith_TransformComponent& xPlayerTransform = xPlayer.GetComponent<Zenith_TransformComponent>();
+	xPlayerTransform.SetPosition(Zenith_Maths::Vector3(0.f, s_fPlayerHeightLocal * 0.5f, 0.f));
+	xPlayerTransform.SetScale(Zenith_Maths::Vector3(1.f));
+
+	Zenith_ModelComponent& xPlayerModel = xPlayer.AddComponent<Zenith_ModelComponent>();
+	xPlayerModel.AddMeshEntry(*Survival::g_pxCapsuleGeometry, *Survival::g_pxPlayerMaterial);
+
+	// ========================================================================
+	// Create Resource Nodes (deterministic positions using fixed seed)
+	// ========================================================================
+	static constexpr uint32_t s_uTreeCount = 15;
+	static constexpr uint32_t s_uRockCount = 10;
+	static constexpr uint32_t s_uBerryCount = 8;
+	static constexpr float s_fWorldRadius = 40.f;
+	static constexpr float s_fMinDistance = 5.f;
+
+	std::mt19937 xRng(12345);  // Fixed seed for reproducible layout
+	std::uniform_real_distribution<float> xAngleDist(0.f, 6.28318f);
+	std::uniform_real_distribution<float> xRadiusDist(8.f, s_fWorldRadius);
+
+	std::vector<Zenith_Maths::Vector3> axPositions;
+
+	auto GeneratePosition = [&]() -> Zenith_Maths::Vector3
+	{
+		for (int iTry = 0; iTry < 50; iTry++)
+		{
+			float fAngle = xAngleDist(xRng);
+			float fRadius = xRadiusDist(xRng);
+			Zenith_Maths::Vector3 xPos(cos(fAngle) * fRadius, 0.f, sin(fAngle) * fRadius);
+
+			bool bValid = true;
+			for (const auto& xExisting : axPositions)
+			{
+				if (glm::distance(xPos, xExisting) < s_fMinDistance)
+				{
+					bValid = false;
+					break;
+				}
+			}
+
+			if (bValid)
+			{
+				axPositions.push_back(xPos);
+				return xPos;
+			}
+		}
+		float fAngle = xAngleDist(xRng);
+		float fRadius = xRadiusDist(xRng);
+		return Zenith_Maths::Vector3(cos(fAngle) * fRadius, 0.f, sin(fAngle) * fRadius);
+	};
+
+	// Create trees
+	for (uint32_t i = 0; i < s_uTreeCount; i++)
+	{
+		Zenith_Maths::Vector3 xPos = GeneratePosition();
+		Zenith_Maths::Vector3 xScale(1.5f, 4.f, 1.5f);
+
+		char szName[32];
+		snprintf(szName, sizeof(szName), "Tree_%u", i);
+		Zenith_Entity xTree = Zenith_Scene::Instantiate(*Survival::g_pxTreePrefab, szName);
+		xTree.SetTransient(false);
+
+		Zenith_TransformComponent& xTreeTransform = xTree.GetComponent<Zenith_TransformComponent>();
+		xTreeTransform.SetPosition(xPos + Zenith_Maths::Vector3(0.f, xScale.y * 0.5f, 0.f));
+		xTreeTransform.SetScale(xScale);
+
+		Zenith_ModelComponent& xTreeModel = xTree.AddComponent<Zenith_ModelComponent>();
+		xTreeModel.AddMeshEntry(*Survival::g_pxCubeGeometry, *Survival::g_pxTreeMaterial);
+	}
+
+	// Create rocks
+	for (uint32_t i = 0; i < s_uRockCount; i++)
+	{
+		Zenith_Maths::Vector3 xPos = GeneratePosition();
+		Zenith_Maths::Vector3 xScale(2.f, 1.5f, 2.f);
+
+		char szName[32];
+		snprintf(szName, sizeof(szName), "Rock_%u", i);
+		Zenith_Entity xRock = Zenith_Scene::Instantiate(*Survival::g_pxRockPrefab, szName);
+		xRock.SetTransient(false);
+
+		Zenith_TransformComponent& xRockTransform = xRock.GetComponent<Zenith_TransformComponent>();
+		xRockTransform.SetPosition(xPos + Zenith_Maths::Vector3(0.f, xScale.y * 0.5f, 0.f));
+		xRockTransform.SetScale(xScale);
+
+		Zenith_ModelComponent& xRockModel = xRock.AddComponent<Zenith_ModelComponent>();
+		xRockModel.AddMeshEntry(*Survival::g_pxSphereGeometry, *Survival::g_pxRockMaterial);
+	}
+
+	// Create berry bushes
+	for (uint32_t i = 0; i < s_uBerryCount; i++)
+	{
+		Zenith_Maths::Vector3 xPos = GeneratePosition();
+		Zenith_Maths::Vector3 xScale(1.2f, 1.f, 1.2f);
+
+		char szName[32];
+		snprintf(szName, sizeof(szName), "BerryBush_%u", i);
+		Zenith_Entity xBush = Zenith_Scene::Instantiate(*Survival::g_pxBerryBushPrefab, szName);
+		xBush.SetTransient(false);
+
+		Zenith_TransformComponent& xBushTransform = xBush.GetComponent<Zenith_TransformComponent>();
+		xBushTransform.SetPosition(xPos + Zenith_Maths::Vector3(0.f, xScale.y * 0.5f, 0.f));
+		xBushTransform.SetScale(xScale);
+
+		Zenith_ModelComponent& xBushModel = xBush.AddComponent<Zenith_ModelComponent>();
+		xBushModel.AddMeshEntry(*Survival::g_pxSphereGeometry, *Survival::g_pxBerryMaterial);
+	}
 
 	// Save the scene file
 	std::string strScenePath = std::string(GAME_ASSETS_DIR) + "/Scenes/Survival.zscn";

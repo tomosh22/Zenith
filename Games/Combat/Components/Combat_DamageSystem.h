@@ -105,11 +105,18 @@ public:
 	/**
 	 * Initialize - Set up event listeners
 	 * Call once at game startup.
+	 * Safe to call multiple times - resets health data for new play sessions.
 	 */
 	static void Initialize()
 	{
 		if (s_bInitialized)
+		{
+			// Already initialized, but reset health data for new play session.
+			// This clears stale entity IDs from previous sessions while keeping
+			// the event subscription active.
+			Reset();
 			return;
+		}
 
 		// Subscribe to damage events
 		s_uDamageEventHandle = Zenith_EventDispatcher::Get().SubscribeLambda<Combat_DamageEvent>(

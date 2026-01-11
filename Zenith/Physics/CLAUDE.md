@@ -57,3 +57,26 @@ Green wireframe overlay rendered via `Flux_Primitives`. Controlled by `g_xPhysic
 **Gravity:** Per-body gravity control via `SetGravityEnabled()`. Default gravity is -9.81 m/s² on Y-axis (down in left-handed coordinates).
 
 **Body Limits:** Max 65536 bodies, 65536 body pairs, 10240 contact constraints. Configured via constants in implementation file.
+
+## Scene Load/Reset Integration
+
+**CRITICAL:** In `Zenith_Scene::LoadFromFile()`, `Zenith_Physics::Reset()` must be called AFTER `Scene::Reset()`.
+
+**Why This Order Matters:**
+- Scene reset destroys entities including their `Zenith_ColliderComponent`
+- Collider destructors call `BodyInterface::DestroyBody()` to remove their physics bodies
+- If physics is reset FIRST, the bodies no longer exist and Jolt asserts on destruction
+- If physics is NOT reset at all, stale bodies from previous play sessions remain, causing invisible collisions
+
+**Symptom of Missing Physics Reset:**
+- First play works correctly
+- After Stop→Play: entities blocked by invisible colliders from previous session
+- Debug shows entities stopping at unexpected distances (e.g., 1.27 instead of expected 0.57)
+
+## Quaternion Normalization
+
+Jolt Physics requires quaternions to be normalized. Always call `glm::normalize()` on quaternions before passing them to `SetRotation()`, especially after using `glm::slerp()` which can produce slightly denormalized results.
+
+**Symptom of Denormalized Quaternion:**
+- Jolt assertion: `Quat.inl: (IsNormalized())`
+- Usually occurs in `SetRotation()` or `SetPositionAndRotationInternal()`
