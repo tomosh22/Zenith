@@ -30,7 +30,8 @@ public:
 
 	static Flux_Texture s_xWhiteBlankTexture2D;
 	static Flux_Texture s_xBlackBlankTexture2D;
-	
+	static Flux_Texture s_xGridPatternTexture2D;  // 2x2 greyscale grid for procedural materials
+
 	static Flux_MeshGeometry s_xBlankMesh;
 	static class Flux_MaterialAsset* s_pxBlankMaterial;
 

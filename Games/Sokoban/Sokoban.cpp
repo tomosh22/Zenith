@@ -9,6 +9,7 @@
 #include "EntityComponent/Components/Zenith_ParticleEmitterComponent.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "Flux/Flux_MaterialAsset.h"
+#include "Flux/Flux_Graphics.h"
 #include "Flux/Particles/Flux_ParticleEmitterConfig.h"
 #include "AssetHandling/Zenith_AssetHandler.h"
 #include "AssetHandling/Zenith_DataAssetManager.h"
@@ -37,35 +38,7 @@ namespace Sokoban
 	Zenith_EntityID g_uDustEmitterID = INVALID_ENTITY_ID;
 }
 
-static Flux_Texture* s_pxFloorTexture = nullptr;
-static Flux_Texture* s_pxWallTexture = nullptr;
-static Flux_Texture* s_pxBoxTexture = nullptr;
-static Flux_Texture* s_pxBoxOnTargetTexture = nullptr;
-static Flux_Texture* s_pxPlayerTexture = nullptr;
-static Flux_Texture* s_pxTargetTexture = nullptr;
 static bool s_bResourcesInitialized = false;
-
-static Flux_Texture* CreateColoredTexture(uint8_t uR, uint8_t uG, uint8_t uB)
-{
-	Flux_SurfaceInfo xTexInfo;
-	xTexInfo.m_eFormat = TEXTURE_FORMAT_RGBA8_UNORM;
-	xTexInfo.m_uWidth = 1;
-	xTexInfo.m_uHeight = 1;
-	xTexInfo.m_uDepth = 1;
-	xTexInfo.m_uNumMips = 1;
-	xTexInfo.m_uNumLayers = 1;
-	xTexInfo.m_uMemoryFlags = 1 << MEMORY_FLAGS__SHADER_READ;
-
-	uint8_t aucPixelData[] = { uR, uG, uB, 255 };
-
-	Zenith_AssetHandler::TextureData xTexData;
-	xTexData.pData = aucPixelData;
-	xTexData.xSurfaceInfo = xTexInfo;
-	xTexData.bCreateMips = false;
-	xTexData.bIsCubemap = false;
-
-	return Zenith_AssetHandler::AddTexture(xTexData);
-}
 
 static void InitializeSokobanResources()
 {
@@ -77,30 +50,32 @@ static void InitializeSokobanResources()
 	g_pxCubeGeometry = new Flux_MeshGeometry();
 	Flux_MeshGeometry::GenerateUnitCube(*g_pxCubeGeometry);
 
-	s_pxFloorTexture = CreateColoredTexture(77, 77, 89);
-	s_pxWallTexture = CreateColoredTexture(102, 64, 38);
-	s_pxBoxTexture = CreateColoredTexture(204, 128, 51);
-	s_pxBoxOnTargetTexture = CreateColoredTexture(51, 204, 51);
-	s_pxPlayerTexture = CreateColoredTexture(51, 102, 230);
-	s_pxTargetTexture = CreateColoredTexture(51, 153, 51);
+	// Use grid pattern texture with BaseColor for all materials
+	Flux_Texture* pxGridTex = &Flux_Graphics::s_xGridPatternTexture2D;
 
 	g_pxFloorMaterial = Flux_MaterialAsset::Create("SokobanFloor");
-	g_pxFloorMaterial->SetDiffuseTexture(s_pxFloorTexture);
+	g_pxFloorMaterial->SetDiffuseTexture(pxGridTex);
+	g_pxFloorMaterial->SetBaseColor({ 77.f/255.f, 77.f/255.f, 89.f/255.f, 1.f });
 
 	g_pxWallMaterial = Flux_MaterialAsset::Create("SokobanWall");
-	g_pxWallMaterial->SetDiffuseTexture(s_pxWallTexture);
+	g_pxWallMaterial->SetDiffuseTexture(pxGridTex);
+	g_pxWallMaterial->SetBaseColor({ 102.f/255.f, 64.f/255.f, 38.f/255.f, 1.f });
 
 	g_pxBoxMaterial = Flux_MaterialAsset::Create("SokobanBox");
-	g_pxBoxMaterial->SetDiffuseTexture(s_pxBoxTexture);
+	g_pxBoxMaterial->SetDiffuseTexture(pxGridTex);
+	g_pxBoxMaterial->SetBaseColor({ 204.f/255.f, 128.f/255.f, 51.f/255.f, 1.f });
 
 	g_pxBoxOnTargetMaterial = Flux_MaterialAsset::Create("SokobanBoxOnTarget");
-	g_pxBoxOnTargetMaterial->SetDiffuseTexture(s_pxBoxOnTargetTexture);
+	g_pxBoxOnTargetMaterial->SetDiffuseTexture(pxGridTex);
+	g_pxBoxOnTargetMaterial->SetBaseColor({ 51.f/255.f, 204.f/255.f, 51.f/255.f, 1.f });
 
 	g_pxPlayerMaterial = Flux_MaterialAsset::Create("SokobanPlayer");
-	g_pxPlayerMaterial->SetDiffuseTexture(s_pxPlayerTexture);
+	g_pxPlayerMaterial->SetDiffuseTexture(pxGridTex);
+	g_pxPlayerMaterial->SetBaseColor({ 51.f/255.f, 102.f/255.f, 230.f/255.f, 1.f });
 
 	g_pxTargetMaterial = Flux_MaterialAsset::Create("SokobanTarget");
-	g_pxTargetMaterial->SetDiffuseTexture(s_pxTargetTexture);
+	g_pxTargetMaterial->SetDiffuseTexture(pxGridTex);
+	g_pxTargetMaterial->SetBaseColor({ 51.f/255.f, 153.f/255.f, 51.f/255.f, 1.f });
 
 	// Create prefabs for runtime instantiation
 	// Note: Prefabs don't include ModelComponent because material varies by tile type

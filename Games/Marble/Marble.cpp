@@ -9,6 +9,7 @@
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "Flux/Flux_MaterialAsset.h"
+#include "Flux/Flux_Graphics.h"
 #include "Flux/Flux.h"
 #include "AssetHandling/Zenith_AssetHandler.h"
 #include "AssetHandling/Zenith_DataAssetManager.h"
@@ -36,37 +37,7 @@ namespace Marble
 	Zenith_Prefab* g_pxCollectiblePrefab = nullptr;
 }
 
-static Flux_Texture* s_pxBallTexture = nullptr;
-static Flux_Texture* s_pxPlatformTexture = nullptr;
-static Flux_Texture* s_pxGoalTexture = nullptr;
-static Flux_Texture* s_pxCollectibleTexture = nullptr;
-static Flux_Texture* s_pxFloorTexture = nullptr;
 static bool s_bResourcesInitialized = false;
-
-// ============================================================================
-// Procedural Texture Generation (same pattern as Sokoban)
-// ============================================================================
-static Flux_Texture* CreateColoredTexture(uint8_t uR, uint8_t uG, uint8_t uB)
-{
-	Flux_SurfaceInfo xTexInfo;
-	xTexInfo.m_eFormat = TEXTURE_FORMAT_RGBA8_UNORM;
-	xTexInfo.m_uWidth = 1;
-	xTexInfo.m_uHeight = 1;
-	xTexInfo.m_uDepth = 1;
-	xTexInfo.m_uNumMips = 1;
-	xTexInfo.m_uNumLayers = 1;
-	xTexInfo.m_uMemoryFlags = 1 << MEMORY_FLAGS__SHADER_READ;
-
-	uint8_t aucPixelData[] = { uR, uG, uB, 255 };
-
-	Zenith_AssetHandler::TextureData xTexData;
-	xTexData.pData = aucPixelData;
-	xTexData.xSurfaceInfo = xTexInfo;
-	xTexData.bCreateMips = false;
-	xTexData.bIsCubemap = false;
-
-	return Zenith_AssetHandler::AddTexture(xTexData);
-}
 
 // ============================================================================
 // Procedural UV Sphere Generation
@@ -167,28 +138,29 @@ static void InitializeMarbleResources()
 	g_pxCubeGeometry = new Flux_MeshGeometry();
 	Flux_MeshGeometry::GenerateUnitCube(*g_pxCubeGeometry);
 
-	// Create textures (procedural single-color pixels)
-	s_pxBallTexture = CreateColoredTexture(51, 102, 230);       // Blue ball
-	s_pxPlatformTexture = CreateColoredTexture(102, 102, 102);  // Gray platforms
-	s_pxGoalTexture = CreateColoredTexture(51, 204, 51);        // Green goal
-	s_pxCollectibleTexture = CreateColoredTexture(255, 215, 0); // Gold collectibles
-	s_pxFloorTexture = CreateColoredTexture(77, 77, 89);        // Dark gray floor
+	// Use grid pattern texture with BaseColor for all materials
+	Flux_Texture* pxGridTex = &Flux_Graphics::s_xGridPatternTexture2D;
 
-	// Create materials
+	// Create materials with grid texture and BaseColor
 	g_pxBallMaterial = Flux_MaterialAsset::Create("MarbleBall");
-	g_pxBallMaterial->SetDiffuseTexture(s_pxBallTexture);
+	g_pxBallMaterial->SetDiffuseTexture(pxGridTex);
+	g_pxBallMaterial->SetBaseColor({ 51.f/255.f, 102.f/255.f, 230.f/255.f, 1.f });
 
 	g_pxPlatformMaterial = Flux_MaterialAsset::Create("MarblePlatform");
-	g_pxPlatformMaterial->SetDiffuseTexture(s_pxPlatformTexture);
+	g_pxPlatformMaterial->SetDiffuseTexture(pxGridTex);
+	g_pxPlatformMaterial->SetBaseColor({ 102.f/255.f, 102.f/255.f, 102.f/255.f, 1.f });
 
 	g_pxGoalMaterial = Flux_MaterialAsset::Create("MarbleGoal");
-	g_pxGoalMaterial->SetDiffuseTexture(s_pxGoalTexture);
+	g_pxGoalMaterial->SetDiffuseTexture(pxGridTex);
+	g_pxGoalMaterial->SetBaseColor({ 51.f/255.f, 204.f/255.f, 51.f/255.f, 1.f });
 
 	g_pxCollectibleMaterial = Flux_MaterialAsset::Create("MarbleCollectible");
-	g_pxCollectibleMaterial->SetDiffuseTexture(s_pxCollectibleTexture);
+	g_pxCollectibleMaterial->SetDiffuseTexture(pxGridTex);
+	g_pxCollectibleMaterial->SetBaseColor({ 255.f/255.f, 215.f/255.f, 0.f/255.f, 1.f });
 
 	g_pxFloorMaterial = Flux_MaterialAsset::Create("MarbleFloor");
-	g_pxFloorMaterial->SetDiffuseTexture(s_pxFloorTexture);
+	g_pxFloorMaterial->SetDiffuseTexture(pxGridTex);
+	g_pxFloorMaterial->SetBaseColor({ 77.f/255.f, 77.f/255.f, 89.f/255.f, 1.f });
 
 	// Create prefabs for runtime instantiation
 	// Note: Prefabs are lightweight templates with only TransformComponent

@@ -8,6 +8,7 @@
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "Flux/Flux_MaterialAsset.h"
+#include "Flux/Flux_Graphics.h"
 #include "Vulkan/Zenith_Vulkan_MemoryManager.h"
 #include "AssetHandling/Zenith_AssetHandler.h"
 #include "Prefab/Zenith_Prefab.h"
@@ -39,38 +40,7 @@ namespace TilePuzzle
 	Zenith_Prefab* g_pxCatPrefab = nullptr;
 }
 
-// Static texture pointers
-static Flux_Texture* s_pxFloorTexture = nullptr;
-static Flux_Texture* s_pxBlockerTexture = nullptr;
-static Flux_Texture* s_apxShapeTextures[TILEPUZZLE_COLOR_COUNT] = {};
-static Flux_Texture* s_apxCatTextures[TILEPUZZLE_COLOR_COUNT] = {};
 static bool s_bResourcesInitialized = false;
-
-// ============================================================================
-// Helper Functions
-// ============================================================================
-
-static Flux_Texture* CreateColoredTexture(uint8_t uR, uint8_t uG, uint8_t uB)
-{
-	Flux_SurfaceInfo xTexInfo;
-	xTexInfo.m_eFormat = TEXTURE_FORMAT_RGBA8_UNORM;
-	xTexInfo.m_uWidth = 1;
-	xTexInfo.m_uHeight = 1;
-	xTexInfo.m_uDepth = 1;
-	xTexInfo.m_uNumMips = 1;
-	xTexInfo.m_uNumLayers = 1;
-	xTexInfo.m_uMemoryFlags = 1 << MEMORY_FLAGS__SHADER_READ;
-
-	uint8_t aucPixelData[] = { uR, uG, uB, 255 };
-
-	Zenith_AssetHandler::TextureData xTexData;
-	xTexData.pData = aucPixelData;
-	xTexData.xSurfaceInfo = xTexInfo;
-	xTexData.bCreateMips = false;
-	xTexData.bIsCubemap = false;
-
-	return Zenith_AssetHandler::AddTexture(xTexData);
-}
 
 /**
  * Generate a unit sphere mesh for Flux_MeshGeometry
@@ -180,49 +150,43 @@ static void InitializeTilePuzzleResources()
 	g_pxSphereGeometry = new Flux_MeshGeometry();
 	GenerateUnitSphere(*g_pxSphereGeometry, 16, 32);
 
-	// Create textures
-	// Floor - gray
-	s_pxFloorTexture = CreateColoredTexture(77, 77, 89);
+	// Use grid pattern texture with BaseColor for all materials
+	Flux_Texture* pxGridTex = &Flux_Graphics::s_xGridPatternTexture2D;
 
-	// Blocker - dark brown
-	s_pxBlockerTexture = CreateColoredTexture(80, 50, 30);
-
-	// Colored shape textures
-	s_apxShapeTextures[TILEPUZZLE_COLOR_RED] = CreateColoredTexture(230, 60, 60);
-	s_apxShapeTextures[TILEPUZZLE_COLOR_GREEN] = CreateColoredTexture(60, 200, 60);
-	s_apxShapeTextures[TILEPUZZLE_COLOR_BLUE] = CreateColoredTexture(60, 100, 230);
-	s_apxShapeTextures[TILEPUZZLE_COLOR_YELLOW] = CreateColoredTexture(230, 230, 60);
-
-	// Colored cat textures (same colors as shapes)
-	s_apxCatTextures[TILEPUZZLE_COLOR_RED] = CreateColoredTexture(230, 60, 60);
-	s_apxCatTextures[TILEPUZZLE_COLOR_GREEN] = CreateColoredTexture(60, 200, 60);
-	s_apxCatTextures[TILEPUZZLE_COLOR_BLUE] = CreateColoredTexture(60, 100, 230);
-	s_apxCatTextures[TILEPUZZLE_COLOR_YELLOW] = CreateColoredTexture(230, 230, 60);
-
-	// Create materials
+	// Create materials with grid texture and BaseColor
 	g_pxFloorMaterial = Flux_MaterialAsset::Create("TilePuzzleFloor");
-	g_pxFloorMaterial->SetDiffuseTexture(s_pxFloorTexture);
+	g_pxFloorMaterial->SetDiffuseTexture(pxGridTex);
+	g_pxFloorMaterial->SetBaseColor({ 77.f/255.f, 77.f/255.f, 89.f/255.f, 1.f });
 
 	g_pxBlockerMaterial = Flux_MaterialAsset::Create("TilePuzzleBlocker");
-	g_pxBlockerMaterial->SetDiffuseTexture(s_pxBlockerTexture);
+	g_pxBlockerMaterial->SetDiffuseTexture(pxGridTex);
+	g_pxBlockerMaterial->SetBaseColor({ 80.f/255.f, 50.f/255.f, 30.f/255.f, 1.f });
 
-	// Shape materials
+	// Shape materials with distinct colors
 	const char* aszShapeColorNames[] = { "Red", "Green", "Blue", "Yellow" };
+	const Zenith_Maths::Vector4 axShapeColors[] = {
+		{ 230.f/255.f, 60.f/255.f, 60.f/255.f, 1.f },    // Red
+		{ 60.f/255.f, 200.f/255.f, 60.f/255.f, 1.f },    // Green
+		{ 60.f/255.f, 100.f/255.f, 230.f/255.f, 1.f },   // Blue
+		{ 230.f/255.f, 230.f/255.f, 60.f/255.f, 1.f }    // Yellow
+	};
 	for (uint32_t i = 0; i < TILEPUZZLE_COLOR_COUNT; ++i)
 	{
 		char szName[64];
 		snprintf(szName, sizeof(szName), "TilePuzzleShape%s", aszShapeColorNames[i]);
 		g_apxShapeMaterials[i] = Flux_MaterialAsset::Create(szName);
-		g_apxShapeMaterials[i]->SetDiffuseTexture(s_apxShapeTextures[i]);
+		g_apxShapeMaterials[i]->SetDiffuseTexture(pxGridTex);
+		g_apxShapeMaterials[i]->SetBaseColor(axShapeColors[i]);
 	}
 
-	// Cat materials
+	// Cat materials (same colors as shapes)
 	for (uint32_t i = 0; i < TILEPUZZLE_COLOR_COUNT; ++i)
 	{
 		char szName[64];
 		snprintf(szName, sizeof(szName), "TilePuzzleCat%s", aszShapeColorNames[i]);
 		g_apxCatMaterials[i] = Flux_MaterialAsset::Create(szName);
-		g_apxCatMaterials[i]->SetDiffuseTexture(s_apxCatTextures[i]);
+		g_apxCatMaterials[i]->SetDiffuseTexture(pxGridTex);
+		g_apxCatMaterials[i]->SetBaseColor(axShapeColors[i]);
 	}
 
 	// Create prefabs for runtime instantiation

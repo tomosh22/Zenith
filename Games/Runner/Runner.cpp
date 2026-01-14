@@ -8,6 +8,7 @@
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "Flux/Flux_MaterialAsset.h"
+#include "Flux/Flux_Graphics.h"
 #include "AssetHandling/Zenith_AssetHandler.h"
 #include "AssetHandling/Zenith_DataAssetManager.h"
 #include "Prefab/Zenith_Prefab.h"
@@ -37,38 +38,7 @@ namespace Runner
 	Zenith_Prefab* g_pxParticlePrefab = nullptr;
 }
 
-static Flux_Texture* s_pxCharacterTexture = nullptr;
-static Flux_Texture* s_pxGroundTexture = nullptr;
-static Flux_Texture* s_pxObstacleTexture = nullptr;
-static Flux_Texture* s_pxCollectibleTexture = nullptr;
-static Flux_Texture* s_pxDustTexture = nullptr;
-static Flux_Texture* s_pxCollectParticleTexture = nullptr;
 static bool s_bResourcesInitialized = false;
-
-// ============================================================================
-// Procedural Texture Generation
-// ============================================================================
-static Flux_Texture* CreateColoredTexture(uint8_t uR, uint8_t uG, uint8_t uB)
-{
-	Flux_SurfaceInfo xTexInfo;
-	xTexInfo.m_eFormat = TEXTURE_FORMAT_RGBA8_UNORM;
-	xTexInfo.m_uWidth = 1;
-	xTexInfo.m_uHeight = 1;
-	xTexInfo.m_uDepth = 1;
-	xTexInfo.m_uNumMips = 1;
-	xTexInfo.m_uNumLayers = 1;
-	xTexInfo.m_uMemoryFlags = 1 << MEMORY_FLAGS__SHADER_READ;
-
-	uint8_t aucPixelData[] = { uR, uG, uB, 255 };
-
-	Zenith_AssetHandler::TextureData xTexData;
-	xTexData.pData = aucPixelData;
-	xTexData.xSurfaceInfo = xTexInfo;
-	xTexData.bCreateMips = false;
-	xTexData.bIsCubemap = false;
-
-	return Zenith_AssetHandler::AddTexture(xTexData);
-}
 
 // ============================================================================
 // Procedural Capsule Geometry Generation
@@ -357,32 +327,33 @@ static void InitializeRunnerResources()
 	g_pxSphereGeometry = new Flux_MeshGeometry();
 	GenerateUVSphere(*g_pxSphereGeometry, 0.5f, 16, 12);
 
-	// Create textures (procedural single-color pixels)
-	s_pxCharacterTexture = CreateColoredTexture(51, 153, 255);       // Blue character
-	s_pxGroundTexture = CreateColoredTexture(102, 77, 51);          // Brown ground
-	s_pxObstacleTexture = CreateColoredTexture(204, 51, 51);        // Red obstacles
-	s_pxCollectibleTexture = CreateColoredTexture(255, 215, 0);     // Gold collectibles
-	s_pxDustTexture = CreateColoredTexture(180, 150, 100);          // Tan dust
-	s_pxCollectParticleTexture = CreateColoredTexture(255, 255, 150); // Light yellow sparkle
+	// Use grid pattern texture with BaseColor for all materials
+	Flux_Texture* pxGridTex = &Flux_Graphics::s_xGridPatternTexture2D;
 
-	// Create materials
+	// Create materials with grid texture and BaseColor
 	g_pxCharacterMaterial = Flux_MaterialAsset::Create("RunnerCharacter");
-	g_pxCharacterMaterial->SetDiffuseTexture(s_pxCharacterTexture);
+	g_pxCharacterMaterial->SetDiffuseTexture(pxGridTex);
+	g_pxCharacterMaterial->SetBaseColor({ 51.f/255.f, 153.f/255.f, 255.f/255.f, 1.f });
 
 	g_pxGroundMaterial = Flux_MaterialAsset::Create("RunnerGround");
-	g_pxGroundMaterial->SetDiffuseTexture(s_pxGroundTexture);
+	g_pxGroundMaterial->SetDiffuseTexture(pxGridTex);
+	g_pxGroundMaterial->SetBaseColor({ 102.f/255.f, 77.f/255.f, 51.f/255.f, 1.f });
 
 	g_pxObstacleMaterial = Flux_MaterialAsset::Create("RunnerObstacle");
-	g_pxObstacleMaterial->SetDiffuseTexture(s_pxObstacleTexture);
+	g_pxObstacleMaterial->SetDiffuseTexture(pxGridTex);
+	g_pxObstacleMaterial->SetBaseColor({ 204.f/255.f, 51.f/255.f, 51.f/255.f, 1.f });
 
 	g_pxCollectibleMaterial = Flux_MaterialAsset::Create("RunnerCollectible");
-	g_pxCollectibleMaterial->SetDiffuseTexture(s_pxCollectibleTexture);
+	g_pxCollectibleMaterial->SetDiffuseTexture(pxGridTex);
+	g_pxCollectibleMaterial->SetBaseColor({ 255.f/255.f, 215.f/255.f, 0.f/255.f, 1.f });
 
 	g_pxDustMaterial = Flux_MaterialAsset::Create("RunnerDust");
-	g_pxDustMaterial->SetDiffuseTexture(s_pxDustTexture);
+	g_pxDustMaterial->SetDiffuseTexture(pxGridTex);
+	g_pxDustMaterial->SetBaseColor({ 180.f/255.f, 150.f/255.f, 100.f/255.f, 1.f });
 
 	g_pxCollectParticleMaterial = Flux_MaterialAsset::Create("RunnerCollectParticle");
-	g_pxCollectParticleMaterial->SetDiffuseTexture(s_pxCollectParticleTexture);
+	g_pxCollectParticleMaterial->SetDiffuseTexture(pxGridTex);
+	g_pxCollectParticleMaterial->SetBaseColor({ 255.f/255.f, 255.f/255.f, 150.f/255.f, 1.f });
 
 	// Create prefabs for runtime instantiation
 	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();

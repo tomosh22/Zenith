@@ -682,6 +682,73 @@ void Zenith_ModelComponent::RenderPropertiesPanel()
 							pxMaterial->SetEmissiveIntensity(fEmissiveIntensity);
 						}
 
+						ImGui::Separator();
+
+						// Transparency
+						bool bTransparent = pxMaterial->IsTransparent();
+						if (ImGui::Checkbox("Transparent", &bTransparent))
+						{
+							pxMaterial->SetTransparent(bTransparent);
+						}
+
+						if (bTransparent)
+						{
+							float fAlphaCutoff = pxMaterial->GetAlphaCutoff();
+							if (ImGui::SliderFloat("Alpha Cutoff", &fAlphaCutoff, 0.0f, 1.0f))
+							{
+								pxMaterial->SetAlphaCutoff(fAlphaCutoff);
+							}
+						}
+
+						ImGui::Separator();
+
+						// UV Controls
+						Zenith_Maths::Vector2 xTiling = pxMaterial->GetUVTiling();
+						float fTiling[2] = { xTiling.x, xTiling.y };
+						if (ImGui::DragFloat2("UV Tiling", fTiling, 0.01f, 0.01f, 100.0f))
+						{
+							pxMaterial->SetUVTiling({ fTiling[0], fTiling[1] });
+						}
+
+						Zenith_Maths::Vector2 xOffset = pxMaterial->GetUVOffset();
+						float fOffset[2] = { xOffset.x, xOffset.y };
+						if (ImGui::DragFloat2("UV Offset", fOffset, 0.01f, -100.0f, 100.0f))
+						{
+							pxMaterial->SetUVOffset({ fOffset[0], fOffset[1] });
+						}
+
+						// Occlusion Strength
+						float fOccStrength = pxMaterial->GetOcclusionStrength();
+						if (ImGui::SliderFloat("Occlusion Strength", &fOccStrength, 0.0f, 1.0f))
+						{
+							pxMaterial->SetOcclusionStrength(fOccStrength);
+						}
+
+						ImGui::Separator();
+
+						// Rendering flags
+						bool bTwoSided = pxMaterial->IsTwoSided();
+						if (ImGui::Checkbox("Two-Sided", &bTwoSided))
+						{
+							pxMaterial->SetTwoSided(bTwoSided);
+						}
+						if (ImGui::IsItemHovered())
+						{
+							ImGui::SetTooltip("Render both front and back faces");
+						}
+
+						bool bUnlit = pxMaterial->IsUnlit();
+						if (ImGui::Checkbox("Unlit", &bUnlit))
+						{
+							pxMaterial->SetUnlit(bUnlit);
+						}
+						if (ImGui::IsItemHovered())
+						{
+							ImGui::SetTooltip("Skip lighting calculations");
+						}
+
+						ImGui::Separator();
+
 						// Texture slots
 						RenderTextureSlot("Diffuse", *pxMaterial, uMeshIdx, TEXTURE_SLOT_DIFFUSE);
 						RenderTextureSlot("Normal", *pxMaterial, uMeshIdx, TEXTURE_SLOT_NORMAL);
@@ -767,6 +834,73 @@ void Zenith_ModelComponent::RenderPropertiesPanel()
 					{
 						pxMaterial->SetEmissiveIntensity(fEmissiveIntensity);
 					}
+
+					ImGui::Separator();
+
+					// Transparency
+					bool bTransparent = pxMaterial->IsTransparent();
+					if (ImGui::Checkbox("Transparent", &bTransparent))
+					{
+						pxMaterial->SetTransparent(bTransparent);
+					}
+
+					if (bTransparent)
+					{
+						float fAlphaCutoff = pxMaterial->GetAlphaCutoff();
+						if (ImGui::SliderFloat("Alpha Cutoff", &fAlphaCutoff, 0.0f, 1.0f))
+						{
+							pxMaterial->SetAlphaCutoff(fAlphaCutoff);
+						}
+					}
+
+					ImGui::Separator();
+
+					// UV Controls
+					Zenith_Maths::Vector2 xTiling = pxMaterial->GetUVTiling();
+					float fTiling[2] = { xTiling.x, xTiling.y };
+					if (ImGui::DragFloat2("UV Tiling", fTiling, 0.01f, 0.01f, 100.0f))
+					{
+						pxMaterial->SetUVTiling({ fTiling[0], fTiling[1] });
+					}
+
+					Zenith_Maths::Vector2 xOffset = pxMaterial->GetUVOffset();
+					float fOffset[2] = { xOffset.x, xOffset.y };
+					if (ImGui::DragFloat2("UV Offset", fOffset, 0.01f, -100.0f, 100.0f))
+					{
+						pxMaterial->SetUVOffset({ fOffset[0], fOffset[1] });
+					}
+
+					// Occlusion Strength
+					float fOccStrength = pxMaterial->GetOcclusionStrength();
+					if (ImGui::SliderFloat("Occlusion Strength", &fOccStrength, 0.0f, 1.0f))
+					{
+						pxMaterial->SetOcclusionStrength(fOccStrength);
+					}
+
+					ImGui::Separator();
+
+					// Rendering flags
+					bool bTwoSided = pxMaterial->IsTwoSided();
+					if (ImGui::Checkbox("Two-Sided", &bTwoSided))
+					{
+						pxMaterial->SetTwoSided(bTwoSided);
+					}
+					if (ImGui::IsItemHovered())
+					{
+						ImGui::SetTooltip("Render both front and back faces");
+					}
+
+					bool bUnlit = pxMaterial->IsUnlit();
+					if (ImGui::Checkbox("Unlit", &bUnlit))
+					{
+						pxMaterial->SetUnlit(bUnlit);
+					}
+					if (ImGui::IsItemHovered())
+					{
+						ImGui::SetTooltip("Skip lighting calculations");
+					}
+
+					ImGui::Separator();
 
 					// Texture slots
 					RenderTextureSlot("Diffuse", *pxMaterial, uMeshIdx, TEXTURE_SLOT_DIFFUSE);

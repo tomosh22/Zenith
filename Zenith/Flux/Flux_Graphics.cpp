@@ -26,6 +26,7 @@ Flux_MeshGeometry Flux_Graphics::s_xQuadMesh;
 Flux_DynamicConstantBuffer Flux_Graphics::s_xFrameConstantsBuffer;
 Flux_Texture Flux_Graphics::s_xWhiteBlankTexture2D;
 Flux_Texture Flux_Graphics::s_xBlackBlankTexture2D;
+Flux_Texture Flux_Graphics::s_xGridPatternTexture2D;
 Flux_MeshGeometry Flux_Graphics::s_xBlankMesh;
 Flux_MaterialAsset* Flux_Graphics::s_pxBlankMaterial;
 Flux_Texture* Flux_Graphics::s_pxCubemapTexture = nullptr;
@@ -82,6 +83,47 @@ void Flux_Graphics::Initialise()
 	xBlackTexData.bIsCubemap = false;
 	Flux_Texture* pxBlackTex = Zenith_AssetHandler::AddTexture(xBlackTexData);
 	if (pxBlackTex) s_xBlackBlankTexture2D = *pxBlackTex;
+
+	// Create 64x64 greyscale grid pattern texture for procedural materials
+	// This allows materials to use BaseColor for tinting instead of colored 1x1 textures
+	// Each 32x32 quadrant is a uniform color, creating a checkerboard pattern
+	Flux_SurfaceInfo xGridTexInfo;
+	xGridTexInfo.m_eFormat = TEXTURE_FORMAT_RGBA8_UNORM;
+	xGridTexInfo.m_uWidth = 64;
+	xGridTexInfo.m_uHeight = 64;
+	xGridTexInfo.m_uDepth = 1;
+	xGridTexInfo.m_uNumMips = 1;
+	xGridTexInfo.m_uNumLayers = 1;
+	xGridTexInfo.m_uMemoryFlags = 1 << MEMORY_FLAGS__SHADER_READ;
+
+	// 64x64 checkerboard pattern with 32x32 quadrants
+	// Light grey (200) in top-left and bottom-right, dark grey (150) in top-right and bottom-left
+	u_int8 aucGridTexData[64 * 64 * 4];
+	for (u_int uY = 0; uY < 64; ++uY)
+	{
+		for (u_int uX = 0; uX < 64; ++uX)
+		{
+			// Determine quadrant: top-left/bottom-right = light, top-right/bottom-left = dark
+			bool bTopHalf = (uY < 32);
+			bool bLeftHalf = (uX < 32);
+			bool bLightQuadrant = (bTopHalf == bLeftHalf);  // TL or BR
+
+			u_int8 uGreyValue = bLightQuadrant ? 200 : 150;
+			u_int uIdx = (uY * 64 + uX) * 4;
+			aucGridTexData[uIdx + 0] = uGreyValue;  // R
+			aucGridTexData[uIdx + 1] = uGreyValue;  // G
+			aucGridTexData[uIdx + 2] = uGreyValue;  // B
+			aucGridTexData[uIdx + 3] = 255;         // A
+		}
+	}
+
+	Zenith_AssetHandler::TextureData xGridTexData;
+	xGridTexData.pData = aucGridTexData;
+	xGridTexData.xSurfaceInfo = xGridTexInfo;
+	xGridTexData.bCreateMips = false;
+	xGridTexData.bIsCubemap = false;
+	Flux_Texture* pxGridTex = Zenith_AssetHandler::AddTexture(xGridTexData);
+	if (pxGridTex) s_xGridPatternTexture2D = *pxGridTex;
 
 	// Create blank material for use as fallback throughout the engine
 	s_pxBlankMaterial = Flux_MaterialAsset::Create("BlankMaterial");

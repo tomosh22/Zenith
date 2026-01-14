@@ -8,6 +8,7 @@
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "Flux/Flux_MaterialAsset.h"
+#include "Flux/Flux_Graphics.h"
 #include "AssetHandling/Zenith_AssetHandler.h"
 #include "AI/Zenith_AIDebugVariables.h"
 #include "AI/Navigation/Zenith_NavMesh.h"
@@ -46,36 +47,7 @@ namespace AIShowcase
 	Zenith_NavMesh* g_pxArenaNavMesh = nullptr;
 }
 
-static Flux_Texture* s_pxFloorTexture = nullptr;
-static Flux_Texture* s_pxWallTexture = nullptr;
-static Flux_Texture* s_pxObstacleTexture = nullptr;
-static Flux_Texture* s_pxPlayerTexture = nullptr;
-static Flux_Texture* s_pxEnemyTexture = nullptr;
-static Flux_Texture* s_pxLeaderTexture = nullptr;
-static Flux_Texture* s_pxFlankerTexture = nullptr;
 static bool s_bResourcesInitialized = false;
-
-static Flux_Texture* CreateColoredTexture(uint8_t uR, uint8_t uG, uint8_t uB)
-{
-	Flux_SurfaceInfo xTexInfo;
-	xTexInfo.m_eFormat = TEXTURE_FORMAT_RGBA8_UNORM;
-	xTexInfo.m_uWidth = 1;
-	xTexInfo.m_uHeight = 1;
-	xTexInfo.m_uDepth = 1;
-	xTexInfo.m_uNumMips = 1;
-	xTexInfo.m_uNumLayers = 1;
-	xTexInfo.m_uMemoryFlags = 1 << MEMORY_FLAGS__SHADER_READ;
-
-	uint8_t aucPixelData[] = { uR, uG, uB, 255 };
-
-	Zenith_AssetHandler::TextureData xTexData;
-	xTexData.pData = aucPixelData;
-	xTexData.xSurfaceInfo = xTexInfo;
-	xTexData.bCreateMips = false;
-	xTexData.bIsCubemap = false;
-
-	return Zenith_AssetHandler::AddTexture(xTexData);
-}
 
 static void InitializeAIShowcaseResources()
 {
@@ -96,43 +68,46 @@ static void InitializeAIShowcaseResources()
 	g_pxCylinderGeometry = new Flux_MeshGeometry();
 	Flux_MeshGeometry::GenerateUnitCube(*g_pxCylinderGeometry);
 
-	// Create textures
-	s_pxFloorTexture = CreateColoredTexture(64, 64, 64);       // Dark gray floor
-	s_pxWallTexture = CreateColoredTexture(128, 96, 64);       // Brown walls
-	s_pxObstacleTexture = CreateColoredTexture(96, 96, 96);    // Gray obstacles
-	s_pxPlayerTexture = CreateColoredTexture(51, 153, 255);    // Blue player
-	s_pxEnemyTexture = CreateColoredTexture(230, 77, 77);      // Red enemies
-	s_pxLeaderTexture = CreateColoredTexture(255, 204, 51);    // Gold leaders
-	s_pxFlankerTexture = CreateColoredTexture(255, 128, 0);    // Orange flankers
+	// Use grid pattern texture with BaseColor for all materials
+	Flux_Texture* pxGridTex = &Flux_Graphics::s_xGridPatternTexture2D;
 
-	// Create materials
+	// Create materials with grid texture and BaseColor
 	g_pxFloorMaterial = Flux_MaterialAsset::Create("AIShowcase_Floor");
-	g_pxFloorMaterial->SetDiffuseTexture(s_pxFloorTexture);
+	g_pxFloorMaterial->SetDiffuseTexture(pxGridTex);
+	g_pxFloorMaterial->SetBaseColor({ 64.f/255.f, 64.f/255.f, 64.f/255.f, 1.f });
 
 	g_pxWallMaterial = Flux_MaterialAsset::Create("AIShowcase_Wall");
-	g_pxWallMaterial->SetDiffuseTexture(s_pxWallTexture);
+	g_pxWallMaterial->SetDiffuseTexture(pxGridTex);
+	g_pxWallMaterial->SetBaseColor({ 128.f/255.f, 96.f/255.f, 64.f/255.f, 1.f });
 
 	g_pxObstacleMaterial = Flux_MaterialAsset::Create("AIShowcase_Obstacle");
-	g_pxObstacleMaterial->SetDiffuseTexture(s_pxObstacleTexture);
+	g_pxObstacleMaterial->SetDiffuseTexture(pxGridTex);
+	g_pxObstacleMaterial->SetBaseColor({ 96.f/255.f, 96.f/255.f, 96.f/255.f, 1.f });
 
 	g_pxPlayerMaterial = Flux_MaterialAsset::Create("AIShowcase_Player");
-	g_pxPlayerMaterial->SetDiffuseTexture(s_pxPlayerTexture);
+	g_pxPlayerMaterial->SetDiffuseTexture(pxGridTex);
+	g_pxPlayerMaterial->SetBaseColor({ 51.f/255.f, 153.f/255.f, 255.f/255.f, 1.f });
 
 	g_pxEnemyMaterial = Flux_MaterialAsset::Create("AIShowcase_Enemy");
-	g_pxEnemyMaterial->SetDiffuseTexture(s_pxEnemyTexture);
+	g_pxEnemyMaterial->SetDiffuseTexture(pxGridTex);
+	g_pxEnemyMaterial->SetBaseColor({ 230.f/255.f, 77.f/255.f, 77.f/255.f, 1.f });
 
 	g_pxLeaderMaterial = Flux_MaterialAsset::Create("AIShowcase_Leader");
-	g_pxLeaderMaterial->SetDiffuseTexture(s_pxLeaderTexture);
+	g_pxLeaderMaterial->SetDiffuseTexture(pxGridTex);
+	g_pxLeaderMaterial->SetBaseColor({ 255.f/255.f, 204.f/255.f, 51.f/255.f, 1.f });
 
 	g_pxFlankerMaterial = Flux_MaterialAsset::Create("AIShowcase_Flanker");
-	g_pxFlankerMaterial->SetDiffuseTexture(s_pxFlankerTexture);
+	g_pxFlankerMaterial->SetDiffuseTexture(pxGridTex);
+	g_pxFlankerMaterial->SetBaseColor({ 255.f/255.f, 128.f/255.f, 0.f/255.f, 1.f });
 
-	// Cover/patrol point materials (using existing textures)
+	// Cover/patrol point materials
 	g_pxCoverPointMaterial = Flux_MaterialAsset::Create("AIShowcase_CoverPoint");
-	g_pxCoverPointMaterial->SetDiffuseTexture(CreateColoredTexture(51, 204, 51));  // Green
+	g_pxCoverPointMaterial->SetDiffuseTexture(pxGridTex);
+	g_pxCoverPointMaterial->SetBaseColor({ 51.f/255.f, 204.f/255.f, 51.f/255.f, 1.f });
 
 	g_pxPatrolPointMaterial = Flux_MaterialAsset::Create("AIShowcase_PatrolPoint");
-	g_pxPatrolPointMaterial->SetDiffuseTexture(CreateColoredTexture(153, 153, 255));  // Light blue
+	g_pxPatrolPointMaterial->SetDiffuseTexture(pxGridTex);
+	g_pxPatrolPointMaterial->SetBaseColor({ 153.f/255.f, 153.f/255.f, 255.f/255.f, 1.f });
 
 	s_bResourcesInitialized = true;
 }
