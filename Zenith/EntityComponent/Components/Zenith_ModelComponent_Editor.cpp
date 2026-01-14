@@ -10,7 +10,10 @@
 #include "AssetHandling/Zenith_AssetHandler.h"
 #include "Flux/MeshAnimation/Flux_AnimationClip.h"
 #include "Flux/MeshAnimation/Flux_AnimationController.h"
+#include "Flux/Flux_ImGuiIntegration.h"
+#include "Flux/Flux_Graphics.h"
 #include <filesystem>
+#include <unordered_map>
 
 // Windows file dialog support
 #ifdef _WIN32
@@ -28,7 +31,57 @@
 //=============================================================================
 
 //-----------------------------------------------------------------------------
-// Helper: Render a texture slot with drag-drop support
+// Texture Preview Cache - keeps ImGui texture handles alive and avoids re-registration
+//-----------------------------------------------------------------------------
+namespace
+{
+	struct TexturePreviewCache
+	{
+		Flux_ImGuiTextureHandle m_xHandle;
+		u_int64 m_ulImageViewHandle = 0;  // Cached to detect changes
+	};
+
+	// Cache keyed by VRAM handle (unique per texture)
+	static std::unordered_map<u_int64, TexturePreviewCache> s_xTexturePreviewCache;
+}
+
+//-----------------------------------------------------------------------------
+// Helper: Get or create an ImGui texture handle for a Flux_Texture
+//-----------------------------------------------------------------------------
+static Flux_ImGuiTextureHandle GetOrCreateTexturePreviewHandle(const Flux_Texture* pxTexture)
+{
+	if (!pxTexture || !pxTexture->m_xVRAMHandle.IsValid() || !pxTexture->m_xSRV.m_xImageViewHandle.IsValid())
+	{
+		return Flux_ImGuiTextureHandle();
+	}
+
+	u_int64 ulKey = pxTexture->m_xVRAMHandle.AsUInt();
+	u_int64 ulImageViewHandle = pxTexture->m_xSRV.m_xImageViewHandle.AsUInt();
+
+	auto it = s_xTexturePreviewCache.find(ulKey);
+	if (it != s_xTexturePreviewCache.end())
+	{
+		// Check if image view changed (e.g., texture was reloaded)
+		if (it->second.m_ulImageViewHandle == ulImageViewHandle)
+		{
+			return it->second.m_xHandle;
+		}
+		// Image view changed - unregister old and create new
+		Flux_ImGuiIntegration::UnregisterTexture(it->second.m_xHandle);
+	}
+
+	// Register new texture with ImGui
+	Flux_ImGuiTextureHandle xHandle = Flux_ImGuiIntegration::RegisterTexture(
+		pxTexture->m_xSRV,
+		Flux_Graphics::s_xClampSampler
+	);
+
+	s_xTexturePreviewCache[ulKey] = { xHandle, ulImageViewHandle };
+	return xHandle;
+}
+
+//-----------------------------------------------------------------------------
+// Helper: Render a texture slot with drag-drop support and preview
 //-----------------------------------------------------------------------------
 void Zenith_ModelComponent::RenderTextureSlot(const char* szLabel, Flux_MaterialAsset& xMaterial, uint32_t uMeshIdx, TextureSlotType eSlot)
 {
@@ -61,7 +114,8 @@ void Zenith_ModelComponent::RenderTextureSlot(const char* szLabel, Flux_Material
 	}
 
 	std::string strTextureName = "(none)";
-	if (pxCurrentTexture && pxCurrentTexture->m_xVRAMHandle.IsValid())
+	bool bHasTexture = pxCurrentTexture && pxCurrentTexture->m_xVRAMHandle.IsValid();
+	if (bHasTexture)
 	{
 		if (!strCurrentPath.empty())
 		{
@@ -77,9 +131,32 @@ void Zenith_ModelComponent::RenderTextureSlot(const char* szLabel, Flux_Material
 	ImGui::Text("%s:", szLabel);
 	ImGui::SameLine();
 
-	ImVec2 xButtonSize(150, 20);
-	ImGui::Button(strTextureName.c_str(), xButtonSize);
+	// Show texture preview if available
+	constexpr float fPreviewSize = 48.0f;
+	if (bHasTexture)
+	{
+		Flux_ImGuiTextureHandle xHandle = GetOrCreateTexturePreviewHandle(pxCurrentTexture);
+		if (xHandle.IsValid())
+		{
+			// Texture preview image (acts as drop target)
+			ImGui::Image(
+				(ImTextureID)Flux_ImGuiIntegration::GetImTextureID(xHandle),
+				ImVec2(fPreviewSize, fPreviewSize)
+			);
+		}
+		else
+		{
+			// Fallback button if handle couldn't be created
+			ImGui::Button("[?]", ImVec2(fPreviewSize, fPreviewSize));
+		}
+	}
+	else
+	{
+		// Empty slot button
+		ImGui::Button("...", ImVec2(fPreviewSize, fPreviewSize));
+	}
 
+	// Drag-drop target for the preview/button
 	if (ImGui::BeginDragDropTarget())
 	{
 		if (const ImGuiPayload* pPayload = ImGui::AcceptDragDropPayload(DRAGDROP_PAYLOAD_TEXTURE))
@@ -96,17 +173,26 @@ void Zenith_ModelComponent::RenderTextureSlot(const char* szLabel, Flux_Material
 		ImGui::EndDragDropTarget();
 	}
 
+	// Tooltip with full path
 	if (ImGui::IsItemHovered())
 	{
 		if (!strCurrentPath.empty())
 		{
-			ImGui::SetTooltip("Drop a .ztxtr texture here\nPath: %s", strCurrentPath.c_str());
+			ImGui::SetTooltip("%s\nPath: %s\nDrop a .ztxtr texture here to change", strTextureName.c_str(), strCurrentPath.c_str());
+		}
+		else if (bHasTexture)
+		{
+			ImGui::SetTooltip("%s\nDrop a .ztxtr texture here to change", strTextureName.c_str());
 		}
 		else
 		{
-			ImGui::SetTooltip("Drop a .ztxtr texture here\nCurrent: %s", strTextureName.c_str());
+			ImGui::SetTooltip("Drop a .ztxtr texture here");
 		}
 	}
+
+	// Show texture name next to preview
+	ImGui::SameLine();
+	ImGui::Text("%s", strTextureName.c_str());
 
 	ImGui::PopID();
 }

@@ -6,7 +6,10 @@
 #include "Flux/Flux_MaterialAsset.h"
 #include "FileAccess/Zenith_FileAccess.h"
 #include "AssetHandling/Zenith_ModelAsset.h"
+#include "AssetHandling/Zenith_AssetHandler.h"
 #include "Flux/MeshAnimation/Flux_AnimationClip.h"
+#include "Flux/Flux_ImGuiIntegration.h"
+#include "Flux/Flux_Graphics.h"
 
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "imgui.h"
@@ -14,6 +17,76 @@
 
 #include <filesystem>
 #include <algorithm>
+#include <unordered_map>
+
+//=============================================================================
+// Texture Preview Cache for Content Browser
+//=============================================================================
+namespace
+{
+	struct TextureThumbnailEntry
+	{
+		Flux_Texture* m_pxTexture = nullptr;
+		Flux_ImGuiTextureHandle m_xImGuiHandle;
+		bool m_bLoadAttempted = false;
+	};
+
+	// Cache of loaded texture thumbnails keyed by file path
+	static std::unordered_map<std::string, TextureThumbnailEntry> s_xThumbnailCache;
+
+	// Maximum number of thumbnails to keep loaded (LRU would be ideal, but simple cap for now)
+	static constexpr size_t MAX_CACHED_THUMBNAILS = 100;
+}
+
+//-----------------------------------------------------------------------------
+// Get or load a texture thumbnail for the content browser
+//-----------------------------------------------------------------------------
+static Flux_ImGuiTextureHandle GetTextureThumbnail(const std::string& strPath)
+{
+	auto it = s_xThumbnailCache.find(strPath);
+	if (it != s_xThumbnailCache.end())
+	{
+		if (it->second.m_xImGuiHandle.IsValid())
+		{
+			return it->second.m_xImGuiHandle;
+		}
+		// Already tried loading and failed
+		if (it->second.m_bLoadAttempted)
+		{
+			return Flux_ImGuiTextureHandle();
+		}
+	}
+
+	// Limit cache size
+	if (s_xThumbnailCache.size() >= MAX_CACHED_THUMBNAILS)
+	{
+		// Simple eviction: just don't load more for now
+		// A proper implementation would use LRU eviction
+		return Flux_ImGuiTextureHandle();
+	}
+
+	// Try to load the texture
+	TextureThumbnailEntry xEntry;
+	xEntry.m_bLoadAttempted = true;
+
+	Zenith_AssetHandler::TextureData xTexData = Zenith_AssetHandler::LoadTexture2DFromFile(strPath.c_str());
+	if (xTexData.pData)
+	{
+		xEntry.m_pxTexture = Zenith_AssetHandler::AddTexture(xTexData);
+		xTexData.FreeAllocatedData();
+
+		if (xEntry.m_pxTexture && xEntry.m_pxTexture->m_xSRV.m_xImageViewHandle.IsValid())
+		{
+			xEntry.m_xImGuiHandle = Flux_ImGuiIntegration::RegisterTexture(
+				xEntry.m_pxTexture->m_xSRV,
+				Flux_Graphics::s_xClampSampler
+			);
+		}
+	}
+
+	s_xThumbnailCache[strPath] = xEntry;
+	return xEntry.m_xImGuiHandle;
+}
 
 void Zenith_EditorPanelContentBrowser::Render(ContentBrowserState& xState)
 {
@@ -177,18 +250,45 @@ void Zenith_EditorPanelContentBrowser::Render(ContentBrowserState& xState)
 
 			ImGui::BeginGroup();
 
+			// Calculate icon/thumbnail size
+			ImVec2 xIconSize(fCellSize - 10, fCellSize - 30);
+			bool bShowedImage = false;
+
 			if (xEntry.m_bIsDirectory)
 			{
 				// Directory - click to enter
-				if (ImGui::Button(szIcon, ImVec2(fCellSize - 10, fCellSize - 30)))
+				if (ImGui::Button(szIcon, xIconSize))
 				{
 					NavigateToDirectory(xState, xEntry.m_strFullPath);
 				}
 			}
 			else
 			{
-				// File - can be dragged
-				ImGui::Button(szIcon, ImVec2(fCellSize - 10, fCellSize - 30));
+				// For texture files, try to show a thumbnail
+				if (xEntry.m_strExtension == ZENITH_TEXTURE_EXT)
+				{
+					Flux_ImGuiTextureHandle xThumbHandle = GetTextureThumbnail(xEntry.m_strFullPath);
+					if (xThumbHandle.IsValid())
+					{
+						// Show texture thumbnail as an image button
+						ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
+						ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.3f, 0.5f, 0.5f));
+						ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.2f, 0.2f, 0.4f, 0.7f));
+						ImGui::ImageButton(
+							"##texthumb",
+							(ImTextureID)Flux_ImGuiIntegration::GetImTextureID(xThumbHandle),
+							xIconSize
+						);
+						ImGui::PopStyleColor(3);
+						bShowedImage = true;
+					}
+				}
+
+				// Fallback to text button if no image
+				if (!bShowedImage)
+				{
+					ImGui::Button(szIcon, xIconSize);
+				}
 
 				// Drag source for files
 				if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAllowNullID))
@@ -364,6 +464,17 @@ void Zenith_EditorPanelContentBrowser::RefreshDirectoryContents(ContentBrowserSt
 
 void Zenith_EditorPanelContentBrowser::NavigateToDirectory(ContentBrowserState& xState, const std::string& strPath)
 {
+	// Clear thumbnail cache when changing directories to avoid memory buildup
+	// Unregister all ImGui texture handles before clearing
+	for (auto& [path, entry] : s_xThumbnailCache)
+	{
+		if (entry.m_xImGuiHandle.IsValid())
+		{
+			Flux_ImGuiIntegration::UnregisterTexture(entry.m_xImGuiHandle);
+		}
+	}
+	s_xThumbnailCache.clear();
+
 	xState.m_strCurrentDirectory = strPath;
 	xState.m_bDirectoryNeedsRefresh = true;
 	Zenith_Log(LOG_CATEGORY_EDITOR, "[ContentBrowser] Navigated to: %s", strPath.c_str());
@@ -384,6 +495,16 @@ void Zenith_EditorPanelContentBrowser::NavigateToParent(ContentBrowserState& xSt
 
 	if (xParent.string().length() >= strAssetsRoot.length())
 	{
+		// Clear thumbnail cache when changing directories
+		for (auto& [path, entry] : s_xThumbnailCache)
+		{
+			if (entry.m_xImGuiHandle.IsValid())
+			{
+				Flux_ImGuiIntegration::UnregisterTexture(entry.m_xImGuiHandle);
+			}
+		}
+		s_xThumbnailCache.clear();
+
 		xState.m_strCurrentDirectory = xParent.string();
 		xState.m_bDirectoryNeedsRefresh = true;
 		Zenith_Log(LOG_CATEGORY_EDITOR, "[ContentBrowser] Navigated to parent: %s", xState.m_strCurrentDirectory.c_str());
