@@ -175,6 +175,7 @@ void main()
 	
 	float fRoughness = xMaterial.x;
 	float fMetallic = xMaterial.y;
+	float fEmissive = xMaterial.z;  // Emissive luminance from G-Buffer
 	
 	// Calculate view direction for ambient Fresnel
 	vec3 xViewDir = normalize(g_xCamPos_Pad.xyz - xWorldPos);
@@ -294,6 +295,10 @@ void main()
 		// fShadowFactor: 1.0 = fully lit, 0.0 = fully shadowed
 		o_xColour.rgb = ambientDiffuse + ambientSpecular + (o_xColour.rgb - ambientDiffuse - ambientSpecular) * fShadowFactor;
 	}
-	
+
+	// Add emissive contribution (not affected by shadows or lighting)
+	// Emissive acts as self-illumination from the surface itself
+	o_xColour.rgb += vec3(fEmissive);
+
 	o_xColour.w = 1.f;
 }

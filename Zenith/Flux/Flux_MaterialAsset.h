@@ -142,10 +142,28 @@ public:
 	// Alpha/Transparency
 	bool IsTransparent() const { return m_bTransparent; }
 	void SetTransparent(bool bTransparent) { m_bTransparent = bTransparent; m_bDirty = true; }
-	
+
 	float GetAlphaCutoff() const { return m_fAlphaCutoff; }
 	void SetAlphaCutoff(float fCutoff) { m_fAlphaCutoff = fCutoff; m_bDirty = true; }
-	
+
+	// UV Controls
+	const Zenith_Maths::Vector2& GetUVTiling() const { return m_xUVTiling; }
+	void SetUVTiling(const Zenith_Maths::Vector2& xTiling) { m_xUVTiling = xTiling; m_bDirty = true; }
+
+	const Zenith_Maths::Vector2& GetUVOffset() const { return m_xUVOffset; }
+	void SetUVOffset(const Zenith_Maths::Vector2& xOffset) { m_xUVOffset = xOffset; m_bDirty = true; }
+
+	// Occlusion Strength
+	float GetOcclusionStrength() const { return m_fOcclusionStrength; }
+	void SetOcclusionStrength(float fStrength) { m_fOcclusionStrength = fStrength; m_bDirty = true; }
+
+	// Render Flags
+	bool IsTwoSided() const { return m_bTwoSided; }
+	void SetTwoSided(bool bTwoSided) { m_bTwoSided = bTwoSided; m_bDirty = true; }
+
+	bool IsUnlit() const { return m_bUnlit; }
+	void SetUnlit(bool bUnlit) { m_bUnlit = bUnlit; m_bDirty = true; }
+
 	//--------------------------------------------------------------------------
 	// Texture References (GUID-based)
 	// Primary way to reference textures - survives asset moves/renames
@@ -238,6 +256,17 @@ private:
 	float m_fEmissiveIntensity = 0.0f;
 	bool m_bTransparent = false;
 	float m_fAlphaCutoff = 0.5f;
+
+	// UV Controls
+	Zenith_Maths::Vector2 m_xUVTiling = { 1.0f, 1.0f };
+	Zenith_Maths::Vector2 m_xUVOffset = { 0.0f, 0.0f };
+
+	// Occlusion Strength
+	float m_fOcclusionStrength = 1.0f;
+
+	// Render Flags
+	bool m_bTwoSided = false;
+	bool m_bUnlit = false;
 	
 	// Texture references (GUID-based, serialized)
 	TextureRef m_xDiffuseTextureRef;
@@ -279,4 +308,5 @@ private:
 
 // Material file format version (increment when format changes)
 // Version 2: GUID-based texture references via TextureRef
-#define MATERIAL_FILE_VERSION 2
+// Version 3: Added UV controls, occlusion strength, two-sided, unlit flags
+#define MATERIAL_FILE_VERSION 3

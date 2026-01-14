@@ -1,6 +1,7 @@
 #include "../Common.fxh"
 #ifndef SHADOWS
 #include "../GBufferCommon.fxh"
+#include "../MaterialCommon.fxh"
 #endif
 
 layout(location = 0) in vec2 a_xUV;
@@ -8,6 +9,15 @@ layout(location = 1) in vec3 a_xNormal;
 layout(location = 2) in vec3 a_xWorldPos;
 layout(location = 3) in mat3 a_xTBN;
 layout(location = 6) in vec4 a_xColor;
+
+// Material Push Constants (must match vertex shader layout)
+layout(push_constant) uniform PushConstants{
+	mat4 g_xModelMatrix;       // 64 bytes
+	vec4 g_xBaseColor;         // 16 bytes
+	vec4 g_xMaterialParams;    // 16 bytes (metallic, roughness, alphaCutoff, occlusionStrength)
+	vec4 g_xUVParams;          // 16 bytes (tilingX, tilingY, offsetX, offsetY)
+	vec4 g_xEmissiveParams;    // 16 bytes (R, G, B, intensity)
+};
 
 #ifndef SHADOWS
 layout(set = 1, binding = 1) uniform sampler2D g_xDiffuseTex;
@@ -19,17 +29,42 @@ layout(set = 1, binding = 5) uniform sampler2D g_xEmissiveTex;
 
 void main(){
 	#ifndef SHADOWS
-	vec4 xDiffuse = texture(g_xDiffuseTex, a_xUV);
-	
+	// Apply UV transformation (tiling and offset)
+	vec2 xUV = TransformUV(a_xUV, GetUVTiling(), GetUVOffset());
+
+	// Sample diffuse texture and apply base color multiplier
+	vec4 xDiffuse = SampleDiffuseWithBaseColor(g_xDiffuseTex, xUV, g_xBaseColor);
+
 	// If vertex has color data, multiply it with the texture
 	if (a_xColor.a > 0.0f)
 	{
 		xDiffuse *= a_xColor;
 	}
-	
-	vec3 xNormal = a_xTBN * (2 * texture(g_xNormalTex, a_xUV).xyz - 1.);
-	vec2 xRoughnessMetallic = texture(g_xRoughnessMetallicTex, a_xUV).gb;
-	
-	OutputToGBuffer(xDiffuse, xNormal, 0.2, xRoughnessMetallic.x, xRoughnessMetallic.y);
+
+	// Alpha test with material cutoff
+	float fAlphaCutoff = GetAlphaCutoff();
+	if (xDiffuse.a < fAlphaCutoff)
+	{
+		discard;
+	}
+
+	// Sample normal map and transform to world space using TBN from vertex shader
+	vec3 xNormalTangent = texture(g_xNormalTex, xUV).xyz * 2.0 - 1.0;
+	vec3 xWorldNormal = normalize(a_xTBN * xNormalTangent);
+
+	// Sample roughness/metallic and apply material multipliers
+	float fRoughness, fMetallic;
+	SampleRoughnessMetallic(g_xRoughnessMetallicTex, xUV,
+							GetRoughnessMultiplier(), GetMetallicMultiplier(),
+							fRoughness, fMetallic);
+
+	// Sample occlusion with strength
+	float fOcclusion = SampleOcclusion(g_xOcclusionTex, xUV, GetOcclusionStrength());
+
+	// Calculate emissive luminance
+	float fEmissive = CalculateEmissiveLuminance(g_xEmissiveTex, xUV,
+												  GetEmissiveColor(), GetEmissiveIntensity());
+
+	OutputToGBuffer(xDiffuse, xWorldNormal, fOcclusion, fRoughness, fMetallic, fEmissive);
 	#endif
 }

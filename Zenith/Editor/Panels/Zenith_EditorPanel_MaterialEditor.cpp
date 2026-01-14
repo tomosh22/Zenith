@@ -248,6 +248,57 @@ void Zenith_EditorPanelMaterialEditor::Render(MaterialEditorState& xState)
 		}
 
 		ImGui::Separator();
+		ImGui::Text("UV Controls");
+
+		// UV Tiling
+		Zenith_Maths::Vector2 xTiling = pMat->GetUVTiling();
+		float fTiling[2] = { xTiling.x, xTiling.y };
+		if (ImGui::DragFloat2("UV Tiling", fTiling, 0.01f, 0.01f, 100.0f))
+		{
+			pMat->SetUVTiling({ fTiling[0], fTiling[1] });
+		}
+
+		// UV Offset
+		Zenith_Maths::Vector2 xOffset = pMat->GetUVOffset();
+		float fOffset[2] = { xOffset.x, xOffset.y };
+		if (ImGui::DragFloat2("UV Offset", fOffset, 0.01f, -100.0f, 100.0f))
+		{
+			pMat->SetUVOffset({ fOffset[0], fOffset[1] });
+		}
+
+		ImGui::Separator();
+		ImGui::Text("Rendering Options");
+
+		// Occlusion Strength
+		float fOccStrength = pMat->GetOcclusionStrength();
+		if (ImGui::SliderFloat("Occlusion Strength", &fOccStrength, 0.0f, 1.0f))
+		{
+			pMat->SetOcclusionStrength(fOccStrength);
+		}
+
+		// Two-Sided
+		bool bTwoSided = pMat->IsTwoSided();
+		if (ImGui::Checkbox("Two-Sided", &bTwoSided))
+		{
+			pMat->SetTwoSided(bTwoSided);
+		}
+		if (ImGui::IsItemHovered())
+		{
+			ImGui::SetTooltip("Render both sides of polygons (disables backface culling)");
+		}
+
+		// Unlit
+		bool bUnlit = pMat->IsUnlit();
+		if (ImGui::Checkbox("Unlit (No Lighting)", &bUnlit))
+		{
+			pMat->SetUnlit(bUnlit);
+		}
+		if (ImGui::IsItemHovered())
+		{
+			ImGui::SetTooltip("Skip lighting calculations - material will display at full brightness");
+		}
+
+		ImGui::Separator();
 		ImGui::Text("Textures");
 
 		// Texture slots with drag-drop support

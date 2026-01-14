@@ -538,16 +538,107 @@ void Zenith_ModelComponent::RenderPropertiesPanel()
 		}
 
 		ImGui::Separator();
-		ImGui::Text("Mesh Entries: %u", GetNumMeshes());
 
-		// Display each procedural mesh entry with its material
+		// Show materials for NEW MODEL INSTANCE SYSTEM
+		if (m_pxModelInstance)
+		{
+			ImGui::Text("Materials (%u meshes):", m_pxModelInstance->GetNumMeshes());
+			for (uint32_t uMeshIdx = 0; uMeshIdx < m_pxModelInstance->GetNumMeshes(); ++uMeshIdx)
+			{
+				ImGui::PushID(uMeshIdx);
+
+				Flux_MaterialAsset* pxMaterial = m_pxModelInstance->GetMaterial(uMeshIdx);
+				if (pxMaterial)
+				{
+					// Material header with name and edit button
+					bool bExpanded = ImGui::TreeNode("Material", "Mesh %u: %s", uMeshIdx, pxMaterial->GetName().c_str());
+
+					// Button to select in Material Editor
+					ImGui::SameLine();
+					if (ImGui::SmallButton("Edit"))
+					{
+						Zenith_Editor::SelectMaterial(pxMaterial);
+					}
+
+					if (bExpanded)
+					{
+						// Inline display of key properties
+						Zenith_Maths::Vector4 xBaseColor = pxMaterial->GetBaseColor();
+						float fColor[4] = { xBaseColor.x, xBaseColor.y, xBaseColor.z, xBaseColor.w };
+						if (ImGui::ColorEdit4("Base Color", fColor))
+						{
+							pxMaterial->SetBaseColor({ fColor[0], fColor[1], fColor[2], fColor[3] });
+						}
+
+						float fMetallic = pxMaterial->GetMetallic();
+						if (ImGui::SliderFloat("Metallic", &fMetallic, 0.0f, 1.0f))
+						{
+							pxMaterial->SetMetallic(fMetallic);
+						}
+
+						float fRoughness = pxMaterial->GetRoughness();
+						if (ImGui::SliderFloat("Roughness", &fRoughness, 0.0f, 1.0f))
+						{
+							pxMaterial->SetRoughness(fRoughness);
+						}
+
+						// Emissive
+						Zenith_Maths::Vector3 xEmissive = pxMaterial->GetEmissiveColor();
+						float fEmissive[3] = { xEmissive.x, xEmissive.y, xEmissive.z };
+						if (ImGui::ColorEdit3("Emissive Color", fEmissive))
+						{
+							pxMaterial->SetEmissiveColor({ fEmissive[0], fEmissive[1], fEmissive[2] });
+						}
+
+						float fEmissiveIntensity = pxMaterial->GetEmissiveIntensity();
+						if (ImGui::SliderFloat("Emissive Intensity", &fEmissiveIntensity, 0.0f, 10.0f))
+						{
+							pxMaterial->SetEmissiveIntensity(fEmissiveIntensity);
+						}
+
+						// Texture slots
+						RenderTextureSlot("Diffuse", *pxMaterial, uMeshIdx, TEXTURE_SLOT_DIFFUSE);
+						RenderTextureSlot("Normal", *pxMaterial, uMeshIdx, TEXTURE_SLOT_NORMAL);
+						RenderTextureSlot("Roughness/Metallic", *pxMaterial, uMeshIdx, TEXTURE_SLOT_ROUGHNESS_METALLIC);
+						RenderTextureSlot("Occlusion", *pxMaterial, uMeshIdx, TEXTURE_SLOT_OCCLUSION);
+						RenderTextureSlot("Emissive", *pxMaterial, uMeshIdx, TEXTURE_SLOT_EMISSIVE);
+
+						ImGui::TreePop();
+					}
+				}
+				else
+				{
+					ImGui::Text("Mesh %u: (no material)", uMeshIdx);
+				}
+
+				ImGui::PopID();
+			}
+		}
+
+		// PROCEDURAL MESH ENTRIES - Enhanced to show material properties
+		if (m_xMeshEntries.GetSize() > 0)
+		{
+			ImGui::Text("Procedural Mesh Entries (%u):", m_xMeshEntries.GetSize());
+		}
 		for (uint32_t uMeshIdx = 0; uMeshIdx < m_xMeshEntries.GetSize(); ++uMeshIdx)
 		{
-			ImGui::PushID(uMeshIdx);
+			ImGui::PushID(uMeshIdx + 1000);  // Offset ID to avoid conflict with model instance
 
-			Flux_MaterialAsset& xMaterial = GetMaterialAtIndex(uMeshIdx);
+			Flux_MaterialAsset* pxMaterial = m_xMeshEntries.Get(uMeshIdx).m_pxMaterial;
 
-			if (ImGui::TreeNode("MeshEntry", "Mesh Entry %u", uMeshIdx))
+			bool bExpanded = ImGui::TreeNode("MeshEntry", "Mesh %u: %s", uMeshIdx,
+				pxMaterial ? pxMaterial->GetName().c_str() : "(no material)");
+
+			if (pxMaterial)
+			{
+				ImGui::SameLine();
+				if (ImGui::SmallButton("Edit"))
+				{
+					Zenith_Editor::SelectMaterial(pxMaterial);
+				}
+			}
+
+			if (bExpanded)
 			{
 				Flux_MeshGeometry& xGeom = GetMeshGeometryAtIndex(uMeshIdx);
 				if (!xGeom.m_strSourcePath.empty())
@@ -555,11 +646,49 @@ void Zenith_ModelComponent::RenderPropertiesPanel()
 					ImGui::TextWrapped("Source: %s", xGeom.m_strSourcePath.c_str());
 				}
 
-				RenderTextureSlot("Diffuse", xMaterial, uMeshIdx, TEXTURE_SLOT_DIFFUSE);
-				RenderTextureSlot("Normal", xMaterial, uMeshIdx, TEXTURE_SLOT_NORMAL);
-				RenderTextureSlot("Roughness/Metallic", xMaterial, uMeshIdx, TEXTURE_SLOT_ROUGHNESS_METALLIC);
-				RenderTextureSlot("Occlusion", xMaterial, uMeshIdx, TEXTURE_SLOT_OCCLUSION);
-				RenderTextureSlot("Emissive", xMaterial, uMeshIdx, TEXTURE_SLOT_EMISSIVE);
+				if (pxMaterial)
+				{
+					// Inline material editing
+					Zenith_Maths::Vector4 xBaseColor = pxMaterial->GetBaseColor();
+					float fColor[4] = { xBaseColor.x, xBaseColor.y, xBaseColor.z, xBaseColor.w };
+					if (ImGui::ColorEdit4("Base Color", fColor))
+					{
+						pxMaterial->SetBaseColor({ fColor[0], fColor[1], fColor[2], fColor[3] });
+					}
+
+					float fMetallic = pxMaterial->GetMetallic();
+					if (ImGui::SliderFloat("Metallic", &fMetallic, 0.0f, 1.0f))
+					{
+						pxMaterial->SetMetallic(fMetallic);
+					}
+
+					float fRoughness = pxMaterial->GetRoughness();
+					if (ImGui::SliderFloat("Roughness", &fRoughness, 0.0f, 1.0f))
+					{
+						pxMaterial->SetRoughness(fRoughness);
+					}
+
+					// Emissive
+					Zenith_Maths::Vector3 xEmissive = pxMaterial->GetEmissiveColor();
+					float fEmissive[3] = { xEmissive.x, xEmissive.y, xEmissive.z };
+					if (ImGui::ColorEdit3("Emissive Color", fEmissive))
+					{
+						pxMaterial->SetEmissiveColor({ fEmissive[0], fEmissive[1], fEmissive[2] });
+					}
+
+					float fEmissiveIntensity = pxMaterial->GetEmissiveIntensity();
+					if (ImGui::SliderFloat("Emissive Intensity", &fEmissiveIntensity, 0.0f, 10.0f))
+					{
+						pxMaterial->SetEmissiveIntensity(fEmissiveIntensity);
+					}
+
+					// Texture slots
+					RenderTextureSlot("Diffuse", *pxMaterial, uMeshIdx, TEXTURE_SLOT_DIFFUSE);
+					RenderTextureSlot("Normal", *pxMaterial, uMeshIdx, TEXTURE_SLOT_NORMAL);
+					RenderTextureSlot("Roughness/Metallic", *pxMaterial, uMeshIdx, TEXTURE_SLOT_ROUGHNESS_METALLIC);
+					RenderTextureSlot("Occlusion", *pxMaterial, uMeshIdx, TEXTURE_SLOT_OCCLUSION);
+					RenderTextureSlot("Emissive", *pxMaterial, uMeshIdx, TEXTURE_SLOT_EMISSIVE);
+				}
 
 				ImGui::TreePop();
 			}

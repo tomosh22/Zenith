@@ -444,6 +444,19 @@ void Flux_MaterialAsset::WriteToDataStream(Zenith_DataStream& xStream) const
 	xStream << m_bTransparent;
 	xStream << m_fAlphaCutoff;
 
+	// Version 3+: UV Controls
+	xStream << m_xUVTiling.x;
+	xStream << m_xUVTiling.y;
+	xStream << m_xUVOffset.x;
+	xStream << m_xUVOffset.y;
+
+	// Version 3+: Occlusion strength
+	xStream << m_fOcclusionStrength;
+
+	// Version 3+: Render flags
+	xStream << m_bTwoSided;
+	xStream << m_bUnlit;
+
 	// Texture references (GUID-based) - Version 2+
 	m_xDiffuseTextureRef.WriteToDataStream(xStream);
 	m_xNormalTextureRef.WriteToDataStream(xStream);
@@ -458,9 +471,9 @@ void Flux_MaterialAsset::ReadFromDataStream(Zenith_DataStream& xStream)
 	uint32_t uVersion;
 	xStream >> uVersion;
 
-	if (uVersion != MATERIAL_FILE_VERSION)
+	if (uVersion < 2 || uVersion > MATERIAL_FILE_VERSION)
 	{
-		Zenith_Error(LOG_CATEGORY_MATERIAL, "Unsupported material version %u (expected %u). Please re-export the material.",
+		Zenith_Error(LOG_CATEGORY_MATERIAL, "Unsupported material version %u (expected 2-%u). Please re-export the material.",
 			uVersion, MATERIAL_FILE_VERSION);
 		return;
 	}
@@ -485,7 +498,30 @@ void Flux_MaterialAsset::ReadFromDataStream(Zenith_DataStream& xStream)
 	xStream >> m_bTransparent;
 	xStream >> m_fAlphaCutoff;
 
-	// Texture references (GUID-based)
+	// Version 3+: UV Controls, Occlusion strength, Render flags
+	if (uVersion >= 3)
+	{
+		xStream >> m_xUVTiling.x;
+		xStream >> m_xUVTiling.y;
+		xStream >> m_xUVOffset.x;
+		xStream >> m_xUVOffset.y;
+
+		xStream >> m_fOcclusionStrength;
+
+		xStream >> m_bTwoSided;
+		xStream >> m_bUnlit;
+	}
+	else
+	{
+		// Defaults for version 2 files
+		m_xUVTiling = { 1.0f, 1.0f };
+		m_xUVOffset = { 0.0f, 0.0f };
+		m_fOcclusionStrength = 1.0f;
+		m_bTwoSided = false;
+		m_bUnlit = false;
+	}
+
+	// Texture references (GUID-based) - Version 2+
 	m_xDiffuseTextureRef.ReadFromDataStream(xStream);
 	m_xNormalTextureRef.ReadFromDataStream(xStream);
 	m_xRoughnessMetallicTextureRef.ReadFromDataStream(xStream);

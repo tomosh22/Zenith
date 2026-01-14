@@ -14,9 +14,15 @@ layout(location = 3) out vec3 o_xTangent;
 layout(location = 4) out float o_fBitangentSign;  // Sign for bitangent reconstruction (saves 2 varyings)
 layout(location = 5) out vec4 o_xColor;
 
-layout(push_constant) uniform ModelMatrix{
-	mat4 g_xModelMatrix;
-};
+// Material Push Constants (128 bytes total for Vulkan compatibility)
+// Layout matches C++ MaterialPushConstants structure
+layout(push_constant) uniform PushConstants{
+	mat4 g_xModelMatrix;       // 64 bytes - Model transform matrix
+	vec4 g_xBaseColor;         // 16 bytes - RGBA base color multiplier
+	vec4 g_xMaterialParams;    // 16 bytes - (metallic, roughness, alphaCutoff, occlusionStrength)
+	vec4 g_xUVParams;          // 16 bytes - (tilingX, tilingY, offsetX, offsetY)
+	vec4 g_xEmissiveParams;    // 16 bytes - (R, G, B, intensity)
+};  // Total: 128 bytes
 
 #ifdef SHADOWS
 layout(std140, set = 1, binding=0) uniform ShadowMatrix{

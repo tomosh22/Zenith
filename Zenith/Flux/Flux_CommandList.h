@@ -67,9 +67,9 @@ public:
 	Flux_CommandPushConstant(const void* pData, u_int uSize)
 	: m_uSize(uSize)
 	{
-		Zenith_Assert(uSize < uMAX_SIZE, "Push constant too big");
+		Zenith_Assert(uSize <= uMAX_SIZE, "Push constant too big (%u > %u)", uSize, uMAX_SIZE);
 		// Runtime guard for release builds - prevent buffer overflow
-		if (uSize >= uMAX_SIZE)
+		if (uSize > uMAX_SIZE)
 		{
 			m_uSize = 0;
 			return;
