@@ -71,6 +71,7 @@ enum Zenith_LogCategory : u_int8
 	LOG_CATEGORY_TOOLS,         // Asset export, migration
 	LOG_CATEGORY_UNITTEST,      // Unit test output
 	LOG_CATEGORY_GAMEPLAY,      // Game-specific logs
+	LOG_CATEGORY_AI,            // AI system (behavior trees, navigation, perception)
 
 	LOG_CATEGORY_COUNT
 };
@@ -79,7 +80,7 @@ inline constexpr const char* Zenith_LogCategoryNames[LOG_CATEGORY_COUNT] = {
 	"General", "Core", "Scene", "ECS", "Asset", "Vulkan", "Renderer",
 	"Mesh", "Animation", "Terrain", "Shadows", "Gizmos", "Particles",
 	"Text", "Material", "Physics", "TaskSystem", "Editor", "Prefab",
-	"UI", "Input", "Window", "Tools", "UnitTest", "Gameplay"
+	"UI", "Input", "Window", "Tools", "UnitTest", "Gameplay", "AI"
 };
 
 inline const char* Zenith_GetLogCategoryName(Zenith_LogCategory eCategory)
@@ -152,6 +153,14 @@ inline void Zenith_LogImpl(Zenith_LogCategory eCategory, int eLevel, const char*
 #define DEBUGVAR static const
 #endif
 
+// Memory tracking with guard bytes, leak detection, and callstack capture
+// Thread-safety approach:
+// - std::atomic<bool> for initialization flag (acquire/release semantics)
+// - thread_local recursion guards (no cross-thread interference)
+// - Initialization check BEFORE accessing TLS (avoids TLS init allocating)
+// - Untracked allocations (static init) silently use plain malloc/free
+#define ZENITH_MEMORY_MANAGEMENT_ENABLED
+
 #define COUNT_OF(x) sizeof(x) / sizeof(x[0])
 
 #define STUBBED Zenith_DebugBreak();
@@ -209,6 +218,10 @@ extern const char* Project_GetGameAssetsDirectory();
 #define ZENITH_MAX_MESHES ZenithConfig::MAX_MESHES
 #define ZENITH_MAX_MATERIALS ZenithConfig::MAX_MATERIALS
 
+// Memory management system setup
+// The macro is only enabled via Zenith_MemoryManagement_Enabled.h if:
+// 1. ZENITH_MEMORY_MANAGEMENT_ENABLED is defined (line 156)
+// 2. ZENITH_PLACEMENT_NEW_ZONE is NOT defined (files that create third-party objects define this)
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "Memory/Zenith_MemoryManagement.h"
 #include "Memory/Zenith_MemoryManagement_Enabled.h"

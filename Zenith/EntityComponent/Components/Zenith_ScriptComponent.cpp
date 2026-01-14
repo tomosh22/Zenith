@@ -66,7 +66,9 @@ void Zenith_ScriptComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 }
 
 #ifdef ZENITH_TOOLS
+#include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "imgui.h"
+#include "Memory/Zenith_MemoryManagement_Enabled.h"
 
 void Zenith_ScriptComponent::RenderPropertiesPanel()
 {

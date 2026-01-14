@@ -66,6 +66,8 @@ public:
 		Zenith_Maths::Matrix4 m_xProjMat;
 		Zenith_Maths::Matrix4 m_xViewProjMat;
 		Zenith_Maths::Matrix4 m_xInvViewProjMat;
+		Zenith_Maths::Matrix4 m_xInvViewMat;
+		Zenith_Maths::Matrix4 m_xInvProjMat;
 		Zenith_Maths::Vector4 m_xCamPos_Pad;
 		Zenith_Maths::Vector4 m_xSunDir_Pad;
 		Zenith_Maths::Vector4 m_xSunColour_Pad;
@@ -73,6 +75,7 @@ public:
 		Zenith_Maths::Vector2 m_xRcpScreenDims;
 		u_int m_uQuadUtilisationAnalysis;
 		u_int m_uTargetPixelsPerTri;
+		Zenith_Maths::Vector2 m_xCameraNearFar;  // x = near plane, y = far plane
 	};
 	static FrameConstants s_xFrameConstants;
 private:

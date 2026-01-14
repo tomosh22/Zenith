@@ -89,6 +89,11 @@ namespace Zenith_Maths
 		return glm::length(v);
 	}
 
+	static inline float LengthSq(const Vector3& v)
+	{
+		return glm::dot(v, v);
+	}
+
 	static inline float Dot(const Vector3& a, const Vector3& b)
 	{
 		return glm::dot(a, b);
@@ -134,5 +139,17 @@ namespace Zenith_Maths
 	static inline Quaternion QuatLookAt(const Vector3& direction, const Vector3& up)
 	{
 		return glm::quatLookAt(direction, up);
+	}
+
+	// Rotate a vector by a quaternion
+	static inline Vector3 RotateVector(const Vector3& v, const Quaternion& q)
+	{
+		return q * v;
+	}
+
+	// Create quaternion from euler angles (pitch, yaw, roll in radians)
+	static inline Quaternion QuatFromEuler(float fPitch, float fYaw, float fRoll)
+	{
+		return glm::quat(Vector3(fPitch, fYaw, fRoll));
 	}
 }

@@ -27,6 +27,9 @@ extern void ExportDefaultFontAtlas();
 
 int main()
 {
+	// CRITICAL: Memory tracking must be initialized FIRST to capture all allocations
+	Zenith_MemoryManagement::Initialise();
+
 	Zenith_Profiling::Initialise();
 	Zenith_Multithreading::RegisterThread(true);
 	Zenith_TaskSystem::Inititalise();
@@ -38,8 +41,6 @@ int main()
 	//ExportHeightmap();
 	ExportDefaultFontAtlas();  // Generate font atlas from TTF
 #endif
-
-	Zenith_MemoryManagement::Initialise();
 
 	Zenith_Window::Inititalise("Zenith", 1280, 720);
 	Flux::EarlyInitialise();

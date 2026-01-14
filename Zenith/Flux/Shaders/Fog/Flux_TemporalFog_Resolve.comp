@@ -1,0 +1,137 @@
+#version 450
+
+#include "../Common.fxh"
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
+
+// Bindings (binding 0 is FrameConstants from Common.fxh)
+layout(set = 0, binding = 1) uniform sampler3D u_xCurrentFog;
+layout(set = 0, binding = 2) uniform sampler3D u_xHistoryFog;
+layout(set = 0, binding = 3, rgba16f) uniform writeonly image3D u_xOutputFog;
+layout(set = 0, binding = 4, rgba16f) uniform writeonly image2D u_xDebugMotionVectors;
+
+// Push constants
+layout(push_constant) uniform ResolveConstants
+{
+    vec4 u_xGridDimensions;   // x = width, y = height, z = depth, w = unused
+    vec4 u_xJitterOffset;     // xy = current jitter, zw = previous jitter
+    float u_fBlendWeight;
+    float u_fNearZ;
+    float u_fFarZ;
+    uint u_uDebugMode;
+    uint u_uFrameIndex;
+    float u_fPad0;
+    float u_fPad1;
+    float u_fPad2;
+};
+
+// Debug mode constants
+const uint DEBUG_TEMPORAL_MOTION_VECTORS = 17;
+const uint DEBUG_TEMPORAL_HISTORY_WEIGHT = 18;
+const uint DEBUG_TEMPORAL_JITTER_OFFSET = 19;
+const uint DEBUG_TEMPORAL_DISOCCLUSION = 20;
+
+// Neighborhood clamping to reduce ghosting
+vec4 ClampToNeighborhood(vec4 history, vec3 uvw)
+{
+    // Sample current frame neighbors to find min/max bounds
+    vec4 minVal = vec4(1e10);
+    vec4 maxVal = vec4(-1e10);
+
+    vec3 texelSize = 1.0 / u_xGridDimensions.xyz;
+
+    // 3x3x3 neighborhood (simplified to 6 neighbors for performance)
+    for (int i = -1; i <= 1; i += 2)
+    {
+        vec4 sampleX = texture(u_xCurrentFog, uvw + vec3(float(i) * texelSize.x, 0.0, 0.0));
+        vec4 sampleY = texture(u_xCurrentFog, uvw + vec3(0.0, float(i) * texelSize.y, 0.0));
+        vec4 sampleZ = texture(u_xCurrentFog, uvw + vec3(0.0, 0.0, float(i) * texelSize.z));
+
+        minVal = min(minVal, min(sampleX, min(sampleY, sampleZ)));
+        maxVal = max(maxVal, max(sampleX, max(sampleY, sampleZ)));
+    }
+
+    // Include center sample
+    vec4 center = texture(u_xCurrentFog, uvw);
+    minVal = min(minVal, center);
+    maxVal = max(maxVal, center);
+
+    // Clamp history to neighborhood bounds
+    return clamp(history, minVal, maxVal);
+}
+
+void main()
+{
+    ivec3 froxelCoord = ivec3(gl_GlobalInvocationID.xyz);
+
+    // Bounds check
+    if (froxelCoord.x >= int(u_xGridDimensions.x) ||
+        froxelCoord.y >= int(u_xGridDimensions.y) ||
+        froxelCoord.z >= int(u_xGridDimensions.z))
+    {
+        return;
+    }
+
+    // Current froxel UVW
+    vec3 uvw = (vec3(froxelCoord) + 0.5) / u_xGridDimensions.xyz;
+
+    // Apply jitter offset for current frame sampling
+    vec2 jitteredUV = uvw.xy + u_xJitterOffset.xy / u_xGridDimensions.xy;
+    vec3 jitteredUVW = vec3(jitteredUV, uvw.z);
+
+    // Sample current frame fog
+    vec4 currentFog = texture(u_xCurrentFog, jitteredUVW);
+
+    // Simplified reprojection: use same UVW (assumes static camera)
+    // For proper reprojection, would need previous frame matrices
+    vec3 prevUVW = uvw;
+
+    // Apply previous frame jitter offset
+    vec2 prevJitteredUV = prevUVW.xy + u_xJitterOffset.zw / u_xGridDimensions.xy;
+    vec3 prevJitteredUVW = vec3(prevJitteredUV, prevUVW.z);
+
+    // Sample history
+    vec4 historyFog = texture(u_xHistoryFog, prevJitteredUVW);
+
+    // Neighborhood clamp to reduce ghosting
+    historyFog = ClampToNeighborhood(historyFog, uvw);
+
+    float blendWeight = u_fBlendWeight;
+
+    // Debug visualizations
+    if (u_uDebugMode == DEBUG_TEMPORAL_MOTION_VECTORS && froxelCoord.z == int(u_xGridDimensions.z / 2))
+    {
+        // No motion vectors without reprojection, show zero
+        imageStore(u_xDebugMotionVectors, froxelCoord.xy, vec4(0.5, 0.5, 0.5, 1.0));
+    }
+
+    if (u_uDebugMode == DEBUG_TEMPORAL_HISTORY_WEIGHT)
+    {
+        // Visualize blend weight (white = high history use)
+        vec4 debugOut = vec4(vec3(blendWeight), 1.0);
+        imageStore(u_xOutputFog, froxelCoord, debugOut);
+        return;
+    }
+
+    if (u_uDebugMode == DEBUG_TEMPORAL_JITTER_OFFSET)
+    {
+        // Visualize jitter pattern
+        vec2 jitter = u_xJitterOffset.xy;
+        vec4 debugOut = vec4(jitter.x + 0.5, jitter.y + 0.5, 0.0, 1.0);
+        imageStore(u_xOutputFog, froxelCoord, debugOut);
+        return;
+    }
+
+    if (u_uDebugMode == DEBUG_TEMPORAL_DISOCCLUSION)
+    {
+        // No disocclusion without reprojection, show green (always valid)
+        vec4 debugOut = vec4(0.0, 1.0, 0.0, 1.0);
+        imageStore(u_xOutputFog, froxelCoord, debugOut);
+        return;
+    }
+
+    // Blend current and history
+    vec4 result = mix(currentFog, historyFog, blendWeight);
+
+    imageStore(u_xOutputFog, froxelCoord, result);
+}

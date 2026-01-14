@@ -94,6 +94,26 @@ void Zenith_Vulkan_MemoryManager::Initialise()
 	Zenith_Log(LOG_CATEGORY_VULKAN, "Vulkan memory manager initialised");
 }
 
+Zenith_Vulkan_MemoryManager::VMAStats Zenith_Vulkan_MemoryManager::GetVMAStats()
+{
+	VMAStats xStats = {};
+
+	if (s_xAllocator == nullptr)
+	{
+		return xStats;
+	}
+
+	VmaTotalStatistics xVmaStats;
+	vmaCalculateStatistics(s_xAllocator, &xVmaStats);
+
+	// Sum up all heap statistics
+	xStats.m_ulTotalAllocatedBytes = xVmaStats.total.statistics.blockBytes;
+	xStats.m_ulTotalUsedBytes = xVmaStats.total.statistics.allocationBytes;
+	xStats.m_ulAllocationCount = xVmaStats.total.statistics.allocationCount;
+
+	return xStats;
+}
+
 void Zenith_Vulkan_MemoryManager::Shutdown()
 {
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
@@ -476,14 +496,24 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateRenderTargetVRAM(const Flux_S
 		eInitialLayout = vk::ImageLayout::eDepthStencilReadOnlyOptimal;
 	}
 	
-	if (xInfo.m_uMemoryFlags & 1 << MEMORY_FLAGS__SHADER_READ) 
+	if (xInfo.m_uMemoryFlags & 1 << MEMORY_FLAGS__SHADER_READ)
 		eUsageFlags |= vk::ImageUsageFlagBits::eSampled;
 
+	// Determine image type and extent based on texture type
+	vk::ImageType eImageType = vk::ImageType::e2D;
+	vk::Extent3D xExtent = { xInfo.m_uWidth, xInfo.m_uHeight, 1 };
+
+	if (xInfo.m_eTextureType == TEXTURE_TYPE_3D)
+	{
+		eImageType = vk::ImageType::e3D;
+		xExtent = vk::Extent3D(xInfo.m_uWidth, xInfo.m_uHeight, xInfo.m_uDepth);
+	}
+
 	vk::ImageCreateInfo xImageInfo = vk::ImageCreateInfo()
-		.setImageType(vk::ImageType::e2D)
+		.setImageType(eImageType)
 		.setFormat(xFormat)
 		.setTiling(vk::ImageTiling::eOptimal)
-		.setExtent({ xInfo.m_uWidth, xInfo.m_uHeight, 1 })
+		.setExtent(xExtent)
 		.setMipLevels(xInfo.m_uNumMips)
 		.setArrayLayers(xInfo.m_uNumLayers)
 		.setInitialLayout(vk::ImageLayout::eUndefined)
@@ -532,20 +562,30 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateTextureVRAM(const void* pData
 	if (xInfoCopy.m_uMemoryFlags & 1 << MEMORY_FLAGS__SHADER_READ) eUsageFlags |= vk::ImageUsageFlagBits::eSampled;
 	if (xInfoCopy.m_uMemoryFlags & 1 << MEMORY_FLAGS__UNORDERED_ACCESS) eUsageFlags |= vk::ImageUsageFlagBits::eStorage;
 
+	// Determine image type and extent based on texture type
+	vk::ImageType eImageType = vk::ImageType::e2D;
+	vk::Extent3D xExtent = { xInfoCopy.m_uWidth, xInfoCopy.m_uHeight, 1 };
+
+	if (xInfoCopy.m_eTextureType == TEXTURE_TYPE_3D)
+	{
+		eImageType = vk::ImageType::e3D;
+		xExtent = vk::Extent3D(xInfoCopy.m_uWidth, xInfoCopy.m_uHeight, xInfoCopy.m_uDepth);
+	}
+
 	vk::ImageCreateInfo xImageInfo = vk::ImageCreateInfo()
-		.setImageType(vk::ImageType::e2D)
+		.setImageType(eImageType)
 		.setFormat(xFormat)
 		.setTiling(vk::ImageTiling::eOptimal)
-		.setExtent({ xInfoCopy.m_uWidth, xInfoCopy.m_uHeight, 1 })
+		.setExtent(xExtent)
 		.setMipLevels(xInfoCopy.m_uNumMips)
 		.setArrayLayers(xInfoCopy.m_uNumLayers)
 		.setInitialLayout(vk::ImageLayout::eUndefined)
 		.setUsage(eUsageFlags)
 		.setSharingMode(vk::SharingMode::eExclusive)
 		.setSamples(vk::SampleCountFlagBits::e1);
-	
+
 	// Add cube compatible flag if this is a cubemap (6 layers)
-	if (xInfoCopy.m_uNumLayers == 6)
+	if (xInfoCopy.m_eTextureType == TEXTURE_TYPE_CUBE || xInfoCopy.m_uNumLayers == 6)
 	{
 		xImageInfo.setFlags(vk::ImageCreateFlagBits::eCubeCompatible);
 	}
@@ -617,6 +657,7 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateTextureVRAM(const void* pData
 				xStagingAlloc.m_xTextureMetadata.m_xImage = vk::Image(xImage);
 				xStagingAlloc.m_xTextureMetadata.m_uWidth = xInfoCopy.m_uWidth;
 				xStagingAlloc.m_xTextureMetadata.m_uHeight = xInfoCopy.m_uHeight;
+				xStagingAlloc.m_xTextureMetadata.m_uDepth = xInfoCopy.m_uDepth;
 				xStagingAlloc.m_xTextureMetadata.m_uNumMips = xInfoCopy.m_uNumMips;
 				xStagingAlloc.m_xTextureMetadata.m_uNumLayers = xInfoCopy.m_uNumLayers;
 				xStagingAlloc.m_uSize = ulDataSize;
@@ -654,18 +695,27 @@ Flux_RenderTargetView Zenith_Vulkan_MemoryManager::CreateRenderTargetView(Flux_V
 
 	vk::Format xFormat = Zenith_Vulkan::ConvertToVkFormat_Colour(xInfo.m_eFormat);
 
-	const bool bIsCube = xInfo.m_uNumLayers == 6;
+	// Determine view type based on texture type
+	const bool bIsCube = xInfo.m_eTextureType == TEXTURE_TYPE_CUBE || xInfo.m_uNumLayers == 6;
+	const bool bIs3D = xInfo.m_eTextureType == TEXTURE_TYPE_3D;
 	const uint32_t uLayerCount = bIsCube ? 6 : (xInfo.m_uNumLayers > 0 ? xInfo.m_uNumLayers : 1);
+
+	vk::ImageViewType eViewType = vk::ImageViewType::e2D;
+	if (bIs3D)
+		eViewType = vk::ImageViewType::e3D;
+	else if (bIsCube)
+		eViewType = vk::ImageViewType::eCube;
+
 	vk::ImageSubresourceRange xSubresourceRange = vk::ImageSubresourceRange()
 		.setAspectMask(vk::ImageAspectFlagBits::eColor)
 		.setBaseMipLevel(uMipLevel)
 		.setLevelCount(1)
 		.setBaseArrayLayer(0)
-		.setLayerCount(uLayerCount);
+		.setLayerCount(bIs3D ? 1 : uLayerCount);
 
 	vk::ImageViewCreateInfo xViewCreate = vk::ImageViewCreateInfo()
 		.setImage(pxVRAM->GetImage())
-		.setViewType(bIsCube ? vk::ImageViewType::eCube : vk::ImageViewType::e2D)
+		.setViewType(eViewType)
 		.setFormat(xFormat)
 		.setSubresourceRange(xSubresourceRange);
 
@@ -719,18 +769,27 @@ Flux_ShaderResourceView Zenith_Vulkan_MemoryManager::CreateShaderResourceView(Fl
 	const bool bIsDepth = xInfo.m_eFormat > TEXTURE_FORMAT_DEPTH_STENCIL_BEGIN && xInfo.m_eFormat < TEXTURE_FORMAT_DEPTH_STENCIL_END;
 	vk::Format xFormat = bIsDepth ? Zenith_Vulkan::ConvertToVkFormat_DepthStencil(xInfo.m_eFormat) : Zenith_Vulkan::ConvertToVkFormat_Colour(xInfo.m_eFormat);
 
-	const bool bIsCube = xInfo.m_uNumLayers == 6;
+	// Determine view type based on texture type
+	const bool bIsCube = xInfo.m_eTextureType == TEXTURE_TYPE_CUBE || xInfo.m_uNumLayers == 6;
+	const bool bIs3D = xInfo.m_eTextureType == TEXTURE_TYPE_3D;
 	const uint32_t uLayerCount = bIsCube ? 6 : (xInfo.m_uNumLayers > 0 ? xInfo.m_uNumLayers : 1);
+
+	vk::ImageViewType eViewType = vk::ImageViewType::e2D;
+	if (bIs3D)
+		eViewType = vk::ImageViewType::e3D;
+	else if (bIsCube)
+		eViewType = vk::ImageViewType::eCube;
+
 	vk::ImageSubresourceRange xSubresourceRange = vk::ImageSubresourceRange()
 		.setAspectMask(bIsDepth ? vk::ImageAspectFlagBits::eDepth : vk::ImageAspectFlagBits::eColor)
 		.setBaseMipLevel(uBaseMip)
 		.setLevelCount(uMipCount)
 		.setBaseArrayLayer(0)
-		.setLayerCount(uLayerCount);
+		.setLayerCount(bIs3D ? 1 : uLayerCount);
 
 	vk::ImageViewCreateInfo xViewCreate = vk::ImageViewCreateInfo()
 		.setImage(pxVRAM->GetImage())
-		.setViewType(bIsCube ? vk::ImageViewType::eCube : vk::ImageViewType::e2D)
+		.setViewType(eViewType)
 		.setFormat(xFormat)
 		.setSubresourceRange(xSubresourceRange);
 
@@ -751,18 +810,27 @@ Flux_UnorderedAccessView_Texture Zenith_Vulkan_MemoryManager::CreateUnorderedAcc
 
 	vk::Format xFormat = Zenith_Vulkan::ConvertToVkFormat_Colour(xInfo.m_eFormat);
 
-	const bool bIsCube = xInfo.m_uNumLayers == 6;
+	// Determine view type based on texture type
+	const bool bIsCube = xInfo.m_eTextureType == TEXTURE_TYPE_CUBE || xInfo.m_uNumLayers == 6;
+	const bool bIs3D = xInfo.m_eTextureType == TEXTURE_TYPE_3D;
 	const uint32_t uLayerCount = bIsCube ? 6 : (xInfo.m_uNumLayers > 0 ? xInfo.m_uNumLayers : 1);
+
+	vk::ImageViewType eViewType = vk::ImageViewType::e2D;
+	if (bIs3D)
+		eViewType = vk::ImageViewType::e3D;
+	else if (bIsCube)
+		eViewType = vk::ImageViewType::eCube;
+
 	vk::ImageSubresourceRange xSubresourceRange = vk::ImageSubresourceRange()
 		.setAspectMask(vk::ImageAspectFlagBits::eColor)
 		.setBaseMipLevel(uMipLevel)
 		.setLevelCount(1)
 		.setBaseArrayLayer(0)
-		.setLayerCount(uLayerCount);
+		.setLayerCount(bIs3D ? 1 : uLayerCount);
 
 	vk::ImageViewCreateInfo xViewCreate = vk::ImageViewCreateInfo()
 		.setImage(pxVRAM->GetImage())
-		.setViewType(bIsCube ? vk::ImageViewType::eCube : vk::ImageViewType::e2D)
+		.setViewType(eViewType)
 		.setFormat(xFormat)
 		.setSubresourceRange(xSubresourceRange);
 
@@ -1063,7 +1131,7 @@ void Zenith_Vulkan_MemoryManager::FlushStagingBuffer()
 				.setBufferImageHeight(0)
 				.setImageSubresource(xSubresource)
 				.setImageOffset({ 0, 0, 0 })
-				.setImageExtent({ xMeta.m_uWidth, xMeta.m_uHeight, 1 });
+				.setImageExtent({ xMeta.m_uWidth, xMeta.m_uHeight, xMeta.m_uDepth });
 
 			s_xCommandBuffer.GetCurrentCmdBuffer().copyBufferToImage(s_xStagingBuffer, xImage, vk::ImageLayout::eTransferDstOptimal, 1, &region);
 

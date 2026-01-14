@@ -1,4 +1,13 @@
 #pragma once
+
+// Save zone state and set up placement new protection
+#ifdef ZENITH_PLACEMENT_NEW_ZONE
+#define ZENITH_VECTOR_ZONE_WAS_SET
+#else
+#define ZENITH_PLACEMENT_NEW_ZONE
+#endif
+#include "Memory/Zenith_MemoryManagement_Disabled.h"
+
 #include "DataStream/Zenith_DataStream.h"
 
 template<typename T>
@@ -73,9 +82,7 @@ public:
 			// Copy construct elements into new buffer
 			for (u_int u = 0; u < uNewSize; u++)
 			{
-				#include "Memory/Zenith_MemoryManagement_Disabled.h"
 				new (&pNewData[u]) T(xOther.m_pxData[u]);
-				#include "Memory/Zenith_MemoryManagement_Enabled.h"
 			}
 		}
 
@@ -121,9 +128,7 @@ public:
 	{
 		while (m_uSize >= m_uCapacity) Resize();
 
-		#include "Memory/Zenith_MemoryManagement_Disabled.h"
 		new (&m_pxData[m_uSize]) T(xValue);
-		#include "Memory/Zenith_MemoryManagement_Enabled.h"
 		m_uSize++;
 	}
 
@@ -131,9 +136,7 @@ public:
 	{
 		while (m_uSize >= m_uCapacity) Resize();
 
-		#include "Memory/Zenith_MemoryManagement_Disabled.h"
 		new (&m_pxData[m_uSize]) T(std::move(xValue));
-		#include "Memory/Zenith_MemoryManagement_Enabled.h"
 		m_uSize++;
 	}
 
@@ -142,9 +145,7 @@ public:
 	{
 		while (m_uSize >= m_uCapacity) Resize();
 
-		#include "Memory/Zenith_MemoryManagement_Disabled.h"
 		new (&m_pxData[m_uSize]) T(std::forward<Args>(args)...);
-		#include "Memory/Zenith_MemoryManagement_Enabled.h"
 		m_uSize++;
 	}
 
@@ -236,9 +237,7 @@ public:
 		{
 			// Move last element to removed position
 			m_pxData[uIndex].~T();
-			#include "Memory/Zenith_MemoryManagement_Disabled.h"
 			new (&m_pxData[uIndex]) T(std::move(m_pxData[m_uSize - 1]));
-			#include "Memory/Zenith_MemoryManagement_Enabled.h"
 		}
 
 		m_pxData[m_uSize - 1].~T();
@@ -273,9 +272,7 @@ public:
 		// Move remaining valid elements using move semantics for proper handling of non-trivial types
 		for (u_int u = uIndex; u < m_uSize - 1; u++)
 		{
-			#include "Memory/Zenith_MemoryManagement_Disabled.h"
 			new (&m_pxData[u]) T(std::move(m_pxData[u + 1]));
-			#include "Memory/Zenith_MemoryManagement_Enabled.h"
 			m_pxData[u + 1].~T();
 		}
 		m_uSize--;
@@ -318,9 +315,7 @@ public:
 
 		for (u_int u = 0; u < m_uSize; u++)
 		{
-			#include "Memory/Zenith_MemoryManagement_Disabled.h"
 			new (&pNewData[u]) T(std::move(m_pxData[u]));
-			#include "Memory/Zenith_MemoryManagement_Enabled.h"
 			m_pxData[u].~T();
 		}
 		Zenith_MemoryManagement::Deallocate(m_pxData);
@@ -475,9 +470,7 @@ private:
 		// Use placement new with copy construction for proper handling of non-trivial types (e.g. std::string)
 		for (u_int u = 0; u < m_uSize; u++)
 		{
-			#include "Memory/Zenith_MemoryManagement_Disabled.h"
 			new (&m_pxData[u]) T(xOther.m_pxData[u]);
-			#include "Memory/Zenith_MemoryManagement_Enabled.h"
 		}
 	}
 
@@ -486,3 +479,10 @@ private:
 	u_int m_uCapacity = 0;
 	u_int m_uGeneration = 0;  // Incremented on reallocation to detect iterator invalidation
 };
+
+// Restore zone state - only undefine if we defined it ourselves
+#ifndef ZENITH_VECTOR_ZONE_WAS_SET
+#undef ZENITH_PLACEMENT_NEW_ZONE
+#endif
+#undef ZENITH_VECTOR_ZONE_WAS_SET
+#include "Memory/Zenith_MemoryManagement_Enabled.h"

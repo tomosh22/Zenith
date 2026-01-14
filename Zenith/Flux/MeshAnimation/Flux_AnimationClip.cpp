@@ -2,9 +2,11 @@
 #include "Flux_AnimationClip.h"
 #include "Core/Zenith_Core.h"
 
+#include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
+#include "Memory/Zenith_MemoryManagement_Enabled.h"
 
 //=============================================================================
 // Flux_AnimationEvent

@@ -173,3 +173,15 @@ public class TilePuzzleGameProject : GameProject
 		// TilePuzzle-specific configuration if needed
 	}
 }
+
+// AIShowcase game project - AI System demonstration
+[Sharpmake.Generate]
+public class AIShowcaseGameProject : GameProject
+{
+	public override string GameName => "AIShowcase";
+
+	public AIShowcaseGameProject() : base()
+	{
+		// AIShowcase-specific configuration if needed
+	}
+}

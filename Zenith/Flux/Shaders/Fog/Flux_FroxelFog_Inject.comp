@@ -1,0 +1,102 @@
+#version 450
+
+#include "../Common.fxh"
+#include "Flux_NoiseCommon.fxh"
+#include "Flux_VolumetricCommon.fxh"
+
+layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
+
+// Bindings (binding 0 is FrameConstants from Common.fxh)
+layout(set = 0, binding = 1) uniform sampler3D u_xNoiseTexture3D;
+layout(set = 0, binding = 2, rgba16f) uniform writeonly image3D u_xDensityGrid;
+
+// Push constants
+layout(push_constant) uniform InjectConstants
+{
+    vec4 u_xFogParams;        // x = density, y = scattering, z = absorption, w = time
+    vec4 u_xNoiseParams;      // x = scale, y = speed, z = detail, w = unused
+    vec4 u_xHeightParams;     // x = base height, y = falloff, z = min height, w = max height
+    vec4 u_xGridDimensions;   // x = width, y = height, z = depth, w = unused
+    float u_fNearZ;
+    float u_fFarZ;
+    uint u_uFrameIndex;
+    float u_fPad0;
+};
+
+// Convert froxel coordinates to world position
+vec3 FroxelToWorldPosition(ivec3 froxelCoord)
+{
+    // UV in froxel space (0-1)
+    vec2 uv = (vec2(froxelCoord.xy) + 0.5) / u_xGridDimensions.xy;
+
+    // Exponential depth distribution (more resolution near camera)
+    float nearZ = max(u_fNearZ, SAFE_NEAR_Z);
+    float farZ = max(u_fFarZ, nearZ * SAFE_DEPTH_RATIO);
+    float sliceNorm = (float(froxelCoord.z) + 0.5) / u_xGridDimensions.z;
+    float linearDepth = nearZ * pow(farZ / nearZ, sliceNorm);
+
+    // Convert UV to NDC
+    vec2 ndc = uv * 2.0 - 1.0;
+
+    // Reconstruct view ray using precomputed inverse projection
+    vec4 clipPos = vec4(ndc, 0.0, 1.0);
+    vec4 viewPos = g_xInvProjMat * clipPos;
+    viewPos /= viewPos.w;
+
+    // Scale the view position to reach the target depth
+    float viewZ = max(abs(viewPos.z), SAFE_NEAR_Z);
+    vec3 scaledViewPos = viewPos.xyz * (linearDepth / viewZ);
+
+    // Transform to world space using precomputed inverse view matrix
+    vec4 worldPos = g_xInvViewMat * vec4(scaledViewPos, 1.0);
+    return worldPos.xyz;
+}
+
+void main()
+{
+    ivec3 froxelCoord = ivec3(gl_GlobalInvocationID.xyz);
+
+    // Bounds check
+    if (froxelCoord.x >= int(u_xGridDimensions.x) ||
+        froxelCoord.y >= int(u_xGridDimensions.y) ||
+        froxelCoord.z >= int(u_xGridDimensions.z))
+    {
+        return;
+    }
+
+    // Get world position for this froxel
+    vec3 worldPos = FroxelToWorldPosition(froxelCoord);
+
+    // Base density from parameters
+    float baseDensity = u_xFogParams.x;
+
+    // Height-based density falloff
+    float heightDensity = HeightFogDensity(worldPos.y, u_xHeightParams.x, u_xHeightParams.y);
+
+    // Clamp to height bounds
+    if (worldPos.y < u_xHeightParams.z || worldPos.y > u_xHeightParams.w)
+    {
+        heightDensity = 0.0;
+    }
+
+    // Sample 3D noise for density variation
+    vec3 noiseCoord = worldPos * u_xNoiseParams.x;
+    noiseCoord.y += u_xFogParams.w * u_xNoiseParams.y;  // Animate vertically over time
+
+    float noise = texture(u_xNoiseTexture3D, noiseCoord).r;
+
+    // Combine all density factors
+    // Scale baseDensity to match UI range (0-0.01 maps to 0-1.0)
+    float scaledBaseDensity = baseDensity * 100.0;
+    float finalDensity = scaledBaseDensity * heightDensity * noise;
+
+    // Store density (R), scattering coefficient (G), absorption coefficient (B)
+    vec4 densityOutput = vec4(
+        finalDensity,
+        u_xFogParams.y * finalDensity,  // Scattering
+        u_xFogParams.z * finalDensity,  // Absorption
+        1.0  // Unused
+    );
+
+    imageStore(u_xDensityGrid, froxelCoord, densityOutput);
+}

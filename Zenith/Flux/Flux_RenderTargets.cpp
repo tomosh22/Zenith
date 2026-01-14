@@ -18,7 +18,9 @@ void Flux_RenderAttachmentBuilder::BuildColour(Flux_RenderAttachment& xAttachmen
 	Flux_SurfaceInfo xInfo;
 	xInfo.m_uWidth = m_uWidth;
 	xInfo.m_uHeight = m_uHeight;
+	xInfo.m_uDepth = m_uDepth;
 	xInfo.m_eFormat = m_eFormat;
+	xInfo.m_eTextureType = m_eTextureType;
 	xInfo.m_uNumMips = 1;
 	xInfo.m_uNumLayers = 1;
 	xInfo.m_uMemoryFlags = m_uMemoryFlags;
@@ -27,8 +29,11 @@ void Flux_RenderAttachmentBuilder::BuildColour(Flux_RenderAttachment& xAttachmen
 	xAttachment.m_xVRAMHandle = Flux_MemoryManager::CreateRenderTargetVRAM(xInfo);
 	xAttachment.m_xSurfaceInfo = xInfo;
 
-	// Create RTV
-	xAttachment.m_pxRTV = Flux_MemoryManager::CreateRenderTargetView(xAttachment.m_xVRAMHandle, xInfo, 0);
+	// Create RTV (only for 2D textures)
+	if (m_eTextureType == TEXTURE_TYPE_2D)
+	{
+		xAttachment.m_pxRTV = Flux_MemoryManager::CreateRenderTargetView(xAttachment.m_xVRAMHandle, xInfo, 0);
+	}
 
 	// Create SRV
 	xAttachment.m_pxSRV = Flux_MemoryManager::CreateShaderResourceView(xAttachment.m_xVRAMHandle, xInfo, 0, xInfo.m_uNumMips);

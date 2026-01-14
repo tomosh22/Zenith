@@ -1,5 +1,13 @@
 #pragma once
 
+// Save zone state and set up placement new protection
+#ifdef ZENITH_PLACEMENT_NEW_ZONE
+#define ZENITH_CIRCULARQUEUE_ZONE_WAS_SET
+#else
+#define ZENITH_PLACEMENT_NEW_ZONE
+#endif
+#include "Memory/Zenith_MemoryManagement_Disabled.h"
+
 /**
  * Zenith_CircularQueue - Fixed-capacity FIFO queue
  *
@@ -95,3 +103,10 @@ private:
 	u_int m_uCurrentSize = 0;
 	u_int m_uFront = 0;
 };
+
+// Restore zone state - only undefine if we defined it ourselves
+#ifndef ZENITH_CIRCULARQUEUE_ZONE_WAS_SET
+#undef ZENITH_PLACEMENT_NEW_ZONE
+#endif
+#undef ZENITH_CIRCULARQUEUE_ZONE_WAS_SET
+#include "Memory/Zenith_MemoryManagement_Enabled.h"

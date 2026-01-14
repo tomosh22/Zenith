@@ -132,6 +132,11 @@ public class ZenithProject : ZenithBaseProject
 		if (target.Platform == Platform.win64)
 		{
 			conf.Output = Configuration.OutputType.Lib;
+
+			// DbgHelp library for callstack capture (used by memory tracking)
+			conf.LibraryFiles.Add("dbghelp.lib");
+			// PSApi library for process memory info (GetProcessMemoryInfo)
+			conf.LibraryFiles.Add("psapi.lib");
 		}
 		else if (target.Platform == Platform.agde)
 		{

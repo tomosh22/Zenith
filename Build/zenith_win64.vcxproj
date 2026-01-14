@@ -1035,6 +1035,24 @@
     <ClInclude Include="..\Tools\Zenith_Tools_MeshExport.h" />
     <ClInclude Include="..\Tools\Zenith_Tools_TerrainExport.h" />
     <ClInclude Include="..\Tools\Zenith_Tools_TextureExport.h" />
+    <ClInclude Include="..\Zenith\AI\BehaviorTree\Zenith_BehaviorTree.h" />
+    <ClInclude Include="..\Zenith\AI\BehaviorTree\Zenith_Blackboard.h" />
+    <ClInclude Include="..\Zenith\AI\BehaviorTree\Zenith_BTActions.h" />
+    <ClInclude Include="..\Zenith\AI\BehaviorTree\Zenith_BTComposites.h" />
+    <ClInclude Include="..\Zenith\AI\BehaviorTree\Zenith_BTConditions.h" />
+    <ClInclude Include="..\Zenith\AI\BehaviorTree\Zenith_BTDecorators.h" />
+    <ClInclude Include="..\Zenith\AI\BehaviorTree\Zenith_BTNode.h" />
+    <ClInclude Include="..\Zenith\AI\Components\Zenith_AIAgentComponent.h" />
+    <ClInclude Include="..\Zenith\AI\Navigation\Zenith_NavMesh.h" />
+    <ClInclude Include="..\Zenith\AI\Navigation\Zenith_NavMeshAgent.h" />
+    <ClInclude Include="..\Zenith\AI\Navigation\Zenith_NavMeshGenerator.h" />
+    <ClInclude Include="..\Zenith\AI\Navigation\Zenith_Pathfinding.h" />
+    <ClInclude Include="..\Zenith\AI\Perception\Zenith_PerceptionSystem.h" />
+    <ClInclude Include="..\Zenith\AI\Squad\Zenith_Formation.h" />
+    <ClInclude Include="..\Zenith\AI\Squad\Zenith_Squad.h" />
+    <ClInclude Include="..\Zenith\AI\Squad\Zenith_TacticalPoint.h" />
+    <ClInclude Include="..\Zenith\AI\Zenith_AIDebugVariables.h" />
+    <ClInclude Include="..\Zenith\Android\Callstack\Zenith_Android_Callstack.h" />
     <ClInclude Include="..\Zenith\Android\Multithreading\Zenith_Android_Multithreading.h" />
     <ClInclude Include="..\Zenith\Android\Zenith_Android_Window.h" />
     <ClInclude Include="..\Zenith\Android\Zenith_OS_Include.h" />
@@ -1052,9 +1070,13 @@
     <ClInclude Include="..\Zenith\Collections\Zenith_CircularQueue.h" />
     <ClInclude Include="..\Zenith\Collections\Zenith_MemoryPool.h" />
     <ClInclude Include="..\Zenith\Collections\Zenith_Vector.h" />
+    <ClInclude Include="..\Zenith\Core\Callstack\Zenith_Callstack.h" />
+    <ClInclude Include="..\Zenith\Core\Memory\Zenith_MemoryBudgets.h" />
+    <ClInclude Include="..\Zenith\Core\Memory\Zenith_MemoryCategories.h" />
     <ClInclude Include="..\Zenith\Core\Memory\Zenith_MemoryManagement.h" />
     <ClInclude Include="..\Zenith\Core\Memory\Zenith_MemoryManagement_Disabled.h" />
     <ClInclude Include="..\Zenith\Core\Memory\Zenith_MemoryManagement_Enabled.h" />
+    <ClInclude Include="..\Zenith\Core\Memory\Zenith_MemoryTracker.h" />
     <ClInclude Include="..\Zenith\Core\Multithreading\Zenith_Multithreading.h" />
     <ClInclude Include="..\Zenith\Core\Zenith.h" />
     <ClInclude Include="..\Zenith\Core\ZenithConfig.h" />
@@ -1068,6 +1090,7 @@
     <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_ContentBrowser.h" />
     <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Hierarchy.h" />
     <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_MaterialEditor.h" />
+    <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Memory.h" />
     <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Properties.h" />
     <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Toolbar.h" />
     <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Viewport.h" />
@@ -1106,6 +1129,12 @@
     <ClInclude Include="..\Zenith\Flux\Flux_RenderTargets.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_Types.h" />
     <ClInclude Include="..\Zenith\Flux\Fog\Flux_Fog.h" />
+    <ClInclude Include="..\Zenith\Flux\Fog\Flux_FroxelFog.h" />
+    <ClInclude Include="..\Zenith\Flux\Fog\Flux_GodRaysFog.h" />
+    <ClInclude Include="..\Zenith\Flux\Fog\Flux_LPVFog.h" />
+    <ClInclude Include="..\Zenith\Flux\Fog\Flux_RaymarchFog.h" />
+    <ClInclude Include="..\Zenith\Flux\Fog\Flux_TemporalFog.h" />
+    <ClInclude Include="..\Zenith\Flux\Fog\Flux_VolumeFog.h" />
     <ClInclude Include="..\Zenith\Flux\Gizmos\Flux_Gizmos.h" />
     <ClInclude Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationClip.h" />
     <ClInclude Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationController.h" />
@@ -1138,6 +1167,17 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\Flux_Fullscreen_UV.vert" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Flux_TexturedQuad.frag" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_Fog.frag" />
+    <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_FroxelFog_Apply.frag" />
+    <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_FroxelFog_Inject.comp" />
+    <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_FroxelFog_Light.comp" />
+    <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_GodRays.frag" />
+    <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_LPVFog_Apply.frag" />
+    <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_LPVFog_Inject.comp" />
+    <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_LPVFog_Propagate.comp" />
+    <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_NoiseCommon.fxh" />
+    <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_RaymarchFog.frag" />
+    <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_TemporalFog_Resolve.comp" />
+    <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_VolumetricCommon.fxh" />
     <ClInclude Include="..\Zenith\Flux\Shaders\GBufferCommon.fxh" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Gizmos\Flux_Gizmos.frag" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Gizmos\Flux_Gizmos.vert" />
@@ -1204,6 +1244,7 @@
     <ClInclude Include="..\Zenith\Vulkan\Zenith_Vulkan_Platform.h" />
     <ClInclude Include="..\Zenith\Vulkan\Zenith_Vulkan_Swapchain.h" />
     <ClInclude Include="..\Zenith\Vulkan\Zenith_Vulkan_Texture.h" />
+    <ClInclude Include="..\Zenith\Windows\Callstack\Zenith_Windows_Callstack.h" />
     <ClInclude Include="..\Zenith\Windows\Multithreading\Zenith_Windows_Multithreading.h" />
     <ClInclude Include="..\Zenith\Windows\Zenith_OS_Include.h" />
     <ClInclude Include="..\Zenith\Windows\Zenith_Windows_Window.h" />
@@ -2101,6 +2142,29 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">true</ExcludedFromBuild>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="..\Zenith\AI\BehaviorTree\Zenith_BehaviorTree.cpp" />
+    <ClCompile Include="..\Zenith\AI\BehaviorTree\Zenith_Blackboard.cpp" />
+    <ClCompile Include="..\Zenith\AI\BehaviorTree\Zenith_BTActions.cpp" />
+    <ClCompile Include="..\Zenith\AI\BehaviorTree\Zenith_BTComposites.cpp" />
+    <ClCompile Include="..\Zenith\AI\BehaviorTree\Zenith_BTConditions.cpp" />
+    <ClCompile Include="..\Zenith\AI\BehaviorTree\Zenith_BTDecorators.cpp" />
+    <ClCompile Include="..\Zenith\AI\BehaviorTree\Zenith_BTNode.cpp" />
+    <ClCompile Include="..\Zenith\AI\Components\Zenith_AIAgentComponent.cpp" />
+    <ClCompile Include="..\Zenith\AI\Navigation\Zenith_NavMesh.cpp" />
+    <ClCompile Include="..\Zenith\AI\Navigation\Zenith_NavMeshAgent.cpp" />
+    <ClCompile Include="..\Zenith\AI\Navigation\Zenith_NavMeshGenerator.cpp" />
+    <ClCompile Include="..\Zenith\AI\Navigation\Zenith_Pathfinding.cpp" />
+    <ClCompile Include="..\Zenith\AI\Perception\Zenith_PerceptionSystem.cpp" />
+    <ClCompile Include="..\Zenith\AI\Squad\Zenith_Formation.cpp" />
+    <ClCompile Include="..\Zenith\AI\Squad\Zenith_Squad.cpp" />
+    <ClCompile Include="..\Zenith\AI\Squad\Zenith_TacticalPoint.cpp" />
+    <ClCompile Include="..\Zenith\AI\Zenith_AIDebugVariables.cpp" />
+    <ClCompile Include="..\Zenith\Android\Callstack\Zenith_Android_Callstack.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Android\FileAccess\Zenith_Android_FileAccess.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
@@ -2148,7 +2212,10 @@
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_MeshAsset.cpp" />
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_ModelAsset.cpp" />
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_SkeletonAsset.cpp" />
+    <ClCompile Include="..\Zenith\Core\Callstack\Zenith_Callstack.cpp" />
+    <ClCompile Include="..\Zenith\Core\Memory\Zenith_MemoryBudgets.cpp" />
     <ClCompile Include="..\Zenith\Core\Memory\Zenith_MemoryManagement.cpp" />
+    <ClCompile Include="..\Zenith\Core\Memory\Zenith_MemoryTracker.cpp" />
     <ClCompile Include="..\Zenith\Core\Multithreading\Zenith_Multithreading.cpp" />
     <ClCompile Include="..\Zenith\Core\Zenith.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">Create</PrecompiledHeader>
@@ -2164,6 +2231,7 @@
     <ClCompile Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_ContentBrowser.cpp" />
     <ClCompile Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Hierarchy.cpp" />
     <ClCompile Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_MaterialEditor.cpp" />
+    <ClCompile Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Memory.cpp" />
     <ClCompile Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Properties.cpp" />
     <ClCompile Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Toolbar.cpp" />
     <ClCompile Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Viewport.cpp" />
@@ -2199,6 +2267,12 @@
     <ClCompile Include="..\Zenith\Flux\Flux_ModelInstance.cpp" />
     <ClCompile Include="..\Zenith\Flux\Flux_RenderTargets.cpp" />
     <ClCompile Include="..\Zenith\Flux\Fog\Flux_Fog.cpp" />
+    <ClCompile Include="..\Zenith\Flux\Fog\Flux_FroxelFog.cpp" />
+    <ClCompile Include="..\Zenith\Flux\Fog\Flux_GodRaysFog.cpp" />
+    <ClCompile Include="..\Zenith\Flux\Fog\Flux_LPVFog.cpp" />
+    <ClCompile Include="..\Zenith\Flux\Fog\Flux_RaymarchFog.cpp" />
+    <ClCompile Include="..\Zenith\Flux\Fog\Flux_TemporalFog.cpp" />
+    <ClCompile Include="..\Zenith\Flux\Fog\Flux_VolumeFog.cpp" />
     <ClCompile Include="..\Zenith\Flux\Gizmos\Flux_Gizmos.cpp" />
     <ClCompile Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationClip.cpp" />
     <ClCompile Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationController.cpp" />
@@ -2235,6 +2309,7 @@
     <ClCompile Include="..\Zenith\UI\Zenith_UIImage.cpp" />
     <ClCompile Include="..\Zenith\UI\Zenith_UIRect.cpp" />
     <ClCompile Include="..\Zenith\UI\Zenith_UIText.cpp" />
+    <ClCompile Include="..\Zenith\UnitTests\Zenith_AITests.cpp" />
     <ClCompile Include="..\Zenith\UnitTests\Zenith_EditorTests.cpp" />
     <ClCompile Include="..\Zenith\UnitTests\Zenith_UnitTests.cpp" />
     <ClCompile Include="..\Zenith\Vulkan\Zenith_Vulkan.cpp" />
@@ -2245,6 +2320,7 @@
     <ClCompile Include="..\Zenith\Vulkan\Zenith_Vulkan_Pipeline.cpp" />
     <ClCompile Include="..\Zenith\Vulkan\Zenith_Vulkan_Swapchain.cpp" />
     <ClCompile Include="..\Zenith\Vulkan\Zenith_Vulkan_Texture.cpp" />
+    <ClCompile Include="..\Zenith\Windows\Callstack\Zenith_Windows_Callstack.cpp" />
     <ClCompile Include="..\Zenith\Windows\FileAccess\Zenith_Windows_FileAccess.cpp" />
     <ClCompile Include="..\Zenith\Windows\Multithreading\Zenith_Windows_Multithreading.cpp" />
     <ClCompile Include="..\Zenith\Windows\Vulkan\Zenith_Windows_Vulkan.cpp" />

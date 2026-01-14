@@ -12,31 +12,18 @@ thread_local static char tl_g_acThreadName[Zenith_Multithreading::uMAX_THREAD_NA
 thread_local static u_int tl_g_uThreadID = -1;
 static u_int g_uMainThreadID = -1;
 
-Zenith_Windows_Mutex::Zenith_Windows_Mutex()
-{
-	InitializeCriticalSection(&m_xCriticalSection);
-}
-
-Zenith_Windows_Mutex::~Zenith_Windows_Mutex()
-{
-	DeleteCriticalSection(&m_xCriticalSection);
-}
-
-void Zenith_Windows_Mutex::Lock()
+template<>
+void Zenith_Windows_Mutex_T<true>::Lock()
 {
 	Zenith_Profiling::BeginProfile(ZENITH_PROFILE_INDEX__WAIT_FOR_MUTEX);
 	EnterCriticalSection(&m_xCriticalSection);
 	Zenith_Profiling::EndProfile(ZENITH_PROFILE_INDEX__WAIT_FOR_MUTEX);
 }
 
-bool Zenith_Windows_Mutex::TryLock()
+template<>
+void Zenith_Windows_Mutex_T<false>::Lock()
 {
-	return TryEnterCriticalSection(&m_xCriticalSection) != 0;
-}
-
-void Zenith_Windows_Mutex::Unlock()
-{
-	LeaveCriticalSection(&m_xCriticalSection);
+	EnterCriticalSection(&m_xCriticalSection);
 }
 
 Zenith_Windows_Semaphore::Zenith_Windows_Semaphore(u_int uInitialValue, u_int uMaxValue)

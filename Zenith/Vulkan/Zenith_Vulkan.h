@@ -74,6 +74,10 @@ public:
 	static void ShutdownImGui();
 	static void ImGuiBeginFrame();
 	static const vk::DescriptorPool& GetImGuiDescriptorPool() { return s_xImGuiDescriptorPool; }
+
+	// ImGui memory tracking
+	static u_int64 GetImGuiMemoryAllocated();
+	static u_int64 GetImGuiAllocationCount();
 #endif
 
 	static void BeginFrame();

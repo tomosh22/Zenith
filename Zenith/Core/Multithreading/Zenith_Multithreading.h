@@ -20,12 +20,22 @@ private:
 
 };
 
-class Zenith_ScopedMutexLock
+template<typename TMutex = Zenith_Mutex>
+class Zenith_ScopedMutexLock_T
 {
 public:
-	Zenith_ScopedMutexLock() = delete;
-	Zenith_ScopedMutexLock(Zenith_Mutex& xMutex);
-	~Zenith_ScopedMutexLock();
+	Zenith_ScopedMutexLock_T() = delete;
+	Zenith_ScopedMutexLock_T(TMutex& xMutex)
+		: m_xMutex(xMutex)
+	{
+		m_xMutex.Lock();
+	}
+	~Zenith_ScopedMutexLock_T()
+	{
+		m_xMutex.Unlock();
+	}
 private:
-	Zenith_Mutex& m_xMutex;
+	TMutex& m_xMutex;
 };
+
+using Zenith_ScopedMutexLock = Zenith_ScopedMutexLock_T<Zenith_Mutex>;

@@ -93,7 +93,7 @@ class Flux_CommandSetPipeline
 public:
 	static constexpr Flux_CommandType m_eType = FLUX_COMMANDTYPE__SET_PIPELINE;
 
-	Flux_CommandSetPipeline(Flux_Pipeline* pxPipeline) : m_pxPipeline(pxPipeline) {}
+	Flux_CommandSetPipeline(Flux_Pipeline* pxPipeline);
 	void operator()(Flux_CommandBuffer* pxCmdBuf)
 	{
 		pxCmdBuf->SetPipeline(m_pxPipeline);
@@ -157,10 +157,7 @@ class Flux_CommandBindCBV
 public:
 	static constexpr Flux_CommandType m_eType = FLUX_COMMANDTYPE__BIND_CBV;
 
-	Flux_CommandBindCBV(const Flux_ConstantBufferView* pxCBV, const u_int uBindPoint)
-		: m_pxCBV(pxCBV)
-		, m_uBindPoint(uBindPoint)
-	{}
+	Flux_CommandBindCBV(const Flux_ConstantBufferView* pxCBV, const u_int uBindPoint);
 	void operator()(Flux_CommandBuffer* pxCmdBuf)
 	{
 		pxCmdBuf->BindCBV(m_pxCBV, m_uBindPoint);
@@ -175,11 +172,7 @@ class Flux_CommandBindSRV
 public:
 	static constexpr Flux_CommandType m_eType = FLUX_COMMANDTYPE__BIND_SRV;
 
-	Flux_CommandBindSRV(const Flux_ShaderResourceView* const pxSRV, const u_int uBindPoint, Flux_Sampler* pxSampler = nullptr)
-		: m_pxSRV(pxSRV)
-		, m_uBindPoint(uBindPoint)
-		, m_pxSampler(pxSampler)
-	{}
+	Flux_CommandBindSRV(const Flux_ShaderResourceView* const pxSRV, const u_int uBindPoint, Flux_Sampler* pxSampler = nullptr);
 	void operator()(Flux_CommandBuffer* pxCmdBuf)
 	{
 		pxCmdBuf->BindSRV(m_pxSRV, m_uBindPoint, m_pxSampler);
@@ -194,10 +187,7 @@ class Flux_CommandBindUAV_Texture
 public:
 	static constexpr Flux_CommandType m_eType = FLUX_COMMANDTYPE__BIND_UAV_TEXTURE;
 
-	Flux_CommandBindUAV_Texture(const Flux_UnorderedAccessView_Texture* const pxUAV, const u_int uBindPoint)
-		: m_pxUAV(pxUAV)
-		, m_uBindPoint(uBindPoint)
-	{}
+	Flux_CommandBindUAV_Texture(const Flux_UnorderedAccessView_Texture* const pxUAV, const u_int uBindPoint);
 	void operator()(Flux_CommandBuffer* pxCmdBuf)
 	{
 		pxCmdBuf->BindUAV_Texture(m_pxUAV, m_uBindPoint);
@@ -211,11 +201,7 @@ class Flux_CommandBindUAV_Buffer
 public:
 	static constexpr Flux_CommandType m_eType = FLUX_COMMANDTYPE__BIND_UAV_BUFFER;
 
-	Flux_CommandBindUAV_Buffer(const Flux_UnorderedAccessView_Buffer* const pxUAV, const u_int uBindPoint)
-		: m_pxUAV(pxUAV)
-		, m_uBindPoint(uBindPoint)
-	{
-	}
+	Flux_CommandBindUAV_Buffer(const Flux_UnorderedAccessView_Buffer* const pxUAV, const u_int uBindPoint);
 	void operator()(Flux_CommandBuffer* pxCmdBuf)
 	{
 		pxCmdBuf->BindUAV_Buffer(m_pxUAV, m_uBindPoint);
@@ -267,12 +253,7 @@ class Flux_CommandDrawIndexedIndirect
 public:
 	static constexpr Flux_CommandType m_eType = FLUX_COMMANDTYPE__DRAW_INDEXED_INDIRECT;
 
-	Flux_CommandDrawIndexedIndirect(const Flux_IndirectBuffer* pxIndirectBuffer, u_int uDrawCount, u_int uOffset = 0, u_int uStride = 20)
-		: m_pxIndirectBuffer(pxIndirectBuffer)
-		, m_uDrawCount(uDrawCount)
-		, m_uOffset(uOffset)
-		, m_uStride(uStride)
-	{}
+	Flux_CommandDrawIndexedIndirect(const Flux_IndirectBuffer* pxIndirectBuffer, u_int uDrawCount, u_int uOffset = 0, u_int uStride = 20);
 	void operator()(Flux_CommandBuffer* pxCmdBuf)
 	{
 		pxCmdBuf->DrawIndexedIndirect(m_pxIndirectBuffer, m_uDrawCount, m_uOffset, m_uStride);
@@ -289,14 +270,7 @@ class Flux_CommandDrawIndexedIndirectCount
 public:
 	static constexpr Flux_CommandType m_eType = FLUX_COMMANDTYPE__DRAW_INDEXED_INDIRECT_COUNT;
 
-	Flux_CommandDrawIndexedIndirectCount(const Flux_IndirectBuffer* pxIndirectBuffer, const Flux_IndirectBuffer* pxCountBuffer, u_int uMaxDrawCount, u_int uIndirectOffset = 0, u_int uCountOffset = 0, u_int uStride = 20)
-		: m_pxIndirectBuffer(pxIndirectBuffer)
-		, m_pxCountBuffer(pxCountBuffer)
-		, m_uMaxDrawCount(uMaxDrawCount)
-		, m_uIndirectOffset(uIndirectOffset)
-		, m_uCountOffset(uCountOffset)
-		, m_uStride(uStride)
-	{}
+	Flux_CommandDrawIndexedIndirectCount(const Flux_IndirectBuffer* pxIndirectBuffer, const Flux_IndirectBuffer* pxCountBuffer, u_int uMaxDrawCount, u_int uIndirectOffset = 0, u_int uCountOffset = 0, u_int uStride = 20);
 	void operator()(Flux_CommandBuffer* pxCmdBuf)
 	{
 		pxCmdBuf->DrawIndexedIndirectCount(m_pxIndirectBuffer, m_pxCountBuffer, m_uMaxDrawCount, m_uIndirectOffset, m_uCountOffset, m_uStride);
@@ -317,7 +291,7 @@ class Flux_CommandBindComputePipeline
 public:
 	static constexpr Flux_CommandType m_eType = FLUX_COMMANDTYPE__BIND_COMPUTE_PIPELINE;
 
-	Flux_CommandBindComputePipeline(Flux_Pipeline* pxPipeline) : m_pxPipeline(pxPipeline) {}
+	Flux_CommandBindComputePipeline(Flux_Pipeline* pxPipeline);
 	void operator()(Flux_CommandBuffer* pxCmdBuf)
 	{
 		pxCmdBuf->BindComputePipeline(m_pxPipeline);

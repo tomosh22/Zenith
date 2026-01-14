@@ -101,6 +101,15 @@ public:
 	static void IncreaseMemoryUsage(u_int64 ulSize) { s_ulMemoryUsed += ulSize; }
 	static void DecreaseMemoryUsage(u_int64 ulSize) { s_ulMemoryUsed -= ulSize; }
 	static const u_int64* GetMemoryUsagePtr() { return &s_ulMemoryUsed; }
+
+	// VMA statistics - returns actual allocated GPU memory from VMA
+	struct VMAStats
+	{
+		u_int64 m_ulTotalAllocatedBytes;
+		u_int64 m_ulTotalUsedBytes;
+		u_int64 m_ulAllocationCount;
+	};
+	static VMAStats GetVMAStats();
 private:
 
 	static void InitialiseStagingBuffer();
@@ -116,6 +125,7 @@ private:
 		vk::Image m_xImage;
 		uint32_t m_uWidth;
 		uint32_t m_uHeight;
+		uint32_t m_uDepth;
 		uint32_t m_uNumMips;
 		uint32_t m_uNumLayers;
 	};

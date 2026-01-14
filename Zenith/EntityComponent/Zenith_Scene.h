@@ -1,5 +1,13 @@
 #pragma once
 
+// Save zone state and set up placement new protection
+#ifdef ZENITH_PLACEMENT_NEW_ZONE
+#define ZENITH_SCENE_ZONE_WAS_SET
+#else
+#define ZENITH_PLACEMENT_NEW_ZONE
+#endif
+#include "Memory/Zenith_MemoryManagement_Disabled.h"
+
 #include "Collections/Zenith_Vector.h"
 #include "Core/Multithreading/Zenith_Multithreading.h"
 #include <atomic>
@@ -660,3 +668,10 @@ void Zenith_Entity::RemoveComponent()
 
 	m_pxParentScene->RemoveComponentFromEntity<T>(m_xEntityID);
 }
+
+// Restore zone state - only undefine if we defined it ourselves
+#ifndef ZENITH_SCENE_ZONE_WAS_SET
+#undef ZENITH_PLACEMENT_NEW_ZONE
+#endif
+#undef ZENITH_SCENE_ZONE_WAS_SET
+#include "Memory/Zenith_MemoryManagement_Enabled.h"

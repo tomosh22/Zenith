@@ -104,12 +104,28 @@ struct CylinderInstance
 	Zenith_Maths::Vector3 m_xColor;
 };
 
+struct TriangleInstance
+{
+	Zenith_Maths::Vector3 m_xV0;
+	Zenith_Maths::Vector3 m_xV1;
+	Zenith_Maths::Vector3 m_xV2;
+	Zenith_Maths::Vector3 m_xColor;
+};
+
 // Per-frame instance queues
 static Zenith_Vector<SphereInstance> g_xSphereInstances;
 static Zenith_Vector<CubeInstance> g_xCubeInstances;
 static Zenith_Vector<LineInstance> g_xLineInstances;
 static Zenith_Vector<CapsuleInstance> g_xCapsuleInstances;
 static Zenith_Vector<CylinderInstance> g_xCylinderInstances;
+static Zenith_Vector<TriangleInstance> g_xTriangleInstances;
+
+// Dynamic buffers for triangles (reused each frame, data uploaded rather than recreated)
+// This avoids recreating GPU buffers every frame which causes memory leaks
+static Flux_DynamicVertexBuffer s_xTriangleDynamicVertexBuffer;
+static Flux_IndexBuffer s_xTriangleIndexBuffer;
+static bool s_bTriangleBuffersInitialised = false;
+static constexpr u_int s_uMaxTriangles = 8192;  // Max triangles per frame
 
 // Mutex for thread-safe AddXXX calls (in case called from multiple threads)
 static Zenith_Mutex g_xInstanceMutex;
@@ -515,6 +531,17 @@ void Flux_Primitives::Initialise()
 		Flux_PipelineBuilder::FromSpecification(s_xPrimitivesWireframePipeline, xPipelineSpec);
 	}
 
+	// Pre-allocate triangle buffers (dynamic vertex buffer, static index buffer)
+	// This avoids recreating GPU buffers every frame which causes memory leaks
+	{
+		const size_t uVertexBufferSize = s_uMaxTriangles * 3 * sizeof(PrimitiveVertex);
+		const size_t uIndexBufferSize = s_uMaxTriangles * 3 * sizeof(u_int);
+
+		Flux_MemoryManager::InitialiseDynamicVertexBuffer(nullptr, uVertexBufferSize, s_xTriangleDynamicVertexBuffer, false);
+		Flux_MemoryManager::InitialiseIndexBuffer(nullptr, uIndexBufferSize, s_xTriangleIndexBuffer);
+		s_bTriangleBuffersInitialised = true;
+	}
+
 #ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_DebugVariables::AddBoolean({ "Render", "Enable", "Primitives" }, dbg_bEnablePrimitives);
 #endif
@@ -547,6 +574,14 @@ void Flux_Primitives::Shutdown()
 
 	Flux_MemoryManager::DestroyVertexBuffer(s_xLineVertexBuffer);
 	Flux_MemoryManager::DestroyIndexBuffer(s_xLineIndexBuffer);
+
+	// Destroy pre-allocated triangle buffers
+	if (s_bTriangleBuffersInitialised)
+	{
+		Flux_MemoryManager::DestroyDynamicVertexBuffer(s_xTriangleDynamicVertexBuffer);
+		Flux_MemoryManager::DestroyIndexBuffer(s_xTriangleIndexBuffer);
+		s_bTriangleBuffersInitialised = false;
+	}
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Primitives shut down");
 }
@@ -632,6 +667,19 @@ void Flux_Primitives::AddCylinder(const Zenith_Maths::Vector3& xStart, const Zen
 	g_xInstanceMutex.Unlock();
 }
 
+void Flux_Primitives::AddTriangle(const Zenith_Maths::Vector3& xV0, const Zenith_Maths::Vector3& xV1,
+	const Zenith_Maths::Vector3& xV2, const Zenith_Maths::Vector3& xColor)
+{
+	g_xInstanceMutex.Lock();
+	TriangleInstance xInstance;
+	xInstance.m_xV0 = xV0;
+	xInstance.m_xV1 = xV1;
+	xInstance.m_xV2 = xV2;
+	xInstance.m_xColor = xColor;
+	g_xTriangleInstances.PushBack(xInstance);
+	g_xInstanceMutex.Unlock();
+}
+
 void Flux_Primitives::Clear()
 {
 	g_xInstanceMutex.Lock();
@@ -640,6 +688,7 @@ void Flux_Primitives::Clear()
 	g_xLineInstances.Clear();
 	g_xCapsuleInstances.Clear();
 	g_xCylinderInstances.Clear();
+	g_xTriangleInstances.Clear();
 	g_xInstanceMutex.Unlock();
 }
 
@@ -659,6 +708,7 @@ void Flux_Primitives::Render(void*)
 	Zenith_Vector<LineInstance> xLocalLineInstances;
 	Zenith_Vector<CapsuleInstance> xLocalCapsuleInstances;
 	Zenith_Vector<CylinderInstance> xLocalCylinderInstances;
+	Zenith_Vector<TriangleInstance> xLocalTriangleInstances;
 
 	{
 		Zenith_ScopedMutexLock xLock(g_xInstanceMutex);
@@ -668,7 +718,8 @@ void Flux_Primitives::Render(void*)
 			g_xCubeInstances.GetSize() == 0 &&
 			g_xLineInstances.GetSize() == 0 &&
 			g_xCapsuleInstances.GetSize() == 0 &&
-			g_xCylinderInstances.GetSize() == 0)
+			g_xCylinderInstances.GetSize() == 0 &&
+			g_xTriangleInstances.GetSize() == 0)
 		{
 			return;
 		}
@@ -684,6 +735,8 @@ void Flux_Primitives::Render(void*)
 			xLocalCapsuleInstances.PushBack(g_xCapsuleInstances.Get(i));
 		for (u_int i = 0; i < g_xCylinderInstances.GetSize(); ++i)
 			xLocalCylinderInstances.PushBack(g_xCylinderInstances.Get(i));
+		for (u_int i = 0; i < g_xTriangleInstances.GetSize(); ++i)
+			xLocalTriangleInstances.PushBack(g_xTriangleInstances.Get(i));
 
 		// Clear global instances now that we have local copies
 		g_xSphereInstances.Clear();
@@ -691,6 +744,7 @@ void Flux_Primitives::Render(void*)
 		g_xLineInstances.Clear();
 		g_xCapsuleInstances.Clear();
 		g_xCylinderInstances.Clear();
+		g_xTriangleInstances.Clear();
 	}
 
 	g_xCommandList.Reset(false);  // Don't clear GBuffer targets (other geometry already rendered)
@@ -913,8 +967,323 @@ void Flux_Primitives::Render(void*)
 		}
 	}
 
+	// ========== RENDER TRIANGLES ==========
+	if (xLocalTriangleInstances.GetSize() > 0 && s_bTriangleBuffersInitialised)
+	{
+		// Clamp to max triangles to avoid buffer overflow
+		u_int uTriangleCount = xLocalTriangleInstances.GetSize();
+		if (uTriangleCount > s_uMaxTriangles)
+		{
+			Zenith_Log(LOG_CATEGORY_RENDERER, "Warning: Triangle count %u exceeds max %u, clamping", uTriangleCount, s_uMaxTriangles);
+			uTriangleCount = s_uMaxTriangles;
+		}
+
+		// Generate vertex and index data for all triangles
+		// Use stack arrays for small counts, heap for large
+		const u_int uVertexCount = uTriangleCount * 3;
+		const u_int uIndexCount = uTriangleCount * 3;
+
+		Zenith_Vector<PrimitiveVertex> xTriangleVertices;
+		Zenith_Vector<u_int> xTriangleIndices;
+		xTriangleVertices.Reserve(uVertexCount);
+		xTriangleIndices.Reserve(uIndexCount);
+
+		for (u_int i = 0; i < uTriangleCount; ++i)
+		{
+			const TriangleInstance& xInstance = xLocalTriangleInstances.Get(i);
+
+			// Calculate face normal from edges (CCW winding)
+			Zenith_Maths::Vector3 xEdge1 = xInstance.m_xV1 - xInstance.m_xV0;
+			Zenith_Maths::Vector3 xEdge2 = xInstance.m_xV2 - xInstance.m_xV0;
+			Zenith_Maths::Vector3 xNormal = Zenith_Maths::Cross(xEdge1, xEdge2);
+			float fLen = Zenith_Maths::Length(xNormal);
+			if (fLen > 0.0001f)
+			{
+				xNormal = xNormal / fLen;
+			}
+			else
+			{
+				xNormal = Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f);  // Default up
+			}
+
+			// Add 3 vertices for this triangle
+			u_int uBaseVertex = xTriangleVertices.GetSize();
+
+			PrimitiveVertex xV0, xV1, xV2;
+			xV0.m_xPosition = xInstance.m_xV0;
+			xV0.m_xNormal = xNormal;
+			xV0.m_xColor = xInstance.m_xColor;
+
+			xV1.m_xPosition = xInstance.m_xV1;
+			xV1.m_xNormal = xNormal;
+			xV1.m_xColor = xInstance.m_xColor;
+
+			xV2.m_xPosition = xInstance.m_xV2;
+			xV2.m_xNormal = xNormal;
+			xV2.m_xColor = xInstance.m_xColor;
+
+			xTriangleVertices.PushBack(xV0);
+			xTriangleVertices.PushBack(xV1);
+			xTriangleVertices.PushBack(xV2);
+
+			// Add indices (CCW)
+			xTriangleIndices.PushBack(uBaseVertex + 0);
+			xTriangleIndices.PushBack(uBaseVertex + 1);
+			xTriangleIndices.PushBack(uBaseVertex + 2);
+		}
+
+		// Upload vertex and index data to pre-allocated buffers (no buffer recreation!)
+		Flux_MemoryManager::UploadBufferData(
+			s_xTriangleDynamicVertexBuffer.GetBuffer().m_xVRAMHandle,
+			xTriangleVertices.GetDataPointer(),
+			xTriangleVertices.GetSize() * sizeof(PrimitiveVertex)
+		);
+		Flux_MemoryManager::UploadBufferData(
+			s_xTriangleIndexBuffer.GetBuffer().m_xVRAMHandle,
+			xTriangleIndices.GetDataPointer(),
+			xTriangleIndices.GetSize() * sizeof(u_int)
+		);
+
+		// Render all triangles with identity transform (vertices are in world space)
+		g_xCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xPrimitivesPipeline);
+		g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&s_xTriangleDynamicVertexBuffer);
+		g_xCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&s_xTriangleIndexBuffer);
+
+		PrimitivePushConstant xPushConstant;
+		xPushConstant.m_xModelMatrix = Zenith_Maths::Matrix4(1.0f);  // Identity
+		xPushConstant.m_xColor = Zenith_Maths::Vector3(1.0f);  // Color is per-vertex
+		xPushConstant.m_fPadding = 0.0f;
+
+		g_xCommandList.AddCommand<Flux_CommandPushConstant>(&xPushConstant, sizeof(PrimitivePushConstant));
+		g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(xTriangleIndices.GetSize());
+	}
+
 	// Submit command list to GBuffer target at RENDER_ORDER_PRIMITIVES
 	Flux::SubmitCommandList(&g_xCommandList, Flux_Graphics::s_xMRTTarget, RENDER_ORDER_PRIMITIVES);
 
 	// Note: Instances already cleared inside the lock above
+}
+
+// ========== HELPER FUNCTIONS ==========
+
+void Flux_Primitives::AddCross(const Zenith_Maths::Vector3& xCenter, float fSize, const Zenith_Maths::Vector3& xColor)
+{
+	// X axis line
+	AddLine(xCenter - Zenith_Maths::Vector3(fSize, 0.0f, 0.0f),
+		xCenter + Zenith_Maths::Vector3(fSize, 0.0f, 0.0f), xColor);
+	// Y axis line
+	AddLine(xCenter - Zenith_Maths::Vector3(0.0f, fSize, 0.0f),
+		xCenter + Zenith_Maths::Vector3(0.0f, fSize, 0.0f), xColor);
+	// Z axis line
+	AddLine(xCenter - Zenith_Maths::Vector3(0.0f, 0.0f, fSize),
+		xCenter + Zenith_Maths::Vector3(0.0f, 0.0f, fSize), xColor);
+}
+
+void Flux_Primitives::AddCircle(const Zenith_Maths::Vector3& xCenter, float fRadius, const Zenith_Maths::Vector3& xColor,
+	const Zenith_Maths::Vector3& xNormal, uint32_t uSegments)
+{
+	const float PI = 3.14159265359f;
+
+	// Build orthonormal basis around normal
+	Zenith_Maths::Vector3 xUp = (fabsf(xNormal.y) < 0.999f)
+		? Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f)
+		: Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f);
+	Zenith_Maths::Vector3 xRight = Zenith_Maths::Normalize(Zenith_Maths::Cross(xUp, xNormal));
+	Zenith_Maths::Vector3 xForward = Zenith_Maths::Cross(xNormal, xRight);
+
+	Zenith_Maths::Vector3 xPrevPoint;
+	for (uint32_t u = 0; u <= uSegments; ++u)
+	{
+		float fAngle = (static_cast<float>(u) / static_cast<float>(uSegments)) * 2.0f * PI;
+		float fCos = cosf(fAngle);
+		float fSin = sinf(fAngle);
+
+		Zenith_Maths::Vector3 xPoint = xCenter + (xRight * fCos + xForward * fSin) * fRadius;
+
+		if (u > 0)
+		{
+			AddLine(xPrevPoint, xPoint, xColor);
+		}
+
+		xPrevPoint = xPoint;
+	}
+}
+
+void Flux_Primitives::AddArrow(const Zenith_Maths::Vector3& xStart, const Zenith_Maths::Vector3& xEnd,
+	const Zenith_Maths::Vector3& xColor, float fThickness, float fHeadSize)
+{
+	// Main shaft
+	AddLine(xStart, xEnd, xColor, fThickness);
+
+	// Arrowhead
+	Zenith_Maths::Vector3 xDirection = xEnd - xStart;
+	float fLength = Zenith_Maths::Length(xDirection);
+	if (fLength < 0.001f)
+	{
+		return;
+	}
+
+	xDirection = xDirection / fLength;
+
+	// Build orthonormal basis
+	Zenith_Maths::Vector3 xUp = (fabsf(xDirection.y) < 0.999f)
+		? Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f)
+		: Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f);
+	Zenith_Maths::Vector3 xRight = Zenith_Maths::Normalize(Zenith_Maths::Cross(xUp, xDirection));
+	Zenith_Maths::Vector3 xRealUp = Zenith_Maths::Cross(xDirection, xRight);
+
+	// Arrowhead lines
+	float fHeadLength = fLength * fHeadSize;
+	float fHeadWidth = fHeadLength * 0.5f;
+
+	Zenith_Maths::Vector3 xHeadBase = xEnd - xDirection * fHeadLength;
+
+	AddLine(xEnd, xHeadBase + xRight * fHeadWidth, xColor, fThickness);
+	AddLine(xEnd, xHeadBase - xRight * fHeadWidth, xColor, fThickness);
+	AddLine(xEnd, xHeadBase + xRealUp * fHeadWidth, xColor, fThickness);
+	AddLine(xEnd, xHeadBase - xRealUp * fHeadWidth, xColor, fThickness);
+}
+
+void Flux_Primitives::AddConeOutline(const Zenith_Maths::Vector3& xApex, const Zenith_Maths::Vector3& xDirection,
+	float fAngle, float fLength, const Zenith_Maths::Vector3& xColor, uint32_t uSegments)
+{
+	const float PI = 3.14159265359f;
+
+	// Build orthonormal basis around direction
+	Zenith_Maths::Vector3 xNormDir = Zenith_Maths::Normalize(xDirection);
+	Zenith_Maths::Vector3 xUp = (fabsf(xNormDir.y) < 0.999f)
+		? Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f)
+		: Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f);
+	Zenith_Maths::Vector3 xRight = Zenith_Maths::Normalize(Zenith_Maths::Cross(xUp, xNormDir));
+	Zenith_Maths::Vector3 xRealUp = Zenith_Maths::Cross(xNormDir, xRight);
+
+	// Calculate cone base radius
+	float fAngleRad = fAngle * PI / 180.0f;
+	float fBaseRadius = fLength * tanf(fAngleRad);
+
+	// Center of cone base
+	Zenith_Maths::Vector3 xBaseCenter = xApex + xNormDir * fLength;
+
+	// Draw lines from apex to base circle
+	Zenith_Maths::Vector3 xPrevBasePoint;
+	for (uint32_t u = 0; u <= uSegments; ++u)
+	{
+		float fSegAngle = (static_cast<float>(u) / static_cast<float>(uSegments)) * 2.0f * PI;
+		float fCos = cosf(fSegAngle);
+		float fSin = sinf(fSegAngle);
+
+		Zenith_Maths::Vector3 xBasePoint = xBaseCenter + (xRight * fCos + xRealUp * fSin) * fBaseRadius;
+
+		// Draw line from apex to this base point (only every few segments for cleaner look)
+		if (u % 4 == 0 || u == uSegments)
+		{
+			AddLine(xApex, xBasePoint, xColor);
+		}
+
+		// Draw base circle
+		if (u > 0)
+		{
+			AddLine(xPrevBasePoint, xBasePoint, xColor);
+		}
+
+		xPrevBasePoint = xBasePoint;
+	}
+}
+
+void Flux_Primitives::AddArc(const Zenith_Maths::Vector3& xCenter, float fRadius, float fStartAngle, float fEndAngle,
+	const Zenith_Maths::Vector3& xColor, const Zenith_Maths::Vector3& xNormal, uint32_t uSegments)
+{
+	const float PI = 3.14159265359f;
+
+	// Build orthonormal basis around normal
+	Zenith_Maths::Vector3 xUp = (fabsf(xNormal.y) < 0.999f)
+		? Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f)
+		: Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f);
+	Zenith_Maths::Vector3 xRight = Zenith_Maths::Normalize(Zenith_Maths::Cross(xUp, xNormal));
+	Zenith_Maths::Vector3 xForward = Zenith_Maths::Cross(xNormal, xRight);
+
+	float fStartRad = fStartAngle * PI / 180.0f;
+	float fEndRad = fEndAngle * PI / 180.0f;
+	float fArcLength = fEndRad - fStartRad;
+
+	Zenith_Maths::Vector3 xPrevPoint;
+	for (uint32_t u = 0; u <= uSegments; ++u)
+	{
+		float fT = static_cast<float>(u) / static_cast<float>(uSegments);
+		float fAngle = fStartRad + fT * fArcLength;
+		float fCos = cosf(fAngle);
+		float fSin = sinf(fAngle);
+
+		Zenith_Maths::Vector3 xPoint = xCenter + (xRight * fSin + xForward * fCos) * fRadius;
+
+		if (u > 0)
+		{
+			AddLine(xPrevPoint, xPoint, xColor);
+		}
+
+		xPrevPoint = xPoint;
+	}
+}
+
+void Flux_Primitives::AddPolygonOutline(const Zenith_Maths::Vector3* axVertices, uint32_t uVertexCount,
+	const Zenith_Maths::Vector3& xColor, bool bClosed)
+{
+	if (uVertexCount < 2)
+	{
+		return;
+	}
+
+	for (uint32_t u = 1; u < uVertexCount; ++u)
+	{
+		AddLine(axVertices[u - 1], axVertices[u], xColor);
+	}
+
+	if (bClosed && uVertexCount > 2)
+	{
+		AddLine(axVertices[uVertexCount - 1], axVertices[0], xColor);
+	}
+}
+
+void Flux_Primitives::AddGrid(const Zenith_Maths::Vector3& xCenter, float fSize, uint32_t uDivisions,
+	const Zenith_Maths::Vector3& xColor)
+{
+	float fHalfSize = fSize * 0.5f;
+	float fStep = fSize / static_cast<float>(uDivisions);
+
+	// Lines along X axis
+	for (uint32_t u = 0; u <= uDivisions; ++u)
+	{
+		float fZ = -fHalfSize + static_cast<float>(u) * fStep;
+		AddLine(
+			xCenter + Zenith_Maths::Vector3(-fHalfSize, 0.0f, fZ),
+			xCenter + Zenith_Maths::Vector3(fHalfSize, 0.0f, fZ),
+			xColor
+		);
+	}
+
+	// Lines along Z axis
+	for (uint32_t u = 0; u <= uDivisions; ++u)
+	{
+		float fX = -fHalfSize + static_cast<float>(u) * fStep;
+		AddLine(
+			xCenter + Zenith_Maths::Vector3(fX, 0.0f, -fHalfSize),
+			xCenter + Zenith_Maths::Vector3(fX, 0.0f, fHalfSize),
+			xColor
+		);
+	}
+}
+
+void Flux_Primitives::AddAxes(const Zenith_Maths::Vector3& xOrigin, float fSize)
+{
+	// X axis - Red
+	AddArrow(xOrigin, xOrigin + Zenith_Maths::Vector3(fSize, 0.0f, 0.0f),
+		Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f));
+
+	// Y axis - Green
+	AddArrow(xOrigin, xOrigin + Zenith_Maths::Vector3(0.0f, fSize, 0.0f),
+		Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
+
+	// Z axis - Blue
+	AddArrow(xOrigin, xOrigin + Zenith_Maths::Vector3(0.0f, 0.0f, fSize),
+		Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f));
 }

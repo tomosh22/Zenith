@@ -1,4 +1,8 @@
+// This file creates Jolt Physics objects - disable memory tracking macro to avoid conflicts
+// with Jolt's custom operator new
 #include "Zenith.h"
+#define ZENITH_PLACEMENT_NEW_ZONE
+#include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "Physics/Zenith_Physics.h"
 #include "Physics/Zenith_PhysicsMeshGenerator.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
@@ -6,6 +10,9 @@
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "Zenith_OS_Include.h"
+#include <Jolt/Physics/Collision/RayCast.h>
+#include <Jolt/Physics/Collision/CastResult.h>
+#include <Jolt/Physics/Collision/NarrowPhaseQuery.h>
 
 JPH::TempAllocatorImpl* Zenith_Physics::s_pxTempAllocator = nullptr;
 JPH::JobSystemThreadPool* Zenith_Physics::s_pxJobSystem = nullptr;
@@ -14,6 +21,172 @@ double Zenith_Physics::s_fTimestepAccumulator = 0;
 Zenith_Physics::PhysicsContactListener Zenith_Physics::s_xContactListener;
 Zenith_Vector<Zenith_Physics::DeferredCollisionEvent> Zenith_Physics::s_xDeferredEvents;
 std::mutex Zenith_Physics::s_xEventQueueMutex;
+
+static bool g_bInitialised = false;
+
+// Jolt memory tracking
+static std::atomic<u_int64> s_ulJoltMemoryAllocated = 0;
+static std::atomic<u_int64> s_ulJoltAllocationCount = 0;
+
+// Jolt requires 16-byte alignment on 64-bit platforms for ALL allocations (not just aligned ones)
+// Our header must be 16 bytes to preserve alignment from malloc
+struct alignas(16) JoltAllocHeader
+{
+	size_t m_ulSize;
+	size_t m_ulPadding;  // Ensure 16-byte alignment
+};
+static_assert(sizeof(JoltAllocHeader) == 16, "JoltAllocHeader must be 16 bytes for alignment");
+
+static void* JoltAllocate(size_t inSize)
+{
+	// Allocate extra space for 16-byte aligned header
+	size_t ulTotalSize = sizeof(JoltAllocHeader) + inSize;
+	void* pRaw = std::malloc(ulTotalSize);
+	if (!pRaw)
+		return nullptr;
+
+	// Store size in header
+	JoltAllocHeader* pHeader = static_cast<JoltAllocHeader*>(pRaw);
+	pHeader->m_ulSize = inSize;
+	pHeader->m_ulPadding = 0;
+
+	// Track allocation
+	s_ulJoltMemoryAllocated += inSize;
+	s_ulJoltAllocationCount++;
+
+	// Return pointer past header - guaranteed 16-byte aligned since header is 16 bytes
+	return pHeader + 1;
+}
+
+static void* JoltReallocate(void* inBlock, size_t inOldSize, size_t inNewSize)
+{
+	if (!inBlock)
+		return JoltAllocate(inNewSize);
+
+	if (inNewSize == 0)
+	{
+		// Get header and free
+		JoltAllocHeader* pHeader = static_cast<JoltAllocHeader*>(inBlock) - 1;
+		size_t ulOldSize = pHeader->m_ulSize;
+		s_ulJoltMemoryAllocated -= ulOldSize;
+		s_ulJoltAllocationCount--;
+		std::free(pHeader);
+		return nullptr;
+	}
+
+	// Reallocate
+	JoltAllocHeader* pOldHeader = static_cast<JoltAllocHeader*>(inBlock) - 1;
+	size_t ulOldActual = pOldHeader->m_ulSize;
+
+	size_t ulTotalSize = sizeof(JoltAllocHeader) + inNewSize;
+	void* pNewRaw = std::realloc(pOldHeader, ulTotalSize);
+	if (!pNewRaw)
+		return nullptr;
+
+	// Update tracking (remove old, add new)
+	s_ulJoltMemoryAllocated -= ulOldActual;
+	s_ulJoltMemoryAllocated += inNewSize;
+
+	// Store new size
+	JoltAllocHeader* pNewHeader = static_cast<JoltAllocHeader*>(pNewRaw);
+	pNewHeader->m_ulSize = inNewSize;
+
+	return pNewHeader + 1;
+}
+
+static void JoltFree(void* inBlock)
+{
+	if (!inBlock)
+		return;
+
+	// Get header (16 bytes before user pointer)
+	JoltAllocHeader* pHeader = static_cast<JoltAllocHeader*>(inBlock) - 1;
+	size_t ulSize = pHeader->m_ulSize;
+
+	// Track deallocation
+	s_ulJoltMemoryAllocated -= ulSize;
+	s_ulJoltAllocationCount--;
+
+	std::free(pHeader);
+}
+
+// Aligned allocation - store original pointer and size at fixed offset before aligned address
+// We allocate extra space and store metadata at the START of the allocation, then return
+// an aligned address after it
+
+static void* JoltAlignedAllocate(size_t inSize, size_t inAlignment)
+{
+	// Ensure alignment is at least sizeof(void*) and is a power of 2
+	if (inAlignment < sizeof(void*))
+		inAlignment = sizeof(void*);
+
+	// We need space for:
+	// - A pointer to store the original malloc address (for freeing)
+	// - A size_t to store the allocation size (for tracking)
+	// - Padding to achieve requested alignment
+	// - The actual user data
+	//
+	// Layout: [original_ptr][size][padding...][aligned_user_data]
+	// We store the original pointer at a known location: aligned_addr - sizeof(void*) - sizeof(size_t)
+
+	// Total size: metadata + alignment padding (worst case) + user data
+	const size_t uMetadataSize = sizeof(void*) + sizeof(size_t);
+	size_t ulTotalSize = uMetadataSize + inAlignment + inSize;
+
+	void* pRaw = std::malloc(ulTotalSize);
+	if (!pRaw)
+		return nullptr;
+
+	// Calculate the aligned address for user data
+	// Start after the metadata, then align up
+	uintptr_t ulRawAddr = reinterpret_cast<uintptr_t>(pRaw);
+	uintptr_t ulDataStart = ulRawAddr + uMetadataSize;
+	uintptr_t ulAlignedAddr = (ulDataStart + inAlignment - 1) & ~(inAlignment - 1);
+
+	// Store metadata just before the aligned address
+	// Use the space immediately before ulAlignedAddr for our metadata
+	void** ppOriginal = reinterpret_cast<void**>(ulAlignedAddr - sizeof(void*) - sizeof(size_t));
+	size_t* pSize = reinterpret_cast<size_t*>(ulAlignedAddr - sizeof(size_t));
+
+	*ppOriginal = pRaw;
+	*pSize = inSize;
+
+	// Track allocation
+	s_ulJoltMemoryAllocated += inSize;
+	s_ulJoltAllocationCount++;
+
+	return reinterpret_cast<void*>(ulAlignedAddr);
+}
+
+static void JoltAlignedFree(void* inBlock)
+{
+	if (!inBlock)
+		return;
+
+	// Retrieve metadata from known locations before the aligned address
+	uintptr_t ulAlignedAddr = reinterpret_cast<uintptr_t>(inBlock);
+	void** ppOriginal = reinterpret_cast<void**>(ulAlignedAddr - sizeof(void*) - sizeof(size_t));
+	size_t* pSize = reinterpret_cast<size_t*>(ulAlignedAddr - sizeof(size_t));
+
+	void* pOriginal = *ppOriginal;
+	size_t ulSize = *pSize;
+
+	// Track deallocation
+	s_ulJoltMemoryAllocated -= ulSize;
+	s_ulJoltAllocationCount--;
+
+	std::free(pOriginal);
+}
+
+u_int64 Zenith_Physics::GetJoltMemoryAllocated()
+{
+	return s_ulJoltMemoryAllocated.load();
+}
+
+u_int64 Zenith_Physics::GetJoltAllocationCount()
+{
+	return s_ulJoltAllocationCount.load();
+}
 
 static void TraceImpl(const char* inFMT, ...)
 {
@@ -205,7 +378,18 @@ void Zenith_Physics::ProcessDeferredCollisionEvents()
 
 void Zenith_Physics::Initialise()
 {
-	JPH::RegisterDefaultAllocator();
+	if (g_bInitialised)
+	{
+		return;
+	}
+	g_bInitialised = true;
+	// Set custom allocator functions for Jolt memory tracking
+	// Must be done BEFORE any Jolt allocations occur
+	JPH::Allocate = JoltAllocate;
+	JPH::Reallocate = JoltReallocate;
+	JPH::Free = JoltFree;
+	JPH::AlignedAllocate = JoltAlignedAllocate;
+	JPH::AlignedFree = JoltAlignedFree;
 
 	JPH::Trace = TraceImpl;
 	JPH_IF_ENABLE_ASSERTS(JPH::AssertFailed = AssertFailedImpl;)
@@ -255,6 +439,12 @@ void Zenith_Physics::Reset()
 
 void Zenith_Physics::Shutdown()
 {
+	if (!g_bInitialised)
+	{
+		return;
+	}
+	g_bInitialised = false;
+
 	if (s_pxPhysicsSystem)
 	{
 		delete s_pxPhysicsSystem;
@@ -434,6 +624,57 @@ void Zenith_Physics::EnforceUpright(const JPH::BodyID& xBodyID)
 	float fYaw = JPH::ATan2(xForward.GetX(), xForward.GetZ());
 	JPH::Quat xUprightRot = JPH::Quat::sRotation(JPH::Vec3::sAxisY(), fYaw);
 	xBodyInterface.SetRotation(xBodyID, xUprightRot, JPH::EActivation::DontActivate);
+}
+
+Zenith_Physics::RaycastResult Zenith_Physics::Raycast(const Zenith_Maths::Vector3& xOrigin,
+	const Zenith_Maths::Vector3& xDirection, float fMaxDistance)
+{
+	RaycastResult xResult;
+	xResult.m_bHit = false;
+
+	if (!s_pxPhysicsSystem)
+	{
+		return xResult;
+	}
+
+	// Normalize direction
+	Zenith_Maths::Vector3 xNormDir = Zenith_Maths::Normalize(xDirection);
+
+	// Create ray
+	JPH::RRayCast xRay;
+	xRay.mOrigin = JPH::RVec3(xOrigin.x, xOrigin.y, xOrigin.z);
+	xRay.mDirection = JPH::Vec3(xNormDir.x * fMaxDistance, xNormDir.y * fMaxDistance, xNormDir.z * fMaxDistance);
+
+	// Cast ray
+	JPH::RayCastResult xHit;
+	const JPH::NarrowPhaseQuery& xQuery = s_pxPhysicsSystem->GetNarrowPhaseQuery();
+
+	if (xQuery.CastRay(xRay, xHit))
+	{
+		xResult.m_bHit = true;
+		xResult.m_fDistance = xHit.mFraction * fMaxDistance;
+
+		// Calculate hit point
+		JPH::RVec3 xHitPoint = xRay.GetPointOnRay(xHit.mFraction);
+		xResult.m_xHitPoint = Zenith_Maths::Vector3(
+			static_cast<float>(xHitPoint.GetX()),
+			static_cast<float>(xHitPoint.GetY()),
+			static_cast<float>(xHitPoint.GetZ()));
+
+		// Get entity from body
+		JPH::BodyLockRead xLock(s_pxPhysicsSystem->GetBodyLockInterface(), xHit.mBodyID);
+		if (xLock.Succeeded())
+		{
+			const JPH::Body& xBody = xLock.GetBody();
+			xResult.m_xHitEntity = Zenith_EntityID::FromPacked(xBody.GetUserData());
+
+			// Get surface normal
+			JPH::Vec3 xNormal = xBody.GetWorldSpaceSurfaceNormal(xHit.mSubShapeID2, xHitPoint);
+			xResult.m_xHitNormal = Zenith_Maths::Vector3(xNormal.GetX(), xNormal.GetY(), xNormal.GetZ());
+		}
+	}
+
+	return xResult;
 }
 
 JPH::ValidateResult Zenith_Physics::PhysicsContactListener::OnContactValidate(

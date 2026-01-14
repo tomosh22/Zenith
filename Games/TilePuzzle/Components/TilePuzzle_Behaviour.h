@@ -26,7 +26,9 @@
 #include <cmath>
 
 #ifdef ZENITH_TOOLS
+#include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "imgui.h"
+#include "Memory/Zenith_MemoryManagement_Enabled.h"
 #endif
 
 // ============================================================================

@@ -46,6 +46,7 @@ void Zenith_EditorAddLogMessage(const char* szMessage, int eLevel, Zenith_LogCat
 #include "Panels/Zenith_EditorPanel_ContentBrowser.h"
 #include "Panels/Zenith_EditorPanel_Hierarchy.h"
 #include "Panels/Zenith_EditorPanel_MaterialEditor.h"
+#include "Panels/Zenith_EditorPanel_Memory.h"
 #include "Panels/Zenith_EditorPanel_Properties.h"
 #include "Panels/Zenith_EditorPanel_Toolbar.h"
 #include "Panels/Zenith_EditorPanel_Viewport.h"
@@ -542,6 +543,10 @@ void Zenith_Editor::Render()
 	RenderConsolePanel();
 	RenderMaterialEditorPanel();
 
+#ifdef ZENITH_MEMORY_MANAGEMENT_ENABLED
+	Zenith_EditorPanelMemory::Render();
+#endif
+
 	// Animation state machine editor
 	// Zenith_AnimationStateMachineEditor::Render();  // TEMPORARILY DISABLED
 
@@ -691,6 +696,13 @@ void Zenith_Editor::RenderMainMenuBar()
 				// TODO: Toggle console panel visibility
 				Zenith_Log(LOG_CATEGORY_EDITOR, "Toggle Console - Not yet implemented");
 			}
+
+#ifdef ZENITH_MEMORY_MANAGEMENT_ENABLED
+			if (ImGui::MenuItem("Memory Profiler", nullptr, Zenith_EditorPanelMemory::IsVisible()))
+			{
+				Zenith_EditorPanelMemory::SetVisible(!Zenith_EditorPanelMemory::IsVisible());
+			}
+#endif
 
 			ImGui::Separator();
 

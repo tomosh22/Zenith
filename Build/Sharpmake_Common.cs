@@ -152,6 +152,7 @@ public class ZenithSolution : Solution
 		conf.AddProject<ExplorationGameProject>(target);
 		conf.AddProject<SurvivalGameProject>(target);
 		conf.AddProject<TilePuzzleGameProject>(target);
+		conf.AddProject<AIShowcaseGameProject>(target);
 
 		// FluxCompiler is Windows-only
 		if (target.Platform == Platform.win64)

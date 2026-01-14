@@ -20,7 +20,9 @@ class Flux_AnimationStateMachine;
 class Flux_IKSolver;
 
 #ifdef ZENITH_TOOLS
+#include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "imgui.h"
+#include "Memory/Zenith_MemoryManagement_Enabled.h"
 #include "EntityComponent/Zenith_ComponentRegistry.h"
 #include "Editor/Zenith_Editor.h"
 #include <filesystem>

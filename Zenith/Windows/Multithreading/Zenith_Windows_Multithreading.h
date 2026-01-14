@@ -2,21 +2,39 @@
 #include <Windows.h>
 #include <winnt.h>
 
-class Zenith_Windows_Mutex
+template<bool bEnableProfiling = true>
+class Zenith_Windows_Mutex_T
 {
 public:
 
-	Zenith_Windows_Mutex();
-	~Zenith_Windows_Mutex();
+	Zenith_Windows_Mutex_T()
+	{
+		InitializeCriticalSection(&m_xCriticalSection);
+	}
+
+	~Zenith_Windows_Mutex_T()
+	{
+		DeleteCriticalSection(&m_xCriticalSection);
+	}
 
 	void Lock();
-	bool TryLock();
-	void Unlock();
+
+	bool TryLock()
+	{
+		return TryEnterCriticalSection(&m_xCriticalSection) != 0;
+	}
+
+	void Unlock()
+	{
+		LeaveCriticalSection(&m_xCriticalSection);
+	}
 
 private:
 
 	CRITICAL_SECTION m_xCriticalSection;
 };
+
+using Zenith_Windows_Mutex = Zenith_Windows_Mutex_T<true>;
 
 class Zenith_Windows_Semaphore
 {

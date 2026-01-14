@@ -1,5 +1,7 @@
 Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "AIShowcase", "..\Games\AIShowcase\build\aishowcase_win64.vcxproj", "{0BC80C5D-3599-A32E-E30B-FD28B9E9AA45}"
+EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Combat", "..\Games\Combat\build\combat_win64.vcxproj", "{19FF9295-5CA7-AD0E-181D-F2B242060690}"
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Exploration", "..\Games\Exploration\build\exploration_win64.vcxproj", "{5F241163-C637-2B7E-9F56-06B99F55A28A}"
@@ -26,6 +28,14 @@ Global
 		vs2022_Release_Win64_True|x64 = vs2022_Release_Win64_True|x64
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{0BC80C5D-3599-A32E-E30B-FD28B9E9AA45}.vs2022_Debug_Win64_False|x64.ActiveCfg = vs2022_Debug_Win64_False|x64
+		{0BC80C5D-3599-A32E-E30B-FD28B9E9AA45}.vs2022_Debug_Win64_False|x64.Build.0 = vs2022_Debug_Win64_False|x64
+		{0BC80C5D-3599-A32E-E30B-FD28B9E9AA45}.vs2022_Debug_Win64_True|x64.ActiveCfg = vs2022_Debug_Win64_True|x64
+		{0BC80C5D-3599-A32E-E30B-FD28B9E9AA45}.vs2022_Debug_Win64_True|x64.Build.0 = vs2022_Debug_Win64_True|x64
+		{0BC80C5D-3599-A32E-E30B-FD28B9E9AA45}.vs2022_Release_Win64_False|x64.ActiveCfg = vs2022_Release_Win64_False|x64
+		{0BC80C5D-3599-A32E-E30B-FD28B9E9AA45}.vs2022_Release_Win64_False|x64.Build.0 = vs2022_Release_Win64_False|x64
+		{0BC80C5D-3599-A32E-E30B-FD28B9E9AA45}.vs2022_Release_Win64_True|x64.ActiveCfg = vs2022_Release_Win64_True|x64
+		{0BC80C5D-3599-A32E-E30B-FD28B9E9AA45}.vs2022_Release_Win64_True|x64.Build.0 = vs2022_Release_Win64_True|x64
 		{19FF9295-5CA7-AD0E-181D-F2B242060690}.vs2022_Debug_Win64_False|x64.ActiveCfg = vs2022_Debug_Win64_False|x64
 		{19FF9295-5CA7-AD0E-181D-F2B242060690}.vs2022_Debug_Win64_False|x64.Build.0 = vs2022_Debug_Win64_False|x64
 		{19FF9295-5CA7-AD0E-181D-F2B242060690}.vs2022_Debug_Win64_True|x64.ActiveCfg = vs2022_Debug_Win64_True|x64

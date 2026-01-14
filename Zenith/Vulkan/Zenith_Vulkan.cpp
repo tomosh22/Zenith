@@ -37,6 +37,60 @@ static std::vector<const char*> s_xValidationLayers = { "VK_LAYER_KHRONOS_valida
 #ifdef ZENITH_TOOLS
 vk::RenderPass Zenith_Vulkan::s_xImGuiRenderPass;
 vk::DescriptorPool Zenith_Vulkan::s_xImGuiDescriptorPool;
+
+// ImGui memory tracking
+static std::atomic<u_int64> s_ulImGuiMemoryAllocated = 0;
+static std::atomic<u_int64> s_ulImGuiAllocationCount = 0;
+
+// Disable memory management macros for ImGui allocator (uses raw malloc/free)
+#include "Memory/Zenith_MemoryManagement_Disabled.h"
+
+// Custom ImGui allocator with tracking
+static void* ImGuiAllocWrapper(size_t sz, void* user_data)
+{
+	(void)user_data;
+	if (sz == 0)
+		return nullptr;
+
+	// Allocate with header for size tracking
+	size_t* pBlock = static_cast<size_t*>(std::malloc(sizeof(size_t) + sz));
+	if (!pBlock)
+		return nullptr;
+
+	*pBlock = sz;
+	s_ulImGuiMemoryAllocated += sz;
+	s_ulImGuiAllocationCount++;
+
+	return pBlock + 1;
+}
+
+static void ImGuiFreeWrapper(void* ptr, void* user_data)
+{
+	(void)user_data;
+	if (!ptr)
+		return;
+
+	size_t* pBlock = static_cast<size_t*>(ptr) - 1;
+	size_t sz = *pBlock;
+
+	s_ulImGuiMemoryAllocated -= sz;
+	s_ulImGuiAllocationCount--;
+
+	std::free(pBlock);
+}
+
+// Re-enable memory management macros
+#include "Memory/Zenith_MemoryManagement_Enabled.h"
+
+u_int64 Zenith_Vulkan::GetImGuiMemoryAllocated()
+{
+	return s_ulImGuiMemoryAllocated.load();
+}
+
+u_int64 Zenith_Vulkan::GetImGuiAllocationCount()
+{
+	return s_ulImGuiAllocationCount.load();
+}
 #endif
 
 static const char* s_aszDeviceExtensions[] = {
@@ -792,6 +846,9 @@ void Zenith_Vulkan::InitialiseImGui()
 	s_xImGuiDescriptorPool = s_xDevice.createDescriptorPool(xImGuiPoolInfo);
 	
 	Zenith_Log(LOG_CATEGORY_EDITOR, "ImGui dedicated descriptor pool created");
+
+	// Hook ImGui allocator for memory tracking BEFORE creating context
+	ImGui::SetAllocatorFunctions(ImGuiAllocWrapper, ImGuiFreeWrapper, nullptr);
 
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();

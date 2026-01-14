@@ -20,7 +20,10 @@
 - `Shadows/` - Cascaded shadow maps
 - `DeferredShading/` - Deferred lighting
 - `SSAO/` - Screen-space ambient occlusion
-- `Fog/` - Fog application
+- `Fog/` - Volumetric fog system (see Fog/CLAUDE.md)
+  - Multiple techniques: Simple, Froxel, Raymarch, LPV, Temporal, God Rays
+  - Runtime technique selection via debug variables
+  - Requires 3D texture support (see Vulkan/CLAUDE.md)
 - `Particles/` - Particle systems
 - `Skybox/` - Sky rendering
 - `Text/` - Text rendering
@@ -59,6 +62,10 @@ Key constants in `Core/ZenithConfig.h`:
 **Multi-threaded Recording:** Multiple command lists can be recorded in parallel across worker threads.
 
 **Memory Reuse:** Command lists reuse allocations across frames via Reset().
+
+**View Space Convention:** The engine uses **+Z forward** in view space (not -Z like OpenGL convention). When extracting linear depth from view-space positions, use `viewPos.z` directly without negation. See `Fog/CLAUDE.md` for depth reconstruction details.
+
+**World Position Reconstruction:** Use `GetWorldPosFromDepthTex()` from `Shaders/Common.fxh` for reconstructing world positions from the depth buffer - it handles the view/projection inverse transforms correctly.
 
 ## Design Rationale
 

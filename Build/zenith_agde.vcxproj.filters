@@ -445,6 +445,60 @@
     <ClCompile Include="..\Tools\Zenith_Tools_TextureExport.cpp">
       <Filter>Tools</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\AI\BehaviorTree\Zenith_BehaviorTree.cpp">
+      <Filter>AI\BehaviorTree</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\AI\BehaviorTree\Zenith_Blackboard.cpp">
+      <Filter>AI\BehaviorTree</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\AI\BehaviorTree\Zenith_BTActions.cpp">
+      <Filter>AI\BehaviorTree</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\AI\BehaviorTree\Zenith_BTComposites.cpp">
+      <Filter>AI\BehaviorTree</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\AI\BehaviorTree\Zenith_BTConditions.cpp">
+      <Filter>AI\BehaviorTree</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\AI\BehaviorTree\Zenith_BTDecorators.cpp">
+      <Filter>AI\BehaviorTree</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\AI\BehaviorTree\Zenith_BTNode.cpp">
+      <Filter>AI\BehaviorTree</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\AI\Components\Zenith_AIAgentComponent.cpp">
+      <Filter>AI\Components</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\AI\Navigation\Zenith_NavMesh.cpp">
+      <Filter>AI\Navigation</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\AI\Navigation\Zenith_NavMeshAgent.cpp">
+      <Filter>AI\Navigation</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\AI\Navigation\Zenith_NavMeshGenerator.cpp">
+      <Filter>AI\Navigation</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\AI\Navigation\Zenith_Pathfinding.cpp">
+      <Filter>AI\Navigation</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\AI\Perception\Zenith_PerceptionSystem.cpp">
+      <Filter>AI\Perception</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\AI\Squad\Zenith_Formation.cpp">
+      <Filter>AI\Squad</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\AI\Squad\Zenith_Squad.cpp">
+      <Filter>AI\Squad</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\AI\Squad\Zenith_TacticalPoint.cpp">
+      <Filter>AI\Squad</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\AI\Zenith_AIDebugVariables.cpp">
+      <Filter>AI</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Android\Callstack\Zenith_Android_Callstack.cpp">
+      <Filter>Android\Callstack</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Android\FileAccess\Zenith_Android_FileAccess.cpp">
       <Filter>Android\FileAccess</Filter>
     </ClCompile>
@@ -496,7 +550,16 @@
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_SkeletonAsset.cpp">
       <Filter>AssetHandling</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\Core\Callstack\Zenith_Callstack.cpp">
+      <Filter>Core\Callstack</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Core\Memory\Zenith_MemoryBudgets.cpp">
+      <Filter>Core\Memory</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Core\Memory\Zenith_MemoryManagement.cpp">
+      <Filter>Core\Memory</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Core\Memory\Zenith_MemoryTracker.cpp">
       <Filter>Core\Memory</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\Core\Multithreading\Zenith_Multithreading.cpp">
@@ -527,6 +590,9 @@
       <Filter>Editor\Panels</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_MaterialEditor.cpp">
+      <Filter>Editor\Panels</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Memory.cpp">
       <Filter>Editor\Panels</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Properties.cpp">
@@ -632,6 +698,24 @@
       <Filter>Flux</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\Flux\Fog\Flux_Fog.cpp">
+      <Filter>Flux\Fog</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Flux\Fog\Flux_FroxelFog.cpp">
+      <Filter>Flux\Fog</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Flux\Fog\Flux_GodRaysFog.cpp">
+      <Filter>Flux\Fog</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Flux\Fog\Flux_LPVFog.cpp">
+      <Filter>Flux\Fog</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Flux\Fog\Flux_RaymarchFog.cpp">
+      <Filter>Flux\Fog</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Flux\Fog\Flux_TemporalFog.cpp">
+      <Filter>Flux\Fog</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Flux\Fog\Flux_VolumeFog.cpp">
       <Filter>Flux\Fog</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\Flux\Gizmos\Flux_Gizmos.cpp">
@@ -742,6 +826,9 @@
     <ClCompile Include="..\Zenith\UI\Zenith_UIText.cpp">
       <Filter>UI</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\UnitTests\Zenith_AITests.cpp">
+      <Filter>UnitTests</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\UnitTests\Zenith_EditorTests.cpp">
       <Filter>UnitTests</Filter>
     </ClCompile>
@@ -771,6 +858,9 @@
     </ClCompile>
     <ClCompile Include="..\Zenith\Vulkan\Zenith_Vulkan_Texture.cpp">
       <Filter>Vulkan</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Windows\Callstack\Zenith_Windows_Callstack.cpp">
+      <Filter>Windows\Callstack</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\Windows\FileAccess\Zenith_Windows_FileAccess.cpp">
       <Filter>Windows\FileAccess</Filter>
@@ -2818,6 +2908,60 @@
     <ClInclude Include="..\Tools\Zenith_Tools_TextureExport.h">
       <Filter>Tools</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\AI\BehaviorTree\Zenith_BehaviorTree.h">
+      <Filter>AI\BehaviorTree</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\AI\BehaviorTree\Zenith_Blackboard.h">
+      <Filter>AI\BehaviorTree</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\AI\BehaviorTree\Zenith_BTActions.h">
+      <Filter>AI\BehaviorTree</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\AI\BehaviorTree\Zenith_BTComposites.h">
+      <Filter>AI\BehaviorTree</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\AI\BehaviorTree\Zenith_BTConditions.h">
+      <Filter>AI\BehaviorTree</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\AI\BehaviorTree\Zenith_BTDecorators.h">
+      <Filter>AI\BehaviorTree</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\AI\BehaviorTree\Zenith_BTNode.h">
+      <Filter>AI\BehaviorTree</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\AI\Components\Zenith_AIAgentComponent.h">
+      <Filter>AI\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\AI\Navigation\Zenith_NavMesh.h">
+      <Filter>AI\Navigation</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\AI\Navigation\Zenith_NavMeshAgent.h">
+      <Filter>AI\Navigation</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\AI\Navigation\Zenith_NavMeshGenerator.h">
+      <Filter>AI\Navigation</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\AI\Navigation\Zenith_Pathfinding.h">
+      <Filter>AI\Navigation</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\AI\Perception\Zenith_PerceptionSystem.h">
+      <Filter>AI\Perception</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\AI\Squad\Zenith_Formation.h">
+      <Filter>AI\Squad</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\AI\Squad\Zenith_Squad.h">
+      <Filter>AI\Squad</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\AI\Squad\Zenith_TacticalPoint.h">
+      <Filter>AI\Squad</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\AI\Zenith_AIDebugVariables.h">
+      <Filter>AI</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Android\Callstack\Zenith_Android_Callstack.h">
+      <Filter>Android\Callstack</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Android\Multithreading\Zenith_Android_Multithreading.h">
       <Filter>Android\Multithreading</Filter>
     </ClInclude>
@@ -2869,6 +3013,15 @@
     <ClInclude Include="..\Zenith\Collections\Zenith_Vector.h">
       <Filter>Collections</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Core\Callstack\Zenith_Callstack.h">
+      <Filter>Core\Callstack</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Core\Memory\Zenith_MemoryBudgets.h">
+      <Filter>Core\Memory</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Core\Memory\Zenith_MemoryCategories.h">
+      <Filter>Core\Memory</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Core\Memory\Zenith_MemoryManagement.h">
       <Filter>Core\Memory</Filter>
     </ClInclude>
@@ -2876,6 +3029,9 @@
       <Filter>Core\Memory</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Core\Memory\Zenith_MemoryManagement_Enabled.h">
+      <Filter>Core\Memory</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Core\Memory\Zenith_MemoryTracker.h">
       <Filter>Core\Memory</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Core\Multithreading\Zenith_Multithreading.h">
@@ -2915,6 +3071,9 @@
       <Filter>Editor\Panels</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_MaterialEditor.h">
+      <Filter>Editor\Panels</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Memory.h">
       <Filter>Editor\Panels</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Properties.h">
@@ -3031,6 +3190,24 @@
     <ClInclude Include="..\Zenith\Flux\Fog\Flux_Fog.h">
       <Filter>Flux\Fog</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Fog\Flux_FroxelFog.h">
+      <Filter>Flux\Fog</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Fog\Flux_GodRaysFog.h">
+      <Filter>Flux\Fog</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Fog\Flux_LPVFog.h">
+      <Filter>Flux\Fog</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Fog\Flux_RaymarchFog.h">
+      <Filter>Flux\Fog</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Fog\Flux_TemporalFog.h">
+      <Filter>Flux\Fog</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Fog\Flux_VolumeFog.h">
+      <Filter>Flux\Fog</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Gizmos\Flux_Gizmos.h">
       <Filter>Flux\Gizmos</Filter>
     </ClInclude>
@@ -3125,6 +3302,39 @@
       <Filter>Flux\Shaders</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_Fog.frag">
+      <Filter>Flux\Shaders\Fog</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_FroxelFog_Apply.frag">
+      <Filter>Flux\Shaders\Fog</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_FroxelFog_Inject.comp">
+      <Filter>Flux\Shaders\Fog</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_FroxelFog_Light.comp">
+      <Filter>Flux\Shaders\Fog</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_GodRays.frag">
+      <Filter>Flux\Shaders\Fog</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_LPVFog_Apply.frag">
+      <Filter>Flux\Shaders\Fog</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_LPVFog_Inject.comp">
+      <Filter>Flux\Shaders\Fog</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_LPVFog_Propagate.comp">
+      <Filter>Flux\Shaders\Fog</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_NoiseCommon.fxh">
+      <Filter>Flux\Shaders\Fog</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_RaymarchFog.frag">
+      <Filter>Flux\Shaders\Fog</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_TemporalFog_Resolve.comp">
+      <Filter>Flux\Shaders\Fog</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_VolumetricCommon.fxh">
       <Filter>Flux\Shaders\Fog</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\GBufferCommon.fxh">
@@ -3325,6 +3535,9 @@
     <ClInclude Include="..\Zenith\Vulkan\Zenith_Vulkan_Texture.h">
       <Filter>Vulkan</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Windows\Callstack\Zenith_Windows_Callstack.h">
+      <Filter>Windows\Callstack</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Windows\Multithreading\Zenith_Windows_Multithreading.h">
       <Filter>Windows\Multithreading</Filter>
     </ClInclude>
@@ -3342,8 +3555,29 @@
     </Natvis>
   </ItemGroup>
   <ItemGroup>
+    <Filter Include="AI">
+      <UniqueIdentifier>{c9e3400a-3a1a-c955-a374-28c6d194d0e5}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="AI\BehaviorTree">
+      <UniqueIdentifier>{7163b185-7f4c-c3e7-fde6-a2288cdd461d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="AI\Components">
+      <UniqueIdentifier>{11af2d90-91c5-f0d5-0b4e-0ab6a50f7092}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="AI\Navigation">
+      <UniqueIdentifier>{40600597-204a-f544-a038-f54fac0f4daf}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="AI\Perception">
+      <UniqueIdentifier>{911a5890-22ae-66cb-58df-b14c9df25e8f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="AI\Squad">
+      <UniqueIdentifier>{302fcb7b-99a9-016e-0a3f-f429f1c4ae70}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Android">
       <UniqueIdentifier>{b9304ee8-0c39-64db-db6d-b2c9ab87846d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Android\Callstack">
+      <UniqueIdentifier>{2b732a56-616e-8155-4a14-c660d3a93117}</UniqueIdentifier>
     </Filter>
     <Filter Include="Android\FileAccess">
       <UniqueIdentifier>{22f42580-daeb-b58f-4339-cea1c560167b}</UniqueIdentifier>
@@ -3362,6 +3596,9 @@
     </Filter>
     <Filter Include="Core">
       <UniqueIdentifier>{6c8e1683-89b2-32d7-cc78-427b51f93153}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Core\Callstack">
+      <UniqueIdentifier>{d6f5bc97-b101-1f97-8929-f6197462972f}</UniqueIdentifier>
     </Filter>
     <Filter Include="Core\Memory">
       <UniqueIdentifier>{ee157ed3-103f-0fba-51ac-8c653307c00c}</UniqueIdentifier>
@@ -3725,6 +3962,9 @@
     </Filter>
     <Filter Include="Windows">
       <UniqueIdentifier>{8934a2ae-3ace-b6a9-406e-bb28e0cda430}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Windows\Callstack">
+      <UniqueIdentifier>{5168ab18-c091-c597-88f8-73808f82dd4b}</UniqueIdentifier>
     </Filter>
     <Filter Include="Windows\FileAccess">
       <UniqueIdentifier>{afcc5f70-983d-8922-a273-3c23b21e6494}</UniqueIdentifier>

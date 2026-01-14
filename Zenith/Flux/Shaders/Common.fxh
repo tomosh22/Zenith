@@ -3,6 +3,8 @@ layout(std140, set = 0, binding=0) uniform FrameConstants{
 	mat4 g_xProjMat;
 	mat4 g_xViewProjMat;
 	mat4 g_xInvViewProjMat;
+	mat4 g_xInvViewMat;
+	mat4 g_xInvProjMat;
 	vec4 g_xCamPos_Pad;
 	vec4 g_xSunDir_Pad;
 	vec4 g_xSunColour;
@@ -10,6 +12,7 @@ layout(std140, set = 0, binding=0) uniform FrameConstants{
 	vec2 g_xRcpScreenDims;
 	uint g_bQuadUtilisationAnalysis;
 	uint g_uTargetPixelsPerTri;
+	vec2 g_xCameraNearFar;  // x = near plane, y = far plane
 };
 
 struct DirectionalLight{
@@ -23,12 +26,10 @@ vec3 RayDir(vec2 xUV)
 
 	vec4 xClipSpace = vec4(xNDC, 1., 1.);
 
-	//#TO_TODO: invert this CPU side
-	vec4 xViewSpace = inverse(g_xProjMat) * xClipSpace;
+	vec4 xViewSpace = g_xInvProjMat * xClipSpace;
 	xViewSpace.w = 0.;
 
-	//#TO_TODO: same here
-	vec3 xWorldSpace = (inverse(g_xViewMat) * xViewSpace).xyz;
+	vec3 xWorldSpace = (g_xInvViewMat * xViewSpace).xyz;
 
 	return normalize(xWorldSpace);
 }
@@ -36,15 +37,13 @@ vec3 RayDir(vec2 xUV)
 vec3 GetWorldPosFromDepthTex(sampler2D xDepthTex, vec2 xUV)
 {
 	float fDepth = texture(xDepthTex, xUV).x;
-	
+
 	vec2 xNDC = xUV * 2. - 1.;
 
 	vec4 xClipSpace = vec4(xNDC, fDepth, 1.);
 
-	//#TO_TODO: invert this CPU side
-	vec4 xViewSpace = inverse(g_xProjMat) * xClipSpace;
+	vec4 xViewSpace = g_xInvProjMat * xClipSpace;
 	xViewSpace /= xViewSpace.w;
 
-	//#TO_TODO: same here
-	return (inverse(g_xViewMat) * xViewSpace).xyz;
+	return (g_xInvViewMat * xViewSpace).xyz;
 }

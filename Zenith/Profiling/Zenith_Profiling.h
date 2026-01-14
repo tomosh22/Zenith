@@ -58,6 +58,17 @@ enum Zenith_ProfileIndex
 
 	ZENITH_PROFILE_INDEX__VISIBILITY_CHECK,
 
+	// AI System
+	ZENITH_PROFILE_INDEX__AI_PERCEPTION_UPDATE,
+	ZENITH_PROFILE_INDEX__AI_PERCEPTION_SIGHT,
+	ZENITH_PROFILE_INDEX__AI_SQUAD_UPDATE,
+	ZENITH_PROFILE_INDEX__AI_TACTICAL_UPDATE,
+	ZENITH_PROFILE_INDEX__AI_NAVMESH_AGENT_UPDATE,
+	ZENITH_PROFILE_INDEX__AI_PATHFINDING,
+	ZENITH_PROFILE_INDEX__AI_AGENT_UPDATE,
+	ZENITH_PROFILE_INDEX__AI_NAVMESH_GENERATE,
+	ZENITH_PROFILE_INDEX__AI_DEBUG_DRAW,
+
 	#ifdef ZENITH_TOOLS
 	ZENITH_PROFILE_INDEX__RENDER_IMGUI,
 	ZENITH_PROFILE_INDEX__RENDER_IMGUI_PROFILING,
@@ -112,6 +123,18 @@ static const char* g_aszProfileNames[]
 	"Vulkan Memory Manager Flush",
 
 	"Visibility Check",
+
+	// AI System
+	"AI Perception Update",
+	"AI Perception Sight",
+	"AI Squad Update",
+	"AI Tactical Update",
+	"AI NavMesh Agent Update",
+	"AI Pathfinding",
+	"AI Agent Update",
+	"AI NavMesh Generate",
+	"AI Debug Draw",
+
 	#ifdef ZENITH_TOOLS
 	"ImGUI",
 	"ImGUI Profiling",

@@ -49,6 +49,10 @@ public:
 	void GetMousePosition(Zenith_Maths::Vector2_64& xOut);
 	bool IsKeyDown(Zenith_KeyCode iKey);
 
+	// GLFW memory tracking (tracked separately from normal allocations)
+	static u_int64 GetGLFWMemoryAllocated();
+	static u_int64 GetGLFWAllocationCount();
+
 private:
 	static Zenith_Window* s_pxInstance;
 

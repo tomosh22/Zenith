@@ -164,6 +164,8 @@ void Flux_Graphics::UploadFrameConstants()
 			s_xFrameConstants.m_xViewProjMat = s_xFrameConstants.m_xProjMat * s_xFrameConstants.m_xViewMat;
 		}
 		s_xFrameConstants.m_xInvViewProjMat = glm::inverse(s_xFrameConstants.m_xViewProjMat);
+		s_xFrameConstants.m_xInvViewMat = glm::inverse(s_xFrameConstants.m_xViewMat);
+		s_xFrameConstants.m_xInvProjMat = glm::inverse(s_xFrameConstants.m_xProjMat);
 		Zenith_Editor::GetCameraPosition(s_xFrameConstants.m_xCamPos_Pad);
 	}
 	else
@@ -181,6 +183,8 @@ void Flux_Graphics::UploadFrameConstants()
 			s_xFrameConstants.m_xViewProjMat = s_xFrameConstants.m_xProjMat * s_xFrameConstants.m_xViewMat;
 		}
 		s_xFrameConstants.m_xInvViewProjMat = glm::inverse(s_xFrameConstants.m_xViewProjMat);
+		s_xFrameConstants.m_xInvViewMat = glm::inverse(s_xFrameConstants.m_xViewMat);
+		s_xFrameConstants.m_xInvProjMat = glm::inverse(s_xFrameConstants.m_xProjMat);
 		xCamera.GetPosition(s_xFrameConstants.m_xCamPos_Pad);
 	}
 
@@ -196,6 +200,7 @@ void Flux_Graphics::UploadFrameConstants()
 	};
 	s_xFrameConstants.m_uQuadUtilisationAnalysis = dbg_bQuadUtilisationAnalysis;
 	s_xFrameConstants.m_uTargetPixelsPerTri = dbg_uTargetPixelsPerTri;
+	s_xFrameConstants.m_xCameraNearFar = { GetNearPlane(), GetFarPlane() };
 	Flux_MemoryManager::UploadBufferData(s_xFrameConstantsBuffer.GetBuffer().m_xVRAMHandle, &s_xFrameConstants, sizeof(FrameConstants));
 }
 

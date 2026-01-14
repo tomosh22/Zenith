@@ -3,6 +3,12 @@
 // Include forward declarations and enums
 #include "Physics/Zenith_Physics_Fwd.h"
 
+// Save zone state and set up placement new protection for Jolt includes
+#ifdef ZENITH_PLACEMENT_NEW_ZONE
+#define ZENITH_PHYSICS_ZONE_WAS_SET
+#else
+#define ZENITH_PLACEMENT_NEW_ZONE
+#endif
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include <Jolt/Jolt.h>
 #include <Jolt/RegisterTypes.h>
@@ -17,6 +23,11 @@
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
 #include <Jolt/Physics/Body/BodyActivationListener.h>
 #include <Jolt/Physics/Body/BodyLockInterface.h>
+// Restore zone state - only undefine if we defined it ourselves
+#ifndef ZENITH_PHYSICS_ZONE_WAS_SET
+#undef ZENITH_PLACEMENT_NEW_ZONE
+#endif
+#undef ZENITH_PHYSICS_ZONE_WAS_SET
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
 #include "Collections/Zenith_Vector.h"
 #include "EntityComponent/Zenith_Entity.h"
@@ -36,6 +47,10 @@ public:
 	static void Reset();
 	static void Shutdown();
 
+	// Jolt memory tracking (tracked separately from normal allocations)
+	static u_int64 GetJoltMemoryAllocated();
+	static u_int64 GetJoltAllocationCount();
+
 	// Physics body manipulation - use BodyID for thread-safe access
 	static void SetLinearVelocity(const JPH::BodyID& xBodyID, const Zenith_Maths::Vector3& xVelocity);
 	static Zenith_Maths::Vector3 GetLinearVelocity(const JPH::BodyID& xBodyID);
@@ -53,6 +68,17 @@ public:
 		Zenith_Maths::Vector3 m_xDirection;
 	};
 	static RaycastInfo BuildRayFromMouse(Zenith_CameraComponent& xCam);
+
+	struct RaycastResult
+	{
+		bool m_bHit = false;
+		Zenith_Maths::Vector3 m_xHitPoint;
+		Zenith_Maths::Vector3 m_xHitNormal;
+		float m_fDistance = 0.0f;
+		Zenith_EntityID m_xHitEntity = INVALID_ENTITY_ID;
+	};
+	// Cast a ray and return the first hit. Returns true if hit, false if no hit.
+	static RaycastResult Raycast(const Zenith_Maths::Vector3& xOrigin, const Zenith_Maths::Vector3& xDirection, float fMaxDistance);
 
 	static double s_fTimestepAccumulator;
 	static constexpr double s_fDesiredFramerate = 1.0 / 60.0;

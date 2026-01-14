@@ -3,7 +3,9 @@
 #include "Physics/Zenith_Physics.h"
 
 #ifdef ZENITH_TOOLS
+#include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "imgui.h"
+#include "Memory/Zenith_MemoryManagement_Enabled.h"
 #include "EntityComponent/Zenith_ComponentRegistry.h"
 #endif
 
@@ -36,6 +38,7 @@ public:
 	const JPH::BodyID& GetBodyID() const { return m_xBodyID; }
 	bool HasValidBody() const;
 	Zenith_EntityID GetEntityID() { return m_xParentEntity.GetEntityID(); }
+	RigidBodyType GetRigidBodyType() const { return m_eRigidBodyType; }
 
 	void AddCollider(CollisionVolumeType eVolumeType, RigidBodyType eRigidBodyType);
 	void AddCapsuleCollider(float fRadius, float fHalfHeight, RigidBodyType eRigidBodyType);

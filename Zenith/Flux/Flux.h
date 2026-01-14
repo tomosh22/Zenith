@@ -8,9 +8,10 @@
 struct Flux_SurfaceInfo
 {
 	TextureFormat m_eFormat = TEXTURE_FORMAT_NONE;
+	TextureType m_eTextureType = TEXTURE_TYPE_2D;
 	u_int m_uWidth = 0;
 	u_int m_uHeight = 0;
-	u_int m_uDepth = 0;
+	u_int m_uDepth = 1;  // Used for 3D textures
 	u_int m_uNumMips = 0;
 	u_int m_uNumLayers = 0;
 	u_int m_uMemoryFlags = MEMORY_FLAGS__NONE;
@@ -83,10 +84,12 @@ class Flux_RenderAttachmentBuilder {
 public:
 	Flux_RenderAttachmentBuilder() = default;
 	TextureFormat m_eFormat = TEXTURE_FORMAT_NONE;
+	TextureType m_eTextureType = TEXTURE_TYPE_2D;
 	u_int m_uMemoryFlags = MEMORY_FLAGS__NONE;
 
-	uint32_t m_uWidth;
-	uint32_t m_uHeight;
+	uint32_t m_uWidth = 1;
+	uint32_t m_uHeight = 1;
+	uint32_t m_uDepth = 1;  // For 3D textures
 
 	void BuildColour(Flux_RenderAttachment& xAttachment, const std::string& strName);
 	void BuildDepthStencil(Flux_RenderAttachment& xAttachment, const std::string& strName);

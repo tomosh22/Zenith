@@ -13,6 +13,7 @@ thread_local static std::chrono::time_point<std::chrono::high_resolution_clock> 
 thread_local static std::chrono::time_point<std::chrono::high_resolution_clock> tl_g_axEndPoints[uMAX_PROFILE_DEPTH];
 static std::unordered_map<u_int, Zenith_Vector<Zenith_Profiling::Event>> g_xEvents;
 static std::unordered_map<u_int, Zenith_Vector<Zenith_Profiling::Event>> g_xPreviousFrameEvents;
+static Zenith_Mutex_NoProfiling g_xEventsMutex; // Disable profiling to avoid circular dependency
 static std::chrono::time_point<std::chrono::high_resolution_clock> g_xFrameStart;
 static std::chrono::time_point<std::chrono::high_resolution_clock> g_xFrameEnd;
 static std::chrono::time_point<std::chrono::high_resolution_clock> g_xPreviousFrameStart;
@@ -27,11 +28,13 @@ void Zenith_Profiling::Initialise()
 	memset(tl_g_aeIndices, ZENITH_PROFILE_INDEX__TOTAL_FRAME, sizeof(tl_g_aeIndices));
 	memset(tl_g_axStartPoints, 0, sizeof(tl_g_axStartPoints));
 	memset(tl_g_axEndPoints, 0, sizeof(tl_g_axEndPoints));
+	Zenith_ScopedMutexLock_T xLock(g_xEventsMutex);
 	g_xEvents.clear();
 }
 
 void Zenith_Profiling::RegisterThread()
 {
+	Zenith_ScopedMutexLock_T xLock(g_xEventsMutex);
 	Zenith_Assert(g_xEvents.find(Zenith_Multithreading::GetCurrentThreadID()) == g_xEvents.end(), "Thread already registered");
 	g_xEvents.insert({ Zenith_Multithreading::GetCurrentThreadID(), {} });
 }
@@ -40,14 +43,17 @@ void Zenith_Profiling::BeginFrame()
 {
 	if (g_bIsPaused) return;
 
-	// Save previous frame's data for rendering
-	g_xPreviousFrameEvents = g_xEvents;
-	g_xPreviousFrameStart = g_xFrameStart;
-	g_xPreviousFrameEnd = g_xFrameEnd;
-
-	for (auto xIt = g_xEvents.begin(); xIt != g_xEvents.end(); xIt++)
 	{
-		xIt->second.Clear();
+		Zenith_ScopedMutexLock_T xLock(g_xEventsMutex);
+		// Save previous frame's data for rendering
+		g_xPreviousFrameEvents = g_xEvents;
+		g_xPreviousFrameStart = g_xFrameStart;
+		g_xPreviousFrameEnd = g_xFrameEnd;
+
+		for (auto xIt = g_xEvents.begin(); xIt != g_xEvents.end(); xIt++)
+		{
+			xIt->second.Clear();
+		}
 	}
 
 	g_xFrameStart = std::chrono::high_resolution_clock::now();
@@ -620,6 +626,18 @@ void Zenith_Profiling::RenderThreadBreakdown(float fFrameDurationMs, u_int& uThr
 }
 #endif
 
+static Zenith_Vector<Zenith_Profiling::Event>& GetOrCreateThreadEvents()
+{
+	u_int uThreadID = Zenith_Multithreading::GetCurrentThreadID();
+	Zenith_ScopedMutexLock_T xLock(g_xEventsMutex);
+	auto xIt = g_xEvents.find(uThreadID);
+	if (xIt == g_xEvents.end())
+	{
+		xIt = g_xEvents.insert({ uThreadID, {} }).first;
+	}
+	return xIt->second;
+}
+
 void Zenith_Profiling::BeginProfile(const Zenith_ProfileIndex eIndex)
 {
 	if (g_bIsPaused) return;
@@ -643,7 +661,7 @@ void Zenith_Profiling::EndProfile(const Zenith_ProfileIndex eIndex)
 
 	tl_g_axEndPoints[tl_g_uCurrentDepth] = std::chrono::high_resolution_clock::now();
 	const Event& xEvent = {tl_g_axStartPoints[tl_g_uCurrentDepth], tl_g_axEndPoints[tl_g_uCurrentDepth], tl_g_aeIndices[tl_g_uCurrentDepth], tl_g_uCurrentDepth};
-	g_xEvents.at(Zenith_Multithreading::GetCurrentThreadID()).PushBack(xEvent);
+	GetOrCreateThreadEvents().PushBack(xEvent);
 
 	tl_g_aeIndices[tl_g_uCurrentDepth] = ZENITH_PROFILE_INDEX__TOTAL_FRAME;
 }

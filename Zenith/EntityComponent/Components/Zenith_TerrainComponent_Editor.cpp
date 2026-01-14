@@ -3,7 +3,9 @@
 #ifdef ZENITH_TOOLS
 
 #include "Zenith_TerrainComponent.h"
+#include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "imgui.h"
+#include "Memory/Zenith_MemoryManagement_Enabled.h"
 #include "Editor/Zenith_Editor.h"
 #include "AssetHandling/Zenith_AssetHandler.h"
 #include <filesystem>

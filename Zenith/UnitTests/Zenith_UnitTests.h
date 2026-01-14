@@ -183,6 +183,82 @@ private:
 	static void TestDataAssetCreateAndSave();
 	static void TestDataAssetLoad();
 	static void TestDataAssetRoundTrip();
+
+	// AI System tests - Blackboard
+	static void TestBlackboardBasicTypes();
+	static void TestBlackboardVector3();
+	static void TestBlackboardEntityID();
+	static void TestBlackboardHasKey();
+	static void TestBlackboardClear();
+	static void TestBlackboardDefaultValues();
+	static void TestBlackboardOverwrite();
+	static void TestBlackboardSerialization();
+
+	// AI System tests - Behavior Tree
+	static void TestBTSequenceAllSuccess();
+	static void TestBTSequenceFirstFails();
+	static void TestBTSequenceRunning();
+	static void TestBTSelectorFirstSucceeds();
+	static void TestBTSelectorAllFail();
+	static void TestBTSelectorRunning();
+	static void TestBTParallelRequireOne();
+	static void TestBTParallelRequireAll();
+	static void TestBTInverter();
+	static void TestBTRepeaterCount();
+	static void TestBTCooldown();
+	static void TestBTSucceeder();
+	static void TestBTNodeOwnership();
+
+	// AI System tests - NavMesh
+	static void TestNavMeshPolygonCreation();
+	static void TestNavMeshAdjacency();
+	static void TestNavMeshFindNearestPolygon();
+	static void TestNavMeshIsPointOnMesh();
+	static void TestNavMeshRaycast();
+	static void TestPathfindingStraightLine();
+	static void TestPathfindingAroundObstacle();
+	static void TestPathfindingNoPath();
+	static void TestPathfindingSmoothing();
+
+	// AI System tests - NavMesh Agent
+	static void TestNavAgentSetDestination();
+	static void TestNavAgentMovement();
+	static void TestNavAgentArrival();
+	static void TestNavAgentStop();
+	static void TestNavAgentSpeedSettings();
+	static void TestNavAgentRemainingDistanceBounds();
+	static void TestPathfindingNoDuplicateWaypoints();
+
+	// AI System tests - Perception
+	static void TestSightConeInRange();
+	static void TestSightConeOutOfRange();
+	static void TestSightConeOutOfFOV();
+	static void TestSightAwarenessGain();
+	static void TestHearingStimulusInRange();
+	static void TestHearingStimulusAttenuation();
+	static void TestHearingStimulusOutOfRange();
+	static void TestMemoryRememberTarget();
+	static void TestMemoryDecay();
+
+	// AI System tests - Squad
+	static void TestSquadAddRemoveMember();
+	static void TestSquadRoleAssignment();
+	static void TestSquadLeaderSelection();
+	static void TestFormationLine();
+	static void TestFormationWedge();
+	static void TestFormationWorldPositions();
+	static void TestSquadSharedKnowledge();
+
+	// AI System tests - Tactical Points
+	static void TestTacticalPointRegistration();
+	static void TestTacticalPointCoverScoring();
+	static void TestTacticalPointFlankScoring();
+
+	// AI System tests - Debug Variables
+	static void TestAIDebugVariablesDefault();
+	static void TestAIDebugVariablesToggle();
+	static void TestTacticalPointDebugColor();
+	static void TestSquadDebugRoleColor();
 };
 
 // Include editor tests separately as they are only available in ZENITH_TOOLS builds

@@ -20,6 +20,13 @@ enum AllocationType
 	ALLOCATION_TYPE_COUNT,
 };
 
+enum TextureType
+{
+	TEXTURE_TYPE_2D,
+	TEXTURE_TYPE_3D,
+	TEXTURE_TYPE_CUBE
+};
+
 enum RenderOrder
 {
 	RENDER_ORDER_MEMORY_UPDATE,
@@ -35,6 +42,9 @@ enum RenderOrder
 	RENDER_ORDER_POINT_LIGHTS,
 	RENDER_ORDER_WATER,
 	RENDER_ORDER_SSAO,
+	RENDER_ORDER_VOLUMEFOG_INJECT,    // Volumetric fog density injection (compute)
+	RENDER_ORDER_VOLUMEFOG_LIGHT,     // Volumetric fog lighting pass (compute)
+	RENDER_ORDER_VOLUMEFOG_TEMPORAL,  // Volumetric fog temporal resolve (compute)
 	RENDER_ORDER_FOG,
 	RENDER_ORDER_SDFS,
 	RENDER_ORDER_PARTICLES_COMPUTE,

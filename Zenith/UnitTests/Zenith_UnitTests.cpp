@@ -237,6 +237,82 @@ void Zenith_UnitTests::RunAllTests()
 	// Stick figure asset export (creates reusable assets for game projects)
 	TestStickFigureAssetExport();
 
+	// AI System tests - Blackboard
+	TestBlackboardBasicTypes();
+	TestBlackboardVector3();
+	TestBlackboardEntityID();
+	TestBlackboardHasKey();
+	TestBlackboardClear();
+	TestBlackboardDefaultValues();
+	TestBlackboardOverwrite();
+	TestBlackboardSerialization();
+
+	// AI System tests - Behavior Tree
+	TestBTSequenceAllSuccess();
+	TestBTSequenceFirstFails();
+	TestBTSequenceRunning();
+	TestBTSelectorFirstSucceeds();
+	TestBTSelectorAllFail();
+	TestBTSelectorRunning();
+	TestBTParallelRequireOne();
+	TestBTParallelRequireAll();
+	TestBTInverter();
+	TestBTRepeaterCount();
+	TestBTCooldown();
+	TestBTSucceeder();
+	TestBTNodeOwnership();
+
+	// AI System tests - NavMesh
+	TestNavMeshPolygonCreation();
+	TestNavMeshAdjacency();
+	TestNavMeshFindNearestPolygon();
+	TestNavMeshIsPointOnMesh();
+	TestNavMeshRaycast();
+	TestPathfindingStraightLine();
+	TestPathfindingAroundObstacle();
+	TestPathfindingNoPath();
+	TestPathfindingSmoothing();
+
+	// AI System tests - NavMesh Agent
+	TestNavAgentSetDestination();
+	TestNavAgentMovement();
+	TestNavAgentArrival();
+	TestNavAgentStop();
+	TestNavAgentSpeedSettings();
+	TestNavAgentRemainingDistanceBounds();
+	TestPathfindingNoDuplicateWaypoints();
+
+	// AI System tests - Perception
+	TestSightConeInRange();
+	TestSightConeOutOfRange();
+	TestSightConeOutOfFOV();
+	TestSightAwarenessGain();
+	TestHearingStimulusInRange();
+	TestHearingStimulusAttenuation();
+	TestHearingStimulusOutOfRange();
+	TestMemoryRememberTarget();
+	TestMemoryDecay();
+
+	// AI System tests - Squad
+	TestSquadAddRemoveMember();
+	TestSquadRoleAssignment();
+	TestSquadLeaderSelection();
+	TestFormationLine();
+	TestFormationWedge();
+	TestFormationWorldPositions();
+	TestSquadSharedKnowledge();
+
+	// AI System tests - Tactical Points
+	TestTacticalPointRegistration();
+	TestTacticalPointCoverScoring();
+	TestTacticalPointFlankScoring();
+
+	// AI System tests - Debug Variables
+	TestAIDebugVariablesDefault();
+	TestAIDebugVariablesToggle();
+	TestTacticalPointDebugColor();
+	TestSquadDebugRoleColor();
+
 #ifdef ZENITH_TOOLS
 	// Editor tests (only in tools builds)
 	Zenith_EditorTests::RunAllTests();

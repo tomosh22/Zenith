@@ -23,14 +23,3 @@ bool Zenith_Multithreading::IsMainThread()
 {
 	return Platform_IsMainThread();
 }
-
-Zenith_ScopedMutexLock::Zenith_ScopedMutexLock(Zenith_Mutex& xMutex)
-	: m_xMutex(xMutex)
-{
-	m_xMutex.Lock();
-}
-
-Zenith_ScopedMutexLock::~Zenith_ScopedMutexLock()
-{
-	m_xMutex.Unlock();
-}

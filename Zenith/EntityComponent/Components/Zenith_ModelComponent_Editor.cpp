@@ -3,7 +3,9 @@
 #ifdef ZENITH_TOOLS
 
 #include "Zenith_ModelComponent.h"
+#include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "imgui.h"
+#include "Memory/Zenith_MemoryManagement_Enabled.h"
 #include "Editor/Zenith_Editor.h"
 #include "AssetHandling/Zenith_AssetHandler.h"
 #include "Flux/MeshAnimation/Flux_AnimationClip.h"
