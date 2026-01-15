@@ -3867,7 +3867,7 @@ static Flux_MeshGeometry* CreateFluxMeshGeometry(const Zenith_MeshAsset* pxMeshA
 	pxGeometry->m_xMaterialColor = pxMeshAsset->m_xMaterialColor;
 
 	// Copy positions
-	pxGeometry->m_pxPositions = new Zenith_Maths::Vector3[uNumVerts];
+	pxGeometry->m_pxPositions = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector3)));
 	for (uint32_t i = 0; i < uNumVerts; i++)
 	{
 		pxGeometry->m_pxPositions[i] = pxMeshAsset->m_xPositions.Get(i);
@@ -3876,7 +3876,7 @@ static Flux_MeshGeometry* CreateFluxMeshGeometry(const Zenith_MeshAsset* pxMeshA
 	// Copy normals
 	if (pxMeshAsset->m_xNormals.GetSize() > 0)
 	{
-		pxGeometry->m_pxNormals = new Zenith_Maths::Vector3[uNumVerts];
+		pxGeometry->m_pxNormals = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector3)));
 		for (uint32_t i = 0; i < uNumVerts; i++)
 		{
 			pxGeometry->m_pxNormals[i] = pxMeshAsset->m_xNormals.Get(i);
@@ -3886,7 +3886,7 @@ static Flux_MeshGeometry* CreateFluxMeshGeometry(const Zenith_MeshAsset* pxMeshA
 	// Copy UVs
 	if (pxMeshAsset->m_xUVs.GetSize() > 0)
 	{
-		pxGeometry->m_pxUVs = new Zenith_Maths::Vector2[uNumVerts];
+		pxGeometry->m_pxUVs = static_cast<Zenith_Maths::Vector2*>(Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector2)));
 		for (uint32_t i = 0; i < uNumVerts; i++)
 		{
 			pxGeometry->m_pxUVs[i] = pxMeshAsset->m_xUVs.Get(i);
@@ -3896,7 +3896,7 @@ static Flux_MeshGeometry* CreateFluxMeshGeometry(const Zenith_MeshAsset* pxMeshA
 	// Copy tangents
 	if (pxMeshAsset->m_xTangents.GetSize() > 0)
 	{
-		pxGeometry->m_pxTangents = new Zenith_Maths::Vector3[uNumVerts];
+		pxGeometry->m_pxTangents = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector3)));
 		for (uint32_t i = 0; i < uNumVerts; i++)
 		{
 			pxGeometry->m_pxTangents[i] = pxMeshAsset->m_xTangents.Get(i);
@@ -3906,7 +3906,7 @@ static Flux_MeshGeometry* CreateFluxMeshGeometry(const Zenith_MeshAsset* pxMeshA
 	// Copy colors
 	if (pxMeshAsset->m_xColors.GetSize() > 0)
 	{
-		pxGeometry->m_pxColors = new Zenith_Maths::Vector4[uNumVerts];
+		pxGeometry->m_pxColors = static_cast<Zenith_Maths::Vector4*>(Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector4)));
 		for (uint32_t i = 0; i < uNumVerts; i++)
 		{
 			pxGeometry->m_pxColors[i] = pxMeshAsset->m_xColors.Get(i);
@@ -3914,7 +3914,7 @@ static Flux_MeshGeometry* CreateFluxMeshGeometry(const Zenith_MeshAsset* pxMeshA
 	}
 
 	// Copy indices
-	pxGeometry->m_puIndices = new Flux_MeshGeometry::IndexType[uNumIndices];
+	pxGeometry->m_puIndices = static_cast<Flux_MeshGeometry::IndexType*>(Zenith_MemoryManagement::Allocate(uNumIndices * sizeof(Flux_MeshGeometry::IndexType)));
 	for (uint32_t i = 0; i < uNumIndices; i++)
 	{
 		pxGeometry->m_puIndices[i] = pxMeshAsset->m_xIndices.Get(i);
@@ -3923,7 +3923,7 @@ static Flux_MeshGeometry* CreateFluxMeshGeometry(const Zenith_MeshAsset* pxMeshA
 	// Copy bone IDs (flatten uvec4 to uint32_t array)
 	if (pxMeshAsset->m_xBoneIndices.GetSize() > 0)
 	{
-		pxGeometry->m_puBoneIDs = new uint32_t[uNumVerts * MAX_BONES_PER_VERTEX];
+		pxGeometry->m_puBoneIDs = static_cast<uint32_t*>(Zenith_MemoryManagement::Allocate(uNumVerts * MAX_BONES_PER_VERTEX * sizeof(uint32_t)));
 		for (uint32_t v = 0; v < uNumVerts; v++)
 		{
 			const glm::uvec4& xIndices = pxMeshAsset->m_xBoneIndices.Get(v);
@@ -3937,7 +3937,7 @@ static Flux_MeshGeometry* CreateFluxMeshGeometry(const Zenith_MeshAsset* pxMeshA
 	// Copy bone weights (flatten vec4 to float array)
 	if (pxMeshAsset->m_xBoneWeights.GetSize() > 0)
 	{
-		pxGeometry->m_pfBoneWeights = new float[uNumVerts * MAX_BONES_PER_VERTEX];
+		pxGeometry->m_pfBoneWeights = static_cast<float*>(Zenith_MemoryManagement::Allocate(uNumVerts * MAX_BONES_PER_VERTEX * sizeof(float)));
 		for (uint32_t v = 0; v < uNumVerts; v++)
 		{
 			const glm::vec4& xWeights = pxMeshAsset->m_xBoneWeights.Get(v);
@@ -3980,14 +3980,14 @@ static Flux_MeshGeometry* CreateStaticFluxMeshGeometry(const Zenith_MeshAsset* p
 	pxGeometry->m_xMaterialColor = pxMeshAsset->m_xMaterialColor;
 
 	// Copy positions
-	pxGeometry->m_pxPositions = new Zenith_Maths::Vector3[uNumVerts];
+	pxGeometry->m_pxPositions = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector3)));
 	for (uint32_t i = 0; i < uNumVerts; i++)
 	{
 		pxGeometry->m_pxPositions[i] = pxMeshAsset->m_xPositions.Get(i);
 	}
 
 	// Copy normals (or generate default up vector)
-	pxGeometry->m_pxNormals = new Zenith_Maths::Vector3[uNumVerts];
+	pxGeometry->m_pxNormals = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector3)));
 	for (uint32_t i = 0; i < uNumVerts; i++)
 	{
 		if (pxMeshAsset->m_xNormals.GetSize() > 0)
@@ -3997,7 +3997,7 @@ static Flux_MeshGeometry* CreateStaticFluxMeshGeometry(const Zenith_MeshAsset* p
 	}
 
 	// Copy UVs (or generate default zero)
-	pxGeometry->m_pxUVs = new Zenith_Maths::Vector2[uNumVerts];
+	pxGeometry->m_pxUVs = static_cast<Zenith_Maths::Vector2*>(Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector2)));
 	for (uint32_t i = 0; i < uNumVerts; i++)
 	{
 		if (pxMeshAsset->m_xUVs.GetSize() > 0)
@@ -4007,7 +4007,7 @@ static Flux_MeshGeometry* CreateStaticFluxMeshGeometry(const Zenith_MeshAsset* p
 	}
 
 	// Copy tangents (or generate default)
-	pxGeometry->m_pxTangents = new Zenith_Maths::Vector3[uNumVerts];
+	pxGeometry->m_pxTangents = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector3)));
 	for (uint32_t i = 0; i < uNumVerts; i++)
 	{
 		if (pxMeshAsset->m_xTangents.GetSize() > 0)
@@ -4017,7 +4017,7 @@ static Flux_MeshGeometry* CreateStaticFluxMeshGeometry(const Zenith_MeshAsset* p
 	}
 
 	// Copy bitangents (or generate default)
-	pxGeometry->m_pxBitangents = new Zenith_Maths::Vector3[uNumVerts];
+	pxGeometry->m_pxBitangents = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector3)));
 	for (uint32_t i = 0; i < uNumVerts; i++)
 	{
 		if (pxMeshAsset->m_xBitangents.GetSize() > 0)
@@ -4027,7 +4027,7 @@ static Flux_MeshGeometry* CreateStaticFluxMeshGeometry(const Zenith_MeshAsset* p
 	}
 
 	// Copy colors (or generate default white)
-	pxGeometry->m_pxColors = new Zenith_Maths::Vector4[uNumVerts];
+	pxGeometry->m_pxColors = static_cast<Zenith_Maths::Vector4*>(Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector4)));
 	for (uint32_t i = 0; i < uNumVerts; i++)
 	{
 		if (pxMeshAsset->m_xColors.GetSize() > 0)
@@ -4037,7 +4037,7 @@ static Flux_MeshGeometry* CreateStaticFluxMeshGeometry(const Zenith_MeshAsset* p
 	}
 
 	// Copy indices
-	pxGeometry->m_puIndices = new Flux_MeshGeometry::IndexType[uNumIndices];
+	pxGeometry->m_puIndices = static_cast<Flux_MeshGeometry::IndexType*>(Zenith_MemoryManagement::Allocate(uNumIndices * sizeof(Flux_MeshGeometry::IndexType)));
 	for (uint32_t i = 0; i < uNumIndices; i++)
 	{
 		pxGeometry->m_puIndices[i] = pxMeshAsset->m_xIndices.Get(i);

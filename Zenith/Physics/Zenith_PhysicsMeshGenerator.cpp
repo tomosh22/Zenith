@@ -209,8 +209,8 @@ Flux_MeshGeometry* Zenith_PhysicsMeshGenerator::CreateBoxMesh(
 
 	// 8 corners of the box
 	pxMesh->m_uNumVerts = 8;
-	pxMesh->m_pxPositions = new Zenith_Maths::Vector3[8];
-	pxMesh->m_pxNormals = new Zenith_Maths::Vector3[8];
+	pxMesh->m_pxPositions = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Allocate(8 * sizeof(Zenith_Maths::Vector3)));
+	pxMesh->m_pxNormals = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Allocate(8 * sizeof(Zenith_Maths::Vector3)));
 
 	// Define 8 corners (back-bottom-left to front-top-right)
 	pxMesh->m_pxPositions[0] = Zenith_Maths::Vector3(xMin.x, xMin.y, xMin.z); // 0: BBL
@@ -231,7 +231,7 @@ Flux_MeshGeometry* Zenith_PhysicsMeshGenerator::CreateBoxMesh(
 
 	// 12 triangles (2 per face, 6 faces)
 	pxMesh->m_uNumIndices = 36;
-	pxMesh->m_puIndices = new Flux_MeshGeometry::IndexType[36];
+	pxMesh->m_puIndices = static_cast<Flux_MeshGeometry::IndexType*>(Zenith_MemoryManagement::Allocate(36 * sizeof(Flux_MeshGeometry::IndexType)));
 
 	// Back face (-Z)
 	pxMesh->m_puIndices[0] = 0; pxMesh->m_puIndices[1] = 2; pxMesh->m_puIndices[2] = 1;
@@ -274,9 +274,9 @@ Flux_MeshGeometry* Zenith_PhysicsMeshGenerator::CreateMeshFromData(
 	pxMesh->m_uNumVerts = xPositions.GetSize();
 	pxMesh->m_uNumIndices = xIndices.GetSize();
 
-	pxMesh->m_pxPositions = new Zenith_Maths::Vector3[pxMesh->m_uNumVerts];
-	pxMesh->m_pxNormals = new Zenith_Maths::Vector3[pxMesh->m_uNumVerts];
-	pxMesh->m_puIndices = new Flux_MeshGeometry::IndexType[pxMesh->m_uNumIndices];
+	pxMesh->m_pxPositions = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Allocate(pxMesh->m_uNumVerts * sizeof(Zenith_Maths::Vector3)));
+	pxMesh->m_pxNormals = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Allocate(pxMesh->m_uNumVerts * sizeof(Zenith_Maths::Vector3)));
+	pxMesh->m_puIndices = static_cast<Flux_MeshGeometry::IndexType*>(Zenith_MemoryManagement::Allocate(pxMesh->m_uNumIndices * sizeof(Flux_MeshGeometry::IndexType)));
 
 	// Copy positions
 	for (uint32_t i = 0; i < pxMesh->m_uNumVerts; i++)

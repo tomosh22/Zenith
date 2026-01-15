@@ -430,21 +430,7 @@ void Zenith_AssetHandler::DeleteMesh(Flux_MeshGeometry* pxMesh)
 
 	LogAssetDeletion("Mesh", uID, pxMesh);
 
-	// Queue vertex buffer VRAM for deletion if it exists
-	if (pxMesh->GetVertexBuffer().GetBuffer().m_xVRAMHandle.IsValid())
-	{
-		Zenith_Vulkan_VRAM* pxVertexVRAM = Zenith_Vulkan::GetVRAM(pxMesh->GetVertexBuffer().GetBuffer().m_xVRAMHandle);
-		Flux_MemoryManager::QueueVRAMDeletion(pxVertexVRAM, pxMesh->GetVertexBuffer().GetBuffer().m_xVRAMHandle);
-	}
-
-	// Queue index buffer VRAM for deletion if it exists
-	if (pxMesh->GetIndexBuffer().GetBuffer().m_xVRAMHandle.IsValid())
-	{
-		Zenith_Vulkan_VRAM* pxIndexVRAM = Zenith_Vulkan::GetVRAM(pxMesh->GetIndexBuffer().GetBuffer().m_xVRAMHandle);
-		Flux_MemoryManager::QueueVRAMDeletion(pxIndexVRAM, pxMesh->GetIndexBuffer().GetBuffer().m_xVRAMHandle);
-	}
-
-	// Reset the mesh (clears CPU-side data)
+	// Reset handles all cleanup - both GPU buffer destruction (with VRAM queuing) and CPU buffer deallocation
 	pxMesh->Reset();
 
 	s_xUsedMeshIDs.erase(uID);

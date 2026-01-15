@@ -51,6 +51,25 @@ Location: `Memory/Zenith_MemoryManagement.h/cpp`
 
 Memory allocation abstraction layer. Overloads global `new`/`delete` operators. Currently delegates to standard `malloc`/`realloc`/`free` but provides hook point for custom allocators. File/line tracking is stubbed but not yet implemented.
 
+### Allocation Consistency (CRITICAL)
+
+**Never mix allocation strategies:**
+- `Allocate()`/`Reallocate()`/`Deallocate()` use `malloc`/`realloc`/`free`
+- `new[]`/`delete[]` may use a different heap
+
+```cpp
+// WRONG: Heap corruption!
+data = new T[count];
+data = Reallocate(data, newSize);  // realloc() on new[]-allocated memory = UB
+
+// CORRECT: Use consistent allocation
+data = static_cast<T*>(Allocate(count * sizeof(T)));
+data = static_cast<T*>(Reallocate(data, newSize));  // Works correctly
+Deallocate(data);
+```
+
+For classes that may have buffers reallocated (e.g., `Flux_MeshGeometry` used by terrain streaming), always use `Allocate()`/`Deallocate()` for buffer allocation.
+
 ## Multithreading
 
 Location: `Multithreading/Zenith_Multithreading.h/cpp`

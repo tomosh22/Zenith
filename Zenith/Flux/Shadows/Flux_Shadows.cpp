@@ -142,10 +142,8 @@ void Flux_Shadows::Render(void*)
 			g_axCommandLists[u].AddCommand<Flux_CommandBeginBind>(0);
 			g_axCommandLists[u].AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
 
-			g_axCommandLists[u].AddCommand<Flux_CommandBeginBind>(1);
-			g_axCommandLists[u].AddCommand<Flux_CommandBindCBV>(&g_xShadowMatrixBuffers[u].GetCBV(), 1);
-
-			Flux_AnimatedMeshes::RenderToShadowMap(g_axCommandLists[u]);
+			// Shadow matrix buffer passed to RenderToShadowMap so it can bind alongside bone buffer
+			Flux_AnimatedMeshes::RenderToShadowMap(g_axCommandLists[u], g_xShadowMatrixBuffers[u]);
 		}
 
 		if (false)

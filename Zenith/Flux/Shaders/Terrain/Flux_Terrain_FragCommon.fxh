@@ -25,16 +25,26 @@ layout(set = 1, binding = 4) uniform sampler2D g_xNormalTex1;
 layout(set = 1, binding = 5) uniform sampler2D g_xRoughnessMetallicTex1;
 #endif
 
-// Scratch buffer for push constants replacement (set 0, binding 1)
-layout(std140, set = 0, binding = 1) uniform DebugConstants {
-	uint debugVisualizeLOD;  // 0 = normal rendering, 1 = visualize LOD
-} debugConstants;
+// ========== Terrain Material Constants (from push constants via scratch buffer) ==========
+// Matches C++ TerrainMaterialPushConstants struct
+layout(std140, set = 0, binding = 1) uniform TerrainMaterialConstants {
+	vec4 g_xBaseColor0;        // Material 0 base color
+	vec4 g_xUVParams0;         // Material 0: (tilingX, tilingY, offsetX, offsetY)
+	vec4 g_xMaterialParams0;   // Material 0: (metallic, roughness, occlusionStrength, unused)
+
+	vec4 g_xBaseColor1;        // Material 1 base color
+	vec4 g_xUVParams1;         // Material 1: (tilingX, tilingY, offsetX, offsetY)
+	vec4 g_xMaterialParams1;   // Material 1: (metallic, roughness, occlusionStrength, unused)
+
+	uint g_uVisualizeLOD;      // 0 = normal rendering, 1 = visualize LOD
+	float g_fPad[7];           // Padding to 128 bytes
+};
 
 void main(){
 	#ifndef SHADOWS
-	
+
 	// ========== LOD Visualization Mode ==========
-	if (debugConstants.debugVisualizeLOD != 0)
+	if (g_uVisualizeLOD != 0u)
 	{
 		vec3 lodColor;
 		switch(a_uLODLevel)
@@ -45,36 +55,45 @@ void main(){
 			case 3u: lodColor = vec3(1.0, 0.0, 1.0); break;  // Magenta
 			default: lodColor = vec3(1.0, 1.0, 0.0); break;  // Yellow (error)
 		}
-		
+
 		OutputToGBuffer(vec4(lodColor, 1.0), a_xNormal, 0.2, 0.8, 0.0);
 		return;
 	}
-	
+
+	// ========== Apply UV Transform for Both Materials ==========
+	vec2 xUV0 = a_xUV * g_xUVParams0.xy + g_xUVParams0.zw;
+	vec2 xUV1 = a_xUV * g_xUVParams1.xy + g_xUVParams1.zw;
+
 	// ========== Full Material Rendering with Normal Mapping ==========
-	// Sample all textures for both materials
-	vec4 xDiffuse0 = texture(g_xDiffuseTex0, a_xUV);
-	vec4 xDiffuse1 = texture(g_xDiffuseTex1, a_xUV);
-	vec3 xNormalMap0 = texture(g_xNormalTex0, a_xUV).xyz * 2.0 - 1.0;
-	vec3 xNormalMap1 = texture(g_xNormalTex1, a_xUV).xyz * 2.0 - 1.0;
-	vec2 xRM0 = texture(g_xRoughnessMetallicTex0, a_xUV).gb;
-	vec2 xRM1 = texture(g_xRoughnessMetallicTex1, a_xUV).gb;
-	
+	// Sample all textures for both materials with transformed UVs
+	vec4 xDiffuse0 = texture(g_xDiffuseTex0, xUV0) * g_xBaseColor0;
+	vec4 xDiffuse1 = texture(g_xDiffuseTex1, xUV1) * g_xBaseColor1;
+	vec3 xNormalMap0 = texture(g_xNormalTex0, xUV0).xyz * 2.0 - 1.0;
+	vec3 xNormalMap1 = texture(g_xNormalTex1, xUV1).xyz * 2.0 - 1.0;
+	vec2 xRM0 = texture(g_xRoughnessMetallicTex0, xUV0).gb;
+	vec2 xRM1 = texture(g_xRoughnessMetallicTex1, xUV1).gb;
+
 	// Lerp between materials based on vertex material lerp value
 	float fLerp = a_fMaterialLerp;
 	vec4 xDiffuse = mix(xDiffuse0, xDiffuse1, fLerp);
 	vec3 xNormalTangent = normalize(mix(xNormalMap0, xNormalMap1, fLerp));
 	vec2 xRM = mix(xRM0, xRM1, fLerp);
-	
+
+	// Apply material roughness/metallic multipliers
+	float fRoughness = xRM.x * mix(g_xMaterialParams0.y, g_xMaterialParams1.y, fLerp);
+	float fMetallic = xRM.y * mix(g_xMaterialParams0.x, g_xMaterialParams1.x, fLerp);
+	float fOcclusion = mix(g_xMaterialParams0.z, g_xMaterialParams1.z, fLerp);
+
 	// Reconstruct TBN matrix - bitangent reconstructed from normal and tangent
 	vec3 N = normalize(a_xNormal);
 	vec3 T = normalize(a_xTangent);
 	vec3 B = cross(N, T) * a_fBitangentSign;
 	mat3 TBN = mat3(T, B, N);
-	
+
 	// Transform normal from tangent space to world space
 	vec3 xWorldNormal = normalize(TBN * xNormalTangent);
-	
-	OutputToGBuffer(xDiffuse, xWorldNormal, 0.2, xRM.x, xRM.y);
-	
+
+	OutputToGBuffer(xDiffuse, xWorldNormal, fOcclusion, fRoughness, fMetallic);
+
 	#endif  // !SHADOWS
 }

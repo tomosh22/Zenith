@@ -36,19 +36,30 @@ public:
 		Reset();
 	}
 
+	// Non-copyable and non-movable - VRAM handles require special handling
+	Flux_MeshGeometry(const Flux_MeshGeometry&) = delete;
+	Flux_MeshGeometry& operator=(const Flux_MeshGeometry&) = delete;
+	Flux_MeshGeometry(Flux_MeshGeometry&&) = delete;
+	Flux_MeshGeometry& operator=(Flux_MeshGeometry&&) = delete;
+
+	// Default constructor
+	Flux_MeshGeometry() = default;
+
 	void Reset()
 	{
 		m_xBufferLayout.Reset();
 
-		if(m_pVertexData) delete[] m_pVertexData;
-		if(m_puIndices) delete[] m_puIndices;
-		if(m_pxPositions) delete[] m_pxPositions;
-		if(m_pxUVs) delete[] m_pxUVs;
-		if(m_pxNormals) delete[] m_pxNormals;
-		if(m_pxTangents) delete[] m_pxTangents;
-		if(m_pxBitangents) delete[] m_pxBitangents;
-		if(m_pxColors) delete[] m_pxColors;
-		if(m_pfMaterialLerps) delete[] m_pfMaterialLerps;
+		if(m_pVertexData) Zenith_MemoryManagement::Deallocate(m_pVertexData);
+		if(m_puIndices) Zenith_MemoryManagement::Deallocate(m_puIndices);
+		if(m_pxPositions) Zenith_MemoryManagement::Deallocate(m_pxPositions);
+		if(m_pxUVs) Zenith_MemoryManagement::Deallocate(m_pxUVs);
+		if(m_pxNormals) Zenith_MemoryManagement::Deallocate(m_pxNormals);
+		if(m_pxTangents) Zenith_MemoryManagement::Deallocate(m_pxTangents);
+		if(m_pxBitangents) Zenith_MemoryManagement::Deallocate(m_pxBitangents);
+		if(m_pxColors) Zenith_MemoryManagement::Deallocate(m_pxColors);
+		if(m_pfMaterialLerps) Zenith_MemoryManagement::Deallocate(m_pfMaterialLerps);
+		if(m_puBoneIDs) Zenith_MemoryManagement::Deallocate(m_puBoneIDs);
+		if(m_pfBoneWeights) Zenith_MemoryManagement::Deallocate(m_pfBoneWeights);
 
 		// Destroy GPU buffers if they were allocated
 		if (m_xVertexBuffer.GetBuffer().m_xVRAMHandle.IsValid())

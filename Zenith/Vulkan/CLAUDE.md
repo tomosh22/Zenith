@@ -129,3 +129,62 @@ GPU resources use opaque handles to abstract Vulkan types:
 - `Flux_BufferDescriptorHandle` - Buffer descriptors
 
 Handles are registered in internal registries and can be released for reuse.
+
+## GPU Resource Lifecycle (CRITICAL)
+
+### Deferred Deletion System
+
+GPU resources cannot be immediately deleted because they may still be in use by in-flight command buffers. The `QueueVRAMDeletion()` system defers deletion until `MAX_FRAMES_IN_FLIGHT + 1` frames have passed.
+
+### Correct Deletion Pattern
+
+**Always use wrapper functions** that queue deletion AND invalidate handles:
+
+```cpp
+// CORRECT: Use wrapper functions
+Flux_MemoryManager::DestroyVertexBuffer(xVertexBuffer);  // Queues + resets handle
+Flux_MemoryManager::DestroyIndexBuffer(xIndexBuffer);    // Queues + resets handle
+```
+
+The wrapper functions:
+1. Check if handle is valid (early return if not)
+2. Queue VRAM for deferred deletion
+3. Call `xBuffer.Reset()` to invalidate the handle
+
+### Double-Free Anti-Pattern (AVOID)
+
+**Never queue VRAM directly and then call a cleanup function that also queues:**
+
+```cpp
+// WRONG: Double-queue bug!
+QueueVRAMDeletion(pxVRAM, xHandle);  // Queues deletion, handle stays valid
+pxObject->Reset();                    // Reset() sees valid handle, queues AGAIN
+```
+
+This causes double-free crashes because:
+1. First queue adds handle to pending deletions
+2. Handle is NOT invalidated
+3. Reset()/destructor checks `IsValid()` → returns true
+4. Same VRAM queued again → deleted twice → crash
+
+### When Directly Calling QueueVRAMDeletion
+
+If you must call `QueueVRAMDeletion()` directly (e.g., for textures or render attachments), **immediately invalidate the handle**:
+
+```cpp
+// CORRECT direct usage
+if (xAttachment.m_xVRAMHandle.IsValid())
+{
+    Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xAttachment.m_xVRAMHandle);
+    Flux_MemoryManager::QueueVRAMDeletion(pxVRAM, xAttachment.m_xVRAMHandle, ...);
+    xAttachment.m_xVRAMHandle = Flux_VRAMHandle();  // Invalidate immediately!
+}
+```
+
+### Classes with VRAM-Owning Members
+
+For classes like `Flux_MeshGeometry` that own GPU resources:
+- Make them non-copyable (`= delete` copy/move constructors)
+- Have `Reset()` check `IsValid()` before destroying
+- Have destructor call `Reset()`
+- Use the wrapper destroy functions, not direct `QueueVRAMDeletion()`

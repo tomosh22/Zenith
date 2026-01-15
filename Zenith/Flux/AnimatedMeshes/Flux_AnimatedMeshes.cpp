@@ -17,50 +17,7 @@
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
-
-// Material Push Constants structure - matches shader layout (128 bytes total)
-struct MaterialPushConstants
-{
-	Zenith_Maths::Matrix4 m_xModelMatrix;       // 64 bytes - Model transform matrix
-	Zenith_Maths::Vector4 m_xBaseColor;         // 16 bytes - RGBA base color multiplier
-	Zenith_Maths::Vector4 m_xMaterialParams;    // 16 bytes - (metallic, roughness, alphaCutoff, occlusionStrength)
-	Zenith_Maths::Vector4 m_xUVParams;          // 16 bytes - (tilingX, tilingY, offsetX, offsetY)
-	Zenith_Maths::Vector4 m_xEmissiveParams;    // 16 bytes - (R, G, B, intensity)
-};  // Total: 128 bytes
-
-static_assert(sizeof(MaterialPushConstants) == 128, "MaterialPushConstants must be exactly 128 bytes");
-
-// Helper to build MaterialPushConstants from a material asset
-static void BuildMaterialPushConstants(MaterialPushConstants& xOut,
-									   const Zenith_Maths::Matrix4& xModelMatrix,
-									   const Flux_MaterialAsset* pxMaterial)
-{
-	xOut.m_xModelMatrix = xModelMatrix;
-
-	if (pxMaterial)
-	{
-		xOut.m_xBaseColor = pxMaterial->GetBaseColor();
-		xOut.m_xMaterialParams = Zenith_Maths::Vector4(
-			pxMaterial->GetMetallic(),
-			pxMaterial->GetRoughness(),
-			pxMaterial->GetAlphaCutoff(),
-			pxMaterial->GetOcclusionStrength()
-		);
-		const Zenith_Maths::Vector2& xTiling = pxMaterial->GetUVTiling();
-		const Zenith_Maths::Vector2& xOffset = pxMaterial->GetUVOffset();
-		xOut.m_xUVParams = Zenith_Maths::Vector4(xTiling.x, xTiling.y, xOffset.x, xOffset.y);
-		const Zenith_Maths::Vector3& xEmissive = pxMaterial->GetEmissiveColor();
-		xOut.m_xEmissiveParams = Zenith_Maths::Vector4(xEmissive.x, xEmissive.y, xEmissive.z, pxMaterial->GetEmissiveIntensity());
-	}
-	else
-	{
-		// Default values for missing material
-		xOut.m_xBaseColor = Zenith_Maths::Vector4(1.0f, 1.0f, 1.0f, 1.0f);
-		xOut.m_xMaterialParams = Zenith_Maths::Vector4(0.0f, 0.5f, 0.5f, 1.0f);  // metallic=0, roughness=0.5, alphaCutoff=0.5, occlusionStrength=1
-		xOut.m_xUVParams = Zenith_Maths::Vector4(1.0f, 1.0f, 0.0f, 0.0f);  // tiling=1, offset=0
-		xOut.m_xEmissiveParams = Zenith_Maths::Vector4(0.0f, 0.0f, 0.0f, 0.0f);
-	}
-}
+#include "Flux/Flux_MaterialBinding.h"
 
 static Zenith_Task g_xRenderTask(ZENITH_PROFILE_INDEX__FLUX_ANIMATED_MESHES, Flux_AnimatedMeshes::RenderToGBuffer, nullptr);
 
@@ -250,11 +207,7 @@ void Flux_AnimatedMeshes::RenderToGBuffer(void*)
 			// Bind set 1: bone buffer and material textures
 			g_xCommandList.AddCommand<Flux_CommandBeginBind>(1);
 			g_xCommandList.AddCommand<Flux_CommandBindCBV>(&xBoneBuffer.GetCBV(), 0);
-			g_xCommandList.AddCommand<Flux_CommandBindSRV>(&pxMaterial->GetDiffuseTexture()->m_xSRV, 1);
-			g_xCommandList.AddCommand<Flux_CommandBindSRV>(&pxMaterial->GetNormalTexture()->m_xSRV, 2);
-			g_xCommandList.AddCommand<Flux_CommandBindSRV>(&pxMaterial->GetRoughnessMetallicTexture()->m_xSRV, 3);
-			g_xCommandList.AddCommand<Flux_CommandBindSRV>(&pxMaterial->GetOcclusionTexture()->m_xSRV, 4);
-			g_xCommandList.AddCommand<Flux_CommandBindSRV>(&pxMaterial->GetEmissiveTexture()->m_xSRV, 5);
+			BindMaterialTextures(g_xCommandList, pxMaterial, 1);  // Start at 1 (bone buffer is 0)
 
 			g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(pxMeshInstance->GetNumIndices());
 		}
@@ -263,7 +216,7 @@ void Flux_AnimatedMeshes::RenderToGBuffer(void*)
 	Flux::SubmitCommandList(&g_xCommandList, Flux_Graphics::s_xMRTTarget, RENDER_ORDER_SKINNED_MESHES);
 }
 
-void Flux_AnimatedMeshes::RenderToShadowMap(Flux_CommandList& xCmdBuf)
+void Flux_AnimatedMeshes::RenderToShadowMap(Flux_CommandList& xCmdBuf, const Flux_DynamicConstantBuffer& xShadowMatrixBuffer)
 {
 	Zenith_Vector<Zenith_ModelComponent*> xModels;
 	Zenith_Scene::GetCurrentScene().GetAllOfComponentType<Zenith_ModelComponent>(xModels);
@@ -307,8 +260,10 @@ void Flux_AnimatedMeshes::RenderToShadowMap(Flux_CommandList& xCmdBuf)
 			xCmdBuf.AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
 			xCmdBuf.AddCommand<Flux_CommandPushConstant>(&xModelMatrix, sizeof(xModelMatrix));
 
-			xCmdBuf.AddCommand<Flux_CommandBeginBind>(1);  // Switch to set 1 for bone buffer
+			// Bind set 1: bone buffer at binding 0, shadow matrix at binding 1
+			xCmdBuf.AddCommand<Flux_CommandBeginBind>(1);
 			xCmdBuf.AddCommand<Flux_CommandBindCBV>(&xBoneBuffer.GetCBV(), 0);
+			xCmdBuf.AddCommand<Flux_CommandBindCBV>(&xShadowMatrixBuffer.GetCBV(), 1);
 
 			xCmdBuf.AddCommand<Flux_CommandDrawIndexed>(pxMeshInstance->GetNumIndices());
 		}

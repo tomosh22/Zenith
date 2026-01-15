@@ -10,10 +10,12 @@ void Flux_MeshGeometry::GenerateFullscreenQuad(Flux_MeshGeometry& xGeometryOut)
 {
 	xGeometryOut.m_uNumVerts = 4;
 	xGeometryOut.m_uNumIndices = 6;
-	xGeometryOut.m_pxPositions = new Zenith_Maths::Vector3[xGeometryOut.m_uNumVerts];
-	xGeometryOut.m_pxUVs = new Zenith_Maths::Vector2[xGeometryOut.m_uNumVerts];
+	xGeometryOut.m_pxPositions = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Allocate(xGeometryOut.m_uNumVerts * sizeof(Zenith_Maths::Vector3)));
+	xGeometryOut.m_pxUVs = static_cast<Zenith_Maths::Vector2*>(Zenith_MemoryManagement::Allocate(xGeometryOut.m_uNumVerts * sizeof(Zenith_Maths::Vector2)));
 
-	xGeometryOut.m_puIndices = new IndexType[xGeometryOut.m_uNumIndices]{ 0, 1, 2, 2, 1, 3 };
+	xGeometryOut.m_puIndices = static_cast<IndexType*>(Zenith_MemoryManagement::Allocate(xGeometryOut.m_uNumIndices * sizeof(IndexType)));
+	xGeometryOut.m_puIndices[0] = 0; xGeometryOut.m_puIndices[1] = 1; xGeometryOut.m_puIndices[2] = 2;
+	xGeometryOut.m_puIndices[3] = 2; xGeometryOut.m_puIndices[4] = 1; xGeometryOut.m_puIndices[5] = 3;
 
 	xGeometryOut.m_pxPositions[0] = { 1,1,0 };
 	xGeometryOut.m_pxPositions[1] = { 1,-1,0 };
@@ -32,10 +34,12 @@ void Flux_MeshGeometry::GenerateFullscreenQuad(Flux_MeshGeometry& xGeometryOut, 
 {
 	xGeometryOut.m_uNumVerts = 4;
 	xGeometryOut.m_uNumIndices = 6;
-	xGeometryOut.m_pxPositions = new Zenith_Maths::Vector3[xGeometryOut.m_uNumVerts];
-	xGeometryOut.m_pxUVs = new Zenith_Maths::Vector2[xGeometryOut.m_uNumVerts];
+	xGeometryOut.m_pxPositions = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Allocate(xGeometryOut.m_uNumVerts * sizeof(Zenith_Maths::Vector3)));
+	xGeometryOut.m_pxUVs = static_cast<Zenith_Maths::Vector2*>(Zenith_MemoryManagement::Allocate(xGeometryOut.m_uNumVerts * sizeof(Zenith_Maths::Vector2)));
 
-	xGeometryOut.m_puIndices = new IndexType[xGeometryOut.m_uNumIndices]{ 0, 1, 2, 2, 1, 3 };
+	xGeometryOut.m_puIndices = static_cast<IndexType*>(Zenith_MemoryManagement::Allocate(xGeometryOut.m_uNumIndices * sizeof(IndexType)));
+	xGeometryOut.m_puIndices[0] = 0; xGeometryOut.m_puIndices[1] = 1; xGeometryOut.m_puIndices[2] = 2;
+	xGeometryOut.m_puIndices[3] = 2; xGeometryOut.m_puIndices[4] = 1; xGeometryOut.m_puIndices[5] = 3;
 
 	xGeometryOut.m_pxPositions[0] = { 1,1,0 };
 	xGeometryOut.m_pxPositions[1] = { 1,-1,0 };
@@ -72,13 +76,13 @@ void Flux_MeshGeometry::GenerateUnitCube(Flux_MeshGeometry& xGeometryOut)
 	xGeometryOut.m_uNumVerts = 24;
 	xGeometryOut.m_uNumIndices = 36;
 
-	xGeometryOut.m_pxPositions = new Zenith_Maths::Vector3[24];
-	xGeometryOut.m_pxUVs = new Zenith_Maths::Vector2[24];
-	xGeometryOut.m_pxNormals = new Zenith_Maths::Vector3[24];
-	xGeometryOut.m_pxTangents = new Zenith_Maths::Vector3[24];
-	xGeometryOut.m_pxBitangents = new Zenith_Maths::Vector3[24];
-	xGeometryOut.m_pxColors = new Zenith_Maths::Vector4[24];
-	xGeometryOut.m_puIndices = new IndexType[36];
+	xGeometryOut.m_pxPositions = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Allocate(24 * sizeof(Zenith_Maths::Vector3)));
+	xGeometryOut.m_pxUVs = static_cast<Zenith_Maths::Vector2*>(Zenith_MemoryManagement::Allocate(24 * sizeof(Zenith_Maths::Vector2)));
+	xGeometryOut.m_pxNormals = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Allocate(24 * sizeof(Zenith_Maths::Vector3)));
+	xGeometryOut.m_pxTangents = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Allocate(24 * sizeof(Zenith_Maths::Vector3)));
+	xGeometryOut.m_pxBitangents = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Allocate(24 * sizeof(Zenith_Maths::Vector3)));
+	xGeometryOut.m_pxColors = static_cast<Zenith_Maths::Vector4*>(Zenith_MemoryManagement::Allocate(24 * sizeof(Zenith_Maths::Vector4)));
+	xGeometryOut.m_puIndices = static_cast<IndexType*>(Zenith_MemoryManagement::Allocate(36 * sizeof(IndexType)));
 
 	uint32_t uVert = 0;
 	uint32_t uIdx = 0;
@@ -200,7 +204,7 @@ void ReadAttribute(T*& ptData, Zenith_DataStream& xStream, u_int uDataSize)
 
 	if (bRead)
 	{
-		ptData = new T[uDataSize / sizeof(T)];
+		ptData = static_cast<T*>(Zenith_MemoryManagement::Allocate(uDataSize));
 		xStream.ReadData(ptData, uDataSize);
 	}
 	else
@@ -493,7 +497,7 @@ void Flux_MeshGeometry::GenerateLayoutAndVertexData()
 		uNumFloats += MAX_BONES_PER_VERTEX * 2;
 	}
 
-	m_pVertexData = new u_int8[m_uNumVerts * uNumFloats * 4];
+	m_pVertexData = static_cast<u_int8*>(Zenith_MemoryManagement::Allocate(m_uNumVerts * uNumFloats * 4));
 
 	size_t index = 0;
 	for (uint32_t i = 0; i < m_uNumVerts; i++)

@@ -14,6 +14,7 @@
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
 #include "Profiling/Zenith_Profiling.h"
+#include "Flux/Flux_MaterialBinding.h"
 
 static Zenith_Task g_xRenderTask(ZENITH_PROFILE_INDEX__FLUX_TERRAIN, Flux_Terrain::RenderToGBuffer, nullptr);
 static Zenith_Vector<Zenith_TerrainComponent*> g_xTerrainComponentsToRender;
@@ -303,20 +304,22 @@ void Flux_Terrain::RenderToGBuffer(void*)
 
 	g_xTerrainCommandList.AddCommand<Flux_CommandSetPipeline>(dbg_bWireframe ? &s_xTerrainWireframePipeline : &s_xTerrainGBufferPipeline);
 
-	// LOD visualization value (same for all terrain components)
-	uint32_t uVisualizeLOD = dbg_bVisualizeLOD ? 1 : 0;
-
 	for (u_int u = 0; u < g_xTerrainComponentsToRender.GetSize(); u++)
 	{
 		Zenith_TerrainComponent* const pxTerrain = g_xTerrainComponentsToRender.Get(u);
 		if(!pxTerrain->GetUnifiedVertexBuffer().GetBuffer().m_ulSize) continue;
 
+		Flux_MaterialAsset& xMaterial0 = pxTerrain->GetMaterial0();
+		Flux_MaterialAsset& xMaterial1 = pxTerrain->GetMaterial1();
+
 		// Bind per-frame constants and terrain constants (set 0)
 		g_xTerrainCommandList.AddCommand<Flux_CommandBeginBind>(0);
 		g_xTerrainCommandList.AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
 
-		// Push constant for LOD visualization (must be after BeginBind(0) for scratch buffer system)
-		g_xTerrainCommandList.AddCommand<Flux_CommandPushConstant>(&uVisualizeLOD, sizeof(uint32_t));
+		// Build and push terrain material constants (128 bytes)
+		TerrainMaterialPushConstants xTerrainMatConst;
+		BuildTerrainMaterialPushConstants(xTerrainMatConst, &xMaterial0, &xMaterial1, dbg_bVisualizeLOD);
+		g_xTerrainCommandList.AddCommand<Flux_CommandPushConstant>(&xTerrainMatConst, sizeof(xTerrainMatConst));
 
 		g_xTerrainCommandList.AddCommand<Flux_CommandBindCBV>(&s_xTerrainConstantsBuffer.GetCBV(), 2);
 
@@ -330,17 +333,8 @@ void Flux_Terrain::RenderToGBuffer(void*)
 
 		// Bind materials (set 1)
 		g_xTerrainCommandList.AddCommand<Flux_CommandBeginBind>(1);
-
-		Flux_MaterialAsset& xMaterial0 = pxTerrain->GetMaterial0();
-		Flux_MaterialAsset& xMaterial1 = pxTerrain->GetMaterial1();
-
-		g_xTerrainCommandList.AddCommand<Flux_CommandBindSRV>(&xMaterial0.GetDiffuseTexture()->m_xSRV, 0);
-		g_xTerrainCommandList.AddCommand<Flux_CommandBindSRV>(&xMaterial0.GetNormalTexture()->m_xSRV, 1);
-		g_xTerrainCommandList.AddCommand<Flux_CommandBindSRV>(&xMaterial0.GetRoughnessMetallicTexture()->m_xSRV, 2);
-
-		g_xTerrainCommandList.AddCommand<Flux_CommandBindSRV>(&xMaterial1.GetDiffuseTexture()->m_xSRV, 3);
-		g_xTerrainCommandList.AddCommand<Flux_CommandBindSRV>(&xMaterial1.GetNormalTexture()->m_xSRV, 4);
-		g_xTerrainCommandList.AddCommand<Flux_CommandBindSRV>(&xMaterial1.GetRoughnessMetallicTexture()->m_xSRV, 5);
+		BindTerrainMaterialTextures(g_xTerrainCommandList, &xMaterial0, 0);
+		BindTerrainMaterialTextures(g_xTerrainCommandList, &xMaterial1, 3);
 
 		// GPU-driven indirect rendering with front-to-back sorted visible chunks
 		// Each component uses its own indirect draw buffer and visible count buffer
