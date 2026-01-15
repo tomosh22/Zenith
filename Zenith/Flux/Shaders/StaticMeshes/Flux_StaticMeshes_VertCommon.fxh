@@ -14,9 +14,9 @@ layout(location = 3) out vec3 o_xTangent;
 layout(location = 4) out float o_fBitangentSign;  // Sign for bitangent reconstruction (saves 2 varyings)
 layout(location = 5) out vec4 o_xColor;
 
-// Material Push Constants (128 bytes total for Vulkan compatibility)
+// Material Constants (128 bytes, scratch buffer at binding 1, replaces push constants)
 // Layout matches C++ MaterialPushConstants structure
-layout(push_constant) uniform PushConstants{
+layout(std140, set = 0, binding = 1) uniform PushConstants{
 	mat4 g_xModelMatrix;       // 64 bytes - Model transform matrix
 	vec4 g_xBaseColor;         // 16 bytes - RGBA base color multiplier
 	vec4 g_xMaterialParams;    // 16 bytes - (metallic, roughness, alphaCutoff, occlusionStrength)

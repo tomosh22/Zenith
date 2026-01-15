@@ -85,8 +85,7 @@ void Flux_Gizmos::Initialise()
 	Flux_PipelineLayout& xLayout = xSpec.m_xPipelineLayout;
 	xLayout.m_uNumDescriptorSets = 1;
 	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;  // Frame constants
-
-	xSpec.m_bUsePushConstants = true;
+	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_BUFFER;  // Scratch buffer for push constants
 
 	// Build pipeline
 	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xSpec);

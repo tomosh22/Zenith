@@ -9,8 +9,8 @@ layout(location = 1) in vec3 a_xColor;
 // Outputs to fragment shader
 layout(location = 0) out vec3 v_xColor;
 
-// Push constants for gizmo transform
-layout(push_constant) uniform GizmoPushConstants {
+// Gizmo transform (scratch buffer, replaces push constants)
+layout(std140, set = 0, binding = 1) uniform GizmoPushConstants {
     mat4 g_xModelMatrix;
     float g_fHighlightIntensity;  // 0.0 = normal, 1.0 = highlighted/hovered
     float g_fPad0;

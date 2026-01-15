@@ -317,11 +317,30 @@ void Zenith_Vulkan_CommandBuffer::UpdateDescriptorSets()
 				}
 			}
 
+			// Add scratch buffer binding if valid (for push constant replacement at binding 1)
+			const ScratchBufferBinding& xScratch = m_xBindings[uDescSet].m_xScratchBuffer;
+			if (xScratch.m_bValid && uDescSet == 0)
+			{
+				Zenith_Vulkan_PerFrame* pxFrame = Zenith_Vulkan::s_pxCurrentFrame;
+				axBufferInfos[uNumBufferWrites] = vk::DescriptorBufferInfo()
+					.setBuffer(pxFrame->GetScratchBuffer())
+					.setOffset(xScratch.m_uOffset)
+					.setRange(xScratch.m_uSize);
+
+				axWrites[uNumWrites++] = vk::WriteDescriptorSet()
+					.setDescriptorType(vk::DescriptorType::eUniformBuffer)
+					.setDstSet(m_axCurrentDescSet[uDescSet])
+					.setDstBinding(1) // Scratch buffer always at binding 1
+					.setDstArrayElement(0)
+					.setDescriptorCount(1)
+					.setPBufferInfo(axBufferInfos + uNumBufferWrites++);
+			}
+
 			if (uNumWrites > 0)
 			{
 				xDevice.updateDescriptorSets(uNumWrites, axWrites, 0, nullptr);
 			}
-			
+
 			xCacheEntry.layout = xLayout;
 			xCacheEntry.bindings = m_xBindings[uDescSet];
 			xCacheEntry.descriptorSet = m_axCurrentDescSet[uDescSet];
@@ -510,7 +529,21 @@ void Zenith_Vulkan_CommandBuffer::BindAccelerationStruct(void* pxStruct, uint32_
 
 void Zenith_Vulkan_CommandBuffer::PushConstant(void* pData, size_t uSize)
 {
-	m_xCurrentCmdBuffer.pushConstants(m_pxCurrentPipeline->m_xRootSig.m_xLayout, vk::ShaderStageFlagBits::eAll, 0, uSize, pData);
+	// Allocate from scratch buffer
+	Zenith_Vulkan_PerFrame* pxFrame = Zenith_Vulkan::s_pxCurrentFrame;
+	u_int uOffset = pxFrame->AllocateScratchBuffer(static_cast<u_int>(uSize), m_uWorkerIndex);
+
+	// Copy data to scratch buffer
+	void* pDst = static_cast<u_int8*>(pxFrame->GetScratchBufferMappedPtr()) + uOffset;
+	memcpy(pDst, pData, uSize);
+
+	// Stage scratch buffer binding for set 0, binding 1
+	// BeginBind(0) should have been called before this
+	Zenith_Assert(m_uCurrentBindFreq == 0, "PushConstant called without BeginBind(0) - current bind freq is %u", m_uCurrentBindFreq);
+	m_xBindings[0].m_xScratchBuffer.m_uOffset = uOffset;
+	m_xBindings[0].m_xScratchBuffer.m_uSize = static_cast<u_int>(uSize);
+	m_xBindings[0].m_xScratchBuffer.m_bValid = true;
+	m_uDescriptorDirty |= 1 << 0;
 }
 
 void Zenith_Vulkan_CommandBuffer::SetShoudClear(const bool bClear)

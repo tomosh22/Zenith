@@ -35,8 +35,8 @@ struct RenderInstance
 	vec4 color;            // rgba
 };
 
-// Push constants
-layout(push_constant) uniform PushConstants
+// Scratch buffer for push constants replacement
+layout(std140, set = 0, binding = 1) uniform PushConstants
 {
 	float deltaTime;
 	uint particleCount;
@@ -52,19 +52,19 @@ layout(std430, set = 0, binding = 0) readonly buffer InputParticles
 };
 
 // Output: next frame particles (write)
-layout(std430, set = 0, binding = 1) writeonly buffer OutputParticles
+layout(std430, set = 0, binding = 2) writeonly buffer OutputParticles
 {
 	Particle particlesOut[];
 };
 
 // Output: render instances for drawing
-layout(std430, set = 0, binding = 2) writeonly buffer InstanceBuffer
+layout(std430, set = 0, binding = 3) writeonly buffer InstanceBuffer
 {
 	RenderInstance instances[];
 };
 
 // Output: atomic counter for alive particles
-layout(std430, set = 0, binding = 3) buffer CounterBuffer
+layout(std430, set = 0, binding = 4) buffer CounterBuffer
 {
 	uint aliveCount;
 };

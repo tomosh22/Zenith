@@ -6,15 +6,8 @@
 layout(location = 0) in vec2 a_xUV;
 layout(location = 0) out vec4 o_xColour;
 
-// Bindings (binding 0 is FrameConstants from Common.fxh)
-layout(set = 0, binding = 1) uniform sampler2D u_xDepthTexture;
-layout(set = 0, binding = 2) uniform sampler3D u_xLPVCascade0;
-layout(set = 0, binding = 3) uniform sampler3D u_xLPVCascade1;
-layout(set = 0, binding = 4) uniform sampler3D u_xLPVCascade2;
-layout(set = 0, binding = 5) uniform sampler3D u_xNoiseTexture3D;
-
-// Push constants
-layout(push_constant) uniform ApplyConstants
+// Scratch buffer for push constants replacement
+layout(std140, set = 0, binding = 1) uniform ApplyConstants
 {
     vec4 u_axCascadeCenters[3];    // xyz = center, w = radius (packed to avoid alignment issues)
     uint u_uNumCascades;
@@ -22,6 +15,13 @@ layout(push_constant) uniform ApplyConstants
     uint u_uDebugCascade;
     float u_fPad0;
 };
+
+// Bindings (binding 0 is FrameConstants from Common.fxh)
+layout(set = 0, binding = 2) uniform sampler2D u_xDepthTexture;
+layout(set = 0, binding = 3) uniform sampler3D u_xLPVCascade0;
+layout(set = 0, binding = 4) uniform sampler3D u_xLPVCascade1;
+layout(set = 0, binding = 5) uniform sampler3D u_xLPVCascade2;
+layout(set = 0, binding = 6) uniform sampler3D u_xNoiseTexture3D;
 
 // Debug mode constants
 const uint DEBUG_LPV_CASCADE_BOUNDS = 15;

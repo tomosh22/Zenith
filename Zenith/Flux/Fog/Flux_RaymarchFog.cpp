@@ -53,9 +53,10 @@ void Flux_RaymarchFog::Initialise()
 	Flux_PipelineLayout& xLayout = xPipelineSpec.m_xPipelineLayout;
 	xLayout.m_uNumDescriptorSets = 1;
 	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;   // Frame constants
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_TEXTURE;  // Depth texture
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[2].m_eType = DESCRIPTOR_TYPE_TEXTURE;  // 3D noise texture
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[3].m_eType = DESCRIPTOR_TYPE_TEXTURE;  // Blue noise texture
+	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_BUFFER;   // Scratch buffer for push constants
+	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[2].m_eType = DESCRIPTOR_TYPE_TEXTURE;  // Depth texture
+	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[3].m_eType = DESCRIPTOR_TYPE_TEXTURE;  // 3D noise texture
+	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[4].m_eType = DESCRIPTOR_TYPE_TEXTURE;  // Blue noise texture
 
 	xPipelineSpec.m_bDepthTestEnabled = false;
 	xPipelineSpec.m_bDepthWriteEnabled = false;
@@ -144,9 +145,9 @@ void Flux_RaymarchFog::Render(void*)
 
 	g_xCommandList.AddCommand<Flux_CommandBeginBind>(0);
 	g_xCommandList.AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
-	g_xCommandList.AddCommand<Flux_CommandBindSRV>(Flux_Graphics::GetDepthStencilSRV(), 1);
-	g_xCommandList.AddCommand<Flux_CommandBindSRV>(&Flux_VolumeFog::GetNoiseTexture3D().m_xSRV, 2);
-	g_xCommandList.AddCommand<Flux_CommandBindSRV>(&Flux_VolumeFog::GetBlueNoiseTexture().m_xSRV, 3);
+	g_xCommandList.AddCommand<Flux_CommandBindSRV>(Flux_Graphics::GetDepthStencilSRV(), 2);              // Bumped from 1 to 2
+	g_xCommandList.AddCommand<Flux_CommandBindSRV>(&Flux_VolumeFog::GetNoiseTexture3D().m_xSRV, 3);      // Bumped from 2 to 3
+	g_xCommandList.AddCommand<Flux_CommandBindSRV>(&Flux_VolumeFog::GetBlueNoiseTexture().m_xSRV, 4);    // Bumped from 3 to 4
 
 	g_xCommandList.AddCommand<Flux_CommandPushConstant>(&s_xConstants, sizeof(Flux_RaymarchConstants));
 

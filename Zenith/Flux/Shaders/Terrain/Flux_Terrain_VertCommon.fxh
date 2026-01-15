@@ -28,7 +28,8 @@ layout(location = 5) flat out uint o_uLODLevel;  // Flat = only read once per pr
 layout(location = 6) out float o_fBitangentSign;
 
 #ifndef SHADOWS
-layout(std140, set = 0, binding=1) uniform TerrainConstants{
+// Terrain constants (binding 2, after scratch buffer at binding 1)
+layout(std140, set = 0, binding=2) uniform TerrainConstants{
 	float g_fUVScale;
 };
 #endif
@@ -42,7 +43,8 @@ layout(std140, set = 1, binding=0) uniform ShadowMatrix{
 #ifndef SHADOWS
 // LOD level buffer (read-only in vertex shader)
 // OPTIMIZATION: Use flat interpolation so only first vertex per triangle reads this
-layout(std430, set = 0, binding = 2) readonly buffer LODLevelBuffer
+// Binding 3: After FrameConstants(0), scratch buffer(1), TerrainConstants(2)
+layout(std430, set = 0, binding = 3) readonly buffer LODLevelBuffer
 {
 	uint lodLevels[];
 };

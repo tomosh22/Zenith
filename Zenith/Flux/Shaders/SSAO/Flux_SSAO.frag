@@ -6,15 +6,16 @@ layout(location = 0) out vec4 o_xColour;
 
 layout(location = 0) in vec2 a_xUV;
 
-layout(set = 0, binding = 1) uniform sampler2D g_xDepthTex;
-layout(set = 0, binding = 2) uniform sampler2D g_xNormalTex;
-
-layout(push_constant) uniform SSAOConstants{
+// Scratch buffer for push constants replacement
+layout(std140, set = 0, binding = 1) uniform SSAOConstants{
 	float RADIUS;
 	float BIAS;
 	float INTENSITY;
 	float KERNEL_SIZE;
 };
+
+layout(set = 0, binding = 2) uniform sampler2D g_xDepthTex;
+layout(set = 0, binding = 3) uniform sampler2D g_xNormalTex;
 
 // Hardcoded kernel samples (can be moved to UBO if needed)
 const vec3 KERNEL_SAMPLES[64] = vec3[](

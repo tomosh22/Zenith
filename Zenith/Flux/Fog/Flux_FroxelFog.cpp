@@ -108,9 +108,10 @@ void Flux_FroxelFog::Initialise()
 	Flux_PipelineLayout xInjectLayout;
 	xInjectLayout.m_uNumDescriptorSets = 1;
 	xInjectLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;        // Frame constants
-	xInjectLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_TEXTURE;       // Noise texture
-	xInjectLayout.m_axDescriptorSetLayouts[0].m_axBindings[2].m_eType = DESCRIPTOR_TYPE_STORAGE_IMAGE; // Density output
-	xInjectLayout.m_axDescriptorSetLayouts[0].m_axBindings[3].m_eType = DESCRIPTOR_TYPE_MAX;
+	xInjectLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_BUFFER;        // Scratch buffer for push constants
+	xInjectLayout.m_axDescriptorSetLayouts[0].m_axBindings[2].m_eType = DESCRIPTOR_TYPE_TEXTURE;       // Noise texture
+	xInjectLayout.m_axDescriptorSetLayouts[0].m_axBindings[3].m_eType = DESCRIPTOR_TYPE_STORAGE_IMAGE; // Density output
+	xInjectLayout.m_axDescriptorSetLayouts[0].m_axBindings[4].m_eType = DESCRIPTOR_TYPE_MAX;
 	Zenith_Vulkan_RootSigBuilder::FromSpecification(s_xInjectRootSig, xInjectLayout);
 
 	// Build inject compute pipeline
@@ -127,10 +128,11 @@ void Flux_FroxelFog::Initialise()
 	Flux_PipelineLayout xLightLayout;
 	xLightLayout.m_uNumDescriptorSets = 1;
 	xLightLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;        // Frame constants
-	xLightLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_TEXTURE;       // Density input
-	xLightLayout.m_axDescriptorSetLayouts[0].m_axBindings[2].m_eType = DESCRIPTOR_TYPE_STORAGE_IMAGE; // Lighting output
-	xLightLayout.m_axDescriptorSetLayouts[0].m_axBindings[3].m_eType = DESCRIPTOR_TYPE_STORAGE_IMAGE; // Scattering output
-	xLightLayout.m_axDescriptorSetLayouts[0].m_axBindings[4].m_eType = DESCRIPTOR_TYPE_MAX;
+	xLightLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_BUFFER;        // Scratch buffer for push constants
+	xLightLayout.m_axDescriptorSetLayouts[0].m_axBindings[2].m_eType = DESCRIPTOR_TYPE_TEXTURE;       // Density input
+	xLightLayout.m_axDescriptorSetLayouts[0].m_axBindings[3].m_eType = DESCRIPTOR_TYPE_STORAGE_IMAGE; // Lighting output
+	xLightLayout.m_axDescriptorSetLayouts[0].m_axBindings[4].m_eType = DESCRIPTOR_TYPE_STORAGE_IMAGE; // Scattering output
+	xLightLayout.m_axDescriptorSetLayouts[0].m_axBindings[5].m_eType = DESCRIPTOR_TYPE_MAX;
 	Zenith_Vulkan_RootSigBuilder::FromSpecification(s_xLightRootSig, xLightLayout);
 
 	// Build light compute pipeline
@@ -154,9 +156,10 @@ void Flux_FroxelFog::Initialise()
 	Flux_PipelineLayout& xLayout = xApplySpec.m_xPipelineLayout;
 	xLayout.m_uNumDescriptorSets = 1;
 	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;   // Frame constants
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_TEXTURE;  // Depth texture
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[2].m_eType = DESCRIPTOR_TYPE_TEXTURE;  // Lighting grid
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[3].m_eType = DESCRIPTOR_TYPE_TEXTURE;  // Scattering grid
+	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_BUFFER;   // Scratch buffer for push constants
+	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[2].m_eType = DESCRIPTOR_TYPE_TEXTURE;  // Depth texture
+	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[3].m_eType = DESCRIPTOR_TYPE_TEXTURE;  // Lighting grid
+	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[4].m_eType = DESCRIPTOR_TYPE_TEXTURE;  // Scattering grid
 
 	xApplySpec.m_bDepthTestEnabled = false;
 	xApplySpec.m_bDepthWriteEnabled = false;
@@ -257,8 +260,8 @@ void Flux_FroxelFog::Render(void*)
 	g_xInjectCommandList.AddCommand<Flux_CommandBindComputePipeline>(&s_xInjectPipeline);
 	g_xInjectCommandList.AddCommand<Flux_CommandBeginBind>(0);
 	g_xInjectCommandList.AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
-	g_xInjectCommandList.AddCommand<Flux_CommandBindSRV>(&Flux_VolumeFog::GetNoiseTexture3D().m_xSRV, 1, &Flux_Graphics::s_xRepeatSampler);
-	g_xInjectCommandList.AddCommand<Flux_CommandBindUAV_Texture>(&s_xDensityGrid.m_pxUAV, 2);
+	g_xInjectCommandList.AddCommand<Flux_CommandBindSRV>(&Flux_VolumeFog::GetNoiseTexture3D().m_xSRV, 2, &Flux_Graphics::s_xRepeatSampler);  // Bumped from 1 to 2
+	g_xInjectCommandList.AddCommand<Flux_CommandBindUAV_Texture>(&s_xDensityGrid.m_pxUAV, 3);  // Bumped from 2 to 3
 	g_xInjectCommandList.AddCommand<Flux_CommandPushConstant>(&s_xInjectConstants, sizeof(InjectConstants));
 	g_xInjectCommandList.AddCommand<Flux_CommandDispatch>(
 		(FROXEL_WIDTH + 7) / 8,
@@ -287,9 +290,9 @@ void Flux_FroxelFog::Render(void*)
 	g_xLightCommandList.AddCommand<Flux_CommandBindComputePipeline>(&s_xLightPipeline);
 	g_xLightCommandList.AddCommand<Flux_CommandBeginBind>(0);
 	g_xLightCommandList.AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
-	g_xLightCommandList.AddCommand<Flux_CommandBindSRV>(&s_xDensityGrid.m_pxSRV, 1);
-	g_xLightCommandList.AddCommand<Flux_CommandBindUAV_Texture>(&s_xLightingGrid.m_pxUAV, 2);
-	g_xLightCommandList.AddCommand<Flux_CommandBindUAV_Texture>(&s_xScatteringGrid.m_pxUAV, 3);
+	g_xLightCommandList.AddCommand<Flux_CommandBindSRV>(&s_xDensityGrid.m_pxSRV, 2);  // Bumped from 1 to 2
+	g_xLightCommandList.AddCommand<Flux_CommandBindUAV_Texture>(&s_xLightingGrid.m_pxUAV, 3);   // Bumped from 2 to 3
+	g_xLightCommandList.AddCommand<Flux_CommandBindUAV_Texture>(&s_xScatteringGrid.m_pxUAV, 4); // Bumped from 3 to 4
 	g_xLightCommandList.AddCommand<Flux_CommandPushConstant>(&s_xLightConstants, sizeof(LightConstants));
 	g_xLightCommandList.AddCommand<Flux_CommandDispatch>(
 		(FROXEL_WIDTH + 7) / 8,
@@ -312,9 +315,9 @@ void Flux_FroxelFog::Render(void*)
 	g_xApplyCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
 	g_xApplyCommandList.AddCommand<Flux_CommandBeginBind>(0);
 	g_xApplyCommandList.AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
-	g_xApplyCommandList.AddCommand<Flux_CommandBindSRV>(Flux_Graphics::GetDepthStencilSRV(), 1);
-	g_xApplyCommandList.AddCommand<Flux_CommandBindSRV>(&s_xLightingGrid.m_pxSRV, 2);
-	g_xApplyCommandList.AddCommand<Flux_CommandBindSRV>(&s_xScatteringGrid.m_pxSRV, 3);
+	g_xApplyCommandList.AddCommand<Flux_CommandBindSRV>(Flux_Graphics::GetDepthStencilSRV(), 2);   // Bumped from 1 to 2
+	g_xApplyCommandList.AddCommand<Flux_CommandBindSRV>(&s_xLightingGrid.m_pxSRV, 3);             // Bumped from 2 to 3
+	g_xApplyCommandList.AddCommand<Flux_CommandBindSRV>(&s_xScatteringGrid.m_pxSRV, 4);           // Bumped from 3 to 4
 	g_xApplyCommandList.AddCommand<Flux_CommandPushConstant>(&s_xApplyConstants, sizeof(ApplyConstants));
 	g_xApplyCommandList.AddCommand<Flux_CommandDrawIndexed>(6);
 

@@ -100,6 +100,7 @@ void Flux_StaticMeshes::Initialise()
 		Flux_PipelineLayout& xLayout = xPipelineSpec.m_xPipelineLayout;
 		xLayout.m_uNumDescriptorSets = 2;
 		xLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;
+		xLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_BUFFER;  // Scratch buffer for push constants
 		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_TEXTURE;
 		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_TEXTURE;
 		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[2].m_eType = DESCRIPTOR_TYPE_TEXTURE;
@@ -128,6 +129,7 @@ void Flux_StaticMeshes::Initialise()
 		Flux_PipelineLayout& xLayout = xShadowPipelineSpec.m_xPipelineLayout;
 		xLayout.m_uNumDescriptorSets = 2;
 		xLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;
+		xLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_BUFFER;  // Scratch buffer for push constants
 		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;
 
 		Flux_PipelineBuilder::FromSpecification(s_xShadowPipeline, xShadowPipelineSpec);
@@ -171,11 +173,6 @@ void Flux_StaticMeshes::RenderToGBuffer(void*)
 
 	Zenith_Vector<Zenith_ModelComponent*> xModels;
 	Zenith_Scene::GetCurrentScene().GetAllOfComponentType<Zenith_ModelComponent>(xModels);
-
-	g_xCommandList.AddCommand<Flux_CommandBeginBind>(0);
-	g_xCommandList.AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
-
-	g_xCommandList.AddCommand<Flux_CommandBeginBind>(1);
 
 	static bool s_bLoggedOnce = false;
 	for (Zenith_Vector<Zenith_ModelComponent*>::Iterator xIt(xModels); !xIt.Done(); xIt.Next())
@@ -248,11 +245,17 @@ void Flux_StaticMeshes::RenderToGBuffer(void*)
 				}
 				Zenith_Assert(pxMaterial != nullptr, "Material is null and blank material fallback also null");
 
+				// Bind set 0: frame constants + push constants (scratch buffer)
+				g_xCommandList.AddCommand<Flux_CommandBeginBind>(0);
+				g_xCommandList.AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
+
 				// Build and push material constants (128 bytes)
 				MaterialPushConstants xPushConstants;
 				BuildMaterialPushConstants(xPushConstants, xModelMatrix, pxMaterial);
 				g_xCommandList.AddCommand<Flux_CommandPushConstant>(&xPushConstants, sizeof(xPushConstants));
 
+				// Bind set 1: material textures
+				g_xCommandList.AddCommand<Flux_CommandBeginBind>(1);
 				g_xCommandList.AddCommand<Flux_CommandBindSRV>(&pxMaterial->GetDiffuseTexture()->m_xSRV, 0);
 				g_xCommandList.AddCommand<Flux_CommandBindSRV>(&pxMaterial->GetNormalTexture()->m_xSRV, 1);
 				g_xCommandList.AddCommand<Flux_CommandBindSRV>(&pxMaterial->GetRoughnessMetallicTexture()->m_xSRV, 2);
@@ -282,11 +285,17 @@ void Flux_StaticMeshes::RenderToGBuffer(void*)
 
 			Flux_MaterialAsset& xMaterial = pxModel->GetMaterialAtIndex(uMesh);
 
+			// Bind set 0: frame constants + push constants (scratch buffer)
+			g_xCommandList.AddCommand<Flux_CommandBeginBind>(0);
+			g_xCommandList.AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
+
 			// Build and push material constants (128 bytes)
 			MaterialPushConstants xPushConstants;
 			BuildMaterialPushConstants(xPushConstants, xModelMatrix, &xMaterial);
 			g_xCommandList.AddCommand<Flux_CommandPushConstant>(&xPushConstants, sizeof(xPushConstants));
 
+			// Bind set 1: material textures
+			g_xCommandList.AddCommand<Flux_CommandBeginBind>(1);
 			g_xCommandList.AddCommand<Flux_CommandBindSRV>(&xMaterial.GetDiffuseTexture()->m_xSRV, 0);
 			g_xCommandList.AddCommand<Flux_CommandBindSRV>(&xMaterial.GetNormalTexture()->m_xSRV, 1);
 			g_xCommandList.AddCommand<Flux_CommandBindSRV>(&xMaterial.GetRoughnessMetallicTexture()->m_xSRV, 2);
@@ -350,6 +359,8 @@ void Flux_StaticMeshes::RenderToShadowMap(Flux_CommandList& xCmdBuf)
 
 				xCmdBuf.AddCommand<Flux_CommandSetVertexBuffer>(&pxMeshInstance->GetVertexBuffer());
 				xCmdBuf.AddCommand<Flux_CommandSetIndexBuffer>(&pxMeshInstance->GetIndexBuffer());
+				xCmdBuf.AddCommand<Flux_CommandBeginBind>(0);  // Required for scratch buffer system
+				xCmdBuf.AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
 				xCmdBuf.AddCommand<Flux_CommandPushConstant>(&xModelMatrix, sizeof(xModelMatrix));
 				xCmdBuf.AddCommand<Flux_CommandDrawIndexed>(pxMeshInstance->GetNumIndices());
 			}
@@ -370,6 +381,8 @@ void Flux_StaticMeshes::RenderToShadowMap(Flux_CommandList& xCmdBuf)
 
 			Zenith_Maths::Matrix4 xModelMatrix;
 			pxModel->GetParentEntity().GetComponent<Zenith_TransformComponent>().BuildModelMatrix(xModelMatrix);
+			xCmdBuf.AddCommand<Flux_CommandBeginBind>(0);  // Required for scratch buffer system
+			xCmdBuf.AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
 			xCmdBuf.AddCommand<Flux_CommandPushConstant>(&xModelMatrix, sizeof(xModelMatrix));
 			const Flux_MaterialAsset& xMaterial = pxModel->GetMaterialAtIndex(uMesh);
 

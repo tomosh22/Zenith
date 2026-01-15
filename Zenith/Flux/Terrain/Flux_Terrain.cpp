@@ -83,9 +83,10 @@ void Flux_Terrain::Initialise()
 
 		Flux_PipelineLayout& xLayout = xPipelineSpec.m_xPipelineLayout;
 		xLayout.m_uNumDescriptorSets = 2;
-		xLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;
-		xLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_BUFFER;
-		xLayout.m_axDescriptorSetLayouts[0].m_axBindings[2].m_eType = DESCRIPTOR_TYPE_STORAGE_BUFFER;  // LOD level buffer
+		xLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;  // Frame constants
+		xLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_BUFFER;  // Scratch buffer for push constants
+		xLayout.m_axDescriptorSetLayouts[0].m_axBindings[2].m_eType = DESCRIPTOR_TYPE_BUFFER;  // Terrain constants (was 1)
+		xLayout.m_axDescriptorSetLayouts[0].m_axBindings[3].m_eType = DESCRIPTOR_TYPE_STORAGE_BUFFER;  // LOD level buffer (was 2)
 		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_TEXTURE;
 		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_TEXTURE;
 		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[2].m_eType = DESCRIPTOR_TYPE_TEXTURE;
@@ -302,9 +303,8 @@ void Flux_Terrain::RenderToGBuffer(void*)
 
 	g_xTerrainCommandList.AddCommand<Flux_CommandSetPipeline>(dbg_bWireframe ? &s_xTerrainWireframePipeline : &s_xTerrainGBufferPipeline);
 
-	// Set push constant for LOD visualization (same for all terrain components)
+	// LOD visualization value (same for all terrain components)
 	uint32_t uVisualizeLOD = dbg_bVisualizeLOD ? 1 : 0;
-	g_xTerrainCommandList.AddCommand<Flux_CommandPushConstant>(&uVisualizeLOD, sizeof(uint32_t));
 
 	for (u_int u = 0; u < g_xTerrainComponentsToRender.GetSize(); u++)
 	{
@@ -314,11 +314,15 @@ void Flux_Terrain::RenderToGBuffer(void*)
 		// Bind per-frame constants and terrain constants (set 0)
 		g_xTerrainCommandList.AddCommand<Flux_CommandBeginBind>(0);
 		g_xTerrainCommandList.AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
-		g_xTerrainCommandList.AddCommand<Flux_CommandBindCBV>(&s_xTerrainConstantsBuffer.GetCBV(), 1);
 
-		// Bind LOD level buffer for visualization (binding 2 in set 0)
+		// Push constant for LOD visualization (must be after BeginBind(0) for scratch buffer system)
+		g_xTerrainCommandList.AddCommand<Flux_CommandPushConstant>(&uVisualizeLOD, sizeof(uint32_t));
+
+		g_xTerrainCommandList.AddCommand<Flux_CommandBindCBV>(&s_xTerrainConstantsBuffer.GetCBV(), 2);
+
+		// Bind LOD level buffer for visualization (binding 3 in set 0)
 		// Each component has its own LOD buffer
-		g_xTerrainCommandList.AddCommand<Flux_CommandBindUAV_Buffer>(&pxTerrain->GetLODLevelBuffer().GetUAV(), 2);
+		g_xTerrainCommandList.AddCommand<Flux_CommandBindUAV_Buffer>(&pxTerrain->GetLODLevelBuffer().GetUAV(), 3);
 
 
 		g_xTerrainCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&pxTerrain->GetUnifiedVertexBuffer());

@@ -136,10 +136,11 @@ void Flux_LPVFog::Initialise()
 	Flux_PipelineLayout xInjectLayout;
 	xInjectLayout.m_uNumDescriptorSets = 1;
 	xInjectLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;        // Frame constants
-	xInjectLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_TEXTURE;       // Shadow map (placeholder)
-	xInjectLayout.m_axDescriptorSetLayouts[0].m_axBindings[2].m_eType = DESCRIPTOR_TYPE_STORAGE_IMAGE; // LPV output
-	xInjectLayout.m_axDescriptorSetLayouts[0].m_axBindings[3].m_eType = DESCRIPTOR_TYPE_STORAGE_IMAGE; // Debug output
-	xInjectLayout.m_axDescriptorSetLayouts[0].m_axBindings[4].m_eType = DESCRIPTOR_TYPE_MAX;
+	xInjectLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_BUFFER;        // Scratch buffer for push constants
+	xInjectLayout.m_axDescriptorSetLayouts[0].m_axBindings[2].m_eType = DESCRIPTOR_TYPE_TEXTURE;       // Shadow map (placeholder)
+	xInjectLayout.m_axDescriptorSetLayouts[0].m_axBindings[3].m_eType = DESCRIPTOR_TYPE_STORAGE_IMAGE; // LPV output
+	xInjectLayout.m_axDescriptorSetLayouts[0].m_axBindings[4].m_eType = DESCRIPTOR_TYPE_STORAGE_IMAGE; // Debug output
+	xInjectLayout.m_axDescriptorSetLayouts[0].m_axBindings[5].m_eType = DESCRIPTOR_TYPE_MAX;
 	Zenith_Vulkan_RootSigBuilder::FromSpecification(s_xInjectRootSig, xInjectLayout);
 
 	// Build inject compute pipeline
@@ -156,8 +157,9 @@ void Flux_LPVFog::Initialise()
 	Flux_PipelineLayout xPropagateLayout;
 	xPropagateLayout.m_uNumDescriptorSets = 1;
 	xPropagateLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_TEXTURE;       // LPV input
-	xPropagateLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_STORAGE_IMAGE; // LPV output
-	xPropagateLayout.m_axDescriptorSetLayouts[0].m_axBindings[2].m_eType = DESCRIPTOR_TYPE_MAX;
+	xPropagateLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_BUFFER;        // Scratch buffer for push constants
+	xPropagateLayout.m_axDescriptorSetLayouts[0].m_axBindings[2].m_eType = DESCRIPTOR_TYPE_STORAGE_IMAGE; // LPV output
+	xPropagateLayout.m_axDescriptorSetLayouts[0].m_axBindings[3].m_eType = DESCRIPTOR_TYPE_MAX;
 	Zenith_Vulkan_RootSigBuilder::FromSpecification(s_xPropagateRootSig, xPropagateLayout);
 
 	// Build propagate compute pipeline
@@ -181,11 +183,12 @@ void Flux_LPVFog::Initialise()
 	Flux_PipelineLayout& xLayout = xApplySpec.m_xPipelineLayout;
 	xLayout.m_uNumDescriptorSets = 1;
 	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;   // Frame constants
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_TEXTURE;  // Depth texture
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[2].m_eType = DESCRIPTOR_TYPE_TEXTURE;  // LPV Cascade 0
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[3].m_eType = DESCRIPTOR_TYPE_TEXTURE;  // LPV Cascade 1
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[4].m_eType = DESCRIPTOR_TYPE_TEXTURE;  // LPV Cascade 2
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[5].m_eType = DESCRIPTOR_TYPE_TEXTURE;  // Noise texture
+	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_BUFFER;   // Scratch buffer for push constants
+	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[2].m_eType = DESCRIPTOR_TYPE_TEXTURE;  // Depth texture
+	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[3].m_eType = DESCRIPTOR_TYPE_TEXTURE;  // LPV Cascade 0
+	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[4].m_eType = DESCRIPTOR_TYPE_TEXTURE;  // LPV Cascade 1
+	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[5].m_eType = DESCRIPTOR_TYPE_TEXTURE;  // LPV Cascade 2
+	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[6].m_eType = DESCRIPTOR_TYPE_TEXTURE;  // Noise texture
 
 	xApplySpec.m_bDepthTestEnabled = false;
 	xApplySpec.m_bDepthWriteEnabled = false;
@@ -278,9 +281,9 @@ void Flux_LPVFog::Render(void*)
 		g_xInjectCommandList.AddCommand<Flux_CommandBeginBind>(0);
 		g_xInjectCommandList.AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
 		// Use blue noise as placeholder for shadow map
-		g_xInjectCommandList.AddCommand<Flux_CommandBindSRV>(&Flux_VolumeFog::GetBlueNoiseTexture().m_xSRV, 1);
-		g_xInjectCommandList.AddCommand<Flux_CommandBindUAV_Texture>(&s_axLPVGrids[uCascade][0].m_pxUAV, 2);
-		g_xInjectCommandList.AddCommand<Flux_CommandBindUAV_Texture>(&s_xDebugInjectionTexture.m_pxUAV, 3);
+		g_xInjectCommandList.AddCommand<Flux_CommandBindSRV>(&Flux_VolumeFog::GetBlueNoiseTexture().m_xSRV, 2);  // Bumped from 1 to 2
+		g_xInjectCommandList.AddCommand<Flux_CommandBindUAV_Texture>(&s_axLPVGrids[uCascade][0].m_pxUAV, 3);     // Bumped from 2 to 3
+		g_xInjectCommandList.AddCommand<Flux_CommandBindUAV_Texture>(&s_xDebugInjectionTexture.m_pxUAV, 4);      // Bumped from 3 to 4
 		g_xInjectCommandList.AddCommand<Flux_CommandPushConstant>(&s_xInjectConstants, sizeof(InjectConstants));
 		g_xInjectCommandList.AddCommand<Flux_CommandDispatch>(
 			(LPV_GRID_SIZE + 7) / 8,
@@ -314,7 +317,7 @@ void Flux_LPVFog::Render(void*)
 			g_xPropagateCommandList.AddCommand<Flux_CommandBindComputePipeline>(&s_xPropagatePipeline);
 			g_xPropagateCommandList.AddCommand<Flux_CommandBeginBind>(0);
 			g_xPropagateCommandList.AddCommand<Flux_CommandBindSRV>(&s_axLPVGrids[uCascade][uSrcIdx].m_pxSRV, 0);
-			g_xPropagateCommandList.AddCommand<Flux_CommandBindUAV_Texture>(&s_axLPVGrids[uCascade][uDstIdx].m_pxUAV, 1);
+			g_xPropagateCommandList.AddCommand<Flux_CommandBindUAV_Texture>(&s_axLPVGrids[uCascade][uDstIdx].m_pxUAV, 2);  // Bumped from 1 to 2
 			g_xPropagateCommandList.AddCommand<Flux_CommandPushConstant>(&s_xPropagateConstants, sizeof(PropagateConstants));
 			g_xPropagateCommandList.AddCommand<Flux_CommandDispatch>(
 				(LPV_GRID_SIZE + 7) / 8,
@@ -345,11 +348,11 @@ void Flux_LPVFog::Render(void*)
 	g_xApplyCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
 	g_xApplyCommandList.AddCommand<Flux_CommandBeginBind>(0);
 	g_xApplyCommandList.AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
-	g_xApplyCommandList.AddCommand<Flux_CommandBindSRV>(Flux_Graphics::GetDepthStencilSRV(), 1);
-	g_xApplyCommandList.AddCommand<Flux_CommandBindSRV>(&s_axLPVGrids[0][s_uCurrentPingPong].m_pxSRV, 2);
-	g_xApplyCommandList.AddCommand<Flux_CommandBindSRV>(&s_axLPVGrids[1][s_uCurrentPingPong].m_pxSRV, 3);
-	g_xApplyCommandList.AddCommand<Flux_CommandBindSRV>(&s_axLPVGrids[2][s_uCurrentPingPong].m_pxSRV, 4);
-	g_xApplyCommandList.AddCommand<Flux_CommandBindSRV>(&Flux_VolumeFog::GetNoiseTexture3D().m_xSRV, 5);
+	g_xApplyCommandList.AddCommand<Flux_CommandBindSRV>(Flux_Graphics::GetDepthStencilSRV(), 2);  // Bumped from 1 to 2
+	g_xApplyCommandList.AddCommand<Flux_CommandBindSRV>(&s_axLPVGrids[0][s_uCurrentPingPong].m_pxSRV, 3);  // Bumped from 2 to 3
+	g_xApplyCommandList.AddCommand<Flux_CommandBindSRV>(&s_axLPVGrids[1][s_uCurrentPingPong].m_pxSRV, 4);  // Bumped from 3 to 4
+	g_xApplyCommandList.AddCommand<Flux_CommandBindSRV>(&s_axLPVGrids[2][s_uCurrentPingPong].m_pxSRV, 5);  // Bumped from 4 to 5
+	g_xApplyCommandList.AddCommand<Flux_CommandBindSRV>(&Flux_VolumeFog::GetNoiseTexture3D().m_xSRV, 6);   // Bumped from 5 to 6
 	g_xApplyCommandList.AddCommand<Flux_CommandPushConstant>(&s_xApplyConstants, sizeof(ApplyConstants));
 	g_xApplyCommandList.AddCommand<Flux_CommandDrawIndexed>(6);
 

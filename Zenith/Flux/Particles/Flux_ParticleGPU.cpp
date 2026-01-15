@@ -84,17 +84,20 @@ void Flux_ParticleGPU::Initialise()
 	s_xComputeShader.InitialiseCompute("Particles/Flux_ParticleUpdate.comp");
 
 	// Build compute root signature
-	// Binding 0: Input particles (storage buffer, read)
-	// Binding 1: Output particles (storage buffer, write)
-	// Binding 2: Instance buffer (storage buffer, write)
-	// Binding 3: Counter buffer (storage buffer, read/write atomic)
+	// Binding 0: Frame constants (not currently used, but reserved)
+	// Binding 1: Scratch buffer for push constants
+	// Binding 2: Input particles (storage buffer, read) (was 0)
+	// Binding 3: Output particles (storage buffer, write) (was 1)
+	// Binding 4: Instance buffer (storage buffer, write) (was 2)
+	// Binding 5: Counter buffer (storage buffer, read/write atomic) (was 3)
 	Flux_PipelineLayout xComputeLayout;
 	xComputeLayout.m_uNumDescriptorSets = 1;
-	xComputeLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_STORAGE_BUFFER;
-	xComputeLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_STORAGE_BUFFER;
-	xComputeLayout.m_axDescriptorSetLayouts[0].m_axBindings[2].m_eType = DESCRIPTOR_TYPE_STORAGE_BUFFER;
-	xComputeLayout.m_axDescriptorSetLayouts[0].m_axBindings[3].m_eType = DESCRIPTOR_TYPE_STORAGE_BUFFER;
-	xComputeLayout.m_axDescriptorSetLayouts[0].m_axBindings[4].m_eType = DESCRIPTOR_TYPE_MAX;
+	xComputeLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_STORAGE_BUFFER;  // Input particles (keep at 0 for now - will be storage buffer)
+	xComputeLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_BUFFER;          // Scratch buffer for push constants
+	xComputeLayout.m_axDescriptorSetLayouts[0].m_axBindings[2].m_eType = DESCRIPTOR_TYPE_STORAGE_BUFFER;  // Output particles (was 1)
+	xComputeLayout.m_axDescriptorSetLayouts[0].m_axBindings[3].m_eType = DESCRIPTOR_TYPE_STORAGE_BUFFER;  // Instance buffer (was 2)
+	xComputeLayout.m_axDescriptorSetLayouts[0].m_axBindings[4].m_eType = DESCRIPTOR_TYPE_STORAGE_BUFFER;  // Counter buffer (was 3)
+	xComputeLayout.m_axDescriptorSetLayouts[0].m_axBindings[5].m_eType = DESCRIPTOR_TYPE_MAX;
 
 	Zenith_Vulkan_RootSigBuilder::FromSpecification(s_xComputeRootSig, xComputeLayout);
 
@@ -397,9 +400,9 @@ void Flux_ParticleGPU::DispatchCompute()
 
 	s_xComputeCommandList.AddCommand<Flux_CommandBeginBind>(0);
 	s_xComputeCommandList.AddCommand<Flux_CommandBindUAV_Buffer>(&xInputBuffer.GetUAV(), 0);
-	s_xComputeCommandList.AddCommand<Flux_CommandBindUAV_Buffer>(&xOutputBuffer.GetUAV(), 1);
-	s_xComputeCommandList.AddCommand<Flux_CommandBindUAV_Buffer>(&s_xInstanceBuffer.GetUAV(), 2);
-	s_xComputeCommandList.AddCommand<Flux_CommandBindUAV_Buffer>(&s_xCounterBuffer.GetUAV(), 3);
+	s_xComputeCommandList.AddCommand<Flux_CommandBindUAV_Buffer>(&xOutputBuffer.GetUAV(), 2);   // Was 1
+	s_xComputeCommandList.AddCommand<Flux_CommandBindUAV_Buffer>(&s_xInstanceBuffer.GetUAV(), 3);  // Was 2
+	s_xComputeCommandList.AddCommand<Flux_CommandBindUAV_Buffer>(&s_xCounterBuffer.GetUAV(), 4);   // Was 3
 
 	// Set up push constants
 	ParticleComputeConstants xConstants;

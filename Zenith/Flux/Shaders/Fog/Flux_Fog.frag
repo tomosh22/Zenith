@@ -6,11 +6,12 @@ layout(location = 0) out vec4 o_xColour;
 
 layout(location = 0) in vec2 a_xUV;
 
-layout(set = 0, binding = 1) uniform sampler2D g_xDepthTex;
-
-layout(push_constant) uniform FogConstants{
+// Scratch buffer for push constants replacement
+layout(std140, set = 0, binding = 1) uniform FogConstants{
 	vec4 g_xFogColour_Falloff;
 };
+
+layout(set = 0, binding = 2) uniform sampler2D g_xDepthTex;
 
 void main()
 {

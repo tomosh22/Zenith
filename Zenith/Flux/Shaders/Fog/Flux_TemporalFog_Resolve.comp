@@ -4,14 +4,8 @@
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
 
-// Bindings (binding 0 is FrameConstants from Common.fxh)
-layout(set = 0, binding = 1) uniform sampler3D u_xCurrentFog;
-layout(set = 0, binding = 2) uniform sampler3D u_xHistoryFog;
-layout(set = 0, binding = 3, rgba16f) uniform writeonly image3D u_xOutputFog;
-layout(set = 0, binding = 4, rgba16f) uniform writeonly image2D u_xDebugMotionVectors;
-
-// Push constants
-layout(push_constant) uniform ResolveConstants
+// Scratch buffer for push constants replacement
+layout(std140, set = 0, binding = 1) uniform ResolveConstants
 {
     vec4 u_xGridDimensions;   // x = width, y = height, z = depth, w = unused
     vec4 u_xJitterOffset;     // xy = current jitter, zw = previous jitter
@@ -24,6 +18,12 @@ layout(push_constant) uniform ResolveConstants
     float u_fPad1;
     float u_fPad2;
 };
+
+// Bindings (binding 0 is FrameConstants from Common.fxh)
+layout(set = 0, binding = 2) uniform sampler3D u_xCurrentFog;
+layout(set = 0, binding = 3) uniform sampler3D u_xHistoryFog;
+layout(set = 0, binding = 4, rgba16f) uniform writeonly image3D u_xOutputFog;
+layout(set = 0, binding = 5, rgba16f) uniform writeonly image2D u_xDebugMotionVectors;
 
 // Debug mode constants
 const uint DEBUG_TEMPORAL_MOTION_VECTORS = 17;

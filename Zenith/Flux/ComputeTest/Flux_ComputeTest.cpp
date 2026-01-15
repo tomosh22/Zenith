@@ -40,7 +40,7 @@ void Flux_ComputeTest::Initialise()
 	Flux_PipelineLayout xComputeLayout;
 	xComputeLayout.m_uNumDescriptorSets = 1;
 	xComputeLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_STORAGE_IMAGE;
-	xComputeLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_MAX;
+	xComputeLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_BUFFER;  // Scratch buffer for push constants
 	Zenith_Vulkan_RootSigBuilder::FromSpecification(g_xComputeRootSig, xComputeLayout);
 	
 	// Build compute pipeline

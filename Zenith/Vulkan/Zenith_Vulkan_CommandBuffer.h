@@ -24,6 +24,13 @@ struct Flux_UnorderedAccessView_Buffer;
 struct Flux_RenderTargetView;
 struct Flux_DepthStencilView;
 
+// Scratch buffer binding info for push constant replacement
+struct ScratchBufferBinding {
+	u_int m_uOffset = 0;
+	u_int m_uSize = 0;
+	bool m_bValid = false;
+};
+
 struct DescSetBindings {
 	const Flux_ShaderResourceView* m_xSRVs[MAX_BINDINGS];
 	const Flux_UnorderedAccessView_Texture* m_xUAV_Textures[MAX_BINDINGS];
@@ -31,7 +38,10 @@ struct DescSetBindings {
 	const Flux_ConstantBufferView* m_xCBVs[MAX_BINDINGS];
 
 	Zenith_Vulkan_Sampler* m_apxSamplers[MAX_BINDINGS];
-	
+
+	// Scratch buffer binding (for push constant replacement at binding 1)
+	ScratchBufferBinding m_xScratchBuffer;
+
 	// Helper for hashing - compares if two DescSetBindings are equal
 	bool operator==(const DescSetBindings& other) const
 	{

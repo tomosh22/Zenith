@@ -35,11 +35,11 @@ void Flux_DeferredShading::Initialise()
 	Flux_PipelineLayout& xLayout = xPipelineSpec.m_xPipelineLayout;
 	xLayout.m_uNumDescriptorSets = 1;
 	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_BUFFER;
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[2].m_eType = DESCRIPTOR_TYPE_BUFFER;
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[3].m_eType = DESCRIPTOR_TYPE_BUFFER;
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[4].m_eType = DESCRIPTOR_TYPE_BUFFER;
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[5].m_eType = DESCRIPTOR_TYPE_TEXTURE;
+	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_BUFFER;  // Scratch buffer for push constants
+	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[2].m_eType = DESCRIPTOR_TYPE_BUFFER;  // Shadow matrix 0
+	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[3].m_eType = DESCRIPTOR_TYPE_BUFFER;  // Shadow matrix 1
+	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[4].m_eType = DESCRIPTOR_TYPE_BUFFER;  // Shadow matrix 2
+	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[5].m_eType = DESCRIPTOR_TYPE_BUFFER;  // Shadow matrix 3
 	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[6].m_eType = DESCRIPTOR_TYPE_TEXTURE;
 	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[7].m_eType = DESCRIPTOR_TYPE_TEXTURE;
 	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[8].m_eType = DESCRIPTOR_TYPE_TEXTURE;
@@ -47,6 +47,7 @@ void Flux_DeferredShading::Initialise()
 	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[10].m_eType = DESCRIPTOR_TYPE_TEXTURE;
 	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[11].m_eType = DESCRIPTOR_TYPE_TEXTURE;
 	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[12].m_eType = DESCRIPTOR_TYPE_TEXTURE;
+	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[13].m_eType = DESCRIPTOR_TYPE_TEXTURE;
 
 	xPipelineSpec.m_axBlendStates[0].m_eSrcBlendFactor = BLEND_FACTOR_ONE;
 	xPipelineSpec.m_axBlendStates[0].m_eDstBlendFactor = BLEND_FACTOR_ONE;
@@ -93,18 +94,18 @@ void Flux_DeferredShading::Render(void*)
 
 	g_xCommandList.AddCommand<Flux_CommandBeginBind>(0);
 	g_xCommandList.AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
-	g_xCommandList.AddCommand<Flux_CommandBindSRV>(Flux_Graphics::GetGBufferSRV(MRT_INDEX_DIFFUSE), 5);
-	g_xCommandList.AddCommand<Flux_CommandBindSRV>(Flux_Graphics::GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT), 6);
-	g_xCommandList.AddCommand<Flux_CommandBindSRV>(Flux_Graphics::GetGBufferSRV(MRT_INDEX_MATERIAL), 7);
-	g_xCommandList.AddCommand<Flux_CommandBindSRV>(Flux_Graphics::GetDepthStencilSRV(), 8);
+	g_xCommandList.AddCommand<Flux_CommandBindSRV>(Flux_Graphics::GetGBufferSRV(MRT_INDEX_DIFFUSE), 6);
+	g_xCommandList.AddCommand<Flux_CommandBindSRV>(Flux_Graphics::GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT), 7);
+	g_xCommandList.AddCommand<Flux_CommandBindSRV>(Flux_Graphics::GetGBufferSRV(MRT_INDEX_MATERIAL), 8);
+	g_xCommandList.AddCommand<Flux_CommandBindSRV>(Flux_Graphics::GetDepthStencilSRV(), 9);
 
-	constexpr uint32_t uFirstShadowTexBind = 9;
+	constexpr uint32_t uFirstShadowTexBind = 10;  // Bumped from 9 to 10 (scratch buffer at binding 1)
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
 		Flux_ShaderResourceView& xSRV = Flux_Shadows::GetCSMSRV(u);
 		g_xCommandList.AddCommand<Flux_CommandBindSRV>(&xSRV, uFirstShadowTexBind + u, &Flux_Graphics::s_xClampSampler);
 	}
-	constexpr uint32_t uFirstShadowBufferBind = 1;
+	constexpr uint32_t uFirstShadowBufferBind = 2;  // Bumped from 1 to 2 (scratch buffer at binding 1)
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
 		g_xCommandList.AddCommand<Flux_CommandBindCBV>(&Flux_Shadows::GetShadowMatrixBuffer(u).GetCBV(), uFirstShadowBufferBind + u);

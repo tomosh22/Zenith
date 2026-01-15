@@ -11,8 +11,8 @@ layout(location = 0) out vec3 o_xWorldPos;
 layout(location = 1) out vec3 o_xWorldNormal;
 layout(location = 2) out vec3 o_xColor;
 
-// Push constant: model matrix + color
-layout(push_constant) uniform PrimitivePushConstant
+// Model matrix + color (scratch buffer, replaces push constants)
+layout(std140, set = 0, binding = 1) uniform PrimitivePushConstant
 {
 	mat4 m_xModelMatrix;
 	vec3 m_xColor;

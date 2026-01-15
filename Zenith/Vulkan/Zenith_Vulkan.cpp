@@ -2,6 +2,7 @@
 
 #include "Vulkan/Zenith_Vulkan.h"
 #include "Vulkan/Zenith_Vulkan_Platform.h"
+#include "Vulkan/Zenith_Vulkan_MemoryManager.h"
 #include "Flux/Flux.h"
 #include "Flux/Flux_Enums.h"
 #include "Flux/Flux_Graphics.h"
@@ -312,6 +313,14 @@ void Zenith_Vulkan::Initialise()
 	s_pxCurrentFrame = &s_axPerFrame[0];
 
 	g_xCommandBuffer.Initialise();
+}
+
+void Zenith_Vulkan::InitialiseScratchBuffers()
+{
+	for (Zenith_Vulkan_PerFrame& xFrame : s_axPerFrame)
+	{
+		xFrame.InitialiseScratchBuffers();
+	}
 }
 
 void Zenith_Vulkan::BeginFrame()
@@ -995,6 +1004,26 @@ void Zenith_Vulkan_PerFrame::Initialise()
 	m_xMemorySemaphore = Zenith_Vulkan::GetDevice().createSemaphore(vk::SemaphoreCreateInfo());
 }
 
+void Zenith_Vulkan_PerFrame::InitialiseScratchBuffers()
+{
+	// Create scratch buffer for push constant replacement
+	Zenith_Vulkan_MemoryManager::PersistentBuffer xScratch = Zenith_Vulkan_MemoryManager::CreatePersistentlyMappedBuffer(
+		uSCRATCH_BUFFER_SIZE,
+		vk::BufferUsageFlagBits::eUniformBuffer);
+	m_xScratchBuffer = xScratch.m_xBuffer;
+	m_xScratchAllocation = xScratch.m_xAllocation;
+	m_pScratchBufferMapped = xScratch.m_pMappedPtr;
+
+	// Query alignment requirement
+	m_uMinAlignment = static_cast<u_int>(Zenith_Vulkan::GetPhysicalDevice().getProperties().limits.minUniformBufferOffsetAlignment);
+
+	// Initialize worker offsets
+	for (u_int i = 0; i < NUM_WORKER_THREADS; i++)
+	{
+		m_auWorkerScratchOffsets[i] = i * uWORKER_PARTITION_SIZE;
+	}
+}
+
 void Zenith_Vulkan_PerFrame::BeginFrame()
 {
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
@@ -1004,6 +1033,12 @@ void Zenith_Vulkan_PerFrame::BeginFrame()
 	for (vk::DescriptorPool& xPool : m_axDescriptorPools)
 	{
 		xDevice.resetDescriptorPool(xPool);
+	}
+
+	// Reset scratch buffer offsets for each worker
+	for (u_int i = 0; i < NUM_WORKER_THREADS; i++)
+	{
+		m_auWorkerScratchOffsets[i] = i * uWORKER_PARTITION_SIZE;
 	}
 }
 
@@ -1023,6 +1058,28 @@ Zenith_Vulkan_CommandBuffer& Zenith_Vulkan_PerFrame::GetWorkerCommandBuffer(u_in
 {
 	Zenith_Assert(uWorkerIndex < NUM_WORKER_THREADS, "Worker index out of range");
 	return m_axWorkerCommandBuffers[uWorkerIndex];
+}
+
+u_int Zenith_Vulkan_PerFrame::AllocateScratchBuffer(u_int uSize, u_int uWorkerIndex)
+{
+	Zenith_Assert(uWorkerIndex < NUM_WORKER_THREADS, "Worker index out of range");
+
+	// Align size to minUniformBufferOffsetAlignment
+	u_int uAlignedSize = (uSize + m_uMinAlignment - 1) & ~(m_uMinAlignment - 1);
+
+	// Get current offset for this worker
+	u_int uOffset = m_auWorkerScratchOffsets[uWorkerIndex];
+
+	// Check we don't exceed worker's partition
+	u_int uPartitionEnd = (uWorkerIndex + 1) * uWORKER_PARTITION_SIZE;
+	Zenith_Assert(uOffset + uAlignedSize <= uPartitionEnd,
+		"Worker %u scratch buffer overflow (offset=%u, size=%u, end=%u)",
+		uWorkerIndex, uOffset, uAlignedSize, uPartitionEnd);
+
+	// Advance offset
+	m_auWorkerScratchOffsets[uWorkerIndex] = uOffset + uAlignedSize;
+
+	return uOffset;
 }
 
 Flux_VRAMHandle Zenith_Vulkan::RegisterVRAM(Zenith_Vulkan_VRAM* pxVRAM)

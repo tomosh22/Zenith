@@ -2,12 +2,8 @@
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
 
-// Bindings
-layout(set = 0, binding = 0) uniform sampler3D u_xLPVInput;
-layout(set = 0, binding = 1, rgba16f) uniform writeonly image3D u_xLPVOutput;
-
-// Push constants
-layout(push_constant) uniform PropagateConstants
+// Scratch buffer for push constants replacement
+layout(std140, set = 0, binding = 1) uniform PropagateConstants
 {
     vec4 u_xGridDimensions;
     uint u_uIterationIndex;
@@ -15,6 +11,10 @@ layout(push_constant) uniform PropagateConstants
     float u_fDamping;
     uint u_uDebugMode;
 };
+
+// Bindings
+layout(set = 0, binding = 0) uniform sampler3D u_xLPVInput;
+layout(set = 0, binding = 2, rgba16f) uniform writeonly image3D u_xLPVOutput;
 
 // Debug mode constants
 const uint DEBUG_LPV_PROPAGATION_ITER = 14;

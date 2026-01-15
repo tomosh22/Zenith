@@ -20,19 +20,36 @@ public:
 	Zenith_Vulkan_PerFrame() = default;
 
 	void Initialise();
+	void InitialiseScratchBuffers(); // Must be called after Flux_MemoryManager::Initialise()
 	void BeginFrame();
 	const vk::DescriptorPool& GetDescriptorPoolForWorkerIndex(u_int uWorkerIndex);
 	const vk::CommandPool& GetCommandPoolForWorkerIndex(u_int uWorkerIndex);
 	Zenith_Vulkan_CommandBuffer& GetWorkerCommandBuffer(u_int uWorkerIndex);
 	const vk::Semaphore& GetMemorySemaphore() const { return m_xMemorySemaphore; }
 
+	// Scratch buffer access
+	const vk::Buffer& GetScratchBuffer() const { return m_xScratchBuffer; }
+	void* GetScratchBufferMappedPtr() const { return m_pScratchBufferMapped; }
+	u_int AllocateScratchBuffer(u_int uSize, u_int uWorkerIndex);
+
 	vk::Fence m_xFence;
 	vk::Semaphore m_xMemorySemaphore;
-	
+
 	static constexpr u_int NUM_WORKER_THREADS = FLUX_NUM_WORKER_THREADS;
 	vk::DescriptorPool m_axDescriptorPools[NUM_WORKER_THREADS];
 	vk::CommandPool m_axCommandPools[NUM_WORKER_THREADS];
 	Zenith_Vulkan_CommandBuffer m_axWorkerCommandBuffers[NUM_WORKER_THREADS];
+
+	// Scratch buffer for push constant replacement (1MB total, 128KB per worker)
+	static constexpr u_int uSCRATCH_BUFFER_SIZE = 1 * 1024 * 1024;
+	static constexpr u_int uWORKER_PARTITION_SIZE = uSCRATCH_BUFFER_SIZE / NUM_WORKER_THREADS;
+
+private:
+	vk::Buffer m_xScratchBuffer;
+	VmaAllocation m_xScratchAllocation = VK_NULL_HANDLE;
+	void* m_pScratchBufferMapped = nullptr;
+	u_int m_auWorkerScratchOffsets[NUM_WORKER_THREADS] = {};
+	u_int m_uMinAlignment = 256; // minUniformBufferOffsetAlignment
 };
 
 class Zenith_Vulkan_Sampler
@@ -54,6 +71,7 @@ public:
 	static vk::DescriptorSet CreateDescriptorSet(const vk::DescriptorSetLayout& xLayout, const vk::DescriptorPool& xPool);
 
 	static void Initialise();
+	static void InitialiseScratchBuffers(); // Must be called after Flux_MemoryManager::Initialise()
 	static void CreateInstance();
 #ifdef ZENITH_DEBUG
 	static void CreateDebugMessenger();

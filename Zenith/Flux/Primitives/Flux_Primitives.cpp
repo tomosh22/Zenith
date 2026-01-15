@@ -510,6 +510,7 @@ void Flux_Primitives::Initialise()
 		Flux_PipelineLayout& xLayout = xPipelineSpec.m_xPipelineLayout;
 		xLayout.m_uNumDescriptorSets = 1;
 		xLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;  // Frame constants
+		xLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_BUFFER;  // Scratch buffer for push constants
 
 		// Standard depth testing for opaque geometry
 		xPipelineSpec.m_bDepthTestEnabled = true;

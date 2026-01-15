@@ -133,11 +133,12 @@ void Flux_TemporalFog::Initialise()
 	Flux_PipelineLayout xResolveLayout;
 	xResolveLayout.m_uNumDescriptorSets = 1;
 	xResolveLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;        // Frame constants
-	xResolveLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_TEXTURE;       // Current fog (from froxel)
-	xResolveLayout.m_axDescriptorSetLayouts[0].m_axBindings[2].m_eType = DESCRIPTOR_TYPE_TEXTURE;       // History fog
-	xResolveLayout.m_axDescriptorSetLayouts[0].m_axBindings[3].m_eType = DESCRIPTOR_TYPE_STORAGE_IMAGE; // Output fog
-	xResolveLayout.m_axDescriptorSetLayouts[0].m_axBindings[4].m_eType = DESCRIPTOR_TYPE_STORAGE_IMAGE; // Debug motion vectors
-	xResolveLayout.m_axDescriptorSetLayouts[0].m_axBindings[5].m_eType = DESCRIPTOR_TYPE_MAX;
+	xResolveLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_BUFFER;        // Scratch buffer for push constants
+	xResolveLayout.m_axDescriptorSetLayouts[0].m_axBindings[2].m_eType = DESCRIPTOR_TYPE_TEXTURE;       // Current fog (from froxel) (was 1)
+	xResolveLayout.m_axDescriptorSetLayouts[0].m_axBindings[3].m_eType = DESCRIPTOR_TYPE_TEXTURE;       // History fog (was 2)
+	xResolveLayout.m_axDescriptorSetLayouts[0].m_axBindings[4].m_eType = DESCRIPTOR_TYPE_STORAGE_IMAGE; // Output fog (was 3)
+	xResolveLayout.m_axDescriptorSetLayouts[0].m_axBindings[5].m_eType = DESCRIPTOR_TYPE_STORAGE_IMAGE; // Debug motion vectors (was 4)
+	xResolveLayout.m_axDescriptorSetLayouts[0].m_axBindings[6].m_eType = DESCRIPTOR_TYPE_MAX;
 	Zenith_Vulkan_RootSigBuilder::FromSpecification(s_xResolveRootSig, xResolveLayout);
 
 	// Build resolve compute pipeline
@@ -242,12 +243,12 @@ void Flux_TemporalFog::Render(void*)
 	g_xResolveCommandList.AddCommand<Flux_CommandBeginBind>(0);
 	g_xResolveCommandList.AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
 	// Current fog comes from froxel lighting grid
-	g_xResolveCommandList.AddCommand<Flux_CommandBindSRV>(&Flux_FroxelFog::GetLightingGrid().m_pxSRV, 1);
+	g_xResolveCommandList.AddCommand<Flux_CommandBindSRV>(&Flux_FroxelFog::GetLightingGrid().m_pxSRV, 2);  // Was 1
 	// History from previous frame
-	g_xResolveCommandList.AddCommand<Flux_CommandBindSRV>(&s_axHistoryBuffers[uHistoryReadIdx].m_pxSRV, 2);
+	g_xResolveCommandList.AddCommand<Flux_CommandBindSRV>(&s_axHistoryBuffers[uHistoryReadIdx].m_pxSRV, 3);  // Was 2
 	// Output to resolved buffer and also update history
-	g_xResolveCommandList.AddCommand<Flux_CommandBindUAV_Texture>(&s_axHistoryBuffers[uHistoryWriteIdx].m_pxUAV, 3);
-	g_xResolveCommandList.AddCommand<Flux_CommandBindUAV_Texture>(&s_xDebugMotionVectors.m_pxUAV, 4);
+	g_xResolveCommandList.AddCommand<Flux_CommandBindUAV_Texture>(&s_axHistoryBuffers[uHistoryWriteIdx].m_pxUAV, 4);  // Was 3
+	g_xResolveCommandList.AddCommand<Flux_CommandBindUAV_Texture>(&s_xDebugMotionVectors.m_pxUAV, 5);  // Was 4
 	g_xResolveCommandList.AddCommand<Flux_CommandPushConstant>(&s_xResolveConstants, sizeof(ResolveConstants));
 	g_xResolveCommandList.AddCommand<Flux_CommandDispatch>(
 		(TEMPORAL_WIDTH + 7) / 8,

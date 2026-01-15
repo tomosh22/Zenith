@@ -10,8 +10,8 @@ layout(location = 2) in vec3 a_xWorldPos;
 layout(location = 3) in mat3 a_xTBN;
 layout(location = 6) in vec4 a_xColor;
 
-// Material Push Constants (must match vertex shader layout)
-layout(push_constant) uniform PushConstants{
+// Material Constants (scratch buffer at binding 1, replaces push constants, must match vertex shader layout)
+layout(std140, set = 0, binding = 1) uniform PushConstants{
 	mat4 g_xModelMatrix;       // 64 bytes
 	vec4 g_xBaseColor;         // 16 bytes
 	vec4 g_xMaterialParams;    // 16 bytes (metallic, roughness, alphaCutoff, occlusionStrength)

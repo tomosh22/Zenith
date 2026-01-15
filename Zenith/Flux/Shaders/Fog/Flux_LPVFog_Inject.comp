@@ -4,13 +4,8 @@
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
 
-// Bindings (binding 0 is FrameConstants from Common.fxh)
-layout(set = 0, binding = 1) uniform sampler2D u_xShadowMap;
-layout(set = 0, binding = 2, rgba16f) uniform writeonly image3D u_xLPVOutput;
-layout(set = 0, binding = 3, rgba16f) uniform writeonly image2D u_xDebugInjection;
-
-// Push constants
-layout(push_constant) uniform InjectConstants
+// Scratch buffer for push constants replacement
+layout(std140, set = 0, binding = 1) uniform InjectConstants
 {
     vec4 u_xLightDirection;    // xyz = direction, w = unused
     vec4 u_xLightColour;       // RGB = color, A = intensity
@@ -20,6 +15,11 @@ layout(push_constant) uniform InjectConstants
     float u_fCascadeRadius;
     float u_fPad0;
 };
+
+// Bindings (binding 0 is FrameConstants from Common.fxh)
+layout(set = 0, binding = 2) uniform sampler2D u_xShadowMap;
+layout(set = 0, binding = 3, rgba16f) uniform writeonly image3D u_xLPVOutput;
+layout(set = 0, binding = 4, rgba16f) uniform writeonly image2D u_xDebugInjection;
 
 // Debug mode constants
 const uint DEBUG_LPV_INJECTION_POINTS = 13;

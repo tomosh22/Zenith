@@ -7,13 +7,8 @@
 layout(location = 0) in vec2 a_xUV;
 layout(location = 0) out vec4 o_xColour;
 
-// Bindings (binding 0 is FrameConstants from Common.fxh)
-layout(set = 0, binding = 1) uniform sampler2D u_xDepthTexture;
-layout(set = 0, binding = 2) uniform sampler3D u_xNoiseTexture3D;
-layout(set = 0, binding = 3) uniform sampler2D u_xBlueNoiseTexture;
-
-// Push constants for raymarch-specific parameters
-layout(push_constant) uniform RaymarchConstants
+// Scratch buffer for push constants replacement
+layout(std140, set = 0, binding = 1) uniform RaymarchConstants
 {
     vec4 u_xFogColour;        // RGB = fog color, A = unused
     vec4 u_xFogParams;        // x = density, y = scattering, z = absorption, w = max distance
@@ -24,6 +19,11 @@ layout(push_constant) uniform RaymarchConstants
     uint u_uFrameIndex;
     float u_fPad0;
 };
+
+// Bindings (binding 0 is FrameConstants from Common.fxh)
+layout(set = 0, binding = 2) uniform sampler2D u_xDepthTexture;
+layout(set = 0, binding = 3) uniform sampler3D u_xNoiseTexture3D;
+layout(set = 0, binding = 4) uniform sampler2D u_xBlueNoiseTexture;
 
 // Debug mode constants (9-12 for raymarch)
 const uint DEBUG_RAYMARCH_STEP_COUNT = 9;

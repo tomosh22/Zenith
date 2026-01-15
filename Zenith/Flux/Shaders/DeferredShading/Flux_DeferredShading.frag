@@ -6,35 +6,36 @@ layout(location = 0) out vec4 o_xColour;
 
 layout(location = 0) in vec2 a_xUV;
 
-//#TO_TODO: these should really all be in one buffer
-layout(std140, set = 0, binding=1) uniform ShadowMatrix0{
-	mat4 g_xShadowMat0;
-};
-layout(std140, set = 0, binding=2) uniform ShadowMatrix1{
-	mat4 g_xShadowMat1;
-};
-layout(std140, set = 0, binding=3) uniform ShadowMatrix2{
-	mat4 g_xShadowMat2;
-};
-layout(std140, set = 0, binding=4) uniform ShadowMatrix3{
-	mat4 g_xShadowMat3;
-};
-
-layout(set = 0, binding = 5) uniform sampler2D g_xDiffuseTex;
-layout(set = 0, binding = 6) uniform sampler2D g_xNormalsAmbientTex;
-layout(set = 0, binding = 7) uniform sampler2D g_xMaterialTex;
-layout(set = 0, binding = 8) uniform sampler2D g_xDepthTex;
-
-//#TO_TODO: texture arrays
-layout(set = 0, binding = 9) uniform sampler2D g_xCSM0;
-layout(set = 0, binding = 10) uniform sampler2D g_xCSM1;
-layout(set = 0, binding = 11) uniform sampler2D g_xCSM2;
-layout(set = 0, binding = 12) uniform sampler2D g_xCSM3;
-
-layout(push_constant) uniform DeferredShadingConstants
+// Scratch buffer for push constants replacement
+layout(std140, set = 0, binding = 1) uniform DeferredShadingConstants
 {
 	uint g_bVisualiseCSMs;
 };
+
+//#TO_TODO: these should really all be in one buffer
+layout(std140, set = 0, binding=2) uniform ShadowMatrix0{
+	mat4 g_xShadowMat0;
+};
+layout(std140, set = 0, binding=3) uniform ShadowMatrix1{
+	mat4 g_xShadowMat1;
+};
+layout(std140, set = 0, binding=4) uniform ShadowMatrix2{
+	mat4 g_xShadowMat2;
+};
+layout(std140, set = 0, binding=5) uniform ShadowMatrix3{
+	mat4 g_xShadowMat3;
+};
+
+layout(set = 0, binding = 6) uniform sampler2D g_xDiffuseTex;
+layout(set = 0, binding = 7) uniform sampler2D g_xNormalsAmbientTex;
+layout(set = 0, binding = 8) uniform sampler2D g_xMaterialTex;
+layout(set = 0, binding = 9) uniform sampler2D g_xDepthTex;
+
+//#TO_TODO: texture arrays
+layout(set = 0, binding = 10) uniform sampler2D g_xCSM0;
+layout(set = 0, binding = 11) uniform sampler2D g_xCSM1;
+layout(set = 0, binding = 12) uniform sampler2D g_xCSM2;
+layout(set = 0, binding = 13) uniform sampler2D g_xCSM3;
 
 
 const float PI = 3.14159265359;

@@ -6,12 +6,8 @@
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
 
-// Bindings (binding 0 is FrameConstants from Common.fxh)
-layout(set = 0, binding = 1) uniform sampler3D u_xNoiseTexture3D;
-layout(set = 0, binding = 2, rgba16f) uniform writeonly image3D u_xDensityGrid;
-
-// Push constants
-layout(push_constant) uniform InjectConstants
+// Scratch buffer for push constants replacement
+layout(std140, set = 0, binding = 1) uniform InjectConstants
 {
     vec4 u_xFogParams;        // x = density, y = scattering, z = absorption, w = time
     vec4 u_xNoiseParams;      // x = scale, y = speed, z = detail, w = unused
@@ -22,6 +18,10 @@ layout(push_constant) uniform InjectConstants
     uint u_uFrameIndex;
     float u_fPad0;
 };
+
+// Bindings (binding 0 is FrameConstants from Common.fxh)
+layout(set = 0, binding = 2) uniform sampler3D u_xNoiseTexture3D;
+layout(set = 0, binding = 3, rgba16f) uniform writeonly image3D u_xDensityGrid;
 
 // Convert froxel coordinates to world position
 vec3 FroxelToWorldPosition(ivec3 froxelCoord)

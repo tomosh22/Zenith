@@ -6,13 +6,8 @@
 layout(location = 0) in vec2 a_xUV;
 layout(location = 0) out vec4 o_xColour;
 
-// Bindings (binding 0 is FrameConstants from Common.fxh)
-layout(set = 0, binding = 1) uniform sampler2D u_xDepthTexture;
-layout(set = 0, binding = 2) uniform sampler3D u_xLightingGrid;
-layout(set = 0, binding = 3) uniform sampler3D u_xScatteringGrid;
-
-// Push constants
-layout(push_constant) uniform ApplyConstants
+// Scratch buffer for push constants replacement
+layout(std140, set = 0, binding = 1) uniform ApplyConstants
 {
     vec4 u_xGridDimensions;
     float u_fNearZ;
@@ -20,6 +15,11 @@ layout(push_constant) uniform ApplyConstants
     uint u_uDebugMode;
     uint u_uDebugSliceIndex;
 };
+
+// Bindings (binding 0 is FrameConstants from Common.fxh)
+layout(set = 0, binding = 2) uniform sampler2D u_xDepthTexture;
+layout(set = 0, binding = 3) uniform sampler3D u_xLightingGrid;
+layout(set = 0, binding = 4) uniform sampler3D u_xScatteringGrid;
 
 // Debug mode constants
 const uint DEBUG_FROXEL_DENSITY_SLICE = 3;

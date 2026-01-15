@@ -64,6 +64,16 @@ public:
 	static Flux_VRAMHandle CreateTextureVRAM(const void* pData, const Flux_SurfaceInfo& xInfo, bool bCreateMips);
 	static Flux_VRAMHandle CreateRenderTargetVRAM(const Flux_SurfaceInfo& xInfo);
 
+	// Create a persistently mapped host-visible buffer (for scratch buffers, etc.)
+	struct PersistentBuffer
+	{
+		vk::Buffer m_xBuffer;
+		VmaAllocation m_xAllocation;
+		void* m_pMappedPtr;
+		u_int m_uSize;
+	};
+	static PersistentBuffer CreatePersistentlyMappedBuffer(u_int uSize, vk::BufferUsageFlags eUsageFlags);
+
 	// View creation functions - return Flux view structs with abstract handles
 	static Flux_RenderTargetView CreateRenderTargetView(Flux_VRAMHandle xVRAMHandle, const Flux_SurfaceInfo& xInfo, uint32_t uMipLevel = 0);
 	static Flux_DepthStencilView CreateDepthStencilView(Flux_VRAMHandle xVRAMHandle, const Flux_SurfaceInfo& xInfo, uint32_t uMipLevel = 0);

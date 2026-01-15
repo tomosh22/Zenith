@@ -465,6 +465,36 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateBufferVRAM(const u_int uSize,
 	return xHandle;
 }
 
+Zenith_Vulkan_MemoryManager::PersistentBuffer Zenith_Vulkan_MemoryManager::CreatePersistentlyMappedBuffer(u_int uSize, vk::BufferUsageFlags eUsageFlags)
+{
+	PersistentBuffer xResult = {};
+	xResult.m_uSize = uSize;
+
+	vk::BufferCreateInfo xBufferInfo = vk::BufferCreateInfo()
+		.setSize(uSize)
+		.setUsage(eUsageFlags)
+		.setSharingMode(vk::SharingMode::eExclusive);
+
+	VmaAllocationCreateInfo xAllocInfo = {};
+	xAllocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_HOST;
+	xAllocInfo.flags = VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT | VMA_ALLOCATION_CREATE_MAPPED_BIT;
+	xAllocInfo.requiredFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+
+	const vk::BufferCreateInfo::NativeType xBufferInfo_Native = xBufferInfo;
+
+	VkBuffer xBuffer = VK_NULL_HANDLE;
+	VmaAllocationInfo xAllocationInfo = {};
+	VkResult eResult = vmaCreateBuffer(s_xAllocator, &xBufferInfo_Native, &xAllocInfo, &xBuffer, &xResult.m_xAllocation, &xAllocationInfo);
+	Zenith_Assert(eResult == VK_SUCCESS, "vmaCreateBuffer failed for persistent buffer with result %d", static_cast<int>(eResult));
+
+	xResult.m_xBuffer = vk::Buffer(xBuffer);
+	xResult.m_pMappedPtr = xAllocationInfo.pMappedData;
+
+	Zenith_Assert(xResult.m_pMappedPtr != nullptr, "Persistent buffer mapping failed");
+
+	return xResult;
+}
+
 Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateRenderTargetVRAM(const Flux_SurfaceInfo& xInfo)
 {
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();

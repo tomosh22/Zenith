@@ -800,12 +800,12 @@ void Zenith_Vulkan_RootSigBuilder::FromSpecification(Zenith_Vulkan_RootSig& xRoo
 
 		xRootSigOut.m_axDescSetLayouts[uDescSet] = Zenith_Vulkan::GetDevice().createDescriptorSetLayout(xInfo);
 	}
-	vk::PushConstantRange xPushConstantRange(vk::ShaderStageFlagBits::eAll, 0, Zenith_Vulkan::GetPhysicalDevice().getProperties().limits.maxPushConstantsSize);
+	// Push constants replaced with scratch buffer system - no push constant ranges needed
 	vk::PipelineLayoutCreateInfo xPipelineLayoutInfo = vk::PipelineLayoutCreateInfo()
 		.setPSetLayouts(xRootSigOut.m_axDescSetLayouts)
 		.setSetLayoutCount(xSpec.m_uNumDescriptorSets)
-		.setPushConstantRangeCount(1)
-		.setPPushConstantRanges(&xPushConstantRange);
+		.setPushConstantRangeCount(0)
+		.setPPushConstantRanges(nullptr);
 
 	xRootSigOut.m_xLayout = Zenith_Vulkan::GetDevice().createPipelineLayout(xPipelineLayoutInfo);
 }

@@ -8,11 +8,8 @@
 layout(location = 0) out vec4 o_xColour;
 layout(location = 0) in vec2 a_xUV;
 
-// Bindings
-layout(set = 0, binding = 1) uniform sampler2D g_xDepthTex;
-
-// Push constants
-layout(push_constant) uniform GodRaysConstants
+// Scratch buffer for push constants replacement
+layout(std140, set = 0, binding = 1) uniform GodRaysConstants
 {
 	vec4 g_xLightScreenPos_Pad;  // xy = light screen pos (0-1)
 	vec4 g_xParams;              // x = decay, y = exposure, z = density, w = weight
@@ -21,6 +18,9 @@ layout(push_constant) uniform GodRaysConstants
 	float g_fPad0;
 	float g_fPad1;
 };
+
+// Bindings
+layout(set = 0, binding = 2) uniform sampler2D g_xDepthTex;
 
 // Debug modes for god rays
 const uint VOLFOG_DEBUG_GODRAYS_LIGHT_MASK = 21;

@@ -28,6 +28,7 @@ void Flux::EarlyInitialise()
 {
 	Flux_PlatformAPI::Initialise();
 	Flux_MemoryManager::Initialise();
+	Flux_PlatformAPI::InitialiseScratchBuffers(); // Must be after memory manager init
 }
 
 void Flux::LateInitialise()

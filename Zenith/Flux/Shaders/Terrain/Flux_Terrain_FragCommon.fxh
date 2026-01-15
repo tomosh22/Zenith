@@ -25,8 +25,8 @@ layout(set = 1, binding = 4) uniform sampler2D g_xNormalTex1;
 layout(set = 1, binding = 5) uniform sampler2D g_xRoughnessMetallicTex1;
 #endif
 
-// Push constant for debug mode
-layout(push_constant) uniform DebugConstants {
+// Scratch buffer for push constants replacement (set 0, binding 1)
+layout(std140, set = 0, binding = 1) uniform DebugConstants {
 	uint debugVisualizeLOD;  // 0 = normal rendering, 1 = visualize LOD
 } debugConstants;
 

@@ -5,13 +5,8 @@
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 8) in;
 
-// Bindings (binding 0 is FrameConstants from Common.fxh)
-layout(set = 0, binding = 1) uniform sampler3D u_xDensityGrid;
-layout(set = 0, binding = 2, rgba16f) uniform writeonly image3D u_xLightingGrid;
-layout(set = 0, binding = 3, rgba16f) uniform writeonly image3D u_xScatteringGrid;
-
-// Push constants
-layout(push_constant) uniform LightConstants
+// Scratch buffer for push constants replacement
+layout(std140, set = 0, binding = 1) uniform LightConstants
 {
     vec4 u_xFogColour;
     vec4 u_xLightDirection;
@@ -22,6 +17,11 @@ layout(push_constant) uniform LightConstants
     float u_fPhaseG;
     uint u_uDebugMode;
 };
+
+// Bindings (binding 0 is FrameConstants from Common.fxh)
+layout(set = 0, binding = 2) uniform sampler3D u_xDensityGrid;
+layout(set = 0, binding = 3, rgba16f) uniform writeonly image3D u_xLightingGrid;
+layout(set = 0, binding = 4, rgba16f) uniform writeonly image3D u_xScatteringGrid;
 
 // Debug mode constants
 const uint DEBUG_FROXEL_SCATTERING = 6;
