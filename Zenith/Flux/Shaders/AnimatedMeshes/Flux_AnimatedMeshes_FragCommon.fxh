@@ -4,14 +4,18 @@
 #include "../MaterialCommon.fxh"
 #endif
 
+// Varyings from vertex shader - only declared when not doing shadow pass
+#ifndef SHADOWS
 layout(location = 0) in vec2 a_xUV;
 layout(location = 1) in vec3 a_xNormal;
 layout(location = 2) in vec3 a_xWorldPos;
 layout(location = 3) in mat3 a_xTBN;
 layout(location = 6) in vec4 a_xColor;
+#endif
 
-// Material Constants (scratch buffer at binding 1, replaces push constants, must match vertex shader layout)
-layout(std140, set = 0, binding = 1) uniform PushConstants{
+// Material Constants (scratch buffer in per-draw set 1, must match vertex shader layout)
+// Note: Moved from set 0 to set 1 so FrameConstants can be bound once per frame
+layout(std140, set = 1, binding = 0) uniform PushConstants{
 	mat4 g_xModelMatrix;       // 64 bytes
 	vec4 g_xBaseColor;         // 16 bytes
 	vec4 g_xMaterialParams;    // 16 bytes (metallic, roughness, alphaCutoff, occlusionStrength)
@@ -20,11 +24,11 @@ layout(std140, set = 0, binding = 1) uniform PushConstants{
 };
 
 #ifndef SHADOWS
-layout(set = 1, binding = 1) uniform sampler2D g_xDiffuseTex;
-layout(set = 1, binding = 2) uniform sampler2D g_xNormalTex;
-layout(set = 1, binding = 3) uniform sampler2D g_xRoughnessMetallicTex;
-layout(set = 1, binding = 4) uniform sampler2D g_xOcclusionTex;
-layout(set = 1, binding = 5) uniform sampler2D g_xEmissiveTex;
+layout(set = 1, binding = 2) uniform sampler2D g_xDiffuseTex;
+layout(set = 1, binding = 3) uniform sampler2D g_xNormalTex;
+layout(set = 1, binding = 4) uniform sampler2D g_xRoughnessMetallicTex;
+layout(set = 1, binding = 5) uniform sampler2D g_xOcclusionTex;
+layout(set = 1, binding = 6) uniform sampler2D g_xEmissiveTex;
 #endif
 
 void main(){

@@ -28,6 +28,7 @@ struct Flux_DepthStencilView;
 struct ScratchBufferBinding {
 	u_int m_uOffset = 0;
 	u_int m_uSize = 0;
+	u_int m_uBinding = 0;  // Which binding slot in the descriptor set
 	bool m_bValid = false;
 };
 
@@ -39,7 +40,7 @@ struct DescSetBindings {
 
 	Zenith_Vulkan_Sampler* m_apxSamplers[MAX_BINDINGS];
 
-	// Scratch buffer binding (for push constant replacement at binding 1)
+	// Scratch buffer binding (for push constant replacement)
 	ScratchBufferBinding m_xScratchBuffer;
 
 	// Helper for hashing - compares if two DescSetBindings are equal
@@ -76,7 +77,7 @@ public:
 	void BindCBV(const Flux_ConstantBufferView* pxCBV, uint32_t uBindPoint);
 
 	void BindAccelerationStruct(void* pxStruct, uint32_t uBindPoint);
-	void PushConstant(void* pData, size_t uSize);
+	void PushConstant(void* pData, size_t uSize, u_int uBinding);
 	void SetShoudClear(const bool bClear);
 
 	void UseBindlessTextures(const uint32_t uSet);

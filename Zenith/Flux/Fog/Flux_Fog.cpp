@@ -12,6 +12,7 @@
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_Buffers.h"
+#include "Flux/Slang/Flux_ShaderBinder.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
 
@@ -30,6 +31,10 @@ static struct Flux_FogConstants
 {
 	Zenith_Maths::Vector4 m_xColour_Falloff = { 0.5,0.6,0.7,0.000075 };
 } dbg_xConstants;
+
+// Cached binding handles from shader reflection
+static Flux_BindingHandle s_xFrameConstantsBinding;
+static Flux_BindingHandle s_xDepthBinding;
 
 void Flux_Fog::Initialise()
 {
@@ -54,6 +59,11 @@ void Flux_Fog::Initialise()
 	xPipelineSpec.m_bDepthWriteEnabled = false;
 
 	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
+
+	// Cache binding handles from shader reflection
+	const Flux_ShaderReflection& xReflection = s_xShader.GetReflection();
+	s_xFrameConstantsBinding = xReflection.GetBinding("FrameConstants");
+	s_xDepthBinding = xReflection.GetBinding("g_xDepthTex");
 
 	// Initialize shared volumetric fog infrastructure
 	Flux_VolumeFog::Initialise();
@@ -113,11 +123,10 @@ void Flux_Fog::RenderSimpleFog()
 	g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
 	g_xCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
 
-	g_xCommandList.AddCommand<Flux_CommandBeginBind>(0);
-	g_xCommandList.AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
-	g_xCommandList.AddCommand<Flux_CommandBindSRV>(Flux_Graphics::GetDepthStencilSRV(), 2);  // Bumped from 1 to 2
-
-	g_xCommandList.AddCommand<Flux_CommandPushConstant>(&dbg_xConstants, sizeof(Flux_FogConstants));
+	Flux_ShaderBinder xBinder(g_xCommandList);
+	xBinder.BindCBV(s_xFrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
+	xBinder.BindSRV(s_xDepthBinding, Flux_Graphics::GetDepthStencilSRV());
+	xBinder.PushConstant(&dbg_xConstants, sizeof(Flux_FogConstants));
 
 	g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(6);
 

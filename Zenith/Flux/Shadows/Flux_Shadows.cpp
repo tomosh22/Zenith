@@ -127,22 +127,14 @@ void Flux_Shadows::Render(void*)
 			g_axCommandLists[u].Reset(true);
 			g_axCommandLists[u].AddCommand<Flux_CommandSetPipeline>(&Flux_StaticMeshes::GetShadowPipeline());
 
-			g_axCommandLists[u].AddCommand<Flux_CommandBeginBind>(0);
-			g_axCommandLists[u].AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
-
-			g_axCommandLists[u].AddCommand<Flux_CommandBeginBind>(1);
-			g_axCommandLists[u].AddCommand<Flux_CommandBindCBV>(&g_xShadowMatrixBuffers[u].GetCBV(), 0);
-
-			Flux_StaticMeshes::RenderToShadowMap(g_axCommandLists[u]);
+			// RenderToShadowMap handles all bindings via shader reflection
+			Flux_StaticMeshes::RenderToShadowMap(g_axCommandLists[u], g_xShadowMatrixBuffers[u]);
 		}
 
 		{
 			g_axCommandLists[u].AddCommand<Flux_CommandSetPipeline>(&Flux_AnimatedMeshes::GetShadowPipeline());
 
-			g_axCommandLists[u].AddCommand<Flux_CommandBeginBind>(0);
-			g_axCommandLists[u].AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
-
-			// Shadow matrix buffer passed to RenderToShadowMap so it can bind alongside bone buffer
+			// RenderToShadowMap handles all bindings via shader reflection
 			Flux_AnimatedMeshes::RenderToShadowMap(g_axCommandLists[u], g_xShadowMatrixBuffers[u]);
 		}
 
@@ -150,13 +142,8 @@ void Flux_Shadows::Render(void*)
 		{
 			g_axCommandLists[u].AddCommand<Flux_CommandSetPipeline>(&Flux_Terrain::GetShadowPipeline());
 
-			g_axCommandLists[u].AddCommand<Flux_CommandBeginBind>(0);
-			g_axCommandLists[u].AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
-
-			g_axCommandLists[u].AddCommand<Flux_CommandBeginBind>(1);
-			g_axCommandLists[u].AddCommand<Flux_CommandBindCBV>(&g_xShadowMatrixBuffers[u].GetCBV(), 0);
-
-			Flux_Terrain::RenderToShadowMap(g_axCommandLists[u]);
+			// RenderToShadowMap handles all bindings via shader reflection
+			Flux_Terrain::RenderToShadowMap(g_axCommandLists[u], g_xShadowMatrixBuffers[u]);
 		}
 
 		Flux::SubmitCommandList(&g_axCommandLists[u], g_axCSMTargetSetups[u], RENDER_ORDER_CSM);

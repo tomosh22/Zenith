@@ -14,8 +14,38 @@ License: MIT (see LICENSE file at the top of the source tree)
 #include "Flux/Flux_RenderTargets.h"
 #include "FileAccess/Zenith_FileAccess.h"
 
+#ifdef ZENITH_TOOLS
+#include "Flux/Slang/Flux_SlangCompiler.h"
+#include "Flux/Slang/Flux_ShaderHotReload.h"
+#include <unordered_map>
+
+// File-scope maps for hot reload - stores shader pointers and pipeline specs
+// so the hot reload callback can access them
+static std::unordered_map<Zenith_Vulkan_Pipeline*, Zenith_Vulkan_Shader*> s_xHotReloadShaderMap;
+static std::unordered_map<Zenith_Vulkan_Pipeline*, Flux_PipelineSpecification> s_xHotReloadSpecMap;
+#endif
+
 void Zenith_Vulkan_Shader::Initialise(const std::string& strVertex, const std::string& strFragment, const std::string& strGeometry, const std::string& strDomain, const std::string& strHull)
 {
+#ifdef ZENITH_TOOLS
+	// Use runtime compilation when tools are enabled and Slang compiler is available
+	// This enables shader hot reloading during development
+	if (Flux_SlangCompiler::IsInitialised() && strDomain.empty() && strHull.empty())
+	{
+		// Store paths for hot reload
+		m_strVertexPath = strVertex;
+		m_strFragmentPath = strFragment;
+
+		if (InitialiseFromSource(strVertex, strFragment))
+		{
+			return;
+		}
+		// Fall through to pre-compiled loading on failure
+		Zenith_Log(LOG_CATEGORY_RENDERER, "Runtime compilation failed, falling back to pre-compiled: %s + %s",
+				   strVertex.c_str(), strFragment.c_str());
+	}
+#endif
+
 	const std::string strExtension = ".spv";
 	std::string strShaderRoot(SHADER_SOURCE_ROOT);
 	m_pcVertShaderCode = Zenith_FileAccess::ReadFile((strShaderRoot + strVertex + strExtension).c_str(), m_pcVertShaderCodeSize);
@@ -135,6 +165,135 @@ vk::ShaderModule Zenith_Vulkan_Shader::CreateShaderModule(const char* szCode, ui
 		.setPCode(reinterpret_cast<const uint32_t*>(szCode));
 	return Zenith_Vulkan::GetDevice().createShaderModule(xCreateInfo);
 }
+
+void Zenith_Vulkan_Shader::MergeReflection(const Flux_ShaderReflection& xStageReflection)
+{
+	// Merge bindings from stage reflection into combined reflection
+	// Skip duplicates (same set/binding)
+	const Zenith_Vector<Flux_ReflectedBinding>& axNewBindings = xStageReflection.GetBindings();
+	for (u_int u = 0; u < axNewBindings.GetSize(); u++)
+	{
+		const Flux_ReflectedBinding& xNewBinding = axNewBindings.Get(u);
+
+		// Check if this binding already exists
+		bool bExists = false;
+		const Zenith_Vector<Flux_ReflectedBinding>& axExistingBindings = m_xReflection.GetBindings();
+		for (u_int e = 0; e < axExistingBindings.GetSize(); e++)
+		{
+			const Flux_ReflectedBinding& xExisting = axExistingBindings.Get(e);
+			if (xExisting.m_uSet == xNewBinding.m_uSet && xExisting.m_uBinding == xNewBinding.m_uBinding)
+			{
+				bExists = true;
+				break;
+			}
+		}
+
+		if (!bExists)
+		{
+			m_xReflection.AddBinding(xNewBinding);
+		}
+	}
+
+	// Rebuild the lookup map after merging
+	m_xReflection.BuildLookupMap();
+}
+
+#ifdef ZENITH_TOOLS
+bool Zenith_Vulkan_Shader::InitialiseFromSource(const std::string& strVertexPath, const std::string& strFragmentPath)
+{
+	if (!Flux_SlangCompiler::IsInitialised())
+	{
+		Zenith_Log(LOG_CATEGORY_RENDERER, "Slang compiler not initialized for runtime compilation");
+		return false;
+	}
+
+	// Store paths for hot reload
+	m_strVertexPath = strVertexPath;
+	m_strFragmentPath = strFragmentPath;
+
+	std::string strShaderRoot(SHADER_SOURCE_ROOT);
+
+	// Compile both shaders together using paired compilation
+	// This ensures Slang sees the full pipeline interface and preserves varyings
+	// that are output from vertex shader but conditionally used in fragment shader
+	// (e.g., when SHADOWS is defined and fragment shader wraps most code in #ifndef SHADOWS)
+	Flux_SlangGraphicsPipelineResult xPipelineResult;
+	if (!Flux_SlangCompiler::CompileGraphicsPipeline(strShaderRoot + strVertexPath, strShaderRoot + strFragmentPath, xPipelineResult))
+	{
+		Zenith_Log(LOG_CATEGORY_RENDERER, "Failed to compile graphics pipeline: %s + %s - %s",
+				   strVertexPath.c_str(), strFragmentPath.c_str(), xPipelineResult.m_strError.c_str());
+		return false;
+	}
+
+	// Create shader modules from compiled SPIR-V
+	m_pcVertShaderCodeSize = xPipelineResult.m_axVertexSpirv.GetSize() * sizeof(uint32_t);
+	m_pcVertShaderCode = new char[m_pcVertShaderCodeSize];
+	memcpy(m_pcVertShaderCode, xPipelineResult.m_axVertexSpirv.GetDataPointer(), m_pcVertShaderCodeSize);
+
+	m_pcFragShaderCodeSize = xPipelineResult.m_axFragmentSpirv.GetSize() * sizeof(uint32_t);
+	m_pcFragShaderCode = new char[m_pcFragShaderCodeSize];
+	memcpy(m_pcFragShaderCode, xPipelineResult.m_axFragmentSpirv.GetDataPointer(), m_pcFragShaderCodeSize);
+
+	m_xVertShaderModule = CreateShaderModule(m_pcVertShaderCode, m_pcVertShaderCodeSize);
+	m_xFragShaderModule = CreateShaderModule(m_pcFragShaderCode, m_pcFragShaderCodeSize);
+
+	m_uStageCount = 2;
+	m_xInfos = new vk::PipelineShaderStageCreateInfo[m_uStageCount];
+
+	m_xInfos[0].stage = vk::ShaderStageFlagBits::eVertex;
+	m_xInfos[0].module = m_xVertShaderModule;
+	m_xInfos[0].pName = "main";
+
+	m_xInfos[1].stage = vk::ShaderStageFlagBits::eFragment;
+	m_xInfos[1].module = m_xFragShaderModule;
+	m_xInfos[1].pName = "main";
+
+	// Merge reflection data from both stages
+	MergeReflection(xPipelineResult.m_xVertexReflection);
+	MergeReflection(xPipelineResult.m_xFragmentReflection);
+
+	Zenith_Log(LOG_CATEGORY_RENDERER, "Runtime compiled shader (paired): %s + %s (%u bindings)",
+			   strVertexPath.c_str(), strFragmentPath.c_str(), m_xReflection.GetBindings().GetSize());
+
+	return true;
+}
+
+bool Zenith_Vulkan_Shader::InitialiseComputeFromSource(const std::string& strComputePath)
+{
+	if (!Flux_SlangCompiler::IsInitialised())
+	{
+		Zenith_Log(LOG_CATEGORY_RENDERER, "Slang compiler not initialized for runtime compilation");
+		return false;
+	}
+
+	std::string strShaderRoot(SHADER_SOURCE_ROOT);
+
+	// Compile compute shader
+	Flux_SlangCompileResult xResult;
+	if (!Flux_SlangCompiler::Compile(strShaderRoot + strComputePath, SLANG_SHADER_STAGE_COMPUTE, xResult))
+	{
+		Zenith_Log(LOG_CATEGORY_RENDERER, "Failed to compile compute shader: %s - %s",
+				   strComputePath.c_str(), xResult.m_strError.c_str());
+		return false;
+	}
+
+	// Create shader module from compiled SPIR-V
+	m_pcCompShaderCodeSize = xResult.m_axSpirv.GetSize() * sizeof(uint32_t);
+	m_pcCompShaderCode = new char[m_pcCompShaderCodeSize];
+	memcpy(m_pcCompShaderCode, xResult.m_axSpirv.GetDataPointer(), m_pcCompShaderCodeSize);
+
+	m_xCompShaderModule = CreateShaderModule(m_pcCompShaderCode, m_pcCompShaderCodeSize);
+	m_uStageCount = 1;
+
+	// Store reflection data
+	m_xReflection = xResult.m_xReflection;
+
+	Zenith_Log(LOG_CATEGORY_RENDERER, "Runtime compiled compute shader: %s (%u bindings)",
+			   strComputePath.c_str(), m_xReflection.GetBindings().GetSize());
+
+	return true;
+}
+#endif // ZENITH_TOOLS
 
 class Zenith_Vulkan_DescriptorSetLayoutBuilder
 {
@@ -740,6 +899,69 @@ void Zenith_Vulkan_PipelineBuilder::FromSpecification(Zenith_Vulkan_Pipeline& xP
 #pragma endregion
 
 	xPipelineOut.m_xPipeline = Zenith_Vulkan::GetDevice().createGraphicsPipeline(VK_NULL_HANDLE, xPipelineInfo).value;
+
+#ifdef ZENITH_TOOLS
+	// Register pipeline for hot reload if shader has source paths
+	if (!xSpec.m_pxShader->m_strVertexPath.empty() && !xSpec.m_pxShader->m_strFragmentPath.empty())
+	{
+		// Store shader pointer and pipeline spec in file-scope maps for hot reload callback
+		s_xHotReloadShaderMap[&xPipelineOut] = const_cast<Zenith_Vulkan_Shader*>(xSpec.m_pxShader);
+		s_xHotReloadSpecMap[&xPipelineOut] = xSpec;
+
+		Flux_ShaderHotReload::RegisterPipeline(&xPipelineOut,
+			xSpec.m_pxShader->m_strVertexPath, xSpec.m_pxShader->m_strFragmentPath,
+			[](Zenith_Vulkan_Pipeline* pxPipeline, const std::string& strVertPath, const std::string& strFragPath) -> bool
+			{
+				// Get the shader and spec for this pipeline from file-scope maps
+				auto itShader = s_xHotReloadShaderMap.find(pxPipeline);
+				auto itSpec = s_xHotReloadSpecMap.find(pxPipeline);
+				if (itShader == s_xHotReloadShaderMap.end() || itSpec == s_xHotReloadSpecMap.end())
+				{
+					Zenith_Error(LOG_CATEGORY_RENDERER, "Hot reload failed: Pipeline not found in maps");
+					return false;
+				}
+
+				Zenith_Vulkan_Shader* pxShader = itShader->second;
+				Flux_PipelineSpecification& xSpec = itSpec->second;
+
+				// Recompile the shader from source
+				if (!pxShader->InitialiseFromSource(strVertPath, strFragPath))
+				{
+					Zenith_Error(LOG_CATEGORY_RENDERER, "Hot reload failed: Shader compilation failed");
+					return false;
+				}
+
+				// Destroy the old pipeline
+				if (pxPipeline->m_xPipeline)
+				{
+					Zenith_Vulkan::GetDevice().destroyPipeline(pxPipeline->m_xPipeline);
+					pxPipeline->m_xPipeline = nullptr;
+				}
+
+				// Destroy the old root sig resources
+				if (pxPipeline->m_xRootSig.m_xLayout)
+				{
+					Zenith_Vulkan::GetDevice().destroyPipelineLayout(pxPipeline->m_xRootSig.m_xLayout);
+					pxPipeline->m_xRootSig.m_xLayout = nullptr;
+				}
+				for (u_int i = 0; i < pxPipeline->m_xRootSig.m_uNumDescriptorSets; i++)
+				{
+					if (pxPipeline->m_xRootSig.m_axDescSetLayouts[i])
+					{
+						Zenith_Vulkan::GetDevice().destroyDescriptorSetLayout(pxPipeline->m_xRootSig.m_axDescSetLayouts[i]);
+						pxPipeline->m_xRootSig.m_axDescSetLayouts[i] = nullptr;
+					}
+				}
+
+				// Recreate the pipeline with updated shader
+				Zenith_Vulkan_PipelineBuilder::FromSpecification(*pxPipeline, xSpec);
+
+				Zenith_Log(LOG_CATEGORY_RENDERER, "Hot reload succeeded for pipeline: %s + %s",
+						   strVertPath.c_str(), strFragPath.c_str());
+				return true;
+			});
+	}
+#endif
 }
 
 void Zenith_Vulkan_RootSigBuilder::FromSpecification(Zenith_Vulkan_RootSig& xRootSigOut, const Flux_PipelineLayout& xSpec)
@@ -808,6 +1030,19 @@ void Zenith_Vulkan_RootSigBuilder::FromSpecification(Zenith_Vulkan_RootSig& xRoo
 		.setPPushConstantRanges(nullptr);
 
 	xRootSigOut.m_xLayout = Zenith_Vulkan::GetDevice().createPipelineLayout(xPipelineLayoutInfo);
+}
+
+void Zenith_Vulkan_RootSigBuilder::FromReflection(Zenith_Vulkan_RootSig& xRootSigOut, const Flux_ShaderReflection& xReflection)
+{
+	// Generate pipeline layout from reflection data
+	Flux_PipelineLayout xLayout;
+	xReflection.PopulateLayout(xLayout);
+
+	// Use the existing FromSpecification to create the Vulkan resources
+	FromSpecification(xRootSigOut, xLayout);
+
+	// Store reflection data for runtime name-based binding lookups
+	xRootSigOut.m_xReflection = xReflection;
 }
 
 // ========== COMPUTE PIPELINE BUILDER IMPLEMENTATION ==========

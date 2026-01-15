@@ -4,30 +4,21 @@
 #endif
 
 // ========== Fragment Inputs ==========
+// Varyings from vertex shader - only declared when not doing shadow pass
 #ifndef SHADOWS
 layout(location = 0) in vec2 a_xUV;
-#endif
 layout(location = 1) in vec3 a_xNormal;
 layout(location = 2) in vec3 a_xWorldPos;
 layout(location = 3) in vec3 a_xTangent;
 layout(location = 4) in float a_fMaterialLerp;
 layout(location = 5) flat in uint a_uLODLevel;  // LOD level from vertex shader
 layout(location = 6) in float a_fBitangentSign;  // Sign for bitangent reconstruction
-
-// ========== Material Textures ==========
-#ifndef SHADOWS
-layout(set = 1, binding = 0) uniform sampler2D g_xDiffuseTex0;
-layout(set = 1, binding = 1) uniform sampler2D g_xNormalTex0;
-layout(set = 1, binding = 2) uniform sampler2D g_xRoughnessMetallicTex0;
-
-layout(set = 1, binding = 3) uniform sampler2D g_xDiffuseTex1;
-layout(set = 1, binding = 4) uniform sampler2D g_xNormalTex1;
-layout(set = 1, binding = 5) uniform sampler2D g_xRoughnessMetallicTex1;
 #endif
 
-// ========== Terrain Material Constants (from push constants via scratch buffer) ==========
+// ========== Terrain Material Constants (per-draw, set 1 binding 0) ==========
 // Matches C++ TerrainMaterialPushConstants struct
-layout(std140, set = 0, binding = 1) uniform TerrainMaterialConstants {
+// Note: Moved from set 0 to set 1 so FrameConstants can be bound once per frame
+layout(std140, set = 1, binding = 0) uniform TerrainMaterialConstants {
 	vec4 g_xBaseColor0;        // Material 0 base color
 	vec4 g_xUVParams0;         // Material 0: (tilingX, tilingY, offsetX, offsetY)
 	vec4 g_xMaterialParams0;   // Material 0: (metallic, roughness, occlusionStrength, unused)
@@ -39,6 +30,17 @@ layout(std140, set = 0, binding = 1) uniform TerrainMaterialConstants {
 	uint g_uVisualizeLOD;      // 0 = normal rendering, 1 = visualize LOD
 	float g_fPad[7];           // Padding to 128 bytes
 };
+
+// ========== Material Textures (per-draw, set 1 bindings 2-7) ==========
+#ifndef SHADOWS
+layout(set = 1, binding = 2) uniform sampler2D g_xDiffuseTex0;
+layout(set = 1, binding = 3) uniform sampler2D g_xNormalTex0;
+layout(set = 1, binding = 4) uniform sampler2D g_xRoughnessMetallicTex0;
+
+layout(set = 1, binding = 5) uniform sampler2D g_xDiffuseTex1;
+layout(set = 1, binding = 6) uniform sampler2D g_xNormalTex1;
+layout(set = 1, binding = 7) uniform sampler2D g_xRoughnessMetallicTex1;
+#endif
 
 void main(){
 	#ifndef SHADOWS

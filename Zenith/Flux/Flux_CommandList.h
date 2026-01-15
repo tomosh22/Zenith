@@ -64,8 +64,9 @@ class Flux_CommandPushConstant
 public:
 	static constexpr Flux_CommandType m_eType = FLUX_COMMANDTYPE__PUSH_CONSTANT;
 
-	Flux_CommandPushConstant(const void* pData, u_int uSize)
+	Flux_CommandPushConstant(const void* pData, u_int uSize, u_int uBinding = 0)
 	: m_uSize(uSize)
+	, m_uBinding(uBinding)
 	{
 		Zenith_Assert(uSize <= uMAX_SIZE, "Push constant too big (%u > %u)", uSize, uMAX_SIZE);
 		// Runtime guard for release builds - prevent buffer overflow
@@ -78,7 +79,7 @@ public:
 	}
 	void operator()(Flux_CommandBuffer* pxCmdBuf)
 	{
-		pxCmdBuf->PushConstant(m_acData, m_uSize);
+		pxCmdBuf->PushConstant(m_acData, m_uSize, m_uBinding);
 	}
 private:
 	//#TO minimum that Vulkan requires for push constants
@@ -86,6 +87,7 @@ private:
 
 	u_int8 m_acData[uMAX_SIZE];
 	u_int m_uSize;
+	u_int m_uBinding;
 };
 
 class Flux_CommandSetPipeline

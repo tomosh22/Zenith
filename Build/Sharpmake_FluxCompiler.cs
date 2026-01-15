@@ -41,10 +41,26 @@ public class FluxCompilerProject : ZenithBaseProject
 		conf.IncludePaths.Add(RootPath + "/Zenith");
 		conf.IncludePaths.Add(RootPath + "/Zenith/Core");
 		conf.IncludePaths.Add(RootPath + "/Middleware/glm-master");
+		conf.IncludePaths.Add(RootPath + "/Middleware/stb");
+		conf.IncludePaths.Add(RootPath + "/Middleware");
 		conf.IncludePaths.Add(RootPath + "/Zenith/Windows");
 		conf.IncludePaths.Add(RootPath + "/Middleware/glfw-3.4.bin.WIN64/include");
+		conf.IncludePaths.Add(RootPath + "/Middleware/VulkanSDK/1.3.280.0/Include");
+		conf.IncludePaths.Add(RootPath + "/Middleware/slang/include");
+
+		// Library paths
+		conf.LibraryPaths.Add(RootPath + "/Middleware/slang/lib");
+		conf.LibraryFiles.Add("slang.lib");
+
+		// Copy Slang DLLs to output directory
+		string slangBinPath = Path.GetFullPath(Path.Combine(SharpmakeCsPath, "..", "Middleware", "slang", "bin"));
+		conf.EventPostBuild.Add($"xcopy /Y /D \"{slangBinPath}\\slang.dll\" \"$(OutDir)\"");
+		conf.EventPostBuild.Add($"xcopy /Y /D \"{slangBinPath}\\slang-glslang.dll\" \"$(OutDir)\"");
 
 		// Output executable
 		conf.Output = Configuration.OutputType.Exe;
+
+		// Add dependency on Zenith library
+		conf.AddPublicDependency<ZenithProject>(target);
 	}
 }

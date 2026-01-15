@@ -5,6 +5,7 @@
 #include "Flux/Flux.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_Buffers.h"
+#include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Collections/Zenith_Vector.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
@@ -21,6 +22,9 @@ static Flux_Shader s_xPrimitivesShader;
 static Flux_Pipeline s_xPrimitivesPipeline;
 static Flux_Pipeline s_xPrimitivesWireframePipeline;
 static Flux_Pipeline s_xLinesPipeline;
+
+// Cached binding handles from shader reflection
+static Flux_BindingHandle s_xFrameConstantsBinding;
 
 // Shared geometry for primitives (unit meshes, transformed via push constants)
 static Flux_VertexBuffer s_xSphereVertexBuffer;
@@ -532,6 +536,10 @@ void Flux_Primitives::Initialise()
 		Flux_PipelineBuilder::FromSpecification(s_xPrimitivesWireframePipeline, xPipelineSpec);
 	}
 
+	// Cache binding handles from shader reflection
+	const Flux_ShaderReflection& xReflection = s_xPrimitivesShader.GetReflection();
+	s_xFrameConstantsBinding = xReflection.GetBinding("FrameConstants");
+
 	// Pre-allocate triangle buffers (dynamic vertex buffer, static index buffer)
 	// This avoids recreating GPU buffers every frame which causes memory leaks
 	{
@@ -750,9 +758,9 @@ void Flux_Primitives::Render(void*)
 
 	g_xCommandList.Reset(false);  // Don't clear GBuffer targets (other geometry already rendered)
 
-	// Bind frame constants (set 0, binding 0)
-	g_xCommandList.AddCommand<Flux_CommandBeginBind>(0);
-	g_xCommandList.AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
+	// Create binder and bind frame constants (same for all primitives)
+	Flux_ShaderBinder xBinder(g_xCommandList);
+	xBinder.BindCBV(s_xFrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
 
 	// ========== RENDER SPHERES ==========
 	if (xLocalSphereInstances.GetSize() > 0)
@@ -774,7 +782,7 @@ void Flux_Primitives::Render(void*)
 			xPushConstant.m_xColor = xInstance.m_xColor;
 			xPushConstant.m_fPadding = 0.0f;
 
-			g_xCommandList.AddCommand<Flux_CommandPushConstant>(&xPushConstant, sizeof(PrimitivePushConstant));
+			xBinder.PushConstant(&xPushConstant, sizeof(PrimitivePushConstant));
 			g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(s_uSphereIndexCount);
 		}
 	}
@@ -808,7 +816,7 @@ void Flux_Primitives::Render(void*)
 			xPushConstant.m_xColor = xInstance.m_xColor;
 			xPushConstant.m_fPadding = 0.0f;
 
-			g_xCommandList.AddCommand<Flux_CommandPushConstant>(&xPushConstant, sizeof(PrimitivePushConstant));
+			xBinder.PushConstant(&xPushConstant, sizeof(PrimitivePushConstant));
 			g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(s_uCubeIndexCount);
 		}
 	}
@@ -860,7 +868,7 @@ void Flux_Primitives::Render(void*)
 			xPushConstant.m_xColor = xInstance.m_xColor;
 			xPushConstant.m_fPadding = 0.0f;
 
-			g_xCommandList.AddCommand<Flux_CommandPushConstant>(&xPushConstant, sizeof(PrimitivePushConstant));
+			xBinder.PushConstant(&xPushConstant, sizeof(PrimitivePushConstant));
 			g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(s_uLineIndexCount);
 		}
 	}
@@ -912,7 +920,7 @@ void Flux_Primitives::Render(void*)
 			xPushConstant.m_xColor = xInstance.m_xColor;
 			xPushConstant.m_fPadding = 0.0f;
 
-			g_xCommandList.AddCommand<Flux_CommandPushConstant>(&xPushConstant, sizeof(PrimitivePushConstant));
+			xBinder.PushConstant(&xPushConstant, sizeof(PrimitivePushConstant));
 			g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(s_uCapsuleIndexCount);
 		}
 	}
@@ -963,7 +971,7 @@ void Flux_Primitives::Render(void*)
 			xPushConstant.m_xColor = xInstance.m_xColor;
 			xPushConstant.m_fPadding = 0.0f;
 
-			g_xCommandList.AddCommand<Flux_CommandPushConstant>(&xPushConstant, sizeof(PrimitivePushConstant));
+			xBinder.PushConstant(&xPushConstant, sizeof(PrimitivePushConstant));
 			g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(s_uCylinderIndexCount);
 		}
 	}
@@ -1055,7 +1063,7 @@ void Flux_Primitives::Render(void*)
 		xPushConstant.m_xColor = Zenith_Maths::Vector3(1.0f);  // Color is per-vertex
 		xPushConstant.m_fPadding = 0.0f;
 
-		g_xCommandList.AddCommand<Flux_CommandPushConstant>(&xPushConstant, sizeof(PrimitivePushConstant));
+		xBinder.PushConstant(&xPushConstant, sizeof(PrimitivePushConstant));
 		g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(xTriangleIndices.GetSize());
 	}
 

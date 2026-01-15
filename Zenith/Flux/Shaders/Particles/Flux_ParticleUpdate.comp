@@ -64,10 +64,9 @@ layout(std430, set = 0, binding = 3) writeonly buffer InstanceBuffer
 };
 
 // Output: atomic counter for alive particles
-layout(std430, set = 0, binding = 4) buffer CounterBuffer
-{
-	uint aliveCount;
-};
+// Using Slang RWStructuredBuffer for atomic support
+[[vk::binding(4, 0)]]
+RWStructuredBuffer<uint> aliveCount;
 
 void main()
 {
@@ -137,7 +136,8 @@ void main()
 	float size = mix(sizeStart, sizeEnd, normalizedAge);
 
 	// Atomically allocate render instance slot
-	uint instanceIdx = atomicAdd(aliveCount, 1);
+	uint instanceIdx;
+	InterlockedAdd(aliveCount[0], 1, instanceIdx);
 
 	// Write render instance
 	instances[instanceIdx].positionSize = vec4(p.positionAge.xyz, size);

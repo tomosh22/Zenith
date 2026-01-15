@@ -15,6 +15,7 @@
 #include "TaskSystem/Zenith_TaskSystem.h"
 #include "Profiling/Zenith_Profiling.h"
 #include "Flux/Flux_MaterialBinding.h"
+#include "Flux/Slang/Flux_ShaderBinder.h"
 
 static Zenith_Task g_xRenderTask(ZENITH_PROFILE_INDEX__FLUX_TERRAIN, Flux_Terrain::RenderToGBuffer, nullptr);
 static Zenith_Vector<Zenith_TerrainComponent*> g_xTerrainComponentsToRender;
@@ -52,6 +53,20 @@ struct TerrainConstants
 } s_xTerrainConstants;
 static Flux_DynamicConstantBuffer s_xTerrainConstantsBuffer;
 
+// Cached binding handles for named resource binding (populated at init from shader reflection)
+// GBuffer shader - set 0 bindings (per-frame)
+static Flux_BindingHandle s_xFrameConstantsBinding;
+static Flux_BindingHandle s_xTerrainConstantsBinding;
+// GBuffer shader - set 1 bindings (per-draw)
+static Flux_BindingHandle s_xScratchBufferBinding;  // For PushConstant calls
+static Flux_BindingHandle s_xLODLevelBufferBinding;
+static Flux_BindingHandle s_xDiffuseTex0Binding;
+static Flux_BindingHandle s_xNormalTex0Binding;
+static Flux_BindingHandle s_xRoughnessMetallicTex0Binding;
+static Flux_BindingHandle s_xDiffuseTex1Binding;
+static Flux_BindingHandle s_xNormalTex1Binding;
+static Flux_BindingHandle s_xRoughnessMetallicTex1Binding;
+
 DEBUGVAR bool dbg_bEnableTerrain = true;
 DEBUGVAR bool dbg_bWireframe = false;
 DEBUGVAR float dbg_fVisibilityThresholdMultiplier = 0.5f;
@@ -84,16 +99,18 @@ void Flux_Terrain::Initialise()
 
 		Flux_PipelineLayout& xLayout = xPipelineSpec.m_xPipelineLayout;
 		xLayout.m_uNumDescriptorSets = 2;
+		// Set 0: Per-frame (FrameConstants + TerrainConstants - bound once per command list)
 		xLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;  // Frame constants
-		xLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_BUFFER;  // Scratch buffer for push constants
-		xLayout.m_axDescriptorSetLayouts[0].m_axBindings[2].m_eType = DESCRIPTOR_TYPE_BUFFER;  // Terrain constants (was 1)
-		xLayout.m_axDescriptorSetLayouts[0].m_axBindings[3].m_eType = DESCRIPTOR_TYPE_STORAGE_BUFFER;  // LOD level buffer (was 2)
-		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_TEXTURE;
-		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_TEXTURE;
+		xLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_BUFFER;  // Terrain constants
+		// Set 1: Per-draw (scratch buffer + LOD level buffer + textures)
+		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;  // Scratch buffer for push constants
+		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_STORAGE_BUFFER;  // LOD level buffer
 		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[2].m_eType = DESCRIPTOR_TYPE_TEXTURE;
 		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[3].m_eType = DESCRIPTOR_TYPE_TEXTURE;
 		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[4].m_eType = DESCRIPTOR_TYPE_TEXTURE;
 		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[5].m_eType = DESCRIPTOR_TYPE_TEXTURE;
+		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[6].m_eType = DESCRIPTOR_TYPE_TEXTURE;
+		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[7].m_eType = DESCRIPTOR_TYPE_TEXTURE;
 		
 
 		for (Flux_BlendState& xBlendState : xPipelineSpec.m_axBlendStates)
@@ -107,9 +124,24 @@ void Flux_Terrain::Initialise()
 
 		xPipelineSpec.m_bWireframe = true;
 		Flux_PipelineBuilder::FromSpecification(s_xTerrainWireframePipeline, xPipelineSpec);
+
+		// Cache binding handles from shader reflection for named resource binding
+		const Flux_ShaderReflection& xGBufferReflection = s_xTerrainGBufferShader.GetReflection();
+		// Set 0 bindings (per-frame)
+		s_xFrameConstantsBinding = xGBufferReflection.GetBinding("FrameConstants");
+		s_xTerrainConstantsBinding = xGBufferReflection.GetBinding("TerrainConstants");
+		// Set 1 bindings (per-draw)
+		s_xScratchBufferBinding = xGBufferReflection.GetBinding("TerrainMaterialConstants");  // Scratch buffer for per-draw data
+		s_xLODLevelBufferBinding = xGBufferReflection.GetBinding("LODLevelBuffer");
+		s_xDiffuseTex0Binding = xGBufferReflection.GetBinding("g_xDiffuseTex0");
+		s_xNormalTex0Binding = xGBufferReflection.GetBinding("g_xNormalTex0");
+		s_xRoughnessMetallicTex0Binding = xGBufferReflection.GetBinding("g_xRoughnessMetallicTex0");
+		s_xDiffuseTex1Binding = xGBufferReflection.GetBinding("g_xDiffuseTex1");
+		s_xNormalTex1Binding = xGBufferReflection.GetBinding("g_xNormalTex1");
+		s_xRoughnessMetallicTex1Binding = xGBufferReflection.GetBinding("g_xRoughnessMetallicTex1");
 	}
 
-	
+
 	{
 		Flux_PipelineSpecification xShadowPipelineSpec;
 		xShadowPipelineSpec.m_pxTargetSetup = &Flux_Shadows::GetCSMTargetSetup(0);
@@ -304,6 +336,13 @@ void Flux_Terrain::RenderToGBuffer(void*)
 
 	g_xTerrainCommandList.AddCommand<Flux_CommandSetPipeline>(dbg_bWireframe ? &s_xTerrainWireframePipeline : &s_xTerrainGBufferPipeline);
 
+	// Create binder for named resource binding
+	Flux_ShaderBinder xBinder(g_xTerrainCommandList);
+
+	// Bind set 0 (per-frame data) once per command list
+	xBinder.BindCBV(s_xFrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
+	xBinder.BindCBV(s_xTerrainConstantsBinding, &s_xTerrainConstantsBuffer.GetCBV());
+
 	for (u_int u = 0; u < g_xTerrainComponentsToRender.GetSize(); u++)
 	{
 		Zenith_TerrainComponent* const pxTerrain = g_xTerrainComponentsToRender.Get(u);
@@ -312,29 +351,24 @@ void Flux_Terrain::RenderToGBuffer(void*)
 		Flux_MaterialAsset& xMaterial0 = pxTerrain->GetMaterial0();
 		Flux_MaterialAsset& xMaterial1 = pxTerrain->GetMaterial1();
 
-		// Bind per-frame constants and terrain constants (set 0)
-		g_xTerrainCommandList.AddCommand<Flux_CommandBeginBind>(0);
-		g_xTerrainCommandList.AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
-
-		// Build and push terrain material constants (128 bytes)
+		// Build and push terrain material constants (128 bytes) - uses scratch buffer in set 1
 		TerrainMaterialPushConstants xTerrainMatConst;
 		BuildTerrainMaterialPushConstants(xTerrainMatConst, &xMaterial0, &xMaterial1, dbg_bVisualizeLOD);
-		g_xTerrainCommandList.AddCommand<Flux_CommandPushConstant>(&xTerrainMatConst, sizeof(xTerrainMatConst));
+		xBinder.PushConstant(s_xScratchBufferBinding, &xTerrainMatConst, sizeof(xTerrainMatConst));
 
-		g_xTerrainCommandList.AddCommand<Flux_CommandBindCBV>(&s_xTerrainConstantsBuffer.GetCBV(), 2);
-
-		// Bind LOD level buffer for visualization (binding 3 in set 0)
-		// Each component has its own LOD buffer
-		g_xTerrainCommandList.AddCommand<Flux_CommandBindUAV_Buffer>(&pxTerrain->GetLODLevelBuffer().GetUAV(), 3);
-
+		// Bind LOD level buffer (per-terrain, set 1)
+		xBinder.BindUAV_Buffer(s_xLODLevelBufferBinding, &pxTerrain->GetLODLevelBuffer().GetUAV());
 
 		g_xTerrainCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&pxTerrain->GetUnifiedVertexBuffer());
 		g_xTerrainCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&pxTerrain->GetUnifiedIndexBuffer());
 
-		// Bind materials (set 1)
-		g_xTerrainCommandList.AddCommand<Flux_CommandBeginBind>(1);
-		BindTerrainMaterialTextures(g_xTerrainCommandList, &xMaterial0, 0);
-		BindTerrainMaterialTextures(g_xTerrainCommandList, &xMaterial1, 3);
+		// Bind material textures (set 1, named bindings)
+		xBinder.BindSRV(s_xDiffuseTex0Binding, &xMaterial0.GetDiffuseTexture()->m_xSRV);
+		xBinder.BindSRV(s_xNormalTex0Binding, &xMaterial0.GetNormalTexture()->m_xSRV);
+		xBinder.BindSRV(s_xRoughnessMetallicTex0Binding, &xMaterial0.GetRoughnessMetallicTexture()->m_xSRV);
+		xBinder.BindSRV(s_xDiffuseTex1Binding, &xMaterial1.GetDiffuseTexture()->m_xSRV);
+		xBinder.BindSRV(s_xNormalTex1Binding, &xMaterial1.GetNormalTexture()->m_xSRV);
+		xBinder.BindSRV(s_xRoughnessMetallicTex1Binding, &xMaterial1.GetRoughnessMetallicTexture()->m_xSRV);
 
 		// GPU-driven indirect rendering with front-to-back sorted visible chunks
 		// Each component uses its own indirect draw buffer and visible count buffer
@@ -352,7 +386,7 @@ void Flux_Terrain::RenderToGBuffer(void*)
 	Flux::SubmitCommandList(&g_xTerrainCommandList, Flux_Graphics::s_xMRTTarget, RENDER_ORDER_TERRAIN);
 }
 
-void Flux_Terrain::RenderToShadowMap(Flux_CommandList& xCmdBuf)
+void Flux_Terrain::RenderToShadowMap(Flux_CommandList& xCmdBuf, const Flux_DynamicConstantBuffer& xShadowMatrixBuffer)
 {
 	STUBBED
 }

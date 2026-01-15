@@ -6,6 +6,7 @@
 #include "Flux/Flux.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_Buffers.h"
+#include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Vulkan/Zenith_Vulkan_MemoryManager.h"
 #include "Vulkan/Zenith_Vulkan_Pipeline.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
@@ -66,6 +67,12 @@ static Flux_Shader s_xComputeShader;
 static Flux_RootSig s_xComputeRootSig;
 static Flux_CommandList s_xComputeCommandList("Particle GPU Compute");
 
+// Cached binding handles from shader reflection
+static Flux_BindingHandle s_xInputParticlesBinding;
+static Flux_BindingHandle s_xOutputParticlesBinding;
+static Flux_BindingHandle s_xInstanceBufferBinding;
+static Flux_BindingHandle s_xCounterBufferBinding;
+
 // Push constants for compute shader
 struct ParticleComputeConstants
 {
@@ -108,6 +115,13 @@ void Flux_ParticleGPU::Initialise()
 		.Build(s_xComputePipeline);
 
 	s_xComputePipeline.m_xRootSig = s_xComputeRootSig;
+
+	// Cache binding handles from shader reflection
+	const Flux_ShaderReflection& xReflection = s_xComputeShader.GetReflection();
+	s_xInputParticlesBinding = xReflection.GetBinding("g_xInputParticles");
+	s_xOutputParticlesBinding = xReflection.GetBinding("g_xOutputParticles");
+	s_xInstanceBufferBinding = xReflection.GetBinding("g_xInstances");
+	s_xCounterBufferBinding = xReflection.GetBinding("g_xCounter");
 
 	// Allocate particle buffers (double-buffered)
 	Flux_MemoryManager::InitialiseReadWriteBuffer(
@@ -398,19 +412,18 @@ void Flux_ParticleGPU::DispatchCompute()
 
 	s_xComputeCommandList.AddCommand<Flux_CommandBindComputePipeline>(&s_xComputePipeline);
 
-	s_xComputeCommandList.AddCommand<Flux_CommandBeginBind>(0);
-	s_xComputeCommandList.AddCommand<Flux_CommandBindUAV_Buffer>(&xInputBuffer.GetUAV(), 0);
-	s_xComputeCommandList.AddCommand<Flux_CommandBindUAV_Buffer>(&xOutputBuffer.GetUAV(), 2);   // Was 1
-	s_xComputeCommandList.AddCommand<Flux_CommandBindUAV_Buffer>(&s_xInstanceBuffer.GetUAV(), 3);  // Was 2
-	s_xComputeCommandList.AddCommand<Flux_CommandBindUAV_Buffer>(&s_xCounterBuffer.GetUAV(), 4);   // Was 3
-
 	// Set up push constants
 	ParticleComputeConstants xConstants;
 	xConstants.m_fDeltaTime = fDt;
 	xConstants.m_uParticleCount = s_uTotalAllocatedParticles;
 	xConstants.m_xGravity = Zenith_Maths::Vector4(0.0f, -9.8f, 0.0f, 0.0f);  // Default gravity
 
-	s_xComputeCommandList.AddCommand<Flux_CommandPushConstant>(&xConstants, sizeof(xConstants));
+	Flux_ShaderBinder xBinder(s_xComputeCommandList);
+	xBinder.BindUAV_Buffer(s_xInputParticlesBinding, &xInputBuffer.GetUAV());
+	xBinder.BindUAV_Buffer(s_xOutputParticlesBinding, &xOutputBuffer.GetUAV());
+	xBinder.BindUAV_Buffer(s_xInstanceBufferBinding, &s_xInstanceBuffer.GetUAV());
+	xBinder.BindUAV_Buffer(s_xCounterBufferBinding, &s_xCounterBuffer.GetUAV());
+	xBinder.PushConstant(&xConstants, sizeof(xConstants));
 
 	// Dispatch compute shader
 	uint32_t uWorkgroups = (s_uTotalAllocatedParticles + s_uWorkgroupSize - 1) / s_uWorkgroupSize;

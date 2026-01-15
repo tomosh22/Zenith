@@ -11,6 +11,7 @@ License: MIT (see LICENSE file at the top of the source tree)
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
 #include "Flux/Flux_Enums.h"
 #include "Flux/Flux_Types.h"
+#include "Flux/Slang/Flux_SlangCompiler.h"
 
 struct Flux_BlendState;
 struct Flux_TargetSetup;
@@ -20,9 +21,24 @@ class Zenith_Vulkan_Shader
 public:
 	Zenith_Vulkan_Shader() = default;
 
+	// Load pre-compiled SPIR-V from disk
 	void Initialise(const std::string& strVertex, const std::string& strFragment, const std::string& strGeometry = "", const std::string& strDomain = "", const std::string& strHull = "");
 	void InitialiseCompute(const std::string& strCompute);
+
+#ifdef ZENITH_TOOLS
+	// Compile from source at runtime (tools/editor only)
+	// Returns true if compilation succeeded
+	bool InitialiseFromSource(const std::string& strVertexPath, const std::string& strFragmentPath);
+	bool InitialiseComputeFromSource(const std::string& strComputePath);
+#endif
+
 	~Zenith_Vulkan_Shader();
+
+	// Get combined reflection data for all shader stages
+	const Flux_ShaderReflection& GetReflection() const { return m_xReflection; }
+
+	// Check if reflection data is available
+	bool HasReflection() const { return m_xReflection.GetBindings().GetSize() > 0; }
 
 	//credit Rich Davison
 	void FillShaderStageCreateInfo(vk::GraphicsPipelineCreateInfo& xPipelineCreateInfo) const;
@@ -51,6 +67,18 @@ public:
 	vk::ShaderModule m_xTescShaderModule;
 	vk::ShaderModule m_xTeseShaderModule;
 	vk::ShaderModule m_xCompShaderModule;
+
+	// Shader paths for hot reload (ZENITH_TOOLS only)
+	std::string m_strVertexPath;
+	std::string m_strFragmentPath;
+	std::string m_strComputePath;
+
+private:
+	// Combined reflection data from all shader stages
+	Flux_ShaderReflection m_xReflection;
+
+	// Helper to merge reflection from multiple stages
+	void MergeReflection(const Flux_ShaderReflection& xStageReflection);
 };
 
 class Zenith_Vulkan_RootSig
@@ -67,11 +95,20 @@ public:
 			}
 		}
 	}
-	
+
+	// Get binding location by name (for named resource binding)
+	Flux_BindingHandle GetBinding(const char* szName) const { return m_xReflection.GetBinding(szName); }
+
+	// Check if reflection data is available for name-based lookups
+	bool HasReflection() const { return m_xReflection.GetBindings().GetSize() > 0; }
+
 	vk::PipelineLayout m_xLayout;
 	vk::DescriptorSetLayout m_axDescSetLayouts[FLUX_MAX_DESCRIPTOR_BINDINGS];
 	DescriptorType m_axDescriptorTypes[FLUX_MAX_DESCRIPTOR_BINDINGS][FLUX_MAX_DESCRIPTOR_BINDINGS];
 	u_int m_uNumDescriptorSets = UINT32_MAX;
+
+	// Reflection data for name-based binding lookups
+	Flux_ShaderReflection m_xReflection;
 };
 
 class Zenith_Vulkan_Pipeline
@@ -92,7 +129,11 @@ public:
 class Zenith_Vulkan_RootSigBuilder
 {
 public:
+	// Build from manual specification (existing method)
 	static void FromSpecification(Zenith_Vulkan_RootSig& xRootSigOut, const Flux_PipelineLayout& xSpec);
+
+	// Build from shader reflection data (auto-generates layout)
+	static void FromReflection(Zenith_Vulkan_RootSig& xRootSigOut, const Flux_ShaderReflection& xReflection);
 };
 
 class Zenith_Vulkan_PipelineBuilder {

@@ -22,6 +22,7 @@
 #include "backends/imgui_impl_glfw.h"
 #endif //ZENITH_WINDOWS
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
+#include "Flux/Slang/Flux_ShaderHotReload.h"
 #endif //ZENITH_TOOLS
 
 #ifdef ZENITH_DEBUG_VARIABLES
@@ -328,6 +329,11 @@ void Zenith_Vulkan::BeginFrame()
 	s_pxCurrentFrame = &s_axPerFrame[Zenith_Vulkan_Swapchain::GetCurrentFrameIndex()];
 	s_pxCurrentFrame->BeginFrame();
 
+#ifdef ZENITH_TOOLS
+	// Update shader hot reload system (checks for file changes)
+	Flux_ShaderHotReload::Update();
+#endif
+
 #ifdef ZENITH_DEBUG_VARIABLES
 	dbg_uNumDescSetAllocations = 0;
 #endif
@@ -571,7 +577,11 @@ VKAPI_ATTR vk::Bool32 VKAPI_CALL Zenith_Vulkan::DebugCallback(vk::DebugUtilsMess
 	{
 		Zenith_Error(LOG_CATEGORY_VULKAN, "%s%s", "Zenith_Vulkan::DebugCallback: ", pxCallbackData->pMessage);
 	}
+	// Only break on actual errors, not performance warnings
+	if (eMessageSeverity >= vk::DebugUtilsMessageSeverityFlagBitsEXT::eError)
+	{
 		Zenith_DebugBreak();
+	}
 	return VK_FALSE;
 }
 

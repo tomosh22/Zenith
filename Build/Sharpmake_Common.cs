@@ -89,6 +89,7 @@ public abstract class ZenithBaseProject : Project
 		{
 			conf.IncludePaths.Add(RootPath + "/Middleware/glfw-3.4.bin.WIN64/include");
 			conf.IncludePaths.Add(RootPath + "/Middleware/VulkanSDK/1.3.280.0/Include");
+			conf.IncludePaths.Add(RootPath + "/Middleware/slang/include");
 			conf.IncludePaths.Add(RootPath + "/Zenith/Windows");
 		}
 		else if (target.Platform == Platform.agde)
@@ -104,8 +105,10 @@ public abstract class ZenithBaseProject : Project
 		{
 			conf.LibraryPaths.Add(RootPath + "/Middleware/VulkanSDK/1.3.280.0/Lib");
 			conf.LibraryPaths.Add(RootPath + "/Middleware/glfw-3.4.bin.WIN64/lib-vc2022");
+			conf.LibraryPaths.Add(RootPath + "/Middleware/slang/lib");
 			conf.LibraryFiles.Add("glfw3_mt.lib");
 			conf.LibraryFiles.Add("vulkan-1.lib");
+			conf.LibraryFiles.Add("slang.lib");
 		}
 		// Android links against system Vulkan loader, no static libs needed
 	}

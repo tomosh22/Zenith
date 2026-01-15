@@ -7,6 +7,7 @@
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_Buffers.h"
 #include "Flux/Flux_RenderTargets.h"
+#include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Vulkan/Zenith_Vulkan_Pipeline.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
@@ -98,6 +99,23 @@ static InjectConstants s_xInjectConstants;
 static PropagateConstants s_xPropagateConstants;
 static ApplyConstants s_xApplyConstants;
 
+// Cached binding handles from shader reflection
+// Inject pass
+static Flux_BindingHandle s_xInjectFrameConstantsBinding;
+static Flux_BindingHandle s_xInjectShadowMapBinding;
+static Flux_BindingHandle s_xInjectOutputBinding;
+static Flux_BindingHandle s_xInjectDebugBinding;
+// Propagate pass
+static Flux_BindingHandle s_xPropagateInputBinding;
+static Flux_BindingHandle s_xPropagateOutputBinding;
+// Apply pass
+static Flux_BindingHandle s_xApplyFrameConstantsBinding;
+static Flux_BindingHandle s_xApplyDepthBinding;
+static Flux_BindingHandle s_xApplyLPVCascade0Binding;
+static Flux_BindingHandle s_xApplyLPVCascade1Binding;
+static Flux_BindingHandle s_xApplyLPVCascade2Binding;
+static Flux_BindingHandle s_xApplyNoiseBinding;
+
 void Flux_LPVFog::Initialise()
 {
 	// Create 3D LPV grids for each cascade (ping-pong pairs)
@@ -169,6 +187,18 @@ void Flux_LPVFog::Initialise()
 		.Build(s_xPropagatePipeline);
 	s_xPropagatePipeline.m_xRootSig = s_xPropagateRootSig;
 
+	// Cache inject binding handles
+	const Flux_ShaderReflection& xInjectReflection = s_xInjectShader.GetReflection();
+	s_xInjectFrameConstantsBinding = xInjectReflection.GetBinding("FrameConstants");
+	s_xInjectShadowMapBinding = xInjectReflection.GetBinding("g_xShadowMap");
+	s_xInjectOutputBinding = xInjectReflection.GetBinding("g_xLPVOutput");
+	s_xInjectDebugBinding = xInjectReflection.GetBinding("g_xDebugOutput");
+
+	// Cache propagate binding handles
+	const Flux_ShaderReflection& xPropagateReflection = s_xPropagateShader.GetReflection();
+	s_xPropagateInputBinding = xPropagateReflection.GetBinding("g_xLPVInput");
+	s_xPropagateOutputBinding = xPropagateReflection.GetBinding("g_xLPVOutput");
+
 	// Initialize apply fragment shader
 	s_xApplyShader.Initialise("Flux_Fullscreen_UV.vert", "Fog/Flux_LPVFog_Apply.frag");
 
@@ -199,6 +229,15 @@ void Flux_LPVFog::Initialise()
 	xApplySpec.m_axBlendStates[0].m_eDstBlendFactor = BLEND_FACTOR_ONEMINUSSRCALPHA;
 
 	Flux_PipelineBuilder::FromSpecification(s_xApplyPipeline, xApplySpec);
+
+	// Cache apply binding handles
+	const Flux_ShaderReflection& xApplyReflection = s_xApplyShader.GetReflection();
+	s_xApplyFrameConstantsBinding = xApplyReflection.GetBinding("FrameConstants");
+	s_xApplyDepthBinding = xApplyReflection.GetBinding("g_xDepthTex");
+	s_xApplyLPVCascade0Binding = xApplyReflection.GetBinding("g_xLPVCascade0");
+	s_xApplyLPVCascade1Binding = xApplyReflection.GetBinding("g_xLPVCascade1");
+	s_xApplyLPVCascade2Binding = xApplyReflection.GetBinding("g_xLPVCascade2");
+	s_xApplyNoiseBinding = xApplyReflection.GetBinding("g_xNoiseTex");
 
 #ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_DebugVariables::AddUInt32({ "Render", "Volumetric Fog", "LPV", "Propagation Steps" }, dbg_uLPVPropagationSteps, 1, 16);
@@ -278,13 +317,14 @@ void Flux_LPVFog::Render(void*)
 
 		g_xInjectCommandList.Reset(false);
 		g_xInjectCommandList.AddCommand<Flux_CommandBindComputePipeline>(&s_xInjectPipeline);
-		g_xInjectCommandList.AddCommand<Flux_CommandBeginBind>(0);
-		g_xInjectCommandList.AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
+
+		Flux_ShaderBinder xInjectBinder(g_xInjectCommandList);
+		xInjectBinder.BindCBV(s_xInjectFrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
 		// Use blue noise as placeholder for shadow map
-		g_xInjectCommandList.AddCommand<Flux_CommandBindSRV>(&Flux_VolumeFog::GetBlueNoiseTexture().m_xSRV, 2);  // Bumped from 1 to 2
-		g_xInjectCommandList.AddCommand<Flux_CommandBindUAV_Texture>(&s_axLPVGrids[uCascade][0].m_pxUAV, 3);     // Bumped from 2 to 3
-		g_xInjectCommandList.AddCommand<Flux_CommandBindUAV_Texture>(&s_xDebugInjectionTexture.m_pxUAV, 4);      // Bumped from 3 to 4
-		g_xInjectCommandList.AddCommand<Flux_CommandPushConstant>(&s_xInjectConstants, sizeof(InjectConstants));
+		xInjectBinder.BindSRV(s_xInjectShadowMapBinding, &Flux_VolumeFog::GetBlueNoiseTexture().m_xSRV);
+		xInjectBinder.BindUAV_Texture(s_xInjectOutputBinding, &s_axLPVGrids[uCascade][0].m_pxUAV);
+		xInjectBinder.BindUAV_Texture(s_xInjectDebugBinding, &s_xDebugInjectionTexture.m_pxUAV);
+		xInjectBinder.PushConstant(&s_xInjectConstants, sizeof(InjectConstants));
 		g_xInjectCommandList.AddCommand<Flux_CommandDispatch>(
 			(LPV_GRID_SIZE + 7) / 8,
 			(LPV_GRID_SIZE + 7) / 8,
@@ -315,10 +355,11 @@ void Flux_LPVFog::Render(void*)
 
 			g_xPropagateCommandList.Reset(false);
 			g_xPropagateCommandList.AddCommand<Flux_CommandBindComputePipeline>(&s_xPropagatePipeline);
-			g_xPropagateCommandList.AddCommand<Flux_CommandBeginBind>(0);
-			g_xPropagateCommandList.AddCommand<Flux_CommandBindSRV>(&s_axLPVGrids[uCascade][uSrcIdx].m_pxSRV, 0);
-			g_xPropagateCommandList.AddCommand<Flux_CommandBindUAV_Texture>(&s_axLPVGrids[uCascade][uDstIdx].m_pxUAV, 2);  // Bumped from 1 to 2
-			g_xPropagateCommandList.AddCommand<Flux_CommandPushConstant>(&s_xPropagateConstants, sizeof(PropagateConstants));
+
+			Flux_ShaderBinder xPropagateBinder(g_xPropagateCommandList);
+			xPropagateBinder.BindSRV(s_xPropagateInputBinding, &s_axLPVGrids[uCascade][uSrcIdx].m_pxSRV);
+			xPropagateBinder.BindUAV_Texture(s_xPropagateOutputBinding, &s_axLPVGrids[uCascade][uDstIdx].m_pxUAV);
+			xPropagateBinder.PushConstant(&s_xPropagateConstants, sizeof(PropagateConstants));
 			g_xPropagateCommandList.AddCommand<Flux_CommandDispatch>(
 				(LPV_GRID_SIZE + 7) / 8,
 				(LPV_GRID_SIZE + 7) / 8,
@@ -346,14 +387,15 @@ void Flux_LPVFog::Render(void*)
 	g_xApplyCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xApplyPipeline);
 	g_xApplyCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
 	g_xApplyCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
-	g_xApplyCommandList.AddCommand<Flux_CommandBeginBind>(0);
-	g_xApplyCommandList.AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
-	g_xApplyCommandList.AddCommand<Flux_CommandBindSRV>(Flux_Graphics::GetDepthStencilSRV(), 2);  // Bumped from 1 to 2
-	g_xApplyCommandList.AddCommand<Flux_CommandBindSRV>(&s_axLPVGrids[0][s_uCurrentPingPong].m_pxSRV, 3);  // Bumped from 2 to 3
-	g_xApplyCommandList.AddCommand<Flux_CommandBindSRV>(&s_axLPVGrids[1][s_uCurrentPingPong].m_pxSRV, 4);  // Bumped from 3 to 4
-	g_xApplyCommandList.AddCommand<Flux_CommandBindSRV>(&s_axLPVGrids[2][s_uCurrentPingPong].m_pxSRV, 5);  // Bumped from 4 to 5
-	g_xApplyCommandList.AddCommand<Flux_CommandBindSRV>(&Flux_VolumeFog::GetNoiseTexture3D().m_xSRV, 6);   // Bumped from 5 to 6
-	g_xApplyCommandList.AddCommand<Flux_CommandPushConstant>(&s_xApplyConstants, sizeof(ApplyConstants));
+
+	Flux_ShaderBinder xApplyBinder(g_xApplyCommandList);
+	xApplyBinder.BindCBV(s_xApplyFrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
+	xApplyBinder.BindSRV(s_xApplyDepthBinding, Flux_Graphics::GetDepthStencilSRV());
+	xApplyBinder.BindSRV(s_xApplyLPVCascade0Binding, &s_axLPVGrids[0][s_uCurrentPingPong].m_pxSRV);
+	xApplyBinder.BindSRV(s_xApplyLPVCascade1Binding, &s_axLPVGrids[1][s_uCurrentPingPong].m_pxSRV);
+	xApplyBinder.BindSRV(s_xApplyLPVCascade2Binding, &s_axLPVGrids[2][s_uCurrentPingPong].m_pxSRV);
+	xApplyBinder.BindSRV(s_xApplyNoiseBinding, &Flux_VolumeFog::GetNoiseTexture3D().m_xSRV);
+	xApplyBinder.PushConstant(&s_xApplyConstants, sizeof(ApplyConstants));
 	g_xApplyCommandList.AddCommand<Flux_CommandDrawIndexed>(6);
 
 	Flux::SubmitCommandList(&g_xApplyCommandList, Flux_Graphics::s_xFinalRenderTarget_NoDepth, RENDER_ORDER_FOG);

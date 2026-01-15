@@ -3,6 +3,7 @@
 #include "Flux/ComputeTest/Flux_ComputeTest.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_RenderTargets.h"
+#include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Vulkan/Zenith_Vulkan_MemoryManager.h"
 #include "Vulkan/Zenith_Vulkan_Pipeline.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
@@ -81,12 +82,13 @@ void Flux_ComputeTest::Run()
 void Flux_ComputeTest::RunComputePass()
 {
 	g_xComputeCommandList.Reset(false);
-	
-	g_xComputeCommandList.AddCommand<Flux_CommandBindComputePipeline>(&g_xComputePipeline);
-	g_xComputeCommandList.AddCommand<Flux_CommandBeginBind>(0);
-	g_xComputeCommandList.AddCommand<Flux_CommandBindUAV_Texture>(&g_xComputeOutput.m_pxUAV, 0);
 
-	g_xComputeCommandList.AddCommand<Flux_CommandPushConstant>(&Flux_Graphics::s_xFrameConstants.m_xScreenDims, sizeof(Flux_Graphics::s_xFrameConstants.m_xScreenDims));
+	g_xComputeCommandList.AddCommand<Flux_CommandBindComputePipeline>(&g_xComputePipeline);
+
+	Flux_ShaderBinder xBinder(g_xComputeCommandList);
+	xBinder.BindUAV_Texture(Flux_BindingHandle{0, 0}, &g_xComputeOutput.m_pxUAV);
+	xBinder.PushConstant(&Flux_Graphics::s_xFrameConstants.m_xScreenDims, sizeof(Flux_Graphics::s_xFrameConstants.m_xScreenDims));
+
 	// Dispatch compute shader: (width/8, height/8, 1) workgroups for 8x8 local size
 	g_xComputeCommandList.AddCommand<Flux_CommandDispatch>(Flux_Graphics::s_xFrameConstants.m_xScreenDims.x / 8, Flux_Graphics::s_xFrameConstants.m_xScreenDims.y / 8, 1);
 	

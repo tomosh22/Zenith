@@ -8,6 +8,8 @@
 #include "Flux/Terrain/Flux_Terrain.h"
 #ifdef ZENITH_TOOLS
 #include "Flux/Gizmos/Flux_Gizmos.h"
+#include "Flux/Slang/Flux_SlangCompiler.h"
+#include "Flux/Slang/Flux_ShaderHotReload.h"
 #endif
 #include "Flux/Primitives/Flux_Primitives.h"
 #include "Flux/DeferredShading/Flux_DeferredShading.h"
@@ -39,6 +41,10 @@ void Flux::LateInitialise()
 #ifdef ZENITH_TOOLS
 	Flux_PlatformAPI::InitialiseImGui();
 	Flux_Gizmos::Initialise();
+
+	// Initialize Slang compiler for runtime compilation
+	Flux_SlangCompiler::Initialise();
+	Flux_ShaderHotReload::Initialise();
 #endif
 	Flux_Shadows::Initialise();
 	Flux_Skybox::Initialise();
@@ -71,6 +77,10 @@ void Flux::Shutdown()
 	Flux_Shadows::Shutdown();
 
 #ifdef ZENITH_TOOLS
+	// Shutdown shader hot reload and Slang compiler
+	Flux_ShaderHotReload::Shutdown();
+	Flux_SlangCompiler::Shutdown();
+
 	Flux_Gizmos::Shutdown();
 	Flux_PlatformAPI::ShutdownImGui();
 #endif

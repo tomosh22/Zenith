@@ -6,6 +6,7 @@
 #include "Flux/Flux.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_Buffers.h"
+#include "Flux/Slang/Flux_ShaderBinder.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
 
@@ -37,6 +38,10 @@ DEBUGVAR float dbg_fGodRaysWeight = 0.5f;
 // Cached constants for push constant
 static Flux_GodRaysConstants s_xConstants;
 
+// Cached binding handles from shader reflection
+static Flux_BindingHandle s_xFrameConstantsBinding;
+static Flux_BindingHandle s_xDepthBinding;
+
 void Flux_GodRaysFog::Initialise()
 {
 	s_xShader.Initialise("Flux_Fullscreen_UV.vert", "Fog/Flux_GodRays.frag");
@@ -64,6 +69,11 @@ void Flux_GodRaysFog::Initialise()
 	xPipelineSpec.m_axBlendStates[0].m_eDstBlendFactor = BLEND_FACTOR_ONE;
 
 	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
+
+	// Cache binding handles from shader reflection
+	const Flux_ShaderReflection& xReflection = s_xShader.GetReflection();
+	s_xFrameConstantsBinding = xReflection.GetBinding("FrameConstants");
+	s_xDepthBinding = xReflection.GetBinding("g_xDepthTex");
 
 #ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_DebugVariables::AddUInt32({ "Render", "Volumetric Fog", "God Rays", "Sample Count" }, dbg_uGodRaysSamples, 8, 128);
@@ -135,11 +145,11 @@ void Flux_GodRaysFog::Render(void*)
 	g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
 	g_xCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
 
-	g_xCommandList.AddCommand<Flux_CommandBeginBind>(0);
-	g_xCommandList.AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
-	g_xCommandList.AddCommand<Flux_CommandBindSRV>(Flux_Graphics::GetDepthStencilSRV(), 2);  // Bumped from 1 to 2
+	Flux_ShaderBinder xBinder(g_xCommandList);
+	xBinder.BindCBV(s_xFrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
+	xBinder.BindSRV(s_xDepthBinding, Flux_Graphics::GetDepthStencilSRV());
 
-	g_xCommandList.AddCommand<Flux_CommandPushConstant>(&s_xConstants, sizeof(Flux_GodRaysConstants));
+	xBinder.PushConstant(&s_xConstants, sizeof(Flux_GodRaysConstants));
 
 	g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(6);
 

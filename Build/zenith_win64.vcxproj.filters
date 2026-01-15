@@ -775,6 +775,15 @@
     <ClCompile Include="..\Zenith\Flux\Skybox\Flux_Skybox.cpp">
       <Filter>Flux\Skybox</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\Flux\Slang\Flux_ShaderBinder.cpp">
+      <Filter>Flux\Slang</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Flux\Slang\Flux_ShaderHotReload.cpp">
+      <Filter>Flux\Slang</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Flux\Slang\Flux_SlangCompiler.cpp">
+      <Filter>Flux\Slang</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Flux\SSAO\Flux_SSAO.cpp">
       <Filter>Flux\SSAO</Filter>
     </ClCompile>
@@ -872,6 +881,9 @@
       <Filter>Windows\Vulkan</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\Windows\Zenith_Windows_DebugBreak.cpp">
+      <Filter>Windows</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Windows\Zenith_Windows_FileWatcher.cpp">
       <Filter>Windows</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\Windows\Zenith_Windows_Main.cpp">
@@ -3046,6 +3058,9 @@
     <ClInclude Include="..\Zenith\Core\Zenith_Core.h">
       <Filter>Core</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Core\Zenith_FileWatcher.h">
+      <Filter>Core</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Core\Zenith_GUID.h">
       <Filter>Core</Filter>
     </ClInclude>
@@ -3176,6 +3191,9 @@
       <Filter>Flux</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Flux_MaterialAsset.h">
+      <Filter>Flux</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Flux_MaterialBinding.h">
       <Filter>Flux</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Flux_ModelInstance.h">
@@ -3346,6 +3364,9 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\Gizmos\Flux_Gizmos.vert">
       <Filter>Flux\Shaders\Gizmos</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\MaterialCommon.fxh">
+      <Filter>Flux\Shaders</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\Particles\Flux_Particles.frag">
       <Filter>Flux\Shaders\Particles</Filter>
     </ClInclude>
@@ -3432,6 +3453,15 @@
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Skybox\Flux_Skybox.h">
       <Filter>Flux\Skybox</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Slang\Flux_ShaderBinder.h">
+      <Filter>Flux\Slang</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Slang\Flux_ShaderHotReload.h">
+      <Filter>Flux\Slang</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Slang\Flux_SlangCompiler.h">
+      <Filter>Flux\Slang</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\SSAO\Flux_SSAO.h">
       <Filter>Flux\SSAO</Filter>
@@ -3719,6 +3749,9 @@
     </Filter>
     <Filter Include="Flux\Skybox">
       <UniqueIdentifier>{8478a1b7-448b-45d9-6ad4-4aae4c42359c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Flux\Slang">
+      <UniqueIdentifier>{bcaf7916-8dc3-e560-877d-372dcef62076}</UniqueIdentifier>
     </Filter>
     <Filter Include="Flux\StaticMeshes">
       <UniqueIdentifier>{9b29d795-b53f-6d77-2c78-e46261ae5b81}</UniqueIdentifier>

@@ -87,6 +87,15 @@ public class GameProject : ZenithBaseProject
 
 		// Add Zenith engine dependency (includes Tools when ToolsEnabled)
 		conf.AddPublicDependency<ZenithProject>(target);
+
+		// Copy Slang DLLs to output directory (Windows only)
+		if (target.Platform == Platform.win64)
+		{
+			// Use zenithRoot which is the actual project root (one level up from Build/)
+			string slangBinPath = zenithRoot + "/Middleware/slang/bin";
+			conf.EventPostBuild.Add($"xcopy /Y /D \"{slangBinPath}\\slang.dll\" \"$(OutDir)\"");
+			conf.EventPostBuild.Add($"xcopy /Y /D \"{slangBinPath}\\slang-glslang.dll\" \"$(OutDir)\"");
+		}
 	}
 }
 

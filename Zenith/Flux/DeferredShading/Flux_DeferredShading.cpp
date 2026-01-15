@@ -9,6 +9,7 @@
 #include "Flux/Shadows/Flux_Shadows.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
+#include "Flux/Slang/Flux_ShaderBinder.h"
 
 static Zenith_Task g_xRenderTask(ZENITH_PROFILE_INDEX__FLUX_DEFERRED_SHADING, Flux_DeferredShading::Render, nullptr);
 
@@ -16,6 +17,15 @@ static Flux_CommandList g_xCommandList("Apply Lighting");
 
 static Flux_Shader s_xShader;
 static Flux_Pipeline s_xPipeline;
+
+// Cached binding handles for named resource binding (populated at init from shader reflection)
+static Flux_BindingHandle s_xFrameConstantsBinding;
+static Flux_BindingHandle s_axShadowMatrixBindings[ZENITH_FLUX_NUM_CSMS];
+static Flux_BindingHandle s_xDiffuseTexBinding;
+static Flux_BindingHandle s_xNormalsAmbientTexBinding;
+static Flux_BindingHandle s_xMaterialTexBinding;
+static Flux_BindingHandle s_xDepthTexBinding;
+static Flux_BindingHandle s_axCSMBindings[ZENITH_FLUX_NUM_CSMS];
 
 DEBUGVAR u_int dbg_uVisualiseCSMs = 0;
 DEBUGVAR bool dbg_bVisualiseCSMs = false;
@@ -58,6 +68,22 @@ void Flux_DeferredShading::Initialise()
 
 	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
 
+	// Cache binding handles from shader reflection for named resource binding
+	const Flux_ShaderReflection& xReflection = s_xShader.GetReflection();
+	s_xFrameConstantsBinding = xReflection.GetBinding("FrameConstants");
+	s_axShadowMatrixBindings[0] = xReflection.GetBinding("ShadowMatrix0");
+	s_axShadowMatrixBindings[1] = xReflection.GetBinding("ShadowMatrix1");
+	s_axShadowMatrixBindings[2] = xReflection.GetBinding("ShadowMatrix2");
+	s_axShadowMatrixBindings[3] = xReflection.GetBinding("ShadowMatrix3");
+	s_xDiffuseTexBinding = xReflection.GetBinding("g_xDiffuseTex");
+	s_xNormalsAmbientTexBinding = xReflection.GetBinding("g_xNormalsAmbientTex");
+	s_xMaterialTexBinding = xReflection.GetBinding("g_xMaterialTex");
+	s_xDepthTexBinding = xReflection.GetBinding("g_xDepthTex");
+	s_axCSMBindings[0] = xReflection.GetBinding("g_xCSM0");
+	s_axCSMBindings[1] = xReflection.GetBinding("g_xCSM1");
+	s_axCSMBindings[2] = xReflection.GetBinding("g_xCSM2");
+	s_axCSMBindings[3] = xReflection.GetBinding("g_xCSM3");
+
 	#ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_DebugVariables::AddBoolean({ "Render", "Shadows", "Visualise CSMs" }, dbg_bVisualiseCSMs);
 	#endif
@@ -92,26 +118,32 @@ void Flux_DeferredShading::Render(void*)
 	g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
 	g_xCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
 
-	g_xCommandList.AddCommand<Flux_CommandBeginBind>(0);
-	g_xCommandList.AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
-	g_xCommandList.AddCommand<Flux_CommandBindSRV>(Flux_Graphics::GetGBufferSRV(MRT_INDEX_DIFFUSE), 6);
-	g_xCommandList.AddCommand<Flux_CommandBindSRV>(Flux_Graphics::GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT), 7);
-	g_xCommandList.AddCommand<Flux_CommandBindSRV>(Flux_Graphics::GetGBufferSRV(MRT_INDEX_MATERIAL), 8);
-	g_xCommandList.AddCommand<Flux_CommandBindSRV>(Flux_Graphics::GetDepthStencilSRV(), 9);
+	// Use named bindings via shader binder (auto-manages descriptor set switches)
+	Flux_ShaderBinder xBinder(g_xCommandList);
 
-	constexpr uint32_t uFirstShadowTexBind = 10;  // Bumped from 9 to 10 (scratch buffer at binding 1)
+	// Bind frame constants
+	xBinder.BindCBV(s_xFrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
+
+	// Bind G-buffer textures (named bindings)
+	xBinder.BindSRV(s_xDiffuseTexBinding, Flux_Graphics::GetGBufferSRV(MRT_INDEX_DIFFUSE));
+	xBinder.BindSRV(s_xNormalsAmbientTexBinding, Flux_Graphics::GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT));
+	xBinder.BindSRV(s_xMaterialTexBinding, Flux_Graphics::GetGBufferSRV(MRT_INDEX_MATERIAL));
+	xBinder.BindSRV(s_xDepthTexBinding, Flux_Graphics::GetDepthStencilSRV());
+
+	// Bind shadow maps (named bindings)
 	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
 	{
 		Flux_ShaderResourceView& xSRV = Flux_Shadows::GetCSMSRV(u);
-		g_xCommandList.AddCommand<Flux_CommandBindSRV>(&xSRV, uFirstShadowTexBind + u, &Flux_Graphics::s_xClampSampler);
-	}
-	constexpr uint32_t uFirstShadowBufferBind = 2;  // Bumped from 1 to 2 (scratch buffer at binding 1)
-	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
-	{
-		g_xCommandList.AddCommand<Flux_CommandBindCBV>(&Flux_Shadows::GetShadowMatrixBuffer(u).GetCBV(), uFirstShadowBufferBind + u);
+		xBinder.BindSRV(s_axCSMBindings[u], &xSRV, &Flux_Graphics::s_xClampSampler);
 	}
 
-	g_xCommandList.AddCommand<Flux_CommandPushConstant>(&dbg_uVisualiseCSMs, sizeof(dbg_uVisualiseCSMs));
+	// Bind shadow matrix buffers (named bindings)
+	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
+	{
+		xBinder.BindCBV(s_axShadowMatrixBindings[u], &Flux_Shadows::GetShadowMatrixBuffer(u).GetCBV());
+	}
+
+	xBinder.PushConstant(&dbg_uVisualiseCSMs, sizeof(dbg_uVisualiseCSMs));
 
 	g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(6);
 

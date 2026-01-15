@@ -78,10 +78,9 @@ layout(std430, set = 0, binding = 2) buffer IndirectCommandBuffer
 };
 
 // Output: atomic counter for visible chunks
-layout(std430, set = 0, binding = 3) buffer VisibleCountBuffer
-{
-    uint visibleCount;
-};
+// Using Slang RWStructuredBuffer for atomic support
+[[vk::binding(3, 0)]]
+RWStructuredBuffer<uint> visibleCount;
 
 // Output: LOD levels for each draw call (for visualization)
 layout(std430, set = 0, binding = 4) buffer LODLevelBuffer
@@ -203,7 +202,8 @@ void main()
         return;
     
     // Allocate output slot atomically
-    uint outIndex = atomicAdd(visibleCount, 1);
+    uint outIndex;
+    InterlockedAdd(visibleCount[0], 1, outIndex);
     
     // Write indirect draw command directly (no sorting)
     // Modern GPUs have effective early-Z even without perfect front-to-back order

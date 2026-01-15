@@ -8,6 +8,7 @@
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_Buffers.h"
 #include "Flux/Flux_RenderTargets.h"
+#include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Vulkan/Zenith_Vulkan_Pipeline.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
@@ -101,6 +102,13 @@ static ResolveConstants s_xResolveConstants;
 // Previous frame jitter for reprojection
 static Zenith_Maths::Vector2 s_xPreviousJitter = { 0.0f, 0.0f };
 
+// Cached binding handles from shader reflection
+static Flux_BindingHandle s_xResolveFrameConstantsBinding;
+static Flux_BindingHandle s_xResolveCurrentFogBinding;
+static Flux_BindingHandle s_xResolveHistoryFogBinding;
+static Flux_BindingHandle s_xResolveOutputBinding;
+static Flux_BindingHandle s_xResolveDebugMotionBinding;
+
 void Flux_TemporalFog::Initialise()
 {
 	// Create history buffers (3D, matching froxel grid size)
@@ -147,6 +155,14 @@ void Flux_TemporalFog::Initialise()
 		.WithLayout(s_xResolveRootSig.m_xLayout)
 		.Build(s_xResolvePipeline);
 	s_xResolvePipeline.m_xRootSig = s_xResolveRootSig;
+
+	// Cache binding handles from shader reflection
+	const Flux_ShaderReflection& xResolveReflection = s_xResolveShader.GetReflection();
+	s_xResolveFrameConstantsBinding = xResolveReflection.GetBinding("FrameConstants");
+	s_xResolveCurrentFogBinding = xResolveReflection.GetBinding("g_xCurrentFog");
+	s_xResolveHistoryFogBinding = xResolveReflection.GetBinding("g_xHistoryFog");
+	s_xResolveOutputBinding = xResolveReflection.GetBinding("g_xOutput");
+	s_xResolveDebugMotionBinding = xResolveReflection.GetBinding("g_xDebugMotion");
 
 #ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_DebugVariables::AddFloat({ "Render", "Volumetric Fog", "Temporal", "Blend Weight" }, dbg_fTemporalBlendWeight, 0.0f, 1.0f);
@@ -240,16 +256,18 @@ void Flux_TemporalFog::Render(void*)
 	// ========== RESOLVE PASS ==========
 	g_xResolveCommandList.Reset(false);
 	g_xResolveCommandList.AddCommand<Flux_CommandBindComputePipeline>(&s_xResolvePipeline);
-	g_xResolveCommandList.AddCommand<Flux_CommandBeginBind>(0);
-	g_xResolveCommandList.AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
+
+	Flux_ShaderBinder xResolveBinder(g_xResolveCommandList);
+	xResolveBinder.BindCBV(s_xResolveFrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
 	// Current fog comes from froxel lighting grid
-	g_xResolveCommandList.AddCommand<Flux_CommandBindSRV>(&Flux_FroxelFog::GetLightingGrid().m_pxSRV, 2);  // Was 1
+	xResolveBinder.BindSRV(s_xResolveCurrentFogBinding, &Flux_FroxelFog::GetLightingGrid().m_pxSRV);
 	// History from previous frame
-	g_xResolveCommandList.AddCommand<Flux_CommandBindSRV>(&s_axHistoryBuffers[uHistoryReadIdx].m_pxSRV, 3);  // Was 2
+	xResolveBinder.BindSRV(s_xResolveHistoryFogBinding, &s_axHistoryBuffers[uHistoryReadIdx].m_pxSRV);
 	// Output to resolved buffer and also update history
-	g_xResolveCommandList.AddCommand<Flux_CommandBindUAV_Texture>(&s_axHistoryBuffers[uHistoryWriteIdx].m_pxUAV, 4);  // Was 3
-	g_xResolveCommandList.AddCommand<Flux_CommandBindUAV_Texture>(&s_xDebugMotionVectors.m_pxUAV, 5);  // Was 4
-	g_xResolveCommandList.AddCommand<Flux_CommandPushConstant>(&s_xResolveConstants, sizeof(ResolveConstants));
+	xResolveBinder.BindUAV_Texture(s_xResolveOutputBinding, &s_axHistoryBuffers[uHistoryWriteIdx].m_pxUAV);
+	xResolveBinder.BindUAV_Texture(s_xResolveDebugMotionBinding, &s_xDebugMotionVectors.m_pxUAV);
+
+	xResolveBinder.PushConstant(&s_xResolveConstants, sizeof(ResolveConstants));
 	g_xResolveCommandList.AddCommand<Flux_CommandDispatch>(
 		(TEMPORAL_WIDTH + 7) / 8,
 		(TEMPORAL_HEIGHT + 7) / 8,

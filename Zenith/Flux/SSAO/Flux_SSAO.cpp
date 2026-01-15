@@ -6,6 +6,7 @@
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_Buffers.h"
+#include "Flux/Slang/Flux_ShaderBinder.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
 
@@ -97,12 +98,11 @@ void Flux_SSAO::Render(void*)
 	g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
 	g_xCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
 
-	g_xCommandList.AddCommand<Flux_CommandBeginBind>(0);
-	g_xCommandList.AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
+	Flux_ShaderBinder xBinder(g_xCommandList);
+	xBinder.BindCBV(Flux_BindingHandle{0, 0}, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
+	xBinder.PushConstant(&dbg_xConstants, sizeof(Flux_FogConstants));
 	g_xCommandList.AddCommand<Flux_CommandBindSRV>(Flux_Graphics::GetDepthStencilSRV(), 2);  // Bumped from 1 to 2
 	g_xCommandList.AddCommand<Flux_CommandBindSRV>(Flux_Graphics::GetGBufferSRV(MRT_INDEX_NORMALSAMBIENT), 3);  // Bumped from 2 to 3
-
-	g_xCommandList.AddCommand<Flux_CommandPushConstant>(&dbg_xConstants, sizeof(Flux_FogConstants));
 
 	g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(6);
 

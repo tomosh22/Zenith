@@ -109,7 +109,7 @@
       <WarningLevel>Level4</WarningLevel>
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>ENGINE_ASSETS_DIR="c:/dev/zenith/Zenith/Assets/";GLM_ENABLE_EXPERIMENTAL;NOMINMAX;SHADER_SOURCE_ROOT="c:/dev/zenith/Zenith/Flux/Shaders/";WIN64;ZENITH_DEBUG;ZENITH_VULKAN;ZENITH_WINDOWS;_DEBUG;_LIB;%(PreprocessorDefinitions);$(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>..\middleware;..\middleware\glfw-3.4.bin.win64\include;..\middleware\glm-master;..\middleware\imgui-docking;..\middleware\joltphysics-5.4.0;..\middleware\stb;..\middleware\vma;..\middleware\vulkansdk\1.3.280.0\include;..\zenith;..\zenith\core;..\zenith\vulkan;..\zenith\windows</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\middleware;..\middleware\glfw-3.4.bin.win64\include;..\middleware\glm-master;..\middleware\imgui-docking;..\middleware\joltphysics-5.4.0;..\middleware\slang\include;..\middleware\stb;..\middleware\vma;..\middleware\vulkansdk\1.3.280.0\include;..\zenith;..\zenith\core;..\zenith\vulkan;..\zenith\windows</AdditionalIncludeDirectories>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <TreatWarningAsError>false</TreatWarningAsError>
@@ -173,7 +173,7 @@
       <WarningLevel>Level4</WarningLevel>
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>ENGINE_ASSETS_DIR="c:/dev/zenith/Zenith/Assets/";GLM_ENABLE_EXPERIMENTAL;NOMINMAX;OPENDDLPARSER_BUILD;SHADER_SOURCE_ROOT="c:/dev/zenith/Zenith/Flux/Shaders/";WIN64;ZENITH_DEBUG;ZENITH_ROOT="c:/dev/zenith/";ZENITH_TOOLS;ZENITH_VULKAN;ZENITH_WINDOWS;_DEBUG;_LIB;%(PreprocessorDefinitions);$(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>..\middleware;..\middleware\glfw-3.4.bin.win64\include;..\middleware\glm-master;..\middleware\imgui-docking;..\middleware\joltphysics-5.4.0;..\middleware\stb;..\middleware\vma;..\middleware\vulkansdk\1.3.280.0\include;..\tools\middleware;..\tools\middleware\assimp\include;..\tools\middleware\opencv\build\include;..\tools\middleware\opencv\build\include\opencv2;..\zenith;..\zenith\core;..\zenith\vulkan;..\zenith\windows</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\middleware;..\middleware\glfw-3.4.bin.win64\include;..\middleware\glm-master;..\middleware\imgui-docking;..\middleware\joltphysics-5.4.0;..\middleware\slang\include;..\middleware\stb;..\middleware\vma;..\middleware\vulkansdk\1.3.280.0\include;..\tools\middleware;..\tools\middleware\assimp\include;..\tools\middleware\opencv\build\include;..\tools\middleware\opencv\build\include\opencv2;..\zenith;..\zenith\core;..\zenith\vulkan;..\zenith\windows</AdditionalIncludeDirectories>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <TreatWarningAsError>false</TreatWarningAsError>
@@ -237,7 +237,7 @@
       <WarningLevel>Level4</WarningLevel>
       <Optimization>Full</Optimization>
       <PreprocessorDefinitions>ENGINE_ASSETS_DIR="c:/dev/zenith/Zenith/Assets/";GLM_ENABLE_EXPERIMENTAL;NDEBUG;NOMINMAX;SHADER_SOURCE_ROOT="c:/dev/zenith/Zenith/Flux/Shaders/";WIN64;ZENITH_VULKAN;ZENITH_WINDOWS;_LIB;%(PreprocessorDefinitions);$(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>..\middleware;..\middleware\glfw-3.4.bin.win64\include;..\middleware\glm-master;..\middleware\imgui-docking;..\middleware\joltphysics-5.4.0;..\middleware\stb;..\middleware\vma;..\middleware\vulkansdk\1.3.280.0\include;..\zenith;..\zenith\core;..\zenith\vulkan;..\zenith\windows</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\middleware;..\middleware\glfw-3.4.bin.win64\include;..\middleware\glm-master;..\middleware\imgui-docking;..\middleware\joltphysics-5.4.0;..\middleware\slang\include;..\middleware\stb;..\middleware\vma;..\middleware\vulkansdk\1.3.280.0\include;..\zenith;..\zenith\core;..\zenith\vulkan;..\zenith\windows</AdditionalIncludeDirectories>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <TreatWarningAsError>false</TreatWarningAsError>
@@ -301,7 +301,7 @@
       <WarningLevel>Level4</WarningLevel>
       <Optimization>Full</Optimization>
       <PreprocessorDefinitions>ENGINE_ASSETS_DIR="c:/dev/zenith/Zenith/Assets/";GLM_ENABLE_EXPERIMENTAL;NDEBUG;NOMINMAX;OPENDDLPARSER_BUILD;SHADER_SOURCE_ROOT="c:/dev/zenith/Zenith/Flux/Shaders/";WIN64;ZENITH_ROOT="c:/dev/zenith/";ZENITH_TOOLS;ZENITH_VULKAN;ZENITH_WINDOWS;_LIB;%(PreprocessorDefinitions);$(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>..\middleware;..\middleware\glfw-3.4.bin.win64\include;..\middleware\glm-master;..\middleware\imgui-docking;..\middleware\joltphysics-5.4.0;..\middleware\stb;..\middleware\vma;..\middleware\vulkansdk\1.3.280.0\include;..\tools\middleware;..\tools\middleware\assimp\include;..\tools\middleware\opencv\build\include;..\tools\middleware\opencv\build\include\opencv2;..\zenith;..\zenith\core;..\zenith\vulkan;..\zenith\windows</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>..\middleware;..\middleware\glfw-3.4.bin.win64\include;..\middleware\glm-master;..\middleware\imgui-docking;..\middleware\joltphysics-5.4.0;..\middleware\slang\include;..\middleware\stb;..\middleware\vma;..\middleware\vulkansdk\1.3.280.0\include;..\tools\middleware;..\tools\middleware\assimp\include;..\tools\middleware\opencv\build\include;..\tools\middleware\opencv\build\include\opencv2;..\zenith;..\zenith\core;..\zenith\vulkan;..\zenith\windows</AdditionalIncludeDirectories>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <TreatWarningAsError>false</TreatWarningAsError>
@@ -1081,6 +1081,7 @@
     <ClInclude Include="..\Zenith\Core\Zenith.h" />
     <ClInclude Include="..\Zenith\Core\ZenithConfig.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_Core.h" />
+    <ClInclude Include="..\Zenith\Core\Zenith_FileWatcher.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_GUID.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_String.h" />
     <ClInclude Include="..\Zenith\DataStream\Zenith_DataStream.h" />
@@ -1125,6 +1126,7 @@
     <ClInclude Include="..\Zenith\Flux\Flux_Graphics.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_ImGuiIntegration.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_MaterialAsset.h" />
+    <ClInclude Include="..\Zenith\Flux\Flux_MaterialBinding.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_ModelInstance.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_RenderTargets.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_Types.h" />
@@ -1181,6 +1183,7 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\GBufferCommon.fxh" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Gizmos\Flux_Gizmos.frag" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Gizmos\Flux_Gizmos.vert" />
+    <ClInclude Include="..\Zenith\Flux\Shaders\MaterialCommon.fxh" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Particles\Flux_Particles.frag" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Particles\Flux_Particles.vert" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Particles\Flux_ParticleUpdate.comp" />
@@ -1210,6 +1213,9 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\Water\Flux_Water.vert" />
     <ClInclude Include="..\Zenith\Flux\Shadows\Flux_Shadows.h" />
     <ClInclude Include="..\Zenith\Flux\Skybox\Flux_Skybox.h" />
+    <ClInclude Include="..\Zenith\Flux\Slang\Flux_ShaderBinder.h" />
+    <ClInclude Include="..\Zenith\Flux\Slang\Flux_ShaderHotReload.h" />
+    <ClInclude Include="..\Zenith\Flux\Slang\Flux_SlangCompiler.h" />
     <ClInclude Include="..\Zenith\Flux\SSAO\Flux_SSAO.h" />
     <ClInclude Include="..\Zenith\Flux\StaticMeshes\Flux_StaticMeshes.h" />
     <ClInclude Include="..\Zenith\Flux\Terrain\Flux_Terrain.h" />
@@ -2292,6 +2298,9 @@
     <ClCompile Include="..\Zenith\Flux\SDFs\Flux_SDFs.cpp" />
     <ClCompile Include="..\Zenith\Flux\Shadows\Flux_Shadows.cpp" />
     <ClCompile Include="..\Zenith\Flux\Skybox\Flux_Skybox.cpp" />
+    <ClCompile Include="..\Zenith\Flux\Slang\Flux_ShaderBinder.cpp" />
+    <ClCompile Include="..\Zenith\Flux\Slang\Flux_ShaderHotReload.cpp" />
+    <ClCompile Include="..\Zenith\Flux\Slang\Flux_SlangCompiler.cpp" />
     <ClCompile Include="..\Zenith\Flux\SSAO\Flux_SSAO.cpp" />
     <ClCompile Include="..\Zenith\Flux\StaticMeshes\Flux_StaticMeshes.cpp" />
     <ClCompile Include="..\Zenith\Flux\Terrain\Flux_Terrain.cpp" />
@@ -2325,6 +2334,7 @@
     <ClCompile Include="..\Zenith\Windows\Multithreading\Zenith_Windows_Multithreading.cpp" />
     <ClCompile Include="..\Zenith\Windows\Vulkan\Zenith_Windows_Vulkan.cpp" />
     <ClCompile Include="..\Zenith\Windows\Zenith_Windows_DebugBreak.cpp" />
+    <ClCompile Include="..\Zenith\Windows\Zenith_Windows_FileWatcher.cpp" />
     <ClCompile Include="..\Zenith\Windows\Zenith_Windows_Main.cpp" />
     <ClCompile Include="..\Zenith\Windows\Zenith_Windows_Window.cpp" />
     <ClCompile Include="..\Zenith\Zenith_Main.cpp" />

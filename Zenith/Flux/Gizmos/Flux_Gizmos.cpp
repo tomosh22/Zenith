@@ -10,6 +10,7 @@
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_Buffers.h"
 #include "Flux/Primitives/Flux_Primitives.h"
+#include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Maths/Zenith_Maths_Intersections.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
 
@@ -198,9 +199,9 @@ void Flux_Gizmos::Render(void*)
 	s_xCommandList.Reset(false);
 	s_xCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xPipeline);
 
-	// Bind frame constants (set 0, binding 0)
-	s_xCommandList.AddCommand<Flux_CommandBeginBind>(0);
-	s_xCommandList.AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
+	// Create binder once - bind frame constants once (same for all gizmo components)
+	Flux_ShaderBinder xBinder(s_xCommandList);
+	xBinder.BindCBV(Flux_BindingHandle{0, 0}, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
 
 	// Render each gizmo component
 	for (uint32_t i = 0; i < pxGeometry->GetSize(); ++i)
@@ -228,7 +229,7 @@ void Flux_Gizmos::Render(void*)
 		else if (xGeom.m_eComponent == s_eActiveComponent && s_bIsInteracting)
 			xPushConstants.m_fHighlightIntensity = 1.0f;
 
-		s_xCommandList.AddCommand<Flux_CommandPushConstant>(&xPushConstants, sizeof(xPushConstants));
+		xBinder.PushConstant(&xPushConstants, sizeof(xPushConstants));
 
 		// Draw
 		s_xCommandList.AddCommand<Flux_CommandDrawIndexed>(xGeom.m_uIndexCount);

@@ -850,6 +850,7 @@
     <ClInclude Include="..\Zenith\Core\Zenith.h" />
     <ClInclude Include="..\Zenith\Core\ZenithConfig.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_Core.h" />
+    <ClInclude Include="..\Zenith\Core\Zenith_FileWatcher.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_GUID.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_String.h" />
     <ClInclude Include="..\Zenith\DataStream\Zenith_DataStream.h" />
@@ -894,6 +895,7 @@
     <ClInclude Include="..\Zenith\Flux\Flux_Graphics.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_ImGuiIntegration.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_MaterialAsset.h" />
+    <ClInclude Include="..\Zenith\Flux\Flux_MaterialBinding.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_ModelInstance.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_RenderTargets.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_Types.h" />
@@ -950,6 +952,7 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\GBufferCommon.fxh" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Gizmos\Flux_Gizmos.frag" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Gizmos\Flux_Gizmos.vert" />
+    <ClInclude Include="..\Zenith\Flux\Shaders\MaterialCommon.fxh" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Particles\Flux_Particles.frag" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Particles\Flux_Particles.vert" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Particles\Flux_ParticleUpdate.comp" />
@@ -979,6 +982,9 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\Water\Flux_Water.vert" />
     <ClInclude Include="..\Zenith\Flux\Shadows\Flux_Shadows.h" />
     <ClInclude Include="..\Zenith\Flux\Skybox\Flux_Skybox.h" />
+    <ClInclude Include="..\Zenith\Flux\Slang\Flux_ShaderBinder.h" />
+    <ClInclude Include="..\Zenith\Flux\Slang\Flux_ShaderHotReload.h" />
+    <ClInclude Include="..\Zenith\Flux\Slang\Flux_SlangCompiler.h" />
     <ClInclude Include="..\Zenith\Flux\SSAO\Flux_SSAO.h" />
     <ClInclude Include="..\Zenith\Flux\StaticMeshes\Flux_StaticMeshes.h" />
     <ClInclude Include="..\Zenith\Flux\Terrain\Flux_Terrain.h" />
@@ -1767,6 +1773,9 @@
     <ClCompile Include="..\Zenith\Flux\SDFs\Flux_SDFs.cpp" />
     <ClCompile Include="..\Zenith\Flux\Shadows\Flux_Shadows.cpp" />
     <ClCompile Include="..\Zenith\Flux\Skybox\Flux_Skybox.cpp" />
+    <ClCompile Include="..\Zenith\Flux\Slang\Flux_ShaderBinder.cpp" />
+    <ClCompile Include="..\Zenith\Flux\Slang\Flux_ShaderHotReload.cpp" />
+    <ClCompile Include="..\Zenith\Flux\Slang\Flux_SlangCompiler.cpp" />
     <ClCompile Include="..\Zenith\Flux\SSAO\Flux_SSAO.cpp" />
     <ClCompile Include="..\Zenith\Flux\StaticMeshes\Flux_StaticMeshes.cpp" />
     <ClCompile Include="..\Zenith\Flux\Terrain\Flux_Terrain.cpp" />
@@ -1812,6 +1821,10 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Zenith\Windows\Zenith_Windows_DebugBreak.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Windows\Zenith_Windows_FileWatcher.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
     </ClCompile>
