@@ -311,16 +311,16 @@ public:
 #pragma endregion
 
 #pragma region std::unordered_map
-	template<typename T1, typename T2>
-	void operator<<(std::unordered_map<T1, T2> xMap)
-	{
-		*this << u_int(xMap.size());
-		for (auto xIt = xMap.cbegin(); xIt != xMap.cend(); xIt++)
-		{
-			*this << xIt->first;
-			*this << xIt->second;
-		}
-	}
+template<typename T1, typename T2>
+void operator<<(const std::unordered_map<T1, T2>& xMap)
+{
+*this << u_int(xMap.size());
+for (auto xIt = xMap.cbegin(); xIt != xMap.cend(); xIt++)
+{
+*this << xIt->first;
+*this << xIt->second;
+}
+}
 	template<typename T1, typename T2>
 	void operator>>(std::unordered_map<T1, T2>& xMap)
 	{

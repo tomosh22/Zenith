@@ -418,8 +418,8 @@ void Zenith_UnitTests::TestProfiling()
 	const std::unordered_map<u_int, Zenith_Vector<Zenith_Profiling::Event>>& xEvents = Zenith_Profiling::GetEvents();
 	const Zenith_Vector<Zenith_Profiling::Event>& xEventsMain = xEvents.at(Zenith_Multithreading::GetCurrentThreadID());
 	const Zenith_Vector<Zenith_Profiling::Event>& xEvents0 = xEvents.at(pxTask0->GetCompletedThreadID());
-	const Zenith_Vector<Zenith_Profiling::Event>& xEvents1 = xEvents.at(pxTask0->GetCompletedThreadID());
-	const Zenith_Vector<Zenith_Profiling::Event>& xEvents2 = xEvents.at(pxTask0->GetCompletedThreadID());
+	const Zenith_Vector<Zenith_Profiling::Event>& xEvents1 = xEvents.at(pxTask1->GetCompletedThreadID());
+	const Zenith_Vector<Zenith_Profiling::Event>& xEvents2 = xEvents.at(pxTask2->GetCompletedThreadID());
 
 	Zenith_Assert(xEventsMain.GetSize() == 8, "Expected 8 events, have %u", xEvents.size());
 	Zenith_Assert(xEventsMain.Get(0).m_eIndex == eIndex1, "Wrong profile index");

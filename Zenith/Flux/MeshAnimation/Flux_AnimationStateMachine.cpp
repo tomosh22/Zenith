@@ -169,6 +169,12 @@ void Flux_AnimationParameters::ReadFromDataStream(Zenith_DataStream& xStream)
 	uint32_t uNumParams = 0;
 	xStream >> uNumParams;
 
+	// Sanity check to prevent OOM from corrupted data
+	constexpr uint32_t uMAX_PARAMS = 10000;
+	Zenith_Assert(uNumParams <= uMAX_PARAMS,
+		"AnimationParameters: Param count %u exceeds limit - possible corruption", uNumParams);
+	if (uNumParams > uMAX_PARAMS) return;
+
 	for (uint32_t i = 0; i < uNumParams; ++i)
 	{
 		Parameter param;
@@ -176,6 +182,9 @@ void Flux_AnimationParameters::ReadFromDataStream(Zenith_DataStream& xStream)
 
 		uint8_t uType = 0;
 		xStream >> uType;
+
+		Zenith_Assert(uType <= static_cast<uint8_t>(ParamType::Trigger), "AnimationParameters: Invalid param type %u for '%s' - skipping",
+			uType, param.m_strName.c_str());
 		param.m_eType = static_cast<ParamType>(uType);
 
 		switch (param.m_eType)

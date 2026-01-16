@@ -141,6 +141,15 @@ Zenith_PathResult Zenith_Pathfinding::FindPathInternal(const Zenith_NavMesh& xNa
 			return xResult;
 		}
 
+		// Bounds check before accessing polygon
+		Zenith_Assert(xCurrent.m_uPolygonIndex < xNavMesh.GetPolygonCount(),
+			"Pathfinding: Polygon index %u out of bounds (count=%u)",
+			xCurrent.m_uPolygonIndex, xNavMesh.GetPolygonCount());
+		if (xCurrent.m_uPolygonIndex >= xNavMesh.GetPolygonCount())
+		{
+			continue;  // Skip invalid polygon in release builds
+		}
+
 		// Expand neighbors
 		const Zenith_NavMeshPolygon& xPoly = xNavMesh.GetPolygon(xCurrent.m_uPolygonIndex);
 		const Zenith_Maths::Vector3& xCurrentCenter = xPoly.m_xCenter;
@@ -158,6 +167,8 @@ Zenith_PathResult Zenith_Pathfinding::FindPathInternal(const Zenith_NavMesh& xNa
 			{
 				continue;  // Already processed
 			}
+
+			Zenith_Assert(uNeighbor < xNavMesh.GetPolygonCount(), "Pathfinding: Neighbor index %u out of bounds", uNeighbor);
 
 			const Zenith_NavMeshPolygon& xNeighborPoly = xNavMesh.GetPolygon(uNeighbor);
 
