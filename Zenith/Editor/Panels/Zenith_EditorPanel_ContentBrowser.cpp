@@ -10,6 +10,7 @@
 #include "Flux/MeshAnimation/Flux_AnimationClip.h"
 #include "Flux/Flux_ImGuiIntegration.h"
 #include "Flux/Flux_Graphics.h"
+#include "../../../Tools/Zenith_Tools_TextureExport.h"
 
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "imgui.h"
@@ -381,6 +382,35 @@ void Zenith_EditorPanelContentBrowser::Render(ContentBrowserState& xState)
 								xPath.stem().string() + "_copy" + std::to_string(iCounter++) + xPath.extension().string();
 						}
 						std::filesystem::copy(xEntry.m_strFullPath, strNewPath);
+						xState.m_bDirectoryNeedsRefresh = true;
+					}
+
+					// Export image files to .ztxtr
+					static const char* aszExportableExtensions[] = { ".png", ".jpg", ".jpeg", ".tif", ".tiff" };
+					bool bCanExport = false;
+					for (const char* szExt : aszExportableExtensions)
+					{
+						if (xEntry.m_strExtension == szExt)
+						{
+							bCanExport = true;
+							break;
+						}
+					}
+
+					if (bCanExport && ImGui::MenuItem("Export to .ztxtr"))
+					{
+						if (xEntry.m_strExtension == ".tif" || xEntry.m_strExtension == ".tiff")
+						{
+							Zenith_Tools_TextureExport::ExportFromTifFile(xEntry.m_strFullPath);
+						}
+						else
+						{
+							// PNG/JPG - use existing export (extension without dot)
+							Zenith_Tools_TextureExport::ExportFromFile(
+								xEntry.m_strFullPath,
+								xEntry.m_strExtension.c_str() + 1,
+								TextureCompressionMode::Uncompressed);
+						}
 						xState.m_bDirectoryNeedsRefresh = true;
 					}
 				}

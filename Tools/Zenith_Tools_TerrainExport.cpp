@@ -1,5 +1,8 @@
 #include "Zenith.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
+#include "DataStream/Zenith_DataStream.h"
+#include "Flux/Flux_Enums.h"
+#include "FileAccess/Zenith_FileAccess.h"
 
 // Extern function that must be implemented by game projects - returns just the project name (e.g., "Test")
 // Paths are constructed using ZENITH_ROOT (defined by build system) + project name
@@ -15,6 +18,113 @@ static std::string GetGameAssetsDirectory()
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
 
 #define MAX_TERRAIN_HEIGHT 4096
+
+//-----------------------------------------------------------------------------
+// Load heightmap from .ztxtr file and return as cv::Mat in CV_32FC1 format
+//-----------------------------------------------------------------------------
+static cv::Mat LoadHeightmapFromZtxtr(const std::string& strPath)
+{
+	Zenith_DataStream xStream;
+	xStream.ReadFromFile(strPath.c_str());
+	if (!xStream.IsValid())
+	{
+		Zenith_Log(LOG_CATEGORY_TOOLS, "Failed to load .ztxtr file: %s", strPath.c_str());
+		return cv::Mat();
+	}
+
+	int32_t iWidth, iHeight, iDepth;
+	TextureFormat eFormat;
+	uint64_t ulDataSize;
+
+	xStream >> iWidth;
+	xStream >> iHeight;
+	xStream >> iDepth;
+	xStream >> eFormat;
+	xStream >> ulDataSize;
+
+	Zenith_Log(LOG_CATEGORY_TOOLS, "Loading .ztxtr heightmap: %dx%d, format=%d, size=%llu",
+		iWidth, iHeight, static_cast<int>(eFormat), ulDataSize);
+
+	// Allocate and read data
+	void* pData = Zenith_MemoryManagement::Allocate(ulDataSize);
+	xStream.ReadData(pData, ulDataSize);
+
+	// Create cv::Mat based on format
+	cv::Mat xResult;
+	if (eFormat == TEXTURE_FORMAT_R32_SFLOAT)
+	{
+		// 32-bit float single channel - use directly
+		cv::Mat xTemp(iHeight, iWidth, CV_32FC1, pData);
+		xResult = xTemp.clone();
+	}
+	else if (eFormat == TEXTURE_FORMAT_R16_UNORM)
+	{
+		// 16-bit unsigned single channel - convert to float normalized [0,1]
+		cv::Mat xTemp(iHeight, iWidth, CV_16UC1, pData);
+		xTemp.convertTo(xResult, CV_32FC1, 1.0 / 65535.0);
+	}
+	else if (eFormat == TEXTURE_FORMAT_RGBA8_UNORM)
+	{
+		// RGBA8 - use red channel, convert to float
+		cv::Mat xTemp(iHeight, iWidth, CV_8UC4, pData);
+		std::vector<cv::Mat> xChannels;
+		cv::split(xTemp, xChannels);
+		xChannels[0].convertTo(xResult, CV_32FC1, 1.0 / 255.0);
+	}
+	else
+	{
+		Zenith_Log(LOG_CATEGORY_TOOLS, "Unsupported texture format for heightmap: %d", static_cast<int>(eFormat));
+		Zenith_MemoryManagement::Deallocate(pData);
+		return cv::Mat();
+	}
+
+	Zenith_MemoryManagement::Deallocate(pData);
+	return xResult;
+}
+
+//-----------------------------------------------------------------------------
+// Load heightmap from either .ztxtr or .tif based on file extension
+//-----------------------------------------------------------------------------
+static cv::Mat LoadHeightmapAuto(const std::string& strPath)
+{
+	// Get file extension
+	std::string strExt = strPath.substr(strPath.rfind('.'));
+
+	if (strExt == ZENITH_TEXTURE_EXT)
+	{
+		return LoadHeightmapFromZtxtr(strPath);
+	}
+	else
+	{
+		// Use OpenCV for .tif and other formats
+		cv::Mat xImage = cv::imread(strPath, cv::IMREAD_ANYDEPTH);
+		if (xImage.empty())
+		{
+			Zenith_Log(LOG_CATEGORY_TOOLS, "Failed to load heightmap: %s", strPath.c_str());
+			return cv::Mat();
+		}
+
+		// Convert to 32-bit float if needed
+		if (xImage.depth() != CV_32F)
+		{
+			cv::Mat xConverted;
+			if (xImage.depth() == CV_16U)
+			{
+				xImage.convertTo(xConverted, CV_32FC1, 1.0 / 65535.0);
+			}
+			else if (xImage.depth() == CV_8U)
+			{
+				xImage.convertTo(xConverted, CV_32FC1, 1.0 / 255.0);
+			}
+			else
+			{
+				xImage.convertTo(xConverted, CV_32FC1);
+			}
+			return xConverted;
+		}
+		return xImage;
+	}
+}
 
 //#TO width/height that heightmap is divided into
 #define TERRAIN_SIZE 64
@@ -129,10 +239,11 @@ void ExportMesh(u_int uDensityDivisor, std::string strName, const std::string& s
 
 	float fDensity = 1.f / uDensityDivisor;
 
-	cv::Mat xHeightmap = cv::imread(strHeightmapPath, cv::IMREAD_ANYDEPTH);
-	cv::Mat xMaterialLerpMap = cv::imread(strMaterialPath, cv::IMREAD_ANYDEPTH);
+	// Load heightmap and material textures (supports both .ztxtr and .tif)
+	cv::Mat xHeightmap = LoadHeightmapAuto(strHeightmapPath);
+	cv::Mat xMaterialLerpMap = LoadHeightmapAuto(strMaterialPath);
 
-	Zenith_Assert(!xHeightmap.empty(), "Invalid image");
+	Zenith_Assert(!xHeightmap.empty(), "Invalid heightmap image");
 
 	u_int uImageWidth = xHeightmap.cols;
 	u_int uImageHeight = xHeightmap.rows;

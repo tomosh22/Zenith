@@ -34,7 +34,8 @@ static bool s_bTerrainExportInProgress = false;
 static std::string s_strTerrainExportStatus = "";
 
 //-----------------------------------------------------------------------------
-// Helper function to show Windows Open File dialog for .tif files
+// Helper function to show Windows Open File dialog for terrain textures
+// Supports .ztxtr (preferred) and .tif files
 //-----------------------------------------------------------------------------
 static std::string ShowTifOpenFileDialog()
 {
@@ -43,10 +44,10 @@ static std::string ShowTifOpenFileDialog()
 	OPENFILENAMEA ofn = {};
 	ofn.lStructSize = sizeof(OPENFILENAMEA);
 	ofn.hwndOwner = nullptr;
-	ofn.lpstrFilter = "TIF Files (*.tif)\0*.tif\0All Files (*.*)\0*.*\0";
+	ofn.lpstrFilter = "Zenith Texture (*.ztxtr)\0*.ztxtr\0TIF Files (*.tif)\0*.tif\0All Files (*.*)\0*.*\0";
 	ofn.lpstrFile = szFilePath;
 	ofn.nMaxFile = MAX_PATH;
-	ofn.lpstrDefExt = "tif";
+	ofn.lpstrDefExt = "ztxtr";
 	ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
 
 	if (GetOpenFileNameA(&ofn))
@@ -146,7 +147,7 @@ void Zenith_TerrainComponent::RenderPropertiesPanel()
 		{
 			if (ImGui::TreeNode("Create Terrain From Heightmap"))
 			{
-				ImGui::TextWrapped("Specify heightmap and material interpolation textures to generate terrain geometry. Both textures should be 4096x4096 16-bit grayscale .tif files.");
+				ImGui::TextWrapped("Specify heightmap and material interpolation textures to generate terrain geometry. Use .ztxtr files (exported from .tif via content browser) or .tif files directly. Textures should be 4096x4096 single-channel (grayscale).");
 				ImGui::Separator();
 
 				// Heightmap path input
@@ -154,6 +155,21 @@ void Zenith_TerrainComponent::RenderPropertiesPanel()
 				ImGui::PushItemWidth(300);
 				ImGui::InputText("##HeightmapPath", s_szHeightmapPath, sizeof(s_szHeightmapPath), ImGuiInputTextFlags_ReadOnly);
 				ImGui::PopItemWidth();
+
+				// Drag-drop target for heightmap texture
+				if (ImGui::BeginDragDropTarget())
+				{
+					if (const ImGuiPayload* pPayload = ImGui::AcceptDragDropPayload(DRAGDROP_PAYLOAD_TEXTURE))
+					{
+						const DragDropFilePayload* pFilePayload =
+							static_cast<const DragDropFilePayload*>(pPayload->Data);
+						strncpy(s_szHeightmapPath, pFilePayload->m_szFilePath, sizeof(s_szHeightmapPath) - 1);
+						s_szHeightmapPath[sizeof(s_szHeightmapPath) - 1] = '\0';
+						Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Dropped heightmap: %s", s_szHeightmapPath);
+					}
+					ImGui::EndDragDropTarget();
+				}
+
 				ImGui::SameLine();
 				if (ImGui::Button("Browse...##Heightmap"))
 				{
@@ -171,6 +187,21 @@ void Zenith_TerrainComponent::RenderPropertiesPanel()
 				ImGui::PushItemWidth(300);
 				ImGui::InputText("##MaterialPath", s_szMaterialPath, sizeof(s_szMaterialPath), ImGuiInputTextFlags_ReadOnly);
 				ImGui::PopItemWidth();
+
+				// Drag-drop target for material interpolation texture
+				if (ImGui::BeginDragDropTarget())
+				{
+					if (const ImGuiPayload* pPayload = ImGui::AcceptDragDropPayload(DRAGDROP_PAYLOAD_TEXTURE))
+					{
+						const DragDropFilePayload* pFilePayload =
+							static_cast<const DragDropFilePayload*>(pPayload->Data);
+						strncpy(s_szMaterialPath, pFilePayload->m_szFilePath, sizeof(s_szMaterialPath) - 1);
+						s_szMaterialPath[sizeof(s_szMaterialPath) - 1] = '\0';
+						Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Dropped material texture: %s", s_szMaterialPath);
+					}
+					ImGui::EndDragDropTarget();
+				}
+
 				ImGui::SameLine();
 				if (ImGui::Button("Browse...##Material"))
 				{
@@ -323,6 +354,21 @@ void Zenith_TerrainComponent::RenderPropertiesPanel()
 				ImGui::PushItemWidth(300);
 				ImGui::InputText("##RegenHeightmapPath", s_szHeightmapPath, sizeof(s_szHeightmapPath), ImGuiInputTextFlags_ReadOnly);
 				ImGui::PopItemWidth();
+
+				// Drag-drop target for heightmap texture
+				if (ImGui::BeginDragDropTarget())
+				{
+					if (const ImGuiPayload* pPayload = ImGui::AcceptDragDropPayload(DRAGDROP_PAYLOAD_TEXTURE))
+					{
+						const DragDropFilePayload* pFilePayload =
+							static_cast<const DragDropFilePayload*>(pPayload->Data);
+						strncpy(s_szHeightmapPath, pFilePayload->m_szFilePath, sizeof(s_szHeightmapPath) - 1);
+						s_szHeightmapPath[sizeof(s_szHeightmapPath) - 1] = '\0';
+						Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Dropped new heightmap: %s", s_szHeightmapPath);
+					}
+					ImGui::EndDragDropTarget();
+				}
+
 				ImGui::SameLine();
 				if (ImGui::Button("Browse...##RegenHeightmap"))
 				{
@@ -340,6 +386,21 @@ void Zenith_TerrainComponent::RenderPropertiesPanel()
 				ImGui::PushItemWidth(300);
 				ImGui::InputText("##RegenMaterialPath", s_szMaterialPath, sizeof(s_szMaterialPath), ImGuiInputTextFlags_ReadOnly);
 				ImGui::PopItemWidth();
+
+				// Drag-drop target for material interpolation texture
+				if (ImGui::BeginDragDropTarget())
+				{
+					if (const ImGuiPayload* pPayload = ImGui::AcceptDragDropPayload(DRAGDROP_PAYLOAD_TEXTURE))
+					{
+						const DragDropFilePayload* pFilePayload =
+							static_cast<const DragDropFilePayload*>(pPayload->Data);
+						strncpy(s_szMaterialPath, pFilePayload->m_szFilePath, sizeof(s_szMaterialPath) - 1);
+						s_szMaterialPath[sizeof(s_szMaterialPath) - 1] = '\0';
+						Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Dropped new material texture: %s", s_szMaterialPath);
+					}
+					ImGui::EndDragDropTarget();
+				}
+
 				ImGui::SameLine();
 				if (ImGui::Button("Browse...##RegenMaterial"))
 				{

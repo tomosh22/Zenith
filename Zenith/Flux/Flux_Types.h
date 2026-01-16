@@ -211,6 +211,10 @@ static uint32_t ColourFormatBitsPerPixel(TextureFormat eFormat)
 		return 128u;
 	case TEXTURE_FORMAT_R32G32B32_SFLOAT:
 		return 96u;
+	case TEXTURE_FORMAT_R16_UNORM:
+		return 16u;
+	case TEXTURE_FORMAT_R32_SFLOAT:
+		return 32u;
 	default:
 		Zenith_Assert(false, "Unrecognised colour format");
 		return 0u;

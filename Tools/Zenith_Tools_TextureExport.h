@@ -12,18 +12,25 @@ enum class TextureCompressionMode
 
 namespace Zenith_Tools_TextureExport
 {
-	// Export texture with specified compression mode
+	// Export texture with specified compression mode (PNG, JPG, JPEG)
 	void ExportFromFile(std::string strFilename, const char* szExtension, TextureCompressionMode eCompression = TextureCompressionMode::Uncompressed);
-	
+
+	// Export TIF texture with bit depth preservation (uses OpenCV)
+	// Preserves 16-bit and 32-bit depth for heightmaps
+	void ExportFromTifFile(const std::string& strFilename, TextureCompressionMode eCompression = TextureCompressionMode::Uncompressed);
+
 	// Export raw texture data (uncompressed only - for procedural textures)
 	void ExportFromData(const void* pData, const std::string& strFilename, int32_t iWidth, int32_t iHeight, TextureFormat eFormat);
-	
+
+	// Export raw texture data with explicit format and bytes per pixel
+	void ExportFromDataWithFormat(const void* pData, const std::string& strFilename, int32_t iWidth, int32_t iHeight, TextureFormat eFormat, size_t ulBytesPerPixel);
+
 	// Export raw texture data with compression
 	void ExportFromDataCompressed(const void* pRGBAData, const std::string& strFilename, int32_t iWidth, int32_t iHeight, TextureCompressionMode eCompression);
-	
+
 	// Helper to determine if a format is BC compressed
 	bool IsCompressedFormat(TextureFormat eFormat);
-	
+
 	// Get bytes per block for compressed formats (returns bytes per pixel for uncompressed)
 	uint32_t GetBytesPerBlockOrPixel(TextureFormat eFormat);
 }

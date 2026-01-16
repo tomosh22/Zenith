@@ -1156,6 +1156,11 @@ vk::Format Zenith_Vulkan::ConvertToVkFormat_Colour(TextureFormat eFormat) {
 		return vk::Format::eR16G16B16A16Unorm;
 	case TEXTURE_FORMAT_BGRA8_UNORM:
 		return vk::Format::eB8G8R8A8Unorm;
+	// Single-channel formats (for heightmaps)
+	case TEXTURE_FORMAT_R16_UNORM:
+		return vk::Format::eR16Unorm;
+	case TEXTURE_FORMAT_R32_SFLOAT:
+		return vk::Format::eR32Sfloat;
 	// BC Compressed formats
 	case TEXTURE_FORMAT_BC1_RGB_UNORM:
 		return vk::Format::eBc1RgbUnormBlock;
