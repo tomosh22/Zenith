@@ -53,16 +53,14 @@ namespace Exploration_TerrainExplorer
 	};
 
 	/**
-	 * Convert world position to chunk coordinates
+	 * Convert mesh position to chunk coordinates
+	 * Terrain mesh goes from (0, 0) to (TERRAIN_SIZE, TERRAIN_SIZE)
 	 */
-	inline void WorldPosToChunkCoords(const Zenith_Maths::Vector3& xWorldPos, int32_t& iChunkX, int32_t& iChunkY)
+	inline void WorldPosToChunkCoords(const Zenith_Maths::Vector3& xMeshPos, int32_t& iChunkX, int32_t& iChunkY)
 	{
-		// Terrain is centered at origin, so offset by half terrain size
-		float fOffsetX = xWorldPos.x + TERRAIN_SIZE * 0.5f;
-		float fOffsetZ = xWorldPos.z + TERRAIN_SIZE * 0.5f;
-
-		iChunkX = static_cast<int32_t>(std::floor(fOffsetX / CHUNK_SIZE_WORLD));
-		iChunkY = static_cast<int32_t>(std::floor(fOffsetZ / CHUNK_SIZE_WORLD));
+		// Mesh coordinates are 0 to TERRAIN_SIZE, divide by chunk size to get chunk index
+		iChunkX = static_cast<int32_t>(std::floor(xMeshPos.x / CHUNK_SIZE_WORLD));
+		iChunkY = static_cast<int32_t>(std::floor(xMeshPos.z / CHUNK_SIZE_WORLD));
 	}
 
 	/**
@@ -75,44 +73,50 @@ namespace Exploration_TerrainExplorer
 	}
 
 	/**
-	 * Get terrain height at a world XZ position
-	 * This is a simplified sampling - in a real implementation you'd sample
-	 * the actual heightmap data or use physics raycasting.
+	 * Get terrain height at a mesh XZ position
+	 * Converts mesh coordinates to procedural world coordinates, calculates
+	 * procedural height, then scales to match terrain mesh Y coordinates.
 	 *
-	 * @param fWorldX World X coordinate
-	 * @param fWorldZ World Z coordinate
-	 * @return Estimated terrain height (simplified procedural for demo)
+	 * @param fMeshX Mesh X coordinate (0 to TERRAIN_SIZE)
+	 * @param fMeshZ Mesh Z coordinate (0 to TERRAIN_SIZE)
+	 * @return Terrain mesh Y coordinate
 	 */
-	inline float GetTerrainHeightAt(float fWorldX, float fWorldZ)
+	inline float GetTerrainHeightAt(float fMeshX, float fMeshZ)
 	{
-		// Simplified procedural height for demo purposes
-		// In a real implementation, you would:
-		// 1. Sample the terrain heightmap texture
-		// 2. Or use physics raycast against terrain collider
-		// 3. Or query the terrain component's physics mesh
+		// Convert mesh coordinates to procedural world coordinates
+		// Mesh coords: 0 to TERRAIN_SIZE
+		// Procedural coords: -TERRAIN_SIZE/2 to +TERRAIN_SIZE/2
+		// NOTE: Z is negated because the heightmap was flipped vertically during generation
+		float fProcX = fMeshX - TERRAIN_SIZE * 0.5f;
+		float fProcZ = TERRAIN_SIZE * 0.5f - fMeshZ;  // Negated due to heightmap flip
 
-		// Simple multi-octave noise approximation
-		float fHeight = 0.0f;
+		// Simple multi-octave noise approximation (same as heightmap generation)
+		float fProceduralHeight = 0.0f;
 
 		// Large hills
 		float fFreq1 = 0.001f;
-		fHeight += std::sin(fWorldX * fFreq1) * std::cos(fWorldZ * fFreq1) * 50.0f;
+		fProceduralHeight += std::sin(fProcX * fFreq1) * std::cos(fProcZ * fFreq1) * 50.0f;
 
 		// Medium features
 		float fFreq2 = 0.005f;
-		fHeight += std::sin(fWorldX * fFreq2 + 1.3f) * std::cos(fWorldZ * fFreq2 + 0.7f) * 20.0f;
+		fProceduralHeight += std::sin(fProcX * fFreq2 + 1.3f) * std::cos(fProcZ * fFreq2 + 0.7f) * 20.0f;
 
 		// Small details
 		float fFreq3 = 0.02f;
-		fHeight += std::sin(fWorldX * fFreq3 + 2.1f) * std::cos(fWorldZ * fFreq3 + 1.4f) * 5.0f;
+		fProceduralHeight += std::sin(fProcX * fFreq3 + 2.1f) * std::cos(fProcZ * fFreq3 + 1.4f) * 5.0f;
 
 		// Add base height to keep most terrain above water level
-		fHeight += 30.0f;
+		fProceduralHeight += 30.0f;
 
 		// Clamp to reasonable terrain bounds
-		fHeight = std::max(0.0f, fHeight);
+		fProceduralHeight = std::max(0.0f, fProceduralHeight);
 
-		return fHeight;
+		// Convert procedural height (0-100) to terrain mesh Y scale
+		// Terrain export uses: meshY = normalizedHeight * 4096 - 1000
+		float fNormalized = fProceduralHeight / 100.0f;
+		float fMeshY = fNormalized * 4096.0f - 1000.0f;
+
+		return fMeshY;
 	}
 
 	/**
@@ -188,41 +192,41 @@ namespace Exploration_TerrainExplorer
 	}
 
 	/**
-	 * Calculate distance to chunk center
+	 * Calculate distance to chunk center (mesh coordinates)
 	 */
-	inline float GetDistanceToChunk(const Zenith_Maths::Vector3& xWorldPos, int32_t iChunkX, int32_t iChunkY)
+	inline float GetDistanceToChunk(const Zenith_Maths::Vector3& xMeshPos, int32_t iChunkX, int32_t iChunkY)
 	{
-		// Calculate chunk center in world space
-		float fChunkCenterX = (static_cast<float>(iChunkX) + 0.5f) * CHUNK_SIZE_WORLD - TERRAIN_SIZE * 0.5f;
-		float fChunkCenterZ = (static_cast<float>(iChunkY) + 0.5f) * CHUNK_SIZE_WORLD - TERRAIN_SIZE * 0.5f;
+		// Calculate chunk center in mesh coordinates (0 to TERRAIN_SIZE)
+		float fChunkCenterX = (static_cast<float>(iChunkX) + 0.5f) * CHUNK_SIZE_WORLD;
+		float fChunkCenterZ = (static_cast<float>(iChunkY) + 0.5f) * CHUNK_SIZE_WORLD;
 
-		float fDx = xWorldPos.x - fChunkCenterX;
-		float fDz = xWorldPos.z - fChunkCenterZ;
+		float fDx = xMeshPos.x - fChunkCenterX;
+		float fDz = xMeshPos.z - fChunkCenterZ;
 
 		return std::sqrt(fDx * fDx + fDz * fDz);
 	}
 
 	/**
-	 * Get terrain bounds
+	 * Get terrain bounds (mesh coordinates)
 	 */
 	inline void GetTerrainBounds(Zenith_Maths::Vector3& xMin, Zenith_Maths::Vector3& xMax)
 	{
-		float fHalfSize = TERRAIN_SIZE * 0.5f;
-		xMin = Zenith_Maths::Vector3(-fHalfSize, 0.0f, -fHalfSize);
-		xMax = Zenith_Maths::Vector3(fHalfSize, MAX_TERRAIN_HEIGHT, fHalfSize);
+		// Terrain mesh goes from (0, 0) to (TERRAIN_SIZE, TERRAIN_SIZE)
+		// Y range is from the mesh export: -1000 to 3096
+		xMin = Zenith_Maths::Vector3(0.0f, -1000.0f, 0.0f);
+		xMax = Zenith_Maths::Vector3(TERRAIN_SIZE, 3096.0f, TERRAIN_SIZE);
 	}
 
 	/**
-	 * Clamp position to terrain bounds
+	 * Clamp position to terrain bounds (mesh coordinates)
 	 */
 	inline Zenith_Maths::Vector3 ClampToTerrainBounds(const Zenith_Maths::Vector3& xPos)
 	{
-		float fHalfSize = TERRAIN_SIZE * 0.5f;
 		float fMargin = 50.0f;  // Keep player slightly inside bounds
 
 		Zenith_Maths::Vector3 xClamped = xPos;
-		xClamped.x = std::clamp(xClamped.x, -fHalfSize + fMargin, fHalfSize - fMargin);
-		xClamped.z = std::clamp(xClamped.z, -fHalfSize + fMargin, fHalfSize - fMargin);
+		xClamped.x = std::clamp(xClamped.x, fMargin, TERRAIN_SIZE - fMargin);
+		xClamped.z = std::clamp(xClamped.z, fMargin, TERRAIN_SIZE - fMargin);
 
 		return xClamped;
 	}

@@ -625,6 +625,9 @@
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_ColliderComponent.cpp">
       <Filter>EntityComponent\Components</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_InstancedMeshComponent.cpp">
+      <Filter>EntityComponent\Components</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_ModelComponent.cpp">
       <Filter>EntityComponent\Components</Filter>
     </ClCompile>
@@ -720,6 +723,15 @@
     </ClCompile>
     <ClCompile Include="..\Zenith\Flux\Gizmos\Flux_Gizmos.cpp">
       <Filter>Flux\Gizmos</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Flux\InstancedMeshes\Flux_AnimationTexture.cpp">
+      <Filter>Flux\InstancedMeshes</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Flux\InstancedMeshes\Flux_InstancedMeshes.cpp">
+      <Filter>Flux\InstancedMeshes</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Flux\InstancedMeshes\Flux_InstanceGroup.cpp">
+      <Filter>Flux\InstancedMeshes</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationClip.cpp">
       <Filter>Flux\MeshAnimation</Filter>
@@ -3121,6 +3133,9 @@
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_ColliderComponent.h">
       <Filter>EntityComponent\Components</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_InstancedMeshComponent.h">
+      <Filter>EntityComponent\Components</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_ModelComponent.h">
       <Filter>EntityComponent\Components</Filter>
     </ClInclude>
@@ -3228,6 +3243,18 @@
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Gizmos\Flux_Gizmos.h">
       <Filter>Flux\Gizmos</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\InstancedMeshes\Flux_AnimationTexture.h">
+      <Filter>Flux\InstancedMeshes</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\InstancedMeshes\Flux_InstanceCulling.h">
+      <Filter>Flux\InstancedMeshes</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\InstancedMeshes\Flux_InstancedMeshes.h">
+      <Filter>Flux\InstancedMeshes</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\InstancedMeshes\Flux_InstanceGroup.h">
+      <Filter>Flux\InstancedMeshes</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationClip.h">
       <Filter>Flux\MeshAnimation</Filter>
@@ -3363,6 +3390,27 @@
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\Gizmos\Flux_Gizmos.vert">
       <Filter>Flux\Shaders\Gizmos</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\InstancedMeshes\Flux_InstanceCulling.comp">
+      <Filter>Flux\Shaders\InstancedMeshes</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\InstancedMeshes\Flux_InstancedMeshes_FragCommon.fxh">
+      <Filter>Flux\Shaders\InstancedMeshes</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\InstancedMeshes\Flux_InstancedMeshes_ToGBuffer.frag">
+      <Filter>Flux\Shaders\InstancedMeshes</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\InstancedMeshes\Flux_InstancedMeshes_ToGBuffer.vert">
+      <Filter>Flux\Shaders\InstancedMeshes</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\InstancedMeshes\Flux_InstancedMeshes_ToShadowMap.frag">
+      <Filter>Flux\Shaders\InstancedMeshes</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\InstancedMeshes\Flux_InstancedMeshes_ToShadowMap.vert">
+      <Filter>Flux\Shaders\InstancedMeshes</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\InstancedMeshes\Flux_InstancedMeshes_VertCommon.fxh">
+      <Filter>Flux\Shaders\InstancedMeshes</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\MaterialCommon.fxh">
       <Filter>Flux\Shaders</Filter>
@@ -3675,6 +3723,9 @@
     <Filter Include="Flux\Gizmos">
       <UniqueIdentifier>{76953480-ba52-31b7-1038-c737312d8a2d}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Flux\InstancedMeshes">
+      <UniqueIdentifier>{7109fc1e-ca9a-d2fa-7525-1fec74c49b4d}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Flux\MeshAnimation">
       <UniqueIdentifier>{eaca438f-c905-fe04-4c8e-faed919b2340}</UniqueIdentifier>
     </Filter>
@@ -3713,6 +3764,9 @@
     </Filter>
     <Filter Include="Flux\Shaders\Gizmos">
       <UniqueIdentifier>{01cd4a62-90c0-b695-ef95-56f0663ca794}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Flux\Shaders\InstancedMeshes">
+      <UniqueIdentifier>{b314e0cc-c57a-cfb4-9281-f0bd3ebfb433}</UniqueIdentifier>
     </Filter>
     <Filter Include="Flux\Shaders\Particles">
       <UniqueIdentifier>{4ebcffad-75d4-aa28-cf01-3889f4480f8b}</UniqueIdentifier>

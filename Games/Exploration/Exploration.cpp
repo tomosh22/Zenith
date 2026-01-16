@@ -6,6 +6,7 @@
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
+#include "EntityComponent/Components/Zenith_InstancedMeshComponent.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "Flux/Flux_MaterialAsset.h"
 #include "Flux/Flux_Graphics.h"
@@ -140,6 +141,10 @@ static cv::Mat GenerateProceduralHeightmap(uint32_t uSize, float fTerrainWorldSi
 			xHeightmap.at<float>(y, x) = fNormalized;
 		}
 	}
+
+	// Flip vertically to match terrain export expectations
+	// OpenCV stores images top-to-bottom, but terrain export expects bottom-to-top
+	cv::flip(xHeightmap, xHeightmap, 0);  // 0 = flip around x-axis (vertical flip)
 
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "[Exploration] Generated procedural heightmap: %ux%u", uSize, uSize);
 	return xHeightmap;
@@ -283,6 +288,200 @@ static void InitializeExplorationResources()
 }
 
 // ============================================================================
+// Instanced Trees System
+// ============================================================================
+namespace Exploration
+{
+	// Resources for instanced trees
+	Flux_MaterialAsset* g_pxTreeMaterial = nullptr;
+	Zenith_InstancedMeshComponent* g_pxTreeComponent = nullptr;
+}
+
+/**
+ * Get terrain height at world position using procedural formula
+ */
+static float GetTerrainHeightAt(float fWorldX, float fWorldZ)
+{
+	float fHeight = 0.0f;
+
+	// Large hills (same as heightmap generation)
+	float fFreq1 = 0.001f;
+	fHeight += std::sin(fWorldX * fFreq1) * std::cos(fWorldZ * fFreq1) * 50.0f;
+
+	// Medium features
+	float fFreq2 = 0.005f;
+	fHeight += std::sin(fWorldX * fFreq2 + 1.3f) * std::cos(fWorldZ * fFreq2 + 0.7f) * 20.0f;
+
+	// Small details
+	float fFreq3 = 0.02f;
+	fHeight += std::sin(fWorldX * fFreq3 + 2.1f) * std::cos(fWorldZ * fFreq3 + 1.4f) * 5.0f;
+
+	// Add base height
+	fHeight += 30.0f;
+
+	return std::max(0.0f, fHeight);
+}
+
+/**
+ * Simple pseudo-random number generator using position as seed
+ */
+static float RandomFromPosition(float fX, float fZ, float fOffset)
+{
+	float fSeed = fX * 12.9898f + fZ * 78.233f + fOffset;
+	return std::fmod(std::sin(fSeed) * 43758.5453f, 1.0f);
+}
+
+/**
+ * Spawn instanced trees across the terrain
+ */
+static void SpawnInstancedTrees(Zenith_InstancedMeshComponent& xTreeComponent, uint32_t uTargetCount)
+{
+	using namespace Flux_TerrainConfig;
+
+	// Reserve capacity upfront for efficiency
+	xTreeComponent.Reserve(uTargetCount);
+
+	// Calculate grid spacing for even distribution
+	float fArea = TERRAIN_SIZE * TERRAIN_SIZE;
+	float fTreesPerUnit = static_cast<float>(uTargetCount) / fArea;
+	float fSpacing = 1.0f / std::sqrt(fTreesPerUnit);
+
+	// Calculate grid dimensions
+	uint32_t uGridDim = static_cast<uint32_t>(TERRAIN_SIZE / fSpacing);
+	float fHalfTerrain = TERRAIN_SIZE * 0.5f;
+
+	uint32_t uSpawnedCount = 0;
+	for (uint32_t gz = 0; gz < uGridDim && uSpawnedCount < uTargetCount; ++gz)
+	{
+		for (uint32_t gx = 0; gx < uGridDim && uSpawnedCount < uTargetCount; ++gx)
+		{
+			// Base position in grid
+			float fBaseX = (gx + 0.5f) * fSpacing - fHalfTerrain;
+			float fBaseZ = (gz + 0.5f) * fSpacing - fHalfTerrain;
+
+			// Add random offset within cell for natural appearance
+			float fOffsetX = (RandomFromPosition(fBaseX, fBaseZ, 0.0f) - 0.5f) * fSpacing * 0.8f;
+			float fOffsetZ = (RandomFromPosition(fBaseX, fBaseZ, 1.0f) - 0.5f) * fSpacing * 0.8f;
+
+			float fX = fBaseX + fOffsetX;
+			float fZ = fBaseZ + fOffsetZ;
+
+			// Convert tree position from centered coords to terrain mesh coords
+			// Terrain mesh X/Z goes from 0 to TERRAIN_SIZE, not -TERRAIN_SIZE/2 to +TERRAIN_SIZE/2
+			float fMeshX = fX + fHalfTerrain;
+			float fMeshZ = fZ + fHalfTerrain;
+
+			// Get terrain height at mesh position using TerrainExplorer
+			// This function handles the coordinate transformations and returns mesh-scale height
+			float fMeshY = Exploration_TerrainExplorer::GetTerrainHeightAt(fMeshX, fMeshZ);
+
+			// Skip trees in very low areas (water level)
+			// Mesh height -1000 corresponds to normalized 0, so -500 is roughly 12% height
+			if (fMeshY < -500.0f)
+				continue;
+
+			// Skip trees on steep slopes (high areas = rocky)
+			// Mesh height 3096 is max, so 1500 is roughly 60% height
+			if (fMeshY > 1500.0f)
+			{
+				// Random chance to skip in rocky areas
+				if (RandomFromPosition(fX, fZ, 2.0f) > 0.3f)
+					continue;
+			}
+
+			// Random scale variation (0.8 to 1.2)
+			float fScale = 0.8f + RandomFromPosition(fX, fZ, 3.0f) * 0.4f;
+
+			// Random rotation around Y axis
+			float fRotation = RandomFromPosition(fX, fZ, 4.0f) * 6.28318f;
+			Zenith_Maths::Quat xRotation = glm::angleAxis(fRotation, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
+
+			// Spawn the tree
+			uint32_t uInstanceID = xTreeComponent.SpawnInstance(
+				Zenith_Maths::Vector3(fMeshX, fMeshY, fMeshZ),
+				xRotation,
+				Zenith_Maths::Vector3(fScale, fScale, fScale)
+			);
+
+			// Random animation phase offset so trees don't all sway in sync
+			float fPhase = RandomFromPosition(fX, fZ, 5.0f);
+			xTreeComponent.SetInstanceAnimationTime(uInstanceID, fPhase);
+
+			// Slight color variation (green tint)
+			float fColorVar = 0.8f + RandomFromPosition(fX, fZ, 6.0f) * 0.4f;
+			xTreeComponent.SetInstanceColor(uInstanceID, Zenith_Maths::Vector4(
+				0.3f * fColorVar,
+				0.5f * fColorVar,
+				0.2f * fColorVar,
+				1.0f
+			));
+
+			++uSpawnedCount;
+		}
+	}
+
+	Zenith_Log(LOG_CATEGORY_MESH, "[Exploration] Spawned %u instanced trees", uSpawnedCount);
+}
+
+/**
+ * Create instanced trees entity and spawn trees
+ */
+static void CreateInstancedTrees(Zenith_Scene& xScene)
+{
+	using namespace Exploration;
+
+	std::string strTreeDir = std::string(ENGINE_ASSETS_DIR) + "Meshes/ProceduralTree/";
+	std::string strMeshAssetPath = strTreeDir + "Tree.zasset";
+	std::string strVATPath = strTreeDir + "Tree_Sway.zanmt";
+
+	// Check if tree assets exist
+	if (!std::filesystem::exists(strMeshAssetPath))
+	{
+		Zenith_Log(LOG_CATEGORY_MESH, "[Exploration] Tree mesh not found: %s", strMeshAssetPath.c_str());
+		Zenith_Log(LOG_CATEGORY_MESH, "[Exploration] Run unit tests first to generate tree assets");
+		return;
+	}
+
+	Zenith_Log(LOG_CATEGORY_MESH, "[Exploration] Creating instanced trees entity...");
+
+	// Create tree material (green with some variation)
+	g_pxTreeMaterial = Flux_MaterialAsset::Create("TreeMaterial");
+	g_pxTreeMaterial->SetBaseColor(Zenith_Maths::Vector4(0.3f, 0.5f, 0.2f, 1.0f));
+
+	// Create entity with instanced mesh component
+	Zenith_Entity xTreesEntity(&xScene, "InstancedTrees");
+	xTreesEntity.SetTransient(false);
+
+	Zenith_InstancedMeshComponent& xTrees = xTreesEntity.AddComponent<Zenith_InstancedMeshComponent>();
+	g_pxTreeComponent = &xTrees;
+
+	// Load mesh
+	xTrees.LoadMesh(strMeshAssetPath);
+
+	// Load VAT if available
+	if (std::filesystem::exists(strVATPath))
+	{
+		xTrees.LoadAnimationTexture(strVATPath);
+		xTrees.SetAnimationDuration(2.0f);  // 2 second sway cycle
+		xTrees.SetAnimationSpeed(1.0f);
+		Zenith_Log(LOG_CATEGORY_MESH, "[Exploration] Loaded tree animation texture");
+	}
+	else
+	{
+		Zenith_Log(LOG_CATEGORY_MESH, "[Exploration] No VAT found, trees will be static");
+	}
+
+	// Set material
+	xTrees.SetMaterial(g_pxTreeMaterial);
+
+	// Spawn trees (start with 10k for testing, can increase to 100k)
+	// Reduced count for initial testing to ensure performance is acceptable
+	SpawnInstancedTrees(xTrees, 10000);
+
+	Zenith_Log(LOG_CATEGORY_MESH, "[Exploration] Instanced trees created: %u instances", xTrees.GetInstanceCount());
+}
+
+// ============================================================================
 // Project Entry Points
 // ============================================================================
 
@@ -330,10 +529,13 @@ void Project_LoadInitialScene()
 	Zenith_CameraComponent& xCamera = xCameraEntity.AddComponent<Zenith_CameraComponent>();
 
 	// Position camera in the middle of the terrain, at a reasonable height
-	// Terrain is centered at origin, so 0,0 is center of terrain
-	float fStartX = 0.0f;
-	float fStartZ = 0.0f;
-	float fStartY = 50.0f;  // Above terrain - will be adjusted by player controller
+	// NOTE: Terrain mesh is NOT centered at origin - it goes from (0,0) to (TERRAIN_SIZE, TERRAIN_SIZE)
+	// So the center is at (TERRAIN_SIZE/2, TERRAIN_SIZE/2)
+	float fStartX = TERRAIN_SIZE * 0.5f;
+	float fStartZ = TERRAIN_SIZE * 0.5f;
+	// Terrain mesh Y is scaled: meshY = (proceduralHeight/100) * 4096 - 1000
+	// Start above terrain center with a reasonable height (procedural ~50 -> mesh ~1048)
+	float fStartY = 1200.0f;  // Above terrain - will be adjusted by player controller
 
 	xCamera.InitialisePerspective(
 		Zenith_Maths::Vector3(fStartX, fStartY, fStartZ),
@@ -341,7 +543,7 @@ void Project_LoadInitialScene()
 		0.0f,     // Yaw: facing +Z direction
 		glm::radians(70.0f),   // FOV: 70 degrees (nice for exploration)
 		0.1f,     // Near plane
-		5000.0f,  // Far plane (large for terrain viewing)
+		10000.0f, // Far plane (large for terrain viewing)
 		16.0f / 9.0f  // Aspect ratio
 	);
 	xScene.SetMainCameraEntity(xCameraEntity.GetEntityID());
@@ -405,6 +607,11 @@ void Project_LoadInitialScene()
 		Zenith_Log(LOG_CATEGORY_TERRAIN, "[Exploration] No terrain meshes found. Run in tools build first to generate terrain.");
 	}
 #endif
+
+	// ========================================================================
+	// Create Instanced Trees Entity
+	// ========================================================================
+	CreateInstancedTrees(xScene);
 
 	// ========================================================================
 	// Save the scene file

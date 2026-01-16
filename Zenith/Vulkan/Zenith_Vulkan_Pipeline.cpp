@@ -36,13 +36,9 @@ void Zenith_Vulkan_Shader::Initialise(const std::string& strVertex, const std::s
 		m_strVertexPath = strVertex;
 		m_strFragmentPath = strFragment;
 
-		if (InitialiseFromSource(strVertex, strFragment))
-		{
-			return;
-		}
-		// Fall through to pre-compiled loading on failure
-		Zenith_Log(LOG_CATEGORY_RENDERER, "Runtime compilation failed, falling back to pre-compiled: %s + %s",
-				   strVertex.c_str(), strFragment.c_str());
+		bool bSuccess = InitialiseFromSource(strVertex, strFragment);
+		Zenith_Assert(bSuccess, "Shader compilation failed: %s + %s", strVertex.c_str(), strFragment.c_str());
+		return;
 	}
 #endif
 
@@ -95,10 +91,21 @@ void Zenith_Vulkan_Shader::Initialise(const std::string& strVertex, const std::s
 
 void Zenith_Vulkan_Shader::InitialiseCompute(const std::string& strCompute)
 {
+#ifdef ZENITH_TOOLS
+	// Use runtime compilation when tools are enabled and Slang compiler is available
+	if (Flux_SlangCompiler::IsInitialised())
+	{
+		m_strComputePath = strCompute;
+		bool bSuccess = InitialiseComputeFromSource(strCompute);
+		Zenith_Assert(bSuccess, "Compute shader compilation failed: %s", strCompute.c_str());
+		return;
+	}
+#endif
+	// Non-tools builds: load precompiled SPV
 	const std::string strExtension = ".spv";
 	std::string strShaderRoot(SHADER_SOURCE_ROOT);
 	m_pcCompShaderCode = Zenith_FileAccess::ReadFile((strShaderRoot + strCompute + strExtension).c_str(), m_pcCompShaderCodeSize);
-	
+	Zenith_Assert(m_pcCompShaderCode != nullptr, "Failed to load precompiled shader: %s%s", strCompute.c_str(), strExtension.c_str());
 	m_xCompShaderModule = CreateShaderModule(m_pcCompShaderCode, m_pcCompShaderCodeSize);
 	m_uStageCount = 1;
 }

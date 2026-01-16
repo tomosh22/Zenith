@@ -21,6 +21,7 @@
 #include "Flux/Text/Flux_Text.h"
 #include "Flux/Quads/Flux_Quads.h"
 #include "Flux/ComputeTest/Flux_ComputeTest.h"
+#include "Flux/InstancedMeshes/Flux_InstancedMeshes.h"
 
 uint32_t Flux::s_uFrameCounter = 0;
 std::vector<void(*)()> Flux::s_xResChangeCallbacks;
@@ -50,6 +51,7 @@ void Flux::LateInitialise()
 	Flux_Skybox::Initialise();
 	Flux_StaticMeshes::Initialise();
 	Flux_AnimatedMeshes::Initialise();
+	Flux_InstancedMeshes::Initialise();
 	Flux_Terrain::Initialise();
 	Flux_Primitives::Initialise();
 	Flux_DeferredShading::Initialise();
@@ -74,6 +76,7 @@ void Flux::Shutdown()
 	Flux_SDFs::Shutdown();
 	Flux_Primitives::Shutdown();
 	Flux_Terrain::Shutdown();
+	Flux_InstancedMeshes::Shutdown();
 	Flux_Shadows::Shutdown();
 
 #ifdef ZENITH_TOOLS

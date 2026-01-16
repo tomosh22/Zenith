@@ -37,6 +37,8 @@ enum RenderOrder
 	RENDER_ORDER_TERRAIN,
 	RENDER_ORDER_PRIMITIVES,  // Debug primitives - rendered after terrain, into GBuffer
 	RENDER_ORDER_SKINNED_MESHES,
+	RENDER_ORDER_INSTANCE_CULLING,  // GPU frustum culling compute pass for instanced meshes
+	RENDER_ORDER_INSTANCED_MESHES,  // GPU-instanced meshes (100k+ instances)
 	RENDER_ORDER_FOLIAGE,
 	RENDER_ORDER_APPLY_LIGHTING,
 	RENDER_ORDER_POINT_LIGHTS,

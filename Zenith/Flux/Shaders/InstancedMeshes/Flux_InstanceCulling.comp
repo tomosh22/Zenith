@@ -1,0 +1,171 @@
+#version 450
+
+// GPU Frustum Culling for Instanced Meshes
+// Tests each instance's bounding sphere against the camera frustum
+// Writes visible instance indices to output buffer for indirect rendering
+//
+// Performance: O(n) with n = instance count, ~64 instances per workgroup
+//
+// NOTE: After this shader completes, a separate pass copies visibleCount to
+// the indirect buffer's instanceCount field. This is handled by
+// Flux_InstanceCullingFinalize.comp or CPU readback.
+
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+// Frustum plane: dot(normal, point) + distance = 0
+// Planes point INWARD (normals toward visible region)
+struct FrustumPlane
+{
+	vec4 normalAndDistance;  // xyz = normal, w = distance
+};
+
+// Camera data for culling
+layout(std140, set = 0, binding = 0) uniform CullingConstants
+{
+	FrustumPlane frustumPlanes[6];  // Left, Right, Bottom, Top, Near, Far
+	vec4 cameraPosition;             // xyz = camera position, w = padding
+	uint totalInstanceCount;         // Total instance count (renamed to avoid conflict)
+	uint meshIndexCount;             // Index count for indirect draw command
+	float boundingSphereRadius;      // Local-space bounding sphere radius
+	float padding;
+};
+
+// Input: per-instance transforms (mat4)
+layout(std430, set = 0, binding = 1) readonly buffer TransformBuffer
+{
+	mat4 transforms[];
+};
+
+// Input: per-instance animation/flag data
+// x: (animationIndex << 16) | frameCount
+// y: animTime (float bits)
+// z: colorTint (RGBA8 packed)
+// w: flags (bit 0 = enabled)
+layout(std430, set = 0, binding = 2) readonly buffer AnimDataBuffer
+{
+	uvec4 animData[];
+};
+
+// Output: visible instance indices
+layout(std430, set = 0, binding = 3) writeonly buffer VisibleIndexBuffer
+{
+	uint visibleIndices[];
+};
+
+// Output: atomic counter for visible instances
+// Using Slang RWStructuredBuffer for atomic support
+[[vk::binding(4, 0)]]
+RWStructuredBuffer<uint> visibleCount;
+
+// Output: indirect draw command instance count (atomic counter)
+// Using Slang RWStructuredBuffer for atomic support
+// This maps to the instanceCount field of VkDrawIndexedIndirectCommand
+[[vk::binding(5, 0)]]
+RWStructuredBuffer<uint> indirectInstanceCount;
+
+// Test if a bounding sphere intersects with the frustum
+// Returns true if sphere is at least partially inside frustum
+bool testSphereFrustum(vec3 center, float radius)
+{
+	// Test against all 6 frustum planes
+	// If sphere is completely behind any plane, it's outside the frustum
+
+	// Near plane (most likely to cull - test first)
+	{
+		vec3 normal = frustumPlanes[4].normalAndDistance.xyz;
+		float distance = frustumPlanes[4].normalAndDistance.w;
+		if (dot(normal, center) + distance < -radius)
+			return false;
+	}
+
+	// Far plane
+	{
+		vec3 normal = frustumPlanes[5].normalAndDistance.xyz;
+		float distance = frustumPlanes[5].normalAndDistance.w;
+		if (dot(normal, center) + distance < -radius)
+			return false;
+	}
+
+	// Left plane
+	{
+		vec3 normal = frustumPlanes[0].normalAndDistance.xyz;
+		float distance = frustumPlanes[0].normalAndDistance.w;
+		if (dot(normal, center) + distance < -radius)
+			return false;
+	}
+
+	// Right plane
+	{
+		vec3 normal = frustumPlanes[1].normalAndDistance.xyz;
+		float distance = frustumPlanes[1].normalAndDistance.w;
+		if (dot(normal, center) + distance < -radius)
+			return false;
+	}
+
+	// Bottom plane
+	{
+		vec3 normal = frustumPlanes[2].normalAndDistance.xyz;
+		float distance = frustumPlanes[2].normalAndDistance.w;
+		if (dot(normal, center) + distance < -radius)
+			return false;
+	}
+
+	// Top plane
+	{
+		vec3 normal = frustumPlanes[3].normalAndDistance.xyz;
+		float distance = frustumPlanes[3].normalAndDistance.w;
+		if (dot(normal, center) + distance < -radius)
+			return false;
+	}
+
+	return true;
+}
+
+// Extract maximum scale from a transformation matrix
+// Used to scale the bounding sphere radius
+float getMaxScale(mat4 m)
+{
+	// Get the length of each basis vector (columns 0-2)
+	float scaleX = length(vec3(m[0].xyz));
+	float scaleY = length(vec3(m[1].xyz));
+	float scaleZ = length(vec3(m[2].xyz));
+	return max(scaleX, max(scaleY, scaleZ));
+}
+
+void main()
+{
+	uint idx = gl_GlobalInvocationID.x;
+
+	// Bounds check
+	if (idx >= totalInstanceCount)
+		return;
+
+	// Check if instance is enabled (flag bit 0)
+	uint flags = animData[idx].w;
+	if ((flags & 1u) == 0u)
+		return;  // Instance disabled
+
+	// Get instance transform
+	mat4 transform = transforms[idx];
+
+	// Extract world-space position (translation from column 3)
+	vec3 worldCenter = transform[3].xyz;
+
+	// Scale bounding sphere radius by max scale factor
+	float worldRadius = boundingSphereRadius * getMaxScale(transform);
+
+	// Frustum culling test
+	if (!testSphereFrustum(worldCenter, worldRadius))
+		return;  // Instance culled
+
+	// Instance is visible - allocate output slot atomically
+	uint outIndex;
+	InterlockedAdd(visibleCount[0], 1, outIndex);
+
+	// Write instance index to visible buffer
+	visibleIndices[outIndex] = idx;
+
+	// Also update the indirect buffer's instance count for DrawIndexedIndirect
+	// Index [1] = instanceCount field of VkDrawIndexedIndirectCommand
+	InterlockedAdd(indirectInstanceCount[1], 1);
+}

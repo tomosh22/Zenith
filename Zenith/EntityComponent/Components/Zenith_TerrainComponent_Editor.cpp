@@ -8,6 +8,7 @@
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
 #include "Editor/Zenith_Editor.h"
 #include "AssetHandling/Zenith_AssetHandler.h"
+#include "Flux/Terrain/Flux_TerrainStreamingManager.h"
 #include <filesystem>
 
 // Windows file dialog support
@@ -280,6 +281,184 @@ void Zenith_TerrainComponent::RenderPropertiesPanel()
 				}
 
 				if (!bCanCreate)
+					ImGui::EndDisabled();
+
+				// Status display
+				if (!s_strTerrainExportStatus.empty())
+				{
+					ImGui::Separator();
+					if (s_bTerrainExportInProgress)
+					{
+						ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "%s", s_strTerrainExportStatus.c_str());
+					}
+					else if (s_strTerrainExportStatus.find("success") != std::string::npos ||
+					         s_strTerrainExportStatus.find("complete") != std::string::npos)
+					{
+						ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "%s", s_strTerrainExportStatus.c_str());
+					}
+					else
+					{
+						ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "%s", s_strTerrainExportStatus.c_str());
+					}
+				}
+
+				ImGui::TreePop();
+			}
+
+			ImGui::Separator();
+		}
+
+		// ========== Regenerate Terrain Section ==========
+		// Show when terrain IS initialized - allows regenerating with new heightmaps
+		if (bTerrainInitialized)
+		{
+			if (ImGui::TreeNode("Regenerate Terrain"))
+			{
+				ImGui::TextWrapped("Regenerate terrain from new heightmap and material interpolation textures. This will delete existing terrain files and recreate all chunks.");
+				ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "Warning: This operation cannot be undone!");
+				ImGui::Separator();
+
+				// Heightmap path input
+				ImGui::Text("New Heightmap Texture:");
+				ImGui::PushItemWidth(300);
+				ImGui::InputText("##RegenHeightmapPath", s_szHeightmapPath, sizeof(s_szHeightmapPath), ImGuiInputTextFlags_ReadOnly);
+				ImGui::PopItemWidth();
+				ImGui::SameLine();
+				if (ImGui::Button("Browse...##RegenHeightmap"))
+				{
+					std::string strPath = ShowTifOpenFileDialog();
+					if (!strPath.empty())
+					{
+						strncpy(s_szHeightmapPath, strPath.c_str(), sizeof(s_szHeightmapPath) - 1);
+						s_szHeightmapPath[sizeof(s_szHeightmapPath) - 1] = '\0';
+						Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Selected new heightmap: %s", s_szHeightmapPath);
+					}
+				}
+
+				// Material path input
+				ImGui::Text("New Material Interpolation Texture:");
+				ImGui::PushItemWidth(300);
+				ImGui::InputText("##RegenMaterialPath", s_szMaterialPath, sizeof(s_szMaterialPath), ImGuiInputTextFlags_ReadOnly);
+				ImGui::PopItemWidth();
+				ImGui::SameLine();
+				if (ImGui::Button("Browse...##RegenMaterial"))
+				{
+					std::string strPath = ShowTifOpenFileDialog();
+					if (!strPath.empty())
+					{
+						strncpy(s_szMaterialPath, strPath.c_str(), sizeof(s_szMaterialPath) - 1);
+						s_szMaterialPath[sizeof(s_szMaterialPath) - 1] = '\0';
+						Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Selected new material texture: %s", s_szMaterialPath);
+					}
+				}
+
+				ImGui::Separator();
+
+				// Output directory info
+				std::string strOutputDir = std::string(Project_GetGameAssetsDirectory()) + "Terrain/";
+				ImGui::Text("Output Directory: %s", strOutputDir.c_str());
+
+				// Regenerate terrain button
+				bool bCanRegenerate = strlen(s_szHeightmapPath) > 0 && strlen(s_szMaterialPath) > 0 && !s_bTerrainExportInProgress;
+
+				if (!bCanRegenerate)
+					ImGui::BeginDisabled();
+
+				if (ImGui::Button("Regenerate Terrain", ImVec2(200, 30)))
+				{
+					s_bTerrainExportInProgress = true;
+					s_strTerrainExportStatus = "Cleaning up existing terrain...";
+
+					Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Starting terrain regeneration...");
+
+					// ========== Step 1: Clean up existing GPU resources ==========
+					Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Destroying existing culling resources...");
+					DestroyCullingResources();
+
+					// Unregister buffers from streaming manager
+					Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Unregistering terrain buffers from streaming manager...");
+					Flux_TerrainStreamingManager::UnregisterTerrainBuffers();
+
+					// Destroy existing unified buffers
+					Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Destroying existing unified buffers...");
+					Flux_MemoryManager::DestroyVertexBuffer(m_xUnifiedVertexBuffer);
+					Flux_MemoryManager::DestroyIndexBuffer(m_xUnifiedIndexBuffer);
+					m_ulUnifiedVertexBufferSize = 0;
+					m_ulUnifiedIndexBufferSize = 0;
+
+					// Clean up physics geometry
+					if (m_pxPhysicsGeometry)
+					{
+						Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Destroying existing physics geometry...");
+						Zenith_AssetHandler::DeleteMesh(m_pxPhysicsGeometry);
+						m_pxPhysicsGeometry = nullptr;
+					}
+
+					// ========== Step 2: Delete existing terrain files ==========
+					s_strTerrainExportStatus = "Deleting existing terrain files...";
+					Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Deleting existing terrain files in %s", strOutputDir.c_str());
+
+					try
+					{
+						if (std::filesystem::exists(strOutputDir))
+						{
+							for (const auto& entry : std::filesystem::directory_iterator(strOutputDir))
+							{
+								if (entry.is_regular_file())
+								{
+									std::filesystem::remove(entry.path());
+								}
+							}
+							Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Deleted existing terrain files");
+						}
+					}
+					catch (const std::exception& e)
+					{
+						Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Warning: Failed to delete some terrain files: %s", e.what());
+					}
+
+					// ========== Step 3: Export new terrain meshes ==========
+					s_strTerrainExportStatus = "Exporting new terrain meshes...";
+					Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Exporting new terrain...");
+					Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent]   Heightmap: %s", s_szHeightmapPath);
+					Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent]   Material: %s", s_szMaterialPath);
+					Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent]   Output: %s", strOutputDir.c_str());
+
+					ExportHeightmapFromPaths(s_szHeightmapPath, s_szMaterialPath, strOutputDir);
+
+					// ========== Step 4: Reload physics geometry ==========
+					s_strTerrainExportStatus = "Loading physics geometry...";
+					Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Loading new physics geometry...");
+					LoadCombinedPhysicsGeometry();
+
+					// ========== Step 5: Reinitialize render resources ==========
+					s_strTerrainExportStatus = "Initializing render resources...";
+					Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Reinitializing render resources...");
+
+					// Use existing materials or create new ones if needed
+					if (!m_pxMaterial0)
+					{
+						std::string strEntityName = m_xParentEntity.GetName().empty() ?
+							("Entity_" + std::to_string(m_xParentEntity.GetEntityID().m_uIndex)) : m_xParentEntity.GetName();
+						m_pxMaterial0 = Flux_MaterialAsset::Create(strEntityName + "_Terrain_Mat0");
+						m_bOwnsMaterials = true;
+					}
+					if (!m_pxMaterial1)
+					{
+						std::string strEntityName = m_xParentEntity.GetName().empty() ?
+							("Entity_" + std::to_string(m_xParentEntity.GetEntityID().m_uIndex)) : m_xParentEntity.GetName();
+						m_pxMaterial1 = Flux_MaterialAsset::Create(strEntityName + "_Terrain_Mat1");
+						m_bOwnsMaterials = true;
+					}
+
+					InitializeRenderResources(*m_pxMaterial0, *m_pxMaterial1);
+
+					s_bTerrainExportInProgress = false;
+					s_strTerrainExportStatus = "Terrain regenerated successfully!";
+					Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Terrain regeneration complete!");
+				}
+
+				if (!bCanRegenerate)
 					ImGui::EndDisabled();
 
 				// Status display

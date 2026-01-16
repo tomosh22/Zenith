@@ -162,15 +162,15 @@ void Flux_FroxelFog::Initialise()
 	// Cache inject binding handles
 	const Flux_ShaderReflection& xInjectReflection = s_xInjectShader.GetReflection();
 	s_xInjectFrameConstantsBinding = xInjectReflection.GetBinding("FrameConstants");
-	s_xInjectNoiseBinding = xInjectReflection.GetBinding("g_xNoiseTex");
-	s_xInjectDensityOutputBinding = xInjectReflection.GetBinding("g_xDensityOutput");
+	s_xInjectNoiseBinding = xInjectReflection.GetBinding("u_xNoiseTexture3D");
+	s_xInjectDensityOutputBinding = xInjectReflection.GetBinding("u_xDensityGrid");
 
 	// Cache light binding handles
 	const Flux_ShaderReflection& xLightReflection = s_xLightShader.GetReflection();
 	s_xLightFrameConstantsBinding = xLightReflection.GetBinding("FrameConstants");
-	s_xLightDensityInputBinding = xLightReflection.GetBinding("g_xDensityInput");
-	s_xLightLightingOutputBinding = xLightReflection.GetBinding("g_xLightingOutput");
-	s_xLightScatteringOutputBinding = xLightReflection.GetBinding("g_xScatteringOutput");
+	s_xLightDensityInputBinding = xLightReflection.GetBinding("u_xDensityGrid");
+	s_xLightLightingOutputBinding = xLightReflection.GetBinding("u_xLightingGrid");
+	s_xLightScatteringOutputBinding = xLightReflection.GetBinding("u_xScatteringGrid");
 
 	// Initialize apply fragment shader
 	s_xApplyShader.Initialise("Flux_Fullscreen_UV.vert", "Fog/Flux_FroxelFog_Apply.frag");
@@ -204,9 +204,9 @@ void Flux_FroxelFog::Initialise()
 	// Cache apply binding handles
 	const Flux_ShaderReflection& xApplyReflection = s_xApplyShader.GetReflection();
 	s_xApplyFrameConstantsBinding = xApplyReflection.GetBinding("FrameConstants");
-	s_xApplyDepthBinding = xApplyReflection.GetBinding("g_xDepthTex");
-	s_xApplyLightingBinding = xApplyReflection.GetBinding("g_xLightingTex");
-	s_xApplyScatteringBinding = xApplyReflection.GetBinding("g_xScatteringTex");
+	s_xApplyDepthBinding = xApplyReflection.GetBinding("u_xDepthTexture");
+	s_xApplyLightingBinding = xApplyReflection.GetBinding("u_xLightingGrid");
+	s_xApplyScatteringBinding = xApplyReflection.GetBinding("u_xScatteringGrid");
 
 #ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_DebugVariables::AddUInt32({ "Render", "Volumetric Fog", "Froxel", "Debug Slice Index" }, dbg_uFroxelDebugSlice, 0, 63);

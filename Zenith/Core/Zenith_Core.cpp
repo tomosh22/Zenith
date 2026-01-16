@@ -21,6 +21,7 @@
 #include "Flux/Particles/Flux_Particles.h"
 #include "Flux/Text/Flux_Text.h"
 #include "Flux/ComputeTest/Flux_ComputeTest.h"
+#include "Flux/InstancedMeshes/Flux_InstancedMeshes.h"
 #ifdef ZENITH_TOOLS
 #include "Flux/Gizmos/Flux_Gizmos.h"
 #include "Editor/Zenith_Editor.h"
@@ -114,6 +115,8 @@ static void SubmitRenderTasks()
 	Flux_Skybox::SubmitRenderTask();
 	Flux_StaticMeshes::SubmitRenderToGBufferTask();
 	Flux_AnimatedMeshes::SubmitRenderTask();
+	Flux_InstancedMeshes::SubmitCullingTask();
+	Flux_InstancedMeshes::SubmitRenderTask();
 	Flux_Terrain::SubmitRenderToGBufferTask();
 	Flux_Primitives::SubmitRenderTask();
 	Flux_DeferredShading::SubmitRenderTask();
@@ -139,6 +142,8 @@ void Zenith_Core::WaitForAllRenderTasks()
 	Flux_Skybox::WaitForRenderTask();
 	Flux_StaticMeshes::WaitForRenderToGBufferTask();
 	Flux_AnimatedMeshes::WaitForRenderTask();
+	Flux_InstancedMeshes::WaitForCullingTask();
+	Flux_InstancedMeshes::WaitForRenderTask();
 	Flux_Terrain::WaitForRenderToGBufferTask();
 	Flux_Primitives::WaitForRenderTask();
 	Flux_DeferredShading::WaitForRenderTask();

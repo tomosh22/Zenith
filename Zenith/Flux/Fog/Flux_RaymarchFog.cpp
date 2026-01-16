@@ -78,9 +78,9 @@ void Flux_RaymarchFog::Initialise()
 	// Cache binding handles from shader reflection
 	const Flux_ShaderReflection& xReflection = s_xShader.GetReflection();
 	s_xFrameConstantsBinding = xReflection.GetBinding("FrameConstants");
-	s_xDepthBinding = xReflection.GetBinding("g_xDepthTex");
-	s_xNoise3DBinding = xReflection.GetBinding("g_xNoiseTex3D");
-	s_xBlueNoiseBinding = xReflection.GetBinding("g_xBlueNoiseTex");
+	s_xDepthBinding = xReflection.GetBinding("u_xDepthTexture");
+	s_xNoise3DBinding = xReflection.GetBinding("u_xNoiseTexture3D");
+	s_xBlueNoiseBinding = xReflection.GetBinding("u_xBlueNoiseTexture");
 
 #ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_DebugVariables::AddUInt32({ "Render", "Volumetric Fog", "Raymarch", "Step Count" }, dbg_uRaymarchSteps, 8, 256);

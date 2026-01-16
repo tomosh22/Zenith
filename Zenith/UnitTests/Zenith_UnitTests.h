@@ -85,6 +85,9 @@ private:
 	// Stick figure asset export
 	static void TestStickFigureAssetExport();
 
+	// Procedural tree asset export (for instanced mesh testing)
+	static void TestProceduralTreeAssetExport();
+
 	// ECS bug fix tests (Phase 1)
 	static void TestComponentRemovalIndexUpdate();
 	static void TestComponentSwapAndPop();

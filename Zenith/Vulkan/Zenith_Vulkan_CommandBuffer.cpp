@@ -109,6 +109,9 @@ void Zenith_Vulkan_CommandBuffer::EndAndCpuWait(bool bEndPass)
 
 	xDevice.waitForFences(1, &xFence, VK_TRUE, UINT64_MAX);
 	xDevice.destroyFence(xFence);
+
+	// Reset the command buffer so it can be recorded again
+	m_xCurrentCmdBuffer.reset(vk::CommandBufferResetFlags());
 }
 
 template<typename T>

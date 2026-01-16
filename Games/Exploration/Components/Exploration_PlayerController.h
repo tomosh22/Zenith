@@ -117,8 +117,8 @@ namespace Exploration_PlayerController
 		float fYawDelta = static_cast<float>(xDelta.x) * s_fMouseSensitivity;
 		float fPitchDelta = static_cast<float>(xDelta.y) * s_fMouseSensitivity;
 
-		// Update yaw (horizontal rotation)
-		double fYaw = xCamera.GetYaw() + fYawDelta;
+		// Update yaw (horizontal rotation) - subtract for correct direction
+		double fYaw = xCamera.GetYaw() - fYawDelta;
 		// Keep yaw in range [0, 2*PI]
 		const double fTwoPi = 6.28318530718;
 		while (fYaw < 0.0) fYaw += fTwoPi;

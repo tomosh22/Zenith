@@ -190,14 +190,14 @@ void Flux_LPVFog::Initialise()
 	// Cache inject binding handles
 	const Flux_ShaderReflection& xInjectReflection = s_xInjectShader.GetReflection();
 	s_xInjectFrameConstantsBinding = xInjectReflection.GetBinding("FrameConstants");
-	s_xInjectShadowMapBinding = xInjectReflection.GetBinding("g_xShadowMap");
-	s_xInjectOutputBinding = xInjectReflection.GetBinding("g_xLPVOutput");
-	s_xInjectDebugBinding = xInjectReflection.GetBinding("g_xDebugOutput");
+	s_xInjectShadowMapBinding = xInjectReflection.GetBinding("u_xShadowMap");
+	s_xInjectOutputBinding = xInjectReflection.GetBinding("u_xLPVOutput");
+	s_xInjectDebugBinding = xInjectReflection.GetBinding("u_xDebugInjection");
 
 	// Cache propagate binding handles
 	const Flux_ShaderReflection& xPropagateReflection = s_xPropagateShader.GetReflection();
-	s_xPropagateInputBinding = xPropagateReflection.GetBinding("g_xLPVInput");
-	s_xPropagateOutputBinding = xPropagateReflection.GetBinding("g_xLPVOutput");
+	s_xPropagateInputBinding = xPropagateReflection.GetBinding("u_xLPVInput");
+	s_xPropagateOutputBinding = xPropagateReflection.GetBinding("u_xLPVOutput");
 
 	// Initialize apply fragment shader
 	s_xApplyShader.Initialise("Flux_Fullscreen_UV.vert", "Fog/Flux_LPVFog_Apply.frag");
@@ -233,11 +233,11 @@ void Flux_LPVFog::Initialise()
 	// Cache apply binding handles
 	const Flux_ShaderReflection& xApplyReflection = s_xApplyShader.GetReflection();
 	s_xApplyFrameConstantsBinding = xApplyReflection.GetBinding("FrameConstants");
-	s_xApplyDepthBinding = xApplyReflection.GetBinding("g_xDepthTex");
-	s_xApplyLPVCascade0Binding = xApplyReflection.GetBinding("g_xLPVCascade0");
-	s_xApplyLPVCascade1Binding = xApplyReflection.GetBinding("g_xLPVCascade1");
-	s_xApplyLPVCascade2Binding = xApplyReflection.GetBinding("g_xLPVCascade2");
-	s_xApplyNoiseBinding = xApplyReflection.GetBinding("g_xNoiseTex");
+	s_xApplyDepthBinding = xApplyReflection.GetBinding("u_xDepthTexture");
+	s_xApplyLPVCascade0Binding = xApplyReflection.GetBinding("u_xLPVCascade0");
+	s_xApplyLPVCascade1Binding = xApplyReflection.GetBinding("u_xLPVCascade1");
+	s_xApplyLPVCascade2Binding = xApplyReflection.GetBinding("u_xLPVCascade2");
+	s_xApplyNoiseBinding = xApplyReflection.GetBinding("u_xNoiseTexture3D");
 
 #ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_DebugVariables::AddUInt32({ "Render", "Volumetric Fog", "LPV", "Propagation Steps" }, dbg_uLPVPropagationSteps, 1, 16);

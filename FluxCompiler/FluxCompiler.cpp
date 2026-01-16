@@ -117,11 +117,7 @@ int main()
 
 		if (Flux_SlangCompiler::Compile(strPath, eStage, xResult))
 		{
-			// NOTE: SPV writing disabled - Slang optimizes out unused varyings
-			// causing vertex/fragment interface mismatches.
-			// Keeping glslc-compiled .spv files until Phase 5 (native Slang conversion).
-			// Slang is still used for reflection data extraction.
-			// WriteSpirv(strOutputPath, xResult.m_axSpirv);
+			WriteSpirv(strOutputPath, xResult.m_axSpirv);
 			printf("  -> Success (%u bytes, %u bindings)\n",
 				   static_cast<u_int>(xResult.m_axSpirv.GetSize() * sizeof(uint32_t)),
 				   xResult.m_xReflection.GetBindings().GetSize());

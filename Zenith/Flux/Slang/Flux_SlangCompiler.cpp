@@ -12,6 +12,7 @@ static Slang::ComPtr<slang::IGlobalSession> s_pxGlobalSession;
 Flux_BindingHandle Flux_ShaderReflection::GetBinding(const char* szName) const
 {
 	auto it = m_xBindingMap.find(szName);
+	Zenith_Assert(it != m_xBindingMap.end(), "Shader binding '%s' not found in reflection", szName);
 	if (it != m_xBindingMap.end())
 	{
 		return it->second;

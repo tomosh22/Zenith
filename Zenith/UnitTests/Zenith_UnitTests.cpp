@@ -37,6 +37,9 @@
 // Mesh geometry include (for exporting runtime-format meshes)
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 
+// Animation texture include (for VAT baking)
+#include "Flux/InstancedMeshes/Flux_AnimationTexture.h"
+
 // Asset pipeline includes
 #include "AssetHandling/Zenith_MeshAsset.h"
 #include "AssetHandling/Zenith_SkeletonAsset.h"
@@ -236,6 +239,9 @@ void Zenith_UnitTests::RunAllTests()
 
 	// Stick figure asset export (creates reusable assets for game projects)
 	TestStickFigureAssetExport();
+
+	// Procedural tree asset export (for instanced mesh testing with VAT)
+	TestProceduralTreeAssetExport();
 
 	// AI System tests - Blackboard
 	TestBlackboardBasicTypes();
@@ -7907,4 +7913,338 @@ void Zenith_UnitTests::TestLocalSceneWithHierarchy()
 	}
 
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestLocalSceneWithHierarchy completed successfully");
+}
+
+//------------------------------------------------------------------------------
+// Procedural Tree Asset Export Test
+//------------------------------------------------------------------------------
+
+// Tree bone indices
+static constexpr uint32_t TREE_BONE_COUNT = 9;
+enum TreeBone
+{
+	TREE_BONE_ROOT = 0,          // Ground anchor
+	TREE_BONE_TRUNK_LOWER = 1,   // Lower trunk
+	TREE_BONE_TRUNK_UPPER = 2,   // Upper trunk
+	TREE_BONE_BRANCH_0 = 3,      // Branch at trunk lower
+	TREE_BONE_BRANCH_1 = 4,      // Branch at trunk upper (left)
+	TREE_BONE_BRANCH_2 = 5,      // Branch at trunk upper (right)
+	TREE_BONE_BRANCH_3 = 6,      // Branch at trunk top
+	TREE_BONE_LEAVES_0 = 7,      // Leaf cluster at branch 3
+	TREE_BONE_LEAVES_1 = 8,      // Leaf cluster at branch 1
+};
+
+// Tree bone scales (half-extents for box geometry)
+static const Zenith_Maths::Vector3 s_axTreeBoneScales[TREE_BONE_COUNT] = {
+	{0.05f, 0.05f, 0.05f},   // 0: Root (small anchor point)
+	{0.15f, 1.0f, 0.15f},    // 1: TrunkLower (thick lower trunk)
+	{0.12f, 1.0f, 0.12f},    // 2: TrunkUpper (slightly thinner upper trunk)
+	{0.06f, 0.6f, 0.06f},    // 3: Branch0 (branch from lower trunk)
+	{0.05f, 0.7f, 0.05f},    // 4: Branch1 (branch from upper trunk, left)
+	{0.05f, 0.7f, 0.05f},    // 5: Branch2 (branch from upper trunk, right)
+	{0.04f, 0.5f, 0.04f},    // 6: Branch3 (top branch)
+	{0.4f, 0.3f, 0.4f},      // 7: Leaves0 (leaf cluster at branch 3)
+	{0.35f, 0.25f, 0.35f},   // 8: Leaves1 (leaf cluster at branch 1)
+};
+
+/**
+ * Create a 9-bone tree skeleton for wind sway animation
+ */
+static Zenith_SkeletonAsset* CreateTreeSkeleton()
+{
+	Zenith_SkeletonAsset* pxSkel = new Zenith_SkeletonAsset();
+	const Zenith_Maths::Quat xIdentity = glm::identity<Zenith_Maths::Quat>();
+	const Zenith_Maths::Vector3 xUnitScale(1.0f);
+
+	// Root at ground level
+	pxSkel->AddBone("Root", -1, Zenith_Maths::Vector3(0, 0, 0), xIdentity, xUnitScale);
+
+	// Trunk segments (vertical along Y axis)
+	pxSkel->AddBone("TrunkLower", TREE_BONE_ROOT, Zenith_Maths::Vector3(0, 1.0f, 0), xIdentity, xUnitScale);
+	pxSkel->AddBone("TrunkUpper", TREE_BONE_TRUNK_LOWER, Zenith_Maths::Vector3(0, 2.0f, 0), xIdentity, xUnitScale);
+
+	// Branches attached to trunk
+	pxSkel->AddBone("Branch0", TREE_BONE_TRUNK_LOWER, Zenith_Maths::Vector3(0.8f, 0.5f, 0), xIdentity, xUnitScale);
+	pxSkel->AddBone("Branch1", TREE_BONE_TRUNK_UPPER, Zenith_Maths::Vector3(-1.0f, 0.5f, 0.3f), xIdentity, xUnitScale);
+	pxSkel->AddBone("Branch2", TREE_BONE_TRUNK_UPPER, Zenith_Maths::Vector3(1.0f, 0.5f, -0.3f), xIdentity, xUnitScale);
+	pxSkel->AddBone("Branch3", TREE_BONE_TRUNK_UPPER, Zenith_Maths::Vector3(0, 1.5f, 0), xIdentity, xUnitScale);
+
+	// Leaf clusters at branch tips
+	pxSkel->AddBone("Leaves0", TREE_BONE_BRANCH_3, Zenith_Maths::Vector3(0, 0.5f, 0), xIdentity, xUnitScale);
+	pxSkel->AddBone("Leaves1", TREE_BONE_BRANCH_1, Zenith_Maths::Vector3(-0.5f, 0.3f, 0), xIdentity, xUnitScale);
+
+	pxSkel->ComputeBindPoseMatrices();
+	return pxSkel;
+}
+
+/**
+ * Create tree mesh with box geometry for each bone
+ */
+static Zenith_MeshAsset* CreateTreeMesh(const Zenith_SkeletonAsset* pxSkeleton)
+{
+	Zenith_MeshAsset* pxMesh = new Zenith_MeshAsset();
+	const uint32_t uVertsPerBone = 8;
+	const uint32_t uIndicesPerBone = 36;
+	pxMesh->Reserve(TREE_BONE_COUNT * uVertsPerBone, TREE_BONE_COUNT * uIndicesPerBone);
+
+	// Add a scaled cube at each bone position
+	for (uint32_t uBone = 0; uBone < TREE_BONE_COUNT; uBone++)
+	{
+		const Zenith_SkeletonAsset::Bone& xBone = pxSkeleton->GetBone(uBone);
+		// Get world position from bind pose model matrix
+		Zenith_Maths::Vector3 xBoneWorldPos = Zenith_Maths::Vector3(xBone.m_xBindPoseModel[3]);
+
+		// Get per-bone scale
+		Zenith_Maths::Vector3 xScale = s_axTreeBoneScales[uBone];
+
+		uint32_t uBaseVertex = pxMesh->GetNumVerts();
+
+		// Add 8 cube vertices with per-bone scaling
+		for (int i = 0; i < 8; i++)
+		{
+			// Scale the cube offsets by the bone's scale factors
+			Zenith_Maths::Vector3 xScaledOffset = s_axCubeOffsets[i] * 2.0f;
+			xScaledOffset.x *= xScale.x * 10.0f;
+			xScaledOffset.y *= xScale.y * 10.0f;
+			xScaledOffset.z *= xScale.z * 10.0f;
+
+			Zenith_Maths::Vector3 xPos = xBoneWorldPos + xScaledOffset;
+
+			// Calculate proper face normal based on vertex position
+			Zenith_Maths::Vector3 xNormal = glm::normalize(s_axCubeOffsets[i]);
+
+			pxMesh->AddVertex(xPos, xNormal, Zenith_Maths::Vector2(0, 0));
+			pxMesh->SetVertexSkinning(
+				uBaseVertex + i,
+				glm::uvec4(uBone, 0, 0, 0),
+				glm::vec4(1.0f, 0.0f, 0.0f, 0.0f));
+		}
+
+		// Add 12 triangles (36 indices)
+		for (int i = 0; i < 36; i += 3)
+		{
+			pxMesh->AddTriangle(
+				uBaseVertex + s_auCubeIndices[i],
+				uBaseVertex + s_auCubeIndices[i + 1],
+				uBaseVertex + s_auCubeIndices[i + 2]);
+		}
+	}
+
+	pxMesh->AddSubmesh(0, TREE_BONE_COUNT * uIndicesPerBone, 0);
+	pxMesh->ComputeBounds();
+	return pxMesh;
+}
+
+/**
+ * Create a 2-second tree sway animation (wind effect)
+ */
+static Flux_AnimationClip* CreateTreeSwayAnimation()
+{
+	Flux_AnimationClip* pxClip = new Flux_AnimationClip();
+	pxClip->SetName("Sway");
+	pxClip->SetDuration(2.0f);
+	pxClip->SetTicksPerSecond(30);
+	pxClip->SetLooping(true);
+
+	const float fTicksPerSec = 30.0f;
+	const Zenith_Maths::Vector3 xZAxis(0, 0, 1);
+	const Zenith_Maths::Vector3 xXAxis(1, 0, 0);
+
+	// Root stays stationary
+	{
+		Flux_BoneChannel xChannel;
+		xChannel.AddRotationKeyframe(0.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.SortKeyframes();
+		pxClip->AddBoneChannel("Root", std::move(xChannel));
+	}
+
+	// TrunkLower sways gently (base of tree, minimal movement)
+	{
+		Flux_BoneChannel xChannel;
+		xChannel.AddRotationKeyframe(0.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(15.0f, glm::angleAxis(glm::radians(1.0f), xZAxis));
+		xChannel.AddRotationKeyframe(30.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(45.0f, glm::angleAxis(glm::radians(-1.0f), xZAxis));
+		xChannel.AddRotationKeyframe(60.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.SortKeyframes();
+		pxClip->AddBoneChannel("TrunkLower", std::move(xChannel));
+	}
+
+	// TrunkUpper sways more (amplified from lower trunk)
+	{
+		Flux_BoneChannel xChannel;
+		xChannel.AddRotationKeyframe(0.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(15.0f, glm::angleAxis(glm::radians(2.0f), xZAxis));
+		xChannel.AddRotationKeyframe(30.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(45.0f, glm::angleAxis(glm::radians(-2.0f), xZAxis));
+		xChannel.AddRotationKeyframe(60.0f, glm::identity<Zenith_Maths::Quat>());
+		xChannel.SortKeyframes();
+		pxClip->AddBoneChannel("TrunkUpper", std::move(xChannel));
+	}
+
+	// Branches sway with phase offsets for natural look
+	const char* aszBranchNames[] = {"Branch0", "Branch1", "Branch2", "Branch3"};
+	const float afPhaseOffsets[] = {0.0f, 7.5f, 3.75f, 11.25f};  // Tick offsets for phase variation
+	for (int i = 0; i < 4; ++i)
+	{
+		Flux_BoneChannel xChannel;
+		float fPhase = afPhaseOffsets[i];
+		// Branches sway more dramatically
+		xChannel.AddRotationKeyframe(fmod(0.0f + fPhase, 60.0f), glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(fmod(15.0f + fPhase, 60.0f), glm::angleAxis(glm::radians(5.0f), xZAxis));
+		xChannel.AddRotationKeyframe(fmod(30.0f + fPhase, 60.0f), glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(fmod(45.0f + fPhase, 60.0f), glm::angleAxis(glm::radians(-5.0f), xZAxis));
+		xChannel.SortKeyframes();
+		pxClip->AddBoneChannel(aszBranchNames[i], std::move(xChannel));
+	}
+
+	// Leaves sway most dramatically with additional X-axis rotation for flutter
+	const char* aszLeafNames[] = {"Leaves0", "Leaves1"};
+	const float afLeafPhaseOffsets[] = {5.0f, 12.0f};
+	for (int i = 0; i < 2; ++i)
+	{
+		Flux_BoneChannel xChannel;
+		float fPhase = afLeafPhaseOffsets[i];
+		// Leaves have larger sway and some flutter
+		Zenith_Maths::Quat xSwayPos = glm::angleAxis(glm::radians(8.0f), xZAxis) *
+			glm::angleAxis(glm::radians(3.0f), xXAxis);
+		Zenith_Maths::Quat xSwayNeg = glm::angleAxis(glm::radians(-8.0f), xZAxis) *
+			glm::angleAxis(glm::radians(-3.0f), xXAxis);
+
+		xChannel.AddRotationKeyframe(fmod(0.0f + fPhase, 60.0f), glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(fmod(15.0f + fPhase, 60.0f), xSwayPos);
+		xChannel.AddRotationKeyframe(fmod(30.0f + fPhase, 60.0f), glm::identity<Zenith_Maths::Quat>());
+		xChannel.AddRotationKeyframe(fmod(45.0f + fPhase, 60.0f), xSwayNeg);
+		xChannel.SortKeyframes();
+		pxClip->AddBoneChannel(aszLeafNames[i], std::move(xChannel));
+	}
+
+	return pxClip;
+}
+
+/**
+ * Test procedural tree asset export
+ * Creates skeleton, mesh, animation, and VAT texture for instanced rendering
+ */
+void Zenith_UnitTests::TestProceduralTreeAssetExport()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestProceduralTreeAssetExport...");
+
+	// Create all assets
+	Zenith_SkeletonAsset* pxSkel = CreateTreeSkeleton();
+	Zenith_MeshAsset* pxMesh = CreateTreeMesh(pxSkel);
+	Flux_AnimationClip* pxSwayClip = CreateTreeSwayAnimation();
+
+	// Create output directory
+	std::string strOutputDir = std::string(ENGINE_ASSETS_DIR) + "Meshes/ProceduralTree/";
+	std::filesystem::create_directories(strOutputDir);
+
+	// Export skeleton
+	std::string strSkelPath = strOutputDir + "Tree.zskel";
+	pxSkel->Export(strSkelPath.c_str());
+	Zenith_Assert(std::filesystem::exists(strSkelPath), "Skeleton file should exist after export");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Exported skeleton to: %s", strSkelPath.c_str());
+
+	// Set skeleton path on mesh before export
+	pxMesh->SetSkeletonPath("Meshes/ProceduralTree/Tree.zskel");
+
+	// Export mesh in Zenith_MeshAsset format (for asset pipeline)
+	std::string strMeshAssetPath = strOutputDir + "Tree.zasset";
+	pxMesh->Export(strMeshAssetPath.c_str());
+	Zenith_Assert(std::filesystem::exists(strMeshAssetPath), "Mesh asset file should exist after export");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Exported mesh asset to: %s", strMeshAssetPath.c_str());
+
+#ifdef ZENITH_TOOLS
+	// Export mesh in Flux_MeshGeometry format (for runtime loading)
+	Flux_MeshGeometry* pxFluxGeometry = CreateFluxMeshGeometry(pxMesh, pxSkel);
+	std::string strMeshPath = strOutputDir + "Tree.zmesh";
+	pxFluxGeometry->Export(strMeshPath.c_str());
+	Zenith_Assert(std::filesystem::exists(strMeshPath), "Mesh geometry file should exist after export");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Exported mesh geometry to: %s", strMeshPath.c_str());
+
+	// Export static mesh (without bone data) for static mesh rendering
+	Flux_MeshGeometry* pxStaticGeometry = CreateStaticFluxMeshGeometry(pxMesh);
+	std::string strStaticMeshPath = strOutputDir + "Tree_Static.zmesh";
+	pxStaticGeometry->Export(strStaticMeshPath.c_str());
+	Zenith_Assert(std::filesystem::exists(strStaticMeshPath), "Static mesh geometry file should exist after export");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Exported static mesh geometry to: %s", strStaticMeshPath.c_str());
+
+	// Bake and export VAT (Vertex Animation Texture)
+	Flux_AnimationTexture* pxVAT = new Flux_AnimationTexture();
+	std::vector<Flux_AnimationClip*> axAnimations;
+	axAnimations.push_back(pxSwayClip);
+	bool bBakeSuccess = pxVAT->BakeFromAnimations(pxFluxGeometry, pxSkel, axAnimations, 30);
+	Zenith_Assert(bBakeSuccess, "VAT baking should succeed");
+
+	std::string strVATPath = strOutputDir + "Tree_Sway.zanmt";
+	bool bExportSuccess = pxVAT->Export(strVATPath);
+	Zenith_Assert(bExportSuccess, "VAT export should succeed");
+	Zenith_Assert(std::filesystem::exists(strVATPath), "VAT file should exist after export");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Exported VAT to: %s", strVATPath.c_str());
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "    VAT dimensions: %u x %u (verts x frames)",
+		pxVAT->GetTextureWidth(), pxVAT->GetTextureHeight());
+
+	delete pxVAT;
+	delete pxStaticGeometry;
+	delete pxFluxGeometry;
+#endif
+
+	// Export animation
+	std::string strSwayPath = strOutputDir + "Tree_Sway.zanim";
+	pxSwayClip->Export(strSwayPath);
+	Zenith_Assert(std::filesystem::exists(strSwayPath), "Sway animation file should exist after export");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Exported sway animation to: %s", strSwayPath.c_str());
+
+	// Reload and verify skeleton
+	Zenith_SkeletonAsset* pxReloadedSkel = Zenith_AssetHandler::LoadSkeletonAsset(strSkelPath);
+	Zenith_Assert(pxReloadedSkel != nullptr, "Should be able to reload skeleton");
+	Zenith_Assert(pxReloadedSkel->GetNumBones() == TREE_BONE_COUNT, "Reloaded skeleton should have 9 bones");
+	Zenith_Assert(pxReloadedSkel->HasBone("TrunkLower"), "Reloaded skeleton should have TrunkLower bone");
+	Zenith_Assert(pxReloadedSkel->HasBone("Branch1"), "Reloaded skeleton should have Branch1 bone");
+	Zenith_Assert(pxReloadedSkel->HasBone("Leaves0"), "Reloaded skeleton should have Leaves0 bone");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Reloaded skeleton verified: %u bones", pxReloadedSkel->GetNumBones());
+
+	// Reload and verify mesh asset format
+	Zenith_MeshAsset* pxReloadedMesh = Zenith_AssetHandler::LoadMeshAsset(strMeshAssetPath);
+	Zenith_Assert(pxReloadedMesh != nullptr, "Should be able to reload mesh asset");
+	Zenith_Assert(pxReloadedMesh->GetNumVerts() == pxMesh->GetNumVerts(), "Reloaded mesh vertex count mismatch");
+	Zenith_Assert(pxReloadedMesh->GetNumIndices() == pxMesh->GetNumIndices(), "Reloaded mesh index count mismatch");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Reloaded mesh asset verified: %u verts, %u indices",
+		pxReloadedMesh->GetNumVerts(), pxReloadedMesh->GetNumIndices());
+
+#ifdef ZENITH_TOOLS
+	// Reload and verify Flux_MeshGeometry format
+	Flux_MeshGeometry xReloadedGeometry;
+	Flux_MeshGeometry::LoadFromFile((strOutputDir + "Tree.zmesh").c_str(), xReloadedGeometry, 0, false);
+	Zenith_Assert(xReloadedGeometry.GetNumVerts() == pxMesh->GetNumVerts(), "Reloaded geometry vertex count mismatch");
+	Zenith_Assert(xReloadedGeometry.GetNumIndices() == pxMesh->GetNumIndices(), "Reloaded geometry index count mismatch");
+	Zenith_Assert(xReloadedGeometry.GetNumBones() == pxSkel->GetNumBones(), "Reloaded geometry bone count mismatch");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Reloaded mesh geometry verified: %u verts, %u indices, %u bones",
+		xReloadedGeometry.GetNumVerts(), xReloadedGeometry.GetNumIndices(), xReloadedGeometry.GetNumBones());
+
+	// Reload and verify VAT
+	Flux_AnimationTexture* pxReloadedVAT = Flux_AnimationTexture::LoadFromFile(strOutputDir + "Tree_Sway.zanmt");
+	Zenith_Assert(pxReloadedVAT != nullptr, "Should be able to reload VAT");
+	Zenith_Assert(pxReloadedVAT->GetVertexCount() == pxMesh->GetNumVerts(), "Reloaded VAT vertex count mismatch");
+	Zenith_Assert(pxReloadedVAT->GetNumAnimations() == 1, "Reloaded VAT should have 1 animation");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Reloaded VAT verified: %u vertices, %u animations, %u frames",
+		pxReloadedVAT->GetVertexCount(), pxReloadedVAT->GetNumAnimations(), pxReloadedVAT->GetFramesPerAnimation());
+	delete pxReloadedVAT;
+#endif
+
+	// Reload and verify animation
+	Flux_AnimationClip* pxReloadedSway = Flux_AnimationClip::LoadFromZanimFile(strSwayPath);
+	Zenith_Assert(pxReloadedSway != nullptr, "Should be able to reload sway animation");
+	Zenith_Assert(pxReloadedSway->GetName() == "Sway", "Reloaded sway animation name mismatch");
+	Zenith_Assert(FloatEquals(pxReloadedSway->GetDuration(), 2.0f, 0.01f), "Reloaded sway duration mismatch");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Reloaded sway animation verified: duration=%.1fs", pxReloadedSway->GetDuration());
+
+	// Cleanup
+	delete pxReloadedSway;
+	delete pxSwayClip;
+	delete pxMesh;
+	delete pxSkel;
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestProceduralTreeAssetExport completed successfully");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Assets available at: %s", strOutputDir.c_str());
 }

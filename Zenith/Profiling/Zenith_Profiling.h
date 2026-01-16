@@ -20,6 +20,8 @@ enum Zenith_ProfileIndex
 	ZENITH_PROFILE_INDEX__FLUX_SKYBOX,
 	ZENITH_PROFILE_INDEX__FLUX_STATIC_MESHES,
 	ZENITH_PROFILE_INDEX__FLUX_ANIMATED_MESHES,
+	ZENITH_PROFILE_INDEX__FLUX_INSTANCED_MESHES,
+	ZENITH_PROFILE_INDEX__FLUX_COMPUTE,
 	ZENITH_PROFILE_INDEX__FLUX_TERRAIN,
 	ZENITH_PROFILE_INDEX__FLUX_TERRAIN_CULLING,
 
@@ -91,6 +93,8 @@ static const char* g_aszProfileNames[]
 	"Flux Skybox",
 	"Flux Static Meshes",
 	"Flux Animated Meshes",
+	"Flux Instanced Meshes",
+	"Flux Compute",
 	"Flux Terrain",
 	"Flux Terrain Culling",
 	"Flux Terrain Streaming",

@@ -159,10 +159,10 @@ void Flux_TemporalFog::Initialise()
 	// Cache binding handles from shader reflection
 	const Flux_ShaderReflection& xResolveReflection = s_xResolveShader.GetReflection();
 	s_xResolveFrameConstantsBinding = xResolveReflection.GetBinding("FrameConstants");
-	s_xResolveCurrentFogBinding = xResolveReflection.GetBinding("g_xCurrentFog");
-	s_xResolveHistoryFogBinding = xResolveReflection.GetBinding("g_xHistoryFog");
-	s_xResolveOutputBinding = xResolveReflection.GetBinding("g_xOutput");
-	s_xResolveDebugMotionBinding = xResolveReflection.GetBinding("g_xDebugMotion");
+	s_xResolveCurrentFogBinding = xResolveReflection.GetBinding("u_xCurrentFog");
+	s_xResolveHistoryFogBinding = xResolveReflection.GetBinding("u_xHistoryFog");
+	s_xResolveOutputBinding = xResolveReflection.GetBinding("u_xOutputFog");
+	s_xResolveDebugMotionBinding = xResolveReflection.GetBinding("u_xDebugMotionVectors");
 
 #ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_DebugVariables::AddFloat({ "Render", "Volumetric Fog", "Temporal", "Blend Weight" }, dbg_fTemporalBlendWeight, 0.0f, 1.0f);
