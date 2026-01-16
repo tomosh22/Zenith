@@ -60,12 +60,18 @@ static Flux_BindingHandle s_xTerrainConstantsBinding;
 // GBuffer shader - set 1 bindings (per-draw)
 static Flux_BindingHandle s_xScratchBufferBinding;  // For PushConstant calls
 static Flux_BindingHandle s_xLODLevelBufferBinding;
+// Material 0 textures (5 per material - full material system)
 static Flux_BindingHandle s_xDiffuseTex0Binding;
 static Flux_BindingHandle s_xNormalTex0Binding;
 static Flux_BindingHandle s_xRoughnessMetallicTex0Binding;
+static Flux_BindingHandle s_xOcclusionTex0Binding;
+static Flux_BindingHandle s_xEmissiveTex0Binding;
+// Material 1 textures
 static Flux_BindingHandle s_xDiffuseTex1Binding;
 static Flux_BindingHandle s_xNormalTex1Binding;
 static Flux_BindingHandle s_xRoughnessMetallicTex1Binding;
+static Flux_BindingHandle s_xOcclusionTex1Binding;
+static Flux_BindingHandle s_xEmissiveTex1Binding;
 
 DEBUGVAR bool dbg_bEnableTerrain = true;
 DEBUGVAR bool dbg_bWireframe = false;
@@ -102,15 +108,21 @@ void Flux_Terrain::Initialise()
 		// Set 0: Per-frame (FrameConstants + TerrainConstants - bound once per command list)
 		xLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;  // Frame constants
 		xLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_BUFFER;  // Terrain constants
-		// Set 1: Per-draw (scratch buffer + LOD level buffer + textures)
+		// Set 1: Per-draw (scratch buffer + LOD level buffer + 10 textures for 2 materials)
 		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;  // Scratch buffer for push constants
 		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_STORAGE_BUFFER;  // LOD level buffer
+		// Material 0 textures (diffuse, normal, RM, occlusion, emissive)
 		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[2].m_eType = DESCRIPTOR_TYPE_TEXTURE;
 		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[3].m_eType = DESCRIPTOR_TYPE_TEXTURE;
 		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[4].m_eType = DESCRIPTOR_TYPE_TEXTURE;
 		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[5].m_eType = DESCRIPTOR_TYPE_TEXTURE;
 		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[6].m_eType = DESCRIPTOR_TYPE_TEXTURE;
+		// Material 1 textures (diffuse, normal, RM, occlusion, emissive)
 		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[7].m_eType = DESCRIPTOR_TYPE_TEXTURE;
+		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[8].m_eType = DESCRIPTOR_TYPE_TEXTURE;
+		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[9].m_eType = DESCRIPTOR_TYPE_TEXTURE;
+		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[10].m_eType = DESCRIPTOR_TYPE_TEXTURE;
+		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[11].m_eType = DESCRIPTOR_TYPE_TEXTURE;
 		
 
 		for (Flux_BlendState& xBlendState : xPipelineSpec.m_axBlendStates)
@@ -133,12 +145,18 @@ void Flux_Terrain::Initialise()
 		// Set 1 bindings (per-draw)
 		s_xScratchBufferBinding = xGBufferReflection.GetBinding("TerrainMaterialConstants");  // Scratch buffer for per-draw data
 		s_xLODLevelBufferBinding = xGBufferReflection.GetBinding("LODLevelBuffer");
+		// Material 0 texture bindings (5 textures - full material system)
 		s_xDiffuseTex0Binding = xGBufferReflection.GetBinding("g_xDiffuseTex0");
 		s_xNormalTex0Binding = xGBufferReflection.GetBinding("g_xNormalTex0");
 		s_xRoughnessMetallicTex0Binding = xGBufferReflection.GetBinding("g_xRoughnessMetallicTex0");
+		s_xOcclusionTex0Binding = xGBufferReflection.GetBinding("g_xOcclusionTex0");
+		s_xEmissiveTex0Binding = xGBufferReflection.GetBinding("g_xEmissiveTex0");
+		// Material 1 texture bindings (5 textures - full material system)
 		s_xDiffuseTex1Binding = xGBufferReflection.GetBinding("g_xDiffuseTex1");
 		s_xNormalTex1Binding = xGBufferReflection.GetBinding("g_xNormalTex1");
 		s_xRoughnessMetallicTex1Binding = xGBufferReflection.GetBinding("g_xRoughnessMetallicTex1");
+		s_xOcclusionTex1Binding = xGBufferReflection.GetBinding("g_xOcclusionTex1");
+		s_xEmissiveTex1Binding = xGBufferReflection.GetBinding("g_xEmissiveTex1");
 	}
 
 
@@ -362,13 +380,19 @@ void Flux_Terrain::RenderToGBuffer(void*)
 		g_xTerrainCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&pxTerrain->GetUnifiedVertexBuffer());
 		g_xTerrainCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&pxTerrain->GetUnifiedIndexBuffer());
 
-		// Bind material textures (set 1, named bindings)
+		// Bind material textures (set 1, named bindings) - full material system (5 textures per material)
+		// Material 0 textures
 		xBinder.BindSRV(s_xDiffuseTex0Binding, &xMaterial0.GetDiffuseTexture()->m_xSRV);
 		xBinder.BindSRV(s_xNormalTex0Binding, &xMaterial0.GetNormalTexture()->m_xSRV);
 		xBinder.BindSRV(s_xRoughnessMetallicTex0Binding, &xMaterial0.GetRoughnessMetallicTexture()->m_xSRV);
+		xBinder.BindSRV(s_xOcclusionTex0Binding, &xMaterial0.GetOcclusionTexture()->m_xSRV);
+		xBinder.BindSRV(s_xEmissiveTex0Binding, &xMaterial0.GetEmissiveTexture()->m_xSRV);
+		// Material 1 textures
 		xBinder.BindSRV(s_xDiffuseTex1Binding, &xMaterial1.GetDiffuseTexture()->m_xSRV);
 		xBinder.BindSRV(s_xNormalTex1Binding, &xMaterial1.GetNormalTexture()->m_xSRV);
 		xBinder.BindSRV(s_xRoughnessMetallicTex1Binding, &xMaterial1.GetRoughnessMetallicTexture()->m_xSRV);
+		xBinder.BindSRV(s_xOcclusionTex1Binding, &xMaterial1.GetOcclusionTexture()->m_xSRV);
+		xBinder.BindSRV(s_xEmissiveTex1Binding, &xMaterial1.GetEmissiveTexture()->m_xSRV);
 
 		// GPU-driven indirect rendering with front-to-back sorted visible chunks
 		// Each component uses its own indirect draw buffer and visible count buffer

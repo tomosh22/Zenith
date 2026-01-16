@@ -866,6 +866,7 @@
     <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Viewport.h" />
     <ClInclude Include="..\Zenith\Editor\Zenith_Editor.h" />
     <ClInclude Include="..\Zenith\Editor\Zenith_EditorState.h" />
+    <ClInclude Include="..\Zenith\Editor\Zenith_Editor_MaterialUI.h" />
     <ClInclude Include="..\Zenith\Editor\Zenith_Gizmo.h" />
     <ClInclude Include="..\Zenith\Editor\Zenith_SelectionSystem.h" />
     <ClInclude Include="..\Zenith\Editor\Zenith_UndoSystem.h" />
@@ -1721,6 +1722,10 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
     </ClCompile>
+    <ClCompile Include="..\Zenith\Editor\Zenith_Editor_MaterialUI.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Editor\Zenith_Gizmo.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
@@ -1852,7 +1857,6 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
     </ClCompile>
-    <ClCompile Include="..\Zenith\Zenith_Main.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

@@ -162,7 +162,7 @@
     </Link>
     <Lib>
       <TargetMachine>MachineX64</TargetMachine>
-      <SubSystem />
+      <SubSystem/>
       <LinkTimeCodeGeneration>false</LinkTimeCodeGeneration>
       <OutputFile>output\win64\vs2022_debug_win64_false\zenith.lib</OutputFile>
     </Lib>
@@ -226,7 +226,7 @@
     </Link>
     <Lib>
       <TargetMachine>MachineX64</TargetMachine>
-      <SubSystem />
+      <SubSystem/>
       <LinkTimeCodeGeneration>false</LinkTimeCodeGeneration>
       <OutputFile>output\win64\vs2022_debug_win64_true\zenith.lib</OutputFile>
     </Lib>
@@ -290,7 +290,7 @@
     </Link>
     <Lib>
       <TargetMachine>MachineX64</TargetMachine>
-      <SubSystem />
+      <SubSystem/>
       <LinkTimeCodeGeneration>false</LinkTimeCodeGeneration>
       <OutputFile>output\win64\vs2022_release_win64_false\zenith.lib</OutputFile>
     </Lib>
@@ -354,7 +354,7 @@
     </Link>
     <Lib>
       <TargetMachine>MachineX64</TargetMachine>
-      <SubSystem />
+      <SubSystem/>
       <LinkTimeCodeGeneration>false</LinkTimeCodeGeneration>
       <OutputFile>output\win64\vs2022_release_win64_true\zenith.lib</OutputFile>
     </Lib>
@@ -1097,6 +1097,7 @@
     <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Viewport.h" />
     <ClInclude Include="..\Zenith\Editor\Zenith_Editor.h" />
     <ClInclude Include="..\Zenith\Editor\Zenith_EditorState.h" />
+    <ClInclude Include="..\Zenith\Editor\Zenith_Editor_MaterialUI.h" />
     <ClInclude Include="..\Zenith\Editor\Zenith_Gizmo.h" />
     <ClInclude Include="..\Zenith\Editor\Zenith_SelectionSystem.h" />
     <ClInclude Include="..\Zenith\Editor\Zenith_UndoSystem.h" />
@@ -2255,6 +2256,7 @@
     <ClCompile Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Viewport.cpp" />
     <ClCompile Include="..\Zenith\Editor\Zenith_Editor.cpp" />
     <ClCompile Include="..\Zenith\Editor\Zenith_EditorCamera.cpp" />
+    <ClCompile Include="..\Zenith\Editor\Zenith_Editor_MaterialUI.cpp" />
     <ClCompile Include="..\Zenith\Editor\Zenith_Gizmo.cpp" />
     <ClCompile Include="..\Zenith\Editor\Zenith_SelectionSystem.cpp" />
     <ClCompile Include="..\Zenith\Editor\Zenith_UndoSystem.cpp" />

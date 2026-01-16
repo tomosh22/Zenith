@@ -7,6 +7,7 @@
 #include "imgui.h"
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
 #include "Editor/Zenith_Editor.h"
+#include "Editor/Zenith_Editor_MaterialUI.h"
 #include "AssetHandling/Zenith_AssetHandler.h"
 #include "Flux/MeshAnimation/Flux_AnimationClip.h"
 #include "Flux/MeshAnimation/Flux_AnimationController.h"
@@ -31,177 +32,11 @@
 //=============================================================================
 
 //-----------------------------------------------------------------------------
-// Texture Preview Cache - keeps ImGui texture handles alive and avoids re-registration
-//-----------------------------------------------------------------------------
-namespace
-{
-	struct TexturePreviewCache
-	{
-		Flux_ImGuiTextureHandle m_xHandle;
-		u_int64 m_ulImageViewHandle = 0;  // Cached to detect changes
-	};
-
-	// Cache keyed by VRAM handle (unique per texture)
-	static std::unordered_map<u_int64, TexturePreviewCache> s_xTexturePreviewCache;
-}
-
-//-----------------------------------------------------------------------------
-// Helper: Get or create an ImGui texture handle for a Flux_Texture
-//-----------------------------------------------------------------------------
-static Flux_ImGuiTextureHandle GetOrCreateTexturePreviewHandle(const Flux_Texture* pxTexture)
-{
-	if (!pxTexture || !pxTexture->m_xVRAMHandle.IsValid() || !pxTexture->m_xSRV.m_xImageViewHandle.IsValid())
-	{
-		return Flux_ImGuiTextureHandle();
-	}
-
-	u_int64 ulKey = pxTexture->m_xVRAMHandle.AsUInt();
-	u_int64 ulImageViewHandle = pxTexture->m_xSRV.m_xImageViewHandle.AsUInt();
-
-	auto it = s_xTexturePreviewCache.find(ulKey);
-	if (it != s_xTexturePreviewCache.end())
-	{
-		// Check if image view changed (e.g., texture was reloaded)
-		if (it->second.m_ulImageViewHandle == ulImageViewHandle)
-		{
-			return it->second.m_xHandle;
-		}
-		// Image view changed - unregister old and create new
-		Flux_ImGuiIntegration::UnregisterTexture(it->second.m_xHandle);
-	}
-
-	// Register new texture with ImGui
-	Flux_ImGuiTextureHandle xHandle = Flux_ImGuiIntegration::RegisterTexture(
-		pxTexture->m_xSRV,
-		Flux_Graphics::s_xClampSampler
-	);
-
-	s_xTexturePreviewCache[ulKey] = { xHandle, ulImageViewHandle };
-	return xHandle;
-}
-
-//-----------------------------------------------------------------------------
-// Helper: Render a texture slot with drag-drop support and preview
-//-----------------------------------------------------------------------------
-void Zenith_ModelComponent::RenderTextureSlot(const char* szLabel, Flux_MaterialAsset& xMaterial, uint32_t uMeshIdx, TextureSlotType eSlot)
-{
-	ImGui::PushID(szLabel);
-
-	const Flux_Texture* pxCurrentTexture = nullptr;
-	std::string strCurrentPath;
-	switch (eSlot)
-	{
-	case TEXTURE_SLOT_DIFFUSE:
-		pxCurrentTexture = xMaterial.GetDiffuseTexture();
-		strCurrentPath = xMaterial.GetDiffuseTextureRef().GetPath();
-		break;
-	case TEXTURE_SLOT_NORMAL:
-		pxCurrentTexture = xMaterial.GetNormalTexture();
-		strCurrentPath = xMaterial.GetNormalTextureRef().GetPath();
-		break;
-	case TEXTURE_SLOT_ROUGHNESS_METALLIC:
-		pxCurrentTexture = xMaterial.GetRoughnessMetallicTexture();
-		strCurrentPath = xMaterial.GetRoughnessMetallicTextureRef().GetPath();
-		break;
-	case TEXTURE_SLOT_OCCLUSION:
-		pxCurrentTexture = xMaterial.GetOcclusionTexture();
-		strCurrentPath = xMaterial.GetOcclusionTextureRef().GetPath();
-		break;
-	case TEXTURE_SLOT_EMISSIVE:
-		pxCurrentTexture = xMaterial.GetEmissiveTexture();
-		strCurrentPath = xMaterial.GetEmissiveTextureRef().GetPath();
-		break;
-	}
-
-	std::string strTextureName = "(none)";
-	bool bHasTexture = pxCurrentTexture && pxCurrentTexture->m_xVRAMHandle.IsValid();
-	if (bHasTexture)
-	{
-		if (!strCurrentPath.empty())
-		{
-			std::filesystem::path xPath(strCurrentPath);
-			strTextureName = xPath.filename().string();
-		}
-		else
-		{
-			strTextureName = "(loaded)";
-		}
-	}
-
-	ImGui::Text("%s:", szLabel);
-	ImGui::SameLine();
-
-	// Show texture preview if available
-	constexpr float fPreviewSize = 48.0f;
-	if (bHasTexture)
-	{
-		Flux_ImGuiTextureHandle xHandle = GetOrCreateTexturePreviewHandle(pxCurrentTexture);
-		if (xHandle.IsValid())
-		{
-			// Texture preview image (acts as drop target)
-			ImGui::Image(
-				(ImTextureID)Flux_ImGuiIntegration::GetImTextureID(xHandle),
-				ImVec2(fPreviewSize, fPreviewSize)
-			);
-		}
-		else
-		{
-			// Fallback button if handle couldn't be created
-			ImGui::Button("[?]", ImVec2(fPreviewSize, fPreviewSize));
-		}
-	}
-	else
-	{
-		// Empty slot button
-		ImGui::Button("...", ImVec2(fPreviewSize, fPreviewSize));
-	}
-
-	// Drag-drop target for the preview/button
-	if (ImGui::BeginDragDropTarget())
-	{
-		if (const ImGuiPayload* pPayload = ImGui::AcceptDragDropPayload(DRAGDROP_PAYLOAD_TEXTURE))
-		{
-			const DragDropFilePayload* pFilePayload =
-				static_cast<const DragDropFilePayload*>(pPayload->Data);
-
-			Zenith_Log(LOG_CATEGORY_MESH, "Texture dropped on %s: %s",
-				szLabel, pFilePayload->m_szFilePath);
-
-			AssignTextureToSlot(pFilePayload->m_szFilePath, uMeshIdx, eSlot);
-		}
-
-		ImGui::EndDragDropTarget();
-	}
-
-	// Tooltip with full path
-	if (ImGui::IsItemHovered())
-	{
-		if (!strCurrentPath.empty())
-		{
-			ImGui::SetTooltip("%s\nPath: %s\nDrop a .ztxtr texture here to change", strTextureName.c_str(), strCurrentPath.c_str());
-		}
-		else if (bHasTexture)
-		{
-			ImGui::SetTooltip("%s\nDrop a .ztxtr texture here to change", strTextureName.c_str());
-		}
-		else
-		{
-			ImGui::SetTooltip("Drop a .ztxtr texture here");
-		}
-	}
-
-	// Show texture name next to preview
-	ImGui::SameLine();
-	ImGui::Text("%s", strTextureName.c_str());
-
-	ImGui::PopID();
-}
-
-//-----------------------------------------------------------------------------
 // Helper: Assign a texture file to a material slot
 //-----------------------------------------------------------------------------
-void Zenith_ModelComponent::AssignTextureToSlot(const char* szFilePath, uint32_t uMeshIdx, TextureSlotType eSlot)
+void Zenith_ModelComponent::AssignTextureToSlot(const char* szFilePath, uint32_t uMeshIdx, Zenith_Editor_MaterialUI::TextureSlotType eSlot)
 {
+	using namespace Zenith_Editor_MaterialUI;
 	Zenith_AssetHandler::TextureData xTexData =
 		Zenith_AssetHandler::LoadTexture2DFromFile(szFilePath);
 	Flux_Texture* pxTexture = Zenith_AssetHandler::AddTexture(xTexData);
@@ -648,113 +483,23 @@ void Zenith_ModelComponent::RenderPropertiesPanel()
 
 					if (bExpanded)
 					{
-						// Inline display of key properties
-						Zenith_Maths::Vector4 xBaseColor = pxMaterial->GetBaseColor();
-						float fColor[4] = { xBaseColor.x, xBaseColor.y, xBaseColor.z, xBaseColor.w };
-						if (ImGui::ColorEdit4("Base Color", fColor))
-						{
-							pxMaterial->SetBaseColor({ fColor[0], fColor[1], fColor[2], fColor[3] });
-						}
-
-						float fMetallic = pxMaterial->GetMetallic();
-						if (ImGui::SliderFloat("Metallic", &fMetallic, 0.0f, 1.0f))
-						{
-							pxMaterial->SetMetallic(fMetallic);
-						}
-
-						float fRoughness = pxMaterial->GetRoughness();
-						if (ImGui::SliderFloat("Roughness", &fRoughness, 0.0f, 1.0f))
-						{
-							pxMaterial->SetRoughness(fRoughness);
-						}
-
-						// Emissive
-						Zenith_Maths::Vector3 xEmissive = pxMaterial->GetEmissiveColor();
-						float fEmissive[3] = { xEmissive.x, xEmissive.y, xEmissive.z };
-						if (ImGui::ColorEdit3("Emissive Color", fEmissive))
-						{
-							pxMaterial->SetEmissiveColor({ fEmissive[0], fEmissive[1], fEmissive[2] });
-						}
-
-						float fEmissiveIntensity = pxMaterial->GetEmissiveIntensity();
-						if (ImGui::SliderFloat("Emissive Intensity", &fEmissiveIntensity, 0.0f, 10.0f))
-						{
-							pxMaterial->SetEmissiveIntensity(fEmissiveIntensity);
-						}
+						// Material properties (using shared utility)
+						Zenith_Editor_MaterialUI::RenderMaterialProperties(pxMaterial, "ModelInstance");
 
 						ImGui::Separator();
 
-						// Transparency
-						bool bTransparent = pxMaterial->IsTransparent();
-						if (ImGui::Checkbox("Transparent", &bTransparent))
-						{
-							pxMaterial->SetTransparent(bTransparent);
-						}
-
-						if (bTransparent)
-						{
-							float fAlphaCutoff = pxMaterial->GetAlphaCutoff();
-							if (ImGui::SliderFloat("Alpha Cutoff", &fAlphaCutoff, 0.0f, 1.0f))
-							{
-								pxMaterial->SetAlphaCutoff(fAlphaCutoff);
-							}
-						}
-
-						ImGui::Separator();
-
-						// UV Controls
-						Zenith_Maths::Vector2 xTiling = pxMaterial->GetUVTiling();
-						float fTiling[2] = { xTiling.x, xTiling.y };
-						if (ImGui::DragFloat2("UV Tiling", fTiling, 0.01f, 0.01f, 100.0f))
-						{
-							pxMaterial->SetUVTiling({ fTiling[0], fTiling[1] });
-						}
-
-						Zenith_Maths::Vector2 xOffset = pxMaterial->GetUVOffset();
-						float fOffset[2] = { xOffset.x, xOffset.y };
-						if (ImGui::DragFloat2("UV Offset", fOffset, 0.01f, -100.0f, 100.0f))
-						{
-							pxMaterial->SetUVOffset({ fOffset[0], fOffset[1] });
-						}
-
-						// Occlusion Strength
-						float fOccStrength = pxMaterial->GetOcclusionStrength();
-						if (ImGui::SliderFloat("Occlusion Strength", &fOccStrength, 0.0f, 1.0f))
-						{
-							pxMaterial->SetOcclusionStrength(fOccStrength);
-						}
-
-						ImGui::Separator();
-
-						// Rendering flags
-						bool bTwoSided = pxMaterial->IsTwoSided();
-						if (ImGui::Checkbox("Two-Sided", &bTwoSided))
-						{
-							pxMaterial->SetTwoSided(bTwoSided);
-						}
-						if (ImGui::IsItemHovered())
-						{
-							ImGui::SetTooltip("Render both front and back faces");
-						}
-
-						bool bUnlit = pxMaterial->IsUnlit();
-						if (ImGui::Checkbox("Unlit", &bUnlit))
-						{
-							pxMaterial->SetUnlit(bUnlit);
-						}
-						if (ImGui::IsItemHovered())
-						{
-							ImGui::SetTooltip("Skip lighting calculations");
-						}
-
-						ImGui::Separator();
-
-						// Texture slots
-						RenderTextureSlot("Diffuse", *pxMaterial, uMeshIdx, TEXTURE_SLOT_DIFFUSE);
-						RenderTextureSlot("Normal", *pxMaterial, uMeshIdx, TEXTURE_SLOT_NORMAL);
-						RenderTextureSlot("Roughness/Metallic", *pxMaterial, uMeshIdx, TEXTURE_SLOT_ROUGHNESS_METALLIC);
-						RenderTextureSlot("Occlusion", *pxMaterial, uMeshIdx, TEXTURE_SLOT_OCCLUSION);
-						RenderTextureSlot("Emissive", *pxMaterial, uMeshIdx, TEXTURE_SLOT_EMISSIVE);
+						// Texture slots (using shared utility with custom assignment callback)
+						using namespace Zenith_Editor_MaterialUI;
+						auto fnAssign = [this, uMeshIdx](TextureSlotType eSlot) {
+							return [this, uMeshIdx, eSlot](const char* szPath) {
+								AssignTextureToSlot(szPath, uMeshIdx, eSlot);
+							};
+						};
+						RenderTextureSlot("Diffuse", *pxMaterial, TEXTURE_SLOT_DIFFUSE, true, 48.0f, fnAssign(TEXTURE_SLOT_DIFFUSE));
+						RenderTextureSlot("Normal", *pxMaterial, TEXTURE_SLOT_NORMAL, true, 48.0f, fnAssign(TEXTURE_SLOT_NORMAL));
+						RenderTextureSlot("Roughness/Metallic", *pxMaterial, TEXTURE_SLOT_ROUGHNESS_METALLIC, true, 48.0f, fnAssign(TEXTURE_SLOT_ROUGHNESS_METALLIC));
+						RenderTextureSlot("Occlusion", *pxMaterial, TEXTURE_SLOT_OCCLUSION, true, 48.0f, fnAssign(TEXTURE_SLOT_OCCLUSION));
+						RenderTextureSlot("Emissive", *pxMaterial, TEXTURE_SLOT_EMISSIVE, true, 48.0f, fnAssign(TEXTURE_SLOT_EMISSIVE));
 
 						ImGui::TreePop();
 					}
@@ -801,113 +546,23 @@ void Zenith_ModelComponent::RenderPropertiesPanel()
 
 				if (pxMaterial)
 				{
-					// Inline material editing
-					Zenith_Maths::Vector4 xBaseColor = pxMaterial->GetBaseColor();
-					float fColor[4] = { xBaseColor.x, xBaseColor.y, xBaseColor.z, xBaseColor.w };
-					if (ImGui::ColorEdit4("Base Color", fColor))
-					{
-						pxMaterial->SetBaseColor({ fColor[0], fColor[1], fColor[2], fColor[3] });
-					}
-
-					float fMetallic = pxMaterial->GetMetallic();
-					if (ImGui::SliderFloat("Metallic", &fMetallic, 0.0f, 1.0f))
-					{
-						pxMaterial->SetMetallic(fMetallic);
-					}
-
-					float fRoughness = pxMaterial->GetRoughness();
-					if (ImGui::SliderFloat("Roughness", &fRoughness, 0.0f, 1.0f))
-					{
-						pxMaterial->SetRoughness(fRoughness);
-					}
-
-					// Emissive
-					Zenith_Maths::Vector3 xEmissive = pxMaterial->GetEmissiveColor();
-					float fEmissive[3] = { xEmissive.x, xEmissive.y, xEmissive.z };
-					if (ImGui::ColorEdit3("Emissive Color", fEmissive))
-					{
-						pxMaterial->SetEmissiveColor({ fEmissive[0], fEmissive[1], fEmissive[2] });
-					}
-
-					float fEmissiveIntensity = pxMaterial->GetEmissiveIntensity();
-					if (ImGui::SliderFloat("Emissive Intensity", &fEmissiveIntensity, 0.0f, 10.0f))
-					{
-						pxMaterial->SetEmissiveIntensity(fEmissiveIntensity);
-					}
+					// Material properties (using shared utility)
+					Zenith_Editor_MaterialUI::RenderMaterialProperties(pxMaterial, "ProceduralMesh");
 
 					ImGui::Separator();
 
-					// Transparency
-					bool bTransparent = pxMaterial->IsTransparent();
-					if (ImGui::Checkbox("Transparent", &bTransparent))
-					{
-						pxMaterial->SetTransparent(bTransparent);
-					}
-
-					if (bTransparent)
-					{
-						float fAlphaCutoff = pxMaterial->GetAlphaCutoff();
-						if (ImGui::SliderFloat("Alpha Cutoff", &fAlphaCutoff, 0.0f, 1.0f))
-						{
-							pxMaterial->SetAlphaCutoff(fAlphaCutoff);
-						}
-					}
-
-					ImGui::Separator();
-
-					// UV Controls
-					Zenith_Maths::Vector2 xTiling = pxMaterial->GetUVTiling();
-					float fTiling[2] = { xTiling.x, xTiling.y };
-					if (ImGui::DragFloat2("UV Tiling", fTiling, 0.01f, 0.01f, 100.0f))
-					{
-						pxMaterial->SetUVTiling({ fTiling[0], fTiling[1] });
-					}
-
-					Zenith_Maths::Vector2 xOffset = pxMaterial->GetUVOffset();
-					float fOffset[2] = { xOffset.x, xOffset.y };
-					if (ImGui::DragFloat2("UV Offset", fOffset, 0.01f, -100.0f, 100.0f))
-					{
-						pxMaterial->SetUVOffset({ fOffset[0], fOffset[1] });
-					}
-
-					// Occlusion Strength
-					float fOccStrength = pxMaterial->GetOcclusionStrength();
-					if (ImGui::SliderFloat("Occlusion Strength", &fOccStrength, 0.0f, 1.0f))
-					{
-						pxMaterial->SetOcclusionStrength(fOccStrength);
-					}
-
-					ImGui::Separator();
-
-					// Rendering flags
-					bool bTwoSided = pxMaterial->IsTwoSided();
-					if (ImGui::Checkbox("Two-Sided", &bTwoSided))
-					{
-						pxMaterial->SetTwoSided(bTwoSided);
-					}
-					if (ImGui::IsItemHovered())
-					{
-						ImGui::SetTooltip("Render both front and back faces");
-					}
-
-					bool bUnlit = pxMaterial->IsUnlit();
-					if (ImGui::Checkbox("Unlit", &bUnlit))
-					{
-						pxMaterial->SetUnlit(bUnlit);
-					}
-					if (ImGui::IsItemHovered())
-					{
-						ImGui::SetTooltip("Skip lighting calculations");
-					}
-
-					ImGui::Separator();
-
-					// Texture slots
-					RenderTextureSlot("Diffuse", *pxMaterial, uMeshIdx, TEXTURE_SLOT_DIFFUSE);
-					RenderTextureSlot("Normal", *pxMaterial, uMeshIdx, TEXTURE_SLOT_NORMAL);
-					RenderTextureSlot("Roughness/Metallic", *pxMaterial, uMeshIdx, TEXTURE_SLOT_ROUGHNESS_METALLIC);
-					RenderTextureSlot("Occlusion", *pxMaterial, uMeshIdx, TEXTURE_SLOT_OCCLUSION);
-					RenderTextureSlot("Emissive", *pxMaterial, uMeshIdx, TEXTURE_SLOT_EMISSIVE);
+					// Texture slots (using shared utility with custom assignment callback)
+					using namespace Zenith_Editor_MaterialUI;
+					auto fnAssign = [this, uMeshIdx](TextureSlotType eSlot) {
+						return [this, uMeshIdx, eSlot](const char* szPath) {
+							AssignTextureToSlot(szPath, uMeshIdx, eSlot);
+						};
+					};
+					RenderTextureSlot("Diffuse", *pxMaterial, TEXTURE_SLOT_DIFFUSE, true, 48.0f, fnAssign(TEXTURE_SLOT_DIFFUSE));
+					RenderTextureSlot("Normal", *pxMaterial, TEXTURE_SLOT_NORMAL, true, 48.0f, fnAssign(TEXTURE_SLOT_NORMAL));
+					RenderTextureSlot("Roughness/Metallic", *pxMaterial, TEXTURE_SLOT_ROUGHNESS_METALLIC, true, 48.0f, fnAssign(TEXTURE_SLOT_ROUGHNESS_METALLIC));
+					RenderTextureSlot("Occlusion", *pxMaterial, TEXTURE_SLOT_OCCLUSION, true, 48.0f, fnAssign(TEXTURE_SLOT_OCCLUSION));
+					RenderTextureSlot("Emissive", *pxMaterial, TEXTURE_SLOT_EMISSIVE, true, 48.0f, fnAssign(TEXTURE_SLOT_EMISSIVE));
 				}
 
 				ImGui::TreePop();

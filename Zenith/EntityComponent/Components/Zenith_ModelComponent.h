@@ -25,6 +25,7 @@ class Flux_IKSolver;
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
 #include "EntityComponent/Zenith_ComponentRegistry.h"
 #include "Editor/Zenith_Editor.h"
+#include "Editor/Zenith_Editor_MaterialUI.h"
 #include <filesystem>
 #ifdef _WIN32
 #include <windows.h>
@@ -235,24 +236,11 @@ public:
 	// Editor UI - Renders component properties in the Properties panel
 	//--------------------------------------------------------------------------
 
-	// Texture slot identifiers for material editing
-	enum TextureSlotType
-	{
-		TEXTURE_SLOT_DIFFUSE,
-		TEXTURE_SLOT_NORMAL,
-		TEXTURE_SLOT_ROUGHNESS_METALLIC,
-		TEXTURE_SLOT_OCCLUSION,
-		TEXTURE_SLOT_EMISSIVE
-	};
-
 	void RenderPropertiesPanel();
 
 private:
-	// Helper to render a single texture slot with drag-drop target
-	void RenderTextureSlot(const char* szLabel, Flux_MaterialAsset& xMaterial, uint32_t uMeshIdx, TextureSlotType eSlot);
-
-	// Helper to load texture and assign to material slot
-	void AssignTextureToSlot(const char* szFilePath, uint32_t uMeshIdx, TextureSlotType eSlot);
+	// Helper to load texture and assign to material slot (creates new material instance)
+	void AssignTextureToSlot(const char* szFilePath, uint32_t uMeshIdx, Zenith_Editor_MaterialUI::TextureSlotType eSlot);
 public:
 #endif
 

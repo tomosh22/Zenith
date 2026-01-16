@@ -610,6 +610,9 @@
     <ClCompile Include="..\Zenith\Editor\Zenith_EditorCamera.cpp">
       <Filter>Editor</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\Editor\Zenith_Editor_MaterialUI.cpp">
+      <Filter>Editor</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Editor\Zenith_Gizmo.cpp">
       <Filter>Editor</Filter>
     </ClCompile>
@@ -3115,6 +3118,9 @@
       <Filter>Editor</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Editor\Zenith_EditorState.h">
+      <Filter>Editor</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Editor\Zenith_Editor_MaterialUI.h">
       <Filter>Editor</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Editor\Zenith_Gizmo.h">

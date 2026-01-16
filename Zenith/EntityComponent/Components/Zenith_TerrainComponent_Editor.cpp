@@ -7,6 +7,7 @@
 #include "imgui.h"
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
 #include "Editor/Zenith_Editor.h"
+#include "Editor/Zenith_Editor_MaterialUI.h"
 #include "AssetHandling/Zenith_AssetHandler.h"
 #include "Flux/Terrain/Flux_TerrainStreamingManager.h"
 #include <filesystem>
@@ -55,81 +56,6 @@ static std::string ShowTifOpenFileDialog()
 		return std::string(szFilePath);
 	}
 	return "";
-}
-
-//-----------------------------------------------------------------------------
-// Helper to render a terrain material texture slot with drag-drop support
-//-----------------------------------------------------------------------------
-static void RenderTerrainTextureSlot(const char* szLabel, Flux_MaterialAsset& xMaterial, int iSlotType)
-{
-	ImGui::PushID(szLabel);
-
-	// Get current texture path based on slot type
-	std::string strCurrentPath;
-	switch (iSlotType)
-	{
-	case 0: strCurrentPath = xMaterial.GetDiffuseTextureRef().GetPath(); break;
-	case 1: strCurrentPath = xMaterial.GetNormalTextureRef().GetPath(); break;
-	case 2: strCurrentPath = xMaterial.GetRoughnessMetallicTextureRef().GetPath(); break;
-	case 3: strCurrentPath = xMaterial.GetOcclusionTextureRef().GetPath(); break;
-	case 4: strCurrentPath = xMaterial.GetEmissiveTextureRef().GetPath(); break;
-	}
-
-	std::string strTextureName = "(none)";
-	if (!strCurrentPath.empty())
-	{
-		std::filesystem::path xPath(strCurrentPath);
-		strTextureName = xPath.filename().string();
-	}
-
-	ImGui::Text("%s:", szLabel);
-	ImGui::SameLine();
-
-	// Drop zone button
-	ImVec2 xButtonSize(150, 20);
-	ImGui::Button(strTextureName.c_str(), xButtonSize);
-
-	// Drag-drop target for texture files
-	if (ImGui::BeginDragDropTarget())
-	{
-		if (const ImGuiPayload* pPayload = ImGui::AcceptDragDropPayload(DRAGDROP_PAYLOAD_TEXTURE))
-		{
-			const DragDropFilePayload* pFilePayload =
-				static_cast<const DragDropFilePayload*>(pPayload->Data);
-
-			std::string strFilePath(pFilePayload->m_szFilePath);
-
-			// Set the texture path on the material
-			TextureRef xRef;
-			xRef.SetFromPath(strFilePath);
-			switch (iSlotType)
-			{
-			case 0: xMaterial.SetDiffuseTextureRef(xRef); break;
-			case 1: xMaterial.SetNormalTextureRef(xRef); break;
-			case 2: xMaterial.SetRoughnessMetallicTextureRef(xRef); break;
-			case 3: xMaterial.SetOcclusionTextureRef(xRef); break;
-			case 4: xMaterial.SetEmissiveTextureRef(xRef); break;
-			}
-
-			Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Set %s texture: %s", szLabel, strFilePath.c_str());
-		}
-		ImGui::EndDragDropTarget();
-	}
-
-	// Tooltip
-	if (ImGui::IsItemHovered())
-	{
-		if (!strCurrentPath.empty())
-		{
-			ImGui::SetTooltip("Drop a .ztxtr texture here\nPath: %s", strCurrentPath.c_str());
-		}
-		else
-		{
-			ImGui::SetTooltip("Drop a .ztxtr texture here");
-		}
-	}
-
-	ImGui::PopID();
 }
 
 //-----------------------------------------------------------------------------
@@ -564,43 +490,20 @@ void Zenith_TerrainComponent::RenderPropertiesPanel()
 
 		ImGui::Separator();
 
-		// Material 0 editing
+		// Material 0 editing (full material system)
 		if (m_pxMaterial0)
 		{
 			if (ImGui::TreeNode("Material 0 (Base)"))
 			{
 				ImGui::Text("Name: %s", m_pxMaterial0->GetName().c_str());
 
-				// Base color
-				Zenith_Maths::Vector4 xBaseColor = m_pxMaterial0->GetBaseColor();
-				float fColor[4] = { xBaseColor.x, xBaseColor.y, xBaseColor.z, xBaseColor.w };
-				if (ImGui::ColorEdit4("Base Color##Mat0", fColor))
-				{
-					m_pxMaterial0->SetBaseColor({ fColor[0], fColor[1], fColor[2], fColor[3] });
-				}
-
-				// Material properties
-				float fMetallic = m_pxMaterial0->GetMetallic();
-				if (ImGui::SliderFloat("Metallic##Mat0", &fMetallic, 0.0f, 1.0f))
-				{
-					m_pxMaterial0->SetMetallic(fMetallic);
-				}
-
-				float fRoughness = m_pxMaterial0->GetRoughness();
-				if (ImGui::SliderFloat("Roughness##Mat0", &fRoughness, 0.0f, 1.0f))
-				{
-					m_pxMaterial0->SetRoughness(fRoughness);
-				}
+				// Full material properties (same as static meshes)
+				Zenith_Editor_MaterialUI::RenderMaterialProperties(m_pxMaterial0, "TerrainMat0");
 
 				// Texture slots
+				ImGui::Separator();
 				ImGui::Text("Textures:");
-				ImGui::PushID("Mat0Textures");
-				RenderTerrainTextureSlot("Diffuse", *m_pxMaterial0, 0);
-				RenderTerrainTextureSlot("Normal", *m_pxMaterial0, 1);
-				RenderTerrainTextureSlot("Roughness/Metallic", *m_pxMaterial0, 2);
-				RenderTerrainTextureSlot("Occlusion", *m_pxMaterial0, 3);
-				RenderTerrainTextureSlot("Emissive", *m_pxMaterial0, 4);
-				ImGui::PopID();
+				Zenith_Editor_MaterialUI::RenderAllTextureSlots(*m_pxMaterial0, false);
 
 				ImGui::TreePop();
 			}
@@ -610,43 +513,20 @@ void Zenith_TerrainComponent::RenderPropertiesPanel()
 			ImGui::TextDisabled("Material 0: (not set)");
 		}
 
-		// Material 1 editing
+		// Material 1 editing (full material system)
 		if (m_pxMaterial1)
 		{
 			if (ImGui::TreeNode("Material 1 (Blend)"))
 			{
 				ImGui::Text("Name: %s", m_pxMaterial1->GetName().c_str());
 
-				// Base color
-				Zenith_Maths::Vector4 xBaseColor = m_pxMaterial1->GetBaseColor();
-				float fColor[4] = { xBaseColor.x, xBaseColor.y, xBaseColor.z, xBaseColor.w };
-				if (ImGui::ColorEdit4("Base Color##Mat1", fColor))
-				{
-					m_pxMaterial1->SetBaseColor({ fColor[0], fColor[1], fColor[2], fColor[3] });
-				}
-
-				// Material properties
-				float fMetallic = m_pxMaterial1->GetMetallic();
-				if (ImGui::SliderFloat("Metallic##Mat1", &fMetallic, 0.0f, 1.0f))
-				{
-					m_pxMaterial1->SetMetallic(fMetallic);
-				}
-
-				float fRoughness = m_pxMaterial1->GetRoughness();
-				if (ImGui::SliderFloat("Roughness##Mat1", &fRoughness, 0.0f, 1.0f))
-				{
-					m_pxMaterial1->SetRoughness(fRoughness);
-				}
+				// Full material properties (same as static meshes)
+				Zenith_Editor_MaterialUI::RenderMaterialProperties(m_pxMaterial1, "TerrainMat1");
 
 				// Texture slots
+				ImGui::Separator();
 				ImGui::Text("Textures:");
-				ImGui::PushID("Mat1Textures");
-				RenderTerrainTextureSlot("Diffuse", *m_pxMaterial1, 0);
-				RenderTerrainTextureSlot("Normal", *m_pxMaterial1, 1);
-				RenderTerrainTextureSlot("Roughness/Metallic", *m_pxMaterial1, 2);
-				RenderTerrainTextureSlot("Occlusion", *m_pxMaterial1, 3);
-				RenderTerrainTextureSlot("Emissive", *m_pxMaterial1, 4);
-				ImGui::PopID();
+				Zenith_Editor_MaterialUI::RenderAllTextureSlots(*m_pxMaterial1, false);
 
 				ImGui::TreePop();
 			}

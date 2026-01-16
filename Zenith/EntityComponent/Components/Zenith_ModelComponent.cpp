@@ -702,5 +702,5 @@ void Zenith_ModelComponent::DebugDrawPhysicsMesh()
 	Zenith_PhysicsMeshGenerator::DebugDrawPhysicsMesh(m_pxPhysicsMesh, xModelMatrix, m_xDebugDrawColor);
 }
 
-// Editor code for RenderPropertiesPanel, RenderTextureSlot, and AssignTextureToSlot
+// Editor code for RenderPropertiesPanel and AssignTextureToSlot
 // is in Zenith_ModelComponent_Editor.cpp
