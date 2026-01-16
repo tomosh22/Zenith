@@ -36,6 +36,12 @@ uint32_t Flux_TerrainStreamingManager::s_uActiveChunkRadius = 16;
 
 Flux_TerrainStreamingManager::StreamingStats Flux_TerrainStreamingManager::s_xStats;
 
+// ========== HIGH LOD Chunk Size Cache ==========
+// Cached size of a typical HIGH LOD chunk (set after first successful load)
+// Used to pre-check available space before expensive disk I/O
+static uint32_t s_uCachedHighLODVertexCount = 0;
+static uint32_t s_uCachedHighLODIndexCount = 0;
+
 // ========== Buffer Allocator Implementation ==========
 
 Flux_TerrainBufferAllocator::Flux_TerrainBufferAllocator()
@@ -145,6 +151,10 @@ void Flux_TerrainStreamingManager::Initialize()
 	s_uCurrentFrame = 0;
 	s_bChunkDataDirty.store(true, std::memory_order_release);
 	s_pxTerrainComponent = nullptr;
+
+	// Reset cached chunk size (will be recalculated on first successful stream)
+	s_uCachedHighLODVertexCount = 0;
+	s_uCachedHighLODIndexCount = 0;
 
 	// Clear chunk residency - all LODs start as NOT_LOADED
 	for (uint32_t i = 0; i < TOTAL_CHUNKS; ++i)
@@ -304,9 +314,19 @@ void Flux_TerrainStreamingManager::UpdateStreaming(const Zenith_Maths::Vector3& 
 
 	// Process each active chunk: determine desired LOD and stream if needed
 	uint32_t uStreamsThisFrame = 0;
+	uint32_t uStreamAttemptsThisFrame = 0;
+	bool bAllocationFailed = false;  // Stop trying after first allocation failure (likely out of space)
 
-	for (uint32_t uActiveIdx = 0; uActiveIdx < s_xActiveChunkIndices.size() && uStreamsThisFrame < MAX_UPLOADS_PER_FRAME; ++uActiveIdx)
+	for (uint32_t uActiveIdx = 0; uActiveIdx < s_xActiveChunkIndices.size(); ++uActiveIdx)
 	{
+		// Stop if we've done enough successful streams or hit allocation failure
+		if (uStreamsThisFrame >= MAX_UPLOADS_PER_FRAME || bAllocationFailed)
+			break;
+
+		// Also limit total attempts to prevent excessive disk I/O
+		if (uStreamAttemptsThisFrame >= MAX_UPLOADS_PER_FRAME * 2)
+			break;
+
 		const uint32_t uChunkIndex = s_xActiveChunkIndices[uActiveIdx];
 		uint32_t uChunkX, uChunkY;
 		ChunkIndexToCoords(uChunkIndex, uChunkX, uChunkY);
@@ -322,6 +342,8 @@ void Flux_TerrainStreamingManager::UpdateStreaming(const Zenith_Maths::Vector3& 
 		// If desired LOD is HIGH and it's not resident, stream it in
 		if (uDesiredLOD == LOD_HIGH && xResidency.m_aeStates[LOD_HIGH] != Flux_TerrainLODResidencyState::RESIDENT)
 		{
+			uStreamAttemptsThisFrame++;
+
 			if (StreamInLOD(uChunkIndex, LOD_HIGH))
 			{
 				uStreamsThisFrame++;
@@ -330,6 +352,14 @@ void Flux_TerrainStreamingManager::UpdateStreaming(const Zenith_Maths::Vector3& 
 
 				if (dbg_bLogTerrainStreaming)
 					Zenith_Log(LOG_CATEGORY_TERRAIN, "[Terrain] Streamed in chunk (%u,%u) HIGH", uChunkX, uChunkY);
+			}
+			else
+			{
+				// Allocation failed - stop trying this frame (buffer likely full/fragmented)
+				bAllocationFailed = true;
+
+				if (dbg_bLogTerrainStreaming)
+					Zenith_Log(LOG_CATEGORY_TERRAIN, "[Terrain] Stream failed for chunk (%u,%u), stopping this frame", uChunkX, uChunkY);
 			}
 		}
 	}
@@ -398,6 +428,18 @@ bool Flux_TerrainStreamingManager::StreamInLOD(uint32_t uChunkIndex, uint32_t uL
 	if (uLODLevel != LOD_HIGH)
 		return false;
 
+	// Pre-check: If we know the typical chunk size, check if there's enough space
+	// before doing expensive disk I/O. All HIGH LOD chunks are roughly the same size.
+	if (s_uCachedHighLODVertexCount > 0 && s_uCachedHighLODIndexCount > 0)
+	{
+		if (s_xVertexAllocator.GetUnusedSpace() < s_uCachedHighLODVertexCount ||
+			s_xIndexAllocator.GetUnusedSpace() < s_uCachedHighLODIndexCount)
+		{
+			// Not enough space - skip disk I/O entirely
+			return false;
+		}
+	}
+
 	uint32_t uChunkX, uChunkY;
 	ChunkIndexToCoords(uChunkIndex, uChunkX, uChunkY);
 
@@ -417,11 +459,18 @@ bool Flux_TerrainStreamingManager::StreamInLOD(uint32_t uChunkIndex, uint32_t uL
 	const uint32_t uNumVerts = pxChunkMesh->GetNumVerts();
 	const uint32_t uNumIndices = pxChunkMesh->GetNumIndices();
 
+	// Cache the chunk size for future pre-checks (all chunks are roughly the same size)
+	if (s_uCachedHighLODVertexCount == 0)
+	{
+		s_uCachedHighLODVertexCount = uNumVerts;
+		s_uCachedHighLODIndexCount = uNumIndices;
+	}
+
 	// Try to allocate space
 	uint32_t uVertexOffset = s_xVertexAllocator.Allocate(uNumVerts);
 	uint32_t uIndexOffset = s_xIndexAllocator.Allocate(uNumIndices);
 
-	// If allocation failed, try evicting distant LODs
+	// If allocation failed, clean up and return
 	if (uVertexOffset == UINT32_MAX || uIndexOffset == UINT32_MAX)
 	{
 		if (uVertexOffset != UINT32_MAX)
@@ -429,26 +478,8 @@ bool Flux_TerrainStreamingManager::StreamInLOD(uint32_t uChunkIndex, uint32_t uL
 		if (uIndexOffset != UINT32_MAX)
 			s_xIndexAllocator.Free(uIndexOffset, uNumIndices);
 
-		if (!EvictToMakeSpace(uNumVerts, uNumIndices, s_xLastCameraPos))
-		{
-			Zenith_AssetHandler::DeleteMesh(pxChunkMesh);
-			return false;
-		}
-
-		// Retry allocation
-		uVertexOffset = s_xVertexAllocator.Allocate(uNumVerts);
-		uIndexOffset = s_xIndexAllocator.Allocate(uNumIndices);
-
-		if (uVertexOffset == UINT32_MAX || uIndexOffset == UINT32_MAX)
-		{
-			if (uVertexOffset != UINT32_MAX)
-				s_xVertexAllocator.Free(uVertexOffset, uNumVerts);
-			if (uIndexOffset != UINT32_MAX)
-				s_xIndexAllocator.Free(uIndexOffset, uNumIndices);
-
-			Zenith_AssetHandler::DeleteMesh(pxChunkMesh);
-			return false;
-		}
+		Zenith_AssetHandler::DeleteMesh(pxChunkMesh);
+		return false;
 	}
 
 	// Calculate absolute offsets in unified buffer (streaming region starts after LOW LOD)
