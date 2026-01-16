@@ -2,20 +2,19 @@
 
 /**
  * Flux_TerrainConfig.h - Unified Terrain LOD Configuration
- * 
+ *
  * This header provides a single source of truth for all terrain LOD-related constants.
  * These values MUST be kept in sync between:
  *   - CPU streaming (Flux_TerrainStreamingManager)
  *   - GPU culling (Flux_TerrainCulling.comp)
  *   - GPU rendering (Flux_Terrain_VertCommon.fxh)
- * 
+ *
+ * LOD System (2 levels):
+ *   - HIGH (LOD 0): Highest detail, density divisor 1, streamed dynamically
+ *   - LOW (LOD 1): Lower detail, density divisor 4, always-resident (never evicted)
+ *
  * CRITICAL: If you change LOD thresholds here, also update:
- *   - Zenith/Flux/Shaders/Terrain/Flux_TerrainCulling.comp (selectLOD function comments)
- * 
- * Bug History:
- *   - CPU/GPU threshold mismatch caused LOD colors correct but mesh density wrong
- *   - TERRAIN_SCALE mismatch caused streaming to load wrong chunks
- *   - See Flux/Terrain/CLAUDE.md for full bug documentation
+ *   - Zenith/Flux/Shaders/Terrain/Flux_TerrainCulling.comp (selectLOD function)
  */
 
 #include <cstdint>
@@ -36,11 +35,11 @@ static constexpr float CHUNK_SIZE_WORLD = 64.0f;
 // Total terrain size in world units
 static constexpr float TERRAIN_SIZE = CHUNK_GRID_SIZE * CHUNK_SIZE_WORLD;
 
-// Number of LOD levels (LOD0 = highest detail, LOD3 = lowest/always-resident)
-static constexpr uint32_t LOD_COUNT = 4;
-static constexpr uint32_t LOD_HIGHEST_DETAIL = 0;
-static constexpr uint32_t LOD_LOWEST_DETAIL = 3;
-static constexpr uint32_t LOD_ALWAYS_RESIDENT = 3;
+// Number of LOD levels (HIGH = highest detail, LOW = always-resident)
+static constexpr uint32_t LOD_COUNT = 2;
+static constexpr uint32_t LOD_HIGH = 0;            // Streamed dynamically
+static constexpr uint32_t LOD_LOW = 1;             // Always resident (never evicted)
+static constexpr uint32_t LOD_ALWAYS_RESIDENT = LOD_LOW;
 
 // ========== LOD Distance Thresholds (Distance Squared) ==========
 // These thresholds determine which LOD level is selected based on
@@ -48,32 +47,23 @@ static constexpr uint32_t LOD_ALWAYS_RESIDENT = 3;
 //
 // CRITICAL: These values MUST match the GPU culling shader!
 // If they don't match, CPU will stream one LOD but GPU will select another,
-// causing fallback to LOD3.
+// causing fallback to LOW LOD.
 //
 // Distance to chunk center (meters):
-//   LOD0: 0 - 632m     (very close, highest detail)
-//   LOD1: 632 - 1000m  (close)
-//   LOD2: 1000 - 1414m (medium distance)
-//   LOD3: 1414m+       (far, always-resident fallback)
+//   HIGH: 0 - 1000m    (close, highest detail, streamed)
+//   LOW: 1000m+        (far, always-resident fallback)
 
-static constexpr float LOD0_MAX_DISTANCE_SQ = 400000.0f;   // sqrt = ~632m
-static constexpr float LOD1_MAX_DISTANCE_SQ = 1000000.0f;  // sqrt = 1000m
-static constexpr float LOD2_MAX_DISTANCE_SQ = 2000000.0f;  // sqrt = ~1414m
-static constexpr float LOD3_MAX_DISTANCE_SQ = FLT_MAX;     // Always used beyond LOD2
+static constexpr float LOD_HIGH_MAX_DISTANCE_SQ = 1000000.0f;  // sqrt = 1000m
+static constexpr float LOD_LOW_MAX_DISTANCE_SQ = FLT_MAX;      // Always used beyond HIGH
 
 // Array form for easy iteration
 static constexpr float LOD_MAX_DISTANCE_SQ[LOD_COUNT] = {
-    LOD0_MAX_DISTANCE_SQ,
-    LOD1_MAX_DISTANCE_SQ,
-    LOD2_MAX_DISTANCE_SQ,
-    LOD3_MAX_DISTANCE_SQ
+    LOD_HIGH_MAX_DISTANCE_SQ,
+    LOD_LOW_MAX_DISTANCE_SQ
 };
 
-// Alias for backward compatibility (some code uses LOD_DISTANCE_SQ)
-static constexpr const float* LOD_DISTANCE_SQ = LOD_MAX_DISTANCE_SQ;
-
 // ========== Streaming Configuration ==========
-// Buffer budgets for streaming region (LOD0-2 meshes)
+// Buffer budgets for streaming region (HIGH LOD meshes only - LOW is always resident)
 static constexpr uint64_t STREAMING_VERTEX_BUFFER_MB = 256;
 static constexpr uint64_t STREAMING_INDEX_BUFFER_MB = 64;
 static constexpr uint64_t STREAMING_VERTEX_BUFFER_BYTES = STREAMING_VERTEX_BUFFER_MB * 1024 * 1024;
@@ -115,20 +105,11 @@ static constexpr uint32_t VERTEX_STRIDE_BYTES = 60;
 /**
  * Select appropriate LOD level for a given distance squared
  * @param fDistanceSq Squared distance from camera to chunk center
- * @return LOD level (0-3)
+ * @return LOD level (LOD_HIGH or LOD_LOW)
  */
 inline uint32_t SelectLOD(float fDistanceSq)
 {
-    // Check LOD0-2 thresholds
-    for (uint32_t i = 0; i < LOD_ALWAYS_RESIDENT; ++i)
-    {
-        if (fDistanceSq < LOD_MAX_DISTANCE_SQ[i])
-        {
-            return i;
-        }
-    }
-    // Default to always-resident LOD3
-    return LOD_ALWAYS_RESIDENT;
+    return (fDistanceSq < LOD_HIGH_MAX_DISTANCE_SQ) ? LOD_HIGH : LOD_LOW;
 }
 
 /**
@@ -154,7 +135,7 @@ inline void ChunkIndexToCoords(uint32_t uChunkIndex, uint32_t& uChunkX, uint32_t
  */
 inline const char* GetLODName(uint32_t uLOD)
 {
-    static const char* LOD_NAMES[] = { "LOD0 (Highest)", "LOD1", "LOD2", "LOD3 (Lowest)" };
+    static const char* LOD_NAMES[] = { "HIGH", "LOW" };
     return (uLOD < LOD_COUNT) ? LOD_NAMES[uLOD] : "Invalid";
 }
 
@@ -164,9 +145,9 @@ inline const char* GetLODName(uint32_t uLOD)
 // Grid aliases
 static constexpr float CHUNK_WORLD_SIZE = CHUNK_SIZE_WORLD;
 
-// LOD aliases
-static constexpr uint32_t LOWEST_DETAIL_LOD = LOD_LOWEST_DETAIL;
-static constexpr uint32_t HIGHEST_DETAIL_LOD = LOD_HIGHEST_DETAIL;
+// LOD aliases for backward compatibility
+static constexpr uint32_t LOD_HIGHEST_DETAIL = LOD_HIGH;
+static constexpr uint32_t LOD_LOWEST_DETAIL = LOD_LOW;
 
 // Buffer aliases (MB form for logging)
 static constexpr uint64_t STREAMING_VERTEX_BUFFER_SIZE_MB = STREAMING_VERTEX_BUFFER_MB;

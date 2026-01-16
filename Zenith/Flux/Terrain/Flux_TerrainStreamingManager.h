@@ -7,6 +7,7 @@
 #include <vector>
 #include <queue>
 #include <cstdint>
+#include <atomic>
 
 // Use unified terrain configuration
 using namespace Flux_TerrainConfig;
@@ -77,7 +78,7 @@ private:
 
 // ========== Terrain Streaming Manager ==========
 // Manages LOD streaming for terrain chunks.
-// LOD3 is always resident (loaded at startup). LOD0-2 are streamed based on distance.
+// LOW LOD is always resident (loaded at startup). HIGH LOD is streamed based on distance.
 class Flux_TerrainStreamingManager
 {
 public:
@@ -105,8 +106,8 @@ public:
 	// ========== GPU Data Building ==========
 	// Builds chunk data array for GPU upload (AABBs + LOD allocations)
 	static void BuildChunkDataForGPU(Zenith_TerrainChunkData* pxChunkDataOut);
-	static bool IsChunkDataDirty() { return s_bInitialized && s_bChunkDataDirty; }
-	static void ClearChunkDataDirty() { s_bChunkDataDirty = false; }
+	static bool IsChunkDataDirty() { return s_bInitialized && s_bChunkDataDirty.load(std::memory_order_acquire); }
+	static void ClearChunkDataDirty() { s_bChunkDataDirty.store(false, std::memory_order_release); }
 	static Zenith_TerrainChunkData* GetCachedChunkDataBuffer() { return s_pxCachedChunkData; }
 
 	// ========== Stats ==========
@@ -138,7 +139,7 @@ private:
 	static Flux_TerrainChunkResidency s_axChunkResidency[TOTAL_CHUNKS];
 	static Zenith_AABB s_axChunkAABBs[TOTAL_CHUNKS];
 	static bool s_bAABBsCached;
-	static bool s_bChunkDataDirty;
+	static std::atomic<bool> s_bChunkDataDirty;  // Atomic to prevent race conditions
 	static Zenith_TerrainChunkData* s_pxCachedChunkData;
 
 	// ========== Camera Tracking ==========
@@ -191,7 +192,7 @@ private:
 	// Debug LOD name helper
 	static const char* GetLODName(uint32_t uLOD)
 	{
-		static const char* names[] = { "LOD0", "LOD1", "LOD2", "LOD3" };
+		static const char* names[] = { "HIGH", "LOW" };
 		return (uLOD < LOD_COUNT) ? names[uLOD] : "LOD?";
 	}
 };

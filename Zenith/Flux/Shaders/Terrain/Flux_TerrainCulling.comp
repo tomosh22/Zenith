@@ -10,19 +10,19 @@
 // 4. Reduced shared memory usage - no sorting buffer needed
 // 5. Coalesced memory access patterns for chunk data
 //
-// LOD distance thresholds are set by CPU-side Flux_TerrainConfig.h via BuildChunkDataForGPU()
-// Thresholds (distance²): LOD0 < 400000, LOD1 < 1000000, LOD2 < 2000000, LOD3 = always
+// LOD System (2 levels):
+//   - HIGH (LOD 0): Highest detail, streamed dynamically, used when close
+//   - LOW (LOD 1): Lower detail, always-resident, used when far or as fallback
+//
+// LOD distance threshold: HIGH < 1000000 (distance²), LOW = always
 
 layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
 
 // Number of LOD levels per chunk (must match LOD_COUNT in Flux_TerrainConfig.h)
-#define TERRAIN_LOD_COUNT 4
+#define TERRAIN_LOD_COUNT 2
 
-// Pre-computed LOD thresholds to avoid per-chunk array access
-// Must match values in Flux_TerrainConfig.h
-#define LOD0_MAX_DIST_SQ 400000.0
-#define LOD1_MAX_DIST_SQ 1000000.0
-#define LOD2_MAX_DIST_SQ 2000000.0
+// LOD threshold - must match LOD_HIGH_MAX_DISTANCE_SQ in Flux_TerrainConfig.h
+#define LOD_HIGH_MAX_DIST_SQ 1000000.0  // ~1000m
 
 // LOD data for a single level
 struct LODData
@@ -38,7 +38,7 @@ struct TerrainChunkData
 {
     vec4 aabbMin;               // xyz = min corner, w = padding
     vec4 aabbMax;               // xyz = max corner, w = padding
-    LODData lods[TERRAIN_LOD_COUNT];  // LOD mesh data (LOD0=highest detail)
+    LODData lods[TERRAIN_LOD_COUNT];  // LOD mesh data (HIGH=0, LOW=1)
 };
 
 // Indirect draw command structure - matches VkDrawIndexedIndirectCommand
@@ -158,16 +158,11 @@ bool testAABBFrustum(vec3 aabbMin, vec3 aabbMax)
     return true;
 }
 
-// OPTIMIZED: Select LOD using constant thresholds (avoids array access)
+// Select LOD: HIGH (0) if close, LOW (1) if far
 uint selectLOD(float distanceSq)
 {
-    // Branchless LOD selection using step functions
-    // This compiles to 3 comparisons and 3 adds - no branching
-    uint lod = 0;
-    lod += uint(distanceSq >= LOD0_MAX_DIST_SQ);
-    lod += uint(distanceSq >= LOD1_MAX_DIST_SQ);
-    lod += uint(distanceSq >= LOD2_MAX_DIST_SQ);
-    return lod;
+    // Binary selection: HIGH if distance < threshold, LOW otherwise
+    return uint(distanceSq >= LOD_HIGH_MAX_DIST_SQ);
 }
 
 void main()

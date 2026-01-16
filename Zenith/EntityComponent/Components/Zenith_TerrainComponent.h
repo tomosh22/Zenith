@@ -33,7 +33,7 @@ struct Zenith_TerrainChunkData
 {
 	Zenith_Maths::Vector4 m_xAABBMin;                   // xyz = min corner, w = padding
 	Zenith_Maths::Vector4 m_xAABBMax;                   // xyz = max corner, w = padding
-	Zenith_TerrainLODData m_axLODs[LOD_COUNT];          // LOD mesh data (LOD0=highest detail)
+	Zenith_TerrainLODData m_axLODs[LOD_COUNT];          // LOD mesh data (HIGH=0, LOW=1)
 };
 
 // Frustum plane structure for GPU upload
@@ -157,17 +157,17 @@ public:
 	bool m_bOwnsMaterials = false;
 
 	// ========== Unified Terrain Buffers (owned by this component) ==========
-	// Contains LOD3 (always-resident) data at the beginning, followed by streaming space for LOD0-2
+	// Contains LOW LOD (always-resident) data at the beginning, followed by streaming space for HIGH LOD
 	// These buffers are registered with Flux_TerrainStreamingManager for LOD streaming
 	Flux_VertexBuffer m_xUnifiedVertexBuffer;
 	Flux_IndexBuffer m_xUnifiedIndexBuffer;
-	
+
 	// Buffer sizes and layout information
 	uint64_t m_ulUnifiedVertexBufferSize = 0;
 	uint64_t m_ulUnifiedIndexBufferSize = 0;
 	uint32_t m_uVertexStride = 0;
-	uint32_t m_uLOD3VertexCount = 0;   // Vertices reserved for LOD3 at buffer start
-	uint32_t m_uLOD3IndexCount = 0;    // Indices reserved for LOD3 at buffer start
+	uint32_t m_uLowLODVertexCount = 0;   // Vertices reserved for LOW LOD at buffer start
+	uint32_t m_uLowLODIndexCount = 0;    // Indices reserved for LOW LOD at buffer start
 
 	// ========== GPU-Driven Culling State ==========
 	bool m_bCullingResourcesInitialized = false;

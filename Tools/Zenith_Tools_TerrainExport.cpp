@@ -425,23 +425,16 @@ void ExportHeightmapFromPaths(const std::string& strHeightmapPath, const std::st
 {
 	Zenith_Log(LOG_CATEGORY_TOOLS, "ExportHeightmapFromPaths: Heightmap=%s, Material=%s, Output=%s",
 		strHeightmapPath.c_str(), strMaterialPath.c_str(), strOutputDir.c_str());
-	
-	// Export full detail render meshes (LOD0)
+
+	// Export HIGH detail render meshes (density divisor 1, streamed dynamically)
 	ExportMesh(1, "Render", strHeightmapPath, strMaterialPath, strOutputDir);
-	
-	// Export LOD1 meshes (2x downsampled - skip every other vertex)
-	ExportMesh(2, "Render_LOD1", strHeightmapPath, strMaterialPath, strOutputDir);
-	
-	// Export LOD2 meshes (4x downsampled - skip 3 out of 4 vertices)
-	ExportMesh(4, "Render_LOD2", strHeightmapPath, strMaterialPath, strOutputDir);
-	
-	// Export LOD3 meshes (8x downsampled - skip 7 out of 8 vertices)
-	ExportMesh(8, "Render_LOD3", strHeightmapPath, strMaterialPath, strOutputDir);
-	
-	// Export physics mesh (8x downsampled, already existed)
-	// Rename it to avoid confusion
+
+	// Export LOW detail render meshes (density divisor 4, always resident)
+	ExportMesh(4, "Render_LOW", strHeightmapPath, strMaterialPath, strOutputDir);
+
+	// Export physics mesh (density divisor 8)
 	ExportMesh(8, "Physics", strHeightmapPath, strMaterialPath, strOutputDir);
-	
+
 	Zenith_Log(LOG_CATEGORY_TOOLS, "ExportHeightmapFromPaths: Export complete");
 }
 

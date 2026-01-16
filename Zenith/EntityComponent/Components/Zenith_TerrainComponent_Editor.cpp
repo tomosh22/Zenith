@@ -272,7 +272,7 @@ void Zenith_TerrainComponent::RenderPropertiesPanel()
 						}
 					}
 
-					// Initialize render resources (LOD3 meshes, buffers, culling)
+					// Initialize render resources (LOW LOD meshes, buffers, culling)
 					InitializeRenderResources(*m_pxMaterial0, *m_pxMaterial1);
 
 					s_bTerrainExportInProgress = false;
@@ -494,8 +494,8 @@ void Zenith_TerrainComponent::RenderPropertiesPanel()
 			ImGui::Text("LOD Count: %d", LOD_COUNT);
 			ImGui::Text("Vertex Buffer Size: %.2f MB", m_ulUnifiedVertexBufferSize / (1024.0f * 1024.0f));
 			ImGui::Text("Index Buffer Size: %.2f MB", m_ulUnifiedIndexBufferSize / (1024.0f * 1024.0f));
-			ImGui::Text("LOD3 Vertices: %u", m_uLOD3VertexCount);
-			ImGui::Text("LOD3 Indices: %u", m_uLOD3IndexCount);
+			ImGui::Text("LOW LOD Vertices: %u", m_uLowLODVertexCount);
+			ImGui::Text("LOW LOD Indices: %u", m_uLowLODIndexCount);
 			bool bTemp = m_bCullingResourcesInitialized;
 			ImGui::Checkbox("Culling Resources Initialized", &bTemp);
 			ImGui::TreePop();

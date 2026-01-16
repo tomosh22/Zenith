@@ -162,7 +162,7 @@
     </Link>
     <Lib>
       <TargetMachine>MachineX64</TargetMachine>
-      <SubSystem/>
+      <SubSystem />
       <LinkTimeCodeGeneration>false</LinkTimeCodeGeneration>
       <OutputFile>output\win64\vs2022_debug_win64_false\zenith.lib</OutputFile>
     </Lib>
@@ -226,7 +226,7 @@
     </Link>
     <Lib>
       <TargetMachine>MachineX64</TargetMachine>
-      <SubSystem/>
+      <SubSystem />
       <LinkTimeCodeGeneration>false</LinkTimeCodeGeneration>
       <OutputFile>output\win64\vs2022_debug_win64_true\zenith.lib</OutputFile>
     </Lib>
@@ -290,7 +290,7 @@
     </Link>
     <Lib>
       <TargetMachine>MachineX64</TargetMachine>
-      <SubSystem/>
+      <SubSystem />
       <LinkTimeCodeGeneration>false</LinkTimeCodeGeneration>
       <OutputFile>output\win64\vs2022_release_win64_false\zenith.lib</OutputFile>
     </Lib>
@@ -354,7 +354,7 @@
     </Link>
     <Lib>
       <TargetMachine>MachineX64</TargetMachine>
-      <SubSystem/>
+      <SubSystem />
       <LinkTimeCodeGeneration>false</LinkTimeCodeGeneration>
       <OutputFile>output\win64\vs2022_release_win64_true\zenith.lib</OutputFile>
     </Lib>
@@ -2353,7 +2353,6 @@
     <ClCompile Include="..\Zenith\Windows\Zenith_Windows_FileWatcher.cpp" />
     <ClCompile Include="..\Zenith\Windows\Zenith_Windows_Main.cpp" />
     <ClCompile Include="..\Zenith\Windows\Zenith_Windows_Window.cpp" />
-    <ClCompile Include="..\Zenith\Zenith_Main.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
