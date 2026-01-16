@@ -287,6 +287,8 @@ void Zenith_UnitTests::RunAllTests()
 	TestNavAgentSpeedSettings();
 	TestNavAgentRemainingDistanceBounds();
 	TestPathfindingNoDuplicateWaypoints();
+	TestPathfindingBatchProcessing();
+	TestPathfindingPartialPath();
 
 	// AI System tests - Perception
 	TestSightConeInRange();

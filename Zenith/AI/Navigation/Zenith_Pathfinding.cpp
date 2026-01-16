@@ -354,14 +354,6 @@ bool Zenith_Pathfinding::GetPortal(const Zenith_NavMesh& xNavMesh,
 	return false;
 }
 
-float Zenith_Pathfinding::TriArea2D(const Zenith_Maths::Vector3& xA,
-	const Zenith_Maths::Vector3& xB,
-	const Zenith_Maths::Vector3& xC)
-{
-	// 2D cross product (using X and Z, ignoring Y)
-	return (xB.x - xA.x) * (xC.z - xA.z) - (xC.x - xA.x) * (xB.z - xA.z);
-}
-
 // ============================================================================
 // Batch Parallel Pathfinding
 // ============================================================================

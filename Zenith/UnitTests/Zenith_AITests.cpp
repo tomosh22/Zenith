@@ -1718,3 +1718,109 @@ void Zenith_UnitTests::TestPathfindingNoDuplicateWaypoints()
 
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestPathfindingNoDuplicateWaypoints PASSED");
 }
+
+void Zenith_UnitTests::TestPathfindingBatchProcessing()
+{
+	// Test batch parallel pathfinding API
+	Zenith_NavMesh xNavMesh;
+
+	// Create a simple navmesh
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(10.0f, 0.0f, 0.0f));
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(10.0f, 0.0f, 10.0f));
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(0.0f, 0.0f, 10.0f));
+
+	Zenith_Vector<uint32_t> axIndices;
+	axIndices.PushBack(0);
+	axIndices.PushBack(1);
+	axIndices.PushBack(2);
+	axIndices.PushBack(3);
+	xNavMesh.AddPolygon(axIndices);
+	xNavMesh.BuildSpatialGrid();
+
+	// Create batch of path requests
+	Zenith_Pathfinding::PathRequest axRequests[3];
+
+	axRequests[0].m_pxNavMesh = &xNavMesh;
+	axRequests[0].m_xStart = Zenith_Maths::Vector3(1.0f, 0.0f, 1.0f);
+	axRequests[0].m_xEnd = Zenith_Maths::Vector3(9.0f, 0.0f, 1.0f);
+
+	axRequests[1].m_pxNavMesh = &xNavMesh;
+	axRequests[1].m_xStart = Zenith_Maths::Vector3(2.0f, 0.0f, 2.0f);
+	axRequests[1].m_xEnd = Zenith_Maths::Vector3(8.0f, 0.0f, 8.0f);
+
+	axRequests[2].m_pxNavMesh = &xNavMesh;
+	axRequests[2].m_xStart = Zenith_Maths::Vector3(5.0f, 0.0f, 1.0f);
+	axRequests[2].m_xEnd = Zenith_Maths::Vector3(5.0f, 0.0f, 9.0f);
+
+	// Process batch
+	Zenith_Pathfinding::FindPathsBatch(axRequests, 3);
+
+	// Verify all paths succeeded
+	Zenith_Assert(axRequests[0].m_xResult.m_eStatus == Zenith_PathResult::Status::SUCCESS,
+		"Batch request 0 should succeed");
+	Zenith_Assert(axRequests[1].m_xResult.m_eStatus == Zenith_PathResult::Status::SUCCESS,
+		"Batch request 1 should succeed");
+	Zenith_Assert(axRequests[2].m_xResult.m_eStatus == Zenith_PathResult::Status::SUCCESS,
+		"Batch request 2 should succeed");
+
+	// Verify waypoints exist
+	Zenith_Assert(axRequests[0].m_xResult.m_axWaypoints.GetSize() >= 2,
+		"Batch request 0 should have waypoints");
+
+	// Test null navmesh handling
+	Zenith_Pathfinding::PathRequest xNullRequest;
+	xNullRequest.m_pxNavMesh = nullptr;
+	xNullRequest.m_xStart = Zenith_Maths::Vector3(0.0f);
+	xNullRequest.m_xEnd = Zenith_Maths::Vector3(1.0f);
+	Zenith_Pathfinding::FindPathsBatch(&xNullRequest, 1);
+	Zenith_Assert(xNullRequest.m_xResult.m_eStatus == Zenith_PathResult::Status::FAILED,
+		"Null navmesh request should fail");
+
+	// Test empty batch
+	Zenith_Pathfinding::FindPathsBatch(nullptr, 0);  // Should not crash
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestPathfindingBatchProcessing PASSED");
+}
+
+void Zenith_UnitTests::TestPathfindingPartialPath()
+{
+	// Test that partial paths are returned for disconnected regions
+	Zenith_NavMesh xNavMesh;
+
+	// Create two disconnected polygons
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(3.0f, 0.0f, 0.0f));
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(3.0f, 0.0f, 3.0f));
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(0.0f, 0.0f, 3.0f));
+
+	// Polygon 2: Disconnected (far away)
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(20.0f, 0.0f, 0.0f));
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(23.0f, 0.0f, 0.0f));
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(23.0f, 0.0f, 3.0f));
+	xNavMesh.AddVertex(Zenith_Maths::Vector3(20.0f, 0.0f, 3.0f));
+
+	Zenith_Vector<uint32_t> axPoly0, axPoly1;
+	axPoly0.PushBack(0); axPoly0.PushBack(1); axPoly0.PushBack(2); axPoly0.PushBack(3);
+	xNavMesh.AddPolygon(axPoly0);
+
+	axPoly1.PushBack(4); axPoly1.PushBack(5); axPoly1.PushBack(6); axPoly1.PushBack(7);
+	xNavMesh.AddPolygon(axPoly1);
+
+	xNavMesh.ComputeAdjacency();
+	xNavMesh.BuildSpatialGrid();
+
+	// Try to find path from start polygon to disconnected target polygon
+	Zenith_PathResult xResult = Zenith_Pathfinding::FindPath(
+		xNavMesh,
+		Zenith_Maths::Vector3(1.0f, 0.0f, 1.0f),
+		Zenith_Maths::Vector3(21.0f, 0.0f, 1.0f));
+
+	// Should fail since regions are disconnected
+	Zenith_Assert(xResult.m_eStatus == Zenith_PathResult::Status::FAILED ||
+	              xResult.m_eStatus == Zenith_PathResult::Status::PARTIAL,
+		"Path to disconnected region should fail or return partial");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestPathfindingPartialPath PASSED");
+}
+

@@ -80,11 +80,6 @@ private:
 		uint32_t uPoly1, uint32_t uPoly2,
 		Zenith_Maths::Vector3& xLeft, Zenith_Maths::Vector3& xRight);
 
-	// Funnel algorithm helper
-	static float TriArea2D(const Zenith_Maths::Vector3& xA,
-		const Zenith_Maths::Vector3& xB,
-		const Zenith_Maths::Vector3& xC);
-
 	// ========================================================================
 	// Batch Parallel Pathfinding API
 	// ========================================================================

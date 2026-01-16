@@ -231,6 +231,8 @@ private:
 	static void TestNavAgentSpeedSettings();
 	static void TestNavAgentRemainingDistanceBounds();
 	static void TestPathfindingNoDuplicateWaypoints();
+	static void TestPathfindingBatchProcessing();
+	static void TestPathfindingPartialPath();
 
 	// AI System tests - Perception
 	static void TestSightConeInRange();
