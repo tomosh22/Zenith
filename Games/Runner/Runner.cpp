@@ -10,6 +10,7 @@
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
+#include "AssetHandling/Zenith_MeshGeometryAsset.h"
 #include "Flux/Flux_Graphics.h"
 #include "AssetHandling/Zenith_DataAssetManager.h"
 #include "Prefab/Zenith_Prefab.h"
@@ -21,6 +22,12 @@
 // ============================================================================
 namespace Runner
 {
+	// Geometry assets (registry-managed)
+	Zenith_MeshGeometryAsset* g_pxCapsuleAsset = nullptr;
+	Zenith_MeshGeometryAsset* g_pxCubeAsset = nullptr;
+	Zenith_MeshGeometryAsset* g_pxSphereAsset = nullptr;
+
+	// Convenience pointers to underlying geometry
 	Flux_MeshGeometry* g_pxCapsuleGeometry = nullptr;
 	Flux_MeshGeometry* g_pxCubeGeometry = nullptr;
 	Flux_MeshGeometry* g_pxSphereGeometry = nullptr;
@@ -316,17 +323,23 @@ static void InitializeRunnerResources()
 
 	using namespace Runner;
 
-	// Create capsule geometry for character
-	g_pxCapsuleGeometry = new Flux_MeshGeometry();
-	GenerateCapsule(*g_pxCapsuleGeometry, 0.4f, 1.8f, 16, 12);
+	// Create capsule geometry for character - custom size, tracked through registry
+	g_pxCapsuleAsset = Zenith_AssetRegistry::Get().Create<Zenith_MeshGeometryAsset>();
+	Flux_MeshGeometry* pxCapsule = new Flux_MeshGeometry();
+	GenerateCapsule(*pxCapsule, 0.4f, 1.8f, 16, 12);
+	g_pxCapsuleAsset->SetGeometry(pxCapsule);
+	g_pxCapsuleGeometry = g_pxCapsuleAsset->GetGeometry();
 
-	// Create cube geometry for obstacles and ground
-	g_pxCubeGeometry = new Flux_MeshGeometry();
-	Flux_MeshGeometry::GenerateUnitCube(*g_pxCubeGeometry);
+	// Create cube geometry for obstacles and ground - use registry's cached unit cube
+	g_pxCubeAsset = Zenith_MeshGeometryAsset::CreateUnitCube();
+	g_pxCubeGeometry = g_pxCubeAsset->GetGeometry();
 
-	// Create sphere geometry for collectibles and particles
-	g_pxSphereGeometry = new Flux_MeshGeometry();
-	GenerateUVSphere(*g_pxSphereGeometry, 0.5f, 16, 12);
+	// Create sphere geometry for collectibles and particles - custom size, tracked through registry
+	g_pxSphereAsset = Zenith_AssetRegistry::Get().Create<Zenith_MeshGeometryAsset>();
+	Flux_MeshGeometry* pxSphere = new Flux_MeshGeometry();
+	GenerateUVSphere(*pxSphere, 0.5f, 16, 12);
+	g_pxSphereAsset->SetGeometry(pxSphere);
+	g_pxSphereGeometry = g_pxSphereAsset->GetGeometry();
 
 	// Use grid pattern texture with BaseColor for all materials
 	Zenith_TextureAsset* pxGridTex = Flux_Graphics::s_pxGridTexture;

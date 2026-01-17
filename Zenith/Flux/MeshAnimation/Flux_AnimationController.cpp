@@ -2,6 +2,8 @@
 #include "Flux_AnimationController.h"
 #include "Flux/MeshAnimation/Flux_SkeletonInstance.h"
 #include "AssetHandling/Zenith_SkeletonAsset.h"
+#include "AssetHandling/Zenith_AnimationAsset.h"
+#include "AssetHandling/Zenith_AssetRegistry.h"
 #include "Vulkan/Zenith_Vulkan_MemoryManager.h"
 #include "Core/Zenith_Core.h"
 
@@ -28,6 +30,7 @@ Flux_AnimationController::Flux_AnimationController(Flux_AnimationController&& xO
 	: m_pxSkeletonInstance(xOther.m_pxSkeletonInstance)
 	, m_pxSkeletonAsset(xOther.m_pxSkeletonAsset)
 	, m_xClipCollection(std::move(xOther.m_xClipCollection))
+	, m_xAnimationAssets(std::move(xOther.m_xAnimationAssets))
 	, m_pxStateMachine(xOther.m_pxStateMachine)
 	, m_pxIKSolver(xOther.m_pxIKSolver)
 	, m_xOutputPose(std::move(xOther.m_xOutputPose))
@@ -65,6 +68,7 @@ Flux_AnimationController& Flux_AnimationController::operator=(Flux_AnimationCont
 
 		// Move value types
 		m_xClipCollection = std::move(xOther.m_xClipCollection);
+		m_xAnimationAssets = std::move(xOther.m_xAnimationAssets);
 		m_xOutputPose = std::move(xOther.m_xOutputPose);
 		m_bPaused = xOther.m_bPaused;
 		m_fPlaybackSpeed = xOther.m_fPlaybackSpeed;
@@ -264,32 +268,20 @@ const Zenith_Maths::Matrix4* Flux_AnimationController::GetSkinningMatrices() con
 
 Flux_AnimationClip* Flux_AnimationController::AddClipFromFile(const std::string& strPath)
 {
-	Flux_AnimationClip* pxClip = nullptr;
+	// Store handle to keep asset alive (the clip is owned by the asset)
+	AnimationHandle xHandle(strPath);
+	Zenith_AnimationAsset* pxAnimAsset = xHandle.Get();
+	Zenith_Assert(pxAnimAsset != nullptr, "Failed to load animation asset from: %s", strPath.c_str());
 
-	// Check file extension to determine loader
-	size_t ulDotPos = strPath.rfind('.');
-	if (ulDotPos != std::string::npos)
-	{
-		std::string strExt = strPath.substr(ulDotPos);
-		if (strExt == ".zanim")
-		{
-			pxClip = Flux_AnimationClip::LoadFromZanimFile(strPath);
-		}
-		else
-		{
-			// Use Assimp for other formats (fbx, dae, etc.)
-			pxClip = Flux_AnimationClip::LoadFromFile(strPath);
-		}
-	}
-	else
-	{
-		// No extension - try Assimp
-		pxClip = Flux_AnimationClip::LoadFromFile(strPath);
-	}
+	// Get the clip (asset retains ownership)
+	Flux_AnimationClip* pxClip = pxAnimAsset->GetClip();
+	Zenith_Assert(pxClip != nullptr, "Animation asset has no clip: %s", strPath.c_str());
 
-	Zenith_Assert(pxClip != nullptr, "Failed to load animation clip from: %s", strPath.c_str());
+	// Store the handle to keep the asset alive
+	m_xAnimationAssets.push_back(std::move(xHandle));
 
-	m_xClipCollection.AddClip(pxClip);
+	// Add as a non-owning reference (asset owns the clip)
+	m_xClipCollection.AddClipReference(pxClip);
 
 	// Resolve clip references in state machine
 	if (m_pxStateMachine)

@@ -48,6 +48,7 @@
 
 // Asset system includes
 #include "AssetHandling/Zenith_AssetHandle.h"
+#include "AssetHandling/Zenith_AnimationAsset.h"
 #include "Prefab/Zenith_Prefab.h"
 
 // Async asset loading and DataAsset includes
@@ -3533,7 +3534,8 @@ void Zenith_UnitTests::TestAnimatedVertexPositions()
 
 	Zenith_MeshAsset* pxMesh = Zenith_AssetRegistry::Get().Get<Zenith_MeshAsset>(strMeshPath);
 	Zenith_SkeletonAsset* pxSkel = Zenith_AssetRegistry::Get().Get<Zenith_SkeletonAsset>(strSkelPath);
-	Flux_AnimationClip* pxClip = Flux_AnimationClip::LoadFromZanimFile(strAnimPath);
+	Zenith_AnimationAsset* pxAnimAsset = Zenith_AssetRegistry::Get().Get<Zenith_AnimationAsset>(strAnimPath);
+	Flux_AnimationClip* pxClip = pxAnimAsset ? pxAnimAsset->GetClip() : nullptr;
 
 	if (pxMesh == nullptr || pxSkel == nullptr)
 	{
@@ -3644,8 +3646,6 @@ void Zenith_UnitTests::TestAnimatedVertexPositions()
 
 			Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Animation t=1.0 (90-degree rotation) verified");
 		}
-
-		delete pxClip;
 	}
 
 	// Cleanup
@@ -5378,26 +5378,23 @@ void Zenith_UnitTests::TestStickFigureAssetExport()
 #endif
 
 	// Reload and verify animations
-	Flux_AnimationClip* pxReloadedIdle = Flux_AnimationClip::LoadFromZanimFile(strIdlePath);
-	Zenith_Assert(pxReloadedIdle != nullptr, "Should be able to reload idle animation");
-	Zenith_Assert(pxReloadedIdle->GetName() == "Idle", "Reloaded idle animation name mismatch");
-	Zenith_Assert(FloatEquals(pxReloadedIdle->GetDuration(), 2.0f, 0.01f), "Reloaded idle duration mismatch");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Reloaded idle animation verified: duration=%.1fs", pxReloadedIdle->GetDuration());
+	Zenith_AnimationAsset* pxReloadedIdleAsset = Zenith_AssetRegistry::Get().Get<Zenith_AnimationAsset>(strIdlePath);
+	Zenith_Assert(pxReloadedIdleAsset != nullptr && pxReloadedIdleAsset->GetClip() != nullptr, "Should be able to reload idle animation");
+	Zenith_Assert(pxReloadedIdleAsset->GetClip()->GetName() == "Idle", "Reloaded idle animation name mismatch");
+	Zenith_Assert(FloatEquals(pxReloadedIdleAsset->GetClip()->GetDuration(), 2.0f, 0.01f), "Reloaded idle duration mismatch");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Reloaded idle animation verified: duration=%.1fs", pxReloadedIdleAsset->GetClip()->GetDuration());
 
-	Flux_AnimationClip* pxReloadedWalk = Flux_AnimationClip::LoadFromZanimFile(strWalkPath);
-	Zenith_Assert(pxReloadedWalk != nullptr, "Should be able to reload walk animation");
-	Zenith_Assert(pxReloadedWalk->GetName() == "Walk", "Reloaded walk animation name mismatch");
+	Zenith_AnimationAsset* pxReloadedWalkAsset = Zenith_AssetRegistry::Get().Get<Zenith_AnimationAsset>(strWalkPath);
+	Zenith_Assert(pxReloadedWalkAsset != nullptr && pxReloadedWalkAsset->GetClip() != nullptr, "Should be able to reload walk animation");
+	Zenith_Assert(pxReloadedWalkAsset->GetClip()->GetName() == "Walk", "Reloaded walk animation name mismatch");
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Reloaded walk animation verified");
 
-	Flux_AnimationClip* pxReloadedRun = Flux_AnimationClip::LoadFromZanimFile(strRunPath);
-	Zenith_Assert(pxReloadedRun != nullptr, "Should be able to reload run animation");
-	Zenith_Assert(pxReloadedRun->GetName() == "Run", "Reloaded run animation name mismatch");
+	Zenith_AnimationAsset* pxReloadedRunAsset = Zenith_AssetRegistry::Get().Get<Zenith_AnimationAsset>(strRunPath);
+	Zenith_Assert(pxReloadedRunAsset != nullptr && pxReloadedRunAsset->GetClip() != nullptr, "Should be able to reload run animation");
+	Zenith_Assert(pxReloadedRunAsset->GetClip()->GetName() == "Run", "Reloaded run animation name mismatch");
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Reloaded run animation verified");
 
-	// Cleanup
-	delete pxReloadedRun;
-	delete pxReloadedWalk;
-	delete pxReloadedIdle;
+	// Cleanup (registry manages reloaded animation assets)
 	delete pxDeathClip;
 	delete pxHitClip;
 	delete pxDodgeClip;
@@ -7658,14 +7655,13 @@ void Zenith_UnitTests::TestProceduralTreeAssetExport()
 #endif
 
 	// Reload and verify animation
-	Flux_AnimationClip* pxReloadedSway = Flux_AnimationClip::LoadFromZanimFile(strSwayPath);
-	Zenith_Assert(pxReloadedSway != nullptr, "Should be able to reload sway animation");
-	Zenith_Assert(pxReloadedSway->GetName() == "Sway", "Reloaded sway animation name mismatch");
-	Zenith_Assert(FloatEquals(pxReloadedSway->GetDuration(), 2.0f, 0.01f), "Reloaded sway duration mismatch");
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Reloaded sway animation verified: duration=%.1fs", pxReloadedSway->GetDuration());
+	Zenith_AnimationAsset* pxReloadedSwayAsset = Zenith_AssetRegistry::Get().Get<Zenith_AnimationAsset>(strSwayPath);
+	Zenith_Assert(pxReloadedSwayAsset != nullptr && pxReloadedSwayAsset->GetClip() != nullptr, "Should be able to reload sway animation");
+	Zenith_Assert(pxReloadedSwayAsset->GetClip()->GetName() == "Sway", "Reloaded sway animation name mismatch");
+	Zenith_Assert(FloatEquals(pxReloadedSwayAsset->GetClip()->GetDuration(), 2.0f, 0.01f), "Reloaded sway duration mismatch");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Reloaded sway animation verified: duration=%.1fs", pxReloadedSwayAsset->GetClip()->GetDuration());
 
-	// Cleanup
-	delete pxReloadedSway;
+	// Cleanup (registry manages reloaded animation asset)
 	delete pxSwayClip;
 	delete pxMesh;
 	delete pxSkel;

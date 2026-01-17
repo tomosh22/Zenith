@@ -458,36 +458,6 @@ void Flux_AnimationClip::LoadFromAssimp(const aiAnimation* pxAnimation, const ai
 	}
 }
 
-Flux_AnimationClip* Flux_AnimationClip::LoadFromFile(const std::string& strPath)
-{
-	Assimp::Importer xImporter;
-	const aiScene* pxScene = xImporter.ReadFile(strPath,
-		aiProcess_Triangulate |
-		aiProcess_LimitBoneWeights |
-		aiProcess_ValidateDataStructure
-	);
-
-	Zenith_Assert(pxScene && pxScene->mRootNode, "Failed to load animation from: %s", strPath.c_str());
-	Zenith_Assert(pxScene->mNumAnimations > 0, "No animations found in: %s", strPath.c_str());
-
-	Flux_AnimationClip* pxClip = new Flux_AnimationClip();
-	pxClip->LoadFromAssimp(pxScene->mAnimations[0], pxScene->mRootNode);
-	pxClip->m_strSourcePath = strPath;
-
-	return pxClip;
-}
-
-Flux_AnimationClip* Flux_AnimationClip::LoadFromZanimFile(const std::string& strPath)
-{
-	Zenith_DataStream xStream;
-	xStream.ReadFromFile(strPath.c_str());
-
-	Flux_AnimationClip* pxClip = new Flux_AnimationClip();
-	pxClip->ReadFromDataStream(xStream);
-
-	return pxClip;
-}
-
 void Flux_AnimationClip::Export(const std::string& strPath) const
 {
 	Zenith_DataStream xStream;
@@ -603,10 +573,12 @@ Flux_AnimationClipCollection::~Flux_AnimationClipCollection()
 Flux_AnimationClipCollection::Flux_AnimationClipCollection(Flux_AnimationClipCollection&& xOther) noexcept
 	: m_xClipsByName(std::move(xOther.m_xClipsByName))
 	, m_xClips(std::move(xOther.m_xClips))
+	, m_xBorrowedClips(std::move(xOther.m_xBorrowedClips))
 {
 	// Clear the moved-from object's containers to prevent double-delete
 	xOther.m_xClipsByName.clear();
 	xOther.m_xClips.clear();
+	xOther.m_xBorrowedClips.clear();
 }
 
 Flux_AnimationClipCollection& Flux_AnimationClipCollection::operator=(Flux_AnimationClipCollection&& xOther) noexcept
@@ -619,10 +591,12 @@ Flux_AnimationClipCollection& Flux_AnimationClipCollection::operator=(Flux_Anima
 		// Take ownership of the other's clips
 		m_xClipsByName = std::move(xOther.m_xClipsByName);
 		m_xClips = std::move(xOther.m_xClips);
+		m_xBorrowedClips = std::move(xOther.m_xBorrowedClips);
 
 		// Clear the moved-from object's containers to prevent double-delete
 		xOther.m_xClipsByName.clear();
 		xOther.m_xClips.clear();
+		xOther.m_xBorrowedClips.clear();
 	}
 	return *this;
 }
@@ -642,6 +616,22 @@ void Flux_AnimationClipCollection::AddClip(Flux_AnimationClip* pxClip)
 	m_xClips.push_back(pxClip);
 }
 
+void Flux_AnimationClipCollection::AddClipReference(Flux_AnimationClip* pxClip)
+{
+	if (!pxClip)
+		return;
+
+	const std::string& strName = pxClip->GetName();
+
+	// Remove existing clip with same name
+	if (HasClip(strName))
+		RemoveClip(strName);
+
+	m_xClipsByName[strName] = pxClip;
+	m_xClips.push_back(pxClip);
+	m_xBorrowedClips.insert(pxClip);  // Mark as borrowed (not owned)
+}
+
 void Flux_AnimationClipCollection::RemoveClip(const std::string& strName)
 {
 	auto it = m_xClipsByName.find(strName);
@@ -657,18 +647,32 @@ void Flux_AnimationClipCollection::RemoveClip(const std::string& strName)
 		// Remove from map
 		m_xClipsByName.erase(it);
 
-		// Delete clip
-		delete pxClip;
+		// Only delete if we own it (not borrowed)
+		if (m_xBorrowedClips.find(pxClip) == m_xBorrowedClips.end())
+		{
+			delete pxClip;
+		}
+		else
+		{
+			m_xBorrowedClips.erase(pxClip);
+		}
 	}
 }
 
 void Flux_AnimationClipCollection::Clear()
 {
+	// Only delete clips we own (not borrowed)
 	for (Flux_AnimationClip* pxClip : m_xClips)
-		delete pxClip;
+	{
+		if (m_xBorrowedClips.find(pxClip) == m_xBorrowedClips.end())
+		{
+			delete pxClip;
+		}
+	}
 
 	m_xClips.clear();
 	m_xClipsByName.clear();
+	m_xBorrowedClips.clear();
 }
 
 Flux_AnimationClip* Flux_AnimationClipCollection::GetClip(const std::string& strName)

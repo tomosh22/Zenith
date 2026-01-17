@@ -10,6 +10,8 @@ class Zenith_MaterialAsset;
 class Zenith_MeshAsset;
 class Zenith_SkeletonAsset;
 class Zenith_ModelAsset;
+class Zenith_AnimationAsset;
+class Zenith_MeshGeometryAsset;
 class Zenith_Prefab;
 class Zenith_DataStream;
 
@@ -253,6 +255,8 @@ using MaterialHandle = Zenith_AssetHandle<Zenith_MaterialAsset>;
 using MeshHandle = Zenith_AssetHandle<Zenith_MeshAsset>;
 using SkeletonHandle = Zenith_AssetHandle<Zenith_SkeletonAsset>;
 using ModelHandle = Zenith_AssetHandle<Zenith_ModelAsset>;
+using AnimationHandle = Zenith_AssetHandle<Zenith_AnimationAsset>;
+using MeshGeometryHandle = Zenith_AssetHandle<Zenith_MeshGeometryAsset>;
 using PrefabHandle = Zenith_AssetHandle<Zenith_Prefab>;
 
 //--------------------------------------------------------------------------

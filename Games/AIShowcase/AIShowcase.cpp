@@ -10,6 +10,7 @@
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
+#include "AssetHandling/Zenith_MeshGeometryAsset.h"
 #include "Flux/Flux_Graphics.h"
 #include "AI/Zenith_AIDebugVariables.h"
 #include "AI/Navigation/Zenith_NavMesh.h"
@@ -24,7 +25,12 @@
 // ============================================================================
 namespace AIShowcase
 {
-	// Geometry
+	// Geometry assets (registry-managed)
+	Zenith_MeshGeometryAsset* g_pxCubeAsset = nullptr;
+	Zenith_MeshGeometryAsset* g_pxSphereAsset = nullptr;
+	Zenith_MeshGeometryAsset* g_pxCylinderAsset = nullptr;
+
+	// Convenience pointers to underlying geometry
 	Flux_MeshGeometry* g_pxCubeGeometry = nullptr;
 	Flux_MeshGeometry* g_pxSphereGeometry = nullptr;
 	Flux_MeshGeometry* g_pxCylinderGeometry = nullptr;
@@ -57,17 +63,15 @@ static void InitializeAIShowcaseResources()
 
 	using namespace AIShowcase;
 
-	// Create geometries
-	// Note: Only GenerateUnitCube is available - using it for all shapes
-	g_pxCubeGeometry = new Flux_MeshGeometry();
-	Flux_MeshGeometry::GenerateUnitCube(*g_pxCubeGeometry);
+	// Create geometries using registry's cached primitives
+	g_pxCubeAsset = Zenith_MeshGeometryAsset::CreateUnitCube();
+	g_pxCubeGeometry = g_pxCubeAsset->GetGeometry();
 
-	// Use cube geometry for sphere/cylinder (until proper generation functions added)
-	g_pxSphereGeometry = new Flux_MeshGeometry();
-	Flux_MeshGeometry::GenerateUnitCube(*g_pxSphereGeometry);
+	g_pxSphereAsset = Zenith_MeshGeometryAsset::CreateUnitSphere(16);
+	g_pxSphereGeometry = g_pxSphereAsset->GetGeometry();
 
-	g_pxCylinderGeometry = new Flux_MeshGeometry();
-	Flux_MeshGeometry::GenerateUnitCube(*g_pxCylinderGeometry);
+	g_pxCylinderAsset = Zenith_MeshGeometryAsset::CreateUnitCylinder(16);
+	g_pxCylinderGeometry = g_pxCylinderAsset->GetGeometry();
 
 	// Use grid pattern texture with BaseColor for all materials
 	Zenith_TextureAsset* pxGridTex = Flux_Graphics::s_pxGridTexture;

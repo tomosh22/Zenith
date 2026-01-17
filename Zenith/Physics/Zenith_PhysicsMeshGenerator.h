@@ -3,6 +3,9 @@
 #include "Maths/Zenith_Maths.h"
 #include "Collections/Zenith_Vector.h"
 
+// Forward declarations
+class Zenith_MeshGeometryAsset;
+
 /**
  * Zenith_PhysicsMeshGenerator - Generates approximate physics collision geometry
  *
@@ -62,20 +65,19 @@ class Zenith_PhysicsMeshGenerator
 public:
 	/**
 	 * Generate a physics mesh from a collection of render mesh entries
-	 * 
+	 *
 	 * @param xMeshGeometries Vector of pointers to source mesh geometries
 	 * @param eQuality Quality level for generation (overrides global config)
-	 * @return Pointer to newly allocated Flux_MeshGeometry, or nullptr on failure
-	 *         Caller is responsible for deleting the returned pointer
+	 * @return Registry-managed asset containing the physics mesh, or nullptr on failure
 	 */
-	static Flux_MeshGeometry* GeneratePhysicsMesh(
+	static Zenith_MeshGeometryAsset* GeneratePhysicsMesh(
 		const Zenith_Vector<Flux_MeshGeometry*>& xMeshGeometries,
 		PhysicsMeshQuality eQuality = PHYSICS_MESH_QUALITY_MEDIUM);
 
 	/**
 	 * Generate a physics mesh using the global configuration
 	 */
-	static Flux_MeshGeometry* GeneratePhysicsMeshWithConfig(
+	static Zenith_MeshGeometryAsset* GeneratePhysicsMeshWithConfig(
 		const Zenith_Vector<Flux_MeshGeometry*>& xMeshGeometries,
 		const PhysicsMeshConfig& xConfig);
 

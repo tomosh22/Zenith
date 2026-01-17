@@ -824,6 +824,7 @@
     <ClInclude Include="..\Zenith\Android\Multithreading\Zenith_Android_Multithreading.h" />
     <ClInclude Include="..\Zenith\Android\Zenith_Android_Window.h" />
     <ClInclude Include="..\Zenith\Android\Zenith_OS_Include.h" />
+    <ClInclude Include="..\Zenith\AssetHandling\Zenith_AnimationAsset.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_Asset.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_AssetHandle.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_AssetRegistry.h" />
@@ -833,6 +834,7 @@
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_FileWatcher.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_MaterialAsset.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_MeshAsset.h" />
+    <ClInclude Include="..\Zenith\AssetHandling\Zenith_MeshGeometryAsset.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_ModelAsset.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_SkeletonAsset.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_TextureAsset.h" />
@@ -1652,6 +1654,7 @@
     <ClCompile Include="..\Zenith\Android\Zenith_Android_DebugBreak.cpp" />
     <ClCompile Include="..\Zenith\Android\Zenith_Android_Main.cpp" />
     <ClCompile Include="..\Zenith\Android\Zenith_Android_Window.cpp" />
+    <ClCompile Include="..\Zenith\AssetHandling\Zenith_AnimationAsset.cpp" />
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_Asset.cpp" />
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_AssetHandle.cpp" />
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_AssetRegistry.cpp" />
@@ -1661,6 +1664,7 @@
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_FileWatcher.cpp" />
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_MaterialAsset.cpp" />
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_MeshAsset.cpp" />
+    <ClCompile Include="..\Zenith\AssetHandling\Zenith_MeshGeometryAsset.cpp" />
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_ModelAsset.cpp" />
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_SkeletonAsset.cpp" />
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_TextureAsset.cpp" />

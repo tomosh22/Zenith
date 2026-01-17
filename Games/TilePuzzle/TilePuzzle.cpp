@@ -10,6 +10,7 @@
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
+#include "AssetHandling/Zenith_MeshGeometryAsset.h"
 #include "Flux/Flux_Graphics.h"
 #include "Vulkan/Zenith_Vulkan_MemoryManager.h"
 #include "Prefab/Zenith_Prefab.h"
@@ -19,7 +20,11 @@
 // ============================================================================
 namespace TilePuzzle
 {
-	// Shared geometry
+	// Shared geometry assets (registry-managed)
+	Zenith_MeshGeometryAsset* g_pxCubeAsset = nullptr;
+	Zenith_MeshGeometryAsset* g_pxSphereAsset = nullptr;
+
+	// Convenience pointers to underlying geometry (do not delete - managed by assets)
 	Flux_MeshGeometry* g_pxCubeGeometry = nullptr;
 	Flux_MeshGeometry* g_pxSphereGeometry = nullptr;
 
@@ -144,12 +149,12 @@ static void InitializeTilePuzzleResources()
 
 	using namespace TilePuzzle;
 
-	// Create geometry
-	g_pxCubeGeometry = new Flux_MeshGeometry();
-	Flux_MeshGeometry::GenerateUnitCube(*g_pxCubeGeometry);
+	// Create geometry using registry's cached primitives
+	g_pxCubeAsset = Zenith_MeshGeometryAsset::CreateUnitCube();
+	g_pxCubeGeometry = g_pxCubeAsset->GetGeometry();
 
-	g_pxSphereGeometry = new Flux_MeshGeometry();
-	GenerateUnitSphere(*g_pxSphereGeometry, 16, 32);
+	g_pxSphereAsset = Zenith_MeshGeometryAsset::CreateUnitSphere(16);
+	g_pxSphereGeometry = g_pxSphereAsset->GetGeometry();
 
 	// Use grid pattern texture with BaseColor for all materials
 	Zenith_TextureAsset* pxGridTex = Flux_Graphics::s_pxGridTexture;

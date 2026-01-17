@@ -6,6 +6,7 @@
 #include "Flux_InverseKinematics.h"
 #include "Flux/Flux_Buffers.h"
 #include "DataStream/Zenith_DataStream.h"
+#include "AssetHandling/Zenith_AssetHandle.h"
 #include <functional>
 
 // Forward declarations
@@ -202,6 +203,7 @@ private:
 
 	// Animation data
 	Flux_AnimationClipCollection m_xClipCollection;
+	std::vector<AnimationHandle> m_xAnimationAssets;  // Keeps assets alive for borrowed clips
 	Flux_AnimationStateMachine* m_pxStateMachine = nullptr;
 	Flux_IKSolver* m_pxIKSolver = nullptr;
 

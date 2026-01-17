@@ -6,6 +6,8 @@
 #include "AssetHandling/Zenith_MeshAsset.h"
 #include "AssetHandling/Zenith_SkeletonAsset.h"
 #include "AssetHandling/Zenith_ModelAsset.h"
+#include "AssetHandling/Zenith_AnimationAsset.h"
+#include "AssetHandling/Zenith_MeshGeometryAsset.h"
 #include "Prefab/Zenith_Prefab.h"
 
 // Forward declare loaders (defined in respective asset .cpp files)
@@ -15,6 +17,8 @@ static Zenith_Asset* LoadMeshAsset(const std::string& strPath);
 static Zenith_Asset* LoadSkeletonAsset(const std::string& strPath);
 static Zenith_Asset* LoadModelAsset(const std::string& strPath);
 static Zenith_Asset* LoadPrefabAsset(const std::string& strPath);
+static Zenith_Asset* LoadAnimationAsset(const std::string& strPath);
+static Zenith_Asset* LoadMeshGeometryAsset(const std::string& strPath);
 
 // Loader implementations
 static Zenith_Asset* LoadTextureAsset(const std::string& strPath)
@@ -96,6 +100,52 @@ static Zenith_Asset* LoadPrefabAsset(const std::string& strPath)
 	}
 
 	Zenith_Prefab* pxAsset = new Zenith_Prefab();
+	if (!pxAsset->LoadFromFile(strPath))
+	{
+		delete pxAsset;
+		return nullptr;
+	}
+	return pxAsset;
+}
+
+static Zenith_Asset* LoadAnimationAsset(const std::string& strPath)
+{
+	if (strPath.empty())
+	{
+		// Create empty animation asset (for procedural animations)
+		return new Zenith_AnimationAsset();
+	}
+
+	// Procedural assets are created via Create(), not loaded
+	if (strPath.find("procedural://") == 0)
+	{
+		return nullptr;
+	}
+
+	Zenith_AnimationAsset* pxAsset = new Zenith_AnimationAsset();
+	if (!pxAsset->LoadFromFile(strPath))
+	{
+		delete pxAsset;
+		return nullptr;
+	}
+	return pxAsset;
+}
+
+static Zenith_Asset* LoadMeshGeometryAsset(const std::string& strPath)
+{
+	if (strPath.empty())
+	{
+		// Create empty mesh geometry asset (for procedural geometry)
+		return new Zenith_MeshGeometryAsset();
+	}
+
+	// Procedural assets are created via Create(), not loaded
+	if (strPath.find("procedural://") == 0)
+	{
+		return nullptr;
+	}
+
+	Zenith_MeshGeometryAsset* pxAsset = new Zenith_MeshGeometryAsset();
 	if (!pxAsset->LoadFromFile(strPath))
 	{
 		delete pxAsset;
@@ -229,6 +279,8 @@ void Zenith_AssetRegistry::Initialize()
 	s_pxInstance->RegisterLoader(std::type_index(typeid(Zenith_SkeletonAsset)), LoadSkeletonAsset);
 	s_pxInstance->RegisterLoader(std::type_index(typeid(Zenith_ModelAsset)), LoadModelAsset);
 	s_pxInstance->RegisterLoader(std::type_index(typeid(Zenith_Prefab)), LoadPrefabAsset);
+	s_pxInstance->RegisterLoader(std::type_index(typeid(Zenith_AnimationAsset)), LoadAnimationAsset);
+	s_pxInstance->RegisterLoader(std::type_index(typeid(Zenith_MeshGeometryAsset)), LoadMeshGeometryAsset);
 
 	// Note: Zenith_MaterialAsset::InitializeDefaults() must be called AFTER Vulkan/VMA
 	// is initialized (after Flux::EarlyInitialise). See InitializeGPUDependentAssets().
@@ -435,6 +487,38 @@ Zenith_Asset* Zenith_AssetRegistry::CreateInternal(std::type_index xType)
 	}
 
 	// Set path and add to cache
+	pxAsset->m_strPath = strPath;
+	m_xAssetsByPath[strPath] = pxAsset;
+
+	if (m_bLifecycleLogging)
+	{
+		Zenith_Log(LOG_CATEGORY_ASSET, "AssetRegistry: Created procedural asset '%s'", strPath.c_str());
+	}
+
+	return pxAsset;
+}
+
+Zenith_Asset* Zenith_AssetRegistry::CreateInternal(std::type_index xType, const std::string& strPath)
+{
+	Zenith_ScopedMutexLock xLock(m_xMutex);
+
+	// Find loader
+	auto itLoader = m_xLoaders.find(xType);
+	if (itLoader == m_xLoaders.end())
+	{
+		Zenith_Log(LOG_CATEGORY_ASSET, "AssetRegistry: No loader registered for type");
+		return nullptr;
+	}
+
+	// Create the asset (loader should handle empty path as "create new")
+	Zenith_Asset* pxAsset = itLoader->second("");
+	if (pxAsset == nullptr)
+	{
+		Zenith_Log(LOG_CATEGORY_ASSET, "AssetRegistry: Failed to create procedural asset");
+		return nullptr;
+	}
+
+	// Set the specified path and add to cache
 	pxAsset->m_strPath = strPath;
 	m_xAssetsByPath[strPath] = pxAsset;
 

@@ -9,6 +9,7 @@
 
 // Forward declarations for new asset/instance system
 class Zenith_ModelAsset;
+class Zenith_MeshGeometryAsset;
 class Flux_ModelInstance;
 class Flux_MeshInstance;
 class Flux_SkeletonInstance;
@@ -217,8 +218,8 @@ public:
 
 	void GeneratePhysicsMesh(PhysicsMeshQuality eQuality = PHYSICS_MESH_QUALITY_MEDIUM);
 	void GeneratePhysicsMeshWithConfig(const PhysicsMeshConfig& xConfig);
-	Flux_MeshGeometry* GetPhysicsMesh() const { return m_pxPhysicsMesh; }
-	bool HasPhysicsMesh() const { return m_pxPhysicsMesh != nullptr; }
+	Flux_MeshGeometry* GetPhysicsMesh() const;
+	bool HasPhysicsMesh() const { return m_pxPhysicsMeshAsset != nullptr; }
 	void ClearPhysicsMesh();
 
 	// Debug drawing control
@@ -267,7 +268,7 @@ public:
 	//=========================================================================
 
 	Zenith_Vector<MeshEntry> m_xMeshEntries;
-	Flux_MeshGeometry* m_pxPhysicsMesh = nullptr;
+	Zenith_MeshGeometryAsset* m_pxPhysicsMeshAsset = nullptr;
 
 	// Debug draw settings
 	bool m_bDebugDrawPhysicsMesh = true;

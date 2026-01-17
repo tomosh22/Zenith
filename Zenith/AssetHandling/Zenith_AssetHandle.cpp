@@ -6,6 +6,8 @@
 #include "AssetHandling/Zenith_MeshAsset.h"
 #include "AssetHandling/Zenith_SkeletonAsset.h"
 #include "AssetHandling/Zenith_ModelAsset.h"
+#include "AssetHandling/Zenith_AnimationAsset.h"
+#include "AssetHandling/Zenith_MeshGeometryAsset.h"
 #include "Prefab/Zenith_Prefab.h"
 #include "DataStream/Zenith_DataStream.h"
 
@@ -261,6 +263,94 @@ void Zenith_AssetHandle<Zenith_Prefab>::WriteToDataStream(Zenith_DataStream& xSt
 
 template<>
 void Zenith_AssetHandle<Zenith_Prefab>::ReadFromDataStream(Zenith_DataStream& xStream)
+{
+	if (m_pxCached)
+	{
+		m_pxCached->Release();
+		m_pxCached = nullptr;
+	}
+	xStream >> m_strPath;
+}
+
+//--------------------------------------------------------------------------
+// Animation specializations
+//--------------------------------------------------------------------------
+
+template<>
+Zenith_AnimationAsset* Zenith_AssetHandle<Zenith_AnimationAsset>::Get()
+{
+	if (m_strPath.empty())
+	{
+		return nullptr;
+	}
+
+	// Check cache
+	if (m_pxCached)
+	{
+		return m_pxCached;
+	}
+
+	// Load from registry
+	m_pxCached = Zenith_AssetRegistry::Get().Get<Zenith_AnimationAsset>(m_strPath);
+	if (m_pxCached)
+	{
+		m_pxCached->AddRef();
+	}
+	return m_pxCached;
+}
+
+template<>
+void Zenith_AssetHandle<Zenith_AnimationAsset>::WriteToDataStream(Zenith_DataStream& xStream) const
+{
+	xStream << m_strPath;
+}
+
+template<>
+void Zenith_AssetHandle<Zenith_AnimationAsset>::ReadFromDataStream(Zenith_DataStream& xStream)
+{
+	if (m_pxCached)
+	{
+		m_pxCached->Release();
+		m_pxCached = nullptr;
+	}
+	xStream >> m_strPath;
+}
+
+//--------------------------------------------------------------------------
+// MeshGeometry specializations
+//--------------------------------------------------------------------------
+
+template<>
+Zenith_MeshGeometryAsset* Zenith_AssetHandle<Zenith_MeshGeometryAsset>::Get()
+{
+	if (m_strPath.empty())
+	{
+		return nullptr;
+	}
+
+	// Check cache
+	if (m_pxCached)
+	{
+		return m_pxCached;
+	}
+
+	// Load from registry
+	m_pxCached = Zenith_AssetRegistry::Get().Get<Zenith_MeshGeometryAsset>(m_strPath);
+	if (m_pxCached)
+	{
+		m_pxCached->AddRef();
+	}
+	return m_pxCached;
+}
+
+template<>
+void Zenith_AssetHandle<Zenith_MeshGeometryAsset>::WriteToDataStream(Zenith_DataStream& xStream) const
+{
+	xStream << m_strPath;
+}
+
+template<>
+void Zenith_AssetHandle<Zenith_MeshGeometryAsset>::ReadFromDataStream(Zenith_DataStream& xStream)
 {
 	if (m_pxCached)
 	{

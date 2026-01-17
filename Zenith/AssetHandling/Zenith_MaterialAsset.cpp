@@ -354,7 +354,7 @@ Zenith_TextureAsset* Zenith_MaterialAsset::GetDefaultNormalTexture()
 void Zenith_MaterialAsset::InitializeDefaults()
 {
 	// Create default white texture (1x1 white pixel)
-	s_pxDefaultWhite = new Zenith_TextureAsset();
+	s_pxDefaultWhite = Zenith_AssetRegistry::Get().Create<Zenith_TextureAsset>();
 	{
 		uint32_t uWhite = 0xFFFFFFFF;
 		Flux_SurfaceInfo xInfo;
@@ -367,7 +367,7 @@ void Zenith_MaterialAsset::InitializeDefaults()
 	}
 
 	// Create default normal texture (1x1 flat normal: 0.5, 0.5, 1.0)
-	s_pxDefaultNormal = new Zenith_TextureAsset();
+	s_pxDefaultNormal = Zenith_AssetRegistry::Get().Create<Zenith_TextureAsset>();
 	{
 		uint32_t uNormal = 0xFFFF8080; // RGBA: 0.5, 0.5, 1.0, 1.0 in 8-bit (128, 128, 255, 255)
 		Flux_SurfaceInfo xInfo;
@@ -384,10 +384,8 @@ void Zenith_MaterialAsset::InitializeDefaults()
 
 void Zenith_MaterialAsset::ShutdownDefaults()
 {
-	delete s_pxDefaultWhite;
+	// Clear pointers - registry manages asset lifetime
 	s_pxDefaultWhite = nullptr;
-
-	delete s_pxDefaultNormal;
 	s_pxDefaultNormal = nullptr;
 
 	Zenith_Log(LOG_CATEGORY_ASSET, "Material default textures shut down");

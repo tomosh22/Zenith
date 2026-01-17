@@ -15,6 +15,7 @@
 #include "AssetHandling/Zenith_DataAssetManager.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "Prefab/Zenith_Prefab.h"
+#include "AssetHandling/Zenith_MeshGeometryAsset.h"
 
 #include <cmath>
 
@@ -23,6 +24,11 @@
 // ============================================================================
 namespace Marble
 {
+	// Geometry assets (registry-managed)
+	Zenith_MeshGeometryAsset* g_pxSphereAsset = nullptr;
+	Zenith_MeshGeometryAsset* g_pxCubeAsset = nullptr;
+
+	// Convenience pointers to underlying geometry
 	Flux_MeshGeometry* g_pxSphereGeometry = nullptr;
 	Flux_MeshGeometry* g_pxCubeGeometry = nullptr;
 	Zenith_MaterialAsset* g_pxBallMaterial = nullptr;
@@ -131,13 +137,16 @@ static void InitializeMarbleResources()
 
 	using namespace Marble;
 
-	// Create sphere geometry
-	g_pxSphereGeometry = new Flux_MeshGeometry();
-	GenerateUVSphere(*g_pxSphereGeometry, 0.5f, 16, 12);
+	// Create sphere geometry (custom radius - tracked through registry)
+	g_pxSphereAsset = Zenith_AssetRegistry::Get().Create<Zenith_MeshGeometryAsset>();
+	Flux_MeshGeometry* pxSphereGeom = new Flux_MeshGeometry();
+	GenerateUVSphere(*pxSphereGeom, 0.5f, 16, 12);
+	g_pxSphereAsset->SetGeometry(pxSphereGeom);
+	g_pxSphereGeometry = g_pxSphereAsset->GetGeometry();
 
-	// Create cube geometry
-	g_pxCubeGeometry = new Flux_MeshGeometry();
-	Flux_MeshGeometry::GenerateUnitCube(*g_pxCubeGeometry);
+	// Create cube geometry (uses cached unit cube)
+	g_pxCubeAsset = Zenith_MeshGeometryAsset::CreateUnitCube();
+	g_pxCubeGeometry = g_pxCubeAsset->GetGeometry();
 
 	// Use grid pattern texture with BaseColor for all materials
 	Zenith_TextureAsset* pxGridTex = Flux_Graphics::s_pxGridTexture;

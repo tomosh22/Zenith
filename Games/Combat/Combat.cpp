@@ -19,6 +19,7 @@
 #include "AssetHandling/Zenith_AssetHandle.h"
 #include "AssetHandling/Zenith_DataAssetManager.h"
 #include "AssetHandling/Zenith_ModelAsset.h"
+#include "AssetHandling/Zenith_MeshGeometryAsset.h"
 #include "Prefab/Zenith_Prefab.h"
 
 #include <cmath>
@@ -29,10 +30,18 @@
 // ============================================================================
 namespace Combat
 {
+	// Mesh geometry assets (registry-managed)
+	Zenith_MeshGeometryAsset* g_pxCapsuleAsset = nullptr;
+	Zenith_MeshGeometryAsset* g_pxCubeAsset = nullptr;
+	Zenith_MeshGeometryAsset* g_pxConeAsset = nullptr;
+	Zenith_MeshGeometryAsset* g_pxStickFigureGeometryAsset = nullptr;
+
+	// Convenience pointers to underlying geometry (do not delete - managed by assets)
 	Flux_MeshGeometry* g_pxCapsuleGeometry = nullptr;
 	Flux_MeshGeometry* g_pxCubeGeometry = nullptr;
-	Flux_MeshGeometry* g_pxConeGeometry = nullptr;  // Cone mesh for candles
-	Flux_MeshGeometry* g_pxStickFigureGeometry = nullptr;  // Animated character mesh (skinned)
+	Flux_MeshGeometry* g_pxConeGeometry = nullptr;
+	Flux_MeshGeometry* g_pxStickFigureGeometry = nullptr;
+
 	Zenith_ModelAsset* g_pxStickFigureModelAsset = nullptr;  // Model asset with skeleton for animated rendering
 	std::string g_strStickFigureModelPath;  // Path to model asset file
 	Zenith_MaterialAsset* g_pxPlayerMaterial = nullptr;
@@ -83,25 +92,19 @@ static void CleanupCombatResources()
 	delete g_pxArenaWallPrefab;
 	g_pxArenaWallPrefab = nullptr;
 
-	// Delete model asset
-	delete g_pxStickFigureModelAsset;
+	// Clear model asset pointer - registry manages lifetime
 	g_pxStickFigureModelAsset = nullptr;
 
-	// Cleanup mesh geometries - destructor handles GPU buffer cleanup
-	if (g_pxStickFigureGeometry && g_pxStickFigureGeometry != g_pxCapsuleGeometry)
-	{
-		delete g_pxStickFigureGeometry;
-	}
+	// Clear mesh geometry pointers - registry manages asset lifetime
 	g_pxStickFigureGeometry = nullptr;
-
-	delete g_pxCapsuleGeometry;
 	g_pxCapsuleGeometry = nullptr;
-
-	delete g_pxCubeGeometry;
 	g_pxCubeGeometry = nullptr;
-
-	delete g_pxConeGeometry;
 	g_pxConeGeometry = nullptr;
+
+	g_pxStickFigureGeometryAsset = nullptr;
+	g_pxCapsuleAsset = nullptr;
+	g_pxCubeAsset = nullptr;
+	g_pxConeAsset = nullptr;
 
 	// Note: Textures and materials are managed by Zenith_AssetRegistry
 
@@ -375,27 +378,33 @@ static void InitializeCombatResources()
 	std::string strMeshDir = std::string(GAME_ASSETS_DIR) + "/Meshes";
 	std::filesystem::create_directories(strMeshDir);
 
-	// Create capsule geometry (for characters)
-	g_pxCapsuleGeometry = new Flux_MeshGeometry();
-	GenerateCapsule(*g_pxCapsuleGeometry, 0.5f, 1.0f, 16, 16);
+	// Create capsule geometry (for characters) - custom size, tracked through registry
+	g_pxCapsuleAsset = Zenith_AssetRegistry::Get().Create<Zenith_MeshGeometryAsset>();
+	Flux_MeshGeometry* pxCapsule = new Flux_MeshGeometry();
+	GenerateCapsule(*pxCapsule, 0.5f, 1.0f, 16, 16);
+	g_pxCapsuleAsset->SetGeometry(pxCapsule);
+	g_pxCapsuleGeometry = g_pxCapsuleAsset->GetGeometry();
 #ifdef ZENITH_TOOLS
 	std::string strCapsulePath = strMeshDir + "/Capsule.zmesh";
 	g_pxCapsuleGeometry->Export(strCapsulePath.c_str());
 	g_pxCapsuleGeometry->m_strSourcePath = strCapsulePath;
 #endif
 
-	// Create cube geometry (for arena)
-	g_pxCubeGeometry = new Flux_MeshGeometry();
-	Flux_MeshGeometry::GenerateUnitCube(*g_pxCubeGeometry);
+	// Create cube geometry (for arena) - use registry's cached unit cube
+	g_pxCubeAsset = Zenith_MeshGeometryAsset::CreateUnitCube();
+	g_pxCubeGeometry = g_pxCubeAsset->GetGeometry();
 #ifdef ZENITH_TOOLS
 	std::string strCubePath = strMeshDir + "/Cube.zmesh";
 	g_pxCubeGeometry->Export(strCubePath.c_str());
 	g_pxCubeGeometry->m_strSourcePath = strCubePath;
 #endif
 
-	// Create cone geometry (for candles on walls)
-	g_pxConeGeometry = new Flux_MeshGeometry();
-	GenerateCone(*g_pxConeGeometry, 0.08f, 0.25f, 12);
+	// Create cone geometry (for candles on walls) - custom size, tracked through registry
+	g_pxConeAsset = Zenith_AssetRegistry::Get().Create<Zenith_MeshGeometryAsset>();
+	Flux_MeshGeometry* pxCone = new Flux_MeshGeometry();
+	GenerateCone(*pxCone, 0.08f, 0.25f, 12);
+	g_pxConeAsset->SetGeometry(pxCone);
+	g_pxConeGeometry = g_pxConeAsset->GetGeometry();
 #ifdef ZENITH_TOOLS
 	std::string strConePath = strMeshDir + "/Cone.zmesh";
 	g_pxConeGeometry->Export(strConePath.c_str());
@@ -403,22 +412,25 @@ static void InitializeCombatResources()
 #endif
 
 	// Load stick figure mesh (skinned version with bone data for animated rendering)
-	std::string strStickFigureMeshGeomPath = std::string(ENGINE_ASSETS_DIR) + "Meshes/StickFigure/StickFigure.zmesh";  // Flux_MeshGeometry format
-	std::string strStickFigureMeshAssetPath = std::string(ENGINE_ASSETS_DIR) + "Meshes/StickFigure/StickFigure.zasset";  // Zenith_MeshAsset format
+	std::string strStickFigureMeshGeomPath = std::string(ENGINE_ASSETS_DIR) + "Meshes/StickFigure/StickFigure.zmesh";
+	std::string strStickFigureMeshAssetPath = std::string(ENGINE_ASSETS_DIR) + "Meshes/StickFigure/StickFigure.zasset";
 	std::string strStickFigureSkeletonPath = std::string(ENGINE_ASSETS_DIR) + "Meshes/StickFigure/StickFigure.zskel";
 
-	g_pxStickFigureGeometry = new Flux_MeshGeometry();
 	if (std::filesystem::exists(strStickFigureMeshAssetPath) && std::filesystem::exists(strStickFigureSkeletonPath))
 	{
-		// Load the mesh geometry for fallback
+		// Load the mesh geometry through registry
 		if (std::filesystem::exists(strStickFigureMeshGeomPath))
 		{
-			Flux_MeshGeometry::LoadFromFile(strStickFigureMeshGeomPath.c_str(), *g_pxStickFigureGeometry);
-			Zenith_Log(LOG_CATEGORY_MESH, "[Combat] Loaded stick figure mesh from %s", strStickFigureMeshGeomPath.c_str());
+			g_pxStickFigureGeometryAsset = Zenith_AssetRegistry::Get().Get<Zenith_MeshGeometryAsset>(strStickFigureMeshGeomPath);
+			if (g_pxStickFigureGeometryAsset)
+			{
+				g_pxStickFigureGeometry = g_pxStickFigureGeometryAsset->GetGeometry();
+				Zenith_Log(LOG_CATEGORY_MESH, "[Combat] Loaded stick figure mesh from %s", strStickFigureMeshGeomPath.c_str());
+			}
 		}
 
-		// Create model asset
-		g_pxStickFigureModelAsset = new Zenith_ModelAsset();
+		// Create model asset via registry
+		g_pxStickFigureModelAsset = Zenith_AssetRegistry::Get().Create<Zenith_ModelAsset>();
 		g_pxStickFigureModelAsset->SetName("StickFigure");
 		g_pxStickFigureModelAsset->SetSkeletonPath(strStickFigureSkeletonPath);
 
@@ -433,7 +445,7 @@ static void InitializeCombatResources()
 	else
 	{
 		Zenith_Log(LOG_CATEGORY_MESH, "[Combat] Stick figure assets not found, using capsule");
-		delete g_pxStickFigureGeometry;
+		g_pxStickFigureGeometryAsset = g_pxCapsuleAsset;
 		g_pxStickFigureGeometry = g_pxCapsuleGeometry;
 		g_strStickFigureModelPath.clear();
 	}

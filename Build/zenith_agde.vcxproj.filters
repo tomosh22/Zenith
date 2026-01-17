@@ -514,6 +514,9 @@
     <ClCompile Include="..\Zenith\Android\Zenith_Android_Window.cpp">
       <Filter>Android</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\AssetHandling\Zenith_AnimationAsset.cpp">
+      <Filter>AssetHandling</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_Asset.cpp">
       <Filter>AssetHandling</Filter>
     </ClCompile>
@@ -539,6 +542,9 @@
       <Filter>AssetHandling</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_MeshAsset.cpp">
+      <Filter>AssetHandling</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\AssetHandling\Zenith_MeshGeometryAsset.cpp">
       <Filter>AssetHandling</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_ModelAsset.cpp">
@@ -2988,6 +2994,9 @@
     <ClInclude Include="..\Zenith\Android\Zenith_OS_Include.h">
       <Filter>Android</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\AssetHandling\Zenith_AnimationAsset.h">
+      <Filter>AssetHandling</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_Asset.h">
       <Filter>AssetHandling</Filter>
     </ClInclude>
@@ -3013,6 +3022,9 @@
       <Filter>AssetHandling</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_MeshAsset.h">
+      <Filter>AssetHandling</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\AssetHandling\Zenith_MeshGeometryAsset.h">
       <Filter>AssetHandling</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_ModelAsset.h">

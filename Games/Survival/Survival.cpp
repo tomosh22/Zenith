@@ -10,6 +10,7 @@
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
+#include "AssetHandling/Zenith_MeshGeometryAsset.h"
 #include "Flux/Flux.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
 #include "AssetHandling/Zenith_DataAssetManager.h"
@@ -25,7 +26,12 @@
 // ============================================================================
 namespace Survival
 {
-	// Geometry
+	// Geometry assets (registry-managed)
+	Zenith_MeshGeometryAsset* g_pxCubeAsset = nullptr;
+	Zenith_MeshGeometryAsset* g_pxSphereAsset = nullptr;
+	Zenith_MeshGeometryAsset* g_pxCapsuleAsset = nullptr;
+
+	// Convenience pointers to underlying geometry
 	Flux_MeshGeometry* g_pxCubeGeometry = nullptr;
 	Flux_MeshGeometry* g_pxSphereGeometry = nullptr;
 	Flux_MeshGeometry* g_pxCapsuleGeometry = nullptr;
@@ -342,25 +348,33 @@ static void InitializeSurvivalResources()
 	std::string strMeshDir = std::string(GAME_ASSETS_DIR) + "/Meshes";
 	std::filesystem::create_directories(strMeshDir);
 
-	// Create geometries
-	g_pxCubeGeometry = new Flux_MeshGeometry();
-	Flux_MeshGeometry::GenerateUnitCube(*g_pxCubeGeometry);
+	// Create geometries using registry
+	g_pxCubeAsset = Zenith_MeshGeometryAsset::CreateUnitCube();
+	g_pxCubeGeometry = g_pxCubeAsset->GetGeometry();
 #ifdef ZENITH_TOOLS
 	std::string strCubePath = strMeshDir + "/Cube.zmesh";
 	g_pxCubeGeometry->Export(strCubePath.c_str());
 	g_pxCubeGeometry->m_strSourcePath = strCubePath;
 #endif
 
-	g_pxSphereGeometry = new Flux_MeshGeometry();
-	GenerateUVSphere(*g_pxSphereGeometry, 0.5f, 16, 12);
+	// Custom sphere - tracked through registry
+	g_pxSphereAsset = Zenith_AssetRegistry::Get().Create<Zenith_MeshGeometryAsset>();
+	Flux_MeshGeometry* pxSphere = new Flux_MeshGeometry();
+	GenerateUVSphere(*pxSphere, 0.5f, 16, 12);
+	g_pxSphereAsset->SetGeometry(pxSphere);
+	g_pxSphereGeometry = g_pxSphereAsset->GetGeometry();
 #ifdef ZENITH_TOOLS
 	std::string strSpherePath = strMeshDir + "/Sphere.zmesh";
 	g_pxSphereGeometry->Export(strSpherePath.c_str());
 	g_pxSphereGeometry->m_strSourcePath = strSpherePath;
 #endif
 
-	g_pxCapsuleGeometry = new Flux_MeshGeometry();
-	GenerateCapsule(*g_pxCapsuleGeometry, 0.3f, 1.6f, 12, 6);
+	// Custom capsule - tracked through registry
+	g_pxCapsuleAsset = Zenith_AssetRegistry::Get().Create<Zenith_MeshGeometryAsset>();
+	Flux_MeshGeometry* pxCapsule = new Flux_MeshGeometry();
+	GenerateCapsule(*pxCapsule, 0.3f, 1.6f, 12, 6);
+	g_pxCapsuleAsset->SetGeometry(pxCapsule);
+	g_pxCapsuleGeometry = g_pxCapsuleAsset->GetGeometry();
 #ifdef ZENITH_TOOLS
 	std::string strCapsulePath = strMeshDir + "/Capsule.zmesh";
 	g_pxCapsuleGeometry->Export(strCapsulePath.c_str());

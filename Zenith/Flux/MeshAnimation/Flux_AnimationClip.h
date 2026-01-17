@@ -3,6 +3,7 @@
 #include "DataStream/Zenith_DataStream.h"
 #include <vector>
 #include <unordered_map>
+#include <unordered_set>
 #include <string>
 #include <functional>
 
@@ -129,14 +130,8 @@ public:
 	Flux_AnimationClip() = default;
 	~Flux_AnimationClip() = default;
 
-	// Load from Assimp animation data
+	// Load from Assimp animation data (use Zenith_AnimationAsset for file loading)
 	void LoadFromAssimp(const aiAnimation* pxAnimation, const aiNode* pxRootNode);
-
-	// Load from file (uses Assimp internally)
-	static Flux_AnimationClip* LoadFromFile(const std::string& strPath);
-
-	// Load from pre-baked .zanim file
-	static Flux_AnimationClip* LoadFromZanimFile(const std::string& strPath);
 
 	// Export to .zanim file
 	void Export(const std::string& strPath) const;
@@ -211,7 +206,8 @@ public:
 	Flux_AnimationClipCollection& operator=(Flux_AnimationClipCollection&& xOther) noexcept;
 
 	// Add/remove clips
-	void AddClip(Flux_AnimationClip* pxClip);
+	void AddClip(Flux_AnimationClip* pxClip);  // Takes ownership
+	void AddClipReference(Flux_AnimationClip* pxClip);  // Non-owning reference
 	void RemoveClip(const std::string& strName);
 	void Clear();
 
@@ -234,4 +230,5 @@ public:
 private:
 	std::unordered_map<std::string, Flux_AnimationClip*> m_xClipsByName;
 	std::vector<Flux_AnimationClip*> m_xClips;  // Ordered list for iteration
+	std::unordered_set<Flux_AnimationClip*> m_xBorrowedClips;  // Non-owned references
 };

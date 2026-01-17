@@ -9,6 +9,7 @@
 #include "Flux/MeshGeometry/Flux_MeshInstance.h"
 #include "Flux/MeshAnimation/Flux_SkeletonInstance.h"
 #include "AssetHandling/Zenith_ModelAsset.h"
+#include "AssetHandling/Zenith_MeshGeometryAsset.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "Core/Zenith_Core.h"
 #include <filesystem>
@@ -47,14 +48,14 @@ Zenith_ModelComponent::Zenith_ModelComponent(Zenith_ModelComponent&& xOther) noe
 	, m_xModel(std::move(xOther.m_xModel))
 	, m_strModelPath(std::move(xOther.m_strModelPath))
 	, m_xMeshEntries(std::move(xOther.m_xMeshEntries))
-	, m_pxPhysicsMesh(xOther.m_pxPhysicsMesh)
+	, m_pxPhysicsMeshAsset(xOther.m_pxPhysicsMeshAsset)
 	, m_bDebugDrawPhysicsMesh(xOther.m_bDebugDrawPhysicsMesh)
 	, m_xDebugDrawColor(xOther.m_xDebugDrawColor)
 {
 	// Nullify source pointers so its destructor doesn't delete our resources
 	xOther.m_pxModelInstance = nullptr;
 	xOther.m_pxAnimController = nullptr;
-	xOther.m_pxPhysicsMesh = nullptr;
+	xOther.m_pxPhysicsMeshAsset = nullptr;
 }
 
 Zenith_ModelComponent& Zenith_ModelComponent::operator=(Zenith_ModelComponent&& xOther) noexcept
@@ -72,14 +73,14 @@ Zenith_ModelComponent& Zenith_ModelComponent::operator=(Zenith_ModelComponent&& 
 		m_xModel = std::move(xOther.m_xModel);
 		m_strModelPath = std::move(xOther.m_strModelPath);
 		m_xMeshEntries = std::move(xOther.m_xMeshEntries);
-		m_pxPhysicsMesh = xOther.m_pxPhysicsMesh;
+		m_pxPhysicsMeshAsset = xOther.m_pxPhysicsMeshAsset;
 		m_bDebugDrawPhysicsMesh = xOther.m_bDebugDrawPhysicsMesh;
 		m_xDebugDrawColor = xOther.m_xDebugDrawColor;
 
 		// Nullify source pointers
 		xOther.m_pxModelInstance = nullptr;
 		xOther.m_pxAnimController = nullptr;
-		xOther.m_pxPhysicsMesh = nullptr;
+		xOther.m_pxPhysicsMeshAsset = nullptr;
 	}
 	return *this;
 }
@@ -661,18 +662,19 @@ void Zenith_ModelComponent::GeneratePhysicsMeshWithConfig(const PhysicsMeshConfi
 			xScale.x, xScale.y, xScale.z);
 	}
 
-	// Generate the physics mesh
-	m_pxPhysicsMesh = Zenith_PhysicsMeshGenerator::GeneratePhysicsMeshWithConfig(xMeshGeometries, xConfig);
+	// Generate the physics mesh (returns registry-managed asset)
+	m_pxPhysicsMeshAsset = Zenith_PhysicsMeshGenerator::GeneratePhysicsMeshWithConfig(xMeshGeometries, xConfig);
 
-	if (m_pxPhysicsMesh)
+	if (m_pxPhysicsMeshAsset)
 	{
+		Flux_MeshGeometry* pxGeometry = m_pxPhysicsMeshAsset->GetGeometry();
 		Zenith_Log(LOG_CATEGORY_PHYSICS, "Generated physics mesh for model: %u verts, %u tris",
-			m_pxPhysicsMesh->GetNumVerts(),
-			m_pxPhysicsMesh->GetNumIndices() / 3);
+			pxGeometry->GetNumVerts(),
+			pxGeometry->GetNumIndices() / 3);
 
-		if (m_pxPhysicsMesh->GetNumVerts() > 0)
+		if (pxGeometry->GetNumVerts() > 0)
 		{
-			Zenith_Maths::Vector3& v0 = m_pxPhysicsMesh->m_pxPositions[0];
+			Zenith_Maths::Vector3& v0 = pxGeometry->m_pxPositions[0];
 			Zenith_Log(LOG_CATEGORY_PHYSICS, "First vertex in model space: (%.3f, %.3f, %.3f)",
 				v0.x, v0.y, v0.z);
 		}
@@ -685,16 +687,19 @@ void Zenith_ModelComponent::GeneratePhysicsMeshWithConfig(const PhysicsMeshConfi
 
 void Zenith_ModelComponent::ClearPhysicsMesh()
 {
-	if (m_pxPhysicsMesh)
-	{
-		delete m_pxPhysicsMesh;
-		m_pxPhysicsMesh = nullptr;
-	}
+	// Just clear the pointer - registry manages asset deletion
+	m_pxPhysicsMeshAsset = nullptr;
+}
+
+Flux_MeshGeometry* Zenith_ModelComponent::GetPhysicsMesh() const
+{
+	return m_pxPhysicsMeshAsset ? m_pxPhysicsMeshAsset->GetGeometry() : nullptr;
 }
 
 void Zenith_ModelComponent::DebugDrawPhysicsMesh()
 {
-	if (!m_bDebugDrawPhysicsMesh || !m_pxPhysicsMesh)
+	Flux_MeshGeometry* pxPhysicsMesh = GetPhysicsMesh();
+	if (!m_bDebugDrawPhysicsMesh || !pxPhysicsMesh)
 	{
 		return;
 	}
@@ -712,9 +717,9 @@ void Zenith_ModelComponent::DebugDrawPhysicsMesh()
 	xTransform.BuildModelMatrix(xModelMatrix);
 
 	Zenith_Log(LOG_CATEGORY_PHYSICS, "DebugDraw: Entity scale (%.3f, %.3f, %.3f), verts=%u",
-		xScale.x, xScale.y, xScale.z, m_pxPhysicsMesh->GetNumVerts());
+		xScale.x, xScale.y, xScale.z, pxPhysicsMesh->GetNumVerts());
 
-	Zenith_PhysicsMeshGenerator::DebugDrawPhysicsMesh(m_pxPhysicsMesh, xModelMatrix, m_xDebugDrawColor);
+	Zenith_PhysicsMeshGenerator::DebugDrawPhysicsMesh(pxPhysicsMesh, xModelMatrix, m_xDebugDrawColor);
 }
 
 // Editor code for RenderPropertiesPanel and AssignTextureToSlot

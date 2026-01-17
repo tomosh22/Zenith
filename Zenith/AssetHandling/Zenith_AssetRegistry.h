@@ -132,6 +132,15 @@ public:
 	T* Create();
 
 	/**
+	 * Create a new procedural asset with a specific path
+	 * Useful for caching primitives by path (e.g., "procedural://unit_cube")
+	 * @param strPath The path to register the asset under
+	 * @return Pointer to the new asset
+	 */
+	template<typename T>
+	T* Create(const std::string& strPath);
+
+	/**
 	 * Check if an asset is loaded
 	 * @param strPath Path to check
 	 * @return true if asset is currently loaded
@@ -194,6 +203,7 @@ private:
 	// Internal getter for non-template code
 	Zenith_Asset* GetInternal(std::type_index xType, const std::string& strPath);
 	Zenith_Asset* CreateInternal(std::type_index xType);
+	Zenith_Asset* CreateInternal(std::type_index xType, const std::string& strPath);
 
 	// Generate a unique path for procedural assets
 	std::string GenerateProceduralPath(const std::string& strPrefix);
@@ -235,4 +245,10 @@ template<typename T>
 T* Zenith_AssetRegistry::Create()
 {
 	return static_cast<T*>(CreateInternal(std::type_index(typeid(T))));
+}
+
+template<typename T>
+T* Zenith_AssetRegistry::Create(const std::string& strPath)
+{
+	return static_cast<T*>(CreateInternal(std::type_index(typeid(T)), strPath));
 }

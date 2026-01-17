@@ -1,5 +1,7 @@
 #include "Zenith.h"
 #include "Physics/Zenith_PhysicsMeshGenerator.h"
+#include "AssetHandling/Zenith_MeshGeometryAsset.h"
+#include "AssetHandling/Zenith_AssetRegistry.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Zenith_Scene.h"
@@ -34,7 +36,7 @@ const char* Zenith_PhysicsMeshGenerator::GetQualityName(PhysicsMeshQuality eQual
 	}
 }
 
-Flux_MeshGeometry* Zenith_PhysicsMeshGenerator::GeneratePhysicsMesh(
+Zenith_MeshGeometryAsset* Zenith_PhysicsMeshGenerator::GeneratePhysicsMesh(
 	const Zenith_Vector<Flux_MeshGeometry*>& xMeshGeometries,
 	PhysicsMeshQuality eQuality)
 {
@@ -43,7 +45,7 @@ Flux_MeshGeometry* Zenith_PhysicsMeshGenerator::GeneratePhysicsMesh(
 	return GeneratePhysicsMeshWithConfig(xMeshGeometries, xConfig);
 }
 
-Flux_MeshGeometry* Zenith_PhysicsMeshGenerator::GeneratePhysicsMeshWithConfig(
+Zenith_MeshGeometryAsset* Zenith_PhysicsMeshGenerator::GeneratePhysicsMeshWithConfig(
 	const Zenith_Vector<Flux_MeshGeometry*>& xMeshGeometries,
 	const PhysicsMeshConfig& xConfig)
 {
@@ -113,7 +115,15 @@ Flux_MeshGeometry* Zenith_PhysicsMeshGenerator::GeneratePhysicsMeshWithConfig(
 		}
 	}
 
-	return pxResult;
+	// Wrap in asset for registry tracking
+	if (pxResult)
+	{
+		Zenith_MeshGeometryAsset* pxAsset = Zenith_AssetRegistry::Get().Create<Zenith_MeshGeometryAsset>();
+		pxAsset->SetGeometry(pxResult);
+		return pxAsset;
+	}
+
+	return nullptr;
 }
 
 void Zenith_PhysicsMeshGenerator::DebugDrawPhysicsMesh(

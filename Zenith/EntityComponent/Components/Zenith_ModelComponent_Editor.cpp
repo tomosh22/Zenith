@@ -10,6 +10,7 @@
 #include "Editor/Zenith_Editor_MaterialUI.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
+#include "AssetHandling/Zenith_AnimationAsset.h"
 #include "Flux/MeshAnimation/Flux_AnimationClip.h"
 #include "Flux/MeshAnimation/Flux_AnimationController.h"
 #include "Flux/Flux_ImGuiIntegration.h"
@@ -212,9 +213,10 @@ void Zenith_ModelComponent::RenderPropertiesPanel()
 						Flux_AnimationController* pxController = GetOrCreateAnimationController();
 						if (pxController)
 						{
-							Flux_AnimationClip* pxClip = Flux_AnimationClip::LoadFromZanimFile(pFilePayload->m_szFilePath);
-							if (pxClip)
+							Zenith_AnimationAsset* pxAnimAsset = Zenith_AssetRegistry::Get().Get<Zenith_AnimationAsset>(pFilePayload->m_szFilePath);
+							if (pxAnimAsset && pxAnimAsset->GetClip())
 							{
+								Flux_AnimationClip* pxClip = pxAnimAsset->ReleaseClip();
 								pxController->GetClipCollection().AddClip(pxClip);
 								Zenith_Log(LOG_CATEGORY_ANIMATION, "Loaded animation: %s", pxClip->GetName().c_str());
 							}
@@ -243,10 +245,11 @@ void Zenith_ModelComponent::RenderPropertiesPanel()
 						Flux_AnimationController* pxController = GetOrCreateAnimationController();
 						if (pxController)
 						{
-							// Load from .zanim file using our new loader
-							Flux_AnimationClip* pxClip = Flux_AnimationClip::LoadFromZanimFile(s_szAnimPath);
-							if (pxClip)
+							// Load from .zanim file using asset registry
+							Zenith_AnimationAsset* pxAnimAsset = Zenith_AssetRegistry::Get().Get<Zenith_AnimationAsset>(s_szAnimPath);
+							if (pxAnimAsset && pxAnimAsset->GetClip())
 							{
+								Flux_AnimationClip* pxClip = pxAnimAsset->ReleaseClip();
 								pxController->GetClipCollection().AddClip(pxClip);
 								Zenith_Log(LOG_CATEGORY_ANIMATION, "Loaded animation from: %s", s_szAnimPath);
 							}

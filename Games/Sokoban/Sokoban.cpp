@@ -10,6 +10,7 @@
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
+#include "AssetHandling/Zenith_MeshGeometryAsset.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Particles/Flux_ParticleEmitterConfig.h"
@@ -21,6 +22,7 @@
 // ============================================================================
 namespace Sokoban
 {
+	Zenith_MeshGeometryAsset* g_pxCubeAsset = nullptr;
 	Flux_MeshGeometry* g_pxCubeGeometry = nullptr;
 	Zenith_MaterialAsset* g_pxFloorMaterial = nullptr;
 	Zenith_MaterialAsset* g_pxWallMaterial = nullptr;
@@ -48,8 +50,8 @@ static void InitializeSokobanResources()
 
 	using namespace Sokoban;
 
-	g_pxCubeGeometry = new Flux_MeshGeometry();
-	Flux_MeshGeometry::GenerateUnitCube(*g_pxCubeGeometry);
+	g_pxCubeAsset = Zenith_MeshGeometryAsset::CreateUnitCube();
+	g_pxCubeGeometry = g_pxCubeAsset->GetGeometry();
 
 	// Use grid pattern texture with BaseColor for all materials
 	Zenith_TextureAsset* pxGridTex = Flux_Graphics::s_pxGridTexture;
