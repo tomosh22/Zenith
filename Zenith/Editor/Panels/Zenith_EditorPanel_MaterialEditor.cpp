@@ -217,7 +217,7 @@ void Zenith_EditorPanelMaterialEditor::Render(MaterialEditorState& xState)
 
 		if (ImGui::Button("Reload") && !pMat->GetPath().empty() && !pMat->IsProcedural())
 		{
-			pMat->LoadFromFile(pMat->GetPath());
+			pMat->Reload();
 			Zenith_Log(LOG_CATEGORY_EDITOR, "[MaterialEditor] Reloaded material: %s", pMat->GetName().c_str());
 		}
 	}

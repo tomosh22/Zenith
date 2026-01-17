@@ -3,8 +3,8 @@
 #include "DataStream/Zenith_DataStream.h"
 #include "EntityComponent/Zenith_Entity.h"
 #include "EntityComponent/Zenith_Scene.h"
-#include "Core/Zenith_GUID.h"
-#include "AssetHandling/Zenith_AssetRef.h"
+#include "AssetHandling/Zenith_Asset.h"
+#include "AssetHandling/Zenith_AssetHandle.h"
 #include "Collections/Zenith_Vector.h"
 #include <string>
 
@@ -22,7 +22,7 @@ struct Zenith_PropertyOverride
 	void ReadFromDataStream(Zenith_DataStream& xStream);
 };
 
-class Zenith_Prefab
+class Zenith_Prefab : public Zenith_Asset
 {
 public:
 	Zenith_Prefab() = default;
@@ -44,14 +44,13 @@ public:
 	 * Create a variant of an existing prefab
 	 * Variants inherit from a base prefab and only store overrides
 	 */
-	bool CreateAsVariant(const PrefabRef& xBasePrefab, const std::string& strVariantName);
+	bool CreateAsVariant(const PrefabHandle& xBasePrefab, const std::string& strVariantName);
 
 	//--------------------------------------------------------------------------
 	// Persistence
 	//--------------------------------------------------------------------------
 
 	bool SaveToFile(const std::string& strFilePath) const;
-	bool LoadFromFile(const std::string& strFilePath);
 
 	//--------------------------------------------------------------------------
 	// Instantiation
@@ -72,7 +71,7 @@ public:
 	/**
 	 * Get the base prefab (for variants)
 	 */
-	const PrefabRef& GetBasePrefab() const { return m_xBasePrefab; }
+	const PrefabHandle& GetBasePrefab() const { return m_xBasePrefab; }
 
 	/**
 	 * Add a property override (takes ownership via move)
@@ -94,23 +93,27 @@ public:
 	//--------------------------------------------------------------------------
 
 	const std::string& GetName() const { return m_strName; }
-	const Zenith_AssetGUID& GetGUID() const { return m_xGUID; }
 	bool IsValid() const { return m_bIsValid; }
 
-	void SetGUID(const Zenith_AssetGUID& xGUID) { m_xGUID = xGUID; }
-
 private:
+	friend class Zenith_AssetRegistry;
+	friend Zenith_Asset* LoadPrefabAsset(const std::string&);
+
+	/**
+	 * Load prefab from file (private - use Zenith_AssetRegistry::Get)
+	 */
+	bool LoadFromFile(const std::string& strFilePath);
+
 	std::string m_strName;
-	Zenith_AssetGUID m_xGUID;
 	Zenith_DataStream m_xComponentData;
 	bool m_bIsValid = false;
 
 	// Variant support
-	PrefabRef m_xBasePrefab;
+	PrefabHandle m_xBasePrefab;
 	Zenith_Vector<Zenith_PropertyOverride> m_xOverrides;
 
-	// Prefab format version
-	static constexpr u_int PREFAB_VERSION = 2;
+	// Prefab format version (bumped to 3 to break compatibility with GUID-based format)
+	static constexpr u_int PREFAB_VERSION = 3;
 	static constexpr u_int PREFAB_MAGIC = 0x5A505242; // "ZPRB"
 
 	void SerializeComponents(Zenith_Entity& xEntity);

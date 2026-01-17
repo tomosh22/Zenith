@@ -6,6 +6,7 @@
 #include "AssetHandling/Zenith_MeshAsset.h"
 #include "AssetHandling/Zenith_SkeletonAsset.h"
 #include "AssetHandling/Zenith_ModelAsset.h"
+#include "Prefab/Zenith_Prefab.h"
 
 // Forward declare loaders (defined in respective asset .cpp files)
 static Zenith_Asset* LoadTextureAsset(const std::string& strPath);
@@ -13,6 +14,7 @@ static Zenith_Asset* LoadMaterialAsset(const std::string& strPath);
 static Zenith_Asset* LoadMeshAsset(const std::string& strPath);
 static Zenith_Asset* LoadSkeletonAsset(const std::string& strPath);
 static Zenith_Asset* LoadModelAsset(const std::string& strPath);
+static Zenith_Asset* LoadPrefabAsset(const std::string& strPath);
 
 // Loader implementations
 static Zenith_Asset* LoadTextureAsset(const std::string& strPath)
@@ -85,13 +87,134 @@ static Zenith_Asset* LoadModelAsset(const std::string& strPath)
 	return pxAsset;
 }
 
+static Zenith_Asset* LoadPrefabAsset(const std::string& strPath)
+{
+	if (strPath.empty())
+	{
+		// Create empty prefab
+		return new Zenith_Prefab();
+	}
+
+	Zenith_Prefab* pxAsset = new Zenith_Prefab();
+	if (!pxAsset->LoadFromFile(strPath))
+	{
+		delete pxAsset;
+		return nullptr;
+	}
+	return pxAsset;
+}
+
 // Static instance
 Zenith_AssetRegistry* Zenith_AssetRegistry::s_pxInstance = nullptr;
+std::string Zenith_AssetRegistry::s_strGameAssetsDir;
+std::string Zenith_AssetRegistry::s_strEngineAssetsDir;
 
 Zenith_AssetRegistry& Zenith_AssetRegistry::Get()
 {
 	ZENITH_ASSERT(s_pxInstance != nullptr, "Zenith_AssetRegistry not initialized! Call Initialize() first.");
 	return *s_pxInstance;
+}
+
+void Zenith_AssetRegistry::SetGameAssetsDir(const std::string& strPath)
+{
+	s_strGameAssetsDir = strPath;
+	// Normalize path separators to forward slashes
+	for (char& c : s_strGameAssetsDir)
+	{
+		if (c == '\\')
+		{
+			c = '/';
+		}
+	}
+	// Remove trailing slash if present
+	if (!s_strGameAssetsDir.empty() && s_strGameAssetsDir.back() == '/')
+	{
+		s_strGameAssetsDir.pop_back();
+	}
+}
+
+void Zenith_AssetRegistry::SetEngineAssetsDir(const std::string& strPath)
+{
+	s_strEngineAssetsDir = strPath;
+	// Normalize path separators to forward slashes
+	for (char& c : s_strEngineAssetsDir)
+	{
+		if (c == '\\')
+		{
+			c = '/';
+		}
+	}
+	// Remove trailing slash if present
+	if (!s_strEngineAssetsDir.empty() && s_strEngineAssetsDir.back() == '/')
+	{
+		s_strEngineAssetsDir.pop_back();
+	}
+}
+
+std::string Zenith_AssetRegistry::ResolvePath(const std::string& strPrefixedPath)
+{
+	// Check for game: prefix
+	if (strPrefixedPath.size() > 5 && strPrefixedPath.compare(0, 5, "game:") == 0)
+	{
+		return s_strGameAssetsDir + "/" + strPrefixedPath.substr(5);
+	}
+
+	// Check for engine: prefix
+	if (strPrefixedPath.size() > 7 && strPrefixedPath.compare(0, 7, "engine:") == 0)
+	{
+		return s_strEngineAssetsDir + "/" + strPrefixedPath.substr(7);
+	}
+
+	// Check for procedural: prefix (these don't resolve to files)
+	if (strPrefixedPath.size() > 12 && strPrefixedPath.compare(0, 12, "procedural://") == 0)
+	{
+		return strPrefixedPath; // Return as-is
+	}
+
+	// No prefix - treat as absolute path (legacy support or already absolute)
+	return strPrefixedPath;
+}
+
+std::string Zenith_AssetRegistry::MakeRelativePath(const std::string& strAbsolutePath)
+{
+	// Normalize the input path
+	std::string strNormalized = strAbsolutePath;
+	for (char& c : strNormalized)
+	{
+		if (c == '\\')
+		{
+			c = '/';
+		}
+	}
+
+	// Check if it's under the game assets directory
+	if (!s_strGameAssetsDir.empty() && strNormalized.size() > s_strGameAssetsDir.size())
+	{
+		if (strNormalized.compare(0, s_strGameAssetsDir.size(), s_strGameAssetsDir) == 0)
+		{
+			// Check for path separator after the directory
+			if (strNormalized[s_strGameAssetsDir.size()] == '/')
+			{
+				return "game:" + strNormalized.substr(s_strGameAssetsDir.size() + 1);
+			}
+		}
+	}
+
+	// Check if it's under the engine assets directory
+	if (!s_strEngineAssetsDir.empty() && strNormalized.size() > s_strEngineAssetsDir.size())
+	{
+		if (strNormalized.compare(0, s_strEngineAssetsDir.size(), s_strEngineAssetsDir) == 0)
+		{
+			// Check for path separator after the directory
+			if (strNormalized[s_strEngineAssetsDir.size()] == '/')
+			{
+				return "engine:" + strNormalized.substr(s_strEngineAssetsDir.size() + 1);
+			}
+		}
+	}
+
+	// Not in a known directory - return empty string
+	return "";
 }
 
 void Zenith_AssetRegistry::Initialize()
@@ -105,6 +228,7 @@ void Zenith_AssetRegistry::Initialize()
 	s_pxInstance->RegisterLoader(std::type_index(typeid(Zenith_MeshAsset)), LoadMeshAsset);
 	s_pxInstance->RegisterLoader(std::type_index(typeid(Zenith_SkeletonAsset)), LoadSkeletonAsset);
 	s_pxInstance->RegisterLoader(std::type_index(typeid(Zenith_ModelAsset)), LoadModelAsset);
+	s_pxInstance->RegisterLoader(std::type_index(typeid(Zenith_Prefab)), LoadPrefabAsset);
 
 	// Note: Zenith_MaterialAsset::InitializeDefaults() must be called AFTER Vulkan/VMA
 	// is initialized (after Flux::EarlyInitialise). See InitializeGPUDependentAssets().
@@ -249,7 +373,7 @@ Zenith_Asset* Zenith_AssetRegistry::GetInternal(std::type_index xType, const std
 
 	Zenith_ScopedMutexLock xLock(m_xMutex);
 
-	// Check cache first
+	// Check cache first (using the prefixed path as key for portability)
 	auto itAsset = m_xAssetsByPath.find(strPath);
 	if (itAsset != m_xAssetsByPath.end())
 	{
@@ -264,15 +388,18 @@ Zenith_Asset* Zenith_AssetRegistry::GetInternal(std::type_index xType, const std
 		return nullptr;
 	}
 
-	// Load the asset
-	Zenith_Asset* pxAsset = itLoader->second(strPath);
+	// Resolve prefixed path to absolute path for file loading
+	std::string strAbsolutePath = ResolvePath(strPath);
+
+	// Load the asset using the absolute path
+	Zenith_Asset* pxAsset = itLoader->second(strAbsolutePath);
 	if (pxAsset == nullptr)
 	{
-		Zenith_Log(LOG_CATEGORY_ASSET, "AssetRegistry: Failed to load asset '%s'", strPath.c_str());
+		Zenith_Log(LOG_CATEGORY_ASSET, "AssetRegistry: Failed to load asset '%s' (resolved: '%s')", strPath.c_str(), strAbsolutePath.c_str());
 		return nullptr;
 	}
 
-	// Set path and add to cache
+	// Store the prefixed path (portable) in the asset and cache
 	pxAsset->m_strPath = strPath;
 	m_xAssetsByPath[strPath] = pxAsset;
 

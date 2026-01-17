@@ -32,14 +32,6 @@ public:
 	//--------------------------------------------------------------------------
 
 	/**
-	 * Load texture data from an image file
-	 * @param strPath Path to image file (PNG, JPG, etc.)
-	 * @param bCreateMips Generate mipmaps
-	 * @return true on success
-	 */
-	bool LoadFromFile(const std::string& strPath, bool bCreateMips = true);
-
-	/**
 	 * Create texture from raw data (for procedural textures)
 	 * @param pData Pointer to pixel data
 	 * @param xSurfaceInfo Surface format and dimensions
@@ -105,6 +97,17 @@ public:
 	Flux_ShaderResourceView m_xSRV;
 
 private:
+	friend class Zenith_AssetRegistry;
+	friend Zenith_Asset* LoadTextureAsset(const std::string&);
+
+	/**
+	 * Load texture data from an image file (private - use Zenith_AssetRegistry::Get)
+	 * @param strPath Path to image file (PNG, JPG, etc.)
+	 * @param bCreateMips Generate mipmaps
+	 * @return true on success
+	 */
+	bool LoadFromFile(const std::string& strPath, bool bCreateMips = true);
+
 	bool m_bGPUResourcesAllocated = false;
 };
 

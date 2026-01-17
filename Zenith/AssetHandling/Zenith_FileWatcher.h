@@ -4,7 +4,6 @@
 #include <functional>
 #include <unordered_map>
 #include "Collections/Zenith_Vector.h"
-#include "Core/Zenith_GUID.h"
 #include "Core/Multithreading/Zenith_Multithreading.h"
 
 /**

@@ -2,7 +2,7 @@
 #include "AssetHandling/Zenith_Asset.h"
 #include "Collections/Zenith_Vector.h"
 #include "DataStream/Zenith_DataStream.h"
-#include "AssetHandling/Zenith_AssetRef.h"
+#include "AssetHandling/Zenith_AssetHandle.h"
 #include <string>
 
 #define ZENITH_MODEL_ASSET_VERSION 2
@@ -29,22 +29,19 @@ class Zenith_MaterialAsset;
  *   // Load from registry
  *   Zenith_ModelAsset* pModel = Zenith_AssetRegistry::Get().Get<Zenith_ModelAsset>("Assets/model.zmodel");
  *
- * Note: Currently still uses GUID-based MeshRef/MaterialRef internally.
- * Will be updated to path-based handles in a future phase.
  */
 class Zenith_ModelAsset : public Zenith_Asset
 {
 public:
 	/**
 	 * MeshMaterialBinding - Associates a mesh with its materials
-	 * Uses GUID-based references for robust asset tracking.
 	 */
 	struct MeshMaterialBinding
 	{
-		MeshRef m_xMesh;                          // Reference to mesh geometry
-		Zenith_Vector<MaterialRef> m_xMaterials;  // One per submesh
+		MeshHandle m_xMesh;                          // Reference to mesh geometry
+		Zenith_Vector<MaterialHandle> m_xMaterials;  // One per submesh
 
-		// Path accessors (resolve GUIDs via AssetDatabase)
+		// Path accessors
 		std::string GetMeshPath() const { return m_xMesh.GetPath(); }
 		std::string GetMaterialPath(uint32_t uIndex) const;
 
@@ -66,13 +63,6 @@ public:
 	//--------------------------------------------------------------------------
 	// Loading and Saving
 	//--------------------------------------------------------------------------
-
-	/**
-	 * Load a model asset from file
-	 * @param szPath Path to .zmodel file
-	 * @return Loaded asset, or nullptr on failure
-	 */
-	static Zenith_ModelAsset* LoadFromFile(const char* szPath);
 
 	/**
 	 * Export this model to a file
@@ -112,13 +102,12 @@ public:
 	void SetName(const std::string& strName) { m_strName = strName; }
 
 	/**
-	 * Add a mesh with its materials (GUID-based)
+	 * Add a mesh with its materials
 	 */
-	void AddMesh(const MeshRef& xMesh, const Zenith_Vector<MaterialRef>& xMaterials);
+	void AddMesh(const MeshHandle& xMesh, const Zenith_Vector<MaterialHandle>& xMaterials);
 
 	/**
 	 * Add a mesh with its materials (path-based, for tools)
-	 * Paths are resolved to GUIDs via AssetDatabase
 	 */
 	void AddMeshByPath(const std::string& strMeshPath, const Zenith_Vector<std::string>& xMaterialPaths);
 
@@ -146,4 +135,15 @@ public:
 	std::string m_strSkeletonPath;
 	Zenith_Vector<std::string> m_xAnimationPaths;
 	std::string m_strSourcePath;
+
+private:
+	friend class Zenith_AssetRegistry;
+	friend Zenith_Asset* LoadModelAsset(const std::string&);
+
+	/**
+	 * Load a model asset from file (private - use Zenith_AssetRegistry::Get)
+	 * @param szPath Path to .zmodel file
+	 * @return Loaded asset, or nullptr on failure
+	 */
+	static Zenith_ModelAsset* LoadFromFile(const char* szPath);
 };

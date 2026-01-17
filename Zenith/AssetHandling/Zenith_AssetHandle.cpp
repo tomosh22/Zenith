@@ -6,6 +6,7 @@
 #include "AssetHandling/Zenith_MeshAsset.h"
 #include "AssetHandling/Zenith_SkeletonAsset.h"
 #include "AssetHandling/Zenith_ModelAsset.h"
+#include "Prefab/Zenith_Prefab.h"
 #include "DataStream/Zenith_DataStream.h"
 
 //--------------------------------------------------------------------------
@@ -216,6 +217,50 @@ void Zenith_AssetHandle<Zenith_ModelAsset>::WriteToDataStream(Zenith_DataStream&
 
 template<>
 void Zenith_AssetHandle<Zenith_ModelAsset>::ReadFromDataStream(Zenith_DataStream& xStream)
+{
+	if (m_pxCached)
+	{
+		m_pxCached->Release();
+		m_pxCached = nullptr;
+	}
+	xStream >> m_strPath;
+}
+
+//--------------------------------------------------------------------------
+// Prefab specializations
+//--------------------------------------------------------------------------
+
+template<>
+Zenith_Prefab* Zenith_AssetHandle<Zenith_Prefab>::Get()
+{
+	if (m_strPath.empty())
+	{
+		return nullptr;
+	}
+
+	// Check cache
+	if (m_pxCached)
+	{
+		return m_pxCached;
+	}
+
+	// Load from registry
+	m_pxCached = Zenith_AssetRegistry::Get().Get<Zenith_Prefab>(m_strPath);
+	if (m_pxCached)
+	{
+		m_pxCached->AddRef();
+	}
+	return m_pxCached;
+}
+
+template<>
+void Zenith_AssetHandle<Zenith_Prefab>::WriteToDataStream(Zenith_DataStream& xStream) const
+{
+	xStream << m_strPath;
+}
+
+template<>
+void Zenith_AssetHandle<Zenith_Prefab>::ReadFromDataStream(Zenith_DataStream& xStream)
 {
 	if (m_pxCached)
 	{

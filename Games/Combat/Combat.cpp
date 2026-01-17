@@ -16,7 +16,7 @@
 #include "Flux/Flux_ModelInstance.h"
 #include "Flux/Flux.h"
 #include "Flux/Particles/Flux_ParticleEmitterConfig.h"
-#include "AssetHandling/Zenith_AssetDatabase.h"
+#include "AssetHandling/Zenith_AssetHandle.h"
 #include "AssetHandling/Zenith_DataAssetManager.h"
 #include "AssetHandling/Zenith_ModelAsset.h"
 #include "Prefab/Zenith_Prefab.h"
@@ -113,8 +113,8 @@ static void CleanupCombatResources()
 // Procedural Texture Generation
 // ============================================================================
 
-// Export a 1x1 colored texture to disk and return a TextureRef with its GUID
-static TextureRef ExportColoredTexture(const std::string& strPath, uint8_t uR, uint8_t uG, uint8_t uB)
+// Export a 1x1 colored texture to disk and return a TextureHandle with its path
+static TextureHandle ExportColoredTexture(const std::string& strPath, uint8_t uR, uint8_t uG, uint8_t uB)
 {
 	// Create texture data
 	uint8_t aucPixelData[] = { uR, uG, uB, 255 };
@@ -129,18 +129,16 @@ static TextureRef ExportColoredTexture(const std::string& strPath, uint8_t uR, u
 	xStream.WriteData(aucPixelData, 4);
 	xStream.WriteToFile(strPath.c_str());
 
-	// Import into asset database to get GUID
-	Zenith_AssetGUID xGUID = Zenith_AssetDatabase::ImportAsset(strPath);
-	if (!xGUID.IsValid())
+	// Convert absolute path to prefixed relative path for portability
+	std::string strRelativePath = Zenith_AssetRegistry::MakeRelativePath(strPath);
+	if (strRelativePath.empty())
 	{
-		Zenith_Error(LOG_CATEGORY_ASSET, "[Combat] Failed to import texture: %s", strPath.c_str());
-		return TextureRef();
+		Zenith_Error(LOG_CATEGORY_ASSET, "[Combat] Failed to make relative path for texture: %s", strPath.c_str());
+		return TextureHandle();
 	}
 
-	// Create TextureRef with the GUID
-	TextureRef xRef;
-	xRef.SetGUID(xGUID);
-	return xRef;
+	// Create TextureHandle with the prefixed path
+	return TextureHandle(strRelativePath);
 }
 
 // ============================================================================
@@ -419,13 +417,6 @@ static void InitializeCombatResources()
 			Zenith_Log(LOG_CATEGORY_MESH, "[Combat] Loaded stick figure mesh from %s", strStickFigureMeshGeomPath.c_str());
 		}
 
-		// Import mesh asset into AssetDatabase
-		Zenith_AssetGUID xMeshGUID = Zenith_AssetDatabase::ImportAsset(strStickFigureMeshAssetPath);
-		if (!xMeshGUID.IsValid())
-		{
-			Zenith_Log(LOG_CATEGORY_MESH, "[Combat] Warning: Failed to import mesh asset");
-		}
-
 		// Create model asset
 		g_pxStickFigureModelAsset = new Zenith_ModelAsset();
 		g_pxStickFigureModelAsset->SetName("StickFigure");
@@ -438,13 +429,6 @@ static void InitializeCombatResources()
 		g_strStickFigureModelPath = std::string(ENGINE_ASSETS_DIR) + "Meshes/StickFigure/StickFigure.zmodel";
 		g_pxStickFigureModelAsset->Export(g_strStickFigureModelPath.c_str());
 		Zenith_Log(LOG_CATEGORY_MESH, "[Combat] Created model asset at %s", g_strStickFigureModelPath.c_str());
-
-		// Import model asset into database so it can be resolved after scene restore
-		Zenith_AssetGUID xModelGUID = Zenith_AssetDatabase::ImportAsset(g_strStickFigureModelPath);
-		if (!xModelGUID.IsValid())
-		{
-			Zenith_Log(LOG_CATEGORY_MESH, "[Combat] Warning: Failed to import model asset into database");
-		}
 	}
 	else
 	{
@@ -458,12 +442,12 @@ static void InitializeCombatResources()
 	std::string strTexturesDir = std::string(GAME_ASSETS_DIR) + "/Textures";
 	std::filesystem::create_directories(strTexturesDir);
 
-	// Export procedural textures to disk and get TextureRefs
-	TextureRef xPlayerTextureRef = ExportColoredTexture(strTexturesDir + "/Player.ztex", 51, 102, 230);    // Blue player
-	TextureRef xEnemyTextureRef = ExportColoredTexture(strTexturesDir + "/Enemy.ztex", 204, 51, 51);       // Red enemies
-	TextureRef xArenaTextureRef = ExportColoredTexture(strTexturesDir + "/Arena.ztex", 77, 77, 89);        // Gray arena floor
-	TextureRef xWallTextureRef = ExportColoredTexture(strTexturesDir + "/Wall.ztex", 102, 64, 38);         // Brown walls
-	TextureRef xCandleTextureRef = ExportColoredTexture(strTexturesDir + "/Candle.ztex", 240, 220, 180);   // Cream candle color
+	// Export procedural textures to disk and get TextureHandles
+	TextureHandle xPlayerTextureHandle = ExportColoredTexture(strTexturesDir + "/Player.ztex", 51, 102, 230);    // Blue player
+	TextureHandle xEnemyTextureHandle = ExportColoredTexture(strTexturesDir + "/Enemy.ztex", 204, 51, 51);       // Red enemies
+	TextureHandle xArenaTextureHandle = ExportColoredTexture(strTexturesDir + "/Arena.ztex", 77, 77, 89);        // Gray arena floor
+	TextureHandle xWallTextureHandle = ExportColoredTexture(strTexturesDir + "/Wall.ztex", 102, 64, 38);         // Brown walls
+	TextureHandle xCandleTextureHandle = ExportColoredTexture(strTexturesDir + "/Candle.ztex", 240, 220, 180);   // Cream candle color
 
 	// Create materials with texture paths (properly serializable)
 	auto& xRegistry = Zenith_AssetRegistry::Get();

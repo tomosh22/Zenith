@@ -72,13 +72,6 @@ public:
 	//--------------------------------------------------------------------------
 
 	/**
-	 * Load a skeleton asset from file
-	 * @param szPath Path to .zskel file
-	 * @return Loaded asset, or nullptr on failure
-	 */
-	static Zenith_SkeletonAsset* LoadFromFile(const char* szPath);
-
-	/**
 	 * Export this skeleton to a file
 	 * @param szPath Output path
 	 */
@@ -163,6 +156,16 @@ public:
 	std::string m_strSourcePath;
 
 private:
+	friend class Zenith_AssetRegistry;
+	friend Zenith_Asset* LoadSkeletonAsset(const std::string&);
+
+	/**
+	 * Load a skeleton asset from file (private - use Zenith_AssetRegistry::Get)
+	 * @param szPath Path to .zskel file
+	 * @return Loaded asset, or nullptr on failure
+	 */
+	static Zenith_SkeletonAsset* LoadFromFile(const char* szPath);
+
 	/**
 	 * Recursively compute model-space bind pose for a bone and its children
 	 */

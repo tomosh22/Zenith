@@ -59,13 +59,6 @@ public:
 	//--------------------------------------------------------------------------
 
 	/**
-	 * Load a mesh asset from file
-	 * @param szPath Path to .zmesh file
-	 * @return Loaded asset, or nullptr on failure
-	 */
-	static Zenith_MeshAsset* LoadFromFile(const char* szPath);
-
-	/**
 	 * Export this mesh to a file
 	 * @param szPath Output path
 	 */
@@ -259,6 +252,16 @@ public:
 	const Flux_BufferLayout& GetBufferLayout() const { return m_xBufferLayout; }
 
 private:
+	friend class Zenith_AssetRegistry;
+	friend Zenith_Asset* LoadMeshAsset(const std::string&);
+
+	/**
+	 * Load a mesh asset from file (private - use Zenith_AssetRegistry::Get)
+	 * @param szPath Path to .zmesh file
+	 * @return Loaded asset, or nullptr on failure
+	 */
+	static Zenith_MeshAsset* LoadFromFile(const char* szPath);
+
 	uint32_t m_uNumVerts = 0;
 	uint32_t m_uNumIndices = 0;
 

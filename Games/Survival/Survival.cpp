@@ -11,7 +11,7 @@
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "Flux/Flux.h"
-#include "AssetHandling/Zenith_AssetDatabase.h"
+#include "AssetHandling/Zenith_AssetHandle.h"
 #include "AssetHandling/Zenith_DataAssetManager.h"
 #include "Prefab/Zenith_Prefab.h"
 
@@ -53,8 +53,8 @@ static bool s_bResourcesInitialized = false;
 // Procedural Texture Generation
 // ============================================================================
 
-// Export a 1x1 colored texture to disk and return a TextureRef with its GUID
-static TextureRef ExportColoredTexture(const std::string& strPath, uint8_t uR, uint8_t uG, uint8_t uB)
+// Export a 1x1 colored texture to disk and return a TextureHandle with its path
+static TextureHandle ExportColoredTexture(const std::string& strPath, uint8_t uR, uint8_t uG, uint8_t uB)
 {
 	// Create texture data
 	uint8_t aucPixelData[] = { uR, uG, uB, 255 };
@@ -69,18 +69,16 @@ static TextureRef ExportColoredTexture(const std::string& strPath, uint8_t uR, u
 	xStream.WriteData(aucPixelData, 4);
 	xStream.WriteToFile(strPath.c_str());
 
-	// Import into asset database to get GUID
-	Zenith_AssetGUID xGUID = Zenith_AssetDatabase::ImportAsset(strPath);
-	if (!xGUID.IsValid())
+	// Convert absolute path to prefixed relative path for portability
+	std::string strRelativePath = Zenith_AssetRegistry::MakeRelativePath(strPath);
+	if (strRelativePath.empty())
 	{
-		Zenith_Error(LOG_CATEGORY_ASSET, "[Survival] Failed to import texture: %s", strPath.c_str());
-		return TextureRef();
+		Zenith_Error(LOG_CATEGORY_ASSET, "[Survival] Failed to make relative path for texture: %s", strPath.c_str());
+		return TextureHandle();
 	}
 
-	// Create TextureRef with the GUID
-	TextureRef xRef;
-	xRef.SetGUID(xGUID);
-	return xRef;
+	// Create TextureHandle with the prefixed path
+	return TextureHandle(strRelativePath);
 }
 
 // ============================================================================
@@ -373,14 +371,14 @@ static void InitializeSurvivalResources()
 	std::string strTexturesDir = std::string(GAME_ASSETS_DIR) + "/Textures";
 	std::filesystem::create_directories(strTexturesDir);
 
-	// Export procedural textures to disk and get TextureRefs
-	TextureRef xPlayerTextureRef = ExportColoredTexture(strTexturesDir + "/Player.ztex", 51, 102, 230);      // Blue player
-	TextureRef xGroundTextureRef = ExportColoredTexture(strTexturesDir + "/Ground.ztex", 90, 70, 50);        // Brown ground
-	TextureRef xTreeTextureRef = ExportColoredTexture(strTexturesDir + "/Tree.ztex", 40, 120, 40);           // Green tree
-	TextureRef xRockTextureRef = ExportColoredTexture(strTexturesDir + "/Rock.ztex", 120, 120, 130);         // Gray rock
-	TextureRef xBerryTextureRef = ExportColoredTexture(strTexturesDir + "/Berry.ztex", 200, 50, 80);         // Red berries
-	TextureRef xWoodTextureRef = ExportColoredTexture(strTexturesDir + "/Wood.ztex", 139, 90, 43);           // Brown wood
-	TextureRef xStoneTextureRef = ExportColoredTexture(strTexturesDir + "/Stone.ztex", 100, 100, 110);       // Gray stone item
+	// Export procedural textures to disk and get TextureHandles
+	TextureHandle xPlayerTextureHandle = ExportColoredTexture(strTexturesDir + "/Player.ztex", 51, 102, 230);      // Blue player
+	TextureHandle xGroundTextureHandle = ExportColoredTexture(strTexturesDir + "/Ground.ztex", 90, 70, 50);        // Brown ground
+	TextureHandle xTreeTextureHandle = ExportColoredTexture(strTexturesDir + "/Tree.ztex", 40, 120, 40);           // Green tree
+	TextureHandle xRockTextureHandle = ExportColoredTexture(strTexturesDir + "/Rock.ztex", 120, 120, 130);         // Gray rock
+	TextureHandle xBerryTextureHandle = ExportColoredTexture(strTexturesDir + "/Berry.ztex", 200, 50, 80);         // Red berries
+	TextureHandle xWoodTextureHandle = ExportColoredTexture(strTexturesDir + "/Wood.ztex", 139, 90, 43);           // Brown wood
+	TextureHandle xStoneTextureHandle = ExportColoredTexture(strTexturesDir + "/Stone.ztex", 100, 100, 110);       // Gray stone item
 
 	// Create materials with texture paths (properly serializable)
 	auto& xRegistry = Zenith_AssetRegistry::Get();

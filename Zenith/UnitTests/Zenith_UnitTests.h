@@ -126,32 +126,6 @@ private:
 	static void TestEventMultipleSubscribers();
 	static void TestEventClearSubscriptions();
 
-	// GUID system tests
-	static void TestGUIDGeneration();
-	static void TestGUIDStringRoundTrip();
-	static void TestGUIDSerializationRoundTrip();
-	static void TestGUIDComparisonOperators();
-	static void TestGUIDHashDistribution();
-	static void TestGUIDInvalidDetection();
-
-	// Asset meta file tests
-	static void TestAssetMetaSaveLoadRoundTrip();
-	static void TestAssetMetaVersionCompatibility();
-	static void TestAssetMetaImportSettings();
-	static void TestAssetMetaGetMetaPath();
-
-	// Asset database tests
-	static void TestAssetDatabaseGUIDToPath();
-	static void TestAssetDatabasePathToGUID();
-	static void TestAssetDatabaseDependencyTracking();
-	static void TestAssetDatabaseDependentLookup();
-
-	// Asset reference tests
-	static void TestAssetRefGUIDStorage();
-	static void TestAssetRefSerializationRoundTrip();
-	static void TestAssetRefFromPath();
-	static void TestAssetRefInvalidHandling();
-
 	// Entity hierarchy tests
 	static void TestEntityAddChild();
 	static void TestEntityRemoveChild();
@@ -179,7 +153,6 @@ private:
 	static void TestAsyncLoadState();
 	static void TestAsyncLoadRequest();
 	static void TestAsyncLoadCompletion();
-	static void TestAssetRefAsyncAPI();
 
 	// DataAsset system tests
 	static void TestDataAssetRegistration();

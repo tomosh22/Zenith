@@ -4,7 +4,7 @@
 #include "Flux/Flux.h"
 #include "Flux/Flux_Buffers.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
-#include "AssetHandling/Zenith_AssetRef.h"
+#include "AssetHandling/Zenith_AssetHandle.h"
 #include "Physics/Zenith_PhysicsMeshGenerator.h"
 
 // Forward declarations for new asset/instance system
@@ -256,8 +256,8 @@ public:
 	// Animation controller (moved from mesh to component level)
 	Flux_AnimationController* m_pxAnimController = nullptr;
 
-	// GUID-based reference to the .zmodel asset (primary)
-	ModelRef m_xModel;
+	// Path-based reference to the .zmodel asset (primary)
+	ModelHandle m_xModel;
 
 	// Path to the .zmodel file (cached from GUID resolution)
 	std::string m_strModelPath;

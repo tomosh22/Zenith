@@ -1,33 +1,39 @@
 #pragma once
 
 #include <string>
+#include "AssetHandling/Zenith_Asset.h"
 
 // Forward declarations
-class Zenith_Asset;
 class Zenith_AssetRegistry;
 class Zenith_TextureAsset;
 class Zenith_MaterialAsset;
 class Zenith_MeshAsset;
 class Zenith_SkeletonAsset;
 class Zenith_ModelAsset;
+class Zenith_Prefab;
 class Zenith_DataStream;
 
 /**
  * Zenith_AssetHandle<T> - Smart handle for referencing assets
  *
- * This is the primary way to reference assets in components and other assets.
+ * This is THE primary way to reference assets in components and other assets.
  * Instead of storing raw pointers, store an AssetHandle which:
  * - Manages reference counting automatically (AddRef on copy, Release on destroy)
  * - Loads assets on demand via the registry
  * - Serializes by path for scene save/load
+ * - Uses prefixed paths for cross-machine portability
+ *
+ * Path Prefixes:
+ *   game:   - Game assets (e.g., "game:Textures/diffuse.ztex")
+ *   engine: - Engine assets (e.g., "engine:Materials/default.zmat")
  *
  * Usage:
  *   // In component header
  *   TextureHandle m_xDiffuseTexture;
  *   MeshHandle m_xMesh;
  *
- *   // Set from path
- *   m_xDiffuseTexture = TextureHandle("Assets/Textures/diffuse.ztex");
+ *   // Set from prefixed path
+ *   m_xDiffuseTexture = TextureHandle("game:Textures/diffuse.ztex");
  *
  *   // Get the asset (loads if needed)
  *   Zenith_TextureAsset* pTexture = m_xDiffuseTexture.Get();
@@ -59,7 +65,7 @@ public:
 	{
 		if (m_pxCached)
 		{
-			m_pxCached->AddRef();
+			reinterpret_cast<Zenith_Asset*>(m_pxCached)->AddRef();
 		}
 	}
 
@@ -73,7 +79,7 @@ public:
 			// Release old
 			if (m_pxCached)
 			{
-				m_pxCached->Release();
+				reinterpret_cast<Zenith_Asset*>(m_pxCached)->Release();
 			}
 
 			// Copy and acquire new
@@ -82,7 +88,7 @@ public:
 
 			if (m_pxCached)
 			{
-				m_pxCached->AddRef();
+				reinterpret_cast<Zenith_Asset*>(m_pxCached)->AddRef();
 			}
 		}
 		return *this;
@@ -108,7 +114,7 @@ public:
 			// Release old
 			if (m_pxCached)
 			{
-				m_pxCached->Release();
+				reinterpret_cast<Zenith_Asset*>(m_pxCached)->Release();
 			}
 
 			// Move and steal
@@ -126,7 +132,7 @@ public:
 	{
 		if (m_pxCached)
 		{
-			m_pxCached->Release();
+			reinterpret_cast<Zenith_Asset*>(m_pxCached)->Release();
 			m_pxCached = nullptr;
 		}
 	}
@@ -162,6 +168,14 @@ public:
 	}
 
 	/**
+	 * Check if path is set (alias for operator bool)
+	 */
+	bool IsSet() const
+	{
+		return !m_strPath.empty();
+	}
+
+	/**
 	 * Check if the asset is currently loaded
 	 */
 	bool IsLoaded() const
@@ -186,7 +200,7 @@ public:
 		{
 			if (m_pxCached)
 			{
-				m_pxCached->Release();
+				reinterpret_cast<Zenith_Asset*>(m_pxCached)->Release();
 				m_pxCached = nullptr;
 			}
 			m_strPath = strPath;
@@ -200,7 +214,7 @@ public:
 	{
 		if (m_pxCached)
 		{
-			m_pxCached->Release();
+			reinterpret_cast<Zenith_Asset*>(m_pxCached)->Release();
 			m_pxCached = nullptr;
 		}
 		m_strPath.clear();
@@ -239,6 +253,7 @@ using MaterialHandle = Zenith_AssetHandle<Zenith_MaterialAsset>;
 using MeshHandle = Zenith_AssetHandle<Zenith_MeshAsset>;
 using SkeletonHandle = Zenith_AssetHandle<Zenith_SkeletonAsset>;
 using ModelHandle = Zenith_AssetHandle<Zenith_ModelAsset>;
+using PrefabHandle = Zenith_AssetHandle<Zenith_Prefab>;
 
 //--------------------------------------------------------------------------
 // Template implementations that need registry access are in the .cpp

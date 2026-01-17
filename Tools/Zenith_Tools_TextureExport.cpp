@@ -23,7 +23,6 @@ static std::string GetEngineAssetsDirectory()
 #include "stb/stb_dxt.h"
 #include <opencv2/opencv.hpp>
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
-#include "AssetHandling/Zenith_AssetDatabase.h"
 
 bool Zenith_Tools_TextureExport::IsCompressedFormat(TextureFormat eFormat)
 {
@@ -132,9 +131,6 @@ void Zenith_Tools_TextureExport::ExportFromFile(std::string strFilename, const c
 	}
 
 	stbi_image_free(pData);
-
-	// Generate .zmeta file for asset database registration
-	Zenith_AssetDatabase::ImportAsset(strFilename);
 }
 
 void Zenith_Tools_TextureExport::ExportFromData(const void* pData, const std::string& strFilename, int32_t iWidth, int32_t iHeight, TextureFormat eFormat)
@@ -327,9 +323,6 @@ void Zenith_Tools_TextureExport::ExportFromTifFile(const std::string& strFilenam
 		Zenith_Log(LOG_CATEGORY_TOOLS, "Unsupported TIF channel count: %d", iChannels);
 		return;
 	}
-
-	// Generate .zmeta file for asset database registration
-	Zenith_AssetDatabase::ImportAsset(strOutputFilename);
 
 	Zenith_Log(LOG_CATEGORY_TOOLS, "TIF export complete: %s -> %s", strFilename.c_str(), strOutputFilename.c_str());
 }

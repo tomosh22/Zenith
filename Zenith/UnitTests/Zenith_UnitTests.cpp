@@ -46,11 +46,8 @@
 #include "AssetHandling/Zenith_MeshAsset.h"
 #include "AssetHandling/Zenith_SkeletonAsset.h"
 
-// GUID and asset system includes
-#include "Core/Zenith_GUID.h"
-#include "AssetHandling/Zenith_AssetMeta.h"
-#include "AssetHandling/Zenith_AssetDatabase.h"
-#include "AssetHandling/Zenith_AssetRef.h"
+// Asset system includes
+#include "AssetHandling/Zenith_AssetHandle.h"
 #include "Prefab/Zenith_Prefab.h"
 
 // Async asset loading and DataAsset includes
@@ -165,32 +162,6 @@ void Zenith_UnitTests::RunAllTests()
 	TestEventMultipleSubscribers();
 	TestEventClearSubscriptions();
 
-	// GUID system tests
-	TestGUIDGeneration();
-	TestGUIDStringRoundTrip();
-	TestGUIDSerializationRoundTrip();
-	TestGUIDComparisonOperators();
-	TestGUIDHashDistribution();
-	TestGUIDInvalidDetection();
-
-	// Asset meta file tests
-	TestAssetMetaSaveLoadRoundTrip();
-	TestAssetMetaVersionCompatibility();
-	TestAssetMetaImportSettings();
-	TestAssetMetaGetMetaPath();
-
-	// Asset database tests
-	TestAssetDatabaseGUIDToPath();
-	TestAssetDatabasePathToGUID();
-	TestAssetDatabaseDependencyTracking();
-	TestAssetDatabaseDependentLookup();
-
-	// Asset reference tests
-	TestAssetRefGUIDStorage();
-	TestAssetRefSerializationRoundTrip();
-	TestAssetRefFromPath();
-	TestAssetRefInvalidHandling();
-
 	// Entity hierarchy tests
 	TestEntityAddChild();
 	TestEntityRemoveChild();
@@ -218,7 +189,6 @@ void Zenith_UnitTests::RunAllTests()
 	TestAsyncLoadState();
 	TestAsyncLoadRequest();
 	TestAsyncLoadCompletion();
-	TestAssetRefAsyncAPI();
 
 	// DataAsset system tests
 	TestDataAssetRegistration();
@@ -6589,531 +6559,6 @@ void Zenith_UnitTests::TestEventClearSubscriptions()
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestEventClearSubscriptions completed successfully");
 }
 
-//=============================================================================
-// GUID System Tests
-//=============================================================================
-
-void Zenith_UnitTests::TestGUIDGeneration()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestGUIDGeneration...");
-
-	// Generate multiple GUIDs and ensure they're all unique
-	constexpr uint32_t uNumGUIDs = 100;
-	std::vector<Zenith_AssetGUID> xGUIDs;
-	xGUIDs.reserve(uNumGUIDs);
-
-	for (uint32_t u = 0; u < uNumGUIDs; ++u)
-	{
-		Zenith_AssetGUID xGUID = Zenith_AssetGUID::Generate();
-		Zenith_Assert(xGUID.IsValid(), "TestGUIDGeneration: Generated GUID should be valid");
-
-		// Check uniqueness against all previously generated GUIDs
-		for (const auto& xExisting : xGUIDs)
-		{
-			Zenith_Assert(xGUID != xExisting, "TestGUIDGeneration: Generated GUIDs should be unique");
-		}
-		xGUIDs.push_back(xGUID);
-	}
-
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestGUIDGeneration completed successfully");
-}
-
-void Zenith_UnitTests::TestGUIDStringRoundTrip()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestGUIDStringRoundTrip...");
-
-	// Generate a GUID, convert to string, parse back, compare
-	Zenith_AssetGUID xOriginal = Zenith_AssetGUID::Generate();
-	std::string strGUID = xOriginal.ToString();
-
-	// String should be in format "XXXXXXXX-XXXX-XXXX-XXXX-XXXXXXXXXXXX"
-	Zenith_Assert(strGUID.length() == 36, "TestGUIDStringRoundTrip: String should be 36 characters");
-	Zenith_Assert(strGUID[8] == '-' && strGUID[13] == '-' && strGUID[18] == '-' && strGUID[23] == '-',
-		"TestGUIDStringRoundTrip: String should have dashes at correct positions");
-
-	Zenith_AssetGUID xParsed = Zenith_AssetGUID::FromString(strGUID);
-	Zenith_Assert(xParsed.IsValid(), "TestGUIDStringRoundTrip: Parsed GUID should be valid");
-	Zenith_Assert(xOriginal == xParsed, "TestGUIDStringRoundTrip: Round-trip should produce identical GUID");
-
-	// Test invalid string
-	Zenith_AssetGUID xInvalid = Zenith_AssetGUID::FromString("not-a-valid-guid");
-	Zenith_Assert(!xInvalid.IsValid(), "TestGUIDStringRoundTrip: Invalid string should produce invalid GUID");
-
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestGUIDStringRoundTrip completed successfully");
-}
-
-void Zenith_UnitTests::TestGUIDSerializationRoundTrip()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestGUIDSerializationRoundTrip...");
-
-	Zenith_AssetGUID xOriginal = Zenith_AssetGUID::Generate();
-
-	// Write to data stream
-	Zenith_DataStream xStream;
-	xStream << xOriginal;
-
-	// Read back
-	xStream.SetCursor(0);
-	Zenith_AssetGUID xDeserialized;
-	xStream >> xDeserialized;
-
-	Zenith_Assert(xOriginal == xDeserialized,
-		"TestGUIDSerializationRoundTrip: Deserialized GUID should match original");
-
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestGUIDSerializationRoundTrip completed successfully");
-}
-
-void Zenith_UnitTests::TestGUIDComparisonOperators()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestGUIDComparisonOperators...");
-
-	Zenith_AssetGUID xGUID1 = Zenith_AssetGUID::Generate();
-	Zenith_AssetGUID xGUID2 = Zenith_AssetGUID::Generate();
-	Zenith_AssetGUID xGUID1Copy = xGUID1;
-
-	// Equality
-	Zenith_Assert(xGUID1 == xGUID1Copy, "TestGUIDComparisonOperators: Same GUID should be equal");
-	Zenith_Assert(!(xGUID1 != xGUID1Copy), "TestGUIDComparisonOperators: Same GUID != should be false");
-
-	// Inequality
-	Zenith_Assert(xGUID1 != xGUID2, "TestGUIDComparisonOperators: Different GUIDs should not be equal");
-
-	// Less than (for ordering)
-	bool bLess1 = xGUID1 < xGUID2;
-	bool bLess2 = xGUID2 < xGUID1;
-	Zenith_Assert(bLess1 != bLess2 || xGUID1 == xGUID2,
-		"TestGUIDComparisonOperators: Exactly one should be less (unless equal)");
-
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestGUIDComparisonOperators completed successfully");
-}
-
-void Zenith_UnitTests::TestGUIDHashDistribution()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestGUIDHashDistribution...");
-
-	// Generate many GUIDs and hash them, check for reasonable distribution
-	std::unordered_set<size_t> xHashes;
-	constexpr uint32_t uNumGUIDs = 1000;
-
-	for (uint32_t u = 0; u < uNumGUIDs; ++u)
-	{
-		Zenith_AssetGUID xGUID = Zenith_AssetGUID::Generate();
-		size_t ulHash = std::hash<Zenith_AssetGUID>{}(xGUID);
-		xHashes.insert(ulHash);
-	}
-
-	// With good distribution, we should have very few collisions
-	// Allow up to 5% collision rate (950+ unique hashes)
-	Zenith_Assert(xHashes.size() >= 950,
-		"TestGUIDHashDistribution: Hash distribution should have minimal collisions");
-
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestGUIDHashDistribution completed successfully");
-}
-
-void Zenith_UnitTests::TestGUIDInvalidDetection()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestGUIDInvalidDetection...");
-
-	// Default constructed should be invalid
-	Zenith_AssetGUID xDefault;
-	Zenith_Assert(!xDefault.IsValid(), "TestGUIDInvalidDetection: Default GUID should be invalid");
-
-	// INVALID constant should be invalid
-	Zenith_Assert(!Zenith_AssetGUID::INVALID.IsValid(), "TestGUIDInvalidDetection: INVALID should be invalid");
-
-	// Generated should be valid
-	Zenith_AssetGUID xGenerated = Zenith_AssetGUID::Generate();
-	Zenith_Assert(xGenerated.IsValid(), "TestGUIDInvalidDetection: Generated GUID should be valid");
-
-	// Explicit zero construction
-	Zenith_AssetGUID xZero(0, 0);
-	Zenith_Assert(!xZero.IsValid(), "TestGUIDInvalidDetection: Zero GUID should be invalid");
-
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestGUIDInvalidDetection completed successfully");
-}
-
-//=============================================================================
-// Asset Meta File Tests
-//=============================================================================
-
-void Zenith_UnitTests::TestAssetMetaSaveLoadRoundTrip()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestAssetMetaSaveLoadRoundTrip...");
-
-	// Create a meta with test data
-	Zenith_AssetMeta xOriginal;
-	xOriginal.m_xGUID = Zenith_AssetGUID::Generate();
-	xOriginal.m_strAssetPath = "TestAssets/test_texture.ztex";
-	xOriginal.m_ulLastModifiedTime = 12345678;
-	xOriginal.m_eAssetType = Zenith_AssetType::TEXTURE;
-
-	// Save to temp file
-	std::string strTempPath = "TestAssets/test_meta_roundtrip.zmeta";
-
-	// Ensure directory exists
-	std::filesystem::create_directories("TestAssets");
-
-	bool bSaved = xOriginal.SaveToFile(strTempPath);
-	Zenith_Assert(bSaved, "TestAssetMetaSaveLoadRoundTrip: Save should succeed");
-
-	// Load back
-	Zenith_AssetMeta xLoaded;
-	bool bLoaded = xLoaded.LoadFromFile(strTempPath);
-	Zenith_Assert(bLoaded, "TestAssetMetaSaveLoadRoundTrip: Load should succeed");
-
-	// Verify fields
-	Zenith_Assert(xOriginal.m_xGUID == xLoaded.m_xGUID,
-		"TestAssetMetaSaveLoadRoundTrip: GUID should match");
-	Zenith_Assert(xOriginal.m_strAssetPath == xLoaded.m_strAssetPath,
-		"TestAssetMetaSaveLoadRoundTrip: Asset path should match");
-	Zenith_Assert(xOriginal.m_ulLastModifiedTime == xLoaded.m_ulLastModifiedTime,
-		"TestAssetMetaSaveLoadRoundTrip: Modification time should match");
-	Zenith_Assert(xOriginal.m_eAssetType == xLoaded.m_eAssetType,
-		"TestAssetMetaSaveLoadRoundTrip: Asset type should match");
-
-	// Cleanup
-	std::filesystem::remove(strTempPath);
-
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAssetMetaSaveLoadRoundTrip completed successfully");
-}
-
-void Zenith_UnitTests::TestAssetMetaVersionCompatibility()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestAssetMetaVersionCompatibility...");
-
-	// This test ensures the meta file format includes version info
-	Zenith_AssetMeta xMeta;
-	xMeta.m_xGUID = Zenith_AssetGUID::Generate();
-	xMeta.m_strAssetPath = "TestAssets/version_test.ztex";
-	xMeta.m_eAssetType = Zenith_AssetType::TEXTURE;
-
-	std::string strPath = "TestAssets/version_test.zmeta";
-	std::filesystem::create_directories("TestAssets");
-
-	xMeta.SaveToFile(strPath);
-
-	// Load and verify it works (version is embedded in file)
-	Zenith_AssetMeta xLoaded;
-	bool bLoaded = xLoaded.LoadFromFile(strPath);
-	Zenith_Assert(bLoaded, "TestAssetMetaVersionCompatibility: Should load current version");
-
-	std::filesystem::remove(strPath);
-
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAssetMetaVersionCompatibility completed successfully");
-}
-
-void Zenith_UnitTests::TestAssetMetaImportSettings()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestAssetMetaImportSettings...");
-
-	// Test texture import settings
-	Zenith_AssetMeta xTextureMeta;
-	xTextureMeta.m_xGUID = Zenith_AssetGUID::Generate();
-	xTextureMeta.m_strAssetPath = "TestAssets/import_test.ztex";
-	xTextureMeta.m_eAssetType = Zenith_AssetType::TEXTURE;
-
-	xTextureMeta.m_xTextureSettings.m_bGenerateMipmaps = true;
-	xTextureMeta.m_xTextureSettings.m_bSRGB = false;
-
-	std::string strPath = "TestAssets/import_settings_test.zmeta";
-	std::filesystem::create_directories("TestAssets");
-
-	xTextureMeta.SaveToFile(strPath);
-
-	Zenith_AssetMeta xLoaded;
-	xLoaded.LoadFromFile(strPath);
-
-	Zenith_Assert(xLoaded.m_xTextureSettings.m_bGenerateMipmaps == xTextureMeta.m_xTextureSettings.m_bGenerateMipmaps,
-		"TestAssetMetaImportSettings: GenerateMipmaps should match");
-	Zenith_Assert(xLoaded.m_xTextureSettings.m_bSRGB == xTextureMeta.m_xTextureSettings.m_bSRGB,
-		"TestAssetMetaImportSettings: SRGB should match");
-
-	std::filesystem::remove(strPath);
-
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAssetMetaImportSettings completed successfully");
-}
-
-void Zenith_UnitTests::TestAssetMetaGetMetaPath()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestAssetMetaGetMetaPath...");
-
-	// Test meta path generation
-	std::string strAssetPath = "Assets/Textures/diffuse.ztex";
-	std::string strMetaPath = Zenith_AssetMeta::GetMetaPath(strAssetPath);
-
-	Zenith_Assert(strMetaPath == "Assets/Textures/diffuse.ztex.zmeta",
-		"TestAssetMetaGetMetaPath: Meta path should append .zmeta");
-
-	// Test with different extensions
-	std::string strMaterialPath = "Assets/Materials/test.zmtrl";
-	std::string strMaterialMetaPath = Zenith_AssetMeta::GetMetaPath(strMaterialPath);
-	Zenith_Assert(strMaterialMetaPath == "Assets/Materials/test.zmtrl.zmeta",
-		"TestAssetMetaGetMetaPath: Should work with any extension");
-
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAssetMetaGetMetaPath completed successfully");
-}
-
-//=============================================================================
-// Asset Database Tests
-//=============================================================================
-
-void Zenith_UnitTests::TestAssetDatabaseGUIDToPath()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestAssetDatabaseGUIDToPath...");
-
-	// Create a test meta and register it
-	Zenith_AssetMeta xMeta;
-	xMeta.m_xGUID = Zenith_AssetGUID::Generate();
-	xMeta.m_strAssetPath = "TestAssets/db_test_asset.ztex";
-	xMeta.m_eAssetType = Zenith_AssetType::TEXTURE;
-
-	// Initialize database if not already
-	bool bWasInitialized = Zenith_AssetDatabase::IsInitialized();
-	if (!bWasInitialized)
-	{
-		Zenith_AssetDatabase::Initialize("TestAssets/");
-	}
-
-	// Register the asset
-	Zenith_AssetDatabase::RegisterAsset(xMeta);
-
-	// Look up by GUID
-	std::string strPath = Zenith_AssetDatabase::GetPathFromGUID(xMeta.m_xGUID);
-	Zenith_Assert(!strPath.empty(), "TestAssetDatabaseGUIDToPath: Should find registered asset");
-
-	// Unregister
-	Zenith_AssetDatabase::UnregisterAsset(xMeta.m_xGUID);
-
-	// Should not find after unregister
-	strPath = Zenith_AssetDatabase::GetPathFromGUID(xMeta.m_xGUID);
-	Zenith_Assert(strPath.empty(), "TestAssetDatabaseGUIDToPath: Should not find unregistered asset");
-
-	if (!bWasInitialized)
-	{
-		Zenith_AssetDatabase::Shutdown();
-	}
-
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAssetDatabaseGUIDToPath completed successfully");
-}
-
-void Zenith_UnitTests::TestAssetDatabasePathToGUID()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestAssetDatabasePathToGUID...");
-
-	Zenith_AssetMeta xMeta;
-	xMeta.m_xGUID = Zenith_AssetGUID::Generate();
-	xMeta.m_strAssetPath = "TestAssets/path_lookup_test.ztex";
-	xMeta.m_eAssetType = Zenith_AssetType::TEXTURE;
-
-	bool bWasInitialized = Zenith_AssetDatabase::IsInitialized();
-	if (!bWasInitialized)
-	{
-		Zenith_AssetDatabase::Initialize("TestAssets/");
-	}
-
-	Zenith_AssetDatabase::RegisterAsset(xMeta);
-
-	// Look up by path
-	Zenith_AssetGUID xFoundGUID = Zenith_AssetDatabase::GetGUIDFromPath("TestAssets/path_lookup_test.ztex");
-	Zenith_Assert(xFoundGUID.IsValid(), "TestAssetDatabasePathToGUID: Should find by path");
-	Zenith_Assert(xFoundGUID == xMeta.m_xGUID, "TestAssetDatabasePathToGUID: GUID should match");
-
-	// Test case insensitivity on Windows
-#ifdef _WIN32
-	Zenith_AssetGUID xUpperGUID = Zenith_AssetDatabase::GetGUIDFromPath("TESTASSETS/PATH_LOOKUP_TEST.ZTEX");
-	Zenith_Assert(xUpperGUID == xMeta.m_xGUID,
-		"TestAssetDatabasePathToGUID: Should be case-insensitive on Windows");
-#endif
-
-	Zenith_AssetDatabase::UnregisterAsset(xMeta.m_xGUID);
-
-	if (!bWasInitialized)
-	{
-		Zenith_AssetDatabase::Shutdown();
-	}
-
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAssetDatabasePathToGUID completed successfully");
-}
-
-void Zenith_UnitTests::TestAssetDatabaseDependencyTracking()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestAssetDatabaseDependencyTracking...");
-
-	bool bWasInitialized = Zenith_AssetDatabase::IsInitialized();
-	if (!bWasInitialized)
-	{
-		Zenith_AssetDatabase::Initialize("TestAssets/");
-	}
-
-	Zenith_AssetGUID xMaterialGUID = Zenith_AssetGUID::Generate();
-	Zenith_AssetGUID xTextureGUID = Zenith_AssetGUID::Generate();
-
-	// Register dependency: material depends on texture
-	Zenith_AssetDatabase::RegisterDependency(xMaterialGUID, xTextureGUID);
-
-	// Get dependencies
-	Zenith_Vector<Zenith_AssetGUID> xDeps = Zenith_AssetDatabase::GetDependencies(xMaterialGUID);
-	Zenith_Assert(xDeps.GetSize() == 1, "TestAssetDatabaseDependencyTracking: Should have 1 dependency");
-	Zenith_Assert(xDeps.Get(0) == xTextureGUID, "TestAssetDatabaseDependencyTracking: Dependency should be texture");
-
-	// Unregister dependency
-	Zenith_AssetDatabase::UnregisterDependency(xMaterialGUID, xTextureGUID);
-	xDeps = Zenith_AssetDatabase::GetDependencies(xMaterialGUID);
-	Zenith_Assert(xDeps.GetSize() == 0, "TestAssetDatabaseDependencyTracking: Should have no dependencies after unregister");
-
-	if (!bWasInitialized)
-	{
-		Zenith_AssetDatabase::Shutdown();
-	}
-
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAssetDatabaseDependencyTracking completed successfully");
-}
-
-void Zenith_UnitTests::TestAssetDatabaseDependentLookup()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestAssetDatabaseDependentLookup...");
-
-	bool bWasInitialized = Zenith_AssetDatabase::IsInitialized();
-	if (!bWasInitialized)
-	{
-		Zenith_AssetDatabase::Initialize("TestAssets/");
-	}
-
-	Zenith_AssetGUID xTextureGUID = Zenith_AssetGUID::Generate();
-	Zenith_AssetGUID xMaterial1GUID = Zenith_AssetGUID::Generate();
-	Zenith_AssetGUID xMaterial2GUID = Zenith_AssetGUID::Generate();
-
-	// Two materials depend on the same texture
-	Zenith_AssetDatabase::RegisterDependency(xMaterial1GUID, xTextureGUID);
-	Zenith_AssetDatabase::RegisterDependency(xMaterial2GUID, xTextureGUID);
-
-	// Get dependents of texture
-	Zenith_Vector<Zenith_AssetGUID> xDependents = Zenith_AssetDatabase::GetDependents(xTextureGUID);
-	Zenith_Assert(xDependents.GetSize() == 2, "TestAssetDatabaseDependentLookup: Should have 2 dependents");
-
-	// Clear dependencies
-	Zenith_AssetDatabase::ClearDependencies(xMaterial1GUID);
-	Zenith_AssetDatabase::ClearDependencies(xMaterial2GUID);
-
-	if (!bWasInitialized)
-	{
-		Zenith_AssetDatabase::Shutdown();
-	}
-
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAssetDatabaseDependentLookup completed successfully");
-}
-
-//=============================================================================
-// Asset Reference Tests
-//=============================================================================
-
-void Zenith_UnitTests::TestAssetRefGUIDStorage()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestAssetRefGUIDStorage...");
-
-	Zenith_AssetGUID xTestGUID = Zenith_AssetGUID::Generate();
-
-	TextureRef xRef;
-	Zenith_Assert(!xRef.IsSet(), "TestAssetRefGUIDStorage: Default ref should not be set");
-
-	xRef.SetGUID(xTestGUID);
-	Zenith_Assert(xRef.IsSet(), "TestAssetRefGUIDStorage: Should be set after SetGUID");
-	Zenith_Assert(xRef.GetGUID() == xTestGUID, "TestAssetRefGUIDStorage: GUID should match");
-
-	xRef.Clear();
-	Zenith_Assert(!xRef.IsSet(), "TestAssetRefGUIDStorage: Should not be set after Clear");
-
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAssetRefGUIDStorage completed successfully");
-}
-
-void Zenith_UnitTests::TestAssetRefSerializationRoundTrip()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestAssetRefSerializationRoundTrip...");
-
-	Zenith_AssetGUID xTestGUID = Zenith_AssetGUID::Generate();
-	MaterialRef xOriginal;
-	xOriginal.SetGUID(xTestGUID);
-
-	// Write to stream
-	Zenith_DataStream xStream;
-	xOriginal.WriteToDataStream(xStream);
-
-	// Read back
-	xStream.SetCursor(0);
-	MaterialRef xLoaded;
-	xLoaded.ReadFromDataStream(xStream);
-
-	Zenith_Assert(xOriginal.GetGUID() == xLoaded.GetGUID(),
-		"TestAssetRefSerializationRoundTrip: GUIDs should match after round-trip");
-
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAssetRefSerializationRoundTrip completed successfully");
-}
-
-void Zenith_UnitTests::TestAssetRefFromPath()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestAssetRefFromPath...");
-
-	// Register a test asset in the database
-	bool bWasInitialized = Zenith_AssetDatabase::IsInitialized();
-	if (!bWasInitialized)
-	{
-		Zenith_AssetDatabase::Initialize("TestAssets/");
-	}
-
-	Zenith_AssetMeta xMeta;
-	xMeta.m_xGUID = Zenith_AssetGUID::Generate();
-	xMeta.m_strAssetPath = "TestAssets/ref_from_path_test.zmtrl";
-	xMeta.m_eAssetType = Zenith_AssetType::MATERIAL;
-	Zenith_AssetDatabase::RegisterAsset(xMeta);
-
-	// Create ref from path
-	MaterialRef xRef;
-	bool bFound = xRef.SetFromPath("TestAssets/ref_from_path_test.zmtrl");
-	Zenith_Assert(bFound, "TestAssetRefFromPath: Should find registered asset");
-	Zenith_Assert(xRef.GetGUID() == xMeta.m_xGUID, "TestAssetRefFromPath: GUID should match");
-
-	// Try non-existent path
-	MaterialRef xBadRef;
-	bFound = xBadRef.SetFromPath("TestAssets/does_not_exist.zmtrl");
-	Zenith_Assert(!bFound, "TestAssetRefFromPath: Should not find non-existent asset");
-	Zenith_Assert(!xBadRef.IsSet(), "TestAssetRefFromPath: Bad ref should not be set");
-
-	Zenith_AssetDatabase::UnregisterAsset(xMeta.m_xGUID);
-
-	if (!bWasInitialized)
-	{
-		Zenith_AssetDatabase::Shutdown();
-	}
-
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAssetRefFromPath completed successfully");
-}
-
-void Zenith_UnitTests::TestAssetRefInvalidHandling()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestAssetRefInvalidHandling...");
-
-	TextureRef xRef;
-
-	// Default ref should return nullptr
-	Zenith_TextureAsset* pTexture = xRef.Get();
-	Zenith_Assert(pTexture == nullptr, "TestAssetRefInvalidHandling: Invalid ref should return nullptr");
-
-	// Arrow operator on invalid ref should return nullptr
-	// (We can't test dereferencing nullptr, but we can verify Get returns nullptr)
-	Zenith_Assert(xRef.operator->() == nullptr,
-		"TestAssetRefInvalidHandling: Arrow operator should return nullptr for invalid ref");
-
-	// Bool conversion
-	Zenith_Assert(!static_cast<bool>(xRef), "TestAssetRefInvalidHandling: Bool should be false for invalid ref");
-
-	// Set to valid GUID that doesn't exist in database - Get should still return nullptr
-	xRef.SetGUID(Zenith_AssetGUID::Generate());
-	Zenith_Assert(xRef.IsSet(), "TestAssetRefInvalidHandling: Should be set with any valid GUID");
-	// Note: We can't test Get() here without the database being properly set up with the asset
-
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAssetRefInvalidHandling completed successfully");
-}
-
 //------------------------------------------------------------------------------
 // Entity Hierarchy Tests
 //------------------------------------------------------------------------------
@@ -7406,16 +6851,15 @@ void Zenith_UnitTests::TestPrefabSaveLoadRoundTrip()
 	// Create and save prefab
 	Zenith_Prefab xPrefab;
 	xPrefab.CreateFromEntity(xSource, "RoundTripPrefab");
-	xPrefab.SetGUID(Zenith_AssetGUID::Generate());
 
 	std::string strTempPath = "test_roundtrip.zpfb";
 	bool bSaved = xPrefab.SaveToFile(strTempPath);
 	Zenith_Assert(bSaved, "TestPrefabSaveLoadRoundTrip: Save should succeed");
 
-	// Load prefab
-	Zenith_Prefab xLoadedPrefab;
-	bool bLoaded = xLoadedPrefab.LoadFromFile(strTempPath);
-	Zenith_Assert(bLoaded, "TestPrefabSaveLoadRoundTrip: Load should succeed");
+	// Load prefab via registry
+	Zenith_Prefab* pxLoadedPrefab = Zenith_AssetRegistry::Get().Get<Zenith_Prefab>(strTempPath);
+	Zenith_Assert(pxLoadedPrefab != nullptr, "TestPrefabSaveLoadRoundTrip: Load should succeed");
+	Zenith_Prefab& xLoadedPrefab = *pxLoadedPrefab;
 	Zenith_Assert(xLoadedPrefab.IsValid(), "TestPrefabSaveLoadRoundTrip: Loaded prefab should be valid");
 	Zenith_Assert(xLoadedPrefab.GetName() == "RoundTripPrefab",
 		"TestPrefabSaveLoadRoundTrip: Loaded prefab name should match");
@@ -7483,20 +6927,19 @@ void Zenith_UnitTests::TestPrefabVariantCreation()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestPrefabVariantCreation...");
 
-	// Create a base prefab reference (mock - not actually loaded)
-	PrefabRef xBasePrefabRef;
-	Zenith_AssetGUID xBaseGUID = Zenith_AssetGUID::Generate();
-	xBasePrefabRef.SetGUID(xBaseGUID);
+	// Create a base prefab handle (mock - path-based reference)
+	std::string strBasePrefabPath = "test_base_prefab.zpfb";
+	PrefabHandle xBasePrefabHandle(strBasePrefabPath);
 
 	// Create a variant prefab
 	Zenith_Prefab xVariant;
-	bool bSuccess = xVariant.CreateAsVariant(xBasePrefabRef, "VariantPrefab");
+	bool bSuccess = xVariant.CreateAsVariant(xBasePrefabHandle, "VariantPrefab");
 
 	Zenith_Assert(bSuccess, "TestPrefabVariantCreation: CreateAsVariant should succeed");
 	Zenith_Assert(xVariant.IsVariant(), "TestPrefabVariantCreation: Should be marked as variant");
 	Zenith_Assert(xVariant.GetBasePrefab().IsSet(), "TestPrefabVariantCreation: Should have base prefab set");
-	Zenith_Assert(xVariant.GetBasePrefab().GetGUID() == xBaseGUID,
-		"TestPrefabVariantCreation: Base prefab GUID should match");
+	Zenith_Assert(xVariant.GetBasePrefab().GetPath() == strBasePrefabPath,
+		"TestPrefabVariantCreation: Base prefab path should match");
 
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestPrefabVariantCreation completed successfully");
 }
@@ -7509,10 +6952,10 @@ void Zenith_UnitTests::TestAsyncLoadState()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestAsyncLoadState...");
 
-	// Test that default state is UNLOADED for unknown GUIDs
-	Zenith_AssetGUID xUnknownGUID = Zenith_AssetGUID::Generate();
-	AssetLoadState eState = Zenith_AsyncAssetLoader::GetLoadState(xUnknownGUID);
-	Zenith_Assert(eState == AssetLoadState::UNLOADED, "TestAsyncLoadState: Unknown GUID should be UNLOADED");
+	// Test that default state is UNLOADED for unknown paths
+	std::string strUnknownPath = "game:NonExistent/Unknown.ztex";
+	AssetLoadState eState = Zenith_AsyncAssetLoader::GetLoadState(strUnknownPath);
+	Zenith_Assert(eState == AssetLoadState::UNLOADED, "TestAsyncLoadState: Unknown path should be UNLOADED");
 
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAsyncLoadState completed successfully");
 }
@@ -7540,28 +6983,6 @@ void Zenith_UnitTests::TestAsyncLoadCompletion()
 	Zenith_AsyncAssetLoader::ProcessCompletedLoads();
 
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAsyncLoadCompletion completed successfully");
-}
-
-void Zenith_UnitTests::TestAssetRefAsyncAPI()
-{
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestAssetRefAsyncAPI...");
-
-	// Test AssetRef async API availability
-	Zenith_AssetRef<Zenith_TextureAsset> xTextureRef;
-
-	// Default ref should not be ready
-	Zenith_Assert(!xTextureRef.IsReady(), "TestAssetRefAsyncAPI: Empty ref should not be ready");
-
-	// TryGet should return nullptr for unloaded ref
-	Zenith_TextureAsset* pxTex = xTextureRef.TryGet();
-	Zenith_Assert(pxTex == nullptr, "TestAssetRefAsyncAPI: TryGet on empty ref should return nullptr");
-
-	// GetLoadState should return UNLOADED for invalid GUID
-	AssetLoadState eState = xTextureRef.GetLoadState();
-	// Note: Empty ref may return LOADED (cached as nullptr) or UNLOADED depending on implementation
-	// This just tests the API exists and doesn't crash
-
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAssetRefAsyncAPI completed successfully");
 }
 
 //==============================================================================

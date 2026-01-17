@@ -13,6 +13,7 @@ class Zenith_MaterialAsset;
 class Zenith_MeshAsset;
 class Zenith_SkeletonAsset;
 class Zenith_ModelAsset;
+class Zenith_Prefab;
 
 /**
  * Zenith_AssetRegistry - THE unified asset management system
@@ -25,17 +26,27 @@ class Zenith_ModelAsset;
  *
  * Features:
  * - Single unified cache for all asset types
- * - Path-based identification (no GUIDs)
+ * - Path-based identification with prefixes (game: and engine:)
  * - Reference counting with automatic cleanup
  * - Support for procedural (code-created) assets
  * - Thread-safe operations
+ * - Relative paths for cross-machine portability
+ *
+ * Path Prefixes:
+ *   game:   - Resolves to GAME_ASSETS_DIR (e.g., "game:Textures/diffuse.ztex")
+ *   engine: - Resolves to ENGINE_ASSETS_DIR (e.g., "engine:Materials/default.zmat")
  *
  * Usage:
+ *   // Set directories at startup
+ *   Zenith_AssetRegistry::SetGameAssetsDir(GAME_ASSETS_DIR);
+ *   Zenith_AssetRegistry::SetEngineAssetsDir(ENGINE_ASSETS_DIR);
+ *   Zenith_AssetRegistry::Initialize();
+ *
  *   // Get singleton
  *   auto& reg = Zenith_AssetRegistry::Get();
  *
- *   // Load asset from file
- *   Zenith_TextureAsset* pTex = reg.Get<Zenith_TextureAsset>("Assets/tex.ztex");
+ *   // Load asset from file (using prefixed path)
+ *   Zenith_TextureAsset* pTex = reg.Get<Zenith_TextureAsset>("game:Textures/diffuse.ztex");
  *
  *   // Create procedural asset
  *   Zenith_MeshAsset* pMesh = reg.Create<Zenith_MeshAsset>();
@@ -51,8 +62,42 @@ public:
 	 */
 	static Zenith_AssetRegistry& Get();
 
+	//--------------------------------------------------------------------------
+	// Path Resolution
+	//--------------------------------------------------------------------------
+
 	/**
-	 * Initialize the registry (call once at startup)
+	 * Set the game assets directory (call before Initialize)
+	 * @param strPath Absolute path to game assets directory
+	 */
+	static void SetGameAssetsDir(const std::string& strPath);
+
+	/**
+	 * Set the engine assets directory (call before Initialize)
+	 * @param strPath Absolute path to engine assets directory
+	 */
+	static void SetEngineAssetsDir(const std::string& strPath);
+
+	/**
+	 * Resolve a prefixed path to an absolute path
+	 * @param strPrefixedPath Path with prefix (e.g., "game:Textures/tex.ztex")
+	 * @return Absolute path on disk
+	 */
+	static std::string ResolvePath(const std::string& strPrefixedPath);
+
+	/**
+	 * Convert an absolute path to a prefixed relative path
+	 * @param strAbsolutePath Absolute path on disk
+	 * @return Prefixed relative path (e.g., "game:Textures/tex.ztex"), or empty if not in known directories
+	 */
+	static std::string MakeRelativePath(const std::string& strAbsolutePath);
+
+	//--------------------------------------------------------------------------
+	// Initialization
+	//--------------------------------------------------------------------------
+
+	/**
+	 * Initialize the registry (call once at startup, after SetGameAssetsDir/SetEngineAssetsDir)
 	 */
 	static void Initialize();
 
@@ -155,6 +200,10 @@ private:
 
 	// Singleton instance
 	static Zenith_AssetRegistry* s_pxInstance;
+
+	// Asset directories (set before Initialize)
+	static std::string s_strGameAssetsDir;
+	static std::string s_strEngineAssetsDir;
 
 	// Unified asset cache: path -> asset
 	std::unordered_map<std::string, Zenith_Asset*> m_xAssetsByPath;

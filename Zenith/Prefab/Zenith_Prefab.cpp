@@ -44,14 +44,12 @@ void Zenith_PropertyOverride::ReadFromDataStream(Zenith_DataStream& xStream)
 
 Zenith_Prefab::Zenith_Prefab(Zenith_Prefab&& other)
 	: m_strName(std::move(other.m_strName))
-	, m_xGUID(other.m_xGUID)
 	, m_xComponentData(std::move(other.m_xComponentData))
 	, m_bIsValid(other.m_bIsValid)
 	, m_xBasePrefab(std::move(other.m_xBasePrefab))
 	, m_xOverrides(std::move(other.m_xOverrides))
 {
 	other.m_bIsValid = false;
-	other.m_xGUID = Zenith_AssetGUID::INVALID;
 }
 
 Zenith_Prefab& Zenith_Prefab::operator=(Zenith_Prefab&& other)
@@ -59,13 +57,11 @@ Zenith_Prefab& Zenith_Prefab::operator=(Zenith_Prefab&& other)
 	if (this != &other)
 	{
 		m_strName = std::move(other.m_strName);
-		m_xGUID = other.m_xGUID;
 		m_xComponentData = std::move(other.m_xComponentData);
 		m_bIsValid = other.m_bIsValid;
 		m_xBasePrefab = std::move(other.m_xBasePrefab);
 		m_xOverrides = std::move(other.m_xOverrides);
 		other.m_bIsValid = false;
-		other.m_xGUID = Zenith_AssetGUID::INVALID;
 	}
 	return *this;
 }
@@ -73,7 +69,6 @@ Zenith_Prefab& Zenith_Prefab::operator=(Zenith_Prefab&& other)
 bool Zenith_Prefab::CreateFromEntity(const Zenith_Entity& xEntity, const std::string& strPrefabName)
 {
 	m_strName = strPrefabName;
-	m_xGUID = Zenith_AssetGUID::Generate();
 	m_bIsValid = false;
 	m_xOverrides.Clear();
 	m_xBasePrefab.Clear();
@@ -83,7 +78,6 @@ bool Zenith_Prefab::CreateFromEntity(const Zenith_Entity& xEntity, const std::st
 	m_xComponentData << PREFAB_MAGIC;
 	m_xComponentData << PREFAB_VERSION;
 	m_xComponentData << m_strName;
-	m_xGUID.WriteToDataStream(m_xComponentData);
 
 	Zenith_Entity& xMutableEntity = const_cast<Zenith_Entity&>(xEntity);
 	SerializeComponents(xMutableEntity);
@@ -92,7 +86,7 @@ bool Zenith_Prefab::CreateFromEntity(const Zenith_Entity& xEntity, const std::st
 	return true;
 }
 
-bool Zenith_Prefab::CreateAsVariant(const PrefabRef& xBasePrefab, const std::string& strVariantName)
+bool Zenith_Prefab::CreateAsVariant(const PrefabHandle& xBasePrefab, const std::string& strVariantName)
 {
 	if (!xBasePrefab.IsSet())
 	{
@@ -101,7 +95,6 @@ bool Zenith_Prefab::CreateAsVariant(const PrefabRef& xBasePrefab, const std::str
 	}
 
 	m_strName = strVariantName;
-	m_xGUID = Zenith_AssetGUID::Generate();
 	m_xBasePrefab = xBasePrefab;
 	m_xOverrides.Clear();
 	m_xComponentData = Zenith_DataStream();
@@ -131,7 +124,6 @@ bool Zenith_Prefab::SaveToFile(const std::string& strFilePath) const
 	xOutput << PREFAB_MAGIC;
 	xOutput << PREFAB_VERSION;
 	xOutput << m_strName;
-	m_xGUID.WriteToDataStream(xOutput);
 
 	// Write base prefab reference (for variants)
 	bool bIsVariant = m_xBasePrefab.IsSet();
@@ -161,9 +153,8 @@ bool Zenith_Prefab::SaveToFile(const std::string& strFilePath) const
 	}
 
 	xOutput.WriteToFile(strFilePath.c_str());
-	Zenith_Log(LOG_CATEGORY_PREFAB, "Saved prefab '%s' to %s (GUID: %s, variant: %s)",
-		m_strName.c_str(), strFilePath.c_str(), m_xGUID.ToString().c_str(),
-		bIsVariant ? "yes" : "no");
+	Zenith_Log(LOG_CATEGORY_PREFAB, "Saved prefab '%s' to %s (variant: %s)",
+		m_strName.c_str(), strFilePath.c_str(), bIsVariant ? "yes" : "no");
 	return true;
 }
 
@@ -194,9 +185,6 @@ bool Zenith_Prefab::LoadFromFile(const std::string& strFilePath)
 	}
 
 	xInput >> m_strName;
-
-	// Read GUID
-	m_xGUID.ReadFromDataStream(xInput);
 
 	// Read base prefab reference
 	bool bIsVariant;
@@ -233,8 +221,7 @@ bool Zenith_Prefab::LoadFromFile(const std::string& strFilePath)
 	}
 
 	m_bIsValid = true;
-	Zenith_Log(LOG_CATEGORY_PREFAB, "Loaded prefab '%s' from %s (GUID: %s)",
-		m_strName.c_str(), strFilePath.c_str(), m_xGUID.ToString().c_str());
+	Zenith_Log(LOG_CATEGORY_PREFAB, "Loaded prefab '%s' from %s", m_strName.c_str(), strFilePath.c_str());
 	return true;
 }
 
@@ -272,16 +259,12 @@ void Zenith_Prefab::DeserializeComponents(Zenith_Entity& xEntity) const
 	Zenith_DataStream& xStream = const_cast<Zenith_DataStream&>(m_xComponentData);
 	xStream.SetCursor(0);
 
-	// Skip the header (magic, version, name, GUID)
+	// Skip the header (magic, version, name)
 	u_int uMagic, uVersion;
 	std::string strName;
 	xStream >> uMagic;
 	xStream >> uVersion;
 	xStream >> strName;
-
-	// Skip the GUID (it was written after the name in CreateFromEntity)
-	Zenith_AssetGUID xSkipGUID;
-	xSkipGUID.ReadFromDataStream(xStream);
 
 	// Use the ComponentMeta registry to deserialize all components
 	Zenith_ComponentMetaRegistry::Get().DeserializeEntityComponents(xEntity, xStream);

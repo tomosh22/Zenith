@@ -3,7 +3,6 @@
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "DataStream/Zenith_DataStream.h"
-#include "Core/Zenith_GUID.h"
 #include <filesystem>
 
 // Static default textures
@@ -60,6 +59,17 @@ bool Zenith_MaterialAsset::SaveToFile(const std::string& strPath)
 
 	Zenith_Log(LOG_CATEGORY_ASSET, "Saved material to: %s", strPath.c_str());
 	return true;
+}
+
+bool Zenith_MaterialAsset::Reload()
+{
+	if (m_strPath.empty())
+	{
+		Zenith_Log(LOG_CATEGORY_ASSET, "Cannot reload material with empty path");
+		return false;
+	}
+
+	return LoadFromFile(m_strPath);
 }
 
 void Zenith_MaterialAsset::WriteToDataStream(Zenith_DataStream& xStream) const
@@ -188,17 +198,10 @@ void Zenith_MaterialAsset::ReadFromDataStream(Zenith_DataStream& xStream)
 	}
 	else if (uVersion >= 2)
 	{
-		// Version 2-3: GUID-based (old format) - skip GUID data, paths won't work
-		// This is a breaking change - old materials need to be re-exported
-		Zenith_Log(LOG_CATEGORY_ASSET, "Material %s uses old GUID format (v%u), textures will be missing. Please re-export.",
+		// Version 2-3: GUID-based (old format) - no longer supported
+		// Old materials need to be re-exported
+		Zenith_Error(LOG_CATEGORY_ASSET, "Material %s uses old GUID format (v%u). Please re-export.",
 			m_strName.c_str(), uVersion);
-
-		// Skip the GUID data in the stream
-		for (int i = 0; i < 5; ++i)
-		{
-			Zenith_AssetGUID xDummy;
-			xStream >> xDummy;
-		}
 	}
 }
 

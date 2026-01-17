@@ -1,7 +1,5 @@
 #include "Zenith.h"
 #include "AssetHandling/Zenith_FileWatcher.h"
-#include "AssetHandling/Zenith_AssetDatabase.h"
-#include "AssetHandling/Zenith_AssetMeta.h"
 #include <filesystem>
 #include <algorithm>
 

@@ -113,8 +113,8 @@ void Zenith_ModelComponent::LoadModel(const std::string& strPath)
 	// Clear any existing model
 	ClearModel();
 
-	// Load model asset from file
-	Zenith_ModelAsset* pxAsset = Zenith_ModelAsset::LoadFromFile(strLocalPath.c_str());
+	// Load model asset via registry
+	Zenith_ModelAsset* pxAsset = Zenith_AssetRegistry::Get().Get<Zenith_ModelAsset>(strLocalPath);
 	if (!pxAsset)
 	{
 		Zenith_Error(LOG_CATEGORY_MESH, "Failed to load model asset from: %s", strLocalPath.c_str());
@@ -137,10 +137,10 @@ void Zenith_ModelComponent::LoadModel(const std::string& strPath)
 	// Store path for serialization
 	m_strModelPath = strLocalPath;
 
-	// Also populate GUID reference if not already set
+	// Also populate handle if not already set
 	if (!m_xModel.IsSet())
 	{
-		m_xModel.SetFromPath(strLocalPath);
+		m_xModel.SetPath(strLocalPath);
 	}
 
 	// Detailed logging for debugging

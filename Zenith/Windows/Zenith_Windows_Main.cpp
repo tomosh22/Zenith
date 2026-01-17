@@ -34,6 +34,18 @@ int main()
 	Zenith_Profiling::Initialise();
 	Zenith_Multithreading::RegisterThread(true);
 	Zenith_TaskSystem::Inititalise();
+
+	// Set asset directories before registry initialization
+#ifdef GAME_ASSETS_DIR
+	Zenith_AssetRegistry::SetGameAssetsDir(GAME_ASSETS_DIR);
+#else
+	Zenith_AssetRegistry::SetGameAssetsDir("./Assets/");
+#endif
+#ifdef ENGINE_ASSETS_DIR
+	Zenith_AssetRegistry::SetEngineAssetsDir(ENGINE_ASSETS_DIR);
+#else
+	Zenith_AssetRegistry::SetEngineAssetsDir("./Zenith/Assets/");
+#endif
 	Zenith_AssetRegistry::Initialize();
 	Zenith_UnitTests::RunAllTests();
 

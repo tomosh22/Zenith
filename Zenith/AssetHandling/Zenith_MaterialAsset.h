@@ -45,18 +45,17 @@ public:
 	//--------------------------------------------------------------------------
 
 	/**
-	 * Load material data from file
-	 * @param strPath Path to .zmat file
-	 * @return true on success
-	 */
-	bool LoadFromFile(const std::string& strPath);
-
-	/**
 	 * Save material data to file
 	 * @param strPath Path to save to (becomes the asset path)
 	 * @return true on success
 	 */
 	bool SaveToFile(const std::string& strPath);
+
+	/**
+	 * Reload material data from disk (uses stored path)
+	 * @return true on success
+	 */
+	bool Reload();
 
 	/**
 	 * Write material data to stream
@@ -172,6 +171,16 @@ public:
 	static void ShutdownDefaults();
 
 private:
+	friend class Zenith_AssetRegistry;
+	friend Zenith_Asset* LoadMaterialAsset(const std::string&);
+
+	/**
+	 * Load material data from file (private - use Zenith_AssetRegistry::Get)
+	 * @param strPath Path to .zmat file
+	 * @return true on success
+	 */
+	bool LoadFromFile(const std::string& strPath);
+
 	// Material identity
 	std::string m_strName;
 

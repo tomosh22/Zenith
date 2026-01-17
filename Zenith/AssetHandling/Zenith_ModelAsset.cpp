@@ -1,6 +1,5 @@
 #include "Zenith.h"
 #include "AssetHandling/Zenith_ModelAsset.h"
-#include "AssetHandling/Zenith_AssetDatabase.h"
 
 //------------------------------------------------------------------------------
 // MeshMaterialBinding Serialization
@@ -17,10 +16,10 @@ std::string Zenith_ModelAsset::MeshMaterialBinding::GetMaterialPath(uint32_t uIn
 
 void Zenith_ModelAsset::MeshMaterialBinding::WriteToDataStream(Zenith_DataStream& xStream) const
 {
-	// Write mesh GUID
+	// Write mesh path
 	m_xMesh.WriteToDataStream(xStream);
 
-	// Write material GUIDs
+	// Write material paths
 	uint32_t uNumMaterials = static_cast<uint32_t>(m_xMaterials.GetSize());
 	xStream << uNumMaterials;
 	for (uint32_t u = 0; u < uNumMaterials; u++)
@@ -31,17 +30,17 @@ void Zenith_ModelAsset::MeshMaterialBinding::WriteToDataStream(Zenith_DataStream
 
 void Zenith_ModelAsset::MeshMaterialBinding::ReadFromDataStream(Zenith_DataStream& xStream)
 {
-	// Read mesh GUID
+	// Read mesh path
 	m_xMesh.ReadFromDataStream(xStream);
 
-	// Read material GUIDs
+	// Read material paths
 	uint32_t uNumMaterials;
 	xStream >> uNumMaterials;
 	for (uint32_t u = 0; u < uNumMaterials; u++)
 	{
-		MaterialRef xMatRef;
-		xMatRef.ReadFromDataStream(xStream);
-		m_xMaterials.PushBack(xMatRef);
+		MaterialHandle xMatHandle;
+		xMatHandle.ReadFromDataStream(xStream);
+		m_xMaterials.PushBack(xMatHandle);
 	}
 }
 
@@ -200,7 +199,7 @@ void Zenith_ModelAsset::ReadFromDataStream(Zenith_DataStream& xStream)
 // Model Building
 //------------------------------------------------------------------------------
 
-void Zenith_ModelAsset::AddMesh(const MeshRef& xMesh, const Zenith_Vector<MaterialRef>& xMaterials)
+void Zenith_ModelAsset::AddMesh(const MeshHandle& xMesh, const Zenith_Vector<MaterialHandle>& xMaterials)
 {
 	MeshMaterialBinding xBinding;
 	xBinding.m_xMesh = xMesh;
@@ -211,13 +210,13 @@ void Zenith_ModelAsset::AddMesh(const MeshRef& xMesh, const Zenith_Vector<Materi
 void Zenith_ModelAsset::AddMeshByPath(const std::string& strMeshPath, const Zenith_Vector<std::string>& xMaterialPaths)
 {
 	MeshMaterialBinding xBinding;
-	xBinding.m_xMesh.SetFromPath(strMeshPath);
+	xBinding.m_xMesh.SetPath(strMeshPath);
 
 	for (u_int u = 0; u < xMaterialPaths.GetSize(); ++u)
 	{
-		MaterialRef xMatRef;
-		xMatRef.SetFromPath(xMaterialPaths.Get(u));
-		xBinding.m_xMaterials.PushBack(xMatRef);
+		MaterialHandle xMatHandle;
+		xMatHandle.SetPath(xMaterialPaths.Get(u));
+		xBinding.m_xMaterials.PushBack(xMatHandle);
 	}
 
 	m_xMeshBindings.PushBack(std::move(xBinding));

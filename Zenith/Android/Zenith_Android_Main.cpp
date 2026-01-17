@@ -46,7 +46,14 @@ static void InitialiseEngine()
 	Flux::EarlyInitialise();
 	Zenith_Physics::Initialise();
 
-	// Load engine assets
+	// Set asset directories and initialize registry
+	Zenith_AssetRegistry::SetGameAssetsDir(Project_GetGameAssetsDirectory());
+#ifdef ENGINE_ASSETS_DIR
+	Zenith_AssetRegistry::SetEngineAssetsDir(ENGINE_ASSETS_DIR);
+#else
+	// On Android, engine assets are typically bundled with game assets
+	Zenith_AssetRegistry::SetEngineAssetsDir(Project_GetGameAssetsDirectory());
+#endif
 	Zenith_AssetRegistry::Initialize();
 	Zenith_AssetRegistry::InitializeGPUDependentAssets();  // Must be after Flux::EarlyInitialise()
 

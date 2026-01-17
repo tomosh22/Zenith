@@ -1,6 +1,6 @@
 #include "Zenith.h"
 #include "Zenith_AsyncAssetLoader.h"
-#include "AssetHandling/Zenith_AssetDatabase.h"
+#include "AssetHandling/Zenith_AssetRegistry.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
 
 // Static member definitions
@@ -8,7 +8,7 @@ Zenith_Vector<Zenith_AsyncAssetLoader::LoadRequest> Zenith_AsyncAssetLoader::s_x
 Zenith_Vector<Zenith_AsyncAssetLoader::CompletedLoad> Zenith_AsyncAssetLoader::s_xCompletedLoads;
 Zenith_Mutex Zenith_AsyncAssetLoader::s_xPendingMutex;
 Zenith_Mutex Zenith_AsyncAssetLoader::s_xCompletedMutex;
-std::unordered_map<Zenith_AssetGUID, AssetLoadState> Zenith_AsyncAssetLoader::s_xLoadStates;
+std::unordered_map<std::string, AssetLoadState> Zenith_AsyncAssetLoader::s_xLoadStates;
 Zenith_Mutex Zenith_AsyncAssetLoader::s_xStateMutex;
 
 //------------------------------------------------------------------------------
@@ -28,34 +28,26 @@ static void AsyncLoadTaskFunction(void* pData)
 	const auto& xRequest = pxTaskData->m_xRequest;
 
 	Zenith_AsyncAssetLoader::CompletedLoad xCompleted;
-	xCompleted.m_xGUID = xRequest.m_xGUID;
+	xCompleted.m_strPath = xRequest.m_strPath;
 	xCompleted.m_pfnOnComplete = xRequest.m_pfnOnComplete;
 	xCompleted.m_pfnOnFail = xRequest.m_pfnOnFail;
 	xCompleted.m_pxUserData = xRequest.m_pxUserData;
 
-	// Resolve GUID to path
-	std::string strPath = Zenith_AssetDatabase::GetPathFromGUID(xRequest.m_xGUID);
-	if (strPath.empty())
+	// Resolve prefixed path to absolute path for loading
+	std::string strAbsolutePath = Zenith_AssetRegistry::ResolvePath(xRequest.m_strPath);
+
+	// Call the type-specific loader with the resolved absolute path
+	void* pxAsset = xRequest.m_pfnLoader(strAbsolutePath);
+	if (pxAsset != nullptr)
 	{
-		xCompleted.m_bSuccess = false;
-		xCompleted.m_strError = "Failed to resolve GUID to path";
-		xCompleted.m_pxAsset = nullptr;
+		xCompleted.m_bSuccess = true;
+		xCompleted.m_pxAsset = pxAsset;
 	}
 	else
 	{
-		// Call the type-specific loader
-		void* pxAsset = xRequest.m_pfnLoader(strPath);
-		if (pxAsset != nullptr)
-		{
-			xCompleted.m_bSuccess = true;
-			xCompleted.m_pxAsset = pxAsset;
-		}
-		else
-		{
-			xCompleted.m_bSuccess = false;
-			xCompleted.m_strError = "Failed to load asset from path: " + strPath;
-			xCompleted.m_pxAsset = nullptr;
-		}
+		xCompleted.m_bSuccess = false;
+		xCompleted.m_strError = "Failed to load asset from path: " + xRequest.m_strPath;
+		xCompleted.m_pxAsset = nullptr;
 	}
 
 	// Queue completed load for main thread processing
@@ -67,7 +59,7 @@ static void AsyncLoadTaskFunction(void* pData)
 	// Update load state
 	{
 		Zenith_ScopedMutexLock xLock(Zenith_AsyncAssetLoader::s_xStateMutex);
-		Zenith_AsyncAssetLoader::s_xLoadStates[xRequest.m_xGUID] =
+		Zenith_AsyncAssetLoader::s_xLoadStates[xRequest.m_strPath] =
 			xCompleted.m_bSuccess ? AssetLoadState::LOADED : AssetLoadState::FAILED;
 	}
 
@@ -118,10 +110,10 @@ void Zenith_AsyncAssetLoader::ProcessCompletedLoads()
 	}
 }
 
-AssetLoadState Zenith_AsyncAssetLoader::GetLoadState(const Zenith_AssetGUID& xGUID)
+AssetLoadState Zenith_AsyncAssetLoader::GetLoadState(const std::string& strPath)
 {
 	Zenith_ScopedMutexLock xLock(s_xStateMutex);
-	auto xIt = s_xLoadStates.find(xGUID);
+	auto xIt = s_xLoadStates.find(strPath);
 	return (xIt != s_xLoadStates.end()) ? xIt->second : AssetLoadState::UNLOADED;
 }
 
@@ -138,6 +130,12 @@ void Zenith_AsyncAssetLoader::CancelAllPendingLoads()
 
 	// Note: Tasks already submitted cannot be cancelled
 	// They will complete but their callbacks will be ignored
+}
+
+void Zenith_AsyncAssetLoader::ClearLoadStates()
+{
+	Zenith_ScopedMutexLock xLock(s_xStateMutex);
+	s_xLoadStates.clear();
 }
 
 void Zenith_AsyncAssetLoader::SubmitLoadRequest(const LoadRequest& xRequest)
@@ -166,20 +164,20 @@ void Zenith_AsyncAssetLoader::SubmitLoadRequest(const LoadRequest& xRequest)
 //------------------------------------------------------------------------------
 
 // Forward declarations of asset types
-struct Flux_Texture;
+class Zenith_TextureAsset;
 class Zenith_MaterialAsset;
-class Flux_MeshGeometry;
+class Zenith_MeshAsset;
 class Zenith_ModelAsset;
 class Zenith_Prefab;
 
 // Texture loader
 template<>
-void* AsyncLoadAsset<Flux_Texture>(const std::string& strPath)
+void* AsyncLoadAsset<Zenith_TextureAsset>(const std::string& strPath)
 {
 	// Note: Texture loading may require GPU access which isn't thread-safe
 	// For now, return nullptr and let the sync path handle it
 	// A full implementation would use staging buffers
-	Zenith_Log(LOG_CATEGORY_ASSET, "AsyncLoadAsset<Flux_Texture>: Async texture loading not yet implemented, use sync load");
+	Zenith_Log(LOG_CATEGORY_ASSET, "AsyncLoadAsset<Zenith_TextureAsset>: Async texture loading not yet implemented, use sync load");
 	return nullptr;
 }
 
@@ -194,10 +192,10 @@ void* AsyncLoadAsset<Zenith_MaterialAsset>(const std::string& strPath)
 
 // Mesh loader
 template<>
-void* AsyncLoadAsset<Flux_MeshGeometry>(const std::string& strPath)
+void* AsyncLoadAsset<Zenith_MeshAsset>(const std::string& strPath)
 {
 	// Mesh data can be loaded on background thread, but GPU upload needs main thread
-	Zenith_Log(LOG_CATEGORY_ASSET, "AsyncLoadAsset<Flux_MeshGeometry>: Async mesh loading not yet implemented");
+	Zenith_Log(LOG_CATEGORY_ASSET, "AsyncLoadAsset<Zenith_MeshAsset>: Async mesh loading not yet implemented");
 	return nullptr;
 }
 

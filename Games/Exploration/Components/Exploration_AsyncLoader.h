@@ -13,7 +13,6 @@
  */
 
 #include "AssetHandling/Zenith_AsyncAssetLoader.h"
-#include "Core/Zenith_GUID.h"
 // Note: Zenith_Log macro is available from precompiled header via Exploration.cpp
 
 #include <string>
@@ -27,8 +26,7 @@ namespace Exploration_AsyncLoader
 	// ========================================================================
 	struct LoadRequest
 	{
-		Zenith_AssetGUID m_xGUID;
-		std::string m_strAssetPath;
+		std::string m_strPath;  // Prefixed path (e.g., "game:Textures/tex.ztex")
 		int32_t m_iPriority = 0;  // Higher = more important
 		bool m_bCompleted = false;
 		bool m_bFailed = false;
@@ -91,15 +89,13 @@ namespace Exploration_AsyncLoader
 
 	/**
 	 * Queue an asset for async loading
-	 * @param xGUID Asset GUID to load
-	 * @param strPath Asset path (for display/debugging)
+	 * @param strPath Prefixed path to load (e.g., "game:Textures/diffuse.ztex")
 	 * @param iPriority Load priority (higher = sooner)
 	 */
-	inline void QueueAsset(const Zenith_AssetGUID& xGUID, const std::string& strPath, int32_t iPriority = 0)
+	inline void QueueAsset(const std::string& strPath, int32_t iPriority = 0)
 	{
 		LoadRequest xRequest;
-		xRequest.m_xGUID = xGUID;
-		xRequest.m_strAssetPath = strPath;
+		xRequest.m_strPath = strPath;
 		xRequest.m_iPriority = iPriority;
 		xRequest.m_bCompleted = false;
 		xRequest.m_bFailed = false;
@@ -123,10 +119,10 @@ namespace Exploration_AsyncLoader
 		for (size_t i = 0; i < s_xPendingRequests.size(); ++i)
 		{
 			LoadRequest& xRequest = s_xPendingRequests[i];
-			if (!xRequest.m_bCompleted && xRequest.m_xGUID.IsValid())
+			if (!xRequest.m_bCompleted && !xRequest.m_strPath.empty())
 			{
 				Zenith_AsyncAssetLoader::LoadAsync<AssetType>(
-					xRequest.m_xGUID,
+					xRequest.m_strPath,
 					&OnLoadComplete,
 					reinterpret_cast<void*>(i),
 					&OnLoadFailed);

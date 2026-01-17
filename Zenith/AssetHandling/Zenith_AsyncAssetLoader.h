@@ -1,9 +1,9 @@
 #pragma once
 
-#include "Core/Zenith_GUID.h"
 #include "Core/Multithreading/Zenith_Multithreading.h"
 #include "Collections/Zenith_Vector.h"
-#include <queue>
+#include <string>
+#include <unordered_map>
 
 /**
  * Asset load state enum - tracks the loading progress of an asset
@@ -36,8 +36,8 @@ using AssetLoaderFn = void*(*)(const std::string& strPath);
  * Assets are loaded on worker threads and callbacks are invoked on the main thread.
  *
  * Usage:
- *   // Request async load
- *   Zenith_AsyncAssetLoader::LoadAsync<Flux_Texture>(guid, OnTextureLoaded, userData);
+ *   // Request async load using prefixed path
+ *   Zenith_AsyncAssetLoader::LoadAsync<Zenith_TextureAsset>("game:Textures/diffuse.ztex", OnTextureLoaded, userData);
  *
  *   // In main loop (must be called every frame)
  *   Zenith_AsyncAssetLoader::ProcessCompletedLoads();
@@ -45,7 +45,7 @@ using AssetLoaderFn = void*(*)(const std::string& strPath);
  *   // Callback is called on main thread when complete
  *   void OnTextureLoaded(void* pxAsset, void* pxUserData)
  *   {
- *       Flux_Texture* pxTexture = static_cast<Flux_Texture*>(pxAsset);
+ *       Zenith_TextureAsset* pxTexture = static_cast<Zenith_TextureAsset*>(pxAsset);
  *       // Use texture...
  *   }
  */
@@ -55,7 +55,7 @@ public:
 	// Internal types (public for task function access)
 	struct LoadRequest
 	{
-		Zenith_AssetGUID m_xGUID;
+		std::string m_strPath;  // Prefixed path (e.g., "game:Textures/tex.ztex")
 		AssetLoaderFn m_pfnLoader;
 		AssetLoadCompleteFn m_pfnOnComplete;
 		AssetLoadFailFn m_pfnOnFail;
@@ -64,7 +64,7 @@ public:
 
 	struct CompletedLoad
 	{
-		Zenith_AssetGUID m_xGUID;
+		std::string m_strPath;
 		void* m_pxAsset;
 		AssetLoadCompleteFn m_pfnOnComplete;
 		AssetLoadFailFn m_pfnOnFail;
@@ -74,15 +74,15 @@ public:
 	};
 
 	/**
-	 * Request async loading of an asset by GUID
-	 * @param xGUID GUID of the asset to load
+	 * Request async loading of an asset by path
+	 * @param strPath Prefixed path to the asset (e.g., "game:Textures/tex.ztex")
 	 * @param pfnOnComplete Callback when load completes (called on main thread)
 	 * @param pxUserData User data passed to callbacks
 	 * @param pfnOnFail Callback on load failure (optional, called on main thread)
 	 */
 	template<typename T>
 	static void LoadAsync(
-		const Zenith_AssetGUID& xGUID,
+		const std::string& strPath,
 		AssetLoadCompleteFn pfnOnComplete,
 		void* pxUserData = nullptr,
 		AssetLoadFailFn pfnOnFail = nullptr);
@@ -95,10 +95,10 @@ public:
 
 	/**
 	 * Get the load state of an asset
-	 * @param xGUID GUID of the asset
+	 * @param strPath Prefixed path of the asset
 	 * @return Current load state
 	 */
-	static AssetLoadState GetLoadState(const Zenith_AssetGUID& xGUID);
+	static AssetLoadState GetLoadState(const std::string& strPath);
 
 	/**
 	 * Check if any loads are pending
@@ -110,14 +110,19 @@ public:
 	 */
 	static void CancelAllPendingLoads();
 
+	/**
+	 * Clear all load states (call when switching scenes or at shutdown)
+	 */
+	static void ClearLoadStates();
+
 	// Thread-safe queues (public for task function access)
 	static Zenith_Vector<LoadRequest> s_xPendingLoads;
 	static Zenith_Vector<CompletedLoad> s_xCompletedLoads;
 	static Zenith_Mutex s_xPendingMutex;
 	static Zenith_Mutex s_xCompletedMutex;
 
-	// Track load states (public for task function access)
-	static std::unordered_map<Zenith_AssetGUID, AssetLoadState> s_xLoadStates;
+	// Track load states by path (public for task function access)
+	static std::unordered_map<std::string, AssetLoadState> s_xLoadStates;
 	static Zenith_Mutex s_xStateMutex;
 
 private:
@@ -135,16 +140,16 @@ void* AsyncLoadAsset(const std::string& strPath);
 
 template<typename T>
 void Zenith_AsyncAssetLoader::LoadAsync(
-	const Zenith_AssetGUID& xGUID,
+	const std::string& strPath,
 	AssetLoadCompleteFn pfnOnComplete,
 	void* pxUserData,
 	AssetLoadFailFn pfnOnFail)
 {
-	if (!xGUID.IsValid())
+	if (strPath.empty())
 	{
 		if (pfnOnFail)
 		{
-			pfnOnFail("Invalid GUID", pxUserData);
+			pfnOnFail("Empty path", pxUserData);
 		}
 		return;
 	}
@@ -152,7 +157,7 @@ void Zenith_AsyncAssetLoader::LoadAsync(
 	// Check if already loaded or loading
 	{
 		s_xStateMutex.Lock();
-		auto xIt = s_xLoadStates.find(xGUID);
+		auto xIt = s_xLoadStates.find(strPath);
 		if (xIt != s_xLoadStates.end())
 		{
 			AssetLoadState eState = xIt->second;
@@ -164,7 +169,7 @@ void Zenith_AsyncAssetLoader::LoadAsync(
 				if (pfnOnComplete)
 				{
 					// Get cached asset and call callback
-					// Note: Caller should use AssetRef::Get() to get the actual pointer
+					// Note: Caller should use AssetHandle::Get() to get the actual pointer
 					pfnOnComplete(nullptr, pxUserData);
 				}
 				return;
@@ -177,14 +182,14 @@ void Zenith_AsyncAssetLoader::LoadAsync(
 		}
 		else
 		{
-			s_xLoadStates[xGUID] = AssetLoadState::LOADING;
+			s_xLoadStates[strPath] = AssetLoadState::LOADING;
 		}
 		s_xStateMutex.Unlock();
 	}
 
 	// Create load request
 	LoadRequest xRequest;
-	xRequest.m_xGUID = xGUID;
+	xRequest.m_strPath = strPath;
 	xRequest.m_pfnLoader = &AsyncLoadAsset<T>;
 	xRequest.m_pfnOnComplete = pfnOnComplete;
 	xRequest.m_pfnOnFail = pfnOnFail;
