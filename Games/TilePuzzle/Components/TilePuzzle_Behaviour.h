@@ -14,8 +14,7 @@
 #include "EntityComponent/Zenith_Scene.h"
 #include "Input/Zenith_Input.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
-#include "Flux/Flux_MaterialAsset.h"
-#include "AssetHandling/Zenith_AssetHandler.h"
+#include "AssetHandling/Zenith_MaterialAsset.h"
 #include "Prefab/Zenith_Prefab.h"
 
 #include "TilePuzzle/Components/TilePuzzle_Types.h"
@@ -39,10 +38,10 @@ namespace TilePuzzle
 {
 	extern Flux_MeshGeometry* g_pxCubeGeometry;
 	extern Flux_MeshGeometry* g_pxSphereGeometry;
-	extern Flux_MaterialAsset* g_pxFloorMaterial;
-	extern Flux_MaterialAsset* g_pxBlockerMaterial;
-	extern Flux_MaterialAsset* g_apxShapeMaterials[TILEPUZZLE_COLOR_COUNT];
-	extern Flux_MaterialAsset* g_apxCatMaterials[TILEPUZZLE_COLOR_COUNT];
+	extern Zenith_MaterialAsset* g_pxFloorMaterial;
+	extern Zenith_MaterialAsset* g_pxBlockerMaterial;
+	extern Zenith_MaterialAsset* g_apxShapeMaterials[TILEPUZZLE_COLOR_COUNT];
+	extern Zenith_MaterialAsset* g_apxCatMaterials[TILEPUZZLE_COLOR_COUNT];
 	extern Zenith_Prefab* g_pxCellPrefab;
 	extern Zenith_Prefab* g_pxShapeCubePrefab;
 	extern Zenith_Prefab* g_pxCatPrefab;
@@ -226,10 +225,10 @@ private:
 	// Cached resources
 	Flux_MeshGeometry* m_pxCubeGeometry = nullptr;
 	Flux_MeshGeometry* m_pxSphereGeometry = nullptr;
-	Flux_MaterialAsset* m_pxFloorMaterial = nullptr;
-	Flux_MaterialAsset* m_pxBlockerMaterial = nullptr;
-	Flux_MaterialAsset* m_apxShapeMaterials[TILEPUZZLE_COLOR_COUNT] = {};
-	Flux_MaterialAsset* m_apxCatMaterials[TILEPUZZLE_COLOR_COUNT] = {};
+	Zenith_MaterialAsset* m_pxFloorMaterial = nullptr;
+	Zenith_MaterialAsset* m_pxBlockerMaterial = nullptr;
+	Zenith_MaterialAsset* m_apxShapeMaterials[TILEPUZZLE_COLOR_COUNT] = {};
+	Zenith_MaterialAsset* m_apxCatMaterials[TILEPUZZLE_COLOR_COUNT] = {};
 
 	// ========================================================================
 	// Level Generation
@@ -551,7 +550,7 @@ private:
 		{
 			xShape.axCubeEntityIDs.clear();
 
-			Flux_MaterialAsset* pxMaterial = m_pxBlockerMaterial;
+			Zenith_MaterialAsset* pxMaterial = m_pxBlockerMaterial;
 			if (xShape.pxDefinition->bDraggable && xShape.eColor < TILEPUZZLE_COLOR_COUNT)
 			{
 				pxMaterial = m_apxShapeMaterials[xShape.eColor];

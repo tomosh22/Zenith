@@ -12,8 +12,8 @@ struct Flux_SurfaceInfo
 	u_int m_uWidth = 0;
 	u_int m_uHeight = 0;
 	u_int m_uDepth = 1;  // Used for 3D textures
-	u_int m_uNumMips = 0;
-	u_int m_uNumLayers = 0;
+	u_int m_uNumMips = 1;
+	u_int m_uNumLayers = 1;  // Minimum 1 for valid Vulkan image
 	u_int m_uMemoryFlags = MEMORY_FLAGS__NONE;
 };
 

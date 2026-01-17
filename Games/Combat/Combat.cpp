@@ -11,11 +11,11 @@
 #include "EntityComponent/Zenith_EventSystem.h"
 #include "Physics/Zenith_Physics.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
-#include "Flux/Flux_MaterialAsset.h"
+#include "AssetHandling/Zenith_MaterialAsset.h"
+#include "AssetHandling/Zenith_AssetRegistry.h"
 #include "Flux/Flux_ModelInstance.h"
 #include "Flux/Flux.h"
 #include "Flux/Particles/Flux_ParticleEmitterConfig.h"
-#include "AssetHandling/Zenith_AssetHandler.h"
 #include "AssetHandling/Zenith_AssetDatabase.h"
 #include "AssetHandling/Zenith_DataAssetManager.h"
 #include "AssetHandling/Zenith_ModelAsset.h"
@@ -35,11 +35,11 @@ namespace Combat
 	Flux_MeshGeometry* g_pxStickFigureGeometry = nullptr;  // Animated character mesh (skinned)
 	Zenith_ModelAsset* g_pxStickFigureModelAsset = nullptr;  // Model asset with skeleton for animated rendering
 	std::string g_strStickFigureModelPath;  // Path to model asset file
-	Flux_MaterialAsset* g_pxPlayerMaterial = nullptr;
-	Flux_MaterialAsset* g_pxEnemyMaterial = nullptr;
-	Flux_MaterialAsset* g_pxArenaMaterial = nullptr;
-	Flux_MaterialAsset* g_pxWallMaterial = nullptr;
-	Flux_MaterialAsset* g_pxCandleMaterial = nullptr;  // Cream color for candles
+	Zenith_MaterialAsset* g_pxPlayerMaterial = nullptr;
+	Zenith_MaterialAsset* g_pxEnemyMaterial = nullptr;
+	Zenith_MaterialAsset* g_pxArenaMaterial = nullptr;
+	Zenith_MaterialAsset* g_pxWallMaterial = nullptr;
+	Zenith_MaterialAsset* g_pxCandleMaterial = nullptr;  // Cream color for candles
 
 	// Prefabs for runtime instantiation
 	Zenith_Prefab* g_pxPlayerPrefab = nullptr;
@@ -103,7 +103,7 @@ static void CleanupCombatResources()
 	delete g_pxConeGeometry;
 	g_pxConeGeometry = nullptr;
 
-	// Note: Textures and materials are cleaned up by Zenith_AssetHandler::DestroyAllAssets()
+	// Note: Textures and materials are managed by Zenith_AssetRegistry
 
 	s_bResourcesInitialized = false;
 	Zenith_Log(LOG_CATEGORY_ASSET, "[Combat] Resources cleaned up");
@@ -465,21 +465,28 @@ static void InitializeCombatResources()
 	TextureRef xWallTextureRef = ExportColoredTexture(strTexturesDir + "/Wall.ztex", 102, 64, 38);         // Brown walls
 	TextureRef xCandleTextureRef = ExportColoredTexture(strTexturesDir + "/Candle.ztex", 240, 220, 180);   // Cream candle color
 
-	// Create materials with TextureRefs (properly serializable)
-	g_pxPlayerMaterial = Flux_MaterialAsset::Create("CombatPlayer");
-	g_pxPlayerMaterial->SetDiffuseTextureRef(xPlayerTextureRef);
+	// Create materials with texture paths (properly serializable)
+	auto& xRegistry = Zenith_AssetRegistry::Get();
 
-	g_pxEnemyMaterial = Flux_MaterialAsset::Create("CombatEnemy");
-	g_pxEnemyMaterial->SetDiffuseTextureRef(xEnemyTextureRef);
+	g_pxPlayerMaterial = xRegistry.Create<Zenith_MaterialAsset>();
+	g_pxPlayerMaterial->SetName("CombatPlayer");
+	g_pxPlayerMaterial->SetDiffuseTexturePath(strTexturesDir + "/Player.ztex");
 
-	g_pxArenaMaterial = Flux_MaterialAsset::Create("CombatArena");
-	g_pxArenaMaterial->SetDiffuseTextureRef(xArenaTextureRef);
+	g_pxEnemyMaterial = xRegistry.Create<Zenith_MaterialAsset>();
+	g_pxEnemyMaterial->SetName("CombatEnemy");
+	g_pxEnemyMaterial->SetDiffuseTexturePath(strTexturesDir + "/Enemy.ztex");
 
-	g_pxWallMaterial = Flux_MaterialAsset::Create("CombatWall");
-	g_pxWallMaterial->SetDiffuseTextureRef(xWallTextureRef);
+	g_pxArenaMaterial = xRegistry.Create<Zenith_MaterialAsset>();
+	g_pxArenaMaterial->SetName("CombatArena");
+	g_pxArenaMaterial->SetDiffuseTexturePath(strTexturesDir + "/Arena.ztex");
 
-	g_pxCandleMaterial = Flux_MaterialAsset::Create("CombatCandle");
-	g_pxCandleMaterial->SetDiffuseTextureRef(xCandleTextureRef);
+	g_pxWallMaterial = xRegistry.Create<Zenith_MaterialAsset>();
+	g_pxWallMaterial->SetName("CombatWall");
+	g_pxWallMaterial->SetDiffuseTexturePath(strTexturesDir + "/Wall.ztex");
+
+	g_pxCandleMaterial = xRegistry.Create<Zenith_MaterialAsset>();
+	g_pxCandleMaterial->SetName("CombatCandle");
+	g_pxCandleMaterial->SetDiffuseTexturePath(strTexturesDir + "/Candle.ztex");
 
 	// Create flame particle config for wall candles
 	g_pxFlameConfig = new Flux_ParticleEmitterConfig();

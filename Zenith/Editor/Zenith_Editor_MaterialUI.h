@@ -2,7 +2,7 @@
 
 #ifdef ZENITH_TOOLS
 
-#include "Flux/Flux_MaterialAsset.h"
+#include "AssetHandling/Zenith_MaterialAsset.h"
 #include "Flux/Flux_ImGuiIntegration.h"
 #include <functional>
 
@@ -34,12 +34,12 @@ namespace Zenith_Editor_MaterialUI
 	//-------------------------------------------------------------------------
 
 	/**
-	 * Get or create an ImGui texture handle for previewing a Flux_Texture.
+	 * Get or create an ImGui texture handle for previewing a Zenith_TextureAsset.
 	 * Handles caching to avoid re-registration.
 	 * @param pxTexture The texture to get a preview handle for
 	 * @return Valid ImGui texture handle, or invalid handle if texture is null
 	 */
-	Flux_ImGuiTextureHandle GetOrCreateTexturePreviewHandle(const Flux_Texture* pxTexture);
+	Flux_ImGuiTextureHandle GetOrCreateTexturePreviewHandle(const Zenith_TextureAsset* pxTexture);
 
 	/**
 	 * Clear the texture preview cache.
@@ -57,7 +57,7 @@ namespace Zenith_Editor_MaterialUI
 	 * @param pxMaterial The material to edit
 	 * @param szIdSuffix Optional suffix for ImGui IDs to avoid conflicts
 	 */
-	void RenderMaterialProperties(Flux_MaterialAsset* pxMaterial, const char* szIdSuffix = "");
+	void RenderMaterialProperties(Zenith_MaterialAsset* pxMaterial, const char* szIdSuffix = "");
 
 	//-------------------------------------------------------------------------
 	// Texture Slot Rendering
@@ -82,7 +82,7 @@ namespace Zenith_Editor_MaterialUI
 	 */
 	void RenderTextureSlot(
 		const char* szLabel,
-		Flux_MaterialAsset& xMaterial,
+		Zenith_MaterialAsset& xMaterial,
 		TextureSlotType eSlot,
 		bool bShowPreview = true,
 		float fPreviewSize = 48.0f,
@@ -93,7 +93,7 @@ namespace Zenith_Editor_MaterialUI
 	 * @param xMaterial Material to edit
 	 * @param bShowPreview Whether to show texture previews
 	 */
-	void RenderAllTextureSlots(Flux_MaterialAsset& xMaterial, bool bShowPreview = true);
+	void RenderAllTextureSlots(Zenith_MaterialAsset& xMaterial, bool bShowPreview = true);
 
 	//-------------------------------------------------------------------------
 	// Helpers
@@ -102,17 +102,17 @@ namespace Zenith_Editor_MaterialUI
 	/**
 	 * Get the current texture path from a material for a given slot type.
 	 */
-	std::string GetTexturePathForSlot(const Flux_MaterialAsset& xMaterial, TextureSlotType eSlot);
+	std::string GetTexturePathForSlot(const Zenith_MaterialAsset& xMaterial, TextureSlotType eSlot);
 
 	/**
 	 * Set a texture path on a material for a given slot type.
 	 */
-	void SetTexturePathForSlot(Flux_MaterialAsset& xMaterial, TextureSlotType eSlot, const std::string& strPath);
+	void SetTexturePathForSlot(Zenith_MaterialAsset& xMaterial, TextureSlotType eSlot, const std::string& strPath);
 
 	/**
-	 * Get the Flux_Texture pointer for a given slot type.
+	 * Get the Zenith_TextureAsset pointer for a given slot type.
 	 */
-	const Flux_Texture* GetTextureForSlot(Flux_MaterialAsset& xMaterial, TextureSlotType eSlot);
+	const Zenith_TextureAsset* GetTextureForSlot(Zenith_MaterialAsset& xMaterial, TextureSlotType eSlot);
 }
 
 #endif // ZENITH_TOOLS

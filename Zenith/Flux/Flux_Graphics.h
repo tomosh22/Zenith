@@ -28,16 +28,17 @@ public:
 
 	static Flux_DynamicConstantBuffer s_xFrameConstantsBuffer;
 
-	static Flux_Texture s_xWhiteBlankTexture2D;
-	static Flux_Texture s_xBlackBlankTexture2D;
-	static Flux_Texture s_xGridPatternTexture2D;  // 2x2 greyscale grid for procedural materials
+	// Global textures
+	static class Zenith_TextureAsset* s_pxWhiteTexture;
+	static class Zenith_TextureAsset* s_pxBlackTexture;
+	static class Zenith_TextureAsset* s_pxGridTexture;
 
 	static Flux_MeshGeometry s_xBlankMesh;
-	static class Flux_MaterialAsset* s_pxBlankMaterial;
+	static class Zenith_MaterialAsset* s_pxBlankMaterial;
 
 	// Global engine textures (set during initialization in Zenith_Main.cpp)
-	static Flux_Texture* s_pxCubemapTexture;
-	static Flux_Texture* s_pxWaterNormalTexture;
+	static class Zenith_TextureAsset* s_pxCubemapTexture;
+	static class Zenith_TextureAsset* s_pxWaterNormalTexture;
 
 	static TextureFormat GetMRTFormat(MRTIndex eIndex);
 	static TextureFormat s_aeMRTFormats[MRT_INDEX_COUNT];

@@ -3,6 +3,7 @@
 #include "Flux/Fog/Flux_FroxelFog.h"
 #include "Flux/Fog/Flux_VolumeFog.h"
 
+#include "AssetHandling/Zenith_TextureAsset.h"
 #include "Flux/Flux.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_Buffers.h"
@@ -298,7 +299,7 @@ void Flux_FroxelFog::Render(void*)
 
 	Flux_ShaderBinder xInjectBinder(g_xInjectCommandList);
 	xInjectBinder.BindCBV(s_xInjectFrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
-	xInjectBinder.BindSRV(s_xInjectNoiseBinding, &Flux_VolumeFog::GetNoiseTexture3D().m_xSRV, &Flux_Graphics::s_xRepeatSampler);
+	xInjectBinder.BindSRV(s_xInjectNoiseBinding, &Flux_VolumeFog::GetNoiseTexture3D()->m_xSRV, &Flux_Graphics::s_xRepeatSampler);
 	xInjectBinder.BindUAV_Texture(s_xInjectDensityOutputBinding, &s_xDensityGrid.m_pxUAV);
 	xInjectBinder.PushConstant(&s_xInjectConstants, sizeof(InjectConstants));
 	g_xInjectCommandList.AddCommand<Flux_CommandDispatch>(

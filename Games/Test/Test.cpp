@@ -23,8 +23,7 @@ const char* Project_GetGameAssetsDirectory()
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "UI/Zenith_UI.h"
 #include "Prefab/Zenith_Prefab.h"
-#include "AssetHandling/Zenith_AssetHandler.h"
-#include "Flux/Flux_MaterialAsset.h"
+#include "AssetHandling/Zenith_MaterialAsset.h"
 #include <filesystem>
 
 void Project_RegisterScriptBehaviours()

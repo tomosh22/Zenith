@@ -10,7 +10,7 @@
 #include <bitset>
 
 // Forward declarations
-class Flux_MaterialAsset;
+class Zenith_MaterialAsset;
 struct ContentBrowserEntry;
 struct ConsoleLogEntry;
 
@@ -160,7 +160,7 @@ struct Zenith_EditorCameraState
 //-----------------------------------------------------------------------------
 struct Zenith_EditorMaterialState
 {
-	Flux_MaterialAsset* m_pxSelectedMaterial = nullptr;
+	Zenith_MaterialAsset* m_pxSelectedMaterial = nullptr;
 	bool m_bShowEditor = true;
 };
 

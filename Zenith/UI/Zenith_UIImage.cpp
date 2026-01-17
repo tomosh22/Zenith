@@ -1,7 +1,8 @@
 #include "Zenith.h"
 #include "UI/Zenith_UIImage.h"
 #include "UI/Zenith_UICanvas.h"
-#include "AssetHandling/Zenith_AssetHandler.h"
+#include "AssetHandling/Zenith_AssetRegistry.h"
+#include "AssetHandling/Zenith_TextureAsset.h"
 #include "Flux/Flux_Buffers.h"
 #include "DataStream/Zenith_DataStream.h"
 
@@ -22,7 +23,7 @@ Zenith_UIImage::Zenith_UIImage(const std::string& strName)
 
 Zenith_UIImage::~Zenith_UIImage()
 {
-    // We don't delete the texture - the asset handler owns it
+    // Texture lifetime managed by asset registry
 }
 
 void Zenith_UIImage::SetTexturePath(const std::string& strPath)
@@ -39,27 +40,12 @@ void Zenith_UIImage::LoadTexture()
         return;
     }
 
-    // TODO: Implement texture loading for UI images
-    // This requires integration with Zenith_AssetHandler::AddTexture
-    // and proper texture path management
+    // Load texture via asset registry (handles caching internally)
+    m_pxTexture = Zenith_AssetRegistry::Get().Get<Zenith_TextureAsset>(m_strTexturePath);
 
-    // Try to get existing texture
-    m_pxTexture = Zenith_AssetHandler::GetTextureByPath(m_strTexturePath);
-
-    if (!m_pxTexture && !m_strTexturePath.empty())
+    if (!m_pxTexture)
     {
-        // Load texture from file
-        Zenith_AssetHandler::TextureData xData = Zenith_AssetHandler::LoadTexture2DFromFile(m_strTexturePath.c_str());
-        if (xData.pData)
-        {
-            m_pxTexture = Zenith_AssetHandler::AddTexture(xData);
-            m_bOwnsTexture = true;
-            xData.FreeAllocatedData();
-        }
-        else
-        {
-            Zenith_Log(LOG_CATEGORY_UI, "[UIImage] Failed to load texture: %s", m_strTexturePath.c_str());
-        }
+        Zenith_Log(LOG_CATEGORY_UI, "[UIImage] Failed to load texture: %s", m_strTexturePath.c_str());
     }
 }
 

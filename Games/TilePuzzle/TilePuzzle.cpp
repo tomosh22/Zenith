@@ -7,10 +7,11 @@
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
-#include "Flux/Flux_MaterialAsset.h"
+#include "AssetHandling/Zenith_MaterialAsset.h"
+#include "AssetHandling/Zenith_TextureAsset.h"
+#include "AssetHandling/Zenith_AssetRegistry.h"
 #include "Flux/Flux_Graphics.h"
 #include "Vulkan/Zenith_Vulkan_MemoryManager.h"
-#include "AssetHandling/Zenith_AssetHandler.h"
 #include "Prefab/Zenith_Prefab.h"
 
 // ============================================================================
@@ -23,16 +24,16 @@ namespace TilePuzzle
 	Flux_MeshGeometry* g_pxSphereGeometry = nullptr;
 
 	// Floor material
-	Flux_MaterialAsset* g_pxFloorMaterial = nullptr;
+	Zenith_MaterialAsset* g_pxFloorMaterial = nullptr;
 
 	// Blocker material (static shapes)
-	Flux_MaterialAsset* g_pxBlockerMaterial = nullptr;
+	Zenith_MaterialAsset* g_pxBlockerMaterial = nullptr;
 
 	// Colored shape materials (draggable)
-	Flux_MaterialAsset* g_apxShapeMaterials[TILEPUZZLE_COLOR_COUNT] = {};
+	Zenith_MaterialAsset* g_apxShapeMaterials[TILEPUZZLE_COLOR_COUNT] = {};
 
 	// Colored cat materials
-	Flux_MaterialAsset* g_apxCatMaterials[TILEPUZZLE_COLOR_COUNT] = {};
+	Zenith_MaterialAsset* g_apxCatMaterials[TILEPUZZLE_COLOR_COUNT] = {};
 
 	// Prefabs for runtime instantiation
 	Zenith_Prefab* g_pxCellPrefab = nullptr;
@@ -151,15 +152,18 @@ static void InitializeTilePuzzleResources()
 	GenerateUnitSphere(*g_pxSphereGeometry, 16, 32);
 
 	// Use grid pattern texture with BaseColor for all materials
-	Flux_Texture* pxGridTex = &Flux_Graphics::s_xGridPatternTexture2D;
+	Zenith_TextureAsset* pxGridTex = Flux_Graphics::s_pxGridTexture;
 
 	// Create materials with grid texture and BaseColor
-	g_pxFloorMaterial = Flux_MaterialAsset::Create("TilePuzzleFloor");
-	g_pxFloorMaterial->SetDiffuseTexture(pxGridTex);
+	auto& xRegistry = Zenith_AssetRegistry::Get();
+	g_pxFloorMaterial = xRegistry.Create<Zenith_MaterialAsset>();
+	g_pxFloorMaterial->SetName("TilePuzzleFloor");
+	g_pxFloorMaterial->SetDiffuseTextureDirectly(pxGridTex);
 	g_pxFloorMaterial->SetBaseColor({ 77.f/255.f, 77.f/255.f, 89.f/255.f, 1.f });
 
-	g_pxBlockerMaterial = Flux_MaterialAsset::Create("TilePuzzleBlocker");
-	g_pxBlockerMaterial->SetDiffuseTexture(pxGridTex);
+	g_pxBlockerMaterial = xRegistry.Create<Zenith_MaterialAsset>();
+	g_pxBlockerMaterial->SetName("TilePuzzleBlocker");
+	g_pxBlockerMaterial->SetDiffuseTextureDirectly(pxGridTex);
 	g_pxBlockerMaterial->SetBaseColor({ 80.f/255.f, 50.f/255.f, 30.f/255.f, 1.f });
 
 	// Shape materials with distinct colors
@@ -174,8 +178,9 @@ static void InitializeTilePuzzleResources()
 	{
 		char szName[64];
 		snprintf(szName, sizeof(szName), "TilePuzzleShape%s", aszShapeColorNames[i]);
-		g_apxShapeMaterials[i] = Flux_MaterialAsset::Create(szName);
-		g_apxShapeMaterials[i]->SetDiffuseTexture(pxGridTex);
+		g_apxShapeMaterials[i] = xRegistry.Create<Zenith_MaterialAsset>();
+		g_apxShapeMaterials[i]->SetName(szName);
+		g_apxShapeMaterials[i]->SetDiffuseTextureDirectly(pxGridTex);
 		g_apxShapeMaterials[i]->SetBaseColor(axShapeColors[i]);
 	}
 
@@ -184,8 +189,9 @@ static void InitializeTilePuzzleResources()
 	{
 		char szName[64];
 		snprintf(szName, sizeof(szName), "TilePuzzleCat%s", aszShapeColorNames[i]);
-		g_apxCatMaterials[i] = Flux_MaterialAsset::Create(szName);
-		g_apxCatMaterials[i]->SetDiffuseTexture(pxGridTex);
+		g_apxCatMaterials[i] = xRegistry.Create<Zenith_MaterialAsset>();
+		g_apxCatMaterials[i]->SetName(szName);
+		g_apxCatMaterials[i]->SetDiffuseTextureDirectly(pxGridTex);
 		g_apxCatMaterials[i]->SetBaseColor(axShapeColors[i]);
 	}
 

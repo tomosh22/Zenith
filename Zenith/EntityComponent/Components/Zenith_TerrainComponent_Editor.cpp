@@ -8,7 +8,8 @@
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
 #include "Editor/Zenith_Editor.h"
 #include "Editor/Zenith_Editor_MaterialUI.h"
-#include "AssetHandling/Zenith_AssetHandler.h"
+#include "AssetHandling/Zenith_AssetRegistry.h"
+#include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "Flux/Terrain/Flux_TerrainStreamingManager.h"
 #include <filesystem>
 
@@ -172,8 +173,18 @@ void Zenith_TerrainComponent::RenderPropertiesPanel()
 					std::string strEntityName = m_xParentEntity.GetName().empty() ?
 						("Entity_" + std::to_string(m_xParentEntity.GetEntityID().m_uIndex)) : m_xParentEntity.GetName();
 
-					m_pxMaterial0 = Flux_MaterialAsset::Create(strEntityName + "_Terrain_Mat0");
-					m_pxMaterial1 = Flux_MaterialAsset::Create(strEntityName + "_Terrain_Mat1");
+					m_pxMaterial0 = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
+					m_pxMaterial1 = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
+					if (m_pxMaterial0)
+					{
+						m_pxMaterial0->SetName(strEntityName + "_Terrain_Mat0");
+						m_pxMaterial0->AddRef();
+					}
+					if (m_pxMaterial1)
+					{
+						m_pxMaterial1->SetName(strEntityName + "_Terrain_Mat1");
+						m_pxMaterial1->AddRef();
+					}
 					m_bOwnsMaterials = true;
 
 					// Load physics geometry (same as constructor/deserialization)
@@ -182,11 +193,13 @@ void Zenith_TerrainComponent::RenderPropertiesPanel()
 						Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Loading and combining all physics chunks...");
 
 						// Load first physics chunk
-						m_pxPhysicsGeometry = Zenith_AssetHandler::AddMeshFromFile(
+						m_pxPhysicsGeometry = new Flux_MeshGeometry();
+						Flux_MeshGeometry::LoadFromFile(
 							(strOutputDir + "Physics_0_0" ZENITH_MESH_EXT).c_str(),
+							*m_pxPhysicsGeometry,
 							1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__POSITION | 1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__NORMAL);
 
-						if (m_pxPhysicsGeometry)
+						if (m_pxPhysicsGeometry->GetNumVerts() > 0)
 						{
 							Flux_MeshGeometry& xPhysicsGeometry = *m_pxPhysicsGeometry;
 
@@ -212,15 +225,17 @@ void Zenith_TerrainComponent::RenderPropertiesPanel()
 									if (x == 0 && y == 0) continue;
 
 									std::string strPhysicsPath = strOutputDir + "Physics_" + std::to_string(x) + "_" + std::to_string(y) + ZENITH_MESH_EXT;
-									Flux_MeshGeometry* pxTerrainPhysicsMesh = Zenith_AssetHandler::AddMeshFromFile(
+									Flux_MeshGeometry xTerrainPhysicsMesh;
+									Flux_MeshGeometry::LoadFromFile(
 										strPhysicsPath.c_str(),
+										xTerrainPhysicsMesh,
 										1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__POSITION | 1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__NORMAL);
 
-									if (pxTerrainPhysicsMesh)
+									if (xTerrainPhysicsMesh.GetNumVerts() > 0)
 									{
-										Flux_MeshGeometry::Combine(xPhysicsGeometry, *pxTerrainPhysicsMesh);
-										Zenith_AssetHandler::DeleteMesh(pxTerrainPhysicsMesh);
+										Flux_MeshGeometry::Combine(xPhysicsGeometry, xTerrainPhysicsMesh);
 									}
+									// xTerrainPhysicsMesh automatically destroyed when going out of scope
 								}
 							}
 
@@ -377,7 +392,7 @@ void Zenith_TerrainComponent::RenderPropertiesPanel()
 					if (m_pxPhysicsGeometry)
 					{
 						Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Destroying existing physics geometry...");
-						Zenith_AssetHandler::DeleteMesh(m_pxPhysicsGeometry);
+						delete m_pxPhysicsGeometry;
 						m_pxPhysicsGeometry = nullptr;
 					}
 
@@ -427,14 +442,24 @@ void Zenith_TerrainComponent::RenderPropertiesPanel()
 					{
 						std::string strEntityName = m_xParentEntity.GetName().empty() ?
 							("Entity_" + std::to_string(m_xParentEntity.GetEntityID().m_uIndex)) : m_xParentEntity.GetName();
-						m_pxMaterial0 = Flux_MaterialAsset::Create(strEntityName + "_Terrain_Mat0");
+						m_pxMaterial0 = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
+						if (m_pxMaterial0)
+						{
+							m_pxMaterial0->SetName(strEntityName + "_Terrain_Mat0");
+							m_pxMaterial0->AddRef();
+						}
 						m_bOwnsMaterials = true;
 					}
 					if (!m_pxMaterial1)
 					{
 						std::string strEntityName = m_xParentEntity.GetName().empty() ?
 							("Entity_" + std::to_string(m_xParentEntity.GetEntityID().m_uIndex)) : m_xParentEntity.GetName();
-						m_pxMaterial1 = Flux_MaterialAsset::Create(strEntityName + "_Terrain_Mat1");
+						m_pxMaterial1 = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
+						if (m_pxMaterial1)
+						{
+							m_pxMaterial1->SetName(strEntityName + "_Terrain_Mat1");
+							m_pxMaterial1->AddRef();
+						}
 						m_bOwnsMaterials = true;
 					}
 

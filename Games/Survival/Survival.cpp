@@ -8,9 +8,9 @@
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
-#include "Flux/Flux_MaterialAsset.h"
+#include "AssetHandling/Zenith_MaterialAsset.h"
+#include "AssetHandling/Zenith_AssetRegistry.h"
 #include "Flux/Flux.h"
-#include "AssetHandling/Zenith_AssetHandler.h"
 #include "AssetHandling/Zenith_AssetDatabase.h"
 #include "AssetHandling/Zenith_DataAssetManager.h"
 #include "Prefab/Zenith_Prefab.h"
@@ -31,13 +31,13 @@ namespace Survival
 	Flux_MeshGeometry* g_pxCapsuleGeometry = nullptr;
 
 	// Materials
-	Flux_MaterialAsset* g_pxPlayerMaterial = nullptr;
-	Flux_MaterialAsset* g_pxGroundMaterial = nullptr;
-	Flux_MaterialAsset* g_pxTreeMaterial = nullptr;
-	Flux_MaterialAsset* g_pxRockMaterial = nullptr;
-	Flux_MaterialAsset* g_pxBerryMaterial = nullptr;
-	Flux_MaterialAsset* g_pxWoodMaterial = nullptr;
-	Flux_MaterialAsset* g_pxStoneMaterial = nullptr;
+	Zenith_MaterialAsset* g_pxPlayerMaterial = nullptr;
+	Zenith_MaterialAsset* g_pxGroundMaterial = nullptr;
+	Zenith_MaterialAsset* g_pxTreeMaterial = nullptr;
+	Zenith_MaterialAsset* g_pxRockMaterial = nullptr;
+	Zenith_MaterialAsset* g_pxBerryMaterial = nullptr;
+	Zenith_MaterialAsset* g_pxWoodMaterial = nullptr;
+	Zenith_MaterialAsset* g_pxStoneMaterial = nullptr;
 
 	// Prefabs for runtime instantiation
 	Zenith_Prefab* g_pxPlayerPrefab = nullptr;
@@ -382,27 +382,36 @@ static void InitializeSurvivalResources()
 	TextureRef xWoodTextureRef = ExportColoredTexture(strTexturesDir + "/Wood.ztex", 139, 90, 43);           // Brown wood
 	TextureRef xStoneTextureRef = ExportColoredTexture(strTexturesDir + "/Stone.ztex", 100, 100, 110);       // Gray stone item
 
-	// Create materials with TextureRefs (properly serializable)
-	g_pxPlayerMaterial = Flux_MaterialAsset::Create("SurvivalPlayer");
-	g_pxPlayerMaterial->SetDiffuseTextureRef(xPlayerTextureRef);
+	// Create materials with texture paths (properly serializable)
+	auto& xRegistry = Zenith_AssetRegistry::Get();
 
-	g_pxGroundMaterial = Flux_MaterialAsset::Create("SurvivalGround");
-	g_pxGroundMaterial->SetDiffuseTextureRef(xGroundTextureRef);
+	g_pxPlayerMaterial = xRegistry.Create<Zenith_MaterialAsset>();
+	g_pxPlayerMaterial->SetName("SurvivalPlayer");
+	g_pxPlayerMaterial->SetDiffuseTexturePath(strTexturesDir + "/Player.ztex");
 
-	g_pxTreeMaterial = Flux_MaterialAsset::Create("SurvivalTree");
-	g_pxTreeMaterial->SetDiffuseTextureRef(xTreeTextureRef);
+	g_pxGroundMaterial = xRegistry.Create<Zenith_MaterialAsset>();
+	g_pxGroundMaterial->SetName("SurvivalGround");
+	g_pxGroundMaterial->SetDiffuseTexturePath(strTexturesDir + "/Ground.ztex");
 
-	g_pxRockMaterial = Flux_MaterialAsset::Create("SurvivalRock");
-	g_pxRockMaterial->SetDiffuseTextureRef(xRockTextureRef);
+	g_pxTreeMaterial = xRegistry.Create<Zenith_MaterialAsset>();
+	g_pxTreeMaterial->SetName("SurvivalTree");
+	g_pxTreeMaterial->SetDiffuseTexturePath(strTexturesDir + "/Tree.ztex");
 
-	g_pxBerryMaterial = Flux_MaterialAsset::Create("SurvivalBerry");
-	g_pxBerryMaterial->SetDiffuseTextureRef(xBerryTextureRef);
+	g_pxRockMaterial = xRegistry.Create<Zenith_MaterialAsset>();
+	g_pxRockMaterial->SetName("SurvivalRock");
+	g_pxRockMaterial->SetDiffuseTexturePath(strTexturesDir + "/Rock.ztex");
 
-	g_pxWoodMaterial = Flux_MaterialAsset::Create("SurvivalWood");
-	g_pxWoodMaterial->SetDiffuseTextureRef(xWoodTextureRef);
+	g_pxBerryMaterial = xRegistry.Create<Zenith_MaterialAsset>();
+	g_pxBerryMaterial->SetName("SurvivalBerry");
+	g_pxBerryMaterial->SetDiffuseTexturePath(strTexturesDir + "/Berry.ztex");
 
-	g_pxStoneMaterial = Flux_MaterialAsset::Create("SurvivalStone");
-	g_pxStoneMaterial->SetDiffuseTextureRef(xStoneTextureRef);
+	g_pxWoodMaterial = xRegistry.Create<Zenith_MaterialAsset>();
+	g_pxWoodMaterial->SetName("SurvivalWood");
+	g_pxWoodMaterial->SetDiffuseTexturePath(strTexturesDir + "/Wood.ztex");
+
+	g_pxStoneMaterial = xRegistry.Create<Zenith_MaterialAsset>();
+	g_pxStoneMaterial->SetName("SurvivalStone");
+	g_pxStoneMaterial->SetDiffuseTexturePath(strTexturesDir + "/Stone.ztex");
 
 	// Create prefabs for runtime instantiation
 	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();

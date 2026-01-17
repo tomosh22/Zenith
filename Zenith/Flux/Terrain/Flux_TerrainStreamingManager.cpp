@@ -3,7 +3,6 @@
 #include "Flux_TerrainConfig.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
-#include "AssetHandling/Zenith_AssetHandler.h"
 #include "Vulkan/Zenith_Vulkan_MemoryManager.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Maths/Zenith_FrustumCulling.h"
@@ -229,19 +228,19 @@ void Flux_TerrainStreamingManager::RegisterTerrainBuffers(Zenith_TerrainComponen
 				strChunkPath = std::string(Project_GetGameAssetsDirectory()) + "Terrain/Render_" + std::to_string(x) + "_" + std::to_string(y) + ZENITH_MESH_EXT;
 
 			//false so we don't upload to GPU
-			Flux_MeshGeometry* pxChunkMesh = Zenith_AssetHandler::AddMeshFromFile(strChunkPath.c_str(), 1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__POSITION, false);
+			Flux_MeshGeometry xChunkMesh;
+			Flux_MeshGeometry::LoadFromFile(strChunkPath.c_str(), xChunkMesh, 1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__POSITION, false);
 
 			// Mark LOW LOD as resident with its allocation info
 			xResidency.m_aeStates[LOD_LOW] = Flux_TerrainLODResidencyState::RESIDENT;
 			xResidency.m_axAllocations[LOD_LOW].m_uVertexOffset = uCurrentLowLODVertexOffset;
-			xResidency.m_axAllocations[LOD_LOW].m_uVertexCount = pxChunkMesh->GetNumVerts();
+			xResidency.m_axAllocations[LOD_LOW].m_uVertexCount = xChunkMesh.GetNumVerts();
 			xResidency.m_axAllocations[LOD_LOW].m_uIndexOffset = uCurrentLowLODIndexOffset;
-			xResidency.m_axAllocations[LOD_LOW].m_uIndexCount = pxChunkMesh->GetNumIndices();
+			xResidency.m_axAllocations[LOD_LOW].m_uIndexCount = xChunkMesh.GetNumIndices();
 
-			uCurrentLowLODVertexOffset += pxChunkMesh->GetNumVerts();
-			uCurrentLowLODIndexOffset += pxChunkMesh->GetNumIndices();
-
-			Zenith_AssetHandler::DeleteMesh(pxChunkMesh);
+			uCurrentLowLODVertexOffset += xChunkMesh.GetNumVerts();
+			uCurrentLowLODIndexOffset += xChunkMesh.GetNumIndices();
+			// xChunkMesh automatically destroyed when going out of scope
 
 			// HIGH LOD starts as NOT_LOADED
 			xResidency.m_aeStates[LOD_HIGH] = Flux_TerrainLODResidencyState::NOT_LOADED;
@@ -258,14 +257,14 @@ void Flux_TerrainStreamingManager::RegisterTerrainBuffers(Zenith_TerrainComponen
 			std::string strChunkPath = std::string(Project_GetGameAssetsDirectory()) + "Terrain/Render_" + std::to_string(x) + "_" + std::to_string(y) + ZENITH_MESH_EXT;
 
 			//false so we don't upload to GPU
-			Flux_MeshGeometry* pxChunkMesh = Zenith_AssetHandler::AddMeshFromFile(strChunkPath.c_str(), 1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__POSITION, false);
+			Flux_MeshGeometry xChunkMesh;
+			Flux_MeshGeometry::LoadFromFile(strChunkPath.c_str(), xChunkMesh, 1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__POSITION, false);
 
 			s_axChunkAABBs[uChunkIndex] = Zenith_FrustumCulling::GenerateAABBFromVertices(
-				pxChunkMesh->m_pxPositions,
-				pxChunkMesh->GetNumVerts()
+				xChunkMesh.m_pxPositions,
+				xChunkMesh.GetNumVerts()
 			);
-
-			Zenith_AssetHandler::DeleteMesh(pxChunkMesh);
+			// xChunkMesh automatically destroyed when going out of scope
 		}
 	}
 	s_bAABBsCached = true;
@@ -452,12 +451,13 @@ bool Flux_TerrainStreamingManager::StreamInLOD(uint32_t uChunkIndex, uint32_t uL
 		return false;
 
 	// Load mesh to get size requirements, false so we don't upload to GPU
-	Flux_MeshGeometry* pxChunkMesh = Zenith_AssetHandler::AddMeshFromFile(strChunkPath.c_str(), 0, false);
-	if (!pxChunkMesh)
+	Flux_MeshGeometry xChunkMesh;
+	Flux_MeshGeometry::LoadFromFile(strChunkPath.c_str(), xChunkMesh, 0, false);
+	if (xChunkMesh.GetNumVerts() == 0)
 		return false;
 
-	const uint32_t uNumVerts = pxChunkMesh->GetNumVerts();
-	const uint32_t uNumIndices = pxChunkMesh->GetNumIndices();
+	const uint32_t uNumVerts = xChunkMesh.GetNumVerts();
+	const uint32_t uNumIndices = xChunkMesh.GetNumIndices();
 
 	// Cache the chunk size for future pre-checks (all chunks are roughly the same size)
 	if (s_uCachedHighLODVertexCount == 0)
@@ -478,7 +478,6 @@ bool Flux_TerrainStreamingManager::StreamInLOD(uint32_t uChunkIndex, uint32_t uL
 		if (uIndexOffset != UINT32_MAX)
 			s_xIndexAllocator.Free(uIndexOffset, uNumIndices);
 
-		Zenith_AssetHandler::DeleteMesh(pxChunkMesh);
 		return false;
 	}
 
@@ -496,14 +495,14 @@ bool Flux_TerrainStreamingManager::StreamInLOD(uint32_t uChunkIndex, uint32_t uL
 	// Upload to GPU
 	Flux_MemoryManager::UploadBufferDataAtOffset(
 		s_pxTerrainComponent->GetUnifiedVertexBuffer().GetBuffer().m_xVRAMHandle,
-		pxChunkMesh->m_pVertexData,
+		xChunkMesh.m_pVertexData,
 		ulVertexDataSize,
 		ulVertexOffsetBytes
 	);
 
 	Flux_MemoryManager::UploadBufferDataAtOffset(
 		s_pxTerrainComponent->GetUnifiedIndexBuffer().GetBuffer().m_xVRAMHandle,
-		pxChunkMesh->m_puIndices,
+		xChunkMesh.m_puIndices,
 		ulIndexDataSize,
 		ulIndexOffsetBytes
 	);
@@ -516,7 +515,7 @@ bool Flux_TerrainStreamingManager::StreamInLOD(uint32_t uChunkIndex, uint32_t uL
 	xResidency.m_axAllocations[uLODLevel].m_uIndexCount = uNumIndices;
 	xResidency.m_aeStates[uLODLevel] = Flux_TerrainLODResidencyState::RESIDENT;
 
-	Zenith_AssetHandler::DeleteMesh(pxChunkMesh);
+	// xChunkMesh automatically destroyed when going out of scope
 	return true;
 }
 

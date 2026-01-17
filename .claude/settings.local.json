@@ -80,7 +80,8 @@
       "Bash(\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\MSBuild\\\\Current\\\\Bin\\\\MSBuild.exe\" \"c:\\\\dev\\\\Zenith\\\\Games\\\\AIShowcase\\\\Build\\\\aishowcase_win64.vcxproj\" -p:Configuration=vs2022_Debug_Win64_True -p:Platform=x64 -verbosity:minimal)",
       "Bash(msbuild:*)",
       "Bash(wc:*)",
-      "Bash(cmd //c \"\"\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\MSBuild\\\\Current\\\\Bin\\\\MSBuild.exe\"\" \"\"c:\\\\dev\\\\Zenith\\\\Build\\\\zenith_win64.sln\"\" /p:Configuration=vs2022_Debug_Win64_True /p:Platform=x64 /t:Zenith /m\")"
+      "Bash(cmd //c \"\"\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\MSBuild\\\\Current\\\\Bin\\\\MSBuild.exe\"\" \"\"c:\\\\dev\\\\Zenith\\\\Build\\\\zenith_win64.sln\"\" /p:Configuration=vs2022_Debug_Win64_True /p:Platform=x64 /t:Zenith /m\")",
+      "Bash(./Sharpmake_Build.bat)"
     ],
     "deny": [],
     "ask": []

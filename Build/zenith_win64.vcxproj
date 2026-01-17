@@ -1056,17 +1056,21 @@
     <ClInclude Include="..\Zenith\Android\Multithreading\Zenith_Android_Multithreading.h" />
     <ClInclude Include="..\Zenith\Android\Zenith_Android_Window.h" />
     <ClInclude Include="..\Zenith\Android\Zenith_OS_Include.h" />
+    <ClInclude Include="..\Zenith\AssetHandling\Zenith_Asset.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_AssetDatabase.h" />
-    <ClInclude Include="..\Zenith\AssetHandling\Zenith_AssetHandler.h" />
+    <ClInclude Include="..\Zenith\AssetHandling\Zenith_AssetHandle.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_AssetMeta.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_AssetRef.h" />
+    <ClInclude Include="..\Zenith\AssetHandling\Zenith_AssetRegistry.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_AsyncAssetLoader.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_DataAsset.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_DataAssetManager.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_FileWatcher.h" />
+    <ClInclude Include="..\Zenith\AssetHandling\Zenith_MaterialAsset.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_MeshAsset.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_ModelAsset.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_SkeletonAsset.h" />
+    <ClInclude Include="..\Zenith\AssetHandling\Zenith_TextureAsset.h" />
     <ClInclude Include="..\Zenith\Collections\Zenith_CircularQueue.h" />
     <ClInclude Include="..\Zenith\Collections\Zenith_MemoryPool.h" />
     <ClInclude Include="..\Zenith\Collections\Zenith_Vector.h" />
@@ -1127,7 +1131,6 @@
     <ClInclude Include="..\Zenith\Flux\Flux_Fwd.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_Graphics.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_ImGuiIntegration.h" />
-    <ClInclude Include="..\Zenith\Flux\Flux_MaterialAsset.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_MaterialBinding.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_ModelInstance.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_RenderTargets.h" />
@@ -2220,17 +2223,21 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
+    <ClCompile Include="..\Zenith\AssetHandling\Zenith_Asset.cpp" />
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_AssetDatabase.cpp" />
-    <ClCompile Include="..\Zenith\AssetHandling\Zenith_AssetHandler.cpp" />
+    <ClCompile Include="..\Zenith\AssetHandling\Zenith_AssetHandle.cpp" />
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_AssetMeta.cpp" />
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_AssetRef.cpp" />
+    <ClCompile Include="..\Zenith\AssetHandling\Zenith_AssetRegistry.cpp" />
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_AsyncAssetLoader.cpp" />
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_DataAsset.cpp" />
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_DataAssetManager.cpp" />
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_FileWatcher.cpp" />
+    <ClCompile Include="..\Zenith\AssetHandling\Zenith_MaterialAsset.cpp" />
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_MeshAsset.cpp" />
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_ModelAsset.cpp" />
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_SkeletonAsset.cpp" />
+    <ClCompile Include="..\Zenith\AssetHandling\Zenith_TextureAsset.cpp" />
     <ClCompile Include="..\Zenith\Core\Callstack\Zenith_Callstack.cpp" />
     <ClCompile Include="..\Zenith\Core\Memory\Zenith_MemoryBudgets.cpp" />
     <ClCompile Include="..\Zenith\Core\Memory\Zenith_MemoryManagement.cpp" />
@@ -2284,7 +2291,6 @@
     <ClCompile Include="..\Zenith\Flux\Flux_Buffers.cpp" />
     <ClCompile Include="..\Zenith\Flux\Flux_CommandList.cpp" />
     <ClCompile Include="..\Zenith\Flux\Flux_Graphics.cpp" />
-    <ClCompile Include="..\Zenith\Flux\Flux_MaterialAsset.cpp" />
     <ClCompile Include="..\Zenith\Flux\Flux_ModelInstance.cpp" />
     <ClCompile Include="..\Zenith\Flux\Flux_RenderTargets.cpp" />
     <ClCompile Include="..\Zenith\Flux\Fog\Flux_Fog.cpp" />

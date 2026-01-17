@@ -11,7 +11,6 @@
 #include "Flux/MeshAnimation/Flux_SkeletonInstance.h"
 #include "Flux/Shadows/Flux_Shadows.h"
 #include "Flux/DeferredShading/Flux_DeferredShading.h"
-#include "AssetHandling/Zenith_AssetHandler.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
@@ -240,12 +239,12 @@ void Flux_AnimatedMeshes::RenderToGBuffer(void*)
 			Zenith_Maths::Matrix4 xModelMatrix;
 			pxModelComponent->GetParentEntity().GetComponent<Zenith_TransformComponent>().BuildModelMatrix(xModelMatrix);
 
-			Flux_MaterialAsset* pxMaterial = pxModelInstance->GetMaterial(uMesh);
+			Zenith_MaterialAsset* pxMaterial = pxModelInstance->GetMaterial(uMesh);
 			if (!pxMaterial)
 			{
-				pxMaterial = Flux_Graphics::s_pxBlankMaterial;
+				// Skip rendering if no material - fallback handled during model instance creation
+				continue;
 			}
-			Zenith_Assert(pxMaterial != nullptr, "Material is null and blank material fallback also null");
 
 			// Build and push material constants (128 bytes) - uses scratch buffer in set 1
 			MaterialPushConstants xPushConstants;

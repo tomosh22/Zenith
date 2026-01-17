@@ -4,7 +4,7 @@
 #include "Flux/InstancedMeshes/Flux_InstanceGroup.h"
 #include "Flux/InstancedMeshes/Flux_AnimationTexture.h"
 #include "Flux/MeshGeometry/Flux_MeshInstance.h"
-#include "Flux/Flux_MaterialAsset.h"
+#include "AssetHandling/Zenith_MaterialAsset.h"
 #include "Maths/Zenith_Maths.h"
 #include <string>
 #include <vector>
@@ -51,7 +51,7 @@ public:
 	void SetMesh(Flux_MeshInstance* pxMesh);
 
 	// Set the material for all instances (required)
-	void SetMaterial(Flux_MaterialAsset* pxMaterial);
+	void SetMaterial(Zenith_MaterialAsset* pxMaterial);
 
 	// Set the vertex animation texture for skeletal animation (optional)
 	void SetAnimationTexture(Flux_AnimationTexture* pxAnimTex);
@@ -154,7 +154,7 @@ public:
 	const Flux_InstanceGroup* GetInstanceGroup() const { return m_pxInstanceGroup; }
 
 	Flux_MeshInstance* GetMesh() const;
-	Flux_MaterialAsset* GetMaterial() const;
+	Zenith_MaterialAsset* GetMaterial() const;
 	Flux_AnimationTexture* GetAnimationTexture() const;
 
 	Zenith_Entity GetParentEntity() const { return m_xParentEntity; }
@@ -197,7 +197,7 @@ private:
 	Zenith_MeshAsset* m_pxOwnedMeshAsset = nullptr;
 	Flux_MeshInstance* m_pxOwnedMeshInstance = nullptr;
 	Flux_AnimationTexture* m_pxOwnedAnimTexture = nullptr;
-	Flux_MaterialAsset* m_pxOwnedMaterial = nullptr;
+	Zenith_MaterialAsset* m_pxOwnedMaterial = nullptr;
 
 	// Animation playback settings
 	float m_fAnimationDuration = 1.0f;

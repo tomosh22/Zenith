@@ -7,9 +7,10 @@
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
-#include "Flux/Flux_MaterialAsset.h"
+#include "AssetHandling/Zenith_MaterialAsset.h"
+#include "AssetHandling/Zenith_TextureAsset.h"
+#include "AssetHandling/Zenith_AssetRegistry.h"
 #include "Flux/Flux_Graphics.h"
-#include "AssetHandling/Zenith_AssetHandler.h"
 #include "AssetHandling/Zenith_DataAssetManager.h"
 #include "Prefab/Zenith_Prefab.h"
 
@@ -24,12 +25,12 @@ namespace Runner
 	Flux_MeshGeometry* g_pxCubeGeometry = nullptr;
 	Flux_MeshGeometry* g_pxSphereGeometry = nullptr;
 
-	Flux_MaterialAsset* g_pxCharacterMaterial = nullptr;
-	Flux_MaterialAsset* g_pxGroundMaterial = nullptr;
-	Flux_MaterialAsset* g_pxObstacleMaterial = nullptr;
-	Flux_MaterialAsset* g_pxCollectibleMaterial = nullptr;
-	Flux_MaterialAsset* g_pxDustMaterial = nullptr;
-	Flux_MaterialAsset* g_pxCollectParticleMaterial = nullptr;
+	Zenith_MaterialAsset* g_pxCharacterMaterial = nullptr;
+	Zenith_MaterialAsset* g_pxGroundMaterial = nullptr;
+	Zenith_MaterialAsset* g_pxObstacleMaterial = nullptr;
+	Zenith_MaterialAsset* g_pxCollectibleMaterial = nullptr;
+	Zenith_MaterialAsset* g_pxDustMaterial = nullptr;
+	Zenith_MaterialAsset* g_pxCollectParticleMaterial = nullptr;
 
 	Zenith_Prefab* g_pxCharacterPrefab = nullptr;
 	Zenith_Prefab* g_pxGroundPrefab = nullptr;
@@ -328,31 +329,38 @@ static void InitializeRunnerResources()
 	GenerateUVSphere(*g_pxSphereGeometry, 0.5f, 16, 12);
 
 	// Use grid pattern texture with BaseColor for all materials
-	Flux_Texture* pxGridTex = &Flux_Graphics::s_xGridPatternTexture2D;
+	Zenith_TextureAsset* pxGridTex = Flux_Graphics::s_pxGridTexture;
 
 	// Create materials with grid texture and BaseColor
-	g_pxCharacterMaterial = Flux_MaterialAsset::Create("RunnerCharacter");
-	g_pxCharacterMaterial->SetDiffuseTexture(pxGridTex);
+	auto& xRegistry = Zenith_AssetRegistry::Get();
+	g_pxCharacterMaterial = xRegistry.Create<Zenith_MaterialAsset>();
+	g_pxCharacterMaterial->SetName("RunnerCharacter");
+	g_pxCharacterMaterial->SetDiffuseTextureDirectly(pxGridTex);
 	g_pxCharacterMaterial->SetBaseColor({ 51.f/255.f, 153.f/255.f, 255.f/255.f, 1.f });
 
-	g_pxGroundMaterial = Flux_MaterialAsset::Create("RunnerGround");
-	g_pxGroundMaterial->SetDiffuseTexture(pxGridTex);
+	g_pxGroundMaterial = xRegistry.Create<Zenith_MaterialAsset>();
+	g_pxGroundMaterial->SetName("RunnerGround");
+	g_pxGroundMaterial->SetDiffuseTextureDirectly(pxGridTex);
 	g_pxGroundMaterial->SetBaseColor({ 102.f/255.f, 77.f/255.f, 51.f/255.f, 1.f });
 
-	g_pxObstacleMaterial = Flux_MaterialAsset::Create("RunnerObstacle");
-	g_pxObstacleMaterial->SetDiffuseTexture(pxGridTex);
+	g_pxObstacleMaterial = xRegistry.Create<Zenith_MaterialAsset>();
+	g_pxObstacleMaterial->SetName("RunnerObstacle");
+	g_pxObstacleMaterial->SetDiffuseTextureDirectly(pxGridTex);
 	g_pxObstacleMaterial->SetBaseColor({ 204.f/255.f, 51.f/255.f, 51.f/255.f, 1.f });
 
-	g_pxCollectibleMaterial = Flux_MaterialAsset::Create("RunnerCollectible");
-	g_pxCollectibleMaterial->SetDiffuseTexture(pxGridTex);
+	g_pxCollectibleMaterial = xRegistry.Create<Zenith_MaterialAsset>();
+	g_pxCollectibleMaterial->SetName("RunnerCollectible");
+	g_pxCollectibleMaterial->SetDiffuseTextureDirectly(pxGridTex);
 	g_pxCollectibleMaterial->SetBaseColor({ 255.f/255.f, 215.f/255.f, 0.f/255.f, 1.f });
 
-	g_pxDustMaterial = Flux_MaterialAsset::Create("RunnerDust");
-	g_pxDustMaterial->SetDiffuseTexture(pxGridTex);
+	g_pxDustMaterial = xRegistry.Create<Zenith_MaterialAsset>();
+	g_pxDustMaterial->SetName("RunnerDust");
+	g_pxDustMaterial->SetDiffuseTextureDirectly(pxGridTex);
 	g_pxDustMaterial->SetBaseColor({ 180.f/255.f, 150.f/255.f, 100.f/255.f, 1.f });
 
-	g_pxCollectParticleMaterial = Flux_MaterialAsset::Create("RunnerCollectParticle");
-	g_pxCollectParticleMaterial->SetDiffuseTexture(pxGridTex);
+	g_pxCollectParticleMaterial = xRegistry.Create<Zenith_MaterialAsset>();
+	g_pxCollectParticleMaterial->SetName("RunnerCollectParticle");
+	g_pxCollectParticleMaterial->SetDiffuseTextureDirectly(pxGridTex);
 	g_pxCollectParticleMaterial->SetBaseColor({ 255.f/255.f, 255.f/255.f, 150.f/255.f, 1.f });
 
 	// Create prefabs for runtime instantiation

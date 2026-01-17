@@ -8,10 +8,11 @@
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
 #include "EntityComponent/Components/Zenith_InstancedMeshComponent.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
-#include "Flux/Flux_MaterialAsset.h"
+#include "AssetHandling/Zenith_MaterialAsset.h"
+#include "AssetHandling/Zenith_AssetRegistry.h"
+#include "AssetHandling/Zenith_TextureAsset.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Terrain/Flux_TerrainConfig.h"
-#include "AssetHandling/Zenith_AssetHandler.h"
 #include "AssetHandling/Zenith_DataAssetManager.h"
 
 #ifdef ZENITH_TOOLS
@@ -30,12 +31,12 @@ extern void ExportHeightmapFromPaths(const std::string& strHeightmapPath, const 
 namespace Exploration
 {
 	// Terrain materials
-	Flux_MaterialAsset* g_pxTerrainMaterial0 = nullptr;
-	Flux_MaterialAsset* g_pxTerrainMaterial1 = nullptr;
+	Zenith_MaterialAsset* g_pxTerrainMaterial0 = nullptr;
+	Zenith_MaterialAsset* g_pxTerrainMaterial1 = nullptr;
 
 	// Terrain textures (procedural)
-	Flux_Texture* g_pxGrassTexture = nullptr;
-	Flux_Texture* g_pxRockTexture = nullptr;
+	Zenith_TextureAsset* g_pxGrassTexture = nullptr;
+	Zenith_TextureAsset* g_pxRockTexture = nullptr;
 }
 
 static bool s_bResourcesInitialized = false;
@@ -43,7 +44,7 @@ static bool s_bResourcesInitialized = false;
 /**
  * Create a procedural gradient texture for terrain
  */
-static Flux_Texture* CreateGradientTexture(
+static Zenith_TextureAsset* CreateGradientTexture(
 	uint8_t uR1, uint8_t uG1, uint8_t uB1,
 	uint8_t uR2, uint8_t uG2, uint8_t uB2,
 	uint32_t uWidth, uint32_t uHeight)
@@ -76,13 +77,13 @@ static Flux_Texture* CreateGradientTexture(
 		}
 	}
 
-	Zenith_AssetHandler::TextureData xTexData;
-	xTexData.pData = xPixelData.data();
-	xTexData.xSurfaceInfo = xTexInfo;
-	xTexData.bCreateMips = false;
-	xTexData.bIsCubemap = false;
-
-	return Zenith_AssetHandler::AddTexture(xTexData);
+	// Create texture via new asset system
+	Zenith_TextureAsset* pxTexture = Zenith_AssetRegistry::Get().Create<Zenith_TextureAsset>();
+	if (pxTexture)
+	{
+		pxTexture->CreateFromData(xPixelData.data(), xTexInfo, false);
+	}
+	return pxTexture;
 }
 
 #ifdef ZENITH_TOOLS
@@ -278,11 +279,14 @@ static void InitializeExplorationResources()
 		4, 4);
 
 	// Create terrain materials
-	g_pxTerrainMaterial0 = Flux_MaterialAsset::Create("ExplorationTerrainGrass");
-	g_pxTerrainMaterial0->SetDiffuseTexture(g_pxGrassTexture);
+	auto& xRegistry = Zenith_AssetRegistry::Get();
+	g_pxTerrainMaterial0 = xRegistry.Create<Zenith_MaterialAsset>();
+	g_pxTerrainMaterial0->SetName("ExplorationTerrainGrass");
+	g_pxTerrainMaterial0->SetDiffuseTextureDirectly(g_pxGrassTexture);
 
-	g_pxTerrainMaterial1 = Flux_MaterialAsset::Create("ExplorationTerrainRock");
-	g_pxTerrainMaterial1->SetDiffuseTexture(g_pxRockTexture);
+	g_pxTerrainMaterial1 = xRegistry.Create<Zenith_MaterialAsset>();
+	g_pxTerrainMaterial1->SetName("ExplorationTerrainRock");
+	g_pxTerrainMaterial1->SetDiffuseTextureDirectly(g_pxRockTexture);
 
 	s_bResourcesInitialized = true;
 }
@@ -293,7 +297,7 @@ static void InitializeExplorationResources()
 namespace Exploration
 {
 	// Resources for instanced trees
-	Flux_MaterialAsset* g_pxTreeMaterial = nullptr;
+	Zenith_MaterialAsset* g_pxTreeMaterial = nullptr;
 	Zenith_InstancedMeshComponent* g_pxTreeComponent = nullptr;
 }
 
@@ -445,7 +449,8 @@ static void CreateInstancedTrees(Zenith_Scene& xScene)
 	Zenith_Log(LOG_CATEGORY_MESH, "[Exploration] Creating instanced trees entity...");
 
 	// Create tree material (green with some variation)
-	g_pxTreeMaterial = Flux_MaterialAsset::Create("TreeMaterial");
+	g_pxTreeMaterial = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
+	g_pxTreeMaterial->SetName("TreeMaterial");
 	g_pxTreeMaterial->SetBaseColor(Zenith_Maths::Vector4(0.3f, 0.5f, 0.2f, 1.0f));
 
 	// Create entity with instanced mesh component

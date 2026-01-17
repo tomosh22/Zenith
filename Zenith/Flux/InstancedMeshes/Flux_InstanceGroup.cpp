@@ -38,7 +38,7 @@ void Flux_InstanceGroup::SetMesh(Flux_MeshInstance* pxMesh)
 	m_pxMesh = pxMesh;
 }
 
-void Flux_InstanceGroup::SetMaterial(Flux_MaterialAsset* pxMaterial)
+void Flux_InstanceGroup::SetMaterial(Zenith_MaterialAsset* pxMaterial)
 {
 	m_pxMaterial = pxMaterial;
 }

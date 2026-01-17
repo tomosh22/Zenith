@@ -22,6 +22,7 @@
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
+#include "Flux/Flux_ModelInstance.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_ParticleEmitterComponent.h"
@@ -29,7 +30,7 @@
 #include "EntityComponent/Zenith_EventSystem.h"
 #include "Input/Zenith_Input.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
-#include "Flux/Flux_MaterialAsset.h"
+#include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_ModelAsset.h"
 #include "Prefab/Zenith_Prefab.h"
 #include "Maths/Zenith_Maths.h"
@@ -69,11 +70,11 @@ namespace Combat
 	extern Flux_MeshGeometry* g_pxStickFigureGeometry;  // Animated humanoid mesh (skinned)
 	extern Zenith_ModelAsset* g_pxStickFigureModelAsset;  // Model asset with skeleton
 	extern std::string g_strStickFigureModelPath;  // Path to model asset for LoadModelFromFile
-	extern Flux_MaterialAsset* g_pxPlayerMaterial;
-	extern Flux_MaterialAsset* g_pxEnemyMaterial;
-	extern Flux_MaterialAsset* g_pxArenaMaterial;
-	extern Flux_MaterialAsset* g_pxWallMaterial;
-	extern Flux_MaterialAsset* g_pxCandleMaterial;  // Cream color for candles
+	extern Zenith_MaterialAsset* g_pxPlayerMaterial;
+	extern Zenith_MaterialAsset* g_pxEnemyMaterial;
+	extern Zenith_MaterialAsset* g_pxArenaMaterial;
+	extern Zenith_MaterialAsset* g_pxWallMaterial;
+	extern Zenith_MaterialAsset* g_pxCandleMaterial;  // Cream color for candles
 
 	extern Zenith_Prefab* g_pxPlayerPrefab;
 	extern Zenith_Prefab* g_pxEnemyPrefab;
@@ -1002,8 +1003,8 @@ public:
 	Flux_MeshGeometry* m_pxCapsuleGeometry = nullptr;
 	Flux_MeshGeometry* m_pxCubeGeometry = nullptr;
 	Flux_MeshGeometry* m_pxStickFigureGeometry = nullptr;  // Animated character mesh
-	Flux_MaterialAsset* m_pxPlayerMaterial = nullptr;
-	Flux_MaterialAsset* m_pxEnemyMaterial = nullptr;
-	Flux_MaterialAsset* m_pxArenaMaterial = nullptr;
-	Flux_MaterialAsset* m_pxWallMaterial = nullptr;
+	Zenith_MaterialAsset* m_pxPlayerMaterial = nullptr;
+	Zenith_MaterialAsset* m_pxEnemyMaterial = nullptr;
+	Zenith_MaterialAsset* m_pxArenaMaterial = nullptr;
+	Zenith_MaterialAsset* m_pxWallMaterial = nullptr;
 };

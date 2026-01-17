@@ -15,7 +15,7 @@ A resource gathering and crafting survival game demonstrating advanced Zenith en
 | **Input Handling** | `Zenith_Input` | Continuous and discrete input polling |
 | **UI System** | `Zenith_UIComponent`, `Zenith_UIText` | HUD with inventory, crafting progress |
 | **Model Rendering** | `Zenith_ModelComponent`, `Flux_MeshGeometry` | Procedural geometry for all objects |
-| **Materials/Textures** | `Flux_MaterialAsset` | Color-coded materials for game objects |
+| **Materials/Textures** | `Zenith_MaterialAsset` | Color-coded materials for game objects |
 | **DataAsset System** | `Zenith_DataAsset` | Configuration with serialization |
 | **Camera** | `Zenith_CameraComponent` | Third-person follow camera |
 

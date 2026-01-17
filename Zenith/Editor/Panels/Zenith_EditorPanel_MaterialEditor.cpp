@@ -4,7 +4,8 @@
 
 #include "Zenith_EditorPanel_MaterialEditor.h"
 #include "../Zenith_Editor_MaterialUI.h"
-#include "Flux/Flux_MaterialAsset.h"
+#include "AssetHandling/Zenith_MaterialAsset.h"
+#include "AssetHandling/Zenith_AssetRegistry.h"
 #include "FileAccess/Zenith_FileAccess.h"
 #include "Collections/Zenith_Vector.h"
 
@@ -77,9 +78,12 @@ void Zenith_EditorPanelMaterialEditor::Render(MaterialEditorState& xState)
 	// Create New Material button
 	if (ImGui::Button("Create New Material"))
 	{
-		Flux_MaterialAsset* pNewMaterial = Flux_MaterialAsset::Create();
-		Zenith_Editor::SelectMaterial(pNewMaterial);
-		Zenith_Log(LOG_CATEGORY_EDITOR, "[MaterialEditor] Created new material: %s", pNewMaterial->GetName().c_str());
+		Zenith_MaterialAsset* pNewMaterial = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
+		if (pNewMaterial)
+		{
+			Zenith_Editor::SelectMaterial(pNewMaterial);
+			Zenith_Log(LOG_CATEGORY_EDITOR, "[MaterialEditor] Created new material: %s", pNewMaterial->GetName().c_str());
+		}
 	}
 
 	ImGui::SameLine();
@@ -93,7 +97,7 @@ void Zenith_EditorPanelMaterialEditor::Render(MaterialEditorState& xState)
 			ZENITH_MATERIAL_EXT);
 		if (!strFilePath.empty())
 		{
-			Flux_MaterialAsset* pMaterial = Flux_MaterialAsset::LoadFromFile(strFilePath);
+			Zenith_MaterialAsset* pMaterial = Zenith_AssetRegistry::Get().Get<Zenith_MaterialAsset>(strFilePath);
 			if (pMaterial)
 			{
 				Zenith_Editor::SelectMaterial(pMaterial);
@@ -109,59 +113,12 @@ void Zenith_EditorPanelMaterialEditor::Render(MaterialEditorState& xState)
 
 	ImGui::Separator();
 
-	// Display ALL materials (both file-cached and runtime-created)
-	Zenith_Vector<Flux_MaterialAsset*> allMaterials;
-	Flux_MaterialAsset::GetAllMaterials(allMaterials);
-
-	if (ImGui::CollapsingHeader("All Materials", ImGuiTreeNodeFlags_DefaultOpen))
+	// TODO: Re-implement material list using Zenith_AssetRegistry API when needed
+	// The registry currently doesn't expose GetAllOfType<T>() method
+	if (ImGui::CollapsingHeader("Loaded Materials", ImGuiTreeNodeFlags_DefaultOpen))
 	{
-		ImGui::Text("Total: %u materials", allMaterials.GetSize());
-		ImGui::Separator();
-
-		for (Zenith_Vector<Flux_MaterialAsset*>::Iterator xIt(allMaterials); !xIt.Done(); xIt.Next())
-		{
-			Flux_MaterialAsset* pMat = xIt.GetData();
-			if (pMat)
-			{
-				bool bIsSelected = (xState.m_pxSelectedMaterial == pMat);
-				std::string strDisplayName = pMat->GetName();
-				if (pMat->IsDirty())
-				{
-					strDisplayName += " *";  // Unsaved changes indicator
-				}
-
-				// Show file path indicator for saved materials
-				if (!pMat->GetAssetPath().empty())
-				{
-					strDisplayName += " [saved]";
-				}
-
-				if (ImGui::Selectable(strDisplayName.c_str(), bIsSelected))
-				{
-					Zenith_Editor::SelectMaterial(pMat);
-				}
-
-				// Tooltip with more details
-				if (ImGui::IsItemHovered())
-				{
-					std::string strTooltip = "Name: " + pMat->GetName();
-					if (!pMat->GetAssetPath().empty())
-					{
-						strTooltip += "\nPath: " + pMat->GetAssetPath();
-					}
-					else
-					{
-						strTooltip += "\n(Runtime-created, not saved to file)";
-					}
-					ImGui::SetTooltip("%s", strTooltip.c_str());
-				}
-			}
-		}
-
-		if (allMaterials.GetSize() == 0)
-		{
-			ImGui::TextDisabled("No materials loaded");
-		}
+		ImGui::TextDisabled("Use Content Browser to select materials");
+		ImGui::TextDisabled("Or use Create New/Load buttons above");
 	}
 
 	ImGui::Separator();
@@ -169,13 +126,13 @@ void Zenith_EditorPanelMaterialEditor::Render(MaterialEditorState& xState)
 	// Material properties editor
 	if (xState.m_pxSelectedMaterial)
 	{
-		Flux_MaterialAsset* pMat = xState.m_pxSelectedMaterial;
+		Zenith_MaterialAsset* pMat = xState.m_pxSelectedMaterial;
 
 		ImGui::Text("Editing: %s", pMat->GetName().c_str());
 
-		if (!pMat->GetAssetPath().empty())
+		if (!pMat->GetPath().empty() && !pMat->IsProcedural())
 		{
-			ImGui::TextDisabled("Path: %s", pMat->GetAssetPath().c_str());
+			ImGui::TextDisabled("Path: %s", pMat->GetPath().c_str());
 		}
 		else
 		{
@@ -210,7 +167,7 @@ void Zenith_EditorPanelMaterialEditor::Render(MaterialEditorState& xState)
 		// Save button
 		if (ImGui::Button("Save Material"))
 		{
-			if (pMat->GetAssetPath().empty())
+			if (pMat->GetPath().empty() || pMat->IsProcedural())
 			{
 				// Show save dialog for new material
 #ifdef _WIN32
@@ -230,9 +187,9 @@ void Zenith_EditorPanelMaterialEditor::Render(MaterialEditorState& xState)
 			else
 			{
 				// Save to existing path
-				if (pMat->SaveToFile(pMat->GetAssetPath()))
+				if (pMat->SaveToFile(pMat->GetPath()))
 				{
-					Zenith_Log(LOG_CATEGORY_EDITOR, "[MaterialEditor] Saved material: %s", pMat->GetAssetPath().c_str());
+					Zenith_Log(LOG_CATEGORY_EDITOR, "[MaterialEditor] Saved material: %s", pMat->GetPath().c_str());
 				}
 			}
 		}
@@ -258,9 +215,9 @@ void Zenith_EditorPanelMaterialEditor::Render(MaterialEditorState& xState)
 
 		ImGui::SameLine();
 
-		if (ImGui::Button("Reload"))
+		if (ImGui::Button("Reload") && !pMat->GetPath().empty() && !pMat->IsProcedural())
 		{
-			pMat->Reload();
+			pMat->LoadFromFile(pMat->GetPath());
 			Zenith_Log(LOG_CATEGORY_EDITOR, "[MaterialEditor] Reloaded material: %s", pMat->GetName().c_str());
 		}
 	}

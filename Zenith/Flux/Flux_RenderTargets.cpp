@@ -2,8 +2,6 @@
 
 #include "Flux/Flux_RenderTargets.h"
 
-#include "AssetHandling/Zenith_AssetHandler.h"
-
 void Flux_RenderAttachmentBuilder::BuildColour(Flux_RenderAttachment& xAttachment, const std::string& strName)
 {
 	// Check if attachment already has VRAM allocated and queue it for deletion

@@ -3,7 +3,7 @@
 #include "EntityComponent/Components/Zenith_InstancedMeshComponent.h"
 #include "EntityComponent/Zenith_ComponentMeta.h"
 #include "Flux/InstancedMeshes/Flux_InstancedMeshes.h"
-#include "AssetHandling/Zenith_AssetHandler.h"
+#include "AssetHandling/Zenith_AssetRegistry.h"
 #include "AssetHandling/Zenith_MeshAsset.h"
 
 ZENITH_REGISTER_COMPONENT(Zenith_InstancedMeshComponent, "InstancedMesh")
@@ -124,7 +124,7 @@ void Zenith_InstancedMeshComponent::SetMesh(Flux_MeshInstance* pxMesh)
 	m_pxInstanceGroup->SetMesh(pxMesh);
 }
 
-void Zenith_InstancedMeshComponent::SetMaterial(Flux_MaterialAsset* pxMaterial)
+void Zenith_InstancedMeshComponent::SetMaterial(Zenith_MaterialAsset* pxMaterial)
 {
 	EnsureInstanceGroupCreated();
 	m_pxInstanceGroup->SetMaterial(pxMaterial);
@@ -169,8 +169,8 @@ void Zenith_InstancedMeshComponent::LoadMesh(const std::string& strPath)
 	delete m_pxOwnedMeshAsset;
 	m_pxOwnedMeshAsset = nullptr;
 
-	// Load mesh asset (.zasset format)
-	m_pxOwnedMeshAsset = Zenith_AssetHandler::LoadMeshAsset(strPath);
+	// Load mesh asset (.zasset format) via registry
+	m_pxOwnedMeshAsset = Zenith_AssetRegistry::Get().Get<Zenith_MeshAsset>(strPath);
 	if (m_pxOwnedMeshAsset == nullptr)
 	{
 		Zenith_Error(LOG_CATEGORY_MESH, "[InstancedMeshComponent] Failed to load mesh asset: %s", strPath.c_str());
@@ -416,7 +416,7 @@ Flux_MeshInstance* Zenith_InstancedMeshComponent::GetMesh() const
 	return m_pxInstanceGroup != nullptr ? m_pxInstanceGroup->GetMesh() : nullptr;
 }
 
-Flux_MaterialAsset* Zenith_InstancedMeshComponent::GetMaterial() const
+Zenith_MaterialAsset* Zenith_InstancedMeshComponent::GetMaterial() const
 {
 	return m_pxInstanceGroup != nullptr ? m_pxInstanceGroup->GetMaterial() : nullptr;
 }

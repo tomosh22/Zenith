@@ -3,7 +3,6 @@
 #include "Zenith_Vulkan_CommandBuffer.h"
 
 #include "Zenith_Vulkan.h"
-#include "AssetHandling/Zenith_AssetHandler.h"
 #include "Flux/Flux.h"
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Flux_Graphics.h"

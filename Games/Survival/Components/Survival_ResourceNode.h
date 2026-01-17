@@ -17,7 +17,7 @@
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
-#include "Flux/Flux_MaterialAsset.h"
+#include "AssetHandling/Zenith_MaterialAsset.h"
 #include <cstdint>
 
 /**

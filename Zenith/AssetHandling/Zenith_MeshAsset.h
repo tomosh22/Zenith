@@ -1,22 +1,31 @@
 #pragma once
+#include "AssetHandling/Zenith_Asset.h"
 #include "Maths/Zenith_Maths.h"
 #include "Collections/Zenith_Vector.h"
 #include "DataStream/Zenith_DataStream.h"
+#include "Flux/Flux_Buffers.h"
 
 #define ZENITH_MESH_ASSET_VERSION 1
 
+// Forward declarations
+class Zenith_SkeletonAsset;
+
 /**
- * Zenith_MeshAsset - Pure geometry data container (no GPU resources)
+ * Zenith_MeshAsset - Geometry asset with CPU data and GPU buffers
  *
- * This is the "asset" representation of a mesh - data that lives on disk
- * and in CPU memory. It contains no GPU resources and can be shared between
- * multiple runtime instances.
+ * This class contains both CPU geometry data (for serialization/physics) and
+ * GPU buffers (for rendering). It replaces the old split between Zenith_MeshAsset,
+ * Flux_MeshGeometry, and Flux_MeshInstance.
  *
- * Split between Asset (data) and Instance (GPU):
- * - Asset: Loadable, serializable, shareable data
- * - Instance: GPU-uploaded, per-entity runtime state
+ * Usage:
+ *   // Load from file
+ *   Zenith_MeshAsset* pMesh = Zenith_AssetRegistry::Get().Get<Zenith_MeshAsset>("Assets/mesh.zmesh");
+ *
+ *   // Get GPU buffers for rendering (uploads if needed)
+ *   pMesh->EnsureGPUBuffers();
+ *   const Flux_VertexBuffer& xVB = pMesh->GetVertexBuffer();
  */
-class Zenith_MeshAsset
+class Zenith_MeshAsset : public Zenith_Asset
 {
 public:
 	static constexpr uint32_t BONES_PER_VERTEX_LIMIT = 4;
@@ -150,6 +159,31 @@ public:
 	void Reset();
 
 	//--------------------------------------------------------------------------
+	// Static Mesh Generation Utilities
+	//--------------------------------------------------------------------------
+
+	/**
+	 * Generate a fullscreen quad (for post-processing)
+	 * Creates a 2-triangle quad from -1 to 1 in X/Y, with Z=0
+	 * @param xMeshOut Output mesh asset (will be reset first)
+	 */
+	static void GenerateFullscreenQuad(Zenith_MeshAsset& xMeshOut);
+
+	/**
+	 * Generate a fullscreen quad with a transform applied
+	 * @param xMeshOut Output mesh asset (will be reset first)
+	 * @param xTransform Transform matrix to apply to positions
+	 */
+	static void GenerateFullscreenQuad(Zenith_MeshAsset& xMeshOut, const Zenith_Maths::Matrix4& xTransform);
+
+	/**
+	 * Generate a unit cube (from -0.5 to 0.5 on each axis)
+	 * Creates a 24-vertex cube with proper normals per face
+	 * @param xMeshOut Output mesh asset (will be reset first)
+	 */
+	static void GenerateUnitCube(Zenith_MeshAsset& xMeshOut);
+
+	//--------------------------------------------------------------------------
 	// Vertex Data (public for direct access during export/building)
 	//--------------------------------------------------------------------------
 
@@ -182,7 +216,56 @@ public:
 	// Material base color (from source file, if any)
 	Zenith_Maths::Vector4 m_xMaterialColor = Zenith_Maths::Vector4(1, 1, 1, 1);
 
+	//--------------------------------------------------------------------------
+	// GPU Resources
+	//--------------------------------------------------------------------------
+
+	/**
+	 * Ensure GPU buffers are created and uploaded
+	 * Call this before rendering. Does nothing if already uploaded.
+	 * @param bSkinned If true, creates skinned vertex format (104 bytes per vert)
+	 */
+	void EnsureGPUBuffers(bool bSkinned = false);
+
+	/**
+	 * Ensure GPU buffers with skeleton for bind pose transformation
+	 * @param pxSkeleton Skeleton for bind pose (can be null)
+	 */
+	void EnsureGPUBuffers(Zenith_SkeletonAsset* pxSkeleton);
+
+	/**
+	 * Release GPU resources (call before destroying or to free VRAM)
+	 */
+	void ReleaseGPU();
+
+	/**
+	 * Check if GPU buffers are ready
+	 */
+	bool HasGPUBuffers() const { return m_bGPUBuffersReady; }
+
+	/**
+	 * Get vertex buffer for rendering
+	 */
+	const Flux_VertexBuffer& GetVertexBuffer() const { return m_xVertexBuffer; }
+
+	/**
+	 * Get index buffer for rendering
+	 */
+	const Flux_IndexBuffer& GetIndexBuffer() const { return m_xIndexBuffer; }
+
+	/**
+	 * Get buffer layout
+	 */
+	const Flux_BufferLayout& GetBufferLayout() const { return m_xBufferLayout; }
+
 private:
 	uint32_t m_uNumVerts = 0;
 	uint32_t m_uNumIndices = 0;
+
+	// GPU resources
+	Flux_VertexBuffer m_xVertexBuffer;
+	Flux_IndexBuffer m_xIndexBuffer;
+	Flux_BufferLayout m_xBufferLayout;
+	bool m_bGPUBuffersReady = false;
+	bool m_bIsSkinned = false;
 };

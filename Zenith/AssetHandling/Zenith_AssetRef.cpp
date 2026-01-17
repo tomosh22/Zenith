@@ -1,40 +1,31 @@
 #include "Zenith.h"
 #include "AssetHandling/Zenith_AssetRef.h"
-#include "AssetHandling/Zenith_AssetHandler.h"
 #include "AssetHandling/Zenith_ModelAsset.h"
 #include "AssetHandling/Zenith_AsyncAssetLoader.h"
 #include "Flux/Flux.h"
-#include "Flux/Flux_MaterialAsset.h"
+#include "AssetHandling/Zenith_MaterialAsset.h"
+#include "AssetHandling/Zenith_AssetRegistry.h"
+#include "AssetHandling/Zenith_TextureAsset.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "Prefab/Zenith_Prefab.h"
 
 //--------------------------------------------------------------------------
-// Template specialization: Flux_Texture
+// Template specialization: Zenith_TextureAsset
 //--------------------------------------------------------------------------
 
 template<>
-Flux_Texture* Zenith_AssetRef<Flux_Texture>::LoadAsset(const std::string& strPath) const
+Zenith_TextureAsset* Zenith_AssetRef<Zenith_TextureAsset>::LoadAsset(const std::string& strPath) const
 {
 	if (strPath.empty())
 	{
 		return nullptr;
 	}
 
-	// Load texture data from file
-	Zenith_AssetHandler::TextureData xTexData = Zenith_AssetHandler::LoadTexture2DFromFile(strPath.c_str());
-	if (!xTexData.pData)
-	{
-		Zenith_Error(LOG_CATEGORY_ASSET, "Failed to load texture from %s", strPath.c_str());
-		return nullptr;
-	}
-
-	// Create GPU texture
-	Flux_Texture* pxTexture = Zenith_AssetHandler::AddTexture(xTexData);
-	xTexData.FreeAllocatedData();
-
+	// Load texture via registry
+	Zenith_TextureAsset* pxTexture = Zenith_AssetRegistry::Get().Get<Zenith_TextureAsset>(strPath);
 	if (!pxTexture)
 	{
-		Zenith_Error(LOG_CATEGORY_ASSET, "Failed to create texture from %s", strPath.c_str());
+		Zenith_Error(LOG_CATEGORY_ASSET, "Failed to load texture from %s", strPath.c_str());
 		return nullptr;
 	}
 
@@ -42,19 +33,19 @@ Flux_Texture* Zenith_AssetRef<Flux_Texture>::LoadAsset(const std::string& strPat
 }
 
 //--------------------------------------------------------------------------
-// Template specialization: Flux_MaterialAsset
+// Template specialization: Zenith_MaterialAsset
 //--------------------------------------------------------------------------
 
 template<>
-Flux_MaterialAsset* Zenith_AssetRef<Flux_MaterialAsset>::LoadAsset(const std::string& strPath) const
+Zenith_MaterialAsset* Zenith_AssetRef<Zenith_MaterialAsset>::LoadAsset(const std::string& strPath) const
 {
 	if (strPath.empty())
 	{
 		return nullptr;
 	}
 
-	// Materials are cached by the MaterialAsset system
-	Flux_MaterialAsset* pxMaterial = Flux_MaterialAsset::LoadFromFile(strPath);
+	// Materials are loaded and cached via the AssetRegistry
+	Zenith_MaterialAsset* pxMaterial = Zenith_AssetRegistry::Get().Get<Zenith_MaterialAsset>(strPath);
 	if (!pxMaterial)
 	{
 		Zenith_Error(LOG_CATEGORY_ASSET, "Failed to load material from %s", strPath.c_str());
@@ -249,7 +240,7 @@ namespace Zenith_AssetRefInternal
 
 // Texture
 template<>
-void Zenith_AssetRef<Flux_Texture>::LoadAsync(
+void Zenith_AssetRef<Zenith_TextureAsset>::LoadAsync(
 	AssetLoadCompleteFn pfnOnComplete,
 	void* pxUserData,
 	AssetLoadFailFn pfnOnFail)
@@ -258,7 +249,7 @@ void Zenith_AssetRef<Flux_Texture>::LoadAsync(
 }
 
 template<>
-bool Zenith_AssetRef<Flux_Texture>::IsReady() const
+bool Zenith_AssetRef<Zenith_TextureAsset>::IsReady() const
 {
 	if (m_pxCached.load(std::memory_order_acquire) != nullptr)
 		return true;
@@ -266,7 +257,7 @@ bool Zenith_AssetRef<Flux_Texture>::IsReady() const
 }
 
 template<>
-AssetLoadState Zenith_AssetRef<Flux_Texture>::GetLoadState() const
+AssetLoadState Zenith_AssetRef<Zenith_TextureAsset>::GetLoadState() const
 {
 	if (m_pxCached.load(std::memory_order_acquire) != nullptr)
 		return AssetLoadState::LOADED;
@@ -275,16 +266,16 @@ AssetLoadState Zenith_AssetRef<Flux_Texture>::GetLoadState() const
 
 // Material
 template<>
-void Zenith_AssetRef<Flux_MaterialAsset>::LoadAsync(
+void Zenith_AssetRef<Zenith_MaterialAsset>::LoadAsync(
 	AssetLoadCompleteFn pfnOnComplete,
 	void* pxUserData,
 	AssetLoadFailFn pfnOnFail)
 {
-	Zenith_AsyncAssetLoader::LoadAsync<Flux_MaterialAsset>(m_xGUID, pfnOnComplete, pxUserData, pfnOnFail);
+	Zenith_AsyncAssetLoader::LoadAsync<Zenith_MaterialAsset>(m_xGUID, pfnOnComplete, pxUserData, pfnOnFail);
 }
 
 template<>
-bool Zenith_AssetRef<Flux_MaterialAsset>::IsReady() const
+bool Zenith_AssetRef<Zenith_MaterialAsset>::IsReady() const
 {
 	if (m_pxCached.load(std::memory_order_acquire) != nullptr)
 		return true;
@@ -292,7 +283,7 @@ bool Zenith_AssetRef<Flux_MaterialAsset>::IsReady() const
 }
 
 template<>
-AssetLoadState Zenith_AssetRef<Flux_MaterialAsset>::GetLoadState() const
+AssetLoadState Zenith_AssetRef<Zenith_MaterialAsset>::GetLoadState() const
 {
 	if (m_pxCached.load(std::memory_order_acquire) != nullptr)
 		return AssetLoadState::LOADED;

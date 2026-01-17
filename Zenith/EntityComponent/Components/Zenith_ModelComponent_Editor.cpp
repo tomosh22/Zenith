@@ -8,11 +8,13 @@
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
 #include "Editor/Zenith_Editor.h"
 #include "Editor/Zenith_Editor_MaterialUI.h"
-#include "AssetHandling/Zenith_AssetHandler.h"
+#include "AssetHandling/Zenith_AssetRegistry.h"
+#include "AssetHandling/Zenith_TextureAsset.h"
 #include "Flux/MeshAnimation/Flux_AnimationClip.h"
 #include "Flux/MeshAnimation/Flux_AnimationController.h"
 #include "Flux/Flux_ImGuiIntegration.h"
 #include "Flux/Flux_Graphics.h"
+#include "Flux/Flux_ModelInstance.h"
 #include <filesystem>
 #include <unordered_map>
 
@@ -37,69 +39,65 @@
 void Zenith_ModelComponent::AssignTextureToSlot(const char* szFilePath, uint32_t uMeshIdx, Zenith_Editor_MaterialUI::TextureSlotType eSlot)
 {
 	using namespace Zenith_Editor_MaterialUI;
-	Zenith_AssetHandler::TextureData xTexData =
-		Zenith_AssetHandler::LoadTexture2DFromFile(szFilePath);
-	Flux_Texture* pxTexture = Zenith_AssetHandler::AddTexture(xTexData);
-	xTexData.FreeAllocatedData();
 
+	// Validate texture can be loaded via registry
+	Zenith_TextureAsset* pxTexture = Zenith_AssetRegistry::Get().Get<Zenith_TextureAsset>(szFilePath);
 	if (!pxTexture)
 	{
 		Zenith_Error(LOG_CATEGORY_MESH, "Failed to load texture: %s", szFilePath);
 		return;
 	}
 
-	pxTexture->m_strSourcePath = szFilePath;
 	Zenith_Log(LOG_CATEGORY_MESH, "Loaded texture from: %s", szFilePath);
 
-	Flux_MaterialAsset* pxOldMaterial = m_xMeshEntries.Get(uMeshIdx).m_pxMaterial;
+	Zenith_MaterialAsset* pxOldMaterial = m_xMeshEntries.Get(uMeshIdx).m_pxMaterial;
 
-	Flux_MaterialAsset* pxNewMaterial = Flux_MaterialAsset::Create("Material_" + std::to_string(uMeshIdx));
+	Zenith_MaterialAsset* pxNewMaterial = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
 	if (!pxNewMaterial)
 	{
 		Zenith_Error(LOG_CATEGORY_MATERIAL, "Failed to create new material instance");
 		return;
 	}
+	pxNewMaterial->SetName("Material_" + std::to_string(uMeshIdx));
 
 	Zenith_Log(LOG_CATEGORY_MATERIAL, "Created new material instance");
 
 	if (pxOldMaterial)
 	{
-		if (!pxOldMaterial->GetDiffuseTextureRef().GetPath().empty())
-			pxNewMaterial->SetDiffuseTextureRef(pxOldMaterial->GetDiffuseTextureRef());
-		if (!pxOldMaterial->GetNormalTextureRef().GetPath().empty())
-			pxNewMaterial->SetNormalTextureRef(pxOldMaterial->GetNormalTextureRef());
-		if (!pxOldMaterial->GetRoughnessMetallicTextureRef().GetPath().empty())
-			pxNewMaterial->SetRoughnessMetallicTextureRef(pxOldMaterial->GetRoughnessMetallicTextureRef());
-		if (!pxOldMaterial->GetOcclusionTextureRef().GetPath().empty())
-			pxNewMaterial->SetOcclusionTextureRef(pxOldMaterial->GetOcclusionTextureRef());
-		if (!pxOldMaterial->GetEmissiveTextureRef().GetPath().empty())
-			pxNewMaterial->SetEmissiveTextureRef(pxOldMaterial->GetEmissiveTextureRef());
+		if (!pxOldMaterial->GetDiffuseTexturePath().empty())
+			pxNewMaterial->SetDiffuseTexturePath(pxOldMaterial->GetDiffuseTexturePath());
+		if (!pxOldMaterial->GetNormalTexturePath().empty())
+			pxNewMaterial->SetNormalTexturePath(pxOldMaterial->GetNormalTexturePath());
+		if (!pxOldMaterial->GetRoughnessMetallicTexturePath().empty())
+			pxNewMaterial->SetRoughnessMetallicTexturePath(pxOldMaterial->GetRoughnessMetallicTexturePath());
+		if (!pxOldMaterial->GetOcclusionTexturePath().empty())
+			pxNewMaterial->SetOcclusionTexturePath(pxOldMaterial->GetOcclusionTexturePath());
+		if (!pxOldMaterial->GetEmissiveTexturePath().empty())
+			pxNewMaterial->SetEmissiveTexturePath(pxOldMaterial->GetEmissiveTexturePath());
 
 		pxNewMaterial->SetBaseColor(pxOldMaterial->GetBaseColor());
 	}
 
-	TextureRef xRef;
-	xRef.SetFromPath(szFilePath);
 	switch (eSlot)
 	{
 	case TEXTURE_SLOT_DIFFUSE:
-		pxNewMaterial->SetDiffuseTextureRef(xRef);
+		pxNewMaterial->SetDiffuseTexturePath(szFilePath);
 		Zenith_Log(LOG_CATEGORY_MATERIAL, "Set diffuse texture");
 		break;
 	case TEXTURE_SLOT_NORMAL:
-		pxNewMaterial->SetNormalTextureRef(xRef);
+		pxNewMaterial->SetNormalTexturePath(szFilePath);
 		Zenith_Log(LOG_CATEGORY_MATERIAL, "Set normal texture");
 		break;
 	case TEXTURE_SLOT_ROUGHNESS_METALLIC:
-		pxNewMaterial->SetRoughnessMetallicTextureRef(xRef);
+		pxNewMaterial->SetRoughnessMetallicTexturePath(szFilePath);
 		Zenith_Log(LOG_CATEGORY_MATERIAL, "Set roughness/metallic texture");
 		break;
 	case TEXTURE_SLOT_OCCLUSION:
-		pxNewMaterial->SetOcclusionTextureRef(xRef);
+		pxNewMaterial->SetOcclusionTexturePath(szFilePath);
 		Zenith_Log(LOG_CATEGORY_MATERIAL, "Set occlusion texture");
 		break;
 	case TEXTURE_SLOT_EMISSIVE:
-		pxNewMaterial->SetEmissiveTextureRef(xRef);
+		pxNewMaterial->SetEmissiveTexturePath(szFilePath);
 		Zenith_Log(LOG_CATEGORY_MATERIAL, "Set emissive texture");
 		break;
 	}
@@ -468,7 +466,7 @@ void Zenith_ModelComponent::RenderPropertiesPanel()
 			{
 				ImGui::PushID(uMeshIdx);
 
-				Flux_MaterialAsset* pxMaterial = m_pxModelInstance->GetMaterial(uMeshIdx);
+				Zenith_MaterialAsset* pxMaterial = m_pxModelInstance->GetMaterial(uMeshIdx);
 				if (pxMaterial)
 				{
 					// Material header with name and edit button
@@ -522,7 +520,7 @@ void Zenith_ModelComponent::RenderPropertiesPanel()
 		{
 			ImGui::PushID(uMeshIdx + 1000);  // Offset ID to avoid conflict with model instance
 
-			Flux_MaterialAsset* pxMaterial = m_xMeshEntries.Get(uMeshIdx).m_pxMaterial;
+			Zenith_MaterialAsset* pxMaterial = m_xMeshEntries.Get(uMeshIdx).m_pxMaterial;
 
 			bool bExpanded = ImGui::TreeNode("MeshEntry", "Mesh %u: %s", uMeshIdx,
 				pxMaterial ? pxMaterial->GetName().c_str() : "(no material)");

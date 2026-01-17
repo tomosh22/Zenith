@@ -10,8 +10,6 @@
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Profiling/Zenith_Profiling.h"
 
-#include "AssetHandling/Zenith_AssetHandler.h"
-
 #include "Zenith_OS_Include.h" //#TO for Zenith_Window
 #ifdef ZENITH_WINDOWS
 #include "Zenith_Windows_Window.h"

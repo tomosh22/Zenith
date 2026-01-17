@@ -4,9 +4,9 @@
 class Zenith_ModelAsset;
 class Zenith_MeshAsset;
 class Zenith_SkeletonAsset;
+class Zenith_MaterialAsset;
 class Flux_MeshInstance;
 class Flux_SkeletonInstance;
-class Flux_MaterialAsset;
 
 /**
  * Flux_ModelInstance - A complete renderable model combining meshes, materials, and optional skeleton
@@ -29,7 +29,7 @@ class Flux_MaterialAsset;
  *   for (uint32_t u = 0; u < pxInstance->GetNumMeshes(); u++)
  *   {
  *       Flux_MeshInstance* pxMesh = pxInstance->GetMeshInstance(u);
- *       Flux_MaterialAsset* pxMat = pxInstance->GetMaterial(u);
+ *       Zenith_MaterialAsset* pxMat = pxInstance->GetMaterial(u);
  *       // Submit draw call...
  *   }
  *
@@ -115,7 +115,7 @@ public:
 	 * @param uIndex Material index (0 to GetNumMaterials()-1)
 	 * @return Material asset, or nullptr if index out of range
 	 */
-	Flux_MaterialAsset* GetMaterial(uint32_t uIndex) const;
+	Zenith_MaterialAsset* GetMaterial(uint32_t uIndex) const;
 
 	/**
 	 * Override material at the specified index
@@ -123,7 +123,7 @@ public:
 	 * @param uIndex Material index (0 to GetNumMaterials()-1)
 	 * @param pxMaterial Material to set (not owned by model instance)
 	 */
-	void SetMaterial(uint32_t uIndex, Flux_MaterialAsset* pxMaterial);
+	void SetMaterial(uint32_t uIndex, Zenith_MaterialAsset* pxMaterial);
 
 	/**
 	 * Check if this model has a skeleton (is animated)
@@ -159,7 +159,7 @@ private:
 	Zenith_Vector<Flux_MeshInstance*> m_xSkinnedMeshInstances;
 
 	// Materials for each mesh (owned by material cache, not deleted by this instance)
-	Zenith_Vector<Flux_MaterialAsset*> m_xMaterials;
+	Zenith_Vector<Zenith_MaterialAsset*> m_xMaterials;
 
 	// Skeleton instance (owned by this instance)
 	Flux_SkeletonInstance* m_pxSkeleton = nullptr;

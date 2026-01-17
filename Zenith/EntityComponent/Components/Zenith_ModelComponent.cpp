@@ -9,6 +9,7 @@
 #include "Flux/MeshGeometry/Flux_MeshInstance.h"
 #include "Flux/MeshAnimation/Flux_SkeletonInstance.h"
 #include "AssetHandling/Zenith_ModelAsset.h"
+#include "AssetHandling/Zenith_AssetRegistry.h"
 #include "Core/Zenith_Core.h"
 #include <filesystem>
 
@@ -214,7 +215,7 @@ Flux_MeshInstance* Zenith_ModelComponent::GetMeshInstance(uint32_t uIndex) const
 	return nullptr;
 }
 
-Flux_MaterialAsset* Zenith_ModelComponent::GetMaterial(uint32_t uIndex) const
+Zenith_MaterialAsset* Zenith_ModelComponent::GetMaterial(uint32_t uIndex) const
 {
 	if (m_pxModelInstance)
 	{
@@ -437,17 +438,17 @@ void Zenith_ModelComponent::WriteToDataStream(Zenith_DataStream& xStream) const
 
 		for (uint32_t u = 0; u < uNumMaterials; u++)
 		{
-			Flux_MaterialAsset* pxMaterial = m_pxModelInstance->GetMaterial(u);
+			Zenith_MaterialAsset* pxMaterial = m_pxModelInstance->GetMaterial(u);
 			if (pxMaterial)
 			{
 				pxMaterial->WriteToDataStream(xStream);
 			}
 			else
 			{
-				// Write empty material placeholder
-				Flux_MaterialAsset* pxEmptyMat = Flux_MaterialAsset::Create("Empty");
-				pxEmptyMat->WriteToDataStream(xStream);
-				delete pxEmptyMat;
+				// Write empty material placeholder - create temporary material for serialization
+				Zenith_MaterialAsset xEmptyMat;
+				xEmptyMat.SetName("Empty");
+				xEmptyMat.WriteToDataStream(xStream);
 			}
 		}
 	}
@@ -472,9 +473,10 @@ void Zenith_ModelComponent::WriteToDataStream(Zenith_DataStream& xStream) const
 			}
 			else
 			{
-				Flux_MaterialAsset* pxEmptyMat = Flux_MaterialAsset::Create("Empty");
-				pxEmptyMat->WriteToDataStream(xStream);
-				delete pxEmptyMat;
+				// Write empty material placeholder - create temporary material for serialization
+				Zenith_MaterialAsset xEmptyMat;
+				xEmptyMat.SetName("Empty");
+				xEmptyMat.WriteToDataStream(xStream);
 			}
 
 			// Serialize animation path if animation exists
@@ -536,13 +538,19 @@ void Zenith_ModelComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 
 			for (uint32_t u = 0; u < uNumMaterials; u++)
 			{
-				Flux_MaterialAsset* pxMaterial = Flux_MaterialAsset::Create("LoadedMaterial");
-				pxMaterial->ReadFromDataStream(xStream);
-
-				// Apply material to model instance if it was loaded successfully
-				if (m_pxModelInstance && u < m_pxModelInstance->GetNumMaterials())
+				// Create material through registry for proper lifetime management
+				Zenith_MaterialAsset* pxMaterial = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
+				if (pxMaterial)
 				{
-					m_pxModelInstance->SetMaterial(u, pxMaterial);
+					pxMaterial->SetName("LoadedMaterial");
+					pxMaterial->ReadFromDataStream(xStream);
+					pxMaterial->AddRef();  // Add reference for this component's usage
+
+					// Apply material to model instance if it was loaded successfully
+					if (m_pxModelInstance && u < m_pxModelInstance->GetNumMaterials())
+					{
+						m_pxModelInstance->SetMaterial(u, pxMaterial);
+					}
 				}
 			}
 		}
@@ -560,26 +568,33 @@ void Zenith_ModelComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 			std::string strMeshPath;
 			xStream >> strMeshPath;
 
-			// Read material data
-			Flux_MaterialAsset* pxMaterial = Flux_MaterialAsset::Create("Material");
-			pxMaterial->ReadFromDataStream(xStream);
-
-			// Read animation path (for future use)
-			std::string strAnimPath;
-			xStream >> strAnimPath;
-
-			// If mesh path is set, load the mesh from file
-			if (!strMeshPath.empty() && std::filesystem::exists(strMeshPath))
+			// Read material data through registry for proper lifetime management
+			Zenith_MaterialAsset* pxMaterial = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
+			if (pxMaterial)
 			{
-				Flux_MeshGeometry* pxGeometry = new Flux_MeshGeometry();
-				Flux_MeshGeometry::LoadFromFile(strMeshPath.c_str(), *pxGeometry);
-				pxGeometry->m_strSourcePath = strMeshPath;  // Preserve path for future serialization
-				m_xMeshEntries.PushBack({ pxGeometry, pxMaterial });
+				pxMaterial->SetName("Material");
+				pxMaterial->ReadFromDataStream(xStream);
+
+				// Read animation path (for future use)
+				std::string strAnimPath;
+				xStream >> strAnimPath;
+
+				// If mesh path is set, load the mesh from file
+				if (!strMeshPath.empty() && std::filesystem::exists(strMeshPath))
+				{
+					pxMaterial->AddRef();  // Add reference for this component's usage
+					Flux_MeshGeometry* pxGeometry = new Flux_MeshGeometry();
+					Flux_MeshGeometry::LoadFromFile(strMeshPath.c_str(), *pxGeometry);
+					pxGeometry->m_strSourcePath = strMeshPath;  // Preserve path for future serialization
+					m_xMeshEntries.PushBack({ pxGeometry, pxMaterial });
+				}
+				// else: material stays in registry with refcount 0, will be cleaned up later
 			}
 			else
 			{
-				// No valid mesh path - material is orphaned, delete it
-				delete pxMaterial;
+				// Skip animation path read
+				std::string strAnimPath;
+				xStream >> strAnimPath;
 			}
 		}
 	}

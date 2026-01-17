@@ -2,7 +2,8 @@
 #include "Core/Zenith_Core.h"
 #include "Zenith_OS_Include.h"
 #include "Flux/Flux.h"
-#include "AssetHandling/Zenith_AssetHandler.h"
+#include "AssetHandling/Zenith_AssetRegistry.h"
+#include "AssetHandling/Zenith_TextureAsset.h"
 #include "FileAccess/Zenith_FileAccess.h"
 #include "Flux/Flux_Graphics.h"
 #include "Physics/Zenith_Physics.h"
@@ -46,26 +47,32 @@ static void InitialiseEngine()
 	Zenith_Physics::Initialise();
 
 	// Load engine assets
+	Zenith_AssetRegistry::Initialize();
+	Zenith_AssetRegistry::InitializeGPUDependentAssets();  // Must be after Flux::EarlyInitialise()
+
 	{
 		Flux_MemoryManager::BeginFrame();
 		std::string strGameAssets = Project_GetGameAssetsDirectory();
-		Zenith_AssetHandler::TextureData xCubemapTexData = Zenith_AssetHandler::LoadTextureCubeFromFiles(
-			(strGameAssets + "Textures/Cubemap/px" ZENITH_TEXTURE_EXT).c_str(),
-			(strGameAssets + "Textures/Cubemap/nx" ZENITH_TEXTURE_EXT).c_str(),
-			(strGameAssets + "Textures/Cubemap/py" ZENITH_TEXTURE_EXT).c_str(),
-			(strGameAssets + "Textures/Cubemap/ny" ZENITH_TEXTURE_EXT).c_str(),
-			(strGameAssets + "Textures/Cubemap/pz" ZENITH_TEXTURE_EXT).c_str(),
-			(strGameAssets + "Textures/Cubemap/nz" ZENITH_TEXTURE_EXT).c_str()
-		);
-		Flux_Graphics::s_pxCubemapTexture = Zenith_AssetHandler::AddTexture(xCubemapTexData);
-		xCubemapTexData.FreeAllocatedData();
 
-		Zenith_AssetHandler::TextureData xWaterNormalTexData = Zenith_AssetHandler::LoadTexture2DFromFile((strGameAssets + "Textures/water/normal" ZENITH_TEXTURE_EXT).c_str());
-		Flux_Graphics::s_pxWaterNormalTexture = Zenith_AssetHandler::AddTexture(xWaterNormalTexData);
-		xWaterNormalTexData.FreeAllocatedData();
+		// Load cubemap texture
+		Flux_Graphics::s_pxCubemapTexture = Zenith_AssetRegistry::Get().Create<Zenith_TextureAsset>();
+		if (Flux_Graphics::s_pxCubemapTexture)
+		{
+			Flux_Graphics::s_pxCubemapTexture->LoadCubemapFromFiles(
+				(strGameAssets + "Textures/Cubemap/px" ZENITH_TEXTURE_EXT).c_str(),
+				(strGameAssets + "Textures/Cubemap/nx" ZENITH_TEXTURE_EXT).c_str(),
+				(strGameAssets + "Textures/Cubemap/py" ZENITH_TEXTURE_EXT).c_str(),
+				(strGameAssets + "Textures/Cubemap/ny" ZENITH_TEXTURE_EXT).c_str(),
+				(strGameAssets + "Textures/Cubemap/pz" ZENITH_TEXTURE_EXT).c_str(),
+				(strGameAssets + "Textures/Cubemap/nz" ZENITH_TEXTURE_EXT).c_str()
+			);
+		}
+
+		// Load water normal texture
+		Flux_Graphics::s_pxWaterNormalTexture = Zenith_AssetRegistry::Get().Get<Zenith_TextureAsset>(strGameAssets + "Textures/water/normal" ZENITH_TEXTURE_EXT);
+
 		Flux_MemoryManager::EndFrame(false);
 	}
-
 	Flux::LateInitialise();
 
 	// Load game
@@ -232,6 +239,6 @@ void android_main(android_app* pxApp)
 	if (s_bEngineInitialised)
 	{
 		Zenith_Core::WaitForAllRenderTasks();
-		// Additional cleanup would go here
+		Zenith_AssetRegistry::Shutdown();
 	}
 }

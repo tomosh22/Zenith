@@ -1,7 +1,7 @@
 #pragma once
 
 #include "Flux/Flux_Buffers.h"
-#include "Flux/Flux_MaterialAsset.h"
+#include "AssetHandling/Zenith_MaterialAsset.h"
 #include "Flux/MeshGeometry/Flux_MeshInstance.h"
 #include "Maths/Zenith_Maths.h"
 #include <vector>
@@ -52,7 +52,7 @@ public:
 	// Configuration (call before adding instances)
 	//-------------------------------------------------------------------------
 	void SetMesh(Flux_MeshInstance* pxMesh);
-	void SetMaterial(Flux_MaterialAsset* pxMaterial);
+	void SetMaterial(Zenith_MaterialAsset* pxMaterial);
 	void SetAnimationTexture(Flux_AnimationTexture* pxAnimTex);
 	void SetBounds(const Flux_InstanceBounds& xBounds);
 
@@ -110,7 +110,7 @@ public:
 	bool IsEmpty() const { return m_uInstanceCount == 0; }
 
 	Flux_MeshInstance* GetMesh() const { return m_pxMesh; }
-	Flux_MaterialAsset* GetMaterial() const { return m_pxMaterial; }
+	Zenith_MaterialAsset* GetMaterial() const { return m_pxMaterial; }
 	Flux_AnimationTexture* GetAnimationTexture() const { return m_pxAnimationTexture; }
 	const Flux_InstanceBounds& GetBounds() const { return m_xBounds; }
 
@@ -168,7 +168,7 @@ private:
 	// References (not owned)
 	//-------------------------------------------------------------------------
 	Flux_MeshInstance* m_pxMesh = nullptr;
-	Flux_MaterialAsset* m_pxMaterial = nullptr;
+	Zenith_MaterialAsset* m_pxMaterial = nullptr;
 	Flux_AnimationTexture* m_pxAnimationTexture = nullptr;
 	Flux_InstanceBounds m_xBounds = {};
 };

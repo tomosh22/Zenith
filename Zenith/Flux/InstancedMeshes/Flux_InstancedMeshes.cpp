@@ -453,7 +453,7 @@ void Flux_InstancedMeshes::RenderToGBuffer(void*)
 		g_xGBufferCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&pxMesh->GetIndexBuffer());
 
 		// Get material (fall back to blank if none)
-		Flux_MaterialAsset* pxMaterial = pxGroup->GetMaterial();
+		Zenith_MaterialAsset* pxMaterial = pxGroup->GetMaterial();
 		if (!pxMaterial)
 		{
 			pxMaterial = Flux_Graphics::s_pxBlankMaterial;
@@ -508,7 +508,7 @@ void Flux_InstancedMeshes::RenderToGBuffer(void*)
 		}
 		else
 		{
-			xBinder.BindSRV(s_xAnimationTexBinding, &Flux_Graphics::s_xWhiteBlankTexture2D.m_xSRV);
+			xBinder.BindSRV(s_xAnimationTexBinding, &Flux_Graphics::s_pxWhiteTexture->m_xSRV);
 		}
 
 		// Bind instance buffers

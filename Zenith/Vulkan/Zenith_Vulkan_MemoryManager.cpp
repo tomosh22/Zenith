@@ -690,6 +690,7 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateTextureVRAM(const void* pData
 				xStagingAlloc.m_xTextureMetadata.m_uDepth = xInfoCopy.m_uDepth;
 				xStagingAlloc.m_xTextureMetadata.m_uNumMips = xInfoCopy.m_uNumMips;
 				xStagingAlloc.m_xTextureMetadata.m_uNumLayers = xInfoCopy.m_uNumLayers;
+				xStagingAlloc.m_xTextureMetadata.m_eFormat = xInfoCopy.m_eFormat;
 				xStagingAlloc.m_uSize = ulDataSize;
 				xStagingAlloc.m_uOffset = s_uNextFreeStagingOffset;
 				s_xStagingAllocations.push_back(xStagingAlloc);
@@ -1165,56 +1166,67 @@ void Zenith_Vulkan_MemoryManager::FlushStagingBuffer()
 
 			s_xCommandBuffer.GetCurrentCmdBuffer().copyBufferToImage(s_xStagingBuffer, xImage, vk::ImageLayout::eTransferDstOptimal, 1, &region);
 
+			// Compressed formats (BC1, BC3, BC5, BC7) cannot use blit for mipmap generation
+			// They must have pre-generated mipmaps in the source data
+			const bool bIsCompressed = IsCompressedFormat(xMeta.m_eFormat);
+
 			for (uint32_t uLayer = 0; uLayer < xMeta.m_uNumLayers; uLayer++)
 			{
 				s_xCommandBuffer.ImageTransitionBarrier(xImage, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eTransferSrcOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, 0, uLayer);
 
-				for (uint32_t uMip = 1; uMip < xMeta.m_uNumMips; uMip++)
+				// Skip blit-based mipmap generation for compressed formats
+				if (!bIsCompressed)
 				{
-					// Blit mipmap generation using metadata
-					std::array<vk::Offset3D, 2> axSrcOffsets;
-					axSrcOffsets.at(0).setX(0);
-					axSrcOffsets.at(0).setY(0);
-					axSrcOffsets.at(0).setZ(0);
-					axSrcOffsets.at(1).setX(xMeta.m_uWidth >> (uMip - 1));
-					axSrcOffsets.at(1).setY(xMeta.m_uHeight >> (uMip - 1));
-					axSrcOffsets.at(1).setZ(1);
+					for (uint32_t uMip = 1; uMip < xMeta.m_uNumMips; uMip++)
+					{
+						// Blit mipmap generation using metadata
+						std::array<vk::Offset3D, 2> axSrcOffsets;
+						axSrcOffsets.at(0).setX(0);
+						axSrcOffsets.at(0).setY(0);
+						axSrcOffsets.at(0).setZ(0);
+						axSrcOffsets.at(1).setX(xMeta.m_uWidth >> (uMip - 1));
+						axSrcOffsets.at(1).setY(xMeta.m_uHeight >> (uMip - 1));
+						axSrcOffsets.at(1).setZ(1);
 
-					vk::ImageSubresourceLayers xSrcSubresource = vk::ImageSubresourceLayers()
-						.setAspectMask(vk::ImageAspectFlagBits::eColor)
-						.setMipLevel(uMip - 1)
-						.setBaseArrayLayer(uLayer)
-						.setLayerCount(1);
+						vk::ImageSubresourceLayers xSrcSubresource = vk::ImageSubresourceLayers()
+							.setAspectMask(vk::ImageAspectFlagBits::eColor)
+							.setMipLevel(uMip - 1)
+							.setBaseArrayLayer(uLayer)
+							.setLayerCount(1);
 
-					std::array<vk::Offset3D, 2> axDstOffsets;
-					axDstOffsets.at(0).setX(0);
-					axDstOffsets.at(0).setY(0);
-					axDstOffsets.at(0).setZ(0);
-					axDstOffsets.at(1).setX(xMeta.m_uWidth >> uMip);
-					axDstOffsets.at(1).setY(xMeta.m_uHeight >> uMip);
-					axDstOffsets.at(1).setZ(1);
+						std::array<vk::Offset3D, 2> axDstOffsets;
+						axDstOffsets.at(0).setX(0);
+						axDstOffsets.at(0).setY(0);
+						axDstOffsets.at(0).setZ(0);
+						axDstOffsets.at(1).setX(xMeta.m_uWidth >> uMip);
+						axDstOffsets.at(1).setY(xMeta.m_uHeight >> uMip);
+						axDstOffsets.at(1).setZ(1);
 
-					vk::ImageSubresourceLayers xDstSubresource = vk::ImageSubresourceLayers()
-						.setAspectMask(vk::ImageAspectFlagBits::eColor)
-						.setMipLevel(uMip)
-						.setBaseArrayLayer(uLayer)
-						.setLayerCount(1);
+						vk::ImageSubresourceLayers xDstSubresource = vk::ImageSubresourceLayers()
+							.setAspectMask(vk::ImageAspectFlagBits::eColor)
+							.setMipLevel(uMip)
+							.setBaseArrayLayer(uLayer)
+							.setLayerCount(1);
 
-					vk::ImageBlit xBlit = vk::ImageBlit()
-						.setSrcOffsets(axSrcOffsets)
-						.setSrcSubresource(xSrcSubresource)
-						.setDstOffsets(axDstOffsets)
-						.setDstSubresource(xDstSubresource);
+						vk::ImageBlit xBlit = vk::ImageBlit()
+							.setSrcOffsets(axSrcOffsets)
+							.setSrcSubresource(xSrcSubresource)
+							.setDstOffsets(axDstOffsets)
+							.setDstSubresource(xDstSubresource);
 
-					s_xCommandBuffer.GetCurrentCmdBuffer().blitImage(xImage, vk::ImageLayout::eTransferSrcOptimal, xImage, vk::ImageLayout::eTransferDstOptimal, 1, &xBlit, vk::Filter::eLinear);
-					s_xCommandBuffer.ImageTransitionBarrier(xImage, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eTransferSrcOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, uMip, uLayer);
+						s_xCommandBuffer.GetCurrentCmdBuffer().blitImage(xImage, vk::ImageLayout::eTransferSrcOptimal, xImage, vk::ImageLayout::eTransferDstOptimal, 1, &xBlit, vk::Filter::eLinear);
+						s_xCommandBuffer.ImageTransitionBarrier(xImage, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eTransferSrcOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, uMip, uLayer);
+					}
 				}
 
 				s_xCommandBuffer.ImageTransitionBarrier(xImage, vk::ImageLayout::eTransferSrcOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, 0, uLayer);
 
 				for (uint32_t uMip = 1; uMip < xMeta.m_uNumMips; uMip++)
 				{
-					s_xCommandBuffer.ImageTransitionBarrier(xImage, vk::ImageLayout::eTransferSrcOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, uMip, uLayer);
+					// For compressed textures, mip levels 1+ are still in TRANSFER_DST_OPTIMAL (no blit was done)
+					// For non-compressed, they were transitioned to TRANSFER_SRC_OPTIMAL after each blit
+					vk::ImageLayout eSrcLayout = bIsCompressed ? vk::ImageLayout::eTransferDstOptimal : vk::ImageLayout::eTransferSrcOptimal;
+					s_xCommandBuffer.ImageTransitionBarrier(xImage, eSrcLayout, vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, uMip, uLayer);
 				}
 			}
 		}

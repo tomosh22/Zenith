@@ -3,10 +3,11 @@
 #ifdef ZENITH_TOOLS
 
 #include "Zenith_EditorPanel_ContentBrowser.h"
-#include "Flux/Flux_MaterialAsset.h"
+#include "AssetHandling/Zenith_MaterialAsset.h"
+#include "AssetHandling/Zenith_AssetRegistry.h"
+#include "AssetHandling/Zenith_TextureAsset.h"
 #include "FileAccess/Zenith_FileAccess.h"
 #include "AssetHandling/Zenith_ModelAsset.h"
-#include "AssetHandling/Zenith_AssetHandler.h"
 #include "Flux/MeshAnimation/Flux_AnimationClip.h"
 #include "Flux/Flux_ImGuiIntegration.h"
 #include "Flux/Flux_Graphics.h"
@@ -27,7 +28,7 @@ namespace
 {
 	struct TextureThumbnailEntry
 	{
-		Flux_Texture* m_pxTexture = nullptr;
+		Zenith_TextureAsset* m_pxTexture = nullptr;
 		Flux_ImGuiTextureHandle m_xImGuiHandle;
 		bool m_bLoadAttempted = false;
 	};
@@ -66,23 +67,17 @@ static Flux_ImGuiTextureHandle GetTextureThumbnail(const std::string& strPath)
 		return Flux_ImGuiTextureHandle();
 	}
 
-	// Try to load the texture
+	// Try to load the texture via registry
 	TextureThumbnailEntry xEntry;
 	xEntry.m_bLoadAttempted = true;
 
-	Zenith_AssetHandler::TextureData xTexData = Zenith_AssetHandler::LoadTexture2DFromFile(strPath.c_str());
-	if (xTexData.pData)
+	xEntry.m_pxTexture = Zenith_AssetRegistry::Get().Get<Zenith_TextureAsset>(strPath);
+	if (xEntry.m_pxTexture && xEntry.m_pxTexture->m_xSRV.m_xImageViewHandle.IsValid())
 	{
-		xEntry.m_pxTexture = Zenith_AssetHandler::AddTexture(xTexData);
-		xTexData.FreeAllocatedData();
-
-		if (xEntry.m_pxTexture && xEntry.m_pxTexture->m_xSRV.m_xImageViewHandle.IsValid())
-		{
-			xEntry.m_xImGuiHandle = Flux_ImGuiIntegration::RegisterTexture(
-				xEntry.m_pxTexture->m_xSRV,
-				Flux_Graphics::s_xClampSampler
-			);
-		}
+		xEntry.m_xImGuiHandle = Flux_ImGuiIntegration::RegisterTexture(
+			xEntry.m_pxTexture->m_xSRV,
+			Flux_Graphics::s_xClampSampler
+		);
 	}
 
 	s_xThumbnailCache[strPath] = xEntry;
@@ -208,9 +203,10 @@ void Zenith_EditorPanelContentBrowser::Render(ContentBrowserState& xState)
 				{
 					strNewMaterial = xState.m_strCurrentDirectory + "/NewMaterial" + std::to_string(iCounter++) + ZENITH_MATERIAL_EXT;
 				}
-				Flux_MaterialAsset* pxNewMat = Flux_MaterialAsset::Create("NewMaterial");
+				Zenith_MaterialAsset* pxNewMat = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
 				if (pxNewMat)
 				{
+					pxNewMat->SetName("NewMaterial");
 					pxNewMat->SaveToFile(strNewMaterial);
 					xState.m_bDirectoryNeedsRefresh = true;
 				}
@@ -339,7 +335,7 @@ void Zenith_EditorPanelContentBrowser::Render(ContentBrowserState& xState)
 				{
 					if (xEntry.m_strExtension == ZENITH_MATERIAL_EXT)
 					{
-						Flux_MaterialAsset* pMaterial = Flux_MaterialAsset::LoadFromFile(xEntry.m_strFullPath);
+						Zenith_MaterialAsset* pMaterial = Zenith_AssetRegistry::Get().Get<Zenith_MaterialAsset>(xEntry.m_strFullPath);
 						if (pMaterial)
 						{
 							Zenith_Editor::SelectMaterial(pMaterial);

@@ -28,8 +28,8 @@
 #include "EntityComponent/Zenith_Scene.h"
 #include "Input/Zenith_Input.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
-#include "Flux/Flux_MaterialAsset.h"
-#include "AssetHandling/Zenith_AssetHandler.h"
+#include "AssetHandling/Zenith_MaterialAsset.h"
+#include "AssetHandling/Zenith_AssetRegistry.h"
 
 // Include extracted modules
 #include "Sokoban_Input.h"
@@ -59,12 +59,12 @@ class Flux_ParticleEmitterConfig;
 namespace Sokoban
 {
 	extern Flux_MeshGeometry* g_pxCubeGeometry;
-	extern Flux_MaterialAsset* g_pxFloorMaterial;
-	extern Flux_MaterialAsset* g_pxWallMaterial;
-	extern Flux_MaterialAsset* g_pxBoxMaterial;
-	extern Flux_MaterialAsset* g_pxBoxOnTargetMaterial;
-	extern Flux_MaterialAsset* g_pxPlayerMaterial;
-	extern Flux_MaterialAsset* g_pxTargetMaterial;
+	extern Zenith_MaterialAsset* g_pxFloorMaterial;
+	extern Zenith_MaterialAsset* g_pxWallMaterial;
+	extern Zenith_MaterialAsset* g_pxBoxMaterial;
+	extern Zenith_MaterialAsset* g_pxBoxOnTargetMaterial;
+	extern Zenith_MaterialAsset* g_pxPlayerMaterial;
+	extern Zenith_MaterialAsset* g_pxTargetMaterial;
 
 	extern Zenith_Prefab* g_pxTilePrefab;
 	extern Zenith_Prefab* g_pxBoxPrefab;
@@ -242,7 +242,7 @@ public:
 		xStream << strMeshPath;
 
 		// Materials
-		auto WriteMaterial = [&xStream](Flux_MaterialAsset* pxMat)
+		auto WriteMaterial = [&xStream](Zenith_MaterialAsset* pxMat)
 		{
 			if (pxMat)
 			{
@@ -250,7 +250,8 @@ public:
 			}
 			else
 			{
-				Flux_MaterialAsset* pxEmpty = Flux_MaterialAsset::Create("Empty");
+				Zenith_MaterialAsset* pxEmpty = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
+				pxEmpty->SetName("Empty");
 				pxEmpty->WriteToDataStream(xStream);
 				delete pxEmpty;
 			}
@@ -275,12 +276,14 @@ public:
 			xStream >> strMeshPath;
 			if (!strMeshPath.empty())
 			{
-				m_pxCubeGeometry = Zenith_AssetHandler::AddMeshFromFile(strMeshPath.c_str(), 0, true);
+				m_pxCubeGeometry = new Flux_MeshGeometry();
+				Flux_MeshGeometry::LoadFromFile(strMeshPath.c_str(), *m_pxCubeGeometry, 0, true);
 			}
 
-			auto ReadMaterial = [&xStream](Flux_MaterialAsset*& pxMat, const char* szName)
+			auto ReadMaterial = [&xStream](Zenith_MaterialAsset*& pxMat, const char* szName)
 			{
-				Flux_MaterialAsset* pxLoaded = Flux_MaterialAsset::Create(szName);
+				Zenith_MaterialAsset* pxLoaded = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
+				pxLoaded->SetName(szName);
 				pxLoaded->ReadFromDataStream(xStream);
 				pxMat = pxLoaded;
 			};
@@ -584,7 +587,7 @@ private:
 	// Editor Helpers
 	// ========================================================================
 #ifdef ZENITH_TOOLS
-	void RenderMaterialSlot(const char* szLabel, Flux_MaterialAsset*& pxMaterial)
+	void RenderMaterialSlot(const char* szLabel, Zenith_MaterialAsset*& pxMaterial)
 	{
 		ImGui::PushID(szLabel);
 		std::string strMaterialName = pxMaterial ? pxMaterial->GetName() : "(none)";
@@ -599,7 +602,7 @@ private:
 			{
 				const DragDropFilePayload* pFilePayload =
 					static_cast<const DragDropFilePayload*>(pPayload->Data);
-				Flux_MaterialAsset* pxNewMaterial = Flux_MaterialAsset::LoadFromFile(pFilePayload->m_szFilePath);
+				Zenith_MaterialAsset* pxNewMaterial = Zenith_AssetRegistry::Get().Get<Zenith_MaterialAsset>(pFilePayload->m_szFilePath);
 				if (pxNewMaterial)
 				{
 					pxMaterial = pxNewMaterial;
@@ -635,11 +638,15 @@ private:
 			{
 				const DragDropFilePayload* pFilePayload =
 					static_cast<const DragDropFilePayload*>(pPayload->Data);
-				Flux_MeshGeometry* pxNewMesh = Zenith_AssetHandler::AddMeshFromFile(
-					pFilePayload->m_szFilePath, 0, true);
-				if (pxNewMesh)
+				Flux_MeshGeometry* pxNewMesh = new Flux_MeshGeometry();
+				Flux_MeshGeometry::LoadFromFile(pFilePayload->m_szFilePath, *pxNewMesh, 0, true);
+				if (pxNewMesh->GetNumVerts() > 0)
 				{
 					pxMesh = pxNewMesh;
+				}
+				else
+				{
+					delete pxNewMesh;
 				}
 			}
 			ImGui::EndDragDropTarget();
@@ -702,10 +709,10 @@ private:
 public:
 	// Resource pointers
 	Flux_MeshGeometry* m_pxCubeGeometry = nullptr;
-	Flux_MaterialAsset* m_pxFloorMaterial = nullptr;
-	Flux_MaterialAsset* m_pxWallMaterial = nullptr;
-	Flux_MaterialAsset* m_pxBoxMaterial = nullptr;
-	Flux_MaterialAsset* m_pxBoxOnTargetMaterial = nullptr;
-	Flux_MaterialAsset* m_pxPlayerMaterial = nullptr;
-	Flux_MaterialAsset* m_pxTargetMaterial = nullptr;
+	Zenith_MaterialAsset* m_pxFloorMaterial = nullptr;
+	Zenith_MaterialAsset* m_pxWallMaterial = nullptr;
+	Zenith_MaterialAsset* m_pxBoxMaterial = nullptr;
+	Zenith_MaterialAsset* m_pxBoxOnTargetMaterial = nullptr;
+	Zenith_MaterialAsset* m_pxPlayerMaterial = nullptr;
+	Zenith_MaterialAsset* m_pxTargetMaterial = nullptr;
 };

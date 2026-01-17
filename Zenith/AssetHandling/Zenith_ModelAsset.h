@@ -1,4 +1,5 @@
 #pragma once
+#include "AssetHandling/Zenith_Asset.h"
 #include "Collections/Zenith_Vector.h"
 #include "DataStream/Zenith_DataStream.h"
 #include "AssetHandling/Zenith_AssetRef.h"
@@ -10,7 +11,7 @@
 // Forward declarations
 class Zenith_MeshAsset;
 class Zenith_SkeletonAsset;
-class Flux_MaterialAsset;
+class Zenith_MaterialAsset;
 
 /**
  * Zenith_ModelAsset - Bundle asset combining meshes, materials, skeleton, and animations
@@ -24,9 +25,14 @@ class Flux_MaterialAsset;
  * "Model" or "FBX import" produces
  * a bundle that can be instantiated multiple times in the scene.
  *
- * Uses GUID-based asset references for robust asset tracking.
+ * Usage:
+ *   // Load from registry
+ *   Zenith_ModelAsset* pModel = Zenith_AssetRegistry::Get().Get<Zenith_ModelAsset>("Assets/model.zmodel");
+ *
+ * Note: Currently still uses GUID-based MeshRef/MaterialRef internally.
+ * Will be updated to path-based handles in a future phase.
  */
-class Zenith_ModelAsset
+class Zenith_ModelAsset : public Zenith_Asset
 {
 public:
 	/**
@@ -47,7 +53,7 @@ public:
 	};
 
 	Zenith_ModelAsset() = default;
-	~Zenith_ModelAsset() = default;
+	virtual ~Zenith_ModelAsset() = default;
 
 	// Prevent accidental copies
 	Zenith_ModelAsset(const Zenith_ModelAsset&) = delete;

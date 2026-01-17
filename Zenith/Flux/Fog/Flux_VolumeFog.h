@@ -2,6 +2,8 @@
 
 #include "Flux/Flux.h"
 
+class Zenith_TextureAsset;
+
 /*
  * Flux_VolumeFog - Shared Infrastructure for Volumetric Fog Techniques
  *
@@ -90,8 +92,8 @@ public:
 	static void Reset();  // Clear state when scene resets
 
 	// Shared resources accessors
-	static Flux_Texture& GetNoiseTexture3D() { return s_xNoiseTexture3D; }
-	static Flux_Texture& GetBlueNoiseTexture() { return s_xBlueNoiseTexture; }
+	static Zenith_TextureAsset* GetNoiseTexture3D() { return s_pxNoiseTexture3D; }
+	static Zenith_TextureAsset* GetBlueNoiseTexture() { return s_pxBlueNoiseTexture; }
 	static Flux_RenderAttachment& GetFroxelDensityGrid() { return s_xFroxelDensityGrid; }
 	static Flux_RenderAttachment& GetFroxelLightingGrid() { return s_xFroxelLightingGrid; }
 
@@ -120,8 +122,8 @@ private:
 	static void RegisterDebugVariables();
 
 	// Shared textures
-	static Flux_Texture s_xNoiseTexture3D;      // 128^3 Perlin-Worley noise
-	static Flux_Texture s_xBlueNoiseTexture;    // 64x64 blue noise
+	static Zenith_TextureAsset* s_pxNoiseTexture3D;      // 128^3 Perlin-Worley noise
+	static Zenith_TextureAsset* s_pxBlueNoiseTexture;    // 64x64 blue noise
 
 	// Froxel grids (3D render targets)
 	static Flux_RenderAttachment s_xFroxelDensityGrid;   // RGBA16F: density + scattering

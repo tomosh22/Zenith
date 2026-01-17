@@ -1,4 +1,5 @@
 #pragma once
+#include "AssetHandling/Zenith_Asset.h"
 #include "Maths/Zenith_Maths.h"
 #include "Collections/Zenith_Vector.h"
 #include "DataStream/Zenith_DataStream.h"
@@ -15,8 +16,16 @@
  * - Different meshes to use the same skeleton (e.g., LODs, cosmetic variants)
  * - Animation retargeting between compatible skeletons
  * - Clear separation of concerns between mesh geometry and bone hierarchy
+ *
+ * Usage:
+ *   // Load from registry
+ *   Zenith_SkeletonAsset* pSkel = Zenith_AssetRegistry::Get().Get<Zenith_SkeletonAsset>("Assets/skeleton.zskel");
+ *
+ * Note: Per-entity animation state (current pose, skinning matrices, GPU buffer) is stored
+ * in Flux_SkeletonInstance, not in this asset class. This asset contains only the shared
+ * bone hierarchy and bind pose data.
  */
-class Zenith_SkeletonAsset
+class Zenith_SkeletonAsset : public Zenith_Asset
 {
 public:
 	static constexpr int32_t INVALID_BONE_INDEX = -1;
@@ -48,7 +57,7 @@ public:
 	};
 
 	Zenith_SkeletonAsset() = default;
-	~Zenith_SkeletonAsset() = default;
+	virtual ~Zenith_SkeletonAsset() = default;
 
 	// Prevent accidental copies
 	Zenith_SkeletonAsset(const Zenith_SkeletonAsset&) = delete;

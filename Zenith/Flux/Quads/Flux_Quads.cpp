@@ -6,7 +6,6 @@
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_Buffers.h"
-#include "AssetHandling/Zenith_AssetHandler.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "TaskSystem/Zenith_TaskSystem.h"

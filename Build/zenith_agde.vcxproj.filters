@@ -517,16 +517,22 @@
     <ClCompile Include="..\Zenith\Android\Zenith_Android_Window.cpp">
       <Filter>Android</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\AssetHandling\Zenith_Asset.cpp">
+      <Filter>AssetHandling</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_AssetDatabase.cpp">
       <Filter>AssetHandling</Filter>
     </ClCompile>
-    <ClCompile Include="..\Zenith\AssetHandling\Zenith_AssetHandler.cpp">
+    <ClCompile Include="..\Zenith\AssetHandling\Zenith_AssetHandle.cpp">
       <Filter>AssetHandling</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_AssetMeta.cpp">
       <Filter>AssetHandling</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_AssetRef.cpp">
+      <Filter>AssetHandling</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\AssetHandling\Zenith_AssetRegistry.cpp">
       <Filter>AssetHandling</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_AsyncAssetLoader.cpp">
@@ -541,6 +547,9 @@
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_FileWatcher.cpp">
       <Filter>AssetHandling</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\AssetHandling\Zenith_MaterialAsset.cpp">
+      <Filter>AssetHandling</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_MeshAsset.cpp">
       <Filter>AssetHandling</Filter>
     </ClCompile>
@@ -548,6 +557,9 @@
       <Filter>AssetHandling</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_SkeletonAsset.cpp">
+      <Filter>AssetHandling</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\AssetHandling\Zenith_TextureAsset.cpp">
       <Filter>AssetHandling</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\Core\Callstack\Zenith_Callstack.cpp">
@@ -692,9 +704,6 @@
       <Filter>Flux</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\Flux\Flux_Graphics.cpp">
-      <Filter>Flux</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Zenith\Flux\Flux_MaterialAsset.cpp">
       <Filter>Flux</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\Flux\Flux_ModelInstance.cpp">
@@ -2997,16 +3006,22 @@
     <ClInclude Include="..\Zenith\Android\Zenith_OS_Include.h">
       <Filter>Android</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\AssetHandling\Zenith_Asset.h">
+      <Filter>AssetHandling</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_AssetDatabase.h">
       <Filter>AssetHandling</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\AssetHandling\Zenith_AssetHandler.h">
+    <ClInclude Include="..\Zenith\AssetHandling\Zenith_AssetHandle.h">
       <Filter>AssetHandling</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_AssetMeta.h">
       <Filter>AssetHandling</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_AssetRef.h">
+      <Filter>AssetHandling</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\AssetHandling\Zenith_AssetRegistry.h">
       <Filter>AssetHandling</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_AsyncAssetLoader.h">
@@ -3021,6 +3036,9 @@
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_FileWatcher.h">
       <Filter>AssetHandling</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\AssetHandling\Zenith_MaterialAsset.h">
+      <Filter>AssetHandling</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_MeshAsset.h">
       <Filter>AssetHandling</Filter>
     </ClInclude>
@@ -3028,6 +3046,9 @@
       <Filter>AssetHandling</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_SkeletonAsset.h">
+      <Filter>AssetHandling</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\AssetHandling\Zenith_TextureAsset.h">
       <Filter>AssetHandling</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Collections\Zenith_CircularQueue.h">
@@ -3208,9 +3229,6 @@
       <Filter>Flux</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Flux_ImGuiIntegration.h">
-      <Filter>Flux</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Flux_MaterialAsset.h">
       <Filter>Flux</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Flux_MaterialBinding.h">

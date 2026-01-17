@@ -9,7 +9,6 @@
 #include "Input/Zenith_Input.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "EntityComponent/Zenith_Entity.h"
-#include "AssetHandling/Zenith_AssetHandler.h"
 #include "Flux/Flux_Graphics.h"
 #include "Prefab/Zenith_Prefab.h"
 

@@ -21,7 +21,7 @@
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "Prefab/Zenith_Prefab.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
-#include "Flux/Flux_MaterialAsset.h"
+#include "AssetHandling/Zenith_MaterialAsset.h"
 #include "Maths/Zenith_Maths.h"
 #include <vector>
 
@@ -71,8 +71,8 @@ public:
 		const Config& xConfig,
 		Zenith_Prefab* pxParticlePrefab,
 		Flux_MeshGeometry* pxSphereGeometry,
-		Flux_MaterialAsset* pxDustMaterial,
-		Flux_MaterialAsset* pxCollectMaterial)
+		Zenith_MaterialAsset* pxDustMaterial,
+		Zenith_MaterialAsset* pxCollectMaterial)
 	{
 		s_xConfig = xConfig;
 		s_pxParticlePrefab = pxParticlePrefab;
@@ -318,6 +318,6 @@ private:
 
 	static inline Zenith_Prefab* s_pxParticlePrefab = nullptr;
 	static inline Flux_MeshGeometry* s_pxSphereGeometry = nullptr;
-	static inline Flux_MaterialAsset* s_pxDustMaterial = nullptr;
-	static inline Flux_MaterialAsset* s_pxCollectMaterial = nullptr;
+	static inline Zenith_MaterialAsset* s_pxDustMaterial = nullptr;
+	static inline Zenith_MaterialAsset* s_pxCollectMaterial = nullptr;
 };

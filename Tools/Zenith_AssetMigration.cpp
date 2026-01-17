@@ -170,7 +170,7 @@ bool Zenith_AssetMigration::MigrateMaterialFile(const std::string& strMaterialPa
 		return false;
 	}
 
-	// Material migration is handled by Flux_MaterialAsset load/save code
+	// Material migration is handled by Zenith_MaterialAsset load/save code
 	// Loading an old material and saving it will automatically migrate it
 	Zenith_Log(LOG_CATEGORY_TOOLS, "Material migration for %s should be handled by loading and re-saving",
 		strMaterialPath.c_str());

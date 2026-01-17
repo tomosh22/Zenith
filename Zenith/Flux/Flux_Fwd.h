@@ -43,7 +43,7 @@ class Flux_CommandList;
 
 // Mesh and material types
 class Flux_MeshGeometry;
-class Flux_MaterialAsset;
+class Zenith_MaterialAsset;
 
 // Model/animation types
 class Flux_ModelInstance;

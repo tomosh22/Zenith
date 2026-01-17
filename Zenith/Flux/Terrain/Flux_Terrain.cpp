@@ -7,7 +7,7 @@
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_Buffers.h"
 #include "Flux/Shadows/Flux_Shadows.h"
-#include "AssetHandling/Zenith_AssetHandler.h"
+#include "AssetHandling/Zenith_TextureAsset.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
@@ -31,7 +31,7 @@ static Flux_Pipeline s_xTerrainWireframePipeline;
 static Flux_Shader s_xWaterShader;
 static Flux_Pipeline s_xWaterPipeline;
 
-static Flux_Texture s_xWaterNormalTexture;
+static Zenith_TextureAsset* s_pxWaterNormalTexture = nullptr;
 static uint32_t s_uWaterDisplacementTexHandle = UINT32_MAX;
 
 // ========== GPU-Driven Terrain Culling Pipeline ==========
@@ -203,7 +203,7 @@ void Flux_Terrain::Initialise()
 	}
 
 	// Use the global water normal texture pointer set during initialization in Zenith_Main.cpp
-	s_xWaterNormalTexture = *Flux_Graphics::s_pxWaterNormalTexture;
+	s_pxWaterNormalTexture = Flux_Graphics::s_pxWaterNormalTexture;
 
 	Flux_MemoryManager::InitialiseDynamicConstantBuffer(nullptr, sizeof(struct TerrainConstants
 		), s_xTerrainConstantsBuffer);
@@ -366,8 +366,8 @@ void Flux_Terrain::RenderToGBuffer(void*)
 		Zenith_TerrainComponent* const pxTerrain = g_xTerrainComponentsToRender.Get(u);
 		if(!pxTerrain->GetUnifiedVertexBuffer().GetBuffer().m_ulSize) continue;
 
-		Flux_MaterialAsset& xMaterial0 = pxTerrain->GetMaterial0();
-		Flux_MaterialAsset& xMaterial1 = pxTerrain->GetMaterial1();
+		Zenith_MaterialAsset& xMaterial0 = pxTerrain->GetMaterial0();
+		Zenith_MaterialAsset& xMaterial1 = pxTerrain->GetMaterial1();
 
 		// Build and push terrain material constants (128 bytes) - uses scratch buffer in set 1
 		TerrainMaterialPushConstants xTerrainMatConst;

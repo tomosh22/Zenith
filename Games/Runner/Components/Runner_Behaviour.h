@@ -57,12 +57,12 @@ namespace Runner
 	extern Flux_MeshGeometry* g_pxCubeGeometry;
 	extern Flux_MeshGeometry* g_pxSphereGeometry;
 
-	extern Flux_MaterialAsset* g_pxCharacterMaterial;
-	extern Flux_MaterialAsset* g_pxGroundMaterial;
-	extern Flux_MaterialAsset* g_pxObstacleMaterial;
-	extern Flux_MaterialAsset* g_pxCollectibleMaterial;
-	extern Flux_MaterialAsset* g_pxDustMaterial;
-	extern Flux_MaterialAsset* g_pxCollectParticleMaterial;
+	extern Zenith_MaterialAsset* g_pxCharacterMaterial;
+	extern Zenith_MaterialAsset* g_pxGroundMaterial;
+	extern Zenith_MaterialAsset* g_pxObstacleMaterial;
+	extern Zenith_MaterialAsset* g_pxCollectibleMaterial;
+	extern Zenith_MaterialAsset* g_pxDustMaterial;
+	extern Zenith_MaterialAsset* g_pxCollectParticleMaterial;
 
 	extern Zenith_Prefab* g_pxCharacterPrefab;
 	extern Zenith_Prefab* g_pxGroundPrefab;
@@ -496,10 +496,10 @@ private:
 	Flux_MeshGeometry* m_pxCapsuleGeometry = nullptr;
 	Flux_MeshGeometry* m_pxCubeGeometry = nullptr;
 	Flux_MeshGeometry* m_pxSphereGeometry = nullptr;
-	Flux_MaterialAsset* m_pxCharacterMaterial = nullptr;
-	Flux_MaterialAsset* m_pxGroundMaterial = nullptr;
-	Flux_MaterialAsset* m_pxObstacleMaterial = nullptr;
-	Flux_MaterialAsset* m_pxCollectibleMaterial = nullptr;
-	Flux_MaterialAsset* m_pxDustMaterial = nullptr;
-	Flux_MaterialAsset* m_pxCollectParticleMaterial = nullptr;
+	Zenith_MaterialAsset* m_pxCharacterMaterial = nullptr;
+	Zenith_MaterialAsset* m_pxGroundMaterial = nullptr;
+	Zenith_MaterialAsset* m_pxObstacleMaterial = nullptr;
+	Zenith_MaterialAsset* m_pxCollectibleMaterial = nullptr;
+	Zenith_MaterialAsset* m_pxDustMaterial = nullptr;
+	Zenith_MaterialAsset* m_pxCollectParticleMaterial = nullptr;
 };

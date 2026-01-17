@@ -21,7 +21,9 @@
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
-#include "AssetHandling/Zenith_AssetHandler.h"
+#include "AssetHandling/Zenith_AssetRegistry.h"
+#include "AssetHandling/Zenith_MeshAsset.h"
+#include "AssetHandling/Zenith_SkeletonAsset.h"
 #include "Physics/Zenith_Physics.h"
 #include <filesystem>
 
@@ -3417,7 +3419,7 @@ void Zenith_UnitTests::TestMeshAssetLoading()
 	// Test loading a mesh asset
 	{
 		const std::string strMeshPath = ENGINE_ASSETS_DIR "Meshes/UnitTest/ArmChain_Mesh0_Mat0.zmesh";
-		Zenith_MeshAsset* pxMeshAsset = Zenith_AssetHandler::LoadMeshAsset(strMeshPath);
+		Zenith_MeshAsset* pxMeshAsset = Zenith_AssetRegistry::Get().Get<Zenith_MeshAsset>(strMeshPath);
 
 		if (pxMeshAsset == nullptr)
 		{
@@ -3462,8 +3464,8 @@ void Zenith_UnitTests::TestBindPoseVertexPositions()
 	const std::string strMeshPath = ENGINE_ASSETS_DIR "Meshes/UnitTest/ArmChain_Mesh0_Mat0.zmesh";
 	const std::string strSkelPath = ENGINE_ASSETS_DIR "Meshes/UnitTest/ArmChain.zskel";
 
-	Zenith_MeshAsset* pxMesh = Zenith_AssetHandler::LoadMeshAsset(strMeshPath);
-	Zenith_SkeletonAsset* pxSkel = Zenith_AssetHandler::LoadSkeletonAsset(strSkelPath);
+	Zenith_MeshAsset* pxMesh = Zenith_AssetRegistry::Get().Get<Zenith_MeshAsset>(strMeshPath);
+	Zenith_SkeletonAsset* pxSkel = Zenith_AssetRegistry::Get().Get<Zenith_SkeletonAsset>(strSkelPath);
 
 	if (pxMesh == nullptr || pxSkel == nullptr)
 	{
@@ -3559,8 +3561,8 @@ void Zenith_UnitTests::TestAnimatedVertexPositions()
 	const std::string strSkelPath = ENGINE_ASSETS_DIR "Meshes/UnitTest/ArmChain.zskel";
 	const std::string strAnimPath = ENGINE_ASSETS_DIR "Meshes/UnitTest/ArmChain_ForearmRotate.zanim";
 
-	Zenith_MeshAsset* pxMesh = Zenith_AssetHandler::LoadMeshAsset(strMeshPath);
-	Zenith_SkeletonAsset* pxSkel = Zenith_AssetHandler::LoadSkeletonAsset(strSkelPath);
+	Zenith_MeshAsset* pxMesh = Zenith_AssetRegistry::Get().Get<Zenith_MeshAsset>(strMeshPath);
+	Zenith_SkeletonAsset* pxSkel = Zenith_AssetRegistry::Get().Get<Zenith_SkeletonAsset>(strSkelPath);
 	Flux_AnimationClip* pxClip = Flux_AnimationClip::LoadFromZanimFile(strAnimPath);
 
 	if (pxMesh == nullptr || pxSkel == nullptr)
@@ -5380,14 +5382,14 @@ void Zenith_UnitTests::TestStickFigureAssetExport()
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Exported death animation to: %s", strDeathPath.c_str());
 
 	// Reload and verify skeleton
-	Zenith_SkeletonAsset* pxReloadedSkel = Zenith_AssetHandler::LoadSkeletonAsset(strSkelPath);
+	Zenith_SkeletonAsset* pxReloadedSkel = Zenith_AssetRegistry::Get().Get<Zenith_SkeletonAsset>(strSkelPath);
 	Zenith_Assert(pxReloadedSkel != nullptr, "Should be able to reload skeleton");
 	Zenith_Assert(pxReloadedSkel->GetNumBones() == STICK_BONE_COUNT, "Reloaded skeleton should have 16 bones");
 	Zenith_Assert(pxReloadedSkel->HasBone("LeftUpperArm"), "Reloaded skeleton should have LeftUpperArm bone");
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Reloaded skeleton verified: %u bones", pxReloadedSkel->GetNumBones());
 
 	// Reload and verify mesh asset format
-	Zenith_MeshAsset* pxReloadedMesh = Zenith_AssetHandler::LoadMeshAsset(strMeshAssetPath);
+	Zenith_MeshAsset* pxReloadedMesh = Zenith_AssetRegistry::Get().Get<Zenith_MeshAsset>(strMeshAssetPath);
 	Zenith_Assert(pxReloadedMesh != nullptr, "Should be able to reload mesh asset");
 	Zenith_Assert(pxReloadedMesh->GetNumVerts() == pxMesh->GetNumVerts(), "Reloaded mesh vertex count mismatch");
 	Zenith_Assert(pxReloadedMesh->GetNumIndices() == pxMesh->GetNumIndices(), "Reloaded mesh index count mismatch");
@@ -7093,7 +7095,7 @@ void Zenith_UnitTests::TestAssetRefInvalidHandling()
 	TextureRef xRef;
 
 	// Default ref should return nullptr
-	Flux_Texture* pTexture = xRef.Get();
+	Zenith_TextureAsset* pTexture = xRef.Get();
 	Zenith_Assert(pTexture == nullptr, "TestAssetRefInvalidHandling: Invalid ref should return nullptr");
 
 	// Arrow operator on invalid ref should return nullptr
@@ -7545,13 +7547,13 @@ void Zenith_UnitTests::TestAssetRefAsyncAPI()
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestAssetRefAsyncAPI...");
 
 	// Test AssetRef async API availability
-	Zenith_AssetRef<Flux_Texture> xTextureRef;
+	Zenith_AssetRef<Zenith_TextureAsset> xTextureRef;
 
 	// Default ref should not be ready
 	Zenith_Assert(!xTextureRef.IsReady(), "TestAssetRefAsyncAPI: Empty ref should not be ready");
 
 	// TryGet should return nullptr for unloaded ref
-	Flux_Texture* pxTex = xTextureRef.TryGet();
+	Zenith_TextureAsset* pxTex = xTextureRef.TryGet();
 	Zenith_Assert(pxTex == nullptr, "TestAssetRefAsyncAPI: TryGet on empty ref should return nullptr");
 
 	// GetLoadState should return UNLOADED for invalid GUID
@@ -8198,7 +8200,7 @@ void Zenith_UnitTests::TestProceduralTreeAssetExport()
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Exported sway animation to: %s", strSwayPath.c_str());
 
 	// Reload and verify skeleton
-	Zenith_SkeletonAsset* pxReloadedSkel = Zenith_AssetHandler::LoadSkeletonAsset(strSkelPath);
+	Zenith_SkeletonAsset* pxReloadedSkel = Zenith_AssetRegistry::Get().Get<Zenith_SkeletonAsset>(strSkelPath);
 	Zenith_Assert(pxReloadedSkel != nullptr, "Should be able to reload skeleton");
 	Zenith_Assert(pxReloadedSkel->GetNumBones() == TREE_BONE_COUNT, "Reloaded skeleton should have 9 bones");
 	Zenith_Assert(pxReloadedSkel->HasBone("TrunkLower"), "Reloaded skeleton should have TrunkLower bone");
@@ -8207,7 +8209,7 @@ void Zenith_UnitTests::TestProceduralTreeAssetExport()
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Reloaded skeleton verified: %u bones", pxReloadedSkel->GetNumBones());
 
 	// Reload and verify mesh asset format
-	Zenith_MeshAsset* pxReloadedMesh = Zenith_AssetHandler::LoadMeshAsset(strMeshAssetPath);
+	Zenith_MeshAsset* pxReloadedMesh = Zenith_AssetRegistry::Get().Get<Zenith_MeshAsset>(strMeshAssetPath);
 	Zenith_Assert(pxReloadedMesh != nullptr, "Should be able to reload mesh asset");
 	Zenith_Assert(pxReloadedMesh->GetNumVerts() == pxMesh->GetNumVerts(), "Reloaded mesh vertex count mismatch");
 	Zenith_Assert(pxReloadedMesh->GetNumIndices() == pxMesh->GetNumIndices(), "Reloaded mesh index count mismatch");

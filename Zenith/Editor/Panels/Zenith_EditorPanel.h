@@ -8,7 +8,7 @@
 
 // Forward declarations
 struct Zenith_EditorState;
-class Flux_MaterialAsset;
+class Zenith_MaterialAsset;
 
 //=============================================================================
 // Zenith_EditorPanel

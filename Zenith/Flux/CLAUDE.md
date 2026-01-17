@@ -3,14 +3,17 @@
 ## Files
 
 ### Core
-- `Flux.h/cpp` - Main rendering infrastructure, pipeline specification
+- `Flux.h/cpp` - Main rendering infrastructure, pipeline specification, `Flux_SurfaceInfo`
 - `Flux_Buffers.h/cpp` - Buffer management
 - `Flux_CommandList.h/cpp` - Command list recording
 - `Flux_Enums.h` - Rendering enums including RenderOrder
 - `Flux_Graphics.h/cpp` - Global graphics state, frame constants
-- `Flux_MaterialAsset.h/cpp` - Material and asset management
 - `Flux_RenderTargets.h/cpp` - Render target management
-- `Flux_Types.h` - Type definitions
+- `Flux_Types.h` - Type definitions, `IsCompressedFormat()` helper
+
+Note: Materials and textures are now in `AssetHandling/` (see AssetHandling/CLAUDE.md):
+- `Zenith_MaterialAsset.h/cpp` - Material properties + texture references
+- `Zenith_TextureAsset.h/cpp` - GPU texture wrapper with SRV
 
 ### Subdirectories
 - `StaticMeshes/` - Opaque geometry
@@ -45,7 +48,7 @@ Platform-agnostic command recording. Commands stored sequentially in dynamically
 `Flux_PipelineSpecification` struct defines complete graphics pipeline state: shader, blend modes, depth test, vertex input, render targets, load/store actions.
 
 ### Material System
-Materials store textures and rendering properties. Use `SetDiffuseWithPath()` when creating materials to store texture source path for scene serialization.
+Materials (`Zenith_MaterialAsset`) store textures and rendering properties. Located in `AssetHandling/`. Use `SetDiffuseWithPath()` when creating materials to store texture source path for scene serialization. See `AssetHandling/CLAUDE.md` for details on material and texture asset management.
 
 ## Configuration
 

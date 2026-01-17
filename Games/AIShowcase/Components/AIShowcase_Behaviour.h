@@ -26,7 +26,7 @@
 #include "EntityComponent/Zenith_Scene.h"
 #include "Input/Zenith_Input.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
-#include "Flux/Flux_MaterialAsset.h"
+#include "AssetHandling/Zenith_MaterialAsset.h"
 #include "Flux/Primitives/Flux_Primitives.h"
 
 // AI System includes
@@ -63,15 +63,15 @@ namespace AIShowcase
 	extern Flux_MeshGeometry* g_pxSphereGeometry;
 	extern Flux_MeshGeometry* g_pxCylinderGeometry;
 
-	extern Flux_MaterialAsset* g_pxFloorMaterial;
-	extern Flux_MaterialAsset* g_pxWallMaterial;
-	extern Flux_MaterialAsset* g_pxObstacleMaterial;
-	extern Flux_MaterialAsset* g_pxPlayerMaterial;
-	extern Flux_MaterialAsset* g_pxEnemyMaterial;
-	extern Flux_MaterialAsset* g_pxLeaderMaterial;
-	extern Flux_MaterialAsset* g_pxFlankerMaterial;
-	extern Flux_MaterialAsset* g_pxCoverPointMaterial;
-	extern Flux_MaterialAsset* g_pxPatrolPointMaterial;
+	extern Zenith_MaterialAsset* g_pxFloorMaterial;
+	extern Zenith_MaterialAsset* g_pxWallMaterial;
+	extern Zenith_MaterialAsset* g_pxObstacleMaterial;
+	extern Zenith_MaterialAsset* g_pxPlayerMaterial;
+	extern Zenith_MaterialAsset* g_pxEnemyMaterial;
+	extern Zenith_MaterialAsset* g_pxLeaderMaterial;
+	extern Zenith_MaterialAsset* g_pxFlankerMaterial;
+	extern Zenith_MaterialAsset* g_pxCoverPointMaterial;
+	extern Zenith_MaterialAsset* g_pxPatrolPointMaterial;
 
 	extern Zenith_NavMesh* g_pxArenaNavMesh;
 }
@@ -391,7 +391,7 @@ private:
 				break;
 
 			SquadRole eRole;
-			Flux_MaterialAsset* pxMaterial;
+			Zenith_MaterialAsset* pxMaterial;
 			switch (u)
 			{
 			case 0:
@@ -425,7 +425,7 @@ private:
 	}
 
 	Zenith_EntityID CreateEnemy(Zenith_Scene& xScene, const Zenith_Maths::Vector3& xBasePos,
-		uint32_t uIndex, Flux_MaterialAsset* pxMaterial)
+		uint32_t uIndex, Zenith_MaterialAsset* pxMaterial)
 	{
 		char szName[32];
 		sprintf(szName, "Enemy_%u", m_uEnemyCount);

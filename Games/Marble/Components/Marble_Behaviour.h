@@ -53,11 +53,11 @@ namespace Marble
 {
 	extern Flux_MeshGeometry* g_pxSphereGeometry;
 	extern Flux_MeshGeometry* g_pxCubeGeometry;
-	extern Flux_MaterialAsset* g_pxBallMaterial;
-	extern Flux_MaterialAsset* g_pxPlatformMaterial;
-	extern Flux_MaterialAsset* g_pxGoalMaterial;
-	extern Flux_MaterialAsset* g_pxCollectibleMaterial;
-	extern Flux_MaterialAsset* g_pxFloorMaterial;
+	extern Zenith_MaterialAsset* g_pxBallMaterial;
+	extern Zenith_MaterialAsset* g_pxPlatformMaterial;
+	extern Zenith_MaterialAsset* g_pxGoalMaterial;
+	extern Zenith_MaterialAsset* g_pxCollectibleMaterial;
+	extern Zenith_MaterialAsset* g_pxFloorMaterial;
 
 	// Prefabs for runtime instantiation
 	extern Zenith_Prefab* g_pxBallPrefab;
@@ -423,9 +423,9 @@ public:
 	// Resource pointers (set in OnAwake from globals)
 	Flux_MeshGeometry* m_pxSphereGeometry = nullptr;
 	Flux_MeshGeometry* m_pxCubeGeometry = nullptr;
-	Flux_MaterialAsset* m_pxBallMaterial = nullptr;
-	Flux_MaterialAsset* m_pxPlatformMaterial = nullptr;
-	Flux_MaterialAsset* m_pxGoalMaterial = nullptr;
-	Flux_MaterialAsset* m_pxCollectibleMaterial = nullptr;
-	Flux_MaterialAsset* m_pxFloorMaterial = nullptr;
+	Zenith_MaterialAsset* m_pxBallMaterial = nullptr;
+	Zenith_MaterialAsset* m_pxPlatformMaterial = nullptr;
+	Zenith_MaterialAsset* m_pxGoalMaterial = nullptr;
+	Zenith_MaterialAsset* m_pxCollectibleMaterial = nullptr;
+	Zenith_MaterialAsset* m_pxFloorMaterial = nullptr;
 };

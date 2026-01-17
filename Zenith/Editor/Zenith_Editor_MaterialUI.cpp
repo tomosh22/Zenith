@@ -5,7 +5,7 @@
 #include "Zenith_Editor_MaterialUI.h"
 #include "Zenith_Editor.h"
 #include "Flux/Flux_Graphics.h"
-#include "AssetHandling/Zenith_AssetHandler.h"
+#include "AssetHandling/Zenith_TextureAsset.h"
 
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "imgui.h"
@@ -37,7 +37,7 @@ namespace
 namespace Zenith_Editor_MaterialUI
 {
 
-Flux_ImGuiTextureHandle GetOrCreateTexturePreviewHandle(const Flux_Texture* pxTexture)
+Flux_ImGuiTextureHandle GetOrCreateTexturePreviewHandle(const Zenith_TextureAsset* pxTexture)
 {
 	if (!pxTexture || !pxTexture->m_xVRAMHandle.IsValid() || !pxTexture->m_xSRV.m_xImageViewHandle.IsValid())
 	{
@@ -78,51 +78,48 @@ void ClearTexturePreviewCache()
 	s_xTexturePreviewCache.clear();
 }
 
-std::string GetTexturePathForSlot(const Flux_MaterialAsset& xMaterial, TextureSlotType eSlot)
+std::string GetTexturePathForSlot(const Zenith_MaterialAsset& xMaterial, TextureSlotType eSlot)
 {
 	switch (eSlot)
 	{
 	case TEXTURE_SLOT_DIFFUSE:
-		return xMaterial.GetDiffuseTextureRef().GetPath();
+		return xMaterial.GetDiffuseTexturePath();
 	case TEXTURE_SLOT_NORMAL:
-		return xMaterial.GetNormalTextureRef().GetPath();
+		return xMaterial.GetNormalTexturePath();
 	case TEXTURE_SLOT_ROUGHNESS_METALLIC:
-		return xMaterial.GetRoughnessMetallicTextureRef().GetPath();
+		return xMaterial.GetRoughnessMetallicTexturePath();
 	case TEXTURE_SLOT_OCCLUSION:
-		return xMaterial.GetOcclusionTextureRef().GetPath();
+		return xMaterial.GetOcclusionTexturePath();
 	case TEXTURE_SLOT_EMISSIVE:
-		return xMaterial.GetEmissiveTextureRef().GetPath();
+		return xMaterial.GetEmissiveTexturePath();
 	default:
 		return "";
 	}
 }
 
-void SetTexturePathForSlot(Flux_MaterialAsset& xMaterial, TextureSlotType eSlot, const std::string& strPath)
+void SetTexturePathForSlot(Zenith_MaterialAsset& xMaterial, TextureSlotType eSlot, const std::string& strPath)
 {
-	TextureRef xRef;
-	xRef.SetFromPath(strPath);
-
 	switch (eSlot)
 	{
 	case TEXTURE_SLOT_DIFFUSE:
-		xMaterial.SetDiffuseTextureRef(xRef);
+		xMaterial.SetDiffuseTexturePath(strPath);
 		break;
 	case TEXTURE_SLOT_NORMAL:
-		xMaterial.SetNormalTextureRef(xRef);
+		xMaterial.SetNormalTexturePath(strPath);
 		break;
 	case TEXTURE_SLOT_ROUGHNESS_METALLIC:
-		xMaterial.SetRoughnessMetallicTextureRef(xRef);
+		xMaterial.SetRoughnessMetallicTexturePath(strPath);
 		break;
 	case TEXTURE_SLOT_OCCLUSION:
-		xMaterial.SetOcclusionTextureRef(xRef);
+		xMaterial.SetOcclusionTexturePath(strPath);
 		break;
 	case TEXTURE_SLOT_EMISSIVE:
-		xMaterial.SetEmissiveTextureRef(xRef);
+		xMaterial.SetEmissiveTexturePath(strPath);
 		break;
 	}
 }
 
-const Flux_Texture* GetTextureForSlot(Flux_MaterialAsset& xMaterial, TextureSlotType eSlot)
+const Zenith_TextureAsset* GetTextureForSlot(Zenith_MaterialAsset& xMaterial, TextureSlotType eSlot)
 {
 	switch (eSlot)
 	{
@@ -141,7 +138,7 @@ const Flux_Texture* GetTextureForSlot(Flux_MaterialAsset& xMaterial, TextureSlot
 	}
 }
 
-void RenderMaterialProperties(Flux_MaterialAsset* pxMaterial, const char* szIdSuffix)
+void RenderMaterialProperties(Zenith_MaterialAsset* pxMaterial, const char* szIdSuffix)
 {
 	if (!pxMaterial)
 		return;
@@ -252,7 +249,7 @@ void RenderMaterialProperties(Flux_MaterialAsset* pxMaterial, const char* szIdSu
 
 void RenderTextureSlot(
 	const char* szLabel,
-	Flux_MaterialAsset& xMaterial,
+	Zenith_MaterialAsset& xMaterial,
 	TextureSlotType eSlot,
 	bool bShowPreview,
 	float fPreviewSize,
@@ -261,13 +258,13 @@ void RenderTextureSlot(
 	ImGui::PushID(szLabel);
 
 	std::string strCurrentPath = GetTexturePathForSlot(xMaterial, eSlot);
-	const Flux_Texture* pxCurrentTexture = GetTextureForSlot(xMaterial, eSlot);
+	const Zenith_TextureAsset* pxCurrentTexture = GetTextureForSlot(xMaterial, eSlot);
 
-	// Fall back to texture's source path if TextureRef path is empty
-	// (happens when texture loaded directly without asset database registration)
-	if (strCurrentPath.empty() && pxCurrentTexture && !pxCurrentTexture->m_strSourcePath.empty())
+	// Fall back to texture's path if material path is empty
+	// (happens when texture loaded directly without setting material texture path)
+	if (strCurrentPath.empty() && pxCurrentTexture && !pxCurrentTexture->GetPath().empty())
 	{
-		strCurrentPath = pxCurrentTexture->m_strSourcePath;
+		strCurrentPath = pxCurrentTexture->GetPath();
 	}
 
 	std::string strTextureName = "(none)";
@@ -361,7 +358,7 @@ void RenderTextureSlot(
 	ImGui::PopID();
 }
 
-void RenderAllTextureSlots(Flux_MaterialAsset& xMaterial, bool bShowPreview)
+void RenderAllTextureSlots(Zenith_MaterialAsset& xMaterial, bool bShowPreview)
 {
 	RenderTextureSlot("Diffuse", xMaterial, TEXTURE_SLOT_DIFFUSE, bShowPreview);
 	RenderTextureSlot("Normal", xMaterial, TEXTURE_SLOT_NORMAL, bShowPreview);

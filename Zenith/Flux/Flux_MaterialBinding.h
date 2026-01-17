@@ -1,6 +1,7 @@
 #pragma once
 
-#include "Flux_MaterialAsset.h"
+#include "AssetHandling/Zenith_MaterialAsset.h"
+#include "AssetHandling/Zenith_TextureAsset.h"
 #include "Flux_CommandList.h"
 #include "Maths/Zenith_Maths.h"
 
@@ -45,7 +46,7 @@ static_assert(sizeof(TerrainMaterialPushConstants) == 128, "TerrainMaterialPushC
 inline void BuildMaterialPushConstants(
 	MaterialPushConstants& xOut,
 	const Zenith_Maths::Matrix4& xModelMatrix,
-	const Flux_MaterialAsset* pxMaterial)
+	const Zenith_MaterialAsset* pxMaterial)
 {
 	xOut.m_xModelMatrix = xModelMatrix;
 
@@ -83,8 +84,8 @@ inline void BuildMaterialPushConstants(
 
 inline void BuildTerrainMaterialPushConstants(
 	TerrainMaterialPushConstants& xOut,
-	const Flux_MaterialAsset* pxMaterial0,
-	const Flux_MaterialAsset* pxMaterial1,
+	const Zenith_MaterialAsset* pxMaterial0,
+	const Zenith_MaterialAsset* pxMaterial1,
 	bool bVisualizeLOD)
 {
 	auto BuildSingleMaterial = [](
@@ -92,7 +93,7 @@ inline void BuildTerrainMaterialPushConstants(
 		Zenith_Maths::Vector4& xUVParamsOut,
 		Zenith_Maths::Vector4& xMaterialParamsOut,
 		Zenith_Maths::Vector4& xEmissiveParamsOut,
-		const Flux_MaterialAsset* pxMat,
+		const Zenith_MaterialAsset* pxMat,
 		float fExtraParam = 0.0f)  // For visualizeLOD or other per-material flags
 	{
 		if (pxMat)
@@ -127,7 +128,7 @@ inline void BuildTerrainMaterialPushConstants(
 // Bind 5 material textures (diffuse, normal, RM, occlusion, emissive)
 inline void BindMaterialTextures(
 	Flux_CommandList& xCommandList,
-	Flux_MaterialAsset* pxMaterial,
+	Zenith_MaterialAsset* pxMaterial,
 	uint32_t uStartBinding = 0)
 {
 	xCommandList.AddCommand<Flux_CommandBindSRV>(
@@ -146,7 +147,7 @@ inline void BindMaterialTextures(
 // Uses full material system - same as standard materials
 inline void BindTerrainMaterialTextures(
 	Flux_CommandList& xCommandList,
-	Flux_MaterialAsset* pxMaterial,
+	Zenith_MaterialAsset* pxMaterial,
 	uint32_t uStartBinding = 0)
 {
 	xCommandList.AddCommand<Flux_CommandBindSRV>(

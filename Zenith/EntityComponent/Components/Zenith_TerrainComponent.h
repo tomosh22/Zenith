@@ -8,7 +8,7 @@ using namespace Flux_TerrainConfig;
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "Flux/Flux.h"
 #include "Flux/Flux_Buffers.h"
-#include "Flux/Flux_MaterialAsset.h"
+#include "AssetHandling/Zenith_MaterialAsset.h"
 #include "Maths/Zenith_FrustumCulling.h"
 
 // Forward declarations
@@ -66,7 +66,7 @@ public:
 	};
 
 	// Full constructor for runtime creation
-	Zenith_TerrainComponent(Flux_MaterialAsset& xMaterial0, Flux_MaterialAsset& xMaterial1, Zenith_Entity& xEntity);
+	Zenith_TerrainComponent(Zenith_MaterialAsset& xMaterial0, Zenith_MaterialAsset& xMaterial1, Zenith_Entity& xEntity);
 
 	~Zenith_TerrainComponent();
 
@@ -80,10 +80,10 @@ public:
 	const Flux_IndexBuffer& GetUnifiedIndexBuffer() const { return m_xUnifiedIndexBuffer; }
 
 	const Flux_MeshGeometry& GetPhysicsMeshGeometry() const { return *m_pxPhysicsGeometry; }
-	const Flux_MaterialAsset& GetMaterial0() const { return *m_pxMaterial0; }
-	Flux_MaterialAsset& GetMaterial0() { return *m_pxMaterial0; }
-	const Flux_MaterialAsset& GetMaterial1() const { return *m_pxMaterial1; }
-	Flux_MaterialAsset& GetMaterial1() { return *m_pxMaterial1; }
+	const Zenith_MaterialAsset& GetMaterial0() const { return *m_pxMaterial0; }
+	Zenith_MaterialAsset& GetMaterial0() { return *m_pxMaterial0; }
+	const Zenith_MaterialAsset& GetMaterial1() const { return *m_pxMaterial1; }
+	Zenith_MaterialAsset& GetMaterial1() { return *m_pxMaterial1; }
 
 	Zenith_Entity GetParentEntity() const { return m_xParentEntity; }
 	// Serialization methods for Zenith_DataStream
@@ -149,8 +149,8 @@ public:
 
 	//#TO not owning - just references to materials and physics geometry
 	Flux_MeshGeometry* m_pxPhysicsGeometry = nullptr;
-	Flux_MaterialAsset* m_pxMaterial0 = nullptr;
-	Flux_MaterialAsset* m_pxMaterial1 = nullptr;
+	Zenith_MaterialAsset* m_pxMaterial0 = nullptr;
+	Zenith_MaterialAsset* m_pxMaterial1 = nullptr;
 	
 	// Ownership tracking: true if materials were created during deserialization
 	// (and their textures need to be cleaned up when the component is destroyed)
@@ -184,7 +184,7 @@ public:
 	void ExtractFrustumPlanes(const Zenith_Maths::Matrix4& xViewProjMatrix, Zenith_FrustumPlaneGPU* pxOutPlanes);
 
 	// Helper method to initialize render resources (called by constructor and deserialization)
-	void InitializeRenderResources(Flux_MaterialAsset& xMaterial0, Flux_MaterialAsset& xMaterial1);
+	void InitializeRenderResources(Zenith_MaterialAsset& xMaterial0, Zenith_MaterialAsset& xMaterial1);
 
 	// Helper method to load and combine all physics chunks
 	void LoadCombinedPhysicsGeometry();

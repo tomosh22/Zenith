@@ -8,11 +8,12 @@
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
-#include "Flux/Flux_MaterialAsset.h"
+#include "AssetHandling/Zenith_MaterialAsset.h"
+#include "AssetHandling/Zenith_AssetRegistry.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux.h"
-#include "AssetHandling/Zenith_AssetHandler.h"
 #include "AssetHandling/Zenith_DataAssetManager.h"
+#include "AssetHandling/Zenith_TextureAsset.h"
 #include "Prefab/Zenith_Prefab.h"
 
 #include <cmath>
@@ -24,11 +25,11 @@ namespace Marble
 {
 	Flux_MeshGeometry* g_pxSphereGeometry = nullptr;
 	Flux_MeshGeometry* g_pxCubeGeometry = nullptr;
-	Flux_MaterialAsset* g_pxBallMaterial = nullptr;
-	Flux_MaterialAsset* g_pxPlatformMaterial = nullptr;
-	Flux_MaterialAsset* g_pxGoalMaterial = nullptr;
-	Flux_MaterialAsset* g_pxCollectibleMaterial = nullptr;
-	Flux_MaterialAsset* g_pxFloorMaterial = nullptr;
+	Zenith_MaterialAsset* g_pxBallMaterial = nullptr;
+	Zenith_MaterialAsset* g_pxPlatformMaterial = nullptr;
+	Zenith_MaterialAsset* g_pxGoalMaterial = nullptr;
+	Zenith_MaterialAsset* g_pxCollectibleMaterial = nullptr;
+	Zenith_MaterialAsset* g_pxFloorMaterial = nullptr;
 
 	// Prefabs for runtime instantiation
 	Zenith_Prefab* g_pxBallPrefab = nullptr;
@@ -139,27 +140,33 @@ static void InitializeMarbleResources()
 	Flux_MeshGeometry::GenerateUnitCube(*g_pxCubeGeometry);
 
 	// Use grid pattern texture with BaseColor for all materials
-	Flux_Texture* pxGridTex = &Flux_Graphics::s_xGridPatternTexture2D;
+	Zenith_TextureAsset* pxGridTex = Flux_Graphics::s_pxGridTexture;
 
 	// Create materials with grid texture and BaseColor
-	g_pxBallMaterial = Flux_MaterialAsset::Create("MarbleBall");
-	g_pxBallMaterial->SetDiffuseTexture(pxGridTex);
+	auto& xRegistry = Zenith_AssetRegistry::Get();
+	g_pxBallMaterial = xRegistry.Create<Zenith_MaterialAsset>();
+	g_pxBallMaterial->SetName("MarbleBall");
+	g_pxBallMaterial->SetDiffuseTextureDirectly(pxGridTex);
 	g_pxBallMaterial->SetBaseColor({ 51.f/255.f, 102.f/255.f, 230.f/255.f, 1.f });
 
-	g_pxPlatformMaterial = Flux_MaterialAsset::Create("MarblePlatform");
-	g_pxPlatformMaterial->SetDiffuseTexture(pxGridTex);
+	g_pxPlatformMaterial = xRegistry.Create<Zenith_MaterialAsset>();
+	g_pxPlatformMaterial->SetName("MarblePlatform");
+	g_pxPlatformMaterial->SetDiffuseTextureDirectly(pxGridTex);
 	g_pxPlatformMaterial->SetBaseColor({ 102.f/255.f, 102.f/255.f, 102.f/255.f, 1.f });
 
-	g_pxGoalMaterial = Flux_MaterialAsset::Create("MarbleGoal");
-	g_pxGoalMaterial->SetDiffuseTexture(pxGridTex);
+	g_pxGoalMaterial = xRegistry.Create<Zenith_MaterialAsset>();
+	g_pxGoalMaterial->SetName("MarbleGoal");
+	g_pxGoalMaterial->SetDiffuseTextureDirectly(pxGridTex);
 	g_pxGoalMaterial->SetBaseColor({ 51.f/255.f, 204.f/255.f, 51.f/255.f, 1.f });
 
-	g_pxCollectibleMaterial = Flux_MaterialAsset::Create("MarbleCollectible");
-	g_pxCollectibleMaterial->SetDiffuseTexture(pxGridTex);
+	g_pxCollectibleMaterial = xRegistry.Create<Zenith_MaterialAsset>();
+	g_pxCollectibleMaterial->SetName("MarbleCollectible");
+	g_pxCollectibleMaterial->SetDiffuseTextureDirectly(pxGridTex);
 	g_pxCollectibleMaterial->SetBaseColor({ 255.f/255.f, 215.f/255.f, 0.f/255.f, 1.f });
 
-	g_pxFloorMaterial = Flux_MaterialAsset::Create("MarbleFloor");
-	g_pxFloorMaterial->SetDiffuseTexture(pxGridTex);
+	g_pxFloorMaterial = xRegistry.Create<Zenith_MaterialAsset>();
+	g_pxFloorMaterial->SetName("MarbleFloor");
+	g_pxFloorMaterial->SetDiffuseTextureDirectly(pxGridTex);
 	g_pxFloorMaterial->SetBaseColor({ 77.f/255.f, 77.f/255.f, 89.f/255.f, 1.f });
 
 	// Create prefabs for runtime instantiation

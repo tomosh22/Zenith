@@ -2,7 +2,7 @@
 
 #include "Flux/Skybox/Flux_Skybox.h"
 
-#include "AssetHandling/Zenith_AssetHandler.h"
+#include "AssetHandling/Zenith_TextureAsset.h"
 #include "Flux/Flux.h"
 #include "Flux/Flux_CommandList.h"
 #include "Flux/Flux_RenderTargets.h"
@@ -18,7 +18,7 @@ static Flux_CommandList g_xCommandList("Skybox");
 static Flux_Shader s_xShader;
 static Flux_Pipeline s_xPipeline;
 
-static Flux_Texture s_xCubemapTexture;
+static Zenith_TextureAsset* s_pxCubemapTexture = nullptr;
 
 void Flux_Skybox::Initialise()
 {
@@ -50,7 +50,7 @@ void Flux_Skybox::Initialise()
 	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
 
 	// Use the global cubemap texture pointer set during initialization in Zenith_Main.cpp
-	s_xCubemapTexture = *Flux_Graphics::s_pxCubemapTexture;
+	s_pxCubemapTexture = Flux_Graphics::s_pxCubemapTexture;
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Skybox initialised");
 }
@@ -81,7 +81,7 @@ void Flux_Skybox::Render(void*)
 	g_xCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
 	g_xCommandList.AddCommand<Flux_CommandBeginBind>(0);
 	g_xCommandList.AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
-	g_xCommandList.AddCommand<Flux_CommandBindSRV>(&s_xCubemapTexture.m_xSRV, 1);
+	g_xCommandList.AddCommand<Flux_CommandBindSRV>(&s_pxCubemapTexture->m_xSRV, 1);
 	g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(6);
 	Flux::SubmitCommandList(&g_xCommandList, Flux_Graphics::s_xMRTTarget, RENDER_ORDER_SKYBOX);
 }

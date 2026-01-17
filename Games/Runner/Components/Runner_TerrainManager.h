@@ -21,7 +21,7 @@
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
-#include "Flux/Flux_MaterialAsset.h"
+#include "AssetHandling/Zenith_MaterialAsset.h"
 #include "Maths/Zenith_Maths.h"
 #include <vector>
 
@@ -74,7 +74,7 @@ public:
 		const Config& xConfig,
 		Zenith_Prefab* pxGroundPrefab,
 		Flux_MeshGeometry* pxCubeGeometry,
-		Flux_MaterialAsset* pxGroundMaterial)
+		Zenith_MaterialAsset* pxGroundMaterial)
 	{
 		s_xConfig = xConfig;
 		s_pxGroundPrefab = pxGroundPrefab;
@@ -171,11 +171,13 @@ public:
 
 		// Create materials for terrain texture blending
 		// Material 0 = grass, Material 1 = dirt
-		Flux_MaterialAsset& xGrassMat = *Flux_MaterialAsset::Create("TerrainGrass");
-		xGrassMat.SetDiffuseWithPath("Textures/grass_diffuse.ztex");
+		Zenith_MaterialAsset& xGrassMat = *Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
+		xGrassMat.SetName("TerrainGrass");
+		xGrassMat.SetDiffuseTexturePath("Textures/grass_diffuse.ztex");
 
-		Flux_MaterialAsset& xDirtMat = *Flux_MaterialAsset::Create("TerrainDirt");
-		xDirtMat.SetDiffuseWithPath("Textures/dirt_diffuse.ztex");
+		Zenith_MaterialAsset& xDirtMat = *Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
+		xDirtMat.SetName("TerrainDirt");
+		xDirtMat.SetDiffuseTexturePath("Textures/dirt_diffuse.ztex");
 
 		// Add TerrainComponent - this handles:
 		// 1. Loading terrain mesh data (heightmap -> mesh)
@@ -258,5 +260,5 @@ private:
 	static inline std::vector<TerrainChunk> s_axChunks;
 	static inline Zenith_Prefab* s_pxGroundPrefab = nullptr;
 	static inline Flux_MeshGeometry* s_pxCubeGeometry = nullptr;
-	static inline Flux_MaterialAsset* s_pxGroundMaterial = nullptr;
+	static inline Zenith_MaterialAsset* s_pxGroundMaterial = nullptr;
 };

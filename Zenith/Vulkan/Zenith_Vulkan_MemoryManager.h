@@ -138,6 +138,7 @@ private:
 		uint32_t m_uDepth;
 		uint32_t m_uNumMips;
 		uint32_t m_uNumLayers;
+		TextureFormat m_eFormat;
 	};
 
 	struct StagingBufferMetadata {

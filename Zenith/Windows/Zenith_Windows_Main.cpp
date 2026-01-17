@@ -10,7 +10,8 @@
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
 #include "Editor/Zenith_Editor.h"
 #endif
-#include "AssetHandling/Zenith_AssetHandler.h"
+#include "AssetHandling/Zenith_AssetRegistry.h"
+#include "AssetHandling/Zenith_TextureAsset.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "Physics/Zenith_Physics.h"
 #include "Profiling/Zenith_Profiling.h"
@@ -33,6 +34,7 @@ int main()
 	Zenith_Profiling::Initialise();
 	Zenith_Multithreading::RegisterThread(true);
 	Zenith_TaskSystem::Inititalise();
+	Zenith_AssetRegistry::Initialize();
 	Zenith_UnitTests::RunAllTests();
 
 #ifdef ZENITH_TOOLS
@@ -49,23 +51,27 @@ int main()
 	//#TO_TODO: move somewhere sensible
 	{
 		Flux_MemoryManager::BeginFrame();
-		Zenith_AssetHandler::TextureData xCubemapTexData = Zenith_AssetHandler::LoadTextureCubeFromFiles(
-			ENGINE_ASSETS_DIR"Textures/Cubemap/px" ZENITH_TEXTURE_EXT,
-			ENGINE_ASSETS_DIR"Textures/Cubemap/nx" ZENITH_TEXTURE_EXT,
-			ENGINE_ASSETS_DIR"Textures/Cubemap/py" ZENITH_TEXTURE_EXT,
-			ENGINE_ASSETS_DIR"Textures/Cubemap/ny" ZENITH_TEXTURE_EXT,
-			ENGINE_ASSETS_DIR"Textures/Cubemap/pz" ZENITH_TEXTURE_EXT,
-			ENGINE_ASSETS_DIR"Textures/Cubemap/nz" ZENITH_TEXTURE_EXT
-		);
-		Flux_Graphics::s_pxCubemapTexture = Zenith_AssetHandler::AddTexture(xCubemapTexData);
-		xCubemapTexData.FreeAllocatedData();
+		Zenith_AssetRegistry::InitializeGPUDependentAssets();  // Must be after Flux::EarlyInitialise()
 
-		Zenith_AssetHandler::TextureData xWaterNormalTexData = Zenith_AssetHandler::LoadTexture2DFromFile(ENGINE_ASSETS_DIR"Textures/water/normal" ZENITH_TEXTURE_EXT);
-		Flux_Graphics::s_pxWaterNormalTexture = Zenith_AssetHandler::AddTexture(xWaterNormalTexData);
-		xWaterNormalTexData.FreeAllocatedData();
+		// Load cubemap texture
+		Flux_Graphics::s_pxCubemapTexture = Zenith_AssetRegistry::Get().Create<Zenith_TextureAsset>();
+		if (Flux_Graphics::s_pxCubemapTexture)
+		{
+			Flux_Graphics::s_pxCubemapTexture->LoadCubemapFromFiles(
+				ENGINE_ASSETS_DIR"Textures/Cubemap/px" ZENITH_TEXTURE_EXT,
+				ENGINE_ASSETS_DIR"Textures/Cubemap/nx" ZENITH_TEXTURE_EXT,
+				ENGINE_ASSETS_DIR"Textures/Cubemap/py" ZENITH_TEXTURE_EXT,
+				ENGINE_ASSETS_DIR"Textures/Cubemap/ny" ZENITH_TEXTURE_EXT,
+				ENGINE_ASSETS_DIR"Textures/Cubemap/pz" ZENITH_TEXTURE_EXT,
+				ENGINE_ASSETS_DIR"Textures/Cubemap/nz" ZENITH_TEXTURE_EXT
+			);
+		}
+
+		// Load water normal texture
+		Flux_Graphics::s_pxWaterNormalTexture = Zenith_AssetRegistry::Get().Get<Zenith_TextureAsset>(ENGINE_ASSETS_DIR"Textures/water/normal" ZENITH_TEXTURE_EXT);
+
 		Flux_MemoryManager::EndFrame(false);
 	}
-
 	Flux::LateInitialise();
 
 #if defined ZENITH_TOOLS && defined ZENITH_DEBUG_VARIABLES
@@ -119,8 +125,8 @@ int main()
 	extern void Project_Shutdown();
 	Project_Shutdown();
 
-	// 6. Destroy all assets (textures, meshes, materials)
-	Zenith_AssetHandler::DestroyAllAssets();
+	// 6. Shutdown asset registry (unloads all assets)
+	Zenith_AssetRegistry::Shutdown();
 
 	// 7. Shutdown Flux (all subsystems + graphics + memory manager)
 	Flux::Shutdown();

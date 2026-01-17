@@ -9,7 +9,9 @@
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Zenith_OS_Include.h"
-#include "AssetHandling/Zenith_AssetHandler.h"
+#include "AssetHandling/Zenith_AssetRegistry.h"
+#include "AssetHandling/Zenith_MaterialAsset.h"
+#include "AssetHandling/Zenith_TextureAsset.h"
 
 #ifdef ZENITH_TOOLS
 #include "Editor/Zenith_Editor.h"
@@ -24,13 +26,13 @@ Flux_Sampler Flux_Graphics::s_xRepeatSampler;
 Flux_Sampler Flux_Graphics::s_xClampSampler;
 Flux_MeshGeometry Flux_Graphics::s_xQuadMesh;
 Flux_DynamicConstantBuffer Flux_Graphics::s_xFrameConstantsBuffer;
-Flux_Texture Flux_Graphics::s_xWhiteBlankTexture2D;
-Flux_Texture Flux_Graphics::s_xBlackBlankTexture2D;
-Flux_Texture Flux_Graphics::s_xGridPatternTexture2D;
+Zenith_TextureAsset* Flux_Graphics::s_pxWhiteTexture = nullptr;
+Zenith_TextureAsset* Flux_Graphics::s_pxBlackTexture = nullptr;
+Zenith_TextureAsset* Flux_Graphics::s_pxGridTexture = nullptr;
 Flux_MeshGeometry Flux_Graphics::s_xBlankMesh;
-Flux_MaterialAsset* Flux_Graphics::s_pxBlankMaterial;
-Flux_Texture* Flux_Graphics::s_pxCubemapTexture = nullptr;
-Flux_Texture* Flux_Graphics::s_pxWaterNormalTexture = nullptr;
+Zenith_MaterialAsset* Flux_Graphics::s_pxBlankMaterial = nullptr;
+Zenith_TextureAsset* Flux_Graphics::s_pxCubemapTexture = nullptr;
+Zenith_TextureAsset* Flux_Graphics::s_pxWaterNormalTexture = nullptr;
 Flux_Graphics::FrameConstants Flux_Graphics::s_xFrameConstants;
 Flux_DescriptorSetLayout Flux_Graphics::s_xFrameConstantsLayout;
 
@@ -66,23 +68,21 @@ void Flux_Graphics::Initialise()
 
 	u_int8 aucWhiteBlankTexData[] = { 255,255,255,255 };
 
-	Zenith_AssetHandler::TextureData xWhiteTexData;
-	xWhiteTexData.pData = aucWhiteBlankTexData;
-	xWhiteTexData.xSurfaceInfo = xTexInfo;
-	xWhiteTexData.bCreateMips = false;
-	xWhiteTexData.bIsCubemap = false;
-	Flux_Texture* pxWhiteTex = Zenith_AssetHandler::AddTexture(xWhiteTexData);
-	if (pxWhiteTex) s_xWhiteBlankTexture2D = *pxWhiteTex;
+	// Create white texture
+	s_pxWhiteTexture = Zenith_AssetRegistry::Get().Create<Zenith_TextureAsset>();
+	if (s_pxWhiteTexture)
+	{
+		s_pxWhiteTexture->CreateFromData(aucWhiteBlankTexData, xTexInfo, false);
+	}
 
 	u_int8 aucBlackBlankTexData[] = { 0,0,0,0 };
 
-	Zenith_AssetHandler::TextureData xBlackTexData;
-	xBlackTexData.pData = aucBlackBlankTexData;
-	xBlackTexData.xSurfaceInfo = xTexInfo;
-	xBlackTexData.bCreateMips = false;
-	xBlackTexData.bIsCubemap = false;
-	Flux_Texture* pxBlackTex = Zenith_AssetHandler::AddTexture(xBlackTexData);
-	if (pxBlackTex) s_xBlackBlankTexture2D = *pxBlackTex;
+	// Create black texture
+	s_pxBlackTexture = Zenith_AssetRegistry::Get().Create<Zenith_TextureAsset>();
+	if (s_pxBlackTexture)
+	{
+		s_pxBlackTexture->CreateFromData(aucBlackBlankTexData, xTexInfo, false);
+	}
 
 	// Create 64x64 greyscale grid pattern texture for procedural materials
 	// This allows materials to use BaseColor for tinting instead of colored 1x1 textures
@@ -117,16 +117,19 @@ void Flux_Graphics::Initialise()
 		}
 	}
 
-	Zenith_AssetHandler::TextureData xGridTexData;
-	xGridTexData.pData = aucGridTexData;
-	xGridTexData.xSurfaceInfo = xGridTexInfo;
-	xGridTexData.bCreateMips = false;
-	xGridTexData.bIsCubemap = false;
-	Flux_Texture* pxGridTex = Zenith_AssetHandler::AddTexture(xGridTexData);
-	if (pxGridTex) s_xGridPatternTexture2D = *pxGridTex;
+	// Create grid texture
+	s_pxGridTexture = Zenith_AssetRegistry::Get().Create<Zenith_TextureAsset>();
+	if (s_pxGridTexture)
+	{
+		s_pxGridTexture->CreateFromData(aucGridTexData, xGridTexInfo, false);
+	}
 
 	// Create blank material for use as fallback throughout the engine
-	s_pxBlankMaterial = Flux_MaterialAsset::Create("BlankMaterial");
+	s_pxBlankMaterial = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
+	if (s_pxBlankMaterial)
+	{
+		s_pxBlankMaterial->SetName("BlankMaterial");
+	}
 	// Ensure it has white textures set
 	if (s_pxBlankMaterial)
 	{

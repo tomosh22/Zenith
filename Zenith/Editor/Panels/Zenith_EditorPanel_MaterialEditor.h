@@ -5,7 +5,7 @@
 #include "Editor/Zenith_Editor.h"
 
 // Forward declarations
-class Flux_MaterialAsset;
+class Zenith_MaterialAsset;
 
 //=============================================================================
 // Material Editor Panel
@@ -16,7 +16,7 @@ class Flux_MaterialAsset;
 // Material editor state structure
 struct MaterialEditorState
 {
-	Flux_MaterialAsset*& m_pxSelectedMaterial;
+	Zenith_MaterialAsset*& m_pxSelectedMaterial;
 	bool& m_bShowMaterialEditor;
 };
 
@@ -37,9 +37,9 @@ namespace Zenith_EditorPanelMaterialEditor
 	 * @param strCurrentPath Current texture path
 	 * @param SetPathFunc Function to set the new texture path
 	 */
-	void RenderMaterialTextureSlot(const char* szLabel, Flux_MaterialAsset* pMaterial,
+	void RenderMaterialTextureSlot(const char* szLabel, Zenith_MaterialAsset* pMaterial,
 		const std::string& strCurrentPath,
-		void (*SetPathFunc)(Flux_MaterialAsset*, const std::string&));
+		void (*SetPathFunc)(Zenith_MaterialAsset*, const std::string&));
 }
 
 #endif // ZENITH_TOOLS

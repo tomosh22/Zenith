@@ -3,6 +3,7 @@
 #include "Flux/Fog/Flux_LPVFog.h"
 #include "Flux/Fog/Flux_VolumeFog.h"
 
+#include "AssetHandling/Zenith_TextureAsset.h"
 #include "Flux/Flux.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_Buffers.h"
@@ -321,7 +322,7 @@ void Flux_LPVFog::Render(void*)
 		Flux_ShaderBinder xInjectBinder(g_xInjectCommandList);
 		xInjectBinder.BindCBV(s_xInjectFrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
 		// Use blue noise as placeholder for shadow map
-		xInjectBinder.BindSRV(s_xInjectShadowMapBinding, &Flux_VolumeFog::GetBlueNoiseTexture().m_xSRV);
+		xInjectBinder.BindSRV(s_xInjectShadowMapBinding, &Flux_VolumeFog::GetBlueNoiseTexture()->m_xSRV);
 		xInjectBinder.BindUAV_Texture(s_xInjectOutputBinding, &s_axLPVGrids[uCascade][0].m_pxUAV);
 		xInjectBinder.BindUAV_Texture(s_xInjectDebugBinding, &s_xDebugInjectionTexture.m_pxUAV);
 		xInjectBinder.PushConstant(&s_xInjectConstants, sizeof(InjectConstants));
@@ -394,7 +395,7 @@ void Flux_LPVFog::Render(void*)
 	xApplyBinder.BindSRV(s_xApplyLPVCascade0Binding, &s_axLPVGrids[0][s_uCurrentPingPong].m_pxSRV);
 	xApplyBinder.BindSRV(s_xApplyLPVCascade1Binding, &s_axLPVGrids[1][s_uCurrentPingPong].m_pxSRV);
 	xApplyBinder.BindSRV(s_xApplyLPVCascade2Binding, &s_axLPVGrids[2][s_uCurrentPingPong].m_pxSRV);
-	xApplyBinder.BindSRV(s_xApplyNoiseBinding, &Flux_VolumeFog::GetNoiseTexture3D().m_xSRV);
+	xApplyBinder.BindSRV(s_xApplyNoiseBinding, &Flux_VolumeFog::GetNoiseTexture3D()->m_xSRV);
 	xApplyBinder.PushConstant(&s_xApplyConstants, sizeof(ApplyConstants));
 	g_xApplyCommandList.AddCommand<Flux_CommandDrawIndexed>(6);
 

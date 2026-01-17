@@ -9,7 +9,8 @@
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_Buffers.h"
-#include "AssetHandling/Zenith_AssetHandler.h"
+#include "AssetHandling/Zenith_AssetRegistry.h"
+#include "AssetHandling/Zenith_TextureAsset.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_Query.h"
 #include "EntityComponent/Components/Zenith_ParticleEmitterComponent.h"
@@ -34,7 +35,7 @@ static constexpr uint32_t s_uMaxParticles = 4096;
 static Flux_ParticleInstance s_axCPUInstances[s_uMaxParticles];
 static uint32_t s_uInstanceCount = 0;
 
-static Flux_Texture s_xParticleTexture;
+static Zenith_TextureAsset* s_pxParticleTexture = nullptr;
 
 void Flux_Particles::Initialise()
 {
@@ -73,13 +74,11 @@ void Flux_Particles::Initialise()
 	Flux_MemoryManager::InitialiseDynamicVertexBuffer(nullptr, s_uMaxParticles * sizeof(Flux_ParticleInstance), s_xInstanceBuffer, false);
 
 	// Load default particle texture
-	Zenith_AssetHandler::TextureData xParticleSwirlTexData = Zenith_AssetHandler::LoadTexture2DFromFile("C:/dev/Zenith/Games/Test/Assets/Textures/particleSwirl" ZENITH_TEXTURE_EXT);
-	Flux_Texture* pxParticleSwirlTex = Zenith_AssetHandler::AddTexture(xParticleSwirlTexData);
-	xParticleSwirlTexData.FreeAllocatedData();
-
-	if (pxParticleSwirlTex)
+	s_pxParticleTexture = Zenith_AssetRegistry::Get().Get<Zenith_TextureAsset>("C:/dev/Zenith/Games/Test/Assets/Textures/particleSwirl" ZENITH_TEXTURE_EXT);
+	if (!s_pxParticleTexture)
 	{
-		s_xParticleTexture = *pxParticleSwirlTex;
+		Zenith_Log(LOG_CATEGORY_PARTICLES, "Warning: Failed to load particle texture, using white texture");
+		s_pxParticleTexture = Flux_Graphics::s_pxWhiteTexture;
 	}
 
 #ifdef ZENITH_DEBUG_VARIABLES
@@ -193,7 +192,7 @@ void Flux_Particles::Render(void*)
 
 		g_xCommandList.AddCommand<Flux_CommandBeginBind>(0);
 		g_xCommandList.AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
-		g_xCommandList.AddCommand<Flux_CommandBindSRV>(&s_xParticleTexture.m_xSRV, 1);
+		g_xCommandList.AddCommand<Flux_CommandBindSRV>(&s_pxParticleTexture->m_xSRV, 1);
 
 		// Draw CPU particles (6 indices per quad, s_uInstanceCount instances)
 		g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(6, s_uInstanceCount);

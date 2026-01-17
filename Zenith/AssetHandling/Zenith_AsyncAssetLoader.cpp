@@ -1,7 +1,6 @@
 #include "Zenith.h"
 #include "Zenith_AsyncAssetLoader.h"
 #include "AssetHandling/Zenith_AssetDatabase.h"
-#include "AssetHandling/Zenith_AssetHandler.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
 
 // Static member definitions
@@ -168,7 +167,7 @@ void Zenith_AsyncAssetLoader::SubmitLoadRequest(const LoadRequest& xRequest)
 
 // Forward declarations of asset types
 struct Flux_Texture;
-class Flux_MaterialAsset;
+class Zenith_MaterialAsset;
 class Flux_MeshGeometry;
 class Zenith_ModelAsset;
 class Zenith_Prefab;
@@ -186,10 +185,10 @@ void* AsyncLoadAsset<Flux_Texture>(const std::string& strPath)
 
 // Material loader
 template<>
-void* AsyncLoadAsset<Flux_MaterialAsset>(const std::string& strPath)
+void* AsyncLoadAsset<Zenith_MaterialAsset>(const std::string& strPath)
 {
 	// Materials may reference textures, making them complex to load async
-	Zenith_Log(LOG_CATEGORY_ASSET, "AsyncLoadAsset<Flux_MaterialAsset>: Async material loading not yet implemented");
+	Zenith_Log(LOG_CATEGORY_ASSET, "AsyncLoadAsset<Zenith_MaterialAsset>: Async material loading not yet implemented");
 	return nullptr;
 }
 

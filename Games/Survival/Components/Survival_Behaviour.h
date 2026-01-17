@@ -61,13 +61,13 @@ namespace Survival
 	extern Flux_MeshGeometry* g_pxSphereGeometry;
 	extern Flux_MeshGeometry* g_pxCapsuleGeometry;
 
-	extern Flux_MaterialAsset* g_pxPlayerMaterial;
-	extern Flux_MaterialAsset* g_pxGroundMaterial;
-	extern Flux_MaterialAsset* g_pxTreeMaterial;
-	extern Flux_MaterialAsset* g_pxRockMaterial;
-	extern Flux_MaterialAsset* g_pxBerryMaterial;
-	extern Flux_MaterialAsset* g_pxWoodMaterial;
-	extern Flux_MaterialAsset* g_pxStoneMaterial;
+	extern Zenith_MaterialAsset* g_pxPlayerMaterial;
+	extern Zenith_MaterialAsset* g_pxGroundMaterial;
+	extern Zenith_MaterialAsset* g_pxTreeMaterial;
+	extern Zenith_MaterialAsset* g_pxRockMaterial;
+	extern Zenith_MaterialAsset* g_pxBerryMaterial;
+	extern Zenith_MaterialAsset* g_pxWoodMaterial;
+	extern Zenith_MaterialAsset* g_pxStoneMaterial;
 
 	extern Zenith_Prefab* g_pxPlayerPrefab;
 	extern Zenith_Prefab* g_pxTreePrefab;

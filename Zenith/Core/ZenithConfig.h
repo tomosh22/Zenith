@@ -73,18 +73,12 @@ static constexpr uint32_t FLUX_NUM_WORKER_THREADS = 8;
 // ASSET LIMITS
 // ============================================================================
 // Maximum number of assets that can be loaded simultaneously.
-// These are fixed-size pools allocated at engine startup.
-//
-// WARNING: Exceeding these limits returns nullptr from AssetHandler::Add*()
-//          Always check return values or use Zenith_AlwaysCheck()
+// These are used by Zenith_AssetRegistry for resource tracking.
 //
 // Memory impact (approximate):
 //   - Each texture slot: ~16 bytes metadata (not including GPU memory)
 //   - Each mesh slot: ~64 bytes metadata (not including GPU memory)
 //   - Each material slot: ~128 bytes
-//
-// Files using these constants:
-//   - Zenith/AssetHandling/Zenith_AssetHandler.cpp
 
 static constexpr uint32_t MAX_TEXTURES = 1024;
 static constexpr uint32_t MAX_MESHES = 16384 * 2;  // 32768

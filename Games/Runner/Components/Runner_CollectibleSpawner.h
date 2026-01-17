@@ -18,7 +18,7 @@
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "Prefab/Zenith_Prefab.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
-#include "Flux/Flux_MaterialAsset.h"
+#include "AssetHandling/Zenith_MaterialAsset.h"
 #include "Maths/Zenith_Maths.h"
 #include <vector>
 #include <random>
@@ -96,8 +96,8 @@ public:
 		Zenith_Prefab* pxObstaclePrefab,
 		Flux_MeshGeometry* pxSphereGeometry,
 		Flux_MeshGeometry* pxCubeGeometry,
-		Flux_MaterialAsset* pxCollectibleMaterial,
-		Flux_MaterialAsset* pxObstacleMaterial,
+		Zenith_MaterialAsset* pxCollectibleMaterial,
+		Zenith_MaterialAsset* pxObstacleMaterial,
 		std::mt19937& xRng)
 	{
 		s_xConfig = xConfig;
@@ -493,7 +493,7 @@ private:
 	static inline Zenith_Prefab* s_pxObstaclePrefab = nullptr;
 	static inline Flux_MeshGeometry* s_pxSphereGeometry = nullptr;
 	static inline Flux_MeshGeometry* s_pxCubeGeometry = nullptr;
-	static inline Flux_MaterialAsset* s_pxCollectibleMaterial = nullptr;
-	static inline Flux_MaterialAsset* s_pxObstacleMaterial = nullptr;
+	static inline Zenith_MaterialAsset* s_pxCollectibleMaterial = nullptr;
+	static inline Zenith_MaterialAsset* s_pxObstacleMaterial = nullptr;
 	static inline std::mt19937* s_pxRng = nullptr;
 };

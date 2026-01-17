@@ -3,7 +3,7 @@
 #ifdef ZENITH_TOOLS
 
 #include "Zenith_Editor.h"
-#include "Flux/Flux_MaterialAsset.h"
+#include "AssetHandling/Zenith_MaterialAsset.h"
 
 // Bridge function called from Zenith_Log macro to add to editor console
 // NOTE: Must be defined after including Zenith_Editor.h
@@ -154,7 +154,7 @@ bool Zenith_Editor::s_bShowConsoleErrors = true;
 std::bitset<LOG_CATEGORY_COUNT> Zenith_Editor::s_xCategoryFilters = std::bitset<LOG_CATEGORY_COUNT>().set();
 
 // Material Editor state
-Flux_MaterialAsset* Zenith_Editor::s_pxSelectedMaterial = nullptr;
+Zenith_MaterialAsset* Zenith_Editor::s_pxSelectedMaterial = nullptr;
 bool Zenith_Editor::s_bShowMaterialEditor = true;
 
 // Editor camera state is defined in Zenith_EditorCamera.cpp
@@ -179,8 +179,7 @@ void Zenith_Editor::Initialise()
 	s_uLastClickedEntityID = INVALID_ENTITY_ID;
 	s_eGizmoMode = EditorGizmoMode::Translate;
 
-	// Initialize material system
-	Flux_MaterialAsset::Initialize();
+	// Material system is now managed by Zenith_AssetRegistry
 
 	// Initialize editor subsystems
 	Zenith_SelectionSystem::Initialise();
@@ -212,9 +211,8 @@ void Zenith_Editor::Shutdown()
 	// Reset editor camera state
 	s_bEditorCameraInitialized = false;
 	
-	// Clear material selection and shutdown material system
+	// Clear material selection (material system managed by Zenith_AssetRegistry)
 	s_pxSelectedMaterial = nullptr;
-	Flux_MaterialAsset::Shutdown();
 
 	// Shutdown editor subsystems
 	// Zenith_AnimationStateMachineEditor::Shutdown();  // TEMPORARILY DISABLED
@@ -1256,7 +1254,7 @@ void Zenith_Editor::RenderConsolePanel()
 // Material Editor Implementation
 //------------------------------------------------------------------------------
 
-void Zenith_Editor::SelectMaterial(Flux_MaterialAsset* pMaterial)
+void Zenith_Editor::SelectMaterial(Zenith_MaterialAsset* pMaterial)
 {
 	s_pxSelectedMaterial = pMaterial;
 	s_bShowMaterialEditor = true;

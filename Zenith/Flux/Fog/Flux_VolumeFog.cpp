@@ -3,7 +3,8 @@
 #include "Flux/Fog/Flux_VolumeFog.h"
 
 #include "Flux/Flux_Graphics.h"
-#include "AssetHandling/Zenith_AssetHandler.h"
+#include "AssetHandling/Zenith_AssetRegistry.h"
+#include "AssetHandling/Zenith_TextureAsset.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Maths/Zenith_Maths.h"
 
@@ -85,8 +86,8 @@ namespace
 
 // Static member definitions
 // Note: Use {} initialization to trigger default member initializers
-Flux_Texture Flux_VolumeFog::s_xNoiseTexture3D;
-Flux_Texture Flux_VolumeFog::s_xBlueNoiseTexture;
+Zenith_TextureAsset* Flux_VolumeFog::s_pxNoiseTexture3D = nullptr;
+Zenith_TextureAsset* Flux_VolumeFog::s_pxBlueNoiseTexture = nullptr;
 Flux_RenderAttachment Flux_VolumeFog::s_xFroxelDensityGrid;
 Flux_RenderAttachment Flux_VolumeFog::s_xFroxelLightingGrid;
 Flux_RenderAttachment Flux_VolumeFog::s_axHistoryBuffers[2];
@@ -181,24 +182,19 @@ void Flux_VolumeFog::GenerateNoiseTexture3D()
 		}
 	}
 
-	// Create texture
-	Zenith_AssetHandler::TextureData xTexData;
-	xTexData.pData = pData;
-	xTexData.xSurfaceInfo.m_eFormat = TEXTURE_FORMAT_RGBA8_UNORM;
-	xTexData.xSurfaceInfo.m_eTextureType = TEXTURE_TYPE_3D;
-	xTexData.xSurfaceInfo.m_uWidth = uSize;
-	xTexData.xSurfaceInfo.m_uHeight = uSize;
-	xTexData.xSurfaceInfo.m_uDepth = uSize;
-	xTexData.xSurfaceInfo.m_uNumMips = 1;
-	xTexData.xSurfaceInfo.m_uNumLayers = 1;
-	xTexData.xSurfaceInfo.m_uMemoryFlags = 1 << MEMORY_FLAGS__SHADER_READ;
-	xTexData.bCreateMips = false;
+	// Create texture via registry
+	Flux_SurfaceInfo xSurfaceInfo;
+	xSurfaceInfo.m_eFormat = TEXTURE_FORMAT_RGBA8_UNORM;
+	xSurfaceInfo.m_eTextureType = TEXTURE_TYPE_3D;
+	xSurfaceInfo.m_uWidth = uSize;
+	xSurfaceInfo.m_uHeight = uSize;
+	xSurfaceInfo.m_uDepth = uSize;
+	xSurfaceInfo.m_uNumMips = 1;
+	xSurfaceInfo.m_uNumLayers = 1;
+	xSurfaceInfo.m_uMemoryFlags = 1 << MEMORY_FLAGS__SHADER_READ;
 
-	Flux_Texture* pTexture = Zenith_AssetHandler::AddTexture(xTexData);
-	if (pTexture)
-	{
-		s_xNoiseTexture3D = *pTexture;
-	}
+	s_pxNoiseTexture3D = Zenith_AssetRegistry::Get().Create<Zenith_TextureAsset>();
+	s_pxNoiseTexture3D->CreateFromData(pData, xSurfaceInfo, false);
 
 	Zenith_MemoryManagement::Deallocate(pData);
 
@@ -264,24 +260,19 @@ void Flux_VolumeFog::GenerateBlueNoiseTexture()
 		pData[i * 4 + 2] = uValue;
 	}
 
-	// Create texture
-	Zenith_AssetHandler::TextureData xTexData;
-	xTexData.pData = pData;
-	xTexData.xSurfaceInfo.m_eFormat = TEXTURE_FORMAT_RGBA8_UNORM;
-	xTexData.xSurfaceInfo.m_eTextureType = TEXTURE_TYPE_2D;
-	xTexData.xSurfaceInfo.m_uWidth = uSize;
-	xTexData.xSurfaceInfo.m_uHeight = uSize;
-	xTexData.xSurfaceInfo.m_uDepth = 1;
-	xTexData.xSurfaceInfo.m_uNumMips = 1;
-	xTexData.xSurfaceInfo.m_uNumLayers = 1;
-	xTexData.xSurfaceInfo.m_uMemoryFlags = 1 << MEMORY_FLAGS__SHADER_READ;
-	xTexData.bCreateMips = false;
+	// Create texture via registry
+	Flux_SurfaceInfo xSurfaceInfo;
+	xSurfaceInfo.m_eFormat = TEXTURE_FORMAT_RGBA8_UNORM;
+	xSurfaceInfo.m_eTextureType = TEXTURE_TYPE_2D;
+	xSurfaceInfo.m_uWidth = uSize;
+	xSurfaceInfo.m_uHeight = uSize;
+	xSurfaceInfo.m_uDepth = 1;
+	xSurfaceInfo.m_uNumMips = 1;
+	xSurfaceInfo.m_uNumLayers = 1;
+	xSurfaceInfo.m_uMemoryFlags = 1 << MEMORY_FLAGS__SHADER_READ;
 
-	Flux_Texture* pTexture = Zenith_AssetHandler::AddTexture(xTexData);
-	if (pTexture)
-	{
-		s_xBlueNoiseTexture = *pTexture;
-	}
+	s_pxBlueNoiseTexture = Zenith_AssetRegistry::Get().Create<Zenith_TextureAsset>();
+	s_pxBlueNoiseTexture->CreateFromData(pData, xSurfaceInfo, false);
 
 	Zenith_MemoryManagement::Deallocate(pData);
 

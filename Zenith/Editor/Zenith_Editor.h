@@ -10,7 +10,7 @@
 #include <bitset>
 
 // Forward declarations
-class Flux_MaterialAsset;
+class Zenith_MaterialAsset;
 
 // Drag-drop payload type identifiers (max 32 chars per ImGui)
 #define DRAGDROP_PAYLOAD_TEXTURE  "ZENITH_TEXTURE"
@@ -159,9 +159,9 @@ public:
 	static void ClearConsole();
 	
 	// Material Editor
-	static void SelectMaterial(Flux_MaterialAsset* pMaterial);
+	static void SelectMaterial(Zenith_MaterialAsset* pMaterial);
 	static void ClearMaterialSelection();
-	static Flux_MaterialAsset* GetSelectedMaterial() { return s_pxSelectedMaterial; }
+	static Zenith_MaterialAsset* GetSelectedMaterial() { return s_pxSelectedMaterial; }
 
 private:
 	static void RenderConsolePanel();
@@ -182,9 +182,9 @@ private:
 	
 	// Material Editor
 	static void RenderMaterialEditorPanel();
-	static void RenderMaterialTextureSlot(const char* szLabel, Flux_MaterialAsset* pMaterial,
+	static void RenderMaterialTextureSlot(const char* szLabel, Zenith_MaterialAsset* pMaterial,
 		const std::string& strCurrentPath,
-		void (*SetPathFunc)(Flux_MaterialAsset*, const std::string&));
+		void (*SetPathFunc)(Zenith_MaterialAsset*, const std::string&));
 
 	static EditorMode s_eEditorMode;
 	static EditorGizmoMode s_eGizmoMode;
@@ -242,7 +242,7 @@ private:
 	static bool s_bEditorCameraInitialized;
 
 	// Material Editor state
-	static Flux_MaterialAsset* s_pxSelectedMaterial;
+	static Zenith_MaterialAsset* s_pxSelectedMaterial;
 	static bool s_bShowMaterialEditor;
 
 	// Editor camera control

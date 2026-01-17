@@ -12,7 +12,7 @@ A classic box-pushing puzzle game demonstrating core Zenith engine features.
 | **Input Handling** | `Zenith_Input` | Keyboard input polling |
 | **UI System** | `Zenith_UIComponent`, `Zenith_UIText` | Text elements with anchoring |
 | **Model Rendering** | `Zenith_ModelComponent`, `Flux_MeshGeometry` | 3D mesh rendering with materials |
-| **Materials/Textures** | `Flux_MaterialAsset` | Procedural single-color textures |
+| **Materials/Textures** | `Zenith_MaterialAsset` | Procedural single-color textures |
 | **DataAsset System** | `Zenith_DataAsset` | Configuration with serialization |
 | **Serialization** | `Zenith_DataStream` | Behavior state persistence |
 | **Camera** | `Zenith_CameraComponent` | Orthographic top-down view |

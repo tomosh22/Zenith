@@ -8,7 +8,8 @@
 #include "Flux/Flux_Buffers.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "UI/Zenith_UICanvas.h"
-#include "AssetHandling/Zenith_AssetHandler.h"
+#include "AssetHandling/Zenith_AssetRegistry.h"
+#include "AssetHandling/Zenith_TextureAsset.h"
 #include "Zenith_OS_Include.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
 
@@ -38,7 +39,7 @@ struct TextVertex
 };
 static Flux_DynamicVertexBuffer s_xInstanceBuffer;
 
-static Flux_Texture s_xFontAtlasTexture;
+static Zenith_TextureAsset* s_pxFontAtlasTexture = nullptr;
 
 DEBUGVAR bool dbg_bEnable = true;
 DEBUGVAR float dbg_fTextSize = 100.f;
@@ -78,12 +79,11 @@ void Flux_Text::Initialise()
 	constexpr bool bDeviceLocal = false;
 	Flux_MemoryManager::InitialiseDynamicVertexBuffer(nullptr, s_uMaxCharsPerFrame * sizeof(TextVertex), s_xInstanceBuffer, bDeviceLocal);
 
-	Zenith_AssetHandler::TextureData xTexData = Zenith_AssetHandler::LoadTexture2DFromFile(ENGINE_ASSETS_DIR "Textures/Font/FontAtlas" ZENITH_TEXTURE_EXT);
-	Flux_Texture* pxFontAtlas = Zenith_AssetHandler::AddTexture(xTexData);
-	xTexData.FreeAllocatedData();
-	if (pxFontAtlas)
+	s_pxFontAtlasTexture = Zenith_AssetRegistry::Get().Get<Zenith_TextureAsset>(ENGINE_ASSETS_DIR "Textures/Font/FontAtlas" ZENITH_TEXTURE_EXT);
+	if (!s_pxFontAtlasTexture)
 	{
-		s_xFontAtlasTexture = *pxFontAtlas;
+		Zenith_Log(LOG_CATEGORY_TEXT, "Warning: Failed to load font atlas texture, using white texture");
+		s_pxFontAtlasTexture = Flux_Graphics::s_pxWhiteTexture;
 	}
 
 #ifdef ZENITH_DEBUG_VARIABLES
@@ -184,7 +184,7 @@ void Flux_Text::Render(void*)
 
 	g_xCommandList.AddCommand<Flux_CommandBeginBind>(0);
 	g_xCommandList.AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
-	g_xCommandList.AddCommand<Flux_CommandBindSRV>(&s_xFontAtlasTexture.m_xSRV, 1);
+	g_xCommandList.AddCommand<Flux_CommandBindSRV>(&s_pxFontAtlasTexture->m_xSRV, 1);
 
 	g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(6, uNumChars);
 

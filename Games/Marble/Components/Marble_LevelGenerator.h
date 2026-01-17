@@ -21,7 +21,7 @@
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "Prefab/Zenith_Prefab.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
-#include "Flux/Flux_MaterialAsset.h"
+#include "AssetHandling/Zenith_MaterialAsset.h"
 #include "Maths/Zenith_Maths.h"
 #include <vector>
 #include <random>
@@ -68,10 +68,10 @@ public:
 		Zenith_Prefab* pxCollectiblePrefab,
 		Flux_MeshGeometry* pxSphereGeometry,
 		Flux_MeshGeometry* pxCubeGeometry,
-		Flux_MaterialAsset* pxBallMaterial,
-		Flux_MaterialAsset* pxPlatformMaterial,
-		Flux_MaterialAsset* pxGoalMaterial,
-		Flux_MaterialAsset* pxCollectibleMaterial)
+		Zenith_MaterialAsset* pxBallMaterial,
+		Zenith_MaterialAsset* pxPlatformMaterial,
+		Zenith_MaterialAsset* pxGoalMaterial,
+		Zenith_MaterialAsset* pxCollectibleMaterial)
 	{
 		// Random distributions
 		std::uniform_real_distribution<float> xSizeDist(2.0f, 5.0f);
@@ -165,7 +165,7 @@ private:
 		LevelEntities& xEntities,
 		Zenith_Prefab* pxPrefab,
 		Flux_MeshGeometry* pxMesh,
-		Flux_MaterialAsset* pxMaterial,
+		Zenith_MaterialAsset* pxMaterial,
 		const Zenith_Maths::Vector3& xPos,
 		const Zenith_Maths::Vector3& xScale)
 	{
@@ -191,7 +191,7 @@ private:
 		LevelEntities& xEntities,
 		Zenith_Prefab* pxPrefab,
 		Flux_MeshGeometry* pxMesh,
-		Flux_MaterialAsset* pxMaterial,
+		Zenith_MaterialAsset* pxMaterial,
 		const Zenith_Maths::Vector3& xPos)
 	{
 		Zenith_Entity xGoal = Zenith_Scene::Instantiate(*pxPrefab, "Goal");
@@ -213,7 +213,7 @@ private:
 		LevelEntities& xEntities,
 		Zenith_Prefab* pxPrefab,
 		Flux_MeshGeometry* pxMesh,
-		Flux_MaterialAsset* pxMaterial,
+		Zenith_MaterialAsset* pxMaterial,
 		const Zenith_Maths::Vector3& xPos)
 	{
 		Zenith_Entity xBall = Zenith_Scene::Instantiate(*pxPrefab, "Ball");
@@ -236,7 +236,7 @@ private:
 		LevelEntities& xEntities,
 		Zenith_Prefab* pxPrefab,
 		Flux_MeshGeometry* pxMesh,
-		Flux_MaterialAsset* pxMaterial,
+		Zenith_MaterialAsset* pxMaterial,
 		std::mt19937& xRng)
 	{
 		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();

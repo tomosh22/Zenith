@@ -3,6 +3,7 @@
 #include "Flux/Fog/Flux_RaymarchFog.h"
 #include "Flux/Fog/Flux_VolumeFog.h"
 
+#include "AssetHandling/Zenith_TextureAsset.h"
 #include "Flux/Flux.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_Buffers.h"
@@ -160,8 +161,8 @@ void Flux_RaymarchFog::Render(void*)
 	Flux_ShaderBinder xBinder(g_xCommandList);
 	xBinder.BindCBV(s_xFrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
 	xBinder.BindSRV(s_xDepthBinding, Flux_Graphics::GetDepthStencilSRV());
-	xBinder.BindSRV(s_xNoise3DBinding, &Flux_VolumeFog::GetNoiseTexture3D().m_xSRV);
-	xBinder.BindSRV(s_xBlueNoiseBinding, &Flux_VolumeFog::GetBlueNoiseTexture().m_xSRV);
+	xBinder.BindSRV(s_xNoise3DBinding, &Flux_VolumeFog::GetNoiseTexture3D()->m_xSRV);
+	xBinder.BindSRV(s_xBlueNoiseBinding, &Flux_VolumeFog::GetBlueNoiseTexture()->m_xSRV);
 
 	xBinder.PushConstant(&s_xConstants, sizeof(Flux_RaymarchConstants));
 

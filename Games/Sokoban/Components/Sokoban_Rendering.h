@@ -21,7 +21,7 @@
 #include "EntityComponent/Zenith_Scene.h"
 #include "Prefab/Zenith_Prefab.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
-#include "Flux/Flux_MaterialAsset.h"
+#include "AssetHandling/Zenith_MaterialAsset.h"
 #include "Maths/Zenith_Maths.h"
 #include "Sokoban_GridLogic.h"  // For SokobanTileType enum
 #include <vector>
@@ -76,13 +76,13 @@ public:
 	/**
 	 * GetMaterialForTile - Select material based on tile state
 	 */
-	static Flux_MaterialAsset* GetMaterialForTile(
+	static Zenith_MaterialAsset* GetMaterialForTile(
 		const SokobanTileType* aeTiles,
 		const bool* abTargets,
 		uint32_t uIndex,
-		Flux_MaterialAsset* pxFloorMaterial,
-		Flux_MaterialAsset* pxWallMaterial,
-		Flux_MaterialAsset* pxTargetMaterial)
+		Zenith_MaterialAsset* pxFloorMaterial,
+		Zenith_MaterialAsset* pxWallMaterial,
+		Zenith_MaterialAsset* pxTargetMaterial)
 	{
 		if (aeTiles[uIndex] == SOKOBAN_TILE_WALL)
 			return pxWallMaterial;
@@ -125,12 +125,12 @@ public:
 		Zenith_Prefab* pxBoxPrefab,
 		Zenith_Prefab* pxPlayerPrefab,
 		Flux_MeshGeometry* pxCubeGeometry,
-		Flux_MaterialAsset* pxFloorMaterial,
-		Flux_MaterialAsset* pxWallMaterial,
-		Flux_MaterialAsset* pxTargetMaterial,
-		Flux_MaterialAsset* pxBoxMaterial,
-		Flux_MaterialAsset* pxBoxOnTargetMaterial,
-		Flux_MaterialAsset* pxPlayerMaterial)
+		Zenith_MaterialAsset* pxFloorMaterial,
+		Zenith_MaterialAsset* pxWallMaterial,
+		Zenith_MaterialAsset* pxTargetMaterial,
+		Zenith_MaterialAsset* pxBoxMaterial,
+		Zenith_MaterialAsset* pxBoxOnTargetMaterial,
+		Zenith_MaterialAsset* pxPlayerMaterial)
 	{
 		// Clean up existing entities first
 		Destroy3DLevel();
@@ -190,7 +190,7 @@ public:
 					xTransform.SetScale({s_fTileScale * 0.8f, s_fBoxHeight, s_fTileScale * 0.8f});
 
 					// Choose material based on whether box is on target
-					Flux_MaterialAsset* pxMaterial = abTargets[uIndex] ? pxBoxOnTargetMaterial : pxBoxMaterial;
+					Zenith_MaterialAsset* pxMaterial = abTargets[uIndex] ? pxBoxOnTargetMaterial : pxBoxMaterial;
 
 					Zenith_ModelComponent& xModel = xBoxEntity.AddComponent<Zenith_ModelComponent>();
 					xModel.AddMeshEntry(*pxCubeGeometry, *pxMaterial);

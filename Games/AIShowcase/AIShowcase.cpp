@@ -7,9 +7,10 @@
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
-#include "Flux/Flux_MaterialAsset.h"
+#include "AssetHandling/Zenith_MaterialAsset.h"
+#include "AssetHandling/Zenith_TextureAsset.h"
+#include "AssetHandling/Zenith_AssetRegistry.h"
 #include "Flux/Flux_Graphics.h"
-#include "AssetHandling/Zenith_AssetHandler.h"
 #include "AI/Zenith_AIDebugVariables.h"
 #include "AI/Navigation/Zenith_NavMesh.h"
 #include "AI/Navigation/Zenith_NavMeshGenerator.h"
@@ -29,19 +30,19 @@ namespace AIShowcase
 	Flux_MeshGeometry* g_pxCylinderGeometry = nullptr;
 
 	// Materials for arena
-	Flux_MaterialAsset* g_pxFloorMaterial = nullptr;
-	Flux_MaterialAsset* g_pxWallMaterial = nullptr;
-	Flux_MaterialAsset* g_pxObstacleMaterial = nullptr;
+	Zenith_MaterialAsset* g_pxFloorMaterial = nullptr;
+	Zenith_MaterialAsset* g_pxWallMaterial = nullptr;
+	Zenith_MaterialAsset* g_pxObstacleMaterial = nullptr;
 
 	// Materials for agents
-	Flux_MaterialAsset* g_pxPlayerMaterial = nullptr;
-	Flux_MaterialAsset* g_pxEnemyMaterial = nullptr;
-	Flux_MaterialAsset* g_pxLeaderMaterial = nullptr;
-	Flux_MaterialAsset* g_pxFlankerMaterial = nullptr;
+	Zenith_MaterialAsset* g_pxPlayerMaterial = nullptr;
+	Zenith_MaterialAsset* g_pxEnemyMaterial = nullptr;
+	Zenith_MaterialAsset* g_pxLeaderMaterial = nullptr;
+	Zenith_MaterialAsset* g_pxFlankerMaterial = nullptr;
 
 	// Debug visualization materials
-	Flux_MaterialAsset* g_pxCoverPointMaterial = nullptr;
-	Flux_MaterialAsset* g_pxPatrolPointMaterial = nullptr;
+	Zenith_MaterialAsset* g_pxCoverPointMaterial = nullptr;
+	Zenith_MaterialAsset* g_pxPatrolPointMaterial = nullptr;
 
 	// NavMesh
 	Zenith_NavMesh* g_pxArenaNavMesh = nullptr;
@@ -69,44 +70,54 @@ static void InitializeAIShowcaseResources()
 	Flux_MeshGeometry::GenerateUnitCube(*g_pxCylinderGeometry);
 
 	// Use grid pattern texture with BaseColor for all materials
-	Flux_Texture* pxGridTex = &Flux_Graphics::s_xGridPatternTexture2D;
+	Zenith_TextureAsset* pxGridTex = Flux_Graphics::s_pxGridTexture;
 
 	// Create materials with grid texture and BaseColor
-	g_pxFloorMaterial = Flux_MaterialAsset::Create("AIShowcase_Floor");
-	g_pxFloorMaterial->SetDiffuseTexture(pxGridTex);
+	auto& xRegistry = Zenith_AssetRegistry::Get();
+	g_pxFloorMaterial = xRegistry.Create<Zenith_MaterialAsset>();
+	g_pxFloorMaterial->SetName("AIShowcase_Floor");
+	g_pxFloorMaterial->SetDiffuseTextureDirectly(pxGridTex);
 	g_pxFloorMaterial->SetBaseColor({ 64.f/255.f, 64.f/255.f, 64.f/255.f, 1.f });
 
-	g_pxWallMaterial = Flux_MaterialAsset::Create("AIShowcase_Wall");
-	g_pxWallMaterial->SetDiffuseTexture(pxGridTex);
+	g_pxWallMaterial = xRegistry.Create<Zenith_MaterialAsset>();
+	g_pxWallMaterial->SetName("AIShowcase_Wall");
+	g_pxWallMaterial->SetDiffuseTextureDirectly(pxGridTex);
 	g_pxWallMaterial->SetBaseColor({ 128.f/255.f, 96.f/255.f, 64.f/255.f, 1.f });
 
-	g_pxObstacleMaterial = Flux_MaterialAsset::Create("AIShowcase_Obstacle");
-	g_pxObstacleMaterial->SetDiffuseTexture(pxGridTex);
+	g_pxObstacleMaterial = xRegistry.Create<Zenith_MaterialAsset>();
+	g_pxObstacleMaterial->SetName("AIShowcase_Obstacle");
+	g_pxObstacleMaterial->SetDiffuseTextureDirectly(pxGridTex);
 	g_pxObstacleMaterial->SetBaseColor({ 96.f/255.f, 96.f/255.f, 96.f/255.f, 1.f });
 
-	g_pxPlayerMaterial = Flux_MaterialAsset::Create("AIShowcase_Player");
-	g_pxPlayerMaterial->SetDiffuseTexture(pxGridTex);
+	g_pxPlayerMaterial = xRegistry.Create<Zenith_MaterialAsset>();
+	g_pxPlayerMaterial->SetName("AIShowcase_Player");
+	g_pxPlayerMaterial->SetDiffuseTextureDirectly(pxGridTex);
 	g_pxPlayerMaterial->SetBaseColor({ 51.f/255.f, 153.f/255.f, 255.f/255.f, 1.f });
 
-	g_pxEnemyMaterial = Flux_MaterialAsset::Create("AIShowcase_Enemy");
-	g_pxEnemyMaterial->SetDiffuseTexture(pxGridTex);
+	g_pxEnemyMaterial = xRegistry.Create<Zenith_MaterialAsset>();
+	g_pxEnemyMaterial->SetName("AIShowcase_Enemy");
+	g_pxEnemyMaterial->SetDiffuseTextureDirectly(pxGridTex);
 	g_pxEnemyMaterial->SetBaseColor({ 230.f/255.f, 77.f/255.f, 77.f/255.f, 1.f });
 
-	g_pxLeaderMaterial = Flux_MaterialAsset::Create("AIShowcase_Leader");
-	g_pxLeaderMaterial->SetDiffuseTexture(pxGridTex);
+	g_pxLeaderMaterial = xRegistry.Create<Zenith_MaterialAsset>();
+	g_pxLeaderMaterial->SetName("AIShowcase_Leader");
+	g_pxLeaderMaterial->SetDiffuseTextureDirectly(pxGridTex);
 	g_pxLeaderMaterial->SetBaseColor({ 255.f/255.f, 204.f/255.f, 51.f/255.f, 1.f });
 
-	g_pxFlankerMaterial = Flux_MaterialAsset::Create("AIShowcase_Flanker");
-	g_pxFlankerMaterial->SetDiffuseTexture(pxGridTex);
+	g_pxFlankerMaterial = xRegistry.Create<Zenith_MaterialAsset>();
+	g_pxFlankerMaterial->SetName("AIShowcase_Flanker");
+	g_pxFlankerMaterial->SetDiffuseTextureDirectly(pxGridTex);
 	g_pxFlankerMaterial->SetBaseColor({ 255.f/255.f, 128.f/255.f, 0.f/255.f, 1.f });
 
 	// Cover/patrol point materials
-	g_pxCoverPointMaterial = Flux_MaterialAsset::Create("AIShowcase_CoverPoint");
-	g_pxCoverPointMaterial->SetDiffuseTexture(pxGridTex);
+	g_pxCoverPointMaterial = xRegistry.Create<Zenith_MaterialAsset>();
+	g_pxCoverPointMaterial->SetName("AIShowcase_CoverPoint");
+	g_pxCoverPointMaterial->SetDiffuseTextureDirectly(pxGridTex);
 	g_pxCoverPointMaterial->SetBaseColor({ 51.f/255.f, 204.f/255.f, 51.f/255.f, 1.f });
 
-	g_pxPatrolPointMaterial = Flux_MaterialAsset::Create("AIShowcase_PatrolPoint");
-	g_pxPatrolPointMaterial->SetDiffuseTexture(pxGridTex);
+	g_pxPatrolPointMaterial = xRegistry.Create<Zenith_MaterialAsset>();
+	g_pxPatrolPointMaterial->SetName("AIShowcase_PatrolPoint");
+	g_pxPatrolPointMaterial->SetDiffuseTextureDirectly(pxGridTex);
 	g_pxPatrolPointMaterial->SetBaseColor({ 153.f/255.f, 153.f/255.f, 255.f/255.f, 1.f });
 
 	s_bResourcesInitialized = true;

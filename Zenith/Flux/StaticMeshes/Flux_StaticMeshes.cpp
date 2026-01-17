@@ -11,7 +11,6 @@
 #include "Flux/DeferredShading/Flux_DeferredShading.h"
 #include "Flux/Flux_ModelInstance.h"
 #include "Flux/MeshGeometry/Flux_MeshInstance.h"
-#include "AssetHandling/Zenith_AssetHandler.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
@@ -242,7 +241,7 @@ void Flux_StaticMeshes::RenderToGBuffer(void*)
 				g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&pxMeshInstance->GetVertexBuffer());
 				g_xCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&pxMeshInstance->GetIndexBuffer());
 
-				Flux_MaterialAsset* pxMaterial = pxModelInstance->GetMaterial(uMesh);
+				Zenith_MaterialAsset* pxMaterial = pxModelInstance->GetMaterial(uMesh);
 				if (!pxMaterial)
 				{
 					pxMaterial = Flux_Graphics::s_pxBlankMaterial;
@@ -282,7 +281,7 @@ void Flux_StaticMeshes::RenderToGBuffer(void*)
 			g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&xMesh.GetVertexBuffer());
 			g_xCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&xMesh.GetIndexBuffer());
 
-			Flux_MaterialAsset& xMaterial = pxModel->GetMaterialAtIndex(uMesh);
+			Zenith_MaterialAsset& xMaterial = pxModel->GetMaterialAtIndex(uMesh);
 
 			// Build and push material constants (128 bytes) - uses scratch buffer in set 1
 			MaterialPushConstants xPushConstants;

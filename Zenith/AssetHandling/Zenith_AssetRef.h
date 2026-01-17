@@ -327,8 +327,8 @@ private:
 // Forward declarations for common asset types
 //--------------------------------------------------------------------------
 
-struct Flux_Texture;
-class Flux_MaterialAsset;
+class Zenith_TextureAsset;
+class Zenith_MaterialAsset;
 class Flux_MeshGeometry;
 class Zenith_ModelAsset;
 class Zenith_Prefab;
@@ -337,8 +337,8 @@ class Zenith_Prefab;
 // Type aliases for common asset references
 //--------------------------------------------------------------------------
 
-using TextureRef = Zenith_AssetRef<Flux_Texture>;
-using MaterialRef = Zenith_AssetRef<Flux_MaterialAsset>;
+using TextureRef = Zenith_AssetRef<Zenith_TextureAsset>;
+using MaterialRef = Zenith_AssetRef<Zenith_MaterialAsset>;
 using MeshRef = Zenith_AssetRef<Flux_MeshGeometry>;
 using ModelRef = Zenith_AssetRef<Zenith_ModelAsset>;
 using PrefabRef = Zenith_AssetRef<Zenith_Prefab>;
@@ -350,11 +350,11 @@ using PrefabRef = Zenith_AssetRef<Zenith_Prefab>;
 
 // Texture loading
 template<>
-Flux_Texture* Zenith_AssetRef<Flux_Texture>::LoadAsset(const std::string& strPath) const;
+Zenith_TextureAsset* Zenith_AssetRef<Zenith_TextureAsset>::LoadAsset(const std::string& strPath) const;
 
 // Material loading
 template<>
-Flux_MaterialAsset* Zenith_AssetRef<Flux_MaterialAsset>::LoadAsset(const std::string& strPath) const;
+Zenith_MaterialAsset* Zenith_AssetRef<Zenith_MaterialAsset>::LoadAsset(const std::string& strPath) const;
 
 // Mesh loading
 template<>

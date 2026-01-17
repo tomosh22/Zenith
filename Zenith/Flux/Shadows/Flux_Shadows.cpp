@@ -4,6 +4,7 @@
 
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Flux/Flux_Graphics.h"
+#include "AssetHandling/Zenith_TextureAsset.h"
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/AnimatedMeshes/Flux_AnimatedMeshes.h"
 #include "Flux/StaticMeshes/Flux_StaticMeshes.h"
@@ -174,7 +175,7 @@ Zenith_Maths::Matrix4 Flux_Shadows::GetSunViewProjMatrix(const uint32_t uIndex)
 
 Flux_ShaderResourceView& Flux_Shadows::GetCSMSRV(const uint32_t u)
 {
-	return dbg_bEnabled ? g_axCSMs[u].m_pxSRV : Flux_Graphics::s_xWhiteBlankTexture2D.m_xSRV;
+	return dbg_bEnabled ? g_axCSMs[u].m_pxSRV : Flux_Graphics::s_pxWhiteTexture->m_xSRV;
 }
 
 Flux_DynamicConstantBuffer& Flux_Shadows::GetShadowMatrixBuffer(const uint32_t u)

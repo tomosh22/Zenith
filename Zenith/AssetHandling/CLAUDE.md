@@ -2,7 +2,109 @@
 
 ## Overview
 
-The asset handling system manages the import, export, and runtime loading of 3D models and animations. It uses Assimp for importing from standard formats (FBX, glTF, OBJ) and exports to Zenith's binary formats for optimized runtime loading.
+The asset handling system manages the import, export, and runtime loading of game assets. It uses Assimp for importing from standard formats (FBX, glTF, OBJ) and exports to Zenith's binary formats for optimized runtime loading.
+
+## Asset Registry (Zenith_AssetRegistry)
+
+The **unified asset management system** for all asset types. This singleton provides:
+
+- **Single unified cache** for all asset types (textures, materials, meshes, models, etc.)
+- **Path-based identification** - assets identified by file path strings
+- **Reference counting** with automatic cleanup
+- **Support for procedural assets** (code-created assets with generated paths)
+- **Thread-safe operations**
+
+### Usage
+
+```cpp
+// Get singleton
+auto& reg = Zenith_AssetRegistry::Get();
+
+// Load asset from file (returns cached if already loaded)
+Zenith_TextureAsset* pTex = reg.Get<Zenith_TextureAsset>("Assets/tex.ztex");
+
+// Create procedural asset (generates unique path like "procedural://texture_0")
+Zenith_TextureAsset* pProc = reg.Create<Zenith_TextureAsset>();
+
+// Cleanup unused assets
+reg.UnloadUnused();  // Free assets with ref count 0
+```
+
+### Initialization Order
+
+The asset registry has two-phase initialization to handle GPU-dependent assets:
+
+```cpp
+// In main():
+Zenith_AssetRegistry::Initialize();        // Call early, before Flux
+
+// ... Flux::EarlyInitialise() ...
+
+{
+    Flux_MemoryManager::BeginFrame();
+    Zenith_AssetRegistry::InitializeGPUDependentAssets();  // After VMA is ready
+    Flux_MemoryManager::EndFrame(false);
+}
+```
+
+### Type Aliases
+
+```cpp
+using TextureRef = Zenith_AssetRef<Zenith_TextureAsset>;
+using MaterialRef = Zenith_AssetRef<Zenith_MaterialAsset>;
+using MeshRef = Zenith_AssetRef<Flux_MeshGeometry>;
+using ModelRef = Zenith_AssetRef<Zenith_ModelAsset>;
+using PrefabRef = Zenith_AssetRef<Zenith_Prefab>;
+```
+
+## Texture Assets (Zenith_TextureAsset)
+
+Texture assets contain GPU texture data and metadata:
+
+```cpp
+class Zenith_TextureAsset : public Zenith_Asset
+{
+    Flux_SurfaceInfo m_xSurfaceInfo;  // Format, dimensions, mip count
+    Flux_VRAMHandle m_xVRAMHandle;     // GPU memory handle
+    Flux_ShaderResourceView m_xSRV;    // For shader binding
+    std::string m_strSourcePath;       // For serialization
+};
+```
+
+### Loading Textures
+
+```cpp
+// Via registry (preferred)
+Zenith_TextureAsset* pTex = Zenith_AssetRegistry::Get().Get<Zenith_TextureAsset>(path);
+
+// Via asset reference
+TextureRef xTexRef;
+xTexRef.SetFromPath("Assets/tex.ztex");
+Zenith_TextureAsset* pTex = xTexRef.Get();
+```
+
+## Material Assets (Zenith_MaterialAsset)
+
+Materials store textures and rendering properties.
+
+### Creating Materials
+
+```cpp
+// Create via registry
+Zenith_MaterialAsset* pMat = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
+
+// Set textures (stores path for serialization)
+pMat->SetDiffuseWithPath("Assets/diffuse.ztex");
+pMat->SetNormalWithPath("Assets/normal.ztex");
+```
+
+### Default Textures
+
+Materials use default textures when slots are unset:
+- `s_pxDefaultDiffuse` - White 1x1 texture
+- `s_pxDefaultNormal` - Flat normal (128, 128, 255)
+
+These are initialized by `Zenith_AssetRegistry::InitializeGPUDependentAssets()`.
 
 ## Asset Types
 
@@ -112,8 +214,13 @@ worldPos = skinningMatrix * meshLocalPos
 
 ```
 AssetHandling/
+  Zenith_Asset.h/cpp          - Base asset class with ref counting
+  Zenith_AssetRegistry.h/cpp  - Unified asset cache and loading
+  Zenith_AssetRef.h/cpp       - Smart handle template for asset references
+  Zenith_TextureAsset.h/cpp   - Texture asset (GPU texture + metadata)
+  Zenith_MaterialAsset.h/cpp  - Material properties + texture references
   Zenith_MeshAsset.h/cpp      - Mesh geometry container
   Zenith_SkeletonAsset.h/cpp  - Skeleton hierarchy and bind pose
   Zenith_ModelAsset.h/cpp     - Model container (meshes + skeleton + materials)
-  Zenith_AssetHandler.h/cpp   - Asset loading and caching
+  Zenith_AssetDatabase.h/cpp  - GUID to path mapping (legacy, being phased out)
 ```

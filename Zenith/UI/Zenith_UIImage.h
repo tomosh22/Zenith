@@ -4,7 +4,7 @@
 #include "Maths/Zenith_Maths.h"
 #include <string>
 
-struct Flux_Texture;
+class Zenith_TextureAsset;
 
 /**
  * Zenith_UIImage - Textured image widget
@@ -38,8 +38,8 @@ public:
     const std::string& GetTexturePath() const { return m_strTexturePath; }
 
     // Set texture directly (for textures already loaded elsewhere)
-    void SetTexture(Flux_Texture* pxTexture) { m_pxTexture = pxTexture; }
-    Flux_Texture* GetTexture() const { return m_pxTexture; }
+    void SetTexture(Zenith_TextureAsset* pxTexture) { m_pxTexture = pxTexture; }
+    Zenith_TextureAsset* GetTexture() const { return m_pxTexture; }
 
     // ========== UV Coordinates ==========
 
@@ -78,8 +78,7 @@ private:
     void LoadTexture();
 
     std::string m_strTexturePath;
-    Flux_Texture* m_pxTexture = nullptr;
-    bool m_bOwnsTexture = false;  // True if we loaded the texture ourselves
+    Zenith_TextureAsset* m_pxTexture = nullptr;
 
     // UV coordinates (default to full texture)
     Zenith_Maths::Vector2 m_xUVMin = { 0.0f, 0.0f };

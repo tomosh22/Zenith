@@ -66,6 +66,26 @@ xInfo.m_uMemoryFlags = (1 << MEMORY_FLAGS__SHADER_READ) | (1 << MEMORY_FLAGS__UN
 
 Large uploads use a staging buffer pool (`g_uStagingPoolSize`). Uploads larger than the pool are chunked automatically.
 
+### Compressed Texture Handling
+
+Compressed formats (BC1, BC3, BC5, BC7) require special handling:
+
+1. **No runtime mipmap generation**: Compressed formats don't support `VK_FORMAT_FEATURE_BLIT_DST_BIT`, so `vkCmdBlitImage` cannot be used for mipmap generation. Compressed textures must have pre-generated mipmaps in the source data.
+
+2. **Layout transitions**: In `FlushStagingBuffer()`, compressed textures skip the blit-based mipmap loop. Mip levels 1+ remain in `TRANSFER_DST_OPTIMAL` (not `TRANSFER_SRC_OPTIMAL` like non-compressed textures after blit). The final transition to `SHADER_READ_ONLY_OPTIMAL` must use the correct source layout.
+
+3. **Format detection**: Use `IsCompressedFormat(TextureFormat)` from `Flux_Types.h` to check if a format is compressed.
+
+```cpp
+// StagingTextureMetadata includes format for compressed texture handling
+struct StagingTextureMetadata {
+    vk::Image m_xImage;
+    uint32_t m_uWidth, m_uHeight, m_uDepth;
+    uint32_t m_uNumMips, m_uNumLayers;
+    TextureFormat m_eFormat;  // Used to detect compressed formats
+};
+```
+
 ### 3D Texture Upload Bug Fix Note
 
 The `StagingTextureMetadata` struct stores texture dimensions for deferred buffer-to-image copy in `FlushStagingBuffer()`. The `m_uDepth` field must be correctly stored and used in the copy command's `setImageExtent()`, otherwise only the first Z slice(s) will have valid data.
