@@ -51,7 +51,7 @@ void Zenith_ModelComponent::AssignTextureToSlot(const char* szFilePath, uint32_t
 
 	Zenith_Log(LOG_CATEGORY_MESH, "Loaded texture from: %s", szFilePath);
 
-	Zenith_MaterialAsset* pxOldMaterial = m_xMeshEntries.Get(uMeshIdx).m_pxMaterial;
+	Zenith_MaterialAsset* pxOldMaterial = m_xMeshEntries.Get(uMeshIdx).m_xMaterial.Get();
 
 	Zenith_MaterialAsset* pxNewMaterial = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
 	if (!pxNewMaterial)
@@ -103,7 +103,7 @@ void Zenith_ModelComponent::AssignTextureToSlot(const char* szFilePath, uint32_t
 		break;
 	}
 
-	m_xMeshEntries.Get(uMeshIdx).m_pxMaterial = pxNewMaterial;
+	m_xMeshEntries.Get(uMeshIdx).m_xMaterial.Set(pxNewMaterial);
 }
 
 //-----------------------------------------------------------------------------
@@ -523,7 +523,7 @@ void Zenith_ModelComponent::RenderPropertiesPanel()
 		{
 			ImGui::PushID(uMeshIdx + 1000);  // Offset ID to avoid conflict with model instance
 
-			Zenith_MaterialAsset* pxMaterial = m_xMeshEntries.Get(uMeshIdx).m_pxMaterial;
+			Zenith_MaterialAsset* pxMaterial = m_xMeshEntries.Get(uMeshIdx).m_xMaterial.Get();
 
 			bool bExpanded = ImGui::TreeNode("MeshEntry", "Mesh %u: %s", uMeshIdx,
 				pxMaterial ? pxMaterial->GetName().c_str() : "(no material)");

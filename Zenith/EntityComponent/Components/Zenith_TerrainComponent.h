@@ -9,6 +9,7 @@ using namespace Flux_TerrainConfig;
 #include "Flux/Flux.h"
 #include "Flux/Flux_Buffers.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
+#include "AssetHandling/Zenith_AssetHandle.h"
 #include "Maths/Zenith_FrustumCulling.h"
 
 // Forward declarations
@@ -57,9 +58,6 @@ public:
 	Zenith_TerrainComponent(Zenith_Entity& xEntity)
 		: m_xParentEntity(xEntity)
 		, m_pxPhysicsGeometry(nullptr)
-		, m_pxMaterial0(nullptr)
-		, m_pxMaterial1(nullptr)
-		, m_bOwnsMaterials(false)
 		, m_bCullingResourcesInitialized(false)
 	{
 		IncrementInstanceCount();
@@ -80,10 +78,10 @@ public:
 	const Flux_IndexBuffer& GetUnifiedIndexBuffer() const { return m_xUnifiedIndexBuffer; }
 
 	const Flux_MeshGeometry& GetPhysicsMeshGeometry() const { return *m_pxPhysicsGeometry; }
-	const Zenith_MaterialAsset& GetMaterial0() const { return *m_pxMaterial0; }
-	Zenith_MaterialAsset& GetMaterial0() { return *m_pxMaterial0; }
-	const Zenith_MaterialAsset& GetMaterial1() const { return *m_pxMaterial1; }
-	Zenith_MaterialAsset& GetMaterial1() { return *m_pxMaterial1; }
+	Zenith_MaterialAsset* GetMaterial0() const { return m_xMaterial0.Get(); }
+	Zenith_MaterialAsset* GetMaterial1() const { return m_xMaterial1.Get(); }
+	MaterialHandle& GetMaterial0Handle() { return m_xMaterial0; }
+	MaterialHandle& GetMaterial1Handle() { return m_xMaterial1; }
 
 	Zenith_Entity GetParentEntity() const { return m_xParentEntity; }
 	// Serialization methods for Zenith_DataStream
@@ -147,14 +145,9 @@ public:
 //private:
 	Zenith_Entity m_xParentEntity;
 
-	//#TO not owning - just references to materials and physics geometry
 	Flux_MeshGeometry* m_pxPhysicsGeometry = nullptr;
-	Zenith_MaterialAsset* m_pxMaterial0 = nullptr;
-	Zenith_MaterialAsset* m_pxMaterial1 = nullptr;
-	
-	// Ownership tracking: true if materials were created during deserialization
-	// (and their textures need to be cleaned up when the component is destroyed)
-	bool m_bOwnsMaterials = false;
+	MaterialHandle m_xMaterial0;
+	MaterialHandle m_xMaterial1;
 
 	// ========== Unified Terrain Buffers (owned by this component) ==========
 	// Contains LOW LOD (always-resident) data at the beginning, followed by streaming space for HIGH LOD

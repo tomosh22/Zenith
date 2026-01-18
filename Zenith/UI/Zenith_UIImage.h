@@ -1,6 +1,7 @@
 #pragma once
 
 #include "UI/Zenith_UIElement.h"
+#include "AssetHandling/Zenith_AssetHandle.h"
 #include "Maths/Zenith_Maths.h"
 #include <string>
 
@@ -35,11 +36,14 @@ public:
 
     // Set texture from path (loads texture if not already loaded)
     void SetTexturePath(const std::string& strPath);
-    const std::string& GetTexturePath() const { return m_strTexturePath; }
+    const std::string& GetTexturePath() const { return m_xTexture.GetPath(); }
 
     // Set texture directly (for textures already loaded elsewhere)
-    void SetTexture(Zenith_TextureAsset* pxTexture) { m_pxTexture = pxTexture; }
-    Zenith_TextureAsset* GetTexture() const { return m_pxTexture; }
+    void SetTexture(Zenith_TextureAsset* pxTexture) { m_xTexture.Set(pxTexture); }
+    Zenith_TextureAsset* GetTexture() const { return m_xTexture.Get(); }
+
+    // Get texture handle
+    TextureHandle& GetTextureHandle() { return m_xTexture; }
 
     // ========== UV Coordinates ==========
 
@@ -77,8 +81,7 @@ public:
 private:
     void LoadTexture();
 
-    std::string m_strTexturePath;
-    Zenith_TextureAsset* m_pxTexture = nullptr;
+    TextureHandle m_xTexture;  // Texture asset handle (stores path and manages ref counting)
 
     // UV coordinates (default to full texture)
     Zenith_Maths::Vector2 m_xUVMin = { 0.0f, 0.0f };

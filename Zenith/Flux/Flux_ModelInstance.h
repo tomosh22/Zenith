@@ -1,5 +1,6 @@
 #pragma once
 #include "Collections/Zenith_Vector.h"
+#include "AssetHandling/Zenith_AssetHandle.h"
 
 class Zenith_ModelAsset;
 class Zenith_MeshAsset;
@@ -147,7 +148,7 @@ public:
 	void UpdateAnimation();
 
 private:
-	// Source asset this instance was created from
+	// Source asset this instance was created from (not owned - just a reference)
 	Zenith_ModelAsset* m_pxSourceAsset = nullptr;
 
 	// Runtime mesh instances (GPU-ready, owned by this instance)
@@ -158,15 +159,15 @@ private:
 	// Used for animated rendering with GPU skinning - only populated if model has skeleton
 	Zenith_Vector<Flux_MeshInstance*> m_xSkinnedMeshInstances;
 
-	// Materials for each mesh (owned by material cache, not deleted by this instance)
-	Zenith_Vector<Zenith_MaterialAsset*> m_xMaterials;
+	// Materials for each mesh (handles manage ref counting automatically)
+	Zenith_Vector<MaterialHandle> m_xMaterials;
 
-	// Skeleton instance (owned by this instance)
+	// Skeleton instance (owned by this instance - runtime state, not a registry asset)
 	Flux_SkeletonInstance* m_pxSkeleton = nullptr;
 
-	// Track mesh assets that were loaded (for cleanup)
-	Zenith_Vector<Zenith_MeshAsset*> m_xLoadedMeshAssets;
+	// Track mesh assets that were loaded (handles manage ref counting)
+	Zenith_Vector<MeshHandle> m_xLoadedMeshAssets;
 
-	// Track skeleton asset that was loaded (for cleanup)
-	Zenith_SkeletonAsset* m_pxLoadedSkeletonAsset = nullptr;
+	// Track skeleton asset that was loaded (handle manages ref counting)
+	SkeletonHandle m_xLoadedSkeletonAsset;
 };

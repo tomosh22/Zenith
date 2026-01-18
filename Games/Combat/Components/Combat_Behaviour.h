@@ -32,6 +32,7 @@
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_ModelAsset.h"
+#include "AssetHandling/Zenith_AssetHandle.h"
 #include "Prefab/Zenith_Prefab.h"
 #include "Maths/Zenith_Maths.h"
 #include "Flux/Quads/Flux_Quads.h"
@@ -70,11 +71,11 @@ namespace Combat
 	extern Flux_MeshGeometry* g_pxStickFigureGeometry;  // Animated humanoid mesh (skinned)
 	extern Zenith_ModelAsset* g_pxStickFigureModelAsset;  // Model asset with skeleton
 	extern std::string g_strStickFigureModelPath;  // Path to model asset for LoadModelFromFile
-	extern Zenith_MaterialAsset* g_pxPlayerMaterial;
-	extern Zenith_MaterialAsset* g_pxEnemyMaterial;
-	extern Zenith_MaterialAsset* g_pxArenaMaterial;
-	extern Zenith_MaterialAsset* g_pxWallMaterial;
-	extern Zenith_MaterialAsset* g_pxCandleMaterial;  // Cream color for candles
+	extern MaterialHandle g_xPlayerMaterial;
+	extern MaterialHandle g_xEnemyMaterial;
+	extern MaterialHandle g_xArenaMaterial;
+	extern MaterialHandle g_xWallMaterial;
+	extern MaterialHandle g_xCandleMaterial;  // Cream color for candles
 
 	extern Zenith_Prefab* g_pxPlayerPrefab;
 	extern Zenith_Prefab* g_pxEnemyPrefab;
@@ -169,10 +170,10 @@ public:
 		m_pxCapsuleGeometry = Combat::g_pxCapsuleGeometry;
 		m_pxCubeGeometry = Combat::g_pxCubeGeometry;
 		m_pxStickFigureGeometry = Combat::g_pxStickFigureGeometry;
-		m_pxPlayerMaterial = Combat::g_pxPlayerMaterial;
-		m_pxEnemyMaterial = Combat::g_pxEnemyMaterial;
-		m_pxArenaMaterial = Combat::g_pxArenaMaterial;
-		m_pxWallMaterial = Combat::g_pxWallMaterial;
+		m_xPlayerMaterial = Combat::g_xPlayerMaterial;
+		m_xEnemyMaterial = Combat::g_xEnemyMaterial;
+		m_xArenaMaterial = Combat::g_xArenaMaterial;
+		m_xWallMaterial = Combat::g_xWallMaterial;
 	}
 
 	void OnStart() ZENITH_FINAL override
@@ -408,7 +409,7 @@ private:
 				// Check if model loaded successfully with a skeleton
 				if (xModel.GetModelInstance() && xModel.HasSkeleton())
 				{
-					xModel.GetModelInstance()->SetMaterial(0, m_pxEnemyMaterial);
+					xModel.GetModelInstance()->SetMaterial(0, m_xEnemyMaterial.Get());
 					bUsingEnemyModel = true;
 				}
 			}
@@ -416,7 +417,7 @@ private:
 			// Fallback to mesh entry if model instance failed
 			if (!bUsingEnemyModel)
 			{
-				xModel.AddMeshEntry(*m_pxStickFigureGeometry, *m_pxEnemyMaterial);
+				xModel.AddMeshEntry(*m_pxStickFigureGeometry, *m_xEnemyMaterial.Get());
 			}
 
 			// Use explicit capsule dimensions for humanoid enemy (slightly smaller than player)
@@ -994,8 +995,8 @@ public:
 	Flux_MeshGeometry* m_pxCapsuleGeometry = nullptr;
 	Flux_MeshGeometry* m_pxCubeGeometry = nullptr;
 	Flux_MeshGeometry* m_pxStickFigureGeometry = nullptr;  // Animated character mesh
-	Zenith_MaterialAsset* m_pxPlayerMaterial = nullptr;
-	Zenith_MaterialAsset* m_pxEnemyMaterial = nullptr;
-	Zenith_MaterialAsset* m_pxArenaMaterial = nullptr;
-	Zenith_MaterialAsset* m_pxWallMaterial = nullptr;
+	MaterialHandle m_xPlayerMaterial;
+	MaterialHandle m_xEnemyMaterial;
+	MaterialHandle m_xArenaMaterial;
+	MaterialHandle m_xWallMaterial;
 };

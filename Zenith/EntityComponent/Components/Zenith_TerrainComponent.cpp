@@ -43,9 +43,7 @@ void Zenith_TerrainComponent::DecrementInstanceCount()
 }
 
 Zenith_TerrainComponent::Zenith_TerrainComponent(Zenith_MaterialAsset& xMaterial0, Zenith_MaterialAsset& xMaterial1, Zenith_Entity& xEntity)
-	: m_pxMaterial0(&xMaterial0)
-	, m_pxMaterial1(&xMaterial1)
-	, m_bCullingResourcesInitialized(false)
+	: m_bCullingResourcesInitialized(false)
 	, m_xParentEntity(xEntity)
 	, m_ulUnifiedVertexBufferSize(0)
 	, m_ulUnifiedIndexBufferSize(0)
@@ -54,6 +52,10 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Zenith_MaterialAsset& xMaterial
 	, m_uLowLODIndexCount(0)
 {
 	IncrementInstanceCount();
+
+	// Store material handles (auto ref-counting)
+	m_xMaterial0.Set(&xMaterial0);
+	m_xMaterial1.Set(&xMaterial1);
 
 	// Ensure streaming manager is initialized (may have been shut down after previous terrain was destroyed)
 	if (!Flux_TerrainStreamingManager::IsInitialized())
@@ -256,25 +258,8 @@ Zenith_TerrainComponent::~Zenith_TerrainComponent()
 
 	delete m_pxPhysicsGeometry;
 	m_pxPhysicsGeometry = nullptr;
-	
-	// Clean up materials if we own them (created during deserialization)
-	if (m_bOwnsMaterials)
-	{
-		Zenith_Log(LOG_CATEGORY_TERRAIN, "Zenith_TerrainComponent - Cleaning up owned materials");
 
-		// Zenith_MaterialAsset manages its own lifecycle
-		// We just need to delete the instances
-		if (m_pxMaterial0)
-		{
-			delete m_pxMaterial0;
-			m_pxMaterial0 = nullptr;
-		}
-		if (m_pxMaterial1)
-		{
-			delete m_pxMaterial1;
-			m_pxMaterial1 = nullptr;
-		}
-	}
+	// MaterialHandle members (m_xMaterial0, m_xMaterial1) auto-release when destroyed
 
 	// Decrement instance count - this may trigger streaming manager shutdown if last instance
 	DecrementInstanceCount();
@@ -285,16 +270,17 @@ void Zenith_TerrainComponent::WriteToDataStream(Zenith_DataStream& xStream) cons
 	// Serialization version
 	uint32_t uVersion = 2;
 	xStream << uVersion;
-	
+
 	// NOTE: Terrain component uses hardcoded paths for physics geometry during construction
 	// We serialize the source paths for reference, but reconstruction is handled by the constructor
 	std::string strPhysicsGeometryPath = m_pxPhysicsGeometry ? m_pxPhysicsGeometry->m_strSourcePath : "";
 	xStream << strPhysicsGeometryPath;
 
 	// Version 2: Serialize full materials with texture paths
-	if (m_pxMaterial0)
+	Zenith_MaterialAsset* pxMat0 = m_xMaterial0.Get();
+	if (pxMat0)
 	{
-		m_pxMaterial0->WriteToDataStream(xStream);
+		pxMat0->WriteToDataStream(xStream);
 	}
 	else
 	{
@@ -302,9 +288,10 @@ void Zenith_TerrainComponent::WriteToDataStream(Zenith_DataStream& xStream) cons
 		xEmptyMat.WriteToDataStream(xStream);
 	}
 
-	if (m_pxMaterial1)
+	Zenith_MaterialAsset* pxMat1 = m_xMaterial1.Get();
+	if (pxMat1)
 	{
-		m_pxMaterial1->WriteToDataStream(xStream);
+		pxMat1->WriteToDataStream(xStream);
 	}
 	else
 	{
@@ -340,26 +327,26 @@ void Zenith_TerrainComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 		// Create fresh materials with descriptive names including entity name
 		std::string strEntityName = m_xParentEntity.GetName().empty() ?
 			("Entity_" + std::to_string(m_xParentEntity.GetEntityID().m_uIndex)) : m_xParentEntity.GetName();
-		m_pxMaterial0 = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
-		m_pxMaterial1 = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
-		if (m_pxMaterial0)
-		{
-			m_pxMaterial0->SetName(strEntityName + "_Terrain_Mat0");
-			m_pxMaterial0->AddRef();
-		}
-		if (m_pxMaterial1)
-		{
-			m_pxMaterial1->SetName(strEntityName + "_Terrain_Mat1");
-			m_pxMaterial1->AddRef();
-		}
 
-		// Mark that we own these materials and their textures need cleanup
-		m_bOwnsMaterials = true;
+		// Create materials via registry and store in handles (handles manage ref counting)
+		Zenith_MaterialAsset* pxNewMat0 = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
+		Zenith_MaterialAsset* pxNewMat1 = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
+
+		if (pxNewMat0)
+		{
+			pxNewMat0->SetName(strEntityName + "_Terrain_Mat0");
+			m_xMaterial0.Set(pxNewMat0);
+		}
+		if (pxNewMat1)
+		{
+			pxNewMat1->SetName(strEntityName + "_Terrain_Mat1");
+			m_xMaterial1.Set(pxNewMat1);
+		}
 
 		// Read material data (this will also load textures from paths)
-		if (m_pxMaterial0)
+		if (m_xMaterial0.Get())
 		{
-			m_pxMaterial0->ReadFromDataStream(xStream);
+			m_xMaterial0.Get()->ReadFromDataStream(xStream);
 		}
 		else
 		{
@@ -368,9 +355,9 @@ void Zenith_TerrainComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 			xTempMat.ReadFromDataStream(xStream);
 		}
 
-		if (m_pxMaterial1)
+		if (m_xMaterial1.Get())
 		{
-			m_pxMaterial1->ReadFromDataStream(xStream);
+			m_xMaterial1.Get()->ReadFromDataStream(xStream);
 		}
 		else
 		{
@@ -392,13 +379,13 @@ void Zenith_TerrainComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 		xStream >> xMat1Color.w;
 
 		// Apply loaded colors to materials if they exist
-		if (m_pxMaterial0)
+		if (m_xMaterial0.Get())
 		{
-			m_pxMaterial0->SetBaseColor(xMat0Color);
+			m_xMaterial0.Get()->SetBaseColor(xMat0Color);
 		}
-		if (m_pxMaterial1)
+		if (m_xMaterial1.Get())
 		{
-			m_pxMaterial1->SetBaseColor(xMat1Color);
+			m_xMaterial1.Get()->SetBaseColor(xMat1Color);
 		}
 	}
 
@@ -411,8 +398,8 @@ void Zenith_TerrainComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 	// Use blank material as fallback if materials not provided
 	// This ensures terrain is visible (though with default textures) rather than invisible
 	// The game code can set proper materials after scene load if needed
-	Zenith_MaterialAsset* pxMat0 = m_pxMaterial0 ? m_pxMaterial0 : Flux_Graphics::s_pxBlankMaterial;
-	Zenith_MaterialAsset* pxMat1 = m_pxMaterial1 ? m_pxMaterial1 : Flux_Graphics::s_pxBlankMaterial;
+	Zenith_MaterialAsset* pxMat0 = m_xMaterial0.Get() ? m_xMaterial0.Get() : Flux_Graphics::s_pxBlankMaterial;
+	Zenith_MaterialAsset* pxMat1 = m_xMaterial1.Get() ? m_xMaterial1.Get() : Flux_Graphics::s_pxBlankMaterial;
 
 	if (pxMat0 && pxMat1)
 	{
@@ -436,9 +423,8 @@ void Zenith_TerrainComponent::InitializeRenderResources(Zenith_MaterialAsset& xM
 		Flux_TerrainStreamingManager::Initialize();
 	}
 
-	// Store material references
-	m_pxMaterial0 = &xMaterial0;
-	m_pxMaterial1 = &xMaterial1;
+	// NOTE: Materials are stored in m_xMaterial0/m_xMaterial1 handles by the caller
+	// (constructor or ReadFromDataStream) before this method is invoked
 
 	// Calculate expected LOW LOD buffer requirements
 	const float fLowLODDensity = 0.25f;  // 64x64 -> 16x16 vertices per chunk for LOW LOD

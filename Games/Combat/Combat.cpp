@@ -44,11 +44,11 @@ namespace Combat
 
 	Zenith_ModelAsset* g_pxStickFigureModelAsset = nullptr;  // Model asset with skeleton for animated rendering
 	std::string g_strStickFigureModelPath;  // Path to model asset file
-	Zenith_MaterialAsset* g_pxPlayerMaterial = nullptr;
-	Zenith_MaterialAsset* g_pxEnemyMaterial = nullptr;
-	Zenith_MaterialAsset* g_pxArenaMaterial = nullptr;
-	Zenith_MaterialAsset* g_pxWallMaterial = nullptr;
-	Zenith_MaterialAsset* g_pxCandleMaterial = nullptr;  // Cream color for candles
+	MaterialHandle g_xPlayerMaterial;
+	MaterialHandle g_xEnemyMaterial;
+	MaterialHandle g_xArenaMaterial;
+	MaterialHandle g_xWallMaterial;
+	MaterialHandle g_xCandleMaterial;  // Cream color for candles
 
 	// Prefabs for runtime instantiation
 	Zenith_Prefab* g_pxPlayerPrefab = nullptr;
@@ -464,25 +464,25 @@ static void InitializeCombatResources()
 	// Create materials with texture paths (properly serializable)
 	auto& xRegistry = Zenith_AssetRegistry::Get();
 
-	g_pxPlayerMaterial = xRegistry.Create<Zenith_MaterialAsset>();
-	g_pxPlayerMaterial->SetName("CombatPlayer");
-	g_pxPlayerMaterial->SetDiffuseTexturePath(strTexturesDir + "/Player.ztex");
+	g_xPlayerMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
+	g_xPlayerMaterial.Get()->SetName("CombatPlayer");
+	g_xPlayerMaterial.Get()->SetDiffuseTexturePath(strTexturesDir + "/Player.ztex");
 
-	g_pxEnemyMaterial = xRegistry.Create<Zenith_MaterialAsset>();
-	g_pxEnemyMaterial->SetName("CombatEnemy");
-	g_pxEnemyMaterial->SetDiffuseTexturePath(strTexturesDir + "/Enemy.ztex");
+	g_xEnemyMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
+	g_xEnemyMaterial.Get()->SetName("CombatEnemy");
+	g_xEnemyMaterial.Get()->SetDiffuseTexturePath(strTexturesDir + "/Enemy.ztex");
 
-	g_pxArenaMaterial = xRegistry.Create<Zenith_MaterialAsset>();
-	g_pxArenaMaterial->SetName("CombatArena");
-	g_pxArenaMaterial->SetDiffuseTexturePath(strTexturesDir + "/Arena.ztex");
+	g_xArenaMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
+	g_xArenaMaterial.Get()->SetName("CombatArena");
+	g_xArenaMaterial.Get()->SetDiffuseTexturePath(strTexturesDir + "/Arena.ztex");
 
-	g_pxWallMaterial = xRegistry.Create<Zenith_MaterialAsset>();
-	g_pxWallMaterial->SetName("CombatWall");
-	g_pxWallMaterial->SetDiffuseTexturePath(strTexturesDir + "/Wall.ztex");
+	g_xWallMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
+	g_xWallMaterial.Get()->SetName("CombatWall");
+	g_xWallMaterial.Get()->SetDiffuseTexturePath(strTexturesDir + "/Wall.ztex");
 
-	g_pxCandleMaterial = xRegistry.Create<Zenith_MaterialAsset>();
-	g_pxCandleMaterial->SetName("CombatCandle");
-	g_pxCandleMaterial->SetDiffuseTexturePath(strTexturesDir + "/Candle.ztex");
+	g_xCandleMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
+	g_xCandleMaterial.Get()->SetName("CombatCandle");
+	g_xCandleMaterial.Get()->SetDiffuseTexturePath(strTexturesDir + "/Candle.ztex");
 
 	// Create flame particle config for wall candles
 	g_pxFlameConfig = new Flux_ParticleEmitterConfig();
@@ -723,7 +723,7 @@ void Project_LoadInitialScene()
 	xFloorTransform.SetScale(Zenith_Maths::Vector3(s_fArenaRadius * 2.0f, 1.0f, s_fArenaRadius * 2.0f));
 
 	Zenith_ModelComponent& xFloorModel = xFloor.AddComponent<Zenith_ModelComponent>();
-	xFloorModel.AddMeshEntry(*Combat::g_pxCubeGeometry, *Combat::g_pxArenaMaterial);
+	xFloorModel.AddMeshEntry(*Combat::g_pxCubeGeometry, *Combat::g_xArenaMaterial.Get());
 
 	xFloor.AddComponent<Zenith_ColliderComponent>()
 		.AddCollider(COLLISION_VOLUME_TYPE_AABB, RIGIDBODY_TYPE_STATIC);
@@ -750,8 +750,8 @@ void Project_LoadInitialScene()
 
 		// Add ModelComponent with wall cube and candle cone
 		Zenith_ModelComponent& xWallModel = xWall.AddComponent<Zenith_ModelComponent>();
-		xWallModel.AddMeshEntry(*Combat::g_pxCubeGeometry, *Combat::g_pxWallMaterial);
-		xWallModel.AddMeshEntry(*Combat::g_pxConeGeometry, *Combat::g_pxCandleMaterial);
+		xWallModel.AddMeshEntry(*Combat::g_pxCubeGeometry, *Combat::g_xWallMaterial.Get());
+		xWallModel.AddMeshEntry(*Combat::g_pxConeGeometry, *Combat::g_xCandleMaterial.Get());
 
 		// Add ColliderComponent for wall collision
 		xWall.AddComponent<Zenith_ColliderComponent>()
@@ -787,7 +787,7 @@ void Project_LoadInitialScene()
 		// Check if model loaded successfully with a skeleton
 		if (xPlayerModel.GetModelInstance() && xPlayerModel.HasSkeleton())
 		{
-			xPlayerModel.GetModelInstance()->SetMaterial(0, Combat::g_pxPlayerMaterial);
+			xPlayerModel.GetModelInstance()->SetMaterial(0, Combat::g_xPlayerMaterial.Get());
 			bUsingModelInstance = true;
 		}
 	}
@@ -795,7 +795,7 @@ void Project_LoadInitialScene()
 	// Fallback to mesh entry if model instance failed
 	if (!bUsingModelInstance)
 	{
-		xPlayerModel.AddMeshEntry(*Combat::g_pxStickFigureGeometry, *Combat::g_pxPlayerMaterial);
+		xPlayerModel.AddMeshEntry(*Combat::g_pxStickFigureGeometry, *Combat::g_xPlayerMaterial.Get());
 	}
 
 	// Use explicit capsule dimensions for humanoid character

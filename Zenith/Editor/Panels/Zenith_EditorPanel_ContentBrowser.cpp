@@ -28,7 +28,7 @@ namespace
 {
 	struct TextureThumbnailEntry
 	{
-		Zenith_TextureAsset* m_pxTexture = nullptr;
+		TextureHandle m_xTexture;  // Handle manages ref counting
 		Flux_ImGuiTextureHandle m_xImGuiHandle;
 		bool m_bLoadAttempted = false;
 	};
@@ -67,15 +67,16 @@ static Flux_ImGuiTextureHandle GetTextureThumbnail(const std::string& strPath)
 		return Flux_ImGuiTextureHandle();
 	}
 
-	// Try to load the texture via registry
+	// Try to load the texture via registry using handle (manages ref counting)
 	TextureThumbnailEntry xEntry;
 	xEntry.m_bLoadAttempted = true;
 
-	xEntry.m_pxTexture = Zenith_AssetRegistry::Get().Get<Zenith_TextureAsset>(strPath);
-	if (xEntry.m_pxTexture && xEntry.m_pxTexture->m_xSRV.m_xImageViewHandle.IsValid())
+	xEntry.m_xTexture.SetPath(strPath);
+	Zenith_TextureAsset* pxTexture = xEntry.m_xTexture.Get();
+	if (pxTexture && pxTexture->m_xSRV.m_xImageViewHandle.IsValid())
 	{
 		xEntry.m_xImGuiHandle = Flux_ImGuiIntegration::RegisterTexture(
-			xEntry.m_pxTexture->m_xSRV,
+			pxTexture->m_xSRV,
 			Flux_Graphics::s_xClampSampler
 		);
 	}

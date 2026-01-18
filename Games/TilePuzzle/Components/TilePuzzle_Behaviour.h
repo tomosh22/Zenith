@@ -15,6 +15,7 @@
 #include "Input/Zenith_Input.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
+#include "AssetHandling/Zenith_AssetHandle.h"
 #include "Prefab/Zenith_Prefab.h"
 
 #include "TilePuzzle/Components/TilePuzzle_Types.h"
@@ -38,10 +39,10 @@ namespace TilePuzzle
 {
 	extern Flux_MeshGeometry* g_pxCubeGeometry;
 	extern Flux_MeshGeometry* g_pxSphereGeometry;
-	extern Zenith_MaterialAsset* g_pxFloorMaterial;
-	extern Zenith_MaterialAsset* g_pxBlockerMaterial;
-	extern Zenith_MaterialAsset* g_apxShapeMaterials[TILEPUZZLE_COLOR_COUNT];
-	extern Zenith_MaterialAsset* g_apxCatMaterials[TILEPUZZLE_COLOR_COUNT];
+	extern MaterialHandle g_xFloorMaterial;
+	extern MaterialHandle g_xBlockerMaterial;
+	extern MaterialHandle g_axShapeMaterials[TILEPUZZLE_COLOR_COUNT];
+	extern MaterialHandle g_axCatMaterials[TILEPUZZLE_COLOR_COUNT];
 	extern Zenith_Prefab* g_pxCellPrefab;
 	extern Zenith_Prefab* g_pxShapeCubePrefab;
 	extern Zenith_Prefab* g_pxCatPrefab;
@@ -91,13 +92,13 @@ public:
 		// Cache global resources (lightweight)
 		m_pxCubeGeometry = TilePuzzle::g_pxCubeGeometry;
 		m_pxSphereGeometry = TilePuzzle::g_pxSphereGeometry;
-		m_pxFloorMaterial = TilePuzzle::g_pxFloorMaterial;
-		m_pxBlockerMaterial = TilePuzzle::g_pxBlockerMaterial;
+		m_xFloorMaterial = TilePuzzle::g_xFloorMaterial;
+		m_xBlockerMaterial = TilePuzzle::g_xBlockerMaterial;
 
 		for (uint32_t i = 0; i < TILEPUZZLE_COLOR_COUNT; ++i)
 		{
-			m_apxShapeMaterials[i] = TilePuzzle::g_apxShapeMaterials[i];
-			m_apxCatMaterials[i] = TilePuzzle::g_apxCatMaterials[i];
+			m_axShapeMaterials[i] = TilePuzzle::g_axShapeMaterials[i];
+			m_axCatMaterials[i] = TilePuzzle::g_axCatMaterials[i];
 		}
 
 		// Heavy initialization moved to OnStart
@@ -225,10 +226,10 @@ private:
 	// Cached resources
 	Flux_MeshGeometry* m_pxCubeGeometry = nullptr;
 	Flux_MeshGeometry* m_pxSphereGeometry = nullptr;
-	Zenith_MaterialAsset* m_pxFloorMaterial = nullptr;
-	Zenith_MaterialAsset* m_pxBlockerMaterial = nullptr;
-	Zenith_MaterialAsset* m_apxShapeMaterials[TILEPUZZLE_COLOR_COUNT] = {};
-	Zenith_MaterialAsset* m_apxCatMaterials[TILEPUZZLE_COLOR_COUNT] = {};
+	MaterialHandle m_xFloorMaterial;
+	MaterialHandle m_xBlockerMaterial;
+	MaterialHandle m_axShapeMaterials[TILEPUZZLE_COLOR_COUNT];
+	MaterialHandle m_axCatMaterials[TILEPUZZLE_COLOR_COUNT];
 
 	// ========================================================================
 	// Level Generation
@@ -538,7 +539,7 @@ private:
 					xTransform.SetScale(Zenith_Maths::Vector3(s_fCellSize * 0.95f, s_fFloorHeight, s_fCellSize * 0.95f));
 
 					Zenith_ModelComponent& xModel = xFloorEntity.AddComponent<Zenith_ModelComponent>();
-					xModel.AddMeshEntry(*m_pxCubeGeometry, *m_pxFloorMaterial);
+					xModel.AddMeshEntry(*m_pxCubeGeometry, *m_xFloorMaterial.Get());
 
 					m_axFloorEntityIDs.push_back(xFloorEntity.GetEntityID());
 				}
@@ -550,10 +551,10 @@ private:
 		{
 			xShape.axCubeEntityIDs.clear();
 
-			Zenith_MaterialAsset* pxMaterial = m_pxBlockerMaterial;
+			Zenith_MaterialAsset* pxMaterial = m_xBlockerMaterial.Get();
 			if (xShape.pxDefinition->bDraggable && xShape.eColor < TILEPUZZLE_COLOR_COUNT)
 			{
-				pxMaterial = m_apxShapeMaterials[xShape.eColor];
+				pxMaterial = m_axShapeMaterials[xShape.eColor].Get();
 			}
 
 			for (const auto& xOffset : xShape.pxDefinition->axCells)
@@ -582,7 +583,7 @@ private:
 			xTransform.SetScale(Zenith_Maths::Vector3(s_fCatRadius * 2.0f));
 
 			Zenith_ModelComponent& xModel = xCatEntity.AddComponent<Zenith_ModelComponent>();
-			xModel.AddMeshEntry(*m_pxSphereGeometry, *m_apxCatMaterials[xCat.eColor]);
+			xModel.AddMeshEntry(*m_pxSphereGeometry, *m_axCatMaterials[xCat.eColor].Get());
 
 			xCat.uEntityID = xCatEntity.GetEntityID();
 		}
@@ -595,7 +596,7 @@ private:
 
 		// White cursor material (TODO: create proper highlight material)
 		Zenith_ModelComponent& xModel = xCursorEntity.AddComponent<Zenith_ModelComponent>();
-		xModel.AddMeshEntry(*m_pxCubeGeometry, *m_pxFloorMaterial);
+		xModel.AddMeshEntry(*m_pxCubeGeometry, *m_xFloorMaterial.Get());
 
 		m_uCursorEntityID = xCursorEntity.GetEntityID();
 	}

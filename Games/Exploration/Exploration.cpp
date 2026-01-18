@@ -10,6 +10,7 @@
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
+#include "AssetHandling/Zenith_AssetHandle.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Terrain/Flux_TerrainConfig.h"
@@ -31,8 +32,8 @@ extern void ExportHeightmapFromPaths(const std::string& strHeightmapPath, const 
 namespace Exploration
 {
 	// Terrain materials
-	Zenith_MaterialAsset* g_pxTerrainMaterial0 = nullptr;
-	Zenith_MaterialAsset* g_pxTerrainMaterial1 = nullptr;
+	MaterialHandle g_xTerrainMaterial0;
+	MaterialHandle g_xTerrainMaterial1;
 
 	// Terrain textures (procedural)
 	Zenith_TextureAsset* g_pxGrassTexture = nullptr;
@@ -280,13 +281,13 @@ static void InitializeExplorationResources()
 
 	// Create terrain materials
 	auto& xRegistry = Zenith_AssetRegistry::Get();
-	g_pxTerrainMaterial0 = xRegistry.Create<Zenith_MaterialAsset>();
-	g_pxTerrainMaterial0->SetName("ExplorationTerrainGrass");
-	g_pxTerrainMaterial0->SetDiffuseTextureDirectly(g_pxGrassTexture);
+	g_xTerrainMaterial0.Set(xRegistry.Create<Zenith_MaterialAsset>());
+	g_xTerrainMaterial0.Get()->SetName("ExplorationTerrainGrass");
+	g_xTerrainMaterial0.Get()->SetDiffuseTextureDirectly(g_pxGrassTexture);
 
-	g_pxTerrainMaterial1 = xRegistry.Create<Zenith_MaterialAsset>();
-	g_pxTerrainMaterial1->SetName("ExplorationTerrainRock");
-	g_pxTerrainMaterial1->SetDiffuseTextureDirectly(g_pxRockTexture);
+	g_xTerrainMaterial1.Set(xRegistry.Create<Zenith_MaterialAsset>());
+	g_xTerrainMaterial1.Get()->SetName("ExplorationTerrainRock");
+	g_xTerrainMaterial1.Get()->SetDiffuseTextureDirectly(g_pxRockTexture);
 
 	s_bResourcesInitialized = true;
 }
@@ -297,7 +298,7 @@ static void InitializeExplorationResources()
 namespace Exploration
 {
 	// Resources for instanced trees
-	Zenith_MaterialAsset* g_pxTreeMaterial = nullptr;
+	MaterialHandle g_xTreeMaterial;
 	Zenith_InstancedMeshComponent* g_pxTreeComponent = nullptr;
 }
 
@@ -393,8 +394,8 @@ static void SpawnInstancedTrees(Zenith_InstancedMeshComponent& xTreeComponent, u
 					continue;
 			}
 
-			// Random scale variation (0.8 to 1.2)
-			float fScale = 0.8f + RandomFromPosition(fX, fZ, 3.0f) * 0.4f;
+			// Random scale variation (0.8 to 1.2), multiplied by 5 for visibility
+			float fScale = (0.8f + RandomFromPosition(fX, fZ, 3.0f) * 0.4f) * 5.0f;
 
 			// Random rotation around Y axis
 			float fRotation = RandomFromPosition(fX, fZ, 4.0f) * 6.28318f;
@@ -449,9 +450,9 @@ static void CreateInstancedTrees(Zenith_Scene& xScene)
 	Zenith_Log(LOG_CATEGORY_MESH, "[Exploration] Creating instanced trees entity...");
 
 	// Create tree material (green with some variation)
-	g_pxTreeMaterial = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
-	g_pxTreeMaterial->SetName("TreeMaterial");
-	g_pxTreeMaterial->SetBaseColor(Zenith_Maths::Vector4(0.3f, 0.5f, 0.2f, 1.0f));
+	g_xTreeMaterial.Set(Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>());
+	g_xTreeMaterial.Get()->SetName("TreeMaterial");
+	g_xTreeMaterial.Get()->SetBaseColor(Zenith_Maths::Vector4(0.3f, 0.5f, 0.2f, 1.0f));
 
 	// Create entity with instanced mesh component
 	Zenith_Entity xTreesEntity(&xScene, "InstancedTrees");
@@ -477,7 +478,7 @@ static void CreateInstancedTrees(Zenith_Scene& xScene)
 	}
 
 	// Set material
-	xTrees.SetMaterial(g_pxTreeMaterial);
+	xTrees.SetMaterial(g_xTreeMaterial.Get());
 
 	// Spawn trees (start with 10k for testing, can increase to 100k)
 	// Reduced count for initial testing to ensure performance is acceptable
@@ -582,8 +583,8 @@ void Project_LoadInitialScene()
 		// Add terrain component with materials
 		// Note: AddComponent automatically passes entity as last arg
 		xTerrainEntity.AddComponent<Zenith_TerrainComponent>(
-			*g_pxTerrainMaterial0,
-			*g_pxTerrainMaterial1);
+			*g_xTerrainMaterial0.Get(),
+			*g_xTerrainMaterial1.Get());
 
 		Zenith_Log(LOG_CATEGORY_TERRAIN, "[Exploration] Terrain entity created successfully!");
 	}
@@ -603,8 +604,8 @@ void Project_LoadInitialScene()
 		xTerrainEntity.SetTransient(false);
 
 		xTerrainEntity.AddComponent<Zenith_TerrainComponent>(
-			*g_pxTerrainMaterial0,
-			*g_pxTerrainMaterial1);
+			*g_xTerrainMaterial0.Get(),
+			*g_xTerrainMaterial1.Get());
 
 		Zenith_Log(LOG_CATEGORY_TERRAIN, "[Exploration] Terrain entity created successfully!");
 	}
@@ -628,4 +629,26 @@ void Project_LoadInitialScene()
 
 	// Load from disk to ensure unified lifecycle code path (LoadFromFile handles OnAwake/OnEnable)
 	xScene.LoadFromFile(strScenePath);
+
+	// Reconnect procedural materials if needed, and spawn instances if empty
+	// (procedural materials and instances are now serialized, but we may need to
+	// set them up fresh if loading an older scene file)
+	Zenith_Entity xTreesEntity = xScene.FindEntityByName("InstancedTrees");
+	if (xTreesEntity.IsValid() && xTreesEntity.HasComponent<Zenith_InstancedMeshComponent>())
+	{
+		Zenith_InstancedMeshComponent& xTrees = xTreesEntity.GetComponent<Zenith_InstancedMeshComponent>();
+
+		// Set material if not already set (fallback for older scene files)
+		if (xTrees.GetMaterial() == nullptr)
+		{
+			xTrees.SetMaterial(g_xTreeMaterial.Get());
+		}
+		g_pxTreeComponent = &xTrees;
+
+		// Only spawn instances if none exist (they're now serialized in v4+ scenes)
+		if (xTrees.IsEmpty())
+		{
+			SpawnInstancedTrees(xTrees, 10000);
+		}
+	}
 }

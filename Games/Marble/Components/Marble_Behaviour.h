@@ -26,6 +26,7 @@
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Zenith_Scene.h"
+#include "AssetHandling/Zenith_AssetHandle.h"
 
 // Include extracted modules
 #include "Marble_Input.h"
@@ -53,11 +54,11 @@ namespace Marble
 {
 	extern Flux_MeshGeometry* g_pxSphereGeometry;
 	extern Flux_MeshGeometry* g_pxCubeGeometry;
-	extern Zenith_MaterialAsset* g_pxBallMaterial;
-	extern Zenith_MaterialAsset* g_pxPlatformMaterial;
-	extern Zenith_MaterialAsset* g_pxGoalMaterial;
-	extern Zenith_MaterialAsset* g_pxCollectibleMaterial;
-	extern Zenith_MaterialAsset* g_pxFloorMaterial;
+	extern MaterialHandle g_xBallMaterial;
+	extern MaterialHandle g_xPlatformMaterial;
+	extern MaterialHandle g_xGoalMaterial;
+	extern MaterialHandle g_xCollectibleMaterial;
+	extern MaterialHandle g_xFloorMaterial;
 
 	// Prefabs for runtime instantiation
 	extern Zenith_Prefab* g_pxBallPrefab;
@@ -107,11 +108,11 @@ public:
 		// Store resource pointers from globals (lightweight)
 		m_pxSphereGeometry = Marble::g_pxSphereGeometry;
 		m_pxCubeGeometry = Marble::g_pxCubeGeometry;
-		m_pxBallMaterial = Marble::g_pxBallMaterial;
-		m_pxPlatformMaterial = Marble::g_pxPlatformMaterial;
-		m_pxGoalMaterial = Marble::g_pxGoalMaterial;
-		m_pxCollectibleMaterial = Marble::g_pxCollectibleMaterial;
-		m_pxFloorMaterial = Marble::g_pxFloorMaterial;
+		m_xBallMaterial = Marble::g_xBallMaterial;
+		m_xPlatformMaterial = Marble::g_xPlatformMaterial;
+		m_xGoalMaterial = Marble::g_xGoalMaterial;
+		m_xCollectibleMaterial = Marble::g_xCollectibleMaterial;
+		m_xFloorMaterial = Marble::g_xFloorMaterial;
 
 		// Heavy initialization moved to OnStart
 	}
@@ -352,10 +353,10 @@ private:
 			Marble::g_pxCollectiblePrefab,
 			m_pxSphereGeometry,
 			m_pxCubeGeometry,
-			m_pxBallMaterial,
-			m_pxPlatformMaterial,
-			m_pxGoalMaterial,
-			m_pxCollectibleMaterial);
+			m_xBallMaterial.Get(),
+			m_xPlatformMaterial.Get(),
+			m_xGoalMaterial.Get(),
+			m_xCollectibleMaterial.Get());
 
 		// Reset game state
 		m_eGameState = MarbleGameState::PLAYING;
@@ -423,9 +424,9 @@ public:
 	// Resource pointers (set in OnAwake from globals)
 	Flux_MeshGeometry* m_pxSphereGeometry = nullptr;
 	Flux_MeshGeometry* m_pxCubeGeometry = nullptr;
-	Zenith_MaterialAsset* m_pxBallMaterial = nullptr;
-	Zenith_MaterialAsset* m_pxPlatformMaterial = nullptr;
-	Zenith_MaterialAsset* m_pxGoalMaterial = nullptr;
-	Zenith_MaterialAsset* m_pxCollectibleMaterial = nullptr;
-	Zenith_MaterialAsset* m_pxFloorMaterial = nullptr;
+	MaterialHandle m_xBallMaterial;
+	MaterialHandle m_xPlatformMaterial;
+	MaterialHandle m_xGoalMaterial;
+	MaterialHandle m_xCollectibleMaterial;
+	MaterialHandle m_xFloorMaterial;
 };

@@ -292,6 +292,17 @@ void Zenith_UnitTests::RunAllTests()
 	TestTacticalPointDebugColor();
 	TestSquadDebugRoleColor();
 
+	// Asset Handle tests (operator bool fix for procedural assets)
+	TestAssetHandleProceduralBoolConversion();
+	TestAssetHandlePathBasedBoolConversion();
+	TestAssetHandleEmptyBoolConversion();
+	TestAssetHandleSetStoresRef();
+	TestAssetHandleCopySemantics();
+	TestAssetHandleMoveSemantics();
+	TestAssetHandleSetPathReleasesRef();
+	TestAssetHandleClearReleasesRef();
+	TestAssetHandleProceduralComparison();
+
 #ifdef ZENITH_TOOLS
 	// Editor tests (only in tools builds)
 	Zenith_EditorTests::RunAllTests();
@@ -7666,4 +7677,357 @@ void Zenith_UnitTests::TestProceduralTreeAssetExport()
 
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestProceduralTreeAssetExport completed successfully");
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "  Assets available at: %s", strOutputDir.c_str());
+}
+
+//=============================================================================
+// Asset Handle Tests
+// Tests for the operator bool() fix that ensures procedural assets (via Set())
+// are correctly detected as valid, not just path-based assets.
+//=============================================================================
+
+#include "AssetHandling/Zenith_MaterialAsset.h"
+
+void Zenith_UnitTests::TestAssetHandleProceduralBoolConversion()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAssetHandleProceduralBoolConversion...");
+
+	// Create a procedural material via registry
+	auto& xRegistry = Zenith_AssetRegistry::Get();
+	Zenith_MaterialAsset* pxMaterial = xRegistry.Create<Zenith_MaterialAsset>();
+	pxMaterial->SetName("TestProceduralMaterial");
+
+	// Create a handle and set it via Set() (procedural path)
+	MaterialHandle xHandle;
+	xHandle.Set(pxMaterial);
+
+	// The key fix: operator bool() should return true for procedural assets
+	// Previously it only checked if path was set, which is empty for procedural assets
+	Zenith_Assert(static_cast<bool>(xHandle), "Procedural asset handle should be valid (operator bool)");
+	Zenith_Assert(xHandle.Get() == pxMaterial, "Get() should return the procedural material");
+	Zenith_Assert(xHandle.IsLoaded(), "IsLoaded() should return true for procedural asset");
+
+	// Path should be empty for procedural assets
+	Zenith_Assert(xHandle.GetPath().empty(), "Procedural asset should have empty path");
+	Zenith_Assert(!xHandle.IsSet(), "IsSet() should return false (no path) for procedural asset");
+
+	// Guard pattern that was broken before the fix:
+	// if (!xHandle) { return; } // This would incorrectly return for procedural assets
+	bool bGuardPassed = false;
+	if (xHandle)
+	{
+		bGuardPassed = true;
+	}
+	Zenith_Assert(bGuardPassed, "Guard pattern 'if (xHandle)' should pass for procedural asset");
+
+	// Cleanup is automatic via handle destructor
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAssetHandleProceduralBoolConversion passed");
+}
+
+void Zenith_UnitTests::TestAssetHandlePathBasedBoolConversion()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAssetHandlePathBasedBoolConversion...");
+
+	// Create a handle with a path (simulating a file-based asset)
+	MaterialHandle xHandle;
+	xHandle.SetPath("game:Materials/TestMaterial.zmat");
+
+	// operator bool() should return true when path is set
+	Zenith_Assert(static_cast<bool>(xHandle), "Path-based handle should be valid (operator bool)");
+	Zenith_Assert(xHandle.IsSet(), "IsSet() should return true for path-based handle");
+	Zenith_Assert(!xHandle.GetPath().empty(), "GetPath() should return the path");
+
+	// Note: Get() would try to load from registry which may not exist in test
+	// We're testing the bool conversion, not the loading
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAssetHandlePathBasedBoolConversion passed");
+}
+
+void Zenith_UnitTests::TestAssetHandleEmptyBoolConversion()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAssetHandleEmptyBoolConversion...");
+
+	// Default-constructed handle should be invalid
+	MaterialHandle xHandle;
+
+	Zenith_Assert(!static_cast<bool>(xHandle), "Empty handle should be invalid (operator bool)");
+	Zenith_Assert(!xHandle.IsSet(), "Empty handle IsSet() should be false");
+	Zenith_Assert(!xHandle.IsLoaded(), "Empty handle IsLoaded() should be false");
+	Zenith_Assert(xHandle.GetPath().empty(), "Empty handle path should be empty");
+	Zenith_Assert(xHandle.Get() == nullptr, "Empty handle Get() should return nullptr");
+
+	// Guard pattern should correctly skip empty handles
+	bool bGuardSkipped = true;
+	if (xHandle)
+	{
+		bGuardSkipped = false;
+	}
+	Zenith_Assert(bGuardSkipped, "Guard pattern 'if (xHandle)' should skip empty handle");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAssetHandleEmptyBoolConversion passed");
+}
+
+void Zenith_UnitTests::TestAssetHandleSetStoresRef()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAssetHandleSetStoresRef...");
+
+	// This tests that Set() properly increments reference count
+	auto& xRegistry = Zenith_AssetRegistry::Get();
+	Zenith_MaterialAsset* pxMaterial = xRegistry.Create<Zenith_MaterialAsset>();
+	pxMaterial->SetName("TestRefCountMaterial");
+
+	uint32_t uInitialRefCount = pxMaterial->GetRefCount();
+
+	{
+		MaterialHandle xHandle;
+		xHandle.Set(pxMaterial);
+
+		// Ref count should increase after Set()
+		Zenith_Assert(pxMaterial->GetRefCount() == uInitialRefCount + 1,
+			"Set() should increment ref count");
+
+		// Copy handle should also increment ref count
+		MaterialHandle xHandleCopy = xHandle;
+		Zenith_Assert(pxMaterial->GetRefCount() == uInitialRefCount + 2,
+			"Handle copy should increment ref count");
+	}
+	// After handles go out of scope, ref count should be back to initial
+
+	Zenith_Assert(pxMaterial->GetRefCount() == uInitialRefCount,
+		"Ref count should return to initial after handles destroyed");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAssetHandleSetStoresRef passed");
+}
+
+void Zenith_UnitTests::TestAssetHandleCopySemantics()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAssetHandleCopySemantics...");
+
+	auto& xRegistry = Zenith_AssetRegistry::Get();
+	Zenith_MaterialAsset* pxMaterial = xRegistry.Create<Zenith_MaterialAsset>();
+	pxMaterial->SetName("TestCopyMaterial");
+
+	uint32_t uInitialRefCount = pxMaterial->GetRefCount();
+
+	// Test copy constructor
+	{
+		MaterialHandle xHandle1;
+		xHandle1.Set(pxMaterial);
+		Zenith_Assert(pxMaterial->GetRefCount() == uInitialRefCount + 1,
+			"Set() should increment ref count");
+
+		// Copy constructor
+		MaterialHandle xHandle2(xHandle1);
+		Zenith_Assert(pxMaterial->GetRefCount() == uInitialRefCount + 2,
+			"Copy constructor should increment ref count");
+
+		// Both handles should return the same pointer
+		Zenith_Assert(xHandle1.Get() == pxMaterial, "Handle1 should return original pointer");
+		Zenith_Assert(xHandle2.Get() == pxMaterial, "Handle2 should return original pointer");
+	}
+
+	Zenith_Assert(pxMaterial->GetRefCount() == uInitialRefCount,
+		"Ref count should return to initial after copy handles destroyed");
+
+	// Test copy assignment
+	{
+		MaterialHandle xHandle1;
+		xHandle1.Set(pxMaterial);
+
+		Zenith_MaterialAsset* pxMaterial2 = xRegistry.Create<Zenith_MaterialAsset>();
+		pxMaterial2->SetName("TestCopyMaterial2");
+		uint32_t uMat2InitialRef = pxMaterial2->GetRefCount();
+
+		MaterialHandle xHandle2;
+		xHandle2.Set(pxMaterial2);
+		Zenith_Assert(pxMaterial2->GetRefCount() == uMat2InitialRef + 1,
+			"Material2 ref count after Set()");
+
+		// Copy assignment - should release old, acquire new
+		xHandle2 = xHandle1;
+		Zenith_Assert(pxMaterial2->GetRefCount() == uMat2InitialRef,
+			"Copy assignment should release old material");
+		Zenith_Assert(pxMaterial->GetRefCount() == uInitialRefCount + 2,
+			"Copy assignment should increment new material ref");
+	}
+
+	Zenith_Assert(pxMaterial->GetRefCount() == uInitialRefCount,
+		"Ref count should return to initial after all handles destroyed");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAssetHandleCopySemantics passed");
+}
+
+void Zenith_UnitTests::TestAssetHandleMoveSemantics()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAssetHandleMoveSemantics...");
+
+	auto& xRegistry = Zenith_AssetRegistry::Get();
+	Zenith_MaterialAsset* pxMaterial = xRegistry.Create<Zenith_MaterialAsset>();
+	pxMaterial->SetName("TestMoveMaterial");
+
+	uint32_t uInitialRefCount = pxMaterial->GetRefCount();
+
+	// Test move constructor
+	{
+		MaterialHandle xHandle1;
+		xHandle1.Set(pxMaterial);
+		Zenith_Assert(pxMaterial->GetRefCount() == uInitialRefCount + 1,
+			"Set() should increment ref count");
+
+		// Move constructor - should NOT change ref count
+		MaterialHandle xHandle2(std::move(xHandle1));
+		Zenith_Assert(pxMaterial->GetRefCount() == uInitialRefCount + 1,
+			"Move constructor should NOT change ref count");
+
+		// Source handle should be nullified
+		Zenith_Assert(!xHandle1.IsLoaded(), "Moved-from handle should not be loaded");
+		Zenith_Assert(xHandle2.Get() == pxMaterial, "Moved-to handle should have pointer");
+	}
+
+	Zenith_Assert(pxMaterial->GetRefCount() == uInitialRefCount,
+		"Ref count should return to initial after moved handle destroyed");
+
+	// Test move assignment
+	{
+		MaterialHandle xHandle1;
+		xHandle1.Set(pxMaterial);
+
+		Zenith_MaterialAsset* pxMaterial2 = xRegistry.Create<Zenith_MaterialAsset>();
+		pxMaterial2->SetName("TestMoveMaterial2");
+		uint32_t uMat2InitialRef = pxMaterial2->GetRefCount();
+
+		MaterialHandle xHandle2;
+		xHandle2.Set(pxMaterial2);
+
+		// Move assignment - should release old, take ownership of new
+		xHandle2 = std::move(xHandle1);
+		Zenith_Assert(pxMaterial2->GetRefCount() == uMat2InitialRef,
+			"Move assignment should release old material");
+		Zenith_Assert(pxMaterial->GetRefCount() == uInitialRefCount + 1,
+			"Move assignment should NOT increment new material ref");
+		Zenith_Assert(!xHandle1.IsLoaded(), "Moved-from handle should not be loaded");
+	}
+
+	Zenith_Assert(pxMaterial->GetRefCount() == uInitialRefCount,
+		"Ref count should return to initial after all handles destroyed");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAssetHandleMoveSemantics passed");
+}
+
+void Zenith_UnitTests::TestAssetHandleSetPathReleasesRef()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAssetHandleSetPathReleasesRef...");
+
+	auto& xRegistry = Zenith_AssetRegistry::Get();
+	Zenith_MaterialAsset* pxMaterial = xRegistry.Create<Zenith_MaterialAsset>();
+	pxMaterial->SetName("TestSetPathMaterial");
+
+	uint32_t uInitialRefCount = pxMaterial->GetRefCount();
+
+	{
+		MaterialHandle xHandle;
+		xHandle.Set(pxMaterial);
+		Zenith_Assert(pxMaterial->GetRefCount() == uInitialRefCount + 1,
+			"Set() should increment ref count");
+
+		// SetPath should release the old cached pointer
+		xHandle.SetPath("game:Materials/NonExistent.zmat");
+		Zenith_Assert(pxMaterial->GetRefCount() == uInitialRefCount,
+			"SetPath() should release old cached ref");
+
+		// Handle is now path-based, not loaded
+		Zenith_Assert(!xHandle.IsLoaded(), "After SetPath, handle should not be loaded");
+		Zenith_Assert(xHandle.IsSet(), "After SetPath, handle should have path set");
+	}
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAssetHandleSetPathReleasesRef passed");
+}
+
+void Zenith_UnitTests::TestAssetHandleClearReleasesRef()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAssetHandleClearReleasesRef...");
+
+	auto& xRegistry = Zenith_AssetRegistry::Get();
+	Zenith_MaterialAsset* pxMaterial = xRegistry.Create<Zenith_MaterialAsset>();
+	pxMaterial->SetName("TestClearMaterial");
+
+	uint32_t uInitialRefCount = pxMaterial->GetRefCount();
+
+	{
+		MaterialHandle xHandle;
+		xHandle.Set(pxMaterial);
+		Zenith_Assert(pxMaterial->GetRefCount() == uInitialRefCount + 1,
+			"Set() should increment ref count");
+
+		// Clear should release the ref
+		xHandle.Clear();
+		Zenith_Assert(pxMaterial->GetRefCount() == uInitialRefCount,
+			"Clear() should release ref");
+
+		// Handle should be empty
+		Zenith_Assert(!xHandle.IsLoaded(), "After Clear, handle should not be loaded");
+		Zenith_Assert(!xHandle.IsSet(), "After Clear, handle should not have path set");
+		Zenith_Assert(!static_cast<bool>(xHandle), "After Clear, operator bool should return false");
+	}
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAssetHandleClearReleasesRef passed");
+}
+
+void Zenith_UnitTests::TestAssetHandleProceduralComparison()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAssetHandleProceduralComparison...");
+
+	auto& xRegistry = Zenith_AssetRegistry::Get();
+
+	// Create two different procedural materials
+	Zenith_MaterialAsset* pxMaterial1 = xRegistry.Create<Zenith_MaterialAsset>();
+	pxMaterial1->SetName("TestCompare1");
+
+	Zenith_MaterialAsset* pxMaterial2 = xRegistry.Create<Zenith_MaterialAsset>();
+	pxMaterial2->SetName("TestCompare2");
+
+	MaterialHandle xHandle1;
+	xHandle1.Set(pxMaterial1);
+
+	MaterialHandle xHandle2;
+	xHandle2.Set(pxMaterial2);
+
+	MaterialHandle xHandle1Copy;
+	xHandle1Copy.Set(pxMaterial1);
+
+	// Different procedural assets should NOT compare equal
+	Zenith_Assert(!(xHandle1 == xHandle2),
+		"Different procedural assets should not be equal");
+	Zenith_Assert(xHandle1 != xHandle2,
+		"Different procedural assets should compare not-equal");
+
+	// Same procedural asset should compare equal
+	Zenith_Assert(xHandle1 == xHandle1Copy,
+		"Same procedural asset should be equal");
+	Zenith_Assert(!(xHandle1 != xHandle1Copy),
+		"Same procedural asset should not compare not-equal");
+
+	// Empty handles should compare equal
+	MaterialHandle xEmpty1;
+	MaterialHandle xEmpty2;
+	Zenith_Assert(xEmpty1 == xEmpty2, "Empty handles should be equal");
+
+	// Test path-based comparison still works
+	MaterialHandle xPath1;
+	xPath1.SetPath("game:Materials/Test.zmat");
+
+	MaterialHandle xPath2;
+	xPath2.SetPath("game:Materials/Test.zmat");
+
+	MaterialHandle xPath3;
+	xPath3.SetPath("game:Materials/Different.zmat");
+
+	Zenith_Assert(xPath1 == xPath2, "Same path should be equal");
+	Zenith_Assert(xPath1 != xPath3, "Different paths should not be equal");
+
+	// Procedural vs path-based should not be equal (even if both valid)
+	Zenith_Assert(xHandle1 != xPath1,
+		"Procedural and path-based handles should not be equal");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAssetHandleProceduralComparison passed");
 }

@@ -37,13 +37,12 @@ Flux_ModelInstance* Flux_ModelInstance::CreateFromAsset(Zenith_ModelAsset* pxAss
 	if (pxAsset->HasSkeleton())
 	{
 		const std::string& strSkeletonPath = pxAsset->GetSkeletonPath();
-		// Load skeleton from registry (shared asset with ref counting)
-		Zenith_SkeletonAsset* pxSkeletonAsset = Zenith_AssetRegistry::Get().Get<Zenith_SkeletonAsset>(strSkeletonPath);
+		// Load skeleton from registry via handle (handles ref counting automatically)
+		pxInstance->m_xLoadedSkeletonAsset.SetPath(strSkeletonPath);
+		Zenith_SkeletonAsset* pxSkeletonAsset = pxInstance->m_xLoadedSkeletonAsset.Get();
 
 		if (pxSkeletonAsset)
 		{
-			pxSkeletonAsset->AddRef();  // Add reference for this instance's usage
-			pxInstance->m_pxLoadedSkeletonAsset = pxSkeletonAsset;
 			pxInstance->m_pxSkeleton = Flux_SkeletonInstance::CreateFromAsset(pxSkeletonAsset);
 
 			if (!pxInstance->m_pxSkeleton)
@@ -66,19 +65,19 @@ Flux_ModelInstance* Flux_ModelInstance::CreateFromAsset(Zenith_ModelAsset* pxAss
 		// Get mesh path from the MeshRef
 		std::string strMeshPath = xBinding.GetMeshPath();
 
-		// Load the mesh asset from registry (shared asset with ref counting)
-		Zenith_MeshAsset* pxMeshAsset = Zenith_AssetRegistry::Get().Get<Zenith_MeshAsset>(strMeshPath);
+		// Load the mesh asset from registry via handle (handles ref counting automatically)
+		MeshHandle xMeshHandle(strMeshPath);
+		Zenith_MeshAsset* pxMeshAsset = xMeshHandle.Get();
 		if (!pxMeshAsset)
 		{
 			Zenith_Log(LOG_CATEGORY_MESH, "[ModelInstance] Failed to load mesh: %s", strMeshPath.c_str());
 			continue;
 		}
-		pxMeshAsset->AddRef();  // Add reference for this instance's usage
-		pxInstance->m_xLoadedMeshAssets.PushBack(pxMeshAsset);
+		pxInstance->m_xLoadedMeshAssets.PushBack(std::move(xMeshHandle));
 
 		// Create GPU mesh instance from the mesh asset
 		// Pass skeleton for skinned meshes to apply bind pose transforms for static rendering
-		Flux_MeshInstance* pxMeshInstance = Flux_MeshInstance::CreateFromAsset(pxMeshAsset, pxInstance->m_pxLoadedSkeletonAsset);
+		Flux_MeshInstance* pxMeshInstance = Flux_MeshInstance::CreateFromAsset(pxMeshAsset, pxInstance->m_xLoadedSkeletonAsset.Get());
 		if (!pxMeshInstance)
 		{
 			Zenith_Log(LOG_CATEGORY_MESH, "[ModelInstance] Failed to create mesh instance from: %s", strMeshPath.c_str());
@@ -112,36 +111,29 @@ Flux_ModelInstance* Flux_ModelInstance::CreateFromAsset(Zenith_ModelAsset* pxAss
 			}
 		}
 
-		// Load materials for this mesh
+		// Load materials for this mesh via handles (handles manage ref counting)
 		uint32_t uNumMaterials = static_cast<uint32_t>(xBinding.m_xMaterials.GetSize());
 		for (uint32_t uMatIdx = 0; uMatIdx < uNumMaterials; uMatIdx++)
 		{
 			std::string strMaterialPath = xBinding.GetMaterialPath(uMatIdx);
-			Zenith_MaterialAsset* pxMaterial = Zenith_AssetRegistry::Get().Get<Zenith_MaterialAsset>(strMaterialPath);
+			MaterialHandle xMaterialHandle(strMaterialPath);
 
-			if (!pxMaterial)
+			if (!xMaterialHandle.Get())
 			{
 				Zenith_Log(LOG_CATEGORY_MESH, "[ModelInstance] Failed to load material: %s", strMaterialPath.c_str());
 				// Use blank material as fallback - create new default material
-				pxMaterial = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
+				xMaterialHandle.Set(Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>());
 			}
 
-			if (pxMaterial)
-			{
-				pxMaterial->AddRef();  // Add reference for this instance's usage
-			}
-			pxInstance->m_xMaterials.PushBack(pxMaterial);
+			pxInstance->m_xMaterials.PushBack(std::move(xMaterialHandle));
 		}
 
 		// If no materials were specified, add a blank material
 		if (uNumMaterials == 0)
 		{
-			Zenith_MaterialAsset* pxBlank = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
-			if (pxBlank)
-			{
-				pxBlank->AddRef();
-			}
-			pxInstance->m_xMaterials.PushBack(pxBlank);
+			MaterialHandle xBlankHandle;
+			xBlankHandle.Set(Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>());
+			pxInstance->m_xMaterials.PushBack(std::move(xBlankHandle));
 		}
 	}
 
@@ -181,26 +173,10 @@ void Flux_ModelInstance::Destroy()
 	}
 	m_xSkinnedMeshInstances.Clear();
 
-	// Release loaded materials (ref-counted, managed by registry)
-	for (uint32_t u = 0; u < m_xMaterials.GetSize(); u++)
-	{
-		Zenith_MaterialAsset* pxMaterial = m_xMaterials.Get(u);
-		if (pxMaterial)
-		{
-			pxMaterial->Release();
-		}
-	}
+	// Clear materials (handles auto-release when cleared)
 	m_xMaterials.Clear();
 
-	// Release loaded mesh assets (ref-counted, managed by registry)
-	for (uint32_t u = 0; u < m_xLoadedMeshAssets.GetSize(); u++)
-	{
-		Zenith_MeshAsset* pxMeshAsset = m_xLoadedMeshAssets.Get(u);
-		if (pxMeshAsset)
-		{
-			pxMeshAsset->Release();
-		}
-	}
+	// Clear loaded mesh assets (handles auto-release when cleared)
 	m_xLoadedMeshAssets.Clear();
 
 	// Delete skeleton instance (per-entity state, owned by us)
@@ -210,12 +186,8 @@ void Flux_ModelInstance::Destroy()
 		m_pxSkeleton = nullptr;
 	}
 
-	// Release loaded skeleton asset (ref-counted, managed by registry)
-	if (m_pxLoadedSkeletonAsset)
-	{
-		m_pxLoadedSkeletonAsset->Release();
-		m_pxLoadedSkeletonAsset = nullptr;
-	}
+	// Clear skeleton asset handle (auto-releases ref count)
+	m_xLoadedSkeletonAsset.Clear();
 
 	// Clear source asset reference (not owned by us)
 	m_pxSourceAsset = nullptr;
@@ -249,7 +221,7 @@ Zenith_MaterialAsset* Flux_ModelInstance::GetMaterial(uint32_t uIndex) const
 	{
 		return nullptr;
 	}
-	return m_xMaterials.Get(uIndex);
+	return m_xMaterials.Get(uIndex).Get();
 }
 
 void Flux_ModelInstance::SetMaterial(uint32_t uIndex, Zenith_MaterialAsset* pxMaterial)
@@ -257,9 +229,9 @@ void Flux_ModelInstance::SetMaterial(uint32_t uIndex, Zenith_MaterialAsset* pxMa
 	// Ensure array has enough elements
 	while (m_xMaterials.GetSize() <= uIndex)
 	{
-		m_xMaterials.PushBack(nullptr);
+		m_xMaterials.PushBack(MaterialHandle());
 	}
-	m_xMaterials.Get(uIndex) = pxMaterial;
+	m_xMaterials.Get(uIndex).Set(pxMaterial);
 }
 
 //------------------------------------------------------------------------------

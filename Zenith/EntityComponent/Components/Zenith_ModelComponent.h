@@ -43,8 +43,8 @@ public:
 	//=========================================================================
 	struct MeshEntry
 	{
-		Flux_MeshGeometry* m_pxGeometry;
-		Zenith_MaterialAsset* m_pxMaterial;
+		Flux_MeshGeometry* m_pxGeometry;  // Not a registry asset - keep raw pointer
+		MaterialHandle m_xMaterial;
 	};
 
 	Zenith_ModelComponent(Zenith_Entity& xEntity)
@@ -180,7 +180,13 @@ public:
 	 * Use this when building models programmatically from already-loaded geometry and materials.
 	 * For loading assets from files, use LoadModel() with a .zmodel asset instead.
 	 */
-	void AddMeshEntry(Flux_MeshGeometry& xGeometry, Zenith_MaterialAsset& xMaterial) { m_xMeshEntries.PushBack({ &xGeometry, &xMaterial }); }
+	void AddMeshEntry(Flux_MeshGeometry& xGeometry, Zenith_MaterialAsset& xMaterial)
+	{
+		MeshEntry xEntry;
+		xEntry.m_pxGeometry = &xGeometry;
+		xEntry.m_xMaterial.Set(&xMaterial);
+		m_xMeshEntries.PushBack(std::move(xEntry));
+	}
 
 	// Mesh entry accessors (for procedural mesh system)
 	// Note: These assert that pointers are valid - callers should check entry validity first
@@ -191,19 +197,15 @@ public:
 		Zenith_Assert(pxGeometry != nullptr, "GetMeshGeometryAtIndex: Geometry pointer is null at index %u", uIndex);
 		return *pxGeometry;
 	}
-	const Zenith_MaterialAsset& GetMaterialAtIndex(const uint32_t uIndex) const
+	Zenith_MaterialAsset* GetMaterialAtIndex(const uint32_t uIndex) const
 	{
 		Zenith_Assert(uIndex < m_xMeshEntries.GetSize(), "GetMaterialAtIndex: Index %u out of bounds (size=%u)", uIndex, m_xMeshEntries.GetSize());
-		const Zenith_MaterialAsset* pxMaterial = m_xMeshEntries.Get(uIndex).m_pxMaterial;
-		Zenith_Assert(pxMaterial != nullptr, "GetMaterialAtIndex: Material pointer is null at index %u", uIndex);
-		return *pxMaterial;
+		return m_xMeshEntries.Get(uIndex).m_xMaterial.Get();
 	}
-	Zenith_MaterialAsset& GetMaterialAtIndex(const uint32_t uIndex)
+	MaterialHandle& GetMaterialHandleAtIndex(const uint32_t uIndex)
 	{
-		Zenith_Assert(uIndex < m_xMeshEntries.GetSize(), "GetMaterialAtIndex: Index %u out of bounds (size=%u)", uIndex, m_xMeshEntries.GetSize());
-		Zenith_MaterialAsset* pxMaterial = m_xMeshEntries.Get(uIndex).m_pxMaterial;
-		Zenith_Assert(pxMaterial != nullptr, "GetMaterialAtIndex: Material pointer is null at index %u", uIndex);
-		return *pxMaterial;
+		Zenith_Assert(uIndex < m_xMeshEntries.GetSize(), "GetMaterialHandleAtIndex: Index %u out of bounds (size=%u)", uIndex, m_xMeshEntries.GetSize());
+		return m_xMeshEntries.Get(uIndex).m_xMaterial;
 	}
 	uint32_t GetNumMeshEntries() const { return m_xMeshEntries.GetSize(); }
 

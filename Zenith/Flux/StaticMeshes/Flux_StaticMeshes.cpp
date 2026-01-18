@@ -281,7 +281,7 @@ void Flux_StaticMeshes::RenderToGBuffer(void*)
 			g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&xMesh.GetVertexBuffer());
 			g_xCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&xMesh.GetIndexBuffer());
 
-			Zenith_MaterialAsset& xMaterial = pxModel->GetMaterialAtIndex(uMesh);
+			Zenith_MaterialAsset& xMaterial = *pxModel->GetMaterialAtIndex(uMesh);
 
 			// Build and push material constants (128 bytes) - uses scratch buffer in set 1
 			MaterialPushConstants xPushConstants;

@@ -109,6 +109,9 @@ public:
 	uint32_t GetVisibleCount() const { return m_uVisibleCount; }
 	bool IsEmpty() const { return m_uInstanceCount == 0; }
 
+	// Access to CPU-side transform data (for serialization)
+	const std::vector<Zenith_Maths::Matrix4>& GetTransforms() const { return m_axTransforms; }
+
 	Flux_MeshInstance* GetMesh() const { return m_pxMesh; }
 	Zenith_MaterialAsset* GetMaterial() const { return m_pxMaterial; }
 	Flux_AnimationTexture* GetAnimationTexture() const { return m_pxAnimationTexture; }

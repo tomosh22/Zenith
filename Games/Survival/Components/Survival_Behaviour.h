@@ -26,6 +26,7 @@
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
+#include "AssetHandling/Zenith_AssetHandle.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "Prefab/Zenith_Prefab.h"
@@ -61,13 +62,13 @@ namespace Survival
 	extern Flux_MeshGeometry* g_pxSphereGeometry;
 	extern Flux_MeshGeometry* g_pxCapsuleGeometry;
 
-	extern Zenith_MaterialAsset* g_pxPlayerMaterial;
-	extern Zenith_MaterialAsset* g_pxGroundMaterial;
-	extern Zenith_MaterialAsset* g_pxTreeMaterial;
-	extern Zenith_MaterialAsset* g_pxRockMaterial;
-	extern Zenith_MaterialAsset* g_pxBerryMaterial;
-	extern Zenith_MaterialAsset* g_pxWoodMaterial;
-	extern Zenith_MaterialAsset* g_pxStoneMaterial;
+	extern MaterialHandle g_xPlayerMaterial;
+	extern MaterialHandle g_xGroundMaterial;
+	extern MaterialHandle g_xTreeMaterial;
+	extern MaterialHandle g_xRockMaterial;
+	extern MaterialHandle g_xBerryMaterial;
+	extern MaterialHandle g_xWoodMaterial;
+	extern MaterialHandle g_xStoneMaterial;
 
 	extern Zenith_Prefab* g_pxPlayerPrefab;
 	extern Zenith_Prefab* g_pxTreePrefab;

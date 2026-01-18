@@ -16,17 +16,18 @@
 //--------------------------------------------------------------------------
 
 template<>
-Zenith_TextureAsset* Zenith_AssetHandle<Zenith_TextureAsset>::Get()
+Zenith_TextureAsset* Zenith_AssetHandle<Zenith_TextureAsset>::Get() const
 {
-	if (m_strPath.empty())
-	{
-		return nullptr;
-	}
-
-	// Check cache
+	// Return cached pointer if available (even for procedural assets with no path)
 	if (m_pxCached)
 	{
 		return m_pxCached;
+	}
+
+	// If no cached pointer and no path, nothing to load
+	if (m_strPath.empty())
+	{
+		return nullptr;
 	}
 
 	// Load from registry
@@ -68,17 +69,18 @@ void Zenith_AssetHandle<Zenith_TextureAsset>::ReadFromDataStream(Zenith_DataStre
 // These will be implemented as their respective asset classes are created
 
 template<>
-Zenith_MaterialAsset* Zenith_AssetHandle<Zenith_MaterialAsset>::Get()
+Zenith_MaterialAsset* Zenith_AssetHandle<Zenith_MaterialAsset>::Get() const
 {
-	if (m_strPath.empty())
-	{
-		return nullptr;
-	}
-
-	// Check cache
+	// Return cached pointer if available (even for procedural assets with no path)
 	if (m_pxCached)
 	{
 		return m_pxCached;
+	}
+
+	// If no cached pointer and no path, nothing to load
+	if (m_strPath.empty())
+	{
+		return nullptr;
 	}
 
 	// Load from registry
@@ -91,17 +93,18 @@ Zenith_MaterialAsset* Zenith_AssetHandle<Zenith_MaterialAsset>::Get()
 }
 
 template<>
-Zenith_MeshAsset* Zenith_AssetHandle<Zenith_MeshAsset>::Get()
+Zenith_MeshAsset* Zenith_AssetHandle<Zenith_MeshAsset>::Get() const
 {
-	if (m_strPath.empty())
-	{
-		return nullptr;
-	}
-
-	// Check cache
+	// Return cached pointer if available (even for procedural assets with no path)
 	if (m_pxCached)
 	{
 		return m_pxCached;
+	}
+
+	// If no cached pointer and no path, nothing to load
+	if (m_strPath.empty())
+	{
+		return nullptr;
 	}
 
 	// Load from registry
@@ -114,17 +117,18 @@ Zenith_MeshAsset* Zenith_AssetHandle<Zenith_MeshAsset>::Get()
 }
 
 template<>
-Zenith_SkeletonAsset* Zenith_AssetHandle<Zenith_SkeletonAsset>::Get()
+Zenith_SkeletonAsset* Zenith_AssetHandle<Zenith_SkeletonAsset>::Get() const
 {
-	if (m_strPath.empty())
-	{
-		return nullptr;
-	}
-
-	// Check cache
+	// Return cached pointer if available (even for procedural assets with no path)
 	if (m_pxCached)
 	{
 		return m_pxCached;
+	}
+
+	// If no cached pointer and no path, nothing to load
+	if (m_strPath.empty())
+	{
+		return nullptr;
 	}
 
 	// Load from registry
@@ -137,17 +141,18 @@ Zenith_SkeletonAsset* Zenith_AssetHandle<Zenith_SkeletonAsset>::Get()
 }
 
 template<>
-Zenith_ModelAsset* Zenith_AssetHandle<Zenith_ModelAsset>::Get()
+Zenith_ModelAsset* Zenith_AssetHandle<Zenith_ModelAsset>::Get() const
 {
-	if (m_strPath.empty())
-	{
-		return nullptr;
-	}
-
-	// Check cache
+	// Return cached pointer if available (even for procedural assets with no path)
 	if (m_pxCached)
 	{
 		return m_pxCached;
+	}
+
+	// If no cached pointer and no path, nothing to load
+	if (m_strPath.empty())
+	{
+		return nullptr;
 	}
 
 	// Load from registry
@@ -233,17 +238,18 @@ void Zenith_AssetHandle<Zenith_ModelAsset>::ReadFromDataStream(Zenith_DataStream
 //--------------------------------------------------------------------------
 
 template<>
-Zenith_Prefab* Zenith_AssetHandle<Zenith_Prefab>::Get()
+Zenith_Prefab* Zenith_AssetHandle<Zenith_Prefab>::Get() const
 {
-	if (m_strPath.empty())
-	{
-		return nullptr;
-	}
-
-	// Check cache
+	// Return cached pointer if available (even for procedural assets with no path)
 	if (m_pxCached)
 	{
 		return m_pxCached;
+	}
+
+	// If no cached pointer and no path, nothing to load
+	if (m_strPath.empty())
+	{
+		return nullptr;
 	}
 
 	// Load from registry
@@ -277,17 +283,18 @@ void Zenith_AssetHandle<Zenith_Prefab>::ReadFromDataStream(Zenith_DataStream& xS
 //--------------------------------------------------------------------------
 
 template<>
-Zenith_AnimationAsset* Zenith_AssetHandle<Zenith_AnimationAsset>::Get()
+Zenith_AnimationAsset* Zenith_AssetHandle<Zenith_AnimationAsset>::Get() const
 {
-	if (m_strPath.empty())
-	{
-		return nullptr;
-	}
-
-	// Check cache
+	// Return cached pointer if available (even for procedural assets with no path)
 	if (m_pxCached)
 	{
 		return m_pxCached;
+	}
+
+	// If no cached pointer and no path, nothing to load
+	if (m_strPath.empty())
+	{
+		return nullptr;
 	}
 
 	// Load from registry
@@ -321,17 +328,18 @@ void Zenith_AssetHandle<Zenith_AnimationAsset>::ReadFromDataStream(Zenith_DataSt
 //--------------------------------------------------------------------------
 
 template<>
-Zenith_MeshGeometryAsset* Zenith_AssetHandle<Zenith_MeshGeometryAsset>::Get()
+Zenith_MeshGeometryAsset* Zenith_AssetHandle<Zenith_MeshGeometryAsset>::Get() const
 {
-	if (m_strPath.empty())
-	{
-		return nullptr;
-	}
-
-	// Check cache
+	// Return cached pointer if available (even for procedural assets with no path)
 	if (m_pxCached)
 	{
 		return m_pxCached;
+	}
+
+	// If no cached pointer and no path, nothing to load
+	if (m_strPath.empty())
+	{
+		return nullptr;
 	}
 
 	// Load from registry

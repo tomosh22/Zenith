@@ -235,6 +235,17 @@ private:
 	// AI System tests - Debug Variables
 	static void TestTacticalPointDebugColor();
 	static void TestSquadDebugRoleColor();
+
+	// Asset Handle tests (operator bool fix for procedural assets)
+	static void TestAssetHandleProceduralBoolConversion();
+	static void TestAssetHandlePathBasedBoolConversion();
+	static void TestAssetHandleEmptyBoolConversion();
+	static void TestAssetHandleSetStoresRef();
+	static void TestAssetHandleCopySemantics();
+	static void TestAssetHandleMoveSemantics();
+	static void TestAssetHandleSetPathReleasesRef();
+	static void TestAssetHandleClearReleasesRef();
+	static void TestAssetHandleProceduralComparison();
 };
 
 // Include editor tests separately as they are only available in ZENITH_TOOLS builds

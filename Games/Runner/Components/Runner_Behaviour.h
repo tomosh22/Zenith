@@ -27,6 +27,7 @@
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Zenith_Scene.h"
+#include "AssetHandling/Zenith_AssetHandle.h"
 
 // Include modules
 #include "Runner_Config.h"
@@ -57,12 +58,12 @@ namespace Runner
 	extern Flux_MeshGeometry* g_pxCubeGeometry;
 	extern Flux_MeshGeometry* g_pxSphereGeometry;
 
-	extern Zenith_MaterialAsset* g_pxCharacterMaterial;
-	extern Zenith_MaterialAsset* g_pxGroundMaterial;
-	extern Zenith_MaterialAsset* g_pxObstacleMaterial;
-	extern Zenith_MaterialAsset* g_pxCollectibleMaterial;
-	extern Zenith_MaterialAsset* g_pxDustMaterial;
-	extern Zenith_MaterialAsset* g_pxCollectParticleMaterial;
+	extern MaterialHandle g_xCharacterMaterial;
+	extern MaterialHandle g_xGroundMaterial;
+	extern MaterialHandle g_xObstacleMaterial;
+	extern MaterialHandle g_xCollectibleMaterial;
+	extern MaterialHandle g_xDustMaterial;
+	extern MaterialHandle g_xCollectParticleMaterial;
 
 	extern Zenith_Prefab* g_pxCharacterPrefab;
 	extern Zenith_Prefab* g_pxGroundPrefab;
@@ -104,12 +105,12 @@ public:
 		m_pxCapsuleGeometry = Runner::g_pxCapsuleGeometry;
 		m_pxCubeGeometry = Runner::g_pxCubeGeometry;
 		m_pxSphereGeometry = Runner::g_pxSphereGeometry;
-		m_pxCharacterMaterial = Runner::g_pxCharacterMaterial;
-		m_pxGroundMaterial = Runner::g_pxGroundMaterial;
-		m_pxObstacleMaterial = Runner::g_pxObstacleMaterial;
-		m_pxCollectibleMaterial = Runner::g_pxCollectibleMaterial;
-		m_pxDustMaterial = Runner::g_pxDustMaterial;
-		m_pxCollectParticleMaterial = Runner::g_pxCollectParticleMaterial;
+		m_xCharacterMaterial = Runner::g_xCharacterMaterial;
+		m_xGroundMaterial = Runner::g_xGroundMaterial;
+		m_xObstacleMaterial = Runner::g_xObstacleMaterial;
+		m_xCollectibleMaterial = Runner::g_xCollectibleMaterial;
+		m_xDustMaterial = Runner::g_xDustMaterial;
+		m_xCollectParticleMaterial = Runner::g_xCollectParticleMaterial;
 
 		// Heavy initialization moved to OnStart
 	}
@@ -320,7 +321,7 @@ private:
 			xTerrainConfig,
 			Runner::g_pxGroundPrefab,
 			m_pxCubeGeometry,
-			m_pxGroundMaterial);
+			m_xGroundMaterial.Get());
 
 		// Initialize collectible spawner
 		Runner_CollectibleSpawner::Config xSpawnConfig;
@@ -330,8 +331,8 @@ private:
 			Runner::g_pxObstaclePrefab,
 			m_pxSphereGeometry,
 			m_pxCubeGeometry,
-			m_pxCollectibleMaterial,
-			m_pxObstacleMaterial,
+			m_xCollectibleMaterial.Get(),
+			m_xObstacleMaterial.Get(),
 			m_xRng);
 
 		// Initialize particle manager
@@ -340,8 +341,8 @@ private:
 			xParticleConfig,
 			Runner::g_pxParticlePrefab,
 			m_pxSphereGeometry,
-			m_pxDustMaterial,
-			m_pxCollectParticleMaterial);
+			m_xDustMaterial.Get(),
+			m_xCollectParticleMaterial.Get());
 
 		// Create character entity
 		CreateCharacter();
@@ -353,7 +354,7 @@ private:
 
 	void CreateCharacter()
 	{
-		if (Runner::g_pxCharacterPrefab == nullptr || m_pxCapsuleGeometry == nullptr || m_pxCharacterMaterial == nullptr)
+		if (Runner::g_pxCharacterPrefab == nullptr || m_pxCapsuleGeometry == nullptr || !m_xCharacterMaterial)
 		{
 			return;
 		}
@@ -367,7 +368,7 @@ private:
 
 		// Add model
 		Zenith_ModelComponent& xModel = xCharacter.AddComponent<Zenith_ModelComponent>();
-		xModel.AddMeshEntry(*m_pxCapsuleGeometry, *m_pxCharacterMaterial);
+		xModel.AddMeshEntry(*m_pxCapsuleGeometry, *m_xCharacterMaterial.Get());
 
 		m_uCharacterEntityID = xCharacter.GetEntityID();
 	}
@@ -496,10 +497,10 @@ private:
 	Flux_MeshGeometry* m_pxCapsuleGeometry = nullptr;
 	Flux_MeshGeometry* m_pxCubeGeometry = nullptr;
 	Flux_MeshGeometry* m_pxSphereGeometry = nullptr;
-	Zenith_MaterialAsset* m_pxCharacterMaterial = nullptr;
-	Zenith_MaterialAsset* m_pxGroundMaterial = nullptr;
-	Zenith_MaterialAsset* m_pxObstacleMaterial = nullptr;
-	Zenith_MaterialAsset* m_pxCollectibleMaterial = nullptr;
-	Zenith_MaterialAsset* m_pxDustMaterial = nullptr;
-	Zenith_MaterialAsset* m_pxCollectParticleMaterial = nullptr;
+	MaterialHandle m_xCharacterMaterial;
+	MaterialHandle m_xGroundMaterial;
+	MaterialHandle m_xObstacleMaterial;
+	MaterialHandle m_xCollectibleMaterial;
+	MaterialHandle m_xDustMaterial;
+	MaterialHandle m_xCollectParticleMaterial;
 };

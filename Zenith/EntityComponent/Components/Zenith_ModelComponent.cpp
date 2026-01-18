@@ -131,7 +131,8 @@ void Zenith_ModelComponent::LoadModel(const std::string& strPath)
 	if (!m_pxModelInstance)
 	{
 		Zenith_Error(LOG_CATEGORY_MESH, "Failed to create model instance from asset: %s", strLocalPath.c_str());
-		delete pxAsset;
+		// Note: pxAsset is owned by the registry, don't delete it here
+		// It will be cleaned up by UnloadUnused() if nothing references it
 		return;
 	}
 
@@ -225,7 +226,7 @@ Zenith_MaterialAsset* Zenith_ModelComponent::GetMaterial(uint32_t uIndex) const
 	// Fall back to procedural mesh entries
 	if (uIndex < m_xMeshEntries.GetSize())
 	{
-		return m_xMeshEntries.Get(uIndex).m_pxMaterial;
+		return m_xMeshEntries.Get(uIndex).m_xMaterial.Get();
 	}
 	return nullptr;
 }
@@ -468,9 +469,10 @@ void Zenith_ModelComponent::WriteToDataStream(Zenith_DataStream& xStream) const
 			xStream << strMeshPath;
 
 			// Serialize the entire material
-			if (xEntry.m_pxMaterial)
+			Zenith_MaterialAsset* pxMaterial = xEntry.m_xMaterial.Get();
+			if (pxMaterial)
 			{
-				xEntry.m_pxMaterial->WriteToDataStream(xStream);
+				pxMaterial->WriteToDataStream(xStream);
 			}
 			else
 			{
@@ -583,11 +585,15 @@ void Zenith_ModelComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 				// If mesh path is set, load the mesh from file
 				if (!strMeshPath.empty() && std::filesystem::exists(strMeshPath))
 				{
-					pxMaterial->AddRef();  // Add reference for this component's usage
 					Flux_MeshGeometry* pxGeometry = new Flux_MeshGeometry();
 					Flux_MeshGeometry::LoadFromFile(strMeshPath.c_str(), *pxGeometry);
 					pxGeometry->m_strSourcePath = strMeshPath;  // Preserve path for future serialization
-					m_xMeshEntries.PushBack({ pxGeometry, pxMaterial });
+
+					// Create mesh entry with handle (handles ref counting automatically)
+					MeshEntry xEntry;
+					xEntry.m_pxGeometry = pxGeometry;
+					xEntry.m_xMaterial.Set(pxMaterial);
+					m_xMeshEntries.PushBack(std::move(xEntry));
 				}
 				// else: material stays in registry with refcount 0, will be cleaned up later
 			}

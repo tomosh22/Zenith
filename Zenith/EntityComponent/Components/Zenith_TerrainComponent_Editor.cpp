@@ -173,19 +173,18 @@ void Zenith_TerrainComponent::RenderPropertiesPanel()
 					std::string strEntityName = m_xParentEntity.GetName().empty() ?
 						("Entity_" + std::to_string(m_xParentEntity.GetEntityID().m_uIndex)) : m_xParentEntity.GetName();
 
-					m_pxMaterial0 = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
-					m_pxMaterial1 = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
-					if (m_pxMaterial0)
+					Zenith_MaterialAsset* pxMat0 = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
+					Zenith_MaterialAsset* pxMat1 = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
+					if (pxMat0)
 					{
-						m_pxMaterial0->SetName(strEntityName + "_Terrain_Mat0");
-						m_pxMaterial0->AddRef();
+						pxMat0->SetName(strEntityName + "_Terrain_Mat0");
 					}
-					if (m_pxMaterial1)
+					if (pxMat1)
 					{
-						m_pxMaterial1->SetName(strEntityName + "_Terrain_Mat1");
-						m_pxMaterial1->AddRef();
+						pxMat1->SetName(strEntityName + "_Terrain_Mat1");
 					}
-					m_bOwnsMaterials = true;
+					m_xMaterial0.Set(pxMat0);
+					m_xMaterial1.Set(pxMat1);
 
 					// Load physics geometry (same as constructor/deserialization)
 					if (m_pxPhysicsGeometry == nullptr)
@@ -245,7 +244,7 @@ void Zenith_TerrainComponent::RenderPropertiesPanel()
 					}
 
 					// Initialize render resources (LOW LOD meshes, buffers, culling)
-					InitializeRenderResources(*m_pxMaterial0, *m_pxMaterial1);
+					InitializeRenderResources(*m_xMaterial0.Get(), *m_xMaterial1.Get());
 
 					s_bTerrainExportInProgress = false;
 					s_strTerrainExportStatus = "Terrain created successfully!";
@@ -438,32 +437,30 @@ void Zenith_TerrainComponent::RenderPropertiesPanel()
 					Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Reinitializing render resources...");
 
 					// Use existing materials or create new ones if needed
-					if (!m_pxMaterial0)
+					if (!m_xMaterial0.Get())
 					{
 						std::string strEntityName = m_xParentEntity.GetName().empty() ?
 							("Entity_" + std::to_string(m_xParentEntity.GetEntityID().m_uIndex)) : m_xParentEntity.GetName();
-						m_pxMaterial0 = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
-						if (m_pxMaterial0)
+						Zenith_MaterialAsset* pxMat0 = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
+						if (pxMat0)
 						{
-							m_pxMaterial0->SetName(strEntityName + "_Terrain_Mat0");
-							m_pxMaterial0->AddRef();
+							pxMat0->SetName(strEntityName + "_Terrain_Mat0");
 						}
-						m_bOwnsMaterials = true;
+						m_xMaterial0.Set(pxMat0);
 					}
-					if (!m_pxMaterial1)
+					if (!m_xMaterial1.Get())
 					{
 						std::string strEntityName = m_xParentEntity.GetName().empty() ?
 							("Entity_" + std::to_string(m_xParentEntity.GetEntityID().m_uIndex)) : m_xParentEntity.GetName();
-						m_pxMaterial1 = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
-						if (m_pxMaterial1)
+						Zenith_MaterialAsset* pxMat1 = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
+						if (pxMat1)
 						{
-							m_pxMaterial1->SetName(strEntityName + "_Terrain_Mat1");
-							m_pxMaterial1->AddRef();
+							pxMat1->SetName(strEntityName + "_Terrain_Mat1");
 						}
-						m_bOwnsMaterials = true;
+						m_xMaterial1.Set(pxMat1);
 					}
 
-					InitializeRenderResources(*m_pxMaterial0, *m_pxMaterial1);
+					InitializeRenderResources(*m_xMaterial0.Get(), *m_xMaterial1.Get());
 
 					s_bTerrainExportInProgress = false;
 					s_strTerrainExportStatus = "Terrain regenerated successfully!";
@@ -516,19 +513,20 @@ void Zenith_TerrainComponent::RenderPropertiesPanel()
 		ImGui::Separator();
 
 		// Material 0 editing (full material system)
-		if (m_pxMaterial0)
+		Zenith_MaterialAsset* pxMat0 = m_xMaterial0.Get();
+		if (pxMat0)
 		{
 			if (ImGui::TreeNode("Material 0 (Base)"))
 			{
-				ImGui::Text("Name: %s", m_pxMaterial0->GetName().c_str());
+				ImGui::Text("Name: %s", pxMat0->GetName().c_str());
 
 				// Full material properties (same as static meshes)
-				Zenith_Editor_MaterialUI::RenderMaterialProperties(m_pxMaterial0, "TerrainMat0");
+				Zenith_Editor_MaterialUI::RenderMaterialProperties(pxMat0, "TerrainMat0");
 
 				// Texture slots
 				ImGui::Separator();
 				ImGui::Text("Textures:");
-				Zenith_Editor_MaterialUI::RenderAllTextureSlots(*m_pxMaterial0, false);
+				Zenith_Editor_MaterialUI::RenderAllTextureSlots(*pxMat0, false);
 
 				ImGui::TreePop();
 			}
@@ -539,19 +537,20 @@ void Zenith_TerrainComponent::RenderPropertiesPanel()
 		}
 
 		// Material 1 editing (full material system)
-		if (m_pxMaterial1)
+		Zenith_MaterialAsset* pxMat1 = m_xMaterial1.Get();
+		if (pxMat1)
 		{
 			if (ImGui::TreeNode("Material 1 (Blend)"))
 			{
-				ImGui::Text("Name: %s", m_pxMaterial1->GetName().c_str());
+				ImGui::Text("Name: %s", pxMat1->GetName().c_str());
 
 				// Full material properties (same as static meshes)
-				Zenith_Editor_MaterialUI::RenderMaterialProperties(m_pxMaterial1, "TerrainMat1");
+				Zenith_Editor_MaterialUI::RenderMaterialProperties(pxMat1, "TerrainMat1");
 
 				// Texture slots
 				ImGui::Separator();
 				ImGui::Text("Textures:");
-				Zenith_Editor_MaterialUI::RenderAllTextureSlots(*m_pxMaterial1, false);
+				Zenith_Editor_MaterialUI::RenderAllTextureSlots(*pxMat1, false);
 
 				ImGui::TreePop();
 			}

@@ -366,8 +366,8 @@ void Flux_Terrain::RenderToGBuffer(void*)
 		Zenith_TerrainComponent* const pxTerrain = g_xTerrainComponentsToRender.Get(u);
 		if(!pxTerrain->GetUnifiedVertexBuffer().GetBuffer().m_ulSize) continue;
 
-		Zenith_MaterialAsset& xMaterial0 = pxTerrain->GetMaterial0();
-		Zenith_MaterialAsset& xMaterial1 = pxTerrain->GetMaterial1();
+		Zenith_MaterialAsset& xMaterial0 = *pxTerrain->GetMaterial0();
+		Zenith_MaterialAsset& xMaterial1 = *pxTerrain->GetMaterial1();
 
 		// Build and push terrain material constants (128 bytes) - uses scratch buffer in set 1
 		TerrainMaterialPushConstants xTerrainMatConst;

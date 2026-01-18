@@ -5,6 +5,7 @@
 #include "Flux/InstancedMeshes/Flux_AnimationTexture.h"
 #include "Flux/MeshGeometry/Flux_MeshInstance.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
+#include "AssetHandling/Zenith_AssetHandle.h"
 #include "Maths/Zenith_Maths.h"
 #include <string>
 #include <vector>
@@ -51,7 +52,11 @@ public:
 	void SetMesh(Flux_MeshInstance* pxMesh);
 
 	// Set the material for all instances (required)
+	// Note: For file-based materials, use LoadMaterial() to ensure proper serialization
 	void SetMaterial(Zenith_MaterialAsset* pxMaterial);
+
+	// Load material from path (ensures proper serialization)
+	void LoadMaterial(const std::string& strPath);
 
 	// Set the vertex animation texture for skeletal animation (optional)
 	void SetAnimationTexture(Flux_AnimationTexture* pxAnimTex);
@@ -193,19 +198,17 @@ private:
 	// The instance group (owned)
 	Flux_InstanceGroup* m_pxInstanceGroup = nullptr;
 
-	// Owned resources (loaded from files)
-	Zenith_MeshAsset* m_pxOwnedMeshAsset = nullptr;
-	Flux_MeshInstance* m_pxOwnedMeshInstance = nullptr;
-	Flux_AnimationTexture* m_pxOwnedAnimTexture = nullptr;
-	Zenith_MaterialAsset* m_pxOwnedMaterial = nullptr;
+	// Asset handles (handles manage ref counting)
+	MeshHandle m_xMeshAsset;
+	MaterialHandle m_xMaterial;
+
+	// Non-registry resources (still using raw pointers)
+	Flux_MeshInstance* m_pxOwnedMeshInstance = nullptr;  // Not a registry asset
+	Flux_AnimationTexture* m_pxOwnedAnimTexture = nullptr;  // Not a registry asset
+	std::string m_strAnimTexturePath;  // Path for animation texture (not a registry asset)
 
 	// Animation playback settings
 	float m_fAnimationDuration = 1.0f;
 	float m_fAnimationSpeed = 1.0f;
 	bool m_bAnimationsPaused = false;
-
-	// Asset paths (for serialization)
-	std::string m_strMeshPath;
-	std::string m_strAnimTexturePath;
-	std::string m_strMaterialPath;
 };

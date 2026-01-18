@@ -27,6 +27,7 @@
 #include "Input/Zenith_Input.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
+#include "AssetHandling/Zenith_AssetHandle.h"
 #include "Flux/Primitives/Flux_Primitives.h"
 
 // AI System includes
@@ -63,15 +64,15 @@ namespace AIShowcase
 	extern Flux_MeshGeometry* g_pxSphereGeometry;
 	extern Flux_MeshGeometry* g_pxCylinderGeometry;
 
-	extern Zenith_MaterialAsset* g_pxFloorMaterial;
-	extern Zenith_MaterialAsset* g_pxWallMaterial;
-	extern Zenith_MaterialAsset* g_pxObstacleMaterial;
-	extern Zenith_MaterialAsset* g_pxPlayerMaterial;
-	extern Zenith_MaterialAsset* g_pxEnemyMaterial;
-	extern Zenith_MaterialAsset* g_pxLeaderMaterial;
-	extern Zenith_MaterialAsset* g_pxFlankerMaterial;
-	extern Zenith_MaterialAsset* g_pxCoverPointMaterial;
-	extern Zenith_MaterialAsset* g_pxPatrolPointMaterial;
+	extern MaterialHandle g_xFloorMaterial;
+	extern MaterialHandle g_xWallMaterial;
+	extern MaterialHandle g_xObstacleMaterial;
+	extern MaterialHandle g_xPlayerMaterial;
+	extern MaterialHandle g_xEnemyMaterial;
+	extern MaterialHandle g_xLeaderMaterial;
+	extern MaterialHandle g_xFlankerMaterial;
+	extern MaterialHandle g_xCoverPointMaterial;
+	extern MaterialHandle g_xPatrolPointMaterial;
 
 	extern Zenith_NavMesh* g_pxArenaNavMesh;
 }
@@ -237,7 +238,7 @@ private:
 		xTransform.SetPosition(Zenith_Maths::Vector3(0.0f, -0.05f, 0.0f));
 
 		Zenith_ModelComponent& xModel = xFloor.AddComponent<Zenith_ModelComponent>();
-		xModel.AddMeshEntry(*AIShowcase::g_pxCubeGeometry, *AIShowcase::g_pxFloorMaterial);
+		xModel.AddMeshEntry(*AIShowcase::g_pxCubeGeometry, *AIShowcase::g_xFloorMaterial.Get());
 
 		// Add static collider for NavMesh generation
 		Zenith_ColliderComponent& xCollider = xFloor.AddComponent<Zenith_ColliderComponent>();
@@ -280,7 +281,7 @@ private:
 			xTransform.SetScale(aWalls[u].m_xScale);
 
 			Zenith_ModelComponent& xModel = xWall.AddComponent<Zenith_ModelComponent>();
-			xModel.AddMeshEntry(*AIShowcase::g_pxCubeGeometry, *AIShowcase::g_pxWallMaterial);
+			xModel.AddMeshEntry(*AIShowcase::g_pxCubeGeometry, *AIShowcase::g_xWallMaterial.Get());
 
 			Zenith_ColliderComponent& xCollider = xWall.AddComponent<Zenith_ColliderComponent>();
 			xCollider.AddCollider(COLLISION_VOLUME_TYPE_OBB, RIGIDBODY_TYPE_STATIC);
@@ -324,7 +325,7 @@ private:
 			xTransform.SetScale(aObstacles[u].m_xScale);
 
 			Zenith_ModelComponent& xModel = xObstacle.AddComponent<Zenith_ModelComponent>();
-			xModel.AddMeshEntry(*AIShowcase::g_pxCubeGeometry, *AIShowcase::g_pxObstacleMaterial);
+			xModel.AddMeshEntry(*AIShowcase::g_pxCubeGeometry, *AIShowcase::g_xObstacleMaterial.Get());
 
 			Zenith_ColliderComponent& xCollider = xObstacle.AddComponent<Zenith_ColliderComponent>();
 			xCollider.AddCollider(COLLISION_VOLUME_TYPE_OBB, RIGIDBODY_TYPE_STATIC);
@@ -351,7 +352,7 @@ private:
 		xTransform.SetScale(Zenith_Maths::Vector3(0.8f, 1.0f, 0.8f));
 
 		Zenith_ModelComponent& xModel = xPlayer.AddComponent<Zenith_ModelComponent>();
-		xModel.AddMeshEntry(*AIShowcase::g_pxCylinderGeometry, *AIShowcase::g_pxPlayerMaterial);
+		xModel.AddMeshEntry(*AIShowcase::g_pxCylinderGeometry, *AIShowcase::g_xPlayerMaterial.Get());
 
 		Zenith_ColliderComponent& xCollider = xPlayer.AddComponent<Zenith_ColliderComponent>();
 		xCollider.AddCapsuleCollider(0.4f, 0.5f, RIGIDBODY_TYPE_DYNAMIC);
@@ -398,19 +399,19 @@ private:
 			{
 			case 0:
 				eRole = SquadRole::LEADER;
-				pxMaterial = AIShowcase::g_pxLeaderMaterial;
+				pxMaterial = AIShowcase::g_xLeaderMaterial.Get();
 				break;
 			case 1:
 				eRole = SquadRole::ASSAULT;
-				pxMaterial = AIShowcase::g_pxEnemyMaterial;
+				pxMaterial = AIShowcase::g_xEnemyMaterial.Get();
 				break;
 			case 2:
 				eRole = SquadRole::FLANKER;
-				pxMaterial = AIShowcase::g_pxFlankerMaterial;
+				pxMaterial = AIShowcase::g_xFlankerMaterial.Get();
 				break;
 			default:
 				eRole = SquadRole::ASSAULT;
-				pxMaterial = AIShowcase::g_pxEnemyMaterial;
+				pxMaterial = AIShowcase::g_xEnemyMaterial.Get();
 				break;
 			}
 

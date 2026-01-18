@@ -28,24 +28,23 @@ Zenith_UIImage::~Zenith_UIImage()
 
 void Zenith_UIImage::SetTexturePath(const std::string& strPath)
 {
-    m_strTexturePath = strPath;
+    m_xTexture.SetPath(strPath);
     LoadTexture();
 }
 
 void Zenith_UIImage::LoadTexture()
 {
-    if (m_strTexturePath.empty())
+    if (!m_xTexture.IsSet())
     {
-        m_pxTexture = nullptr;
         return;
     }
 
-    // Load texture via asset registry (handles caching internally)
-    m_pxTexture = Zenith_AssetRegistry::Get().Get<Zenith_TextureAsset>(m_strTexturePath);
+    // Load texture via handle (handles caching and ref counting)
+    Zenith_TextureAsset* pxTexture = m_xTexture.Get();
 
-    if (!m_pxTexture)
+    if (!pxTexture)
     {
-        Zenith_Log(LOG_CATEGORY_UI, "[UIImage] Failed to load texture: %s", m_strTexturePath.c_str());
+        Zenith_Log(LOG_CATEGORY_UI, "[UIImage] Failed to load texture: %s", m_xTexture.GetPath().c_str());
     }
 }
 
@@ -99,7 +98,8 @@ void Zenith_UIImage::WriteToDataStream(Zenith_DataStream& xStream) const
 
     // Write image-specific data
     xStream << UI_IMAGE_VERSION;
-    xStream << m_strTexturePath;
+    std::string strTexturePath = m_xTexture.GetPath();
+    xStream << strTexturePath;
     xStream << m_xUVMin.x;
     xStream << m_xUVMin.y;
     xStream << m_xUVMax.x;
@@ -121,7 +121,10 @@ void Zenith_UIImage::ReadFromDataStream(Zenith_DataStream& xStream)
     uint32_t uVersion;
     xStream >> uVersion;
 
-    xStream >> m_strTexturePath;
+    std::string strTexturePath;
+    xStream >> strTexturePath;
+    m_xTexture.SetPath(strTexturePath);
+
     xStream >> m_xUVMin.x;
     xStream >> m_xUVMin.y;
     xStream >> m_xUVMax.x;
@@ -147,13 +150,14 @@ void Zenith_UIImage::RenderPropertiesPanel()
     ImGui::Text("Image Properties");
 
     char szPathBuffer[512];
-    strncpy_s(szPathBuffer, m_strTexturePath.c_str(), sizeof(szPathBuffer) - 1);
+    const std::string& strTexturePath = m_xTexture.GetPath();
+    strncpy_s(szPathBuffer, strTexturePath.c_str(), sizeof(szPathBuffer) - 1);
     if (ImGui::InputText("Texture Path", szPathBuffer, sizeof(szPathBuffer), ImGuiInputTextFlags_EnterReturnsTrue))
     {
         SetTexturePath(szPathBuffer);
     }
 
-    if (m_pxTexture)
+    if (m_xTexture.IsLoaded())
     {
         ImGui::Text("Texture loaded: Yes");
     }

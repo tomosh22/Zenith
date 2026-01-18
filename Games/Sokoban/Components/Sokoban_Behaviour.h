@@ -30,6 +30,7 @@
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
+#include "AssetHandling/Zenith_AssetHandle.h"
 
 // Include extracted modules
 #include "Sokoban_Input.h"
@@ -59,12 +60,12 @@ class Flux_ParticleEmitterConfig;
 namespace Sokoban
 {
 	extern Flux_MeshGeometry* g_pxCubeGeometry;
-	extern Zenith_MaterialAsset* g_pxFloorMaterial;
-	extern Zenith_MaterialAsset* g_pxWallMaterial;
-	extern Zenith_MaterialAsset* g_pxBoxMaterial;
-	extern Zenith_MaterialAsset* g_pxBoxOnTargetMaterial;
-	extern Zenith_MaterialAsset* g_pxPlayerMaterial;
-	extern Zenith_MaterialAsset* g_pxTargetMaterial;
+	extern MaterialHandle g_xFloorMaterial;
+	extern MaterialHandle g_xWallMaterial;
+	extern MaterialHandle g_xBoxMaterial;
+	extern MaterialHandle g_xBoxOnTargetMaterial;
+	extern MaterialHandle g_xPlayerMaterial;
+	extern MaterialHandle g_xTargetMaterial;
 
 	extern Zenith_Prefab* g_pxTilePrefab;
 	extern Zenith_Prefab* g_pxBoxPrefab;
@@ -126,7 +127,14 @@ public:
 		memset(m_abBoxes, false, sizeof(m_abBoxes));
 	}
 
-	~Sokoban_Behaviour() = default;
+	~Sokoban_Behaviour()
+	{
+		if (m_bOwnsGeometry && m_pxCubeGeometry)
+		{
+			delete m_pxCubeGeometry;
+			m_pxCubeGeometry = nullptr;
+		}
+	}
 
 	// ========================================================================
 	// Lifecycle Hooks - Called by engine
@@ -141,12 +149,12 @@ public:
 	{
 		// Use global resources (initialized in Sokoban.cpp)
 		m_pxCubeGeometry = Sokoban::g_pxCubeGeometry;
-		m_pxFloorMaterial = Sokoban::g_pxFloorMaterial;
-		m_pxWallMaterial = Sokoban::g_pxWallMaterial;
-		m_pxBoxMaterial = Sokoban::g_pxBoxMaterial;
-		m_pxBoxOnTargetMaterial = Sokoban::g_pxBoxOnTargetMaterial;
-		m_pxPlayerMaterial = Sokoban::g_pxPlayerMaterial;
-		m_pxTargetMaterial = Sokoban::g_pxTargetMaterial;
+		m_xFloorMaterial = Sokoban::g_xFloorMaterial;
+		m_xWallMaterial = Sokoban::g_xWallMaterial;
+		m_xBoxMaterial = Sokoban::g_xBoxMaterial;
+		m_xBoxOnTargetMaterial = Sokoban::g_xBoxOnTargetMaterial;
+		m_xPlayerMaterial = Sokoban::g_xPlayerMaterial;
+		m_xTargetMaterial = Sokoban::g_xTargetMaterial;
 
 		GenerateNewLevel();
 	}
@@ -217,12 +225,12 @@ public:
 		{
 			RenderMeshSlot("Cube Mesh", m_pxCubeGeometry);
 			ImGui::Separator();
-			RenderMaterialSlot("Floor Material", m_pxFloorMaterial);
-			RenderMaterialSlot("Wall Material", m_pxWallMaterial);
-			RenderMaterialSlot("Box Material", m_pxBoxMaterial);
-			RenderMaterialSlot("Box On Target", m_pxBoxOnTargetMaterial);
-			RenderMaterialSlot("Player Material", m_pxPlayerMaterial);
-			RenderMaterialSlot("Target Material", m_pxTargetMaterial);
+			RenderMaterialSlot("Floor Material", m_xFloorMaterial);
+			RenderMaterialSlot("Wall Material", m_xWallMaterial);
+			RenderMaterialSlot("Box Material", m_xBoxMaterial);
+			RenderMaterialSlot("Box On Target", m_xBoxOnTargetMaterial);
+			RenderMaterialSlot("Player Material", m_xPlayerMaterial);
+			RenderMaterialSlot("Target Material", m_xTargetMaterial);
 		}
 #endif
 	}
@@ -242,27 +250,28 @@ public:
 		xStream << strMeshPath;
 
 		// Materials
-		auto WriteMaterial = [&xStream](Zenith_MaterialAsset* pxMat)
+		auto WriteMaterial = [&xStream](const MaterialHandle& xMat)
 		{
+			Zenith_MaterialAsset* pxMat = xMat.Get();
 			if (pxMat)
 			{
 				pxMat->WriteToDataStream(xStream);
 			}
 			else
 			{
-				Zenith_MaterialAsset* pxEmpty = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
-				pxEmpty->SetName("Empty");
-				pxEmpty->WriteToDataStream(xStream);
-				delete pxEmpty;
+				// Write empty material placeholder - use local to avoid registry leak
+				Zenith_MaterialAsset xEmptyMat;
+				xEmptyMat.SetName("Empty");
+				xEmptyMat.WriteToDataStream(xStream);
 			}
 		};
 
-		WriteMaterial(m_pxFloorMaterial);
-		WriteMaterial(m_pxWallMaterial);
-		WriteMaterial(m_pxBoxMaterial);
-		WriteMaterial(m_pxBoxOnTargetMaterial);
-		WriteMaterial(m_pxPlayerMaterial);
-		WriteMaterial(m_pxTargetMaterial);
+		WriteMaterial(m_xFloorMaterial);
+		WriteMaterial(m_xWallMaterial);
+		WriteMaterial(m_xBoxMaterial);
+		WriteMaterial(m_xBoxOnTargetMaterial);
+		WriteMaterial(m_xPlayerMaterial);
+		WriteMaterial(m_xTargetMaterial);
 	}
 
 	void ReadParametersFromDataStream(Zenith_DataStream& xStream) override
@@ -276,24 +285,30 @@ public:
 			xStream >> strMeshPath;
 			if (!strMeshPath.empty())
 			{
+				// Clean up old geometry if we own it
+				if (m_bOwnsGeometry && m_pxCubeGeometry)
+				{
+					delete m_pxCubeGeometry;
+				}
 				m_pxCubeGeometry = new Flux_MeshGeometry();
+				m_bOwnsGeometry = true;
 				Flux_MeshGeometry::LoadFromFile(strMeshPath.c_str(), *m_pxCubeGeometry, 0, true);
 			}
 
-			auto ReadMaterial = [&xStream](Zenith_MaterialAsset*& pxMat, const char* szName)
+			auto ReadMaterial = [&xStream](MaterialHandle& xMat, const char* szName)
 			{
 				Zenith_MaterialAsset* pxLoaded = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
 				pxLoaded->SetName(szName);
 				pxLoaded->ReadFromDataStream(xStream);
-				pxMat = pxLoaded;
+				xMat.Set(pxLoaded);
 			};
 
-			ReadMaterial(m_pxFloorMaterial, "Sokoban_Floor");
-			ReadMaterial(m_pxWallMaterial, "Sokoban_Wall");
-			ReadMaterial(m_pxBoxMaterial, "Sokoban_Box");
-			ReadMaterial(m_pxBoxOnTargetMaterial, "Sokoban_BoxOnTarget");
-			ReadMaterial(m_pxPlayerMaterial, "Sokoban_Player");
-			ReadMaterial(m_pxTargetMaterial, "Sokoban_Target");
+			ReadMaterial(m_xFloorMaterial, "Sokoban_Floor");
+			ReadMaterial(m_xWallMaterial, "Sokoban_Wall");
+			ReadMaterial(m_xBoxMaterial, "Sokoban_Box");
+			ReadMaterial(m_xBoxOnTargetMaterial, "Sokoban_BoxOnTarget");
+			ReadMaterial(m_xPlayerMaterial, "Sokoban_Player");
+			ReadMaterial(m_xTargetMaterial, "Sokoban_Target");
 		}
 	}
 
@@ -560,8 +575,8 @@ private:
 			m_uPlayerX, m_uPlayerY,
 			Sokoban::g_pxTilePrefab, Sokoban::g_pxBoxPrefab, Sokoban::g_pxPlayerPrefab,
 			m_pxCubeGeometry,
-			m_pxFloorMaterial, m_pxWallMaterial, m_pxTargetMaterial,
-			m_pxBoxMaterial, m_pxBoxOnTargetMaterial, m_pxPlayerMaterial);
+			m_xFloorMaterial.Get(), m_xWallMaterial.Get(), m_xTargetMaterial.Get(),
+			m_xBoxMaterial.Get(), m_xBoxOnTargetMaterial.Get(), m_xPlayerMaterial.Get());
 
 		m_xRenderer.RepositionCamera(m_uGridWidth, m_uGridHeight);
 		UpdateUI();
@@ -587,10 +602,11 @@ private:
 	// Editor Helpers
 	// ========================================================================
 #ifdef ZENITH_TOOLS
-	void RenderMaterialSlot(const char* szLabel, Zenith_MaterialAsset*& pxMaterial)
+	void RenderMaterialSlot(const char* szLabel, MaterialHandle& xMaterial)
 	{
 		ImGui::PushID(szLabel);
-		std::string strMaterialName = pxMaterial ? pxMaterial->GetName() : "(none)";
+		Zenith_MaterialAsset* pxMat = xMaterial.Get();
+		std::string strMaterialName = pxMat ? pxMat->GetName() : "(none)";
 		ImGui::Text("%s:", szLabel);
 		ImGui::SameLine();
 		ImVec2 xButtonSize(150, 20);
@@ -602,11 +618,8 @@ private:
 			{
 				const DragDropFilePayload* pFilePayload =
 					static_cast<const DragDropFilePayload*>(pPayload->Data);
-				Zenith_MaterialAsset* pxNewMaterial = Zenith_AssetRegistry::Get().Get<Zenith_MaterialAsset>(pFilePayload->m_szFilePath);
-				if (pxNewMaterial)
-				{
-					pxMaterial = pxNewMaterial;
-				}
+				// Use SetPath for file-based assets so the path is stored for serialization
+				xMaterial.SetPath(pFilePayload->m_szFilePath);
 			}
 			ImGui::EndDragDropTarget();
 		}
@@ -642,7 +655,13 @@ private:
 				Flux_MeshGeometry::LoadFromFile(pFilePayload->m_szFilePath, *pxNewMesh, 0, true);
 				if (pxNewMesh->GetNumVerts() > 0)
 				{
+					// Clean up old geometry if we own it
+					if (m_bOwnsGeometry && pxMesh)
+					{
+						delete pxMesh;
+					}
 					pxMesh = pxNewMesh;
+					m_bOwnsGeometry = true;
 				}
 				else
 				{
@@ -709,10 +728,11 @@ private:
 public:
 	// Resource pointers
 	Flux_MeshGeometry* m_pxCubeGeometry = nullptr;
-	Zenith_MaterialAsset* m_pxFloorMaterial = nullptr;
-	Zenith_MaterialAsset* m_pxWallMaterial = nullptr;
-	Zenith_MaterialAsset* m_pxBoxMaterial = nullptr;
-	Zenith_MaterialAsset* m_pxBoxOnTargetMaterial = nullptr;
-	Zenith_MaterialAsset* m_pxPlayerMaterial = nullptr;
-	Zenith_MaterialAsset* m_pxTargetMaterial = nullptr;
+	bool m_bOwnsGeometry = false;  // true if we allocated m_pxCubeGeometry
+	MaterialHandle m_xFloorMaterial;
+	MaterialHandle m_xWallMaterial;
+	MaterialHandle m_xBoxMaterial;
+	MaterialHandle m_xBoxOnTargetMaterial;
+	MaterialHandle m_xPlayerMaterial;
+	MaterialHandle m_xTargetMaterial;
 };

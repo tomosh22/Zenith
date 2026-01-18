@@ -143,34 +143,30 @@ public:
 	 * Get the asset, loading if necessary
 	 * @return Pointer to the asset, or nullptr if path is empty or load fails
 	 */
-	T* Get();
+	T* Get() const;
 
 	/**
 	 * Dereference operator
 	 */
-	T* operator->()
+	T* operator->() const
 	{
 		return Get();
 	}
 
 	/**
-	 * Const dereference
-	 */
-	const T* operator->() const
-	{
-		return const_cast<Zenith_AssetHandle*>(this)->Get();
-	}
-
-	/**
-	 * Bool conversion - true if path is set (doesn't check if asset exists)
+	 * Bool conversion - true if handle references a valid asset
+	 * Returns true if either:
+	 * - A path is set (file-based asset)
+	 * - A cached pointer exists (procedural asset via Set())
 	 */
 	explicit operator bool() const
 	{
-		return !m_strPath.empty();
+		return !m_strPath.empty() || m_pxCached != nullptr;
 	}
 
 	/**
-	 * Check if path is set (alias for operator bool)
+	 * Check if path is set (for serialization purposes)
+	 * Note: For procedural assets created via Set(), use operator bool() or IsLoaded() instead
 	 */
 	bool IsSet() const
 	{
@@ -223,16 +219,52 @@ public:
 	}
 
 	/**
+	 * Set the handle from an asset pointer directly
+	 * Used for procedural assets created via registry.Create<T>()
+	 * Note: For procedural assets, the path is not stored - use SetPath() for serializable references
+	 * @param pxAsset Pointer to asset (must be from registry)
+	 */
+	void Set(T* pxAsset)
+	{
+		// Release old
+		if (m_pxCached)
+		{
+			reinterpret_cast<Zenith_Asset*>(m_pxCached)->Release();
+		}
+
+		if (pxAsset)
+		{
+			// For procedural assets, we hold the pointer but path is not stored
+			// This is intentional - procedural assets aren't serializable via path
+			m_strPath.clear();
+			m_pxCached = pxAsset;
+			reinterpret_cast<Zenith_Asset*>(m_pxCached)->AddRef();
+		}
+		else
+		{
+			m_strPath.clear();
+			m_pxCached = nullptr;
+		}
+	}
+
+	/**
 	 * Comparison operators
+	 * For path-based assets, compares paths. For procedural assets (empty paths), compares pointers.
 	 */
 	bool operator==(const Zenith_AssetHandle& xOther) const
 	{
-		return m_strPath == xOther.m_strPath;
+		// If either has a path, compare by path
+		if (!m_strPath.empty() || !xOther.m_strPath.empty())
+		{
+			return m_strPath == xOther.m_strPath;
+		}
+		// Both are procedural (no path), compare by cached pointer
+		return m_pxCached == xOther.m_pxCached;
 	}
 
 	bool operator!=(const Zenith_AssetHandle& xOther) const
 	{
-		return m_strPath != xOther.m_strPath;
+		return !(*this == xOther);
 	}
 
 	/**
@@ -243,7 +275,7 @@ public:
 
 private:
 	std::string m_strPath;
-	T* m_pxCached = nullptr;
+	mutable T* m_pxCached = nullptr;  // mutable: lazy loading doesn't change logical state
 };
 
 //--------------------------------------------------------------------------
