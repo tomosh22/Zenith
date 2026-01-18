@@ -47,7 +47,8 @@ int main()
 	Zenith_AssetRegistry::SetEngineAssetsDir("./Zenith/Assets/");
 #endif
 	Zenith_AssetRegistry::Initialize();
-	Zenith_UnitTests::RunAllTests();
+	// Unit tests that don't require graphics/scene can run here
+	// Editor/scene tests run after full initialization (see below)
 
 #ifdef ZENITH_TOOLS
 	ExportAllMeshes();
@@ -94,14 +95,19 @@ int main()
 	Zenith_DebugVariables::AddButton({ "Export", "Font", "Export Font Atlas" }, ExportDefaultFontAtlas);
 #endif
 
-	Flux_MemoryManager::BeginFrame();
 	extern void Project_RegisterScriptBehaviours();
 	extern void Project_LoadInitialScene();
 	Project_RegisterScriptBehaviours();
 
+	// Run unit tests BEFORE loading the game scene
+	// This ensures tests don't corrupt game entities - scene loads fresh after tests
+	Zenith_UnitTests::RunAllTests();
+
+	Flux_MemoryManager::BeginFrame();
 	//#TO_TODO: Flux_Graphics::UploadFrameConstants crashes if we don't do this because there is no game camera
 	Project_LoadInitialScene();
 	Flux_MemoryManager::EndFrame(false);
+
 	Zenith_Core::g_xLastFrameTime = std::chrono::high_resolution_clock::now();
 
 	while (!Zenith_Window::GetInstance()->ShouldClose())

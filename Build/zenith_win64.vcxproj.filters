@@ -853,7 +853,13 @@
     <ClCompile Include="..\Zenith\UnitTests\Zenith_AITests.cpp">
       <Filter>UnitTests</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\UnitTests\Zenith_EditorTestFixture.cpp">
+      <Filter>UnitTests</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\UnitTests\Zenith_EditorTests.cpp">
+      <Filter>UnitTests</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\UnitTests\Zenith_MockInput.cpp">
       <Filter>UnitTests</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\UnitTests\Zenith_UnitTests.cpp">
@@ -3585,7 +3591,13 @@
     <ClInclude Include="..\Zenith\UI\Zenith_UIText.h">
       <Filter>UI</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\UnitTests\Zenith_EditorTestFixture.h">
+      <Filter>UnitTests</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\UnitTests\Zenith_EditorTests.h">
+      <Filter>UnitTests</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\UnitTests\Zenith_MockInput.h">
       <Filter>UnitTests</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\UnitTests\Zenith_UnitTests.h">

@@ -1252,7 +1252,9 @@
     <ClInclude Include="..\Zenith\UI\Zenith_UIImage.h" />
     <ClInclude Include="..\Zenith\UI\Zenith_UIRect.h" />
     <ClInclude Include="..\Zenith\UI\Zenith_UIText.h" />
+    <ClInclude Include="..\Zenith\UnitTests\Zenith_EditorTestFixture.h" />
     <ClInclude Include="..\Zenith\UnitTests\Zenith_EditorTests.h" />
+    <ClInclude Include="..\Zenith\UnitTests\Zenith_MockInput.h" />
     <ClInclude Include="..\Zenith\UnitTests\Zenith_UnitTests.h" />
     <ClInclude Include="..\Zenith\Vulkan\Zenith_PlatformGraphics_Include.h" />
     <ClInclude Include="..\Zenith\Vulkan\Zenith_Vulkan.h" />
@@ -2332,7 +2334,9 @@
     <ClCompile Include="..\Zenith\UI\Zenith_UIRect.cpp" />
     <ClCompile Include="..\Zenith\UI\Zenith_UIText.cpp" />
     <ClCompile Include="..\Zenith\UnitTests\Zenith_AITests.cpp" />
+    <ClCompile Include="..\Zenith\UnitTests\Zenith_EditorTestFixture.cpp" />
     <ClCompile Include="..\Zenith\UnitTests\Zenith_EditorTests.cpp" />
+    <ClCompile Include="..\Zenith\UnitTests\Zenith_MockInput.cpp" />
     <ClCompile Include="..\Zenith\UnitTests\Zenith_UnitTests.cpp" />
     <ClCompile Include="..\Zenith\Vulkan\Zenith_Vulkan.cpp" />
     <ClCompile Include="..\Zenith\Vulkan\Zenith_Vulkan_Buffer.cpp" />

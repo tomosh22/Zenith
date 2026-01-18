@@ -1013,6 +1013,116 @@ void Zenith_Editor::SetEditorMode(EditorMode eMode)
 	}
 }
 
+void Zenith_Editor::FlushPendingSceneOperations()
+{
+	// Handle pending scene reset
+	if (s_bPendingSceneReset)
+	{
+		s_bPendingSceneReset = false;
+
+		Zenith_Log(LOG_CATEGORY_EDITOR, "[FlushPending] Waiting for render tasks before scene reset...");
+		Zenith_Core::WaitForAllRenderTasks();
+
+		// Flush staging buffer to complete any pending copy operations before destroying buffers
+		// Must use BeginFrame/EndFrame to properly bracket the staging buffer flush with command buffer recording
+		Zenith_Log(LOG_CATEGORY_EDITOR, "[FlushPending] Flushing staging buffer...");
+		Flux_MemoryManager::BeginFrame();
+		Flux_MemoryManager::EndFrame(false);  // false = don't defer, wait synchronously
+
+		Zenith_Log(LOG_CATEGORY_EDITOR, "[FlushPending] Waiting for GPU idle before scene reset...");
+		Flux_PlatformAPI::WaitForGPUIdle();
+
+		for (u_int u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
+		{
+			Flux_MemoryManager::ProcessDeferredDeletions();
+		}
+
+		Flux::ClearPendingCommandLists();
+
+		Zenith_Scene::GetCurrentScene().Reset();
+		Zenith_Log(LOG_CATEGORY_EDITOR, "[FlushPending] Scene reset complete");
+
+		ClearSelection();
+		s_uGameCameraEntity = INVALID_ENTITY_ID;
+		ResetEditorCameraToDefaults();
+		Zenith_UndoSystem::Clear();
+	}
+
+	// Handle pending scene save
+	if (s_bPendingSceneSave)
+	{
+		s_bPendingSceneSave = false;
+
+		try
+		{
+			Zenith_Scene::GetCurrentScene().SaveToFile(s_strPendingSceneSavePath);
+			Zenith_Log(LOG_CATEGORY_EDITOR, "[FlushPending] Scene saved to %s", s_strPendingSceneSavePath.c_str());
+		}
+		catch (const std::exception& e)
+		{
+			Zenith_Log(LOG_CATEGORY_EDITOR, "[FlushPending] Failed to save scene: %s", e.what());
+		}
+
+		s_strPendingSceneSavePath.clear();
+	}
+
+	// Handle pending scene load
+	if (s_bPendingSceneLoad)
+	{
+		s_bPendingSceneLoad = false;
+
+		Zenith_Log(LOG_CATEGORY_EDITOR, "[FlushPending] Waiting for render tasks before scene load...");
+		Zenith_Core::WaitForAllRenderTasks();
+
+		// Flush staging buffer to complete any pending copy operations before destroying buffers
+		// Must use BeginFrame/EndFrame to properly bracket the staging buffer flush with command buffer recording
+		Zenith_Log(LOG_CATEGORY_EDITOR, "[FlushPending] Flushing staging buffer...");
+		Flux_MemoryManager::BeginFrame();
+		Flux_MemoryManager::EndFrame(false);  // false = don't defer, wait synchronously
+
+		Zenith_Log(LOG_CATEGORY_EDITOR, "[FlushPending] Waiting for GPU idle before scene load...");
+		Flux_PlatformAPI::WaitForGPUIdle();
+
+		for (u_int u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
+		{
+			Flux_MemoryManager::ProcessDeferredDeletions();
+		}
+
+		Flux::ClearPendingCommandLists();
+
+		Zenith_Scene::GetCurrentScene().LoadFromFile(s_strPendingSceneLoadPath);
+		Zenith_Log(LOG_CATEGORY_EDITOR, "[FlushPending] Scene loaded from %s", s_strPendingSceneLoadPath.c_str());
+
+		ClearSelection();
+		Zenith_UndoSystem::Clear();
+		s_uGameCameraEntity = INVALID_ENTITY_ID;
+
+		// If this was a backup scene restore, clean up
+		if (s_bHasSceneBackup && s_strPendingSceneLoadPath == s_strBackupScenePath)
+		{
+			std::filesystem::remove(s_strBackupScenePath);
+			s_bHasSceneBackup = false;
+			s_strBackupScenePath = "";
+			Zenith_Log(LOG_CATEGORY_EDITOR, "[FlushPending] Backup scene file cleaned up");
+
+			// Dispatch full lifecycle for restored entities
+			Zenith_Scene::DispatchFullLifecycleInit();
+			Zenith_Log(LOG_CATEGORY_EDITOR, "[FlushPending] Full lifecycle dispatched for all entities");
+
+			if (s_bEditorCameraInitialized)
+			{
+				SwitchToEditorCamera();
+			}
+		}
+		else if (s_bEditorCameraInitialized)
+		{
+			SwitchToEditorCamera();
+		}
+
+		s_strPendingSceneLoadPath.clear();
+	}
+}
+
 //------------------------------------------------------------------------------
 // Multi-Select System Implementation
 //------------------------------------------------------------------------------

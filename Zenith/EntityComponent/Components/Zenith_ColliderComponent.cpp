@@ -80,13 +80,18 @@ bool Zenith_ColliderComponent::HasValidBody() const
 	return !m_xBodyID.IsInvalid();
 }
 
-Zenith_ColliderComponent::~Zenith_ColliderComponent() 
+Zenith_ColliderComponent::~Zenith_ColliderComponent()
 {
-	if (m_xBodyID.IsInvalid() == false)
+	if (m_xBodyID.IsInvalid() == false && Zenith_Physics::s_pxPhysicsSystem != nullptr)
 	{
 		JPH::BodyInterface& xBodyInterface = Zenith_Physics::s_pxPhysicsSystem->GetBodyInterface();
-		xBodyInterface.RemoveBody(m_xBodyID);
-		xBodyInterface.DestroyBody(m_xBodyID);
+		// Check if the body actually exists in the physics system before trying to destroy it.
+		// This handles cases where scene restore loads stale body IDs that don't exist.
+		if (xBodyInterface.IsAdded(m_xBodyID))
+		{
+			xBodyInterface.RemoveBody(m_xBodyID);
+			xBodyInterface.DestroyBody(m_xBodyID);
+		}
 	}
 
 	if (m_pxTerrainMeshData != nullptr)

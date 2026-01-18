@@ -74,7 +74,11 @@ public:
 	// Editor state
 	static EditorMode GetEditorMode() { return s_eEditorMode; }
 	static void SetEditorMode(EditorMode eMode);
-	
+
+	// Synchronously process pending scene operations (load/save/reset)
+	// Used by unit tests to ensure scene state is consistent after mode transitions
+	static void FlushPendingSceneOperations();
+
 	//--------------------------------------------------------------------------
 	// Multi-Select System
 	//--------------------------------------------------------------------------
