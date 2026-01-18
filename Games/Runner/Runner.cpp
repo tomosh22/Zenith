@@ -535,11 +535,15 @@ void Project_LoadInitialScene()
 	pxStatus->SetColor(Zenith_Maths::Vector4(1.f, 0.3f, 0.3f, 1.f));
 
 	// Add script component with Runner behaviour
+	// Use SetBehaviourForSerialization - OnAwake will be dispatched when Play mode is entered
 	Zenith_ScriptComponent& xScript = xRunnerEntity.AddComponent<Zenith_ScriptComponent>();
-	xScript.SetBehaviour<Runner_Behaviour>();
+	xScript.SetBehaviourForSerialization<Runner_Behaviour>();
 
 	// Save the scene file
 	std::string strScenePath = std::string(GAME_ASSETS_DIR) + "/Scenes/Runner.zscn";
 	std::filesystem::create_directories(std::string(GAME_ASSETS_DIR) + "/Scenes");
 	xScene.SaveToFile(strScenePath);
+
+	// Load from disk to ensure unified lifecycle code path (LoadFromFile handles OnAwake/OnEnable)
+	xScene.LoadFromFile(strScenePath);
 }

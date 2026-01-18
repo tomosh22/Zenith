@@ -153,7 +153,7 @@ public:
 
 				// Prefab-based entity creation
 				// This creates an entity with TransformComponent already attached
-				Zenith_Entity xTileEntity = Zenith_Scene::Instantiate(*pxTilePrefab, "Tile");
+				Zenith_Entity xTileEntity = pxTilePrefab->Instantiate(&Zenith_Scene::GetCurrentScene(), "Tile");
 
 				// Set transform position and scale
 				Zenith_TransformComponent& xTransform = xTileEntity.GetComponent<Zenith_TransformComponent>();
@@ -183,7 +183,7 @@ public:
 						uGridWidth, uGridHeight);
 					xPos.y += s_fFloorHeight; // Sit on top of floor
 
-					Zenith_Entity xBoxEntity = Zenith_Scene::Instantiate(*pxBoxPrefab, "Box");
+					Zenith_Entity xBoxEntity = pxBoxPrefab->Instantiate(&Zenith_Scene::GetCurrentScene(), "Box");
 
 					Zenith_TransformComponent& xTransform = xBoxEntity.GetComponent<Zenith_TransformComponent>();
 					xTransform.SetPosition(xPos);
@@ -207,7 +207,7 @@ public:
 				uGridWidth, uGridHeight);
 			xPos.y += s_fFloorHeight; // Sit on top of floor
 
-			Zenith_Entity xPlayerEntity = Zenith_Scene::Instantiate(*pxPlayerPrefab, "Player");
+			Zenith_Entity xPlayerEntity = pxPlayerPrefab->Instantiate(&Zenith_Scene::GetCurrentScene(), "Player");
 
 			Zenith_TransformComponent& xTransform = xPlayerEntity.GetComponent<Zenith_TransformComponent>();
 			xTransform.SetPosition(xPos);

@@ -276,12 +276,15 @@ void Project_LoadInitialScene()
 	Sokoban::g_uDustEmitterID = xDustEmitter.GetEntityID();
 
 	// Add script component with Sokoban behaviour
-	// Resources are automatically obtained from Sokoban:: namespace in OnCreate()
+	// Use SetBehaviourForSerialization - OnAwake will be dispatched when Play mode is entered
 	Zenith_ScriptComponent& xScript = xSokobanEntity.AddComponent<Zenith_ScriptComponent>();
-	xScript.SetBehaviour<Sokoban_Behaviour>();
+	xScript.SetBehaviourForSerialization<Sokoban_Behaviour>();
 
 	// Save the scene file
 	std::string strScenePath = std::string(GAME_ASSETS_DIR) + "/Scenes/Sokoban.zscn";
 	std::filesystem::create_directories(std::string(GAME_ASSETS_DIR) + "/Scenes");
 	xScene.SaveToFile(strScenePath);
+
+	// Load from disk to ensure unified lifecycle code path (LoadFromFile handles OnAwake/OnEnable)
+	xScene.LoadFromFile(strScenePath);
 }

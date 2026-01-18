@@ -355,25 +355,6 @@ public:
 	// Entity management
 	void RemoveEntity(Zenith_EntityID uID);
 
-	//--------------------------------------------------------------------------
-	// Instantiate (runtime entity creation)
-	//--------------------------------------------------------------------------
-
-	/**
-	 * Instantiate a prefab. The resulting entity is transient (not saved with scene).
-	 */
-	static Zenith_Entity Instantiate(const class Zenith_Prefab& xPrefab, const std::string& strName = "");
-
-	/**
-	 * Instantiate a prefab with position. The resulting entity is transient.
-	 */
-	static Zenith_Entity Instantiate(const class Zenith_Prefab& xPrefab, const Zenith_Maths::Vector3& xPosition, const std::string& strName = "");
-
-	/**
-	 * Instantiate a prefab with position and rotation. The resulting entity is transient.
-	 */
-	static Zenith_Entity Instantiate(const class Zenith_Prefab& xPrefab, const Zenith_Maths::Vector3& xPosition, const Zenith_Maths::Quat& xRotation, const std::string& strName = "");
-
 	/**
 	 * Destroy an entity (Unity-style deferred destruction at end of frame).
 	 * Children are also marked for destruction.
@@ -481,8 +462,14 @@ public:
 	// Prefab instantiation state (allows entity creation during prefab instantiate)
 	static void SetPrefabInstantiating(bool b) { s_bIsPrefabInstantiating = b; }
 
+	// Mark entity as having had OnAwake called (prevents duplicate dispatch in Update)
+	void MarkEntityAwoken(Zenith_EntityID xID) { m_xEntitiesAwoken.insert(xID); }
+
+	// Mark entity as having had OnStart called (prevents duplicate dispatch in Update)
+	void MarkEntityStarted(Zenith_EntityID xID) { m_xEntitiesStarted.insert(xID); }
+
 	/**
-	 * DispatchFullLifecycleInit - Safely dispatch OnAwake, OnEnable, OnStart to all entities
+	 * DispatchFullLifecycleInit - Safely dispatch OnStart to all entities (OnAwake/OnEnable now per-entity)
 	 *
 	 * CRITICAL: This method handles entity creation during callbacks safely by:
 	 * 1. Copying entity IDs before iteration (prevents vector reference invalidation)
@@ -493,6 +480,15 @@ public:
 	 * Called by: Editor (after backup restore), and any code needing full entity init.
 	 */
 	static void DispatchFullLifecycleInit();
+
+	/**
+	 * DispatchLifecycleForNewScene - Dispatch OnAwake/OnEnable for programmatically created entities.
+	 *
+	 * Call this after creating a scene programmatically (not via LoadFromFile).
+	 * Dispatches lifecycle hooks for entities that haven't been awoken yet.
+	 * Skips entities already marked as awoken (e.g., from SetBehaviour calls).
+	 */
+	void DispatchLifecycleForNewScene();
 
 private:
 	// RAII guard for scene loading flag - ensures flag is cleared even on early returns/asserts
@@ -543,6 +539,7 @@ private:
 	Zenith_Vector<uint32_t> m_xFreeIndices;               // Free list for slot recycling
 	Zenith_Vector<Zenith_EntityID> m_xActiveEntities;     // Active entity IDs for iteration
 	std::unordered_set<Zenith_EntityID> m_xEntitiesStarted;  // Tracks which entities have had OnStart called
+	std::unordered_set<Zenith_EntityID> m_xEntitiesAwoken;   // Tracks which entities have had OnAwake called
 	static Zenith_Scene s_xCurrentScene;
 	static float s_fFixedTimeAccumulator;  // Accumulator for fixed timestep updates
 	Zenith_EntityID m_xMainCameraEntity = INVALID_ENTITY_ID;

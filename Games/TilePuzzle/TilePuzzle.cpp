@@ -340,11 +340,15 @@ void Project_LoadInitialScene()
 	pxWin->SetColor(Zenith_Maths::Vector4(0.2f, 1.f, 0.2f, 1.f));
 
 	// Add script component with TilePuzzle behaviour
+	// Use SetBehaviourForSerialization - OnAwake will be dispatched when Play mode is entered
 	Zenith_ScriptComponent& xScript = xGameEntity.AddComponent<Zenith_ScriptComponent>();
-	xScript.SetBehaviour<TilePuzzle_Behaviour>();
+	xScript.SetBehaviourForSerialization<TilePuzzle_Behaviour>();
 
 	// Save the scene file
 	std::string strScenePath = std::string(GAME_ASSETS_DIR) + "/Scenes/TilePuzzle.zscn";
 	std::filesystem::create_directories(std::string(GAME_ASSETS_DIR) + "/Scenes");
 	xScene.SaveToFile(strScenePath);
+
+	// Load from disk to ensure unified lifecycle code path (LoadFromFile handles OnAwake/OnEnable)
+	xScene.LoadFromFile(strScenePath);
 }

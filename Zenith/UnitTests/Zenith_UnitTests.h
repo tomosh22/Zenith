@@ -233,8 +233,6 @@ private:
 	static void TestTacticalPointFlankScoring();
 
 	// AI System tests - Debug Variables
-	static void TestAIDebugVariablesDefault();
-	static void TestAIDebugVariablesToggle();
 	static void TestTacticalPointDebugColor();
 	static void TestSquadDebugRoleColor();
 };

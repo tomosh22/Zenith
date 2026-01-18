@@ -563,8 +563,9 @@ void Project_LoadInitialScene()
 	xGameEntity.AddComponent<Zenith_UIComponent>();
 
 	// Add script component with Exploration behaviour
+	// Use SetBehaviourForSerialization - OnAwake will be dispatched when Play mode is entered
 	Zenith_ScriptComponent& xScript = xGameEntity.AddComponent<Zenith_ScriptComponent>();
-	xScript.SetBehaviour<Exploration_Behaviour>();
+	xScript.SetBehaviourForSerialization<Exploration_Behaviour>();
 
 	// ========================================================================
 	// Create Terrain Entity
@@ -624,4 +625,7 @@ void Project_LoadInitialScene()
 	std::string strScenePath = std::string(GAME_ASSETS_DIR) + "/Scenes/Exploration.zscn";
 	std::filesystem::create_directories(std::string(GAME_ASSETS_DIR) + "/Scenes");
 	xScene.SaveToFile(strScenePath);
+
+	// Load from disk to ensure unified lifecycle code path (LoadFromFile handles OnAwake/OnEnable)
+	xScene.LoadFromFile(strScenePath);
 }

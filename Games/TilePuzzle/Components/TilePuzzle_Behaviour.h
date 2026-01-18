@@ -88,7 +88,7 @@ public:
 
 	void OnAwake() ZENITH_FINAL override
 	{
-		// Cache global resources
+		// Cache global resources (lightweight)
 		m_pxCubeGeometry = TilePuzzle::g_pxCubeGeometry;
 		m_pxSphereGeometry = TilePuzzle::g_pxSphereGeometry;
 		m_pxFloorMaterial = TilePuzzle::g_pxFloorMaterial;
@@ -100,7 +100,7 @@ public:
 			m_apxCatMaterials[i] = TilePuzzle::g_apxCatMaterials[i];
 		}
 
-		GenerateNewLevel();
+		// Heavy initialization moved to OnStart
 	}
 
 	void OnStart() ZENITH_FINAL override
@@ -532,7 +532,7 @@ private:
 				uint32_t uIdx = y * m_xCurrentLevel.uGridWidth + x;
 				if (m_xCurrentLevel.aeCells[uIdx] == TILEPUZZLE_CELL_FLOOR)
 				{
-					Zenith_Entity xFloorEntity = Zenith_Scene::Instantiate(*TilePuzzle::g_pxCellPrefab, "Floor");
+					Zenith_Entity xFloorEntity = TilePuzzle::g_pxCellPrefab->Instantiate(&Zenith_Scene::GetCurrentScene(), "Floor");
 					Zenith_TransformComponent& xTransform = xFloorEntity.GetComponent<Zenith_TransformComponent>();
 					xTransform.SetPosition(GridToWorld(static_cast<float>(x), static_cast<float>(y), 0.0f));
 					xTransform.SetScale(Zenith_Maths::Vector3(s_fCellSize * 0.95f, s_fFloorHeight, s_fCellSize * 0.95f));
@@ -561,7 +561,7 @@ private:
 				float fX = static_cast<float>(xShape.iOriginX + xOffset.iX);
 				float fY = static_cast<float>(xShape.iOriginY + xOffset.iY);
 
-				Zenith_Entity xCubeEntity = Zenith_Scene::Instantiate(*TilePuzzle::g_pxShapeCubePrefab, "ShapeCube");
+				Zenith_Entity xCubeEntity = TilePuzzle::g_pxShapeCubePrefab->Instantiate(&Zenith_Scene::GetCurrentScene(), "ShapeCube");
 				Zenith_TransformComponent& xTransform = xCubeEntity.GetComponent<Zenith_TransformComponent>();
 				xTransform.SetPosition(GridToWorld(fX, fY, s_fShapeHeight));
 				xTransform.SetScale(Zenith_Maths::Vector3(s_fCellSize * 0.85f, s_fShapeHeight * 2.0f, s_fCellSize * 0.85f));
@@ -576,7 +576,7 @@ private:
 		// Create cat visuals
 		for (auto& xCat : m_xCurrentLevel.axCats)
 		{
-			Zenith_Entity xCatEntity = Zenith_Scene::Instantiate(*TilePuzzle::g_pxCatPrefab, "Cat");
+			Zenith_Entity xCatEntity = TilePuzzle::g_pxCatPrefab->Instantiate(&Zenith_Scene::GetCurrentScene(), "Cat");
 			Zenith_TransformComponent& xTransform = xCatEntity.GetComponent<Zenith_TransformComponent>();
 			xTransform.SetPosition(GridToWorld(static_cast<float>(xCat.iGridX), static_cast<float>(xCat.iGridY), s_fCatHeight));
 			xTransform.SetScale(Zenith_Maths::Vector3(s_fCatRadius * 2.0f));
@@ -588,7 +588,7 @@ private:
 		}
 
 		// Create cursor visual
-		Zenith_Entity xCursorEntity = Zenith_Scene::Instantiate(*TilePuzzle::g_pxCellPrefab, "Cursor");
+		Zenith_Entity xCursorEntity = TilePuzzle::g_pxCellPrefab->Instantiate(&Zenith_Scene::GetCurrentScene(), "Cursor");
 		Zenith_TransformComponent& xTransform = xCursorEntity.GetComponent<Zenith_TransformComponent>();
 		xTransform.SetPosition(GridToWorld(static_cast<float>(m_iCursorX), static_cast<float>(m_iCursorY), 0.01f));
 		xTransform.SetScale(Zenith_Maths::Vector3(s_fCellSize * 0.98f, 0.02f, s_fCellSize * 0.98f));

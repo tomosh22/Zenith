@@ -207,7 +207,8 @@ public:
 
 	/**
 	 * SetBehaviour - Attach a behaviour to this component at runtime.
-	 * Calls OnAwake() immediately.
+	 * Calls OnAwake() immediately and marks entity as awoken.
+	 * Use this when creating entities during gameplay.
 	 */
 	template<typename T>
 	void SetBehaviour()
@@ -215,6 +216,25 @@ public:
 		m_pxScriptBehaviour = new T(m_xParentEntity);
 		m_pxScriptBehaviour->m_xParentEntity = m_xParentEntity;
 		m_pxScriptBehaviour->OnAwake();
+
+		// Mark entity as awoken to prevent duplicate dispatch in Scene::Update()
+		if (m_xParentEntity.IsValid())
+		{
+			Zenith_Scene::GetCurrentScene().MarkEntityAwoken(m_xParentEntity.GetEntityID());
+		}
+	}
+
+	/**
+	 * SetBehaviourForSerialization - Attach a behaviour for scene setup/serialization.
+	 * Does NOT call OnAwake() - lifecycle hooks will be called when Play mode is entered.
+	 * Use this in Project_LoadInitialScene to set up behaviors that will be serialized.
+	 */
+	template<typename T>
+	void SetBehaviourForSerialization()
+	{
+		m_pxScriptBehaviour = new T(m_xParentEntity);
+		m_pxScriptBehaviour->m_xParentEntity = m_xParentEntity;
+		// OnAwake is NOT called - will be dispatched when entering Play mode
 	}
 
 	template<typename T>

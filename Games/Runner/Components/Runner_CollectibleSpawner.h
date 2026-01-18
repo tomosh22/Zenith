@@ -343,7 +343,7 @@ private:
 			return;
 		}
 
-		Zenith_Entity xColl = Zenith_Scene::Instantiate(*s_pxCollectiblePrefab, "Collectible");
+		Zenith_Entity xColl = s_pxCollectiblePrefab->Instantiate(&Zenith_Scene::GetCurrentScene(), "Collectible");
 
 		Zenith_TransformComponent& xTransform = xColl.GetComponent<Zenith_TransformComponent>();
 		xTransform.SetPosition(xPos);
@@ -368,7 +368,7 @@ private:
 			return;
 		}
 
-		Zenith_Entity xObs = Zenith_Scene::Instantiate(*s_pxObstaclePrefab, "Obstacle");
+		Zenith_Entity xObs = s_pxObstaclePrefab->Instantiate(&Zenith_Scene::GetCurrentScene(), "Obstacle");
 
 		// Size based on type
 		Zenith_Maths::Vector3 xSize;

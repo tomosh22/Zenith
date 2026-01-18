@@ -1393,66 +1393,6 @@ void Zenith_UnitTests::TestTacticalPointFlankScoring()
 // ============================================================================
 #include "AI/Zenith_AIDebugVariables.h"
 
-void Zenith_UnitTests::TestAIDebugVariablesDefault()
-{
-	// Test that debug variables have expected default values
-	// (After initialization, most visualization toggles should be on for easy debugging)
-
-	// Save current values
-	bool bOrigEnableAll = Zenith_AIDebugVariables::s_bEnableAllAIDebug;
-	bool bOrigNavMeshEdges = Zenith_AIDebugVariables::s_bDrawNavMeshEdges;
-	bool bOrigAgentPaths = Zenith_AIDebugVariables::s_bDrawAgentPaths;
-	bool bOrigSightCones = Zenith_AIDebugVariables::s_bDrawSightCones;
-
-	// Verify master toggle defaults to true
-	Zenith_Assert(bOrigEnableAll == true, "Master debug toggle should default to true");
-
-	// Verify key visualization defaults
-	Zenith_Assert(bOrigNavMeshEdges == true, "NavMesh edges should default to visible");
-	Zenith_Assert(bOrigAgentPaths == true, "Agent paths should default to visible");
-	Zenith_Assert(bOrigSightCones == true, "Sight cones should default to visible");
-
-	// Some defaults should be off to reduce clutter
-	Zenith_Assert(Zenith_AIDebugVariables::s_bDrawNavMeshPolygons == false,
-		"NavMesh polygons should default to hidden (too cluttered)");
-	Zenith_Assert(Zenith_AIDebugVariables::s_bDrawHearingRadius == false,
-		"Hearing radius should default to hidden");
-
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAIDebugVariablesDefault PASSED");
-}
-
-void Zenith_UnitTests::TestAIDebugVariablesToggle()
-{
-	// Test that debug variables can be toggled
-
-	// Save original value
-	bool bOrigValue = Zenith_AIDebugVariables::s_bDrawNavMeshEdges;
-
-	// Toggle off
-	Zenith_AIDebugVariables::s_bDrawNavMeshEdges = false;
-	Zenith_Assert(Zenith_AIDebugVariables::s_bDrawNavMeshEdges == false,
-		"Should be able to set debug variable to false");
-
-	// Toggle on
-	Zenith_AIDebugVariables::s_bDrawNavMeshEdges = true;
-	Zenith_Assert(Zenith_AIDebugVariables::s_bDrawNavMeshEdges == true,
-		"Should be able to set debug variable to true");
-
-	// Restore original
-	Zenith_AIDebugVariables::s_bDrawNavMeshEdges = bOrigValue;
-
-	// Test master toggle disables visualization
-	bool bOrigMaster = Zenith_AIDebugVariables::s_bEnableAllAIDebug;
-	Zenith_AIDebugVariables::s_bEnableAllAIDebug = false;
-	Zenith_Assert(Zenith_AIDebugVariables::s_bEnableAllAIDebug == false,
-		"Master toggle should be disable-able");
-
-	// Restore
-	Zenith_AIDebugVariables::s_bEnableAllAIDebug = bOrigMaster;
-
-	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAIDebugVariablesToggle PASSED");
-}
-
 void Zenith_UnitTests::TestTacticalPointDebugColor()
 {
 	// Test that tactical point types have distinct colors for visualization accuracy

@@ -126,6 +126,13 @@ void Zenith_ScriptComponent::RenderPropertiesPanel()
 					{
 						m_pxScriptBehaviour->m_xParentEntity = m_xParentEntity;
 						m_pxScriptBehaviour->OnAwake();
+
+						// Mark entity as awoken to prevent duplicate dispatch in Scene::Update()
+						if (m_xParentEntity.IsValid())
+						{
+							Zenith_Scene::GetCurrentScene().MarkEntityAwoken(m_xParentEntity.GetEntityID());
+						}
+
 						Zenith_Log(LOG_CATEGORY_ECS, "[ScriptComponent] Set behaviour to: %s", szSelectedName);
 					}
 				}

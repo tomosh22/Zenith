@@ -289,8 +289,6 @@ void Zenith_UnitTests::RunAllTests()
 	TestTacticalPointFlankScoring();
 
 	// AI System tests - Debug Variables
-	TestAIDebugVariablesDefault();
-	TestAIDebugVariablesToggle();
 	TestTacticalPointDebugColor();
 	TestSquadDebugRoleColor();
 

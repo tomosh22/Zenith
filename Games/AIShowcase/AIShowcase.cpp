@@ -243,11 +243,15 @@ void Project_LoadInitialScene()
 	pxStatus->SetColor(Zenith_Maths::Vector4(0.6f, 0.8f, 1.f, 1.f));
 
 	// Add script component with AIShowcase behaviour
+	// Use SetBehaviourForSerialization - OnAwake will be dispatched when Play mode is entered
 	Zenith_ScriptComponent& xScript = xGameEntity.AddComponent<Zenith_ScriptComponent>();
-	xScript.SetBehaviour<AIShowcase_Behaviour>();
+	xScript.SetBehaviourForSerialization<AIShowcase_Behaviour>();
 
 	// Save scene file
 	std::string strScenePath = std::string(GAME_ASSETS_DIR) + "/Scenes/AIShowcase.zscn";
 	std::filesystem::create_directories(std::string(GAME_ASSETS_DIR) + "/Scenes");
 	xScene.SaveToFile(strScenePath);
+
+	// Load from disk to ensure unified lifecycle code path (LoadFromFile handles OnAwake/OnEnable)
+	xScene.LoadFromFile(strScenePath);
 }

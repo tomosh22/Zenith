@@ -169,7 +169,7 @@ private:
 		const Zenith_Maths::Vector3& xPos,
 		const Zenith_Maths::Vector3& xScale)
 	{
-		Zenith_Entity xPlatform = Zenith_Scene::Instantiate(*pxPrefab, "Platform");
+		Zenith_Entity xPlatform = pxPrefab->Instantiate(&Zenith_Scene::GetCurrentScene(), "Platform");
 
 		// 1. Set transform first
 		Zenith_TransformComponent& xTransform = xPlatform.GetComponent<Zenith_TransformComponent>();
@@ -194,7 +194,7 @@ private:
 		Zenith_MaterialAsset* pxMaterial,
 		const Zenith_Maths::Vector3& xPos)
 	{
-		Zenith_Entity xGoal = Zenith_Scene::Instantiate(*pxPrefab, "Goal");
+		Zenith_Entity xGoal = pxPrefab->Instantiate(&Zenith_Scene::GetCurrentScene(), "Goal");
 
 		Zenith_TransformComponent& xTransform = xGoal.GetComponent<Zenith_TransformComponent>();
 		xTransform.SetPosition(xPos);
@@ -216,7 +216,7 @@ private:
 		Zenith_MaterialAsset* pxMaterial,
 		const Zenith_Maths::Vector3& xPos)
 	{
-		Zenith_Entity xBall = Zenith_Scene::Instantiate(*pxPrefab, "Ball");
+		Zenith_Entity xBall = pxPrefab->Instantiate(&Zenith_Scene::GetCurrentScene(), "Ball");
 
 		Zenith_TransformComponent& xTransform = xBall.GetComponent<Zenith_TransformComponent>();
 		xTransform.SetPosition(xPos);
@@ -260,7 +260,7 @@ private:
 			// Place collectible above platform center
 			Zenith_Maths::Vector3 xCollPos = xPlatPos + Zenith_Maths::Vector3(0.f, xPlatScale.y + 1.0f, 0.f);
 
-			Zenith_Entity xCollectible = Zenith_Scene::Instantiate(*pxPrefab, "Collectible");
+			Zenith_Entity xCollectible = pxPrefab->Instantiate(&Zenith_Scene::GetCurrentScene(), "Collectible");
 
 			Zenith_TransformComponent& xTransform = xCollectible.GetComponent<Zenith_TransformComponent>();
 			xTransform.SetPosition(xCollPos);

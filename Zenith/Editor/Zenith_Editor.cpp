@@ -352,12 +352,10 @@ bool Zenith_Editor::Update()
 			s_strBackupScenePath = "";
 			Zenith_Log(LOG_CATEGORY_EDITOR, "Backup scene file cleaned up");
 
-			// CRITICAL: Dispatch full lifecycle for all entities after backup restore
-			// In Stopped mode, Scene::Update() is not called, so lifecycle hooks would never run.
-			// Must dispatch OnAwake (which calls OnCreate to set up resources), OnEnable, then OnStart.
-			// This allows behaviours (like Sokoban_Behaviour) to initialize and regenerate transient entities.
-			Zenith_Scene::DispatchFullLifecycleInit();
-			Zenith_Log(LOG_CATEGORY_EDITOR, "Full lifecycle dispatched for all entities after backup restore");
+			// Unity-style: In Stopped mode, scene is restored but scripts remain "dormant"
+			// OnAwake/OnEnable/OnStart will only be dispatched when Play is clicked again.
+			// DO NOT dispatch lifecycle here - it would cause OnStart to run which may
+			// create runtime entities (like enemies) that shouldn't exist in Stopped mode.
 
 			// After restoring scene, initialize editor camera state from the game's camera
 			if (s_bEditorCameraInitialized)
@@ -965,6 +963,55 @@ void Zenith_Editor::SetEditorMode(EditorMode eMode)
 				break;
 			}
 		}
+
+		// Unity-style lifecycle: Dispatch OnAwake/OnEnable for all entities when entering Play mode
+		// In Stopped mode, scene was loaded but scripts were "dormant" - now we wake them up
+		Zenith_Log(LOG_CATEGORY_EDITOR, "Editor: Dispatching OnAwake/OnEnable for %u entities", xScene.GetEntityCount());
+		Zenith_ComponentMetaRegistry& xRegistry = Zenith_ComponentMetaRegistry::Get();
+
+		// First pass: OnAwake for all entities
+		const Zenith_Vector<Zenith_EntityID>& xEntityIDs = xScene.GetActiveEntities();
+		for (u_int u = 0; u < xEntityIDs.GetSize(); ++u)
+		{
+			Zenith_EntityID uID = xEntityIDs.Get(u);
+			if (xScene.EntityExists(uID))
+			{
+				Zenith_Entity xEntity = xScene.GetEntity(uID);
+				xRegistry.DispatchOnAwake(xEntity);
+			}
+		}
+
+		// Second pass: OnEnable for enabled entities, and mark all as awoken
+		for (u_int u = 0; u < xEntityIDs.GetSize(); ++u)
+		{
+			Zenith_EntityID uID = xEntityIDs.Get(u);
+			if (xScene.EntityExists(uID))
+			{
+				Zenith_Entity xEntity = xScene.GetEntity(uID);
+				if (xEntity.IsEnabled())
+				{
+					xRegistry.DispatchOnEnable(xEntity);
+				}
+				xScene.MarkEntityAwoken(uID);
+			}
+		}
+
+		// Third pass: OnStart for enabled entities (Unity-style: called before first Update)
+		// Re-fetch entity list since OnAwake/OnEnable may have created new entities
+		const Zenith_Vector<Zenith_EntityID>& xStartEntityIDs = xScene.GetActiveEntities();
+		for (u_int u = 0; u < xStartEntityIDs.GetSize(); ++u)
+		{
+			Zenith_EntityID uID = xStartEntityIDs.Get(u);
+			if (xScene.EntityExists(uID))
+			{
+				Zenith_Entity xEntity = xScene.GetEntity(uID);
+				if (xEntity.IsEnabled())
+				{
+					xRegistry.DispatchOnStart(xEntity);
+				}
+				xScene.MarkEntityStarted(uID);
+			}
+		}
 	}
 
 	// PLAYING/PAUSED -> STOPPED: Restore scene state and switch to editor camera
@@ -1105,9 +1152,9 @@ void Zenith_Editor::FlushPendingSceneOperations()
 			s_strBackupScenePath = "";
 			Zenith_Log(LOG_CATEGORY_EDITOR, "[FlushPending] Backup scene file cleaned up");
 
-			// Dispatch full lifecycle for restored entities
-			Zenith_Scene::DispatchFullLifecycleInit();
-			Zenith_Log(LOG_CATEGORY_EDITOR, "[FlushPending] Full lifecycle dispatched for all entities");
+			// Unity-style: In Stopped mode, scene is restored but scripts remain "dormant"
+			// OnAwake/OnEnable/OnStart will only be dispatched when Play is clicked again
+			// DO NOT dispatch lifecycle here - it would cause OnStart to run which may create entities
 
 			if (s_bEditorCameraInitialized)
 			{

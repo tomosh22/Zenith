@@ -104,7 +104,7 @@ public:
 	 */
 	void OnAwake() ZENITH_FINAL override
 	{
-		// Store resource pointers from globals (properly initialized with GPU resources)
+		// Store resource pointers from globals (lightweight)
 		m_pxSphereGeometry = Marble::g_pxSphereGeometry;
 		m_pxCubeGeometry = Marble::g_pxCubeGeometry;
 		m_pxBallMaterial = Marble::g_pxBallMaterial;
@@ -113,7 +113,7 @@ public:
 		m_pxCollectibleMaterial = Marble::g_pxCollectibleMaterial;
 		m_pxFloorMaterial = Marble::g_pxFloorMaterial;
 
-		GenerateLevel();
+		// Heavy initialization moved to OnStart
 	}
 
 	/**

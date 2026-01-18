@@ -100,7 +100,7 @@ public:
 	 */
 	void OnAwake() ZENITH_FINAL override
 	{
-		// Store resource pointers from globals
+		// Store resource pointers from globals (lightweight)
 		m_pxCapsuleGeometry = Runner::g_pxCapsuleGeometry;
 		m_pxCubeGeometry = Runner::g_pxCubeGeometry;
 		m_pxSphereGeometry = Runner::g_pxSphereGeometry;
@@ -111,7 +111,7 @@ public:
 		m_pxDustMaterial = Runner::g_pxDustMaterial;
 		m_pxCollectParticleMaterial = Runner::g_pxCollectParticleMaterial;
 
-		InitializeGame();
+		// Heavy initialization moved to OnStart
 	}
 
 	/**
@@ -358,7 +358,7 @@ private:
 			return;
 		}
 
-		Zenith_Entity xCharacter = Zenith_Scene::Instantiate(*Runner::g_pxCharacterPrefab, "Runner");
+		Zenith_Entity xCharacter = Runner::g_pxCharacterPrefab->Instantiate(&Zenith_Scene::GetCurrentScene(), "Runner");
 
 		// Initial position
 		Zenith_TransformComponent& xTransform = xCharacter.GetComponent<Zenith_TransformComponent>();

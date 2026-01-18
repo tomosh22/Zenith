@@ -113,24 +113,26 @@ public:
 
 	void OnAwake() ZENITH_FINAL override
 	{
+		// Lightweight only - heavy initialization moved to OnStart
+		// Resource pointers are accessed via AIShowcase::g_px* globals
+	}
+
+	void OnStart() ZENITH_FINAL override
+	{
+		// Ensure AI systems are initialized (may have been shut down by unit tests)
+		Zenith_PerceptionSystem::Initialise();
+		Zenith_SquadManager::Initialise();
+		Zenith_TacticalPointSystem::Initialise();
+
+		// Guard: Skip if already initialized
+		if (m_xPlayerEntity.IsValid())
+			return;
+
 		InitializeArena();
 		InitializePlayer();
 		InitializeEnemySquads();
 		GenerateNavMesh();
 		SetupTacticalPoints();
-	}
-
-	void OnStart() ZENITH_FINAL override
-	{
-		// Ensure arena is set up even if loaded from scene
-		if (!m_xPlayerEntity.IsValid())
-		{
-			InitializeArena();
-			InitializePlayer();
-			InitializeEnemySquads();
-			GenerateNavMesh();
-			SetupTacticalPoints();
-		}
 	}
 
 	void OnUpdate(const float fDt) ZENITH_FINAL override

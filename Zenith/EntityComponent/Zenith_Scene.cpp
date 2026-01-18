@@ -24,6 +24,7 @@
 #include "Flux/Quads/Flux_Quads.h"
 #ifdef ZENITH_TOOLS
 #include "Flux/Gizmos/Flux_Gizmos.h"
+#include "Editor/Zenith_Editor.h"
 #endif
 #include "Physics/Zenith_Physics.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
@@ -116,6 +117,7 @@ void Zenith_Scene::Reset()
 	m_xFreeIndices.Clear();
 	m_xActiveEntities.Clear();
 	m_xEntitiesStarted.clear();  // Clear started tracking
+	m_xEntitiesAwoken.clear();   // Clear awoken tracking
 	m_xPendingDestruction.Clear();  // Clear pending destructions
 	m_xPendingDestructionSet.clear();
 	m_xCreatedDuringUpdate.clear();  // Clear deferred creation tracking
@@ -193,32 +195,6 @@ void Zenith_Scene::ProcessPendingDestructions()
 
 	m_xPendingDestruction.Clear();
 	m_xPendingDestructionSet.clear();
-}
-
-Zenith_Entity Zenith_Scene::Instantiate(const Zenith_Prefab& xPrefab, const std::string& strName)
-{
-	std::string strEntityName = strName.empty() ? xPrefab.GetName() : strName;
-	// Set flag to allow entity creation during prefab instantiation
-	s_bIsPrefabInstantiating = true;
-	Zenith_Entity xEntity = xPrefab.Instantiate(&s_xCurrentScene, strEntityName);
-	s_bIsPrefabInstantiating = false;
-	return xEntity;
-}
-
-Zenith_Entity Zenith_Scene::Instantiate(const Zenith_Prefab& xPrefab, const Zenith_Maths::Vector3& xPosition, const std::string& strName)
-{
-	Zenith_Entity xEntity = Instantiate(xPrefab, strName);
-	xEntity.GetComponent<Zenith_TransformComponent>().SetPosition(xPosition);
-	return xEntity;
-}
-
-Zenith_Entity Zenith_Scene::Instantiate(const Zenith_Prefab& xPrefab, const Zenith_Maths::Vector3& xPosition, const Zenith_Maths::Quat& xRotation, const std::string& strName)
-{
-	Zenith_Entity xEntity = Instantiate(xPrefab, strName);
-	Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
-	xTransform.SetPosition(xPosition);
-	xTransform.SetRotation(xRotation);
-	return xEntity;
 }
 
 //------------------------------------------------------------------------------
@@ -523,6 +499,46 @@ void Zenith_Scene::LoadFromFile(const std::string& strFilename)
 		}
 	}
 
+	// Unity-style lifecycle: Only dispatch OnAwake/OnEnable at runtime or when entering Play mode.
+	// In editor Stopped mode, scene loads but scripts remain "dormant" - lifecycle hooks run when Play is clicked.
+#ifdef ZENITH_TOOLS
+	bool bShouldDispatchLifecycle = (Zenith_Editor::GetEditorMode() != EditorMode::Stopped);
+#else
+	bool bShouldDispatchLifecycle = true;  // Always dispatch at runtime (no editor)
+#endif
+
+	if (bShouldDispatchLifecycle)
+	{
+		// Dispatch OnAwake/OnEnable for all loaded entities (Unity-style: after ALL entities instantiated)
+		// This ensures entities can find each other in OnAwake since all are loaded
+		Zenith_ComponentMetaRegistry& xRegistry = Zenith_ComponentMetaRegistry::Get();
+		for (u_int u = 0; u < m_xActiveEntities.GetSize(); ++u)
+		{
+			Zenith_EntityID xEntityID = m_xActiveEntities.Get(u);
+			if (EntityExists(xEntityID))
+			{
+				Zenith_Entity xEntity = GetEntity(xEntityID);
+				xRegistry.DispatchOnAwake(xEntity);
+			}
+		}
+
+		// OnEnable - only for enabled entities, after all OnAwake calls complete
+		for (u_int u = 0; u < m_xActiveEntities.GetSize(); ++u)
+		{
+			Zenith_EntityID xEntityID = m_xActiveEntities.Get(u);
+			if (EntityExists(xEntityID))
+			{
+				Zenith_Entity xEntity = GetEntity(xEntityID);
+				if (xEntity.IsEnabled())
+				{
+					xRegistry.DispatchOnEnable(xEntity);
+				}
+				// Mark as awoken so Update() doesn't dispatch again
+				m_xEntitiesAwoken.insert(xEntityID);
+			}
+		}
+	}
+
 	// Note: Loading flag is automatically cleared by SceneLoadingGuard destructor
 }
 
@@ -544,7 +560,30 @@ void Zenith_Scene::Update(const float fDt)
 		xEntityIDs.PushBack(s_xCurrentScene.m_xActiveEntities.Get(u));
 	}
 
-	// 1. OnStart for new entities (entities not yet started)
+	// 1. OnAwake/OnEnable for runtime-created entities (not yet awoken)
+	// Scene-loaded and prefab entities are already awoken during creation
+	// Skip entities created during this Update frame
+	for (u_int u = 0; u < xEntityIDs.GetSize(); ++u)
+	{
+		Zenith_EntityID uID = xEntityIDs.Get(u);
+		// Skip if destroyed or created this frame
+		if (!s_xCurrentScene.EntityExists(uID)) continue;
+		if (s_xCurrentScene.WasCreatedDuringUpdate(uID)) continue;
+
+		// Skip if already awoken (scene-loaded or prefab entities)
+		if (s_xCurrentScene.m_xEntitiesAwoken.find(uID) != s_xCurrentScene.m_xEntitiesAwoken.end())
+			continue;
+
+		Zenith_Entity xEntity = s_xCurrentScene.GetEntity(uID);
+		xRegistry.DispatchOnAwake(xEntity);
+		if (xEntity.IsEnabled())
+		{
+			xRegistry.DispatchOnEnable(xEntity);
+		}
+		s_xCurrentScene.m_xEntitiesAwoken.insert(uID);
+	}
+
+	// 2. OnStart for new entities (entities not yet started, only if enabled)
 	// Skip entities created during this Update frame
 	for (u_int u = 0; u < xEntityIDs.GetSize(); ++u)
 	{
@@ -556,12 +595,16 @@ void Zenith_Scene::Update(const float fDt)
 		if (s_xCurrentScene.m_xEntitiesStarted.find(uID) == s_xCurrentScene.m_xEntitiesStarted.end())
 		{
 			Zenith_Entity xEntity = s_xCurrentScene.GetEntity(uID);
-			xRegistry.DispatchOnStart(xEntity);
-			s_xCurrentScene.m_xEntitiesStarted.insert(uID);
+			// Only dispatch OnStart if entity is enabled (Unity behavior)
+			if (xEntity.IsEnabled())
+			{
+				xRegistry.DispatchOnStart(xEntity);
+				s_xCurrentScene.m_xEntitiesStarted.insert(uID);
+			}
 		}
 	}
 
-	// 2. OnFixedUpdate (physics timestep - 60Hz)
+	// 3. OnFixedUpdate (physics timestep - 60Hz)
 	s_fFixedTimeAccumulator += fDt;
 	while (s_fFixedTimeAccumulator >= FIXED_TIMESTEP)
 	{
@@ -578,7 +621,7 @@ void Zenith_Scene::Update(const float fDt)
 		s_fFixedTimeAccumulator -= FIXED_TIMESTEP;
 	}
 
-	// 3. OnUpdate (every frame)
+	// 4. OnUpdate (every frame)
 	for (u_int u = 0; u < xEntityIDs.GetSize(); ++u)
 	{
 		Zenith_EntityID uID = xEntityIDs.Get(u);
@@ -590,7 +633,7 @@ void Zenith_Scene::Update(const float fDt)
 		xRegistry.DispatchOnUpdate(xEntity, fDt);
 	}
 
-	// 4. OnLateUpdate (after all OnUpdate calls)
+	// 5. OnLateUpdate (after all OnUpdate calls)
 	for (u_int u = 0; u < xEntityIDs.GetSize(); ++u)
 	{
 		Zenith_EntityID uID = xEntityIDs.Get(u);
@@ -650,11 +693,13 @@ void Zenith_Scene::WaitForUpdateComplete()
 
 void Zenith_Scene::DispatchFullLifecycleInit()
 {
+	// This function is now only used by the editor when restoring backup in stopped mode.
+	// OnAwake and OnEnable are already dispatched per-entity during LoadFromFile.
+	// We just need to dispatch OnStart for enabled entities that haven't had it yet.
+
 	Zenith_ComponentMetaRegistry& xRegistry = Zenith_ComponentMetaRegistry::Get();
 
-	// CRITICAL: Copy entity IDs to prevent iterator invalidation if callbacks create entities
-	// Callbacks like OnAwake may create new entities which can reallocate m_xEntitySlots,
-	// invalidating any held references. We must re-fetch entity reference before each callback.
+	// Copy entity IDs to prevent iterator invalidation if callbacks create entities
 	Zenith_Vector<Zenith_EntityID> xEntityIDs;
 	xEntityIDs.Reserve(s_xCurrentScene.m_xActiveEntities.GetSize());
 	for (u_int u = 0; u < s_xCurrentScene.m_xActiveEntities.GetSize(); ++u)
@@ -662,40 +707,67 @@ void Zenith_Scene::DispatchFullLifecycleInit()
 		xEntityIDs.PushBack(s_xCurrentScene.m_xActiveEntities.Get(u));
 	}
 
-	// Dispatch lifecycle callbacks in separate passes
-	// Entity handles are now lightweight - no need to worry about vector reallocation
-
-	// 1. OnAwake - Called when entity is first created/initialized
+	// OnStart - Only for enabled entities that haven't had it yet
 	for (u_int u = 0; u < xEntityIDs.GetSize(); ++u)
 	{
 		Zenith_EntityID xEntityID = xEntityIDs.Get(u);
 		if (s_xCurrentScene.EntityExists(xEntityID))
 		{
+			// Skip if already started
+			if (s_xCurrentScene.m_xEntitiesStarted.find(xEntityID) != s_xCurrentScene.m_xEntitiesStarted.end())
+				continue;
+
 			Zenith_Entity xEntity = s_xCurrentScene.GetEntity(xEntityID);
-			xRegistry.DispatchOnAwake(xEntity);
+			// Only dispatch OnStart if entity is enabled (Unity behavior)
+			if (xEntity.IsEnabled())
+			{
+				xRegistry.DispatchOnStart(xEntity);
+				s_xCurrentScene.m_xEntitiesStarted.insert(xEntityID);
+			}
 		}
 	}
+}
 
-	// 2. OnEnable - Called when entity is enabled
+void Zenith_Scene::DispatchLifecycleForNewScene()
+{
+	// Called after programmatic scene creation (not file loading).
+	// Dispatches OnAwake/OnEnable for entities that haven't been awoken yet.
+	// Entities that were awoken via SetBehaviour will be skipped.
+
+	Zenith_ComponentMetaRegistry& xRegistry = Zenith_ComponentMetaRegistry::Get();
+
+	// Copy entity IDs to prevent iterator invalidation if callbacks create entities
+	Zenith_Vector<Zenith_EntityID> xEntityIDs;
+	xEntityIDs.Reserve(m_xActiveEntities.GetSize());
+	for (u_int u = 0; u < m_xActiveEntities.GetSize(); ++u)
+	{
+		xEntityIDs.PushBack(m_xActiveEntities.Get(u));
+	}
+
+	// OnAwake - for entities not yet awoken
 	for (u_int u = 0; u < xEntityIDs.GetSize(); ++u)
 	{
 		Zenith_EntityID xEntityID = xEntityIDs.Get(u);
-		if (s_xCurrentScene.EntityExists(xEntityID))
+		if (!EntityExists(xEntityID)) continue;
+		if (m_xEntitiesAwoken.find(xEntityID) != m_xEntitiesAwoken.end()) continue;
+
+		Zenith_Entity xEntity = GetEntity(xEntityID);
+		xRegistry.DispatchOnAwake(xEntity);
+	}
+
+	// OnEnable + mark awoken - for entities not yet awoken
+	for (u_int u = 0; u < xEntityIDs.GetSize(); ++u)
+	{
+		Zenith_EntityID xEntityID = xEntityIDs.Get(u);
+		if (!EntityExists(xEntityID)) continue;
+		if (m_xEntitiesAwoken.find(xEntityID) != m_xEntitiesAwoken.end()) continue;
+
+		Zenith_Entity xEntity = GetEntity(xEntityID);
+		if (xEntity.IsEnabled())
 		{
-			Zenith_Entity xEntity = s_xCurrentScene.GetEntity(xEntityID);
 			xRegistry.DispatchOnEnable(xEntity);
 		}
-	}
-
-	// 3. OnStart - Called before first update
-	for (u_int u = 0; u < xEntityIDs.GetSize(); ++u)
-	{
-		Zenith_EntityID xEntityID = xEntityIDs.Get(u);
-		if (s_xCurrentScene.EntityExists(xEntityID))
-		{
-			Zenith_Entity xEntity = s_xCurrentScene.GetEntity(xEntityID);
-			xRegistry.DispatchOnStart(xEntity);
-		}
+		m_xEntitiesAwoken.insert(xEntityID);
 	}
 }
 

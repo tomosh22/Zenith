@@ -715,7 +715,7 @@ void Project_LoadInitialScene()
 	static constexpr uint32_t s_uWallSegments = 24;
 
 	// Create arena floor
-	Zenith_Entity xFloor = Zenith_Scene::Instantiate(*Combat::g_pxArenaPrefab, "ArenaFloor");
+	Zenith_Entity xFloor = Combat::g_pxArenaPrefab->Instantiate(&xScene, "ArenaFloor");
 	xFloor.SetTransient(false);
 
 	Zenith_TransformComponent& xFloorTransform = xFloor.GetComponent<Zenith_TransformComponent>();
@@ -770,7 +770,7 @@ void Project_LoadInitialScene()
 	// ========================================================================
 	// Create Player
 	// ========================================================================
-	Zenith_Entity xPlayer = Zenith_Scene::Instantiate(*Combat::g_pxPlayerPrefab, "Player");
+	Zenith_Entity xPlayer = Combat::g_pxPlayerPrefab->Instantiate(&xScene, "Player");
 	xPlayer.SetTransient(false);
 
 	Zenith_TransformComponent& xPlayerTransform = xPlayer.GetComponent<Zenith_TransformComponent>();
@@ -807,11 +807,17 @@ void Project_LoadInitialScene()
 	Zenith_Physics::LockRotation(xPlayerCollider.GetBodyID(), true, false, true);
 
 	// Add script component with Combat behaviour
+	// Use SetBehaviourForSerialization to attach the behaviour for serialization WITHOUT calling OnAwake.
+	// OnAwake will be dispatched when Play mode is entered, which is when enemies should spawn.
 	Zenith_ScriptComponent& xScript = xCombatEntity.AddComponent<Zenith_ScriptComponent>();
-	xScript.SetBehaviour<Combat_Behaviour>();
+	xScript.SetBehaviourForSerialization<Combat_Behaviour>();
 
 	// Save the scene file
 	std::string strScenePath = std::string(GAME_ASSETS_DIR) + "/Scenes/Combat.zscn";
 	std::filesystem::create_directories(std::string(GAME_ASSETS_DIR) + "/Scenes");
 	xScene.SaveToFile(strScenePath);
+
+	// Load from disk to ensure unified lifecycle code path (LoadFromFile handles OnAwake/OnEnable)
+	// This resets the scene and recreates all entities fresh from the saved file
+	xScene.LoadFromFile(strScenePath);
 }

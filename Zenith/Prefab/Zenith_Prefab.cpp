@@ -238,6 +238,17 @@ Zenith_Entity Zenith_Prefab::Instantiate(Zenith_Scene* pxScene, const std::strin
 
 	DeserializeComponents(xEntity);
 
+	// Dispatch lifecycle hooks (Unity-style: per-entity, immediately after creation)
+	Zenith_ComponentMetaRegistry& xRegistry = Zenith_ComponentMetaRegistry::Get();
+	xRegistry.DispatchOnAwake(xEntity);
+	if (xEntity.IsEnabled())
+	{
+		xRegistry.DispatchOnEnable(xEntity);
+	}
+
+	// Mark as awoken so Update() doesn't dispatch again
+	pxScene->MarkEntityAwoken(xEntity.GetEntityID());
+
 	return xEntity;
 }
 

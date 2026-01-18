@@ -136,6 +136,15 @@ void Zenith_Entity::SetEnabled(bool bEnabled)
 	if (bEnabled)
 	{
 		Zenith_ComponentMetaRegistry::Get().DispatchOnEnable(*this);
+
+		// If entity hasn't had OnStart called yet, call it now (Unity behavior)
+		// This handles entities that were created disabled and are now being enabled
+		if (m_pxParentScene->m_xEntitiesStarted.find(m_xEntityID) ==
+			m_pxParentScene->m_xEntitiesStarted.end())
+		{
+			Zenith_ComponentMetaRegistry::Get().DispatchOnStart(*this);
+			m_pxParentScene->m_xEntitiesStarted.insert(m_xEntityID);
+		}
 	}
 	else
 	{

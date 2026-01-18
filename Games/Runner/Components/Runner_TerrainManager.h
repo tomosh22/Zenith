@@ -23,6 +23,7 @@
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "Maths/Zenith_Maths.h"
+#include "Prefab/Zenith_Prefab.h"
 #include <vector>
 
 // Forward declaration
@@ -225,7 +226,7 @@ private:
 		xChunk.m_fHeight = sin(fProgress * 3.14159f * 2.0f) * s_xConfig.m_fHeightVariation;
 
 		// Create ground entity
-		Zenith_Entity xGround = Zenith_Scene::Instantiate(*s_pxGroundPrefab, "Ground");
+		Zenith_Entity xGround = s_pxGroundPrefab->Instantiate(&Zenith_Scene::GetCurrentScene(), "Ground");
 
 		// Position: center of chunk, below player level
 		Zenith_Maths::Vector3 xPos(

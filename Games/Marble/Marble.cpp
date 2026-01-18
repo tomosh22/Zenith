@@ -328,11 +328,15 @@ void Project_LoadInitialScene()
 	pxStatus->SetColor(Zenith_Maths::Vector4(0.2f, 1.f, 0.2f, 1.f));
 
 	// Add script component with Marble behaviour
+	// Use SetBehaviourForSerialization - OnAwake will be dispatched when Play mode is entered
 	Zenith_ScriptComponent& xScript = xMarbleEntity.AddComponent<Zenith_ScriptComponent>();
-	xScript.SetBehaviour<Marble_Behaviour>();
+	xScript.SetBehaviourForSerialization<Marble_Behaviour>();
 
 	// Save the scene file
 	std::string strScenePath = std::string(GAME_ASSETS_DIR) + "/Scenes/Marble.zscn";
 	std::filesystem::create_directories(std::string(GAME_ASSETS_DIR) + "/Scenes");
 	xScene.SaveToFile(strScenePath);
+
+	// Load from disk to ensure unified lifecycle code path (LoadFromFile handles OnAwake/OnEnable)
+	xScene.LoadFromFile(strScenePath);
 }

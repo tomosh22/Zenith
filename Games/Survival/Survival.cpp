@@ -631,8 +631,9 @@ void Project_LoadInitialScene()
 	pxStatus->SetColor(Zenith_Maths::Vector4(0.2f, 1.f, 0.2f, 1.f));
 
 	// Add script component with Survival behaviour
+	// Use SetBehaviourForSerialization - OnAwake will be dispatched when Play mode is entered
 	Zenith_ScriptComponent& xScript = xSurvivalEntity.AddComponent<Zenith_ScriptComponent>();
-	xScript.SetBehaviour<Survival_Behaviour>();
+	xScript.SetBehaviourForSerialization<Survival_Behaviour>();
 
 	// ========================================================================
 	// Create Ground
@@ -652,7 +653,7 @@ void Project_LoadInitialScene()
 	// ========================================================================
 	static constexpr float s_fPlayerHeightLocal = 1.6f;
 
-	Zenith_Entity xPlayer = Zenith_Scene::Instantiate(*Survival::g_pxPlayerPrefab, "Player");
+	Zenith_Entity xPlayer = Survival::g_pxPlayerPrefab->Instantiate(&Zenith_Scene::GetCurrentScene(), "Player");
 	xPlayer.SetTransient(false);
 
 	Zenith_TransformComponent& xPlayerTransform = xPlayer.GetComponent<Zenith_TransformComponent>();
@@ -714,7 +715,7 @@ void Project_LoadInitialScene()
 
 		char szName[32];
 		snprintf(szName, sizeof(szName), "Tree_%u", i);
-		Zenith_Entity xTree = Zenith_Scene::Instantiate(*Survival::g_pxTreePrefab, szName);
+		Zenith_Entity xTree = Survival::g_pxTreePrefab->Instantiate(&Zenith_Scene::GetCurrentScene(), szName);
 		xTree.SetTransient(false);
 
 		Zenith_TransformComponent& xTreeTransform = xTree.GetComponent<Zenith_TransformComponent>();
@@ -733,7 +734,7 @@ void Project_LoadInitialScene()
 
 		char szName[32];
 		snprintf(szName, sizeof(szName), "Rock_%u", i);
-		Zenith_Entity xRock = Zenith_Scene::Instantiate(*Survival::g_pxRockPrefab, szName);
+		Zenith_Entity xRock = Survival::g_pxRockPrefab->Instantiate(&Zenith_Scene::GetCurrentScene(), szName);
 		xRock.SetTransient(false);
 
 		Zenith_TransformComponent& xRockTransform = xRock.GetComponent<Zenith_TransformComponent>();
@@ -752,7 +753,7 @@ void Project_LoadInitialScene()
 
 		char szName[32];
 		snprintf(szName, sizeof(szName), "BerryBush_%u", i);
-		Zenith_Entity xBush = Zenith_Scene::Instantiate(*Survival::g_pxBerryBushPrefab, szName);
+		Zenith_Entity xBush = Survival::g_pxBerryBushPrefab->Instantiate(&Zenith_Scene::GetCurrentScene(), "szName");
 		xBush.SetTransient(false);
 
 		Zenith_TransformComponent& xBushTransform = xBush.GetComponent<Zenith_TransformComponent>();
@@ -767,4 +768,7 @@ void Project_LoadInitialScene()
 	std::string strScenePath = std::string(GAME_ASSETS_DIR) + "/Scenes/Survival.zscn";
 	std::filesystem::create_directories(std::string(GAME_ASSETS_DIR) + "/Scenes");
 	xScene.SaveToFile(strScenePath);
+
+	// Load from disk to ensure unified lifecycle code path (LoadFromFile handles OnAwake/OnEnable)
+	xScene.LoadFromFile(strScenePath);
 }

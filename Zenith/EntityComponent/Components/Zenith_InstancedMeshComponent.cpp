@@ -31,8 +31,7 @@ Zenith_InstancedMeshComponent::~Zenith_InstancedMeshComponent()
 	delete m_pxOwnedAnimTexture;
 	m_pxOwnedAnimTexture = nullptr;
 
-	// Note: m_pxOwnedMeshInstance is deleted by m_pxOwnedMeshAsset's cleanup
-	// or we own it directly - either way it needs deletion
+	// Clean up mesh instance (we own this, created from the asset)
 	if (m_pxOwnedMeshInstance != nullptr)
 	{
 		m_pxOwnedMeshInstance->Destroy();
@@ -40,8 +39,12 @@ Zenith_InstancedMeshComponent::~Zenith_InstancedMeshComponent()
 		m_pxOwnedMeshInstance = nullptr;
 	}
 
-	delete m_pxOwnedMeshAsset;
-	m_pxOwnedMeshAsset = nullptr;
+	// Release our reference to the mesh asset (registry owns it)
+	if (m_pxOwnedMeshAsset != nullptr)
+	{
+		m_pxOwnedMeshAsset->Release();
+		m_pxOwnedMeshAsset = nullptr;
+	}
 
 	delete m_pxOwnedMaterial;
 	m_pxOwnedMaterial = nullptr;
@@ -88,7 +91,11 @@ Zenith_InstancedMeshComponent& Zenith_InstancedMeshComponent::operator=(Zenith_I
 			m_pxOwnedMeshInstance->Destroy();
 			delete m_pxOwnedMeshInstance;
 		}
-		delete m_pxOwnedMeshAsset;
+		// Release our reference to mesh asset (we're about to take xOther's reference)
+		if (m_pxOwnedMeshAsset != nullptr)
+		{
+			m_pxOwnedMeshAsset->Release();
+		}
 		delete m_pxOwnedMaterial;
 
 		// Move from other
@@ -159,15 +166,19 @@ void Zenith_InstancedMeshComponent::LoadMesh(const std::string& strPath)
 {
 	m_strMeshPath = strPath;
 
-	// Clean up existing
+	// Clean up existing mesh instance (we own this)
 	if (m_pxOwnedMeshInstance != nullptr)
 	{
 		m_pxOwnedMeshInstance->Destroy();
 		delete m_pxOwnedMeshInstance;
 		m_pxOwnedMeshInstance = nullptr;
 	}
-	delete m_pxOwnedMeshAsset;
-	m_pxOwnedMeshAsset = nullptr;
+	// Release previous asset reference (registry owns the asset, we just hold a reference)
+	if (m_pxOwnedMeshAsset != nullptr)
+	{
+		m_pxOwnedMeshAsset->Release();
+		m_pxOwnedMeshAsset = nullptr;
+	}
 
 	// Load mesh asset (.zasset format) via registry
 	m_pxOwnedMeshAsset = Zenith_AssetRegistry::Get().Get<Zenith_MeshAsset>(strPath);
@@ -176,13 +187,14 @@ void Zenith_InstancedMeshComponent::LoadMesh(const std::string& strPath)
 		Zenith_Error(LOG_CATEGORY_MESH, "[InstancedMeshComponent] Failed to load mesh asset: %s", strPath.c_str());
 		return;
 	}
+	m_pxOwnedMeshAsset->AddRef();  // We're holding a reference to this asset
 
 	// Create mesh instance for GPU rendering
 	m_pxOwnedMeshInstance = Flux_MeshInstance::CreateFromAsset(m_pxOwnedMeshAsset);
 	if (m_pxOwnedMeshInstance == nullptr)
 	{
 		Zenith_Error(LOG_CATEGORY_MESH, "[InstancedMeshComponent] Failed to create mesh instance from asset: %s", strPath.c_str());
-		delete m_pxOwnedMeshAsset;
+		m_pxOwnedMeshAsset->Release();
 		m_pxOwnedMeshAsset = nullptr;
 		return;
 	}

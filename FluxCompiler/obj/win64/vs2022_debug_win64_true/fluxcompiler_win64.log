@@ -1,1 +1,47 @@
-﻿
+﻿  FluxCompiler.cpp
+C:\Program Files\Microsoft Visual Studio\18\Insiders\VC\Tools\MSVC\14.44.35207\include\chrono(2359,9): warning C4530: C++ exception handler used, but unwind semantics are not enabled. Specify /EHsc
+  (compiling source file 'FluxCompiler.cpp')
+  
+C:\Program Files (x86)\Windows Kits\10\Include\10.0.19041.0\shared\minwindef.h(130,9): warning C4005: 'APIENTRY': macro redefinition
+  (compiling source file 'FluxCompiler.cpp')
+      C:\dev\Zenith\middleware\glfw-3.4.bin.win64\include\GLFW\glfw3.h(123,11):
+      see previous definition of 'APIENTRY'
+  
+C:\dev\Zenith\zenith\core\Memory\Zenith_MemoryManagement.h(16,7): warning C5043: 'operator new': exception specification does not match previous declaration
+  (compiling source file 'FluxCompiler.cpp')
+      C:\Program Files\Microsoft Visual Studio\18\Insiders\VC\Tools\MSVC\14.44.35207\include\vcruntime_new.h(49,17):
+      see declaration of 'operator new'
+  
+C:\dev\Zenith\zenith\core\Memory\Zenith_MemoryManagement.h(18,7): warning C5043: 'operator new': exception specification does not match previous declaration
+  (compiling source file 'FluxCompiler.cpp')
+      C:\Program Files\Microsoft Visual Studio\18\Insiders\VC\Tools\MSVC\14.44.35207\include\vcruntime_new.h(101,17):
+      see declaration of 'operator new'
+  
+C:\dev\Zenith\zenith\core\Memory\Zenith_MemoryManagement.h(22,7): warning C5043: 'operator new[]': exception specification does not match previous declaration
+  (compiling source file 'FluxCompiler.cpp')
+      C:\Program Files\Microsoft Visual Studio\18\Insiders\VC\Tools\MSVC\14.44.35207\include\vcruntime_new.h(60,17):
+      see declaration of 'operator new[]'
+  
+C:\dev\Zenith\zenith\core\Memory\Zenith_MemoryManagement.h(24,7): warning C5043: 'operator new[]': exception specification does not match previous declaration
+  (compiling source file 'FluxCompiler.cpp')
+      C:\Program Files\Microsoft Visual Studio\18\Insiders\VC\Tools\MSVC\14.44.35207\include\vcruntime_new.h(115,17):
+      see declaration of 'operator new[]'
+  
+C:\dev\Zenith\zenith\Maths\Zenith_Maths.h(47,17): warning C4505: 'Zenith_Maths::PerspectiveProjection': unreferenced function with internal linkage has been removed
+  (compiling source file 'FluxCompiler.cpp')
+  
+C:\dev\Zenith\zenith\Maths\Zenith_Maths.h(52,17): warning C4505: 'Zenith_Maths::OrthographicProjection': unreferenced function with internal linkage has been removed
+  (compiling source file 'FluxCompiler.cpp')
+  
+C:\dev\Zenith\zenith\Maths\Zenith_Maths.h(57,17): warning C4505: 'Zenith_Maths::EulerRotationToMatrix4': unreferenced function with internal linkage has been removed
+  (compiling source file 'FluxCompiler.cpp')
+  
+C:\dev\Zenith\zenith\Core\Zenith_String.h(5,14): warning C4505: 'Zenith_StringUtil::ReplaceAllChars': unreferenced function with internal linkage has been removed
+  (compiling source file 'FluxCompiler.cpp')
+  
+LINK : warning LNK4098: defaultlib 'LIBCMT' conflicts with use of other libs; use /NODEFAULTLIB:library
+  fluxcompiler_win64.vcxproj -> C:\dev\Zenith\FluxCompiler\output\win64\vs2022_debug_win64_true\fluxcompiler.exe
+  'pwsh.exe' is not recognized as an internal or external command,
+  operable program or batch file.
+  0 File(s) copied
+  0 File(s) copied

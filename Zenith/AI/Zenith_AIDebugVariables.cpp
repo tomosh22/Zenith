@@ -12,7 +12,7 @@ namespace Zenith_AIDebugVariables
 
 	// NavMesh Visualization
 	bool s_bDrawNavMeshPolygons = false;
-	bool s_bDrawNavMeshEdges = true;
+	bool s_bDrawNavMeshEdges = false;
 	bool s_bDrawNavMeshBoundary = false;
 	bool s_bDrawNavMeshNeighbors = false;
 

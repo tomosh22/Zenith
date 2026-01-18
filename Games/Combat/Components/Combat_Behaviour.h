@@ -127,9 +127,6 @@ public:
 
 	void OnAwake() ZENITH_FINAL override
 	{
-		// Initialize damage system (resets health data for new play session)
-		Combat_DamageSystem::Initialize();
-
 		// Clear stale state from previous play sessions
 		// This is critical for Play/Stop/Play cycles in the editor
 		m_xEnemyManager.Reset();
@@ -176,15 +173,25 @@ public:
 		m_pxEnemyMaterial = Combat::g_pxEnemyMaterial;
 		m_pxArenaMaterial = Combat::g_pxArenaMaterial;
 		m_pxWallMaterial = Combat::g_pxWallMaterial;
+	}
+
+	void OnStart() ZENITH_FINAL override
+	{
+		// Guard: Skip if already initialized
+		if (m_xLevelEntities.m_uPlayerEntityID != INVALID_ENTITY_ID)
+			return;
+
+		// Initialize damage system (resets health data for new play session)
+		Combat_DamageSystem::Initialize();
 
 		// Find pre-created entities by name (created in Project_LoadInitialScene)
 		FindSceneEntities();
 
-		// Spawn enemies (still dynamic)
+		// Spawn enemies
 		SpawnEnemies();
 
 		// Log initialization state for debugging
-		Zenith_Log(LOG_CATEGORY_ANIMATION, "[Combat] OnAwake complete: playerID=%u, enemyCount=%zu, managerSize=%zu",
+		Zenith_Log(LOG_CATEGORY_ANIMATION, "[Combat] OnStart complete: playerID=%u, enemyCount=%zu, managerSize=%zu",
 			m_xLevelEntities.m_uPlayerEntityID.m_uIndex,
 			m_xLevelEntities.m_axEnemyEntityIDs.size(),
 			m_xEnemyManager.GetEnemies().size());
@@ -198,22 +205,6 @@ public:
 		InitializePlayerAnimation();
 
 		m_xPlayerHitDetection.SetOwner(m_xLevelEntities.m_uPlayerEntityID);
-	}
-
-	void OnStart() ZENITH_FINAL override
-	{
-		// Ensure entities are found if loaded from scene
-		if (m_xLevelEntities.m_uPlayerEntityID == INVALID_ENTITY_ID)
-		{
-			FindSceneEntities();
-			InitializePlayerAnimation();
-		}
-
-		// Spawn enemies if not already done
-		if (m_xLevelEntities.m_axEnemyEntityIDs.empty())
-		{
-			SpawnEnemies();
-		}
 	}
 
 	void OnUpdate(const float fDt) ZENITH_FINAL override
@@ -401,7 +392,7 @@ private:
 			char szName[32];
 			snprintf(szName, sizeof(szName), "Enemy_%u", i);
 
-			Zenith_Entity xEnemy = Zenith_Scene::Instantiate(*Combat::g_pxEnemyPrefab, szName);
+			Zenith_Entity xEnemy = Combat::g_pxEnemyPrefab->Instantiate(&Zenith_Scene::GetCurrentScene(), szName);
 
 			Zenith_TransformComponent& xTransform = xEnemy.GetComponent<Zenith_TransformComponent>();
 			xTransform.SetPosition(Zenith_Maths::Vector3(fX, 1.0f, fZ));  // Start above floor

@@ -236,7 +236,7 @@ private:
 		xParticle.m_fSize = 0.1f + static_cast<float>(rand()) / RAND_MAX * 0.1f;
 
 		// Create entity
-		Zenith_Entity xEntity = Zenith_Scene::Instantiate(*s_pxParticlePrefab, "DustParticle");
+		Zenith_Entity xEntity = s_pxParticlePrefab->Instantiate(&Zenith_Scene::GetCurrentScene(), "DustParticle");
 		Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
 		xTransform.SetPosition(xParticle.m_xPosition);
 		xTransform.SetScale(Zenith_Maths::Vector3(xParticle.m_fSize));
@@ -268,7 +268,7 @@ private:
 		xParticle.m_fSize = 0.15f;
 
 		// Create entity
-		Zenith_Entity xEntity = Zenith_Scene::Instantiate(*s_pxParticlePrefab, "CollectParticle");
+		Zenith_Entity xEntity = s_pxParticlePrefab->Instantiate(&Zenith_Scene::GetCurrentScene(), "CollectParticle");
 		Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
 		xTransform.SetPosition(xParticle.m_xPosition);
 		xTransform.SetScale(Zenith_Maths::Vector3(xParticle.m_fSize));
