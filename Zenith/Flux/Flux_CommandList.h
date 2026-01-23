@@ -326,7 +326,7 @@ public:
 	static constexpr Flux_CommandType m_eType = FLUX_COMMANDTYPE__RENDER_IMGUI;
 
 	Flux_CommandRenderImGui() = default;
-	
+
 	void operator()(Flux_CommandBuffer* pxCmdBuf)
 	{
 		pxCmdBuf->RenderImGui();
@@ -409,9 +409,9 @@ public:
 
 				HANDLE_COMMAND(FLUX_COMMANDTYPE__BIND_COMPUTE_PIPELINE, Flux_CommandBindComputePipeline);
 				HANDLE_COMMAND(FLUX_COMMANDTYPE__DISPATCH, Flux_CommandDispatch);
-				
+
 				HANDLE_COMMAND(FLUX_COMMANDTYPE__RENDER_IMGUI, Flux_CommandRenderImGui);
-				
+
 				default:
 					Zenith_Assert(false, "Unhandled command");
 			}
@@ -434,6 +434,11 @@ public:
 	u_int GetCommandCount() const
 	{
 		return m_uCommandCount;
+	}
+
+	const char* GetName() const
+	{
+		return m_szName;
 	}
 
 private:

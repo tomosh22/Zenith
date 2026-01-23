@@ -225,17 +225,9 @@ void Flux_Terrain::Initialise()
 	s_xCullingShader.InitialiseCompute("Terrain/Flux_TerrainCulling.comp");
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "Flux_Terrain - Loaded terrain culling compute shader");
 
-	// Build compute root signature
-	Flux_PipelineLayout xCullingLayout;
-	xCullingLayout.m_uNumDescriptorSets = 1;
-	xCullingLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_STORAGE_BUFFER;  // Chunk data (read)
-	xCullingLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_BUFFER;  // Frustum planes (read)
-	xCullingLayout.m_axDescriptorSetLayouts[0].m_axBindings[2].m_eType = DESCRIPTOR_TYPE_STORAGE_BUFFER;  // Indirect commands (write)
-	xCullingLayout.m_axDescriptorSetLayouts[0].m_axBindings[3].m_eType = DESCRIPTOR_TYPE_STORAGE_BUFFER;  // Visible count (read/write atomic)
-	xCullingLayout.m_axDescriptorSetLayouts[0].m_axBindings[4].m_eType = DESCRIPTOR_TYPE_STORAGE_BUFFER;  // LOD levels (write)
-	xCullingLayout.m_axDescriptorSetLayouts[0].m_axBindings[5].m_eType = DESCRIPTOR_TYPE_MAX;
-
-	Zenith_Vulkan_RootSigBuilder::FromSpecification(s_xCullingRootSig, xCullingLayout);
+	// Build compute root signature from shader reflection
+	const Flux_ShaderReflection& xCullingReflection = s_xCullingShader.GetReflection();
+	Zenith_Vulkan_RootSigBuilder::FromReflection(s_xCullingRootSig, xCullingReflection);
 
 	// Build compute pipeline
 	Zenith_Vulkan_ComputePipelineBuilder xCullingBuilder;

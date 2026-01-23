@@ -4,8 +4,7 @@
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
 #include "Flux/Flux_Enums.h"
 #include "Flux/Flux_Types.h"
-
-#define MAX_BINDINGS 16
+#include "Core/ZenithConfig.h"
 
 class Flux_VertexBuffer;
 struct Flux_Texture;
@@ -33,12 +32,12 @@ struct ScratchBufferBinding {
 };
 
 struct DescSetBindings {
-	const Flux_ShaderResourceView* m_xSRVs[MAX_BINDINGS];
-	const Flux_UnorderedAccessView_Texture* m_xUAV_Textures[MAX_BINDINGS];
-	const Flux_UnorderedAccessView_Buffer* m_xUAV_Buffers[MAX_BINDINGS];
-	const Flux_ConstantBufferView* m_xCBVs[MAX_BINDINGS];
+	const Flux_ShaderResourceView* m_xSRVs[FLUX_MAX_DESCRIPTOR_BINDINGS];
+	const Flux_UnorderedAccessView_Texture* m_xUAV_Textures[FLUX_MAX_DESCRIPTOR_BINDINGS];
+	const Flux_UnorderedAccessView_Buffer* m_xUAV_Buffers[FLUX_MAX_DESCRIPTOR_BINDINGS];
+	const Flux_ConstantBufferView* m_xCBVs[FLUX_MAX_DESCRIPTOR_BINDINGS];
 
-	Zenith_Vulkan_Sampler* m_apxSamplers[MAX_BINDINGS];
+	Zenith_Vulkan_Sampler* m_apxSamplers[FLUX_MAX_DESCRIPTOR_BINDINGS];
 
 	// Scratch buffer binding (for push constant replacement)
 	ScratchBufferBinding m_xScratchBuffer;
@@ -130,6 +129,6 @@ private:
 		vk::DescriptorSet descriptorSet = VK_NULL_HANDLE;
 		vk::DescriptorSetLayout layout = VK_NULL_HANDLE;
 	};
-	
+
 	DescriptorSetCacheEntry m_axDescriptorSetCache[FLUX_MAX_DESCRIPTOR_SET_LAYOUTS];
 };

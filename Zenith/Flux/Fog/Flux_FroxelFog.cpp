@@ -8,6 +8,7 @@
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_Buffers.h"
 #include "Flux/Flux_RenderTargets.h"
+#include "Flux/HDR/Flux_HDR.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "Vulkan/Zenith_Vulkan_Pipeline.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
@@ -122,15 +123,9 @@ void Flux_FroxelFog::Initialise()
 	// Initialize inject compute shader
 	s_xInjectShader.InitialiseCompute("Fog/Flux_FroxelFog_Inject.comp");
 
-	// Build inject root signature
-	Flux_PipelineLayout xInjectLayout;
-	xInjectLayout.m_uNumDescriptorSets = 1;
-	xInjectLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;        // Frame constants
-	xInjectLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_BUFFER;        // Scratch buffer for push constants
-	xInjectLayout.m_axDescriptorSetLayouts[0].m_axBindings[2].m_eType = DESCRIPTOR_TYPE_TEXTURE;       // Noise texture
-	xInjectLayout.m_axDescriptorSetLayouts[0].m_axBindings[3].m_eType = DESCRIPTOR_TYPE_STORAGE_IMAGE; // Density output
-	xInjectLayout.m_axDescriptorSetLayouts[0].m_axBindings[4].m_eType = DESCRIPTOR_TYPE_MAX;
-	Zenith_Vulkan_RootSigBuilder::FromSpecification(s_xInjectRootSig, xInjectLayout);
+	// Build inject root signature from shader reflection
+	const Flux_ShaderReflection& xInjectReflection = s_xInjectShader.GetReflection();
+	Zenith_Vulkan_RootSigBuilder::FromReflection(s_xInjectRootSig, xInjectReflection);
 
 	// Build inject compute pipeline
 	Zenith_Vulkan_ComputePipelineBuilder xInjectBuilder;
@@ -142,16 +137,9 @@ void Flux_FroxelFog::Initialise()
 	// Initialize light compute shader
 	s_xLightShader.InitialiseCompute("Fog/Flux_FroxelFog_Light.comp");
 
-	// Build light root signature
-	Flux_PipelineLayout xLightLayout;
-	xLightLayout.m_uNumDescriptorSets = 1;
-	xLightLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;        // Frame constants
-	xLightLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_BUFFER;        // Scratch buffer for push constants
-	xLightLayout.m_axDescriptorSetLayouts[0].m_axBindings[2].m_eType = DESCRIPTOR_TYPE_TEXTURE;       // Density input
-	xLightLayout.m_axDescriptorSetLayouts[0].m_axBindings[3].m_eType = DESCRIPTOR_TYPE_STORAGE_IMAGE; // Lighting output
-	xLightLayout.m_axDescriptorSetLayouts[0].m_axBindings[4].m_eType = DESCRIPTOR_TYPE_STORAGE_IMAGE; // Scattering output
-	xLightLayout.m_axDescriptorSetLayouts[0].m_axBindings[5].m_eType = DESCRIPTOR_TYPE_MAX;
-	Zenith_Vulkan_RootSigBuilder::FromSpecification(s_xLightRootSig, xLightLayout);
+	// Build light root signature from shader reflection
+	const Flux_ShaderReflection& xLightReflection = s_xLightShader.GetReflection();
+	Zenith_Vulkan_RootSigBuilder::FromReflection(s_xLightRootSig, xLightReflection);
 
 	// Build light compute pipeline
 	Zenith_Vulkan_ComputePipelineBuilder xLightBuilder;
@@ -160,14 +148,12 @@ void Flux_FroxelFog::Initialise()
 		.Build(s_xLightPipeline);
 	s_xLightPipeline.m_xRootSig = s_xLightRootSig;
 
-	// Cache inject binding handles
-	const Flux_ShaderReflection& xInjectReflection = s_xInjectShader.GetReflection();
+	// Cache inject binding handles (xInjectReflection already declared above)
 	s_xInjectFrameConstantsBinding = xInjectReflection.GetBinding("FrameConstants");
 	s_xInjectNoiseBinding = xInjectReflection.GetBinding("u_xNoiseTexture3D");
 	s_xInjectDensityOutputBinding = xInjectReflection.GetBinding("u_xDensityGrid");
 
-	// Cache light binding handles
-	const Flux_ShaderReflection& xLightReflection = s_xLightShader.GetReflection();
+	// Cache light binding handles (xLightReflection already declared above)
 	s_xLightFrameConstantsBinding = xLightReflection.GetBinding("FrameConstants");
 	s_xLightDensityInputBinding = xLightReflection.GetBinding("u_xDensityGrid");
 	s_xLightLightingOutputBinding = xLightReflection.GetBinding("u_xLightingGrid");
@@ -180,7 +166,7 @@ void Flux_FroxelFog::Initialise()
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_NONE;
 
 	Flux_PipelineSpecification xApplySpec;
-	xApplySpec.m_pxTargetSetup = &Flux_Graphics::s_xFinalRenderTarget_NoDepth;
+	xApplySpec.m_pxTargetSetup = &Flux_HDR::GetHDRSceneTargetSetup();
 	xApplySpec.m_pxShader = &s_xApplyShader;
 	xApplySpec.m_xVertexInputDesc = xVertexDesc;
 
@@ -362,5 +348,5 @@ void Flux_FroxelFog::Render(void*)
 	xApplyBinder.PushConstant(&s_xApplyConstants, sizeof(ApplyConstants));
 	g_xApplyCommandList.AddCommand<Flux_CommandDrawIndexed>(6);
 
-	Flux::SubmitCommandList(&g_xApplyCommandList, Flux_Graphics::s_xFinalRenderTarget_NoDepth, RENDER_ORDER_FOG);
+	Flux::SubmitCommandList(&g_xApplyCommandList, Flux_HDR::GetHDRSceneTargetSetup(), RENDER_ORDER_FOG);
 }

@@ -91,7 +91,7 @@ static constexpr uint32_t MAX_MATERIALS = 1024;
 // Maximum render targets and descriptor bindings per shader.
 
 static constexpr uint32_t FLUX_MAX_TARGETS = 8;
-static constexpr uint32_t FLUX_MAX_DESCRIPTOR_BINDINGS = 16;
+static constexpr uint32_t FLUX_MAX_DESCRIPTOR_BINDINGS = 32;
 static constexpr uint32_t FLUX_MAX_DESCRIPTOR_SET_LAYOUTS = 5;
 
 

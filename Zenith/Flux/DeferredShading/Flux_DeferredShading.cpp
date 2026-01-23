@@ -2,11 +2,12 @@
 
 #include "Flux/DeferredShading/Flux_DeferredShading.h"
 
-
 #include "Flux/Flux_RenderTargets.h"
+#include "Flux/HDR/Flux_HDR.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_Buffers.h"
 #include "Flux/Shadows/Flux_Shadows.h"
+#include "Flux/IBL/Flux_IBL.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
@@ -27,8 +28,14 @@ static Flux_BindingHandle s_xMaterialTexBinding;
 static Flux_BindingHandle s_xDepthTexBinding;
 static Flux_BindingHandle s_axCSMBindings[ZENITH_FLUX_NUM_CSMS];
 
+// IBL texture bindings
+static Flux_BindingHandle s_xBRDFLUTBinding;
+static Flux_BindingHandle s_xIrradianceMapBinding;
+static Flux_BindingHandle s_xPrefilteredMapBinding;
+
 DEBUGVAR u_int dbg_uVisualiseCSMs = 0;
 DEBUGVAR bool dbg_bVisualiseCSMs = false;
+DEBUGVAR u_int dbg_uDeferredShadingDebugMode = 0;  // 0=normal, 1=cyan, 2=depth, 3=diffuse
 
 void Flux_DeferredShading::Initialise()
 {
@@ -38,7 +45,8 @@ void Flux_DeferredShading::Initialise()
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_NONE;
 
 	Flux_PipelineSpecification xPipelineSpec;
-	xPipelineSpec.m_pxTargetSetup = &Flux_Graphics::s_xFinalRenderTarget_NoDepth;
+	// Render to HDR target for proper HDR lighting pipeline (tone mapping converts to final output)
+	xPipelineSpec.m_pxTargetSetup = &Flux_HDR::GetHDRSceneTargetSetup();
 	xPipelineSpec.m_pxShader = &s_xShader;
 	xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
 
@@ -58,6 +66,11 @@ void Flux_DeferredShading::Initialise()
 	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[11].m_eType = DESCRIPTOR_TYPE_TEXTURE;
 	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[12].m_eType = DESCRIPTOR_TYPE_TEXTURE;
 	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[13].m_eType = DESCRIPTOR_TYPE_TEXTURE;
+
+	// IBL textures
+	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[14].m_eType = DESCRIPTOR_TYPE_TEXTURE;  // BRDF LUT
+	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[15].m_eType = DESCRIPTOR_TYPE_TEXTURE;  // Irradiance map
+	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[16].m_eType = DESCRIPTOR_TYPE_TEXTURE;  // Prefiltered map
 
 	xPipelineSpec.m_axBlendStates[0].m_eSrcBlendFactor = BLEND_FACTOR_ONE;
 	xPipelineSpec.m_axBlendStates[0].m_eDstBlendFactor = BLEND_FACTOR_ONE;
@@ -84,8 +97,20 @@ void Flux_DeferredShading::Initialise()
 	s_axCSMBindings[2] = xReflection.GetBinding("g_xCSM2");
 	s_axCSMBindings[3] = xReflection.GetBinding("g_xCSM3");
 
+	// IBL bindings
+	s_xBRDFLUTBinding = xReflection.GetBinding("g_xBRDFLUT");
+	s_xIrradianceMapBinding = xReflection.GetBinding("g_xIrradianceMap");
+	s_xPrefilteredMapBinding = xReflection.GetBinding("g_xPrefilteredMap");
+
+	// Debug: Log IBL binding handles
+	Zenith_Log(LOG_CATEGORY_RENDERER, "IBL Bindings - BRDF: set=%u binding=%u valid=%d, Irradiance: set=%u binding=%u valid=%d, Prefiltered: set=%u binding=%u valid=%d",
+		s_xBRDFLUTBinding.m_uSet, s_xBRDFLUTBinding.m_uBinding, s_xBRDFLUTBinding.IsValid(),
+		s_xIrradianceMapBinding.m_uSet, s_xIrradianceMapBinding.m_uBinding, s_xIrradianceMapBinding.IsValid(),
+		s_xPrefilteredMapBinding.m_uSet, s_xPrefilteredMapBinding.m_uBinding, s_xPrefilteredMapBinding.IsValid());
+
 	#ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_DebugVariables::AddBoolean({ "Render", "Shadows", "Visualise CSMs" }, dbg_bVisualiseCSMs);
+	Zenith_DebugVariables::AddUInt32({ "Render", "DeferredShading", "DebugMode" }, dbg_uDeferredShadingDebugMode, 0, 3);
 	#endif
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_DeferredShading initialised");
@@ -143,9 +168,46 @@ void Flux_DeferredShading::Render(void*)
 		xBinder.BindCBV(s_axShadowMatrixBindings[u], &Flux_Shadows::GetShadowMatrixBuffer(u).GetCBV());
 	}
 
-	xBinder.PushConstant(&dbg_uVisualiseCSMs, sizeof(dbg_uVisualiseCSMs));
+	// Bind IBL textures
+	xBinder.BindSRV(s_xBRDFLUTBinding, &Flux_IBL::GetBRDFLUTSRV());
+	xBinder.BindSRV(s_xIrradianceMapBinding, &Flux_IBL::GetIrradianceMapSRV());
+	xBinder.BindSRV(s_xPrefilteredMapBinding, &Flux_IBL::GetPrefilteredMapSRV());
+
+	// Pass constants to shader
+	struct DeferredShadingConstants
+	{
+		u_int m_bVisualiseCSMs;
+		u_int m_bIBLEnabled;
+		u_int m_uDebugMode;  // 0=normal, 1=cyan (verify running), 2=depth, 3=diffuse
+		u_int m_bIBLDiffuseEnabled;
+		u_int m_bIBLSpecularEnabled;
+		float m_fIBLIntensity;
+		u_int m_bShowBRDFLUT;
+		u_int m_bForceRoughness;
+		float m_fForcedRoughness;
+		u_int _pad0;
+		u_int _pad1;
+		u_int _pad2;
+	};
+	DeferredShadingConstants xConstants;
+	xConstants.m_bVisualiseCSMs = dbg_uVisualiseCSMs;
+	// Only enable IBL if both enabled AND ready (textures have been generated)
+	xConstants.m_bIBLEnabled = (Flux_IBL::IsEnabled() && Flux_IBL::IsReady()) ? 1 : 0;
+	xConstants.m_uDebugMode = dbg_uDeferredShadingDebugMode;
+	xConstants.m_bIBLDiffuseEnabled = Flux_IBL::IsDiffuseEnabled() ? 1 : 0;
+	xConstants.m_bIBLSpecularEnabled = Flux_IBL::IsSpecularEnabled() ? 1 : 0;
+	xConstants.m_fIBLIntensity = Flux_IBL::GetIntensity();
+	xConstants.m_bShowBRDFLUT = Flux_IBL::IsShowBRDFLUT() ? 1 : 0;
+	xConstants.m_bForceRoughness = Flux_IBL::IsForceRoughness() ? 1 : 0;
+	xConstants.m_fForcedRoughness = Flux_IBL::GetForcedRoughness();
+	xConstants._pad0 = 0;
+	xConstants._pad1 = 0;
+	xConstants._pad2 = 0;
+
+	xBinder.PushConstant(&xConstants, sizeof(xConstants));
 
 	g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(6);
 
-	Flux::SubmitCommandList(&g_xCommandList, Flux_Graphics::s_xFinalRenderTarget_NoDepth, RENDER_ORDER_APPLY_LIGHTING);
+	// Render to HDR target for proper HDR lighting pipeline
+	Flux::SubmitCommandList(&g_xCommandList, Flux_HDR::GetHDRSceneTargetSetup(), RENDER_ORDER_APPLY_LIGHTING);
 }

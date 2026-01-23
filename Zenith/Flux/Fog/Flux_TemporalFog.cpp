@@ -137,17 +137,9 @@ void Flux_TemporalFog::Initialise()
 	// Initialize resolve compute shader
 	s_xResolveShader.InitialiseCompute("Fog/Flux_TemporalFog_Resolve.comp");
 
-	// Build resolve root signature
-	Flux_PipelineLayout xResolveLayout;
-	xResolveLayout.m_uNumDescriptorSets = 1;
-	xResolveLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;        // Frame constants
-	xResolveLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_BUFFER;        // Scratch buffer for push constants
-	xResolveLayout.m_axDescriptorSetLayouts[0].m_axBindings[2].m_eType = DESCRIPTOR_TYPE_TEXTURE;       // Current fog (from froxel) (was 1)
-	xResolveLayout.m_axDescriptorSetLayouts[0].m_axBindings[3].m_eType = DESCRIPTOR_TYPE_TEXTURE;       // History fog (was 2)
-	xResolveLayout.m_axDescriptorSetLayouts[0].m_axBindings[4].m_eType = DESCRIPTOR_TYPE_STORAGE_IMAGE; // Output fog (was 3)
-	xResolveLayout.m_axDescriptorSetLayouts[0].m_axBindings[5].m_eType = DESCRIPTOR_TYPE_STORAGE_IMAGE; // Debug motion vectors (was 4)
-	xResolveLayout.m_axDescriptorSetLayouts[0].m_axBindings[6].m_eType = DESCRIPTOR_TYPE_MAX;
-	Zenith_Vulkan_RootSigBuilder::FromSpecification(s_xResolveRootSig, xResolveLayout);
+	// Build resolve root signature from shader reflection
+	const Flux_ShaderReflection& xResolveReflection = s_xResolveShader.GetReflection();
+	Zenith_Vulkan_RootSigBuilder::FromReflection(s_xResolveRootSig, xResolveReflection);
 
 	// Build resolve compute pipeline
 	Zenith_Vulkan_ComputePipelineBuilder xResolveBuilder;
@@ -156,8 +148,7 @@ void Flux_TemporalFog::Initialise()
 		.Build(s_xResolvePipeline);
 	s_xResolvePipeline.m_xRootSig = s_xResolveRootSig;
 
-	// Cache binding handles from shader reflection
-	const Flux_ShaderReflection& xResolveReflection = s_xResolveShader.GetReflection();
+	// Cache binding handles (xResolveReflection already declared above)
 	s_xResolveFrameConstantsBinding = xResolveReflection.GetBinding("FrameConstants");
 	s_xResolveCurrentFogBinding = xResolveReflection.GetBinding("u_xCurrentFog");
 	s_xResolveHistoryFogBinding = xResolveReflection.GetBinding("u_xHistoryFog");

@@ -30,8 +30,10 @@ enum TextureType
 enum RenderOrder
 {
 	RENDER_ORDER_MEMORY_UPDATE,
+	RENDER_ORDER_PROBE_CONVOLUTION,   // IBL probe irradiance/prefilter convolution
 	RENDER_ORDER_CSM,
-	RENDER_ORDER_SKYBOX,
+	RENDER_ORDER_ATMOSPHERE_LUT,      // Precompute transmittance LUT (compute)
+	RENDER_ORDER_SKYBOX,              // Cubemap or procedural atmosphere
 	RENDER_ORDER_OPAQUE_MESHES,
 	RENDER_ORDER_TERRAIN_CULLING,
 	RENDER_ORDER_TERRAIN,
@@ -48,11 +50,18 @@ enum RenderOrder
 	RENDER_ORDER_VOLUMEFOG_LIGHT,     // Volumetric fog lighting pass (compute)
 	RENDER_ORDER_VOLUMEFOG_TEMPORAL,  // Volumetric fog temporal resolve (compute)
 	RENDER_ORDER_FOG,
+	RENDER_ORDER_AERIAL_PERSPECTIVE,  // Atmospheric distance fog (after regular fog)
 	RENDER_ORDER_SDFS,
 	RENDER_ORDER_PARTICLES_COMPUTE,
 	RENDER_ORDER_PARTICLES,
-	RENDER_ORDER_QUADS,
-	RENDER_ORDER_TEXT,
+	RENDER_ORDER_HDR_LUMINANCE,       // Auto-exposure histogram (must be after all HDR scene rendering)
+	RENDER_ORDER_HDR_ADAPTATION,      // Auto-exposure adaptation
+	RENDER_ORDER_HDR_BLOOM_THRESHOLD, // Bloom threshold extraction (HDR scene -> bloom[0])
+	RENDER_ORDER_HDR_BLOOM_DOWNSAMPLE,// Bloom downsample chain (bloom[i-1] -> bloom[i])
+	RENDER_ORDER_HDR_BLOOM_UPSAMPLE,  // Bloom upsample chain (bloom[i+1] -> bloom[i], additive)
+	RENDER_ORDER_HDR_TONEMAP,         // Tone mapping (reads HDR target, writes to final target)
+	RENDER_ORDER_QUADS,               // UI quads (rendered on top of tone-mapped scene)
+	RENDER_ORDER_TEXT,                // UI text (rendered on top of quads)
 	RENDER_ORDER_COMPUTE_TEST,
 	RENDER_ORDER_IMGUI,
 	RENDER_ORDER_COPYTOFRAMEBUFFER,
@@ -81,6 +90,7 @@ enum TextureFormat
 	// Single-channel formats (for heightmaps) - added at end for backwards compatibility
 	TEXTURE_FORMAT_R16_UNORM,          // 16-bit unsigned normalized
 	TEXTURE_FORMAT_R32_SFLOAT,         // 32-bit float
+	TEXTURE_FORMAT_R16G16_SFLOAT,      // 32-bit RG float (for BRDF LUT, etc.)
 	TEXTURE_FORMAT_COLOUR_END,/////////////////////////
 
 	TEXTURE_FORMAT_DEPTH_STENCIL_BEGIN,////////////////

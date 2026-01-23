@@ -44,6 +44,9 @@ vk::Format Zenith_Vulkan_Texture::ConvertToVkFormat_Colour(TextureFormat eFormat
 		return vk::Format::eR16Unorm;
 	case TEXTURE_FORMAT_R32_SFLOAT:
 		return vk::Format::eR32Sfloat;
+	// Two-channel formats
+	case TEXTURE_FORMAT_R16G16_SFLOAT:
+		return vk::Format::eR16G16Sfloat;
 	// BC Compressed formats
 	case TEXTURE_FORMAT_BC1_RGB_UNORM:
 		return vk::Format::eBc1RgbUnormBlock;

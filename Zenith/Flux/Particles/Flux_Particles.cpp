@@ -9,6 +9,7 @@
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_Buffers.h"
+#include "Flux/HDR/Flux_HDR.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "EntityComponent/Zenith_Scene.h"
@@ -52,7 +53,7 @@ void Flux_Particles::Initialise()
 	xVertexDesc.m_xPerInstanceLayout.CalculateOffsetsAndStrides();
 
 	Flux_PipelineSpecification xPipelineSpec;
-	xPipelineSpec.m_pxTargetSetup = &Flux_Graphics::s_xFinalRenderTarget;
+	xPipelineSpec.m_pxTargetSetup = &Flux_HDR::GetHDRSceneTargetSetupWithDepth();
 	xPipelineSpec.m_pxShader = &s_xShader;
 	xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
 
@@ -197,7 +198,7 @@ void Flux_Particles::Render(void*)
 		// Draw CPU particles (6 indices per quad, s_uInstanceCount instances)
 		g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(6, s_uInstanceCount);
 
-		Flux::SubmitCommandList(&g_xCommandList, Flux_Graphics::s_xFinalRenderTarget, RENDER_ORDER_PARTICLES);
+		Flux::SubmitCommandList(&g_xCommandList, Flux_HDR::GetHDRSceneTargetSetupWithDepth(), RENDER_ORDER_PARTICLES);
 	}
 
 	// TODO: GPU particle rendering requires using the compute output buffer as a vertex buffer.

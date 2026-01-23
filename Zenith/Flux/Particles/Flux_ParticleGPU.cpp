@@ -90,23 +90,9 @@ void Flux_ParticleGPU::Initialise()
 	// Initialize compute shader
 	s_xComputeShader.InitialiseCompute("Particles/Flux_ParticleUpdate.comp");
 
-	// Build compute root signature
-	// Binding 0: Frame constants (not currently used, but reserved)
-	// Binding 1: Scratch buffer for push constants
-	// Binding 2: Input particles (storage buffer, read) (was 0)
-	// Binding 3: Output particles (storage buffer, write) (was 1)
-	// Binding 4: Instance buffer (storage buffer, write) (was 2)
-	// Binding 5: Counter buffer (storage buffer, read/write atomic) (was 3)
-	Flux_PipelineLayout xComputeLayout;
-	xComputeLayout.m_uNumDescriptorSets = 1;
-	xComputeLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_STORAGE_BUFFER;  // Input particles (keep at 0 for now - will be storage buffer)
-	xComputeLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_BUFFER;          // Scratch buffer for push constants
-	xComputeLayout.m_axDescriptorSetLayouts[0].m_axBindings[2].m_eType = DESCRIPTOR_TYPE_STORAGE_BUFFER;  // Output particles (was 1)
-	xComputeLayout.m_axDescriptorSetLayouts[0].m_axBindings[3].m_eType = DESCRIPTOR_TYPE_STORAGE_BUFFER;  // Instance buffer (was 2)
-	xComputeLayout.m_axDescriptorSetLayouts[0].m_axBindings[4].m_eType = DESCRIPTOR_TYPE_STORAGE_BUFFER;  // Counter buffer (was 3)
-	xComputeLayout.m_axDescriptorSetLayouts[0].m_axBindings[5].m_eType = DESCRIPTOR_TYPE_MAX;
-
-	Zenith_Vulkan_RootSigBuilder::FromSpecification(s_xComputeRootSig, xComputeLayout);
+	// Build compute root signature from shader reflection
+	const Flux_ShaderReflection& xReflection = s_xComputeShader.GetReflection();
+	Zenith_Vulkan_RootSigBuilder::FromReflection(s_xComputeRootSig, xReflection);
 
 	// Build compute pipeline
 	Zenith_Vulkan_ComputePipelineBuilder xComputeBuilder;
@@ -117,7 +103,6 @@ void Flux_ParticleGPU::Initialise()
 	s_xComputePipeline.m_xRootSig = s_xComputeRootSig;
 
 	// Cache binding handles from shader reflection
-	const Flux_ShaderReflection& xReflection = s_xComputeShader.GetReflection();
 	s_xInputParticlesBinding = xReflection.GetBinding("g_xInputParticles");
 	s_xOutputParticlesBinding = xReflection.GetBinding("g_xOutputParticles");
 	s_xInstanceBufferBinding = xReflection.GetBinding("g_xInstances");

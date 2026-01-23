@@ -14,6 +14,8 @@ struct Flux_SurfaceInfo
 	u_int m_uDepth = 1;  // Used for 3D textures
 	u_int m_uNumMips = 1;
 	u_int m_uNumLayers = 1;  // Minimum 1 for valid Vulkan image
+	u_int m_uBaseLayer = 0;  // Base array layer for render target views (used for cubemap faces)
+	u_int m_uBaseMip = 0;    // Base mip level for render target views (used for roughness mip chain)
 	u_int m_uMemoryFlags = MEMORY_FLAGS__NONE;
 };
 
@@ -22,6 +24,7 @@ struct Flux_SurfaceInfo
 struct Flux_ShaderResourceView {
 	Flux_ImageViewHandle m_xImageViewHandle;
 	Flux_VRAMHandle m_xVRAMHandle;
+	bool m_bIsDepthStencil = false;  // True if this SRV is for a depth/stencil texture
 };
 
 struct Flux_UnorderedAccessView_Texture {
@@ -59,6 +62,14 @@ struct Flux_RenderAttachment {
 	Flux_UnorderedAccessView_Texture m_pxUAV; // For compute shader read/write
 	Flux_RenderTargetView m_pxRTV;     // For rendering (color attachments)
 	Flux_DepthStencilView m_pxDSV;     // For depth/stencil attachments
+
+	// Cubemap face RTVs (for rendering to individual cubemap faces)
+	// Only valid when m_xSurfaceInfo.m_eTextureType == TEXTURE_TYPE_CUBE
+	Flux_RenderTargetView m_axFaceRTVs[6];
+
+	// Cubemap face SRVs (for debug display of individual faces)
+	// Only valid when m_xSurfaceInfo.m_eTextureType == TEXTURE_TYPE_CUBE
+	Flux_ShaderResourceView m_axFaceSRVs[6];
 };
 
 struct Flux_Texture
@@ -90,8 +101,10 @@ public:
 	uint32_t m_uWidth = 1;
 	uint32_t m_uHeight = 1;
 	uint32_t m_uDepth = 1;  // For 3D textures
+	uint32_t m_uNumMips = 1;  // Number of mip levels (for cubemaps with roughness mips)
 
 	void BuildColour(Flux_RenderAttachment& xAttachment, const std::string& strName);
+	void BuildColourCubemap(Flux_RenderAttachment& xAttachment, const std::string& strName);
 	void BuildDepthStencil(Flux_RenderAttachment& xAttachment, const std::string& strName);
 };
 
@@ -115,6 +128,11 @@ struct Flux_TargetSetup {
 			{
 				return false;
 			}
+			// Also compare RTV handles to distinguish cubemap faces (same VRAM, different layer views)
+			if (m_axColourAttachments[u].m_pxRTV.m_xImageViewHandle.AsUInt() != xOther.m_axColourAttachments[u].m_pxRTV.m_xImageViewHandle.AsUInt())
+			{
+				return false;
+			}
 		}
 		return m_pxDepthStencil == xOther.m_pxDepthStencil;
 	}
@@ -122,6 +140,20 @@ struct Flux_TargetSetup {
 	bool operator!=(const Flux_TargetSetup& xOther) const
 	{
 		return !(*this == xOther);
+	}
+};
+
+// Entry for pending command list with sub-ordering support
+struct Flux_CommandListEntry
+{
+	const Flux_CommandList* m_pxCmdList;
+	Flux_TargetSetup m_xTargetSetup;
+	u_int m_uSubOrder;
+
+	// For sorting by sub-order within a render order
+	bool operator<(const Flux_CommandListEntry& xOther) const
+	{
+		return m_uSubOrder < xOther.m_uSubOrder;
 	}
 };
 
@@ -135,7 +167,7 @@ struct Flux_WorkDistribution
 	u_int auEndRenderOrder[FLUX_NUM_WORKER_THREADS];
 	u_int auEndIndex[FLUX_NUM_WORKER_THREADS];
 	u_int uTotalCommandCount;
-	
+
 	void Clear()
 	{
 		for (u_int i = 0; i < FLUX_NUM_WORKER_THREADS; i++)
@@ -160,7 +192,7 @@ public:
 
 	static const uint32_t GetFrameCounter() { return s_uFrameCounter; }
 
-	static void SubmitCommandList(const Flux_CommandList* pxCmdList, const Flux_TargetSetup& xTargetSetup, RenderOrder eOrder)
+	static void SubmitCommandList(const Flux_CommandList* pxCmdList, const Flux_TargetSetup& xTargetSetup, RenderOrder eOrder, u_int uSubOrder = 0)
 	{
 		Zenith_Assert(pxCmdList != nullptr, "SubmitCommandList: Command list is null");
 		Zenith_Assert(eOrder < RENDER_ORDER_MAX, "SubmitCommandList: Invalid render order %u", eOrder);
@@ -170,7 +202,7 @@ public:
 
 		static Zenith_Mutex ls_xMutex;
 		ls_xMutex.Lock();
-		s_xPendingCommandLists[eOrder].PushBack({pxCmdList, xTargetSetup});
+		s_xPendingCommandLists[eOrder].PushBack({pxCmdList, xTargetSetup, uSubOrder});
 		ls_xMutex.Unlock();
 	}
 	
@@ -191,7 +223,8 @@ public:
 	}
 	
 	// Public access to pending command lists for platform layer
-	static Zenith_Vector<std::pair<const Flux_CommandList*, Flux_TargetSetup>> s_xPendingCommandLists[RENDER_ORDER_MAX];
+	// Entries are sorted by sub-order during PrepareFrame
+	static Zenith_Vector<Flux_CommandListEntry> s_xPendingCommandLists[RENDER_ORDER_MAX];
 private:
 	friend class Flux_PlatformAPI;
 

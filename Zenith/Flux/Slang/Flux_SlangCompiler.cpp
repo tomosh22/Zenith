@@ -12,13 +12,19 @@ static Slang::ComPtr<slang::IGlobalSession> s_pxGlobalSession;
 Flux_BindingHandle Flux_ShaderReflection::GetBinding(const char* szName) const
 {
 	auto it = m_xBindingMap.find(szName);
-	Zenith_Assert(it != m_xBindingMap.end(), "Shader binding '%s' not found in reflection", szName);
-	if (it != m_xBindingMap.end())
+	if (it == m_xBindingMap.end())
 	{
-		return it->second;
+		// Log all available bindings to help debug
+		Zenith_Log(LOG_CATEGORY_RENDERER, "GetBinding('%s') failed. Available bindings (%u):",
+			szName, static_cast<u_int>(m_xBindingMap.size()));
+		for (const auto& pair : m_xBindingMap)
+		{
+			Zenith_Log(LOG_CATEGORY_RENDERER, "  '%s' -> set=%u, binding=%u",
+				pair.first.c_str(), pair.second.m_uSet, pair.second.m_uBinding);
+		}
+		Zenith_Assert(false, "Shader binding '%s' not found in reflection", szName);
 	}
-	Flux_BindingHandle xInvalid;
-	return xInvalid;
+	return it->second;
 }
 
 u_int Flux_ShaderReflection::GetBindingPoint(const char* szName) const
@@ -458,7 +464,7 @@ void Flux_SlangCompiler::ExtractReflection(void* pxLayoutVoid, Flux_ShaderReflec
 	slang::ProgramLayout* pxLayout = static_cast<slang::ProgramLayout*>(pxLayoutVoid);
 
 	unsigned int uParamCount = pxLayout->getParameterCount();
-	Zenith_Log(LOG_CATEGORY_RENDERER, "Slang Reflection: %u parameters found", uParamCount);
+	unsigned int uEntryPointCount = pxLayout->getEntryPointCount();
 
 	for (unsigned int u = 0; u < uParamCount; u++)
 	{
@@ -502,10 +508,78 @@ void Flux_SlangCompiler::ExtractReflection(void* pxLayoutVoid, Flux_ShaderReflec
 		xBinding.m_eType = SlangTypeToDescriptorType(pxTypeLayout);
 		xBinding.m_uSize = static_cast<u_int>(pxTypeLayout->getSize());
 
-		Zenith_Log(LOG_CATEGORY_RENDERER, "  Binding[%u]: name='%s', set=%u, binding=%u, type=%d",
-			u, xBinding.m_strName.c_str(), xBinding.m_uSet, xBinding.m_uBinding, (int)xBinding.m_eType);
-
 		xReflectionOut.AddBinding(xBinding);
+	}
+
+	// For combined graphics pipelines, also check entry-point-specific parameters
+	// Some resources may be reported per-entry-point rather than globally
+	for (unsigned int ep = 0; ep < uEntryPointCount; ep++)
+	{
+		slang::EntryPointLayout* pxEntryPoint = pxLayout->getEntryPointByIndex(ep);
+		if (!pxEntryPoint)
+		{
+			continue;
+		}
+
+		for (unsigned int u = 0; u < pxEntryPoint->getParameterCount(); u++)
+		{
+			slang::VariableLayoutReflection* pxParam = pxEntryPoint->getParameterByIndex(u);
+			if (!pxParam)
+			{
+				continue;
+			}
+
+			slang::ParameterCategory eCategory = pxParam->getCategory();
+
+			// Skip varyings
+			if (eCategory == slang::ParameterCategory::VaryingInput ||
+				eCategory == slang::ParameterCategory::VaryingOutput)
+			{
+				continue;
+			}
+
+			slang::TypeLayoutReflection* pxTypeLayout = pxParam->getTypeLayout();
+			if (!pxTypeLayout)
+			{
+				continue;
+			}
+
+			Flux_ReflectedBinding xBinding;
+			xBinding.m_strName = pxParam->getName() ? pxParam->getName() : "";
+
+			if (xBinding.m_strName.empty())
+			{
+				slang::TypeReflection* pxType = pxTypeLayout->getType();
+				if (pxType && pxType->getName())
+				{
+					xBinding.m_strName = pxType->getName();
+				}
+			}
+
+			xBinding.m_uSet = static_cast<u_int>(pxParam->getBindingSpace());
+			xBinding.m_uBinding = static_cast<u_int>(pxParam->getBindingIndex());
+			xBinding.m_eType = SlangTypeToDescriptorType(pxTypeLayout);
+			xBinding.m_uSize = static_cast<u_int>(pxTypeLayout->getSize());
+
+			// Check if this binding already exists (avoid duplicates)
+			bool bExists = false;
+			for (u_int v = 0; v < xReflectionOut.GetBindings().GetSize(); v++)
+			{
+				const Flux_ReflectedBinding& xExisting = xReflectionOut.GetBindings().Get(v);
+				if (xExisting.m_uSet == xBinding.m_uSet && xExisting.m_uBinding == xBinding.m_uBinding)
+				{
+					bExists = true;
+					break;
+				}
+			}
+
+			if (!bExists)
+			{
+				Zenith_Log(LOG_CATEGORY_RENDERER, "  EP Binding: name='%s', set=%u, binding=%u, type=%d",
+					xBinding.m_strName.c_str(), xBinding.m_uSet, xBinding.m_uBinding, (int)xBinding.m_eType);
+				xReflectionOut.AddBinding(xBinding);
+			}
+		}
 	}
 
 	xReflectionOut.BuildLookupMap();

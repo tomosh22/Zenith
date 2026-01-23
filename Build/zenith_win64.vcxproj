@@ -1140,6 +1140,8 @@
     <ClInclude Include="..\Zenith\Flux\Fog\Flux_TemporalFog.h" />
     <ClInclude Include="..\Zenith\Flux\Fog\Flux_VolumeFog.h" />
     <ClInclude Include="..\Zenith\Flux\Gizmos\Flux_Gizmos.h" />
+    <ClInclude Include="..\Zenith\Flux\HDR\Flux_HDR.h" />
+    <ClInclude Include="..\Zenith\Flux\IBL\Flux_IBL.h" />
     <ClInclude Include="..\Zenith\Flux\InstancedMeshes\Flux_AnimationTexture.h" />
     <ClInclude Include="..\Zenith\Flux\InstancedMeshes\Flux_InstanceCulling.h" />
     <ClInclude Include="..\Zenith\Flux\InstancedMeshes\Flux_InstancedMeshes.h" />
@@ -1189,6 +1191,16 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\GBufferCommon.fxh" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Gizmos\Flux_Gizmos.frag" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Gizmos\Flux_Gizmos.vert" />
+    <ClInclude Include="..\Zenith\Flux\Shaders\HDR\Flux_Adaptation.comp" />
+    <ClInclude Include="..\Zenith\Flux\Shaders\HDR\Flux_BloomDownsample.frag" />
+    <ClInclude Include="..\Zenith\Flux\Shaders\HDR\Flux_BloomThreshold.frag" />
+    <ClInclude Include="..\Zenith\Flux\Shaders\HDR\Flux_BloomUpsample.frag" />
+    <ClInclude Include="..\Zenith\Flux\Shaders\HDR\Flux_Luminance.comp" />
+    <ClInclude Include="..\Zenith\Flux\Shaders\HDR\Flux_ToneMapping.frag" />
+    <ClInclude Include="..\Zenith\Flux\Shaders\IBL\Flux_BRDFIntegration.frag" />
+    <ClInclude Include="..\Zenith\Flux\Shaders\IBL\Flux_IBLCommon.fxh" />
+    <ClInclude Include="..\Zenith\Flux\Shaders\IBL\Flux_IrradianceConvolution.frag" />
+    <ClInclude Include="..\Zenith\Flux\Shaders\IBL\Flux_PrefilterEnvMap.frag" />
     <ClInclude Include="..\Zenith\Flux\Shaders\InstancedMeshes\Flux_InstanceCulling.comp" />
     <ClInclude Include="..\Zenith\Flux\Shaders\InstancedMeshes\Flux_InstancedMeshes_FragCommon.fxh" />
     <ClInclude Include="..\Zenith\Flux\Shaders\InstancedMeshes\Flux_InstancedMeshes_ToGBuffer.frag" />
@@ -1205,6 +1217,9 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\Quads\Flux_Quads.frag" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Quads\Flux_Quads.vert" />
     <ClInclude Include="..\Zenith\Flux\Shaders\SDFs\Flux_SDFs.frag" />
+    <ClInclude Include="..\Zenith\Flux\Shaders\Skybox\Flux_AerialPerspective.frag" />
+    <ClInclude Include="..\Zenith\Flux\Shaders\Skybox\Flux_Atmosphere.frag" />
+    <ClInclude Include="..\Zenith\Flux\Shaders\Skybox\Flux_AtmosphereCommon.fxh" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Skybox\Flux_Skybox.frag" />
     <ClInclude Include="..\Zenith\Flux\Shaders\SSAO\Flux_SSAO.frag" />
     <ClInclude Include="..\Zenith\Flux\Shaders\StaticMeshes\Flux_StaticMeshes_FragCommon.fxh" />
@@ -1222,6 +1237,9 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\Terrain\Flux_Terrain_VertCommon.fxh" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Text\Flux_Text.frag" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Text\Flux_Text.vert" />
+    <ClInclude Include="..\Zenith\Flux\Shaders\Vegetation\Flux_Grass.frag" />
+    <ClInclude Include="..\Zenith\Flux\Shaders\Vegetation\Flux_Grass.vert" />
+    <ClInclude Include="..\Zenith\Flux\Shaders\Vegetation\Flux_Wind.fxh" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Water\Flux_Water.frag" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Water\Flux_Water.vert" />
     <ClInclude Include="..\Zenith\Flux\Shadows\Flux_Shadows.h" />
@@ -1235,6 +1253,7 @@
     <ClInclude Include="..\Zenith\Flux\Terrain\Flux_TerrainConfig.h" />
     <ClInclude Include="..\Zenith\Flux\Terrain\Flux_TerrainStreamingManager.h" />
     <ClInclude Include="..\Zenith\Flux\Text\Flux_Text.h" />
+    <ClInclude Include="..\Zenith\Flux\Vegetation\Flux_Grass.h" />
     <ClInclude Include="..\Zenith\Input\Zenith_Input.h" />
     <ClInclude Include="..\Zenith\Input\Zenith_KeyCodes.h" />
     <ClInclude Include="..\Zenith\Maths\Zenith_FrustumCulling.h" />
@@ -2292,6 +2311,8 @@
     <ClCompile Include="..\Zenith\Flux\Fog\Flux_TemporalFog.cpp" />
     <ClCompile Include="..\Zenith\Flux\Fog\Flux_VolumeFog.cpp" />
     <ClCompile Include="..\Zenith\Flux\Gizmos\Flux_Gizmos.cpp" />
+    <ClCompile Include="..\Zenith\Flux\HDR\Flux_HDR.cpp" />
+    <ClCompile Include="..\Zenith\Flux\IBL\Flux_IBL.cpp" />
     <ClCompile Include="..\Zenith\Flux\InstancedMeshes\Flux_AnimationTexture.cpp" />
     <ClCompile Include="..\Zenith\Flux\InstancedMeshes\Flux_InstancedMeshes.cpp" />
     <ClCompile Include="..\Zenith\Flux\InstancedMeshes\Flux_InstanceGroup.cpp" />
@@ -2321,6 +2342,7 @@
     <ClCompile Include="..\Zenith\Flux\Terrain\Flux_Terrain.cpp" />
     <ClCompile Include="..\Zenith\Flux\Terrain\Flux_TerrainStreamingManager.cpp" />
     <ClCompile Include="..\Zenith\Flux\Text\Flux_Text.cpp" />
+    <ClCompile Include="..\Zenith\Flux\Vegetation\Flux_Grass.cpp" />
     <ClCompile Include="..\Zenith\Input\Zenith_Input.cpp" />
     <ClCompile Include="..\Zenith\Maths\Zenith_Maths.cpp" />
     <ClCompile Include="..\Zenith\Physics\Zenith_Physics.cpp" />

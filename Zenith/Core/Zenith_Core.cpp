@@ -22,6 +22,9 @@
 #include "Flux/Text/Flux_Text.h"
 #include "Flux/ComputeTest/Flux_ComputeTest.h"
 #include "Flux/InstancedMeshes/Flux_InstancedMeshes.h"
+#include "Flux/HDR/Flux_HDR.h"
+#include "Flux/IBL/Flux_IBL.h"
+#include "Flux/Vegetation/Flux_Grass.h"
 #ifdef ZENITH_TOOLS
 #include "Flux/Gizmos/Flux_Gizmos.h"
 #include "Editor/Zenith_Editor.h"
@@ -111,22 +114,26 @@ void RenderImGui()
 static void SubmitRenderTasks()
 {
 	Flux_ComputeTest::Run();
+	Flux_IBL::SubmitRenderTask();         // IBL BRDF LUT generation (early, used by deferred shading)
 	Flux_Shadows::SubmitRenderTask();
-	Flux_Skybox::SubmitRenderTask();
+	Flux_Skybox::SubmitRenderTask();      // Cubemap skybox + procedural atmosphere
+	Flux_Skybox::SubmitAerialPerspectiveTask();  // Aerial perspective (if atmosphere enabled)
 	Flux_StaticMeshes::SubmitRenderToGBufferTask();
 	Flux_AnimatedMeshes::SubmitRenderTask();
 	Flux_InstancedMeshes::SubmitCullingTask();
 	Flux_InstancedMeshes::SubmitRenderTask();
 	Flux_Terrain::SubmitRenderToGBufferTask();
+	Flux_Grass::SubmitRenderTask();       // Grass/vegetation (after terrain)
 	Flux_Primitives::SubmitRenderTask();
 	Flux_DeferredShading::SubmitRenderTask();
 	Flux_SSAO::SubmitRenderTask();
 	Flux_Fog::SubmitRenderTask();
 	Flux_SDFs::SubmitRenderTask();
 	Flux_Particles::SubmitRenderTask();
+	Flux_HDR::SubmitRenderTask();         // Tone mapping (must be after all HDR scene passes)
 	Flux_Text::SubmitRenderTask();
 	Flux_Quads::SubmitRenderTask();
-	
+
 	#ifdef ZENITH_TOOLS
 	//#TO calls Flux_Gizmos::SubmitRenderTask()
 	ZENITH_PROFILING_FUNCTION_WRAPPER(RenderImGui, ZENITH_PROFILE_INDEX__RENDER_IMGUI);
@@ -138,19 +145,23 @@ static void SubmitRenderTasks()
 // bIncludeGizmos: If false, skips waiting for gizmo task (useful when called mid-frame before gizmo submission)
 void Zenith_Core::WaitForAllRenderTasks()
 {
+	Flux_IBL::WaitForRenderTask();
 	Flux_Shadows::WaitForRenderTask();
 	Flux_Skybox::WaitForRenderTask();
+	Flux_Skybox::WaitForAerialPerspectiveTask();
 	Flux_StaticMeshes::WaitForRenderToGBufferTask();
 	Flux_AnimatedMeshes::WaitForRenderTask();
 	Flux_InstancedMeshes::WaitForCullingTask();
 	Flux_InstancedMeshes::WaitForRenderTask();
 	Flux_Terrain::WaitForRenderToGBufferTask();
+	Flux_Grass::WaitForRenderTask();
 	Flux_Primitives::WaitForRenderTask();
 	Flux_DeferredShading::WaitForRenderTask();
 	Flux_SSAO::WaitForRenderTask();
 	Flux_Fog::WaitForRenderTask();
 	Flux_SDFs::WaitForRenderTask();
 	Flux_Particles::WaitForRenderTask();
+	Flux_HDR::WaitForRenderTask();
 	Flux_Text::WaitForRenderTask();
 	Flux_Quads::WaitForRenderTask();
 	#ifdef ZENITH_TOOLS

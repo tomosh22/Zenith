@@ -32,6 +32,7 @@ layout(set = 1, binding = 6) uniform sampler2D g_xEmissiveTex;
 #endif
 
 void main(){
+	
 	#ifndef SHADOWS
 	// Apply UV transformation (tiling and offset)
 	vec2 xUV = TransformUV(a_xUV, GetUVTiling(), GetUVOffset());

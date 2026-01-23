@@ -6,6 +6,7 @@
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_Buffers.h"
+#include "Flux/HDR/Flux_HDR.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
@@ -21,8 +22,8 @@ DEBUGVAR bool dbg_bEnable = true;
 
 static struct Flux_FogConstants
 {
-	float m_fRadius = 0.058f;
-	float m_fBias = 0.15f;
+	float m_fRadius = 0.9f;
+	float m_fBias = 0.1f;
 	float m_fIntensity = 1.f;
 	float m_fKernelSize = 16.f;
 } dbg_xConstants;
@@ -35,7 +36,7 @@ void Flux_SSAO::Initialise()
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_NONE;
 
 	Flux_PipelineSpecification xPipelineSpec;
-	xPipelineSpec.m_pxTargetSetup = &Flux_Graphics::s_xFinalRenderTarget_NoDepth;
+	xPipelineSpec.m_pxTargetSetup = &Flux_HDR::GetHDRSceneTargetSetup();
 	xPipelineSpec.m_pxShader = &s_xShader;
 	xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
 
@@ -106,5 +107,5 @@ void Flux_SSAO::Render(void*)
 
 	g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(6);
 
-	Flux::SubmitCommandList(&g_xCommandList, Flux_Graphics::s_xFinalRenderTarget_NoDepth, RENDER_ORDER_SSAO);
+	Flux::SubmitCommandList(&g_xCommandList, Flux_HDR::GetHDRSceneTargetSetup(), RENDER_ORDER_SSAO);
 }

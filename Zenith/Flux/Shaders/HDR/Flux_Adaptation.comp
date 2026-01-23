@@ -1,0 +1,140 @@
+#version 450
+
+// Eye adaptation compute shader
+// Reads luminance histogram and calculates adapted exposure
+
+layout(local_size_x = 256, local_size_y = 1, local_size_z = 1) in;
+
+// Push constants
+layout(std140, set = 0, binding = 0) uniform AdaptationConstants
+{
+	float g_fMinLogLum;          // Minimum log luminance
+	float g_fLogLumRange;        // Range of log luminance
+	float g_fDeltaTime;          // Frame delta time
+	float g_fAdaptationSpeed;    // How fast exposure adapts (2.0 typical)
+	float g_fTargetLuminance;    // Target middle-gray luminance (0.18 typical)
+	float g_fMinExposure;        // Minimum allowed exposure (0.1 typical)
+	float g_fMaxExposure;        // Maximum allowed exposure (10.0 typical)
+	float g_fLowPercentile;      // Low percentile to ignore (0.05 = 5%)
+	float g_fHighPercentile;     // High percentile to ignore (0.95 = 95%)
+	uint g_uTotalPixels;         // Total pixel count for normalization
+	uint g_uPad0;
+	uint g_uPad1;
+};
+
+// Histogram buffer (256 bins) - input/output - using Slang RWStructuredBuffer
+[[vk::binding(1, 0)]]
+RWStructuredBuffer<uint> g_auHistogram;
+
+// Exposure data buffer - input/output
+// [0] = average luminance, [1] = current exposure, [2] = target exposure, [3] = histogram max count
+// coherent: Ensures reads see writes from the same invocation within this dispatch
+[[vk::binding(2, 0)]]
+coherent RWStructuredBuffer<float> g_afExposureData;
+
+// Shared memory for parallel reduction
+shared uint s_auLocalHistogram[256];
+shared float s_afPartialSum[256];
+
+void main()
+{
+	uint uLocalIdx = gl_LocalInvocationID.x;
+
+	// Load histogram bin into shared memory
+	s_auLocalHistogram[uLocalIdx] = g_auHistogram[uLocalIdx];
+	barrier();
+
+	// Calculate total count (parallel reduction)
+	s_afPartialSum[uLocalIdx] = float(s_auLocalHistogram[uLocalIdx]);
+	barrier();
+
+	// First thread computes the weighted average
+	if (uLocalIdx == 0)
+	{
+		// Calculate total count for normalization and find max bin count for histogram visualization
+		float fTotalCount = 0.0;
+		uint uMaxBinCount = 1u;  // Minimum 1 to avoid division by zero
+		for (uint i = 0; i < 256; i++)
+		{
+			fTotalCount += float(s_auLocalHistogram[i]);
+			uMaxBinCount = max(uMaxBinCount, s_auLocalHistogram[i]);
+		}
+
+		// Store histogram max count for fragment shader visualization
+		// This avoids per-pixel 256-iteration loops in the tone mapping shader
+		g_afExposureData[3] = float(uMaxBinCount);
+
+		// Early exit if no valid pixels
+		if (fTotalCount < 1.0)
+		{
+			g_afExposureData[0] = 0.18;  // Default average luminance
+			g_afExposureData[2] = 1.0;   // Default target exposure
+			return;
+		}
+
+		// Calculate percentile bounds
+		float fLowThreshold = fTotalCount * g_fLowPercentile;
+		float fHighThreshold = fTotalCount * g_fHighPercentile;
+
+		// Find valid range (ignore outliers)
+		float fRunningCount = 0.0;
+		uint uLowBin = 0;
+		uint uHighBin = 255;
+
+		for (uint i = 0; i < 256; i++)
+		{
+			fRunningCount += float(s_auLocalHistogram[i]);
+			if (fRunningCount < fLowThreshold)
+			{
+				uLowBin = i + 1;
+			}
+			// Use <= to include the bin where count crosses the threshold
+			if (fRunningCount <= fHighThreshold)
+			{
+				uHighBin = i;
+			}
+		}
+
+		// Calculate weighted average luminance within valid range
+		float fWeightedSum = 0.0;
+		float fValidCount = 0.0;
+
+		for (uint i = uLowBin; i <= uHighBin; i++)
+		{
+			float fBinValue = (float(i) + 0.5) / 256.0;
+			float fCount = float(s_auLocalHistogram[i]);
+			fWeightedSum += fBinValue * fCount;
+			fValidCount += fCount;
+		}
+
+		// Avoid division by zero
+		if (fValidCount < 1.0)
+		{
+			fValidCount = 1.0;
+		}
+
+		// Convert from normalized bin value back to luminance
+		float fAvgLogLum = (fWeightedSum / fValidCount) * g_fLogLumRange + g_fMinLogLum;
+		float fAvgLuminance = exp2(fAvgLogLum);
+
+		// Calculate target exposure using EV compensation formula
+		// exposure = targetLuminance / averageLuminance
+		float fTargetExposure = g_fTargetLuminance / max(fAvgLuminance, 0.001);
+
+		// Clamp to valid exposure range
+		fTargetExposure = clamp(fTargetExposure, g_fMinExposure, g_fMaxExposure);
+
+		// Store results
+		g_afExposureData[0] = fAvgLuminance;
+		g_afExposureData[2] = fTargetExposure;
+
+		// Eye adaptation - smooth transition
+		float fCurrentExposure = g_afExposureData[1];
+		float fAdaptationRate = 1.0 - exp(-g_fDeltaTime * g_fAdaptationSpeed);
+		float fNewExposure = mix(fCurrentExposure, fTargetExposure, fAdaptationRate);
+		g_afExposureData[1] = fNewExposure;
+
+		// Note: Histogram clearing is now handled by the luminance shader
+		// (workgroup 0,0 overwrites global histogram each frame)
+	}
+}

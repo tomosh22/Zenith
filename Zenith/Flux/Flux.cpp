@@ -22,10 +22,13 @@
 #include "Flux/Quads/Flux_Quads.h"
 #include "Flux/ComputeTest/Flux_ComputeTest.h"
 #include "Flux/InstancedMeshes/Flux_InstancedMeshes.h"
+#include "Flux/HDR/Flux_HDR.h"
+#include "Flux/IBL/Flux_IBL.h"
+#include "Flux/Vegetation/Flux_Grass.h"
 
 uint32_t Flux::s_uFrameCounter = 0;
 std::vector<void(*)()> Flux::s_xResChangeCallbacks;
-Zenith_Vector<std::pair<const Flux_CommandList*, Flux_TargetSetup>> Flux::s_xPendingCommandLists[RENDER_ORDER_MAX];
+Zenith_Vector<Flux_CommandListEntry> Flux::s_xPendingCommandLists[RENDER_ORDER_MAX];
 
 void Flux::EarlyInitialise()
 {
@@ -38,21 +41,28 @@ void Flux::LateInitialise()
 {
 	Flux_MemoryManager::BeginFrame();
 	Flux_Swapchain::Initialise();
+
+#ifdef ZENITH_TOOLS
+	// Initialize Slang compiler for runtime compilation FIRST
+	// This must be done before any shaders are loaded so they can use runtime compilation
+	Flux_SlangCompiler::Initialise();
+#endif
+
 	Flux_Graphics::Initialise();
+	Flux_HDR::Initialise();  // Must be before DeferredShading - deferred renders to HDR target
 #ifdef ZENITH_TOOLS
 	Flux_PlatformAPI::InitialiseImGui();
 	Flux_Gizmos::Initialise();
-
-	// Initialize Slang compiler for runtime compilation
-	Flux_SlangCompiler::Initialise();
 	Flux_ShaderHotReload::Initialise();
 #endif
 	Flux_Shadows::Initialise();
-	Flux_Skybox::Initialise();
+	Flux_Skybox::Initialise();       // Cubemap skybox + procedural atmosphere
+	Flux_IBL::Initialise();          // Image-based lighting (BRDF LUT, environment probes)
 	Flux_StaticMeshes::Initialise();
 	Flux_AnimatedMeshes::Initialise();
 	Flux_InstancedMeshes::Initialise();
 	Flux_Terrain::Initialise();
+	Flux_Grass::Initialise();        // Grass/vegetation (after terrain)
 	Flux_Primitives::Initialise();
 	Flux_DeferredShading::Initialise();
 	Flux_SSAO::Initialise();
@@ -67,16 +77,22 @@ void Flux::LateInitialise()
 
 void Flux::Shutdown()
 {
-	// Shutdown Flux subsystems (vertex/index/constant buffers, render attachments)
-	// Order is reverse of initialization where dependencies exist
+	// Shutdown Flux subsystems in REVERSE order of initialization
+	// This ensures dependencies are destroyed after their dependents
+	// NOTE: Some subsystems (Fog, SSAO, DeferredShading, Primitives, AnimatedMeshes, StaticMeshes)
+	// don't have Shutdown() methods - they rely on RAII or are stateless
 	Flux_ComputeTest::Shutdown();
 	Flux_Text::Shutdown();
 	Flux_Quads::Shutdown();
 	Flux_Particles::Shutdown();
 	Flux_SDFs::Shutdown();
-	Flux_Primitives::Shutdown();
+	// Flux_Fog, Flux_SSAO, Flux_DeferredShading, Flux_Primitives - no Shutdown() methods
+	Flux_Grass::Shutdown();        // After Terrain (depends on terrain data)
 	Flux_Terrain::Shutdown();
 	Flux_InstancedMeshes::Shutdown();
+	// Flux_AnimatedMeshes, Flux_StaticMeshes - no Shutdown() methods
+	Flux_IBL::Shutdown();          // After Skybox (uses skybox for environment)
+	Flux_Skybox::Shutdown();
 	Flux_Shadows::Shutdown();
 
 #ifdef ZENITH_TOOLS
@@ -87,6 +103,9 @@ void Flux::Shutdown()
 	Flux_Gizmos::Shutdown();
 	Flux_PlatformAPI::ShutdownImGui();
 #endif
+
+	// HDR must shutdown after other render systems that target HDR buffer
+	Flux_HDR::Shutdown();
 
 	// Shutdown core graphics (render targets, depth buffer, quad mesh, frame constants)
 	Flux_Graphics::Shutdown();
@@ -110,62 +129,73 @@ bool Flux::PrepareFrame(Flux_WorkDistribution& xOutDistribution)
 	static_assert(FLUX_NUM_WORKER_THREADS > 0, "FLUX_NUM_WORKER_THREADS must be positive");
 
 	xOutDistribution.Clear();
-	
+
+	// Sort command lists by sub-order within each render order
+	// This ensures correct execution order for multi-pass effects like bloom
+	for (u_int uRenderOrder = 0; uRenderOrder < RENDER_ORDER_MAX; uRenderOrder++)
+	{
+		Zenith_Vector<Flux_CommandListEntry>& xCommandLists = s_xPendingCommandLists[uRenderOrder];
+		if (xCommandLists.GetSize() > 1)
+		{
+			std::sort(xCommandLists.GetDataPointer(), xCommandLists.GetDataPointer() + xCommandLists.GetSize());
+		}
+	}
+
 	// Count total commands across all render orders
 	for (u_int uRenderOrder = RENDER_ORDER_MEMORY_UPDATE + 1; uRenderOrder < RENDER_ORDER_MAX; uRenderOrder++)
 	{
-		const Zenith_Vector<std::pair<const Flux_CommandList*, Flux_TargetSetup>>& xCommandLists = s_xPendingCommandLists[uRenderOrder];
-		
+		const Zenith_Vector<Flux_CommandListEntry>& xCommandLists = s_xPendingCommandLists[uRenderOrder];
+
 		for (u_int i = 0; i < xCommandLists.GetSize(); i++)
 		{
-			xOutDistribution.uTotalCommandCount += xCommandLists.Get(i).first->GetCommandCount();
+			xOutDistribution.uTotalCommandCount += xCommandLists.Get(i).m_pxCmdList->GetCommandCount();
 		}
 	}
-	
+
 	// Early exit if there are no commands
 	if (xOutDistribution.uTotalCommandCount == 0)
 	{
 		return false;
 	}
-	
+
 	// Distribute work across threads based on command count
 	const u_int uTargetCommandsPerThread = (xOutDistribution.uTotalCommandCount + FLUX_NUM_WORKER_THREADS - 1) / FLUX_NUM_WORKER_THREADS;
 	u_int uCurrentThreadIndex = 0;
 	u_int uCurrentThreadCommandCount = 0;
-	
+
 	// Set the first thread's start position
 	xOutDistribution.auStartRenderOrder[0] = RENDER_ORDER_MEMORY_UPDATE + 1;
 	xOutDistribution.auStartIndex[0] = 0;
-	
+
 	// Iterate through all render orders and command lists to distribute work
 	for (u_int uRenderOrder = RENDER_ORDER_MEMORY_UPDATE + 1; uRenderOrder < RENDER_ORDER_MAX; uRenderOrder++)
 	{
-		const Zenith_Vector<std::pair<const Flux_CommandList*, Flux_TargetSetup>>& xCommandLists = s_xPendingCommandLists[uRenderOrder];
-		
+		const Zenith_Vector<Flux_CommandListEntry>& xCommandLists = s_xPendingCommandLists[uRenderOrder];
+
 		for (u_int uIndex = 0; uIndex < xCommandLists.GetSize(); uIndex++)
 		{
-			const u_int uCommandCount = xCommandLists.Get(uIndex).first->GetCommandCount();
-			
+			const u_int uCommandCount = xCommandLists.Get(uIndex).m_pxCmdList->GetCommandCount();
+
 			// If adding this item would exceed the target and we have more threads available, move to next thread
-			if (uCurrentThreadCommandCount > 0 && 
+		if (uCurrentThreadCommandCount > 0 &&
 			    uCurrentThreadCommandCount + uCommandCount > uTargetCommandsPerThread && 
-			    uCurrentThreadIndex < FLUX_NUM_WORKER_THREADS - 1)
-			{
+		    uCurrentThreadIndex < FLUX_NUM_WORKER_THREADS - 1)
+		{
 				// Finalize current thread's range
-				xOutDistribution.auEndRenderOrder[uCurrentThreadIndex] = uRenderOrder;
+			xOutDistribution.auEndRenderOrder[uCurrentThreadIndex] = uRenderOrder;
 				xOutDistribution.auEndIndex[uCurrentThreadIndex] = uIndex;
-				
-				// Move to next thread
-				uCurrentThreadIndex++;
-				uCurrentThreadCommandCount = 0;
-				xOutDistribution.auStartRenderOrder[uCurrentThreadIndex] = uRenderOrder;
+
+			// Move to next thread
+			uCurrentThreadIndex++;
+			uCurrentThreadCommandCount = 0;
+			xOutDistribution.auStartRenderOrder[uCurrentThreadIndex] = uRenderOrder;
 				xOutDistribution.auStartIndex[uCurrentThreadIndex] = uIndex;
-			}
-			
+		}
+
 			uCurrentThreadCommandCount += uCommandCount;
 		}
 	}
-	
+
 	// Finalize the last thread's range (end is exclusive, so point to start of next render order)
 	Zenith_Assert(uCurrentThreadIndex < FLUX_NUM_WORKER_THREADS,
 		"PrepareFrame: Thread index %u out of bounds (max %u)", uCurrentThreadIndex, FLUX_NUM_WORKER_THREADS);
@@ -174,6 +204,42 @@ bool Flux::PrepareFrame(Flux_WorkDistribution& xOutDistribution)
 	{
 		xOutDistribution.auEndRenderOrder[uCurrentThreadIndex] = RENDER_ORDER_MAX;
 		xOutDistribution.auEndIndex[uCurrentThreadIndex] = 0;
+	}
+
+	// Debug logging: show which render orders have commands
+	Zenith_Log(LOG_CATEGORY_RENDERER, "=== Render Order Commands (Frame %u, %u total) ===", s_uFrameCounter, xOutDistribution.uTotalCommandCount);
+	for (u_int uRenderOrder = RENDER_ORDER_MEMORY_UPDATE + 1; uRenderOrder < RENDER_ORDER_MAX; uRenderOrder++)
+	{
+		const Zenith_Vector<Flux_CommandListEntry>& xCommandLists = s_xPendingCommandLists[uRenderOrder];
+		if (xCommandLists.GetSize() > 0)
+		{
+			u_int uCmdCount = 0;
+			for (u_int i = 0; i < xCommandLists.GetSize(); i++)
+			{
+				uCmdCount += xCommandLists.Get(i).m_pxCmdList->GetCommandCount();
+			}
+			Zenith_Log(LOG_CATEGORY_RENDERER, "  RenderOrder %u: %u lists, %u commands", uRenderOrder, xCommandLists.GetSize(), uCmdCount);
+		}
+	}
+
+	// Debug logging: show work distribution across worker threads
+	// Ranges are [start, end) - start is INCLUSIVE, end is EXCLUSIVE
+	Zenith_Log(LOG_CATEGORY_RENDERER, "=== Work Distribution (8 worker threads) ===");
+	for (u_int uThread = 0; uThread < FLUX_NUM_WORKER_THREADS; uThread++)
+	{
+		const u_int uStartOrder = xOutDistribution.auStartRenderOrder[uThread];
+		const u_int uEndOrder = xOutDistribution.auEndRenderOrder[uThread];
+		const u_int uStartIdx = xOutDistribution.auStartIndex[uThread];
+		const u_int uEndIdx = xOutDistribution.auEndIndex[uThread];
+
+		// Skip threads with no work (all zeros means unassigned)
+		if (uStartOrder == 0 && uEndOrder == 0 && uStartIdx == 0 && uEndIdx == 0)
+		{
+			continue;
+		}
+
+		Zenith_Log(LOG_CATEGORY_RENDERER, "  Worker %u: RenderOrder [%u, %u) idx [%u, %u)",
+			uThread, uStartOrder, uEndOrder, uStartIdx, uEndIdx);
 	}
 
 	return true;

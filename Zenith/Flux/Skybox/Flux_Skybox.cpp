@@ -8,59 +8,229 @@
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_Buffers.h"
-#include "Flux/DeferredShading/Flux_DeferredShading.h"
+#include "Flux/HDR/Flux_HDR.h"
+#include "Flux/Slang/Flux_ShaderBinder.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
 
+#ifdef ZENITH_TOOLS
+#include "DebugVariables/Zenith_DebugVariables.h"
+#endif
+
+// Tasks
 static Zenith_Task g_xRenderTask(ZENITH_PROFILE_INDEX__FLUX_SKYBOX, Flux_Skybox::Render, nullptr);
+static Zenith_Task g_xAerialPerspectiveTask(ZENITH_PROFILE_INDEX__FLUX_SKYBOX, Flux_Skybox::RenderAerialPerspective, nullptr);
 
-static Flux_CommandList g_xCommandList("Skybox");
+// Command lists
+static Flux_CommandList g_xSkyCommandList("Skybox");
+static Flux_CommandList g_xAerialCommandList("Skybox_Aerial");
 
-static Flux_Shader s_xShader;
-static Flux_Pipeline s_xPipeline;
-
+// Cubemap texture reference
 static Zenith_TextureAsset* s_pxCubemapTexture = nullptr;
+
+// Static member definitions
+Flux_RenderAttachment Flux_Skybox::s_xTransmittanceLUT;
+Flux_TargetSetup Flux_Skybox::s_xTransmittanceLUTSetup;
+bool Flux_Skybox::s_bLUTNeedsUpdate = true;
+
+Flux_Pipeline Flux_Skybox::s_xCubemapPipeline;
+Flux_Pipeline Flux_Skybox::s_xAtmospherePipeline;
+Flux_Pipeline Flux_Skybox::s_xAerialPerspectivePipeline;
+
+Flux_Shader Flux_Skybox::s_xCubemapShader;
+Flux_Shader Flux_Skybox::s_xAtmosphereShader;
+Flux_Shader Flux_Skybox::s_xAerialPerspectiveShader;
+
+bool Flux_Skybox::s_bAtmosphereEnabled = false;
+float Flux_Skybox::s_fSunIntensity = AtmosphereConfig::fSUN_INTENSITY;
+float Flux_Skybox::s_fRayleighScale = 1.0f;
+float Flux_Skybox::s_fMieScale = 1.0f;
+float Flux_Skybox::s_fMieG = AtmosphereConfig::fMIE_G;
+bool Flux_Skybox::s_bAerialPerspectiveEnabled = true;  // Must match dbg_bAerialEnabled default
+float Flux_Skybox::s_fAerialPerspectiveStrength = 1.0f;
+
+Flux_DynamicConstantBuffer Flux_Skybox::s_xAtmosphereConstantsBuffer;
+
+// Cached binding handles for cubemap
+static Flux_BindingHandle s_xCubemapFrameConstantsBinding;
+static Flux_BindingHandle s_xCubemapTextureBinding;
+
+// Cached binding handles for atmosphere
+static Flux_BindingHandle s_xAtmosFrameConstantsBinding;
+static Flux_BindingHandle s_xAtmosConstantsBinding;
+
+// Cached binding handles for aerial perspective
+static Flux_BindingHandle s_xAerialFrameConstantsBinding;
+static Flux_BindingHandle s_xAerialAtmosConstantsBinding;
+static Flux_BindingHandle s_xAerialDepthTexBinding;
+
+// Atmosphere constants buffer structure
+struct AtmosphereConstants
+{
+	// Scattering coefficients
+	Zenith_Maths::Vector4 m_xRayleighScatter;      // RGB coefficients, W = scale height
+	Zenith_Maths::Vector4 m_xMieScatter;           // RGB = scatter, W = scale height
+
+	// Planet parameters
+	float m_fPlanetRadius;
+	float m_fAtmosphereRadius;
+	float m_fMieG;                                   // Henyey-Greenstein asymmetry
+	float m_fSunIntensity;
+
+	// Configuration
+	float m_fRayleighScale;
+	float m_fMieScale;
+	float m_fAerialPerspectiveStrength;
+	u_int m_uDebugMode;
+
+	// Ray march settings
+	u_int m_uSkySamples;
+	u_int m_uLightSamples;
+	Zenith_Maths::Vector2 m_xPad;
+};
+static AtmosphereConstants s_xAtmosphereConstants;
+
+// Debug variables
+DEBUGVAR bool dbg_bAtmosphereEnable = false;
+DEBUGVAR u_int dbg_uSkyboxDebugMode = SKYBOX_DEBUG_NONE;
+DEBUGVAR float dbg_fSunIntensity = AtmosphereConfig::fSUN_INTENSITY;
+DEBUGVAR float dbg_fRayleighScale = 1.0f;
+DEBUGVAR float dbg_fMieScale = 1.0f;
+DEBUGVAR float dbg_fMieG = AtmosphereConfig::fMIE_G;
+DEBUGVAR bool dbg_bAerialEnabled = true;
+DEBUGVAR float dbg_fAerialStrength = 1.0f;
+DEBUGVAR u_int dbg_uSkySamples = AtmosphereConfig::uDEFAULT_SKY_SAMPLES;
+DEBUGVAR u_int dbg_uLightSamples = AtmosphereConfig::uDEFAULT_LIGHT_SAMPLES;
 
 void Flux_Skybox::Initialise()
 {
-	s_xShader.Initialise("Flux_Fullscreen_UV.vert", "Skybox/Flux_Skybox.frag");
+	CreateRenderTargets();
+
+	// Initialize atmosphere constants buffer
+	Flux_MemoryManager::InitialiseDynamicConstantBuffer(&s_xAtmosphereConstants, sizeof(AtmosphereConstants), s_xAtmosphereConstantsBuffer);
 
 	Flux_VertexInputDescription xVertexDesc;
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_NONE;
 	xVertexDesc.m_xPerVertexLayout.CalculateOffsetsAndStrides();
 
-	Flux_PipelineSpecification xPipelineSpec;
-	xPipelineSpec.m_pxTargetSetup = &Flux_Graphics::s_xMRTTarget;
-	xPipelineSpec.m_pxShader = &s_xShader;
-	xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
+	// ========== Cubemap skybox pipeline ==========
+	s_xCubemapShader.Initialise("Flux_Fullscreen_UV.vert", "Skybox/Flux_Skybox.frag");
 
-	Flux_PipelineLayout& xLayout = xPipelineSpec.m_xPipelineLayout;
-	xLayout.m_uNumDescriptorSets = 1;
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_TEXTURE;
+	Flux_PipelineSpecification xCubemapSpec;
+	xCubemapSpec.m_pxTargetSetup = &Flux_Graphics::s_xMRTTarget;
+	xCubemapSpec.m_pxShader = &s_xCubemapShader;
+	xCubemapSpec.m_xVertexInputDesc = xVertexDesc;
+	xCubemapSpec.m_bDepthTestEnabled = false;
 
-	for (Flux_BlendState& xBlendState : xPipelineSpec.m_axBlendStates)
+	Flux_PipelineLayout& xCubemapLayout = xCubemapSpec.m_xPipelineLayout;
+	xCubemapLayout.m_uNumDescriptorSets = 1;
+	xCubemapLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;
+	xCubemapLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_TEXTURE;
+
+	for (Flux_BlendState& xBlendState : xCubemapSpec.m_axBlendStates)
 	{
 		xBlendState.m_eSrcBlendFactor = BLEND_FACTOR_ONE;
 		xBlendState.m_eDstBlendFactor = BLEND_FACTOR_ZERO;
 		xBlendState.m_bBlendEnabled = false;
 	}
 
-	xPipelineSpec.m_bDepthTestEnabled = false;
-
-	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
+	Flux_PipelineBuilder::FromSpecification(s_xCubemapPipeline, xCubemapSpec);
 
 	// Use the global cubemap texture pointer set during initialization in Zenith_Main.cpp
 	s_pxCubemapTexture = Flux_Graphics::s_pxCubemapTexture;
 
+	// ========== Atmosphere sky pipeline ==========
+	s_xAtmosphereShader.Initialise("Flux_Fullscreen_UV.vert", "Skybox/Flux_Atmosphere.frag");
+
+	Flux_PipelineSpecification xAtmosSpec;
+	xAtmosSpec.m_pxTargetSetup = &Flux_Graphics::s_xMRTTarget;
+	xAtmosSpec.m_pxShader = &s_xAtmosphereShader;
+	xAtmosSpec.m_xVertexInputDesc = xVertexDesc;
+	xAtmosSpec.m_bDepthTestEnabled = false;
+	xAtmosSpec.m_bDepthWriteEnabled = false;
+
+	Flux_PipelineLayout& xAtmosLayout = xAtmosSpec.m_xPipelineLayout;
+	xAtmosLayout.m_uNumDescriptorSets = 1;
+	xAtmosLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;  // Frame constants
+	xAtmosLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_BUFFER;  // Atmosphere constants
+
+	Flux_PipelineBuilder::FromSpecification(s_xAtmospherePipeline, xAtmosSpec);
+
+	// Cache atmosphere binding handles
+	const Flux_ShaderReflection& xAtmosReflection = s_xAtmosphereShader.GetReflection();
+	s_xAtmosFrameConstantsBinding = xAtmosReflection.GetBinding("FrameConstants");
+	s_xAtmosConstantsBinding = xAtmosReflection.GetBinding("AtmosphereConstants");
+
+	// ========== Aerial perspective pipeline ==========
+	s_xAerialPerspectiveShader.Initialise("Flux_Fullscreen_UV.vert", "Skybox/Flux_AerialPerspective.frag");
+
+	Flux_PipelineSpecification xAerialSpec;
+	xAerialSpec.m_pxTargetSetup = &Flux_HDR::GetHDRSceneTargetSetup();
+	xAerialSpec.m_pxShader = &s_xAerialPerspectiveShader;
+	xAerialSpec.m_xVertexInputDesc = xVertexDesc;
+	xAerialSpec.m_bDepthTestEnabled = false;
+	xAerialSpec.m_bDepthWriteEnabled = false;
+	xAerialSpec.m_axBlendStates[0].m_bBlendEnabled = true;
+	xAerialSpec.m_axBlendStates[0].m_eSrcBlendFactor = BLEND_FACTOR_SRCALPHA;
+	xAerialSpec.m_axBlendStates[0].m_eDstBlendFactor = BLEND_FACTOR_ONEMINUSSRCALPHA;
+
+	Flux_PipelineLayout& xAerialLayout = xAerialSpec.m_xPipelineLayout;
+	xAerialLayout.m_uNumDescriptorSets = 1;
+	xAerialLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;  // Frame constants
+	xAerialLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_BUFFER;  // Atmosphere constants
+	xAerialLayout.m_axDescriptorSetLayouts[0].m_axBindings[2].m_eType = DESCRIPTOR_TYPE_TEXTURE; // Depth texture
+
+	Flux_PipelineBuilder::FromSpecification(s_xAerialPerspectivePipeline, xAerialSpec);
+
+	const Flux_ShaderReflection& xAerialReflection = s_xAerialPerspectiveShader.GetReflection();
+	s_xAerialFrameConstantsBinding = xAerialReflection.GetBinding("FrameConstants");
+	s_xAerialAtmosConstantsBinding = xAerialReflection.GetBinding("AtmosphereConstants");
+	s_xAerialDepthTexBinding = xAerialReflection.GetBinding("g_xDepthTex");
+
+#ifdef ZENITH_TOOLS
+	RegisterDebugVariables();
+#endif
+
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Skybox initialised");
+}
+
+void Flux_Skybox::Shutdown()
+{
+	DestroyRenderTargets();
+	Flux_MemoryManager::DestroyDynamicConstantBuffer(s_xAtmosphereConstantsBuffer);
+	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Skybox shut down");
 }
 
 void Flux_Skybox::Reset()
 {
-	// Reset command list to ensure no stale GPU resource references, including descriptor bindings
-	// This is called when the scene is reset (e.g., Play/Stop transitions in editor)
-	g_xCommandList.Reset(true);
-	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Skybox::Reset() - Reset command list");
+	g_xSkyCommandList.Reset(true);
+	g_xAerialCommandList.Reset(true);
+	s_bLUTNeedsUpdate = true;
+	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Skybox::Reset() - Reset command lists");
+}
+
+void Flux_Skybox::CreateRenderTargets()
+{
+	// Create transmittance LUT for atmosphere
+	Flux_RenderAttachmentBuilder xBuilder;
+	xBuilder.m_uWidth = AtmosphereConfig::uTRANSMITTANCE_LUT_WIDTH;
+	xBuilder.m_uHeight = AtmosphereConfig::uTRANSMITTANCE_LUT_HEIGHT;
+	xBuilder.m_uMemoryFlags = 1u << MEMORY_FLAGS__SHADER_READ;
+	xBuilder.m_eFormat = TEXTURE_FORMAT_R16G16B16A16_SFLOAT;
+
+	xBuilder.BuildColour(s_xTransmittanceLUT, "Skybox Transmittance LUT");
+	s_xTransmittanceLUTSetup.m_axColourAttachments[0] = s_xTransmittanceLUT;
+}
+
+void Flux_Skybox::DestroyRenderTargets()
+{
+	if (s_xTransmittanceLUT.m_xVRAMHandle.IsValid())
+	{
+		Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(s_xTransmittanceLUT.m_xVRAMHandle);
+		Flux_MemoryManager::QueueVRAMDeletion(pxVRAM, s_xTransmittanceLUT.m_xVRAMHandle,
+			s_xTransmittanceLUT.m_pxRTV.m_xImageViewHandle, s_xTransmittanceLUT.m_pxDSV.m_xImageViewHandle,
+			s_xTransmittanceLUT.m_pxSRV.m_xImageViewHandle, s_xTransmittanceLUT.m_pxUAV.m_xImageViewHandle);
+		s_xTransmittanceLUT.m_xVRAMHandle = Flux_VRAMHandle();
+	}
 }
 
 void Flux_Skybox::SubmitRenderTask()
@@ -73,15 +243,172 @@ void Flux_Skybox::WaitForRenderTask()
 	g_xRenderTask.WaitUntilComplete();
 }
 
+void Flux_Skybox::SubmitAerialPerspectiveTask()
+{
+	Zenith_TaskSystem::SubmitTask(&g_xAerialPerspectiveTask);
+}
+
+void Flux_Skybox::WaitForAerialPerspectiveTask()
+{
+	g_xAerialPerspectiveTask.WaitUntilComplete();
+}
+
 void Flux_Skybox::Render(void*)
 {
-	g_xCommandList.Reset(true);
-	g_xCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xPipeline);
-	g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
-	g_xCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
-	g_xCommandList.AddCommand<Flux_CommandBeginBind>(0);
-	g_xCommandList.AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
-	g_xCommandList.AddCommand<Flux_CommandBindSRV>(&s_pxCubemapTexture->m_xSRV, 1);
-	g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(6);
-	Flux::SubmitCommandList(&g_xCommandList, Flux_Graphics::s_xMRTTarget, RENDER_ORDER_SKYBOX);
+	// Always sync enabled state for consistency
+	s_bAtmosphereEnabled = dbg_bAtmosphereEnable;
+
+	if (s_bAtmosphereEnabled)
+	{
+		// Sync atmosphere debug variables
+		s_fSunIntensity = dbg_fSunIntensity;
+		s_fRayleighScale = dbg_fRayleighScale;
+		s_fMieScale = dbg_fMieScale;
+		s_fMieG = dbg_fMieG;
+		s_bAerialPerspectiveEnabled = dbg_bAerialEnabled;
+		s_fAerialPerspectiveStrength = dbg_fAerialStrength;
+
+		RenderAtmosphereSky();
+	}
+	else
+	{
+		RenderCubemapSky();
+	}
 }
+
+void Flux_Skybox::RenderCubemapSky()
+{
+	g_xSkyCommandList.Reset(true);
+
+	// Check if cubemap texture is valid
+	if (!s_pxCubemapTexture || !s_pxCubemapTexture->m_xSRV.m_xImageViewHandle.IsValid())
+	{
+		// Still submit with clear to ensure render targets are cleared even without skybox
+		Flux::SubmitCommandList(&g_xSkyCommandList, Flux_Graphics::s_xMRTTarget, RENDER_ORDER_SKYBOX);
+		return;
+	}
+
+	g_xSkyCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xCubemapPipeline);
+	g_xSkyCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
+	g_xSkyCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
+	g_xSkyCommandList.AddCommand<Flux_CommandBeginBind>(0);
+	g_xSkyCommandList.AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
+	g_xSkyCommandList.AddCommand<Flux_CommandBindSRV>(&s_pxCubemapTexture->m_xSRV, 1);
+	g_xSkyCommandList.AddCommand<Flux_CommandDrawIndexed>(6);
+	Flux::SubmitCommandList(&g_xSkyCommandList, Flux_Graphics::s_xMRTTarget, RENDER_ORDER_SKYBOX);
+}
+
+void Flux_Skybox::RenderAtmosphereSky()
+{
+	// Update atmosphere constants
+	s_xAtmosphereConstants.m_xRayleighScatter = Zenith_Maths::Vector4(
+		AtmosphereConfig::afRAYLEIGH_SCATTER[0],
+		AtmosphereConfig::afRAYLEIGH_SCATTER[1],
+		AtmosphereConfig::afRAYLEIGH_SCATTER[2],
+		AtmosphereConfig::fRAYLEIGH_SCALE_HEIGHT);
+
+	s_xAtmosphereConstants.m_xMieScatter = Zenith_Maths::Vector4(
+		AtmosphereConfig::fMIE_SCATTER,
+		AtmosphereConfig::fMIE_SCATTER,
+		AtmosphereConfig::fMIE_SCATTER,
+		AtmosphereConfig::fMIE_SCALE_HEIGHT);
+
+	s_xAtmosphereConstants.m_fPlanetRadius = AtmosphereConfig::fEARTH_RADIUS;
+	s_xAtmosphereConstants.m_fAtmosphereRadius = AtmosphereConfig::fATMOSPHERE_RADIUS;
+	s_xAtmosphereConstants.m_fMieG = s_fMieG;
+	s_xAtmosphereConstants.m_fSunIntensity = s_fSunIntensity;
+
+	s_xAtmosphereConstants.m_fRayleighScale = s_fRayleighScale;
+	s_xAtmosphereConstants.m_fMieScale = s_fMieScale;
+	s_xAtmosphereConstants.m_fAerialPerspectiveStrength = s_fAerialPerspectiveStrength;
+	s_xAtmosphereConstants.m_uDebugMode = dbg_uSkyboxDebugMode;
+
+	s_xAtmosphereConstants.m_uSkySamples = dbg_uSkySamples;
+	s_xAtmosphereConstants.m_uLightSamples = dbg_uLightSamples;
+	s_xAtmosphereConstants.m_xPad = Zenith_Maths::Vector2(0.0f);
+
+	Flux_MemoryManager::UploadBufferData(s_xAtmosphereConstantsBuffer.GetBuffer().m_xVRAMHandle, &s_xAtmosphereConstants, sizeof(AtmosphereConstants));
+
+	// Clear=true because skybox is first to render to MRT
+	g_xSkyCommandList.Reset(true);
+
+	g_xSkyCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xAtmospherePipeline);
+	g_xSkyCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
+	g_xSkyCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
+
+	{
+		Flux_ShaderBinder xBinder(g_xSkyCommandList);
+		xBinder.BindCBV(s_xAtmosFrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
+		xBinder.BindCBV(s_xAtmosConstantsBinding, &s_xAtmosphereConstantsBuffer.GetCBV());
+	}
+
+	g_xSkyCommandList.AddCommand<Flux_CommandDrawIndexed>(6);
+
+	Flux::SubmitCommandList(&g_xSkyCommandList, Flux_Graphics::s_xMRTTarget, RENDER_ORDER_SKYBOX);
+}
+
+void Flux_Skybox::RenderAerialPerspective(void*)
+{
+	if (!s_bAtmosphereEnabled || !s_bAerialPerspectiveEnabled)
+	{
+		return;
+	}
+
+	g_xAerialCommandList.Reset(false);
+
+	g_xAerialCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xAerialPerspectivePipeline);
+	g_xAerialCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
+	g_xAerialCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
+
+	{
+		Flux_ShaderBinder xBinder(g_xAerialCommandList);
+		xBinder.BindCBV(s_xAerialFrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
+		xBinder.BindCBV(s_xAerialAtmosConstantsBinding, &s_xAtmosphereConstantsBuffer.GetCBV());
+		xBinder.BindSRV(s_xAerialDepthTexBinding, &Flux_Graphics::s_xDepthBuffer.m_pxSRV);
+	}
+
+	g_xAerialCommandList.AddCommand<Flux_CommandDrawIndexed>(6);
+
+	Flux::SubmitCommandList(&g_xAerialCommandList, Flux_HDR::GetHDRSceneTargetSetup(), RENDER_ORDER_AERIAL_PERSPECTIVE);
+}
+
+// Setters
+void Flux_Skybox::SetAtmosphereEnabled(bool bEnabled) { s_bAtmosphereEnabled = bEnabled; dbg_bAtmosphereEnable = bEnabled; }
+void Flux_Skybox::SetSunIntensity(float fIntensity) { s_fSunIntensity = fIntensity; dbg_fSunIntensity = fIntensity; }
+void Flux_Skybox::SetRayleighScale(float fScale) { s_fRayleighScale = fScale; dbg_fRayleighScale = fScale; }
+void Flux_Skybox::SetMieScale(float fScale) { s_fMieScale = fScale; dbg_fMieScale = fScale; }
+void Flux_Skybox::SetMieG(float fG) { s_fMieG = fG; dbg_fMieG = fG; }
+void Flux_Skybox::SetAerialPerspectiveEnabled(bool bEnabled) { s_bAerialPerspectiveEnabled = bEnabled; dbg_bAerialEnabled = bEnabled; }
+void Flux_Skybox::SetAerialPerspectiveStrength(float fStrength) { s_fAerialPerspectiveStrength = fStrength; dbg_fAerialStrength = fStrength; }
+
+// Getters
+bool Flux_Skybox::IsAtmosphereEnabled() { return s_bAtmosphereEnabled; }
+float Flux_Skybox::GetSunIntensity() { return s_fSunIntensity; }
+float Flux_Skybox::GetRayleighScale() { return s_fRayleighScale; }
+float Flux_Skybox::GetMieScale() { return s_fMieScale; }
+float Flux_Skybox::GetMieG() { return s_fMieG; }
+bool Flux_Skybox::IsAerialPerspectiveEnabled() { return s_bAerialPerspectiveEnabled; }
+float Flux_Skybox::GetAerialPerspectiveStrength() { return s_fAerialPerspectiveStrength; }
+
+Flux_ShaderResourceView& Flux_Skybox::GetTransmittanceLUTSRV()
+{
+	return s_xTransmittanceLUT.m_pxSRV;
+}
+
+#ifdef ZENITH_TOOLS
+void Flux_Skybox::RegisterDebugVariables()
+{
+	Zenith_DebugVariables::AddBoolean({ "Flux", "Skybox", "Atmosphere Enable" }, dbg_bAtmosphereEnable);
+	Zenith_DebugVariables::AddUInt32({ "Flux", "Skybox", "DebugMode" }, dbg_uSkyboxDebugMode, 0, SKYBOX_DEBUG_COUNT - 1);
+	Zenith_DebugVariables::AddFloat({ "Flux", "Skybox", "SunIntensity" }, dbg_fSunIntensity, 1.0f, 100.0f);
+	Zenith_DebugVariables::AddFloat({ "Flux", "Skybox", "RayleighScale" }, dbg_fRayleighScale, 0.0f, 5.0f);
+	Zenith_DebugVariables::AddFloat({ "Flux", "Skybox", "MieScale" }, dbg_fMieScale, 0.0f, 5.0f);
+	Zenith_DebugVariables::AddFloat({ "Flux", "Skybox", "MieG" }, dbg_fMieG, 0.0f, 0.99f);
+	Zenith_DebugVariables::AddBoolean({ "Flux", "Skybox", "AerialPerspective" }, dbg_bAerialEnabled);
+	Zenith_DebugVariables::AddFloat({ "Flux", "Skybox", "AerialStrength" }, dbg_fAerialStrength, 0.0f, 5.0f);
+	Zenith_DebugVariables::AddUInt32({ "Flux", "Skybox", "SkySamples" }, dbg_uSkySamples, 4, 64);
+	Zenith_DebugVariables::AddUInt32({ "Flux", "Skybox", "LightSamples" }, dbg_uLightSamples, 2, 32);
+
+	Zenith_DebugVariables::AddTexture({ "Flux", "Skybox", "Textures", "TransmittanceLUT" }, s_xTransmittanceLUT.m_pxSRV);
+}
+#endif

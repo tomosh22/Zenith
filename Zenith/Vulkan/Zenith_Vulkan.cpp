@@ -159,7 +159,10 @@ static void TransitionColorTargets(Zenith_Vulkan_CommandBuffer& xCommandBuffer, 
 				Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xVRAMHandle);
 				if (pxVRAM)
 				{
-					vk::ImageSubresourceRange xSubRange = vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1);
+					// Use base layer and mip from surface info to support cubemap face/mip rendering
+					const uint32_t uBaseLayer = xTargetSetup.m_axColourAttachments[i].m_xSurfaceInfo.m_uBaseLayer;
+					const uint32_t uBaseMip = xTargetSetup.m_axColourAttachments[i].m_xSurfaceInfo.m_uBaseMip;
+					vk::ImageSubresourceRange xSubRange = vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, uBaseMip, 1, uBaseLayer, 1);
 
 					axBarriers[uNumBarriers] = vk::ImageMemoryBarrier()
 						.setSubresourceRange(xSubRange)
@@ -195,6 +198,7 @@ static void TransitionDepthStencilTarget(Zenith_Vulkan_CommandBuffer& xCommandBu
 {
 	if (xTargetSetup.m_pxDepthStencil == nullptr)
 	{
+		// No depth in this target setup, skip transition
 		return;
 	}
 
@@ -229,37 +233,24 @@ static void TransitionTargetsForRenderPass(Zenith_Vulkan_CommandBuffer& xCommand
 	TransitionColorTargets(xCommandBuffer, xTargetSetup, eOldLayout, vk::ImageLayout::eColorAttachmentOptimal,
 		vk::AccessFlagBits::eColorAttachmentWrite, eSrcStage, eDstStage);
 
-	// Ensure depth is in DepthStencilReadOnlyOptimal to match render pass initial layout
-	// (Render pass handles ReadOnly->Attachment transition internally)
-	// Use DepthStencilReadOnlyOptimal for all formats (doesn't require separateDepthStencilLayouts feature)
-	if (!bClear)
-	{
-		TransitionDepthStencilTarget(xCommandBuffer, xTargetSetup,
-			vk::ImageLayout::eShaderReadOnlyOptimal,
-			vk::ImageLayout::eDepthStencilReadOnlyOptimal,
-			vk::AccessFlagBits::eShaderRead,
-			vk::AccessFlagBits::eDepthStencilAttachmentRead,
-			eSrcStage, eDstStage);
-	}
+	// Depth stays in DepthStencilReadOnlyOptimal between render passes
+	// The render pass initial layout is DepthStencilReadOnlyOptimal (when loading) or Undefined (when clearing)
+	// No explicit transition needed - depth is already in the correct layout from previous render pass
+	// (or will be transitioned from Undefined by the render pass itself when clearing)
 }
 
 // Transition color targets back to ShaderReadOnlyOptimal after render pass
-// Also transition depth to DepthStencilReadOnlyOptimal for shader sampling
+// Depth stays in DepthStencilReadOnlyOptimal for shader sampling (that's the render pass final layout)
 static void TransitionTargetsAfterRenderPass(Zenith_Vulkan_CommandBuffer& xCommandBuffer, const Flux_TargetSetup& xTargetSetup,
 	vk::PipelineStageFlags eSrcStage, vk::PipelineStageFlags eDstStage)
 {
 	// Transition color attachments
-	TransitionColorTargets(xCommandBuffer, xTargetSetup, vk::ImageLayout::eColorAttachmentOptimal, 
+	TransitionColorTargets(xCommandBuffer, xTargetSetup, vk::ImageLayout::eColorAttachmentOptimal,
 		vk::ImageLayout::eShaderReadOnlyOptimal, vk::AccessFlagBits::eShaderRead, eSrcStage, eDstStage);
 
-	// Transition depth from render pass final layout to shader read layout
-	// Use DepthStencilReadOnlyOptimal for all formats (doesn't require separateDepthStencilLayouts feature)
-	TransitionDepthStencilTarget(xCommandBuffer, xTargetSetup,
-		vk::ImageLayout::eDepthStencilReadOnlyOptimal,
-		vk::ImageLayout::eShaderReadOnlyOptimal,
-		vk::AccessFlagBits::eDepthStencilAttachmentRead,
-		vk::AccessFlagBits::eShaderRead,
-		eSrcStage, eDstStage);
+	// NOTE: Depth stays in DepthStencilReadOnlyOptimal (the render pass final layout)
+	// This is the correct layout for sampling depth textures in shaders
+	// The descriptor binding code now uses DepthStencilReadOnlyOptimal for depth SRVs
 }
 
 const vk::DescriptorPool& Zenith_Vulkan::GetPerFrameDescriptorPool(u_int uWorkerIndex)
@@ -344,37 +335,40 @@ void Zenith_Vulkan::BeginFrame()
 void Zenith_Vulkan::RecordCommandBuffersTask(void* pData, u_int uInvocationIndex, u_int uNumInvocations)
 {
 	const Flux_WorkDistribution* pWorkDistribution = static_cast<const Flux_WorkDistribution*>(pData);
-	
+
 	// Get the worker command buffer from the current frame
 	Zenith_Vulkan_CommandBuffer& xCommandBuffer = Zenith_Vulkan::s_pxCurrentFrame->GetWorkerCommandBuffer(uInvocationIndex);
 	xCommandBuffer.BeginRecording();
-	
+
 	Flux_TargetSetup xCurrentTargetSetup;
-	
+
 	const u_int uStartRenderOrder = pWorkDistribution->auStartRenderOrder[uInvocationIndex];
 	const u_int uStartIndex = pWorkDistribution->auStartIndex[uInvocationIndex];
 	const u_int uEndRenderOrder = pWorkDistribution->auEndRenderOrder[uInvocationIndex];
 	const u_int uEndIndex = pWorkDistribution->auEndIndex[uInvocationIndex];
-	
+
+	// Log worker assignment for debugging
+	//Zenith_Log(LOG_CATEGORY_RENDERER, "Worker %u: BEGIN recording, range [%u, %u) idx [%u, %u)", uInvocationIndex, uStartRenderOrder, uEndRenderOrder, uStartIndex, uEndIndex);
+
 	// Process all assigned command lists across render orders
 	for (u_int uRenderOrder = uStartRenderOrder; uRenderOrder <= uEndRenderOrder; uRenderOrder++)
 	{
-		Zenith_Vector<std::pair<const Flux_CommandList*, Flux_TargetSetup>>& xCommandLists = Flux::s_xPendingCommandLists[uRenderOrder];
-		
+		Zenith_Vector<Flux_CommandListEntry>& xCommandLists = Flux::s_xPendingCommandLists[uRenderOrder];
+
 		// Skip empty render orders
 		if (xCommandLists.GetSize() == 0)
 		{
 			continue;
 		}
-		
+
 		// Determine the range within this render order
 		const u_int uIndexStart = (uRenderOrder == uStartRenderOrder) ? uStartIndex : 0;
 		const u_int uIndexEnd = (uRenderOrder == uEndRenderOrder) ? uEndIndex : xCommandLists.GetSize();
-		
+
 		for (u_int i = uIndexStart; i < uIndexEnd; i++)
 		{
-			const Flux_CommandList* pxCommandList = xCommandLists.Get(i).first;
-			Flux_TargetSetup& xTargetSetup = xCommandLists.Get(i).second;
+			const Flux_CommandList* pxCommandList = xCommandLists.Get(i).m_pxCmdList;
+			Flux_TargetSetup& xTargetSetup = xCommandLists.Get(i).m_xTargetSetup;
 			
 			const bool bClear = pxCommandList->RequiresClear();
 			
@@ -388,7 +382,7 @@ void Zenith_Vulkan::RecordCommandBuffersTask(void* pData, u_int uInvocationIndex
 			{
 				xCommandBuffer.EndRenderPass();
 				TransitionTargetsAfterRenderPass(
-					xCommandBuffer, 
+					xCommandBuffer,
 					xCurrentTargetSetup,
 					vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eLateFragmentTests,
 					vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eComputeShader
@@ -401,22 +395,26 @@ void Zenith_Vulkan::RecordCommandBuffersTask(void* pData, u_int uInvocationIndex
 		{
 			if (xCommandBuffer.m_xCurrentRenderPass != VK_NULL_HANDLE)
 			{
+				//Zenith_Log(LOG_CATEGORY_RENDERER, "Worker %u: Ending render pass for RenderOrder %u, prev target had depth=%s", uInvocationIndex, uRenderOrder, xCurrentTargetSetup.m_pxDepthStencil != nullptr ? "YES" : "NO");
 				xCommandBuffer.EndRenderPass();
 				TransitionTargetsAfterRenderPass(
-					xCommandBuffer, 
+					xCommandBuffer,
 					xCurrentTargetSetup,
 					vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eLateFragmentTests,
 					vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eComputeShader
 				);
 			}
 
+			//Zenith_Log(LOG_CATEGORY_RENDERER, "Worker %u: Starting render pass for RenderOrder %u '%s', clear=%s, depth=%s, depthVRAM=%u", uInvocationIndex, uRenderOrder, pxCommandList->GetName(), bClear ? "YES" : "NO", xTargetSetup.m_pxDepthStencil != nullptr ? "YES" : "NO",xTargetSetup.m_pxDepthStencil ? xTargetSetup.m_pxDepthStencil->m_xVRAMHandle.AsUInt() : 0);
+			//Zenith_Log(LOG_CATEGORY_RENDERER, "Worker %u: Calling TransitionTargetsForRenderPass (bClear=%s)", uInvocationIndex, bClear ? "YES" : "NO");
 			TransitionTargetsForRenderPass(
-				xCommandBuffer, 
+				xCommandBuffer,
 				xTargetSetup,
 				vk::PipelineStageFlagBits::eFragmentShader,
 				vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eEarlyFragmentTests,
 				bClear
 			);
+			//Zenith_Log(LOG_CATEGORY_RENDERER, "Worker %u: TransitionTargetsForRenderPass completed", uInvocationIndex);
 			xCommandBuffer.BeginRenderPass(xTargetSetup, bClear, bClear, bClear);
 			xCurrentTargetSetup = xTargetSetup;
 			pxCommandList->IterateCommands(&xCommandBuffer);
@@ -431,15 +429,20 @@ void Zenith_Vulkan::RecordCommandBuffersTask(void* pData, u_int uInvocationIndex
 	// Only end render pass and transition targets if we're not in a compute-only pass
 	if (!(xCurrentTargetSetup == Flux_Graphics::s_xNullTargetSetup))
 	{
+		//Zenith_Log(LOG_CATEGORY_RENDERER, "Worker %u: END - final render pass had depth=%s", uInvocationIndex, xCurrentTargetSetup.m_pxDepthStencil != nullptr ? "YES" : "NO");
 		xCommandBuffer.EndRenderPass();
 		TransitionTargetsAfterRenderPass(
-			xCommandBuffer, 
+			xCommandBuffer,
 			xCurrentTargetSetup,
 			vk::PipelineStageFlagBits::eColorAttachmentOutput | vk::PipelineStageFlagBits::eLateFragmentTests,
 			vk::PipelineStageFlagBits::eFragmentShader | vk::PipelineStageFlagBits::eComputeShader
 		);
 	}
-	
+	else
+	{
+		//Zenith_Log(LOG_CATEGORY_RENDERER, "Worker %u: END - no render pass (compute only or no work)", uInvocationIndex);
+	}
+
 	xCommandBuffer.GetCurrentCmdBuffer().end();
 
 }
@@ -1156,6 +1159,9 @@ vk::Format Zenith_Vulkan::ConvertToVkFormat_Colour(TextureFormat eFormat) {
 		return vk::Format::eR16G16B16A16Unorm;
 	case TEXTURE_FORMAT_BGRA8_UNORM:
 		return vk::Format::eB8G8R8A8Unorm;
+	// Two-channel formats
+	case TEXTURE_FORMAT_R16G16_SFLOAT:
+		return vk::Format::eR16G16Sfloat;
 	// Single-channel formats (for heightmaps)
 	case TEXTURE_FORMAT_R16_UNORM:
 		return vk::Format::eR16Unorm;

@@ -213,17 +213,9 @@ void Flux_InstancedMeshes::Initialise()
 	{
 		s_xCullingShader.InitialiseCompute("InstancedMeshes/Flux_InstanceCulling.comp");
 
-		// Build compute root signature
-		Flux_PipelineLayout xComputeLayout;
-		xComputeLayout.m_uNumDescriptorSets = 1;
-		xComputeLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;          // CullingConstants
-		xComputeLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_STORAGE_BUFFER;  // TransformBuffer
-		xComputeLayout.m_axDescriptorSetLayouts[0].m_axBindings[2].m_eType = DESCRIPTOR_TYPE_STORAGE_BUFFER;  // AnimDataBuffer
-		xComputeLayout.m_axDescriptorSetLayouts[0].m_axBindings[3].m_eType = DESCRIPTOR_TYPE_STORAGE_BUFFER;  // VisibleIndexBuffer
-		xComputeLayout.m_axDescriptorSetLayouts[0].m_axBindings[4].m_eType = DESCRIPTOR_TYPE_STORAGE_BUFFER;  // VisibleCount
-		xComputeLayout.m_axDescriptorSetLayouts[0].m_axBindings[5].m_eType = DESCRIPTOR_TYPE_STORAGE_BUFFER;  // IndirectCommand
-
-		Zenith_Vulkan_RootSigBuilder::FromSpecification(s_xCullingRootSig, xComputeLayout);
+		// Build compute root signature from shader reflection
+		const Flux_ShaderReflection& xCullingReflection = s_xCullingShader.GetReflection();
+		Zenith_Vulkan_RootSigBuilder::FromReflection(s_xCullingRootSig, xCullingReflection);
 
 		// Build compute pipeline
 		Zenith_Vulkan_ComputePipelineBuilder xComputeBuilder;
@@ -234,7 +226,6 @@ void Flux_InstancedMeshes::Initialise()
 		s_xCullingPipeline.m_xRootSig = s_xCullingRootSig;
 
 		// Cache culling shader binding handles
-		const Flux_ShaderReflection& xCullingReflection = s_xCullingShader.GetReflection();
 		s_xCullingConstantsBinding = xCullingReflection.GetBinding("CullingConstants");
 		s_xCullingTransformBufferBinding = xCullingReflection.GetBinding("TransformBuffer");
 		s_xCullingAnimDataBufferBinding = xCullingReflection.GetBinding("AnimDataBuffer");

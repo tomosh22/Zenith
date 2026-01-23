@@ -727,6 +727,12 @@
     <ClCompile Include="..\Zenith\Flux\Gizmos\Flux_Gizmos.cpp">
       <Filter>Flux\Gizmos</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\Flux\HDR\Flux_HDR.cpp">
+      <Filter>Flux\HDR</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Flux\IBL\Flux_IBL.cpp">
+      <Filter>Flux\IBL</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Flux\InstancedMeshes\Flux_AnimationTexture.cpp">
       <Filter>Flux\InstancedMeshes</Filter>
     </ClCompile>
@@ -813,6 +819,9 @@
     </ClCompile>
     <ClCompile Include="..\Zenith\Flux\Text\Flux_Text.cpp">
       <Filter>Flux\Text</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Flux\Vegetation\Flux_Grass.cpp">
+      <Filter>Flux\Vegetation</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\Input\Zenith_Input.cpp">
       <Filter>Input</Filter>
@@ -3255,6 +3264,12 @@
     <ClInclude Include="..\Zenith\Flux\Gizmos\Flux_Gizmos.h">
       <Filter>Flux\Gizmos</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\HDR\Flux_HDR.h">
+      <Filter>Flux\HDR</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\IBL\Flux_IBL.h">
+      <Filter>Flux\IBL</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\InstancedMeshes\Flux_AnimationTexture.h">
       <Filter>Flux\InstancedMeshes</Filter>
     </ClInclude>
@@ -3402,6 +3417,36 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\Gizmos\Flux_Gizmos.vert">
       <Filter>Flux\Shaders\Gizmos</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\HDR\Flux_Adaptation.comp">
+      <Filter>Flux\Shaders\HDR</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\HDR\Flux_BloomDownsample.frag">
+      <Filter>Flux\Shaders\HDR</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\HDR\Flux_BloomThreshold.frag">
+      <Filter>Flux\Shaders\HDR</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\HDR\Flux_BloomUpsample.frag">
+      <Filter>Flux\Shaders\HDR</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\HDR\Flux_Luminance.comp">
+      <Filter>Flux\Shaders\HDR</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\HDR\Flux_ToneMapping.frag">
+      <Filter>Flux\Shaders\HDR</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\IBL\Flux_BRDFIntegration.frag">
+      <Filter>Flux\Shaders\IBL</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\IBL\Flux_IBLCommon.fxh">
+      <Filter>Flux\Shaders\IBL</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\IBL\Flux_IrradianceConvolution.frag">
+      <Filter>Flux\Shaders\IBL</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\IBL\Flux_PrefilterEnvMap.frag">
+      <Filter>Flux\Shaders\IBL</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\InstancedMeshes\Flux_InstanceCulling.comp">
       <Filter>Flux\Shaders\InstancedMeshes</Filter>
     </ClInclude>
@@ -3449,6 +3494,15 @@
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\SDFs\Flux_SDFs.frag">
       <Filter>Flux\Shaders\SDFs</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Skybox\Flux_AerialPerspective.frag">
+      <Filter>Flux\Shaders\Skybox</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Skybox\Flux_Atmosphere.frag">
+      <Filter>Flux\Shaders\Skybox</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Skybox\Flux_AtmosphereCommon.fxh">
+      <Filter>Flux\Shaders\Skybox</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\Skybox\Flux_Skybox.frag">
       <Filter>Flux\Shaders\Skybox</Filter>
@@ -3501,6 +3555,15 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\Text\Flux_Text.vert">
       <Filter>Flux\Shaders\Text</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Vegetation\Flux_Grass.frag">
+      <Filter>Flux\Shaders\Vegetation</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Vegetation\Flux_Grass.vert">
+      <Filter>Flux\Shaders\Vegetation</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Vegetation\Flux_Wind.fxh">
+      <Filter>Flux\Shaders\Vegetation</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\Water\Flux_Water.frag">
       <Filter>Flux\Shaders\Water</Filter>
     </ClInclude>
@@ -3539,6 +3602,9 @@
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Text\Flux_Text.h">
       <Filter>Flux\Text</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Vegetation\Flux_Grass.h">
+      <Filter>Flux\Vegetation</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Input\Zenith_Input.h">
       <Filter>Input</Filter>
@@ -3740,6 +3806,12 @@
     <Filter Include="Flux\Gizmos">
       <UniqueIdentifier>{76953480-ba52-31b7-1038-c737312d8a2d}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Flux\HDR">
+      <UniqueIdentifier>{dd96f572-bb49-0985-0708-bf2e34c0e357}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Flux\IBL">
+      <UniqueIdentifier>{d5cd5962-8525-77ea-b52c-f40795a85f2b}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Flux\InstancedMeshes">
       <UniqueIdentifier>{7109fc1e-ca9a-d2fa-7525-1fec74c49b4d}</UniqueIdentifier>
     </Filter>
@@ -3782,6 +3854,12 @@
     <Filter Include="Flux\Shaders\Gizmos">
       <UniqueIdentifier>{01cd4a62-90c0-b695-ef95-56f0663ca794}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Flux\Shaders\HDR">
+      <UniqueIdentifier>{a3c4ab7e-b802-6ce0-1ca4-d9fe1ae5777d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Flux\Shaders\IBL">
+      <UniqueIdentifier>{6d583209-5b9d-2c7d-8404-8b073c591308}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Flux\Shaders\InstancedMeshes">
       <UniqueIdentifier>{b314e0cc-c57a-cfb4-9281-f0bd3ebfb433}</UniqueIdentifier>
     </Filter>
@@ -3812,6 +3890,9 @@
     <Filter Include="Flux\Shaders\Text">
       <UniqueIdentifier>{e1b55da0-f29d-c66a-8ae3-2759a7cded5b}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Flux\Shaders\Vegetation">
+      <UniqueIdentifier>{cc361528-2c01-902a-6706-5126a9573784}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Flux\Shaders\Water">
       <UniqueIdentifier>{04eb5175-e52e-978f-edbb-02dda863e286}</UniqueIdentifier>
     </Filter>
@@ -3832,6 +3913,9 @@
     </Filter>
     <Filter Include="Flux\Text">
       <UniqueIdentifier>{d1b13c6f-88b2-add3-d423-556fa13f6214}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Flux\Vegetation">
+      <UniqueIdentifier>{82a3d927-f8ba-16d0-f637-8145163bb70a}</UniqueIdentifier>
     </Filter>
     <Filter Include="Input">
       <UniqueIdentifier>{a6184132-1d72-b8d6-a9b9-f4e327df2bf5}</UniqueIdentifier>

@@ -60,7 +60,11 @@ void main() {
 	
 	// Get G-Buffer values (in view space)
 	vec3 fragPos = GetViewPos(a_xUV);
-	vec3 normal = normalize(texture(g_xNormalTex, a_xUV).rgb * 2.0 - 1.0);
+	// Unpack world-space normal from G-buffer and transform to view space
+	// G-buffer stores normals in world space, but SSAO works in view space
+	vec3 worldNormal = normalize(texture(g_xNormalTex, a_xUV).rgb * 2.0 - 1.0);
+	// Transform to view space using the upper-left 3x3 of view matrix (rotation only)
+	vec3 normal = normalize(mat3(g_xViewMat) * worldNormal);
 	
 	// Generate noise for rotation (4x4 tiling like Sascha's example)
 	ivec2 texDim = ivec2(g_xScreenDims);
@@ -77,26 +81,34 @@ void main() {
 	// Calculate occlusion
 	float occlusion = 0.0;
 	int kernelSize = int(KERNEL_SIZE);
-	
+
 	for(int i = 0; i < kernelSize; i++) {
 		// Get sample position in view space
 		vec3 samplePos = TBN * KERNEL_SAMPLES[i];
 		samplePos = fragPos + samplePos * RADIUS;
-		
+
 		// Project sample position to screen space
 		vec4 offset = vec4(samplePos, 1.0);
 		offset = g_xProjMat * offset;
 		offset.xyz /= offset.w;
 		offset.xy = offset.xy * 0.5 + 0.5;
-		
+
+		// Skip samples that project outside screen bounds
+		if (offset.x < 0.0 || offset.x > 1.0 || offset.y < 0.0 || offset.y > 1.0) {
+			continue;
+		}
+
 		// Get depth of geometry at sample position
 		float sampleDepth = GetViewPos(offset.xy).z;
-		
+
 		// Range check (smoothstep for gradual falloff)
 		float rangeCheck = smoothstep(0.0, 1.0, RADIUS / abs(fragPos.z - sampleDepth));
-		
+
 		// Depth comparison with bias
-		occlusion += (sampleDepth >= samplePos.z + BIAS ? 1.0 : 0.0) * rangeCheck;
+		// CRITICAL FIX: Sample is occluded when geometry at sample position is CLOSER than
+		// the sample point. With +Z forward convention, closer = smaller Z.
+		// So occlusion occurs when sampleDepth < samplePos.z (geometry is in front of sample)
+		occlusion += (sampleDepth < samplePos.z - BIAS ? 1.0 : 0.0) * rangeCheck;
 	}
 	
 	// Normalize and invert

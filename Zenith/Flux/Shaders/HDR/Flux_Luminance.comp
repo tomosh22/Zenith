@@ -1,0 +1,87 @@
+#version 450
+
+// Luminance histogram compute shader
+// Computes a 256-bin histogram of scene luminance in log space
+// Uses shared memory for per-workgroup accumulation, then merges to global
+//
+// IMPORTANT: This shader requires exactly 16x16 = 256 threads per workgroup
+// to ensure Phase 1 (histogram clearing) and Phase 3 (histogram merging) work correctly.
+// If workgroup size changes, these phases must be updated.
+
+layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+// Push constants
+layout(std140, set = 0, binding = 0) uniform LuminanceConstants
+{
+	uvec2 g_xImageSize;
+	float g_fMinLogLum;    // Minimum log luminance (-10.0 typically)
+	float g_fLogLumRange;  // Range of log luminance (12.0 typically)
+};
+
+// HDR scene texture
+layout(set = 0, binding = 1) uniform sampler2D g_xHDRTex;
+
+// Histogram buffer (256 bins) - using Slang RWStructuredBuffer for atomic support
+[[vk::binding(2, 0)]]
+RWStructuredBuffer<uint> g_auHistogram;
+
+// Shared memory for per-workgroup histogram
+shared uint s_auLocalHistogram[256];
+
+// Convert RGB to luminance (Rec. 709)
+float RGBToLuminance(vec3 xColor)
+{
+	return dot(xColor, vec3(0.2126, 0.7152, 0.0722));
+}
+
+void main()
+{
+	uvec2 xPixelCoord = gl_GlobalInvocationID.xy;
+	uint uLocalIndex = gl_LocalInvocationIndex;  // 0-255 for 16x16 workgroup
+
+	// Phase 1: Clear local histogram (each thread clears one bin)
+	// 16x16 = 256 threads, so each thread clears exactly one bin
+	s_auLocalHistogram[uLocalIndex] = 0u;
+
+	// Barrier to ensure all local bins are cleared before we start accumulating
+	barrier();
+
+	// Phase 2: Accumulate into local histogram
+	// Bounds check for pixels outside image
+	if (xPixelCoord.x < g_xImageSize.x && xPixelCoord.y < g_xImageSize.y)
+	{
+		// Sample HDR texture
+		vec2 xUV = (vec2(xPixelCoord) + 0.5) / vec2(g_xImageSize);
+		vec3 xColor = texture(g_xHDRTex, xUV).rgb;
+
+		// Convert to luminance
+		float fLuminance = RGBToLuminance(xColor);
+
+		// Only process pixels with valid luminance (skip very dark pixels)
+		if (fLuminance >= 0.001)
+		{
+			// Convert to log space and normalize to [0, 1] range
+			float fLogLum = clamp((log2(fLuminance) - g_fMinLogLum) / g_fLogLumRange, 0.0, 1.0);
+
+			// Convert to histogram bin index [0, 255]
+			// Clamp to prevent overflow from floating-point precision issues
+			uint uBin = min(uint(fLogLum * 255.0), 255u);
+
+			// Atomically increment the local histogram bin
+			atomicAdd(s_auLocalHistogram[uBin], 1u);
+		}
+	}
+
+	// Barrier to ensure all threads have finished accumulating
+	barrier();
+
+	// Phase 3: Merge local histogram to global
+	// IMPORTANT: Histogram buffer must be cleared to zero before this shader runs.
+	// All workgroups use atomicAdd for consistent behavior regardless of execution order.
+	uint uLocalCount = s_auLocalHistogram[uLocalIndex];
+
+	if (uLocalCount > 0u)
+	{
+		atomicAdd(g_auHistogram[uLocalIndex], uLocalCount);
+	}
+}

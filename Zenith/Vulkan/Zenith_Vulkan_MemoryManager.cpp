@@ -532,11 +532,17 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateRenderTargetVRAM(const Flux_S
 	// Determine image type and extent based on texture type
 	vk::ImageType eImageType = vk::ImageType::e2D;
 	vk::Extent3D xExtent = { xInfo.m_uWidth, xInfo.m_uHeight, 1 };
+	vk::ImageCreateFlags eCreateFlags = {};
 
 	if (xInfo.m_eTextureType == TEXTURE_TYPE_3D)
 	{
 		eImageType = vk::ImageType::e3D;
 		xExtent = vk::Extent3D(xInfo.m_uWidth, xInfo.m_uHeight, xInfo.m_uDepth);
+	}
+	else if (xInfo.m_eTextureType == TEXTURE_TYPE_CUBE)
+	{
+		// Cubemaps require the cube-compatible flag
+		eCreateFlags |= vk::ImageCreateFlagBits::eCubeCompatible;
 	}
 
 	vk::ImageCreateInfo xImageInfo = vk::ImageCreateInfo()
@@ -549,7 +555,8 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateRenderTargetVRAM(const Flux_S
 		.setInitialLayout(vk::ImageLayout::eUndefined)
 		.setUsage(eUsageFlags)
 		.setSharingMode(vk::SharingMode::eExclusive)
-		.setSamples(vk::SampleCountFlagBits::e1);
+		.setSamples(vk::SampleCountFlagBits::e1)
+		.setFlags(eCreateFlags);
 
 	VmaAllocationCreateInfo xAllocInfo = {};
 	xAllocInfo.usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE;
@@ -574,7 +581,11 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateRenderTargetVRAM(const Flux_S
 		Zenith_Assert(xInfo.m_eFormat == TEXTURE_FORMAT_D32_SFLOAT, "#TO_TODO: layouts for just depth without stencil");
 	}
 
-	ImageTransitionBarrier(vk::Image(xImage), vk::ImageLayout::eUndefined, eInitialLayout, eAspectFlags, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands);
+	// Transition all layers to initial layout (important for cubemaps/array textures)
+	for (uint32_t uLayer = 0; uLayer < xInfo.m_uNumLayers; uLayer++)
+	{
+		ImageTransitionBarrier(vk::Image(xImage), vk::ImageLayout::eUndefined, eInitialLayout, eAspectFlags, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, 0, uLayer);
+	}
 
 	return xHandle;
 }
@@ -755,6 +766,37 @@ Flux_RenderTargetView Zenith_Vulkan_MemoryManager::CreateRenderTargetView(Flux_V
 	return xView;
 }
 
+Flux_RenderTargetView Zenith_Vulkan_MemoryManager::CreateRenderTargetViewForLayer(Flux_VRAMHandle xVRAMHandle, const Flux_SurfaceInfo& xInfo, uint32_t uLayer, uint32_t uMipLevel)
+{
+	Flux_RenderTargetView xView;
+	xView.m_xVRAMHandle = xVRAMHandle;
+
+	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
+	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xVRAMHandle);
+	Zenith_Assert(pxVRAM != nullptr, "GetVRAM returned null in CreateRenderTargetViewForLayer");
+	if (!pxVRAM) return xView;
+
+	vk::Format xFormat = Zenith_Vulkan::ConvertToVkFormat_Colour(xInfo.m_eFormat);
+
+	// Create a 2D view for a single layer/face of a cubemap or array texture
+	vk::ImageSubresourceRange xSubresourceRange = vk::ImageSubresourceRange()
+		.setAspectMask(vk::ImageAspectFlagBits::eColor)
+		.setBaseMipLevel(uMipLevel)
+		.setLevelCount(1)
+		.setBaseArrayLayer(uLayer)
+		.setLayerCount(1);
+
+	vk::ImageViewCreateInfo xViewCreate = vk::ImageViewCreateInfo()
+		.setImage(pxVRAM->GetImage())
+		.setViewType(vk::ImageViewType::e2D)
+		.setFormat(xFormat)
+		.setSubresourceRange(xSubresourceRange);
+
+	vk::ImageView xVkView = xDevice.createImageView(xViewCreate);
+	xView.m_xImageViewHandle = RegisterImageView(xVkView);
+	return xView;
+}
+
 Flux_DepthStencilView Zenith_Vulkan_MemoryManager::CreateDepthStencilView(Flux_VRAMHandle xVRAMHandle, const Flux_SurfaceInfo& xInfo, uint32_t uMipLevel)
 {
 	Flux_DepthStencilView xView;
@@ -826,6 +868,40 @@ Flux_ShaderResourceView Zenith_Vulkan_MemoryManager::CreateShaderResourceView(Fl
 
 	vk::ImageView xVkView = xDevice.createImageView(xViewCreate);
 	xView.m_xImageViewHandle = RegisterImageView(xVkView);
+	xView.m_bIsDepthStencil = bIsDepth;
+	return xView;
+}
+
+Flux_ShaderResourceView Zenith_Vulkan_MemoryManager::CreateShaderResourceViewForLayer(Flux_VRAMHandle xVRAMHandle, const Flux_SurfaceInfo& xInfo, uint32_t uLayer, uint32_t uBaseMip, uint32_t uMipCount)
+{
+	Flux_ShaderResourceView xView;
+	xView.m_xVRAMHandle = xVRAMHandle;
+
+	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
+	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xVRAMHandle);
+	Zenith_Assert(pxVRAM != nullptr, "GetVRAM returned null in CreateShaderResourceViewForLayer");
+	if (!pxVRAM) return xView;
+
+	const bool bIsDepth = xInfo.m_eFormat > TEXTURE_FORMAT_DEPTH_STENCIL_BEGIN && xInfo.m_eFormat < TEXTURE_FORMAT_DEPTH_STENCIL_END;
+	vk::Format xFormat = bIsDepth ? Zenith_Vulkan::ConvertToVkFormat_DepthStencil(xInfo.m_eFormat) : Zenith_Vulkan::ConvertToVkFormat_Colour(xInfo.m_eFormat);
+
+	// Create a 2D view for a single layer/face of a cubemap or array texture
+	vk::ImageSubresourceRange xSubresourceRange = vk::ImageSubresourceRange()
+		.setAspectMask(bIsDepth ? vk::ImageAspectFlagBits::eDepth : vk::ImageAspectFlagBits::eColor)
+		.setBaseMipLevel(uBaseMip)
+		.setLevelCount(uMipCount)
+		.setBaseArrayLayer(uLayer)
+		.setLayerCount(1);
+
+	vk::ImageViewCreateInfo xViewCreate = vk::ImageViewCreateInfo()
+		.setImage(pxVRAM->GetImage())
+		.setViewType(vk::ImageViewType::e2D)
+		.setFormat(xFormat)
+		.setSubresourceRange(xSubresourceRange);
+
+	vk::ImageView xVkView = xDevice.createImageView(xViewCreate);
+	xView.m_xImageViewHandle = RegisterImageView(xVkView);
+	xView.m_bIsDepthStencil = bIsDepth;
 	return xView;
 }
 

@@ -139,6 +139,13 @@ void main()
 	uint instanceIdx;
 	InterlockedAdd(aliveCount[0], 1, instanceIdx);
 
+	// CRITICAL: Bounds check to prevent instance buffer overflow
+	// This can happen if more particles are alive than expected
+	if (instanceIdx >= pc.particleCount)
+	{
+		return;
+	}
+
 	// Write render instance
 	instances[instanceIdx].positionSize = vec4(p.positionAge.xyz, size);
 	instances[instanceIdx].color = color;

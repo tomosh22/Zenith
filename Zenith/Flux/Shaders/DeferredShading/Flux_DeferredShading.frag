@@ -10,6 +10,17 @@ layout(location = 0) in vec2 a_xUV;
 layout(std140, set = 0, binding = 1) uniform DeferredShadingConstants
 {
 	uint g_bVisualiseCSMs;
+	uint g_bIBLEnabled;
+	uint g_uDebugMode;  // 0=normal, 1=show cyan (verify running), 2=show depth, 3=show diffuse
+	uint g_bIBLDiffuseEnabled;
+	uint g_bIBLSpecularEnabled;
+	float g_fIBLIntensity;
+	uint g_bShowBRDFLUT;
+	uint g_bForceRoughness;
+	float g_fForcedRoughness;
+	uint _pad0;
+	uint _pad1;
+	uint _pad2;
 };
 
 //#TO_TODO: these should really all be in one buffer
@@ -36,6 +47,11 @@ layout(set = 0, binding = 10) uniform sampler2D g_xCSM0;
 layout(set = 0, binding = 11) uniform sampler2D g_xCSM1;
 layout(set = 0, binding = 12) uniform sampler2D g_xCSM2;
 layout(set = 0, binding = 13) uniform sampler2D g_xCSM3;
+
+// IBL textures
+layout(set = 0, binding = 14) uniform sampler2D g_xBRDFLUT;
+layout(set = 0, binding = 15) uniform samplerCube g_xIrradianceMap;
+layout(set = 0, binding = 16) uniform samplerCube g_xPrefilteredMap;
 
 
 const float PI = 3.14159265359;
@@ -157,11 +173,129 @@ vec3 Uncharted2Tonemap(vec3 x) {
 	return ((x * (A * x + C * B) + D * E) / (x * (A * x + B) + D * F)) - E / F;
 }
 
+// IBL Constants
+const float IBL_PREFILTER_MIP_COUNT = 5.0;
+
+// Compute IBL ambient lighting using cubemap textures
+vec3 ComputeIBLAmbient(vec3 xNormal, vec3 xViewDir, vec3 xAlbedo, float fMetallic, float fRoughness, float fAmbientOcclusion)
+{
+	// Simple ambient fallback when IBL is disabled
+	if (g_bIBLEnabled == 0)
+	{
+		return vec3(0.03) * xAlbedo * fAmbientOcclusion;
+	}
+
+	// Guard against zero/degenerate normals (e.g., from sky pixels that slip through)
+	// Sampling cubemap with zero direction produces undefined results
+	float fNormalLen = length(xNormal);
+	if (fNormalLen < 0.001)
+	{
+		return vec3(0.0);
+	}
+	xNormal = xNormal / fNormalLen;  // Re-normalize in case of precision issues
+
+	float NdotV = max(dot(xNormal, xViewDir), 0.0);
+
+	// Calculate F0 (base reflectivity)
+	vec3 F0 = vec3(0.04);
+	F0 = mix(F0, xAlbedo, fMetallic);
+
+	// Fresnel with roughness for ambient
+	vec3 F = FresnelSchlickRoughness(NdotV, F0, fRoughness);
+
+	// Energy conservation
+	vec3 kS = F;
+	vec3 kD = (1.0 - kS) * (1.0 - fMetallic);
+
+	// Sample BRDF LUT - clamp roughness to avoid edge artifacts at 0 and 1
+	float fRoughnessForLUT = clamp(fRoughness, 0.01, 0.99);
+	vec2 xBRDF = texture(g_xBRDFLUT, vec2(NdotV, fRoughnessForLUT)).rg;
+
+	// Diffuse IBL - sample irradiance cubemap using normal direction
+	vec3 xDiffuseIBL = vec3(0.0);
+	if (g_bIBLDiffuseEnabled != 0)
+	{
+		vec3 xIrradiance = texture(g_xIrradianceMap, xNormal).rgb;
+		xDiffuseIBL = kD * xIrradiance * xAlbedo;
+	}
+
+	// Specular IBL - sample prefiltered cubemap using reflection direction
+	vec3 xSpecularIBL = vec3(0.0);
+	if (g_bIBLSpecularEnabled != 0)
+	{
+		vec3 xReflect = reflect(-xViewDir, xNormal);
+		// LOD based on roughness
+		float fLOD = fRoughness * (IBL_PREFILTER_MIP_COUNT - 1.0);
+		vec3 xPrefilteredColor = textureLod(g_xPrefilteredMap, xReflect, fLOD).rgb;
+		xSpecularIBL = xPrefilteredColor * (F * xBRDF.x + xBRDF.y);
+	}
+
+	// Combine with ambient occlusion and intensity
+	return (xDiffuseIBL + xSpecularIBL) * fAmbientOcclusion * g_fIBLIntensity;
+}
+
 void main()
 {
+	// Show BRDF LUT as overlay in bottom-right corner
+	if (g_bShowBRDFLUT != 0u)
+	{
+		// Display region: bottom-right corner, 20% of screen size
+		float fSize = 0.2;
+		float fMargin = 0.02;
+		float fMinX = 1.0 - fMargin - fSize;
+		float fMaxX = 1.0 - fMargin;
+		float fMinY = 1.0 - fMargin - fSize;
+		float fMaxY = 1.0 - fMargin;
+
+		// Check if we're in the BRDF LUT display region
+		bool bInRegion = (a_xUV.x > fMinX) && (a_xUV.x < fMaxX) && (a_xUV.y > fMinY) && (a_xUV.y < fMaxY);
+		if (bInRegion)
+		{
+			// Map screen UV to BRDF LUT UV
+			// X axis = NdotV (0 to 1), Y axis = roughness (0 to 1)
+			vec2 xLutUV = vec2(
+				(a_xUV.x - fMinX) / fSize,
+				(a_xUV.y - fMinY) / fSize
+			);
+
+			// Sample BRDF LUT - RG channels contain scale and bias
+			vec2 xBRDF = texture(g_xBRDFLUT, xLutUV).rg;
+
+			// Visualize: R = scale (red), G = bias (green)
+			o_xColour = vec4(xBRDF.r, xBRDF.g, 0.0, 1.0);
+			return;
+		}
+	}
+
+	// Debug mode 1: Output cyan to verify deferred shading is running
+	if (g_uDebugMode == 1u)
+	{
+		o_xColour = vec4(0.0, 1.0, 1.0, 1.0); // Cyan
+		return;
+	}
+
 	vec4 xDiffuse = texture(g_xDiffuseTex, a_xUV);
-	
-	if(texture(g_xDepthTex, a_xUV).r == 1.0f)
+	float fDepth = texture(g_xDepthTex, a_xUV).r;
+
+	// Debug mode 2: Visualize depth values
+	if (g_uDebugMode == 2u)
+	{
+		// Show depth as grayscale (near=white, far=black, sky=red)
+		if (fDepth >= 1.0)
+			o_xColour = vec4(1.0, 0.0, 0.0, 1.0); // Red for sky/clear
+		else
+			o_xColour = vec4(vec3(1.0 - fDepth), 1.0); // Invert so near is brighter
+		return;
+	}
+
+	// Debug mode 3: Visualize diffuse G-buffer
+	if (g_uDebugMode == 3u)
+	{
+		o_xColour = vec4(xDiffuse.rgb, 1.0);
+		return;
+	}
+
+	if(fDepth == 1.0f)
 	{
 		o_xColour = xDiffuse;
 		return;
@@ -169,7 +303,9 @@ void main()
 	
 	vec4 xMaterial = texture(g_xMaterialTex, a_xUV);
 	vec4 xNormalAmbient = texture(g_xNormalsAmbientTex, a_xUV);
-	vec3 xNormal = xNormalAmbient.xyz;
+	// CRITICAL: Normals stored in G-buffer can become denormalized due to interpolation,
+	// compression, or precision loss. Always normalize before use in lighting calculations.
+	vec3 xNormal = normalize(xNormalAmbient.xyz);
 	float fAmbient = xNormalAmbient.w;
 	
 	vec3 xWorldPos = GetWorldPosFromDepthTex(g_xDepthTex, a_xUV);
@@ -177,29 +313,20 @@ void main()
 	float fRoughness = xMaterial.x;
 	float fMetallic = xMaterial.y;
 	float fEmissive = xMaterial.z;  // Emissive luminance from G-Buffer
+
+	// Override roughness if force roughness is enabled (for IBL debugging)
+	if (g_bForceRoughness != 0u)
+	{
+		fRoughness = g_fForcedRoughness;
+	}
 	
-	// Calculate view direction for ambient Fresnel
+	// Calculate view direction for IBL
 	vec3 xViewDir = normalize(g_xCamPos_Pad.xyz - xWorldPos);
-	float NdotV = max(dot(xNormal, xViewDir), 0.0);
-	
-	// Calculate F0 for ambient term
-	vec3 F0 = vec3(0.04);
-	F0 = mix(F0, xDiffuse.rgb, fMetallic);
-	
-	// Ambient with energy conservation
-	vec3 kS_ambient = FresnelSchlickRoughness(NdotV, F0, fRoughness);
-	vec3 kD_ambient = (1.0 - kS_ambient) * (1.0 - fMetallic);
-	
-	// Apply ambient diffuse
-	vec3 ambientDiffuse = kD_ambient * xDiffuse.rgb * fAmbient;
-	
-	// Apply ambient specular (approximation for metals and reflective surfaces)
-	// This simulates environment reflection without an actual environment map
-	// Use roughness to modulate the ambient specular strength
-	float specularStrength = 1.0 - fRoughness * 0.7; // Rougher = less specular reflection
-	vec3 ambientSpecular = kS_ambient * F0 * fAmbient * specularStrength;
-	
-	o_xColour.rgb = ambientDiffuse + ambientSpecular;
+
+	// Compute IBL ambient lighting (replaces simple ambient approximation)
+	vec3 xIBLAmbient = ComputeIBLAmbient(xNormal, xViewDir, xDiffuse.rgb, fMetallic, fRoughness, fAmbient);
+
+	o_xColour.rgb = xIBLAmbient;
 
 	DirectionalLight xLight;
 	xLight.m_xColour = g_xSunColour;
@@ -291,10 +418,11 @@ void main()
 		{
 			CookTorrance_Directional(o_xColour, xDiffuse, xLight, xNormal, fMetallic, fRoughness, fReflectivity, xWorldPos);
 		}
-		
+
 		// Modulate lighting by shadow factor
 		// fShadowFactor: 1.0 = fully lit, 0.0 = fully shadowed
-		o_xColour.rgb = ambientDiffuse + ambientSpecular + (o_xColour.rgb - ambientDiffuse - ambientSpecular) * fShadowFactor;
+		// IBL ambient is not affected by shadows (it's indirect lighting)
+		o_xColour.rgb = xIBLAmbient + (o_xColour.rgb - xIBLAmbient) * fShadowFactor;
 	}
 
 	// Add emissive contribution (not affected by shadows or lighting)

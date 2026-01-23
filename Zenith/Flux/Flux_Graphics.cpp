@@ -172,6 +172,8 @@ void Flux_Graphics::InitialiseRenderTargets()
 	xBuilder.m_eFormat = TEXTURE_FORMAT_D32_SFLOAT;
 	xBuilder.BuildDepthStencil(s_xDepthBuffer, "Flux Graphics Depth Buffer");
 	Zenith_Vulkan_VRAM* pxDepthVRAM = Zenith_Vulkan::GetVRAM(s_xDepthBuffer.m_xVRAMHandle);
+	Zenith_Log(LOG_CATEGORY_RENDERER, "DEBUG: Main depth buffer VRAM=%u VkImage=0x%llx",
+		s_xDepthBuffer.m_xVRAMHandle.AsUInt(), (unsigned long long)(VkImage)pxDepthVRAM->GetImage());
 
 	{
 		for (uint32_t u = 0; u < MRT_INDEX_COUNT; u++)

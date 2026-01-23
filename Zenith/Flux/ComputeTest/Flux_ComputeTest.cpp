@@ -19,6 +19,10 @@ static Zenith_Vulkan_Shader g_xComputeShader;
 static Zenith_Vulkan_Shader g_xDisplayShader;
 static Zenith_Vulkan_RootSig g_xComputeRootSig;
 
+// Cached binding handles from shader reflection
+static Flux_BindingHandle s_xOutputImageBinding;
+static Flux_BindingHandle s_xPushConstantsBinding;
+
 void Flux_ComputeTest::Initialise()
 {
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_ComputeTest::Initialise() - Starting");
@@ -34,22 +38,23 @@ void Flux_ComputeTest::Initialise()
 	
 	// ========== COMPUTE PIPELINE SETUP ==========
 	g_xComputeShader.InitialiseCompute("ComputeTest/ComputeTest.comp");
-	
+
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_ComputeTest - Loaded compute shader");
-	
-	// Build compute root signature
-	Flux_PipelineLayout xComputeLayout;
-	xComputeLayout.m_uNumDescriptorSets = 1;
-	xComputeLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_STORAGE_IMAGE;
-	xComputeLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_BUFFER;  // Scratch buffer for push constants
-	Zenith_Vulkan_RootSigBuilder::FromSpecification(g_xComputeRootSig, xComputeLayout);
-	
+
+	// Build compute root signature from shader reflection
+	const Flux_ShaderReflection& xComputeReflection = g_xComputeShader.GetReflection();
+	Zenith_Vulkan_RootSigBuilder::FromReflection(g_xComputeRootSig, xComputeReflection);
+
+	// Cache binding handles from reflection for use at render time
+	s_xOutputImageBinding = xComputeReflection.GetBinding("outputImage");
+	s_xPushConstantsBinding = xComputeReflection.GetBinding("pushConstants");
+
 	// Build compute pipeline
 	Zenith_Vulkan_ComputePipelineBuilder xComputeBuilder;
 	xComputeBuilder.WithShader(g_xComputeShader)
 		.WithLayout(g_xComputeRootSig.m_xLayout)
 		.Build(g_xComputePipeline);
-	
+
 	g_xComputePipeline.m_xRootSig = g_xComputeRootSig;
 	
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_ComputeTest - Built compute pipeline");
@@ -85,15 +90,16 @@ void Flux_ComputeTest::RunComputePass()
 
 	g_xComputeCommandList.AddCommand<Flux_CommandBindComputePipeline>(&g_xComputePipeline);
 
+	// Use reflection-based binding handles
 	Flux_ShaderBinder xBinder(g_xComputeCommandList);
-	xBinder.BindUAV_Texture(Flux_BindingHandle{0, 0}, &g_xComputeOutput.m_pxUAV);
-	xBinder.PushConstant(&Flux_Graphics::s_xFrameConstants.m_xScreenDims, sizeof(Flux_Graphics::s_xFrameConstants.m_xScreenDims));
+	xBinder.BindUAV_Texture(s_xOutputImageBinding, &g_xComputeOutput.m_pxUAV);
+	xBinder.PushConstant(s_xPushConstantsBinding, &Flux_Graphics::s_xFrameConstants.m_xScreenDims, sizeof(Flux_Graphics::s_xFrameConstants.m_xScreenDims));
 
 	// Dispatch compute shader: (width/8, height/8, 1) workgroups for 8x8 local size
 	g_xComputeCommandList.AddCommand<Flux_CommandDispatch>(Flux_Graphics::s_xFrameConstants.m_xScreenDims.x / 8, Flux_Graphics::s_xFrameConstants.m_xScreenDims.y / 8, 1);
-	
+
 	Flux::SubmitCommandList(&g_xComputeCommandList, Flux_Graphics::s_xNullTargetSetup, RENDER_ORDER_COMPUTE_TEST);
-	
+
 	static bool bFirstRun = true;
 	if (bFirstRun)
 	{
