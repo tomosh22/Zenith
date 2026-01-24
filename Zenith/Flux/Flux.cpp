@@ -206,41 +206,5 @@ bool Flux::PrepareFrame(Flux_WorkDistribution& xOutDistribution)
 		xOutDistribution.auEndIndex[uCurrentThreadIndex] = 0;
 	}
 
-	// Debug logging: show which render orders have commands
-	Zenith_Log(LOG_CATEGORY_RENDERER, "=== Render Order Commands (Frame %u, %u total) ===", s_uFrameCounter, xOutDistribution.uTotalCommandCount);
-	for (u_int uRenderOrder = RENDER_ORDER_MEMORY_UPDATE + 1; uRenderOrder < RENDER_ORDER_MAX; uRenderOrder++)
-	{
-		const Zenith_Vector<Flux_CommandListEntry>& xCommandLists = s_xPendingCommandLists[uRenderOrder];
-		if (xCommandLists.GetSize() > 0)
-		{
-			u_int uCmdCount = 0;
-			for (u_int i = 0; i < xCommandLists.GetSize(); i++)
-			{
-				uCmdCount += xCommandLists.Get(i).m_pxCmdList->GetCommandCount();
-			}
-			Zenith_Log(LOG_CATEGORY_RENDERER, "  RenderOrder %u: %u lists, %u commands", uRenderOrder, xCommandLists.GetSize(), uCmdCount);
-		}
-	}
-
-	// Debug logging: show work distribution across worker threads
-	// Ranges are [start, end) - start is INCLUSIVE, end is EXCLUSIVE
-	Zenith_Log(LOG_CATEGORY_RENDERER, "=== Work Distribution (8 worker threads) ===");
-	for (u_int uThread = 0; uThread < FLUX_NUM_WORKER_THREADS; uThread++)
-	{
-		const u_int uStartOrder = xOutDistribution.auStartRenderOrder[uThread];
-		const u_int uEndOrder = xOutDistribution.auEndRenderOrder[uThread];
-		const u_int uStartIdx = xOutDistribution.auStartIndex[uThread];
-		const u_int uEndIdx = xOutDistribution.auEndIndex[uThread];
-
-		// Skip threads with no work (all zeros means unassigned)
-		if (uStartOrder == 0 && uEndOrder == 0 && uStartIdx == 0 && uEndIdx == 0)
-		{
-			continue;
-		}
-
-		Zenith_Log(LOG_CATEGORY_RENDERER, "  Worker %u: RenderOrder [%u, %u) idx [%u, %u)",
-			uThread, uStartOrder, uEndOrder, uStartIdx, uEndIdx);
-	}
-
 	return true;
 }

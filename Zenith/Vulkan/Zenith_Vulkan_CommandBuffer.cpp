@@ -224,12 +224,6 @@ void Zenith_Vulkan_CommandBuffer::UpdateDescriptorSets()
 			xCacheEntry.bindings == m_xBindings[uDescSet])
 		{
 			m_axCurrentDescSet[uDescSet] = xCacheEntry.descriptorSet;
-			// Debug: Log cache hit for Worker 4
-			if (m_uWorkerIndex == 4)
-			{
-				Zenith_Log(LOG_CATEGORY_RENDERER, "Worker4 DescSet CACHE HIT: set=%u VkDescSet=0x%llx",
-					uDescSet, (unsigned long long)(VkDescriptorSet)m_axCurrentDescSet[uDescSet]);
-			}
 		}
 		else
 		{
@@ -241,12 +235,6 @@ void Zenith_Vulkan_CommandBuffer::UpdateDescriptorSets()
 			#ifdef ZENITH_DEBUG_VARIABLES
 			Zenith_Vulkan::IncrementDescriptorSetAllocations();
 			#endif
-			// Debug: Log new allocation for Worker 4
-			if (m_uWorkerIndex == 4)
-			{
-				Zenith_Log(LOG_CATEGORY_RENDERER, "Worker4 DescSet ALLOCATED: set=%u VkDescSet=0x%llx",
-					uDescSet, (unsigned long long)(VkDescriptorSet)m_axCurrentDescSet[uDescSet]);
-			}
 
 			// Stack-allocated arrays for building descriptor writes
 			u_int uNumBufferWrites = 0;
@@ -269,12 +257,6 @@ void Zenith_Vulkan_CommandBuffer::UpdateDescriptorSets()
 					// Validate SRV has a valid image view before using it
 						Zenith_Assert(pxSRV->m_xImageViewHandle.IsValid(), "SRV at descSet=%u binding=%u has null image view", uDescSet, u);
 
-						// Debug: Log VRAM handle for Worker 4 to trace depth buffer binding issue
-						if (m_uWorkerIndex == 4)
-						{
-							Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(pxSRV->m_xVRAMHandle);
-							//Zenith_Log(LOG_CATEGORY_RENDERER, "Worker4 SRV: set=%u bind=%u VRAM=%u VkImage=0x%llx", uDescSet, u, pxSRV->m_xVRAMHandle.AsUInt(), (unsigned long long)(VkImage)pxVRAM->GetImage());
-						}
 
 						Zenith_Vulkan_Sampler* pxSampler = m_xBindings[uDescSet].m_apxSamplers[u];
 						// Use correct layout for depth textures - they must be sampled in DepthStencilReadOnlyOptimal
@@ -369,13 +351,6 @@ void Zenith_Vulkan_CommandBuffer::UpdateDescriptorSets()
 			xCacheEntry.layout = xLayout;
 			xCacheEntry.bindings = m_xBindings[uDescSet];
 			xCacheEntry.descriptorSet = m_axCurrentDescSet[uDescSet];
-		}
-
-		// Debug: Log descriptor set binding for Worker 4
-		if (m_uWorkerIndex == 4)
-		{
-			Zenith_Log(LOG_CATEGORY_RENDERER, "Worker4 BIND DescSet: set=%u VkDescSet=0x%llx",
-				uDescSet, (unsigned long long)(VkDescriptorSet)m_axCurrentDescSet[uDescSet]);
 		}
 		m_xCurrentCmdBuffer.bindDescriptorSets(m_eCurrentBindPoint, m_pxCurrentPipeline->m_xRootSig.m_xLayout, uDescSet, 1, &m_axCurrentDescSet[uDescSet], 0, nullptr);
 		m_uDescriptorDirty &= ~(1 << uDescSet);
