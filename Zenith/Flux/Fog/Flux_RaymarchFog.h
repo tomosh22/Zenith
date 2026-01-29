@@ -11,7 +11,7 @@
  *
  * Resources:
  *   - 3D noise texture (Perlin-Worley) from Flux_VolumeFog
- *   - Blue noise texture for temporal jitter
+ *   - Blue noise texture for spatial dithering (per-frame only)
  *   - Depth buffer for ray termination
  *
  * Debug Modes: 9-12 (step count, accumulated density, noise sample, jitter pattern)

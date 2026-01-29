@@ -1,19 +1,10 @@
 // IBL Common Functions
 // Helper functions for Image-Based Lighting sampling
+//
+// Note: Core PBR constants (PI, FresnelSchlick functions) are now centralized
+// in PBRConstants.fxh for consistency across all shaders.
 
-const float IBL_PI = 3.14159265359;
-
-// Fresnel-Schlick approximation
-vec3 FresnelSchlick(float cosTheta, vec3 F0)
-{
-	return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
-}
-
-// Fresnel-Schlick with roughness (for IBL)
-vec3 FresnelSchlickRoughness(float cosTheta, vec3 F0, float roughness)
-{
-	return F0 + (max(vec3(1.0 - roughness), F0) - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
-}
+#include "../PBRConstants.fxh"
 
 // Sample environment map with roughness-based LOD
 // Assumes cubemap with 5 mip levels (0=smooth, 4=rough)
@@ -61,11 +52,13 @@ vec3 ComputeSpecularIBL(
 	// Sample BRDF LUT
 	vec2 brdf = texture(brdfLUT, vec2(NdotV, roughness)).rg;
 
-	// Fresnel with roughness
+	// Fresnel with roughness (used for energy conservation, not for Split-Sum)
 	vec3 F = FresnelSchlickRoughness(NdotV, F0, roughness);
 
-	// Combine
-	vec3 specular = prefilteredColor * (F * brdf.x + brdf.y);
+	// Split-Sum approximation: F0 * scale + bias
+	// The bias term (brdf.y) already encodes the Fresnel variation across viewing angles
+	// Using full F instead of F0 would double-apply the Fresnel effect
+	vec3 specular = prefilteredColor * (F0 * brdf.x + brdf.y);
 
 	return specular * ao * intensity;
 }
@@ -89,7 +82,7 @@ vec3 ComputeIBL(
 	// F0 (reflectance at normal incidence)
 	// Dielectrics: 0.04 (4% reflection)
 	// Metals: use albedo as F0
-	vec3 F0 = mix(vec3(0.04), albedo, metallic);
+	vec3 F0 = mix(PBR_DIELECTRIC_F0, albedo, metallic);
 
 	vec3 result = vec3(0.0);
 
@@ -122,7 +115,7 @@ vec3 ComputeIBLFallback(
 	float NdotV = max(dot(N, V), 0.0);
 
 	// F0 (reflectance at normal incidence)
-	vec3 F0 = mix(vec3(0.04), albedo, metallic);
+	vec3 F0 = mix(PBR_DIELECTRIC_F0, albedo, metallic);
 
 	// Sample BRDF LUT
 	vec2 brdf = texture(brdfLUT, vec2(NdotV, roughness)).rg;
@@ -139,7 +132,8 @@ vec3 ComputeIBLFallback(
 	vec3 R = reflect(-V, N);
 	float fRdotUp = max(dot(R, vec3(0.0, 1.0, 0.0)), 0.0);
 	vec3 specularColor = mix(vec3(0.1), skyColor, fRdotUp);
-	vec3 specularIBL = specularColor * (F * brdf.x + brdf.y);
+	// Split-Sum: F0 * scale + bias (bias encodes Fresnel variation)
+	vec3 specularIBL = specularColor * (F0 * brdf.x + brdf.y);
 
 	return (diffuseIBL + specularIBL) * ao * intensity;
 }

@@ -3,8 +3,12 @@
 // Prefiltered environment map shader
 // Generates roughness-based mip levels for specular IBL
 // Uses GGX importance sampling
+//
+// Note: Common sampling utilities (RadicalInverse_VdC, Hammersley, ImportanceSampleGGX)
+// are now centralized in PBRConstants.fxh for consistency across all shaders.
 
 #include "../Common.fxh"
+#include "../PBRConstants.fxh"
 #include "../Skybox/Flux_AtmosphereCommon.fxh"
 
 layout(location = 0) out vec4 o_xColour;
@@ -22,7 +26,6 @@ layout(std140, set = 0, binding = 1) uniform PrefilterConstants
 // Skybox cubemap (used when g_uUseAtmosphere == 0)
 layout(set = 0, binding = 2) uniform samplerCube g_xSkyboxCubemap;
 
-const float PI = 3.14159265359;
 // 64 samples is sufficient for prefiltered environment map due to the blurring
 // effect at higher roughness levels. Reduces total cost from ~61M to ~30M samples.
 const uint SAMPLE_COUNT = 64u;
@@ -48,45 +51,7 @@ vec3 CubemapFaceDirection(vec2 xUV, uint uFace)
 	return normalize(xDir);
 }
 
-// Van der Corput sequence for quasi-random sampling
-float RadicalInverse_VdC(uint bits)
-{
-	bits = (bits << 16u) | (bits >> 16u);
-	bits = ((bits & 0x55555555u) << 1u) | ((bits & 0xAAAAAAAAu) >> 1u);
-	bits = ((bits & 0x33333333u) << 2u) | ((bits & 0xCCCCCCCCu) >> 2u);
-	bits = ((bits & 0x0F0F0F0Fu) << 4u) | ((bits & 0xF0F0F0F0u) >> 4u);
-	bits = ((bits & 0x00FF00FFu) << 8u) | ((bits & 0xFF00FF00u) >> 8u);
-	return float(bits) * 2.3283064365386963e-10;
-}
-
-// Hammersley sequence
-vec2 Hammersley(uint i, uint N)
-{
-	return vec2(float(i) / float(N), RadicalInverse_VdC(i));
-}
-
-// GGX importance sampling
-vec3 ImportanceSampleGGX(vec2 Xi, vec3 N, float roughness)
-{
-	float a = roughness * roughness;
-
-	float phi = 2.0 * PI * Xi.x;
-	float cosTheta = sqrt((1.0 - Xi.y) / (1.0 + (a * a - 1.0) * Xi.y));
-	float sinTheta = sqrt(1.0 - cosTheta * cosTheta);
-
-	// Spherical to cartesian
-	vec3 H;
-	H.x = cos(phi) * sinTheta;
-	H.y = sin(phi) * sinTheta;
-	H.z = cosTheta;
-
-	// Tangent to world space
-	vec3 up = abs(N.z) < 0.999 ? vec3(0.0, 0.0, 1.0) : vec3(1.0, 0.0, 0.0);
-	vec3 tangent = normalize(cross(up, N));
-	vec3 bitangent = cross(N, tangent);
-
-	return normalize(tangent * H.x + bitangent * H.y + N * H.z);
-}
+// Note: RadicalInverse_VdC, Hammersley, and ImportanceSampleGGX are now in PBRConstants.fxh
 
 // Sample environment in given direction
 vec3 SampleEnvironment(vec3 xDir)
@@ -121,16 +86,19 @@ void main()
 	vec3 xPrefilteredColor = vec3(0.0);
 	float fTotalWeight = 0.0;
 
-	// For very smooth surfaces (roughness < threshold), blend between mirror reflection
-	// and sampled result to avoid visible discontinuity at the cutoff boundary
+	// Blend threshold for very smooth surfaces (roughness < 0.05)
+	// At extremely low roughness, GGX importance sampling produces aliasing artifacts
+	// because the distribution approaches a delta function. Blending with a direct
+	// mirror reflection avoids this discontinuity and provides correct behavior for
+	// near-perfect mirrors. Industry standard threshold range: 0.02-0.08.
 	vec3 xMirrorColor = SampleEnvironment(xN);
-	float fBlendThreshold = 0.05;
+	const float IBL_SMOOTH_BLEND_THRESHOLD = 0.05;
 
-	// Clamp roughness to avoid numerical issues in GGX sampling
-	// NOTE: Do NOT early-return for roughness < 0.005 - this would bypass the
-	// blending logic below and create a visible seam at the threshold. Instead,
-	// clamp roughness and let the smoothstep blend handle the transition.
-	float fClampedRoughness = max(g_fRoughness, 0.005);
+	// Minimum roughness for GGX importance sampling
+	// As roughness approaches 0, GGX distribution becomes a delta function, causing
+	// numerical instability in sampling. This floor prevents division by near-zero
+	// in the GGX formula while the smoothstep blend above ensures visual continuity.
+	float fClampedRoughness = max(g_fRoughness, PBR_GGX_MIN_ROUGHNESS);
 
 	for (uint i = 0u; i < SAMPLE_COUNT; i++)
 	{
@@ -150,9 +118,9 @@ void main()
 	xPrefilteredColor = xPrefilteredColor / max(fTotalWeight, 0.001);
 
 	// Blend with mirror reflection for smooth surfaces to avoid discontinuity
-	if (g_fRoughness < fBlendThreshold)
+	if (g_fRoughness < IBL_SMOOTH_BLEND_THRESHOLD)
 	{
-		float fBlendFactor = smoothstep(0.005, fBlendThreshold, g_fRoughness);
+		float fBlendFactor = smoothstep(PBR_GGX_MIN_ROUGHNESS, IBL_SMOOTH_BLEND_THRESHOLD, g_fRoughness);
 		xPrefilteredColor = mix(xMirrorColor, xPrefilteredColor, fBlendFactor);
 	}
 

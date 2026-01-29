@@ -5,6 +5,7 @@
 #include "Vulkan/Zenith_Vulkan.h"
 #include "DataStream/Zenith_DataStream.h"
 #include "Flux/Flux_Enums.h"
+#include "Flux/Flux_Types.h"
 
 Zenith_TextureAsset::Zenith_TextureAsset()
 {
@@ -40,16 +41,52 @@ bool Zenith_TextureAsset::LoadFromFile(const std::string& strPath, bool bCreateM
 	xStream >> eFormat;
 	xStream >> ulDataSize;
 
-	void* pData = Zenith_MemoryManagement::Allocate(ulDataSize);
-	if (!pData)
+	// Ensure depth is at least 1 for 2D textures (file may store 0 for non-3D textures)
+	// Also recalculate expected data size since file may have stored wrong size
+	const int32_t iCorrectedDepth = std::max(1, iDepth);
+	const bool bIsCompressed = IsCompressedFormat(eFormat);
+
+	size_t ulExpectedDataSize;
+	if (bIsCompressed)
 	{
-		Zenith_Log(LOG_CATEGORY_ASSET, "Zenith_TextureAsset: Failed to allocate %zu bytes for texture '%s'", ulDataSize, strPath.c_str());
+		ulExpectedDataSize = CalculateCompressedTextureSize(eFormat, iWidth, iHeight);
+	}
+	else
+	{
+		ulExpectedDataSize = static_cast<size_t>(ColourFormatBytesPerPixel(eFormat)) * iWidth * iHeight * iCorrectedDepth;
+	}
+
+	// Use the larger of file-stored size or expected size for safety
+	// If file stored size 0 but we expect data, use expected size
+	// If file stored larger size, use that (might have extra padding)
+	size_t ulAllocSize = std::max(ulDataSize, ulExpectedDataSize);
+
+	if (ulAllocSize == 0)
+	{
+		Zenith_Log(LOG_CATEGORY_ASSET, "Zenith_TextureAsset: Zero data size for texture '%s' (dims: %dx%dx%d)", strPath.c_str(), iWidth, iHeight, iDepth);
 		return false;
 	}
-	xStream.ReadData(pData, ulDataSize);
+
+	void* pData = Zenith_MemoryManagement::Allocate(ulAllocSize);
+	if (!pData)
+	{
+		Zenith_Log(LOG_CATEGORY_ASSET, "Zenith_TextureAsset: Failed to allocate %zu bytes for texture '%s'", ulAllocSize, strPath.c_str());
+		return false;
+	}
+
+	// Initialize to zero in case file has less data than expected
+	memset(pData, 0, ulAllocSize);
+
+	// Read actual data from file
+	// If file stored ulDataSize=0 but dimensions are valid, use expected size for reading
+	// (some files incorrectly store 0 for data size but still have pixel data)
+	size_t ulReadSize = (ulDataSize > 0) ? ulDataSize : ulExpectedDataSize;
+	if (ulReadSize > 0)
+	{
+		xStream.ReadData(pData, ulReadSize);
+	}
 
 	// Determine mip count
-	const bool bIsCompressed = IsCompressedFormat(eFormat);
 	const uint32_t uNumMips = (bCreateMips && !bIsCompressed)
 		? static_cast<uint32_t>(std::floor(std::log2((std::max)(iWidth, iHeight))) + 1)
 		: 1;
@@ -57,7 +94,7 @@ bool Zenith_TextureAsset::LoadFromFile(const std::string& strPath, bool bCreateM
 	// Set up surface info
 	m_xSurfaceInfo.m_uWidth = static_cast<uint32_t>(iWidth);
 	m_xSurfaceInfo.m_uHeight = static_cast<uint32_t>(iHeight);
-	m_xSurfaceInfo.m_uDepth = static_cast<uint32_t>(iDepth);
+	m_xSurfaceInfo.m_uDepth = static_cast<uint32_t>(iCorrectedDepth);
 	m_xSurfaceInfo.m_uNumLayers = 1;
 	m_xSurfaceInfo.m_eFormat = eFormat;
 	m_xSurfaceInfo.m_eTextureType = TEXTURE_TYPE_2D;

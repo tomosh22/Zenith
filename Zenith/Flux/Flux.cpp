@@ -24,6 +24,8 @@
 #include "Flux/InstancedMeshes/Flux_InstancedMeshes.h"
 #include "Flux/HDR/Flux_HDR.h"
 #include "Flux/IBL/Flux_IBL.h"
+#include "Flux/HiZ/Flux_HiZ.h"
+#include "Flux/SSR/Flux_SSR.h"
 #include "Flux/Vegetation/Flux_Grass.h"
 
 uint32_t Flux::s_uFrameCounter = 0;
@@ -64,6 +66,8 @@ void Flux::LateInitialise()
 	Flux_Terrain::Initialise();
 	Flux_Grass::Initialise();        // Grass/vegetation (after terrain)
 	Flux_Primitives::Initialise();
+	Flux_HiZ::Initialise();          // Hi-Z depth pyramid (needed by SSR)
+	Flux_SSR::Initialise();          // Screen-space reflections (uses Hi-Z, needed by DeferredShading)
 	Flux_DeferredShading::Initialise();
 	Flux_SSAO::Initialise();
 	Flux_Fog::Initialise();
@@ -87,6 +91,8 @@ void Flux::Shutdown()
 	Flux_Particles::Shutdown();
 	Flux_SDFs::Shutdown();
 	// Flux_Fog, Flux_SSAO, Flux_DeferredShading, Flux_Primitives - no Shutdown() methods
+	Flux_SSR::Shutdown();          // Before HiZ (SSR uses Hi-Z)
+	Flux_HiZ::Shutdown();          // Hi-Z depth pyramid
 	Flux_Grass::Shutdown();        // After Terrain (depends on terrain data)
 	Flux_Terrain::Shutdown();
 	Flux_InstancedMeshes::Shutdown();

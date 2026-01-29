@@ -6,13 +6,13 @@
  * Manages multiple volumetric fog rendering techniques with runtime switching.
  * Technique selection via debug variable: Render/Volumetric Fog/Technique
  *
+ * All techniques are spatial-only (no temporal effects, history buffers, or reprojection).
+ *
  * Available Techniques:
  *   0 - Simple exponential fog (original)
  *   1 - Froxel-based volumetric fog
  *   2 - Ray marching with noise
- *   3 - Light Propagation Volumes (LPV)
- *   4 - Froxel + Temporal reprojection
- *   5 - Screen-space god rays
+ *   3 - Screen-space god rays
  *
  * See Fog/CLAUDE.md for full documentation.
  */

@@ -42,6 +42,9 @@ enum RenderOrder
 	RENDER_ORDER_INSTANCE_CULLING,  // GPU frustum culling compute pass for instanced meshes
 	RENDER_ORDER_INSTANCED_MESHES,  // GPU-instanced meshes (100k+ instances)
 	RENDER_ORDER_FOLIAGE,
+	RENDER_ORDER_HIZ_GENERATE,        // Hi-Z depth pyramid (compute)
+	RENDER_ORDER_SSR_RAYMARCH,        // Screen-space reflection ray marching
+	RENDER_ORDER_SSR_RESOLVE,         // SSR roughness blur pass
 	RENDER_ORDER_APPLY_LIGHTING,
 	RENDER_ORDER_POINT_LIGHTS,
 	RENDER_ORDER_WATER,
@@ -81,6 +84,7 @@ enum TextureFormat
 	TEXTURE_FORMAT_R16G16B16A16_SFLOAT,
 	TEXTURE_FORMAT_R32G32B32A32_SFLOAT,
 	TEXTURE_FORMAT_R32G32B32_SFLOAT,
+	TEXTURE_FORMAT_R32G32_SFLOAT,         // 64-bit RG float (for HiZ min-max depth)
 	// BC Compressed formats
 	TEXTURE_FORMAT_BC1_RGB_UNORM,      // 4 bits/pixel, RGB, no alpha (6:1 compression)
 	TEXTURE_FORMAT_BC1_RGBA_UNORM,     // 4 bits/pixel, RGB + 1-bit alpha (6:1 compression)

@@ -187,6 +187,7 @@ public:
 	~Zenith_Vulkan_VRAM();
 
 	VmaAllocation GetAllocation() const { return m_xAllocation; }
+	VmaAllocator GetAllocator() const { return m_xAllocator; }
 	vk::Image GetImage() const { return m_xImage; }
 	vk::Buffer GetBuffer() const { return m_xBuffer; }
 	u_int GetBufferSize() const { return m_uBufferSize; }

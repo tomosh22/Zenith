@@ -24,6 +24,8 @@
 #include "Flux/InstancedMeshes/Flux_InstancedMeshes.h"
 #include "Flux/HDR/Flux_HDR.h"
 #include "Flux/IBL/Flux_IBL.h"
+#include "Flux/HiZ/Flux_HiZ.h"
+#include "Flux/SSR/Flux_SSR.h"
 #include "Flux/Vegetation/Flux_Grass.h"
 #ifdef ZENITH_TOOLS
 #include "Flux/Gizmos/Flux_Gizmos.h"
@@ -125,6 +127,8 @@ static void SubmitRenderTasks()
 	Flux_Terrain::SubmitRenderToGBufferTask();
 	Flux_Grass::SubmitRenderTask();       // Grass/vegetation (after terrain)
 	Flux_Primitives::SubmitRenderTask();
+	Flux_HiZ::SubmitRenderTask();         // Hi-Z depth pyramid (after G-Buffer, needed by SSR)
+	Flux_SSR::SubmitRenderTask();         // Screen-space reflections (uses Hi-Z, needed by deferred shading)
 	Flux_DeferredShading::SubmitRenderTask();
 	Flux_SSAO::SubmitRenderTask();
 	Flux_Fog::SubmitRenderTask();
@@ -156,6 +160,8 @@ void Zenith_Core::WaitForAllRenderTasks()
 	Flux_Terrain::WaitForRenderToGBufferTask();
 	Flux_Grass::WaitForRenderTask();
 	Flux_Primitives::WaitForRenderTask();
+	Flux_HiZ::WaitForRenderTask();
+	Flux_SSR::WaitForRenderTask();
 	Flux_DeferredShading::WaitForRenderTask();
 	Flux_SSAO::WaitForRenderTask();
 	Flux_Fog::WaitForRenderTask();

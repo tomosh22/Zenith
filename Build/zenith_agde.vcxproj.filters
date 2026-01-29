@@ -712,13 +712,7 @@
     <ClCompile Include="..\Zenith\Flux\Fog\Flux_GodRaysFog.cpp">
       <Filter>Flux\Fog</Filter>
     </ClCompile>
-    <ClCompile Include="..\Zenith\Flux\Fog\Flux_LPVFog.cpp">
-      <Filter>Flux\Fog</Filter>
-    </ClCompile>
     <ClCompile Include="..\Zenith\Flux\Fog\Flux_RaymarchFog.cpp">
-      <Filter>Flux\Fog</Filter>
-    </ClCompile>
-    <ClCompile Include="..\Zenith\Flux\Fog\Flux_TemporalFog.cpp">
       <Filter>Flux\Fog</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\Flux\Fog\Flux_VolumeFog.cpp">
@@ -729,6 +723,9 @@
     </ClCompile>
     <ClCompile Include="..\Zenith\Flux\HDR\Flux_HDR.cpp">
       <Filter>Flux\HDR</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Flux\HiZ\Flux_HiZ.cpp">
+      <Filter>Flux\HiZ</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\Flux\IBL\Flux_IBL.cpp">
       <Filter>Flux\IBL</Filter>
@@ -807,6 +804,9 @@
     </ClCompile>
     <ClCompile Include="..\Zenith\Flux\SSAO\Flux_SSAO.cpp">
       <Filter>Flux\SSAO</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Flux\SSR\Flux_SSR.cpp">
+      <Filter>Flux\SSR</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\Flux\StaticMeshes\Flux_StaticMeshes.cpp">
       <Filter>Flux\StaticMeshes</Filter>
@@ -3249,13 +3249,7 @@
     <ClInclude Include="..\Zenith\Flux\Fog\Flux_GodRaysFog.h">
       <Filter>Flux\Fog</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Fog\Flux_LPVFog.h">
-      <Filter>Flux\Fog</Filter>
-    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Fog\Flux_RaymarchFog.h">
-      <Filter>Flux\Fog</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Fog\Flux_TemporalFog.h">
       <Filter>Flux\Fog</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Fog\Flux_VolumeFog.h">
@@ -3266,6 +3260,9 @@
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\HDR\Flux_HDR.h">
       <Filter>Flux\HDR</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\HiZ\Flux_HiZ.h">
+      <Filter>Flux\HiZ</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\IBL\Flux_IBL.h">
       <Filter>Flux\IBL</Filter>
@@ -3387,15 +3384,6 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_GodRays.frag">
       <Filter>Flux\Shaders\Fog</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_LPVFog_Apply.frag">
-      <Filter>Flux\Shaders\Fog</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_LPVFog_Inject.comp">
-      <Filter>Flux\Shaders\Fog</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_LPVFog_Propagate.comp">
-      <Filter>Flux\Shaders\Fog</Filter>
-    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_NoiseCommon.fxh">
       <Filter>Flux\Shaders\Fog</Filter>
     </ClInclude>
@@ -3434,6 +3422,9 @@
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\HDR\Flux_ToneMapping.frag">
       <Filter>Flux\Shaders\HDR</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\HiZ\Flux_HiZ_Generate.comp">
+      <Filter>Flux\Shaders\HiZ</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\IBL\Flux_BRDFIntegration.frag">
       <Filter>Flux\Shaders\IBL</Filter>
@@ -3480,6 +3471,9 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\Particles\Flux_ParticleUpdate.comp">
       <Filter>Flux\Shaders\Particles</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\PBRConstants.fxh">
+      <Filter>Flux\Shaders</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\Primitives\Flux_Primitives.frag">
       <Filter>Flux\Shaders\Primitives</Filter>
     </ClInclude>
@@ -3509,6 +3503,12 @@
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\SSAO\Flux_SSAO.frag">
       <Filter>Flux\Shaders\SSAO</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\SSR\Flux_SSR_RayMarch.frag">
+      <Filter>Flux\Shaders\SSR</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\SSR\Flux_SSR_Resolve.frag">
+      <Filter>Flux\Shaders\SSR</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\StaticMeshes\Flux_StaticMeshes_FragCommon.fxh">
       <Filter>Flux\Shaders\StaticMeshes</Filter>
@@ -3587,6 +3587,9 @@
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\SSAO\Flux_SSAO.h">
       <Filter>Flux\SSAO</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\SSR\Flux_SSR.h">
+      <Filter>Flux\SSR</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\StaticMeshes\Flux_StaticMeshes.h">
       <Filter>Flux\StaticMeshes</Filter>
@@ -3809,6 +3812,9 @@
     <Filter Include="Flux\HDR">
       <UniqueIdentifier>{dd96f572-bb49-0985-0708-bf2e34c0e357}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Flux\HiZ">
+      <UniqueIdentifier>{e39cd997-322b-827a-edc9-3d13a1348a8a}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Flux\IBL">
       <UniqueIdentifier>{d5cd5962-8525-77ea-b52c-f40795a85f2b}</UniqueIdentifier>
     </Filter>
@@ -3836,6 +3842,9 @@
     <Filter Include="Flux\SSAO">
       <UniqueIdentifier>{f2ec9b44-fa01-4c39-aba3-951ae52cc5f3}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Flux\SSR">
+      <UniqueIdentifier>{60ec89e3-eec9-33f0-a320-77934f93c0c7}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Flux\Shaders">
       <UniqueIdentifier>{64ae2a77-12ed-fc55-5117-fc86e630299b}</UniqueIdentifier>
     </Filter>
@@ -3857,6 +3866,9 @@
     <Filter Include="Flux\Shaders\HDR">
       <UniqueIdentifier>{a3c4ab7e-b802-6ce0-1ca4-d9fe1ae5777d}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Flux\Shaders\HiZ">
+      <UniqueIdentifier>{ecc9aba4-3cfc-c0c2-9707-cdff14a87192}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Flux\Shaders\IBL">
       <UniqueIdentifier>{6d583209-5b9d-2c7d-8404-8b073c591308}</UniqueIdentifier>
     </Filter>
@@ -3877,6 +3889,9 @@
     </Filter>
     <Filter Include="Flux\Shaders\SSAO">
       <UniqueIdentifier>{c2686e44-4aad-e07f-cbfc-1e56b411f700}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Flux\Shaders\SSR">
+      <UniqueIdentifier>{15f68907-9a04-4134-7ac0-a97acfd72d68}</UniqueIdentifier>
     </Filter>
     <Filter Include="Flux\Shaders\Skybox">
       <UniqueIdentifier>{ed42d642-cecc-72a0-ed7f-7226dba9a2a4}</UniqueIdentifier>

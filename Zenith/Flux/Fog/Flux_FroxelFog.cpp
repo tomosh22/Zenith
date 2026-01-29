@@ -10,6 +10,7 @@
 #include "Flux/Flux_RenderTargets.h"
 #include "Flux/HDR/Flux_HDR.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
+#include "Flux/Shadows/Flux_Shadows.h"
 #include "Vulkan/Zenith_Vulkan_Pipeline.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
@@ -36,7 +37,12 @@ static Flux_RenderAttachment s_xDensityGrid;      // RGBA16F: density, scatterin
 static Flux_RenderAttachment s_xLightingGrid;     // RGBA16F: accumulated in-scatter
 static Flux_RenderAttachment s_xScatteringGrid;   // RGBA16F: per-step scatter + extinction
 
-// Froxel grid configuration
+// Froxel grid configuration (fixed at compile time for performance)
+// 160x90: 16:9 aspect ratio, approximately 1 froxel per 12x12 pixels at 1080p
+// 64 depth slices: exponential distribution provides more detail near camera
+// At 1080p (1920x1080): 12x12 pixel coverage per froxel (acceptable quality/perf balance)
+// At 4K (3840x2160): 24x24 pixel coverage (slightly coarser, compensated by higher resolution)
+// Changing requires texture recreation - not recommended at runtime
 static constexpr u_int FROXEL_WIDTH = 160;
 static constexpr u_int FROXEL_HEIGHT = 90;
 static constexpr u_int FROXEL_DEPTH = 64;
@@ -50,6 +56,11 @@ DEBUGVAR float dbg_fFroxelNoiseScale = 0.02f;
 DEBUGVAR float dbg_fFroxelNoiseSpeed = 0.5f;
 DEBUGVAR float dbg_fFroxelHeightBase = 0.0f;
 DEBUGVAR float dbg_fFroxelHeightFalloff = 0.01f;
+// Volumetric shadow parameters - now runtime-adjustable for scene tuning
+// Bias: prevents self-shadowing, increase for distant/large scenes
+// Cone radius: softness of shadows, increase for softer volumetric shadows
+DEBUGVAR float dbg_fVolShadowBias = 0.001f;
+DEBUGVAR float dbg_fVolShadowConeRadius = 0.002f;
 
 // Push constant structures (must match shader)
 struct InjectConstants
@@ -74,6 +85,14 @@ struct LightConstants
 	float m_fAbsorptionCoeff;
 	float m_fPhaseG;
 	u_int m_uDebugMode;
+	// Volumetric shadow parameters (now runtime-adjustable)
+	// Shadow bias prevents self-shadowing artifacts in fog
+	// Cone radius controls softness of volumetric shadows
+	float m_fVolShadowBias;
+	float m_fVolShadowConeRadius;
+	// Ambient irradiance ratio: fraction of sky light vs direct sun (0.15-0.6 typical)
+	float m_fAmbientIrradianceRatio;
+	float m_fPad0;  // Padding to maintain 16-byte alignment
 };
 
 struct ApplyConstants
@@ -99,6 +118,9 @@ static Flux_BindingHandle s_xLightFrameConstantsBinding;
 static Flux_BindingHandle s_xLightDensityInputBinding;
 static Flux_BindingHandle s_xLightLightingOutputBinding;
 static Flux_BindingHandle s_xLightScatteringOutputBinding;
+// CSM shadow bindings for volumetric shadows
+static Flux_BindingHandle s_axLightCSMBindings[ZENITH_FLUX_NUM_CSMS];
+static Flux_BindingHandle s_axLightShadowMatrixBindings[ZENITH_FLUX_NUM_CSMS];
 // Apply pass
 static Flux_BindingHandle s_xApplyFrameConstantsBinding;
 static Flux_BindingHandle s_xApplyDepthBinding;
@@ -159,6 +181,16 @@ void Flux_FroxelFog::Initialise()
 	s_xLightLightingOutputBinding = xLightReflection.GetBinding("u_xLightingGrid");
 	s_xLightScatteringOutputBinding = xLightReflection.GetBinding("u_xScatteringGrid");
 
+	// Cache CSM shadow bindings for volumetric shadows
+	s_axLightCSMBindings[0] = xLightReflection.GetBinding("u_xCSM0");
+	s_axLightCSMBindings[1] = xLightReflection.GetBinding("u_xCSM1");
+	s_axLightCSMBindings[2] = xLightReflection.GetBinding("u_xCSM2");
+	s_axLightCSMBindings[3] = xLightReflection.GetBinding("u_xCSM3");
+	s_axLightShadowMatrixBindings[0] = xLightReflection.GetBinding("ShadowMatrix0");
+	s_axLightShadowMatrixBindings[1] = xLightReflection.GetBinding("ShadowMatrix1");
+	s_axLightShadowMatrixBindings[2] = xLightReflection.GetBinding("ShadowMatrix2");
+	s_axLightShadowMatrixBindings[3] = xLightReflection.GetBinding("ShadowMatrix3");
+
 	// Initialize apply fragment shader
 	s_xApplyShader.Initialise("Flux_Fullscreen_UV.vert", "Fog/Flux_FroxelFog_Apply.frag");
 
@@ -204,6 +236,8 @@ void Flux_FroxelFog::Initialise()
 	Zenith_DebugVariables::AddFloat({ "Render", "Volumetric Fog", "Froxel", "Noise Speed" }, dbg_fFroxelNoiseSpeed, 0.0f, 2.0f);
 	Zenith_DebugVariables::AddFloat({ "Render", "Volumetric Fog", "Froxel", "Height Base" }, dbg_fFroxelHeightBase, -100.0f, 100.0f);
 	Zenith_DebugVariables::AddFloat({ "Render", "Volumetric Fog", "Froxel", "Height Falloff" }, dbg_fFroxelHeightFalloff, 0.001f, 0.1f);
+	Zenith_DebugVariables::AddFloat({ "Render", "Volumetric Fog", "Froxel", "Shadow Bias" }, dbg_fVolShadowBias, 0.0001f, 0.01f);
+	Zenith_DebugVariables::AddFloat({ "Render", "Volumetric Fog", "Froxel", "Shadow Cone Radius" }, dbg_fVolShadowConeRadius, 0.0001f, 0.01f);
 #endif
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_FroxelFog initialised (%ux%ux%u grid)", FROXEL_WIDTH, FROXEL_HEIGHT, FROXEL_DEPTH);
@@ -310,6 +344,11 @@ void Flux_FroxelFog::Render(void*)
 	s_xLightConstants.m_fAbsorptionCoeff = xShared.m_fAbsorptionCoeff;
 	s_xLightConstants.m_fPhaseG = dbg_fFroxelPhaseG;
 	s_xLightConstants.m_uDebugMode = dbg_uVolFogDebugMode;
+	// Volumetric shadow parameters from debug variables
+	s_xLightConstants.m_fVolShadowBias = dbg_fVolShadowBias;
+	s_xLightConstants.m_fVolShadowConeRadius = dbg_fVolShadowConeRadius;
+	// Ambient irradiance ratio from shared fog constants
+	s_xLightConstants.m_fAmbientIrradianceRatio = xShared.m_fAmbientIrradianceRatio;
 
 	g_xLightCommandList.Reset(false);
 	g_xLightCommandList.AddCommand<Flux_CommandBindComputePipeline>(&s_xLightPipeline);
@@ -319,6 +358,15 @@ void Flux_FroxelFog::Render(void*)
 	xLightBinder.BindSRV(s_xLightDensityInputBinding, &s_xDensityGrid.m_pxSRV);
 	xLightBinder.BindUAV_Texture(s_xLightLightingOutputBinding, &s_xLightingGrid.m_pxUAV);
 	xLightBinder.BindUAV_Texture(s_xLightScatteringOutputBinding, &s_xScatteringGrid.m_pxUAV);
+
+	// Bind CSM shadow maps and matrices for volumetric shadows
+	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
+	{
+		Flux_ShaderResourceView& xCSMSRV = Flux_Shadows::GetCSMSRV(u);
+		xLightBinder.BindSRV(s_axLightCSMBindings[u], &xCSMSRV, &Flux_Graphics::s_xClampSampler);
+		xLightBinder.BindCBV(s_axLightShadowMatrixBindings[u], &Flux_Shadows::GetShadowMatrixBuffer(u).GetCBV());
+	}
+
 	xLightBinder.PushConstant(&s_xLightConstants, sizeof(LightConstants));
 	g_xLightCommandList.AddCommand<Flux_CommandDispatch>(
 		(FROXEL_WIDTH + 7) / 8,

@@ -9,9 +9,10 @@ class Zenith_TextureAsset;
  *
  * Provides common resources used across all volumetric fog rendering techniques:
  * - 3D noise textures (Perlin-Worley combined)
- * - Blue noise texture for temporal dithering
+ * - Blue noise texture for spatial dithering
  * - Froxel grid (camera-aligned 3D texture)
- * - History buffers for temporal reprojection
+ *
+ * All techniques are spatial-only (no temporal effects, history buffers, or reprojection).
  *
  * Debug Modes: 1-2 (noise 3D slice, blue noise)
  */
@@ -35,31 +36,19 @@ enum VolumetricFogDebugMode
 	VOLFOG_DEBUG_RAYMARCH_ACCUMULATED_DENSITY, // 10: Density before lighting
 	VOLFOG_DEBUG_RAYMARCH_NOISE_SAMPLE,    // 11: Raw noise values sampled
 	VOLFOG_DEBUG_RAYMARCH_JITTER_PATTERN,  // 12: Blue noise jitter offsets
-	// LPV
-	VOLFOG_DEBUG_LPV_INJECTION_POINTS,     // 13: VPL injection locations
-	VOLFOG_DEBUG_LPV_PROPAGATION_ITER,     // 14: Light after N propagation steps
-	VOLFOG_DEBUG_LPV_CASCADE_BOUNDS,       // 15: Cascade bounding boxes
-	VOLFOG_DEBUG_LPV_SH_COEFFICIENTS,      // 16: SH coefficient magnitude
-	// Temporal
-	VOLFOG_DEBUG_TEMPORAL_MOTION_VECTORS,  // 17: Reprojection motion vectors
-	VOLFOG_DEBUG_TEMPORAL_HISTORY_WEIGHT,  // 18: History vs current blend weight
-	VOLFOG_DEBUG_TEMPORAL_JITTER_OFFSET,   // 19: Current frame jitter pattern
-	VOLFOG_DEBUG_TEMPORAL_DISOCCLUSION,    // 20: Disoccluded pixels (history invalid)
 	// God Rays
-	VOLFOG_DEBUG_GODRAYS_LIGHT_MASK,       // 21: Light source screen-space mask
-	VOLFOG_DEBUG_GODRAYS_OCCLUSION,        // 22: Depth-based occlusion test
-	VOLFOG_DEBUG_GODRAYS_RADIAL_WEIGHTS,   // 23: Sample weights along ray
+	VOLFOG_DEBUG_GODRAYS_LIGHT_MASK,       // 13: Light source screen-space mask
+	VOLFOG_DEBUG_GODRAYS_OCCLUSION,        // 14: Depth-based occlusion test
+	VOLFOG_DEBUG_GODRAYS_RADIAL_WEIGHTS,   // 15: Sample weights along ray
 	VOLFOG_DEBUG_MAX
 };
 
-// Volumetric fog technique selection
+// Volumetric fog technique selection (all spatial-only, no temporal effects)
 enum VolumetricFogTechnique
 {
 	VOLFOG_TECHNIQUE_SIMPLE = 0,     // Original exponential fog
 	VOLFOG_TECHNIQUE_FROXEL,         // Froxel-based volumetric
 	VOLFOG_TECHNIQUE_RAYMARCH,       // Ray marching with noise
-	VOLFOG_TECHNIQUE_LPV,            // Light Propagation Volumes
-	VOLFOG_TECHNIQUE_TEMPORAL,       // Froxel + temporal reprojection
 	VOLFOG_TECHNIQUE_GODRAYS,        // Screen-space god rays
 	VOLFOG_TECHNIQUE_MAX
 };
@@ -71,7 +60,16 @@ struct Flux_VolumeFogConstants
 	float m_fDensity = 0.0001f;
 	float m_fScatteringCoeff = 0.1f;
 	float m_fAbsorptionCoeff = 0.05f;
-	float m_fPad0;
+	// Ambient irradiance ratio: fraction of sky light vs direct sun contribution to fog
+	// Physical basis: Clear sky ambient ~0.15-0.25, overcast ~0.4-0.6
+	// Use 0.25 as balanced default for typical outdoor scenes
+	float m_fAmbientIrradianceRatio = 0.25f;
+	// Noise coordinate scale: Maps world-space to noise texture UV
+	// 0.01 = fog features ~100 units wide (suitable for large outdoor scenes)
+	// Smaller values = larger fog features, larger values = smaller/denser noise detail
+	// Note: Shaders should read from uniform buffer; VolumetricCommon.fxh has fallback const
+	float m_fNoiseWorldScale = 0.01f;
+	float m_fPad[3] = { 0.f, 0.f, 0.f };  // Padding for std140 alignment
 };
 
 // Froxel grid configuration
@@ -97,11 +95,6 @@ public:
 	static Flux_RenderAttachment& GetFroxelDensityGrid() { return s_xFroxelDensityGrid; }
 	static Flux_RenderAttachment& GetFroxelLightingGrid() { return s_xFroxelLightingGrid; }
 
-	// History buffer ping-pong
-	static Flux_RenderAttachment& GetCurrentHistory();
-	static Flux_RenderAttachment& GetPreviousHistory();
-	static void SwapHistoryBuffers();
-
 	// Debug output
 	static Flux_RenderAttachment& GetDebugOutput() { return s_xDebugOutput; }
 
@@ -109,29 +102,20 @@ public:
 	static Flux_VolumeFogConstants& GetSharedConstants() { return s_xSharedConstants; }
 	static Flux_FroxelConfig& GetFroxelConfig() { return s_xFroxelConfig; }
 
-	// Temporal jitter
-	static Zenith_Maths::Vector2 GetCurrentJitter();
-	static u_int GetJitterIndex() { return s_uJitterIndex; }
-
 private:
 	static void GenerateNoiseTexture3D();
 	static void GenerateBlueNoiseTexture();
 	static void CreateFroxelGrids();
-	static void CreateHistoryBuffers();
 	static void CreateDebugOutput();
 	static void RegisterDebugVariables();
 
 	// Shared textures
-	static Zenith_TextureAsset* s_pxNoiseTexture3D;      // 128^3 Perlin-Worley noise
+	static Zenith_TextureAsset* s_pxNoiseTexture3D;      // 64^3 Perlin-Worley noise
 	static Zenith_TextureAsset* s_pxBlueNoiseTexture;    // 64x64 blue noise
 
 	// Froxel grids (3D render targets)
 	static Flux_RenderAttachment s_xFroxelDensityGrid;   // RGBA16F: density + scattering
 	static Flux_RenderAttachment s_xFroxelLightingGrid;  // RGBA16F: lit color + transmittance
-
-	// Temporal history buffers (ping-pong)
-	static Flux_RenderAttachment s_axHistoryBuffers[2];
-	static u_int s_uCurrentHistoryIndex;
 
 	// Debug visualization output
 	static Flux_RenderAttachment s_xDebugOutput;
@@ -139,8 +123,4 @@ private:
 	// Shared configuration
 	static Flux_VolumeFogConstants s_xSharedConstants;
 	static Flux_FroxelConfig s_xFroxelConfig;
-
-	// Temporal jitter
-	static u_int s_uJitterIndex;
-	static const u_int s_uJitterSequenceLength = 16;
 };

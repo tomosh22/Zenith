@@ -1,0 +1,74 @@
+#version 450
+
+// Sequential HiZ Generation with min-max depth pairs
+// Generates one mip level per dispatch
+// RG32F format: R = min depth (closest surface), G = max depth (farthest surface)
+
+// PERFORMANCE: 8x16 = 128 threads = 4 full warps on NVIDIA (vs 8x8 = 2 warps)
+// This improves occupancy and latency hiding on NVIDIA GPUs while remaining
+// efficient on AMD (8 wavefronts of 16 threads each)
+layout(local_size_x = 8, local_size_y = 16, local_size_z = 1) in;
+
+// Input texture (previous mip or depth buffer)
+// For mip 0: R32F depth buffer
+// For mip N>0: RG32F from previous mip (min in R, max in G)
+layout(set = 0, binding = 0) uniform sampler2D g_xInputTex;
+
+// Output texture (current mip being generated)
+// RG32F format: R = min depth, G = max depth
+layout(binding = 1, rg32f) uniform writeonly image2D g_xOutputTex;
+
+// Push constants
+layout(std140, set = 0, binding = 2) uniform PushConstants {
+	uint u_uOutputWidth;
+	uint u_uOutputHeight;
+	uint u_uInputMip;
+	uint u_uPad;
+} pushConstants;
+
+void main()
+{
+	uvec2 xPixelCoords = gl_GlobalInvocationID.xy;
+
+	// Check bounds
+	if (xPixelCoords.x >= pushConstants.u_uOutputWidth || xPixelCoords.y >= pushConstants.u_uOutputHeight)
+	{
+		return;
+	}
+
+	float fMinDepth;
+	float fMaxDepth;
+
+	if (pushConstants.u_uInputMip == 0)
+	{
+		// First mip: depth buffer and HiZ mip 0 are the same resolution (1:1 mapping)
+		// Each HiZ texel corresponds to exactly one depth texel, so min == max
+		// The min-max divergence happens at mip 1+ where we downsample 2x2 regions
+		vec2 xUV = (vec2(xPixelCoords) + 0.5) / vec2(pushConstants.u_uOutputWidth, pushConstants.u_uOutputHeight);
+		float fDepth = texture(g_xInputTex, xUV).r;
+		fMinDepth = fDepth;
+		fMaxDepth = fDepth;
+	}
+	else
+	{
+		// Subsequent mips: sample 2x2 from previous mip (RG32F format)
+		// Compute min of mins and max of maxes
+		vec2 xTexelSize = 1.0 / vec2(pushConstants.u_uOutputWidth * 2, pushConstants.u_uOutputHeight * 2);
+		vec2 xBaseUV = (vec2(xPixelCoords) * 2.0 + 0.5) * xTexelSize;
+
+		// Sample 4 texels in a 2x2 pattern (each has min in R, max in G)
+		vec2 d00 = texture(g_xInputTex, xBaseUV).rg;
+		vec2 d10 = texture(g_xInputTex, xBaseUV + vec2(xTexelSize.x, 0.0)).rg;
+		vec2 d01 = texture(g_xInputTex, xBaseUV + vec2(0.0, xTexelSize.y)).rg;
+		vec2 d11 = texture(g_xInputTex, xBaseUV + xTexelSize).rg;
+
+		// Min depth: minimum of all min values (closest surface in region)
+		fMinDepth = min(min(d00.r, d10.r), min(d01.r, d11.r));
+
+		// Max depth: maximum of all max values (farthest surface in region)
+		fMaxDepth = max(max(d00.g, d10.g), max(d01.g, d11.g));
+	}
+
+	// Store min in R, max in G
+	imageStore(g_xOutputTex, ivec2(xPixelCoords), vec4(fMinDepth, fMaxDepth, 0.0, 0.0));
+}

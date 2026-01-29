@@ -90,12 +90,9 @@ Zenith_TextureAsset* Flux_VolumeFog::s_pxNoiseTexture3D = nullptr;
 Zenith_TextureAsset* Flux_VolumeFog::s_pxBlueNoiseTexture = nullptr;
 Flux_RenderAttachment Flux_VolumeFog::s_xFroxelDensityGrid;
 Flux_RenderAttachment Flux_VolumeFog::s_xFroxelLightingGrid;
-Flux_RenderAttachment Flux_VolumeFog::s_axHistoryBuffers[2];
-u_int Flux_VolumeFog::s_uCurrentHistoryIndex = 0;
 Flux_RenderAttachment Flux_VolumeFog::s_xDebugOutput;
 Flux_VolumeFogConstants Flux_VolumeFog::s_xSharedConstants{};
 Flux_FroxelConfig Flux_VolumeFog::s_xFroxelConfig{};
-u_int Flux_VolumeFog::s_uJitterIndex = 0;
 
 void Flux_VolumeFog::Initialise()
 {
@@ -109,6 +106,12 @@ void Flux_VolumeFog::Initialise()
 	Zenith_DebugVariables::AddFloat({ "Render", "Volumetric Fog", "Shared", "Density" }, s_xSharedConstants.m_fDensity, 0.f, 0.01f);
 	Zenith_DebugVariables::AddFloat({ "Render", "Volumetric Fog", "Shared", "Scattering" }, s_xSharedConstants.m_fScatteringCoeff, 0.f, 1.f);
 	Zenith_DebugVariables::AddFloat({ "Render", "Volumetric Fog", "Shared", "Absorption" }, s_xSharedConstants.m_fAbsorptionCoeff, 0.f, 1.f);
+	// Ambient irradiance ratio: fraction of sky light vs direct sun contribution to fog
+	// Physical basis: Clear sky ~0.15-0.25, overcast ~0.4-0.6
+	Zenith_DebugVariables::AddFloat({ "Render", "Volumetric Fog", "Shared", "Ambient Irradiance Ratio" }, s_xSharedConstants.m_fAmbientIrradianceRatio, 0.f, 1.f);
+	// Noise world scale: maps world-space coordinates to noise texture UV
+	// Smaller values = larger fog features, larger values = denser noise detail
+	Zenith_DebugVariables::AddFloat({ "Render", "Volumetric Fog", "Shared", "Noise World Scale" }, s_xSharedConstants.m_fNoiseWorldScale, 0.001f, 0.1f);
 #endif
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_VolumeFog initialised");
@@ -121,30 +124,7 @@ void Flux_VolumeFog::Shutdown()
 
 void Flux_VolumeFog::Reset()
 {
-	s_uCurrentHistoryIndex = 0;
-	s_uJitterIndex = 0;
-}
-
-Flux_RenderAttachment& Flux_VolumeFog::GetCurrentHistory()
-{
-	return s_axHistoryBuffers[s_uCurrentHistoryIndex];
-}
-
-Flux_RenderAttachment& Flux_VolumeFog::GetPreviousHistory()
-{
-	return s_axHistoryBuffers[1 - s_uCurrentHistoryIndex];
-}
-
-void Flux_VolumeFog::SwapHistoryBuffers()
-{
-	s_uCurrentHistoryIndex = 1 - s_uCurrentHistoryIndex;
-	s_uJitterIndex = (s_uJitterIndex + 1) % s_uJitterSequenceLength;
-}
-
-Zenith_Maths::Vector2 Flux_VolumeFog::GetCurrentJitter()
-{
-	// Simple jitter for now
-	return Zenith_Maths::Vector2(0.0f, 0.0f);
+	// Spatial-only fog - no history buffers to reset
 }
 
 void Flux_VolumeFog::GenerateNoiseTexture3D()
@@ -280,11 +260,6 @@ void Flux_VolumeFog::GenerateBlueNoiseTexture()
 }
 
 void Flux_VolumeFog::CreateFroxelGrids()
-{
-	// STUB - not implemented
-}
-
-void Flux_VolumeFog::CreateHistoryBuffers()
 {
 	// STUB - not implemented
 }

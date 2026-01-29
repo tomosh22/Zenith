@@ -2,6 +2,31 @@
 
 // Flux_GodRays.frag - Screen-space volumetric light shafts
 // Radial blur from light source position with depth-based occlusion
+//
+// ========== ARTISTIC PARAMETERS (NOT PHYSICALLY-BASED) ==========
+// This god rays effect is an ARTISTIC technique, not a physical simulation.
+//
+// Physical light scattering in participating media would use Beer-Lambert extinction:
+//   transmittance = exp(-density * distance)
+// combined with proper phase functions (Henyey-Greenstein, Mie scattering).
+//
+// Instead, this shader uses an exponential DECAY factor for the dramatic
+// "crepuscular rays" look artists expect from games and films:
+//   rayIntensity *= pow(decay, sampleIndex)
+//
+// DECAY VALUE GUIDE:
+// +-----------+----------------------------------------------------+
+// | Value     | Effect                                             |
+// +-----------+----------------------------------------------------+
+// | 0.95-0.99 | Very long rays (dramatic sunrise/sunset, churches) |
+// | 0.85-0.95 | Medium rays (typical outdoor scenes)               |
+// | 0.70-0.85 | Short rays (subtle god ray effect)                 |
+// | < 0.70    | Very short (may not be visible)                    |
+// +-----------+----------------------------------------------------+
+//
+// For physically-based volumetric light shafts, consider using the
+// Froxel or Raymarch fog techniques with volumetric shadow sampling.
+// Those use proper Beer-Lambert extinction and phase functions.
 
 #include "../Common.fxh"
 

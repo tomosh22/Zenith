@@ -101,7 +101,15 @@
       "Bash(\"/c/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe\" zenith_win64.sln -p:Configuration=vs2022_Debug_Win64_True -p:Platform=x64 -t:Sokoban -m -v:minimal)",
       "Bash(\"/c/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe\" zenith_win64.sln -p:Configuration=vs2022_Debug_Win64_True -p:Platform=x64 -t:Exploration -m -v:minimal)",
       "Bash(\"C:/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe\" c:/dev/Zenith/Build/zenith_win64.sln /p:Configuration=vs2022_Debug_Win64_True /p:Platform=x64 /v:minimal /nologo)",
-      "Bash(\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\MSBuild\\\\Current\\\\Bin\\\\MSBuild.exe\" zenith_win64.sln /p:Configuration=vs2022_Debug_Win64_True /p:Platform=x64 /t:Zenith /m /v:minimal)"
+      "Bash(\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Community\\\\MSBuild\\\\Current\\\\Bin\\\\MSBuild.exe\" zenith_win64.sln /p:Configuration=vs2022_Debug_Win64_True /p:Platform=x64 /t:Zenith /m /v:minimal)",
+      "Bash(./combat.exe)",
+      "Bash(taskkill //F //IM combat.exe)",
+      "Bash(tasklist:*)",
+      "Bash(cd \"C:/dev/Zenith/Games/Combat/build/output/win64/vs2022_debug_win64_true\" ls -la imgui.ini powershell -Command \"Start-Process -FilePath ''./combat.exe'' -WorkingDirectory ''.''\" sleep 3 ls -la imgui.ini sleep 3 ls -la imgui.ini tasklist)",
+      "Bash(taskkill:*)",
+      "Bash(\"C:\\\\Program Files\\\\Microsoft Visual Studio\\\\2022\\\\Professional\\\\MSBuild\\\\Current\\\\Bin\\\\MSBuild.exe\" c:devZenithBuildzenith_win64.sln /p:Configuration=vs2022_Debug_Win64_True /p:Platform=x64 /t:combat -v:m -nologo)",
+      "Bash(\"/c/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe\" \"c:/dev/Zenith/Build/zenith_win64.sln\" /p:Configuration=vs2022_Debug_Win64_True /p:Platform=x64 /t:combat -v:m -nologo)",
+      "Bash(\"/c/Program Files/Microsoft Visual Studio/2022/Community/MSBuild/Current/Bin/MSBuild.exe\" \"c:/dev/Zenith/Build/zenith_win64.sln\" //p:Configuration=vs2022_Debug_Win64_True //p:Platform=x64 //t:combat //v:m //nologo)"
     ],
     "deny": [],
     "ask": []

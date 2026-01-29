@@ -75,7 +75,7 @@ void Flux_Particles::Initialise()
 	Flux_MemoryManager::InitialiseDynamicVertexBuffer(nullptr, s_uMaxParticles * sizeof(Flux_ParticleInstance), s_xInstanceBuffer, false);
 
 	// Load default particle texture
-	s_pxParticleTexture = Zenith_AssetRegistry::Get().Get<Zenith_TextureAsset>("C:/dev/Zenith/Games/Test/Assets/Textures/particleSwirl" ZENITH_TEXTURE_EXT);
+	s_pxParticleTexture = Zenith_AssetRegistry::Get().Get<Zenith_TextureAsset>("C:/dev/Zenith/Zenith/Assets/Textures/Particles/particleSwirl" ZENITH_TEXTURE_EXT);
 	if (!s_pxParticleTexture)
 	{
 		Zenith_Log(LOG_CATEGORY_PARTICLES, "Warning: Failed to load particle texture, using white texture");

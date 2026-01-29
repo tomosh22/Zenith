@@ -52,7 +52,7 @@ int main()
 
 #ifdef ZENITH_TOOLS
 	ExportAllMeshes();
-	//ExportAllTextures();
+	ExportAllTextures();
 	//ExportHeightmap();
 	ExportDefaultFontAtlas();  // Generate font atlas from TTF
 #endif

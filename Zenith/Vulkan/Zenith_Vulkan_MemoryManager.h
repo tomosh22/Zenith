@@ -122,6 +122,10 @@ public:
 		u_int64 m_ulAllocationCount;
 	};
 	static VMAStats GetVMAStats();
+
+	// Direct access to VMA allocator (for advanced buffer creation)
+	static VmaAllocator GetVMAAllocator() { return s_xAllocator; }
+
 private:
 
 	static void InitialiseStagingBuffer();

@@ -18,14 +18,36 @@ enum IBL_DebugMode : u_int
 	IBL_DEBUG_COUNT
 };
 
+// IBL regeneration state machine for frame-amortized updates
+// Spreads expensive convolution work across multiple frames to avoid hitches
+enum IBL_RegenState : u_int
+{
+	IBL_REGEN_IDLE,                 // No regeneration in progress
+	IBL_REGEN_IRRADIANCE,           // Processing irradiance cubemap faces
+	IBL_REGEN_PREFILTER             // Processing prefiltered cubemap mips/faces
+};
+
 // IBL configuration constants
 namespace IBLConfig
 {
 	constexpr u_int uBRDF_LUT_SIZE = 512;             // BRDF LUT resolution (512x512)
 	constexpr u_int uIRRADIANCE_SIZE = 32;            // Irradiance cubemap face size
 	constexpr u_int uPREFILTER_SIZE = 128;            // Prefiltered env base resolution
-	constexpr u_int uPREFILTER_MIP_COUNT = 5;         // Roughness mip levels (0=smooth, 4=rough)
+	// Prefilter mip levels: 128->64->32->16->8->4->2 (7 mips)
+	// More mips provides better rough surface quality at minimal VRAM cost (~10% more)
+	// Roughness 0.0 samples mip 0 (128px), roughness 1.0 samples mip 6 (2px)
+	constexpr u_int uPREFILTER_MIP_COUNT = 7;
 	constexpr u_int uMAX_PROBES = 16;                 // Maximum environment probes
+
+	// Frame-amortized regeneration: process up to 8 passes per frame
+	// Total passes: 6 irradiance + 42 prefilter (7 mips × 6 faces) = 48
+	// At 8 passes/frame, regeneration completes in 6 frames (~100ms at 60fps)
+	// This prevents hitches when skybox changes during gameplay.
+	//
+	// NOTE: First generation after startup/reset is always non-amortized (all 48 passes).
+	// This ensures all mip levels have valid Vulkan image layouts before the deferred
+	// shader binds the prefiltered cubemap. Subsequent regenerations use amortization.
+	constexpr u_int uPASSES_PER_FRAME = 8;
 }
 
 class Flux_IBL
@@ -80,8 +102,14 @@ public:
 private:
 	static void CreateRenderTargets();
 	static void DestroyRenderTargets();
+
+	// Legacy functions that process all faces at once (kept for reference)
 	static void GenerateIrradianceMap();
 	static void GeneratePrefilteredMap();
+
+	// Frame-amortized helpers that process a single face
+	static void GenerateIrradianceFace(u_int uFace);
+	static void GeneratePrefilteredFace(u_int uMip, u_int uFace);
 
 	// BRDF Integration LUT (2D texture, computed once)
 	static Flux_RenderAttachment s_xBRDFLUT;
@@ -119,4 +147,10 @@ private:
 	// Dirty flags
 	static bool s_bSkyIBLDirty;
 	static bool s_bIBLReady;  // True after all IBL textures have been generated
+	static bool s_bFirstGeneration;  // True until first full generation completes
+
+	// Frame-amortized regeneration state
+	static IBL_RegenState s_eRegenState;
+	static u_int s_uRegenFace;  // Current face being processed (0-5)
+	static u_int s_uRegenMip;   // Current mip being processed (0-6, prefilter only)
 };

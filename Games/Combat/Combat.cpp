@@ -455,11 +455,12 @@ static void InitializeCombatResources()
 	std::filesystem::create_directories(strTexturesDir);
 
 	// Export procedural textures to disk and get TextureHandles
-	TextureHandle xPlayerTextureHandle = ExportColoredTexture(strTexturesDir + "/Player.ztex", 51, 102, 230);    // Blue player
-	TextureHandle xEnemyTextureHandle = ExportColoredTexture(strTexturesDir + "/Enemy.ztex", 204, 51, 51);       // Red enemies
-	TextureHandle xArenaTextureHandle = ExportColoredTexture(strTexturesDir + "/Arena.ztex", 77, 77, 89);        // Gray arena floor
-	TextureHandle xWallTextureHandle = ExportColoredTexture(strTexturesDir + "/Wall.ztex", 102, 64, 38);         // Brown walls
-	TextureHandle xCandleTextureHandle = ExportColoredTexture(strTexturesDir + "/Candle.ztex", 240, 220, 180);   // Cream candle color
+	// SSR VERIFICATION: Using bright distinctive colors for walls and player
+	TextureHandle xPlayerTextureHandle = ExportColoredTexture(strTexturesDir + "/Player.ztex", 0, 255, 255);      // CYAN player for SSR detection
+	TextureHandle xEnemyTextureHandle = ExportColoredTexture(strTexturesDir + "/Enemy.ztex", 204, 51, 51);        // Red enemies
+	TextureHandle xArenaTextureHandle = ExportColoredTexture(strTexturesDir + "/Arena.ztex", 77, 77, 89);         // Gray arena floor
+	TextureHandle xWallTextureHandle = ExportColoredTexture(strTexturesDir + "/Wall.ztex", 255, 0, 255);          // MAGENTA walls for SSR detection
+	TextureHandle xCandleTextureHandle = ExportColoredTexture(strTexturesDir + "/Candle.ztex", 240, 220, 180);    // Cream candle color
 
 	// Create materials with texture paths (properly serializable)
 	auto& xRegistry = Zenith_AssetRegistry::Get();
@@ -467,22 +468,27 @@ static void InitializeCombatResources()
 	g_xPlayerMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
 	g_xPlayerMaterial.Get()->SetName("CombatPlayer");
 	g_xPlayerMaterial.Get()->SetDiffuseTexturePath(strTexturesDir + "/Player.ztex");
+	g_xPlayerMaterial.Get()->SetRoughness(0.9f);  // HIGH roughness - player should be REFLECTED, not reflecting
 
 	g_xEnemyMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
 	g_xEnemyMaterial.Get()->SetName("CombatEnemy");
 	g_xEnemyMaterial.Get()->SetDiffuseTexturePath(strTexturesDir + "/Enemy.ztex");
+	g_xEnemyMaterial.Get()->SetRoughness(0.9f);  // HIGH roughness - enemies should be REFLECTED, not reflecting
 
 	g_xArenaMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
 	g_xArenaMaterial.Get()->SetName("CombatArena");
 	g_xArenaMaterial.Get()->SetDiffuseTexturePath(strTexturesDir + "/Arena.ztex");
+	g_xArenaMaterial.Get()->SetRoughness(0.15f);  // LOW roughness - floor IS the reflective surface
 
 	g_xWallMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
 	g_xWallMaterial.Get()->SetName("CombatWall");
 	g_xWallMaterial.Get()->SetDiffuseTexturePath(strTexturesDir + "/Wall.ztex");
+	g_xWallMaterial.Get()->SetRoughness(0.9f);  // HIGH roughness - walls should be REFLECTED, not reflecting
 
 	g_xCandleMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
 	g_xCandleMaterial.Get()->SetName("CombatCandle");
 	g_xCandleMaterial.Get()->SetDiffuseTexturePath(strTexturesDir + "/Candle.ztex");
+	g_xCandleMaterial.Get()->SetRoughness(0.9f);  // HIGH roughness - candles should be REFLECTED, not reflecting
 
 	// Create flame particle config for wall candles
 	g_pxFlameConfig = new Flux_ParticleEmitterConfig();

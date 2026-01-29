@@ -16,6 +16,13 @@ layout(std140, set = 0, binding = 1) uniform LightConstants
     float u_fAbsorptionCoeff;
     float u_fPhaseG;
     uint u_uDebugMode;
+    // Volumetric shadow parameters (now runtime-adjustable)
+    // Previous hardcoded values: bias = 0.001, cone radius = 0.002
+    float u_fVolShadowBias;
+    float u_fVolShadowConeRadius;
+    // Ambient irradiance ratio: fraction of sky light vs direct sun (0.15-0.6 typical)
+    float u_fAmbientIrradianceRatio;
+    float _pad0;  // Padding to maintain 16-byte alignment
 };
 
 // Bindings (binding 0 is FrameConstants from Common.fxh)
@@ -23,10 +30,85 @@ layout(set = 0, binding = 2) uniform sampler3D u_xDensityGrid;
 layout(set = 0, binding = 3, rgba16f) uniform writeonly image3D u_xLightingGrid;
 layout(set = 0, binding = 4, rgba16f) uniform writeonly image3D u_xScatteringGrid;
 
+// CSM Shadow maps for volumetric shadows
+layout(set = 0, binding = 5) uniform sampler2D u_xCSM0;
+layout(set = 0, binding = 6) uniform sampler2D u_xCSM1;
+layout(set = 0, binding = 7) uniform sampler2D u_xCSM2;
+layout(set = 0, binding = 8) uniform sampler2D u_xCSM3;
+
+// Shadow matrices (individual bindings to match deferred shading pattern)
+layout(std140, set = 0, binding = 9) uniform ShadowMatrix0 { mat4 u_xShadowMat0; };
+layout(std140, set = 0, binding = 10) uniform ShadowMatrix1 { mat4 u_xShadowMat1; };
+layout(std140, set = 0, binding = 11) uniform ShadowMatrix2 { mat4 u_xShadowMat2; };
+layout(std140, set = 0, binding = 12) uniform ShadowMatrix3 { mat4 u_xShadowMat3; };
+
 // Debug mode constants
 const uint DEBUG_FROXEL_SCATTERING = 6;
 const uint DEBUG_FROXEL_EXTINCTION = 7;
 const uint DEBUG_FROXEL_SHADOW_SAMPLES = 8;
+
+// Volumetric shadow constants
+// Note: VOL_SHADOW_BIAS and VOL_SHADOW_CONE_RADIUS are now uniforms (u_fVolShadowBias, u_fVolShadowConeRadius)
+// for runtime adjustment. Sample count kept as const for loop unrolling performance.
+const int VOL_SHADOW_SAMPLES = 4;                    // Cone samples for soft volumetric shadows
+
+// Sample volumetric shadow with soft cone sampling
+// Returns shadow factor (1.0 = fully lit, 0.0 = fully shadowed)
+float SampleVolumetricShadow(vec3 worldPos)
+{
+    mat4 axShadowMats[4] = mat4[4](u_xShadowMat0, u_xShadowMat1, u_xShadowMat2, u_xShadowMat3);
+
+    // Find appropriate cascade
+    for (int iCascade = 0; iCascade < 4; iCascade++)
+    {
+        vec4 xShadowSpace = axShadowMats[iCascade] * vec4(worldPos, 1.0);
+        vec2 xSamplePos = xShadowSpace.xy / xShadowSpace.w * 0.5 + 0.5;
+        float fCurrentDepth = xShadowSpace.z / xShadowSpace.w;
+
+        // Check if within cascade bounds
+        if (xSamplePos.x < 0.0 || xSamplePos.x > 1.0 ||
+            xSamplePos.y < 0.0 || xSamplePos.y > 1.0 ||
+            fCurrentDepth < 0.0 || fCurrentDepth > 1.0)
+        {
+            continue;
+        }
+
+        // Simple 4-sample cone pattern for soft volumetric shadows
+        // Using fixed offsets for deterministic results (no temporal noise)
+        vec2 axOffsets[4] = vec2[4](
+            vec2(-0.7071, -0.7071),
+            vec2( 0.7071, -0.7071),
+            vec2(-0.7071,  0.7071),
+            vec2( 0.7071,  0.7071)
+        );
+
+        float fBiasedDepth = fCurrentDepth - u_fVolShadowBias;
+        float fShadow = 0.0;
+
+        for (int i = 0; i < VOL_SHADOW_SAMPLES; i++)
+        {
+            vec2 xOffset = axOffsets[i] * u_fVolShadowConeRadius;
+            vec2 xSampleUV = xSamplePos + xOffset;
+
+            float fShadowDepth;
+            if (iCascade == 0)
+                fShadowDepth = texture(u_xCSM0, xSampleUV).r;
+            else if (iCascade == 1)
+                fShadowDepth = texture(u_xCSM1, xSampleUV).r;
+            else if (iCascade == 2)
+                fShadowDepth = texture(u_xCSM2, xSampleUV).r;
+            else
+                fShadowDepth = texture(u_xCSM3, xSampleUV).r;
+
+            fShadow += (fBiasedDepth <= fShadowDepth) ? 1.0 : 0.0;
+        }
+
+        return fShadow / float(VOL_SHADOW_SAMPLES);
+    }
+
+    // No cascade found (far from camera) - assume fully lit
+    return 1.0;
+}
 
 void main()
 {
@@ -46,13 +128,20 @@ void main()
     float scatteringCoeff = densityData.g;
     float absorptionCoeff = densityData.b;
 
-    // Skip empty froxels
-    if (density < 0.0001)
+    // Skip empty froxels - use shared threshold from VolumetricCommon.fxh
+    if (density < FOG_DENSITY_SKIP_THRESHOLD)
     {
         imageStore(u_xLightingGrid, froxelCoord, vec4(0.0, 0.0, 0.0, 0.0));
         imageStore(u_xScatteringGrid, froxelCoord, vec4(0.0, 0.0, 0.0, 0.0));
         return;
     }
+
+    // Calculate world position for this froxel using exponential depth distribution
+    ivec3 gridSize = ivec3(u_xGridDimensions.xyz);
+    vec3 worldPos = FroxelToWorld(froxelCoord, gridSize, g_xInvViewProjMat,
+                                   g_xCameraNearFar.x, g_xCameraNearFar.y);
+    // FroxelToWorld returns camera-relative position, add camera world position
+    worldPos += g_xCamPos_Pad.xyz;
 
     // Calculate view direction for this froxel (towards camera)
     vec2 uv = (vec2(froxelCoord.xy) + 0.5) / u_xGridDimensions.xy;
@@ -71,14 +160,20 @@ void main()
     // Light color and intensity from Common.fxh
     vec3 lightColor = g_xSunColour.rgb * u_xLightColour.a;
 
-    // In-scattering contribution
-    // TODO: Add shadow sampling for volumetric shadows
-    float shadowTerm = 1.0;  // Simplified - no shadows
+    // Sample volumetric shadow for this froxel position
+    float shadowTerm = SampleVolumetricShadow(worldPos);
 
-    vec3 inScatter = lightColor * scatteringCoeff * phase * shadowTerm;
+    // Single-scattering albedo normalization (energy conservation)
+    // albedo = sigma_s / sigma_t where sigma_t = sigma_s + sigma_a
+    // Ensures scattered light cannot exceed extincted light
+    float sigmaT = scatteringCoeff + absorptionCoeff;
+    float albedo = (sigmaT > 0.0001) ? (scatteringCoeff / sigmaT) : 0.0;
 
-    // Ambient contribution (from fog color)
-    vec3 ambient = u_xFogColour.rgb * scatteringCoeff * 0.2;
+    vec3 inScatter = lightColor * albedo * scatteringCoeff * phase * shadowTerm;
+
+    // Ambient sky contribution - runtime configurable for scene matching
+    // Physical basis: Clear sky 0.15-0.25, overcast 0.4-0.6
+    vec3 ambient = u_xFogColour.rgb * albedo * scatteringCoeff * u_fAmbientIrradianceRatio;
 
     // Total in-scatter
     vec3 totalScatter = inScatter + ambient;
@@ -108,10 +203,8 @@ void main()
 
     if (u_uDebugMode == DEBUG_FROXEL_SHADOW_SAMPLES)
     {
-        // Visualize shadow sample positions (where we'd sample shadow map)
-        // For now just show light-facing froxels
-        float facing = max(0.0, dot(viewDir, lightDir));
-        imageStore(u_xLightingGrid, froxelCoord, vec4(facing, 0.0, 0.0, 1.0));
+        // Visualize volumetric shadow term (white = lit, black = shadowed)
+        imageStore(u_xLightingGrid, froxelCoord, vec4(vec3(shadowTerm), 1.0));
         imageStore(u_xScatteringGrid, froxelCoord, vec4(totalScatter, extinction));
         return;
     }

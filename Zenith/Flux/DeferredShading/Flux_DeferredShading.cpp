@@ -8,6 +8,7 @@
 #include "Flux/Flux_Buffers.h"
 #include "Flux/Shadows/Flux_Shadows.h"
 #include "Flux/IBL/Flux_IBL.h"
+#include "Flux/SSR/Flux_SSR.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
@@ -32,6 +33,9 @@ static Flux_BindingHandle s_axCSMBindings[ZENITH_FLUX_NUM_CSMS];
 static Flux_BindingHandle s_xBRDFLUTBinding;
 static Flux_BindingHandle s_xIrradianceMapBinding;
 static Flux_BindingHandle s_xPrefilteredMapBinding;
+
+// SSR texture binding
+static Flux_BindingHandle s_xSSRTexBinding;
 
 DEBUGVAR u_int dbg_uVisualiseCSMs = 0;
 DEBUGVAR bool dbg_bVisualiseCSMs = false;
@@ -72,6 +76,9 @@ void Flux_DeferredShading::Initialise()
 	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[15].m_eType = DESCRIPTOR_TYPE_TEXTURE;  // Irradiance map
 	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[16].m_eType = DESCRIPTOR_TYPE_TEXTURE;  // Prefiltered map
 
+	// SSR texture
+	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[17].m_eType = DESCRIPTOR_TYPE_TEXTURE;  // SSR reflection
+
 	xPipelineSpec.m_axBlendStates[0].m_eSrcBlendFactor = BLEND_FACTOR_ONE;
 	xPipelineSpec.m_axBlendStates[0].m_eDstBlendFactor = BLEND_FACTOR_ONE;
 	xPipelineSpec.m_axBlendStates[0].m_bBlendEnabled = false;
@@ -101,6 +108,9 @@ void Flux_DeferredShading::Initialise()
 	s_xBRDFLUTBinding = xReflection.GetBinding("g_xBRDFLUT");
 	s_xIrradianceMapBinding = xReflection.GetBinding("g_xIrradianceMap");
 	s_xPrefilteredMapBinding = xReflection.GetBinding("g_xPrefilteredMap");
+
+	// SSR binding
+	s_xSSRTexBinding = xReflection.GetBinding("g_xSSRTex");
 
 	// Debug: Log IBL binding handles
 	Zenith_Log(LOG_CATEGORY_RENDERER, "IBL Bindings - BRDF: set=%u binding=%u valid=%d, Irradiance: set=%u binding=%u valid=%d, Prefiltered: set=%u binding=%u valid=%d",
@@ -173,6 +183,18 @@ void Flux_DeferredShading::Render(void*)
 	xBinder.BindSRV(s_xIrradianceMapBinding, &Flux_IBL::GetIrradianceMapSRV());
 	xBinder.BindSRV(s_xPrefilteredMapBinding, &Flux_IBL::GetPrefilteredMapSRV());
 
+	// Always bind SSR texture if initialised (shader checks g_bSSREnabled before sampling)
+	// This avoids Vulkan validation errors for unbound descriptors
+	if (Flux_SSR::IsInitialised())
+	{
+		xBinder.BindSRV(s_xSSRTexBinding, &Flux_SSR::GetReflectionSRV());
+	}
+	else
+	{
+		// Fallback: bind diffuse G-Buffer as placeholder to satisfy descriptor validation
+		xBinder.BindSRV(s_xSSRTexBinding, Flux_Graphics::GetGBufferSRV(MRT_INDEX_DIFFUSE));
+	}
+
 	// Pass constants to shader
 	struct DeferredShadingConstants
 	{
@@ -185,9 +207,9 @@ void Flux_DeferredShading::Render(void*)
 		u_int m_bShowBRDFLUT;
 		u_int m_bForceRoughness;
 		float m_fForcedRoughness;
+		u_int m_bSSREnabled;
 		u_int _pad0;
 		u_int _pad1;
-		u_int _pad2;
 	};
 	DeferredShadingConstants xConstants;
 	xConstants.m_bVisualiseCSMs = dbg_uVisualiseCSMs;
@@ -200,9 +222,9 @@ void Flux_DeferredShading::Render(void*)
 	xConstants.m_bShowBRDFLUT = Flux_IBL::IsShowBRDFLUT() ? 1 : 0;
 	xConstants.m_bForceRoughness = Flux_IBL::IsForceRoughness() ? 1 : 0;
 	xConstants.m_fForcedRoughness = Flux_IBL::GetForcedRoughness();
+	xConstants.m_bSSREnabled = Flux_SSR::IsEnabled() ? 1 : 0;
 	xConstants._pad0 = 0;
 	xConstants._pad1 = 0;
-	xConstants._pad2 = 0;
 
 	xBinder.PushConstant(&xConstants, sizeof(xConstants));
 

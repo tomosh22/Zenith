@@ -25,11 +25,14 @@ struct Flux_ShaderResourceView {
 	Flux_ImageViewHandle m_xImageViewHandle;
 	Flux_VRAMHandle m_xVRAMHandle;
 	bool m_bIsDepthStencil = false;  // True if this SRV is for a depth/stencil texture
+	u_int m_uBaseMip = 0;            // Base mip level this SRV covers (for barrier tracking)
+	u_int m_uMipCount = 1;           // Number of mip levels this SRV covers
 };
 
 struct Flux_UnorderedAccessView_Texture {
 	Flux_ImageViewHandle m_xImageViewHandle;
 	Flux_VRAMHandle m_xVRAMHandle;
+	u_int m_uMipLevel = 0;  // Mip level this UAV targets (for barrier tracking)
 };
 
 struct Flux_UnorderedAccessView_Buffer {

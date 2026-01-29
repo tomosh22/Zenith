@@ -159,7 +159,7 @@ inline void Zenith_LogImpl(Zenith_LogCategory eCategory, int eLevel, const char*
 // - thread_local recursion guards (no cross-thread interference)
 // - Initialization check BEFORE accessing TLS (avoids TLS init allocating)
 // - Untracked allocations (static init) silently use plain malloc/free
-//#define ZENITH_MEMORY_MANAGEMENT_ENABLED
+#define ZENITH_MEMORY_MANAGEMENT_ENABLED
 
 #define COUNT_OF(x) sizeof(x) / sizeof(x[0])
 

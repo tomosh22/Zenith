@@ -52,7 +52,7 @@ public:
 	// Debug slice visualization
 	static struct Flux_RenderAttachment& GetDebugSliceTexture();
 
-	// Get froxel depth range (for temporal fog)
+	// Get froxel depth range (for depth linearization)
 	static float GetNearZ();
 	static float GetFarZ();
 };

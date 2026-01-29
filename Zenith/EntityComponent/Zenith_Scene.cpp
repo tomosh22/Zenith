@@ -18,6 +18,8 @@
 #include "Flux/Particles/Flux_Particles.h"
 #include "Flux/Skybox/Flux_Skybox.h"
 #include "Flux/DeferredShading/Flux_DeferredShading.h"
+#include "Flux/HiZ/Flux_HiZ.h"
+#include "Flux/SSR/Flux_SSR.h"
 #include "Flux/SSAO/Flux_SSAO.h"
 #include "Flux/Fog/Flux_Fog.h"
 #include "Flux/SDFs/Flux_SDFs.h"
@@ -307,6 +309,8 @@ void Zenith_Scene::LoadFromFile(const std::string& strFilename)
 	Flux_Text::Reset();
 	Flux_Particles::Reset();
 	Flux_Skybox::Reset();
+	Flux_HiZ::Reset();
+	Flux_SSR::Reset();
 	Flux_DeferredShading::Reset();
 	Flux_SSAO::Reset();
 	Flux_Fog::Reset();

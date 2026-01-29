@@ -4,17 +4,17 @@
 
 Multi-technique volumetric fog rendering system with runtime technique switching via debug variables.
 
+**All techniques are spatial-only** (no temporal effects, history buffers, or reprojection).
+
 ## Files
 
 | File | Purpose |
 |------|---------|
 | `Flux_Fog.h/.cpp` | Orchestrator - technique selection and initialization |
-| `Flux_VolumeFog.h/.cpp` | Shared infrastructure - noise textures, froxel grids, history buffers |
-| `Flux_GodRaysFog.h/.cpp` | Technique 5: Screen-space god rays |
+| `Flux_VolumeFog.h/.cpp` | Shared infrastructure - noise textures, froxel grids |
+| `Flux_GodRaysFog.h/.cpp` | Technique 3: Screen-space god rays |
 | `Flux_RaymarchFog.h/.cpp` | Technique 2: Ray marching with procedural noise |
 | `Flux_FroxelFog.h/.cpp` | Technique 1: Froxel-based volumetric fog |
-| `Flux_TemporalFog.h/.cpp` | Technique 4: Temporal reprojection enhancement |
-| `Flux_LPVFog.h/.cpp` | Technique 3: Light Propagation Volumes |
 
 ## Techniques
 
@@ -23,16 +23,14 @@ Multi-technique volumetric fog rendering system with runtime technique switching
 | 0 | Simple Exponential | Flux_Fog.cpp | <0.5ms | Basic distance-based fog |
 | 1 | Froxel-based | Flux_FroxelFog.cpp | 1-3ms | Camera-aligned 3D grid, per-froxel lighting |
 | 2 | Ray Marching | Flux_RaymarchFog.cpp | 2-4ms | Per-pixel ray march with 3D noise |
-| 3 | Light Propagation Volumes | Flux_LPVFog.cpp | 3-5ms | Multiple scattering via cascaded grids |
-| 4 | Temporal + Froxel | Flux_TemporalFog.cpp | +0.5ms | Sub-voxel jitter + history blending |
-| 5 | God Rays | Flux_GodRaysFog.cpp | <1ms | Screen-space radial blur |
+| 3 | God Rays | Flux_GodRaysFog.cpp | <1ms | Screen-space radial blur |
 
 ## Debug Variables
 
 ### Technique Selection
 ```
-Render/Volumetric Fog/Technique     [uint: 0-5]
-Render/Volumetric Fog/Debug Mode    [uint: 0-23]
+Render/Volumetric Fog/Technique     [uint: 0-3]
+Render/Volumetric Fog/Debug Mode    [uint: 0-15]
 ```
 
 ### Shared Parameters
@@ -53,13 +51,6 @@ Render/Volumetric Fog/Froxel/Phase G            [float]
 Render/Volumetric Fog/Raymarch/Step Count       [uint]
 Render/Volumetric Fog/Raymarch/Noise Scale      [float]
 Render/Volumetric Fog/Raymarch/Max Distance     [float]
-
-Render/Volumetric Fog/Temporal/Blend Weight     [float]
-Render/Volumetric Fog/Temporal/Jitter Enabled   [bool]
-
-Render/Volumetric Fog/LPV/Propagation Iterations [uint]
-Render/Volumetric Fog/LPV/Damping               [float]
-Render/Volumetric Fog/LPV/Debug Cascade         [uint]
 
 Render/Volumetric Fog/God Rays/Sample Count     [uint]
 Render/Volumetric Fog/God Rays/Decay            [float]
@@ -94,28 +85,12 @@ Set `Render/Volumetric Fog/Debug Mode` to visualize internals:
 | 11 | Noise sample values |
 | 12 | Jitter pattern |
 
-### LPV (13-16)
+### God Rays (13-15)
 | Mode | Visualization |
 |------|---------------|
-| 13 | VPL injection points |
-| 14 | Propagation iteration |
-| 15 | Cascade bounds |
-| 16 | SH coefficient magnitude |
-
-### Temporal (17-20)
-| Mode | Visualization |
-|------|---------------|
-| 17 | Motion vectors |
-| 18 | History blend weight |
-| 19 | Jitter offset |
-| 20 | Disoccluded pixels |
-
-### God Rays (21-23)
-| Mode | Visualization |
-|------|---------------|
-| 21 | Light source mask |
-| 22 | Occlusion test |
-| 23 | Radial sample weights |
+| 13 | Light source mask |
+| 14 | Occlusion test |
+| 15 | Radial sample weights |
 
 ## Shaders
 
@@ -124,7 +99,6 @@ Located in `Shaders/Fog/`:
 ### Includes
 | File | Purpose |
 |------|---------|
-| `Flux_NoiseCommon.fxh` | Perlin, Worley, FBM noise functions |
 | `Flux_VolumetricCommon.fxh` | Beer-Lambert, phase functions, froxel utilities |
 
 ### Per-Technique
@@ -136,19 +110,14 @@ Located in `Shaders/Fog/`:
 | `Flux_FroxelFog_Inject.comp` | Density injection |
 | `Flux_FroxelFog_Light.comp` | Lighting accumulation |
 | `Flux_FroxelFog_Apply.frag` | Froxel application |
-| `Flux_TemporalFog_Resolve.comp` | Temporal resolve |
-| `Flux_LPVFog_Inject.comp` | VPL injection |
-| `Flux_LPVFog_Propagate.comp` | Light propagation |
-| `Flux_LPVFog_Apply.frag` | LPV application |
 
 ## Render Order
 
-New render orders in `Flux_Enums.h`:
+Render orders in `Flux_Enums.h`:
 
 ```
 RENDER_ORDER_VOLUMEFOG_INJECT    → Density injection (compute)
 RENDER_ORDER_VOLUMEFOG_LIGHT     → Lighting pass (compute)
-RENDER_ORDER_VOLUMEFOG_TEMPORAL  → Temporal resolve (compute)
 RENDER_ORDER_FOG                 → Application pass (existing)
 ```
 
@@ -164,22 +133,16 @@ switch (dbg_uVolFogTechnique)
     case 0: RenderSimpleFog(); break;
     case 1: Flux_FroxelFog::Render(); break;
     case 2: Flux_RaymarchFog::Render(); break;
-    case 3: Flux_LPVFog::Render(); break;
-    case 4:
-        Flux_FroxelFog::Render();
-        Flux_TemporalFog::Render();
-        break;
-    case 5: Flux_GodRaysFog::Render(); break;
+    case 3: Flux_GodRaysFog::Render(); break;
 }
 ```
 
 ### Shared Resources
 
 `Flux_VolumeFog` provides:
-- 3D noise texture (128^3 Perlin-Worley)
+- 3D noise texture (64^3 Perlin-Worley)
 - Blue noise texture (64x64)
 - Froxel grid allocation (160x90x64)
-- History buffer management
 
 ### Technique Pattern
 
@@ -224,8 +187,6 @@ float linearDepth = nearZ * pow(farZ / nearZ, sliceNorm);
 
 - Froxel technique uses 160x90x64 grid by default (adjustable)
 - Ray marching defaults to 64 steps (adjustable)
-- LPV uses 3 cascades of 32^3 grids
-- Temporal adds ~0.5ms overhead but significantly improves quality
 - God rays is cheapest for simple directional light effects
 
 ## Important: View Space Convention

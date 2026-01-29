@@ -19,7 +19,7 @@ void Flux_RenderAttachmentBuilder::BuildColour(Flux_RenderAttachment& xAttachmen
 	xInfo.m_uDepth = m_uDepth;
 	xInfo.m_eFormat = m_eFormat;
 	xInfo.m_eTextureType = m_eTextureType;
-	xInfo.m_uNumMips = 1;
+	xInfo.m_uNumMips = m_uNumMips;  // Use builder's mip count (default 1)
 	xInfo.m_uNumLayers = 1;
 	xInfo.m_uMemoryFlags = m_uMemoryFlags;
 

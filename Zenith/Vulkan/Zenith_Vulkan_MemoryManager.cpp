@@ -596,7 +596,10 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateTextureVRAM(const void* pData
 	
 	Flux_SurfaceInfo xInfoCopy = xInfo;
 	xInfoCopy.m_uNumMips = bCreateMips ? std::floor(std::log2((std::max)(xInfo.m_uWidth, xInfo.m_uHeight))) + 1 : 1;
-	
+	// Ensure depth and layers are at least 1 to prevent zero data size calculations
+	xInfoCopy.m_uDepth = std::max(1u, xInfoCopy.m_uDepth);
+	xInfoCopy.m_uNumLayers = std::max(1u, xInfoCopy.m_uNumLayers);
+
 	vk::Format xFormat = Zenith_Vulkan::ConvertToVkFormat_Colour(xInfoCopy.m_eFormat);
 	
 	vk::ImageUsageFlags eUsageFlags = vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eTransferSrc;
@@ -869,6 +872,8 @@ Flux_ShaderResourceView Zenith_Vulkan_MemoryManager::CreateShaderResourceView(Fl
 	vk::ImageView xVkView = xDevice.createImageView(xViewCreate);
 	xView.m_xImageViewHandle = RegisterImageView(xVkView);
 	xView.m_bIsDepthStencil = bIsDepth;
+	xView.m_uBaseMip = uBaseMip;    // Store mip level for barrier tracking
+	xView.m_uMipCount = uMipCount;  // Store mip count for barrier tracking
 	return xView;
 }
 
@@ -902,6 +907,8 @@ Flux_ShaderResourceView Zenith_Vulkan_MemoryManager::CreateShaderResourceViewFor
 	vk::ImageView xVkView = xDevice.createImageView(xViewCreate);
 	xView.m_xImageViewHandle = RegisterImageView(xVkView);
 	xView.m_bIsDepthStencil = bIsDepth;
+	xView.m_uBaseMip = uBaseMip;    // Store mip level for barrier tracking
+	xView.m_uMipCount = uMipCount;  // Store mip count for barrier tracking
 	return xView;
 }
 
@@ -943,6 +950,7 @@ Flux_UnorderedAccessView_Texture Zenith_Vulkan_MemoryManager::CreateUnorderedAcc
 
 	vk::ImageView xVkView = xDevice.createImageView(xViewCreate);
 	xView.m_xImageViewHandle = RegisterImageView(xVkView);
+	xView.m_uMipLevel = uMipLevel;  // Store mip level for barrier tracking
 	return xView;
 }
 

@@ -3,8 +3,12 @@
 // Irradiance convolution shader
 // Generates diffuse irradiance map from environment (atmosphere or skybox)
 // Uses hemisphere cosine-weighted sampling
+//
+// Note: Common sampling utilities (RadicalInverse_VdC, Hammersley) are now
+// centralized in PBRConstants.fxh for consistency across all shaders.
 
 #include "../Common.fxh"
+#include "../PBRConstants.fxh"
 #include "../Skybox/Flux_AtmosphereCommon.fxh"
 
 layout(location = 0) out vec4 o_xColour;
@@ -22,7 +26,6 @@ layout(std140, set = 0, binding = 1) uniform IrradianceConstants
 // Skybox cubemap (used when g_uUseAtmosphere == 0)
 layout(set = 0, binding = 2) uniform samplerCube g_xSkyboxCubemap;
 
-const float PI = 3.14159265359;
 const uint SAMPLE_COUNT = 64u;
 
 // Convert UV + face index to cubemap direction
@@ -87,23 +90,15 @@ void main()
 
 	for (uint i = 0u; i < SAMPLE_COUNT; i++)
 	{
-		// Hammersley sequence for quasi-random sampling
-		float fXi1 = float(i) / float(SAMPLE_COUNT);
-		// Van der Corput sequence for fXi2
-		uint uBits = i;
-		uBits = (uBits << 16u) | (uBits >> 16u);
-		uBits = ((uBits & 0x55555555u) << 1u) | ((uBits & 0xAAAAAAAAu) >> 1u);
-		uBits = ((uBits & 0x33333333u) << 2u) | ((uBits & 0xCCCCCCCCu) >> 2u);
-		uBits = ((uBits & 0x0F0F0F0Fu) << 4u) | ((uBits & 0xF0F0F0F0u) >> 4u);
-		uBits = ((uBits & 0x00FF00FFu) << 8u) | ((uBits & 0xFF00FF00u) >> 8u);
-		float fXi2 = float(uBits) * 2.3283064365386963e-10; // 1/2^32
+		// Use centralized Hammersley sequence for quasi-random sampling
+		vec2 Xi = Hammersley(i, SAMPLE_COUNT);
 
 		// Cosine-weighted importance sampling:
 		// For diffuse irradiance, we want samples weighted by cos(theta)
 		// Using the transformation: cos(theta) = sqrt(1 - xi1)
-		float fCosTheta = sqrt(1.0 - fXi1);
-		float fSinTheta = sqrt(fXi1);  // sin^2 + cos^2 = 1, so sin = sqrt(1 - cos^2) = sqrt(xi1)
-		float fPhi = 2.0 * PI * fXi2;
+		float fCosTheta = sqrt(1.0 - Xi.x);
+		float fSinTheta = sqrt(Xi.x);  // sin^2 + cos^2 = 1, so sin = sqrt(1 - cos^2) = sqrt(xi1)
+		float fPhi = TWO_PI * Xi.y;
 
 		// Convert to cartesian in tangent space
 		vec3 xTangentSample = vec3(

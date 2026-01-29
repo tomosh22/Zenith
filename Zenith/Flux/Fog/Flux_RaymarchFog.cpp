@@ -9,6 +9,7 @@
 #include "Flux/Flux_Buffers.h"
 #include "Flux/HDR/Flux_HDR.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
+#include "Flux/Shadows/Flux_Shadows.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
 
@@ -29,7 +30,11 @@ struct Flux_RaymarchConstants
 	u_int m_uNumSteps;
 	u_int m_uDebugMode;
 	u_int m_uFrameIndex;
-	float m_fPad0;
+	float m_fPhaseG;                           // Henyey-Greenstein asymmetry: -1=back, 0=isotropic, 0.6=forward
+	float m_fVolShadowBias;                    // Shadow bias for volumetric samples (matches Froxel fog)
+	float m_fVolShadowConeRadius;              // Cone spread radius in shadow space (matches Froxel fog)
+	float m_fAmbientIrradianceRatio;           // Sky/sun light ratio for ambient fog contribution
+	float m_fNoiseWorldScale;                  // World-to-texture coordinate scale for noise sampling
 };
 
 // Debug variables
@@ -38,6 +43,12 @@ DEBUGVAR float dbg_fRaymarchNoiseScale = 0.02f;
 DEBUGVAR float dbg_fRaymarchNoiseSpeed = 0.1f;
 DEBUGVAR float dbg_fRaymarchMaxDistance = 500.0f;
 DEBUGVAR float dbg_fRaymarchHeightFalloff = 0.01f;
+// Henyey-Greenstein phase function asymmetry parameter
+// -1.0 = pure backscatter, 0.0 = isotropic, 0.6 = typical fog (forward scatter), 1.0 = pure forward
+DEBUGVAR float dbg_fRaymarchPhaseG = 0.6f;
+// Volumetric shadow parameters (unified with Froxel fog for consistent shadow softness)
+DEBUGVAR float dbg_fRaymarchShadowBias = 0.001f;       // Shadow bias - prevents self-shadowing artifacts
+DEBUGVAR float dbg_fRaymarchShadowConeRadius = 0.002f; // Cone spread - controls soft shadow edge
 
 static Flux_RaymarchConstants s_xConstants;
 
@@ -46,6 +57,9 @@ static Flux_BindingHandle s_xFrameConstantsBinding;
 static Flux_BindingHandle s_xDepthBinding;
 static Flux_BindingHandle s_xNoise3DBinding;
 static Flux_BindingHandle s_xBlueNoiseBinding;
+// CSM shadow bindings for volumetric shadows
+static Flux_BindingHandle s_axCSMBindings[ZENITH_FLUX_NUM_CSMS];
+static Flux_BindingHandle s_axShadowMatrixBindings[ZENITH_FLUX_NUM_CSMS];
 
 void Flux_RaymarchFog::Initialise()
 {
@@ -66,6 +80,16 @@ void Flux_RaymarchFog::Initialise()
 	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[2].m_eType = DESCRIPTOR_TYPE_TEXTURE;  // Depth texture
 	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[3].m_eType = DESCRIPTOR_TYPE_TEXTURE;  // 3D noise texture
 	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[4].m_eType = DESCRIPTOR_TYPE_TEXTURE;  // Blue noise texture
+	// CSM shadow maps for volumetric shadows
+	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[5].m_eType = DESCRIPTOR_TYPE_TEXTURE;  // CSM0
+	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[6].m_eType = DESCRIPTOR_TYPE_TEXTURE;  // CSM1
+	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[7].m_eType = DESCRIPTOR_TYPE_TEXTURE;  // CSM2
+	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[8].m_eType = DESCRIPTOR_TYPE_TEXTURE;  // CSM3
+	// Shadow matrices
+	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[9].m_eType = DESCRIPTOR_TYPE_BUFFER;   // ShadowMatrix0
+	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[10].m_eType = DESCRIPTOR_TYPE_BUFFER;  // ShadowMatrix1
+	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[11].m_eType = DESCRIPTOR_TYPE_BUFFER;  // ShadowMatrix2
+	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[12].m_eType = DESCRIPTOR_TYPE_BUFFER;  // ShadowMatrix3
 
 	xPipelineSpec.m_bDepthTestEnabled = false;
 	xPipelineSpec.m_bDepthWriteEnabled = false;
@@ -84,12 +108,26 @@ void Flux_RaymarchFog::Initialise()
 	s_xNoise3DBinding = xReflection.GetBinding("u_xNoiseTexture3D");
 	s_xBlueNoiseBinding = xReflection.GetBinding("u_xBlueNoiseTexture");
 
+	// Cache CSM shadow bindings for volumetric shadows
+	s_axCSMBindings[0] = xReflection.GetBinding("u_xCSM0");
+	s_axCSMBindings[1] = xReflection.GetBinding("u_xCSM1");
+	s_axCSMBindings[2] = xReflection.GetBinding("u_xCSM2");
+	s_axCSMBindings[3] = xReflection.GetBinding("u_xCSM3");
+	s_axShadowMatrixBindings[0] = xReflection.GetBinding("ShadowMatrix0");
+	s_axShadowMatrixBindings[1] = xReflection.GetBinding("ShadowMatrix1");
+	s_axShadowMatrixBindings[2] = xReflection.GetBinding("ShadowMatrix2");
+	s_axShadowMatrixBindings[3] = xReflection.GetBinding("ShadowMatrix3");
+
 #ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_DebugVariables::AddUInt32({ "Render", "Volumetric Fog", "Raymarch", "Step Count" }, dbg_uRaymarchSteps, 8, 256);
 	Zenith_DebugVariables::AddFloat({ "Render", "Volumetric Fog", "Raymarch", "Noise Scale" }, dbg_fRaymarchNoiseScale, 0.001f, 0.1f);
 	Zenith_DebugVariables::AddFloat({ "Render", "Volumetric Fog", "Raymarch", "Noise Speed" }, dbg_fRaymarchNoiseSpeed, 0.0f, 1.0f);
 	Zenith_DebugVariables::AddFloat({ "Render", "Volumetric Fog", "Raymarch", "Max Distance" }, dbg_fRaymarchMaxDistance, 50.0f, 1000.0f);
 	Zenith_DebugVariables::AddFloat({ "Render", "Volumetric Fog", "Raymarch", "Height Falloff" }, dbg_fRaymarchHeightFalloff, 0.0f, 0.1f);
+	Zenith_DebugVariables::AddFloat({ "Render", "Volumetric Fog", "Raymarch", "Phase G" }, dbg_fRaymarchPhaseG, -0.9f, 0.9f);
+	// Volumetric shadow parameters (unified with Froxel fog)
+	Zenith_DebugVariables::AddFloat({ "Render", "Volumetric Fog", "Raymarch", "Shadow Bias" }, dbg_fRaymarchShadowBias, 0.0001f, 0.01f);
+	Zenith_DebugVariables::AddFloat({ "Render", "Volumetric Fog", "Raymarch", "Shadow Cone Radius" }, dbg_fRaymarchShadowConeRadius, 0.0001f, 0.01f);
 #endif
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_RaymarchFog initialised");
@@ -125,10 +163,11 @@ void Flux_RaymarchFog::Render(void*)
 		dbg_fRaymarchMaxDistance
 	);
 
-	// Get elapsed time for noise animation
-	// Wrap time to prevent float precision loss after extended runtime (~2.4 hours at 60fps before precision issues)
+	// Get elapsed time for noise animation using actual frame delta time
+	// Wrap time to prevent float precision loss after extended runtime
 	static float s_fTime = 0.0f;
-	s_fTime += 0.016f * dbg_fRaymarchNoiseSpeed;
+	float fDeltaTime = Zenith_Core::GetDt();  // Actual frame delta, frame-rate independent
+	s_fTime += fDeltaTime * dbg_fRaymarchNoiseSpeed;
 	s_fTime = std::fmod(s_fTime, 1000.0f);  // Wrap every 1000 seconds to maintain precision
 
 	s_xConstants.m_xNoiseParams = Zenith_Maths::Vector4(
@@ -151,6 +190,13 @@ void Flux_RaymarchFog::Render(void*)
 	extern u_int dbg_uVolFogDebugMode;
 	s_xConstants.m_uDebugMode = dbg_uVolFogDebugMode;
 	s_xConstants.m_uFrameIndex = Flux::GetFrameCounter();
+	s_xConstants.m_fPhaseG = dbg_fRaymarchPhaseG;
+
+	// Volumetric shadow parameters (unified with Froxel fog for consistent shadow softness)
+	s_xConstants.m_fVolShadowBias = dbg_fRaymarchShadowBias;
+	s_xConstants.m_fVolShadowConeRadius = dbg_fRaymarchShadowConeRadius;
+	s_xConstants.m_fAmbientIrradianceRatio = xShared.m_fAmbientIrradianceRatio;
+	s_xConstants.m_fNoiseWorldScale = xShared.m_fNoiseWorldScale;
 
 	g_xCommandList.Reset(false);
 
@@ -164,6 +210,14 @@ void Flux_RaymarchFog::Render(void*)
 	xBinder.BindSRV(s_xDepthBinding, Flux_Graphics::GetDepthStencilSRV());
 	xBinder.BindSRV(s_xNoise3DBinding, &Flux_VolumeFog::GetNoiseTexture3D()->m_xSRV);
 	xBinder.BindSRV(s_xBlueNoiseBinding, &Flux_VolumeFog::GetBlueNoiseTexture()->m_xSRV);
+
+	// Bind CSM shadow maps and matrices for volumetric shadows
+	for (uint32_t u = 0; u < ZENITH_FLUX_NUM_CSMS; u++)
+	{
+		Flux_ShaderResourceView& xCSMSRV = Flux_Shadows::GetCSMSRV(u);
+		xBinder.BindSRV(s_axCSMBindings[u], &xCSMSRV, &Flux_Graphics::s_xClampSampler);
+		xBinder.BindCBV(s_axShadowMatrixBindings[u], &Flux_Shadows::GetShadowMatrixBuffer(u).GetCBV());
+	}
 
 	xBinder.PushConstant(&s_xConstants, sizeof(Flux_RaymarchConstants));
 

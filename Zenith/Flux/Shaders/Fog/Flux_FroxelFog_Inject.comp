@@ -86,8 +86,9 @@ void main()
     float noise = texture(u_xNoiseTexture3D, noiseCoord).r;
 
     // Combine all density factors
-    // Scale baseDensity to match UI range (0-0.01 maps to 0-1.0)
-    float scaledBaseDensity = baseDensity * 100.0;
+    // Use shared UI-to-physical density conversion from VolumetricCommon.fxh
+    // This ensures consistent density behavior across all fog techniques
+    float scaledBaseDensity = UIToPhysicalDensity(baseDensity);
     float finalDensity = scaledBaseDensity * heightDensity * noise;
 
     // Store density (R), scattering coefficient (G), absorption coefficient (B)

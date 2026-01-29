@@ -31,6 +31,12 @@ struct Flux_GodRaysConstants
 
 // Debug variables
 DEBUGVAR u_int dbg_uGodRaysSamples = 64;
+// God rays decay factor per sample along radial blur
+// Decay = 0.97 means 3% intensity loss per sample
+// With 64 samples: final_intensity = 0.97^64 = ~14% of original
+// Lower values (0.9) give shorter, more defined shafts
+// Higher values (0.99) give longer, softer shafts
+// Range: [0.9, 1.0], typical: 0.95-0.98
 DEBUGVAR float dbg_fGodRaysDecay = 0.97f;
 DEBUGVAR float dbg_fGodRaysExposure = 0.3f;
 DEBUGVAR float dbg_fGodRaysDensity = 1.0f;
@@ -111,7 +117,12 @@ void Flux_GodRaysFog::Render(void*)
 	const Zenith_Maths::Vector3& xCamPos = Flux_Graphics::s_xFrameConstants.m_xCamPos_Pad;
 
 	// Calculate sun position far along sun direction from camera
-	Zenith_Maths::Vector3 xSunWorldPos = xCamPos - xSunDir * 10000.0f;
+	// Distance to place virtual sun position for screen-space projection
+	// Must be far enough that sun direction remains consistent across screen
+	// but not so far that floating-point precision becomes an issue
+	// 10000m is sufficient for scenes up to ~1km while maintaining precision
+	const float GOD_RAYS_SUN_PROJECTION_DISTANCE = 10000.0f;
+	Zenith_Maths::Vector3 xSunWorldPos = xCamPos - xSunDir * GOD_RAYS_SUN_PROJECTION_DISTANCE;
 
 	// Project to clip space
 	Zenith_Maths::Vector4 xClipPos = xViewProj * Zenith_Maths::Vector4(xSunWorldPos, 1.0f);

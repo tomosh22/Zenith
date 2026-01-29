@@ -4,11 +4,67 @@
 #ifndef FLUX_VOLUMETRIC_COMMON_FXH
 #define FLUX_VOLUMETRIC_COMMON_FXH
 
+#include "../PBRConstants.fxh"
+
 // ============================================================================
 // Physical Constants and Parameters
 // ============================================================================
 
-const float PI = 3.14159265359;
+// Ambient irradiance ratio: fraction of sky light vs direct sun contribution to fog
+// Physical basis: Clear sky ambient ~0.15-0.25, overcast ~0.4-0.6
+//
+// NOTE: This constant is now configurable at runtime via Flux_VolumeFogConstants.
+// For shaders that have access to the VolumeFog uniform buffer, use:
+//   u_xVolFogConstants.m_fAmbientIrradianceRatio
+//
+// This default is provided for shaders that don't have the uniform buffer bound.
+// See: Flux_VolumeFog.h Flux_VolumeFogConstants struct
+const float FOG_AMBIENT_IRRADIANCE_RATIO_DEFAULT = 0.25;
+
+// ============================================================================
+// Volumetric Fog Numerical Thresholds
+// These pragmatic values balance quality vs performance for fog rendering
+// ============================================================================
+
+// Density skip threshold: Optimization to skip near-empty samples
+// Physical basis: Beer-Lambert transmittance for density 0.001 over 1m is ~99.9%
+// At this level, fog contribution is imperceptible but computation still occurs
+const float FOG_DENSITY_SKIP_THRESHOLD = 0.001;
+
+// Transmittance early-exit threshold: Stop marching when fully opaque
+// Physical basis: Transmittance 0.01 = 1% light passes through = effectively opaque
+// Lower values give marginally better quality in dense fog edges
+const float FOG_TRANSMITTANCE_EARLY_EXIT = 0.01;
+
+// Noise coordinate scale: Maps world-space to noise texture UV
+// This value is NOT physically based - it's an artistic control for fog "scale"
+// 0.01 = fog features are ~100 units wide (suitable for large outdoor scenes)
+//
+// NOTE: This constant is now configurable at runtime via Flux_VolumeFogConstants.
+// For shaders that have access to the VolumeFog uniform buffer, use:
+//   u_fNoiseWorldScale (in shader uniform block)
+//
+// This default is provided for shaders that don't have the uniform buffer bound.
+// See: Flux_VolumeFog.h Flux_VolumeFogConstants struct
+const float FOG_NOISE_WORLD_SCALE_DEFAULT = 0.01;
+
+// ============================================================================
+// UI-to-Physical Density Conversion
+// ============================================================================
+
+// UI DENSITY SCALING
+// Artists work with intuitive 0.0-0.01 range in debug UI.
+// Physical extinction coefficients are in inverse meters (m^-1).
+// This scale converts UI values to physical units:
+//   UI 0.01 * 100 = 1.0 m^-1 (dense fog, ~1m visibility)
+//   UI 0.001 * 100 = 0.1 m^-1 (light fog, ~10m visibility)
+const float FOG_UI_DENSITY_SCALE = 100.0;
+
+// Helper function for consistent density conversion across all fog techniques
+float UIToPhysicalDensity(float uiDensity)
+{
+    return uiDensity * FOG_UI_DENSITY_SCALE;
+}
 
 // ============================================================================
 // Beer-Lambert Extinction
@@ -162,16 +218,37 @@ int DepthToFroxelSlice(float depth, int numSlices, float nearZ, float farZ)
 // In-Scattering Integration
 // ============================================================================
 
-// Single scattering approximation
+// Physical inscattering with normalized single-scattering albedo
+// L_inscatter = L_light * albedo * sigma_s * phase * transmittance
+// Where albedo = sigma_s / sigma_t and sigma_t = sigma_s + sigma_a (extinction coefficient)
+// This ensures energy conservation: scattered light cannot exceed extincted light
+//
+// Parameters:
 // lightColor: incoming light color
-// density: local density
-// scatteringCoeff: probability of scattering
-// phase: phase function value for viewing direction
+// density: local density at sample point
+// scatteringCoeff: scattering coefficient (sigma_s) - probability of scattering
+// absorptionCoeff: absorption coefficient (sigma_a) - probability of absorption
+// phase: phase function value for viewing direction (Henyey-Greenstein etc.)
 // transmittance: accumulated transmittance along view ray
+vec3 InScatteringStep(vec3 lightColor, float density, float scatteringCoeff, float absorptionCoeff, float phase, float transmittance)
+{
+    // Total extinction = scattering + absorption
+    float sigmaT = scatteringCoeff + absorptionCoeff;
+
+    // Single-scattering albedo: fraction of extinction that scatters (vs absorbed)
+    // Physically: albedo in [0,1] where 0 = pure absorption, 1 = pure scattering
+    float albedo = (sigmaT > 0.0001) ? (scatteringCoeff / sigmaT) : 0.0;
+
+    float scattering = density * scatteringCoeff * phase;
+    return lightColor * albedo * scattering * transmittance;
+}
+
+// Legacy overload for backwards compatibility (assumes zero absorption)
+// DEPRECATED: Use the 6-parameter version for physically correct results
 vec3 InScatteringStep(vec3 lightColor, float density, float scatteringCoeff, float phase, float transmittance)
 {
-    float scattering = density * scatteringCoeff * phase;
-    return lightColor * scattering * transmittance;
+    // With zero absorption, albedo = sigma_s / sigma_s = 1.0 (pure scattering)
+    return InScatteringStep(lightColor, density, scatteringCoeff, 0.0, phase, transmittance);
 }
 
 // Approximate shadow from fog (exponential shadow map style)

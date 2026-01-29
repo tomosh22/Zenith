@@ -96,7 +96,12 @@ void main()
     linearDepth = clamp(linearDepth, nearZ, farZ);
 
     // Ray march through froxel grid
-    // We'll use a fixed number of samples along the view ray
+    // ========== FROXEL APPLY SAMPLE COUNT ==========
+    // 32 samples provides good quality for typical froxel grids (160x90x64)
+    // This is a pragmatic balance, NOT a physically-derived value.
+    // The froxel grid is 64 slices deep, so 32 samples provides ~2x oversampling
+    // with trilinear filtering for smooth results.
+    // Quality guidance: 16 = fast/mobile, 32 = balanced, 64 = high quality
     const int NUM_SAMPLES = 32;
 
     vec3 accumulatedLight = vec3(0.0);
@@ -133,7 +138,7 @@ void main()
         accumulatedTransmittance *= stepTransmittance;
 
         // Early exit if fully opaque
-        if (accumulatedTransmittance < 0.01) break;
+        if (accumulatedTransmittance < FOG_TRANSMITTANCE_EARLY_EXIT) break;
     }
 
     // Final output

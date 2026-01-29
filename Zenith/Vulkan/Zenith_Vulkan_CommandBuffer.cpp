@@ -629,10 +629,14 @@ void Zenith_Vulkan_CommandBuffer::Dispatch(uint32_t uGroupCountX, uint32_t uGrou
 	UpdateDescriptorSets();
 
 	// Collect all barriers - both images and buffers
-	vk::ImageMemoryBarrier axImageBarriers[FLUX_MAX_DESCRIPTOR_BINDINGS];
+	vk::ImageMemoryBarrier axImageBarriers[FLUX_MAX_DESCRIPTOR_BINDINGS * 2];  // Extra space for SRV barriers
 	vk::BufferMemoryBarrier axBufferBarriers[FLUX_MAX_DESCRIPTOR_BINDINGS];
 	u_int uNumImageBarriers = 0;
 	u_int uNumBufferBarriers = 0;
+
+	// Collect UAV VRAM handles to detect SRVs that share the same texture
+	Flux_VRAMHandle axUAVHandles[FLUX_MAX_DESCRIPTOR_BINDINGS];
+	u_int uNumUAVHandles = 0;
 
 	// Transition image UAVs to general layout for compute write
 	for (u_int uDescSet = 0; uDescSet < m_pxCurrentPipeline->m_xRootSig.m_uNumDescriptorSets; uDescSet++)
@@ -645,17 +649,68 @@ void Zenith_Vulkan_CommandBuffer::Dispatch(uint32_t uGroupCountX, uint32_t uGrou
 			Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(pxUAV->m_xVRAMHandle);
 			Zenith_Assert(pxVRAM, "Invalid VRAM for UAV");
 
+			// Track this UAV's VRAM handle for SRV barrier detection
+			axUAVHandles[uNumUAVHandles++] = pxUAV->m_xVRAMHandle;
+
+			// Use eUndefined as old layout since we don't care about previous contents
+			// (we're about to overwrite via UAV). This handles both freshly created
+			// mips (which start in eUndefined) and previously used mips.
 			axImageBarriers[uNumImageBarriers++] = vk::ImageMemoryBarrier()
-				.setSubresourceRange(vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1))
+				.setSubresourceRange(vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, pxUAV->m_uMipLevel, 1, 0, 1))
 				.setImage(pxVRAM->GetImage())
-				.setOldLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
+				.setOldLayout(vk::ImageLayout::eUndefined)
 				.setNewLayout(vk::ImageLayout::eGeneral)
-				.setSrcAccessMask(vk::AccessFlagBits::eShaderRead)
+				.setSrcAccessMask(vk::AccessFlagBits::eNone)
 				.setDstAccessMask(vk::AccessFlagBits::eShaderWrite | vk::AccessFlagBits::eShaderRead);
 		}
 	}
 
-	// Pre-dispatch barrier: transition images to general layout
+	// Check SRVs that share a VRAM handle with any UAV (same texture, different mips)
+	// These need barriers to ensure proper layout for reading
+	for (u_int uDescSet = 0; uDescSet < m_pxCurrentPipeline->m_xRootSig.m_uNumDescriptorSets; uDescSet++)
+	{
+		for (u_int i = 0; i < FLUX_MAX_DESCRIPTOR_BINDINGS; i++)
+		{
+			const Flux_ShaderResourceView* pxSRV = m_xBindings[uDescSet].m_xSRVs[i];
+			if (!pxSRV || !pxSRV->m_xImageViewHandle.IsValid()) continue;
+			if (pxSRV->m_bIsDepthStencil) continue;  // Skip depth textures, they use different layouts
+
+			// Check if this SRV shares a VRAM handle with any UAV
+			bool bSharesVRAM = false;
+			for (u_int j = 0; j < uNumUAVHandles; j++)
+			{
+				if (pxSRV->m_xVRAMHandle.AsUInt() == axUAVHandles[j].AsUInt())
+				{
+					bSharesVRAM = true;
+					break;
+				}
+			}
+
+			if (bSharesVRAM)
+			{
+				Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(pxSRV->m_xVRAMHandle);
+				Zenith_Assert(pxVRAM, "Invalid VRAM for SRV");
+
+				// Add barrier to ensure SRV's mip range is in SHADER_READ_ONLY_OPTIMAL
+				// Use eUndefined as old layout to handle both first-use and subsequent reads
+				// after UAV writes. This works because we only care about the transition,
+				// and the data was written by a previous dispatch in the same command buffer.
+				axImageBarriers[uNumImageBarriers++] = vk::ImageMemoryBarrier()
+					.setSubresourceRange(vk::ImageSubresourceRange(
+						vk::ImageAspectFlagBits::eColor,
+						pxSRV->m_uBaseMip,
+						pxSRV->m_uMipCount,
+						0, 1))
+					.setImage(pxVRAM->GetImage())
+					.setOldLayout(vk::ImageLayout::eShaderReadOnlyOptimal)  // Assume already transitioned by post-dispatch
+					.setNewLayout(vk::ImageLayout::eShaderReadOnlyOptimal)  // No actual transition, just synchronization
+					.setSrcAccessMask(vk::AccessFlagBits::eShaderWrite)
+					.setDstAccessMask(vk::AccessFlagBits::eShaderRead);
+			}
+		}
+	}
+
+	// Pre-dispatch barrier: transition images to required layouts
 	if (uNumImageBarriers > 0)
 	{
 		m_xCurrentCmdBuffer.pipelineBarrier(
@@ -688,7 +743,7 @@ void Zenith_Vulkan_CommandBuffer::Dispatch(uint32_t uGroupCountX, uint32_t uGrou
 				Zenith_Assert(pxVRAM, "Invalid VRAM for image UAV");
 
 				axImageBarriers[uNumImageBarriers++] = vk::ImageMemoryBarrier()
-					.setSubresourceRange(vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1))
+					.setSubresourceRange(vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, pxUAV_Texture->m_uMipLevel, 1, 0, 1))
 					.setImage(pxVRAM->GetImage())
 					.setOldLayout(vk::ImageLayout::eGeneral)
 					.setNewLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
