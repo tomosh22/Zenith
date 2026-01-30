@@ -44,7 +44,10 @@ enum RenderOrder
 	RENDER_ORDER_FOLIAGE,
 	RENDER_ORDER_HIZ_GENERATE,        // Hi-Z depth pyramid (compute)
 	RENDER_ORDER_SSR_RAYMARCH,        // Screen-space reflection ray marching
+	RENDER_ORDER_SSGI_RAYMARCH,       // Screen-space GI ray marching
 	RENDER_ORDER_SSR_RESOLVE,         // SSR roughness blur pass
+	RENDER_ORDER_SSGI_UPSAMPLE,       // SSGI bilateral upsample to full res
+	RENDER_ORDER_SSGI_DENOISE,        // SSGI joint bilateral denoising
 	RENDER_ORDER_APPLY_LIGHTING,
 	RENDER_ORDER_POINT_LIGHTS,
 	RENDER_ORDER_WATER,

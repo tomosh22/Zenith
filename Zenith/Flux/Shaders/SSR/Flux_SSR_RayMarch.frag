@@ -4,13 +4,11 @@
 #include "../PBRConstants.fxh"
 
 // ========== SSR CONFIGURATION CONSTANTS ==========
-// Blue noise sampling
-const int SSR_BLUE_NOISE_SIZE = 64;                    // Blue noise texture dimensions
-const float SSR_GOLDEN_RATIO = 0.618033988749;         // Golden ratio for temporal offset
+// Blue noise sampling: Uses BLUE_NOISE_SIZE and GOLDEN_RATIO from Common.fxh
 
 // Normal and direction thresholds
 const float SSR_NORMAL_UP_THRESHOLD = 0.999;           // Threshold for up vector selection
-const float SSR_DIRECTION_EPSILON = 0.0001;            // Minimum direction magnitude
+// Note: Direction epsilon now uses PBR_DIRECTION_EPSILON from PBRConstants.fxh
 
 // Ray start offset (prevents self-intersection)
 // Minimum offset ensures we step past the origin surface to avoid self-reflection
@@ -126,6 +124,11 @@ const float SSR_METALLIC_BOOST = 1.0;                  // Disabled - Fresnel app
 // Stochastic ray perturbation
 const float SSR_ROUGHNESS_PERTURB_THRESHOLD = 0.05;    // Minimum roughness for perturbation
 
+// Horizon occlusion: fades reflections when ray direction is nearly parallel to surface
+// Prevents artifacts at extreme grazing angles where small normal variations cause large direction changes
+// Value of 5.0 means: NdotR >= 0.2 = full confidence, NdotR = 0 = zero confidence
+const float SSR_HORIZON_FADE_SCALE = 5.0;
+
 layout(location = 0) out vec4 o_xReflection;  // RGB = color, A = confidence
 
 layout(location = 0) in vec2 a_xUV;
@@ -173,39 +176,8 @@ const uint SSR_DEBUG_FINAL_RESULT = 9u;
 const uint SSR_DEBUG_ROUGHNESS = 10u;       // Visualize roughness from GBuffer
 const uint SSR_DEBUG_WORLD_NORMAL_Y = 11u;  // Visualize world normal Y component
 
-// Reconstruct view-space position from depth
-vec3 GetViewPosFromDepth(vec2 xUV, float fDepth)
-{
-	vec2 xNDC = xUV * 2.0 - 1.0;
-	vec4 xClipSpace = vec4(xNDC, fDepth, 1.0);
-	vec4 xViewSpace = g_xInvProjMat * xClipSpace;
-	return xViewSpace.xyz / xViewSpace.w;
-}
-
-// Convert depth buffer value to view-space Z at a given UV position
-// Using proper UV coordinates gives more accurate results, especially at screen edges
-float DepthToViewZ(vec2 xUV, float fDepth)
-{
-	vec2 xNDC = xUV * 2.0 - 1.0;
-	vec4 xClipSpace = vec4(xNDC, fDepth, 1.0);
-	vec4 xViewSpace = g_xInvProjMat * xClipSpace;
-	return xViewSpace.z / xViewSpace.w;
-}
-
-// Transform view position to screen space (returns UV + depth)
-vec3 ViewToScreen(vec3 xViewPos)
-{
-	vec4 xClipSpace = g_xProjMat * vec4(xViewPos, 1.0);
-	xClipSpace.xyz /= xClipSpace.w;
-	return vec3(xClipSpace.x * 0.5 + 0.5, xClipSpace.y * 0.5 + 0.5, xClipSpace.z);
-}
-
-// Compute edge fade to prevent artifacts at screen borders
-float ComputeEdgeFade(vec2 xUV, float fMargin)
-{
-	vec2 xFade = smoothstep(0.0, fMargin, xUV) * smoothstep(0.0, fMargin, 1.0 - xUV);
-	return xFade.x * xFade.y;
-}
+// Note: GetViewPosFromDepth, DepthToViewZ, ViewToScreen, ComputeEdgeFade
+// are now centralized in Common.fxh for consistency across SSR/SSGI
 
 // Note: ImportanceSampleGGX is now in PBRConstants.fxh for consistency
 
@@ -213,11 +185,11 @@ float ComputeEdgeFade(vec2 xUV, float fMargin)
 vec2 GetBlueNoise(ivec2 xPixelCoord, uint uFrameIndex)
 {
 	// Tile the blue noise texture across the screen
-	vec2 xNoiseUV = vec2(xPixelCoord % ivec2(SSR_BLUE_NOISE_SIZE)) / float(SSR_BLUE_NOISE_SIZE);
+	vec2 xNoiseUV = vec2(xPixelCoord % ivec2(BLUE_NOISE_SIZE)) / float(BLUE_NOISE_SIZE);
 	vec2 xNoise = texture(g_xBlueNoiseTex, xNoiseUV).rg;
 
 	// Add temporal offset using golden ratio for good distribution across frames
-	xNoise = fract(xNoise + float(uFrameIndex) * SSR_GOLDEN_RATIO);
+	xNoise = fract(xNoise + float(uFrameIndex) * GOLDEN_RATIO);
 
 	return xNoise;
 }
@@ -247,7 +219,7 @@ vec4 RayMarch(vec3 xViewOrigin, vec3 xReflectDir, vec3 xViewNormal, float fRough
 	if (xRaySampleView.z < fNearPlane)
 	{
 		// Avoid division by zero when reflection is perpendicular to view direction
-		if (abs(xReflectDir.z) > SSR_DIRECTION_EPSILON)
+		if (abs(xReflectDir.z) > PBR_DIRECTION_EPSILON)
 		{
 			float fSafeT = (fNearPlane - xViewStart.z) / xReflectDir.z * 0.9;
 			if (fSafeT > 0.0)
@@ -271,7 +243,13 @@ vec4 RayMarch(vec3 xViewOrigin, vec3 xReflectDir, vec3 xViewNormal, float fRough
 	}
 	else
 	{
-		xScreenDir = normalize(vec2(xReflectDir.x, xReflectDir.y) + vec2(SSR_DIRECTION_EPSILON));
+		// Fallback for degenerate screen direction (ray going nearly straight into/out of screen)
+		// Preserve the sign of non-zero ray components to avoid directional bias
+		vec2 xDir = vec2(xReflectDir.x, xReflectDir.y);
+		vec2 xEps = vec2(PBR_DIRECTION_EPSILON);
+		if (xDir.x < 0.0) xEps.x = -PBR_DIRECTION_EPSILON;
+		if (xDir.y < 0.0) xEps.y = -PBR_DIRECTION_EPSILON;
+		xScreenDir = normalize(xDir + xEps);
 	}
 
 	// Determine max screen distance to trace
@@ -284,11 +262,11 @@ vec4 RayMarch(vec3 xViewOrigin, vec3 xReflectDir, vec3 xViewNormal, float fRough
 
 	// Calculate where the ray would exit the screen
 	vec2 xExitDist = vec2(1e10);
-	if (abs(xScreenDir.x) > SSR_DIRECTION_EPSILON)
+	if (abs(xScreenDir.x) > PBR_DIRECTION_EPSILON)
 	{
 		xExitDist.x = xScreenDir.x > 0.0 ? (1.0 - xScreenStart.x) / xScreenDir.x : -xScreenStart.x / xScreenDir.x;
 	}
-	if (abs(xScreenDir.y) > SSR_DIRECTION_EPSILON)
+	if (abs(xScreenDir.y) > PBR_DIRECTION_EPSILON)
 	{
 		xExitDist.y = xScreenDir.y > 0.0 ? (1.0 - xScreenStart.y) / xScreenDir.y : -xScreenStart.y / xScreenDir.y;
 	}
@@ -449,7 +427,7 @@ vec4 RayMarch(vec3 xViewOrigin, vec3 xReflectDir, vec3 xViewNormal, float fRough
 					{
 						// Backface hit - reject and continue marching
 						fPrevT = fT;
-						float fStepSize = xTexelSize.x * SSR_STEP_SIZE_MULTIPLIER;
+						float fStepSize = max(xTexelSize.x, xTexelSize.y) * SSR_STEP_SIZE_MULTIPLIER;
 						fT += fStepSize / fMaxScreenDist;
 						bFirstSample = false;
 						continue;
@@ -492,7 +470,7 @@ vec4 RayMarch(vec3 xViewOrigin, vec3 xReflectDir, vec3 xViewNormal, float fRough
 				{
 					// Behind surface but outside thickness - step back and try smaller step
 					fT = fPrevT;
-					float fStepSize = xTexelSize.x * 0.5;
+					float fStepSize = max(xTexelSize.x, xTexelSize.y) * 0.5;
 					fPrevT = fT;
 					fT += fStepSize / fMaxScreenDist;
 				}
@@ -781,6 +759,16 @@ void main()
 		// fights against this physics - reflections become weak where Fresnel says strong.
 		// The existing stretch penalty (fStretchConfidence) handles quality issues at
 		// extreme angles without inverting the Fresnel effect.
+
+		// ========== HORIZON OCCLUSION ==========
+		// Fade reflections when the ray direction is nearly parallel to the surface.
+		// This prevents artifacts at extreme grazing angles where small normal variations
+		// cause large direction changes, leading to incorrect hits or flickering.
+		// NdotR = dot(normal, reflectDir): larger values = ray pointing away from surface
+		// At NdotR >= 0.2: full confidence, At NdotR = 0: zero confidence
+		float fNdotR = max(dot(xViewNormal, xReflectDir), 0.0);
+		float fHorizonFade = clamp(fNdotR * SSR_HORIZON_FADE_SCALE, 0.0, 1.0);
+		fFinalConfidence *= fHorizonFade;
 
 		// Apply contact hardening to final confidence
 		fFinalConfidence *= fContactConfidence;

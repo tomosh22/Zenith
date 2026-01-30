@@ -114,6 +114,9 @@ static const char* s_aszDeviceExtensions[] = {
 
 vk::Instance Zenith_Vulkan::s_xInstance;
 vk::DebugUtilsMessengerEXT Zenith_Vulkan::s_xDebugMessenger;
+#ifdef ZENITH_DEBUG
+vk::DispatchLoaderDynamic Zenith_Vulkan::s_xDispatchLoader;
+#endif
 vk::SurfaceKHR Zenith_Vulkan::s_xSurface;
 vk::PhysicalDevice Zenith_Vulkan::s_xPhysicalDevice;
 Zenith_Vulkan::GPUCapabilities Zenith_Vulkan::s_xGPUCapabilties;
@@ -285,6 +288,9 @@ void Zenith_Vulkan::Initialise()
 	CreatePhysicalDevice();
 	CreateQueueFamilies();
 	CreateDevice();
+#ifdef ZENITH_DEBUG
+	s_xDispatchLoader = vk::DispatchLoaderDynamic(s_xInstance, vkGetInstanceProcAddr, s_xDevice, vkGetDeviceProcAddr);
+#endif
 	CreateCommandPools();
 	CreateDefaultDescriptorPool();
 	CreateBindlessTexturesDescriptorPool();
@@ -1040,14 +1046,17 @@ void Zenith_Vulkan_PerFrame::InitialiseScratchBuffers()
 void Zenith_Vulkan_PerFrame::BeginFrame()
 {
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
+	Zenith_Profiling::BeginProfile(ZENITH_PROFILE_INDEX__VULKAN_WAIT_FOR_GPU);
 	xDevice.waitForFences(1, &m_xFence, VK_TRUE, UINT64_MAX);
+	Zenith_Profiling::EndProfile(ZENITH_PROFILE_INDEX__VULKAN_WAIT_FOR_GPU);
 	xDevice.resetFences(1, &m_xFence);
 
+	Zenith_Profiling::BeginProfile(ZENITH_PROFILE_INDEX__VULKAN_RESET_DESCRIPTOR_POOLS);
 	for (vk::DescriptorPool& xPool : m_axDescriptorPools)
 	{
 		xDevice.resetDescriptorPool(xPool);
 	}
-
+	Zenith_Profiling::EndProfile(ZENITH_PROFILE_INDEX__VULKAN_RESET_DESCRIPTOR_POOLS);
 	// Reset scratch buffer offsets for each worker
 	for (u_int i = 0; i < NUM_WORKER_THREADS; i++)
 	{

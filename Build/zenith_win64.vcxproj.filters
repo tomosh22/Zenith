@@ -805,6 +805,9 @@
     <ClCompile Include="..\Zenith\Flux\SSAO\Flux_SSAO.cpp">
       <Filter>Flux\SSAO</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\Flux\SSGI\Flux_SSGI.cpp">
+      <Filter>Flux\SSGI</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Flux\SSR\Flux_SSR.cpp">
       <Filter>Flux\SSR</Filter>
     </ClCompile>
@@ -3504,6 +3507,15 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\SSAO\Flux_SSAO.frag">
       <Filter>Flux\Shaders\SSAO</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\SSGI\Flux_SSGI_RayMarch.frag">
+      <Filter>Flux\Shaders\SSGI</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\SSGI\Flux_SSGI_Temporal.frag">
+      <Filter>Flux\Shaders\SSGI</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\SSGI\Flux_SSGI_Upsample.frag">
+      <Filter>Flux\Shaders\SSGI</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\SSR\Flux_SSR_RayMarch.frag">
       <Filter>Flux\Shaders\SSR</Filter>
     </ClInclude>
@@ -3587,6 +3599,9 @@
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\SSAO\Flux_SSAO.h">
       <Filter>Flux\SSAO</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\SSGI\Flux_SSGI.h">
+      <Filter>Flux\SSGI</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\SSR\Flux_SSR.h">
       <Filter>Flux\SSR</Filter>
@@ -3842,6 +3857,9 @@
     <Filter Include="Flux\SSAO">
       <UniqueIdentifier>{f2ec9b44-fa01-4c39-aba3-951ae52cc5f3}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Flux\SSGI">
+      <UniqueIdentifier>{8a14e5df-6ff2-30b1-fce3-7c5bee1e0015}</UniqueIdentifier>
+    </Filter>
     <Filter Include="Flux\SSR">
       <UniqueIdentifier>{60ec89e3-eec9-33f0-a320-77934f93c0c7}</UniqueIdentifier>
     </Filter>
@@ -3889,6 +3907,9 @@
     </Filter>
     <Filter Include="Flux\Shaders\SSAO">
       <UniqueIdentifier>{c2686e44-4aad-e07f-cbfc-1e56b411f700}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Flux\Shaders\SSGI">
+      <UniqueIdentifier>{198bef33-cb70-ba7b-e025-2dbe3867a252}</UniqueIdentifier>
     </Filter>
     <Filter Include="Flux\Shaders\SSR">
       <UniqueIdentifier>{15f68907-9a04-4134-7ac0-a97acfd72d68}</UniqueIdentifier>

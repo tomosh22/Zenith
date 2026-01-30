@@ -52,12 +52,10 @@ vec3 ComputeSpecularIBL(
 	// Sample BRDF LUT
 	vec2 brdf = texture(brdfLUT, vec2(NdotV, roughness)).rg;
 
-	// Fresnel with roughness (used for energy conservation, not for Split-Sum)
-	vec3 F = FresnelSchlickRoughness(NdotV, F0, roughness);
-
 	// Split-Sum approximation: F0 * scale + bias
-	// The bias term (brdf.y) already encodes the Fresnel variation across viewing angles
-	// Using full F instead of F0 would double-apply the Fresnel effect
+	// Note: Fresnel is NOT applied here because the BRDF LUT's bias term (brdf.y)
+	// already encodes Fresnel variation across viewing angles.
+	// Using FresnelSchlickRoughness() here would double-apply the Fresnel effect.
 	vec3 specular = prefilteredColor * (F0 * brdf.x + brdf.y);
 
 	return specular * ao * intensity;
@@ -119,9 +117,6 @@ vec3 ComputeIBLFallback(
 
 	// Sample BRDF LUT
 	vec2 brdf = texture(brdfLUT, vec2(NdotV, roughness)).rg;
-
-	// Fresnel
-	vec3 F = FresnelSchlickRoughness(NdotV, F0, roughness);
 
 	// Simple hemisphere approximation
 	// Diffuse: sky color from above

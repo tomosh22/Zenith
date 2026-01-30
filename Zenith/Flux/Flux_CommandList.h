@@ -378,6 +378,9 @@ public:
 	void IterateCommands(Flux_CommandBuffer* pxCmdBuf) const
 	{
 		Zenith_Profiling::BeginProfile(ZENITH_PROFILE_INDEX__FLUX_ITERATE_COMMANDS);
+#ifdef ZENITH_DEBUG
+		pxCmdBuf->BeginDebugMarker(m_szName);
+#endif
 		u_int uCursor = 0;
 		while(uCursor < m_uCursor)
 		{
@@ -416,6 +419,9 @@ public:
 					Zenith_Assert(false, "Unhandled command");
 			}
 		}
+#ifdef ZENITH_DEBUG
+		pxCmdBuf->EndDebugMarker();
+#endif
 		Zenith_Profiling::EndProfile(ZENITH_PROFILE_INDEX__FLUX_ITERATE_COMMANDS);
 	}
 

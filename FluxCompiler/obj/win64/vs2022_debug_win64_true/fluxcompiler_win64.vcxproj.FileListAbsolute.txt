@@ -1,0 +1,7 @@
+c:\dev\Zenith\FluxCompiler\output\win64\vs2022_debug_win64_true\assimp-vc143-mtd.dll
+c:\dev\Zenith\FluxCompiler\output\win64\vs2022_debug_win64_true\poly2tri.dll
+c:\dev\Zenith\FluxCompiler\output\win64\vs2022_debug_win64_true\minizip.dll
+c:\dev\Zenith\FluxCompiler\output\win64\vs2022_debug_win64_true\zlibd1.dll
+c:\dev\Zenith\FluxCompiler\output\win64\vs2022_debug_win64_true\kubazip.dll
+c:\dev\Zenith\FluxCompiler\output\win64\vs2022_debug_win64_true\pugixml.dll
+c:\dev\Zenith\FluxCompiler\obj\win64\vs2022_debug_win64_true\fluxcomp.7EF704E9.Up2Date

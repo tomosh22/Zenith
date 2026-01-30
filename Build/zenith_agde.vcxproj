@@ -989,6 +989,9 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\Skybox\Flux_AtmosphereCommon.fxh" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Skybox\Flux_Skybox.frag" />
     <ClInclude Include="..\Zenith\Flux\Shaders\SSAO\Flux_SSAO.frag" />
+    <ClInclude Include="..\Zenith\Flux\Shaders\SSGI\Flux_SSGI_RayMarch.frag" />
+    <ClInclude Include="..\Zenith\Flux\Shaders\SSGI\Flux_SSGI_Temporal.frag" />
+    <ClInclude Include="..\Zenith\Flux\Shaders\SSGI\Flux_SSGI_Upsample.frag" />
     <ClInclude Include="..\Zenith\Flux\Shaders\SSR\Flux_SSR_RayMarch.frag" />
     <ClInclude Include="..\Zenith\Flux\Shaders\SSR\Flux_SSR_Resolve.frag" />
     <ClInclude Include="..\Zenith\Flux\Shaders\StaticMeshes\Flux_StaticMeshes_FragCommon.fxh" />
@@ -1017,6 +1020,7 @@
     <ClInclude Include="..\Zenith\Flux\Slang\Flux_ShaderHotReload.h" />
     <ClInclude Include="..\Zenith\Flux\Slang\Flux_SlangCompiler.h" />
     <ClInclude Include="..\Zenith\Flux\SSAO\Flux_SSAO.h" />
+    <ClInclude Include="..\Zenith\Flux\SSGI\Flux_SSGI.h" />
     <ClInclude Include="..\Zenith\Flux\SSR\Flux_SSR.h" />
     <ClInclude Include="..\Zenith\Flux\StaticMeshes\Flux_StaticMeshes.h" />
     <ClInclude Include="..\Zenith\Flux\Terrain\Flux_Terrain.h" />
@@ -1818,6 +1822,7 @@
     <ClCompile Include="..\Zenith\Flux\Slang\Flux_ShaderHotReload.cpp" />
     <ClCompile Include="..\Zenith\Flux\Slang\Flux_SlangCompiler.cpp" />
     <ClCompile Include="..\Zenith\Flux\SSAO\Flux_SSAO.cpp" />
+    <ClCompile Include="..\Zenith\Flux\SSGI\Flux_SSGI.cpp" />
     <ClCompile Include="..\Zenith\Flux\SSR\Flux_SSR.cpp" />
     <ClCompile Include="..\Zenith\Flux\StaticMeshes\Flux_StaticMeshes.cpp" />
     <ClCompile Include="..\Zenith\Flux\Terrain\Flux_Terrain.cpp" />

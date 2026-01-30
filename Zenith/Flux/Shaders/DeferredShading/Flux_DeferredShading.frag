@@ -20,8 +20,8 @@ layout(std140, set = 0, binding = 1) uniform DeferredShadingConstants
 	uint g_bForceRoughness;
 	float g_fForcedRoughness;
 	uint g_bSSREnabled;
-	uint _pad0;
-	uint _pad1;
+	uint g_bSSGIEnabled;
+	float g_fAmbientFallbackIntensity;  // Configurable ambient when IBL disabled (default 0.03)
 };
 
 //#TO_TODO: these should really all be in one buffer
@@ -57,6 +57,9 @@ layout(set = 0, binding = 16) uniform samplerCube g_xPrefilteredMap;
 // SSR texture (RGB = reflected color, A = confidence)
 layout(set = 0, binding = 17) uniform sampler2D g_xSSRTex;
 
+// SSGI texture (RGB = indirect diffuse color, A = confidence)
+layout(set = 0, binding = 18) uniform sampler2D g_xSSGITex;
+
 
 // ========== DEFERRED SHADING CONFIGURATION CONSTANTS ==========
 // Note: Core PBR constants (PI, PBR_DIELECTRIC_F0, FRESNEL_POWER, PBR_MIN_ROUGHNESS, FresnelSchlick functions)
@@ -67,10 +70,12 @@ layout(set = 0, binding = 17) uniform sampler2D g_xSSRTex;
 
 // Epsilon values
 // NUMERICAL STABILITY: These values balance precision with stability at grazing angles
-const float DEFERRED_EPSILON = 0.0001;               // General epsilon for divisions
+// Note: Core epsilon values are defined in PBRConstants.fxh (PBR_EPSILON = 0.0001)
+// Deferred shader uses matching values but keeps local definitions for specific tuning
+const float DEFERRED_EPSILON = PBR_EPSILON;          // General epsilon for divisions (matches PBRConstants.fxh)
 const float DEFERRED_EPSILON_SMALL = 0.0001;         // GGX epsilon - prevents underflow at grazing angles (was 1e-7, too small)
-const float DEFERRED_DENOM_EPSILON = 0.0001;         // Specular denominator epsilon - allows sharper highlights (was 0.001, too large)
-const float NORMAL_LENGTH_EPSILON = 0.001;           // Minimum normal length
+const float DEFERRED_DENOM_EPSILON = PBR_EPSILON;    // Specular denominator epsilon (matches PBRConstants.fxh)
+const float NORMAL_LENGTH_EPSILON = 0.001;           // Minimum normal length (10x epsilon for normal robustness)
 const float SSR_CONFIDENCE_EPSILON = 0.001;          // Minimum SSR confidence for blending
 
 // Geometry GGX K-factor for DIRECT/ANALYTIC lighting (per Epic Games UE4 PBR):
@@ -81,16 +86,15 @@ const float SSR_CONFIDENCE_EPSILON = 0.001;          // Minimum SSR confidence f
 const float GEOMETRY_K_DIVISOR = PBR_GEOMETRY_K_DIRECT_DIVISOR;
 
 // Ambient fallback (when IBL disabled)
-// PHYSICAL BASIS: 0.03 approximates minimal ambient contribution from a dark interior scene.
+// PHYSICAL BASIS: Approximates minimal ambient contribution when environment map unavailable.
 // This fallback ONLY activates when IBL is disabled (debug mode or missing environment map).
 // When IBL is enabled, irradiance map provides physically-accurate ambient from environment.
-// Value range guidance:
+// Value range guidance (configured via g_fAmbientFallbackIntensity uniform):
 //   0.01 - Very dark (moonlit/caves), near-black ambient fill
-//   0.03 - Dark interior (current), minimal fill light for visibility
+//   0.03 - Dark interior (default), minimal fill light for visibility
 //   0.05 - Overcast exterior, subtle ambient contribution
 //   0.10 - Bright overcast, noticeable ambient fill
-// Intentionally low because most scenes should use IBL for proper ambient lighting.
-const float AMBIENT_FALLBACK_INTENSITY = 0.03;       // Dark interior fallback
+// Now configurable at runtime via DeferredShadingConstants.g_fAmbientFallbackIntensity
 
 // Shadow PCF bias - tuned for 2048x2048 shadow maps at typical outdoor scene scale
 // Min bias: prevents self-shadowing on surfaces facing the light (perpendicular)
@@ -254,10 +258,7 @@ vec3 Uncharted2Tonemap(vec3 x) {
 	return ((x * (A * x + C * B) + D * E) / (x * (A * x + B) + D * F)) - E / F;
 }
 
-// IBL Constants
-// Prefilter mip levels: 7 mips (128->64->32->16->8->4->2 pixels)
-// Roughness 0.0 samples mip 0, roughness 1.0 samples mip 6
-const float IBL_PREFILTER_MIP_COUNT = 7.0;
+// IBL_PREFILTER_MIP_COUNT is now defined in PBRConstants.fxh (7.0)
 
 // Compute IBL ambient lighting using cubemap textures
 // AAA-quality: SSR is blended with IBL specular using proper BRDF weighting
@@ -298,7 +299,7 @@ vec3 ComputeIBLAmbient(vec3 xNormal, vec3 xViewDir, vec3 xAlbedo, float fMetalli
 	if (g_bIBLEnabled == 0)
 	{
 		// Return basic ambient + properly weighted SSR
-		vec3 xAmbient = vec3(AMBIENT_FALLBACK_INTENSITY) * xAlbedo * fAmbientOcclusion;
+		vec3 xAmbient = vec3(g_fAmbientFallbackIntensity) * xAlbedo * fAmbientOcclusion;
 		vec3 xSSRFinal = xSSRSpecular * fSSRConfidence * fAmbientOcclusion;
 		return xAmbient + xSSRFinal;
 	}
@@ -323,6 +324,29 @@ vec3 ComputeIBLAmbient(vec3 xNormal, vec3 xViewDir, vec3 xAlbedo, float fMetalli
 		xDiffuseIBL = kD * xIrradiance * xAlbedo;
 	}
 
+	// ========== SSGI DIFFUSE (Screen-Space Global Illumination) ==========
+	// SSGI provides indirect diffuse lighting from nearby on-screen geometry
+	// It REPLACES (not adds to) IBL diffuse where SSGI has valid data
+	// This is physically correct: SSGI is more accurate for local bounces,
+	// while IBL provides the distant environment contribution
+	vec3 xFinalDiffuse = xDiffuseIBL;
+	if (g_bSSGIEnabled != 0)
+	{
+		vec4 xSSGI = texture(g_xSSGITex, xUV);
+		float fSSGIConfidence = xSSGI.a;
+
+		if (fSSGIConfidence > 0.001)
+		{
+			// SSGI provides pre-weighted indirect radiance
+			// Apply kD for energy conservation with specular
+			vec3 xSSGIDiffuse = kD * xSSGI.rgb * xAlbedo;
+
+			// Blend SSGI with IBL diffuse based on confidence
+			// High confidence = use SSGI, low confidence = use IBL
+			xFinalDiffuse = mix(xDiffuseIBL, xSSGIDiffuse, fSSGIConfidence);
+		}
+	}
+
 	// Specular IBL - sample prefiltered cubemap using reflection direction
 	vec3 xSpecularIBL = vec3(0.0);
 	if (g_bIBLSpecularEnabled != 0)
@@ -331,11 +355,13 @@ vec3 ComputeIBLAmbient(vec3 xNormal, vec3 xViewDir, vec3 xAlbedo, float fMetalli
 		// LOD based on roughness
 		float fLOD = fRoughness * (IBL_PREFILTER_MIP_COUNT - 1.0);
 		vec3 xPrefilteredColor = textureLod(g_xPrefilteredMap, xReflect, fLOD).rgb;
-		// Split-Sum approximation: F0 * scale + bias
-		// The bias term (xBRDF.y) already encodes the Fresnel variation across viewing angles
-		// Using full F instead of F0 would double-apply the Fresnel effect
+		// Multiscatter BRDF: Recovers energy lost in single-scatter GGX at high roughness
+		// Standard split-sum (F0 * scale + bias) loses energy because it only accounts for
+		// single-scatter events. MultiscatterBRDF adds the contribution from light that
+		// bounces multiple times between microfacets before exiting.
+		// Reference: Fdez-Aguera 2019 "A Multiple-Scattering Microfacet Model"
 		// Reference: Epic Games "Real Shading in UE4" (Karis, SIGGRAPH 2013)
-		xSpecularIBL = xPrefilteredColor * (F0 * xBRDF.x + xBRDF.y);
+		xSpecularIBL = xPrefilteredColor * MultiscatterBRDF(F0, NdotV, fRoughness, xBRDF);
 	}
 
 	// ========== AAA SSR/IBL BLENDING ==========
@@ -359,8 +385,8 @@ vec3 ComputeIBLAmbient(vec3 xNormal, vec3 xViewDir, vec3 xAlbedo, float fMetalli
 	// Formula: specularAO = saturate(pow(NdotV + AO, exp2(-16*roughness - 1)) - 1 + AO)
 	float fSpecularAO = clamp(pow(NdotV + fAmbientOcclusion, exp2(-16.0 * fRoughness - 1.0)) - 1.0 + fAmbientOcclusion, 0.0, 1.0);
 
-	// Combine diffuse IBL with final specular, apply AO (different for diffuse vs specular)
-	return (xDiffuseIBL * fAmbientOcclusion + xFinalSpecular * fSpecularAO) * g_fIBLIntensity;
+	// Combine diffuse (IBL + SSGI blend) with final specular, apply AO (different for diffuse vs specular)
+	return (xFinalDiffuse * fAmbientOcclusion + xFinalSpecular * fSpecularAO) * g_fIBLIntensity;
 }
 
 void main()

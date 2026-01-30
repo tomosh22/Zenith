@@ -840,3 +840,18 @@ void Zenith_Vulkan_CommandBuffer::RenderImGui()
 	// Call ImGui's Vulkan rendering backend with raw Vulkan command buffer handle
 	ImGui_ImplVulkan_RenderDrawData(pxDrawData, static_cast<VkCommandBuffer>(m_xCurrentCmdBuffer));
 }
+
+#ifdef ZENITH_DEBUG
+void Zenith_Vulkan_CommandBuffer::BeginDebugMarker(const char* szName)
+{
+	vk::DebugUtilsLabelEXT xLabel = vk::DebugUtilsLabelEXT()
+		.setPLabelName(szName)
+		.setColor({ 1.0f, 1.0f, 1.0f, 1.0f });
+	m_xCurrentCmdBuffer.beginDebugUtilsLabelEXT(xLabel, Zenith_Vulkan::GetDispatchLoader());
+}
+
+void Zenith_Vulkan_CommandBuffer::EndDebugMarker()
+{
+	m_xCurrentCmdBuffer.endDebugUtilsLabelEXT(Zenith_Vulkan::GetDispatchLoader());
+}
+#endif

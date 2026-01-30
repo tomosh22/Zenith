@@ -75,6 +75,7 @@ public:
 	static void CreateInstance();
 #ifdef ZENITH_DEBUG
 	static void CreateDebugMessenger();
+	static vk::DispatchLoaderDynamic& GetDispatchLoader() { return s_xDispatchLoader; }
 #endif
 	static void CreateSurface();
 	static void CreatePhysicalDevice();
@@ -149,6 +150,9 @@ private:
 		const vk::DebugUtilsMessengerCallbackDataEXT* pxCallbackData,
 		void* pUserData);
 	static vk::DebugUtilsMessengerEXT s_xDebugMessenger;
+#ifdef ZENITH_DEBUG
+	static vk::DispatchLoaderDynamic s_xDispatchLoader;
+#endif
 	static vk::SurfaceKHR s_xSurface;
 	static vk::PhysicalDevice s_xPhysicalDevice;
 	static struct GPUCapabilities {

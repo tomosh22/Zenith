@@ -47,3 +47,46 @@ vec3 GetWorldPosFromDepthTex(sampler2D xDepthTex, vec2 xUV)
 
 	return (g_xInvViewMat * xViewSpace).xyz;
 }
+
+// ============================================================================
+// SCREEN-SPACE UTILITY FUNCTIONS
+// Used by SSR, SSGI, and other screen-space effects
+// ============================================================================
+
+// Reconstruct view-space position from UV and depth value
+vec3 GetViewPosFromDepth(vec2 xUV, float fDepth)
+{
+	vec2 xNDC = xUV * 2.0 - 1.0;
+	vec4 xClipSpace = vec4(xNDC, fDepth, 1.0);
+	vec4 xViewSpace = g_xInvProjMat * xClipSpace;
+	return xViewSpace.xyz / xViewSpace.w;
+}
+
+// Convert depth buffer value to view-space Z
+float DepthToViewZ(vec2 xUV, float fDepth)
+{
+	vec2 xNDC = xUV * 2.0 - 1.0;
+	vec4 xClipSpace = vec4(xNDC, fDepth, 1.0);
+	vec4 xViewSpace = g_xInvProjMat * xClipSpace;
+	return xViewSpace.z / xViewSpace.w;
+}
+
+// Transform view position to screen space (returns UV.xy + depth.z)
+vec3 ViewToScreen(vec3 xViewPos)
+{
+	vec4 xClipSpace = g_xProjMat * vec4(xViewPos, 1.0);
+	xClipSpace.xyz /= xClipSpace.w;
+	return vec3(xClipSpace.x * 0.5 + 0.5, xClipSpace.y * 0.5 + 0.5, xClipSpace.z);
+}
+
+// Compute screen-edge fade to prevent artifacts at borders
+// fMargin: fraction of screen width/height for fade zone (e.g., 0.15 = 15%)
+float ComputeEdgeFade(vec2 xUV, float fMargin)
+{
+	vec2 xFade = smoothstep(0.0, fMargin, xUV) * smoothstep(0.0, fMargin, 1.0 - xUV);
+	return xFade.x * xFade.y;
+}
+
+// Blue noise sampling constants (shared by SSR, SSGI)
+const int BLUE_NOISE_SIZE = 64;
+const float GOLDEN_RATIO = 0.618033988749;

@@ -36,6 +36,7 @@ enum Zenith_ProfileIndex
 	ZENITH_PROFILE_INDEX__FLUX_SSAO,
 	ZENITH_PROFILE_INDEX__FLUX_HIZ,
 	ZENITH_PROFILE_INDEX__FLUX_SSR,
+	ZENITH_PROFILE_INDEX__FLUX_SSGI,
 	ZENITH_PROFILE_INDEX__FLUX_FOG,
 	ZENITH_PROFILE_INDEX__FLUX_HDR,
 	ZENITH_PROFILE_INDEX__FLUX_ATMOSPHERE,
@@ -61,6 +62,8 @@ enum Zenith_ProfileIndex
 	ZENITH_PROFILE_INDEX__VULKAN_UPDATE_DESCRIPTOR_SETS,
 	ZENITH_PROFILE_INDEX__VULKAN_MEMORY_MANAGER_UPLOAD,
 	ZENITH_PROFILE_INDEX__VULKAN_MEMORY_MANAGER_FLUSH,
+	ZENITH_PROFILE_INDEX__VULKAN_WAIT_FOR_GPU,
+	ZENITH_PROFILE_INDEX__VULKAN_RESET_DESCRIPTOR_POOLS,
 	
 
 	ZENITH_PROFILE_INDEX__VISIBILITY_CHECK,
@@ -112,6 +115,7 @@ static const char* g_aszProfileNames[]
 	"Flux SSAO",
 	"Flux HiZ",
 	"Flux SSR",
+	"Flux SSGI",
 	"Flux Fog",
 	"Flux HDR",
 	"Flux Atmosphere",
@@ -135,6 +139,8 @@ static const char* g_aszProfileNames[]
 	"Vulkan Update Descriptor Sets",
 	"Vulkan Memory Manager Upload",
 	"Vulkan Memory Manager Flush",
+	"Vulkan Wait For GPU",
+	"Vulkan Reset Descriptor Pools",
 
 	"Visibility Check",
 

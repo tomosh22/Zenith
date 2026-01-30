@@ -9,6 +9,7 @@
 #include "Flux/Shadows/Flux_Shadows.h"
 #include "Flux/IBL/Flux_IBL.h"
 #include "Flux/SSR/Flux_SSR.h"
+#include "Flux/SSGI/Flux_SSGI.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Flux/Slang/Flux_ShaderBinder.h"
@@ -37,9 +38,13 @@ static Flux_BindingHandle s_xPrefilteredMapBinding;
 // SSR texture binding
 static Flux_BindingHandle s_xSSRTexBinding;
 
+// SSGI texture binding
+static Flux_BindingHandle s_xSSGITexBinding;
+
 DEBUGVAR u_int dbg_uVisualiseCSMs = 0;
 DEBUGVAR bool dbg_bVisualiseCSMs = false;
 DEBUGVAR u_int dbg_uDeferredShadingDebugMode = 0;  // 0=normal, 1=cyan, 2=depth, 3=diffuse
+DEBUGVAR float dbg_fAmbientFallbackIntensity = 0.03f;  // Ambient when IBL disabled (0.01-0.1 typical)
 
 void Flux_DeferredShading::Initialise()
 {
@@ -79,6 +84,9 @@ void Flux_DeferredShading::Initialise()
 	// SSR texture
 	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[17].m_eType = DESCRIPTOR_TYPE_TEXTURE;  // SSR reflection
 
+	// SSGI texture
+	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[18].m_eType = DESCRIPTOR_TYPE_TEXTURE;  // SSGI indirect diffuse
+
 	xPipelineSpec.m_axBlendStates[0].m_eSrcBlendFactor = BLEND_FACTOR_ONE;
 	xPipelineSpec.m_axBlendStates[0].m_eDstBlendFactor = BLEND_FACTOR_ONE;
 	xPipelineSpec.m_axBlendStates[0].m_bBlendEnabled = false;
@@ -112,6 +120,9 @@ void Flux_DeferredShading::Initialise()
 	// SSR binding
 	s_xSSRTexBinding = xReflection.GetBinding("g_xSSRTex");
 
+	// SSGI binding
+	s_xSSGITexBinding = xReflection.GetBinding("g_xSSGITex");
+
 	// Debug: Log IBL binding handles
 	Zenith_Log(LOG_CATEGORY_RENDERER, "IBL Bindings - BRDF: set=%u binding=%u valid=%d, Irradiance: set=%u binding=%u valid=%d, Prefiltered: set=%u binding=%u valid=%d",
 		s_xBRDFLUTBinding.m_uSet, s_xBRDFLUTBinding.m_uBinding, s_xBRDFLUTBinding.IsValid(),
@@ -121,6 +132,7 @@ void Flux_DeferredShading::Initialise()
 	#ifdef ZENITH_DEBUG_VARIABLES
 	Zenith_DebugVariables::AddBoolean({ "Render", "Shadows", "Visualise CSMs" }, dbg_bVisualiseCSMs);
 	Zenith_DebugVariables::AddUInt32({ "Render", "DeferredShading", "DebugMode" }, dbg_uDeferredShadingDebugMode, 0, 3);
+	Zenith_DebugVariables::AddFloat({ "Render", "DeferredShading", "AmbientFallback" }, dbg_fAmbientFallbackIntensity, 0.0f, 0.2f);
 	#endif
 
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_DeferredShading initialised");
@@ -195,6 +207,17 @@ void Flux_DeferredShading::Render(void*)
 		xBinder.BindSRV(s_xSSRTexBinding, Flux_Graphics::GetGBufferSRV(MRT_INDEX_DIFFUSE));
 	}
 
+	// Always bind SSGI texture if initialised (shader checks g_bSSGIEnabled before sampling)
+	if (Flux_SSGI::IsInitialised())
+	{
+		xBinder.BindSRV(s_xSSGITexBinding, &Flux_SSGI::GetSSGISRV());
+	}
+	else
+	{
+		// Fallback: bind diffuse G-Buffer as placeholder to satisfy descriptor validation
+		xBinder.BindSRV(s_xSSGITexBinding, Flux_Graphics::GetGBufferSRV(MRT_INDEX_DIFFUSE));
+	}
+
 	// Pass constants to shader
 	struct DeferredShadingConstants
 	{
@@ -208,8 +231,8 @@ void Flux_DeferredShading::Render(void*)
 		u_int m_bForceRoughness;
 		float m_fForcedRoughness;
 		u_int m_bSSREnabled;
-		u_int _pad0;
-		u_int _pad1;
+		u_int m_bSSGIEnabled;
+		float m_fAmbientFallbackIntensity;  // Configurable ambient when IBL disabled
 	};
 	DeferredShadingConstants xConstants;
 	xConstants.m_bVisualiseCSMs = dbg_uVisualiseCSMs;
@@ -223,8 +246,8 @@ void Flux_DeferredShading::Render(void*)
 	xConstants.m_bForceRoughness = Flux_IBL::IsForceRoughness() ? 1 : 0;
 	xConstants.m_fForcedRoughness = Flux_IBL::GetForcedRoughness();
 	xConstants.m_bSSREnabled = Flux_SSR::IsEnabled() ? 1 : 0;
-	xConstants._pad0 = 0;
-	xConstants._pad1 = 0;
+	xConstants.m_bSSGIEnabled = Flux_SSGI::IsEnabled() ? 1 : 0;
+	xConstants.m_fAmbientFallbackIntensity = dbg_fAmbientFallbackIntensity;
 
 	xBinder.PushConstant(&xConstants, sizeof(xConstants));
 

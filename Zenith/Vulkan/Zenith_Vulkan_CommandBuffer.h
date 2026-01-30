@@ -98,6 +98,11 @@ public:
 	void RenderImGui();
 	void SetCurrentRenderPass(vk::RenderPass xRenderPass) { m_xCurrentRenderPass = xRenderPass; }
 
+#ifdef ZENITH_DEBUG
+	void BeginDebugMarker(const char* szName);
+	void EndDebugMarker();
+#endif
+
 	vk::CommandBuffer m_xCurrentCmdBuffer;
 	vk::RenderPass m_xCurrentRenderPass;
 private:

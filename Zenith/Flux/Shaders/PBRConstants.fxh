@@ -49,25 +49,75 @@ const float PBR_GGX_MIN_ROUGHNESS = 0.005;
 const float PBR_BRDF_LUT_MIN_ROUGHNESS = 0.01;
 const float PBR_BRDF_LUT_MAX_ROUGHNESS = 0.99;
 
+// ---------- IBL Configuration ----------
+// IBL Reference Height: Fixed altitude (meters above sea level) for IBL precomputation
+//
+// DESIGN TRADE-OFF:
+// - Using camera height would require re-convolving IBL textures every frame (~costly)
+// - Fixed height provides consistent ambient lighting regardless of camera altitude
+// - This is intentional: IBL represents pre-computed environment, not real-time camera view
+//
+// SCENE GUIDANCE:
+// - 100m (default): Standard for ground-level outdoor scenes, human-scale environments
+// - 1000m-10000m: High-altitude scenes (aircraft, mountainous terrain)
+// - 10m-50m: Indoor scenes with skylights, smaller scale environments
+//
+// Note: This affects atmospheric scattering color at the IBL sampling point.
+// For most games at ground level, 100m provides natural sky colors without
+// excessive atmospheric haze that would occur at higher altitudes.
+const float IBL_REFERENCE_HEIGHT_METERS = 100.0;
+
 // ---------- Geometry Function K-factors ----------
 // These INTENTIONALLY differ between direct and IBL lighting per Epic Games specification
 //
-// Direct/Analytic lighting: k = ((roughness + 1)^2) / 8
+// MATHEMATICAL BACKGROUND:
+// The Smith geometry function models microfacet self-shadowing/masking:
+//   G_SchlickGGX(NdotV, k) = NdotV / (NdotV * (1-k) + k)
+// The k parameter controls shadowing severity based on incoming light distribution.
+//
+// DIRECT/ANALYTIC LIGHTING: k = ((roughness + 1)^2) / 8
 // - Used for point lights, directional lights, spot lights
-// - The (roughness + 1) remapping accounts for how specular roughness manifests
-//   under analytic light sources
+// - The (r+1) term is Disney's roughness remapping: prevents overly dark edges at low
+//   roughness by ensuring some self-shadowing even on smooth surfaces
+// - Division by 8 comes from hemisphere integration geometry
+// - Reference: Burley 2012, "Physically-Based Shading at Disney"
 //
 // IBL (Image-Based Lighting): k = (roughness^2) / 2
 // - Used for environment maps and pre-integrated lighting
-// - Different formula because IBL represents pre-integrated hemisphere lighting
-//   where the roughness remapping is already partially baked in
+// - No (r+1) remapping because the convolution already accounts for the
+//   roughness-dependent lobe distribution across the hemisphere
+// - Division by 2 (vs 8) because IBL samples represent pre-integrated light
+//   from multiple directions, reducing the effective shadowing term
+// - Reference: Karis 2013, "Real Shading in UE4", SIGGRAPH Course Notes
+//
 const float PBR_GEOMETRY_K_DIRECT_DIVISOR = 8.0;
 const float PBR_GEOMETRY_K_IBL_DIVISOR = 2.0;
 
+// ---------- IBL Prefilter Configuration ----------
+// Prefilter mip levels: 7 mips (128->64->32->16->8->4->2 pixels per face)
+// Mip 0 = roughness 0 (mirror), Mip 6 = roughness 1 (fully rough)
+// Linear mapping: mipLevel = roughness * (IBL_PREFILTER_MIP_COUNT - 1)
+const float IBL_PREFILTER_MIP_COUNT = 7.0;
+
+// Smooth surface blend threshold for IBL prefilter
+// At roughness below this, blend with mirror reflection to avoid GGX aliasing
+// when the distribution approaches a delta function
+// Industry standard range: 0.02-0.08
+const float IBL_SMOOTH_BLEND_THRESHOLD = 0.05;
+
 // ---------- Common Epsilon Values ----------
 // Used to prevent division by zero and other numerical instabilities
+//
+// PBR_EPSILON: General-purpose epsilon for most division guards
+// PBR_EPSILON_SMALL: Very small epsilon for high-precision calculations
+// PBR_DIRECTION_EPSILON: Minimum magnitude for valid direction vectors (screen-space effects)
+//
+// Note: GGX-specific epsilons may differ per-shader based on tuning. The deferred shader
+// uses 0.0001 for GGX denominator (tuned for grazing angle stability), while importance
+// sampling may use smaller values for precision.
 const float PBR_EPSILON = 0.0001;
 const float PBR_EPSILON_SMALL = 0.0000001;
+const float PBR_DIRECTION_EPSILON = 0.0001;  // Minimum direction magnitude for SSR/SSGI
 
 // ============================================================================
 // COMMON PBR FUNCTIONS
@@ -144,6 +194,60 @@ float GeometrySmith_IBL(float NdotV, float NdotL, float roughness)
 	float ggx1 = GeometrySchlickGGX_IBL(NdotV, roughness);
 	float ggx2 = GeometrySchlickGGX_IBL(NdotL, roughness);
 	return ggx1 * ggx2;
+}
+
+// ============================================================================
+// MULTISCATTER BRDF APPROXIMATION
+// Accounts for energy lost in single-scatter GGX at high roughness
+// Reference: Fdez-Aguera 2019 "A Multiple-Scattering Microfacet Model"
+// ============================================================================
+
+// Multiscatter BRDF: Compensates for energy loss in single-scatter GGX
+// At high roughness, single-scatter Cook-Torrance loses significant energy
+// because light that scatters multiple times between microfacets isn't accounted for.
+// This approximation recovers that lost energy, making rough metals appear correctly bright.
+//
+// F0: Base reflectivity at normal incidence
+// NdotV: dot(Normal, ViewDir)
+// roughness: Surface roughness [0, 1]
+// brdfLUT: Pre-computed BRDF integration LUT sample (scale, bias)
+//
+// Returns: Corrected specular term to use instead of (F0 * brdfLUT.x + brdfLUT.y)
+vec3 MultiscatterBRDF(vec3 F0, float NdotV, float roughness, vec2 brdfLUT)
+{
+	// Single-scatter energy
+	vec3 FssEss = F0 * brdfLUT.x + brdfLUT.y;
+
+	// Total single-scatter albedo
+	float Ess = brdfLUT.x + brdfLUT.y;
+
+	// Energy lost to multiple scattering
+	float Ems = 1.0 - Ess;
+
+	// Average Fresnel (approximation for hemisphere integral of F)
+	//
+	// MATHEMATICAL DERIVATION:
+	// Favg = integral of F_schlick(theta) * sin(2*theta) over hemisphere
+	//      = integral_0^(pi/2) [F0 + (1-F0)(1-cos(theta))^5] * sin(2*theta) d(theta)
+	//
+	// The integral of (1-cos(theta))^5 * sin(2*theta) from 0 to pi/2 evaluates to 1/21:
+	//   integral_0^(pi/2) (1-cos(theta))^5 * 2*sin(theta)*cos(theta) d(theta) = 1/21
+	//
+	// Therefore: Favg = F0 + (1-F0)/21
+	//
+	// For dielectrics F0=0.04: Favg = 0.04 + 0.96/21 ≈ 0.086
+	// For metals F0≈albedo: Favg ≈ F0 + (1-F0)/21
+	//
+	// Reference: Fdez-Aguera 2019, "A Multiple-Scattering Microfacet Model"
+	// https://www.jcgt.org/published/0008/01/03/
+	vec3 Favg = F0 + (1.0 - F0) / 21.0;
+
+	// Multiple-scatter contribution
+	// This is the energy that bounces multiple times and eventually exits
+	vec3 Fms = FssEss * Favg / (1.0 - Ems * Favg);
+
+	// Total energy: single-scatter + multi-scatter
+	return FssEss + Fms * Ems;
 }
 
 // ============================================================================

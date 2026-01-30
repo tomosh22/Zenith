@@ -60,10 +60,10 @@ vec3 SampleEnvironment(vec3 xDir)
 	{
 		// Note: g_xSunDir_Pad is direction light travels (from sun), negate to get direction TO sun
 		vec3 xSunDir = normalize(-g_xSunDir_Pad.xyz);
-		// IBL uses fixed reference height (100m above ground) - this is intentional
-		// as IBL textures are pre-computed environment lighting, not camera-relative
+		// IBL uses fixed reference height (configurable via IBL_REFERENCE_HEIGHT_METERS in PBRConstants.fxh)
+		// This is intentional: IBL textures are pre-computed environment lighting, not camera-relative
 		AtmosphereResult xResult = ComputeAtmosphereScattering(
-			vec3(0.0, EARTH_RADIUS + 100.0, 0.0),
+			vec3(0.0, EARTH_RADIUS + IBL_REFERENCE_HEIGHT_METERS, 0.0),
 			normalize(xDir),
 			xSunDir,
 			g_fSunIntensity
@@ -90,9 +90,8 @@ void main()
 	// At extremely low roughness, GGX importance sampling produces aliasing artifacts
 	// because the distribution approaches a delta function. Blending with a direct
 	// mirror reflection avoids this discontinuity and provides correct behavior for
-	// near-perfect mirrors. Industry standard threshold range: 0.02-0.08.
+	// near-perfect mirrors. IBL_SMOOTH_BLEND_THRESHOLD is defined in PBRConstants.fxh.
 	vec3 xMirrorColor = SampleEnvironment(xN);
-	const float IBL_SMOOTH_BLEND_THRESHOLD = 0.05;
 
 	// Minimum roughness for GGX importance sampling
 	// As roughness approaches 0, GGX distribution becomes a delta function, causing
