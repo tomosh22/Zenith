@@ -1,18 +1,17 @@
 #pragma once
 /**
- * Exploration_Config.h - DataAsset for Exploration game configuration
+ * Exploration_Config - Serializable asset for Exploration game configuration
  *
- * This demonstrates the DataAsset system for game settings.
  * Settings can be serialized to .zdata files for designer tweaking.
  *
  * Usage:
- *   Exploration_Config* pxConfig = Zenith_DataAssetManager::LoadDataAsset<Exploration_Config>("path.zdata");
+ *   Exploration_Config* pxConfig = Zenith_AssetRegistry::Get().Get<Exploration_Config>("game:Config/path.zdata");
  *   // Or create programmatically:
- *   Exploration_Config* pxConfig = Zenith_DataAssetManager::CreateDataAsset<Exploration_Config>();
+ *   Exploration_Config* pxConfig = Zenith_AssetRegistry::Get().Create<Exploration_Config>();
  */
 
-#include "AssetHandling/Zenith_DataAsset.h"
-#include "AssetHandling/Zenith_DataAssetManager.h"
+#include "AssetHandling/Zenith_Asset.h"
+#include "AssetHandling/Zenith_AssetRegistry.h"
 #include "DataStream/Zenith_DataStream.h"
 
 #ifdef ZENITH_TOOLS
@@ -21,10 +20,10 @@
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
 #endif
 
-class Exploration_Config : public Zenith_DataAsset
+class Exploration_Config : public Zenith_Asset
 {
 public:
-	ZENITH_DATA_ASSET_TYPE_NAME(Exploration_Config)
+	ZENITH_ASSET_TYPE_NAME(Exploration_Config)
 
 	// ========================================================================
 	// Player Movement Settings
@@ -278,8 +277,5 @@ public:
 #endif
 };
 
-// Register the DataAsset type (call once at startup)
-inline void RegisterExplorationDataAssets()
-{
-	Zenith_DataAssetManager::RegisterDataAssetType<Exploration_Config>();
-}
+// Register the asset type (automatically called via static initialization)
+ZENITH_REGISTER_ASSET_TYPE(Exploration_Config)

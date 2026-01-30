@@ -3,6 +3,9 @@
 #include <string>
 #include <atomic>
 
+// Forward declaration for serialization
+class Zenith_DataStream;
+
 /**
  * Zenith_Asset - Base class for all assets in the engine
  *
@@ -54,6 +57,37 @@ public:
 	 */
 	uint32_t GetRefCount() const;
 
+	//--------------------------------------------------------------------------
+	// Serialization Support (optional - override for serializable assets)
+	//--------------------------------------------------------------------------
+
+	/**
+	 * Get the type name for factory registration
+	 * Override this for assets that support DataStream serialization (.zdata files)
+	 * @return Type name string, or nullptr for non-serializable assets
+	 */
+	virtual const char* GetTypeName() const { return nullptr; }
+
+	/**
+	 * Serialize asset data to a data stream
+	 * Override this for assets that support saving to .zdata files
+	 */
+	virtual void WriteToDataStream(Zenith_DataStream& xStream) const { (void)xStream; }
+
+	/**
+	 * Deserialize asset data from a data stream
+	 * Override this for assets that support loading from .zdata files
+	 */
+	virtual void ReadFromDataStream(Zenith_DataStream& xStream) { (void)xStream; }
+
+#ifdef ZENITH_TOOLS
+	/**
+	 * Render the asset's properties in ImGui for editing
+	 * Override this to provide a custom editor UI
+	 */
+	virtual void RenderPropertiesPanel() {}
+#endif
+
 protected:
 	Zenith_Asset() = default;
 
@@ -65,3 +99,29 @@ private:
 
 	friend class Zenith_AssetRegistry;
 };
+
+//--------------------------------------------------------------------------
+// Macros for serializable assets
+//--------------------------------------------------------------------------
+
+/**
+ * Macro to implement GetTypeName() for a serializable asset
+ * Usage: ZENITH_ASSET_TYPE_NAME(MyAssetClass)
+ */
+#define ZENITH_ASSET_TYPE_NAME(ClassName) \
+	const char* GetTypeName() const override { return #ClassName; }
+
+/**
+ * Macro to register a serializable asset type at static initialization time
+ * Place in a .cpp file:
+ *   ZENITH_REGISTER_ASSET_TYPE(MyAssetClass)
+ */
+#define ZENITH_REGISTER_ASSET_TYPE(ClassName) \
+	namespace { \
+		struct ClassName##_AssetTypeRegistrar { \
+			ClassName##_AssetTypeRegistrar() { \
+				Zenith_AssetRegistry::RegisterAssetType<ClassName>(); \
+			} \
+		}; \
+		static ClassName##_AssetTypeRegistrar g_x##ClassName##Registrar; \
+	}

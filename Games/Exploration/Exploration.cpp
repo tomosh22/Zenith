@@ -14,7 +14,6 @@
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Terrain/Flux_TerrainConfig.h"
-#include "AssetHandling/Zenith_DataAssetManager.h"
 
 #ifdef ZENITH_TOOLS
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
@@ -505,9 +504,6 @@ void Project_RegisterScriptBehaviours()
 {
 	// Initialize resources at startup
 	InitializeExplorationResources();
-
-	// Register DataAsset types
-	RegisterExplorationDataAssets();
 
 	// Register the main game behavior
 	Exploration_Behaviour::RegisterBehaviour();

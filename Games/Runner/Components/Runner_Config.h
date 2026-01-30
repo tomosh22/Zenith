@@ -1,7 +1,7 @@
 #pragma once
 
-#include "AssetHandling/Zenith_DataAsset.h"
-#include "AssetHandling/Zenith_DataAssetManager.h"
+#include "AssetHandling/Zenith_Asset.h"
+#include "AssetHandling/Zenith_AssetRegistry.h"
 #include "DataStream/Zenith_DataStream.h"
 
 #ifdef ZENITH_TOOLS
@@ -11,7 +11,7 @@
 #endif
 
 /**
- * Runner_Config - DataAsset for Runner game configuration
+ * Runner_Config - Serializable asset for Runner game configuration
  *
  * Stores all tunable gameplay parameters for the endless runner:
  * - Character movement and physics
@@ -20,10 +20,10 @@
  * - Animation parameters
  * - Scoring
  */
-class Runner_Config : public Zenith_DataAsset
+class Runner_Config : public Zenith_Asset
 {
 public:
-	ZENITH_DATA_ASSET_TYPE_NAME(Runner_Config)
+	ZENITH_ASSET_TYPE_NAME(Runner_Config)
 
 	// ========================================================================
 	// Character Movement
@@ -316,7 +316,5 @@ public:
 #endif
 };
 
-inline void RegisterRunnerDataAssets()
-{
-	Zenith_DataAssetManager::RegisterDataAssetType<Runner_Config>();
-}
+// Register the asset type (automatically called via static initialization)
+ZENITH_REGISTER_ASSET_TYPE(Runner_Config)

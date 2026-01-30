@@ -1,13 +1,14 @@
 #pragma once
 
-#include "AssetHandling/Zenith_DataAsset.h"
+#include "AssetHandling/Zenith_Asset.h"
+#include "AssetHandling/Zenith_AssetRegistry.h"
 #include "DataStream/Zenith_DataStream.h"
 #include "Maths/Zenith_Maths.h"
 #include <string>
 #include <unordered_map>
 
 /**
- * Flux_ParticleEmitterConfig - DataAsset for configuring particle emitters
+ * Flux_ParticleEmitterConfig - Serializable asset for configuring particle emitters
  *
  * This class defines all the parameters for a particle emitter, including:
  * - Spawn settings (rate, burst count, max particles)
@@ -22,10 +23,10 @@
  * Configs are created programmatically in game code (Project_LoadInitialScene)
  * and can be shared between multiple emitter components.
  */
-class Flux_ParticleEmitterConfig : public Zenith_DataAsset
+class Flux_ParticleEmitterConfig : public Zenith_Asset
 {
 public:
-	ZENITH_DATA_ASSET_TYPE_NAME(Flux_ParticleEmitterConfig)
+	ZENITH_ASSET_TYPE_NAME(Flux_ParticleEmitterConfig)
 
 	Flux_ParticleEmitterConfig() = default;
 	virtual ~Flux_ParticleEmitterConfig() = default;

@@ -17,7 +17,6 @@
 #include "Flux/Flux.h"
 #include "Flux/Particles/Flux_ParticleEmitterConfig.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
-#include "AssetHandling/Zenith_DataAssetManager.h"
 #include "AssetHandling/Zenith_ModelAsset.h"
 #include "AssetHandling/Zenith_MeshGeometryAsset.h"
 #include "Prefab/Zenith_Prefab.h"
@@ -578,9 +577,6 @@ void Project_RegisterScriptBehaviours()
 {
 	// Initialize resources at startup
 	InitializeCombatResources();
-
-	// Register DataAsset types
-	RegisterCombatDataAssets();
 
 	// Register behaviors
 	Combat_Behaviour::RegisterBehaviour();

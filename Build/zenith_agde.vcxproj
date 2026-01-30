@@ -830,8 +830,6 @@
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_AssetHandle.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_AssetRegistry.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_AsyncAssetLoader.h" />
-    <ClInclude Include="..\Zenith\AssetHandling\Zenith_DataAsset.h" />
-    <ClInclude Include="..\Zenith\AssetHandling\Zenith_DataAssetManager.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_FileWatcher.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_MaterialAsset.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_MeshAsset.h" />
@@ -1691,8 +1689,6 @@
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_AssetHandle.cpp" />
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_AssetRegistry.cpp" />
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_AsyncAssetLoader.cpp" />
-    <ClCompile Include="..\Zenith\AssetHandling\Zenith_DataAsset.cpp" />
-    <ClCompile Include="..\Zenith\AssetHandling\Zenith_DataAssetManager.cpp" />
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_FileWatcher.cpp" />
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_MaterialAsset.cpp" />
     <ClCompile Include="..\Zenith\AssetHandling\Zenith_MeshAsset.cpp" />

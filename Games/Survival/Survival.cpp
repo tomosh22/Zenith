@@ -13,7 +13,6 @@
 #include "AssetHandling/Zenith_MeshGeometryAsset.h"
 #include "Flux/Flux.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
-#include "AssetHandling/Zenith_DataAssetManager.h"
 #include "Prefab/Zenith_Prefab.h"
 
 #include <cmath>
@@ -488,9 +487,6 @@ void Project_RegisterScriptBehaviours()
 {
 	// Initialize resources at startup
 	InitializeSurvivalResources();
-
-	// Register DataAsset types
-	RegisterSurvivalDataAssets();
 
 	Survival_Behaviour::RegisterBehaviour();
 }

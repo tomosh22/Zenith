@@ -15,6 +15,9 @@ class Zenith_SkeletonAsset;
 class Zenith_ModelAsset;
 class Zenith_Prefab;
 
+// Forward declare .zdata loader (defined in .cpp, used by RegisterAssetType<T>)
+Zenith_Asset* LoadSerializableAsset(const std::string& strPath);
+
 /**
  * Zenith_AssetRegistry - THE unified asset management system
  *
@@ -170,6 +173,70 @@ public:
 	void UnloadAll();
 
 	//--------------------------------------------------------------------------
+	// Serializable Asset Support (.zdata files)
+	//--------------------------------------------------------------------------
+
+	/**
+	 * Factory function type for creating serializable asset instances
+	 */
+	using SerializableAssetFactoryFn = Zenith_Asset*(*)();
+
+	/**
+	 * Register a serializable asset type (call during static initialization)
+	 * Assets with GetTypeName() override should be registered here
+	 * @param szTypeName The type name (must match GetTypeName() return value)
+	 * @param pfnFactory Factory function to create instances
+	 */
+	static void RegisterSerializableAssetType(const char* szTypeName, SerializableAssetFactoryFn pfnFactory);
+
+	/**
+	 * Template helper for registering serializable asset types
+	 * This registers both the type factory and a loader for the asset type
+	 */
+	template<typename T>
+	static void RegisterAssetType()
+	{
+		T xTemp;  // Create temporary to get type name
+		const char* szTypeName = xTemp.GetTypeName();
+		RegisterSerializableAssetType(szTypeName, []() -> Zenith_Asset* { return new T(); });
+
+		// Also register a loader for this type if instance exists
+		if (s_pxInstance)
+		{
+			s_pxInstance->RegisterLoader(std::type_index(typeid(T)), [](const std::string& strPath) -> Zenith_Asset* {
+				if (strPath.empty())
+				{
+					// Create empty instance for procedural assets
+					return new T();
+				}
+				// Use the generic .zdata loader
+				return LoadSerializableAsset(strPath);
+			});
+		}
+	}
+
+	/**
+	 * Check if a serializable asset type is registered
+	 */
+	static bool IsSerializableTypeRegistered(const char* szTypeName);
+
+	/**
+	 * Save a serializable asset to a .zdata file
+	 * The asset must have GetTypeName() and WriteToDataStream() implemented
+	 * @param pxAsset Asset to save
+	 * @param strPath Path to save to (prefixed or absolute)
+	 * @return true on success
+	 */
+	bool Save(Zenith_Asset* pxAsset, const std::string& strPath);
+
+	/**
+	 * Save a serializable asset to its current path
+	 * @param pxAsset Asset to save (must have a non-procedural path set)
+	 * @return true on success
+	 */
+	bool Save(Zenith_Asset* pxAsset);
+
+	//--------------------------------------------------------------------------
 	// Diagnostics
 	//--------------------------------------------------------------------------
 
@@ -196,6 +263,9 @@ private:
 	Zenith_AssetRegistry(const Zenith_AssetRegistry&) = delete;
 	Zenith_AssetRegistry& operator=(const Zenith_AssetRegistry&) = delete;
 
+	// Friend declaration for .zdata loader
+	friend Zenith_Asset* LoadSerializableAsset(const std::string& strPath);
+
 	// Internal loader registration (called by template specializations)
 	using AssetLoaderFn = std::function<Zenith_Asset*(const std::string&)>;
 	void RegisterLoader(std::type_index xType, AssetLoaderFn pfnLoader);
@@ -214,6 +284,15 @@ private:
 	// Asset directories (set before Initialize)
 	static std::string s_strGameAssetsDir;
 	static std::string s_strEngineAssetsDir;
+
+	// Serializable asset type registry accessors (use function-local statics to avoid
+	// static initialization order fiasco - registration happens during static init)
+	static std::unordered_map<std::string, SerializableAssetFactoryFn>& GetSerializableTypeRegistry();
+	static Zenith_Mutex_NoProfiling& GetSerializableTypeRegistryMutex();
+
+	// .zdata file format constants
+	static constexpr uint32_t ZDATA_MAGIC = 0x5441445A;  // "ZDAT" in little-endian
+	static constexpr uint32_t ZDATA_VERSION = 1;
 
 	// Unified asset cache: path -> asset
 	std::unordered_map<std::string, Zenith_Asset*> m_xAssetsByPath;

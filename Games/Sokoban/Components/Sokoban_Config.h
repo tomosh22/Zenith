@@ -1,7 +1,7 @@
 #pragma once
 
-#include "AssetHandling/Zenith_DataAsset.h"
-#include "AssetHandling/Zenith_DataAssetManager.h"
+#include "AssetHandling/Zenith_Asset.h"
+#include "AssetHandling/Zenith_AssetRegistry.h"
 #include "DataStream/Zenith_DataStream.h"
 
 #ifdef ZENITH_TOOLS
@@ -11,25 +11,24 @@
 #endif
 
 /**
- * Sokoban_Config - DataAsset for Sokoban game configuration
+ * Sokoban_Config - Serializable asset for Sokoban game configuration
  *
- * This demonstrates the DataAsset system.
  * Game designers can create .zdata files with different configurations for
  * difficulty levels, visual tweaks, etc.
  *
  * Usage:
  *   // In Sokoban_Behaviour::OnAwake():
- *   m_pxConfig = Zenith_DataAssetManager::LoadDataAsset<Sokoban_Config>("Assets/SokobanConfig.zdata");
+ *   m_pxConfig = Zenith_AssetRegistry::Get().Get<Sokoban_Config>("game:Config/SokobanConfig.zdata");
  *
  *   // Or create programmatically:
- *   Sokoban_Config* pxConfig = Zenith_DataAssetManager::CreateDataAsset<Sokoban_Config>();
+ *   Sokoban_Config* pxConfig = Zenith_AssetRegistry::Get().Create<Sokoban_Config>();
  *   pxConfig->m_uMinGridSize = 10;
- *   Zenith_DataAssetManager::SaveDataAsset(pxConfig, "Assets/HardMode.zdata");
+ *   Zenith_AssetRegistry::Get().Save(pxConfig, "game:Config/HardMode.zdata");
  */
-class Sokoban_Config : public Zenith_DataAsset
+class Sokoban_Config : public Zenith_Asset
 {
 public:
-	ZENITH_DATA_ASSET_TYPE_NAME(Sokoban_Config)
+	ZENITH_ASSET_TYPE_NAME(Sokoban_Config)
 
 	// Grid generation
 	uint32_t m_uMinGridSize = 8;
@@ -144,8 +143,5 @@ public:
 #endif
 };
 
-// Register the DataAsset type (call once at startup)
-inline void RegisterSokobanDataAssets()
-{
-	Zenith_DataAssetManager::RegisterDataAssetType<Sokoban_Config>();
-}
+// Register the asset type (automatically called via static initialization)
+ZENITH_REGISTER_ASSET_TYPE(Sokoban_Config)

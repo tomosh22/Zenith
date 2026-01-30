@@ -210,17 +210,105 @@ worldPos = skinningMatrix * meshLocalPos
 - Maximum 4 bone influences per vertex
 - Blender exports with Armature nodes may have a ~90 degree rotation offset due to Z-up to Y-up conversion that isn't fully compensated in the current pipeline
 
+## Creating Serializable Asset Types
+
+The asset system supports serializable "data assets" (game configs, particle emitter configs, etc.) that can be saved/loaded from `.zdata` files. These inherit directly from `Zenith_Asset`.
+
+### 1. Define the Class
+
+```cpp
+// In MyConfig.h
+#include "AssetHandling/Zenith_Asset.h"
+#include "AssetHandling/Zenith_AssetRegistry.h"
+#include "DataStream/Zenith_DataStream.h"
+
+class MyConfig : public Zenith_Asset
+{
+public:
+    ZENITH_ASSET_TYPE_NAME(MyConfig)  // Required for .zdata loading
+
+    // Data members
+    float m_fValue = 1.0f;
+    std::string m_strName = "Default";
+
+    // Serialization (required for .zdata support)
+    void WriteToDataStream(Zenith_DataStream& xStream) const override
+    {
+        uint32_t uVersion = 1;
+        xStream << uVersion;
+        xStream << m_fValue;
+        xStream << m_strName;
+    }
+
+    void ReadFromDataStream(Zenith_DataStream& xStream) override
+    {
+        uint32_t uVersion;
+        xStream >> uVersion;
+        if (uVersion >= 1)
+        {
+            xStream >> m_fValue;
+            xStream >> m_strName;
+        }
+    }
+
+#ifdef ZENITH_TOOLS
+    void RenderPropertiesPanel() override
+    {
+        ImGui::DragFloat("Value", &m_fValue);
+    }
+#endif
+};
+
+// Auto-register type (static initialization)
+ZENITH_REGISTER_ASSET_TYPE(MyConfig)
+```
+
+### 2. Use the Asset
+
+```cpp
+// Load from file
+MyConfig* pxConfig = Zenith_AssetRegistry::Get().Get<MyConfig>("game:Config/my.zdata");
+
+// Create programmatically
+MyConfig* pxNew = Zenith_AssetRegistry::Get().Create<MyConfig>();
+pxNew->m_fValue = 2.0f;
+Zenith_AssetRegistry::Get().Save(pxNew, "game:Config/new.zdata");
+```
+
+### Path Prefixes
+
+Assets use prefixed paths for cross-machine portability:
+
+| Prefix | Resolves To | Example |
+|--------|-------------|---------|
+| `game:` | `GAME_ASSETS_DIR` | `game:Textures/diffuse.ztex` |
+| `engine:` | `ENGINE_ASSETS_DIR` | `engine:Materials/default.zmat` |
+| `procedural://` | Runtime-created asset | `procedural://unit_cube` |
+
+### .zdata File Format
+
+Binary format for serializable assets:
+
+| Offset | Size | Field |
+|--------|------|-------|
+| 0 | 4 | Magic number: `0x5441445A` ("ZDAT") |
+| 4 | 4 | Version: `1` |
+| 8 | N+1 | Type name (null-terminated string) |
+| 8+N+1 | ... | Asset data (from `WriteToDataStream`) |
+
 ## File Structure
 
 ```
 AssetHandling/
-  Zenith_Asset.h/cpp          - Base asset class with ref counting
-  Zenith_AssetRegistry.h/cpp  - Unified asset cache and loading
-  Zenith_AssetRef.h/cpp       - Smart handle template for asset references
+  Zenith_Asset.h/cpp          - Base asset class with ref counting and optional serialization
+  Zenith_AssetRegistry.h/cpp  - Unified asset cache, loading, and saving
+  Zenith_AssetHandle.h/cpp    - Smart handle template with automatic ref counting
   Zenith_TextureAsset.h/cpp   - Texture asset (GPU texture + metadata)
   Zenith_MaterialAsset.h/cpp  - Material properties + texture references
   Zenith_MeshAsset.h/cpp      - Mesh geometry container
   Zenith_SkeletonAsset.h/cpp  - Skeleton hierarchy and bind pose
   Zenith_ModelAsset.h/cpp     - Model container (meshes + skeleton + materials)
-  Zenith_AssetDatabase.h/cpp  - GUID to path mapping (legacy, being phased out)
+  Zenith_AnimationAsset.h/cpp - Animation clips
+  Zenith_MeshGeometryAsset.h  - Wrapper for Flux_MeshGeometry
+  Zenith_AsyncAssetLoader.h   - Background asset loading
 ```

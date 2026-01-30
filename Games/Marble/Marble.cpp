@@ -13,7 +13,6 @@
 #include "AssetHandling/Zenith_AssetHandle.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux.h"
-#include "AssetHandling/Zenith_DataAssetManager.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "Prefab/Zenith_Prefab.h"
 #include "AssetHandling/Zenith_MeshGeometryAsset.h"
@@ -245,9 +244,6 @@ void Project_RegisterScriptBehaviours()
 {
 	// Initialize resources at startup
 	InitializeMarbleResources();
-
-	// Register DataAsset types
-	RegisterMarbleDataAssets();
 
 	Marble_Behaviour::RegisterBehaviour();
 }

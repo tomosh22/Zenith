@@ -9,6 +9,8 @@
 #include "AssetHandling/Zenith_AnimationAsset.h"
 #include "AssetHandling/Zenith_MeshGeometryAsset.h"
 #include "Prefab/Zenith_Prefab.h"
+#include "DataStream/Zenith_DataStream.h"
+#include <fstream>
 
 // Forward declare loaders (defined in respective asset .cpp files)
 static Zenith_Asset* LoadTextureAsset(const std::string& strPath);
@@ -158,6 +160,19 @@ static Zenith_Asset* LoadMeshGeometryAsset(const std::string& strPath)
 Zenith_AssetRegistry* Zenith_AssetRegistry::s_pxInstance = nullptr;
 std::string Zenith_AssetRegistry::s_strGameAssetsDir;
 std::string Zenith_AssetRegistry::s_strEngineAssetsDir;
+
+// Serializable asset type registry - uses function-local statics to avoid static initialization order fiasco
+std::unordered_map<std::string, Zenith_AssetRegistry::SerializableAssetFactoryFn>& Zenith_AssetRegistry::GetSerializableTypeRegistry()
+{
+	static std::unordered_map<std::string, SerializableAssetFactoryFn> s_xRegistry;
+	return s_xRegistry;
+}
+
+Zenith_Mutex_NoProfiling& Zenith_AssetRegistry::GetSerializableTypeRegistryMutex()
+{
+	static Zenith_Mutex_NoProfiling s_xMutex;
+	return s_xMutex;
+}
 
 Zenith_AssetRegistry& Zenith_AssetRegistry::Get()
 {
@@ -533,4 +548,210 @@ Zenith_Asset* Zenith_AssetRegistry::CreateInternal(std::type_index xType, const 
 std::string Zenith_AssetRegistry::GenerateProceduralPath(const std::string& strPrefix)
 {
 	return "procedural://" + strPrefix + "_" + std::to_string(m_uNextProceduralId++);
+}
+
+//------------------------------------------------------------------------------
+// Serializable Asset Support (.zdata files)
+//------------------------------------------------------------------------------
+
+void Zenith_AssetRegistry::RegisterSerializableAssetType(const char* szTypeName, SerializableAssetFactoryFn pfnFactory)
+{
+	Zenith_ScopedMutexLock_T<Zenith_Mutex_NoProfiling> xLock(GetSerializableTypeRegistryMutex());
+	GetSerializableTypeRegistry()[szTypeName] = pfnFactory;
+	Zenith_Log(LOG_CATEGORY_ASSET, "AssetRegistry: Registered serializable type: %s", szTypeName);
+}
+
+bool Zenith_AssetRegistry::IsSerializableTypeRegistered(const char* szTypeName)
+{
+	Zenith_ScopedMutexLock_T<Zenith_Mutex_NoProfiling> xLock(GetSerializableTypeRegistryMutex());
+	return GetSerializableTypeRegistry().find(szTypeName) != GetSerializableTypeRegistry().end();
+}
+
+bool Zenith_AssetRegistry::Save(Zenith_Asset* pxAsset, const std::string& strPath)
+{
+	if (!pxAsset)
+	{
+		Zenith_Log(LOG_CATEGORY_ASSET, "AssetRegistry: Cannot save null asset");
+		return false;
+	}
+
+	const char* szTypeName = pxAsset->GetTypeName();
+	if (!szTypeName)
+	{
+		Zenith_Log(LOG_CATEGORY_ASSET, "AssetRegistry: Cannot save asset - GetTypeName() returned nullptr");
+		return false;
+	}
+
+	// Resolve prefixed path to absolute path for file writing
+	std::string strAbsolutePath = ResolvePath(strPath);
+
+	// Open file for writing
+	std::ofstream xFile(strAbsolutePath, std::ios::binary);
+	if (!xFile.is_open())
+	{
+		Zenith_Log(LOG_CATEGORY_ASSET, "AssetRegistry: Failed to create file: %s", strAbsolutePath.c_str());
+		return false;
+	}
+
+	// Write magic number
+	uint32_t uMagic = ZDATA_MAGIC;
+	xFile.write(reinterpret_cast<const char*>(&uMagic), sizeof(uMagic));
+
+	// Write version
+	uint32_t uVersion = ZDATA_VERSION;
+	xFile.write(reinterpret_cast<const char*>(&uVersion), sizeof(uVersion));
+
+	// Write type name (null-terminated)
+	xFile.write(szTypeName, strlen(szTypeName) + 1);
+
+	// Serialize asset data
+	Zenith_DataStream xStream;
+	pxAsset->WriteToDataStream(xStream);
+
+	// Write serialized data
+	if (xStream.GetSize() > 0)
+	{
+		xFile.write(reinterpret_cast<const char*>(xStream.GetData()), xStream.GetSize());
+	}
+
+	// Update the asset's path if it was procedural
+	if (pxAsset->IsProcedural())
+	{
+		Zenith_ScopedMutexLock xLock(m_xMutex);
+
+		// Remove from old procedural path in cache
+		auto it = m_xAssetsByPath.find(pxAsset->m_strPath);
+		if (it != m_xAssetsByPath.end())
+		{
+			m_xAssetsByPath.erase(it);
+		}
+
+		// Update path and re-cache with new path
+		pxAsset->m_strPath = strPath;
+		m_xAssetsByPath[strPath] = pxAsset;
+	}
+
+	if (m_bLifecycleLogging)
+	{
+		Zenith_Log(LOG_CATEGORY_ASSET, "AssetRegistry: Saved '%s' to: %s", szTypeName, strAbsolutePath.c_str());
+	}
+
+	return true;
+}
+
+bool Zenith_AssetRegistry::Save(Zenith_Asset* pxAsset)
+{
+	if (!pxAsset)
+	{
+		Zenith_Log(LOG_CATEGORY_ASSET, "AssetRegistry: Cannot save null asset");
+		return false;
+	}
+
+	if (pxAsset->IsProcedural())
+	{
+		Zenith_Log(LOG_CATEGORY_ASSET, "AssetRegistry: Cannot save asset - no file path set (procedural asset)");
+		return false;
+	}
+
+	return Save(pxAsset, pxAsset->GetPath());
+}
+
+// Loader function for .zdata files (serializable assets)
+// This is a friend function of Zenith_AssetRegistry and is forward-declared in the header
+Zenith_Asset* LoadSerializableAsset(const std::string& strPath)
+{
+	if (strPath.empty())
+	{
+		// Cannot create without type - use registry.Create<T>() instead
+		return nullptr;
+	}
+
+	// Open file
+	std::ifstream xFile(strPath, std::ios::binary);
+	if (!xFile.is_open())
+	{
+		Zenith_Log(LOG_CATEGORY_ASSET, "AssetRegistry: Failed to open .zdata file: %s", strPath.c_str());
+		return nullptr;
+	}
+
+	// Read and validate magic number
+	uint32_t uMagic = 0;
+	xFile.read(reinterpret_cast<char*>(&uMagic), sizeof(uMagic));
+	if (uMagic != Zenith_AssetRegistry::ZDATA_MAGIC)
+	{
+		Zenith_Log(LOG_CATEGORY_ASSET, "AssetRegistry: Invalid .zdata file (bad magic): %s", strPath.c_str());
+		return nullptr;
+	}
+
+	// Read and validate version
+	uint32_t uVersion = 0;
+	xFile.read(reinterpret_cast<char*>(&uVersion), sizeof(uVersion));
+	if (uVersion > Zenith_AssetRegistry::ZDATA_VERSION)
+	{
+		Zenith_Log(LOG_CATEGORY_ASSET, "AssetRegistry: .zdata file version %u is newer than supported (%u): %s",
+			uVersion, Zenith_AssetRegistry::ZDATA_VERSION, strPath.c_str());
+		return nullptr;
+	}
+
+	// Read type name
+	std::string strTypeName;
+	char c;
+	while (xFile.get(c) && c != '\0')
+	{
+		strTypeName += c;
+	}
+
+	if (strTypeName.empty())
+	{
+		Zenith_Log(LOG_CATEGORY_ASSET, "AssetRegistry: .zdata file has empty type name: %s", strPath.c_str());
+		return nullptr;
+	}
+
+	// Find factory for this type
+	Zenith_AssetRegistry::SerializableAssetFactoryFn pfnFactory = nullptr;
+	{
+		Zenith_ScopedMutexLock_T<Zenith_Mutex_NoProfiling> xLock(Zenith_AssetRegistry::GetSerializableTypeRegistryMutex());
+		auto& xRegistry = Zenith_AssetRegistry::GetSerializableTypeRegistry();
+		auto xIt = xRegistry.find(strTypeName);
+		if (xIt != xRegistry.end())
+		{
+			pfnFactory = xIt->second;
+		}
+	}
+
+	if (!pfnFactory)
+	{
+		Zenith_Log(LOG_CATEGORY_ASSET, "AssetRegistry: Serializable type '%s' not registered, cannot load: %s",
+			strTypeName.c_str(), strPath.c_str());
+		return nullptr;
+	}
+
+	// Create asset instance
+	Zenith_Asset* pxAsset = pfnFactory();
+	if (!pxAsset)
+	{
+		Zenith_Log(LOG_CATEGORY_ASSET, "AssetRegistry: Failed to create '%s' from: %s",
+			strTypeName.c_str(), strPath.c_str());
+		return nullptr;
+	}
+
+	// Read remaining file data into buffer
+	std::streampos xCurrentPos = xFile.tellg();
+	xFile.seekg(0, std::ios::end);
+	std::streamsize xDataSize = xFile.tellg() - xCurrentPos;
+	xFile.seekg(xCurrentPos);
+
+	if (xDataSize > 0)
+	{
+		std::vector<char> xBuffer(static_cast<size_t>(xDataSize));
+		xFile.read(xBuffer.data(), xDataSize);
+
+		// Create DataStream with external data and deserialize
+		Zenith_DataStream xStream(xBuffer.data(), static_cast<uint64_t>(xDataSize));
+		pxAsset->ReadFromDataStream(xStream);
+	}
+
+	Zenith_Log(LOG_CATEGORY_ASSET, "AssetRegistry: Loaded serializable asset '%s' from: %s",
+		strTypeName.c_str(), strPath.c_str());
+	return pxAsset;
 }

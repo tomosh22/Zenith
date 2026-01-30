@@ -51,10 +51,8 @@
 #include "AssetHandling/Zenith_AnimationAsset.h"
 #include "Prefab/Zenith_Prefab.h"
 
-// Async asset loading and DataAsset includes
+// Async asset loading
 #include "AssetHandling/Zenith_AsyncAssetLoader.h"
-#include "AssetHandling/Zenith_DataAsset.h"
-#include "AssetHandling/Zenith_DataAssetManager.h"
 
 #ifdef ZENITH_TOOLS
 #include "UnitTests/Zenith_EditorTests.h"
@@ -6901,14 +6899,14 @@ void Zenith_UnitTests::TestAsyncLoadCompletion()
 }
 
 //==============================================================================
-// DataAsset System Tests
+// Serializable Asset Tests
 //==============================================================================
 
-// Test DataAsset class for unit testing
-class TestDataAsset : public Zenith_DataAsset
+// Test asset class for unit testing serializable assets
+class TestSerializableAsset : public Zenith_Asset
 {
 public:
-	ZENITH_DATA_ASSET_TYPE_NAME(TestDataAsset)
+	ZENITH_ASSET_TYPE_NAME(TestSerializableAsset)
 
 	int32_t m_iTestValue = 42;
 	float m_fTestFloat = 3.14f;
@@ -6933,15 +6931,15 @@ void Zenith_UnitTests::TestDataAssetRegistration()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestDataAssetRegistration...");
 
-	// Register the test data asset type
-	Zenith_DataAssetManager::RegisterDataAssetType<TestDataAsset>();
+	// Register the test serializable asset type
+	Zenith_AssetRegistry::RegisterAssetType<TestSerializableAsset>();
 
 	// Verify it was registered
-	bool bRegistered = Zenith_DataAssetManager::IsTypeRegistered("TestDataAsset");
-	Zenith_Assert(bRegistered, "TestDataAssetRegistration: TestDataAsset should be registered");
+	bool bRegistered = Zenith_AssetRegistry::IsSerializableTypeRegistered("TestSerializableAsset");
+	Zenith_Assert(bRegistered, "TestDataAssetRegistration: TestSerializableAsset should be registered");
 
 	// Verify unknown type is not registered
-	bool bUnknown = Zenith_DataAssetManager::IsTypeRegistered("UnknownType");
+	bool bUnknown = Zenith_AssetRegistry::IsSerializableTypeRegistered("UnknownType");
 	Zenith_Assert(!bUnknown, "TestDataAssetRegistration: Unknown type should not be registered");
 
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestDataAssetRegistration completed successfully");
@@ -6952,11 +6950,11 @@ void Zenith_UnitTests::TestDataAssetCreateAndSave()
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestDataAssetCreateAndSave...");
 
 	// Ensure type is registered
-	Zenith_DataAssetManager::RegisterDataAssetType<TestDataAsset>();
+	Zenith_AssetRegistry::RegisterAssetType<TestSerializableAsset>();
 
 	// Create a new instance via factory
-	TestDataAsset* pxAsset = Zenith_DataAssetManager::CreateDataAsset<TestDataAsset>();
-	Zenith_Assert(pxAsset != nullptr, "TestDataAssetCreateAndSave: Failed to create TestDataAsset");
+	TestSerializableAsset* pxAsset = Zenith_AssetRegistry::Get().Create<TestSerializableAsset>();
+	Zenith_Assert(pxAsset != nullptr, "TestDataAssetCreateAndSave: Failed to create TestSerializableAsset");
 
 	// Set some values
 	pxAsset->m_iTestValue = 100;
@@ -6966,15 +6964,14 @@ void Zenith_UnitTests::TestDataAssetCreateAndSave()
 	// Save to file
 	std::string strTestPath = "TestData/test_data_asset.zdata";
 	std::filesystem::create_directories("TestData");
-	bool bSaved = Zenith_DataAssetManager::SaveDataAsset(pxAsset, strTestPath);
-	Zenith_Assert(bSaved, "TestDataAssetCreateAndSave: Failed to save TestDataAsset");
+	bool bSaved = Zenith_AssetRegistry::Get().Save(pxAsset, strTestPath);
+	Zenith_Assert(bSaved, "TestDataAssetCreateAndSave: Failed to save TestSerializableAsset");
 
 	// Verify file exists
 	bool bExists = std::filesystem::exists(strTestPath);
 	Zenith_Assert(bExists, "TestDataAssetCreateAndSave: Saved file should exist");
 
-	// Note: Don't delete pxAsset here - SaveDataAsset adds it to the cache,
-	// which takes ownership. ClearCache() will clean it up.
+	// Note: Asset is managed by registry cache
 
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestDataAssetCreateAndSave completed successfully");
 }
@@ -6983,13 +6980,13 @@ void Zenith_UnitTests::TestDataAssetLoad()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestDataAssetLoad...");
 
-	// Clear cache to force reload
-	Zenith_DataAssetManager::ClearCache();
+	// Unload to force reload from disk
+	Zenith_AssetRegistry::Get().Unload("TestData/test_data_asset.zdata");
 
 	// Load the asset saved in previous test
 	std::string strTestPath = "TestData/test_data_asset.zdata";
-	TestDataAsset* pxLoaded = Zenith_DataAssetManager::LoadDataAsset<TestDataAsset>(strTestPath);
-	Zenith_Assert(pxLoaded != nullptr, "TestDataAssetLoad: Failed to load TestDataAsset");
+	TestSerializableAsset* pxLoaded = Zenith_AssetRegistry::Get().Get<TestSerializableAsset>(strTestPath);
+	Zenith_Assert(pxLoaded != nullptr, "TestDataAssetLoad: Failed to load TestSerializableAsset");
 
 	// Verify loaded values match what we saved
 	Zenith_Assert(pxLoaded->m_iTestValue == 100,
@@ -7007,23 +7004,23 @@ void Zenith_UnitTests::TestDataAssetRoundTrip()
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestDataAssetRoundTrip...");
 
 	// Ensure type is registered
-	Zenith_DataAssetManager::RegisterDataAssetType<TestDataAsset>();
+	Zenith_AssetRegistry::RegisterAssetType<TestSerializableAsset>();
 
 	// Create with unique values
-	TestDataAsset* pxOriginal = new TestDataAsset();
+	TestSerializableAsset* pxOriginal = Zenith_AssetRegistry::Get().Create<TestSerializableAsset>();
 	pxOriginal->m_iTestValue = -999;
 	pxOriginal->m_fTestFloat = 123.456f;
 	pxOriginal->m_strTestString = "RoundTripTest";
 
-	// Save (adds to cache, which takes ownership)
+	// Save (adds to cache)
 	std::string strPath = "TestData/round_trip_test.zdata";
-	Zenith_DataAssetManager::SaveDataAsset(pxOriginal, strPath);
+	Zenith_AssetRegistry::Get().Save(pxOriginal, strPath);
 
-	// Clear cache to force reload from disk (also deletes the cached asset)
-	Zenith_DataAssetManager::ClearCache();
+	// Unload to force reload from disk
+	Zenith_AssetRegistry::Get().Unload(strPath);
 
 	// Load
-	TestDataAsset* pxLoaded = Zenith_DataAssetManager::LoadDataAsset<TestDataAsset>(strPath);
+	TestSerializableAsset* pxLoaded = Zenith_AssetRegistry::Get().Get<TestSerializableAsset>(strPath);
 	Zenith_Assert(pxLoaded != nullptr, "TestDataAssetRoundTrip: Failed to load");
 	Zenith_Assert(pxLoaded->m_iTestValue == -999, "TestDataAssetRoundTrip: Int mismatch");
 	Zenith_Assert(std::abs(pxLoaded->m_fTestFloat - 123.456f) < 0.001f, "TestDataAssetRoundTrip: Float mismatch");

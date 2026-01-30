@@ -1,7 +1,7 @@
 #pragma once
 
-#include "AssetHandling/Zenith_DataAsset.h"
-#include "AssetHandling/Zenith_DataAssetManager.h"
+#include "AssetHandling/Zenith_Asset.h"
+#include "AssetHandling/Zenith_AssetRegistry.h"
 #include "DataStream/Zenith_DataStream.h"
 
 #ifdef ZENITH_TOOLS
@@ -11,7 +11,7 @@
 #endif
 
 /**
- * Combat_Config - DataAsset for combat game configuration
+ * Combat_Config - Serializable asset for combat game configuration
  *
  * Contains all tunable parameters for combat gameplay:
  * - Player stats (health, damage, speed)
@@ -20,10 +20,10 @@
  * - IK settings (foot placement, look-at)
  * - Arena configuration
  */
-class Combat_Config : public Zenith_DataAsset
+class Combat_Config : public Zenith_Asset
 {
 public:
-	ZENITH_DATA_ASSET_TYPE_NAME(Combat_Config)
+	ZENITH_ASSET_TYPE_NAME(Combat_Config)
 
 	// ========================================================================
 	// Player Settings
@@ -297,8 +297,5 @@ public:
 #endif
 };
 
-// Register the DataAsset type (call once at startup)
-inline void RegisterCombatDataAssets()
-{
-	Zenith_DataAssetManager::RegisterDataAssetType<Combat_Config>();
-}
+// Register the asset type (automatically called via static initialization)
+ZENITH_REGISTER_ASSET_TYPE(Combat_Config)

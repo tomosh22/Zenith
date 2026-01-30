@@ -1,7 +1,7 @@
 #pragma once
 
-#include "AssetHandling/Zenith_DataAsset.h"
-#include "AssetHandling/Zenith_DataAssetManager.h"
+#include "AssetHandling/Zenith_Asset.h"
+#include "AssetHandling/Zenith_AssetRegistry.h"
 #include "DataStream/Zenith_DataStream.h"
 
 #ifdef ZENITH_TOOLS
@@ -11,15 +11,14 @@
 #endif
 
 /**
- * Marble_Config - DataAsset for Marble game configuration
+ * Marble_Config - Serializable asset for Marble game configuration
  *
- * Demonstrates DataAsset system.
  * Game designers can create .zdata files with different configurations.
  */
-class Marble_Config : public Zenith_DataAsset
+class Marble_Config : public Zenith_Asset
 {
 public:
-	ZENITH_DATA_ASSET_TYPE_NAME(Marble_Config)
+	ZENITH_ASSET_TYPE_NAME(Marble_Config)
 
 	// Ball physics
 	float m_fBallRadius = 0.5f;
@@ -171,7 +170,5 @@ public:
 #endif
 };
 
-inline void RegisterMarbleDataAssets()
-{
-	Zenith_DataAssetManager::RegisterDataAssetType<Marble_Config>();
-}
+// Register the asset type (automatically called via static initialization)
+ZENITH_REGISTER_ASSET_TYPE(Marble_Config)

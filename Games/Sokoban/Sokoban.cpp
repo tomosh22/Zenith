@@ -15,7 +15,6 @@
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Particles/Flux_ParticleEmitterConfig.h"
-#include "AssetHandling/Zenith_DataAssetManager.h"
 #include "Prefab/Zenith_Prefab.h"
 
 // ============================================================================
@@ -144,9 +143,6 @@ void Project_RegisterScriptBehaviours()
 {
 	// Initialize resources at startup
 	InitializeSokobanResources();
-
-	// Register DataAsset types
-	RegisterSokobanDataAssets();
 
 	Sokoban_Behaviour::RegisterBehaviour();
 }

@@ -1,17 +1,16 @@
 #pragma once
 /**
- * Survival_Config.h - DataAsset for Survival game configuration
+ * Survival_Config - Serializable asset for Survival game configuration
  *
- * Demonstrates the DataAsset system for game configuration.
- * Designers can create .zdata files with different configurations
+ * Game designers can create .zdata files with different configurations
  * for difficulty levels, spawn rates, crafting times, etc.
  *
  * Usage:
- *   m_pxConfig = Zenith_DataAssetManager::LoadDataAsset<Survival_Config>("Assets/SurvivalConfig.zdata");
+ *   m_pxConfig = Zenith_AssetRegistry::Get().Get<Survival_Config>("game:Config/SurvivalConfig.zdata");
  */
 
-#include "AssetHandling/Zenith_DataAsset.h"
-#include "AssetHandling/Zenith_DataAssetManager.h"
+#include "AssetHandling/Zenith_Asset.h"
+#include "AssetHandling/Zenith_AssetRegistry.h"
 #include "DataStream/Zenith_DataStream.h"
 
 #ifdef ZENITH_TOOLS
@@ -20,10 +19,10 @@
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
 #endif
 
-class Survival_Config : public Zenith_DataAsset
+class Survival_Config : public Zenith_Asset
 {
 public:
-	ZENITH_DATA_ASSET_TYPE_NAME(Survival_Config)
+	ZENITH_ASSET_TYPE_NAME(Survival_Config)
 
 	// World generation
 	uint32_t m_uTreeCount = 15;
@@ -219,8 +218,5 @@ public:
 #endif
 };
 
-// Register the DataAsset type (call once at startup)
-inline void RegisterSurvivalDataAssets()
-{
-	Zenith_DataAssetManager::RegisterDataAssetType<Survival_Config>();
-}
+// Register the asset type (automatically called via static initialization)
+ZENITH_REGISTER_ASSET_TYPE(Survival_Config)
