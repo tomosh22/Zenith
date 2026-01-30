@@ -439,6 +439,9 @@
     <ClCompile Include="..\Tools\Zenith_Tools_TerrainExport.cpp">
       <Filter>Tools</Filter>
     </ClCompile>
+    <ClCompile Include="..\Tools\Zenith_Tools_TestAssetExport.cpp">
+      <Filter>Tools</Filter>
+    </ClCompile>
     <ClCompile Include="..\Tools\Zenith_Tools_TextureExport.cpp">
       <Filter>Tools</Filter>
     </ClCompile>
@@ -2946,6 +2949,9 @@
     <ClInclude Include="..\Tools\Zenith_Tools_TerrainExport.h">
       <Filter>Tools</Filter>
     </ClInclude>
+    <ClInclude Include="..\Tools\Zenith_Tools_TestAssetExport.h">
+      <Filter>Tools</Filter>
+    </ClInclude>
     <ClInclude Include="..\Tools\Zenith_Tools_TextureExport.h">
       <Filter>Tools</Filter>
     </ClInclude>
@@ -3489,6 +3495,9 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\Quads\Flux_Quads.vert">
       <Filter>Flux\Shaders\Quads</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\RayMarchCommon.fxh">
+      <Filter>Flux\Shaders</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\SDFs\Flux_SDFs.frag">
       <Filter>Flux\Shaders\SDFs</Filter>
     </ClInclude>
@@ -3507,10 +3516,10 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\SSAO\Flux_SSAO.frag">
       <Filter>Flux\Shaders\SSAO</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\SSGI\Flux_SSGI_RayMarch.frag">
+    <ClInclude Include="..\Zenith\Flux\Shaders\SSGI\Flux_SSGI_Denoise.frag">
       <Filter>Flux\Shaders\SSGI</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\Shaders\SSGI\Flux_SSGI_Temporal.frag">
+    <ClInclude Include="..\Zenith\Flux\Shaders\SSGI\Flux_SSGI_RayMarch.frag">
       <Filter>Flux\Shaders\SSGI</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\SSGI\Flux_SSGI_Upsample.frag">

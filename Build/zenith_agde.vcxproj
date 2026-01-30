@@ -802,6 +802,7 @@
     <ClInclude Include="..\Tools\Zenith_Tools_FontExport.h" />
     <ClInclude Include="..\Tools\Zenith_Tools_MeshExport.h" />
     <ClInclude Include="..\Tools\Zenith_Tools_TerrainExport.h" />
+    <ClInclude Include="..\Tools\Zenith_Tools_TestAssetExport.h" />
     <ClInclude Include="..\Tools\Zenith_Tools_TextureExport.h" />
     <ClInclude Include="..\Zenith\AI\BehaviorTree\Zenith_BehaviorTree.h" />
     <ClInclude Include="..\Zenith\AI\BehaviorTree\Zenith_Blackboard.h" />
@@ -983,14 +984,15 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\Primitives\Flux_Primitives.vert" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Quads\Flux_Quads.frag" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Quads\Flux_Quads.vert" />
+    <ClInclude Include="..\Zenith\Flux\Shaders\RayMarchCommon.fxh" />
     <ClInclude Include="..\Zenith\Flux\Shaders\SDFs\Flux_SDFs.frag" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Skybox\Flux_AerialPerspective.frag" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Skybox\Flux_Atmosphere.frag" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Skybox\Flux_AtmosphereCommon.fxh" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Skybox\Flux_Skybox.frag" />
     <ClInclude Include="..\Zenith\Flux\Shaders\SSAO\Flux_SSAO.frag" />
+    <ClInclude Include="..\Zenith\Flux\Shaders\SSGI\Flux_SSGI_Denoise.frag" />
     <ClInclude Include="..\Zenith\Flux\Shaders\SSGI\Flux_SSGI_RayMarch.frag" />
-    <ClInclude Include="..\Zenith\Flux\Shaders\SSGI\Flux_SSGI_Temporal.frag" />
     <ClInclude Include="..\Zenith\Flux\Shaders\SSGI\Flux_SSGI_Upsample.frag" />
     <ClInclude Include="..\Zenith\Flux\Shaders\SSR\Flux_SSR_RayMarch.frag" />
     <ClInclude Include="..\Zenith\Flux\Shaders\SSR\Flux_SSR_Resolve.frag" />
@@ -1649,6 +1651,10 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Tools\Zenith_Tools_TerrainExport.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="..\Tools\Zenith_Tools_TestAssetExport.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
     </ClCompile>

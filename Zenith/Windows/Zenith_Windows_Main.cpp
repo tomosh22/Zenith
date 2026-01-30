@@ -23,6 +23,7 @@ extern void ExportAllMeshes();
 extern void ExportAllTextures();
 extern void ExportHeightmap();
 extern void ExportDefaultFontAtlas();
+extern void GenerateTestAssets();
 #endif
 
 
@@ -55,6 +56,7 @@ int main()
 	ExportAllTextures();
 	//ExportHeightmap();
 	ExportDefaultFontAtlas();  // Generate font atlas from TTF
+	GenerateTestAssets();      // Generate procedural test assets (StickFigure, Tree)
 #endif
 
 	Zenith_Window::Inititalise("Zenith", 1280, 720);
