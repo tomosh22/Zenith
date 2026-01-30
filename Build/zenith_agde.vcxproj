@@ -799,7 +799,9 @@
     <ClInclude Include="..\Tools\Middleware\assimp\include\utf8cpp\utf8\unchecked.h" />
     <ClInclude Include="..\Tools\Middleware\assimp\include\zconf.h" />
     <ClInclude Include="..\Tools\Middleware\assimp\include\zlib.h" />
+    <ClInclude Include="..\Tools\Zenith_Tools_AssimpConvert.h" />
     <ClInclude Include="..\Tools\Zenith_Tools_FontExport.h" />
+    <ClInclude Include="..\Tools\Zenith_Tools_GltfExport.h" />
     <ClInclude Include="..\Tools\Zenith_Tools_MeshExport.h" />
     <ClInclude Include="..\Tools\Zenith_Tools_TerrainExport.h" />
     <ClInclude Include="..\Tools\Zenith_Tools_TestAssetExport.h" />
@@ -1640,7 +1642,15 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
     </ClCompile>
+    <ClCompile Include="..\Tools\Zenith_Tools_AssimpConvert.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+    </ClCompile>
     <ClCompile Include="..\Tools\Zenith_Tools_FontExport.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="..\Tools\Zenith_Tools_GltfExport.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
     </ClCompile>

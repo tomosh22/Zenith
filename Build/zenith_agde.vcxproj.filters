@@ -430,7 +430,13 @@
     <ClCompile Include="..\Tools\Middleware\assimp\include\stb_vorbis.c">
       <Filter>Tools\Middleware\assimp\include</Filter>
     </ClCompile>
+    <ClCompile Include="..\Tools\Zenith_Tools_AssimpConvert.cpp">
+      <Filter>Tools</Filter>
+    </ClCompile>
     <ClCompile Include="..\Tools\Zenith_Tools_FontExport.cpp">
+      <Filter>Tools</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Tools\Zenith_Tools_GltfExport.cpp">
       <Filter>Tools</Filter>
     </ClCompile>
     <ClCompile Include="..\Tools\Zenith_Tools_MeshExport.cpp">
@@ -2934,7 +2940,13 @@
     <ClInclude Include="..\Tools\Middleware\assimp\include\zlib.h">
       <Filter>Tools\Middleware\assimp\include</Filter>
     </ClInclude>
+    <ClInclude Include="..\Tools\Zenith_Tools_AssimpConvert.h">
+      <Filter>Tools</Filter>
+    </ClInclude>
     <ClInclude Include="..\Tools\Zenith_Tools_FontExport.h">
+      <Filter>Tools</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Tools\Zenith_Tools_GltfExport.h">
       <Filter>Tools</Filter>
     </ClInclude>
     <ClInclude Include="..\Tools\Zenith_Tools_MeshExport.h">

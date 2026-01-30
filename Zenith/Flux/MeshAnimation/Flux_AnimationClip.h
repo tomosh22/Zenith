@@ -54,6 +54,11 @@ public:
 	bool HasRotationKeyframes() const { return !m_xRotations.empty(); }
 	bool HasScaleKeyframes() const { return !m_xScales.empty(); }
 
+	// Get keyframe data for export
+	const std::vector<std::pair<Zenith_Maths::Vector3, float>>& GetPositionKeyframes() const { return m_xPositions; }
+	const std::vector<std::pair<Zenith_Maths::Quat, float>>& GetRotationKeyframes() const { return m_xRotations; }
+	const std::vector<std::pair<Zenith_Maths::Vector3, float>>& GetScaleKeyframes() const { return m_xScales; }
+
 	void WriteToDataStream(Zenith_DataStream& xStream) const;
 	void ReadFromDataStream(Zenith_DataStream& xStream);
 

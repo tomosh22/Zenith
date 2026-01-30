@@ -1030,7 +1030,9 @@
     <ClInclude Include="..\Tools\Middleware\assimp\include\utf8cpp\utf8\unchecked.h" />
     <ClInclude Include="..\Tools\Middleware\assimp\include\zconf.h" />
     <ClInclude Include="..\Tools\Middleware\assimp\include\zlib.h" />
+    <ClInclude Include="..\Tools\Zenith_Tools_AssimpConvert.h" />
     <ClInclude Include="..\Tools\Zenith_Tools_FontExport.h" />
+    <ClInclude Include="..\Tools\Zenith_Tools_GltfExport.h" />
     <ClInclude Include="..\Tools\Zenith_Tools_MeshExport.h" />
     <ClInclude Include="..\Tools\Zenith_Tools_TerrainExport.h" />
     <ClInclude Include="..\Tools\Zenith_Tools_TestAssetExport.h" />
@@ -2157,7 +2159,19 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">true</ExcludedFromBuild>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
     </ClCompile>
+    <ClCompile Include="..\Tools\Zenith_Tools_AssimpConvert.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">true</ExcludedFromBuild>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">true</ExcludedFromBuild>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="..\Tools\Zenith_Tools_FontExport.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">true</ExcludedFromBuild>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">true</ExcludedFromBuild>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">NotUsing</PrecompiledHeader>
+    </ClCompile>
+    <ClCompile Include="..\Tools\Zenith_Tools_GltfExport.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">true</ExcludedFromBuild>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">NotUsing</PrecompiledHeader>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">true</ExcludedFromBuild>

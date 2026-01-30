@@ -1,0 +1,51 @@
+﻿MSBuild version 17.11.9+a69bbaaf5 for .NET Framework
+
+  Zenith_Tools_AssimpConvert.cpp
+C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.41.34120\include\chrono(2313,9): warning C4530: C++ exception handler used, but unwind semantics are not enabled. Specify /EHsc [c:\dev\Zenith\Build\zenith_win64.vcxproj]
+  (compiling source file '../Tools/Zenith_Tools_AssimpConvert.cpp')
+  
+c:\dev\Zenith\zenith\core\Memory\Zenith_MemoryManagement.h(16,7): warning C5043: 'operator new': exception specification does not match previous declaration [c:\dev\Zenith\Build\zenith_win64.vcxproj]
+  (compiling source file '../Tools/Zenith_Tools_AssimpConvert.cpp')
+      C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.41.34120\include\vcruntime_new.h(49,17):
+      see declaration of 'operator new'
+  
+c:\dev\Zenith\zenith\core\Memory\Zenith_MemoryManagement.h(18,7): warning C5043: 'operator new': exception specification does not match previous declaration [c:\dev\Zenith\Build\zenith_win64.vcxproj]
+  (compiling source file '../Tools/Zenith_Tools_AssimpConvert.cpp')
+      C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.41.34120\include\vcruntime_new.h(101,17):
+      see declaration of 'operator new'
+  
+c:\dev\Zenith\zenith\core\Memory\Zenith_MemoryManagement.h(22,7): warning C5043: 'operator new[]': exception specification does not match previous declaration [c:\dev\Zenith\Build\zenith_win64.vcxproj]
+  (compiling source file '../Tools/Zenith_Tools_AssimpConvert.cpp')
+      C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.41.34120\include\vcruntime_new.h(60,17):
+      see declaration of 'operator new[]'
+  
+c:\dev\Zenith\zenith\core\Memory\Zenith_MemoryManagement.h(24,7): warning C5043: 'operator new[]': exception specification does not match previous declaration [c:\dev\Zenith\Build\zenith_win64.vcxproj]
+  (compiling source file '../Tools/Zenith_Tools_AssimpConvert.cpp')
+      C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Tools\MSVC\14.41.34120\include\vcruntime_new.h(115,17):
+      see declaration of 'operator new[]'
+  
+c:\dev\Zenith\zenith\Maths\Zenith_Maths.h(47,17): warning C4505: 'Zenith_Maths::PerspectiveProjection': unreferenced function with internal linkage has been removed [c:\dev\Zenith\Build\zenith_win64.vcxproj]
+  (compiling source file '../Tools/Zenith_Tools_AssimpConvert.cpp')
+  
+c:\dev\Zenith\zenith\Maths\Zenith_Maths.h(52,17): warning C4505: 'Zenith_Maths::OrthographicProjection': unreferenced function with internal linkage has been removed [c:\dev\Zenith\Build\zenith_win64.vcxproj]
+  (compiling source file '../Tools/Zenith_Tools_AssimpConvert.cpp')
+  
+c:\dev\Zenith\zenith\Maths\Zenith_Maths.h(57,17): warning C4505: 'Zenith_Maths::EulerRotationToMatrix4': unreferenced function with internal linkage has been removed [c:\dev\Zenith\Build\zenith_win64.vcxproj]
+  (compiling source file '../Tools/Zenith_Tools_AssimpConvert.cpp')
+  
+c:\dev\Zenith\zenith\Core\Zenith_String.h(5,14): warning C4505: 'Zenith_StringUtil::ReplaceAllChars': unreferenced function with internal linkage has been removed [c:\dev\Zenith\Build\zenith_win64.vcxproj]
+  (compiling source file '../Tools/Zenith_Tools_AssimpConvert.cpp')
+  
+c:\dev\Zenith\zenith\Flux\Flux_Types.h(162,13): warning C4505: 'IsCompressedFormat': unreferenced function with internal linkage has been removed [c:\dev\Zenith\Build\zenith_win64.vcxproj]
+  (compiling source file '../Tools/Zenith_Tools_AssimpConvert.cpp')
+  
+c:\dev\Zenith\zenith\Flux\Flux_Types.h(189,15): warning C4505: 'CalculateCompressedTextureSize': unreferenced function with internal linkage has been removed [c:\dev\Zenith\Build\zenith_win64.vcxproj]
+  (compiling source file '../Tools/Zenith_Tools_AssimpConvert.cpp')
+  
+c:\dev\Zenith\zenith\Flux\Flux_Types.h(228,17): warning C4505: 'ColourFormatBytesPerPixel': unreferenced function with internal linkage has been removed [c:\dev\Zenith\Build\zenith_win64.vcxproj]
+  (compiling source file '../Tools/Zenith_Tools_AssimpConvert.cpp')
+  
+c:\dev\Zenith\zenith\Flux\Flux_Types.h(233,17): warning C4505: 'DepthStencilFormatBitsPerPixel': unreferenced function with internal linkage has been removed [c:\dev\Zenith\Build\zenith_win64.vcxproj]
+  (compiling source file '../Tools/Zenith_Tools_AssimpConvert.cpp')
+  
+  zenith_win64.vcxproj -> c:\dev\Zenith\Build\output\win64\vs2022_debug_win64_true\zenith.lib

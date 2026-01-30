@@ -6,6 +6,7 @@
 #include "Flux/MeshAnimation/Flux_AnimationClip.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "Flux/InstancedMeshes/Flux_AnimationTexture.h"
+#include "Zenith_Tools_GltfExport.h"
 #include <filesystem>
 
 //------------------------------------------------------------------------------
@@ -1085,6 +1086,19 @@ void GenerateStickFigureAssets()
 	pxDeathClip->Export(strDeathPath);
 	Zenith_Log(LOG_CATEGORY_ASSET, "  Exported death animation to: %s", strDeathPath.c_str());
 
+	// Export to glTF format for editing in Blender
+	{
+		std::vector<const Flux_AnimationClip*> axClips = {
+			pxIdleClip, pxWalkClip, pxRunClip, pxAttack1Clip, pxAttack2Clip,
+			pxAttack3Clip, pxDodgeClip, pxHitClip, pxDeathClip
+		};
+		std::string strGltfPath = strOutputDir + "StickFigure.gltf";
+		if (Zenith_Tools_GltfExport::ExportToGltf(strGltfPath.c_str(), pxMesh, pxSkel, axClips))
+		{
+			Zenith_Log(LOG_CATEGORY_ASSET, "  Exported glTF to: %s", strGltfPath.c_str());
+		}
+	}
+
 	// Cleanup
 	delete pxDeathClip;
 	delete pxHitClip;
@@ -1162,6 +1176,16 @@ void GenerateProceduralTreeAssets()
 	std::string strSwayPath = strOutputDir + "Tree_Sway.zanim";
 	pxSwayClip->Export(strSwayPath);
 	Zenith_Log(LOG_CATEGORY_ASSET, "  Exported sway animation to: %s", strSwayPath.c_str());
+
+	// Export to glTF format for editing in Blender
+	{
+		std::vector<const Flux_AnimationClip*> axClips = { pxSwayClip };
+		std::string strGltfPath = strOutputDir + "Tree.gltf";
+		if (Zenith_Tools_GltfExport::ExportToGltf(strGltfPath.c_str(), pxMesh, pxSkel, axClips))
+		{
+			Zenith_Log(LOG_CATEGORY_ASSET, "  Exported glTF to: %s", strGltfPath.c_str());
+		}
+	}
 
 	// Cleanup
 	delete pxSwayClip;
