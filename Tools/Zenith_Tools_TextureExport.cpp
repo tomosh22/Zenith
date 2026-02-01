@@ -113,13 +113,73 @@ static void CompressToBC1(const uint8_t* pRGBAData, uint8_t* pOutputData, int32_
 	}
 }
 
+// Compress RGBA data to BC3 format (DXT5)
+// BC3 = BC4 alpha block (8 bytes) + BC1 color block (8 bytes) = 16 bytes per 4x4 block
+static void CompressToBC3(const uint8_t* pRGBAData, uint8_t* pOutputData, int32_t iWidth, int32_t iHeight)
+{
+	const int32_t iBlocksX = (iWidth + 3) / 4;
+	const int32_t iBlocksY = (iHeight + 3) / 4;
+
+	uint8_t block[16 * 4];     // 4x4 block of RGBA pixels
+	uint8_t alphaBlock[16];    // 4x4 block of just alpha values
+
+	for (int32_t by = 0; by < iBlocksY; by++)
+	{
+		for (int32_t bx = 0; bx < iBlocksX; bx++)
+		{
+			// Extract 4x4 block from source image
+			for (int32_t py = 0; py < 4; py++)
+			{
+				for (int32_t px = 0; px < 4; px++)
+				{
+					int32_t srcX = bx * 4 + px;
+					int32_t srcY = by * 4 + py;
+
+					// Clamp to image bounds (pad with edge pixels)
+					srcX = (srcX < iWidth) ? srcX : (iWidth - 1);
+					srcY = (srcY < iHeight) ? srcY : (iHeight - 1);
+
+					const uint8_t* pSrcPixel = pRGBAData + (srcY * iWidth + srcX) * 4;
+					uint8_t* pDstPixel = block + (py * 4 + px) * 4;
+
+					pDstPixel[0] = pSrcPixel[0]; // R
+					pDstPixel[1] = pSrcPixel[1]; // G
+					pDstPixel[2] = pSrcPixel[2]; // B
+					pDstPixel[3] = pSrcPixel[3]; // A
+
+					// Extract alpha for BC4 compression
+					alphaBlock[py * 4 + px] = pSrcPixel[3];
+				}
+			}
+
+			// BC3 block layout: 8 bytes alpha (BC4) + 8 bytes color (BC1)
+			uint8_t* pDstBlock = pOutputData + (by * iBlocksX + bx) * 16;
+
+			// Compress alpha channel with BC4
+			stb_compress_bc4_block(pDstBlock, alphaBlock);
+
+			// Compress color with BC1 (alpha=0 means ignore alpha in color compression)
+			stb_compress_dxt_block(pDstBlock + 8, block, 0, STB_DXT_HIGHQUAL);
+		}
+	}
+}
+
 void Zenith_Tools_TextureExport::ExportFromFile(std::string strFilename, const char* szExtension, TextureCompressionMode eCompression)
 {
 	int32_t iWidth, iHeight, iNumChannels;
 	uint8_t* pData = stbi_load(strFilename.c_str(), &iWidth, &iHeight, &iNumChannels, STBI_rgb_alpha);
 
+	if (!pData)
+	{
+		Zenith_Log(LOG_CATEGORY_TOOLS, "Failed to load texture: %s", strFilename.c_str());
+		return;
+	}
+
 	size_t ulFindPos = strFilename.find(szExtension);
 	strFilename.replace(ulFindPos-1, strlen(szExtension)+1, ZENITH_TEXTURE_EXT);
+
+	// Detect alpha channel - use BC3 instead of BC1 if source has alpha
+	bool bHasAlpha = (iNumChannels == 4);
 
 	if (eCompression == TextureCompressionMode::Uncompressed)
 	{
@@ -127,7 +187,14 @@ void Zenith_Tools_TextureExport::ExportFromFile(std::string strFilename, const c
 	}
 	else
 	{
-		ExportFromDataCompressed(pData, strFilename, iWidth, iHeight, eCompression);
+		// Upgrade BC1 to BC3 for textures with alpha
+		TextureCompressionMode eFinalCompression = eCompression;
+		if (bHasAlpha && eCompression == TextureCompressionMode::BC1)
+		{
+			eFinalCompression = TextureCompressionMode::BC3;
+			Zenith_Log(LOG_CATEGORY_TOOLS, "Texture '%s' has alpha - using BC3 compression", strFilename.c_str());
+		}
+		ExportFromDataCompressed(pData, strFilename, iWidth, iHeight, eFinalCompression);
 	}
 
 	stbi_image_free(pData);
@@ -170,10 +237,12 @@ void Zenith_Tools_TextureExport::ExportFromDataCompressed(const void* pRGBAData,
 		CompressToBC1(static_cast<const uint8_t*>(pRGBAData), pCompressedData, iWidth, iHeight, true);
 		break;
 	case TextureCompressionMode::BC3:
+		CompressToBC3(static_cast<const uint8_t*>(pRGBAData), pCompressedData, iWidth, iHeight);
+		break;
 	case TextureCompressionMode::BC5:
-		// BC3 and BC5 not yet implemented - fall through to BC1 for now
+		// BC5 not yet implemented - fall through to BC1 for now
 		CompressToBC1(static_cast<const uint8_t*>(pRGBAData), pCompressedData, iWidth, iHeight, false);
-		Zenith_Warning(LOG_CATEGORY_TOOLS, "BC3/BC5 compression not yet implemented, using BC1");
+		Zenith_Warning(LOG_CATEGORY_TOOLS, "BC5 compression not yet implemented, using BC1");
 		eFormat = TEXTURE_FORMAT_BC1_RGB_UNORM;
 		break;
 	default:
