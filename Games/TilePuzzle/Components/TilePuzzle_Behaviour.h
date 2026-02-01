@@ -16,6 +16,7 @@
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
+#include "AssetHandling/Zenith_AssetRegistry.h"
 #include "Prefab/Zenith_Prefab.h"
 
 #include "TilePuzzle/Components/TilePuzzle_Types.h"
@@ -23,6 +24,7 @@
 
 #include <random>
 #include <vector>
+#include <unordered_map>
 #include <cmath>
 
 #ifdef ZENITH_TOOLS
@@ -99,6 +101,37 @@ public:
 		{
 			m_axShapeMaterials[i] = TilePuzzle::g_axShapeMaterials[i];
 			m_axCatMaterials[i] = TilePuzzle::g_axCatMaterials[i];
+		}
+
+		// Create highlighted versions of shape materials with emissive glow
+		auto& xRegistry = Zenith_AssetRegistry::Get();
+		for (uint32_t i = 0; i < TILEPUZZLE_COLOR_COUNT; ++i)
+		{
+			Zenith_MaterialAsset* pxOriginal = m_axShapeMaterials[i].Get();
+			Zenith_MaterialAsset* pxHighlighted = xRegistry.Create<Zenith_MaterialAsset>();
+
+			// Copy properties from original material
+			pxHighlighted->SetName(pxOriginal->GetName() + "_Highlighted");
+			pxHighlighted->SetBaseColor(pxOriginal->GetBaseColor());
+			pxHighlighted->SetDiffuseTextureDirectly(pxOriginal->GetDiffuseTexture());
+
+			// Add emissive glow for selection highlight
+			Zenith_Maths::Vector4 xBaseColor = pxOriginal->GetBaseColor();
+			pxHighlighted->SetEmissiveColor(Zenith_Maths::Vector3(xBaseColor.x, xBaseColor.y, xBaseColor.z));
+			pxHighlighted->SetEmissiveIntensity(0.5f);
+
+			m_axShapeMaterialsHighlighted[i].Set(pxHighlighted);
+		}
+
+		// Create highlighted floor material for cursor position
+		{
+			Zenith_MaterialAsset* pxFloorHighlighted = xRegistry.Create<Zenith_MaterialAsset>();
+			pxFloorHighlighted->SetName("TilePuzzleFloor_Cursor");
+			pxFloorHighlighted->SetDiffuseTextureDirectly(m_xFloorMaterial.Get()->GetDiffuseTexture());
+			pxFloorHighlighted->SetBaseColor({ 150.f/255.f, 150.f/255.f, 180.f/255.f, 1.f });
+			pxFloorHighlighted->SetEmissiveColor(Zenith_Maths::Vector3(0.5f, 0.5f, 0.7f));
+			pxFloorHighlighted->SetEmissiveIntensity(0.3f);
+			m_xFloorMaterialHighlighted.Set(pxFloorHighlighted);
 		}
 
 		// Heavy initialization moved to OnStart
@@ -207,6 +240,8 @@ private:
 	// Selection/Cursor
 	int32_t m_iCursorX;
 	int32_t m_iCursorY;
+	int32_t m_iPreviousCursorX = -1;
+	int32_t m_iPreviousCursorY = -1;
 	int32_t m_iSelectedShapeIndex;
 
 	// Animation
@@ -219,17 +254,21 @@ private:
 	// Random number generator
 	std::mt19937 m_xRng;
 
-	// Entity IDs
-	std::vector<Zenith_EntityID> m_axFloorEntityIDs;
-	Zenith_EntityID m_uCursorEntityID;
+	// Entity IDs - floor entities indexed by grid position (y * 1000 + x)
+	std::unordered_map<uint32_t, Zenith_EntityID> m_axFloorEntityIDs;
 
 	// Cached resources
 	Flux_MeshGeometry* m_pxCubeGeometry = nullptr;
 	Flux_MeshGeometry* m_pxSphereGeometry = nullptr;
 	MaterialHandle m_xFloorMaterial;
+	MaterialHandle m_xFloorMaterialHighlighted;
 	MaterialHandle m_xBlockerMaterial;
 	MaterialHandle m_axShapeMaterials[TILEPUZZLE_COLOR_COUNT];
+	MaterialHandle m_axShapeMaterialsHighlighted[TILEPUZZLE_COLOR_COUNT];
 	MaterialHandle m_axCatMaterials[TILEPUZZLE_COLOR_COUNT];
+
+	// Selection tracking
+	int32_t m_iPreviousSelectedShapeIndex = -1;
 
 	// ========================================================================
 	// Level Generation
@@ -262,7 +301,13 @@ private:
 
 		m_uMoveCount = 0;
 		m_iSelectedShapeIndex = -1;
+		m_iPreviousSelectedShapeIndex = -1;
+		m_iPreviousCursorX = -1;
+		m_iPreviousCursorY = -1;
 		m_eState = TILEPUZZLE_STATE_PLAYING;
+
+		// Trigger initial cursor highlight
+		UpdateSelectionHighlight();
 	}
 
 	void ResetLevel()
@@ -291,9 +336,9 @@ private:
 		// Get keyboard direction
 		TilePuzzleDirection eDir = TILEPUZZLE_DIR_NONE;
 		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_W) || Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_UP))
-			eDir = TILEPUZZLE_DIR_UP;
-		else if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_S) || Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_DOWN))
 			eDir = TILEPUZZLE_DIR_DOWN;
+		else if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_S) || Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_DOWN))
+			eDir = TILEPUZZLE_DIR_UP;
 		else if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_A) || Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_LEFT))
 			eDir = TILEPUZZLE_DIR_LEFT;
 		else if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_D) || Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_RIGHT))
@@ -333,8 +378,12 @@ private:
 				if (iNewX >= 0 && iNewX < static_cast<int32_t>(m_xCurrentLevel.uGridWidth) &&
 					iNewY >= 0 && iNewY < static_cast<int32_t>(m_xCurrentLevel.uGridHeight))
 				{
-					m_iCursorX = iNewX;
-					m_iCursorY = iNewY;
+					uint32_t uCellIndex = iNewY * m_xCurrentLevel.uGridWidth + iNewX;
+					if (m_xCurrentLevel.aeCells[uCellIndex] == TILEPUZZLE_CELL_FLOOR)
+					{
+						m_iCursorX = iNewX;
+						m_iCursorY = iNewY;
+					}
 				}
 			}
 		}
@@ -483,6 +532,7 @@ private:
 						{
 							Zenith_Scene::Destroy(xCatEntity);
 						}
+						xCat.uEntityID = Zenith_EntityID();  // Clear stale reference
 					}
 				}
 			}
@@ -541,7 +591,8 @@ private:
 					Zenith_ModelComponent& xModel = xFloorEntity.AddComponent<Zenith_ModelComponent>();
 					xModel.AddMeshEntry(*m_pxCubeGeometry, *m_xFloorMaterial.Get());
 
-					m_axFloorEntityIDs.push_back(xFloorEntity.GetEntityID());
+					uint32_t uKey = y * 1000 + x;
+					m_axFloorEntityIDs[uKey] = xFloorEntity.GetEntityID();
 				}
 			}
 		}
@@ -587,18 +638,6 @@ private:
 
 			xCat.uEntityID = xCatEntity.GetEntityID();
 		}
-
-		// Create cursor visual
-		Zenith_Entity xCursorEntity = TilePuzzle::g_pxCellPrefab->Instantiate(&Zenith_Scene::GetCurrentScene(), "Cursor");
-		Zenith_TransformComponent& xTransform = xCursorEntity.GetComponent<Zenith_TransformComponent>();
-		xTransform.SetPosition(GridToWorld(static_cast<float>(m_iCursorX), static_cast<float>(m_iCursorY), 0.01f));
-		xTransform.SetScale(Zenith_Maths::Vector3(s_fCellSize * 0.98f, 0.02f, s_fCellSize * 0.98f));
-
-		// White cursor material (TODO: create proper highlight material)
-		Zenith_ModelComponent& xModel = xCursorEntity.AddComponent<Zenith_ModelComponent>();
-		xModel.AddMeshEntry(*m_pxCubeGeometry, *m_xFloorMaterial.Get());
-
-		m_uCursorEntityID = xCursorEntity.GetEntityID();
 	}
 
 	void DestroyLevelVisuals()
@@ -606,9 +645,9 @@ private:
 		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
 
 		// Destroy floor entities
-		for (auto uID : m_axFloorEntityIDs)
+		for (auto& xPair : m_axFloorEntityIDs)
 		{
-			Zenith_Entity xEntity = xScene.GetEntity(uID);
+			Zenith_Entity xEntity = xScene.GetEntity(xPair.second);
 			if (xEntity.IsValid())
 			{
 				Zenith_Scene::Destroy(xEntity);
@@ -633,22 +672,13 @@ private:
 		// Destroy cat entities
 		for (auto& xCat : m_xCurrentLevel.axCats)
 		{
+			if (!xCat.uEntityID.IsValid())
+				continue;
 			Zenith_Entity xEntity = xScene.GetEntity(xCat.uEntityID);
 			if (xEntity.IsValid())
 			{
 				Zenith_Scene::Destroy(xEntity);
 			}
-		}
-
-		// Destroy cursor
-		if (m_uCursorEntityID.IsValid())
-		{
-			Zenith_Entity xCursor = xScene.GetEntity(m_uCursorEntityID);
-			if (xCursor.IsValid())
-			{
-				Zenith_Scene::Destroy(xCursor);
-			}
-			m_uCursorEntityID = Zenith_EntityID();
 		}
 	}
 
@@ -681,12 +711,109 @@ private:
 			}
 		}
 
-		// Update cursor position
-		Zenith_Entity xCursor = xScene.GetEntity(m_uCursorEntityID);
-		if (xCursor.IsValid())
+		// Update selection highlighting
+		UpdateSelectionHighlight();
+	}
+
+	void UpdateSelectionHighlight()
+	{
+		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+
+		bool bShapeSelectionChanged = (m_iPreviousSelectedShapeIndex != m_iSelectedShapeIndex);
+		bool bCursorMoved = (m_iPreviousCursorX != m_iCursorX || m_iPreviousCursorY != m_iCursorY);
+
+		// Update shape highlighting if selection changed
+		if (bShapeSelectionChanged)
 		{
-			Zenith_TransformComponent& xTransform = xCursor.GetComponent<Zenith_TransformComponent>();
-			xTransform.SetPosition(GridToWorld(static_cast<float>(m_iCursorX), static_cast<float>(m_iCursorY), 0.01f));
+			// Remove highlight from previously selected shape
+			if (m_iPreviousSelectedShapeIndex >= 0 &&
+				m_iPreviousSelectedShapeIndex < static_cast<int32_t>(m_xCurrentLevel.axShapes.size()))
+			{
+				TilePuzzleShapeInstance& xPrevShape = m_xCurrentLevel.axShapes[m_iPreviousSelectedShapeIndex];
+				if (xPrevShape.pxDefinition->bDraggable)
+				{
+					Zenith_MaterialAsset* pxNormalMaterial = m_axShapeMaterials[xPrevShape.eColor].Get();
+					for (auto uID : xPrevShape.axCubeEntityIDs)
+					{
+						Zenith_Entity xCube = xScene.GetEntity(uID);
+						if (xCube.IsValid() && xCube.HasComponent<Zenith_ModelComponent>())
+						{
+							Zenith_ModelComponent& xModel = xCube.GetComponent<Zenith_ModelComponent>();
+							if (xModel.GetNumMeshEntries() > 0)
+							{
+								xModel.GetMaterialHandleAtIndex(0).Set(pxNormalMaterial);
+							}
+						}
+					}
+				}
+			}
+
+			// Apply highlight to newly selected shape
+			if (m_iSelectedShapeIndex >= 0 &&
+				m_iSelectedShapeIndex < static_cast<int32_t>(m_xCurrentLevel.axShapes.size()))
+			{
+				TilePuzzleShapeInstance& xShape = m_xCurrentLevel.axShapes[m_iSelectedShapeIndex];
+				if (xShape.pxDefinition->bDraggable)
+				{
+					Zenith_MaterialAsset* pxHighlightMaterial = m_axShapeMaterialsHighlighted[xShape.eColor].Get();
+					for (auto uID : xShape.axCubeEntityIDs)
+					{
+						Zenith_Entity xCube = xScene.GetEntity(uID);
+						if (xCube.IsValid() && xCube.HasComponent<Zenith_ModelComponent>())
+						{
+							Zenith_ModelComponent& xModel = xCube.GetComponent<Zenith_ModelComponent>();
+							if (xModel.GetNumMeshEntries() > 0)
+							{
+								xModel.GetMaterialHandleAtIndex(0).Set(pxHighlightMaterial);
+							}
+						}
+					}
+				}
+			}
+
+			m_iPreviousSelectedShapeIndex = m_iSelectedShapeIndex;
+		}
+
+		// Update cursor floor highlighting if cursor moved
+		if (bCursorMoved)
+		{
+			// Remove highlight from previous cursor floor tile
+			if (m_iPreviousCursorX >= 0 && m_iPreviousCursorY >= 0)
+			{
+				uint32_t uPrevKey = m_iPreviousCursorY * 1000 + m_iPreviousCursorX;
+				auto itPrev = m_axFloorEntityIDs.find(uPrevKey);
+				if (itPrev != m_axFloorEntityIDs.end())
+				{
+					Zenith_Entity xFloor = xScene.GetEntity(itPrev->second);
+					if (xFloor.IsValid() && xFloor.HasComponent<Zenith_ModelComponent>())
+					{
+						Zenith_ModelComponent& xModel = xFloor.GetComponent<Zenith_ModelComponent>();
+						if (xModel.GetNumMeshEntries() > 0)
+						{
+							xModel.GetMaterialHandleAtIndex(0).Set(m_xFloorMaterial.Get());
+						}
+					}
+				}
+			}
+
+			// Apply highlight to current cursor floor tile
+			uint32_t uCurKey = m_iCursorY * 1000 + m_iCursorX;
+			auto itCur = m_axFloorEntityIDs.find(uCurKey);
+			if (itCur != m_axFloorEntityIDs.end())
+			{
+				Zenith_Entity xFloor = xScene.GetEntity(itCur->second);
+				if (xFloor.IsValid() && xFloor.HasComponent<Zenith_ModelComponent>())
+				{
+					Zenith_ModelComponent& xModel = xFloor.GetComponent<Zenith_ModelComponent>();
+					if (xModel.GetNumMeshEntries() > 0)
+					{
+						xModel.GetMaterialHandleAtIndex(0).Set(m_xFloorMaterialHighlighted.Get());
+					}
+				}
+			}
+
+			m_iPreviousCursorX = m_iCursorX;
+			m_iPreviousCursorY = m_iCursorY;
 		}
 	}
 
