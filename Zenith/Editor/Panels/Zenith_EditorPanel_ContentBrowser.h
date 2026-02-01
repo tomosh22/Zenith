@@ -3,6 +3,7 @@
 #ifdef ZENITH_TOOLS
 
 #include "Editor/Zenith_Editor.h"
+#include "Editor/Zenith_EditorState.h"
 #include <vector>
 #include <string>
 
@@ -23,6 +24,10 @@ struct ContentBrowserState
 	size_t m_uSearchBufferSize;
 	int& m_iAssetTypeFilter;
 	int& m_iSelectedContentIndex;
+	float& m_fThumbnailSize;
+	std::vector<std::string>& m_axNavigationHistory;
+	int& m_iHistoryIndex;
+	ContentBrowserViewMode& m_eViewMode;
 };
 
 namespace Zenith_EditorPanelContentBrowser
@@ -46,8 +51,9 @@ namespace Zenith_EditorPanelContentBrowser
 	 *
 	 * @param xState Reference to content browser state
 	 * @param strPath Path to navigate to
+	 * @param bAddToHistory Whether to add this navigation to history (default true)
 	 */
-	void NavigateToDirectory(ContentBrowserState& xState, const std::string& strPath);
+	void NavigateToDirectory(ContentBrowserState& xState, const std::string& strPath, bool bAddToHistory = true);
 
 	/**
 	 * Navigate to parent directory

@@ -3,6 +3,7 @@
 #ifdef ZENITH_TOOLS
 
 #include "Zenith_Editor.h"
+#include "Zenith_EditorState.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 
 // Bridge function called from Zenith_Log macro to add to editor console
@@ -144,6 +145,10 @@ bool Zenith_Editor::s_bDirectoryNeedsRefresh = true;
 char Zenith_Editor::s_szSearchBuffer[256] = "";
 int Zenith_Editor::s_iAssetTypeFilter = 0;
 int Zenith_Editor::s_iSelectedContentIndex = -1;
+float Zenith_Editor::s_fThumbnailSize = 80.0f;
+std::vector<std::string> Zenith_Editor::s_axNavigationHistory;
+int Zenith_Editor::s_iHistoryIndex = -1;
+ContentBrowserViewMode Zenith_Editor::s_eViewMode = ContentBrowserViewMode::Grid;
 
 // Console state
 std::vector<ConsoleLogEntry> Zenith_Editor::s_xConsoleLogs;
@@ -1357,7 +1362,11 @@ void Zenith_Editor::RenderContentBrowser()
 		s_szSearchBuffer,
 		sizeof(s_szSearchBuffer),
 		s_iAssetTypeFilter,
-		s_iSelectedContentIndex
+		s_iSelectedContentIndex,
+		s_fThumbnailSize,
+		s_axNavigationHistory,
+		s_iHistoryIndex,
+		s_eViewMode
 	};
 	Zenith_EditorPanelContentBrowser::Render(xState);
 }

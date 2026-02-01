@@ -22,6 +22,113 @@
 #include <unordered_map>
 
 //=============================================================================
+// Zenith File Type Registry
+//=============================================================================
+static const EditorFileTypeInfo s_axKnownFileTypes[] = {
+	{ ZENITH_TEXTURE_EXT,    "[TEX]", "Texture",   DRAGDROP_PAYLOAD_TEXTURE },
+	{ ZENITH_MATERIAL_EXT,   "[MAT]", "Material",  DRAGDROP_PAYLOAD_MATERIAL },
+	{ ZENITH_MESH_EXT,       "[MSH]", "Mesh",      DRAGDROP_PAYLOAD_MESH },
+	{ ZENITH_MODEL_EXT,      "[MDL]", "Model",     DRAGDROP_PAYLOAD_MODEL },
+	{ ZENITH_PREFAB_EXT,     "[PRE]", "Prefab",    DRAGDROP_PAYLOAD_PREFAB },
+	{ ZENITH_SCENE_EXT,      "[SCN]", "Scene",     DRAGDROP_PAYLOAD_FILE_GENERIC },
+	{ ZENITH_ANIMATION_EXT,  "[ANM]", "Animation", DRAGDROP_PAYLOAD_ANIMATION },
+};
+
+const EditorFileTypeInfo* GetFileTypeInfo(const std::string& strExtension)
+{
+	for (const auto& xType : s_axKnownFileTypes)
+	{
+		if (strExtension == xType.m_szExtension)
+		{
+			return &xType;
+		}
+	}
+	return nullptr;
+}
+
+static void FormatFileSize(uint64_t ulBytes, char* pBuffer, size_t uBufferSize)
+{
+	if (ulBytes < 1024)
+	{
+		snprintf(pBuffer, uBufferSize, "%llu B", ulBytes);
+	}
+	else if (ulBytes < 1024 * 1024)
+	{
+		snprintf(pBuffer, uBufferSize, "%.1f KB", ulBytes / 1024.0);
+	}
+	else if (ulBytes < 1024ULL * 1024 * 1024)
+	{
+		snprintf(pBuffer, uBufferSize, "%.2f MB", ulBytes / (1024.0 * 1024.0));
+	}
+	else
+	{
+		snprintf(pBuffer, uBufferSize, "%.2f GB", ulBytes / (1024.0 * 1024.0 * 1024.0));
+	}
+}
+
+static void RenderBreadcrumbs(ContentBrowserState& xState)
+{
+	std::string strAssetsRoot = Project_GetGameAssetsDirectory();
+	// Normalize trailing slash
+	if (!strAssetsRoot.empty() && (strAssetsRoot.back() == '/' || strAssetsRoot.back() == '\\'))
+	{
+		strAssetsRoot.pop_back();
+	}
+
+	std::filesystem::path xCurrentPath(xState.m_strCurrentDirectory);
+	std::filesystem::path xRootPath(strAssetsRoot);
+
+	// Build path segments
+	std::vector<std::pair<std::string, std::string>> axSegments;
+
+	// Add root as "Assets"
+	axSegments.push_back({ "Assets", strAssetsRoot });
+
+	// Build relative path components
+	try
+	{
+		std::filesystem::path xRelPath = std::filesystem::relative(xCurrentPath, xRootPath);
+		std::filesystem::path xBuildPath = xRootPath;
+
+		for (const auto& xPart : xRelPath)
+		{
+			std::string strPart = xPart.string();
+			if (strPart == "." || strPart.empty())
+			{
+				continue;
+			}
+			xBuildPath /= xPart;
+			axSegments.push_back({ strPart, xBuildPath.string() });
+		}
+	}
+	catch (...) {}
+
+	// Render breadcrumbs
+	for (size_t i = 0; i < axSegments.size(); ++i)
+	{
+		if (i > 0)
+		{
+			ImGui::SameLine();
+			ImGui::TextDisabled(">");
+			ImGui::SameLine();
+		}
+
+		// Last segment is non-clickable (current folder)
+		if (i == axSegments.size() - 1)
+		{
+			ImGui::Text("%s", axSegments[i].first.c_str());
+		}
+		else
+		{
+			if (ImGui::SmallButton(axSegments[i].first.c_str()))
+			{
+				Zenith_EditorPanelContentBrowser::NavigateToDirectory(xState, axSegments[i].second);
+			}
+		}
+	}
+}
+
+//=============================================================================
 // Texture Preview Cache for Content Browser
 //=============================================================================
 namespace
@@ -97,24 +204,62 @@ void Zenith_EditorPanelContentBrowser::Render(ContentBrowserState& xState)
 	}
 
 	// Navigation buttons
-	if (ImGui::Button("<- Back"))
+	bool bCanGoBack = xState.m_iHistoryIndex > 0;
+	bool bCanGoForward = xState.m_iHistoryIndex >= 0 &&
+		xState.m_iHistoryIndex < static_cast<int>(xState.m_axNavigationHistory.size()) - 1;
+
+	// Back button
+	ImGui::BeginDisabled(!bCanGoBack);
+	if (ImGui::Button("<"))
+	{
+		xState.m_iHistoryIndex--;
+		NavigateToDirectory(xState, xState.m_axNavigationHistory[xState.m_iHistoryIndex], false);
+	}
+	ImGui::EndDisabled();
+	if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+	{
+		ImGui::SetTooltip("Back");
+	}
+
+	ImGui::SameLine();
+
+	// Forward button
+	ImGui::BeginDisabled(!bCanGoForward);
+	if (ImGui::Button(">"))
+	{
+		xState.m_iHistoryIndex++;
+		NavigateToDirectory(xState, xState.m_axNavigationHistory[xState.m_iHistoryIndex], false);
+	}
+	ImGui::EndDisabled();
+	if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+	{
+		ImGui::SetTooltip("Forward");
+	}
+
+	ImGui::SameLine();
+
+	// Parent folder button
+	if (ImGui::Button("^"))
 	{
 		NavigateToParent(xState);
 	}
+	if (ImGui::IsItemHovered())
+	{
+		ImGui::SetTooltip("Go to Parent Folder");
+	}
+
 	ImGui::SameLine();
+
+	// Refresh button
 	if (ImGui::Button("Refresh"))
 	{
 		xState.m_bDirectoryNeedsRefresh = true;
 	}
+
 	ImGui::SameLine();
 
-	// Display current path (truncated if too long)
-	std::string strDisplayPath = xState.m_strCurrentDirectory;
-	if (strDisplayPath.length() > 50)
-	{
-		strDisplayPath = "..." + strDisplayPath.substr(strDisplayPath.length() - 47);
-	}
-	ImGui::Text("Path: %s", strDisplayPath.c_str());
+	// Breadcrumb navigation
+	RenderBreadcrumbs(xState);
 
 	// Search and Filter bar
 	ImGui::Separator();
@@ -129,6 +274,63 @@ void Zenith_EditorPanelContentBrowser::Render(ContentBrowserState& xState)
 	const char* aszFilterTypes[] = { "All Types", "Textures", "Materials", "Meshes", "Models", "Prefabs", "Scenes", "Animations" };
 	ImGui::SetNextItemWidth(120.0f);
 	bool bFilterChanged = ImGui::Combo("##TypeFilter", &xState.m_iAssetTypeFilter, aszFilterTypes, IM_ARRAYSIZE(aszFilterTypes));
+
+	ImGui::SameLine();
+
+	// Thumbnail size slider
+	ImGui::SetNextItemWidth(100.0f);
+	ImGui::SliderFloat("##ThumbnailSize", &xState.m_fThumbnailSize, 40.0f, 200.0f, "%.0f");
+	if (ImGui::IsItemHovered())
+	{
+		ImGui::SetTooltip("Thumbnail Size (Ctrl+Scroll)");
+	}
+
+	// Ctrl+Scroll to adjust thumbnail size
+	if (ImGui::IsWindowHovered() && ImGui::GetIO().KeyCtrl)
+	{
+		float fScroll = ImGui::GetIO().MouseWheel;
+		if (fScroll != 0.0f)
+		{
+			xState.m_fThumbnailSize = std::clamp(
+				xState.m_fThumbnailSize + fScroll * 10.0f,
+				40.0f, 200.0f);
+		}
+	}
+
+	ImGui::SameLine();
+	ImGui::TextDisabled("|");
+	ImGui::SameLine();
+
+	// View mode toggle buttons
+	bool bGridSelected = (xState.m_eViewMode == ContentBrowserViewMode::Grid);
+	if (bGridSelected)
+	{
+		ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+	}
+	if (ImGui::Button("Grid"))
+	{
+		xState.m_eViewMode = ContentBrowserViewMode::Grid;
+	}
+	if (bGridSelected)
+	{
+		ImGui::PopStyleColor();
+	}
+
+	ImGui::SameLine();
+
+	bool bListSelected = (xState.m_eViewMode == ContentBrowserViewMode::List);
+	if (bListSelected)
+	{
+		ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+	}
+	if (ImGui::Button("List"))
+	{
+		xState.m_eViewMode = ContentBrowserViewMode::List;
+	}
+	if (bListSelected)
+	{
+		ImGui::PopStyleColor();
+	}
 
 	// Apply filtering
 	if (bSearchChanged || bFilterChanged || xState.m_xFilteredContents.empty())
@@ -163,7 +365,7 @@ void Zenith_EditorPanelContentBrowser::Render(ContentBrowserState& xState)
 				case 3: bPassFilter = (xEntry.m_strExtension == ZENITH_MESH_EXT); break;
 				case 4: bPassFilter = (xEntry.m_strExtension == ZENITH_MODEL_EXT); break;
 				case 5: bPassFilter = (xEntry.m_strExtension == ZENITH_PREFAB_EXT); break;
-				case 6: bPassFilter = (xEntry.m_strExtension == ".zscn"); break;
+				case 6: bPassFilter = (xEntry.m_strExtension == ZENITH_SCENE_EXT); break;
 				case 7: bPassFilter = (xEntry.m_strExtension == ZENITH_ANIMATION_EXT); break;
 				}
 				if (!bPassFilter)
@@ -217,13 +419,150 @@ void Zenith_EditorPanelContentBrowser::Render(ContentBrowserState& xState)
 		ImGui::EndPopup();
 	}
 
-	// Display directory contents in a table/grid
+	// Display directory contents
 	float fPanelWidth = ImGui::GetContentRegionAvail().x;
-	float fCellSize = 80.0f;  // Size of each item cell
-	int iColumnCount = std::max(1, (int)(fPanelWidth / fCellSize));
+	float fCellSize = xState.m_fThumbnailSize;
 
-	if (ImGui::BeginTable("ContentBrowserTable", iColumnCount))
+	if (xState.m_eViewMode == ContentBrowserViewMode::List)
 	{
+		// List view
+		if (ImGui::BeginTable("ContentBrowserList", 4,
+			ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
+			ImGuiTableFlags_Resizable | ImGuiTableFlags_ScrollY,
+			ImVec2(0, 0)))
+		{
+			ImGui::TableSetupColumn("Name", ImGuiTableColumnFlags_WidthStretch);
+			ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthFixed, 80.0f);
+			ImGui::TableSetupColumn("Size", ImGuiTableColumnFlags_WidthFixed, 80.0f);
+			ImGui::TableSetupColumn("Extension", ImGuiTableColumnFlags_WidthFixed, 70.0f);
+			ImGui::TableSetupScrollFreeze(0, 1);
+			ImGui::TableHeadersRow();
+
+			for (size_t i = 0; i < xState.m_xFilteredContents.size(); ++i)
+			{
+				const ContentBrowserEntry& xEntry = xState.m_xFilteredContents[i];
+				ImGui::PushID(static_cast<int>(i));
+
+				ImGui::TableNextRow();
+
+				// Name column
+				ImGui::TableNextColumn();
+				std::string strIcon = xEntry.m_bIsDirectory ? "[DIR] " : "";
+				std::string strLabel = strIcon + xEntry.m_strName;
+
+				ImGuiSelectableFlags eFlags = ImGuiSelectableFlags_SpanAllColumns |
+					ImGuiSelectableFlags_AllowDoubleClick;
+
+				if (ImGui::Selectable(strLabel.c_str(), false, eFlags))
+				{
+					if (ImGui::IsMouseDoubleClicked(0))
+					{
+						if (xEntry.m_bIsDirectory)
+						{
+							NavigateToDirectory(xState, xEntry.m_strFullPath);
+						}
+						else if (xEntry.m_strExtension == ZENITH_MATERIAL_EXT)
+						{
+							Zenith_MaterialAsset* pMaterial =
+								Zenith_AssetRegistry::Get().Get<Zenith_MaterialAsset>(xEntry.m_strFullPath);
+							if (pMaterial)
+							{
+								Zenith_Editor::SelectMaterial(pMaterial);
+							}
+						}
+					}
+				}
+
+				// Drag source
+				if (!xEntry.m_bIsDirectory &&
+					ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAllowNullID))
+				{
+					DragDropFilePayload xPayload;
+					strncpy(xPayload.m_szFilePath, xEntry.m_strFullPath.c_str(),
+						sizeof(xPayload.m_szFilePath) - 1);
+					xPayload.m_szFilePath[sizeof(xPayload.m_szFilePath) - 1] = '\0';
+
+					const EditorFileTypeInfo* pxTypeInfo = GetFileTypeInfo(xEntry.m_strExtension);
+					const char* szPayloadType = pxTypeInfo ? pxTypeInfo->m_szDragDropType : DRAGDROP_PAYLOAD_FILE_GENERIC;
+
+					ImGui::SetDragDropPayload(szPayloadType, &xPayload, sizeof(xPayload));
+					ImGui::Text("Drag: %s", xEntry.m_strName.c_str());
+					ImGui::EndDragDropSource();
+				}
+
+				// Context menu
+				if (ImGui::BeginPopupContextItem())
+				{
+					if (ImGui::MenuItem("Show in Explorer"))
+					{
+#ifdef _WIN32
+						std::string strCmd = "explorer /select,\"" + xEntry.m_strFullPath + "\"";
+						system(strCmd.c_str());
+#endif
+					}
+					if (!xEntry.m_bIsDirectory)
+					{
+						if (ImGui::MenuItem("Delete"))
+						{
+							if (std::filesystem::remove(xEntry.m_strFullPath))
+							{
+								std::string strMetaPath = xEntry.m_strFullPath + ".zmeta";
+								std::filesystem::remove(strMetaPath);
+								xState.m_bDirectoryNeedsRefresh = true;
+							}
+						}
+					}
+					ImGui::EndPopup();
+				}
+
+				// Type column
+				ImGui::TableNextColumn();
+				if (xEntry.m_bIsDirectory)
+				{
+					ImGui::TextDisabled("Folder");
+				}
+				else
+				{
+					const EditorFileTypeInfo* pxTypeInfo = GetFileTypeInfo(xEntry.m_strExtension);
+					if (pxTypeInfo)
+					{
+						ImGui::Text("%s", pxTypeInfo->m_szDisplayName);
+					}
+					else
+					{
+						ImGui::TextDisabled("File");
+					}
+				}
+
+				// Size column
+				ImGui::TableNextColumn();
+				if (!xEntry.m_bIsDirectory && xEntry.m_ulFileSize > 0)
+				{
+					char acBuffer[32];
+					FormatFileSize(xEntry.m_ulFileSize, acBuffer, sizeof(acBuffer));
+					ImGui::Text("%s", acBuffer);
+				}
+
+				// Extension column
+				ImGui::TableNextColumn();
+				if (!xEntry.m_bIsDirectory && !xEntry.m_strExtension.empty())
+				{
+					ImGui::Text("%s", xEntry.m_strExtension.c_str() + 1);
+				}
+
+				ImGui::PopID();
+			}
+
+			ImGui::EndTable();
+		}
+	}
+	else
+	{
+		// Grid view
+		int iColumnCount = std::max(1, (int)(fPanelWidth / fCellSize));
+
+		if (ImGui::BeginTable("ContentBrowserTable", iColumnCount))
+		{
 		for (size_t i = 0; i < xState.m_xFilteredContents.size(); ++i)
 		{
 			const ContentBrowserEntry& xEntry = xState.m_xFilteredContents[i];
@@ -231,19 +570,28 @@ void Zenith_EditorPanelContentBrowser::Render(ContentBrowserState& xState)
 			ImGui::TableNextColumn();
 			ImGui::PushID((int)i);
 
-			// Icon representation (using text for now)
-			const char* szIcon = xEntry.m_bIsDirectory ? "[DIR]" : "[FILE]";
-
-			// File type specific icons
+			// Icon representation
+			const char* szIcon = "[DIR]";
+			static char szExtIcon[16];  // Static buffer for unknown extension icons
 			if (!xEntry.m_bIsDirectory)
 			{
-				if (xEntry.m_strExtension == ZENITH_TEXTURE_EXT) szIcon = "[TEX]";
-				else if (xEntry.m_strExtension == ZENITH_MATERIAL_EXT) szIcon = "[MAT]";
-				else if (xEntry.m_strExtension == ZENITH_MESH_EXT) szIcon = "[MSH]";
-				else if (xEntry.m_strExtension == ZENITH_MODEL_EXT) szIcon = "[MDL]";
-				else if (xEntry.m_strExtension == ZENITH_PREFAB_EXT) szIcon = "[PRE]";
-				else if (xEntry.m_strExtension == ".zscn") szIcon = "[SCN]";
-				else if (xEntry.m_strExtension == ZENITH_ANIMATION_EXT) szIcon = "[ANM]";
+				const EditorFileTypeInfo* pxTypeInfo = GetFileTypeInfo(xEntry.m_strExtension);
+				if (pxTypeInfo)
+				{
+					szIcon = pxTypeInfo->m_szIconText;
+				}
+				else
+				{
+					// Unknown type - show uppercase extension
+					std::string strExt = xEntry.m_strExtension;
+					if (!strExt.empty() && strExt[0] == '.')
+					{
+						strExt = strExt.substr(1);
+					}
+					std::transform(strExt.begin(), strExt.end(), strExt.begin(), ::toupper);
+					snprintf(szExtIcon, sizeof(szExtIcon), "[%s]", strExt.c_str());
+					szIcon = szExtIcon;
+				}
 			}
 
 			ImGui::BeginGroup();
@@ -296,32 +644,9 @@ void Zenith_EditorPanelContentBrowser::Render(ContentBrowserState& xState)
 						sizeof(xPayload.m_szFilePath) - 1);
 					xPayload.m_szFilePath[sizeof(xPayload.m_szFilePath) - 1] = '\0';
 
-					// Determine payload type based on extension
-					const char* szPayloadType = DRAGDROP_PAYLOAD_FILE_GENERIC;
-					if (xEntry.m_strExtension == ZENITH_TEXTURE_EXT)
-					{
-						szPayloadType = DRAGDROP_PAYLOAD_TEXTURE;
-					}
-					else if (xEntry.m_strExtension == ZENITH_MESH_EXT)
-					{
-						szPayloadType = DRAGDROP_PAYLOAD_MESH;
-					}
-					else if (xEntry.m_strExtension == ZENITH_MATERIAL_EXT)
-					{
-						szPayloadType = DRAGDROP_PAYLOAD_MATERIAL;
-					}
-					else if (xEntry.m_strExtension == ZENITH_PREFAB_EXT)
-					{
-						szPayloadType = DRAGDROP_PAYLOAD_PREFAB;
-					}
-					else if (xEntry.m_strExtension == ZENITH_MODEL_EXT)
-					{
-						szPayloadType = DRAGDROP_PAYLOAD_MODEL;
-					}
-					else if (xEntry.m_strExtension == ZENITH_ANIMATION_EXT)
-					{
-						szPayloadType = DRAGDROP_PAYLOAD_ANIMATION;
-					}
+					// Determine payload type from registry
+					const EditorFileTypeInfo* pxTypeInfo = GetFileTypeInfo(xEntry.m_strExtension);
+					const char* szPayloadType = pxTypeInfo ? pxTypeInfo->m_szDragDropType : DRAGDROP_PAYLOAD_FILE_GENERIC;
 
 					ImGui::SetDragDropPayload(szPayloadType, &xPayload, sizeof(xPayload));
 
@@ -431,17 +756,44 @@ void Zenith_EditorPanelContentBrowser::Render(ContentBrowserState& xState)
 			}
 
 			// Display truncated filename below icon
+			// Calculate max chars based on cell width (~7 pixels per char at default font)
 			std::string strDisplayName = xEntry.m_strName;
-			if (strDisplayName.length() > 10)
+			size_t uMaxChars = static_cast<size_t>((fCellSize - 10) / 7.0f);
+			uMaxChars = std::max(uMaxChars, static_cast<size_t>(8));  // Minimum 8 chars
+			if (strDisplayName.length() > uMaxChars)
 			{
-				strDisplayName = strDisplayName.substr(0, 7) + "...";
+				strDisplayName = strDisplayName.substr(0, uMaxChars - 3) + "...";
 			}
 			ImGui::TextWrapped("%s", strDisplayName.c_str());
 
-			// Tooltip with full filename
+			// Enhanced tooltip with file info
 			if (ImGui::IsItemHovered())
 			{
-				ImGui::SetTooltip("%s", xEntry.m_strName.c_str());
+				ImGui::BeginTooltip();
+				ImGui::Text("%s", xEntry.m_strName.c_str());
+				if (!xEntry.m_bIsDirectory)
+				{
+					// Show type name from registry or raw extension
+					const EditorFileTypeInfo* pxTypeInfo = GetFileTypeInfo(xEntry.m_strExtension);
+					if (pxTypeInfo)
+					{
+						ImGui::Text("Type: %s", pxTypeInfo->m_szDisplayName);
+					}
+					else if (!xEntry.m_strExtension.empty())
+					{
+						ImGui::Text("Type: %s", xEntry.m_strExtension.c_str() + 1);
+					}
+
+					// Show file size
+					char acSizeBuffer[32];
+					FormatFileSize(xEntry.m_ulFileSize, acSizeBuffer, sizeof(acSizeBuffer));
+					ImGui::Text("Size: %s", acSizeBuffer);
+				}
+				else
+				{
+					ImGui::TextDisabled("Folder");
+				}
+				ImGui::EndTooltip();
 			}
 
 			ImGui::EndGroup();
@@ -449,7 +801,8 @@ void Zenith_EditorPanelContentBrowser::Render(ContentBrowserState& xState)
 		}
 
 		ImGui::EndTable();
-	}
+		}
+	}  // End Grid view else block
 
 	ImGui::End();
 }
@@ -468,6 +821,16 @@ void Zenith_EditorPanelContentBrowser::RefreshDirectoryContents(ContentBrowserSt
 			xBrowserEntry.m_strName = xEntry.path().filename().string();
 			xBrowserEntry.m_strExtension = xEntry.path().extension().string();
 			xBrowserEntry.m_bIsDirectory = xEntry.is_directory();
+
+			// Get file size for files
+			if (!xBrowserEntry.m_bIsDirectory)
+			{
+				try
+				{
+					xBrowserEntry.m_ulFileSize = std::filesystem::file_size(xEntry.path());
+				}
+				catch (...) {}
+			}
 
 			xState.m_xDirectoryContents.push_back(xBrowserEntry);
 		}
@@ -489,7 +852,7 @@ void Zenith_EditorPanelContentBrowser::RefreshDirectoryContents(ContentBrowserSt
 	}
 }
 
-void Zenith_EditorPanelContentBrowser::NavigateToDirectory(ContentBrowserState& xState, const std::string& strPath)
+void Zenith_EditorPanelContentBrowser::NavigateToDirectory(ContentBrowserState& xState, const std::string& strPath, bool bAddToHistory)
 {
 	// Clear thumbnail cache when changing directories to avoid memory buildup
 	// Unregister all ImGui texture handles before clearing
@@ -501,6 +864,28 @@ void Zenith_EditorPanelContentBrowser::NavigateToDirectory(ContentBrowserState& 
 		}
 	}
 	s_xThumbnailCache.clear();
+
+	// Add to navigation history if requested
+	if (bAddToHistory)
+	{
+		// Trim forward history when navigating to new location
+		if (xState.m_iHistoryIndex >= 0 &&
+			xState.m_iHistoryIndex < static_cast<int>(xState.m_axNavigationHistory.size()) - 1)
+		{
+			xState.m_axNavigationHistory.resize(xState.m_iHistoryIndex + 1);
+		}
+
+		xState.m_axNavigationHistory.push_back(strPath);
+
+		// Limit history size
+		constexpr int MAX_HISTORY_SIZE = 50;
+		while (xState.m_axNavigationHistory.size() > static_cast<size_t>(MAX_HISTORY_SIZE))
+		{
+			xState.m_axNavigationHistory.erase(xState.m_axNavigationHistory.begin());
+		}
+
+		xState.m_iHistoryIndex = static_cast<int>(xState.m_axNavigationHistory.size()) - 1;
+	}
 
 	xState.m_strCurrentDirectory = strPath;
 	xState.m_bDirectoryNeedsRefresh = true;

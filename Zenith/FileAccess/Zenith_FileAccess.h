@@ -4,6 +4,7 @@
 #define ZENITH_MESH_EXT			".zmesh"
 #define ZENITH_MATERIAL_EXT		".zmtrl"
 #define ZENITH_PREFAB_EXT		".zprfb"
+#define ZENITH_SCENE_EXT		".zscen"
 
 #define ZENITH_MAX_PATH_LENGTH 1024
 

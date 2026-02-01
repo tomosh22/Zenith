@@ -2,20 +2,11 @@
 
 #ifdef ZENITH_TOOLS
 
-#include "Maths/Zenith_Maths.h"
-#include "EntityComponent/Zenith_Scene.h"
+#include "Editor/Zenith_Editor.h"
 #include <vector>
 #include <string>
 #include <unordered_set>
 #include <bitset>
-
-// Forward declarations
-class Zenith_MaterialAsset;
-struct ContentBrowserEntry;
-struct ConsoleLogEntry;
-
-enum class EditorMode;
-enum class EditorGizmoMode;
 
 //=============================================================================
 // Zenith_EditorState
@@ -98,6 +89,11 @@ struct Zenith_EditorContentBrowserState
 	char m_szSearchBuffer[256] = "";
 	int m_iAssetTypeFilter = 0;      // 0 = All, then asset types
 	int m_iSelectedContentIndex = -1;
+	float m_fThumbnailSize = 80.0f;  // Range: 40-200 pixels
+	std::vector<std::string> m_axNavigationHistory;
+	int m_iHistoryIndex = -1;
+	ContentBrowserViewMode m_eViewMode = ContentBrowserViewMode::Grid;
+	static constexpr int MAX_HISTORY_SIZE = 50;
 };
 
 //-----------------------------------------------------------------------------

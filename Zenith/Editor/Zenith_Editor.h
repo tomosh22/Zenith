@@ -12,6 +12,13 @@
 // Forward declarations
 class Zenith_MaterialAsset;
 
+// Content browser view mode
+enum class ContentBrowserViewMode
+{
+	Grid,
+	List
+};
+
 // Drag-drop payload type identifiers (max 32 chars per ImGui)
 #define DRAGDROP_PAYLOAD_TEXTURE  "ZENITH_TEXTURE"
 #define DRAGDROP_PAYLOAD_MESH    "ZENITH_MESH"
@@ -28,6 +35,7 @@ struct ContentBrowserEntry
 	std::string m_strFullPath;       // Full absolute path
 	std::string m_strExtension;      // File extension (e.g., ZENITH_TEXTURE_EXT)
 	bool m_bIsDirectory;             // true for folders, false for files
+	uint64_t m_ulFileSize = 0;       // File size in bytes
 };
 
 // Drag-drop payload data structure
@@ -35,6 +43,18 @@ struct DragDropFilePayload
 {
 	char m_szFilePath[512];          // Absolute path to file
 };
+
+// File type metadata for content browser display
+struct EditorFileTypeInfo
+{
+	const char* m_szExtension;       // e.g., ".ztxtr"
+	const char* m_szIconText;        // e.g., "[TEX]"
+	const char* m_szDisplayName;     // e.g., "Texture"
+	const char* m_szDragDropType;    // e.g., DRAGDROP_PAYLOAD_TEXTURE
+};
+
+// Look up file type info by extension (returns nullptr for non-Zenith types)
+const EditorFileTypeInfo* GetFileTypeInfo(const std::string& strExtension);
 
 class Zenith_Entity;
 class Zenith_Scene;
@@ -223,6 +243,10 @@ private:
 	static char s_szSearchBuffer[256];  // Search text input buffer
 	static int s_iAssetTypeFilter;      // 0 = All, then asset types
 	static int s_iSelectedContentIndex; // Currently selected item for context menu
+	static float s_fThumbnailSize;      // Thumbnail size in pixels (40-200)
+	static std::vector<std::string> s_axNavigationHistory;
+	static int s_iHistoryIndex;
+	static ContentBrowserViewMode s_eViewMode;
 
 	// Console state
 	static std::vector<ConsoleLogEntry> s_xConsoleLogs;
