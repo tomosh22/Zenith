@@ -23,7 +23,7 @@ bool Flux_SSGI::s_bEnabled = true;
 bool Flux_SSGI::s_bInitialised = false;
 
 // Debug variables
-DEBUGVAR bool dbg_bSSGIEnable = true;
+DEBUGVAR bool dbg_bSSGIEnable = false;
 DEBUGVAR u_int dbg_uDebugMode = SSGI_DEBUG_NONE;
 
 static struct SSGIConstants

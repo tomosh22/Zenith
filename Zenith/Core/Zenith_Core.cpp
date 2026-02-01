@@ -20,7 +20,6 @@
 #include "Flux/Shadows/Flux_Shadows.h"
 #include "Flux/Particles/Flux_Particles.h"
 #include "Flux/Text/Flux_Text.h"
-#include "Flux/ComputeTest/Flux_ComputeTest.h"
 #include "Flux/InstancedMeshes/Flux_InstancedMeshes.h"
 #include "Flux/HDR/Flux_HDR.h"
 #include "Flux/IBL/Flux_IBL.h"
@@ -28,6 +27,7 @@
 #include "Flux/SSR/Flux_SSR.h"
 #include "Flux/SSGI/Flux_SSGI.h"
 #include "Flux/Vegetation/Flux_Grass.h"
+#include "Flux/DynamicLights/Flux_DynamicLights.h"
 #ifdef ZENITH_TOOLS
 #include "Flux/Gizmos/Flux_Gizmos.h"
 #include "Editor/Zenith_Editor.h"
@@ -116,7 +116,6 @@ void RenderImGui()
 
 static void SubmitRenderTasks()
 {
-	Flux_ComputeTest::Run();
 	Flux_IBL::SubmitRenderTask();         // IBL BRDF LUT generation (early, used by deferred shading)
 	Flux_Shadows::SubmitRenderTask();
 	Flux_Skybox::SubmitRenderTask();      // Cubemap skybox + procedural atmosphere
@@ -132,6 +131,7 @@ static void SubmitRenderTasks()
 	Flux_SSR::SubmitRenderTask();         // Screen-space reflections (uses Hi-Z, needed by deferred shading)
 	Flux_SSGI::SubmitRenderTask();        // Screen-space GI (uses Hi-Z, needed by deferred shading)
 	Flux_DeferredShading::SubmitRenderTask();
+	Flux_DynamicLights::SubmitRenderTask();  // Dynamic lights (after deferred shading, additive blend)
 	Flux_SSAO::SubmitRenderTask();
 	Flux_Fog::SubmitRenderTask();
 	Flux_SDFs::SubmitRenderTask();
@@ -166,6 +166,7 @@ void Zenith_Core::WaitForAllRenderTasks()
 	Flux_SSR::WaitForRenderTask();
 	Flux_SSGI::WaitForRenderTask();
 	Flux_DeferredShading::WaitForRenderTask();
+	Flux_DynamicLights::WaitForRenderTask();
 	Flux_SSAO::WaitForRenderTask();
 	Flux_Fog::WaitForRenderTask();
 	Flux_SDFs::WaitForRenderTask();

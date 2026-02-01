@@ -143,10 +143,7 @@ void Flux_Grass::Initialise()
 	xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
 	xPipelineSpec.m_bDepthTestEnabled = true;
 	xPipelineSpec.m_bDepthWriteEnabled = true;
-	// TODO: Grass should be double-sided (CULL_MODE_NONE) but cull mode is not yet
-	// exposed in Flux_PipelineSpecification. Currently uses default back-face culling,
-	// which causes grass blades to be invisible when viewed from behind.
-	// Add eCullMode field to Flux_PipelineSpecification to fix this.
+	xPipelineSpec.m_eCullMode = CULL_MODE_NONE;  // Grass is double-sided
 
 	Flux_PipelineLayout& xLayout = xPipelineSpec.m_xPipelineLayout;
 	xLayout.m_uNumDescriptorSets = 1;

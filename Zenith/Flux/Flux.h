@@ -261,6 +261,8 @@ struct Flux_PipelineSpecification
 	StoreAction m_eDepthStencilStoreAction;
 	bool m_bWireframe = false;
 
+	CullMode m_eCullMode = CULL_MODE_NONE;  // No culling by default (matches previous hardcoded behavior)
+
 	bool m_bDepthBias = false;
 	float m_fDepthBiasConstant = 0.0f;
 	float m_fDepthBiasSlope = 0.0f;

@@ -1106,6 +1106,7 @@
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_CameraComponent.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_ColliderComponent.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_InstancedMeshComponent.h" />
+    <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_LightComponent.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_ModelComponent.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_ParticleEmitterComponent.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_ScriptComponent.h" />
@@ -1120,8 +1121,8 @@
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_Scene.h" />
     <ClInclude Include="..\Zenith\FileAccess\Zenith_FileAccess.h" />
     <ClInclude Include="..\Zenith\Flux\AnimatedMeshes\Flux_AnimatedMeshes.h" />
-    <ClInclude Include="..\Zenith\Flux\ComputeTest\Flux_ComputeTest.h" />
     <ClInclude Include="..\Zenith\Flux\DeferredShading\Flux_DeferredShading.h" />
+    <ClInclude Include="..\Zenith\Flux\DynamicLights\Flux_DynamicLights.h" />
     <ClInclude Include="..\Zenith\Flux\Flux.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_Buffers.h" />
     <ClInclude Include="..\Zenith\Flux\Flux_CommandList.h" />
@@ -1174,6 +1175,8 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\ComputeTest\ComputeTest_Display.frag" />
     <ClInclude Include="..\Zenith\Flux\Shaders\ComputeTest\ComputeTest_Display.vert" />
     <ClInclude Include="..\Zenith\Flux\Shaders\DeferredShading\Flux_DeferredShading.frag" />
+    <ClInclude Include="..\Zenith\Flux\Shaders\DynamicLights\Flux_DynamicLights.frag" />
+    <ClInclude Include="..\Zenith\Flux\Shaders\DynamicLights\Flux_DynamicLights.vert" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Flux_Fullscreen_UV.vert" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Flux_TexturedQuad.frag" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Fog\Flux_Fog.frag" />
@@ -2303,6 +2306,7 @@
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_CameraComponent.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_ColliderComponent.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_InstancedMeshComponent.cpp" />
+    <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_LightComponent.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_ModelComponent.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_ModelComponent_Editor.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_ParticleEmitterComponent.cpp" />
@@ -2318,8 +2322,8 @@
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_Scene.cpp" />
     <ClCompile Include="..\Zenith\FileAccess\Zenith_FileAccess.cpp" />
     <ClCompile Include="..\Zenith\Flux\AnimatedMeshes\Flux_AnimatedMeshes.cpp" />
-    <ClCompile Include="..\Zenith\Flux\ComputeTest\Flux_ComputeTest.cpp" />
     <ClCompile Include="..\Zenith\Flux\DeferredShading\Flux_DeferredShading.cpp" />
+    <ClCompile Include="..\Zenith\Flux\DynamicLights\Flux_DynamicLights.cpp" />
     <ClCompile Include="..\Zenith\Flux\Flux.cpp" />
     <ClCompile Include="..\Zenith\Flux\Flux_Buffers.cpp" />
     <ClCompile Include="..\Zenith\Flux\Flux_CommandList.cpp" />

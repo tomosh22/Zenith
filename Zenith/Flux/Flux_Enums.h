@@ -68,7 +68,6 @@ enum RenderOrder
 	RENDER_ORDER_HDR_TONEMAP,         // Tone mapping (reads HDR target, writes to final target)
 	RENDER_ORDER_QUADS,               // UI quads (rendered on top of tone-mapped scene)
 	RENDER_ORDER_TEXT,                // UI text (rendered on top of quads)
-	RENDER_ORDER_COMPUTE_TEST,
 	RENDER_ORDER_IMGUI,
 	RENDER_ORDER_COPYTOFRAMEBUFFER,
 	RENDER_ORDER_MAX
@@ -209,4 +208,11 @@ enum MemoryFlags : u_int
 	MEMORY_FLAGS__VERTEX_BUFFER,
 	MEMORY_FLAGS__INDEX_BUFFER,
 	MEMORY_FLAGS__INDIRECT_BUFFER,
+};
+
+enum CullMode
+{
+	CULL_MODE_NONE,   // No culling (render both faces)
+	CULL_MODE_FRONT,  // Cull front faces
+	CULL_MODE_BACK,   // Cull back faces (default)
 };

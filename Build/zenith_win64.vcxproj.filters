@@ -637,6 +637,9 @@
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_InstancedMeshComponent.cpp">
       <Filter>EntityComponent\Components</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_LightComponent.cpp">
+      <Filter>EntityComponent\Components</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_ModelComponent.cpp">
       <Filter>EntityComponent\Components</Filter>
     </ClCompile>
@@ -682,11 +685,11 @@
     <ClCompile Include="..\Zenith\Flux\AnimatedMeshes\Flux_AnimatedMeshes.cpp">
       <Filter>Flux\AnimatedMeshes</Filter>
     </ClCompile>
-    <ClCompile Include="..\Zenith\Flux\ComputeTest\Flux_ComputeTest.cpp">
-      <Filter>Flux\ComputeTest</Filter>
-    </ClCompile>
     <ClCompile Include="..\Zenith\Flux\DeferredShading\Flux_DeferredShading.cpp">
       <Filter>Flux\DeferredShading</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Flux\DynamicLights\Flux_DynamicLights.cpp">
+      <Filter>Flux\DynamicLights</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\Flux\Flux.cpp">
       <Filter>Flux</Filter>
@@ -3168,6 +3171,9 @@
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_InstancedMeshComponent.h">
       <Filter>EntityComponent\Components</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_LightComponent.h">
+      <Filter>EntityComponent\Components</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_ModelComponent.h">
       <Filter>EntityComponent\Components</Filter>
     </ClInclude>
@@ -3210,11 +3216,11 @@
     <ClInclude Include="..\Zenith\Flux\AnimatedMeshes\Flux_AnimatedMeshes.h">
       <Filter>Flux\AnimatedMeshes</Filter>
     </ClInclude>
-    <ClInclude Include="..\Zenith\Flux\ComputeTest\Flux_ComputeTest.h">
-      <Filter>Flux\ComputeTest</Filter>
-    </ClInclude>
     <ClInclude Include="..\Zenith\Flux\DeferredShading\Flux_DeferredShading.h">
       <Filter>Flux\DeferredShading</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\DynamicLights\Flux_DynamicLights.h">
+      <Filter>Flux\DynamicLights</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Flux.h">
       <Filter>Flux</Filter>
@@ -3371,6 +3377,12 @@
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\DeferredShading\Flux_DeferredShading.frag">
       <Filter>Flux\Shaders\DeferredShading</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\DynamicLights\Flux_DynamicLights.frag">
+      <Filter>Flux\Shaders\DynamicLights</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\DynamicLights\Flux_DynamicLights.vert">
+      <Filter>Flux\Shaders\DynamicLights</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\Flux_Fullscreen_UV.vert">
       <Filter>Flux\Shaders</Filter>
@@ -3821,11 +3833,11 @@
     <Filter Include="Flux\AnimatedMeshes">
       <UniqueIdentifier>{bf2887ce-a035-709c-1b23-f354257dbdb0}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Flux\ComputeTest">
-      <UniqueIdentifier>{2cef5cbf-e5f6-e323-3c78-882c776f5f9a}</UniqueIdentifier>
-    </Filter>
     <Filter Include="Flux\DeferredShading">
       <UniqueIdentifier>{a9dab6da-cbee-63eb-9c37-5df5e2db7ddb}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Flux\DynamicLights">
+      <UniqueIdentifier>{f5fd747f-cd48-f756-ce51-dbf4bdfe13e2}</UniqueIdentifier>
     </Filter>
     <Filter Include="Flux\Fog">
       <UniqueIdentifier>{70bb2c4f-c51f-42d4-ab3c-a4653229d946}</UniqueIdentifier>
@@ -3883,6 +3895,9 @@
     </Filter>
     <Filter Include="Flux\Shaders\DeferredShading">
       <UniqueIdentifier>{1395f665-b91c-b9e2-e764-120841bbdfe0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Flux\Shaders\DynamicLights">
+      <UniqueIdentifier>{08ce3051-7284-355d-08eb-7e50013b0948}</UniqueIdentifier>
     </Filter>
     <Filter Include="Flux\Shaders\Fog">
       <UniqueIdentifier>{388c15d2-6ab2-d541-f830-80baba4418ff}</UniqueIdentifier>

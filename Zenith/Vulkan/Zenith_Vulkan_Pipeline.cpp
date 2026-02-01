@@ -855,8 +855,17 @@ void Zenith_Vulkan_PipelineBuilder::FromSpecification(Zenith_Vulkan_Pipeline& xP
 #pragma endregion
 
 #pragma region RasterState
+	// Convert Flux CullMode to Vulkan CullModeFlagBits
+	vk::CullModeFlagBits eVkCullMode = vk::CullModeFlagBits::eNone;
+	switch (xSpec.m_eCullMode)
+	{
+	case CULL_MODE_NONE:  eVkCullMode = vk::CullModeFlagBits::eNone;  break;
+	case CULL_MODE_FRONT: eVkCullMode = vk::CullModeFlagBits::eFront; break;
+	case CULL_MODE_BACK:  eVkCullMode = vk::CullModeFlagBits::eBack;  break;
+	}
+
 	vk::PipelineRasterizationStateCreateInfo xRasterInfo = vk::PipelineRasterizationStateCreateInfo()
-		.setCullMode(vk::CullModeFlagBits::eNone)
+		.setCullMode(eVkCullMode)
 		.setFrontFace(vk::FrontFace::eCounterClockwise)
 		.setPolygonMode(xSpec.m_bWireframe ? vk::PolygonMode::eLine : vk::PolygonMode::eFill)
 		.setLineWidth(1.0f);

@@ -122,21 +122,8 @@ const float LIGHT_INTENSITY_THRESHOLD = 0.1;         // Minimum light intensity 
 const float BRDF_LUT_DISPLAY_SIZE = 0.2;            // Size of debug display (20% of screen)
 const float BRDF_LUT_DISPLAY_MARGIN = 0.02;         // Margin from screen edge
 
-// Note: FresnelSchlick() and FresnelSchlickRoughness() are now in PBRConstants.fxh
-
-// GGX/Trowbridge-Reitz Normal Distribution Function
-float DistributionGGX(float NdotH, float roughness) {
-	float a = roughness * roughness;
-	float a2 = a * a;
-	float NdotH2 = NdotH * NdotH;
-
-	float denom = (NdotH2 * (a2 - 1.0) + 1.0);
-	denom = PI * denom * denom;
-
-	return a2 / max(denom, DEFERRED_EPSILON_SMALL);
-}
-
-// Note: GeometrySchlickGGX_Direct() and GeometrySmith_Direct() are now centralized in PBRConstants.fxh
+// Note: FresnelSchlick(), FresnelSchlickRoughness(), DistributionGGX(),
+// GeometrySchlickGGX_Direct() and GeometrySmith_Direct() are now centralized in PBRConstants.fxh
 // for consistency across all shaders. The Direct variants use k = ((r+1)²)/8 per Epic Games specification.
 
 void CookTorrance_Directional(inout vec4 xFinalColor, vec4 xDiffuse, DirectionalLight xLight, vec3 xNormal, float fMetal, float fRough, vec3 xWorldPos) {
@@ -265,7 +252,7 @@ vec3 Uncharted2Tonemap(vec3 x) {
 vec3 ComputeIBLAmbient(vec3 xNormal, vec3 xViewDir, vec3 xAlbedo, float fMetallic, float fRoughness, float fAmbientOcclusion, vec2 xUV)
 {
 	// Calculate F0 and Fresnel (needed for IBL and SSR)
-	float NdotV = max(dot(xNormal, xViewDir), 0.0);
+	float NdotV = max(dot(xNormal, xViewDir), PBR_EPSILON);
 	vec3 F0 = PBR_DIELECTRIC_F0;
 	F0 = mix(F0, xAlbedo, fMetallic);
 	vec3 F = FresnelSchlickRoughness(NdotV, F0, fRoughness);
@@ -289,9 +276,10 @@ vec3 ComputeIBLAmbient(vec3 xNormal, vec3 xViewDir, vec3 xAlbedo, float fMetalli
 		vec4 xSSR = texture(g_xSSRTex, xUV);
 		fSSRConfidence = xSSR.a;
 
-		// SSR is direct reflected radiance (single ray sample from scene)
-		// Fresnel weighting matches IBL specular for seamless confidence blending
-		vec3 xSSRFresnel = FresnelSchlickRoughness(NdotV, F0, fRoughness);
+		// SSR is a direct ray reflection (single sample), not a pre-integrated hemisphere like IBL.
+		// Use FresnelSchlick without roughness modification - roughness-modified Fresnel is only
+		// correct for pre-integrated environment maps where the hemisphere integral is approximated.
+		vec3 xSSRFresnel = FresnelSchlick(NdotV, F0);
 		xSSRSpecular = xSSR.rgb * xSSRFresnel;
 	}
 
@@ -305,18 +293,21 @@ vec3 ComputeIBLAmbient(vec3 xNormal, vec3 xViewDir, vec3 xAlbedo, float fMetalli
 	}
 
 	// Guard against zero/degenerate normals (e.g., from sky pixels that slip through)
+	// Note: xNormal is already normalized by caller (main), so this is a safety check only
 	float fNormalLen = length(xNormal);
 	if (fNormalLen < NORMAL_LENGTH_EPSILON)
 	{
 		return vec3(0.0);
 	}
-	xNormal = xNormal / fNormalLen;
+	// Skip redundant renormalization - already normalized by caller
 
 	// Energy conservation
 	vec3 kS = F;
 	vec3 kD = (1.0 - kS) * (1.0 - fMetallic);
 
 	// Diffuse IBL - sample irradiance cubemap using normal direction
+	// NOTE: Irradiance and prefiltered environment maps are stored in LINEAR color space
+	// (loaded with VK_FORMAT_*_SRGB or converted during texture import in Flux_Texture.cpp)
 	vec3 xDiffuseIBL = vec3(0.0);
 	if (g_bIBLDiffuseEnabled != 0)
 	{

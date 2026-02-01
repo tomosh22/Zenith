@@ -17,6 +17,7 @@ enum Zenith_ProfileIndex
 	ZENITH_PROFILE_INDEX__FLUX_SHADOWS_UPDATE_MATRICES,
 
 	ZENITH_PROFILE_INDEX__FLUX_DEFERRED_SHADING,
+	ZENITH_PROFILE_INDEX__FLUX_DYNAMIC_LIGHTS,
 	ZENITH_PROFILE_INDEX__FLUX_SKYBOX,
 	ZENITH_PROFILE_INDEX__FLUX_STATIC_MESHES,
 	ZENITH_PROFILE_INDEX__FLUX_ANIMATED_MESHES,
@@ -98,6 +99,7 @@ static const char* g_aszProfileNames[]
 	"Flux Shadows",
 	"Flux Shadows Update Matrices",
 	"Flux Deferred Shading",
+	"Flux Dynamic Lights",
 	"Flux Skybox",
 	"Flux Static Meshes",
 	"Flux Animated Meshes",

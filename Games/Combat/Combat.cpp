@@ -8,6 +8,7 @@
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_ParticleEmitterComponent.h"
+#include "EntityComponent/Components/Zenith_LightComponent.h"
 #include "EntityComponent/Zenith_EventSystem.h"
 #include "Physics/Zenith_Physics.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
@@ -767,6 +768,21 @@ void Project_LoadInitialScene()
 		Zenith_Maths::Vector3 xFlamePos(fX, s_fArenaWallHeight + 0.1f, fZ);
 		xFlameEmitter.SetEmitPosition(xFlamePos);
 		xFlameEmitter.SetEmitDirection(Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
+
+		// Add orange spot light pointing toward arena floor center
+		Zenith_LightComponent& xLight = xWall.AddComponent<Zenith_LightComponent>();
+		xLight.SetLightType(LIGHT_TYPE_SPOT);
+		xLight.SetColor(Zenith_Maths::Vector3(1.0f, 0.5f, 0.1f));  // Orange (linear RGB)
+		xLight.SetIntensity(1000.0f);  // 1000 lumens
+		xLight.SetRange(s_fArenaRadius * 3.0f);
+		xLight.SetSpotInnerAngle(glm::radians(25.0f));
+		xLight.SetSpotOuterAngle(glm::radians(45.0f));
+
+		// Set light direction to point from wall position toward arena floor center
+		Zenith_Maths::Vector3 xWallPos(fX, s_fArenaWallHeight * 0.5f, fZ);
+		Zenith_Maths::Vector3 xFloorCenter(0.0f, 0.0f, 0.0f);
+		Zenith_Maths::Vector3 xTargetDir = glm::normalize(xFloorCenter - xWallPos);
+		xLight.SetWorldDirection(xTargetDir);
 	}
 
 	// ========================================================================

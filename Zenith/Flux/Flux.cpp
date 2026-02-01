@@ -20,7 +20,6 @@
 #include "Flux/Particles/Flux_Particles.h"
 #include "Flux/Text/Flux_Text.h"
 #include "Flux/Quads/Flux_Quads.h"
-#include "Flux/ComputeTest/Flux_ComputeTest.h"
 #include "Flux/InstancedMeshes/Flux_InstancedMeshes.h"
 #include "Flux/HDR/Flux_HDR.h"
 #include "Flux/IBL/Flux_IBL.h"
@@ -28,6 +27,7 @@
 #include "Flux/SSR/Flux_SSR.h"
 #include "Flux/SSGI/Flux_SSGI.h"
 #include "Flux/Vegetation/Flux_Grass.h"
+#include "Flux/DynamicLights/Flux_DynamicLights.h"
 
 uint32_t Flux::s_uFrameCounter = 0;
 std::vector<void(*)()> Flux::s_xResChangeCallbacks;
@@ -71,13 +71,13 @@ void Flux::LateInitialise()
 	Flux_SSR::Initialise();          // Screen-space reflections (uses Hi-Z, needed by DeferredShading)
 	Flux_SSGI::Initialise();         // Screen-space GI (uses Hi-Z, needed by DeferredShading)
 	Flux_DeferredShading::Initialise();
+	Flux_DynamicLights::Initialise();  // Dynamic point/spot/directional lights (after DeferredShading)
 	Flux_SSAO::Initialise();
 	Flux_Fog::Initialise();
 	Flux_SDFs::Initialise();
 	Flux_Particles::Initialise();
 	Flux_Quads::Initialise();
 	Flux_Text::Initialise();
-	Flux_ComputeTest::Initialise();
 	Flux_MemoryManager::EndFrame(false);
 }
 
@@ -87,12 +87,12 @@ void Flux::Shutdown()
 	// This ensures dependencies are destroyed after their dependents
 	// NOTE: Some subsystems (Fog, SSAO, DeferredShading, Primitives, AnimatedMeshes, StaticMeshes)
 	// don't have Shutdown() methods - they rely on RAII or are stateless
-	Flux_ComputeTest::Shutdown();
 	Flux_Text::Shutdown();
 	Flux_Quads::Shutdown();
 	Flux_Particles::Shutdown();
 	Flux_SDFs::Shutdown();
 	// Flux_Fog, Flux_SSAO, Flux_DeferredShading, Flux_Primitives - no Shutdown() methods
+	Flux_DynamicLights::Shutdown();  // Dynamic lights (after DeferredShading in init order)
 	Flux_SSGI::Shutdown();         // Before HiZ (SSGI uses Hi-Z)
 	Flux_SSR::Shutdown();          // Before HiZ (SSR uses Hi-Z)
 	Flux_HiZ::Shutdown();          // Hi-Z depth pyramid

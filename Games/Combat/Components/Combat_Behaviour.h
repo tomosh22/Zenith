@@ -47,6 +47,7 @@
 #include "Combat_EnemyAI.h"
 #include "Combat_QueryHelper.h"
 #include "Combat_UIManager.h"
+#include "EntityComponent/Components/Zenith_LightComponent.h"
 
 #include <random>
 
@@ -210,6 +211,9 @@ public:
 
 	void OnUpdate(const float fDt) ZENITH_FINAL override
 	{
+		// Update wall light animation (runs regardless of game state for ambiance)
+		UpdateWallLights(fDt);
+
 		// Handle pause input
 		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_P) ||
 			Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
@@ -736,6 +740,7 @@ private:
 		m_eGameState = Combat_GameState::PLAYING;
 		m_uComboCount = 0;
 		m_fComboTimer = 0.0f;
+		m_fWallLightTime = 0.0f;
 
 		// Respawn enemies
 		SpawnEnemies();
@@ -959,6 +964,75 @@ private:
 	}
 
 	// ========================================================================
+	// Wall Light Animation
+	// ========================================================================
+
+	/**
+	 * UpdateWallLights - Animate wall lights with rotating direction and color oscillation
+	 * - Direction oscillates ±20 degrees from the base direction (toward arena center)
+	 * - Color oscillates between red and yellow
+	 */
+	void UpdateWallLights(float fDt)
+	{
+		static constexpr float fOSCILLATION_SPEED = 0.75f;      // Oscillation frequency (cycles per second)
+		static constexpr float fMAX_ANGLE_DEGREES = 20.0f;      // Maximum rotation from center
+		static constexpr float fCOLOR_SPEED = 1.0f;             // Color oscillation frequency
+
+		m_fWallLightTime += fDt;
+
+		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+
+		// Calculate oscillation factors
+		// Direction: sin wave for smooth back-and-forth motion
+		float fAngleOffset = sinf(m_fWallLightTime * fOSCILLATION_SPEED * 2.0f * 3.14159f) * glm::radians(fMAX_ANGLE_DEGREES);
+
+		// Color: oscillate between red (1,0,0) and yellow (1,1,0)
+		// Use sin wave mapped from [-1,1] to [0,1] for smooth transition
+		float fColorT = (sinf(m_fWallLightTime * fCOLOR_SPEED * 2.0f * 3.14159f) + 1.0f) * 0.5f;
+		// Red = (1, 0, 0), Yellow = (1, 1, 0)
+		// Interpolate: (1, fColorT, 0)
+		Zenith_Maths::Vector3 xLightColor(1.0f, fColorT, 0.0f);
+
+		for (Zenith_EntityID uWallID : m_xLevelEntities.m_axArenaWallEntityIDs)
+		{
+			if (!xScene.EntityExists(uWallID))
+				continue;
+
+			Zenith_Entity xWall = xScene.GetEntity(uWallID);
+			if (!xWall.HasComponent<Zenith_LightComponent>() ||
+				!xWall.HasComponent<Zenith_TransformComponent>())
+				continue;
+
+			Zenith_LightComponent& xLight = xWall.GetComponent<Zenith_LightComponent>();
+			Zenith_TransformComponent& xTransform = xWall.GetComponent<Zenith_TransformComponent>();
+
+			// Get wall position to compute base direction toward arena center
+			Zenith_Maths::Vector3 xWallPos;
+			xTransform.GetPosition(xWallPos);
+
+			// Base direction: from wall toward arena center (0, 0, 0)
+			Zenith_Maths::Vector3 xFloorCenter(0.0f, 0.0f, 0.0f);
+			Zenith_Maths::Vector3 xBaseDir = glm::normalize(xFloorCenter - xWallPos);
+
+			// Compute rotation axis (perpendicular to base direction in XZ plane)
+			// We want to rotate left/right, so rotate around Y axis
+			// Apply rotation around Y axis to the base direction
+			float fCos = cosf(fAngleOffset);
+			float fSin = sinf(fAngleOffset);
+
+			// Rotate xBaseDir around Y axis by fAngleOffset
+			Zenith_Maths::Vector3 xRotatedDir;
+			xRotatedDir.x = xBaseDir.x * fCos - xBaseDir.z * fSin;
+			xRotatedDir.y = xBaseDir.y;
+			xRotatedDir.z = xBaseDir.x * fSin + xBaseDir.z * fCos;
+
+			// Set the new direction and color
+			xLight.SetWorldDirection(xRotatedDir);
+			xLight.SetColor(xLightColor);
+		}
+	}
+
+	// ========================================================================
 	// Member Variables
 	// ========================================================================
 
@@ -966,6 +1040,7 @@ private:
 	uint32_t m_uTotalEnemies;
 	uint32_t m_uComboCount;
 	float m_fComboTimer;
+	float m_fWallLightTime = 0.0f;  // Accumulator for wall light oscillation
 
 	std::mt19937 m_xRng;
 

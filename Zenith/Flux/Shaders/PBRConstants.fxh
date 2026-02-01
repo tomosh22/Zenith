@@ -141,6 +141,31 @@ vec3 FresnelSchlickRoughness(float cosTheta, vec3 F0, float roughness)
 }
 
 // ============================================================================
+// GGX/TROWBRIDGE-REITZ NORMAL DISTRIBUTION FUNCTION
+// Describes the statistical distribution of microfacet orientations
+// ============================================================================
+
+// GGX Normal Distribution Function (NDF)
+// Returns the probability that microfacets are oriented to reflect light in the half-vector direction
+// NdotH: dot(Normal, HalfVector) - clamped to [0,1]
+// roughness: surface roughness [0,1]
+//
+// The GGX (Trowbridge-Reitz) distribution is industry-standard for real-time PBR:
+// - Longer tail than Beckmann, producing more realistic highlights on rough surfaces
+// - Used by Unreal Engine, Unity, Frostbite, and most modern renderers
+float DistributionGGX(float NdotH, float roughness)
+{
+	float a = roughness * roughness;
+	float a2 = a * a;
+	float NdotH2 = NdotH * NdotH;
+
+	float denom = (NdotH2 * (a2 - 1.0) + 1.0);
+	denom = PI * denom * denom;
+
+	return a2 / max(denom, PBR_EPSILON);
+}
+
+// ============================================================================
 // SMITH'S SCHLICK-GGX GEOMETRY FUNCTION
 // Models geometric self-shadowing and masking on microfacet surfaces
 // ============================================================================

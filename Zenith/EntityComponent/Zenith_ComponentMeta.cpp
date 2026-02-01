@@ -23,6 +23,7 @@ u_int Zenith_ComponentMetaRegistry::GetSerializationOrder(const std::string& str
 		{"Transform", 0},
 		{"Model", 10},
 		{"Camera", 20},
+		{"Light", 25},     // Dynamic lights (point, spot, directional)
 		{"Text", 30},
 		{"Terrain", 40},   // Must be before Collider
 		{"Collider", 50},
