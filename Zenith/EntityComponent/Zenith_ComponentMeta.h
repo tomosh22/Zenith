@@ -33,6 +33,9 @@ using ComponentSerializeFn = void(*)(Zenith_Entity&, Zenith_DataStream&);
 // Deserialize component from data stream
 using ComponentDeserializeFn = void(*)(Zenith_Entity&, Zenith_DataStream&);
 
+// Transfer (move-construct) a component from source scene to target scene
+using ComponentTransferFn = void(*)(Zenith_EntityID, Zenith_SceneData*, Zenith_SceneData*);
+
 //------------------------------------------------------------------------------
 // Lifecycle hook function pointer types
 //------------------------------------------------------------------------------
@@ -86,6 +89,7 @@ struct Zenith_ComponentMeta
 	ComponentRemoveFn m_pfnRemoveComponent = nullptr;
 	ComponentSerializeFn m_pfnSerialize = nullptr;
 	ComponentDeserializeFn m_pfnDeserialize = nullptr;
+	ComponentTransferFn m_pfnTransferComponent = nullptr;
 
 	// Lifecycle hooks (nullptr if component doesn't implement the hook)
 	ComponentLifecycleFn m_pfnOnAwake = nullptr;    // Called when component is created
@@ -133,6 +137,11 @@ public:
 	// Order is hardcoded to ensure dependencies are respected
 	static u_int GetSerializationOrder(const std::string& strTypeName);
 
+	// ========== Component Transfer ==========
+
+	// Transfer all components from source to target scene (move-construct, no serialize)
+	void TransferAllComponents(Zenith_EntityID xEntityID, Zenith_SceneData* pxSource, Zenith_SceneData* pxTarget) const;
+
 	// ========== Component Removal ==========
 
 	// Remove all components from an entity (calls OnDestroy for each)
@@ -159,6 +168,12 @@ private:
 		{
 			const_cast<Zenith_ComponentMetaRegistry*>(this)->FinalizeRegistration();
 		}
+	}
+
+	template<typename T>
+	static void ComponentTransferWrapper(Zenith_EntityID xEntityID, Zenith_SceneData* pxSource, Zenith_SceneData* pxTarget)
+	{
+		Zenith_SceneData::TransferComponent<T>(xEntityID, pxSource, pxTarget);
 	}
 
 	std::unordered_map<std::string, Zenith_ComponentMeta> m_xMetaByName;
@@ -274,6 +289,7 @@ void Zenith_ComponentMetaRegistry::RegisterComponent(const std::string& strTypeN
 	xMeta.m_pfnRemoveComponent = &ComponentRemoveWrapper<T>;
 	xMeta.m_pfnSerialize = &ComponentSerializeWrapper<T>;
 	xMeta.m_pfnDeserialize = &ComponentDeserializeWrapper<T>;
+	xMeta.m_pfnTransferComponent = &ComponentTransferWrapper<T>;
 
 	// Detect and assign lifecycle hooks using C++20 concepts
 	// Hook pointers remain nullptr if component doesn't implement the hook

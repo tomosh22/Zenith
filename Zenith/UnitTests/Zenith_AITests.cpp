@@ -17,6 +17,8 @@
 #include "DataStream/Zenith_DataStream.h"
 #include "EntityComponent/Zenith_Entity.h"
 #include "EntityComponent/Zenith_Scene.h"
+#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneData.h"
 
 // ============================================================================
 // Helper: Mock BT Node for testing
@@ -177,8 +179,9 @@ void Zenith_UnitTests::TestBlackboardSerialization()
 // ============================================================================
 void Zenith_UnitTests::TestBTSequenceAllSuccess()
 {
-	Zenith_Scene xScene;
-	Zenith_Entity xAgent(&xScene, "TestAgent");
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Entity xAgent(pxSceneData, "TestAgent");
 	Zenith_Blackboard xBlackboard;
 
 	Zenith_BTSequence xSequence;
@@ -194,8 +197,9 @@ void Zenith_UnitTests::TestBTSequenceAllSuccess()
 
 void Zenith_UnitTests::TestBTSequenceFirstFails()
 {
-	Zenith_Scene xScene;
-	Zenith_Entity xAgent(&xScene, "TestAgent");
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Entity xAgent(pxSceneData, "TestAgent");
 	Zenith_Blackboard xBlackboard;
 
 	MockBTNode* pxSecond = new MockBTNode(BTNodeStatus::SUCCESS);
@@ -213,8 +217,9 @@ void Zenith_UnitTests::TestBTSequenceFirstFails()
 
 void Zenith_UnitTests::TestBTSequenceRunning()
 {
-	Zenith_Scene xScene;
-	Zenith_Entity xAgent(&xScene, "TestAgent");
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Entity xAgent(pxSceneData, "TestAgent");
 	Zenith_Blackboard xBlackboard;
 
 	Zenith_BTSequence xSequence;
@@ -230,8 +235,9 @@ void Zenith_UnitTests::TestBTSequenceRunning()
 
 void Zenith_UnitTests::TestBTSelectorFirstSucceeds()
 {
-	Zenith_Scene xScene;
-	Zenith_Entity xAgent(&xScene, "TestAgent");
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Entity xAgent(pxSceneData, "TestAgent");
 	Zenith_Blackboard xBlackboard;
 
 	MockBTNode* pxSecond = new MockBTNode(BTNodeStatus::SUCCESS);
@@ -249,8 +255,9 @@ void Zenith_UnitTests::TestBTSelectorFirstSucceeds()
 
 void Zenith_UnitTests::TestBTSelectorAllFail()
 {
-	Zenith_Scene xScene;
-	Zenith_Entity xAgent(&xScene, "TestAgent");
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Entity xAgent(pxSceneData, "TestAgent");
 	Zenith_Blackboard xBlackboard;
 
 	Zenith_BTSelector xSelector;
@@ -266,8 +273,9 @@ void Zenith_UnitTests::TestBTSelectorAllFail()
 
 void Zenith_UnitTests::TestBTSelectorRunning()
 {
-	Zenith_Scene xScene;
-	Zenith_Entity xAgent(&xScene, "TestAgent");
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Entity xAgent(pxSceneData, "TestAgent");
 	Zenith_Blackboard xBlackboard;
 
 	Zenith_BTSelector xSelector;
@@ -282,8 +290,9 @@ void Zenith_UnitTests::TestBTSelectorRunning()
 
 void Zenith_UnitTests::TestBTParallelRequireOne()
 {
-	Zenith_Scene xScene;
-	Zenith_Entity xAgent(&xScene, "TestAgent");
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Entity xAgent(pxSceneData, "TestAgent");
 	Zenith_Blackboard xBlackboard;
 
 	Zenith_BTParallel xParallel(Zenith_BTParallel::Policy::REQUIRE_ONE, Zenith_BTParallel::Policy::REQUIRE_ALL); // Require 1 success, fail on all failures
@@ -299,8 +308,9 @@ void Zenith_UnitTests::TestBTParallelRequireOne()
 
 void Zenith_UnitTests::TestBTParallelRequireAll()
 {
-	Zenith_Scene xScene;
-	Zenith_Entity xAgent(&xScene, "TestAgent");
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Entity xAgent(pxSceneData, "TestAgent");
 	Zenith_Blackboard xBlackboard;
 
 	Zenith_BTParallel xParallel(Zenith_BTParallel::Policy::REQUIRE_ALL, Zenith_BTParallel::Policy::REQUIRE_ONE); // Require all, fail on 1
@@ -316,8 +326,9 @@ void Zenith_UnitTests::TestBTParallelRequireAll()
 
 void Zenith_UnitTests::TestBTInverter()
 {
-	Zenith_Scene xScene;
-	Zenith_Entity xAgent(&xScene, "TestAgent");
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Entity xAgent(pxSceneData, "TestAgent");
 	Zenith_Blackboard xBlackboard;
 
 	// Test inverting SUCCESS
@@ -343,8 +354,9 @@ void Zenith_UnitTests::TestBTInverter()
 
 void Zenith_UnitTests::TestBTRepeaterCount()
 {
-	Zenith_Scene xScene;
-	Zenith_Entity xAgent(&xScene, "TestAgent");
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Entity xAgent(pxSceneData, "TestAgent");
 	Zenith_Blackboard xBlackboard;
 
 	MockBTNode* pxChild = new MockBTNode(BTNodeStatus::SUCCESS);
@@ -365,8 +377,9 @@ void Zenith_UnitTests::TestBTRepeaterCount()
 
 void Zenith_UnitTests::TestBTCooldown()
 {
-	Zenith_Scene xScene;
-	Zenith_Entity xAgent(&xScene, "TestAgent");
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Entity xAgent(pxSceneData, "TestAgent");
 	Zenith_Blackboard xBlackboard;
 
 	MockBTNode* pxChild = new MockBTNode(BTNodeStatus::SUCCESS);
@@ -387,8 +400,9 @@ void Zenith_UnitTests::TestBTCooldown()
 
 void Zenith_UnitTests::TestBTSucceeder()
 {
-	Zenith_Scene xScene;
-	Zenith_Entity xAgent(&xScene, "TestAgent");
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Entity xAgent(pxSceneData, "TestAgent");
 	Zenith_Blackboard xBlackboard;
 
 	Zenith_BTSucceeder xSucceeder;
@@ -708,8 +722,9 @@ void Zenith_UnitTests::TestNavAgentSetDestination()
 	xNavMesh.BuildSpatialGrid();
 
 	// Create entity with transform for position
-	Zenith_Scene xScene;
-	Zenith_Entity xEntity(&xScene, "NavAgent");
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Entity xEntity(pxSceneData, "NavAgent");
 	Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
 	xTransform.SetPosition(Zenith_Maths::Vector3(1.0f, 0.0f, 1.0f));
 
@@ -744,8 +759,9 @@ void Zenith_UnitTests::TestNavAgentMovement()
 	xNavMesh.BuildSpatialGrid();
 
 	// Create entity with transform for position
-	Zenith_Scene xScene;
-	Zenith_Entity xEntity(&xScene, "NavAgent");
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Entity xEntity(pxSceneData, "NavAgent");
 	Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
 
 	Zenith_Maths::Vector3 xStartPos(1.0f, 0.0f, 1.0f);
@@ -785,8 +801,9 @@ void Zenith_UnitTests::TestNavAgentArrival()
 	xNavMesh.BuildSpatialGrid();
 
 	// Create entity with transform for position
-	Zenith_Scene xScene;
-	Zenith_Entity xEntity(&xScene, "NavAgent");
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Entity xEntity(pxSceneData, "NavAgent");
 	Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
 	xTransform.SetPosition(Zenith_Maths::Vector3(1.0f, 0.0f, 1.0f));
 
@@ -826,8 +843,9 @@ void Zenith_UnitTests::TestNavAgentStop()
 	xNavMesh.BuildSpatialGrid();
 
 	// Create entity with transform for position
-	Zenith_Scene xScene;
-	Zenith_Entity xEntity(&xScene, "NavAgent");
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Entity xEntity(pxSceneData, "NavAgent");
 	Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
 	xTransform.SetPosition(Zenith_Maths::Vector3(1.0f, 0.0f, 1.0f));
 
@@ -870,9 +888,10 @@ void Zenith_UnitTests::TestSightConeInRange()
 {
 	Zenith_PerceptionSystem::Initialise();
 
-	Zenith_Scene xScene;
-	Zenith_Entity xAgent(&xScene, "Agent");
-	Zenith_Entity xTarget(&xScene, "Target");
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Entity xAgent(pxSceneData, "Agent");
+	Zenith_Entity xTarget(pxSceneData, "Target");
 
 	xAgent.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
 	xTarget.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(0.0f, 0.0f, 5.0f));
@@ -888,7 +907,7 @@ void Zenith_UnitTests::TestSightConeInRange()
 	Zenith_PerceptionSystem::SetSightConfig(xAgent.GetEntityID(), xConfig);
 
 	// Update perception
-	Zenith_PerceptionSystem::Update(0.1f, xScene);
+	Zenith_PerceptionSystem::Update(0.1f, *pxSceneData);
 
 	// Check if target is perceived
 	const Zenith_Vector<Zenith_PerceivedTarget>* pxTargets =
@@ -907,9 +926,10 @@ void Zenith_UnitTests::TestSightConeOutOfRange()
 {
 	Zenith_PerceptionSystem::Initialise();
 
-	Zenith_Scene xScene;
-	Zenith_Entity xAgent(&xScene, "Agent");
-	Zenith_Entity xTarget(&xScene, "Target");
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Entity xAgent(pxSceneData, "Agent");
+	Zenith_Entity xTarget(pxSceneData, "Target");
 
 	xAgent.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
 	xTarget.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(0.0f, 0.0f, 100.0f)); // Far away
@@ -923,7 +943,7 @@ void Zenith_UnitTests::TestSightConeOutOfRange()
 	xConfig.m_bRequireLineOfSight = false;
 
 	Zenith_PerceptionSystem::SetSightConfig(xAgent.GetEntityID(), xConfig);
-	Zenith_PerceptionSystem::Update(0.1f, xScene);
+	Zenith_PerceptionSystem::Update(0.1f, *pxSceneData);
 
 	const Zenith_Vector<Zenith_PerceivedTarget>* pxTargets =
 		Zenith_PerceptionSystem::GetPerceivedTargets(xAgent.GetEntityID());
@@ -941,9 +961,10 @@ void Zenith_UnitTests::TestSightConeOutOfFOV()
 {
 	Zenith_PerceptionSystem::Initialise();
 
-	Zenith_Scene xScene;
-	Zenith_Entity xAgent(&xScene, "Agent");
-	Zenith_Entity xTarget(&xScene, "Target");
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Entity xAgent(pxSceneData, "Agent");
+	Zenith_Entity xTarget(pxSceneData, "Target");
 
 	// Agent facing +Z, target behind at -Z
 	xAgent.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
@@ -958,7 +979,7 @@ void Zenith_UnitTests::TestSightConeOutOfFOV()
 	xConfig.m_bRequireLineOfSight = false;
 
 	Zenith_PerceptionSystem::SetSightConfig(xAgent.GetEntityID(), xConfig);
-	Zenith_PerceptionSystem::Update(0.1f, xScene);
+	Zenith_PerceptionSystem::Update(0.1f, *pxSceneData);
 
 	const Zenith_Vector<Zenith_PerceivedTarget>* pxTargets =
 		Zenith_PerceptionSystem::GetPerceivedTargets(xAgent.GetEntityID());
@@ -988,9 +1009,10 @@ void Zenith_UnitTests::TestSightAwarenessGain()
 {
 	Zenith_PerceptionSystem::Initialise();
 
-	Zenith_Scene xScene;
-	Zenith_Entity xAgent(&xScene, "Agent");
-	Zenith_Entity xTarget(&xScene, "Target");
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Entity xAgent(pxSceneData, "Agent");
+	Zenith_Entity xTarget(pxSceneData, "Target");
 
 	xAgent.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
 	xTarget.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(0.0f, 0.0f, 5.0f));
@@ -1008,7 +1030,7 @@ void Zenith_UnitTests::TestSightAwarenessGain()
 	// Update multiple times to gain awareness
 	for (int i = 0; i < 10; ++i)
 	{
-		Zenith_PerceptionSystem::Update(0.1f, xScene);
+		Zenith_PerceptionSystem::Update(0.1f, *pxSceneData);
 	}
 
 	float fAwareness = Zenith_PerceptionSystem::GetAwarenessOf(
@@ -1025,9 +1047,10 @@ void Zenith_UnitTests::TestHearingStimulusInRange()
 {
 	Zenith_PerceptionSystem::Initialise();
 
-	Zenith_Scene xScene;
-	Zenith_Entity xAgent(&xScene, "Agent");
-	Zenith_Entity xSource(&xScene, "SoundSource");
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Entity xAgent(pxSceneData, "Agent");
+	Zenith_Entity xSource(pxSceneData, "SoundSource");
 
 	xAgent.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
 
@@ -1040,7 +1063,7 @@ void Zenith_UnitTests::TestHearingStimulusInRange()
 		20.0f, // Radius
 		xSource.GetEntityID());
 
-	Zenith_PerceptionSystem::Update(0.1f, xScene);
+	Zenith_PerceptionSystem::Update(0.1f, *pxSceneData);
 
 	// Agent should have heard something
 	const Zenith_Vector<Zenith_PerceivedTarget>* pxTargets =
@@ -1065,9 +1088,10 @@ void Zenith_UnitTests::TestHearingStimulusOutOfRange()
 {
 	Zenith_PerceptionSystem::Initialise();
 
-	Zenith_Scene xScene;
-	Zenith_Entity xAgent(&xScene, "Agent");
-	Zenith_Entity xSource(&xScene, "SoundSource");
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Entity xAgent(pxSceneData, "Agent");
+	Zenith_Entity xSource(pxSceneData, "SoundSource");
 
 	xAgent.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
 
@@ -1080,7 +1104,7 @@ void Zenith_UnitTests::TestHearingStimulusOutOfRange()
 		10.0f, // Small radius
 		xSource.GetEntityID());
 
-	Zenith_PerceptionSystem::Update(0.1f, xScene);
+	Zenith_PerceptionSystem::Update(0.1f, *pxSceneData);
 
 	const Zenith_Vector<Zenith_PerceivedTarget>* pxTargets =
 		Zenith_PerceptionSystem::GetPerceivedTargets(xAgent.GetEntityID());
@@ -1100,9 +1124,10 @@ void Zenith_UnitTests::TestMemoryRememberTarget()
 	// Test that last known position is stored
 	Zenith_PerceptionSystem::Initialise();
 
-	Zenith_Scene xScene;
-	Zenith_Entity xAgent(&xScene, "Agent");
-	Zenith_Entity xTarget(&xScene, "Target");
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Entity xAgent(pxSceneData, "Agent");
+	Zenith_Entity xTarget(pxSceneData, "Target");
 
 	xAgent.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
 	xTarget.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(0.0f, 0.0f, 5.0f));
@@ -1116,7 +1141,7 @@ void Zenith_UnitTests::TestMemoryRememberTarget()
 	xConfig.m_bRequireLineOfSight = false;
 
 	Zenith_PerceptionSystem::SetSightConfig(xAgent.GetEntityID(), xConfig);
-	Zenith_PerceptionSystem::Update(0.1f, xScene);
+	Zenith_PerceptionSystem::Update(0.1f, *pxSceneData);
 
 	const Zenith_Vector<Zenith_PerceivedTarget>* pxTargets =
 		Zenith_PerceptionSystem::GetPerceivedTargets(xAgent.GetEntityID());
@@ -1575,8 +1600,9 @@ void Zenith_UnitTests::TestNavAgentRemainingDistanceBounds()
 	xAgent.SetDestination(Zenith_Maths::Vector3(5.0f, 0.0f, 5.0f));
 
 	// Create entity for transform
-	Zenith_Scene xScene;
-	Zenith_Entity xEntity(&xScene, "Agent");
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Entity xEntity(pxSceneData, "Agent");
 	Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
 	xTransform.SetPosition(Zenith_Maths::Vector3(1.0f, 0.0f, 1.0f));
 

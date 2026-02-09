@@ -10,6 +10,7 @@
 #include "Profiling/Zenith_Profiling.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
 #include "UnitTests/Zenith_UnitTests.h"
+#include "EntityComponent/Zenith_SceneManager.h"
 
 #include <android_native_app_glue.h>
 #include <android/log.h>
@@ -85,7 +86,10 @@ static void InitialiseEngine()
 	// Load game
 	Flux_MemoryManager::BeginFrame();
 	Project_RegisterScriptBehaviours();
+	Zenith_SceneManager::SetInitialSceneLoadCallback(&Project_LoadInitialScene);
+	Zenith_SceneManager::SetLoadingScene(true);
 	Project_LoadInitialScene();
+	Zenith_SceneManager::SetLoadingScene(false);
 	Flux_MemoryManager::EndFrame(false);
 
 	Zenith_Core::g_xLastFrameTime = std::chrono::high_resolution_clock::now();

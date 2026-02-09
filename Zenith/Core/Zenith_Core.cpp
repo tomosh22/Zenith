@@ -3,6 +3,8 @@
 
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "EntityComponent/Zenith_Scene.h"
+#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "Flux/Flux.h"
@@ -140,10 +142,6 @@ static void SubmitRenderTasks()
 	Flux_Text::SubmitRenderTask();
 	Flux_Quads::SubmitRenderTask();
 
-	#ifdef ZENITH_TOOLS
-	//#TO calls Flux_Gizmos::SubmitRenderTask()
-	ZENITH_PROFILING_FUNCTION_WRAPPER(RenderImGui, ZENITH_PROFILE_INDEX__RENDER_IMGUI);
-	#endif
 }
 
 // Public wrapper for WaitForRenderTasks
@@ -174,9 +172,6 @@ void Zenith_Core::WaitForAllRenderTasks()
 	Flux_HDR::WaitForRenderTask();
 	Flux_Text::WaitForRenderTask();
 	Flux_Quads::WaitForRenderTask();
-	#ifdef ZENITH_TOOLS
-	Flux_Gizmos::WaitForRenderTask();
-	#endif
 }
 
 void Zenith_Core::Zenith_MainLoop()
@@ -214,7 +209,7 @@ void Zenith_Core::Zenith_MainLoop()
 	if (bShouldUpdateGameLogic)
 	{
 		ZENITH_PROFILING_FUNCTION_WRAPPER(Zenith_Physics::Update, ZENITH_PROFILE_INDEX__PHYSICS, Zenith_Core::GetDt());
-		ZENITH_PROFILING_FUNCTION_WRAPPER(Zenith_Scene::Update, ZENITH_PROFILE_INDEX__SCENE_UPDATE, Zenith_Core::GetDt());
+		ZENITH_PROFILING_FUNCTION_WRAPPER(Zenith_SceneManager::Update, ZENITH_PROFILE_INDEX__SCENE_UPDATE, Zenith_Core::GetDt());
 	}
 	Flux_Graphics::UploadFrameConstants();
 
@@ -231,22 +226,51 @@ void Zenith_Core::Zenith_MainLoop()
 
 		// Render UI components - submits to Flux_Quads and Flux_Text
 		// Must happen before SubmitRenderTasks() which submits those systems
+		// Collects from ALL loaded scenes (persistent entity UI + game scene UI)
 		Zenith_Vector<Zenith_UIComponent*> xUIComponents;
-		Zenith_Scene::GetCurrentScene().GetAllOfComponentType<Zenith_UIComponent>(xUIComponents);
+		Zenith_SceneManager::GetAllOfComponentTypeFromAllScenes<Zenith_UIComponent>(xUIComponents);
 		for (Zenith_Vector<Zenith_UIComponent*>::Iterator xIt(xUIComponents); !xIt.Done(); xIt.Next())
 		{
 			Zenith_UIComponent* const pxUI = xIt.GetData();
+			pxUI->Update(Zenith_Core::GetDt());
 			pxUI->Render();
 		}
 
+		#ifdef ZENITH_ASSERT
+		Zenith_SceneManager::SetRenderTasksActive(true);
+		#endif
 		SubmitRenderTasks();
 		WaitForAllRenderTasks();
+		#ifdef ZENITH_ASSERT
+		Zenith_SceneManager::SetRenderTasksActive(false);
+		#endif
+
+		// Render ImGui AFTER all render tasks have completed
+		// This allows editor UI callbacks (scene load/save/unload) to call SceneManager
+		// directly without needing deferred queues - no render tasks are active here.
+		// RenderImGui itself runs on the main thread so SceneManager calls are safe.
+		// However, it submits Flux_Gizmos::SubmitRenderTask() which runs on a worker
+		// thread and needs s_bRenderTasksActive for thread safety asserts.
+		// Set the flag BEFORE RenderImGui to avoid race: gizmo worker can start and
+		// call GetActiveScene() before main thread reaches the line after RenderImGui.
+		// This is safe because main thread ImGui callbacks pass the IsMainThread() check
+		// regardless of this flag - it only enables the gizmo worker thread to also pass.
+		#ifdef ZENITH_TOOLS
+		#ifdef ZENITH_ASSERT
+		Zenith_SceneManager::SetRenderTasksActive(true);
+		#endif
+		ZENITH_PROFILING_FUNCTION_WRAPPER(RenderImGui, ZENITH_PROFILE_INDEX__RENDER_IMGUI);
+		Flux_Gizmos::WaitForRenderTask();
+		#ifdef ZENITH_ASSERT
+		Zenith_SceneManager::SetRenderTasksActive(false);
+		#endif
+		#endif
 	}
 
 	// Only wait for scene update if we actually ran it
 	if (bShouldUpdateGameLogic)
 	{
-		Zenith_Scene::WaitForUpdateComplete();
+		Zenith_SceneManager::WaitForUpdateComplete();
 	}
 
 	// EndFrame prepares memory command buffer for submission and processes deferred deletions

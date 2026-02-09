@@ -16,6 +16,8 @@
  */
 
 #include "EntityComponent/Zenith_Scene.h"
+#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
@@ -122,31 +124,40 @@ public:
 	 */
 	static void DestroyLevel(LevelEntities& xEntities)
 	{
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
 
-		if (xEntities.uBallEntityID.IsValid() && xScene.EntityExists(xEntities.uBallEntityID))
+		if (xEntities.uBallEntityID.IsValid() && pxSceneData->EntityExists(xEntities.uBallEntityID))
 		{
-			Zenith_Scene::Destroy(xEntities.uBallEntityID);
+			Zenith_Entity xEntity = pxSceneData->GetEntity(xEntities.uBallEntityID);
+			Zenith_SceneManager::Destroy(xEntity);
 			xEntities.uBallEntityID = INVALID_ENTITY_ID;
 		}
 
 		for (Zenith_EntityID uID : xEntities.axPlatformEntityIDs)
 		{
-			if (xScene.EntityExists(uID))
-				Zenith_Scene::Destroy(uID);
+			if (pxSceneData->EntityExists(uID))
+			{
+				Zenith_Entity xEntity = pxSceneData->GetEntity(uID);
+				Zenith_SceneManager::Destroy(xEntity);
+			}
 		}
 		xEntities.axPlatformEntityIDs.clear();
 
 		for (Zenith_EntityID uID : xEntities.axCollectibleEntityIDs)
 		{
-			if (xScene.EntityExists(uID))
-				Zenith_Scene::Destroy(uID);
+			if (pxSceneData->EntityExists(uID))
+			{
+				Zenith_Entity xEntity = pxSceneData->GetEntity(uID);
+				Zenith_SceneManager::Destroy(xEntity);
+			}
 		}
 		xEntities.axCollectibleEntityIDs.clear();
 
-		if (xEntities.uGoalEntityID.IsValid() && xScene.EntityExists(xEntities.uGoalEntityID))
+		if (xEntities.uGoalEntityID.IsValid() && pxSceneData->EntityExists(xEntities.uGoalEntityID))
 		{
-			Zenith_Scene::Destroy(xEntities.uGoalEntityID);
+			Zenith_Entity xEntity = pxSceneData->GetEntity(xEntities.uGoalEntityID);
+			Zenith_SceneManager::Destroy(xEntity);
 			xEntities.uGoalEntityID = INVALID_ENTITY_ID;
 		}
 	}
@@ -169,7 +180,9 @@ private:
 		const Zenith_Maths::Vector3& xPos,
 		const Zenith_Maths::Vector3& xScale)
 	{
-		Zenith_Entity xPlatform = pxPrefab->Instantiate(&Zenith_Scene::GetCurrentScene(), "Platform");
+		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+		Zenith_Entity xPlatform = pxPrefab->Instantiate(pxSceneData, "Platform");
 
 		// 1. Set transform first
 		Zenith_TransformComponent& xTransform = xPlatform.GetComponent<Zenith_TransformComponent>();
@@ -194,7 +207,9 @@ private:
 		Zenith_MaterialAsset* pxMaterial,
 		const Zenith_Maths::Vector3& xPos)
 	{
-		Zenith_Entity xGoal = pxPrefab->Instantiate(&Zenith_Scene::GetCurrentScene(), "Goal");
+		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+		Zenith_Entity xGoal = pxPrefab->Instantiate(pxSceneData, "Goal");
 
 		Zenith_TransformComponent& xTransform = xGoal.GetComponent<Zenith_TransformComponent>();
 		xTransform.SetPosition(xPos);
@@ -216,7 +231,9 @@ private:
 		Zenith_MaterialAsset* pxMaterial,
 		const Zenith_Maths::Vector3& xPos)
 	{
-		Zenith_Entity xBall = pxPrefab->Instantiate(&Zenith_Scene::GetCurrentScene(), "Ball");
+		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+		Zenith_Entity xBall = pxPrefab->Instantiate(pxSceneData, "Ball");
 
 		Zenith_TransformComponent& xTransform = xBall.GetComponent<Zenith_TransformComponent>();
 		xTransform.SetPosition(xPos);
@@ -239,7 +256,8 @@ private:
 		Zenith_MaterialAsset* pxMaterial,
 		std::mt19937& xRng)
 	{
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
 
 		// Place collectibles above platforms
 		std::uniform_int_distribution<size_t> xPlatformDist(0, xEntities.axPlatformEntityIDs.size() - 1);
@@ -249,10 +267,10 @@ private:
 			size_t uPlatformIdx = i; // One per platform initially
 
 			Zenith_EntityID uPlatformID = xEntities.axPlatformEntityIDs[uPlatformIdx];
-			if (!xScene.EntityExists(uPlatformID))
+			if (!pxSceneData->EntityExists(uPlatformID))
 				continue;
 
-			Zenith_Entity xPlatform = xScene.GetEntity(uPlatformID);
+			Zenith_Entity xPlatform = pxSceneData->GetEntity(uPlatformID);
 			Zenith_Maths::Vector3 xPlatPos, xPlatScale;
 			xPlatform.GetComponent<Zenith_TransformComponent>().GetPosition(xPlatPos);
 			xPlatform.GetComponent<Zenith_TransformComponent>().GetScale(xPlatScale);
@@ -260,7 +278,7 @@ private:
 			// Place collectible above platform center
 			Zenith_Maths::Vector3 xCollPos = xPlatPos + Zenith_Maths::Vector3(0.f, xPlatScale.y + 1.0f, 0.f);
 
-			Zenith_Entity xCollectible = pxPrefab->Instantiate(&Zenith_Scene::GetCurrentScene(), "Collectible");
+			Zenith_Entity xCollectible = pxPrefab->Instantiate(pxSceneData, "Collectible");
 
 			Zenith_TransformComponent& xTransform = xCollectible.GetComponent<Zenith_TransformComponent>();
 			xTransform.SetPosition(xCollPos);

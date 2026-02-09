@@ -16,6 +16,8 @@ A classic box-pushing puzzle game demonstrating core Zenith engine features.
 | **DataAsset System** | `Zenith_DataAsset` | Configuration with serialization |
 | **Serialization** | `Zenith_DataStream` | Behavior state persistence |
 | **Camera** | `Zenith_CameraComponent` | Orthographic top-down view |
+| **Multi-Scene** | `Zenith_SceneManager` | `DontDestroyOnLoad()`, `CreateEmptyScene()`, `UnloadScene()` |
+| **UI Buttons** | `Zenith_UIButton` | Clickable/tappable menu buttons with `SetOnClick()` callback |
 
 ## File Structure
 
@@ -109,6 +111,49 @@ Demonstrates:
 - Dynamic text updates
 - UI anchor/pivot system (TopRight positioning)
 
+## Multi-Scene Architecture
+
+### Entity Layout
+- **Persistent scene**: GameManager entity (Camera + UI + Script + ParticleEmitter), marked with `DontDestroyOnLoad()`
+- **Puzzle scene** (`m_xPuzzleScene`): Floor tiles, walls, boxes, targets, player - created/destroyed per level
+
+### Game State Machine
+```
+MAIN_MENU  -->  PLAYING  -->  MAIN_MENU
+   ^                |              ^
+   |                v (win + R)    |
+   |           new level           |
+   +---------- (Escape) ----------+
+```
+
+### Scene Transition Pattern
+```cpp
+// Starting a game from menu
+void StartGame()
+{
+    m_xPuzzleScene = Zenith_SceneManager::CreateEmptyScene("Puzzle");
+    Zenith_SceneManager::SetActiveScene(m_xPuzzleScene);
+    GenerateNewLevel();
+}
+
+// Loading a new level (resets puzzle scene)
+void StartNewLevel()
+{
+    Zenith_SceneManager::UnloadScene(m_xPuzzleScene);
+    m_xPuzzleScene = Zenith_SceneManager::CreateEmptyScene("Puzzle");
+    Zenith_SceneManager::SetActiveScene(m_xPuzzleScene);
+    GenerateNewLevel();
+}
+
+// Returning to menu
+void ReturnToMenu()
+{
+    Zenith_SceneManager::UnloadScene(m_xPuzzleScene);
+    m_xPuzzleScene = Zenith_Scene();  // invalidate handle
+    m_eState = SokobanGameState::MAIN_MENU;
+}
+```
+
 ## Learning Path
 
 1. **Start here:** `Sokoban.cpp` - See how projects initialize resources
@@ -127,6 +172,10 @@ Demonstrates:
 | A / Left Arrow | Move left |
 | D / Right Arrow | Move right |
 | R | Reset/regenerate level |
+| Click / Touch | Select menu button |
+| W/S or Up/Down | Navigate menu |
+| Enter | Activate focused button |
+| Escape | Return to menu |
 
 ## Key Patterns
 
@@ -165,8 +214,7 @@ if (pxText) {
 When launching in a tools build (`vs2022_Debug_Win64_True`):
 
 ### Scene Hierarchy
-- **MainCamera** - Orthographic camera entity positioned above the puzzle grid
-- **SokobanGame** - Main game entity with UIComponent and ScriptComponent (Sokoban_Behaviour)
+- **GameManager** - Persistent entity (Camera + UI + Script + ParticleEmitter) - `DontDestroyOnLoad`
 
 ### Viewport
 - **Top-down orthographic view** of a procedurally generated puzzle grid
@@ -176,7 +224,7 @@ When launching in a tools build (`vs2022_Debug_Win64_True`):
 - **Green target positions** where boxes need to be placed
 - **Red player entity** (cube shape) at the starting position
 
-### Properties Panel (when SokobanGame selected)
+### Properties Panel (when GameManager selected)
 - **Grid size** - Puzzle dimensions
 - **Box count** - Number of boxes/targets in puzzle
 - **Move speed** - Player movement animation speed
@@ -219,57 +267,74 @@ When launching in a tools build (`vs2022_Debug_Win64_True`):
 |------|--------|-----------------|
 | T1.1 | Launch sokoban.exe | Window opens with orthographic view of puzzle |
 | T1.2 | Check console output | Level generation logs appear without errors |
-| T1.3 | Verify entity count | MainCamera and SokobanGame entities visible in hierarchy |
+| T1.3 | Verify entity count | GameManager entity visible in hierarchy |
 | T1.4 | Check HUD | Moves, Pushes, and Boxes counters display at 0 |
 
-### T2: Player Movement
+### T2: Menu Navigation
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| T2.1 | Press W or Up Arrow | Player moves up one tile |
-| T2.2 | Press S or Down Arrow | Player moves down one tile |
-| T2.3 | Press A or Left Arrow | Player moves left one tile |
-| T2.4 | Press D or Right Arrow | Player moves right one tile |
-| T2.5 | Move into wall | Player does not move, no crash |
-| T2.6 | Check HUD after move | Moves counter increments by 1 |
+| T2.1 | Click Play button | Game transitions to PLAYING state, puzzle appears |
+| T2.2 | Press W/S or Up/Down on menu | Button focus cycles (single button stays focused) |
+| T2.3 | Press Enter on focused button | Game starts, menu hides |
+| T2.4 | Press Escape during gameplay | Returns to main menu, puzzle scene unloads |
+| T2.5 | Click Play again after returning | New puzzle scene created, game resumes |
 
-### T3: Box Pushing
+### T3: Scene Transitions
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| T3.1 | Push box into empty space | Box moves, player moves into box's old position |
-| T3.2 | Push box into wall | Neither box nor player moves |
-| T3.3 | Push box into another box | Neither box nor player moves |
-| T3.4 | Push box onto target | Box placed, "Boxes: X/Y" counter updates |
-| T3.5 | Check HUD after push | Pushes counter increments by 1 |
+| T3.1 | Start game from menu | Puzzle scene created, level entities spawned |
+| T3.2 | Press Escape to return to menu | Puzzle scene unloaded, only GameManager remains |
+| T3.3 | Complete level, press R | Old puzzle scene unloaded, new one created with fresh level |
+| T3.4 | Rapid menu/game transitions | No crashes, scenes clean up properly |
 
-### T4: Win Condition
+### T4: Player Movement
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| T4.1 | Place all boxes on targets | "Level Complete!" message appears |
-| T4.2 | Press any move key after win | New level generates |
-| T4.3 | Verify new level | Different puzzle layout from previous |
+| T4.1 | Press W or Up Arrow | Player moves up one tile |
+| T4.2 | Press S or Down Arrow | Player moves down one tile |
+| T4.3 | Press A or Left Arrow | Player moves left one tile |
+| T4.4 | Press D or Right Arrow | Player moves right one tile |
+| T4.5 | Move into wall | Player does not move, no crash |
+| T4.6 | Check HUD after move | Moves counter increments by 1 |
 
-### T5: Level Reset
+### T5: Box Pushing
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| T5.1 | Make several moves | Moves counter > 0 |
-| T5.2 | Press R | New level generates |
-| T5.3 | Check counters | All counters reset to 0 |
-| T5.4 | Verify solvability | Level can be completed (uses solver validation) |
+| T5.1 | Push box into empty space | Box moves, player moves into box's old position |
+| T5.2 | Push box into wall | Neither box nor player moves |
+| T5.3 | Push box into another box | Neither box nor player moves |
+| T5.4 | Push box onto target | Box placed, "Boxes: X/Y" counter updates |
+| T5.5 | Check HUD after push | Pushes counter increments by 1 |
 
-### T6: Edge Cases
+### T6: Win Condition
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| T6.1 | Rapid key presses | Movement queues properly, no stuck state |
-| T6.2 | Hold movement key | Single move per key press (not continuous) |
-| T6.3 | Press multiple directions | Only one direction processed |
-| T6.4 | Minimize/restore window | Game resumes correctly |
+| T6.1 | Place all boxes on targets | "Level Complete!" message appears |
+| T6.2 | Press any move key after win | New level generates |
+| T6.3 | Verify new level | Different puzzle layout from previous |
 
-### T7: Editor Features (Tools Build Only)
+### T7: Level Reset
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| T7.1 | Select SokobanGame entity | Properties panel appears |
-| T7.2 | Modify configuration values | Changes apply to next level |
-| T7.3 | Save scene | Sokoban.zscn updates in Assets/Scenes |
+| T7.1 | Make several moves | Moves counter > 0 |
+| T7.2 | Press R | New level generates |
+| T7.3 | Check counters | All counters reset to 0 |
+| T7.4 | Verify solvability | Level can be completed (uses solver validation) |
+
+### T8: Edge Cases
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| T8.1 | Rapid key presses | Movement queues properly, no stuck state |
+| T8.2 | Hold movement key | Single move per key press (not continuous) |
+| T8.3 | Press multiple directions | Only one direction processed |
+| T8.4 | Minimize/restore window | Game resumes correctly |
+
+### T9: Editor Features (Tools Build Only)
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| T9.1 | Select GameManager entity | Properties panel appears |
+| T9.2 | Modify configuration values | Changes apply to next level |
+| T9.3 | Save scene | Sokoban.zscn updates in Assets/Scenes |
 
 ## Building
 

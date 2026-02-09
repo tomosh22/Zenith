@@ -4,6 +4,7 @@
 
 #include "Zenith_SelectionSystem.h"
 #include "EntityComponent/Zenith_Scene.h"
+#include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_Entity.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
@@ -199,13 +200,11 @@ void Zenith_SelectionSystem::Shutdown()
 void Zenith_SelectionSystem::UpdateBoundingBoxes()
 {
 	s_xEntityBoundingBoxes.clear();
-	
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	
-	// Get all entities with model components
-	// These are the entities that can be visually picked by the user
+
+	// Get all entities with model components from ALL loaded scenes
+	// This allows picking entities in any scene, not just the active one
 	Zenith_Vector<Zenith_ModelComponent*> xModelComponents;
-	xScene.GetAllOfComponentType<Zenith_ModelComponent>(xModelComponents);
+	Zenith_SceneManager::GetAllOfComponentTypeFromAllScenes<Zenith_ModelComponent>(xModelComponents);
 	
 	// TODO: Also handle entities without models but with other pickable components
 	// For example: cameras, lights, empty transform nodes, etc.
@@ -256,11 +255,9 @@ Zenith_EntityID Zenith_SelectionSystem::RaycastSelect(const Zenith_Maths::Vector
 	float fClosestDistance = std::numeric_limits<float>::max();
 	Zenith_EntityID uClosestEntityID = INVALID_ENTITY_ID;
 
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-
-	// Get all model components for detailed raycasting
+	// Get all model components from ALL loaded scenes for detailed raycasting
 	Zenith_Vector<Zenith_ModelComponent*> xModelComponents;
-	xScene.GetAllOfComponentType<Zenith_ModelComponent>(xModelComponents);
+	Zenith_SceneManager::GetAllOfComponentTypeFromAllScenes<Zenith_ModelComponent>(xModelComponents);
 
 	for (u_int i = 0; i < xModelComponents.GetSize(); ++i)
 	{
@@ -339,10 +336,13 @@ BoundingBox Zenith_SelectionSystem::CalculateBoundingBox(Zenith_Entity* pxEntity
 	if (!pxEntity)
 		return xBoundingBox;
 
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+	// Find the scene that owns this entity (not just active scene)
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneDataForEntity(pxEntity->GetEntityID());
+	if (!pxSceneData)
+		return xBoundingBox;
 
 	// Check if entity has a model component
-	if (!xScene.EntityHasComponent<Zenith_ModelComponent>(pxEntity->GetEntityID()))
+	if (!pxSceneData->EntityHasComponent<Zenith_ModelComponent>(pxEntity->GetEntityID()))
 	{
 		// TODO: Handle entities without models
 		// Create default bounding box for non-renderable entities
@@ -366,7 +366,7 @@ BoundingBox Zenith_SelectionSystem::CalculateBoundingBox(Zenith_Entity* pxEntity
 		return xBoundingBox;
 	}
 
-	Zenith_ModelComponent& xModel = xScene.GetComponentFromEntity<Zenith_ModelComponent>(pxEntity->GetEntityID());
+	Zenith_ModelComponent& xModel = pxSceneData->GetComponentFromEntity<Zenith_ModelComponent>(pxEntity->GetEntityID());
 
 	// Initialize min/max to extreme values
 	// These will be updated as we process vertices
@@ -418,9 +418,9 @@ BoundingBox Zenith_SelectionSystem::CalculateBoundingBox(Zenith_Entity* pxEntity
 	
 	// Apply entity transform to convert from model space to world space
 	// The entity's transform may include translation, rotation, and scale
-	if (xScene.EntityHasComponent<Zenith_TransformComponent>(pxEntity->GetEntityID()))
+	if (pxSceneData->EntityHasComponent<Zenith_TransformComponent>(pxEntity->GetEntityID()))
 	{
-		Zenith_TransformComponent& xTransform = xScene.GetComponentFromEntity<Zenith_TransformComponent>(pxEntity->GetEntityID());
+		Zenith_TransformComponent& xTransform = pxSceneData->GetComponentFromEntity<Zenith_TransformComponent>(pxEntity->GetEntityID());
 		Zenith_Maths::Matrix4 xTransformMatrix;
 		xTransform.BuildModelMatrix(xTransformMatrix);
 		

@@ -2,6 +2,8 @@
 #include "AI/Squad/Zenith_TacticalPoint.h"
 #include "AI/Zenith_AIDebugVariables.h"
 #include "EntityComponent/Zenith_Scene.h"
+#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "Physics/Zenith_Physics.h"
 #include "Profiling/Zenith_Profiling.h"
@@ -52,7 +54,12 @@ void Zenith_TacticalPointSystem::Update(float fDt)
 	Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__AI_TACTICAL_UPDATE);
 
 	// Validate owner entities still exist
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	if (!pxSceneData)
+	{
+		return;
+	}
 
 	for (uint32_t u = 0; u < s_axPoints.GetSize(); ++u)
 	{
@@ -66,7 +73,7 @@ void Zenith_TacticalPointSystem::Update(float fDt)
 		// Check if occupied entity still exists
 		if (xPoint.m_xOccupiedBy.IsValid())
 		{
-			Zenith_Entity xEntity = xScene.TryGetEntity(xPoint.m_xOccupiedBy);
+			Zenith_Entity xEntity = pxSceneData->TryGetEntity(xPoint.m_xOccupiedBy);
 			if (!xEntity.IsValid())
 			{
 				xPoint.m_xOccupiedBy = Zenith_EntityID();
@@ -77,7 +84,7 @@ void Zenith_TacticalPointSystem::Update(float fDt)
 		// Check if owner entity (dynamic points) still exists
 		if ((xPoint.m_uFlags & TACPOINT_FLAG_DYNAMIC) && xPoint.m_xOwnerEntity.IsValid())
 		{
-			Zenith_Entity xEntity = xScene.TryGetEntity(xPoint.m_xOwnerEntity);
+			Zenith_Entity xEntity = pxSceneData->TryGetEntity(xPoint.m_xOwnerEntity);
 			if (!xEntity.IsValid())
 			{
 				FreePointSlot(u);
@@ -273,8 +280,14 @@ Zenith_Maths::Vector3 Zenith_TacticalPointSystem::FindBestCoverPosition(
 	float fMaxDistance)
 {
 	// Get agent position from scene
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	Zenith_Entity xAgentEntity = xScene.TryGetEntity(xAgent);
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	if (!pxSceneData)
+	{
+		return Zenith_Maths::Vector3(0.0f);
+	}
+
+	Zenith_Entity xAgentEntity = pxSceneData->TryGetEntity(xAgent);
 	if (!xAgentEntity.IsValid() || !xAgentEntity.HasComponent<Zenith_TransformComponent>())
 	{
 		return Zenith_Maths::Vector3(0.0f);
@@ -365,8 +378,14 @@ Zenith_Maths::Vector3 Zenith_TacticalPointSystem::FindBestFlankPosition(
 	float fMaxDistance)
 {
 	// Get agent position from scene
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	Zenith_Entity xAgentEntity = xScene.TryGetEntity(xAgent);
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	if (!pxSceneData)
+	{
+		return Zenith_Maths::Vector3(0.0f);
+	}
+
+	Zenith_Entity xAgentEntity = pxSceneData->TryGetEntity(xAgent);
 	if (!xAgentEntity.IsValid() || !xAgentEntity.HasComponent<Zenith_TransformComponent>())
 	{
 		return Zenith_Maths::Vector3(0.0f);
@@ -462,8 +481,14 @@ Zenith_Maths::Vector3 Zenith_TacticalPointSystem::FindBestOverwatchPosition(
 	float fMaxDistance)
 {
 	// Get agent position from scene
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	Zenith_Entity xAgentEntity = xScene.TryGetEntity(xAgent);
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	if (!pxSceneData)
+	{
+		return Zenith_Maths::Vector3(0.0f);
+	}
+
+	Zenith_Entity xAgentEntity = pxSceneData->TryGetEntity(xAgent);
 	if (!xAgentEntity.IsValid() || !xAgentEntity.HasComponent<Zenith_TransformComponent>())
 	{
 		return Zenith_Maths::Vector3(0.0f);

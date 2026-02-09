@@ -4,6 +4,8 @@
 
 #include "Zenith_EditorPanel_Properties.h"
 #include "EntityComponent/Zenith_ComponentRegistry.h"
+#include "EntityComponent/Zenith_Scene.h"
+#include "EntityComponent/Zenith_SceneManager.h"
 
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "imgui.h"
@@ -24,6 +26,16 @@ void Render(Zenith_Entity* pxSelectedEntity, Zenith_EntityID uPrimarySelectedEnt
 
 	if (pxSelectedEntity)
 	{
+		// Scene label (shows which scene this entity belongs to)
+		Zenith_Scene xEntityScene = pxSelectedEntity->GetScene();
+		if (xEntityScene.IsValid())
+		{
+			Zenith_Scene xPersistentScene = Zenith_SceneManager::GetPersistentScene();
+			const char* szSceneName = (xEntityScene == xPersistentScene) ?
+				"DontDestroyOnLoad" : xEntityScene.GetName().c_str();
+			ImGui::TextDisabled("Scene: %s", szSceneName);
+		}
+
 		// Entity name editing
 		char nameBuffer[256];
 		strncpy(nameBuffer, pxSelectedEntity->GetName().c_str(), sizeof(nameBuffer));
@@ -47,9 +59,9 @@ void Render(Zenith_Entity* pxSelectedEntity, Zenith_EntityID uPrimarySelectedEnt
 		for (const Zenith_ComponentRegistryEntry& xEntry : xEntries)
 		{
 			// Check if entity has this component and render its properties panel
-			if (xEntry.m_fnHasComponent(*pxSelectedEntity))
+			if (xEntry.m_pfnHasComponent(*pxSelectedEntity))
 			{
-				xEntry.m_fnRenderPropertiesPanel(*pxSelectedEntity);
+				xEntry.m_pfnRenderPropertiesPanel(*pxSelectedEntity);
 			}
 		}
 

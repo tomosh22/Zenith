@@ -14,6 +14,8 @@
 
 #include "Input/Zenith_Input.h"
 #include "EntityComponent/Zenith_Scene.h"
+#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "Maths/Zenith_Maths.h"
@@ -89,11 +91,12 @@ public:
 		float fSpeed,
 		float fDt)
 	{
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		if (!xScene.EntityExists(uPlayerEntityID))
+		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+		if (!pxSceneData->EntityExists(uPlayerEntityID))
 			return;
 
-		Zenith_Entity xPlayer = xScene.GetEntity(uPlayerEntityID);
+		Zenith_Entity xPlayer = pxSceneData->GetEntity(uPlayerEntityID);
 		if (!xPlayer.HasComponent<Zenith_TransformComponent>())
 			return;
 
@@ -171,11 +174,12 @@ public:
 	 */
 	static Zenith_Maths::Vector3 GetPlayerPosition(Zenith_EntityID uPlayerEntityID)
 	{
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		if (!xScene.EntityExists(uPlayerEntityID))
+		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+		if (!pxSceneData->EntityExists(uPlayerEntityID))
 			return Zenith_Maths::Vector3(0.f);
 
-		Zenith_Entity xPlayer = xScene.GetEntity(uPlayerEntityID);
+		Zenith_Entity xPlayer = pxSceneData->GetEntity(uPlayerEntityID);
 		if (!xPlayer.HasComponent<Zenith_TransformComponent>())
 			return Zenith_Maths::Vector3(0.f);
 
@@ -191,12 +195,13 @@ public:
 		Zenith_EntityID uPlayerEntityID,
 		Zenith_EntityID uTargetEntityID)
 	{
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		if (!xScene.EntityExists(uPlayerEntityID) || !xScene.EntityExists(uTargetEntityID))
+		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+		if (!pxSceneData->EntityExists(uPlayerEntityID) || !pxSceneData->EntityExists(uTargetEntityID))
 			return FLT_MAX;
 
-		Zenith_Entity xPlayer = xScene.GetEntity(uPlayerEntityID);
-		Zenith_Entity xTarget = xScene.GetEntity(uTargetEntityID);
+		Zenith_Entity xPlayer = pxSceneData->GetEntity(uPlayerEntityID);
+		Zenith_Entity xTarget = pxSceneData->GetEntity(uTargetEntityID);
 
 		if (!xPlayer.HasComponent<Zenith_TransformComponent>() ||
 			!xTarget.HasComponent<Zenith_TransformComponent>())
@@ -237,35 +242,34 @@ public:
 		float fSmoothSpeed,
 		float fDt)
 	{
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		Zenith_EntityID uCamID = xScene.GetMainCameraEntity();
-
-		if (!xScene.EntityExists(uPlayerEntityID) ||
-			uCamID == INVALID_ENTITY_ID ||
-			!xScene.EntityExists(uCamID))
+		// Get player from active scene (world scene)
+		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+		if (!pxSceneData->EntityExists(uPlayerEntityID))
 			return;
 
-		Zenith_Entity xPlayer = xScene.GetEntity(uPlayerEntityID);
-		Zenith_Entity xCamEntity = xScene.GetEntity(uCamID);
-
+		Zenith_Entity xPlayer = pxSceneData->GetEntity(uPlayerEntityID);
 		if (!xPlayer.HasComponent<Zenith_TransformComponent>())
+			return;
+
+		// Get camera from persistent scene
+		Zenith_CameraComponent* pxCamera = Zenith_SceneManager::FindMainCameraAcrossScenes();
+		if (!pxCamera)
 			return;
 
 		Zenith_Maths::Vector3 xPlayerPos;
 		xPlayer.GetComponent<Zenith_TransformComponent>().GetPosition(xPlayerPos);
-
-		Zenith_CameraComponent& xCamera = xCamEntity.GetComponent<Zenith_CameraComponent>();
 
 		// Target camera position: behind and above player
 		Zenith_Maths::Vector3 xTargetPos = xPlayerPos + Zenith_Maths::Vector3(0.f, fHeight, -fDistance);
 
 		// Get current camera position
 		Zenith_Maths::Vector3 xCurrentPos;
-		xCamera.GetPosition(xCurrentPos);
+		pxCamera->GetPosition(xCurrentPos);
 
 		// Smooth interpolation
 		Zenith_Maths::Vector3 xNewPos = glm::mix(xCurrentPos, xTargetPos, fSmoothSpeed * fDt);
-		xCamera.SetPosition(xNewPos);
+		pxCamera->SetPosition(xNewPos);
 
 		// Look at player
 		Zenith_Maths::Vector3 xLookDir = xPlayerPos - xNewPos;
@@ -279,8 +283,8 @@ public:
 			// Calculate yaw
 			float fYaw = atan2(xLookDir.x, xLookDir.z);
 
-			xCamera.SetPitch(fPitch);
-			xCamera.SetYaw(fYaw);
+			pxCamera->SetPitch(fPitch);
+			pxCamera->SetYaw(fYaw);
 		}
 	}
 
@@ -289,17 +293,12 @@ public:
 	 */
 	static Zenith_Maths::Vector3 GetCameraPosition()
 	{
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		Zenith_EntityID uCamID = xScene.GetMainCameraEntity();
-
-		if (uCamID == INVALID_ENTITY_ID || !xScene.EntityExists(uCamID))
+		Zenith_CameraComponent* pxCamera = Zenith_SceneManager::FindMainCameraAcrossScenes();
+		if (!pxCamera)
 			return Zenith_Maths::Vector3(0.f);
 
-		Zenith_Entity xCamEntity = xScene.GetEntity(uCamID);
-		Zenith_CameraComponent& xCamera = xCamEntity.GetComponent<Zenith_CameraComponent>();
-
 		Zenith_Maths::Vector3 xPos;
-		xCamera.GetPosition(xPos);
+		pxCamera->GetPosition(xPos);
 		return xPos;
 	}
 };

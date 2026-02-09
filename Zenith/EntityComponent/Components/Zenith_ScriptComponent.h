@@ -1,15 +1,14 @@
 #pragma once
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
+#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneData.h"
 #include <unordered_map>
 #include <string>
 
 #ifdef ZENITH_TOOLS
 #include "EntityComponent/Zenith_ComponentRegistry.h"
 #endif
-
-// Force link function - call from Zenith_Scene.cpp to ensure static registration runs
-void Zenith_ScriptComponent_ForceLink();
 
 class Zenith_ScriptBehaviour {
 	friend class Zenith_ScriptComponent;
@@ -35,9 +34,35 @@ public:
 	virtual void OnStart() {}
 
 	/**
+	 * OnEnable - Called when the entity becomes active in the hierarchy.
+	 * Called after OnAwake when entity is first created.
+	 * Also called when SetEnabled(true) is called on the entity.
+	 */
+	virtual void OnEnable() {}
+
+	/**
+	 * OnDisable - Called when the entity becomes inactive in the hierarchy.
+	 * Called before OnDestroy during entity removal.
+	 * Also called when SetEnabled(false) is called on the entity.
+	 */
+	virtual void OnDisable() {}
+
+	/**
 	 * OnUpdate - Called every frame.
 	 */
 	virtual void OnUpdate(float /*fDt*/) {}
+
+	/**
+	 * OnFixedUpdate - Called at fixed timestep intervals (default 50Hz).
+	 * Use for: Physics-related logic, fixed-rate simulations.
+	 */
+	virtual void OnFixedUpdate(float /*fDt*/) {}
+
+	/**
+	 * OnLateUpdate - Called after all OnUpdate calls in a frame.
+	 * Use for: Camera follow, post-update adjustments.
+	 */
+	virtual void OnLateUpdate(float /*fDt*/) {}
 
 	/**
 	 * OnDestroy - Called when behavior is destroyed.
@@ -136,7 +161,8 @@ public:
 	~Zenith_ScriptComponent() {
 		if (m_pxScriptBehaviour)
 		{
-			m_pxScriptBehaviour->OnDestroy();
+			// OnDestroy is NOT called here - the lifecycle system (RemoveAllComponents) owns that dispatch
+			// The destructor only handles memory cleanup
 			delete m_pxScriptBehaviour;
 		}
 	}
@@ -153,10 +179,9 @@ public:
 	{
 		if (this != &xOther)
 		{
-			// Clean up our existing behaviour
+			// Clean up our existing behaviour (OnDestroy not called - lifecycle system owns that)
 			if (m_pxScriptBehaviour)
 			{
-				m_pxScriptBehaviour->OnDestroy();
 				delete m_pxScriptBehaviour;
 			}
 
@@ -196,6 +221,26 @@ public:
 	void OnUpdate(float fDt) { if(m_pxScriptBehaviour) m_pxScriptBehaviour->OnUpdate(fDt); }
 
 	/**
+	 * OnEnable - Called when entity becomes active in hierarchy.
+	 */
+	void OnEnable() { if(m_pxScriptBehaviour) m_pxScriptBehaviour->OnEnable(); }
+
+	/**
+	 * OnDisable - Called when entity becomes inactive in hierarchy.
+	 */
+	void OnDisable() { if(m_pxScriptBehaviour) m_pxScriptBehaviour->OnDisable(); }
+
+	/**
+	 * OnFixedUpdate - Called at fixed timestep intervals.
+	 */
+	void OnFixedUpdate(float fDt) { if(m_pxScriptBehaviour) m_pxScriptBehaviour->OnFixedUpdate(fDt); }
+
+	/**
+	 * OnLateUpdate - Called after all OnUpdate calls in a frame.
+	 */
+	void OnLateUpdate(float fDt) { if(m_pxScriptBehaviour) m_pxScriptBehaviour->OnLateUpdate(fDt); }
+
+	/**
 	 * OnDestroy - Called when component is destroyed.
 	 */
 	void OnDestroy() { if(m_pxScriptBehaviour) m_pxScriptBehaviour->OnDestroy(); }
@@ -220,7 +265,11 @@ public:
 		// Mark entity as awoken to prevent duplicate dispatch in Scene::Update()
 		if (m_xParentEntity.IsValid())
 		{
-			Zenith_Scene::GetCurrentScene().MarkEntityAwoken(m_xParentEntity.GetEntityID());
+			Zenith_SceneData* pxSceneData = m_xParentEntity.GetSceneData();
+			if (pxSceneData)
+			{
+				pxSceneData->MarkEntityAwoken(m_xParentEntity.GetEntityID());
+			}
 		}
 	}
 

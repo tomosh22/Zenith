@@ -6,6 +6,8 @@
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Zenith_ComponentMeta.h"
+#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneData.h"
 #include "Physics/Zenith_Physics.h"
 #include "DataStream/Zenith_DataStream.h"
 #include <Jolt/Jolt.h>
@@ -22,16 +24,16 @@ Zenith_TransformComponent::~Zenith_TransformComponent()
 {
 	// Skip hierarchy cleanup if entity's scene is not the current scene
 	// This happens when:
-	// 1. A local test scene is being destroyed (not s_xCurrentScene)
+	// 1. A local test scene is being destroyed (not the active scene)
 	// 2. The scene is null (shouldn't happen but defensive check)
 	//
-	// During normal entity removal via Scene::RemoveEntity or ProcessPendingDestructions,
+	// During normal entity removal via SceneData::RemoveEntity or ProcessPendingDestructions,
 	// hierarchy cleanup is handled explicitly before component destruction.
 	// The destructor cleanup is only needed for edge cases where a TransformComponent
 	// is removed individually without going through the scene's removal path.
 
-	Zenith_Scene* pxOwningScene = m_xOwningEntity.m_pxParentScene;
-	if (pxOwningScene == nullptr)
+	Zenith_SceneData* pxOwningSceneData = m_xOwningEntity.GetSceneData();
+	if (pxOwningSceneData == nullptr)
 	{
 		// No scene - can't do hierarchy operations, just let member destructors run
 		return;
@@ -40,14 +42,16 @@ Zenith_TransformComponent::~Zenith_TransformComponent()
 	// Check if the scene is being destroyed/reset - skip all cleanup to avoid
 	// acquiring mutexes and accessing scene data during destruction.
 	// This prevents crashes during static destruction when profiling data may be gone.
-	if (pxOwningScene->IsBeingDestroyed())
+	if (pxOwningSceneData->IsBeingDestroyed())
 	{
 		return;
 	}
 
 	// Check if this entity's scene is the current active scene
 	// If not, we're likely in a test scenario with a local scene being destroyed
-	if (pxOwningScene != &Zenith_Scene::GetCurrentScene())
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxActiveSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	if (pxOwningSceneData != pxActiveSceneData)
 	{
 		// Different scene - skip hierarchy cleanup to avoid accessing wrong scene data
 		return;
@@ -56,7 +60,7 @@ Zenith_TransformComponent::~Zenith_TransformComponent()
 	// Check if the entity still exists in its scene
 	// During scene destruction, entity slots may be cleared before component pools
 	Zenith_EntityID xMyID = m_xOwningEntity.GetEntityID();
-	if (!pxOwningScene->EntityExists(xMyID))
+	if (!pxOwningSceneData->EntityExists(xMyID))
 	{
 		// Entity no longer valid - skip hierarchy cleanup
 		return;
@@ -74,18 +78,19 @@ Zenith_TransformComponent* Zenith_TransformComponent::TryGetParent() const
 		return nullptr;
 	}
 
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+	Zenith_SceneData* pxSceneData = m_xOwningEntity.GetSceneData();
+	if (!pxSceneData)
+	{
+		return nullptr;
+	}
 
-	// Use scoped mutex lock to prevent TOCTOU between existence check and access
-	Zenith_ScopedMutexLock xLock(xScene.m_xMutex);
-
-	if (!xScene.EntityExistsUnsafe(m_xParentEntityID))
+	if (!pxSceneData->EntityExists(m_xParentEntityID))
 	{
 		return nullptr;
 	}
 
 	// Access component pool directly - safer than via temporary entity
-	return &xScene.GetComponentFromEntity<Zenith_TransformComponent>(m_xParentEntityID);
+	return &pxSceneData->GetComponentFromEntity<Zenith_TransformComponent>(m_xParentEntityID);
 }
 
 Zenith_Entity Zenith_TransformComponent::GetParentEntity() const
@@ -95,13 +100,18 @@ Zenith_Entity Zenith_TransformComponent::GetParentEntity() const
 		return Zenith_Entity();
 	}
 
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	if (!xScene.EntityExists(m_xParentEntityID))
+	Zenith_SceneData* pxSceneData = m_xOwningEntity.GetSceneData();
+	if (!pxSceneData)
 	{
 		return Zenith_Entity();
 	}
 
-	return xScene.GetEntity(m_xParentEntityID);
+	if (!pxSceneData->EntityExists(m_xParentEntityID))
+	{
+		return Zenith_Entity();
+	}
+
+	return pxSceneData->GetEntity(m_xParentEntityID);
 }
 
 Zenith_TransformComponent* Zenith_TransformComponent::TryGetChildAt(uint32_t uIndex) const
@@ -111,15 +121,20 @@ Zenith_TransformComponent* Zenith_TransformComponent::TryGetChildAt(uint32_t uIn
 		return nullptr;
 	}
 
+	Zenith_SceneData* pxSceneData = m_xOwningEntity.GetSceneData();
+	if (!pxSceneData)
+	{
+		return nullptr;
+	}
+
 	Zenith_EntityID uChildID = m_xChildEntityIDs.Get(uIndex);
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	if (!xScene.EntityExists(uChildID))
+	if (!pxSceneData->EntityExists(uChildID))
 	{
 		return nullptr;
 	}
 
 	// Access component pool directly - safer than via temporary entity
-	return &xScene.GetComponentFromEntity<Zenith_TransformComponent>(uChildID);
+	return &pxSceneData->GetComponentFromEntity<Zenith_TransformComponent>(uChildID);
 }
 
 Zenith_Entity Zenith_TransformComponent::GetChildEntityAt(uint32_t uIndex) const
@@ -129,14 +144,19 @@ Zenith_Entity Zenith_TransformComponent::GetChildEntityAt(uint32_t uIndex) const
 		return Zenith_Entity();
 	}
 
-	Zenith_EntityID uChildID = m_xChildEntityIDs.Get(uIndex);
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	if (!xScene.EntityExists(uChildID))
+	Zenith_SceneData* pxSceneData = m_xOwningEntity.GetSceneData();
+	if (!pxSceneData)
 	{
 		return Zenith_Entity();
 	}
 
-	return xScene.GetEntity(uChildID);
+	Zenith_EntityID uChildID = m_xChildEntityIDs.Get(uIndex);
+	if (!pxSceneData->EntityExists(uChildID))
+	{
+		return Zenith_Entity();
+	}
+
+	return pxSceneData->GetEntity(uChildID);
 }
 
 void Zenith_TransformComponent::SetParent(Zenith_TransformComponent* pxParent)
@@ -153,14 +173,13 @@ bool Zenith_TransformComponent::IsDescendantOf(Zenith_EntityID uAncestorID) cons
 		return false;
 	}
 
-	// Use the owning entity's scene, not GetCurrentScene()
+	// Use the owning entity's scene, not GetActiveScene()
 	// This allows hierarchy operations to work correctly on local/test scenes
-	Zenith_Scene* pxScene = m_xOwningEntity.m_pxParentScene;
-	if (pxScene == nullptr)
+	Zenith_SceneData* pxSceneData = m_xOwningEntity.GetSceneData();
+	if (pxSceneData == nullptr)
 	{
 		return false;
 	}
-	Zenith_Scene& xScene = *pxScene;
 	Zenith_EntityID uCurrentID = m_xParentEntityID;
 
 	// Walk up the parent chain looking for the ancestor
@@ -175,12 +194,12 @@ bool Zenith_TransformComponent::IsDescendantOf(Zenith_EntityID uAncestorID) cons
 			return true;
 		}
 
-		if (!xScene.EntityExists(uCurrentID))
+		if (!pxSceneData->EntityExists(uCurrentID))
 		{
 			return false;
 		}
 
-		uCurrentID = xScene.GetEntity(uCurrentID).GetComponent<Zenith_TransformComponent>().m_xParentEntityID;
+		uCurrentID = pxSceneData->GetEntity(uCurrentID).GetComponent<Zenith_TransformComponent>().m_xParentEntityID;
 		++uDepth;
 	}
 
@@ -194,9 +213,9 @@ bool Zenith_TransformComponent::IsDescendantOf(Zenith_EntityID uAncestorID) cons
 	return false;
 }
 
-bool Zenith_TransformComponent::IsDescendantOfUnsafe(Zenith_EntityID uAncestorID, Zenith_Scene& xScene) const
+bool Zenith_TransformComponent::IsDescendantOfUnsafe(Zenith_EntityID uAncestorID, Zenith_SceneData& xSceneData) const
 {
-	// Unsafe version - assumes caller holds xScene.m_xMutex
+	// Unsafe version - assumes caller holds xSceneData.m_xMutex
 	// Used by SetParentByID to avoid recursive locking
 
 	if (uAncestorID == INVALID_ENTITY_ID)
@@ -217,12 +236,12 @@ bool Zenith_TransformComponent::IsDescendantOfUnsafe(Zenith_EntityID uAncestorID
 			return true;
 		}
 
-		if (!xScene.EntityExistsUnsafe(uCurrentID))
+		if (!xSceneData.EntityExists(uCurrentID))
 		{
 			return false;
 		}
 
-		uCurrentID = xScene.GetComponentFromEntity<Zenith_TransformComponent>(uCurrentID).m_xParentEntityID;
+		uCurrentID = xSceneData.GetComponentFromEntity<Zenith_TransformComponent>(uCurrentID).m_xParentEntityID;
 		++uDepth;
 	}
 
@@ -236,24 +255,30 @@ void Zenith_TransformComponent::SetParentByID(Zenith_EntityID uNewParentID)
 {
 	if (m_xParentEntityID == uNewParentID) return;
 
-	// Use the owning entity's scene, not GetCurrentScene()
+	// Use the owning entity's scene, not GetActiveScene()
 	// This allows hierarchy operations to work correctly on local/test scenes
-	Zenith_Scene* pxScene = m_xOwningEntity.m_pxParentScene;
-	if (pxScene == nullptr)
+	Zenith_SceneData* pxSceneData = m_xOwningEntity.GetSceneData();
+	if (pxSceneData == nullptr)
 	{
 		Zenith_Warning(LOG_CATEGORY_ECS, "SetParentByID: Entity has no scene");
 		return;
 	}
-	Zenith_Scene& xScene = *pxScene;
-
-	// Acquire scene mutex for entire operation - prevents TOCTOU races
-	Zenith_ScopedMutexLock xLock(xScene.m_xMutex);
 
 	Zenith_EntityID uMyEntityID = m_xOwningEntity.GetEntityID();
 
 	// CIRCULAR HIERARCHY CHECKS (Unity-style safety)
 	if (uNewParentID != INVALID_ENTITY_ID)
 	{
+		// Unity parity: Cannot parent to an entity in a different scene
+		// EntityExists checks global slots and would succeed for cross-scene entities,
+		// but GetComponentFromEntity uses per-scene pools and would access the wrong pool
+		Zenith_Assert(uNewParentID.m_uIndex < Zenith_SceneData::s_axEntitySlots.GetSize(), "SetParentByID: Parent entity index out of range");
+		const Zenith_SceneData::Zenith_EntitySlot& xParentSlot = Zenith_SceneData::s_axEntitySlots.Get(uNewParentID.m_uIndex);
+		const Zenith_SceneData::Zenith_EntitySlot& xMySlot = Zenith_SceneData::s_axEntitySlots.Get(uMyEntityID.m_uIndex);
+		Zenith_Assert(xParentSlot.m_iSceneHandle == xMySlot.m_iSceneHandle,
+			"SetParentByID: Cannot parent entity to an entity in a different scene (child scene=%d, parent scene=%d)",
+			xMySlot.m_iSceneHandle, xParentSlot.m_iSceneHandle);
+
 		// Cannot parent to self
 		if (uNewParentID == uMyEntityID)
 		{
@@ -262,10 +287,10 @@ void Zenith_TransformComponent::SetParentByID(Zenith_EntityID uNewParentID)
 		}
 
 		// Cannot parent to a descendant (would create cycle)
-		if (xScene.EntityExistsUnsafe(uNewParentID))
+		if (pxSceneData->EntityExists(uNewParentID))
 		{
-			Zenith_TransformComponent& xProposedParent = xScene.GetComponentFromEntity<Zenith_TransformComponent>(uNewParentID);
-			if (xProposedParent.IsDescendantOfUnsafe(uMyEntityID, xScene))
+			Zenith_TransformComponent& xProposedParent = pxSceneData->GetComponentFromEntity<Zenith_TransformComponent>(uNewParentID);
+			if (xProposedParent.IsDescendantOfUnsafe(uMyEntityID, *pxSceneData))
 			{
 				Zenith_Warning(LOG_CATEGORY_ECS, "Cannot parent entity %u to %u - would create circular hierarchy",
 					uMyEntityID.m_uIndex, uNewParentID.m_uIndex);
@@ -282,20 +307,23 @@ void Zenith_TransformComponent::SetParentByID(Zenith_EntityID uNewParentID)
 	}
 
 	// Remove from old parent's children (use unsafe methods since we hold lock)
-	if (m_xParentEntityID != INVALID_ENTITY_ID && xScene.EntityExistsUnsafe(m_xParentEntityID))
+	if (m_xParentEntityID != INVALID_ENTITY_ID && pxSceneData->EntityExists(m_xParentEntityID))
 	{
-		Zenith_TransformComponent& xOldParent = xScene.GetComponentFromEntity<Zenith_TransformComponent>(m_xParentEntityID);
+		Zenith_TransformComponent& xOldParent = pxSceneData->GetComponentFromEntity<Zenith_TransformComponent>(m_xParentEntityID);
 		xOldParent.m_xChildEntityIDs.EraseValue(uMyEntityID);
 	}
 
 	m_xParentEntityID = uNewParentID;
 
 	// Add to new parent's children
-	if (m_xParentEntityID != INVALID_ENTITY_ID && xScene.EntityExistsUnsafe(m_xParentEntityID))
+	if (m_xParentEntityID != INVALID_ENTITY_ID && pxSceneData->EntityExists(m_xParentEntityID))
 	{
-		Zenith_TransformComponent& xNewParent = xScene.GetComponentFromEntity<Zenith_TransformComponent>(m_xParentEntityID);
+		Zenith_TransformComponent& xNewParent = pxSceneData->GetComponentFromEntity<Zenith_TransformComponent>(m_xParentEntityID);
 		xNewParent.m_xChildEntityIDs.PushBack(uMyEntityID);
 	}
+
+	// Invalidate root entity cache since parent changed (entity may have become/stopped being a root)
+	pxSceneData->InvalidateRootEntityCache();
 }
 
 void Zenith_TransformComponent::DetachFromParent()
@@ -305,37 +333,29 @@ void Zenith_TransformComponent::DetachFromParent()
 
 void Zenith_TransformComponent::DetachAllChildren()
 {
-	// Use the owning entity's scene, not GetCurrentScene()
+	// Use the owning entity's scene, not GetActiveScene()
 	// This allows hierarchy operations to work correctly on local/test scenes
-	Zenith_Scene* pxScene = m_xOwningEntity.m_pxParentScene;
-	if (pxScene == nullptr)
+	Zenith_SceneData* pxSceneData = m_xOwningEntity.GetSceneData();
+	if (pxSceneData == nullptr)
 	{
 		// No scene - just clear our list directly
 		m_xChildEntityIDs.Clear();
 		return;
 	}
-	Zenith_Scene& xScene = *pxScene;
 
-	// Process all children - always remove from our list after processing
-	while (m_xChildEntityIDs.GetSize() > 0)
+	// Clear each child's parent reference directly, then bulk-clear our list
+	// This avoids O(n^2) from per-child EraseValue on our child list
+	for (u_int i = 0; i < m_xChildEntityIDs.GetSize(); ++i)
 	{
-		Zenith_EntityID uChildID = m_xChildEntityIDs.Get(0);
-		if (xScene.EntityExists(uChildID))
+		Zenith_EntityID uChildID = m_xChildEntityIDs.Get(i);
+		if (pxSceneData->EntityExists(uChildID))
 		{
-			// Tell the child to detach from parent (this also removes from our list)
-			Zenith_TransformComponent& xChildTransform = xScene.GetEntity(uChildID).GetComponent<Zenith_TransformComponent>();
-			// If child's parent isn't us (inconsistent state), just clear their parent
-			// and remove from our list manually
-			if (xChildTransform.m_xParentEntityID == m_xOwningEntity.GetEntityID())
-			{
-				xChildTransform.SetParentByID(INVALID_ENTITY_ID);
-				// SetParentByID removes from our children list, so continue
-				continue;
-			}
+			Zenith_TransformComponent& xChild = pxSceneData->GetComponentFromEntity<Zenith_TransformComponent>(uChildID);
+			xChild.m_xParentEntityID = INVALID_ENTITY_ID;
 		}
-		// Child doesn't exist or has inconsistent parent - remove from our list directly
-		m_xChildEntityIDs.Erase(0);
 	}
+	m_xChildEntityIDs.Clear();
+	pxSceneData->InvalidateRootEntityCache();
 }
 
 void Zenith_TransformComponent::SetPosition(const Zenith_Maths::Vector3& xPos)
@@ -469,7 +489,11 @@ void Zenith_TransformComponent::BuildModelMatrix(Zenith_Maths::Matrix4& xMatOut)
 
 	// Walk parent chain via EntityIDs (safe against pool relocations)
 	Zenith_EntityID uParentID = m_xParentEntityID;
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+	Zenith_SceneData* pxSceneData = m_xOwningEntity.GetSceneData();
+	if (!pxSceneData)
+	{
+		return;
+	}
 
 	// Depth limit to catch any circular references that slip through
 	// (should never happen with SetParentByID checks, but safety first)
@@ -477,7 +501,7 @@ void Zenith_TransformComponent::BuildModelMatrix(Zenith_Maths::Matrix4& xMatOut)
 	constexpr u_int MAX_HIERARCHY_DEPTH = 1000;   // Hard limit
 	u_int uDepth = 0;
 
-	while (uParentID != INVALID_ENTITY_ID && xScene.EntityExists(uParentID))
+	while (uParentID != INVALID_ENTITY_ID && pxSceneData->EntityExists(uParentID))
 	{
 		// Soft warning at 100 levels - unusual but not necessarily broken
 		if (uDepth == SOFT_HIERARCHY_DEPTH)
@@ -492,7 +516,7 @@ void Zenith_TransformComponent::BuildModelMatrix(Zenith_Maths::Matrix4& xMatOut)
 			break; // Safety break even in release builds
 		}
 
-		Zenith_TransformComponent& xParentTransform = xScene.GetEntity(uParentID).GetComponent<Zenith_TransformComponent>();
+		Zenith_TransformComponent& xParentTransform = pxSceneData->GetEntity(uParentID).GetComponent<Zenith_TransformComponent>();
 
 		Zenith_Maths::Vector3 xParentPos;
 		Zenith_Maths::Quat xParentRot;
@@ -510,14 +534,14 @@ void Zenith_TransformComponent::BuildModelMatrix(Zenith_Maths::Matrix4& xMatOut)
 	}
 }
 
-void Zenith_TransformComponent::WriteToDataStream(Zenith_DataStream& xStream) const
+void Zenith_TransformComponent::WriteToDataStream(Zenith_DataStream& xStream)
 {
 	// Write position, rotation, and scale
 	// Note: We get current values from physics if rigid body exists
 	Zenith_Maths::Vector3 xPos;
 	Zenith_Maths::Quat xRot;
-	const_cast<Zenith_TransformComponent*>(this)->GetPosition(xPos);
-	const_cast<Zenith_TransformComponent*>(this)->GetRotation(xRot);
+	GetPosition(xPos);
+	GetRotation(xRot);
 
 	xStream << xPos;
 	xStream << xRot;

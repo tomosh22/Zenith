@@ -20,6 +20,7 @@
 
 enum class Combat_GameState : uint8_t
 {
+	MAIN_MENU,
 	PLAYING,
 	PAUSED,
 	VICTORY,
@@ -175,6 +176,10 @@ public:
 
 		switch (eState)
 		{
+		case Combat_GameState::MAIN_MENU:
+			pxStatus->SetText("");
+			break;
+
 		case Combat_GameState::PLAYING:
 			pxStatus->SetText("");
 			break;

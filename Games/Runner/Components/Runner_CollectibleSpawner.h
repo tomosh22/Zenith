@@ -14,6 +14,8 @@
  */
 
 #include "EntityComponent/Zenith_Scene.h"
+#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "Prefab/Zenith_Prefab.h"
@@ -115,22 +117,25 @@ public:
 	static void Reset()
 	{
 		// Destroy existing entities
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
 
 		for (auto& xColl : s_axCollectibles)
 		{
-			if (xColl.m_uEntityID.IsValid() && xScene.EntityExists(xColl.m_uEntityID))
+			if (xColl.m_uEntityID.IsValid() && pxSceneData->EntityExists(xColl.m_uEntityID))
 			{
-				Zenith_Scene::Destroy(xColl.m_uEntityID);
+				Zenith_Entity xEntity = pxSceneData->GetEntity(xColl.m_uEntityID);
+				Zenith_SceneManager::Destroy(xEntity);
 			}
 		}
 		s_axCollectibles.clear();
 
 		for (auto& xObs : s_axObstacles)
 		{
-			if (xObs.m_uEntityID.IsValid() && xScene.EntityExists(xObs.m_uEntityID))
+			if (xObs.m_uEntityID.IsValid() && pxSceneData->EntityExists(xObs.m_uEntityID))
 			{
-				Zenith_Scene::Destroy(xObs.m_uEntityID);
+				Zenith_Entity xEntity = pxSceneData->GetEntity(xObs.m_uEntityID);
+				Zenith_SceneManager::Destroy(xEntity);
 			}
 		}
 		s_axObstacles.clear();
@@ -166,7 +171,8 @@ public:
 	static CollectionResult CheckCollectibles(const Zenith_Maths::Vector3& xPlayerPos, float fPlayerRadius)
 	{
 		CollectionResult xResult;
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
 
 		for (auto& xColl : s_axCollectibles)
 		{
@@ -175,13 +181,13 @@ public:
 				continue;
 			}
 
-			if (!xScene.EntityExists(xColl.m_uEntityID))
+			if (!pxSceneData->EntityExists(xColl.m_uEntityID))
 			{
 				xColl.m_bCollected = true;
 				continue;
 			}
 
-			Zenith_Entity xEntity = xScene.GetEntity(xColl.m_uEntityID);
+			Zenith_Entity xEntity = pxSceneData->GetEntity(xColl.m_uEntityID);
 			Zenith_Maths::Vector3 xCollPos;
 			xEntity.GetComponent<Zenith_TransformComponent>().GetPosition(xCollPos);
 
@@ -196,7 +202,7 @@ public:
 				xResult.m_uCollectedCount++;
 
 				// Destroy entity
-				Zenith_Scene::Destroy(xColl.m_uEntityID);
+				Zenith_SceneManager::Destroy(xEntity);
 				xColl.m_uEntityID = INVALID_ENTITY_ID;
 			}
 		}
@@ -343,7 +349,9 @@ private:
 			return;
 		}
 
-		Zenith_Entity xColl = s_pxCollectiblePrefab->Instantiate(&Zenith_Scene::GetCurrentScene(), "Collectible");
+		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+		Zenith_Entity xColl = s_pxCollectiblePrefab->Instantiate(pxSceneData, "Collectible");
 
 		Zenith_TransformComponent& xTransform = xColl.GetComponent<Zenith_TransformComponent>();
 		xTransform.SetPosition(xPos);
@@ -368,7 +376,9 @@ private:
 			return;
 		}
 
-		Zenith_Entity xObs = s_pxObstaclePrefab->Instantiate(&Zenith_Scene::GetCurrentScene(), "Obstacle");
+		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+		Zenith_Entity xObs = s_pxObstaclePrefab->Instantiate(pxSceneData, "Obstacle");
 
 		// Size based on type
 		Zenith_Maths::Vector3 xSize;
@@ -405,7 +415,8 @@ private:
 	// ========================================================================
 	static void AnimateCollectibles(float fDt)
 	{
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
 
 		for (auto& xColl : s_axCollectibles)
 		{
@@ -414,12 +425,12 @@ private:
 				continue;
 			}
 
-			if (!xScene.EntityExists(xColl.m_uEntityID))
+			if (!pxSceneData->EntityExists(xColl.m_uEntityID))
 			{
 				continue;
 			}
 
-			Zenith_Entity xEntity = xScene.GetEntity(xColl.m_uEntityID);
+			Zenith_Entity xEntity = pxSceneData->GetEntity(xColl.m_uEntityID);
 			Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
 
 			// Bob up and down
@@ -441,7 +452,8 @@ private:
 	// ========================================================================
 	static void RemovePassedEntities(float fPlayerZ)
 	{
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
 		float fRemoveThreshold = fPlayerZ - 20.0f;
 
 		// Remove passed collectibles
@@ -449,9 +461,10 @@ private:
 		{
 			if (it->m_xBasePosition.z < fRemoveThreshold)
 			{
-				if (it->m_uEntityID.IsValid() && xScene.EntityExists(it->m_uEntityID))
+				if (it->m_uEntityID.IsValid() && pxSceneData->EntityExists(it->m_uEntityID))
 				{
-					Zenith_Scene::Destroy(it->m_uEntityID);
+					Zenith_Entity xEntity = pxSceneData->GetEntity(it->m_uEntityID);
+					Zenith_SceneManager::Destroy(xEntity);
 				}
 				it = s_axCollectibles.erase(it);
 			}
@@ -466,9 +479,10 @@ private:
 		{
 			if (it->m_xPosition.z < fRemoveThreshold)
 			{
-				if (it->m_uEntityID.IsValid() && xScene.EntityExists(it->m_uEntityID))
+				if (it->m_uEntityID.IsValid() && pxSceneData->EntityExists(it->m_uEntityID))
 				{
-					Zenith_Scene::Destroy(it->m_uEntityID);
+					Zenith_Entity xEntity = pxSceneData->GetEntity(it->m_uEntityID);
+					Zenith_SceneManager::Destroy(xEntity);
 				}
 				it = s_axObstacles.erase(it);
 			}

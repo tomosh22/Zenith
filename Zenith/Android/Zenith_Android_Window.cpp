@@ -1,5 +1,6 @@
 #include "Zenith.h"
 #include "Zenith_Android_Window.h"
+#include "Input/Zenith_Input.h"
 
 #include <android/native_window.h>
 #include <android_native_app_glue.h>
@@ -69,8 +70,13 @@ void Zenith_Window::GetMousePosition(Zenith_Maths::Vector2_64& xOut)
 
 bool Zenith_Window::IsKeyDown(Zenith_KeyCode iKey)
 {
-	// TODO: Implement keyboard input for Android if needed
-	// For now, return false - mobile typically uses touch
+	if (iKey <= ZENITH_MOUSE_BUTTON_LAST)
+	{
+		// Treat touch as left mouse button
+		if (iKey == ZENITH_MOUSE_BUTTON_LEFT)
+			return m_bTouchDown;
+		return false;
+	}
 	return false;
 }
 
@@ -88,6 +94,7 @@ void Zenith_Window::OnTouchEvent(int32_t iAction, float fX, float fY)
 	{
 	case 0: // AMOTION_EVENT_ACTION_DOWN
 		m_bTouchDown = true;
+		Zenith_Input::MouseButtonPressedCallback(ZENITH_MOUSE_BUTTON_LEFT);
 		break;
 	case 1: // AMOTION_EVENT_ACTION_UP
 		m_bTouchDown = false;

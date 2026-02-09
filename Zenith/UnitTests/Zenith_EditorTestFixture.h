@@ -3,6 +3,8 @@
 #ifdef ZENITH_TOOLS
 
 #include "EntityComponent/Zenith_Scene.h"
+#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Zenith_Entity.h"
 #include "Maths/Zenith_Maths.h"
 #include <vector>
@@ -38,7 +40,7 @@ public:
 	static void ResetEditorState();
 
 	// Get current scene for tests
-	static Zenith_Scene& GetTestScene();
+	static Zenith_SceneData* GetTestScene();
 
 	// Track created entities for cleanup
 	static const std::vector<Zenith_EntityID>& GetCreatedEntities() { return s_axCreatedEntities; }

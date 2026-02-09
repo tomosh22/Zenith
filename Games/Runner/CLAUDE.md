@@ -14,6 +14,8 @@ An infinite runner game demonstrating Animation State Machine and Terrain featur
 | **Prefab Instantiation** | `Zenith_Prefab`, `Zenith_Scene::Instantiate` | Runtime entity creation |
 | **UI Text** | `Zenith_UIComponent`, `Zenith_UIText` | Distance, score, speed HUD |
 | **DataAsset System** | `Runner_Config` | Configurable gameplay parameters |
+| **Multi-Scene** | `Zenith_SceneManager` | `DontDestroyOnLoad()`, `CreateEmptyScene()`, `UnloadScene()`, `SetScenePaused()` |
+| **Menu Buttons** | `Zenith_UIButton` | Clickable/tappable menu buttons with `SetOnClick()` callback |
 
 ## File Structure
 
@@ -148,6 +150,51 @@ Demonstrates:
 - Game over and pause overlays
 - Fading controls hint
 
+## Multi-Scene Architecture
+
+### Entity Layout
+- **Persistent scene** (DontDestroyOnLoad): `GameManager` entity with Camera + UIComponent + ScriptComponent (Runner_Behaviour). Survives scene transitions.
+- **Game scene** (`m_xGameScene`, named "Run"): Contains all level entities (player, terrain chunks, obstacles, collectibles, particles). Created on play, destroyed on return to menu.
+
+### Game State Machine
+```
+MAIN_MENU --> PLAYING --> PAUSED --> PLAYING
+                |            |
+                v            v
+            GAME_OVER    MAIN_MENU
+                |
+                v
+            MAIN_MENU
+```
+
+### Scene Transition Pattern
+
+**Start Game (MAIN_MENU -> PLAYING):**
+```cpp
+m_xGameScene = Zenith_SceneManager::CreateEmptyScene("Run");
+Zenith_SceneManager::SetActiveScene(m_xGameScene);
+InitializeGame();
+m_eGameState = RunnerGameState::PLAYING;
+```
+
+**Pause / Resume (PLAYING <-> PAUSED):**
+```cpp
+// Pause
+Zenith_SceneManager::SetScenePaused(m_xGameScene, true);
+m_eGameState = RunnerGameState::PAUSED;
+
+// Resume
+Zenith_SceneManager::SetScenePaused(m_xGameScene, false);
+m_eGameState = RunnerGameState::PLAYING;
+```
+
+**Return to Menu (any state -> MAIN_MENU):**
+```cpp
+Zenith_SceneManager::UnloadScene(m_xGameScene);
+m_xGameScene = Zenith_Scene();
+m_eGameState = RunnerGameState::MAIN_MENU;
+```
+
 ## Learning Path
 
 1. **Start here:** `Runner.cpp` - See capsule geometry generation
@@ -165,7 +212,11 @@ Demonstrates:
 | D / Right Arrow | Move to right lane |
 | Space / W / Up | Jump over obstacles |
 | S / Down | Slide under obstacles |
-| P / Escape | Pause/Resume game |
+| Click / Touch | Select menu button |
+| W/S or Up/Down | Navigate menu |
+| Enter | Activate focused button |
+| Escape | Return to menu / Pause |
+| P | Pause/Resume |
 | R | Reset game |
 
 ## Key Patterns
@@ -248,12 +299,12 @@ float fHeight = Runner_TerrainManager::GetTerrainHeightAt(fPlayerZ);
 When launching in a tools build (`vs2022_Debug_Win64_True`):
 
 ### Scene Hierarchy
-- **MainCamera** - Third-person camera following the player from behind
-- **RunnerGame** - Main game entity with UIComponent and ScriptComponent (Runner_Behaviour)
-- **Player** - Character entity (capsule) in the center lane
-- **TerrainChunk_X** - Procedural terrain chunk entities ahead of player
-- **Obstacle_X** - Spawned obstacle entities in lanes
-- **Collectible_X** - Coin/gem pickup entities in lanes
+- **GameManager** - Persistent entity (Camera + UIComponent + ScriptComponent/Runner_Behaviour) - DontDestroyOnLoad
+- *(Game scene "Run", created at runtime)*
+  - **Player** - Character entity (capsule) in the center lane
+  - **TerrainChunk_X** - Procedural terrain chunk entities ahead of player
+  - **Obstacle_X** - Spawned obstacle entities in lanes
+  - **Collectible_X** - Coin/gem pickup entities in lanes
 
 ### Viewport
 - **Third-person perspective** view behind and above the character
@@ -421,14 +472,40 @@ When launching in a tools build (`vs2022_Debug_Win64_True`):
 | T12.3 | Collect items during run | Score updates in real-time |
 | T12.4 | Check speed display | Speed shows current value, updates as accelerates |
 
-### T13: Editor Features (Tools Build Only)
+### T13: Menu Navigation
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| T13.1 | Select RunnerGame entity | Properties panel appears |
-| T13.2 | Modify base speed | Speed changes affect next run |
-| T13.3 | Modify lane width | Lane spacing changes |
-| T13.4 | Modify obstacle frequency | Obstacle density changes |
-| T13.5 | Check debug stats | FPS, entity count visible |
+| T13.1 | Launch runner.exe | Main menu displayed with Play button |
+| T13.2 | Click Play button | Game starts, menu hidden, HUD visible |
+| T13.3 | Press Escape (while playing) | Returns to main menu, game scene unloaded |
+| T13.4 | Use W/S or Up/Down arrows | Menu button focus navigates |
+| T13.5 | Press Enter on focused button | Activates the focused button |
+
+### T14: Scene Transitions
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| T14.1 | Click Play from menu | Game scene "Run" created, level entities spawned |
+| T14.2 | Press Escape to return to menu | Game scene unloaded, menu reappears |
+| T14.3 | Click Play again | Fresh game scene created, no stale state |
+| T14.4 | Press R during gameplay | Game scene destroyed and recreated (restart) |
+| T14.5 | Trigger game over, press R | New game scene, score reset to 0 |
+
+### T15: Pause / Resume
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| T15.1 | Press P during gameplay | Game pauses, "PAUSED" overlay shown |
+| T15.2 | Press P again | Game resumes, overlay hidden |
+| T15.3 | Press Escape while paused | Returns to main menu |
+| T15.4 | Verify scene paused | Character, terrain, obstacles frozen while paused |
+
+### T16: Editor Features (Tools Build Only)
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| T16.1 | Select GameManager entity | Properties panel appears |
+| T16.2 | Modify base speed | Speed changes affect next run |
+| T16.3 | Modify lane width | Lane spacing changes |
+| T16.4 | Modify obstacle frequency | Obstacle density changes |
+| T16.5 | Check debug stats | FPS, entity count visible |
 
 ## Building
 

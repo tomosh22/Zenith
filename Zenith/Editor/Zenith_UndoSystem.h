@@ -4,9 +4,8 @@
 
 #include "Maths/Zenith_Maths.h"
 #include "EntityComponent/Zenith_Scene.h"
-#include <vector>
+#include "Collections/Zenith_Vector.h"
 #include <string>
-#include <memory>
 
 //------------------------------------------------------------------------------
 // Base Command Interface
@@ -18,6 +17,7 @@
 class Zenith_UndoCommand
 {
 public:
+	Zenith_UndoCommand();
 	virtual ~Zenith_UndoCommand() = default;
 
 	// Execute the command (modifies scene state)
@@ -28,6 +28,11 @@ public:
 
 	// Get human-readable description for UI
 	virtual const char* GetDescription() const = 0;
+
+protected:
+	// Scene captured at command creation time - ensures undo/redo operates on the correct
+	// scene even if the active scene has changed since the command was recorded
+	Zenith_Scene m_xScene;
 };
 
 //------------------------------------------------------------------------------
@@ -158,18 +163,18 @@ public:
 	static void Clear();
 
 	// Get stack sizes (for debugging/UI)
-	static u_int GetUndoStackSize() { return static_cast<u_int>(s_xUndoStack.size()); }
-	static u_int GetRedoStackSize() { return static_cast<u_int>(s_xRedoStack.size()); }
+	static u_int GetUndoStackSize() { return s_xUndoStack.GetSize(); }
+	static u_int GetRedoStackSize() { return s_xRedoStack.GetSize(); }
 
 	// Configuration
 	static constexpr u_int MAX_UNDO_STACK_SIZE = 100;
 
 private:
 	// Undo stack: Commands that can be undone (most recent at back)
-	static std::vector<std::unique_ptr<Zenith_UndoCommand>> s_xUndoStack;
+	static Zenith_Vector<Zenith_UndoCommand*> s_xUndoStack;
 
 	// Redo stack: Commands that can be redone (most recent at back)
-	static std::vector<std::unique_ptr<Zenith_UndoCommand>> s_xRedoStack;
+	static Zenith_Vector<Zenith_UndoCommand*> s_xRedoStack;
 
 	// Helper: Enforce max stack size (remove oldest commands)
 	static void EnforceStackLimit();

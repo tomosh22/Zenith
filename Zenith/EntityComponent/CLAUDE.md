@@ -3,7 +3,10 @@
 ## Files
 
 ### Core
-- `Zenith_Scene.h/cpp` - Scene management, component pools, entity-component mapping
+- `Zenith_SceneManager.h/cpp` - Static scene manager, multi-scene support, scene loading/unloading
+- `Zenith_SceneData.h/cpp` - Internal scene storage (entity pools, components, metadata)
+- `Zenith_Scene.h/cpp` - Lightweight scene handle struct
+- `Zenith_SceneOperation.h/cpp` - Async scene operation tracking
 - `Zenith_Entity.h/cpp` - Entity wrapper class (scene pointer + entity ID + parent ID + child entity vector)
 - `Zenith_ComponentMeta.h/cpp` - Component reflection/registration system with type-erased operations
 - `Zenith_ComponentRegistry.h/cpp` - Component type registration for editor UI
@@ -22,10 +25,51 @@
 ## Architecture
 
 ### Entity
-Wrapper around scene pointer, entity ID, parent entity ID, and child entity ID vector. Entity names are stored in the scene (not the entity) via `GetName()`/`SetName()` accessors that delegate to the scene.
+Wrapper around scene data pointer, entity ID, parent entity ID, and child entity ID vector. Entity names are stored in the scene data (not the entity) via `GetName()`/`SetName()` accessors that delegate to the scene.
 
-### Scene
-Static singleton storing all entities and component pools. Components of same type stored in contiguous `Zenith_Vector` for cache-friendly iteration. Scene serialization uses `Zenith_DataStream` with `.zscn` file extension.
+### Scene Management (Multi-Scene Architecture)
+
+Zenith uses a multi-scene architecture inspired by Unity:
+
+- **Zenith_Scene** - Lightweight handle struct (`int m_iHandle`). Can be copied freely, used to reference scenes.
+- **Zenith_SceneData** - Internal class storing entities, components, and metadata. Not accessed directly by game code.
+- **Zenith_SceneManager** - Static manager for scene lifecycle (loading, unloading, queries, events).
+- **Zenith_SceneOperation** - Tracks async scene loading progress.
+
+Multiple scenes can be loaded simultaneously (additive loading). One scene is "active" at any time.
+
+### Scene Loading Modes
+| Mode | Enum | Behavior |
+|------|------|----------|
+| Single | `SCENE_LOAD_SINGLE` | Unload all non-persistent scenes, load new |
+| Additive | `SCENE_LOAD_ADDITIVE` | Keep existing scenes, add new |
+
+### Persistent Scene
+A special scene that is always loaded and never unloaded. Use `MarkEntityPersistent()` to move entities here. Entities in the persistent scene survive `SCENE_LOAD_SINGLE` operations.
+
+### Common Scene Management Patterns
+
+```cpp
+// Get active scene and create entity
+Zenith_Scene xScene = Zenith_SceneManager::GetActiveScene();
+Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xScene);
+Zenith_Entity xEntity(pxSceneData, "MyEntity");
+
+// Load scene additively
+Zenith_Scene xLoaded = Zenith_SceneManager::LoadScene("Levels/Level1.zscn", SCENE_LOAD_ADDITIVE);
+
+// Make entity persistent across scene loads
+Zenith_SceneManager::MarkEntityPersistent(xPlayerEntity);
+
+// Move entity between scenes (updates reference in-place, Unity behavior)
+Zenith_SceneManager::MoveEntityToScene(xEntity, xTargetScene);
+// xEntity now points to the entity in the target scene
+
+// Register for scene events
+Zenith_SceneManager::RegisterSceneLoadedCallback([](Zenith_Scene xScene, Zenith_SceneLoadMode eMode) {
+    // Handle scene load
+});
+```
 
 ### Component Pools
 Each component type has a dedicated pool with:
@@ -137,12 +181,14 @@ Callbacks: `OnCreate()`, `OnUpdate(float)`, `OnCollisionEnter(entity)`, `OnColli
 - Event system provides thread-safe `QueueEvent()` for cross-thread event dispatch
 
 **Scene Loading Reset Order:**
-When `Zenith_Scene::LoadFromFile()` loads a scene, systems are reset in this order:
+When `Zenith_SceneManager::LoadScene()` loads a scene in `SCENE_LOAD_SINGLE` mode, systems are reset in this order:
 1. Flux render systems (Terrain, StaticMeshes, AnimatedMeshes, etc.)
-2. `Scene::Reset()` - Destroys all entities and their components
+2. `SceneData::Reset()` - Destroys all entities and their components
 3. `Zenith_Physics::Reset()` - Clears physics world
 
 The physics reset MUST come AFTER scene reset because collider component destructors need the physics world to exist to remove their bodies. See [Physics/CLAUDE.md](../Physics/CLAUDE.md) for details.
+
+Note: In `SCENE_LOAD_ADDITIVE` mode, existing scenes are NOT unloaded - the new scene is simply added to the loaded scene list.
 
 **Entity Lifecycle:** Entities can have parent-child relationships via `m_uParentEntityID` member.
 

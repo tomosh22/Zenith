@@ -5,6 +5,8 @@
 #include "AI/Navigation/Zenith_NavMeshAgent.h"
 #include "AI/Perception/Zenith_PerceptionSystem.h"
 #include "EntityComponent/Zenith_Scene.h"
+#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "DataStream/Zenith_DataStream.h"
 
@@ -210,8 +212,15 @@ BTNodeStatus Zenith_BTAction_MoveToEntity::Execute(Zenith_Entity& xAgent, Zenith
 	}
 
 	// Get target position
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	Zenith_Entity xTargetEntity = xScene.TryGetEntity(xTargetID);
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	if (!pxSceneData)
+	{
+		m_eLastStatus = BTNodeStatus::FAILURE;
+		return m_eLastStatus;
+	}
+
+	Zenith_Entity xTargetEntity = pxSceneData->TryGetEntity(xTargetID);
 	if (!xTargetEntity.IsValid() || !xTargetEntity.HasComponent<Zenith_TransformComponent>())
 	{
 		m_eLastStatus = BTNodeStatus::FAILURE;
@@ -417,13 +426,17 @@ BTNodeStatus Zenith_BTAction_FindPrimaryTarget::Execute(Zenith_Entity& xAgent, Z
 		xBlackboard.SetEntityID(m_strOutputKey, xTarget);
 
 		// Also store target position
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		Zenith_Entity xTargetEntity = xScene.TryGetEntity(xTarget);
-		if (xTargetEntity.IsValid() && xTargetEntity.HasComponent<Zenith_TransformComponent>())
+		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+		if (pxSceneData)
 		{
-			Zenith_Maths::Vector3 xPos;
-			xTargetEntity.GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
-			xBlackboard.SetVector3("TargetPosition", xPos);
+			Zenith_Entity xTargetEntity = pxSceneData->TryGetEntity(xTarget);
+			if (xTargetEntity.IsValid() && xTargetEntity.HasComponent<Zenith_TransformComponent>())
+			{
+				Zenith_Maths::Vector3 xPos;
+				xTargetEntity.GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
+				xBlackboard.SetVector3("TargetPosition", xPos);
+			}
 		}
 
 		m_eLastStatus = BTNodeStatus::SUCCESS;

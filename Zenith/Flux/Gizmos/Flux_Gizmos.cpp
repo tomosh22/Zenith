@@ -4,6 +4,8 @@
 
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "EntityComponent/Zenith_Scene.h"
+#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Zenith_Entity.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "Flux/Gizmos/Flux_Gizmos.h"
@@ -149,14 +151,19 @@ void Flux_Gizmos::Render(void*)
 	}
 
 	// Get entity transform
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	if (!xScene.EntityHasComponent<Zenith_TransformComponent>(s_pxTargetEntity->GetEntityID()))
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	if (!pxSceneData)
+	{
+		return;
+	}
+	if (!pxSceneData->EntityHasComponent<Zenith_TransformComponent>(s_pxTargetEntity->GetEntityID()))
 	{
 		Zenith_Log(LOG_CATEGORY_GIZMOS, "Gizmos: Entity has no transform component");
 		return;
 	}
 
-	Zenith_TransformComponent& xTransform = xScene.GetComponentFromEntity<Zenith_TransformComponent>(s_pxTargetEntity->GetEntityID());
+	Zenith_TransformComponent& xTransform = pxSceneData->GetComponentFromEntity<Zenith_TransformComponent>(s_pxTargetEntity->GetEntityID());
 
 	// Calculate gizmo scale based on camera distance for consistent screen size
 	Zenith_Maths::Vector3 xEntityPos;
@@ -288,14 +295,18 @@ void Flux_Gizmos::BeginInteraction(const Zenith_Maths::Vector3& rayOrigin, const
 		s_xInteractionStartPos = rayOrigin + rayDir * fDistance;
 
 		// Store initial entity transform
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		if (xScene.EntityHasComponent<Zenith_TransformComponent>(s_pxTargetEntity->GetEntityID()))
+		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+		if (pxSceneData)
 		{
-			Zenith_TransformComponent& xTransform = xScene.GetComponentFromEntity<Zenith_TransformComponent>(s_pxTargetEntity->GetEntityID());
-			xTransform.GetPosition(s_xInitialEntityPosition);
-			xTransform.GetRotation(s_xInitialEntityRotation);
-			xTransform.GetScale(s_xInitialEntityScale);
+			if (pxSceneData->EntityHasComponent<Zenith_TransformComponent>(s_pxTargetEntity->GetEntityID()))
+			{
+				Zenith_TransformComponent& xTransform = pxSceneData->GetComponentFromEntity<Zenith_TransformComponent>(s_pxTargetEntity->GetEntityID());
+				xTransform.GetPosition(s_xInitialEntityPosition);
+				xTransform.GetRotation(s_xInitialEntityRotation);
+				xTransform.GetScale(s_xInitialEntityScale);
 			}
+		}
 	}
 }
 
@@ -614,11 +625,14 @@ GizmoComponent Flux_Gizmos::RaycastGizmo(const Zenith_Maths::Vector3& rayOrigin,
 		return GizmoComponent::None;
 
 	// Get entity position (gizmo center)
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	if (!xScene.EntityHasComponent<Zenith_TransformComponent>(s_pxTargetEntity->GetEntityID()))
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	if (!pxSceneData)
+		return GizmoComponent::None;
+	if (!pxSceneData->EntityHasComponent<Zenith_TransformComponent>(s_pxTargetEntity->GetEntityID()))
 		return GizmoComponent::None;
 
-	Zenith_TransformComponent& xTransform = xScene.GetComponentFromEntity<Zenith_TransformComponent>(s_pxTargetEntity->GetEntityID());
+	Zenith_TransformComponent& xTransform = pxSceneData->GetComponentFromEntity<Zenith_TransformComponent>(s_pxTargetEntity->GetEntityID());
 	Zenith_Maths::Vector3 xGizmoPos;
 	xTransform.GetPosition(xGizmoPos);
 
@@ -698,11 +712,14 @@ GizmoComponent Flux_Gizmos::RaycastGizmo(const Zenith_Maths::Vector3& rayOrigin,
 
 void Flux_Gizmos::ApplyTranslation(const Zenith_Maths::Vector3& rayOrigin, const Zenith_Maths::Vector3& rayDir)
 {
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	if (!xScene.EntityHasComponent<Zenith_TransformComponent>(s_pxTargetEntity->GetEntityID()))
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	if (!pxSceneData)
+		return;
+	if (!pxSceneData->EntityHasComponent<Zenith_TransformComponent>(s_pxTargetEntity->GetEntityID()))
 		return;
 
-	Zenith_TransformComponent& xTransform = xScene.GetComponentFromEntity<Zenith_TransformComponent>(s_pxTargetEntity->GetEntityID());
+	Zenith_TransformComponent& xTransform = pxSceneData->GetComponentFromEntity<Zenith_TransformComponent>(s_pxTargetEntity->GetEntityID());
 
 	// Get constraint axis
 	Zenith_Maths::Vector3 axis(0, 0, 0);
@@ -770,11 +787,14 @@ void Flux_Gizmos::ApplyTranslation(const Zenith_Maths::Vector3& rayOrigin, const
 
 void Flux_Gizmos::ApplyRotation(const Zenith_Maths::Vector3& rayOrigin, const Zenith_Maths::Vector3& rayDir)
 {
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	if (!xScene.EntityHasComponent<Zenith_TransformComponent>(s_pxTargetEntity->GetEntityID()))
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	if (!pxSceneData)
+		return;
+	if (!pxSceneData->EntityHasComponent<Zenith_TransformComponent>(s_pxTargetEntity->GetEntityID()))
 		return;
 
-	Zenith_TransformComponent& xTransform = xScene.GetComponentFromEntity<Zenith_TransformComponent>(s_pxTargetEntity->GetEntityID());
+	Zenith_TransformComponent& xTransform = pxSceneData->GetComponentFromEntity<Zenith_TransformComponent>(s_pxTargetEntity->GetEntityID());
 
 	// Get rotation axis
 	Zenith_Maths::Vector3 axis(0, 0, 0);
@@ -816,11 +836,14 @@ void Flux_Gizmos::ApplyRotation(const Zenith_Maths::Vector3& rayOrigin, const Ze
 
 void Flux_Gizmos::ApplyScale(const Zenith_Maths::Vector3& rayOrigin, const Zenith_Maths::Vector3& rayDir)
 {
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	if (!xScene.EntityHasComponent<Zenith_TransformComponent>(s_pxTargetEntity->GetEntityID()))
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	if (!pxSceneData)
+		return;
+	if (!pxSceneData->EntityHasComponent<Zenith_TransformComponent>(s_pxTargetEntity->GetEntityID()))
 		return;
 
-	Zenith_TransformComponent& xTransform = xScene.GetComponentFromEntity<Zenith_TransformComponent>(s_pxTargetEntity->GetEntityID());
+	Zenith_TransformComponent& xTransform = pxSceneData->GetComponentFromEntity<Zenith_TransformComponent>(s_pxTargetEntity->GetEntityID());
 
 	// Get constraint axis
 	Zenith_Maths::Vector3 axis(0, 0, 0);

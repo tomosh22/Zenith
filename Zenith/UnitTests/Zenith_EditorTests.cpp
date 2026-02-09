@@ -9,6 +9,8 @@
 #include "Editor/Zenith_Editor.h"
 #include "Editor/Zenith_UndoSystem.h"
 #include "EntityComponent/Zenith_Scene.h"
+#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Zenith_Entity.h"
 #include "EntityComponent/Zenith_ComponentRegistry.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
@@ -239,10 +241,11 @@ void Zenith_EditorTests::TestTransformRoundTrip()
 	// Test that transform values can be set and retrieved accurately
 	// This is important for property panel editing
 
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
 
 	// Create a test entity
-	Zenith_Entity xEntity(&xScene, "TestEntity");
+	Zenith_Entity xEntity(pxSceneData, "TestEntity");
 	Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
 	
 	// Test position round trip
@@ -280,10 +283,11 @@ void Zenith_EditorTests::TestMultiSelectSingle()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestMultiSelectSingle...");
 
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
 
 	// Create a test entity
-	Zenith_Entity xEntity(&xScene, "MultiSelectEntity1");
+	Zenith_Entity xEntity(pxSceneData, "MultiSelectEntity1");
 	Zenith_EntityID uEntityID = xEntity.GetEntityID();
 
 	// Clear selection first
@@ -308,12 +312,13 @@ void Zenith_EditorTests::TestMultiSelectCtrlClick()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestMultiSelectCtrlClick...");
 
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
 
 	// Create test entities
-	Zenith_Entity xEntity1(&xScene, "CtrlClickEntity1");
-	Zenith_Entity xEntity2(&xScene, "CtrlClickEntity2");
-	Zenith_Entity xEntity3(&xScene, "CtrlClickEntity3");
+	Zenith_Entity xEntity1(pxSceneData, "CtrlClickEntity1");
+	Zenith_Entity xEntity2(pxSceneData, "CtrlClickEntity2");
+	Zenith_Entity xEntity3(pxSceneData, "CtrlClickEntity3");
 
 	Zenith_EntityID uEntityID1 = xEntity1.GetEntityID();
 	Zenith_EntityID uEntityID2 = xEntity2.GetEntityID();
@@ -349,11 +354,12 @@ void Zenith_EditorTests::TestMultiSelectClear()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestMultiSelectClear...");
 
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
 
 	// Create and select multiple entities
-	Zenith_Entity xEntity1(&xScene, "ClearEntity1");
-	Zenith_Entity xEntity2(&xScene, "ClearEntity2");
+	Zenith_Entity xEntity1(pxSceneData, "ClearEntity1");
+	Zenith_Entity xEntity2(pxSceneData, "ClearEntity2");
 
 	Zenith_EntityID uEntityID1 = xEntity1.GetEntityID();
 	Zenith_EntityID uEntityID2 = xEntity2.GetEntityID();
@@ -377,11 +383,12 @@ void Zenith_EditorTests::TestMultiSelectAfterEntityDelete()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestMultiSelectAfterEntityDelete...");
 
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
 
 	// Create entities
-	Zenith_Entity xEntity1(&xScene, "DeleteTestEntity1");
-	Zenith_Entity xEntity2(&xScene, "DeleteTestEntity2");
+	Zenith_Entity xEntity1(pxSceneData, "DeleteTestEntity1");
+	Zenith_Entity xEntity2(pxSceneData, "DeleteTestEntity2");
 
 	Zenith_EntityID uEntityID1 = xEntity1.GetEntityID();
 	Zenith_EntityID uEntityID2 = xEntity2.GetEntityID();
@@ -529,7 +536,8 @@ void Zenith_EditorTests::TestModePreservesSelection()
 	Zenith_Editor::FlushPendingSceneOperations();
 
 	// Verify entity still exists in scene after restore
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
 	// Note: Entity IDs are regenerated on scene load, so we can't check the same ID
 	// Instead, verify scene has entities and is in a valid state
 	Zenith_Assert(Zenith_Editor::GetEditorMode() == EditorMode::Stopped,
@@ -641,8 +649,9 @@ void Zenith_EditorTests::TestTransformEditUndoRedo()
 	EDITOR_TEST_BEGIN(TestTransformEditUndoRedo);
 
 	Zenith_EntityID uEntity = Zenith_EditorTestFixture::CreateTestEntity("UndoTestEntity");
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	Zenith_Entity xEntity = xScene.GetEntity(uEntity);
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Entity xEntity = pxSceneData->GetEntity(uEntity);
 	Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
 
 	// Set initial position
@@ -696,8 +705,9 @@ void Zenith_EditorTests::TestEntityReparenting()
 	Zenith_EntityID uParent = Zenith_EditorTestFixture::CreateTestEntity("Parent");
 	Zenith_EntityID uChild = Zenith_EditorTestFixture::CreateTestEntity("Child");
 
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	Zenith_Entity xChild = xScene.GetEntity(uChild);
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Entity xChild = pxSceneData->GetEntity(uChild);
 
 	// Set parent
 	xChild.SetParent(uParent);
@@ -715,8 +725,9 @@ void Zenith_EditorTests::TestCreateChildEntity()
 
 	Zenith_EditorTestFixture::SetupHierarchy(uParent, uChild);
 
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	Zenith_Entity xChild = xScene.GetEntity(uChild);
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Entity xChild = pxSceneData->GetEntity(uChild);
 	Zenith_Assert(xChild.GetParentEntityID() == uParent, "Child should have parent set");
 
 	EDITOR_TEST_END(TestCreateChildEntity);
@@ -729,8 +740,9 @@ void Zenith_EditorTests::TestUnparentEntity()
 	Zenith_EntityID uParent = Zenith_EditorTestFixture::CreateTestEntity("Parent");
 	Zenith_EntityID uChild = Zenith_EditorTestFixture::CreateTestEntity("Child");
 
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	Zenith_Entity xChild = xScene.GetEntity(uChild);
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Entity xChild = pxSceneData->GetEntity(uChild);
 
 	// Set parent
 	xChild.SetParent(uParent);
@@ -751,9 +763,10 @@ void Zenith_EditorTests::TestHierarchyCircularPrevention()
 	Zenith_EntityID uParent = Zenith_EditorTestFixture::CreateTestEntity("Parent");
 	Zenith_EntityID uChild = Zenith_EditorTestFixture::CreateTestEntity("Child");
 
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	Zenith_Entity xParent = xScene.GetEntity(uParent);
-	Zenith_Entity xChild = xScene.GetEntity(uChild);
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Entity xParent = pxSceneData->GetEntity(uParent);
+	Zenith_Entity xChild = pxSceneData->GetEntity(uChild);
 
 	// Set up valid hierarchy
 	xChild.SetParent(uParent);
@@ -876,8 +889,9 @@ void Zenith_EditorTests::TestComponentAddRemove()
 	EDITOR_TEST_BEGIN(TestComponentAddRemove);
 
 	Zenith_EntityID uEntity = Zenith_EditorTestFixture::CreateTestEntity("ComponentTestEntity");
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	Zenith_Entity xEntity = xScene.GetEntity(uEntity);
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Entity xEntity = pxSceneData->GetEntity(uEntity);
 
 	// All entities have TransformComponent by default
 	Zenith_Assert(xEntity.HasComponent<Zenith_TransformComponent>(),
@@ -904,8 +918,9 @@ void Zenith_EditorTests::TestComponentAddViaRegistry()
 	EDITOR_TEST_BEGIN(TestComponentAddViaRegistry);
 
 	Zenith_EntityID uEntity = Zenith_EditorTestFixture::CreateTestEntity("RegistryTestEntity");
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	Zenith_Entity xEntity = xScene.GetEntity(uEntity);
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Entity xEntity = pxSceneData->GetEntity(uEntity);
 
 	// The component registry provides type-erased component operations
 	Zenith_ComponentRegistry& xRegistry = Zenith_ComponentRegistry::Get();
@@ -922,8 +937,9 @@ void Zenith_EditorTests::TestMultipleComponentAdd()
 	EDITOR_TEST_BEGIN(TestMultipleComponentAdd);
 
 	Zenith_EntityID uEntity = Zenith_EditorTestFixture::CreateTestEntity("MultiComponentEntity");
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	Zenith_Entity xEntity = xScene.GetEntity(uEntity);
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Entity xEntity = pxSceneData->GetEntity(uEntity);
 
 	// Add multiple components
 	xEntity.AddComponent<Zenith_CameraComponent>();
@@ -943,8 +959,9 @@ void Zenith_EditorTests::TestTransformPositionRoundTrip()
 	EDITOR_TEST_BEGIN(TestTransformPositionRoundTrip);
 
 	Zenith_EntityID uEntity = Zenith_EditorTestFixture::CreateTestEntity("PosRoundTripEntity");
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	Zenith_Entity xEntity = xScene.GetEntity(uEntity);
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Entity xEntity = pxSceneData->GetEntity(uEntity);
 	Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
 
 	Zenith_Maths::Vector3 xTestPos(100.0f, -50.0f, 25.5f);
@@ -964,8 +981,9 @@ void Zenith_EditorTests::TestTransformRotationRoundTrip()
 	EDITOR_TEST_BEGIN(TestTransformRotationRoundTrip);
 
 	Zenith_EntityID uEntity = Zenith_EditorTestFixture::CreateTestEntity("RotRoundTripEntity");
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	Zenith_Entity xEntity = xScene.GetEntity(uEntity);
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Entity xEntity = pxSceneData->GetEntity(uEntity);
 	Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
 
 	Zenith_Maths::Quat xTestRot = glm::angleAxis(glm::radians(90.0f), Zenith_Maths::Vector3(0, 1, 0));
@@ -986,8 +1004,9 @@ void Zenith_EditorTests::TestTransformScaleRoundTrip()
 	EDITOR_TEST_BEGIN(TestTransformScaleRoundTrip);
 
 	Zenith_EntityID uEntity = Zenith_EditorTestFixture::CreateTestEntity("ScaleRoundTripEntity");
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	Zenith_Entity xEntity = xScene.GetEntity(uEntity);
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Entity xEntity = pxSceneData->GetEntity(uEntity);
 	Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
 
 	Zenith_Maths::Vector3 xTestScale(2.0f, 0.5f, 3.0f);
@@ -1007,8 +1026,9 @@ void Zenith_EditorTests::TestTransformMatrixBuild()
 	EDITOR_TEST_BEGIN(TestTransformMatrixBuild);
 
 	Zenith_EntityID uEntity = Zenith_EditorTestFixture::CreateTestEntity("MatrixBuildEntity");
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	Zenith_Entity xEntity = xScene.GetEntity(uEntity);
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Entity xEntity = pxSceneData->GetEntity(uEntity);
 	Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
 
 	// Set transform values
@@ -1036,8 +1056,9 @@ void Zenith_EditorTests::TestTransformParentChild()
 
 	Zenith_EditorTestFixture::SetupHierarchy(uParent, uChild);
 
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	Zenith_Entity xChild = xScene.GetEntity(uChild);
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Entity xChild = pxSceneData->GetEntity(uChild);
 	Zenith_TransformComponent& xChildTransform = xChild.GetComponent<Zenith_TransformComponent>();
 
 	// Verify parent is set
@@ -1058,8 +1079,9 @@ void Zenith_EditorTests::TestTransformHierarchyTraversal()
 	Zenith_EditorTestFixture::SetupHierarchy(uParent, uChild1);
 	Zenith_EditorTestFixture::SetupHierarchy(uParent, uChild2);
 
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	Zenith_Entity xParent = xScene.GetEntity(uParent);
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Entity xParent = pxSceneData->GetEntity(uParent);
 	Zenith_TransformComponent& xParentTransform = xParent.GetComponent<Zenith_TransformComponent>();
 
 	// Count children via traversal
@@ -1084,8 +1106,9 @@ void Zenith_EditorTests::TestTransformIsDescendantOf()
 	Zenith_EditorTestFixture::SetupHierarchy(uGrandparent, uParent);
 	Zenith_EditorTestFixture::SetupHierarchy(uParent, uChild);
 
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	Zenith_Entity xChild = xScene.GetEntity(uChild);
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Entity xChild = pxSceneData->GetEntity(uChild);
 	Zenith_TransformComponent& xChildTransform = xChild.GetComponent<Zenith_TransformComponent>();
 
 	// Child should be descendant of grandparent
@@ -1097,7 +1120,7 @@ void Zenith_EditorTests::TestTransformIsDescendantOf()
 		"Child should be descendant of parent");
 
 	// Grandparent should not be descendant of child
-	Zenith_Entity xGrandparent = xScene.GetEntity(uGrandparent);
+	Zenith_Entity xGrandparent = pxSceneData->GetEntity(uGrandparent);
 	Zenith_TransformComponent& xGrandparentTransform = xGrandparent.GetComponent<Zenith_TransformComponent>();
 	Zenith_Assert(!xGrandparentTransform.IsDescendantOf(uChild),
 		"Grandparent should not be descendant of child");
@@ -1114,8 +1137,9 @@ void Zenith_EditorTests::TestCameraPerspectiveMatrix()
 	EDITOR_TEST_BEGIN(TestCameraPerspectiveMatrix);
 
 	Zenith_EntityID uEntity = Zenith_EditorTestFixture::CreateTestEntity("PerspCameraEntity");
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	Zenith_Entity xEntity = xScene.GetEntity(uEntity);
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Entity xEntity = pxSceneData->GetEntity(uEntity);
 	xEntity.AddComponent<Zenith_CameraComponent>();
 
 	Zenith_CameraComponent& xCamera = xEntity.GetComponent<Zenith_CameraComponent>();
@@ -1137,8 +1161,9 @@ void Zenith_EditorTests::TestCameraOrthographicMatrix()
 	EDITOR_TEST_BEGIN(TestCameraOrthographicMatrix);
 
 	Zenith_EntityID uEntity = Zenith_EditorTestFixture::CreateTestEntity("OrthoCameraEntity");
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	Zenith_Entity xEntity = xScene.GetEntity(uEntity);
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Entity xEntity = pxSceneData->GetEntity(uEntity);
 	xEntity.AddComponent<Zenith_CameraComponent>();
 
 	Zenith_CameraComponent& xCamera = xEntity.GetComponent<Zenith_CameraComponent>();
@@ -1159,8 +1184,9 @@ void Zenith_EditorTests::TestCameraViewMatrix()
 	EDITOR_TEST_BEGIN(TestCameraViewMatrix);
 
 	Zenith_EntityID uEntity = Zenith_EditorTestFixture::CreateTestEntity("ViewCameraEntity");
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	Zenith_Entity xEntity = xScene.GetEntity(uEntity);
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Entity xEntity = pxSceneData->GetEntity(uEntity);
 	xEntity.AddComponent<Zenith_CameraComponent>();
 
 	Zenith_CameraComponent& xCamera = xEntity.GetComponent<Zenith_CameraComponent>();
@@ -1180,8 +1206,9 @@ void Zenith_EditorTests::TestCameraTypeSwitch()
 	EDITOR_TEST_BEGIN(TestCameraTypeSwitch);
 
 	Zenith_EntityID uEntity = Zenith_EditorTestFixture::CreateTestEntity("TypeSwitchCamera");
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	Zenith_Entity xEntity = xScene.GetEntity(uEntity);
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Entity xEntity = pxSceneData->GetEntity(uEntity);
 	xEntity.AddComponent<Zenith_CameraComponent>();
 
 	Zenith_CameraComponent& xCamera = xEntity.GetComponent<Zenith_CameraComponent>();
@@ -1208,8 +1235,9 @@ void Zenith_EditorTests::TestCameraNearFarPlanes()
 	EDITOR_TEST_BEGIN(TestCameraNearFarPlanes);
 
 	Zenith_EntityID uEntity = Zenith_EditorTestFixture::CreateTestEntity("NearFarCamera");
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	Zenith_Entity xEntity = xScene.GetEntity(uEntity);
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Entity xEntity = pxSceneData->GetEntity(uEntity);
 	xEntity.AddComponent<Zenith_CameraComponent>();
 
 	Zenith_CameraComponent& xCamera = xEntity.GetComponent<Zenith_CameraComponent>();
@@ -1227,8 +1255,9 @@ void Zenith_EditorTests::TestCameraFOVSettings()
 	EDITOR_TEST_BEGIN(TestCameraFOVSettings);
 
 	Zenith_EntityID uEntity = Zenith_EditorTestFixture::CreateTestEntity("FOVCamera");
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	Zenith_Entity xEntity = xScene.GetEntity(uEntity);
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Entity xEntity = pxSceneData->GetEntity(uEntity);
 	xEntity.AddComponent<Zenith_CameraComponent>();
 
 	Zenith_CameraComponent& xCamera = xEntity.GetComponent<Zenith_CameraComponent>();
@@ -1486,8 +1515,9 @@ void Zenith_EditorTests::TestDragDropEntityToParent()
 	Zenith_EntityID uParent = Zenith_EditorTestFixture::CreateTestEntity("DragDropParent");
 	Zenith_EntityID uChild = Zenith_EditorTestFixture::CreateTestEntity("DragDropChild");
 
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	Zenith_Entity xChild = xScene.GetEntity(uChild);
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Entity xChild = pxSceneData->GetEntity(uChild);
 
 	// Simulate what happens when entity is dropped on another in hierarchy
 	xChild.SetParent(uParent);
@@ -1506,9 +1536,10 @@ void Zenith_EditorTests::TestDragDropEntityCircularPrevention()
 	Zenith_EntityID uParent = Zenith_EditorTestFixture::CreateTestEntity("CircularParent");
 	Zenith_EntityID uChild = Zenith_EditorTestFixture::CreateTestEntity("CircularChild");
 
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	Zenith_Entity xParent = xScene.GetEntity(uParent);
-	Zenith_Entity xChild = xScene.GetEntity(uChild);
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Entity xParent = pxSceneData->GetEntity(uParent);
+	Zenith_Entity xChild = pxSceneData->GetEntity(uChild);
 
 	// Set up valid hierarchy
 	xChild.SetParent(uParent);
@@ -1531,8 +1562,9 @@ void Zenith_EditorTests::TestContextMenuCreateChild()
 	Zenith_EntityID uParent = Zenith_EditorTestFixture::CreateTestEntity("ContextParent");
 	Zenith_EntityID uChild = Zenith_EditorTestFixture::CreateTestEntity("ContextChild");
 
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	Zenith_Entity xChild = xScene.GetEntity(uChild);
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Entity xChild = pxSceneData->GetEntity(uChild);
 	xChild.SetParent(uParent);
 
 	Zenith_Assert(xChild.GetParentEntityID() == uParent,
@@ -1548,11 +1580,12 @@ void Zenith_EditorTests::TestContextMenuDeleteEntity()
 	// Test entity deletion via context menu
 	Zenith_EntityID uEntity = Zenith_EditorTestFixture::CreateTestEntity("DeleteEntity");
 
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	Zenith_Assert(xScene.EntityExists(uEntity), "Entity should exist before deletion");
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Assert(pxSceneData->EntityExists(uEntity), "Entity should exist before deletion");
 
-	xScene.RemoveEntity(uEntity);
-	Zenith_Assert(!xScene.EntityExists(uEntity), "Entity should not exist after deletion");
+	pxSceneData->RemoveEntity(uEntity);
+	Zenith_Assert(!pxSceneData->EntityExists(uEntity), "Entity should not exist after deletion");
 
 	// Remove from fixture tracking since we deleted it
 	auto& axEntities = const_cast<std::vector<Zenith_EntityID>&>(Zenith_EditorTestFixture::GetCreatedEntities());
@@ -1568,8 +1601,9 @@ void Zenith_EditorTests::TestContextMenuUnparent()
 	Zenith_EntityID uParent = Zenith_EditorTestFixture::CreateTestEntity("UnparentParent");
 	Zenith_EntityID uChild = Zenith_EditorTestFixture::CreateTestEntity("UnparentChild");
 
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	Zenith_Entity xChild = xScene.GetEntity(uChild);
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Entity xChild = pxSceneData->GetEntity(uChild);
 
 	xChild.SetParent(uParent);
 	Zenith_Assert(xChild.GetParentEntityID() == uParent, "Should have parent");
@@ -1619,8 +1653,9 @@ void Zenith_EditorTests::TestEntityNameChange()
 	EDITOR_TEST_BEGIN(TestEntityNameChange);
 
 	Zenith_EntityID uEntity = Zenith_EditorTestFixture::CreateTestEntity("OriginalName");
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	Zenith_Entity xEntity = xScene.GetEntity(uEntity);
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Entity xEntity = pxSceneData->GetEntity(uEntity);
 
 	// Simulate name change from property panel text input
 	xEntity.SetName("NewName");
@@ -1635,8 +1670,9 @@ void Zenith_EditorTests::TestTransformDragPosition()
 	EDITOR_TEST_BEGIN(TestTransformDragPosition);
 
 	Zenith_EntityID uEntity = Zenith_EditorTestFixture::CreateTestEntity("DragPositionEntity");
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	Zenith_Entity xEntity = xScene.GetEntity(uEntity);
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Entity xEntity = pxSceneData->GetEntity(uEntity);
 	Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
 
 	// Simulate position change from drag control

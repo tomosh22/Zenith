@@ -18,6 +18,8 @@
  * - Camera-relative input with continuous polling (IsKeyHeld)
  * - Prefab-based entity instantiation
  * - Component order dependencies (Transform before Collider)
+ * - Multi-scene architecture (persistent GameManager + level scene)
+ * - Zenith_UIButton for clickable/tappable menu
  */
 
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
@@ -26,7 +28,10 @@
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Zenith_Scene.h"
+#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneData.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
+#include "UI/Zenith_UIButton.h"
 
 // Include extracted modules
 #include "Marble_Input.h"
@@ -78,10 +83,11 @@ static constexpr float s_fInitialTime = 60.0f;
 /**
  * Marble_Behaviour - Main game coordinator
  *
- * Lifecycle:
- * - OnAwake: Called when behavior is attached at runtime
- * - OnStart: Called before first update (for all entities)
- * - OnUpdate: Called every frame
+ * Architecture:
+ * - Persistent GameManager entity (camera + UI + script) in DontDestroyOnLoad scene
+ * - Level scene created/destroyed on transitions via CreateEmptyScene/UnloadScene
+ *
+ * State machine: MAIN_MENU -> PLAYING -> PAUSED / WON / LOST -> MAIN_MENU
  */
 class Marble_Behaviour ZENITH_FINAL : Zenith_ScriptBehaviour
 {
@@ -91,21 +97,19 @@ public:
 
 	Marble_Behaviour() = delete;
 	Marble_Behaviour(Zenith_Entity& xParentEntity)
-		: m_eGameState(MarbleGameState::PLAYING)
+		: m_eGameState(MarbleGameState::MAIN_MENU)
 		, m_uScore(0)
 		, m_fTimeRemaining(s_fInitialTime)
 		, m_uCollectedCount(0)
 		, m_xRng(std::random_device{}())
+		, m_iFocusIndex(0)
 	{
 	}
 	~Marble_Behaviour() = default;
 
-	/**
-	 * OnAwake - Called when behavior is attached at RUNTIME
-	 */
 	void OnAwake() ZENITH_FINAL override
 	{
-		// Store resource pointers from globals (lightweight)
+		// Cache resource pointers
 		m_pxSphereGeometry = Marble::g_pxSphereGeometry;
 		m_pxCubeGeometry = Marble::g_pxCubeGeometry;
 		m_xBallMaterial = Marble::g_xBallMaterial;
@@ -114,47 +118,60 @@ public:
 		m_xCollectibleMaterial = Marble::g_xCollectibleMaterial;
 		m_xFloorMaterial = Marble::g_xFloorMaterial;
 
-		// Heavy initialization moved to OnStart
+		// Wire menu button callbacks
+		if (m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		{
+			Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+
+			Zenith_UI::Zenith_UIButton* pxPlay = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuPlay");
+			if (pxPlay)
+				pxPlay->SetOnClick(&OnPlayClicked, this);
+
+			// Quit button has no callback - just visual
+		}
+
+		// Start in menu state
+		m_eGameState = MarbleGameState::MAIN_MENU;
+		SetMenuVisible(true);
+		SetHUDVisible(false);
 	}
 
-	/**
-	 * OnStart - Called before first update
-	 */
 	void OnStart() ZENITH_FINAL override
 	{
-		if (!m_xLevelEntities.uBallEntityID.IsValid())
+		if (m_eGameState == MarbleGameState::MAIN_MENU)
 		{
-			GenerateLevel();
+			SetMenuVisible(true);
+			SetHUDVisible(false);
 		}
 	}
 
-	/**
-	 * OnUpdate - Main game loop
-	 */
 	void OnUpdate(const float fDt) ZENITH_FINAL override
 	{
-		// Handle pause input (always checked)
-		if (Marble_Input::WasPausePressed())
+		switch (m_eGameState)
 		{
-			TogglePause();
-		}
+		case MarbleGameState::MAIN_MENU:
+			UpdateMenuInput();
+			break;
 
-		// Handle reset input (always checked)
-		if (Marble_Input::WasResetPressed())
-		{
-			ResetLevel();
-		}
+		case MarbleGameState::PLAYING:
+			if (Marble_Input::WasPausePressed())
+			{
+				m_eGameState = MarbleGameState::PAUSED;
+				Zenith_SceneManager::SetScenePaused(m_xLevelScene, true);
+				UpdateUI();
+				return;
+			}
+			if (Marble_Input::WasResetPressed())
+			{
+				ResetLevel();
+				return;
+			}
+			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
+			{
+				ReturnToMenu();
+				return;
+			}
 
-		// Paused - don't update game logic
-		if (m_eGameState == MarbleGameState::PAUSED)
-		{
-			UpdateUI();
-			return;
-		}
-
-		// Playing state - full game update
-		if (m_eGameState == MarbleGameState::PLAYING)
-		{
 			// Timer
 			m_fTimeRemaining -= fDt;
 			if (m_fTimeRemaining <= 0.0f)
@@ -163,21 +180,43 @@ public:
 				m_eGameState = MarbleGameState::LOST;
 			}
 
-			// Input and physics
 			HandleInput(fDt);
-
-			// Collectibles
 			HandleCollectibles(fDt);
-
-			// Check fall
 			CheckFallCondition();
+			UpdateCamera(fDt);
+			UpdateUI();
+			break;
+
+		case MarbleGameState::PAUSED:
+			if (Marble_Input::WasPausePressed())
+			{
+				m_eGameState = MarbleGameState::PLAYING;
+				Zenith_SceneManager::SetScenePaused(m_xLevelScene, false);
+			}
+			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
+			{
+				ReturnToMenu();
+				return;
+			}
+			UpdateUI();
+			break;
+
+		case MarbleGameState::WON:
+		case MarbleGameState::LOST:
+			if (Marble_Input::WasResetPressed())
+			{
+				ResetLevel();
+				return;
+			}
+			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
+			{
+				ReturnToMenu();
+				return;
+			}
+			UpdateCamera(fDt);
+			UpdateUI();
+			break;
 		}
-
-		// Camera follow (runs even when paused/won/lost)
-		UpdateCamera(fDt);
-
-		// UI always updated
-		UpdateUI();
 	}
 
 	void RenderPropertiesPanel() override
@@ -185,24 +224,30 @@ public:
 #ifdef ZENITH_TOOLS
 		ImGui::Text("Marble Ball Game");
 		ImGui::Separator();
-		ImGui::Text("Score: %u", m_uScore);
-		ImGui::Text("Time: %.1f", m_fTimeRemaining);
-		ImGui::Text("Collected: %u / %u", m_uCollectedCount,
-			static_cast<uint32_t>(m_xLevelEntities.axCollectibleEntityIDs.size()) + m_uCollectedCount);
 
-		const char* szStates[] = { "PLAYING", "PAUSED", "WON", "LOST" };
+		const char* szStates[] = { "MENU", "PLAYING", "PAUSED", "WON", "LOST" };
 		ImGui::Text("State: %s", szStates[static_cast<int>(m_eGameState)]);
 
-		if (ImGui::Button("Reset Level"))
+		if (m_eGameState != MarbleGameState::MAIN_MENU)
 		{
-			ResetLevel();
+			ImGui::Text("Score: %u", m_uScore);
+			ImGui::Text("Time: %.1f", m_fTimeRemaining);
+			ImGui::Text("Collected: %u / %u", m_uCollectedCount,
+				static_cast<uint32_t>(m_xLevelEntities.axCollectibleEntityIDs.size()) + m_uCollectedCount);
 		}
-		ImGui::Separator();
-		ImGui::Text("Controls:");
-		ImGui::Text("  WASD: Move ball");
-		ImGui::Text("  Space: Jump");
-		ImGui::Text("  P/Esc: Pause");
-		ImGui::Text("  R: Reset");
+
+		if (m_eGameState == MarbleGameState::MAIN_MENU)
+		{
+			if (ImGui::Button("Start Game"))
+				StartGame();
+		}
+		else
+		{
+			if (ImGui::Button("Reset Level"))
+				ResetLevel();
+			if (ImGui::Button("Return to Menu"))
+				ReturnToMenu();
+		}
 #endif
 	}
 
@@ -225,125 +270,27 @@ public:
 
 private:
 	// ========================================================================
-	// Input and Physics (delegates to modules)
+	// Menu Button Callbacks
 	// ========================================================================
-	void HandleInput(float /*fDt*/)
+	static void OnPlayClicked(void* pxUserData)
 	{
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		if (!m_xLevelEntities.uBallEntityID.IsValid() || !xScene.EntityExists(m_xLevelEntities.uBallEntityID))
-			return;
-
-		Zenith_Entity xBall = xScene.GetEntity(m_xLevelEntities.uBallEntityID);
-		if (!xBall.HasComponent<Zenith_ColliderComponent>())
-			return;
-
-		Zenith_ColliderComponent& xCollider = xBall.GetComponent<Zenith_ColliderComponent>();
-
-		// Get camera for relative input
-		Zenith_EntityID uCamID = xScene.GetMainCameraEntity();
-		if (uCamID == INVALID_ENTITY_ID || !xScene.EntityExists(uCamID))
-			return;
-
-		Zenith_Entity xCamEntity = xScene.GetEntity(uCamID);
-		Zenith_CameraComponent& xCamera = xCamEntity.GetComponent<Zenith_CameraComponent>();
-
-		// Get positions for input calculation
-		Zenith_Maths::Vector3 xCamPos, xBallPos;
-		xCamera.GetPosition(xCamPos);
-		xBall.GetComponent<Zenith_TransformComponent>().GetPosition(xBallPos);
-
-		// Get camera-relative movement direction (Marble_Input)
-		Zenith_Maths::Vector3 xDirection = Marble_Input::GetMovementDirection(xCamPos, xBallPos);
-
-		// Apply movement (Marble_PhysicsController)
-		Marble_PhysicsController::ApplyMovement(xCollider, xDirection);
-
-		// Handle jump
-		if (Marble_Input::WasJumpPressed())
-		{
-			Marble_PhysicsController::TryJump(xCollider);
-		}
-	}
-
-	void CheckFallCondition()
-	{
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		if (!m_xLevelEntities.uBallEntityID.IsValid() || !xScene.EntityExists(m_xLevelEntities.uBallEntityID))
-			return;
-
-		Zenith_Entity xBall = xScene.GetEntity(m_xLevelEntities.uBallEntityID);
-		Zenith_Maths::Vector3 xBallPos;
-		xBall.GetComponent<Zenith_TransformComponent>().GetPosition(xBallPos);
-
-		if (Marble_PhysicsController::HasFallenOff(xBallPos))
-		{
-			m_eGameState = MarbleGameState::LOST;
-		}
+		Marble_Behaviour* pxSelf = static_cast<Marble_Behaviour*>(pxUserData);
+		pxSelf->StartGame();
 	}
 
 	// ========================================================================
-	// Camera (delegates to Marble_CameraFollow)
+	// State Transitions
 	// ========================================================================
-	void UpdateCamera(float fDt)
+	void StartGame()
 	{
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		if (!m_xLevelEntities.uBallEntityID.IsValid() || !xScene.EntityExists(m_xLevelEntities.uBallEntityID))
-			return;
+		SetMenuVisible(false);
+		SetHUDVisible(true);
 
-		Zenith_EntityID uCamID = xScene.GetMainCameraEntity();
-		if (uCamID == INVALID_ENTITY_ID || !xScene.EntityExists(uCamID))
-			return;
+		// Create level scene
+		m_xLevelScene = Zenith_SceneManager::CreateEmptyScene("Level");
+		Zenith_SceneManager::SetActiveScene(m_xLevelScene);
 
-		Zenith_Entity xBall = xScene.GetEntity(m_xLevelEntities.uBallEntityID);
-		Zenith_Entity xCamEntity = xScene.GetEntity(uCamID);
-
-		Zenith_Maths::Vector3 xBallPos;
-		xBall.GetComponent<Zenith_TransformComponent>().GetPosition(xBallPos);
-		Zenith_CameraComponent& xCamera = xCamEntity.GetComponent<Zenith_CameraComponent>();
-
-		Marble_CameraFollow::Update(xCamera, xBallPos, fDt);
-	}
-
-	// ========================================================================
-	// Collectibles (delegates to Marble_CollectibleSystem)
-	// ========================================================================
-	void HandleCollectibles(float fDt)
-	{
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		if (!m_xLevelEntities.uBallEntityID.IsValid() || !xScene.EntityExists(m_xLevelEntities.uBallEntityID))
-			return;
-
-		Zenith_Entity xBall = xScene.GetEntity(m_xLevelEntities.uBallEntityID);
-		Zenith_Maths::Vector3 xBallPos;
-		xBall.GetComponent<Zenith_TransformComponent>().GetPosition(xBallPos);
-
-		// Check for collections
-		Marble_CollectibleSystem::CollectionResult xResult =
-			Marble_CollectibleSystem::CheckCollectibles(xBallPos, m_xLevelEntities.axCollectibleEntityIDs, m_uCollectedCount);
-
-		// Update score and count
-		m_uScore += xResult.uScoreGained;
-		m_uCollectedCount += xResult.uCollectedCount;
-
-		// Check win condition
-		if (xResult.bAllCollected)
-		{
-			m_eGameState = MarbleGameState::WON;
-		}
-
-		// Animate collectibles
-		Marble_CollectibleSystem::UpdateCollectibleRotation(m_xLevelEntities.axCollectibleEntityIDs, fDt);
-	}
-
-	// ========================================================================
-	// Level Generation (delegates to Marble_LevelGenerator)
-	// ========================================================================
-	void GenerateLevel()
-	{
-		// Clean up existing level
-		Marble_LevelGenerator::DestroyLevel(m_xLevelEntities);
-
-		// Generate new level
+		// Generate level (uses GetActiveScene internally)
 		Marble_LevelGenerator::GenerateLevel(
 			m_xLevelEntities,
 			m_xRng,
@@ -365,24 +312,224 @@ private:
 		m_uCollectedCount = 0;
 	}
 
+	void ReturnToMenu()
+	{
+		ClearEntityReferences();
+
+		if (m_xLevelScene.IsValid())
+		{
+			Zenith_SceneManager::UnloadScene(m_xLevelScene);
+			m_xLevelScene = Zenith_Scene();
+		}
+
+		m_eGameState = MarbleGameState::MAIN_MENU;
+		m_iFocusIndex = 0;
+		SetMenuVisible(true);
+		SetHUDVisible(false);
+	}
+
 	void ResetLevel()
 	{
-		GenerateLevel();
+		ClearEntityReferences();
+
+		if (m_xLevelScene.IsValid())
+		{
+			Zenith_SceneManager::UnloadScene(m_xLevelScene);
+			m_xLevelScene = Zenith_Scene();
+		}
+
+		// Create fresh level scene
+		m_xLevelScene = Zenith_SceneManager::CreateEmptyScene("Level");
+		Zenith_SceneManager::SetActiveScene(m_xLevelScene);
+
+		// Generate level
+		Marble_LevelGenerator::GenerateLevel(
+			m_xLevelEntities,
+			m_xRng,
+			Marble::g_pxBallPrefab,
+			Marble::g_pxPlatformPrefab,
+			Marble::g_pxGoalPrefab,
+			Marble::g_pxCollectiblePrefab,
+			m_pxSphereGeometry,
+			m_pxCubeGeometry,
+			m_xBallMaterial.Get(),
+			m_xPlatformMaterial.Get(),
+			m_xGoalMaterial.Get(),
+			m_xCollectibleMaterial.Get());
+
+		m_eGameState = MarbleGameState::PLAYING;
+		m_uScore = 0;
+		m_fTimeRemaining = s_fInitialTime;
+		m_uCollectedCount = 0;
+	}
+
+	void ClearEntityReferences()
+	{
+		m_xLevelEntities.uBallEntityID = INVALID_ENTITY_ID;
+		m_xLevelEntities.uGoalEntityID = INVALID_ENTITY_ID;
+		m_xLevelEntities.axPlatformEntityIDs.clear();
+		m_xLevelEntities.axCollectibleEntityIDs.clear();
 	}
 
 	// ========================================================================
-	// Pause
+	// Menu UI
 	// ========================================================================
-	void TogglePause()
+	void SetMenuVisible(bool bVisible)
 	{
-		if (m_eGameState == MarbleGameState::PLAYING)
+		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
+			return;
+		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+
+		Zenith_UI::Zenith_UIText* pxTitle = xUI.FindElement<Zenith_UI::Zenith_UIText>("MenuTitle");
+		if (pxTitle) pxTitle->SetVisible(bVisible);
+		Zenith_UI::Zenith_UIButton* pxPlay = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuPlay");
+		if (pxPlay) pxPlay->SetVisible(bVisible);
+		Zenith_UI::Zenith_UIButton* pxQuit = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuQuit");
+		if (pxQuit) pxQuit->SetVisible(bVisible);
+	}
+
+	void SetHUDVisible(bool bVisible)
+	{
+		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
+			return;
+		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+
+		const char* aszElements[] = { "Title", "Score", "Time", "Collected", "Controls", "Status" };
+		for (const char* szName : aszElements)
 		{
-			m_eGameState = MarbleGameState::PAUSED;
+			Zenith_UI::Zenith_UIText* pxText = xUI.FindElement<Zenith_UI::Zenith_UIText>(szName);
+			if (pxText) pxText->SetVisible(bVisible);
 		}
-		else if (m_eGameState == MarbleGameState::PAUSED)
+	}
+
+	void UpdateMenuInput()
+	{
+		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
+			return;
+		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+
+		static constexpr int32_t s_iButtonCount = 2;
+
+		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_UP) || Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_W))
+			m_iFocusIndex = (m_iFocusIndex - 1 + s_iButtonCount) % s_iButtonCount;
+		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_DOWN) || Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_S))
+			m_iFocusIndex = (m_iFocusIndex + 1) % s_iButtonCount;
+
+		Zenith_UI::Zenith_UIButton* pxPlay = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuPlay");
+		Zenith_UI::Zenith_UIButton* pxQuit = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuQuit");
+		if (pxPlay) pxPlay->SetFocused(m_iFocusIndex == 0);
+		if (pxQuit) pxQuit->SetFocused(m_iFocusIndex == 1);
+	}
+
+	// ========================================================================
+	// Input and Physics (delegates to modules)
+	// ========================================================================
+	void HandleInput(float /*fDt*/)
+	{
+		if (!m_xLevelScene.IsValid())
+			return;
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(m_xLevelScene);
+		if (!m_xLevelEntities.uBallEntityID.IsValid() || !pxSceneData->EntityExists(m_xLevelEntities.uBallEntityID))
+			return;
+
+		Zenith_Entity xBall = pxSceneData->GetEntity(m_xLevelEntities.uBallEntityID);
+		if (!xBall.HasComponent<Zenith_ColliderComponent>())
+			return;
+
+		Zenith_ColliderComponent& xCollider = xBall.GetComponent<Zenith_ColliderComponent>();
+
+		// Get camera from persistent scene
+		Zenith_CameraComponent* pxCamera = Zenith_SceneManager::FindMainCameraAcrossScenes();
+		if (!pxCamera)
+			return;
+
+		// Get positions for input calculation
+		Zenith_Maths::Vector3 xCamPos, xBallPos;
+		pxCamera->GetPosition(xCamPos);
+		xBall.GetComponent<Zenith_TransformComponent>().GetPosition(xBallPos);
+
+		// Get camera-relative movement direction
+		Zenith_Maths::Vector3 xDirection = Marble_Input::GetMovementDirection(xCamPos, xBallPos);
+
+		// Apply movement
+		Marble_PhysicsController::ApplyMovement(xCollider, xDirection);
+
+		// Handle jump
+		if (Marble_Input::WasJumpPressed())
 		{
-			m_eGameState = MarbleGameState::PLAYING;
+			Marble_PhysicsController::TryJump(xCollider);
 		}
+	}
+
+	void CheckFallCondition()
+	{
+		if (!m_xLevelScene.IsValid())
+			return;
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(m_xLevelScene);
+		if (!m_xLevelEntities.uBallEntityID.IsValid() || !pxSceneData->EntityExists(m_xLevelEntities.uBallEntityID))
+			return;
+
+		Zenith_Entity xBall = pxSceneData->GetEntity(m_xLevelEntities.uBallEntityID);
+		Zenith_Maths::Vector3 xBallPos;
+		xBall.GetComponent<Zenith_TransformComponent>().GetPosition(xBallPos);
+
+		if (Marble_PhysicsController::HasFallenOff(xBallPos))
+		{
+			m_eGameState = MarbleGameState::LOST;
+		}
+	}
+
+	// ========================================================================
+	// Camera (delegates to Marble_CameraFollow)
+	// ========================================================================
+	void UpdateCamera(float fDt)
+	{
+		if (!m_xLevelScene.IsValid())
+			return;
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(m_xLevelScene);
+		if (!m_xLevelEntities.uBallEntityID.IsValid() || !pxSceneData->EntityExists(m_xLevelEntities.uBallEntityID))
+			return;
+
+		Zenith_CameraComponent* pxCamera = Zenith_SceneManager::FindMainCameraAcrossScenes();
+		if (!pxCamera)
+			return;
+
+		Zenith_Entity xBall = pxSceneData->GetEntity(m_xLevelEntities.uBallEntityID);
+		Zenith_Maths::Vector3 xBallPos;
+		xBall.GetComponent<Zenith_TransformComponent>().GetPosition(xBallPos);
+
+		Marble_CameraFollow::Update(*pxCamera, xBallPos, fDt);
+	}
+
+	// ========================================================================
+	// Collectibles (delegates to Marble_CollectibleSystem)
+	// ========================================================================
+	void HandleCollectibles(float fDt)
+	{
+		if (!m_xLevelScene.IsValid())
+			return;
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(m_xLevelScene);
+		if (!m_xLevelEntities.uBallEntityID.IsValid() || !pxSceneData->EntityExists(m_xLevelEntities.uBallEntityID))
+			return;
+
+		Zenith_Entity xBall = pxSceneData->GetEntity(m_xLevelEntities.uBallEntityID);
+		Zenith_Maths::Vector3 xBallPos;
+		xBall.GetComponent<Zenith_TransformComponent>().GetPosition(xBallPos);
+
+		// Check for collections (uses GetActiveScene internally - still works)
+		Marble_CollectibleSystem::CollectionResult xResult =
+			Marble_CollectibleSystem::CheckCollectibles(xBallPos, m_xLevelEntities.axCollectibleEntityIDs, m_uCollectedCount);
+
+		m_uScore += xResult.uScoreGained;
+		m_uCollectedCount += xResult.uCollectedCount;
+
+		if (xResult.bAllCollected)
+		{
+			m_eGameState = MarbleGameState::WON;
+		}
+
+		// Animate collectibles (uses GetActiveScene internally - still works)
+		Marble_CollectibleSystem::UpdateCollectibleRotation(m_xLevelEntities.axCollectibleEntityIDs, fDt);
 	}
 
 	// ========================================================================
@@ -417,8 +564,14 @@ private:
 	// Level entities (managed by Marble_LevelGenerator)
 	Marble_LevelGenerator::LevelEntities m_xLevelEntities;
 
+	// Scene handle for the level scene
+	Zenith_Scene m_xLevelScene;
+
 	// Random number generator
 	std::mt19937 m_xRng;
+
+	// Menu keyboard focus
+	int32_t m_iFocusIndex;
 
 public:
 	// Resource pointers (set in OnAwake from globals)

@@ -4,6 +4,12 @@
  *
  * A sliding tile puzzle where players drag colored shapes onto matching colored cats.
  * Shapes can be multi-cube polyominos. Win by eliminating all cats.
+ *
+ * Architecture:
+ * - GameManager entity (persistent): camera + UI + script
+ * - Puzzle scene (created/destroyed per level): floor, shapes, cats
+ *
+ * State machine: MAIN_MENU -> PLAYING -> LEVEL_COMPLETE -> (next level / menu)
  */
 
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
@@ -12,12 +18,15 @@
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Zenith_Scene.h"
+#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneData.h"
 #include "Input/Zenith_Input.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "Prefab/Zenith_Prefab.h"
+#include "UI/Zenith_UIButton.h"
 
 #include "TilePuzzle/Components/TilePuzzle_Types.h"
 #include "TilePuzzle/Components/TilePuzzle_LevelGenerator.h"
@@ -71,7 +80,7 @@ public:
 
 	TilePuzzle_Behaviour() = delete;
 	TilePuzzle_Behaviour(Zenith_Entity& /*xParentEntity*/)
-		: m_eState(TILEPUZZLE_STATE_GENERATING)
+		: m_eState(TILEPUZZLE_STATE_MAIN_MENU)
 		, m_uCurrentLevelNumber(1)
 		, m_uMoveCount(0)
 		, m_iCursorX(0)
@@ -80,6 +89,7 @@ public:
 		, m_fSlideProgress(0.0f)
 		, m_eSlideDirection(TILEPUZZLE_DIR_NONE)
 		, m_xRng(std::random_device{}())
+		, m_iFocusIndex(0)
 	{
 	}
 
@@ -110,12 +120,10 @@ public:
 			Zenith_MaterialAsset* pxOriginal = m_axShapeMaterials[i].Get();
 			Zenith_MaterialAsset* pxHighlighted = xRegistry.Create<Zenith_MaterialAsset>();
 
-			// Copy properties from original material
 			pxHighlighted->SetName(pxOriginal->GetName() + "_Highlighted");
 			pxHighlighted->SetBaseColor(pxOriginal->GetBaseColor());
 			pxHighlighted->SetDiffuseTextureDirectly(pxOriginal->GetDiffuseTexture());
 
-			// Add emissive glow for selection highlight
 			Zenith_Maths::Vector4 xBaseColor = pxOriginal->GetBaseColor();
 			pxHighlighted->SetEmissiveColor(Zenith_Maths::Vector3(xBaseColor.x, xBaseColor.y, xBaseColor.z));
 			pxHighlighted->SetEmissiveIntensity(0.5f);
@@ -134,14 +142,30 @@ public:
 			m_xFloorMaterialHighlighted.Set(pxFloorHighlighted);
 		}
 
-		// Heavy initialization moved to OnStart
+		// Wire up button callbacks
+		if (m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		{
+			Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+			Zenith_UI::Zenith_UIButton* pxPlayBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuPlay");
+			if (pxPlayBtn)
+			{
+				pxPlayBtn->SetOnClick(&OnPlayClicked, this);
+				pxPlayBtn->SetFocused(true);
+			}
+		}
+
+		// Start in main menu state
+		m_eState = TILEPUZZLE_STATE_MAIN_MENU;
+		SetMenuVisible(true);
+		SetHUDVisible(false);
 	}
 
 	void OnStart() ZENITH_FINAL override
 	{
-		if (m_axFloorEntityIDs.empty())
+		if (m_eState == TILEPUZZLE_STATE_MAIN_MENU)
 		{
-			GenerateNewLevel();
+			SetMenuVisible(true);
+			SetHUDVisible(false);
 		}
 	}
 
@@ -149,7 +173,17 @@ public:
 	{
 		switch (m_eState)
 		{
+		case TILEPUZZLE_STATE_MAIN_MENU:
+			UpdateMenuInput();
+			break;
+
 		case TILEPUZZLE_STATE_PLAYING:
+			// Escape returns to menu
+			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
+			{
+				ReturnToMenu();
+				return;
+			}
 			HandleInput();
 			break;
 
@@ -170,16 +204,25 @@ public:
 			break;
 
 		case TILEPUZZLE_STATE_LEVEL_COMPLETE:
+			// Escape returns to menu even from level complete
+			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
+			{
+				ReturnToMenu();
+				return;
+			}
 			HandleLevelCompleteInput();
 			break;
 
 		case TILEPUZZLE_STATE_GENERATING:
-			// Wait for generation
 			break;
 		}
 
-		UpdateVisuals();
-		UpdateUI();
+		// Only update visuals/UI while playing
+		if (m_eState != TILEPUZZLE_STATE_MAIN_MENU)
+		{
+			UpdateVisuals();
+			UpdateUI();
+		}
 	}
 
 	void RenderPropertiesPanel() override
@@ -191,12 +234,12 @@ public:
 		ImGui::Text("Moves: %u", m_uMoveCount);
 		ImGui::Text("Cats remaining: %zu", CountRemainingCats());
 
-		const char* aszStateNames[] = { "Playing", "Sliding", "Checking", "Complete", "Generating" };
+		const char* aszStateNames[] = { "Menu", "Playing", "Sliding", "Checking", "Complete", "Generating" };
 		ImGui::Text("State: %s", aszStateNames[m_eState]);
 
 		if (ImGui::Button("New Level"))
 		{
-			GenerateNewLevel();
+			StartNewLevel();
 		}
 
 		ImGui::SameLine();
@@ -230,6 +273,153 @@ public:
 
 private:
 	// ========================================================================
+	// Button Callbacks (static function pointers, NOT std::function)
+	// ========================================================================
+
+	static void OnPlayClicked(void* pxUserData)
+	{
+		TilePuzzle_Behaviour* pxSelf = static_cast<TilePuzzle_Behaviour*>(pxUserData);
+		pxSelf->StartGame();
+	}
+
+	// ========================================================================
+	// State Transitions
+	// ========================================================================
+
+	void StartGame()
+	{
+		SetMenuVisible(false);
+		SetHUDVisible(true);
+
+		// Create puzzle scene for level entities
+		m_xPuzzleScene = Zenith_SceneManager::CreateEmptyScene("Puzzle");
+		Zenith_SceneManager::SetActiveScene(m_xPuzzleScene);
+
+		GenerateNewLevel();
+	}
+
+	void StartNewLevel()
+	{
+		// Unload current puzzle scene (destroys all level entities automatically)
+		if (m_xPuzzleScene.IsValid())
+		{
+			ClearEntityReferences();
+			Zenith_SceneManager::UnloadScene(m_xPuzzleScene);
+		}
+
+		// Create fresh puzzle scene
+		m_xPuzzleScene = Zenith_SceneManager::CreateEmptyScene("Puzzle");
+		Zenith_SceneManager::SetActiveScene(m_xPuzzleScene);
+
+		m_eState = TILEPUZZLE_STATE_GENERATING;
+		GenerateNewLevel();
+	}
+
+	void ReturnToMenu()
+	{
+		// Unload puzzle scene (destroys all level entities automatically)
+		if (m_xPuzzleScene.IsValid())
+		{
+			ClearEntityReferences();
+			Zenith_SceneManager::UnloadScene(m_xPuzzleScene);
+			m_xPuzzleScene = Zenith_Scene();
+		}
+
+		m_eState = TILEPUZZLE_STATE_MAIN_MENU;
+		SetMenuVisible(true);
+		SetHUDVisible(false);
+
+		// Reset button focus
+		if (m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		{
+			Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+			Zenith_UI::Zenith_UIButton* pxPlayBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuPlay");
+			if (pxPlayBtn)
+			{
+				pxPlayBtn->SetFocused(true);
+			}
+		}
+		m_iFocusIndex = 0;
+	}
+
+	// ========================================================================
+	// Menu UI
+	// ========================================================================
+
+	void SetMenuVisible(bool bVisible)
+	{
+		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
+			return;
+
+		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+
+		Zenith_UI::Zenith_UIText* pxTitle = xUI.FindElement<Zenith_UI::Zenith_UIText>("MenuTitle");
+		if (pxTitle) pxTitle->SetVisible(bVisible);
+
+		Zenith_UI::Zenith_UIButton* pxPlay = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuPlay");
+		if (pxPlay) pxPlay->SetVisible(bVisible);
+	}
+
+	void SetHUDVisible(bool bVisible)
+	{
+		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
+			return;
+
+		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+
+		const char* aszHUDElements[] = {
+			"Title", "ControlsHeader", "MoveInstr", "ResetInstr",
+			"GoalHeader", "GoalDesc", "Status", "Progress", "WinText"
+		};
+
+		for (const char* szName : aszHUDElements)
+		{
+			Zenith_UI::Zenith_UIText* pxText = xUI.FindElement<Zenith_UI::Zenith_UIText>(szName);
+			if (pxText) pxText->SetVisible(bVisible);
+		}
+	}
+
+	void UpdateMenuInput()
+	{
+		static constexpr int32_t s_iButtonCount = 1;
+
+		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_UP) ||
+			Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_W))
+		{
+			m_iFocusIndex = (m_iFocusIndex - 1 + s_iButtonCount) % s_iButtonCount;
+		}
+		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_DOWN) ||
+			Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_S))
+		{
+			m_iFocusIndex = (m_iFocusIndex + 1) % s_iButtonCount;
+		}
+
+		if (m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		{
+			Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+			Zenith_UI::Zenith_UIButton* pxPlay = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuPlay");
+			if (pxPlay) pxPlay->SetFocused(m_iFocusIndex == 0);
+		}
+	}
+
+	// ========================================================================
+	// Entity Reference Management
+	// ========================================================================
+
+	void ClearEntityReferences()
+	{
+		m_axFloorEntityIDs.clear();
+		for (auto& xShape : m_xCurrentLevel.axShapes)
+		{
+			xShape.axCubeEntityIDs.clear();
+		}
+		for (auto& xCat : m_xCurrentLevel.axCats)
+		{
+			xCat.uEntityID = Zenith_EntityID();
+		}
+	}
+
+	// ========================================================================
 	// Game State
 	// ========================================================================
 	TilePuzzleGameState m_eState;
@@ -255,7 +445,7 @@ private:
 	std::mt19937 m_xRng;
 
 	// Entity IDs - floor entities indexed by grid position (y * 1000 + x)
-	std::unordered_map<uint32_t, Zenith_EntityID> m_axFloorEntityIDs;
+	std::unordered_map<uint32_t, Zenith_EntityID> m_axFloorEntityIDs; // #TODO: Replace with engine hash map
 
 	// Cached resources
 	Flux_MeshGeometry* m_pxCubeGeometry = nullptr;
@@ -270,19 +460,20 @@ private:
 	// Selection tracking
 	int32_t m_iPreviousSelectedShapeIndex = -1;
 
+	// Menu state
+	int32_t m_iFocusIndex;
+
+	// Scene handle for the puzzle scene (created/destroyed on transitions)
+	Zenith_Scene m_xPuzzleScene;
+
 	// ========================================================================
 	// Level Generation
 	// ========================================================================
 	void GenerateNewLevel()
 	{
-		DestroyLevelVisuals();
-
 		// Generate a solvable level using the level generator
-		bool bGenerated = TilePuzzle_LevelGenerator::GenerateLevel(
+		TilePuzzle_LevelGenerator::GenerateLevel(
 			m_xCurrentLevel, m_xRng, m_uCurrentLevelNumber);
-
-		// bGenerated is false if fallback level was used (generation failed)
-		(void)bGenerated;
 
 		CreateLevelVisuals();
 
@@ -306,19 +497,18 @@ private:
 		m_iPreviousCursorY = -1;
 		m_eState = TILEPUZZLE_STATE_PLAYING;
 
-		// Trigger initial cursor highlight
 		UpdateSelectionHighlight();
 	}
 
 	void ResetLevel()
 	{
-		GenerateNewLevel();
+		StartNewLevel();
 	}
 
 	void NextLevel()
 	{
 		m_uCurrentLevelNumber++;
-		GenerateNewLevel();
+		StartNewLevel();
 	}
 
 	// ========================================================================
@@ -349,12 +539,10 @@ private:
 		{
 			if (m_iSelectedShapeIndex >= 0)
 			{
-				// Deselect
 				m_iSelectedShapeIndex = -1;
 			}
 			else
 			{
-				// Try to select shape at cursor
 				m_iSelectedShapeIndex = GetShapeAtPosition(m_iCursorX, m_iCursorY);
 			}
 			return;
@@ -364,12 +552,10 @@ private:
 		{
 			if (m_iSelectedShapeIndex >= 0)
 			{
-				// Move selected shape
 				TryMoveShape(m_iSelectedShapeIndex, eDir);
 			}
 			else
 			{
-				// Move cursor
 				int32_t iDeltaX, iDeltaY;
 				TilePuzzleDirections::GetDelta(eDir, iDeltaX, iDeltaY);
 				int32_t iNewX = m_iCursorX + iDeltaX;
@@ -434,7 +620,6 @@ private:
 		int32_t iDeltaX, iDeltaY;
 		TilePuzzleDirections::GetDelta(eDir, iDeltaX, iDeltaY);
 
-		// Check if move is valid
 		if (!CanMoveShape(iShapeIndex, iDeltaX, iDeltaY))
 			return false;
 
@@ -445,7 +630,6 @@ private:
 		m_xSlideStartPos = GridToWorld(static_cast<float>(xShape.iOriginX), static_cast<float>(xShape.iOriginY), s_fShapeHeight);
 		m_xSlideEndPos = GridToWorld(static_cast<float>(xShape.iOriginX + iDeltaX), static_cast<float>(xShape.iOriginY + iDeltaY), s_fShapeHeight);
 
-		// Apply move to game state
 		xShape.iOriginX += iDeltaX;
 		xShape.iOriginY += iDeltaY;
 
@@ -463,21 +647,18 @@ private:
 			int32_t iNewX = xShape.iOriginX + xOffset.iX + iDeltaX;
 			int32_t iNewY = xShape.iOriginY + xOffset.iY + iDeltaY;
 
-			// Check bounds
 			if (iNewX < 0 || iNewX >= static_cast<int32_t>(m_xCurrentLevel.uGridWidth) ||
 				iNewY < 0 || iNewY >= static_cast<int32_t>(m_xCurrentLevel.uGridHeight))
 			{
 				return false;
 			}
 
-			// Check cell type
 			uint32_t uCellIndex = iNewY * m_xCurrentLevel.uGridWidth + iNewX;
 			if (m_xCurrentLevel.aeCells[uCellIndex] == TILEPUZZLE_CELL_EMPTY)
 			{
 				return false;
 			}
 
-			// Check collision with other shapes
 			for (size_t i = 0; i < m_xCurrentLevel.axShapes.size(); ++i)
 			{
 				if (static_cast<int32_t>(i) == iShapeIndex)
@@ -504,7 +685,13 @@ private:
 	// ========================================================================
 	void CheckCatElimination()
 	{
-		// For each shape, check if any of its cells overlap with a cat of the same color
+		if (!m_xPuzzleScene.IsValid())
+			return;
+
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(m_xPuzzleScene);
+		if (!pxSceneData)
+			return;
+
 		for (auto& xShape : m_xCurrentLevel.axShapes)
 		{
 			if (!xShape.pxDefinition->bDraggable)
@@ -522,17 +709,17 @@ private:
 
 					if (xCat.iGridX == iCellX && xCat.iGridY == iCellY && xCat.eColor == xShape.eColor)
 					{
-						// Eliminate cat
 						xCat.bEliminated = true;
 
-						// Hide the cat entity
-						Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-						Zenith_Entity xCatEntity = xScene.GetEntity(xCat.uEntityID);
-						if (xCatEntity.IsValid())
+						if (xCat.uEntityID.IsValid() && pxSceneData->EntityExists(xCat.uEntityID))
 						{
-							Zenith_Scene::Destroy(xCatEntity);
+							Zenith_Entity xCatEntity = pxSceneData->GetEntity(xCat.uEntityID);
+							if (xCatEntity.IsValid())
+							{
+								Zenith_SceneManager::Destroy(xCatEntity, 0.3f);
+							}
 						}
-						xCat.uEntityID = Zenith_EntityID();  // Clear stale reference
+						xCat.uEntityID = Zenith_EntityID();
 					}
 				}
 			}
@@ -575,6 +762,15 @@ private:
 	// ========================================================================
 	void CreateLevelVisuals()
 	{
+		if (!m_xPuzzleScene.IsValid())
+			return;
+
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(m_xPuzzleScene);
+		if (!pxSceneData || !TilePuzzle::g_pxCellPrefab || !TilePuzzle::g_pxCellPrefab->IsValid())
+		{
+			return;
+		}
+
 		// Create floor cells
 		for (uint32_t y = 0; y < m_xCurrentLevel.uGridHeight; ++y)
 		{
@@ -583,7 +779,10 @@ private:
 				uint32_t uIdx = y * m_xCurrentLevel.uGridWidth + x;
 				if (m_xCurrentLevel.aeCells[uIdx] == TILEPUZZLE_CELL_FLOOR)
 				{
-					Zenith_Entity xFloorEntity = TilePuzzle::g_pxCellPrefab->Instantiate(&Zenith_Scene::GetCurrentScene(), "Floor");
+					Zenith_Entity xFloorEntity = TilePuzzle::g_pxCellPrefab->Instantiate(pxSceneData, "Floor");
+					if (!xFloorEntity.IsValid())
+						continue;
+
 					Zenith_TransformComponent& xTransform = xFloorEntity.GetComponent<Zenith_TransformComponent>();
 					xTransform.SetPosition(GridToWorld(static_cast<float>(x), static_cast<float>(y), 0.0f));
 					xTransform.SetScale(Zenith_Maths::Vector3(s_fCellSize * 0.95f, s_fFloorHeight, s_fCellSize * 0.95f));
@@ -613,7 +812,7 @@ private:
 				float fX = static_cast<float>(xShape.iOriginX + xOffset.iX);
 				float fY = static_cast<float>(xShape.iOriginY + xOffset.iY);
 
-				Zenith_Entity xCubeEntity = TilePuzzle::g_pxShapeCubePrefab->Instantiate(&Zenith_Scene::GetCurrentScene(), "ShapeCube");
+				Zenith_Entity xCubeEntity = TilePuzzle::g_pxShapeCubePrefab->Instantiate(pxSceneData, "ShapeCube");
 				Zenith_TransformComponent& xTransform = xCubeEntity.GetComponent<Zenith_TransformComponent>();
 				xTransform.SetPosition(GridToWorld(fX, fY, s_fShapeHeight));
 				xTransform.SetScale(Zenith_Maths::Vector3(s_fCellSize * 0.85f, s_fShapeHeight * 2.0f, s_fCellSize * 0.85f));
@@ -628,7 +827,7 @@ private:
 		// Create cat visuals
 		for (auto& xCat : m_xCurrentLevel.axCats)
 		{
-			Zenith_Entity xCatEntity = TilePuzzle::g_pxCatPrefab->Instantiate(&Zenith_Scene::GetCurrentScene(), "Cat");
+			Zenith_Entity xCatEntity = TilePuzzle::g_pxCatPrefab->Instantiate(pxSceneData, "Cat");
 			Zenith_TransformComponent& xTransform = xCatEntity.GetComponent<Zenith_TransformComponent>();
 			xTransform.SetPosition(GridToWorld(static_cast<float>(xCat.iGridX), static_cast<float>(xCat.iGridY), s_fCatHeight));
 			xTransform.SetScale(Zenith_Maths::Vector3(s_fCatRadius * 2.0f));
@@ -640,64 +839,28 @@ private:
 		}
 	}
 
-	void DestroyLevelVisuals()
-	{
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-
-		// Destroy floor entities
-		for (auto& xPair : m_axFloorEntityIDs)
-		{
-			Zenith_Entity xEntity = xScene.GetEntity(xPair.second);
-			if (xEntity.IsValid())
-			{
-				Zenith_Scene::Destroy(xEntity);
-			}
-		}
-		m_axFloorEntityIDs.clear();
-
-		// Destroy shape cube entities
-		for (auto& xShape : m_xCurrentLevel.axShapes)
-		{
-			for (auto uID : xShape.axCubeEntityIDs)
-			{
-				Zenith_Entity xEntity = xScene.GetEntity(uID);
-				if (xEntity.IsValid())
-				{
-					Zenith_Scene::Destroy(xEntity);
-				}
-			}
-			xShape.axCubeEntityIDs.clear();
-		}
-
-		// Destroy cat entities
-		for (auto& xCat : m_xCurrentLevel.axCats)
-		{
-			if (!xCat.uEntityID.IsValid())
-				continue;
-			Zenith_Entity xEntity = xScene.GetEntity(xCat.uEntityID);
-			if (xEntity.IsValid())
-			{
-				Zenith_Scene::Destroy(xEntity);
-			}
-		}
-	}
-
 	void UpdateVisuals()
 	{
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+		if (!m_xPuzzleScene.IsValid())
+			return;
+
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(m_xPuzzleScene);
+		if (!pxSceneData)
+			return;
 
 		// Update shape positions (for sliding animation)
 		if (m_eState == TILEPUZZLE_STATE_SHAPE_SLIDING && m_iSlidingShapeIndex >= 0)
 		{
 			TilePuzzleShapeInstance& xShape = m_xCurrentLevel.axShapes[m_iSlidingShapeIndex];
 
-			// Interpolate position
 			Zenith_Maths::Vector3 xCurrentPos = m_xSlideStartPos + (m_xSlideEndPos - m_xSlideStartPos) * m_fSlideProgress;
 
-			// Update all cube entities in the shape
 			for (size_t i = 0; i < xShape.axCubeEntityIDs.size(); ++i)
 			{
-				Zenith_Entity xCube = xScene.GetEntity(xShape.axCubeEntityIDs[i]);
+				if (!pxSceneData->EntityExists(xShape.axCubeEntityIDs[i]))
+					continue;
+
+				Zenith_Entity xCube = pxSceneData->GetEntity(xShape.axCubeEntityIDs[i]);
 				if (xCube.IsValid())
 				{
 					const TilePuzzleCellOffset& xOffset = xShape.pxDefinition->axCells[i];
@@ -711,13 +874,17 @@ private:
 			}
 		}
 
-		// Update selection highlighting
 		UpdateSelectionHighlight();
 	}
 
 	void UpdateSelectionHighlight()
 	{
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+		if (!m_xPuzzleScene.IsValid())
+			return;
+
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(m_xPuzzleScene);
+		if (!pxSceneData)
+			return;
 
 		bool bShapeSelectionChanged = (m_iPreviousSelectedShapeIndex != m_iSelectedShapeIndex);
 		bool bCursorMoved = (m_iPreviousCursorX != m_iCursorX || m_iPreviousCursorY != m_iCursorY);
@@ -735,7 +902,9 @@ private:
 					Zenith_MaterialAsset* pxNormalMaterial = m_axShapeMaterials[xPrevShape.eColor].Get();
 					for (auto uID : xPrevShape.axCubeEntityIDs)
 					{
-						Zenith_Entity xCube = xScene.GetEntity(uID);
+						if (!pxSceneData->EntityExists(uID))
+							continue;
+						Zenith_Entity xCube = pxSceneData->GetEntity(uID);
 						if (xCube.IsValid() && xCube.HasComponent<Zenith_ModelComponent>())
 						{
 							Zenith_ModelComponent& xModel = xCube.GetComponent<Zenith_ModelComponent>();
@@ -758,7 +927,9 @@ private:
 					Zenith_MaterialAsset* pxHighlightMaterial = m_axShapeMaterialsHighlighted[xShape.eColor].Get();
 					for (auto uID : xShape.axCubeEntityIDs)
 					{
-						Zenith_Entity xCube = xScene.GetEntity(uID);
+						if (!pxSceneData->EntityExists(uID))
+							continue;
+						Zenith_Entity xCube = pxSceneData->GetEntity(uID);
 						if (xCube.IsValid() && xCube.HasComponent<Zenith_ModelComponent>())
 						{
 							Zenith_ModelComponent& xModel = xCube.GetComponent<Zenith_ModelComponent>();
@@ -782,9 +953,9 @@ private:
 			{
 				uint32_t uPrevKey = m_iPreviousCursorY * 1000 + m_iPreviousCursorX;
 				auto itPrev = m_axFloorEntityIDs.find(uPrevKey);
-				if (itPrev != m_axFloorEntityIDs.end())
+				if (itPrev != m_axFloorEntityIDs.end() && pxSceneData->EntityExists(itPrev->second))
 				{
-					Zenith_Entity xFloor = xScene.GetEntity(itPrev->second);
+					Zenith_Entity xFloor = pxSceneData->GetEntity(itPrev->second);
 					if (xFloor.IsValid() && xFloor.HasComponent<Zenith_ModelComponent>())
 					{
 						Zenith_ModelComponent& xModel = xFloor.GetComponent<Zenith_ModelComponent>();
@@ -799,9 +970,9 @@ private:
 			// Apply highlight to current cursor floor tile
 			uint32_t uCurKey = m_iCursorY * 1000 + m_iCursorX;
 			auto itCur = m_axFloorEntityIDs.find(uCurKey);
-			if (itCur != m_axFloorEntityIDs.end())
+			if (itCur != m_axFloorEntityIDs.end() && pxSceneData->EntityExists(itCur->second))
 			{
-				Zenith_Entity xFloor = xScene.GetEntity(itCur->second);
+				Zenith_Entity xFloor = pxSceneData->GetEntity(itCur->second);
 				if (xFloor.IsValid() && xFloor.HasComponent<Zenith_ModelComponent>())
 				{
 					Zenith_ModelComponent& xModel = xFloor.GetComponent<Zenith_ModelComponent>();
@@ -862,7 +1033,6 @@ private:
 	// ========================================================================
 	Zenith_Maths::Vector3 GridToWorld(float fGridX, float fGridY, float fHeight) const
 	{
-		// Center the grid at origin
 		float fOffsetX = -static_cast<float>(m_xCurrentLevel.uGridWidth) * 0.5f + 0.5f;
 		float fOffsetY = -static_cast<float>(m_xCurrentLevel.uGridHeight) * 0.5f + 0.5f;
 

@@ -18,6 +18,8 @@ A resource gathering and crafting survival game demonstrating advanced Zenith en
 | **Materials/Textures** | `Zenith_MaterialAsset` | Color-coded materials for game objects |
 | **DataAsset System** | `Zenith_DataAsset` | Configuration with serialization |
 | **Camera** | `Zenith_CameraComponent` | Third-person follow camera |
+| **Multi-Scene** | `Zenith_SceneManager` | `DontDestroyOnLoad()`, `CreateEmptyScene()`, `UnloadScene()` |
+| **UI Buttons** | `Zenith_UIButton` | Clickable/tappable menu buttons with `SetOnClick()` callback |
 
 ## File Structure
 
@@ -179,6 +181,38 @@ bool hasAny = scene.Query<TransformComponent>().Any();
 - Interaction prompts
 - Status messages
 
+## Multi-Scene Architecture
+
+### Entity Layout
+
+The game uses two scenes:
+
+- **Persistent Scene** (default scene): Contains the `GameManager` entity with `Zenith_CameraComponent`, `Zenith_UIComponent`, and `Zenith_ScriptComponent` (Survival_Behaviour). This entity calls `DontDestroyOnLoad()` so it survives scene transitions.
+- **World Scene** (`m_xWorldScene`, named "World"): Contains the player, resource nodes (trees, rocks, berry bushes), ground plane, and all world entities. Created when entering gameplay, unloaded when returning to menu.
+
+### Game State Machine
+
+```
+MAIN_MENU  ──(Play)──>  PLAYING  ──(Escape)──>  MAIN_MENU
+```
+
+There is no pause state. Pressing Escape from gameplay returns directly to the main menu.
+
+### Scene Transition Pattern
+
+**Menu to Gameplay:**
+```cpp
+m_xWorldScene = Zenith_SceneManager::CreateEmptyScene("World");
+Zenith_SceneManager::SetActiveScene(m_xWorldScene);
+// Populate world: player, resource nodes, ground plane, etc.
+```
+
+**Gameplay to Menu:**
+```cpp
+Zenith_SceneManager::UnloadScene(m_xWorldScene);
+// GameManager persists (DontDestroyOnLoad), UI switches to menu
+```
+
 ## Controls
 
 | Key | Action |
@@ -188,6 +222,10 @@ bool hasAny = scene.Query<TransformComponent>().Any();
 | 1 | Craft Axe (3 Wood + 2 Stone) |
 | 2 | Craft Pickaxe (2 Wood + 3 Stone) |
 | R | Reset game |
+| Escape | Return to menu (from gameplay) |
+| Click / Touch | Select menu button |
+| W/S or Up/Down | Navigate menu (in menu state) |
+| Enter | Activate focused button |
 | Tab | (Reserved for inventory) |
 | C | (Reserved for crafting menu) |
 
@@ -272,13 +310,12 @@ survival.exe
 When launching in a tools build (`vs2022_Debug_Win64_True`):
 
 ### Scene Hierarchy
-- **MainCamera** - Third-person camera following the player
-- **SurvivalGame** - Main game entity with UIComponent and ScriptComponent (Survival_Behaviour)
-- **Player** - Player character entity (capsule) at world origin
-- **Tree_X** - Multiple tree resource entities scattered around
-- **Rock_X** - Multiple rock resource entities scattered around
-- **BerryBush_X** - Multiple berry bush entities scattered around
-- **Ground** - Ground plane entity
+- **GameManager** - Persistent entity (Camera + UI + Script) - `DontDestroyOnLoad`
+- **Player** - Player character entity (capsule) at world origin (in World scene)
+- **Tree_X** - Multiple tree resource entities scattered around (in World scene)
+- **Rock_X** - Multiple rock resource entities scattered around (in World scene)
+- **BerryBush_X** - Multiple berry bush entities scattered around (in World scene)
+- **Ground** - Ground plane entity (in World scene)
 
 ### Viewport
 - **Third-person perspective** view behind and above the player
@@ -420,10 +457,26 @@ When launching in a tools build (`vs2022_Debug_Win64_True`):
 | T9.4 | Walk away during respawn | Respawn still occurs |
 | T9.5 | Minimize/restore window | Game resumes correctly |
 
-### T10: Editor Features (Tools Build Only)
+### T10: Menu Navigation
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| T10.1 | Select SurvivalGame entity | Properties panel appears |
-| T10.2 | Modify interaction range | Range affects harvest distance |
-| T10.3 | Modify respawn time | Resources respawn faster/slower |
-| T10.4 | Check task debug info | Parallel task stats displayed |
+| T10.1 | Launch game | Main menu displayed with Play button |
+| T10.2 | Click Play button | World scene created, gameplay begins |
+| T10.3 | Press Up/Down or W/S | Menu button focus changes |
+| T10.4 | Press Enter on focused button | Button activates |
+
+### T11: Scene Transitions
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| T11.1 | Click Play from main menu | World scene created, resources spawn |
+| T11.2 | Press Escape during gameplay | World scene unloaded, main menu shown |
+| T11.3 | Click Play again after returning | New world scene created, game works normally |
+| T11.4 | Repeat menu/game cycle multiple times | No leaks, no crashes, transitions clean |
+
+### T12: Editor Features (Tools Build Only)
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| T12.1 | Select GameManager entity | Properties panel appears |
+| T12.2 | Modify interaction range | Range affects harvest distance |
+| T12.3 | Modify respawn time | Resources respawn faster/slower |
+| T12.4 | Check task debug info | Parallel task stats displayed |

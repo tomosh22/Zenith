@@ -7,6 +7,8 @@
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
+#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneData.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
@@ -16,6 +18,7 @@
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "Prefab/Zenith_Prefab.h"
 #include "AssetHandling/Zenith_MeshGeometryAsset.h"
+#include "UI/Zenith_UIButton.h"
 
 #include <cmath>
 
@@ -182,46 +185,47 @@ static void InitializeMarbleResources()
 	// Note: Prefabs are lightweight templates with only TransformComponent
 	// ModelComponent and ColliderComponent are added AFTER setting position/scale
 	// (ColliderComponent creates physics bodies - must be added after transform is set)
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
 
 	// Ball prefab - basic entity (ModelComponent and ColliderComponent added at runtime)
 	{
-		Zenith_Entity xBallTemplate(&xScene, "BallTemplate");
+		Zenith_Entity xBallTemplate(pxSceneData, "BallTemplate");
 
 		g_pxBallPrefab = new Zenith_Prefab();
 		g_pxBallPrefab->CreateFromEntity(xBallTemplate, "Ball");
 
-		Zenith_Scene::Destroy(xBallTemplate);
+		Zenith_SceneManager::Destroy(xBallTemplate);
 	}
 
 	// Platform prefab - basic entity (ModelComponent and ColliderComponent added at runtime)
 	{
-		Zenith_Entity xPlatformTemplate(&xScene, "PlatformTemplate");
+		Zenith_Entity xPlatformTemplate(pxSceneData, "PlatformTemplate");
 
 		g_pxPlatformPrefab = new Zenith_Prefab();
 		g_pxPlatformPrefab->CreateFromEntity(xPlatformTemplate, "Platform");
 
-		Zenith_Scene::Destroy(xPlatformTemplate);
+		Zenith_SceneManager::Destroy(xPlatformTemplate);
 	}
 
 	// Goal prefab - basic entity (ModelComponent and ColliderComponent added at runtime)
 	{
-		Zenith_Entity xGoalTemplate(&xScene, "GoalTemplate");
+		Zenith_Entity xGoalTemplate(pxSceneData, "GoalTemplate");
 
 		g_pxGoalPrefab = new Zenith_Prefab();
 		g_pxGoalPrefab->CreateFromEntity(xGoalTemplate, "Goal");
 
-		Zenith_Scene::Destroy(xGoalTemplate);
+		Zenith_SceneManager::Destroy(xGoalTemplate);
 	}
 
 	// Collectible prefab - basic entity (ModelComponent added at runtime, no collider - uses distance check)
 	{
-		Zenith_Entity xCollectibleTemplate(&xScene, "CollectibleTemplate");
+		Zenith_Entity xCollectibleTemplate(pxSceneData, "CollectibleTemplate");
 
 		g_pxCollectiblePrefab = new Zenith_Prefab();
 		g_pxCollectiblePrefab->CreateFromEntity(xCollectibleTemplate, "Collectible");
 
-		Zenith_Scene::Destroy(xCollectibleTemplate);
+		Zenith_SceneManager::Destroy(xCollectibleTemplate);
 	}
 
 	s_bResourcesInitialized = true;
@@ -255,65 +259,81 @@ void Project_Shutdown()
 
 void Project_LoadInitialScene()
 {
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	xScene.Reset();
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	pxSceneData->Reset();
 
-	// Create camera entity
-	Zenith_Entity xCameraEntity(&xScene, "MainCamera");
-	xCameraEntity.SetTransient(false);  // Persistent - will be saved to scene
-	Zenith_CameraComponent& xCamera = xCameraEntity.AddComponent<Zenith_CameraComponent>();
+	// Create persistent GameManager entity (camera + UI + script)
+	Zenith_Entity xGameManager(pxSceneData, "GameManager");
+	xGameManager.SetTransient(false);
+
+	// Camera
+	Zenith_CameraComponent& xCamera = xGameManager.AddComponent<Zenith_CameraComponent>();
 	xCamera.InitialisePerspective(
-		Zenith_Maths::Vector3(0.f, 8.f, -12.f),  // Position: behind and above
-		-0.4f,  // Pitch: looking slightly down (negative pitch = look down)
-		0.f,    // Yaw: facing forward
-		glm::radians(50.f),   // FOV
+		Zenith_Maths::Vector3(0.f, 8.f, -12.f),
+		-0.4f,
+		0.f,
+		glm::radians(50.f),
 		0.1f,
 		1000.f,
 		16.f / 9.f
 	);
-	xScene.SetMainCameraEntity(xCameraEntity.GetEntityID());
+	pxSceneData->SetMainCameraEntity(xGameManager.GetEntityID());
 
-	// Create main game entity
-	Zenith_Entity xMarbleEntity(&xScene, "MarbleGame");
-	xMarbleEntity.SetTransient(false);  // Persistent - will be saved to scene
-
-	// UI Setup - anchored to top-left corner
+	// UI
 	static constexpr float s_fMarginLeft = 30.f;
 	static constexpr float s_fMarginTop = 30.f;
 	static constexpr float s_fBaseTextSize = 15.f;
 	static constexpr float s_fLineHeight = 24.f;
 
-	Zenith_UIComponent& xUI = xMarbleEntity.AddComponent<Zenith_UIComponent>();
+	Zenith_UIComponent& xUI = xGameManager.AddComponent<Zenith_UIComponent>();
 
-	auto SetupTopLeftText = [](Zenith_UI::Zenith_UIText* pxText, float fYOffset)
+	// --- Menu UI (visible initially) ---
+	Zenith_UI::Zenith_UIText* pxMenuTitle = xUI.CreateText("MenuTitle", "MARBLE ROLL");
+	pxMenuTitle->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
+	pxMenuTitle->SetPosition(0.f, -120.f);
+	pxMenuTitle->SetAlignment(Zenith_UI::TextAlignment::Center);
+	pxMenuTitle->SetFontSize(s_fBaseTextSize * 6.0f);
+	pxMenuTitle->SetColor(Zenith_Maths::Vector4(0.4f, 0.6f, 1.f, 1.f));
+
+	Zenith_UI::Zenith_UIButton* pxPlayBtn = xUI.CreateButton("MenuPlay", "Play");
+	pxPlayBtn->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
+	pxPlayBtn->SetPosition(0.f, 0.f);
+	pxPlayBtn->SetSize(200.f, 50.f);
+
+	Zenith_UI::Zenith_UIButton* pxQuitBtn = xUI.CreateButton("MenuQuit", "Quit");
+	pxQuitBtn->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
+	pxQuitBtn->SetPosition(0.f, 70.f);
+	pxQuitBtn->SetSize(200.f, 50.f);
+
+	// --- HUD UI (hidden initially) ---
+	auto CreateHUDText = [&](const char* szName, const char* szText, float fYOffset) -> Zenith_UI::Zenith_UIText*
 	{
+		Zenith_UI::Zenith_UIText* pxText = xUI.CreateText(szName, szText);
 		pxText->SetAnchorAndPivot(Zenith_UI::AnchorPreset::TopLeft);
 		pxText->SetPosition(s_fMarginLeft, s_fMarginTop + fYOffset);
 		pxText->SetAlignment(Zenith_UI::TextAlignment::Left);
+		pxText->SetVisible(false);
+		return pxText;
 	};
 
-	Zenith_UI::Zenith_UIText* pxTitle = xUI.CreateText("Title", "MARBLE ROLL");
-	SetupTopLeftText(pxTitle, 0.f);
+	Zenith_UI::Zenith_UIText* pxTitle = CreateHUDText("Title", "MARBLE ROLL", 0.f);
 	pxTitle->SetFontSize(s_fBaseTextSize * 4.8f);
 	pxTitle->SetColor(Zenith_Maths::Vector4(1.f, 1.f, 1.f, 1.f));
 
-	Zenith_UI::Zenith_UIText* pxScore = xUI.CreateText("Score", "Score: 0");
-	SetupTopLeftText(pxScore, s_fLineHeight * 3);
+	Zenith_UI::Zenith_UIText* pxScore = CreateHUDText("Score", "Score: 0", s_fLineHeight * 3);
 	pxScore->SetFontSize(s_fBaseTextSize * 3.0f);
 	pxScore->SetColor(Zenith_Maths::Vector4(0.6f, 0.8f, 1.f, 1.f));
 
-	Zenith_UI::Zenith_UIText* pxTime = xUI.CreateText("Time", "Time: 60.0");
-	SetupTopLeftText(pxTime, s_fLineHeight * 4);
+	Zenith_UI::Zenith_UIText* pxTime = CreateHUDText("Time", "Time: 60.0", s_fLineHeight * 4);
 	pxTime->SetFontSize(s_fBaseTextSize * 3.0f);
 	pxTime->SetColor(Zenith_Maths::Vector4(0.6f, 0.8f, 1.f, 1.f));
 
-	Zenith_UI::Zenith_UIText* pxCollected = xUI.CreateText("Collected", "Collected: 0 / 5");
-	SetupTopLeftText(pxCollected, s_fLineHeight * 5);
+	Zenith_UI::Zenith_UIText* pxCollected = CreateHUDText("Collected", "Collected: 0 / 5", s_fLineHeight * 5);
 	pxCollected->SetFontSize(s_fBaseTextSize * 3.0f);
 	pxCollected->SetColor(Zenith_Maths::Vector4(0.6f, 0.8f, 1.f, 1.f));
 
-	Zenith_UI::Zenith_UIText* pxControls = xUI.CreateText("Controls", "WASD: Move | Space: Jump | R: Reset");
-	SetupTopLeftText(pxControls, s_fLineHeight * 7);
+	Zenith_UI::Zenith_UIText* pxControls = CreateHUDText("Controls", "WASD: Move | Space: Jump | R: Reset | Esc: Menu", s_fLineHeight * 7);
 	pxControls->SetFontSize(s_fBaseTextSize * 2.5f);
 	pxControls->SetColor(Zenith_Maths::Vector4(0.7f, 0.7f, 0.7f, 1.f));
 
@@ -323,17 +343,12 @@ void Project_LoadInitialScene()
 	pxStatus->SetAlignment(Zenith_UI::TextAlignment::Center);
 	pxStatus->SetFontSize(s_fBaseTextSize * 6.0f);
 	pxStatus->SetColor(Zenith_Maths::Vector4(0.2f, 1.f, 0.2f, 1.f));
+	pxStatus->SetVisible(false);
 
-	// Add script component with Marble behaviour
-	// Use SetBehaviourForSerialization - OnAwake will be dispatched when Play mode is entered
-	Zenith_ScriptComponent& xScript = xMarbleEntity.AddComponent<Zenith_ScriptComponent>();
+	// Script
+	Zenith_ScriptComponent& xScript = xGameManager.AddComponent<Zenith_ScriptComponent>();
 	xScript.SetBehaviourForSerialization<Marble_Behaviour>();
 
-	// Save the scene file
-	std::string strScenePath = std::string(GAME_ASSETS_DIR) + "/Scenes/Marble.zscn";
-	std::filesystem::create_directories(std::string(GAME_ASSETS_DIR) + "/Scenes");
-	xScene.SaveToFile(strScenePath);
-
-	// Load from disk to ensure unified lifecycle code path (LoadFromFile handles OnAwake/OnEnable)
-	xScene.LoadFromFile(strScenePath);
+	// Mark as persistent
+	xGameManager.DontDestroyOnLoad();
 }

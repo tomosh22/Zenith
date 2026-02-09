@@ -29,6 +29,8 @@
 #include "AssetHandling/Zenith_AssetHandle.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Zenith_Scene.h"
+#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneData.h"
 #include "Prefab/Zenith_Prefab.h"
 
 // Include all game modules
@@ -42,6 +44,8 @@
 #include "Survival_TaskProcessor.h"
 #include "Survival_UIManager.h"
 
+#include "UI/Zenith_UIButton.h"
+
 #include <random>
 
 #ifdef ZENITH_TOOLS
@@ -49,6 +53,9 @@
 #include "imgui.h"
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
 #endif
+
+// Forward declaration for world content creation (defined in Survival.cpp)
+extern void Survival_CreateWorldContent(Zenith_SceneData* pxSceneData);
 
 // ============================================================================
 // Survival Resources - Global access
@@ -86,6 +93,15 @@ static constexpr float s_fDefaultInteractionRange = 3.0f;
 static constexpr float s_fStatusMessageDuration = 2.0f;
 
 // ============================================================================
+// Game State
+// ============================================================================
+enum class SurvivalGameState : uint32_t
+{
+	MAIN_MENU,
+	PLAYING
+};
+
+// ============================================================================
 // Main Behavior Class
 // ============================================================================
 class Survival_Behaviour ZENITH_FINAL : Zenith_ScriptBehaviour
@@ -107,6 +123,8 @@ public:
 		, m_fAxeBonus(2.0f)
 		, m_fPickaxeBonus(2.0f)
 		, m_xRng(std::random_device{}())
+		, m_eGameState(SurvivalGameState::MAIN_MENU)
+		, m_iFocusIndex(0)
 	{
 	}
 
@@ -137,13 +155,21 @@ public:
 		// Subscribe to events
 		SubscribeToEvents();
 
-		// Find pre-created entities and populate resource manager
-		FindSceneEntities();
-		PopulateResourceManagerFromScene();
+		// Wire menu button callback
+		if (m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		{
+			Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+			Zenith_UI::Zenith_UIButton* pxPlay = static_cast<Zenith_UI::Zenith_UIButton*>(xUI.FindElement("MenuPlay"));
+			if (pxPlay)
+			{
+				pxPlay->SetOnClick(&OnPlayClicked, this);
+				pxPlay->SetFocused(true);
+			}
+		}
 
-		// Reset inventory and crafting for fresh start
-		m_xInventory.Reset();
-		m_xCrafting.CancelCrafting();
+		// Start in menu state
+		m_eGameState = SurvivalGameState::MAIN_MENU;
+		m_iFocusIndex = 0;
 	}
 
 	/**
@@ -151,12 +177,7 @@ public:
 	 */
 	void OnStart() ZENITH_FINAL override
 	{
-		// Ensure entities are found if loaded from scene
-		if (m_uPlayerEntityID == INVALID_ENTITY_ID)
-		{
-			FindSceneEntities();
-			PopulateResourceManagerFromScene();
-		}
+		// Nothing to do here - world entities are found in StartGame
 	}
 
 	/**
@@ -164,48 +185,66 @@ public:
 	 */
 	void OnUpdate(const float fDt) ZENITH_FINAL override
 	{
-		// Process deferred events from background tasks
-		Survival_EventBus::ProcessDeferredEvents();
-
-		// Handle reset
-		if (Survival_PlayerController::WasResetPressed())
+		switch (m_eGameState)
 		{
-			ResetGame();
-			return;
-		}
+		case SurvivalGameState::MAIN_MENU:
+			UpdateMenuInput();
+			break;
 
-		// Handle input
-		HandleMovement(fDt);
-		HandleInteraction();
-		HandleCrafting();
-
-		// Update game systems
-		UpdateCrafting(fDt);
-		UpdateResourceNodes(fDt);
-
-		// Update camera
-		Survival_CameraController::UpdateCamera(
-			m_uPlayerEntityID,
-			m_fCameraDistance,
-			m_fCameraHeight,
-			m_fCameraSmoothSpeed,
-			fDt);
-
-		// Update visuals
-		m_xResourceManager.UpdateNodeVisuals();
-
-		// Update status message timer
-		if (m_fStatusMessageTimer > 0.f)
+		case SurvivalGameState::PLAYING:
 		{
-			m_fStatusMessageTimer -= fDt;
-			if (m_fStatusMessageTimer <= 0.f)
+			// Process deferred events from background tasks
+			Survival_EventBus::ProcessDeferredEvents();
+
+			// Handle escape -> return to menu
+			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
 			{
-				ClearStatusMessage();
+				ReturnToMenu();
+				return;
 			}
-		}
 
-		// Update UI
-		UpdateUI();
+			// Handle reset
+			if (Survival_PlayerController::WasResetPressed())
+			{
+				ResetGame();
+				return;
+			}
+
+			// Handle input
+			HandleMovement(fDt);
+			HandleInteraction();
+			HandleCrafting();
+
+			// Update game systems
+			UpdateCrafting(fDt);
+			UpdateResourceNodes(fDt);
+
+			// Update camera
+			Survival_CameraController::UpdateCamera(
+				m_uPlayerEntityID,
+				m_fCameraDistance,
+				m_fCameraHeight,
+				m_fCameraSmoothSpeed,
+				fDt);
+
+			// Update visuals
+			m_xResourceManager.UpdateNodeVisuals();
+
+			// Update status message timer
+			if (m_fStatusMessageTimer > 0.f)
+			{
+				m_fStatusMessageTimer -= fDt;
+				if (m_fStatusMessageTimer <= 0.f)
+				{
+					ClearStatusMessage();
+				}
+			}
+
+			// Update UI
+			UpdateUI();
+			break;
+		}
+		}
 	}
 
 	/**
@@ -215,6 +254,27 @@ public:
 	{
 #ifdef ZENITH_TOOLS
 		ImGui::Text("Survival Game");
+		ImGui::Separator();
+
+		// State display
+		const char* aszStateNames[] = { "Main Menu", "Playing" };
+		ImGui::Text("State: %s", aszStateNames[static_cast<uint32_t>(m_eGameState)]);
+
+		if (m_eGameState == SurvivalGameState::MAIN_MENU)
+		{
+			if (ImGui::Button("Start Game"))
+			{
+				StartGame();
+			}
+		}
+		else
+		{
+			if (ImGui::Button("Return to Menu"))
+			{
+				ReturnToMenu();
+			}
+		}
+
 		ImGui::Separator();
 
 		// Inventory display
@@ -233,8 +293,10 @@ public:
 		ImGui::Text("  Active: %u", m_xResourceManager.GetActiveCount());
 		ImGui::Text("  Depleted: %u", m_xResourceManager.GetDepletedCount());
 
-		// Query demo
-		ImGui::Text("  Renderable Entities: %u", Survival_WorldQuery::CountRenderableEntities());
+		if (m_eGameState == SurvivalGameState::PLAYING)
+		{
+			ImGui::Text("  Renderable Entities: %u", Survival_WorldQuery::CountRenderableEntities());
+		}
 
 		ImGui::Separator();
 
@@ -264,15 +326,18 @@ public:
 		ImGui::Separator();
 
 		// Actions
-		if (ImGui::Button("Reset Game"))
+		if (m_eGameState == SurvivalGameState::PLAYING)
 		{
-			ResetGame();
-		}
+			if (ImGui::Button("Reset Game"))
+			{
+				ResetGame();
+			}
 
-		if (ImGui::Button("Give Resources"))
-		{
-			m_xInventory.AddItem(ITEM_TYPE_WOOD, 10);
-			m_xInventory.AddItem(ITEM_TYPE_STONE, 10);
+			if (ImGui::Button("Give Resources"))
+			{
+				m_xInventory.AddItem(ITEM_TYPE_WOOD, 10);
+				m_xInventory.AddItem(ITEM_TYPE_STONE, 10);
+			}
 		}
 #endif
 	}
@@ -369,8 +434,9 @@ private:
 
 	void HandleMovement(float fDt)
 	{
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		if (!xScene.EntityExists(m_uPlayerEntityID))
+		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+		if (!pxSceneData->EntityExists(m_uPlayerEntityID))
 			return;
 
 		Zenith_Maths::Vector3 xCamPos = Survival_CameraController::GetCameraPosition();
@@ -530,15 +596,16 @@ private:
 
 	void FindSceneEntities()
 	{
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
 
 		// Find player entity
-		Zenith_Entity xPlayer = xScene.FindEntityByName("Player");
+		Zenith_Entity xPlayer = pxSceneData->FindEntityByName("Player");
 		Zenith_Assert(xPlayer.IsValid(), "Player entity not found in scene - ensure scene was saved after Project_LoadInitialScene created entities");
 		m_uPlayerEntityID = xPlayer.GetEntityID();
 
 		// Find ground entity
-		Zenith_Entity xGround = xScene.FindEntityByName("Ground");
+		Zenith_Entity xGround = pxSceneData->FindEntityByName("Ground");
 		Zenith_Assert(xGround.IsValid(), "Ground entity not found in scene");
 		m_uGroundEntityID = xGround.GetEntityID();
 	}
@@ -549,14 +616,15 @@ private:
 		static constexpr uint32_t s_uRockCount = 10;
 		static constexpr uint32_t s_uBerryCount = 8;
 
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
 
 		// Find and register all tree entities
 		for (uint32_t i = 0; i < s_uTreeCount; i++)
 		{
 			char szName[32];
 			snprintf(szName, sizeof(szName), "Tree_%u", i);
-			Zenith_Entity xTree = xScene.FindEntityByName(szName);
+			Zenith_Entity xTree = pxSceneData->FindEntityByName(szName);
 			if (xTree.IsValid())
 			{
 				Zenith_TransformComponent& xTransform = xTree.GetComponent<Zenith_TransformComponent>();
@@ -585,7 +653,7 @@ private:
 		{
 			char szName[32];
 			snprintf(szName, sizeof(szName), "Rock_%u", i);
-			Zenith_Entity xRock = xScene.FindEntityByName(szName);
+			Zenith_Entity xRock = pxSceneData->FindEntityByName(szName);
 			if (xRock.IsValid())
 			{
 				Zenith_TransformComponent& xTransform = xRock.GetComponent<Zenith_TransformComponent>();
@@ -614,7 +682,7 @@ private:
 		{
 			char szName[32];
 			snprintf(szName, sizeof(szName), "BerryBush_%u", i);
-			Zenith_Entity xBush = xScene.FindEntityByName(szName);
+			Zenith_Entity xBush = pxSceneData->FindEntityByName(szName);
 			if (xBush.IsValid())
 			{
 				Zenith_TransformComponent& xTransform = xBush.GetComponent<Zenith_TransformComponent>();
@@ -639,13 +707,131 @@ private:
 		}
 	}
 
+	// ========================================================================
+	// Menu / Scene Transition
+	// ========================================================================
+
+	static void OnPlayClicked(void* pxUserData)
+	{
+		Survival_Behaviour* pxSelf = static_cast<Survival_Behaviour*>(pxUserData);
+		pxSelf->StartGame();
+	}
+
+	void StartGame()
+	{
+		SetMenuVisible(false);
+		SetHUDVisible(true);
+
+		// Create world scene
+		m_xWorldScene = Zenith_SceneManager::CreateEmptyScene("World");
+		Zenith_SceneManager::SetActiveScene(m_xWorldScene);
+		Zenith_SceneData* pxWorldData = Zenith_SceneManager::GetSceneData(m_xWorldScene);
+
+		// Create world content (ground, player, resource nodes)
+		Survival_CreateWorldContent(pxWorldData);
+
+		// Initialize game systems for new world
+		m_xResourceManager.Clear();
+		FindSceneEntities();
+		PopulateResourceManagerFromScene();
+
+		m_xInventory.Reset();
+		m_xCrafting.CancelCrafting();
+
+		m_eGameState = SurvivalGameState::PLAYING;
+	}
+
+	void ReturnToMenu()
+	{
+		// Clear game systems
+		m_xResourceManager.Clear();
+		m_xCrafting.CancelCrafting();
+		m_uPlayerEntityID = INVALID_ENTITY_ID;
+		m_uGroundEntityID = INVALID_ENTITY_ID;
+
+		// Unload the world scene (destroys all world entities)
+		if (m_xWorldScene.IsValid())
+		{
+			Zenith_SceneManager::UnloadScene(m_xWorldScene);
+			m_xWorldScene = Zenith_Scene();
+		}
+
+		// Show menu, hide HUD
+		SetMenuVisible(true);
+		SetHUDVisible(false);
+
+		// Re-focus play button
+		if (m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		{
+			Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+			Zenith_UI::Zenith_UIButton* pxPlay = static_cast<Zenith_UI::Zenith_UIButton*>(xUI.FindElement("MenuPlay"));
+			if (pxPlay)
+				pxPlay->SetFocused(true);
+		}
+
+		m_iFocusIndex = 0;
+		m_eGameState = SurvivalGameState::MAIN_MENU;
+	}
+
+	void SetMenuVisible(bool bVisible)
+	{
+		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
+			return;
+
+		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+
+		Zenith_UI::Zenith_UIElement* pxMenuTitle = xUI.FindElement("MenuTitle");
+		Zenith_UI::Zenith_UIElement* pxMenuPlay = xUI.FindElement("MenuPlay");
+
+		if (pxMenuTitle) pxMenuTitle->SetVisible(bVisible);
+		if (pxMenuPlay) pxMenuPlay->SetVisible(bVisible);
+	}
+
+	void SetHUDVisible(bool bVisible)
+	{
+		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
+			return;
+
+		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+
+		const char* aszHUDElements[] = {
+			"Title", "ControlsHeader", "MoveInstr", "CraftInstr",
+			"InventoryHeader", "WoodCount", "StoneCount", "BerriesCount",
+			"CraftedHeader", "AxeCount", "PickaxeCount",
+			"InteractPrompt", "CraftProgress", "Status"
+		};
+
+		for (const char* szName : aszHUDElements)
+		{
+			Zenith_UI::Zenith_UIElement* pxElement = xUI.FindElement(szName);
+			if (pxElement)
+				pxElement->SetVisible(bVisible);
+		}
+	}
+
+	void UpdateMenuInput()
+	{
+		// Single button - keep it focused
+		if (m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		{
+			Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+			Zenith_UI::Zenith_UIButton* pxPlay = static_cast<Zenith_UI::Zenith_UIButton*>(xUI.FindElement("MenuPlay"));
+			if (pxPlay)
+				pxPlay->SetFocused(true);
+		}
+	}
+
 	void ResetGame()
 	{
+		if (m_eGameState != SurvivalGameState::PLAYING)
+			return;
+
 		// Reset player position
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		if (xScene.EntityExists(m_uPlayerEntityID))
+		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+		if (pxSceneData->EntityExists(m_uPlayerEntityID))
 		{
-			Zenith_Entity xPlayer = xScene.GetEntity(m_uPlayerEntityID);
+			Zenith_Entity xPlayer = pxSceneData->GetEntity(m_uPlayerEntityID);
 			xPlayer.GetComponent<Zenith_TransformComponent>().SetPosition(
 				Zenith_Maths::Vector3(0.f, s_fPlayerHeight * 0.5f, 0.f));
 		}
@@ -696,4 +882,9 @@ private:
 
 	// Random
 	std::mt19937 m_xRng;
+
+	// Scene management
+	SurvivalGameState m_eGameState;
+	Zenith_Scene m_xWorldScene;
+	int32_t m_iFocusIndex;
 };

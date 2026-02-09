@@ -1119,6 +1119,9 @@
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_EventSystem.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_Query.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_Scene.h" />
+    <ClInclude Include="..\Zenith\EntityComponent\Zenith_SceneData.h" />
+    <ClInclude Include="..\Zenith\EntityComponent\Zenith_SceneManager.h" />
+    <ClInclude Include="..\Zenith\EntityComponent\Zenith_SceneOperation.h" />
     <ClInclude Include="..\Zenith\FileAccess\Zenith_FileAccess.h" />
     <ClInclude Include="..\Zenith\Flux\AnimatedMeshes\Flux_AnimatedMeshes.h" />
     <ClInclude Include="..\Zenith\Flux\DeferredShading\Flux_DeferredShading.h" />
@@ -1276,6 +1279,7 @@
     <ClInclude Include="..\Zenith\Profiling\Zenith_Profiling.h" />
     <ClInclude Include="..\Zenith\TaskSystem\Zenith_TaskSystem.h" />
     <ClInclude Include="..\Zenith\UI\Zenith_UI.h" />
+    <ClInclude Include="..\Zenith\UI\Zenith_UIButton.h" />
     <ClInclude Include="..\Zenith\UI\Zenith_UICanvas.h" />
     <ClInclude Include="..\Zenith\UI\Zenith_UIElement.h" />
     <ClInclude Include="..\Zenith\UI\Zenith_UIImage.h" />
@@ -1284,6 +1288,7 @@
     <ClInclude Include="..\Zenith\UnitTests\Zenith_EditorTestFixture.h" />
     <ClInclude Include="..\Zenith\UnitTests\Zenith_EditorTests.h" />
     <ClInclude Include="..\Zenith\UnitTests\Zenith_MockInput.h" />
+    <ClInclude Include="..\Zenith\UnitTests\Zenith_SceneTests.h" />
     <ClInclude Include="..\Zenith\UnitTests\Zenith_UnitTests.h" />
     <ClInclude Include="..\Zenith\Vulkan\Zenith_PlatformGraphics_Include.h" />
     <ClInclude Include="..\Zenith\Vulkan\Zenith_Vulkan.h" />
@@ -2320,6 +2325,9 @@
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_Entity.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_EventSystem.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_Scene.cpp" />
+    <ClCompile Include="..\Zenith\EntityComponent\Zenith_SceneData.cpp" />
+    <ClCompile Include="..\Zenith\EntityComponent\Zenith_SceneManager.cpp" />
+    <ClCompile Include="..\Zenith\EntityComponent\Zenith_SceneOperation.cpp" />
     <ClCompile Include="..\Zenith\FileAccess\Zenith_FileAccess.cpp" />
     <ClCompile Include="..\Zenith\Flux\AnimatedMeshes\Flux_AnimatedMeshes.cpp" />
     <ClCompile Include="..\Zenith\Flux\DeferredShading\Flux_DeferredShading.cpp" />
@@ -2378,6 +2386,7 @@
     <ClCompile Include="..\Zenith\Prefab\Zenith_Prefab.cpp" />
     <ClCompile Include="..\Zenith\Profiling\Zenith_Profiling.cpp" />
     <ClCompile Include="..\Zenith\TaskSystem\Zenith_TaskSystem.cpp" />
+    <ClCompile Include="..\Zenith\UI\Zenith_UIButton.cpp" />
     <ClCompile Include="..\Zenith\UI\Zenith_UICanvas.cpp" />
     <ClCompile Include="..\Zenith\UI\Zenith_UIElement.cpp" />
     <ClCompile Include="..\Zenith\UI\Zenith_UIImage.cpp" />
@@ -2387,6 +2396,7 @@
     <ClCompile Include="..\Zenith\UnitTests\Zenith_EditorTestFixture.cpp" />
     <ClCompile Include="..\Zenith\UnitTests\Zenith_EditorTests.cpp" />
     <ClCompile Include="..\Zenith\UnitTests\Zenith_MockInput.cpp" />
+    <ClCompile Include="..\Zenith\UnitTests\Zenith_SceneTests.cpp" />
     <ClCompile Include="..\Zenith\UnitTests\Zenith_UnitTests.cpp" />
     <ClCompile Include="..\Zenith\Vulkan\Zenith_Vulkan.cpp" />
     <ClCompile Include="..\Zenith\Vulkan\Zenith_Vulkan_Buffer.cpp" />

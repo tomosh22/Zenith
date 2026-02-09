@@ -13,6 +13,8 @@
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "EntityComponent/Zenith_Scene.h"
+#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Zenith_Query.h"
 #include "EntityComponent/Components/Zenith_ParticleEmitterComponent.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
@@ -107,32 +109,39 @@ static void UpdateEmittersAndBuildInstanceBuffer(float fDt)
 {
 	s_uInstanceCount = 0;
 
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-
-	// Query all particle emitter components
-	xScene.Query<Zenith_ParticleEmitterComponent>()
-		.ForEach([fDt](Zenith_EntityID, Zenith_ParticleEmitterComponent& xEmitter)
+	// Query all particle emitter components from ALL loaded scenes
+	for (uint32_t uSceneSlot = 0; uSceneSlot < Zenith_SceneManager::GetSceneSlotCount(); ++uSceneSlot)
+	{
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneDataAtSlot(uSceneSlot);
+		if (!pxSceneData || !pxSceneData->IsLoaded() || pxSceneData->IsUnloading())
 		{
-			// Update ALL emitters (handles spawning for both CPU and GPU)
-			xEmitter.Update(fDt);
+			continue;
+		}
 
-			// Only build instance buffer for CPU emitters
-			// GPU emitters have their instances built by the compute shader
-			if (xEmitter.UsesGPUCompute())
+		pxSceneData->Query<Zenith_ParticleEmitterComponent>()
+			.ForEach([fDt](Zenith_EntityID, Zenith_ParticleEmitterComponent& xEmitter)
 			{
-				return;
-			}
+				// Update ALL emitters (handles spawning for both CPU and GPU)
+				xEmitter.Update(fDt);
 
-			// Copy alive particles to instance buffer
-			const Zenith_Vector<Flux_Particle>& axParticles = xEmitter.GetParticles();
-			uint32_t uAliveCount = xEmitter.GetAliveCount();
+				// Only build instance buffer for CPU emitters
+				// GPU emitters have their instances built by the compute shader
+				if (xEmitter.UsesGPUCompute())
+				{
+					return;
+				}
 
-			for (uint32_t i = 0; i < uAliveCount && s_uInstanceCount < s_uMaxParticles; ++i)
-			{
-				s_axCPUInstances[s_uInstanceCount] = Flux_ParticleInstance::FromParticle(axParticles.Get(i));
-				s_uInstanceCount++;
-			}
-		});
+				// Copy alive particles to instance buffer
+				const Zenith_Vector<Flux_Particle>& axParticles = xEmitter.GetParticles();
+				uint32_t uAliveCount = xEmitter.GetAliveCount();
+
+				for (uint32_t i = 0; i < uAliveCount && s_uInstanceCount < s_uMaxParticles; ++i)
+				{
+					s_axCPUInstances[s_uInstanceCount] = Flux_ParticleInstance::FromParticle(axParticles.Get(i));
+					s_uInstanceCount++;
+				}
+			});
+	}
 }
 
 static void UploadInstanceData()

@@ -2,10 +2,9 @@
 
 #ifdef ZENITH_TOOLS
 
-#include "Zenith_Scene.h"
+#include "Zenith_SceneData.h"
 #include "Zenith_Entity.h"
 #include <concepts>
-#include <functional>
 #include <string>
 #include <vector>
 
@@ -20,7 +19,7 @@ class Zenith_Entity;
 //
 // Requirements:
 // 1. Component must be constructible with a Zenith_Entity& parameter
-// 2. Component type must work with Zenith_Scene::TypeIDGenerator
+// 2. Component type must work with Zenith_SceneData::TypeIDGenerator
 // 3. Component must have a RenderPropertiesPanel method for editor UI
 //
 // Note: We don't require default constructibility because all Zenith components
@@ -46,20 +45,20 @@ struct Zenith_ComponentRegistryEntry
 	// Human-readable name shown in editor UI
 	std::string m_strDisplayName;
 	
-	// Unique type ID from Zenith_Scene::TypeIDGenerator
-	Zenith_Scene::TypeID m_uTypeID;
+	// Unique type ID from Zenith_SceneData::TypeIDGenerator
+	Zenith_SceneData::TypeID m_uTypeID;
 	
 	// Factory function: adds this component type to the given entity
 	// Returns true on success, false if already has component or other error
 	// May be nullptr for render-only components
-	std::function<bool(Zenith_Entity&)> m_fnAddComponent;
-	
+	bool(*m_pfnAddComponent)(Zenith_Entity&);
+
 	// Check function: returns true if entity already has this component
-	std::function<bool(const Zenith_Entity&)> m_fnHasComponent;
-	
+	bool(*m_pfnHasComponent)(const Zenith_Entity&);
+
 	// Render function: calls RenderPropertiesPanel on the component if entity has it
 	// This avoids virtual functions by using type-erased function pointers
-	std::function<void(Zenith_Entity&)> m_fnRenderPropertiesPanel;
+	void(*m_pfnRenderPropertiesPanel)(Zenith_Entity&);
 };
 
 //==============================================================================
@@ -96,10 +95,11 @@ public:
 	{
 		Zenith_ComponentRegistryEntry xEntry;
 		xEntry.m_strDisplayName = strDisplayName;
-		xEntry.m_uTypeID = Zenith_Scene::TypeIDGenerator::GetTypeID<T>();
+		xEntry.m_uTypeID = Zenith_SceneData::TypeIDGenerator::GetTypeID<T>();
 		
 		// Factory function to add component to entity
-		xEntry.m_fnAddComponent = [](Zenith_Entity& xEntity) -> bool
+		// Unary + converts captureless lambda to function pointer
+		xEntry.m_pfnAddComponent = +[](Zenith_Entity& xEntity) -> bool
 		{
 			if (xEntity.HasComponent<T>())
 			{
@@ -107,23 +107,23 @@ public:
 					typeid(T).name(), xEntity.GetEntityID());
 				return false;
 			}
-			
+
 			xEntity.AddComponent<T>();
 			Zenith_Log(LOG_CATEGORY_ECS, "Added %s to Entity %u (TypeID: %u)",
 				typeid(T).name(), xEntity.GetEntityID(),
-				Zenith_Scene::TypeIDGenerator::GetTypeID<T>());
+				Zenith_SceneData::TypeIDGenerator::GetTypeID<T>());
 			return true;
 		};
-		
+
 		// Check function to test if entity has component
-		xEntry.m_fnHasComponent = [](const Zenith_Entity& xEntity) -> bool
+		xEntry.m_pfnHasComponent = +[](const Zenith_Entity& xEntity) -> bool
 		{
 			return xEntity.HasComponent<T>();
 		};
-		
+
 		// Render function to display component properties in editor
 		// Only renders if entity has this component type
-		xEntry.m_fnRenderPropertiesPanel = [](Zenith_Entity& xEntity) -> void
+		xEntry.m_pfnRenderPropertiesPanel = +[](Zenith_Entity& xEntity) -> void
 		{
 			if (xEntity.HasComponent<T>())
 			{
@@ -169,15 +169,15 @@ public:
 		const Zenith_ComponentRegistryEntry& xEntry = m_xEntries[uIndex];
 		
 		// Check for duplicate
-		if (xEntry.m_fnHasComponent(xEntity))
+		if (xEntry.m_pfnHasComponent(xEntity))
 		{
 			Zenith_Error(LOG_CATEGORY_ECS, "Cannot add %s to Entity %u: already has this component",
 				xEntry.m_strDisplayName.c_str(), xEntity.GetEntityID());
 			return false;
 		}
-		
+
 		// Add the component
-		bool bSuccess = xEntry.m_fnAddComponent(xEntity);
+		bool bSuccess = xEntry.m_pfnAddComponent(xEntity);
 		
 		if (bSuccess)
 		{
@@ -202,7 +202,7 @@ public:
 		{
 			return false;
 		}
-		return m_xEntries[uIndex].m_fnHasComponent(xEntity);
+		return m_xEntries[uIndex].m_pfnHasComponent(xEntity);
 	}
 	
 	//--------------------------------------------------------------------------

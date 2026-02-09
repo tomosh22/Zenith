@@ -4,6 +4,7 @@
 #include "UI/Zenith_UIText.h"
 #include "UI/Zenith_UIRect.h"
 #include "UI/Zenith_UIImage.h"
+#include "UI/Zenith_UIButton.h"
 #include "DataStream/Zenith_DataStream.h"
 
 ZENITH_REGISTER_COMPONENT(Zenith_UIComponent, "UI")
@@ -62,6 +63,13 @@ Zenith_UI::Zenith_UIImage* Zenith_UIComponent::CreateImage(const std::string& st
     Zenith_UI::Zenith_UIImage* pxImage = new Zenith_UI::Zenith_UIImage(strName);
     m_xCanvas.AddElement(pxImage);
     return pxImage;
+}
+
+Zenith_UI::Zenith_UIButton* Zenith_UIComponent::CreateButton(const std::string& strName, const std::string& strText)
+{
+    Zenith_UI::Zenith_UIButton* pxButton = new Zenith_UI::Zenith_UIButton(strText, strName);
+    m_xCanvas.AddElement(pxButton);
+    return pxButton;
 }
 
 Zenith_UI::Zenith_UIElement* Zenith_UIComponent::CreateElement(const std::string& strName)
@@ -189,6 +197,16 @@ void Zenith_UIComponent::RenderPropertiesPanel()
             pxImage->SetSize(64, 64);
             m_pxSelectedElement = pxImage;
         }
+        ImGui::SameLine();
+
+        if (ImGui::Button("+ Button"))
+        {
+            static int s_iButtonCount = 0;
+            std::string strName = "Button_" + std::to_string(s_iButtonCount++);
+            Zenith_UI::Zenith_UIButton* pxButton = CreateButton(strName, "Button");
+            pxButton->SetSize(200, 50);
+            m_pxSelectedElement = pxButton;
+        }
 
         ImGui::Separator();
 
@@ -273,6 +291,10 @@ void Zenith_UIComponent::RenderElementTree(Zenith_UI::Zenith_UIElement* pxElemen
     case Zenith_UI::UIElementType::Image:
         szTypeChar = "I";
         xTypeColor = ImVec4(0.5f, 0.5f, 1.0f, 1.0f);
+        break;
+    case Zenith_UI::UIElementType::Button:
+        szTypeChar = "B";
+        xTypeColor = ImVec4(1.0f, 0.8f, 0.3f, 1.0f);
         break;
     default:
         break;

@@ -1,7 +1,8 @@
 #pragma once
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
-#include "EntityComponent/Zenith_Scene.h"
+#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneData.h"
 
 #ifdef ZENITH_TOOLS
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
@@ -81,11 +82,11 @@ public:
 			ImGui::Separator();
 
 			// Set as Main Camera button
-			Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+			Zenith_SceneData* pxSceneData = m_xParentEntity.GetSceneData();
 			bool bIsMainCamera = false;
-			if (xScene.GetMainCameraEntity() != INVALID_ENTITY_ID)
+			if (pxSceneData && pxSceneData->GetMainCameraEntity() != INVALID_ENTITY_ID)
 			{
-				bIsMainCamera = (xScene.GetMainCameraEntity() == m_xParentEntity.GetEntityID());
+				bIsMainCamera = (pxSceneData->GetMainCameraEntity() == m_xParentEntity.GetEntityID());
 			}
 
 			if (bIsMainCamera)
@@ -96,8 +97,11 @@ public:
 			{
 				if (ImGui::Button("Set as Main Camera"))
 				{
-					xScene.SetMainCameraEntity(m_xParentEntity.GetEntityID());
-					Zenith_Log(LOG_CATEGORY_ECS, "Set entity '%s' as main camera", m_xParentEntity.GetName().c_str());
+					if (pxSceneData)
+					{
+						pxSceneData->SetMainCameraEntity(m_xParentEntity.GetEntityID());
+						Zenith_Log(LOG_CATEGORY_ECS, "Set entity '%s' as main camera", m_xParentEntity.GetName().c_str());
+					}
 				}
 			}
 

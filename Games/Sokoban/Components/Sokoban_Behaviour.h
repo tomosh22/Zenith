@@ -2,21 +2,18 @@
 /**
  * Sokoban_Behaviour.h - Main game coordinator
  *
- * Demonstrates: Zenith_ScriptBehaviour lifecycle hooks
+ * Demonstrates:
+ * - Zenith_ScriptBehaviour lifecycle hooks
+ * - Multi-scene architecture (persistent GameManager + puzzle scene)
+ * - Zenith_UIButton with function pointer callback (no std::function)
+ * - Scene transitions via CreateEmptyScene / UnloadScene
+ * - DontDestroyOnLoad for persistent entities
  *
- * This is the main behavior that coordinates all game systems:
- * - Input handling (Sokoban_Input.h)
- * - Game logic (Sokoban_GridLogic.h)
- * - 3D rendering (Sokoban_Rendering.h)
- * - Level generation (Sokoban_LevelGenerator.h)
- * - Level validation (Sokoban_Solver.h)
- * - UI updates (Sokoban_UIManager.h)
+ * Architecture:
+ * - GameManager entity (persistent): camera + UI + script + dust emitter
+ * - Puzzle scene (created/destroyed per level): tiles, boxes, player
  *
- * Key lifecycle hooks:
- * - OnAwake()  - Called at RUNTIME creation only
- * - OnStart()  - Called before first OnUpdate
- * - OnUpdate() - Called every frame
- * - RenderPropertiesPanel() - Editor UI (tools build)
+ * State machine: MAIN_MENU -> PLAYING -> (won -> R for next / Esc for menu)
  */
 
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
@@ -26,11 +23,14 @@
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_ParticleEmitterComponent.h"
 #include "EntityComponent/Zenith_Scene.h"
+#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneData.h"
 #include "Input/Zenith_Input.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
+#include "UI/Zenith_UIButton.h"
 
 // Include extracted modules
 #include "Sokoban_Input.h"
@@ -85,6 +85,16 @@ static constexpr uint32_t s_uMaxGridSizeConfig = 16;
 static constexpr float s_fAnimationDuration = 0.1f;
 
 // ============================================================================
+// Game State
+// ============================================================================
+enum class SokobanGameState : uint32_t
+{
+	MAIN_MENU,
+	PLAYING,
+	GAME_OVER
+};
+
+// ============================================================================
 // Main Behavior Class
 // ============================================================================
 class Sokoban_Behaviour ZENITH_FINAL : Zenith_ScriptBehaviour
@@ -121,6 +131,8 @@ public:
 		, m_fBoxVisualX(0.f)
 		, m_fBoxVisualY(0.f)
 		, m_xRng(std::random_device{}())
+		, m_eState(SokobanGameState::MAIN_MENU)
+		, m_iFocusIndex(0)
 	{
 		memset(m_aeTiles, 0, sizeof(m_aeTiles));
 		memset(m_abTargets, false, sizeof(m_abTargets));
@@ -143,7 +155,7 @@ public:
 	/**
 	 * OnAwake - Called when behavior is attached at RUNTIME
 	 * NOT called during scene loading/deserialization.
-	 * Use for: Initial resource setup, procedural generation.
+	 * Use for: Initial resource setup, wiring button callbacks.
 	 */
 	void OnAwake() ZENITH_FINAL override
 	{
@@ -156,48 +168,90 @@ public:
 		m_xPlayerMaterial = Sokoban::g_xPlayerMaterial;
 		m_xTargetMaterial = Sokoban::g_xTargetMaterial;
 
-		GenerateNewLevel();
+		// Wire up button callbacks
+		if (m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		{
+			Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+			Zenith_UI::Zenith_UIButton* pxPlayBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuPlay");
+			if (pxPlayBtn)
+			{
+				pxPlayBtn->SetOnClick(&OnPlayClicked, this);
+				pxPlayBtn->SetFocused(true);
+			}
+		}
+
+		// Start in main menu state
+		m_eState = SokobanGameState::MAIN_MENU;
+		SetMenuVisible(true);
+		SetHUDVisible(false);
 	}
 
 	/**
 	 * OnStart - Called before first OnUpdate, for ALL entities
 	 * Called even for entities loaded from scene file.
-	 * Use for: Late initialization that depends on other components.
 	 */
 	void OnStart() ZENITH_FINAL override
 	{
-		if (!m_xRenderer.GetPlayerEntityID().IsValid())
+		// Ensure menu state if no level is loaded yet
+		if (m_eState == SokobanGameState::MAIN_MENU)
 		{
-			GenerateNewLevel();
+			SetMenuVisible(true);
+			SetHUDVisible(false);
 		}
 	}
 
 	/**
 	 * OnUpdate - Called every frame
-	 * Main game loop: input -> logic -> animation -> rendering
+	 * Dispatches to the current game state handler.
 	 */
 	void OnUpdate(const float fDt) ZENITH_FINAL override
 	{
-		if (m_bAnimating)
+		switch (m_eState)
 		{
-			UpdateAnimation(fDt);
+		case SokobanGameState::MAIN_MENU:
+			UpdateMenuInput();
+			break;
+
+		case SokobanGameState::PLAYING:
+			// Escape returns to menu
+			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
+			{
+				ReturnToMenu();
+				return;
+			}
+			// R starts a new level
+			if (Sokoban_Input::WasResetPressed())
+			{
+				StartNewLevel();
+				return;
+			}
+
+			if (m_bAnimating)
+			{
+				UpdateAnimation(fDt);
+			}
+			else if (!m_bWon)
+			{
+				HandleInput();
+			}
+			UpdateVisuals();
+			break;
+
+		case SokobanGameState::GAME_OVER:
+			break;
 		}
-		else if (!m_bWon)
-		{
-			HandleInput();
-		}
-		UpdateVisuals();
 	}
 
 	/**
 	 * RenderPropertiesPanel - Editor UI (tools build only)
-	 * Renders ImGui controls for debugging and configuration.
 	 */
 	void RenderPropertiesPanel() override
 	{
 #ifdef ZENITH_TOOLS
 		ImGui::Text("Sokoban Puzzle Game");
 		ImGui::Separator();
+		ImGui::Text("State: %s", m_eState == SokobanGameState::MAIN_MENU ? "Menu" :
+			m_eState == SokobanGameState::PLAYING ? "Playing" : "Game Over");
 		ImGui::Text("Grid Size: %u x %u", m_uGridWidth, m_uGridHeight);
 		ImGui::Text("Moves: %u", m_uMoveCount);
 		ImGui::Text("Min Moves: %u", m_uMinMoves);
@@ -212,13 +266,14 @@ public:
 
 		if (ImGui::Button("New Level"))
 		{
-			GenerateNewLevel();
+			StartNewLevel();
 		}
 
 		ImGui::Separator();
 		ImGui::Text("Controls:");
 		ImGui::Text("  WASD / Arrow Keys: Move");
 		ImGui::Text("  R: New Level");
+		ImGui::Text("  Esc: Return to Menu");
 
 		ImGui::Separator();
 		if (ImGui::CollapsingHeader("Visual Assets", ImGuiTreeNodeFlags_DefaultOpen))
@@ -314,20 +369,152 @@ public:
 
 private:
 	// ========================================================================
-	// Input Handling
+	// Button Callbacks (static function pointers, NOT std::function)
+	// ========================================================================
+
+	static void OnPlayClicked(void* pxUserData)
+	{
+		Sokoban_Behaviour* pxSelf = static_cast<Sokoban_Behaviour*>(pxUserData);
+		pxSelf->StartGame();
+	}
+
+	// ========================================================================
+	// State Transitions
+	// ========================================================================
+
+	void StartGame()
+	{
+		SetMenuVisible(false);
+		SetHUDVisible(true);
+
+		// Create puzzle scene for level entities
+		m_xPuzzleScene = Zenith_SceneManager::CreateEmptyScene("Puzzle");
+		Zenith_SceneManager::SetActiveScene(m_xPuzzleScene);
+
+		m_eState = SokobanGameState::PLAYING;
+		GenerateNewLevel();
+	}
+
+	void StartNewLevel()
+	{
+		// Unload current puzzle scene (destroys all level entities automatically)
+		if (m_xPuzzleScene.IsValid())
+		{
+			m_xRenderer.ClearEntityIDs();
+			Zenith_SceneManager::UnloadScene(m_xPuzzleScene);
+		}
+
+		// Create fresh puzzle scene
+		m_xPuzzleScene = Zenith_SceneManager::CreateEmptyScene("Puzzle");
+		Zenith_SceneManager::SetActiveScene(m_xPuzzleScene);
+
+		m_eState = SokobanGameState::PLAYING;
+		GenerateNewLevel();
+	}
+
+	void ReturnToMenu()
+	{
+		// Unload puzzle scene (destroys all level entities automatically)
+		if (m_xPuzzleScene.IsValid())
+		{
+			m_xRenderer.ClearEntityIDs();
+			Zenith_SceneManager::UnloadScene(m_xPuzzleScene);
+			m_xPuzzleScene = Zenith_Scene();
+		}
+
+		// Reset game state
+		m_bWon = false;
+		m_bAnimating = false;
+		m_bBoxAnimating = false;
+		StopDustParticles();
+
+		m_eState = SokobanGameState::MAIN_MENU;
+		SetMenuVisible(true);
+		SetHUDVisible(false);
+
+		// Reset button focus
+		if (m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		{
+			Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+			Zenith_UI::Zenith_UIButton* pxPlayBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuPlay");
+			if (pxPlayBtn)
+			{
+				pxPlayBtn->SetFocused(true);
+			}
+		}
+		m_iFocusIndex = 0;
+	}
+
+	// ========================================================================
+	// Menu UI
+	// ========================================================================
+
+	void SetMenuVisible(bool bVisible)
+	{
+		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
+			return;
+
+		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+
+		Zenith_UI::Zenith_UIText* pxTitle = xUI.FindElement<Zenith_UI::Zenith_UIText>("MenuTitle");
+		if (pxTitle) pxTitle->SetVisible(bVisible);
+
+		Zenith_UI::Zenith_UIButton* pxPlay = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuPlay");
+		if (pxPlay) pxPlay->SetVisible(bVisible);
+	}
+
+	void SetHUDVisible(bool bVisible)
+	{
+		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
+			return;
+
+		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+
+		const char* aszHUDElements[] = {
+			"Title", "ControlsHeader", "MoveInstr", "ResetInstr",
+			"GoalHeader", "GoalDesc", "Status", "Progress", "MinMoves", "WinText"
+		};
+
+		for (const char* szName : aszHUDElements)
+		{
+			Zenith_UI::Zenith_UIText* pxText = xUI.FindElement<Zenith_UI::Zenith_UIText>(szName);
+			if (pxText) pxText->SetVisible(bVisible);
+		}
+	}
+
+	void UpdateMenuInput()
+	{
+		// Only 1 button (Play) - keyboard focus stays on it
+		// Enter/Space activates via the button's own focus handling
+		// Up/Down would cycle if more buttons existed
+		static constexpr int32_t s_iButtonCount = 1;
+
+		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_UP) ||
+			Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_W))
+		{
+			m_iFocusIndex = (m_iFocusIndex - 1 + s_iButtonCount) % s_iButtonCount;
+		}
+		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_DOWN) ||
+			Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_S))
+		{
+			m_iFocusIndex = (m_iFocusIndex + 1) % s_iButtonCount;
+		}
+
+		if (m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		{
+			Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+			Zenith_UI::Zenith_UIButton* pxPlay = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuPlay");
+			if (pxPlay) pxPlay->SetFocused(m_iFocusIndex == 0);
+		}
+	}
+
+	// ========================================================================
+	// Input Handling (movement only - R and Esc handled in OnUpdate)
 	// ========================================================================
 	void HandleInput()
 	{
 		if (m_bAnimating) return;
 
-		// Check for reset
-		if (Sokoban_Input::WasResetPressed())
-		{
-			GenerateNewLevel();
-			return;
-		}
-
-		// Check for movement
 		SokobanDirection eDir = Sokoban_Input::GetInputDirection();
 		if (eDir != SOKOBAN_DIR_NONE)
 		{
@@ -342,7 +529,6 @@ private:
 	{
 		if (m_bAnimating) return false;
 
-		// Check if move is valid using grid logic module
 		if (!Sokoban_GridLogic::CanMove(m_aeTiles, m_abBoxes, m_uPlayerX, m_uPlayerY,
 			m_uGridWidth, m_uGridHeight, eDir))
 		{
@@ -352,8 +538,6 @@ private:
 		int32_t iDeltaX, iDeltaY;
 		Sokoban_GridLogic::GetDirectionDelta(eDir, iDeltaX, iDeltaY);
 
-		uint32_t uOldX = m_uPlayerX;
-		uint32_t uOldY = m_uPlayerY;
 		uint32_t uNewX = m_uPlayerX + iDeltaX;
 		uint32_t uNewY = m_uPlayerY + iDeltaY;
 		uint32_t uNewIndex = uNewY * m_uGridWidth + uNewX;
@@ -361,7 +545,6 @@ private:
 		bool bPushingBox = false;
 		uint32_t uBoxDestX = 0, uBoxDestY = 0;
 
-		// Check if pushing a box
 		if (m_abBoxes[uNewIndex])
 		{
 			bPushingBox = true;
@@ -370,12 +553,12 @@ private:
 			Sokoban_GridLogic::PushBox(m_abBoxes, uNewX, uNewY, m_uGridWidth, eDir);
 		}
 
-		// Update player position
+		uint32_t uOldX = m_uPlayerX;
+		uint32_t uOldY = m_uPlayerY;
 		m_uPlayerX = uNewX;
 		m_uPlayerY = uNewY;
 		m_uMoveCount++;
 
-		// Start animation
 		StartAnimation(uOldX, uOldY, uNewX, uNewY);
 		if (bPushingBox)
 		{
@@ -394,11 +577,9 @@ private:
 		m_fAnimationTimer += fDt;
 		float fProgress = std::min(m_fAnimationTimer / s_fAnimationDuration, 1.f);
 
-		// Lerp player position
 		m_fPlayerVisualX = m_fPlayerStartX + (static_cast<float>(m_uPlayerTargetX) - m_fPlayerStartX) * fProgress;
 		m_fPlayerVisualY = m_fPlayerStartY + (static_cast<float>(m_uPlayerTargetY) - m_fPlayerStartY) * fProgress;
 
-		// Lerp box position if pushing
 		if (m_bBoxAnimating)
 		{
 			m_fBoxVisualX = static_cast<float>(m_uAnimBoxFromX) +
@@ -406,11 +587,9 @@ private:
 			m_fBoxVisualY = static_cast<float>(m_uAnimBoxFromY) +
 				(static_cast<float>(m_uAnimBoxToY) - static_cast<float>(m_uAnimBoxFromY)) * fProgress;
 
-			// Emit dust particles while box is moving
-			UpdateDustParticles(fDt);
+			UpdateDustParticles();
 		}
 
-		// Animation complete
 		if (fProgress >= 1.f)
 		{
 			m_bAnimating = false;
@@ -418,7 +597,6 @@ private:
 			m_fPlayerVisualX = static_cast<float>(m_uPlayerTargetX);
 			m_fPlayerVisualY = static_cast<float>(m_uPlayerTargetY);
 
-			// Stop dust emission
 			StopDustParticles();
 
 			if (Sokoban_GridLogic::CheckWinCondition(m_abBoxes, m_abTargets,
@@ -430,17 +608,20 @@ private:
 		}
 	}
 
-	void UpdateDustParticles(float /*fDt*/)
+	void UpdateDustParticles()
 	{
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+		// Dust emitter is in the persistent scene (DontDestroyOnLoad)
+		Zenith_Scene xPersistentScene = Zenith_SceneManager::GetPersistentScene();
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xPersistentScene);
 
-		if (Sokoban::g_uDustEmitterID == INVALID_ENTITY_ID ||
-			!xScene.EntityExists(Sokoban::g_uDustEmitterID))
+		if (!pxSceneData ||
+			Sokoban::g_uDustEmitterID == INVALID_ENTITY_ID ||
+			!pxSceneData->EntityExists(Sokoban::g_uDustEmitterID))
 		{
 			return;
 		}
 
-		Zenith_Entity xEmitterEntity = xScene.GetEntity(Sokoban::g_uDustEmitterID);
+		Zenith_Entity xEmitterEntity = pxSceneData->GetEntity(Sokoban::g_uDustEmitterID);
 		if (!xEmitterEntity.HasComponent<Zenith_ParticleEmitterComponent>())
 		{
 			return;
@@ -448,23 +629,14 @@ private:
 
 		Zenith_ParticleEmitterComponent& xEmitter = xEmitterEntity.GetComponent<Zenith_ParticleEmitterComponent>();
 
-		// Calculate box world position (using the same calculation as Sokoban_Rendering)
 		float fOffsetX = -static_cast<float>(m_uGridWidth) * 0.5f + 0.5f;
 		float fOffsetZ = -static_cast<float>(m_uGridHeight) * 0.5f + 0.5f;
 		Zenith_Maths::Vector3 xBoxPos(
 			m_fBoxVisualX + fOffsetX,
-			0.1f,  // At floor level
+			0.1f,
 			m_fBoxVisualY + fOffsetZ
 		);
 
-		// Calculate movement direction for dust
-		Zenith_Maths::Vector3 xMoveDir(
-			static_cast<float>(m_uAnimBoxToX) - static_cast<float>(m_uAnimBoxFromX),
-			0.0f,
-			static_cast<float>(m_uAnimBoxToY) - static_cast<float>(m_uAnimBoxFromY)
-		);
-
-		// Dust emits perpendicular to movement, at floor level
 		Zenith_Maths::Vector3 xDustDir = Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f);
 
 		xEmitter.SetEmitPosition(xBoxPos);
@@ -474,15 +646,17 @@ private:
 
 	void StopDustParticles()
 	{
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+		Zenith_Scene xPersistentScene = Zenith_SceneManager::GetPersistentScene();
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xPersistentScene);
 
-		if (Sokoban::g_uDustEmitterID == INVALID_ENTITY_ID ||
-			!xScene.EntityExists(Sokoban::g_uDustEmitterID))
+		if (!pxSceneData ||
+			Sokoban::g_uDustEmitterID == INVALID_ENTITY_ID ||
+			!pxSceneData->EntityExists(Sokoban::g_uDustEmitterID))
 		{
 			return;
 		}
 
-		Zenith_Entity xEmitterEntity = xScene.GetEntity(Sokoban::g_uDustEmitterID);
+		Zenith_Entity xEmitterEntity = pxSceneData->GetEntity(Sokoban::g_uDustEmitterID);
 		if (xEmitterEntity.HasComponent<Zenith_ParticleEmitterComponent>())
 		{
 			xEmitterEntity.GetComponent<Zenith_ParticleEmitterComponent>().SetEmitting(false);
@@ -517,12 +691,20 @@ private:
 	// ========================================================================
 	void UpdateVisuals()
 	{
+		if (!m_xPuzzleScene.IsValid())
+			return;
+
+		Zenith_SceneData* pxPuzzleData = Zenith_SceneManager::GetSceneData(m_xPuzzleScene);
+		if (!pxPuzzleData)
+			return;
+
 		float fVisualX = m_bAnimating ? m_fPlayerVisualX : static_cast<float>(m_uPlayerX);
 		float fVisualY = m_bAnimating ? m_fPlayerVisualY : static_cast<float>(m_uPlayerY);
-		m_xRenderer.UpdatePlayerPosition(fVisualX, fVisualY);
+		m_xRenderer.UpdatePlayerPosition(fVisualX, fVisualY, pxPuzzleData);
 
 		m_xRenderer.UpdateBoxPositions(m_abBoxes, m_uGridWidth, m_uGridHeight,
-			m_bBoxAnimating, m_uAnimBoxToX, m_uAnimBoxToY, m_fBoxVisualX, m_fBoxVisualY);
+			m_bBoxAnimating, m_uAnimBoxToX, m_uAnimBoxToY, m_fBoxVisualX, m_fBoxVisualY,
+			pxPuzzleData);
 	}
 
 	// ========================================================================
@@ -530,18 +712,15 @@ private:
 	// ========================================================================
 	void GenerateNewLevel()
 	{
-		// Reset state
 		m_uMoveCount = 0;
 		m_bWon = false;
 		m_bAnimating = false;
 
-		// Use level generator module
 		Sokoban_LevelGenerator::LevelData xData;
 		xData.aeTiles = m_aeTiles;
 		xData.abTargets = m_abTargets;
 		xData.abBoxes = m_abBoxes;
 
-		// Try to generate a solvable level
 		for (int i = 0; i < 1000; i++)
 		{
 			Sokoban_LevelGenerator::GenerateLevelAttempt(xData, m_xRng);
@@ -552,23 +731,22 @@ private:
 			m_uPlayerY = xData.uPlayerY;
 			m_uTargetCount = xData.uTargetCount;
 
-			// Validate with solver
 			int32_t iMinMoves = Sokoban_Solver::SolveLevel(
 				m_aeTiles, m_abBoxes, m_abTargets,
 				m_uPlayerX, m_uPlayerY, m_uGridWidth, m_uGridHeight);
 
-			if (iMinMoves >= 5) // Minimum complexity
+			if (iMinMoves >= 5)
 			{
 				m_uMinMoves = static_cast<uint32_t>(iMinMoves);
 				break;
 			}
 		}
 
-		// Initialize visual positions
 		m_fPlayerVisualX = static_cast<float>(m_uPlayerX);
 		m_fPlayerVisualY = static_cast<float>(m_uPlayerY);
 
-		// Create 3D entities using renderer module
+		// Create 3D entities in the puzzle scene
+		Zenith_SceneData* pxPuzzleData = Zenith_SceneManager::GetSceneData(m_xPuzzleScene);
 		m_xRenderer.Create3DLevel(
 			m_uGridWidth, m_uGridHeight,
 			m_aeTiles, m_abBoxes, m_abTargets,
@@ -576,7 +754,8 @@ private:
 			Sokoban::g_pxTilePrefab, Sokoban::g_pxBoxPrefab, Sokoban::g_pxPlayerPrefab,
 			m_pxCubeGeometry,
 			m_xFloorMaterial.Get(), m_xWallMaterial.Get(), m_xTargetMaterial.Get(),
-			m_xBoxMaterial.Get(), m_xBoxOnTargetMaterial.Get(), m_xPlayerMaterial.Get());
+			m_xBoxMaterial.Get(), m_xBoxOnTargetMaterial.Get(), m_xPlayerMaterial.Get(),
+			pxPuzzleData);
 
 		m_xRenderer.RepositionCamera(m_uGridWidth, m_uGridHeight);
 		UpdateUI();
@@ -618,7 +797,6 @@ private:
 			{
 				const DragDropFilePayload* pFilePayload =
 					static_cast<const DragDropFilePayload*>(pPayload->Data);
-				// Use SetPath for file-based assets so the path is stored for serialization
 				xMaterial.SetPath(pFilePayload->m_szFilePath);
 			}
 			ImGui::EndDragDropTarget();
@@ -655,7 +833,6 @@ private:
 				Flux_MeshGeometry::LoadFromFile(pFilePayload->m_szFilePath, *pxNewMesh, 0, true);
 				if (pxNewMesh->GetNumVerts() > 0)
 				{
-					// Clean up old geometry if we own it
 					if (m_bOwnsGeometry && pxMesh)
 					{
 						delete pxMesh;
@@ -724,6 +901,13 @@ private:
 
 	// Renderer module instance
 	Sokoban_Renderer m_xRenderer;
+
+	// State machine
+	SokobanGameState m_eState;
+	int32_t m_iFocusIndex;
+
+	// Scene handle for the puzzle scene (created/destroyed on transitions)
+	Zenith_Scene m_xPuzzleScene;
 
 public:
 	// Resource pointers

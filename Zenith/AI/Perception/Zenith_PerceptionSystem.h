@@ -5,7 +5,7 @@
 #include "EntityComponent/Zenith_Entity.h"
 #include <unordered_map>
 
-class Zenith_Scene;
+class Zenith_SceneData;
 
 /**
  * Stimulus mask bits for perception types
@@ -86,7 +86,7 @@ public:
 	static void Initialise();
 	static void Shutdown();
 	static void Update(float fDt);
-	static void Update(float fDt, Zenith_Scene& xScene);  // For testing with specific scene
+	static void Update(float fDt, Zenith_SceneData& xScene);  // For testing with specific scene
 	static void Reset();
 
 	// ========== Agent Registration ==========
@@ -175,14 +175,14 @@ private:
 	static Zenith_Vector<Zenith_SoundStimulus> s_axActiveSounds;
 
 	// Update helpers
-	static void UpdateSightPerception(float fDt, Zenith_Scene& xScene);
+	static void UpdateSightPerception(float fDt, Zenith_SceneData& xScene);
 	static void UpdateHearingPerception(float fDt);
 	static void UpdateMemoryDecay(float fDt);
 	static void UpdateActiveSounds(float fDt);
 
 	// Sight helpers
 	static bool CheckLineOfSight(const Zenith_Maths::Vector3& xFrom,
-		const Zenith_Maths::Vector3& xTo, Zenith_Scene& xScene);
+		const Zenith_Maths::Vector3& xTo, Zenith_SceneData& xScene);
 	static float CalculateAngle(const Zenith_Maths::Vector3& xFrom,
 		const Zenith_Maths::Vector3& xForward, const Zenith_Maths::Vector3& xTo);
 

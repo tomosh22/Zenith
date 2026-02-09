@@ -2,6 +2,7 @@
 #include "Zenith_ComponentMeta.h"
 #include "Zenith_Entity.h"
 #include "DataStream/Zenith_DataStream.h"
+#include "EntityComponent/Components/Zenith_ScriptComponent.h"
 #include <algorithm>
 
 //------------------------------------------------------------------------------
@@ -53,6 +54,13 @@ const Zenith_ComponentMeta* Zenith_ComponentMetaRegistry::GetMetaByName(const st
 
 void Zenith_ComponentMetaRegistry::FinalizeRegistration()
 {
+	// Ensure built-in components are registered
+	// ScriptComponent may not auto-register if its translation unit isn't directly referenced
+	if (m_xMetaByName.find("Script") == m_xMetaByName.end())
+	{
+		RegisterComponent<Zenith_ScriptComponent>("Script");
+	}
+
 	// Build sorted list of metas
 	m_xMetasSorted.clear();
 	m_xMetasSorted.reserve(m_xMetaByName.size());
@@ -153,6 +161,26 @@ void Zenith_ComponentMetaRegistry::DeserializeEntityComponents(Zenith_Entity& xE
 		{
 			Zenith_Log(LOG_CATEGORY_ECS, "[ComponentMetaRegistry] WARNING: Unknown component type '%s', skipping %u bytes", strComponentType.c_str(), uComponentDataSize);
 			xStream.SkipBytes(uComponentDataSize);
+		}
+	}
+}
+
+//------------------------------------------------------------------------------
+// Component Transfer Implementation
+//------------------------------------------------------------------------------
+
+void Zenith_ComponentMetaRegistry::TransferAllComponents(Zenith_EntityID xEntityID, Zenith_SceneData* pxSource, Zenith_SceneData* pxTarget) const
+{
+	EnsureInitialized();
+
+	// Transfer each component type from source pool to target pool via move-construct.
+	// Each wrapper checks the global entity-component map and skips if the entity
+	// doesn't have that component type.
+	for (const Zenith_ComponentMeta* pxMeta : m_xMetasSorted)
+	{
+		if (pxMeta->m_pfnTransferComponent)
+		{
+			pxMeta->m_pfnTransferComponent(xEntityID, pxSource, pxTarget);
 		}
 	}
 }

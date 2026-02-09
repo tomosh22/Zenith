@@ -679,6 +679,15 @@
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_Scene.cpp">
       <Filter>EntityComponent</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\EntityComponent\Zenith_SceneData.cpp">
+      <Filter>EntityComponent</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\EntityComponent\Zenith_SceneManager.cpp">
+      <Filter>EntityComponent</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\EntityComponent\Zenith_SceneOperation.cpp">
+      <Filter>EntityComponent</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\FileAccess\Zenith_FileAccess.cpp">
       <Filter>FileAccess</Filter>
     </ClCompile>
@@ -853,6 +862,9 @@
     <ClCompile Include="..\Zenith\TaskSystem\Zenith_TaskSystem.cpp">
       <Filter>TaskSystem</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\UI\Zenith_UIButton.cpp">
+      <Filter>UI</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\UI\Zenith_UICanvas.cpp">
       <Filter>UI</Filter>
     </ClCompile>
@@ -878,6 +890,9 @@
       <Filter>UnitTests</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\UnitTests\Zenith_MockInput.cpp">
+      <Filter>UnitTests</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\UnitTests\Zenith_SceneTests.cpp">
       <Filter>UnitTests</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\UnitTests\Zenith_UnitTests.cpp">
@@ -3210,6 +3225,15 @@
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_Scene.h">
       <Filter>EntityComponent</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\EntityComponent\Zenith_SceneData.h">
+      <Filter>EntityComponent</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\EntityComponent\Zenith_SceneManager.h">
+      <Filter>EntityComponent</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\EntityComponent\Zenith_SceneOperation.h">
+      <Filter>EntityComponent</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\FileAccess\Zenith_FileAccess.h">
       <Filter>FileAccess</Filter>
     </ClInclude>
@@ -3681,6 +3705,9 @@
     <ClInclude Include="..\Zenith\UI\Zenith_UI.h">
       <Filter>UI</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\UI\Zenith_UIButton.h">
+      <Filter>UI</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\UI\Zenith_UICanvas.h">
       <Filter>UI</Filter>
     </ClInclude>
@@ -3703,6 +3730,9 @@
       <Filter>UnitTests</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\UnitTests\Zenith_MockInput.h">
+      <Filter>UnitTests</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\UnitTests\Zenith_SceneTests.h">
       <Filter>UnitTests</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\UnitTests\Zenith_UnitTests.h">

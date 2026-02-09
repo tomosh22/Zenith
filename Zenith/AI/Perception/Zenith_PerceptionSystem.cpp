@@ -1,6 +1,8 @@
 #include "Zenith.h"
 #include "AI/Perception/Zenith_PerceptionSystem.h"
 #include "EntityComponent/Zenith_Scene.h"
+#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "Physics/Zenith_Physics.h"
 #include "Profiling/Zenith_Profiling.h"
@@ -37,10 +39,15 @@ void Zenith_PerceptionSystem::Reset()
 
 void Zenith_PerceptionSystem::Update(float fDt)
 {
-	Update(fDt, Zenith_Scene::GetCurrentScene());
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	if (pxSceneData)
+	{
+		Update(fDt, *pxSceneData);
+	}
 }
 
-void Zenith_PerceptionSystem::Update(float fDt, Zenith_Scene& xScene)
+void Zenith_PerceptionSystem::Update(float fDt, Zenith_SceneData& xScene)
 {
 	Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__AI_PERCEPTION_UPDATE);
 
@@ -127,11 +134,15 @@ void Zenith_PerceptionSystem::EmitDamageStimulus(Zenith_EntityID xVictim,
 		pxTarget->m_bHostile = true;
 
 		// Get attacker position
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		Zenith_Entity xAttackerEntity = xScene.TryGetEntity(xAttacker);
-		if (xAttackerEntity.IsValid() && xAttackerEntity.HasComponent<Zenith_TransformComponent>())
+		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+		if (pxSceneData)
 		{
-			xAttackerEntity.GetComponent<Zenith_TransformComponent>().GetPosition(pxTarget->m_xLastKnownPosition);
+			Zenith_Entity xAttackerEntity = pxSceneData->TryGetEntity(xAttacker);
+			if (xAttackerEntity.IsValid() && xAttackerEntity.HasComponent<Zenith_TransformComponent>())
+			{
+				xAttackerEntity.GetComponent<Zenith_TransformComponent>().GetPosition(pxTarget->m_xLastKnownPosition);
+			}
 		}
 
 		UpdatePrimaryTarget(it->second);
@@ -225,7 +236,7 @@ float Zenith_PerceptionSystem::GetAwarenessOf(Zenith_EntityID xAgentID, Zenith_E
 	return 0.0f;
 }
 
-void Zenith_PerceptionSystem::UpdateSightPerception(float fDt, Zenith_Scene& xScene)
+void Zenith_PerceptionSystem::UpdateSightPerception(float fDt, Zenith_SceneData& xScene)
 {
 	Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__AI_PERCEPTION_SIGHT);
 
@@ -340,13 +351,19 @@ void Zenith_PerceptionSystem::UpdateSightPerception(float fDt, Zenith_Scene& xSc
 
 void Zenith_PerceptionSystem::UpdateHearingPerception(float fDt)
 {
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	if (!pxSceneData)
+	{
+		return;
+	}
+
 	for (auto& xPair : s_xAgentData)
 	{
 		Zenith_EntityID xAgentID = Zenith_EntityID::FromPacked(xPair.first);
 		AgentPerceptionData& xData = xPair.second;
 
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		Zenith_Entity xAgentEntity = xScene.TryGetEntity(xAgentID);
+		Zenith_Entity xAgentEntity = pxSceneData->TryGetEntity(xAgentID);
 		if (!xAgentEntity.IsValid() || !xAgentEntity.HasComponent<Zenith_TransformComponent>())
 		{
 			continue;
@@ -460,7 +477,7 @@ void Zenith_PerceptionSystem::UpdateActiveSounds(float fDt)
 }
 
 bool Zenith_PerceptionSystem::CheckLineOfSight(const Zenith_Maths::Vector3& xFrom,
-	const Zenith_Maths::Vector3& xTo, Zenith_Scene& xScene)
+	const Zenith_Maths::Vector3& xTo, Zenith_SceneData& xScene)
 {
 	// Use physics raycast to check for occlusion
 	Zenith_Maths::Vector3 xDirection = xTo - xFrom;

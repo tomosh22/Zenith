@@ -20,6 +20,9 @@
 #include "AI/Squad/Zenith_Squad.h"
 #include "AI/Squad/Zenith_TacticalPoint.h"
 #include "AI/BehaviorTree/Zenith_Blackboard.h"
+#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneData.h"
+#include "UI/Zenith_UIButton.h"
 
 // ============================================================================
 // AIShowcase Resources - Global access for behaviours
@@ -172,87 +175,91 @@ void Project_Shutdown()
 
 void Project_LoadInitialScene()
 {
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	xScene.Reset();
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	pxSceneData->Reset();
 
-	// Create camera
-	Zenith_Entity xCameraEntity(&xScene, "MainCamera");
-	xCameraEntity.SetTransient(false);
-	Zenith_CameraComponent& xCamera = xCameraEntity.AddComponent<Zenith_CameraComponent>();
-	// Top-down isometric view for tactical overview
-	// Camera positioned behind and above the arena (similar to Combat game setup)
-	// Arena is 40x30 centered at origin, so camera at Z=-35 to see the full arena
+	// Create persistent GameManager entity (camera + UI + script)
+	Zenith_Entity xGameManager(pxSceneData, "GameManager");
+	xGameManager.SetTransient(false);
+
+	// Camera - top-down isometric view for tactical overview
+	Zenith_CameraComponent& xCamera = xGameManager.AddComponent<Zenith_CameraComponent>();
 	xCamera.InitialisePerspective(
-		Zenith_Maths::Vector3(0.f, 30.f, -35.f),  // Position: behind arena, elevated
-		-0.7f,   // Pitch: looking down at arena (matches Combat)
-		0.f,     // Yaw: facing forward (+Z direction)
-		glm::radians(50.f),  // FOV to see full arena
+		Zenith_Maths::Vector3(0.f, 30.f, -35.f),
+		-0.7f,
+		0.f,
+		glm::radians(50.f),
 		0.1f,
 		500.f,
 		16.f / 9.f
 	);
-	xScene.SetMainCameraEntity(xCameraEntity.GetEntityID());
 
-	// Create main game entity with behaviour
-	Zenith_Entity xGameEntity(&xScene, "AIShowcase");
-	xGameEntity.SetTransient(false);
+	// UI
+	Zenith_UIComponent& xUI = xGameManager.AddComponent<Zenith_UIComponent>();
 
-	// UI Setup
+	// ---- Menu UI (visible initially) ----
+	Zenith_UI::Zenith_UIText* pxMenuTitle = xUI.CreateText("MenuTitle", "AI SHOWCASE");
+	pxMenuTitle->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
+	pxMenuTitle->SetPosition(0.f, -120.f);
+	pxMenuTitle->SetFontSize(48.f);
+	pxMenuTitle->SetColor(Zenith_Maths::Vector4(0.2f, 0.6f, 1.f, 1.f));
+
+	Zenith_UI::Zenith_UIButton* pxPlayButton = xUI.CreateButton("MenuPlay", "Play");
+	pxPlayButton->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
+	pxPlayButton->SetPosition(0.f, 0.f);
+	pxPlayButton->SetSize(200.f, 50.f);
+
+	// ---- HUD UI (hidden initially) ----
 	static constexpr float s_fMargin = 20.f;
 	static constexpr float s_fTextSize = 14.f;
 	static constexpr float s_fLineHeight = 22.f;
 
-	Zenith_UIComponent& xUI = xGameEntity.AddComponent<Zenith_UIComponent>();
+	auto CreateHUDText = [&](const char* szName, const char* szText,
+		Zenith_UI::AnchorPreset eAnchor, float fX, float fY, float fSize,
+		const Zenith_Maths::Vector4& xColor) -> Zenith_UI::Zenith_UIText*
+	{
+		Zenith_UI::Zenith_UIText* pxText = xUI.CreateText(szName, szText);
+		pxText->SetAnchorAndPivot(eAnchor);
+		pxText->SetPosition(fX, fY);
+		pxText->SetFontSize(fSize);
+		pxText->SetColor(xColor);
+		pxText->SetVisible(false);
+		return pxText;
+	};
 
-	// Title
-	Zenith_UI::Zenith_UIText* pxTitle = xUI.CreateText("Title", "AI SHOWCASE");
-	pxTitle->SetAnchorAndPivot(Zenith_UI::AnchorPreset::TopLeft);
-	pxTitle->SetPosition(s_fMargin, s_fMargin);
-	pxTitle->SetFontSize(s_fTextSize * 3.0f);
-	pxTitle->SetColor(Zenith_Maths::Vector4(1.f, 1.f, 1.f, 1.f));
+	CreateHUDText("Title", "AI SHOWCASE",
+		Zenith_UI::AnchorPreset::TopLeft, s_fMargin, s_fMargin, s_fTextSize * 3.0f,
+		Zenith_Maths::Vector4(1.f, 1.f, 1.f, 1.f));
 
-	// Controls header
-	Zenith_UI::Zenith_UIText* pxControls = xUI.CreateText("ControlsHeader", "Controls:");
-	pxControls->SetAnchorAndPivot(Zenith_UI::AnchorPreset::TopLeft);
-	pxControls->SetPosition(s_fMargin, s_fMargin + s_fLineHeight * 2);
-	pxControls->SetFontSize(s_fTextSize * 2.4f);
-	pxControls->SetColor(Zenith_Maths::Vector4(0.9f, 0.9f, 0.2f, 1.f));
+	CreateHUDText("ControlsHeader", "Controls:",
+		Zenith_UI::AnchorPreset::TopLeft, s_fMargin, s_fMargin + s_fLineHeight * 2, s_fTextSize * 2.4f,
+		Zenith_Maths::Vector4(0.9f, 0.9f, 0.2f, 1.f));
 
-	// Control instructions
 	const char* astrControls[] = {
 		"WASD: Move player",
 		"Space: Attack/Make sound",
 		"1-5: Change formation",
-		"R: Reset demo"
+		"R: Reset demo",
+		"Esc: Menu"
 	};
-	for (uint32_t u = 0; u < 4; ++u)
+	for (uint32_t u = 0; u < 5; ++u)
 	{
 		char szName[32];
 		sprintf(szName, "Control%u", u);
-		Zenith_UI::Zenith_UIText* pxText = xUI.CreateText(szName, astrControls[u]);
-		pxText->SetAnchorAndPivot(Zenith_UI::AnchorPreset::TopLeft);
-		pxText->SetPosition(s_fMargin, s_fMargin + s_fLineHeight * (3 + u));
-		pxText->SetFontSize(s_fTextSize * 2.0f);
-		pxText->SetColor(Zenith_Maths::Vector4(0.8f, 0.8f, 0.8f, 1.f));
+		CreateHUDText(szName, astrControls[u],
+			Zenith_UI::AnchorPreset::TopLeft, s_fMargin, s_fMargin + s_fLineHeight * (3 + u), s_fTextSize * 2.0f,
+			Zenith_Maths::Vector4(0.8f, 0.8f, 0.8f, 1.f));
 	}
 
-	// Status text (bottom-left)
-	Zenith_UI::Zenith_UIText* pxStatus = xUI.CreateText("Status", "Enemies: 0 | Squads: 0");
-	pxStatus->SetAnchorAndPivot(Zenith_UI::AnchorPreset::BottomLeft);
-	pxStatus->SetPosition(s_fMargin, -s_fMargin);
-	pxStatus->SetFontSize(s_fTextSize * 2.0f);
-	pxStatus->SetColor(Zenith_Maths::Vector4(0.6f, 0.8f, 1.f, 1.f));
+	CreateHUDText("Status", "Enemies: 0 | Squads: 0",
+		Zenith_UI::AnchorPreset::BottomLeft, s_fMargin, -s_fMargin, s_fTextSize * 2.0f,
+		Zenith_Maths::Vector4(0.6f, 0.8f, 1.f, 1.f));
 
-	// Add script component with AIShowcase behaviour
-	// Use SetBehaviourForSerialization - OnAwake will be dispatched when Play mode is entered
-	Zenith_ScriptComponent& xScript = xGameEntity.AddComponent<Zenith_ScriptComponent>();
+	// Script
+	Zenith_ScriptComponent& xScript = xGameManager.AddComponent<Zenith_ScriptComponent>();
 	xScript.SetBehaviourForSerialization<AIShowcase_Behaviour>();
 
-	// Save scene file
-	std::string strScenePath = std::string(GAME_ASSETS_DIR) + "/Scenes/AIShowcase.zscn";
-	std::filesystem::create_directories(std::string(GAME_ASSETS_DIR) + "/Scenes");
-	xScene.SaveToFile(strScenePath);
-
-	// Load from disk to ensure unified lifecycle code path (LoadFromFile handles OnAwake/OnEnable)
-	xScene.LoadFromFile(strScenePath);
+	// Mark as persistent - survives all scene transitions
+	xGameManager.DontDestroyOnLoad();
 }

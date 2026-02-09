@@ -1,6 +1,7 @@
 #pragma once
 #include "EntityComponent/Zenith_Entity.h"
-#include "EntityComponent/Zenith_Scene.h"
+#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneData.h"
 #include "Maths/Zenith_Maths.h"
 
 #ifdef ZENITH_TOOLS
@@ -17,7 +18,7 @@ public:
 	~Zenith_TransformComponent();
 
 	// Serialization methods for Zenith_DataStream
-	void WriteToDataStream(Zenith_DataStream& xStream) const;
+	void WriteToDataStream(Zenith_DataStream& xStream);
 	void ReadFromDataStream(Zenith_DataStream& xStream);
 
 	void SetPosition(const Zenith_Maths::Vector3& xPos);
@@ -85,8 +86,8 @@ public:
 	bool IsDescendantOf(Zenith_EntityID uAncestorID) const;
 
 	// Unsafe version for internal use when scene mutex is already held
-	// ONLY call this when you already hold Zenith_Scene::m_xMutex!
-	bool IsDescendantOfUnsafe(Zenith_EntityID uAncestorID, Zenith_Scene& xScene) const;
+	// ONLY call this when you already hold Zenith_SceneData::m_xMutex!
+	bool IsDescendantOfUnsafe(Zenith_EntityID uAncestorID, Zenith_SceneData& xSceneData) const;
 
 
 #ifdef ZENITH_TOOLS
@@ -151,7 +152,11 @@ private:
 template<typename Func>
 void Zenith_TransformComponent::ForEachChild(Func&& func)
 {
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+	Zenith_SceneData* pxSceneData = m_xOwningEntity.GetSceneData();
+	if (!pxSceneData)
+	{
+		return;
+	}
 
 	// Copy child IDs to local vector to prevent invalidation during iteration
 	// This fixes the case where the callback modifies the child list (e.g., reparenting)
@@ -166,9 +171,9 @@ void Zenith_TransformComponent::ForEachChild(Func&& func)
 	for (u_int u = 0; u < xChildIDsCopy.GetSize(); ++u)
 	{
 		Zenith_EntityID uChildID = xChildIDsCopy.Get(u);
-		if (xScene.EntityExists(uChildID))
+		if (pxSceneData->EntityExists(uChildID))
 		{
-			Zenith_Entity xChildEntity = xScene.GetEntity(uChildID);
+			Zenith_Entity xChildEntity = pxSceneData->GetEntity(uChildID);
 			Zenith_TransformComponent& xChildTransform = xChildEntity.GetComponent<Zenith_TransformComponent>();
 			func(xChildTransform);
 		}

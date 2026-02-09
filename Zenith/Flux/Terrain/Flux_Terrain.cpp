@@ -9,6 +9,8 @@
 #include "Flux/Shadows/Flux_Shadows.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "EntityComponent/Zenith_Scene.h"
+#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
@@ -267,10 +269,9 @@ void Flux_Terrain::Shutdown()
 void Flux_Terrain::SubmitRenderToGBufferTask()
 {
 	s_uFrameCounter++;
-	
+
 	// Get all terrain components
-	g_xTerrainComponentsToRender.Clear();
-	Zenith_Scene::GetCurrentScene().GetAllOfComponentType<Zenith_TerrainComponent>(g_xTerrainComponentsToRender);
+	Zenith_SceneManager::GetAllOfComponentTypeFromAllScenes<Zenith_TerrainComponent>(g_xTerrainComponentsToRender);
 
 	Flux_MemoryManager::UploadBufferData(s_xTerrainConstantsBuffer.GetBuffer().m_xVRAMHandle, &s_xTerrainConstants, sizeof(TerrainConstants));
 

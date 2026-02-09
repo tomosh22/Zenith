@@ -23,6 +23,7 @@
 // Game state for UI
 enum class RunnerGameState
 {
+	MAIN_MENU,
 	PLAYING,
 	PAUSED,
 	GAME_OVER
@@ -107,6 +108,7 @@ public:
 		{
 			switch (eGameState)
 			{
+			case RunnerGameState::MAIN_MENU:
 			case RunnerGameState::PLAYING:
 				pxStatus->SetText("");
 				break;

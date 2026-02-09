@@ -5,6 +5,8 @@
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
+#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneData.h"
 #include "UI/Zenith_UI.h"
 #include "Input/Zenith_Input.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
@@ -77,8 +79,17 @@ void PlayerController_Behaviour::Shoot()
 		return;
 	}
 
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+
+	// Destroy old bullet in this slot to prevent entity leak
+	if (s_axBulletEntities[s_uCurrentBulletIndex].IsValid())
+	{
+		s_axBulletEntities[s_uCurrentBulletIndex].DestroyImmediate();
+	}
+
+	s_axBulletEntities[s_uCurrentBulletIndex] = Zenith_Entity(pxSceneData, "Bullet" + std::to_string(s_uCurrentBulletIndex));
 	Zenith_Entity& xBulletEntity = s_axBulletEntities[s_uCurrentBulletIndex];
-	xBulletEntity.Initialise(&Zenith_Scene::GetCurrentScene(), "Bullet" + std::to_string(s_uCurrentBulletIndex));
 	s_uCurrentBulletIndex = (s_uCurrentBulletIndex + 1) % 128;
 
 	m_pxBulletPrefab->ApplyToEntity(xBulletEntity);
@@ -288,8 +299,9 @@ void PlayerController_Behaviour::FindHUDElements()
 		return;
 
 	// Find the HUD entity by name
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	Zenith_Entity xHUDEntity = xScene.FindEntityByName("HUD");
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Entity xHUDEntity = pxSceneData->FindEntityByName("HUD");
 	if (!xHUDEntity.IsValid())
 	{
 		Zenith_Log(LOG_CATEGORY_GAMEPLAY, "[PlayerController] Could not find HUD entity");

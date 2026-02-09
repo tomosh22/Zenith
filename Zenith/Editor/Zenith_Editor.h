@@ -174,6 +174,10 @@ public:
 	 */
 	static void DeselectEntity(Zenith_EntityID uEntityID);
 
+	// Viewport
+	static Zenith_Maths::Vector2 GetViewportPos() { return s_xViewportPos; }
+	static Zenith_Maths::Vector2 GetViewportSize() { return s_xViewportSize; }
+
 	// Gizmo
 	static EditorGizmoMode GetGizmoMode() { return s_eGizmoMode; }
 	static void SetGizmoMode(EditorGizmoMode eMode) { s_eGizmoMode = eMode; }
@@ -227,6 +231,7 @@ private:
 	// Scene state backup (for play mode)
 	static bool s_bHasSceneBackup;
 	static std::string s_strBackupScenePath;
+	static int s_iBackupSceneHandle; // The scene handle that was active when Play was pressed
 
 	// Deferred scene operations (to avoid concurrent access during render tasks)
 	static bool s_bPendingSceneLoad;

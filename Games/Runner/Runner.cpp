@@ -6,6 +6,8 @@
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
+#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneData.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
@@ -14,6 +16,7 @@
 #include "AssetHandling/Zenith_MeshGeometryAsset.h"
 #include "Flux/Flux_Graphics.h"
 #include "Prefab/Zenith_Prefab.h"
+#include "UI/Zenith_UIButton.h"
 
 #include <cmath>
 
@@ -377,46 +380,47 @@ static void InitializeRunnerResources()
 	g_xCollectParticleMaterial.Get()->SetBaseColor({ 255.f/255.f, 255.f/255.f, 150.f/255.f, 1.f });
 
 	// Create prefabs for runtime instantiation
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
 
 	// Character prefab
 	{
-		Zenith_Entity xCharTemplate(&xScene, "CharacterTemplate");
+		Zenith_Entity xCharTemplate(pxSceneData, "CharacterTemplate");
 		g_pxCharacterPrefab = new Zenith_Prefab();
 		g_pxCharacterPrefab->CreateFromEntity(xCharTemplate, "Runner");
-		Zenith_Scene::Destroy(xCharTemplate);
+		Zenith_SceneManager::Destroy(xCharTemplate);
 	}
 
 	// Ground prefab
 	{
-		Zenith_Entity xGroundTemplate(&xScene, "GroundTemplate");
+		Zenith_Entity xGroundTemplate(pxSceneData, "GroundTemplate");
 		g_pxGroundPrefab = new Zenith_Prefab();
 		g_pxGroundPrefab->CreateFromEntity(xGroundTemplate, "Ground");
-		Zenith_Scene::Destroy(xGroundTemplate);
+		Zenith_SceneManager::Destroy(xGroundTemplate);
 	}
 
 	// Obstacle prefab
 	{
-		Zenith_Entity xObstacleTemplate(&xScene, "ObstacleTemplate");
+		Zenith_Entity xObstacleTemplate(pxSceneData, "ObstacleTemplate");
 		g_pxObstaclePrefab = new Zenith_Prefab();
 		g_pxObstaclePrefab->CreateFromEntity(xObstacleTemplate, "Obstacle");
-		Zenith_Scene::Destroy(xObstacleTemplate);
+		Zenith_SceneManager::Destroy(xObstacleTemplate);
 	}
 
 	// Collectible prefab
 	{
-		Zenith_Entity xCollectibleTemplate(&xScene, "CollectibleTemplate");
+		Zenith_Entity xCollectibleTemplate(pxSceneData, "CollectibleTemplate");
 		g_pxCollectiblePrefab = new Zenith_Prefab();
 		g_pxCollectiblePrefab->CreateFromEntity(xCollectibleTemplate, "Collectible");
-		Zenith_Scene::Destroy(xCollectibleTemplate);
+		Zenith_SceneManager::Destroy(xCollectibleTemplate);
 	}
 
 	// Particle prefab
 	{
-		Zenith_Entity xParticleTemplate(&xScene, "ParticleTemplate");
+		Zenith_Entity xParticleTemplate(pxSceneData, "ParticleTemplate");
 		g_pxParticlePrefab = new Zenith_Prefab();
 		g_pxParticlePrefab->CreateFromEntity(xParticleTemplate, "Particle");
-		Zenith_Scene::Destroy(xParticleTemplate);
+		Zenith_SceneManager::Destroy(xParticleTemplate);
 	}
 
 	s_bResourcesInitialized = true;
@@ -450,97 +454,95 @@ void Project_Shutdown()
 
 void Project_LoadInitialScene()
 {
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	xScene.Reset();
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	pxSceneData->Reset();
 
-	// Create camera entity
-	Zenith_Entity xCameraEntity(&xScene, "MainCamera");
-	xCameraEntity.SetTransient(false);
-	Zenith_CameraComponent& xCamera = xCameraEntity.AddComponent<Zenith_CameraComponent>();
+	// Create persistent GameManager entity (camera + UI + script)
+	Zenith_Entity xGameManager(pxSceneData, "GameManager");
+	xGameManager.SetTransient(false);
+
+	// Camera
+	Zenith_CameraComponent& xCamera = xGameManager.AddComponent<Zenith_CameraComponent>();
 	xCamera.InitialisePerspective(
-		Zenith_Maths::Vector3(0.f, 4.f, -8.f),   // Position: behind and above
-		-0.3f,  // Pitch: looking slightly down
-		0.f,    // Yaw: facing forward (+Z)
-		glm::radians(60.f),   // FOV
+		Zenith_Maths::Vector3(0.f, 4.f, -8.f),
+		-0.3f,
+		0.f,
+		glm::radians(60.f),
 		0.1f,
 		1000.f,
 		16.f / 9.f
 	);
-	xScene.SetMainCameraEntity(xCameraEntity.GetEntityID());
+	pxSceneData->SetMainCameraEntity(xGameManager.GetEntityID());
 
-	// Create main game entity
-	Zenith_Entity xRunnerEntity(&xScene, "RunnerGame");
-	xRunnerEntity.SetTransient(false);
-
-	// UI Setup
+	// UI
 	static constexpr float s_fMarginLeft = 30.f;
 	static constexpr float s_fMarginTop = 30.f;
 	static constexpr float s_fBaseTextSize = 15.f;
 	static constexpr float s_fLineHeight = 28.f;
 
-	Zenith_UIComponent& xUI = xRunnerEntity.AddComponent<Zenith_UIComponent>();
+	Zenith_UIComponent& xUI = xGameManager.AddComponent<Zenith_UIComponent>();
 
-	auto SetupTopLeftText = [](Zenith_UI::Zenith_UIText* pxText, float fYOffset)
+	// --- Menu UI (visible initially) ---
+	Zenith_UI::Zenith_UIText* pxMenuTitle = xUI.CreateText("MenuTitle", "ENDLESS RUNNER");
+	pxMenuTitle->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
+	pxMenuTitle->SetPosition(0.f, -120.f);
+	pxMenuTitle->SetAlignment(Zenith_UI::TextAlignment::Center);
+	pxMenuTitle->SetFontSize(s_fBaseTextSize * 6.0f);
+	pxMenuTitle->SetColor(Zenith_Maths::Vector4(0.3f, 0.6f, 1.f, 1.f));
+
+	Zenith_UI::Zenith_UIButton* pxPlayBtn = xUI.CreateButton("MenuPlay", "Play");
+	pxPlayBtn->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
+	pxPlayBtn->SetPosition(0.f, 0.f);
+	pxPlayBtn->SetSize(200.f, 50.f);
+
+	// --- HUD UI (hidden initially) ---
+	auto CreateHUDText = [&](const char* szName, const char* szText, float fYOffset) -> Zenith_UI::Zenith_UIText*
 	{
+		Zenith_UI::Zenith_UIText* pxText = xUI.CreateText(szName, szText);
 		pxText->SetAnchorAndPivot(Zenith_UI::AnchorPreset::TopLeft);
 		pxText->SetPosition(s_fMarginLeft, s_fMarginTop + fYOffset);
 		pxText->SetAlignment(Zenith_UI::TextAlignment::Left);
+		pxText->SetVisible(false);
+		return pxText;
 	};
 
-	// Title
-	Zenith_UI::Zenith_UIText* pxTitle = xUI.CreateText("Title", "ENDLESS RUNNER");
-	SetupTopLeftText(pxTitle, 0.f);
+	Zenith_UI::Zenith_UIText* pxTitle = CreateHUDText("Title", "ENDLESS RUNNER", 0.f);
 	pxTitle->SetFontSize(s_fBaseTextSize * 4.8f);
 	pxTitle->SetColor(Zenith_Maths::Vector4(1.f, 1.f, 1.f, 1.f));
 
-	// Distance
-	Zenith_UI::Zenith_UIText* pxDistance = xUI.CreateText("Distance", "0m");
-	SetupTopLeftText(pxDistance, s_fLineHeight * 2.5f);
+	Zenith_UI::Zenith_UIText* pxDistance = CreateHUDText("Distance", "0m", s_fLineHeight * 2.5f);
 	pxDistance->SetFontSize(s_fBaseTextSize * 6.0f);
 	pxDistance->SetColor(Zenith_Maths::Vector4(1.f, 1.f, 1.f, 1.f));
 
-	// Score
-	Zenith_UI::Zenith_UIText* pxScore = xUI.CreateText("Score", "Score: 0");
-	SetupTopLeftText(pxScore, s_fLineHeight * 5);
+	Zenith_UI::Zenith_UIText* pxScore = CreateHUDText("Score", "Score: 0", s_fLineHeight * 5);
 	pxScore->SetFontSize(s_fBaseTextSize * 3.0f);
 	pxScore->SetColor(Zenith_Maths::Vector4(0.6f, 0.8f, 1.f, 1.f));
 
-	// High Score
-	Zenith_UI::Zenith_UIText* pxHighScore = xUI.CreateText("HighScore", "Best: 0");
-	SetupTopLeftText(pxHighScore, s_fLineHeight * 6);
+	Zenith_UI::Zenith_UIText* pxHighScore = CreateHUDText("HighScore", "Best: 0", s_fLineHeight * 6);
 	pxHighScore->SetFontSize(s_fBaseTextSize * 3.0f);
 	pxHighScore->SetColor(Zenith_Maths::Vector4(1.f, 0.84f, 0.f, 1.f));
 
-	// Speed
-	Zenith_UI::Zenith_UIText* pxSpeed = xUI.CreateText("Speed", "Speed: 15.0");
-	SetupTopLeftText(pxSpeed, s_fLineHeight * 7);
+	Zenith_UI::Zenith_UIText* pxSpeed = CreateHUDText("Speed", "Speed: 15.0", s_fLineHeight * 7);
 	pxSpeed->SetFontSize(s_fBaseTextSize * 3.0f);
 	pxSpeed->SetColor(Zenith_Maths::Vector4(0.6f, 0.8f, 1.f, 1.f));
 
-	// Controls hint
-	Zenith_UI::Zenith_UIText* pxControls = xUI.CreateText("Controls", "A/D: Switch Lanes | Space/W: Jump | S: Slide");
-	SetupTopLeftText(pxControls, s_fLineHeight * 9);
+	Zenith_UI::Zenith_UIText* pxControls = CreateHUDText("Controls", "A/D: Lanes | Space/W: Jump | S: Slide | R: Reset | Esc: Menu", s_fLineHeight * 9);
 	pxControls->SetFontSize(s_fBaseTextSize * 2.5f);
 	pxControls->SetColor(Zenith_Maths::Vector4(0.7f, 0.7f, 0.7f, 1.f));
 
-	// Status (center of screen for game over/pause)
 	Zenith_UI::Zenith_UIText* pxStatus = xUI.CreateText("Status", "");
 	pxStatus->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
 	pxStatus->SetPosition(0.f, 0.f);
 	pxStatus->SetAlignment(Zenith_UI::TextAlignment::Center);
 	pxStatus->SetFontSize(s_fBaseTextSize * 5.0f);
 	pxStatus->SetColor(Zenith_Maths::Vector4(1.f, 0.3f, 0.3f, 1.f));
+	pxStatus->SetVisible(false);
 
-	// Add script component with Runner behaviour
-	// Use SetBehaviourForSerialization - OnAwake will be dispatched when Play mode is entered
-	Zenith_ScriptComponent& xScript = xRunnerEntity.AddComponent<Zenith_ScriptComponent>();
+	// Script
+	Zenith_ScriptComponent& xScript = xGameManager.AddComponent<Zenith_ScriptComponent>();
 	xScript.SetBehaviourForSerialization<Runner_Behaviour>();
 
-	// Save the scene file
-	std::string strScenePath = std::string(GAME_ASSETS_DIR) + "/Scenes/Runner.zscn";
-	std::filesystem::create_directories(std::string(GAME_ASSETS_DIR) + "/Scenes");
-	xScene.SaveToFile(strScenePath);
-
-	// Load from disk to ensure unified lifecycle code path (LoadFromFile handles OnAwake/OnEnable)
-	xScene.LoadFromFile(strScenePath);
+	// Mark as persistent
+	xGameManager.DontDestroyOnLoad();
 }

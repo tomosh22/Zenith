@@ -17,6 +17,8 @@
  */
 
 #include "EntityComponent/Zenith_Scene.h"
+#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Zenith_Query.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
@@ -55,11 +57,12 @@ public:
 		Survival_ResourceNodeManager& xResourceMgr)
 	{
 		QueryResult xResult;
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
 
 		xResourceMgr.ForEachActive([&](Survival_ResourceNodeData& xNode, uint32_t uIndex)
 		{
-			if (!xScene.EntityExists(xNode.m_uEntityID))
+			if (!pxSceneData->EntityExists(xNode.m_uEntityID))
 				return;
 
 			float fDist = glm::distance(xPlayerPos, xNode.m_xPosition);
@@ -89,11 +92,12 @@ public:
 		std::vector<QueryResult>& axResults)
 	{
 		axResults.clear();
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
 
 		xResourceMgr.ForEachActive([&](Survival_ResourceNodeData& xNode, uint32_t uIndex)
 		{
-			if (!xScene.EntityExists(xNode.m_uEntityID))
+			if (!pxSceneData->EntityExists(xNode.m_uEntityID))
 				return;
 
 			float fDist = glm::distance(xPlayerPos, xNode.m_xPosition);
@@ -121,8 +125,9 @@ public:
 	 */
 	static uint32_t CountEntitiesWithTransform()
 	{
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		return xScene.Query<Zenith_TransformComponent>().Count();
+		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+		return pxSceneData->Query<Zenith_TransformComponent>().Count();
 	}
 
 	/**
@@ -131,8 +136,9 @@ public:
 	 */
 	static uint32_t CountRenderableEntities()
 	{
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		return xScene.Query<Zenith_TransformComponent, Zenith_ModelComponent>().Count();
+		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+		return pxSceneData->Query<Zenith_TransformComponent, Zenith_ModelComponent>().Count();
 	}
 
 	/**
@@ -145,9 +151,10 @@ public:
 		float fRange,
 		Func&& fn)
 	{
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
 
-		xScene.Query<Zenith_TransformComponent, Zenith_ModelComponent>()
+		pxSceneData->Query<Zenith_TransformComponent, Zenith_ModelComponent>()
 			.ForEach([&](Zenith_EntityID uID, Zenith_TransformComponent& xTransform, Zenith_ModelComponent& xModel)
 			{
 				Zenith_Maths::Vector3 xPos;
@@ -167,8 +174,9 @@ public:
 	 */
 	static Zenith_EntityID FindFirstEntityWithTransform()
 	{
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		return xScene.Query<Zenith_TransformComponent>().First();
+		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+		return pxSceneData->Query<Zenith_TransformComponent>().First();
 	}
 
 	/**
@@ -177,8 +185,9 @@ public:
 	 */
 	static bool HasAnyRenderableEntities()
 	{
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		return xScene.Query<Zenith_TransformComponent, Zenith_ModelComponent>().Any();
+		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+		return pxSceneData->Query<Zenith_TransformComponent, Zenith_ModelComponent>().Any();
 	}
 
 	/**
@@ -186,11 +195,12 @@ public:
 	 */
 	static bool GetEntityPosition(Zenith_EntityID uEntityID, Zenith_Maths::Vector3& xPosOut)
 	{
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		if (!xScene.EntityExists(uEntityID))
+		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+		if (!pxSceneData->EntityExists(uEntityID))
 			return false;
 
-		Zenith_Entity xEntity = xScene.GetEntity(uEntityID);
+		Zenith_Entity xEntity = pxSceneData->GetEntity(uEntityID);
 		if (!xEntity.HasComponent<Zenith_TransformComponent>())
 			return false;
 

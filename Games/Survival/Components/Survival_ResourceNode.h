@@ -15,6 +15,8 @@
 
 #include "Survival_EventBus.h"
 #include "EntityComponent/Zenith_Scene.h"
+#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
@@ -202,15 +204,16 @@ public:
 	 */
 	void UpdateNodeVisuals()
 	{
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
 
 		for (uint32_t i = 0; i < m_uNodeCount; i++)
 		{
 			Survival_ResourceNodeData& xNode = m_axNodes[i];
-			if (!xScene.EntityExists(xNode.m_uEntityID))
+			if (!pxSceneData->EntityExists(xNode.m_uEntityID))
 				continue;
 
-			Zenith_Entity xEntity = xScene.GetEntity(xNode.m_uEntityID);
+			Zenith_Entity xEntity = pxSceneData->GetEntity(xNode.m_uEntityID);
 			if (!xEntity.HasComponent<Zenith_TransformComponent>())
 				continue;
 

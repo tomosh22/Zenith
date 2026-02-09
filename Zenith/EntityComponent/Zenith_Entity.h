@@ -2,10 +2,13 @@
 
 #include "Collections/Zenith_Vector.h"
 #include <cstdint>
-#include <functional>
+#include <functional>  // Required for std::hash<Zenith_EntityID> specialization (NOT for std::function)
 
-class Zenith_Scene;
+// Forward declarations
+class Zenith_SceneData;
 class Zenith_DataStream;
+struct Zenith_Scene;
+class Zenith_SceneManager;
 
 //--------------------------------------------------------------------------
 // Zenith_EntityID - Unity-style entity identifier with generation counter
@@ -57,10 +60,10 @@ namespace std
 class Zenith_TransformComponent;
 
 /**
- * Zenith_Entity - Lightweight handle to an entity in the scene
+ * Zenith_Entity - Lightweight handle to an entity in a scene
  *
  * This is a VALUE TYPE that can be freely copied. It only holds:
- * - A pointer to the scene
+ * - A pointer to the scene data
  * - The entity ID (index + generation)
  *
  * All entity state (name, enabled, transient) is stored in the scene's
@@ -68,7 +71,7 @@ class Zenith_TransformComponent;
  * synchronization bugs that occurred when entity state was duplicated.
  *
  * Usage:
- *   Zenith_Entity xEntity = scene.GetEntity(entityID);
+ *   Zenith_Entity xEntity = pxSceneData->GetEntity(entityID);
  *   xEntity.SetName("MyEntity");  // Modifies slot directly
  *   xEntity.SetEnabled(false);    // Modifies slot directly
  */
@@ -76,28 +79,14 @@ class Zenith_Entity
 {
 public:
 	// Default constructor - creates an invalid entity handle
-	Zenith_Entity()
-		: m_pxParentScene(nullptr)
-		, m_xEntityID(INVALID_ENTITY_ID)
-	{
-	}
+	Zenith_Entity() = default;
 
-	// Construct a handle from scene and ID (used internally by Scene::GetEntity)
-	Zenith_Entity(Zenith_Scene* pxScene, Zenith_EntityID xID)
-		: m_pxParentScene(pxScene)
-		, m_xEntityID(xID)
-	{
-	}
+	// Construct a handle from scene data and ID (used internally by SceneData::GetEntity)
+	Zenith_Entity(Zenith_SceneData* pxSceneData, Zenith_EntityID xID);
+
 
 	// Create a NEW entity in the scene with the given name
-	Zenith_Entity(Zenith_Scene* pxScene, const std::string& strName);
-
-	// Create a NEW entity with a specific ID (for scene loading)
-	Zenith_Entity(Zenith_Scene* pxScene, Zenith_EntityID xID, const std::string& strName);
-
-	// Initialize an invalid entity handle to create a new entity
-	void Initialise(Zenith_Scene* pxScene, const std::string& strName);
-	void Initialise(Zenith_Scene* pxScene, Zenith_EntityID xID, const std::string& strName);
+	Zenith_Entity(Zenith_SceneData* pxSceneData, const std::string& strName);
 
 	//--------------------------------------------------------------------------
 	// Validity Check
@@ -137,19 +126,40 @@ public:
 	//--------------------------------------------------------------------------
 
 	Zenith_EntityID GetEntityID() const { return m_xEntityID; }
-	Zenith_Scene* GetScene() const { return m_pxParentScene; }
+
+	/**
+	 * Get the scene data that owns this entity.
+	 * Returns nullptr if the scene has been unloaded (stale entity reference).
+	 * Uses scene handle + generation for safe validation during async unload.
+	 */
+	Zenith_SceneData* GetSceneData() const;
+
+	/**
+	 * Get the scene handle for this entity's scene
+	 */
+	Zenith_Scene GetScene() const;
 
 	// Name accessors - delegate to EntitySlot
 	const std::string& GetName() const;
 	void SetName(const std::string& strName);
 
 	/**
-	 * Check if this entity is enabled. Disabled entities skip Update/FixedUpdate.
+	 * Check if this entity's own enabled flag is set (Unity's activeSelf).
+	 * Does NOT check parent hierarchy - use IsActiveInHierarchy() for that.
 	 */
 	bool IsEnabled() const;
 
 	/**
+	 * Check if this entity is active in the scene hierarchy (Unity's activeInHierarchy).
+	 * Returns true only if this entity AND all ancestors are enabled.
+	 * Update/FixedUpdate/LateUpdate only run on entities where this returns true.
+	 */
+	bool IsActiveInHierarchy() const;
+
+	/**
 	 * Enable or disable this entity. Calls OnEnable/OnDisable on all components.
+	 * When disabling, also dispatches OnDisable to children whose activeSelf is true.
+	 * When enabling, also dispatches OnEnable to children whose activeSelf is true.
 	 */
 	void SetEnabled(bool bEnabled);
 
@@ -164,20 +174,53 @@ public:
 	void SetTransient(bool bTransient);
 
 	//--------------------------------------------------------------------------
+	// Persistence Across Scene Loads
+	//--------------------------------------------------------------------------
+
+	/**
+	 * Mark this entity to persist across scene loads.
+	 * Equivalent to Unity's DontDestroyOnLoad.
+	 * Entity is moved to the persistent scene.
+	 */
+	void DontDestroyOnLoad();
+
+	//--------------------------------------------------------------------------
+	// Destruction (Unity-style API)
+	//--------------------------------------------------------------------------
+
+	/**
+	 * Mark this entity for destruction at end of frame.
+	 * Equivalent to Unity's Destroy(gameObject).
+	 * Children are also marked for destruction.
+	 *
+	 * @note Must be called from main thread.
+	 */
+	void Destroy();
+
+	/**
+	 * Immediately destroy this entity (current-frame destruction).
+	 * Equivalent to Unity's DestroyImmediate(gameObject).
+	 * Use with caution - mainly for editor/test scenarios.
+	 *
+	 * @note Must be called from main thread.
+	 */
+	void DestroyImmediate();
+
+	//--------------------------------------------------------------------------
 	// Parent/Child Hierarchy (delegates to TransformComponent)
 	//--------------------------------------------------------------------------
 
 	Zenith_EntityID GetParentEntityID() const;
 	bool HasParent() const;
 	void SetParent(Zenith_EntityID uParentID);
-	Zenith_Vector<Zenith_EntityID> GetChildEntityIDs() const;
+	const Zenith_Vector<Zenith_EntityID>& GetChildEntityIDs() const;
 	bool HasChildren() const;
 	uint32_t GetChildCount() const;
 	bool IsRoot() const;
 	Zenith_TransformComponent& GetTransform();
 
 	// Serialization methods for Zenith_DataStream
-	void WriteToDataStream(Zenith_DataStream& xStream) const;
+	void WriteToDataStream(Zenith_DataStream& xStream);
 	void ReadFromDataStream(Zenith_DataStream& xStream);
 
 	//--------------------------------------------------------------------------
@@ -186,7 +229,8 @@ public:
 
 	bool operator==(const Zenith_Entity& xOther) const
 	{
-		return m_xEntityID == xOther.m_xEntityID && m_pxParentScene == xOther.m_pxParentScene;
+		// EntityIDs are globally unique (not per-scene), so comparing only IDs is sufficient
+		return m_xEntityID == xOther.m_xEntityID;
 	}
 
 	bool operator!=(const Zenith_Entity& xOther) const
@@ -194,10 +238,10 @@ public:
 		return !(*this == xOther);
 	}
 
-	// Legacy: public access to scene pointer for compatibility
-	// TODO: Make this private once all code uses GetScene()
-	Zenith_Scene* m_pxParentScene = nullptr;
-
 private:
+	static void PropagateHierarchyEnabled(Zenith_SceneData* pxSceneData, Zenith_EntityID xParentID, bool bBecomingActive);
+
 	Zenith_EntityID m_xEntityID;
+	mutable Zenith_SceneData* m_pxCachedSceneData = nullptr;  // Cached for fast path in GetSceneData()
+	mutable int m_iCachedSceneHandle = -1;  // Cached handle for safe validation (avoids dereferencing stale pointer)
 };

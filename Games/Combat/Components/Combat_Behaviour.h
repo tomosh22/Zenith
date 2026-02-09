@@ -4,18 +4,14 @@
  *
  * Demonstrates:
  * - Zenith_ScriptBehaviour lifecycle (OnAwake, OnStart, OnUpdate)
+ * - Multi-scene architecture: persistent GameManager + arena scene
+ * - DontDestroyOnLoad for persistent entities
+ * - CreateEmptyScene / UnloadScene for level transitions
+ * - Zenith_UIButton for menu interaction
  * - Coordinator pattern delegating to specialized modules
  * - Animation state machine integration
  * - IK system integration
  * - Event-based damage system
- *
- * This behavior orchestrates all combat game systems:
- * - Player controller for input and movement
- * - Animation controller for combat animations
- * - IK controller for foot placement and look-at
- * - Hit detection for attack registration
- * - Enemy AI management
- * - UI updates
  */
 
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
@@ -27,6 +23,8 @@
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_ParticleEmitterComponent.h"
 #include "EntityComponent/Zenith_Scene.h"
+#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Zenith_EventSystem.h"
 #include "Input/Zenith_Input.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
@@ -36,6 +34,7 @@
 #include "Prefab/Zenith_Prefab.h"
 #include "Maths/Zenith_Maths.h"
 #include "Flux/Quads/Flux_Quads.h"
+#include "UI/Zenith_UIButton.h"
 
 // Include combat modules
 #include "Combat_Config.h"
@@ -68,25 +67,25 @@ namespace Combat
 {
 	extern Flux_MeshGeometry* g_pxCapsuleGeometry;
 	extern Flux_MeshGeometry* g_pxCubeGeometry;
-	extern Flux_MeshGeometry* g_pxConeGeometry;  // Cone mesh for candles
-	extern Flux_MeshGeometry* g_pxStickFigureGeometry;  // Animated humanoid mesh (skinned)
-	extern Zenith_ModelAsset* g_pxStickFigureModelAsset;  // Model asset with skeleton
-	extern std::string g_strStickFigureModelPath;  // Path to model asset for LoadModelFromFile
+	extern Flux_MeshGeometry* g_pxConeGeometry;
+	extern Flux_MeshGeometry* g_pxStickFigureGeometry;
+	extern Zenith_ModelAsset* g_pxStickFigureModelAsset;
+	extern std::string g_strStickFigureModelPath;
 	extern MaterialHandle g_xPlayerMaterial;
 	extern MaterialHandle g_xEnemyMaterial;
 	extern MaterialHandle g_xArenaMaterial;
 	extern MaterialHandle g_xWallMaterial;
-	extern MaterialHandle g_xCandleMaterial;  // Cream color for candles
+	extern MaterialHandle g_xCandleMaterial;
 
 	extern Zenith_Prefab* g_pxPlayerPrefab;
 	extern Zenith_Prefab* g_pxEnemyPrefab;
 	extern Zenith_Prefab* g_pxArenaPrefab;
-	extern Zenith_Prefab* g_pxArenaWallPrefab;  // Wall segment with candle and flame
+	extern Zenith_Prefab* g_pxArenaWallPrefab;
 
 	// Particle effects
 	extern Flux_ParticleEmitterConfig* g_pxHitSparkConfig;
 	extern Zenith_EntityID g_uHitSparkEmitterID;
-	extern Flux_ParticleEmitterConfig* g_pxFlameConfig;  // Candle flame particles
+	extern Flux_ParticleEmitterConfig* g_pxFlameConfig;
 }
 
 // ============================================================================
@@ -113,10 +112,11 @@ public:
 
 	Combat_Behaviour() = delete;
 	Combat_Behaviour(Zenith_Entity& xParentEntity)
-		: m_eGameState(Combat_GameState::PLAYING)
+		: m_eGameState(Combat_GameState::MAIN_MENU)
 		, m_uTotalEnemies(3)
 		, m_uComboCount(0)
 		, m_fComboTimer(0.0f)
+		, m_iFocusIndex(0)
 		, m_xRng(std::random_device{}())
 	{
 	}
@@ -130,16 +130,13 @@ public:
 	void OnAwake() ZENITH_FINAL override
 	{
 		// Clear stale state from previous play sessions
-		// This is critical for Play/Stop/Play cycles in the editor
 		m_xEnemyManager.Reset();
-		m_xLevelEntities = Combat_LevelEntities();  // Reset to default state
+		m_xLevelEntities = Combat_LevelEntities();
 
-		// Clear any stale events from previous sessions
 		s_axDeferredDamageEvents.clear();
 		s_axDeferredDeathEvents.clear();
 
-		// Unsubscribe old event handles to prevent orphaned subscriptions
-		// (can happen after Play/Stop cycle recreates the behaviour)
+		// Unsubscribe old event handles
 		if (s_uDamageEventHandle != INVALID_EVENT_HANDLE)
 		{
 			Zenith_EventDispatcher::Get().Unsubscribe(s_uDamageEventHandle);
@@ -151,23 +148,20 @@ public:
 			s_uDeathEventHandle = INVALID_EVENT_HANDLE;
 		}
 
-		// Subscribe to damage events for hit reactions
-		// IMPORTANT: Use static queues to avoid captured 'this' pointer issues
-		// The lambda only adds to the queue; processing happens in OnUpdate where 'this' is valid
+		// Subscribe to events (static queues avoid captured 'this')
 		s_uDamageEventHandle = Zenith_EventDispatcher::Get().SubscribeLambda<Combat_DamageEvent>(
 			[](const Combat_DamageEvent& xEvent)
 			{
 				s_axDeferredDamageEvents.push_back(xEvent);
 			});
 
-		// Subscribe to death events
 		s_uDeathEventHandle = Zenith_EventDispatcher::Get().SubscribeLambda<Combat_DeathEvent>(
 			[](const Combat_DeathEvent& xEvent)
 			{
 				s_axDeferredDeathEvents.push_back(xEvent);
 			});
 
-		// Store resource pointers
+		// Cache resource pointers
 		m_pxCapsuleGeometry = Combat::g_pxCapsuleGeometry;
 		m_pxCubeGeometry = Combat::g_pxCubeGeometry;
 		m_pxStickFigureGeometry = Combat::g_pxStickFigureGeometry;
@@ -175,102 +169,106 @@ public:
 		m_xEnemyMaterial = Combat::g_xEnemyMaterial;
 		m_xArenaMaterial = Combat::g_xArenaMaterial;
 		m_xWallMaterial = Combat::g_xWallMaterial;
+
+		Zenith_Assert(m_xEnemyMaterial.Get() != nullptr,
+			"Combat::g_xEnemyMaterial was not properly initialized - check InitializeCombatResources()");
+		Zenith_Assert(m_xPlayerMaterial.Get() != nullptr,
+			"Combat::g_xPlayerMaterial was not properly initialized - check InitializeCombatResources()");
+
+		// Wire menu button callback
+		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+		Zenith_UI::Zenith_UIButton* pxPlayButton = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuPlay");
+		if (pxPlayButton)
+			pxPlayButton->SetOnClick(&OnPlayClicked, this);
+
+		// Start in menu state
+		m_eGameState = Combat_GameState::MAIN_MENU;
+		m_iFocusIndex = 0;
+		SetMenuVisible(true);
+		SetHUDVisible(false);
 	}
 
 	void OnStart() ZENITH_FINAL override
 	{
-		// Guard: Skip if already initialized
-		if (m_xLevelEntities.m_uPlayerEntityID != INVALID_ENTITY_ID)
-			return;
-
-		// Initialize damage system (resets health data for new play session)
-		Combat_DamageSystem::Initialize();
-
-		// Find pre-created entities by name (created in Project_LoadInitialScene)
-		FindSceneEntities();
-
-		// Spawn enemies
-		SpawnEnemies();
-
-		// Log initialization state for debugging
-		Zenith_Log(LOG_CATEGORY_ANIMATION, "[Combat] OnStart complete: playerID=%u, enemyCount=%zu, managerSize=%zu",
-			m_xLevelEntities.m_uPlayerEntityID.m_uIndex,
-			m_xLevelEntities.m_axEnemyEntityIDs.size(),
-			m_xEnemyManager.GetEnemies().size());
-
-		// Initialize player systems
-		m_xPlayerController.m_fMoveSpeed = 5.0f;
-		m_xPlayerController.m_fLightAttackDuration = 0.3f;
-		m_xPlayerController.m_fHeavyAttackDuration = 0.6f;
-
-		// Initialize animation controller if player has skeleton
-		InitializePlayerAnimation();
-
-		m_xPlayerHitDetection.SetOwner(m_xLevelEntities.m_uPlayerEntityID);
+		if (m_eGameState == Combat_GameState::MAIN_MENU)
+		{
+			SetMenuVisible(true);
+			SetHUDVisible(false);
+		}
 	}
 
 	void OnUpdate(const float fDt) ZENITH_FINAL override
 	{
-		// Update wall light animation (runs regardless of game state for ambiance)
-		UpdateWallLights(fDt);
+		// Wall lights animate always during gameplay for ambiance
+		if (m_xArenaScene.IsValid())
+			UpdateWallLights(fDt);
 
-		// Handle pause input
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_P) ||
-			Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
+		switch (m_eGameState)
 		{
-			TogglePause();
-		}
+		case Combat_GameState::MAIN_MENU:
+			UpdateMenuInput();
+			break;
 
-		// Handle reset input
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_R))
-		{
-			ResetGame();
-			return;
-		}
+		case Combat_GameState::PLAYING:
+			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_P))
+			{
+				m_eGameState = Combat_GameState::PAUSED;
+				Zenith_SceneManager::SetScenePaused(m_xArenaScene, true);
+				UpdateUI();
+				return;
+			}
+			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_R))
+			{
+				ResetGame();
+				return;
+			}
+			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
+			{
+				ReturnToMenu();
+				return;
+			}
 
-		// Paused - only update UI
-		if (m_eGameState == Combat_GameState::PAUSED)
-		{
-			UpdateUI();
-			return;
-		}
-
-		// Game over states - only update UI and camera
-		if (m_eGameState == Combat_GameState::VICTORY ||
-			m_eGameState == Combat_GameState::GAME_OVER)
-		{
+			Combat_DamageSystem::Update(fDt);
+			UpdatePlayer(fDt);
+			m_xEnemyManager.Update(fDt);
+			ProcessDeferredEvents();
+			UpdateComboTimer(fDt);
+			CheckGameState();
 			UpdateCamera(fDt);
 			UpdateUI();
-			return;
+			UpdateEntityOverheadDisplay();
+			break;
+
+		case Combat_GameState::PAUSED:
+			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_P))
+			{
+				m_eGameState = Combat_GameState::PLAYING;
+				Zenith_SceneManager::SetScenePaused(m_xArenaScene, false);
+			}
+			else if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
+			{
+				ReturnToMenu();
+				return;
+			}
+			UpdateUI();
+			break;
+
+		case Combat_GameState::VICTORY:
+		case Combat_GameState::GAME_OVER:
+			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_R))
+			{
+				ResetGame();
+				return;
+			}
+			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
+			{
+				ReturnToMenu();
+				return;
+			}
+			UpdateCamera(fDt);
+			UpdateUI();
+			break;
 		}
-
-		// Update damage system timers
-		Combat_DamageSystem::Update(fDt);
-
-		// Update player
-		UpdatePlayer(fDt);
-
-		// Update enemies
-		m_xEnemyManager.Update(fDt);
-
-		// Process deferred damage/death events AFTER updates complete
-		// Events are queued during updates to avoid re-entrancy issues with captured 'this'
-		ProcessDeferredEvents();
-
-		// Update combo timer
-		UpdateComboTimer(fDt);
-
-		// Check win/lose conditions
-		CheckGameState();
-
-		// Update camera
-		UpdateCamera(fDt);
-
-		// Update UI
-		UpdateUI();
-
-		// Update animation state labels and health bars above entities
-		UpdateEntityOverheadDisplay();
 	}
 
 	void RenderPropertiesPanel() override
@@ -279,17 +277,28 @@ public:
 		ImGui::Text("Combat Arena Game");
 		ImGui::Separator();
 
-		const char* szStates[] = { "PLAYING", "PAUSED", "VICTORY", "GAME OVER" };
+		const char* szStates[] = { "MENU", "PLAYING", "PAUSED", "VICTORY", "GAME OVER" };
 		ImGui::Text("State: %s", szStates[static_cast<int>(m_eGameState)]);
 
-		ImGui::Text("Player Health: %.0f", Combat_DamageSystem::GetHealth(m_xLevelEntities.m_uPlayerEntityID));
-		ImGui::Text("Enemies Alive: %u / %u", m_xEnemyManager.GetAliveCount(), m_uTotalEnemies);
-		ImGui::Text("Combo: %u", m_uComboCount);
+		if (m_eGameState != Combat_GameState::MAIN_MENU)
+		{
+			ImGui::Text("Player Health: %.0f", Combat_DamageSystem::GetHealth(m_xLevelEntities.m_uPlayerEntityID));
+			ImGui::Text("Enemies Alive: %u / %u", m_xEnemyManager.GetAliveCount(), m_uTotalEnemies);
+			ImGui::Text("Combo: %u", m_uComboCount);
+		}
 
 		ImGui::Separator();
-		if (ImGui::Button("Reset Game"))
+		if (m_eGameState == Combat_GameState::MAIN_MENU)
 		{
-			ResetGame();
+			if (ImGui::Button("Start Game"))
+				StartGame();
+		}
+		else
+		{
+			if (ImGui::Button("Reset Game"))
+				ResetGame();
+			if (ImGui::Button("Return to Menu"))
+				ReturnToMenu();
 		}
 
 		ImGui::Separator();
@@ -298,8 +307,9 @@ public:
 		ImGui::Text("  Left Click: Light Attack");
 		ImGui::Text("  Right Click: Heavy Attack");
 		ImGui::Text("  Space: Dodge");
-		ImGui::Text("  P/Esc: Pause");
+		ImGui::Text("  P: Pause");
 		ImGui::Text("  R: Reset");
+		ImGui::Text("  Esc: Menu");
 #endif
 	}
 
@@ -322,49 +332,276 @@ public:
 
 private:
 	// ========================================================================
-	// Entity Lookup (find pre-created entities from Project_LoadInitialScene)
+	// Menu Callbacks
 	// ========================================================================
 
-	void FindSceneEntities()
+	static void OnPlayClicked(void* pxUserData)
 	{
+		Combat_Behaviour* pxSelf = static_cast<Combat_Behaviour*>(pxUserData);
+		pxSelf->StartGame();
+	}
+
+	// ========================================================================
+	// State Transitions
+	// ========================================================================
+
+	void StartGame()
+	{
+		SetMenuVisible(false);
+		SetHUDVisible(true);
+
+		// Create arena scene
+		m_xArenaScene = Zenith_SceneManager::CreateEmptyScene("Arena");
+		Zenith_SceneManager::SetActiveScene(m_xArenaScene);
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(m_xArenaScene);
+
+		Combat_DamageSystem::Initialize();
+
+		CreateArena(pxSceneData);
+		SpawnEnemies();
+		InitializePlayerAnimation();
+
+		m_xPlayerController.m_fMoveSpeed = 5.0f;
+		m_xPlayerController.m_fLightAttackDuration = 0.3f;
+		m_xPlayerController.m_fHeavyAttackDuration = 0.6f;
+		m_xPlayerHitDetection.SetOwner(m_xLevelEntities.m_uPlayerEntityID);
+
+		m_eGameState = Combat_GameState::PLAYING;
+		m_uComboCount = 0;
+		m_fComboTimer = 0.0f;
+		m_fWallLightTime = 0.0f;
+	}
+
+	void ReturnToMenu()
+	{
+		ClearEntityReferences();
+
+		if (m_xArenaScene.IsValid())
+			Zenith_SceneManager::UnloadScene(m_xArenaScene);
+		m_xArenaScene = Zenith_Scene();
+
+		m_xEnemyManager.Reset();
+		m_xPlayerController.Reset();
+		m_xPlayerAnimController.Reset();
+		m_xPlayerIKController.Reset();
+		m_xPlayerHitDetection.DeactivateHitbox();
+		Combat_DamageSystem::Reset();
+		s_axDeferredDamageEvents.clear();
+		s_axDeferredDeathEvents.clear();
+
+		m_eGameState = Combat_GameState::MAIN_MENU;
+		m_iFocusIndex = 0;
+		SetMenuVisible(true);
+		SetHUDVisible(false);
+	}
+
+	void ResetGame()
+	{
+		ClearEntityReferences();
+
+		if (m_xArenaScene.IsValid())
+			Zenith_SceneManager::UnloadScene(m_xArenaScene);
+
+		m_xArenaScene = Zenith_SceneManager::CreateEmptyScene("Arena");
+		Zenith_SceneManager::SetActiveScene(m_xArenaScene);
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(m_xArenaScene);
+
+		Combat_DamageSystem::Reset();
+		m_xEnemyManager.Reset();
+		s_axDeferredDamageEvents.clear();
+		s_axDeferredDeathEvents.clear();
+		m_xPlayerController.Reset();
+		m_xPlayerAnimController.Reset();
+		m_xPlayerIKController.Reset();
+		m_xPlayerHitDetection.DeactivateHitbox();
+
+		Combat_DamageSystem::Initialize();
+		CreateArena(pxSceneData);
+		SpawnEnemies();
+		InitializePlayerAnimation();
+		m_xPlayerHitDetection.SetOwner(m_xLevelEntities.m_uPlayerEntityID);
+
+		m_eGameState = Combat_GameState::PLAYING;
+		m_uComboCount = 0;
+		m_fComboTimer = 0.0f;
+		m_fWallLightTime = 0.0f;
+	}
+
+	// ========================================================================
+	// Menu UI
+	// ========================================================================
+
+	void SetMenuVisible(bool bVisible)
+	{
+		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
+			return;
+
+		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+
+		Zenith_UI::Zenith_UIText* pxTitle = xUI.FindElement<Zenith_UI::Zenith_UIText>("MenuTitle");
+		if (pxTitle) pxTitle->SetVisible(bVisible);
+
+		Zenith_UI::Zenith_UIButton* pxPlay = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuPlay");
+		if (pxPlay)
+		{
+			pxPlay->SetVisible(bVisible);
+			pxPlay->SetFocused(bVisible);
+		}
+	}
+
+	void SetHUDVisible(bool bVisible)
+	{
+		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
+			return;
+
+		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+
+		const char* aszNames[] = {
+			"PlayerHealth", "PlayerHealthBar", "EnemyCount",
+			"ComboCount", "ComboText", "Controls", "Status"
+		};
+
+		for (const char* szName : aszNames)
+		{
+			Zenith_UI::Zenith_UIText* pxText = xUI.FindElement<Zenith_UI::Zenith_UIText>(szName);
+			if (pxText) pxText->SetVisible(bVisible);
+		}
+	}
+
+	void UpdateMenuInput()
+	{
+		// Keyboard focus (only 1 button, but follow the pattern)
+		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+		Zenith_UI::Zenith_UIButton* pxPlay = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuPlay");
+		if (pxPlay)
+			pxPlay->SetFocused(true);
+	}
+
+	// ========================================================================
+	// Arena Creation (moved from Project_LoadInitialScene)
+	// ========================================================================
+
+	void CreateArena(Zenith_SceneData* pxSceneData)
+	{
+		static constexpr float s_fArenaRadius = 15.0f;
+		static constexpr float s_fArenaWallHeight = 2.0f;
 		static constexpr uint32_t s_uWallSegments = 24;
 
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+		// Create arena floor
+		Zenith_Entity xFloor = Combat::g_pxArenaPrefab->Instantiate(pxSceneData, "ArenaFloor");
 
-		// Find player entity
-		Zenith_Entity xPlayer = xScene.FindEntityByName("Player");
-		Zenith_Assert(xPlayer.IsValid(), "Player entity not found in scene - ensure scene was saved after Project_LoadInitialScene created entities");
+		Zenith_TransformComponent& xFloorTransform = xFloor.GetComponent<Zenith_TransformComponent>();
+		xFloorTransform.SetPosition(Zenith_Maths::Vector3(0.0f, -0.5f, 0.0f));
+		xFloorTransform.SetScale(Zenith_Maths::Vector3(s_fArenaRadius * 2.0f, 1.0f, s_fArenaRadius * 2.0f));
+
+		Zenith_ModelComponent& xFloorModel = xFloor.AddComponent<Zenith_ModelComponent>();
+		xFloorModel.AddMeshEntry(*m_pxCubeGeometry, *m_xArenaMaterial.Get());
+
+		xFloor.AddComponent<Zenith_ColliderComponent>()
+			.AddCollider(COLLISION_VOLUME_TYPE_AABB, RIGIDBODY_TYPE_STATIC);
+
+		m_xLevelEntities.m_uArenaFloorEntityID = xFloor.GetEntityID();
+
+		// Create wall segments
+		for (uint32_t i = 0; i < s_uWallSegments; i++)
+		{
+			float fAngle = (static_cast<float>(i) / s_uWallSegments) * 6.28318f;
+			float fX = cos(fAngle) * s_fArenaRadius;
+			float fZ = sin(fAngle) * s_fArenaRadius;
+
+			char szName[32];
+			snprintf(szName, sizeof(szName), "ArenaWall_%u", i);
+			Zenith_Entity xWall(pxSceneData, szName);
+
+			Zenith_TransformComponent& xWallTransform = xWall.GetComponent<Zenith_TransformComponent>();
+			xWallTransform.SetPosition(Zenith_Maths::Vector3(fX, s_fArenaWallHeight * 0.5f, fZ));
+			xWallTransform.SetScale(Zenith_Maths::Vector3(2.0f, s_fArenaWallHeight, 1.0f));
+
+			float fYaw = fAngle + 1.5708f;
+			xWallTransform.SetRotation(glm::angleAxis(fYaw, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f)));
+
+			Zenith_ModelComponent& xWallModel = xWall.AddComponent<Zenith_ModelComponent>();
+			xWallModel.AddMeshEntry(*m_pxCubeGeometry, *m_xWallMaterial.Get());
+			xWallModel.AddMeshEntry(*Combat::g_pxConeGeometry, *Combat::g_xCandleMaterial.Get());
+
+			xWall.AddComponent<Zenith_ColliderComponent>()
+				.AddCollider(COLLISION_VOLUME_TYPE_AABB, RIGIDBODY_TYPE_STATIC);
+
+			Zenith_ParticleEmitterComponent& xFlameEmitter = xWall.AddComponent<Zenith_ParticleEmitterComponent>();
+			xFlameEmitter.SetConfig(Combat::g_pxFlameConfig);
+			xFlameEmitter.SetEmitting(true);
+			xFlameEmitter.SetEmitPosition(Zenith_Maths::Vector3(fX, s_fArenaWallHeight + 0.1f, fZ));
+			xFlameEmitter.SetEmitDirection(Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
+
+			Zenith_LightComponent& xLight = xWall.AddComponent<Zenith_LightComponent>();
+			xLight.SetLightType(LIGHT_TYPE_SPOT);
+			xLight.SetColor(Zenith_Maths::Vector3(1.0f, 0.5f, 0.1f));
+			xLight.SetIntensity(1000.0f);
+			xLight.SetRange(s_fArenaRadius * 3.0f);
+			xLight.SetSpotInnerAngle(glm::radians(25.0f));
+			xLight.SetSpotOuterAngle(glm::radians(45.0f));
+
+			Zenith_Maths::Vector3 xWallPos(fX, s_fArenaWallHeight * 0.5f, fZ);
+			Zenith_Maths::Vector3 xFloorCenter(0.0f, 0.0f, 0.0f);
+			Zenith_Maths::Vector3 xTargetDir = glm::normalize(xFloorCenter - xWallPos);
+			xLight.SetWorldDirection(xTargetDir);
+
+			m_xLevelEntities.m_axArenaWallEntityIDs.push_back(xWall.GetEntityID());
+		}
+
+		// Create player
+		Zenith_Entity xPlayer = Combat::g_pxPlayerPrefab->Instantiate(pxSceneData, "Player");
+
+		Zenith_TransformComponent& xPlayerTransform = xPlayer.GetComponent<Zenith_TransformComponent>();
+		xPlayerTransform.SetPosition(Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
+		xPlayerTransform.SetScale(Zenith_Maths::Vector3(1.0f, 1.0f, 1.0f));
+
+		Zenith_ModelComponent& xPlayerModel = xPlayer.AddComponent<Zenith_ModelComponent>();
+		bool bUsingModelInstance = false;
+		if (!Combat::g_strStickFigureModelPath.empty())
+		{
+			xPlayerModel.LoadModel(Combat::g_strStickFigureModelPath);
+			if (xPlayerModel.GetModelInstance() && xPlayerModel.HasSkeleton())
+			{
+				xPlayerModel.GetModelInstance()->SetMaterial(0, m_xPlayerMaterial.Get());
+				bUsingModelInstance = true;
+			}
+		}
+		if (!bUsingModelInstance)
+		{
+			xPlayerModel.AddMeshEntry(*m_pxStickFigureGeometry, *m_xPlayerMaterial.Get());
+		}
+
+		Zenith_ColliderComponent& xPlayerCollider = xPlayer.AddComponent<Zenith_ColliderComponent>();
+		xPlayerCollider.AddCapsuleCollider(0.3f, 0.6f, RIGIDBODY_TYPE_DYNAMIC);
+		Zenith_Physics::LockRotation(xPlayerCollider.GetBodyID(), true, false, true);
+
 		m_xLevelEntities.m_uPlayerEntityID = xPlayer.GetEntityID();
 		Combat_DamageSystem::RegisterEntity(xPlayer.GetEntityID(), 100.0f, 0.2f);
 
-		// Verify player is properly registered
-		bool bPlayerIsDead = Combat_DamageSystem::IsDead(xPlayer.GetEntityID());
-		Zenith_Log(LOG_CATEGORY_ANIMATION, "[Combat] FindSceneEntities: playerID=%u, isDead=%d (should be 0)",
-			xPlayer.GetEntityID().m_uIndex, bPlayerIsDead);
+		// Create hit spark emitter in arena scene
+		Zenith_Entity xHitSparkEmitter(pxSceneData, "HitSparkEmitter");
+		Zenith_ParticleEmitterComponent& xEmitter = xHitSparkEmitter.AddComponent<Zenith_ParticleEmitterComponent>();
+		xEmitter.SetConfig(Combat::g_pxHitSparkConfig);
+		Combat::g_uHitSparkEmitterID = xHitSparkEmitter.GetEntityID();
+	}
 
-		// Find arena floor
-		Zenith_Entity xFloor = xScene.FindEntityByName("ArenaFloor");
-		Zenith_Assert(xFloor.IsValid(), "ArenaFloor entity not found in scene");
-		m_xLevelEntities.m_uArenaFloorEntityID = xFloor.GetEntityID();
-
-		// Find walls
-		for (uint32_t i = 0; i < s_uWallSegments; i++)
-		{
-			char szName[32];
-			snprintf(szName, sizeof(szName), "ArenaWall_%u", i);
-			Zenith_Entity xWall = xScene.FindEntityByName(szName);
-			Zenith_Assert(xWall.IsValid(), "ArenaWall entity not found in scene: %s", szName);
-			m_xLevelEntities.m_axArenaWallEntityIDs.push_back(xWall.GetEntityID());
-		}
+	void ClearEntityReferences()
+	{
+		m_xLevelEntities = Combat_LevelEntities();
+		Combat::g_uHitSparkEmitterID = INVALID_ENTITY_ID;
 	}
 
 	void InitializePlayerAnimation()
 	{
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		if (!xScene.EntityExists(m_xLevelEntities.m_uPlayerEntityID))
+		if (!m_xArenaScene.IsValid())
 			return;
 
-		Zenith_Entity xPlayer = xScene.GetEntity(m_xLevelEntities.m_uPlayerEntityID);
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(m_xArenaScene);
+		if (!pxSceneData->EntityExists(m_xLevelEntities.m_uPlayerEntityID))
+			return;
+
+		Zenith_Entity xPlayer = pxSceneData->GetEntity(m_xLevelEntities.m_uPlayerEntityID);
 		if (!xPlayer.HasComponent<Zenith_ModelComponent>())
 			return;
 
@@ -375,7 +612,6 @@ private:
 			if (pxSkeleton)
 			{
 				m_xPlayerAnimController.Initialize(pxSkeleton);
-				Zenith_Log(LOG_CATEGORY_ANIMATION, "[Combat] Player animation controller initialized with skeleton instance");
 			}
 		}
 	}
@@ -387,6 +623,8 @@ private:
 		std::uniform_real_distribution<float> xAngleDist(0.0f, 6.28318f);
 		std::uniform_real_distribution<float> xRadiusDist(5.0f, s_fSpawnRadius);
 
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(m_xArenaScene);
+
 		for (uint32_t i = 0; i < m_uTotalEnemies; i++)
 		{
 			float fAngle = xAngleDist(m_xRng);
@@ -397,55 +635,44 @@ private:
 			char szName[32];
 			snprintf(szName, sizeof(szName), "Enemy_%u", i);
 
-			Zenith_Entity xEnemy = Combat::g_pxEnemyPrefab->Instantiate(&Zenith_Scene::GetCurrentScene(), szName);
+			Zenith_Entity xEnemy = Combat::g_pxEnemyPrefab->Instantiate(pxSceneData, szName);
 
 			Zenith_TransformComponent& xTransform = xEnemy.GetComponent<Zenith_TransformComponent>();
-			xTransform.SetPosition(Zenith_Maths::Vector3(fX, 1.0f, fZ));  // Start above floor
-			xTransform.SetScale(Zenith_Maths::Vector3(0.9f, 0.9f, 0.9f));  // Slightly smaller than player
+			xTransform.SetPosition(Zenith_Maths::Vector3(fX, 1.0f, fZ));
+			xTransform.SetScale(Zenith_Maths::Vector3(0.9f, 0.9f, 0.9f));
 
 			Zenith_ModelComponent& xModel = xEnemy.AddComponent<Zenith_ModelComponent>();
 
-			// Use model instance system with skeleton for animated rendering
 			bool bUsingEnemyModel = false;
 			if (!Combat::g_strStickFigureModelPath.empty())
 			{
 				xModel.LoadModel(Combat::g_strStickFigureModelPath);
-				// Check if model loaded successfully with a skeleton
 				if (xModel.GetModelInstance() && xModel.HasSkeleton())
 				{
 					xModel.GetModelInstance()->SetMaterial(0, m_xEnemyMaterial.Get());
 					bUsingEnemyModel = true;
 				}
 			}
-
-			// Fallback to mesh entry if model instance failed
 			if (!bUsingEnemyModel)
 			{
 				xModel.AddMeshEntry(*m_pxStickFigureGeometry, *m_xEnemyMaterial.Get());
 			}
 
-			// Use explicit capsule dimensions for humanoid enemy (slightly smaller than player)
 			Zenith_ColliderComponent& xCollider = xEnemy.AddComponent<Zenith_ColliderComponent>();
 			xCollider.AddCapsuleCollider(0.27f, 0.54f, RIGIDBODY_TYPE_DYNAMIC);
-
-			// Lock X and Z rotation to prevent character from tipping over
 			Zenith_Physics::LockRotation(xCollider.GetBodyID(), true, false, true);
 
 			m_xLevelEntities.m_axEnemyEntityIDs.push_back(xEnemy.GetEntityID());
 
-			// Register with damage system
 			Combat_DamageSystem::RegisterEntity(xEnemy.GetEntityID(), 50.0f, 0.0f);
 
-			// Register with enemy manager - pass skeleton instance if available
 			Combat_EnemyConfig xConfig;
 			xConfig.m_fMoveSpeed = 3.0f;
 			xConfig.m_fAttackDamage = 15.0f;
-			xConfig.m_fAttackRange = 1.5f;  // Accounts for physics collision settling distance
+			xConfig.m_fAttackRange = 1.5f;
 			xConfig.m_fAttackCooldown = 1.5f;
 
 			Flux_SkeletonInstance* pxSkeleton = xModel.HasSkeleton() ? xModel.GetSkeletonInstance() : nullptr;
-			Zenith_Log(LOG_CATEGORY_ANIMATION, "[Combat] Spawning enemy %u: hasSkel=%d, skelPtr=%p, bUsingModel=%d",
-				xEnemy.GetEntityID().m_uIndex, xModel.HasSkeleton(), pxSkeleton, bUsingEnemyModel);
 			m_xEnemyManager.RegisterEnemy(xEnemy.GetEntityID(), xConfig, pxSkeleton);
 		}
 	}
@@ -456,11 +683,14 @@ private:
 
 	void UpdatePlayer(float fDt)
 	{
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		if (!xScene.EntityExists(m_xLevelEntities.m_uPlayerEntityID))
+		if (!m_xArenaScene.IsValid())
 			return;
 
-		Zenith_Entity xPlayer = xScene.GetEntity(m_xLevelEntities.m_uPlayerEntityID);
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(m_xArenaScene);
+		if (!pxSceneData->EntityExists(m_xLevelEntities.m_uPlayerEntityID))
+			return;
+
+		Zenith_Entity xPlayer = pxSceneData->GetEntity(m_xLevelEntities.m_uPlayerEntityID);
 		if (!xPlayer.HasComponent<Zenith_TransformComponent>() ||
 			!xPlayer.HasComponent<Zenith_ColliderComponent>())
 			return;
@@ -468,36 +698,28 @@ private:
 		Zenith_TransformComponent& xTransform = xPlayer.GetComponent<Zenith_TransformComponent>();
 		Zenith_ColliderComponent& xCollider = xPlayer.GetComponent<Zenith_ColliderComponent>();
 
-		// Enforce upright orientation every frame (collision impulses can still tip characters)
 		if (xCollider.HasValidBody())
 		{
 			Zenith_Physics::EnforceUpright(xCollider.GetBodyID());
 		}
 
-		// Check if player is dead
 		if (Combat_DamageSystem::IsDead(m_xLevelEntities.m_uPlayerEntityID))
 		{
 			m_xPlayerController.TriggerDeath();
 		}
 
-		// Update player controller
 		m_xPlayerController.Update(xTransform, xCollider, fDt);
-
-		// Update animation
 		m_xPlayerAnimController.UpdateFromPlayerState(m_xPlayerController, fDt);
 
-		// Update IK
 		bool bCanUseIK = !m_xPlayerController.IsDodging() &&
 			m_xPlayerController.GetState() != Combat_PlayerState::DEAD;
 		m_xPlayerIKController.UpdateWithAutoTarget(xTransform, m_xLevelEntities.m_uPlayerEntityID, 0.0f, bCanUseIK, fDt);
 
-		// Handle attack hit detection
 		UpdatePlayerAttack(xTransform);
 	}
 
 	void UpdatePlayerAttack(Zenith_TransformComponent& xTransform)
 	{
-		// Start hitbox when attack begins
 		if (m_xPlayerController.WasAttackJustStarted())
 		{
 			Combat_AttackType eType = m_xPlayerController.GetCurrentAttackType();
@@ -508,19 +730,16 @@ private:
 			m_xPlayerHitDetection.ActivateHitbox(fDamage, fRange, uCombo, uCombo > 1);
 		}
 
-		// Check for hits during attack
 		if (m_xPlayerController.IsAttacking() && m_xPlayerAnimController.IsAttackHitFrame())
 		{
 			uint32_t uHits = m_xPlayerHitDetection.Update(xTransform);
 			if (uHits > 0)
 			{
-				// Extend combo timer on hit
 				m_uComboCount = m_xPlayerController.GetComboCount();
 				m_fComboTimer = 2.0f;
 			}
 		}
 
-		// Deactivate hitbox when attack ends
 		if (!m_xPlayerController.IsAttacking())
 		{
 			m_xPlayerHitDetection.DeactivateHitbox();
@@ -531,21 +750,14 @@ private:
 	// Event Handlers
 	// ========================================================================
 
-	/**
-	 * ProcessDeferredEvents - Process damage and death events queued during updates
-	 * This is called from OnUpdate where 'this' is guaranteed valid, avoiding
-	 * issues with captured 'this' pointers in event callbacks becoming stale.
-	 */
 	void ProcessDeferredEvents()
 	{
-		// Process damage events
 		for (const Combat_DamageEvent& xEvent : s_axDeferredDamageEvents)
 		{
 			OnDamageEvent(xEvent);
 		}
 		s_axDeferredDamageEvents.clear();
 
-		// Process death events
 		for (const Combat_DeathEvent& xEvent : s_axDeferredDeathEvents)
 		{
 			OnDeathEvent(xEvent);
@@ -555,56 +767,52 @@ private:
 
 	void OnDamageEvent(const Combat_DamageEvent& xEvent)
 	{
-		// Trigger hit stun on player
 		if (xEvent.m_uTargetEntityID == m_xLevelEntities.m_uPlayerEntityID)
 		{
 			m_xPlayerController.TriggerHitStun();
 		}
 		else
 		{
-			// Trigger hit stun on enemies
 			m_xEnemyManager.TriggerHitStunForEntity(xEvent.m_uTargetEntityID);
 		}
 
-		// Spawn hit spark particles at the hit location
 		SpawnHitParticles(xEvent);
 	}
 
 	void SpawnHitParticles(const Combat_DamageEvent& xEvent)
 	{
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+		if (!m_xArenaScene.IsValid())
+			return;
 
-		// Use hit point from the event, or fall back to target position
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(m_xArenaScene);
+
 		Zenith_Maths::Vector3 xHitPos = xEvent.m_xHitPoint;
-		if (glm::length(xHitPos) < 0.001f && xScene.EntityExists(xEvent.m_uTargetEntityID))
+		if (glm::length(xHitPos) < 0.001f && pxSceneData->EntityExists(xEvent.m_uTargetEntityID))
 		{
-			Zenith_Entity xTarget = xScene.GetEntity(xEvent.m_uTargetEntityID);
+			Zenith_Entity xTarget = pxSceneData->GetEntity(xEvent.m_uTargetEntityID);
 			if (xTarget.HasComponent<Zenith_TransformComponent>())
 			{
 				xTarget.GetComponent<Zenith_TransformComponent>().GetPosition(xHitPos);
-				xHitPos.y += 1.0f;  // Offset to chest height
+				xHitPos.y += 1.0f;
 			}
 		}
 
-		// Use hit direction from the event
 		Zenith_Maths::Vector3 xHitDir = xEvent.m_xHitDirection;
 		if (glm::length(xHitDir) < 0.001f)
 		{
-			xHitDir = Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f);  // Default up
+			xHitDir = Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f);
 		}
 
-		// Spawn particles at the hit emitter
 		if (Combat::g_uHitSparkEmitterID != INVALID_ENTITY_ID &&
-			xScene.EntityExists(Combat::g_uHitSparkEmitterID))
+			pxSceneData->EntityExists(Combat::g_uHitSparkEmitterID))
 		{
-			Zenith_Entity xEmitterEntity = xScene.GetEntity(Combat::g_uHitSparkEmitterID);
+			Zenith_Entity xEmitterEntity = pxSceneData->GetEntity(Combat::g_uHitSparkEmitterID);
 			if (xEmitterEntity.HasComponent<Zenith_ParticleEmitterComponent>())
 			{
 				Zenith_ParticleEmitterComponent& xEmitter = xEmitterEntity.GetComponent<Zenith_ParticleEmitterComponent>();
 				xEmitter.SetEmitPosition(xHitPos);
 				xEmitter.SetEmitDirection(xHitDir);
 
-				// Scale particle count based on damage (more damage = more particles)
 				uint32_t uCount = static_cast<uint32_t>(10 + xEvent.m_fDamage * 0.5f);
 				xEmitter.Emit(uCount);
 			}
@@ -613,10 +821,19 @@ private:
 
 	void OnDeathEvent(const Combat_DeathEvent& xEvent)
 	{
-		// Player died
 		if (xEvent.m_uEntityID == m_xLevelEntities.m_uPlayerEntityID)
 		{
 			m_eGameState = Combat_GameState::GAME_OVER;
+		}
+		else if (m_xArenaScene.IsValid())
+		{
+			// Timed destruction for dead enemies (corpse auto-cleanup after 3s)
+			Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(m_xArenaScene);
+			if (pxSceneData && pxSceneData->EntityExists(xEvent.m_uEntityID))
+			{
+				Zenith_Entity xDeadEntity = pxSceneData->GetEntity(xEvent.m_uEntityID);
+				Zenith_SceneManager::Destroy(xDeadEntity, 3.0f);
+			}
 		}
 	}
 
@@ -626,26 +843,22 @@ private:
 
 	void UpdateCamera(float fDt)
 	{
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		Zenith_EntityID uCamID = xScene.GetMainCameraEntity();
-		if (uCamID == INVALID_ENTITY_ID)
+		Zenith_CameraComponent* pxCamera = Zenith_SceneManager::FindMainCameraAcrossScenes();
+		if (!pxCamera)
 			return;
 
-		Zenith_Entity xCamEntity = xScene.GetEntity(uCamID);
-		if (!xCamEntity.HasComponent<Zenith_CameraComponent>())
-			return;
-
-		Zenith_CameraComponent& xCamera = xCamEntity.GetComponent<Zenith_CameraComponent>();
-
-		// Get player position for camera target
+		// Get player position from arena scene
 		Zenith_Maths::Vector3 xPlayerPos(0.0f);
-		if (xScene.EntityExists(m_xLevelEntities.m_uPlayerEntityID))
+		if (m_xArenaScene.IsValid())
 		{
-			Zenith_Entity xPlayer = xScene.GetEntity(m_xLevelEntities.m_uPlayerEntityID);
-			xPlayer.GetComponent<Zenith_TransformComponent>().GetPosition(xPlayerPos);
+			Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(m_xArenaScene);
+			if (pxSceneData && pxSceneData->EntityExists(m_xLevelEntities.m_uPlayerEntityID))
+			{
+				Zenith_Entity xPlayer = pxSceneData->GetEntity(m_xLevelEntities.m_uPlayerEntityID);
+				xPlayer.GetComponent<Zenith_TransformComponent>().GetPosition(xPlayerPos);
+			}
 		}
 
-		// Isometric-style camera position
 		static constexpr float s_fCamDistance = 15.0f;
 		static constexpr float s_fCamHeight = 12.0f;
 		static constexpr float s_fCamPitch = -0.7f;
@@ -653,14 +866,13 @@ private:
 		Zenith_Maths::Vector3 xCamTarget = xPlayerPos;
 		Zenith_Maths::Vector3 xCamPos = xCamTarget + Zenith_Maths::Vector3(0.0f, s_fCamHeight, -s_fCamDistance);
 
-		// Smooth follow
 		Zenith_Maths::Vector3 xCurrentPos;
-		xCamera.GetPosition(xCurrentPos);
+		pxCamera->GetPosition(xCurrentPos);
 		xCamPos = glm::mix(xCurrentPos, xCamPos, fDt * 5.0f);
 
-		xCamera.SetPosition(xCamPos);
-		xCamera.SetPitch(s_fCamPitch);
-		xCamera.SetYaw(0.0f);
+		pxCamera->SetPosition(xCamPos);
+		pxCamera->SetPitch(s_fCamPitch);
+		pxCamera->SetYaw(0.0f);
 	}
 
 	// ========================================================================
@@ -681,82 +893,15 @@ private:
 
 	void CheckGameState()
 	{
-		// Check for victory
 		if (m_xEnemyManager.GetAliveCount() == 0)
 		{
 			m_eGameState = Combat_GameState::VICTORY;
 		}
 
-		// Check for game over
 		if (Combat_DamageSystem::IsDead(m_xLevelEntities.m_uPlayerEntityID))
 		{
 			m_eGameState = Combat_GameState::GAME_OVER;
 		}
-	}
-
-	void TogglePause()
-	{
-		if (m_eGameState == Combat_GameState::PLAYING)
-		{
-			m_eGameState = Combat_GameState::PAUSED;
-		}
-		else if (m_eGameState == Combat_GameState::PAUSED)
-		{
-			m_eGameState = Combat_GameState::PLAYING;
-		}
-	}
-
-	void ResetGame()
-	{
-		// Destroy only enemies (arena and player are persistent)
-		DestroyEnemies();
-
-		// Reset damage system and re-register player
-		Combat_DamageSystem::Reset();
-		Combat_DamageSystem::RegisterEntity(m_xLevelEntities.m_uPlayerEntityID, 100.0f, 0.2f);
-
-		// Reset enemy manager
-		m_xEnemyManager.Reset();
-
-		// Clear deferred event queues
-		s_axDeferredDamageEvents.clear();
-		s_axDeferredDeathEvents.clear();
-
-		// Reset player systems
-		m_xPlayerController.Reset();
-		m_xPlayerAnimController.Reset();
-		m_xPlayerIKController.Reset();
-		m_xPlayerHitDetection.DeactivateHitbox();
-
-		// Reset player position
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		if (xScene.EntityExists(m_xLevelEntities.m_uPlayerEntityID))
-		{
-			Zenith_Entity xPlayer = xScene.GetEntity(m_xLevelEntities.m_uPlayerEntityID);
-			xPlayer.GetComponent<Zenith_TransformComponent>().SetPosition(Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
-		}
-
-		// Reset game state
-		m_eGameState = Combat_GameState::PLAYING;
-		m_uComboCount = 0;
-		m_fComboTimer = 0.0f;
-		m_fWallLightTime = 0.0f;
-
-		// Respawn enemies
-		SpawnEnemies();
-	}
-
-	void DestroyEnemies()
-	{
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-
-		// Destroy enemies only (player and arena are persistent)
-		for (Zenith_EntityID uID : m_xLevelEntities.m_axEnemyEntityIDs)
-		{
-			if (xScene.EntityExists(uID))
-				Zenith_Scene::Destroy(uID);
-		}
-		m_xLevelEntities.m_axEnemyEntityIDs.clear();
 	}
 
 	// ========================================================================
@@ -790,22 +935,12 @@ private:
 
 	void UpdateAnimationStateLabels()
 	{
-		// Disabled: Zenith_TextComponent has been removed from the engine.
-		// Animation state labels were debug-only features.
 	}
 
 	// ========================================================================
 	// Health Bar Rendering
 	// ========================================================================
 
-	/**
-	 * WorldToScreen - Project a world position to screen-space pixel coordinates
-	 * @param xWorldPos World position to project
-	 * @param xViewMatrix Camera view matrix
-	 * @param xProjMatrix Camera projection matrix
-	 * @param xScreenPos Output screen position in pixels
-	 * @return true if position is in front of camera, false if behind
-	 */
 	bool WorldToScreen(const Zenith_Maths::Vector3& xWorldPos,
 		const Zenith_Maths::Matrix4& xViewMatrix,
 		const Zenith_Maths::Matrix4& xProjMatrix,
@@ -813,14 +948,11 @@ private:
 	{
 		Zenith_Maths::Vector4 xClipPos = xProjMatrix * xViewMatrix * Zenith_Maths::Vector4(xWorldPos, 1.0f);
 
-		// Behind camera check
 		if (xClipPos.w <= 0.0f)
 			return false;
 
-		// Perspective divide to NDC
 		Zenith_Maths::Vector3 xNDC = Zenith_Maths::Vector3(xClipPos) / xClipPos.w;
 
-		// NDC to screen coordinates (Y=0 at bottom for Flux_Quads)
 		int32_t iWidth, iHeight;
 		Zenith_Window::GetInstance()->GetSize(iWidth, iHeight);
 		xScreenPos.x = (xNDC.x * 0.5f + 0.5f) * static_cast<float>(iWidth);
@@ -829,13 +961,6 @@ private:
 		return true;
 	}
 
-	/**
-	 * RenderHealthBarQuad - Render a health bar at screen position using Flux_Quads
-	 * @param xScreenPos Screen position (center of bar)
-	 * @param fHealthPercent Health percentage (0-1)
-	 * @param uBarWidth Width in pixels
-	 * @param uBarHeight Height in pixels
-	 */
 	void RenderHealthBarQuad(const Zenith_Maths::Vector2& xScreenPos, float fHealthPercent, uint32_t uBarWidth = 60, uint32_t uBarHeight = 8)
 	{
 		fHealthPercent = glm::clamp(fHealthPercent, 0.0f, 1.0f);
@@ -843,34 +968,25 @@ private:
 		uint32_t uX = static_cast<uint32_t>(xScreenPos.x - uBarWidth / 2);
 		uint32_t uY = static_cast<uint32_t>(xScreenPos.y);
 
-		// Background bar (dark grey)
 		Flux_Quads::Quad xBgQuad;
 		xBgQuad.m_xPosition_Size = Zenith_Maths::UVector4(uX, uY, uBarWidth, uBarHeight);
 		xBgQuad.m_xColour = Zenith_Maths::Vector4(0.15f, 0.15f, 0.15f, 0.9f);
-		xBgQuad.m_uTexture = 0;  // No texture
+		xBgQuad.m_uTexture = 0;
 		xBgQuad.m_xUVMult_UVAdd = Zenith_Maths::Vector2(0.0f, 0.0f);
 		Flux_Quads::UploadQuad(xBgQuad);
 
-		// Foreground bar (colored by health)
 		if (fHealthPercent > 0.0f)
 		{
 			uint32_t uFgWidth = static_cast<uint32_t>(uBarWidth * fHealthPercent);
 			if (uFgWidth > 0)
 			{
-				// Color based on health percentage
 				Zenith_Maths::Vector4 xFgColor;
 				if (fHealthPercent > 0.6f)
-				{
-					xFgColor = Zenith_Maths::Vector4(0.2f, 0.9f, 0.2f, 1.0f);  // Green
-				}
+					xFgColor = Zenith_Maths::Vector4(0.2f, 0.9f, 0.2f, 1.0f);
 				else if (fHealthPercent > 0.3f)
-				{
-					xFgColor = Zenith_Maths::Vector4(0.9f, 0.8f, 0.2f, 1.0f);  // Yellow
-				}
+					xFgColor = Zenith_Maths::Vector4(0.9f, 0.8f, 0.2f, 1.0f);
 				else
-				{
-					xFgColor = Zenith_Maths::Vector4(0.9f, 0.2f, 0.2f, 1.0f);  // Red
-				}
+					xFgColor = Zenith_Maths::Vector4(0.9f, 0.2f, 0.2f, 1.0f);
 
 				Flux_Quads::Quad xFgQuad;
 				xFgQuad.m_xPosition_Size = Zenith_Maths::UVector4(uX + 1, uY + 1, uFgWidth - 2, uBarHeight - 2);
@@ -882,35 +998,28 @@ private:
 		}
 	}
 
-	/**
-	 * UpdateHealthBars - Render health bars above all entities using Flux_Quads
-	 */
 	void UpdateHealthBars()
 	{
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-
-		// Get camera matrices for world-to-screen projection
-		Zenith_EntityID uCamID = xScene.GetMainCameraEntity();
-		if (uCamID == INVALID_ENTITY_ID)
+		if (!m_xArenaScene.IsValid())
 			return;
 
-		Zenith_Entity xCamEntity = xScene.GetEntity(uCamID);
-		if (!xCamEntity.HasComponent<Zenith_CameraComponent>())
-			return;
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(m_xArenaScene);
 
-		Zenith_CameraComponent& xCamera = xCamEntity.GetComponent<Zenith_CameraComponent>();
+		// Get camera for world-to-screen projection
+		Zenith_CameraComponent* pxCamera = Zenith_SceneManager::FindMainCameraAcrossScenes();
+		if (!pxCamera)
+			return;
 
 		Zenith_Maths::Matrix4 xViewMatrix, xProjMatrix;
-		xCamera.BuildViewMatrix(xViewMatrix);
-		xCamera.BuildProjectionMatrix(xProjMatrix);
+		pxCamera->BuildViewMatrix(xViewMatrix);
+		pxCamera->BuildProjectionMatrix(xProjMatrix);
 
-		// Health bar offset above entity
 		static constexpr float fBarHeightOffset = 2.3f;
 
 		// Player health bar
-		if (xScene.EntityExists(m_xLevelEntities.m_uPlayerEntityID))
+		if (pxSceneData->EntityExists(m_xLevelEntities.m_uPlayerEntityID))
 		{
-			Zenith_Entity xPlayer = xScene.GetEntity(m_xLevelEntities.m_uPlayerEntityID);
+			Zenith_Entity xPlayer = pxSceneData->GetEntity(m_xLevelEntities.m_uPlayerEntityID);
 			if (xPlayer.HasComponent<Zenith_TransformComponent>())
 			{
 				Zenith_Maths::Vector3 xWorldPos;
@@ -921,7 +1030,7 @@ private:
 				if (WorldToScreen(xWorldPos, xViewMatrix, xProjMatrix, xScreenPos))
 				{
 					float fHealthPercent = Combat_DamageSystem::GetHealthPercent(m_xLevelEntities.m_uPlayerEntityID);
-					RenderHealthBarQuad(xScreenPos, fHealthPercent, 80, 10);  // Larger bar for player
+					RenderHealthBarQuad(xScreenPos, fHealthPercent, 80, 10);
 				}
 			}
 		}
@@ -930,14 +1039,13 @@ private:
 		for (const Combat_EnemyAI& xEnemy : m_xEnemyManager.GetEnemies())
 		{
 			Zenith_EntityID uEnemyID = xEnemy.GetEntityID();
-			if (!xScene.EntityExists(uEnemyID))
+			if (!pxSceneData->EntityExists(uEnemyID))
 				continue;
 
-			// Skip dead enemies
 			if (!xEnemy.IsAlive())
 				continue;
 
-			Zenith_Entity xEnemyEntity = xScene.GetEntity(uEnemyID);
+			Zenith_Entity xEnemyEntity = pxSceneData->GetEntity(uEnemyID);
 			if (!xEnemyEntity.HasComponent<Zenith_TransformComponent>())
 				continue;
 
@@ -954,9 +1062,6 @@ private:
 		}
 	}
 
-	/**
-	 * UpdateEntityOverheadDisplay - Update animation labels and health bars
-	 */
 	void UpdateEntityOverheadDisplay()
 	{
 		UpdateAnimationStateLabels();
@@ -967,38 +1072,30 @@ private:
 	// Wall Light Animation
 	// ========================================================================
 
-	/**
-	 * UpdateWallLights - Animate wall lights with rotating direction and color oscillation
-	 * - Direction oscillates ±20 degrees from the base direction (toward arena center)
-	 * - Color oscillates between red and yellow
-	 */
 	void UpdateWallLights(float fDt)
 	{
-		static constexpr float fOSCILLATION_SPEED = 0.75f;      // Oscillation frequency (cycles per second)
-		static constexpr float fMAX_ANGLE_DEGREES = 20.0f;      // Maximum rotation from center
-		static constexpr float fCOLOR_SPEED = 1.0f;             // Color oscillation frequency
+		static constexpr float fOSCILLATION_SPEED = 0.75f;
+		static constexpr float fMAX_ANGLE_DEGREES = 20.0f;
+		static constexpr float fCOLOR_SPEED = 1.0f;
 
 		m_fWallLightTime += fDt;
 
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+		if (!m_xArenaScene.IsValid())
+			return;
 
-		// Calculate oscillation factors
-		// Direction: sin wave for smooth back-and-forth motion
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(m_xArenaScene);
+
 		float fAngleOffset = sinf(m_fWallLightTime * fOSCILLATION_SPEED * 2.0f * 3.14159f) * glm::radians(fMAX_ANGLE_DEGREES);
 
-		// Color: oscillate between red (1,0,0) and yellow (1,1,0)
-		// Use sin wave mapped from [-1,1] to [0,1] for smooth transition
 		float fColorT = (sinf(m_fWallLightTime * fCOLOR_SPEED * 2.0f * 3.14159f) + 1.0f) * 0.5f;
-		// Red = (1, 0, 0), Yellow = (1, 1, 0)
-		// Interpolate: (1, fColorT, 0)
 		Zenith_Maths::Vector3 xLightColor(1.0f, fColorT, 0.0f);
 
 		for (Zenith_EntityID uWallID : m_xLevelEntities.m_axArenaWallEntityIDs)
 		{
-			if (!xScene.EntityExists(uWallID))
+			if (!pxSceneData->EntityExists(uWallID))
 				continue;
 
-			Zenith_Entity xWall = xScene.GetEntity(uWallID);
+			Zenith_Entity xWall = pxSceneData->GetEntity(uWallID);
 			if (!xWall.HasComponent<Zenith_LightComponent>() ||
 				!xWall.HasComponent<Zenith_TransformComponent>())
 				continue;
@@ -1006,27 +1103,20 @@ private:
 			Zenith_LightComponent& xLight = xWall.GetComponent<Zenith_LightComponent>();
 			Zenith_TransformComponent& xTransform = xWall.GetComponent<Zenith_TransformComponent>();
 
-			// Get wall position to compute base direction toward arena center
 			Zenith_Maths::Vector3 xWallPos;
 			xTransform.GetPosition(xWallPos);
 
-			// Base direction: from wall toward arena center (0, 0, 0)
 			Zenith_Maths::Vector3 xFloorCenter(0.0f, 0.0f, 0.0f);
 			Zenith_Maths::Vector3 xBaseDir = glm::normalize(xFloorCenter - xWallPos);
 
-			// Compute rotation axis (perpendicular to base direction in XZ plane)
-			// We want to rotate left/right, so rotate around Y axis
-			// Apply rotation around Y axis to the base direction
 			float fCos = cosf(fAngleOffset);
 			float fSin = sinf(fAngleOffset);
 
-			// Rotate xBaseDir around Y axis by fAngleOffset
 			Zenith_Maths::Vector3 xRotatedDir;
 			xRotatedDir.x = xBaseDir.x * fCos - xBaseDir.z * fSin;
 			xRotatedDir.y = xBaseDir.y;
 			xRotatedDir.z = xBaseDir.x * fSin + xBaseDir.z * fCos;
 
-			// Set the new direction and color
 			xLight.SetWorldDirection(xRotatedDir);
 			xLight.SetColor(xLightColor);
 		}
@@ -1040,11 +1130,15 @@ private:
 	uint32_t m_uTotalEnemies;
 	uint32_t m_uComboCount;
 	float m_fComboTimer;
-	float m_fWallLightTime = 0.0f;  // Accumulator for wall light oscillation
+	float m_fWallLightTime = 0.0f;
+	int32_t m_iFocusIndex;
 
 	std::mt19937 m_xRng;
 
-	// Level entities
+	// Scene handle for the arena
+	Zenith_Scene m_xArenaScene;
+
+	// Level entities (in arena scene)
 	Combat_LevelEntities m_xLevelEntities;
 
 	// Player systems
@@ -1056,12 +1150,11 @@ private:
 	// Enemy manager
 	Combat_EnemyManager m_xEnemyManager;
 
-	// Static event handles (persist across behaviour instances for proper cleanup)
+	// Static event handles
 	static inline Zenith_EventHandle s_uDamageEventHandle = INVALID_EVENT_HANDLE;
 	static inline Zenith_EventHandle s_uDeathEventHandle = INVALID_EVENT_HANDLE;
 
 	// Static event queues for deferred processing
-	// These are static so lambda callbacks don't need to capture 'this'
 	static inline std::vector<Combat_DamageEvent> s_axDeferredDamageEvents;
 	static inline std::vector<Combat_DeathEvent> s_axDeferredDeathEvents;
 
@@ -1069,7 +1162,7 @@ public:
 	// Resource pointers (set in OnAwake from globals)
 	Flux_MeshGeometry* m_pxCapsuleGeometry = nullptr;
 	Flux_MeshGeometry* m_pxCubeGeometry = nullptr;
-	Flux_MeshGeometry* m_pxStickFigureGeometry = nullptr;  // Animated character mesh
+	Flux_MeshGeometry* m_pxStickFigureGeometry = nullptr;
 	MaterialHandle m_xPlayerMaterial;
 	MaterialHandle m_xEnemyMaterial;
 	MaterialHandle m_xArenaMaterial;

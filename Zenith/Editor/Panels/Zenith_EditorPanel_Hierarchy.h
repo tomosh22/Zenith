@@ -5,24 +5,28 @@
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_Entity.h"
 
+// Forward declaration
+class Zenith_SceneData;
+
 //=============================================================================
-// Hierarchy Panel
+// Hierarchy Panel (Unity-Style Multi-Scene)
 //
-// Displays the scene entity hierarchy as a tree view with:
-// - Drag-drop reparenting
+// Displays all loaded scenes as collapsible divider bars with:
+// - Scene headers showing active (bold), dirty (*), entity count
+// - Per-scene context menus (Set Active, Save, Unload, Create Entity)
+// - Entity tree view with drag-drop reparenting
+// - Cross-scene entity operations (Move To Scene, DontDestroyOnLoad)
 // - Multi-selection (Ctrl+click, Shift+click)
-// - Context menu for entity creation/deletion
 //=============================================================================
 
 namespace Zenith_EditorPanelHierarchy
 {
 	/**
-	 * Render the hierarchy panel
+	 * Render the hierarchy panel showing all loaded scenes
 	 *
-	 * @param xScene Reference to the current scene
 	 * @param uGameCameraEntityID Reference to game camera entity (set to invalid if deleted)
 	 */
-	void Render(Zenith_Scene& xScene, Zenith_EntityID& uGameCameraEntityID);
+	void Render(Zenith_EntityID& uGameCameraEntityID);
 }
 
 #endif // ZENITH_TOOLS

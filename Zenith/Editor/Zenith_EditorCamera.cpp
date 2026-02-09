@@ -4,6 +4,7 @@
 
 #include "Zenith_Editor.h"
 #include "EntityComponent/Zenith_Scene.h"
+#include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "Input/Zenith_Input.h"
 
@@ -59,12 +60,13 @@ void Zenith_Editor::InitializeEditorCamera()
 
 	// Initialize editor camera from scene's main camera if available
 	// Otherwise use default values
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	if (xScene.m_xMainCameraEntity != INVALID_ENTITY_ID)
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	if (pxSceneData && pxSceneData->GetMainCameraEntity() != INVALID_ENTITY_ID)
 	{
 		try
 		{
-			Zenith_CameraComponent& xSceneCamera = xScene.GetMainCamera();
+			Zenith_CameraComponent& xSceneCamera = pxSceneData->GetMainCamera();
 			xSceneCamera.GetPosition(s_xEditorCameraPosition);
 			s_fEditorCameraPitch = xSceneCamera.GetPitch();
 			s_fEditorCameraYaw = xSceneCamera.GetYaw();
@@ -182,13 +184,18 @@ void Zenith_Editor::UpdateEditorCamera(float fDt)
 	// (In stopped/paused mode, the game camera is being controlled by editor values)
 	if (s_uGameCameraEntity != INVALID_ENTITY_ID)
 	{
-		Zenith_Entity xCameraEntity = Zenith_Scene::GetCurrentScene().TryGetEntity(s_uGameCameraEntity);
-		if (xCameraEntity.IsValid() && xCameraEntity.HasComponent<Zenith_CameraComponent>())
+		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+		if (pxSceneData)
 		{
-			Zenith_CameraComponent& xCamera = xCameraEntity.GetComponent<Zenith_CameraComponent>();
-			xCamera.SetPosition(s_xEditorCameraPosition);
-			xCamera.SetPitch(s_fEditorCameraPitch);
-			xCamera.SetYaw(s_fEditorCameraYaw);
+			Zenith_Entity xCameraEntity = pxSceneData->TryGetEntity(s_uGameCameraEntity);
+			if (xCameraEntity.IsValid() && xCameraEntity.HasComponent<Zenith_CameraComponent>())
+			{
+				Zenith_CameraComponent& xCamera = xCameraEntity.GetComponent<Zenith_CameraComponent>();
+				xCamera.SetPosition(s_xEditorCameraPosition);
+				xCamera.SetPitch(s_fEditorCameraPitch);
+				xCamera.SetYaw(s_fEditorCameraYaw);
+			}
 		}
 	}
 }
@@ -204,15 +211,21 @@ void Zenith_Editor::SwitchToEditorCamera()
 		return;
 	}
 
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	if (!pxSceneData)
+	{
+		Zenith_Log(LOG_CATEGORY_EDITOR, "Warning: Cannot switch to editor camera - no active scene");
+		return;
+	}
 
 	// Save the game's current main camera entity
-	s_uGameCameraEntity = xScene.m_xMainCameraEntity;
+	s_uGameCameraEntity = pxSceneData->GetMainCameraEntity();
 
 	// Copy game camera state to editor camera
 	if (s_uGameCameraEntity != INVALID_ENTITY_ID)
 	{
-		Zenith_Entity xEntity = xScene.TryGetEntity(s_uGameCameraEntity);
+		Zenith_Entity xEntity = pxSceneData->TryGetEntity(s_uGameCameraEntity);
 		if (xEntity.IsValid() && xEntity.HasComponent<Zenith_CameraComponent>())
 		{
 			Zenith_CameraComponent& xGameCamera = xEntity.GetComponent<Zenith_CameraComponent>();
@@ -253,10 +266,11 @@ void Zenith_Editor::BuildViewMatrix(Zenith_Maths::Matrix4& xOutMatrix)
 	// In Playing mode, use the scene's camera (game controls it)
 	if (s_eEditorMode == EditorMode::Playing)
 	{
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		if (xScene.m_xMainCameraEntity != INVALID_ENTITY_ID)
+		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+		if (pxSceneData && pxSceneData->GetMainCameraEntity() != INVALID_ENTITY_ID)
 		{
-			xScene.GetMainCamera().BuildViewMatrix(xOutMatrix);
+			pxSceneData->GetMainCamera().BuildViewMatrix(xOutMatrix);
 			return;
 		}
 	}
@@ -290,10 +304,11 @@ void Zenith_Editor::GetCameraPosition(Zenith_Maths::Vector4& xOutPosition)
 	// In Playing mode, use the scene's camera (game controls it)
 	if (s_eEditorMode == EditorMode::Playing)
 	{
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		if (xScene.m_xMainCameraEntity != INVALID_ENTITY_ID)
+		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+		if (pxSceneData && pxSceneData->GetMainCameraEntity() != INVALID_ENTITY_ID)
 		{
-			xScene.GetMainCamera().GetPosition(xOutPosition);
+			pxSceneData->GetMainCamera().GetPosition(xOutPosition);
 			return;
 		}
 	}
@@ -310,10 +325,11 @@ float Zenith_Editor::GetCameraNearPlane()
 	// In Playing mode, use the scene's camera (game controls it)
 	if (s_eEditorMode == EditorMode::Playing)
 	{
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		if (xScene.m_xMainCameraEntity != INVALID_ENTITY_ID)
+		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+		if (pxSceneData && pxSceneData->GetMainCameraEntity() != INVALID_ENTITY_ID)
 		{
-			return xScene.GetMainCamera().GetNearPlane();
+			return pxSceneData->GetMainCamera().GetNearPlane();
 		}
 	}
 
@@ -329,10 +345,11 @@ float Zenith_Editor::GetCameraFarPlane()
 	// In Playing mode, use the scene's camera (game controls it)
 	if (s_eEditorMode == EditorMode::Playing)
 	{
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		if (xScene.m_xMainCameraEntity != INVALID_ENTITY_ID)
+		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+		if (pxSceneData && pxSceneData->GetMainCameraEntity() != INVALID_ENTITY_ID)
 		{
-			return xScene.GetMainCamera().GetFarPlane();
+			return pxSceneData->GetMainCamera().GetFarPlane();
 		}
 	}
 
@@ -348,10 +365,11 @@ float Zenith_Editor::GetCameraFOV()
 	// In Playing mode, use the scene's camera (game controls it)
 	if (s_eEditorMode == EditorMode::Playing)
 	{
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		if (xScene.m_xMainCameraEntity != INVALID_ENTITY_ID)
+		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+		if (pxSceneData && pxSceneData->GetMainCameraEntity() != INVALID_ENTITY_ID)
 		{
-			return xScene.GetMainCamera().GetFOV();
+			return pxSceneData->GetMainCamera().GetFOV();
 		}
 	}
 
@@ -367,10 +385,11 @@ float Zenith_Editor::GetCameraAspectRatio()
 	// In Playing mode, use the scene's camera (game controls it)
 	if (s_eEditorMode == EditorMode::Playing)
 	{
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		if (xScene.m_xMainCameraEntity != INVALID_ENTITY_ID)
+		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+		if (pxSceneData && pxSceneData->GetMainCameraEntity() != INVALID_ENTITY_ID)
 		{
-			return xScene.GetMainCamera().GetAspectRatio();
+			return pxSceneData->GetMainCamera().GetAspectRatio();
 		}
 	}
 

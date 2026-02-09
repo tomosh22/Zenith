@@ -12,6 +12,8 @@
 #include "Flux/Shadows/Flux_Shadows.h"
 #include "Flux/DeferredShading/Flux_DeferredShading.h"
 #include "EntityComponent/Zenith_Scene.h"
+#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
@@ -182,7 +184,7 @@ void Flux_AnimatedMeshes::RenderToGBuffer(void*)
 	xBinder.BindCBV(s_xFrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
 
 	Zenith_Vector<Zenith_ModelComponent*> xModels;
-	Zenith_Scene::GetCurrentScene().GetAllOfComponentType<Zenith_ModelComponent>(xModels);
+	Zenith_SceneManager::GetAllOfComponentTypeFromAllScenes<Zenith_ModelComponent>(xModels);
 
 	static bool s_bLoggedOnce = false;
 	for (Zenith_Vector<Zenith_ModelComponent*>::Iterator xIt(xModels); !xIt.Done(); xIt.Next())
@@ -275,7 +277,7 @@ void Flux_AnimatedMeshes::RenderToShadowMap(Flux_CommandList& xCmdBuf, const Flu
 	xBinder.BindCBV(s_xShadowFrameConstantsBinding, &Flux_Graphics::s_xFrameConstantsBuffer.GetCBV());
 
 	Zenith_Vector<Zenith_ModelComponent*> xModels;
-	Zenith_Scene::GetCurrentScene().GetAllOfComponentType<Zenith_ModelComponent>(xModels);
+	Zenith_SceneManager::GetAllOfComponentTypeFromAllScenes<Zenith_ModelComponent>(xModels);
 
 	for (Zenith_Vector<Zenith_ModelComponent*>::Iterator xIt(xModels); !xIt.Done(); xIt.Next())
 	{

@@ -14,6 +14,9 @@ An arena-based combat game demonstrating Animation State Machines, Inverse Kinem
 | **Physics Hit Detection** | `Zenith_ColliderComponent` | Capsule colliders for characters |
 | **Script Behaviours** | `Zenith_ScriptBehaviour` | OnCollisionEnter for hit registration |
 | **DataAsset Configuration** | `Zenith_DataAsset` | Combat tuning parameters |
+| **Multi-Scene Management** | `Zenith_SceneManager` | `DontDestroyOnLoad()`, `CreateEmptyScene()`, `UnloadScene()`, `SetScenePaused()` |
+| **UI Buttons** | `Zenith_UIButton` | Clickable/tappable menu buttons with `SetOnClick()` callback |
+| **Timed Destruction** | `Zenith_SceneManager::Destroy` | Corpse auto-cleanup with delayed entity destruction |
 
 ## File Structure
 
@@ -129,6 +132,41 @@ Demonstrates:
 - Enemy health indicators
 - Game over / victory screens
 
+## Multi-Scene Architecture
+
+### Entity Layout
+```
+[Persistent Scene - "DontDestroyOnLoad"]
+  GameManager entity (DontDestroyOnLoad)
+    ├── Zenith_CameraComponent
+    ├── Zenith_UIComponent (ALL UI: menu + HUD)
+    └── Zenith_ScriptComponent<Combat_Behaviour>
+
+[Arena Scene - created/destroyed on transitions]
+  Level entities (arena, player, enemies, etc.)
+```
+
+### Game State Machine
+```
+MAIN_MENU → PLAYING → PAUSED → GAME_OVER → MAIN_MENU
+```
+
+### Scene Transition Pattern
+```cpp
+// Menu → Game
+m_xArenaScene = Zenith_SceneManager::CreateEmptyScene("Arena");
+Zenith_SceneManager::SetActiveScene(m_xArenaScene);
+// Generate level content...
+m_eGameState = CombatGameState::PLAYING;
+
+// Game → Menu
+Zenith_SceneManager::UnloadScene(m_xArenaScene);
+m_eGameState = CombatGameState::MAIN_MENU;
+
+// Pause
+Zenith_SceneManager::SetScenePaused(m_xArenaScene, true);
+```
+
 ## Learning Path
 
 1. **Start here:** `Combat.cpp` - See resource initialization and event setup
@@ -145,7 +183,11 @@ Demonstrates:
 | Left Mouse | Light attack (combo chain) |
 | Right Mouse | Heavy attack |
 | Space | Dodge roll |
-| P/Escape | Pause |
+| Click / Touch | Select menu button |
+| W/S or Up/Down | Navigate menu |
+| Enter | Activate focused button |
+| Escape | Return to menu / Pause |
+| P | Pause/Resume |
 | R | Restart round |
 
 ## Animation State Machine
@@ -260,8 +302,7 @@ xScene.Query<Zenith_TransformComponent, Zenith_ColliderComponent>()
 When launching in a tools build (`vs2022_Debug_Win64_True`):
 
 ### Scene Hierarchy
-- **MainCamera** - Third-person camera following the player
-- **CombatGame** - Main game entity with UIComponent and ScriptComponent (Combat_Behaviour)
+- **GameManager** - Persistent entity (Camera + UI + Script) - DontDestroyOnLoad
 - **Player** - Player character entity with model, collider, and animation components
 - **ArenaFloor** - Ground plane for the combat arena
 - **ArenaWall_X** - Wall entities forming the arena boundary
@@ -400,6 +441,18 @@ When launching in a tools build (`vs2022_Debug_Win64_True`):
 | T10.2 | Move during attack | Movement blocked during attack |
 | T10.3 | Multiple enemies attack | All hits register properly |
 | T10.4 | Pause during combat | Game pauses, all animations stop |
+
+### T11: Menu and Scene Transitions
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| T11.1 | Click menu button | Button activates, game starts |
+| T11.2 | Navigate menu with W/S keys | Focus moves between buttons |
+| T11.3 | Press Enter on focused button | Button activates |
+| T11.4 | Start game from menu | Arena scene created, gameplay begins |
+| T11.5 | Press Escape during gameplay | Returns to main menu, arena scene unloaded |
+| T11.6 | Press P during gameplay | Game pauses, arena scene paused |
+| T11.7 | Press P while paused | Game resumes |
+| T11.8 | Restart via menu after game over | New arena scene created, level reset |
 
 ## Building
 

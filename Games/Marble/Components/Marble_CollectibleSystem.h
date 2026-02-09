@@ -17,6 +17,8 @@
  */
 
 #include "EntityComponent/Zenith_Scene.h"
+#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "Maths/Zenith_Maths.h"
 #include <vector>
@@ -60,7 +62,8 @@ public:
 		uint32_t uTotalCollected)
 	{
 		CollectionResult xResult;
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
 
 		float fPickupDist = s_fBallPickupRadius + s_fCollectiblePickupRadius + s_fPickupMargin;
 
@@ -68,14 +71,14 @@ public:
 		for (int i = static_cast<int>(axCollectibleEntityIDs.size()) - 1; i >= 0; i--)
 		{
 			Zenith_EntityID uCollID = axCollectibleEntityIDs[i];
-			if (!xScene.EntityExists(uCollID))
+			if (!pxSceneData->EntityExists(uCollID))
 			{
 				// Clean up stale ID
 				axCollectibleEntityIDs.erase(axCollectibleEntityIDs.begin() + i);
 				continue;
 			}
 
-			Zenith_Entity xColl = xScene.GetEntity(uCollID);
+			Zenith_Entity xColl = pxSceneData->GetEntity(uCollID);
 			Zenith_Maths::Vector3 xCollPos;
 			xColl.GetComponent<Zenith_TransformComponent>().GetPosition(xCollPos);
 
@@ -83,7 +86,7 @@ public:
 			if (fDist < fPickupDist)
 			{
 				// Collected!
-				Zenith_Scene::Destroy(uCollID);
+				Zenith_SceneManager::Destroy(xColl);
 				axCollectibleEntityIDs.erase(axCollectibleEntityIDs.begin() + i);
 
 				xResult.uCollectedCount++;
@@ -106,14 +109,15 @@ public:
 		const std::vector<Zenith_EntityID>& axCollectibleEntityIDs,
 		float fDt)
 	{
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
 
 		for (Zenith_EntityID uID : axCollectibleEntityIDs)
 		{
-			if (!xScene.EntityExists(uID))
+			if (!pxSceneData->EntityExists(uID))
 				continue;
 
-			Zenith_Entity xColl = xScene.GetEntity(uID);
+			Zenith_Entity xColl = pxSceneData->GetEntity(uID);
 			Zenith_TransformComponent& xTransform = xColl.GetComponent<Zenith_TransformComponent>();
 
 			// Get current rotation, add Y rotation, set back

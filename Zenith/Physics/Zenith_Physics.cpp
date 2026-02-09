@@ -9,6 +9,8 @@
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Zenith_Scene.h"
+#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneData.h"
 #include "Zenith_OS_Include.h"
 #include <Jolt/Physics/Collision/RayCast.h>
 #include <Jolt/Physics/Collision/CastResult.h>
@@ -326,17 +328,24 @@ void Zenith_Physics::ProcessDeferredCollisionEvents()
 	}
 
 	// Process all deferred events on the main thread (safe to access scene)
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-
+	// Unity parity: dispatch collision events to all loaded scenes, not just the active scene
 	for (Zenith_Vector<DeferredCollisionEvent>::Iterator xIt(xEventsToProcess); !xIt.Done(); xIt.Next())
 	{
 		const DeferredCollisionEvent& xEvent = xIt.GetData();
-		// Check if entities still exist
-		if (!xScene.EntityExists(xEvent.uEntityID1) || !xScene.EntityExists(xEvent.uEntityID2))
+
+		// Look up each entity's owning scene from the global entity slot
+		// Entities in a collision pair may be in different scenes
+		Zenith_SceneData* pxSceneData1 = Zenith_SceneManager::GetSceneDataForEntity(xEvent.uEntityID1);
+		Zenith_SceneData* pxSceneData2 = Zenith_SceneManager::GetSceneDataForEntity(xEvent.uEntityID2);
+
+		// Check if entities still exist in their respective scenes
+		if (!pxSceneData1)
+			continue;
+		if (!pxSceneData2)
 			continue;
 
-		Zenith_Entity xEntity1 = xScene.GetEntity(xEvent.uEntityID1);
-		Zenith_Entity xEntity2 = xScene.GetEntity(xEvent.uEntityID2);
+		Zenith_Entity xEntity1 = pxSceneData1->GetEntity(xEvent.uEntityID1);
+		Zenith_Entity xEntity2 = pxSceneData2->GetEntity(xEvent.uEntityID2);
 
 		// Dispatch to entity 1's script component
 		if (xEntity1.HasComponent<Zenith_ScriptComponent>())

@@ -10,6 +10,8 @@
 #include "EntityComponent/Components/Zenith_ParticleEmitterComponent.h"
 #include "EntityComponent/Components/Zenith_LightComponent.h"
 #include "EntityComponent/Zenith_EventSystem.h"
+#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneData.h"
 #include "Physics/Zenith_Physics.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
@@ -21,6 +23,7 @@
 #include "AssetHandling/Zenith_ModelAsset.h"
 #include "AssetHandling/Zenith_MeshGeometryAsset.h"
 #include "Prefab/Zenith_Prefab.h"
+#include "UI/Zenith_UIButton.h"
 
 #include <cmath>
 #include <filesystem>
@@ -512,37 +515,38 @@ static void InitializeCombatResources()
 
 	// Create prefabs for runtime instantiation
 	// Note: Prefabs are lightweight templates - components added after transform is set
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
 
 	// Player prefab
 	{
-		Zenith_Entity xPlayerTemplate(&xScene, "PlayerTemplate");
+		Zenith_Entity xPlayerTemplate(pxSceneData, "PlayerTemplate");
 		g_pxPlayerPrefab = new Zenith_Prefab();
 		g_pxPlayerPrefab->CreateFromEntity(xPlayerTemplate, "Player");
-		Zenith_Scene::Destroy(xPlayerTemplate);
+		Zenith_SceneManager::Destroy(xPlayerTemplate);
 	}
 
 	// Enemy prefab
 	{
-		Zenith_Entity xEnemyTemplate(&xScene, "EnemyTemplate");
+		Zenith_Entity xEnemyTemplate(pxSceneData, "EnemyTemplate");
 		g_pxEnemyPrefab = new Zenith_Prefab();
 		g_pxEnemyPrefab->CreateFromEntity(xEnemyTemplate, "Enemy");
-		Zenith_Scene::Destroy(xEnemyTemplate);
+		Zenith_SceneManager::Destroy(xEnemyTemplate);
 	}
 
 	// Arena prefab (for floor)
 	{
-		Zenith_Entity xArenaTemplate(&xScene, "ArenaTemplate");
+		Zenith_Entity xArenaTemplate(pxSceneData, "ArenaTemplate");
 		g_pxArenaPrefab = new Zenith_Prefab();
 		g_pxArenaPrefab->CreateFromEntity(xArenaTemplate, "Arena");
-		Zenith_Scene::Destroy(xArenaTemplate);
+		Zenith_SceneManager::Destroy(xArenaTemplate);
 	}
 
 	// ArenaWall prefab with collider and particle emitter
 	// NOTE: ModelComponent is NOT included because mesh/material pointers don't serialize.
 	// ModelComponent is added after instantiation in CreateArena().
 	{
-		Zenith_Entity xWallTemplate(&xScene, "ArenaWallTemplate");
+		Zenith_Entity xWallTemplate(pxSceneData, "ArenaWallTemplate");
 
 		// Add ColliderComponent for wall collision
 		xWallTemplate.AddComponent<Zenith_ColliderComponent>()
@@ -555,8 +559,27 @@ static void InitializeCombatResources()
 
 		g_pxArenaWallPrefab = new Zenith_Prefab();
 		g_pxArenaWallPrefab->CreateFromEntity(xWallTemplate, "ArenaWall");
-		Zenith_Scene::Destroy(xWallTemplate);
+		Zenith_SceneManager::Destroy(xWallTemplate);
 	}
+
+	// Create hit spark particle config
+	g_pxHitSparkConfig = new Flux_ParticleEmitterConfig();
+	g_pxHitSparkConfig->m_uBurstCount = 20;
+	g_pxHitSparkConfig->m_fSpawnRate = 0.0f;
+	g_pxHitSparkConfig->m_uMaxParticles = 256;
+	g_pxHitSparkConfig->m_fLifetimeMin = 0.2f;
+	g_pxHitSparkConfig->m_fLifetimeMax = 0.4f;
+	g_pxHitSparkConfig->m_fSpeedMin = 8.0f;
+	g_pxHitSparkConfig->m_fSpeedMax = 15.0f;
+	g_pxHitSparkConfig->m_fSpreadAngleDegrees = 60.0f;
+	g_pxHitSparkConfig->m_xGravity = Zenith_Maths::Vector3(0.0f, -5.0f, 0.0f);
+	g_pxHitSparkConfig->m_fDrag = 2.0f;
+	g_pxHitSparkConfig->m_xColorStart = Zenith_Maths::Vector4(1.0f, 0.6f, 0.1f, 1.0f);
+	g_pxHitSparkConfig->m_xColorEnd = Zenith_Maths::Vector4(1.0f, 1.0f, 0.2f, 0.0f);
+	g_pxHitSparkConfig->m_fSizeStart = 0.3f;
+	g_pxHitSparkConfig->m_fSizeEnd = 0.1f;
+	g_pxHitSparkConfig->m_bUseGPUCompute = false;
+	Flux_ParticleEmitterConfig::Register("Combat_HitSpark", g_pxHitSparkConfig);
 
 	s_bResourcesInitialized = true;
 }
@@ -590,27 +613,26 @@ void Project_Shutdown()
 
 void Project_LoadInitialScene()
 {
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	xScene.Reset();
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	pxSceneData->Reset();
 
-	// Create camera entity
-	Zenith_Entity xCameraEntity(&xScene, "MainCamera");
-	xCameraEntity.SetTransient(false);
-	Zenith_CameraComponent& xCamera = xCameraEntity.AddComponent<Zenith_CameraComponent>();
+	// Create persistent GameManager entity
+	Zenith_Entity xGameManager(pxSceneData, "GameManager");
+	xGameManager.SetTransient(false);
+
+	// Camera
+	Zenith_CameraComponent& xCamera = xGameManager.AddComponent<Zenith_CameraComponent>();
 	xCamera.InitialisePerspective(
-		Zenith_Maths::Vector3(0.0f, 12.0f, -15.0f),  // Position: above and behind
-		-0.7f,  // Pitch: looking down at arena
-		0.0f,   // Yaw: facing forward
-		glm::radians(50.0f),  // FOV
+		Zenith_Maths::Vector3(0.0f, 12.0f, -15.0f),
+		-0.7f,
+		0.0f,
+		glm::radians(50.0f),
 		0.1f,
 		1000.0f,
 		16.0f / 9.0f
 	);
-	xScene.SetMainCameraEntity(xCameraEntity.GetEntityID());
-
-	// Create main game entity
-	Zenith_Entity xCombatEntity(&xScene, "CombatGame");
-	xCombatEntity.SetTransient(false);
+	pxSceneData->SetMainCameraEntity(xGameManager.GetEntityID());
 
 	// UI Setup
 	static constexpr float s_fMarginLeft = 30.0f;
@@ -618,224 +640,67 @@ void Project_LoadInitialScene()
 	static constexpr float s_fBaseTextSize = 15.0f;
 	static constexpr float s_fLineHeight = 24.0f;
 
-	Zenith_UIComponent& xUI = xCombatEntity.AddComponent<Zenith_UIComponent>();
+	Zenith_UIComponent& xUI = xGameManager.AddComponent<Zenith_UIComponent>();
 
-	auto SetupTopLeftText = [](Zenith_UI::Zenith_UIText* pxText, float fYOffset)
+	// Menu UI (visible initially)
+	Zenith_UI::Zenith_UIText* pxMenuTitle = xUI.CreateText("MenuTitle", "COMBAT ARENA");
+	pxMenuTitle->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
+	pxMenuTitle->SetPosition(0.0f, -120.0f);
+	pxMenuTitle->SetFontSize(s_fBaseTextSize * 4.8f);
+	pxMenuTitle->SetColor(Zenith_Maths::Vector4(1.0f, 0.2f, 0.2f, 1.0f));
+
+	Zenith_UI::Zenith_UIButton* pxPlayButton = xUI.CreateButton("MenuPlay", "Play");
+	pxPlayButton->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
+	pxPlayButton->SetPosition(0.0f, 0.0f);
+	pxPlayButton->SetSize(200.0f, 50.0f);
+
+	// HUD UI (hidden initially)
+	auto CreateHUDText = [&](const char* szName, const char* szText,
+		Zenith_UI::AnchorPreset eAnchor, float fX, float fY, float fSize,
+		Zenith_Maths::Vector4 xColor,
+		Zenith_UI::TextAlignment eAlign = Zenith_UI::TextAlignment::Left)
 	{
-		pxText->SetAnchorAndPivot(Zenith_UI::AnchorPreset::TopLeft);
-		pxText->SetPosition(s_fMarginLeft, s_fMarginTop + fYOffset);
-		pxText->SetAlignment(Zenith_UI::TextAlignment::Left);
+		Zenith_UI::Zenith_UIText* pxText = xUI.CreateText(szName, szText);
+		pxText->SetAnchorAndPivot(eAnchor);
+		pxText->SetPosition(fX, fY);
+		pxText->SetFontSize(fSize);
+		pxText->SetColor(xColor);
+		pxText->SetAlignment(eAlign);
+		pxText->SetVisible(false);
 	};
 
-	// Title
-	Zenith_UI::Zenith_UIText* pxTitle = xUI.CreateText("Title", "COMBAT ARENA");
-	SetupTopLeftText(pxTitle, 0.0f);
-	pxTitle->SetFontSize(s_fBaseTextSize * 4.8f);
-	pxTitle->SetColor(Zenith_Maths::Vector4(1.0f, 0.2f, 0.2f, 1.0f));
+	CreateHUDText("PlayerHealth", "Health: 100 / 100",
+		Zenith_UI::AnchorPreset::TopLeft, s_fMarginLeft, s_fMarginTop + s_fLineHeight * 3,
+		s_fBaseTextSize * 3.0f, {0.2f, 1.0f, 0.2f, 1.0f});
 
-	// Player Health
-	Zenith_UI::Zenith_UIText* pxHealth = xUI.CreateText("PlayerHealth", "Health: 100 / 100");
-	SetupTopLeftText(pxHealth, s_fLineHeight * 3);
-	pxHealth->SetFontSize(s_fBaseTextSize * 3.0f);
-	pxHealth->SetColor(Zenith_Maths::Vector4(0.2f, 1.0f, 0.2f, 1.0f));
+	CreateHUDText("PlayerHealthBar", "[||||||||||||||||||||]",
+		Zenith_UI::AnchorPreset::TopLeft, s_fMarginLeft, s_fMarginTop + s_fLineHeight * 4,
+		s_fBaseTextSize * 2.5f, {0.2f, 1.0f, 0.2f, 1.0f});
 
-	// Health Bar
-	Zenith_UI::Zenith_UIText* pxHealthBar = xUI.CreateText("PlayerHealthBar", "[||||||||||||||||||||]");
-	SetupTopLeftText(pxHealthBar, s_fLineHeight * 4);
-	pxHealthBar->SetFontSize(s_fBaseTextSize * 2.5f);
-	pxHealthBar->SetColor(Zenith_Maths::Vector4(0.2f, 1.0f, 0.2f, 1.0f));
+	CreateHUDText("EnemyCount", "Enemies: 3 / 3",
+		Zenith_UI::AnchorPreset::TopLeft, s_fMarginLeft, s_fMarginTop + s_fLineHeight * 6,
+		s_fBaseTextSize * 3.0f, {0.8f, 0.8f, 0.8f, 1.0f});
 
-	// Enemy Count
-	Zenith_UI::Zenith_UIText* pxEnemyCount = xUI.CreateText("EnemyCount", "Enemies: 3 / 3");
-	SetupTopLeftText(pxEnemyCount, s_fLineHeight * 6);
-	pxEnemyCount->SetFontSize(s_fBaseTextSize * 3.0f);
-	pxEnemyCount->SetColor(Zenith_Maths::Vector4(0.8f, 0.8f, 0.8f, 1.0f));
+	CreateHUDText("ComboCount", "",
+		Zenith_UI::AnchorPreset::Center, 0.0f, -100.0f,
+		s_fBaseTextSize * 8.0f, {1.0f, 0.8f, 0.2f, 1.0f}, Zenith_UI::TextAlignment::Center);
 
-	// Combo Counter (center of screen)
-	Zenith_UI::Zenith_UIText* pxComboCount = xUI.CreateText("ComboCount", "");
-	pxComboCount->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
-	pxComboCount->SetPosition(0.0f, -100.0f);
-	pxComboCount->SetAlignment(Zenith_UI::TextAlignment::Center);
-	pxComboCount->SetFontSize(s_fBaseTextSize * 8.0f);
-	pxComboCount->SetColor(Zenith_Maths::Vector4(1.0f, 0.8f, 0.2f, 1.0f));
+	CreateHUDText("ComboText", "",
+		Zenith_UI::AnchorPreset::Center, 0.0f, -60.0f,
+		s_fBaseTextSize * 4.0f, {1.0f, 0.8f, 0.2f, 1.0f}, Zenith_UI::TextAlignment::Center);
 
-	Zenith_UI::Zenith_UIText* pxComboText = xUI.CreateText("ComboText", "");
-	pxComboText->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
-	pxComboText->SetPosition(0.0f, -60.0f);
-	pxComboText->SetAlignment(Zenith_UI::TextAlignment::Center);
-	pxComboText->SetFontSize(s_fBaseTextSize * 4.0f);
-	pxComboText->SetColor(Zenith_Maths::Vector4(1.0f, 0.8f, 0.2f, 1.0f));
+	CreateHUDText("Controls", "WASD: Move | LMB: Attack | RMB: Heavy | Space: Dodge | R: Reset | Esc: Menu",
+		Zenith_UI::AnchorPreset::BottomLeft, s_fMarginLeft, s_fMarginTop,
+		s_fBaseTextSize * 2.5f, {0.7f, 0.7f, 0.7f, 1.0f});
 
-	// Controls (bottom left)
-	Zenith_UI::Zenith_UIText* pxControls = xUI.CreateText("Controls", "WASD: Move | LMB: Light Attack | RMB: Heavy Attack | Space: Dodge | R: Reset");
-	pxControls->SetAnchorAndPivot(Zenith_UI::AnchorPreset::BottomLeft);
-	pxControls->SetPosition(s_fMarginLeft, s_fMarginTop);
-	pxControls->SetAlignment(Zenith_UI::TextAlignment::Left);
-	pxControls->SetFontSize(s_fBaseTextSize * 2.5f);
-	pxControls->SetColor(Zenith_Maths::Vector4(0.7f, 0.7f, 0.7f, 1.0f));
+	CreateHUDText("Status", "",
+		Zenith_UI::AnchorPreset::Center, 0.0f, 0.0f,
+		s_fBaseTextSize * 8.0f, {0.2f, 1.0f, 0.2f, 1.0f}, Zenith_UI::TextAlignment::Center);
 
-	// Status (center - for game over/victory/paused)
-	Zenith_UI::Zenith_UIText* pxStatus = xUI.CreateText("Status", "");
-	pxStatus->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
-	pxStatus->SetPosition(0.0f, 0.0f);
-	pxStatus->SetAlignment(Zenith_UI::TextAlignment::Center);
-	pxStatus->SetFontSize(s_fBaseTextSize * 8.0f);
-	pxStatus->SetColor(Zenith_Maths::Vector4(0.2f, 1.0f, 0.2f, 1.0f));
-
-	// Create hit spark particle config programmatically
-	Combat::g_pxHitSparkConfig = new Flux_ParticleEmitterConfig();
-	Combat::g_pxHitSparkConfig->m_uBurstCount = 20;
-	Combat::g_pxHitSparkConfig->m_fSpawnRate = 0.0f;              // Burst only, not continuous
-	Combat::g_pxHitSparkConfig->m_uMaxParticles = 256;
-	Combat::g_pxHitSparkConfig->m_fLifetimeMin = 0.2f;
-	Combat::g_pxHitSparkConfig->m_fLifetimeMax = 0.4f;
-	Combat::g_pxHitSparkConfig->m_fSpeedMin = 8.0f;
-	Combat::g_pxHitSparkConfig->m_fSpeedMax = 15.0f;
-	Combat::g_pxHitSparkConfig->m_fSpreadAngleDegrees = 60.0f;
-	Combat::g_pxHitSparkConfig->m_xGravity = Zenith_Maths::Vector3(0.0f, -5.0f, 0.0f);
-	Combat::g_pxHitSparkConfig->m_fDrag = 2.0f;
-	Combat::g_pxHitSparkConfig->m_xColorStart = Zenith_Maths::Vector4(1.0f, 0.6f, 0.1f, 1.0f);  // Orange
-	Combat::g_pxHitSparkConfig->m_xColorEnd = Zenith_Maths::Vector4(1.0f, 1.0f, 0.2f, 0.0f);    // Yellow->transparent
-	Combat::g_pxHitSparkConfig->m_fSizeStart = 0.3f;
-	Combat::g_pxHitSparkConfig->m_fSizeEnd = 0.1f;
-	Combat::g_pxHitSparkConfig->m_bUseGPUCompute = false;         // CPU for small bursts
-
-	// Register config for scene restore after editor Play/Stop
-	Flux_ParticleEmitterConfig::Register("Combat_HitSpark", Combat::g_pxHitSparkConfig);
-
-	// Create particle emitter entity for hit sparks
-	Zenith_Entity xHitSparkEmitter(&xScene, "HitSparkEmitter");
-	xHitSparkEmitter.SetTransient(false);
-	Zenith_ParticleEmitterComponent& xEmitter = xHitSparkEmitter.AddComponent<Zenith_ParticleEmitterComponent>();
-	xEmitter.SetConfig(Combat::g_pxHitSparkConfig);
-	Combat::g_uHitSparkEmitterID = xHitSparkEmitter.GetEntityID();
-
-	// ========================================================================
-	// Create Arena
-	// ========================================================================
-	static constexpr float s_fArenaRadius = 15.0f;
-	static constexpr float s_fArenaWallHeight = 2.0f;
-	static constexpr uint32_t s_uWallSegments = 24;
-
-	// Create arena floor
-	Zenith_Entity xFloor = Combat::g_pxArenaPrefab->Instantiate(&xScene, "ArenaFloor");
-	xFloor.SetTransient(false);
-
-	Zenith_TransformComponent& xFloorTransform = xFloor.GetComponent<Zenith_TransformComponent>();
-	xFloorTransform.SetPosition(Zenith_Maths::Vector3(0.0f, -0.5f, 0.0f));
-	xFloorTransform.SetScale(Zenith_Maths::Vector3(s_fArenaRadius * 2.0f, 1.0f, s_fArenaRadius * 2.0f));
-
-	Zenith_ModelComponent& xFloorModel = xFloor.AddComponent<Zenith_ModelComponent>();
-	xFloorModel.AddMeshEntry(*Combat::g_pxCubeGeometry, *Combat::g_xArenaMaterial.Get());
-
-	xFloor.AddComponent<Zenith_ColliderComponent>()
-		.AddCollider(COLLISION_VOLUME_TYPE_AABB, RIGIDBODY_TYPE_STATIC);
-
-	// Create wall segments
-	for (uint32_t i = 0; i < s_uWallSegments; i++)
-	{
-		float fAngle = (static_cast<float>(i) / s_uWallSegments) * 6.28318f;
-		float fX = cos(fAngle) * s_fArenaRadius;
-		float fZ = sin(fAngle) * s_fArenaRadius;
-
-		char szName[32];
-		snprintf(szName, sizeof(szName), "ArenaWall_%u", i);
-		Zenith_Entity xWall(&xScene, szName);
-		xWall.SetTransient(false);
-
-		Zenith_TransformComponent& xWallTransform = xWall.GetComponent<Zenith_TransformComponent>();
-		xWallTransform.SetPosition(Zenith_Maths::Vector3(fX, s_fArenaWallHeight * 0.5f, fZ));
-		xWallTransform.SetScale(Zenith_Maths::Vector3(2.0f, s_fArenaWallHeight, 1.0f));
-
-		// Rotate to face center
-		float fYaw = fAngle + 1.5708f;  // 90 degrees
-		xWallTransform.SetRotation(glm::angleAxis(fYaw, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f)));
-
-		// Add ModelComponent with wall cube and candle cone
-		Zenith_ModelComponent& xWallModel = xWall.AddComponent<Zenith_ModelComponent>();
-		xWallModel.AddMeshEntry(*Combat::g_pxCubeGeometry, *Combat::g_xWallMaterial.Get());
-		xWallModel.AddMeshEntry(*Combat::g_pxConeGeometry, *Combat::g_xCandleMaterial.Get());
-
-		// Add ColliderComponent for wall collision
-		xWall.AddComponent<Zenith_ColliderComponent>()
-			.AddCollider(COLLISION_VOLUME_TYPE_AABB, RIGIDBODY_TYPE_STATIC);
-
-		// Add ParticleEmitterComponent for candle flame
-		Zenith_ParticleEmitterComponent& xFlameEmitter = xWall.AddComponent<Zenith_ParticleEmitterComponent>();
-		xFlameEmitter.SetConfig(Combat::g_pxFlameConfig);
-		xFlameEmitter.SetEmitting(true);
-		// Position flame at top of wall segment
-		Zenith_Maths::Vector3 xFlamePos(fX, s_fArenaWallHeight + 0.1f, fZ);
-		xFlameEmitter.SetEmitPosition(xFlamePos);
-		xFlameEmitter.SetEmitDirection(Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
-
-		// Add orange spot light pointing toward arena floor center
-		Zenith_LightComponent& xLight = xWall.AddComponent<Zenith_LightComponent>();
-		xLight.SetLightType(LIGHT_TYPE_SPOT);
-		xLight.SetColor(Zenith_Maths::Vector3(1.0f, 0.5f, 0.1f));  // Orange (linear RGB)
-		xLight.SetIntensity(1000.0f);  // 1000 lumens
-		xLight.SetRange(s_fArenaRadius * 3.0f);
-		xLight.SetSpotInnerAngle(glm::radians(25.0f));
-		xLight.SetSpotOuterAngle(glm::radians(45.0f));
-
-		// Set light direction to point from wall position toward arena floor center
-		Zenith_Maths::Vector3 xWallPos(fX, s_fArenaWallHeight * 0.5f, fZ);
-		Zenith_Maths::Vector3 xFloorCenter(0.0f, 0.0f, 0.0f);
-		Zenith_Maths::Vector3 xTargetDir = glm::normalize(xFloorCenter - xWallPos);
-		xLight.SetWorldDirection(xTargetDir);
-	}
-
-	// ========================================================================
-	// Create Player
-	// ========================================================================
-	Zenith_Entity xPlayer = Combat::g_pxPlayerPrefab->Instantiate(&xScene, "Player");
-	xPlayer.SetTransient(false);
-
-	Zenith_TransformComponent& xPlayerTransform = xPlayer.GetComponent<Zenith_TransformComponent>();
-	xPlayerTransform.SetPosition(Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));  // Start above floor
-	xPlayerTransform.SetScale(Zenith_Maths::Vector3(1.0f, 1.0f, 1.0f));  // Stick figure at unit scale
-
-	Zenith_ModelComponent& xPlayerModel = xPlayer.AddComponent<Zenith_ModelComponent>();
-
-	// Use model instance system with skeleton for animated rendering
-	bool bUsingModelInstance = false;
-	if (!Combat::g_strStickFigureModelPath.empty())
-	{
-		xPlayerModel.LoadModel(Combat::g_strStickFigureModelPath);
-		// Check if model loaded successfully with a skeleton
-		if (xPlayerModel.GetModelInstance() && xPlayerModel.HasSkeleton())
-		{
-			xPlayerModel.GetModelInstance()->SetMaterial(0, Combat::g_xPlayerMaterial.Get());
-			bUsingModelInstance = true;
-		}
-	}
-
-	// Fallback to mesh entry if model instance failed
-	if (!bUsingModelInstance)
-	{
-		xPlayerModel.AddMeshEntry(*Combat::g_pxStickFigureGeometry, *Combat::g_xPlayerMaterial.Get());
-	}
-
-	// Use explicit capsule dimensions for humanoid character
-	// Radius 0.3 (shoulder width / 2), HalfHeight 0.6 (total height ~1.8 with caps)
-	Zenith_ColliderComponent& xPlayerCollider = xPlayer.AddComponent<Zenith_ColliderComponent>();
-	xPlayerCollider.AddCapsuleCollider(0.3f, 0.6f, RIGIDBODY_TYPE_DYNAMIC);
-
-	// Lock X and Z rotation to prevent character from tipping over
-	Zenith_Physics::LockRotation(xPlayerCollider.GetBodyID(), true, false, true);
-
-	// Add script component with Combat behaviour
-	// Use SetBehaviourForSerialization to attach the behaviour for serialization WITHOUT calling OnAwake.
-	// OnAwake will be dispatched when Play mode is entered, which is when enemies should spawn.
-	Zenith_ScriptComponent& xScript = xCombatEntity.AddComponent<Zenith_ScriptComponent>();
+	// Script
+	Zenith_ScriptComponent& xScript = xGameManager.AddComponent<Zenith_ScriptComponent>();
 	xScript.SetBehaviourForSerialization<Combat_Behaviour>();
 
-	// Save the scene file
-	std::string strScenePath = std::string(GAME_ASSETS_DIR) + "/Scenes/Combat.zscn";
-	std::filesystem::create_directories(std::string(GAME_ASSETS_DIR) + "/Scenes");
-	xScene.SaveToFile(strScenePath);
-
-	// Load from disk to ensure unified lifecycle code path (LoadFromFile handles OnAwake/OnEnable)
-	// This resets the scene and recreates all entities fresh from the saved file
-	xScene.LoadFromFile(strScenePath);
+	// Mark as persistent - survives all scene transitions
+	xGameManager.DontDestroyOnLoad();
 }

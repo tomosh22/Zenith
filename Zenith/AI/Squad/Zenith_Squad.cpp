@@ -2,6 +2,8 @@
 #include "AI/Squad/Zenith_Squad.h"
 #include "AI/Zenith_AIDebugVariables.h"
 #include "EntityComponent/Zenith_Scene.h"
+#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "Profiling/Zenith_Profiling.h"
 
@@ -156,8 +158,14 @@ void Zenith_Squad::UpdateFormationPositions()
 	}
 
 	// Get leader position and rotation
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	Zenith_Entity xLeaderEntity = xScene.TryGetEntity(m_xLeaderID);
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	if (!pxSceneData)
+	{
+		return;
+	}
+
+	Zenith_Entity xLeaderEntity = pxSceneData->TryGetEntity(m_xLeaderID);
 	if (!xLeaderEntity.IsValid() || !xLeaderEntity.HasComponent<Zenith_TransformComponent>())
 	{
 		return;
@@ -416,10 +424,16 @@ void Zenith_Squad::Update(float fDt)
 	UpdateSharedKnowledge(fDt);
 
 	// Validate members still exist
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	if (!pxSceneData)
+	{
+		return;
+	}
+
 	for (int32_t i = static_cast<int32_t>(m_axMembers.GetSize()) - 1; i >= 0; --i)
 	{
-		Zenith_Entity xEntity = xScene.TryGetEntity(m_axMembers.Get(static_cast<uint32_t>(i)).m_xEntityID);
+		Zenith_Entity xEntity = pxSceneData->TryGetEntity(m_axMembers.Get(static_cast<uint32_t>(i)).m_xEntityID);
 		if (!xEntity.IsValid())
 		{
 			RemoveMember(m_axMembers.Get(static_cast<uint32_t>(i)).m_xEntityID);
@@ -514,10 +528,15 @@ void Zenith_Squad::DebugDraw() const
 		return;
 	}
 
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	if (!pxSceneData)
+	{
+		return;
+	}
 
 	// Get leader position
-	Zenith_Entity xLeaderEntity = xScene.TryGetEntity(m_xLeaderID);
+	Zenith_Entity xLeaderEntity = pxSceneData->TryGetEntity(m_xLeaderID);
 	if (!xLeaderEntity.IsValid() || !xLeaderEntity.HasComponent<Zenith_TransformComponent>())
 	{
 		return;
@@ -538,7 +557,7 @@ void Zenith_Squad::DebugDraw() const
 				continue;
 			}
 
-			Zenith_Entity xMemberEntity = xScene.TryGetEntity(xMember.m_xEntityID);
+			Zenith_Entity xMemberEntity = pxSceneData->TryGetEntity(xMember.m_xEntityID);
 			if (!xMemberEntity.IsValid() || !xMemberEntity.HasComponent<Zenith_TransformComponent>())
 			{
 				continue;
@@ -621,7 +640,7 @@ void Zenith_Squad::DebugDraw() const
 				continue;
 			}
 
-			Zenith_Entity xMemberEntity = xScene.TryGetEntity(xMember.m_xEntityID);
+			Zenith_Entity xMemberEntity = pxSceneData->TryGetEntity(xMember.m_xEntityID);
 			if (!xMemberEntity.IsValid() || !xMemberEntity.HasComponent<Zenith_TransformComponent>())
 			{
 				continue;

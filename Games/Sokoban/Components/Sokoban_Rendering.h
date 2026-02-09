@@ -6,19 +6,21 @@
  * - Zenith_Scene::Instantiate() for prefab-based entity creation
  * - Zenith_TransformComponent for position/scale
  * - Zenith_ModelComponent for mesh rendering
- * - Dynamic entity creation and destruction
- * - Coordinate space conversion (grid to world)
+ * - Multi-scene architecture (entities in puzzle scene, camera in persistent scene)
+ * - FindMainCameraAcrossScenes for cross-scene camera access
  *
  * Key concepts:
  * - Prefabs as entity templates
  * - Transform must be set BEFORE adding physics components
- * - Entity lifetime management with scene queries
+ * - Scene transitions clean up entities automatically (no manual Destroy3DLevel)
  */
 
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Zenith_Scene.h"
+#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneData.h"
 #include "Prefab/Zenith_Prefab.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
@@ -41,41 +43,22 @@ static constexpr float s_fPlayerHeight = 0.5f;   // Player height
  * Sokoban_Renderer - Manages 3D visualization of the Sokoban level
  *
  * Responsibilities:
- * - Create 3D entities for tiles, boxes, and player
+ * - Create 3D entities for tiles, boxes, and player in the puzzle scene
  * - Update entity positions during animation
- * - Clean up entities on level change
- * - Position camera to fit the level
+ * - Position camera (in persistent scene) to fit the level
  */
 class Sokoban_Renderer
 {
 public:
-	/**
-	 * GridToWorld - Convert grid coordinates to world position
-	 *
-	 * Centers the grid at the world origin.
-	 * Negates Z to match camera orientation (looking down -Y axis).
-	 *
-	 * @param fGridX   Grid X position (can be fractional for animation)
-	 * @param fGridY   Grid Y position (can be fractional for animation)
-	 * @param fHeight  Height of the object
-	 * @param uGridWidth  Grid width for centering
-	 * @param uGridHeight Grid height for centering
-	 */
 	static Zenith_Maths::Vector3 GridToWorld(
 		float fGridX, float fGridY, float fHeight,
 		uint32_t uGridWidth, uint32_t uGridHeight)
 	{
-		// Center grid at origin
 		float fWorldX = fGridX - static_cast<float>(uGridWidth) * 0.5f;
-		// Negate Z for camera orientation (positive Z = toward camera)
 		float fWorldZ = static_cast<float>(uGridHeight) * 0.5f - fGridY;
-		// Y is up, height is centered at half
 		return {fWorldX, fHeight * 0.5f, fWorldZ};
 	}
 
-	/**
-	 * GetMaterialForTile - Select material based on tile state
-	 */
 	static Zenith_MaterialAsset* GetMaterialForTile(
 		const SokobanTileType* aeTiles,
 		const bool* abTargets,
@@ -93,9 +76,6 @@ public:
 		return pxFloorMaterial;
 	}
 
-	/**
-	 * GetTileHeight - Get visual height for a tile
-	 */
 	static float GetTileHeight(const SokobanTileType* aeTiles, uint32_t uIndex)
 	{
 		if (aeTiles[uIndex] == SOKOBAN_TILE_WALL)
@@ -104,14 +84,9 @@ public:
 	}
 
 	/**
-	 * Create3DLevel - Create all 3D entities for the level
+	 * Create3DLevel - Create all 3D entities in the specified puzzle scene
 	 *
-	 * Creates entities for:
-	 * - Floor and wall tiles
-	 * - Boxes
-	 * - Player
-	 *
-	 * Uses prefab-based instantiation for consistent entity setup.
+	 * @param pxSceneData  The puzzle scene to create entities in (NOT the persistent scene)
 	 */
 	void Create3DLevel(
 		uint32_t uGridWidth,
@@ -130,12 +105,11 @@ public:
 		Zenith_MaterialAsset* pxTargetMaterial,
 		Zenith_MaterialAsset* pxBoxMaterial,
 		Zenith_MaterialAsset* pxBoxOnTargetMaterial,
-		Zenith_MaterialAsset* pxPlayerMaterial)
+		Zenith_MaterialAsset* pxPlayerMaterial,
+		Zenith_SceneData* pxSceneData)
 	{
-		// Clean up existing entities first
-		Destroy3DLevel();
+		ClearEntityIDs();
 
-		// Store grid dimensions for coordinate conversion
 		m_uGridWidth = uGridWidth;
 		m_uGridHeight = uGridHeight;
 
@@ -151,16 +125,12 @@ public:
 					static_cast<float>(uX), static_cast<float>(uY), fHeight,
 					uGridWidth, uGridHeight);
 
-				// Prefab-based entity creation
-				// This creates an entity with TransformComponent already attached
-				Zenith_Entity xTileEntity = pxTilePrefab->Instantiate(&Zenith_Scene::GetCurrentScene(), "Tile");
+				Zenith_Entity xTileEntity = pxTilePrefab->Instantiate(pxSceneData, "Tile");
 
-				// Set transform position and scale
 				Zenith_TransformComponent& xTransform = xTileEntity.GetComponent<Zenith_TransformComponent>();
 				xTransform.SetPosition(xPos);
 				xTransform.SetScale({s_fTileScale, fHeight, s_fTileScale});
 
-				// Add model component with mesh and material
 				Zenith_ModelComponent& xModel = xTileEntity.AddComponent<Zenith_ModelComponent>();
 				xModel.AddMeshEntry(
 					*pxCubeGeometry,
@@ -181,15 +151,14 @@ public:
 					Zenith_Maths::Vector3 xPos = GridToWorld(
 						static_cast<float>(uX), static_cast<float>(uY), s_fBoxHeight,
 						uGridWidth, uGridHeight);
-					xPos.y += s_fFloorHeight; // Sit on top of floor
+					xPos.y += s_fFloorHeight;
 
-					Zenith_Entity xBoxEntity = pxBoxPrefab->Instantiate(&Zenith_Scene::GetCurrentScene(), "Box");
+					Zenith_Entity xBoxEntity = pxBoxPrefab->Instantiate(pxSceneData, "Box");
 
 					Zenith_TransformComponent& xTransform = xBoxEntity.GetComponent<Zenith_TransformComponent>();
 					xTransform.SetPosition(xPos);
 					xTransform.SetScale({s_fTileScale * 0.8f, s_fBoxHeight, s_fTileScale * 0.8f});
 
-					// Choose material based on whether box is on target
 					Zenith_MaterialAsset* pxMaterial = abTargets[uIndex] ? pxBoxOnTargetMaterial : pxBoxMaterial;
 
 					Zenith_ModelComponent& xModel = xBoxEntity.AddComponent<Zenith_ModelComponent>();
@@ -205,9 +174,9 @@ public:
 			Zenith_Maths::Vector3 xPos = GridToWorld(
 				static_cast<float>(uPlayerX), static_cast<float>(uPlayerY), s_fPlayerHeight,
 				uGridWidth, uGridHeight);
-			xPos.y += s_fFloorHeight; // Sit on top of floor
+			xPos.y += s_fFloorHeight;
 
-			Zenith_Entity xPlayerEntity = pxPlayerPrefab->Instantiate(&Zenith_Scene::GetCurrentScene(), "Player");
+			Zenith_Entity xPlayerEntity = pxPlayerPrefab->Instantiate(pxSceneData, "Player");
 
 			Zenith_TransformComponent& xTransform = xPlayerEntity.GetComponent<Zenith_TransformComponent>();
 			xTransform.SetPosition(xPos);
@@ -221,45 +190,27 @@ public:
 	}
 
 	/**
-	 * Destroy3DLevel - Remove all level entities
-	 *
-	 * Called before creating a new level to clean up old entities.
+	 * ClearEntityIDs - Reset tracked entity IDs without destroying entities.
+	 * Called when the puzzle scene is unloaded (entities are cleaned up by scene unload).
 	 */
-	void Destroy3DLevel()
+	void ClearEntityIDs()
 	{
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-
-		for (Zenith_EntityID uID : m_axTileEntityIDs)
-		{
-			if (xScene.EntityExists(uID))
-				Zenith_Scene::Destroy(uID);
-		}
 		m_axTileEntityIDs.clear();
-
-		for (Zenith_EntityID uID : m_axBoxEntityIDs)
-		{
-			if (xScene.EntityExists(uID))
-				Zenith_Scene::Destroy(uID);
-		}
 		m_axBoxEntityIDs.clear();
-
-		if (m_uPlayerEntityID.IsValid() && xScene.EntityExists(m_uPlayerEntityID))
-		{
-			Zenith_Scene::Destroy(m_uPlayerEntityID);
-			m_uPlayerEntityID = INVALID_ENTITY_ID;
-		}
+		m_uPlayerEntityID = INVALID_ENTITY_ID;
 	}
 
 	/**
 	 * UpdatePlayerPosition - Update player entity position during animation
+	 * @param pxSceneData  The puzzle scene containing the player entity
 	 */
-	void UpdatePlayerPosition(float fVisualX, float fVisualY)
+	void UpdatePlayerPosition(float fVisualX, float fVisualY, Zenith_SceneData* pxSceneData)
 	{
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+		if (!pxSceneData) return;
 
-		if (m_uPlayerEntityID.IsValid() && xScene.EntityExists(m_uPlayerEntityID))
+		if (m_uPlayerEntityID.IsValid() && pxSceneData->EntityExists(m_uPlayerEntityID))
 		{
-			Zenith_Entity xPlayer = xScene.GetEntity(m_uPlayerEntityID);
+			Zenith_Entity xPlayer = pxSceneData->GetEntity(m_uPlayerEntityID);
 			if (xPlayer.HasComponent<Zenith_TransformComponent>())
 			{
 				Zenith_TransformComponent& xTransform = xPlayer.GetComponent<Zenith_TransformComponent>();
@@ -272,8 +223,7 @@ public:
 
 	/**
 	 * UpdateBoxPositions - Update all box entity positions
-	 *
-	 * Handles both static boxes and the currently animating box.
+	 * @param pxSceneData  The puzzle scene containing the box entities
 	 */
 	void UpdateBoxPositions(
 		const bool* abBoxes,
@@ -283,9 +233,10 @@ public:
 		uint32_t uAnimBoxToX,
 		uint32_t uAnimBoxToY,
 		float fBoxVisualX,
-		float fBoxVisualY)
+		float fBoxVisualY,
+		Zenith_SceneData* pxSceneData)
 	{
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+		if (!pxSceneData) return;
 
 		size_t uBoxIdx = 0;
 		for (uint32_t uY = 0; uY < uGridHeight; uY++)
@@ -296,9 +247,9 @@ public:
 				if (abBoxes[uIndex] && uBoxIdx < m_axBoxEntityIDs.size())
 				{
 					Zenith_EntityID uBoxID = m_axBoxEntityIDs[uBoxIdx];
-					if (xScene.EntityExists(uBoxID))
+					if (pxSceneData->EntityExists(uBoxID))
 					{
-						Zenith_Entity xBox = xScene.GetEntity(uBoxID);
+						Zenith_Entity xBox = pxSceneData->GetEntity(uBoxID);
 						if (xBox.HasComponent<Zenith_TransformComponent>())
 						{
 							Zenith_TransformComponent& xTransform = xBox.GetComponent<Zenith_TransformComponent>();
@@ -306,7 +257,6 @@ public:
 							float fVisualX = static_cast<float>(uX);
 							float fVisualY = static_cast<float>(uY);
 
-							// Use animated position for the moving box
 							if (bBoxAnimating && uX == uAnimBoxToX && uY == uAnimBoxToY)
 							{
 								fVisualX = fBoxVisualX;
@@ -326,45 +276,27 @@ public:
 
 	/**
 	 * RepositionCamera - Adjust camera to fit the level in view
-	 *
-	 * Calculates required camera height based on:
-	 * - Grid dimensions
-	 * - Camera FOV and aspect ratio
-	 * - Padding margin
+	 * Uses FindMainCameraAcrossScenes to find the camera in the persistent scene.
 	 */
 	void RepositionCamera(uint32_t uGridWidth, uint32_t uGridHeight)
 	{
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		Zenith_EntityID uCameraEntityID = xScene.GetMainCameraEntity();
-
-		if (uCameraEntityID == INVALID_ENTITY_ID || !xScene.EntityExists(uCameraEntityID))
+		Zenith_CameraComponent* pxCamera = Zenith_SceneManager::FindMainCameraAcrossScenes();
+		if (!pxCamera)
 			return;
 
-		Zenith_Entity xCameraEntity = xScene.GetEntity(uCameraEntityID);
-		if (!xCameraEntity.HasComponent<Zenith_CameraComponent>())
-			return;
+		float fFOV = pxCamera->GetFOV();
+		float fAspectRatio = pxCamera->GetAspectRatio();
 
-		Zenith_CameraComponent& xCamera = xCameraEntity.GetComponent<Zenith_CameraComponent>();
-
-		// Get camera parameters
-		float fFOV = xCamera.GetFOV();
-		float fAspectRatio = xCamera.GetAspectRatio();
-
-		// Calculate grid world dimensions with padding
-		float fGridWorldWidth = static_cast<float>(uGridWidth) * 1.2f;  // 20% margin
+		float fGridWorldWidth = static_cast<float>(uGridWidth) * 1.2f;
 		float fGridWorldHeight = static_cast<float>(uGridHeight) * 1.2f;
 
-		// Calculate required height to fit grid
-		// For camera looking down: visible distance = 2 * height * tan(FOV/2)
 		float fHalfFOVTan = tan(fFOV * 0.5f);
 		float fHeightForVertical = fGridWorldHeight / (2.0f * fHalfFOVTan);
 		float fHeightForHorizontal = fGridWorldWidth / (2.0f * fHalfFOVTan * fAspectRatio);
 
-		// Use larger value to ensure both dimensions fit
 		float fRequiredHeight = std::max(fHeightForVertical, fHeightForHorizontal);
 
-		// Position camera above grid center, looking down
-		xCamera.SetPosition(Zenith_Maths::Vector3(0.f, fRequiredHeight, 0.f));
+		pxCamera->SetPosition(Zenith_Maths::Vector3(0.f, fRequiredHeight, 0.f));
 	}
 
 	// Accessors for entity IDs

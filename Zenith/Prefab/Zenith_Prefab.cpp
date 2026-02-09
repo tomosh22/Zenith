@@ -1,6 +1,7 @@
 #include "Zenith.h"
 #include "Prefab/Zenith_Prefab.h"
 #include "EntityComponent/Zenith_ComponentMeta.h"
+#include "EntityComponent/Zenith_SceneManager.h"
 
 //=============================================================================
 // PropertyOverride Implementation
@@ -225,20 +226,23 @@ bool Zenith_Prefab::LoadFromFile(const std::string& strFilePath)
 	return true;
 }
 
-Zenith_Entity Zenith_Prefab::Instantiate(Zenith_Scene* pxScene, const std::string& strEntityName) const
+Zenith_Entity Zenith_Prefab::Instantiate(Zenith_SceneData* pxSceneData, const std::string& strEntityName) const
 {
-	if (!m_bIsValid || !pxScene)
+	if (!m_bIsValid || !pxSceneData)
 	{
 		Zenith_Error(LOG_CATEGORY_PREFAB, "Cannot instantiate invalid prefab or null scene");
 		return Zenith_Entity();
 	}
 
 	std::string strName = strEntityName.empty() ? m_strName : strEntityName;
-	Zenith_Entity xEntity(pxScene, strName);
 
+	// Suppress immediate lifecycle dispatch in Entity constructor - we dispatch after all components are added
+	Zenith_SceneManager::SetPrefabInstantiating(true);
+	Zenith_Entity xEntity(pxSceneData, strName);
 	DeserializeComponents(xEntity);
+	Zenith_SceneManager::SetPrefabInstantiating(false);
 
-	// Dispatch lifecycle hooks (Unity-style: per-entity, immediately after creation)
+	// Dispatch lifecycle hooks with all components present (Unity-style: per-entity, immediately after creation)
 	Zenith_ComponentMetaRegistry& xRegistry = Zenith_ComponentMetaRegistry::Get();
 	xRegistry.DispatchOnAwake(xEntity);
 	if (xEntity.IsEnabled())
@@ -247,7 +251,7 @@ Zenith_Entity Zenith_Prefab::Instantiate(Zenith_Scene* pxScene, const std::strin
 	}
 
 	// Mark as awoken so Update() doesn't dispatch again
-	pxScene->MarkEntityAwoken(xEntity.GetEntityID());
+	pxSceneData->MarkEntityAwoken(xEntity.GetEntityID());
 
 	return xEntity;
 }

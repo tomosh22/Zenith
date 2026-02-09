@@ -344,14 +344,6 @@ void Flux_SSR::RenderRayMarch()
 
 	g_xRayMarchCommandList.AddCommand<Flux_CommandDrawIndexed>(6);
 
-	// Debug: log command count to verify commands are being added
-	static u_int s_uFrameCount = 0;
-	if (s_uFrameCount++ % 60 == 0)
-	{
-		Zenith_Log(LOG_CATEGORY_RENDERER, "[SSR RayMarch] Commands: %u, DebugMode: %u",
-			g_xRayMarchCommandList.GetCommandCount(), dbg_xSSRConstants.m_uDebugMode);
-	}
-
 	Flux::SubmitCommandList(&g_xRayMarchCommandList, s_xRayMarchTargetSetup, RENDER_ORDER_SSR_RAYMARCH);
 }
 

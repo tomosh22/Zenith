@@ -1,5 +1,6 @@
 #pragma once
 #include <fstream>
+#include "UnitTests/Zenith_SceneTests.h"
 
 class Zenith_UnitTests
 {
@@ -246,6 +247,12 @@ private:
 	static void TestAssetHandleSetPathReleasesRef();
 	static void TestAssetHandleClearReleasesRef();
 	static void TestAssetHandleProceduralComparison();
+
+	// Model Instance Material tests (GBuffer rendering bug fix)
+	static void TestModelInstanceMaterialSetAndGet();
+	static void TestMaterialHandleCopyPreservesCachedPointer();
+
+	// Scene Management tests moved to Zenith_SceneTests.h/.cpp
 };
 
 // Include editor tests separately as they are only available in ZENITH_TOOLS builds

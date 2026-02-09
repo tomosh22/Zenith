@@ -18,6 +18,8 @@
  */
 
 #include "EntityComponent/Zenith_Scene.h"
+#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
@@ -88,12 +90,14 @@ public:
 	static void Reset()
 	{
 		// Destroy existing chunks
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
 		for (auto& xChunk : s_axChunks)
 		{
-			if (xChunk.m_uEntityID.IsValid() && xScene.EntityExists(xChunk.m_uEntityID))
+			if (xChunk.m_uEntityID.IsValid() && pxSceneData->EntityExists(xChunk.m_uEntityID))
 			{
-				Zenith_Scene::Destroy(xChunk.m_uEntityID);
+				Zenith_Entity xEntity = pxSceneData->GetEntity(xChunk.m_uEntityID);
+				Zenith_SceneManager::Destroy(xEntity);
 			}
 		}
 		s_axChunks.clear();
@@ -112,7 +116,8 @@ public:
 	// ========================================================================
 	static void Update(float fPlayerZ)
 	{
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
 
 		// Check if we need to spawn new chunks ahead
 		if (!s_axChunks.empty())
@@ -131,9 +136,10 @@ public:
 		float fDespawnThreshold = fPlayerZ - s_xConfig.m_fChunkLength * 2.0f;
 		while (!s_axChunks.empty() && s_axChunks.front().m_fEndZ < fDespawnThreshold)
 		{
-			if (s_axChunks.front().m_uEntityID.IsValid() && xScene.EntityExists(s_axChunks.front().m_uEntityID))
+			if (s_axChunks.front().m_uEntityID.IsValid() && pxSceneData->EntityExists(s_axChunks.front().m_uEntityID))
 			{
-				Zenith_Scene::Destroy(s_axChunks.front().m_uEntityID);
+				Zenith_Entity xEntity = pxSceneData->GetEntity(s_axChunks.front().m_uEntityID);
+				Zenith_SceneManager::Destroy(xEntity);
 			}
 			s_axChunks.erase(s_axChunks.begin());
 		}
@@ -226,7 +232,9 @@ private:
 		xChunk.m_fHeight = sin(fProgress * 3.14159f * 2.0f) * s_xConfig.m_fHeightVariation;
 
 		// Create ground entity
-		Zenith_Entity xGround = s_pxGroundPrefab->Instantiate(&Zenith_Scene::GetCurrentScene(), "Ground");
+		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+		Zenith_Entity xGround = s_pxGroundPrefab->Instantiate(pxSceneData, "Ground");
 
 		// Position: center of chunk, below player level
 		Zenith_Maths::Vector3 xPos(

@@ -4,7 +4,7 @@
 #include "Maths/Zenith_Maths.h"
 #include "Collections/Zenith_Vector.h"
 
-class Zenith_Scene;
+class Zenith_SceneData;
 
 /**
  * NavMeshGenerationConfig - Parameters for navmesh generation
@@ -55,7 +55,7 @@ public:
 	 * @param xConfig Generation parameters
 	 * @return Newly allocated NavMesh (caller owns), or nullptr on failure
 	 */
-	static Zenith_NavMesh* GenerateFromScene(Zenith_Scene& xScene, const NavMeshGenerationConfig& xConfig);
+	static Zenith_NavMesh* GenerateFromScene(Zenith_SceneData& xScene, const NavMeshGenerationConfig& xConfig);
 
 	/**
 	 * Generate a navigation mesh from explicit geometry
@@ -141,7 +141,7 @@ private:
 	};
 
 	// Pipeline stages
-	static bool CollectGeometryFromScene(Zenith_Scene& xScene,
+	static bool CollectGeometryFromScene(Zenith_SceneData& xScene,
 		Zenith_Vector<Zenith_Maths::Vector3>& axVerticesOut,
 		Zenith_Vector<uint32_t>& axIndicesOut);
 

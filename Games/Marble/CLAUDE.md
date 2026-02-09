@@ -14,6 +14,8 @@ A physics-based ball rolling game demonstrating Jolt Physics integration and dyn
 | **Game State Machine** | `MarbleGameState` enum | Playing/Paused/Won/Lost states |
 | **Distance-Based Pickups** | Manual distance check | Simple collectible system |
 | **Entity Lifetime** | `Zenith_Scene::Destroy` | Dynamic entity creation/destruction |
+| **Multi-Scene Management** | `Zenith_SceneManager` | `DontDestroyOnLoad()`, `CreateEmptyScene()`, `UnloadScene()`, `SetScenePaused()` |
+| **UI Buttons** | `Zenith_UIButton` | Clickable/tappable menu buttons with `SetOnClick()` callback |
 
 ## File Structure
 
@@ -102,6 +104,41 @@ Demonstrates:
 - Color changes based on game state
 - Multiple UI elements (Score, Time, Collected, Status)
 
+## Multi-Scene Architecture
+
+### Entity Layout
+```
+[Persistent Scene - "DontDestroyOnLoad"]
+  GameManager entity (DontDestroyOnLoad)
+    ├── Zenith_CameraComponent
+    ├── Zenith_UIComponent (ALL UI: menu + HUD)
+    └── Zenith_ScriptComponent<Marble_Behaviour>
+
+[Level Scene - created/destroyed on transitions]
+  Level entities (platforms, collectibles, goal, player ball, etc.)
+```
+
+### Game State Machine
+```
+MAIN_MENU → PLAYING → PAUSED → GAME_OVER → MAIN_MENU
+```
+
+### Scene Transition Pattern
+```cpp
+// Menu → Game
+m_xLevelScene = Zenith_SceneManager::CreateEmptyScene("Level");
+Zenith_SceneManager::SetActiveScene(m_xLevelScene);
+// Generate level content...
+m_eGameState = MarbleGameState::PLAYING;
+
+// Game → Menu
+Zenith_SceneManager::UnloadScene(m_xLevelScene);
+m_eGameState = MarbleGameState::MAIN_MENU;
+
+// Pause
+Zenith_SceneManager::SetScenePaused(m_xLevelScene, true);
+```
+
 ## Learning Path
 
 1. **Start here:** `Marble.cpp` - See UV sphere generation
@@ -119,7 +156,11 @@ Demonstrates:
 | A / Left Arrow | Roll left |
 | D / Right Arrow | Roll right |
 | Space | Jump |
-| P / Escape | Pause/Unpause |
+| Click / Touch | Select menu button |
+| W/S or Up/Down | Navigate menu |
+| Enter | Activate focused button |
+| Escape | Return to menu / Pause |
+| P | Pause/Resume |
 | R | Reset level |
 
 ## Key Patterns
@@ -175,8 +216,7 @@ Zenith_Maths::Vector3 xRight = glm::cross(Zenith_Maths::Vector3(0,1,0), xForward
 When launching in a tools build (`vs2022_Debug_Win64_True`):
 
 ### Scene Hierarchy
-- **MainCamera** - Perspective camera following the player ball
-- **MarbleGame** - Main game entity with UIComponent and ScriptComponent (Marble_Behaviour)
+- **GameManager** - Persistent entity (Camera + UI + Script) - DontDestroyOnLoad
 - **PlayerBall** - The player-controlled marble with physics
 - **StartPlatform** - Initial platform where player spawns
 - **GoalPlatform** - Final destination platform
@@ -296,6 +336,18 @@ When launching in a tools build (`vs2022_Debug_Win64_True`):
 | T8.2 | Collide with platform edge | Ball bounces or stops correctly |
 | T8.3 | Jump at platform edge | Ball can land back on same platform |
 | T8.4 | Minimize/restore window | Game resumes correctly |
+
+### T9: Menu and Scene Transitions
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| T9.1 | Click menu button | Button activates, game starts |
+| T9.2 | Navigate menu with W/S keys | Focus moves between buttons |
+| T9.3 | Press Enter on focused button | Button activates |
+| T9.4 | Start game from menu | Level scene created, gameplay begins |
+| T9.5 | Press Escape during gameplay | Returns to main menu, level scene unloaded |
+| T9.6 | Press P during gameplay | Game pauses, level scene paused |
+| T9.7 | Press P while paused | Game resumes |
+| T9.8 | Restart via menu after game over | New level scene created, level reset |
 
 ## Building
 

@@ -23,6 +23,7 @@
 // Game state enum (shared with Marble_Behaviour.h)
 enum class MarbleGameState
 {
+	MAIN_MENU,
 	PLAYING,
 	PAUSED,
 	WON,
@@ -109,6 +110,11 @@ public:
 		case MarbleGameState::PAUSED:
 			pxStatus->SetText("PAUSED");
 			pxStatus->SetColor(Zenith_Maths::Vector4(1.f, 1.f, 0.2f, 1.f)); // Yellow
+			break;
+
+		case MarbleGameState::MAIN_MENU:
+		case MarbleGameState::PLAYING:
+			pxStatus->SetText("");
 			break;
 
 		default:

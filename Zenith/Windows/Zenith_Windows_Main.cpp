@@ -13,6 +13,8 @@
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "EntityComponent/Zenith_Scene.h"
+#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneData.h"
 #include "Physics/Zenith_Physics.h"
 #include "Profiling/Zenith_Profiling.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
@@ -62,6 +64,7 @@ int main()
 	Zenith_Window::Inititalise("Zenith", 1280, 720);
 	Flux::EarlyInitialise();
 	Zenith_Physics::Initialise();
+	Zenith_SceneManager::Initialise();
 
 	//#TO_TODO: move somewhere sensible
 	{
@@ -107,7 +110,10 @@ int main()
 
 	Flux_MemoryManager::BeginFrame();
 	//#TO_TODO: Flux_Graphics::UploadFrameConstants crashes if we don't do this because there is no game camera
+	Zenith_SceneManager::SetInitialSceneLoadCallback(&Project_LoadInitialScene);
+	Zenith_SceneManager::SetLoadingScene(true);
 	Project_LoadInitialScene();
+	Zenith_SceneManager::SetLoadingScene(false);
 	Flux_MemoryManager::EndFrame(false);
 
 	Zenith_Core::g_xLastFrameTime = std::chrono::high_resolution_clock::now();
@@ -133,10 +139,10 @@ int main()
 	Zenith_Editor::Shutdown();
 #endif
 
-	// 3. Reset scene to release all resources before subsystem shutdown
+	// 3. Shutdown SceneManager (unloads all scenes, releases resources)
 	// Must happen before physics (colliders need to remove bodies) and before
 	// memory manager (model/mesh components hold VRAM handles)
-	Zenith_Scene::GetCurrentScene().Reset();
+	Zenith_SceneManager::Shutdown();
 
 	// 4. Shutdown physics system
 	Zenith_Physics::Shutdown();

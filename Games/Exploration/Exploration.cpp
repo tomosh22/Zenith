@@ -7,6 +7,8 @@
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
 #include "EntityComponent/Components/Zenith_InstancedMeshComponent.h"
+#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneData.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
@@ -14,6 +16,7 @@
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Terrain/Flux_TerrainConfig.h"
+#include "UI/Zenith_UIButton.h"
 
 #ifdef ZENITH_TOOLS
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
@@ -430,7 +433,7 @@ static void SpawnInstancedTrees(Zenith_InstancedMeshComponent& xTreeComponent, u
 /**
  * Create instanced trees entity and spawn trees
  */
-static void CreateInstancedTrees(Zenith_Scene& xScene)
+static void CreateInstancedTrees(Zenith_SceneData* pxSceneData)
 {
 	using namespace Exploration;
 
@@ -448,13 +451,16 @@ static void CreateInstancedTrees(Zenith_Scene& xScene)
 
 	Zenith_Log(LOG_CATEGORY_MESH, "[Exploration] Creating instanced trees entity...");
 
-	// Create tree material (green with some variation)
-	g_xTreeMaterial.Set(Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>());
-	g_xTreeMaterial.Get()->SetName("TreeMaterial");
-	g_xTreeMaterial.Get()->SetBaseColor(Zenith_Maths::Vector4(0.3f, 0.5f, 0.2f, 1.0f));
+	// Create tree material (green with some variation) - guard for replay
+	if (g_xTreeMaterial.Get() == nullptr)
+	{
+		g_xTreeMaterial.Set(Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>());
+		g_xTreeMaterial.Get()->SetName("TreeMaterial");
+		g_xTreeMaterial.Get()->SetBaseColor(Zenith_Maths::Vector4(0.3f, 0.5f, 0.2f, 1.0f));
+	}
 
 	// Create entity with instanced mesh component
-	Zenith_Entity xTreesEntity(&xScene, "InstancedTrees");
+	Zenith_Entity xTreesEntity(pxSceneData, "InstancedTrees");
 	xTreesEntity.SetTransient(false);
 
 	Zenith_InstancedMeshComponent& xTrees = xTreesEntity.AddComponent<Zenith_InstancedMeshComponent>();
@@ -487,6 +493,64 @@ static void CreateInstancedTrees(Zenith_Scene& xScene)
 }
 
 // ============================================================================
+// World Content Creation (callable from behaviour)
+// ============================================================================
+
+void Exploration_CreateWorldContent(Zenith_SceneData* pxSceneData)
+{
+	using namespace Exploration;
+
+	// Create terrain entity
+#ifdef ZENITH_TOOLS
+	if (GenerateAndExportTerrain())
+	{
+		Zenith_Log(LOG_CATEGORY_TERRAIN, "[Exploration] Creating terrain entity...");
+
+		Zenith_Entity xTerrainEntity(pxSceneData, "Terrain");
+		xTerrainEntity.SetTransient(false);
+
+		xTerrainEntity.AddComponent<Zenith_TerrainComponent>(
+			*g_xTerrainMaterial0.Get(),
+			*g_xTerrainMaterial1.Get());
+
+		Zenith_Log(LOG_CATEGORY_TERRAIN, "[Exploration] Terrain entity created successfully!");
+	}
+	else
+	{
+		Zenith_Log(LOG_CATEGORY_TERRAIN, "[Exploration] WARNING: Failed to generate terrain, skipping terrain entity creation");
+	}
+#else
+	std::string strTerrainDir = std::string(GAME_ASSETS_DIR) + "Terrain/";
+	std::string strFirstChunk = strTerrainDir + "Render_LOD3_0_0" ZENITH_MESH_EXT;
+	if (std::filesystem::exists(strFirstChunk))
+	{
+		Zenith_Log(LOG_CATEGORY_TERRAIN, "[Exploration] Found pre-generated terrain, creating terrain entity...");
+
+		Zenith_Entity xTerrainEntity(pxSceneData, "Terrain");
+		xTerrainEntity.SetTransient(false);
+
+		xTerrainEntity.AddComponent<Zenith_TerrainComponent>(
+			*g_xTerrainMaterial0.Get(),
+			*g_xTerrainMaterial1.Get());
+
+		Zenith_Log(LOG_CATEGORY_TERRAIN, "[Exploration] Terrain entity created successfully!");
+	}
+	else
+	{
+		Zenith_Log(LOG_CATEGORY_TERRAIN, "[Exploration] No terrain meshes found. Run in tools build first to generate terrain.");
+	}
+#endif
+
+	// Create instanced trees
+	CreateInstancedTrees(pxSceneData);
+}
+
+void Exploration_CleanupWorldContent()
+{
+	Exploration::g_pxTreeComponent = nullptr;
+}
+
+// ============================================================================
 // Project Entry Points
 // ============================================================================
 
@@ -516,135 +580,55 @@ void Project_Shutdown()
 
 void Project_LoadInitialScene()
 {
-	using namespace Exploration;
 	using namespace Flux_TerrainConfig;
 
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-	xScene.Reset();
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	pxSceneData->Reset();
 
-	// ========================================================================
-	// Create Camera Entity
-	// ========================================================================
-	Zenith_Entity xCameraEntity(&xScene, "MainCamera");
-	xCameraEntity.SetTransient(false);
+	// Create persistent GameManager entity (camera + UI + script)
+	Zenith_Entity xGameManager(pxSceneData, "GameManager");
+	xGameManager.SetTransient(false);
 
-	Zenith_CameraComponent& xCamera = xCameraEntity.AddComponent<Zenith_CameraComponent>();
-
-	// Position camera in the middle of the terrain, at a reasonable height
-	// NOTE: Terrain mesh is NOT centered at origin - it goes from (0,0) to (TERRAIN_SIZE, TERRAIN_SIZE)
-	// So the center is at (TERRAIN_SIZE/2, TERRAIN_SIZE/2)
+	// Camera - first-person view at terrain center
+	// NOTE: Terrain mesh goes from (0,0) to (TERRAIN_SIZE, TERRAIN_SIZE)
+	Zenith_CameraComponent& xCamera = xGameManager.AddComponent<Zenith_CameraComponent>();
 	float fStartX = TERRAIN_SIZE * 0.5f;
 	float fStartZ = TERRAIN_SIZE * 0.5f;
-	// Terrain mesh Y is scaled: meshY = (proceduralHeight/100) * 4096 - 1000
-	// Start above terrain center with a reasonable height (procedural ~50 -> mesh ~1048)
-	float fStartY = 1200.0f;  // Above terrain - will be adjusted by player controller
+	float fStartY = 1200.0f;  // Above terrain - adjusted by player controller
 
 	xCamera.InitialisePerspective(
 		Zenith_Maths::Vector3(fStartX, fStartY, fStartZ),
 		-0.2f,    // Pitch: slightly looking down
 		0.0f,     // Yaw: facing +Z direction
-		glm::radians(70.0f),   // FOV: 70 degrees (nice for exploration)
+		glm::radians(70.0f),   // FOV: 70 degrees
 		0.1f,     // Near plane
 		10000.0f, // Far plane (large for terrain viewing)
 		16.0f / 9.0f  // Aspect ratio
 	);
-	xScene.SetMainCameraEntity(xCameraEntity.GetEntityID());
+	pxSceneData->SetMainCameraEntity(xGameManager.GetEntityID());
 
-	// ========================================================================
-	// Create Main Game Entity (with UI and behavior)
-	// ========================================================================
-	Zenith_Entity xGameEntity(&xScene, "ExplorationGame");
-	xGameEntity.SetTransient(false);
+	// UI
+	Zenith_UIComponent& xUI = xGameManager.AddComponent<Zenith_UIComponent>();
 
-	// Add UI component for HUD
-	xGameEntity.AddComponent<Zenith_UIComponent>();
+	// ---- Menu UI (visible initially) ----
+	Zenith_UI::Zenith_UIText* pxMenuTitle = xUI.CreateText("MenuTitle", "EXPLORATION");
+	pxMenuTitle->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
+	pxMenuTitle->SetPosition(0.f, -120.f);
+	pxMenuTitle->SetFontSize(48.f);
+	pxMenuTitle->SetColor(Zenith_Maths::Vector4(0.3f, 0.7f, 0.3f, 1.f));
 
-	// Add script component with Exploration behaviour
-	// Use SetBehaviourForSerialization - OnAwake will be dispatched when Play mode is entered
-	Zenith_ScriptComponent& xScript = xGameEntity.AddComponent<Zenith_ScriptComponent>();
+	Zenith_UI::Zenith_UIButton* pxPlayButton = xUI.CreateButton("MenuPlay", "Play");
+	pxPlayButton->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
+	pxPlayButton->SetPosition(0.f, 0.f);
+	pxPlayButton->SetSize(200.f, 50.f);
+
+	// ---- HUD UI is created by Exploration_UIManager in OnStart ----
+
+	// Script
+	Zenith_ScriptComponent& xScript = xGameManager.AddComponent<Zenith_ScriptComponent>();
 	xScript.SetBehaviourForSerialization<Exploration_Behaviour>();
 
-	// ========================================================================
-	// Create Terrain Entity
-	// ========================================================================
-#ifdef ZENITH_TOOLS
-	// Generate terrain meshes if they don't exist (first run)
-	if (GenerateAndExportTerrain())
-	{
-		Zenith_Log(LOG_CATEGORY_TERRAIN, "[Exploration] Creating terrain entity...");
-
-		Zenith_Entity xTerrainEntity(&xScene, "Terrain");
-		xTerrainEntity.SetTransient(false);
-
-		// Add terrain component with materials
-		// Note: AddComponent automatically passes entity as last arg
-		xTerrainEntity.AddComponent<Zenith_TerrainComponent>(
-			*g_xTerrainMaterial0.Get(),
-			*g_xTerrainMaterial1.Get());
-
-		Zenith_Log(LOG_CATEGORY_TERRAIN, "[Exploration] Terrain entity created successfully!");
-	}
-	else
-	{
-		Zenith_Log(LOG_CATEGORY_TERRAIN, "[Exploration] WARNING: Failed to generate terrain, skipping terrain entity creation");
-	}
-#else
-	// In non-tools builds, check if terrain meshes exist and load them
-	std::string strTerrainDir = std::string(GAME_ASSETS_DIR) + "Terrain/";
-	std::string strFirstChunk = strTerrainDir + "Render_LOD3_0_0" ZENITH_MESH_EXT;
-	if (std::filesystem::exists(strFirstChunk))
-	{
-		Zenith_Log(LOG_CATEGORY_TERRAIN, "[Exploration] Found pre-generated terrain, creating terrain entity...");
-
-		Zenith_Entity xTerrainEntity(&xScene, "Terrain");
-		xTerrainEntity.SetTransient(false);
-
-		xTerrainEntity.AddComponent<Zenith_TerrainComponent>(
-			*g_xTerrainMaterial0.Get(),
-			*g_xTerrainMaterial1.Get());
-
-		Zenith_Log(LOG_CATEGORY_TERRAIN, "[Exploration] Terrain entity created successfully!");
-	}
-	else
-	{
-		Zenith_Log(LOG_CATEGORY_TERRAIN, "[Exploration] No terrain meshes found. Run in tools build first to generate terrain.");
-	}
-#endif
-
-	// ========================================================================
-	// Create Instanced Trees Entity
-	// ========================================================================
-	CreateInstancedTrees(xScene);
-
-	// ========================================================================
-	// Save the scene file
-	// ========================================================================
-	std::string strScenePath = std::string(GAME_ASSETS_DIR) + "/Scenes/Exploration.zscn";
-	std::filesystem::create_directories(std::string(GAME_ASSETS_DIR) + "/Scenes");
-	xScene.SaveToFile(strScenePath);
-
-	// Load from disk to ensure unified lifecycle code path (LoadFromFile handles OnAwake/OnEnable)
-	xScene.LoadFromFile(strScenePath);
-
-	// Reconnect procedural materials if needed, and spawn instances if empty
-	// (procedural materials and instances are now serialized, but we may need to
-	// set them up fresh if loading an older scene file)
-	Zenith_Entity xTreesEntity = xScene.FindEntityByName("InstancedTrees");
-	if (xTreesEntity.IsValid() && xTreesEntity.HasComponent<Zenith_InstancedMeshComponent>())
-	{
-		Zenith_InstancedMeshComponent& xTrees = xTreesEntity.GetComponent<Zenith_InstancedMeshComponent>();
-
-		// Set material if not already set (fallback for older scene files)
-		if (xTrees.GetMaterial() == nullptr)
-		{
-			xTrees.SetMaterial(g_xTreeMaterial.Get());
-		}
-		g_pxTreeComponent = &xTrees;
-
-		// Only spawn instances if none exist (they're now serialized in v4+ scenes)
-		if (xTrees.IsEmpty())
-		{
-			SpawnInstancedTrees(xTrees, 10000);
-		}
-	}
+	// Mark as persistent - survives all scene transitions
+	xGameManager.DontDestroyOnLoad();
 }

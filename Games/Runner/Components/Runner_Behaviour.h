@@ -14,10 +14,8 @@
  * - Runner_UIManager.h           - HUD management
  *
  * Key Engine Features Demonstrated:
- * - Flux_AnimationStateMachine with states and transitions
- * - Flux_BlendTreeNode_BlendSpace1D for speed-based animation blending
- * - Zenith_TerrainComponent concepts (procedural in this demo)
- * - Flux_Particles concepts (entity-based in this demo)
+ * - Multi-scene architecture (persistent GameManager + game scene)
+ * - Zenith_UIButton for clickable/tappable menu
  * - Lane-based endless runner mechanics
  */
 
@@ -27,7 +25,10 @@
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Zenith_Scene.h"
+#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneData.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
+#include "UI/Zenith_UIButton.h"
 
 // Include modules
 #include "Runner_Config.h"
@@ -75,10 +76,11 @@ namespace Runner
 /**
  * Runner_Behaviour - Main game coordinator
  *
- * Lifecycle:
- * - OnAwake: Called when behavior is attached at runtime
- * - OnStart: Called before first update (for all entities)
- * - OnUpdate: Called every frame
+ * Architecture:
+ * - Persistent GameManager entity (camera + UI + script) in DontDestroyOnLoad scene
+ * - Game scene created/destroyed on transitions via CreateEmptyScene/UnloadScene
+ *
+ * State machine: MAIN_MENU -> PLAYING -> PAUSED / GAME_OVER -> MAIN_MENU
  */
 class Runner_Behaviour ZENITH_FINAL : Zenith_ScriptBehaviour
 {
@@ -88,20 +90,18 @@ public:
 
 	Runner_Behaviour() = delete;
 	Runner_Behaviour(Zenith_Entity& xParentEntity)
-		: m_eGameState(RunnerGameState::PLAYING)
+		: m_eGameState(RunnerGameState::MAIN_MENU)
 		, m_uScore(0)
 		, m_uHighScore(0)
 		, m_xRng(std::random_device{}())
+		, m_iFocusIndex(0)
 	{
 	}
 	~Runner_Behaviour() = default;
 
-	/**
-	 * OnAwake - Called when behavior is attached at RUNTIME
-	 */
 	void OnAwake() ZENITH_FINAL override
 	{
-		// Store resource pointers from globals (lightweight)
+		// Cache resource pointers
 		m_pxCapsuleGeometry = Runner::g_pxCapsuleGeometry;
 		m_pxCubeGeometry = Runner::g_pxCubeGeometry;
 		m_pxSphereGeometry = Runner::g_pxSphereGeometry;
@@ -112,136 +112,89 @@ public:
 		m_xDustMaterial = Runner::g_xDustMaterial;
 		m_xCollectParticleMaterial = Runner::g_xCollectParticleMaterial;
 
-		// Heavy initialization moved to OnStart
+		// Wire menu button callback
+		if (m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		{
+			Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+			Zenith_UI::Zenith_UIButton* pxPlay = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuPlay");
+			if (pxPlay)
+				pxPlay->SetOnClick(&OnPlayClicked, this);
+		}
+
+		m_eGameState = RunnerGameState::MAIN_MENU;
+		SetMenuVisible(true);
+		SetHUDVisible(false);
 	}
 
-	/**
-	 * OnStart - Called before first update
-	 */
 	void OnStart() ZENITH_FINAL override
 	{
-		if (!m_uCharacterEntityID.IsValid())
+		if (m_eGameState == RunnerGameState::MAIN_MENU)
 		{
-			InitializeGame();
+			SetMenuVisible(true);
+			SetHUDVisible(false);
 		}
 	}
 
-	/**
-	 * OnUpdate - Main game loop
-	 */
 	void OnUpdate(const float fDt) ZENITH_FINAL override
 	{
-		// Handle pause input
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_P) ||
-			Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
+		switch (m_eGameState)
 		{
-			TogglePause();
-		}
+		case RunnerGameState::MAIN_MENU:
+			UpdateMenuInput();
+			break;
 
-		// Handle reset input
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_R))
+		case RunnerGameState::PLAYING:
 		{
-			ResetGame();
-			return;
-		}
-
-		// Paused - only update UI
-		if (m_eGameState == RunnerGameState::PAUSED)
-		{
-			UpdateUI();
-			return;
-		}
-
-		// Game over - wait for restart
-		if (m_eGameState == RunnerGameState::GAME_OVER)
-		{
-			UpdateUI();
-			return;
-		}
-
-		// ====================================================================
-		// Playing state - full game update
-		// ====================================================================
-
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		if (!m_uCharacterEntityID.IsValid() || !xScene.EntityExists(m_uCharacterEntityID))
-		{
-			return;
-		}
-
-		Zenith_Entity xCharacter = xScene.GetEntity(m_uCharacterEntityID);
-		Zenith_TransformComponent& xTransform = xCharacter.GetComponent<Zenith_TransformComponent>();
-
-		// Get terrain height at player position
-		float fPlayerZ = Runner_CharacterController::GetDistanceTraveled();
-		float fTerrainHeight = Runner_TerrainManager::GetTerrainHeightAt(fPlayerZ);
-
-		// Update character controller
-		Runner_CharacterController::Update(fDt, xTransform, fTerrainHeight);
-
-		// Update animation driver
-		Runner_AnimationDriver::Update(fDt, xTransform);
-
-		// Get current player position for other systems
-		Zenith_Maths::Vector3 xPlayerPos;
-		xTransform.GetPosition(xPlayerPos);
-
-		// Update terrain
-		Runner_TerrainManager::Update(fPlayerZ);
-
-		// Update collectibles and obstacles
-		Runner_CollectibleSpawner::Update(fDt, fPlayerZ);
-
-		// Check collectible pickups
-		float fPlayerRadius = 0.4f;
-		Runner_CollectibleSpawner::CollectionResult xCollectResult =
-			Runner_CollectibleSpawner::CheckCollectibles(xPlayerPos, fPlayerRadius);
-
-		if (xCollectResult.m_uCollectedCount > 0)
-		{
-			m_uScore += xCollectResult.m_uPointsGained;
-
-			// Spawn collection particles
-			for (uint32_t i = 0; i < xCollectResult.m_uCollectedCount; i++)
+			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_P))
 			{
-				Runner_ParticleManager::SpawnCollectEffect(xPlayerPos);
+				m_eGameState = RunnerGameState::PAUSED;
+				Zenith_SceneManager::SetScenePaused(m_xGameScene, true);
+				UpdateUI();
+				return;
 			}
-		}
-
-		// Check obstacle collision
-		float fPlayerHeight = Runner_CharacterController::GetCurrentCharacterHeight();
-		bool bIsSliding = Runner_CharacterController::IsSliding();
-
-		if (Runner_CollectibleSpawner::CheckObstacleCollision(xPlayerPos, fPlayerRadius, fPlayerHeight, bIsSliding))
-		{
-			// Hit obstacle - game over
-			Runner_CharacterController::OnObstacleHit();
-			m_eGameState = RunnerGameState::GAME_OVER;
-
-			// Update high score
-			float fFinalDistance = Runner_CharacterController::GetDistanceTraveled();
-			if (m_uScore > m_uHighScore)
+			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_R))
 			{
-				m_uHighScore = m_uScore;
+				ResetGame();
+				return;
 			}
+			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
+			{
+				ReturnToMenu();
+				return;
+			}
+
+			UpdatePlaying(fDt);
+			break;
 		}
 
-		// Check if character is dead from falling
-		if (Runner_CharacterController::GetState() == RunnerCharacterState::DEAD)
-		{
-			m_eGameState = RunnerGameState::GAME_OVER;
+		case RunnerGameState::PAUSED:
+			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_P))
+			{
+				m_eGameState = RunnerGameState::PLAYING;
+				Zenith_SceneManager::SetScenePaused(m_xGameScene, false);
+			}
+			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
+			{
+				ReturnToMenu();
+				return;
+			}
+			UpdateUI();
+			break;
+
+		case RunnerGameState::GAME_OVER:
+			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_R))
+			{
+				ResetGame();
+				return;
+			}
+			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
+			{
+				ReturnToMenu();
+				return;
+			}
+			UpdateUI();
+			break;
 		}
-
-		// Update particles
-		bool bIsRunning = Runner_CharacterController::GetState() == RunnerCharacterState::RUNNING;
-		bool bIsGrounded = Runner_CharacterController::IsGrounded();
-		Runner_ParticleManager::Update(fDt, xPlayerPos, bIsRunning, bIsGrounded);
-
-		// Update camera
-		UpdateCamera(fDt, xPlayerPos);
-
-		// Update UI
-		UpdateUI();
 	}
 
 	void RenderPropertiesPanel() override
@@ -250,37 +203,35 @@ public:
 		ImGui::Text("Endless Runner");
 		ImGui::Separator();
 
-		float fDistance = Runner_CharacterController::GetDistanceTraveled();
-		float fSpeed = Runner_CharacterController::GetCurrentSpeed();
-
-		ImGui::Text("Distance: %.1f m", fDistance);
-		ImGui::Text("Score: %u", m_uScore);
-		ImGui::Text("High Score: %u", m_uHighScore);
-		ImGui::Text("Speed: %.1f", fSpeed);
-
-		const char* szStates[] = { "PLAYING", "PAUSED", "GAME_OVER" };
+		const char* szStates[] = { "MENU", "PLAYING", "PAUSED", "GAME_OVER" };
 		ImGui::Text("State: %s", szStates[static_cast<int>(m_eGameState)]);
 
-		const char* szCharStates[] = { "RUNNING", "JUMPING", "SLIDING", "DEAD" };
-		ImGui::Text("Character: %s", szCharStates[static_cast<int>(Runner_CharacterController::GetState())]);
-
-		ImGui::Text("Lane: %d", Runner_CharacterController::GetCurrentLane());
-		ImGui::Text("Grounded: %s", Runner_CharacterController::IsGrounded() ? "Yes" : "No");
-
-		ImGui::Separator();
-		if (ImGui::Button("Reset Game"))
+		if (m_eGameState != RunnerGameState::MAIN_MENU)
 		{
-			ResetGame();
+			float fDistance = Runner_CharacterController::GetDistanceTraveled();
+			float fSpeed = Runner_CharacterController::GetCurrentSpeed();
+			ImGui::Text("Distance: %.1f m", fDistance);
+			ImGui::Text("Score: %u", m_uScore);
+			ImGui::Text("High Score: %u", m_uHighScore);
+			ImGui::Text("Speed: %.1f", fSpeed);
+
+			const char* szCharStates[] = { "RUNNING", "JUMPING", "SLIDING", "DEAD" };
+			ImGui::Text("Character: %s", szCharStates[static_cast<int>(Runner_CharacterController::GetState())]);
+			ImGui::Text("Lane: %d", Runner_CharacterController::GetCurrentLane());
 		}
 
-		ImGui::Separator();
-		ImGui::Text("Controls:");
-		ImGui::Text("  A/Left: Move left lane");
-		ImGui::Text("  D/Right: Move right lane");
-		ImGui::Text("  Space/W/Up: Jump");
-		ImGui::Text("  S/Down: Slide");
-		ImGui::Text("  P/Esc: Pause");
-		ImGui::Text("  R: Reset");
+		if (m_eGameState == RunnerGameState::MAIN_MENU)
+		{
+			if (ImGui::Button("Start Game"))
+				StartGame();
+		}
+		else
+		{
+			if (ImGui::Button("Reset Game"))
+				ResetGame();
+			if (ImGui::Button("Return to Menu"))
+				ReturnToMenu();
+		}
 #endif
 	}
 
@@ -303,7 +254,121 @@ public:
 
 private:
 	// ========================================================================
-	// Initialization
+	// Menu Button Callbacks
+	// ========================================================================
+	static void OnPlayClicked(void* pxUserData)
+	{
+		Runner_Behaviour* pxSelf = static_cast<Runner_Behaviour*>(pxUserData);
+		pxSelf->StartGame();
+	}
+
+	// ========================================================================
+	// State Transitions
+	// ========================================================================
+	void StartGame()
+	{
+		SetMenuVisible(false);
+		SetHUDVisible(true);
+
+		// Create game scene
+		m_xGameScene = Zenith_SceneManager::CreateEmptyScene("Run");
+		Zenith_SceneManager::SetActiveScene(m_xGameScene);
+
+		// Initialize all systems (uses GetActiveScene internally)
+		InitializeGame();
+
+		m_eGameState = RunnerGameState::PLAYING;
+		m_uScore = 0;
+	}
+
+	void ReturnToMenu()
+	{
+		// Update high score before leaving
+		if (m_uScore > m_uHighScore)
+			m_uHighScore = m_uScore;
+
+		m_uCharacterEntityID = INVALID_ENTITY_ID;
+
+		if (m_xGameScene.IsValid())
+		{
+			Zenith_SceneManager::UnloadScene(m_xGameScene);
+			m_xGameScene = Zenith_Scene();
+		}
+
+		m_eGameState = RunnerGameState::MAIN_MENU;
+		m_iFocusIndex = 0;
+		SetMenuVisible(true);
+		SetHUDVisible(false);
+	}
+
+	void ResetGame()
+	{
+		// Update high score
+		if (m_uScore > m_uHighScore)
+			m_uHighScore = m_uScore;
+
+		m_uCharacterEntityID = INVALID_ENTITY_ID;
+
+		if (m_xGameScene.IsValid())
+		{
+			Zenith_SceneManager::UnloadScene(m_xGameScene);
+			m_xGameScene = Zenith_Scene();
+		}
+
+		// Create fresh game scene
+		m_xGameScene = Zenith_SceneManager::CreateEmptyScene("Run");
+		Zenith_SceneManager::SetActiveScene(m_xGameScene);
+
+		// Re-initialize all systems
+		InitializeGame();
+
+		m_eGameState = RunnerGameState::PLAYING;
+		m_uScore = 0;
+	}
+
+	// ========================================================================
+	// Menu UI
+	// ========================================================================
+	void SetMenuVisible(bool bVisible)
+	{
+		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
+			return;
+		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+
+		Zenith_UI::Zenith_UIText* pxTitle = xUI.FindElement<Zenith_UI::Zenith_UIText>("MenuTitle");
+		if (pxTitle) pxTitle->SetVisible(bVisible);
+		Zenith_UI::Zenith_UIButton* pxPlay = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuPlay");
+		if (pxPlay) pxPlay->SetVisible(bVisible);
+	}
+
+	void SetHUDVisible(bool bVisible)
+	{
+		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
+			return;
+		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+
+		const char* aszElements[] = { "Title", "Distance", "Score", "HighScore", "Speed", "Controls", "Status" };
+		for (const char* szName : aszElements)
+		{
+			Zenith_UI::Zenith_UIText* pxText = xUI.FindElement<Zenith_UI::Zenith_UIText>(szName);
+			if (pxText) pxText->SetVisible(bVisible);
+		}
+	}
+
+	void UpdateMenuInput()
+	{
+		// Only one button, but still support keyboard focus
+		Zenith_UI::Zenith_UIButton* pxPlay = nullptr;
+		if (m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		{
+			Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+			pxPlay = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuPlay");
+		}
+		if (pxPlay) pxPlay->SetFocused(true);
+	}
+
+	// ========================================================================
+	// Game Logic
 	// ========================================================================
 	void InitializeGame()
 	{
@@ -346,71 +411,103 @@ private:
 
 		// Create character entity
 		CreateCharacter();
-
-		// Reset game state
-		m_eGameState = RunnerGameState::PLAYING;
-		m_uScore = 0;
 	}
 
 	void CreateCharacter()
 	{
 		if (Runner::g_pxCharacterPrefab == nullptr || m_pxCapsuleGeometry == nullptr || !m_xCharacterMaterial)
-		{
 			return;
-		}
 
-		Zenith_Entity xCharacter = Runner::g_pxCharacterPrefab->Instantiate(&Zenith_Scene::GetCurrentScene(), "Runner");
+		if (!m_xGameScene.IsValid())
+			return;
 
-		// Initial position
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(m_xGameScene);
+		Zenith_Entity xCharacter = Runner::g_pxCharacterPrefab->Instantiate(pxSceneData, "Runner");
+
 		Zenith_TransformComponent& xTransform = xCharacter.GetComponent<Zenith_TransformComponent>();
 		xTransform.SetPosition(Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
 		xTransform.SetScale(Zenith_Maths::Vector3(0.8f, 1.8f, 0.8f));
 
-		// Add model
 		Zenith_ModelComponent& xModel = xCharacter.AddComponent<Zenith_ModelComponent>();
 		xModel.AddMeshEntry(*m_pxCapsuleGeometry, *m_xCharacterMaterial.Get());
 
 		m_uCharacterEntityID = xCharacter.GetEntityID();
 	}
 
-	void ResetGame()
+	void UpdatePlaying(float fDt)
 	{
-		// Destroy character
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		if (m_uCharacterEntityID.IsValid() && xScene.EntityExists(m_uCharacterEntityID))
+		if (!m_xGameScene.IsValid())
+			return;
+
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(m_xGameScene);
+		if (!m_uCharacterEntityID.IsValid() || !pxSceneData->EntityExists(m_uCharacterEntityID))
+			return;
+
+		Zenith_Entity xCharacter = pxSceneData->GetEntity(m_uCharacterEntityID);
+		Zenith_TransformComponent& xTransform = xCharacter.GetComponent<Zenith_TransformComponent>();
+
+		// Get terrain height at player position
+		float fPlayerZ = Runner_CharacterController::GetDistanceTraveled();
+		float fTerrainHeight = Runner_TerrainManager::GetTerrainHeightAt(fPlayerZ);
+
+		// Update character controller
+		Runner_CharacterController::Update(fDt, xTransform, fTerrainHeight);
+
+		// Update animation driver
+		Runner_AnimationDriver::Update(fDt, xTransform);
+
+		// Get current player position for other systems
+		Zenith_Maths::Vector3 xPlayerPos;
+		xTransform.GetPosition(xPlayerPos);
+
+		// Update terrain
+		Runner_TerrainManager::Update(fPlayerZ);
+
+		// Update collectibles and obstacles
+		Runner_CollectibleSpawner::Update(fDt, fPlayerZ);
+
+		// Check collectible pickups
+		float fPlayerRadius = 0.4f;
+		Runner_CollectibleSpawner::CollectionResult xCollectResult =
+			Runner_CollectibleSpawner::CheckCollectibles(xPlayerPos, fPlayerRadius);
+
+		if (xCollectResult.m_uCollectedCount > 0)
 		{
-			Zenith_Scene::Destroy(m_uCharacterEntityID);
-			m_uCharacterEntityID = INVALID_ENTITY_ID;
+			m_uScore += xCollectResult.m_uPointsGained;
+			for (uint32_t i = 0; i < xCollectResult.m_uCollectedCount; i++)
+			{
+				Runner_ParticleManager::SpawnCollectEffect(xPlayerPos);
+			}
 		}
 
-		// Reset all systems
-		Runner_CharacterController::Reset();
-		Runner_AnimationDriver::Reset();
-		Runner_TerrainManager::Reset();
-		Runner_CollectibleSpawner::Reset();
-		Runner_ParticleManager::Reset();
+		// Check obstacle collision
+		float fPlayerHeight = Runner_CharacterController::GetCurrentCharacterHeight();
+		bool bIsSliding = Runner_CharacterController::IsSliding();
 
-		// Recreate character
-		CreateCharacter();
-
-		// Reset game state
-		m_eGameState = RunnerGameState::PLAYING;
-		m_uScore = 0;
-	}
-
-	// ========================================================================
-	// Pause
-	// ========================================================================
-	void TogglePause()
-	{
-		if (m_eGameState == RunnerGameState::PLAYING)
+		if (Runner_CollectibleSpawner::CheckObstacleCollision(xPlayerPos, fPlayerRadius, fPlayerHeight, bIsSliding))
 		{
-			m_eGameState = RunnerGameState::PAUSED;
+			Runner_CharacterController::OnObstacleHit();
+			m_eGameState = RunnerGameState::GAME_OVER;
+			if (m_uScore > m_uHighScore)
+				m_uHighScore = m_uScore;
 		}
-		else if (m_eGameState == RunnerGameState::PAUSED)
+
+		// Check if character is dead from falling
+		if (Runner_CharacterController::GetState() == RunnerCharacterState::DEAD)
 		{
-			m_eGameState = RunnerGameState::PLAYING;
+			m_eGameState = RunnerGameState::GAME_OVER;
 		}
+
+		// Update particles
+		bool bIsRunning = Runner_CharacterController::GetState() == RunnerCharacterState::RUNNING;
+		bool bIsGrounded = Runner_CharacterController::IsGrounded();
+		Runner_ParticleManager::Update(fDt, xPlayerPos, bIsRunning, bIsGrounded);
+
+		// Update camera
+		UpdateCamera(fDt, xPlayerPos);
+
+		// Update UI
+		UpdateUI();
 	}
 
 	// ========================================================================
@@ -418,45 +515,35 @@ private:
 	// ========================================================================
 	void UpdateCamera(float fDt, const Zenith_Maths::Vector3& xPlayerPos)
 	{
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		Zenith_EntityID uCamID = xScene.GetMainCameraEntity();
-		if (uCamID == INVALID_ENTITY_ID || !xScene.EntityExists(uCamID))
-		{
+		Zenith_CameraComponent* pxCamera = Zenith_SceneManager::FindMainCameraAcrossScenes();
+		if (!pxCamera)
 			return;
-		}
 
-		Zenith_Entity xCamEntity = xScene.GetEntity(uCamID);
-		Zenith_CameraComponent& xCamera = xCamEntity.GetComponent<Zenith_CameraComponent>();
-
-		// Camera follows behind and above player
 		static constexpr float s_fCameraDistance = 8.0f;
 		static constexpr float s_fCameraHeight = 4.0f;
 		static constexpr float s_fCameraLookAhead = 5.0f;
 		static constexpr float s_fCameraSmoothSpeed = 5.0f;
 
 		Zenith_Maths::Vector3 xCurrentPos;
-		xCamera.GetPosition(xCurrentPos);
+		pxCamera->GetPosition(xCurrentPos);
 
 		Zenith_Maths::Vector3 xTargetPos(
-			xPlayerPos.x * 0.3f,  // Slight lateral follow
+			xPlayerPos.x * 0.3f,
 			xPlayerPos.y + s_fCameraHeight,
 			xPlayerPos.z - s_fCameraDistance
 		);
 
-		// Smooth follow
 		Zenith_Maths::Vector3 xNewPos = glm::mix(xCurrentPos, xTargetPos, s_fCameraSmoothSpeed * fDt);
-		xCamera.SetPosition(xNewPos);
+		pxCamera->SetPosition(xNewPos);
 
-		// Look at point ahead of player
 		Zenith_Maths::Vector3 xLookAt = xPlayerPos + Zenith_Maths::Vector3(0.0f, 0.0f, s_fCameraLookAhead);
 		Zenith_Maths::Vector3 xDir = glm::normalize(xLookAt - xNewPos);
 
-		// Calculate pitch and yaw
 		float fPitch = -asin(xDir.y);
 		float fYaw = atan2(xDir.x, xDir.z);
 
-		xCamera.SetPitch(fPitch);
-		xCamera.SetYaw(fYaw);
+		pxCamera->SetPitch(fPitch);
+		pxCamera->SetYaw(fYaw);
 	}
 
 	// ========================================================================
@@ -465,16 +552,12 @@ private:
 	void UpdateUI()
 	{
 		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
-		{
 			return;
-		}
 
 		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
 
 		float fDistance = Runner_CharacterController::GetDistanceTraveled();
 		float fSpeed = Runner_CharacterController::GetCurrentSpeed();
-
-		// Get max speed from config
 		static constexpr float s_fMaxSpeed = 35.0f;
 
 		Runner_UIManager::UpdateUI(xUI, fDistance, m_uScore, fSpeed, s_fMaxSpeed, m_eGameState);
@@ -490,8 +573,14 @@ private:
 
 	Zenith_EntityID m_uCharacterEntityID = INVALID_ENTITY_ID;
 
+	// Scene handle for the game scene
+	Zenith_Scene m_xGameScene;
+
 	// Random number generator
 	std::mt19937 m_xRng;
+
+	// Menu keyboard focus
+	int32_t m_iFocusIndex;
 
 	// Resource pointers (set in OnAwake from globals)
 	Flux_MeshGeometry* m_pxCapsuleGeometry = nullptr;

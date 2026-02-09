@@ -7,6 +7,8 @@
 #include "Editor/Zenith_Editor.h"
 #include "Editor/Zenith_UndoSystem.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
+#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneData.h"
 
 std::vector<Zenith_EntityID> Zenith_EditorTestFixture::s_axCreatedEntities;
 bool Zenith_EditorTestFixture::s_bIsSetUp = false;
@@ -37,12 +39,13 @@ void Zenith_EditorTestFixture::TearDown()
 	}
 
 	// Clean up created entities (in reverse order to handle hierarchies)
-	Zenith_Scene& xScene = GetTestScene();
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
 	for (auto it = s_axCreatedEntities.rbegin(); it != s_axCreatedEntities.rend(); ++it)
 	{
-		if (it->IsValid() && xScene.EntityExists(*it))
+		if (it->IsValid() && pxSceneData->EntityExists(*it))
 		{
-			xScene.RemoveEntity(*it);
+			pxSceneData->RemoveEntity(*it);
 		}
 	}
 	s_axCreatedEntities.clear();
@@ -58,8 +61,9 @@ void Zenith_EditorTestFixture::TearDown()
 
 Zenith_EntityID Zenith_EditorTestFixture::CreateTestEntity(const std::string& strName)
 {
-	Zenith_Scene& xScene = GetTestScene();
-	Zenith_Entity xEntity(&xScene, strName.c_str());
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Entity xEntity(pxSceneData, strName.c_str());
 	Zenith_EntityID uEntityID = xEntity.GetEntityID();
 	s_axCreatedEntities.push_back(uEntityID);
 	return uEntityID;
@@ -71,8 +75,9 @@ Zenith_EntityID Zenith_EditorTestFixture::CreateTestEntityWithTransform(
 	const Zenith_Maths::Vector3& xScale)
 {
 	Zenith_EntityID uEntityID = CreateTestEntity(strName);
-	Zenith_Scene& xScene = GetTestScene();
-	Zenith_Entity xEntity = xScene.GetEntity(uEntityID);
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Entity xEntity = pxSceneData->GetEntity(uEntityID);
 
 	Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
 	xTransform.SetPosition(xPos);
@@ -88,8 +93,9 @@ Zenith_EntityID Zenith_EditorTestFixture::CreateTestEntityWithTransform(
 	const Zenith_Maths::Vector3& xScale)
 {
 	Zenith_EntityID uEntityID = CreateTestEntity(strName);
-	Zenith_Scene& xScene = GetTestScene();
-	Zenith_Entity xEntity = xScene.GetEntity(uEntityID);
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Entity xEntity = pxSceneData->GetEntity(uEntityID);
 
 	Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
 	xTransform.SetPosition(xPos);
@@ -101,8 +107,9 @@ Zenith_EntityID Zenith_EditorTestFixture::CreateTestEntityWithTransform(
 
 void Zenith_EditorTestFixture::SetupHierarchy(Zenith_EntityID uParent, Zenith_EntityID uChild)
 {
-	Zenith_Scene& xScene = GetTestScene();
-	Zenith_Entity xChild = xScene.GetEntity(uChild);
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Entity xChild = pxSceneData->GetEntity(uChild);
 	xChild.SetParent(uParent);
 }
 
@@ -131,9 +138,10 @@ void Zenith_EditorTestFixture::ResetEditorState()
 	Zenith_MockInput::Reset();
 }
 
-Zenith_Scene& Zenith_EditorTestFixture::GetTestScene()
+Zenith_SceneData* Zenith_EditorTestFixture::GetTestScene()
 {
-	return Zenith_Scene::GetCurrentScene();
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	return Zenith_SceneManager::GetSceneData(xActiveScene);
 }
 
 #endif // ZENITH_TOOLS

@@ -9,6 +9,7 @@
  *   - Zenith_UIText: Text rendering widget
  *   - Zenith_UIRect: Colored rectangle widget (health bars, progress bars)
  *   - Zenith_UIImage: Textured image widget (icons, sprites)
+ *   - Zenith_UIButton: Clickable/tappable button widget (menus, actions)
  *
  * Usage Example:
  *
@@ -54,3 +55,4 @@
 #include "UI/Zenith_UIText.h"
 #include "UI/Zenith_UIRect.h"
 #include "UI/Zenith_UIImage.h"
+#include "UI/Zenith_UIButton.h"

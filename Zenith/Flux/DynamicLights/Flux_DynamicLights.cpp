@@ -9,6 +9,8 @@
 #include "Flux/IBL/Flux_IBL.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
 #include "EntityComponent/Zenith_Scene.h"
+#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Zenith_Query.h"
 #include "EntityComponent/Components/Zenith_LightComponent.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
@@ -681,8 +683,6 @@ void Flux_DynamicLights::GatherLightsFromScene()
 	// Update frustum for culling
 	s_xCameraFrustum.ExtractFromViewProjection(Flux_Graphics::GetViewProjMatrix());
 
-	Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-
 	// Temporary storage for visible lights (used during ECS query, then staged directly)
 	// OPTIMIZATION: Light data flows directly from these vectors to staging buffers,
 	// eliminating the previous intermediate static vectors (s_xPointLights, etc.)
@@ -690,9 +690,17 @@ void Flux_DynamicLights::GatherLightsFromScene()
 	Zenith_Vector<SpotLightData> xAllSpotLights;
 	Zenith_Vector<DirectionalLightData> xAllDirectionalLights;
 
-	// First pass: Collect ALL visible lights (no limit check yet)
-	xScene.Query<Zenith_LightComponent, Zenith_TransformComponent>()
-		.ForEach([&xAllPointLights, &xAllSpotLights, &xAllDirectionalLights](Zenith_EntityID uID, Zenith_LightComponent& xLight, Zenith_TransformComponent& xTransform)
+	// First pass: Collect ALL visible lights from ALL loaded scenes (no limit check yet)
+	for (uint32_t uSceneSlot = 0; uSceneSlot < Zenith_SceneManager::GetSceneSlotCount(); ++uSceneSlot)
+	{
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneDataAtSlot(uSceneSlot);
+		if (!pxSceneData || !pxSceneData->IsLoaded() || pxSceneData->IsUnloading())
+		{
+			continue;
+		}
+
+		pxSceneData->Query<Zenith_LightComponent, Zenith_TransformComponent>()
+			.ForEach([&xAllPointLights, &xAllSpotLights, &xAllDirectionalLights](Zenith_EntityID uID, Zenith_LightComponent& xLight, Zenith_TransformComponent& xTransform)
 		{
 			LIGHT_TYPE eType = xLight.GetLightType();
 
@@ -796,6 +804,7 @@ void Flux_DynamicLights::GatherLightsFromScene()
 				xAllDirectionalLights.PushBack(xData);
 			}
 		});
+	}
 
 	// Helper lambda: stage a point light directly to staging buffer
 	auto StagePointLight = [](const PointLightData& xLight)

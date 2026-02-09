@@ -13,6 +13,13 @@ Zenith_EventDispatcher& Zenith_EventDispatcher::Get()
 
 void Zenith_EventDispatcher::Unsubscribe(Zenith_EventHandle uHandle)
 {
+	// Defer unsubscribe if we're currently dispatching to avoid modifying vectors during iteration
+	if (m_bDispatching)
+	{
+		m_axPendingUnsubscribes.PushBack(uHandle);
+		return;
+	}
+
 	auto xIt = m_xSubscriptions.find(uHandle);
 	if (xIt == m_xSubscriptions.end())
 	{
@@ -25,10 +32,7 @@ void Zenith_EventDispatcher::Unsubscribe(Zenith_EventHandle uHandle)
 	auto xTypeIt = m_xSubscribersByEventType.find(uEventTypeID);
 	if (xTypeIt != m_xSubscribersByEventType.end())
 	{
-		auto& xHandles = xTypeIt->second;
-		xHandles.erase(
-			std::remove(xHandles.begin(), xHandles.end(), uHandle),
-			xHandles.end());
+		xTypeIt->second.EraseValue(uHandle);
 	}
 
 	// Remove subscription
@@ -38,17 +42,17 @@ void Zenith_EventDispatcher::Unsubscribe(Zenith_EventHandle uHandle)
 void Zenith_EventDispatcher::ProcessDeferredEvents()
 {
 	// Swap the deferred events vector to minimize lock time
-	std::vector<std::unique_ptr<Zenith_EventBase>> xEventsToProcess;
-	{
-		std::lock_guard<std::mutex> xLock(m_xDeferredMutex);
-		xEventsToProcess = std::move(m_xDeferredEvents);
-		m_xDeferredEvents.clear();
-	}
+	Zenith_Vector<Zenith_EventBase*> axEventsToProcess;
+	m_xDeferredMutex.Lock();
+	axEventsToProcess = std::move(m_axDeferredEvents);
+	m_axDeferredEvents.Clear();
+	m_xDeferredMutex.Unlock();
 
 	// Process events without holding the lock
-	for (const auto& pxEvent : xEventsToProcess)
+	for (u_int uIdx = 0; uIdx < axEventsToProcess.GetSize(); uIdx++)
 	{
-		pxEvent->Dispatch(*this);
+		axEventsToProcess.Get(uIdx)->Dispatch(*this);
+		delete axEventsToProcess.Get(uIdx);
 	}
 }
 
@@ -58,6 +62,11 @@ void Zenith_EventDispatcher::ClearAllSubscriptions()
 	m_xSubscribersByEventType.clear();
 
 	// Also clear deferred events
-	std::lock_guard<std::mutex> xLock(m_xDeferredMutex);
-	m_xDeferredEvents.clear();
+	m_xDeferredMutex.Lock();
+	for (u_int uIdx = 0; uIdx < m_axDeferredEvents.GetSize(); uIdx++)
+	{
+		delete m_axDeferredEvents.Get(uIdx);
+	}
+	m_axDeferredEvents.Clear();
+	m_xDeferredMutex.Unlock();
 }

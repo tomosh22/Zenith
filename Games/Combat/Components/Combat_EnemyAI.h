@@ -12,6 +12,8 @@
  */
 
 #include "EntityComponent/Zenith_Scene.h"
+#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "Physics/Zenith_Physics.h"
@@ -119,11 +121,12 @@ public:
 	 */
 	void Update(float fDt)
 	{
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		if (!xScene.EntityExists(m_uEntityID))
+		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+		if (!pxSceneData->EntityExists(m_uEntityID))
 			return;
 
-		Zenith_Entity xEntity = xScene.GetEntity(m_uEntityID);
+		Zenith_Entity xEntity = pxSceneData->GetEntity(m_uEntityID);
 		if (!xEntity.HasComponent<Zenith_TransformComponent>())
 			return;
 

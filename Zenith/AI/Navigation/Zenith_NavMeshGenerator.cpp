@@ -1,6 +1,6 @@
 #include "Zenith.h"
 #include "AI/Navigation/Zenith_NavMeshGenerator.h"
-#include "EntityComponent/Zenith_Scene.h"
+#include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "Physics/Zenith_Physics_Fwd.h"
@@ -14,7 +14,7 @@ Zenith_NavMeshGenerator::GenerationContext::~GenerationContext()
 	Zenith_NavMeshGenerator::FreeHeightfield(*this);
 }
 
-Zenith_NavMesh* Zenith_NavMeshGenerator::GenerateFromScene(Zenith_Scene& xScene, const NavMeshGenerationConfig& xConfig)
+Zenith_NavMesh* Zenith_NavMeshGenerator::GenerateFromScene(Zenith_SceneData& xScene, const NavMeshGenerationConfig& xConfig)
 {
 	Zenith_Log(LOG_CATEGORY_AI, "Starting NavMesh generation from scene...");
 
@@ -106,7 +106,7 @@ Zenith_NavMesh* Zenith_NavMeshGenerator::GenerateFromGeometry(
 	return pxNavMesh;
 }
 
-bool Zenith_NavMeshGenerator::CollectGeometryFromScene(Zenith_Scene& xScene,
+bool Zenith_NavMeshGenerator::CollectGeometryFromScene(Zenith_SceneData& xScene,
 	Zenith_Vector<Zenith_Maths::Vector3>& axVerticesOut,
 	Zenith_Vector<uint32_t>& axIndicesOut)
 {

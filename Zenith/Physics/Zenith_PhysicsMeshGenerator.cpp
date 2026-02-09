@@ -5,6 +5,8 @@
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Zenith_Scene.h"
+#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneData.h"
 #include "Flux/Primitives/Flux_Primitives.h"
 #include <unordered_map>
 #include <unordered_set>
@@ -727,8 +729,15 @@ iter, fCellSize,
 void Zenith_PhysicsMeshGenerator::DebugDrawAllPhysicsMeshes()
 {
 	// Get all model components in the current scene
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	if (!pxSceneData)
+	{
+		return;
+	}
+
 	Zenith_Vector<Zenith_ModelComponent*> xModels;
-	Zenith_Scene::GetCurrentScene().GetAllOfComponentType<Zenith_ModelComponent>(xModels);
+	pxSceneData->GetAllOfComponentType<Zenith_ModelComponent>(xModels);
 
 	static bool ls_bLoggedOnce = false;
 

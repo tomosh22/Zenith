@@ -3,6 +3,8 @@
 #include "AI/BehaviorTree/Zenith_Blackboard.h"
 #include "AI/Perception/Zenith_PerceptionSystem.h"
 #include "EntityComponent/Zenith_Scene.h"
+#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "DataStream/Zenith_DataStream.h"
 #include <random>
@@ -21,13 +23,17 @@ BTNodeStatus Zenith_BTCondition_HasTarget::Execute(Zenith_Entity& xAgent, Zenith
 	if (xTarget.IsValid())
 	{
 		// Verify entity still exists
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		Zenith_Entity xTargetEntity = xScene.TryGetEntity(xTarget);
-
-		if (xTargetEntity.IsValid())
+		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+		if (pxSceneData)
 		{
-			m_eLastStatus = BTNodeStatus::SUCCESS;
-			return m_eLastStatus;
+			Zenith_Entity xTargetEntity = pxSceneData->TryGetEntity(xTarget);
+
+			if (xTargetEntity.IsValid())
+			{
+				m_eLastStatus = BTNodeStatus::SUCCESS;
+				return m_eLastStatus;
+			}
 		}
 	}
 
@@ -80,8 +86,15 @@ BTNodeStatus Zenith_BTCondition_InRange::Execute(Zenith_Entity& xAgent, Zenith_B
 	Zenith_EntityID xTargetID = xBlackboard.GetEntityID(m_strTargetKey);
 	if (xTargetID.IsValid())
 	{
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		Zenith_Entity xTargetEntity = xScene.TryGetEntity(xTargetID);
+		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+		if (!pxSceneData)
+		{
+			m_eLastStatus = BTNodeStatus::FAILURE;
+			return m_eLastStatus;
+		}
+
+		Zenith_Entity xTargetEntity = pxSceneData->TryGetEntity(xTargetID);
 
 		if (xTargetEntity.IsValid() && xTargetEntity.HasComponent<Zenith_TransformComponent>())
 		{

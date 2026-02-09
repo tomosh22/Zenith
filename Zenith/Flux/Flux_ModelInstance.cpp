@@ -226,6 +226,10 @@ Zenith_MaterialAsset* Flux_ModelInstance::GetMaterial(uint32_t uIndex) const
 
 void Flux_ModelInstance::SetMaterial(uint32_t uIndex, Zenith_MaterialAsset* pxMaterial)
 {
+	// Assert to catch null materials early - this would cause GBuffer rendering to skip the mesh
+	Zenith_Assert(pxMaterial != nullptr,
+		"SetMaterial called with nullptr for index %u - mesh will not render in GBuffer pass", uIndex);
+
 	// Ensure array has enough elements
 	while (m_xMaterials.GetSize() <= uIndex)
 	{

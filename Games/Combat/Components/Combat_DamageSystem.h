@@ -16,6 +16,8 @@
 
 #include "EntityComponent/Zenith_EventSystem.h"
 #include "EntityComponent/Zenith_Scene.h"
+#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "Physics/Zenith_Physics.h"
@@ -312,10 +314,11 @@ public:
 
 			// Get death position
 			Zenith_Maths::Vector3 xDeathPos(0.0f);
-			Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-			if (xScene.EntityExists(uTargetID))
+			Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+			Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+			if (pxSceneData->EntityExists(uTargetID))
 			{
-				Zenith_Entity xEntity = xScene.GetEntity(uTargetID);
+				Zenith_Entity xEntity = pxSceneData->GetEntity(uTargetID);
 				if (xEntity.HasComponent<Zenith_TransformComponent>())
 				{
 					xEntity.GetComponent<Zenith_TransformComponent>().GetPosition(xDeathPos);
@@ -377,11 +380,12 @@ private:
 	static void ApplyKnockback(Zenith_EntityID uEntityID, const Zenith_Maths::Vector3& xDirection,
 		float fForce, float fResistance)
 	{
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		if (!xScene.EntityExists(uEntityID))
+		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+		if (!pxSceneData->EntityExists(uEntityID))
 			return;
 
-		Zenith_Entity xEntity = xScene.GetEntity(uEntityID);
+		Zenith_Entity xEntity = pxSceneData->GetEntity(uEntityID);
 		if (!xEntity.HasComponent<Zenith_ColliderComponent>())
 			return;
 

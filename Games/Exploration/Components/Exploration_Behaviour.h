@@ -21,6 +21,8 @@
  * - Day/night cycle and weather
  * - Fog and atmospheric effects
  * - First-person camera controls
+ * - Multi-scene architecture (persistent GameManager + world scene)
+ * - Zenith_UIButton for clickable/tappable menu
  */
 
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
@@ -29,7 +31,10 @@
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_TerrainComponent.h"
 #include "EntityComponent/Zenith_Scene.h"
+#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneData.h"
 #include "Input/Zenith_Input.h"
+#include "UI/Zenith_UIButton.h"
 
 // Include game modules
 #include "Exploration_Config.h"
@@ -44,6 +49,19 @@
 #include "imgui.h"
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
 #endif
+
+// World content creation/cleanup (defined in Exploration.cpp)
+extern void Exploration_CreateWorldContent(Zenith_SceneData* pxSceneData);
+extern void Exploration_CleanupWorldContent();
+
+// ============================================================================
+// Game State
+// ============================================================================
+enum class ExplorationGameState : uint8_t
+{
+	MAIN_MENU = 0,
+	PLAYING
+};
 
 // ============================================================================
 // Main Behavior Class
@@ -61,6 +79,8 @@ public:
 		, m_uFrameCount(0)
 		, m_fCurrentFPS(60.0f)
 		, m_fFPSUpdateInterval(0.5f)
+		, m_eGameState(ExplorationGameState::MAIN_MENU)
+		, m_iFocusIndex(0)
 	{
 	}
 
@@ -70,20 +90,28 @@ public:
 	// Lifecycle Hooks - Called by engine
 	// ========================================================================
 
-	/**
-	 * OnAwake - Called when behavior is attached at RUNTIME
-	 * NOT called during scene loading/deserialization.
-	 */
 	void OnAwake() ZENITH_FINAL override
 	{
 		InitializeFromConfig();
 		m_bInitialized = true;
+
+		// Wire menu button callbacks
+		if (m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		{
+			Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+
+			Zenith_UI::Zenith_UIButton* pxPlay = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuPlay");
+			if (pxPlay)
+			{
+				pxPlay->SetOnClick(&OnPlayClicked, this);
+				pxPlay->SetFocused(true);
+			}
+		}
+
+		m_eGameState = ExplorationGameState::MAIN_MENU;
+		SetMenuVisible(true);
 	}
 
-	/**
-	 * OnStart - Called before first OnUpdate, for ALL entities
-	 * Called even for entities loaded from scene file.
-	 */
 	void OnStart() ZENITH_FINAL override
 	{
 		if (!m_bInitialized)
@@ -92,80 +120,92 @@ public:
 			m_bInitialized = true;
 		}
 
-		// Create UI elements
+		// Create HUD elements via UIManager
 		if (m_xParentEntity.HasComponent<Zenith_UIComponent>())
 		{
 			Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
 			Exploration_UIManager::CreateUI(xUI);
 		}
 
+		// Hide HUD while in menu
+		if (m_eGameState == ExplorationGameState::MAIN_MENU)
+		{
+			SetHUDVisible(false);
+		}
+
 		// Set debug HUD visibility from config
 		Exploration_UIManager::SetDebugHUDVisible(m_xConfig.m_bShowDebugHUD);
 	}
 
-	/**
-	 * OnUpdate - Called every frame
-	 * Main game loop coordinating all systems
-	 */
 	void OnUpdate(const float fDt) ZENITH_FINAL override
 	{
-		// Update FPS counter
-		UpdateFPS(fDt);
-
-		// Handle debug toggle
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_TAB))
+		switch (m_eGameState)
 		{
-			Exploration_UIManager::ToggleDebugHUD();
+		case ExplorationGameState::MAIN_MENU:
+			UpdateMenuInput();
+			break;
+
+		case ExplorationGameState::PLAYING:
+		{
+			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
+			{
+				ReturnToMenu();
+				return;
+			}
+
+			// Update FPS counter
+			UpdateFPS(fDt);
+
+			// Handle debug toggle
+			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_TAB))
+			{
+				Exploration_UIManager::ToggleDebugHUD();
+			}
+
+			// Get camera from persistent scene
+			Zenith_CameraComponent* pxCamera = Zenith_SceneManager::FindMainCameraAcrossScenes();
+			if (!pxCamera)
+				return;
+
+			// Get current player position
+			Zenith_Maths::Vector3 xPlayerPos;
+			pxCamera->GetPosition(xPlayerPos);
+
+			// Get terrain height at player position
+			float fTerrainHeight = Exploration_TerrainExplorer::GetTerrainHeightAt(
+				xPlayerPos.x, xPlayerPos.z);
+
+			// Update player controller (movement + mouse look)
+			Exploration_PlayerController::Update(*pxCamera, fTerrainHeight, fDt);
+
+			// Get updated position after movement
+			pxCamera->GetPosition(xPlayerPos);
+
+			// Clamp to terrain bounds
+			xPlayerPos = Exploration_TerrainExplorer::ClampToTerrainBounds(xPlayerPos);
+			pxCamera->SetPosition(xPlayerPos);
+
+			// Update atmosphere (day/night cycle, weather)
+			Exploration_AtmosphereController::Update(fDt);
+
+			// Update async loader
+			Exploration_AsyncLoader::Update();
+
+			// Update UI
+			UpdateUI(xPlayerPos);
+			break;
 		}
-
-		// Get camera entity
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		Zenith_EntityID uCamID = xScene.GetMainCameraEntity();
-		if (uCamID == INVALID_ENTITY_ID || !xScene.EntityExists(uCamID))
-			return;
-
-		Zenith_Entity xCamEntity = xScene.GetEntity(uCamID);
-		if (!xCamEntity.HasComponent<Zenith_CameraComponent>())
-			return;
-
-		Zenith_CameraComponent& xCamera = xCamEntity.GetComponent<Zenith_CameraComponent>();
-
-		// Get current player position
-		Zenith_Maths::Vector3 xPlayerPos;
-		xCamera.GetPosition(xPlayerPos);
-
-		// Get terrain height at player position
-		float fTerrainHeight = Exploration_TerrainExplorer::GetTerrainHeightAt(
-			xPlayerPos.x, xPlayerPos.z);
-
-		// Update player controller (movement + mouse look)
-		Exploration_PlayerController::Update(xCamera, fTerrainHeight, fDt);
-
-		// Get updated position after movement
-		xCamera.GetPosition(xPlayerPos);
-
-		// Clamp to terrain bounds
-		xPlayerPos = Exploration_TerrainExplorer::ClampToTerrainBounds(xPlayerPos);
-		xCamera.SetPosition(xPlayerPos);
-
-		// Update atmosphere (day/night cycle, weather)
-		Exploration_AtmosphereController::Update(fDt);
-
-		// Update async loader
-		Exploration_AsyncLoader::Update();
-
-		// Update UI
-		UpdateUI(xPlayerPos);
+		}
 	}
 
-	/**
-	 * RenderPropertiesPanel - Editor UI (tools build only)
-	 */
 	void RenderPropertiesPanel() override
 	{
 #ifdef ZENITH_TOOLS
 		ImGui::Text("Exploration Game");
 		ImGui::Separator();
+
+		const char* aszStates[] = { "MENU", "PLAYING" };
+		ImGui::Text("State: %s", aszStates[static_cast<int>(m_eGameState)]);
 
 		// Time controls
 		if (ImGui::CollapsingHeader("Time & Weather", ImGuiTreeNodeFlags_DefaultOpen))
@@ -261,6 +301,17 @@ public:
 			ImGui::Text("Ambient: %.2f", xAtmosphere.m_fAmbientIntensity);
 			ImGui::Text("Fog Density: %.5f", xAtmosphere.m_fFogDensity);
 		}
+
+		if (m_eGameState == ExplorationGameState::MAIN_MENU)
+		{
+			if (ImGui::Button("Start Game"))
+				StartGame();
+		}
+		else
+		{
+			if (ImGui::Button("Return to Menu"))
+				ReturnToMenu();
+		}
 #endif
 	}
 
@@ -285,6 +336,100 @@ public:
 	}
 
 private:
+	// ========================================================================
+	// Menu Button Callbacks
+	// ========================================================================
+	static void OnPlayClicked(void* pxUserData)
+	{
+		Exploration_Behaviour* pxSelf = static_cast<Exploration_Behaviour*>(pxUserData);
+		pxSelf->StartGame();
+	}
+
+	// ========================================================================
+	// State Transitions
+	// ========================================================================
+	void StartGame()
+	{
+		SetMenuVisible(false);
+		SetHUDVisible(true);
+
+		// Create world scene
+		m_xWorldScene = Zenith_SceneManager::CreateEmptyScene("World");
+		Zenith_SceneManager::SetActiveScene(m_xWorldScene);
+
+		// Create terrain + trees in the world scene
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(m_xWorldScene);
+		Exploration_CreateWorldContent(pxSceneData);
+
+		m_eGameState = ExplorationGameState::PLAYING;
+	}
+
+	void ReturnToMenu()
+	{
+		// Cleanup world content references
+		Exploration_CleanupWorldContent();
+
+		if (m_xWorldScene.IsValid())
+		{
+			Zenith_SceneManager::UnloadScene(m_xWorldScene);
+			m_xWorldScene = Zenith_Scene();
+		}
+
+		m_eGameState = ExplorationGameState::MAIN_MENU;
+		m_iFocusIndex = 0;
+		SetMenuVisible(true);
+		SetHUDVisible(false);
+
+		// Re-focus play button
+		if (m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		{
+			Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+			Zenith_UI::Zenith_UIButton* pxPlay = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuPlay");
+			if (pxPlay)
+				pxPlay->SetFocused(true);
+		}
+	}
+
+	// ========================================================================
+	// Menu UI
+	// ========================================================================
+	void SetMenuVisible(bool bVisible)
+	{
+		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
+			return;
+		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+
+		Zenith_UI::Zenith_UIText* pxTitle = xUI.FindElement<Zenith_UI::Zenith_UIText>("MenuTitle");
+		if (pxTitle) pxTitle->SetVisible(bVisible);
+		Zenith_UI::Zenith_UIButton* pxPlay = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuPlay");
+		if (pxPlay) pxPlay->SetVisible(bVisible);
+	}
+
+	void SetHUDVisible(bool bVisible)
+	{
+		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
+			return;
+		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+
+		const char* aszElements[] = { "Time", "Position", "Chunk", "Weather", "FPS", "Controls", "Loading", "TerrainLOD", "Streaming" };
+		for (const char* szName : aszElements)
+		{
+			Zenith_UI::Zenith_UIText* pxText = xUI.FindElement<Zenith_UI::Zenith_UIText>(szName);
+			if (pxText) pxText->SetVisible(bVisible);
+		}
+	}
+
+	void UpdateMenuInput()
+	{
+		if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
+			return;
+		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+
+		// Single button - keep it focused
+		Zenith_UI::Zenith_UIButton* pxPlay = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuPlay");
+		if (pxPlay) pxPlay->SetFocused(true);
+	}
+
 	// ========================================================================
 	// Initialization
 	// ========================================================================
@@ -396,4 +541,9 @@ private:
 	uint32_t m_uFrameCount;
 	float m_fCurrentFPS;
 	float m_fFPSUpdateInterval;
+
+	// Game state
+	ExplorationGameState m_eGameState;
+	Zenith_Scene m_xWorldScene;
+	int32_t m_iFocusIndex;
 };

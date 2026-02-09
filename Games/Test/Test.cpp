@@ -17,6 +17,8 @@ const char* Project_GetGameAssetsDirectory()
 
 #include "Test/Components/SphereMovement_Behaviour.h"
 #include "Test/Components/PlayerController_Behaviour.h"
+#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
@@ -40,5 +42,7 @@ void Project_Shutdown()
 
 void Project_LoadInitialScene()
 {
-	Zenith_Scene::GetCurrentScene().Reset();
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	pxSceneData->Reset();
 }

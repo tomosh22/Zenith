@@ -9,6 +9,7 @@
  * - Squad tactics and formations
  * - Tactical point system (cover, flanking)
  * - Debug visualization
+ * - Multi-scene architecture (persistent GameManager + arena scene)
  *
  * Key lifecycle hooks:
  * - OnAwake()  - Called at RUNTIME creation
@@ -24,11 +25,14 @@
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Zenith_Scene.h"
+#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneData.h"
 #include "Input/Zenith_Input.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
 #include "Flux/Primitives/Flux_Primitives.h"
+#include "UI/Zenith_UIButton.h"
 
 // AI System includes
 #include "AI/Navigation/Zenith_NavMesh.h"
@@ -78,6 +82,16 @@ namespace AIShowcase
 }
 
 // ============================================================================
+// Game State
+// ============================================================================
+enum class AIShowcaseGameState : uint8_t
+{
+	MAIN_MENU,
+	PLAYING,
+	PAUSED
+};
+
+// ============================================================================
 // Configuration
 // ============================================================================
 static constexpr float s_fArenaWidth = 40.0f;
@@ -103,6 +117,8 @@ public:
 		, m_fPlayerYaw(0.0f)
 		, m_uCurrentFormation(0)
 		, m_uEnemyCount(0)
+		, m_eGameState(AIShowcaseGameState::MAIN_MENU)
+		, m_iFocusIndex(0)
 	{
 	}
 
@@ -114,8 +130,19 @@ public:
 
 	void OnAwake() ZENITH_FINAL override
 	{
-		// Lightweight only - heavy initialization moved to OnStart
-		// Resource pointers are accessed via AIShowcase::g_px* globals
+		// Wire menu button callback
+		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+		Zenith_UI::Zenith_UIButton* pxPlay = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuPlay");
+		if (pxPlay)
+		{
+			pxPlay->SetOnClick(&OnPlayClicked, this);
+			pxPlay->SetFocused(true);
+		}
+
+		// Start in menu state
+		m_eGameState = AIShowcaseGameState::MAIN_MENU;
+		SetMenuVisible(true);
+		SetHUDVisible(false);
 	}
 
 	void OnStart() ZENITH_FINAL override
@@ -124,31 +151,44 @@ public:
 		Zenith_PerceptionSystem::Initialise();
 		Zenith_SquadManager::Initialise();
 		Zenith_TacticalPointSystem::Initialise();
-
-		// Guard: Skip if already initialized
-		if (m_xPlayerEntity.IsValid())
-			return;
-
-		InitializeArena();
-		InitializePlayer();
-		InitializeEnemySquads();
-		GenerateNavMesh();
-		SetupTacticalPoints();
 	}
 
 	void OnUpdate(const float fDt) ZENITH_FINAL override
 	{
-		HandlePlayerInput(fDt);
-		UpdateAISystems(fDt);
-		UpdateUI();
+		switch (m_eGameState)
+		{
+		case AIShowcaseGameState::MAIN_MENU:
+			UpdateMenuInput();
+			break;
+
+		case AIShowcaseGameState::PLAYING:
+			HandlePlayerInput(fDt);
+			UpdateAISystems(fDt);
+			UpdateUI();
 
 #ifdef ZENITH_TOOLS
-		// Debug visualization controlled by Zenith_AIDebugVariables
-		if (Zenith_AIDebugVariables::s_bEnableAllAIDebug)
-		{
-			DrawDebugVisualization();
-		}
+			if (Zenith_AIDebugVariables::s_bEnableAllAIDebug)
+			{
+				DrawDebugVisualization();
+			}
 #endif
+			break;
+
+		case AIShowcaseGameState::PAUSED:
+			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_P))
+			{
+				m_eGameState = AIShowcaseGameState::PLAYING;
+				Zenith_SceneManager::SetScenePaused(m_xArenaScene, false);
+			}
+			else if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
+			{
+				Zenith_SceneManager::SetScenePaused(m_xArenaScene, false);
+				ReturnToMenu();
+				return;
+			}
+			UpdateUI();
+			break;
+		}
 	}
 
 	void RenderPropertiesPanel() override
@@ -156,6 +196,9 @@ public:
 #ifdef ZENITH_TOOLS
 		ImGui::Text("AI Showcase Demo");
 		ImGui::Separator();
+
+		const char* astrStates[] = { "Main Menu", "Playing", "Paused" };
+		ImGui::Text("State: %s", astrStates[static_cast<int>(m_eGameState)]);
 
 		ImGui::Text("Player Position: (%.1f, %.1f, %.1f)",
 			m_xPlayerPos.x, m_xPlayerPos.y, m_xPlayerPos.z);
@@ -203,7 +246,7 @@ public:
 			}
 		}
 
-		if (ImGui::Button("Reset Demo"))
+		if (m_eGameState == AIShowcaseGameState::PLAYING && ImGui::Button("Reset Demo"))
 		{
 			ResetDemo();
 		}
@@ -212,25 +255,158 @@ public:
 
 private:
 	// ========================================================================
+	// Menu / State Management
+	// ========================================================================
+
+	static void OnPlayClicked(void* pxUserData)
+	{
+		AIShowcase_Behaviour* pxSelf = static_cast<AIShowcase_Behaviour*>(pxUserData);
+		pxSelf->StartGame();
+	}
+
+	void StartGame()
+	{
+		SetMenuVisible(false);
+		SetHUDVisible(true);
+
+		// Create arena scene
+		m_xArenaScene = Zenith_SceneManager::CreateEmptyScene("Arena");
+		Zenith_SceneManager::SetActiveScene(m_xArenaScene);
+
+		// Initialize arena content
+		InitializeArena();
+		InitializePlayer();
+		InitializeEnemySquads();
+		GenerateNavMesh();
+		SetupTacticalPoints();
+
+		m_eGameState = AIShowcaseGameState::PLAYING;
+	}
+
+	void ReturnToMenu()
+	{
+		CleanupArena();
+
+		SetHUDVisible(false);
+		SetMenuVisible(true);
+
+		// Re-focus the play button
+		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+		Zenith_UI::Zenith_UIButton* pxPlay = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuPlay");
+		if (pxPlay)
+			pxPlay->SetFocused(true);
+
+		m_eGameState = AIShowcaseGameState::MAIN_MENU;
+	}
+
+	void ResetDemo()
+	{
+		CleanupArena();
+
+		// Re-initialize AI systems
+		Zenith_PerceptionSystem::Initialise();
+		Zenith_SquadManager::Initialise();
+		Zenith_TacticalPointSystem::Initialise();
+
+		// Create fresh arena scene
+		m_xArenaScene = Zenith_SceneManager::CreateEmptyScene("Arena");
+		Zenith_SceneManager::SetActiveScene(m_xArenaScene);
+
+		// Reinitialize everything
+		InitializeArena();
+		InitializePlayer();
+		InitializeEnemySquads();
+		GenerateNavMesh();
+		SetupTacticalPoints();
+
+		m_xPlayerPos = Zenith_Maths::Vector3(0.0f, 0.5f, 10.0f);
+	}
+
+	void CleanupArena()
+	{
+		// Reset NavMeshAgents before deleting NavMesh
+		for (uint32_t u = 0; u < s_uMaxEnemies; ++u)
+			m_axNavAgents[u] = Zenith_NavMeshAgent();
+
+		// Shutdown AI systems (clears registered agents, targets, squads, tactical points)
+		Zenith_TacticalPointSystem::Shutdown();
+		Zenith_SquadManager::Shutdown();
+		Zenith_PerceptionSystem::Shutdown();
+
+		// Delete NavMesh
+		delete AIShowcase::g_pxArenaNavMesh;
+		AIShowcase::g_pxArenaNavMesh = nullptr;
+
+		// Clear member state
+		m_xPlayerEntity = Zenith_EntityID();
+		m_uEnemyCount = 0;
+		m_uObstacleCount = 0;
+		m_pxSquadAlpha = nullptr;
+		m_pxSquadBravo = nullptr;
+		m_fPatrolTimer = 0.0f;
+		for (uint32_t u = 0; u < s_uMaxEnemies; ++u)
+			m_axEnemyIDs[u] = Zenith_EntityID();
+		for (uint32_t u = 0; u < 32; ++u)
+			m_axObstacleIDs[u] = Zenith_EntityID();
+
+		// Unload arena scene
+		if (m_xArenaScene.IsValid())
+		{
+			Zenith_SceneManager::UnloadScene(m_xArenaScene);
+			m_xArenaScene = Zenith_Scene();
+		}
+	}
+
+	void SetMenuVisible(bool bVisible)
+	{
+		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+		Zenith_UI::Zenith_UIText* pxTitle = xUI.FindElement<Zenith_UI::Zenith_UIText>("MenuTitle");
+		Zenith_UI::Zenith_UIButton* pxPlay = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuPlay");
+		if (pxTitle) pxTitle->SetVisible(bVisible);
+		if (pxPlay) pxPlay->SetVisible(bVisible);
+	}
+
+	void SetHUDVisible(bool bVisible)
+	{
+		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+		const char* aszElements[] = { "Title", "ControlsHeader", "Control0", "Control1", "Control2", "Control3", "Control4", "Status" };
+		for (uint32_t u = 0; u < sizeof(aszElements) / sizeof(aszElements[0]); ++u)
+		{
+			Zenith_UI::Zenith_UIText* pxText = xUI.FindElement<Zenith_UI::Zenith_UIText>(aszElements[u]);
+			if (pxText) pxText->SetVisible(bVisible);
+		}
+	}
+
+	void UpdateMenuInput()
+	{
+		// Single button - keep it focused for keyboard activation
+		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+		Zenith_UI::Zenith_UIButton* pxPlay = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuPlay");
+		if (pxPlay)
+			pxPlay->SetFocused(true);
+	}
+
+	// ========================================================================
 	// Arena Setup
 	// ========================================================================
 	void InitializeArena()
 	{
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
 
 		// Create floor
-		CreateFloor(xScene);
+		CreateFloor(pxSceneData);
 
 		// Create walls
-		CreateWalls(xScene);
+		CreateWalls(pxSceneData);
 
 		// Create obstacles for cover
-		CreateObstacles(xScene);
+		CreateObstacles(pxSceneData);
 	}
 
-	void CreateFloor(Zenith_Scene& xScene)
+	void CreateFloor(Zenith_SceneData* pxSceneData)
 	{
-		Zenith_Entity xFloor(&xScene, "Floor");
+		Zenith_Entity xFloor(pxSceneData, "Floor");
 		xFloor.SetTransient(false);
 
 		Zenith_TransformComponent& xTransform = xFloor.GetComponent<Zenith_TransformComponent>();
@@ -245,7 +421,7 @@ private:
 		xCollider.AddCollider(COLLISION_VOLUME_TYPE_OBB, RIGIDBODY_TYPE_STATIC);
 	}
 
-	void CreateWalls(Zenith_Scene& xScene)
+	void CreateWalls(Zenith_SceneData* pxSceneData)
 	{
 		const float fHalfWidth = s_fArenaWidth * 0.5f;
 		const float fHalfHeight = s_fArenaHeight * 0.5f;
@@ -273,7 +449,7 @@ private:
 		{
 			char szName[32];
 			sprintf(szName, "Wall_%u", u);
-			Zenith_Entity xWall(&xScene, szName);
+			Zenith_Entity xWall(pxSceneData, szName);
 			xWall.SetTransient(false);
 
 			Zenith_TransformComponent& xTransform = xWall.GetComponent<Zenith_TransformComponent>();
@@ -288,7 +464,7 @@ private:
 		}
 	}
 
-	void CreateObstacles(Zenith_Scene& xScene)
+	void CreateObstacles(Zenith_SceneData* pxSceneData)
 	{
 		// Place obstacles for tactical gameplay
 		struct ObstacleDef
@@ -317,7 +493,7 @@ private:
 		{
 			char szName[32];
 			sprintf(szName, "Obstacle_%u", u);
-			Zenith_Entity xObstacle(&xScene, szName);
+			Zenith_Entity xObstacle(pxSceneData, szName);
 			xObstacle.SetTransient(false);
 
 			Zenith_TransformComponent& xTransform = xObstacle.GetComponent<Zenith_TransformComponent>();
@@ -340,9 +516,10 @@ private:
 	// ========================================================================
 	void InitializePlayer()
 	{
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
 
-		Zenith_Entity xPlayer(&xScene, "Player");
+		Zenith_Entity xPlayer(pxSceneData, "Player");
 		xPlayer.SetTransient(false);
 
 		m_xPlayerPos = Zenith_Maths::Vector3(0.0f, 0.5f, 10.0f);
@@ -368,16 +545,17 @@ private:
 	// ========================================================================
 	void InitializeEnemySquads()
 	{
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
 
 		// Create Squad Alpha
 		m_pxSquadAlpha = Zenith_SquadManager::CreateSquad("Alpha");
-		CreateEnemySquad(xScene, m_pxSquadAlpha,
+		CreateEnemySquad(pxSceneData, m_pxSquadAlpha,
 			Zenith_Maths::Vector3(-10.0f, 0.0f, -10.0f));
 
 		// Create Squad Bravo
 		m_pxSquadBravo = Zenith_SquadManager::CreateSquad("Bravo");
-		CreateEnemySquad(xScene, m_pxSquadBravo,
+		CreateEnemySquad(pxSceneData, m_pxSquadBravo,
 			Zenith_Maths::Vector3(10.0f, 0.0f, -10.0f));
 
 		// Set initial formation
@@ -385,7 +563,7 @@ private:
 		m_pxSquadBravo->SetFormation(Zenith_Formation::GetLine());
 	}
 
-	void CreateEnemySquad(Zenith_Scene& xScene, Zenith_Squad* pxSquad,
+	void CreateEnemySquad(Zenith_SceneData* pxSceneData, Zenith_Squad* pxSquad,
 		const Zenith_Maths::Vector3& xBasePos)
 	{
 		for (uint32_t u = 0; u < s_uEnemiesPerSquad; ++u)
@@ -415,7 +593,7 @@ private:
 				break;
 			}
 
-			Zenith_EntityID xEnemyID = CreateEnemy(xScene, xBasePos, u, pxMaterial);
+			Zenith_EntityID xEnemyID = CreateEnemy(pxSceneData, xBasePos, u, pxMaterial);
 			pxSquad->AddMember(xEnemyID, eRole);
 
 			if (u == 0)
@@ -427,12 +605,12 @@ private:
 		}
 	}
 
-	Zenith_EntityID CreateEnemy(Zenith_Scene& xScene, const Zenith_Maths::Vector3& xBasePos,
+	Zenith_EntityID CreateEnemy(Zenith_SceneData* pxSceneData, const Zenith_Maths::Vector3& xBasePos,
 		uint32_t uIndex, Zenith_MaterialAsset* pxMaterial)
 	{
 		char szName[32];
 		sprintf(szName, "Enemy_%u", m_uEnemyCount);
-		Zenith_Entity xEnemy(&xScene, szName);
+		Zenith_Entity xEnemy(pxSceneData, szName);
 		xEnemy.SetTransient(false);
 
 		// Offset position based on index
@@ -470,7 +648,8 @@ private:
 	// ========================================================================
 	void GenerateNavMesh()
 	{
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
 
 		NavMeshGenerationConfig xConfig;
 		xConfig.m_fAgentRadius = 0.4f;
@@ -479,7 +658,7 @@ private:
 		xConfig.m_fMaxStepHeight = 0.3f;
 		xConfig.m_fCellSize = 0.3f;
 
-		AIShowcase::g_pxArenaNavMesh = Zenith_NavMeshGenerator::GenerateFromScene(xScene, xConfig);
+		AIShowcase::g_pxArenaNavMesh = Zenith_NavMeshGenerator::GenerateFromScene(*pxSceneData, xConfig);
 
 		if (AIShowcase::g_pxArenaNavMesh)
 		{
@@ -506,11 +685,12 @@ private:
 		// Register cover points around obstacles
 		for (uint32_t u = 0; u < m_uObstacleCount; ++u)
 		{
-			Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-			if (!xScene.EntityExists(m_axObstacleIDs[u]))
+			Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+			Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+			if (!pxSceneData->EntityExists(m_axObstacleIDs[u]))
 				continue;
 
-			Zenith_Entity xObstacle = xScene.GetEntity(m_axObstacleIDs[u]);
+			Zenith_Entity xObstacle = pxSceneData->GetEntity(m_axObstacleIDs[u]);
 			Zenith_Maths::Vector3 xPos;
 			xObstacle.GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
 			Zenith_Maths::Vector3 xScale;
@@ -577,8 +757,25 @@ private:
 	// ========================================================================
 	void HandlePlayerInput(float fDt)
 	{
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		if (!xScene.EntityExists(m_xPlayerEntity))
+		// Pause
+		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_P))
+		{
+			m_eGameState = AIShowcaseGameState::PAUSED;
+			Zenith_SceneManager::SetScenePaused(m_xArenaScene, true);
+			UpdateUI();
+			return;
+		}
+
+		// Escape - return to menu
+		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
+		{
+			ReturnToMenu();
+			return;
+		}
+
+		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+		if (!pxSceneData->EntityExists(m_xPlayerEntity))
 			return;
 
 		// Movement
@@ -607,7 +804,7 @@ private:
 			m_fPlayerYaw = atan2f(-xMoveDir.x, -xMoveDir.z);
 
 			// Update entity
-			Zenith_Entity xPlayer = xScene.GetEntity(m_xPlayerEntity);
+			Zenith_Entity xPlayer = pxSceneData->GetEntity(m_xPlayerEntity);
 			xPlayer.GetComponent<Zenith_TransformComponent>().SetPosition(m_xPlayerPos);
 		}
 
@@ -635,6 +832,7 @@ private:
 		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_R))
 		{
 			ResetDemo();
+			return;
 		}
 	}
 
@@ -681,16 +879,17 @@ private:
 	{
 		Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__AI_AGENT_UPDATE);
 
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
 
 		// Phase 1: Determine destinations for all agents (sets m_bPathPending = true)
 		// This must happen BEFORE batch pathfinding so that pending requests exist
 		for (uint32_t u = 0; u < m_uEnemyCount; ++u)
 		{
-			if (!xScene.EntityExists(m_axEnemyIDs[u]))
+			if (!pxSceneData->EntityExists(m_axEnemyIDs[u]))
 				continue;
 
-			Zenith_Entity xEnemy = xScene.GetEntity(m_axEnemyIDs[u]);
+			Zenith_Entity xEnemy = pxSceneData->GetEntity(m_axEnemyIDs[u]);
 			Zenith_Maths::Vector3 xPos;
 			xEnemy.GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
 
@@ -747,15 +946,15 @@ private:
 
 		// Phase 2: Process batch pathfinding for all agents that need paths
 		// Now m_bPathPending is true for agents that called SetDestination above
-		ProcessBatchPathfinding(xScene);
+		ProcessBatchPathfinding(pxSceneData);
 
 		// Phase 3: Update AI components and agent movement (paths already computed)
 		for (uint32_t u = 0; u < m_uEnemyCount; ++u)
 		{
-			if (!xScene.EntityExists(m_axEnemyIDs[u]))
+			if (!pxSceneData->EntityExists(m_axEnemyIDs[u]))
 				continue;
 
-			Zenith_Entity xEnemy = xScene.GetEntity(m_axEnemyIDs[u]);
+			Zenith_Entity xEnemy = pxSceneData->GetEntity(m_axEnemyIDs[u]);
 			if (!xEnemy.HasComponent<Zenith_AIAgentComponent>())
 				continue;
 
@@ -766,9 +965,9 @@ private:
 		m_fPatrolTimer += fDt;
 	}
 
-	void ProcessBatchPathfinding(Zenith_Scene& xScene)
+	void ProcessBatchPathfinding(Zenith_SceneData* pxSceneData)
 	{
-		(void)xScene;  // Start positions already set in Phase 1
+		(void)pxSceneData;  // Start positions already set in Phase 1
 
 		// Collect path requests from all agents that need paths
 		Zenith_Pathfinding::PathRequest axRequests[s_uMaxEnemies];
@@ -875,15 +1074,16 @@ private:
 	void DrawPerceptionVisualization()
 	{
 #ifdef ZENITH_TOOLS
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
 		static constexpr float s_fHearingRange = 15.0f;  // Match EmitSoundStimulus radius
 
 		for (uint32_t u = 0; u < m_uEnemyCount; ++u)
 		{
-			if (!xScene.EntityExists(m_axEnemyIDs[u]))
+			if (!pxSceneData->EntityExists(m_axEnemyIDs[u]))
 				continue;
 
-			Zenith_Entity xEnemy = xScene.GetEntity(m_axEnemyIDs[u]);
+			Zenith_Entity xEnemy = pxSceneData->GetEntity(m_axEnemyIDs[u]);
 			Zenith_Maths::Vector3 xPos;
 			xEnemy.GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
 			Zenith_Maths::Vector3 xEyePos = xPos + Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f);
@@ -960,14 +1160,15 @@ private:
 		if (!Zenith_AIDebugVariables::s_bDrawAgentPaths && !Zenith_AIDebugVariables::s_bDrawPathWaypoints)
 			return;
 
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
+		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
 
 		for (uint32_t u = 0; u < m_uEnemyCount; ++u)
 		{
-			if (!xScene.EntityExists(m_axEnemyIDs[u]))
+			if (!pxSceneData->EntityExists(m_axEnemyIDs[u]))
 				continue;
 
-			Zenith_Entity xEnemy = xScene.GetEntity(m_axEnemyIDs[u]);
+			Zenith_Entity xEnemy = pxSceneData->GetEntity(m_axEnemyIDs[u]);
 			Zenith_Maths::Vector3 xPos;
 			xEnemy.GetComponent<Zenith_TransformComponent>().GetPosition(xPos);
 			m_axNavAgents[u].DebugDraw(xPos);
@@ -976,27 +1177,13 @@ private:
 	}
 
 	// ========================================================================
-	// Reset
-	// ========================================================================
-	void ResetDemo()
-	{
-		// Reset player position
-		m_xPlayerPos = Zenith_Maths::Vector3(0.0f, 0.5f, 10.0f);
-
-		Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-		if (xScene.EntityExists(m_xPlayerEntity))
-		{
-			Zenith_Entity xPlayer = xScene.GetEntity(m_xPlayerEntity);
-			xPlayer.GetComponent<Zenith_TransformComponent>().SetPosition(m_xPlayerPos);
-		}
-
-		// Reset enemy positions to formation positions
-		// (Squads will update positions automatically)
-	}
-
-	// ========================================================================
 	// Member Variables
 	// ========================================================================
+
+	// Game state
+	AIShowcaseGameState m_eGameState;
+	Zenith_Scene m_xArenaScene;
+	int32_t m_iFocusIndex;
 
 	// Player
 	Zenith_EntityID m_xPlayerEntity;

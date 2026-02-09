@@ -1,14 +1,11 @@
 #include "Zenith.h"
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
 #include "EntityComponent/Zenith_ComponentMeta.h"
-#include "EntityComponent/Zenith_Scene.h"
+#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneData.h"
 #include "DataStream/Zenith_DataStream.h"
 
 ZENITH_REGISTER_COMPONENT(Zenith_ScriptComponent, "Script")
-
-// Force link function - ensures this translation unit is included by the linker
-// Called from Zenith_Scene.cpp to guarantee static initializer runs
-void Zenith_ScriptComponent_ForceLink() {}
 
 void Zenith_ScriptComponent::WriteToDataStream(Zenith_DataStream& xStream) const
 {
@@ -113,6 +110,7 @@ void Zenith_ScriptComponent::RenderPropertiesPanel()
 				// Delete old behaviour
 				if (m_pxScriptBehaviour)
 				{
+					m_pxScriptBehaviour->OnDestroy();
 					delete m_pxScriptBehaviour;
 					m_pxScriptBehaviour = nullptr;
 				}
@@ -130,7 +128,11 @@ void Zenith_ScriptComponent::RenderPropertiesPanel()
 						// Mark entity as awoken to prevent duplicate dispatch in Scene::Update()
 						if (m_xParentEntity.IsValid())
 						{
-							Zenith_Scene::GetCurrentScene().MarkEntityAwoken(m_xParentEntity.GetEntityID());
+							Zenith_SceneData* pxSceneData = m_xParentEntity.GetSceneData();
+							if (pxSceneData)
+							{
+								pxSceneData->MarkEntityAwoken(m_xParentEntity.GetEntityID());
+							}
 						}
 
 						Zenith_Log(LOG_CATEGORY_ECS, "[ScriptComponent] Set behaviour to: %s", szSelectedName);

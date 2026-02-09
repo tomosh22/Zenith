@@ -16,6 +16,8 @@ A first-person terrain exploration experience demonstrating atmospheric renderin
 | **Script Behaviours** | `Zenith_ScriptBehaviour` | Game logic via lifecycle hooks |
 | **DataAsset System** | `Zenith_DataAsset` | Configuration serialization |
 | **UI System** | `Zenith_UIComponent` | Minimal HUD overlay |
+| **Multi-Scene** | `Zenith_SceneManager` | `DontDestroyOnLoad()`, `CreateEmptyScene()`, `UnloadScene()` |
+| **UI Buttons** | `Zenith_UIButton` | Clickable/tappable menu buttons with `SetOnClick()` callback |
 
 ## File Structure
 
@@ -106,6 +108,38 @@ Demonstrates:
 - UI anchoring (top-left positioning)
 - Dynamic text updates
 
+## Multi-Scene Architecture
+
+### Entity Layout
+
+The game uses two scenes:
+
+- **Persistent Scene** (default scene): Contains the `GameManager` entity with `Zenith_CameraComponent`, `Zenith_UIComponent`, and `Zenith_ScriptComponent` (Exploration_Behaviour). This entity calls `DontDestroyOnLoad()` so it survives scene transitions.
+- **World Scene** (`m_xWorldScene`, named "World"): Contains terrain, atmosphere objects, and all world entities. Created when entering gameplay, unloaded when returning to menu.
+
+### Game State Machine
+
+```
+MAIN_MENU  ──(Play)──>  PLAYING  ──(Escape)──>  MAIN_MENU
+```
+
+There is no pause state. Pressing Escape from gameplay returns directly to the main menu.
+
+### Scene Transition Pattern
+
+**Menu to Gameplay:**
+```cpp
+m_xWorldScene = Zenith_SceneManager::CreateEmptyScene("World");
+Zenith_SceneManager::SetActiveScene(m_xWorldScene);
+// Populate world: terrain, resources, etc.
+```
+
+**Gameplay to Menu:**
+```cpp
+Zenith_SceneManager::UnloadScene(m_xWorldScene);
+// GameManager persists (DontDestroyOnLoad), UI switches to menu
+```
+
 ## Learning Path
 
 1. **Start here:** `Exploration.cpp` - See how exploration scene is initialized
@@ -126,7 +160,10 @@ Demonstrates:
 | Shift | Sprint |
 | Space | Jump (if applicable) |
 | Tab | Toggle debug HUD |
-| Escape | Release mouse / Pause |
+| Escape | Return to menu (from gameplay) |
+| Click / Touch | Select menu button |
+| W/S or Up/Down | Navigate menu (in menu state) |
+| Enter | Activate focused button |
 
 ## Key Patterns
 
@@ -236,9 +273,8 @@ On the very first launch, the game will generate terrain mesh data:
 This process generates LOD0-LOD3 mesh files for all 4096 terrain chunks and may take several minutes.
 
 ### Scene Hierarchy
-- **MainCamera** - First-person perspective camera
-- **ExplorationGame** - Main game entity with UIComponent and ScriptComponent (Exploration_Behaviour)
-- **Terrain** - Terrain entity with Zenith_TerrainComponent
+- **GameManager** - Persistent entity (Camera + UI + Script) - `DontDestroyOnLoad`
+- **Terrain** - Terrain entity with Zenith_TerrainComponent (in World scene)
 
 ### Viewport
 - **First-person perspective** view at eye height on the terrain
@@ -383,10 +419,26 @@ This process generates LOD0-LOD3 mesh files for all 4096 terrain chunks and may 
 | T8.4 | Minimize/restore window | Game resumes correctly |
 | T8.5 | Run at terrain boundary | Player position clamped, no crashes |
 
-### T9: Editor Features (Tools Build Only)
+### T9: Menu Navigation
 | Step | Action | Expected Result |
 |------|--------|-----------------|
-| T9.1 | Select ExplorationGame entity | Properties panel appears |
-| T9.2 | Modify move speed | Player movement speed changes |
-| T9.3 | Modify mouse sensitivity | Look sensitivity changes |
-| T9.4 | Toggle Show Debug HUD | Debug HUD visibility changes |
+| T9.1 | Launch game | Main menu displayed with Play button |
+| T9.2 | Click Play button | World scene created, gameplay begins |
+| T9.3 | Press Up/Down or W/S | Menu button focus changes |
+| T9.4 | Press Enter on focused button | Button activates |
+
+### T10: Scene Transitions
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| T10.1 | Click Play from main menu | World scene created, terrain loads |
+| T10.2 | Press Escape during gameplay | World scene unloaded, main menu shown |
+| T10.3 | Click Play again after returning | New world scene created, game works normally |
+| T10.4 | Repeat menu/game cycle multiple times | No leaks, no crashes, transitions clean |
+
+### T11: Editor Features (Tools Build Only)
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| T11.1 | Select GameManager entity | Properties panel appears |
+| T11.2 | Modify move speed | Player movement speed changes |
+| T11.3 | Modify mouse sensitivity | Look sensitivity changes |
+| T11.4 | Toggle Show Debug HUD | Debug HUD visibility changes |

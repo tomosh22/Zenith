@@ -9,6 +9,19 @@ A tactical demonstration game showcasing all Zenith AI system features:
 - **Squad coordination** (formations, flanking, suppression)
 - **Debug visualization toggles** to observe AI internals
 
+## Engine Features Demonstrated
+
+| Feature | Engine Class | Usage |
+|---------|--------------|-------|
+| **NavMesh Navigation** | `Zenith_NavMesh`, `Zenith_NavMeshAgent` | Pathfinding around obstacles |
+| **Behavior Trees** | `Zenith_BehaviorTree`, `Zenith_Blackboard` | Patrol, investigate, engage, retreat AI |
+| **Perception System** | `Zenith_PerceptionSystem` | Sight cones, hearing, damage awareness |
+| **Squad Tactics** | `Zenith_Squad`, `Zenith_Formation` | Formations, roles, coordinated flanking |
+| **Tactical Points** | `Zenith_TacticalPointSystem` | Cover and flanking position evaluation |
+| **Debug Visualization** | `Zenith_AIDebugVariables` | Toggle visualization of AI internals |
+| **Multi-Scene** | `Zenith_SceneManager` | `DontDestroyOnLoad()`, `CreateEmptyScene()`, `UnloadScene()`, `SetScenePaused()` |
+| **Menu Buttons** | `Zenith_UIButton` | Clickable/tappable menu buttons with `SetOnClick()` callback |
+
 ## Project Structure
 
 ```
@@ -29,6 +42,11 @@ Games/AIShowcase/
 | WASD | Move player |
 | Space | Attack/Make sound (emits hearing stimulus) |
 | 1-5 | Change squad formation (Line, Wedge, Column, Circle, Skirmish) |
+| Click / Touch | Select menu button |
+| W/S or Up/Down | Navigate menu |
+| Enter | Activate focused button |
+| Escape | Return to menu / Pause |
+| P | Pause/Resume |
 | R | Reset demo |
 
 ## AI Features Demonstrated
@@ -122,6 +140,57 @@ Access via the AIShowcase properties panel checkbox or Zenith_DebugVariables sys
 | Flank Positions | Orange | Flanking tactical points |
 | Tactical Scores | Yellow | Height indicators for point scores |
 
+## Multi-Scene Architecture
+
+### Entity Layout
+- **Persistent scene** (DontDestroyOnLoad): `GameManager` entity with Camera + UIComponent + ScriptComponent (AIShowcase_Behaviour). Survives scene transitions.
+- **Arena scene** (`m_xArenaScene`, named "Arena"): Contains all level entities (floor, walls, obstacles, player, enemies). Created on play, destroyed on return to menu.
+
+### Game State Machine
+```
+MAIN_MENU --> PLAYING --> PAUSED --> PLAYING
+                             |
+                             v
+                         MAIN_MENU
+```
+
+### Scene Transition Pattern
+
+**Start Game (MAIN_MENU -> PLAYING):**
+```cpp
+m_xArenaScene = Zenith_SceneManager::CreateEmptyScene("Arena");
+Zenith_SceneManager::SetActiveScene(m_xArenaScene);
+InitializeArena();
+m_eGameState = AIShowcaseGameState::PLAYING;
+```
+
+**Pause / Resume (PLAYING <-> PAUSED):**
+```cpp
+// Pause
+Zenith_SceneManager::SetScenePaused(m_xArenaScene, true);
+m_eGameState = AIShowcaseGameState::PAUSED;
+
+// Resume
+Zenith_SceneManager::SetScenePaused(m_xArenaScene, false);
+m_eGameState = AIShowcaseGameState::PLAYING;
+```
+
+**Return to Menu (any state -> MAIN_MENU):**
+```cpp
+Zenith_SceneManager::UnloadScene(m_xArenaScene);
+m_xArenaScene = Zenith_Scene();
+m_eGameState = AIShowcaseGameState::MAIN_MENU;
+```
+
+### Editor View / Scene Hierarchy
+- **GameManager** - Persistent entity (Camera + UIComponent + ScriptComponent/AIShowcase_Behaviour) - DontDestroyOnLoad
+- *(Arena scene "Arena", created at runtime)*
+  - **Floor** - Arena ground plane with collider
+  - **Wall_X** - Arena boundary walls
+  - **Obstacle_X** - Cover obstacles
+  - **Player** - Player entity (blue cylinder)
+  - **Enemy_X** - AI agent entities (red/gold/orange cylinders)
+
 ## Arena Layout
 
 ```
@@ -195,6 +264,40 @@ Access via the AIShowcase properties panel checkbox or Zenith_DebugVariables sys
 1. Add to `aObstacles` array in `CreateObstacles()`
 2. Regenerate NavMesh via `GenerateNavMesh()`
 3. Add tactical points around new obstacles
+
+## Test Plan
+
+### T1: Menu Navigation
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| T1.1 | Launch aishowcase.exe | Main menu displayed with Play button |
+| T1.2 | Click Play button | Arena loads, menu hidden, HUD visible |
+| T1.3 | Press Escape (while playing) | Returns to main menu, arena unloaded |
+| T1.4 | Use W/S or Up/Down arrows | Menu button focus navigates |
+| T1.5 | Press Enter on focused button | Activates the focused button |
+
+### T2: Scene Transitions
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| T2.1 | Click Play from menu | Arena scene "Arena" created, entities spawned |
+| T2.2 | Press Escape to return to menu | Arena scene unloaded, menu reappears |
+| T2.3 | Click Play again | Fresh arena scene created, no stale AI state |
+| T2.4 | Press R during gameplay | Arena destroyed and recreated (reset) |
+
+### T3: Pause / Resume
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| T3.1 | Press P during gameplay | Game pauses, "PAUSED" overlay shown |
+| T3.2 | Press P again | Game resumes, overlay hidden |
+| T3.3 | Press Escape while paused | Returns to main menu |
+| T3.4 | Verify scene paused | AI agents, player movement frozen while paused |
+
+### T4: Game Restart
+| Step | Action | Expected Result |
+|------|--------|-----------------|
+| T4.1 | Press R during gameplay | Arena resets, player at start position |
+| T4.2 | Verify AI state after reset | Squads re-initialized, enemies respawned |
+| T4.3 | Click Play after Escape | Fresh arena, no leftover NavMesh or squads |
 
 ## See Also
 

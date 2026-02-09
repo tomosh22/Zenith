@@ -2,7 +2,7 @@
 
 #include "DataStream/Zenith_DataStream.h"
 #include "EntityComponent/Zenith_Entity.h"
-#include "EntityComponent/Zenith_Scene.h"
+#include "EntityComponent/Zenith_SceneData.h"
 #include "AssetHandling/Zenith_Asset.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
 #include "Collections/Zenith_Vector.h"
@@ -56,7 +56,7 @@ public:
 	// Instantiation
 	//--------------------------------------------------------------------------
 
-	Zenith_Entity Instantiate(Zenith_Scene* pxScene, const std::string& strEntityName = "") const;
+	Zenith_Entity Instantiate(Zenith_SceneData* pxSceneData, const std::string& strEntityName = "") const;
 	bool ApplyToEntity(Zenith_Entity& xEntity) const;
 
 	//--------------------------------------------------------------------------
