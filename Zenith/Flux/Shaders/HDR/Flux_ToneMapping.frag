@@ -417,10 +417,8 @@ void main()
 	}
 
 	// Apply tone mapping
+	// Gamma correction is handled by the sRGB swapchain format
 	vec3 xToneMapped = ApplyToneMapping(xExposed, g_uToneMappingOperator);
-
-	// Apply gamma correction (sRGB)
-	vec3 xGammaCorrected = pow(xToneMapped, vec3(1.0 / 2.2));
 
 	// Check for histogram overlay
 	if (g_bShowHistogram != 0u)
@@ -433,5 +431,5 @@ void main()
 		}
 	}
 
-	o_xColour = vec4(xGammaCorrected, 1.0);
+	o_xColour = vec4(xToneMapped, 1.0);
 }

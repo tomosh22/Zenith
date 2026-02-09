@@ -204,58 +204,58 @@ void Zenith_Editor::ApplyEditorTheme()
 	xStyle.PopupBorderSize = 1.0f;
 	xStyle.TabBorderSize = 0.0f;
 
-	// Colors
+	// Colors — neutral grays matching Unity's dark theme, blue accent for interactive elements only
 	ImVec4* axColors = xStyle.Colors;
 
 	// Text
-	axColors[ImGuiCol_Text] = ImVec4(0.83f, 0.83f, 0.85f, 1.00f);
-	axColors[ImGuiCol_TextDisabled] = ImVec4(0.45f, 0.45f, 0.50f, 1.00f);
+	axColors[ImGuiCol_Text] = ImVec4(0.79f, 0.79f, 0.79f, 1.00f);
+	axColors[ImGuiCol_TextDisabled] = ImVec4(0.50f, 0.50f, 0.50f, 1.00f);
 
 	// Backgrounds
-	axColors[ImGuiCol_WindowBg] = ImVec4(0.12f, 0.12f, 0.18f, 1.00f);
-	axColors[ImGuiCol_ChildBg] = ImVec4(0.12f, 0.12f, 0.18f, 1.00f);
-	axColors[ImGuiCol_PopupBg] = ImVec4(0.10f, 0.10f, 0.14f, 0.96f);
+	axColors[ImGuiCol_WindowBg] = ImVec4(0.22f, 0.22f, 0.22f, 1.00f);
+	axColors[ImGuiCol_ChildBg] = ImVec4(0.22f, 0.22f, 0.22f, 1.00f);
+	axColors[ImGuiCol_PopupBg] = ImVec4(0.18f, 0.18f, 0.18f, 0.96f);
 
 	// Borders
-	axColors[ImGuiCol_Border] = ImVec4(0.28f, 0.28f, 0.35f, 0.65f);
+	axColors[ImGuiCol_Border] = ImVec4(0.14f, 0.14f, 0.14f, 1.00f);
 	axColors[ImGuiCol_BorderShadow] = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
 
 	// Frames (input fields, checkboxes)
-	axColors[ImGuiCol_FrameBg] = ImVec4(0.18f, 0.18f, 0.24f, 1.00f);
-	axColors[ImGuiCol_FrameBgHovered] = ImVec4(0.24f, 0.24f, 0.32f, 1.00f);
-	axColors[ImGuiCol_FrameBgActive] = ImVec4(0.28f, 0.28f, 0.38f, 1.00f);
+	axColors[ImGuiCol_FrameBg] = ImVec4(0.16f, 0.16f, 0.16f, 1.00f);
+	axColors[ImGuiCol_FrameBgHovered] = ImVec4(0.20f, 0.20f, 0.20f, 1.00f);
+	axColors[ImGuiCol_FrameBgActive] = ImVec4(0.24f, 0.24f, 0.24f, 1.00f);
 
 	// Title bar
-	axColors[ImGuiCol_TitleBg] = ImVec4(0.08f, 0.08f, 0.12f, 1.00f);
-	axColors[ImGuiCol_TitleBgActive] = ImVec4(0.12f, 0.12f, 0.18f, 1.00f);
-	axColors[ImGuiCol_TitleBgCollapsed] = ImVec4(0.08f, 0.08f, 0.12f, 0.75f);
+	axColors[ImGuiCol_TitleBg] = ImVec4(0.16f, 0.16f, 0.16f, 1.00f);
+	axColors[ImGuiCol_TitleBgActive] = ImVec4(0.19f, 0.19f, 0.19f, 1.00f);
+	axColors[ImGuiCol_TitleBgCollapsed] = ImVec4(0.16f, 0.16f, 0.16f, 0.75f);
 
 	// Menu bar
-	axColors[ImGuiCol_MenuBarBg] = ImVec4(0.10f, 0.10f, 0.15f, 1.00f);
+	axColors[ImGuiCol_MenuBarBg] = ImVec4(0.24f, 0.24f, 0.24f, 1.00f);
 
 	// Scrollbar
-	axColors[ImGuiCol_ScrollbarBg] = ImVec4(0.10f, 0.10f, 0.14f, 1.00f);
-	axColors[ImGuiCol_ScrollbarGrab] = ImVec4(0.28f, 0.28f, 0.35f, 1.00f);
-	axColors[ImGuiCol_ScrollbarGrabHovered] = ImVec4(0.35f, 0.35f, 0.42f, 1.00f);
-	axColors[ImGuiCol_ScrollbarGrabActive] = ImVec4(0.40f, 0.40f, 0.48f, 1.00f);
+	axColors[ImGuiCol_ScrollbarBg] = ImVec4(0.16f, 0.16f, 0.16f, 1.00f);
+	axColors[ImGuiCol_ScrollbarGrab] = ImVec4(0.31f, 0.31f, 0.31f, 1.00f);
+	axColors[ImGuiCol_ScrollbarGrabHovered] = ImVec4(0.37f, 0.37f, 0.37f, 1.00f);
+	axColors[ImGuiCol_ScrollbarGrabActive] = ImVec4(0.42f, 0.42f, 0.42f, 1.00f);
 
-	// Checkmark, slider
+	// Checkmark, slider — blue accent
 	axColors[ImGuiCol_CheckMark] = ImVec4(0.26f, 0.59f, 0.98f, 1.00f);
 	axColors[ImGuiCol_SliderGrab] = ImVec4(0.26f, 0.59f, 0.98f, 0.78f);
 	axColors[ImGuiCol_SliderGrabActive] = ImVec4(0.26f, 0.59f, 0.98f, 1.00f);
 
 	// Buttons
-	axColors[ImGuiCol_Button] = ImVec4(0.22f, 0.22f, 0.30f, 1.00f);
-	axColors[ImGuiCol_ButtonHovered] = ImVec4(0.26f, 0.59f, 0.98f, 0.65f);
-	axColors[ImGuiCol_ButtonActive] = ImVec4(0.26f, 0.59f, 0.98f, 0.85f);
+	axColors[ImGuiCol_Button] = ImVec4(0.31f, 0.31f, 0.31f, 1.00f);
+	axColors[ImGuiCol_ButtonHovered] = ImVec4(0.38f, 0.38f, 0.38f, 1.00f);
+	axColors[ImGuiCol_ButtonActive] = ImVec4(0.44f, 0.44f, 0.44f, 1.00f);
 
 	// Headers (collapsing headers, tree nodes, selectables)
-	axColors[ImGuiCol_Header] = ImVec4(0.22f, 0.22f, 0.30f, 1.00f);
-	axColors[ImGuiCol_HeaderHovered] = ImVec4(0.26f, 0.59f, 0.98f, 0.50f);
-	axColors[ImGuiCol_HeaderActive] = ImVec4(0.26f, 0.59f, 0.98f, 0.70f);
+	axColors[ImGuiCol_Header] = ImVec4(0.27f, 0.27f, 0.27f, 1.00f);
+	axColors[ImGuiCol_HeaderHovered] = ImVec4(0.17f, 0.36f, 0.53f, 1.00f);
+	axColors[ImGuiCol_HeaderActive] = ImVec4(0.17f, 0.36f, 0.53f, 1.00f);
 
 	// Separators
-	axColors[ImGuiCol_Separator] = ImVec4(0.28f, 0.28f, 0.35f, 1.00f);
+	axColors[ImGuiCol_Separator] = ImVec4(0.14f, 0.14f, 0.14f, 1.00f);
 	axColors[ImGuiCol_SeparatorHovered] = ImVec4(0.26f, 0.59f, 0.98f, 0.78f);
 	axColors[ImGuiCol_SeparatorActive] = ImVec4(0.26f, 0.59f, 0.98f, 1.00f);
 
@@ -265,22 +265,22 @@ void Zenith_Editor::ApplyEditorTheme()
 	axColors[ImGuiCol_ResizeGripActive] = ImVec4(0.26f, 0.59f, 0.98f, 0.95f);
 
 	// Tabs
-	axColors[ImGuiCol_Tab] = ImVec4(0.14f, 0.14f, 0.20f, 1.00f);
-	axColors[ImGuiCol_TabHovered] = ImVec4(0.26f, 0.59f, 0.98f, 0.50f);
-	axColors[ImGuiCol_TabSelected] = ImVec4(0.18f, 0.18f, 0.26f, 1.00f);
+	axColors[ImGuiCol_Tab] = ImVec4(0.18f, 0.18f, 0.18f, 1.00f);
+	axColors[ImGuiCol_TabHovered] = ImVec4(0.27f, 0.27f, 0.27f, 1.00f);
+	axColors[ImGuiCol_TabSelected] = ImVec4(0.22f, 0.22f, 0.22f, 1.00f);
 	axColors[ImGuiCol_TabSelectedOverline] = ImVec4(0.26f, 0.59f, 0.98f, 1.00f);
-	axColors[ImGuiCol_TabDimmed] = ImVec4(0.10f, 0.10f, 0.15f, 1.00f);
-	axColors[ImGuiCol_TabDimmedSelected] = ImVec4(0.14f, 0.14f, 0.20f, 1.00f);
+	axColors[ImGuiCol_TabDimmed] = ImVec4(0.16f, 0.16f, 0.16f, 1.00f);
+	axColors[ImGuiCol_TabDimmedSelected] = ImVec4(0.20f, 0.20f, 0.20f, 1.00f);
 	axColors[ImGuiCol_TabDimmedSelectedOverline] = ImVec4(0.26f, 0.59f, 0.98f, 0.50f);
 
 	// Docking
 	axColors[ImGuiCol_DockingPreview] = ImVec4(0.26f, 0.59f, 0.98f, 0.70f);
-	axColors[ImGuiCol_DockingEmptyBg] = ImVec4(0.08f, 0.08f, 0.12f, 1.00f);
+	axColors[ImGuiCol_DockingEmptyBg] = ImVec4(0.14f, 0.14f, 0.14f, 1.00f);
 
 	// Table
-	axColors[ImGuiCol_TableHeaderBg] = ImVec4(0.18f, 0.18f, 0.24f, 1.00f);
-	axColors[ImGuiCol_TableBorderStrong] = ImVec4(0.28f, 0.28f, 0.35f, 1.00f);
-	axColors[ImGuiCol_TableBorderLight] = ImVec4(0.22f, 0.22f, 0.28f, 1.00f);
+	axColors[ImGuiCol_TableHeaderBg] = ImVec4(0.19f, 0.19f, 0.19f, 1.00f);
+	axColors[ImGuiCol_TableBorderStrong] = ImVec4(0.14f, 0.14f, 0.14f, 1.00f);
+	axColors[ImGuiCol_TableBorderLight] = ImVec4(0.18f, 0.18f, 0.18f, 1.00f);
 	axColors[ImGuiCol_TableRowBg] = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
 	axColors[ImGuiCol_TableRowBgAlt] = ImVec4(1.00f, 1.00f, 1.00f, 0.03f);
 
@@ -290,6 +290,16 @@ void Zenith_Editor::ApplyEditorTheme()
 	axColors[ImGuiCol_NavWindowingHighlight] = ImVec4(1.00f, 1.00f, 1.00f, 0.70f);
 	axColors[ImGuiCol_NavWindowingDimBg] = ImVec4(0.80f, 0.80f, 0.80f, 0.20f);
 	axColors[ImGuiCol_ModalWindowDimBg] = ImVec4(0.20f, 0.20f, 0.20f, 0.35f);
+
+	// Convert all colors from sRGB to linear space
+	// The sRGB swapchain applies linear->sRGB conversion on write,
+	// so we need linear input values to get the correct perceptual output
+	for (int i = 0; i < ImGuiCol_COUNT; i++)
+	{
+		axColors[i].x = powf(axColors[i].x, 2.2f);
+		axColors[i].y = powf(axColors[i].y, 2.2f);
+		axColors[i].z = powf(axColors[i].z, 2.2f);
+	}
 }
 
 void Zenith_Editor::Initialise()
