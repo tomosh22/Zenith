@@ -175,8 +175,127 @@ static Flux_ImageViewHandle s_xCachedImageViewHandle;
 // (PendingImGuiTextureDeletion struct is defined in Zenith_EditorPanel_Viewport.h)
 static std::vector<PendingImGuiTextureDeletion> s_xPendingDeletions;
 
+void Zenith_Editor::ApplyEditorTheme()
+{
+	ImGuiStyle& xStyle = ImGui::GetStyle();
+
+	// Layout
+	xStyle.WindowPadding = ImVec2(8.0f, 8.0f);
+	xStyle.FramePadding = ImVec2(5.0f, 4.0f);
+	xStyle.ItemSpacing = ImVec2(6.0f, 4.0f);
+	xStyle.ItemInnerSpacing = ImVec2(6.0f, 4.0f);
+	xStyle.IndentSpacing = 16.0f;
+	xStyle.ScrollbarSize = 13.0f;
+	xStyle.GrabMinSize = 9.0f;
+
+	// Rounding
+	xStyle.WindowRounding = 4.0f;
+	xStyle.ChildRounding = 4.0f;
+	xStyle.FrameRounding = 3.0f;
+	xStyle.PopupRounding = 4.0f;
+	xStyle.ScrollbarRounding = 9.0f;
+	xStyle.GrabRounding = 3.0f;
+	xStyle.TabRounding = 3.0f;
+
+	// Borders
+	xStyle.WindowBorderSize = 1.0f;
+	xStyle.ChildBorderSize = 1.0f;
+	xStyle.FrameBorderSize = 0.0f;
+	xStyle.PopupBorderSize = 1.0f;
+	xStyle.TabBorderSize = 0.0f;
+
+	// Colors
+	ImVec4* axColors = xStyle.Colors;
+
+	// Text
+	axColors[ImGuiCol_Text] = ImVec4(0.83f, 0.83f, 0.85f, 1.00f);
+	axColors[ImGuiCol_TextDisabled] = ImVec4(0.45f, 0.45f, 0.50f, 1.00f);
+
+	// Backgrounds
+	axColors[ImGuiCol_WindowBg] = ImVec4(0.12f, 0.12f, 0.18f, 1.00f);
+	axColors[ImGuiCol_ChildBg] = ImVec4(0.12f, 0.12f, 0.18f, 1.00f);
+	axColors[ImGuiCol_PopupBg] = ImVec4(0.10f, 0.10f, 0.14f, 0.96f);
+
+	// Borders
+	axColors[ImGuiCol_Border] = ImVec4(0.28f, 0.28f, 0.35f, 0.65f);
+	axColors[ImGuiCol_BorderShadow] = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
+
+	// Frames (input fields, checkboxes)
+	axColors[ImGuiCol_FrameBg] = ImVec4(0.18f, 0.18f, 0.24f, 1.00f);
+	axColors[ImGuiCol_FrameBgHovered] = ImVec4(0.24f, 0.24f, 0.32f, 1.00f);
+	axColors[ImGuiCol_FrameBgActive] = ImVec4(0.28f, 0.28f, 0.38f, 1.00f);
+
+	// Title bar
+	axColors[ImGuiCol_TitleBg] = ImVec4(0.08f, 0.08f, 0.12f, 1.00f);
+	axColors[ImGuiCol_TitleBgActive] = ImVec4(0.12f, 0.12f, 0.18f, 1.00f);
+	axColors[ImGuiCol_TitleBgCollapsed] = ImVec4(0.08f, 0.08f, 0.12f, 0.75f);
+
+	// Menu bar
+	axColors[ImGuiCol_MenuBarBg] = ImVec4(0.10f, 0.10f, 0.15f, 1.00f);
+
+	// Scrollbar
+	axColors[ImGuiCol_ScrollbarBg] = ImVec4(0.10f, 0.10f, 0.14f, 1.00f);
+	axColors[ImGuiCol_ScrollbarGrab] = ImVec4(0.28f, 0.28f, 0.35f, 1.00f);
+	axColors[ImGuiCol_ScrollbarGrabHovered] = ImVec4(0.35f, 0.35f, 0.42f, 1.00f);
+	axColors[ImGuiCol_ScrollbarGrabActive] = ImVec4(0.40f, 0.40f, 0.48f, 1.00f);
+
+	// Checkmark, slider
+	axColors[ImGuiCol_CheckMark] = ImVec4(0.26f, 0.59f, 0.98f, 1.00f);
+	axColors[ImGuiCol_SliderGrab] = ImVec4(0.26f, 0.59f, 0.98f, 0.78f);
+	axColors[ImGuiCol_SliderGrabActive] = ImVec4(0.26f, 0.59f, 0.98f, 1.00f);
+
+	// Buttons
+	axColors[ImGuiCol_Button] = ImVec4(0.22f, 0.22f, 0.30f, 1.00f);
+	axColors[ImGuiCol_ButtonHovered] = ImVec4(0.26f, 0.59f, 0.98f, 0.65f);
+	axColors[ImGuiCol_ButtonActive] = ImVec4(0.26f, 0.59f, 0.98f, 0.85f);
+
+	// Headers (collapsing headers, tree nodes, selectables)
+	axColors[ImGuiCol_Header] = ImVec4(0.22f, 0.22f, 0.30f, 1.00f);
+	axColors[ImGuiCol_HeaderHovered] = ImVec4(0.26f, 0.59f, 0.98f, 0.50f);
+	axColors[ImGuiCol_HeaderActive] = ImVec4(0.26f, 0.59f, 0.98f, 0.70f);
+
+	// Separators
+	axColors[ImGuiCol_Separator] = ImVec4(0.28f, 0.28f, 0.35f, 1.00f);
+	axColors[ImGuiCol_SeparatorHovered] = ImVec4(0.26f, 0.59f, 0.98f, 0.78f);
+	axColors[ImGuiCol_SeparatorActive] = ImVec4(0.26f, 0.59f, 0.98f, 1.00f);
+
+	// Resize grip
+	axColors[ImGuiCol_ResizeGrip] = ImVec4(0.26f, 0.59f, 0.98f, 0.20f);
+	axColors[ImGuiCol_ResizeGripHovered] = ImVec4(0.26f, 0.59f, 0.98f, 0.67f);
+	axColors[ImGuiCol_ResizeGripActive] = ImVec4(0.26f, 0.59f, 0.98f, 0.95f);
+
+	// Tabs
+	axColors[ImGuiCol_Tab] = ImVec4(0.14f, 0.14f, 0.20f, 1.00f);
+	axColors[ImGuiCol_TabHovered] = ImVec4(0.26f, 0.59f, 0.98f, 0.50f);
+	axColors[ImGuiCol_TabSelected] = ImVec4(0.18f, 0.18f, 0.26f, 1.00f);
+	axColors[ImGuiCol_TabSelectedOverline] = ImVec4(0.26f, 0.59f, 0.98f, 1.00f);
+	axColors[ImGuiCol_TabDimmed] = ImVec4(0.10f, 0.10f, 0.15f, 1.00f);
+	axColors[ImGuiCol_TabDimmedSelected] = ImVec4(0.14f, 0.14f, 0.20f, 1.00f);
+	axColors[ImGuiCol_TabDimmedSelectedOverline] = ImVec4(0.26f, 0.59f, 0.98f, 0.50f);
+
+	// Docking
+	axColors[ImGuiCol_DockingPreview] = ImVec4(0.26f, 0.59f, 0.98f, 0.70f);
+	axColors[ImGuiCol_DockingEmptyBg] = ImVec4(0.08f, 0.08f, 0.12f, 1.00f);
+
+	// Table
+	axColors[ImGuiCol_TableHeaderBg] = ImVec4(0.18f, 0.18f, 0.24f, 1.00f);
+	axColors[ImGuiCol_TableBorderStrong] = ImVec4(0.28f, 0.28f, 0.35f, 1.00f);
+	axColors[ImGuiCol_TableBorderLight] = ImVec4(0.22f, 0.22f, 0.28f, 1.00f);
+	axColors[ImGuiCol_TableRowBg] = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
+	axColors[ImGuiCol_TableRowBgAlt] = ImVec4(1.00f, 1.00f, 1.00f, 0.03f);
+
+	// Drag-drop, nav
+	axColors[ImGuiCol_DragDropTarget] = ImVec4(0.26f, 0.59f, 0.98f, 0.90f);
+	axColors[ImGuiCol_NavHighlight] = ImVec4(0.26f, 0.59f, 0.98f, 1.00f);
+	axColors[ImGuiCol_NavWindowingHighlight] = ImVec4(1.00f, 1.00f, 1.00f, 0.70f);
+	axColors[ImGuiCol_NavWindowingDimBg] = ImVec4(0.80f, 0.80f, 0.80f, 0.20f);
+	axColors[ImGuiCol_ModalWindowDimBg] = ImVec4(0.20f, 0.20f, 0.20f, 0.35f);
+}
+
 void Zenith_Editor::Initialise()
 {
+	ApplyEditorTheme();
+
 	// Initialize content browser to game assets directory
 	s_strCurrentDirectory = Project_GetGameAssetsDirectory();
 

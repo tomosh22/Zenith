@@ -278,6 +278,9 @@ private:
 	static Zenith_MaterialAsset* s_pxSelectedMaterial;
 	static bool s_bShowMaterialEditor;
 
+	// Editor theme
+	static void ApplyEditorTheme();
+
 	// Editor camera control
 	static void InitializeEditorCamera();
 	static void UpdateEditorCamera(float fDt);
