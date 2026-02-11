@@ -1,16 +1,8 @@
 #include "Zenith.h"
 #include "Core/Zenith_Core.h"
 #include "Zenith_OS_Include.h"
-#include "Flux/Flux.h"
-#include "AssetHandling/Zenith_AssetRegistry.h"
-#include "AssetHandling/Zenith_TextureAsset.h"
 #include "FileAccess/Zenith_FileAccess.h"
-#include "Flux/Flux_Graphics.h"
-#include "Physics/Zenith_Physics.h"
 #include "Profiling/Zenith_Profiling.h"
-#include "TaskSystem/Zenith_TaskSystem.h"
-#include "UnitTests/Zenith_UnitTests.h"
-#include "EntityComponent/Zenith_SceneManager.h"
 
 #include <android_native_app_glue.h>
 #include <android/log.h>
@@ -24,11 +16,6 @@ static bool s_bWindowReady = false;
 static bool s_bAppActive = true;
 static bool s_bDestroyRequested = false;
 
-// Forward declarations for game-specific functions
-extern void Project_RegisterScriptBehaviours();
-extern void Project_CreateScenes();
-extern void Project_LoadInitialScene();
-
 static void InitialiseEngine()
 {
 	if (s_bEngineInitialised)
@@ -38,67 +25,8 @@ static void InitialiseEngine()
 
 	LOGI("Initialising Zenith Engine...");
 
-	Zenith_Profiling::Initialise();
-	Zenith_Multithreading::RegisterThread(true);
-	Zenith_MemoryManagement::Initialise();
-	Zenith_TaskSystem::Inititalise();
-	Zenith_UnitTests::RunAllTests();
-
 	// Window is already initialised via SetNativeWindow
-	Flux::EarlyInitialise();
-	Zenith_Physics::Initialise();
-
-	// Set asset directories and initialize registry
-	Zenith_AssetRegistry::SetGameAssetsDir(Project_GetGameAssetsDirectory());
-#ifdef ENGINE_ASSETS_DIR
-	Zenith_AssetRegistry::SetEngineAssetsDir(ENGINE_ASSETS_DIR);
-#else
-	// On Android, engine assets are typically bundled with game assets
-	Zenith_AssetRegistry::SetEngineAssetsDir(Project_GetGameAssetsDirectory());
-#endif
-	Zenith_AssetRegistry::Initialize();
-	Zenith_AssetRegistry::InitializeGPUDependentAssets();  // Must be after Flux::EarlyInitialise()
-
-	{
-		Flux_MemoryManager::BeginFrame();
-		std::string strGameAssets = Project_GetGameAssetsDirectory();
-
-		// Load cubemap texture
-		Flux_Graphics::s_pxCubemapTexture = Zenith_AssetRegistry::Get().Create<Zenith_TextureAsset>();
-		if (Flux_Graphics::s_pxCubemapTexture)
-		{
-			Flux_Graphics::s_pxCubemapTexture->LoadCubemapFromFiles(
-				(strGameAssets + "Textures/Cubemap/px" ZENITH_TEXTURE_EXT).c_str(),
-				(strGameAssets + "Textures/Cubemap/nx" ZENITH_TEXTURE_EXT).c_str(),
-				(strGameAssets + "Textures/Cubemap/py" ZENITH_TEXTURE_EXT).c_str(),
-				(strGameAssets + "Textures/Cubemap/ny" ZENITH_TEXTURE_EXT).c_str(),
-				(strGameAssets + "Textures/Cubemap/pz" ZENITH_TEXTURE_EXT).c_str(),
-				(strGameAssets + "Textures/Cubemap/nz" ZENITH_TEXTURE_EXT).c_str()
-			);
-		}
-
-		// Load water normal texture
-		Flux_Graphics::s_pxWaterNormalTexture = Zenith_AssetRegistry::Get().Get<Zenith_TextureAsset>(strGameAssets + "Textures/water/normal" ZENITH_TEXTURE_EXT);
-
-		Flux_MemoryManager::EndFrame(false);
-	}
-	Flux::LateInitialise();
-
-	// Load game
-	Project_RegisterScriptBehaviours();
-
-	Flux_MemoryManager::BeginFrame();
-	Project_CreateScenes();
-	Flux_MemoryManager::EndFrame(false);
-
-	Flux_MemoryManager::BeginFrame();
-	Zenith_SceneManager::SetInitialSceneLoadCallback(&Project_LoadInitialScene);
-	Zenith_SceneManager::SetLoadingScene(true);
-	Project_LoadInitialScene();
-	Zenith_SceneManager::SetLoadingScene(false);
-	Flux_MemoryManager::EndFrame(false);
-
-	Zenith_Core::g_xLastFrameTime = std::chrono::high_resolution_clock::now();
+	Zenith_Core::Zenith_Init();
 
 	s_bEngineInitialised = true;
 	LOGI("Zenith Engine initialised successfully");
@@ -255,7 +183,6 @@ void android_main(android_app* pxApp)
 	// Clean shutdown
 	if (s_bEngineInitialised)
 	{
-		Zenith_Core::WaitForAllRenderTasks();
-		Zenith_AssetRegistry::Shutdown();
+		Zenith_Core::Zenith_Shutdown();
 	}
 }

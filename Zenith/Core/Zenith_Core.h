@@ -5,6 +5,10 @@
 // (classes should have instance state; use namespaces for grouping related functions)
 namespace Zenith_Core
 {
+	void Zenith_Main();
+	void Zenith_Init();
+	void Zenith_Shutdown();
+
 	// Frame timing accessors (inline for performance)
 	inline void SetDt(const float fDt);
 	inline float GetDt();

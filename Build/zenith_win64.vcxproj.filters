@@ -577,6 +577,9 @@
     <ClCompile Include="..\Zenith\Core\Zenith_Core.cpp">
       <Filter>Core</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\Core\Zenith_Main.cpp">
+      <Filter>Core</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Core\Zenith_String.cpp">
       <Filter>Core</Filter>
     </ClCompile>

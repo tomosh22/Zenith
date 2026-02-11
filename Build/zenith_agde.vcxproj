@@ -1722,6 +1722,7 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">Create</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="..\Zenith\Core\Zenith_Core.cpp" />
+    <ClCompile Include="..\Zenith\Core\Zenith_Main.cpp" />
     <ClCompile Include="..\Zenith\Core\Zenith_String.cpp" />
     <ClCompile Include="..\Zenith\DataStream\Zenith_DataStream.cpp" />
     <ClCompile Include="..\Zenith\DebugVariables\Zenith_DebugVariables.cpp" />

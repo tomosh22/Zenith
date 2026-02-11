@@ -41,12 +41,11 @@
 #include "AssetHandling/Zenith_AsyncAssetLoader.h"
 #include "Zenith_OS_Include.h"
 
+
 // Namespace variable definitions
 float Zenith_Core::g_fDt = 0.f;
 float Zenith_Core::g_fTimePassed = 0.f;
 std::chrono::high_resolution_clock::time_point Zenith_Core::g_xLastFrameTime;
-
-
 
 void Zenith_Core::UpdateTimers()
 {
