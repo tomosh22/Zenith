@@ -21,6 +21,7 @@ void Flux_ParticleEmitterConfig::RenderPropertiesPanel()
 		{
 			m_uMaxParticles = static_cast<uint32_t>(iMaxParticles);
 		}
+		ImGui::DragFloat("Spawn Radius", &m_fSpawnRadius, 0.01f, 0.0f, 10.0f, "%.2f");
 	}
 
 	if (ImGui::CollapsingHeader("Lifetime", ImGuiTreeNodeFlags_DefaultOpen))
@@ -75,6 +76,18 @@ void Flux_ParticleEmitterConfig::RenderPropertiesPanel()
 			m_strTexturePath = szTexturePath;
 		}
 		ImGui::TextDisabled("(empty = colored quads)");
+
+		ImGui::Checkbox("Additive Blending", &m_bAdditiveBlending);
+		if (m_bAdditiveBlending)
+		{
+			ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "Glow mode: overlapping particles brighten");
+		}
+	}
+
+	if (ImGui::CollapsingHeader("Turbulence"))
+	{
+		ImGui::DragFloat("Turbulence", &m_fTurbulence, 0.01f, 0.0f, 10.0f, "%.2f m/s");
+		ImGui::TextDisabled("Random velocity jitter per frame");
 	}
 
 	if (ImGui::CollapsingHeader("Compute Mode"))

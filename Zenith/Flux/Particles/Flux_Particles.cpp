@@ -25,18 +25,23 @@ static Zenith_Task g_xRenderTask(ZENITH_PROFILE_INDEX__FLUX_PFX, Flux_Particles:
 static Flux_CommandList g_xCommandList("Particles");
 
 static Flux_Shader s_xShader;
-static Flux_Pipeline s_xPipeline;
+static Flux_Pipeline s_xPipelineAlpha;
+static Flux_Pipeline s_xPipelineAdditive;
 
-static Flux_DynamicVertexBuffer s_xInstanceBuffer;
+static Flux_DynamicVertexBuffer s_xInstanceBufferAlpha;
+static Flux_DynamicVertexBuffer s_xInstanceBufferAdditive;
 
 DEBUGVAR bool dbg_bEnable = true;
 
 // Maximum particles across all emitters
 static constexpr uint32_t s_uMaxParticles = 4096;
 
-// CPU-side instance buffer for staging particle render data
-static Flux_ParticleInstance s_axCPUInstances[s_uMaxParticles];
-static uint32_t s_uInstanceCount = 0;
+// CPU-side instance buffers for staging (partitioned by blend mode)
+static Flux_ParticleInstance s_axAlphaInstances[s_uMaxParticles];
+static uint32_t s_uAlphaInstanceCount = 0;
+
+static Flux_ParticleInstance s_axAdditiveInstances[s_uMaxParticles];
+static uint32_t s_uAdditiveInstanceCount = 0;
 
 static Zenith_TextureAsset* s_pxParticleTexture = nullptr;
 
@@ -66,15 +71,21 @@ void Flux_Particles::Initialise()
 
 	xPipelineSpec.m_bDepthWriteEnabled = false;
 
-	// Enable alpha blending
+	// Alpha blending pipeline (SrcAlpha / OneMinusSrcAlpha)
 	xPipelineSpec.m_axBlendStates[0].m_bBlendEnabled = true;
 	xPipelineSpec.m_axBlendStates[0].m_eSrcBlendFactor = BLEND_FACTOR_SRCALPHA;
 	xPipelineSpec.m_axBlendStates[0].m_eDstBlendFactor = BLEND_FACTOR_ONEMINUSSRCALPHA;
 
-	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
+	Flux_PipelineBuilder::FromSpecification(s_xPipelineAlpha, xPipelineSpec);
 
-	// Allocate instance buffer for max particles
-	Flux_MemoryManager::InitialiseDynamicVertexBuffer(nullptr, s_uMaxParticles * sizeof(Flux_ParticleInstance), s_xInstanceBuffer, false);
+	// Additive blending pipeline (SrcAlpha / One)
+	xPipelineSpec.m_axBlendStates[0].m_eDstBlendFactor = BLEND_FACTOR_ONE;
+
+	Flux_PipelineBuilder::FromSpecification(s_xPipelineAdditive, xPipelineSpec);
+
+	// Allocate instance buffers for both blend modes
+	Flux_MemoryManager::InitialiseDynamicVertexBuffer(nullptr, s_uMaxParticles * sizeof(Flux_ParticleInstance), s_xInstanceBufferAlpha, false);
+	Flux_MemoryManager::InitialiseDynamicVertexBuffer(nullptr, s_uMaxParticles * sizeof(Flux_ParticleInstance), s_xInstanceBufferAdditive, false);
 
 	// Load default particle texture
 	s_pxParticleTexture = Zenith_AssetRegistry::Get().Get<Zenith_TextureAsset>("C:/dev/Zenith/Zenith/Assets/Textures/Particles/particleSwirl" ZENITH_TEXTURE_EXT);
@@ -95,19 +106,22 @@ void Flux_Particles::Reset()
 {
 	// Reset command list to ensure no stale GPU resource references
 	g_xCommandList.Reset(true);
-	s_uInstanceCount = 0;
+	s_uAlphaInstanceCount = 0;
+	s_uAdditiveInstanceCount = 0;
 	Zenith_Log(LOG_CATEGORY_PARTICLES, "Flux_Particles::Reset()");
 }
 
 void Flux_Particles::Shutdown()
 {
-	Flux_MemoryManager::DestroyDynamicVertexBuffer(s_xInstanceBuffer);
+	Flux_MemoryManager::DestroyDynamicVertexBuffer(s_xInstanceBufferAlpha);
+	Flux_MemoryManager::DestroyDynamicVertexBuffer(s_xInstanceBufferAdditive);
 	Zenith_Log(LOG_CATEGORY_PARTICLES, "Flux_Particles shut down");
 }
 
 static void UpdateEmittersAndBuildInstanceBuffer(float fDt)
 {
-	s_uInstanceCount = 0;
+	s_uAlphaInstanceCount = 0;
+	s_uAdditiveInstanceCount = 0;
 
 	// Query all particle emitter components from ALL loaded scenes
 	for (uint32_t uSceneSlot = 0; uSceneSlot < Zenith_SceneManager::GetSceneSlotCount(); ++uSceneSlot)
@@ -131,14 +145,20 @@ static void UpdateEmittersAndBuildInstanceBuffer(float fDt)
 					return;
 				}
 
-				// Copy alive particles to instance buffer
+				// Copy alive particles to the appropriate instance buffer based on blend mode
 				const Zenith_Vector<Flux_Particle>& axParticles = xEmitter.GetParticles();
 				uint32_t uAliveCount = xEmitter.GetAliveCount();
 
-				for (uint32_t i = 0; i < uAliveCount && s_uInstanceCount < s_uMaxParticles; ++i)
+				Flux_ParticleEmitterConfig* pxConfig = xEmitter.GetConfig();
+				bool bAdditive = (pxConfig != nullptr && pxConfig->m_bAdditiveBlending);
+
+				Flux_ParticleInstance* pxTargetBuffer = bAdditive ? s_axAdditiveInstances : s_axAlphaInstances;
+				uint32_t& uTargetCount = bAdditive ? s_uAdditiveInstanceCount : s_uAlphaInstanceCount;
+
+				for (uint32_t i = 0; i < uAliveCount && uTargetCount < s_uMaxParticles; ++i)
 				{
-					s_axCPUInstances[s_uInstanceCount] = Flux_ParticleInstance::FromParticle(axParticles.Get(i));
-					s_uInstanceCount++;
+					pxTargetBuffer[uTargetCount] = Flux_ParticleInstance::FromParticle(axParticles.Get(i));
+					uTargetCount++;
 				}
 			});
 	}
@@ -146,16 +166,22 @@ static void UpdateEmittersAndBuildInstanceBuffer(float fDt)
 
 static void UploadInstanceData()
 {
-	if (s_uInstanceCount == 0)
+	if (s_uAlphaInstanceCount > 0)
 	{
-		return;
+		Flux_MemoryManager::UploadBufferData(
+			s_xInstanceBufferAlpha.GetBuffer().m_xVRAMHandle,
+			s_axAlphaInstances,
+			s_uAlphaInstanceCount * sizeof(Flux_ParticleInstance)
+		);
 	}
-
-	Flux_MemoryManager::UploadBufferData(
-		s_xInstanceBuffer.GetBuffer().m_xVRAMHandle,
-		s_axCPUInstances,
-		s_uInstanceCount * sizeof(Flux_ParticleInstance)
-	);
+	if (s_uAdditiveInstanceCount > 0)
+	{
+		Flux_MemoryManager::UploadBufferData(
+			s_xInstanceBufferAdditive.GetBuffer().m_xVRAMHandle,
+			s_axAdditiveInstances,
+			s_uAdditiveInstanceCount * sizeof(Flux_ParticleInstance)
+		);
+	}
 }
 
 void Flux_Particles::SubmitRenderTask()
@@ -175,7 +201,7 @@ void Flux_Particles::Render(void*)
 		return;
 	}
 
-	// Update all emitters (both CPU and GPU) and build the CPU instance buffer
+	// Update all emitters (both CPU and GPU) and build the CPU instance buffers
 	float fDt = Zenith_Core::GetDt();
 	UpdateEmittersAndBuildInstanceBuffer(fDt);
 
@@ -189,23 +215,42 @@ void Flux_Particles::Render(void*)
 	// Upload CPU instance data to GPU
 	UploadInstanceData();
 
-	// Render CPU particles
-	if (s_uInstanceCount > 0)
+	// Render CPU particles (alpha-blended first, then additive)
+	if (s_uAlphaInstanceCount > 0 || s_uAdditiveInstanceCount > 0)
 	{
 		g_xCommandList.Reset(false);
 
-		g_xCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xPipeline);
+		// Alpha-blended particles
+		if (s_uAlphaInstanceCount > 0)
+		{
+			g_xCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xPipelineAlpha);
 
-		g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer(), 0);
-		g_xCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
-		g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&s_xInstanceBuffer, 1);
+			g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer(), 0);
+			g_xCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
+			g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&s_xInstanceBufferAlpha, 1);
 
-		g_xCommandList.AddCommand<Flux_CommandBeginBind>(0);
-		g_xCommandList.AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
-		g_xCommandList.AddCommand<Flux_CommandBindSRV>(&s_pxParticleTexture->m_xSRV, 1);
+			g_xCommandList.AddCommand<Flux_CommandBeginBind>(0);
+			g_xCommandList.AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
+			g_xCommandList.AddCommand<Flux_CommandBindSRV>(&s_pxParticleTexture->m_xSRV, 1);
 
-		// Draw CPU particles (6 indices per quad, s_uInstanceCount instances)
-		g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(6, s_uInstanceCount);
+			g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(6, s_uAlphaInstanceCount);
+		}
+
+		// Additive particles
+		if (s_uAdditiveInstanceCount > 0)
+		{
+			g_xCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xPipelineAdditive);
+
+			g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer(), 0);
+			g_xCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
+			g_xCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&s_xInstanceBufferAdditive, 1);
+
+			g_xCommandList.AddCommand<Flux_CommandBeginBind>(0);
+			g_xCommandList.AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
+			g_xCommandList.AddCommand<Flux_CommandBindSRV>(&s_pxParticleTexture->m_xSRV, 1);
+
+			g_xCommandList.AddCommand<Flux_CommandDrawIndexed>(6, s_uAdditiveInstanceCount);
+		}
 
 		Flux::SubmitCommandList(&g_xCommandList, Flux_HDR::GetHDRSceneTargetSetupWithDepth(), RENDER_ORDER_PARTICLES);
 	}

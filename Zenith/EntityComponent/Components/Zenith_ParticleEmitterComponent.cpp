@@ -158,6 +158,18 @@ void Zenith_ParticleEmitterComponent::SimulateCPU(float fDt)
 				xVel *= (1.0f - m_pxConfig->m_fDrag * fDt);
 			}
 
+			// Apply turbulence (random velocity perturbation)
+			if (m_pxConfig->m_fTurbulence > 0.0f)
+			{
+				float fTurbulence = m_pxConfig->m_fTurbulence;
+				Zenith_Maths::Vector3 xJitter(
+					(RandomFloat() * 2.0f - 1.0f) * fTurbulence,
+					(RandomFloat() * 2.0f - 1.0f) * fTurbulence,
+					(RandomFloat() * 2.0f - 1.0f) * fTurbulence
+				);
+				xVel += xJitter * fDt;
+			}
+
 			xP.SetVelocity(xVel);
 
 			// Update position
@@ -183,8 +195,16 @@ void Zenith_ParticleEmitterComponent::SpawnParticle(const Zenith_Maths::Vector3&
 
 	Flux_Particle& xP = m_axParticles.Get(m_uAliveCount);
 
-	// Position and age
-	xP.SetPosition(xPos);
+	// Position and age (offset by spawn radius)
+	Zenith_Maths::Vector3 xSpawnPos = xPos;
+	if (m_pxConfig->m_fSpawnRadius > 0.0f)
+	{
+		float fRadius = m_pxConfig->m_fSpawnRadius;
+		xSpawnPos.x += (RandomFloat() * 2.0f - 1.0f) * fRadius;
+		xSpawnPos.y += (RandomFloat() * 2.0f - 1.0f) * fRadius;
+		xSpawnPos.z += (RandomFloat() * 2.0f - 1.0f) * fRadius;
+	}
+	xP.SetPosition(xSpawnPos);
 	xP.SetAge(0.0f);
 
 	// Lifetime

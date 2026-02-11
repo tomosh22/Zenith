@@ -78,7 +78,7 @@ struct ParticleComputeConstants
 {
 	float m_fDeltaTime;
 	uint32_t m_uParticleCount;
-	float m_fPad0;
+	float m_fTurbulence;
 	float m_fPad1;
 	Zenith_Maths::Vector4 m_xGravity;  // xyz=gravity, w=drag
 };
@@ -310,8 +310,16 @@ void Flux_ParticleGPU::ProcessPendingSpawns()
 		{
 			Flux_Particle& xP = s_pxStagingBuffer[i];
 
-			// Position and age (start at 0)
-			xP.SetPosition(xEmitter.m_xSpawnPosition);
+			// Position and age (start at 0, offset by spawn radius)
+			Zenith_Maths::Vector3 xSpawnPos = xEmitter.m_xSpawnPosition;
+			if (pxConfig->m_fSpawnRadius > 0.0f)
+			{
+				float fRadius = pxConfig->m_fSpawnRadius;
+				xSpawnPos.x += (RandomFloat() * 2.0f - 1.0f) * fRadius;
+				xSpawnPos.y += (RandomFloat() * 2.0f - 1.0f) * fRadius;
+				xSpawnPos.z += (RandomFloat() * 2.0f - 1.0f) * fRadius;
+			}
+			xP.SetPosition(xSpawnPos);
 			xP.SetAge(0.0f);
 
 			// Lifetime
@@ -398,10 +406,21 @@ void Flux_ParticleGPU::DispatchCompute()
 	s_xComputeCommandList.AddCommand<Flux_CommandBindComputePipeline>(&s_xComputePipeline);
 
 	// Set up push constants
+	// Use first active emitter's config for shared values (gravity, turbulence)
 	ParticleComputeConstants xConstants;
 	xConstants.m_fDeltaTime = fDt;
 	xConstants.m_uParticleCount = s_uTotalAllocatedParticles;
+	xConstants.m_fTurbulence = 0.0f;
 	xConstants.m_xGravity = Zenith_Maths::Vector4(0.0f, -9.8f, 0.0f, 0.0f);  // Default gravity
+
+	for (uint32_t i = 0; i < s_axEmitters.GetSize(); ++i)
+	{
+		if (s_axEmitters.Get(i).m_pxConfig != nullptr)
+		{
+			xConstants.m_fTurbulence = s_axEmitters.Get(i).m_pxConfig->m_fTurbulence;
+			break;
+		}
+	}
 
 	Flux_ShaderBinder xBinder(s_xComputeCommandList);
 	xBinder.BindUAV_Buffer(s_xInputParticlesBinding, &xInputBuffer.GetUAV());

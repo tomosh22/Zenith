@@ -495,21 +495,24 @@ static void InitializeCombatResources()
 
 	// Create flame particle config for wall candles
 	g_pxFlameConfig = new Flux_ParticleEmitterConfig();
-	g_pxFlameConfig->m_fSpawnRate = 15.0f;                    // Continuous flame
+	g_pxFlameConfig->m_fSpawnRate = 30.0f;                    // Dense flame
 	g_pxFlameConfig->m_uBurstCount = 0;
-	g_pxFlameConfig->m_uMaxParticles = 32;                    // Small per candle
-	g_pxFlameConfig->m_fLifetimeMin = 0.3f;
-	g_pxFlameConfig->m_fLifetimeMax = 0.6f;
-	g_pxFlameConfig->m_fSpeedMin = 0.5f;
-	g_pxFlameConfig->m_fSpeedMax = 1.5f;
-	g_pxFlameConfig->m_fSpreadAngleDegrees = 15.0f;           // Mostly upward
+	g_pxFlameConfig->m_uMaxParticles = 64;                    // More particles per candle
+	g_pxFlameConfig->m_fSpawnRadius = 0.05f;                  // Slight position variation
+	g_pxFlameConfig->m_fLifetimeMin = 0.4f;
+	g_pxFlameConfig->m_fLifetimeMax = 0.9f;
+	g_pxFlameConfig->m_fSpeedMin = 0.3f;
+	g_pxFlameConfig->m_fSpeedMax = 1.0f;
+	g_pxFlameConfig->m_fSpreadAngleDegrees = 25.0f;           // Wider spread
 	g_pxFlameConfig->m_xEmitDirection = Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f);
-	g_pxFlameConfig->m_xGravity = Zenith_Maths::Vector3(0.0f, 0.5f, 0.0f);  // Rise up
-	g_pxFlameConfig->m_fDrag = 1.0f;
-	g_pxFlameConfig->m_xColorStart = Zenith_Maths::Vector4(1.0f, 0.8f, 0.2f, 1.0f);  // Yellow-orange
-	g_pxFlameConfig->m_xColorEnd = Zenith_Maths::Vector4(1.0f, 0.3f, 0.0f, 0.0f);    // Red->transparent
-	g_pxFlameConfig->m_fSizeStart = 0.08f;
-	g_pxFlameConfig->m_fSizeEnd = 0.02f;
+	g_pxFlameConfig->m_xGravity = Zenith_Maths::Vector3(0.0f, 0.8f, 0.0f);  // Strong updraft
+	g_pxFlameConfig->m_fDrag = 0.8f;
+	g_pxFlameConfig->m_xColorStart = Zenith_Maths::Vector4(1.0f, 0.9f, 0.3f, 0.9f);  // Bright yellow
+	g_pxFlameConfig->m_xColorEnd = Zenith_Maths::Vector4(1.0f, 0.2f, 0.0f, 0.0f);    // Red->transparent
+	g_pxFlameConfig->m_fSizeStart = 0.15f;
+	g_pxFlameConfig->m_fSizeEnd = 0.04f;
+	g_pxFlameConfig->m_bAdditiveBlending = true;              // Glow effect
+	g_pxFlameConfig->m_fTurbulence = 1.5f;                    // Flickering motion
 	g_pxFlameConfig->m_bUseGPUCompute = false;
 	Flux_ParticleEmitterConfig::Register("Combat_Flame", g_pxFlameConfig);
 

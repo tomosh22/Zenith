@@ -84,6 +84,10 @@ public:
 	// Maximum particle lifetime in seconds
 	float m_fLifetimeMax = 2.0f;
 
+	// Radius around the emit position within which particles can spawn
+	// 0 = all particles spawn at the exact emit position
+	float m_fSpawnRadius = 0.0f;
+
 	//--- Velocity (Cone Emitter) ---//
 
 	// Direction of emission (will be normalized)
@@ -140,6 +144,16 @@ public:
 	// Path to particle texture (empty = colored quads with circular gradient)
 	std::string m_strTexturePath;
 
+	// If true, uses additive blending (SrcAlpha/One) instead of alpha blending (SrcAlpha/OneMinusSrcAlpha)
+	// Additive blending creates glowing effects where overlapping particles brighten
+	bool m_bAdditiveBlending = false;
+
+	//--- Turbulence ---//
+
+	// Strength of random velocity perturbation applied each frame (in m/s)
+	// 0 = no turbulence, higher values make particles jitter and flicker
+	float m_fTurbulence = 0.0f;
+
 	//--- Compute Mode ---//
 
 	// If true, particles are simulated on the GPU via compute shader
@@ -153,7 +167,7 @@ public:
 	void WriteToDataStream(Zenith_DataStream& xStream) const override
 	{
 		// Version number for forward compatibility
-		uint32_t uVersion = 1;
+		uint32_t uVersion = 3;
 		xStream << uVersion;
 
 		// Spawn settings
@@ -194,6 +208,13 @@ public:
 
 		// Compute mode
 		xStream << m_bUseGPUCompute;
+
+		// Version 2+: Additive blending and turbulence
+		xStream << m_bAdditiveBlending;
+		xStream << m_fTurbulence;
+
+		// Version 3+: Spawn radius
+		xStream << m_fSpawnRadius;
 	}
 
 	void ReadFromDataStream(Zenith_DataStream& xStream) override
@@ -241,6 +262,17 @@ public:
 
 			// Compute mode
 			xStream >> m_bUseGPUCompute;
+		}
+
+		if (uVersion >= 2)
+		{
+			xStream >> m_bAdditiveBlending;
+			xStream >> m_fTurbulence;
+		}
+
+		if (uVersion >= 3)
+		{
+			xStream >> m_fSpawnRadius;
 		}
 	}
 
