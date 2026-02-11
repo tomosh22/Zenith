@@ -12,7 +12,7 @@ ZENITH_REGISTER_COMPONENT(Zenith_UIComponent, "UI")
 Zenith_UIComponent::Zenith_UIComponent(Zenith_Entity& xParentEntity)
     : m_xParentEntity(xParentEntity)
 {
-    Zenith_Log(LOG_CATEGORY_UI, "[UIComponent] Created for entity %u", xParentEntity.GetEntityID());
+    Zenith_Log(LOG_CATEGORY_UI, "[UIComponent] Created for entity %u", xParentEntity.GetEntityID().m_uIndex);
 }
 
 Zenith_UIComponent::~Zenith_UIComponent()

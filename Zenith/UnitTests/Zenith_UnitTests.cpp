@@ -419,7 +419,7 @@ void Zenith_UnitTests::TestProfiling()
 	(void)xEvents.at(pxTask1->GetCompletedThreadID());
 	(void)xEvents.at(pxTask2->GetCompletedThreadID());
 
-	Zenith_Assert(xEventsMain.GetSize() == 8, "Expected 8 events, have %u", xEvents.size());
+	Zenith_Assert(xEventsMain.GetSize() == 8, "Expected 8 events, have %zu", xEvents.size());
 	Zenith_Assert(xEventsMain.Get(0).m_eIndex == eIndex1, "Wrong profile index");
 	Zenith_Assert(xEventsMain.Get(1).m_eIndex == eIndex0, "Wrong profile index");
 

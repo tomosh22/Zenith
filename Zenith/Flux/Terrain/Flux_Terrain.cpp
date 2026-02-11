@@ -312,22 +312,6 @@ void Flux_Terrain::SubmitRenderToGBufferTask()
 	Flux::SubmitCommandList(&s_xCullingCommandList, Flux_Graphics::s_xNullTargetSetup, RENDER_ORDER_TERRAIN_CULLING);
 	Zenith_Profiling::EndProfile(ZENITH_PROFILE_INDEX__FLUX_TERRAIN_CULLING);
 
-	// ========== Log Performance Metrics (periodic) ==========
-	if (dbg_bLogTerrainMetrics && (s_uFrameCounter % 120 == 0))
-	{
-		const Flux_TerrainStreamingManager::StreamingStats& xStats = Flux_TerrainStreamingManager::GetStats();
-		Zenith_Log(LOG_CATEGORY_TERRAIN, "=== Terrain Performance Metrics (Frame %u) ===", s_uFrameCounter);
-		Zenith_Log(LOG_CATEGORY_TERRAIN, "  High-LOD chunks resident: %u", xStats.m_uHighLODChunksResident);
-		Zenith_Log(LOG_CATEGORY_TERRAIN, "  Streaming vertex buffer: %u/%u MB (%.1f%%)",
-			xStats.m_uVertexBufferUsedMB, xStats.m_uVertexBufferTotalMB,
-			(xStats.m_uVertexBufferUsedMB * 100.0f) / xStats.m_uVertexBufferTotalMB);
-		Zenith_Log(LOG_CATEGORY_TERRAIN, "  Streaming index buffer: %u/%u MB (%.1f%%)",
-			xStats.m_uIndexBufferUsedMB, xStats.m_uIndexBufferTotalMB,
-			(xStats.m_uIndexBufferUsedMB * 100.0f) / xStats.m_uIndexBufferTotalMB);
-		Zenith_Log(LOG_CATEGORY_TERRAIN, "  Buffer fragmentation: %u vertex blocks, %u index blocks",
-			xStats.m_uVertexFragments, xStats.m_uIndexFragments);
-	}
-
 	Zenith_TaskSystem::SubmitTask(&g_xRenderTask);
 }
 

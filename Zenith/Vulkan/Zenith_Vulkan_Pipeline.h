@@ -26,7 +26,7 @@ public:
 	void Initialise(const std::string& strVertex, const std::string& strFragment, const std::string& strGeometry = "", const std::string& strDomain = "", const std::string& strHull = "");
 	void InitialiseCompute(const std::string& strCompute);
 
-#ifdef ZENITH_TOOLS
+#if 1//def ZENITH_TOOLS
 	// Compile from source at runtime (tools/editor only)
 	// Returns true if compilation succeeded
 	bool InitialiseFromSource(const std::string& strVertexPath, const std::string& strFragmentPath);

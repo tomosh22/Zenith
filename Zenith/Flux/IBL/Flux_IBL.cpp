@@ -104,12 +104,6 @@ static Flux_CommandList g_axPrefilterCommandLists[IBLConfig::uPREFILTER_MIP_COUN
 	Flux_CommandList("IBL_Prefilter_M6_F4"), Flux_CommandList("IBL_Prefilter_M6_F5")
 };
 
-// Debug variables
-DEBUGVAR bool dbg_bIBLEnable = true;
-DEBUGVAR u_int dbg_uIBLDebugMode = IBL_DEBUG_NONE;
-DEBUGVAR float dbg_fIBLIntensity = 1.0f;
-DEBUGVAR bool dbg_bIBLDiffuseEnabled = true;
-DEBUGVAR bool dbg_bIBLSpecularEnabled = true;
 DEBUGVAR bool dbg_bIBLShowBRDFLUT = false;
 DEBUGVAR bool dbg_bIBLForceRoughness = false;
 DEBUGVAR float dbg_fIBLForcedRoughness = 0.5f;
@@ -225,13 +219,6 @@ void Flux_IBL::Reset()
 
 void Flux_IBL::SubmitRenderTask()
 {
-#ifdef ZENITH_TOOLS
-	// Sync debug variables to actual state - allows UI changes to take effect
-	s_bEnabled = dbg_bIBLEnable;
-	s_fIntensity = dbg_fIBLIntensity;
-	s_bDiffuseEnabled = dbg_bIBLDiffuseEnabled;
-	s_bSpecularEnabled = dbg_bIBLSpecularEnabled;
-#endif
 
 	// Check if BRDF LUT needs generation (first frame or regenerate requested)
 	if (!s_bBRDFLUTGenerated || dbg_bIBLRegenerateBRDFLUT)
@@ -239,7 +226,9 @@ void Flux_IBL::SubmitRenderTask()
 		if (dbg_bIBLRegenerateBRDFLUT)
 		{
 			// Reset the flag and force regeneration
+#ifdef ZENITH_DEBUG_VARIABLES
 			dbg_bIBLRegenerateBRDFLUT = false;
+#endif
 			s_bBRDFLUTGenerated = false;
 			Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_IBL: Regenerating BRDF LUT (manual trigger)");
 		}
@@ -728,10 +717,22 @@ const Flux_ShaderResourceView& Flux_IBL::GetPrefilteredMapSRV()
 }
 
 // Setters
-void Flux_IBL::SetEnabled(bool bEnabled) { s_bEnabled = bEnabled; dbg_bIBLEnable = bEnabled; }
-void Flux_IBL::SetIntensity(float fIntensity) { s_fIntensity = fIntensity; dbg_fIBLIntensity = fIntensity; }
-void Flux_IBL::SetDiffuseEnabled(bool bEnabled) { s_bDiffuseEnabled = bEnabled; dbg_bIBLDiffuseEnabled = bEnabled; }
-void Flux_IBL::SetSpecularEnabled(bool bEnabled) { s_bSpecularEnabled = bEnabled; dbg_bIBLSpecularEnabled = bEnabled; }
+void Flux_IBL::SetEnabled(bool bEnabled)
+{
+	s_bEnabled = bEnabled;
+}
+void Flux_IBL::SetIntensity(float fIntensity)
+{
+	s_fIntensity = fIntensity;
+}
+void Flux_IBL::SetDiffuseEnabled(bool bEnabled)
+{
+	s_bDiffuseEnabled = bEnabled;
+}
+void Flux_IBL::SetSpecularEnabled(bool bEnabled)
+{
+	s_bSpecularEnabled = bEnabled;
+}
 
 // Getters - return actual state variables (synced from debug variables in SubmitRenderTask)
 bool Flux_IBL::IsEnabled() { return s_bEnabled; }
@@ -750,11 +751,6 @@ void Flux_IBL::RegisterDebugVariables()
 	// content is generated. The SRVs are valid (created in CreateRenderTargets) but
 	// textures will appear black/undefined until GenerateBRDFLUT() and UpdateSkyIBL()
 	// run on the first frame. This is expected behavior.
-	Zenith_DebugVariables::AddBoolean({ "Flux", "IBL", "Enable" }, dbg_bIBLEnable);
-	Zenith_DebugVariables::AddUInt32({ "Flux", "IBL", "DebugMode" }, dbg_uIBLDebugMode, 0, IBL_DEBUG_COUNT - 1);
-	Zenith_DebugVariables::AddFloat({ "Flux", "IBL", "Intensity" }, dbg_fIBLIntensity, 0.0f, 5.0f);
-	Zenith_DebugVariables::AddBoolean({ "Flux", "IBL", "DiffuseEnabled" }, dbg_bIBLDiffuseEnabled);
-	Zenith_DebugVariables::AddBoolean({ "Flux", "IBL", "SpecularEnabled" }, dbg_bIBLSpecularEnabled);
 	Zenith_DebugVariables::AddBoolean({ "Flux", "IBL", "ShowBRDFLUT" }, dbg_bIBLShowBRDFLUT);
 	Zenith_DebugVariables::AddBoolean({ "Flux", "IBL", "ForceRoughness" }, dbg_bIBLForceRoughness);
 	Zenith_DebugVariables::AddFloat({ "Flux", "IBL", "ForcedRoughness" }, dbg_fIBLForcedRoughness, 0.0f, 1.0f);

@@ -90,16 +90,16 @@ struct AtmosphereConstants
 static AtmosphereConstants s_xAtmosphereConstants;
 
 // Debug variables
-DEBUGVAR bool dbg_bAtmosphereEnable = false;
-DEBUGVAR u_int dbg_uSkyboxDebugMode = SKYBOX_DEBUG_NONE;
-DEBUGVAR float dbg_fSunIntensity = AtmosphereConfig::fSUN_INTENSITY;
-DEBUGVAR float dbg_fRayleighScale = 1.0f;
-DEBUGVAR float dbg_fMieScale = 1.0f;
-DEBUGVAR float dbg_fMieG = AtmosphereConfig::fMIE_G;
-DEBUGVAR bool dbg_bAerialEnabled = true;
-DEBUGVAR float dbg_fAerialStrength = 1.0f;
-DEBUGVAR u_int dbg_uSkySamples = AtmosphereConfig::uDEFAULT_SKY_SAMPLES;
-DEBUGVAR u_int dbg_uLightSamples = AtmosphereConfig::uDEFAULT_LIGHT_SAMPLES;
+bool dbg_bAtmosphereEnable = false;
+u_int dbg_uSkyboxDebugMode = SKYBOX_DEBUG_NONE;
+float dbg_fSunIntensity = AtmosphereConfig::fSUN_INTENSITY;
+float dbg_fRayleighScale = 1.0f;
+float dbg_fMieScale = 1.0f;
+float dbg_fMieG = AtmosphereConfig::fMIE_G;
+bool dbg_bAerialEnabled = true;
+float dbg_fAerialStrength = 1.0f;
+u_int dbg_uSkySamples = AtmosphereConfig::uDEFAULT_SKY_SAMPLES;
+u_int dbg_uLightSamples = AtmosphereConfig::uDEFAULT_LIGHT_SAMPLES;
 
 void Flux_Skybox::Initialise()
 {
@@ -186,7 +186,7 @@ void Flux_Skybox::Initialise()
 	s_xAerialAtmosConstantsBinding = xAerialReflection.GetBinding("AtmosphereConstants");
 	s_xAerialDepthTexBinding = xAerialReflection.GetBinding("g_xDepthTex");
 
-#ifdef ZENITH_TOOLS
+#ifdef ZENITH_DEBUG_VARIABLES
 	RegisterDebugVariables();
 #endif
 
@@ -255,18 +255,8 @@ void Flux_Skybox::WaitForAerialPerspectiveTask()
 
 void Flux_Skybox::Render(void*)
 {
-	// Always sync enabled state for consistency
-	s_bAtmosphereEnabled = dbg_bAtmosphereEnable;
-
 	if (s_bAtmosphereEnabled)
 	{
-		// Sync atmosphere debug variables
-		s_fSunIntensity = dbg_fSunIntensity;
-		s_fRayleighScale = dbg_fRayleighScale;
-		s_fMieScale = dbg_fMieScale;
-		s_fMieG = dbg_fMieG;
-		s_bAerialPerspectiveEnabled = dbg_bAerialEnabled;
-		s_fAerialPerspectiveStrength = dbg_fAerialStrength;
 
 		RenderAtmosphereSky();
 	}
@@ -373,13 +363,13 @@ void Flux_Skybox::RenderAerialPerspective(void*)
 }
 
 // Setters
-void Flux_Skybox::SetAtmosphereEnabled(bool bEnabled) { s_bAtmosphereEnabled = bEnabled; dbg_bAtmosphereEnable = bEnabled; }
-void Flux_Skybox::SetSunIntensity(float fIntensity) { s_fSunIntensity = fIntensity; dbg_fSunIntensity = fIntensity; }
-void Flux_Skybox::SetRayleighScale(float fScale) { s_fRayleighScale = fScale; dbg_fRayleighScale = fScale; }
-void Flux_Skybox::SetMieScale(float fScale) { s_fMieScale = fScale; dbg_fMieScale = fScale; }
-void Flux_Skybox::SetMieG(float fG) { s_fMieG = fG; dbg_fMieG = fG; }
-void Flux_Skybox::SetAerialPerspectiveEnabled(bool bEnabled) { s_bAerialPerspectiveEnabled = bEnabled; dbg_bAerialEnabled = bEnabled; }
-void Flux_Skybox::SetAerialPerspectiveStrength(float fStrength) { s_fAerialPerspectiveStrength = fStrength; dbg_fAerialStrength = fStrength; }
+void Flux_Skybox::SetAtmosphereEnabled(bool bEnabled) { s_bAtmosphereEnabled = bEnabled; }
+void Flux_Skybox::SetSunIntensity(float fIntensity) { s_fSunIntensity = fIntensity; }
+void Flux_Skybox::SetRayleighScale(float fScale) { s_fRayleighScale = fScale; }
+void Flux_Skybox::SetMieScale(float fScale) { s_fMieScale = fScale; }
+void Flux_Skybox::SetMieG(float fG) { s_fMieG = fG; }
+void Flux_Skybox::SetAerialPerspectiveEnabled(bool bEnabled) { s_bAerialPerspectiveEnabled = bEnabled; }
+void Flux_Skybox::SetAerialPerspectiveStrength(float fStrength) { s_fAerialPerspectiveStrength = fStrength; }
 
 // Getters
 bool Flux_Skybox::IsAtmosphereEnabled() { return s_bAtmosphereEnabled; }
@@ -395,7 +385,7 @@ Flux_ShaderResourceView& Flux_Skybox::GetTransmittanceLUTSRV()
 	return s_xTransmittanceLUT.m_pxSRV;
 }
 
-#ifdef ZENITH_TOOLS
+#ifdef ZENITH_DEBUG_VARIABLES
 void Flux_Skybox::RegisterDebugVariables()
 {
 	Zenith_DebugVariables::AddBoolean({ "Flux", "Skybox", "Atmosphere Enable" }, dbg_bAtmosphereEnable);

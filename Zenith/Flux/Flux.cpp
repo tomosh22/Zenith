@@ -45,7 +45,7 @@ void Flux::LateInitialise()
 	Flux_MemoryManager::BeginFrame();
 	Flux_Swapchain::Initialise();
 
-#ifdef ZENITH_TOOLS
+#if 1//def ZENITH_TOOLS
 	// Initialize Slang compiler for runtime compilation FIRST
 	// This must be done before any shaders are loaded so they can use runtime compilation
 	Flux_SlangCompiler::Initialise();

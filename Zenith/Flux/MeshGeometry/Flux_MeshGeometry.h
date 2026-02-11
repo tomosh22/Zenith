@@ -105,23 +105,23 @@ public:
 	void Export(const char* szFilename);
 #endif
 
-#ifndef ZENITH_TOOLS
-private:
-#endif
 	friend class Zenith_ColliderComponent;
 	friend class Zenith_PhysicsMeshGenerator;
 	void GenerateLayoutAndVertexData();
 
+	uint32_t m_uNumVerts = 0;
+	uint32_t m_uNumIndices = 0;
+	uint32_t m_uNumBones = 0;
+
+#ifndef ZENITH_TOOLS
+private:
+#endif
 	void GenerateNormals();
 	void GenerateTangents();
 	void GenerateBitangents();
 	Zenith_Maths::Vector3 GenerateTangent(uint32_t uA, uint32_t uB, uint32_t uC);
 
 	Flux_BufferLayout m_xBufferLayout;
-
-	uint32_t m_uNumVerts = 0;
-	uint32_t m_uNumIndices = 0;
-	uint32_t m_uNumBones = 0;
 
 	//#TO_TODO: move to private
 public:

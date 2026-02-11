@@ -327,8 +327,11 @@ void Flux_SSGI::WaitForRenderTask()
 
 void Flux_SSGI::Render(void*)
 {
+#pragma warning(push)
+#pragma warning(disable: 4127) // conditional expression is constant (dbg_bSSGIEnable is const in non-tools builds)
 	if (!dbg_bSSGIEnable || !s_bInitialised)
 		return;
+#pragma warning(pop)
 
 	// SSGI requires Hi-Z buffer for accelerated ray marching
 	if (!Flux_HiZ::IsEnabled())

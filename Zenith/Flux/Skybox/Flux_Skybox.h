@@ -101,7 +101,7 @@ public:
 	// Access transmittance LUT for other systems (IBL, fog)
 	static Flux_ShaderResourceView& GetTransmittanceLUTSRV();
 
-#ifdef ZENITH_TOOLS
+#ifdef ZENITH_DEBUG_VARIABLES
 	static void RegisterDebugVariables();
 #endif
 

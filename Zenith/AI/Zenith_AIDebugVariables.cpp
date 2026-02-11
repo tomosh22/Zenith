@@ -43,7 +43,7 @@ namespace Zenith_AIDebugVariables
 
 	void Initialise()
 	{
-#ifdef ZENITH_TOOLS
+#ifdef ZENITH_DEBUG_VARIABLES
 		// Master Toggle
 		Zenith_DebugVariables::AddBoolean({ "AI", "Enable All AI Debug" }, s_bEnableAllAIDebug);
 

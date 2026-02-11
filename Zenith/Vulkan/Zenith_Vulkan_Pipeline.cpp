@@ -27,7 +27,7 @@ static std::unordered_map<Zenith_Vulkan_Pipeline*, Flux_PipelineSpecification> s
 
 void Zenith_Vulkan_Shader::Initialise(const std::string& strVertex, const std::string& strFragment, const std::string&, const std::string& strDomain, const std::string& strHull)
 {
-#ifdef ZENITH_TOOLS
+#if 1//def ZENITH_TOOLS
 	// Use runtime compilation when tools are enabled and Slang compiler is available
 	// This enables shader hot reloading during development
 	if (Flux_SlangCompiler::IsInitialised() && strDomain.empty() && strHull.empty())
@@ -91,7 +91,7 @@ void Zenith_Vulkan_Shader::Initialise(const std::string& strVertex, const std::s
 
 void Zenith_Vulkan_Shader::InitialiseCompute(const std::string& strCompute)
 {
-#ifdef ZENITH_TOOLS
+#if 1//def ZENITH_TOOLS
 	// Use runtime compilation when tools are enabled and Slang compiler is available
 	if (Flux_SlangCompiler::IsInitialised())
 	{
@@ -205,7 +205,7 @@ void Zenith_Vulkan_Shader::MergeReflection(const Flux_ShaderReflection& xStageRe
 	m_xReflection.BuildLookupMap();
 }
 
-#ifdef ZENITH_TOOLS
+#if 1//def ZENITH_TOOLS
 bool Zenith_Vulkan_Shader::InitialiseFromSource(const std::string& strVertexPath, const std::string& strFragmentPath)
 {
 	if (!Flux_SlangCompiler::IsInitialised())

@@ -129,12 +129,6 @@ DEBUGVAR float dbg_fHDRTargetLuminance = 0.18f;
 DEBUGVAR float dbg_fHDRMinExposure = 0.1f;
 DEBUGVAR float dbg_fHDRMaxExposure = 10.0f;
 
-// Read-only stats
-DEBUGVAR float dbg_fHDRCurrentExposure = 1.0f;
-DEBUGVAR float dbg_fHDRAverageLuminance = 0.18f;
-DEBUGVAR float dbg_fHDRToneMappingMs = 0.0f;
-DEBUGVAR float dbg_fHDRBloomMs = 0.0f;
-
 // Track auto-exposure state transitions to ensure clean histogram on enable
 static bool s_bAutoExposureWasEnabled = false;
 
@@ -612,10 +606,6 @@ void Flux_HDR::Render(void*)
 	// Always run tone mapping - deferred shading renders to HDR target,
 	// tone mapping converts to final LDR output
 	RenderToneMapping();
-
-	// Update read-only debug stats
-	dbg_fHDRCurrentExposure = s_fCurrentExposure;
-	dbg_fHDRAverageLuminance = s_fAverageLuminance;
 }
 
 static void SubmitHistogramLabels()
@@ -895,27 +885,22 @@ float Flux_HDR::GetAverageLuminance()
 void Flux_HDR::SetAutoExposureEnabled(bool bEnabled)
 {
 	s_bAutoExposure = bEnabled;
-	dbg_bHDRAutoExposure = bEnabled;
 }
 
 void Flux_HDR::SetAdaptationSpeed(float fSpeed)
 {
 	s_fAdaptationSpeed = fSpeed;
-	dbg_fHDRAdaptationSpeed = fSpeed;
 }
 
 void Flux_HDR::SetTargetLuminance(float fLuminance)
 {
 	s_fTargetLuminance = fLuminance;
-	dbg_fHDRTargetLuminance = fLuminance;
 }
 
 void Flux_HDR::SetExposureRange(float fMin, float fMax)
 {
 	s_fMinExposure = fMin;
 	s_fMaxExposure = fMax;
-	dbg_fHDRMinExposure = fMin;
-	dbg_fHDRMaxExposure = fMax;
 }
 
 bool Flux_HDR::IsAutoExposureEnabled()
@@ -956,11 +941,6 @@ void Flux_HDR::RegisterDebugVariables()
 	Zenith_DebugVariables::AddFloat({ "Flux", "HDR", "TargetLuminance" }, dbg_fHDRTargetLuminance, 0.01f, 1.0f);
 	Zenith_DebugVariables::AddFloat({ "Flux", "HDR", "MinExposure" }, dbg_fHDRMinExposure, 0.01f, 1.0f);
 	Zenith_DebugVariables::AddFloat({ "Flux", "HDR", "MaxExposure" }, dbg_fHDRMaxExposure, 1.0f, 20.0f);
-
-	Zenith_DebugVariables::AddFloat_ReadOnly({ "Flux", "HDR", "Stats", "CurrentExposure" }, dbg_fHDRCurrentExposure);
-	Zenith_DebugVariables::AddFloat_ReadOnly({ "Flux", "HDR", "Stats", "AverageLuminance" }, dbg_fHDRAverageLuminance);
-	Zenith_DebugVariables::AddFloat_ReadOnly({ "Flux", "HDR", "Stats", "ToneMappingMs" }, dbg_fHDRToneMappingMs);
-	Zenith_DebugVariables::AddFloat_ReadOnly({ "Flux", "HDR", "Stats", "BloomMs" }, dbg_fHDRBloomMs);
 
 	Zenith_DebugVariables::AddTexture({ "Flux", "HDR", "Textures", "HDRScene" }, s_xHDRSceneTarget.m_pxSRV);
 	Zenith_DebugVariables::AddTexture({ "Flux", "HDR", "Textures", "BloomMip0" }, s_axBloomChain[0].m_pxSRV);

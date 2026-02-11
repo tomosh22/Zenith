@@ -758,7 +758,7 @@ void Flux_DynamicLights::GatherLightsFromScene()
 				float fDirLength = Zenith_Maths::Length(xDirection);
 				if (fDirLength < fDIRECTION_EPSILON)
 				{
-					Zenith_Log(LOG_CATEGORY_RENDERER, "Skipping spot light with zero-length direction (Entity %u)", uID);
+					Zenith_Log(LOG_CATEGORY_RENDERER, "Skipping spot light with zero-length direction (Entity %u)", uID.m_uIndex);
 					return;
 				}
 				xDirection /= fDirLength;  // Normalize once on CPU
@@ -792,7 +792,7 @@ void Flux_DynamicLights::GatherLightsFromScene()
 				float fDirLength = Zenith_Maths::Length(xDirection);
 				if (fDirLength < fDIRECTION_EPSILON)
 				{
-					Zenith_Log(LOG_CATEGORY_RENDERER, "Skipping directional light with zero-length direction (Entity %u)", uID);
+					Zenith_Log(LOG_CATEGORY_RENDERER, "Skipping directional light with zero-length direction (Entity %u)", uID.m_uIndex);
 					return;
 				}
 				xDirection /= fDirLength;  // Normalize once on CPU
