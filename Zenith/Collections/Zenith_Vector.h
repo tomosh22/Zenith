@@ -392,8 +392,8 @@ public:
 		void Next()
 		{
 			Zenith_Assert(m_uGeneration == m_xVec.m_uGeneration,
-				"Iterator invalidated: vector was reallocated during iteration");
-			Zenith_Assert(m_uIndex < m_xVec.GetSize(), "Iterated past end of vector");
+				"Iterator invalidated: vector was reallocated during iteration. Iterator generation: %u, Vector generation %u", m_uGeneration, m_xVec.m_uGeneration);
+			Zenith_Assert(m_uIndex < m_xVec.GetSize(), "Iterated past end of vectorof size %u", m_xVec.GetSize());
 			m_uIndex++;
 		}
 

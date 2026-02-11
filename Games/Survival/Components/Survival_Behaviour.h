@@ -156,6 +156,7 @@ public:
 		SubscribeToEvents();
 
 		// Wire menu button callback
+		bool bHasMenu = false;
 		if (m_xParentEntity.HasComponent<Zenith_UIComponent>())
 		{
 			Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
@@ -164,12 +165,21 @@ public:
 			{
 				pxPlay->SetOnClick(&OnPlayClicked, this);
 				pxPlay->SetFocused(true);
+				bHasMenu = true;
 			}
 		}
 
-		// Start in menu state
-		m_eGameState = SurvivalGameState::MAIN_MENU;
-		m_iFocusIndex = 0;
+		if (bHasMenu)
+		{
+			// Start in menu state
+			m_eGameState = SurvivalGameState::MAIN_MENU;
+			m_iFocusIndex = 0;
+		}
+		else
+		{
+			// No menu UI (gameplay scene) - start game directly
+			StartGame();
+		}
 	}
 
 	/**
@@ -711,10 +721,9 @@ private:
 	// Menu / Scene Transition
 	// ========================================================================
 
-	static void OnPlayClicked(void* pxUserData)
+	static void OnPlayClicked(void* /*pxUserData*/)
 	{
-		Survival_Behaviour* pxSelf = static_cast<Survival_Behaviour*>(pxUserData);
-		pxSelf->StartGame();
+		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 	}
 
 	void StartGame()
@@ -756,21 +765,7 @@ private:
 			m_xWorldScene = Zenith_Scene();
 		}
 
-		// Show menu, hide HUD
-		SetMenuVisible(true);
-		SetHUDVisible(false);
-
-		// Re-focus play button
-		if (m_xParentEntity.HasComponent<Zenith_UIComponent>())
-		{
-			Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
-			Zenith_UI::Zenith_UIButton* pxPlay = static_cast<Zenith_UI::Zenith_UIButton*>(xUI.FindElement("MenuPlay"));
-			if (pxPlay)
-				pxPlay->SetFocused(true);
-		}
-
-		m_iFocusIndex = 0;
-		m_eGameState = SurvivalGameState::MAIN_MENU;
+		Zenith_SceneManager::LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
 	}
 
 	void SetMenuVisible(bool bVisible)

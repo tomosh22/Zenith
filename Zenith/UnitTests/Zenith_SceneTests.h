@@ -230,7 +230,7 @@ private:
 	static void TestAsyncLoadDuringAsyncUnloadSameScene(); // Race condition: unload then load same scene
 	static void TestEntitySpawnDuringOnDestroy();          // Component OnDestroy spawns new entity
 	static void TestCallbackExceptionHandling();           // Callback throws - other callbacks still fire
-	static void TestMalformedSceneFile();                  // Invalid .zscn file handling
+	static void TestMalformedSceneFile();                  // Invalid .zscen file handling
 	static void TestMaxConcurrentAsyncLoadWarning();       // Warning at max concurrent threshold
 
 	//==========================================================================
@@ -709,4 +709,10 @@ private:
 	static void TestDisableThenEnableSameFrame();
 	static void TestEnableChildWhenParentDisabled();
 	static void TestRecursiveEnableMixedHierarchy();
+
+	//==========================================================================
+	// Cat 42: Deferred Scene Load (Unity Parity)
+	//==========================================================================
+	static void TestLoadSceneDeferredDuringUpdate();
+	static void TestLoadSceneSyncOutsideUpdate();
 };

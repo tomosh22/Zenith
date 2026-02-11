@@ -72,6 +72,7 @@ uint64_t Zenith_SceneManager::s_ulNextOperationID = 1;  // Start at 1 so 0 is in
 Zenith_Vector<Zenith_SceneManager::AsyncLoadJob*> Zenith_SceneManager::s_axAsyncJobs;
 Zenith_Vector<Zenith_SceneManager::AsyncUnloadJob*> Zenith_SceneManager::s_axAsyncUnloadJobs;
 bool Zenith_SceneManager::s_bAsyncJobsNeedSort = false;
+bool Zenith_SceneManager::s_bIsUpdating = false;
 
 // Helper: check if a Zenith_Vector<std::string> contains a given string
 static bool VectorContainsString(const Zenith_Vector<std::string>& axVec, const std::string& str)
@@ -150,7 +151,7 @@ static void AnimUpdateTask(void*, u_int uInvocationIndex, u_int uNumInvocations)
 	}
 }
 
-// Helper to extract scene name from file path (e.g., "Levels/MyScene.zscn" -> "MyScene")
+// Helper to extract scene name from file path (e.g., "Levels/MyScene.zscen" -> "MyScene")
 static std::string ExtractSceneNameFromPath(const std::string& strPath)
 {
 	size_t uLastSlash = strPath.find_last_of("/\\");
@@ -165,7 +166,7 @@ static std::string ExtractSceneNameFromPath(const std::string& strPath)
 // Handles: backslashes, ./ prefix, ../ sequences, trailing slashes
 // Canonicalizes a relative scene path for consistent path comparisons.
 // Handles: backslash->forward slash, double slashes, ./ prefix, ../ resolution, trailing slashes.
-// Note: designed for relative scene paths (e.g., "Levels/Scene.zscn"). Absolute paths are not expected.
+// Note: designed for relative scene paths (e.g., "Levels/Scene.zscen"). Absolute paths are not expected.
 static std::string CanonicalizeScenePath(const std::string& strPath)
 {
 	std::string strResult = strPath;
@@ -176,7 +177,7 @@ static std::string CanonicalizeScenePath(const std::string& strPath)
 		if (c == '\\') c = '/';
 	}
 
-	// Collapse double slashes (e.g., "Levels//Scene.zscn" -> "Levels/Scene.zscn")
+	// Collapse double slashes (e.g., "Levels//Scene.zscen" -> "Levels/Scene.zscen")
 	size_t uDoubleSlash;
 	while ((uDoubleSlash = strResult.find("//")) != std::string::npos)
 	{
@@ -492,7 +493,7 @@ Zenith_Scene Zenith_SceneManager::GetSceneByName(const std::string& strName)
 		else
 		{
 			// Unity: Also match by filename without path/extension
-			// e.g., "MyScene" matches "Levels/MyScene.zscn"
+			// e.g., "MyScene" matches "Levels/MyScene.zscen"
 			size_t uLastSlash = strSceneName.find_last_of("/\\");
 			size_t uStart = (uLastSlash == std::string::npos) ? 0 : uLastSlash + 1;
 			size_t uLastDot = strSceneName.find_last_of('.');
@@ -574,6 +575,23 @@ void Zenith_SceneManager::ClearBuildIndexRegistry()
 	Zenith_Log(LOG_CATEGORY_SCENE, "Cleared scene build index registry");
 }
 
+static const std::string s_strEmptyBuildPath;
+
+const std::string& Zenith_SceneManager::GetRegisteredScenePath(int iBuildIndex)
+{
+	const u_int uBuildIndex = static_cast<u_int>(iBuildIndex);
+	if (iBuildIndex >= 0 && uBuildIndex < s_axBuildIndexToPath.GetSize())
+	{
+		return s_axBuildIndexToPath.Get(uBuildIndex);
+	}
+	return s_strEmptyBuildPath;
+}
+
+uint32_t Zenith_SceneManager::GetBuildIndexRegistrySize()
+{
+	return s_axBuildIndexToPath.GetSize();
+}
+
 //==========================================================================
 // Scene Loading (Synchronous)
 //==========================================================================
@@ -581,6 +599,16 @@ void Zenith_SceneManager::ClearBuildIndexRegistry()
 Zenith_Scene Zenith_SceneManager::LoadScene(const std::string& strPath, Zenith_SceneLoadMode eMode)
 {
 	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "LoadScene must be called from main thread");
+
+	// Unity parity: LoadScene called during script execution (Update/FixedUpdate/callbacks)
+	// is deferred to next frame's ProcessPendingAsyncLoads, matching Unity's
+	// EarlyUpdate.UpdatePreloading behavior. This prevents use-after-free when the
+	// calling entity's scene is destroyed by SCENE_LOAD_SINGLE.
+	if (s_bIsUpdating)
+	{
+		LoadSceneAsync(strPath, eMode);
+		return Zenith_Scene::INVALID_SCENE;
+	}
 
 	// Canonicalize path for consistent detection and storage
 	std::string strCanonicalPath = CanonicalizeScenePath(strPath);
@@ -694,6 +722,15 @@ Zenith_Scene Zenith_SceneManager::LoadScene(const std::string& strPath, Zenith_S
 
 Zenith_Scene Zenith_SceneManager::LoadSceneByIndex(int iBuildIndex, Zenith_SceneLoadMode eMode)
 {
+	// Unity parity: defer to async when called during script execution
+	if (s_bIsUpdating)
+	{
+		LoadSceneAsyncByIndex(iBuildIndex, eMode);
+		Zenith_Scene xInvalid;
+		xInvalid.m_iHandle = -1;
+		return xInvalid;
+	}
+
 	const u_int uBuildIndex = static_cast<u_int>(iBuildIndex);
 	if (iBuildIndex >= 0 && uBuildIndex < s_axBuildIndexToPath.GetSize() && !s_axBuildIndexToPath.Get(uBuildIndex).empty())
 	{
@@ -2118,6 +2155,10 @@ void Zenith_SceneManager::Update(float fDt)
 	// Clean up completed operations that are no longer being polled
 	CleanupCompletedOperations();
 
+	// Mark as updating - any LoadScene/LoadSceneByIndex calls during script execution
+	// will route through LoadSceneAsync to defer to next frame (Unity parity)
+	s_bIsUpdating = true;
+
 	// Fixed timestep accumulation for FixedUpdate (50Hz by default, configurable via SetFixedTimestep)
 	// #TODO: Use scaled time when timeScale system is implemented (Unity's Time.fixedDeltaTime is affected by Time.timeScale)
 	// Clamp delta time to prevent runaway FixedUpdate loops after long freezes or breakpoints
@@ -2205,6 +2246,8 @@ void Zenith_SceneManager::Update(float fDt)
 			}
 		}
 	}
+
+	s_bIsUpdating = false;
 
 	if (g_pxAnimUpdateTask)
 	{

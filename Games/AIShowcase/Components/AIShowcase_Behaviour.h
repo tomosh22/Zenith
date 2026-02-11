@@ -137,12 +137,16 @@ public:
 		{
 			pxPlay->SetOnClick(&OnPlayClicked, this);
 			pxPlay->SetFocused(true);
+			// Start in menu state
+			m_eGameState = AIShowcaseGameState::MAIN_MENU;
+			SetMenuVisible(true);
+			SetHUDVisible(false);
 		}
-
-		// Start in menu state
-		m_eGameState = AIShowcaseGameState::MAIN_MENU;
-		SetMenuVisible(true);
-		SetHUDVisible(false);
+		else
+		{
+			// No menu UI (gameplay scene) - start game directly
+			StartGame();
+		}
 	}
 
 	void OnStart() ZENITH_FINAL override
@@ -258,10 +262,9 @@ private:
 	// Menu / State Management
 	// ========================================================================
 
-	static void OnPlayClicked(void* pxUserData)
+	static void OnPlayClicked(void* /*pxUserData*/)
 	{
-		AIShowcase_Behaviour* pxSelf = static_cast<AIShowcase_Behaviour*>(pxUserData);
-		pxSelf->StartGame();
+		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 	}
 
 	void StartGame()
@@ -287,16 +290,7 @@ private:
 	{
 		CleanupArena();
 
-		SetHUDVisible(false);
-		SetMenuVisible(true);
-
-		// Re-focus the play button
-		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
-		Zenith_UI::Zenith_UIButton* pxPlay = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuPlay");
-		if (pxPlay)
-			pxPlay->SetFocused(true);
-
-		m_eGameState = AIShowcaseGameState::MAIN_MENU;
+		Zenith_SceneManager::LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
 	}
 
 	void ResetDemo()

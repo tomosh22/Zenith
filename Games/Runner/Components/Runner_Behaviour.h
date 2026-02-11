@@ -113,17 +113,29 @@ public:
 		m_xCollectParticleMaterial = Runner::g_xCollectParticleMaterial;
 
 		// Wire menu button callback
+		bool bHasMenu = false;
 		if (m_xParentEntity.HasComponent<Zenith_UIComponent>())
 		{
 			Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
 			Zenith_UI::Zenith_UIButton* pxPlay = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuPlay");
 			if (pxPlay)
+			{
 				pxPlay->SetOnClick(&OnPlayClicked, this);
+				bHasMenu = true;
+			}
 		}
 
-		m_eGameState = RunnerGameState::MAIN_MENU;
-		SetMenuVisible(true);
-		SetHUDVisible(false);
+		if (bHasMenu)
+		{
+			m_eGameState = RunnerGameState::MAIN_MENU;
+			SetMenuVisible(true);
+			SetHUDVisible(false);
+		}
+		else
+		{
+			// No menu UI (gameplay scene) - start game directly
+			StartGame();
+		}
 	}
 
 	void OnStart() ZENITH_FINAL override
@@ -256,10 +268,9 @@ private:
 	// ========================================================================
 	// Menu Button Callbacks
 	// ========================================================================
-	static void OnPlayClicked(void* pxUserData)
+	static void OnPlayClicked(void* /*pxUserData*/)
 	{
-		Runner_Behaviour* pxSelf = static_cast<Runner_Behaviour*>(pxUserData);
-		pxSelf->StartGame();
+		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 	}
 
 	// ========================================================================
@@ -295,10 +306,7 @@ private:
 			m_xGameScene = Zenith_Scene();
 		}
 
-		m_eGameState = RunnerGameState::MAIN_MENU;
-		m_iFocusIndex = 0;
-		SetMenuVisible(true);
-		SetHUDVisible(false);
+		Zenith_SceneManager::LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
 	}
 
 	void ResetGame()

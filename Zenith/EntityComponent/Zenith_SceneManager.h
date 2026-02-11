@@ -75,10 +75,10 @@ static constexpr Zenith_SceneOperationID ZENITH_INVALID_OPERATION_ID = 0;
  *
  * Example usage:
  *   // Synchronous load
- *   Zenith_Scene xScene = Zenith_SceneManager::LoadScene("Level.zscn", SCENE_LOAD_SINGLE);
+ *   Zenith_Scene xScene = Zenith_SceneManager::LoadScene("Level.zscen", SCENE_LOAD_SINGLE);
  *
  *   // Asynchronous load with progress
- *   Zenith_SceneOperationID ulOpID = Zenith_SceneManager::LoadSceneAsync("Level.zscn");
+ *   Zenith_SceneOperationID ulOpID = Zenith_SceneManager::LoadSceneAsync("Level.zscen");
  *   Zenith_SceneOperation* pxOp = Zenith_SceneManager::GetOperation(ulOpID);
  *   if (pxOp) pxOp->SetActivationAllowed(false);  // Pause at 90%
  *
@@ -116,6 +116,7 @@ static constexpr Zenith_SceneOperationID ZENITH_INVALID_OPERATION_ID = 0;
 class Zenith_SceneManager
 {
 	friend class Zenith_SceneData;  // For lifecycle context access
+	friend class Zenith_SceneTests; // For unit test access to s_bIsUpdating
 
 public:
 	//==========================================================================
@@ -457,7 +458,7 @@ public:
 	 * reference counting (Flux_TextureManager, Flux_ModelManager, etc.).
 	 *
 	 * Example usage:
-	 *   Zenith_SceneManager::LoadScene("NewLevel.zscn", SCENE_LOAD_SINGLE);
+	 *   Zenith_SceneManager::LoadScene("NewLevel.zscen", SCENE_LOAD_SINGLE);
 	 *   Zenith_SceneManager::UnloadUnusedAssets();  // Clean up textures/models from old level
 	 */
 	static void UnloadUnusedAssets();
@@ -477,6 +478,18 @@ public:
 	 * Called when reloading project settings.
 	 */
 	static void ClearBuildIndexRegistry();
+
+	/**
+	 * Get the registered path for a build index.
+	 * Returns empty string if build index is not registered.
+	 */
+	static const std::string& GetRegisteredScenePath(int iBuildIndex);
+
+	/**
+	 * Get the total size of the build index registry (includes empty/sparse slots).
+	 * Use with GetRegisteredScenePath() to iterate all registered scenes.
+	 */
+	static uint32_t GetBuildIndexRegistrySize();
 
 	//==========================================================================
 	// Fixed Timestep Configuration
@@ -607,6 +620,26 @@ public:
 	static void SetInitialSceneLoadCallback(InitialSceneLoadFn pfnCallback);
 	static InitialSceneLoadFn GetInitialSceneLoadCallback();
 
+	/**
+	 * Reset all Flux render systems (called before scene teardown)
+	 * Must be called before UnloadScene/UnloadAllNonPersistent when doing
+	 * a full scene swap, to clear Flux system state before entity destruction.
+	 */
+	static void ResetAllRenderSystems();
+
+	/**
+	 * Mark that we're inside a frame update phase (script execution, UI callbacks, etc.)
+	 * While true, LoadScene/LoadSceneByIndex route through async to defer to next frame.
+	 * Set by SceneManager::Update internally, and by the main loop around UI update.
+	 */
+	static void SetIsUpdating(bool b) { s_bIsUpdating = b; }
+
+	/**
+	 * Unload a scene bypassing the "last scene" guard.
+	 * Used by editor backup restore where the guard would prevent cleanup.
+	 */
+	static void UnloadSceneForced(Zenith_Scene xScene);
+
 private:
 	// Internal helper for moving entities between scenes (zero-copy transfer)
 	static bool MoveEntityInternal(Zenith_Entity& xEntity, Zenith_SceneData* pxTargetData);
@@ -635,6 +668,11 @@ public:
 private:
 #endif
 	static int s_iPersistentSceneHandle;
+
+	// True while inside Update() - LoadScene/LoadSceneByIndex route through async when set
+	// (Unity parity: LoadScene is deferred during script execution)
+	static bool s_bIsUpdating;
+
 	static Zenith_Vector<Zenith_SceneOperation*> s_axActiveOperations;
 	static float s_fFixedTimeAccumulator;
 	static float s_fFixedTimestep;  // Configurable fixed timestep (default 0.02 = 50Hz, matching Unity)
@@ -723,7 +761,6 @@ private:
 	static void PopLifecycleContext(const std::string& strCanonicalPath);
 	static void ProcessPendingUnloads();
 	static void UnloadAllNonPersistent();
-	static void ResetAllRenderSystems();
 	static uint32_t CountScenesBeingAsyncUnloaded();
 	static void CleanupCompletedOperations();
 	static void FireSceneLoadedCallbacks(Zenith_Scene xScene, Zenith_SceneLoadMode eMode);
@@ -802,8 +839,6 @@ private:
 	static bool CanUnloadScene(Zenith_Scene xScene);
 	// Shared unload logic (callbacks, destruction, active scene reselection)
 	static void UnloadSceneInternal(Zenith_Scene xScene);
-	// Unloads a scene without the "last scene" guard - for use by MergeScenes where source is empty
-	static void UnloadSceneForced(Zenith_Scene xScene);
 
 	static void CancelAllPendingAsyncLoads(AsyncLoadJob* pxExclude = nullptr);
 	static void ProcessPendingAsyncLoads();

@@ -10,6 +10,7 @@
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
 #include "EntityComponent/Zenith_EventSystem.h"
 #include "EntityComponent/Zenith_Query.h"
+#include "FileAccess/Zenith_FileAccess.h"
 #include "Core/Zenith_Core.h"
 #include <filesystem>
 #include <chrono>
@@ -707,6 +708,24 @@ void Zenith_SceneTests::RunAllTests()
 	TestEnableChildWhenParentDisabled();
 	TestRecursiveEnableMixedHierarchy();
 
+	// Cat 42: Deferred Scene Load (Unity Parity)
+	TestLoadSceneDeferredDuringUpdate();
+	TestLoadSceneSyncOutsideUpdate();
+
+	// Clean up any scene state left over from tests so it doesn't leak into the game.
+	// We can't unload the last scene (engine prevents it), so reset the active scene's
+	// data and clear its test name/path. Project_LoadInitialScene will populate it.
+	{
+		Zenith_Scene xCleanupScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxCleanupData = Zenith_SceneManager::GetSceneData(xCleanupScene);
+		if (pxCleanupData)
+		{
+			pxCleanupData->Reset();
+			pxCleanupData->m_strName.clear();
+			pxCleanupData->m_strPath.clear();
+		}
+	}
+
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "=== Scene Management Tests Complete ===");
 }
 
@@ -989,7 +1008,7 @@ void Zenith_SceneTests::TestGetSceneByPath()
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestGetSceneByPath...");
 
 	// Create, save, and reload a test scene (LoadFromFile sets the path)
-	const std::string strPath = "test_path_query.zscn";
+	const std::string strPath = "test_path_query" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strPath);
 
 	// Load the scene (this sets m_strPath via LoadFromFile)
@@ -1002,7 +1021,7 @@ void Zenith_SceneTests::TestGetSceneByPath()
 	Zenith_Assert(xFound == xTestScene, "Found scene should match test scene");
 
 	// Query non-existent path
-	Zenith_Scene xNotFound = Zenith_SceneManager::GetSceneByPath("nonexistent/path.zscn");
+	Zenith_Scene xNotFound = Zenith_SceneManager::GetSceneByPath("nonexistent/path" ZENITH_SCENE_EXT);
 	Zenith_Assert(!xNotFound.IsValid(), "Non-existent path should return invalid");
 
 	// Clean up
@@ -1020,7 +1039,7 @@ void Zenith_SceneTests::TestLoadSceneSingle()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestLoadSceneSingle...");
 
-	const std::string strPath = "test_load_single.zscn";
+	const std::string strPath = "test_load_single" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strPath);
 
 	// Load in single mode
@@ -1038,7 +1057,7 @@ void Zenith_SceneTests::TestLoadSceneAdditive()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestLoadSceneAdditive...");
 
-	const std::string strPath = "test_load_additive.zscn";
+	const std::string strPath = "test_load_additive" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strPath, "AdditiveEntity");
 
 	uint32_t uCountBefore = Zenith_SceneManager::GetLoadedSceneCount();
@@ -1062,7 +1081,7 @@ void Zenith_SceneTests::TestLoadSceneReturnsHandle()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestLoadSceneReturnsHandle...");
 
-	const std::string strPath = "test_load_handle.zscn";
+	const std::string strPath = "test_load_handle" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strPath);
 
 	// Load and verify handle
@@ -1251,7 +1270,7 @@ void Zenith_SceneTests::TestPersistentEntitySurvivesLoad()
 	Zenith_EntityID xID = xEntity.GetEntityID();
 
 	// Create and save a test scene
-	const std::string strPath = "test_persist_survives.zscn";
+	const std::string strPath = "test_persist_survives" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strPath);
 
 	// Load scene in single mode (should unload non-persistent scenes)
@@ -1309,7 +1328,7 @@ void Zenith_SceneTests::TestSceneLoadedCallbackFires()
 	);
 
 	// Create a test scene file
-	const std::string strPath = "test_callback.zscn";
+	const std::string strPath = "test_callback" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strPath);
 
 	// Reset flag
@@ -1440,7 +1459,7 @@ void Zenith_SceneTests::TestSceneLoadUnloadCycle()
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestSceneLoadUnloadCycle...");
 
 	// Create and save a test scene
-	const std::string strPath = "test_cycle.zscn";
+	const std::string strPath = "test_cycle" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strPath, "CycleEntity");
 
 	// Perform multiple load/unload cycles
@@ -1505,7 +1524,7 @@ void Zenith_SceneTests::TestLoadSceneAsyncReturnsOperation()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestLoadSceneAsyncReturnsOperation...");
 
-	const std::string strPath = "test_async_op.zscn";
+	const std::string strPath = "test_async_op" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strPath);
 
 	Zenith_SceneOperationID ulOpID = Zenith_SceneManager::LoadSceneAsync(strPath, SCENE_LOAD_ADDITIVE);
@@ -1527,7 +1546,7 @@ void Zenith_SceneTests::TestLoadSceneAsyncProgress()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestLoadSceneAsyncProgress...");
 
-	const std::string strPath = "test_async_progress.zscn";
+	const std::string strPath = "test_async_progress" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strPath);
 
 	Zenith_SceneOperationID ulOpID = Zenith_SceneManager::LoadSceneAsync(strPath, SCENE_LOAD_ADDITIVE);
@@ -1560,7 +1579,7 @@ void Zenith_SceneTests::TestLoadSceneAsyncIsComplete()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestLoadSceneAsyncIsComplete...");
 
-	const std::string strPath = "test_async_complete.zscn";
+	const std::string strPath = "test_async_complete" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strPath);
 
 	Zenith_SceneOperationID ulOpID = Zenith_SceneManager::LoadSceneAsync(strPath, SCENE_LOAD_ADDITIVE);
@@ -1586,7 +1605,7 @@ void Zenith_SceneTests::TestLoadSceneAsyncActivationPause()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestLoadSceneAsyncActivationPause...");
 
-	const std::string strPath = "test_async_pause.zscn";
+	const std::string strPath = "test_async_pause" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strPath);
 
 	Zenith_SceneOperationID ulOpID = Zenith_SceneManager::LoadSceneAsync(strPath, SCENE_LOAD_ADDITIVE);
@@ -1629,7 +1648,7 @@ void Zenith_SceneTests::TestLoadSceneAsyncActivationResume()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestLoadSceneAsyncActivationResume...");
 
-	const std::string strPath = "test_async_resume.zscn";
+	const std::string strPath = "test_async_resume" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strPath);
 
 	Zenith_SceneOperationID ulOpID = Zenith_SceneManager::LoadSceneAsync(strPath, SCENE_LOAD_ADDITIVE);
@@ -1667,7 +1686,7 @@ void Zenith_SceneTests::TestLoadSceneAsyncCompletionCallback()
 	static bool s_bCallbackFired = false;
 	static Zenith_Scene s_xResultScene;
 
-	const std::string strPath = "test_async_callback.zscn";
+	const std::string strPath = "test_async_callback" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strPath);
 
 	s_bCallbackFired = false;
@@ -1697,7 +1716,7 @@ void Zenith_SceneTests::TestLoadSceneAsyncGetResultScene()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestLoadSceneAsyncGetResultScene...");
 
-	const std::string strPath = "test_async_result.zscn";
+	const std::string strPath = "test_async_result" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strPath);
 
 	Zenith_SceneOperationID ulOpID = Zenith_SceneManager::LoadSceneAsync(strPath, SCENE_LOAD_ADDITIVE);
@@ -1722,8 +1741,8 @@ void Zenith_SceneTests::TestLoadSceneAsyncPriority()
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestLoadSceneAsyncPriority...");
 
 	// Create two test scene files
-	const std::string strPath1 = "test_async_priority1.zscn";
-	const std::string strPath2 = "test_async_priority2.zscn";
+	const std::string strPath1 = "test_async_priority1" ZENITH_SCENE_EXT;
+	const std::string strPath2 = "test_async_priority2" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strPath1, "Entity1");
 	CreateTestSceneFile(strPath2, "Entity2");
 
@@ -1762,7 +1781,7 @@ void Zenith_SceneTests::TestLoadSceneAsyncByIndexValid()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestLoadSceneAsyncByIndexValid...");
 
-	const std::string strPath = "test_async_index.zscn";
+	const std::string strPath = "test_async_index" ZENITH_SCENE_EXT;
 	const int iBuildIndex = 999;
 
 	CreateTestSceneFile(strPath);
@@ -1789,9 +1808,9 @@ void Zenith_SceneTests::TestLoadSceneAsyncMultiple()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestLoadSceneAsyncMultiple...");
 
-	const std::string strPath1 = "test_async_multi1.zscn";
-	const std::string strPath2 = "test_async_multi2.zscn";
-	const std::string strPath3 = "test_async_multi3.zscn";
+	const std::string strPath1 = "test_async_multi1" ZENITH_SCENE_EXT;
+	const std::string strPath2 = "test_async_multi2" ZENITH_SCENE_EXT;
+	const std::string strPath3 = "test_async_multi3" ZENITH_SCENE_EXT;
 
 	CreateTestSceneFile(strPath1, "Multi1");
 	CreateTestSceneFile(strPath2, "Multi2");
@@ -1840,7 +1859,7 @@ void Zenith_SceneTests::TestLoadSceneAsyncSingleMode()
 	Zenith_Scene xExisting = Zenith_SceneManager::CreateEmptyScene("ExistingScene");
 	uint32_t uCountBefore = Zenith_SceneManager::GetLoadedSceneCount();
 
-	const std::string strPath = "test_async_single.zscn";
+	const std::string strPath = "test_async_single" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strPath);
 
 	// Async load in single mode
@@ -1866,7 +1885,7 @@ void Zenith_SceneTests::TestLoadSceneAsyncAdditiveMode()
 	Zenith_Scene xExisting = Zenith_SceneManager::CreateEmptyScene("AdditiveExisting");
 	uint32_t uCountBefore = Zenith_SceneManager::GetLoadedSceneCount();
 
-	const std::string strPath = "test_async_additive.zscn";
+	const std::string strPath = "test_async_additive" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strPath);
 
 	// Async load in additive mode
@@ -2036,7 +2055,7 @@ void Zenith_SceneTests::TestRegisterSceneBuildIndex()
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestRegisterSceneBuildIndex...");
 
 	const int iBuildIndex = 42;
-	const std::string strPath = "test_build_index.zscn";
+	const std::string strPath = "test_build_index" ZENITH_SCENE_EXT;
 
 	Zenith_SceneManager::RegisterSceneBuildIndex(iBuildIndex, strPath);
 
@@ -2055,7 +2074,7 @@ void Zenith_SceneTests::TestGetSceneByBuildIndex()
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestGetSceneByBuildIndex...");
 
 	const int iBuildIndex = 100;
-	const std::string strPath = "test_get_by_index.zscn";
+	const std::string strPath = "test_get_by_index" ZENITH_SCENE_EXT;
 
 	CreateTestSceneFile(strPath);
 	Zenith_SceneManager::RegisterSceneBuildIndex(iBuildIndex, strPath);
@@ -2093,7 +2112,7 @@ void Zenith_SceneTests::TestLoadSceneByIndexSync()
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestLoadSceneByIndexSync...");
 
 	const int iBuildIndex = 101;
-	const std::string strPath = "test_load_by_index.zscn";
+	const std::string strPath = "test_load_by_index" ZENITH_SCENE_EXT;
 
 	CreateTestSceneFile(strPath);
 	Zenith_SceneManager::RegisterSceneBuildIndex(iBuildIndex, strPath);
@@ -2117,9 +2136,9 @@ void Zenith_SceneTests::TestGetBuildSceneCount()
 	uint32_t uInitialCount = Zenith_SceneManager::GetBuildSceneCount();
 	Zenith_Assert(uInitialCount == 0, "Initial build count should be 0 after clear");
 
-	Zenith_SceneManager::RegisterSceneBuildIndex(1, "scene1.zscn");
-	Zenith_SceneManager::RegisterSceneBuildIndex(2, "scene2.zscn");
-	Zenith_SceneManager::RegisterSceneBuildIndex(3, "scene3.zscn");
+	Zenith_SceneManager::RegisterSceneBuildIndex(1, "scene1" ZENITH_SCENE_EXT);
+	Zenith_SceneManager::RegisterSceneBuildIndex(2, "scene2" ZENITH_SCENE_EXT);
+	Zenith_SceneManager::RegisterSceneBuildIndex(3, "scene3" ZENITH_SCENE_EXT);
 
 	uint32_t uCount = Zenith_SceneManager::GetBuildSceneCount();
 	Zenith_Assert(uCount == 3, "Build count should be 3 after registering 3 scenes");
@@ -2134,8 +2153,8 @@ void Zenith_SceneTests::TestClearBuildIndexRegistry()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestClearBuildIndexRegistry...");
 
-	Zenith_SceneManager::RegisterSceneBuildIndex(1, "scene1.zscn");
-	Zenith_SceneManager::RegisterSceneBuildIndex(2, "scene2.zscn");
+	Zenith_SceneManager::RegisterSceneBuildIndex(1, "scene1" ZENITH_SCENE_EXT);
+	Zenith_SceneManager::RegisterSceneBuildIndex(2, "scene2" ZENITH_SCENE_EXT);
 
 	Zenith_SceneManager::ClearBuildIndexRegistry();
 
@@ -2377,7 +2396,7 @@ void Zenith_SceneTests::TestSceneLoadStartedCallbackFires()
 		}
 	);
 
-	const std::string strPath = "test_load_started.zscn";
+	const std::string strPath = "test_load_started" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strPath);
 
 	s_bCallbackFired = false;
@@ -2441,7 +2460,7 @@ void Zenith_SceneTests::TestCallbackUnregister()
 		}
 	);
 
-	const std::string strPath = "test_unregister.zscn";
+	const std::string strPath = "test_unregister" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strPath);
 
 	s_iCallCount = 0;
@@ -2479,7 +2498,7 @@ void Zenith_SceneTests::TestCallbackUnregisterDuringCallback()
 		}
 	);
 
-	const std::string strPath = "test_unregister_during.zscn";
+	const std::string strPath = "test_unregister_during" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strPath);
 
 	s_bCallbackFired = false;
@@ -2518,7 +2537,7 @@ void Zenith_SceneTests::TestMultipleCallbacksFireInOrder()
 		}
 	);
 
-	const std::string strPath = "test_multi_callback.zscn";
+	const std::string strPath = "test_multi_callback" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strPath);
 
 	s_axCallOrder.clear();
@@ -2823,7 +2842,7 @@ void Zenith_SceneTests::TestGetSceneByNameFilenameMatch()
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestGetSceneByNameFilenameMatch...");
 
 	// Create scene file with path
-	const std::string strPath = "levels/test_filename_match.zscn";
+	const std::string strPath = "levels/test_filename_match" ZENITH_SCENE_EXT;
 	const std::string strFilename = "test_filename_match";
 
 	// Create directory if needed
@@ -2914,7 +2933,7 @@ void Zenith_SceneTests::TestInvalidScenePropertyAccess()
 	Zenith_Assert(!xInvalid.WasLoadedAdditively(), "INVALID_SCENE WasLoadedAdditively should return false");
 
 	// Test stale handle (after unload)
-	const std::string strPath = "test_stale_access.zscn";
+	const std::string strPath = "test_stale_access" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strPath);
 
 	Zenith_Scene xScene = Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_ADDITIVE);
@@ -2938,7 +2957,7 @@ void Zenith_SceneTests::TestOperationIdAfterCleanup()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestOperationIdAfterCleanup...");
 
-	const std::string strPath = "test_op_cleanup.zscn";
+	const std::string strPath = "test_op_cleanup" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strPath);
 
 	// Start async load
@@ -3072,7 +3091,7 @@ void Zenith_SceneTests::TestWasLoadedAdditively()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestWasLoadedAdditively...");
 
-	const std::string strPath = "test_additive_load.zscn";
+	const std::string strPath = "test_additive_load" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strPath);
 
 	// Load scene in SINGLE mode - should not have been loaded additively
@@ -3081,7 +3100,7 @@ void Zenith_SceneTests::TestWasLoadedAdditively()
 	Zenith_Assert(!xSingleScene.WasLoadedAdditively(), "Scene loaded with SINGLE mode should not have been loaded additively");
 
 	// Create test file for additive load
-	const std::string strPath2 = "test_additive_load2.zscn";
+	const std::string strPath2 = "test_additive_load2" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strPath2);
 
 	// Load scene in ADDITIVE mode - should have been loaded additively
@@ -3101,7 +3120,7 @@ void Zenith_SceneTests::TestAsyncLoadCircularDetection()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAsyncLoadCircularDetection...");
 
-	const std::string strPath = "test_circular_load.zscn";
+	const std::string strPath = "test_circular_load" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strPath);
 
 	// Start first async load
@@ -3384,7 +3403,7 @@ void Zenith_SceneTests::TestSceneLoadedCallbackOrder()
 	Zenith_SceneManager::CallbackHandle hCallback3 = Zenith_SceneManager::RegisterSceneLoadedCallback(pfnCallback3);
 
 	// Create a test scene file and load it
-	const std::string strPath = "test_callback_order.zscn";
+	const std::string strPath = "test_callback_order" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strPath);
 
 	Zenith_Scene xScene = Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_ADDITIVE);
@@ -3418,9 +3437,9 @@ void Zenith_SceneTests::TestAsyncLoadPriorityOrdering()
 	// Since file I/O timing is non-deterministic, we test that priority affects
 	// the order when all loads are ready to activate.
 
-	const std::string strPath1 = "test_priority1.zscn";
-	const std::string strPath2 = "test_priority2.zscn";
-	const std::string strPath3 = "test_priority3.zscn";
+	const std::string strPath1 = "test_priority1" ZENITH_SCENE_EXT;
+	const std::string strPath2 = "test_priority2" ZENITH_SCENE_EXT;
+	const std::string strPath3 = "test_priority3" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strPath1, "Priority1");
 	CreateTestSceneFile(strPath2, "Priority2");
 	CreateTestSceneFile(strPath3, "Priority3");
@@ -3488,7 +3507,7 @@ void Zenith_SceneTests::TestAsyncLoadCancellation()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAsyncLoadCancellation...");
 
-	const std::string strPath = "test_cancellation.zscn";
+	const std::string strPath = "test_cancellation" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strPath, "CancellationTest");
 
 	// Start an async load
@@ -3598,7 +3617,7 @@ void Zenith_SceneTests::TestCircularAsyncLoadFromLifecycle()
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestCircularAsyncLoadFromLifecycle...");
 
 	// Create a scene file so LoadScene can find it
-	const std::string strTestPath = "test_circular_lifecycle.zscn";
+	const std::string strTestPath = "test_circular_lifecycle" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strTestPath, "CircularTestEntity");
 
 	// Test circular detection via s_axCurrentlyLoadingPaths:
@@ -3617,7 +3636,7 @@ void Zenith_SceneTests::TestCircularAsyncLoadFromLifecycle()
 			{
 				s_bAttempted = true;
 				// Re-entrant load of the same scene - should be detected as circular
-				s_xCircularResult = Zenith_SceneManager::LoadScene("test_circular_lifecycle.zscn", SCENE_LOAD_ADDITIVE);
+				s_xCircularResult = Zenith_SceneManager::LoadScene("test_circular_lifecycle" ZENITH_SCENE_EXT, SCENE_LOAD_ADDITIVE);
 			}
 		}
 	);
@@ -3640,7 +3659,7 @@ void Zenith_SceneTests::TestAsyncLoadDuringAsyncUnloadSameScene()
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAsyncLoadDuringAsyncUnloadSameScene...");
 
 	// Create a test scene file
-	const std::string strTestPath = "test_load_during_unload.zscn";
+	const std::string strTestPath = "test_load_during_unload" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strTestPath, "TestEntity");
 
 	// Load the scene synchronously first
@@ -3738,7 +3757,7 @@ void Zenith_SceneTests::TestCallbackExceptionHandling()
 	auto ulHandle2 = Zenith_SceneManager::RegisterSceneLoadedCallback(pfnCallback2);
 
 	// Load a scene to trigger callbacks
-	const std::string strTestPath = "test_callback_exception.zscn";
+	const std::string strTestPath = "test_callback_exception" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strTestPath, "TestEntity");
 
 	ls_bCallback1Fired = false;
@@ -3764,7 +3783,7 @@ void Zenith_SceneTests::TestMalformedSceneFile()
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestMalformedSceneFile...");
 
 	// Create a malformed scene file (just random bytes)
-	const std::string strTestPath = "test_malformed.zscn";
+	const std::string strTestPath = "test_malformed" ZENITH_SCENE_EXT;
 	{
 		std::ofstream xFile(strTestPath, std::ios::binary);
 		const char acGarbage[] = { 'B', 'A', 'D', 'D', 'A', 'T', 'A' };
@@ -3798,9 +3817,9 @@ void Zenith_SceneTests::TestMaxConcurrentAsyncLoadWarning()
 	Zenith_SceneManager::SetMaxConcurrentAsyncLoads(2);
 
 	// Create multiple test scene files
-	const std::string strTestPath1 = "test_concurrent_1.zscn";
-	const std::string strTestPath2 = "test_concurrent_2.zscn";
-	const std::string strTestPath3 = "test_concurrent_3.zscn";
+	const std::string strTestPath1 = "test_concurrent_1" ZENITH_SCENE_EXT;
+	const std::string strTestPath2 = "test_concurrent_2" ZENITH_SCENE_EXT;
+	const std::string strTestPath3 = "test_concurrent_3" ZENITH_SCENE_EXT;
 
 	CreateTestSceneFile(strTestPath1, "Entity1");
 	CreateTestSceneFile(strTestPath2, "Entity2");
@@ -4966,7 +4985,7 @@ void Zenith_SceneTests::TestAsyncLoadIsLoadedFalseBeforeActivation()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAsyncLoadIsLoadedFalseBeforeActivation...");
 
-	const std::string strPath = "test_isloaded_activation.zscn";
+	const std::string strPath = "test_isloaded_activation" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strPath);
 
 	// Start async load with activation paused
@@ -5101,7 +5120,7 @@ void Zenith_SceneTests::TestScenePathCanonicalization()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestScenePathCanonicalization...");
 
-	std::string strPath = "test_canon.zscn";
+	std::string strPath = "test_canon" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strPath);
 
 	// Load with canonical path
@@ -5109,7 +5128,7 @@ void Zenith_SceneTests::TestScenePathCanonicalization()
 	Zenith_Assert(xScene.IsValid(), "Scene should load with canonical path");
 
 	// Query with backslashes - should find the same scene
-	Zenith_Scene xFound1 = Zenith_SceneManager::GetSceneByPath("test_canon.zscn");
+	Zenith_Scene xFound1 = Zenith_SceneManager::GetSceneByPath("test_canon" ZENITH_SCENE_EXT);
 	Zenith_Assert(xFound1.IsValid(), "GetSceneByPath should find scene with forward slashes");
 
 	Zenith_SceneManager::UnloadScene(xScene);
@@ -5175,7 +5194,7 @@ void Zenith_SceneTests::TestLoadSceneNonExistentFile()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestLoadSceneNonExistentFile...");
 
-	Zenith_Scene xScene = Zenith_SceneManager::LoadScene("nonexistent_scene_12345.zscn", SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xScene = Zenith_SceneManager::LoadScene("nonexistent_scene_12345" ZENITH_SCENE_EXT, SCENE_LOAD_ADDITIVE);
 	Zenith_Assert(!xScene.IsValid(), "LoadScene with non-existent file should return invalid scene");
 
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestLoadSceneNonExistentFile passed");
@@ -5185,7 +5204,7 @@ void Zenith_SceneTests::TestLoadSceneAsyncNonExistentFile()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestLoadSceneAsyncNonExistentFile...");
 
-	Zenith_SceneOperationID ulOpID = Zenith_SceneManager::LoadSceneAsync("nonexistent_async_12345.zscn", SCENE_LOAD_ADDITIVE);
+	Zenith_SceneOperationID ulOpID = Zenith_SceneManager::LoadSceneAsync("nonexistent_async_12345" ZENITH_SCENE_EXT, SCENE_LOAD_ADDITIVE);
 	Zenith_Assert(ulOpID != ZENITH_INVALID_OPERATION_ID, "Should return valid operation ID even for missing file");
 
 	Zenith_SceneOperation* pxOp = Zenith_SceneManager::GetOperation(ulOpID);
@@ -6248,7 +6267,7 @@ void Zenith_SceneTests::TestSyncLoadCancelsAsyncLoads()
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestSyncLoadCancelsAsyncLoads...");
 
 	// Create a test file to load
-	std::string strPath = "unit_test_sync_cancel.zscn";
+	std::string strPath = "unit_test_sync_cancel" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strPath);
 
 	// Start an async load
@@ -6271,7 +6290,7 @@ void Zenith_SceneTests::TestAsyncLoadProgressMonotonic()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAsyncLoadProgressMonotonic...");
 
-	std::string strPath = "unit_test_progress.zscn";
+	std::string strPath = "unit_test_progress" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strPath);
 
 	Zenith_SceneOperationID ulOpID = Zenith_SceneManager::LoadSceneAsync(strPath, SCENE_LOAD_ADDITIVE);
@@ -6307,7 +6326,7 @@ void Zenith_SceneTests::TestAsyncLoadSameFileTwice()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAsyncLoadSameFileTwice...");
 
-	std::string strPath = "unit_test_twice.zscn";
+	std::string strPath = "unit_test_twice" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strPath);
 
 	// Two additive async loads of the same file
@@ -6343,7 +6362,7 @@ void Zenith_SceneTests::TestAsyncUnloadThenReload()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAsyncUnloadThenReload...");
 
-	std::string strPath = "unit_test_reload.zscn";
+	std::string strPath = "unit_test_reload" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strPath);
 
 	// Load scene
@@ -6368,7 +6387,7 @@ void Zenith_SceneTests::TestOperationCleanupAfter60Frames()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestOperationCleanupAfter60Frames...");
 
-	std::string strPath = "unit_test_cleanup.zscn";
+	std::string strPath = "unit_test_cleanup" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strPath);
 
 	Zenith_SceneOperationID ulOpID = Zenith_SceneManager::LoadSceneAsync(strPath, SCENE_LOAD_ADDITIVE);
@@ -6395,7 +6414,7 @@ void Zenith_SceneTests::TestIsOperationValidAfterCleanup()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestIsOperationValidAfterCleanup...");
 
-	std::string strPath = "unit_test_opvalid.zscn";
+	std::string strPath = "unit_test_opvalid" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strPath);
 
 	Zenith_SceneOperationID ulOpID = Zenith_SceneManager::LoadSceneAsync(strPath, SCENE_LOAD_ADDITIVE);
@@ -6421,7 +6440,7 @@ void Zenith_SceneTests::TestAsyncLoadSingleModeCleansUp()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAsyncLoadSingleModeCleansUp...");
 
-	std::string strPath = "unit_test_single_async.zscn";
+	std::string strPath = "unit_test_single_async" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strPath);
 
 	// Create extra scene that should be unloaded by SINGLE mode
@@ -6446,7 +6465,7 @@ void Zenith_SceneTests::TestCancelAsyncLoadBeforeActivation()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestCancelAsyncLoadBeforeActivation...");
 
-	std::string strPath = "unit_test_cancel.zscn";
+	std::string strPath = "unit_test_cancel" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strPath);
 
 	Zenith_SceneOperationID ulOpID = Zenith_SceneManager::LoadSceneAsync(strPath, SCENE_LOAD_ADDITIVE);
@@ -6485,8 +6504,8 @@ void Zenith_SceneTests::TestSceneLoadedCallbackLoadsAnotherScene()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestSceneLoadedCallbackLoadsAnotherScene...");
 
-	std::string strPath1 = "unit_test_reentrant1.zscn";
-	std::string strPath2 = "unit_test_reentrant2.zscn";
+	std::string strPath1 = "unit_test_reentrant1" ZENITH_SCENE_EXT;
+	std::string strPath2 = "unit_test_reentrant2" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strPath1);
 	CreateTestSceneFile(strPath2);
 
@@ -6522,7 +6541,7 @@ void Zenith_SceneTests::TestSceneUnloadedCallbackLoadsScene()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestSceneUnloadedCallbackLoadsScene...");
 
-	std::string strPath = "unit_test_unload_load.zscn";
+	std::string strPath = "unit_test_unload_load" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strPath);
 
 	static bool s_bCallbackFired = false;
@@ -6618,7 +6637,7 @@ void Zenith_SceneTests::TestRegisterCallbackDuringDispatch()
 
 	Zenith_SceneManager::CallbackHandle ulFirstHandle = Zenith_SceneManager::RegisterSceneLoadedCallback(pfnFirst);
 
-	std::string strPath = "unit_test_cb_dispatch.zscn";
+	std::string strPath = "unit_test_cb_dispatch" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strPath);
 	Zenith_Scene xScene = Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_ADDITIVE);
 
@@ -6643,7 +6662,7 @@ void Zenith_SceneTests::TestSingleModeCallbackOrder()
 
 	// Create test file BEFORE registering callbacks to avoid
 	// CreateTestSceneFile's internal UnloadScene triggering our callbacks
-	std::string strPath = "unit_test_cb_order.zscn";
+	std::string strPath = "unit_test_cb_order" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strPath);
 
 	auto pfnLoadStarted = [](const std::string& strPath) { s_axCallOrder.PushBack("loadStarted"); };
@@ -6690,7 +6709,7 @@ void Zenith_SceneTests::TestMultipleCallbacksSameType()
 	auto h2 = Zenith_SceneManager::RegisterSceneLoadedCallback(pfn2);
 	auto h3 = Zenith_SceneManager::RegisterSceneLoadedCallback(pfn3);
 
-	std::string strPath = "unit_test_multi_cb.zscn";
+	std::string strPath = "unit_test_multi_cb" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strPath);
 	Zenith_Scene xScene = Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_ADDITIVE);
 
@@ -6808,7 +6827,7 @@ void Zenith_SceneTests::TestPersistentSceneSurvivesSingleLoad()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestPersistentSceneSurvivesSingleLoad...");
 
-	std::string strPath = "unit_test_persist_survive.zscn";
+	std::string strPath = "unit_test_persist_survive" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strPath);
 
 	// Create entity and mark persistent
@@ -6835,7 +6854,7 @@ void Zenith_SceneTests::TestMultipleEntitiesPersistent()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestMultipleEntitiesPersistent...");
 
-	std::string strPath = "unit_test_multi_persist.zscn";
+	std::string strPath = "unit_test_multi_persist" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strPath);
 
 	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("MultiPersist");
@@ -7025,7 +7044,7 @@ void Zenith_SceneTests::TestFixedUpdateAccumulatorResetOnSingleLoad()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestFixedUpdateAccumulatorResetOnSingleLoad...");
 
-	std::string strPath = "unit_test_fixed_reset.zscn";
+	std::string strPath = "unit_test_fixed_reset" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strPath);
 
 	// Pump some frames to build up accumulator
@@ -7371,7 +7390,7 @@ void Zenith_SceneTests::TestSaveLoadEntityCount()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestSaveLoadEntityCount...");
 
-	std::string strPath = "unit_test_save_count.zscn";
+	std::string strPath = "unit_test_save_count" ZENITH_SCENE_EXT;
 
 	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("SaveCount");
 	Zenith_SceneData* pxData = Zenith_SceneManager::GetSceneData(xScene);
@@ -7403,7 +7422,7 @@ void Zenith_SceneTests::TestSaveLoadHierarchy()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestSaveLoadHierarchy...");
 
-	std::string strPath = "unit_test_save_hier.zscn";
+	std::string strPath = "unit_test_save_hier" ZENITH_SCENE_EXT;
 
 	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("SaveHierarchy");
 	Zenith_SceneData* pxData = Zenith_SceneManager::GetSceneData(xScene);
@@ -7438,7 +7457,7 @@ void Zenith_SceneTests::TestSaveLoadTransformData()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestSaveLoadTransformData...");
 
-	std::string strPath = "unit_test_save_transform.zscn";
+	std::string strPath = "unit_test_save_transform" ZENITH_SCENE_EXT;
 
 	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("SaveTransform");
 	Zenith_SceneData* pxData = Zenith_SceneManager::GetSceneData(xScene);
@@ -7479,7 +7498,7 @@ void Zenith_SceneTests::TestSaveLoadMainCamera()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestSaveLoadMainCamera...");
 
-	std::string strPath = "unit_test_save_camera.zscn";
+	std::string strPath = "unit_test_save_camera" ZENITH_SCENE_EXT;
 
 	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("SaveCamera");
 	Zenith_SceneData* pxData = Zenith_SceneManager::GetSceneData(xScene);
@@ -7511,7 +7530,7 @@ void Zenith_SceneTests::TestSaveLoadTransientExcluded()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestSaveLoadTransientExcluded...");
 
-	std::string strPath = "unit_test_save_transient.zscn";
+	std::string strPath = "unit_test_save_transient" ZENITH_SCENE_EXT;
 
 	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("SaveTransient");
 	Zenith_SceneData* pxData = Zenith_SceneManager::GetSceneData(xScene);
@@ -7543,7 +7562,7 @@ void Zenith_SceneTests::TestSaveLoadEmptyScene()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestSaveLoadEmptyScene...");
 
-	std::string strPath = "unit_test_save_empty.zscn";
+	std::string strPath = "unit_test_save_empty" ZENITH_SCENE_EXT;
 
 	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("SaveEmpty");
 	Zenith_SceneData* pxData = Zenith_SceneManager::GetSceneData(xScene);
@@ -8851,7 +8870,7 @@ void Zenith_SceneTests::TestTransientEntityNotSaved()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestTransientEntityNotSaved...");
 
-	const std::string strPath = "test_transient_save.zscn";
+	const std::string strPath = "test_transient_save" ZENITH_SCENE_EXT;
 
 	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("TransientSave");
 	Zenith_SceneData* pxData = Zenith_SceneManager::GetSceneData(xScene);
@@ -8946,7 +8965,7 @@ void Zenith_SceneTests::TestMainCameraPreservedOnSceneSave()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestMainCameraPreservedOnSceneSave...");
 
-	const std::string strPath = "test_camera_save.zscn";
+	const std::string strPath = "test_camera_save" ZENITH_SCENE_EXT;
 
 	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("CamSave");
 	Zenith_SceneData* pxData = Zenith_SceneManager::GetSceneData(xScene);
@@ -9103,7 +9122,7 @@ void Zenith_SceneTests::TestSaveLoadDisabledEntity()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestSaveLoadDisabledEntity...");
 
-	const std::string strPath = "test_disabled_save.zscn";
+	const std::string strPath = "test_disabled_save" ZENITH_SCENE_EXT;
 
 	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("DisabledSave");
 	Zenith_SceneData* pxData = Zenith_SceneManager::GetSceneData(xScene);
@@ -9136,7 +9155,7 @@ void Zenith_SceneTests::TestSaveLoadEntityNames()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestSaveLoadEntityNames...");
 
-	const std::string strPath = "test_names_save.zscn";
+	const std::string strPath = "test_names_save" ZENITH_SCENE_EXT;
 
 	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("NamesSave");
 	Zenith_SceneData* pxData = Zenith_SceneManager::GetSceneData(xScene);
@@ -9167,7 +9186,7 @@ void Zenith_SceneTests::TestSaveLoadMultipleComponentTypes()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestSaveLoadMultipleComponentTypes...");
 
-	const std::string strPath = "test_multicomp_save.zscn";
+	const std::string strPath = "test_multicomp_save" ZENITH_SCENE_EXT;
 
 	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("MultiCompSave");
 	Zenith_SceneData* pxData = Zenith_SceneManager::GetSceneData(xScene);
@@ -9206,7 +9225,7 @@ void Zenith_SceneTests::TestSaveLoadParentChildOrder()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestSaveLoadParentChildOrder...");
 
-	const std::string strPath = "test_hierarchy_order_save.zscn";
+	const std::string strPath = "test_hierarchy_order_save" ZENITH_SCENE_EXT;
 
 	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("HierarchyOrder");
 	Zenith_SceneData* pxData = Zenith_SceneManager::GetSceneData(xScene);
@@ -9254,7 +9273,7 @@ void Zenith_SceneTests::TestAsyncUnloadingSceneSkipsUpdate()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAsyncUnloadingSceneSkipsUpdate...");
 
-	const std::string strPath = "test_async_unload_update.zscn";
+	const std::string strPath = "test_async_unload_update" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strPath, "AsyncUnloadEntity");
 
 	Zenith_Scene xScene = Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_ADDITIVE);
@@ -9325,7 +9344,7 @@ void Zenith_SceneTests::TestEntityExistsDuringAsyncUnload()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestEntityExistsDuringAsyncUnload...");
 
-	const std::string strPath = "test_exists_async.zscn";
+	const std::string strPath = "test_exists_async" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strPath, "ExistEntity");
 
 	Zenith_Scene xScene = Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_ADDITIVE);
@@ -9516,7 +9535,7 @@ void Zenith_SceneTests::TestPersistentEntityLifecycleContinues()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestPersistentEntityLifecycleContinues...");
 
-	const std::string strPath = "test_persistent_lifecycle.zscn";
+	const std::string strPath = "test_persistent_lifecycle" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strPath, "Placeholder");
 
 	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("PersistLifecycle");
@@ -10244,9 +10263,9 @@ void Zenith_SceneTests::TestGetResultSceneBeforeCompletion()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestGetResultSceneBeforeCompletion...");
 
-	CreateTestSceneFile("test_result_before.zscn");
+	CreateTestSceneFile("test_result_before" ZENITH_SCENE_EXT);
 
-	Zenith_SceneOperationID ulOp = Zenith_SceneManager::LoadSceneAsync("test_result_before.zscn", SCENE_LOAD_ADDITIVE);
+	Zenith_SceneOperationID ulOp = Zenith_SceneManager::LoadSceneAsync("test_result_before" ZENITH_SCENE_EXT, SCENE_LOAD_ADDITIVE);
 	Zenith_SceneOperation* pxOp = Zenith_SceneManager::GetOperation(ulOp);
 	Zenith_Assert(pxOp != nullptr, "Operation should exist");
 
@@ -10269,7 +10288,7 @@ void Zenith_SceneTests::TestGetResultSceneBeforeCompletion()
 	Zenith_Assert(xResult.IsValid(), "Result scene should be valid after completion");
 
 	Zenith_SceneManager::UnloadScene(xResult);
-	CleanupTestSceneFile("test_result_before.zscn");
+	CleanupTestSceneFile("test_result_before" ZENITH_SCENE_EXT);
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestGetResultSceneBeforeCompletion passed");
 }
 
@@ -10277,9 +10296,9 @@ void Zenith_SceneTests::TestSetActivationAllowedAfterComplete()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestSetActivationAllowedAfterComplete...");
 
-	CreateTestSceneFile("test_activ_after.zscn");
+	CreateTestSceneFile("test_activ_after" ZENITH_SCENE_EXT);
 
-	Zenith_SceneOperationID ulOp = Zenith_SceneManager::LoadSceneAsync("test_activ_after.zscn", SCENE_LOAD_ADDITIVE);
+	Zenith_SceneOperationID ulOp = Zenith_SceneManager::LoadSceneAsync("test_activ_after" ZENITH_SCENE_EXT, SCENE_LOAD_ADDITIVE);
 	Zenith_SceneOperation* pxOp = Zenith_SceneManager::GetOperation(ulOp);
 	PumpUntilComplete(pxOp);
 
@@ -10292,7 +10311,7 @@ void Zenith_SceneTests::TestSetActivationAllowedAfterComplete()
 
 	Zenith_Scene xResult = pxOp->GetResultScene();
 	Zenith_SceneManager::UnloadScene(xResult);
-	CleanupTestSceneFile("test_activ_after.zscn");
+	CleanupTestSceneFile("test_activ_after" ZENITH_SCENE_EXT);
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestSetActivationAllowedAfterComplete passed");
 }
 
@@ -10300,9 +10319,9 @@ void Zenith_SceneTests::TestSetPriorityAfterCompletion()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestSetPriorityAfterCompletion...");
 
-	CreateTestSceneFile("test_prio_after.zscn");
+	CreateTestSceneFile("test_prio_after" ZENITH_SCENE_EXT);
 
-	Zenith_SceneOperationID ulOp = Zenith_SceneManager::LoadSceneAsync("test_prio_after.zscn", SCENE_LOAD_ADDITIVE);
+	Zenith_SceneOperationID ulOp = Zenith_SceneManager::LoadSceneAsync("test_prio_after" ZENITH_SCENE_EXT, SCENE_LOAD_ADDITIVE);
 	Zenith_SceneOperation* pxOp = Zenith_SceneManager::GetOperation(ulOp);
 	PumpUntilComplete(pxOp);
 
@@ -10312,7 +10331,7 @@ void Zenith_SceneTests::TestSetPriorityAfterCompletion()
 
 	Zenith_Scene xResult = pxOp->GetResultScene();
 	Zenith_SceneManager::UnloadScene(xResult);
-	CleanupTestSceneFile("test_prio_after.zscn");
+	CleanupTestSceneFile("test_prio_after" ZENITH_SCENE_EXT);
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestSetPriorityAfterCompletion passed");
 }
 
@@ -10320,7 +10339,7 @@ void Zenith_SceneTests::TestHasFailedOnNonExistentFileAsync()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestHasFailedOnNonExistentFileAsync...");
 
-	Zenith_SceneOperationID ulOp = Zenith_SceneManager::LoadSceneAsync("nonexistent_file_xyz_12345.zscn", SCENE_LOAD_ADDITIVE);
+	Zenith_SceneOperationID ulOp = Zenith_SceneManager::LoadSceneAsync("nonexistent_file_xyz_12345" ZENITH_SCENE_EXT, SCENE_LOAD_ADDITIVE);
 	Zenith_SceneOperation* pxOp = Zenith_SceneManager::GetOperation(ulOp);
 
 	if (pxOp != nullptr)
@@ -10337,9 +10356,9 @@ void Zenith_SceneTests::TestCancelAlreadyCompletedOperation()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestCancelAlreadyCompletedOperation...");
 
-	CreateTestSceneFile("test_cancel_complete.zscn");
+	CreateTestSceneFile("test_cancel_complete" ZENITH_SCENE_EXT);
 
-	Zenith_SceneOperationID ulOp = Zenith_SceneManager::LoadSceneAsync("test_cancel_complete.zscn", SCENE_LOAD_ADDITIVE);
+	Zenith_SceneOperationID ulOp = Zenith_SceneManager::LoadSceneAsync("test_cancel_complete" ZENITH_SCENE_EXT, SCENE_LOAD_ADDITIVE);
 	Zenith_SceneOperation* pxOp = Zenith_SceneManager::GetOperation(ulOp);
 	PumpUntilComplete(pxOp);
 
@@ -10351,7 +10370,7 @@ void Zenith_SceneTests::TestCancelAlreadyCompletedOperation()
 
 	Zenith_Scene xResult = pxOp->GetResultScene();
 	if (xResult.IsValid()) Zenith_SceneManager::UnloadScene(xResult);
-	CleanupTestSceneFile("test_cancel_complete.zscn");
+	CleanupTestSceneFile("test_cancel_complete" ZENITH_SCENE_EXT);
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestCancelAlreadyCompletedOperation passed");
 }
 
@@ -10359,9 +10378,9 @@ void Zenith_SceneTests::TestIsCancellationRequestedTracking()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestIsCancellationRequestedTracking...");
 
-	CreateTestSceneFile("test_cancel_track.zscn");
+	CreateTestSceneFile("test_cancel_track" ZENITH_SCENE_EXT);
 
-	Zenith_SceneOperationID ulOp = Zenith_SceneManager::LoadSceneAsync("test_cancel_track.zscn", SCENE_LOAD_ADDITIVE);
+	Zenith_SceneOperationID ulOp = Zenith_SceneManager::LoadSceneAsync("test_cancel_track" ZENITH_SCENE_EXT, SCENE_LOAD_ADDITIVE);
 	Zenith_SceneOperation* pxOp = Zenith_SceneManager::GetOperation(ulOp);
 	Zenith_Assert(pxOp != nullptr, "Operation should exist");
 
@@ -10374,7 +10393,7 @@ void Zenith_SceneTests::TestIsCancellationRequestedTracking()
 
 	Zenith_Scene xResult = pxOp->GetResultScene();
 	if (xResult.IsValid()) Zenith_SceneManager::UnloadScene(xResult);
-	CleanupTestSceneFile("test_cancel_track.zscn");
+	CleanupTestSceneFile("test_cancel_track" ZENITH_SCENE_EXT);
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestIsCancellationRequestedTracking passed");
 }
 
@@ -11023,15 +11042,15 @@ void Zenith_SceneTests::TestCanonicalizeDotSlashPrefix()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestCanonicalizeDotSlashPrefix...");
 
-	CreateTestSceneFile("test_dotslash.zscn");
-	Zenith_Scene xScene = Zenith_SceneManager::LoadScene("./test_dotslash.zscn", SCENE_LOAD_ADDITIVE);
+	CreateTestSceneFile("test_dotslash" ZENITH_SCENE_EXT);
+	Zenith_Scene xScene = Zenith_SceneManager::LoadScene("./test_dotslash" ZENITH_SCENE_EXT, SCENE_LOAD_ADDITIVE);
 	Zenith_Assert(xScene.IsValid(), "Scene loaded with ./ prefix should be valid");
 
-	Zenith_Scene xFound = Zenith_SceneManager::GetSceneByPath("test_dotslash.zscn");
+	Zenith_Scene xFound = Zenith_SceneManager::GetSceneByPath("test_dotslash" ZENITH_SCENE_EXT);
 	Zenith_Assert(xFound.IsValid(), "Should find scene by canonical path");
 
 	Zenith_SceneManager::UnloadScene(xScene);
-	CleanupTestSceneFile("test_dotslash.zscn");
+	CleanupTestSceneFile("test_dotslash" ZENITH_SCENE_EXT);
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestCanonicalizeDotSlashPrefix passed");
 }
 
@@ -11040,17 +11059,17 @@ void Zenith_SceneTests::TestCanonicalizeParentResolution()
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestCanonicalizeParentResolution...");
 
 	// Create a test scene file in current directory
-	CreateTestSceneFile("test_parent_res.zscn");
+	CreateTestSceneFile("test_parent_res" ZENITH_SCENE_EXT);
 
 	// Load with ../ in path
-	Zenith_Scene xScene = Zenith_SceneManager::LoadScene("sub/../test_parent_res.zscn", SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xScene = Zenith_SceneManager::LoadScene("sub/../test_parent_res" ZENITH_SCENE_EXT, SCENE_LOAD_ADDITIVE);
 	Zenith_Assert(xScene.IsValid(), "Scene loaded with ../ path should be valid");
 
-	Zenith_Scene xFound = Zenith_SceneManager::GetSceneByPath("test_parent_res.zscn");
+	Zenith_Scene xFound = Zenith_SceneManager::GetSceneByPath("test_parent_res" ZENITH_SCENE_EXT);
 	Zenith_Assert(xFound.IsValid(), "Should find scene by canonical path after ../ resolution");
 
 	Zenith_SceneManager::UnloadScene(xScene);
-	CleanupTestSceneFile("test_parent_res.zscn");
+	CleanupTestSceneFile("test_parent_res" ZENITH_SCENE_EXT);
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestCanonicalizeParentResolution passed");
 }
 
@@ -11058,15 +11077,15 @@ void Zenith_SceneTests::TestCanonicalizeDoubleSlash()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestCanonicalizeDoubleSlash...");
 
-	CreateTestSceneFile("test_doubleslash.zscn");
-	Zenith_Scene xScene = Zenith_SceneManager::LoadScene(".//test_doubleslash.zscn", SCENE_LOAD_ADDITIVE);
+	CreateTestSceneFile("test_doubleslash" ZENITH_SCENE_EXT);
+	Zenith_Scene xScene = Zenith_SceneManager::LoadScene(".//test_doubleslash" ZENITH_SCENE_EXT, SCENE_LOAD_ADDITIVE);
 	Zenith_Assert(xScene.IsValid(), "Scene loaded with // should be valid");
 
-	Zenith_Scene xFound = Zenith_SceneManager::GetSceneByPath("test_doubleslash.zscn");
+	Zenith_Scene xFound = Zenith_SceneManager::GetSceneByPath("test_doubleslash" ZENITH_SCENE_EXT);
 	Zenith_Assert(xFound.IsValid(), "Should find scene by canonical path after // collapse");
 
 	Zenith_SceneManager::UnloadScene(xScene);
-	CleanupTestSceneFile("test_doubleslash.zscn");
+	CleanupTestSceneFile("test_doubleslash" ZENITH_SCENE_EXT);
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestCanonicalizeDoubleSlash passed");
 }
 
@@ -11074,15 +11093,15 @@ void Zenith_SceneTests::TestCanonicalizeAlreadyCanonical()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestCanonicalizeAlreadyCanonical...");
 
-	CreateTestSceneFile("test_canonical.zscn");
-	Zenith_Scene xScene = Zenith_SceneManager::LoadScene("test_canonical.zscn", SCENE_LOAD_ADDITIVE);
+	CreateTestSceneFile("test_canonical" ZENITH_SCENE_EXT);
+	Zenith_Scene xScene = Zenith_SceneManager::LoadScene("test_canonical" ZENITH_SCENE_EXT, SCENE_LOAD_ADDITIVE);
 	Zenith_Assert(xScene.IsValid(), "Scene loaded with clean path should be valid");
 
-	Zenith_Scene xFound = Zenith_SceneManager::GetSceneByPath("test_canonical.zscn");
+	Zenith_Scene xFound = Zenith_SceneManager::GetSceneByPath("test_canonical" ZENITH_SCENE_EXT);
 	Zenith_Assert(xFound.IsValid(), "Should find scene by same canonical path");
 
 	Zenith_SceneManager::UnloadScene(xScene);
-	CleanupTestSceneFile("test_canonical.zscn");
+	CleanupTestSceneFile("test_canonical" ZENITH_SCENE_EXT);
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestCanonicalizeAlreadyCanonical passed");
 }
 
@@ -11090,21 +11109,21 @@ void Zenith_SceneTests::TestGetSceneByPathNonCanonical()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestGetSceneByPathNonCanonical...");
 
-	CreateTestSceneFile("test_noncanon.zscn");
-	Zenith_Scene xScene = Zenith_SceneManager::LoadScene("test_noncanon.zscn", SCENE_LOAD_ADDITIVE);
+	CreateTestSceneFile("test_noncanon" ZENITH_SCENE_EXT);
+	Zenith_Scene xScene = Zenith_SceneManager::LoadScene("test_noncanon" ZENITH_SCENE_EXT, SCENE_LOAD_ADDITIVE);
 
-	// Query with backslash + .\ prefix (Windows-style) - should canonicalize to "test_noncanon.zscn"
-	Zenith_Scene xFoundBackslash = Zenith_SceneManager::GetSceneByPath(".\\test_noncanon.zscn");
+	// Query with backslash + .\ prefix (Windows-style) - should canonicalize to "test_noncanon.zscen"
+	Zenith_Scene xFoundBackslash = Zenith_SceneManager::GetSceneByPath(".\\test_noncanon" ZENITH_SCENE_EXT);
 	Zenith_Assert(xFoundBackslash.IsValid(), "GetSceneByPath should find scene with backslash+dot prefix");
 	Zenith_Assert(xFoundBackslash == xScene, "Backslash query should return same scene handle");
 
 	// Query with double forward slash
-	Zenith_Scene xFoundDouble = Zenith_SceneManager::GetSceneByPath(".//test_noncanon.zscn");
+	Zenith_Scene xFoundDouble = Zenith_SceneManager::GetSceneByPath(".//test_noncanon" ZENITH_SCENE_EXT);
 	Zenith_Assert(xFoundDouble.IsValid(), "GetSceneByPath should find scene with double-slash prefix");
 	Zenith_Assert(xFoundDouble == xScene, "Double-slash query should return same scene handle");
 
 	Zenith_SceneManager::UnloadScene(xScene);
-	CleanupTestSceneFile("test_noncanon.zscn");
+	CleanupTestSceneFile("test_noncanon" ZENITH_SCENE_EXT);
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestGetSceneByPathNonCanonical passed");
 }
 
@@ -11242,13 +11261,13 @@ void Zenith_SceneTests::TestMaxConcurrentAsyncOperationsEnforced()
 	// Create test scene files
 	for (int i = 0; i < 4; i++)
 	{
-		CreateTestSceneFile("test_concurrent_" + std::to_string(i) + ".zscn", "Entity_" + std::to_string(i));
+		CreateTestSceneFile("test_concurrent_" + std::to_string(i) + ZENITH_SCENE_EXT, "Entity_" + std::to_string(i));
 	}
 
 	Zenith_Vector<Zenith_SceneOperationID> axOps;
 	for (int i = 0; i < 4; i++)
 	{
-		Zenith_SceneOperationID ulOp = Zenith_SceneManager::LoadSceneAsync("test_concurrent_" + std::to_string(i) + ".zscn", SCENE_LOAD_ADDITIVE);
+		Zenith_SceneOperationID ulOp = Zenith_SceneManager::LoadSceneAsync("test_concurrent_" + std::to_string(i) + ZENITH_SCENE_EXT, SCENE_LOAD_ADDITIVE);
 		axOps.PushBack(ulOp);
 	}
 
@@ -11281,7 +11300,7 @@ void Zenith_SceneTests::TestMaxConcurrentAsyncOperationsEnforced()
 
 	for (int i = 0; i < 4; i++)
 	{
-		CleanupTestSceneFile("test_concurrent_" + std::to_string(i) + ".zscn");
+		CleanupTestSceneFile("test_concurrent_" + std::to_string(i) + ZENITH_SCENE_EXT);
 	}
 
 	Zenith_SceneManager::SetMaxConcurrentAsyncLoads(uOldMax);
@@ -11305,8 +11324,8 @@ void Zenith_SceneTests::TestIsLoadedAtEveryStage()
 	Zenith_Assert(!xScene.IsLoaded(), "Scene should not be loaded after unload");
 
 	// Async load with activation paused
-	CreateTestSceneFile("test_loaded_stages.zscn");
-	Zenith_SceneOperationID ulOp = Zenith_SceneManager::LoadSceneAsync("test_loaded_stages.zscn", SCENE_LOAD_ADDITIVE);
+	CreateTestSceneFile("test_loaded_stages" ZENITH_SCENE_EXT);
+	Zenith_SceneOperationID ulOp = Zenith_SceneManager::LoadSceneAsync("test_loaded_stages" ZENITH_SCENE_EXT, SCENE_LOAD_ADDITIVE);
 	Zenith_SceneOperation* pxOp = Zenith_SceneManager::GetOperation(ulOp);
 	pxOp->SetActivationAllowed(false);
 
@@ -11329,7 +11348,7 @@ void Zenith_SceneTests::TestIsLoadedAtEveryStage()
 	Zenith_Assert(xResult.IsLoaded(), "Scene should be loaded after activation");
 
 	Zenith_SceneManager::UnloadScene(xResult);
-	CleanupTestSceneFile("test_loaded_stages.zscn");
+	CleanupTestSceneFile("test_loaded_stages" ZENITH_SCENE_EXT);
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestIsLoadedAtEveryStage passed");
 }
 
@@ -11360,14 +11379,14 @@ void Zenith_SceneTests::TestSyncLoadSingleModeTwice()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestSyncLoadSingleModeTwice...");
 
-	CreateTestSceneFile("test_twice.zscn", "TwiceEntity");
+	CreateTestSceneFile("test_twice" ZENITH_SCENE_EXT, "TwiceEntity");
 
 	// First SINGLE load - unloads all non-persistent, loads new scene
-	Zenith_Scene xFirst = Zenith_SceneManager::LoadScene("test_twice.zscn", SCENE_LOAD_SINGLE);
+	Zenith_Scene xFirst = Zenith_SceneManager::LoadScene("test_twice" ZENITH_SCENE_EXT, SCENE_LOAD_SINGLE);
 	Zenith_Assert(xFirst.IsValid(), "First SINGLE load should succeed");
 
 	// Second SINGLE load of same file - should unload xFirst, load new scene
-	Zenith_Scene xSecond = Zenith_SceneManager::LoadScene("test_twice.zscn", SCENE_LOAD_SINGLE);
+	Zenith_Scene xSecond = Zenith_SceneManager::LoadScene("test_twice" ZENITH_SCENE_EXT, SCENE_LOAD_SINGLE);
 	Zenith_Assert(xSecond.IsValid(), "Second SINGLE load should succeed");
 
 	// First scene handle should now be stale (it was unloaded by the second SINGLE load)
@@ -11377,7 +11396,8 @@ void Zenith_SceneTests::TestSyncLoadSingleModeTwice()
 	Zenith_Assert(xFirst.GetHandle() != xSecond.GetHandle() || xFirst.m_uGeneration != xSecond.m_uGeneration,
 		"First and second loads should produce different scene instances");
 
-	CleanupTestSceneFile("test_twice.zscn");
+	Zenith_SceneManager::UnloadScene(xSecond);
+	CleanupTestSceneFile("test_twice" ZENITH_SCENE_EXT);
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestSyncLoadSingleModeTwice passed");
 }
 
@@ -11385,12 +11405,12 @@ void Zenith_SceneTests::TestAdditiveLoadAlreadyLoadedScene()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAdditiveLoadAlreadyLoadedScene...");
 
-	CreateTestSceneFile("test_dup_additive.zscn", "DupEntity");
+	CreateTestSceneFile("test_dup_additive" ZENITH_SCENE_EXT, "DupEntity");
 
-	Zenith_Scene xFirst = Zenith_SceneManager::LoadScene("test_dup_additive.zscn", SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xFirst = Zenith_SceneManager::LoadScene("test_dup_additive" ZENITH_SCENE_EXT, SCENE_LOAD_ADDITIVE);
 	uint32_t uCountAfterFirst = Zenith_SceneManager::GetLoadedSceneCount();
 
-	Zenith_Scene xSecond = Zenith_SceneManager::LoadScene("test_dup_additive.zscn", SCENE_LOAD_ADDITIVE);
+	Zenith_Scene xSecond = Zenith_SceneManager::LoadScene("test_dup_additive" ZENITH_SCENE_EXT, SCENE_LOAD_ADDITIVE);
 	Zenith_Assert(xSecond.IsValid(), "Second additive load should succeed");
 	Zenith_Assert(Zenith_SceneManager::GetLoadedSceneCount() == uCountAfterFirst + 1,
 		"Additive load of same file should create separate scene (no dedup)");
@@ -11398,7 +11418,7 @@ void Zenith_SceneTests::TestAdditiveLoadAlreadyLoadedScene()
 
 	Zenith_SceneManager::UnloadScene(xFirst);
 	Zenith_SceneManager::UnloadScene(xSecond);
-	CleanupTestSceneFile("test_dup_additive.zscn");
+	CleanupTestSceneFile("test_dup_additive" ZENITH_SCENE_EXT);
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAdditiveLoadAlreadyLoadedScene passed");
 }
 
@@ -11525,4 +11545,88 @@ void Zenith_SceneTests::TestRecursiveEnableMixedHierarchy()
 
 	Zenith_SceneManager::UnloadScene(xScene);
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestRecursiveEnableMixedHierarchy passed");
+}
+
+//==============================================================================
+// Cat 42: Deferred Scene Load (Unity Parity)
+//==============================================================================
+
+void Zenith_SceneTests::TestLoadSceneDeferredDuringUpdate()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestLoadSceneDeferredDuringUpdate...");
+
+	const std::string strPath0 = "test_deferred_scene0" ZENITH_SCENE_EXT;
+	const std::string strPath1 = "test_deferred_scene1" ZENITH_SCENE_EXT;
+	const int iBuildIndex0 = 200;
+	const int iBuildIndex1 = 201;
+
+	CreateTestSceneFile(strPath0, "DeferredEntity0");
+	CreateTestSceneFile(strPath1, "DeferredEntity1");
+	Zenith_SceneManager::RegisterSceneBuildIndex(iBuildIndex0, strPath0);
+	Zenith_SceneManager::RegisterSceneBuildIndex(iBuildIndex1, strPath1);
+
+	// Load scene 0 synchronously (s_bIsUpdating is false)
+	Zenith_Scene xScene0 = Zenith_SceneManager::LoadSceneByIndex(iBuildIndex0, SCENE_LOAD_ADDITIVE);
+	Zenith_Assert(xScene0.IsValid(), "Scene 0 should load synchronously");
+	Zenith_SceneManager::SetActiveScene(xScene0);
+
+	// Simulate being inside Update - set s_bIsUpdating = true
+	Zenith_SceneManager::s_bIsUpdating = true;
+
+	// LoadSceneByIndex during update should defer (return invalid handle)
+	Zenith_Scene xScene1 = Zenith_SceneManager::LoadSceneByIndex(iBuildIndex1, SCENE_LOAD_ADDITIVE);
+	Zenith_Assert(!xScene1.IsValid(), "Deferred load should return invalid scene handle");
+
+	// Scene 0 should still be active (load was queued, not processed)
+	Zenith_Scene xActive = Zenith_SceneManager::GetActiveScene();
+	Zenith_Assert(xActive == xScene0, "Active scene should still be scene 0 after deferred load");
+
+	// End the simulated update
+	Zenith_SceneManager::s_bIsUpdating = false;
+
+	// Pump frames until the async load completes (worker thread reads file, then
+	// ProcessPendingAsyncLoads activates the scene on the next Update call)
+	Zenith_Scene xLoadedScene1;
+	for (uint32_t i = 0; i < 60; ++i)
+	{
+		PumpFrames(1);
+		xLoadedScene1 = Zenith_SceneManager::GetSceneByPath(strPath1);
+		if (xLoadedScene1.IsValid())
+			break;
+	}
+	Zenith_Assert(xLoadedScene1.IsValid(), "Scene 1 should be loaded after pumping frames");
+
+	// Cleanup
+	Zenith_SceneManager::UnloadScene(xLoadedScene1);
+	Zenith_SceneManager::UnloadScene(xScene0);
+	Zenith_SceneManager::ClearBuildIndexRegistry();
+	CleanupTestSceneFile(strPath0);
+	CleanupTestSceneFile(strPath1);
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestLoadSceneDeferredDuringUpdate passed");
+}
+
+void Zenith_SceneTests::TestLoadSceneSyncOutsideUpdate()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestLoadSceneSyncOutsideUpdate...");
+
+	const std::string strPath = "test_sync_outside_update" ZENITH_SCENE_EXT;
+	const int iBuildIndex = 202;
+
+	CreateTestSceneFile(strPath, "SyncEntity");
+	Zenith_SceneManager::RegisterSceneBuildIndex(iBuildIndex, strPath);
+
+	// Verify s_bIsUpdating is false (outside Update)
+	Zenith_Assert(!Zenith_SceneManager::s_bIsUpdating, "s_bIsUpdating should be false outside Update");
+
+	// Load should be synchronous and return a valid handle
+	Zenith_Scene xScene = Zenith_SceneManager::LoadSceneByIndex(iBuildIndex, SCENE_LOAD_ADDITIVE);
+	Zenith_Assert(xScene.IsValid(), "LoadSceneByIndex outside Update should return valid scene immediately");
+
+	// Cleanup
+	Zenith_SceneManager::UnloadScene(xScene);
+	Zenith_SceneManager::ClearBuildIndexRegistry();
+	CleanupTestSceneFile(strPath);
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestLoadSceneSyncOutsideUpdate passed");
 }

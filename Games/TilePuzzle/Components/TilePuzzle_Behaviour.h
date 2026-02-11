@@ -143,6 +143,7 @@ public:
 		}
 
 		// Wire up button callbacks
+		bool bHasMenu = false;
 		if (m_xParentEntity.HasComponent<Zenith_UIComponent>())
 		{
 			Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
@@ -151,13 +152,22 @@ public:
 			{
 				pxPlayBtn->SetOnClick(&OnPlayClicked, this);
 				pxPlayBtn->SetFocused(true);
+				bHasMenu = true;
 			}
 		}
 
-		// Start in main menu state
-		m_eState = TILEPUZZLE_STATE_MAIN_MENU;
-		SetMenuVisible(true);
-		SetHUDVisible(false);
+		if (bHasMenu)
+		{
+			// Start in main menu state
+			m_eState = TILEPUZZLE_STATE_MAIN_MENU;
+			SetMenuVisible(true);
+			SetHUDVisible(false);
+		}
+		else
+		{
+			// No menu UI (gameplay scene) - start game directly
+			StartGame();
+		}
 	}
 
 	void OnStart() ZENITH_FINAL override
@@ -276,10 +286,9 @@ private:
 	// Button Callbacks (static function pointers, NOT std::function)
 	// ========================================================================
 
-	static void OnPlayClicked(void* pxUserData)
+	static void OnPlayClicked(void* /*pxUserData*/)
 	{
-		TilePuzzle_Behaviour* pxSelf = static_cast<TilePuzzle_Behaviour*>(pxUserData);
-		pxSelf->StartGame();
+		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 	}
 
 	// ========================================================================
@@ -325,21 +334,7 @@ private:
 			m_xPuzzleScene = Zenith_Scene();
 		}
 
-		m_eState = TILEPUZZLE_STATE_MAIN_MENU;
-		SetMenuVisible(true);
-		SetHUDVisible(false);
-
-		// Reset button focus
-		if (m_xParentEntity.HasComponent<Zenith_UIComponent>())
-		{
-			Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
-			Zenith_UI::Zenith_UIButton* pxPlayBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuPlay");
-			if (pxPlayBtn)
-			{
-				pxPlayBtn->SetFocused(true);
-			}
-		}
-		m_iFocusIndex = 0;
+		Zenith_SceneManager::LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
 	}
 
 	// ========================================================================

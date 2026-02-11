@@ -158,120 +158,9 @@ void Project_Shutdown()
 	Sokoban::g_uDustEmitterID = INVALID_ENTITY_ID;
 }
 
-void Project_LoadInitialScene()
+void Project_CreateScenes()
 {
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
-	pxSceneData->Reset();
-
-	// ========================================================================
-	// Create persistent GameManager entity
-	// Contains: Camera + UI + Script. Survives all scene transitions.
-	// ========================================================================
-	Zenith_Entity xGameManager(pxSceneData, "GameManager");
-	xGameManager.SetTransient(false);
-
-	// Camera - top-down 3D view (repositioned per level by behaviour)
-	Zenith_CameraComponent& xCamera = xGameManager.AddComponent<Zenith_CameraComponent>();
-	xCamera.InitialisePerspective(
-		Zenith_Maths::Vector3(0.f, 12.f, 0.f),
-		-1.5f,  // Pitch: nearly straight down
-		0.f,
-		glm::radians(45.f),
-		0.1f,
-		1000.f,
-		16.f / 9.f
-	);
-	pxSceneData->SetMainCameraEntity(xGameManager.GetEntityID());
-
-	// UI - all elements on one component (menu + HUD + loading)
-	Zenith_UIComponent& xUI = xGameManager.AddComponent<Zenith_UIComponent>();
-
-	// --- Main Menu UI (visible initially) ---
-	Zenith_UI::Zenith_UIText* pxMenuTitle = xUI.CreateText("MenuTitle", "SOKOBAN");
-	pxMenuTitle->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
-	pxMenuTitle->SetPosition(0.f, -120.f);
-	pxMenuTitle->SetFontSize(72.f);
-	pxMenuTitle->SetColor({1.f, 1.f, 1.f, 1.f});
-
-	Zenith_UI::Zenith_UIButton* pxPlayBtn = xUI.CreateButton("MenuPlay", "Play");
-	pxPlayBtn->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
-	pxPlayBtn->SetPosition(0.f, 0.f);
-	pxPlayBtn->SetSize(200.f, 50.f);
-
-	// --- HUD UI (hidden initially - shown during gameplay) ---
-	static constexpr float s_fMarginRight = 30.f;
-	static constexpr float s_fMarginTop = 30.f;
-	static constexpr float s_fBaseTextSize = 15.f;
-	static constexpr float s_fLineHeight = 24.f;
-
-	auto SetupTopRightText = [](Zenith_UI::Zenith_UIText* pxText, float fYOffset, bool bVisible)
-	{
-		pxText->SetAnchorAndPivot(Zenith_UI::AnchorPreset::TopRight);
-		pxText->SetPosition(-s_fMarginRight, s_fMarginTop + fYOffset);
-		pxText->SetAlignment(Zenith_UI::TextAlignment::Right);
-		pxText->SetVisible(bVisible);
-	};
-
-	Zenith_UI::Zenith_UIText* pxTitle = xUI.CreateText("Title", "SOKOBAN");
-	SetupTopRightText(pxTitle, 0.f, false);
-	pxTitle->SetFontSize(s_fBaseTextSize * 4.8f);
-	pxTitle->SetColor({1.f, 1.f, 1.f, 1.f});
-
-	Zenith_UI::Zenith_UIText* pxControls = xUI.CreateText("ControlsHeader", "How to Play:");
-	SetupTopRightText(pxControls, s_fLineHeight * 2, false);
-	pxControls->SetFontSize(s_fBaseTextSize * 3.6f);
-	pxControls->SetColor({0.9f, 0.9f, 0.2f, 1.f});
-
-	Zenith_UI::Zenith_UIText* pxMove = xUI.CreateText("MoveInstr", "WASD / Arrows: Move");
-	SetupTopRightText(pxMove, s_fLineHeight * 3, false);
-	pxMove->SetFontSize(s_fBaseTextSize * 3.0f);
-	pxMove->SetColor({0.8f, 0.8f, 0.8f, 1.f});
-
-	Zenith_UI::Zenith_UIText* pxReset = xUI.CreateText("ResetInstr", "R: New Level  Esc: Menu");
-	SetupTopRightText(pxReset, s_fLineHeight * 4, false);
-	pxReset->SetFontSize(s_fBaseTextSize * 3.0f);
-	pxReset->SetColor({0.8f, 0.8f, 0.8f, 1.f});
-
-	Zenith_UI::Zenith_UIText* pxGoal = xUI.CreateText("GoalHeader", "Goal:");
-	SetupTopRightText(pxGoal, s_fLineHeight * 6, false);
-	pxGoal->SetFontSize(s_fBaseTextSize * 3.6f);
-	pxGoal->SetColor({0.9f, 0.9f, 0.2f, 1.f});
-
-	Zenith_UI::Zenith_UIText* pxGoalDesc = xUI.CreateText("GoalDesc", "Push boxes onto targets");
-	SetupTopRightText(pxGoalDesc, s_fLineHeight * 7, false);
-	pxGoalDesc->SetFontSize(s_fBaseTextSize * 3.0f);
-	pxGoalDesc->SetColor({0.8f, 0.8f, 0.8f, 1.f});
-
-	Zenith_UI::Zenith_UIText* pxStatus = xUI.CreateText("Status", "Moves: 0");
-	SetupTopRightText(pxStatus, s_fLineHeight * 9, false);
-	pxStatus->SetFontSize(s_fBaseTextSize * 3.0f);
-	pxStatus->SetColor({0.6f, 0.8f, 1.f, 1.f});
-
-	Zenith_UI::Zenith_UIText* pxProgress = xUI.CreateText("Progress", "Boxes: 0 / 3");
-	SetupTopRightText(pxProgress, s_fLineHeight * 10, false);
-	pxProgress->SetFontSize(s_fBaseTextSize * 3.0f);
-	pxProgress->SetColor({0.6f, 0.8f, 1.f, 1.f});
-
-	Zenith_UI::Zenith_UIText* pxMinMoves = xUI.CreateText("MinMoves", "Min Moves: 0");
-	SetupTopRightText(pxMinMoves, s_fLineHeight * 11, false);
-	pxMinMoves->SetFontSize(s_fBaseTextSize * 3.0f);
-	pxMinMoves->SetColor({0.6f, 0.8f, 1.f, 1.f});
-
-	Zenith_UI::Zenith_UIText* pxWin = xUI.CreateText("WinText", "");
-	SetupTopRightText(pxWin, s_fLineHeight * 13, false);
-	pxWin->SetFontSize(s_fBaseTextSize * 4.2f);
-	pxWin->SetColor({0.2f, 1.f, 0.2f, 1.f});
-
-	// --- Loading UI (hidden initially) ---
-	Zenith_UI::Zenith_UIText* pxLoadingText = xUI.CreateText("LoadingText", "Generating puzzle...");
-	pxLoadingText->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
-	pxLoadingText->SetPosition(0.f, 0.f);
-	pxLoadingText->SetFontSize(36.f);
-	pxLoadingText->SetColor({1.f, 1.f, 1.f, 1.f});
-	pxLoadingText->SetVisible(false);
-
-	// Create dust trail particle config programmatically
+	// Create dust trail particle config (global resource)
 	Sokoban::g_pxDustConfig = new Flux_ParticleEmitterConfig();
 	Sokoban::g_pxDustConfig->m_fSpawnRate = 30.0f;
 	Sokoban::g_pxDustConfig->m_uBurstCount = 0;
@@ -290,21 +179,150 @@ void Project_LoadInitialScene()
 	Sokoban::g_pxDustConfig->m_bUseGPUCompute = false;
 	Flux_ParticleEmitterConfig::Register("Sokoban_DustTrail", Sokoban::g_pxDustConfig);
 
-	// Create particle emitter entity for dust (persistent - survives scene transitions)
-	Zenith_Entity xDustEmitter(pxSceneData, "DustEmitter");
-	xDustEmitter.SetTransient(false);
-	Zenith_ParticleEmitterComponent& xEmitter = xDustEmitter.AddComponent<Zenith_ParticleEmitterComponent>();
-	xEmitter.SetConfig(Sokoban::g_pxDustConfig);
-	Sokoban::g_uDustEmitterID = xDustEmitter.GetEntityID();
+	// ---- MainMenu scene (build index 0) ----
+	{
+		const std::string strMenuPath = GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT;
 
-	// Script component with Sokoban behaviour
-	Zenith_ScriptComponent& xScript = xGameManager.AddComponent<Zenith_ScriptComponent>();
-	xScript.SetBehaviourForSerialization<Sokoban_Behaviour>();
+		Zenith_Scene xMenuScene = Zenith_SceneManager::CreateEmptyScene("MainMenu");
+		Zenith_SceneData* pxMenuData = Zenith_SceneManager::GetSceneData(xMenuScene);
 
-	// Mark persistent entities - survive all scene transitions
-	xGameManager.DontDestroyOnLoad();
-	xDustEmitter.DontDestroyOnLoad();
+		Zenith_Entity xMenuManager(pxMenuData, "MenuManager");
+		xMenuManager.SetTransient(false);
 
-	// The default scene is now the initial scene (no puzzle entities yet).
-	// The behaviour's OnAwake will show the main menu and wait for the Play button.
+		Zenith_CameraComponent& xCamera = xMenuManager.AddComponent<Zenith_CameraComponent>();
+		xCamera.InitialisePerspective(
+			Zenith_Maths::Vector3(0.f, 12.f, 0.f),
+			-1.5f, 0.f,
+			glm::radians(45.f), 0.1f, 1000.f, 16.f / 9.f
+		);
+		pxMenuData->SetMainCameraEntity(xMenuManager.GetEntityID());
+
+		Zenith_UIComponent& xUI = xMenuManager.AddComponent<Zenith_UIComponent>();
+
+		Zenith_UI::Zenith_UIText* pxMenuTitle = xUI.CreateText("MenuTitle", "SOKOBAN");
+		pxMenuTitle->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
+		pxMenuTitle->SetPosition(0.f, -120.f);
+		pxMenuTitle->SetFontSize(72.f);
+		pxMenuTitle->SetColor({1.f, 1.f, 1.f, 1.f});
+
+		Zenith_UI::Zenith_UIButton* pxPlayBtn = xUI.CreateButton("MenuPlay", "Play");
+		pxPlayBtn->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
+		pxPlayBtn->SetPosition(0.f, 0.f);
+		pxPlayBtn->SetSize(200.f, 50.f);
+
+		Zenith_ScriptComponent& xScript = xMenuManager.AddComponent<Zenith_ScriptComponent>();
+		xScript.SetBehaviourForSerialization<Sokoban_Behaviour>();
+
+		pxMenuData->SaveToFile(strMenuPath);
+		Zenith_SceneManager::RegisterSceneBuildIndex(0, strMenuPath);
+		Zenith_SceneManager::UnloadScene(xMenuScene);
+	}
+
+	// ---- Sokoban gameplay scene (build index 1) ----
+	{
+		const std::string strGamePath = GAME_ASSETS_DIR "Scenes/Sokoban" ZENITH_SCENE_EXT;
+
+		Zenith_Scene xGameScene = Zenith_SceneManager::CreateEmptyScene("Sokoban");
+		Zenith_SceneData* pxGameData = Zenith_SceneManager::GetSceneData(xGameScene);
+
+		Zenith_Entity xGameManager(pxGameData, "GameManager");
+		xGameManager.SetTransient(false);
+
+		Zenith_CameraComponent& xCamera = xGameManager.AddComponent<Zenith_CameraComponent>();
+		xCamera.InitialisePerspective(
+			Zenith_Maths::Vector3(0.f, 12.f, 0.f),
+			-1.5f, 0.f,
+			glm::radians(45.f), 0.1f, 1000.f, 16.f / 9.f
+		);
+		pxGameData->SetMainCameraEntity(xGameManager.GetEntityID());
+
+		Zenith_UIComponent& xUI = xGameManager.AddComponent<Zenith_UIComponent>();
+
+		static constexpr float s_fMarginRight = 30.f;
+		static constexpr float s_fMarginTop = 30.f;
+		static constexpr float s_fBaseTextSize = 15.f;
+		static constexpr float s_fLineHeight = 24.f;
+
+		auto SetupTopRightText = [](Zenith_UI::Zenith_UIText* pxText, float fYOffset, bool bVisible)
+		{
+			pxText->SetAnchorAndPivot(Zenith_UI::AnchorPreset::TopRight);
+			pxText->SetPosition(-s_fMarginRight, s_fMarginTop + fYOffset);
+			pxText->SetAlignment(Zenith_UI::TextAlignment::Right);
+			pxText->SetVisible(bVisible);
+		};
+
+		Zenith_UI::Zenith_UIText* pxTitle = xUI.CreateText("Title", "SOKOBAN");
+		SetupTopRightText(pxTitle, 0.f, false);
+		pxTitle->SetFontSize(s_fBaseTextSize * 4.8f);
+		pxTitle->SetColor({1.f, 1.f, 1.f, 1.f});
+
+		Zenith_UI::Zenith_UIText* pxControls = xUI.CreateText("ControlsHeader", "How to Play:");
+		SetupTopRightText(pxControls, s_fLineHeight * 2, false);
+		pxControls->SetFontSize(s_fBaseTextSize * 3.6f);
+		pxControls->SetColor({0.9f, 0.9f, 0.2f, 1.f});
+
+		Zenith_UI::Zenith_UIText* pxMove = xUI.CreateText("MoveInstr", "WASD / Arrows: Move");
+		SetupTopRightText(pxMove, s_fLineHeight * 3, false);
+		pxMove->SetFontSize(s_fBaseTextSize * 3.0f);
+		pxMove->SetColor({0.8f, 0.8f, 0.8f, 1.f});
+
+		Zenith_UI::Zenith_UIText* pxReset = xUI.CreateText("ResetInstr", "R: New Level  Esc: Menu");
+		SetupTopRightText(pxReset, s_fLineHeight * 4, false);
+		pxReset->SetFontSize(s_fBaseTextSize * 3.0f);
+		pxReset->SetColor({0.8f, 0.8f, 0.8f, 1.f});
+
+		Zenith_UI::Zenith_UIText* pxGoal = xUI.CreateText("GoalHeader", "Goal:");
+		SetupTopRightText(pxGoal, s_fLineHeight * 6, false);
+		pxGoal->SetFontSize(s_fBaseTextSize * 3.6f);
+		pxGoal->SetColor({0.9f, 0.9f, 0.2f, 1.f});
+
+		Zenith_UI::Zenith_UIText* pxGoalDesc = xUI.CreateText("GoalDesc", "Push boxes onto targets");
+		SetupTopRightText(pxGoalDesc, s_fLineHeight * 7, false);
+		pxGoalDesc->SetFontSize(s_fBaseTextSize * 3.0f);
+		pxGoalDesc->SetColor({0.8f, 0.8f, 0.8f, 1.f});
+
+		Zenith_UI::Zenith_UIText* pxStatus = xUI.CreateText("Status", "Moves: 0");
+		SetupTopRightText(pxStatus, s_fLineHeight * 9, false);
+		pxStatus->SetFontSize(s_fBaseTextSize * 3.0f);
+		pxStatus->SetColor({0.6f, 0.8f, 1.f, 1.f});
+
+		Zenith_UI::Zenith_UIText* pxProgress = xUI.CreateText("Progress", "Boxes: 0 / 3");
+		SetupTopRightText(pxProgress, s_fLineHeight * 10, false);
+		pxProgress->SetFontSize(s_fBaseTextSize * 3.0f);
+		pxProgress->SetColor({0.6f, 0.8f, 1.f, 1.f});
+
+		Zenith_UI::Zenith_UIText* pxMinMoves = xUI.CreateText("MinMoves", "Min Moves: 0");
+		SetupTopRightText(pxMinMoves, s_fLineHeight * 11, false);
+		pxMinMoves->SetFontSize(s_fBaseTextSize * 3.0f);
+		pxMinMoves->SetColor({0.6f, 0.8f, 1.f, 1.f});
+
+		Zenith_UI::Zenith_UIText* pxWin = xUI.CreateText("WinText", "");
+		SetupTopRightText(pxWin, s_fLineHeight * 13, false);
+		pxWin->SetFontSize(s_fBaseTextSize * 4.2f);
+		pxWin->SetColor({0.2f, 1.f, 0.2f, 1.f});
+
+		Zenith_UI::Zenith_UIText* pxLoadingText = xUI.CreateText("LoadingText", "Generating puzzle...");
+		pxLoadingText->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
+		pxLoadingText->SetPosition(0.f, 0.f);
+		pxLoadingText->SetFontSize(36.f);
+		pxLoadingText->SetColor({1.f, 1.f, 1.f, 1.f});
+		pxLoadingText->SetVisible(false);
+
+		Zenith_Entity xDustEmitter(pxGameData, "DustEmitter");
+		xDustEmitter.SetTransient(false);
+		Zenith_ParticleEmitterComponent& xEmitter = xDustEmitter.AddComponent<Zenith_ParticleEmitterComponent>();
+		xEmitter.SetConfig(Sokoban::g_pxDustConfig);
+
+		Zenith_ScriptComponent& xScript = xGameManager.AddComponent<Zenith_ScriptComponent>();
+		xScript.SetBehaviourForSerialization<Sokoban_Behaviour>();
+
+		pxGameData->SaveToFile(strGamePath);
+		Zenith_SceneManager::RegisterSceneBuildIndex(1, strGamePath);
+		Zenith_SceneManager::UnloadScene(xGameScene);
+	}
+}
+
+void Project_LoadInitialScene()
+{
+	Zenith_SceneManager::LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
 }

@@ -7,6 +7,7 @@
 #include "EntityComponent/Zenith_ComponentRegistry.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_SceneData.h"
+#include "FileAccess/Zenith_FileAccess.h"
 
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "imgui.h"
@@ -328,13 +329,13 @@ void Render(Zenith_EntityID& uGameCameraEntityID)
 					}
 				}
 			}
-			// Accept .zscen file drops from Content Browser for additive loading
+			// Accept scene file drops from Content Browser for additive loading
 			if (const ImGuiPayload* pPayload = ImGui::AcceptDragDropPayload(DRAGDROP_PAYLOAD_FILE_GENERIC))
 			{
 				const DragDropFilePayload* pxFilePayload = (const DragDropFilePayload*)pPayload->Data;
 				std::string strPath(pxFilePayload->m_szFilePath);
 				// Check if it's a scene file
-				if (strPath.size() > 5 && strPath.substr(strPath.size() - 5) == "zscen")
+				if (strPath.ends_with(ZENITH_SCENE_EXT))
 				{
 					Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_ADDITIVE);
 				}
@@ -362,9 +363,9 @@ void Render(Zenith_EntityID& uGameCameraEntityID)
 			{
 #ifdef _WIN32
 				std::string strFilePath = ::ShowSaveFileDialog(
-					"Zenith Scene Files (*.zscen)\0*.zscen\0All Files (*.*)\0*.*\0",
-					"zscen",
-					(pxSceneData->GetName() + ".zscen").c_str());
+					"Zenith Scene Files (*" ZENITH_SCENE_EXT ")\0*" ZENITH_SCENE_EXT "\0All Files (*.*)\0*.*\0",
+					ZENITH_SCENE_EXT + 1,
+					(pxSceneData->GetName() + ZENITH_SCENE_EXT).c_str());
 				if (!strFilePath.empty())
 				{
 					pxSceneData->SaveToFile(strFilePath);
@@ -435,12 +436,12 @@ end_scene_loop:
 				pxSourceData->GetEntity(xSourceEntityID).SetParent(INVALID_ENTITY_ID);
 			}
 		}
-		// Accept .zscen file drops for additive loading
+		// Accept scene file drops for additive loading
 		if (const ImGuiPayload* pPayload = ImGui::AcceptDragDropPayload(DRAGDROP_PAYLOAD_FILE_GENERIC))
 		{
 			const DragDropFilePayload* pxFilePayload = (const DragDropFilePayload*)pPayload->Data;
 			std::string strPath(pxFilePayload->m_szFilePath);
-			if (strPath.size() > 5 && strPath.substr(strPath.size() - 5) == "zscen")
+			if (strPath.ends_with(ZENITH_SCENE_EXT))
 			{
 				Zenith_SceneManager::LoadScene(strPath, SCENE_LOAD_ADDITIVE);
 			}

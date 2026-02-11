@@ -101,12 +101,18 @@ int main()
 #endif
 
 	extern void Project_RegisterScriptBehaviours();
+	extern void Project_CreateScenes();
 	extern void Project_LoadInitialScene();
 	Project_RegisterScriptBehaviours();
 
 	// Run unit tests BEFORE loading the game scene
 	// This ensures tests don't corrupt game entities - scene loads fresh after tests
 	Zenith_UnitTests::RunAllTests();
+
+	// Create and register all project scenes (writes .zscen files, populates build index registry)
+	Flux_MemoryManager::BeginFrame();
+	Project_CreateScenes();
+	Flux_MemoryManager::EndFrame(false);
 
 	Flux_MemoryManager::BeginFrame();
 	//#TO_TODO: Flux_Graphics::UploadFrameConstants crashes if we don't do this because there is no game camera

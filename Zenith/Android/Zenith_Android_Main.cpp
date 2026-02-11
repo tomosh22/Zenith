@@ -26,6 +26,7 @@ static bool s_bDestroyRequested = false;
 
 // Forward declarations for game-specific functions
 extern void Project_RegisterScriptBehaviours();
+extern void Project_CreateScenes();
 extern void Project_LoadInitialScene();
 
 static void InitialiseEngine()
@@ -84,8 +85,13 @@ static void InitialiseEngine()
 	Flux::LateInitialise();
 
 	// Load game
-	Flux_MemoryManager::BeginFrame();
 	Project_RegisterScriptBehaviours();
+
+	Flux_MemoryManager::BeginFrame();
+	Project_CreateScenes();
+	Flux_MemoryManager::EndFrame(false);
+
+	Flux_MemoryManager::BeginFrame();
 	Zenith_SceneManager::SetInitialSceneLoadCallback(&Project_LoadInitialScene);
 	Zenith_SceneManager::SetLoadingScene(true);
 	Project_LoadInitialScene();

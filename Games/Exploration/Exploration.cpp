@@ -578,57 +578,97 @@ void Project_Shutdown()
 	// Exploration has no resources that need explicit cleanup
 }
 
-void Project_LoadInitialScene()
+void Project_CreateScenes()
 {
 	using namespace Flux_TerrainConfig;
 
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
-	pxSceneData->Reset();
+	// ---- MainMenu scene (build index 0) ----
+	{
+		const std::string strMenuPath = GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT;
 
-	// Create persistent GameManager entity (camera + UI + script)
-	Zenith_Entity xGameManager(pxSceneData, "GameManager");
-	xGameManager.SetTransient(false);
+		Zenith_Scene xMenuScene = Zenith_SceneManager::CreateEmptyScene("MainMenu");
+		Zenith_SceneData* pxMenuData = Zenith_SceneManager::GetSceneData(xMenuScene);
 
-	// Camera - first-person view at terrain center
-	// NOTE: Terrain mesh goes from (0,0) to (TERRAIN_SIZE, TERRAIN_SIZE)
-	Zenith_CameraComponent& xCamera = xGameManager.AddComponent<Zenith_CameraComponent>();
-	float fStartX = TERRAIN_SIZE * 0.5f;
-	float fStartZ = TERRAIN_SIZE * 0.5f;
-	float fStartY = 1200.0f;  // Above terrain - adjusted by player controller
+		Zenith_Entity xMenuManager(pxMenuData, "MenuManager");
+		xMenuManager.SetTransient(false);
 
-	xCamera.InitialisePerspective(
-		Zenith_Maths::Vector3(fStartX, fStartY, fStartZ),
-		-0.2f,    // Pitch: slightly looking down
-		0.0f,     // Yaw: facing +Z direction
-		glm::radians(70.0f),   // FOV: 70 degrees
-		0.1f,     // Near plane
-		10000.0f, // Far plane (large for terrain viewing)
-		16.0f / 9.0f  // Aspect ratio
-	);
-	pxSceneData->SetMainCameraEntity(xGameManager.GetEntityID());
+		// Camera - first-person view at terrain center
+		Zenith_CameraComponent& xCamera = xMenuManager.AddComponent<Zenith_CameraComponent>();
+		float fStartX = TERRAIN_SIZE * 0.5f;
+		float fStartZ = TERRAIN_SIZE * 0.5f;
+		float fStartY = 1200.0f;
 
-	// UI
-	Zenith_UIComponent& xUI = xGameManager.AddComponent<Zenith_UIComponent>();
+		xCamera.InitialisePerspective(
+			Zenith_Maths::Vector3(fStartX, fStartY, fStartZ),
+			-0.2f,
+			0.0f,
+			glm::radians(70.0f),
+			0.1f,
+			10000.0f,
+			16.0f / 9.0f
+		);
+		pxMenuData->SetMainCameraEntity(xMenuManager.GetEntityID());
 
-	// ---- Menu UI (visible initially) ----
-	Zenith_UI::Zenith_UIText* pxMenuTitle = xUI.CreateText("MenuTitle", "EXPLORATION");
-	pxMenuTitle->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
-	pxMenuTitle->SetPosition(0.f, -120.f);
-	pxMenuTitle->SetFontSize(48.f);
-	pxMenuTitle->SetColor(Zenith_Maths::Vector4(0.3f, 0.7f, 0.3f, 1.f));
+		Zenith_UIComponent& xUI = xMenuManager.AddComponent<Zenith_UIComponent>();
 
-	Zenith_UI::Zenith_UIButton* pxPlayButton = xUI.CreateButton("MenuPlay", "Play");
-	pxPlayButton->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
-	pxPlayButton->SetPosition(0.f, 0.f);
-	pxPlayButton->SetSize(200.f, 50.f);
+		Zenith_UI::Zenith_UIText* pxMenuTitle = xUI.CreateText("MenuTitle", "EXPLORATION");
+		pxMenuTitle->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
+		pxMenuTitle->SetPosition(0.f, -120.f);
+		pxMenuTitle->SetFontSize(48.f);
+		pxMenuTitle->SetColor(Zenith_Maths::Vector4(0.3f, 0.7f, 0.3f, 1.f));
 
-	// ---- HUD UI is created by Exploration_UIManager in OnStart ----
+		Zenith_UI::Zenith_UIButton* pxPlayButton = xUI.CreateButton("MenuPlay", "Play");
+		pxPlayButton->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
+		pxPlayButton->SetPosition(0.f, 0.f);
+		pxPlayButton->SetSize(200.f, 50.f);
 
-	// Script
-	Zenith_ScriptComponent& xScript = xGameManager.AddComponent<Zenith_ScriptComponent>();
-	xScript.SetBehaviourForSerialization<Exploration_Behaviour>();
+		Zenith_ScriptComponent& xScript = xMenuManager.AddComponent<Zenith_ScriptComponent>();
+		xScript.SetBehaviourForSerialization<Exploration_Behaviour>();
 
-	// Mark as persistent - survives all scene transitions
-	xGameManager.DontDestroyOnLoad();
+		pxMenuData->SaveToFile(strMenuPath);
+		Zenith_SceneManager::RegisterSceneBuildIndex(0, strMenuPath);
+		Zenith_SceneManager::UnloadScene(xMenuScene);
+	}
+
+	// ---- Exploration gameplay scene (build index 1) ----
+	{
+		const std::string strGamePath = GAME_ASSETS_DIR "Scenes/Exploration" ZENITH_SCENE_EXT;
+
+		Zenith_Scene xGameScene = Zenith_SceneManager::CreateEmptyScene("Exploration");
+		Zenith_SceneData* pxGameData = Zenith_SceneManager::GetSceneData(xGameScene);
+
+		Zenith_Entity xGameManager(pxGameData, "GameManager");
+		xGameManager.SetTransient(false);
+
+		// Camera - first-person view at terrain center
+		Zenith_CameraComponent& xCamera = xGameManager.AddComponent<Zenith_CameraComponent>();
+		float fStartX = TERRAIN_SIZE * 0.5f;
+		float fStartZ = TERRAIN_SIZE * 0.5f;
+		float fStartY = 1200.0f;
+
+		xCamera.InitialisePerspective(
+			Zenith_Maths::Vector3(fStartX, fStartY, fStartZ),
+			-0.2f,
+			0.0f,
+			glm::radians(70.0f),
+			0.1f,
+			10000.0f,
+			16.0f / 9.0f
+		);
+		pxGameData->SetMainCameraEntity(xGameManager.GetEntityID());
+
+		// HUD UI is created by Exploration_UIManager in OnStart
+
+		Zenith_ScriptComponent& xScript = xGameManager.AddComponent<Zenith_ScriptComponent>();
+		xScript.SetBehaviourForSerialization<Exploration_Behaviour>();
+
+		pxGameData->SaveToFile(strGamePath);
+		Zenith_SceneManager::RegisterSceneBuildIndex(1, strGamePath);
+		Zenith_SceneManager::UnloadScene(xGameScene);
+	}
+}
+
+void Project_LoadInitialScene()
+{
+	Zenith_SceneManager::LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
 }

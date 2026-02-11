@@ -611,96 +611,132 @@ void Project_Shutdown()
 	CleanupCombatResources();
 }
 
+void Project_CreateScenes()
+{
+	// ---- MainMenu scene (build index 0) ----
+	{
+		const std::string strMenuPath = GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT;
+
+		Zenith_Scene xMenuScene = Zenith_SceneManager::CreateEmptyScene("MainMenu");
+		Zenith_SceneData* pxMenuData = Zenith_SceneManager::GetSceneData(xMenuScene);
+
+		Zenith_Entity xMenuManager(pxMenuData, "GameManager");
+		xMenuManager.SetTransient(false);
+
+		Zenith_CameraComponent& xCamera = xMenuManager.AddComponent<Zenith_CameraComponent>();
+		xCamera.InitialisePerspective(
+			Zenith_Maths::Vector3(0.0f, 12.0f, -15.0f),
+			-0.7f,
+			0.0f,
+			glm::radians(50.0f),
+			0.1f,
+			1000.0f,
+			16.0f / 9.0f
+		);
+		pxMenuData->SetMainCameraEntity(xMenuManager.GetEntityID());
+
+		Zenith_UIComponent& xUI = xMenuManager.AddComponent<Zenith_UIComponent>();
+
+		Zenith_UI::Zenith_UIText* pxMenuTitle = xUI.CreateText("MenuTitle", "COMBAT ARENA");
+		pxMenuTitle->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
+		pxMenuTitle->SetPosition(0.0f, -120.0f);
+		pxMenuTitle->SetFontSize(15.0f * 4.8f);
+		pxMenuTitle->SetColor(Zenith_Maths::Vector4(1.0f, 0.2f, 0.2f, 1.0f));
+
+		Zenith_UI::Zenith_UIButton* pxPlayButton = xUI.CreateButton("MenuPlay", "Play");
+		pxPlayButton->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
+		pxPlayButton->SetPosition(0.0f, 0.0f);
+		pxPlayButton->SetSize(200.0f, 50.0f);
+
+		Zenith_ScriptComponent& xScript = xMenuManager.AddComponent<Zenith_ScriptComponent>();
+		xScript.SetBehaviourForSerialization<Combat_Behaviour>();
+
+		pxMenuData->SaveToFile(strMenuPath);
+		Zenith_SceneManager::RegisterSceneBuildIndex(0, strMenuPath);
+		Zenith_SceneManager::UnloadScene(xMenuScene);
+	}
+
+	// ---- Arena gameplay scene (build index 1) ----
+	{
+		const std::string strArenaPath = GAME_ASSETS_DIR "Scenes/Arena" ZENITH_SCENE_EXT;
+
+		Zenith_Scene xArenaScene = Zenith_SceneManager::CreateEmptyScene("Arena");
+		Zenith_SceneData* pxArenaData = Zenith_SceneManager::GetSceneData(xArenaScene);
+
+		Zenith_Entity xGameManager(pxArenaData, "GameManager");
+		xGameManager.SetTransient(false);
+
+		Zenith_CameraComponent& xCamera = xGameManager.AddComponent<Zenith_CameraComponent>();
+		xCamera.InitialisePerspective(
+			Zenith_Maths::Vector3(0.0f, 12.0f, -15.0f),
+			-0.7f,
+			0.0f,
+			glm::radians(50.0f),
+			0.1f,
+			1000.0f,
+			16.0f / 9.0f
+		);
+		pxArenaData->SetMainCameraEntity(xGameManager.GetEntityID());
+
+		static constexpr float s_fMarginLeft = 30.0f;
+		static constexpr float s_fMarginTop = 30.0f;
+		static constexpr float s_fBaseTextSize = 15.0f;
+		static constexpr float s_fLineHeight = 24.0f;
+
+		Zenith_UIComponent& xUI = xGameManager.AddComponent<Zenith_UIComponent>();
+
+		auto CreateHUDText = [&](const char* szName, const char* szText,
+			Zenith_UI::AnchorPreset eAnchor, float fX, float fY, float fSize,
+			Zenith_Maths::Vector4 xColor,
+			Zenith_UI::TextAlignment eAlign = Zenith_UI::TextAlignment::Left)
+		{
+			Zenith_UI::Zenith_UIText* pxText = xUI.CreateText(szName, szText);
+			pxText->SetAnchorAndPivot(eAnchor);
+			pxText->SetPosition(fX, fY);
+			pxText->SetFontSize(fSize);
+			pxText->SetColor(xColor);
+			pxText->SetAlignment(eAlign);
+			pxText->SetVisible(false);
+		};
+
+		CreateHUDText("PlayerHealth", "Health: 100 / 100",
+			Zenith_UI::AnchorPreset::TopLeft, s_fMarginLeft, s_fMarginTop + s_fLineHeight * 3,
+			s_fBaseTextSize * 3.0f, {0.2f, 1.0f, 0.2f, 1.0f});
+
+		CreateHUDText("PlayerHealthBar", "[||||||||||||||||||||]",
+			Zenith_UI::AnchorPreset::TopLeft, s_fMarginLeft, s_fMarginTop + s_fLineHeight * 4,
+			s_fBaseTextSize * 2.5f, {0.2f, 1.0f, 0.2f, 1.0f});
+
+		CreateHUDText("EnemyCount", "Enemies: 3 / 3",
+			Zenith_UI::AnchorPreset::TopLeft, s_fMarginLeft, s_fMarginTop + s_fLineHeight * 6,
+			s_fBaseTextSize * 3.0f, {0.8f, 0.8f, 0.8f, 1.0f});
+
+		CreateHUDText("ComboCount", "",
+			Zenith_UI::AnchorPreset::Center, 0.0f, -100.0f,
+			s_fBaseTextSize * 8.0f, {1.0f, 0.8f, 0.2f, 1.0f}, Zenith_UI::TextAlignment::Center);
+
+		CreateHUDText("ComboText", "",
+			Zenith_UI::AnchorPreset::Center, 0.0f, -60.0f,
+			s_fBaseTextSize * 4.0f, {1.0f, 0.8f, 0.2f, 1.0f}, Zenith_UI::TextAlignment::Center);
+
+		CreateHUDText("Controls", "WASD: Move | LMB: Attack | RMB: Heavy | Space: Dodge | R: Reset | Esc: Menu",
+			Zenith_UI::AnchorPreset::BottomLeft, s_fMarginLeft, s_fMarginTop,
+			s_fBaseTextSize * 2.5f, {0.7f, 0.7f, 0.7f, 1.0f});
+
+		CreateHUDText("Status", "",
+			Zenith_UI::AnchorPreset::Center, 0.0f, 0.0f,
+			s_fBaseTextSize * 8.0f, {0.2f, 1.0f, 0.2f, 1.0f}, Zenith_UI::TextAlignment::Center);
+
+		Zenith_ScriptComponent& xScript = xGameManager.AddComponent<Zenith_ScriptComponent>();
+		xScript.SetBehaviourForSerialization<Combat_Behaviour>();
+
+		pxArenaData->SaveToFile(strArenaPath);
+		Zenith_SceneManager::RegisterSceneBuildIndex(1, strArenaPath);
+		Zenith_SceneManager::UnloadScene(xArenaScene);
+	}
+}
+
 void Project_LoadInitialScene()
 {
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
-	pxSceneData->Reset();
-
-	// Create persistent GameManager entity
-	Zenith_Entity xGameManager(pxSceneData, "GameManager");
-	xGameManager.SetTransient(false);
-
-	// Camera
-	Zenith_CameraComponent& xCamera = xGameManager.AddComponent<Zenith_CameraComponent>();
-	xCamera.InitialisePerspective(
-		Zenith_Maths::Vector3(0.0f, 12.0f, -15.0f),
-		-0.7f,
-		0.0f,
-		glm::radians(50.0f),
-		0.1f,
-		1000.0f,
-		16.0f / 9.0f
-	);
-	pxSceneData->SetMainCameraEntity(xGameManager.GetEntityID());
-
-	// UI Setup
-	static constexpr float s_fMarginLeft = 30.0f;
-	static constexpr float s_fMarginTop = 30.0f;
-	static constexpr float s_fBaseTextSize = 15.0f;
-	static constexpr float s_fLineHeight = 24.0f;
-
-	Zenith_UIComponent& xUI = xGameManager.AddComponent<Zenith_UIComponent>();
-
-	// Menu UI (visible initially)
-	Zenith_UI::Zenith_UIText* pxMenuTitle = xUI.CreateText("MenuTitle", "COMBAT ARENA");
-	pxMenuTitle->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
-	pxMenuTitle->SetPosition(0.0f, -120.0f);
-	pxMenuTitle->SetFontSize(s_fBaseTextSize * 4.8f);
-	pxMenuTitle->SetColor(Zenith_Maths::Vector4(1.0f, 0.2f, 0.2f, 1.0f));
-
-	Zenith_UI::Zenith_UIButton* pxPlayButton = xUI.CreateButton("MenuPlay", "Play");
-	pxPlayButton->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
-	pxPlayButton->SetPosition(0.0f, 0.0f);
-	pxPlayButton->SetSize(200.0f, 50.0f);
-
-	// HUD UI (hidden initially)
-	auto CreateHUDText = [&](const char* szName, const char* szText,
-		Zenith_UI::AnchorPreset eAnchor, float fX, float fY, float fSize,
-		Zenith_Maths::Vector4 xColor,
-		Zenith_UI::TextAlignment eAlign = Zenith_UI::TextAlignment::Left)
-	{
-		Zenith_UI::Zenith_UIText* pxText = xUI.CreateText(szName, szText);
-		pxText->SetAnchorAndPivot(eAnchor);
-		pxText->SetPosition(fX, fY);
-		pxText->SetFontSize(fSize);
-		pxText->SetColor(xColor);
-		pxText->SetAlignment(eAlign);
-		pxText->SetVisible(false);
-	};
-
-	CreateHUDText("PlayerHealth", "Health: 100 / 100",
-		Zenith_UI::AnchorPreset::TopLeft, s_fMarginLeft, s_fMarginTop + s_fLineHeight * 3,
-		s_fBaseTextSize * 3.0f, {0.2f, 1.0f, 0.2f, 1.0f});
-
-	CreateHUDText("PlayerHealthBar", "[||||||||||||||||||||]",
-		Zenith_UI::AnchorPreset::TopLeft, s_fMarginLeft, s_fMarginTop + s_fLineHeight * 4,
-		s_fBaseTextSize * 2.5f, {0.2f, 1.0f, 0.2f, 1.0f});
-
-	CreateHUDText("EnemyCount", "Enemies: 3 / 3",
-		Zenith_UI::AnchorPreset::TopLeft, s_fMarginLeft, s_fMarginTop + s_fLineHeight * 6,
-		s_fBaseTextSize * 3.0f, {0.8f, 0.8f, 0.8f, 1.0f});
-
-	CreateHUDText("ComboCount", "",
-		Zenith_UI::AnchorPreset::Center, 0.0f, -100.0f,
-		s_fBaseTextSize * 8.0f, {1.0f, 0.8f, 0.2f, 1.0f}, Zenith_UI::TextAlignment::Center);
-
-	CreateHUDText("ComboText", "",
-		Zenith_UI::AnchorPreset::Center, 0.0f, -60.0f,
-		s_fBaseTextSize * 4.0f, {1.0f, 0.8f, 0.2f, 1.0f}, Zenith_UI::TextAlignment::Center);
-
-	CreateHUDText("Controls", "WASD: Move | LMB: Attack | RMB: Heavy | Space: Dodge | R: Reset | Esc: Menu",
-		Zenith_UI::AnchorPreset::BottomLeft, s_fMarginLeft, s_fMarginTop,
-		s_fBaseTextSize * 2.5f, {0.7f, 0.7f, 0.7f, 1.0f});
-
-	CreateHUDText("Status", "",
-		Zenith_UI::AnchorPreset::Center, 0.0f, 0.0f,
-		s_fBaseTextSize * 8.0f, {0.2f, 1.0f, 0.2f, 1.0f}, Zenith_UI::TextAlignment::Center);
-
-	// Script
-	Zenith_ScriptComponent& xScript = xGameManager.AddComponent<Zenith_ScriptComponent>();
-	xScript.SetBehaviourForSerialization<Combat_Behaviour>();
-
-	// Mark as persistent - survives all scene transitions
-	xGameManager.DontDestroyOnLoad();
+	Zenith_SceneManager::LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
 }

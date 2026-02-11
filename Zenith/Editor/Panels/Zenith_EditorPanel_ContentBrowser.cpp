@@ -7,6 +7,9 @@
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "FileAccess/Zenith_FileAccess.h"
+#include "EntityComponent/Zenith_SceneManager.h"
+#include "EntityComponent/Zenith_SceneData.h"
+#include "Editor/Zenith_UndoSystem.h"
 #include "AssetHandling/Zenith_ModelAsset.h"
 #include "Flux/MeshAnimation/Flux_AnimationClip.h"
 #include "Flux/Flux_ImGuiIntegration.h"
@@ -470,6 +473,10 @@ void Zenith_EditorPanelContentBrowser::Render(ContentBrowserState& xState)
 								Zenith_Editor::SelectMaterial(pMaterial);
 							}
 						}
+						else if (xEntry.m_strExtension == ZENITH_SCENE_EXT)
+						{
+							Zenith_Editor::RequestLoadSceneFromFile(xEntry.m_strFullPath);
+						}
 					}
 				}
 
@@ -656,7 +663,7 @@ void Zenith_EditorPanelContentBrowser::Render(ContentBrowserState& xState)
 					ImGui::EndDragDropSource();
 				}
 
-				// Double-click to open material files in editor
+				// Double-click to open files in editor
 				if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0))
 				{
 					if (xEntry.m_strExtension == ZENITH_MATERIAL_EXT)
@@ -666,6 +673,10 @@ void Zenith_EditorPanelContentBrowser::Render(ContentBrowserState& xState)
 						{
 							Zenith_Editor::SelectMaterial(pMaterial);
 						}
+					}
+					else if (xEntry.m_strExtension == ZENITH_SCENE_EXT)
+					{
+						Zenith_Editor::RequestLoadSceneFromFile(xEntry.m_strFullPath);
 					}
 				}
 			}

@@ -169,6 +169,7 @@ public:
 		m_xTargetMaterial = Sokoban::g_xTargetMaterial;
 
 		// Wire up button callbacks
+		bool bHasMenu = false;
 		if (m_xParentEntity.HasComponent<Zenith_UIComponent>())
 		{
 			Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
@@ -177,13 +178,22 @@ public:
 			{
 				pxPlayBtn->SetOnClick(&OnPlayClicked, this);
 				pxPlayBtn->SetFocused(true);
+				bHasMenu = true;
 			}
 		}
 
-		// Start in main menu state
-		m_eState = SokobanGameState::MAIN_MENU;
-		SetMenuVisible(true);
-		SetHUDVisible(false);
+		if (bHasMenu)
+		{
+			// Start in main menu state
+			m_eState = SokobanGameState::MAIN_MENU;
+			SetMenuVisible(true);
+			SetHUDVisible(false);
+		}
+		else
+		{
+			// No menu UI (gameplay scene) - start game directly
+			StartGame();
+		}
 	}
 
 	/**
@@ -372,10 +382,9 @@ private:
 	// Button Callbacks (static function pointers, NOT std::function)
 	// ========================================================================
 
-	static void OnPlayClicked(void* pxUserData)
+	static void OnPlayClicked(void* /*pxUserData*/)
 	{
-		Sokoban_Behaviour* pxSelf = static_cast<Sokoban_Behaviour*>(pxUserData);
-		pxSelf->StartGame();
+		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 	}
 
 	// ========================================================================
@@ -428,21 +437,7 @@ private:
 		m_bBoxAnimating = false;
 		StopDustParticles();
 
-		m_eState = SokobanGameState::MAIN_MENU;
-		SetMenuVisible(true);
-		SetHUDVisible(false);
-
-		// Reset button focus
-		if (m_xParentEntity.HasComponent<Zenith_UIComponent>())
-		{
-			Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
-			Zenith_UI::Zenith_UIButton* pxPlayBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuPlay");
-			if (pxPlayBtn)
-			{
-				pxPlayBtn->SetFocused(true);
-			}
-		}
-		m_iFocusIndex = 0;
+		Zenith_SceneManager::LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
 	}
 
 	// ========================================================================

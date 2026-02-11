@@ -99,6 +99,12 @@ public:
 	// Used by unit tests to ensure scene state is consistent after mode transitions
 	static void FlushPendingSceneOperations();
 
+	// Request loading a registered scene by build index (deferred to next Update)
+	static void RequestLoadRegisteredScene(int iBuildIndex);
+
+	// Request loading a scene from a file path (deferred to next Update)
+	static void RequestLoadSceneFromFile(const std::string& strPath);
+
 	//--------------------------------------------------------------------------
 	// Multi-Select System
 	//--------------------------------------------------------------------------
@@ -232,6 +238,9 @@ private:
 	static bool s_bHasSceneBackup;
 	static std::string s_strBackupScenePath;
 	static int s_iBackupSceneHandle; // The scene handle that was active when Play was pressed
+	static std::string s_strBackupSceneName; // Original scene name to restore on Stop
+	static std::string s_strBackupOriginalPath; // Original scene file path
+	static int s_iBackupBuildIndex; // Original build index
 
 	// Deferred scene operations (to avoid concurrent access during render tasks)
 	static bool s_bPendingSceneLoad;
@@ -239,6 +248,10 @@ private:
 	static bool s_bPendingSceneSave;
 	static std::string s_strPendingSceneSavePath;
 	static bool s_bPendingSceneReset;
+	static bool s_bPendingRegisteredSceneLoad;
+	static int s_iPendingRegisteredSceneBuildIndex;
+	static bool s_bPendingSceneLoadFromFile;
+	static std::string s_strPendingSceneLoadFromFilePath;
 
 	// Content Browser state
 	static std::string s_strCurrentDirectory;

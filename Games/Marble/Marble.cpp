@@ -9,6 +9,7 @@
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_SceneData.h"
+#include "FileAccess/Zenith_FileAccess.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
@@ -257,98 +258,142 @@ void Project_Shutdown()
 	// Marble has no resources that need explicit cleanup
 }
 
+void Project_CreateScenes()
+{
+	// --- MainMenu scene (build index 0) ---
+	{
+		const std::string strScenePath = GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT;
+
+		Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("MainMenu");
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xScene);
+
+		Zenith_Entity xGameManager(pxSceneData, "GameManager");
+		xGameManager.SetTransient(false);
+
+		// Camera
+		Zenith_CameraComponent& xCamera = xGameManager.AddComponent<Zenith_CameraComponent>();
+		xCamera.InitialisePerspective(
+			Zenith_Maths::Vector3(0.f, 8.f, -12.f),
+			-0.4f,
+			0.f,
+			glm::radians(50.f),
+			0.1f,
+			1000.f,
+			16.f / 9.f
+		);
+		pxSceneData->SetMainCameraEntity(xGameManager.GetEntityID());
+
+		// UI
+		static constexpr float s_fBaseTextSize = 15.f;
+
+		Zenith_UIComponent& xUI = xGameManager.AddComponent<Zenith_UIComponent>();
+
+		Zenith_UI::Zenith_UIText* pxMenuTitle = xUI.CreateText("MenuTitle", "MARBLE ROLL");
+		pxMenuTitle->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
+		pxMenuTitle->SetPosition(0.f, -120.f);
+		pxMenuTitle->SetAlignment(Zenith_UI::TextAlignment::Center);
+		pxMenuTitle->SetFontSize(s_fBaseTextSize * 6.0f);
+		pxMenuTitle->SetColor(Zenith_Maths::Vector4(0.4f, 0.6f, 1.f, 1.f));
+
+		Zenith_UI::Zenith_UIButton* pxPlayBtn = xUI.CreateButton("MenuPlay", "Play");
+		pxPlayBtn->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
+		pxPlayBtn->SetPosition(0.f, 0.f);
+		pxPlayBtn->SetSize(200.f, 50.f);
+
+		Zenith_UI::Zenith_UIButton* pxQuitBtn = xUI.CreateButton("MenuQuit", "Quit");
+		pxQuitBtn->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
+		pxQuitBtn->SetPosition(0.f, 70.f);
+		pxQuitBtn->SetSize(200.f, 50.f);
+
+		// Script
+		Zenith_ScriptComponent& xScript = xGameManager.AddComponent<Zenith_ScriptComponent>();
+		xScript.SetBehaviourForSerialization<Marble_Behaviour>();
+
+		pxSceneData->SaveToFile(strScenePath);
+		Zenith_SceneManager::RegisterSceneBuildIndex(0, strScenePath);
+		Zenith_SceneManager::UnloadScene(xScene);
+	}
+
+	// --- Marble scene (build index 1) ---
+	{
+		const std::string strScenePath = GAME_ASSETS_DIR "Scenes/Marble" ZENITH_SCENE_EXT;
+
+		Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("Marble");
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xScene);
+
+		Zenith_Entity xGameManager(pxSceneData, "GameManager");
+		xGameManager.SetTransient(false);
+
+		// Camera
+		Zenith_CameraComponent& xCamera = xGameManager.AddComponent<Zenith_CameraComponent>();
+		xCamera.InitialisePerspective(
+			Zenith_Maths::Vector3(0.f, 8.f, -12.f),
+			-0.4f,
+			0.f,
+			glm::radians(50.f),
+			0.1f,
+			1000.f,
+			16.f / 9.f
+		);
+		pxSceneData->SetMainCameraEntity(xGameManager.GetEntityID());
+
+		// UI
+		static constexpr float s_fMarginLeft = 30.f;
+		static constexpr float s_fMarginTop = 30.f;
+		static constexpr float s_fBaseTextSize = 15.f;
+		static constexpr float s_fLineHeight = 24.f;
+
+		Zenith_UIComponent& xUI = xGameManager.AddComponent<Zenith_UIComponent>();
+
+		auto CreateHUDText = [&](const char* szName, const char* szText, float fYOffset) -> Zenith_UI::Zenith_UIText*
+		{
+			Zenith_UI::Zenith_UIText* pxText = xUI.CreateText(szName, szText);
+			pxText->SetAnchorAndPivot(Zenith_UI::AnchorPreset::TopLeft);
+			pxText->SetPosition(s_fMarginLeft, s_fMarginTop + fYOffset);
+			pxText->SetAlignment(Zenith_UI::TextAlignment::Left);
+			pxText->SetVisible(false);
+			return pxText;
+		};
+
+		Zenith_UI::Zenith_UIText* pxTitle = CreateHUDText("Title", "MARBLE ROLL", 0.f);
+		pxTitle->SetFontSize(s_fBaseTextSize * 4.8f);
+		pxTitle->SetColor(Zenith_Maths::Vector4(1.f, 1.f, 1.f, 1.f));
+
+		Zenith_UI::Zenith_UIText* pxScore = CreateHUDText("Score", "Score: 0", s_fLineHeight * 3);
+		pxScore->SetFontSize(s_fBaseTextSize * 3.0f);
+		pxScore->SetColor(Zenith_Maths::Vector4(0.6f, 0.8f, 1.f, 1.f));
+
+		Zenith_UI::Zenith_UIText* pxTime = CreateHUDText("Time", "Time: 60.0", s_fLineHeight * 4);
+		pxTime->SetFontSize(s_fBaseTextSize * 3.0f);
+		pxTime->SetColor(Zenith_Maths::Vector4(0.6f, 0.8f, 1.f, 1.f));
+
+		Zenith_UI::Zenith_UIText* pxCollected = CreateHUDText("Collected", "Collected: 0 / 5", s_fLineHeight * 5);
+		pxCollected->SetFontSize(s_fBaseTextSize * 3.0f);
+		pxCollected->SetColor(Zenith_Maths::Vector4(0.6f, 0.8f, 1.f, 1.f));
+
+		Zenith_UI::Zenith_UIText* pxControls = CreateHUDText("Controls", "WASD: Move | Space: Jump | R: Reset | Esc: Menu", s_fLineHeight * 7);
+		pxControls->SetFontSize(s_fBaseTextSize * 2.5f);
+		pxControls->SetColor(Zenith_Maths::Vector4(0.7f, 0.7f, 0.7f, 1.f));
+
+		Zenith_UI::Zenith_UIText* pxStatus = xUI.CreateText("Status", "");
+		pxStatus->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
+		pxStatus->SetPosition(0.f, 0.f);
+		pxStatus->SetAlignment(Zenith_UI::TextAlignment::Center);
+		pxStatus->SetFontSize(s_fBaseTextSize * 6.0f);
+		pxStatus->SetColor(Zenith_Maths::Vector4(0.2f, 1.f, 0.2f, 1.f));
+		pxStatus->SetVisible(false);
+
+		// Script
+		Zenith_ScriptComponent& xScript = xGameManager.AddComponent<Zenith_ScriptComponent>();
+		xScript.SetBehaviourForSerialization<Marble_Behaviour>();
+
+		pxSceneData->SaveToFile(strScenePath);
+		Zenith_SceneManager::RegisterSceneBuildIndex(1, strScenePath);
+		Zenith_SceneManager::UnloadScene(xScene);
+	}
+}
+
 void Project_LoadInitialScene()
 {
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
-	pxSceneData->Reset();
-
-	// Create persistent GameManager entity (camera + UI + script)
-	Zenith_Entity xGameManager(pxSceneData, "GameManager");
-	xGameManager.SetTransient(false);
-
-	// Camera
-	Zenith_CameraComponent& xCamera = xGameManager.AddComponent<Zenith_CameraComponent>();
-	xCamera.InitialisePerspective(
-		Zenith_Maths::Vector3(0.f, 8.f, -12.f),
-		-0.4f,
-		0.f,
-		glm::radians(50.f),
-		0.1f,
-		1000.f,
-		16.f / 9.f
-	);
-	pxSceneData->SetMainCameraEntity(xGameManager.GetEntityID());
-
-	// UI
-	static constexpr float s_fMarginLeft = 30.f;
-	static constexpr float s_fMarginTop = 30.f;
-	static constexpr float s_fBaseTextSize = 15.f;
-	static constexpr float s_fLineHeight = 24.f;
-
-	Zenith_UIComponent& xUI = xGameManager.AddComponent<Zenith_UIComponent>();
-
-	// --- Menu UI (visible initially) ---
-	Zenith_UI::Zenith_UIText* pxMenuTitle = xUI.CreateText("MenuTitle", "MARBLE ROLL");
-	pxMenuTitle->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
-	pxMenuTitle->SetPosition(0.f, -120.f);
-	pxMenuTitle->SetAlignment(Zenith_UI::TextAlignment::Center);
-	pxMenuTitle->SetFontSize(s_fBaseTextSize * 6.0f);
-	pxMenuTitle->SetColor(Zenith_Maths::Vector4(0.4f, 0.6f, 1.f, 1.f));
-
-	Zenith_UI::Zenith_UIButton* pxPlayBtn = xUI.CreateButton("MenuPlay", "Play");
-	pxPlayBtn->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
-	pxPlayBtn->SetPosition(0.f, 0.f);
-	pxPlayBtn->SetSize(200.f, 50.f);
-
-	Zenith_UI::Zenith_UIButton* pxQuitBtn = xUI.CreateButton("MenuQuit", "Quit");
-	pxQuitBtn->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
-	pxQuitBtn->SetPosition(0.f, 70.f);
-	pxQuitBtn->SetSize(200.f, 50.f);
-
-	// --- HUD UI (hidden initially) ---
-	auto CreateHUDText = [&](const char* szName, const char* szText, float fYOffset) -> Zenith_UI::Zenith_UIText*
-	{
-		Zenith_UI::Zenith_UIText* pxText = xUI.CreateText(szName, szText);
-		pxText->SetAnchorAndPivot(Zenith_UI::AnchorPreset::TopLeft);
-		pxText->SetPosition(s_fMarginLeft, s_fMarginTop + fYOffset);
-		pxText->SetAlignment(Zenith_UI::TextAlignment::Left);
-		pxText->SetVisible(false);
-		return pxText;
-	};
-
-	Zenith_UI::Zenith_UIText* pxTitle = CreateHUDText("Title", "MARBLE ROLL", 0.f);
-	pxTitle->SetFontSize(s_fBaseTextSize * 4.8f);
-	pxTitle->SetColor(Zenith_Maths::Vector4(1.f, 1.f, 1.f, 1.f));
-
-	Zenith_UI::Zenith_UIText* pxScore = CreateHUDText("Score", "Score: 0", s_fLineHeight * 3);
-	pxScore->SetFontSize(s_fBaseTextSize * 3.0f);
-	pxScore->SetColor(Zenith_Maths::Vector4(0.6f, 0.8f, 1.f, 1.f));
-
-	Zenith_UI::Zenith_UIText* pxTime = CreateHUDText("Time", "Time: 60.0", s_fLineHeight * 4);
-	pxTime->SetFontSize(s_fBaseTextSize * 3.0f);
-	pxTime->SetColor(Zenith_Maths::Vector4(0.6f, 0.8f, 1.f, 1.f));
-
-	Zenith_UI::Zenith_UIText* pxCollected = CreateHUDText("Collected", "Collected: 0 / 5", s_fLineHeight * 5);
-	pxCollected->SetFontSize(s_fBaseTextSize * 3.0f);
-	pxCollected->SetColor(Zenith_Maths::Vector4(0.6f, 0.8f, 1.f, 1.f));
-
-	Zenith_UI::Zenith_UIText* pxControls = CreateHUDText("Controls", "WASD: Move | Space: Jump | R: Reset | Esc: Menu", s_fLineHeight * 7);
-	pxControls->SetFontSize(s_fBaseTextSize * 2.5f);
-	pxControls->SetColor(Zenith_Maths::Vector4(0.7f, 0.7f, 0.7f, 1.f));
-
-	Zenith_UI::Zenith_UIText* pxStatus = xUI.CreateText("Status", "");
-	pxStatus->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
-	pxStatus->SetPosition(0.f, 0.f);
-	pxStatus->SetAlignment(Zenith_UI::TextAlignment::Center);
-	pxStatus->SetFontSize(s_fBaseTextSize * 6.0f);
-	pxStatus->SetColor(Zenith_Maths::Vector4(0.2f, 1.f, 0.2f, 1.f));
-	pxStatus->SetVisible(false);
-
-	// Script
-	Zenith_ScriptComponent& xScript = xGameManager.AddComponent<Zenith_ScriptComponent>();
-	xScript.SetBehaviourForSerialization<Marble_Behaviour>();
-
-	// Mark as persistent
-	xGameManager.DontDestroyOnLoad();
+	Zenith_SceneManager::LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
 }

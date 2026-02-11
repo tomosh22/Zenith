@@ -38,6 +38,7 @@ void Zenith_EditorAddLogMessage(const char* szMessage, int eLevel, Zenith_LogCat
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "Input/Zenith_Input.h"
+#include "FileAccess/Zenith_FileAccess.h"
 #include "Flux/Flux_Graphics.h"
 #include "Flux/Flux_ImGuiIntegration.h"
 #include "AssetHandling/Zenith_ModelAsset.h"
@@ -133,11 +134,18 @@ bool Zenith_Editor::s_bViewportFocused = false;
 bool Zenith_Editor::s_bHasSceneBackup = false;
 std::string Zenith_Editor::s_strBackupScenePath = "";
 int Zenith_Editor::s_iBackupSceneHandle = -1;
+std::string Zenith_Editor::s_strBackupSceneName = "";
+std::string Zenith_Editor::s_strBackupOriginalPath = "";
+int Zenith_Editor::s_iBackupBuildIndex = -1;
 bool Zenith_Editor::s_bPendingSceneLoad = false;
 std::string Zenith_Editor::s_strPendingSceneLoadPath = "";
 bool Zenith_Editor::s_bPendingSceneSave = false;
 std::string Zenith_Editor::s_strPendingSceneSavePath = "";
 bool Zenith_Editor::s_bPendingSceneReset = false;
+bool Zenith_Editor::s_bPendingRegisteredSceneLoad = false;
+int Zenith_Editor::s_iPendingRegisteredSceneBuildIndex = -1;
+bool Zenith_Editor::s_bPendingSceneLoadFromFile = false;
+std::string Zenith_Editor::s_strPendingSceneLoadFromFilePath = "";
 
 // Content Browser state
 std::string Zenith_Editor::s_strCurrentDirectory;
@@ -480,35 +488,34 @@ bool Zenith_Editor::Update()
 
 		bool bIsBackupRestore = s_bHasSceneBackup && s_strPendingSceneLoadPath == s_strBackupScenePath;
 
-		// When restoring from backup (editor Stop), clean up game scenes and persistent entities
-		// Games create scenes during Play (e.g. arena, level) and modify persistent entity state
-		// (hide menu UI, show HUD). All of this must be reset to return to the pre-Play state.
+		// When restoring from backup (editor Stop), clean up all game scenes and persistent entities.
+		// The backup handle may be stale - games using SCENE_LOAD_SINGLE during Play destroy
+		// the original scene. We unload ALL non-persistent scenes unconditionally.
 		if (bIsBackupRestore)
 		{
+			// 1. Reset all Flux render systems BEFORE destroying entities.
+			// This clears Flux system state (registered meshes, particles, etc.)
+			// so entity destructors don't interact with stale render system references.
+			// Matches the SCENE_LOAD_SINGLE cleanup order (ResetAllRenderSystems -> UnloadAllNonPersistent).
+			Zenith_SceneManager::ResetAllRenderSystems();
+
 			Zenith_Scene xPersistentScene = Zenith_SceneManager::GetPersistentScene();
 
-			// 1. Collect game scenes created during Play, then unload them
-			// Collect first since unloading modifies the scene list during iteration
+			// 2. Force-unload all non-persistent scenes. Uses UnloadSceneForced to bypass
+			// the "last scene" guard - after SCENE_LOAD_SINGLE during play, only one
+			// game scene remains and UnloadScene would silently refuse to unload it.
 			Zenith_Vector<Zenith_Scene> axScenesToUnload;
 			uint32_t uSceneCount = Zenith_SceneManager::GetLoadedSceneCount();
 			for (uint32_t i = 0; i < uSceneCount; ++i)
 			{
 				Zenith_Scene xScene = Zenith_SceneManager::GetSceneAt(i);
 				if (!xScene.IsValid()) continue;
-				if (xScene.m_iHandle == s_iBackupSceneHandle) continue; // Keep original scene
-				if (xScene == xPersistentScene) continue; // Keep persistent scene
+				if (xScene == xPersistentScene) continue;
 				axScenesToUnload.PushBack(xScene);
 			}
 			for (u_int i = 0; i < axScenesToUnload.GetSize(); ++i)
 			{
-				Zenith_SceneManager::UnloadScene(axScenesToUnload.Get(i));
-			}
-
-			// 2. Restore the original scene as active (games may have changed it via SetActiveScene)
-			Zenith_Scene xOriginalScene = Zenith_SceneManager::GetSceneFromHandle(s_iBackupSceneHandle);
-			if (xOriginalScene.IsValid())
-			{
-				Zenith_SceneManager::SetActiveScene(xOriginalScene);
+				Zenith_SceneManager::UnloadSceneForced(axScenesToUnload.Get(i));
 			}
 
 			// 3. Reset persistent scene entities (destroys all entities, clears component pools)
@@ -516,6 +523,17 @@ bool Zenith_Editor::Update()
 			if (pxPersistentData)
 			{
 				pxPersistentData->Reset();
+			}
+
+			// 4. Create fresh scene with the original name and restore metadata
+			Zenith_Scene xRestoredScene = Zenith_SceneManager::CreateEmptyScene(s_strBackupSceneName);
+			Zenith_SceneManager::SetActiveScene(xRestoredScene);
+
+			Zenith_SceneData* pxRestoredData = Zenith_SceneManager::GetSceneData(xRestoredScene);
+			if (pxRestoredData)
+			{
+				pxRestoredData->m_strPath = s_strBackupOriginalPath;
+				pxRestoredData->m_iBuildIndex = s_iBackupBuildIndex;
 			}
 		}
 
@@ -527,20 +545,6 @@ bool Zenith_Editor::Update()
 			pxSceneData->LoadFromFile(s_strPendingSceneLoadPath);
 		}
 		Zenith_Log(LOG_CATEGORY_EDITOR, "Scene loaded from %s", s_strPendingSceneLoadPath.c_str());
-
-		// When restoring from backup, re-run Project_LoadInitialScene to recreate persistent entities
-		// with fresh default state (UI visibility, game state, callbacks all reset)
-		if (bIsBackupRestore)
-		{
-			Zenith_SceneManager::InitialSceneLoadFn pfnLoadScene = Zenith_SceneManager::GetInitialSceneLoadCallback();
-			if (pfnLoadScene)
-			{
-				Zenith_SceneManager::SetLoadingScene(true);
-				pfnLoadScene();
-				Zenith_SceneManager::SetLoadingScene(false);
-				Zenith_Log(LOG_CATEGORY_EDITOR, "Persistent entities recreated via Project_LoadInitialScene");
-			}
-		}
 
 		// Clear selection as entity pointers are now invalid
 		ClearSelection();
@@ -558,6 +562,9 @@ bool Zenith_Editor::Update()
 			s_bHasSceneBackup = false;
 			s_strBackupScenePath = "";
 			s_iBackupSceneHandle = -1;
+			s_strBackupSceneName = "";
+			s_strBackupOriginalPath = "";
+			s_iBackupBuildIndex = -1;
 			Zenith_Log(LOG_CATEGORY_EDITOR, "Backup scene file cleaned up");
 		}
 
@@ -567,6 +574,60 @@ bool Zenith_Editor::Update()
 		}
 
 		s_strPendingSceneLoadPath.clear();
+
+		return false;
+	}
+
+	// Handle pending registered scene load (from toolbar dropdown)
+	if (s_bPendingRegisteredSceneLoad)
+	{
+		s_bPendingRegisteredSceneLoad = false;
+
+		Zenith_Log(LOG_CATEGORY_EDITOR, "Waiting for all render tasks to complete before loading registered scene...");
+		Zenith_Core::WaitForAllRenderTasks();
+
+		Zenith_Log(LOG_CATEGORY_EDITOR, "Waiting for GPU to become idle before loading registered scene...");
+		Flux_PlatformAPI::WaitForGPUIdle();
+
+		Zenith_Log(LOG_CATEGORY_EDITOR, "Processing deferred resource deletions...");
+		for (u_int u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
+		{
+			Flux_MemoryManager::ProcessDeferredDeletions();
+		}
+
+		Zenith_Log(LOG_CATEGORY_EDITOR, "Clearing pending command lists...");
+		Flux::ClearPendingCommandLists();
+
+		Zenith_SceneManager::LoadSceneByIndex(s_iPendingRegisteredSceneBuildIndex, SCENE_LOAD_SINGLE);
+		Zenith_Log(LOG_CATEGORY_EDITOR, "Registered scene (build index %d) loaded", s_iPendingRegisteredSceneBuildIndex);
+
+		ClearSelection();
+		Zenith_UndoSystem::Clear();
+		s_uGameCameraEntity = INVALID_ENTITY_ID;
+
+		return false;
+	}
+
+	// Handle pending scene load from file path (content browser double-click)
+	if (s_bPendingSceneLoadFromFile)
+	{
+		s_bPendingSceneLoadFromFile = false;
+
+		Zenith_Core::WaitForAllRenderTasks();
+		Flux_PlatformAPI::WaitForGPUIdle();
+		for (u_int u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
+		{
+			Flux_MemoryManager::ProcessDeferredDeletions();
+		}
+		Flux::ClearPendingCommandLists();
+
+		Zenith_SceneManager::LoadScene(s_strPendingSceneLoadFromFilePath, SCENE_LOAD_SINGLE);
+		Zenith_Log(LOG_CATEGORY_EDITOR, "Scene loaded from file: %s", s_strPendingSceneLoadFromFilePath.c_str());
+
+		ClearSelection();
+		Zenith_UndoSystem::Clear();
+		s_uGameCameraEntity = INVALID_ENTITY_ID;
+		s_strPendingSceneLoadFromFilePath.clear();
 
 		return false;
 	}
@@ -769,21 +830,11 @@ void Zenith_Editor::RenderMainMenuBar()
 			{
 #ifdef _WIN32
 				std::string strFilePath = ShowOpenFileDialog(
-					"Zenith Scene Files (*.zscen)\0*.zscen\0All Files (*.*)\0*.*\0",
-					"zscen");
+					"Zenith Scene Files (*" ZENITH_SCENE_EXT ")\0*" ZENITH_SCENE_EXT "\0All Files (*.*)\0*.*\0",
+					ZENITH_SCENE_EXT + 1);
 				if (!strFilePath.empty())
 				{
-					// Safe to call directly - no render tasks active
-					Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-					Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
-					if (pxSceneData)
-					{
-						pxSceneData->LoadFromFile(strFilePath);
-						ClearSelection();
-						s_uGameCameraEntity = INVALID_ENTITY_ID;
-						Zenith_UndoSystem::Clear();
-						Zenith_Log(LOG_CATEGORY_EDITOR, "Scene loaded from %s", strFilePath.c_str());
-					}
+					RequestLoadSceneFromFile(strFilePath);
 				}
 #endif
 			}
@@ -792,8 +843,8 @@ void Zenith_Editor::RenderMainMenuBar()
 			{
 #ifdef _WIN32
 				std::string strFilePath = ShowOpenFileDialog(
-					"Zenith Scene Files (*.zscen)\0*.zscen\0All Files (*.*)\0*.*\0",
-					"zscen");
+					"Zenith Scene Files (*" ZENITH_SCENE_EXT ")\0*" ZENITH_SCENE_EXT "\0All Files (*.*)\0*.*\0",
+					ZENITH_SCENE_EXT + 1);
 				if (!strFilePath.empty())
 				{
 					Zenith_SceneManager::LoadScene(strFilePath, SCENE_LOAD_ADDITIVE);
@@ -806,9 +857,9 @@ void Zenith_Editor::RenderMainMenuBar()
 			{
 #ifdef _WIN32
 				std::string strFilePath = ShowSaveFileDialog(
-					"Zenith Scene Files (*.zscen)\0*.zscen\0All Files (*.*)\0*.*\0",
-					"zscen",
-					"scene.zscen");
+					"Zenith Scene Files (*" ZENITH_SCENE_EXT ")\0*" ZENITH_SCENE_EXT "\0All Files (*.*)\0*.*\0",
+					ZENITH_SCENE_EXT + 1,
+					"scene" ZENITH_SCENE_EXT);
 				if (!strFilePath.empty())
 				{
 					// Safe to call directly - no render tasks active
@@ -1121,7 +1172,7 @@ void Zenith_Editor::SetEditorMode(EditorMode eMode)
 		Zenith_Log(LOG_CATEGORY_EDITOR, "Editor: Entering Play Mode");
 
 		// Generate backup file path in temp directory
-		s_strBackupScenePath = std::filesystem::temp_directory_path().string() + "/zenith_scene_backup.zscen";
+		s_strBackupScenePath = std::filesystem::temp_directory_path().string() + "/zenith_scene_backup" ZENITH_SCENE_EXT;
 
 		// Save current scene state to backup file (persistent entities only)
 		// Transient entities are NOT included because:
@@ -1140,6 +1191,9 @@ void Zenith_Editor::SetEditorMode(EditorMode eMode)
 		pxSceneData->SaveToFile(s_strBackupScenePath, false);
 		s_bHasSceneBackup = true;
 		s_iBackupSceneHandle = xActiveScene.m_iHandle;
+		s_strBackupSceneName = pxSceneData->GetName();
+		s_strBackupOriginalPath = pxSceneData->GetPath();
+		s_iBackupBuildIndex = pxSceneData->GetBuildIndex();
 
 		Zenith_Log(LOG_CATEGORY_EDITOR, "Scene state backed up to: %s", s_strBackupScenePath.c_str());
 
@@ -1259,6 +1313,18 @@ void Zenith_Editor::SetEditorMode(EditorMode eMode)
 	}
 }
 
+void Zenith_Editor::RequestLoadRegisteredScene(int iBuildIndex)
+{
+	s_bPendingRegisteredSceneLoad = true;
+	s_iPendingRegisteredSceneBuildIndex = iBuildIndex;
+}
+
+void Zenith_Editor::RequestLoadSceneFromFile(const std::string& strPath)
+{
+	s_bPendingSceneLoadFromFile = true;
+	s_strPendingSceneLoadFromFilePath = strPath;
+}
+
 void Zenith_Editor::FlushPendingSceneOperations()
 {
 	// Handle pending scene reset
@@ -1348,35 +1414,31 @@ void Zenith_Editor::FlushPendingSceneOperations()
 
 		bool bIsBackupRestore = s_bHasSceneBackup && s_strPendingSceneLoadPath == s_strBackupScenePath;
 
-		// When restoring from backup (editor Stop), clean up game scenes and persistent entities
-		// Games create scenes during Play (e.g. arena, level) and modify persistent entity state
-		// (hide menu UI, show HUD). All of this must be reset to return to the pre-Play state.
+		// When restoring from backup (editor Stop), clean up all game scenes and persistent entities.
+		// The backup handle may be stale - games using SCENE_LOAD_SINGLE during Play destroy
+		// the original scene. We unload ALL non-persistent scenes unconditionally.
 		if (bIsBackupRestore)
 		{
+			// 1. Reset all Flux render systems BEFORE destroying entities.
+			Zenith_SceneManager::ResetAllRenderSystems();
+
 			Zenith_Scene xPersistentScene = Zenith_SceneManager::GetPersistentScene();
 
-			// 1. Collect game scenes created during Play, then unload them
-			// Collect first since unloading modifies the scene list during iteration
+			// 2. Force-unload all non-persistent scenes. Uses UnloadSceneForced to bypass
+			// the "last scene" guard - after SCENE_LOAD_SINGLE during play, only one
+			// game scene remains and UnloadScene would silently refuse to unload it.
 			Zenith_Vector<Zenith_Scene> axScenesToUnload;
 			uint32_t uSceneCount = Zenith_SceneManager::GetLoadedSceneCount();
 			for (uint32_t i = 0; i < uSceneCount; ++i)
 			{
 				Zenith_Scene xScene = Zenith_SceneManager::GetSceneAt(i);
 				if (!xScene.IsValid()) continue;
-				if (xScene.m_iHandle == s_iBackupSceneHandle) continue; // Keep original scene
-				if (xScene == xPersistentScene) continue; // Keep persistent scene
+				if (xScene == xPersistentScene) continue;
 				axScenesToUnload.PushBack(xScene);
 			}
 			for (u_int i = 0; i < axScenesToUnload.GetSize(); ++i)
 			{
-				Zenith_SceneManager::UnloadScene(axScenesToUnload.Get(i));
-			}
-
-			// 2. Restore the original scene as active (games may have changed it via SetActiveScene)
-			Zenith_Scene xOriginalScene = Zenith_SceneManager::GetSceneFromHandle(s_iBackupSceneHandle);
-			if (xOriginalScene.IsValid())
-			{
-				Zenith_SceneManager::SetActiveScene(xOriginalScene);
+				Zenith_SceneManager::UnloadSceneForced(axScenesToUnload.Get(i));
 			}
 
 			// 3. Reset persistent scene entities (destroys all entities, clears component pools)
@@ -1384,6 +1446,17 @@ void Zenith_Editor::FlushPendingSceneOperations()
 			if (pxPersistentData)
 			{
 				pxPersistentData->Reset();
+			}
+
+			// 4. Create fresh scene with the original name and restore metadata
+			Zenith_Scene xRestoredScene = Zenith_SceneManager::CreateEmptyScene(s_strBackupSceneName);
+			Zenith_SceneManager::SetActiveScene(xRestoredScene);
+
+			Zenith_SceneData* pxRestoredData = Zenith_SceneManager::GetSceneData(xRestoredScene);
+			if (pxRestoredData)
+			{
+				pxRestoredData->m_strPath = s_strBackupOriginalPath;
+				pxRestoredData->m_iBuildIndex = s_iBackupBuildIndex;
 			}
 		}
 
@@ -1396,20 +1469,6 @@ void Zenith_Editor::FlushPendingSceneOperations()
 		}
 		Zenith_Log(LOG_CATEGORY_EDITOR, "[FlushPending] Scene loaded from %s", s_strPendingSceneLoadPath.c_str());
 
-		// When restoring from backup, re-run Project_LoadInitialScene to recreate persistent entities
-		// with fresh default state (UI visibility, game state, callbacks all reset)
-		if (bIsBackupRestore)
-		{
-			Zenith_SceneManager::InitialSceneLoadFn pfnLoadScene = Zenith_SceneManager::GetInitialSceneLoadCallback();
-			if (pfnLoadScene)
-			{
-				Zenith_SceneManager::SetLoadingScene(true);
-				pfnLoadScene();
-				Zenith_SceneManager::SetLoadingScene(false);
-				Zenith_Log(LOG_CATEGORY_EDITOR, "[FlushPending] Persistent entities recreated via Project_LoadInitialScene");
-			}
-		}
-
 		ClearSelection();
 		Zenith_UndoSystem::Clear();
 		s_uGameCameraEntity = INVALID_ENTITY_ID;
@@ -1420,6 +1479,9 @@ void Zenith_Editor::FlushPendingSceneOperations()
 			s_bHasSceneBackup = false;
 			s_strBackupScenePath = "";
 			s_iBackupSceneHandle = -1;
+			s_strBackupSceneName = "";
+			s_strBackupOriginalPath = "";
+			s_iBackupBuildIndex = -1;
 			Zenith_Log(LOG_CATEGORY_EDITOR, "[FlushPending] Backup scene file cleaned up");
 		}
 

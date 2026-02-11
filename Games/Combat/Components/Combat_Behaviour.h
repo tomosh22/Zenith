@@ -179,13 +179,19 @@ public:
 		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
 		Zenith_UI::Zenith_UIButton* pxPlayButton = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuPlay");
 		if (pxPlayButton)
+		{
 			pxPlayButton->SetOnClick(&OnPlayClicked, this);
-
-		// Start in menu state
-		m_eGameState = Combat_GameState::MAIN_MENU;
-		m_iFocusIndex = 0;
-		SetMenuVisible(true);
-		SetHUDVisible(false);
+			// Start in menu state
+			m_eGameState = Combat_GameState::MAIN_MENU;
+			m_iFocusIndex = 0;
+			SetMenuVisible(true);
+			SetHUDVisible(false);
+		}
+		else
+		{
+			// No menu UI (gameplay scene) - start game directly
+			StartGame();
+		}
 	}
 
 	void OnStart() ZENITH_FINAL override
@@ -335,10 +341,9 @@ private:
 	// Menu Callbacks
 	// ========================================================================
 
-	static void OnPlayClicked(void* pxUserData)
+	static void OnPlayClicked(void* /*pxUserData*/)
 	{
-		Combat_Behaviour* pxSelf = static_cast<Combat_Behaviour*>(pxUserData);
-		pxSelf->StartGame();
+		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 	}
 
 	// ========================================================================
@@ -389,10 +394,7 @@ private:
 		s_axDeferredDamageEvents.clear();
 		s_axDeferredDeathEvents.clear();
 
-		m_eGameState = Combat_GameState::MAIN_MENU;
-		m_iFocusIndex = 0;
-		SetMenuVisible(true);
-		SetHUDVisible(false);
+		Zenith_SceneManager::LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
 	}
 
 	void ResetGame()

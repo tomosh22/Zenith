@@ -22,6 +22,7 @@
 #include "AI/BehaviorTree/Zenith_Blackboard.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_SceneData.h"
+#include "FileAccess/Zenith_FileAccess.h"
 #include "UI/Zenith_UIButton.h"
 
 // ============================================================================
@@ -173,93 +174,134 @@ void Project_Shutdown()
 	AIShowcase::g_pxArenaNavMesh = nullptr;
 }
 
-void Project_LoadInitialScene()
+void Project_CreateScenes()
 {
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
-	pxSceneData->Reset();
-
-	// Create persistent GameManager entity (camera + UI + script)
-	Zenith_Entity xGameManager(pxSceneData, "GameManager");
-	xGameManager.SetTransient(false);
-
-	// Camera - top-down isometric view for tactical overview
-	Zenith_CameraComponent& xCamera = xGameManager.AddComponent<Zenith_CameraComponent>();
-	xCamera.InitialisePerspective(
-		Zenith_Maths::Vector3(0.f, 30.f, -35.f),
-		-0.7f,
-		0.f,
-		glm::radians(50.f),
-		0.1f,
-		500.f,
-		16.f / 9.f
-	);
-
-	// UI
-	Zenith_UIComponent& xUI = xGameManager.AddComponent<Zenith_UIComponent>();
-
-	// ---- Menu UI (visible initially) ----
-	Zenith_UI::Zenith_UIText* pxMenuTitle = xUI.CreateText("MenuTitle", "AI SHOWCASE");
-	pxMenuTitle->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
-	pxMenuTitle->SetPosition(0.f, -120.f);
-	pxMenuTitle->SetFontSize(48.f);
-	pxMenuTitle->SetColor(Zenith_Maths::Vector4(0.2f, 0.6f, 1.f, 1.f));
-
-	Zenith_UI::Zenith_UIButton* pxPlayButton = xUI.CreateButton("MenuPlay", "Play");
-	pxPlayButton->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
-	pxPlayButton->SetPosition(0.f, 0.f);
-	pxPlayButton->SetSize(200.f, 50.f);
-
-	// ---- HUD UI (hidden initially) ----
-	static constexpr float s_fMargin = 20.f;
-	static constexpr float s_fTextSize = 14.f;
-	static constexpr float s_fLineHeight = 22.f;
-
-	auto CreateHUDText = [&](const char* szName, const char* szText,
-		Zenith_UI::AnchorPreset eAnchor, float fX, float fY, float fSize,
-		const Zenith_Maths::Vector4& xColor) -> Zenith_UI::Zenith_UIText*
+	// ---- MainMenu scene (build index 0) ----
 	{
-		Zenith_UI::Zenith_UIText* pxText = xUI.CreateText(szName, szText);
-		pxText->SetAnchorAndPivot(eAnchor);
-		pxText->SetPosition(fX, fY);
-		pxText->SetFontSize(fSize);
-		pxText->SetColor(xColor);
-		pxText->SetVisible(false);
-		return pxText;
-	};
+		const std::string strMenuPath = GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT;
 
-	CreateHUDText("Title", "AI SHOWCASE",
-		Zenith_UI::AnchorPreset::TopLeft, s_fMargin, s_fMargin, s_fTextSize * 3.0f,
-		Zenith_Maths::Vector4(1.f, 1.f, 1.f, 1.f));
+		Zenith_Scene xMenuScene = Zenith_SceneManager::CreateEmptyScene("MainMenu");
+		Zenith_SceneData* pxMenuData = Zenith_SceneManager::GetSceneData(xMenuScene);
 
-	CreateHUDText("ControlsHeader", "Controls:",
-		Zenith_UI::AnchorPreset::TopLeft, s_fMargin, s_fMargin + s_fLineHeight * 2, s_fTextSize * 2.4f,
-		Zenith_Maths::Vector4(0.9f, 0.9f, 0.2f, 1.f));
+		Zenith_Entity xMenuManager(pxMenuData, "MenuManager");
+		xMenuManager.SetTransient(false);
 
-	const char* astrControls[] = {
-		"WASD: Move player",
-		"Space: Attack/Make sound",
-		"1-5: Change formation",
-		"R: Reset demo",
-		"Esc: Menu"
-	};
-	for (uint32_t u = 0; u < 5; ++u)
-	{
-		char szName[32];
-		sprintf(szName, "Control%u", u);
-		CreateHUDText(szName, astrControls[u],
-			Zenith_UI::AnchorPreset::TopLeft, s_fMargin, s_fMargin + s_fLineHeight * (3 + u), s_fTextSize * 2.0f,
-			Zenith_Maths::Vector4(0.8f, 0.8f, 0.8f, 1.f));
+		// Camera - top-down isometric view
+		Zenith_CameraComponent& xCamera = xMenuManager.AddComponent<Zenith_CameraComponent>();
+		xCamera.InitialisePerspective(
+			Zenith_Maths::Vector3(0.f, 30.f, -35.f),
+			-0.7f,
+			0.f,
+			glm::radians(50.f),
+			0.1f,
+			500.f,
+			16.f / 9.f
+		);
+
+		// Menu UI
+		Zenith_UIComponent& xUI = xMenuManager.AddComponent<Zenith_UIComponent>();
+
+		Zenith_UI::Zenith_UIText* pxMenuTitle = xUI.CreateText("MenuTitle", "AI SHOWCASE");
+		pxMenuTitle->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
+		pxMenuTitle->SetPosition(0.f, -120.f);
+		pxMenuTitle->SetFontSize(48.f);
+		pxMenuTitle->SetColor(Zenith_Maths::Vector4(0.2f, 0.6f, 1.f, 1.f));
+
+		Zenith_UI::Zenith_UIButton* pxPlayButton = xUI.CreateButton("MenuPlay", "Play");
+		pxPlayButton->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
+		pxPlayButton->SetPosition(0.f, 0.f);
+		pxPlayButton->SetSize(200.f, 50.f);
+
+		// Script
+		Zenith_ScriptComponent& xScript = xMenuManager.AddComponent<Zenith_ScriptComponent>();
+		xScript.SetBehaviourForSerialization<AIShowcase_Behaviour>();
+
+		pxMenuData->SaveToFile(strMenuPath);
+		Zenith_SceneManager::RegisterSceneBuildIndex(0, strMenuPath);
+		Zenith_SceneManager::UnloadScene(xMenuScene);
 	}
 
-	CreateHUDText("Status", "Enemies: 0 | Squads: 0",
-		Zenith_UI::AnchorPreset::BottomLeft, s_fMargin, -s_fMargin, s_fTextSize * 2.0f,
-		Zenith_Maths::Vector4(0.6f, 0.8f, 1.f, 1.f));
+	// ---- AIShowcase gameplay scene (build index 1) ----
+	{
+		const std::string strGamePath = GAME_ASSETS_DIR "Scenes/AIShowcase" ZENITH_SCENE_EXT;
 
-	// Script
-	Zenith_ScriptComponent& xScript = xGameManager.AddComponent<Zenith_ScriptComponent>();
-	xScript.SetBehaviourForSerialization<AIShowcase_Behaviour>();
+		Zenith_Scene xGameScene = Zenith_SceneManager::CreateEmptyScene("AIShowcase");
+		Zenith_SceneData* pxGameData = Zenith_SceneManager::GetSceneData(xGameScene);
 
-	// Mark as persistent - survives all scene transitions
-	xGameManager.DontDestroyOnLoad();
+		Zenith_Entity xGameManager(pxGameData, "GameManager");
+		xGameManager.SetTransient(false);
+
+		// Camera - top-down isometric view for tactical overview
+		Zenith_CameraComponent& xCamera = xGameManager.AddComponent<Zenith_CameraComponent>();
+		xCamera.InitialisePerspective(
+			Zenith_Maths::Vector3(0.f, 30.f, -35.f),
+			-0.7f,
+			0.f,
+			glm::radians(50.f),
+			0.1f,
+			500.f,
+			16.f / 9.f
+		);
+
+		// HUD UI
+		Zenith_UIComponent& xUI = xGameManager.AddComponent<Zenith_UIComponent>();
+
+		static constexpr float s_fMargin = 20.f;
+		static constexpr float s_fTextSize = 14.f;
+		static constexpr float s_fLineHeight = 22.f;
+
+		auto CreateHUDText = [&](const char* szName, const char* szText,
+			Zenith_UI::AnchorPreset eAnchor, float fX, float fY, float fSize,
+			const Zenith_Maths::Vector4& xColor) -> Zenith_UI::Zenith_UIText*
+		{
+			Zenith_UI::Zenith_UIText* pxText = xUI.CreateText(szName, szText);
+			pxText->SetAnchorAndPivot(eAnchor);
+			pxText->SetPosition(fX, fY);
+			pxText->SetFontSize(fSize);
+			pxText->SetColor(xColor);
+			pxText->SetVisible(false);
+			return pxText;
+		};
+
+		CreateHUDText("Title", "AI SHOWCASE",
+			Zenith_UI::AnchorPreset::TopLeft, s_fMargin, s_fMargin, s_fTextSize * 3.0f,
+			Zenith_Maths::Vector4(1.f, 1.f, 1.f, 1.f));
+
+		CreateHUDText("ControlsHeader", "Controls:",
+			Zenith_UI::AnchorPreset::TopLeft, s_fMargin, s_fMargin + s_fLineHeight * 2, s_fTextSize * 2.4f,
+			Zenith_Maths::Vector4(0.9f, 0.9f, 0.2f, 1.f));
+
+		const char* astrControls[] = {
+			"WASD: Move player",
+			"Space: Attack/Make sound",
+			"1-5: Change formation",
+			"R: Reset demo",
+			"Esc: Menu"
+		};
+		for (uint32_t u = 0; u < 5; ++u)
+		{
+			char szName[32];
+			sprintf(szName, "Control%u", u);
+			CreateHUDText(szName, astrControls[u],
+				Zenith_UI::AnchorPreset::TopLeft, s_fMargin, s_fMargin + s_fLineHeight * (3 + u), s_fTextSize * 2.0f,
+				Zenith_Maths::Vector4(0.8f, 0.8f, 0.8f, 1.f));
+		}
+
+		CreateHUDText("Status", "Enemies: 0 | Squads: 0",
+			Zenith_UI::AnchorPreset::BottomLeft, s_fMargin, -s_fMargin, s_fTextSize * 2.0f,
+			Zenith_Maths::Vector4(0.6f, 0.8f, 1.f, 1.f));
+
+		// Script
+		Zenith_ScriptComponent& xScript = xGameManager.AddComponent<Zenith_ScriptComponent>();
+		xScript.SetBehaviourForSerialization<AIShowcase_Behaviour>();
+
+		pxGameData->SaveToFile(strGamePath);
+		Zenith_SceneManager::RegisterSceneBuildIndex(1, strGamePath);
+		Zenith_SceneManager::UnloadScene(xGameScene);
+	}
+}
+
+void Project_LoadInitialScene()
+{
+	Zenith_SceneManager::LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
 }

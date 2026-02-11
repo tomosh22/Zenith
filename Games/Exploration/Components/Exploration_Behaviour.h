@@ -96,6 +96,7 @@ public:
 		m_bInitialized = true;
 
 		// Wire menu button callbacks
+		bool bHasMenu = false;
 		if (m_xParentEntity.HasComponent<Zenith_UIComponent>())
 		{
 			Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
@@ -105,11 +106,20 @@ public:
 			{
 				pxPlay->SetOnClick(&OnPlayClicked, this);
 				pxPlay->SetFocused(true);
+				bHasMenu = true;
 			}
 		}
 
-		m_eGameState = ExplorationGameState::MAIN_MENU;
-		SetMenuVisible(true);
+		if (bHasMenu)
+		{
+			m_eGameState = ExplorationGameState::MAIN_MENU;
+			SetMenuVisible(true);
+		}
+		else
+		{
+			// No menu UI (gameplay scene) - start game directly
+			StartGame();
+		}
 	}
 
 	void OnStart() ZENITH_FINAL override
@@ -339,10 +349,9 @@ private:
 	// ========================================================================
 	// Menu Button Callbacks
 	// ========================================================================
-	static void OnPlayClicked(void* pxUserData)
+	static void OnPlayClicked(void* /*pxUserData*/)
 	{
-		Exploration_Behaviour* pxSelf = static_cast<Exploration_Behaviour*>(pxUserData);
-		pxSelf->StartGame();
+		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 	}
 
 	// ========================================================================
@@ -375,19 +384,7 @@ private:
 			m_xWorldScene = Zenith_Scene();
 		}
 
-		m_eGameState = ExplorationGameState::MAIN_MENU;
-		m_iFocusIndex = 0;
-		SetMenuVisible(true);
-		SetHUDVisible(false);
-
-		// Re-focus play button
-		if (m_xParentEntity.HasComponent<Zenith_UIComponent>())
-		{
-			Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
-			Zenith_UI::Zenith_UIButton* pxPlay = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuPlay");
-			if (pxPlay)
-				pxPlay->SetFocused(true);
-		}
+		Zenith_SceneManager::LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
 	}
 
 	// ========================================================================

@@ -99,7 +99,11 @@ void Flux_Text::Reset()
 	// Reset command list to ensure no stale GPU resource references, including descriptor bindings
 	// This is called when the scene is reset (e.g., Play/Stop transitions in editor)
 	g_xCommandList.Reset(true);
-	Zenith_Log(LOG_CATEGORY_TEXT, "Flux_Text::Reset() - Reset command list");
+
+	// Clear pending text entries to prevent stale text from destroyed scenes persisting
+	Zenith_UI::Zenith_UICanvas::ClearPendingTextEntries();
+
+	Zenith_Log(LOG_CATEGORY_TEXT, "Flux_Text::Reset() - Reset command list and cleared pending text entries");
 }
 
 void Flux_Text::Shutdown()

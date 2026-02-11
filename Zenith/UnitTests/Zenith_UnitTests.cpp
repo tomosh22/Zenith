@@ -13,6 +13,7 @@
 
 // Scene serialization includes
 #include "EntityComponent/Zenith_Scene.h"
+#include "FileAccess/Zenith_FileAccess.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "EntityComponent/Zenith_SceneData.h"
 #include "EntityComponent/Zenith_SceneOperation.h"
@@ -1266,7 +1267,7 @@ void Zenith_UnitTests::TestSceneSerialization()
 	xTransform2.SetPosition(Zenith_Maths::Vector3(-5.0f, 0.0f, 0.0f));
 
 	// Save scene to file
-	const std::string strTestScenePath = "unit_test_scene.zscen";
+	const std::string strTestScenePath = "unit_test_scene" ZENITH_SCENE_EXT;
 	pxSceneData->SaveToFile(strTestScenePath);
 
 	// Verify file exists
@@ -1296,7 +1297,7 @@ void Zenith_UnitTests::TestSceneRoundTrip()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestSceneRoundTrip...");
 
-	const std::string strTestScenePath = "unit_test_roundtrip.zscen";
+	const std::string strTestScenePath = "unit_test_roundtrip" ZENITH_SCENE_EXT;
 
 	// ========================================================================
 	// STEP 1: CREATE GROUND TRUTH SCENE

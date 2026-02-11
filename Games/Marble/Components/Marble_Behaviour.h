@@ -119,21 +119,31 @@ public:
 		m_xFloorMaterial = Marble::g_xFloorMaterial;
 
 		// Wire menu button callbacks
+		bool bHasMenu = false;
 		if (m_xParentEntity.HasComponent<Zenith_UIComponent>())
 		{
 			Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
 
 			Zenith_UI::Zenith_UIButton* pxPlay = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuPlay");
 			if (pxPlay)
+			{
 				pxPlay->SetOnClick(&OnPlayClicked, this);
-
-			// Quit button has no callback - just visual
+				bHasMenu = true;
+			}
 		}
 
-		// Start in menu state
-		m_eGameState = MarbleGameState::MAIN_MENU;
-		SetMenuVisible(true);
-		SetHUDVisible(false);
+		if (bHasMenu)
+		{
+			// Start in menu state
+			m_eGameState = MarbleGameState::MAIN_MENU;
+			SetMenuVisible(true);
+			SetHUDVisible(false);
+		}
+		else
+		{
+			// No menu UI (gameplay scene) - start game directly
+			StartGame();
+		}
 	}
 
 	void OnStart() ZENITH_FINAL override
@@ -272,10 +282,9 @@ private:
 	// ========================================================================
 	// Menu Button Callbacks
 	// ========================================================================
-	static void OnPlayClicked(void* pxUserData)
+	static void OnPlayClicked(void* /*pxUserData*/)
 	{
-		Marble_Behaviour* pxSelf = static_cast<Marble_Behaviour*>(pxUserData);
-		pxSelf->StartGame();
+		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 	}
 
 	// ========================================================================
@@ -322,10 +331,7 @@ private:
 			m_xLevelScene = Zenith_Scene();
 		}
 
-		m_eGameState = MarbleGameState::MAIN_MENU;
-		m_iFocusIndex = 0;
-		SetMenuVisible(true);
-		SetHUDVisible(false);
+		Zenith_SceneManager::LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
 	}
 
 	void ResetLevel()

@@ -32,7 +32,7 @@ struct Zenith_Scene;
  *   1.0  - COMPLETE
  *
  * Usage:
- *   Zenith_SceneOperation* pxOp = Zenith_SceneManager::LoadSceneAsync("Level.zscn");
+ *   Zenith_SceneOperation* pxOp = Zenith_SceneManager::LoadSceneAsync("Level.zscen");
  *   pxOp->SetActivationAllowed(false);  // Pause at ~90%
  *
  *   // In update loop:

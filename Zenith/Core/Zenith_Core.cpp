@@ -227,6 +227,9 @@ void Zenith_Core::Zenith_MainLoop()
 		// Render UI components - submits to Flux_Quads and Flux_Text
 		// Must happen before SubmitRenderTasks() which submits those systems
 		// Collects from ALL loaded scenes (persistent entity UI + game scene UI)
+		// Mark as updating so UI callbacks (e.g. button click -> LoadSceneByIndex)
+		// defer scene loads instead of destroying scenes mid-iteration
+		Zenith_SceneManager::SetIsUpdating(true);
 		Zenith_Vector<Zenith_UIComponent*> xUIComponents;
 		Zenith_SceneManager::GetAllOfComponentTypeFromAllScenes<Zenith_UIComponent>(xUIComponents);
 		for (Zenith_Vector<Zenith_UIComponent*>::Iterator xIt(xUIComponents); !xIt.Done(); xIt.Next())
@@ -235,6 +238,7 @@ void Zenith_Core::Zenith_MainLoop()
 			pxUI->Update(Zenith_Core::GetDt());
 			pxUI->Render();
 		}
+		Zenith_SceneManager::SetIsUpdating(false);
 
 		#ifdef ZENITH_ASSERT
 		Zenith_SceneManager::SetRenderTasksActive(true);
