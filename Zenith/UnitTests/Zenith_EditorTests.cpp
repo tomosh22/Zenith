@@ -537,7 +537,6 @@ void Zenith_EditorTests::TestModePreservesSelection()
 
 	// Verify entity still exists in scene after restore
 	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
 	// Note: Entity IDs are regenerated on scene load, so we can't check the same ID
 	// Instead, verify scene has entities and is in a valid state
 	Zenith_Assert(Zenith_Editor::GetEditorMode() == EditorMode::Stopped,
@@ -1086,7 +1085,7 @@ void Zenith_EditorTests::TestTransformHierarchyTraversal()
 
 	// Count children via traversal
 	u_int uChildCount = 0;
-	xParentTransform.ForEachChild([&uChildCount](Zenith_TransformComponent& xChildTransform) {
+	xParentTransform.ForEachChild([&uChildCount](Zenith_TransformComponent&) {
 		uChildCount++;
 	});
 

@@ -186,7 +186,7 @@
       <AdditionalDependencies>zenith.lib;dbghelp.lib;glfw3_mt.lib;psapi.lib;slang.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
-      <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
+      <IgnoreSpecificDefaultLibraries>libcmt.lib</IgnoreSpecificDefaultLibraries>
       <LargeAddressAware>true</LargeAddressAware>
       <MapFileName>output\win64\vs2022_debug_win64_false\fluxcompiler.map</MapFileName>
     </Link>
@@ -273,7 +273,7 @@
       <AdditionalDependencies>zenith.lib;assimp-vc143-mtd.lib;dbghelp.lib;glfw3_mt.lib;opencv_world4100d.lib;psapi.lib;slang.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
-      <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
+      <IgnoreSpecificDefaultLibraries>libcmt.lib</IgnoreSpecificDefaultLibraries>
       <LargeAddressAware>true</LargeAddressAware>
       <MapFileName>output\win64\vs2022_debug_win64_true\fluxcompiler.map</MapFileName>
     </Link>

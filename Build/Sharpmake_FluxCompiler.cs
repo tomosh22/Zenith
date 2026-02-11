@@ -60,6 +60,13 @@ public class FluxCompilerProject : ZenithBaseProject
 		// Output executable
 		conf.Output = Configuration.OutputType.Exe;
 
+		// glfw3_mt.lib (from Zenith dependency) is compiled with /MT (release CRT).
+		// In debug builds we use /MTd (LIBCMTD), causing a linker conflict.
+		if (target.Optimization == Optimization.Debug)
+		{
+			conf.Options.Add(new Options.Vc.Linker.IgnoreSpecificLibraryNames("LIBCMT"));
+		}
+
 		// Add dependency on Zenith library
 		conf.AddPublicDependency<ZenithProject>(target);
 	}

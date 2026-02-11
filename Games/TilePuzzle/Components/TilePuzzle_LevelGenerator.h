@@ -131,9 +131,9 @@ public:
 	 * @param uLevelNumber Level number for difficulty scaling
 	 * @return true if generated level, false if used fallback
 	 */
-	static bool GenerateLevel(TilePuzzleLevelData& xLevelOut, std::mt19937& xRng, uint32_t uLevelNumber)
+	static bool GenerateLevel(TilePuzzleLevelData& xLevelOut, std::mt19937& xRng)
 	{
-		DifficultyParams xParams = GetDifficultyForLevel(uLevelNumber);
+		DifficultyParams xParams = GetDifficultyForLevel(0);
 
 		for (int32_t iAttempt = 0; iAttempt < s_iTilePuzzleMaxGenerationAttempts; ++iAttempt)
 		{
@@ -152,7 +152,7 @@ public:
 		}
 
 		// Fall back to known-good level
-		GenerateFallbackLevel(xLevelOut, uLevelNumber);
+		GenerateFallbackLevel(xLevelOut);
 		return false;
 	}
 
@@ -329,7 +329,7 @@ private:
 	/**
 	 * GenerateFallbackLevel - Create a simple known-solvable level
 	 */
-	static void GenerateFallbackLevel(TilePuzzleLevelData& xLevelOut, uint32_t uLevelNumber)
+	static void GenerateFallbackLevel(TilePuzzleLevelData& xLevelOut)
 	{
 		// Clear shape definitions
 		GetShapeDefinitions().clear();

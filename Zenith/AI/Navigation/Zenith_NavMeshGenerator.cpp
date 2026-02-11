@@ -975,7 +975,6 @@ void Zenith_NavMeshGenerator::AddSpan(HeightfieldColumn& xColumn, uint16_t uMinY
 				if (pxCurrent->m_uMaxY <= pxCurrent->m_uMinY)
 				{
 					// Current span is now empty, remove it
-					VoxelSpan* pxToDelete = pxCurrent;
 					if (pxCurrent == xColumn.m_pxFirstSpan)
 					{
 						xColumn.m_pxFirstSpan = pxCurrent->m_pxNext;

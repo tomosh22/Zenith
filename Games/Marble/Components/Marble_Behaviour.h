@@ -96,7 +96,7 @@ public:
 	ZENITH_BEHAVIOUR_TYPE_NAME(Marble_Behaviour)
 
 	Marble_Behaviour() = delete;
-	Marble_Behaviour(Zenith_Entity& xParentEntity)
+	Marble_Behaviour(Zenith_Entity&)
 		: m_eGameState(MarbleGameState::MAIN_MENU)
 		, m_uScore(0)
 		, m_fTimeRemaining(s_fInitialTime)

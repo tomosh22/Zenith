@@ -326,7 +326,7 @@ void Flux_SkeletonPose::ComputeModelSpaceMatrices(const Flux_MeshAnimation::Node
 	ComputeModelSpaceMatricesRecursive(&xRootNode, glm::mat4(1.0f), xGeometry);
 }
 
-void Flux_SkeletonPose::ComputeModelSpaceMatricesFlat(const Flux_MeshGeometry& xGeometry)
+void Flux_SkeletonPose::ComputeModelSpaceMatricesFlat(const Flux_MeshGeometry&)
 {
 	// Simple flat hierarchy: each bone's model space = its local pose
 	// This is a fallback when no node tree is available
@@ -474,7 +474,6 @@ Flux_BoneMask Flux_BoneMask::CreateUpperBodyMask(const Flux_MeshGeometry& xGeome
 	auto it = xGeometry.m_xBoneNameToIdAndOffset.find(strSpineBoneName);
 	if (it != xGeometry.m_xBoneNameToIdAndOffset.end())
 	{
-		uint32_t uSpineIndex = it->second.first;
 		// Mark spine and all bones above it
 		// Note: This is a simplistic approach; proper implementation would use hierarchy
 		for (const auto& xPair : xGeometry.m_xBoneNameToIdAndOffset)
@@ -510,7 +509,7 @@ Flux_BoneMask Flux_BoneMask::CreateUpperBodyMask(const Flux_MeshGeometry& xGeome
 }
 
 Flux_BoneMask Flux_BoneMask::CreateLowerBodyMask(const Flux_MeshGeometry& xGeometry,
-	const std::string& strSpineBoneName)
+	const std::string&)
 {
 	Flux_BoneMask xMask;
 

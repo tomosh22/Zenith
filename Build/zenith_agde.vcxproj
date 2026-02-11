@@ -77,6 +77,7 @@
       <AdditionalIncludeDirectories>..\middleware;..\middleware\glm-master;..\middleware\imgui-docking;..\middleware\joltphysics-5.4.0;..\middleware\stb;..\middleware\vma;..\zenith;..\zenith\android;..\zenith\core;..\zenith\vulkan;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <ClangDebugInformationFormat>FullDebug</ClangDebugInformationFormat>
       <FloatABI>Default</FloatABI>
+      <TreatWarningAsError>true</TreatWarningAsError>
       <OmitFramePointers>false</OmitFramePointers>
       <UndefineAllPreprocessorDefinitions>false</UndefineAllPreprocessorDefinitions>
       <ExceptionHandling>Disabled</ExceptionHandling>
@@ -107,6 +108,7 @@
       <AdditionalIncludeDirectories>..\middleware;..\middleware\glm-master;..\middleware\imgui-docking;..\middleware\joltphysics-5.4.0;..\middleware\stb;..\middleware\vma;..\zenith;..\zenith\android;..\zenith\core;..\zenith\vulkan;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <ClangDebugInformationFormat>FullDebug</ClangDebugInformationFormat>
       <FloatABI>Default</FloatABI>
+      <TreatWarningAsError>true</TreatWarningAsError>
       <OmitFramePointers>false</OmitFramePointers>
       <UndefineAllPreprocessorDefinitions>false</UndefineAllPreprocessorDefinitions>
       <ExceptionHandling>Disabled</ExceptionHandling>
@@ -1646,10 +1648,6 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
     </ClCompile>
-    <ClCompile Include="..\Tools\Middleware\assimp\include\stb_vorbis.c">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
-    </ClCompile>
     <ClCompile Include="..\Tools\Zenith_Tools_AssimpConvert.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
@@ -1724,6 +1722,7 @@
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">Create</PrecompiledHeader>
     </ClCompile>
     <ClCompile Include="..\Zenith\Core\Zenith_Core.cpp" />
+    <ClCompile Include="..\Zenith\Core\Zenith_String.cpp" />
     <ClCompile Include="..\Zenith\DataStream\Zenith_DataStream.cpp" />
     <ClCompile Include="..\Zenith\DebugVariables\Zenith_DebugVariables.cpp" />
     <ClCompile Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Console.cpp">
@@ -1812,6 +1811,7 @@
     <ClCompile Include="..\Zenith\Flux\Flux_Graphics.cpp" />
     <ClCompile Include="..\Zenith\Flux\Flux_ModelInstance.cpp" />
     <ClCompile Include="..\Zenith\Flux\Flux_RenderTargets.cpp" />
+    <ClCompile Include="..\Zenith\Flux\Flux_Types.cpp" />
     <ClCompile Include="..\Zenith\Flux\Fog\Flux_Fog.cpp" />
     <ClCompile Include="..\Zenith\Flux\Fog\Flux_FroxelFog.cpp" />
     <ClCompile Include="..\Zenith\Flux\Fog\Flux_GodRaysFog.cpp" />

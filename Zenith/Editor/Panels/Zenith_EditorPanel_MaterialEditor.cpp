@@ -18,7 +18,9 @@
 // Windows file dialog support
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
+#ifndef NOMINMAX
 #define NOMINMAX
+#endif
 #include <windows.h>
 #include <commdlg.h>
 #pragma comment(lib, "Comdlg32.lib")
@@ -48,7 +50,7 @@ static std::string ShowSaveFileDialog(const char* szFilter, const char* szDefaul
 	char szFilePath[MAX_PATH] = { 0 };
 	if (szDefaultFilename)
 	{
-		strncpy(szFilePath, szDefaultFilename, MAX_PATH - 1);
+		strncpy_s(szFilePath, sizeof(szFilePath), szDefaultFilename, _TRUNCATE);
 	}
 
 	OPENFILENAMEA ofn = {};
@@ -143,8 +145,7 @@ void Zenith_EditorPanelMaterialEditor::Render(MaterialEditorState& xState)
 
 		// Name
 		char szNameBuffer[256];
-		strncpy(szNameBuffer, pMat->GetName().c_str(), sizeof(szNameBuffer));
-		szNameBuffer[sizeof(szNameBuffer) - 1] = '\0';
+		strncpy_s(szNameBuffer, sizeof(szNameBuffer), pMat->GetName().c_str(), _TRUNCATE);
 		if (ImGui::InputText("Name", szNameBuffer, sizeof(szNameBuffer)))
 		{
 			pMat->SetName(szNameBuffer);

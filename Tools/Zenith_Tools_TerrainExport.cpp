@@ -14,7 +14,9 @@ static std::string GetGameAssetsDirectory()
 	return std::string(ZENITH_ROOT) + "Games/" + Project_GetName() + "/Assets/";
 }
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
+#pragma warning(push, 0)
 #include <opencv2/opencv.hpp>
+#pragma warning(pop)
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
 
 #define MAX_TERRAIN_HEIGHT 4096

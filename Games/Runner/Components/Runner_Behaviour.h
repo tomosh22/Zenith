@@ -89,7 +89,7 @@ public:
 	ZENITH_BEHAVIOUR_TYPE_NAME(Runner_Behaviour)
 
 	Runner_Behaviour() = delete;
-	Runner_Behaviour(Zenith_Entity& xParentEntity)
+	Runner_Behaviour(Zenith_Entity&)
 		: m_eGameState(RunnerGameState::MAIN_MENU)
 		, m_uScore(0)
 		, m_uHighScore(0)
@@ -490,9 +490,7 @@ private:
 
 		// Check obstacle collision
 		float fPlayerHeight = Runner_CharacterController::GetCurrentCharacterHeight();
-		bool bIsSliding = Runner_CharacterController::IsSliding();
-
-		if (Runner_CollectibleSpawner::CheckObstacleCollision(xPlayerPos, fPlayerRadius, fPlayerHeight, bIsSliding))
+		if (Runner_CollectibleSpawner::CheckObstacleCollision(xPlayerPos, fPlayerRadius, fPlayerHeight))
 		{
 			Runner_CharacterController::OnObstacleHit();
 			m_eGameState = RunnerGameState::GAME_OVER;

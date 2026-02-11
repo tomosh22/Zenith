@@ -101,7 +101,7 @@ class Zenith_TacticalPointSystem
 public:
 	static void Initialise();
 	static void Shutdown();
-	static void Update(float fDt);
+	static void Update();
 
 	// Point registration
 	static uint32_t RegisterPoint(const Zenith_Maths::Vector3& xPos,

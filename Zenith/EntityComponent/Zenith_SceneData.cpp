@@ -197,8 +197,8 @@ void Zenith_SceneData::GetCachedRootEntities(Zenith_Vector<Zenith_EntityID>& axO
 Zenith_EntityID Zenith_SceneData::CreateEntity()
 {
 	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "CreateEntity must be called from main thread");
-	uint32_t uIndex;
-	uint32_t uGeneration;
+	u_int uIndex = 0;
+	u_int uGeneration = 0;
 
 	// Try to reuse a free slot. Skip any slots with generation overflow (retired permanently).
 	bool bFoundFreeSlot = false;

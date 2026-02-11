@@ -111,7 +111,7 @@ public:
 	 * Emit a damage event (immediate awareness of attacker)
 	 */
 	static void EmitDamageStimulus(Zenith_EntityID xVictim,
-		Zenith_EntityID xAttacker, float fDamage);
+		Zenith_EntityID xAttacker);
 
 	// ========== Queries ==========
 
@@ -176,13 +176,13 @@ private:
 
 	// Update helpers
 	static void UpdateSightPerception(float fDt, Zenith_SceneData& xScene);
-	static void UpdateHearingPerception(float fDt);
+	static void UpdateHearingPerception();
 	static void UpdateMemoryDecay(float fDt);
 	static void UpdateActiveSounds(float fDt);
 
 	// Sight helpers
 	static bool CheckLineOfSight(const Zenith_Maths::Vector3& xFrom,
-		const Zenith_Maths::Vector3& xTo, Zenith_SceneData& xScene);
+		const Zenith_Maths::Vector3& xTo);
 	static float CalculateAngle(const Zenith_Maths::Vector3& xFrom,
 		const Zenith_Maths::Vector3& xForward, const Zenith_Maths::Vector3& xTo);
 

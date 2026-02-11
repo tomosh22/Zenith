@@ -5,10 +5,12 @@
 #endif
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE
 #define GLM_FORCE_LEFT_HANDED
+#pragma warning(push, 0)
 #include <glm/glm.hpp>
 #include <glm/gtx/quaternion.hpp>
 #include <glm/gtx/transform.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#pragma warning(pop)
 namespace Zenith_Maths
 {
 	using Vector2 = glm::vec2;
@@ -44,37 +46,9 @@ namespace Zenith_Maths
 	static constexpr double Pi = 3.14159265358979323846264338327950288;
 	static constexpr double RadToDeg = 180/Pi;
 
-	static Matrix4 PerspectiveProjection(const float fFOV, const float fAspect, const float fNear, const float fFar)
-	{
-		return glm::perspective(fFOV, fAspect, fNear, fFar);
-	}
-
-	static Matrix4 OrthographicProjection(const float fLeft, const float fRight, const float fBottom, const float fTop, const float fNear, const float fFar)
-	{
-		return glm::ortho(fLeft, fRight, fBottom, fTop, fNear, fFar);
-	}
-
-	static Matrix4 EulerRotationToMatrix4(float fDegrees, const Vector3& xAxis)
-	{
-		Matrix4 xRet = glm::identity<Zenith_Maths::Matrix4>();
-
-		float fCos = cos(glm::radians(fDegrees));
-		float fSin = sin(glm::radians(fDegrees));
-
-		xRet[0][0] = (xAxis.x * xAxis.x) * (1.0f - fCos) + fCos;
-		xRet[0][1] = (xAxis.y * xAxis.x) * (1.0f - fCos) + (xAxis.z * fSin);
-		xRet[0][2] = (xAxis.z * xAxis.x) * (1.0f - fCos) - (xAxis.y * fSin);
-
-		xRet[1][0] = (xAxis.x * xAxis.y) * (1.0f - fCos) - (xAxis.z * fSin);
-		xRet[1][1] = (xAxis.y * xAxis.y) * (1.0f - fCos) + fCos;
-		xRet[1][2] = (xAxis.z * xAxis.y) * (1.0f - fCos) + (xAxis.x * fSin);
-
-		xRet[2][0] = (xAxis.x * xAxis.z) * (1.0f - fCos) + (xAxis.y * fSin);
-		xRet[2][1] = (xAxis.y * xAxis.z) * (1.0f - fCos) - (xAxis.x * fSin);
-		xRet[2][2] = (xAxis.z * xAxis.z) * (1.0f - fCos) + fCos;
-
-		return xRet;
-	}
+	Matrix4 PerspectiveProjection(const float fFOV, const float fAspect, const float fNear, const float fFar);
+	Matrix4 OrthographicProjection(const float fLeft, const float fRight, const float fBottom, const float fTop, const float fNear, const float fFar);
+	Matrix4 EulerRotationToMatrix4(float fDegrees, const Vector3& xAxis);
 
 	// ========== GLM Wrapper Functions for Flux_Primitives ==========
 

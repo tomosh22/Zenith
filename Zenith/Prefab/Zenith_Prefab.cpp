@@ -13,7 +13,7 @@ void Zenith_PropertyOverride::WriteToDataStream(Zenith_DataStream& xStream) cons
 	xStream << m_strPropertyPath;
 
 	// Write the value stream size and data
-	u_int uSize = m_xValue.GetSize();
+	u_int uSize = static_cast<u_int>(m_xValue.GetSize());
 	xStream << uSize;
 	if (uSize > 0)
 	{
@@ -145,7 +145,7 @@ bool Zenith_Prefab::SaveToFile(const std::string& strFilePath) const
 	// Write component data (only for non-variants)
 	if (!bIsVariant)
 	{
-		u_int uDataSize = m_xComponentData.GetSize();
+		u_int uDataSize = static_cast<u_int>(m_xComponentData.GetSize());
 		xOutput << uDataSize;
 		if (uDataSize > 0)
 		{

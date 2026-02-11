@@ -250,7 +250,7 @@ public:
 	 * @param uThisEntityID The entity receiving the collision
 	 * @param uOtherEntityID The colliding entity
 	 */
-	static void HandleCollision(Zenith_EntityID uThisEntityID, Zenith_EntityID uOtherEntityID)
+	static void HandleCollision(Zenith_EntityID, Zenith_EntityID)
 	{
 		// Determine if this is an attack collision
 		// In a full implementation, you would check if the other entity

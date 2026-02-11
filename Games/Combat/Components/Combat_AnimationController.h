@@ -125,7 +125,7 @@ public:
 		case Combat_PlayerState::HEAVY_ATTACK:
 			if (xPlayer.WasStateChangedThisFrame())
 			{
-				TriggerAttack(xPlayer.GetComboCount());
+				TriggerAttack();
 			}
 			break;
 
@@ -186,7 +186,7 @@ public:
 		{
 			Zenith_Log(LOG_CATEGORY_ANIMATION, "[Enemy] Triggering Attack, current state: %s, speed: %.2f",
 				GetCurrentState().c_str(), fSpeed);
-			TriggerAttack(1);
+			TriggerAttack();
 		}
 
 		m_bWasAttacking = bIsAttacking;
@@ -209,7 +209,7 @@ public:
 	// State Control
 	// ========================================================================
 
-	void TriggerAttack(int32_t iComboIndex)
+	void TriggerAttack()
 	{
 		// Attack trigger is consumed and handles combo chaining via exit time
 		if (!m_xController.HasStateMachine())

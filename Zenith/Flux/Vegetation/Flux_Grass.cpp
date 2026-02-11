@@ -437,29 +437,6 @@ void Flux_Grass::UploadInstanceData()
 		s_axAllInstances.GetSize(), uUploadSize / (1024.0f * 1024.0f));
 }
 
-void Flux_Grass::OnTerrainChunkLoaded(const Zenith_Maths::Vector3& xChunkCenter, float fChunkSize)
-{
-	// Create grass chunk for terrain chunk
-	GrassChunk xNewChunk;
-	GenerateGrassForChunk(xNewChunk, xChunkCenter);
-	s_axChunks.PushBack(xNewChunk);
-}
-
-void Flux_Grass::OnTerrainChunkUnloaded(const Zenith_Maths::Vector3& xChunkCenter)
-{
-	// Remove grass chunk - use epsilon for float comparison to handle precision issues
-	constexpr float fEpsilon = 0.01f;
-	constexpr float fMatchDistance = GrassConfig::fCHUNK_SIZE * 0.5f + fEpsilon;
-	for (u_int i = 0; i < s_axChunks.GetSize(); i++)
-	{
-		if (glm::distance(s_axChunks.Get(i).m_xCenter, xChunkCenter) < fMatchDistance)
-		{
-			s_axChunks.Remove(i);
-			break;
-		}
-	}
-}
-
 void Flux_Grass::GenerateFromTerrain(const Flux_MeshGeometry& xTerrainMesh)
 {
 	// Validate terrain mesh has required data

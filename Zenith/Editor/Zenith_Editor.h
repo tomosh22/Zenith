@@ -57,7 +57,7 @@ struct EditorFileTypeInfo
 const EditorFileTypeInfo* GetFileTypeInfo(const std::string& strExtension);
 
 class Zenith_Entity;
-class Zenith_Scene;
+struct Zenith_Scene;
 
 // Console log entry
 struct ConsoleLogEntry

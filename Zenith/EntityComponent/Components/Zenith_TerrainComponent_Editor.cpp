@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#pragma warning(disable: 4530) // C++ exception handler used without /EHsc
 
 #ifdef ZENITH_TOOLS
 
@@ -14,7 +15,9 @@
 #include <filesystem>
 
 // Windows file dialog support
+#ifndef NOMINMAX
 #define NOMINMAX
+#endif
 #include <windows.h>
 #include <commdlg.h>
 #pragma comment(lib, "Comdlg32.lib")
@@ -90,8 +93,7 @@ void Zenith_TerrainComponent::RenderPropertiesPanel()
 					{
 						const DragDropFilePayload* pFilePayload =
 							static_cast<const DragDropFilePayload*>(pPayload->Data);
-						strncpy(s_szHeightmapPath, pFilePayload->m_szFilePath, sizeof(s_szHeightmapPath) - 1);
-						s_szHeightmapPath[sizeof(s_szHeightmapPath) - 1] = '\0';
+						strncpy_s(s_szHeightmapPath, sizeof(s_szHeightmapPath), pFilePayload->m_szFilePath, _TRUNCATE);
 						Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Dropped heightmap: %s", s_szHeightmapPath);
 					}
 					ImGui::EndDragDropTarget();
@@ -103,8 +105,7 @@ void Zenith_TerrainComponent::RenderPropertiesPanel()
 					std::string strPath = ShowTifOpenFileDialog();
 					if (!strPath.empty())
 					{
-						strncpy(s_szHeightmapPath, strPath.c_str(), sizeof(s_szHeightmapPath) - 1);
-						s_szHeightmapPath[sizeof(s_szHeightmapPath) - 1] = '\0';
+						strncpy_s(s_szHeightmapPath, sizeof(s_szHeightmapPath), strPath.c_str(), _TRUNCATE);
 						Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Selected heightmap: %s", s_szHeightmapPath);
 					}
 				}
@@ -122,8 +123,7 @@ void Zenith_TerrainComponent::RenderPropertiesPanel()
 					{
 						const DragDropFilePayload* pFilePayload =
 							static_cast<const DragDropFilePayload*>(pPayload->Data);
-						strncpy(s_szMaterialPath, pFilePayload->m_szFilePath, sizeof(s_szMaterialPath) - 1);
-						s_szMaterialPath[sizeof(s_szMaterialPath) - 1] = '\0';
+						strncpy_s(s_szMaterialPath, sizeof(s_szMaterialPath), pFilePayload->m_szFilePath, _TRUNCATE);
 						Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Dropped material texture: %s", s_szMaterialPath);
 					}
 					ImGui::EndDragDropTarget();
@@ -135,8 +135,7 @@ void Zenith_TerrainComponent::RenderPropertiesPanel()
 					std::string strPath = ShowTifOpenFileDialog();
 					if (!strPath.empty())
 					{
-						strncpy(s_szMaterialPath, strPath.c_str(), sizeof(s_szMaterialPath) - 1);
-						s_szMaterialPath[sizeof(s_szMaterialPath) - 1] = '\0';
+						strncpy_s(s_szMaterialPath, sizeof(s_szMaterialPath), strPath.c_str(), _TRUNCATE);
 						Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Selected material texture: %s", s_szMaterialPath);
 					}
 				}
@@ -302,8 +301,7 @@ void Zenith_TerrainComponent::RenderPropertiesPanel()
 					{
 						const DragDropFilePayload* pFilePayload =
 							static_cast<const DragDropFilePayload*>(pPayload->Data);
-						strncpy(s_szHeightmapPath, pFilePayload->m_szFilePath, sizeof(s_szHeightmapPath) - 1);
-						s_szHeightmapPath[sizeof(s_szHeightmapPath) - 1] = '\0';
+						strncpy_s(s_szHeightmapPath, sizeof(s_szHeightmapPath), pFilePayload->m_szFilePath, _TRUNCATE);
 						Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Dropped new heightmap: %s", s_szHeightmapPath);
 					}
 					ImGui::EndDragDropTarget();
@@ -315,8 +313,7 @@ void Zenith_TerrainComponent::RenderPropertiesPanel()
 					std::string strPath = ShowTifOpenFileDialog();
 					if (!strPath.empty())
 					{
-						strncpy(s_szHeightmapPath, strPath.c_str(), sizeof(s_szHeightmapPath) - 1);
-						s_szHeightmapPath[sizeof(s_szHeightmapPath) - 1] = '\0';
+						strncpy_s(s_szHeightmapPath, sizeof(s_szHeightmapPath), strPath.c_str(), _TRUNCATE);
 						Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Selected new heightmap: %s", s_szHeightmapPath);
 					}
 				}
@@ -334,8 +331,7 @@ void Zenith_TerrainComponent::RenderPropertiesPanel()
 					{
 						const DragDropFilePayload* pFilePayload =
 							static_cast<const DragDropFilePayload*>(pPayload->Data);
-						strncpy(s_szMaterialPath, pFilePayload->m_szFilePath, sizeof(s_szMaterialPath) - 1);
-						s_szMaterialPath[sizeof(s_szMaterialPath) - 1] = '\0';
+						strncpy_s(s_szMaterialPath, sizeof(s_szMaterialPath), pFilePayload->m_szFilePath, _TRUNCATE);
 						Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Dropped new material texture: %s", s_szMaterialPath);
 					}
 					ImGui::EndDragDropTarget();
@@ -347,8 +343,7 @@ void Zenith_TerrainComponent::RenderPropertiesPanel()
 					std::string strPath = ShowTifOpenFileDialog();
 					if (!strPath.empty())
 					{
-						strncpy(s_szMaterialPath, strPath.c_str(), sizeof(s_szMaterialPath) - 1);
-						s_szMaterialPath[sizeof(s_szMaterialPath) - 1] = '\0';
+						strncpy_s(s_szMaterialPath, sizeof(s_szMaterialPath), strPath.c_str(), _TRUNCATE);
 						Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Selected new material texture: %s", s_szMaterialPath);
 					}
 				}

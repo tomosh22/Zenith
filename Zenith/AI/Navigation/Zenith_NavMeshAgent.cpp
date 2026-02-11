@@ -272,7 +272,7 @@ void Zenith_NavMeshAgent::AdvanceWaypoint()
 }
 
 Zenith_Maths::Vector3 Zenith_NavMeshAgent::SteerTowards(const Zenith_Maths::Vector3& xTarget,
-	const Zenith_Maths::Vector3& xCurrentPos, float fDt)
+	const Zenith_Maths::Vector3& xCurrentPos)
 {
 	Zenith_Maths::Vector3 xToTarget = xTarget - xCurrentPos;
 	float fDist = Zenith_Maths::Length(xToTarget);

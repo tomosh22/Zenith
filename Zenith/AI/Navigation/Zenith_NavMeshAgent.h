@@ -165,5 +165,5 @@ private:
 	Zenith_Maths::Vector3 GetCurrentTargetWaypoint() const;
 	void AdvanceWaypoint();
 	Zenith_Maths::Vector3 SteerTowards(const Zenith_Maths::Vector3& xTarget,
-		const Zenith_Maths::Vector3& xCurrentPos, float fDt);
+		const Zenith_Maths::Vector3& xCurrentPos);
 };

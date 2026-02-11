@@ -183,16 +183,16 @@ void Flux_Terrain::Initialise()
 	{
 		s_xWaterShader.Initialise("Water/Flux_Water.vert", "Water/Flux_Water.frag");
 
-		Flux_VertexInputDescription xVertexDesc;
-		xVertexDesc.m_eTopology = MESH_TOPOLOGY_TRIANGLES;
-		xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT3);
-		xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT2);
-		xVertexDesc.m_xPerVertexLayout.CalculateOffsetsAndStrides();
+		Flux_VertexInputDescription xWaterVertexDesc;
+		xWaterVertexDesc.m_eTopology = MESH_TOPOLOGY_TRIANGLES;
+		xWaterVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT3);
+		xWaterVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT2);
+		xWaterVertexDesc.m_xPerVertexLayout.CalculateOffsetsAndStrides();
 
 		Flux_PipelineSpecification xPipelineSpec;
 		xPipelineSpec.m_pxTargetSetup = &Flux_Graphics::s_xFinalRenderTarget;
 		xPipelineSpec.m_pxShader = &s_xWaterShader;
-		xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
+		xPipelineSpec.m_xVertexInputDesc = xWaterVertexDesc;
 
 		Flux_PipelineLayout& xLayout = xPipelineSpec.m_xPipelineLayout;
 		xLayout.m_uNumDescriptorSets = 2;
@@ -403,7 +403,7 @@ void Flux_Terrain::RenderToGBuffer(void*)
 	Flux::SubmitCommandList(&g_xTerrainCommandList, Flux_Graphics::s_xMRTTarget, RENDER_ORDER_TERRAIN);
 }
 
-void Flux_Terrain::RenderToShadowMap(Flux_CommandList& xCmdBuf, const Flux_DynamicConstantBuffer& xShadowMatrixBuffer)
+void Flux_Terrain::RenderToShadowMap(Flux_CommandList&, const Flux_DynamicConstantBuffer&)
 {
 	STUBBED
 }

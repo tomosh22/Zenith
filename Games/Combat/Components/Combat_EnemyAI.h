@@ -160,7 +160,7 @@ public:
 		switch (m_eState)
 		{
 		case Combat_EnemyState::IDLE:
-			UpdateIdleState(xTransform, fDt);
+			UpdateIdleState(xTransform);
 			break;
 
 		case Combat_EnemyState::CHASING:
@@ -209,7 +209,7 @@ private:
 	// State Handlers
 	// ========================================================================
 
-	void UpdateIdleState(Zenith_TransformComponent& xTransform, float fDt)
+	void UpdateIdleState(Zenith_TransformComponent& xTransform)
 	{
 		m_fCurrentSpeed = 0.0f;
 

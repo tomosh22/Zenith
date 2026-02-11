@@ -219,7 +219,6 @@ static void RenderEntityTreeNode(
 //-----------------------------------------------------------------------------
 static void RenderSceneEntities(
 	Zenith_SceneData& xSceneData,
-	Zenith_Scene xScene,
 	Zenith_EntityID& uEntityToDelete,
 	Zenith_EntityID& uDraggedEntityID,
 	Zenith_EntityID& uDropTargetEntityID,
@@ -414,7 +413,7 @@ void Render(Zenith_EntityID& uGameCameraEntityID)
 		if (bHeaderOpen)
 		{
 			ImGui::Indent(4.0f);
-			RenderSceneEntities(*pxSceneData, xScene, uEntityToDelete, uDraggedEntityID, uDropTargetEntityID, xDropTargetScene);
+			RenderSceneEntities(*pxSceneData, uEntityToDelete, uDraggedEntityID, uDropTargetEntityID, xDropTargetScene);
 			ImGui::Unindent(4.0f);
 		}
 

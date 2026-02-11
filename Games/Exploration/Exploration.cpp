@@ -20,7 +20,9 @@
 
 #ifdef ZENITH_TOOLS
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
+#pragma warning(push, 0)
 #include <opencv2/opencv.hpp>
+#pragma warning(pop)
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
 extern void ExportHeightmapFromPaths(const std::string& strHeightmapPath, const std::string& strMaterialPath, const std::string& strOutputDir);
 #endif
@@ -304,30 +306,6 @@ namespace Exploration
 	Zenith_InstancedMeshComponent* g_pxTreeComponent = nullptr;
 }
 
-/**
- * Get terrain height at world position using procedural formula
- */
-static float GetTerrainHeightAt(float fWorldX, float fWorldZ)
-{
-	float fHeight = 0.0f;
-
-	// Large hills (same as heightmap generation)
-	float fFreq1 = 0.001f;
-	fHeight += std::sin(fWorldX * fFreq1) * std::cos(fWorldZ * fFreq1) * 50.0f;
-
-	// Medium features
-	float fFreq2 = 0.005f;
-	fHeight += std::sin(fWorldX * fFreq2 + 1.3f) * std::cos(fWorldZ * fFreq2 + 0.7f) * 20.0f;
-
-	// Small details
-	float fFreq3 = 0.02f;
-	fHeight += std::sin(fWorldX * fFreq3 + 2.1f) * std::cos(fWorldZ * fFreq3 + 1.4f) * 5.0f;
-
-	// Add base height
-	fHeight += 30.0f;
-
-	return std::max(0.0f, fHeight);
-}
 
 /**
  * Simple pseudo-random number generator using position as seed

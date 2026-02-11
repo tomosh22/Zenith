@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#pragma warning(disable: 4530) // C++ exception handler used without /EHsc
 
 #ifdef ZENITH_TOOLS
 
@@ -485,9 +486,7 @@ void Zenith_EditorPanelContentBrowser::Render(ContentBrowserState& xState)
 					ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAllowNullID))
 				{
 					DragDropFilePayload xPayload;
-					strncpy(xPayload.m_szFilePath, xEntry.m_strFullPath.c_str(),
-						sizeof(xPayload.m_szFilePath) - 1);
-					xPayload.m_szFilePath[sizeof(xPayload.m_szFilePath) - 1] = '\0';
+					strncpy_s(xPayload.m_szFilePath, sizeof(xPayload.m_szFilePath), xEntry.m_strFullPath.c_str(), _TRUNCATE);
 
 					const EditorFileTypeInfo* pxTypeInfo = GetFileTypeInfo(xEntry.m_strExtension);
 					const char* szPayloadType = pxTypeInfo ? pxTypeInfo->m_szDragDropType : DRAGDROP_PAYLOAD_FILE_GENERIC;
@@ -647,9 +646,7 @@ void Zenith_EditorPanelContentBrowser::Render(ContentBrowserState& xState)
 				if (ImGui::BeginDragDropSource(ImGuiDragDropFlags_SourceAllowNullID))
 				{
 					DragDropFilePayload xPayload;
-					strncpy(xPayload.m_szFilePath, xEntry.m_strFullPath.c_str(),
-						sizeof(xPayload.m_szFilePath) - 1);
-					xPayload.m_szFilePath[sizeof(xPayload.m_szFilePath) - 1] = '\0';
+					strncpy_s(xPayload.m_szFilePath, sizeof(xPayload.m_szFilePath), xEntry.m_strFullPath.c_str(), _TRUNCATE);
 
 					// Determine payload type from registry
 					const EditorFileTypeInfo* pxTypeInfo = GetFileTypeInfo(xEntry.m_strExtension);

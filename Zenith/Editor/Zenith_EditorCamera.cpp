@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#pragma warning(disable: 4530) // C++ exception handler used without /EHsc
 
 #ifdef ZENITH_TOOLS
 
@@ -138,8 +139,6 @@ void Zenith_Editor::UpdateEditorCamera(float fDt)
 	// This matches PlayerController_Behaviour behavior
 	if (Zenith_Input::IsKeyDown(ZENITH_MOUSE_BUTTON_2))
 	{
-		const double fYawRad = glm::radians(s_fEditorCameraYaw);
-
 		if (Zenith_Input::IsKeyDown(ZENITH_KEY_W))
 		{
 			// Forward movement based on yaw only (stays level)

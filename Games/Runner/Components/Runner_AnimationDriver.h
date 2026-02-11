@@ -144,7 +144,6 @@ public:
 		// Get character state for animation decisions
 		RunnerCharacterState eCharState = Runner_CharacterController::GetState();
 		float fSpeed = Runner_CharacterController::GetCurrentSpeed();
-		bool bGrounded = Runner_CharacterController::IsGrounded();
 
 		// Update animation parameters (would feed into state machine)
 		s_fBlendSpaceParameter = glm::clamp(fSpeed / s_xConfig.m_fBlendSpaceMaxSpeed, 0.0f, 1.0f);
@@ -181,7 +180,7 @@ public:
 		// Handle state transitions
 		if (eNewState != s_eCurrentState)
 		{
-			OnStateExit(s_eCurrentState);
+			OnStateExit();
 			s_eCurrentState = eNewState;
 			s_fStateTime = 0.0f;
 			OnStateEnter(s_eCurrentState);
@@ -244,7 +243,7 @@ private:
 		}
 	}
 
-	static void OnStateExit(RunnerAnimState eState)
+	static void OnStateExit()
 	{
 		// Cleanup if needed
 	}

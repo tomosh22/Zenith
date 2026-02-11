@@ -1,6 +1,9 @@
 #pragma once
+#pragma warning(push)
+#pragma warning(disable: 4005) // APIENTRY macro redefinition (GLFW vs Windows SDK)
 #include <Windows.h>
 #include <winnt.h>
+#pragma warning(pop)
 
 template<bool bEnableProfiling = true>
 class Zenith_Windows_Mutex_T

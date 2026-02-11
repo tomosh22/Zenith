@@ -251,7 +251,7 @@ void RenderTextureSlot(
 	const char* szLabel,
 	Zenith_MaterialAsset& xMaterial,
 	TextureSlotType eSlot,
-	bool bShowPreview,
+	bool,
 	float fPreviewSize,
 	TextureAssignCallback pfnOnAssign)
 {

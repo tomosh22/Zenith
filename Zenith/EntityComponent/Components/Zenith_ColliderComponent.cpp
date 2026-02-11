@@ -243,14 +243,14 @@ void Zenith_ColliderComponent::AddCollider(CollisionVolumeType eVolumeType, Rigi
 		m_pxTerrainMeshData->m_uNumIndices = pxPhysicsMesh->m_uNumIndices;
 
 		m_pxTerrainMeshData->m_pfVertices = new float[pxPhysicsMesh->m_uNumVerts * 3];
-		Zenith_Maths::Vector3 xScale;
-		xTrans.GetScale(xScale);
+		Zenith_Maths::Vector3 xModelScale;
+		xTrans.GetScale(xModelScale);
 		for (uint32_t i = 0; i < pxPhysicsMesh->m_uNumVerts; ++i)
 		{
 			// Apply scale to match rendered geometry size
-			m_pxTerrainMeshData->m_pfVertices[i * 3 + 0] = pxPhysicsMesh->m_pxPositions[i].x * xScale.x;
-			m_pxTerrainMeshData->m_pfVertices[i * 3 + 1] = pxPhysicsMesh->m_pxPositions[i].y * xScale.y;
-			m_pxTerrainMeshData->m_pfVertices[i * 3 + 2] = pxPhysicsMesh->m_pxPositions[i].z * xScale.z;
+			m_pxTerrainMeshData->m_pfVertices[i * 3 + 0] = pxPhysicsMesh->m_pxPositions[i].x * xModelScale.x;
+			m_pxTerrainMeshData->m_pfVertices[i * 3 + 1] = pxPhysicsMesh->m_pxPositions[i].y * xModelScale.y;
+			m_pxTerrainMeshData->m_pfVertices[i * 3 + 2] = pxPhysicsMesh->m_pxPositions[i].z * xModelScale.z;
 		}
 
 		m_pxTerrainMeshData->m_puIndices = new uint32_t[pxPhysicsMesh->m_uNumIndices];

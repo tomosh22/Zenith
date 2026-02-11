@@ -256,8 +256,6 @@ void Zenith_Vulkan_MemoryManager::EndFrame(bool bDefer /*= true*/)
 {
 	FlushStagingBuffer();
 
-	const u_int uNumAllocatedVRAMs = Zenith_Vulkan::s_xVRAMRegistry.size();
-
 	// Process deferred VRAM deletions
 	// Uses a frame counter (MAX_FRAMES_IN_FLIGHT) to ensure GPU has finished using resources
 	ProcessDeferredDeletions();
@@ -280,10 +278,10 @@ void Zenith_Vulkan_MemoryManager::ImageTransitionBarrier(vk::Image xImage, vk::I
 
 void Zenith_Vulkan_MemoryManager::InitialiseVertexBuffer(const void* pData, size_t uSize, Flux_VertexBuffer& xBufferOut, bool bDeviceLocal /*= true*/)
 {
-	Flux_VRAMHandle xHandle = CreateBufferVRAM(uSize, static_cast<MemoryFlags>(1 << MEMORY_FLAGS__VERTEX_BUFFER), bDeviceLocal ? MEMORY_RESIDENCY_GPU : MEMORY_RESIDENCY_CPU);
+	Flux_VRAMHandle xHandle = CreateBufferVRAM(static_cast<u_int>(uSize), static_cast<MemoryFlags>(1 << MEMORY_FLAGS__VERTEX_BUFFER), bDeviceLocal ? MEMORY_RESIDENCY_GPU : MEMORY_RESIDENCY_CPU);
 	xBufferOut.GetBuffer().m_xVRAMHandle = xHandle;
 	xBufferOut.GetBuffer().m_ulSize = uSize;
-	
+
 	if (pData)
 	{
 		UploadBufferData(xHandle, pData, uSize);
@@ -294,7 +292,7 @@ void Zenith_Vulkan_MemoryManager::InitialiseDynamicVertexBuffer(const void* pDat
 {
 	for (uint32_t u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
 	{
-		Flux_VRAMHandle xHandle = CreateBufferVRAM(uSize, static_cast<MemoryFlags>(1 << MEMORY_FLAGS__VERTEX_BUFFER), bDeviceLocal ? MEMORY_RESIDENCY_GPU : MEMORY_RESIDENCY_CPU);
+		Flux_VRAMHandle xHandle = CreateBufferVRAM(static_cast<u_int>(uSize), static_cast<MemoryFlags>(1 << MEMORY_FLAGS__VERTEX_BUFFER), bDeviceLocal ? MEMORY_RESIDENCY_GPU : MEMORY_RESIDENCY_CPU);
 		xBufferOut.GetBufferForFrameInFlight(u).m_xVRAMHandle = xHandle;
 		xBufferOut.GetBufferForFrameInFlight(u).m_ulSize = uSize;
 		
@@ -307,7 +305,7 @@ void Zenith_Vulkan_MemoryManager::InitialiseDynamicVertexBuffer(const void* pDat
 
 void Zenith_Vulkan_MemoryManager::InitialiseIndexBuffer(const void* pData, size_t uSize, Flux_IndexBuffer& xBufferOut)
 {
-	Flux_VRAMHandle xHandle = CreateBufferVRAM(uSize, static_cast<MemoryFlags>(1 << MEMORY_FLAGS__INDEX_BUFFER), MEMORY_RESIDENCY_GPU);
+	Flux_VRAMHandle xHandle = CreateBufferVRAM(static_cast<u_int>(uSize), static_cast<MemoryFlags>(1 << MEMORY_FLAGS__INDEX_BUFFER), MEMORY_RESIDENCY_GPU);
 	xBufferOut.GetBuffer().m_xVRAMHandle = xHandle;
 	xBufferOut.GetBuffer().m_ulSize = uSize;
 	
@@ -319,7 +317,7 @@ void Zenith_Vulkan_MemoryManager::InitialiseIndexBuffer(const void* pData, size_
 
 void Zenith_Vulkan_MemoryManager::InitialiseConstantBuffer(const void* pData, size_t uSize, Flux_ConstantBuffer& xBufferOut)
 {
-	Flux_VRAMHandle xHandle = CreateBufferVRAM(uSize, static_cast<MemoryFlags>(1 << MEMORY_FLAGS__SHADER_READ), MEMORY_RESIDENCY_CPU);
+	Flux_VRAMHandle xHandle = CreateBufferVRAM(static_cast<u_int>(uSize), static_cast<MemoryFlags>(1 << MEMORY_FLAGS__SHADER_READ), MEMORY_RESIDENCY_CPU);
 	Flux_Buffer& xBuffer = xBufferOut.GetBuffer();
 	xBuffer.m_xVRAMHandle = xHandle;
 	xBuffer.m_ulSize = uSize;
@@ -346,7 +344,7 @@ void Zenith_Vulkan_MemoryManager::InitialiseDynamicConstantBuffer(const void* pD
 {
 	for (uint32_t u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
 	{
-		Flux_VRAMHandle xHandle = CreateBufferVRAM(uSize, static_cast<MemoryFlags>(1 << MEMORY_FLAGS__SHADER_READ), MEMORY_RESIDENCY_CPU);
+		Flux_VRAMHandle xHandle = CreateBufferVRAM(static_cast<u_int>(uSize), static_cast<MemoryFlags>(1 << MEMORY_FLAGS__SHADER_READ), MEMORY_RESIDENCY_CPU);
 		Flux_Buffer& xBuffer = xBufferOut.GetBufferForFrameInFlight(u);
 		xBuffer.m_xVRAMHandle = xHandle;
 		xBuffer.m_ulSize = uSize;
@@ -372,7 +370,7 @@ void Zenith_Vulkan_MemoryManager::InitialiseDynamicConstantBuffer(const void* pD
 
 void Zenith_Vulkan_MemoryManager::InitialiseIndirectBuffer(size_t uSize, Flux_IndirectBuffer& xBufferOut)
 {
-	Flux_VRAMHandle xHandle = CreateBufferVRAM(uSize, static_cast<MemoryFlags>(1 << MEMORY_FLAGS__INDIRECT_BUFFER | 1 << MEMORY_FLAGS__UNORDERED_ACCESS), MEMORY_RESIDENCY_GPU);
+	Flux_VRAMHandle xHandle = CreateBufferVRAM(static_cast<u_int>(uSize), static_cast<MemoryFlags>(1 << MEMORY_FLAGS__INDIRECT_BUFFER | 1 << MEMORY_FLAGS__UNORDERED_ACCESS), MEMORY_RESIDENCY_GPU);
 	xBufferOut.GetBuffer().m_xVRAMHandle = xHandle;
 	xBufferOut.GetBuffer().m_ulSize = uSize;
 
@@ -391,7 +389,7 @@ void Zenith_Vulkan_MemoryManager::InitialiseIndirectBuffer(size_t uSize, Flux_In
 
 void Zenith_Vulkan_MemoryManager::InitialiseReadWriteBuffer(const void* pData, size_t uSize, Flux_ReadWriteBuffer& xBufferOut)
 {
-	Flux_VRAMHandle xHandle = CreateBufferVRAM(uSize, static_cast<MemoryFlags>(1 << MEMORY_FLAGS__UNORDERED_ACCESS | 1 << MEMORY_FLAGS__SHADER_READ), MEMORY_RESIDENCY_GPU);
+	Flux_VRAMHandle xHandle = CreateBufferVRAM(static_cast<u_int>(uSize), static_cast<MemoryFlags>(1 << MEMORY_FLAGS__UNORDERED_ACCESS | 1 << MEMORY_FLAGS__SHADER_READ), MEMORY_RESIDENCY_GPU);
 	xBufferOut.GetBuffer().m_xVRAMHandle = xHandle;
 	xBufferOut.GetBuffer().m_ulSize = uSize;
 
@@ -415,8 +413,6 @@ void Zenith_Vulkan_MemoryManager::InitialiseReadWriteBuffer(const void* pData, s
 
 Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateBufferVRAM(const u_int uSize, const MemoryFlags eFlags, MemoryResidency eResidency)
 {
-	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
-
 	vk::BufferUsageFlags eUsageFlags = vk::BufferUsageFlagBits::eTransferDst;
 	
 	if (eFlags & 1 << MEMORY_FLAGS__VERTEX_BUFFER)
@@ -497,8 +493,6 @@ Zenith_Vulkan_MemoryManager::PersistentBuffer Zenith_Vulkan_MemoryManager::Creat
 
 Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateRenderTargetVRAM(const Flux_SurfaceInfo& xInfo)
 {
-	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
-	
 	const bool bIsColour = xInfo.m_eFormat > TEXTURE_FORMAT_COLOUR_BEGIN && xInfo.m_eFormat < TEXTURE_FORMAT_COLOUR_END;
 	const bool bIsDepthStencil = xInfo.m_eFormat > TEXTURE_FORMAT_DEPTH_STENCIL_BEGIN && xInfo.m_eFormat < TEXTURE_FORMAT_DEPTH_STENCIL_END;
 	Zenith_Assert(bIsColour ^ bIsDepthStencil, "Invalid texture format for render target");
@@ -595,7 +589,7 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateTextureVRAM(const void* pData
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 	
 	Flux_SurfaceInfo xInfoCopy = xInfo;
-	xInfoCopy.m_uNumMips = bCreateMips ? std::floor(std::log2((std::max)(xInfo.m_uWidth, xInfo.m_uHeight))) + 1 : 1;
+	xInfoCopy.m_uNumMips = bCreateMips ? static_cast<u_int>(std::floor(std::log2((std::max)(xInfo.m_uWidth, xInfo.m_uHeight))) + 1) : 1;
 	// Ensure depth and layers are at least 1 to prevent zero data size calculations
 	xInfoCopy.m_uDepth = std::max(1u, xInfoCopy.m_uDepth);
 	xInfoCopy.m_uNumLayers = std::max(1u, xInfoCopy.m_uNumLayers);
@@ -674,9 +668,9 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateTextureVRAM(const void* pData
 		if (eMemoryProps & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)
 		{
 			// Direct upload to host-visible memory
-			VmaAllocationInfo xAllocInfo;
-			vmaGetAllocationInfo(s_xAllocator, xAllocation, &xAllocInfo);
-			memcpy(xAllocInfo.pMappedData, pData, ulDataSize);
+			VmaAllocationInfo xImageAllocInfo;
+			vmaGetAllocationInfo(s_xAllocator, xAllocation, &xImageAllocInfo);
+			memcpy(xImageAllocInfo.pMappedData, pData, ulDataSize);
 			vmaFlushAllocation(s_xAllocator, xAllocation, 0, VK_WHOLE_SIZE);
 		}
 		else
@@ -1396,7 +1390,6 @@ void Zenith_Vulkan_MemoryManager::UploadTextureDataChunked(vk::Image xDestImage,
 
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 	const uint8_t* pSrcData = static_cast<const uint8_t*>(pData);
-	size_t uRemainingSize = uSize;
 	size_t uCurrentOffset = 0;
 
 	// For simplicity, chunk by scanlines to avoid partial row uploads
@@ -1421,7 +1414,7 @@ void Zenith_Vulkan_MemoryManager::UploadTextureDataChunked(vk::Image xDestImage,
 	{
 		const uint32_t uCurrentLayer = uCurrentRow / uHeight;
 		const uint32_t uRowInLayer = uCurrentRow % uHeight;
-		const uint32_t uRemainingRows = std::min(uChunkHeight, static_cast<size_t>(uHeight - uRowInLayer));
+		const uint32_t uRemainingRows = static_cast<uint32_t>(std::min(uChunkHeight, static_cast<size_t>(uHeight - uRowInLayer)));
 		const size_t uChunkSize = uRemainingRows * uBytesPerRow;
 
 		s_xMutex.Lock();

@@ -2,7 +2,7 @@
 
 #include "Flux/Flux_RenderTargets.h"
 
-void Flux_RenderAttachmentBuilder::BuildColour(Flux_RenderAttachment& xAttachment, const std::string& strName)
+void Flux_RenderAttachmentBuilder::BuildColour(Flux_RenderAttachment& xAttachment, const std::string&)
 {
 	// Check if attachment already has VRAM allocated and queue it for deletion
 	if (xAttachment.m_xVRAMHandle.IsValid())
@@ -43,7 +43,7 @@ void Flux_RenderAttachmentBuilder::BuildColour(Flux_RenderAttachment& xAttachmen
 	}
 }
 
-void Flux_RenderAttachmentBuilder::BuildColourCubemap(Flux_RenderAttachment& xAttachment, const std::string& strName)
+void Flux_RenderAttachmentBuilder::BuildColourCubemap(Flux_RenderAttachment& xAttachment, const std::string&)
 {
 	// Check if attachment already has VRAM allocated and queue it for deletion
 	if (xAttachment.m_xVRAMHandle.IsValid())
@@ -102,7 +102,7 @@ void Flux_RenderAttachmentBuilder::BuildColourCubemap(Flux_RenderAttachment& xAt
 	}
 }
 
-void Flux_RenderAttachmentBuilder::BuildDepthStencil(Flux_RenderAttachment& xAttachment, const std::string& strName)
+void Flux_RenderAttachmentBuilder::BuildDepthStencil(Flux_RenderAttachment& xAttachment, const std::string&)
 {
 	// Check if attachment already has VRAM allocated and queue it for deletion
 	if (xAttachment.m_xVRAMHandle.IsValid())

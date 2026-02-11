@@ -4,6 +4,7 @@
 #include <atomic>
 #include <string>
 #include "Core/Multithreading/Zenith_Multithreading.h"
+#include "TaskSystem/Zenith_TaskSystem.h"
 
 // Forward declarations
 struct Zenith_Scene;
@@ -12,7 +13,6 @@ class Zenith_SceneOperation;
 class Zenith_Entity;
 struct Zenith_EntityID;
 class Zenith_DataStream;
-class Zenith_Task;
 class Zenith_CameraComponent;
 
 /**

@@ -281,7 +281,7 @@ void Project_CreateScenes()
 		for (uint32_t u = 0; u < 5; ++u)
 		{
 			char szName[32];
-			sprintf(szName, "Control%u", u);
+			sprintf_s(szName, sizeof(szName), "Control%u", u);
 			CreateHUDText(szName, astrControls[u],
 				Zenith_UI::AnchorPreset::TopLeft, s_fMargin, s_fMargin + s_fLineHeight * (3 + u), s_fTextSize * 2.0f,
 				Zenith_Maths::Vector4(0.8f, 0.8f, 0.8f, 1.f));

@@ -239,7 +239,7 @@ private:
 		// Update all resource nodes
 		// Note: This is safe because we're only reading/writing node data,
 		// not modifying the scene graph
-		pResourceMgr->ForEach([&](Survival_ResourceNodeData& xNode, uint32_t uIndex)
+		pResourceMgr->ForEach([&](Survival_ResourceNodeData& xNode, uint32_t)
 		{
 			uUpdated++;
 
@@ -283,14 +283,14 @@ private:
 	 * @param uInvocationIndex Which work item (node index) this invocation handles
 	 * @param uNumInvocations Total number of invocations (nodes)
 	 */
-	static void ParallelNodeUpdateFunction(void* pData, u_int uInvocationIndex, u_int uNumInvocations)
+	static void ParallelNodeUpdateFunction(void* pData, u_int, u_int)
 	{
 		NodeUpdateTaskData* pTaskData = static_cast<NodeUpdateTaskData*>(pData);
 		if (!pTaskData || !pTaskData->m_pxResourceManager)
 			return;
 
 		// Get the node for this invocation
-		Survival_ResourceNodeData* pNode = pTaskData->m_pxResourceManager->GetNode(uInvocationIndex);
+		Survival_ResourceNodeData* pNode = pTaskData->m_pxResourceManager->GetNode(0);
 		if (!pNode)
 			return;
 

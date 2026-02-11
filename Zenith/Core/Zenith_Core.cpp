@@ -52,7 +52,7 @@ void Zenith_Core::UpdateTimers()
 {
 	std::chrono::high_resolution_clock::time_point xCurrentTime = std::chrono::high_resolution_clock::now();
 
-	Zenith_Core::SetDt(std::chrono::duration_cast<std::chrono::nanoseconds>(xCurrentTime - g_xLastFrameTime).count() / 1.e9);
+	Zenith_Core::SetDt(static_cast<float>(std::chrono::duration_cast<std::chrono::nanoseconds>(xCurrentTime - g_xLastFrameTime).count() / 1.e9));
 	g_xLastFrameTime = xCurrentTime;
 
 	Zenith_Core::AddTimePassed(Zenith_Core::GetDt());

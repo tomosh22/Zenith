@@ -334,7 +334,6 @@ bool Zenith_Pathfinding::GetPortal(const Zenith_NavMesh& xNavMesh,
 	Zenith_Maths::Vector3& xLeft, Zenith_Maths::Vector3& xRight)
 {
 	const Zenith_NavMeshPolygon& xP1 = xNavMesh.GetPolygon(uPoly1);
-	const Zenith_NavMeshPolygon& xP2 = xNavMesh.GetPolygon(uPoly2);
 
 	// Find shared edge
 	for (uint32_t u1 = 0; u1 < xP1.m_axVertexIndices.GetSize(); ++u1)
@@ -358,7 +357,7 @@ bool Zenith_Pathfinding::GetPortal(const Zenith_NavMesh& xNavMesh,
 // Batch Parallel Pathfinding
 // ============================================================================
 
-void Zenith_Pathfinding::PathfindingTaskFunc(void* pData, u_int uInvocationIndex, u_int uNumInvocations)
+void Zenith_Pathfinding::PathfindingTaskFunc(void* pData, u_int uInvocationIndex, u_int)
 {
 	PathRequest* pxRequests = static_cast<PathRequest*>(pData);
 	PathRequest& xRequest = pxRequests[uInvocationIndex];

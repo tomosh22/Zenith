@@ -63,7 +63,7 @@ Zenith_BTNode* Zenith_BTComposite::GetChild(uint32_t uIndex) const
 	return m_axChildren.Get(uIndex);
 }
 
-void Zenith_BTComposite::OnEnter(Zenith_Entity& xAgent, Zenith_Blackboard& xBlackboard)
+void Zenith_BTComposite::OnEnter(Zenith_Entity&, Zenith_Blackboard&)
 {
 	// Reset child index when entering this node
 	m_uCurrentChild = 0;

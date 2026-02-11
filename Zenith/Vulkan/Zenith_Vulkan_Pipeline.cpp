@@ -25,7 +25,7 @@ static std::unordered_map<Zenith_Vulkan_Pipeline*, Zenith_Vulkan_Shader*> s_xHot
 static std::unordered_map<Zenith_Vulkan_Pipeline*, Flux_PipelineSpecification> s_xHotReloadSpecMap;
 #endif
 
-void Zenith_Vulkan_Shader::Initialise(const std::string& strVertex, const std::string& strFragment, const std::string& strGeometry, const std::string& strDomain, const std::string& strHull)
+void Zenith_Vulkan_Shader::Initialise(const std::string& strVertex, const std::string& strFragment, const std::string&, const std::string& strDomain, const std::string& strHull)
 {
 #ifdef ZENITH_TOOLS
 	// Use runtime compilation when tools are enabled and Slang compiler is available
@@ -369,7 +369,7 @@ public:
 	vk::DescriptorSetLayout Build(vk::Device device)
 	{
 		m_xCreateInfo.setPBindings(m_xAddedBindings.data());
-		m_xCreateInfo.setBindingCount(m_xAddedBindings.size());
+		m_xCreateInfo.setBindingCount(static_cast<uint32_t>(m_xAddedBindings.size()));
 
 		vk::DescriptorSetLayoutBindingFlagsCreateInfoEXT xBindingFlagsInfo;
 		std::vector< vk::DescriptorBindingFlags> xBindingFlags;
@@ -450,9 +450,9 @@ static vk::PipelineVertexInputStateCreateInfo VertexDescToVulkanDesc(const Flux_
 	AddVertexAttributes(xDesc.m_xPerInstanceLayout, 1, vk::VertexInputRate::eInstance, xBindDescs, xAttrDescs, uBindPoint);
 
 	return std::move(vk::PipelineVertexInputStateCreateInfo()
-		.setVertexBindingDescriptionCount(xBindDescs.size())
+		.setVertexBindingDescriptionCount(static_cast<uint32_t>(xBindDescs.size()))
 		.setPVertexBindingDescriptions(xBindDescs.data())
-		.setVertexAttributeDescriptionCount(xAttrDescs.size())
+		.setVertexAttributeDescriptionCount(static_cast<uint32_t>(xAttrDescs.size()))
 		.setPVertexAttributeDescriptions(xAttrDescs.data()));
 }
 
@@ -618,21 +618,12 @@ Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithTesselation()
 	return *this;
 }
 
-Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithDescriptorSetLayout(uint32_t slot, vk::DescriptorSetLayout layout)
+Zenith_Vulkan_PipelineBuilder& Zenith_Vulkan_PipelineBuilder::WithDescriptorSetLayout(vk::DescriptorSetLayout layout)
 {
 	m_xAllLayouts.push_back(layout);
 	return *this;
 }
 
-//VulkanPipelineBuilder& VulkanPipelineBuilder::WithDescriptorBuffers() {
-//	m_xPipelineCreate.flags |= vk::PipelineCreateFlagBits::eDescriptorBufferEXT;
-//	return *this;
-//}
-
-void Zenith_Vulkan_PipelineBuilder::Build(Zenith_Vulkan_Pipeline& xPipelineOut, const Flux_PipelineSpecification& xSpec, vk::PipelineCache xCache /*= {}*/)
-{
-	STUBBED
-}
 
 vk::CompareOp VceCompareFuncToVkCompareFunc(DepthCompareFunc eFunc)
 {
@@ -650,6 +641,7 @@ vk::CompareOp VceCompareFuncToVkCompareFunc(DepthCompareFunc eFunc)
 		return vk::CompareOp::eAlways;
 	default:
 		Zenith_Assert(false, "Unsupported blend factor");
+		return vk::CompareOp::eAlways;
 	}
 }
 
@@ -667,6 +659,7 @@ vk::BlendFactor FluxBlendFactorToVK(BlendFactor eFactor)
 		return vk::BlendFactor::eZero;
 	default:
 		Zenith_Assert(false, "Unsupported blend factor");
+		return vk::BlendFactor::eZero;
 	}
 }
 
@@ -684,7 +677,7 @@ vk::RenderPass Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(Flux_TargetSetup&
 {
 	const uint32_t uNumColourAttachments = CountColourAttachments(xTargetSetup);
 
-	vk::ImageLayout eLayout;
+	vk::ImageLayout eLayout = vk::ImageLayout::eColorAttachmentOptimal;
 	switch (eUsage)
 	{
 	case RENDER_TARGET_USAGE_RENDERTARGET:
@@ -695,6 +688,7 @@ vk::RenderPass Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(Flux_TargetSetup&
 		break;
 	default:
 		Zenith_Assert(false, "Unsupported usage");
+		break;
 	}
 
 	std::vector<vk::AttachmentDescription> xAttachmentDescs(uNumColourAttachments);
@@ -751,7 +745,7 @@ vk::RenderPass Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(Flux_TargetSetup&
 	}
 
 	vk::RenderPassCreateInfo xRenderPassInfo = vk::RenderPassCreateInfo()
-		.setAttachmentCount(xAttachmentDescs.size())
+		.setAttachmentCount(static_cast<uint32_t>(xAttachmentDescs.size()))
 		.setPAttachments(xAttachmentDescs.data())
 		.setSubpassCount(1)
 		.setPSubpasses(&xSubpass)
@@ -819,7 +813,7 @@ void Zenith_Vulkan_PipelineBuilder::FromSpecification(Zenith_Vulkan_Pipeline& xP
 	vk::PipelineColorBlendAttachmentState axBlendInfo[FLUX_MAX_TARGETS];
 	for (u_int u = 0; u < xSpec.m_pxTargetSetup->GetNumColourAttachments(); u++)
 	{
-		vk::PipelineColorBlendAttachmentState& xBlendInfo = axBlendInfo[u]
+		axBlendInfo[u]
 			.setColorWriteMask(
 				vk::ColorComponentFlagBits::eR |
 				vk::ColorComponentFlagBits::eG |

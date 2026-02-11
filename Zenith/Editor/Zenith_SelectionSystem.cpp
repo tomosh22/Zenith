@@ -310,11 +310,11 @@ Zenith_EntityID Zenith_SelectionSystem::RaycastSelect(const Zenith_Maths::Vector
 		{
 			// Fallback: Use AABB-only selection if no physics mesh
 			// (Already passed AABB test above)
-			auto it = s_xEntityBoundingBoxes.find(uEntityID);
-			if (it != s_xEntityBoundingBoxes.end())
+			auto itFallback = s_xEntityBoundingBoxes.find(uEntityID);
+			if (itFallback != s_xEntityBoundingBoxes.end())
 			{
 				float fBBoxDistance;
-				if (it->second.Intersects(rayOrigin, rayDir, fBBoxDistance))
+				if (itFallback->second.Intersects(rayOrigin, rayDir, fBBoxDistance))
 				{
 					if (fBBoxDistance < fClosestDistance)
 					{
@@ -451,7 +451,7 @@ void Zenith_SelectionSystem::RenderBoundingBoxes()
 	// STUB: Requires implementation for debug rendering of all bounding boxes
 }
 
-void Zenith_SelectionSystem::RenderSelectedBoundingBox(Zenith_Entity* pxEntity)
+void Zenith_SelectionSystem::RenderSelectedBoundingBox(Zenith_Entity*)
 {
 	// STUB: Requires implementation for debug rendering of selected entity bounding box
 }

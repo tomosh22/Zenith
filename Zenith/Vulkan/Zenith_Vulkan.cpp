@@ -195,39 +195,6 @@ static void TransitionColorTargets(Zenith_Vulkan_CommandBuffer& xCommandBuffer, 
 	}
 }
 
-static void TransitionDepthStencilTarget(Zenith_Vulkan_CommandBuffer& xCommandBuffer, const Flux_TargetSetup& xTargetSetup,
-	vk::ImageLayout eOldLayout, vk::ImageLayout eNewLayout, vk::AccessFlags eSrcAccessMask, vk::AccessFlags eDstAccessMask,
-	vk::PipelineStageFlags eSrcStage, vk::PipelineStageFlags eDstStage)
-{
-	if (xTargetSetup.m_pxDepthStencil == nullptr)
-	{
-		// No depth in this target setup, skip transition
-		return;
-	}
-
-	Flux_VRAMHandle xVRAMHandle = xTargetSetup.m_pxDepthStencil->m_xVRAMHandle;
-	Zenith_Assert(xVRAMHandle.IsValid(), "Depth stencil target has invalid VRAM handle");
-
-	Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(xVRAMHandle);
-
-	vk::ImageSubresourceRange xSubRange = vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eDepth, 0, 1, 0, 1);
-
-	vk::ImageMemoryBarrier xBarrier = vk::ImageMemoryBarrier()
-		.setSubresourceRange(xSubRange)
-		.setImage(pxVRAM->GetImage())
-		.setOldLayout(eOldLayout)
-		.setNewLayout(eNewLayout)
-		.setSrcAccessMask(eSrcAccessMask)
-		.setDstAccessMask(eDstAccessMask);
-
-	xCommandBuffer.GetCurrentCmdBuffer().pipelineBarrier(
-		eSrcStage, eDstStage, vk::DependencyFlags(),
-		0, nullptr,
-		0, nullptr,
-		1, &xBarrier
-	);
-}
-
 static void TransitionTargetsForRenderPass(Zenith_Vulkan_CommandBuffer& xCommandBuffer, const Flux_TargetSetup& xTargetSetup,
 	vk::PipelineStageFlags eSrcStage, vk::PipelineStageFlags eDstStage, bool bClear)
 {
@@ -338,7 +305,7 @@ void Zenith_Vulkan::BeginFrame()
 
 // Structure representing a chunk of work for command buffer recording
 // Task array function to record command buffers in parallel
-void Zenith_Vulkan::RecordCommandBuffersTask(void* pData, u_int uInvocationIndex, u_int uNumInvocations)
+void Zenith_Vulkan::RecordCommandBuffersTask(void* pData, u_int uInvocationIndex, u_int)
 {
 	const Flux_WorkDistribution* pWorkDistribution = static_cast<const Flux_WorkDistribution*>(pData);
 
@@ -477,7 +444,7 @@ void Zenith_Vulkan::EndFrame(bool bSubmitRenderWork)
 
 	const bool bShouldWait = Zenith_Vulkan_Swapchain::ShouldWaitOnImageAvailableSemaphore();
 	vk::SubmitInfo xMemorySubmitInfo = vk::SubmitInfo()
-		.setCommandBufferCount(xPlatformMemoryCmdBufs.size())
+		.setCommandBufferCount(static_cast<uint32_t>(xPlatformMemoryCmdBufs.size()))
 		.setPCommandBuffers(xPlatformMemoryCmdBufs.data())
 		// Only signal semaphore if we have render work that will wait on it
 		.setPSignalSemaphores(bHasRenderWork ? &xMemorySemaphore : nullptr)
@@ -530,7 +497,7 @@ void Zenith_Vulkan::EndFrame(bool bSubmitRenderWork)
 		// Render submit waits on memory semaphore to ensure memory operations complete first
 		// This also consumes the semaphore signal so it can be re-signaled next frame
 		vk::SubmitInfo xRenderSubmitInfo = vk::SubmitInfo()
-			.setCommandBufferCount(xCommandBuffersToSubmit.size())
+			.setCommandBufferCount(static_cast<uint32_t>(xCommandBuffersToSubmit.size()))
 			.setPCommandBuffers(xCommandBuffersToSubmit.data())
 			.setPWaitSemaphores(&xMemorySemaphore)
 			.setWaitSemaphoreCount(1)
@@ -567,10 +534,10 @@ void Zenith_Vulkan::CreateInstance()
 
 	vk::InstanceCreateInfo xInstanceInfo = vk::InstanceCreateInfo()
 		.setPApplicationInfo(&xAppInfo)
-		.setEnabledExtensionCount(xExtensions.size())
+		.setEnabledExtensionCount(static_cast<uint32_t>(xExtensions.size()))
 		.setPpEnabledExtensionNames(xExtensions.data())
 #ifdef ZENITH_DEBUG
-		.setEnabledLayerCount(s_xValidationLayers.size())
+		.setEnabledLayerCount(static_cast<uint32_t>(s_xValidationLayers.size()))
 		.setPpEnabledLayerNames(s_xValidationLayers.data());
 #else
 		.setEnabledLayerCount(0);
@@ -580,7 +547,7 @@ void Zenith_Vulkan::CreateInstance()
 	Zenith_Log(LOG_CATEGORY_VULKAN, "Vulkan instance created");
 }
 
-VKAPI_ATTR vk::Bool32 VKAPI_CALL Zenith_Vulkan::DebugCallback(vk::DebugUtilsMessageSeverityFlagBitsEXT eMessageSeverity, vk::DebugUtilsMessageTypeFlagsEXT eMessageType, const vk::DebugUtilsMessengerCallbackDataEXT* pxCallbackData, void* pUserData)
+VKAPI_ATTR vk::Bool32 VKAPI_CALL Zenith_Vulkan::DebugCallback(vk::DebugUtilsMessageSeverityFlagBitsEXT eMessageSeverity, vk::DebugUtilsMessageTypeFlagsEXT, const vk::DebugUtilsMessengerCallbackDataEXT* pxCallbackData, void*)
 {
 	if (eMessageSeverity >= vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning)
 	{
@@ -627,11 +594,13 @@ void Zenith_Vulkan::CreateSurface()
 void Zenith_Vulkan::CreatePhysicalDevice()
 {
 	uint32_t uNumDevices;
-	s_xInstance.enumeratePhysicalDevices(&uNumDevices, nullptr);
+	vk::Result eResult = s_xInstance.enumeratePhysicalDevices(&uNumDevices, nullptr);
+	Zenith_Assert(eResult == vk::Result::eSuccess && uNumDevices > 0, "Failed to find any physical devices with Vulkan support");
 	Zenith_Log(LOG_CATEGORY_VULKAN, "%u physical vulkan devices to choose from", uNumDevices);
 	std::vector<vk::PhysicalDevice> xDevices;
 	xDevices.resize(uNumDevices);
-	s_xInstance.enumeratePhysicalDevices(&uNumDevices, xDevices.data());
+	eResult = s_xInstance.enumeratePhysicalDevices(&uNumDevices, xDevices.data());
+	Zenith_Assert(eResult == vk::Result::eSuccess, "Failed to enumerate physical devices");
 	for (const vk::PhysicalDevice& xDevice : xDevices)
 	{
 		//#TO_TODO: check if physical device is suitable
@@ -664,7 +633,7 @@ void Zenith_Vulkan::CreateQueueFamilies()
 
 	for (uint32_t i = 0; i < xQueueFamilyProperties.size(); ++i)
 	{
-		uSupportsPresent = s_xPhysicalDevice.getSurfaceSupportKHR(i, s_xSurface);
+		uSupportsPresent = static_cast<VkBool32>(s_xPhysicalDevice.getSurfaceSupportKHR(i, s_xSurface));
 
 		if (s_auQueueIndices[COMMANDTYPE_GRAPHICS] == UINT32_MAX && xQueueFamilyProperties[i].queueFlags & vk::QueueFlagBits::eGraphics)
 		{
@@ -714,11 +683,11 @@ void Zenith_Vulkan::CreateDevice()
 
 	vk::DeviceCreateInfo xDeviceCreateInfo = vk::DeviceCreateInfo()
 		.setPQueueCreateInfos(xQueueInfos.data())
-		.setQueueCreateInfoCount(xQueueInfos.size())
+		.setQueueCreateInfoCount(static_cast<uint32_t>(xQueueInfos.size()))
 		.setEnabledExtensionCount(COUNT_OF(s_aszDeviceExtensions))
 		.setPpEnabledExtensionNames(s_aszDeviceExtensions)
 #ifdef ZENITH_DEBUG
-		.setEnabledLayerCount(s_xValidationLayers.size())
+		.setEnabledLayerCount(static_cast<uint32_t>(s_xValidationLayers.size()))
 		.setPpEnabledLayerNames(s_xValidationLayers.data());
 #else
 		.setEnabledLayerCount(0);
@@ -1047,9 +1016,11 @@ void Zenith_Vulkan_PerFrame::BeginFrame()
 {
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 	Zenith_Profiling::BeginProfile(ZENITH_PROFILE_INDEX__VULKAN_WAIT_FOR_GPU);
-	xDevice.waitForFences(1, &m_xFence, VK_TRUE, UINT64_MAX);
+	vk::Result eResult = xDevice.waitForFences(1, &m_xFence, VK_TRUE, UINT64_MAX);
+	Zenith_Assert(eResult == vk::Result::eSuccess, "Failed to wait for fence");
 	Zenith_Profiling::EndProfile(ZENITH_PROFILE_INDEX__VULKAN_WAIT_FOR_GPU);
-	xDevice.resetFences(1, &m_xFence);
+	eResult = xDevice.resetFences(1, &m_xFence);
+	Zenith_Assert(eResult == vk::Result::eSuccess, "Failed to reset fence");
 
 	Zenith_Profiling::BeginProfile(ZENITH_PROFILE_INDEX__VULKAN_RESET_DESCRIPTOR_POOLS);
 	for (vk::DescriptorPool& xPool : m_axDescriptorPools)
@@ -1120,7 +1091,7 @@ Flux_VRAMHandle Zenith_Vulkan::RegisterVRAM(Zenith_Vulkan_VRAM* pxVRAM)
 	else
 	{
 		// No free handles, grow the registry
-		xHandle.SetValue(s_xVRAMRegistry.size());
+		xHandle.SetValue(static_cast<u_int>(s_xVRAMRegistry.size()));
 		s_xVRAMRegistry.push_back(pxVRAM);
 	}
 	

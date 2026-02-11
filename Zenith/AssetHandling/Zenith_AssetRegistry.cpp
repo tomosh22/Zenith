@@ -12,18 +12,8 @@
 #include "DataStream/Zenith_DataStream.h"
 #include <fstream>
 
-// Forward declare loaders (defined in respective asset .cpp files)
-static Zenith_Asset* LoadTextureAsset(const std::string& strPath);
-static Zenith_Asset* LoadMaterialAsset(const std::string& strPath);
-static Zenith_Asset* LoadMeshAsset(const std::string& strPath);
-static Zenith_Asset* LoadSkeletonAsset(const std::string& strPath);
-static Zenith_Asset* LoadModelAsset(const std::string& strPath);
-static Zenith_Asset* LoadPrefabAsset(const std::string& strPath);
-static Zenith_Asset* LoadAnimationAsset(const std::string& strPath);
-static Zenith_Asset* LoadMeshGeometryAsset(const std::string& strPath);
-
 // Loader implementations
-static Zenith_Asset* LoadTextureAsset(const std::string& strPath)
+Zenith_Asset* LoadTextureAsset(const std::string& strPath)
 {
 	if (strPath.empty())
 	{
@@ -40,7 +30,7 @@ static Zenith_Asset* LoadTextureAsset(const std::string& strPath)
 	return pxAsset;
 }
 
-static Zenith_Asset* LoadMaterialAsset(const std::string& strPath)
+Zenith_Asset* LoadMaterialAsset(const std::string& strPath)
 {
 	if (strPath.empty())
 	{
@@ -57,7 +47,7 @@ static Zenith_Asset* LoadMaterialAsset(const std::string& strPath)
 	return pxAsset;
 }
 
-static Zenith_Asset* LoadMeshAsset(const std::string& strPath)
+Zenith_Asset* LoadMeshAsset(const std::string& strPath)
 {
 	if (strPath.empty())
 	{
@@ -69,7 +59,7 @@ static Zenith_Asset* LoadMeshAsset(const std::string& strPath)
 	return pxAsset;
 }
 
-static Zenith_Asset* LoadSkeletonAsset(const std::string& strPath)
+Zenith_Asset* LoadSkeletonAsset(const std::string& strPath)
 {
 	if (strPath.empty())
 	{
@@ -81,7 +71,7 @@ static Zenith_Asset* LoadSkeletonAsset(const std::string& strPath)
 	return pxAsset;
 }
 
-static Zenith_Asset* LoadModelAsset(const std::string& strPath)
+Zenith_Asset* LoadModelAsset(const std::string& strPath)
 {
 	if (strPath.empty())
 	{
@@ -93,7 +83,7 @@ static Zenith_Asset* LoadModelAsset(const std::string& strPath)
 	return pxAsset;
 }
 
-static Zenith_Asset* LoadPrefabAsset(const std::string& strPath)
+Zenith_Asset* LoadPrefabAsset(const std::string& strPath)
 {
 	if (strPath.empty())
 	{
@@ -110,7 +100,7 @@ static Zenith_Asset* LoadPrefabAsset(const std::string& strPath)
 	return pxAsset;
 }
 
-static Zenith_Asset* LoadAnimationAsset(const std::string& strPath)
+Zenith_Asset* LoadAnimationAsset(const std::string& strPath)
 {
 	if (strPath.empty())
 	{
@@ -133,7 +123,7 @@ static Zenith_Asset* LoadAnimationAsset(const std::string& strPath)
 	return pxAsset;
 }
 
-static Zenith_Asset* LoadMeshGeometryAsset(const std::string& strPath)
+Zenith_Asset* LoadMeshGeometryAsset(const std::string& strPath)
 {
 	if (strPath.empty())
 	{

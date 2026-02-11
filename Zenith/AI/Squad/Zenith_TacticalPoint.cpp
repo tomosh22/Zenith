@@ -49,7 +49,7 @@ void Zenith_TacticalPointSystem::Shutdown()
 	Zenith_Log(LOG_CATEGORY_AI, "TacticalPointSystem shutdown");
 }
 
-void Zenith_TacticalPointSystem::Update(float fDt)
+void Zenith_TacticalPointSystem::Update()
 {
 	Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__AI_TACTICAL_UPDATE);
 

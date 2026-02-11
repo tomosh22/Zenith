@@ -442,7 +442,7 @@ private:
 		for (uint32_t u = 0; u < 4; ++u)
 		{
 			char szName[32];
-			sprintf(szName, "Wall_%u", u);
+			sprintf_s(szName, sizeof(szName), "Wall_%u", u);
 			Zenith_Entity xWall(pxSceneData, szName);
 			xWall.SetTransient(false);
 
@@ -486,7 +486,7 @@ private:
 		for (uint32_t u = 0; u < sizeof(aObstacles) / sizeof(aObstacles[0]); ++u)
 		{
 			char szName[32];
-			sprintf(szName, "Obstacle_%u", u);
+			sprintf_s(szName, sizeof(szName), "Obstacle_%u", u);
 			Zenith_Entity xObstacle(pxSceneData, szName);
 			xObstacle.SetTransient(false);
 
@@ -603,7 +603,7 @@ private:
 		uint32_t uIndex, Zenith_MaterialAsset* pxMaterial)
 	{
 		char szName[32];
-		sprintf(szName, "Enemy_%u", m_uEnemyCount);
+		sprintf_s(szName, sizeof(szName), "Enemy_%u", m_uEnemyCount);
 		Zenith_Entity xEnemy(pxSceneData, szName);
 		xEnemy.SetTransient(false);
 
@@ -863,7 +863,7 @@ private:
 		Zenith_SquadManager::Update(fDt);
 
 		// Update tactical points
-		Zenith_TacticalPointSystem::Update(fDt);
+		Zenith_TacticalPointSystem::Update();
 
 		// Update individual AI agents
 		UpdateEnemyAI(fDt);
@@ -1022,7 +1022,7 @@ private:
 				uSquadCount++;
 
 			char szStatus[64];
-			sprintf(szStatus, "Enemies: %u | Squads: %u", m_uEnemyCount, uSquadCount);
+			sprintf_s(szStatus, sizeof(szStatus), "Enemies: %u | Squads: %u", m_uEnemyCount, uSquadCount);
 			pxStatus->SetText(szStatus);
 		}
 	}

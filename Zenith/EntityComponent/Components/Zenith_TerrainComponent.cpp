@@ -414,7 +414,7 @@ void Zenith_TerrainComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 
 // ========== Render Resources Initialization ==========
 
-void Zenith_TerrainComponent::InitializeRenderResources(Zenith_MaterialAsset& xMaterial0, Zenith_MaterialAsset& xMaterial1)
+void Zenith_TerrainComponent::InitializeRenderResources(Zenith_MaterialAsset&, Zenith_MaterialAsset&)
 {
 	// Ensure streaming manager is initialized (may have been shut down after previous terrain was destroyed)
 	if (!Flux_TerrainStreamingManager::IsInitialized())

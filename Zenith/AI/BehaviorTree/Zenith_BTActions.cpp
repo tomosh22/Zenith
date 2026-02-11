@@ -17,7 +17,7 @@ Zenith_BTAction_Wait::Zenith_BTAction_Wait(float fDuration)
 {
 }
 
-void Zenith_BTAction_Wait::OnEnter(Zenith_Entity& xAgent, Zenith_Blackboard& xBlackboard)
+void Zenith_BTAction_Wait::OnEnter(Zenith_Entity&, Zenith_Blackboard& xBlackboard)
 {
 	m_fElapsed = 0.0f;
 
@@ -28,7 +28,7 @@ void Zenith_BTAction_Wait::OnEnter(Zenith_Entity& xAgent, Zenith_Blackboard& xBl
 	}
 }
 
-BTNodeStatus Zenith_BTAction_Wait::Execute(Zenith_Entity& xAgent, Zenith_Blackboard& xBlackboard, float fDt)
+BTNodeStatus Zenith_BTAction_Wait::Execute(Zenith_Entity&, Zenith_Blackboard&, float fDt)
 {
 	m_fElapsed += fDt;
 
@@ -78,12 +78,12 @@ Zenith_BTAction_MoveTo::Zenith_BTAction_MoveTo(const std::string& strTargetKey)
 {
 }
 
-void Zenith_BTAction_MoveTo::OnEnter(Zenith_Entity& xAgent, Zenith_Blackboard& xBlackboard)
+void Zenith_BTAction_MoveTo::OnEnter(Zenith_Entity&, Zenith_Blackboard&)
 {
 	m_bPathRequested = false;
 }
 
-void Zenith_BTAction_MoveTo::OnExit(Zenith_Entity& xAgent, Zenith_Blackboard& xBlackboard)
+void Zenith_BTAction_MoveTo::OnExit(Zenith_Entity& xAgent, Zenith_Blackboard&)
 {
 	// Stop movement
 	if (xAgent.HasComponent<Zenith_AIAgentComponent>())
@@ -102,7 +102,7 @@ void Zenith_BTAction_MoveTo::OnAbort(Zenith_Entity& xAgent, Zenith_Blackboard& x
 	OnExit(xAgent, xBlackboard);
 }
 
-BTNodeStatus Zenith_BTAction_MoveTo::Execute(Zenith_Entity& xAgent, Zenith_Blackboard& xBlackboard, float fDt)
+BTNodeStatus Zenith_BTAction_MoveTo::Execute(Zenith_Entity& xAgent, Zenith_Blackboard& xBlackboard, float)
 {
 	// Get target position from blackboard
 	Zenith_Maths::Vector3 xTargetPos = xBlackboard.GetVector3(m_strTargetKey);
@@ -182,13 +182,13 @@ Zenith_BTAction_MoveToEntity::Zenith_BTAction_MoveToEntity(const std::string& st
 {
 }
 
-void Zenith_BTAction_MoveToEntity::OnEnter(Zenith_Entity& xAgent, Zenith_Blackboard& xBlackboard)
+void Zenith_BTAction_MoveToEntity::OnEnter(Zenith_Entity&, Zenith_Blackboard&)
 {
 	m_bPathRequested = false;
 	m_fTimeSinceRepath = m_fRepathInterval;  // Trigger immediate path
 }
 
-void Zenith_BTAction_MoveToEntity::OnAbort(Zenith_Entity& xAgent, Zenith_Blackboard& xBlackboard)
+void Zenith_BTAction_MoveToEntity::OnAbort(Zenith_Entity& xAgent, Zenith_Blackboard&)
 {
 	if (xAgent.HasComponent<Zenith_AIAgentComponent>())
 	{
@@ -314,7 +314,7 @@ Zenith_BTAction_SetBlackboardBool::Zenith_BTAction_SetBlackboardBool(const std::
 {
 }
 
-BTNodeStatus Zenith_BTAction_SetBlackboardBool::Execute(Zenith_Entity& xAgent, Zenith_Blackboard& xBlackboard, float fDt)
+BTNodeStatus Zenith_BTAction_SetBlackboardBool::Execute(Zenith_Entity&, Zenith_Blackboard& xBlackboard, float)
 {
 	xBlackboard.SetBool(m_strKey, m_bValue);
 	m_eLastStatus = BTNodeStatus::SUCCESS;
@@ -352,7 +352,7 @@ Zenith_BTAction_SetBlackboardFloat::Zenith_BTAction_SetBlackboardFloat(const std
 {
 }
 
-BTNodeStatus Zenith_BTAction_SetBlackboardFloat::Execute(Zenith_Entity& xAgent, Zenith_Blackboard& xBlackboard, float fDt)
+BTNodeStatus Zenith_BTAction_SetBlackboardFloat::Execute(Zenith_Entity&, Zenith_Blackboard& xBlackboard, float)
 {
 	xBlackboard.SetFloat(m_strKey, m_fValue);
 	m_eLastStatus = BTNodeStatus::SUCCESS;
@@ -389,7 +389,7 @@ Zenith_BTAction_Log::Zenith_BTAction_Log(const std::string& strMessage)
 {
 }
 
-BTNodeStatus Zenith_BTAction_Log::Execute(Zenith_Entity& xAgent, Zenith_Blackboard& xBlackboard, float fDt)
+BTNodeStatus Zenith_BTAction_Log::Execute(Zenith_Entity& xAgent, Zenith_Blackboard&, float)
 {
 	Zenith_Log(LOG_CATEGORY_AI, "[BT Log] Entity %u: %s", xAgent.GetEntityID().m_uIndex, m_strMessage.c_str());
 	m_eLastStatus = BTNodeStatus::SUCCESS;
@@ -417,7 +417,7 @@ void Zenith_BTAction_Log::ReadFromDataStream(Zenith_DataStream& xStream)
 
 // ========== Zenith_BTAction_FindPrimaryTarget ==========
 
-BTNodeStatus Zenith_BTAction_FindPrimaryTarget::Execute(Zenith_Entity& xAgent, Zenith_Blackboard& xBlackboard, float fDt)
+BTNodeStatus Zenith_BTAction_FindPrimaryTarget::Execute(Zenith_Entity& xAgent, Zenith_Blackboard& xBlackboard, float)
 {
 	Zenith_EntityID xTarget = Zenith_PerceptionSystem::GetPrimaryTarget(xAgent.GetEntityID());
 

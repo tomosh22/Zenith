@@ -90,10 +90,6 @@ public:
 	static u_int GetActiveChunkCount();
 	static float GetBufferUsageMB();
 
-	// Terrain integration
-	static void OnTerrainChunkLoaded(const Zenith_Maths::Vector3& xChunkCenter, float fChunkSize);
-	static void OnTerrainChunkUnloaded(const Zenith_Maths::Vector3& xChunkCenter);
-
 	// Generate grass from terrain mesh data
 	// Call this during initialization after terrain is loaded
 	static void GenerateFromTerrain(const class Flux_MeshGeometry& xTerrainMesh);

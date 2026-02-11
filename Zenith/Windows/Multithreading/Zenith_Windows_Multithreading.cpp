@@ -9,8 +9,8 @@
 #include <processthreadsapi.h>
 
 thread_local static char tl_g_acThreadName[Zenith_Multithreading::uMAX_THREAD_NAME_LENGTH]{ 0 };
-thread_local static u_int tl_g_uThreadID = -1;
-static u_int g_uMainThreadID = -1;
+thread_local static u_int tl_g_uThreadID = ~0u;
+static u_int g_uMainThreadID = ~0u;
 
 template<>
 void Zenith_Windows_Mutex_T<true>::Lock()
@@ -55,7 +55,7 @@ bool Zenith_Windows_Semaphore::Signal()
 	if (!bRet)
 	{
 		DWORD ulError = GetLastError();
-		Zenith_Assert(false, "Failed to signal semaphore");
+		Zenith_Assert(false, "Failed to signal semaphore, error: %lu", ulError);
 	}
 	#endif
 	return bRet;
@@ -94,8 +94,7 @@ void Zenith_Multithreading::Platform_CreateThread(const char* szName, Zenith_Thr
 	ThreadParams* pxParams = new ThreadParams;
 	pxParams->m_pfnFunc = pfnFunc;
 	pxParams->m_pUserData = pUserData;
-	strncpy(pxParams->m_acName, szName, Zenith_Multithreading::uMAX_THREAD_NAME_LENGTH - 1);
-	pxParams->m_acName[Zenith_Multithreading::uMAX_THREAD_NAME_LENGTH - 1] = '\0';
+	strncpy_s(pxParams->m_acName, Zenith_Multithreading::uMAX_THREAD_NAME_LENGTH, szName, _TRUNCATE);
 
 	HANDLE pHandle = ::CreateThread(NULL, 128 * 1024, ThreadInit, pxParams, 0, NULL);
 	Zenith_Assert(pHandle != NULL, "CreateThread failed with error %lu", GetLastError());

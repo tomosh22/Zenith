@@ -14,6 +14,7 @@ License: MIT (see LICENSE file at the top of the source tree)
 #include "Flux/Slang/Flux_SlangCompiler.h"
 
 struct Flux_BlendState;
+struct Flux_PipelineSpecification;
 struct Flux_TargetSetup;
 
 class Zenith_Vulkan_Shader
@@ -157,15 +158,13 @@ public:
 
 	Zenith_Vulkan_PipelineBuilder& WithPushConstant(vk::ShaderStageFlags flags, uint32_t offset);
 
-	Zenith_Vulkan_PipelineBuilder& WithDescriptorSetLayout(uint32_t slot, vk::DescriptorSetLayout layout);
+	Zenith_Vulkan_PipelineBuilder& WithDescriptorSetLayout(vk::DescriptorSetLayout layout);
 
 	Zenith_Vulkan_PipelineBuilder& WithPass(vk::RenderPass renderPass);
 
 	Zenith_Vulkan_PipelineBuilder& WithDepthStencilFormat(vk::Format combinedFormat);
 	Zenith_Vulkan_PipelineBuilder& WithDepthFormat(vk::Format depthFormat);
 	Zenith_Vulkan_PipelineBuilder& WithTesselation();
-
-	void Build(Zenith_Vulkan_Pipeline& xPipelineOut, const struct Flux_PipelineSpecification& xSpec, vk::PipelineCache xCache = {});
 
 	static void FromSpecification(Zenith_Vulkan_Pipeline& xPipelineOut, const Flux_PipelineSpecification& xSpec);
 

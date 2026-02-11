@@ -77,6 +77,7 @@ public class ZenithProject : ZenithBaseProject
 		SourceFilesExcludeRegex.Add(@".*testzlib\\.*");
 		SourceFilesExcludeRegex.Add(@".*untgz\\.*");
 		SourceFilesExcludeRegex.Add(@".*opencv.*");
+		SourceFilesExcludeRegex.Add(@".*stb_vorbis\.c.*");
 	}
 
 	[Configure]

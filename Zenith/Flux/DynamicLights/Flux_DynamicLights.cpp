@@ -700,7 +700,7 @@ void Flux_DynamicLights::GatherLightsFromScene()
 		}
 
 		pxSceneData->Query<Zenith_LightComponent, Zenith_TransformComponent>()
-			.ForEach([&xAllPointLights, &xAllSpotLights, &xAllDirectionalLights](Zenith_EntityID uID, Zenith_LightComponent& xLight, Zenith_TransformComponent& xTransform)
+			.ForEach([&xAllPointLights, &xAllSpotLights, &xAllDirectionalLights](Zenith_EntityID uID, Zenith_LightComponent& xLight, Zenith_TransformComponent&)
 		{
 			LIGHT_TYPE eType = xLight.GetLightType();
 

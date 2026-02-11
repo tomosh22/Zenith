@@ -71,7 +71,7 @@ void Zenith_Vulkan_CommandBuffer::EndRenderPass()
 	m_xCurrentCmdBuffer.endRenderPass();
 	m_xCurrentRenderPass = VK_NULL_HANDLE;
 }
-void Zenith_Vulkan_CommandBuffer::EndRecording(RenderOrder eOrder, bool bEndPass /*= true*/)
+void Zenith_Vulkan_CommandBuffer::EndRecording(bool bEndPass /*= true*/)
 {
 	if (bEndPass)
 	{
@@ -106,7 +106,8 @@ void Zenith_Vulkan_CommandBuffer::EndAndCpuWait(bool bEndPass)
 
 	Zenith_Vulkan::GetQueue(m_eCommandType).submit(xSubmitInfo, xFence);
 
-	xDevice.waitForFences(1, &xFence, VK_TRUE, UINT64_MAX);
+	vk::Result eResult = xDevice.waitForFences(1, &xFence, VK_TRUE, UINT64_MAX);
+	Zenith_Assert(eResult == vk::Result::eSuccess, "Failed to wait for fence");
 	xDevice.destroyFence(xFence);
 
 	// Reset the command buffer so it can be recorded again
@@ -404,7 +405,7 @@ void Zenith_Vulkan_CommandBuffer::DrawIndexedIndirectCount(const Flux_IndirectBu
 	}
 }
 
-void Zenith_Vulkan_CommandBuffer::BeginRenderPass(Flux_TargetSetup& xTargetSetup, bool bClearColour /*= false*/, bool bClearDepth /*= false*/, bool bClearStencil /*= false*/)
+void Zenith_Vulkan_CommandBuffer::BeginRenderPass(Flux_TargetSetup& xTargetSetup, bool bClearColour /*= false*/, bool bClearDepth /*= false*/, bool /*= false*/)
 {
 	LoadAction eColourLoad = bClearColour ? LOAD_ACTION_CLEAR : LOAD_ACTION_LOAD;
 	LoadAction eDepthStencilLoad = bClearDepth ? LOAD_ACTION_CLEAR : LOAD_ACTION_LOAD;
@@ -451,7 +452,7 @@ void Zenith_Vulkan_CommandBuffer::BeginRenderPass(Flux_TargetSetup& xTargetSetup
 
 	m_xCurrentCmdBuffer.beginRenderPass(xRenderPassInfo, vk::SubpassContents::eInline);
 
-	m_xViewport = vk::Viewport(0, 0, uWidth, uHeight, 0, 1);
+	m_xViewport = vk::Viewport(0, 0, static_cast<float>(uWidth), static_cast<float>(uHeight), 0, 1);
 	m_xScissor = vk::Rect2D({0, 0}, {uWidth, uHeight});
 	m_xCurrentCmdBuffer.setViewport(0, 1, &m_xViewport);
 	m_xCurrentCmdBuffer.setScissor(0, 1, &m_xScissor);
@@ -503,7 +504,7 @@ void Zenith_Vulkan_CommandBuffer::BindCBV(const Flux_ConstantBufferView* pxCBV, 
 	m_xBindings[m_uCurrentBindFreq].m_xCBVs[uBindPoint] = pxCBV;
 }
 
-void Zenith_Vulkan_CommandBuffer::BindAccelerationStruct(void* pxStruct, uint32_t uBindPoint) {
+void Zenith_Vulkan_CommandBuffer::BindAccelerationStruct(void*, uint32_t) {
 	STUBBED
 		/*
 		Zenith_Assert(m_eCurrentBindFreq < BINDING_FREQUENCY_MAX, "Haven't called BeginBind");

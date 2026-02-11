@@ -56,6 +56,7 @@ public abstract class ZenithBaseProject : Project
 	protected void ConfigureCommonSettings(Configuration conf, ZenithTarget target)
 	{
 		conf.Options.Add(Options.Vc.Compiler.CppLanguageStandard.CPP20);
+		conf.Options.Add(Options.Vc.General.TreatWarningsAsErrors.Enable);
 		conf.Defines.Add("GLM_ENABLE_EXPERIMENTAL");
 		conf.Defines.Add("NOMINMAX");
 
@@ -109,6 +110,13 @@ public abstract class ZenithBaseProject : Project
 			conf.LibraryFiles.Add("glfw3_mt.lib");
 			conf.LibraryFiles.Add("vulkan-1.lib");
 			conf.LibraryFiles.Add("slang.lib");
+
+			// glfw3_mt.lib is compiled with /MT (release CRT), which pulls in LIBCMT.
+			// In debug builds we use /MTd (LIBCMTD), causing a linker conflict.
+			if (target.Optimization == Optimization.Debug)
+			{
+				conf.Options.Add(new Options.Vc.Linker.IgnoreSpecificLibraryNames("LIBCMT"));
+			}
 		}
 		// Android links against system Vulkan loader, no static libs needed
 	}

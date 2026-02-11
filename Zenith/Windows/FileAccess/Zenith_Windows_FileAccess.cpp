@@ -46,8 +46,7 @@ namespace Zenith_FileAccess
 	{
 		char acFixedFilename[ZENITH_MAX_PATH_LENGTH]{ 0 };
 		// Use destination buffer size, not source string length, to prevent buffer overflow
-		strncpy(acFixedFilename, szFilename, ZENITH_MAX_PATH_LENGTH - 1);
-		acFixedFilename[ZENITH_MAX_PATH_LENGTH - 1] = '\0';  // Ensure null termination
+		strncpy_s(acFixedFilename, sizeof(acFixedFilename), szFilename, _TRUNCATE);
 		Zenith_StringUtil::ReplaceAllChars(acFixedFilename, '\\', '/');
 
 		std::ofstream xFile(acFixedFilename, std::ios::trunc | std::ios::binary);

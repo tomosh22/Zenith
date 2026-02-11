@@ -16,7 +16,7 @@ Flux_MeshAnimation::AnimBone::AnimBone(const aiNodeAnim* pxChannel)
 	for (uint32_t u = 0; u < m_uNumPositions; u++)
 	{
 		const aiVector3D& xPosition = pxChannel->mPositionKeys[u].mValue;
-		const float fTimestamp = pxChannel->mPositionKeys[u].mTime;
+		const float fTimestamp = static_cast<float>(pxChannel->mPositionKeys[u].mTime);
 		m_xPositions.at(u) = { {xPosition.x, xPosition.y, xPosition.z}, fTimestamp };
 	}
 
@@ -25,7 +25,7 @@ Flux_MeshAnimation::AnimBone::AnimBone(const aiNodeAnim* pxChannel)
 	for (uint32_t u = 0; u < m_uNumRotations; u++)
 	{
 		const aiQuaternion& xRotation = pxChannel->mRotationKeys[u].mValue;
-		const float fTimestamp = pxChannel->mRotationKeys[u].mTime;
+		const float fTimestamp = static_cast<float>(pxChannel->mRotationKeys[u].mTime);
 		m_xRotations.at(u) = { {xRotation.w, xRotation.x, xRotation.y, xRotation.z}, fTimestamp };
 	}
 
@@ -34,7 +34,7 @@ Flux_MeshAnimation::AnimBone::AnimBone(const aiNodeAnim* pxChannel)
 	for (uint32_t u = 0; u < m_uNumScales; u++)
 	{
 		const aiVector3D& xScale = pxChannel->mScalingKeys[u].mValue;
-		const float fTimestamp = pxChannel->mScalingKeys[u].mTime;
+		const float fTimestamp = static_cast<float>(pxChannel->mScalingKeys[u].mTime);
 		m_xScales.at(u) = { {xScale.x, xScale.y, xScale.z}, fTimestamp };
 	}
 }
@@ -126,8 +126,8 @@ Flux_MeshAnimation::Flux_MeshAnimation(const std::string& strPath, Flux_MeshGeom
 	const aiScene* pxScene = xImporter.ReadFile(strPath, aiProcess_Triangulate);
 
 	const aiAnimation* pxAnimation = pxScene->mAnimations[0];
-	m_fDuration = pxAnimation->mDuration;
-	m_uTicksPerSecond = pxAnimation->mTicksPerSecond;
+	m_fDuration = static_cast<float>(pxAnimation->mDuration);
+	m_uTicksPerSecond = static_cast<u_int>(pxAnimation->mTicksPerSecond);
 	
 
 	ReadHierarchy(m_xRootNode, *pxScene->mRootNode);

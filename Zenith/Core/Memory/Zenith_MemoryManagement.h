@@ -13,15 +13,15 @@ struct Zenith_MemoryStats;
 
 // Standard operator new/delete declarations
 void* operator new(size_t ullSize);
-void* operator new(size_t ullSize, const std::nothrow_t&);
+void* operator new(size_t ullSize, const std::nothrow_t&) noexcept;
 void* operator new(size_t ullSize, std::align_val_t);
-void* operator new(size_t ullSize, std::align_val_t, const std::nothrow_t&);
+void* operator new(size_t ullSize, std::align_val_t, const std::nothrow_t&) noexcept;
 void* operator new(size_t ullSize, const int32_t iLine, const char* szFile);
 
 void* operator new[](size_t ullSize);
-void* operator new[](size_t ullSize, const std::nothrow_t&);
+void* operator new[](size_t ullSize, const std::nothrow_t&) noexcept;
 void* operator new[](size_t ullSize, std::align_val_t);
-void* operator new[](size_t ullSize, std::align_val_t, const std::nothrow_t&);
+void* operator new[](size_t ullSize, std::align_val_t, const std::nothrow_t&) noexcept;
 void* operator new[](size_t ullSize, const int32_t iLine, const char* szFile);
 
 void operator delete(void* p) noexcept;

@@ -1,7 +1,9 @@
 #pragma once
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "vulkan/vulkan.hpp"
+#pragma warning(push, 0)
 #include "vma/vk_mem_alloc.h"
+#pragma warning(pop)
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
 
 #include "Flux/Flux_Enums.h"

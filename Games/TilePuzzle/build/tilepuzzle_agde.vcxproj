@@ -76,6 +76,7 @@
       <AdditionalIncludeDirectories>..\..;..;..\..\..\middleware;..\..\..\middleware\glm-master;..\..\..\middleware\imgui-docking;..\..\..\middleware\joltphysics-5.4.0;..\..\..\middleware\stb;..\..\..\middleware\vma;..\..\..\zenith;..\..\..\zenith\android;..\..\..\zenith\core;..\..\..\zenith\vulkan;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <ClangDebugInformationFormat>FullDebug</ClangDebugInformationFormat>
       <FloatABI>Default</FloatABI>
+      <TreatWarningAsError>true</TreatWarningAsError>
       <OmitFramePointers>false</OmitFramePointers>
       <UndefineAllPreprocessorDefinitions>false</UndefineAllPreprocessorDefinitions>
       <ExceptionHandling>Disabled</ExceptionHandling>
@@ -112,6 +113,7 @@
       <AdditionalIncludeDirectories>..\..;..;..\..\..\middleware;..\..\..\middleware\glm-master;..\..\..\middleware\imgui-docking;..\..\..\middleware\joltphysics-5.4.0;..\..\..\middleware\stb;..\..\..\middleware\vma;..\..\..\zenith;..\..\..\zenith\android;..\..\..\zenith\core;..\..\..\zenith\vulkan;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <ClangDebugInformationFormat>FullDebug</ClangDebugInformationFormat>
       <FloatABI>Default</FloatABI>
+      <TreatWarningAsError>true</TreatWarningAsError>
       <OmitFramePointers>false</OmitFramePointers>
       <UndefineAllPreprocessorDefinitions>false</UndefineAllPreprocessorDefinitions>
       <ExceptionHandling>Disabled</ExceptionHandling>

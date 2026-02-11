@@ -150,11 +150,11 @@ public:
 		case Combat_PlayerState::LIGHT_ATTACK_2:
 		case Combat_PlayerState::LIGHT_ATTACK_3:
 		case Combat_PlayerState::HEAVY_ATTACK:
-			HandleAttackState(xTransform, fDt);
+			HandleAttackState(fDt);
 			break;
 
 		case Combat_PlayerState::DODGING:
-			HandleDodgeState(xTransform, xCollider, fDt);
+			HandleDodgeState(xCollider, fDt);
 			break;
 
 		case Combat_PlayerState::HIT_STUN:
@@ -223,7 +223,7 @@ private:
 			return;
 
 		// Check for dodge input
-		if (CheckDodgeInput(xTransform))
+		if (CheckDodgeInput())
 			return;
 
 		// Handle movement
@@ -263,7 +263,7 @@ private:
 		}
 	}
 
-	void HandleAttackState(Zenith_TransformComponent& xTransform, float fDt)
+	void HandleAttackState(float fDt)
 	{
 		m_fStateTimer -= fDt;
 
@@ -292,7 +292,7 @@ private:
 		}
 	}
 
-	void HandleDodgeState(Zenith_TransformComponent& xTransform, Zenith_ColliderComponent& xCollider, float fDt)
+	void HandleDodgeState(Zenith_ColliderComponent& xCollider, float fDt)
 	{
 		m_fStateTimer -= fDt;
 
@@ -375,13 +375,13 @@ private:
 		return false;
 	}
 
-	bool CheckDodgeInput(Zenith_TransformComponent& xTransform)
+	bool CheckDodgeInput()
 	{
 		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_SPACE))
 		{
 			if (CanDodge())
 			{
-				StartDodge(xTransform);
+				StartDodge();
 				return true;
 			}
 		}
@@ -444,7 +444,7 @@ private:
 	// Dodge Logic
 	// ========================================================================
 
-	void StartDodge(Zenith_TransformComponent& xTransform)
+	void StartDodge()
 	{
 		m_eState = Combat_PlayerState::DODGING;
 		m_fStateTimer = m_fDodgeDuration;

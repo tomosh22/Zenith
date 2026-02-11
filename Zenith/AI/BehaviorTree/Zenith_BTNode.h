@@ -41,17 +41,17 @@ public:
 	/**
 	 * Called when this node becomes active (transitions from inactive to running)
 	 */
-	virtual void OnEnter(Zenith_Entity& xAgent, Zenith_Blackboard& xBlackboard) {}
+	virtual void OnEnter(Zenith_Entity&, Zenith_Blackboard&) {}
 
 	/**
 	 * Called when this node completes (SUCCESS or FAILURE)
 	 */
-	virtual void OnExit(Zenith_Entity& xAgent, Zenith_Blackboard& xBlackboard) {}
+	virtual void OnExit(Zenith_Entity&, Zenith_Blackboard&) {}
 
 	/**
 	 * Called when this node is interrupted by a higher-priority branch
 	 */
-	virtual void OnAbort(Zenith_Entity& xAgent, Zenith_Blackboard& xBlackboard) {}
+	virtual void OnAbort(Zenith_Entity&, Zenith_Blackboard&) {}
 
 	/**
 	 * Get the type name for serialization and debugging

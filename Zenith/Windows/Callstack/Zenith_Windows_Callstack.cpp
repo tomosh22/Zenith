@@ -92,8 +92,7 @@ bool Zenith_Windows_Callstack::Symbolicate(void* pAddress, Zenith_CallstackFrame
 	DWORD64 ulDisplacement = 0;
 	if (SymFromAddr(s_hProcess, ulAddress, &ulDisplacement, pxSymbol))
 	{
-		strncpy(xFrameOut.m_acSymbol, pxSymbol->Name, uCALLSTACK_SYMBOL_MAX_LENGTH - 1);
-		xFrameOut.m_acSymbol[uCALLSTACK_SYMBOL_MAX_LENGTH - 1] = '\0';
+		strncpy_s(xFrameOut.m_acSymbol, uCALLSTACK_SYMBOL_MAX_LENGTH, pxSymbol->Name, _TRUNCATE);
 	}
 	else
 	{
@@ -107,8 +106,7 @@ bool Zenith_Windows_Callstack::Symbolicate(void* pAddress, Zenith_CallstackFrame
 
 	if (SymGetLineFromAddr64(s_hProcess, ulAddress, &ulLineDisplacement, &xLine))
 	{
-		strncpy(xFrameOut.m_acFile, xLine.FileName, uCALLSTACK_SYMBOL_MAX_LENGTH - 1);
-		xFrameOut.m_acFile[uCALLSTACK_SYMBOL_MAX_LENGTH - 1] = '\0';
+		strncpy_s(xFrameOut.m_acFile, uCALLSTACK_SYMBOL_MAX_LENGTH, xLine.FileName, _TRUNCATE);
 		xFrameOut.m_uLine = xLine.LineNumber;
 	}
 

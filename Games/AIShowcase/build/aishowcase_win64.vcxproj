@@ -116,7 +116,7 @@
       <AdditionalIncludeDirectories>..\..;..;..\..\..\middleware;..\..\..\middleware\glfw-3.4.bin.win64\include;..\..\..\middleware\glm-master;..\..\..\middleware\imgui-docking;..\..\..\middleware\joltphysics-5.4.0;..\..\..\middleware\slang\include;..\..\..\middleware\stb;..\..\..\middleware\vma;..\..\..\middleware\vulkansdk\1.3.280.0\include;..\..\..\zenith;..\..\..\zenith\core;..\..\..\zenith\vulkan;..\..\..\zenith\windows</AdditionalIncludeDirectories>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <SuppressStartupBanner>true</SuppressStartupBanner>
-      <TreatWarningAsError>false</TreatWarningAsError>
+      <TreatWarningAsError>true</TreatWarningAsError>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <UseUnicodeForAssemblerListing>false</UseUnicodeForAssemblerListing>
       <InlineFunctionExpansion>OnlyExplicitInline</InlineFunctionExpansion>
@@ -186,7 +186,7 @@
       <AdditionalDependencies>zenith.lib;dbghelp.lib;glfw3_mt.lib;psapi.lib;slang.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
-      <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
+      <IgnoreSpecificDefaultLibraries>libcmt.lib</IgnoreSpecificDefaultLibraries>
       <LargeAddressAware>true</LargeAddressAware>
       <MapFileName>output\win64\vs2022_debug_win64_false\aishowcase.map</MapFileName>
     </Link>
@@ -203,7 +203,7 @@
       <AdditionalIncludeDirectories>..\..;..;..\..\..\middleware;..\..\..\middleware\glfw-3.4.bin.win64\include;..\..\..\middleware\glm-master;..\..\..\middleware\imgui-docking;..\..\..\middleware\joltphysics-5.4.0;..\..\..\middleware\slang\include;..\..\..\middleware\stb;..\..\..\middleware\vma;..\..\..\middleware\vulkansdk\1.3.280.0\include;..\..\..\tools\middleware;..\..\..\tools\middleware\assimp\include;..\..\..\tools\middleware\opencv\build\include;..\..\..\tools\middleware\opencv\build\include\opencv2;..\..\..\zenith;..\..\..\zenith\core;..\..\..\zenith\vulkan;..\..\..\zenith\windows</AdditionalIncludeDirectories>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <SuppressStartupBanner>true</SuppressStartupBanner>
-      <TreatWarningAsError>false</TreatWarningAsError>
+      <TreatWarningAsError>true</TreatWarningAsError>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <UseUnicodeForAssemblerListing>false</UseUnicodeForAssemblerListing>
       <InlineFunctionExpansion>OnlyExplicitInline</InlineFunctionExpansion>
@@ -273,7 +273,7 @@
       <AdditionalDependencies>zenith.lib;assimp-vc143-mtd.lib;dbghelp.lib;glfw3_mt.lib;opencv_world4100d.lib;psapi.lib;slang.lib;vulkan-1.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <SuppressStartupBanner>true</SuppressStartupBanner>
       <IgnoreAllDefaultLibraries>false</IgnoreAllDefaultLibraries>
-      <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
+      <IgnoreSpecificDefaultLibraries>libcmt.lib</IgnoreSpecificDefaultLibraries>
       <LargeAddressAware>true</LargeAddressAware>
       <MapFileName>output\win64\vs2022_debug_win64_true\aishowcase.map</MapFileName>
     </Link>
@@ -290,7 +290,7 @@
       <AdditionalIncludeDirectories>..\..;..;..\..\..\middleware;..\..\..\middleware\glfw-3.4.bin.win64\include;..\..\..\middleware\glm-master;..\..\..\middleware\imgui-docking;..\..\..\middleware\joltphysics-5.4.0;..\..\..\middleware\slang\include;..\..\..\middleware\stb;..\..\..\middleware\vma;..\..\..\middleware\vulkansdk\1.3.280.0\include;..\..\..\zenith;..\..\..\zenith\core;..\..\..\zenith\vulkan;..\..\..\zenith\windows</AdditionalIncludeDirectories>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <SuppressStartupBanner>true</SuppressStartupBanner>
-      <TreatWarningAsError>false</TreatWarningAsError>
+      <TreatWarningAsError>true</TreatWarningAsError>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <UseUnicodeForAssemblerListing>false</UseUnicodeForAssemblerListing>
       <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>
@@ -377,7 +377,7 @@
       <AdditionalIncludeDirectories>..\..;..;..\..\..\middleware;..\..\..\middleware\glfw-3.4.bin.win64\include;..\..\..\middleware\glm-master;..\..\..\middleware\imgui-docking;..\..\..\middleware\joltphysics-5.4.0;..\..\..\middleware\slang\include;..\..\..\middleware\stb;..\..\..\middleware\vma;..\..\..\middleware\vulkansdk\1.3.280.0\include;..\..\..\tools\middleware;..\..\..\tools\middleware\assimp\include;..\..\..\tools\middleware\opencv\build\include;..\..\..\tools\middleware\opencv\build\include\opencv2;..\..\..\zenith;..\..\..\zenith\core;..\..\..\zenith\vulkan;..\..\..\zenith\windows</AdditionalIncludeDirectories>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <SuppressStartupBanner>true</SuppressStartupBanner>
-      <TreatWarningAsError>false</TreatWarningAsError>
+      <TreatWarningAsError>true</TreatWarningAsError>
       <MultiProcessorCompilation>true</MultiProcessorCompilation>
       <UseUnicodeForAssemblerListing>false</UseUnicodeForAssemblerListing>
       <InlineFunctionExpansion>AnySuitable</InlineFunctionExpansion>

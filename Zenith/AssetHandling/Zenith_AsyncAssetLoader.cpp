@@ -172,7 +172,7 @@ class Zenith_Prefab;
 
 // Texture loader
 template<>
-void* AsyncLoadAsset<Zenith_TextureAsset>(const std::string& strPath)
+void* AsyncLoadAsset<Zenith_TextureAsset>(const std::string&)
 {
 	// Note: Texture loading may require GPU access which isn't thread-safe
 	// For now, return nullptr and let the sync path handle it
@@ -183,7 +183,7 @@ void* AsyncLoadAsset<Zenith_TextureAsset>(const std::string& strPath)
 
 // Material loader
 template<>
-void* AsyncLoadAsset<Zenith_MaterialAsset>(const std::string& strPath)
+void* AsyncLoadAsset<Zenith_MaterialAsset>(const std::string&)
 {
 	// Materials may reference textures, making them complex to load async
 	Zenith_Log(LOG_CATEGORY_ASSET, "AsyncLoadAsset<Zenith_MaterialAsset>: Async material loading not yet implemented");
@@ -192,7 +192,7 @@ void* AsyncLoadAsset<Zenith_MaterialAsset>(const std::string& strPath)
 
 // Mesh loader
 template<>
-void* AsyncLoadAsset<Zenith_MeshAsset>(const std::string& strPath)
+void* AsyncLoadAsset<Zenith_MeshAsset>(const std::string&)
 {
 	// Mesh data can be loaded on background thread, but GPU upload needs main thread
 	Zenith_Log(LOG_CATEGORY_ASSET, "AsyncLoadAsset<Zenith_MeshAsset>: Async mesh loading not yet implemented");
@@ -201,7 +201,7 @@ void* AsyncLoadAsset<Zenith_MeshAsset>(const std::string& strPath)
 
 // Model loader
 template<>
-void* AsyncLoadAsset<Zenith_ModelAsset>(const std::string& strPath)
+void* AsyncLoadAsset<Zenith_ModelAsset>(const std::string&)
 {
 	Zenith_Log(LOG_CATEGORY_ASSET, "AsyncLoadAsset<Zenith_ModelAsset>: Async model loading not yet implemented");
 	return nullptr;
@@ -209,7 +209,7 @@ void* AsyncLoadAsset<Zenith_ModelAsset>(const std::string& strPath)
 
 // Prefab loader
 template<>
-void* AsyncLoadAsset<Zenith_Prefab>(const std::string& strPath)
+void* AsyncLoadAsset<Zenith_Prefab>(const std::string&)
 {
 	Zenith_Log(LOG_CATEGORY_ASSET, "AsyncLoadAsset<Zenith_Prefab>: Async prefab loading not yet implemented");
 	return nullptr;

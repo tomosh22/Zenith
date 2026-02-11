@@ -539,7 +539,7 @@ Zenith_Maths::Quat RotationBetweenVectors(const Zenith_Maths::Vector3& xFrom,
 void Flux_IKSolver::ConvertPositionsToRotations(Flux_SkeletonPose& xPose,
 	const Flux_IKChain& xChain,
 	const std::vector<Zenith_Maths::Vector3>& xPositions,
-	const Flux_MeshGeometry& xGeometry,
+	const Flux_MeshGeometry&,
 	float fWeight)
 {
 	if (xChain.m_xBoneIndices.size() < 2)
@@ -764,7 +764,7 @@ bool SolveTwoBoneIK(const Zenith_Maths::Vector3& xRootPos,
 
 Zenith_Maths::Quat SolveLookAtIK(const Zenith_Maths::Vector3& xBonePos,
 	const Zenith_Maths::Vector3& xForwardDir,
-	const Zenith_Maths::Vector3& xUpDir,
+	const Zenith_Maths::Vector3&,
 	const Zenith_Maths::Vector3& xTargetPos,
 	float fMaxAngle)
 {

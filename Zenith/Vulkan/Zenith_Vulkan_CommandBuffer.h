@@ -57,7 +57,7 @@ public:
 	void InitialiseWithCustomPool(const vk::CommandPool& xCustomPool, u_int uWorkerIndex, CommandType eType = COMMANDTYPE_GRAPHICS);
 	void BeginRecording();
 	void EndRenderPass();
-	void EndRecording(RenderOrder eOrder, bool bEndPass = true);
+	void EndRecording(bool bEndPass = true);
 	void EndAndCpuWait(bool bEndPass);
 	void SetVertexBuffer(const Flux_VertexBuffer& xVertexBuffer, uint32_t uBindPoint = 0);
 	void SetVertexBuffer(const Flux_DynamicVertexBuffer& xVertexBuffer, uint32_t uBindPoint = 0);

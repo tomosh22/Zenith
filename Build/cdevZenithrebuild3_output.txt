@@ -1,0 +1,8 @@
+MSBuild version 17.11.9+a69bbaaf5 for .NET Framework
+MSBUILD : error MSB1008: Only one project can be specified.
+    Full command line: '"C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe" zenith_win64.sln p:Configuration=vs2022_Debug_Win64_True p:Platform=x64 -maxCpuCount:1 t:Rebuild'
+  Switches appended by response files:
+'' came from 'C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.rsp'
+Switch: p:Configuration=vs2022_Debug_Win64_True
+
+For switch syntax, type "MSBuild -help"

@@ -111,7 +111,7 @@ public:
 	ZENITH_BEHAVIOUR_TYPE_NAME(Survival_Behaviour)
 
 	Survival_Behaviour() = delete;
-	Survival_Behaviour(Zenith_Entity& xParentEntity)
+	Survival_Behaviour(Zenith_Entity&)
 		: m_uPlayerEntityID(INVALID_ENTITY_ID)
 		, m_uGroundEntityID(INVALID_ENTITY_ID)
 		, m_fStatusMessageTimer(0.f)
@@ -393,9 +393,9 @@ private:
 		// Subscribe to resource respawned event
 		m_axEventHandles.push_back(
 			Survival_EventBus::SubscribeLambda<Survival_Event_ResourceRespawned>(
-				[this](const Survival_Event_ResourceRespawned& xEvent)
+				[this](const Survival_Event_ResourceRespawned&)
 				{
-					OnResourceRespawned(xEvent);
+					OnResourceRespawned();
 				}));
 
 		// Subscribe to crafting complete event
@@ -416,7 +416,7 @@ private:
 		ShowStatusMessage(xEvent.m_eItemType, xEvent.m_uAmount);
 	}
 
-	void OnResourceRespawned(const Survival_Event_ResourceRespawned& xEvent)
+	void OnResourceRespawned()
 	{
 		// Could show visual feedback, play sound, etc.
 	}
@@ -525,7 +525,7 @@ private:
 
 	void UpdateCrafting(float fDt)
 	{
-		SurvivalItemType eCompleted = m_xCrafting.Update(fDt);
+		m_xCrafting.Update(fDt);
 		// Completion handled by event
 	}
 
@@ -832,7 +832,7 @@ private:
 		}
 
 		// Reset all resource nodes to full health
-		m_xResourceManager.ForEach([](Survival_ResourceNodeData& xNode, uint32_t uIndex)
+		m_xResourceManager.ForEach([](Survival_ResourceNodeData& xNode, uint32_t)
 		{
 			xNode.m_bDepleted = false;
 			xNode.m_uCurrentHits = xNode.m_uMaxHits;

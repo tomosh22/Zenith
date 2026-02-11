@@ -167,7 +167,7 @@ void Zenith_Profiling::RenderToImGui()
 }
 
 void Zenith_Profiling::RenderTimelineView(int& iMinDepthToRender, int& iMaxDepthToRender, int& iMaxDepthToRenderSeparately,
-                                          float& fTimelineZoom, float& fTimelineScroll, float& fVerticalScale, float fFrameDurationMs)
+                                          float& fTimelineZoom, float& fTimelineScroll, float& fVerticalScale, float)
 {
 	if (ImGui::CollapsingHeader("Controls", ImGuiTreeNodeFlags_DefaultOpen))
 	{
@@ -239,7 +239,7 @@ void Zenith_Profiling::RenderTimelineView(int& iMinDepthToRender, int& iMaxDepth
 		ls_bOnce = false;
 	}
 
-	const float fFrameDuration = std::chrono::duration_cast<std::chrono::nanoseconds>(g_xPreviousFrameEnd - g_xPreviousFrameStart).count();
+	const float fFrameDuration = static_cast<float>(std::chrono::duration_cast<std::chrono::nanoseconds>(g_xPreviousFrameEnd - g_xPreviousFrameStart).count());
 	const float fCanvasTimeScale = (fCanvasWidth * fTimelineZoom) / fFrameDuration;
 
 	const ImVec2 xMousePos = ImGui::GetMousePos();
@@ -259,15 +259,15 @@ void Zenith_Profiling::RenderTimelineView(int& iMinDepthToRender, int& iMaxDepth
 		{
 			const Event& xEvent = xEvents.Get(uEventCount - u - 1);
 
-			if (xEvent.m_uDepth < iMinDepthToRender || xEvent.m_uDepth > iMaxDepthToRender)
+			if (xEvent.m_uDepth < static_cast<u_int>(iMinDepthToRender) || xEvent.m_uDepth > static_cast<u_int>(iMaxDepthToRender))
 				continue;
 
-			const u_int uRowIndex = (xEvent.m_uDepth <= iMaxDepthToRenderSeparately)
-				? (xEvent.m_uDepth - iMinDepthToRender)
-				: (iMaxDepthToRenderSeparately - iMinDepthToRender);
+			const u_int uRowIndex = (xEvent.m_uDepth <= static_cast<u_int>(iMaxDepthToRenderSeparately))
+				? (xEvent.m_uDepth - static_cast<u_int>(iMinDepthToRender))
+				: (static_cast<u_int>(iMaxDepthToRenderSeparately) - static_cast<u_int>(iMinDepthToRender));
 
-			const float fEventStartNs = std::chrono::duration_cast<std::chrono::nanoseconds>(xEvent.m_xBegin - g_xPreviousFrameStart).count();
-			const float fEventEndNs = std::chrono::duration_cast<std::chrono::nanoseconds>(xEvent.m_xEnd - g_xPreviousFrameStart).count();
+			const float fEventStartNs = static_cast<float>(std::chrono::duration_cast<std::chrono::nanoseconds>(xEvent.m_xBegin - g_xPreviousFrameStart).count());
+			const float fEventEndNs = static_cast<float>(std::chrono::duration_cast<std::chrono::nanoseconds>(xEvent.m_xEnd - g_xPreviousFrameStart).count());
 			const float fEventDurationNs = fEventEndNs - fEventStartNs;
 			
 			const float fStartPx = (fEventStartNs * fCanvasTimeScale) - fTimelineScroll;
@@ -433,7 +433,7 @@ void Zenith_Profiling::RenderThreadBreakdown(float fFrameDurationMs, u_int& uThr
 	for (u_int u = 0; u < xSortedEvents.GetSize(); ++u)
 	{
 		const Event* pEvent = xSortedEvents.Get(u);
-		const float fDurationNs = std::chrono::duration_cast<std::chrono::nanoseconds>(pEvent->m_xEnd - pEvent->m_xBegin).count();
+		const float fDurationNs = static_cast<float>(std::chrono::duration_cast<std::chrono::nanoseconds>(pEvent->m_xEnd - pEvent->m_xBegin).count());
 		const float fDurationMs = fDurationNs / 1000000.0f;
 		
 		// Create new node

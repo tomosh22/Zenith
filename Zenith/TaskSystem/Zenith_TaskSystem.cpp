@@ -19,7 +19,7 @@ static u_int g_uNumWorkerThreads = 0;
 
 DEBUGVAR bool dbg_bMultithreaded = true;
 
-static void ThreadFunc(const void* pData)
+static void ThreadFunc(const void*)
 {
 	do
 	{

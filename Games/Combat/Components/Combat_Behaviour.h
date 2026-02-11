@@ -111,7 +111,7 @@ public:
 	ZENITH_BEHAVIOUR_TYPE_NAME(Combat_Behaviour)
 
 	Combat_Behaviour() = delete;
-	Combat_Behaviour(Zenith_Entity& xParentEntity)
+	Combat_Behaviour(Zenith_Entity&)
 		: m_eGameState(Combat_GameState::MAIN_MENU)
 		, m_uTotalEnemies(3)
 		, m_uComboCount(0)
@@ -925,7 +925,6 @@ private:
 			fPlayerHealth,
 			fPlayerMaxHealth,
 			m_uComboCount,
-			m_fComboTimer,
 			m_xEnemyManager.GetAliveCount(),
 			m_uTotalEnemies,
 			m_eGameState);

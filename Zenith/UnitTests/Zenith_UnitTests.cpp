@@ -398,7 +398,7 @@ void Zenith_UnitTests::TestProfiling()
 	Zenith_Assert(Zenith_Profiling::GetCurrentIndex() == eIndex0, "Profiling index wasn't set correctly");
 	Zenith_Profiling::EndProfile(eIndex0);
 
-	TestData xTest0 = { 0, -1 }, xTest1 = { 1,-1 }, xTest2 = { 2, -1 };
+	TestData xTest0 = { 0, ~0u }, xTest1 = { 1, ~0u }, xTest2 = { 2, ~0u };
 	Zenith_Task* pxTask0 = new Zenith_Task(ZENITH_PROFILE_INDEX__FLUX_SHADOWS, Test, &xTest0);
 	Zenith_Task* pxTask1 = new Zenith_Task(ZENITH_PROFILE_INDEX__FLUX_DEFERRED_SHADING, Test, &xTest1);
 	Zenith_Task* pxTask2 = new Zenith_Task(ZENITH_PROFILE_INDEX__FLUX_SKYBOX, Test, &xTest2);
@@ -415,9 +415,9 @@ void Zenith_UnitTests::TestProfiling()
 
 	const std::unordered_map<u_int, Zenith_Vector<Zenith_Profiling::Event>>& xEvents = Zenith_Profiling::GetEvents();
 	const Zenith_Vector<Zenith_Profiling::Event>& xEventsMain = xEvents.at(Zenith_Multithreading::GetCurrentThreadID());
-	const Zenith_Vector<Zenith_Profiling::Event>& xEvents0 = xEvents.at(pxTask0->GetCompletedThreadID());
-	const Zenith_Vector<Zenith_Profiling::Event>& xEvents1 = xEvents.at(pxTask1->GetCompletedThreadID());
-	const Zenith_Vector<Zenith_Profiling::Event>& xEvents2 = xEvents.at(pxTask2->GetCompletedThreadID());
+	(void)xEvents.at(pxTask0->GetCompletedThreadID());
+	(void)xEvents.at(pxTask1->GetCompletedThreadID());
+	(void)xEvents.at(pxTask2->GetCompletedThreadID());
 
 	Zenith_Assert(xEventsMain.GetSize() == 8, "Expected 8 events, have %u", xEvents.size());
 	Zenith_Assert(xEventsMain.Get(0).m_eIndex == eIndex1, "Wrong profile index");
@@ -680,7 +680,7 @@ void Zenith_UnitTests::TestVectorZeroCapacityResize()
 class MemoryPoolTest
 {
 public:
-	static int s_uCount;
+	static u_int s_uCount;
 
 	explicit MemoryPoolTest(u_int& uOut)
 	: m_uTest(++s_uCount)
@@ -693,9 +693,9 @@ public:
 		s_uCount--;
 	}
 
-	int m_uTest;
+	u_int m_uTest;
 };
-int MemoryPoolTest::s_uCount = 0;
+u_int MemoryPoolTest::s_uCount = 0;
 
 void Zenith_UnitTests::TestMemoryPool()
 {
@@ -3866,208 +3866,6 @@ static Zenith_MeshAsset* CreateStickFigureMesh(const Zenith_SkeletonAsset* pxSke
 }
 
 /**
- * Convert a Zenith_MeshAsset to Flux_MeshGeometry format for runtime use
- * This creates the GPU-ready format that Flux_MeshGeometry::LoadFromFile expects
- */
-static Flux_MeshGeometry* CreateFluxMeshGeometry(const Zenith_MeshAsset* pxMeshAsset, const Zenith_SkeletonAsset* pxSkeleton)
-{
-	Flux_MeshGeometry* pxGeometry = new Flux_MeshGeometry();
-
-	const uint32_t uNumVerts = pxMeshAsset->GetNumVerts();
-	const uint32_t uNumIndices = pxMeshAsset->GetNumIndices();
-	const uint32_t uNumBones = pxSkeleton->GetNumBones();
-
-	pxGeometry->m_uNumVerts = uNumVerts;
-	pxGeometry->m_uNumIndices = uNumIndices;
-	pxGeometry->m_uNumBones = uNumBones;
-	pxGeometry->m_xMaterialColor = pxMeshAsset->m_xMaterialColor;
-
-	// Copy positions
-	pxGeometry->m_pxPositions = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector3)));
-	for (uint32_t i = 0; i < uNumVerts; i++)
-	{
-		pxGeometry->m_pxPositions[i] = pxMeshAsset->m_xPositions.Get(i);
-	}
-
-	// Copy normals
-	if (pxMeshAsset->m_xNormals.GetSize() > 0)
-	{
-		pxGeometry->m_pxNormals = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector3)));
-		for (uint32_t i = 0; i < uNumVerts; i++)
-		{
-			pxGeometry->m_pxNormals[i] = pxMeshAsset->m_xNormals.Get(i);
-		}
-	}
-
-	// Copy UVs
-	if (pxMeshAsset->m_xUVs.GetSize() > 0)
-	{
-		pxGeometry->m_pxUVs = static_cast<Zenith_Maths::Vector2*>(Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector2)));
-		for (uint32_t i = 0; i < uNumVerts; i++)
-		{
-			pxGeometry->m_pxUVs[i] = pxMeshAsset->m_xUVs.Get(i);
-		}
-	}
-
-	// Copy tangents
-	if (pxMeshAsset->m_xTangents.GetSize() > 0)
-	{
-		pxGeometry->m_pxTangents = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector3)));
-		for (uint32_t i = 0; i < uNumVerts; i++)
-		{
-			pxGeometry->m_pxTangents[i] = pxMeshAsset->m_xTangents.Get(i);
-		}
-	}
-
-	// Copy colors
-	if (pxMeshAsset->m_xColors.GetSize() > 0)
-	{
-		pxGeometry->m_pxColors = static_cast<Zenith_Maths::Vector4*>(Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector4)));
-		for (uint32_t i = 0; i < uNumVerts; i++)
-		{
-			pxGeometry->m_pxColors[i] = pxMeshAsset->m_xColors.Get(i);
-		}
-	}
-
-	// Copy indices
-	pxGeometry->m_puIndices = static_cast<Flux_MeshGeometry::IndexType*>(Zenith_MemoryManagement::Allocate(uNumIndices * sizeof(Flux_MeshGeometry::IndexType)));
-	for (uint32_t i = 0; i < uNumIndices; i++)
-	{
-		pxGeometry->m_puIndices[i] = pxMeshAsset->m_xIndices.Get(i);
-	}
-
-	// Copy bone IDs (flatten uvec4 to uint32_t array)
-	if (pxMeshAsset->m_xBoneIndices.GetSize() > 0)
-	{
-		pxGeometry->m_puBoneIDs = static_cast<uint32_t*>(Zenith_MemoryManagement::Allocate(uNumVerts * MAX_BONES_PER_VERTEX * sizeof(uint32_t)));
-		for (uint32_t v = 0; v < uNumVerts; v++)
-		{
-			const glm::uvec4& xIndices = pxMeshAsset->m_xBoneIndices.Get(v);
-			pxGeometry->m_puBoneIDs[v * MAX_BONES_PER_VERTEX + 0] = xIndices.x;
-			pxGeometry->m_puBoneIDs[v * MAX_BONES_PER_VERTEX + 1] = xIndices.y;
-			pxGeometry->m_puBoneIDs[v * MAX_BONES_PER_VERTEX + 2] = xIndices.z;
-			pxGeometry->m_puBoneIDs[v * MAX_BONES_PER_VERTEX + 3] = xIndices.w;
-		}
-	}
-
-	// Copy bone weights (flatten vec4 to float array)
-	if (pxMeshAsset->m_xBoneWeights.GetSize() > 0)
-	{
-		pxGeometry->m_pfBoneWeights = static_cast<float*>(Zenith_MemoryManagement::Allocate(uNumVerts * MAX_BONES_PER_VERTEX * sizeof(float)));
-		for (uint32_t v = 0; v < uNumVerts; v++)
-		{
-			const glm::vec4& xWeights = pxMeshAsset->m_xBoneWeights.Get(v);
-			pxGeometry->m_pfBoneWeights[v * MAX_BONES_PER_VERTEX + 0] = xWeights.x;
-			pxGeometry->m_pfBoneWeights[v * MAX_BONES_PER_VERTEX + 1] = xWeights.y;
-			pxGeometry->m_pfBoneWeights[v * MAX_BONES_PER_VERTEX + 2] = xWeights.z;
-			pxGeometry->m_pfBoneWeights[v * MAX_BONES_PER_VERTEX + 3] = xWeights.w;
-		}
-	}
-
-	// Build bone name to ID and offset matrix map from skeleton
-	for (uint32_t b = 0; b < uNumBones; b++)
-	{
-		const Zenith_SkeletonAsset::Bone& xBone = pxSkeleton->GetBone(b);
-		// The offset matrix transforms from mesh space to bone space (inverse bind pose)
-		Zenith_Maths::Matrix4 xOffsetMat = glm::inverse(xBone.m_xBindPoseModel);
-		pxGeometry->m_xBoneNameToIdAndOffset[xBone.m_strName] = std::make_pair(b, xOffsetMat);
-	}
-
-	// Generate buffer layout and interleaved vertex data
-	pxGeometry->GenerateLayoutAndVertexData();
-
-	return pxGeometry;
-}
-
-/**
- * Create a static version of the mesh geometry WITHOUT bone data
- * This is for static rendering (72-byte vertices) that works with the static mesh shader
- */
-static Flux_MeshGeometry* CreateStaticFluxMeshGeometry(const Zenith_MeshAsset* pxMeshAsset)
-{
-	Flux_MeshGeometry* pxGeometry = new Flux_MeshGeometry();
-
-	const uint32_t uNumVerts = pxMeshAsset->GetNumVerts();
-	const uint32_t uNumIndices = pxMeshAsset->GetNumIndices();
-
-	pxGeometry->m_uNumVerts = uNumVerts;
-	pxGeometry->m_uNumIndices = uNumIndices;
-	pxGeometry->m_uNumBones = 0;  // No bones for static mesh
-	pxGeometry->m_xMaterialColor = pxMeshAsset->m_xMaterialColor;
-
-	// Copy positions
-	pxGeometry->m_pxPositions = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector3)));
-	for (uint32_t i = 0; i < uNumVerts; i++)
-	{
-		pxGeometry->m_pxPositions[i] = pxMeshAsset->m_xPositions.Get(i);
-	}
-
-	// Copy normals (or generate default up vector)
-	pxGeometry->m_pxNormals = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector3)));
-	for (uint32_t i = 0; i < uNumVerts; i++)
-	{
-		if (pxMeshAsset->m_xNormals.GetSize() > 0)
-			pxGeometry->m_pxNormals[i] = pxMeshAsset->m_xNormals.Get(i);
-		else
-			pxGeometry->m_pxNormals[i] = Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f);
-	}
-
-	// Copy UVs (or generate default zero)
-	pxGeometry->m_pxUVs = static_cast<Zenith_Maths::Vector2*>(Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector2)));
-	for (uint32_t i = 0; i < uNumVerts; i++)
-	{
-		if (pxMeshAsset->m_xUVs.GetSize() > 0)
-			pxGeometry->m_pxUVs[i] = pxMeshAsset->m_xUVs.Get(i);
-		else
-			pxGeometry->m_pxUVs[i] = Zenith_Maths::Vector2(0.0f, 0.0f);
-	}
-
-	// Copy tangents (or generate default)
-	pxGeometry->m_pxTangents = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector3)));
-	for (uint32_t i = 0; i < uNumVerts; i++)
-	{
-		if (pxMeshAsset->m_xTangents.GetSize() > 0)
-			pxGeometry->m_pxTangents[i] = pxMeshAsset->m_xTangents.Get(i);
-		else
-			pxGeometry->m_pxTangents[i] = Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f);
-	}
-
-	// Copy bitangents (or generate default)
-	pxGeometry->m_pxBitangents = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector3)));
-	for (uint32_t i = 0; i < uNumVerts; i++)
-	{
-		if (pxMeshAsset->m_xBitangents.GetSize() > 0)
-			pxGeometry->m_pxBitangents[i] = pxMeshAsset->m_xBitangents.Get(i);
-		else
-			pxGeometry->m_pxBitangents[i] = Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f);
-	}
-
-	// Copy colors (or generate default white)
-	pxGeometry->m_pxColors = static_cast<Zenith_Maths::Vector4*>(Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector4)));
-	for (uint32_t i = 0; i < uNumVerts; i++)
-	{
-		if (pxMeshAsset->m_xColors.GetSize() > 0)
-			pxGeometry->m_pxColors[i] = pxMeshAsset->m_xColors.Get(i);
-		else
-			pxGeometry->m_pxColors[i] = Zenith_Maths::Vector4(1.0f, 1.0f, 1.0f, 1.0f);
-	}
-
-	// Copy indices
-	pxGeometry->m_puIndices = static_cast<Flux_MeshGeometry::IndexType*>(Zenith_MemoryManagement::Allocate(uNumIndices * sizeof(Flux_MeshGeometry::IndexType)));
-	for (uint32_t i = 0; i < uNumIndices; i++)
-	{
-		pxGeometry->m_puIndices[i] = pxMeshAsset->m_xIndices.Get(i);
-	}
-
-	// NO bone IDs or weights - this is a static mesh
-
-	// Generate buffer layout and interleaved vertex data
-	pxGeometry->GenerateLayoutAndVertexData();
-
-	return pxGeometry;
-}
-
-/**
  * Create a 2-second idle animation (subtle breathing motion)
  */
 static Flux_AnimationClip* CreateIdleAnimation()
@@ -4214,310 +4012,6 @@ static Flux_AnimationClip* CreateRunAnimation()
 		xChannel.AddRotationKeyframe(6.0f, glm::angleAxis(glm::radians(-35.0f), xXAxis));
 		xChannel.AddRotationKeyframe(9.0f, glm::identity<Zenith_Maths::Quat>());
 		xChannel.AddRotationKeyframe(12.0f, glm::angleAxis(glm::radians(35.0f), xXAxis));
-		xChannel.SortKeyframes();
-		pxClip->AddBoneChannel("RightUpperArm", std::move(xChannel));
-	}
-
-	return pxClip;
-}
-
-/**
- * Create a 0.4-second Attack1 animation (quick jab with right arm)
- */
-static Flux_AnimationClip* CreateAttack1Animation()
-{
-	Flux_AnimationClip* pxClip = new Flux_AnimationClip();
-	pxClip->SetName("Attack1");
-	pxClip->SetDuration(0.4f);
-	pxClip->SetTicksPerSecond(24);
-	pxClip->SetLooping(false);
-
-	const Zenith_Maths::Vector3 xXAxis(1, 0, 0);
-	const Zenith_Maths::Vector3 xYAxis(0, 1, 0);
-
-	// Right arm jab forward (rotate around X axis to punch forward)
-	{
-		Flux_BoneChannel xChannel;
-		xChannel.AddRotationKeyframe(0.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.AddRotationKeyframe(3.0f, glm::angleAxis(glm::radians(-45.0f), xXAxis));  // Windup back
-		xChannel.AddRotationKeyframe(6.0f, glm::angleAxis(glm::radians(60.0f), xXAxis));   // Punch forward
-		xChannel.AddRotationKeyframe(10.0f, glm::identity<Zenith_Maths::Quat>());          // Return
-		xChannel.SortKeyframes();
-		pxClip->AddBoneChannel("RightUpperArm", std::move(xChannel));
-	}
-
-	// Slight spine lean forward during punch
-	{
-		Flux_BoneChannel xChannel;
-		xChannel.AddRotationKeyframe(0.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.AddRotationKeyframe(5.0f, glm::angleAxis(glm::radians(15.0f), xXAxis));   // Lean forward
-		xChannel.AddRotationKeyframe(10.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.SortKeyframes();
-		pxClip->AddBoneChannel("Spine", std::move(xChannel));
-	}
-
-	return pxClip;
-}
-
-/**
- * Create a 0.4-second Attack2 animation (cross swing with left arm)
- */
-static Flux_AnimationClip* CreateAttack2Animation()
-{
-	Flux_AnimationClip* pxClip = new Flux_AnimationClip();
-	pxClip->SetName("Attack2");
-	pxClip->SetDuration(0.4f);
-	pxClip->SetTicksPerSecond(24);
-	pxClip->SetLooping(false);
-
-	const Zenith_Maths::Vector3 xXAxis(1, 0, 0);
-	const Zenith_Maths::Vector3 xYAxis(0, 1, 0);
-
-	// Left arm swing across body
-	{
-		Flux_BoneChannel xChannel;
-		xChannel.AddRotationKeyframe(0.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.AddRotationKeyframe(3.0f, glm::angleAxis(glm::radians(-30.0f), xYAxis));  // Pull back
-		xChannel.AddRotationKeyframe(6.0f, glm::angleAxis(glm::radians(75.0f), xYAxis));   // Swing across
-		xChannel.AddRotationKeyframe(10.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.SortKeyframes();
-		pxClip->AddBoneChannel("LeftUpperArm", std::move(xChannel));
-	}
-
-	// Right arm pull back for balance
-	{
-		Flux_BoneChannel xChannel;
-		xChannel.AddRotationKeyframe(0.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.AddRotationKeyframe(5.0f, glm::angleAxis(glm::radians(-25.0f), xXAxis));
-		xChannel.AddRotationKeyframe(10.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.SortKeyframes();
-		pxClip->AddBoneChannel("RightUpperArm", std::move(xChannel));
-	}
-
-	// Spine twist left during swing
-	{
-		Flux_BoneChannel xChannel;
-		xChannel.AddRotationKeyframe(0.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.AddRotationKeyframe(5.0f, glm::angleAxis(glm::radians(-20.0f), xYAxis));  // Twist left
-		xChannel.AddRotationKeyframe(10.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.SortKeyframes();
-		pxClip->AddBoneChannel("Spine", std::move(xChannel));
-	}
-
-	return pxClip;
-}
-
-/**
- * Create a 0.5-second Attack3 animation (heavy overhead swing)
- */
-static Flux_AnimationClip* CreateAttack3Animation()
-{
-	Flux_AnimationClip* pxClip = new Flux_AnimationClip();
-	pxClip->SetName("Attack3");
-	pxClip->SetDuration(0.5f);
-	pxClip->SetTicksPerSecond(24);
-	pxClip->SetLooping(false);
-
-	const Zenith_Maths::Vector3 xXAxis(1, 0, 0);
-	const Zenith_Maths::Vector3 xZAxis(0, 0, 1);
-
-	// Both arms raise up then swing down
-	{
-		Flux_BoneChannel xChannel;
-		xChannel.AddRotationKeyframe(0.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.AddRotationKeyframe(4.0f, glm::angleAxis(glm::radians(-120.0f), xXAxis));  // Arms up
-		xChannel.AddRotationKeyframe(8.0f, glm::angleAxis(glm::radians(60.0f), xXAxis));    // Slam down
-		xChannel.AddRotationKeyframe(12.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.SortKeyframes();
-		pxClip->AddBoneChannel("RightUpperArm", std::move(xChannel));
-	}
-
-	{
-		Flux_BoneChannel xChannel;
-		xChannel.AddRotationKeyframe(0.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.AddRotationKeyframe(4.0f, glm::angleAxis(glm::radians(-120.0f), xXAxis));  // Arms up
-		xChannel.AddRotationKeyframe(8.0f, glm::angleAxis(glm::radians(60.0f), xXAxis));    // Slam down
-		xChannel.AddRotationKeyframe(12.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.SortKeyframes();
-		pxClip->AddBoneChannel("LeftUpperArm", std::move(xChannel));
-	}
-
-	// Spine lean back then forward during slam
-	{
-		Flux_BoneChannel xChannel;
-		xChannel.AddRotationKeyframe(0.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.AddRotationKeyframe(4.0f, glm::angleAxis(glm::radians(-20.0f), xXAxis));  // Lean back
-		xChannel.AddRotationKeyframe(8.0f, glm::angleAxis(glm::radians(30.0f), xXAxis));   // Lean forward
-		xChannel.AddRotationKeyframe(12.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.SortKeyframes();
-		pxClip->AddBoneChannel("Spine", std::move(xChannel));
-	}
-
-	// Root position - slight hop forward
-	{
-		Flux_BoneChannel xChannel;
-		xChannel.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(0, 0, 0));
-		xChannel.AddPositionKeyframe(6.0f, Zenith_Maths::Vector3(0, 0.1f, 0.15f));  // Hop up/forward
-		xChannel.AddPositionKeyframe(12.0f, Zenith_Maths::Vector3(0, 0, 0.1f));     // Land forward
-		xChannel.SortKeyframes();
-		pxClip->AddBoneChannel("Root", std::move(xChannel));
-	}
-
-	return pxClip;
-}
-
-/**
- * Create a 0.5-second Dodge animation (quick sidestep)
- */
-static Flux_AnimationClip* CreateDodgeAnimation()
-{
-	Flux_AnimationClip* pxClip = new Flux_AnimationClip();
-	pxClip->SetName("Dodge");
-	pxClip->SetDuration(0.5f);
-	pxClip->SetTicksPerSecond(24);
-	pxClip->SetLooping(false);
-
-	const Zenith_Maths::Vector3 xXAxis(1, 0, 0);
-	const Zenith_Maths::Vector3 xZAxis(0, 0, 1);
-
-	// Root translation - sidestep right
-	{
-		Flux_BoneChannel xChannel;
-		xChannel.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(0, 0, 0));
-		xChannel.AddPositionKeyframe(6.0f, Zenith_Maths::Vector3(0.5f, -0.2f, 0));   // Dodge right, crouch
-		xChannel.AddPositionKeyframe(12.0f, Zenith_Maths::Vector3(0.8f, 0, 0));      // Land
-		xChannel.SortKeyframes();
-		pxClip->AddBoneChannel("Root", std::move(xChannel));
-	}
-
-	// Spine lean into dodge
-	{
-		Flux_BoneChannel xChannel;
-		xChannel.AddRotationKeyframe(0.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.AddRotationKeyframe(6.0f, glm::angleAxis(glm::radians(30.0f), xZAxis));  // Lean right
-		xChannel.AddRotationKeyframe(12.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.SortKeyframes();
-		pxClip->AddBoneChannel("Spine", std::move(xChannel));
-	}
-
-	// Legs - right leg step out
-	{
-		Flux_BoneChannel xChannel;
-		xChannel.AddRotationKeyframe(0.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.AddRotationKeyframe(6.0f, glm::angleAxis(glm::radians(-30.0f), xZAxis));  // Step out
-		xChannel.AddRotationKeyframe(12.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.SortKeyframes();
-		pxClip->AddBoneChannel("RightUpperLeg", std::move(xChannel));
-	}
-
-	return pxClip;
-}
-
-/**
- * Create a 0.3-second Hit animation (stagger backward)
- */
-static Flux_AnimationClip* CreateHitAnimation()
-{
-	Flux_AnimationClip* pxClip = new Flux_AnimationClip();
-	pxClip->SetName("Hit");
-	pxClip->SetDuration(0.3f);
-	pxClip->SetTicksPerSecond(24);
-	pxClip->SetLooping(false);
-
-	const Zenith_Maths::Vector3 xXAxis(1, 0, 0);
-
-	// Root stagger backward
-	{
-		Flux_BoneChannel xChannel;
-		xChannel.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(0, 0, 0));
-		xChannel.AddPositionKeyframe(4.0f, Zenith_Maths::Vector3(0, 0, -0.3f));   // Knocked back
-		xChannel.AddPositionKeyframe(7.0f, Zenith_Maths::Vector3(0, 0, -0.2f));   // Recover slightly
-		xChannel.SortKeyframes();
-		pxClip->AddBoneChannel("Root", std::move(xChannel));
-	}
-
-	// Spine lean backward from impact
-	{
-		Flux_BoneChannel xChannel;
-		xChannel.AddRotationKeyframe(0.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.AddRotationKeyframe(3.0f, glm::angleAxis(glm::radians(-25.0f), xXAxis));  // Lean back
-		xChannel.AddRotationKeyframe(7.0f, glm::identity<Zenith_Maths::Quat>());           // Recover
-		xChannel.SortKeyframes();
-		pxClip->AddBoneChannel("Spine", std::move(xChannel));
-	}
-
-	// Head snap back
-	{
-		Flux_BoneChannel xChannel;
-		xChannel.AddRotationKeyframe(0.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.AddRotationKeyframe(2.0f, glm::angleAxis(glm::radians(-30.0f), xXAxis));  // Head back
-		xChannel.AddRotationKeyframe(7.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.SortKeyframes();
-		pxClip->AddBoneChannel("Head", std::move(xChannel));
-	}
-
-	return pxClip;
-}
-
-/**
- * Create a 1.0-second Death animation (fall over)
- */
-static Flux_AnimationClip* CreateDeathAnimation()
-{
-	Flux_AnimationClip* pxClip = new Flux_AnimationClip();
-	pxClip->SetName("Death");
-	pxClip->SetDuration(1.0f);
-	pxClip->SetTicksPerSecond(24);
-	pxClip->SetLooping(false);
-
-	const Zenith_Maths::Vector3 xXAxis(1, 0, 0);
-	const Zenith_Maths::Vector3 xZAxis(0, 0, 1);
-
-	// Root drops down and backward
-	{
-		Flux_BoneChannel xChannel;
-		xChannel.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(0, 0, 0));
-		xChannel.AddPositionKeyframe(12.0f, Zenith_Maths::Vector3(0, -0.3f, -0.2f));   // Start falling
-		xChannel.AddPositionKeyframe(24.0f, Zenith_Maths::Vector3(0, -1.0f, -0.4f));   // On ground
-		xChannel.SortKeyframes();
-		pxClip->AddBoneChannel("Root", std::move(xChannel));
-	}
-
-	// Spine collapses backward
-	{
-		Flux_BoneChannel xChannel;
-		xChannel.AddRotationKeyframe(0.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.AddRotationKeyframe(12.0f, glm::angleAxis(glm::radians(-45.0f), xXAxis));  // Falling back
-		xChannel.AddRotationKeyframe(24.0f, glm::angleAxis(glm::radians(-90.0f), xXAxis));  // Flat on back
-		xChannel.SortKeyframes();
-		pxClip->AddBoneChannel("Spine", std::move(xChannel));
-	}
-
-	// Head goes limp
-	{
-		Flux_BoneChannel xChannel;
-		xChannel.AddRotationKeyframe(0.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.AddRotationKeyframe(12.0f, glm::angleAxis(glm::radians(-30.0f), xXAxis));
-		xChannel.AddRotationKeyframe(24.0f, glm::angleAxis(glm::radians(-20.0f), xXAxis));  // Resting
-		xChannel.SortKeyframes();
-		pxClip->AddBoneChannel("Head", std::move(xChannel));
-	}
-
-	// Arms fall limp
-	{
-		Flux_BoneChannel xChannel;
-		xChannel.AddRotationKeyframe(0.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.AddRotationKeyframe(12.0f, glm::angleAxis(glm::radians(45.0f), xZAxis));
-		xChannel.AddRotationKeyframe(24.0f, glm::angleAxis(glm::radians(60.0f), xZAxis));  // Spread out
-		xChannel.SortKeyframes();
-		pxClip->AddBoneChannel("LeftUpperArm", std::move(xChannel));
-	}
-
-	{
-		Flux_BoneChannel xChannel;
-		xChannel.AddRotationKeyframe(0.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.AddRotationKeyframe(12.0f, glm::angleAxis(glm::radians(-45.0f), xZAxis));
-		xChannel.AddRotationKeyframe(24.0f, glm::angleAxis(glm::radians(-60.0f), xZAxis));  // Spread out
 		xChannel.SortKeyframes();
 		pxClip->AddBoneChannel("RightUpperArm", std::move(xChannel));
 	}
@@ -6053,9 +5547,6 @@ void Zenith_UnitTests::TestDispatchFullLifecycleInit()
 	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
 
-	// Store initial count (may have entities from previous tests)
-	const u_int uInitialCount = pxSceneData->GetEntityCount();
-
 	// Create several entities
 	Zenith_Entity xEntity1(pxSceneData, "LifecycleInitEntity1");
 	Zenith_Entity xEntity2(pxSceneData, "LifecycleInitEntity2");
@@ -6120,7 +5611,7 @@ void Zenith_UnitTests::TestQuerySingleComponent()
 	// Query for TransformComponent - should return all 3 entities
 	u_int uTransformCount = 0;
 	pxSceneData->Query<Zenith_TransformComponent>().ForEach(
-		[&uTransformCount](Zenith_EntityID uID, Zenith_TransformComponent& xTransform) {
+		[&uTransformCount](Zenith_EntityID, Zenith_TransformComponent&) {
 			uTransformCount++;
 		});
 
@@ -6130,7 +5621,7 @@ void Zenith_UnitTests::TestQuerySingleComponent()
 	// Query for CameraComponent - should return 2 entities
 	u_int uCameraCount = 0;
 	pxSceneData->Query<Zenith_CameraComponent>().ForEach(
-		[&uCameraCount](Zenith_EntityID uID, Zenith_CameraComponent& xCamera) {
+		[&uCameraCount](Zenith_EntityID, Zenith_CameraComponent&) {
 			uCameraCount++;
 		});
 
@@ -6166,9 +5657,9 @@ void Zenith_UnitTests::TestQueryMultipleComponents()
 	u_int uMatchCount = 0;
 	std::vector<float> xPositions;
 	pxSceneData->Query<Zenith_TransformComponent, Zenith_CameraComponent>().ForEach(
-		[&uMatchCount, &xPositions](Zenith_EntityID uID,
+		[&uMatchCount, &xPositions](Zenith_EntityID,
 		                            Zenith_TransformComponent& xTransform,
-		                            Zenith_CameraComponent& xCamera) {
+		                            Zenith_CameraComponent&) {
 			uMatchCount++;
 			Zenith_Maths::Vector3 xPos;
 			xTransform.GetPosition(xPos);
@@ -6202,7 +5693,7 @@ void Zenith_UnitTests::TestQueryNoMatches()
 	// Query for CameraComponent - should return no matches
 	u_int uCount = 0;
 	pxSceneData->Query<Zenith_CameraComponent>().ForEach(
-		[&uCount](Zenith_EntityID uID, Zenith_CameraComponent& xCamera) {
+		[&uCount](Zenith_EntityID, Zenith_CameraComponent&) {
 			uCount++;
 		});
 
@@ -6466,7 +5957,7 @@ void Zenith_UnitTests::TestEventMultipleSubscribers()
 
 	// Subscribe two callbacks to the same event type
 	Zenith_EventHandle uHandle1 = Zenith_EventDispatcher::Get().Subscribe<TestEvent_Custom>(&MultiSubscriber1);
-	Zenith_EventHandle uHandle2 = Zenith_EventDispatcher::Get().Subscribe<TestEvent_Custom>(&MultiSubscriber2);
+	Zenith_EventDispatcher::Get().Subscribe<TestEvent_Custom>(&MultiSubscriber2);
 
 	// Verify subscriber count
 	u_int uCount = Zenith_EventDispatcher::Get().GetSubscriberCount<TestEvent_Custom>();
@@ -6953,9 +6444,6 @@ void Zenith_UnitTests::TestAsyncLoadRequest()
 {
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestAsyncLoadRequest...");
 
-	// Test that pending loads can be tracked
-	bool bHadPending = Zenith_AsyncAssetLoader::HasPendingLoads();
-
 	// Cancel any pending loads to reset state
 	Zenith_AsyncAssetLoader::CancelAllPendingLoads();
 	Zenith_Assert(!Zenith_AsyncAssetLoader::HasPendingLoads(),
@@ -7351,194 +6839,6 @@ enum TreeBone
 	TREE_BONE_LEAVES_0 = 7,      // Leaf cluster at branch 3
 	TREE_BONE_LEAVES_1 = 8,      // Leaf cluster at branch 1
 };
-
-// Tree bone scales (half-extents for box geometry)
-static const Zenith_Maths::Vector3 s_axTreeBoneScales[TREE_BONE_COUNT] = {
-	{0.05f, 0.05f, 0.05f},   // 0: Root (small anchor point)
-	{0.15f, 1.0f, 0.15f},    // 1: TrunkLower (thick lower trunk)
-	{0.12f, 1.0f, 0.12f},    // 2: TrunkUpper (slightly thinner upper trunk)
-	{0.06f, 0.6f, 0.06f},    // 3: Branch0 (branch from lower trunk)
-	{0.05f, 0.7f, 0.05f},    // 4: Branch1 (branch from upper trunk, left)
-	{0.05f, 0.7f, 0.05f},    // 5: Branch2 (branch from upper trunk, right)
-	{0.04f, 0.5f, 0.04f},    // 6: Branch3 (top branch)
-	{0.4f, 0.3f, 0.4f},      // 7: Leaves0 (leaf cluster at branch 3)
-	{0.35f, 0.25f, 0.35f},   // 8: Leaves1 (leaf cluster at branch 1)
-};
-
-/**
- * Create a 9-bone tree skeleton for wind sway animation
- */
-static Zenith_SkeletonAsset* CreateTreeSkeleton()
-{
-	Zenith_SkeletonAsset* pxSkel = new Zenith_SkeletonAsset();
-	const Zenith_Maths::Quat xIdentity = glm::identity<Zenith_Maths::Quat>();
-	const Zenith_Maths::Vector3 xUnitScale(1.0f);
-
-	// Root at ground level
-	pxSkel->AddBone("Root", -1, Zenith_Maths::Vector3(0, 0, 0), xIdentity, xUnitScale);
-
-	// Trunk segments (vertical along Y axis)
-	pxSkel->AddBone("TrunkLower", TREE_BONE_ROOT, Zenith_Maths::Vector3(0, 1.0f, 0), xIdentity, xUnitScale);
-	pxSkel->AddBone("TrunkUpper", TREE_BONE_TRUNK_LOWER, Zenith_Maths::Vector3(0, 2.0f, 0), xIdentity, xUnitScale);
-
-	// Branches attached to trunk
-	pxSkel->AddBone("Branch0", TREE_BONE_TRUNK_LOWER, Zenith_Maths::Vector3(0.8f, 0.5f, 0), xIdentity, xUnitScale);
-	pxSkel->AddBone("Branch1", TREE_BONE_TRUNK_UPPER, Zenith_Maths::Vector3(-1.0f, 0.5f, 0.3f), xIdentity, xUnitScale);
-	pxSkel->AddBone("Branch2", TREE_BONE_TRUNK_UPPER, Zenith_Maths::Vector3(1.0f, 0.5f, -0.3f), xIdentity, xUnitScale);
-	pxSkel->AddBone("Branch3", TREE_BONE_TRUNK_UPPER, Zenith_Maths::Vector3(0, 1.5f, 0), xIdentity, xUnitScale);
-
-	// Leaf clusters at branch tips
-	pxSkel->AddBone("Leaves0", TREE_BONE_BRANCH_3, Zenith_Maths::Vector3(0, 0.5f, 0), xIdentity, xUnitScale);
-	pxSkel->AddBone("Leaves1", TREE_BONE_BRANCH_1, Zenith_Maths::Vector3(-0.5f, 0.3f, 0), xIdentity, xUnitScale);
-
-	pxSkel->ComputeBindPoseMatrices();
-	return pxSkel;
-}
-
-/**
- * Create tree mesh with box geometry for each bone
- */
-static Zenith_MeshAsset* CreateTreeMesh(const Zenith_SkeletonAsset* pxSkeleton)
-{
-	Zenith_MeshAsset* pxMesh = new Zenith_MeshAsset();
-	const uint32_t uVertsPerBone = 8;
-	const uint32_t uIndicesPerBone = 36;
-	pxMesh->Reserve(TREE_BONE_COUNT * uVertsPerBone, TREE_BONE_COUNT * uIndicesPerBone);
-
-	// Add a scaled cube at each bone position
-	for (uint32_t uBone = 0; uBone < TREE_BONE_COUNT; uBone++)
-	{
-		const Zenith_SkeletonAsset::Bone& xBone = pxSkeleton->GetBone(uBone);
-		// Get world position from bind pose model matrix
-		Zenith_Maths::Vector3 xBoneWorldPos = Zenith_Maths::Vector3(xBone.m_xBindPoseModel[3]);
-
-		// Get per-bone scale
-		Zenith_Maths::Vector3 xScale = s_axTreeBoneScales[uBone];
-
-		uint32_t uBaseVertex = pxMesh->GetNumVerts();
-
-		// Add 8 cube vertices with per-bone scaling
-		for (int i = 0; i < 8; i++)
-		{
-			// Scale the cube offsets by the bone's scale factors
-			Zenith_Maths::Vector3 xScaledOffset = s_axCubeOffsets[i] * 2.0f;
-			xScaledOffset.x *= xScale.x * 10.0f;
-			xScaledOffset.y *= xScale.y * 10.0f;
-			xScaledOffset.z *= xScale.z * 10.0f;
-
-			Zenith_Maths::Vector3 xPos = xBoneWorldPos + xScaledOffset;
-
-			// Calculate proper face normal based on vertex position
-			Zenith_Maths::Vector3 xNormal = glm::normalize(s_axCubeOffsets[i]);
-
-			pxMesh->AddVertex(xPos, xNormal, Zenith_Maths::Vector2(0, 0));
-			pxMesh->SetVertexSkinning(
-				uBaseVertex + i,
-				glm::uvec4(uBone, 0, 0, 0),
-				glm::vec4(1.0f, 0.0f, 0.0f, 0.0f));
-		}
-
-		// Add 12 triangles (36 indices)
-		for (int i = 0; i < 36; i += 3)
-		{
-			pxMesh->AddTriangle(
-				uBaseVertex + s_auCubeIndices[i],
-				uBaseVertex + s_auCubeIndices[i + 1],
-				uBaseVertex + s_auCubeIndices[i + 2]);
-		}
-	}
-
-	pxMesh->AddSubmesh(0, TREE_BONE_COUNT * uIndicesPerBone, 0);
-	pxMesh->ComputeBounds();
-	return pxMesh;
-}
-
-/**
- * Create a 2-second tree sway animation (wind effect)
- */
-static Flux_AnimationClip* CreateTreeSwayAnimation()
-{
-	Flux_AnimationClip* pxClip = new Flux_AnimationClip();
-	pxClip->SetName("Sway");
-	pxClip->SetDuration(2.0f);
-	pxClip->SetTicksPerSecond(30);
-	pxClip->SetLooping(true);
-
-	const float fTicksPerSec = 30.0f;
-	const Zenith_Maths::Vector3 xZAxis(0, 0, 1);
-	const Zenith_Maths::Vector3 xXAxis(1, 0, 0);
-
-	// Root stays stationary
-	{
-		Flux_BoneChannel xChannel;
-		xChannel.AddRotationKeyframe(0.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.SortKeyframes();
-		pxClip->AddBoneChannel("Root", std::move(xChannel));
-	}
-
-	// TrunkLower sways gently (base of tree, minimal movement)
-	{
-		Flux_BoneChannel xChannel;
-		xChannel.AddRotationKeyframe(0.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.AddRotationKeyframe(15.0f, glm::angleAxis(glm::radians(1.0f), xZAxis));
-		xChannel.AddRotationKeyframe(30.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.AddRotationKeyframe(45.0f, glm::angleAxis(glm::radians(-1.0f), xZAxis));
-		xChannel.AddRotationKeyframe(60.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.SortKeyframes();
-		pxClip->AddBoneChannel("TrunkLower", std::move(xChannel));
-	}
-
-	// TrunkUpper sways more (amplified from lower trunk)
-	{
-		Flux_BoneChannel xChannel;
-		xChannel.AddRotationKeyframe(0.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.AddRotationKeyframe(15.0f, glm::angleAxis(glm::radians(2.0f), xZAxis));
-		xChannel.AddRotationKeyframe(30.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.AddRotationKeyframe(45.0f, glm::angleAxis(glm::radians(-2.0f), xZAxis));
-		xChannel.AddRotationKeyframe(60.0f, glm::identity<Zenith_Maths::Quat>());
-		xChannel.SortKeyframes();
-		pxClip->AddBoneChannel("TrunkUpper", std::move(xChannel));
-	}
-
-	// Branches sway with phase offsets for natural look
-	const char* aszBranchNames[] = {"Branch0", "Branch1", "Branch2", "Branch3"};
-	const float afPhaseOffsets[] = {0.0f, 7.5f, 3.75f, 11.25f};  // Tick offsets for phase variation
-	for (int i = 0; i < 4; ++i)
-	{
-		Flux_BoneChannel xChannel;
-		float fPhase = afPhaseOffsets[i];
-		// Branches sway more dramatically
-		xChannel.AddRotationKeyframe(fmod(0.0f + fPhase, 60.0f), glm::identity<Zenith_Maths::Quat>());
-		xChannel.AddRotationKeyframe(fmod(15.0f + fPhase, 60.0f), glm::angleAxis(glm::radians(5.0f), xZAxis));
-		xChannel.AddRotationKeyframe(fmod(30.0f + fPhase, 60.0f), glm::identity<Zenith_Maths::Quat>());
-		xChannel.AddRotationKeyframe(fmod(45.0f + fPhase, 60.0f), glm::angleAxis(glm::radians(-5.0f), xZAxis));
-		xChannel.SortKeyframes();
-		pxClip->AddBoneChannel(aszBranchNames[i], std::move(xChannel));
-	}
-
-	// Leaves sway most dramatically with additional X-axis rotation for flutter
-	const char* aszLeafNames[] = {"Leaves0", "Leaves1"};
-	const float afLeafPhaseOffsets[] = {5.0f, 12.0f};
-	for (int i = 0; i < 2; ++i)
-	{
-		Flux_BoneChannel xChannel;
-		float fPhase = afLeafPhaseOffsets[i];
-		// Leaves have larger sway and some flutter
-		Zenith_Maths::Quat xSwayPos = glm::angleAxis(glm::radians(8.0f), xZAxis) *
-			glm::angleAxis(glm::radians(3.0f), xXAxis);
-		Zenith_Maths::Quat xSwayNeg = glm::angleAxis(glm::radians(-8.0f), xZAxis) *
-			glm::angleAxis(glm::radians(-3.0f), xXAxis);
-
-		xChannel.AddRotationKeyframe(fmod(0.0f + fPhase, 60.0f), glm::identity<Zenith_Maths::Quat>());
-		xChannel.AddRotationKeyframe(fmod(15.0f + fPhase, 60.0f), xSwayPos);
-		xChannel.AddRotationKeyframe(fmod(30.0f + fPhase, 60.0f), glm::identity<Zenith_Maths::Quat>());
-		xChannel.AddRotationKeyframe(fmod(45.0f + fPhase, 60.0f), xSwayNeg);
-		xChannel.SortKeyframes();
-		pxClip->AddBoneChannel(aszLeafNames[i], std::move(xChannel));
-	}
-
-	return pxClip;
-}
 
 /**
  * Test procedural tree asset loading and verification

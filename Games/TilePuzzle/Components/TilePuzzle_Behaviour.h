@@ -468,7 +468,7 @@ private:
 	{
 		// Generate a solvable level using the level generator
 		TilePuzzle_LevelGenerator::GenerateLevel(
-			m_xCurrentLevel, m_xRng, m_uCurrentLevelNumber);
+			m_xCurrentLevel, m_xRng);
 
 		CreateLevelVisuals();
 

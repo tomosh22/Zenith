@@ -38,8 +38,7 @@ void Render(Zenith_Entity* pxSelectedEntity, Zenith_EntityID uPrimarySelectedEnt
 
 		// Entity name editing
 		char nameBuffer[256];
-		strncpy(nameBuffer, pxSelectedEntity->GetName().c_str(), sizeof(nameBuffer));
-		nameBuffer[sizeof(nameBuffer) - 1] = '\0';
+		strncpy_s(nameBuffer, sizeof(nameBuffer), pxSelectedEntity->GetName().c_str(), _TRUNCATE);
 		if (ImGui::InputText("Name", nameBuffer, sizeof(nameBuffer)))
 		{
 			pxSelectedEntity->SetName(nameBuffer);

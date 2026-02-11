@@ -427,9 +427,6 @@
     <ClCompile Include="..\Middleware\JoltPhysics-5.4.0\Jolt\TriangleSplitter\TriangleSplitterMean.cpp">
       <Filter>Middleware\JoltPhysics-5.4.0\Jolt\TriangleSplitter</Filter>
     </ClCompile>
-    <ClCompile Include="..\Tools\Middleware\assimp\include\stb_vorbis.c">
-      <Filter>Tools\Middleware\assimp\include</Filter>
-    </ClCompile>
     <ClCompile Include="..\Tools\Zenith_Tools_AssimpConvert.cpp">
       <Filter>Tools</Filter>
     </ClCompile>
@@ -580,6 +577,9 @@
     <ClCompile Include="..\Zenith\Core\Zenith_Core.cpp">
       <Filter>Core</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\Core\Zenith_String.cpp">
+      <Filter>Core</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\DataStream\Zenith_DataStream.cpp">
       <Filter>DataStream</Filter>
     </ClCompile>
@@ -716,6 +716,9 @@
       <Filter>Flux</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\Flux\Flux_RenderTargets.cpp">
+      <Filter>Flux</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Flux\Flux_Types.cpp">
       <Filter>Flux</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\Flux\Fog\Flux_Fog.cpp">

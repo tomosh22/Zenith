@@ -63,7 +63,7 @@ void Zenith_PerceptionSystem::Update(float fDt, Zenith_SceneData& xScene)
 	UpdateSightPerception(fDt, xScene);
 
 	// Update hearing perception
-	UpdateHearingPerception(fDt);
+	UpdateHearingPerception();
 
 	// Update memory decay
 	UpdateMemoryDecay(fDt);
@@ -116,7 +116,7 @@ void Zenith_PerceptionSystem::EmitSoundStimulus(const Zenith_Maths::Vector3& xPo
 }
 
 void Zenith_PerceptionSystem::EmitDamageStimulus(Zenith_EntityID xVictim,
-	Zenith_EntityID xAttacker, float fDamage)
+	Zenith_EntityID xAttacker)
 {
 	auto it = s_xAgentData.find(xVictim.GetPacked());
 	if (it == s_xAgentData.end())
@@ -312,7 +312,7 @@ void Zenith_PerceptionSystem::UpdateSightPerception(float fDt, Zenith_SceneData&
 			bool bCanSee = true;
 			if (xData.m_xSightConfig.m_bRequireLineOfSight)
 			{
-				bCanSee = CheckLineOfSight(xAgentPos, xTargetPos, xScene);
+				bCanSee = CheckLineOfSight(xAgentPos, xTargetPos);
 			}
 
 			if (!bCanSee)
@@ -349,7 +349,7 @@ void Zenith_PerceptionSystem::UpdateSightPerception(float fDt, Zenith_SceneData&
 	}
 }
 
-void Zenith_PerceptionSystem::UpdateHearingPerception(float fDt)
+void Zenith_PerceptionSystem::UpdateHearingPerception()
 {
 	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
@@ -477,7 +477,7 @@ void Zenith_PerceptionSystem::UpdateActiveSounds(float fDt)
 }
 
 bool Zenith_PerceptionSystem::CheckLineOfSight(const Zenith_Maths::Vector3& xFrom,
-	const Zenith_Maths::Vector3& xTo, Zenith_SceneData& xScene)
+	const Zenith_Maths::Vector3& xTo)
 {
 	// Use physics raycast to check for occlusion
 	Zenith_Maths::Vector3 xDirection = xTo - xFrom;

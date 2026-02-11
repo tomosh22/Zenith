@@ -1585,9 +1585,6 @@ void Zenith_SceneTests::TestLoadSceneAsyncIsComplete()
 	Zenith_SceneOperationID ulOpID = Zenith_SceneManager::LoadSceneAsync(strPath, SCENE_LOAD_ADDITIVE);
 	Zenith_SceneOperation* pxOp = Zenith_SceneManager::GetOperation(ulOpID);
 
-	// Initially should not be complete (unless very fast)
-	bool bInitiallyComplete = pxOp->IsComplete();
-
 	// Pump until complete
 	PumpUntilComplete(pxOp);
 
@@ -1857,7 +1854,6 @@ void Zenith_SceneTests::TestLoadSceneAsyncSingleMode()
 
 	// Create an existing scene
 	Zenith_Scene xExisting = Zenith_SceneManager::CreateEmptyScene("ExistingScene");
-	uint32_t uCountBefore = Zenith_SceneManager::GetLoadedSceneCount();
 
 	const std::string strPath = "test_async_single" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strPath);
@@ -2365,7 +2361,7 @@ void Zenith_SceneTests::TestSceneUnloadedCallbackFires()
 	static bool s_bCallbackFired = false;
 
 	auto ulHandle = Zenith_SceneManager::RegisterSceneUnloadedCallback(
-		[](Zenith_Scene xScene) {
+		[](Zenith_Scene) {
 			s_bCallbackFired = true;
 		}
 	);
@@ -2419,7 +2415,7 @@ void Zenith_SceneTests::TestEntityPersistentCallbackFires()
 	static bool s_bCallbackFired = false;
 
 	auto ulHandle = Zenith_SceneManager::RegisterEntityPersistentCallback(
-		[](const Zenith_Entity& xEntity) {
+		[](const Zenith_Entity&) {
 			s_bCallbackFired = true;
 		}
 	);
@@ -2455,7 +2451,7 @@ void Zenith_SceneTests::TestCallbackUnregister()
 	static int s_iCallCount = 0;
 
 	auto ulHandle = Zenith_SceneManager::RegisterSceneLoadedCallback(
-		[](Zenith_Scene xScene, Zenith_SceneLoadMode eMode) {
+		[](Zenith_Scene, Zenith_SceneLoadMode) {
 			s_iCallCount++;
 		}
 	);
@@ -2491,7 +2487,7 @@ void Zenith_SceneTests::TestCallbackUnregisterDuringCallback()
 	static bool s_bCallbackFired = false;
 
 	s_ulHandle = Zenith_SceneManager::RegisterSceneLoadedCallback(
-		[](Zenith_Scene xScene, Zenith_SceneLoadMode eMode) {
+		[](Zenith_Scene, Zenith_SceneLoadMode) {
 			s_bCallbackFired = true;
 			// Unregister self during callback
 			Zenith_SceneManager::UnregisterSceneLoadedCallback(s_ulHandle);
@@ -2526,13 +2522,13 @@ void Zenith_SceneTests::TestMultipleCallbacksFireInOrder()
 	static std::vector<int> s_axCallOrder;
 
 	auto ulHandle1 = Zenith_SceneManager::RegisterSceneLoadedCallback(
-		[](Zenith_Scene xScene, Zenith_SceneLoadMode eMode) {
+		[](Zenith_Scene, Zenith_SceneLoadMode) {
 			s_axCallOrder.push_back(1);
 		}
 	);
 
 	auto ulHandle2 = Zenith_SceneManager::RegisterSceneLoadedCallback(
-		[](Zenith_Scene xScene, Zenith_SceneLoadMode eMode) {
+		[](Zenith_Scene, Zenith_SceneLoadMode) {
 			s_axCallOrder.push_back(2);
 		}
 	);
@@ -2691,7 +2687,6 @@ void Zenith_SceneTests::TestStaleHandleAfterUnload()
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestStaleHandleAfterUnload...");
 
 	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("StaleHandleTest");
-	int iHandle = xScene.m_iHandle;
 
 	// Unload the scene
 	Zenith_SceneManager::UnloadScene(xScene);
@@ -3038,9 +3033,6 @@ void Zenith_SceneTests::TestConcurrentAsyncUnloads()
 	// The fix ensures: if (uNonPersistentCount <= 1 + uScenesBeingUnloaded) then block
 	// This means with N scenes and M being unloaded, new unloads are blocked if N <= 1 + M
 	// (i.e., if remaining scenes would be <= 1)
-
-	// Get current scene count
-	uint32_t uInitialCount = Zenith_SceneManager::GetLoadedSceneCount();
 
 	// Create exactly 2 new scenes for this test
 	Zenith_Scene xScene1 = Zenith_SceneManager::CreateEmptyScene("ConcurrentTest1");
@@ -4075,11 +4067,11 @@ void Zenith_SceneTests::TestEventDispatchSubscribeDuringCallback()
 
 	// Subscribe a callback that subscribes ANOTHER callback to the SAME event type
 	Zenith_EventHandle uHandle1 = xDispatcher.Subscribe<TestEvent>(
-		[](const TestEvent& xEvent) {
+		[](const TestEvent&) {
 			s_bOriginalFired = true;
 			// Subscribe to the same event type during dispatch - this used to cause dangling reference
 			s_uNewHandle = Zenith_EventDispatcher::Get().Subscribe<TestEvent>(
-				[](const TestEvent& xEvent2) {
+				[](const TestEvent&) {
 					s_bNewSubFired = true;
 				}
 			);
@@ -4127,14 +4119,14 @@ void Zenith_SceneTests::TestEventDispatchUnsubscribeDuringCallback()
 
 	// Callback A unsubscribes callback B
 	Zenith_EventHandle uHandleA = xDispatcher.Subscribe<TestEvent2>(
-		[](const TestEvent2& xEvent) {
+		[](const TestEvent2&) {
 			s_bCallbackAFired = true;
 			Zenith_EventDispatcher::Get().Unsubscribe(s_uHandleB);
 		}
 	);
 
 	s_uHandleB = xDispatcher.Subscribe<TestEvent2>(
-		[](const TestEvent2& xEvent) {
+		[](const TestEvent2&) {
 			s_bCallbackBFired = true;
 		}
 	);
@@ -4641,7 +4633,6 @@ void Zenith_SceneTests::TestMoveEntityTimedDestructionNotInSource()
 	Zenith_Scene xSceneA = Zenith_SceneManager::CreateEmptyScene("TimedNotInSrc");
 	Zenith_Scene xSceneB = Zenith_SceneManager::CreateEmptyScene("TimedNotInDst");
 	Zenith_SceneData* pxDataA = Zenith_SceneManager::GetSceneData(xSceneA);
-	Zenith_SceneData* pxDataB = Zenith_SceneManager::GetSceneData(xSceneB);
 
 	// Create entity and add timed destruction
 	Zenith_Entity xEntity(pxDataA, "TimedEntity");
@@ -5404,7 +5395,7 @@ void Zenith_SceneTests::TestEntityCreatedInAwakeGetsFullLifecycle()
 
 	// When the first entity's Awake fires, spawn a second entity with behaviour
 	static Zenith_SceneData* s_pxData = pxData;
-	SceneTestBehaviour::s_pfnOnAwakeCallback = [](Zenith_Entity& xEntity) {
+	SceneTestBehaviour::s_pfnOnAwakeCallback = [](Zenith_Entity&) {
 		static bool ls_bSpawned = false;
 		if (!ls_bSpawned)
 		{
@@ -5442,7 +5433,7 @@ void Zenith_SceneTests::TestAwakeWaveDrainMultipleLevels()
 	static int s_iLevel = 0;
 	s_iLevel = 0;
 
-	SceneTestBehaviour::s_pfnOnAwakeCallback = [](Zenith_Entity& xEntity) {
+	SceneTestBehaviour::s_pfnOnAwakeCallback = [](Zenith_Entity&) {
 		if (s_iLevel < 2)
 		{
 			s_iLevel++;
@@ -5474,7 +5465,7 @@ void Zenith_SceneTests::TestUpdateNotCalledBeforeStart()
 
 	// Track whether Update is called before Start
 	static bool s_bUpdateBeforeStart = false;
-	SceneTestBehaviour::s_pfnOnUpdateCallback = [](Zenith_Entity& xEntity, float fDt) {
+	SceneTestBehaviour::s_pfnOnUpdateCallback = [](Zenith_Entity&, float) {
 		if (SceneTestBehaviour::s_uStartCount == 0)
 		{
 			s_bUpdateBeforeStart = true;
@@ -5650,10 +5641,10 @@ void Zenith_SceneTests::TestOnDisableCalledBeforeOnDestroy()
 	s_uDestroyOrder = 0;
 	s_uOrderCounter = 0;
 
-	SceneTestBehaviour::s_pfnOnDisableCallback = [](Zenith_Entity& xEntity) {
+	SceneTestBehaviour::s_pfnOnDisableCallback = [](Zenith_Entity&) {
 		s_uDisableOrder = ++s_uOrderCounter;
 	};
-	SceneTestBehaviour::s_pfnOnDestroyCallback = [](Zenith_Entity& xEntity) {
+	SceneTestBehaviour::s_pfnOnDestroyCallback = [](Zenith_Entity&) {
 		s_uDestroyOrder = ++s_uOrderCounter;
 	};
 
@@ -5824,7 +5815,7 @@ void Zenith_SceneTests::TestOnDestroySpawnsEntity()
 	static Zenith_EntityID s_xSpawnedID;
 	s_xSpawnedID = INVALID_ENTITY_ID;
 
-	SceneTestBehaviour::s_pfnOnDestroyCallback = [](Zenith_Entity& xEntity) {
+	SceneTestBehaviour::s_pfnOnDestroyCallback = [](Zenith_Entity&) {
 		if (!s_xSpawnedID.IsValid())
 		{
 			Zenith_Entity xSpawned = CreateEntityWithBehaviour(s_pxData, "SpawnedOnDestroy");
@@ -5869,7 +5860,7 @@ void Zenith_SceneTests::TestDestroyImmediateDuringIteration()
 	// Use query with snapshot - destroying during iteration should be safe
 	uint32_t uCount = 0;
 	pxData->Query<Zenith_TransformComponent>().ForEach(
-		[&uCount, xID2](Zenith_EntityID xID, Zenith_TransformComponent& xTransform) {
+		[&uCount, xID2](Zenith_EntityID xID, Zenith_TransformComponent&) {
 			uCount++;
 			if (xID == xID2)
 			{
@@ -6128,7 +6119,6 @@ void Zenith_SceneTests::TestMoveEntityWithPendingStartTransfers()
 	Zenith_Scene xSource = Zenith_SceneManager::CreateEmptyScene("PendingStartSource");
 	Zenith_Scene xTarget = Zenith_SceneManager::CreateEmptyScene("PendingStartTarget");
 	Zenith_SceneData* pxSourceData = Zenith_SceneManager::GetSceneData(xSource);
-	Zenith_SceneData* pxTargetData = Zenith_SceneManager::GetSceneData(xTarget);
 
 	SceneTestBehaviour::ResetCounters();
 
@@ -6514,7 +6504,7 @@ void Zenith_SceneTests::TestSceneLoadedCallbackLoadsAnotherScene()
 	static std::string s_strPath2 = strPath2;
 
 	// When first scene loads, try loading another scene from the callback
-	auto pfnCallback = [](Zenith_Scene xScene, Zenith_SceneLoadMode eMode) {
+	auto pfnCallback = [](Zenith_Scene, Zenith_SceneLoadMode) {
 		if (!s_xNestedScene.IsValid())
 		{
 			s_xNestedScene = Zenith_SceneManager::LoadScene(s_strPath2, SCENE_LOAD_ADDITIVE);
@@ -6547,7 +6537,7 @@ void Zenith_SceneTests::TestSceneUnloadedCallbackLoadsScene()
 	static bool s_bCallbackFired = false;
 	s_bCallbackFired = false;
 
-	auto pfnCallback = [](Zenith_Scene xScene) {
+	auto pfnCallback = [](Zenith_Scene) {
 		s_bCallbackFired = true;
 	};
 
@@ -6570,7 +6560,7 @@ void Zenith_SceneTests::TestActiveSceneChangedCallbackChangesActive()
 	static bool s_bCallbackFired = false;
 	s_bCallbackFired = false;
 
-	auto pfnCallback = [](Zenith_Scene xOld, Zenith_Scene xNew) {
+	auto pfnCallback = [](Zenith_Scene, Zenith_Scene) {
 		s_bCallbackFired = true;
 		// Intentionally don't call SetActiveScene again to avoid recursion
 	};
@@ -6597,7 +6587,7 @@ void Zenith_SceneTests::TestCallbackFiringDepthTracking()
 	static int s_iCallCount = 0;
 	s_iCallCount = 0;
 
-	auto pfnCallback = [](Zenith_Scene xScene, Zenith_SceneLoadMode eMode) {
+	auto pfnCallback = [](Zenith_Scene, Zenith_SceneLoadMode) {
 		s_iCallCount++;
 	};
 
@@ -6625,7 +6615,7 @@ void Zenith_SceneTests::TestRegisterCallbackDuringDispatch()
 	s_ulSecondHandle = 0;
 
 	// First callback registers a second callback during dispatch
-	auto pfnFirst = [](Zenith_Scene xScene, Zenith_SceneLoadMode eMode) {
+	auto pfnFirst = [](Zenith_Scene, Zenith_SceneLoadMode) {
 		s_bFirstFired = true;
 		if (s_ulSecondHandle == 0)
 		{
@@ -6665,7 +6655,7 @@ void Zenith_SceneTests::TestSingleModeCallbackOrder()
 	std::string strPath = "unit_test_cb_order" ZENITH_SCENE_EXT;
 	CreateTestSceneFile(strPath);
 
-	auto pfnLoadStarted = [](const std::string& strPath) { s_axCallOrder.PushBack("loadStarted"); };
+	auto pfnLoadStarted = [](const std::string&) { s_axCallOrder.PushBack("loadStarted"); };
 	auto pfnUnloading = [](Zenith_Scene) { s_axCallOrder.PushBack("unloading"); };
 	auto pfnUnloaded = [](Zenith_Scene) { s_axCallOrder.PushBack("unloaded"); };
 	auto pfnLoaded = [](Zenith_Scene, Zenith_SceneLoadMode) { s_axCallOrder.PushBack("loaded"); };
@@ -6893,17 +6883,11 @@ void Zenith_SceneTests::TestPersistentSceneVisibilityToggle()
 	Zenith_Scene xPersistScene = Zenith_SceneManager::GetPersistentScene();
 	Zenith_Assert(xPersistScene.IsValid(), "Persistent scene should always be valid");
 
-	// Record initial loaded scene count
-	uint32_t uCountBefore = Zenith_SceneManager::GetLoadedSceneCount();
-
 	// Add entity to persistent scene
 	Zenith_Scene xTemp = Zenith_SceneManager::CreateEmptyScene("TempForPersist");
 	Zenith_SceneData* pxTempData = Zenith_SceneManager::GetSceneData(xTemp);
 	Zenith_Entity xEntity(pxTempData, "PersistVisibility");
 	Zenith_SceneManager::MarkEntityPersistent(xEntity);
-
-	// With entities, persistent scene should be visible
-	uint32_t uCountAfter = Zenith_SceneManager::GetLoadedSceneCount();
 
 	// Clean up
 	Zenith_SceneManager::UnloadScene(xTemp);
@@ -7598,7 +7582,7 @@ void Zenith_SceneTests::TestQueryDuringEntityCreation()
 	// During ForEach, create a new entity
 	uint32_t uIterCount = 0;
 	pxData->Query<Zenith_TransformComponent>().ForEach(
-		[&uIterCount, pxData](Zenith_EntityID xID, Zenith_TransformComponent& xT) {
+		[&uIterCount, pxData](Zenith_EntityID, Zenith_TransformComponent&) {
 			uIterCount++;
 			// Create new entity during iteration
 			Zenith_Entity xNew(pxData, "NewDuringQuery");
@@ -7637,7 +7621,7 @@ void Zenith_SceneTests::TestQueryDuringEntityDestruction()
 	// Query should skip marked-for-destruction entities
 	uint32_t uCount = 0;
 	pxData->Query<Zenith_TransformComponent>().ForEach(
-		[&uCount](Zenith_EntityID xID, Zenith_TransformComponent& xT) {
+		[&uCount](Zenith_EntityID, Zenith_TransformComponent&) {
 			uCount++;
 		}
 	);
@@ -7659,7 +7643,7 @@ void Zenith_SceneTests::TestQueryEmptyScene()
 	// Query on empty scene - should not crash
 	uint32_t uCount = 0;
 	pxData->Query<Zenith_TransformComponent>().ForEach(
-		[&uCount](Zenith_EntityID xID, Zenith_TransformComponent& xT) {
+		[&uCount](Zenith_EntityID, Zenith_TransformComponent&) {
 			uCount++;
 		}
 	);
@@ -7685,7 +7669,7 @@ void Zenith_SceneTests::TestQueryAfterEntityMovedOut()
 
 	uint32_t uSourceCount = 0;
 	pxSourceData->Query<Zenith_TransformComponent>().ForEach(
-		[&uSourceCount](Zenith_EntityID xID, Zenith_TransformComponent& xT) {
+		[&uSourceCount](Zenith_EntityID, Zenith_TransformComponent&) {
 			uSourceCount++;
 		}
 	);
@@ -9284,8 +9268,6 @@ void Zenith_SceneTests::TestAsyncUnloadingSceneSkipsUpdate()
 	pxData->DispatchLifecycleForNewScene();
 	PumpFrames(1);
 
-	uint32_t uUpdatesBeforeUnload = SceneTestBehaviour::s_uUpdateCount;
-
 	// Start async unload - scene should be marked as unloading
 	Zenith_SceneManager::SetAsyncUnloadBatchSize(1); // 1 entity per frame to stretch it out
 	Zenith_SceneOperationID ulOpID = Zenith_SceneManager::UnloadSceneAsync(xScene);
@@ -9398,7 +9380,7 @@ void Zenith_SceneTests::TestCreateManyEntities()
 	// Query should return all
 	uint32_t uQueryCount = 0;
 	pxData->Query<Zenith_TransformComponent>().ForEach(
-		[&uQueryCount](Zenith_EntityID xID, Zenith_TransformComponent& xT) {
+		[&uQueryCount](Zenith_EntityID, Zenith_TransformComponent&) {
 			uQueryCount++;
 		}
 	);
@@ -9601,7 +9583,7 @@ void Zenith_SceneTests::TestUpdateReceivesCorrectDt()
 
 	static float s_fReceivedDt = 0.0f;
 	SceneTestBehaviour::ResetCounters();
-	SceneTestBehaviour::s_pfnOnUpdateCallback = [](Zenith_Entity& xEntity, float fDt)
+	SceneTestBehaviour::s_pfnOnUpdateCallback = [](Zenith_Entity&, float fDt)
 	{
 		s_fReceivedDt = fDt;
 	};
@@ -9685,7 +9667,7 @@ void Zenith_SceneTests::TestEntityCreatedDuringUpdateGetsNextFrameLifecycle()
 	static bool s_bCreated = false;
 
 	SceneTestBehaviour::ResetCounters();
-	SceneTestBehaviour::s_pfnOnUpdateCallback = [](Zenith_Entity& xEntity, float fDt)
+	SceneTestBehaviour::s_pfnOnUpdateCallback = [](Zenith_Entity& xEntity, float)
 	{
 		if (!s_bCreated)
 		{
@@ -9878,7 +9860,7 @@ void Zenith_SceneTests::TestRemoveComponentDuringOnUpdate()
 
 	static bool s_bRemoved = false;
 	s_bRemoved = false;
-	SceneTestBehaviour::s_pfnOnUpdateCallback = [](Zenith_Entity& xEntity, float fDt)
+	SceneTestBehaviour::s_pfnOnUpdateCallback = [](Zenith_Entity& xEntity, float)
 	{
 		if (!s_bRemoved && xEntity.HasComponent<Zenith_CameraComponent>())
 		{
@@ -9997,7 +9979,7 @@ void Zenith_SceneTests::TestEntityCreatedDuringOnFixedUpdate()
 	s_bCreated = false;
 
 	SceneTestBehaviour::ResetCounters();
-	SceneTestBehaviour::s_pfnOnFixedUpdateCallback = [](Zenith_Entity& xEntity, float fDt)
+	SceneTestBehaviour::s_pfnOnFixedUpdateCallback = [](Zenith_Entity& xEntity, float)
 	{
 		if (!s_bCreated)
 		{
@@ -10039,7 +10021,7 @@ void Zenith_SceneTests::TestEntityCreatedDuringOnLateUpdate()
 	s_bCreated = false;
 
 	SceneTestBehaviour::ResetCounters();
-	SceneTestBehaviour::s_pfnOnLateUpdateCallback = [](Zenith_Entity& xEntity, float fDt)
+	SceneTestBehaviour::s_pfnOnLateUpdateCallback = [](Zenith_Entity& xEntity, float)
 	{
 		if (!s_bCreated)
 		{
@@ -10076,7 +10058,7 @@ void Zenith_SceneTests::TestDestroyImmediateDuringSelfOnUpdate()
 
 	static bool s_bDestroyed = false;
 	s_bDestroyed = false;
-	SceneTestBehaviour::s_pfnOnUpdateCallback = [](Zenith_Entity& xEntity, float fDt)
+	SceneTestBehaviour::s_pfnOnUpdateCallback = [](Zenith_Entity& xEntity, float)
 	{
 		if (!s_bDestroyed)
 		{
@@ -10213,8 +10195,6 @@ void Zenith_SceneTests::TestTimedDestructionCancelledBySceneUnload()
 	Zenith_Entity xEntity = CreateEntityWithBehaviour(pxData, "TimedEntity");
 	pxData->DispatchLifecycleForNewScene();
 	PumpFrames(1);
-
-	uint32_t uDestroyBefore = SceneTestBehaviour::s_uDestroyCount;
 
 	Zenith_SceneManager::Destroy(xEntity, 5.0f); // Long delay
 	Zenith_SceneManager::UnloadScene(xScene);
@@ -10494,9 +10474,6 @@ void Zenith_SceneTests::TestMergeSceneWithPersistentEntity()
 	Zenith_EntityID xID = xEntity.GetEntityID();
 
 	// Entity is now in persistent scene, source is empty
-	uint32_t uSourceCount = pxSourceData->GetEntityCount();
-	uint32_t uTargetCountBefore = Zenith_SceneManager::GetSceneData(xTarget)->GetEntityCount();
-
 	Zenith_SceneManager::MergeScenes(xSource, xTarget);
 
 	// Persistent entity should still be in persistent scene
@@ -10723,7 +10700,7 @@ void Zenith_SceneTests::TestEntityCreatedEventNotFired()
 	s_uEventCount = 0;
 
 	Zenith_EventHandle uHandle = Zenith_EventDispatcher::Get().Subscribe<Zenith_Event_EntityCreated>(
-		[](const Zenith_Event_EntityCreated& xEvent) { s_uEventCount++; }
+		[](const Zenith_Event_EntityCreated&) { s_uEventCount++; }
 	);
 
 	Zenith_Entity xEntity(pxData, "EventTest");
@@ -10748,7 +10725,7 @@ void Zenith_SceneTests::TestEntityDestroyedEventNotFired()
 	s_uEventCount = 0;
 
 	Zenith_EventHandle uHandle = Zenith_EventDispatcher::Get().Subscribe<Zenith_Event_EntityDestroyed>(
-		[](const Zenith_Event_EntityDestroyed& xEvent) { s_uEventCount++; }
+		[](const Zenith_Event_EntityDestroyed&) { s_uEventCount++; }
 	);
 
 	Zenith_Entity xEntity(pxData, "EventDestroyTest");
@@ -10772,7 +10749,7 @@ void Zenith_SceneTests::TestComponentAddedEventNotFired()
 	s_uEventCount = 0;
 
 	Zenith_EventHandle uHandle = Zenith_EventDispatcher::Get().Subscribe<Zenith_Event_ComponentAdded>(
-		[](const Zenith_Event_ComponentAdded& xEvent) { s_uEventCount++; }
+		[](const Zenith_Event_ComponentAdded&) { s_uEventCount++; }
 	);
 
 	Zenith_Entity xEntity(pxData, "CompAddTest");
@@ -10796,7 +10773,7 @@ void Zenith_SceneTests::TestComponentRemovedEventNotFired()
 	s_uEventCount = 0;
 
 	Zenith_EventHandle uHandle = Zenith_EventDispatcher::Get().Subscribe<Zenith_Event_ComponentRemoved>(
-		[](const Zenith_Event_ComponentRemoved& xEvent) { s_uEventCount++; }
+		[](const Zenith_Event_ComponentRemoved&) { s_uEventCount++; }
 	);
 
 	Zenith_Entity xEntity(pxData, "CompRemoveTest");
@@ -10815,14 +10792,14 @@ void Zenith_SceneTests::TestEventSubscriberCountTracking()
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestEventSubscriberCountTracking...");
 
 	Zenith_EventHandle uHandle1 = Zenith_EventDispatcher::Get().Subscribe<Zenith_Event_EntityCreated>(
-		[](const Zenith_Event_EntityCreated& xEvent) {}
+		[](const Zenith_Event_EntityCreated&) {}
 	);
 
 	Zenith_Assert(Zenith_EventDispatcher::Get().GetSubscriberCount<Zenith_Event_EntityCreated>() >= 1,
 		"Should have at least 1 subscriber");
 
 	Zenith_EventHandle uHandle2 = Zenith_EventDispatcher::Get().Subscribe<Zenith_Event_EntityCreated>(
-		[](const Zenith_Event_EntityCreated& xEvent) {}
+		[](const Zenith_Event_EntityCreated&) {}
 	);
 
 	Zenith_Assert(Zenith_EventDispatcher::Get().GetSubscriberCount<Zenith_Event_EntityCreated>() >= 2,
@@ -10950,7 +10927,7 @@ void Zenith_SceneTests::TestForEachChildDuringChildDestruction()
 	s_bDestroyed = false;
 
 	// ForEachChild snapshots the child list, so destroying during iteration should be safe
-	xParent.GetTransform().ForEachChild([&](Zenith_TransformComponent& xChildTransform)
+	xParent.GetTransform().ForEachChild([&](Zenith_TransformComponent&)
 	{
 		if (!s_bDestroyed)
 		{
@@ -11493,8 +11470,6 @@ void Zenith_SceneTests::TestEnableChildWhenParentDisabled()
 
 	// Disable parent
 	xParent.SetEnabled(false);
-
-	uint32_t uEnableCount = SceneTestBehaviour::s_uEnableCount;
 
 	// Child is technically enabled (activeSelf=true) but not active in hierarchy
 	Zenith_Assert(!xChild.IsActiveInHierarchy(), "Child should not be active in hierarchy when parent disabled");

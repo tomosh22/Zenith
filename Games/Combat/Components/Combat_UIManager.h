@@ -109,7 +109,7 @@ public:
 	/**
 	 * UpdateCombo - Update combo counter display
 	 */
-	static void UpdateCombo(Zenith_UIComponent& xUI, uint32_t uComboCount, float fComboTimer)
+	static void UpdateCombo(Zenith_UIComponent& xUI, uint32_t uComboCount)
 	{
 		Zenith_UI::Zenith_UIText* pxComboCount = xUI.FindElement<Zenith_UI::Zenith_UIText>(COMBO_COUNT);
 		Zenith_UI::Zenith_UIText* pxComboText = xUI.FindElement<Zenith_UI::Zenith_UIText>(COMBO_TEXT);
@@ -209,13 +209,12 @@ public:
 		float fPlayerHealth,
 		float fPlayerMaxHealth,
 		uint32_t uComboCount,
-		float fComboTimer,
 		uint32_t uAliveEnemies,
 		uint32_t uTotalEnemies,
 		Combat_GameState eState)
 	{
 		UpdatePlayerHealth(xUI, fPlayerHealth, fPlayerMaxHealth);
-		UpdateCombo(xUI, uComboCount, fComboTimer);
+		UpdateCombo(xUI, uComboCount);
 		UpdateEnemyCount(xUI, uAliveEnemies, uTotalEnemies);
 		UpdateGameState(xUI, eState);
 	}

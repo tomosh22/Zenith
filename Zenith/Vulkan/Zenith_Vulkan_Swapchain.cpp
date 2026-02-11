@@ -41,7 +41,7 @@ static Zenith_Vulkan_CommandBuffer s_xCopyToFramebufferCmd;
 DEBUGVAR bool dbg_bOutputMRT = false;
 DEBUGVAR uint32_t dbg_uMRTIndex = MRT_INDEX_DIFFUSE;
 
-static struct SwapChainSupportDetails
+struct SwapChainSupportDetails
 {
 	vk::SurfaceCapabilitiesKHR m_xCapabilities;
 	std::vector <vk::SurfaceFormatKHR> m_xFormats;
@@ -157,7 +157,6 @@ void Zenith_Vulkan_Swapchain::InitialiseCopyToFramebufferCommands()
 
 	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xPipelineSpec);
 
-	volatile bool a = false;
 }
 
 void Zenith_Vulkan_Swapchain::Initialise()
@@ -209,10 +208,12 @@ void Zenith_Vulkan_Swapchain::Initialise()
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 	s_xSwapChain = xDevice.createSwapchainKHR(xCreateInfo);
 
-	xDevice.getSwapchainImagesKHR(s_xSwapChain, &uImageCount, nullptr);
+	vk::Result eResult = xDevice.getSwapchainImagesKHR(s_xSwapChain, &uImageCount, nullptr);
+	Zenith_Assert(eResult == vk::Result::eSuccess);
 	s_xImages.resize(uImageCount);
 	s_xImageViews.resize(uImageCount);
-	xDevice.getSwapchainImagesKHR(s_xSwapChain, &uImageCount, s_xImages.data());
+	eResult = xDevice.getSwapchainImagesKHR(s_xSwapChain, &uImageCount, s_xImages.data());
+	Zenith_Assert(eResult == vk::Result::eSuccess);
 
 	Zenith_Assert(uImageCount == MAX_FRAMES_IN_FLIGHT, "Swapchain has wrong number of images");
 
@@ -315,8 +316,6 @@ bool Zenith_Vulkan_Swapchain::BeginFrame()
 
 void Zenith_Vulkan_Swapchain::BindAsTarget()
 {
-	uint32_t uNumColourAttachments = 1;
-
 #if 1//def ZENITH_DEBUG
 	vk::RenderPass xRenderPass = Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(s_axTargetSetups[s_uCurrentImageIndex], LOAD_ACTION_CLEAR, STORE_ACTION_STORE, LOAD_ACTION_CLEAR, STORE_ACTION_DONTCARE, RENDER_TARGET_USAGE_PRESENT);
 #else

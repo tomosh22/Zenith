@@ -311,7 +311,7 @@ void Zenith_Gizmo::RenderScaleGizmo(
 
 Zenith_Maths::Vector3 Zenith_Gizmo::ScreenToWorldRay(
 	const Zenith_Maths::Vector2& mousePos,
-	const Zenith_Maths::Vector2& viewportPos,
+	const Zenith_Maths::Vector2&,
 	const Zenith_Maths::Vector2& viewportSize,
 	const Zenith_Maths::Matrix4& viewMatrix,
 	const Zenith_Maths::Matrix4& projMatrix)

@@ -1,5 +1,7 @@
 #pragma once
 
+#pragma warning(push)
+#pragma warning(disable: 4530 4244)
 #include <cstdlib>
 #include <cstdint>
 #include <cstdarg>
@@ -16,6 +18,8 @@
 #include <concepts>
 #include <atomic>
 #include <random>
+#include <algorithm>
+#pragma warning(pop)
 
 using u_int = unsigned int;
 
@@ -38,6 +42,11 @@ static_assert(sizeof(u_int64) == 8);
 
 #include "Zenith_OS_Include.h"
 #include "Zenith_DebugBreak.h"
+
+// GLFW defines APIENTRY; undef before Windows.h to avoid C4005 redefinition warning
+#ifdef APIENTRY
+#undef APIENTRY
+#endif
 
 #ifdef ZENITH_WINDOWS
 #include <Windows.h>

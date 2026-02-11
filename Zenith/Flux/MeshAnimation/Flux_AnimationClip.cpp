@@ -437,7 +437,7 @@ void Flux_BoneChannel::SortKeyframes()
 //=============================================================================
 // Flux_AnimationClip
 //=============================================================================
-void Flux_AnimationClip::LoadFromAssimp(const aiAnimation* pxAnimation, const aiNode* pxRootNode)
+void Flux_AnimationClip::LoadFromAssimp(const aiAnimation* pxAnimation, const aiNode*)
 {
 	// Extract metadata
 	m_xMetadata.m_strName = pxAnimation->mName.data;

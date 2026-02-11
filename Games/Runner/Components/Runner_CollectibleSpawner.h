@@ -216,8 +216,7 @@ public:
 	static bool CheckObstacleCollision(
 		const Zenith_Maths::Vector3& xPlayerPos,
 		float fPlayerRadius,
-		float fPlayerHeight,
-		bool bIsSliding)
+		float fPlayerHeight)
 	{
 		for (const auto& xObs : s_axObstacles)
 		{

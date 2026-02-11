@@ -4,7 +4,7 @@
 #include "Flux/Fog/Flux_VolumeFog.h"
 #include "Flux/Fog/Flux_GodRaysFog.h"
 #include "Flux/Fog/Flux_RaymarchFog.h"
-#include "Flux/Fog/Flux_FroxelFog.h">
+#include "Flux/Fog/Flux_FroxelFog.h"
 
 #include "Flux/Flux.h"
 #include "Flux/Flux_RenderTargets.h"

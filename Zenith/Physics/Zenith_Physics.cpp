@@ -60,7 +60,7 @@ static void* JoltAllocate(size_t inSize)
 	return pHeader + 1;
 }
 
-static void* JoltReallocate(void* inBlock, size_t inOldSize, size_t inNewSize)
+static void* JoltReallocate(void* inBlock, size_t, size_t inNewSize)
 {
 	if (!inBlock)
 		return JoltAllocate(inNewSize);
@@ -303,7 +303,7 @@ static ObjectLayerPairFilterImpl s_xObjectLayerPairFilter;
 
 // Queue collision event for deferred processing on main thread
 // CRITICAL: This is called from Jolt worker threads, so it must be thread-safe
-static void QueueCollisionEventInternal(Zenith_EntityID xEntityID1, Zenith_EntityID xEntityID2, CollisionEventType eEventType)
+void QueueCollisionEventInternal(Zenith_EntityID xEntityID1, Zenith_EntityID xEntityID2, CollisionEventType eEventType)
 {
 	// Validate entity IDs
 	if (!xEntityID1.IsValid() || !xEntityID2.IsValid())
@@ -687,15 +687,15 @@ Zenith_Physics::RaycastResult Zenith_Physics::Raycast(const Zenith_Maths::Vector
 }
 
 JPH::ValidateResult Zenith_Physics::PhysicsContactListener::OnContactValidate(
-	const JPH::Body& inBody1, const JPH::Body& inBody2,
-	JPH::RVec3Arg inBaseOffset, const JPH::CollideShapeResult& inCollisionResult)
+	const JPH::Body&, const JPH::Body&,
+	JPH::RVec3Arg, const JPH::CollideShapeResult&)
 {
 	return JPH::ValidateResult::AcceptAllContactsForThisBodyPair;
 }
 
 void Zenith_Physics::PhysicsContactListener::OnContactAdded(
 	const JPH::Body& inBody1, const JPH::Body& inBody2,
-	const JPH::ContactManifold& inManifold, JPH::ContactSettings& ioSettings)
+	const JPH::ContactManifold&, JPH::ContactSettings&)
 {
 	// Queue event for deferred processing (thread-safe)
 	Zenith_EntityID xEntityID1 = Zenith_EntityID::FromPacked(inBody1.GetUserData());
@@ -705,7 +705,7 @@ void Zenith_Physics::PhysicsContactListener::OnContactAdded(
 
 void Zenith_Physics::PhysicsContactListener::OnContactPersisted(
 	const JPH::Body& inBody1, const JPH::Body& inBody2,
-	const JPH::ContactManifold& inManifold, JPH::ContactSettings& ioSettings)
+	const JPH::ContactManifold&, JPH::ContactSettings&)
 {
 	// Queue event for deferred processing (thread-safe)
 	Zenith_EntityID xEntityID1 = Zenith_EntityID::FromPacked(inBody1.GetUserData());

@@ -3,9 +3,12 @@
 #include "Flux/Flux_Types.h"
 #include "FileAccess/Zenith_FileAccess.h"
 
+#pragma warning(push)
+#pragma warning(disable: 4996)
 #include <slang.h>
 #include <slang-com-ptr.h>
 #include <slang-deprecated.h>
+#pragma warning(pop)
 
 static Slang::ComPtr<slang::IGlobalSession> s_pxGlobalSession;
 
@@ -186,6 +189,7 @@ bool Flux_SlangCompiler::CompileFromSource(const std::string& strSource, const s
 
 	// Use the compile request API for explicit stage specification
 	SlangCompileRequest* pxRequest = nullptr;
+#pragma warning(suppress: 4996)
 	SlangResult xResult = s_pxGlobalSession->createCompileRequest(&pxRequest);
 	if (SLANG_FAILED(xResult) || !pxRequest)
 	{
@@ -338,6 +342,7 @@ bool Flux_SlangCompiler::CompileGraphicsPipeline(const std::string& strVertexPat
 
 	// Create compile request
 	SlangCompileRequest* pxRequest = nullptr;
+#pragma warning(suppress: 4996)
 	SlangResult xResult = s_pxGlobalSession->createCompileRequest(&pxRequest);
 	if (SLANG_FAILED(xResult) || !pxRequest)
 	{
@@ -463,10 +468,10 @@ void Flux_SlangCompiler::ExtractReflection(void* pxLayoutVoid, Flux_ShaderReflec
 {
 	slang::ProgramLayout* pxLayout = static_cast<slang::ProgramLayout*>(pxLayoutVoid);
 
-	unsigned int uParamCount = pxLayout->getParameterCount();
-	unsigned int uEntryPointCount = pxLayout->getEntryPointCount();
+	u_int uParamCount = static_cast<u_int>(pxLayout->getParameterCount());
+	u_int uEntryPointCount = static_cast<u_int>(pxLayout->getEntryPointCount());
 
-	for (unsigned int u = 0; u < uParamCount; u++)
+	for (u_int u = 0; u < uParamCount; u++)
 	{
 		slang::VariableLayoutReflection* pxParam = pxLayout->getParameterByIndex(u);
 		if (!pxParam)
@@ -513,7 +518,7 @@ void Flux_SlangCompiler::ExtractReflection(void* pxLayoutVoid, Flux_ShaderReflec
 
 	// For combined graphics pipelines, also check entry-point-specific parameters
 	// Some resources may be reported per-entry-point rather than globally
-	for (unsigned int ep = 0; ep < uEntryPointCount; ep++)
+	for (u_int ep = 0; ep < uEntryPointCount; ep++)
 	{
 		slang::EntryPointLayout* pxEntryPoint = pxLayout->getEntryPointByIndex(ep);
 		if (!pxEntryPoint)
@@ -521,7 +526,7 @@ void Flux_SlangCompiler::ExtractReflection(void* pxLayoutVoid, Flux_ShaderReflec
 			continue;
 		}
 
-		for (unsigned int u = 0; u < pxEntryPoint->getParameterCount(); u++)
+		for (u_int u = 0; u < pxEntryPoint->getParameterCount(); u++)
 		{
 			slang::VariableLayoutReflection* pxParam = pxEntryPoint->getParameterByIndex(u);
 			if (!pxParam)

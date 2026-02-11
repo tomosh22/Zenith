@@ -63,41 +63,6 @@ static uint16_t FloatToHalf(float fValue)
 	return static_cast<uint16_t>(uSign | (iExponent << 10) | (uMantissa >> 13));
 }
 
-// Convert half-float to float
-static float HalfToFloat(uint16_t uHalf)
-{
-	uint32_t uSign = (uHalf & 0x8000) << 16;
-	uint32_t uExponent = (uHalf >> 10) & 0x1F;
-	uint32_t uMantissa = uHalf & 0x3FF;
-
-	if (uExponent == 0)
-	{
-		// Zero or denormalized
-		if (uMantissa == 0)
-		{
-			uint32_t uResult = uSign;
-			return *reinterpret_cast<float*>(&uResult);
-		}
-		// Denormalized - convert to normalized float
-		uExponent = 1;
-		while ((uMantissa & 0x400) == 0)
-		{
-			uMantissa <<= 1;
-			uExponent--;
-		}
-		uMantissa &= 0x3FF;
-	}
-	else if (uExponent == 31)
-	{
-		// Infinity or NaN
-		uint32_t uResult = uSign | 0x7F800000 | (uMantissa << 13);
-		return *reinterpret_cast<float*>(&uResult);
-	}
-
-	uint32_t uResult = uSign | ((uExponent + 127 - 15) << 23) | (uMantissa << 13);
-	return *reinterpret_cast<float*>(&uResult);
-}
-
 //=============================================================================
 // Constructor / Destructor
 //=============================================================================

@@ -1,4 +1,260 @@
-Microsoft Windows [Version 10.0.26100.7462]
-(c) Microsoft Corporation. All rights reserved.
+﻿MSBuild version 17.11.9+a69bbaaf5 for .NET Framework
+Build started 11/02/2026 08:40:43.
 
-c:\dev\Zenith>
+Project "C:\dev\Zenith\Build\zenith_win64.sln" on node 1 (default targets).
+ValidateSolutionConfiguration:
+  Building solution configuration "vs2022_Debug_Win64_True|x64".
+Project "C:\dev\Zenith\Build\zenith_win64.sln" (1) is building "C:\dev\Zenith\Games\AIShowcase\build\aishowcase_win64.vcxproj" (2) on node 1 (default targets).
+Project "C:\dev\Zenith\Games\AIShowcase\build\aishowcase_win64.vcxproj" (2) is building "C:\dev\Zenith\Build\zenith_win64.vcxproj" (3) on node 1 (default targets).
+PrepareForBuild:
+  Structured output is enabled. The formatting of compiler diagnostics will reflect the error hierarchy. See https://aka.ms/cpp/structured-output for more details.
+InitializeBuildStatus:
+  Creating "obj\win64\vs2022_debug_win64_true\Zenith.tlog\unsuccessfulbuild" because "AlwaysCreate" was specified.
+  Touching "obj\win64\vs2022_debug_win64_true\Zenith.tlog\unsuccessfulbuild".
+VcpkgTripletSelection:
+  Using triplet "x64-windows" from "C:\dev\vcpkg\installed\x64-windows\"
+  Using normalized configuration "Debug"
+ClCompile:
+  All outputs are up-to-date.
+  All outputs are up-to-date.
+  All outputs are up-to-date.
+  All outputs are up-to-date.
+Lib:
+  All outputs are up-to-date.
+  Copying file from "C:\dev\Zenith\Build\obj\win64\vs2022_debug_win64_true\zenith_compiler.pdb" to "C:\dev\Zenith\Build\output\win64\vs2022_debug_win64_true\zenith.pdb".
+  zenith_win64.vcxproj -> C:\dev\Zenith\Build\output\win64\vs2022_debug_win64_true\zenith.lib
+FinalizeBuildStatus:
+  Deleting file "obj\win64\vs2022_debug_win64_true\Zenith.tlog\unsuccessfulbuild".
+  Touching "obj\win64\vs2022_debug_win64_true\Zenith.tlog\Zenith.lastbuildstate".
+Done Building Project "C:\dev\Zenith\Build\zenith_win64.vcxproj" (default targets).
+PrepareForBuild:
+  Structured output is enabled. The formatting of compiler diagnostics will reflect the error hierarchy. See https://aka.ms/cpp/structured-output for more details.
+InitializeBuildStatus:
+  Creating "obj\win64\vs2022_debug_win64_true\AIShowcase.tlog\unsuccessfulbuild" because "AlwaysCreate" was specified.
+  Touching "obj\win64\vs2022_debug_win64_true\AIShowcase.tlog\unsuccessfulbuild".
+VcpkgTripletSelection:
+  Using triplet "x64-windows" from "C:\dev\vcpkg\installed\x64-windows\"
+  Using normalized configuration "Debug"
+ClCompile:
+  All outputs are up-to-date.
+Link:
+  All outputs are up-to-date.
+  aishowcase_win64.vcxproj -> C:\dev\Zenith\Games\AIShowcase\build\output\win64\vs2022_debug_win64_true\aishowcase.exe
+PostBuildEvent:
+  xcopy /Y /D "c:/dev/zenith/Middleware/slang/bin\slang.dll" "output\win64\vs2022_debug_win64_true\"
+  xcopy /Y /D "c:/dev/zenith/Middleware/slang/bin\slang-glslang.dll" "output\win64\vs2022_debug_win64_true\"
+  
+  :VCEnd
+  0 File(s) copied
+  0 File(s) copied
+FinalizeBuildStatus:
+  Deleting file "obj\win64\vs2022_debug_win64_true\AIShowcase.tlog\unsuccessfulbuild".
+  Touching "obj\win64\vs2022_debug_win64_true\AIShowcase.tlog\AIShowcase.lastbuildstate".
+Done Building Project "C:\dev\Zenith\Games\AIShowcase\build\aishowcase_win64.vcxproj" (default targets).
+Project "C:\dev\Zenith\Build\zenith_win64.sln" (1) is building "C:\dev\Zenith\Games\Combat\build\combat_win64.vcxproj" (4) on node 1 (default targets).
+PrepareForBuild:
+  Structured output is enabled. The formatting of compiler diagnostics will reflect the error hierarchy. See https://aka.ms/cpp/structured-output for more details.
+InitializeBuildStatus:
+  Creating "obj\win64\vs2022_debug_win64_true\Combat.tlog\unsuccessfulbuild" because "AlwaysCreate" was specified.
+  Touching "obj\win64\vs2022_debug_win64_true\Combat.tlog\unsuccessfulbuild".
+VcpkgTripletSelection:
+  Using triplet "x64-windows" from "C:\dev\vcpkg\installed\x64-windows\"
+  Using normalized configuration "Debug"
+ClCompile:
+  All outputs are up-to-date.
+Link:
+  All outputs are up-to-date.
+  combat_win64.vcxproj -> C:\dev\Zenith\Games\Combat\build\output\win64\vs2022_debug_win64_true\combat.exe
+PostBuildEvent:
+  xcopy /Y /D "c:/dev/zenith/Middleware/slang/bin\slang.dll" "output\win64\vs2022_debug_win64_true\"
+  xcopy /Y /D "c:/dev/zenith/Middleware/slang/bin\slang-glslang.dll" "output\win64\vs2022_debug_win64_true\"
+  
+  :VCEnd
+  0 File(s) copied
+  0 File(s) copied
+FinalizeBuildStatus:
+  Deleting file "obj\win64\vs2022_debug_win64_true\Combat.tlog\unsuccessfulbuild".
+  Touching "obj\win64\vs2022_debug_win64_true\Combat.tlog\Combat.lastbuildstate".
+Done Building Project "C:\dev\Zenith\Games\Combat\build\combat_win64.vcxproj" (default targets).
+Project "C:\dev\Zenith\Build\zenith_win64.sln" (1) is building "C:\dev\Zenith\Games\Exploration\build\exploration_win64.vcxproj" (5) on node 1 (default targets).
+PrepareForBuild:
+  Structured output is enabled. The formatting of compiler diagnostics will reflect the error hierarchy. See https://aka.ms/cpp/structured-output for more details.
+InitializeBuildStatus:
+  Creating "obj\win64\vs2022_debug_win64_true\Exploration.tlog\unsuccessfulbuild" because "AlwaysCreate" was specified.
+  Touching "obj\win64\vs2022_debug_win64_true\Exploration.tlog\unsuccessfulbuild".
+VcpkgTripletSelection:
+  Using triplet "x64-windows" from "C:\dev\vcpkg\installed\x64-windows\"
+  Using normalized configuration "Debug"
+ClCompile:
+  All outputs are up-to-date.
+Link:
+  All outputs are up-to-date.
+  exploration_win64.vcxproj -> C:\dev\Zenith\Games\Exploration\build\output\win64\vs2022_debug_win64_true\exploration.exe
+PostBuildEvent:
+  xcopy /Y /D "c:/dev/zenith/Middleware/slang/bin\slang.dll" "output\win64\vs2022_debug_win64_true\"
+  xcopy /Y /D "c:/dev/zenith/Middleware/slang/bin\slang-glslang.dll" "output\win64\vs2022_debug_win64_true\"
+  
+  :VCEnd
+  0 File(s) copied
+  0 File(s) copied
+FinalizeBuildStatus:
+  Deleting file "obj\win64\vs2022_debug_win64_true\Exploration.tlog\unsuccessfulbuild".
+  Touching "obj\win64\vs2022_debug_win64_true\Exploration.tlog\Exploration.lastbuildstate".
+Done Building Project "C:\dev\Zenith\Games\Exploration\build\exploration_win64.vcxproj" (default targets).
+Project "C:\dev\Zenith\Build\zenith_win64.sln" (1) is building "C:\dev\Zenith\FluxCompiler\fluxcompiler_win64.vcxproj" (6) on node 1 (default targets).
+PrepareForBuild:
+  Structured output is enabled. The formatting of compiler diagnostics will reflect the error hierarchy. See https://aka.ms/cpp/structured-output for more details.
+InitializeBuildStatus:
+  Creating "obj\win64\vs2022_debug_win64_true\FluxCompiler.tlog\unsuccessfulbuild" because "AlwaysCreate" was specified.
+  Touching "obj\win64\vs2022_debug_win64_true\FluxCompiler.tlog\unsuccessfulbuild".
+VcpkgTripletSelection:
+  Using triplet "x64-windows" from "C:\dev\vcpkg\installed\x64-windows\"
+  Using normalized configuration "Debug"
+ClCompile:
+  All outputs are up-to-date.
+Link:
+  All outputs are up-to-date.
+  fluxcompiler_win64.vcxproj -> C:\dev\Zenith\FluxCompiler\output\win64\vs2022_debug_win64_true\fluxcompiler.exe
+PostBuildEvent:
+  xcopy /Y /D "c:\dev\zenith\Middleware\slang\bin\slang.dll" "output\win64\vs2022_debug_win64_true\"
+  xcopy /Y /D "c:\dev\zenith\Middleware\slang\bin\slang-glslang.dll" "output\win64\vs2022_debug_win64_true\"
+  
+  :VCEnd
+  0 File(s) copied
+  0 File(s) copied
+FinalizeBuildStatus:
+  Deleting file "obj\win64\vs2022_debug_win64_true\FluxCompiler.tlog\unsuccessfulbuild".
+  Touching "obj\win64\vs2022_debug_win64_true\FluxCompiler.tlog\FluxCompiler.lastbuildstate".
+Done Building Project "C:\dev\Zenith\FluxCompiler\fluxcompiler_win64.vcxproj" (default targets).
+Project "C:\dev\Zenith\Build\zenith_win64.sln" (1) is building "C:\dev\Zenith\Games\Marble\build\marble_win64.vcxproj" (7) on node 1 (default targets).
+PrepareForBuild:
+  Structured output is enabled. The formatting of compiler diagnostics will reflect the error hierarchy. See https://aka.ms/cpp/structured-output for more details.
+InitializeBuildStatus:
+  Creating "obj\win64\vs2022_debug_win64_true\Marble.tlog\unsuccessfulbuild" because "AlwaysCreate" was specified.
+  Touching "obj\win64\vs2022_debug_win64_true\Marble.tlog\unsuccessfulbuild".
+VcpkgTripletSelection:
+  Using triplet "x64-windows" from "C:\dev\vcpkg\installed\x64-windows\"
+  Using normalized configuration "Debug"
+ClCompile:
+  All outputs are up-to-date.
+Link:
+  All outputs are up-to-date.
+  marble_win64.vcxproj -> C:\dev\Zenith\Games\Marble\build\output\win64\vs2022_debug_win64_true\marble.exe
+PostBuildEvent:
+  xcopy /Y /D "c:/dev/zenith/Middleware/slang/bin\slang.dll" "output\win64\vs2022_debug_win64_true\"
+  xcopy /Y /D "c:/dev/zenith/Middleware/slang/bin\slang-glslang.dll" "output\win64\vs2022_debug_win64_true\"
+  
+  :VCEnd
+  0 File(s) copied
+  0 File(s) copied
+FinalizeBuildStatus:
+  Deleting file "obj\win64\vs2022_debug_win64_true\Marble.tlog\unsuccessfulbuild".
+  Touching "obj\win64\vs2022_debug_win64_true\Marble.tlog\Marble.lastbuildstate".
+Done Building Project "C:\dev\Zenith\Games\Marble\build\marble_win64.vcxproj" (default targets).
+Project "C:\dev\Zenith\Build\zenith_win64.sln" (1) is building "C:\dev\Zenith\Games\Runner\build\runner_win64.vcxproj" (8) on node 1 (default targets).
+PrepareForBuild:
+  Structured output is enabled. The formatting of compiler diagnostics will reflect the error hierarchy. See https://aka.ms/cpp/structured-output for more details.
+InitializeBuildStatus:
+  Creating "obj\win64\vs2022_debug_win64_true\Runner.tlog\unsuccessfulbuild" because "AlwaysCreate" was specified.
+  Touching "obj\win64\vs2022_debug_win64_true\Runner.tlog\unsuccessfulbuild".
+VcpkgTripletSelection:
+  Using triplet "x64-windows" from "C:\dev\vcpkg\installed\x64-windows\"
+  Using normalized configuration "Debug"
+ClCompile:
+  All outputs are up-to-date.
+Link:
+  All outputs are up-to-date.
+  runner_win64.vcxproj -> C:\dev\Zenith\Games\Runner\build\output\win64\vs2022_debug_win64_true\runner.exe
+PostBuildEvent:
+  xcopy /Y /D "c:/dev/zenith/Middleware/slang/bin\slang.dll" "output\win64\vs2022_debug_win64_true\"
+  xcopy /Y /D "c:/dev/zenith/Middleware/slang/bin\slang-glslang.dll" "output\win64\vs2022_debug_win64_true\"
+  
+  :VCEnd
+  0 File(s) copied
+  0 File(s) copied
+FinalizeBuildStatus:
+  Deleting file "obj\win64\vs2022_debug_win64_true\Runner.tlog\unsuccessfulbuild".
+  Touching "obj\win64\vs2022_debug_win64_true\Runner.tlog\Runner.lastbuildstate".
+Done Building Project "C:\dev\Zenith\Games\Runner\build\runner_win64.vcxproj" (default targets).
+Project "C:\dev\Zenith\Build\zenith_win64.sln" (1) is building "C:\dev\Zenith\Games\Sokoban\Build\sokoban_win64.vcxproj" (9) on node 1 (default targets).
+PrepareForBuild:
+  Structured output is enabled. The formatting of compiler diagnostics will reflect the error hierarchy. See https://aka.ms/cpp/structured-output for more details.
+InitializeBuildStatus:
+  Creating "obj\win64\vs2022_debug_win64_true\Sokoban.tlog\unsuccessfulbuild" because "AlwaysCreate" was specified.
+  Touching "obj\win64\vs2022_debug_win64_true\Sokoban.tlog\unsuccessfulbuild".
+VcpkgTripletSelection:
+  Using triplet "x64-windows" from "C:\dev\vcpkg\installed\x64-windows\"
+  Using normalized configuration "Debug"
+ClCompile:
+  All outputs are up-to-date.
+Link:
+  All outputs are up-to-date.
+  sokoban_win64.vcxproj -> C:\dev\Zenith\Games\Sokoban\Build\output\win64\vs2022_debug_win64_true\sokoban.exe
+PostBuildEvent:
+  xcopy /Y /D "c:/dev/zenith/Middleware/slang/bin\slang.dll" "output\win64\vs2022_debug_win64_true\"
+  xcopy /Y /D "c:/dev/zenith/Middleware/slang/bin\slang-glslang.dll" "output\win64\vs2022_debug_win64_true\"
+  
+  :VCEnd
+  0 File(s) copied
+  0 File(s) copied
+FinalizeBuildStatus:
+  Deleting file "obj\win64\vs2022_debug_win64_true\Sokoban.tlog\unsuccessfulbuild".
+  Touching "obj\win64\vs2022_debug_win64_true\Sokoban.tlog\Sokoban.lastbuildstate".
+Done Building Project "C:\dev\Zenith\Games\Sokoban\Build\sokoban_win64.vcxproj" (default targets).
+Project "C:\dev\Zenith\Build\zenith_win64.sln" (1) is building "C:\dev\Zenith\Games\Survival\build\survival_win64.vcxproj" (10) on node 1 (default targets).
+PrepareForBuild:
+  Structured output is enabled. The formatting of compiler diagnostics will reflect the error hierarchy. See https://aka.ms/cpp/structured-output for more details.
+InitializeBuildStatus:
+  Creating "obj\win64\vs2022_debug_win64_true\Survival.tlog\unsuccessfulbuild" because "AlwaysCreate" was specified.
+  Touching "obj\win64\vs2022_debug_win64_true\Survival.tlog\unsuccessfulbuild".
+VcpkgTripletSelection:
+  Using triplet "x64-windows" from "C:\dev\vcpkg\installed\x64-windows\"
+  Using normalized configuration "Debug"
+ClCompile:
+  All outputs are up-to-date.
+Link:
+  All outputs are up-to-date.
+  survival_win64.vcxproj -> C:\dev\Zenith\Games\Survival\build\output\win64\vs2022_debug_win64_true\survival.exe
+PostBuildEvent:
+  xcopy /Y /D "c:/dev/zenith/Middleware/slang/bin\slang.dll" "output\win64\vs2022_debug_win64_true\"
+  xcopy /Y /D "c:/dev/zenith/Middleware/slang/bin\slang-glslang.dll" "output\win64\vs2022_debug_win64_true\"
+  
+  :VCEnd
+  0 File(s) copied
+  0 File(s) copied
+FinalizeBuildStatus:
+  Deleting file "obj\win64\vs2022_debug_win64_true\Survival.tlog\unsuccessfulbuild".
+  Touching "obj\win64\vs2022_debug_win64_true\Survival.tlog\Survival.lastbuildstate".
+Done Building Project "C:\dev\Zenith\Games\Survival\build\survival_win64.vcxproj" (default targets).
+Project "C:\dev\Zenith\Build\zenith_win64.sln" (1) is building "C:\dev\Zenith\Games\TilePuzzle\build\tilepuzzle_win64.vcxproj" (11) on node 1 (default targets).
+PrepareForBuild:
+  Structured output is enabled. The formatting of compiler diagnostics will reflect the error hierarchy. See https://aka.ms/cpp/structured-output for more details.
+InitializeBuildStatus:
+  Creating "obj\win64\vs2022_debug_win64_true\TilePuzzle.tlog\unsuccessfulbuild" because "AlwaysCreate" was specified.
+  Touching "obj\win64\vs2022_debug_win64_true\TilePuzzle.tlog\unsuccessfulbuild".
+VcpkgTripletSelection:
+  Using triplet "x64-windows" from "C:\dev\vcpkg\installed\x64-windows\"
+  Using normalized configuration "Debug"
+ClCompile:
+  All outputs are up-to-date.
+Link:
+  All outputs are up-to-date.
+  tilepuzzle_win64.vcxproj -> C:\dev\Zenith\Games\TilePuzzle\build\output\win64\vs2022_debug_win64_true\tilepuzzle.exe
+PostBuildEvent:
+  xcopy /Y /D "c:/dev/zenith/Middleware/slang/bin\slang.dll" "output\win64\vs2022_debug_win64_true\"
+  xcopy /Y /D "c:/dev/zenith/Middleware/slang/bin\slang-glslang.dll" "output\win64\vs2022_debug_win64_true\"
+  
+  :VCEnd
+  0 File(s) copied
+  0 File(s) copied
+FinalizeBuildStatus:
+  Deleting file "obj\win64\vs2022_debug_win64_true\TilePuzzle.tlog\unsuccessfulbuild".
+  Touching "obj\win64\vs2022_debug_win64_true\TilePuzzle.tlog\TilePuzzle.lastbuildstate".
+Done Building Project "C:\dev\Zenith\Games\TilePuzzle\build\tilepuzzle_win64.vcxproj" (default targets).
+Done Building Project "C:\dev\Zenith\Build\zenith_win64.sln" (default targets).
+
+Build succeeded.
+    0 Warning(s)
+    0 Error(s)
+
+Time Elapsed 00:00:01.18

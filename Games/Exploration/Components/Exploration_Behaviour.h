@@ -73,7 +73,7 @@ public:
 	ZENITH_BEHAVIOUR_TYPE_NAME(Exploration_Behaviour)
 
 	Exploration_Behaviour() = delete;
-	Exploration_Behaviour(Zenith_Entity& xParentEntity)
+	Exploration_Behaviour(Zenith_Entity&)
 		: m_bInitialized(false)
 		, m_fFPSAccumulator(0.0f)
 		, m_uFrameCount(0)

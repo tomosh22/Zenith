@@ -262,7 +262,7 @@ namespace Exploration_AtmosphereController
 	/**
 	 * Calculate fog color based on time of day and sun position
 	 */
-	inline Zenith_Maths::Vector3 CalculateFogColor(float fTimeOfDay, const Zenith_Maths::Vector3& xSunColor)
+	inline Zenith_Maths::Vector3 CalculateFogColor(float fTimeOfDay)
 	{
 		// Near sunrise/sunset, fog takes on sun color
 		bool bNearHorizon = (fTimeOfDay > 0.2f && fTimeOfDay < 0.35f) ||
@@ -379,7 +379,7 @@ namespace Exploration_AtmosphereController
 
 		// Calculate fog properties
 		s_xCurrentState.m_xFogColor = CalculateFogColor(
-			s_xCurrentState.m_fTimeOfDay, s_xCurrentState.m_xSunColor);
+			s_xCurrentState.m_fTimeOfDay);
 
 		// Smoothly interpolate fog density
 		s_xCurrentState.m_fFogDensity = glm::mix(

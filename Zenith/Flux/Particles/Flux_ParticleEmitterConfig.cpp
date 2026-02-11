@@ -69,8 +69,7 @@ void Flux_ParticleEmitterConfig::RenderPropertiesPanel()
 	if (ImGui::CollapsingHeader("Visual"))
 	{
 		char szTexturePath[256];
-		strncpy(szTexturePath, m_strTexturePath.c_str(), sizeof(szTexturePath) - 1);
-		szTexturePath[sizeof(szTexturePath) - 1] = '\0';
+		strncpy_s(szTexturePath, sizeof(szTexturePath), m_strTexturePath.c_str(), _TRUNCATE);
 		if (ImGui::InputText("Texture Path", szTexturePath, sizeof(szTexturePath)))
 		{
 			m_strTexturePath = szTexturePath;

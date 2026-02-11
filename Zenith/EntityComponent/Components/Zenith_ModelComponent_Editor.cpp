@@ -21,7 +21,9 @@
 
 // Windows file dialog support
 #ifdef _WIN32
+#ifndef NOMINMAX
 #define NOMINMAX
+#endif
 #include <windows.h>
 #include <commdlg.h>
 #pragma comment(lib, "Comdlg32.lib")
@@ -274,7 +276,7 @@ void Zenith_ModelComponent::RenderPropertiesPanel()
 					ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST;
 					if (GetOpenFileNameA(&ofn))
 					{
-						strncpy(s_szAnimPath, szFile, sizeof(s_szAnimPath) - 1);
+						strncpy_s(s_szAnimPath, sizeof(s_szAnimPath), szFile, _TRUNCATE);
 					}
 #endif
 				}

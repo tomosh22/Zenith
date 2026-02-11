@@ -95,12 +95,12 @@ u_int64 Zenith_Window::GetGLFWAllocationCount()
 	return s_ulGLFWAllocationCount.load();
 }
 
-static void ErrorCallback(int32_t iError, const char* szDesc)
+static void ErrorCallback(int32_t, const char*)
 {
 	__debugbreak();
 }
 
-static void KeyCallback(GLFWwindow* pxWindow, int32_t iKey, int32_t iScancode, int32_t iAction, int32_t iMods)
+static void KeyCallback(GLFWwindow*, int32_t iKey, int32_t, int32_t iAction, int32_t)
 {
 	switch (iAction)
 	{
@@ -110,7 +110,7 @@ static void KeyCallback(GLFWwindow* pxWindow, int32_t iKey, int32_t iScancode, i
 	}
 }
 
-static void MouseCallback(GLFWwindow* pxWindow, int32_t iKey, int32_t iAction, int32_t iMods)
+static void MouseCallback(GLFWwindow*, int32_t iKey, int32_t iAction, int32_t)
 {
 	switch (iAction)
 	{
@@ -130,7 +130,7 @@ Zenith_Window::Zenith_Window(const char* szTitle, uint32_t uWidth, uint32_t uHei
 	xAllocator.user = nullptr;
 	glfwInitAllocator(&xAllocator);
 
-	int glfwinit = glfwInit();
+	glfwInit();
 
 #ifdef ZENITH_VULKAN
 	glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);

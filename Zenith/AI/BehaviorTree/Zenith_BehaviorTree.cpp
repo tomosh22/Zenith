@@ -199,7 +199,7 @@ Zenith_BehaviorTree* Zenith_BehaviorTree::LoadFromFile(const std::string& strPat
 	return nullptr;
 }
 
-bool Zenith_BehaviorTree::SaveToFile(const Zenith_BehaviorTree& xTree, const std::string& strPath)
+bool Zenith_BehaviorTree::SaveToFile(const Zenith_BehaviorTree&, const std::string& strPath)
 {
 	// BT file serialization is not implemented yet.
 	// WriteToDataStream can serialize tree structure, but loading requires a node factory.

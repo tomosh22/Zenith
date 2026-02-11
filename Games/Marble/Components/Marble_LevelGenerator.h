@@ -116,7 +116,7 @@ public:
 			Zenith_Maths::Vector3(fGoalX, 1.0f, fGoalZ));
 
 		// Create collectibles on platforms
-		CreateCollectibles(xEntities, pxCollectiblePrefab, pxSphereGeometry, pxCollectibleMaterial, xRng);
+		CreateCollectibles(xEntities, pxCollectiblePrefab, pxSphereGeometry, pxCollectibleMaterial);
 	}
 
 	/**
@@ -253,8 +253,7 @@ private:
 		LevelEntities& xEntities,
 		Zenith_Prefab* pxPrefab,
 		Flux_MeshGeometry* pxMesh,
-		Zenith_MaterialAsset* pxMaterial,
-		std::mt19937& xRng)
+		Zenith_MaterialAsset* pxMaterial)
 	{
 		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
 		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);

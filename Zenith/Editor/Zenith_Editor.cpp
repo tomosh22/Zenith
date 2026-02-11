@@ -1,4 +1,5 @@
 #include "Zenith.h"
+#pragma warning(disable: 4530) // C++ exception handler used without /EHsc
 
 #ifdef ZENITH_TOOLS
 
@@ -64,7 +65,9 @@ void Zenith_EditorAddLogMessage(const char* szMessage, int eLevel, Zenith_LogCat
 // Windows file dialog support
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
+#ifndef NOMINMAX
 #define NOMINMAX
+#endif
 #include <windows.h>
 #include <commdlg.h>
 #include <shobjidl.h>
@@ -99,7 +102,7 @@ std::string ShowSaveFileDialog(const char* szFilter, const char* szDefaultExt, c
 	char szFilePath[MAX_PATH] = { 0 };
 	if (szDefaultFilename)
 	{
-		strncpy(szFilePath, szDefaultFilename, MAX_PATH - 1);
+		strncpy_s(szFilePath, sizeof(szFilePath), szDefaultFilename, _TRUNCATE);
 	}
 
 	OPENFILENAMEA ofn = {};

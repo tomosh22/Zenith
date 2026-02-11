@@ -416,7 +416,7 @@ void* operator new(size_t ullSize)
 #endif
 }
 
-void* operator new(size_t ullSize, const std::nothrow_t&)
+void* operator new(size_t ullSize, const std::nothrow_t&) noexcept
 {
 #ifdef ZENITH_MEMORY_MANAGEMENT_ENABLED
 	return Zenith_MemoryManagement::AllocateTracked(ullSize, 0, MEMORY_CATEGORY_GENERAL, nullptr, 0);
@@ -434,7 +434,7 @@ void* operator new(size_t ullSize, std::align_val_t eAlign)
 #endif
 }
 
-void* operator new(size_t ullSize, std::align_val_t eAlign, const std::nothrow_t&)
+void* operator new(size_t ullSize, std::align_val_t eAlign, const std::nothrow_t&) noexcept
 {
 #ifdef ZENITH_MEMORY_MANAGEMENT_ENABLED
 	return Zenith_MemoryManagement::AllocateTracked(ullSize, static_cast<size_t>(eAlign), MEMORY_CATEGORY_GENERAL, nullptr, 0);
@@ -461,7 +461,7 @@ void* operator new[](size_t ullSize)
 #endif
 }
 
-void* operator new[](size_t ullSize, const std::nothrow_t&)
+void* operator new[](size_t ullSize, const std::nothrow_t&) noexcept
 {
 #ifdef ZENITH_MEMORY_MANAGEMENT_ENABLED
 	return Zenith_MemoryManagement::AllocateTracked(ullSize, 0, MEMORY_CATEGORY_GENERAL, nullptr, 0);
@@ -479,7 +479,7 @@ void* operator new[](size_t ullSize, std::align_val_t eAlign)
 #endif
 }
 
-void* operator new[](size_t ullSize, std::align_val_t eAlign, const std::nothrow_t&)
+void* operator new[](size_t ullSize, std::align_val_t eAlign, const std::nothrow_t&) noexcept
 {
 #ifdef ZENITH_MEMORY_MANAGEMENT_ENABLED
 	return Zenith_MemoryManagement::AllocateTracked(ullSize, static_cast<size_t>(eAlign), MEMORY_CATEGORY_GENERAL, nullptr, 0);

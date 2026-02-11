@@ -16,7 +16,7 @@ Zenith_BTCondition_HasTarget::Zenith_BTCondition_HasTarget(const std::string& st
 {
 }
 
-BTNodeStatus Zenith_BTCondition_HasTarget::Execute(Zenith_Entity& xAgent, Zenith_Blackboard& xBlackboard, float fDt)
+BTNodeStatus Zenith_BTCondition_HasTarget::Execute(Zenith_Entity&, Zenith_Blackboard& xBlackboard, float)
 {
 	Zenith_EntityID xTarget = xBlackboard.GetEntityID(m_strTargetKey);
 
@@ -68,7 +68,7 @@ Zenith_BTCondition_InRange::Zenith_BTCondition_InRange(float fRange, const std::
 {
 }
 
-BTNodeStatus Zenith_BTCondition_InRange::Execute(Zenith_Entity& xAgent, Zenith_Blackboard& xBlackboard, float fDt)
+BTNodeStatus Zenith_BTCondition_InRange::Execute(Zenith_Entity& xAgent, Zenith_Blackboard& xBlackboard, float)
 {
 	// Get agent position
 	if (!xAgent.HasComponent<Zenith_TransformComponent>())
@@ -157,7 +157,7 @@ Zenith_BTCondition_CanSeeTarget::Zenith_BTCondition_CanSeeTarget(const std::stri
 {
 }
 
-BTNodeStatus Zenith_BTCondition_CanSeeTarget::Execute(Zenith_Entity& xAgent, Zenith_Blackboard& xBlackboard, float fDt)
+BTNodeStatus Zenith_BTCondition_CanSeeTarget::Execute(Zenith_Entity& xAgent, Zenith_Blackboard& xBlackboard, float)
 {
 	Zenith_EntityID xTargetID = xBlackboard.GetEntityID(m_strTargetKey);
 
@@ -212,7 +212,7 @@ Zenith_BTCondition_BlackboardBool::Zenith_BTCondition_BlackboardBool(const std::
 {
 }
 
-BTNodeStatus Zenith_BTCondition_BlackboardBool::Execute(Zenith_Entity& xAgent, Zenith_Blackboard& xBlackboard, float fDt)
+BTNodeStatus Zenith_BTCondition_BlackboardBool::Execute(Zenith_Entity&, Zenith_Blackboard& xBlackboard, float)
 {
 	bool bValue = xBlackboard.GetBool(m_strKey, !m_bExpectedValue);
 
@@ -261,7 +261,7 @@ Zenith_BTCondition_BlackboardCompare::Zenith_BTCondition_BlackboardCompare(
 {
 }
 
-BTNodeStatus Zenith_BTCondition_BlackboardCompare::Execute(Zenith_Entity& xAgent, Zenith_Blackboard& xBlackboard, float fDt)
+BTNodeStatus Zenith_BTCondition_BlackboardCompare::Execute(Zenith_Entity&, Zenith_Blackboard& xBlackboard, float)
 {
 	float fBBValue = xBlackboard.GetFloat(m_strKey, 0.0f);
 	bool bResult = false;
@@ -322,7 +322,7 @@ void Zenith_BTCondition_BlackboardCompare::ReadFromDataStream(Zenith_DataStream&
 
 // ========== Zenith_BTCondition_HasAwareness ==========
 
-BTNodeStatus Zenith_BTCondition_HasAwareness::Execute(Zenith_Entity& xAgent, Zenith_Blackboard& xBlackboard, float fDt)
+BTNodeStatus Zenith_BTCondition_HasAwareness::Execute(Zenith_Entity& xAgent, Zenith_Blackboard&, float)
 {
 	const Zenith_Vector<Zenith_PerceivedTarget>* pxTargets =
 		Zenith_PerceptionSystem::GetPerceivedTargets(xAgent.GetEntityID());
@@ -354,7 +354,7 @@ Zenith_BTCondition_Random::Zenith_BTCondition_Random(float fProbability)
 {
 }
 
-BTNodeStatus Zenith_BTCondition_Random::Execute(Zenith_Entity& xAgent, Zenith_Blackboard& xBlackboard, float fDt)
+BTNodeStatus Zenith_BTCondition_Random::Execute(Zenith_Entity&, Zenith_Blackboard&, float)
 {
 	static std::random_device rd;
 	static std::mt19937 gen(rd());

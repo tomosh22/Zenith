@@ -168,7 +168,7 @@ public:
 					xNewState.axShapePositions[uShapeIdx].iOriginY = iNewOriginY;
 
 					// Check for cat elimination
-					CheckCatElimination(xLevel, xNewState, axDraggableIndices, uShapeIdx, xShape);
+					CheckCatElimination(xLevel, xNewState, uShapeIdx, xShape);
 
 					// Skip if we've visited this state
 					if (xVisited.find(xNewState) != xVisited.end())
@@ -291,7 +291,6 @@ private:
 	static void CheckCatElimination(
 		const TilePuzzleLevelData& xLevel,
 		TilePuzzleSolverState& xState,
-		const std::vector<size_t>& axDraggableIndices,
 		size_t uMovedShapeIdx,
 		const TilePuzzleShapeInstance& xShape)
 	{
