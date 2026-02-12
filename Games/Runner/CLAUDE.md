@@ -33,7 +33,7 @@ Games/Runner/
     Runner_ParticleManager.h     # Visual particle effects
     Runner_UIManager.h           # HUD management
   Assets/
-    Scenes/Runner.zscn           # Serialized scene
+    Scenes/Runner.zscen          # Serialized scene
 ```
 
 ## Module Breakdown
@@ -79,17 +79,7 @@ Demonstrates:
 - Procedural animation simulation (for this capsule demo)
 
 **Real implementation example:**
-```cpp
-// Create BlendSpace1D for run animation
-Flux_BlendTreeNode_BlendSpace1D* pxRunBlendSpace = new Flux_BlendTreeNode_BlendSpace1D();
-pxRunBlendSpace->AddBlendPoint(new Flux_BlendTreeNode_Clip(pxWalkClip), 0.0f);
-pxRunBlendSpace->AddBlendPoint(new Flux_BlendTreeNode_Clip(pxJogClip), 15.0f);
-pxRunBlendSpace->AddBlendPoint(new Flux_BlendTreeNode_Clip(pxSprintClip), 35.0f);
-pxRunBlendSpace->SortBlendPoints();
-
-// Each frame, set speed parameter
-pxRunBlendSpace->SetParameter(fCurrentSpeed);
-```
+Create `BlendSpace1D`, add blend points at different speed thresholds (walk=0, jog=15, sprint=35), sort, then set parameter each frame.
 
 ### Runner_TerrainManager.h - Terrain System
 **Engine APIs:** `Zenith_TerrainComponent` concepts
@@ -126,19 +116,7 @@ Demonstrates:
 - Fade out over lifetime
 
 **Real Flux_Particles usage:**
-```cpp
-// Particle data structure for GPU
-struct ParticleGPU {
-    Vector4 m_xPosition_Radius;  // xyz = position, w = radius
-    Vector4 m_xColour;           // rgba color
-};
-
-// Upload particle instance data each frame
-Flux_MemoryManager::UploadBufferData(
-    s_xInstanceBuffer.GetBuffer().m_xVRAMHandle,
-    axGPUParticles.data(),
-    axGPUParticles.size() * sizeof(ParticleGPU));
-```
+Particles use GPU structs with position/radius/color, uploaded each frame via `Flux_MemoryManager::UploadBufferData()` to instance buffer.
 
 ### Runner_UIManager.h - HUD
 **Engine APIs:** `Zenith_UIComponent`, `Zenith_UIText`
@@ -169,31 +147,7 @@ MAIN_MENU --> PLAYING --> PAUSED --> PLAYING
 
 ### Scene Transition Pattern
 
-**Start Game (MAIN_MENU -> PLAYING):**
-```cpp
-m_xGameScene = Zenith_SceneManager::CreateEmptyScene("Run");
-Zenith_SceneManager::SetActiveScene(m_xGameScene);
-InitializeGame();
-m_eGameState = RunnerGameState::PLAYING;
-```
-
-**Pause / Resume (PLAYING <-> PAUSED):**
-```cpp
-// Pause
-Zenith_SceneManager::SetScenePaused(m_xGameScene, true);
-m_eGameState = RunnerGameState::PAUSED;
-
-// Resume
-Zenith_SceneManager::SetScenePaused(m_xGameScene, false);
-m_eGameState = RunnerGameState::PLAYING;
-```
-
-**Return to Menu (any state -> MAIN_MENU):**
-```cpp
-Zenith_SceneManager::UnloadScene(m_xGameScene);
-m_xGameScene = Zenith_Scene();
-m_eGameState = RunnerGameState::MAIN_MENU;
-```
+Uses `CreateEmptyScene("Run")` + `SetActiveScene()` to start, `SetScenePaused()` for pause/resume, and `UnloadScene()` to return to menu.
 
 ## Learning Path
 
@@ -222,67 +176,16 @@ m_eGameState = RunnerGameState::MAIN_MENU;
 ## Key Patterns
 
 ### Animation State Machine Setup
-```cpp
-// Create state machine
-Flux_AnimationStateMachine* pxStateMachine = new Flux_AnimationStateMachine("Runner");
-
-// Add parameters
-pxStateMachine->GetParameters().AddFloat("Speed", 0.0f);
-pxStateMachine->GetParameters().AddBool("IsGrounded", true);
-pxStateMachine->GetParameters().AddTrigger("Jump");
-pxStateMachine->GetParameters().AddTrigger("Slide");
-
-// Add Run state with BlendSpace1D
-Flux_AnimationState* pxRunState = pxStateMachine->AddState("Run");
-pxRunState->SetBlendTree(pxRunBlendSpace);
-
-// Add transition: Run -> Jump (on trigger)
-Flux_StateTransition xRunToJump;
-xRunToJump.m_strTargetStateName = "Jump";
-xRunToJump.m_fTransitionDuration = 0.1f;
-Flux_TransitionCondition xJumpCondition;
-xJumpCondition.m_strParameterName = "Jump";
-xJumpCondition.m_eParamType = Flux_AnimationParameters::ParamType::Trigger;
-xRunToJump.m_xConditions.PushBack(xJumpCondition);
-pxRunState->AddTransition(xRunToJump);
-```
+Create `Flux_AnimationStateMachine`, add parameters (Float/Bool/Trigger), create states with blend trees, and configure transitions with conditions and durations.
 
 ### BlendSpace1D for Speed-Based Animation
-```cpp
-// Create blend space with multiple clips
-Flux_BlendTreeNode_BlendSpace1D* pxBlendSpace = new Flux_BlendTreeNode_BlendSpace1D();
-
-// Add clips at different speed positions
-pxBlendSpace->AddBlendPoint(new Flux_BlendTreeNode_Clip(pxWalkClip), 0.0f);   // 0 speed
-pxBlendSpace->AddBlendPoint(new Flux_BlendTreeNode_Clip(pxJogClip), 15.0f);   // 15 speed
-pxBlendSpace->AddBlendPoint(new Flux_BlendTreeNode_Clip(pxSprintClip), 35.0f);// 35 speed
-pxBlendSpace->SortBlendPoints();
-
-// Each frame: set parameter and evaluate
-pxBlendSpace->SetParameter(fCurrentSpeed);
-pxBlendSpace->Evaluate(fDt, xOutPose, xMeshGeometry);
-```
+Add clips at different parameter positions, sort blend points, then call `SetParameter()` and `Evaluate()` each frame for smooth blending.
 
 ### Lane-Based Movement
-```cpp
-// Calculate lane position
-int32_t iHalfLanes = uLaneCount / 2;
-float fLaneOffset = (float(iCurrentLane) - float(iHalfLanes)) * fLaneWidth;
-
-// Smooth lane switching with easing
-float fT = fLaneSwitchProgress;
-fT = fT * fT * (3.0f - 2.0f * fT);  // Smoothstep
-float fX = glm::mix(fCurrentLanePos, fTargetLanePos, fT);
-```
+Calculate lane offset from lane index and width, use smoothstep interpolation for smooth lane switching.
 
 ### Terrain Height Query
-```cpp
-// For real terrain: sample heightmap
-float fHeight = pxTerrainComponent->SampleHeightAt(fX, fZ);
-
-// For this demo: simple chunk-based height
-float fHeight = Runner_TerrainManager::GetTerrainHeightAt(fPlayerZ);
-```
+For real terrain: `SampleHeightAt(fX, fZ)`. For this demo: simple chunk-based height lookup.
 
 ## Gameplay Mechanics
 

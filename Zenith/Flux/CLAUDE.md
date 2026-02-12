@@ -24,7 +24,7 @@ Note: Materials and textures are now in `AssetHandling/` (see AssetHandling/CLAU
 - `DeferredShading/` - Deferred lighting
 - `SSAO/` - Screen-space ambient occlusion
 - `Fog/` - Volumetric fog system (see Fog/CLAUDE.md)
-  - Multiple techniques: Simple, Froxel, Raymarch, LPV, Temporal, God Rays
+  - Four techniques: Simple, Froxel, Raymarch, God Rays
   - Runtime technique selection via debug variables
   - Requires 3D texture support (see Vulkan/CLAUDE.md)
 - `Particles/` - Particle systems

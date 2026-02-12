@@ -17,8 +17,11 @@
 - `Zenith_TransformComponent` - Position, rotation, scale
 - `Zenith_CameraComponent` - View/projection matrices
 - `Zenith_ModelComponent` - Renderable mesh with material
+- `Zenith_LightComponent` - Dynamic lights
 - `Zenith_ColliderComponent` - Physics collision shapes (Jolt Physics)
 - `Zenith_TerrainComponent` - Heightmap-based terrain
+- `Zenith_InstancedMeshComponent` - GPU-instanced mesh rendering
+- `Zenith_ParticleEmitterComponent` - Particle effect emitters
 - `Zenith_ScriptComponent` - Custom behavior attachment
 - `Zenith_UIComponent` - UI element support
 
@@ -56,7 +59,7 @@ Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xScene);
 Zenith_Entity xEntity(pxSceneData, "MyEntity");
 
 // Load scene additively
-Zenith_Scene xLoaded = Zenith_SceneManager::LoadScene("Levels/Level1.zscn", SCENE_LOAD_ADDITIVE);
+Zenith_Scene xLoaded = Zenith_SceneManager::LoadScene("Levels/Level1.zscen", SCENE_LOAD_ADDITIVE);
 
 // Make entity persistent across scene loads
 Zenith_SceneManager::MarkEntityPersistent(xPlayerEntity);
@@ -168,7 +171,7 @@ Custom behaviors use factory pattern for serialization. Behaviors must:
 2. Use `ZENITH_BEHAVIOUR_TYPE_NAME(ClassName)` macro
 3. Register via `RegisterBehaviour()` before scene load
 
-Callbacks: `OnCreate()`, `OnUpdate(float)`, `OnCollisionEnter(entity)`, `OnCollisionExit(entityID)`
+Callbacks: `OnAwake()`, `OnStart()`, `OnEnable()`, `OnDisable()`, `OnUpdate(float)`, `OnFixedUpdate(float)`, `OnLateUpdate(float)`, `OnDestroy()`, `OnCollisionEnter(Zenith_Entity)`, `OnCollisionStay(Zenith_Entity)`, `OnCollisionExit(Zenith_EntityID)`
 
 ## Key Concepts
 

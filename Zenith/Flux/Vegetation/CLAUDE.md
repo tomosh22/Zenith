@@ -112,26 +112,7 @@ GRASS_DEBUG_BUFFER_USAGE     // Memory stats overlay
 
 ## Wind Animation
 
-The wind system uses layered sine waves for natural movement:
-
-```glsl
-vec2 CalculateWind(vec2 xWorldPos, float fTime, vec2 xWindDir, float fStrength)
-{
-    // Primary wave - large scale
-    float fWave1 = sin(dot(xWorldPos, xWindDir) * 0.1 + fTime * 1.5);
-
-    // Secondary wave - medium scale
-    float fWave2 = sin(dot(xWorldPos, xWindDir * 1.3) * 0.25 + fTime * 2.3) * 0.5;
-
-    // Gust effect
-    float fGust = pow(sin(dot(xWorldPos, xWindDir) * 0.02 + fTime * 0.3) * 0.5 + 0.5, 2.0);
-
-    // Combine with gust modulation
-    return xWindDir * fStrength * combined * (1.0 + fGust * 0.5);
-}
-```
-
-Wind is applied in the vertex shader, scaled by height (more movement at tip).
+The wind system uses layered sine waves for natural movement: primary wave (large scale), secondary wave (medium scale), and gust modulation. Waves are based on `dot(worldPos, windDir)` with different frequencies and time offsets. Wind displacement is applied in the vertex shader, scaled by blade height (more movement at tip, none at base).
 
 ## LOD System
 

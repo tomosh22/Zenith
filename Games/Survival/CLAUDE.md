@@ -39,7 +39,7 @@ Games/Survival/
     Survival_TaskProcessor.h     # Background task management
     Survival_UIManager.h         # HUD updates
   Assets/
-    Scenes/Survival.zscn         # Serialized scene
+    Scenes/Survival.zscen        # Serialized scene
 ```
 
 ## Key Systems
@@ -48,26 +48,7 @@ Games/Survival/
 
 Demonstrates `Zenith_Task` and `Zenith_TaskArray`:
 
-```cpp
-// Single task for world updates
-Zenith_Task* pTask = new Zenith_Task(
-    ZENITH_PROFILE_INDEX__SCENE_UPDATE,
-    WorldUpdateTaskFunction,
-    &taskData
-);
-Zenith_TaskSystem::SubmitTask(pTask);
-pTask->WaitUntilComplete();
-
-// Task array for parallel processing across multiple items
-Zenith_TaskArray* pTaskArray = new Zenith_TaskArray(
-    ZENITH_PROFILE_INDEX__SCENE_UPDATE,
-    ParallelNodeUpdateFunction,
-    &taskData,
-    uNumNodes,      // Number of invocations
-    true            // Submitting thread joins
-);
-Zenith_TaskSystem::SubmitTaskArray(pTaskArray);
-```
+Submit single operations via `Zenith_Task` with `Zenith_TaskSystem::SubmitTask()`, or parallel work via `Zenith_TaskArray` with invocation count and optional submitting-thread-joins flag.
 
 Key patterns:
 - Use atomic counters for thread-safe result aggregation
@@ -78,47 +59,13 @@ Key patterns:
 
 Demonstrates `Zenith_EventDispatcher`:
 
-```cpp
-// Define custom event
-struct Survival_Event_ResourceHarvested {
-    Zenith_EntityID m_uNodeEntityID;
-    SurvivalItemType m_eItemType;
-    uint32_t m_uAmount;
-};
-
-// Subscribe to event
-auto handle = Survival_EventBus::SubscribeLambda<Survival_Event_ResourceHarvested>(
-    [this](const Survival_Event_ResourceHarvested& event) {
-        m_xInventory.AddItem(event.m_eItemType, event.m_uAmount);
-    });
-
-// Immediate dispatch (main thread only)
-Survival_EventBus::Dispatch(Survival_Event_ResourceHarvested{ nodeID, ITEM_TYPE_WOOD, 3 });
-
-// Thread-safe deferred dispatch (from background tasks)
-Survival_EventBus::QueueEvent(Survival_Event_ResourceRespawned{ nodeID, RESOURCE_TYPE_TREE });
-```
+Define custom event structs, subscribe via `SubscribeLambda<EventType>()`, dispatch immediately on main thread via `Dispatch()`, or queue from background tasks via `QueueEvent()` for deferred processing.
 
 ### Query System Integration (Survival_WorldQuery.h)
 
 Demonstrates `Zenith_Query`:
 
-```cpp
-// Count entities with specific components
-uint32_t count = scene.Query<TransformComponent, ModelComponent>().Count();
-
-// Find first matching entity
-Zenith_EntityID first = scene.Query<TransformComponent>().First();
-
-// Iterate with callback
-scene.Query<TransformComponent, ModelComponent>()
-    .ForEach([](Zenith_EntityID id, TransformComponent& t, ModelComponent& m) {
-        // Process entity
-    });
-
-// Check if any entities match
-bool hasAny = scene.Query<TransformComponent>().Any();
-```
+Use `scene.Query<ComponentA, ComponentB>()` with `.Count()`, `.First()`, `.Any()`, or `.ForEach()` for multi-component entity queries.
 
 ## Module Breakdown
 
@@ -200,18 +147,7 @@ There is no pause state. Pressing Escape from gameplay returns directly to the m
 
 ### Scene Transition Pattern
 
-**Menu to Gameplay:**
-```cpp
-m_xWorldScene = Zenith_SceneManager::CreateEmptyScene("World");
-Zenith_SceneManager::SetActiveScene(m_xWorldScene);
-// Populate world: player, resource nodes, ground plane, etc.
-```
-
-**Gameplay to Menu:**
-```cpp
-Zenith_SceneManager::UnloadScene(m_xWorldScene);
-// GameManager persists (DontDestroyOnLoad), UI switches to menu
-```
+Uses `CreateEmptyScene("World")` + `SetActiveScene()` to start gameplay, `UnloadScene()` to return to menu. GameManager persists via DontDestroyOnLoad.
 
 ## Controls
 
@@ -240,41 +176,13 @@ Zenith_SceneManager::UnloadScene(m_xWorldScene);
 ## Key Patterns
 
 ### Task-Based World Update
-```cpp
-// Submit background task
-Survival_TaskProcessor::SubmitParallelNodeUpdate(fDeltaTime, uNodeCount);
-
-// Process deferred events on main thread
-Survival_EventBus::ProcessDeferredEvents();
-
-// Wait for completion
-Survival_TaskProcessor::WaitForParallelNodeUpdate();
-```
+Submit parallel node updates, process deferred events on main thread, then wait for task completion.
 
 ### Event-Driven Architecture
-```cpp
-// Resource node fires event on harvest
-Survival_EventBus::Dispatch(Survival_Event_ResourceHarvested{ id, type, amount });
-
-// Main behavior handles event
-void OnResourceHarvested(const Survival_Event_ResourceHarvested& event) {
-    m_xInventory.AddItem(event.m_eItemType, event.m_uAmount);
-    ShowStatusMessage(event.m_eItemType, event.m_uAmount);
-}
-```
+Resource nodes dispatch harvest events, main behavior handles them to update inventory and show status messages.
 
 ### Query-Based Resource Finding
-```cpp
-// Find nearest harvestable resource
-Zenith_Maths::Vector3 xPlayerPos = GetPlayerPosition();
-auto result = Survival_WorldQuery::FindNearestResourceInRange(
-    xPlayerPos, m_fInteractionRange, m_xResourceManager);
-
-if (result.m_uNodeIndex != -1) {
-    auto* pNode = m_xResourceManager.GetNode(result.m_uNodeIndex);
-    pNode->Hit(fBonusMultiplier);
-}
-```
+Find nearest harvestable resource within interaction range, then apply hit with bonus multiplier from equipped tools.
 
 ## Building
 

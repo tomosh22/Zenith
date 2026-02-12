@@ -61,7 +61,7 @@ Puzzle scene (created/destroyed per level):
 ## Module Breakdown
 
 ### TilePuzzle.cpp - Entry Points
-**Engine APIs:** `Project_Initialise`, `Project_RegisterScriptBehaviours`, `Project_CreateScene`
+**Engine APIs:** `Project_GetName`, `Project_RegisterScriptBehaviours`, `Project_CreateScenes`, `Project_LoadInitialScene`
 
 Demonstrates:
 - Project lifecycle hooks
@@ -96,32 +96,7 @@ MAIN_MENU  -->  PLAYING  -->  MAIN_MENU
 ```
 
 ### Scene Transition Pattern
-```cpp
-// Starting a game from menu
-void StartGame()
-{
-    m_xPuzzleScene = Zenith_SceneManager::CreateEmptyScene("Puzzle");
-    Zenith_SceneManager::SetActiveScene(m_xPuzzleScene);
-    GenerateNewLevel();
-}
-
-// Loading a new level (resets puzzle scene)
-void StartNewLevel()
-{
-    Zenith_SceneManager::UnloadScene(m_xPuzzleScene);
-    m_xPuzzleScene = Zenith_SceneManager::CreateEmptyScene("Puzzle");
-    Zenith_SceneManager::SetActiveScene(m_xPuzzleScene);
-    GenerateNewLevel();
-}
-
-// Returning to menu
-void ReturnToMenu()
-{
-    Zenith_SceneManager::UnloadScene(m_xPuzzleScene);
-    m_xPuzzleScene = Zenith_Scene();  // invalidate handle
-    m_eState = TILEPUZZLE_STATE_MAIN_MENU;
-}
-```
+Uses `CreateEmptyScene("Puzzle")` + `SetActiveScene()` to start, `UnloadScene()` + `CreateEmptyScene()` to load next level, and `UnloadScene()` to return to menu. Handle is invalidated after unloading.
 
 ## Controls
 
@@ -138,32 +113,11 @@ void ReturnToMenu()
 
 ## Scene Management Usage
 
-```cpp
-// Get active scene for entity creation
-Zenith_Scene xScene = Zenith_SceneManager::GetActiveScene();
-Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xScene);
-
-// Instantiate entities from prefabs
-Zenith_Entity xFloor = TilePuzzle::g_pxCellPrefab->Instantiate(pxSceneData, "Floor");
-
-// Destroy entities (immediate)
-Zenith_SceneManager::Destroy(xEntity);
-
-// Destroy entities with delay (cat elimination)
-Zenith_SceneManager::Destroy(xCatEntity, 0.3f);
-```
+Get active scene via `GetActiveScene()`, instantiate entities from prefabs via `Prefab::Instantiate()`, destroy entities immediately with `Destroy(entity)` or with delay via `Destroy(entity, 0.3f)` for cat elimination effects.
 
 ## Behaviour Registration
 
-Behaviours must be registered before scene deserialization:
-
-```cpp
-void Project_RegisterScriptBehaviours()
-{
-    InitializeTilePuzzleResources();
-    TilePuzzle_Behaviour::RegisterBehaviour();
-}
-```
+Behaviours must be registered in `Project_RegisterScriptBehaviours()` via `TilePuzzle_Behaviour::RegisterBehaviour()` before scene deserialization.
 
 ## Editor View (What You See on Boot)
 

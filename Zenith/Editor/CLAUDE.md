@@ -8,11 +8,14 @@ ImGui-based scene editor for creating, editing, and testing game content. Active
 
 ## Files
 
-- `Zenith_Editor.h/cpp` - Main controller, UI panels, mode management (2,312 lines)
+- `Zenith_Editor.h/cpp` - Main controller, mode management
 - `Zenith_SelectionSystem.h/cpp` - Entity picking via raycasting (ray-AABB, ray-triangle)
 - `Zenith_Gizmo.h/cpp` - Screen-to-world ray conversion utilities
 - `Zenith_UndoSystem.h/cpp` - Command pattern undo/redo with history stack
-- `Zenith_AnimationStateMachineEditor.h/cpp` - Animation editor (currently disabled)
+- `Zenith_Editor_MaterialUI.h/cpp` - Material editing UI
+- `Zenith_EditorState.h` - Editor state management
+- `Zenith_EditorCamera.cpp` - Editor camera implementation
+- `Panels/` - Panel implementations (Console, ContentBrowser, Hierarchy, MaterialEditor, Memory, Properties, Toolbar, Viewport)
 
 ## Related Systems
 
@@ -594,15 +597,9 @@ Gizmo mode keys (W/E/R) only active when:
 
 ## Known Limitations
 
-### Animation State Machine Editor
-- Currently disabled due to 90+ API mismatches
-- Generated code doesn't match actual Flux animation system
-- Requires: GetType() → GetNodeTypeName(), parameter updates, etc.
-
 ### Multi-Selection
-- Single entity selection only (no Shift+Click or Ctrl+Click)
-- Gizmo system doesn't support multi-entity manipulation
-- Planned feature for future
+- Multi-entity selection supported (SelectEntity, ToggleEntitySelection)
+- Gizmo system operates on selected entities
 
 ### Component Reordering
 - Components appear in registration order (hardcoded)

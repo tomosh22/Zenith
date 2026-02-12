@@ -50,11 +50,14 @@ Zenith_AssetRegistry::Initialize();        // Call early, before Flux
 ### Type Aliases
 
 ```cpp
-using TextureRef = Zenith_AssetRef<Zenith_TextureAsset>;
-using MaterialRef = Zenith_AssetRef<Zenith_MaterialAsset>;
-using MeshRef = Zenith_AssetRef<Flux_MeshGeometry>;
-using ModelRef = Zenith_AssetRef<Zenith_ModelAsset>;
-using PrefabRef = Zenith_AssetRef<Zenith_Prefab>;
+using TextureHandle = Zenith_AssetHandle<Zenith_TextureAsset>;
+using MaterialHandle = Zenith_AssetHandle<Zenith_MaterialAsset>;
+using MeshHandle = Zenith_AssetHandle<Zenith_MeshAsset>;
+using SkeletonHandle = Zenith_AssetHandle<Zenith_SkeletonAsset>;
+using ModelHandle = Zenith_AssetHandle<Zenith_ModelAsset>;
+using AnimationHandle = Zenith_AssetHandle<Zenith_AnimationAsset>;
+using MeshGeometryHandle = Zenith_AssetHandle<Zenith_MeshGeometryAsset>;
+using PrefabHandle = Zenith_AssetHandle<Zenith_Prefab>;
 ```
 
 ## Texture Assets (Zenith_TextureAsset)
@@ -77,10 +80,10 @@ class Zenith_TextureAsset : public Zenith_Asset
 // Via registry (preferred)
 Zenith_TextureAsset* pTex = Zenith_AssetRegistry::Get().Get<Zenith_TextureAsset>(path);
 
-// Via asset reference
-TextureRef xTexRef;
-xTexRef.SetFromPath("Assets/tex.ztex");
-Zenith_TextureAsset* pTex = xTexRef.Get();
+// Via asset handle
+TextureHandle xTexHandle;
+xTexHandle.SetFromPath("Assets/tex.ztex");
+Zenith_TextureAsset* pTex = xTexHandle.Get();
 ```
 
 ## Material Assets (Zenith_MaterialAsset)
@@ -216,64 +219,11 @@ The asset system supports serializable "data assets" (game configs, particle emi
 
 ### 1. Define the Class
 
-```cpp
-// In MyConfig.h
-#include "AssetHandling/Zenith_Asset.h"
-#include "AssetHandling/Zenith_AssetRegistry.h"
-#include "DataStream/Zenith_DataStream.h"
-
-class MyConfig : public Zenith_Asset
-{
-public:
-    ZENITH_ASSET_TYPE_NAME(MyConfig)  // Required for .zdata loading
-
-    // Data members
-    float m_fValue = 1.0f;
-    std::string m_strName = "Default";
-
-    // Serialization (required for .zdata support)
-    void WriteToDataStream(Zenith_DataStream& xStream) const override
-    {
-        uint32_t uVersion = 1;
-        xStream << uVersion;
-        xStream << m_fValue;
-        xStream << m_strName;
-    }
-
-    void ReadFromDataStream(Zenith_DataStream& xStream) override
-    {
-        uint32_t uVersion;
-        xStream >> uVersion;
-        if (uVersion >= 1)
-        {
-            xStream >> m_fValue;
-            xStream >> m_strName;
-        }
-    }
-
-#ifdef ZENITH_TOOLS
-    void RenderPropertiesPanel() override
-    {
-        ImGui::DragFloat("Value", &m_fValue);
-    }
-#endif
-};
-
-// Auto-register type (static initialization)
-ZENITH_REGISTER_ASSET_TYPE(MyConfig)
-```
+Inherit from `Zenith_Asset`, add `ZENITH_ASSET_TYPE_NAME(ClassName)` macro, implement `WriteToDataStream()`/`ReadFromDataStream()` for serialization (with versioning), optionally `RenderPropertiesPanel()` under `#ifdef ZENITH_TOOLS`. Register with `ZENITH_REGISTER_ASSET_TYPE(ClassName)` at file scope for static initialization.
 
 ### 2. Use the Asset
 
-```cpp
-// Load from file
-MyConfig* pxConfig = Zenith_AssetRegistry::Get().Get<MyConfig>("game:Config/my.zdata");
-
-// Create programmatically
-MyConfig* pxNew = Zenith_AssetRegistry::Get().Create<MyConfig>();
-pxNew->m_fValue = 2.0f;
-Zenith_AssetRegistry::Get().Save(pxNew, "game:Config/new.zdata");
-```
+Load via `Zenith_AssetRegistry::Get().Get<MyConfig>("game:path.zdata")` (returns cached if loaded), create programmatically via `Create<MyConfig>()`, save with `Save(pxAsset, "game:path.zdata")`.
 
 ### Path Prefixes
 
@@ -302,7 +252,7 @@ Binary format for serializable assets:
 AssetHandling/
   Zenith_Asset.h/cpp          - Base asset class with ref counting and optional serialization
   Zenith_AssetRegistry.h/cpp  - Unified asset cache, loading, and saving
-  Zenith_AssetHandle.h/cpp    - Smart handle template with automatic ref counting
+  Zenith_AssetHandle.h        - Smart handle template with automatic ref counting
   Zenith_TextureAsset.h/cpp   - Texture asset (GPU texture + metadata)
   Zenith_MaterialAsset.h/cpp  - Material properties + texture references
   Zenith_MeshAsset.h/cpp      - Mesh geometry container

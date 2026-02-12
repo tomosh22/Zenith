@@ -74,7 +74,7 @@ Handles agent movement along paths:
 | `m_fMoveSpeed` | 5.0f | Movement speed (m/s) |
 | `m_fTurnSpeed` | 360.0f | Rotation speed (deg/s) |
 | `m_fStoppingDistance` | 0.2f | Distance to stop from goal |
-| `m_fAcceleration` | 10.0f | Acceleration rate |
+| `m_fAcceleration` | 20.0f | Acceleration rate |
 
 ## Usage Patterns
 

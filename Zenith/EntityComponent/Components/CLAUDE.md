@@ -9,8 +9,11 @@ This directory contains all component types for the Entity-Component System.
 | `Zenith_TransformComponent` | Position, rotation, scale (added automatically to all entities) |
 | `Zenith_CameraComponent` | View/projection matrices for rendering |
 | `Zenith_ModelComponent` | Renderable 3D mesh with materials |
+| `Zenith_LightComponent` | Dynamic lights (directional, point, spot) |
 | `Zenith_ColliderComponent` | Physics collision shapes (Jolt integration) |
 | `Zenith_TerrainComponent` | Heightmap-based terrain with streaming |
+| `Zenith_InstancedMeshComponent` | GPU-instanced mesh rendering |
+| `Zenith_ParticleEmitterComponent` | Particle effect emitters |
 | `Zenith_ScriptComponent` | Custom behavior attachment via ScriptBehaviour |
 | `Zenith_UIComponent` | UI element support |
 
@@ -80,11 +83,12 @@ Current order:
 1. Transform (0)
 2. Model (10)
 3. Camera (20)
-4. Text (30)
-5. Terrain (40)
-6. Collider (50)
-7. Script (60)
-8. UI (70)
+4. Light (25)
+5. Text (30)
+6. Terrain (40)
+7. Collider (50)
+8. Script (60)
+9. UI (70)
 
 New components default to order 1000 (serialized last).
 

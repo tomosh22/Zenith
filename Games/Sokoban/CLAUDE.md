@@ -35,13 +35,13 @@ Games/Sokoban/
     Sokoban_Solver.h             # BFS solver for level validation
     Sokoban_UIManager.h          # HUD text management
   Assets/
-    Scenes/Sokoban.zscn          # Serialized scene
+    Scenes/Sokoban.zscen          # Serialized scene
 ```
 
 ## Module Breakdown
 
 ### Sokoban.cpp - Entry Points
-**Engine APIs:** `Project_Initialise`, `Project_RegisterScriptBehaviours`, `Project_CreateScene`
+**Engine APIs:** `Project_GetName`, `Project_RegisterScriptBehaviours`, `Project_CreateScenes`, `Project_LoadInitialScene`
 
 Demonstrates:
 - Project lifecycle hooks
@@ -127,32 +127,7 @@ MAIN_MENU  -->  PLAYING  -->  MAIN_MENU
 ```
 
 ### Scene Transition Pattern
-```cpp
-// Starting a game from menu
-void StartGame()
-{
-    m_xPuzzleScene = Zenith_SceneManager::CreateEmptyScene("Puzzle");
-    Zenith_SceneManager::SetActiveScene(m_xPuzzleScene);
-    GenerateNewLevel();
-}
-
-// Loading a new level (resets puzzle scene)
-void StartNewLevel()
-{
-    Zenith_SceneManager::UnloadScene(m_xPuzzleScene);
-    m_xPuzzleScene = Zenith_SceneManager::CreateEmptyScene("Puzzle");
-    Zenith_SceneManager::SetActiveScene(m_xPuzzleScene);
-    GenerateNewLevel();
-}
-
-// Returning to menu
-void ReturnToMenu()
-{
-    Zenith_SceneManager::UnloadScene(m_xPuzzleScene);
-    m_xPuzzleScene = Zenith_Scene();  // invalidate handle
-    m_eState = SokobanGameState::MAIN_MENU;
-}
-```
+Scene transitions use `CreateEmptyScene("Puzzle")` + `SetActiveScene()` to start, `UnloadScene()` + `CreateEmptyScene()` to reset levels, and `UnloadScene()` to return to menu. The `m_xPuzzleScene` handle is invalidated after unloading.
 
 ## Learning Path
 
@@ -180,34 +155,13 @@ void ReturnToMenu()
 ## Key Patterns
 
 ### Prefab Instantiation
-```cpp
-// Create entity from prefab template
-Zenith_Entity xEntity = Zenith_Scene::Instantiate(*pxPrefab, "EntityName");
-
-// Set transform BEFORE adding components (important for physics)
-Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
-xTransform.SetPosition(xPos);
-
-// Add components after transform is set
-Zenith_ModelComponent& xModel = xEntity.AddComponent<Zenith_ModelComponent>();
-xModel.AddMeshEntry(*pxMesh, *pxMaterial);
-```
+Create entity from prefab via `Zenith_Scene::Instantiate()`, set transform position, then add components (model, collider, etc.).
 
 ### Behavior Lifecycle
-```cpp
-void OnAwake()   // Called at RUNTIME creation only (not scene load)
-void OnStart()   // Called before first OnUpdate, for ALL entities
-void OnUpdate(float fDt)  // Called every frame
-```
+`OnAwake()` = runtime creation only, `OnStart()` = before first update, `OnUpdate(float fDt)` = every frame.
 
 ### UI Text Updates
-```cpp
-Zenith_UIComponent& xUI = entity.GetComponent<Zenith_UIComponent>();
-Zenith_UI::Zenith_UIText* pxText = xUI.FindElement<Zenith_UI::Zenith_UIText>("ElementName");
-if (pxText) {
-    pxText->SetText("New text content");
-}
-```
+Find UI elements via `xUI.FindElement<Zenith_UIText>("Name")` and call `SetText()` to update.
 
 ## Editor View (What You See on Boot)
 
@@ -334,7 +288,7 @@ When launching in a tools build (`vs2022_Debug_Win64_True`):
 |------|--------|-----------------|
 | T9.1 | Select GameManager entity | Properties panel appears |
 | T9.2 | Modify configuration values | Changes apply to next level |
-| T9.3 | Save scene | Sokoban.zscn updates in Assets/Scenes |
+| T9.3 | Save scene | Sokoban.zscen updates in Assets/Scenes |
 
 ## Building
 

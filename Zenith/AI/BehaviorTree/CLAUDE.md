@@ -87,7 +87,7 @@ Inverts child result (SUCCESS↔FAILURE), RUNNING unchanged
 Always returns SUCCESS regardless of child result
 
 ### Zenith_BTRepeater
-Repeats child N times (or infinite with N=0)
+Repeats child N times (or infinite with `REPEAT_INFINITE = -1`, the default)
 
 ### Zenith_BTCooldown
 After child succeeds, blocks execution for duration

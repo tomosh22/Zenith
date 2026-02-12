@@ -32,7 +32,7 @@ Games/AIShowcase/
 │   └── AIShowcase_Behaviour.h   # Main game coordinator
 └── Assets/
     └── Scenes/
-        └── AIShowcase.zscn      # Generated scene file
+        └── AIShowcase.zscen     # Generated scene file
 ```
 
 ## Controls
@@ -156,31 +156,7 @@ MAIN_MENU --> PLAYING --> PAUSED --> PLAYING
 
 ### Scene Transition Pattern
 
-**Start Game (MAIN_MENU -> PLAYING):**
-```cpp
-m_xArenaScene = Zenith_SceneManager::CreateEmptyScene("Arena");
-Zenith_SceneManager::SetActiveScene(m_xArenaScene);
-InitializeArena();
-m_eGameState = AIShowcaseGameState::PLAYING;
-```
-
-**Pause / Resume (PLAYING <-> PAUSED):**
-```cpp
-// Pause
-Zenith_SceneManager::SetScenePaused(m_xArenaScene, true);
-m_eGameState = AIShowcaseGameState::PAUSED;
-
-// Resume
-Zenith_SceneManager::SetScenePaused(m_xArenaScene, false);
-m_eGameState = AIShowcaseGameState::PLAYING;
-```
-
-**Return to Menu (any state -> MAIN_MENU):**
-```cpp
-Zenith_SceneManager::UnloadScene(m_xArenaScene);
-m_xArenaScene = Zenith_Scene();
-m_eGameState = AIShowcaseGameState::MAIN_MENU;
-```
+Uses `CreateEmptyScene("Arena")` + `SetActiveScene()` to start gameplay, `SetScenePaused(scene, true/false)` for pause/resume, and `UnloadScene()` to return to menu.
 
 ### Editor View / Scene Hierarchy
 - **GameManager** - Persistent entity (Camera + UIComponent + ScriptComponent/AIShowcase_Behaviour) - DontDestroyOnLoad

@@ -36,13 +36,13 @@ Games/Combat/
     Combat_QueryHelper.h         # Entity query utilities
     Combat_UIManager.h           # Health bars + combo display
   Assets/
-    Scenes/Combat.zscn           # Serialized scene
+    Scenes/Arena.zscen           # Serialized scene
 ```
 
 ## Module Breakdown
 
 ### Combat.cpp - Entry Points
-**Engine APIs:** `Project_Initialise`, `Project_RegisterScriptBehaviours`, `Project_CreateScene`
+**Engine APIs:** `Project_GetName`, `Project_RegisterScriptBehaviours`, `Project_CreateScenes`, `Project_LoadInitialScene`
 
 Demonstrates:
 - Procedural capsule geometry generation for characters
@@ -135,16 +135,7 @@ Demonstrates:
 ## Multi-Scene Architecture
 
 ### Entity Layout
-```
-[Persistent Scene - "DontDestroyOnLoad"]
-  GameManager entity (DontDestroyOnLoad)
-    ├── Zenith_CameraComponent
-    ├── Zenith_UIComponent (ALL UI: menu + HUD)
-    └── Zenith_ScriptComponent<Combat_Behaviour>
-
-[Arena Scene - created/destroyed on transitions]
-  Level entities (arena, player, enemies, etc.)
-```
+Persistent scene holds GameManager entity (Camera + UI + Combat_Behaviour) with DontDestroyOnLoad. Arena scene holds level entities (arena floor/walls, player, enemies), created/destroyed on transitions.
 
 ### Game State Machine
 ```
@@ -152,20 +143,7 @@ MAIN_MENU → PLAYING → PAUSED → GAME_OVER → MAIN_MENU
 ```
 
 ### Scene Transition Pattern
-```cpp
-// Menu → Game
-m_xArenaScene = Zenith_SceneManager::CreateEmptyScene("Arena");
-Zenith_SceneManager::SetActiveScene(m_xArenaScene);
-// Generate level content...
-m_eGameState = CombatGameState::PLAYING;
-
-// Game → Menu
-Zenith_SceneManager::UnloadScene(m_xArenaScene);
-m_eGameState = CombatGameState::MAIN_MENU;
-
-// Pause
-Zenith_SceneManager::SetScenePaused(m_xArenaScene, true);
-```
+Uses `CreateEmptyScene("Arena")` + `SetActiveScene()` to start, `UnloadScene()` to return to menu, and `SetScenePaused()` for pausing.
 
 ## Learning Path
 
@@ -229,73 +207,16 @@ Zenith_SceneManager::SetScenePaused(m_xArenaScene, true);
 ## Key Patterns
 
 ### Animation State Machine Setup
-```cpp
-// Create state machine
-Flux_AnimationStateMachine xStateMachine("CombatSM");
-
-// Add parameters
-xStateMachine.GetParameters().AddFloat("Speed", 0.0f);
-xStateMachine.GetParameters().AddBool("IsAttacking", false);
-xStateMachine.GetParameters().AddTrigger("AttackTrigger");
-
-// Add states with transitions
-Flux_AnimationState* pxIdleState = xStateMachine.AddState("Idle");
-Flux_StateTransition xToWalk;
-xToWalk.m_strTargetStateName = "Walk";
-xToWalk.m_xConditions.push_back({...}); // Speed > 0.1
-pxIdleState->AddTransition(xToWalk);
-```
+Create `Flux_AnimationStateMachine`, add parameters (Float, Bool, Trigger types), add states, and configure transitions with conditions.
 
 ### IK Application
-```cpp
-// Set up foot IK chain
-Flux_IKChain xLeftLeg = Flux_IKSolver::CreateLegChain("LeftLeg", "Hip_L", "Knee_L", "Ankle_L");
-m_xIKSolver.AddChain(xLeftLeg);
-
-// During update - set target from raycast
-Flux_IKTarget xFootTarget;
-xFootTarget.m_xPosition = xRayHitPoint;
-xFootTarget.m_fWeight = 1.0f;
-m_xIKSolver.SetTarget("LeftLeg", xFootTarget);
-
-// Apply IK after animation
-m_xIKSolver.Solve(xPose, xGeometry, xWorldMatrix);
-```
+Create IK chains via `Flux_IKSolver::CreateLegChain()`, set targets from raycasts each frame, and call `Solve()` after animation evaluation.
 
 ### Event-Based Damage
-```cpp
-// Define custom event
-struct Combat_DamageEvent
-{
-    Zenith_EntityID m_uTargetEntityID;
-    Zenith_EntityID m_uAttackerEntityID;
-    float m_fDamage;
-    Zenith_Maths::Vector3 m_xHitPoint;
-};
-
-// Subscribe to event
-Zenith_EventDispatcher::Get().SubscribeLambda<Combat_DamageEvent>(
-    [](const Combat_DamageEvent& xEvent) {
-        ApplyDamage(xEvent.m_uTargetEntityID, xEvent.m_fDamage);
-    });
-
-// Dispatch event on hit
-Zenith_EventDispatcher::Get().Dispatch(Combat_DamageEvent{
-    uTargetID, uAttackerID, fDamage, xHitPoint
-});
-```
+Define custom event structs (e.g., `Combat_DamageEvent`), subscribe via `Zenith_EventDispatcher::Get().SubscribeLambda<>()`, and dispatch events on hit.
 
 ### Entity Queries
-```cpp
-// Find all enemies within range
-Zenith_Scene& xScene = Zenith_Scene::GetCurrentScene();
-xScene.Query<Zenith_TransformComponent, Zenith_ColliderComponent>()
-    .ForEach([&](Zenith_EntityID uID, auto& xTransform, auto& xCollider) {
-        if (IsEnemy(uID) && Distance(xPlayerPos, xTransform.GetPosition()) < fRange) {
-            // Process enemy
-        }
-    });
-```
+Query entities via `xScene.Query<ComponentA, ComponentB>().ForEach()` with lambda, filtering by distance or tag.
 
 ## Editor View (What You See on Boot)
 

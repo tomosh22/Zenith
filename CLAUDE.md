@@ -10,23 +10,41 @@ C++20 game engine with custom ECS, Vulkan-based renderer (Flux), and multi-threa
 Zenith/
 ├── EntityComponent/   # Entity-Component System (see EntityComponent/CLAUDE.md)
 ├── Flux/              # Vulkan renderer (see Flux/CLAUDE.md)
+│   ├── Fog/           # Volumetric fog (see Flux/Fog/CLAUDE.md)
 │   ├── Gizmos/        # Editor gizmos (see Flux/Gizmos/CLAUDE.md)
-│   └── Terrain/       # Terrain rendering (see Flux/Terrain/CLAUDE.md)
+│   ├── HDR/           # HDR pipeline (see Flux/HDR/CLAUDE.md)
+│   ├── HiZ/           # Hierarchical Z-buffer (see Flux/HiZ/CLAUDE.md)
+│   ├── IBL/           # Image-based lighting (see Flux/IBL/CLAUDE.md)
+│   ├── MeshAnimation/ # Skeletal animation (see Flux/MeshAnimation/CLAUDE.md)
+│   ├── SSR/           # Screen-space reflections (see Flux/SSR/CLAUDE.md)
+│   ├── SSGI/          # Screen-space GI (see Flux/SSGI/CLAUDE.md)
+│   ├── Terrain/       # Terrain rendering (see Flux/Terrain/CLAUDE.md)
+│   ├── Vegetation/    # Grass system (see Flux/Vegetation/CLAUDE.md)
+│   └── ...            # + AnimatedMeshes, DeferredShading, DynamicLights,
+│                      #   InstancedMeshes, Particles, Primitives, Shadows,
+│                      #   Skybox, SSAO, StaticMeshes, Text, and more
+├── AI/                # AI systems (see AI/CLAUDE.md)
+│   ├── BehaviorTree/  # Decision-making (see AI/BehaviorTree/CLAUDE.md)
+│   ├── Navigation/    # NavMesh pathfinding (see AI/Navigation/CLAUDE.md)
+│   ├── Perception/    # Sensory systems (see AI/Perception/CLAUDE.md)
+│   └── Squad/         # Squad tactics (see AI/Squad/CLAUDE.md)
 ├── Editor/            # Editor tools (see Editor/CLAUDE.md)
 ├── TaskSystem/        # Task parallelism (see TaskSystem/CLAUDE.md)
 ├── Physics/           # Jolt Physics integration (see Physics/CLAUDE.md)
-├── Vulkan/            # Vulkan backend
+├── Vulkan/            # Vulkan backend (see Vulkan/CLAUDE.md)
 ├── Core/              # Core utilities (see Core/CLAUDE.md)
 ├── Collections/       # Custom containers (see Collections/CLAUDE.md)
 ├── Maths/             # GLM wrapper (see Maths/CLAUDE.md)
 ├── AssetHandling/     # Asset import/export (see AssetHandling/CLAUDE.md)
-├── Windows/           # Windows platform layer
-├── Android/           # Android platform layer
-├── DataStream/        # Binary serialization
-├── Input/             # Input handling
-├── Prefab/            # Prefab system
-├── UI/                # UI components
-└── FileAccess/        # File system abstraction
+├── Windows/           # Windows platform layer (see Windows/CLAUDE.md)
+├── Android/           # Android platform layer (see Android/CLAUDE.md)
+├── DataStream/        # Binary serialization (see DataStream/CLAUDE.md)
+├── DebugVariables/    # Runtime debug variable tree (see DebugVariables/CLAUDE.md)
+├── Input/             # Input handling (see Input/CLAUDE.md)
+├── Profiling/         # CPU profiling system (see Profiling/CLAUDE.md)
+├── Prefab/            # Prefab system (see Prefab/CLAUDE.md)
+├── UI/                # UI framework (see UI/CLAUDE.md)
+└── FileAccess/        # File system abstraction (see FileAccess/CLAUDE.md)
 ```
 
 ## Dependencies
@@ -142,8 +160,8 @@ Each project supports these configurations:
 | `vs2022_Debug_Win64_False` | Windows | No | Debug build, runtime only |
 | `vs2022_Release_Win64_True` | Windows | Yes | Release build with editor/tools |
 | `vs2022_Release_Win64_False` | Windows | No | Release build, runtime only |
-| `vs2022_Debug_agde_False` | Android | No | Android debug build |
-| `vs2022_Release_agde_False` | Android | No | Android release build |
+| `arm64_v8a_vs2022_Debug_Agde_False` | Android | No | Android debug build |
+| `arm64_v8a_vs2022_Release_Agde_False` | Android | No | Android release build |
 
 ### Projects
 
@@ -151,7 +169,8 @@ Each project supports these configurations:
 |---------|-------------|--------|
 | Zenith | Core engine library | Static lib (.lib) |
 | FluxCompiler | Shader compiler utility (Windows only) | Executable (.exe) |
-| Sokoban | Game project | Executable (.exe) / Shared lib (.so) |
+| ZenithTools | Asset tools (Windows only) | Executable (.exe) |
+| Game projects | Sokoban, Combat, Marble, Exploration, Survival, TilePuzzle, AIShowcase, Runner, Test | Executable (.exe) / Shared lib (.so) |
 
 ### Building and Running
 
@@ -247,3 +266,4 @@ Located in `Build/`:
 - `Sharpmake_Zenith.cs` - Zenith engine project
 - `Sharpmake_FluxCompiler.cs` - Shader compiler project
 - `Sharpmake_Games.cs` - Game project template
+- `Sharpmake_ZenithTools.cs` - Asset tools project

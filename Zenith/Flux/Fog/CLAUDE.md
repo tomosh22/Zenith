@@ -165,23 +165,13 @@ void Render(void*);   // Main render function
 ## Key Algorithms
 
 ### Beer-Lambert Extinction
-```glsl
-transmittance = exp(-density * distance)
-```
+`transmittance = exp(-density * distance)`
 
 ### Henyey-Greenstein Phase Function
-```glsl
-float HenyeyGreenstein(float cosTheta, float g) {
-    float g2 = g * g;
-    float denom = 1.0 + g2 - 2.0 * g * cosTheta;
-    return (1.0 - g2) / (4.0 * PI * pow(denom, 1.5));
-}
-```
+Standard HG phase function with asymmetry parameter `g` controlling forward/backward scattering bias. Defined in `Flux_VolumetricCommon.fxh`.
 
 ### Froxel Exponential Depth
-```glsl
-float linearDepth = nearZ * pow(farZ / nearZ, sliceNorm);
-```
+`linearDepth = nearZ * pow(farZ / nearZ, sliceNorm)` - exponential depth distribution concentrates slices near camera.
 
 ## Performance Notes
 

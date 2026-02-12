@@ -42,7 +42,7 @@ struct Zenith_SightConfig
     float m_fFOVAngle = 90.0f;           // Primary FOV (degrees)
     float m_fPeripheralAngle = 120.0f;   // Peripheral vision angle
     float m_fPeripheralMultiplier = 0.5f; // Awareness gain rate in peripheral
-    float m_fHeightOffset = 1.6f;        // Eye height from entity origin
+    float m_fEyeHeight = 1.6f;            // Eye height from entity origin
     bool m_bRequireLineOfSight = true;   // Use raycasts for occlusion
 };
 ```
@@ -104,8 +104,7 @@ Zenith_PerceptionSystem::EmitSoundStimulus(
 ```cpp
 Zenith_PerceptionSystem::EmitDamageStimulus(
     xVictimID,    // Entity that was damaged
-    xAttackerID,  // Entity that dealt damage
-    fDamage       // Damage amount
+    xAttackerID   // Entity that dealt damage
 );
 ```
 

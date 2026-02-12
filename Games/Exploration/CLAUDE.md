@@ -34,7 +34,7 @@ Games/Exploration/
     Exploration_AsyncLoader.h        # Asset streaming manager
     Exploration_UIManager.h          # Minimal HUD
   Assets/
-    Scenes/Exploration.zscn          # Serialized scene
+    Scenes/Exploration.zscen         # Serialized scene
 ```
 
 ## Module Breakdown
@@ -127,18 +127,7 @@ There is no pause state. Pressing Escape from gameplay returns directly to the m
 
 ### Scene Transition Pattern
 
-**Menu to Gameplay:**
-```cpp
-m_xWorldScene = Zenith_SceneManager::CreateEmptyScene("World");
-Zenith_SceneManager::SetActiveScene(m_xWorldScene);
-// Populate world: terrain, resources, etc.
-```
-
-**Gameplay to Menu:**
-```cpp
-Zenith_SceneManager::UnloadScene(m_xWorldScene);
-// GameManager persists (DontDestroyOnLoad), UI switches to menu
-```
+Uses `CreateEmptyScene("World")` + `SetActiveScene()` to enter gameplay, `UnloadScene()` to return to menu. GameManager persists via DontDestroyOnLoad.
 
 ## Learning Path
 
@@ -168,55 +157,16 @@ Zenith_SceneManager::UnloadScene(m_xWorldScene);
 ## Key Patterns
 
 ### First-Person Camera Setup
-```cpp
-// Camera with pitch/yaw rotation
-Zenith_CameraComponent& xCamera = xCameraEntity.AddComponent<Zenith_CameraComponent>();
-xCamera.InitialisePerspective(
-    Zenith_Maths::Vector3(0.f, 100.f, 0.f),  // Position on terrain
-    -0.3f,    // Pitch: slightly looking down
-    0.f,      // Yaw: facing forward
-    glm::radians(70.f),  // FOV
-    0.1f,     // Near plane
-    5000.f,   // Far plane (large for terrain)
-    16.f / 9.f
-);
-```
+Initialize perspective camera with position, pitch/yaw angles, FOV, near/far planes via `InitialisePerspective()`. Large far plane (5000) needed for terrain.
 
 ### Terrain Height Sampling
-```cpp
-// Get terrain height at player position
-float fTerrainHeight = Exploration_TerrainExplorer::GetTerrainHeightAt(
-    xPlayerPos.x, xPlayerPos.z, xTerrainComponent);
-xPlayerPos.y = fTerrainHeight + s_fPlayerEyeHeight;
-```
+Sample terrain height at player XZ position and add eye height offset for camera placement.
 
 ### Day/Night Sun Position
-```cpp
-// Animate sun based on time of day (0.0 - 1.0)
-float fSunAngle = m_fTimeOfDay * 2.0f * 3.14159f;
-Zenith_Maths::Vector3 xSunDir(
-    cos(fSunAngle),
-    sin(fSunAngle),  // Y = height in sky
-    0.3f             // Slight offset for more interesting lighting
-);
-xSunDir = glm::normalize(xSunDir);
-```
+Animate sun direction based on time-of-day (0.0-1.0) using cosine/sine for circular arc, then normalize.
 
 ### Fog Configuration by Weather
-```cpp
-// Adjust fog based on weather state
-switch (m_eWeatherState)
-{
-case WEATHER_CLEAR:
-    m_fTargetFogDensity = 0.0001f;
-    break;
-case WEATHER_FOGGY:
-    m_fTargetFogDensity = 0.001f;
-    break;
-}
-// Smoothly interpolate current fog to target
-m_fCurrentFogDensity = glm::mix(m_fCurrentFogDensity, m_fTargetFogDensity, fDt * 0.5f);
-```
+Set target fog density per weather state (clear=0.0001, foggy=0.001), then smoothly interpolate current density toward target each frame.
 
 ## Terrain System Integration
 

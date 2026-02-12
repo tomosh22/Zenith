@@ -33,13 +33,13 @@ Games/Marble/
     Marble_CollectibleSystem.h   # Pickup detection and scoring
     Marble_UIManager.h           # HUD management
   Assets/
-    Scenes/Marble.zscn           # Serialized scene
+    Scenes/Marble.zscen          # Serialized scene
 ```
 
 ## Module Breakdown
 
 ### Marble.cpp - Entry Points
-**Engine APIs:** `Project_Initialise`, `Project_RegisterScriptBehaviours`, `Project_CreateScene`
+**Engine APIs:** `Project_GetName`, `Project_RegisterScriptBehaviours`, `Project_CreateScenes`, `Project_LoadInitialScene`
 
 Demonstrates:
 - Procedural UV sphere generation with tangent calculation
@@ -107,16 +107,7 @@ Demonstrates:
 ## Multi-Scene Architecture
 
 ### Entity Layout
-```
-[Persistent Scene - "DontDestroyOnLoad"]
-  GameManager entity (DontDestroyOnLoad)
-    ├── Zenith_CameraComponent
-    ├── Zenith_UIComponent (ALL UI: menu + HUD)
-    └── Zenith_ScriptComponent<Marble_Behaviour>
-
-[Level Scene - created/destroyed on transitions]
-  Level entities (platforms, collectibles, goal, player ball, etc.)
-```
+Persistent scene holds GameManager entity (Camera + UI + Marble_Behaviour) with DontDestroyOnLoad. Level scene holds platforms, collectibles, goal, and player ball, created/destroyed on transitions.
 
 ### Game State Machine
 ```
@@ -124,20 +115,7 @@ MAIN_MENU → PLAYING → PAUSED → GAME_OVER → MAIN_MENU
 ```
 
 ### Scene Transition Pattern
-```cpp
-// Menu → Game
-m_xLevelScene = Zenith_SceneManager::CreateEmptyScene("Level");
-Zenith_SceneManager::SetActiveScene(m_xLevelScene);
-// Generate level content...
-m_eGameState = MarbleGameState::PLAYING;
-
-// Game → Menu
-Zenith_SceneManager::UnloadScene(m_xLevelScene);
-m_eGameState = MarbleGameState::MAIN_MENU;
-
-// Pause
-Zenith_SceneManager::SetScenePaused(m_xLevelScene, true);
-```
+Uses `CreateEmptyScene("Level")` + `SetActiveScene()` to start, `UnloadScene()` to return to menu, and `SetScenePaused()` for pausing.
 
 ## Learning Path
 
@@ -166,50 +144,13 @@ Zenith_SceneManager::SetScenePaused(m_xLevelScene, true);
 ## Key Patterns
 
 ### Physics-Based Movement
-```cpp
-// Get physics body from collider component
-Zenith_ColliderComponent& xCollider = xBall.GetComponent<Zenith_ColliderComponent>();
-const JPH::BodyID& xBodyID = xCollider.GetBodyID();
-
-// Apply impulse for movement
-Zenith_Maths::Vector3 xForce = glm::normalize(xDirection) * s_fMoveSpeed;
-Zenith_Physics::AddImpulse(xBodyID, xForce);
-
-// Check velocity for jump gating
-Zenith_Maths::Vector3 xVel = Zenith_Physics::GetLinearVelocity(xBodyID);
-if (xVel.y < 1.0f) { /* Allow jump */ }
-```
+Get `JPH::BodyID` from `Zenith_ColliderComponent`, apply forces via `Zenith_Physics::AddImpulse()`, and check velocity via `GetLinearVelocity()` for jump gating.
 
 ### Component Order for Physics
-```cpp
-// 1. Create entity from prefab (gets TransformComponent)
-Zenith_Entity xEntity = Zenith_Scene::Instantiate(*pxPrefab, "Name");
-
-// 2. Set position/scale on transform FIRST
-Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
-xTransform.SetPosition(xPos);
-xTransform.SetScale(xScale);
-
-// 3. Add model component (rendering)
-Zenith_ModelComponent& xModel = xEntity.AddComponent<Zenith_ModelComponent>();
-xModel.AddMeshEntry(*pxMesh, *pxMaterial);
-
-// 4. Add collider LAST (physics body reads from transform)
-xEntity.AddComponent<Zenith_ColliderComponent>()
-    .AddCollider(COLLISION_VOLUME_TYPE_AABB, RIGIDBODY_TYPE_STATIC);
-```
+Entity creation order matters: 1) Instantiate from prefab, 2) Set transform position/scale, 3) Add ModelComponent, 4) Add ColliderComponent last (reads transform on creation).
 
 ### Camera-Relative Input Direction
-```cpp
-// Get direction from camera to target
-Zenith_Maths::Vector3 xToBall = xBallPos - xCamPos;
-xToBall.y = 0.0f;  // Project onto XZ plane
-xToBall = glm::normalize(xToBall);
-
-// Forward is toward ball, right is perpendicular
-Zenith_Maths::Vector3 xForward = xToBall;
-Zenith_Maths::Vector3 xRight = glm::cross(Zenith_Maths::Vector3(0,1,0), xForward);
-```
+Project camera-to-target vector onto XZ plane (zero Y, normalize) to get forward direction, then cross product with up vector for right direction.
 
 ## Editor View (What You See on Boot)
 
