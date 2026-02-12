@@ -74,18 +74,7 @@ void Flux_AnimatedMeshes::Initialise()
 		xPipelineSpec.m_pxShader = &s_xGBufferShader;
 		xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
 
-		Flux_PipelineLayout& xLayout = xPipelineSpec.m_xPipelineLayout;
-		xLayout.m_uNumDescriptorSets = 2;
-		// Set 0: Per-frame (FrameConstants only - bound once per command list)
-		xLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;
-		// Set 1: Per-draw (scratch buffer + bones + textures)
-		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;  // Scratch buffer for push constants
-		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_BUFFER;  // Bones
-		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[2].m_eType = DESCRIPTOR_TYPE_TEXTURE;
-		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[3].m_eType = DESCRIPTOR_TYPE_TEXTURE;
-		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[4].m_eType = DESCRIPTOR_TYPE_TEXTURE;
-		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[5].m_eType = DESCRIPTOR_TYPE_TEXTURE;
-		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[6].m_eType = DESCRIPTOR_TYPE_TEXTURE;
+		s_xGBufferShader.GetReflection().PopulateLayout(xPipelineSpec.m_xPipelineLayout);
 
 		for (Flux_BlendState& xBlendState : xPipelineSpec.m_axBlendStates)
 		{
@@ -105,14 +94,7 @@ void Flux_AnimatedMeshes::Initialise()
 
 		xShadowPipelineSpec.m_bDepthBias = false;
 
-		Flux_PipelineLayout& xLayout = xShadowPipelineSpec.m_xPipelineLayout;
-		xLayout.m_uNumDescriptorSets = 2;
-		// Set 0: Per-frame (FrameConstants only)
-		xLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;
-		// Set 1: Per-draw (scratch buffer + bones + shadow matrix)
-		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;  // Scratch buffer for push constants
-		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_BUFFER;  // Bones
-		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[2].m_eType = DESCRIPTOR_TYPE_BUFFER;  // Shadow matrix
+		s_xShadowShader.GetReflection().PopulateLayout(xShadowPipelineSpec.m_xPipelineLayout);
 
 		Flux_PipelineBuilder::FromSpecification(s_xShadowPipeline, xShadowPipelineSpec);
 	}

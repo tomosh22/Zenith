@@ -1,6 +1,10 @@
 #pragma once
 
-// Save zone state and set up placement new protection
+// Placement-new scope guard: Zenith_Vector and other containers use placement new internally,
+// which conflicts with the engine's memory management overrides of global operator new/delete.
+// This pattern saves whether the zone was already active, defines it if not, disables memory
+// management overrides for this header, and restores the zone state at the bottom of the file.
+// See the matching #undef block at the end of this header.
 #ifdef ZENITH_PLACEMENT_NEW_ZONE
 #define ZENITH_SCENEDATA_ZONE_WAS_SET
 #else
@@ -256,6 +260,7 @@ public:
 	int GetBuildIndex() const { return m_iBuildIndex; }
 	int GetHandle() const { return m_iHandle; }
 	bool IsLoaded() const { return m_bIsLoaded; }
+	bool IsActivated() const { return m_bIsActivated; }
 	bool IsUnloading() const { return m_bIsUnloading; }
 	bool WasLoadedAdditively() const { return m_bWasLoadedAdditively; }
 	bool IsPaused() const { return m_bIsPaused; }
@@ -265,6 +270,7 @@ public:
 	//==========================================================================
 
 #ifdef ZENITH_TOOLS
+	bool HasUnsavedChanges() const { return m_bHasUnsavedChanges; }
 	void MarkDirty() { m_bHasUnsavedChanges = true; }
 	void ClearDirty() { m_bHasUnsavedChanges = false; }
 #else
@@ -367,7 +373,6 @@ private:
 	friend class Zenith_Entity;
 	friend class Zenith_TransformComponent;
 	friend class Zenith_SceneManager;
-	friend struct Zenith_Scene;
 	template<typename... Ts> friend class Zenith_Query;
 	friend class Zenith_SceneTests;
 	friend class Zenith_Prefab;
@@ -381,6 +386,34 @@ private:
 	//==========================================================================
 	// Entity Slot Storage (Generation Counter System)
 	//==========================================================================
+	//
+	// Entity Lifecycle State Machine (Unity parity):
+	//
+	//   FREE                                      -- slot unoccupied, available for reuse
+	//     |  CreateEntity()
+	//     v
+	//   OCCUPIED                                   -- slot taken, entity exists but not yet awoken
+	//     |  DispatchAwakeForEntity()              -- same frame as creation
+	//     v
+	//   AWOKEN  (+m_bOnEnableDispatched if active) -- Awake() called; OnEnable() if active in hierarchy
+	//     |  QueuePendingStartsForNewEntities()
+	//     v
+	//   PENDING_START                              -- queued for Start() next frame
+	//     |  DispatchPendingStarts() (next frame)
+	//     v
+	//   STARTED                                    -- Start() called; now receives Update/LateUpdate
+	//     |  Destroy() or DestroyImmediate()
+	//     v
+	//   MARKED_FOR_DESTRUCTION                     -- OnDisable+OnDestroy dispatched, then slot released
+	//     |  ProcessPendingDestructions()
+	//     v
+	//   FREE                                      -- generation incremented, slot available
+	//
+	// Invariants:
+	//   m_bStarted   => m_bAwoken                (Start implies Awake ran)
+	//   m_bPendingStart => m_bAwoken && !m_bStarted (waiting for next-frame Start dispatch)
+	//   m_bMarkedForDestruction => m_bOccupied   (must be alive to be destroyed)
+	//
 
 	struct Zenith_EntitySlot
 	{
@@ -404,6 +437,65 @@ private:
 		// Invalidated when SetEnabled or SetParent changes. Rebuilt lazily on first access.
 		mutable bool m_bActiveInHierarchy = true;
 		mutable bool m_bActiveInHierarchyDirty = true;
+
+#ifdef ZENITH_ASSERT
+		void ValidateSlotState() const
+		{
+			if (!m_bOccupied)
+			{
+				return; // Free slot, nothing to validate
+			}
+			Zenith_Assert(!m_bStarted || m_bAwoken, "Started entity was never awoken");
+			Zenith_Assert(!m_bPendingStart || (m_bAwoken && !m_bStarted), "PendingStart in invalid state");
+			Zenith_Assert(!m_bMarkedForDestruction || m_bOccupied, "Destroyed entity not occupied");
+		}
+#endif
+
+		// Explicit lifecycle transition methods with invariant assertions
+		void TransitionToAwoken()
+		{
+			m_bAwoken = true;
+		}
+		void TransitionToStarted()
+		{
+			Zenith_Assert(m_bAwoken && !m_bStarted, "Invalid state for Start transition");
+			m_bStarted = true;
+		}
+		void TransitionToDestroying()
+		{
+			Zenith_Assert(m_bOccupied && !m_bMarkedForDestruction, "Invalid state for Destroy transition");
+			m_bMarkedForDestruction = true;
+		}
+
+		// Reset all lifecycle flags and release the slot for reuse
+		void ReleaseSlot()
+		{
+			m_bOccupied = false;
+			m_bMarkedForDestruction = false;
+			m_bAwoken = false;
+			m_bStarted = false;
+			m_bPendingStart = false;
+			m_bCreatedDuringUpdate = false;
+			m_bOnEnableDispatched = false;
+			m_bActiveInHierarchy = true;
+			m_bActiveInHierarchyDirty = true;
+			m_iSceneHandle = -1;
+		}
+
+		// Initialize all lifecycle flags and occupy the slot for a new entity
+		void OccupySlot(int iSceneHandle)
+		{
+			m_bOccupied = true;
+			m_bMarkedForDestruction = false;
+			m_bAwoken = false;
+			m_bStarted = false;
+			m_bPendingStart = false;
+			m_bCreatedDuringUpdate = false;
+			m_bOnEnableDispatched = false;
+			m_bActiveInHierarchy = true;
+			m_bActiveInHierarchyDirty = true;
+			m_iSceneHandle = iSceneHandle;
+		}
 	};
 
 	const Zenith_EntitySlot& GetSlot(Zenith_EntityID xID) const;
@@ -443,12 +535,12 @@ private:
 	void MarkEntityAwoken(Zenith_EntityID xID)
 	{
 		Zenith_Assert(Zenith_Multithreading::IsMainThread(), "MarkEntityAwoken must be called from main thread");
-		s_axEntitySlots.Get(xID.m_uIndex).m_bAwoken = true;
+		s_axEntitySlots.Get(xID.m_uIndex).TransitionToAwoken();
 	}
 	void MarkEntityStarted(Zenith_EntityID xID)
 	{
 		Zenith_Assert(Zenith_Multithreading::IsMainThread(), "MarkEntityStarted must be called from main thread");
-		s_axEntitySlots.Get(xID.m_uIndex).m_bStarted = true;
+		s_axEntitySlots.Get(xID.m_uIndex).TransitionToStarted();
 	}
 	void MarkEntityPendingStart(Zenith_EntityID xID)
 	{
@@ -507,6 +599,14 @@ private:
 	void Update(float fDt);
 	void FixedUpdate(float fFixedDt);
 
+	// Update sub-phases (extracted from Update for readability)
+	void DispatchAwakeAndEnableForNewEntities(Zenith_Vector<Zenith_EntityID>& axAllNewEntities);
+	void QueuePendingStartsForNewEntities(const Zenith_Vector<Zenith_EntityID>& axAllNewEntities);
+	void DispatchOnUpdateForEntities(const Zenith_Vector<Zenith_EntityID>& xSnapshotIDs, float fDt);
+	void DispatchOnLateUpdateForEntities(const Zenith_Vector<Zenith_EntityID>& xSnapshotIDs, float fDt);
+	void TickTimedDestructions(float fDt);
+	void ClearCreatedDuringUpdateFlags();
+
 	/**
 	 * Dispatch OnAwake and OnEnable for newly loaded scene.
 	 * OnStart is deferred to first Update() (Unity behavior).
@@ -526,6 +626,14 @@ private:
 	 * Unity behavior: Start() runs on first frame after scene load.
 	 */
 	void DispatchPendingStarts();
+
+	enum class PendingStartResult
+	{
+		SKIP,     // Invalid/stale/not pending - no action needed
+		CLEARED,  // Flag cleared and count decremented
+		REQUEUE,  // Inactive - re-add to pending list
+	};
+	PendingStartResult ProcessSinglePendingStart(Zenith_EntityID xEntityID, class Zenith_ComponentMetaRegistry& xRegistry);
 
 	//==========================================================================
 	// Internal Component Transfer

@@ -121,10 +121,7 @@ void Flux_Skybox::Initialise()
 	xCubemapSpec.m_xVertexInputDesc = xVertexDesc;
 	xCubemapSpec.m_bDepthTestEnabled = false;
 
-	Flux_PipelineLayout& xCubemapLayout = xCubemapSpec.m_xPipelineLayout;
-	xCubemapLayout.m_uNumDescriptorSets = 1;
-	xCubemapLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;
-	xCubemapLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_TEXTURE;
+	s_xCubemapShader.GetReflection().PopulateLayout(xCubemapSpec.m_xPipelineLayout);
 
 	for (Flux_BlendState& xBlendState : xCubemapSpec.m_axBlendStates)
 	{
@@ -148,10 +145,7 @@ void Flux_Skybox::Initialise()
 	xAtmosSpec.m_bDepthTestEnabled = false;
 	xAtmosSpec.m_bDepthWriteEnabled = false;
 
-	Flux_PipelineLayout& xAtmosLayout = xAtmosSpec.m_xPipelineLayout;
-	xAtmosLayout.m_uNumDescriptorSets = 1;
-	xAtmosLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;  // Frame constants
-	xAtmosLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_BUFFER;  // Atmosphere constants
+	s_xAtmosphereShader.GetReflection().PopulateLayout(xAtmosSpec.m_xPipelineLayout);
 
 	Flux_PipelineBuilder::FromSpecification(s_xAtmospherePipeline, xAtmosSpec);
 
@@ -173,11 +167,7 @@ void Flux_Skybox::Initialise()
 	xAerialSpec.m_axBlendStates[0].m_eSrcBlendFactor = BLEND_FACTOR_SRCALPHA;
 	xAerialSpec.m_axBlendStates[0].m_eDstBlendFactor = BLEND_FACTOR_ONEMINUSSRCALPHA;
 
-	Flux_PipelineLayout& xAerialLayout = xAerialSpec.m_xPipelineLayout;
-	xAerialLayout.m_uNumDescriptorSets = 1;
-	xAerialLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;  // Frame constants
-	xAerialLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_BUFFER;  // Atmosphere constants
-	xAerialLayout.m_axDescriptorSetLayouts[0].m_axBindings[2].m_eType = DESCRIPTOR_TYPE_TEXTURE; // Depth texture
+	s_xAerialPerspectiveShader.GetReflection().PopulateLayout(xAerialSpec.m_xPipelineLayout);
 
 	Flux_PipelineBuilder::FromSpecification(s_xAerialPerspectivePipeline, xAerialSpec);
 

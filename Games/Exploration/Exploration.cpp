@@ -576,15 +576,12 @@ void Project_CreateScenes()
 		float fStartZ = TERRAIN_SIZE * 0.5f;
 		float fStartY = 1200.0f;
 
-		xCamera.InitialisePerspective(
-			Zenith_Maths::Vector3(fStartX, fStartY, fStartZ),
-			-0.2f,
-			0.0f,
-			glm::radians(70.0f),
-			0.1f,
-			10000.0f,
-			16.0f / 9.0f
-		);
+		xCamera.InitialisePerspective({
+			.m_xPosition = Zenith_Maths::Vector3(fStartX, fStartY, fStartZ),
+			.m_fPitch = -0.2f,
+			.m_fFOV = glm::radians(70.0f),
+			.m_fFar = 10000.0f,
+		});
 		pxMenuData->SetMainCameraEntity(xMenuManager.GetEntityID());
 
 		Zenith_UIComponent& xUI = xMenuManager.AddComponent<Zenith_UIComponent>();
@@ -624,15 +621,12 @@ void Project_CreateScenes()
 		float fStartZ = TERRAIN_SIZE * 0.5f;
 		float fStartY = 1200.0f;
 
-		xCamera.InitialisePerspective(
-			Zenith_Maths::Vector3(fStartX, fStartY, fStartZ),
-			-0.2f,
-			0.0f,
-			glm::radians(70.0f),
-			0.1f,
-			10000.0f,
-			16.0f / 9.0f
-		);
+		xCamera.InitialisePerspective({
+			.m_xPosition = Zenith_Maths::Vector3(fStartX, fStartY, fStartZ),
+			.m_fPitch = -0.2f,
+			.m_fFOV = glm::radians(70.0f),
+			.m_fFar = 10000.0f,
+		});
 		pxGameData->SetMainCameraEntity(xGameManager.GetEntityID());
 
 		// HUD UI is created by Exploration_UIManager in OnStart

@@ -188,15 +188,12 @@ void Project_CreateScenes()
 
 		// Camera - top-down isometric view
 		Zenith_CameraComponent& xCamera = xMenuManager.AddComponent<Zenith_CameraComponent>();
-		xCamera.InitialisePerspective(
-			Zenith_Maths::Vector3(0.f, 30.f, -35.f),
-			-0.7f,
-			0.f,
-			glm::radians(50.f),
-			0.1f,
-			500.f,
-			16.f / 9.f
-		);
+		xCamera.InitialisePerspective({
+			.m_xPosition = Zenith_Maths::Vector3(0.f, 30.f, -35.f),
+			.m_fPitch = -0.7f,
+			.m_fFOV = glm::radians(50.f),
+			.m_fFar = 500.f,
+		});
 
 		// Menu UI
 		Zenith_UIComponent& xUI = xMenuManager.AddComponent<Zenith_UIComponent>();
@@ -233,15 +230,12 @@ void Project_CreateScenes()
 
 		// Camera - top-down isometric view for tactical overview
 		Zenith_CameraComponent& xCamera = xGameManager.AddComponent<Zenith_CameraComponent>();
-		xCamera.InitialisePerspective(
-			Zenith_Maths::Vector3(0.f, 30.f, -35.f),
-			-0.7f,
-			0.f,
-			glm::radians(50.f),
-			0.1f,
-			500.f,
-			16.f / 9.f
-		);
+		xCamera.InitialisePerspective({
+			.m_xPosition = Zenith_Maths::Vector3(0.f, 30.f, -35.f),
+			.m_fPitch = -0.7f,
+			.m_fFOV = glm::radians(50.f),
+			.m_fFar = 500.f,
+		});
 
 		// HUD UI
 		Zenith_UIComponent& xUI = xGameManager.AddComponent<Zenith_UIComponent>();

@@ -57,7 +57,9 @@ static void* JoltAllocate(size_t inSize)
 	s_ulJoltAllocationCount++;
 
 	// Return pointer past header - guaranteed 16-byte aligned since header is 16 bytes
-	return pHeader + 1;
+	void* pResult = pHeader + 1;
+	Zenith_Assert((reinterpret_cast<uintptr_t>(pResult) % 16) == 0, "JoltAllocate: 16-byte alignment broken");
+	return pResult;
 }
 
 static void* JoltReallocate(void* inBlock, size_t, size_t inNewSize)
@@ -150,6 +152,7 @@ static void* JoltAlignedAllocate(size_t inSize, size_t inAlignment)
 	void** ppOriginal = reinterpret_cast<void**>(ulAlignedAddr - sizeof(void*) - sizeof(size_t));
 	size_t* pSize = reinterpret_cast<size_t*>(ulAlignedAddr - sizeof(size_t));
 
+	Zenith_Assert(reinterpret_cast<uintptr_t>(ppOriginal) >= ulRawAddr, "JoltAlignedAllocate: metadata pointer underflow");
 	*ppOriginal = pRaw;
 	*pSize = inSize;
 
@@ -157,6 +160,7 @@ static void* JoltAlignedAllocate(size_t inSize, size_t inAlignment)
 	s_ulJoltMemoryAllocated += inSize;
 	s_ulJoltAllocationCount++;
 
+	Zenith_Assert((ulAlignedAddr % inAlignment) == 0, "JoltAlignedAllocate: alignment invariant broken");
 	return reinterpret_cast<void*>(ulAlignedAddr);
 }
 

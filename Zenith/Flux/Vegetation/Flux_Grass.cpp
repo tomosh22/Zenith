@@ -140,11 +140,7 @@ void Flux_Grass::Initialise()
 	xPipelineSpec.m_bDepthWriteEnabled = true;
 	xPipelineSpec.m_eCullMode = CULL_MODE_NONE;  // Grass is double-sided
 
-	Flux_PipelineLayout& xLayout = xPipelineSpec.m_xPipelineLayout;
-	xLayout.m_uNumDescriptorSets = 1;
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;  // Frame constants
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_BUFFER;  // Grass params
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[2].m_eType = DESCRIPTOR_TYPE_STORAGE_BUFFER;  // Instance buffer
+	s_xGrassShader.GetReflection().PopulateLayout(xPipelineSpec.m_xPipelineLayout);
 
 	Flux_PipelineBuilder::FromSpecification(s_xGrassPipeline, xPipelineSpec);
 

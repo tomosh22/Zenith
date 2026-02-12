@@ -63,6 +63,31 @@ void Flux_ShaderReflection::PopulateLayout(Flux_PipelineLayout& xLayoutOut) cons
 
 		xLayoutOut.m_axDescriptorSetLayouts[xBinding.m_uSet].m_axBindings[xBinding.m_uBinding].m_eType = xBinding.m_eType;
 	}
+
+	// Fill gaps in binding indices with placeholder types.
+	// The pipeline builder stops at the first DESCRIPTOR_TYPE_MAX, so sparse
+	// bindings (e.g. shadow shaders that skip texture slots) need gaps filled.
+	for (u_int uSet = 0; uSet < xLayoutOut.m_uNumDescriptorSets; uSet++)
+	{
+		Flux_DescriptorSetLayout& xSetLayout = xLayoutOut.m_axDescriptorSetLayouts[uSet];
+
+		u_int uMaxBinding = 0;
+		for (u_int uBinding = 0; uBinding < FLUX_MAX_DESCRIPTOR_BINDINGS; uBinding++)
+		{
+			if (xSetLayout.m_axBindings[uBinding].m_eType != DESCRIPTOR_TYPE_MAX)
+			{
+				uMaxBinding = uBinding;
+			}
+		}
+
+		for (u_int uBinding = 0; uBinding < uMaxBinding; uBinding++)
+		{
+			if (xSetLayout.m_axBindings[uBinding].m_eType == DESCRIPTOR_TYPE_MAX)
+			{
+				xSetLayout.m_axBindings[uBinding].m_eType = DESCRIPTOR_TYPE_BUFFER;
+			}
+		}
+	}
 }
 
 void Flux_ShaderReflection::AddBinding(const Flux_ReflectedBinding& xBinding)
@@ -595,6 +620,17 @@ DescriptorType Flux_SlangCompiler::SlangTypeToDescriptorType(void* pxTypeLayoutV
 	slang::TypeLayoutReflection* pxTypeLayout = static_cast<slang::TypeLayoutReflection*>(pxTypeLayoutVoid);
 
 	slang::TypeReflection::Kind eKind = pxTypeLayout->getKind();
+
+	// Detect unbounded arrays (e.g., sampler2D g_axTextures[])
+	if (eKind == slang::TypeReflection::Kind::Array)
+	{
+		slang::TypeReflection* pxType = pxTypeLayout->getType();
+		if (pxType && pxType->getElementCount() == 0)
+		{
+			return DESCRIPTOR_TYPE_UNBOUNDED_TEXTURES;
+		}
+	}
+
 	slang::BindingType eBindingType = pxTypeLayout->getDescriptorSetDescriptorRangeType(0, 0);
 
 	switch (eBindingType)

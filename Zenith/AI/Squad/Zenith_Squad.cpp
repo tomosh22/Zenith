@@ -9,6 +9,20 @@
 
 #ifdef ZENITH_TOOLS
 #include "Flux/Primitives/Flux_Primitives.h"
+
+static Zenith_Maths::Vector3 RoleToDebugColor(SquadRole eRole)
+{
+	switch (eRole)
+	{
+	case SquadRole::LEADER:    return Zenith_Maths::Vector3(1.0f, 0.84f, 0.0f);
+	case SquadRole::ASSAULT:   return Zenith_Maths::Vector3(1.0f, 0.3f, 0.3f);
+	case SquadRole::SUPPORT:   return Zenith_Maths::Vector3(0.3f, 0.3f, 1.0f);
+	case SquadRole::FLANKER:   return Zenith_Maths::Vector3(1.0f, 0.6f, 0.2f);
+	case SquadRole::OVERWATCH: return Zenith_Maths::Vector3(0.8f, 0.2f, 0.8f);
+	case SquadRole::MEDIC:     return Zenith_Maths::Vector3(0.2f, 1.0f, 0.2f);
+	default:                   return Zenith_Maths::Vector3(0.7f, 0.7f, 0.7f);
+	}
+}
 #endif
 
 // ========== Zenith_Squad ==========
@@ -567,19 +581,7 @@ void Zenith_Squad::DebugDraw() const
 			xMemberEntity.GetComponent<Zenith_TransformComponent>().GetPosition(xMemberPos);
 			xMemberPos.y += 2.0f;
 
-			// Color based on role
-			Zenith_Maths::Vector3 xColor;
-			switch (xMember.m_eRole)
-			{
-			case SquadRole::ASSAULT:   xColor = Zenith_Maths::Vector3(1.0f, 0.3f, 0.3f); break;
-			case SquadRole::SUPPORT:   xColor = Zenith_Maths::Vector3(0.3f, 0.3f, 1.0f); break;
-			case SquadRole::FLANKER:   xColor = Zenith_Maths::Vector3(1.0f, 0.6f, 0.2f); break;
-			case SquadRole::OVERWATCH: xColor = Zenith_Maths::Vector3(0.8f, 0.2f, 0.8f); break;
-			case SquadRole::MEDIC:     xColor = Zenith_Maths::Vector3(0.2f, 1.0f, 0.2f); break;
-			default:                   xColor = Zenith_Maths::Vector3(0.7f, 0.7f, 0.7f); break;
-			}
-
-			Flux_Primitives::AddLine(xLeaderPos, xMemberPos, xColor);
+			Flux_Primitives::AddLine(xLeaderPos, xMemberPos, RoleToDebugColor(xMember.m_eRole));
 		}
 
 		// Draw leader marker (gold crown)
@@ -597,21 +599,8 @@ void Zenith_Squad::DebugDraw() const
 				continue;
 			}
 
-			// Color based on role
-			Zenith_Maths::Vector3 xColor;
-			switch (xMember.m_eRole)
-			{
-			case SquadRole::LEADER:    xColor = Zenith_Maths::Vector3(1.0f, 0.84f, 0.0f); break;
-			case SquadRole::ASSAULT:   xColor = Zenith_Maths::Vector3(1.0f, 0.3f, 0.3f); break;
-			case SquadRole::SUPPORT:   xColor = Zenith_Maths::Vector3(0.3f, 0.3f, 1.0f); break;
-			case SquadRole::FLANKER:   xColor = Zenith_Maths::Vector3(1.0f, 0.6f, 0.2f); break;
-			case SquadRole::OVERWATCH: xColor = Zenith_Maths::Vector3(0.8f, 0.2f, 0.8f); break;
-			case SquadRole::MEDIC:     xColor = Zenith_Maths::Vector3(0.2f, 1.0f, 0.2f); break;
-			default:                   xColor = Zenith_Maths::Vector3(0.7f, 0.7f, 0.7f); break;
-			}
-
 			// Draw formation target position (dimmed color)
-			Flux_Primitives::AddSphere(xMember.m_xFormationOffset, 0.3f, xColor * 0.5f);
+			Flux_Primitives::AddSphere(xMember.m_xFormationOffset, 0.3f, RoleToDebugColor(xMember.m_eRole) * 0.5f);
 		}
 	}
 
@@ -651,60 +640,44 @@ void Zenith_Squad::DebugDraw() const
 			Zenith_Maths::Vector3 xLabelPos = xMemberPos + Zenith_Maths::Vector3(0.0f, 2.5f, 0.0f);
 
 			// Draw role-specific icon/marker above agent
-			// Each role gets a distinctive visual marker
-			Zenith_Maths::Vector3 xRoleColor;
+			Zenith_Maths::Vector3 xRoleColor = RoleToDebugColor(xMember.m_eRole);
 			switch (xMember.m_eRole)
 			{
 			case SquadRole::LEADER:
-				// Crown/star shape for leader (golden)
-				xRoleColor = Zenith_Maths::Vector3(1.0f, 0.84f, 0.0f);
 				Flux_Primitives::AddSphere(xLabelPos, 0.15f, xRoleColor);
-				// Three points above for crown effect
 				Flux_Primitives::AddLine(xLabelPos, xLabelPos + Zenith_Maths::Vector3(-0.15f, 0.25f, 0.0f), xRoleColor);
 				Flux_Primitives::AddLine(xLabelPos, xLabelPos + Zenith_Maths::Vector3(0.0f, 0.3f, 0.0f), xRoleColor);
 				Flux_Primitives::AddLine(xLabelPos, xLabelPos + Zenith_Maths::Vector3(0.15f, 0.25f, 0.0f), xRoleColor);
 				break;
 			case SquadRole::ASSAULT:
-				// Chevron/arrow pointing forward (red)
-				xRoleColor = Zenith_Maths::Vector3(1.0f, 0.3f, 0.3f);
 				Flux_Primitives::AddLine(xLabelPos + Zenith_Maths::Vector3(-0.15f, 0.0f, 0.15f),
 					xLabelPos + Zenith_Maths::Vector3(0.0f, 0.0f, -0.15f), xRoleColor, 0.03f);
 				Flux_Primitives::AddLine(xLabelPos + Zenith_Maths::Vector3(0.15f, 0.0f, 0.15f),
 					xLabelPos + Zenith_Maths::Vector3(0.0f, 0.0f, -0.15f), xRoleColor, 0.03f);
 				break;
 			case SquadRole::SUPPORT:
-				// Plus/cross shape (blue)
-				xRoleColor = Zenith_Maths::Vector3(0.3f, 0.3f, 1.0f);
 				Flux_Primitives::AddLine(xLabelPos + Zenith_Maths::Vector3(-0.15f, 0.0f, 0.0f),
 					xLabelPos + Zenith_Maths::Vector3(0.15f, 0.0f, 0.0f), xRoleColor, 0.03f);
 				Flux_Primitives::AddLine(xLabelPos + Zenith_Maths::Vector3(0.0f, 0.0f, -0.15f),
 					xLabelPos + Zenith_Maths::Vector3(0.0f, 0.0f, 0.15f), xRoleColor, 0.03f);
 				break;
 			case SquadRole::FLANKER:
-				// Curved arrow/arc shape (orange)
-				xRoleColor = Zenith_Maths::Vector3(1.0f, 0.6f, 0.2f);
 				Flux_Primitives::AddLine(xLabelPos + Zenith_Maths::Vector3(-0.15f, 0.0f, 0.0f),
 					xLabelPos + Zenith_Maths::Vector3(0.0f, 0.0f, 0.15f), xRoleColor, 0.03f);
 				Flux_Primitives::AddLine(xLabelPos + Zenith_Maths::Vector3(0.0f, 0.0f, 0.15f),
 					xLabelPos + Zenith_Maths::Vector3(0.15f, 0.0f, 0.0f), xRoleColor, 0.03f);
 				break;
 			case SquadRole::OVERWATCH:
-				// Eye/circle shape (purple)
-				xRoleColor = Zenith_Maths::Vector3(0.8f, 0.2f, 0.8f);
 				Flux_Primitives::AddCircle(xLabelPos, 0.12f, xRoleColor);
 				Flux_Primitives::AddSphere(xLabelPos, 0.05f, xRoleColor);
 				break;
 			case SquadRole::MEDIC:
-				// Medical cross (green)
-				xRoleColor = Zenith_Maths::Vector3(0.2f, 1.0f, 0.2f);
 				Flux_Primitives::AddLine(xLabelPos + Zenith_Maths::Vector3(-0.12f, 0.0f, 0.0f),
 					xLabelPos + Zenith_Maths::Vector3(0.12f, 0.0f, 0.0f), xRoleColor, 0.04f);
 				Flux_Primitives::AddLine(xLabelPos + Zenith_Maths::Vector3(0.0f, 0.0f, -0.12f),
 					xLabelPos + Zenith_Maths::Vector3(0.0f, 0.0f, 0.12f), xRoleColor, 0.04f);
 				break;
 			default:
-				// Default marker
-				xRoleColor = Zenith_Maths::Vector3(0.7f, 0.7f, 0.7f);
 				Flux_Primitives::AddSphere(xLabelPos, 0.1f, xRoleColor);
 				break;
 			}

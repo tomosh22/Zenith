@@ -37,6 +37,28 @@ struct FrustumCorners
 	Zenith_Maths::Vector3 m_axCorners[8];
 };
 
+struct AABB3D
+{
+	Zenith_Maths::Vector3 m_xMin = Zenith_Maths::Vector3(FLT_MAX);
+	Zenith_Maths::Vector3 m_xMax = Zenith_Maths::Vector3(-FLT_MAX);
+
+	void Expand(const Zenith_Maths::Vector3& xPoint)
+	{
+		m_xMin = glm::min(m_xMin, xPoint);
+		m_xMax = glm::max(m_xMax, xPoint);
+	}
+};
+
+static AABB3D ComputeAABBFromTransformedPoints(const Zenith_Maths::Vector3* pxPoints, uint32_t uCount, const Zenith_Maths::Matrix4& xTransform)
+{
+	AABB3D xAABB;
+	for (uint32_t u = 0; u < uCount; u++)
+	{
+		xAABB.Expand(xTransform * Zenith_Maths::Vector4(pxPoints[u], 1));
+	}
+	return xAABB;
+}
+
 static FrustumCorners WorldSpaceFrustumCornersFromInverseViewProjMatrix(const Zenith_Maths::Matrix4& xInvViewProjMat)
 {
 	FrustumCorners xRet;
@@ -53,7 +75,7 @@ static FrustumCorners WorldSpaceFrustumCornersFromInverseViewProjMatrix(const Ze
 		}
 	}
 
-	return std::move(xRet);
+	return xRet;
 }
 
 void Flux_Shadows::Initialise()
@@ -139,18 +161,11 @@ void Flux_Shadows::Render(void*)
 			Flux_AnimatedMeshes::RenderToShadowMap(g_axCommandLists[u], g_xShadowMatrixBuffers[u]);
 		}
 
-		if (false)
-		{
-			g_axCommandLists[u].AddCommand<Flux_CommandSetPipeline>(&Flux_Terrain::GetShadowPipeline());
-
-			// RenderToShadowMap handles all bindings via shader reflection
-			Flux_Terrain::RenderToShadowMap(g_axCommandLists[u], g_xShadowMatrixBuffers[u]);
-		}
+		// #TODO: Enable terrain shadow casting
+		// Flux_Terrain::RenderToShadowMap(g_axCommandLists[u], g_xShadowMatrixBuffers[u]);
 
 		Flux::SubmitCommandList(&g_axCommandLists[u], g_axCSMTargetSetups[u], RENDER_ORDER_CSM);
 	}
-	
-	
 }
 
 void Flux_Shadows::SubmitRenderTask()
@@ -204,30 +219,13 @@ void Flux_Shadows::UpdateShadowMatrices()
 		
 		Zenith_Maths::Matrix4 xSunViewMat = glm::lookAt(xFrustumCenter - xSunDir, xFrustumCenter, xUp);
 		
-		float fMinX = FLT_MAX;
-		float fMaxX = -FLT_MAX;
-		float fMinY = FLT_MAX;
-		float fMaxY = -FLT_MAX;
-		float fMinZ = FLT_MAX;
-		float fMaxZ = -FLT_MAX;
-		
-		for (uint32_t uCorner = 0; uCorner < 8; uCorner++)
-		{
-			Zenith_Maths::Vector3 xCornerLightSpace = xSunViewMat * Zenith_Maths::Vector4(xFrustumCorners.m_axCorners[uCorner], 1);
-			fMinX = xCornerLightSpace.x < fMinX ? xCornerLightSpace.x : fMinX;
-			fMaxX = xCornerLightSpace.x > fMaxX ? xCornerLightSpace.x : fMaxX;
-			fMinY = xCornerLightSpace.y < fMinY ? xCornerLightSpace.y : fMinY;
-			fMaxY = xCornerLightSpace.y > fMaxY ? xCornerLightSpace.y : fMaxY;
-			fMinZ = xCornerLightSpace.z < fMinZ ? xCornerLightSpace.z : fMinZ;
-			fMaxZ = xCornerLightSpace.z > fMaxZ ? xCornerLightSpace.z : fMaxZ;
-		}
-		
-		const float fZRange = fMaxZ - fMinZ;
-		fMinZ -= fZRange * dbg_fZMultiplier;
-		
-		xSunViewMat = glm::lookAt(xFrustumCenter - xSunDir * (fMaxZ + fZRange * dbg_fZMultiplier), xFrustumCenter, xUp);
+		const AABB3D xLightAABB = ComputeAABBFromTransformedPoints(xFrustumCorners.m_axCorners, 8, xSunViewMat);
 
-		g_axSunViewProjMats[u] = glm::ortho(fMinX, fMaxX, fMinY, fMaxY, 0.0f, fMaxZ - fMinZ + fZRange * dbg_fZMultiplier) * xSunViewMat;
+		const float fZRange = xLightAABB.m_xMax.z - xLightAABB.m_xMin.z;
+
+		xSunViewMat = glm::lookAt(xFrustumCenter - xSunDir * (xLightAABB.m_xMax.z + fZRange * dbg_fZMultiplier), xFrustumCenter, xUp);
+
+		g_axSunViewProjMats[u] = glm::ortho(xLightAABB.m_xMin.x, xLightAABB.m_xMax.x, xLightAABB.m_xMin.y, xLightAABB.m_xMax.y, 0.0f, fZRange * (1.0f + 2.0f * dbg_fZMultiplier)) * xSunViewMat;
 
 		Flux_MemoryManager::UploadBufferData(g_xShadowMatrixBuffers[u].GetBuffer().m_xVRAMHandle, &g_axSunViewProjMats[u], sizeof(g_axSunViewProjMats[u]));
 	}

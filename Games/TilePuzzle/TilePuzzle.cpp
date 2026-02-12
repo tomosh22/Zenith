@@ -179,15 +179,11 @@ void Project_CreateScenes()
 		xMenuManager.SetTransient(false);
 
 		Zenith_CameraComponent& xCamera = xMenuManager.AddComponent<Zenith_CameraComponent>();
-		xCamera.InitialisePerspective(
-			Zenith_Maths::Vector3(0.f, 12.f, 0.f),
-			-1.5f,
-			0.f,
-			glm::radians(45.f),
-			0.1f,
-			1000.f,
-			16.f / 9.f
-		);
+		xCamera.InitialisePerspective({
+			.m_xPosition = Zenith_Maths::Vector3(0.f, 12.f, 0.f),
+			.m_fPitch = -1.5f,
+			.m_fFOV = glm::radians(45.f),
+		});
 		pxMenuData->SetMainCameraEntity(xMenuManager.GetEntityID());
 
 		Zenith_UIComponent& xUI = xMenuManager.AddComponent<Zenith_UIComponent>();
@@ -222,15 +218,11 @@ void Project_CreateScenes()
 		xGameManager.SetTransient(false);
 
 		Zenith_CameraComponent& xCamera = xGameManager.AddComponent<Zenith_CameraComponent>();
-		xCamera.InitialisePerspective(
-			Zenith_Maths::Vector3(0.f, 12.f, 0.f),
-			-1.5f,
-			0.f,
-			glm::radians(45.f),
-			0.1f,
-			1000.f,
-			16.f / 9.f
-		);
+		xCamera.InitialisePerspective({
+			.m_xPosition = Zenith_Maths::Vector3(0.f, 12.f, 0.f),
+			.m_fPitch = -1.5f,
+			.m_fFOV = glm::radians(45.f),
+		});
 		pxGameData->SetMainCameraEntity(xGameManager.GetEntityID());
 
 		Zenith_UIComponent& xUI = xGameManager.AddComponent<Zenith_UIComponent>();

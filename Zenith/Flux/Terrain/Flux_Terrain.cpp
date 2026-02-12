@@ -105,27 +105,7 @@ void Flux_Terrain::Initialise()
 		xPipelineSpec.m_pxShader = &s_xTerrainGBufferShader;
 		xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
 
-		Flux_PipelineLayout& xLayout = xPipelineSpec.m_xPipelineLayout;
-		xLayout.m_uNumDescriptorSets = 2;
-		// Set 0: Per-frame (FrameConstants + TerrainConstants - bound once per command list)
-		xLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;  // Frame constants
-		xLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_BUFFER;  // Terrain constants
-		// Set 1: Per-draw (scratch buffer + LOD level buffer + 10 textures for 2 materials)
-		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;  // Scratch buffer for push constants
-		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_STORAGE_BUFFER;  // LOD level buffer
-		// Material 0 textures (diffuse, normal, RM, occlusion, emissive)
-		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[2].m_eType = DESCRIPTOR_TYPE_TEXTURE;
-		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[3].m_eType = DESCRIPTOR_TYPE_TEXTURE;
-		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[4].m_eType = DESCRIPTOR_TYPE_TEXTURE;
-		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[5].m_eType = DESCRIPTOR_TYPE_TEXTURE;
-		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[6].m_eType = DESCRIPTOR_TYPE_TEXTURE;
-		// Material 1 textures (diffuse, normal, RM, occlusion, emissive)
-		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[7].m_eType = DESCRIPTOR_TYPE_TEXTURE;
-		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[8].m_eType = DESCRIPTOR_TYPE_TEXTURE;
-		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[9].m_eType = DESCRIPTOR_TYPE_TEXTURE;
-		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[10].m_eType = DESCRIPTOR_TYPE_TEXTURE;
-		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[11].m_eType = DESCRIPTOR_TYPE_TEXTURE;
-		
+		s_xTerrainGBufferShader.GetReflection().PopulateLayout(xPipelineSpec.m_xPipelineLayout);
 
 		for (Flux_BlendState& xBlendState : xPipelineSpec.m_axBlendStates)
 		{
@@ -168,10 +148,7 @@ void Flux_Terrain::Initialise()
 		xShadowPipelineSpec.m_pxShader = &s_xTerrainShadowShader;
 		xShadowPipelineSpec.m_xVertexInputDesc = xVertexDesc;
 
-		Flux_PipelineLayout& xLayout = xShadowPipelineSpec.m_xPipelineLayout;
-		xLayout.m_uNumDescriptorSets = 2;
-		xLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;
-		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;
+		s_xTerrainShadowShader.GetReflection().PopulateLayout(xShadowPipelineSpec.m_xPipelineLayout);
 
 		xShadowPipelineSpec.m_bDepthTestEnabled = true;
 		xShadowPipelineSpec.m_bDepthWriteEnabled = true;
@@ -194,10 +171,7 @@ void Flux_Terrain::Initialise()
 		xPipelineSpec.m_pxShader = &s_xWaterShader;
 		xPipelineSpec.m_xVertexInputDesc = xWaterVertexDesc;
 
-		Flux_PipelineLayout& xLayout = xPipelineSpec.m_xPipelineLayout;
-		xLayout.m_uNumDescriptorSets = 2;
-		xLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;
-		xLayout.m_axDescriptorSetLayouts[1].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_TEXTURE;
+		s_xWaterShader.GetReflection().PopulateLayout(xPipelineSpec.m_xPipelineLayout);
 
 		xPipelineSpec.m_bDepthWriteEnabled = false;
 

@@ -2,13 +2,17 @@
 #include "Flux_BonePose.h"
 #include "Flux_AnimationClip.h"
 #include "DataStream/Zenith_DataStream.h"
-#include <vector>
-#include <memory>
-#include <functional>
+#include <array>
 
 // Forward declarations
 class Flux_AnimationClipCollection;
 class Zenith_SkeletonAsset;
+
+struct Flux_WeightedIndex
+{
+	uint32_t m_uIndex;
+	float m_fWeight;
+};
 
 //=============================================================================
 // Flux_BlendTreeNode
@@ -164,17 +168,17 @@ public:
 
 	// Add/remove blend points
 	void AddBlendPoint(Flux_BlendTreeNode* pxNode, float fPosition);
-	void RemoveBlendPoint(size_t uIndex);
+	void RemoveBlendPoint(u_int uIndex);
 	void SortBlendPoints();  // Call after adding all points
 
 	// Accessors
 	float GetParameter() const { return m_fParameter; }
 	void SetParameter(float fValue) { m_fParameter = fValue; }
 
-	const std::vector<BlendPoint>& GetBlendPoints() const { return m_xBlendPoints; }
+	const Zenith_Vector<BlendPoint>& GetBlendPoints() const { return m_xBlendPoints; }
 
 private:
-	std::vector<BlendPoint> m_xBlendPoints;
+	Zenith_Vector<BlendPoint> m_xBlendPoints;
 	float m_fParameter = 0.0f;
 
 	// Temporary poses
@@ -212,7 +216,7 @@ public:
 
 	// Add/remove blend points
 	void AddBlendPoint(Flux_BlendTreeNode* pxNode, const Zenith_Maths::Vector2& xPosition);
-	void RemoveBlendPoint(size_t uIndex);
+	void RemoveBlendPoint(u_int uIndex);
 
 	// Compute triangulation for efficient sampling
 	void ComputeTriangulation();
@@ -229,14 +233,14 @@ private:
 
 	// Fallback: find nearest points if no containing triangle
 	void FindNearestPoints(const Zenith_Maths::Vector2& xPoint,
-		std::vector<std::pair<size_t, float>>& xOutWeights) const;
+		Zenith_Vector<Flux_WeightedIndex>& xOutWeights) const;
 
-	std::vector<BlendPoint> m_xBlendPoints;
-	std::vector<std::array<uint32_t, 3>> m_xTriangles;  // Delaunay triangulation
+	Zenith_Vector<BlendPoint> m_xBlendPoints;
+	Zenith_Vector<std::array<uint32_t, 3>> m_xTriangles;  // Delaunay triangulation
 	Zenith_Maths::Vector2 m_xParameter = Zenith_Maths::Vector2(0.0f);
 
 	// Temporary poses for blending
-	std::vector<Flux_SkeletonPose> m_xTempPoses;
+	Zenith_Vector<Flux_SkeletonPose> m_xTempPoses;
 };
 
 //=============================================================================
@@ -351,13 +355,13 @@ public:
 
 	// Add children
 	void AddChild(Flux_BlendTreeNode* pxChild);
-	void RemoveChild(size_t uIndex);
+	void RemoveChild(u_int uIndex);
 
 	// Accessors
 	int32_t GetSelectedIndex() const { return m_iSelectedIndex; }
 	void SetSelectedIndex(int32_t iIndex);
 
 private:
-	std::vector<Flux_BlendTreeNode*> m_xChildren;
+	Zenith_Vector<Flux_BlendTreeNode*> m_xChildren;
 	int32_t m_iSelectedIndex = 0;
 };

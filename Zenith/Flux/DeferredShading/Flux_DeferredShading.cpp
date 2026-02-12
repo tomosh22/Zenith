@@ -59,33 +59,7 @@ void Flux_DeferredShading::Initialise()
 	xPipelineSpec.m_pxShader = &s_xShader;
 	xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
 
-	Flux_PipelineLayout& xLayout = xPipelineSpec.m_xPipelineLayout;
-	xLayout.m_uNumDescriptorSets = 1;
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_BUFFER;  // Scratch buffer for push constants
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[2].m_eType = DESCRIPTOR_TYPE_BUFFER;  // Shadow matrix 0
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[3].m_eType = DESCRIPTOR_TYPE_BUFFER;  // Shadow matrix 1
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[4].m_eType = DESCRIPTOR_TYPE_BUFFER;  // Shadow matrix 2
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[5].m_eType = DESCRIPTOR_TYPE_BUFFER;  // Shadow matrix 3
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[6].m_eType = DESCRIPTOR_TYPE_TEXTURE;
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[7].m_eType = DESCRIPTOR_TYPE_TEXTURE;
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[8].m_eType = DESCRIPTOR_TYPE_TEXTURE;
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[9].m_eType = DESCRIPTOR_TYPE_TEXTURE;
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[10].m_eType = DESCRIPTOR_TYPE_TEXTURE;
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[11].m_eType = DESCRIPTOR_TYPE_TEXTURE;
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[12].m_eType = DESCRIPTOR_TYPE_TEXTURE;
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[13].m_eType = DESCRIPTOR_TYPE_TEXTURE;
-
-	// IBL textures
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[14].m_eType = DESCRIPTOR_TYPE_TEXTURE;  // BRDF LUT
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[15].m_eType = DESCRIPTOR_TYPE_TEXTURE;  // Irradiance map
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[16].m_eType = DESCRIPTOR_TYPE_TEXTURE;  // Prefiltered map
-
-	// SSR texture
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[17].m_eType = DESCRIPTOR_TYPE_TEXTURE;  // SSR reflection
-
-	// SSGI texture
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[18].m_eType = DESCRIPTOR_TYPE_TEXTURE;  // SSGI indirect diffuse
+	s_xShader.GetReflection().PopulateLayout(xPipelineSpec.m_xPipelineLayout);
 
 	xPipelineSpec.m_axBlendStates[0].m_eSrcBlendFactor = BLEND_FACTOR_ONE;
 	xPipelineSpec.m_axBlendStates[0].m_eDstBlendFactor = BLEND_FACTOR_ONE;

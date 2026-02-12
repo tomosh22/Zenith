@@ -114,13 +114,7 @@ Zenith_PathResult Zenith_Pathfinding::FindPathInternal(const Zenith_NavMesh& xNa
 			}
 
 			// Reverse to get start-to-end order
-			for (uint32_t u = 0; u < axPolygonPath.GetSize() / 2; ++u)
-			{
-				uint32_t uTemp = axPolygonPath.Get(u);
-				uint32_t uOtherIdx = axPolygonPath.GetSize() - 1 - u;
-				axPolygonPath.Get(u) = axPolygonPath.Get(uOtherIdx);
-				axPolygonPath.Get(uOtherIdx) = uTemp;
-			}
+			axPolygonPath.Reverse();
 
 			// Convert polygon path to waypoints
 			xResult.m_axWaypoints.PushBack(xStartProjected);

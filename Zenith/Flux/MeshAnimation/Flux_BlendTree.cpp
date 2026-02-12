@@ -240,27 +240,27 @@ void Flux_BlendTreeNode_Blend::ReadFromDataStream(Zenith_DataStream& xStream)
 //=============================================================================
 Flux_BlendTreeNode_BlendSpace1D::~Flux_BlendTreeNode_BlendSpace1D()
 {
-	for (auto& xPoint : m_xBlendPoints)
-		delete xPoint.m_pxNode;
+	for (u_int u = 0; u < m_xBlendPoints.GetSize(); u++)
+		delete m_xBlendPoints.Get(u).m_pxNode;
 }
 
 void Flux_BlendTreeNode_BlendSpace1D::AddBlendPoint(Flux_BlendTreeNode* pxNode, float fPosition)
 {
-	m_xBlendPoints.push_back({ pxNode, fPosition });
+	m_xBlendPoints.PushBack({ pxNode, fPosition });
 }
 
-void Flux_BlendTreeNode_BlendSpace1D::RemoveBlendPoint(size_t uIndex)
+void Flux_BlendTreeNode_BlendSpace1D::RemoveBlendPoint(u_int uIndex)
 {
-	if (uIndex < m_xBlendPoints.size())
+	if (uIndex < m_xBlendPoints.GetSize())
 	{
-		delete m_xBlendPoints[uIndex].m_pxNode;
-		m_xBlendPoints.erase(m_xBlendPoints.begin() + uIndex);
+		delete m_xBlendPoints.Get(uIndex).m_pxNode;
+		m_xBlendPoints.Remove(uIndex);
 	}
 }
 
 void Flux_BlendTreeNode_BlendSpace1D::SortBlendPoints()
 {
-	std::sort(m_xBlendPoints.begin(), m_xBlendPoints.end(),
+	std::sort(m_xBlendPoints.GetDataPointer(), m_xBlendPoints.GetDataPointer() + m_xBlendPoints.GetSize(),
 		[](const BlendPoint& a, const BlendPoint& b) {
 			return a.m_fPosition < b.m_fPosition;
 		});
@@ -270,27 +270,27 @@ void Flux_BlendTreeNode_BlendSpace1D::Evaluate(float fDt,
 	Flux_SkeletonPose& xOutPose,
 	const Zenith_SkeletonAsset& xSkeleton)
 {
-	if (m_xBlendPoints.empty())
+	if (m_xBlendPoints.GetSize() == 0)
 	{
 		xOutPose.Reset();
 		return;
 	}
 
-	if (m_xBlendPoints.size() == 1)
+	if (m_xBlendPoints.GetSize() == 1)
 	{
-		if (m_xBlendPoints[0].m_pxNode)
-			m_xBlendPoints[0].m_pxNode->Evaluate(fDt, xOutPose, xSkeleton);
+		if (m_xBlendPoints.Get(0).m_pxNode)
+			m_xBlendPoints.Get(0).m_pxNode->Evaluate(fDt, xOutPose, xSkeleton);
 		return;
 	}
 
 	// Find the two blend points to interpolate between
-	size_t uLowerIdx = 0;
-	size_t uUpperIdx = m_xBlendPoints.size() - 1;
+	u_int uLowerIdx = 0;
+	u_int uUpperIdx = m_xBlendPoints.GetSize() - 1;
 
-	for (size_t i = 0; i < m_xBlendPoints.size() - 1; ++i)
+	for (u_int i = 0; i < m_xBlendPoints.GetSize() - 1; ++i)
 	{
-		if (m_fParameter >= m_xBlendPoints[i].m_fPosition &&
-			m_fParameter <= m_xBlendPoints[i + 1].m_fPosition)
+		if (m_fParameter >= m_xBlendPoints.Get(i).m_fPosition &&
+			m_fParameter <= m_xBlendPoints.Get(i + 1).m_fPosition)
 		{
 			uLowerIdx = i;
 			uUpperIdx = i + 1;
@@ -299,50 +299,51 @@ void Flux_BlendTreeNode_BlendSpace1D::Evaluate(float fDt,
 	}
 
 	// Clamp to edges
-	if (m_fParameter <= m_xBlendPoints[0].m_fPosition)
+	if (m_fParameter <= m_xBlendPoints.Get(0).m_fPosition)
 	{
-		if (m_xBlendPoints[0].m_pxNode)
-			m_xBlendPoints[0].m_pxNode->Evaluate(fDt, xOutPose, xSkeleton);
+		if (m_xBlendPoints.Get(0).m_pxNode)
+			m_xBlendPoints.Get(0).m_pxNode->Evaluate(fDt, xOutPose, xSkeleton);
 		return;
 	}
 
-	if (m_fParameter >= m_xBlendPoints.back().m_fPosition)
+	if (m_fParameter >= m_xBlendPoints.Get(m_xBlendPoints.GetSize() - 1).m_fPosition)
 	{
-		if (m_xBlendPoints.back().m_pxNode)
-			m_xBlendPoints.back().m_pxNode->Evaluate(fDt, xOutPose, xSkeleton);
+		if (m_xBlendPoints.Get(m_xBlendPoints.GetSize() - 1).m_pxNode)
+			m_xBlendPoints.Get(m_xBlendPoints.GetSize() - 1).m_pxNode->Evaluate(fDt, xOutPose, xSkeleton);
 		return;
 	}
 
 	// Evaluate both points
-	if (m_xBlendPoints[uLowerIdx].m_pxNode)
-		m_xBlendPoints[uLowerIdx].m_pxNode->Evaluate(fDt, m_xPoseA, xSkeleton);
+	if (m_xBlendPoints.Get(uLowerIdx).m_pxNode)
+		m_xBlendPoints.Get(uLowerIdx).m_pxNode->Evaluate(fDt, m_xPoseA, xSkeleton);
 	else
 		m_xPoseA.Reset();
 
-	if (m_xBlendPoints[uUpperIdx].m_pxNode)
-		m_xBlendPoints[uUpperIdx].m_pxNode->Evaluate(fDt, m_xPoseB, xSkeleton);
+	if (m_xBlendPoints.Get(uUpperIdx).m_pxNode)
+		m_xBlendPoints.Get(uUpperIdx).m_pxNode->Evaluate(fDt, m_xPoseB, xSkeleton);
 	else
 		m_xPoseB.Reset();
 
 	// Calculate blend factor
-	float fRange = m_xBlendPoints[uUpperIdx].m_fPosition - m_xBlendPoints[uLowerIdx].m_fPosition;
+	float fRange = m_xBlendPoints.Get(uUpperIdx).m_fPosition - m_xBlendPoints.Get(uLowerIdx).m_fPosition;
 	float fBlend = (fRange > 0.0f) ?
-		(m_fParameter - m_xBlendPoints[uLowerIdx].m_fPosition) / fRange : 0.0f;
+		(m_fParameter - m_xBlendPoints.Get(uLowerIdx).m_fPosition) / fRange : 0.0f;
 
 	Flux_SkeletonPose::Blend(xOutPose, m_xPoseA, m_xPoseB, fBlend);
 }
 
 float Flux_BlendTreeNode_BlendSpace1D::GetNormalizedTime() const
 {
-	if (m_xBlendPoints.empty())
+	if (m_xBlendPoints.GetSize() == 0)
 		return 0.0f;
 
 	// Return time of nearest blend point
 	float fMinDist = FLT_MAX;
 	const BlendPoint* pxNearest = nullptr;
 
-	for (const auto& xPoint : m_xBlendPoints)
+	for (u_int u = 0; u < m_xBlendPoints.GetSize(); u++)
 	{
+		const BlendPoint& xPoint = m_xBlendPoints.Get(u);
 		float fDist = std::abs(xPoint.m_fPosition - m_fParameter);
 		if (fDist < fMinDist)
 		{
@@ -356,10 +357,10 @@ float Flux_BlendTreeNode_BlendSpace1D::GetNormalizedTime() const
 
 void Flux_BlendTreeNode_BlendSpace1D::Reset()
 {
-	for (auto& xPoint : m_xBlendPoints)
+	for (u_int u = 0; u < m_xBlendPoints.GetSize(); u++)
 	{
-		if (xPoint.m_pxNode)
-			xPoint.m_pxNode->Reset();
+		if (m_xBlendPoints.Get(u).m_pxNode)
+			m_xBlendPoints.Get(u).m_pxNode->Reset();
 	}
 }
 
@@ -367,11 +368,12 @@ void Flux_BlendTreeNode_BlendSpace1D::WriteToDataStream(Zenith_DataStream& xStre
 {
 	xStream << m_fParameter;
 
-	uint32_t uNumPoints = static_cast<uint32_t>(m_xBlendPoints.size());
+	uint32_t uNumPoints = static_cast<uint32_t>(m_xBlendPoints.GetSize());
 	xStream << uNumPoints;
 
-	for (const auto& xPoint : m_xBlendPoints)
+	for (u_int u = 0; u < m_xBlendPoints.GetSize(); u++)
 	{
+		const BlendPoint& xPoint = m_xBlendPoints.Get(u);
 		xStream << xPoint.m_fPosition;
 
 		bool bHasNode = (xPoint.m_pxNode != nullptr);
@@ -410,7 +412,7 @@ void Flux_BlendTreeNode_BlendSpace1D::ReadFromDataStream(Zenith_DataStream& xStr
 				pxNode->ReadFromDataStream(xStream);
 		}
 
-		m_xBlendPoints.push_back({ pxNode, fPosition });
+		m_xBlendPoints.PushBack({ pxNode, fPosition });
 	}
 
 	SortBlendPoints();
@@ -421,22 +423,22 @@ void Flux_BlendTreeNode_BlendSpace1D::ReadFromDataStream(Zenith_DataStream& xStr
 //=============================================================================
 Flux_BlendTreeNode_BlendSpace2D::~Flux_BlendTreeNode_BlendSpace2D()
 {
-	for (auto& xPoint : m_xBlendPoints)
-		delete xPoint.m_pxNode;
+	for (u_int u = 0; u < m_xBlendPoints.GetSize(); u++)
+		delete m_xBlendPoints.Get(u).m_pxNode;
 }
 
 void Flux_BlendTreeNode_BlendSpace2D::AddBlendPoint(Flux_BlendTreeNode* pxNode,
 	const Zenith_Maths::Vector2& xPosition)
 {
-	m_xBlendPoints.push_back({ pxNode, xPosition });
+	m_xBlendPoints.PushBack({ pxNode, xPosition });
 }
 
-void Flux_BlendTreeNode_BlendSpace2D::RemoveBlendPoint(size_t uIndex)
+void Flux_BlendTreeNode_BlendSpace2D::RemoveBlendPoint(u_int uIndex)
 {
-	if (uIndex < m_xBlendPoints.size())
+	if (uIndex < m_xBlendPoints.GetSize())
 	{
-		delete m_xBlendPoints[uIndex].m_pxNode;
-		m_xBlendPoints.erase(m_xBlendPoints.begin() + uIndex);
+		delete m_xBlendPoints.Get(uIndex).m_pxNode;
+		m_xBlendPoints.Remove(uIndex);
 	}
 }
 
@@ -444,16 +446,16 @@ void Flux_BlendTreeNode_BlendSpace2D::ComputeTriangulation()
 {
 	// Simple triangulation for small point sets
 	// For production use, implement Delaunay triangulation
-	m_xTriangles.clear();
+	m_xTriangles.Clear();
 
-	if (m_xBlendPoints.size() < 3)
+	if (m_xBlendPoints.GetSize() < 3)
 		return;
 
 	// Simple fan triangulation from first point (works for convex hulls)
 	// A proper implementation would use Delaunay triangulation
-	for (size_t i = 1; i < m_xBlendPoints.size() - 1; ++i)
+	for (u_int i = 1; i < m_xBlendPoints.GetSize() - 1; ++i)
 	{
-		m_xTriangles.push_back({ 0, static_cast<uint32_t>(i), static_cast<uint32_t>(i + 1) });
+		m_xTriangles.PushBack({ 0, static_cast<uint32_t>(i), static_cast<uint32_t>(i + 1) });
 	}
 }
 
@@ -461,11 +463,12 @@ bool Flux_BlendTreeNode_BlendSpace2D::FindContainingTriangle(const Zenith_Maths:
 	uint32_t& uOutIdx0, uint32_t& uOutIdx1, uint32_t& uOutIdx2,
 	float& fOutW0, float& fOutW1, float& fOutW2) const
 {
-	for (const auto& xTri : m_xTriangles)
+	for (u_int uTri = 0; uTri < m_xTriangles.GetSize(); uTri++)
 	{
-		const Zenith_Maths::Vector2& v0 = m_xBlendPoints[xTri[0]].m_xPosition;
-		const Zenith_Maths::Vector2& v1 = m_xBlendPoints[xTri[1]].m_xPosition;
-		const Zenith_Maths::Vector2& v2 = m_xBlendPoints[xTri[2]].m_xPosition;
+		const std::array<uint32_t, 3>& xTri = m_xTriangles.Get(uTri);
+		const Zenith_Maths::Vector2& v0 = m_xBlendPoints.Get(xTri[0]).m_xPosition;
+		const Zenith_Maths::Vector2& v1 = m_xBlendPoints.Get(xTri[1]).m_xPosition;
+		const Zenith_Maths::Vector2& v2 = m_xBlendPoints.Get(xTri[2]).m_xPosition;
 
 		// Compute barycentric coordinates
 		Zenith_Maths::Vector2 v0v1 = v1 - v0;
@@ -504,40 +507,45 @@ bool Flux_BlendTreeNode_BlendSpace2D::FindContainingTriangle(const Zenith_Maths:
 }
 
 void Flux_BlendTreeNode_BlendSpace2D::FindNearestPoints(const Zenith_Maths::Vector2& xPoint,
-	std::vector<std::pair<size_t, float>>& xOutWeights) const
+	Zenith_Vector<Flux_WeightedIndex>& xOutWeights) const
 {
-	xOutWeights.clear();
+	xOutWeights.Clear();
 
-	if (m_xBlendPoints.empty())
+	if (m_xBlendPoints.GetSize() == 0)
 		return;
 
 	// Find distances to all points
-	std::vector<std::pair<float, size_t>> xDistances;
-	for (size_t i = 0; i < m_xBlendPoints.size(); ++i)
+	// Reuse Flux_WeightedIndex: m_uIndex = point index, m_fWeight = distance (temporarily)
+	Zenith_Vector<Flux_WeightedIndex> xDistances;
+	for (u_int i = 0; i < m_xBlendPoints.GetSize(); ++i)
 	{
-		float fDist = glm::length(m_xBlendPoints[i].m_xPosition - xPoint);
-		xDistances.push_back({ fDist, i });
+		float fDist = glm::length(m_xBlendPoints.Get(i).m_xPosition - xPoint);
+		xDistances.PushBack({ i, fDist });
 	}
 
-	// Sort by distance
-	std::sort(xDistances.begin(), xDistances.end());
+	// Sort by distance (stored in m_fWeight)
+	std::sort(xDistances.GetDataPointer(), xDistances.GetDataPointer() + xDistances.GetSize(),
+		[](const Flux_WeightedIndex& a, const Flux_WeightedIndex& b) {
+			return a.m_fWeight < b.m_fWeight;
+		});
 
 	// Use inverse distance weighting for nearest 3 points
-	size_t uCount = std::min(xDistances.size(), size_t(3));
+	u_int uCount = std::min(xDistances.GetSize(), (u_int)3);
 	float fTotalWeight = 0.0f;
 
-	for (size_t i = 0; i < uCount; ++i)
+	for (u_int i = 0; i < uCount; ++i)
 	{
-		float fWeight = (xDistances[i].first > 0.0001f) ? 1.0f / xDistances[i].first : 1000.0f;
-		xOutWeights.push_back({ xDistances[i].second, fWeight });
+		float fDist = xDistances.Get(i).m_fWeight;
+		float fWeight = (fDist > 0.0001f) ? 1.0f / fDist : 1000.0f;
+		xOutWeights.PushBack({ xDistances.Get(i).m_uIndex, fWeight });
 		fTotalWeight += fWeight;
 	}
 
 	// Normalize weights
 	if (fTotalWeight > 0.0f)
 	{
-		for (auto& xWeight : xOutWeights)
-			xWeight.second /= fTotalWeight;
+		for (u_int u = 0; u < xOutWeights.GetSize(); u++)
+			xOutWeights.Get(u).m_fWeight /= fTotalWeight;
 	}
 }
 
@@ -545,16 +553,16 @@ void Flux_BlendTreeNode_BlendSpace2D::Evaluate(float fDt,
 	Flux_SkeletonPose& xOutPose,
 	const Zenith_SkeletonAsset& xSkeleton)
 {
-	if (m_xBlendPoints.empty())
+	if (m_xBlendPoints.GetSize() == 0)
 	{
 		xOutPose.Reset();
 		return;
 	}
 
-	if (m_xBlendPoints.size() == 1)
+	if (m_xBlendPoints.GetSize() == 1)
 	{
-		if (m_xBlendPoints[0].m_pxNode)
-			m_xBlendPoints[0].m_pxNode->Evaluate(fDt, xOutPose, xSkeleton);
+		if (m_xBlendPoints.Get(0).m_pxNode)
+			m_xBlendPoints.Get(0).m_pxNode->Evaluate(fDt, xOutPose, xSkeleton);
 		return;
 	}
 
@@ -565,62 +573,64 @@ void Flux_BlendTreeNode_BlendSpace2D::Evaluate(float fDt,
 	if (FindContainingTriangle(m_xParameter, idx0, idx1, idx2, w0, w1, w2))
 	{
 		// Ensure temp poses array is big enough
-		m_xTempPoses.resize(3);
+		while (m_xTempPoses.GetSize() < 3)
+			m_xTempPoses.PushBack(Flux_SkeletonPose());
 
 		// Evaluate the three vertices
-		if (m_xBlendPoints[idx0].m_pxNode)
-			m_xBlendPoints[idx0].m_pxNode->Evaluate(fDt, m_xTempPoses[0], xSkeleton);
+		if (m_xBlendPoints.Get(idx0).m_pxNode)
+			m_xBlendPoints.Get(idx0).m_pxNode->Evaluate(fDt, m_xTempPoses.Get(0), xSkeleton);
 		else
-			m_xTempPoses[0].Reset();
+			m_xTempPoses.Get(0).Reset();
 
-		if (m_xBlendPoints[idx1].m_pxNode)
-			m_xBlendPoints[idx1].m_pxNode->Evaluate(fDt, m_xTempPoses[1], xSkeleton);
+		if (m_xBlendPoints.Get(idx1).m_pxNode)
+			m_xBlendPoints.Get(idx1).m_pxNode->Evaluate(fDt, m_xTempPoses.Get(1), xSkeleton);
 		else
-			m_xTempPoses[1].Reset();
+			m_xTempPoses.Get(1).Reset();
 
-		if (m_xBlendPoints[idx2].m_pxNode)
-			m_xBlendPoints[idx2].m_pxNode->Evaluate(fDt, m_xTempPoses[2], xSkeleton);
+		if (m_xBlendPoints.Get(idx2).m_pxNode)
+			m_xBlendPoints.Get(idx2).m_pxNode->Evaluate(fDt, m_xTempPoses.Get(2), xSkeleton);
 		else
-			m_xTempPoses[2].Reset();
+			m_xTempPoses.Get(2).Reset();
 
 		// Blend with barycentric weights
 		Flux_SkeletonPose xTemp;
-		Flux_SkeletonPose::Blend(xTemp, m_xTempPoses[0], m_xTempPoses[1], w1 / (w0 + w1 + 0.0001f));
-		Flux_SkeletonPose::Blend(xOutPose, xTemp, m_xTempPoses[2], w2);
+		Flux_SkeletonPose::Blend(xTemp, m_xTempPoses.Get(0), m_xTempPoses.Get(1), w1 / (w0 + w1 + 0.0001f));
+		Flux_SkeletonPose::Blend(xOutPose, xTemp, m_xTempPoses.Get(2), w2);
 	}
 	else
 	{
 		// Fallback: use inverse distance weighting
-		std::vector<std::pair<size_t, float>> xWeights;
+		Zenith_Vector<Flux_WeightedIndex> xWeights;
 		FindNearestPoints(m_xParameter, xWeights);
 
-		if (xWeights.empty())
+		if (xWeights.GetSize() == 0)
 		{
 			xOutPose.Reset();
 			return;
 		}
 
-		m_xTempPoses.resize(xWeights.size());
+		while (m_xTempPoses.GetSize() < xWeights.GetSize())
+			m_xTempPoses.PushBack(Flux_SkeletonPose());
 
 		// Evaluate all weighted points
-		for (size_t i = 0; i < xWeights.size(); ++i)
+		for (u_int i = 0; i < xWeights.GetSize(); ++i)
 		{
-			size_t idx = xWeights[i].first;
-			if (m_xBlendPoints[idx].m_pxNode)
-				m_xBlendPoints[idx].m_pxNode->Evaluate(fDt, m_xTempPoses[i], xSkeleton);
+			uint32_t uIdx = xWeights.Get(i).m_uIndex;
+			if (m_xBlendPoints.Get(uIdx).m_pxNode)
+				m_xBlendPoints.Get(uIdx).m_pxNode->Evaluate(fDt, m_xTempPoses.Get(i), xSkeleton);
 			else
-				m_xTempPoses[i].Reset();
+				m_xTempPoses.Get(i).Reset();
 		}
 
 		// Blend based on weights
-		xOutPose.CopyFrom(m_xTempPoses[0]);
-		float fAccumWeight = xWeights[0].second;
+		xOutPose.CopyFrom(m_xTempPoses.Get(0));
+		float fAccumWeight = xWeights.Get(0).m_fWeight;
 
-		for (size_t i = 1; i < xWeights.size(); ++i)
+		for (u_int i = 1; i < xWeights.GetSize(); ++i)
 		{
-			float fNewWeight = xWeights[i].second;
+			float fNewWeight = xWeights.Get(i).m_fWeight;
 			float fBlend = fNewWeight / (fAccumWeight + fNewWeight);
-			Flux_SkeletonPose::Blend(xOutPose, xOutPose, m_xTempPoses[i], fBlend);
+			Flux_SkeletonPose::Blend(xOutPose, xOutPose, m_xTempPoses.Get(i), fBlend);
 			fAccumWeight += fNewWeight;
 		}
 	}
@@ -628,15 +638,16 @@ void Flux_BlendTreeNode_BlendSpace2D::Evaluate(float fDt,
 
 float Flux_BlendTreeNode_BlendSpace2D::GetNormalizedTime() const
 {
-	if (m_xBlendPoints.empty())
+	if (m_xBlendPoints.GetSize() == 0)
 		return 0.0f;
 
 	// Return time of nearest point
 	float fMinDist = FLT_MAX;
 	const BlendPoint* pxNearest = nullptr;
 
-	for (const auto& xPoint : m_xBlendPoints)
+	for (u_int u = 0; u < m_xBlendPoints.GetSize(); u++)
 	{
+		const BlendPoint& xPoint = m_xBlendPoints.Get(u);
 		float fDist = glm::length(xPoint.m_xPosition - m_xParameter);
 		if (fDist < fMinDist)
 		{
@@ -650,10 +661,10 @@ float Flux_BlendTreeNode_BlendSpace2D::GetNormalizedTime() const
 
 void Flux_BlendTreeNode_BlendSpace2D::Reset()
 {
-	for (auto& xPoint : m_xBlendPoints)
+	for (u_int u = 0; u < m_xBlendPoints.GetSize(); u++)
 	{
-		if (xPoint.m_pxNode)
-			xPoint.m_pxNode->Reset();
+		if (m_xBlendPoints.Get(u).m_pxNode)
+			m_xBlendPoints.Get(u).m_pxNode->Reset();
 	}
 }
 
@@ -662,11 +673,12 @@ void Flux_BlendTreeNode_BlendSpace2D::WriteToDataStream(Zenith_DataStream& xStre
 	xStream << m_xParameter.x;
 	xStream << m_xParameter.y;
 
-	uint32_t uNumPoints = static_cast<uint32_t>(m_xBlendPoints.size());
+	uint32_t uNumPoints = static_cast<uint32_t>(m_xBlendPoints.GetSize());
 	xStream << uNumPoints;
 
-	for (const auto& xPoint : m_xBlendPoints)
+	for (u_int u = 0; u < m_xBlendPoints.GetSize(); u++)
 	{
+		const BlendPoint& xPoint = m_xBlendPoints.Get(u);
 		xStream << xPoint.m_xPosition.x;
 		xStream << xPoint.m_xPosition.y;
 
@@ -708,7 +720,7 @@ void Flux_BlendTreeNode_BlendSpace2D::ReadFromDataStream(Zenith_DataStream& xStr
 				pxNode->ReadFromDataStream(xStream);
 		}
 
-		m_xBlendPoints.push_back({ pxNode, xPosition });
+		m_xBlendPoints.PushBack({ pxNode, xPosition });
 	}
 
 	ComputeTriangulation();
@@ -925,34 +937,34 @@ void Flux_BlendTreeNode_Masked::ReadFromDataStream(Zenith_DataStream& xStream)
 //=============================================================================
 Flux_BlendTreeNode_Select::~Flux_BlendTreeNode_Select()
 {
-	for (auto* pxChild : m_xChildren)
-		delete pxChild;
+	for (u_int u = 0; u < m_xChildren.GetSize(); u++)
+		delete m_xChildren.Get(u);
 }
 
 void Flux_BlendTreeNode_Select::AddChild(Flux_BlendTreeNode* pxChild)
 {
-	m_xChildren.push_back(pxChild);
+	m_xChildren.PushBack(pxChild);
 }
 
-void Flux_BlendTreeNode_Select::RemoveChild(size_t uIndex)
+void Flux_BlendTreeNode_Select::RemoveChild(u_int uIndex)
 {
-	if (uIndex < m_xChildren.size())
+	if (uIndex < m_xChildren.GetSize())
 	{
-		delete m_xChildren[uIndex];
-		m_xChildren.erase(m_xChildren.begin() + uIndex);
+		delete m_xChildren.Get(uIndex);
+		m_xChildren.Remove(uIndex);
 	}
 }
 
 void Flux_BlendTreeNode_Select::SetSelectedIndex(int32_t iIndex)
 {
-	if (iIndex >= 0 && iIndex < static_cast<int32_t>(m_xChildren.size()))
+	if (iIndex >= 0 && iIndex < static_cast<int32_t>(m_xChildren.GetSize()))
 	{
 		if (iIndex != m_iSelectedIndex)
 		{
 			m_iSelectedIndex = iIndex;
 			// Reset the newly selected child
-			if (m_xChildren[m_iSelectedIndex])
-				m_xChildren[m_iSelectedIndex]->Reset();
+			if (m_xChildren.Get(m_iSelectedIndex))
+				m_xChildren.Get(m_iSelectedIndex)->Reset();
 		}
 	}
 }
@@ -961,11 +973,11 @@ void Flux_BlendTreeNode_Select::Evaluate(float fDt,
 	Flux_SkeletonPose& xOutPose,
 	const Zenith_SkeletonAsset& xSkeleton)
 {
-	if (m_iSelectedIndex >= 0 && m_iSelectedIndex < static_cast<int32_t>(m_xChildren.size()))
+	if (m_iSelectedIndex >= 0 && m_iSelectedIndex < static_cast<int32_t>(m_xChildren.GetSize()))
 	{
-		if (m_xChildren[m_iSelectedIndex])
+		if (m_xChildren.Get(m_iSelectedIndex))
 		{
-			m_xChildren[m_iSelectedIndex]->Evaluate(fDt, xOutPose, xSkeleton);
+			m_xChildren.Get(m_iSelectedIndex)->Evaluate(fDt, xOutPose, xSkeleton);
 			return;
 		}
 	}
@@ -975,29 +987,29 @@ void Flux_BlendTreeNode_Select::Evaluate(float fDt,
 
 float Flux_BlendTreeNode_Select::GetNormalizedTime() const
 {
-	if (m_iSelectedIndex >= 0 && m_iSelectedIndex < static_cast<int32_t>(m_xChildren.size()))
+	if (m_iSelectedIndex >= 0 && m_iSelectedIndex < static_cast<int32_t>(m_xChildren.GetSize()))
 	{
-		if (m_xChildren[m_iSelectedIndex])
-			return m_xChildren[m_iSelectedIndex]->GetNormalizedTime();
+		if (m_xChildren.Get(m_iSelectedIndex))
+			return m_xChildren.Get(m_iSelectedIndex)->GetNormalizedTime();
 	}
 	return 0.0f;
 }
 
 void Flux_BlendTreeNode_Select::Reset()
 {
-	for (auto* pxChild : m_xChildren)
+	for (u_int u = 0; u < m_xChildren.GetSize(); u++)
 	{
-		if (pxChild)
-			pxChild->Reset();
+		if (m_xChildren.Get(u))
+			m_xChildren.Get(u)->Reset();
 	}
 }
 
 bool Flux_BlendTreeNode_Select::IsFinished() const
 {
-	if (m_iSelectedIndex >= 0 && m_iSelectedIndex < static_cast<int32_t>(m_xChildren.size()))
+	if (m_iSelectedIndex >= 0 && m_iSelectedIndex < static_cast<int32_t>(m_xChildren.GetSize()))
 	{
-		if (m_xChildren[m_iSelectedIndex])
-			return m_xChildren[m_iSelectedIndex]->IsFinished();
+		if (m_xChildren.Get(m_iSelectedIndex))
+			return m_xChildren.Get(m_iSelectedIndex)->IsFinished();
 	}
 	return true;
 }
@@ -1006,11 +1018,12 @@ void Flux_BlendTreeNode_Select::WriteToDataStream(Zenith_DataStream& xStream) co
 {
 	xStream << m_iSelectedIndex;
 
-	uint32_t uNumChildren = static_cast<uint32_t>(m_xChildren.size());
+	uint32_t uNumChildren = static_cast<uint32_t>(m_xChildren.GetSize());
 	xStream << uNumChildren;
 
-	for (const auto* pxChild : m_xChildren)
+	for (u_int u = 0; u < m_xChildren.GetSize(); u++)
 	{
+		const Flux_BlendTreeNode* pxChild = m_xChildren.Get(u);
 		bool bHasChild = (pxChild != nullptr);
 		xStream << bHasChild;
 		if (bHasChild)
@@ -1044,6 +1057,6 @@ void Flux_BlendTreeNode_Select::ReadFromDataStream(Zenith_DataStream& xStream)
 				pxChild->ReadFromDataStream(xStream);
 		}
 
-		m_xChildren.push_back(pxChild);
+		m_xChildren.PushBack(pxChild);
 	}
 }

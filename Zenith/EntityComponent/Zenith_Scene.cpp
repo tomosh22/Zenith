@@ -29,7 +29,7 @@ int Zenith_Scene::GetBuildIndex() const
 	{
 		return -1;
 	}
-	return pxData->m_iBuildIndex;
+	return pxData->GetBuildIndex();
 }
 
 #ifdef ZENITH_TOOLS
@@ -41,7 +41,7 @@ bool Zenith_Scene::HasUnsavedChanges() const
 	{
 		return false;
 	}
-	return pxData->m_bHasUnsavedChanges;
+	return pxData->HasUnsavedChanges();
 }
 #endif
 
@@ -55,7 +55,7 @@ bool Zenith_Scene::IsLoaded() const
 	}
 	// Return false if scene is being unloaded or not yet activated (Unity parity:
 	// scene.isLoaded is false until Awake/OnEnable have completed for async loads)
-	return pxData->m_bIsLoaded && pxData->m_bIsActivated && !pxData->m_bIsUnloading;
+	return pxData->IsLoaded() && pxData->IsActivated() && !pxData->IsUnloading();
 }
 
 bool Zenith_Scene::WasLoadedAdditively() const
@@ -66,7 +66,7 @@ bool Zenith_Scene::WasLoadedAdditively() const
 	{
 		return false;
 	}
-	return pxData->m_bWasLoadedAdditively;
+	return pxData->WasLoadedAdditively();
 }
 
 
@@ -79,7 +79,7 @@ const std::string& Zenith_Scene::GetName() const
 	{
 		return s_strEmpty;
 	}
-	return pxData->m_strName;
+	return pxData->GetName();
 }
 
 const std::string& Zenith_Scene::GetPath() const
@@ -91,14 +91,14 @@ const std::string& Zenith_Scene::GetPath() const
 	{
 		return s_strEmpty;
 	}
-	return pxData->m_strPath;
+	return pxData->GetPath();
 }
 
 uint32_t Zenith_Scene::GetRootEntityCount() const
 {
 	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "GetRootEntityCount must be called from main thread");
 	Zenith_SceneData* pxData = Zenith_SceneManager::GetSceneData(*this);
-	if (pxData == nullptr || !pxData->m_bIsLoaded)
+	if (pxData == nullptr || !pxData->IsLoaded())
 	{
 		return 0;
 	}
@@ -110,7 +110,7 @@ void Zenith_Scene::GetRootEntities(Zenith_Vector<Zenith_Entity>& axOut) const
 {
 	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "GetRootEntities must be called from main thread");
 	Zenith_SceneData* pxData = Zenith_SceneManager::GetSceneData(*this);
-	if (pxData == nullptr || !pxData->m_bIsLoaded)
+	if (pxData == nullptr || !pxData->IsLoaded())
 	{
 		return;
 	}

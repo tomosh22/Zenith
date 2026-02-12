@@ -673,43 +673,41 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateTextureVRAM(const void* pData
 			memcpy(xImageAllocInfo.pMappedData, pData, ulDataSize);
 			vmaFlushAllocation(s_xAllocator, xAllocation, 0, VK_WHOLE_SIZE);
 		}
+		else if (ulDataSize > g_uStagingPoolSize)
+		{
+			// Allocation larger than entire staging buffer - unlock and use chunked upload
+			s_xMutex.Unlock();
+			UploadTextureDataChunked(vk::Image(xImage), pData, ulDataSize, xInfoCopy.m_uWidth, xInfoCopy.m_uHeight, xInfoCopy.m_uNumMips, xInfoCopy.m_uNumLayers);
+			return xHandle;
+		}
 		else
 		{
-			// If the allocation is larger than the entire staging buffer, use chunked upload
-			if (ulDataSize > g_uStagingPoolSize)
+			// Upload via staging buffer
+			if (s_uNextFreeStagingOffset + ulDataSize >= g_uStagingPoolSize)
 			{
-				s_xMutex.Unlock();
-				UploadTextureDataChunked(vk::Image(xImage), pData, ulDataSize, xInfoCopy.m_uWidth, xInfoCopy.m_uHeight, xInfoCopy.m_uNumMips, xInfoCopy.m_uNumLayers);
+				HandleStagingBufferFull();
 			}
-			else
-			{
-				// Upload via staging buffer
-				if (s_uNextFreeStagingOffset + ulDataSize >= g_uStagingPoolSize)
-				{
-					HandleStagingBufferFull();
-				}
 
-				// Create staging allocation with texture metadata directly - no temp texture object
-				StagingMemoryAllocation xStagingAlloc;
-				xStagingAlloc.m_eType = ALLOCATION_TYPE_TEXTURE;
-				xStagingAlloc.m_xTextureMetadata.m_xImage = vk::Image(xImage);
-				xStagingAlloc.m_xTextureMetadata.m_uWidth = xInfoCopy.m_uWidth;
-				xStagingAlloc.m_xTextureMetadata.m_uHeight = xInfoCopy.m_uHeight;
-				xStagingAlloc.m_xTextureMetadata.m_uDepth = xInfoCopy.m_uDepth;
-				xStagingAlloc.m_xTextureMetadata.m_uNumMips = xInfoCopy.m_uNumMips;
-				xStagingAlloc.m_xTextureMetadata.m_uNumLayers = xInfoCopy.m_uNumLayers;
-				xStagingAlloc.m_xTextureMetadata.m_eFormat = xInfoCopy.m_eFormat;
-				xStagingAlloc.m_uSize = ulDataSize;
-				xStagingAlloc.m_uOffset = s_uNextFreeStagingOffset;
-				s_xStagingAllocations.push_back(xStagingAlloc);
+			// Create staging allocation with texture metadata directly - no temp texture object
+			StagingMemoryAllocation xStagingAlloc;
+			xStagingAlloc.m_eType = ALLOCATION_TYPE_TEXTURE;
+			xStagingAlloc.m_xTextureMetadata.m_xImage = vk::Image(xImage);
+			xStagingAlloc.m_xTextureMetadata.m_uWidth = xInfoCopy.m_uWidth;
+			xStagingAlloc.m_xTextureMetadata.m_uHeight = xInfoCopy.m_uHeight;
+			xStagingAlloc.m_xTextureMetadata.m_uDepth = xInfoCopy.m_uDepth;
+			xStagingAlloc.m_xTextureMetadata.m_uNumMips = xInfoCopy.m_uNumMips;
+			xStagingAlloc.m_xTextureMetadata.m_uNumLayers = xInfoCopy.m_uNumLayers;
+			xStagingAlloc.m_xTextureMetadata.m_eFormat = xInfoCopy.m_eFormat;
+			xStagingAlloc.m_uSize = ulDataSize;
+			xStagingAlloc.m_uOffset = s_uNextFreeStagingOffset;
+			s_xStagingAllocations.push_back(xStagingAlloc);
 
-				void* pMap = xDevice.mapMemory(s_xStagingMem, s_uNextFreeStagingOffset, ulDataSize);
-				memcpy(pMap, pData, ulDataSize);
-				xDevice.unmapMemory(s_xStagingMem);
-				s_uNextFreeStagingOffset += ulDataSize;
-				// Align to 8 bytes for compressed texture formats (BC1, BC3, etc.)
-				s_uNextFreeStagingOffset = ALIGN(s_uNextFreeStagingOffset, 8);
-			}
+			void* pMap = xDevice.mapMemory(s_xStagingMem, s_uNextFreeStagingOffset, ulDataSize);
+			memcpy(pMap, pData, ulDataSize);
+			xDevice.unmapMemory(s_xStagingMem);
+			s_uNextFreeStagingOffset += ulDataSize;
+			// Align to 8 bytes for compressed texture formats (BC1, BC3, etc.)
+			s_uNextFreeStagingOffset = ALIGN(s_uNextFreeStagingOffset, 8);
 		}
 		s_xMutex.Unlock();
 	}
@@ -1205,113 +1203,123 @@ void Zenith_Vulkan_MemoryManager::UploadBufferDataAtOffset(Flux_VRAMHandle xBuff
 	}
 }
 
+void Zenith_Vulkan_MemoryManager::GenerateMipmapsAndTransitionToShaderRead(vk::Image xImage, uint32_t uWidth, uint32_t uHeight, uint32_t uNumMips, uint32_t uLayer, bool bIsCompressed)
+{
+	// Mip 0 is already in TRANSFER_DST_OPTIMAL from the copy. Transition to TRANSFER_SRC for blit source.
+	s_xCommandBuffer.ImageTransitionBarrier(xImage, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eTransferSrcOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, 0, uLayer);
+
+	// Compressed formats (BC1, BC3, BC5, BC7) cannot use blit for mipmap generation;
+	// they must have pre-generated mipmaps in the source data.
+	if (!bIsCompressed)
+	{
+		for (uint32_t uMip = 1; uMip < uNumMips; uMip++)
+		{
+			std::array<vk::Offset3D, 2> axSrcOffsets;
+			axSrcOffsets.at(0) = vk::Offset3D(0, 0, 0);
+			axSrcOffsets.at(1) = vk::Offset3D(uWidth >> (uMip - 1), uHeight >> (uMip - 1), 1);
+
+			vk::ImageSubresourceLayers xSrcSubresource = vk::ImageSubresourceLayers()
+				.setAspectMask(vk::ImageAspectFlagBits::eColor)
+				.setMipLevel(uMip - 1)
+				.setBaseArrayLayer(uLayer)
+				.setLayerCount(1);
+
+			std::array<vk::Offset3D, 2> axDstOffsets;
+			axDstOffsets.at(0) = vk::Offset3D(0, 0, 0);
+			axDstOffsets.at(1) = vk::Offset3D(uWidth >> uMip, uHeight >> uMip, 1);
+
+			vk::ImageSubresourceLayers xDstSubresource = vk::ImageSubresourceLayers()
+				.setAspectMask(vk::ImageAspectFlagBits::eColor)
+				.setMipLevel(uMip)
+				.setBaseArrayLayer(uLayer)
+				.setLayerCount(1);
+
+			vk::ImageBlit xBlit = vk::ImageBlit()
+				.setSrcOffsets(axSrcOffsets)
+				.setSrcSubresource(xSrcSubresource)
+				.setDstOffsets(axDstOffsets)
+				.setDstSubresource(xDstSubresource);
+
+			s_xCommandBuffer.GetCurrentCmdBuffer().blitImage(xImage, vk::ImageLayout::eTransferSrcOptimal, xImage, vk::ImageLayout::eTransferDstOptimal, 1, &xBlit, vk::Filter::eLinear);
+			s_xCommandBuffer.ImageTransitionBarrier(xImage, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eTransferSrcOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, uMip, uLayer);
+		}
+	}
+
+	// Transition all mips to shader-read layout
+	s_xCommandBuffer.ImageTransitionBarrier(xImage, vk::ImageLayout::eTransferSrcOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, 0, uLayer);
+
+	for (uint32_t uMip = 1; uMip < uNumMips; uMip++)
+	{
+		// Compressed mips 1+ are still in TRANSFER_DST (no blit was done).
+		// Non-compressed mips were transitioned to TRANSFER_SRC after each blit.
+		vk::ImageLayout eSrcLayout = bIsCompressed ? vk::ImageLayout::eTransferDstOptimal : vk::ImageLayout::eTransferSrcOptimal;
+		s_xCommandBuffer.ImageTransitionBarrier(xImage, eSrcLayout, vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, uMip, uLayer);
+	}
+}
+
+void Zenith_Vulkan_MemoryManager::FlushStagingBufferAllocation(const StagingMemoryAllocation& xAlloc)
+{
+	const StagingBufferMetadata& xMeta = xAlloc.m_xBufferMetadata;
+	vk::BufferCopy xCopyRegion(xAlloc.m_uOffset, 0, xAlloc.m_uSize);
+	s_xCommandBuffer.GetCurrentCmdBuffer().copyBuffer(s_xStagingBuffer, xMeta.m_xBuffer, xCopyRegion);
+}
+
+void Zenith_Vulkan_MemoryManager::FlushStagingTextureAllocation(const StagingMemoryAllocation& xAlloc)
+{
+	const StagingTextureMetadata& xMeta = xAlloc.m_xTextureMetadata;
+	const vk::Image& xImage = xMeta.m_xImage;
+
+	// Transition all mips to transfer-dst for the copy
+	for (uint32_t uLayer = 0; uLayer < xMeta.m_uNumLayers; uLayer++)
+	{
+		for (uint32_t uMip = 0; uMip < xMeta.m_uNumMips; uMip++)
+		{
+			s_xCommandBuffer.ImageTransitionBarrier(xImage, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, uMip, uLayer);
+		}
+	}
+
+	// Copy staging buffer to image
+	vk::ImageSubresourceLayers xSubresource = vk::ImageSubresourceLayers()
+		.setAspectMask(vk::ImageAspectFlagBits::eColor)
+		.setMipLevel(0)
+		.setBaseArrayLayer(0)
+		.setLayerCount(xMeta.m_uNumLayers);
+
+	vk::BufferImageCopy region = vk::BufferImageCopy()
+		.setBufferOffset(xAlloc.m_uOffset)
+		.setBufferRowLength(0)
+		.setBufferImageHeight(0)
+		.setImageSubresource(xSubresource)
+		.setImageOffset({ 0, 0, 0 })
+		.setImageExtent({ xMeta.m_uWidth, xMeta.m_uHeight, xMeta.m_uDepth });
+
+	s_xCommandBuffer.GetCurrentCmdBuffer().copyBufferToImage(s_xStagingBuffer, xImage, vk::ImageLayout::eTransferDstOptimal, 1, &region);
+
+	// Generate mipmaps (via blit for non-compressed) and transition to shader-read
+	const bool bIsCompressed = IsCompressedFormat(xMeta.m_eFormat);
+	for (uint32_t uLayer = 0; uLayer < xMeta.m_uNumLayers; uLayer++)
+	{
+		GenerateMipmapsAndTransitionToShaderRead(xImage, xMeta.m_uWidth, xMeta.m_uHeight, xMeta.m_uNumMips, uLayer, bIsCompressed);
+	}
+}
+
 void Zenith_Vulkan_MemoryManager::FlushStagingBuffer()
 {
 	Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__VULKAN_MEMORY_MANAGER_FLUSH);
-	for (auto it = s_xStagingAllocations.begin(); it != s_xStagingAllocations.end(); it++) {
-		StagingMemoryAllocation& xAlloc = *it;
-		if (xAlloc.m_eType == ALLOCATION_TYPE_BUFFER) {
-			const StagingBufferMetadata& xMeta = xAlloc.m_xBufferMetadata;
-			vk::BufferCopy xCopyRegion(xAlloc.m_uOffset, 0, xAlloc.m_uSize);
-			s_xCommandBuffer.GetCurrentCmdBuffer().copyBuffer(s_xStagingBuffer, xMeta.m_xBuffer, xCopyRegion);
+
+	for (auto it = s_xStagingAllocations.begin(); it != s_xStagingAllocations.end(); it++)
+	{
+		if (it->m_eType == ALLOCATION_TYPE_BUFFER)
+		{
+			FlushStagingBufferAllocation(*it);
 		}
-		else if (xAlloc.m_eType == ALLOCATION_TYPE_TEXTURE) {
-			const StagingTextureMetadata& xMeta = xAlloc.m_xTextureMetadata;
-			const vk::Image& xImage = xMeta.m_xImage;
-
-			for (uint32_t uLayer = 0; uLayer < xMeta.m_uNumLayers; uLayer++)
-			{
-				for (uint32_t uMip = 0; uMip < xMeta.m_uNumMips; uMip++)
-				{
-					s_xCommandBuffer.ImageTransitionBarrier(xImage, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, uMip, uLayer);
-				}
-			}
-
-			// Copy buffer to image using metadata
-			vk::ImageSubresourceLayers xSubresource = vk::ImageSubresourceLayers()
-				.setAspectMask(vk::ImageAspectFlagBits::eColor)
-				.setMipLevel(0)
-				.setBaseArrayLayer(0)
-				.setLayerCount(xMeta.m_uNumLayers);
-
-			vk::BufferImageCopy region = vk::BufferImageCopy()
-				.setBufferOffset(xAlloc.m_uOffset)
-				.setBufferRowLength(0)
-				.setBufferImageHeight(0)
-				.setImageSubresource(xSubresource)
-				.setImageOffset({ 0, 0, 0 })
-				.setImageExtent({ xMeta.m_uWidth, xMeta.m_uHeight, xMeta.m_uDepth });
-
-			s_xCommandBuffer.GetCurrentCmdBuffer().copyBufferToImage(s_xStagingBuffer, xImage, vk::ImageLayout::eTransferDstOptimal, 1, &region);
-
-			// Compressed formats (BC1, BC3, BC5, BC7) cannot use blit for mipmap generation
-			// They must have pre-generated mipmaps in the source data
-			const bool bIsCompressed = IsCompressedFormat(xMeta.m_eFormat);
-
-			for (uint32_t uLayer = 0; uLayer < xMeta.m_uNumLayers; uLayer++)
-			{
-				s_xCommandBuffer.ImageTransitionBarrier(xImage, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eTransferSrcOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, 0, uLayer);
-
-				// Skip blit-based mipmap generation for compressed formats
-				if (!bIsCompressed)
-				{
-					for (uint32_t uMip = 1; uMip < xMeta.m_uNumMips; uMip++)
-					{
-						// Blit mipmap generation using metadata
-						std::array<vk::Offset3D, 2> axSrcOffsets;
-						axSrcOffsets.at(0).setX(0);
-						axSrcOffsets.at(0).setY(0);
-						axSrcOffsets.at(0).setZ(0);
-						axSrcOffsets.at(1).setX(xMeta.m_uWidth >> (uMip - 1));
-						axSrcOffsets.at(1).setY(xMeta.m_uHeight >> (uMip - 1));
-						axSrcOffsets.at(1).setZ(1);
-
-						vk::ImageSubresourceLayers xSrcSubresource = vk::ImageSubresourceLayers()
-							.setAspectMask(vk::ImageAspectFlagBits::eColor)
-							.setMipLevel(uMip - 1)
-							.setBaseArrayLayer(uLayer)
-							.setLayerCount(1);
-
-						std::array<vk::Offset3D, 2> axDstOffsets;
-						axDstOffsets.at(0).setX(0);
-						axDstOffsets.at(0).setY(0);
-						axDstOffsets.at(0).setZ(0);
-						axDstOffsets.at(1).setX(xMeta.m_uWidth >> uMip);
-						axDstOffsets.at(1).setY(xMeta.m_uHeight >> uMip);
-						axDstOffsets.at(1).setZ(1);
-
-						vk::ImageSubresourceLayers xDstSubresource = vk::ImageSubresourceLayers()
-							.setAspectMask(vk::ImageAspectFlagBits::eColor)
-							.setMipLevel(uMip)
-							.setBaseArrayLayer(uLayer)
-							.setLayerCount(1);
-
-						vk::ImageBlit xBlit = vk::ImageBlit()
-							.setSrcOffsets(axSrcOffsets)
-							.setSrcSubresource(xSrcSubresource)
-							.setDstOffsets(axDstOffsets)
-							.setDstSubresource(xDstSubresource);
-
-						s_xCommandBuffer.GetCurrentCmdBuffer().blitImage(xImage, vk::ImageLayout::eTransferSrcOptimal, xImage, vk::ImageLayout::eTransferDstOptimal, 1, &xBlit, vk::Filter::eLinear);
-						s_xCommandBuffer.ImageTransitionBarrier(xImage, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eTransferSrcOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, uMip, uLayer);
-					}
-				}
-
-				s_xCommandBuffer.ImageTransitionBarrier(xImage, vk::ImageLayout::eTransferSrcOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, 0, uLayer);
-
-				for (uint32_t uMip = 1; uMip < xMeta.m_uNumMips; uMip++)
-				{
-					// For compressed textures, mip levels 1+ are still in TRANSFER_DST_OPTIMAL (no blit was done)
-					// For non-compressed, they were transitioned to TRANSFER_SRC_OPTIMAL after each blit
-					vk::ImageLayout eSrcLayout = bIsCompressed ? vk::ImageLayout::eTransferDstOptimal : vk::ImageLayout::eTransferSrcOptimal;
-					s_xCommandBuffer.ImageTransitionBarrier(xImage, eSrcLayout, vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, uMip, uLayer);
-				}
-			}
+		else if (it->m_eType == ALLOCATION_TYPE_TEXTURE)
+		{
+			FlushStagingTextureAllocation(*it);
 		}
 	}
 
 	s_xStagingAllocations.clear();
-
 	s_uNextFreeStagingOffset = 0;
 }
 
@@ -1455,59 +1463,10 @@ void Zenith_Vulkan_MemoryManager::UploadTextureDataChunked(vk::Image xDestImage,
 		uCurrentRow += uRemainingRows;
 	}
 
-	// Generate mipmaps if needed
+	// Generate mipmaps (non-compressed only) and transition to shader-read
 	for (uint32_t uLayer = 0; uLayer < uNumLayers; uLayer++)
 	{
-		s_xCommandBuffer.ImageTransitionBarrier(xDestImage, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eTransferSrcOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, 0, uLayer);
-
-		for (uint32_t uMip = 1; uMip < uNumMips; uMip++)
-		{
-			// Blit mipmap generation
-			std::array<vk::Offset3D, 2> axSrcOffsets;
-			axSrcOffsets.at(0).setX(0);
-			axSrcOffsets.at(0).setY(0);
-			axSrcOffsets.at(0).setZ(0);
-			axSrcOffsets.at(1).setX(uWidth >> (uMip - 1));
-			axSrcOffsets.at(1).setY(uHeight >> (uMip - 1));
-			axSrcOffsets.at(1).setZ(1);
-
-			vk::ImageSubresourceLayers xSrcSubresource = vk::ImageSubresourceLayers()
-				.setAspectMask(vk::ImageAspectFlagBits::eColor)
-				.setMipLevel(uMip - 1)
-				.setBaseArrayLayer(uLayer)
-				.setLayerCount(1);
-
-			std::array<vk::Offset3D, 2> axDstOffsets;
-			axDstOffsets.at(0).setX(0);
-			axDstOffsets.at(0).setY(0);
-			axDstOffsets.at(0).setZ(0);
-			axDstOffsets.at(1).setX(uWidth >> uMip);
-			axDstOffsets.at(1).setY(uHeight >> uMip);
-			axDstOffsets.at(1).setZ(1);
-
-			vk::ImageSubresourceLayers xDstSubresource = vk::ImageSubresourceLayers()
-				.setAspectMask(vk::ImageAspectFlagBits::eColor)
-				.setMipLevel(uMip)
-				.setBaseArrayLayer(uLayer)
-				.setLayerCount(1);
-
-			vk::ImageBlit xBlit = vk::ImageBlit()
-				.setSrcOffsets(axSrcOffsets)
-				.setSrcSubresource(xSrcSubresource)
-				.setDstOffsets(axDstOffsets)
-				.setDstSubresource(xDstSubresource);
-
-			s_xCommandBuffer.GetCurrentCmdBuffer().blitImage(xDestImage, vk::ImageLayout::eTransferSrcOptimal, xDestImage, vk::ImageLayout::eTransferDstOptimal, 1, &xBlit, vk::Filter::eLinear);
-			s_xCommandBuffer.ImageTransitionBarrier(xDestImage, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eTransferSrcOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, uMip, uLayer);
-		}
-
-		// Transition all mips to shader read layout
-		s_xCommandBuffer.ImageTransitionBarrier(xDestImage, vk::ImageLayout::eTransferSrcOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, 0, uLayer);
-
-		for (uint32_t uMip = 1; uMip < uNumMips; uMip++)
-		{
-			s_xCommandBuffer.ImageTransitionBarrier(xDestImage, vk::ImageLayout::eTransferSrcOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, vk::ImageAspectFlagBits::eColor, vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlagBits::eAllCommands, uMip, uLayer);
-		}
+		GenerateMipmapsAndTransitionToShaderRead(xDestImage, uWidth, uHeight, uNumMips, uLayer, false);
 	}
 
 	// Execute and wait

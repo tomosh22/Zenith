@@ -251,8 +251,10 @@ void Flux_Graphics::UploadFrameConstants()
 		(s_xFrameConstants.m_xScreenDims.x > 0) ? 1.f / s_xFrameConstants.m_xScreenDims.x : 1.f,
 		(s_xFrameConstants.m_xScreenDims.y > 0) ? 1.f / s_xFrameConstants.m_xScreenDims.y : 1.f
 	};
+#ifdef ZENITH_TOOLS
 	s_xFrameConstants.m_uQuadUtilisationAnalysis = dbg_bQuadUtilisationAnalysis;
 	s_xFrameConstants.m_uTargetPixelsPerTri = dbg_uTargetPixelsPerTri;
+#endif
 	s_xFrameConstants.m_xCameraNearFar = { GetNearPlane(), GetFarPlane() };
 	Flux_MemoryManager::UploadBufferData(s_xFrameConstantsBuffer.GetBuffer().m_xVRAMHandle, &s_xFrameConstants, sizeof(FrameConstants));
 }

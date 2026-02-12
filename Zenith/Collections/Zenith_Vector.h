@@ -294,6 +294,19 @@ public:
 		m_uSize--;
 	}
 
+	void Reverse()
+	{
+		for (u_int u = 0; u < m_uSize / 2; u++)
+		{
+			u_int uOther = m_uSize - 1 - u;
+			T xTemp(std::move(m_pxData[u]));
+			m_pxData[u].~T();
+			new (&m_pxData[u]) T(std::move(m_pxData[uOther]));
+			m_pxData[uOther].~T();
+			new (&m_pxData[uOther]) T(std::move(xTemp));
+		}
+	}
+
 	void Reserve(u_int uNewCapacity)
 	{
 		if (uNewCapacity <= m_uCapacity) return;

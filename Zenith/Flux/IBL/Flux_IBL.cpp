@@ -126,9 +126,7 @@ void Flux_IBL::Initialise()
 	xBRDFSpec.m_bDepthTestEnabled = false;
 	xBRDFSpec.m_bDepthWriteEnabled = false;
 
-	Flux_PipelineLayout& xBRDFLayout = xBRDFSpec.m_xPipelineLayout;
-	xBRDFLayout.m_uNumDescriptorSets = 1;
-	xBRDFLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;  // Frame constants
+	s_xBRDFLUTShader.GetReflection().PopulateLayout(xBRDFSpec.m_xPipelineLayout);
 
 	Flux_PipelineBuilder::FromSpecification(s_xBRDFLUTPipeline, xBRDFSpec);
 
@@ -145,11 +143,7 @@ void Flux_IBL::Initialise()
 	xIrradianceSpec.m_bDepthTestEnabled = false;
 	xIrradianceSpec.m_bDepthWriteEnabled = false;
 
-	Flux_PipelineLayout& xIrradianceLayout = xIrradianceSpec.m_xPipelineLayout;
-	xIrradianceLayout.m_uNumDescriptorSets = 1;
-	xIrradianceLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;  // Frame constants
-	xIrradianceLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_BUFFER;  // Push constants
-	xIrradianceLayout.m_axDescriptorSetLayouts[0].m_axBindings[2].m_eType = DESCRIPTOR_TYPE_TEXTURE; // Skybox cubemap (optional)
+	s_xIrradianceConvolveShader.GetReflection().PopulateLayout(xIrradianceSpec.m_xPipelineLayout);
 
 	Flux_PipelineBuilder::FromSpecification(s_xIrradianceConvolvePipeline, xIrradianceSpec);
 
@@ -167,11 +161,7 @@ void Flux_IBL::Initialise()
 	xPrefilterSpec.m_bDepthTestEnabled = false;
 	xPrefilterSpec.m_bDepthWriteEnabled = false;
 
-	Flux_PipelineLayout& xPrefilterLayout = xPrefilterSpec.m_xPipelineLayout;
-	xPrefilterLayout.m_uNumDescriptorSets = 1;
-	xPrefilterLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;  // Frame constants
-	xPrefilterLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_BUFFER;  // Push constants
-	xPrefilterLayout.m_axDescriptorSetLayouts[0].m_axBindings[2].m_eType = DESCRIPTOR_TYPE_TEXTURE; // Skybox cubemap (optional)
+	s_xPrefilterShader.GetReflection().PopulateLayout(xPrefilterSpec.m_xPipelineLayout);
 
 	Flux_PipelineBuilder::FromSpecification(s_xPrefilterPipeline, xPrefilterSpec);
 

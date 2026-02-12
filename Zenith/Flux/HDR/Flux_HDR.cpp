@@ -149,13 +149,7 @@ void Flux_HDR::Initialise()
 	xToneMappingSpec.m_bDepthTestEnabled = false;
 	xToneMappingSpec.m_bDepthWriteEnabled = false;
 
-	Flux_PipelineLayout& xToneMappingLayout = xToneMappingSpec.m_xPipelineLayout;
-	xToneMappingLayout.m_uNumDescriptorSets = 1;
-	xToneMappingLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;  // Push constants scratch
-	xToneMappingLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_TEXTURE; // HDR texture
-	xToneMappingLayout.m_axDescriptorSetLayouts[0].m_axBindings[2].m_eType = DESCRIPTOR_TYPE_TEXTURE; // Bloom texture
-	xToneMappingLayout.m_axDescriptorSetLayouts[0].m_axBindings[3].m_eType = DESCRIPTOR_TYPE_STORAGE_BUFFER; // Histogram buffer
-	xToneMappingLayout.m_axDescriptorSetLayouts[0].m_axBindings[4].m_eType = DESCRIPTOR_TYPE_STORAGE_BUFFER; // Exposure buffer
+	s_xToneMappingShader.GetReflection().PopulateLayout(xToneMappingSpec.m_xPipelineLayout);
 
 	Flux_PipelineBuilder::FromSpecification(s_xToneMappingPipeline, xToneMappingSpec);
 
@@ -189,10 +183,7 @@ void Flux_HDR::Initialise()
 	xBloomThresholdSpec.m_bDepthTestEnabled = false;
 	xBloomThresholdSpec.m_bDepthWriteEnabled = false;
 
-	Flux_PipelineLayout& xBloomThresholdLayout = xBloomThresholdSpec.m_xPipelineLayout;
-	xBloomThresholdLayout.m_uNumDescriptorSets = 1;
-	xBloomThresholdLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;  // Push constants
-	xBloomThresholdLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_TEXTURE; // HDR texture
+	s_xBloomThresholdShader.GetReflection().PopulateLayout(xBloomThresholdSpec.m_xPipelineLayout);
 
 	Flux_PipelineBuilder::FromSpecification(s_xBloomThresholdPipeline, xBloomThresholdSpec);
 
@@ -216,10 +207,7 @@ void Flux_HDR::Initialise()
 	xBloomDownsampleSpec.m_bDepthTestEnabled = false;
 	xBloomDownsampleSpec.m_bDepthWriteEnabled = false;
 
-	Flux_PipelineLayout& xDownsampleLayout = xBloomDownsampleSpec.m_xPipelineLayout;
-	xDownsampleLayout.m_uNumDescriptorSets = 1;
-	xDownsampleLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;  // Push constants
-	xDownsampleLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_TEXTURE; // Source texture
+	s_xBloomDownsampleShader.GetReflection().PopulateLayout(xBloomDownsampleSpec.m_xPipelineLayout);
 
 	Flux_PipelineBuilder::FromSpecification(s_xBloomDownsamplePipeline, xBloomDownsampleSpec);
 
@@ -245,10 +233,7 @@ void Flux_HDR::Initialise()
 	xBloomUpsampleSpec.m_axBlendStates[0].m_eSrcBlendFactor = BLEND_FACTOR_ONE;
 	xBloomUpsampleSpec.m_axBlendStates[0].m_eDstBlendFactor = BLEND_FACTOR_ONE;
 
-	Flux_PipelineLayout& xUpsampleLayout = xBloomUpsampleSpec.m_xPipelineLayout;
-	xUpsampleLayout.m_uNumDescriptorSets = 1;
-	xUpsampleLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;  // Push constants
-	xUpsampleLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_TEXTURE; // Source texture
+	s_xBloomUpsampleShader.GetReflection().PopulateLayout(xBloomUpsampleSpec.m_xPipelineLayout);
 
 	Flux_PipelineBuilder::FromSpecification(s_xBloomUpsamplePipeline, xBloomUpsampleSpec);
 

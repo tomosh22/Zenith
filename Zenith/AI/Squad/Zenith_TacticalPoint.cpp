@@ -138,6 +138,18 @@ void Zenith_TacticalPointSystem::UnregisterPointsByOwner(Zenith_EntityID xOwner)
 	}
 }
 
+static bool PassesQueryFilter(const Zenith_TacticalPoint& xPoint, bool bActive, const Zenith_TacticalPointQuery& xQuery)
+{
+	if (!bActive) return false;
+	if (!xQuery.m_bAnyType && xPoint.m_eType != xQuery.m_eType) return false;
+	if (xQuery.m_bMustBeAvailable && !xPoint.IsAvailable()) return false;
+	if ((xQuery.m_uRequiredFlags != 0) && ((xPoint.m_uFlags & xQuery.m_uRequiredFlags) != xQuery.m_uRequiredFlags)) return false;
+	if ((xQuery.m_uExcludedFlags != 0) && ((xPoint.m_uFlags & xQuery.m_uExcludedFlags) != 0)) return false;
+	float fDist = Zenith_Maths::Length(xPoint.m_xPosition - xQuery.m_xSearchCenter);
+	if (fDist > xQuery.m_fSearchRadius) return false;
+	return true;
+}
+
 const Zenith_TacticalPoint* Zenith_TacticalPointSystem::FindBestPoint(const Zenith_TacticalPointQuery& xQuery)
 {
 	const Zenith_TacticalPoint* pxBest = nullptr;
@@ -145,46 +157,13 @@ const Zenith_TacticalPoint* Zenith_TacticalPointSystem::FindBestPoint(const Zeni
 
 	for (uint32_t u = 0; u < s_axPoints.GetSize(); ++u)
 	{
-		if (!s_axPointActive.Get(u))
-		{
-			continue;
-		}
-
 		const Zenith_TacticalPoint& xPoint = s_axPoints.Get(u);
-
-		// Check type filter
-		if (!xQuery.m_bAnyType && xPoint.m_eType != xQuery.m_eType)
+		if (!PassesQueryFilter(xPoint, s_axPointActive.Get(u), xQuery))
 		{
 			continue;
 		}
 
-		// Check availability
-		if (xQuery.m_bMustBeAvailable && !xPoint.IsAvailable())
-		{
-			continue;
-		}
-
-		// Check flags
-		if ((xQuery.m_uRequiredFlags != 0) && ((xPoint.m_uFlags & xQuery.m_uRequiredFlags) != xQuery.m_uRequiredFlags))
-		{
-			continue;
-		}
-
-		if ((xQuery.m_uExcludedFlags != 0) && ((xPoint.m_uFlags & xQuery.m_uExcludedFlags) != 0))
-		{
-			continue;
-		}
-
-		// Check distance
-		float fDist = Zenith_Maths::Length(xPoint.m_xPosition - xQuery.m_xSearchCenter);
-		if (fDist > xQuery.m_fSearchRadius)
-		{
-			continue;
-		}
-
-		// Score the point
 		Zenith_TacticalPointScore xScore = ScorePoint(xPoint, xQuery);
-
 		if (xScore.m_fTotal > fBestScore)
 		{
 			fBestScore = xScore.m_fTotal;
@@ -212,36 +191,8 @@ void Zenith_TacticalPointSystem::FindAllPoints(
 
 	for (uint32_t u = 0; u < s_axPoints.GetSize(); ++u)
 	{
-		if (!s_axPointActive.Get(u))
-		{
-			continue;
-		}
-
 		const Zenith_TacticalPoint& xPoint = s_axPoints.Get(u);
-
-		// Apply filters (same as FindBestPoint)
-		if (!xQuery.m_bAnyType && xPoint.m_eType != xQuery.m_eType)
-		{
-			continue;
-		}
-
-		if (xQuery.m_bMustBeAvailable && !xPoint.IsAvailable())
-		{
-			continue;
-		}
-
-		if ((xQuery.m_uRequiredFlags != 0) && ((xPoint.m_uFlags & xQuery.m_uRequiredFlags) != xQuery.m_uRequiredFlags))
-		{
-			continue;
-		}
-
-		if ((xQuery.m_uExcludedFlags != 0) && ((xPoint.m_uFlags & xQuery.m_uExcludedFlags) != 0))
-		{
-			continue;
-		}
-
-		float fDist = Zenith_Maths::Length(xPoint.m_xPosition - xQuery.m_xSearchCenter);
-		if (fDist > xQuery.m_fSearchRadius)
+		if (!PassesQueryFilter(xPoint, s_axPointActive.Get(u), xQuery))
 		{
 			continue;
 		}

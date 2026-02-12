@@ -11,8 +11,8 @@
 #include "Flux/Primitives/Flux_Primitives.h"
 #endif
 
-std::unordered_map<uint64_t, Zenith_PerceptionSystem::AgentPerceptionData> Zenith_PerceptionSystem::s_xAgentData;
-std::unordered_map<uint64_t, Zenith_PerceptionSystem::TargetInfo> Zenith_PerceptionSystem::s_xTargets;
+std::unordered_map<uint64_t, Zenith_PerceptionSystem::AgentPerceptionData> Zenith_PerceptionSystem::s_xAgentData; // #TODO: Replace with engine hash map
+std::unordered_map<uint64_t, Zenith_PerceptionSystem::TargetInfo> Zenith_PerceptionSystem::s_xTargets; // #TODO: Replace with engine hash map
 Zenith_Vector<Zenith_SoundStimulus> Zenith_PerceptionSystem::s_axActiveSounds;
 
 void Zenith_PerceptionSystem::Initialise()

@@ -21,10 +21,21 @@ public:
 		CAMERA_TYPE_ORTHOGRAPHIC,
 		CAMERA_TYPE_MAX
 	};
+	struct PerspectiveParams
+	{
+		Zenith_Maths::Vector3 m_xPosition = {0.f, 0.f, 0.f};
+		float m_fPitch = 0.f;
+		float m_fYaw = 0.f;
+		float m_fFOV = 60.f;
+		float m_fNear = 0.1f;
+		float m_fFar = 1000.f;
+		float m_fAspectRatio = 16.f / 9.f;
+	};
+
 	Zenith_CameraComponent() = default;
 	Zenith_CameraComponent(Zenith_Entity& xParentEntity);
 	~Zenith_CameraComponent() = default;
-	void InitialisePerspective(const Zenith_Maths::Vector3& xPos, const float fPitch, const float fYaw, const float fFOV, const float fNear, const float fFar, const float fAspectRatio);
+	void InitialisePerspective(const PerspectiveParams& xParams);
 
 	// Serialization methods for Zenith_DataStream
 	void WriteToDataStream(Zenith_DataStream& xStream) const;

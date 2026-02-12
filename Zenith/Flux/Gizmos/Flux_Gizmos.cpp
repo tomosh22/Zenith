@@ -84,11 +84,8 @@ void Flux_Gizmos::Initialise()
 	xSpec.m_axBlendStates[0].m_eSrcBlendFactor = BLEND_FACTOR_SRCALPHA;
 	xSpec.m_axBlendStates[0].m_eDstBlendFactor = BLEND_FACTOR_ONEMINUSSRCALPHA;
 
-	// Pipeline layout - needs frame constants (in Common.fxh)
-	Flux_PipelineLayout& xLayout = xSpec.m_xPipelineLayout;
-	xLayout.m_uNumDescriptorSets = 1;
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;  // Frame constants
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_BUFFER;  // Scratch buffer for push constants
+	// Pipeline layout from shader reflection
+	s_xShader.GetReflection().PopulateLayout(xSpec.m_xPipelineLayout);
 
 	// Build pipeline
 	Flux_PipelineBuilder::FromSpecification(s_xPipeline, xSpec);

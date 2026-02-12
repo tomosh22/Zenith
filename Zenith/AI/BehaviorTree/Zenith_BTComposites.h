@@ -66,6 +66,8 @@ public:
 	void SetFailurePolicy(Policy e) { m_eFailurePolicy = e; }
 
 private:
+	void AbortRunningChildren(Zenith_Entity& xAgent, Zenith_Blackboard& xBlackboard);
+
 	Policy m_eSuccessPolicy = Policy::REQUIRE_ONE;
 	Policy m_eFailurePolicy = Policy::REQUIRE_ONE;
 

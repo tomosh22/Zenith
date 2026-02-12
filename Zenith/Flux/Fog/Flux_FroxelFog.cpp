@@ -202,13 +202,7 @@ void Flux_FroxelFog::Initialise()
 	xApplySpec.m_pxShader = &s_xApplyShader;
 	xApplySpec.m_xVertexInputDesc = xVertexDesc;
 
-	Flux_PipelineLayout& xLayout = xApplySpec.m_xPipelineLayout;
-	xLayout.m_uNumDescriptorSets = 1;
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;   // Frame constants
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_BUFFER;   // Scratch buffer for push constants
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[2].m_eType = DESCRIPTOR_TYPE_TEXTURE;  // Depth texture
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[3].m_eType = DESCRIPTOR_TYPE_TEXTURE;  // Lighting grid
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[4].m_eType = DESCRIPTOR_TYPE_TEXTURE;  // Scattering grid
+	s_xApplyShader.GetReflection().PopulateLayout(xApplySpec.m_xPipelineLayout);
 
 	xApplySpec.m_bDepthTestEnabled = false;
 	xApplySpec.m_bDepthWriteEnabled = false;

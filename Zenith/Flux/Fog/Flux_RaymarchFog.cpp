@@ -73,23 +73,7 @@ void Flux_RaymarchFog::Initialise()
 	xPipelineSpec.m_pxShader = &s_xShader;
 	xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
 
-	Flux_PipelineLayout& xLayout = xPipelineSpec.m_xPipelineLayout;
-	xLayout.m_uNumDescriptorSets = 1;
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;   // Frame constants
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_BUFFER;   // Scratch buffer for push constants
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[2].m_eType = DESCRIPTOR_TYPE_TEXTURE;  // Depth texture
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[3].m_eType = DESCRIPTOR_TYPE_TEXTURE;  // 3D noise texture
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[4].m_eType = DESCRIPTOR_TYPE_TEXTURE;  // Blue noise texture
-	// CSM shadow maps for volumetric shadows
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[5].m_eType = DESCRIPTOR_TYPE_TEXTURE;  // CSM0
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[6].m_eType = DESCRIPTOR_TYPE_TEXTURE;  // CSM1
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[7].m_eType = DESCRIPTOR_TYPE_TEXTURE;  // CSM2
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[8].m_eType = DESCRIPTOR_TYPE_TEXTURE;  // CSM3
-	// Shadow matrices
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[9].m_eType = DESCRIPTOR_TYPE_BUFFER;   // ShadowMatrix0
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[10].m_eType = DESCRIPTOR_TYPE_BUFFER;  // ShadowMatrix1
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[11].m_eType = DESCRIPTOR_TYPE_BUFFER;  // ShadowMatrix2
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[12].m_eType = DESCRIPTOR_TYPE_BUFFER;  // ShadowMatrix3
+	s_xShader.GetReflection().PopulateLayout(xPipelineSpec.m_xPipelineLayout);
 
 	xPipelineSpec.m_bDepthTestEnabled = false;
 	xPipelineSpec.m_bDepthWriteEnabled = false;

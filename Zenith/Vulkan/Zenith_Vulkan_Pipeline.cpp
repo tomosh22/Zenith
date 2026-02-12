@@ -114,47 +114,24 @@ Zenith_Vulkan_Shader::~Zenith_Vulkan_Shader()
 {
 	const vk::Device xDevice = Zenith_Vulkan::GetDevice();
 
-	// Only destroy shader modules that were actually created
-	// VK_NULL_HANDLE check prevents destroying uninitialized handles
-	if (m_xVertShaderModule)
+	vk::ShaderModule* apxModules[] = { &m_xVertShaderModule, &m_xFragShaderModule, &m_xTescShaderModule, &m_xTeseShaderModule, &m_xCompShaderModule };
+	for (vk::ShaderModule* pxModule : apxModules)
 	{
-		xDevice.destroyShaderModule(m_xVertShaderModule);
-		m_xVertShaderModule = VK_NULL_HANDLE;
-	}
-	if (m_xFragShaderModule)
-	{
-		xDevice.destroyShaderModule(m_xFragShaderModule);
-		m_xFragShaderModule = VK_NULL_HANDLE;
-	}
-	if (m_xTescShaderModule)
-	{
-		xDevice.destroyShaderModule(m_xTescShaderModule);
-		m_xTescShaderModule = VK_NULL_HANDLE;
-	}
-	if (m_xTeseShaderModule)
-	{
-		xDevice.destroyShaderModule(m_xTeseShaderModule);
-		m_xTeseShaderModule = VK_NULL_HANDLE;
-	}
-	if (m_xCompShaderModule)
-	{
-		xDevice.destroyShaderModule(m_xCompShaderModule);
-		m_xCompShaderModule = VK_NULL_HANDLE;
+		if (*pxModule)
+		{
+			xDevice.destroyShaderModule(*pxModule);
+			*pxModule = VK_NULL_HANDLE;
+		}
 	}
 
-	// Safe to delete nullptr in C++, but explicit for clarity
-	delete[] m_pcVertShaderCode;
-	delete[] m_pcFragShaderCode;
-	delete[] m_pcTescShaderCode;
-	delete[] m_pcTeseShaderCode;
-	delete[] m_pcCompShaderCode;
+	char** appcCodes[] = { &m_pcVertShaderCode, &m_pcFragShaderCode, &m_pcTescShaderCode, &m_pcTeseShaderCode, &m_pcCompShaderCode };
+	for (char** ppcCode : appcCodes)
+	{
+		delete[] *ppcCode;
+		*ppcCode = nullptr;
+	}
+
 	delete[] m_xInfos;
-
-	m_pcVertShaderCode = nullptr;
-	m_pcFragShaderCode = nullptr;
-	m_pcTescShaderCode = nullptr;
-	m_pcTeseShaderCode = nullptr;
-	m_pcCompShaderCode = nullptr;
 	m_xInfos = nullptr;
 }
 

@@ -13,15 +13,15 @@ Zenith_CameraComponent::Zenith_CameraComponent(Zenith_Entity& xParentEntity)
 {
 }
 
-void Zenith_CameraComponent::InitialisePerspective(const Zenith_Maths::Vector3& xPos, const float fPitch, const float fYaw, const float fFOV, const float fNear, const float fFar, const float fAspectRatio)
+void Zenith_CameraComponent::InitialisePerspective(const PerspectiveParams& xParams)
 {
-	m_xPosition = xPos;
-	m_fPitch = fPitch;
-	m_fYaw = fYaw;
-	m_fFOV = fFOV;
-	m_fNear = fNear;
-	m_fFar = fFar;
-	m_fAspect = fAspectRatio;
+	m_xPosition = xParams.m_xPosition;
+	m_fPitch = xParams.m_fPitch;
+	m_fYaw = xParams.m_fYaw;
+	m_fFOV = xParams.m_fFOV;
+	m_fNear = xParams.m_fNear;
+	m_fFar = xParams.m_fFar;
+	m_fAspect = xParams.m_fAspectRatio;
 	m_eType = CAMERA_TYPE_PERSPECTIVE;
 }
 

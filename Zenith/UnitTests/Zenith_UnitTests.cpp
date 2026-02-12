@@ -1143,8 +1143,15 @@ void Zenith_UnitTests::TestComponentSerialization()
 		const float fGroundTruthFar = 1000.0f;
 		const float fGroundTruthAspect = 16.0f / 9.0f;
 
-		xCamera.InitialisePerspective(xGroundTruthPos, fGroundTruthPitch, fGroundTruthYaw,
-									   fGroundTruthFOV, fGroundTruthNear, fGroundTruthFar, fGroundTruthAspect);
+		xCamera.InitialisePerspective({
+			.m_xPosition = xGroundTruthPos,
+			.m_fPitch = fGroundTruthPitch,
+			.m_fYaw = fGroundTruthYaw,
+			.m_fFOV = fGroundTruthFOV,
+			.m_fNear = fGroundTruthNear,
+			.m_fFar = fGroundTruthFar,
+			.m_fAspectRatio = fGroundTruthAspect,
+		});
 
 		// Serialize
 		Zenith_DataStream xStream;
@@ -1200,7 +1207,9 @@ void Zenith_UnitTests::TestEntitySerialization()
 
 	// Add CameraComponent
 	Zenith_CameraComponent& xCamera = xGroundTruthEntity.AddComponent<Zenith_CameraComponent>();
-	xCamera.InitialisePerspective(Zenith_Maths::Vector3(0.0f, 5.0f, 10.0f), 0.0f, 0.0f, 60.0f, 0.1f, 1000.0f, 16.0f / 9.0f);
+	xCamera.InitialisePerspective({
+		.m_xPosition = Zenith_Maths::Vector3(0.0f, 5.0f, 10.0f),
+	});
 
 	// Serialize entity
 	Zenith_DataStream xStream;
@@ -1251,7 +1260,9 @@ void Zenith_UnitTests::TestSceneSerialization()
 	Zenith_Entity xCameraEntity(pxSceneData, "MainCamera");
 	xCameraEntity.SetTransient(false);  // Mark as persistent in scene's map
 	Zenith_CameraComponent& xCamera = xCameraEntity.AddComponent<Zenith_CameraComponent>();
-	xCamera.InitialisePerspective(Zenith_Maths::Vector3(0.0f, 10.0f, 20.0f), 0.0f, 0.0f, 60.0f, 0.1f, 1000.0f, 16.0f / 9.0f);
+	xCamera.InitialisePerspective({
+		.m_xPosition = Zenith_Maths::Vector3(0.0f, 10.0f, 20.0f),
+	});
 	pxSceneData->SetMainCameraEntity(xCameraEntity.GetEntityID());
 
 	// Entity 2: Transform only
@@ -1315,7 +1326,12 @@ void Zenith_UnitTests::TestSceneRoundTrip()
 	const float fCameraPitch = 0.3f;
 	const float fCameraYaw = 1.57f;
 	const float fCameraFOV = 75.0f;
-	xCamera.InitialisePerspective(xCameraPos, fCameraPitch, fCameraYaw, fCameraFOV, 0.1f, 1000.0f, 16.0f / 9.0f);
+	xCamera.InitialisePerspective({
+		.m_xPosition = xCameraPos,
+		.m_fPitch = fCameraPitch,
+		.m_fYaw = fCameraYaw,
+		.m_fFOV = fCameraFOV,
+	});
 	pxSceneData->SetMainCameraEntity(xCameraEntity.GetEntityID());
 
 	// Create Entity 2: Transform with precise values
@@ -2630,11 +2646,11 @@ void Zenith_UnitTests::TestBlendSpace1D()
 		xBlendSpace.AddBlendPoint(pxClip2, 0.5f);
 		xBlendSpace.AddBlendPoint(pxClip3, 1.0f);
 
-		const std::vector<Flux_BlendTreeNode_BlendSpace1D::BlendPoint>& xPoints = xBlendSpace.GetBlendPoints();
-		Zenith_Assert(xPoints.size() == 3, "Should have 3 blend points");
-		Zenith_Assert(FloatEquals(xPoints[0].m_fPosition, 0.0f), "First point position should be 0.0");
-		Zenith_Assert(FloatEquals(xPoints[1].m_fPosition, 0.5f), "Second point position should be 0.5");
-		Zenith_Assert(FloatEquals(xPoints[2].m_fPosition, 1.0f), "Third point position should be 1.0");
+		const Zenith_Vector<Flux_BlendTreeNode_BlendSpace1D::BlendPoint>& xPoints = xBlendSpace.GetBlendPoints();
+		Zenith_Assert(xPoints.GetSize() == 3, "Should have 3 blend points");
+		Zenith_Assert(FloatEquals(xPoints.Get(0).m_fPosition, 0.0f), "First point position should be 0.0");
+		Zenith_Assert(FloatEquals(xPoints.Get(1).m_fPosition, 0.5f), "Second point position should be 0.5");
+		Zenith_Assert(FloatEquals(xPoints.Get(2).m_fPosition, 1.0f), "Third point position should be 1.0");
 
 		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Blend point addition test passed");
 	}
@@ -2654,10 +2670,10 @@ void Zenith_UnitTests::TestBlendSpace1D()
 
 		xBlendSpace.SortBlendPoints();
 
-		const std::vector<Flux_BlendTreeNode_BlendSpace1D::BlendPoint>& xPoints = xBlendSpace.GetBlendPoints();
-		Zenith_Assert(FloatEquals(xPoints[0].m_fPosition, 0.0f), "After sorting, first should be 0.0");
-		Zenith_Assert(FloatEquals(xPoints[1].m_fPosition, 0.5f), "After sorting, second should be 0.5");
-		Zenith_Assert(FloatEquals(xPoints[2].m_fPosition, 1.0f), "After sorting, third should be 1.0");
+		const Zenith_Vector<Flux_BlendTreeNode_BlendSpace1D::BlendPoint>& xPoints = xBlendSpace.GetBlendPoints();
+		Zenith_Assert(FloatEquals(xPoints.Get(0).m_fPosition, 0.0f), "After sorting, first should be 0.0");
+		Zenith_Assert(FloatEquals(xPoints.Get(1).m_fPosition, 0.5f), "After sorting, second should be 0.5");
+		Zenith_Assert(FloatEquals(xPoints.Get(2).m_fPosition, 1.0f), "After sorting, third should be 1.0");
 
 		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ✓ Blend point sorting test passed");
 	}
@@ -4970,10 +4986,16 @@ void Zenith_UnitTests::TestMultipleComponentRemoval()
 	Zenith_Entity xEntity3(pxSceneData, "Entity3");
 
 	// Add CameraComponents to entities 1 and 2
-	xEntity1.AddComponent<Zenith_CameraComponent>().InitialisePerspective(
-		Zenith_Maths::Vector3(1, 0, 0), 0, 0, 60, 0.1f, 100, 1.0f);
-	xEntity2.AddComponent<Zenith_CameraComponent>().InitialisePerspective(
-		Zenith_Maths::Vector3(2, 0, 0), 0, 0, 60, 0.1f, 100, 1.0f);
+	xEntity1.AddComponent<Zenith_CameraComponent>().InitialisePerspective({
+		.m_xPosition = Zenith_Maths::Vector3(1, 0, 0),
+		.m_fFar = 100,
+		.m_fAspectRatio = 1.0f,
+	});
+	xEntity2.AddComponent<Zenith_CameraComponent>().InitialisePerspective({
+		.m_xPosition = Zenith_Maths::Vector3(2, 0, 0),
+		.m_fFar = 100,
+		.m_fAspectRatio = 1.0f,
+	});
 
 	// Add ColliderComponents to entities 2 and 3 (as second component type to test)
 	xEntity2.AddComponent<Zenith_ColliderComponent>();
@@ -5196,12 +5218,11 @@ void Zenith_UnitTests::TestComponentMetaSerialization()
 
 	// Add a camera component
 	Zenith_CameraComponent& xCamera = xEntity.AddComponent<Zenith_CameraComponent>();
-	xCamera.InitialisePerspective(
-		Zenith_Maths::Vector3(1.0f, 2.0f, 3.0f), // position
-		0.5f, 1.0f, // pitch, yaw
-		60.0f, // FOV
-		0.1f, 1000.0f, // near, far
-		16.0f / 9.0f); // aspect
+	xCamera.InitialisePerspective({
+		.m_xPosition = Zenith_Maths::Vector3(1.0f, 2.0f, 3.0f),
+		.m_fPitch = 0.5f,
+		.m_fYaw = 1.0f,
+	});
 
 	// Serialize via registry
 	Zenith_DataStream xStream;

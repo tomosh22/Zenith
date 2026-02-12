@@ -134,7 +134,6 @@ private:
 
 	static void HandleStagingBufferFull();
 
-
 	// Helper for chunked staging uploads when data exceeds staging buffer size
 	static void UploadBufferDataChunked(vk::Buffer xDestBuffer, const void* pData, size_t uSize);
 	static void UploadTextureDataChunked(vk::Image xDestImage, const void* pData, size_t uSize, uint32_t uWidth, uint32_t uHeight, uint32_t uNumMips, uint32_t uNumLayers);
@@ -165,6 +164,14 @@ private:
 		size_t m_uOffset;
 	};
 	static std::list<StagingMemoryAllocation> s_xStagingAllocations;
+
+	// Staging flush helpers (split by allocation type for readability)
+	static void FlushStagingBufferAllocation(const StagingMemoryAllocation& xAlloc);
+	static void FlushStagingTextureAllocation(const StagingMemoryAllocation& xAlloc);
+
+	// Shared mipmap generation via blit chain, then transition all mips to shader-read layout.
+	// For compressed textures (bIsCompressed=true), blitting is skipped (mips must be pre-generated).
+	static void GenerateMipmapsAndTransitionToShaderRead(vk::Image xImage, uint32_t uWidth, uint32_t uHeight, uint32_t uNumMips, uint32_t uLayer, bool bIsCompressed);
 
 	// Deferred deletion tracking
 	struct PendingVRAMDeletion {

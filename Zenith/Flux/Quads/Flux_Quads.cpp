@@ -44,11 +44,7 @@ void Flux_Quads::Initialise()
 	xPipelineSpec.m_pxShader = &s_xShader;
 	xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
 
-	Flux_PipelineLayout& xLayout = xPipelineSpec.m_xPipelineLayout;
-	xLayout.m_uNumDescriptorSets = 2;
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_BUFFER;
-	xLayout.m_axDescriptorSetLayouts[0].m_axBindings[1].m_eType = DESCRIPTOR_TYPE_TEXTURE;
-	xLayout.m_axDescriptorSetLayouts[1].m_axBindings[0].m_eType = DESCRIPTOR_TYPE_UNBOUNDED_TEXTURES;
+	s_xShader.GetReflection().PopulateLayout(xPipelineSpec.m_xPipelineLayout);
 
 	xPipelineSpec.m_bDepthTestEnabled = false;
 	xPipelineSpec.m_bDepthWriteEnabled = false;

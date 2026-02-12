@@ -175,14 +175,7 @@ BTNodeStatus Zenith_BTParallel::Execute(Zenith_Entity& xAgent, Zenith_Blackboard
 	{
 		if (uSuccessCount > 0)
 		{
-			// Abort any still-running children
-			for (uint32_t u = 0; u < GetChildCount(); ++u)
-			{
-				if (m_axChildResults.Get(u) == BTNodeStatus::RUNNING)
-				{
-					GetChild(u)->OnAbort(xAgent, xBlackboard);
-				}
-			}
+			AbortRunningChildren(xAgent, xBlackboard);
 			m_eLastStatus = BTNodeStatus::SUCCESS;
 			return m_eLastStatus;
 		}
@@ -201,14 +194,7 @@ BTNodeStatus Zenith_BTParallel::Execute(Zenith_Entity& xAgent, Zenith_Blackboard
 	{
 		if (uFailureCount > 0)
 		{
-			// Abort any still-running children
-			for (uint32_t u = 0; u < GetChildCount(); ++u)
-			{
-				if (m_axChildResults.Get(u) == BTNodeStatus::RUNNING)
-				{
-					GetChild(u)->OnAbort(xAgent, xBlackboard);
-				}
-			}
+			AbortRunningChildren(xAgent, xBlackboard);
 			m_eLastStatus = BTNodeStatus::FAILURE;
 			return m_eLastStatus;
 		}
@@ -234,6 +220,17 @@ BTNodeStatus Zenith_BTParallel::Execute(Zenith_Entity& xAgent, Zenith_Blackboard
 	// Default to failure in this edge case
 	m_eLastStatus = BTNodeStatus::FAILURE;
 	return m_eLastStatus;
+}
+
+void Zenith_BTParallel::AbortRunningChildren(Zenith_Entity& xAgent, Zenith_Blackboard& xBlackboard)
+{
+	for (uint32_t u = 0; u < GetChildCount(); ++u)
+	{
+		if (m_axChildResults.Get(u) == BTNodeStatus::RUNNING)
+		{
+			GetChild(u)->OnAbort(xAgent, xBlackboard);
+		}
+	}
 }
 
 void Zenith_BTParallel::WriteToDataStream(Zenith_DataStream& xStream) const
