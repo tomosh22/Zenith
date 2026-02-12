@@ -7,31 +7,33 @@
 struct Flux_Texture;
 struct Flux_Buffer;
 
+// Single source of truth for all command types.
+// To add a new command: add one X() entry here and define the command class below.
+// The enum and IterateCommands dispatch are auto-generated from this list.
+#define FLUX_COMMAND_LIST(X) \
+	X(SET_PIPELINE,                Flux_CommandSetPipeline) \
+	X(SET_VERTEX_BUFFER,           Flux_CommandSetVertexBuffer) \
+	X(SET_INDEX_BUFFER,            Flux_CommandSetIndexBuffer) \
+	X(BEGIN_BIND,                  Flux_CommandBeginBind) \
+	X(BIND_SRV,                    Flux_CommandBindSRV) \
+	X(BIND_UAV_TEXTURE,            Flux_CommandBindUAV_Texture) \
+	X(BIND_UAV_BUFFER,             Flux_CommandBindUAV_Buffer) \
+	X(BIND_CBV,                    Flux_CommandBindCBV) \
+	X(USE_UNBOUNDED_TEXTURES,      Flux_CommandUseUnboundedTextures) \
+	X(PUSH_CONSTANT,               Flux_CommandPushConstant) \
+	X(DRAW,                        Flux_CommandDraw) \
+	X(DRAW_INDEXED,                Flux_CommandDrawIndexed) \
+	X(DRAW_INDEXED_INDIRECT,       Flux_CommandDrawIndexedIndirect) \
+	X(DRAW_INDEXED_INDIRECT_COUNT, Flux_CommandDrawIndexedIndirectCount) \
+	X(BIND_COMPUTE_PIPELINE,       Flux_CommandBindComputePipeline) \
+	X(DISPATCH,                    Flux_CommandDispatch) \
+	X(RENDER_IMGUI,                Flux_CommandRenderImGui)
+
 enum Flux_CommandType
 {
-	FLUX_COMMANDTYPE__SET_PIPELINE,
-	FLUX_COMMANDTYPE__SET_VERTEX_BUFFER,
-	FLUX_COMMANDTYPE__SET_INDEX_BUFFER,
-
-	FLUX_COMMANDTYPE__BEGIN_BIND,
-	FLUX_COMMANDTYPE__BIND_SRV,
-	FLUX_COMMANDTYPE__BIND_UAV_TEXTURE,
-	FLUX_COMMANDTYPE__BIND_UAV_BUFFER,
-	FLUX_COMMANDTYPE__BIND_CBV,
-
-	FLUX_COMMANDTYPE__USE_UNBOUNDED_TEXTURES,
-
-	FLUX_COMMANDTYPE__PUSH_CONSTANT,
-
-	FLUX_COMMANDTYPE__DRAW,
-	FLUX_COMMANDTYPE__DRAW_INDEXED,
-	FLUX_COMMANDTYPE__DRAW_INDEXED_INDIRECT,
-	FLUX_COMMANDTYPE__DRAW_INDEXED_INDIRECT_COUNT,
-	FLUX_COMMANDTYPE__BIND_COMPUTE_PIPELINE,
-	FLUX_COMMANDTYPE__DISPATCH,
-
-	FLUX_COMMANDTYPE__RENDER_IMGUI,
-
+	#define FLUX_X_ENUM(Name, Class) FLUX_COMMANDTYPE__##Name,
+	FLUX_COMMAND_LIST(FLUX_X_ENUM)
+	#undef FLUX_X_ENUM
 	FLUX_COMMANDTYPE__COUNT,
 };
 
@@ -387,33 +389,13 @@ public:
 			const Flux_CommandType eCmd = *reinterpret_cast<Flux_CommandType*>(&m_pcData[uCursor]);
 			switch(eCmd)
 			{
-				#define HANDLE_COMMAND(Enum, Class)\
-					case Enum:\
-						(*reinterpret_cast<Class*>(&m_pcData[uCursor + sizeof(Flux_CommandType)]))(pxCmdBuf);\
-						uCursor += sizeof(Class) + sizeof(Flux_CommandType);\
-						break
-
-				HANDLE_COMMAND(FLUX_COMMANDTYPE__SET_PIPELINE, Flux_CommandSetPipeline);
-				HANDLE_COMMAND(FLUX_COMMANDTYPE__SET_VERTEX_BUFFER, Flux_CommandSetVertexBuffer);
-				HANDLE_COMMAND(FLUX_COMMANDTYPE__SET_INDEX_BUFFER, Flux_CommandSetIndexBuffer);
-
-				HANDLE_COMMAND(FLUX_COMMANDTYPE__BEGIN_BIND, Flux_CommandBeginBind);
-				HANDLE_COMMAND(FLUX_COMMANDTYPE__BIND_SRV, Flux_CommandBindSRV);
-				HANDLE_COMMAND(FLUX_COMMANDTYPE__BIND_UAV_TEXTURE, Flux_CommandBindUAV_Texture);
-				HANDLE_COMMAND(FLUX_COMMANDTYPE__BIND_UAV_BUFFER, Flux_CommandBindUAV_Buffer);
-				HANDLE_COMMAND(FLUX_COMMANDTYPE__BIND_CBV, Flux_CommandBindCBV);
-				HANDLE_COMMAND(FLUX_COMMANDTYPE__PUSH_CONSTANT, Flux_CommandPushConstant);
-				HANDLE_COMMAND(FLUX_COMMANDTYPE__USE_UNBOUNDED_TEXTURES, Flux_CommandUseUnboundedTextures);
-
-				HANDLE_COMMAND(FLUX_COMMANDTYPE__DRAW, Flux_CommandDraw);
-				HANDLE_COMMAND(FLUX_COMMANDTYPE__DRAW_INDEXED, Flux_CommandDrawIndexed);
-				HANDLE_COMMAND(FLUX_COMMANDTYPE__DRAW_INDEXED_INDIRECT, Flux_CommandDrawIndexedIndirect);
-				HANDLE_COMMAND(FLUX_COMMANDTYPE__DRAW_INDEXED_INDIRECT_COUNT, Flux_CommandDrawIndexedIndirectCount);
-
-				HANDLE_COMMAND(FLUX_COMMANDTYPE__BIND_COMPUTE_PIPELINE, Flux_CommandBindComputePipeline);
-				HANDLE_COMMAND(FLUX_COMMANDTYPE__DISPATCH, Flux_CommandDispatch);
-
-				HANDLE_COMMAND(FLUX_COMMANDTYPE__RENDER_IMGUI, Flux_CommandRenderImGui);
+				#define FLUX_X_DISPATCH(Name, Class) \
+					case FLUX_COMMANDTYPE__##Name: \
+						(*reinterpret_cast<Class*>(&m_pcData[uCursor + sizeof(Flux_CommandType)]))(pxCmdBuf); \
+						uCursor += sizeof(Class) + sizeof(Flux_CommandType); \
+						break;
+				FLUX_COMMAND_LIST(FLUX_X_DISPATCH)
+				#undef FLUX_X_DISPATCH
 
 				default:
 					Zenith_Assert(false, "Unhandled command");

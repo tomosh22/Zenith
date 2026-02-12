@@ -42,6 +42,20 @@ void Flux::EarlyInitialise()
 
 void Flux::LateInitialise()
 {
+	// Subsystem dependency graph (A -> B means A must init before B):
+	//
+	// MemoryManager -> Swapchain -> SlangCompiler -> Graphics
+	// Graphics -> HDR -> DeferredShading
+	// Graphics -> Shadows, Skybox, StaticMeshes, AnimatedMeshes, InstancedMeshes, Primitives
+	// Skybox -> IBL (environment probes use skybox cubemap)
+	// Terrain -> Grass (vegetation placed on terrain)
+	// HiZ -> SSR, SSGI (screen-space effects use Hi-Z pyramid)
+	// SSR, SSGI -> DeferredShading (composites SSR/SSGI results)
+	// DeferredShading -> DynamicLights (lights applied after deferred setup)
+	// [Tools] PlatformAPI -> ImGui -> Gizmos, ShaderHotReload
+	//
+	// Independent (no ordering constraint): SSAO, Fog, SDFs, Particles, Quads, Text
+
 	Flux_MemoryManager::BeginFrame();
 	Flux_Swapchain::Initialise();
 

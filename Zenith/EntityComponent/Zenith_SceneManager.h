@@ -648,6 +648,10 @@ private:
 	// Prevents the two functions from diverging if the visibility logic changes.
 	static bool IsSceneVisibleToUser(u_int uSlotIndex, const Zenith_SceneData* pxData);
 
+	// Shared predicate: should this scene receive FixedUpdate/Start/Update/LateUpdate calls?
+	// Loaded, activated, not unloading, and not paused.
+	static bool IsSceneUpdatable(const Zenith_SceneData* pxData);
+
 	// Select new active scene when current one is unloaded.
 	// Prefers lowest build index, falls back to most recently loaded.
 	// iExcludeHandle: scene handle to exclude (e.g. scene being unloaded, -1 for none)
@@ -843,6 +847,11 @@ private:
 	static void CancelAllPendingAsyncLoads(AsyncLoadJob* pxExclude = nullptr);
 	static void ProcessPendingAsyncLoads();
 	static void ProcessPendingAsyncUnloads();
+
+	// Mark an async load operation as failed and fire its completion callback
+	static void FailAsyncLoadOperation(Zenith_SceneOperation* pxOp);
+	// Clean up an async load job and remove it from the job list (does not increment index)
+	static void CleanupAndRemoveAsyncJob(u_int uIndex);
 };
 
 // Include SceneData after class definition for template implementations

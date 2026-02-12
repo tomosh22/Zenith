@@ -163,7 +163,7 @@ private:
 		size_t m_uSize;
 		size_t m_uOffset;
 	};
-	static std::list<StagingMemoryAllocation> s_xStagingAllocations;
+	static Zenith_Vector<StagingMemoryAllocation> s_xStagingAllocations;
 
 	// Staging flush helpers (split by allocation type for readability)
 	static void FlushStagingBufferAllocation(const StagingMemoryAllocation& xAlloc);
@@ -185,7 +185,7 @@ private:
 		Flux_ImageViewHandle m_xSRV;
 		Flux_ImageViewHandle m_xUAV;
 	};
-	static std::list<PendingVRAMDeletion> s_xPendingDeletions;
+	static Zenith_Vector<PendingVRAMDeletion> s_xPendingDeletions;
 
 	static VmaAllocator s_xAllocator;
 	static vk::Buffer s_xStagingBuffer;
@@ -202,8 +202,8 @@ private:
 	static u_int64 s_ulMemoryUsed;
 
 	// Handle registry for abstracting Vulkan types
-	static std::vector<vk::ImageView> s_xImageViewRegistry;
-	static std::vector<u_int> s_xFreeImageViewHandles;
-	static std::vector<vk::DescriptorBufferInfo> s_xBufferDescriptorRegistry;
-	static std::vector<u_int> s_xFreeBufferDescHandles;
+	static Zenith_Vector<vk::ImageView> s_xImageViewRegistry;
+	static Zenith_Vector<u_int> s_xFreeImageViewHandles;
+	static Zenith_Vector<vk::DescriptorBufferInfo> s_xBufferDescriptorRegistry;
+	static Zenith_Vector<u_int> s_xFreeBufferDescHandles;
 };

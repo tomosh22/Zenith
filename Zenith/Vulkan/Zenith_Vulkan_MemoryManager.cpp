@@ -14,8 +14,8 @@ Zenith_Vulkan_CommandBuffer Zenith_Vulkan_MemoryManager::s_xCommandBuffer;
 VmaAllocator Zenith_Vulkan_MemoryManager::s_xAllocator;
 vk::Buffer Zenith_Vulkan_MemoryManager::s_xStagingBuffer;
 vk::DeviceMemory Zenith_Vulkan_MemoryManager::s_xStagingMem;
-std::list<Zenith_Vulkan_MemoryManager::StagingMemoryAllocation> Zenith_Vulkan_MemoryManager::s_xStagingAllocations;
-std::list<Zenith_Vulkan_MemoryManager::PendingVRAMDeletion> Zenith_Vulkan_MemoryManager::s_xPendingDeletions;
+Zenith_Vector<Zenith_Vulkan_MemoryManager::StagingMemoryAllocation> Zenith_Vulkan_MemoryManager::s_xStagingAllocations;
+Zenith_Vector<Zenith_Vulkan_MemoryManager::PendingVRAMDeletion> Zenith_Vulkan_MemoryManager::s_xPendingDeletions;
 
 size_t Zenith_Vulkan_MemoryManager::s_uNextFreeStagingOffset = 0;
 
@@ -26,10 +26,10 @@ u_int64 Zenith_Vulkan_MemoryManager::s_ulMemoryUsed = 0;
 Zenith_Mutex Zenith_Vulkan_MemoryManager::s_xMutex;
 
 // Handle registry for abstracting Vulkan types
-std::vector<vk::ImageView> Zenith_Vulkan_MemoryManager::s_xImageViewRegistry;
-std::vector<u_int> Zenith_Vulkan_MemoryManager::s_xFreeImageViewHandles;
-std::vector<vk::DescriptorBufferInfo> Zenith_Vulkan_MemoryManager::s_xBufferDescriptorRegistry;
-std::vector<u_int> Zenith_Vulkan_MemoryManager::s_xFreeBufferDescHandles;
+Zenith_Vector<vk::ImageView> Zenith_Vulkan_MemoryManager::s_xImageViewRegistry;
+Zenith_Vector<u_int> Zenith_Vulkan_MemoryManager::s_xFreeImageViewHandles;
+Zenith_Vector<vk::DescriptorBufferInfo> Zenith_Vulkan_MemoryManager::s_xBufferDescriptorRegistry;
+Zenith_Vector<u_int> Zenith_Vulkan_MemoryManager::s_xFreeBufferDescHandles;
 
 void Zenith_Vulkan_MemoryManager::InitialiseStagingBuffer()
 {
@@ -171,76 +171,76 @@ Zenith_Vulkan_CommandBuffer& Zenith_Vulkan_MemoryManager::GetCommandBuffer() {
 Flux_ImageViewHandle Zenith_Vulkan_MemoryManager::RegisterImageView(vk::ImageView xView)
 {
 	Flux_ImageViewHandle xHandle;
-	if (!s_xFreeImageViewHandles.empty())
+	if (s_xFreeImageViewHandles.GetSize() > 0)
 	{
-		u_int uIndex = s_xFreeImageViewHandles.back();
-		s_xFreeImageViewHandles.pop_back();
-		s_xImageViewRegistry[uIndex] = xView;
+		u_int uIndex = s_xFreeImageViewHandles.GetBack();
+		s_xFreeImageViewHandles.PopBack();
+		s_xImageViewRegistry.Get(uIndex) = xView;
 		xHandle.SetValue(uIndex);
 	}
 	else
 	{
-		xHandle.SetValue(static_cast<u_int>(s_xImageViewRegistry.size()));
-		s_xImageViewRegistry.push_back(xView);
+		xHandle.SetValue(s_xImageViewRegistry.GetSize());
+		s_xImageViewRegistry.PushBack(xView);
 	}
 	return xHandle;
 }
 
 vk::ImageView Zenith_Vulkan_MemoryManager::GetImageView(Flux_ImageViewHandle xHandle)
 {
-	if (!xHandle.IsValid() || xHandle.AsUInt() >= s_xImageViewRegistry.size())
+	if (!xHandle.IsValid() || xHandle.AsUInt() >= s_xImageViewRegistry.GetSize())
 	{
 		return VK_NULL_HANDLE;
 	}
-	return s_xImageViewRegistry[xHandle.AsUInt()];
+	return s_xImageViewRegistry.Get(xHandle.AsUInt());
 }
 
 void Zenith_Vulkan_MemoryManager::ReleaseImageViewHandle(Flux_ImageViewHandle xHandle)
 {
-	if (!xHandle.IsValid() || xHandle.AsUInt() >= s_xImageViewRegistry.size())
+	if (!xHandle.IsValid() || xHandle.AsUInt() >= s_xImageViewRegistry.GetSize())
 	{
 		return;
 	}
-	s_xImageViewRegistry[xHandle.AsUInt()] = VK_NULL_HANDLE;
-	s_xFreeImageViewHandles.push_back(xHandle.AsUInt());
+	s_xImageViewRegistry.Get(xHandle.AsUInt()) = VK_NULL_HANDLE;
+	s_xFreeImageViewHandles.PushBack(xHandle.AsUInt());
 }
 
 // BufferDescriptor handle registry implementation
 Flux_BufferDescriptorHandle Zenith_Vulkan_MemoryManager::RegisterBufferDescriptor(const vk::DescriptorBufferInfo& xInfo)
 {
 	Flux_BufferDescriptorHandle xHandle;
-	if (!s_xFreeBufferDescHandles.empty())
+	if (s_xFreeBufferDescHandles.GetSize() > 0)
 	{
-		u_int uIndex = s_xFreeBufferDescHandles.back();
-		s_xFreeBufferDescHandles.pop_back();
-		s_xBufferDescriptorRegistry[uIndex] = xInfo;
+		u_int uIndex = s_xFreeBufferDescHandles.GetBack();
+		s_xFreeBufferDescHandles.PopBack();
+		s_xBufferDescriptorRegistry.Get(uIndex) = xInfo;
 		xHandle.SetValue(uIndex);
 	}
 	else
 	{
-		xHandle.SetValue(static_cast<u_int>(s_xBufferDescriptorRegistry.size()));
-		s_xBufferDescriptorRegistry.push_back(xInfo);
+		xHandle.SetValue(s_xBufferDescriptorRegistry.GetSize());
+		s_xBufferDescriptorRegistry.PushBack(xInfo);
 	}
 	return xHandle;
 }
 
 vk::DescriptorBufferInfo Zenith_Vulkan_MemoryManager::GetBufferDescriptor(Flux_BufferDescriptorHandle xHandle)
 {
-	if (!xHandle.IsValid() || xHandle.AsUInt() >= s_xBufferDescriptorRegistry.size())
+	if (!xHandle.IsValid() || xHandle.AsUInt() >= s_xBufferDescriptorRegistry.GetSize())
 	{
 		return vk::DescriptorBufferInfo();
 	}
-	return s_xBufferDescriptorRegistry[xHandle.AsUInt()];
+	return s_xBufferDescriptorRegistry.Get(xHandle.AsUInt());
 }
 
 void Zenith_Vulkan_MemoryManager::ReleaseBufferDescriptorHandle(Flux_BufferDescriptorHandle xHandle)
 {
-	if (!xHandle.IsValid() || xHandle.AsUInt() >= s_xBufferDescriptorRegistry.size())
+	if (!xHandle.IsValid() || xHandle.AsUInt() >= s_xBufferDescriptorRegistry.GetSize())
 	{
 		return;
 	}
-	s_xBufferDescriptorRegistry[xHandle.AsUInt()] = vk::DescriptorBufferInfo();
-	s_xFreeBufferDescHandles.push_back(xHandle.AsUInt());
+	s_xBufferDescriptorRegistry.Get(xHandle.AsUInt()) = vk::DescriptorBufferInfo();
+	s_xFreeBufferDescHandles.PushBack(xHandle.AsUInt());
 }
 
 void Zenith_Vulkan_MemoryManager::BeginFrame()
@@ -700,7 +700,7 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateTextureVRAM(const void* pData
 			xStagingAlloc.m_xTextureMetadata.m_eFormat = xInfoCopy.m_eFormat;
 			xStagingAlloc.m_uSize = ulDataSize;
 			xStagingAlloc.m_uOffset = s_uNextFreeStagingOffset;
-			s_xStagingAllocations.push_back(xStagingAlloc);
+			s_xStagingAllocations.PushBack(xStagingAlloc);
 
 			void* pMap = xDevice.mapMemory(s_xStagingMem, s_uNextFreeStagingOffset, ulDataSize);
 			memcpy(pMap, pData, ulDataSize);
@@ -997,7 +997,7 @@ void Zenith_Vulkan_MemoryManager::UploadBufferData(Flux_VRAMHandle xBufferHandle
 		xAllocation.m_xBufferMetadata.m_xBuffer = pxVRAM->GetBuffer();
 		xAllocation.m_uSize = uSize;
 		xAllocation.m_uOffset = s_uNextFreeStagingOffset;
-		s_xStagingAllocations.push_back(xAllocation);
+		s_xStagingAllocations.PushBack(xAllocation);
 
 		void* pMap = xDevice.mapMemory(s_xStagingMem, s_uNextFreeStagingOffset, uSize);
 		memcpy(pMap, pData, uSize);
@@ -1307,19 +1307,20 @@ void Zenith_Vulkan_MemoryManager::FlushStagingBuffer()
 {
 	Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__VULKAN_MEMORY_MANAGER_FLUSH);
 
-	for (auto it = s_xStagingAllocations.begin(); it != s_xStagingAllocations.end(); it++)
+	for (u_int i = 0; i < s_xStagingAllocations.GetSize(); i++)
 	{
-		if (it->m_eType == ALLOCATION_TYPE_BUFFER)
+		const StagingMemoryAllocation& xAlloc = s_xStagingAllocations.Get(i);
+		if (xAlloc.m_eType == ALLOCATION_TYPE_BUFFER)
 		{
-			FlushStagingBufferAllocation(*it);
+			FlushStagingBufferAllocation(xAlloc);
 		}
-		else if (it->m_eType == ALLOCATION_TYPE_TEXTURE)
+		else if (xAlloc.m_eType == ALLOCATION_TYPE_TEXTURE)
 		{
-			FlushStagingTextureAllocation(*it);
+			FlushStagingTextureAllocation(xAlloc);
 		}
 	}
 
-	s_xStagingAllocations.clear();
+	s_xStagingAllocations.Clear();
 	s_uNextFreeStagingOffset = 0;
 }
 
@@ -1360,7 +1361,7 @@ void Zenith_Vulkan_MemoryManager::UploadBufferDataChunked(vk::Buffer xDestBuffer
 		xAllocation.m_xBufferMetadata.m_xBuffer = xDestBuffer;
 		xAllocation.m_uSize = uChunkSize;
 		xAllocation.m_uOffset = 0; // Always use offset 0 since we flush between chunks
-		s_xStagingAllocations.push_back(xAllocation);
+		s_xStagingAllocations.PushBack(xAllocation);
 
 		// Map, copy, and unmap
 		void* pMap = xDevice.mapMemory(s_xStagingMem, 0, uChunkSize);
@@ -1375,7 +1376,7 @@ void Zenith_Vulkan_MemoryManager::UploadBufferDataChunked(vk::Buffer xDestBuffer
 		s_xCommandBuffer.EndAndCpuWait(false);
 
 		// Clear staging allocations after flush
-		s_xStagingAllocations.clear();
+		s_xStagingAllocations.Clear();
 		s_uNextFreeStagingOffset = 0;
 
 		// Move to next chunk
@@ -1473,7 +1474,7 @@ void Zenith_Vulkan_MemoryManager::UploadTextureDataChunked(vk::Image xDestImage,
 	s_xCommandBuffer.EndAndCpuWait(false);
 
 	// Clean up
-	s_xStagingAllocations.clear();
+	s_xStagingAllocations.Clear();
 	s_uNextFreeStagingOffset = 0;
 
 	// Restart command buffer for next operations
@@ -1501,7 +1502,7 @@ void Zenith_Vulkan_MemoryManager::QueueVRAMDeletion(Zenith_Vulkan_VRAM* pxVRAM, 
 	// Wait MAX_FRAMES_IN_FLIGHT + 1 to ensure GPU has finished with resource
 	// +1 because the resource might still be in use by command buffers being built this frame
 	xDeletion.m_uFramesRemaining = MAX_FRAMES_IN_FLIGHT + 1;
-	s_xPendingDeletions.push_back(xDeletion);
+	s_xPendingDeletions.PushBack(xDeletion);
 }
 
 void Zenith_Vulkan_MemoryManager::QueueImageViewDeletion(Flux_ImageViewHandle xImageViewHandle)
@@ -1520,50 +1521,52 @@ void Zenith_Vulkan_MemoryManager::ProcessDeferredDeletions()
 {
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 
-	for (auto it = s_xPendingDeletions.begin(); it != s_xPendingDeletions.end();)
+	for (u_int i = 0; i < s_xPendingDeletions.GetSize();)
 	{
-		it->m_uFramesRemaining--;
+		PendingVRAMDeletion& xDeletion = s_xPendingDeletions.Get(i);
+		xDeletion.m_uFramesRemaining--;
 
-		if (it->m_uFramesRemaining == 0)
+		if (xDeletion.m_uFramesRemaining == 0)
 		{
 			// Destroy all image views before deleting VRAM
-			if (it->m_xRTV.IsValid())
+			if (xDeletion.m_xRTV.IsValid())
 			{
-				vk::ImageView xView = GetImageView(it->m_xRTV);
+				vk::ImageView xView = GetImageView(xDeletion.m_xRTV);
 				xDevice.destroyImageView(xView);
-				ReleaseImageViewHandle(it->m_xRTV);
+				ReleaseImageViewHandle(xDeletion.m_xRTV);
 			}
-			if (it->m_xDSV.IsValid())
+			if (xDeletion.m_xDSV.IsValid())
 			{
-				vk::ImageView xView = GetImageView(it->m_xDSV);
+				vk::ImageView xView = GetImageView(xDeletion.m_xDSV);
 				xDevice.destroyImageView(xView);
-				ReleaseImageViewHandle(it->m_xDSV);
+				ReleaseImageViewHandle(xDeletion.m_xDSV);
 			}
-			if (it->m_xSRV.IsValid())
+			if (xDeletion.m_xSRV.IsValid())
 			{
-				vk::ImageView xView = GetImageView(it->m_xSRV);
+				vk::ImageView xView = GetImageView(xDeletion.m_xSRV);
 				xDevice.destroyImageView(xView);
-				ReleaseImageViewHandle(it->m_xSRV);
+				ReleaseImageViewHandle(xDeletion.m_xSRV);
 			}
-			if (it->m_xUAV.IsValid())
+			if (xDeletion.m_xUAV.IsValid())
 			{
-				vk::ImageView xView = GetImageView(it->m_xUAV);
+				vk::ImageView xView = GetImageView(xDeletion.m_xUAV);
 				xDevice.destroyImageView(xView);
-				ReleaseImageViewHandle(it->m_xUAV);
+				ReleaseImageViewHandle(xDeletion.m_xUAV);
 			}
 
 			// Delete VRAM and release handle (only if VRAM exists)
-			if (it->m_pxVRAM != nullptr)
+			if (xDeletion.m_pxVRAM != nullptr)
 			{
-				delete it->m_pxVRAM;
-				Zenith_Vulkan::ReleaseVRAMHandle(it->m_xHandle);
+				delete xDeletion.m_pxVRAM;
+				Zenith_Vulkan::ReleaseVRAMHandle(xDeletion.m_xHandle);
 			}
 
-			it = s_xPendingDeletions.erase(it);
+			s_xPendingDeletions.RemoveSwap(i);
+			// Don't increment - check the swapped-in element
 		}
 		else
 		{
-			++it;
+			i++;
 		}
 	}
 }

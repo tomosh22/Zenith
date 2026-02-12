@@ -324,6 +324,11 @@ bool Zenith_SceneManager::IsSceneVisibleToUser(u_int uSlotIndex, const Zenith_Sc
 	return true;
 }
 
+bool Zenith_SceneManager::IsSceneUpdatable(const Zenith_SceneData* pxData)
+{
+	return pxData && pxData->m_bIsLoaded && pxData->m_bIsActivated && !pxData->m_bIsUnloading && !pxData->IsPaused();
+}
+
 uint32_t Zenith_SceneManager::GetLoadedSceneCount()
 {
 	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "GetLoadedSceneCount must be called from main thread");
@@ -1752,25 +1757,30 @@ void Zenith_SceneManager::CancelAllPendingAsyncLoads(AsyncLoadJob* pxExclude)
 			}
 		}
 
-		// Wait for worker thread task to complete before cleanup
-		if (pxJob->m_pxTask)
-		{
-			pxJob->m_pxTask->WaitUntilComplete();
-		}
-
-		// Mark operation as failed/complete
-		pxOp->SetResultSceneHandle(-1);
-		pxOp->SetFailed(true);
-		pxOp->SetProgress(1.0f);
-		pxOp->SetComplete(true);
-		pxOp->FireCompletionCallback();
-
-		// Remove from currently loading paths
-		s_axCurrentlyLoadingPaths.EraseValue(pxJob->m_strCanonicalPath);
-
-		delete pxJob;
-		s_axAsyncJobs.Remove(static_cast<u_int>(i));
+		FailAsyncLoadOperation(pxOp);
+		CleanupAndRemoveAsyncJob(static_cast<u_int>(i));
 	}
+}
+
+void Zenith_SceneManager::FailAsyncLoadOperation(Zenith_SceneOperation* pxOp)
+{
+	pxOp->SetResultSceneHandle(-1);
+	pxOp->SetFailed(true);
+	pxOp->SetProgress(1.0f);
+	pxOp->SetComplete(true);
+	pxOp->FireCompletionCallback();
+}
+
+void Zenith_SceneManager::CleanupAndRemoveAsyncJob(u_int uIndex)
+{
+	AsyncLoadJob* pxJob = s_axAsyncJobs.Get(uIndex);
+	if (pxJob->m_pxTask)
+	{
+		pxJob->m_pxTask->WaitUntilComplete();
+	}
+	s_axCurrentlyLoadingPaths.EraseValue(pxJob->m_strCanonicalPath);
+	delete pxJob;
+	s_axAsyncJobs.Remove(uIndex);
 }
 
 void Zenith_SceneManager::ProcessPendingAsyncLoads()
@@ -1823,25 +1833,8 @@ void Zenith_SceneManager::ProcessPendingAsyncLoads()
 				UnloadSceneForced(xCreatedScene);
 			}
 
-			// Remove from currently loading paths to allow future reload
-			s_axCurrentlyLoadingPaths.EraseValue(pxJob->m_strCanonicalPath);
-
-			// Mark operation as failed/complete
-			pxOp->SetResultSceneHandle(-1);
-			pxOp->SetFailed(true);
-			pxOp->SetProgress(1.0f);
-			pxOp->SetComplete(true);
-			pxOp->FireCompletionCallback();
-
-			// Wait for worker thread task to complete before deleting (if still running)
-			if (pxJob->m_pxTask)
-			{
-				pxJob->m_pxTask->WaitUntilComplete();
-			}
-
-			// Cleanup job - don't increment, next element shifts into current slot
-			delete pxJob;
-			s_axAsyncJobs.Remove(i);
+			FailAsyncLoadOperation(pxOp);
+			CleanupAndRemoveAsyncJob(i);
 			continue;
 		}
 
@@ -1903,14 +1896,9 @@ void Zenith_SceneManager::ProcessPendingAsyncLoads()
 			{
 				Zenith_Error(LOG_CATEGORY_SCENE, "LoadSceneAsync: Failed to deserialize '%s'", pxJob->m_strPath.c_str());
 				UnloadScene(xScene);
-				pxOp->SetFailed(true);
-				pxOp->SetProgress(1.0f);
-				pxOp->SetComplete(true);
-				pxOp->FireCompletionCallback();
-				s_axCurrentlyLoadingPaths.EraseValue(strCanonicalPath);
+				FailAsyncLoadOperation(pxOp);
 				s_bIsLoadingScene = false;
-				delete pxJob;
-				s_axAsyncJobs.Remove(i);
+				CleanupAndRemoveAsyncJob(i);
 				continue;
 			}
 
@@ -1968,12 +1956,7 @@ void Zenith_SceneManager::ProcessPendingAsyncLoads()
 
 			s_bIsLoadingScene = false;
 
-			// Remove from currently loading paths (allows reloading the scene)
-			s_axCurrentlyLoadingPaths.EraseValue(pxJob->m_strCanonicalPath);
-
-			// Cleanup job - don't increment, next element shifts into current slot
-			delete pxJob;
-			s_axAsyncJobs.Remove(i);
+			CleanupAndRemoveAsyncJob(i);
 			continue;
 		}
 
@@ -2170,7 +2153,7 @@ void Zenith_SceneManager::Update(float fDt)
 		for (u_int i = 0; i < s_axScenes.GetSize(); ++i)
 		{
 			Zenith_SceneData* pxData = s_axScenes.Get(i);
-			if (pxData && pxData->m_bIsLoaded && pxData->m_bIsActivated && !pxData->m_bIsUnloading && !pxData->IsPaused())
+			if (IsSceneUpdatable(pxData))
 			{
 				pxData->FixedUpdate(s_fFixedTimestep);
 			}
@@ -2183,7 +2166,7 @@ void Zenith_SceneManager::Update(float fDt)
 	for (u_int i = 0; i < s_axScenes.GetSize(); ++i)
 	{
 		Zenith_SceneData* pxData = s_axScenes.Get(i);
-		if (pxData && pxData->m_bIsLoaded && pxData->m_bIsActivated && !pxData->m_bIsUnloading && !pxData->IsPaused())
+		if (IsSceneUpdatable(pxData))
 		{
 			pxData->DispatchPendingStarts();
 		}
@@ -2193,7 +2176,7 @@ void Zenith_SceneManager::Update(float fDt)
 	for (u_int i = 0; i < s_axScenes.GetSize(); ++i)
 	{
 		Zenith_SceneData* pxData = s_axScenes.Get(i);
-		if (pxData && pxData->m_bIsLoaded && pxData->m_bIsActivated && !pxData->m_bIsUnloading && !pxData->IsPaused())
+		if (IsSceneUpdatable(pxData))
 		{
 			pxData->Update(fDt);
 		}
