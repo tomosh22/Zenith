@@ -206,9 +206,9 @@ public:
 
 private:
 	// Static shape definitions that persist during level lifetime
-	static std::vector<TilePuzzleShapeDefinition>& GetShapeDefinitions()
+	static Zenith_Vector<TilePuzzleShapeDefinition>& GetShapeDefinitions()
 	{
-		static std::vector<TilePuzzleShapeDefinition> s_axShapeDefinitions;
+		static Zenith_Vector<TilePuzzleShapeDefinition> s_axShapeDefinitions;
 		return s_axShapeDefinitions;
 	}
 
@@ -222,8 +222,8 @@ private:
 	{
 		// Clear any previous shape definitions and reserve capacity upfront.
 		// pxDefinition pointers into this vector become dangling if it reallocates.
-		GetShapeDefinitions().clear();
-		GetShapeDefinitions().reserve(xParams.uNumBlockers + xParams.uNumColors * xParams.uNumShapesPerColor);
+		GetShapeDefinitions().Clear();
+		GetShapeDefinitions().Reserve(xParams.uNumBlockers + xParams.uNumColors * xParams.uNumShapesPerColor);
 
 		// Generate grid dimensions
 		std::uniform_int_distribution<uint32_t> xWidthDist(xParams.uMinGridWidth, xParams.uMaxGridWidth);
@@ -282,8 +282,8 @@ private:
 					continue;
 
 				// Place blocker
-				GetShapeDefinitions().push_back(TilePuzzleShapes::GetSingleShape(false));
-				TilePuzzleShapeDefinition& xBlockerDef = GetShapeDefinitions().back();
+				GetShapeDefinitions().PushBack(TilePuzzleShapes::GetSingleShape(false));
+				TilePuzzleShapeDefinition& xBlockerDef = GetShapeDefinitions().Get(GetShapeDefinitions().GetSize() - 1);
 
 				TilePuzzleShapeInstance xBlocker;
 				xBlocker.pxDefinition = &xBlockerDef;
@@ -327,8 +327,8 @@ private:
 				}
 
 				// Create shape definition
-				GetShapeDefinitions().push_back(TilePuzzleShapes::GetShape(eShapeType, true));
-				TilePuzzleShapeDefinition& xShapeDef = GetShapeDefinitions().back();
+				GetShapeDefinitions().PushBack(TilePuzzleShapes::GetShape(eShapeType, true));
+				TilePuzzleShapeDefinition& xShapeDef = GetShapeDefinitions().Get(GetShapeDefinitions().GetSize() - 1);
 
 				// Find a position where ALL cells of the shape fit and are unoccupied
 				bool bPlaced = false;
@@ -385,8 +385,8 @@ private:
 				if (!bPlaced)
 				{
 					// Fall back to single cell shape
-					GetShapeDefinitions().back() = TilePuzzleShapes::GetSingleShape(true);
-					TilePuzzleShapeDefinition& xSingleDef = GetShapeDefinitions().back();
+					GetShapeDefinitions().Get(GetShapeDefinitions().GetSize() - 1) = TilePuzzleShapes::GetSingleShape(true);
+					TilePuzzleShapeDefinition& xSingleDef = GetShapeDefinitions().Get(GetShapeDefinitions().GetSize() - 1);
 
 					for (size_t p = 0; p < axFloorPositions.size(); ++p)
 					{
@@ -455,7 +455,8 @@ private:
 	static void GenerateFallbackLevel(TilePuzzleLevelData& xLevelOut)
 	{
 		// Clear shape definitions
-		GetShapeDefinitions().clear();
+		GetShapeDefinitions().Clear();
+		GetShapeDefinitions().Reserve(2);
 
 		xLevelOut.uGridWidth = 5;
 		xLevelOut.uGridHeight = 5;
@@ -473,13 +474,13 @@ private:
 		}
 
 		// Add shape definitions
-		GetShapeDefinitions().push_back(TilePuzzleShapes::GetSingleShape(true));  // Red shape
-		GetShapeDefinitions().push_back(TilePuzzleShapes::GetSingleShape(true));  // Green shape
+		GetShapeDefinitions().PushBack(TilePuzzleShapes::GetSingleShape(true));  // Red shape
+		GetShapeDefinitions().PushBack(TilePuzzleShapes::GetSingleShape(true));  // Green shape
 
 		// Red draggable shape at (1, 1)
 		{
 			TilePuzzleShapeInstance xShape;
-			xShape.pxDefinition = &GetShapeDefinitions()[0];
+			xShape.pxDefinition = &GetShapeDefinitions().Get(0);
 			xShape.iOriginX = 1;
 			xShape.iOriginY = 1;
 			xShape.eColor = TILEPUZZLE_COLOR_RED;
@@ -489,7 +490,7 @@ private:
 		// Green draggable shape at (3, 1)
 		{
 			TilePuzzleShapeInstance xShape;
-			xShape.pxDefinition = &GetShapeDefinitions()[1];
+			xShape.pxDefinition = &GetShapeDefinitions().Get(1);
 			xShape.iOriginX = 3;
 			xShape.iOriginY = 1;
 			xShape.eColor = TILEPUZZLE_COLOR_GREEN;

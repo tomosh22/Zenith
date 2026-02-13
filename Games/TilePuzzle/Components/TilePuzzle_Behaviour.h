@@ -514,6 +514,17 @@ private:
 
 	void StartNewLevel()
 	{
+		// Hide the next level button from level complete screen
+		if (m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		{
+			Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+			Zenith_UI::Zenith_UIButton* pxNextBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("NextLevelBtn");
+			if (pxNextBtn)
+			{
+				pxNextBtn->SetVisible(false);
+			}
+		}
+
 		// Unload current puzzle scene (destroys all level entities automatically)
 		if (m_xPuzzleScene.IsValid())
 		{
@@ -1011,6 +1022,9 @@ private:
 	void NextLevel()
 	{
 		m_uCurrentLevelNumber++;
+		m_xSaveData.uCurrentLevel = m_uCurrentLevelNumber;
+		Zenith_SaveData::Save("autosave", TilePuzzleSaveData::uGAME_SAVE_VERSION,
+			TilePuzzle_WriteSaveData, &m_xSaveData);
 		StartNewLevel();
 	}
 
