@@ -3,10 +3,16 @@
 
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
+#include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "Flux/Flux.h"
 #include "Flux/Flux_Graphics.h"
+#include "Flux/Fog/Flux_Fog.h"
+#include "Flux/SSAO/Flux_SSAO.h"
+#include "Flux/SSR/Flux_SSR.h"
+#include "Flux/SSGI/Flux_SSGI.h"
+#include "Flux/Skybox/Flux_Skybox.h"
 #ifdef ZENITH_TOOLS
 #include "Editor/Zenith_Editor.h"
 #endif
@@ -24,10 +30,13 @@ extern void ExportDefaultFontAtlas();
 extern void GenerateTestAssets();
 #endif
 
+extern void Project_SetGraphicsOptions(Zenith_GraphicsOptions& xOptions);
 extern void Project_RegisterScriptBehaviours();
 extern void Project_CreateScenes();
 extern void Project_LoadInitialScene();
 extern void Project_Shutdown();
+
+static Zenith_GraphicsOptions s_xGraphicsOptions;
 
 void Zenith_Core::Zenith_Init()
 {
@@ -88,6 +97,14 @@ void Zenith_Core::Zenith_Init()
 		Flux_MemoryManager::EndFrame(false);
 	}
 	Flux::LateInitialise();
+
+	// Apply project graphics options
+	Flux_Fog::s_bEnabled = s_xGraphicsOptions.m_bFogEnabled;
+	Flux_SSR::s_bEnabled = s_xGraphicsOptions.m_bSSREnabled;
+	Flux_SSAO::s_bEnabled = s_xGraphicsOptions.m_bSSAOEnabled;
+	Flux_SSGI::s_bEnabled = s_xGraphicsOptions.m_bSSGIEnabled;
+	Flux_Skybox::s_bEnabled = s_xGraphicsOptions.m_bSkyboxEnabled;
+	Flux_Skybox::s_xOverrideColour = s_xGraphicsOptions.m_xSkyboxColour;
 
 #if defined ZENITH_TOOLS && defined ZENITH_DEBUG_VARIABLES
 	Zenith_Editor::Initialise();
@@ -160,7 +177,8 @@ void Zenith_Core::Zenith_Shutdown()
 
 void Zenith_Core::Zenith_Main()
 {
-	Zenith_Window::Inititalise("Zenith", 1280, 720);
+	Project_SetGraphicsOptions(s_xGraphicsOptions);
+	Zenith_Window::Inititalise("Zenith", s_xGraphicsOptions.m_uWindowWidth, s_xGraphicsOptions.m_uWindowHeight);
 	Zenith_Init();
 
 	while (!Zenith_Window::GetInstance()->ShouldClose())

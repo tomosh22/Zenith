@@ -101,11 +101,16 @@ public:
 	// Access transmittance LUT for other systems (IBL, fog)
 	static Flux_ShaderResourceView& GetTransmittanceLUTSRV();
 
+	// Skybox override (solid colour when disabled)
+	static bool s_bEnabled;
+	static Zenith_Maths::Vector3 s_xOverrideColour;
+
 #ifdef ZENITH_DEBUG_VARIABLES
 	static void RegisterDebugVariables();
 #endif
 
 private:
+	static void RenderSolidColour();
 	static void RenderCubemapSky();
 	static void RenderAtmosphereSky();
 
@@ -138,4 +143,9 @@ private:
 
 	// Constants buffer for atmosphere parameters
 	static Flux_DynamicConstantBuffer s_xAtmosphereConstantsBuffer;
+
+	// Solid colour override
+	static Flux_Pipeline s_xSolidColourPipeline;
+	static Flux_Shader s_xSolidColourShader;
+	static Flux_DynamicConstantBuffer s_xSolidColourConstantsBuffer;
 };

@@ -1,5 +1,6 @@
 #include "Zenith.h"
 #include "Core/Zenith_Core.h"
+#include "Core/Zenith_GraphicsOptions.h"
 #include "Zenith_OS_Include.h"
 #include "FileAccess/Zenith_FileAccess.h"
 #include "Profiling/Zenith_Profiling.h"
@@ -125,6 +126,8 @@ static int32_t OnInputEvent(android_app* pxApp, AInputEvent* pxEvent)
 	return 0; // Event not handled
 }
 
+extern void Project_SetGraphicsOptions(Zenith_GraphicsOptions& xOptions);
+
 void android_main(android_app* pxApp)
 {
 	LOGI("android_main started");
@@ -136,7 +139,9 @@ void android_main(android_app* pxApp)
 	Zenith_Window::SetAndroidApp(pxApp);
 
 	// Initialise window (without native window - that comes later via APP_CMD_INIT_WINDOW)
-	Zenith_Window::Inititalise("Zenith", 1280, 720);
+	Zenith_GraphicsOptions xOptions;
+	Project_SetGraphicsOptions(xOptions);
+	Zenith_Window::Inititalise("Zenith", xOptions.m_uWindowWidth, xOptions.m_uWindowHeight);
 
 	// Set up callbacks
 	pxApp->onAppCmd = OnAppCmd;

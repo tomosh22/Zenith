@@ -15,6 +15,8 @@
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
 
+bool Flux_Fog::s_bEnabled = true;
+
 static Zenith_Task g_xRenderTask(ZENITH_PROFILE_INDEX__FLUX_FOG, Flux_Fog::Render, nullptr);
 
 static Flux_CommandList g_xCommandList("Fog");
@@ -133,7 +135,7 @@ void Flux_Fog::RenderSimpleFog()
 
 void Flux_Fog::Render(void*)
 {
-	if (!dbg_bEnable)
+	if (!dbg_bEnable || !s_bEnabled)
 	{
 		return;
 	}

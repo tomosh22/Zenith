@@ -244,7 +244,7 @@ void Flux_SSR::WaitForRenderTask()
 
 void Flux_SSR::Render(void*)
 {
-	if (!dbg_bSSREnable || !s_bInitialised)
+	if (!dbg_bSSREnable || !s_bEnabled || !s_bInitialised)
 		return;
 
 	// SSR REQUIRES Hi-Z buffer for hierarchical ray marching
@@ -354,7 +354,7 @@ Flux_ShaderResourceView& Flux_SSR::GetReflectionSRV()
 
 bool Flux_SSR::IsEnabled()
 {
-	return dbg_bSSREnable && s_bInitialised;
+	return dbg_bSSREnable && s_bEnabled && s_bInitialised;
 }
 
 bool Flux_SSR::IsInitialised()

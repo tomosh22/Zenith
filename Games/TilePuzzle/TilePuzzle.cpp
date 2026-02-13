@@ -1,5 +1,6 @@
 #include "Zenith.h"
 
+#include "Core/Zenith_GraphicsOptions.h"
 #include "TilePuzzle/Components/TilePuzzle_Types.h"
 #include "TilePuzzle/Components/TilePuzzle_Behaviour.h"
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
@@ -157,6 +158,16 @@ const char* Project_GetGameAssetsDirectory()
 	return GAME_ASSETS_DIR;
 }
 
+void Project_SetGraphicsOptions(Zenith_GraphicsOptions& xOptions)
+{
+	xOptions.m_uWindowWidth = 720;
+	xOptions.m_uWindowHeight = 1280;
+	xOptions.m_bFogEnabled = false;
+	xOptions.m_bSSREnabled = false;
+	xOptions.m_bSkyboxEnabled = false;
+	xOptions.m_xSkyboxColour = Zenith_Maths::Vector3(0.1f, 0.1f, 0.15f);
+}
+
 void Project_RegisterScriptBehaviours()
 {
 	Zenith_SaveData::Initialise("TilePuzzle");
@@ -186,6 +197,7 @@ void Project_CreateScenes()
 			.m_xPosition = Zenith_Maths::Vector3(0.f, 12.f, 0.f),
 			.m_fPitch = -1.5f,
 			.m_fFOV = glm::radians(45.f),
+			.m_fAspectRatio = 9.f / 16.f,
 		});
 		pxMenuData->SetMainCameraEntity(xMenuManager.GetEntityID());
 
@@ -330,6 +342,7 @@ void Project_CreateScenes()
 			.m_xPosition = Zenith_Maths::Vector3(0.f, 12.f, 0.f),
 			.m_fPitch = -1.5f,
 			.m_fFOV = glm::radians(45.f),
+			.m_fAspectRatio = 9.f / 16.f,
 		});
 		pxGameData->SetMainCameraEntity(xGameManager.GetEntityID());
 

@@ -1,5 +1,7 @@
 #include "Zenith.h"
 
+#include "Core/Zenith_GraphicsOptions.h"
+
 // Returns the project name - used by Tools code to construct asset paths
 // The build system provides ZENITH_ROOT, and paths are constructed as:
 // ZENITH_ROOT + "Games/" + Project_GetName() + "/Assets/"
@@ -28,6 +30,10 @@ const char* Project_GetGameAssetsDirectory()
 #include "Prefab/Zenith_Prefab.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include <filesystem>
+
+void Project_SetGraphicsOptions(Zenith_GraphicsOptions&)
+{
+}
 
 void Project_RegisterScriptBehaviours()
 {

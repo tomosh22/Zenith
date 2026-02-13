@@ -289,7 +289,7 @@ void Flux_SSGI::Render(void*)
 {
 #pragma warning(push)
 #pragma warning(disable: 4127) // conditional expression is constant (dbg_bSSGIEnable is const in non-tools builds)
-	if (!dbg_bSSGIEnable || !s_bInitialised)
+	if (!dbg_bSSGIEnable || !s_bEnabled || !s_bInitialised)
 		return;
 #pragma warning(pop)
 
@@ -402,7 +402,7 @@ Flux_ShaderResourceView& Flux_SSGI::GetSSGISRV()
 
 bool Flux_SSGI::IsEnabled()
 {
-	return dbg_bSSGIEnable && s_bInitialised;
+	return dbg_bSSGIEnable && s_bEnabled && s_bInitialised;
 }
 
 bool Flux_SSGI::IsInitialised()

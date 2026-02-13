@@ -1,5 +1,6 @@
 #include "Zenith.h"
 
+#include "Core/Zenith_GraphicsOptions.h"
 #include "Runner/Components/Runner_Behaviour.h"
 #include "Runner/Components/Runner_Config.h"
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
@@ -438,6 +439,10 @@ const char* Project_GetName()
 const char* Project_GetGameAssetsDirectory()
 {
 	return GAME_ASSETS_DIR;
+}
+
+void Project_SetGraphicsOptions(Zenith_GraphicsOptions&)
+{
 }
 
 void Project_RegisterScriptBehaviours()

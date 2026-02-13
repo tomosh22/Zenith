@@ -50,6 +50,13 @@ float Flux_Skybox::s_fAerialPerspectiveStrength = 1.0f;
 
 Flux_DynamicConstantBuffer Flux_Skybox::s_xAtmosphereConstantsBuffer;
 
+bool Flux_Skybox::s_bEnabled = true;
+Zenith_Maths::Vector3 Flux_Skybox::s_xOverrideColour = Zenith_Maths::Vector3(0.f);
+
+Flux_Pipeline Flux_Skybox::s_xSolidColourPipeline;
+Flux_Shader Flux_Skybox::s_xSolidColourShader;
+Flux_DynamicConstantBuffer Flux_Skybox::s_xSolidColourConstantsBuffer;
+
 // Cached binding handles for cubemap
 static Flux_BindingHandle s_xCubemapFrameConstantsBinding;
 static Flux_BindingHandle s_xCubemapTextureBinding;
@@ -62,6 +69,13 @@ static Flux_BindingHandle s_xAtmosConstantsBinding;
 static Flux_BindingHandle s_xAerialFrameConstantsBinding;
 static Flux_BindingHandle s_xAerialAtmosConstantsBinding;
 static Flux_BindingHandle s_xAerialDepthTexBinding;
+
+// Solid colour override constants
+struct SkyboxOverrideConstants
+{
+	Zenith_Maths::Vector4 m_xColour;
+};
+static SkyboxOverrideConstants s_xSolidColourConstants;
 
 // Atmosphere constants buffer structure
 struct AtmosphereConstants
@@ -121,6 +135,22 @@ void Flux_Skybox::Initialise()
 		Flux_PipelineBuilder::FromSpecification(s_xCubemapPipeline, xSpec);
 	}
 
+	// ========== Solid colour override pipeline (MRT with no blending) ==========
+	{
+		Flux_PipelineSpecification xSpec = Flux_PipelineHelper::CreateFullscreenSpec(
+			s_xSolidColourShader, "Skybox/Flux_SkyboxSolidColour.frag", &Flux_Graphics::s_xMRTTarget);
+		for (Flux_BlendState& xBlendState : xSpec.m_axBlendStates)
+		{
+			xBlendState.m_eSrcBlendFactor = BLEND_FACTOR_ONE;
+			xBlendState.m_eDstBlendFactor = BLEND_FACTOR_ZERO;
+			xBlendState.m_bBlendEnabled = false;
+		}
+		Flux_PipelineBuilder::FromSpecification(s_xSolidColourPipeline, xSpec);
+	}
+
+	// Initialize solid colour constants buffer
+	Flux_MemoryManager::InitialiseDynamicConstantBuffer(&s_xSolidColourConstants, sizeof(SkyboxOverrideConstants), s_xSolidColourConstantsBuffer);
+
 	// Use the global cubemap texture pointer set during initialization in Zenith_Main.cpp
 	s_pxCubemapTexture = Flux_Graphics::s_pxCubemapTexture;
 
@@ -163,6 +193,7 @@ void Flux_Skybox::Shutdown()
 {
 	DestroyRenderTargets();
 	Flux_MemoryManager::DestroyDynamicConstantBuffer(s_xAtmosphereConstantsBuffer);
+	Flux_MemoryManager::DestroyDynamicConstantBuffer(s_xSolidColourConstantsBuffer);
 	Zenith_Log(LOG_CATEGORY_RENDERER, "Flux_Skybox shut down");
 }
 
@@ -220,9 +251,14 @@ void Flux_Skybox::WaitForAerialPerspectiveTask()
 
 void Flux_Skybox::Render(void*)
 {
+	if (!s_bEnabled)
+	{
+		RenderSolidColour();
+		return;
+	}
+
 	if (s_bAtmosphereEnabled)
 	{
-
 		RenderAtmosphereSky();
 	}
 	else
@@ -249,6 +285,22 @@ void Flux_Skybox::RenderCubemapSky()
 	g_xSkyCommandList.AddCommand<Flux_CommandBeginBind>(0);
 	g_xSkyCommandList.AddCommand<Flux_CommandBindCBV>(&Flux_Graphics::s_xFrameConstantsBuffer.GetCBV(), 0);
 	g_xSkyCommandList.AddCommand<Flux_CommandBindSRV>(&s_pxCubemapTexture->m_xSRV, 1);
+	g_xSkyCommandList.AddCommand<Flux_CommandDrawIndexed>(6);
+	Flux::SubmitCommandList(&g_xSkyCommandList, Flux_Graphics::s_xMRTTarget, RENDER_ORDER_SKYBOX);
+}
+
+void Flux_Skybox::RenderSolidColour()
+{
+	s_xSolidColourConstants.m_xColour = Zenith_Maths::Vector4(s_xOverrideColour, 1.f);
+	Flux_MemoryManager::UploadBufferData(s_xSolidColourConstantsBuffer.GetBuffer().m_xVRAMHandle, &s_xSolidColourConstants, sizeof(SkyboxOverrideConstants));
+
+	g_xSkyCommandList.Reset(true);
+
+	g_xSkyCommandList.AddCommand<Flux_CommandSetPipeline>(&s_xSolidColourPipeline);
+	g_xSkyCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&Flux_Graphics::s_xQuadMesh.GetVertexBuffer());
+	g_xSkyCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&Flux_Graphics::s_xQuadMesh.GetIndexBuffer());
+	g_xSkyCommandList.AddCommand<Flux_CommandBeginBind>(0);
+	g_xSkyCommandList.AddCommand<Flux_CommandBindCBV>(&s_xSolidColourConstantsBuffer.GetCBV(), 0);
 	g_xSkyCommandList.AddCommand<Flux_CommandDrawIndexed>(6);
 	Flux::SubmitCommandList(&g_xSkyCommandList, Flux_Graphics::s_xMRTTarget, RENDER_ORDER_SKYBOX);
 }

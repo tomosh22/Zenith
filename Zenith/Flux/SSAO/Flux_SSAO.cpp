@@ -18,6 +18,8 @@ static Flux_CommandList g_xCommandList("SSAO");
 static Flux_Shader s_xShader;
 static Flux_Pipeline s_xPipeline;
 
+bool Flux_SSAO::s_bEnabled = true;
+
 DEBUGVAR bool dbg_bEnable = true;
 
 static struct Flux_FogConstants
@@ -82,7 +84,7 @@ void Flux_SSAO::WaitForRenderTask()
 
 void Flux_SSAO::Render(void*)
 {
-	if (!dbg_bEnable)
+	if (!dbg_bEnable || !s_bEnabled)
 	{
 		return;
 	}

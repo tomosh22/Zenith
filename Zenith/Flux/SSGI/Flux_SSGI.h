@@ -31,6 +31,9 @@ public:
 	static bool IsEnabled();
 	static bool IsInitialised();
 
+	// Configuration
+	static bool s_bEnabled;
+
 private:
 	// Render passes
 	static void RenderRayMarch();
@@ -51,7 +54,5 @@ private:
 	static Flux_TargetSetup s_xUpsampleTargetSetup;
 	static Flux_TargetSetup s_xDenoiseTargetSetup;
 
-	// Configuration
-	static bool s_bEnabled;
 	static bool s_bInitialised;
 };
