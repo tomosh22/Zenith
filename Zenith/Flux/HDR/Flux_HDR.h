@@ -74,6 +74,7 @@ public:
 #endif
 
 private:
+	static void SyncDebugVariables();
 	static void InitializeAutoExposure();
 	static void RenderToneMapping();
 	static void RenderBloom();

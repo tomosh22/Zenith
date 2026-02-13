@@ -33,6 +33,37 @@ uint32_t Flux::s_uFrameCounter = 0;
 std::vector<void(*)()> Flux::s_xResChangeCallbacks;
 Zenith_Vector<Flux_CommandListEntry> Flux::s_xPendingCommandLists[RENDER_ORDER_MAX];
 
+void Flux_PipelineHelper::BuildFullscreenPipeline(
+	Flux_Shader& xShader,
+	Flux_Pipeline& xPipeline,
+	const char* szFragShader,
+	Flux_TargetSetup* pxTargetSetup,
+	const char* szVertShader)
+{
+	Flux_PipelineSpecification xSpec = CreateFullscreenSpec(xShader, szFragShader, pxTargetSetup, szVertShader);
+	Flux_PipelineBuilder::FromSpecification(xPipeline, xSpec);
+}
+
+Flux_PipelineSpecification Flux_PipelineHelper::CreateFullscreenSpec(
+	Flux_Shader& xShader,
+	const char* szFragShader,
+	Flux_TargetSetup* pxTargetSetup,
+	const char* szVertShader)
+{
+	xShader.Initialise(szVertShader, szFragShader);
+
+	Flux_PipelineSpecification xSpec;
+	xSpec.m_pxTargetSetup = pxTargetSetup;
+	xSpec.m_pxShader = &xShader;
+	xSpec.m_xVertexInputDesc.m_eTopology = MESH_TOPOLOGY_NONE;
+	xSpec.m_bDepthTestEnabled = false;
+	xSpec.m_bDepthWriteEnabled = false;
+
+	xShader.GetReflection().PopulateLayout(xSpec.m_xPipelineLayout);
+
+	return xSpec;
+}
+
 void Flux::EarlyInitialise()
 {
 	Flux_PlatformAPI::Initialise();

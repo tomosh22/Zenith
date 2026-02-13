@@ -96,7 +96,8 @@ public:
 	static Zenith_Vulkan_CommandBuffer& GetCommandBuffer();
 
 	// Deferred deletion system - accepts abstract handles to keep Vulkan types internal
-	static void QueueVRAMDeletion(Zenith_Vulkan_VRAM* pxVRAM, const Flux_VRAMHandle xHandle,
+	// NOTE: xHandle is taken by reference and auto-invalidated after queuing to prevent double-free
+	static void QueueVRAMDeletion(Zenith_Vulkan_VRAM* pxVRAM, Flux_VRAMHandle& xHandle,
 		Flux_ImageViewHandle xRTV = Flux_ImageViewHandle(), Flux_ImageViewHandle xDSV = Flux_ImageViewHandle(),
 		Flux_ImageViewHandle xSRV = Flux_ImageViewHandle(), Flux_ImageViewHandle xUAV = Flux_ImageViewHandle());
 	static void QueueImageViewDeletion(Flux_ImageViewHandle xImageViewHandle);

@@ -155,7 +155,6 @@ void Flux_SSGI::DestroyRenderTargets()
 				xAttachment.m_pxDSV.m_xImageViewHandle,
 				xAttachment.m_pxSRV.m_xImageViewHandle,
 				xAttachment.m_pxUAV.m_xImageViewHandle);
-			xAttachment.m_xVRAMHandle = Flux_VRAMHandle();
 		}
 	};
 
@@ -171,9 +170,11 @@ void Flux_SSGI::Initialise()
 	CreateRenderTargets();
 
 	// Initialize ray march shader and pipeline
-	{
-		s_xRayMarchShader.Initialise("Flux_Fullscreen_UV.vert", "SSGI/Flux_SSGI_RayMarch.frag");
+	Flux_PipelineHelper::BuildFullscreenPipeline(
+		s_xRayMarchShader, s_xRayMarchPipeline,
+		"SSGI/Flux_SSGI_RayMarch.frag", &s_xRayMarchTargetSetup);
 
+	{
 		const Flux_ShaderReflection& xReflection = s_xRayMarchShader.GetReflection();
 		s_xRM_FrameConstantsBinding = xReflection.GetBinding("FrameConstants");
 		s_xRM_DepthTexBinding = xReflection.GetBinding("g_xDepthTex");
@@ -182,71 +183,30 @@ void Flux_SSGI::Initialise()
 		s_xRM_HiZTexBinding = xReflection.GetBinding("g_xHiZTex");
 		s_xRM_DiffuseTexBinding = xReflection.GetBinding("g_xDiffuseTex");
 		s_xRM_BlueNoiseTexBinding = xReflection.GetBinding("g_xBlueNoiseTex");
-
-		Flux_VertexInputDescription xVertexDesc;
-		xVertexDesc.m_eTopology = MESH_TOPOLOGY_NONE;
-
-		Flux_PipelineSpecification xPipelineSpec;
-		xPipelineSpec.m_pxTargetSetup = &s_xRayMarchTargetSetup;
-		xPipelineSpec.m_pxShader = &s_xRayMarchShader;
-		xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
-
-		xPipelineSpec.m_bDepthTestEnabled = false;
-		xPipelineSpec.m_bDepthWriteEnabled = false;
-
-		xReflection.PopulateLayout(xPipelineSpec.m_xPipelineLayout);
-
-		Flux_PipelineBuilder::FromSpecification(s_xRayMarchPipeline, xPipelineSpec);
 	}
 
 	// Initialize upsample shader and pipeline
-	{
-		s_xUpsampleShader.Initialise("Flux_Fullscreen_UV.vert", "SSGI/Flux_SSGI_Upsample.frag");
+	Flux_PipelineHelper::BuildFullscreenPipeline(
+		s_xUpsampleShader, s_xUpsamplePipeline,
+		"SSGI/Flux_SSGI_Upsample.frag", &s_xUpsampleTargetSetup);
 
+	{
 		const Flux_ShaderReflection& xReflection = s_xUpsampleShader.GetReflection();
 		s_xUS_SSGITexBinding = xReflection.GetBinding("g_xSSGITex");
 		s_xUS_DepthTexBinding = xReflection.GetBinding("g_xDepthTex");
-
-		Flux_VertexInputDescription xVertexDesc;
-		xVertexDesc.m_eTopology = MESH_TOPOLOGY_NONE;
-
-		Flux_PipelineSpecification xPipelineSpec;
-		xPipelineSpec.m_pxTargetSetup = &s_xUpsampleTargetSetup;
-		xPipelineSpec.m_pxShader = &s_xUpsampleShader;
-		xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
-
-		xPipelineSpec.m_bDepthTestEnabled = false;
-		xPipelineSpec.m_bDepthWriteEnabled = false;
-
-		xReflection.PopulateLayout(xPipelineSpec.m_xPipelineLayout);
-
-		Flux_PipelineBuilder::FromSpecification(s_xUpsamplePipeline, xPipelineSpec);
 	}
 
 	// Initialize denoise shader and pipeline
-	{
-		s_xDenoiseShader.Initialise("Flux_Fullscreen_UV.vert", "SSGI/Flux_SSGI_Denoise.frag");
+	Flux_PipelineHelper::BuildFullscreenPipeline(
+		s_xDenoiseShader, s_xDenoisePipeline,
+		"SSGI/Flux_SSGI_Denoise.frag", &s_xDenoiseTargetSetup);
 
+	{
 		const Flux_ShaderReflection& xReflection = s_xDenoiseShader.GetReflection();
 		s_xDN_SSGITexBinding = xReflection.GetBinding("g_xSSGITex");
 		s_xDN_DepthTexBinding = xReflection.GetBinding("g_xDepthTex");
 		s_xDN_NormalsTexBinding = xReflection.GetBinding("g_xNormalsTex");
 		s_xDN_AlbedoTexBinding = xReflection.GetBinding("g_xAlbedoTex");
-
-		Flux_VertexInputDescription xVertexDesc;
-		xVertexDesc.m_eTopology = MESH_TOPOLOGY_NONE;
-
-		Flux_PipelineSpecification xPipelineSpec;
-		xPipelineSpec.m_pxTargetSetup = &s_xDenoiseTargetSetup;
-		xPipelineSpec.m_pxShader = &s_xDenoiseShader;
-		xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
-
-		xPipelineSpec.m_bDepthTestEnabled = false;
-		xPipelineSpec.m_bDepthWriteEnabled = false;
-
-		xReflection.PopulateLayout(xPipelineSpec.m_xPipelineLayout);
-
-		Flux_PipelineBuilder::FromSpecification(s_xDenoisePipeline, xPipelineSpec);
 	}
 
 #ifdef ZENITH_DEBUG_VARIABLES

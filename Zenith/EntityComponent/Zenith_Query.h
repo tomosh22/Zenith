@@ -37,10 +37,10 @@ public:
 		// Snapshot entity IDs before iteration to prevent invalidation
 		// if callback creates/destroys entities
 		Zenith_Vector<Zenith_EntityID> xSnapshot;
-		xSnapshot.Reserve(m_pxSceneData->m_xActiveEntities.GetSize());
-		for (u_int u = 0; u < m_pxSceneData->m_xActiveEntities.GetSize(); ++u)
+		xSnapshot.Reserve(m_pxSceneData->GetActiveEntities().GetSize());
+		for (u_int u = 0; u < m_pxSceneData->GetActiveEntities().GetSize(); ++u)
 		{
-			xSnapshot.PushBack(m_pxSceneData->m_xActiveEntities.Get(u));
+			xSnapshot.PushBack(m_pxSceneData->GetActiveEntities().Get(u));
 		}
 
 		// Iterate snapshot
@@ -68,9 +68,9 @@ public:
 	void ForEachUnsafe(Func&& fn)
 	{
 		Zenith_Assert(Zenith_Multithreading::IsMainThread() || Zenith_SceneManager::AreRenderTasksActive(), "Query::ForEachUnsafe must be called from main thread or during render task execution");
-		for (u_int u = 0; u < m_pxSceneData->m_xActiveEntities.GetSize(); ++u)
+		for (u_int u = 0; u < m_pxSceneData->GetActiveEntities().GetSize(); ++u)
 		{
-			Zenith_EntityID xEntityID = m_pxSceneData->m_xActiveEntities.Get(u);
+			Zenith_EntityID xEntityID = m_pxSceneData->GetActiveEntities().Get(u);
 
 			if (m_pxSceneData->IsMarkedForDestruction(xEntityID)) continue;
 
@@ -104,9 +104,9 @@ public:
 	Zenith_EntityID First()
 	{
 		Zenith_Assert(Zenith_Multithreading::IsMainThread() || Zenith_SceneManager::AreRenderTasksActive(), "Query::First must be called from main thread or during render task execution");
-		for (u_int u = 0; u < m_pxSceneData->m_xActiveEntities.GetSize(); ++u)
+		for (u_int u = 0; u < m_pxSceneData->GetActiveEntities().GetSize(); ++u)
 		{
-			Zenith_EntityID xEntityID = m_pxSceneData->m_xActiveEntities.Get(u);
+			Zenith_EntityID xEntityID = m_pxSceneData->GetActiveEntities().Get(u);
 
 			// Skip entities pending destruction
 			if (m_pxSceneData->IsMarkedForDestruction(xEntityID)) continue;

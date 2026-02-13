@@ -35,6 +35,7 @@
 #include "Editor/Zenith_Editor.h"
 #endif
 #include "Input/Zenith_Input.h"
+#include "Input/Zenith_TouchInput.h"
 #include "Physics/Zenith_Physics.h"
 #include "Physics/Zenith_PhysicsMeshGenerator.h"
 #include "Profiling/Zenith_Profiling.h"
@@ -180,6 +181,7 @@ void Zenith_Core::Zenith_MainLoop()
 	UpdateTimers();
 	Zenith_Input::BeginFrame();
 	Zenith_Window::GetInstance()->BeginFrame();
+	Zenith_TouchInput::Update();
 
 	// Process async asset load callbacks on main thread
 	Zenith_AsyncAssetLoader::ProcessCompletedLoads();

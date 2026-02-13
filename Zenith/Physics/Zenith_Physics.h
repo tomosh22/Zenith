@@ -31,7 +31,6 @@
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
 #include "Collections/Zenith_Vector.h"
 #include "EntityComponent/Zenith_Entity.h"
-#include <mutex>
 
 class Zenith_CameraComponent;
 
@@ -111,6 +110,10 @@ public:
 	static PhysicsContactListener s_xContactListener;
 	static void ProcessDeferredCollisionEvents();
 
+	// Diagnostics: number of collision events dropped due to queue overflow since last frame
+	static uint32_t GetDroppedCollisionEventCount() { return s_uDroppedEventCount; }
+	static uint32_t s_uDroppedEventCount;
+
 private:
 	static constexpr uint32_t s_uMaxBodies = 65536;
 	static constexpr uint32_t s_uNumBodyMutexes = 0; // 0 = auto-detect
@@ -119,7 +122,10 @@ private:
 
 	// Thread-safe deferred event queue
 	static Zenith_Vector<DeferredCollisionEvent> s_xDeferredEvents;
-	static std::mutex s_xEventQueueMutex;
+	static Zenith_Mutex s_xEventQueueMutex;
+
+	// Dispatch a collision event to an entity's script component
+	static void DispatchCollisionToEntity(Zenith_Entity& xEntity, Zenith_Entity& xOtherEntity, Zenith_EntityID xOtherID, CollisionEventType eEventType);
 
 	friend void QueueCollisionEventInternal(Zenith_EntityID, Zenith_EntityID, CollisionEventType);
 };

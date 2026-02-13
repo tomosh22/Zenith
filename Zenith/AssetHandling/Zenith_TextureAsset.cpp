@@ -7,6 +7,29 @@
 #include "Flux/Flux_Enums.h"
 #include "Flux/Flux_Types.h"
 
+// Unified data size calculation for both compressed and uncompressed textures
+static size_t CalculateTextureDataSize(TextureFormat eFormat, uint32_t uWidth, uint32_t uHeight, uint32_t uDepth = 1)
+{
+	if (IsCompressedFormat(eFormat))
+	{
+		return CalculateCompressedTextureSize(eFormat, uWidth, uHeight);
+	}
+	return static_cast<size_t>(ColourFormatBytesPerPixel(eFormat)) * uWidth * uHeight * uDepth;
+}
+
+// Free an array of allocated cubemap face data up to uCount entries
+static void FreeCubemapFaceData(void* apDatas[6], uint32_t uCount)
+{
+	for (uint32_t u = 0; u < uCount; u++)
+	{
+		if (apDatas[u])
+		{
+			Zenith_MemoryManagement::Deallocate(apDatas[u]);
+			apDatas[u] = nullptr;
+		}
+	}
+}
+
 Zenith_TextureAsset::Zenith_TextureAsset()
 {
 	m_xSurfaceInfo = Flux_SurfaceInfo();
@@ -45,16 +68,7 @@ bool Zenith_TextureAsset::LoadFromFile(const std::string& strPath, bool bCreateM
 	// Also recalculate expected data size since file may have stored wrong size
 	const int32_t iCorrectedDepth = std::max(1, iDepth);
 	const bool bIsCompressed = IsCompressedFormat(eFormat);
-
-	size_t ulExpectedDataSize;
-	if (bIsCompressed)
-	{
-		ulExpectedDataSize = CalculateCompressedTextureSize(eFormat, iWidth, iHeight);
-	}
-	else
-	{
-		ulExpectedDataSize = static_cast<size_t>(ColourFormatBytesPerPixel(eFormat)) * iWidth * iHeight * iCorrectedDepth;
-	}
+	const size_t ulExpectedDataSize = CalculateTextureDataSize(eFormat, iWidth, iHeight, iCorrectedDepth);
 
 	// Use the larger of file-stored size or expected size for safety
 	// If file stored size 0 but we expect data, use expected size
@@ -143,17 +157,8 @@ bool Zenith_TextureAsset::CreateCubemap(const void* apFaceData[6], const Flux_Su
 	}
 
 	// Calculate face data size
-	size_t ulLayerDataSize;
-	if (IsCompressedFormat(xSurfaceInfo.m_eFormat))
-	{
-		ulLayerDataSize = CalculateCompressedTextureSize(xSurfaceInfo.m_eFormat,
-			xSurfaceInfo.m_uWidth, xSurfaceInfo.m_uHeight);
-	}
-	else
-	{
-		ulLayerDataSize = ColourFormatBytesPerPixel(xSurfaceInfo.m_eFormat) *
-			xSurfaceInfo.m_uWidth * xSurfaceInfo.m_uHeight;
-	}
+	const size_t ulLayerDataSize = CalculateTextureDataSize(xSurfaceInfo.m_eFormat,
+		xSurfaceInfo.m_uWidth, xSurfaceInfo.m_uHeight);
 
 	const size_t ulTotalDataSize = ulLayerDataSize * 6;
 
@@ -207,13 +212,7 @@ bool Zenith_TextureAsset::LoadCubemapFromFiles(
 		if (!xStream.IsValid())
 		{
 			Zenith_Error(LOG_CATEGORY_ASSET, "LoadCubemapFromFiles: Failed to read face %u from '%s'", u, aszPaths[u]);
-			for (uint32_t j = 0; j < u; j++)
-			{
-				if (apDatas[j])
-				{
-					Zenith_MemoryManagement::Deallocate(apDatas[j]);
-				}
-			}
+			FreeCubemapFaceData(apDatas, u);
 			return false;
 		}
 
@@ -233,13 +232,7 @@ bool Zenith_TextureAsset::LoadCubemapFromFiles(
 		if (!apDatas[u])
 		{
 			Zenith_Log(LOG_CATEGORY_ASSET, "ERROR: Failed to allocate cubemap face %u", u);
-			for (uint32_t j = 0; j < u; j++)
-			{
-				if (apDatas[j])
-				{
-					Zenith_MemoryManagement::Deallocate(apDatas[j]);
-				}
-			}
+			FreeCubemapFaceData(apDatas, u);
 			return false;
 		}
 		xStream.ReadData(apDatas[u], aulDataSizes[u]);
@@ -260,13 +253,7 @@ bool Zenith_TextureAsset::LoadCubemapFromFiles(
 	bool bSuccess = CreateCubemap(apFaceData, xInfo);
 
 	// Free staging data
-	for (uint32_t u = 0; u < 6; u++)
-	{
-		if (apDatas[u])
-		{
-			Zenith_MemoryManagement::Deallocate(apDatas[u]);
-		}
-	}
+	FreeCubemapFaceData(apDatas, 6);
 
 	return bSuccess;
 }
@@ -277,8 +264,6 @@ void Zenith_TextureAsset::ReleaseGPU()
 	{
 		Zenith_Vulkan_VRAM* pxVRAM = Zenith_Vulkan::GetVRAM(m_xVRAMHandle);
 		Flux_MemoryManager::QueueVRAMDeletion(pxVRAM, m_xVRAMHandle, m_xSRV.m_xImageViewHandle);
-
-		m_xVRAMHandle = Flux_VRAMHandle();
 		m_xSRV = Flux_ShaderResourceView();
 		m_bGPUResourcesAllocated = false;
 	}

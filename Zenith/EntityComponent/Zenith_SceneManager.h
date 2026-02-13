@@ -608,6 +608,20 @@ public:
 	static void SetLoadingScene(bool b);
 
 	/**
+	 * RAII guard for lifecycle deferral flags.
+	 * Ensures the flag is reset even if an exception or early return occurs.
+	 * Usage: Zenith_SceneManager::LifecycleDeferralGuard xGuard(s_bIsLoadingScene);
+	 */
+	struct LifecycleDeferralGuard
+	{
+		bool& m_bFlag;
+		LifecycleDeferralGuard(bool& bFlag) : m_bFlag(bFlag) { m_bFlag = true; }
+		~LifecycleDeferralGuard() { m_bFlag = false; }
+		LifecycleDeferralGuard(const LifecycleDeferralGuard&) = delete;
+		LifecycleDeferralGuard& operator=(const LifecycleDeferralGuard&) = delete;
+	};
+
+	/**
 	 * Dispatch lifecycle init for all loaded scenes
 	 */
 	static void DispatchFullLifecycleInit();
@@ -641,49 +655,29 @@ public:
 	static void UnloadSceneForced(Zenith_Scene xScene);
 
 private:
-	// Internal helper for moving entities between scenes (zero-copy transfer)
+	//==========================================================================
+	// Internal Helpers
+	//==========================================================================
+
 	static bool MoveEntityInternal(Zenith_Entity& xEntity, Zenith_SceneData* pxTargetData);
-
-	// Shared predicate: should this scene be visible to GetLoadedSceneCount/GetSceneAt?
-	// Prevents the two functions from diverging if the visibility logic changes.
 	static bool IsSceneVisibleToUser(u_int uSlotIndex, const Zenith_SceneData* pxData);
-
-	// Shared predicate: should this scene receive FixedUpdate/Start/Update/LateUpdate calls?
-	// Loaded, activated, not unloading, and not paused.
 	static bool IsSceneUpdatable(const Zenith_SceneData* pxData);
-
-	// Select new active scene when current one is unloaded.
-	// Prefers lowest build index, falls back to most recently loaded.
-	// iExcludeHandle: scene handle to exclude (e.g. scene being unloaded, -1 for none)
 	static int SelectNewActiveScene(int iExcludeHandle = -1);
+	static int AllocateSceneHandle();
+	static void FreeSceneHandle(int iHandle);
 
-	// Scene storage
+	//==========================================================================
+	// Scene Storage
+	//==========================================================================
+
 	static Zenith_Vector<Zenith_SceneData*> s_axScenes;
 	static Zenith_Vector<uint32_t> s_axSceneGenerations;  // Generation counters for stale handle detection
 	static Zenith_Vector<int> s_axFreeHandles;
 	static int s_iActiveSceneHandle;
-#ifdef ZENITH_ASSERT
-	static bool s_bRenderTasksActive;  // Debug-only: true between SubmitRenderTasks and WaitForAllRenderTasks
-	static bool s_bAnimTasksActive;    // Debug-only: true between SubmitTaskArray(animTask) and WaitUntilComplete
-public:
-	static void SetRenderTasksActive(bool b) { s_bRenderTasksActive = b; }
-	static bool AreRenderTasksActive() { return s_bRenderTasksActive; }
-	static void SetAnimTasksActive(bool b) { s_bAnimTasksActive = b; }
-private:
-#endif
 	static int s_iPersistentSceneHandle;
+	static uint64_t s_ulNextLoadTimestamp;  // For selecting most recently loaded scene when active is unloaded
 
-	// True while inside Update() - LoadScene/LoadSceneByIndex route through async when set
-	// (Unity parity: LoadScene is deferred during script execution)
-	static bool s_bIsUpdating;
-
-	static Zenith_Vector<Zenith_SceneOperation*> s_axActiveOperations;
-	static float s_fFixedTimeAccumulator;
-	static float s_fFixedTimestep;  // Configurable fixed timestep (default 0.02 = 50Hz, matching Unity)
-	static uint32_t s_uAsyncUnloadBatchSize;  // Entities destroyed per frame during async unload (default 50)
-	static uint32_t s_uMaxConcurrentAsyncLoads;  // Maximum concurrent async loads (default 8)
-
-	// Loaded scene name cache - smaller than scanning all scene slots
+	// Scene name cache for O(1) lookup by name
 	// #TODO: Replace with engine hash map when available
 	struct SceneNameEntry
 	{
@@ -694,17 +688,41 @@ private:
 	static void AddToSceneNameCache(int iHandle, const std::string& strName);
 	static void RemoveFromSceneNameCache(int iHandle);
 
-	// Flags
-	static bool s_bIsLoadingScene;
-	static bool s_bIsPrefabInstantiating;
+	// Build index registry (indexed by build index - dense, non-negative)
+	static Zenith_Vector<std::string> s_axBuildIndexToPath;
 
-	// Initial scene load callback (set by platform main, used by editor for Play/Stop reset)
+#ifdef ZENITH_ASSERT
+	static bool s_bRenderTasksActive;  // Debug-only: true between SubmitRenderTasks and WaitForAllRenderTasks
+	static bool s_bAnimTasksActive;    // Debug-only: true between SubmitTaskArray(animTask) and WaitUntilComplete
+public:
+	static void SetRenderTasksActive(bool b) { s_bRenderTasksActive = b; }
+	static bool AreRenderTasksActive() { return s_bRenderTasksActive; }
+	static void SetAnimTasksActive(bool b) { s_bAnimTasksActive = b; }
+private:
+#endif
+
+	//==========================================================================
+	// Lifecycle / Update State
+	//==========================================================================
+
+	static bool s_bIsUpdating;            // True inside Update(); LoadScene defers to async when set
+	static bool s_bIsLoadingScene;        // Suppresses immediate lifecycle dispatch during load
+	static bool s_bIsPrefabInstantiating;
+	static float s_fFixedTimeAccumulator;
+	static float s_fFixedTimestep;                // Default 0.02 = 50Hz (Unity parity)
+
 	static InitialSceneLoadFn s_pfnInitialSceneLoad;
 
-	// Load order counter (for selecting most recently loaded scene when active is unloaded)
-	static uint64_t s_ulNextLoadTimestamp;
+	// Circular load detection (small sets - linear scan is fine)
+	static Zenith_Vector<std::string> s_axCurrentlyLoadingPaths;
+	static Zenith_Vector<std::string> s_axLifecycleLoadStack;  // Scenes in lifecycle dispatch (OnAwake/OnEnable)
+	static void PushLifecycleContext(const std::string& strCanonicalPath);
+	static void PopLifecycleContext(const std::string& strCanonicalPath);
 
-	// Event callback wrappers with handles
+	//==========================================================================
+	// Callback System
+	//==========================================================================
+
 	template<typename T>
 	struct CallbackEntry
 	{
@@ -712,7 +730,6 @@ private:
 		T m_pfnCallback;
 	};
 
-	// Templatized callback list to reduce boilerplate across 6 callback types
 	template<typename TCallback>
 	struct Zenith_CallbackList
 	{
@@ -738,15 +755,24 @@ private:
 	static uint32_t s_uFiringCallbacksDepth;
 	static void ProcessPendingCallbackRemovals();
 	static bool IsCallbackPendingRemoval(CallbackHandle ulHandle);
+	static CallbackHandle AllocateCallbackHandle();
 
-	// Build index registry (indexed by build index - dense, non-negative)
-	static Zenith_Vector<std::string> s_axBuildIndexToPath;
+	static void FireSceneLoadedCallbacks(Zenith_Scene xScene, Zenith_SceneLoadMode eMode);
+	static void FireSceneUnloadingCallbacks(Zenith_Scene xScene);
+	static void FireSceneUnloadedCallbacks(Zenith_Scene xScene);
+	static void FireActiveSceneChangedCallbacks(Zenith_Scene xOld, Zenith_Scene xNew);
+	static void FireSceneLoadStartedCallbacks(const std::string& strPath);
+	static void FireEntityPersistentCallbacks(const Zenith_Entity& xEntity);
 
-	// Circular load detection (small sets - linear scan is fine)
-	static Zenith_Vector<std::string> s_axCurrentlyLoadingPaths;
-	static Zenith_Vector<std::string> s_axLifecycleLoadStack;  // Scenes in lifecycle dispatch (OnAwake/OnEnable)
+	//==========================================================================
+	// Async Operations
+	//==========================================================================
 
-	// Operation ID tracking for safe async operation access (few active at any time - linear scan)
+	static Zenith_Vector<Zenith_SceneOperation*> s_axActiveOperations;
+	static uint32_t s_uAsyncUnloadBatchSize;      // Entities destroyed per frame during async unload (default 50)
+	static uint32_t s_uMaxConcurrentAsyncLoads;    // Maximum concurrent async loads (default 8)
+
+	// Operation ID tracking (few active at any time - linear scan)
 	// #TODO: Replace with engine hash map
 	struct OperationMapEntry
 	{
@@ -755,27 +781,8 @@ private:
 	};
 	static Zenith_Vector<OperationMapEntry> s_axOperationMap;
 	static uint64_t s_ulNextOperationID;
-
-	// Internal helpers
-	static int AllocateSceneHandle();
-	static void FreeSceneHandle(int iHandle);
-
-	// Lifecycle context tracking (for circular load detection during OnAwake/OnEnable)
-	static void PushLifecycleContext(const std::string& strCanonicalPath);
-	static void PopLifecycleContext(const std::string& strCanonicalPath);
-	static void ProcessPendingUnloads();
-	static void UnloadAllNonPersistent();
-	static uint32_t CountScenesBeingAsyncUnloaded();
-	static void CleanupCompletedOperations();
-	static void FireSceneLoadedCallbacks(Zenith_Scene xScene, Zenith_SceneLoadMode eMode);
-	static void FireSceneUnloadingCallbacks(Zenith_Scene xScene);
-	static void FireSceneUnloadedCallbacks(Zenith_Scene xScene);
-	static void FireActiveSceneChangedCallbacks(Zenith_Scene xOld, Zenith_Scene xNew);
-	static void FireSceneLoadStartedCallbacks(const std::string& strPath);
-	static void FireEntityPersistentCallbacks(const Zenith_Entity& xEntity);
-	static CallbackHandle AllocateCallbackHandle();
 	static Zenith_SceneOperationID AllocateOperationID();
-	static void AsyncSceneLoadTask(void* pData);
+	static void CleanupCompletedOperations();
 
 	// File load milestones (used instead of atomic float for better ordering guarantees)
 	enum class FileLoadMilestone : uint8_t
@@ -785,12 +792,9 @@ private:
 		FILE_READ_COMPLETE = 70     // Maps to 0.7 progress
 	};
 
-	// Async loading job - file I/O happens on worker thread
+	// Async loading job - file I/O on worker thread, scene creation on main thread
 	struct AsyncLoadJob
 	{
-		// Phase tracking for two-phase async load:
-		// Phase 1: File I/O → SINGLE cleanup → create scene → deserialize (progress 0→0.9)
-		// Phase 2: Activation (Awake/OnEnable) when allowed (progress 0.9→1.0)
 		enum class LoadPhase : uint8_t
 		{
 			WAITING_FOR_FILE,     // File I/O on worker thread
@@ -819,6 +823,11 @@ private:
 	};
 	static Zenith_Vector<AsyncLoadJob*> s_axAsyncJobs;
 	static bool s_bAsyncJobsNeedSort;
+	static void AsyncSceneLoadTask(void* pData);
+	static void CancelAllPendingAsyncLoads(AsyncLoadJob* pxExclude = nullptr);
+	static void ProcessPendingAsyncLoads();
+	static void FailAsyncLoadOperation(Zenith_SceneOperation* pxOp);
+	static void CleanupAndRemoveAsyncJob(u_int uIndex);
 
 	// Async unloading job - destruction spread across frames
 	struct AsyncUnloadJob
@@ -838,20 +847,17 @@ private:
 		}
 	};
 	static Zenith_Vector<AsyncUnloadJob*> s_axAsyncUnloadJobs;
-
-	// Returns true if the scene can be unloaded (not persistent, not last scene, not already unloading)
-	static bool CanUnloadScene(Zenith_Scene xScene);
-	// Shared unload logic (callbacks, destruction, active scene reselection)
-	static void UnloadSceneInternal(Zenith_Scene xScene);
-
-	static void CancelAllPendingAsyncLoads(AsyncLoadJob* pxExclude = nullptr);
-	static void ProcessPendingAsyncLoads();
 	static void ProcessPendingAsyncUnloads();
+	static uint32_t CountScenesBeingAsyncUnloaded();
 
-	// Mark an async load operation as failed and fire its completion callback
-	static void FailAsyncLoadOperation(Zenith_SceneOperation* pxOp);
-	// Clean up an async load job and remove it from the job list (does not increment index)
-	static void CleanupAndRemoveAsyncJob(u_int uIndex);
+	//==========================================================================
+	// Unload Helpers
+	//==========================================================================
+
+	static bool CanUnloadScene(Zenith_Scene xScene);
+	static void UnloadSceneInternal(Zenith_Scene xScene);
+	static void ProcessPendingUnloads();
+	static void UnloadAllNonPersistent();
 };
 
 // Include SceneData after class definition for template implementations

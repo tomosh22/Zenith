@@ -197,13 +197,34 @@ void Flux_Graphics::InitialiseRenderTargets()
 	}
 }
 
-void Flux_Graphics::UploadFrameConstants()
+bool Flux_Graphics::BuildCameraMatrices(FrameConstants& xConstants)
 {
 #ifdef ZENITH_TOOLS
-	if(Zenith_Editor::GetEditorMode() != EditorMode::Playing)
+	if (Zenith_Editor::GetEditorMode() != EditorMode::Playing)
 	{
-		Zenith_Editor::BuildViewMatrix(s_xFrameConstants.m_xViewMat);
-		Zenith_Editor::BuildProjectionMatrix(s_xFrameConstants.m_xProjMat);
+		Zenith_Editor::BuildViewMatrix(xConstants.m_xViewMat);
+		Zenith_Editor::BuildProjectionMatrix(xConstants.m_xProjMat);
+		Zenith_Editor::GetCameraPosition(xConstants.m_xCamPos_Pad);
+		return true;
+	}
+#endif
+	Zenith_CameraComponent* pxCamera = Zenith_SceneManager::FindMainCameraAcrossScenes();
+	if (pxCamera)
+	{
+		pxCamera->BuildViewMatrix(xConstants.m_xViewMat);
+		pxCamera->BuildProjectionMatrix(xConstants.m_xProjMat);
+		pxCamera->GetPosition(xConstants.m_xCamPos_Pad);
+		return true;
+	}
+	return false;
+}
+
+void Flux_Graphics::UploadFrameConstants()
+{
+	bool bCameraValid = BuildCameraMatrices(s_xFrameConstants);
+
+	if (bCameraValid)
+	{
 		if (dbg_bOverrideViewProjMat)
 		{
 			s_xFrameConstants.m_xViewProjMat = Flux_Shadows::GetSunViewProjMatrix(dbg_uOverrideViewProjMatIndex);
@@ -215,30 +236,6 @@ void Flux_Graphics::UploadFrameConstants()
 		s_xFrameConstants.m_xInvViewProjMat = glm::inverse(s_xFrameConstants.m_xViewProjMat);
 		s_xFrameConstants.m_xInvViewMat = glm::inverse(s_xFrameConstants.m_xViewMat);
 		s_xFrameConstants.m_xInvProjMat = glm::inverse(s_xFrameConstants.m_xProjMat);
-		Zenith_Editor::GetCameraPosition(s_xFrameConstants.m_xCamPos_Pad);
-	}
-	else
-#endif
-	{
-		// Search all loaded scenes for the main camera (supports multi-scene with persistent camera)
-		Zenith_CameraComponent* pxCamera = Zenith_SceneManager::FindMainCameraAcrossScenes();
-		if (pxCamera)
-		{
-			pxCamera->BuildViewMatrix(s_xFrameConstants.m_xViewMat);
-			pxCamera->BuildProjectionMatrix(s_xFrameConstants.m_xProjMat);
-			if (dbg_bOverrideViewProjMat)
-			{
-				s_xFrameConstants.m_xViewProjMat = Flux_Shadows::GetSunViewProjMatrix(dbg_uOverrideViewProjMatIndex);
-			}
-			else
-			{
-				s_xFrameConstants.m_xViewProjMat = s_xFrameConstants.m_xProjMat * s_xFrameConstants.m_xViewMat;
-			}
-			s_xFrameConstants.m_xInvViewProjMat = glm::inverse(s_xFrameConstants.m_xViewProjMat);
-			s_xFrameConstants.m_xInvViewMat = glm::inverse(s_xFrameConstants.m_xViewMat);
-			s_xFrameConstants.m_xInvProjMat = glm::inverse(s_xFrameConstants.m_xProjMat);
-			pxCamera->GetPosition(s_xFrameConstants.m_xCamPos_Pad);
-		}
 	}
 
 	s_xFrameConstants.m_xSunDir_Pad = glm::normalize(Zenith_Maths::Vector4(dbg_SunDir.x, dbg_SunDir.y, dbg_SunDir.z, 0.));
@@ -344,7 +341,6 @@ void Flux_Graphics::Shutdown()
 			Flux_MemoryManager::QueueVRAMDeletion(pxVRAM, xAttachment.m_xVRAMHandle,
 				xAttachment.m_pxRTV.m_xImageViewHandle, xAttachment.m_pxDSV.m_xImageViewHandle,
 				xAttachment.m_pxSRV.m_xImageViewHandle, xAttachment.m_pxUAV.m_xImageViewHandle);
-			xAttachment.m_xVRAMHandle = Flux_VRAMHandle();
 		}
 	};
 

@@ -5,12 +5,12 @@
 #include "Flux/Slang/Flux_ShaderHotReload.h"
 #include "Flux/Slang/Flux_SlangCompiler.h"
 #include "Core/Zenith_FileWatcher.h"
+#include "Core/Multithreading/Zenith_Multithreading.h"
 #include "Vulkan/Zenith_Vulkan_Pipeline.h"
 #include "Vulkan/Zenith_Vulkan.h"
-#include <unordered_map>
-#include <unordered_set>
-#include <vector>
-#include <mutex>
+#include <unordered_map> // #TODO: Replace with engine hash map
+#include <unordered_set> // #TODO: Replace with engine hash set when available
+#include <vector> // #TODO: Replace with Zenith_Vector (requires removing range-for and std::remove_if usage)
 #include <algorithm>
 
 // Registered pipeline info
@@ -29,7 +29,7 @@ struct RegisteredPipeline
 static Zenith_FileWatcher s_xFileWatcher;
 static std::vector<RegisteredPipeline> s_axRegisteredPipelines;
 static std::unordered_set<std::string> s_xPendingReloadFiles;
-static std::mutex s_xMutex;
+static Zenith_Mutex s_xMutex;
 static double s_fLastReloadTime = 0.0;
 static constexpr double fRELOAD_DEBOUNCE_TIME = 0.5; // Seconds to wait before reloading (debounce rapid saves)
 
@@ -130,7 +130,7 @@ void Flux_ShaderHotReload::Shutdown()
 	s_xFileWatcher.Stop();
 
 	{
-		std::lock_guard<std::mutex> xLock(s_xMutex);
+		Zenith_ScopedMutexLock xLock(s_xMutex);
 		s_axRegisteredPipelines.clear();
 		s_xPendingReloadFiles.clear();
 	}
@@ -201,7 +201,7 @@ void Flux_ShaderHotReload::OnFileChanged(const std::string& strPath, int eChange
 
 	// Add to pending reload set
 	{
-		std::lock_guard<std::mutex> xLock(s_xMutex);
+		Zenith_ScopedMutexLock xLock(s_xMutex);
 		s_xPendingReloadFiles.insert(strPath);
 	}
 
@@ -210,7 +210,7 @@ void Flux_ShaderHotReload::OnFileChanged(const std::string& strPath, int eChange
 
 void Flux_ShaderHotReload::MarkPipelinesForReload(const std::string& strChangedFile)
 {
-	std::lock_guard<std::mutex> xLock(s_xMutex);
+	Zenith_ScopedMutexLock xLock(s_xMutex);
 
 	for (RegisteredPipeline& xPipeline : s_axRegisteredPipelines)
 	{
@@ -255,7 +255,7 @@ void Flux_ShaderHotReload::ProcessPendingReloads()
 	// Check if we have pending files
 	std::unordered_set<std::string> xFilesToProcess;
 	{
-		std::lock_guard<std::mutex> xLock(s_xMutex);
+		Zenith_ScopedMutexLock xLock(s_xMutex);
 		if (s_xPendingReloadFiles.empty())
 		{
 			return;
@@ -273,7 +273,7 @@ void Flux_ShaderHotReload::ProcessPendingReloads()
 	// Collect pipelines that need reload
 	std::vector<RegisteredPipeline*> axPipelinesToReload;
 	{
-		std::lock_guard<std::mutex> xLock(s_xMutex);
+		Zenith_ScopedMutexLock xLock(s_xMutex);
 		for (RegisteredPipeline& xPipeline : s_axRegisteredPipelines)
 		{
 			if (xPipeline.m_bNeedsReload)
@@ -338,7 +338,7 @@ void Flux_ShaderHotReload::RegisterPipeline(Zenith_Vulkan_Pipeline* pxPipeline,
 		return;
 	}
 
-	std::lock_guard<std::mutex> xLock(s_xMutex);
+	Zenith_ScopedMutexLock xLock(s_xMutex);
 
 	// Check if already registered
 	for (const RegisteredPipeline& xExisting : s_axRegisteredPipelines)
@@ -373,7 +373,7 @@ void Flux_ShaderHotReload::RegisterComputePipeline(Zenith_Vulkan_Pipeline* pxPip
 		return;
 	}
 
-	std::lock_guard<std::mutex> xLock(s_xMutex);
+	Zenith_ScopedMutexLock xLock(s_xMutex);
 
 	// Check if already registered
 	for (const RegisteredPipeline& xExisting : s_axRegisteredPipelines)
@@ -405,7 +405,7 @@ void Flux_ShaderHotReload::UnregisterPipeline(Zenith_Vulkan_Pipeline* pxPipeline
 		return;
 	}
 
-	std::lock_guard<std::mutex> xLock(s_xMutex);
+	Zenith_ScopedMutexLock xLock(s_xMutex);
 
 	auto it = std::remove_if(s_axRegisteredPipelines.begin(), s_axRegisteredPipelines.end(),
 		[pxPipeline](const RegisteredPipeline& xPipeline) {
@@ -430,7 +430,7 @@ void Flux_ShaderHotReload::ReloadAll()
 
 	// Mark all pipelines for reload
 	{
-		std::lock_guard<std::mutex> xLock(s_xMutex);
+		Zenith_ScopedMutexLock xLock(s_xMutex);
 		for (RegisteredPipeline& xPipeline : s_axRegisteredPipelines)
 		{
 			xPipeline.m_bNeedsReload = true;
@@ -439,7 +439,7 @@ void Flux_ShaderHotReload::ReloadAll()
 
 	// Add a dummy file to trigger processing
 	{
-		std::lock_guard<std::mutex> xLock(s_xMutex);
+		Zenith_ScopedMutexLock xLock(s_xMutex);
 		s_xPendingReloadFiles.insert("__force_reload__");
 	}
 }

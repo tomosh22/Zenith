@@ -1483,7 +1483,7 @@ void Zenith_Vulkan_MemoryManager::UploadTextureDataChunked(vk::Image xDestImage,
 	Zenith_Log(LOG_CATEGORY_VULKAN, "Chunked texture upload complete");
 }
 
-void Zenith_Vulkan_MemoryManager::QueueVRAMDeletion(Zenith_Vulkan_VRAM* pxVRAM, const Flux_VRAMHandle xHandle,
+void Zenith_Vulkan_MemoryManager::QueueVRAMDeletion(Zenith_Vulkan_VRAM* pxVRAM, Flux_VRAMHandle& xHandle,
 	Flux_ImageViewHandle xRTV, Flux_ImageViewHandle xDSV, Flux_ImageViewHandle xSRV, Flux_ImageViewHandle xUAV)
 {
 	if (pxVRAM == nullptr && !xRTV.IsValid() && !xDSV.IsValid() &&
@@ -1503,6 +1503,9 @@ void Zenith_Vulkan_MemoryManager::QueueVRAMDeletion(Zenith_Vulkan_VRAM* pxVRAM, 
 	// +1 because the resource might still be in use by command buffers being built this frame
 	xDeletion.m_uFramesRemaining = MAX_FRAMES_IN_FLIGHT + 1;
 	s_xPendingDeletions.PushBack(xDeletion);
+
+	// Auto-invalidate the caller's handle to prevent double-free
+	xHandle = Flux_VRAMHandle();
 }
 
 void Zenith_Vulkan_MemoryManager::QueueImageViewDeletion(Flux_ImageViewHandle xImageViewHandle)

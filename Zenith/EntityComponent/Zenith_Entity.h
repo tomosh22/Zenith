@@ -239,6 +239,11 @@ public:
 	}
 
 private:
+	// Lifecycle helpers for SetEnabled - separated for readability
+	void DispatchEnableLifecycle(Zenith_SceneData* pxSceneData);
+	void DispatchDisableLifecycle(Zenith_SceneData* pxSceneData);
+
+	// Iterative hierarchy propagation (avoids unbounded recursion)
 	static void PropagateHierarchyEnabled(Zenith_SceneData* pxSceneData, Zenith_EntityID xParentID, bool bBecomingActive);
 
 	Zenith_EntityID m_xEntityID;

@@ -127,7 +127,6 @@ void Flux_Shadows::Shutdown()
 			Flux_MemoryManager::QueueVRAMDeletion(pxVRAM, g_axCSMs[u].m_xVRAMHandle,
 				g_axCSMs[u].m_pxRTV.m_xImageViewHandle, g_axCSMs[u].m_pxDSV.m_xImageViewHandle,
 				g_axCSMs[u].m_pxSRV.m_xImageViewHandle, g_axCSMs[u].m_pxUAV.m_xImageViewHandle);
-			g_axCSMs[u].m_xVRAMHandle = Flux_VRAMHandle();
 		}
 
 		// Destroy shadow matrix buffer

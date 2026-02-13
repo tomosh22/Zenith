@@ -4,9 +4,9 @@
 #ifdef ZENITH_WINDOWS
 
 #include "Core/Zenith_FileWatcher.h"
+#include "Core/Multithreading/Zenith_Multithreading.h"
 #include <Windows.h>
 #include <queue>
-#include <mutex>
 
 // Windows-specific data for file watching
 struct FileWatcherPlatformData
@@ -16,7 +16,7 @@ struct FileWatcherPlatformData
 	OVERLAPPED xOverlapped = {};
 	alignas(DWORD) char acBuffer[32768]; // Buffer for ReadDirectoryChangesW
 	std::queue<std::pair<std::string, FileChangeType>> xPendingChanges;
-	std::mutex xMutex;
+	Zenith_Mutex xMutex;
 	bool bPendingRead = false;
 };
 
@@ -156,7 +156,7 @@ void Zenith_FileWatcher::StopPlatform()
 	pData->bPendingRead = false;
 
 	// Clear pending changes
-	std::lock_guard<std::mutex> xLock(pData->xMutex);
+	Zenith_ScopedMutexLock xLock(pData->xMutex);
 	while (!pData->xPendingChanges.empty())
 	{
 		pData->xPendingChanges.pop();
@@ -248,7 +248,7 @@ void Zenith_FileWatcher::UpdatePlatform()
 
 			// Queue the change for callback dispatch
 			{
-				std::lock_guard<std::mutex> xLock(pData->xMutex);
+				Zenith_ScopedMutexLock xLock(pData->xMutex);
 				pData->xPendingChanges.push({ strFileName, eType });
 			}
 
@@ -285,7 +285,7 @@ void Zenith_FileWatcher::UpdatePlatform()
 		std::pair<std::string, FileChangeType> xChange;
 
 		{
-			std::lock_guard<std::mutex> xLock(pData->xMutex);
+			Zenith_ScopedMutexLock xLock(pData->xMutex);
 			if (pData->xPendingChanges.empty())
 			{
 				break;

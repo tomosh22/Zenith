@@ -1269,6 +1269,7 @@
     <ClInclude Include="..\Zenith\Flux\Vegetation\Flux_Grass.h" />
     <ClInclude Include="..\Zenith\Input\Zenith_Input.h" />
     <ClInclude Include="..\Zenith\Input\Zenith_KeyCodes.h" />
+    <ClInclude Include="..\Zenith\Input\Zenith_TouchInput.h" />
     <ClInclude Include="..\Zenith\Maths\Zenith_FrustumCulling.h" />
     <ClInclude Include="..\Zenith\Maths\Zenith_Maths.h" />
     <ClInclude Include="..\Zenith\Maths\Zenith_Maths_Intersections.h" />
@@ -1277,6 +1278,7 @@
     <ClInclude Include="..\Zenith\Physics\Zenith_Physics_Fwd.h" />
     <ClInclude Include="..\Zenith\Prefab\Zenith_Prefab.h" />
     <ClInclude Include="..\Zenith\Profiling\Zenith_Profiling.h" />
+    <ClInclude Include="..\Zenith\SaveData\Zenith_SaveData.h" />
     <ClInclude Include="..\Zenith\TaskSystem\Zenith_TaskSystem.h" />
     <ClInclude Include="..\Zenith\UI\Zenith_UI.h" />
     <ClInclude Include="..\Zenith\UI\Zenith_UIButton.h" />
@@ -2377,11 +2379,13 @@
     <ClCompile Include="..\Zenith\Flux\Text\Flux_Text.cpp" />
     <ClCompile Include="..\Zenith\Flux\Vegetation\Flux_Grass.cpp" />
     <ClCompile Include="..\Zenith\Input\Zenith_Input.cpp" />
+    <ClCompile Include="..\Zenith\Input\Zenith_TouchInput.cpp" />
     <ClCompile Include="..\Zenith\Maths\Zenith_Maths.cpp" />
     <ClCompile Include="..\Zenith\Physics\Zenith_Physics.cpp" />
     <ClCompile Include="..\Zenith\Physics\Zenith_PhysicsMeshGenerator.cpp" />
     <ClCompile Include="..\Zenith\Prefab\Zenith_Prefab.cpp" />
     <ClCompile Include="..\Zenith\Profiling\Zenith_Profiling.cpp" />
+    <ClCompile Include="..\Zenith\SaveData\Zenith_SaveData.cpp" />
     <ClCompile Include="..\Zenith\TaskSystem\Zenith_TaskSystem.cpp" />
     <ClCompile Include="..\Zenith\UI\Zenith_UIButton.cpp" />
     <ClCompile Include="..\Zenith\UI\Zenith_UICanvas.cpp" />

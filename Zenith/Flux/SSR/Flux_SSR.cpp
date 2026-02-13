@@ -129,7 +129,6 @@ void Flux_SSR::DestroyRenderTargets()
 				xAttachment.m_pxDSV.m_xImageViewHandle,
 				xAttachment.m_pxSRV.m_xImageViewHandle,
 				xAttachment.m_pxUAV.m_xImageViewHandle);
-			xAttachment.m_xVRAMHandle = Flux_VRAMHandle();
 		}
 	};
 
@@ -143,10 +142,13 @@ void Flux_SSR::Initialise()
 {
 	CreateRenderTargets();
 
-	{
-		// Initialize ray march shader and pipeline
-		s_xRayMarchShader.Initialise("Flux_Fullscreen_UV.vert", "SSR/Flux_SSR_RayMarch.frag");
+	// Initialize ray march shader and pipeline
+	Flux_PipelineHelper::BuildFullscreenPipeline(
+		s_xRayMarchShader, s_xRayMarchPipeline,
+		"SSR/Flux_SSR_RayMarch.frag", &s_xRayMarchTargetSetup);
 
+	// Cache ray march binding handles from reflection
+	{
 		const Flux_ShaderReflection& xReflection = s_xRayMarchShader.GetReflection();
 		s_xRM_FrameConstantsBinding = xReflection.GetBinding("FrameConstants");
 		s_xRM_DepthTexBinding = xReflection.GetBinding("g_xDepthTex");
@@ -155,53 +157,21 @@ void Flux_SSR::Initialise()
 		s_xRM_HiZTexBinding = xReflection.GetBinding("g_xHiZTex");
 		s_xRM_DiffuseTexBinding = xReflection.GetBinding("g_xDiffuseTex");
 		s_xRM_BlueNoiseTexBinding = xReflection.GetBinding("g_xBlueNoiseTex");
-
-		Flux_VertexInputDescription xVertexDesc;
-		xVertexDesc.m_eTopology = MESH_TOPOLOGY_NONE;
-
-		Flux_PipelineSpecification xPipelineSpec;
-		xPipelineSpec.m_pxTargetSetup = &s_xRayMarchTargetSetup;
-		xPipelineSpec.m_pxShader = &s_xRayMarchShader;
-		xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
-
-		xPipelineSpec.m_bDepthTestEnabled = false;
-		xPipelineSpec.m_bDepthWriteEnabled = false;
-
-		xReflection.PopulateLayout(xPipelineSpec.m_xPipelineLayout);
-
-		Flux_PipelineBuilder::FromSpecification(s_xRayMarchPipeline, xPipelineSpec);
 	}
 
-	{
-		// Initialize resolve shader and pipeline
-		s_xResolveShader.Initialise("Flux_Fullscreen_UV.vert", "SSR/Flux_SSR_Resolve.frag");
+	// Initialize resolve shader and pipeline
+	Flux_PipelineHelper::BuildFullscreenPipeline(
+		s_xResolveShader, s_xResolvePipeline,
+		"SSR/Flux_SSR_Resolve.frag", &s_xResolveTargetSetup);
 
+	// Cache resolve binding handles from reflection
+	{
 		const Flux_ShaderReflection& xReflection = s_xResolveShader.GetReflection();
 		s_xRS_FrameConstantsBinding = xReflection.GetBinding("FrameConstants");
 		s_xRS_RayMarchResultBinding = xReflection.GetBinding("g_xRayMarchTex");
 		s_xRS_NormalsTexBinding = xReflection.GetBinding("g_xNormalsTex");
 		s_xRS_MaterialTexBinding = xReflection.GetBinding("g_xMaterialTex");
 		s_xRS_DepthTexBinding = xReflection.GetBinding("g_xDepthTex");
-
-		Flux_VertexInputDescription xVertexDesc;
-		xVertexDesc.m_eTopology = MESH_TOPOLOGY_NONE;
-
-		Flux_PipelineSpecification xPipelineSpec;
-		xPipelineSpec.m_pxTargetSetup = &s_xResolveTargetSetup;
-		xPipelineSpec.m_pxShader = &s_xResolveShader;
-		xPipelineSpec.m_xVertexInputDesc = xVertexDesc;
-
-		xPipelineSpec.m_bDepthTestEnabled = false;
-		xPipelineSpec.m_bDepthWriteEnabled = false;
-
-		xReflection.PopulateLayout(xPipelineSpec.m_xPipelineLayout);
-
-		Flux_PipelineBuilder::FromSpecification(s_xResolvePipeline, xPipelineSpec);
-	}
-
-	// Cache binding handles from shader reflection for resolve pass
-	{
-		
 	}
 
 #ifdef ZENITH_DEBUG_VARIABLES

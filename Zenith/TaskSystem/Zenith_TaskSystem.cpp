@@ -128,17 +128,55 @@ void Zenith_TaskSystem::Shutdown()
 	Zenith_Log(LOG_CATEGORY_TASKSYSTEM, "Task system shutdown complete");
 }
 
-void Zenith_TaskSystem::SubmitTask(Zenith_Task* const pxTask)
+bool Zenith_TaskSystem::TryClaimTask(Zenith_Task* pxTask, const char* szCallerName)
 {
-	Zenith_Assert(pxTask != nullptr, "SubmitTask: Task is null");
-	Zenith_Assert(g_bInitialized.load(std::memory_order_acquire), "SubmitTask: TaskSystem not initialized");
-	Zenith_Assert(g_pxWorkAvailableSem != nullptr, "SubmitTask: Semaphore is null");
+	Zenith_Assert(pxTask != nullptr, "%s: Task is null", szCallerName);
+	Zenith_Assert(g_bInitialized.load(std::memory_order_acquire), "%s: TaskSystem not initialized", szCallerName);
+	Zenith_Assert(g_pxWorkAvailableSem != nullptr, "%s: Semaphore is null", szCallerName);
 
 	// Atomic check-and-set for double-submit prevention (fixes TOCTOU race)
 	bool bExpected = false;
 	if (!pxTask->m_bSubmitted.compare_exchange_strong(bExpected, true, std::memory_order_acq_rel))
 	{
-		Zenith_Assert(false, "SubmitTask: Task already submitted - call WaitUntilComplete before resubmitting");
+		Zenith_Assert(false, "%s: Task already submitted - call WaitUntilComplete before resubmitting", szCallerName);
+		return false;
+	}
+	return true;
+}
+
+u_int Zenith_TaskSystem::EnqueueAndSignal(Zenith_Task* pxTask, u_int uCount)
+{
+	u_int uEnqueuedCount = 0;
+	{
+		Zenith_ScopedMutexLock xLock(g_xQueueMutex);
+		for (u_int u = 0; u < uCount; u++)
+		{
+			if (g_xTaskQueue.Enqueue(pxTask))
+			{
+				uEnqueuedCount++;
+			}
+			else
+			{
+				break;  // Queue full
+			}
+		}
+	}
+
+	Zenith_Assert(uEnqueuedCount == uCount,
+		"EnqueueAndSignal: Only enqueued %u/%u tasks - queue full!", uEnqueuedCount, uCount);
+
+	for (u_int u = 0; u < uEnqueuedCount; u++)
+	{
+		g_pxWorkAvailableSem->Signal();
+	}
+
+	return uEnqueuedCount;
+}
+
+void Zenith_TaskSystem::SubmitTask(Zenith_Task* const pxTask)
+{
+	if (!TryClaimTask(pxTask, "SubmitTask"))
+	{
 		return;
 	}
 
@@ -148,19 +186,8 @@ void Zenith_TaskSystem::SubmitTask(Zenith_Task* const pxTask)
 		return;
 	}
 
-	bool bEnqueued = false;
-	{
-		Zenith_ScopedMutexLock xLock(g_xQueueMutex);
-		bEnqueued = g_xTaskQueue.Enqueue(pxTask);
-	}
-
-	Zenith_Assert(bEnqueued, "SubmitTask: Queue full (capacity=%u) - task dropped!", uMAX_TASKS);
-
-	if (bEnqueued)
-	{
-		g_pxWorkAvailableSem->Signal();
-	}
-	else
+	u_int uEnqueued = EnqueueAndSignal(pxTask, 1);
+	if (uEnqueued == 0)
 	{
 		// Reset submitted flag if enqueue failed so task can be retried
 		pxTask->m_bSubmitted.store(false, std::memory_order_release);
@@ -169,17 +196,8 @@ void Zenith_TaskSystem::SubmitTask(Zenith_Task* const pxTask)
 
 void Zenith_TaskSystem::SubmitTaskArray(Zenith_TaskArray* const pxTaskArray)
 {
-	Zenith_Assert(pxTaskArray != nullptr, "SubmitTaskArray: TaskArray is null");
-	Zenith_Assert(g_bInitialized.load(std::memory_order_acquire), "SubmitTaskArray: TaskSystem not initialized");
-	Zenith_Assert(g_pxWorkAvailableSem != nullptr, "SubmitTaskArray: Semaphore is null");
-
-	// ATOMIC check-and-set for double-submit prevention
-	// Reset counters AFTER successfully claiming the task to prevent TOCTOU race
-	// where another thread could reset counters while workers are executing
-	bool bExpected = false;
-	if (!pxTaskArray->m_bSubmitted.compare_exchange_strong(bExpected, true, std::memory_order_acq_rel))
+	if (!TryClaimTask(pxTaskArray, "SubmitTaskArray"))
 	{
-		Zenith_Assert(false, "SubmitTaskArray: TaskArray already submitted - call WaitUntilComplete before resubmitting");
 		return;
 	}
 
@@ -187,81 +205,27 @@ void Zenith_TaskSystem::SubmitTaskArray(Zenith_TaskArray* const pxTaskArray)
 	// This is now safe because no other thread can submit until WaitUntilComplete resets m_bSubmitted
 	pxTaskArray->Reset();
 
+	const u_int uNumInvocations = pxTaskArray->GetNumInvocations();
+
 	if (!dbg_bMultithreaded)
 	{
-		// Execute all invocations sequentially in single-threaded mode
-		for (u_int u = 0; u < pxTaskArray->GetNumInvocations(); u++)
+		for (u_int u = 0; u < uNumInvocations; u++)
 		{
 			pxTaskArray->DoTask();
 		}
 		return;
 	}
 
-	const u_int uNumInvocations = pxTaskArray->GetNumInvocations();
 	const bool bSubmittingThreadJoins = pxTaskArray->GetSubmittingThreadJoins();
+	const u_int uTasksForWorkers = bSubmittingThreadJoins
+		? (uNumInvocations > 0 ? uNumInvocations - 1 : 0)
+		: uNumInvocations;
 
-	if (bSubmittingThreadJoins)
+	EnqueueAndSignal(pxTaskArray, uTasksForWorkers);
+
+	// Submitting thread executes one invocation if joining
+	if (bSubmittingThreadJoins && uNumInvocations > 0)
 	{
-		// Submit (N-1) tasks to worker threads, submitting thread will do the last one
-		const u_int uTasksForWorkers = uNumInvocations > 0 ? uNumInvocations - 1 : 0;
-
-		u_int uEnqueuedCount = 0;
-		{
-			Zenith_ScopedMutexLock xLock(g_xQueueMutex);
-			for (u_int u = 0; u < uTasksForWorkers; u++)
-			{
-				if (g_xTaskQueue.Enqueue(pxTaskArray))
-				{
-					uEnqueuedCount++;
-				}
-				else
-				{
-					break;  // Queue full
-				}
-			}
-		}
-
-		Zenith_Assert(uEnqueuedCount == uTasksForWorkers,
-			"SubmitTaskArray: Only enqueued %u/%u tasks - queue full!", uEnqueuedCount, uTasksForWorkers);
-
-		// Signal worker threads only for successfully enqueued tasks
-		for (u_int u = 0; u < uEnqueuedCount; u++)
-		{
-			g_pxWorkAvailableSem->Signal();
-		}
-
-		// Submitting thread executes one task
-		if (uNumInvocations > 0)
-		{
-			pxTaskArray->DoTask();
-		}
-	}
-	else
-	{
-		// Submit all tasks to worker threads
-		u_int uEnqueuedCount = 0;
-		{
-			Zenith_ScopedMutexLock xLock(g_xQueueMutex);
-			for (u_int u = 0; u < uNumInvocations; u++)
-			{
-				if (g_xTaskQueue.Enqueue(pxTaskArray))
-				{
-					uEnqueuedCount++;
-				}
-				else
-				{
-					break;  // Queue full
-				}
-			}
-		}
-
-		Zenith_Assert(uEnqueuedCount == uNumInvocations,
-			"SubmitTaskArray: Only enqueued %u/%u tasks - queue full!", uEnqueuedCount, uNumInvocations);
-
-		// Signal worker threads only for successfully enqueued tasks
-		for (u_int u = 0; u < uEnqueuedCount; u++)
-		{
-			g_pxWorkAvailableSem->Signal();
-		}
+		pxTaskArray->DoTask();
 	}
 }

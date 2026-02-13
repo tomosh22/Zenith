@@ -272,12 +272,12 @@ void Zenith_TransformComponent::SetParentByID(Zenith_EntityID uNewParentID)
 		// Unity parity: Cannot parent to an entity in a different scene
 		// EntityExists checks global slots and would succeed for cross-scene entities,
 		// but GetComponentFromEntity uses per-scene pools and would access the wrong pool
-		Zenith_Assert(uNewParentID.m_uIndex < Zenith_SceneData::s_axEntitySlots.GetSize(), "SetParentByID: Parent entity index out of range");
-		const Zenith_SceneData::Zenith_EntitySlot& xParentSlot = Zenith_SceneData::s_axEntitySlots.Get(uNewParentID.m_uIndex);
-		const Zenith_SceneData::Zenith_EntitySlot& xMySlot = Zenith_SceneData::s_axEntitySlots.Get(uMyEntityID.m_uIndex);
-		Zenith_Assert(xParentSlot.m_iSceneHandle == xMySlot.m_iSceneHandle,
+		int iParentScene = Zenith_SceneData::GetEntitySceneHandle(uNewParentID);
+		int iMyScene = Zenith_SceneData::GetEntitySceneHandle(uMyEntityID);
+		Zenith_Assert(iParentScene != -1, "SetParentByID: Parent entity index out of range");
+		Zenith_Assert(iParentScene == iMyScene,
 			"SetParentByID: Cannot parent entity to an entity in a different scene (child scene=%d, parent scene=%d)",
-			xMySlot.m_iSceneHandle, xParentSlot.m_iSceneHandle);
+			iMyScene, iParentScene);
 
 		// Cannot parent to self
 		if (uNewParentID == uMyEntityID)

@@ -170,8 +170,8 @@ private:
 		bool m_bHostile = true;
 	};
 
-	static std::unordered_map<uint64_t, AgentPerceptionData> s_xAgentData;
-	static std::unordered_map<uint64_t, TargetInfo> s_xTargets;
+	static std::unordered_map<uint64_t, AgentPerceptionData> s_xAgentData; // #TODO: Replace with engine hash map
+	static std::unordered_map<uint64_t, TargetInfo> s_xTargets; // #TODO: Replace with engine hash map
 	static Zenith_Vector<Zenith_SoundStimulus> s_axActiveSounds;
 
 	// Update helpers
@@ -180,11 +180,34 @@ private:
 	static void UpdateMemoryDecay(float fDt);
 	static void UpdateActiveSounds(float fDt);
 
+	// Result of evaluating a single target for sight perception
+	struct SightEvaluation
+	{
+		bool m_bVisible = false;
+		bool m_bInPeripheral = false;
+		float m_fDistance = 0.0f;
+		float m_fDistanceFactor = 0.0f;  // 1.0 = close, 0.0 = at max range
+		Zenith_Maths::Vector3 m_xTargetPos;
+	};
+
 	// Sight helpers
+	static SightEvaluation EvaluateSightForTarget(
+		const Zenith_Maths::Vector3& xAgentPos,
+		const Zenith_Maths::Vector3& xForward,
+		const Zenith_SightConfig& xConfig,
+		Zenith_Entity& xTargetEntity);
+
 	static bool CheckLineOfSight(const Zenith_Maths::Vector3& xFrom,
 		const Zenith_Maths::Vector3& xTo);
 	static float CalculateAngle(const Zenith_Maths::Vector3& xFrom,
 		const Zenith_Maths::Vector3& xForward, const Zenith_Maths::Vector3& xTo);
+
+	// Hearing helpers
+	static bool EvaluateHearingForSound(
+		const Zenith_Maths::Vector3& xAgentPos,
+		const Zenith_HearingConfig& xConfig,
+		const Zenith_SoundStimulus& xSound,
+		float& fOutAwarenessGain);
 
 	// Target lookup helpers
 	static Zenith_PerceivedTarget* FindOrCreateTarget(AgentPerceptionData& xData,

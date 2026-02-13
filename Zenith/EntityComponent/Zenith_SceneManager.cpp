@@ -1331,7 +1331,7 @@ bool Zenith_SceneManager::MoveEntityInternal(Zenith_Entity& xEntity, Zenith_Scen
 
 	// Adjust pending start count and list if this entity hasn't had Start() called yet
 	Zenith_SceneData::Zenith_EntitySlot& xSlot = Zenith_SceneData::s_axEntitySlots.Get(xEntityID.m_uIndex);
-	if (xSlot.m_bPendingStart)
+	if (xSlot.IsPendingStart())
 	{
 		Zenith_Assert(pxSourceData->m_uPendingStartCount > 0, "PendingStartCount underflow in MoveEntityInternal");
 		pxSourceData->m_uPendingStartCount--;
@@ -2288,7 +2288,7 @@ Zenith_SceneData* Zenith_SceneManager::GetSceneDataForEntity(Zenith_EntityID xID
 	if (!xID.IsValid()) return nullptr;
 	if (xID.m_uIndex >= Zenith_SceneData::s_axEntitySlots.GetSize()) return nullptr;
 	const Zenith_SceneData::Zenith_EntitySlot& xSlot = Zenith_SceneData::s_axEntitySlots.Get(xID.m_uIndex);
-	if (!xSlot.m_bOccupied || xSlot.m_uGeneration != xID.m_uGeneration) return nullptr;
+	if (!xSlot.IsOccupied() || xSlot.m_uGeneration != xID.m_uGeneration) return nullptr;
 	return GetSceneDataByHandle(xSlot.m_iSceneHandle);
 }
 

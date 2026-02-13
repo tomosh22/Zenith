@@ -168,13 +168,7 @@ void Zenith_PerceptionSystem::UnregisterTarget(Zenith_EntityID xTargetID)
 		{
 			if (axTargets.Get(u).m_xEntityID == xTargetID)
 			{
-				// Swap with last and pop
-				uint32_t uLast = axTargets.GetSize() - 1;
-				if (u != uLast)
-				{
-					axTargets.Get(u) = axTargets.Get(uLast);
-				}
-				axTargets.PopBack();
+				axTargets.RemoveSwap(u);
 			}
 			else
 			{
@@ -236,6 +230,49 @@ float Zenith_PerceptionSystem::GetAwarenessOf(Zenith_EntityID xAgentID, Zenith_E
 	return 0.0f;
 }
 
+Zenith_PerceptionSystem::SightEvaluation Zenith_PerceptionSystem::EvaluateSightForTarget(
+	const Zenith_Maths::Vector3& xAgentPos,
+	const Zenith_Maths::Vector3& xForward,
+	const Zenith_SightConfig& xConfig,
+	Zenith_Entity& xTargetEntity)
+{
+	SightEvaluation xResult;
+
+	Zenith_TransformComponent& xTargetTransform = xTargetEntity.GetComponent<Zenith_TransformComponent>();
+	xTargetTransform.GetPosition(xResult.m_xTargetPos);
+	xResult.m_xTargetPos.y += 1.0f;  // Target center height
+
+	// Squared distance early-out (avoids sqrt for out-of-range targets)
+	Zenith_Maths::Vector3 xDelta = xResult.m_xTargetPos - xAgentPos;
+	float fDistSq = glm::dot(xDelta, xDelta);
+	if (fDistSq > xConfig.m_fMaxRange * xConfig.m_fMaxRange)
+	{
+		return xResult;
+	}
+	xResult.m_fDistance = std::sqrt(fDistSq);
+
+	// Angle check
+	float fAngle = CalculateAngle(xAgentPos, xForward, xResult.m_xTargetPos);
+	bool bInFOV = (fAngle <= xConfig.m_fFOVAngle * 0.5f);
+	bool bInPeripheralCone = (fAngle <= xConfig.m_fPeripheralAngle * 0.5f);
+
+	if (!bInFOV && !bInPeripheralCone)
+	{
+		return xResult;  // Outside all vision cones
+	}
+
+	// Line of sight check
+	if (xConfig.m_bRequireLineOfSight && !CheckLineOfSight(xAgentPos, xResult.m_xTargetPos))
+	{
+		return xResult;
+	}
+
+	xResult.m_bVisible = true;
+	xResult.m_bInPeripheral = !bInFOV && bInPeripheralCone;
+	xResult.m_fDistanceFactor = 1.0f - (xResult.m_fDistance / xConfig.m_fMaxRange);
+	return xResult;
+}
+
 void Zenith_PerceptionSystem::UpdateSightPerception(float fDt, Zenith_SceneData& xScene)
 {
 	Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__AI_PERCEPTION_SIGHT);
@@ -286,36 +323,8 @@ void Zenith_PerceptionSystem::UpdateSightPerception(float fDt, Zenith_SceneData&
 				continue;
 			}
 
-			Zenith_TransformComponent& xTargetTransform = xTargetEntity.GetComponent<Zenith_TransformComponent>();
-			Zenith_Maths::Vector3 xTargetPos;
-			xTargetTransform.GetPosition(xTargetPos);
-			xTargetPos.y += 1.0f;  // Target center height
-
-			// Distance check
-			float fDist = Zenith_Maths::Length(xTargetPos - xAgentPos);
-			if (fDist > xData.m_xSightConfig.m_fMaxRange)
-			{
-				continue;
-			}
-
-			// Angle check
-			float fAngle = CalculateAngle(xAgentPos, xForward, xTargetPos);
-			bool bInFOV = (fAngle <= xData.m_xSightConfig.m_fFOVAngle * 0.5f);
-			bool bInPeripheral = (fAngle <= xData.m_xSightConfig.m_fPeripheralAngle * 0.5f);
-
-			if (!bInFOV && !bInPeripheral)
-			{
-				continue;  // Outside all vision cones
-			}
-
-			// Line of sight check
-			bool bCanSee = true;
-			if (xData.m_xSightConfig.m_bRequireLineOfSight)
-			{
-				bCanSee = CheckLineOfSight(xAgentPos, xTargetPos);
-			}
-
-			if (!bCanSee)
+			SightEvaluation xEval = EvaluateSightForTarget(xAgentPos, xForward, xData.m_xSightConfig, xTargetEntity);
+			if (!xEval.m_bVisible)
 			{
 				continue;
 			}
@@ -324,29 +333,54 @@ void Zenith_PerceptionSystem::UpdateSightPerception(float fDt, Zenith_SceneData&
 			Zenith_PerceivedTarget* pxTarget = FindOrCreateTarget(xData, xTargetID);
 			pxTarget->m_bCurrentlyVisible = true;
 			pxTarget->m_fTimeSinceLastSeen = 0.0f;
-			pxTarget->m_xLastKnownPosition = xTargetPos;
+			pxTarget->m_xLastKnownPosition = xEval.m_xTargetPos;
 			pxTarget->m_uStimulusMask |= PERCEPTION_STIMULUS_SIGHT;
 			pxTarget->m_bHostile = xTargetPair.second.m_bHostile;
 
-			// Update estimated velocity
-			// (Would need previous position stored for proper velocity estimation)
-
-			// Awareness gain
+			// Awareness gain (peripheral vision is slower)
 			float fGainRate = xData.m_xSightConfig.m_fAwarenessGainRate;
-			if (!bInFOV && bInPeripheral)
+			if (xEval.m_bInPeripheral)
 			{
 				fGainRate *= xData.m_xSightConfig.m_fPeripheralMultiplier;
 			}
-
-			// Distance affects awareness gain (closer = faster)
-			float fDistFactor = 1.0f - (fDist / xData.m_xSightConfig.m_fMaxRange);
-			fGainRate *= fDistFactor;
+			fGainRate *= xEval.m_fDistanceFactor;
 
 			pxTarget->m_fAwareness = std::min(1.0f, pxTarget->m_fAwareness + fGainRate * fDt);
 		}
 
 		UpdatePrimaryTarget(xData);
 	}
+}
+
+bool Zenith_PerceptionSystem::EvaluateHearingForSound(
+	const Zenith_Maths::Vector3& xAgentPos,
+	const Zenith_HearingConfig& xConfig,
+	const Zenith_SoundStimulus& xSound,
+	float& fOutAwarenessGain)
+{
+	fOutAwarenessGain = 0.0f;
+
+	// Squared distance early-out (avoids sqrt for out-of-range sounds)
+	Zenith_Maths::Vector3 xDelta = xSound.m_xPosition - xAgentPos;
+	float fDistSq = glm::dot(xDelta, xDelta);
+	float fMaxDist = std::min(xSound.m_fRadius, xConfig.m_fMaxRange);
+	if (fDistSq > fMaxDist * fMaxDist)
+	{
+		return false;
+	}
+	float fDist = std::sqrt(fDistSq);
+
+	// Calculate perceived loudness with falloff
+	float fFalloff = 1.0f - (fDist / xSound.m_fRadius);
+	float fPerceivedLoudness = xSound.m_fLoudness * fFalloff;
+
+	if (fPerceivedLoudness < xConfig.m_fLoudnessThreshold)
+	{
+		return false;
+	}
+
+	fOutAwarenessGain = fPerceivedLoudness * 0.5f;
+	return true;
 }
 
 void Zenith_PerceptionSystem::UpdateHearingPerception()
@@ -383,18 +417,8 @@ void Zenith_PerceptionSystem::UpdateHearingPerception()
 				continue;
 			}
 
-			// Distance check
-			float fDist = Zenith_Maths::Length(xSound.m_xPosition - xAgentPos);
-			if (fDist > xSound.m_fRadius || fDist > xData.m_xHearingConfig.m_fMaxRange)
-			{
-				continue;
-			}
-
-			// Calculate perceived loudness with falloff
-			float fFalloff = 1.0f - (fDist / xSound.m_fRadius);
-			float fPerceivedLoudness = xSound.m_fLoudness * fFalloff;
-
-			if (fPerceivedLoudness < xData.m_xHearingConfig.m_fLoudnessThreshold)
+			float fAwarenessGain = 0.0f;
+			if (!EvaluateHearingForSound(xAgentPos, xData.m_xHearingConfig, xSound, fAwarenessGain))
 			{
 				continue;
 			}
@@ -406,9 +430,6 @@ void Zenith_PerceptionSystem::UpdateHearingPerception()
 				pxTarget->m_xLastKnownPosition = xSound.m_xPosition;
 				pxTarget->m_fTimeSinceLastSeen = 0.0f;
 				pxTarget->m_uStimulusMask |= PERCEPTION_STIMULUS_HEARING;
-
-				// Sound awareness is based on loudness
-				float fAwarenessGain = fPerceivedLoudness * 0.5f;
 				pxTarget->m_fAwareness = std::min(1.0f, pxTarget->m_fAwareness + fAwarenessGain);
 			}
 		}
@@ -436,13 +457,7 @@ void Zenith_PerceptionSystem::UpdateMemoryDecay(float fDt)
 				// Remove fully forgotten targets
 				if (xTarget.m_fAwareness <= 0.0f)
 				{
-					// Swap with last and pop
-					uint32_t uLast = xData.m_axPerceivedTargets.GetSize() - 1;
-					if (u != uLast)
-					{
-						xData.m_axPerceivedTargets.Get(u) = xData.m_axPerceivedTargets.Get(uLast);
-					}
-					xData.m_axPerceivedTargets.PopBack();
+					xData.m_axPerceivedTargets.RemoveSwap(u);
 					continue;
 				}
 			}
@@ -461,13 +476,7 @@ void Zenith_PerceptionSystem::UpdateActiveSounds(float fDt)
 		s_axActiveSounds.Get(u).m_fTimeRemaining -= fDt;
 		if (s_axActiveSounds.Get(u).m_fTimeRemaining <= 0.0f)
 		{
-			// Swap with last and pop
-			uint32_t uLast = s_axActiveSounds.GetSize() - 1;
-			if (u != uLast)
-			{
-				s_axActiveSounds.Get(u) = s_axActiveSounds.Get(uLast);
-			}
-			s_axActiveSounds.PopBack();
+			s_axActiveSounds.RemoveSwap(u);
 		}
 		else
 		{

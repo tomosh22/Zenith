@@ -268,3 +268,29 @@ struct Flux_PipelineSpecification
 	float m_fDepthBiasSlope = 0.0f;
 	float m_fDepthBiasClamp = 0.0f;
 };
+
+// Helper to reduce boilerplate when creating fullscreen post-processing pipelines.
+// The pattern of init shader -> create spec -> populate layout -> build pipeline
+// is repeated 10+ times across Flux subsystems.
+class Flux_PipelineHelper
+{
+public:
+	Flux_PipelineHelper() = delete;
+
+	// Initialises a shader and builds a fullscreen pipeline with no depth test/write.
+	// Covers the common case used by HDR, SSR, SSGI, IBL, etc.
+	static void BuildFullscreenPipeline(
+		Flux_Shader& xShader,
+		Flux_Pipeline& xPipeline,
+		const char* szFragShader,
+		Flux_TargetSetup* pxTargetSetup,
+		const char* szVertShader = "Flux_Fullscreen_UV.vert");
+
+	// Creates a pre-populated fullscreen spec without building.
+	// Use when you need to customise blend states or other settings before building.
+	static Flux_PipelineSpecification CreateFullscreenSpec(
+		Flux_Shader& xShader,
+		const char* szFragShader,
+		Flux_TargetSetup* pxTargetSetup,
+		const char* szVertShader = "Flux_Fullscreen_UV.vert");
+};

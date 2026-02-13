@@ -24,6 +24,8 @@
 #include <cstdint>
 
 #include "TilePuzzle_Types.h"
+#include "TilePuzzle_Rules.h"
+#include "Collections/Zenith_Vector.h"
 
 // Constants for solver behavior
 static constexpr uint32_t s_uTilePuzzleMaxSolverStates = 50000;  // Limit state exploration
@@ -146,9 +148,6 @@ public:
 			// Try moving each draggable shape
 			for (size_t uShapeIdx = 0; uShapeIdx < axDraggableIndices.size(); ++uShapeIdx)
 			{
-				size_t uOriginalShapeIdx = axDraggableIndices[uShapeIdx];
-				const TilePuzzleShapeInstance& xShape = xLevel.axShapes[uOriginalShapeIdx];
-
 				// Try all four directions
 				for (int32_t iDir = 0; iDir < 4; ++iDir)
 				{
@@ -157,7 +156,7 @@ public:
 
 					// Check if the move is valid
 					if (!CanMoveShape(xLevel, xCurrentState, axDraggableIndices, uShapeIdx,
-									  xShape, iNewOriginX, iNewOriginY))
+									  iNewOriginX, iNewOriginY))
 					{
 						continue;
 					}
@@ -168,7 +167,7 @@ public:
 					xNewState.axShapePositions[uShapeIdx].iOriginY = iNewOriginY;
 
 					// Check for cat elimination
-					CheckCatElimination(xLevel, xNewState, uShapeIdx, xShape);
+					CheckCatElimination(xLevel, xNewState, axDraggableIndices);
 
 					// Skip if we've visited this state
 					if (xVisited.find(xNewState) != xVisited.end())
@@ -204,136 +203,94 @@ public:
 private:
 	/**
 	 * CanMoveShape - Check if a shape can move to a new position
+	 * Delegates to TilePuzzle_Rules::CanMoveShape for shared rule logic
 	 */
 	static bool CanMoveShape(
 		const TilePuzzleLevelData& xLevel,
 		const TilePuzzleSolverState& xState,
 		const std::vector<size_t>& axDraggableIndices,
 		size_t uMovingShapeIdx,
-		const TilePuzzleShapeInstance& xShape,
 		int32_t iNewOriginX,
 		int32_t iNewOriginY)
 	{
-		if (!xShape.pxDefinition)
-			return false;
-
-		// Check each cell of the shape
-		for (const auto& xOffset : xShape.pxDefinition->axCells)
+		// Build ShapeState array from solver state
+		Zenith_Vector<TilePuzzle_Rules::ShapeState> axShapeStates;
+		for (size_t i = 0; i < axDraggableIndices.size(); ++i)
 		{
-			int32_t iCellX = iNewOriginX + xOffset.iX;
-			int32_t iCellY = iNewOriginY + xOffset.iY;
-
-			// Bounds check
-			if (iCellX < 0 || iCellY < 0 ||
-				static_cast<uint32_t>(iCellX) >= xLevel.uGridWidth ||
-				static_cast<uint32_t>(iCellY) >= xLevel.uGridHeight)
-			{
-				return false;
-			}
-
-			uint32_t uIdx = iCellY * xLevel.uGridWidth + iCellX;
-
-			// Can't move onto empty cells
-			if (xLevel.aeCells[uIdx] != TILEPUZZLE_CELL_FLOOR)
-			{
-				return false;
-			}
-
-			// Check collision with static blockers (non-draggable shapes)
-			for (size_t i = 0; i < xLevel.axShapes.size(); ++i)
-			{
-				const auto& xOther = xLevel.axShapes[i];
-				if (!xOther.pxDefinition || xOther.pxDefinition->bDraggable)
-					continue;
-
-				for (const auto& xOtherOffset : xOther.pxDefinition->axCells)
-				{
-					int32_t iOtherX = xOther.iOriginX + xOtherOffset.iX;
-					int32_t iOtherY = xOther.iOriginY + xOtherOffset.iY;
-					if (iCellX == iOtherX && iCellY == iOtherY)
-					{
-						return false;
-					}
-				}
-			}
-
-			// Check collision with other draggable shapes
-			for (size_t i = 0; i < axDraggableIndices.size(); ++i)
-			{
-				if (i == uMovingShapeIdx)
-					continue;
-
-				const auto& xOther = xLevel.axShapes[axDraggableIndices[i]];
-				if (!xOther.pxDefinition)
-					continue;
-
-				int32_t iOtherOriginX = xState.axShapePositions[i].iOriginX;
-				int32_t iOtherOriginY = xState.axShapePositions[i].iOriginY;
-
-				for (const auto& xOtherOffset : xOther.pxDefinition->axCells)
-				{
-					int32_t iOtherX = iOtherOriginX + xOtherOffset.iX;
-					int32_t iOtherY = iOtherOriginY + xOtherOffset.iY;
-					if (iCellX == iOtherX && iCellY == iOtherY)
-					{
-						return false;
-					}
-				}
-			}
+			TilePuzzle_Rules::ShapeState xShapeState;
+			xShapeState.pxDefinition = xLevel.axShapes[axDraggableIndices[i]].pxDefinition;
+			xShapeState.iOriginX = xState.axShapePositions[i].iOriginX;
+			xShapeState.iOriginY = xState.axShapePositions[i].iOriginY;
+			xShapeState.eColor = xLevel.axShapes[axDraggableIndices[i]].eColor;
+			axShapeStates.PushBack(xShapeState);
 		}
 
-		return true;
+		// Build CatState array from level data
+		Zenith_Vector<TilePuzzle_Rules::CatState> axCatStates;
+		for (size_t i = 0; i < xLevel.axCats.size(); ++i)
+		{
+			TilePuzzle_Rules::CatState xCatState;
+			xCatState.iGridX = xLevel.axCats[i].iGridX;
+			xCatState.iGridY = xLevel.axCats[i].iGridY;
+			xCatState.eColor = xLevel.axCats[i].eColor;
+			axCatStates.PushBack(xCatState);
+		}
+
+		return TilePuzzle_Rules::CanMoveShape(
+			xLevel,
+			axShapeStates.GetDataPointer(), axShapeStates.GetSize(),
+			uMovingShapeIdx,
+			iNewOriginX, iNewOriginY,
+			axCatStates.GetDataPointer(), axCatStates.GetSize(),
+			xState.uEliminatedCatsMask);
 	}
 
 	/**
 	 * CheckCatElimination - Check and mark cats eliminated by the moved shape
+	 * Delegates to TilePuzzle_Rules::ComputeNewlyEliminatedCats for shared rule logic
 	 */
 	static void CheckCatElimination(
 		const TilePuzzleLevelData& xLevel,
 		TilePuzzleSolverState& xState,
-		size_t uMovedShapeIdx,
-		const TilePuzzleShapeInstance& xShape)
+		const std::vector<size_t>& axDraggableIndices)
 	{
-		if (!xShape.pxDefinition)
-			return;
-
-		int32_t iShapeOriginX = xState.axShapePositions[uMovedShapeIdx].iOriginX;
-		int32_t iShapeOriginY = xState.axShapePositions[uMovedShapeIdx].iOriginY;
-
-		// Check each cell of the shape for cat overlap
-		for (const auto& xOffset : xShape.pxDefinition->axCells)
+		// Build ShapeState array from solver state
+		Zenith_Vector<TilePuzzle_Rules::ShapeState> axShapeStates;
+		for (size_t i = 0; i < axDraggableIndices.size(); ++i)
 		{
-			int32_t iCellX = iShapeOriginX + xOffset.iX;
-			int32_t iCellY = iShapeOriginY + xOffset.iY;
-
-			// Check each cat
-			for (size_t uCatIdx = 0; uCatIdx < xLevel.axCats.size(); ++uCatIdx)
-			{
-				// Skip if already eliminated
-				if (xState.uEliminatedCatsMask & (1u << uCatIdx))
-					continue;
-
-				const auto& xCat = xLevel.axCats[uCatIdx];
-
-				// Check if cat is at this cell and colors match
-				if (xCat.iGridX == iCellX && xCat.iGridY == iCellY && xCat.eColor == xShape.eColor)
-				{
-					xState.uEliminatedCatsMask |= (1u << uCatIdx);
-				}
-			}
+			TilePuzzle_Rules::ShapeState xShapeState;
+			xShapeState.pxDefinition = xLevel.axShapes[axDraggableIndices[i]].pxDefinition;
+			xShapeState.iOriginX = xState.axShapePositions[i].iOriginX;
+			xShapeState.iOriginY = xState.axShapePositions[i].iOriginY;
+			xShapeState.eColor = xLevel.axShapes[axDraggableIndices[i]].eColor;
+			axShapeStates.PushBack(xShapeState);
 		}
+
+		// Build CatState array
+		Zenith_Vector<TilePuzzle_Rules::CatState> axCatStates;
+		for (size_t i = 0; i < xLevel.axCats.size(); ++i)
+		{
+			TilePuzzle_Rules::CatState xCatState;
+			xCatState.iGridX = xLevel.axCats[i].iGridX;
+			xCatState.iGridY = xLevel.axCats[i].iGridY;
+			xCatState.eColor = xLevel.axCats[i].eColor;
+			axCatStates.PushBack(xCatState);
+		}
+
+		uint32_t uNewlyEliminated = TilePuzzle_Rules::ComputeNewlyEliminatedCats(
+			axShapeStates.GetDataPointer(), axShapeStates.GetSize(),
+			axCatStates.GetDataPointer(), axCatStates.GetSize(),
+			xState.uEliminatedCatsMask);
+
+		xState.uEliminatedCatsMask |= uNewlyEliminated;
 	}
 
 	/**
 	 * IsStateSolved - Check if all cats are eliminated
+	 * Delegates to TilePuzzle_Rules::AreAllCatsEliminated
 	 */
 	static bool IsStateSolved(const TilePuzzleSolverState& xState, uint32_t uTotalCats)
 	{
-		if (uTotalCats == 0)
-			return true;
-
-		// All cats eliminated means all bits up to uTotalCats are set
-		uint32_t uAllEliminatedMask = (1u << uTotalCats) - 1;
-		return xState.uEliminatedCatsMask == uAllEliminatedMask;
+		return TilePuzzle_Rules::AreAllCatsEliminated(xState.uEliminatedCatsMask, uTotalCats);
 	}
 };

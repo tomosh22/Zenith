@@ -63,56 +63,101 @@ public:
 	{
 		DifficultyParams xParams;
 
-		if (uLevelNumber <= 2)
+		if (uLevelNumber <= 5)
 		{
-			// Easy: small grid, 1-2 colors, single-cell shapes
+			// Tutorial: tiny grid, 1 color, single cells, no blockers
 			xParams.uMinGridWidth = 4;
 			xParams.uMaxGridWidth = 5;
 			xParams.uMinGridHeight = 4;
 			xParams.uMaxGridHeight = 5;
-			xParams.uNumColors = 1 + (uLevelNumber / 2);
+			xParams.uNumColors = 1;
 			xParams.uNumCatsPerColor = 1;
 			xParams.uNumShapesPerColor = 1;
 			xParams.uNumBlockers = 0;
 			xParams.uMaxShapeSize = 1;
 		}
-		else if (uLevelNumber <= 5)
+		else if (uLevelNumber <= 15)
 		{
-			// Medium: medium grid, 2-3 colors
+			// Easy: small grid, 1-2 colors, single cells, few blockers
+			uint32_t uProgress = uLevelNumber - 6; // 0-9
 			xParams.uMinGridWidth = 5;
-			xParams.uMaxGridWidth = 6;
+			xParams.uMaxGridWidth = 5;
 			xParams.uMinGridHeight = 5;
-			xParams.uMaxGridHeight = 6;
-			xParams.uNumColors = 2 + (uLevelNumber - 3) / 2;
+			xParams.uMaxGridHeight = 5;
+			xParams.uNumColors = 1 + uProgress / 5;
 			xParams.uNumCatsPerColor = 1;
 			xParams.uNumShapesPerColor = 1;
-			xParams.uNumBlockers = uLevelNumber - 2;
+			xParams.uNumBlockers = uProgress / 5;
+			xParams.uMaxShapeSize = 1;
+		}
+		else if (uLevelNumber <= 30)
+		{
+			// Medium: medium grid, 2 colors, dominos, some blockers
+			uint32_t uProgress = uLevelNumber - 16; // 0-14
+			xParams.uMinGridWidth = 5;
+			xParams.uMaxGridWidth = 5 + uProgress / 8;
+			xParams.uMinGridHeight = 5;
+			xParams.uMaxGridHeight = 5 + uProgress / 8;
+			xParams.uNumColors = 2;
+			xParams.uNumCatsPerColor = 1;
+			xParams.uNumShapesPerColor = 1;
+			xParams.uNumBlockers = 1 + uProgress / 7;
 			xParams.uMaxShapeSize = 2;
 		}
-		else if (uLevelNumber <= 10)
+		else if (uLevelNumber <= 50)
 		{
-			// Hard: larger grid, 3-4 colors, multi-cell shapes
+			// Hard: larger grid, 2-3 colors, I/L shapes, more blockers
+			uint32_t uProgress = uLevelNumber - 31; // 0-19
 			xParams.uMinGridWidth = 6;
-			xParams.uMaxGridWidth = 7;
+			xParams.uMaxGridWidth = 6 + uProgress / 10;
 			xParams.uMinGridHeight = 6;
-			xParams.uMaxGridHeight = 7;
-			xParams.uNumColors = 3 + (uLevelNumber - 6) / 3;
-			xParams.uNumCatsPerColor = 1 + (uLevelNumber - 6) / 4;
+			xParams.uMaxGridHeight = 6 + uProgress / 10;
+			xParams.uNumColors = 2 + uProgress / 10;
+			xParams.uNumCatsPerColor = 1;
 			xParams.uNumShapesPerColor = 1;
-			xParams.uNumBlockers = 2 + (uLevelNumber - 6);
+			xParams.uNumBlockers = 2 + uProgress / 5;
 			xParams.uMaxShapeSize = 3;
+		}
+		else if (uLevelNumber <= 70)
+		{
+			// Expert: large grid, 3 colors, all shapes, many blockers
+			uint32_t uProgress = uLevelNumber - 51; // 0-19
+			xParams.uMinGridWidth = 7;
+			xParams.uMaxGridWidth = 7;
+			xParams.uMinGridHeight = 7;
+			xParams.uMaxGridHeight = 7;
+			xParams.uNumColors = 3;
+			xParams.uNumCatsPerColor = 1;
+			xParams.uNumShapesPerColor = 1;
+			xParams.uNumBlockers = 3 + uProgress / 4;
+			xParams.uMaxShapeSize = 4;
+		}
+		else if (uLevelNumber <= 85)
+		{
+			// Master: large grid, 3-4 colors, all shapes, blockers, 2 cats/color
+			uint32_t uProgress = uLevelNumber - 71; // 0-14
+			xParams.uMinGridWidth = 7;
+			xParams.uMaxGridWidth = 7 + uProgress / 8;
+			xParams.uMinGridHeight = 7;
+			xParams.uMaxGridHeight = 7 + uProgress / 8;
+			xParams.uNumColors = 3 + uProgress / 8;
+			xParams.uNumCatsPerColor = 2;
+			xParams.uNumShapesPerColor = 1;
+			xParams.uNumBlockers = 4 + uProgress / 3;
+			xParams.uMaxShapeSize = 4;
 		}
 		else
 		{
-			// Expert: large grid, 4 colors, complex shapes
-			xParams.uMinGridWidth = 7;
+			// Grandmaster: max grid, 4 colors, all shapes, many blockers, 2 cats/color
+			uint32_t uProgress = uLevelNumber - 86; // 0-14
+			xParams.uMinGridWidth = 8;
 			xParams.uMaxGridWidth = 8;
-			xParams.uMinGridHeight = 7;
+			xParams.uMinGridHeight = 8;
 			xParams.uMaxGridHeight = 8;
 			xParams.uNumColors = 4;
 			xParams.uNumCatsPerColor = 2;
 			xParams.uNumShapesPerColor = 1;
-			xParams.uNumBlockers = 4 + (uLevelNumber - 11) / 2;
+			xParams.uNumBlockers = 5 + uProgress / 3;
 			xParams.uMaxShapeSize = 4;
 		}
 
@@ -131,9 +176,12 @@ public:
 	 * @param uLevelNumber Level number for difficulty scaling
 	 * @return true if generated level, false if used fallback
 	 */
-	static bool GenerateLevel(TilePuzzleLevelData& xLevelOut, std::mt19937& xRng)
+	static bool GenerateLevel(TilePuzzleLevelData& xLevelOut, std::mt19937& xRng, uint32_t uLevelNumber)
 	{
-		DifficultyParams xParams = GetDifficultyForLevel(0);
+		// Seed RNG deterministically so the same level number always produces the same layout
+		xRng.seed(uLevelNumber * 7919u + 104729u);
+
+		DifficultyParams xParams = GetDifficultyForLevel(uLevelNumber);
 
 		for (int32_t iAttempt = 0; iAttempt < s_iTilePuzzleMaxGenerationAttempts; ++iAttempt)
 		{
@@ -172,8 +220,10 @@ private:
 		std::mt19937& xRng,
 		const DifficultyParams& xParams)
 	{
-		// Clear any previous shape definitions
+		// Clear any previous shape definitions and reserve capacity upfront.
+		// pxDefinition pointers into this vector become dangling if it reallocates.
 		GetShapeDefinitions().clear();
+		GetShapeDefinitions().reserve(xParams.uNumBlockers + xParams.uNumColors * xParams.uNumShapesPerColor);
 
 		// Generate grid dimensions
 		std::uniform_int_distribution<uint32_t> xWidthDist(xParams.uMinGridWidth, xParams.uMaxGridWidth);
@@ -198,6 +248,10 @@ private:
 			xLevelOut.aeCells[y * xLevelOut.uGridWidth + xLevelOut.uGridWidth - 1] = TILEPUZZLE_CELL_EMPTY;  // Right column
 		}
 
+		// Occupancy grid - tracks which cells are already taken by placed objects
+		static constexpr uint32_t uMAX_OCCUPANCY = s_uTilePuzzleMaxGridSize * s_uTilePuzzleMaxGridSize;
+		bool abOccupied[uMAX_OCCUPANCY] = {};
+
 		// Collect inner floor positions
 		std::vector<std::pair<int32_t, int32_t>> axFloorPositions;
 		for (uint32_t y = 1; y < xLevelOut.uGridHeight - 1; ++y)
@@ -215,24 +269,37 @@ private:
 
 		std::shuffle(axFloorPositions.begin(), axFloorPositions.end(), xRng);
 
-		size_t uPositionIndex = 0;
-
 		// Place static blockers
-		for (uint32_t i = 0; i < xParams.uNumBlockers && uPositionIndex < axFloorPositions.size(); ++i)
+		for (uint32_t i = 0; i < xParams.uNumBlockers; ++i)
 		{
-			auto [x, y] = axFloorPositions[uPositionIndex++];
+			// Find first unoccupied position in shuffled list
+			bool bPlaced = false;
+			for (size_t p = 0; p < axFloorPositions.size(); ++p)
+			{
+				auto [x, y] = axFloorPositions[p];
+				uint32_t uIdx = y * xLevelOut.uGridWidth + x;
+				if (abOccupied[uIdx])
+					continue;
 
-			// Create a blocker shape definition
-			GetShapeDefinitions().push_back(TilePuzzleShapes::GetSingleShape(false));  // Not draggable
-			TilePuzzleShapeDefinition& xBlockerDef = GetShapeDefinitions().back();
+				// Place blocker
+				GetShapeDefinitions().push_back(TilePuzzleShapes::GetSingleShape(false));
+				TilePuzzleShapeDefinition& xBlockerDef = GetShapeDefinitions().back();
 
-			TilePuzzleShapeInstance xBlocker;
-			xBlocker.pxDefinition = &xBlockerDef;
-			xBlocker.iOriginX = x;
-			xBlocker.iOriginY = y;
-			xBlocker.eColor = TILEPUZZLE_COLOR_NONE;
+				TilePuzzleShapeInstance xBlocker;
+				xBlocker.pxDefinition = &xBlockerDef;
+				xBlocker.iOriginX = x;
+				xBlocker.iOriginY = y;
+				xBlocker.eColor = TILEPUZZLE_COLOR_NONE;
 
-			xLevelOut.axShapes.push_back(xBlocker);
+				xLevelOut.axShapes.push_back(xBlocker);
+
+				// Mark occupied
+				abOccupied[uIdx] = true;
+				bPlaced = true;
+				break;
+			}
+			if (!bPlaced)
+				return false;
 		}
 
 		// Place draggable shapes with colors
@@ -242,11 +309,6 @@ private:
 
 			for (uint32_t i = 0; i < xParams.uNumShapesPerColor; ++i)
 			{
-				if (uPositionIndex >= axFloorPositions.size())
-					return false;  // Not enough space
-
-				auto [x, y] = axFloorPositions[uPositionIndex++];
-
 				// Select shape type based on difficulty
 				TilePuzzleShapeType eShapeType;
 				if (xParams.uMaxShapeSize <= 1)
@@ -256,7 +318,7 @@ private:
 				else if (xParams.uMaxShapeSize <= 2)
 				{
 					std::uniform_int_distribution<int> xShapeDist(0, 1);
-					eShapeType = static_cast<TilePuzzleShapeType>(xShapeDist(xRng));  // SINGLE or DOMINO
+					eShapeType = static_cast<TilePuzzleShapeType>(xShapeDist(xRng));
 				}
 				else
 				{
@@ -265,37 +327,89 @@ private:
 				}
 
 				// Create shape definition
-				GetShapeDefinitions().push_back(TilePuzzleShapes::GetShape(eShapeType, true));  // Draggable
+				GetShapeDefinitions().push_back(TilePuzzleShapes::GetShape(eShapeType, true));
 				TilePuzzleShapeDefinition& xShapeDef = GetShapeDefinitions().back();
 
-				TilePuzzleShapeInstance xShape;
-				xShape.pxDefinition = &xShapeDef;
-				xShape.iOriginX = x;
-				xShape.iOriginY = y;
-				xShape.eColor = eColor;
-
-				// Verify shape fits on grid
-				bool bFits = true;
-				for (const auto& xOffset : xShapeDef.axCells)
+				// Find a position where ALL cells of the shape fit and are unoccupied
+				bool bPlaced = false;
+				for (size_t p = 0; p < axFloorPositions.size(); ++p)
 				{
-					int32_t iCellX = x + xOffset.iX;
-					int32_t iCellY = y + xOffset.iY;
-					if (iCellX < 1 || iCellY < 1 ||
-						static_cast<uint32_t>(iCellX) >= xLevelOut.uGridWidth - 1 ||
-						static_cast<uint32_t>(iCellY) >= xLevelOut.uGridHeight - 1)
+					auto [x, y] = axFloorPositions[p];
+
+					bool bFits = true;
+					for (size_t c = 0; c < xShapeDef.axCells.size(); ++c)
 					{
-						bFits = false;
+						int32_t iCellX = x + xShapeDef.axCells[c].iX;
+						int32_t iCellY = y + xShapeDef.axCells[c].iY;
+
+						// Check bounds (must be within inner area)
+						if (iCellX < 1 || iCellY < 1 ||
+							static_cast<uint32_t>(iCellX) >= xLevelOut.uGridWidth - 1 ||
+							static_cast<uint32_t>(iCellY) >= xLevelOut.uGridHeight - 1)
+						{
+							bFits = false;
+							break;
+						}
+
+						// Check occupancy
+						uint32_t uCellIdx = iCellY * xLevelOut.uGridWidth + iCellX;
+						if (abOccupied[uCellIdx])
+						{
+							bFits = false;
+							break;
+						}
+					}
+
+					if (bFits)
+					{
+						TilePuzzleShapeInstance xShape;
+						xShape.pxDefinition = &xShapeDef;
+						xShape.iOriginX = x;
+						xShape.iOriginY = y;
+						xShape.eColor = eColor;
+						xLevelOut.axShapes.push_back(xShape);
+
+						// Mark ALL cells of the shape as occupied
+						for (size_t c = 0; c < xShapeDef.axCells.size(); ++c)
+						{
+							int32_t iCellX = x + xShapeDef.axCells[c].iX;
+							int32_t iCellY = y + xShapeDef.axCells[c].iY;
+							abOccupied[iCellY * xLevelOut.uGridWidth + iCellX] = true;
+						}
+
+						bPlaced = true;
 						break;
 					}
 				}
 
-				if (!bFits)
+				if (!bPlaced)
 				{
-					// Fall back to single cell if shape doesn't fit
+					// Fall back to single cell shape
 					GetShapeDefinitions().back() = TilePuzzleShapes::GetSingleShape(true);
-				}
+					TilePuzzleShapeDefinition& xSingleDef = GetShapeDefinitions().back();
 
-				xLevelOut.axShapes.push_back(xShape);
+					for (size_t p = 0; p < axFloorPositions.size(); ++p)
+					{
+						auto [x, y] = axFloorPositions[p];
+						uint32_t uIdx = y * xLevelOut.uGridWidth + x;
+						if (abOccupied[uIdx])
+							continue;
+
+						TilePuzzleShapeInstance xShape;
+						xShape.pxDefinition = &xSingleDef;
+						xShape.iOriginX = x;
+						xShape.iOriginY = y;
+						xShape.eColor = eColor;
+						xLevelOut.axShapes.push_back(xShape);
+
+						abOccupied[uIdx] = true;
+						bPlaced = true;
+						break;
+					}
+
+					if (!bPlaced)
+						return false;
+				}
 			}
 		}
 
@@ -306,20 +420,29 @@ private:
 
 			for (uint32_t i = 0; i < xParams.uNumCatsPerColor; ++i)
 			{
-				if (uPositionIndex >= axFloorPositions.size())
-					return false;  // Not enough space
+				bool bPlaced = false;
+				for (size_t p = 0; p < axFloorPositions.size(); ++p)
+				{
+					auto [x, y] = axFloorPositions[p];
+					uint32_t uIdx = y * xLevelOut.uGridWidth + x;
+					if (abOccupied[uIdx])
+						continue;
 
-				auto [x, y] = axFloorPositions[uPositionIndex++];
+					TilePuzzleCatData xCat;
+					xCat.eColor = eColor;
+					xCat.iGridX = x;
+					xCat.iGridY = y;
+					xCat.uEntityID = INVALID_ENTITY_ID;
+					xCat.bEliminated = false;
+					xCat.fEliminationProgress = 0.f;
+					xLevelOut.axCats.push_back(xCat);
 
-				TilePuzzleCatData xCat;
-				xCat.eColor = eColor;
-				xCat.iGridX = x;
-				xCat.iGridY = y;
-				xCat.uEntityID = INVALID_ENTITY_ID;
-				xCat.bEliminated = false;
-				xCat.fEliminationProgress = 0.f;
-
-				xLevelOut.axCats.push_back(xCat);
+					abOccupied[uIdx] = true;
+					bPlaced = true;
+					break;
+				}
+				if (!bPlaced)
+					return false;
 			}
 		}
 

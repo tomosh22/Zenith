@@ -22,7 +22,8 @@ JPH::PhysicsSystem* Zenith_Physics::s_pxPhysicsSystem = nullptr;
 double Zenith_Physics::s_fTimestepAccumulator = 0;
 Zenith_Physics::PhysicsContactListener Zenith_Physics::s_xContactListener;
 Zenith_Vector<Zenith_Physics::DeferredCollisionEvent> Zenith_Physics::s_xDeferredEvents;
-std::mutex Zenith_Physics::s_xEventQueueMutex;
+Zenith_Mutex Zenith_Physics::s_xEventQueueMutex;
+uint32_t Zenith_Physics::s_uDroppedEventCount = 0;
 
 static bool g_bInitialised = false;
 
@@ -307,9 +308,10 @@ static ObjectLayerPairFilterImpl s_xObjectLayerPairFilter;
 
 // Queue collision event for deferred processing on main thread
 // CRITICAL: This is called from Jolt worker threads, so it must be thread-safe
+static constexpr u_int uMAX_DEFERRED_COLLISION_EVENTS = 4096;
+
 void QueueCollisionEventInternal(Zenith_EntityID xEntityID1, Zenith_EntityID xEntityID2, CollisionEventType eEventType)
 {
-	// Validate entity IDs
 	if (!xEntityID1.IsValid() || !xEntityID2.IsValid())
 		return;
 
@@ -318,16 +320,51 @@ void QueueCollisionEventInternal(Zenith_EntityID xEntityID1, Zenith_EntityID xEn
 	xEvent.uEntityID2 = xEntityID2;
 	xEvent.eEventType = eEventType;
 
-	std::lock_guard<std::mutex> xLock(Zenith_Physics::s_xEventQueueMutex);
+	Zenith_ScopedMutexLock xLock(Zenith_Physics::s_xEventQueueMutex);
+	if (Zenith_Physics::s_xDeferredEvents.GetSize() >= uMAX_DEFERRED_COLLISION_EVENTS)
+	{
+		Zenith_Physics::s_uDroppedEventCount++;
+		Zenith_Assert(false, "Deferred collision event queue overflow (%u events) - events are being dropped", uMAX_DEFERRED_COLLISION_EVENTS);
+		return;
+	}
 	Zenith_Physics::s_xDeferredEvents.PushBack(xEvent);
+}
+
+void Zenith_Physics::DispatchCollisionToEntity(Zenith_Entity& xEntity, Zenith_Entity& xOtherEntity, Zenith_EntityID xOtherID, CollisionEventType eEventType)
+{
+	if (!xEntity.HasComponent<Zenith_ScriptComponent>())
+	{
+		return;
+	}
+
+	Zenith_ScriptComponent& xScript = xEntity.GetComponent<Zenith_ScriptComponent>();
+	switch (eEventType)
+	{
+	case COLLISION_EVENT_TYPE_START:
+		xScript.OnCollisionEnter(xOtherEntity);
+		break;
+	case COLLISION_EVENT_TYPE_STAY:
+		xScript.OnCollisionStay(xOtherEntity);
+		break;
+	case COLLISION_EVENT_TYPE_EXIT:
+		xScript.OnCollisionExit(xOtherID);
+		break;
+	}
 }
 
 void Zenith_Physics::ProcessDeferredCollisionEvents()
 {
+	if (s_uDroppedEventCount > 0)
+	{
+		Zenith_Warning(LOG_CATEGORY_PHYSICS, "Dropped %u collision events last frame due to queue overflow (max=%u)",
+			s_uDroppedEventCount, uMAX_DEFERRED_COLLISION_EVENTS);
+		s_uDroppedEventCount = 0;
+	}
+
 	// Swap out the events to minimize lock time
 	Zenith_Vector<DeferredCollisionEvent> xEventsToProcess;
 	{
-		std::lock_guard<std::mutex> xLock(s_xEventQueueMutex);
+		Zenith_ScopedMutexLock xLock(s_xEventQueueMutex);
 		xEventsToProcess = std::move(s_xDeferredEvents);
 	}
 
@@ -342,50 +379,18 @@ void Zenith_Physics::ProcessDeferredCollisionEvents()
 		Zenith_SceneData* pxSceneData1 = Zenith_SceneManager::GetSceneDataForEntity(xEvent.uEntityID1);
 		Zenith_SceneData* pxSceneData2 = Zenith_SceneManager::GetSceneDataForEntity(xEvent.uEntityID2);
 
-		// Check if entities still exist in their respective scenes
-		if (!pxSceneData1)
+		// Check if entities still exist in their respective scenes (may have been destroyed between queueing and processing)
+		if (!pxSceneData1 || !pxSceneData2)
+		{
+			Zenith_Log(LOG_CATEGORY_PHYSICS, "Dropped collision event: entity no longer exists (idx1=%u, idx2=%u)", xEvent.uEntityID1.m_uIndex, xEvent.uEntityID2.m_uIndex);
 			continue;
-		if (!pxSceneData2)
-			continue;
+		}
 
 		Zenith_Entity xEntity1 = pxSceneData1->GetEntity(xEvent.uEntityID1);
 		Zenith_Entity xEntity2 = pxSceneData2->GetEntity(xEvent.uEntityID2);
 
-		// Dispatch to entity 1's script component
-		if (xEntity1.HasComponent<Zenith_ScriptComponent>())
-		{
-			Zenith_ScriptComponent& xScript1 = xEntity1.GetComponent<Zenith_ScriptComponent>();
-			switch (xEvent.eEventType)
-			{
-			case COLLISION_EVENT_TYPE_START:
-				xScript1.OnCollisionEnter(xEntity2);
-				break;
-			case COLLISION_EVENT_TYPE_STAY:
-				xScript1.OnCollisionStay(xEntity2);
-				break;
-			case COLLISION_EVENT_TYPE_EXIT:
-				xScript1.OnCollisionExit(xEvent.uEntityID2);
-				break;
-			}
-		}
-
-		// Dispatch to entity 2's script component
-		if (xEntity2.HasComponent<Zenith_ScriptComponent>())
-		{
-			Zenith_ScriptComponent& xScript2 = xEntity2.GetComponent<Zenith_ScriptComponent>();
-			switch (xEvent.eEventType)
-			{
-			case COLLISION_EVENT_TYPE_START:
-				xScript2.OnCollisionEnter(xEntity1);
-				break;
-			case COLLISION_EVENT_TYPE_STAY:
-				xScript2.OnCollisionStay(xEntity1);
-				break;
-			case COLLISION_EVENT_TYPE_EXIT:
-				xScript2.OnCollisionExit(xEvent.uEntityID1);
-				break;
-			}
-		}
+		DispatchCollisionToEntity(xEntity1, xEntity2, xEvent.uEntityID2, xEvent.eEventType);
+		DispatchCollisionToEntity(xEntity2, xEntity1, xEvent.uEntityID1, xEvent.eEventType);
 	}
 }
 

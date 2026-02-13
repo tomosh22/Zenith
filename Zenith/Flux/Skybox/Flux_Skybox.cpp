@@ -108,73 +108,49 @@ void Flux_Skybox::Initialise()
 	// Initialize atmosphere constants buffer
 	Flux_MemoryManager::InitialiseDynamicConstantBuffer(&s_xAtmosphereConstants, sizeof(AtmosphereConstants), s_xAtmosphereConstantsBuffer);
 
-	Flux_VertexInputDescription xVertexDesc;
-	xVertexDesc.m_eTopology = MESH_TOPOLOGY_NONE;
-	xVertexDesc.m_xPerVertexLayout.CalculateOffsetsAndStrides();
-
-	// ========== Cubemap skybox pipeline ==========
-	s_xCubemapShader.Initialise("Flux_Fullscreen_UV.vert", "Skybox/Flux_Skybox.frag");
-
-	Flux_PipelineSpecification xCubemapSpec;
-	xCubemapSpec.m_pxTargetSetup = &Flux_Graphics::s_xMRTTarget;
-	xCubemapSpec.m_pxShader = &s_xCubemapShader;
-	xCubemapSpec.m_xVertexInputDesc = xVertexDesc;
-	xCubemapSpec.m_bDepthTestEnabled = false;
-
-	s_xCubemapShader.GetReflection().PopulateLayout(xCubemapSpec.m_xPipelineLayout);
-
-	for (Flux_BlendState& xBlendState : xCubemapSpec.m_axBlendStates)
+	// ========== Cubemap skybox pipeline (MRT with no blending) ==========
 	{
-		xBlendState.m_eSrcBlendFactor = BLEND_FACTOR_ONE;
-		xBlendState.m_eDstBlendFactor = BLEND_FACTOR_ZERO;
-		xBlendState.m_bBlendEnabled = false;
+		Flux_PipelineSpecification xSpec = Flux_PipelineHelper::CreateFullscreenSpec(
+			s_xCubemapShader, "Skybox/Flux_Skybox.frag", &Flux_Graphics::s_xMRTTarget);
+		for (Flux_BlendState& xBlendState : xSpec.m_axBlendStates)
+		{
+			xBlendState.m_eSrcBlendFactor = BLEND_FACTOR_ONE;
+			xBlendState.m_eDstBlendFactor = BLEND_FACTOR_ZERO;
+			xBlendState.m_bBlendEnabled = false;
+		}
+		Flux_PipelineBuilder::FromSpecification(s_xCubemapPipeline, xSpec);
 	}
-
-	Flux_PipelineBuilder::FromSpecification(s_xCubemapPipeline, xCubemapSpec);
 
 	// Use the global cubemap texture pointer set during initialization in Zenith_Main.cpp
 	s_pxCubemapTexture = Flux_Graphics::s_pxCubemapTexture;
 
 	// ========== Atmosphere sky pipeline ==========
-	s_xAtmosphereShader.Initialise("Flux_Fullscreen_UV.vert", "Skybox/Flux_Atmosphere.frag");
+	Flux_PipelineHelper::BuildFullscreenPipeline(
+		s_xAtmosphereShader, s_xAtmospherePipeline,
+		"Skybox/Flux_Atmosphere.frag", &Flux_Graphics::s_xMRTTarget);
 
-	Flux_PipelineSpecification xAtmosSpec;
-	xAtmosSpec.m_pxTargetSetup = &Flux_Graphics::s_xMRTTarget;
-	xAtmosSpec.m_pxShader = &s_xAtmosphereShader;
-	xAtmosSpec.m_xVertexInputDesc = xVertexDesc;
-	xAtmosSpec.m_bDepthTestEnabled = false;
-	xAtmosSpec.m_bDepthWriteEnabled = false;
+	{
+		const Flux_ShaderReflection& xReflection = s_xAtmosphereShader.GetReflection();
+		s_xAtmosFrameConstantsBinding = xReflection.GetBinding("FrameConstants");
+		s_xAtmosConstantsBinding = xReflection.GetBinding("AtmosphereConstants");
+	}
 
-	s_xAtmosphereShader.GetReflection().PopulateLayout(xAtmosSpec.m_xPipelineLayout);
+	// ========== Aerial perspective pipeline (alpha blending) ==========
+	{
+		Flux_PipelineSpecification xSpec = Flux_PipelineHelper::CreateFullscreenSpec(
+			s_xAerialPerspectiveShader, "Skybox/Flux_AerialPerspective.frag", &Flux_HDR::GetHDRSceneTargetSetup());
+		xSpec.m_axBlendStates[0].m_bBlendEnabled = true;
+		xSpec.m_axBlendStates[0].m_eSrcBlendFactor = BLEND_FACTOR_SRCALPHA;
+		xSpec.m_axBlendStates[0].m_eDstBlendFactor = BLEND_FACTOR_ONEMINUSSRCALPHA;
+		Flux_PipelineBuilder::FromSpecification(s_xAerialPerspectivePipeline, xSpec);
+	}
 
-	Flux_PipelineBuilder::FromSpecification(s_xAtmospherePipeline, xAtmosSpec);
-
-	// Cache atmosphere binding handles
-	const Flux_ShaderReflection& xAtmosReflection = s_xAtmosphereShader.GetReflection();
-	s_xAtmosFrameConstantsBinding = xAtmosReflection.GetBinding("FrameConstants");
-	s_xAtmosConstantsBinding = xAtmosReflection.GetBinding("AtmosphereConstants");
-
-	// ========== Aerial perspective pipeline ==========
-	s_xAerialPerspectiveShader.Initialise("Flux_Fullscreen_UV.vert", "Skybox/Flux_AerialPerspective.frag");
-
-	Flux_PipelineSpecification xAerialSpec;
-	xAerialSpec.m_pxTargetSetup = &Flux_HDR::GetHDRSceneTargetSetup();
-	xAerialSpec.m_pxShader = &s_xAerialPerspectiveShader;
-	xAerialSpec.m_xVertexInputDesc = xVertexDesc;
-	xAerialSpec.m_bDepthTestEnabled = false;
-	xAerialSpec.m_bDepthWriteEnabled = false;
-	xAerialSpec.m_axBlendStates[0].m_bBlendEnabled = true;
-	xAerialSpec.m_axBlendStates[0].m_eSrcBlendFactor = BLEND_FACTOR_SRCALPHA;
-	xAerialSpec.m_axBlendStates[0].m_eDstBlendFactor = BLEND_FACTOR_ONEMINUSSRCALPHA;
-
-	s_xAerialPerspectiveShader.GetReflection().PopulateLayout(xAerialSpec.m_xPipelineLayout);
-
-	Flux_PipelineBuilder::FromSpecification(s_xAerialPerspectivePipeline, xAerialSpec);
-
-	const Flux_ShaderReflection& xAerialReflection = s_xAerialPerspectiveShader.GetReflection();
-	s_xAerialFrameConstantsBinding = xAerialReflection.GetBinding("FrameConstants");
-	s_xAerialAtmosConstantsBinding = xAerialReflection.GetBinding("AtmosphereConstants");
-	s_xAerialDepthTexBinding = xAerialReflection.GetBinding("g_xDepthTex");
+	{
+		const Flux_ShaderReflection& xReflection = s_xAerialPerspectiveShader.GetReflection();
+		s_xAerialFrameConstantsBinding = xReflection.GetBinding("FrameConstants");
+		s_xAerialAtmosConstantsBinding = xReflection.GetBinding("AtmosphereConstants");
+		s_xAerialDepthTexBinding = xReflection.GetBinding("g_xDepthTex");
+	}
 
 #ifdef ZENITH_DEBUG_VARIABLES
 	RegisterDebugVariables();
@@ -219,7 +195,6 @@ void Flux_Skybox::DestroyRenderTargets()
 		Flux_MemoryManager::QueueVRAMDeletion(pxVRAM, s_xTransmittanceLUT.m_xVRAMHandle,
 			s_xTransmittanceLUT.m_pxRTV.m_xImageViewHandle, s_xTransmittanceLUT.m_pxDSV.m_xImageViewHandle,
 			s_xTransmittanceLUT.m_pxSRV.m_xImageViewHandle, s_xTransmittanceLUT.m_pxUAV.m_xImageViewHandle);
-		s_xTransmittanceLUT.m_xVRAMHandle = Flux_VRAMHandle();
 	}
 }
 

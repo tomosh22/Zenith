@@ -18,6 +18,8 @@
 #include "Vulkan/Zenith_Vulkan_MemoryManager.h"
 #include "Prefab/Zenith_Prefab.h"
 #include "UI/Zenith_UIButton.h"
+#include "UI/Zenith_UIRect.h"
+#include "SaveData/Zenith_SaveData.h"
 
 // ============================================================================
 // TilePuzzle Resources - Global access for behaviours
@@ -157,6 +159,7 @@ const char* Project_GetGameAssetsDirectory()
 
 void Project_RegisterScriptBehaviours()
 {
+	Zenith_SaveData::Initialise("TilePuzzle");
 	InitializeTilePuzzleResources();
 	TilePuzzle_Behaviour::RegisterBehaviour();
 }
@@ -188,16 +191,121 @@ void Project_CreateScenes()
 
 		Zenith_UIComponent& xUI = xMenuManager.AddComponent<Zenith_UIComponent>();
 
+		// ---- Main Menu UI ----
+
+		Zenith_UI::Zenith_UIRect* pxMenuBg = xUI.CreateRect("MenuBackground");
+		pxMenuBg->SetAnchorAndPivot(Zenith_UI::AnchorPreset::TopLeft);
+		pxMenuBg->SetPosition(0.f, 0.f);
+		pxMenuBg->SetSize(4000.f, 4000.f);
+		pxMenuBg->SetColor({0.08f, 0.08f, 0.15f, 1.f});
+
 		Zenith_UI::Zenith_UIText* pxMenuTitle = xUI.CreateText("MenuTitle", "TILE PUZZLE");
 		pxMenuTitle->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
-		pxMenuTitle->SetPosition(0.f, -120.f);
+		pxMenuTitle->SetPosition(0.f, -180.f);
 		pxMenuTitle->SetFontSize(72.f);
 		pxMenuTitle->SetColor({1.f, 1.f, 1.f, 1.f});
 
-		Zenith_UI::Zenith_UIButton* pxPlayBtn = xUI.CreateButton("MenuPlay", "Play");
-		pxPlayBtn->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
-		pxPlayBtn->SetPosition(0.f, 0.f);
-		pxPlayBtn->SetSize(200.f, 50.f);
+		Zenith_UI::Zenith_UIButton* pxContinueBtn = xUI.CreateButton("ContinueButton", "Continue");
+		pxContinueBtn->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
+		pxContinueBtn->SetPosition(0.f, -20.f);
+		pxContinueBtn->SetSize(300.f, 80.f);
+		pxContinueBtn->SetFontSize(32.f);
+		pxContinueBtn->SetNormalColor({0.2f, 0.25f, 0.4f, 1.f});
+		pxContinueBtn->SetHoverColor({0.3f, 0.35f, 0.55f, 1.f});
+		pxContinueBtn->SetPressedColor({0.12f, 0.15f, 0.25f, 1.f});
+
+		Zenith_UI::Zenith_UIButton* pxLevelSelectBtn = xUI.CreateButton("LevelSelectButton", "Level Select");
+		pxLevelSelectBtn->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
+		pxLevelSelectBtn->SetPosition(0.f, 80.f);
+		pxLevelSelectBtn->SetSize(300.f, 80.f);
+		pxLevelSelectBtn->SetFontSize(32.f);
+		pxLevelSelectBtn->SetNormalColor({0.2f, 0.25f, 0.4f, 1.f});
+		pxLevelSelectBtn->SetHoverColor({0.3f, 0.35f, 0.55f, 1.f});
+		pxLevelSelectBtn->SetPressedColor({0.12f, 0.15f, 0.25f, 1.f});
+
+		Zenith_UI::Zenith_UIButton* pxNewGameBtn = xUI.CreateButton("NewGameButton", "New Game");
+		pxNewGameBtn->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
+		pxNewGameBtn->SetPosition(0.f, 180.f);
+		pxNewGameBtn->SetSize(300.f, 80.f);
+		pxNewGameBtn->SetFontSize(32.f);
+		pxNewGameBtn->SetNormalColor({0.2f, 0.25f, 0.4f, 1.f});
+		pxNewGameBtn->SetHoverColor({0.3f, 0.35f, 0.55f, 1.f});
+		pxNewGameBtn->SetPressedColor({0.12f, 0.15f, 0.25f, 1.f});
+
+		// ---- Level Select UI (starts hidden, toggled by behaviour) ----
+
+		Zenith_UI::Zenith_UIRect* pxLevelSelectBg = xUI.CreateRect("LevelSelectBg");
+		pxLevelSelectBg->SetAnchorAndPivot(Zenith_UI::AnchorPreset::TopLeft);
+		pxLevelSelectBg->SetPosition(0.f, 0.f);
+		pxLevelSelectBg->SetSize(4000.f, 4000.f);
+		pxLevelSelectBg->SetColor({0.08f, 0.08f, 0.15f, 1.f});
+		pxLevelSelectBg->SetVisible(false);
+
+		Zenith_UI::Zenith_UIText* pxLevelSelectTitle = xUI.CreateText("LevelSelectTitle", "Select Level");
+		pxLevelSelectTitle->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
+		pxLevelSelectTitle->SetPosition(0.f, -260.f);
+		pxLevelSelectTitle->SetFontSize(48.f);
+		pxLevelSelectTitle->SetColor({1.f, 1.f, 1.f, 1.f});
+		pxLevelSelectTitle->SetVisible(false);
+
+		Zenith_UI::Zenith_UIText* pxPageText = xUI.CreateText("PageText", "Page 1 / 5");
+		pxPageText->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
+		pxPageText->SetPosition(0.f, -200.f);
+		pxPageText->SetFontSize(32.f);
+		pxPageText->SetColor({0.7f, 0.7f, 0.8f, 1.f});
+		pxPageText->SetVisible(false);
+
+		// Level select buttons (4 rows x 5 columns)
+		for (uint32_t uRow = 0; uRow < 4; ++uRow)
+		{
+			for (uint32_t uCol = 0; uCol < 5; ++uCol)
+			{
+				uint32_t uIdx = uRow * 5 + uCol;
+				char szBtnName[32];
+				snprintf(szBtnName, sizeof(szBtnName), "LevelBtn_%u", uIdx);
+				char szLabel[8];
+				snprintf(szLabel, sizeof(szLabel), "%u", uIdx + 1);
+
+				Zenith_UI::Zenith_UIButton* pxLevelBtn = xUI.CreateButton(szBtnName, szLabel);
+				pxLevelBtn->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
+				float fX = (static_cast<float>(uCol) - 2.f) * 105.f;
+				float fY = -50.f + (static_cast<float>(uRow) - 1.5f) * 65.f;
+				pxLevelBtn->SetPosition(fX, fY);
+				pxLevelBtn->SetSize(90.f, 55.f);
+				pxLevelBtn->SetFontSize(20.f);
+				pxLevelBtn->SetNormalColor({0.2f, 0.3f, 0.5f, 1.f});
+				pxLevelBtn->SetHoverColor({0.3f, 0.4f, 0.6f, 1.f});
+				pxLevelBtn->SetPressedColor({0.1f, 0.15f, 0.3f, 1.f});
+				pxLevelBtn->SetVisible(false);
+			}
+		}
+
+		Zenith_UI::Zenith_UIButton* pxPrevPageBtn = xUI.CreateButton("PrevPageButton", "<");
+		pxPrevPageBtn->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
+		pxPrevPageBtn->SetPosition(-160.f, 180.f);
+		pxPrevPageBtn->SetSize(100.f, 50.f);
+		pxPrevPageBtn->SetFontSize(28.f);
+		pxPrevPageBtn->SetNormalColor({0.15f, 0.2f, 0.3f, 1.f});
+		pxPrevPageBtn->SetHoverColor({0.25f, 0.3f, 0.45f, 1.f});
+		pxPrevPageBtn->SetVisible(false);
+
+		Zenith_UI::Zenith_UIButton* pxBackBtn = xUI.CreateButton("BackButton", "Back");
+		pxBackBtn->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
+		pxBackBtn->SetPosition(0.f, 180.f);
+		pxBackBtn->SetSize(120.f, 50.f);
+		pxBackBtn->SetFontSize(24.f);
+		pxBackBtn->SetNormalColor({0.15f, 0.2f, 0.3f, 1.f});
+		pxBackBtn->SetHoverColor({0.25f, 0.3f, 0.45f, 1.f});
+		pxBackBtn->SetVisible(false);
+
+		Zenith_UI::Zenith_UIButton* pxNextPageBtn = xUI.CreateButton("NextPageButton", ">");
+		pxNextPageBtn->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
+		pxNextPageBtn->SetPosition(160.f, 180.f);
+		pxNextPageBtn->SetSize(100.f, 50.f);
+		pxNextPageBtn->SetFontSize(28.f);
+		pxNextPageBtn->SetNormalColor({0.15f, 0.2f, 0.3f, 1.f});
+		pxNextPageBtn->SetHoverColor({0.25f, 0.3f, 0.45f, 1.f});
+		pxNextPageBtn->SetVisible(false);
 
 		Zenith_ScriptComponent& xScript = xMenuManager.AddComponent<Zenith_ScriptComponent>();
 		xScript.SetBehaviourForSerialization<TilePuzzle_Behaviour>();
@@ -284,6 +392,32 @@ void Project_CreateScenes()
 		SetupTopRightText(pxWin, s_fLineHeight * 12, false);
 		pxWin->SetFontSize(s_fBaseTextSize * 4.2f);
 		pxWin->SetColor(Zenith_Maths::Vector4(0.2f, 1.f, 0.2f, 1.f));
+
+		// Gameplay action buttons
+		Zenith_UI::Zenith_UIButton* pxResetBtn = xUI.CreateButton("ResetBtn", "Reset");
+		pxResetBtn->SetAnchorAndPivot(Zenith_UI::AnchorPreset::TopLeft);
+		pxResetBtn->SetPosition(20.f, 20.f);
+		pxResetBtn->SetSize(100.f, 50.f);
+		pxResetBtn->SetFontSize(20.f);
+		pxResetBtn->SetNormalColor({0.2f, 0.25f, 0.35f, 1.f});
+		pxResetBtn->SetHoverColor({0.3f, 0.35f, 0.5f, 1.f});
+
+		Zenith_UI::Zenith_UIButton* pxMenuBtn = xUI.CreateButton("MenuBtn", "Menu");
+		pxMenuBtn->SetAnchorAndPivot(Zenith_UI::AnchorPreset::TopLeft);
+		pxMenuBtn->SetPosition(20.f, 80.f);
+		pxMenuBtn->SetSize(100.f, 50.f);
+		pxMenuBtn->SetFontSize(20.f);
+		pxMenuBtn->SetNormalColor({0.2f, 0.25f, 0.35f, 1.f});
+		pxMenuBtn->SetHoverColor({0.3f, 0.35f, 0.5f, 1.f});
+
+		Zenith_UI::Zenith_UIButton* pxNextLevelBtn = xUI.CreateButton("NextLevelBtn", "Next Level");
+		pxNextLevelBtn->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
+		pxNextLevelBtn->SetPosition(0.f, 80.f);
+		pxNextLevelBtn->SetSize(200.f, 60.f);
+		pxNextLevelBtn->SetFontSize(28.f);
+		pxNextLevelBtn->SetNormalColor({0.15f, 0.4f, 0.2f, 1.f});
+		pxNextLevelBtn->SetHoverColor({0.25f, 0.55f, 0.3f, 1.f});
+		pxNextLevelBtn->SetVisible(false);
 
 		Zenith_ScriptComponent& xScript = xGameManager.AddComponent<Zenith_ScriptComponent>();
 		xScript.SetBehaviourForSerialization<TilePuzzle_Behaviour>();

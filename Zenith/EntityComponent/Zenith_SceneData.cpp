@@ -27,22 +27,32 @@ void Zenith_SceneData::ResetGlobalEntityStorage()
 
 void Zenith_SceneData::InvalidateActiveInHierarchyCache(Zenith_EntityID xID)
 {
-	if (xID.m_uIndex >= s_axEntitySlots.GetSize()) return;
-	Zenith_EntitySlot& xSlot = s_axEntitySlots.Get(xID.m_uIndex);
-	if (!xSlot.m_bOccupied || xSlot.m_uGeneration != xID.m_uGeneration) return;
+	// Iterative tree walk using explicit stack (avoids stack overflow on deep hierarchies)
+	Zenith_Vector<Zenith_EntityID> axStack;
+	axStack.PushBack(xID);
 
-	xSlot.m_bActiveInHierarchyDirty = true;
-
-	// Recursively invalidate children via TransformComponent
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneDataByHandle(xSlot.m_iSceneHandle);
-	if (!pxSceneData) return;
-	if (!pxSceneData->EntityHasComponent<Zenith_TransformComponent>(xID)) return;
-
-	const Zenith_TransformComponent& xTransform = pxSceneData->GetComponentFromEntity<Zenith_TransformComponent>(xID);
-	const Zenith_Vector<Zenith_EntityID>& axChildIDs = xTransform.GetChildEntityIDs();
-	for (u_int i = 0; i < axChildIDs.GetSize(); ++i)
+	while (axStack.GetSize() > 0)
 	{
-		InvalidateActiveInHierarchyCache(axChildIDs.Get(i));
+		Zenith_EntityID xCurrentID = axStack.GetBack();
+		axStack.PopBack();
+
+		if (xCurrentID.m_uIndex >= s_axEntitySlots.GetSize()) continue;
+		Zenith_EntitySlot& xSlot = s_axEntitySlots.Get(xCurrentID.m_uIndex);
+		if (!xSlot.IsOccupied() || xSlot.m_uGeneration != xCurrentID.m_uGeneration) continue;
+
+		xSlot.m_bActiveInHierarchyDirty = true;
+
+		// Queue children for invalidation
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneDataByHandle(xSlot.m_iSceneHandle);
+		if (!pxSceneData) continue;
+		if (!pxSceneData->EntityHasComponent<Zenith_TransformComponent>(xCurrentID)) continue;
+
+		const Zenith_TransformComponent& xTransform = pxSceneData->GetComponentFromEntity<Zenith_TransformComponent>(xCurrentID);
+		const Zenith_Vector<Zenith_EntityID>& axChildIDs = xTransform.GetChildEntityIDs();
+		for (u_int i = 0; i < axChildIDs.GetSize(); ++i)
+		{
+			axStack.PushBack(axChildIDs.Get(i));
+		}
 	}
 }
 
@@ -111,7 +121,7 @@ void Zenith_SceneData::Reset()
 		if (xID.m_uIndex < s_axEntitySlots.GetSize())
 		{
 			Zenith_EntitySlot& xSlot = s_axEntitySlots.Get(xID.m_uIndex);
-			if (xSlot.m_bOccupied && xSlot.m_uGeneration == xID.m_uGeneration)
+			if (xSlot.IsOccupied() && xSlot.m_uGeneration == xID.m_uGeneration)
 			{
 				s_axEntityComponents.Get(xID.m_uIndex).clear();
 				xSlot.ReleaseSlot();
@@ -308,11 +318,10 @@ void Zenith_SceneData::RemoveEntity(Zenith_EntityID xID)
 
 		s_axEntityComponents.Get(xEntityID.m_uIndex).clear();
 
-		// Decrement pending start count before releasing slot
-		if (xSlot.m_bPendingStart)
+		// Cancel any pending start before releasing the slot
+		if (xSlot.IsPendingStart())
 		{
-			Zenith_Assert(m_uPendingStartCount > 0, "PendingStartCount underflow in RemoveEntity");
-			m_uPendingStartCount--;
+			CancelPendingStart(xEntityID);
 		}
 		xSlot.ReleaseSlot();
 		s_axFreeEntityIndices.PushBack(xEntityID.m_uIndex);
@@ -489,12 +498,7 @@ void Zenith_SceneData::Update(float fDt)
 	m_bIsUpdating = true;
 
 	// Snapshot entity IDs before iteration
-	Zenith_Vector<Zenith_EntityID> xSnapshotIDs;
-	xSnapshotIDs.Reserve(m_xActiveEntities.GetSize());
-	for (u_int u = 0; u < m_xActiveEntities.GetSize(); ++u)
-	{
-		xSnapshotIDs.PushBack(m_xActiveEntities.Get(u));
-	}
+	Zenith_Vector<Zenith_EntityID> xSnapshotIDs = SnapshotActiveEntities();
 
 	// 1-2. Awake/OnEnable for new entities, then queue Start for next frame
 	Zenith_Vector<Zenith_EntityID> axAllNewEntities;
@@ -526,12 +530,14 @@ void Zenith_SceneData::DispatchAwakeAndEnableForNewEntities(Zenith_Vector<Zenith
 	u_int uIteration = 0;
 	while (m_axNewlyCreatedEntities.GetSize() > 0 && uIteration < uMAX_AWAKE_ITERATIONS)
 	{
+		// Snapshot this wave and accumulate into output (single pass instead of two copies)
 		Zenith_Vector<Zenith_EntityID> axNewEntities;
 		axNewEntities.Reserve(m_axNewlyCreatedEntities.GetSize());
 		for (u_int u = 0; u < m_axNewlyCreatedEntities.GetSize(); ++u)
 		{
-			axNewEntities.PushBack(m_axNewlyCreatedEntities.Get(u));
-			axAllNewEntities.PushBack(m_axNewlyCreatedEntities.Get(u));
+			Zenith_EntityID xID = m_axNewlyCreatedEntities.Get(u);
+			axNewEntities.PushBack(xID);
+			axAllNewEntities.PushBack(xID);
 		}
 		m_axNewlyCreatedEntities.Clear();
 
@@ -647,12 +653,7 @@ void Zenith_SceneData::FixedUpdate(float fFixedDt)
 	Zenith_ComponentMetaRegistry& xRegistry = Zenith_ComponentMetaRegistry::Get();
 
 	// Snapshot entity IDs before iteration - OnFixedUpdate may create/destroy entities
-	Zenith_Vector<Zenith_EntityID> xEntityIDs;
-	xEntityIDs.Reserve(m_xActiveEntities.GetSize());
-	for (u_int u = 0; u < m_xActiveEntities.GetSize(); ++u)
-	{
-		xEntityIDs.PushBack(m_xActiveEntities.Get(u));
-	}
+	Zenith_Vector<Zenith_EntityID> xEntityIDs = SnapshotActiveEntities();
 
 	for (u_int u = 0; u < xEntityIDs.GetSize(); ++u)
 	{
@@ -830,28 +831,20 @@ Zenith_SceneData::PendingStartResult Zenith_SceneData::ProcessSinglePendingStart
 {
 	if (xEntityID.m_uIndex >= s_axEntitySlots.GetSize()) return PendingStartResult::SKIP;
 	Zenith_EntitySlot& xSlot = s_axEntitySlots.Get(xEntityID.m_uIndex);
-	if (!xSlot.m_bPendingStart) return PendingStartResult::SKIP;
+	if (!xSlot.IsPendingStart()) return PendingStartResult::SKIP;
 
-	// Validate entity still owns this slot before clearing the flag.
+	// Validate entity still owns this slot.
 	// If the slot was freed and reused by a new entity, the new entity's
-	// m_bPendingStart flag must not be cleared by the stale snapshot entry.
-	if (!xSlot.m_bOccupied || xSlot.m_uGeneration != xEntityID.m_uGeneration)
+	// lifecycle state must not be modified by the stale snapshot entry.
+	if (xSlot.m_uGeneration != xEntityID.m_uGeneration)
 		return PendingStartResult::SKIP;
-
-	if (IsEntityStarted(xEntityID))
-	{
-		// Entity was already started (e.g., by SetEnabled path) - clear the stale pending flag
-		xSlot.m_bPendingStart = false;
-		Zenith_Assert(m_uPendingStartCount > 0, "PendingStartCount underflow in DispatchPendingStarts");
-		m_uPendingStartCount--;
-		return PendingStartResult::CLEARED;
-	}
 
 	// Skip entities marked for deferred destruction (Unity parity:
 	// Destroy() in Awake prevents Start from ever firing)
 	if (IsMarkedForDestruction(xEntityID))
 	{
-		xSlot.m_bPendingStart = false;
+		// Revert lifecycle (ReleaseSlot will reset to FREE during destruction)
+		xSlot.RevertFromPendingStart();
 		Zenith_Assert(m_uPendingStartCount > 0, "PendingStartCount underflow in DispatchPendingStarts (destroyed entity)");
 		m_uPendingStartCount--;
 		return PendingStartResult::CLEARED;
@@ -864,18 +857,28 @@ Zenith_SceneData::PendingStartResult Zenith_SceneData::ProcessSinglePendingStart
 	}
 
 	xRegistry.DispatchOnStart(xEntity);
-	MarkEntityStarted(xEntityID);
 
 	// If entity was moved to another scene during Start,
-	// MoveEntityInternal already transferred the pending start count.
-	// Don't double-decrement. Leave m_bPendingStart true so the target
-	// scene clears it via the "already started" path.
+	// MoveEntityInternal already decremented our count and transferred
+	// the pending start to the target. Clean up the target's bookkeeping
+	// since Start was already dispatched by this (source) scene.
 	if (xSlot.m_iSceneHandle != m_iHandle)
 	{
+		Zenith_SceneData* pxTargetData = Zenith_SceneManager::GetSceneDataByHandle(xSlot.m_iSceneHandle);
+		if (pxTargetData)
+		{
+			// Remove from target's pending list and decrement count
+			// (don't use CancelPendingStart - lifecycle is still PENDING_START and
+			// we want MarkEntityStarted to handle the transition, not revert to AWOKEN)
+			Zenith_Assert(pxTargetData->m_uPendingStartCount > 0, "PendingStartCount underflow in target scene after Start-during-move");
+			pxTargetData->m_uPendingStartCount--;
+			pxTargetData->m_axPendingStartEntities.EraseValue(xEntityID);
+		}
+		MarkEntityStarted(xEntityID);
 		return PendingStartResult::CLEARED;
 	}
 
-	xSlot.m_bPendingStart = false;
+	MarkEntityStarted(xEntityID);
 	Zenith_Assert(m_uPendingStartCount > 0, "PendingStartCount underflow in DispatchPendingStarts");
 	m_uPendingStartCount--;
 	return PendingStartResult::CLEARED;

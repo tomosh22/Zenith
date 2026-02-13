@@ -101,10 +101,9 @@ inline const char* Zenith_GetLogCategoryName(Zenith_LogCategory eCategory)
 #ifdef ZENITH_LOG
 
 #ifdef ZENITH_TOOLS
-// Forward declare editor console function
 void Zenith_EditorAddLogMessage(const char* szMessage, int eLevel, Zenith_LogCategory eCategory);
+#endif
 
-// Helper to format and send to both printf and editor console
 inline void Zenith_LogImpl(Zenith_LogCategory eCategory, int eLevel, const char* szFormat, ...)
 {
 	char buffer[2048];
@@ -120,17 +119,16 @@ inline void Zenith_LogImpl(Zenith_LogCategory eCategory, int eLevel, const char*
 
 	printf("%s\n", prefixedBuffer);
 	fflush(stdout);
+#ifdef ZENITH_TOOLS
 	Zenith_EditorAddLogMessage(prefixedBuffer, eLevel, eCategory);
+#else
+	(void)eLevel;
+#endif
 }
 
 #define Zenith_Log(eCategory, ...) Zenith_LogImpl(eCategory, 0, __VA_ARGS__)
 #define Zenith_Error(eCategory, ...) Zenith_LogImpl(eCategory, 2, __VA_ARGS__)
 #define Zenith_Warning(eCategory, ...) Zenith_LogImpl(eCategory, 1, __VA_ARGS__)
-#else
-#define Zenith_Log(eCategory, ...) { printf("[%s] ", Zenith_GetLogCategoryName(eCategory)); printf(__VA_ARGS__); printf("\n"); }
-#define Zenith_Error(eCategory, ...) { printf("[%s] ", Zenith_GetLogCategoryName(eCategory)); printf(__VA_ARGS__); printf("\n"); }
-#define Zenith_Warning(eCategory, ...) { printf("[%s] ", Zenith_GetLogCategoryName(eCategory)); printf(__VA_ARGS__); printf("\n"); }
-#endif
 
 #else
 #define Zenith_Log(eCategory, ...)

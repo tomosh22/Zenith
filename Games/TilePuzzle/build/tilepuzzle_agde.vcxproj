@@ -145,6 +145,7 @@
   <ItemGroup>
     <ClInclude Include="..\Components\TilePuzzle_Behaviour.h" />
     <ClInclude Include="..\Components\TilePuzzle_LevelGenerator.h" />
+    <ClInclude Include="..\Components\TilePuzzle_SaveData.h" />
     <ClInclude Include="..\Components\TilePuzzle_Solver.h" />
     <ClInclude Include="..\Components\TilePuzzle_Types.h" />
   </ItemGroup>

@@ -17,7 +17,7 @@ Zenith_SceneData* Zenith_Entity::GetSceneData() const
 	if (m_xEntityID.m_uIndex >= Zenith_SceneData::s_axEntitySlots.GetSize()) return nullptr;
 
 	const Zenith_SceneData::Zenith_EntitySlot& xSlot = Zenith_SceneData::s_axEntitySlots.Get(m_xEntityID.m_uIndex);
-	if (!xSlot.m_bOccupied || xSlot.m_uGeneration != m_xEntityID.m_uGeneration)
+	if (!xSlot.IsOccupied() || xSlot.m_uGeneration != m_xEntityID.m_uGeneration)
 		return nullptr;
 
 	// Fast path: compare cached int handle (never dereference stale pointer)
@@ -46,7 +46,7 @@ Zenith_Scene Zenith_Entity::GetScene() const
 	if (m_xEntityID.m_uIndex >= Zenith_SceneData::s_axEntitySlots.GetSize()) return Zenith_Scene::INVALID_SCENE;
 
 	const Zenith_SceneData::Zenith_EntitySlot& xSlot = Zenith_SceneData::s_axEntitySlots.Get(m_xEntityID.m_uIndex);
-	if (!xSlot.m_bOccupied || xSlot.m_uGeneration != m_xEntityID.m_uGeneration)
+	if (!xSlot.IsOccupied() || xSlot.m_uGeneration != m_xEntityID.m_uGeneration)
 		return Zenith_Scene::INVALID_SCENE;
 
 	// Use the global slot's current scene handle (survives cross-scene moves)
@@ -98,34 +98,46 @@ Zenith_Entity::Zenith_Entity(Zenith_SceneData* pxSceneData, const std::string& s
 
 void Zenith_Entity::PropagateHierarchyEnabled(Zenith_SceneData* pxSceneData, Zenith_EntityID xParentID, bool bBecomingActive)
 {
-	Zenith_Entity xParent = pxSceneData->GetEntity(xParentID);
-	Zenith_Vector<Zenith_EntityID> axChildIDs = xParent.GetChildEntityIDs();
-	for (u_int i = 0; i < axChildIDs.GetSize(); ++i)
+	// Iterative tree walk using explicit stack (avoids stack overflow on deep hierarchies)
+	Zenith_Vector<Zenith_EntityID> axStack;
+	axStack.PushBack(xParentID);
+
+	while (axStack.GetSize() > 0)
 	{
-		if (!pxSceneData->EntityExists(axChildIDs.Get(i))) continue;
+		Zenith_EntityID xCurrentID = axStack.GetBack();
+		axStack.PopBack();
 
-		Zenith_Entity xChild = pxSceneData->GetEntity(axChildIDs.Get(i));
-		if (!xChild.IsEnabled()) continue;  // Only propagate to children whose activeSelf is true
+		Zenith_Entity xCurrent = pxSceneData->GetEntity(xCurrentID);
+		const Zenith_Vector<Zenith_EntityID>& axChildIDs = xCurrent.GetChildEntityIDs();
 
-		if (bBecomingActive)
+		for (u_int i = 0; i < axChildIDs.GetSize(); ++i)
 		{
-			if (!pxSceneData->IsOnEnableDispatched(axChildIDs.Get(i)))
-			{
-				Zenith_ComponentMetaRegistry::Get().DispatchOnEnable(xChild);
-				pxSceneData->SetOnEnableDispatched(axChildIDs.Get(i), true);
-			}
-		}
-		else
-		{
-			if (pxSceneData->IsOnEnableDispatched(axChildIDs.Get(i)))
-			{
-				Zenith_ComponentMetaRegistry::Get().DispatchOnDisable(xChild);
-				pxSceneData->SetOnEnableDispatched(axChildIDs.Get(i), false);
-			}
-		}
+			Zenith_EntityID xChildID = axChildIDs.Get(i);
+			if (!pxSceneData->EntityExists(xChildID)) continue;
 
-		// Recurse to grandchildren
-		PropagateHierarchyEnabled(pxSceneData, axChildIDs.Get(i), bBecomingActive);
+			Zenith_Entity xChild = pxSceneData->GetEntity(xChildID);
+			if (!xChild.IsEnabled()) continue;  // Only propagate to children whose activeSelf is true
+
+			if (bBecomingActive)
+			{
+				if (!pxSceneData->IsOnEnableDispatched(xChildID))
+				{
+					Zenith_ComponentMetaRegistry::Get().DispatchOnEnable(xChild);
+					pxSceneData->SetOnEnableDispatched(xChildID, true);
+				}
+			}
+			else
+			{
+				if (pxSceneData->IsOnEnableDispatched(xChildID))
+				{
+					Zenith_ComponentMetaRegistry::Get().DispatchOnDisable(xChild);
+					pxSceneData->SetOnEnableDispatched(xChildID, false);
+				}
+			}
+
+			// Push child for processing its subtree
+			axStack.PushBack(xChildID);
+		}
 	}
 }
 
@@ -188,7 +200,7 @@ bool Zenith_Entity::IsActiveInHierarchy() const
 	{
 		if (xCurrentParent.m_uIndex >= Zenith_SceneData::s_axEntitySlots.GetSize()) { bActive = false; break; }
 		const Zenith_SceneData::Zenith_EntitySlot& xParentSlot = Zenith_SceneData::s_axEntitySlots.Get(xCurrentParent.m_uIndex);
-		if (!xParentSlot.m_bOccupied || xParentSlot.m_uGeneration != xCurrentParent.m_uGeneration) { bActive = false; break; }
+		if (!xParentSlot.IsOccupied() || xParentSlot.m_uGeneration != xCurrentParent.m_uGeneration) { bActive = false; break; }
 		if (!xParentSlot.m_bEnabled) { bActive = false; break; }
 
 		// Get parent's parent via transform component
@@ -199,6 +211,40 @@ bool Zenith_Entity::IsActiveInHierarchy() const
 	xSlot.m_bActiveInHierarchy = bActive;
 	xSlot.m_bActiveInHierarchyDirty = false;
 	return bActive;
+}
+
+void Zenith_Entity::DispatchEnableLifecycle(Zenith_SceneData* pxSceneData)
+{
+	Zenith_SceneData::Zenith_EntitySlot& xSlot = Zenith_SceneData::s_axEntitySlots.Get(m_xEntityID.m_uIndex);
+	bool bActiveInHierarchy = IsActiveInHierarchy();
+	if (bActiveInHierarchy)
+	{
+		Zenith_ComponentMetaRegistry::Get().DispatchOnEnable(*this);
+		xSlot.m_bOnEnableDispatched = true;
+
+		// Unity behavior: Start() is called on the first frame AFTER the entity becomes active,
+		// not in the same call stack as SetActive(true). Defer to DispatchPendingStarts.
+		if (!pxSceneData->IsEntityStarted(m_xEntityID))
+		{
+			pxSceneData->MarkEntityPendingStart(m_xEntityID);
+		}
+	}
+
+	// Propagate to children whose activeSelf is true (Unity's activeInHierarchy behavior)
+	PropagateHierarchyEnabled(pxSceneData, m_xEntityID, bActiveInHierarchy);
+}
+
+void Zenith_Entity::DispatchDisableLifecycle(Zenith_SceneData* pxSceneData)
+{
+	Zenith_SceneData::Zenith_EntitySlot& xSlot = Zenith_SceneData::s_axEntitySlots.Get(m_xEntityID.m_uIndex);
+	if (xSlot.m_bOnEnableDispatched)
+	{
+		Zenith_ComponentMetaRegistry::Get().DispatchOnDisable(*this);
+		xSlot.m_bOnEnableDispatched = false;
+	}
+
+	// When a parent is disabled, children that were activeInHierarchy receive OnDisable.
+	PropagateHierarchyEnabled(pxSceneData, m_xEntityID, false);
 }
 
 void Zenith_Entity::SetEnabled(bool bEnabled)
@@ -216,42 +262,15 @@ void Zenith_Entity::SetEnabled(bool bEnabled)
 	xSlot.m_bEnabled = bEnabled;
 	pxSceneData->MarkDirty();
 
-	// Invalidate cached activeInHierarchy for this entity and all descendants
 	Zenith_SceneData::InvalidateActiveInHierarchyCache(m_xEntityID);
 
-	// Dispatch OnEnable or OnDisable to all components
-	// Unity behavior: OnEnable only fires if the entity is actually active in the hierarchy
-	// (i.e. all ancestors are also enabled). Setting activeSelf=true on a child under a
-	// disabled parent should NOT dispatch OnEnable.
 	if (bEnabled)
 	{
-		bool bActiveInHierarchy = IsActiveInHierarchy();
-		if (bActiveInHierarchy)
-		{
-			Zenith_ComponentMetaRegistry::Get().DispatchOnEnable(*this);
-			xSlot.m_bOnEnableDispatched = true;
-
-			// Unity behavior: Start() is called on the first frame AFTER the entity becomes active,
-			// not in the same call stack as SetActive(true). Defer to DispatchPendingStarts.
-			if (!pxSceneData->IsEntityStarted(m_xEntityID))
-			{
-				pxSceneData->MarkEntityPendingStart(m_xEntityID);
-			}
-		}
-
-		// Propagate to children whose activeSelf is true (Unity's activeInHierarchy behavior)
-		PropagateHierarchyEnabled(pxSceneData, m_xEntityID, bActiveInHierarchy);
+		DispatchEnableLifecycle(pxSceneData);
 	}
 	else
 	{
-		if (xSlot.m_bOnEnableDispatched)
-		{
-			Zenith_ComponentMetaRegistry::Get().DispatchOnDisable(*this);
-			xSlot.m_bOnEnableDispatched = false;
-		}
-
-		// When a parent is disabled, children that were activeInHierarchy receive OnDisable.
-		PropagateHierarchyEnabled(pxSceneData, m_xEntityID, false);
+		DispatchDisableLifecycle(pxSceneData);
 	}
 }
 

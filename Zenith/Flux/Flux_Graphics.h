@@ -14,29 +14,39 @@ public:
 
 	static void UploadFrameConstants();
 
+	//----------------------------------------------------------------------
+	// Render Targets
+	//----------------------------------------------------------------------
 	static Flux_TargetSetup s_xMRTTarget;
 	static Flux_TargetSetup s_xFinalRenderTarget;
 	static Flux_TargetSetup s_xFinalRenderTarget_NoDepth;
 	static Flux_TargetSetup s_xNullTargetSetup;  // For compute passes without render targets
-
 	static struct Flux_RenderAttachment s_xDepthBuffer;
 
+	//----------------------------------------------------------------------
+	// Samplers
+	//----------------------------------------------------------------------
 	static Flux_Sampler s_xRepeatSampler;
 	static Flux_Sampler s_xClampSampler;
 
+	//----------------------------------------------------------------------
+	// Shared Geometry & Buffers
+	//----------------------------------------------------------------------
 	static Flux_MeshGeometry s_xQuadMesh;
-
 	static Flux_DynamicConstantBuffer s_xFrameConstantsBuffer;
 
-	// Global textures
+	//----------------------------------------------------------------------
+	// Fallback Assets (engine defaults for missing/loading assets)
+	//----------------------------------------------------------------------
 	static class Zenith_TextureAsset* s_pxWhiteTexture;
 	static class Zenith_TextureAsset* s_pxBlackTexture;
 	static class Zenith_TextureAsset* s_pxGridTexture;
-
 	static Flux_MeshGeometry s_xBlankMesh;
 	static class Zenith_MaterialAsset* s_pxBlankMaterial;
 
-	// Global engine textures (set during initialization in Zenith_Main.cpp)
+	//----------------------------------------------------------------------
+	// Scene Textures (set during initialization in Zenith_Main.cpp)
+	//----------------------------------------------------------------------
 	static class Zenith_TextureAsset* s_pxCubemapTexture;
 	static class Zenith_TextureAsset* s_pxWaterNormalTexture;
 
@@ -86,5 +96,5 @@ public:
 	};
 	static FrameConstants s_xFrameConstants;
 private:
-	
+	static bool BuildCameraMatrices(FrameConstants& xConstants);
 };

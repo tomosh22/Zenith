@@ -850,6 +850,9 @@
     <ClCompile Include="..\Zenith\Input\Zenith_Input.cpp">
       <Filter>Input</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\Input\Zenith_TouchInput.cpp">
+      <Filter>Input</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Maths\Zenith_Maths.cpp">
       <Filter>Maths</Filter>
     </ClCompile>
@@ -864,6 +867,9 @@
     </ClCompile>
     <ClCompile Include="..\Zenith\Profiling\Zenith_Profiling.cpp">
       <Filter>Profiling</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\SaveData\Zenith_SaveData.cpp">
+      <Filter>SaveData</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\TaskSystem\Zenith_TaskSystem.cpp">
       <Filter>TaskSystem</Filter>
@@ -3681,6 +3687,9 @@
     <ClInclude Include="..\Zenith\Input\Zenith_KeyCodes.h">
       <Filter>Input</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Input\Zenith_TouchInput.h">
+      <Filter>Input</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Maths\Zenith_FrustumCulling.h">
       <Filter>Maths</Filter>
     </ClInclude>
@@ -3704,6 +3713,9 @@
     </ClInclude>
     <ClInclude Include="..\Zenith\Profiling\Zenith_Profiling.h">
       <Filter>Profiling</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\SaveData\Zenith_SaveData.h">
+      <Filter>SaveData</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\TaskSystem\Zenith_TaskSystem.h">
       <Filter>TaskSystem</Filter>
@@ -4126,6 +4138,9 @@
     </Filter>
     <Filter Include="Profiling">
       <UniqueIdentifier>{2f6c221a-4713-9a80-185b-8567ba1fc5a7}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="SaveData">
+      <UniqueIdentifier>{267fe3cc-2234-0123-e969-645a9b5677be}</UniqueIdentifier>
     </Filter>
     <Filter Include="TaskSystem">
       <UniqueIdentifier>{4cc59397-cf4e-fb00-80ea-d1b43e569737}</UniqueIdentifier>

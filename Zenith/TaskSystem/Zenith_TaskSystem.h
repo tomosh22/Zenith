@@ -160,5 +160,11 @@ public:
 	static void SubmitTaskArray(Zenith_TaskArray* const pxTaskArray);
 
 private:
+	// Atomic CAS to claim a task for submission. Returns false if already submitted.
+	static bool TryClaimTask(Zenith_Task* pxTask, const char* szCallerName);
+
+	// Enqueue a task pointer uCount times under the queue lock, then signal workers.
+	// Returns the number of tasks successfully enqueued.
+	static u_int EnqueueAndSignal(Zenith_Task* pxTask, u_int uCount);
 };
 
