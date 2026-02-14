@@ -22,6 +22,8 @@
 #include "UI/Zenith_UIRect.h"
 #include "SaveData/Zenith_SaveData.h"
 
+#include <unordered_set>
+
 // ============================================================================
 // TilePuzzle Resources - Global access for behaviours
 // ============================================================================
@@ -51,9 +53,188 @@ namespace TilePuzzle
 	Zenith_Prefab* g_pxCellPrefab = nullptr;
 	Zenith_Prefab* g_pxShapeCubePrefab = nullptr;
 	Zenith_Prefab* g_pxCatPrefab = nullptr;
+
+	// Pre-generated merged meshes for each shape type
+	Flux_MeshGeometry* g_apxShapeMeshes[TILEPUZZLE_SHAPE_COUNT] = {};
 }
 
 static bool s_bResourcesInitialized = false;
+
+// ============================================================================
+// Merged Polyomino Mesh Generation
+// ============================================================================
+static void GenerateShapeMesh(const TilePuzzleShapeDefinition& xDef, Flux_MeshGeometry& xGeometryOut)
+{
+	static constexpr float fBorder = 0.05f;
+	static constexpr float fHalf = 0.5f;
+	static constexpr float fHalfHeight = 0.5f;
+
+	const std::vector<TilePuzzleCellOffset>& axCells = xDef.axCells;
+	uint32_t uNumCells = static_cast<uint32_t>(axCells.size());
+
+	// Build occupancy set for O(1) neighbor lookup
+	// Key = (y+128)*256 + (x+128) to handle negative offsets
+	std::unordered_set<uint32_t> xOccupied;
+	for (uint32_t c = 0; c < uNumCells; ++c)
+	{
+		uint32_t uKey = (static_cast<uint32_t>(axCells[c].iY + 128)) * 256
+			+ static_cast<uint32_t>(axCells[c].iX + 128);
+		xOccupied.insert(uKey);
+	}
+
+	auto IsOccupied = [&](int32_t iX, int32_t iY) -> bool
+	{
+		uint32_t uKey = (static_cast<uint32_t>(iY + 128)) * 256
+			+ static_cast<uint32_t>(iX + 128);
+		return xOccupied.count(uKey) > 0;
+	};
+
+	// Count exterior faces: side faces only where no neighbor, top/bottom always
+	uint32_t uNumExteriorFaces = 0;
+	for (uint32_t c = 0; c < uNumCells; ++c)
+	{
+		int32_t iCX = axCells[c].iX;
+		int32_t iCY = axCells[c].iY;
+
+		if (!IsOccupied(iCX + 1, iCY)) uNumExteriorFaces++;
+		if (!IsOccupied(iCX - 1, iCY)) uNumExteriorFaces++;
+		if (!IsOccupied(iCX, iCY + 1)) uNumExteriorFaces++;
+		if (!IsOccupied(iCX, iCY - 1)) uNumExteriorFaces++;
+		uNumExteriorFaces += 2; // top + bottom always
+	}
+
+	uint32_t uNumVerts = uNumExteriorFaces * 4;
+	uint32_t uNumIndices = uNumExteriorFaces * 6;
+
+	xGeometryOut.m_uNumVerts = uNumVerts;
+	xGeometryOut.m_uNumIndices = uNumIndices;
+
+	xGeometryOut.m_pxPositions = static_cast<Zenith_Maths::Vector3*>(
+		Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector3)));
+	xGeometryOut.m_pxUVs = static_cast<Zenith_Maths::Vector2*>(
+		Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector2)));
+	xGeometryOut.m_pxNormals = static_cast<Zenith_Maths::Vector3*>(
+		Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector3)));
+	xGeometryOut.m_pxTangents = static_cast<Zenith_Maths::Vector3*>(
+		Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector3)));
+	xGeometryOut.m_pxBitangents = static_cast<Zenith_Maths::Vector3*>(
+		Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector3)));
+	xGeometryOut.m_pxColors = static_cast<Zenith_Maths::Vector4*>(
+		Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector4)));
+	xGeometryOut.m_puIndices = static_cast<Flux_MeshGeometry::IndexType*>(
+		Zenith_MemoryManagement::Allocate(uNumIndices * sizeof(Flux_MeshGeometry::IndexType)));
+
+	uint32_t uVert = 0;
+	uint32_t uIdx = 0;
+
+	// Add a quad face (4 verts, 6 indices) with CCW winding matching GenerateUnitCube
+	auto AddFace = [&](
+		const Zenith_Maths::Vector3& p0, const Zenith_Maths::Vector3& p1,
+		const Zenith_Maths::Vector3& p2, const Zenith_Maths::Vector3& p3,
+		const Zenith_Maths::Vector3& xNormal,
+		const Zenith_Maths::Vector3& xTangent,
+		const Zenith_Maths::Vector3& xBitangent)
+	{
+		uint32_t uBase = uVert;
+
+		Zenith_Maths::Vector3 apPositions[4] = { p0, p1, p2, p3 };
+		Zenith_Maths::Vector2 axUVs[4] = { {0.f, 0.f}, {1.f, 0.f}, {0.f, 1.f}, {1.f, 1.f} };
+
+		for (uint32_t v = 0; v < 4; ++v)
+		{
+			xGeometryOut.m_pxPositions[uVert] = apPositions[v];
+			xGeometryOut.m_pxNormals[uVert] = xNormal;
+			xGeometryOut.m_pxTangents[uVert] = xTangent;
+			xGeometryOut.m_pxBitangents[uVert] = xBitangent;
+			xGeometryOut.m_pxUVs[uVert] = axUVs[v];
+			xGeometryOut.m_pxColors[uVert] = { 1.f, 1.f, 1.f, 1.f };
+			uVert++;
+		}
+
+		xGeometryOut.m_puIndices[uIdx++] = uBase + 0;
+		xGeometryOut.m_puIndices[uIdx++] = uBase + 2;
+		xGeometryOut.m_puIndices[uIdx++] = uBase + 1;
+		xGeometryOut.m_puIndices[uIdx++] = uBase + 1;
+		xGeometryOut.m_puIndices[uIdx++] = uBase + 2;
+		xGeometryOut.m_puIndices[uIdx++] = uBase + 3;
+	};
+
+	for (uint32_t c = 0; c < uNumCells; ++c)
+	{
+		float fCX = static_cast<float>(axCells[c].iX);
+		float fCZ = static_cast<float>(axCells[c].iY);
+		int32_t iCX = axCells[c].iX;
+		int32_t iCY = axCells[c].iY;
+
+		bool bHasRight = IsOccupied(iCX + 1, iCY);
+		bool bHasLeft = IsOccupied(iCX - 1, iCY);
+		bool bHasFront = IsOccupied(iCX, iCY + 1); // +Z
+		bool bHasBack = IsOccupied(iCX, iCY - 1);  // -Z
+
+		// Border-adjusted extents: internal edges at exact boundary, external edges inset
+		float fMinX = fCX - fHalf + (bHasLeft ? 0.f : fBorder);
+		float fMaxX = fCX + fHalf - (bHasRight ? 0.f : fBorder);
+		float fMinZ = fCZ - fHalf + (bHasBack ? 0.f : fBorder);
+		float fMaxZ = fCZ + fHalf - (bHasFront ? 0.f : fBorder);
+		float fMinY = -fHalfHeight;
+		float fMaxY = fHalfHeight;
+
+		// +X face (right side) - only if no neighbor
+		if (!bHasRight)
+		{
+			AddFace(
+				{ fMaxX, fMinY, fMaxZ }, { fMaxX, fMinY, fMinZ },
+				{ fMaxX, fMaxY, fMaxZ }, { fMaxX, fMaxY, fMinZ },
+				{ 1.f, 0.f, 0.f }, { 0.f, 0.f, -1.f }, { 0.f, 1.f, 0.f }
+			);
+		}
+		// -X face (left side)
+		if (!bHasLeft)
+		{
+			AddFace(
+				{ fMinX, fMinY, fMinZ }, { fMinX, fMinY, fMaxZ },
+				{ fMinX, fMaxY, fMinZ }, { fMinX, fMaxY, fMaxZ },
+				{ -1.f, 0.f, 0.f }, { 0.f, 0.f, 1.f }, { 0.f, 1.f, 0.f }
+			);
+		}
+		// +Z face (front, grid Y+1)
+		if (!bHasFront)
+		{
+			AddFace(
+				{ fMinX, fMinY, fMaxZ }, { fMaxX, fMinY, fMaxZ },
+				{ fMinX, fMaxY, fMaxZ }, { fMaxX, fMaxY, fMaxZ },
+				{ 0.f, 0.f, 1.f }, { 1.f, 0.f, 0.f }, { 0.f, 1.f, 0.f }
+			);
+		}
+		// -Z face (back, grid Y-1)
+		if (!bHasBack)
+		{
+			AddFace(
+				{ fMaxX, fMinY, fMinZ }, { fMinX, fMinY, fMinZ },
+				{ fMaxX, fMaxY, fMinZ }, { fMinX, fMaxY, fMinZ },
+				{ 0.f, 0.f, -1.f }, { -1.f, 0.f, 0.f }, { 0.f, 1.f, 0.f }
+			);
+		}
+		// +Y face (top) - always exterior
+		AddFace(
+			{ fMinX, fMaxY, fMaxZ }, { fMaxX, fMaxY, fMaxZ },
+			{ fMinX, fMaxY, fMinZ }, { fMaxX, fMaxY, fMinZ },
+			{ 0.f, 1.f, 0.f }, { 1.f, 0.f, 0.f }, { 0.f, 0.f, -1.f }
+		);
+		// -Y face (bottom) - always exterior
+		AddFace(
+			{ fMinX, fMinY, fMinZ }, { fMaxX, fMinY, fMinZ },
+			{ fMinX, fMinY, fMaxZ }, { fMaxX, fMinY, fMaxZ },
+			{ 0.f, -1.f, 0.f }, { 1.f, 0.f, 0.f }, { 0.f, 0.f, 1.f }
+		);
+	}
+
+	xGeometryOut.GenerateLayoutAndVertexData();
+	Flux_MemoryManager::InitialiseVertexBuffer(
+		xGeometryOut.GetVertexData(), xGeometryOut.GetVertexDataSize(), xGeometryOut.m_xVertexBuffer);
+	Flux_MemoryManager::InitialiseIndexBuffer(
+		xGeometryOut.GetIndexData(), xGeometryOut.GetIndexDataSize(), xGeometryOut.m_xIndexBuffer);
+}
 
 static void InitializeTilePuzzleResources()
 {
@@ -68,6 +249,15 @@ static void InitializeTilePuzzleResources()
 
 	g_pxSphereAsset = Zenith_MeshGeometryAsset::CreateUnitSphere(16);
 	g_pxSphereGeometry = g_pxSphereAsset->GetGeometry();
+
+	// Generate merged polyomino meshes for each shape type
+	for (uint32_t u = 0; u < TILEPUZZLE_SHAPE_COUNT; ++u)
+	{
+		TilePuzzleShapeDefinition xDef = TilePuzzleShapes::GetShape(
+			static_cast<TilePuzzleShapeType>(u), true);
+		g_apxShapeMeshes[u] = new Flux_MeshGeometry();
+		GenerateShapeMesh(xDef, *g_apxShapeMeshes[u]);
+	}
 
 	// Use grid pattern texture with BaseColor for all materials
 	Zenith_TextureAsset* pxGridTex = Flux_Graphics::s_pxGridTexture;

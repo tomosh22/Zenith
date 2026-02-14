@@ -62,6 +62,7 @@ namespace TilePuzzle
 	extern Zenith_Prefab* g_pxCellPrefab;
 	extern Zenith_Prefab* g_pxShapeCubePrefab;
 	extern Zenith_Prefab* g_pxCatPrefab;
+	extern Flux_MeshGeometry* g_apxShapeMeshes[TILEPUZZLE_SHAPE_COUNT];
 }
 
 // Forward declaration for level select button user data
@@ -907,7 +908,7 @@ private:
 		m_axFloorEntityIDs.clear();
 		for (auto& xShape : m_xCurrentLevel.axShapes)
 		{
-			xShape.axCubeEntityIDs.clear();
+			xShape.xEntityID = Zenith_EntityID();
 		}
 		for (auto& xCat : m_xCurrentLevel.axCats)
 		{
@@ -1332,22 +1333,18 @@ private:
 			return;
 
 		TilePuzzleShapeInstance& xShape = m_xCurrentLevel.axShapes[iShapeIndex];
-		for (size_t i = 0; i < xShape.axCubeEntityIDs.size(); ++i)
-		{
-			if (!pxSceneData->EntityExists(xShape.axCubeEntityIDs[i]))
-				continue;
+		if (!pxSceneData->EntityExists(xShape.xEntityID))
+			return;
 
-			Zenith_Entity xCube = pxSceneData->GetEntity(xShape.axCubeEntityIDs[i]);
-			if (!xCube.IsValid())
-				continue;
+		Zenith_Entity xEntity = pxSceneData->GetEntity(xShape.xEntityID);
+		if (!xEntity.IsValid())
+			return;
 
-			const TilePuzzleCellOffset& xOffset = xShape.pxDefinition->axCells[i];
-			float fX = static_cast<float>(xShape.iOriginX + xOffset.iX);
-			float fY = static_cast<float>(xShape.iOriginY + xOffset.iY);
-
-			Zenith_TransformComponent& xTransform = xCube.GetComponent<Zenith_TransformComponent>();
-			xTransform.SetPosition(GridToWorld(fX, fY, s_fShapeHeight));
-		}
+		Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
+		xTransform.SetPosition(GridToWorld(
+			static_cast<float>(xShape.iOriginX),
+			static_cast<float>(xShape.iOriginY),
+			s_fShapeHeight));
 	}
 
 	// ========================================================================
@@ -1389,32 +1386,29 @@ private:
 			}
 		}
 
-		// Create shape visuals
+		// Create shape visuals (one entity per shape with merged mesh)
 		for (auto& xShape : m_xCurrentLevel.axShapes)
 		{
-			xShape.axCubeEntityIDs.clear();
-
 			Zenith_MaterialAsset* pxMaterial = m_xBlockerMaterial.Get();
 			if (xShape.pxDefinition->bDraggable && xShape.eColor < TILEPUZZLE_COLOR_COUNT)
 			{
 				pxMaterial = m_axShapeMaterials[xShape.eColor].Get();
 			}
 
-			for (const auto& xOffset : xShape.pxDefinition->axCells)
-			{
-				float fX = static_cast<float>(xShape.iOriginX + xOffset.iX);
-				float fY = static_cast<float>(xShape.iOriginY + xOffset.iY);
+			Flux_MeshGeometry* pxShapeMesh = TilePuzzle::g_apxShapeMeshes[xShape.pxDefinition->eType];
 
-				Zenith_Entity xCubeEntity = TilePuzzle::g_pxShapeCubePrefab->Instantiate(pxSceneData, "ShapeCube");
-				Zenith_TransformComponent& xTransform = xCubeEntity.GetComponent<Zenith_TransformComponent>();
-				xTransform.SetPosition(GridToWorld(fX, fY, s_fShapeHeight));
-				xTransform.SetScale(Zenith_Maths::Vector3(s_fCellSize * 0.85f, s_fShapeHeight * 2.0f, s_fCellSize * 0.85f));
+			Zenith_Entity xShapeEntity = TilePuzzle::g_pxShapeCubePrefab->Instantiate(pxSceneData, "Shape");
+			Zenith_TransformComponent& xTransform = xShapeEntity.GetComponent<Zenith_TransformComponent>();
+			xTransform.SetPosition(GridToWorld(
+				static_cast<float>(xShape.iOriginX),
+				static_cast<float>(xShape.iOriginY),
+				s_fShapeHeight));
+			xTransform.SetScale(Zenith_Maths::Vector3(s_fCellSize, s_fShapeHeight * 2.0f, s_fCellSize));
 
-				Zenith_ModelComponent& xModel = xCubeEntity.AddComponent<Zenith_ModelComponent>();
-				xModel.AddMeshEntry(*m_pxCubeGeometry, *pxMaterial);
+			Zenith_ModelComponent& xModel = xShapeEntity.AddComponent<Zenith_ModelComponent>();
+			xModel.AddMeshEntry(*pxShapeMesh, *pxMaterial);
 
-				xShape.axCubeEntityIDs.push_back(xCubeEntity.GetEntityID());
-			}
+			xShape.xEntityID = xShapeEntity.GetEntityID();
 		}
 
 		// Create cat visuals
@@ -1441,28 +1435,18 @@ private:
 		if (!pxSceneData)
 			return;
 
-		// Update shape positions (for keyboard sliding animation)
+		// Update shape position (for keyboard sliding animation)
 		if (m_eState == TILEPUZZLE_STATE_SHAPE_SLIDING && m_iSlidingShapeIndex >= 0)
 		{
 			TilePuzzleShapeInstance& xShape = m_xCurrentLevel.axShapes[m_iSlidingShapeIndex];
-
 			Zenith_Maths::Vector3 xCurrentPos = m_xSlideStartPos + (m_xSlideEndPos - m_xSlideStartPos) * m_fSlideProgress;
 
-			for (size_t i = 0; i < xShape.axCubeEntityIDs.size(); ++i)
+			if (pxSceneData->EntityExists(xShape.xEntityID))
 			{
-				if (!pxSceneData->EntityExists(xShape.axCubeEntityIDs[i]))
-					continue;
-
-				Zenith_Entity xCube = pxSceneData->GetEntity(xShape.axCubeEntityIDs[i]);
-				if (xCube.IsValid())
+				Zenith_Entity xEntity = pxSceneData->GetEntity(xShape.xEntityID);
+				if (xEntity.IsValid())
 				{
-					const TilePuzzleCellOffset& xOffset = xShape.pxDefinition->axCells[i];
-					Zenith_Maths::Vector3 xCubePos = xCurrentPos;
-					xCubePos.x += xOffset.iX * s_fCellSize;
-					xCubePos.z += xOffset.iY * s_fCellSize;
-
-					Zenith_TransformComponent& xTransform = xCube.GetComponent<Zenith_TransformComponent>();
-					xTransform.SetPosition(xCubePos);
+					xEntity.GetComponent<Zenith_TransformComponent>().SetPosition(xCurrentPos);
 				}
 			}
 		}
@@ -1476,26 +1460,22 @@ private:
 				fLerpFactor = 1.0f;
 
 			TilePuzzleShapeInstance& xShape = m_xCurrentLevel.axShapes[m_iDragShapeIndex];
-			for (size_t i = 0; i < xShape.axCubeEntityIDs.size(); ++i)
+			if (pxSceneData->EntityExists(xShape.xEntityID))
 			{
-				if (!pxSceneData->EntityExists(xShape.axCubeEntityIDs[i]))
-					continue;
+				Zenith_Entity xEntity = pxSceneData->GetEntity(xShape.xEntityID);
+				if (xEntity.IsValid())
+				{
+					Zenith_Maths::Vector3 xTargetPos = GridToWorld(
+						static_cast<float>(xShape.iOriginX),
+						static_cast<float>(xShape.iOriginY),
+						s_fShapeHeight);
 
-				Zenith_Entity xCube = pxSceneData->GetEntity(xShape.axCubeEntityIDs[i]);
-				if (!xCube.IsValid())
-					continue;
+					Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
+					Zenith_Maths::Vector3 xCurrentPos;
+					xTransform.GetPosition(xCurrentPos);
 
-				const TilePuzzleCellOffset& xOffset = xShape.pxDefinition->axCells[i];
-				float fTargetGridX = static_cast<float>(xShape.iOriginX + xOffset.iX);
-				float fTargetGridY = static_cast<float>(xShape.iOriginY + xOffset.iY);
-				Zenith_Maths::Vector3 xTargetPos = GridToWorld(fTargetGridX, fTargetGridY, s_fShapeHeight);
-
-				Zenith_TransformComponent& xTransform = xCube.GetComponent<Zenith_TransformComponent>();
-				Zenith_Maths::Vector3 xCurrentPos;
-				xTransform.GetPosition(xCurrentPos);
-
-				Zenith_Maths::Vector3 xNewPos = glm::mix(xCurrentPos, xTargetPos, fLerpFactor);
-				xTransform.SetPosition(xNewPos);
+					xTransform.SetPosition(glm::mix(xCurrentPos, xTargetPos, fLerpFactor));
+				}
 			}
 		}
 
@@ -1504,26 +1484,22 @@ private:
 		{
 			TilePuzzleShapeInstance& xShape = m_xCurrentLevel.axShapes[m_iDragShapeIndex];
 			bool bReachedTarget = true;
-			for (size_t i = 0; i < xShape.axCubeEntityIDs.size(); ++i)
+
+			if (pxSceneData->EntityExists(xShape.xEntityID))
 			{
-				if (!pxSceneData->EntityExists(xShape.axCubeEntityIDs[i]))
-					continue;
-
-				Zenith_Entity xCube = pxSceneData->GetEntity(xShape.axCubeEntityIDs[i]);
-				if (!xCube.IsValid())
-					continue;
-
-				const TilePuzzleCellOffset& xOffset = xShape.pxDefinition->axCells[i];
-				Zenith_Maths::Vector3 xTargetPos = GridToWorld(
-					static_cast<float>(xShape.iOriginX + xOffset.iX),
-					static_cast<float>(xShape.iOriginY + xOffset.iY), s_fShapeHeight);
-				Zenith_Maths::Vector3 xCurPos;
-				xCube.GetComponent<Zenith_TransformComponent>().GetPosition(xCurPos);
-
-				if (glm::length(xTargetPos - xCurPos) > 0.01f)
+				Zenith_Entity xEntity = pxSceneData->GetEntity(xShape.xEntityID);
+				if (xEntity.IsValid())
 				{
-					bReachedTarget = false;
-					break;
+					Zenith_Maths::Vector3 xTargetPos = GridToWorld(
+						static_cast<float>(xShape.iOriginX),
+						static_cast<float>(xShape.iOriginY), s_fShapeHeight);
+					Zenith_Maths::Vector3 xCurPos;
+					xEntity.GetComponent<Zenith_TransformComponent>().GetPosition(xCurPos);
+
+					if (glm::length(xTargetPos - xCurPos) > 0.01f)
+					{
+						bReachedTarget = false;
+					}
 				}
 			}
 
@@ -1640,14 +1616,12 @@ private:
 				if (xPrevShape.pxDefinition->bDraggable)
 				{
 					Zenith_MaterialAsset* pxNormalMaterial = m_axShapeMaterials[xPrevShape.eColor].Get();
-					for (auto uID : xPrevShape.axCubeEntityIDs)
+					if (pxSceneData->EntityExists(xPrevShape.xEntityID))
 					{
-						if (!pxSceneData->EntityExists(uID))
-							continue;
-						Zenith_Entity xCube = pxSceneData->GetEntity(uID);
-						if (xCube.IsValid() && xCube.HasComponent<Zenith_ModelComponent>())
+						Zenith_Entity xEntity = pxSceneData->GetEntity(xPrevShape.xEntityID);
+						if (xEntity.IsValid() && xEntity.HasComponent<Zenith_ModelComponent>())
 						{
-							Zenith_ModelComponent& xModel = xCube.GetComponent<Zenith_ModelComponent>();
+							Zenith_ModelComponent& xModel = xEntity.GetComponent<Zenith_ModelComponent>();
 							if (xModel.GetNumMeshEntries() > 0)
 							{
 								xModel.GetMaterialHandleAtIndex(0).Set(pxNormalMaterial);
@@ -1665,14 +1639,12 @@ private:
 				if (xShape.pxDefinition->bDraggable)
 				{
 					Zenith_MaterialAsset* pxHighlightMaterial = m_axShapeMaterialsHighlighted[xShape.eColor].Get();
-					for (auto uID : xShape.axCubeEntityIDs)
+					if (pxSceneData->EntityExists(xShape.xEntityID))
 					{
-						if (!pxSceneData->EntityExists(uID))
-							continue;
-						Zenith_Entity xCube = pxSceneData->GetEntity(uID);
-						if (xCube.IsValid() && xCube.HasComponent<Zenith_ModelComponent>())
+						Zenith_Entity xEntity = pxSceneData->GetEntity(xShape.xEntityID);
+						if (xEntity.IsValid() && xEntity.HasComponent<Zenith_ModelComponent>())
 						{
-							Zenith_ModelComponent& xModel = xCube.GetComponent<Zenith_ModelComponent>();
+							Zenith_ModelComponent& xModel = xEntity.GetComponent<Zenith_ModelComponent>();
 							if (xModel.GetNumMeshEntries() > 0)
 							{
 								xModel.GetMaterialHandleAtIndex(0).Set(pxHighlightMaterial);
