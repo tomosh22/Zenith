@@ -194,6 +194,27 @@ public:
 	}
 
 private:
+	/**
+	 * IsSameColorCatAdjacent - Check if placing a cat at (iX, iY) with the given color
+	 * would be adjacent (including diagonals) to any existing cat of the same color.
+	 */
+	static bool IsSameColorCatAdjacent(
+		const std::vector<TilePuzzleCatData>& axCats,
+		TilePuzzleColor eColor,
+		int32_t iX, int32_t iY)
+	{
+		for (size_t i = 0; i < axCats.size(); ++i)
+		{
+			if (axCats[i].eColor != eColor)
+				continue;
+			int32_t iDX = axCats[i].iGridX - iX;
+			int32_t iDY = axCats[i].iGridY - iY;
+			if (iDX >= -1 && iDX <= 1 && iDY >= -1 && iDY <= 1)
+				return true;
+		}
+		return false;
+	}
+
 	// Static shape definitions that persist during level lifetime
 	static Zenith_Vector<TilePuzzleShapeDefinition>& GetShapeDefinitions()
 	{
@@ -365,6 +386,8 @@ private:
 					uint32_t uIdx = y * xLevelOut.uGridWidth + x;
 					if (abOccupied[uIdx])
 						continue;
+					if (IsSameColorCatAdjacent(xLevelOut.axCats, eColor, x, y))
+						continue;
 
 					TilePuzzleCatData xCat;
 					xCat.eColor = eColor;
@@ -390,8 +413,21 @@ private:
 		uint32_t uBlockerCatsToPlace = std::min(xParams.uNumBlockerCats, static_cast<uint32_t>(axBlockerShapeIndices.size()));
 		for (uint32_t i = 0; i < uBlockerCatsToPlace; ++i)
 		{
-			TilePuzzleColor eColor = static_cast<TilePuzzleColor>(i % xParams.uNumColors);
 			const TilePuzzleShapeInstance& xBlocker = xLevelOut.axShapes[axBlockerShapeIndices[i]];
+
+			// Find a color that doesn't violate same-color adjacency
+			TilePuzzleColor eColor = TILEPUZZLE_COLOR_NONE;
+			for (uint32_t uC = 0; uC < xParams.uNumColors; ++uC)
+			{
+				TilePuzzleColor eCandidate = static_cast<TilePuzzleColor>((i + uC) % xParams.uNumColors);
+				if (!IsSameColorCatAdjacent(xLevelOut.axCats, eCandidate, xBlocker.iOriginX, xBlocker.iOriginY))
+				{
+					eColor = eCandidate;
+					break;
+				}
+			}
+			if (eColor == TILEPUZZLE_COLOR_NONE)
+				return false;
 
 			TilePuzzleCatData xCat;
 			xCat.eColor = eColor;
