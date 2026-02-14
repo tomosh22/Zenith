@@ -34,6 +34,7 @@
 #include "TilePuzzle/Components/TilePuzzle_SaveData.h"
 #include "SaveData/Zenith_SaveData.h"
 #include "Input/Zenith_TouchInput.h"
+#include "UI/Zenith_UICanvas.h"
 
 #include <random>
 #include <vector>
@@ -984,6 +985,7 @@ private:
 			m_xCurrentLevel, m_xRng, m_uCurrentLevelNumber);
 
 		CreateLevelVisuals();
+		UpdateCameraForGridSize();
 
 		// Reset cursor to first draggable shape
 		m_iCursorX = 1;
@@ -1179,6 +1181,7 @@ private:
 			xState.iOriginX = xOther.iOriginX;
 			xState.iOriginY = xOther.iOriginY;
 			xState.eColor = xOther.eColor;
+			xState.uUnlockThreshold = xOther.uUnlockThreshold;
 			axDraggableStates.PushBack(xState);
 		}
 
@@ -1191,6 +1194,7 @@ private:
 			xCatState.iGridX = m_xCurrentLevel.axCats[i].iGridX;
 			xCatState.iGridY = m_xCurrentLevel.axCats[i].iGridY;
 			xCatState.eColor = m_xCurrentLevel.axCats[i].eColor;
+			xCatState.bOnBlocker = m_xCurrentLevel.axCats[i].bOnBlocker;
 			axCatStates.PushBack(xCatState);
 
 			if (m_xCurrentLevel.axCats[i].bEliminated)
@@ -1234,6 +1238,7 @@ private:
 			xState.iOriginX = xShape.iOriginX;
 			xState.iOriginY = xShape.iOriginY;
 			xState.eColor = xShape.eColor;
+			xState.uUnlockThreshold = xShape.uUnlockThreshold;
 			axDraggableStates.PushBack(xState);
 		}
 
@@ -1246,6 +1251,7 @@ private:
 			xCatState.iGridX = m_xCurrentLevel.axCats[i].iGridX;
 			xCatState.iGridY = m_xCurrentLevel.axCats[i].iGridY;
 			xCatState.eColor = m_xCurrentLevel.axCats[i].eColor;
+			xCatState.bOnBlocker = m_xCurrentLevel.axCats[i].bOnBlocker;
 			axCatStates.PushBack(xCatState);
 
 			if (m_xCurrentLevel.axCats[i].bEliminated)
@@ -1532,7 +1538,83 @@ private:
 			}
 		}
 
+		// Render text indicators above conditional (locked) shapes
+		RenderConditionalShapeIndicators();
+
 		UpdateSelectionHighlight();
+	}
+
+	void RenderConditionalShapeIndicators()
+	{
+		Zenith_UI::Zenith_UICanvas* pxCanvas = Zenith_UI::Zenith_UICanvas::GetPrimaryCanvas();
+		if (!pxCanvas)
+			return;
+
+		if (!m_xParentEntity.HasComponent<Zenith_CameraComponent>())
+			return;
+
+		// Count currently eliminated cats
+		uint32_t uEliminatedCount = 0;
+		for (size_t i = 0; i < m_xCurrentLevel.axCats.size(); ++i)
+		{
+			if (m_xCurrentLevel.axCats[i].bEliminated)
+				uEliminatedCount++;
+		}
+
+		// Build VP matrix from camera (consistent with ScreenSpaceToWorldSpace)
+		Zenith_CameraComponent& xCam = m_xParentEntity.GetComponent<Zenith_CameraComponent>();
+		Zenith_Maths::Matrix4 xViewMat, xProjMat;
+		xCam.BuildViewMatrix(xViewMat);
+		xCam.BuildProjectionMatrix(xProjMat);
+		Zenith_Maths::Matrix4 xVPMat = xProjMat * xViewMat;
+
+		int32_t iWinWidth, iWinHeight;
+		Zenith_Window::GetInstance()->GetSize(iWinWidth, iWinHeight);
+		if (iWinWidth <= 0 || iWinHeight <= 0)
+			return;
+
+		for (size_t i = 0; i < m_xCurrentLevel.axShapes.size(); ++i)
+		{
+			const TilePuzzleShapeInstance& xShape = m_xCurrentLevel.axShapes[i];
+			if (!xShape.pxDefinition || !xShape.pxDefinition->bDraggable)
+				continue;
+			if (xShape.uUnlockThreshold == 0)
+				continue;
+
+			// Calculate remaining cats needed
+			uint32_t uRemaining = 0;
+			if (uEliminatedCount < xShape.uUnlockThreshold)
+				uRemaining = xShape.uUnlockThreshold - uEliminatedCount;
+
+			if (uRemaining == 0)
+				continue; // Already unlocked, no indicator needed
+
+			// Get world position above the shape's origin
+			Zenith_Maths::Vector3 xWorldPos = GridToWorld(
+				static_cast<float>(xShape.iOriginX), static_cast<float>(xShape.iOriginY),
+				s_fShapeHeight + 0.8f);
+
+			// Project to screen space (same coordinate system as ScreenToGrid)
+			Zenith_Maths::Vector4 xClipPos = xVPMat * Zenith_Maths::Vector4(xWorldPos, 1.0f);
+			if (xClipPos.w <= 0.0f)
+				continue;
+
+			xClipPos.x /= xClipPos.w;
+			xClipPos.y /= xClipPos.w;
+
+			float fScreenX = (xClipPos.x + 1.0f) * 0.5f * static_cast<float>(iWinWidth);
+			float fScreenY = (xClipPos.y + 1.0f) * 0.5f * static_cast<float>(iWinHeight);
+
+			// Render the lock indicator text
+			char szText[8];
+			snprintf(szText, sizeof(szText), "%u", uRemaining);
+
+			pxCanvas->SubmitText(
+				szText,
+				Zenith_Maths::Vector2(fScreenX - 32.0f, fScreenY - 64.0f),
+				128.0f,
+				Zenith_Maths::Vector4(1.0f, 0.8f, 0.2f, 1.0f));
+		}
 	}
 
 	void UpdateSelectionHighlight()
@@ -1728,5 +1810,30 @@ private:
 			fHeight,
 			(fGridY + fOffsetY) * s_fCellSize
 		);
+	}
+
+	void UpdateCameraForGridSize()
+	{
+		if (!m_xParentEntity.HasComponent<Zenith_CameraComponent>())
+			return;
+
+		Zenith_CameraComponent& xCam = m_xParentEntity.GetComponent<Zenith_CameraComponent>();
+
+		// Half-extent of the grid in world units
+		float fHalfExtentX = static_cast<float>(m_xCurrentLevel.uGridWidth) * s_fCellSize * 0.5f;
+		float fHalfExtentZ = static_cast<float>(m_xCurrentLevel.uGridHeight) * s_fCellSize * 0.5f;
+
+		float fHalfFOV = xCam.GetFOV() * 0.5f;
+		float fTanHalfFOV = tanf(fHalfFOV);
+		float fAspect = xCam.GetAspectRatio();
+
+		// Camera looks straight down: vertical viewport maps to Z, horizontal to X
+		float fHeightForZ = fHalfExtentZ / fTanHalfFOV;
+		float fHeightForX = fHalfExtentX / (fTanHalfFOV * fAspect);
+
+		float fRequiredHeight = fHeightForZ > fHeightForX ? fHeightForZ : fHeightForX;
+		fRequiredHeight *= 0.9f;
+
+		xCam.SetPosition(Zenith_Maths::Vector3(0.f, fRequiredHeight, 0.f));
 	}
 };

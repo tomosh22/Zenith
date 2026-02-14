@@ -27,6 +27,7 @@ namespace TilePuzzle_Rules
 		int32_t iOriginX;
 		int32_t iOriginY;
 		TilePuzzleColor eColor;
+		uint32_t uUnlockThreshold = 0; // If > 0, shape requires this many eliminated cats to move
 	};
 
 	struct CatState
@@ -34,6 +35,7 @@ namespace TilePuzzle_Rules
 		int32_t iGridX;
 		int32_t iGridY;
 		TilePuzzleColor eColor;
+		bool bOnBlocker = false; // If true, eliminated by adjacency rather than overlap
 	};
 
 	// ========================================================================
@@ -65,6 +67,20 @@ namespace TilePuzzle_Rules
 		const ShapeState& xMoving = axDraggableShapes[uMovingShapeIdx];
 		if (!xMoving.pxDefinition)
 			return false;
+
+		// Conditional shape check: requires enough cats eliminated to unlock
+		if (xMoving.uUnlockThreshold > 0)
+		{
+			uint32_t uEliminatedCount = 0;
+			uint32_t uMask = uEliminatedCatsMask;
+			while (uMask)
+			{
+				uEliminatedCount += uMask & 1u;
+				uMask >>= 1;
+			}
+			if (uEliminatedCount < xMoving.uUnlockThreshold)
+				return false;
+		}
 
 		for (size_t uCellIdx = 0; uCellIdx < xMoving.pxDefinition->axCells.size(); ++uCellIdx)
 		{
@@ -182,11 +198,28 @@ namespace TilePuzzle_Rules
 					if (uAlreadyEliminatedMask & (1u << uCatIdx))
 						continue;
 
-					if (axCats[uCatIdx].iGridX == iCellX &&
-						axCats[uCatIdx].iGridY == iCellY &&
-						axCats[uCatIdx].eColor == xShape.eColor)
+					if (axCats[uCatIdx].eColor != xShape.eColor)
+						continue;
+
+					if (axCats[uCatIdx].bOnBlocker)
 					{
-						uNewlyEliminated |= (1u << uCatIdx);
+						// Blocker-cat: eliminated by orthogonal adjacency (not overlap)
+						int32_t iDX = iCellX - axCats[uCatIdx].iGridX;
+						int32_t iDY = iCellY - axCats[uCatIdx].iGridY;
+						if ((iDX == 0 && (iDY == 1 || iDY == -1)) ||
+							(iDY == 0 && (iDX == 1 || iDX == -1)))
+						{
+							uNewlyEliminated |= (1u << uCatIdx);
+						}
+					}
+					else
+					{
+						// Normal cat: eliminated by overlap
+						if (axCats[uCatIdx].iGridX == iCellX &&
+							axCats[uCatIdx].iGridY == iCellY)
+						{
+							uNewlyEliminated |= (1u << uCatIdx);
+						}
 					}
 				}
 			}

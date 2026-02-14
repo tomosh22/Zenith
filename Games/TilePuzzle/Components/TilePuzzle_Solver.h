@@ -28,7 +28,7 @@
 #include "Collections/Zenith_Vector.h"
 
 // Constants for solver behavior
-static constexpr uint32_t s_uTilePuzzleMaxSolverStates = 50000;  // Limit state exploration
+static constexpr uint32_t s_uTilePuzzleMaxSolverStates = 500000;  // Limit state exploration
 
 /**
  * TilePuzzleSolverShapeState - Position of a single shape
@@ -222,6 +222,7 @@ private:
 			xShapeState.iOriginX = xState.axShapePositions[i].iOriginX;
 			xShapeState.iOriginY = xState.axShapePositions[i].iOriginY;
 			xShapeState.eColor = xLevel.axShapes[axDraggableIndices[i]].eColor;
+			xShapeState.uUnlockThreshold = xLevel.axShapes[axDraggableIndices[i]].uUnlockThreshold;
 			axShapeStates.PushBack(xShapeState);
 		}
 
@@ -233,6 +234,7 @@ private:
 			xCatState.iGridX = xLevel.axCats[i].iGridX;
 			xCatState.iGridY = xLevel.axCats[i].iGridY;
 			xCatState.eColor = xLevel.axCats[i].eColor;
+			xCatState.bOnBlocker = xLevel.axCats[i].bOnBlocker;
 			axCatStates.PushBack(xCatState);
 		}
 
@@ -263,6 +265,7 @@ private:
 			xShapeState.iOriginX = xState.axShapePositions[i].iOriginX;
 			xShapeState.iOriginY = xState.axShapePositions[i].iOriginY;
 			xShapeState.eColor = xLevel.axShapes[axDraggableIndices[i]].eColor;
+			xShapeState.uUnlockThreshold = xLevel.axShapes[axDraggableIndices[i]].uUnlockThreshold;
 			axShapeStates.PushBack(xShapeState);
 		}
 
@@ -274,6 +277,7 @@ private:
 			xCatState.iGridX = xLevel.axCats[i].iGridX;
 			xCatState.iGridY = xLevel.axCats[i].iGridY;
 			xCatState.eColor = xLevel.axCats[i].eColor;
+			xCatState.bOnBlocker = xLevel.axCats[i].bOnBlocker;
 			axCatStates.PushBack(xCatState);
 		}
 

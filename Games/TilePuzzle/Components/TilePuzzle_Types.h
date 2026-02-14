@@ -85,6 +85,7 @@ struct TilePuzzleShapeInstance
 	int32_t iOriginX;                            // Grid position X
 	int32_t iOriginY;                            // Grid position Y
 	TilePuzzleColor eColor;                      // Color (NONE for blockers)
+	uint32_t uUnlockThreshold = 0;              // If > 0, shape can only move after this many cats are eliminated
 	std::vector<Zenith_EntityID> axCubeEntityIDs; // Visual entities for each cell
 };
 
@@ -96,6 +97,7 @@ struct TilePuzzleCatData
 	int32_t iGridY;
 	Zenith_EntityID uEntityID;
 	bool bEliminated;
+	bool bOnBlocker = false;     // If true, cat sits on a blocker cell and is eliminated by adjacency
 	float fEliminationProgress;  // 0.0 to 1.0 for animation
 };
 
