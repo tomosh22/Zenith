@@ -690,6 +690,8 @@ private:
 				{
 					if (m_eState == TILEPUZZLE_STATE_LEVEL_COMPLETE || m_bPendingLevelComplete)
 						break;
+					if (!m_bDragging)
+						break;
 
 					const TilePuzzleShapeInstance& xShape = m_xCurrentLevel.axShapes[m_iDragShapeIndex];
 					int32_t iDX = iTargetX - xShape.iOriginX;
@@ -1086,6 +1088,8 @@ private:
 			const TilePuzzleShapeInstance& xShape = m_xCurrentLevel.axShapes[i];
 			if (!xShape.pxDefinition->bDraggable)
 				continue;
+			if (xShape.bRemoved)
+				continue;
 
 			for (const auto& xOffset : xShape.pxDefinition->axCells)
 			{
@@ -1110,6 +1114,8 @@ private:
 
 		TilePuzzleShapeInstance& xShape = m_xCurrentLevel.axShapes[iShapeIndex];
 		if (!xShape.pxDefinition->bDraggable)
+			return false;
+		if (xShape.bRemoved)
 			return false;
 
 		int32_t iDeltaX, iDeltaY;
@@ -1140,6 +1146,8 @@ private:
 
 		TilePuzzleShapeInstance& xShape = m_xCurrentLevel.axShapes[iShapeIndex];
 		if (!xShape.pxDefinition->bDraggable)
+			return false;
+		if (xShape.bRemoved)
 			return false;
 
 		int32_t iDeltaX, iDeltaY;
@@ -1172,6 +1180,8 @@ private:
 		{
 			const TilePuzzleShapeInstance& xOther = m_xCurrentLevel.axShapes[i];
 			if (!xOther.pxDefinition || !xOther.pxDefinition->bDraggable)
+				continue;
+			if (xOther.bRemoved)
 				continue;
 
 			if (static_cast<int32_t>(i) == iShapeIndex)
@@ -1215,6 +1225,46 @@ private:
 	}
 
 	// ========================================================================
+	// Shape Removal
+	// ========================================================================
+	void RemoveShape(size_t uLevelShapeIndex)
+	{
+		TilePuzzleShapeInstance& xShape = m_xCurrentLevel.axShapes[uLevelShapeIndex];
+		xShape.bRemoved = true;
+
+		if (m_xPuzzleScene.IsValid())
+		{
+			Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(m_xPuzzleScene);
+			if (pxSceneData && xShape.xEntityID.IsValid() && pxSceneData->EntityExists(xShape.xEntityID))
+			{
+				Zenith_Entity xEntity = pxSceneData->GetEntity(xShape.xEntityID);
+				if (xEntity.IsValid())
+				{
+					Zenith_SceneManager::Destroy(xEntity, 0.3f);
+				}
+			}
+		}
+		xShape.xEntityID = Zenith_EntityID();
+
+		if (m_iSelectedShapeIndex == static_cast<int32_t>(uLevelShapeIndex))
+		{
+			m_iSelectedShapeIndex = -1;
+		}
+
+		if (m_bDragging && m_iDragShapeIndex == static_cast<int32_t>(uLevelShapeIndex))
+		{
+			m_bDragging = false;
+			m_iDragShapeIndex = -1;
+			m_iSelectedShapeIndex = -1;
+		}
+
+		if (m_iSlidingShapeIndex == static_cast<int32_t>(uLevelShapeIndex))
+		{
+			m_iSlidingShapeIndex = -1;
+		}
+	}
+
+	// ========================================================================
 	// Cat Elimination
 	// ========================================================================
 	void CheckCatElimination()
@@ -1226,12 +1276,15 @@ private:
 		if (!pxSceneData)
 			return;
 
-		// Build ShapeState array for all draggable shapes
+		// Build ShapeState array for all draggable shapes (skip removed)
 		Zenith_Vector<TilePuzzle_Rules::ShapeState> axDraggableStates;
+		Zenith_Vector<size_t> axDraggableToLevelIndex;
 		for (size_t i = 0; i < m_xCurrentLevel.axShapes.size(); ++i)
 		{
 			const TilePuzzleShapeInstance& xShape = m_xCurrentLevel.axShapes[i];
 			if (!xShape.pxDefinition || !xShape.pxDefinition->bDraggable)
+				continue;
+			if (xShape.bRemoved)
 				continue;
 
 			TilePuzzle_Rules::ShapeState xState;
@@ -1241,6 +1294,7 @@ private:
 			xState.eColor = xShape.eColor;
 			xState.uUnlockThreshold = xShape.uUnlockThreshold;
 			axDraggableStates.PushBack(xState);
+			axDraggableToLevelIndex.PushBack(i);
 		}
 
 		// Build CatState array and current elimination mask
@@ -1259,10 +1313,12 @@ private:
 				uOldMask |= (1u << i);
 		}
 
-		uint32_t uNewlyEliminated = TilePuzzle_Rules::ComputeNewlyEliminatedCats(
+		int32_t aiAttribution[32];
+		uint32_t uNewlyEliminated = TilePuzzle_Rules::ComputeNewlyEliminatedCatsWithAttribution(
 			axDraggableStates.GetDataPointer(), axDraggableStates.GetSize(),
 			axCatStates.GetDataPointer(), axCatStates.GetSize(),
-			uOldMask);
+			uOldMask,
+			aiAttribution);
 
 		// Apply elimination: set bEliminated and destroy entities for newly eliminated cats
 		for (size_t i = 0; i < m_xCurrentLevel.axCats.size(); ++i)
@@ -1282,6 +1338,40 @@ private:
 				}
 			}
 			xCat.uEntityID = Zenith_EntityID();
+		}
+
+		// Decrement uses for shapes that eliminated cats and remove exhausted shapes
+		uint32_t auEliminationsPerShape[32] = {};
+		for (size_t i = 0; i < m_xCurrentLevel.axCats.size(); ++i)
+		{
+			if (!(uNewlyEliminated & (1u << i)))
+				continue;
+			if (aiAttribution[i] >= 0 && aiAttribution[i] < static_cast<int32_t>(axDraggableStates.GetSize()))
+			{
+				auEliminationsPerShape[aiAttribution[i]]++;
+			}
+		}
+
+		for (uint32_t uDragIdx = 0; uDragIdx < axDraggableStates.GetSize(); ++uDragIdx)
+		{
+			if (auEliminationsPerShape[uDragIdx] == 0)
+				continue;
+
+			size_t uLevelIdx = axDraggableToLevelIndex.Get(uDragIdx);
+			TilePuzzleShapeInstance& xShape = m_xCurrentLevel.axShapes[uLevelIdx];
+
+			if (xShape.uRemainingUses == 0)
+				continue;
+
+			if (xShape.uRemainingUses <= auEliminationsPerShape[uDragIdx])
+			{
+				xShape.uRemainingUses = 0;
+				RemoveShape(uLevelIdx);
+			}
+			else
+			{
+				xShape.uRemainingUses -= auEliminationsPerShape[uDragIdx];
+			}
 		}
 	}
 
@@ -1479,6 +1569,14 @@ private:
 			}
 		}
 
+		// If level completion is pending and the drag has already ended (shape removed), complete now
+		if (m_bPendingLevelComplete && !m_bDragging)
+		{
+			m_bPendingLevelComplete = false;
+			OnLevelCompleted();
+			return;
+		}
+
 		// Check if drag lerp has reached the target while level completion is pending
 		if (m_bPendingLevelComplete && m_bDragging && m_iDragShapeIndex >= 0)
 		{
@@ -1516,6 +1614,7 @@ private:
 
 		// Render text indicators above conditional (locked) shapes
 		RenderConditionalShapeIndicators();
+		RenderUsesIndicators();
 
 		UpdateSelectionHighlight();
 	}
@@ -1590,6 +1689,61 @@ private:
 				Zenith_Maths::Vector2(fScreenX - 32.0f, fScreenY - 64.0f),
 				128.0f,
 				Zenith_Maths::Vector4(1.0f, 0.8f, 0.2f, 1.0f));
+		}
+	}
+
+	void RenderUsesIndicators()
+	{
+		Zenith_UI::Zenith_UICanvas* pxCanvas = Zenith_UI::Zenith_UICanvas::GetPrimaryCanvas();
+		if (!pxCanvas)
+			return;
+
+		if (!m_xParentEntity.HasComponent<Zenith_CameraComponent>())
+			return;
+
+		Zenith_CameraComponent& xCam = m_xParentEntity.GetComponent<Zenith_CameraComponent>();
+		Zenith_Maths::Matrix4 xViewMat, xProjMat;
+		xCam.BuildViewMatrix(xViewMat);
+		xCam.BuildProjectionMatrix(xProjMat);
+		Zenith_Maths::Matrix4 xVPMat = xProjMat * xViewMat;
+
+		int32_t iWinWidth, iWinHeight;
+		Zenith_Window::GetInstance()->GetSize(iWinWidth, iWinHeight);
+		if (iWinWidth <= 0 || iWinHeight <= 0)
+			return;
+
+		for (size_t i = 0; i < m_xCurrentLevel.axShapes.size(); ++i)
+		{
+			const TilePuzzleShapeInstance& xShape = m_xCurrentLevel.axShapes[i];
+			if (!xShape.pxDefinition || !xShape.pxDefinition->bDraggable)
+				continue;
+			if (xShape.bRemoved)
+				continue;
+			if (xShape.uRemainingUses == 0)
+				continue;
+
+			Zenith_Maths::Vector3 xWorldPos = GridToWorld(
+				static_cast<float>(xShape.iOriginX), static_cast<float>(xShape.iOriginY),
+				s_fShapeHeight + 0.5f);
+
+			Zenith_Maths::Vector4 xClipPos = xVPMat * Zenith_Maths::Vector4(xWorldPos, 1.0f);
+			if (xClipPos.w <= 0.0f)
+				continue;
+
+			xClipPos.x /= xClipPos.w;
+			xClipPos.y /= xClipPos.w;
+
+			float fScreenX = (xClipPos.x + 1.0f) * 0.5f * static_cast<float>(iWinWidth);
+			float fScreenY = (xClipPos.y + 1.0f) * 0.5f * static_cast<float>(iWinHeight);
+
+			char szText[8];
+			snprintf(szText, sizeof(szText), "%u", xShape.uRemainingUses);
+
+			pxCanvas->SubmitText(
+				szText,
+				Zenith_Maths::Vector2(fScreenX - 32.0f, fScreenY - 64.0f),
+				128.0f,
+				Zenith_Maths::Vector4(1.0f, 1.0f, 1.0f, 1.0f));
 		}
 	}
 

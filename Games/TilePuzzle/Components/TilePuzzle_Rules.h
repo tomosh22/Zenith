@@ -228,6 +228,79 @@ namespace TilePuzzle_Rules
 		return uNewlyEliminated;
 	}
 
+	/**
+	 * ComputeNewlyEliminatedCatsWithAttribution - Like ComputeNewlyEliminatedCats,
+	 * but also records which draggable shape caused each elimination.
+	 *
+	 * @param aiAttributionOut  Array of size uNumCats. For each newly eliminated cat,
+	 *                          stores the draggable shape index that eliminated it.
+	 *                          -1 for cats not newly eliminated.
+	 */
+	inline uint32_t ComputeNewlyEliminatedCatsWithAttribution(
+		const ShapeState* axDraggableShapes, size_t uNumDraggableShapes,
+		const CatState* axCats, size_t uNumCats,
+		uint32_t uAlreadyEliminatedMask,
+		int32_t* aiAttributionOut)
+	{
+		uint32_t uNewlyEliminated = 0;
+
+		for (size_t i = 0; i < uNumCats; ++i)
+			aiAttributionOut[i] = -1;
+
+		for (size_t uShapeIdx = 0; uShapeIdx < uNumDraggableShapes; ++uShapeIdx)
+		{
+			const ShapeState& xShape = axDraggableShapes[uShapeIdx];
+			if (!xShape.pxDefinition)
+				continue;
+
+			for (size_t uCellIdx = 0; uCellIdx < xShape.pxDefinition->axCells.size(); ++uCellIdx)
+			{
+				const TilePuzzleCellOffset& xOffset = xShape.pxDefinition->axCells[uCellIdx];
+				int32_t iCellX = xShape.iOriginX + xOffset.iX;
+				int32_t iCellY = xShape.iOriginY + xOffset.iY;
+
+				for (size_t uCatIdx = 0; uCatIdx < uNumCats; ++uCatIdx)
+				{
+					if (uAlreadyEliminatedMask & (1u << uCatIdx))
+						continue;
+					if (uNewlyEliminated & (1u << uCatIdx))
+						continue;
+
+					if (axCats[uCatIdx].eColor != xShape.eColor)
+						continue;
+
+					bool bEliminated = false;
+					if (axCats[uCatIdx].bOnBlocker)
+					{
+						int32_t iDX = iCellX - axCats[uCatIdx].iGridX;
+						int32_t iDY = iCellY - axCats[uCatIdx].iGridY;
+						if ((iDX == 0 && (iDY == 1 || iDY == -1)) ||
+							(iDY == 0 && (iDX == 1 || iDX == -1)))
+						{
+							bEliminated = true;
+						}
+					}
+					else
+					{
+						if (axCats[uCatIdx].iGridX == iCellX &&
+							axCats[uCatIdx].iGridY == iCellY)
+						{
+							bEliminated = true;
+						}
+					}
+
+					if (bEliminated)
+					{
+						uNewlyEliminated |= (1u << uCatIdx);
+						aiAttributionOut[uCatIdx] = static_cast<int32_t>(uShapeIdx);
+					}
+				}
+			}
+		}
+
+		return uNewlyEliminated;
+	}
+
 	// ========================================================================
 	// Win condition
 	// ========================================================================

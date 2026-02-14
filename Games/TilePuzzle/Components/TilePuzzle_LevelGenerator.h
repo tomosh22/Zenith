@@ -25,16 +25,16 @@
 
 // Generation constants
 static constexpr uint32_t s_uTilePuzzleMinGridSize = 5;
-static constexpr uint32_t s_uTilePuzzleMaxGridSize = 10;
+static constexpr uint32_t s_uTilePuzzleMaxGridSize = 12;
 static constexpr int32_t s_iTilePuzzleMaxGenerationAttempts = 1000;
 
 // Normal difficulty
 static constexpr uint32_t s_uNormalGridWidth = 6;
-static constexpr uint32_t s_uNormalGridHeight = 8;
+static constexpr uint32_t s_uNormalGridHeight = 7;
 static constexpr uint32_t s_uNormalNumColors = 2;
 static constexpr uint32_t s_uNormalNumCatsPerColor = 2;
 static constexpr uint32_t s_uNormalNumShapesPerColor = 2;
-static constexpr uint32_t s_uNormalNumBlockers = 4;
+static constexpr uint32_t s_uNormalNumBlockers = 6;
 static constexpr uint32_t s_uNormalMaxShapeSize = 2;
 static constexpr uint32_t s_uNormalScrambleMoves = 15;
 static constexpr uint32_t s_uNormalNumBlockerCats = 0;
@@ -43,11 +43,11 @@ static constexpr uint32_t s_uNormalConditionalThreshold = 0;
 
 // Hard difficulty
 static constexpr uint32_t s_uHardGridWidth = 7;
-static constexpr uint32_t s_uHardGridHeight = 9;
+static constexpr uint32_t s_uHardGridHeight = 8;
 static constexpr uint32_t s_uHardNumColors = 3;
 static constexpr uint32_t s_uHardNumCatsPerColor = 2;
 static constexpr uint32_t s_uHardNumShapesPerColor = 2;
-static constexpr uint32_t s_uHardNumBlockers = 8;
+static constexpr uint32_t s_uHardNumBlockers = 10;
 static constexpr uint32_t s_uHardMaxShapeSize = 3;
 static constexpr uint32_t s_uHardScrambleMoves = 30;
 static constexpr uint32_t s_uHardNumBlockerCats = 2;
@@ -55,12 +55,12 @@ static constexpr uint32_t s_uHardNumConditionalShapes = 0;
 static constexpr uint32_t s_uHardConditionalThreshold = 0;
 
 // Very Hard difficulty
-static constexpr uint32_t s_uVeryHardGridWidth = 10;
-static constexpr uint32_t s_uVeryHardGridHeight = 12;
+static constexpr uint32_t s_uVeryHardGridWidth = 9;
+static constexpr uint32_t s_uVeryHardGridHeight = 11;
 static constexpr uint32_t s_uVeryHardNumColors = 3;
 static constexpr uint32_t s_uVeryHardNumCatsPerColor = 4;
 static constexpr uint32_t s_uVeryHardNumShapesPerColor = 2;
-static constexpr uint32_t s_uVeryHardNumBlockers = 12;
+static constexpr uint32_t s_uVeryHardNumBlockers = 15;
 static constexpr uint32_t s_uVeryHardMaxShapeSize = 4;
 static constexpr uint32_t s_uVeryHardScrambleMoves = 60;
 static constexpr uint32_t s_uVeryHardNumBlockerCats = 2;
@@ -628,6 +628,54 @@ private:
 				{
 					xLevelOut.axShapes[i].uUnlockThreshold = xParams.uConditionalThreshold;
 					uConditionalCount++;
+				}
+			}
+		}
+
+		// ---- Phase 3.5: Assign remaining uses to draggable shapes ----
+		{
+			uint32_t auCatsPerColor[TILEPUZZLE_COLOR_COUNT] = {};
+			for (size_t i = 0; i < xLevelOut.axCats.size(); ++i)
+			{
+				if (xLevelOut.axCats[i].eColor < TILEPUZZLE_COLOR_COUNT)
+					auCatsPerColor[xLevelOut.axCats[i].eColor]++;
+			}
+
+			Zenith_Vector<size_t> axDraggablePerColor[TILEPUZZLE_COLOR_COUNT];
+			for (size_t i = 0; i < xLevelOut.axShapes.size(); ++i)
+			{
+				const TilePuzzleShapeInstance& xShape = xLevelOut.axShapes[i];
+				if (xShape.pxDefinition && xShape.pxDefinition->bDraggable &&
+					xShape.eColor < TILEPUZZLE_COLOR_COUNT)
+				{
+					axDraggablePerColor[xShape.eColor].PushBack(i);
+				}
+			}
+
+			for (uint32_t uColorIdx = 0; uColorIdx < TILEPUZZLE_COLOR_COUNT; ++uColorIdx)
+			{
+				uint32_t uCatsOfColor = auCatsPerColor[uColorIdx];
+				if (uCatsOfColor == 0)
+					continue;
+
+				Zenith_Vector<size_t>& axShapeIndices = axDraggablePerColor[uColorIdx];
+				uint32_t uNumShapes = axShapeIndices.GetSize();
+				if (uNumShapes == 0)
+					continue;
+
+				// Each shape gets at least 1 use; distribute remainder randomly
+				for (uint32_t i = 0; i < uNumShapes; ++i)
+				{
+					xLevelOut.axShapes[axShapeIndices.Get(i)].uRemainingUses = 1;
+				}
+
+				uint32_t uRemaining = uCatsOfColor - uNumShapes;
+				std::uniform_int_distribution<uint32_t> xShapeDist(0, uNumShapes - 1);
+				while (uRemaining > 0)
+				{
+					uint32_t uIdx = xShapeDist(xRng);
+					xLevelOut.axShapes[axShapeIndices.Get(uIdx)].uRemainingUses++;
+					uRemaining--;
 				}
 			}
 		}

@@ -86,6 +86,8 @@ struct TilePuzzleShapeInstance
 	int32_t iOriginY;                            // Grid position Y
 	TilePuzzleColor eColor;                      // Color (NONE for blockers)
 	uint32_t uUnlockThreshold = 0;              // If > 0, shape can only move after this many cats are eliminated
+	uint32_t uRemainingUses = 0;                // 0 = unlimited, 1-3 = remaining eliminations before removal
+	bool bRemoved = false;                       // Set when uses exhausted; skip in all logic
 	Zenith_EntityID xEntityID;                    // Single visual entity for merged shape mesh
 };
 
