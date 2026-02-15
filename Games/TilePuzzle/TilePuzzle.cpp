@@ -61,19 +61,425 @@ namespace TilePuzzle
 static bool s_bResourcesInitialized = false;
 
 // ============================================================================
-// Merged Polyomino Mesh Generation
+// Rounded Polyomino Mesh Generation
 // ============================================================================
+static constexpr float fPI = 3.14159265358979f;
+static constexpr float fBORDER = 0.05f;
+static constexpr float fHALF = 0.5f;
+static constexpr float fHALF_HEIGHT = 0.5f;
+static constexpr float fCORNER_RADIUS = 0.10f;
+static constexpr uint32_t uCORNER_SEGMENTS = 4;
+static constexpr float fEDGE_RADIUS = 0.04f;
+static constexpr uint32_t uEDGE_SEGMENTS = 3;
+
+struct PerimeterPoint
+{
+	float m_fX;
+	float m_fZ;
+	float m_fOutX;
+	float m_fOutZ;
+	bool m_bExterior; // segment from this point to next is exterior
+};
+
+struct MeshBuilder
+{
+	Zenith_Vector<Zenith_Maths::Vector3> m_axPositions;
+	Zenith_Vector<Zenith_Maths::Vector2> m_axUVs;
+	Zenith_Vector<Zenith_Maths::Vector3> m_axNormals;
+	Zenith_Vector<Zenith_Maths::Vector3> m_axTangents;
+	Zenith_Vector<Zenith_Maths::Vector3> m_axBitangents;
+	Zenith_Vector<Zenith_Maths::Vector4> m_axColors;
+	Zenith_Vector<uint32_t> m_auIndices;
+
+	uint32_t AddVertex(
+		const Zenith_Maths::Vector3& xPos,
+		const Zenith_Maths::Vector2& xUV,
+		const Zenith_Maths::Vector3& xNormal,
+		const Zenith_Maths::Vector3& xTangent,
+		const Zenith_Maths::Vector3& xBitangent)
+	{
+		uint32_t uIndex = m_axPositions.GetSize();
+		m_axPositions.PushBack(xPos);
+		m_axUVs.PushBack(xUV);
+		m_axNormals.PushBack(xNormal);
+		m_axTangents.PushBack(xTangent);
+		m_axBitangents.PushBack(xBitangent);
+		m_axColors.PushBack({ 1.f, 1.f, 1.f, 1.f });
+		return uIndex;
+	}
+
+	void AddTriangle(uint32_t uA, uint32_t uB, uint32_t uC)
+	{
+		m_auIndices.PushBack(uA);
+		m_auIndices.PushBack(uB);
+		m_auIndices.PushBack(uC);
+	}
+
+	void CopyToGeometry(Flux_MeshGeometry& xGeometryOut)
+	{
+		uint32_t uNumVerts = m_axPositions.GetSize();
+		uint32_t uNumIndices = m_auIndices.GetSize();
+
+		xGeometryOut.m_uNumVerts = uNumVerts;
+		xGeometryOut.m_uNumIndices = uNumIndices;
+
+		xGeometryOut.m_pxPositions = static_cast<Zenith_Maths::Vector3*>(
+			Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector3)));
+		xGeometryOut.m_pxUVs = static_cast<Zenith_Maths::Vector2*>(
+			Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector2)));
+		xGeometryOut.m_pxNormals = static_cast<Zenith_Maths::Vector3*>(
+			Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector3)));
+		xGeometryOut.m_pxTangents = static_cast<Zenith_Maths::Vector3*>(
+			Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector3)));
+		xGeometryOut.m_pxBitangents = static_cast<Zenith_Maths::Vector3*>(
+			Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector3)));
+		xGeometryOut.m_pxColors = static_cast<Zenith_Maths::Vector4*>(
+			Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector4)));
+		xGeometryOut.m_puIndices = static_cast<Flux_MeshGeometry::IndexType*>(
+			Zenith_MemoryManagement::Allocate(uNumIndices * sizeof(Flux_MeshGeometry::IndexType)));
+
+		memcpy(xGeometryOut.m_pxPositions, m_axPositions.GetDataPointer(), uNumVerts * sizeof(Zenith_Maths::Vector3));
+		memcpy(xGeometryOut.m_pxUVs, m_axUVs.GetDataPointer(), uNumVerts * sizeof(Zenith_Maths::Vector2));
+		memcpy(xGeometryOut.m_pxNormals, m_axNormals.GetDataPointer(), uNumVerts * sizeof(Zenith_Maths::Vector3));
+		memcpy(xGeometryOut.m_pxTangents, m_axTangents.GetDataPointer(), uNumVerts * sizeof(Zenith_Maths::Vector3));
+		memcpy(xGeometryOut.m_pxBitangents, m_axBitangents.GetDataPointer(), uNumVerts * sizeof(Zenith_Maths::Vector3));
+		memcpy(xGeometryOut.m_pxColors, m_axColors.GetDataPointer(), uNumVerts * sizeof(Zenith_Maths::Vector4));
+		memcpy(xGeometryOut.m_puIndices, m_auIndices.GetDataPointer(), uNumIndices * sizeof(uint32_t));
+	}
+};
+
+// Build CW perimeter (viewed from +Y) for a single cell
+static void BuildCellPerimeter(
+	float fMinX, float fMaxX, float fMinZ, float fMaxZ,
+	bool bHasRight, bool bHasLeft, bool bHasFront, bool bHasBack,
+	Zenith_Vector<PerimeterPoint>& axPerimeterOut)
+{
+	// Corner positions: BR(+X,-Z), BL(-X,-Z), TL(-X,+Z), TR(+X,+Z)
+	// CW walk from above: BR -> BL -> TL -> TR
+	// Edges between: -Z (BR->BL), -X (BL->TL), +Z (TL->TR), +X (TR->BR)
+
+	struct CornerInfo
+	{
+		float m_fCornerX, m_fCornerZ;
+		float m_fArcCenterX, m_fArcCenterZ;
+		float m_fStartAngle;
+		bool m_bConvex;
+		bool m_bNextEdgeExterior;
+	};
+
+	// Determine convexity: convex if neither adjacent cardinal neighbor exists
+	bool bConvexBR = !bHasRight && !bHasBack;
+	bool bConvexBL = !bHasLeft && !bHasBack;
+	bool bConvexTL = !bHasLeft && !bHasFront;
+	bool bConvexTR = !bHasRight && !bHasFront;
+
+	CornerInfo axCorners[4];
+
+	// Corner 0: BR (+X,-Z), next edge is -Z (BR->BL)
+	axCorners[0].m_fCornerX = fMaxX;
+	axCorners[0].m_fCornerZ = fMinZ;
+	axCorners[0].m_fArcCenterX = fMaxX - fCORNER_RADIUS;
+	axCorners[0].m_fArcCenterZ = fMinZ + fCORNER_RADIUS;
+	axCorners[0].m_fStartAngle = 0.f;
+	axCorners[0].m_bConvex = bConvexBR;
+	axCorners[0].m_bNextEdgeExterior = !bHasBack;
+
+	// Corner 1: BL (-X,-Z), next edge is -X (BL->TL)
+	axCorners[1].m_fCornerX = fMinX;
+	axCorners[1].m_fCornerZ = fMinZ;
+	axCorners[1].m_fArcCenterX = fMinX + fCORNER_RADIUS;
+	axCorners[1].m_fArcCenterZ = fMinZ + fCORNER_RADIUS;
+	axCorners[1].m_fStartAngle = -fPI / 2.f;
+	axCorners[1].m_bConvex = bConvexBL;
+	axCorners[1].m_bNextEdgeExterior = !bHasLeft;
+
+	// Corner 2: TL (-X,+Z), next edge is +Z (TL->TR)
+	axCorners[2].m_fCornerX = fMinX;
+	axCorners[2].m_fCornerZ = fMaxZ;
+	axCorners[2].m_fArcCenterX = fMinX + fCORNER_RADIUS;
+	axCorners[2].m_fArcCenterZ = fMaxZ - fCORNER_RADIUS;
+	axCorners[2].m_fStartAngle = fPI;
+	axCorners[2].m_bConvex = bConvexTL;
+	axCorners[2].m_bNextEdgeExterior = !bHasFront;
+
+	// Corner 3: TR (+X,+Z), next edge is +X (TR->BR)
+	axCorners[3].m_fCornerX = fMaxX;
+	axCorners[3].m_fCornerZ = fMaxZ;
+	axCorners[3].m_fArcCenterX = fMaxX - fCORNER_RADIUS;
+	axCorners[3].m_fArcCenterZ = fMaxZ - fCORNER_RADIUS;
+	axCorners[3].m_fStartAngle = fPI / 2.f;
+	axCorners[3].m_bConvex = bConvexTR;
+	axCorners[3].m_bNextEdgeExterior = !bHasRight;
+
+	// Edge outward normals: -Z->(0,-1), -X->(-1,0), +Z->(0,1), +X->(1,0)
+	float afEdgeOutX[4] = { 0.f, -1.f, 0.f, 1.f };
+	float afEdgeOutZ[4] = { -1.f, 0.f, 1.f, 0.f };
+
+	for (uint32_t uCorner = 0; uCorner < 4; ++uCorner)
+	{
+		const CornerInfo& xCorner = axCorners[uCorner];
+
+		if (xCorner.m_bConvex)
+		{
+			// Emit arc: CW sweep of -PI/2 from start angle
+			for (uint32_t uSeg = 0; uSeg <= uCORNER_SEGMENTS; ++uSeg)
+			{
+				float fTheta = xCorner.m_fStartAngle
+					- static_cast<float>(uSeg) * (fPI / 2.f) / static_cast<float>(uCORNER_SEGMENTS);
+				float fCosTheta = cosf(fTheta);
+				float fSinTheta = sinf(fTheta);
+
+				PerimeterPoint xPoint;
+				xPoint.m_fX = xCorner.m_fArcCenterX + fCORNER_RADIUS * fCosTheta;
+				xPoint.m_fZ = xCorner.m_fArcCenterZ + fCORNER_RADIUS * fSinTheta;
+				xPoint.m_fOutX = fCosTheta;
+				xPoint.m_fOutZ = fSinTheta;
+				// All arc segments and following edge are exterior for convex corners
+				xPoint.m_bExterior = true;
+				axPerimeterOut.PushBack(xPoint);
+			}
+		}
+		else
+		{
+			// Single point at corner
+			PerimeterPoint xPoint;
+			xPoint.m_fX = xCorner.m_fCornerX;
+			xPoint.m_fZ = xCorner.m_fCornerZ;
+
+			// Use the next edge's outward normal as default
+			xPoint.m_fOutX = afEdgeOutX[uCorner];
+			xPoint.m_fOutZ = afEdgeOutZ[uCorner];
+			xPoint.m_bExterior = xCorner.m_bNextEdgeExterior;
+			axPerimeterOut.PushBack(xPoint);
+		}
+	}
+}
+
+// Per-point edge rounding scale: 1.0 if both adjacent segments are exterior, 0.0 otherwise.
+// This prevents edge rounding inset on interior boundaries between cells.
+static float GetEdgeScale(const Zenith_Vector<PerimeterPoint>& axPerimeter, uint32_t uIndex)
+{
+	uint32_t uNumPoints = axPerimeter.GetSize();
+	uint32_t uPrev = (uIndex + uNumPoints - 1) % uNumPoints;
+	bool bPrevExterior = axPerimeter.Get(uPrev).m_bExterior;
+	bool bThisExterior = axPerimeter.Get(uIndex).m_bExterior;
+	return (bPrevExterior && bThisExterior) ? 1.f : 0.f;
+}
+
+static void EmitTopFace(
+	MeshBuilder& xBuilder,
+	const Zenith_Vector<PerimeterPoint>& axPerimeter,
+	float fMaxY, float fCenterX, float fCenterZ)
+{
+	uint32_t uNumPoints = axPerimeter.GetSize();
+
+	// Center vertex
+	uint32_t uCenter = xBuilder.AddVertex(
+		{ fCenterX, fMaxY, fCenterZ },
+		{ 0.5f, 0.5f },
+		{ 0.f, 1.f, 0.f },
+		{ 1.f, 0.f, 0.f },
+		{ 0.f, 0.f, -1.f });
+
+	// Perimeter vertices (only inset on fully-exterior points)
+	Zenith_Vector<uint32_t> auPerimVerts;
+	for (uint32_t u = 0; u < uNumPoints; ++u)
+	{
+		const PerimeterPoint& xPt = axPerimeter.Get(u);
+		float fScale = GetEdgeScale(axPerimeter, u);
+		float fInset = fEDGE_RADIUS * fScale;
+		float fX = xPt.m_fX - xPt.m_fOutX * fInset;
+		float fZ = xPt.m_fZ - xPt.m_fOutZ * fInset;
+		float fU = fX - fCenterX + 0.5f;
+		float fV = fZ - fCenterZ + 0.5f;
+
+		uint32_t uIdx = xBuilder.AddVertex(
+			{ fX, fMaxY, fZ },
+			{ fU, fV },
+			{ 0.f, 1.f, 0.f },
+			{ 1.f, 0.f, 0.f },
+			{ 0.f, 0.f, -1.f });
+		auPerimVerts.PushBack(uIdx);
+	}
+
+	// Triangle fan (winding matches existing top face convention)
+	for (uint32_t u = 0; u < uNumPoints; ++u)
+	{
+		uint32_t uNext = (u + 1) % uNumPoints;
+		xBuilder.AddTriangle(uCenter, auPerimVerts.Get(u), auPerimVerts.Get(uNext));
+	}
+}
+
+static void EmitEdgeRounding(
+	MeshBuilder& xBuilder,
+	const Zenith_Vector<PerimeterPoint>& axPerimeter,
+	float fMaxY)
+{
+	uint32_t uNumPoints = axPerimeter.GetSize();
+	uint32_t uNumRings = uEDGE_SEGMENTS + 1;
+
+	for (uint32_t u = 0; u < uNumPoints; ++u)
+	{
+		if (!axPerimeter.Get(u).m_bExterior)
+			continue;
+
+		uint32_t uNext = (u + 1) % uNumPoints;
+		const PerimeterPoint& xPtA = axPerimeter.Get(u);
+		const PerimeterPoint& xPtB = axPerimeter.Get(uNext);
+		float fScaleA = GetEdgeScale(axPerimeter, u);
+		float fScaleB = GetEdgeScale(axPerimeter, uNext);
+
+		uint32_t uBaseA = xBuilder.m_axPositions.GetSize();
+		for (uint32_t uRing = 0; uRing < uNumRings; ++uRing)
+		{
+			float fAlpha = static_cast<float>(uRing) * (fPI / 2.f) / static_cast<float>(uEDGE_SEGMENTS);
+			float fSinAlpha = sinf(fAlpha);
+			float fCosAlpha = cosf(fAlpha);
+
+			float fInset = fEDGE_RADIUS * (1.f - fSinAlpha) * fScaleA;
+			float fY = fMaxY - fEDGE_RADIUS * (1.f - fCosAlpha) * fScaleA;
+
+			float fX = xPtA.m_fX - xPtA.m_fOutX * fInset;
+			float fZ = xPtA.m_fZ - xPtA.m_fOutZ * fInset;
+
+			Zenith_Maths::Vector3 xNormal = {
+				xPtA.m_fOutX * fSinAlpha,
+				fCosAlpha,
+				xPtA.m_fOutZ * fSinAlpha };
+			Zenith_Maths::Vector3 xTangent = { xPtA.m_fOutZ, 0.f, -xPtA.m_fOutX };
+			Zenith_Maths::Vector3 xBitangent = {
+				-fCosAlpha * xPtA.m_fOutX,
+				fSinAlpha,
+				-fCosAlpha * xPtA.m_fOutZ };
+
+			xBuilder.AddVertex({ fX, fY, fZ }, { 0.f, fAlpha / (fPI / 2.f) }, xNormal, xTangent, xBitangent);
+		}
+
+		uint32_t uBaseB = xBuilder.m_axPositions.GetSize();
+		for (uint32_t uRing = 0; uRing < uNumRings; ++uRing)
+		{
+			float fAlpha = static_cast<float>(uRing) * (fPI / 2.f) / static_cast<float>(uEDGE_SEGMENTS);
+			float fSinAlpha = sinf(fAlpha);
+			float fCosAlpha = cosf(fAlpha);
+
+			float fInset = fEDGE_RADIUS * (1.f - fSinAlpha) * fScaleB;
+			float fY = fMaxY - fEDGE_RADIUS * (1.f - fCosAlpha) * fScaleB;
+
+			float fX = xPtB.m_fX - xPtB.m_fOutX * fInset;
+			float fZ = xPtB.m_fZ - xPtB.m_fOutZ * fInset;
+
+			Zenith_Maths::Vector3 xNormal = {
+				xPtB.m_fOutX * fSinAlpha,
+				fCosAlpha,
+				xPtB.m_fOutZ * fSinAlpha };
+			Zenith_Maths::Vector3 xTangent = { xPtB.m_fOutZ, 0.f, -xPtB.m_fOutX };
+			Zenith_Maths::Vector3 xBitangent = {
+				-fCosAlpha * xPtB.m_fOutX,
+				fSinAlpha,
+				-fCosAlpha * xPtB.m_fOutZ };
+
+			xBuilder.AddVertex({ fX, fY, fZ }, { 1.f, fAlpha / (fPI / 2.f) }, xNormal, xTangent, xBitangent);
+		}
+
+		for (uint32_t uRing = 0; uRing < uEDGE_SEGMENTS; ++uRing)
+		{
+			uint32_t uA0 = uBaseA + uRing;
+			uint32_t uA1 = uBaseA + uRing + 1;
+			uint32_t uB0 = uBaseB + uRing;
+			uint32_t uB1 = uBaseB + uRing + 1;
+			xBuilder.AddTriangle(uA0, uA1, uB0);
+			xBuilder.AddTriangle(uB0, uA1, uB1);
+		}
+	}
+}
+
+static void EmitSideWalls(
+	MeshBuilder& xBuilder,
+	const Zenith_Vector<PerimeterPoint>& axPerimeter,
+	float fMinY, float fMaxY)
+{
+	uint32_t uNumPoints = axPerimeter.GetSize();
+
+	for (uint32_t u = 0; u < uNumPoints; ++u)
+	{
+		if (!axPerimeter.Get(u).m_bExterior)
+			continue;
+
+		uint32_t uNext = (u + 1) % uNumPoints;
+		const PerimeterPoint& xPtA = axPerimeter.Get(u);
+		const PerimeterPoint& xPtB = axPerimeter.Get(uNext);
+
+		// Per-point side wall top: accounts for edge rounding where present
+		float fTopA = fMaxY - fEDGE_RADIUS * GetEdgeScale(axPerimeter, u);
+		float fTopB = fMaxY - fEDGE_RADIUS * GetEdgeScale(axPerimeter, uNext);
+
+		Zenith_Maths::Vector3 xTangentA = { xPtA.m_fOutZ, 0.f, -xPtA.m_fOutX };
+		Zenith_Maths::Vector3 xTangentB = { xPtB.m_fOutZ, 0.f, -xPtB.m_fOutX };
+
+		uint32_t uV0 = xBuilder.AddVertex(
+			{ xPtA.m_fX, fMinY, xPtA.m_fZ }, { 0.f, 0.f },
+			{ xPtA.m_fOutX, 0.f, xPtA.m_fOutZ }, xTangentA, { 0.f, 1.f, 0.f });
+		uint32_t uV1 = xBuilder.AddVertex(
+			{ xPtB.m_fX, fMinY, xPtB.m_fZ }, { 1.f, 0.f },
+			{ xPtB.m_fOutX, 0.f, xPtB.m_fOutZ }, xTangentB, { 0.f, 1.f, 0.f });
+		uint32_t uV2 = xBuilder.AddVertex(
+			{ xPtA.m_fX, fTopA, xPtA.m_fZ }, { 0.f, 1.f },
+			{ xPtA.m_fOutX, 0.f, xPtA.m_fOutZ }, xTangentA, { 0.f, 1.f, 0.f });
+		uint32_t uV3 = xBuilder.AddVertex(
+			{ xPtB.m_fX, fTopB, xPtB.m_fZ }, { 1.f, 1.f },
+			{ xPtB.m_fOutX, 0.f, xPtB.m_fOutZ }, xTangentB, { 0.f, 1.f, 0.f });
+
+		xBuilder.AddTriangle(uV0, uV2, uV1);
+		xBuilder.AddTriangle(uV1, uV2, uV3);
+	}
+}
+
+static void EmitBottomFace(
+	MeshBuilder& xBuilder,
+	const Zenith_Vector<PerimeterPoint>& axPerimeter,
+	float fMinY, float fCenterX, float fCenterZ)
+{
+	uint32_t uNumPoints = axPerimeter.GetSize();
+
+	// Center vertex
+	uint32_t uCenter = xBuilder.AddVertex(
+		{ fCenterX, fMinY, fCenterZ },
+		{ 0.5f, 0.5f },
+		{ 0.f, -1.f, 0.f },
+		{ 1.f, 0.f, 0.f },
+		{ 0.f, 0.f, 1.f });
+
+	// Perimeter vertices at full perimeter position (no edge inset on bottom)
+	Zenith_Vector<uint32_t> auPerimVerts;
+	for (uint32_t u = 0; u < uNumPoints; ++u)
+	{
+		const PerimeterPoint& xPt = axPerimeter.Get(u);
+		float fU = xPt.m_fX - fCenterX + 0.5f;
+		float fV = xPt.m_fZ - fCenterZ + 0.5f;
+
+		uint32_t uIdx = xBuilder.AddVertex(
+			{ xPt.m_fX, fMinY, xPt.m_fZ },
+			{ fU, fV },
+			{ 0.f, -1.f, 0.f },
+			{ 1.f, 0.f, 0.f },
+			{ 0.f, 0.f, 1.f });
+		auPerimVerts.PushBack(uIdx);
+	}
+
+	// Triangle fan (reversed winding for -Y normal)
+	for (uint32_t u = 0; u < uNumPoints; ++u)
+	{
+		uint32_t uNext = (u + 1) % uNumPoints;
+		xBuilder.AddTriangle(uCenter, auPerimVerts.Get(uNext), auPerimVerts.Get(u));
+	}
+}
+
 static void GenerateShapeMesh(const TilePuzzleShapeDefinition& xDef, Flux_MeshGeometry& xGeometryOut)
 {
-	static constexpr float fBorder = 0.05f;
-	static constexpr float fHalf = 0.5f;
-	static constexpr float fHalfHeight = 0.5f;
-
 	const std::vector<TilePuzzleCellOffset>& axCells = xDef.axCells;
 	uint32_t uNumCells = static_cast<uint32_t>(axCells.size());
 
 	// Build occupancy set for O(1) neighbor lookup
-	// Key = (y+128)*256 + (x+128) to handle negative offsets
 	std::unordered_set<uint32_t> xOccupied;
 	for (uint32_t c = 0; c < uNumCells; ++c)
 	{
@@ -89,75 +495,9 @@ static void GenerateShapeMesh(const TilePuzzleShapeDefinition& xDef, Flux_MeshGe
 		return xOccupied.count(uKey) > 0;
 	};
 
-	// Count exterior faces: side faces only where no neighbor, top/bottom always
-	uint32_t uNumExteriorFaces = 0;
-	for (uint32_t c = 0; c < uNumCells; ++c)
-	{
-		int32_t iCX = axCells[c].iX;
-		int32_t iCY = axCells[c].iY;
-
-		if (!IsOccupied(iCX + 1, iCY)) uNumExteriorFaces++;
-		if (!IsOccupied(iCX - 1, iCY)) uNumExteriorFaces++;
-		if (!IsOccupied(iCX, iCY + 1)) uNumExteriorFaces++;
-		if (!IsOccupied(iCX, iCY - 1)) uNumExteriorFaces++;
-		uNumExteriorFaces += 2; // top + bottom always
-	}
-
-	uint32_t uNumVerts = uNumExteriorFaces * 4;
-	uint32_t uNumIndices = uNumExteriorFaces * 6;
-
-	xGeometryOut.m_uNumVerts = uNumVerts;
-	xGeometryOut.m_uNumIndices = uNumIndices;
-
-	xGeometryOut.m_pxPositions = static_cast<Zenith_Maths::Vector3*>(
-		Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector3)));
-	xGeometryOut.m_pxUVs = static_cast<Zenith_Maths::Vector2*>(
-		Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector2)));
-	xGeometryOut.m_pxNormals = static_cast<Zenith_Maths::Vector3*>(
-		Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector3)));
-	xGeometryOut.m_pxTangents = static_cast<Zenith_Maths::Vector3*>(
-		Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector3)));
-	xGeometryOut.m_pxBitangents = static_cast<Zenith_Maths::Vector3*>(
-		Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector3)));
-	xGeometryOut.m_pxColors = static_cast<Zenith_Maths::Vector4*>(
-		Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector4)));
-	xGeometryOut.m_puIndices = static_cast<Flux_MeshGeometry::IndexType*>(
-		Zenith_MemoryManagement::Allocate(uNumIndices * sizeof(Flux_MeshGeometry::IndexType)));
-
-	uint32_t uVert = 0;
-	uint32_t uIdx = 0;
-
-	// Add a quad face (4 verts, 6 indices) with CCW winding matching GenerateUnitCube
-	auto AddFace = [&](
-		const Zenith_Maths::Vector3& p0, const Zenith_Maths::Vector3& p1,
-		const Zenith_Maths::Vector3& p2, const Zenith_Maths::Vector3& p3,
-		const Zenith_Maths::Vector3& xNormal,
-		const Zenith_Maths::Vector3& xTangent,
-		const Zenith_Maths::Vector3& xBitangent)
-	{
-		uint32_t uBase = uVert;
-
-		Zenith_Maths::Vector3 apPositions[4] = { p0, p1, p2, p3 };
-		Zenith_Maths::Vector2 axUVs[4] = { {0.f, 0.f}, {1.f, 0.f}, {0.f, 1.f}, {1.f, 1.f} };
-
-		for (uint32_t v = 0; v < 4; ++v)
-		{
-			xGeometryOut.m_pxPositions[uVert] = apPositions[v];
-			xGeometryOut.m_pxNormals[uVert] = xNormal;
-			xGeometryOut.m_pxTangents[uVert] = xTangent;
-			xGeometryOut.m_pxBitangents[uVert] = xBitangent;
-			xGeometryOut.m_pxUVs[uVert] = axUVs[v];
-			xGeometryOut.m_pxColors[uVert] = { 1.f, 1.f, 1.f, 1.f };
-			uVert++;
-		}
-
-		xGeometryOut.m_puIndices[uIdx++] = uBase + 0;
-		xGeometryOut.m_puIndices[uIdx++] = uBase + 2;
-		xGeometryOut.m_puIndices[uIdx++] = uBase + 1;
-		xGeometryOut.m_puIndices[uIdx++] = uBase + 1;
-		xGeometryOut.m_puIndices[uIdx++] = uBase + 2;
-		xGeometryOut.m_puIndices[uIdx++] = uBase + 3;
-	};
+	MeshBuilder xBuilder;
+	float fMinY = -fHALF_HEIGHT;
+	float fMaxY = fHALF_HEIGHT;
 
 	for (uint32_t c = 0; c < uNumCells; ++c)
 	{
@@ -168,67 +508,30 @@ static void GenerateShapeMesh(const TilePuzzleShapeDefinition& xDef, Flux_MeshGe
 
 		bool bHasRight = IsOccupied(iCX + 1, iCY);
 		bool bHasLeft = IsOccupied(iCX - 1, iCY);
-		bool bHasFront = IsOccupied(iCX, iCY + 1); // +Z
-		bool bHasBack = IsOccupied(iCX, iCY - 1);  // -Z
+		bool bHasFront = IsOccupied(iCX, iCY + 1);
+		bool bHasBack = IsOccupied(iCX, iCY - 1);
 
-		// Border-adjusted extents: internal edges at exact boundary, external edges inset
-		float fMinX = fCX - fHalf + (bHasLeft ? 0.f : fBorder);
-		float fMaxX = fCX + fHalf - (bHasRight ? 0.f : fBorder);
-		float fMinZ = fCZ - fHalf + (bHasBack ? 0.f : fBorder);
-		float fMaxZ = fCZ + fHalf - (bHasFront ? 0.f : fBorder);
-		float fMinY = -fHalfHeight;
-		float fMaxY = fHalfHeight;
+		// Border-adjusted extents
+		float fMinX = fCX - fHALF + (bHasLeft ? 0.f : fBORDER);
+		float fMaxX = fCX + fHALF - (bHasRight ? 0.f : fBORDER);
+		float fMinZ = fCZ - fHALF + (bHasBack ? 0.f : fBORDER);
+		float fMaxZ = fCZ + fHALF - (bHasFront ? 0.f : fBORDER);
 
-		// +X face (right side) - only if no neighbor
-		if (!bHasRight)
-		{
-			AddFace(
-				{ fMaxX, fMinY, fMaxZ }, { fMaxX, fMinY, fMinZ },
-				{ fMaxX, fMaxY, fMaxZ }, { fMaxX, fMaxY, fMinZ },
-				{ 1.f, 0.f, 0.f }, { 0.f, 0.f, -1.f }, { 0.f, 1.f, 0.f }
-			);
-		}
-		// -X face (left side)
-		if (!bHasLeft)
-		{
-			AddFace(
-				{ fMinX, fMinY, fMinZ }, { fMinX, fMinY, fMaxZ },
-				{ fMinX, fMaxY, fMinZ }, { fMinX, fMaxY, fMaxZ },
-				{ -1.f, 0.f, 0.f }, { 0.f, 0.f, 1.f }, { 0.f, 1.f, 0.f }
-			);
-		}
-		// +Z face (front, grid Y+1)
-		if (!bHasFront)
-		{
-			AddFace(
-				{ fMinX, fMinY, fMaxZ }, { fMaxX, fMinY, fMaxZ },
-				{ fMinX, fMaxY, fMaxZ }, { fMaxX, fMaxY, fMaxZ },
-				{ 0.f, 0.f, 1.f }, { 1.f, 0.f, 0.f }, { 0.f, 1.f, 0.f }
-			);
-		}
-		// -Z face (back, grid Y-1)
-		if (!bHasBack)
-		{
-			AddFace(
-				{ fMaxX, fMinY, fMinZ }, { fMinX, fMinY, fMinZ },
-				{ fMaxX, fMaxY, fMinZ }, { fMinX, fMaxY, fMinZ },
-				{ 0.f, 0.f, -1.f }, { -1.f, 0.f, 0.f }, { 0.f, 1.f, 0.f }
-			);
-		}
-		// +Y face (top) - always exterior
-		AddFace(
-			{ fMinX, fMaxY, fMaxZ }, { fMaxX, fMaxY, fMaxZ },
-			{ fMinX, fMaxY, fMinZ }, { fMaxX, fMaxY, fMinZ },
-			{ 0.f, 1.f, 0.f }, { 1.f, 0.f, 0.f }, { 0.f, 0.f, -1.f }
-		);
-		// -Y face (bottom) - always exterior
-		AddFace(
-			{ fMinX, fMinY, fMinZ }, { fMaxX, fMinY, fMinZ },
-			{ fMinX, fMinY, fMaxZ }, { fMaxX, fMinY, fMaxZ },
-			{ 0.f, -1.f, 0.f }, { 1.f, 0.f, 0.f }, { 0.f, 0.f, 1.f }
-		);
+		// Build CW perimeter for this cell
+		Zenith_Vector<PerimeterPoint> axPerimeter;
+		BuildCellPerimeter(
+			fMinX, fMaxX, fMinZ, fMaxZ,
+			bHasRight, bHasLeft, bHasFront, bHasBack,
+			axPerimeter);
+
+		// Emit geometry layers
+		EmitTopFace(xBuilder, axPerimeter, fMaxY, fCX, fCZ);
+		EmitEdgeRounding(xBuilder, axPerimeter, fMaxY);
+		EmitSideWalls(xBuilder, axPerimeter, fMinY, fMaxY);
+		EmitBottomFace(xBuilder, axPerimeter, fMinY, fCX, fCZ);
 	}
 
+	xBuilder.CopyToGeometry(xGeometryOut);
 	xGeometryOut.GenerateLayoutAndVertexData();
 	Flux_MemoryManager::InitialiseVertexBuffer(
 		xGeometryOut.GetVertexData(), xGeometryOut.GetVertexDataSize(), xGeometryOut.m_xVertexBuffer);
