@@ -583,6 +583,9 @@
     <ClCompile Include="..\Zenith\Core\Zenith_String.cpp">
       <Filter>Core</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\Core\Zenith_Tween.cpp">
+      <Filter>Core</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\DataStream\Zenith_DataStream.cpp">
       <Filter>DataStream</Filter>
     </ClCompile>
@@ -631,6 +634,9 @@
     <ClCompile Include="..\Zenith\Editor\Zenith_UndoSystem.cpp">
       <Filter>Editor</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_AnimatorComponent.cpp">
+      <Filter>EntityComponent\Components</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_CameraComponent.cpp">
       <Filter>EntityComponent\Components</Filter>
     </ClCompile>
@@ -662,6 +668,9 @@
       <Filter>EntityComponent\Components</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_TransformComponent.cpp">
+      <Filter>EntityComponent\Components</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_TweenComponent.cpp">
       <Filter>EntityComponent\Components</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_UIComponent.cpp">
@@ -764,6 +773,9 @@
       <Filter>Flux\MeshAnimation</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationController.cpp">
+      <Filter>Flux\MeshAnimation</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationLayer.cpp">
       <Filter>Flux\MeshAnimation</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationStateMachine.cpp">
@@ -3135,7 +3147,13 @@
     <ClInclude Include="..\Zenith\Core\Zenith_FileWatcher.h">
       <Filter>Core</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Core\Zenith_GraphicsOptions.h">
+      <Filter>Core</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Core\Zenith_String.h">
+      <Filter>Core</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Core\Zenith_Tween.h">
       <Filter>Core</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\DataStream\Zenith_DataStream.h">
@@ -3189,6 +3207,9 @@
     <ClInclude Include="..\Zenith\Editor\Zenith_UndoSystem.h">
       <Filter>Editor</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_AnimatorComponent.h">
+      <Filter>EntityComponent\Components</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_CameraComponent.h">
       <Filter>EntityComponent\Components</Filter>
     </ClInclude>
@@ -3214,6 +3235,9 @@
       <Filter>EntityComponent\Components</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_TransformComponent.h">
+      <Filter>EntityComponent\Components</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_TweenComponent.h">
       <Filter>EntityComponent\Components</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_UIComponent.h">
@@ -3334,6 +3358,9 @@
       <Filter>Flux\MeshAnimation</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationController.h">
+      <Filter>Flux\MeshAnimation</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationLayer.h">
       <Filter>Flux\MeshAnimation</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationStateMachine.h">
@@ -3559,6 +3586,9 @@
       <Filter>Flux\Shaders\Skybox</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\Skybox\Flux_Skybox.frag">
+      <Filter>Flux\Shaders\Skybox</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\Flux\Shaders\Skybox\Flux_SkyboxSolidColour.frag">
       <Filter>Flux\Shaders\Skybox</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\Flux\Shaders\SSAO\Flux_SSAO.frag">

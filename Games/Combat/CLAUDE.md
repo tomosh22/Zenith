@@ -6,8 +6,11 @@ An arena-based combat game demonstrating Animation State Machines, Inverse Kinem
 
 | Feature | Engine Class | Usage |
 |---------|--------------|-------|
-| **Animation State Machine** | `Flux_AnimationStateMachine` | Complex combat animation states with transitions |
+| **Animator Component** | `Zenith_AnimatorComponent` | Separate animation component (auto-discovers skeleton from ModelComponent) |
+| **Animation State Machine** | `Flux_AnimationStateMachine` | Complex combat animation states with transitions, any-state transitions |
 | **Animation Parameters** | `Flux_AnimationParameters` | Float/Bool/Trigger parameters for state control |
+| **AnimatorStateInfo** | `Flux_AnimatorStateInfo` | Runtime state introspection (normalized time, state name) |
+| **CrossFade** | `Flux_AnimationStateMachine::CrossFade` | Force-transition bypassing conditions |
 | **Inverse Kinematics** | `Flux_IKSolver`, `SolveLookAtIK` | Foot placement IK and head look-at |
 | **Event System** | `Zenith_EventDispatcher` | Custom damage/death events with deferred dispatch |
 | **Entity Queries** | `Zenith_Query` | Finding enemies within attack radius |
@@ -70,11 +73,15 @@ Demonstrates:
 - State-based input blocking during attacks/dodge
 
 ### Combat_AnimationController.h - Animation State Machine
-**Engine APIs:** `Flux_AnimationStateMachine`, `Flux_AnimationParameters`, `Flux_AnimationState`
+**Engine APIs:** `Zenith_AnimatorComponent`, `Flux_AnimationStateMachine`, `Flux_AnimationParameters`, `Flux_AnimationState`
 
 Demonstrates:
+- Using `Zenith_AnimatorComponent` (separate from `Zenith_ModelComponent`) for animation
 - Creating combat animation states (Idle, Walk, LightAttack1-3, HeavyAttack, Dodge, Hit, Death)
 - Parameter-driven transitions (Speed float, IsAttacking bool, AttackTrigger trigger)
+- Any-State transitions for Hit and Death (fire from any current state)
+- `AnimatorStateInfo` queries for hit-frame detection (`IsAttackHitFrame()`)
+- `CrossFade()` for force-transitioning to states without conditions
 - Combo system with timed transition windows
 - Exit time conditions for attack recovery
 
@@ -207,7 +214,7 @@ Uses `CreateEmptyScene("Arena")` + `SetActiveScene()` to start, `UnloadScene()` 
 ## Key Patterns
 
 ### Animation State Machine Setup
-Create `Flux_AnimationStateMachine`, add parameters (Float, Bool, Trigger types), add states, and configure transitions with conditions.
+Add `Zenith_AnimatorComponent` to the entity (separate from `Zenith_ModelComponent`). The AnimatorComponent auto-discovers the skeleton from ModelComponent on the same entity during `OnStart()`. Create states and transitions via `GetStateMachine()`, use Any-State transitions for global reactions (Hit, Death), and query state with `GetCurrentAnimatorStateInfo()`.
 
 ### IK Application
 Create IK chains via `Flux_IKSolver::CreateLegChain()`, set targets from raycasts each frame, and call `Solve()` after animation evaluation.

@@ -76,7 +76,7 @@ Zenith/
 | `x` | Struct/class instance | `m_xComponents`, `xEntity` |
 | `p` | Pointer | `m_pData`, `pData` |
 | `px` | Pointer to class/struct | `m_pxParentScene`, `pxAnim` |
-| `ax` | Array | `m_axColourAttachments` |
+| `a` | Array | `m_axColourAttachments`, `auIndices` |
 | `u` | Unsigned int | `m_uWidth`, `uIndex` |
 | `b` | Bool | `m_bInitialised`, `bSuccess` |
 | `f` | Float | `m_fScale`, `fDeltaTime` |

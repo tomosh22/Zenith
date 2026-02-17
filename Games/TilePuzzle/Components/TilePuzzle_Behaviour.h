@@ -35,6 +35,7 @@
 #include "SaveData/Zenith_SaveData.h"
 #include "Input/Zenith_TouchInput.h"
 #include "UI/Zenith_UICanvas.h"
+#include "EntityComponent/Components/Zenith_TweenComponent.h"
 
 #include <random>
 #include <vector>
@@ -1240,7 +1241,8 @@ private:
 				Zenith_Entity xEntity = pxSceneData->GetEntity(xShape.xEntityID);
 				if (xEntity.IsValid())
 				{
-					Zenith_SceneManager::Destroy(xEntity, 0.3f);
+					Zenith_TweenComponent::ScaleTo(xEntity, Zenith_Maths::Vector3(0.0f), s_fEliminationDuration, EASING_BACK_IN);
+					Zenith_SceneManager::Destroy(xEntity, s_fEliminationDuration + 0.01f);
 				}
 			}
 		}
@@ -1334,7 +1336,8 @@ private:
 				Zenith_Entity xCatEntity = pxSceneData->GetEntity(xCat.uEntityID);
 				if (xCatEntity.IsValid())
 				{
-					Zenith_SceneManager::Destroy(xCatEntity, 0.3f);
+					Zenith_TweenComponent::ScaleTo(xCatEntity, Zenith_Maths::Vector3(0.0f), s_fEliminationDuration, EASING_BACK_IN);
+					Zenith_SceneManager::Destroy(xCatEntity, s_fEliminationDuration + 0.01f);
 				}
 			}
 			xCat.uEntityID = Zenith_EntityID();

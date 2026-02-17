@@ -8,7 +8,8 @@ This directory contains all component types for the Entity-Component System.
 |-----------|---------|
 | `Zenith_TransformComponent` | Position, rotation, scale (added automatically to all entities) |
 | `Zenith_CameraComponent` | View/projection matrices for rendering |
-| `Zenith_ModelComponent` | Renderable 3D mesh with materials |
+| `Zenith_ModelComponent` | Renderable 3D mesh with materials (no animation - use AnimatorComponent) |
+| `Zenith_AnimatorComponent` | Skeletal animation controller (auto-discovers skeleton from ModelComponent) |
 | `Zenith_LightComponent` | Dynamic lights (directional, point, spot) |
 | `Zenith_ColliderComponent` | Physics collision shapes (Jolt integration) |
 | `Zenith_TerrainComponent` | Heightmap-based terrain with streaming |

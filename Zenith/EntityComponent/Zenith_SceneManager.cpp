@@ -2212,11 +2212,7 @@ void Zenith_SceneManager::Update(float fDt)
 					continue;
 				}
 
-				// New model instance system: Update the animation controller and skeleton
-				if (pxModel->IsUsingModelInstance())
-				{
-					pxModel->Update(fDt);
-				}
+				// Note: Skeletal animation is now handled by Zenith_AnimatorComponent::OnUpdate
 
 				// Legacy system: Collect animations for parallel update task
 				for (u_int uMesh = 0; uMesh < pxModel->GetNumMeshEntries(); uMesh++)

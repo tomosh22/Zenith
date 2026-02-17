@@ -18,7 +18,7 @@
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "Physics/Zenith_Physics.h"
 #include "Maths/Zenith_Maths.h"
-#include "Flux/MeshAnimation/Flux_SkeletonInstance.h"
+#include "EntityComponent/Components/Zenith_AnimatorComponent.h"
 #include "Combat_QueryHelper.h"
 #include "Combat_DamageSystem.h"
 #include "Combat_HitDetection.h"
@@ -69,7 +69,7 @@ public:
 	// Initialization
 	// ========================================================================
 
-	void Initialize(Zenith_EntityID uEntityID, const Combat_EnemyConfig& xConfig, Flux_SkeletonInstance* pxSkeleton = nullptr)
+	void Initialize(Zenith_EntityID uEntityID, const Combat_EnemyConfig& xConfig, Zenith_AnimatorComponent* pxAnimator = nullptr)
 	{
 		m_uEntityID = uEntityID;
 		m_xConfig = xConfig;
@@ -77,14 +77,14 @@ public:
 
 		// Initialize subsystems
 		m_xHitDetection.SetOwner(uEntityID);
-		if (pxSkeleton)
+		if (pxAnimator)
 		{
-			m_xAnimController.Initialize(pxSkeleton);
-			Zenith_Log(LOG_CATEGORY_ANIMATION, "[Enemy %u] Animation controller initialized with skeleton", uEntityID.m_uIndex);
+			m_xAnimController.Initialize(*pxAnimator);
+			Zenith_Log(LOG_CATEGORY_ANIMATION, "[Enemy %u] Animation controller initialized with AnimatorComponent", uEntityID.m_uIndex);
 		}
 		else
 		{
-			Zenith_Log(LOG_CATEGORY_ANIMATION, "[Enemy %u] WARNING: No skeleton provided, animation will not work!", uEntityID.m_uIndex);
+			Zenith_Log(LOG_CATEGORY_ANIMATION, "[Enemy %u] WARNING: No AnimatorComponent provided, animation will not work!", uEntityID.m_uIndex);
 		}
 		m_xIKController.SetFootIKEnabled(true);
 		m_xIKController.SetLookAtIKEnabled(true);
@@ -184,7 +184,7 @@ public:
 		bool bIsAttacking = (m_eState == Combat_EnemyState::ATTACKING);
 		bool bIsHit = (m_eState == Combat_EnemyState::HIT_STUN);
 		bool bIsDead = (m_eState == Combat_EnemyState::DEAD);
-		m_xAnimController.UpdateForEnemy(m_fCurrentSpeed, bIsAttacking, bIsHit, bIsDead, fDt);
+		m_xAnimController.UpdateForEnemy(m_fCurrentSpeed, bIsAttacking, bIsHit, bIsDead);
 
 		// Update IK
 		bool bCanUseIK = (m_eState != Combat_EnemyState::DEAD && m_eState != Combat_EnemyState::HIT_STUN);
@@ -413,12 +413,12 @@ public:
 	/**
 	 * RegisterEnemy - Add an enemy to the manager
 	 */
-	void RegisterEnemy(Zenith_EntityID uEntityID, const Combat_EnemyConfig& xConfig, Flux_SkeletonInstance* pxSkeleton = nullptr)
+	void RegisterEnemy(Zenith_EntityID uEntityID, const Combat_EnemyConfig& xConfig, Zenith_AnimatorComponent* pxAnimator = nullptr)
 	{
-		Zenith_Log(LOG_CATEGORY_ANIMATION, "[EnemyManager] RegisterEnemy %u, skeleton=%p, vector size before=%zu",
-			uEntityID.m_uIndex, pxSkeleton, m_axEnemies.size());
+		Zenith_Log(LOG_CATEGORY_ANIMATION, "[EnemyManager] RegisterEnemy %u, animator=%p, vector size before=%zu",
+			uEntityID.m_uIndex, pxAnimator, m_axEnemies.size());
 		Combat_EnemyAI xAI;
-		xAI.Initialize(uEntityID, xConfig, pxSkeleton);
+		xAI.Initialize(uEntityID, xConfig, pxAnimator);
 		m_axEnemies.push_back(std::move(xAI));
 		Zenith_Log(LOG_CATEGORY_ANIMATION, "[EnemyManager] After push_back, vector size=%zu", m_axEnemies.size());
 	}

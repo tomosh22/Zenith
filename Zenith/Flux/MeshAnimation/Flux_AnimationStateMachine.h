@@ -4,12 +4,16 @@
 #include "DataStream/Zenith_DataStream.h"
 #include "Collections/Zenith_Vector.h"
 #include <unordered_map>
-#include <functional>
 #include <variant>
+
+// Callback typedefs for state lifecycle hooks (replaces std::function)
+using Flux_AnimStateCallback = void(*)(void* pUserData);
+using Flux_AnimStateUpdateCallback = void(*)(void* pUserData, float fDt);
 
 // Forward declarations
 class Flux_AnimationClipCollection;
 class Zenith_SkeletonAsset;
+class Flux_AnimationStateMachine;
 
 //=============================================================================
 // Flux_AnimationParameters
@@ -57,6 +61,9 @@ public:
 	int32_t GetInt(const std::string& strName) const;
 	bool GetBool(const std::string& strName) const;
 
+	// Check if trigger is set without consuming it
+	bool PeekTrigger(const std::string& strName) const;
+
 	// Trigger consumption (returns true if trigger was set, then resets it)
 	bool ConsumeTrigger(const std::string& strName);
 
@@ -78,7 +85,7 @@ public:
 	void ReadFromDataStream(Zenith_DataStream& xStream);
 
 private:
-	std::unordered_map<std::string, Parameter> m_xParameters;
+	std::unordered_map<std::string, Parameter> m_xParameters; // #TODO: Replace with engine hash map
 };
 
 //=============================================================================
@@ -133,8 +140,8 @@ struct Flux_StateTransition
 	bool m_bInterruptible = true;          // Can be interrupted by higher priority transitions
 	int32_t m_iPriority = 0;               // Higher = checked first
 
-	// Check if this transition can occur
-	bool CanTransition(const Flux_AnimationParameters& xParams, float fCurrentNormalizedTime) const;
+	// Check if this transition can occur (consumes triggers only if all conditions pass)
+	bool CanTransition(Flux_AnimationParameters& xParams, float fCurrentNormalizedTime) const;
 
 	// Serialization
 	void WriteToDataStream(Zenith_DataStream& xStream) const;
@@ -161,17 +168,23 @@ public:
 
 	// Transitions
 	void AddTransition(const Flux_StateTransition& xTransition);
-	void RemoveTransition(size_t uIndex);
+	void RemoveTransition(uint32_t uIndex);
 	const Zenith_Vector<Flux_StateTransition>& GetTransitions() const { return m_xTransitions; }
 	Zenith_Vector<Flux_StateTransition>& GetTransitions() { return m_xTransitions; }
 
-	// Find highest priority transition that can trigger
-	const Flux_StateTransition* CheckTransitions(const Flux_AnimationParameters& xParams) const;
+	// Find highest priority transition that can trigger (iMinPriority: skip transitions at or below this priority)
+	const Flux_StateTransition* CheckTransitions(Flux_AnimationParameters& xParams, int32_t iMinPriority = INT32_MIN) const;
+
+	// Sub-state machine (nested state machine within this state)
+	bool IsSubStateMachine() const { return m_pxSubStateMachine != nullptr; }
+	Flux_AnimationStateMachine* GetSubStateMachine() const { return m_pxSubStateMachine; }
+	Flux_AnimationStateMachine* CreateSubStateMachine(const std::string& strName);
 
 	// State callbacks (optional, for gameplay hooks)
-	std::function<void()> m_fnOnEnter;
-	std::function<void()> m_fnOnExit;
-	std::function<void(float)> m_fnOnUpdate;
+	Flux_AnimStateCallback m_pfnOnEnter = nullptr;
+	Flux_AnimStateCallback m_pfnOnExit = nullptr;
+	Flux_AnimStateUpdateCallback m_pfnOnUpdate = nullptr;
+	void* m_pCallbackUserData = nullptr;
 
 	// Editor position for visual state machine editor
 #ifdef ZENITH_TOOLS
@@ -185,7 +198,25 @@ public:
 private:
 	std::string m_strName;
 	Flux_BlendTreeNode* m_pxBlendTree = nullptr;
+	Flux_AnimationStateMachine* m_pxSubStateMachine = nullptr;  // Owned, optional nested SM
 	Zenith_Vector<Flux_StateTransition> m_xTransitions;
+};
+
+//=============================================================================
+// Flux_AnimatorStateInfo
+// Runtime state introspection (Unity's GetCurrentAnimatorStateInfo())
+//=============================================================================
+struct Flux_AnimatorStateInfo
+{
+	std::string m_strStateName;
+	float m_fNormalizedTime = 0.0f;    // fractional = progress [0-1], integer = loop count
+	float m_fLength = 0.0f;            // clip duration in seconds
+	float m_fSpeed = 1.0f;
+	bool m_bHasLooped = false;         // true once normalized time has exceeded 1.0 (past first cycle)
+	bool m_bIsTransitioning = false;
+	float m_fTransitionProgress = 0.0f;
+
+	bool IsName(const char* szName) const;
 };
 
 //=============================================================================
@@ -218,8 +249,10 @@ public:
 	void SetState(const std::string& strStateName);
 
 	// Parameters (shared across all states)
-	Flux_AnimationParameters& GetParameters() { return m_xParameters; }
-	const Flux_AnimationParameters& GetParameters() const { return m_xParameters; }
+	// If shared parameters are set (by parent sub-SM), those are used instead of local
+	Flux_AnimationParameters& GetParameters() { return m_pxSharedParameters ? *m_pxSharedParameters : m_xParameters; }
+	const Flux_AnimationParameters& GetParameters() const { return m_pxSharedParameters ? *m_pxSharedParameters : m_xParameters; }
+	void SetSharedParameters(Flux_AnimationParameters* pxSharedParams) { m_pxSharedParameters = pxSharedParams; }
 
 	// Update the state machine (call each frame)
 	// Returns the resulting skeleton pose
@@ -230,12 +263,24 @@ public:
 	// Check if currently in a transition
 	bool IsTransitioning() const { return m_pxActiveTransition != nullptr; }
 
+	// State info query (Unity's GetCurrentAnimatorStateInfo)
+	Flux_AnimatorStateInfo GetCurrentStateInfo() const;
+
+	// Force-crossfade to a named state, bypassing transition conditions (Unity's Animator.CrossFade)
+	void CrossFade(const std::string& strStateName, float fDuration = 0.15f);
+
 	// Get all states for iteration
 	const std::unordered_map<std::string, Flux_AnimationState*>& GetStates() const { return m_xStates; }
 
 	// Name
 	const std::string& GetName() const { return m_strName; }
 	void SetName(const std::string& strName) { m_strName = strName; }
+
+	// Any-State transitions (fire from any current state)
+	void AddAnyStateTransition(const Flux_StateTransition& xTransition);
+	void RemoveAnyStateTransition(uint32_t uIndex);
+	const Zenith_Vector<Flux_StateTransition>& GetAnyStateTransitions() const { return m_xAnyStateTransitions; }
+	Zenith_Vector<Flux_StateTransition>& GetAnyStateTransitions() { return m_xAnyStateTransitions; }
 
 	// Resolve clip references in blend trees
 	void ResolveClipReferences(Flux_AnimationClipCollection* pxCollection);
@@ -252,15 +297,22 @@ private:
 	void UpdateTransition(float fDt, const Zenith_SkeletonAsset& xSkeleton);
 	void CompleteTransition();
 
+	// Check any-state transitions (skips transitions targeting current state and below iMinPriority)
+	const Flux_StateTransition* CheckAnyStateTransitions(int32_t iMinPriority = INT32_MIN);
+
 	std::string m_strName;
-	std::unordered_map<std::string, Flux_AnimationState*> m_xStates;
+	std::unordered_map<std::string, Flux_AnimationState*> m_xStates; // #TODO: Replace with engine hash map
 	std::string m_strDefaultStateName;
+	Zenith_Vector<Flux_StateTransition> m_xAnyStateTransitions;
 
 	// Runtime state
 	Flux_AnimationState* m_pxCurrentState = nullptr;
 	Flux_CrossFadeTransition* m_pxActiveTransition = nullptr;
 	Flux_AnimationState* m_pxTransitionTargetState = nullptr;
+	bool m_bActiveTransitionInterruptible = true;  // Whether the current active transition can be interrupted
+	int32_t m_iActiveTransitionPriority = 0;       // Priority of the current active transition
 	Flux_AnimationParameters m_xParameters;
+	Flux_AnimationParameters* m_pxSharedParameters = nullptr;  // Non-owned, from parent SM
 
 	// Poses
 	Flux_SkeletonPose m_xCurrentPose;

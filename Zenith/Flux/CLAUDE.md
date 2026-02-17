@@ -17,8 +17,8 @@ Note: Materials and textures are now in `AssetHandling/` (see AssetHandling/CLAU
 
 ### Subdirectories
 - `StaticMeshes/` - Opaque geometry
-- `AnimatedMeshes/` - Skeletal animation rendering
-- `MeshAnimation/` - Skeletal animation system (see MeshAnimation/CLAUDE.md)
+- `AnimatedMeshes/` - Skeletal animation rendering (bone buffers sourced from `Zenith_AnimatorComponent`)
+- `MeshAnimation/` - Skeletal animation system (see MeshAnimation/CLAUDE.md). ECS entry point is `Zenith_AnimatorComponent`, not `Zenith_ModelComponent`.
 - `Terrain/` - Terrain rendering (see Terrain/CLAUDE.md)
 - `Shadows/` - Cascaded shadow maps
 - `DeferredShading/` - Deferred lighting

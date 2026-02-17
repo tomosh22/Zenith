@@ -14,11 +14,6 @@ class Flux_ModelInstance;
 class Flux_MeshInstance;
 class Flux_SkeletonInstance;
 
-// Forward declarations for animation system
-class Flux_AnimationController;
-class Flux_AnimationStateMachine;
-class Flux_IKSolver;
-
 #ifdef ZENITH_TOOLS
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "imgui.h"
@@ -125,46 +120,6 @@ public:
 	Flux_SkeletonInstance* GetSkeletonInstance() const;
 
 	//=========================================================================
-	// Animation System Integration
-	//=========================================================================
-
-	/**
-	 * Get/create animation controller
-	 */
-	Flux_AnimationController* GetOrCreateAnimationController();
-
-	/**
-	 * Get animation controller (returns nullptr if not created)
-	 */
-	Flux_AnimationController* GetAnimationController() const { return m_pxAnimController; }
-
-	/**
-	 * Update animation (call each frame)
-	 */
-	void Update(float fDt);
-
-	// Animation convenience methods
-	void PlayAnimation(const std::string& strClipName, float fBlendTime = 0.15f);
-	void StopAnimations();
-	void SetAnimationsPaused(bool bPaused);
-	bool AreAnimationsPaused() const;
-	void SetAnimationPlaybackSpeed(float fSpeed);
-	float GetAnimationPlaybackSpeed() const;
-
-	// State machine parameter shortcuts
-	void SetAnimationFloat(const std::string& strName, float fValue);
-	void SetAnimationInt(const std::string& strName, int32_t iValue);
-	void SetAnimationBool(const std::string& strName, bool bValue);
-	void SetAnimationTrigger(const std::string& strName);
-
-	// IK target shortcuts
-	void SetIKTarget(const std::string& strChainName, const Zenith_Maths::Vector3& xPosition, float fWeight = 1.0f);
-	void ClearIKTarget(const std::string& strChainName);
-
-	// Set world matrix for IK (called automatically if TransformComponent exists)
-	void UpdateAnimationWorldMatrix();
-
-	//=========================================================================
 	// Serialization
 	//=========================================================================
 
@@ -255,9 +210,6 @@ public:
 
 	// Single model instance (replaces m_xMeshEntries for new system)
 	Flux_ModelInstance* m_pxModelInstance = nullptr;
-
-	// Animation controller (moved from mesh to component level)
-	Flux_AnimationController* m_pxAnimController = nullptr;
 
 	// Path-based reference to the .zmodel asset (primary)
 	ModelHandle m_xModel;

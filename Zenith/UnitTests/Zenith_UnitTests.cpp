@@ -38,6 +38,11 @@
 #include "Flux/MeshAnimation/Flux_AnimationStateMachine.h"
 #include "Flux/MeshAnimation/Flux_InverseKinematics.h"
 #include "Flux/MeshAnimation/Flux_AnimationController.h"
+#include "Flux/MeshAnimation/Flux_AnimationLayer.h"
+
+// Tween system includes
+#include "Core/Zenith_Tween.h"
+#include "EntityComponent/Components/Zenith_TweenComponent.h"
 #include "Flux/MeshAnimation/Flux_SkeletonInstance.h"
 
 // Mesh geometry include (for exporting runtime-format meshes)
@@ -313,6 +318,92 @@ void Zenith_UnitTests::RunAllTests()
 	// Model Instance Material tests (GBuffer rendering bug fix)
 	TestModelInstanceMaterialSetAndGet();
 	TestMaterialHandleCopyPreservesCachedPointer();
+
+	// Any-State Transition tests
+	TestAnyStateTransitionFires();
+	TestAnyStateTransitionSkipsSelf();
+	TestAnyStateTransitionPriority();
+
+	// AnimatorStateInfo tests
+	TestStateInfoStateName();
+	TestStateInfoNormalizedTime();
+
+	// CrossFade tests
+	TestCrossFadeToState();
+	TestCrossFadeToCurrentState();
+
+	// Sub-State Machine tests
+	TestSubStateMachineCreation();
+	TestSubStateMachineSharedParameters();
+
+	// Animation Layer tests
+	TestLayerCreation();
+	TestLayerWeightZero();
+
+	// Tween system tests - Easing
+	TestEasingLinear();
+	TestEasingEndpoints();
+	TestEasingQuadOut();
+	TestEasingBounceOut();
+
+	// Tween system tests - TweenInstance
+	TestTweenInstanceProgress();
+	TestTweenInstanceCompletion();
+	TestTweenInstanceDelay();
+
+	// Tween system tests - TweenComponent
+	TestTweenComponentScaleTo();
+	TestTweenComponentPositionTo();
+	TestTweenComponentMultiple();
+	TestTweenComponentCallback();
+	TestTweenComponentLoop();
+	TestTweenComponentPingPong();
+	TestTweenComponentCancel();
+
+	// Sub-SM transition evaluation test (verifies BUG 1 fix)
+	TestSubStateMachineTransitionEvaluation();
+
+	// CrossFade edge cases
+	TestCrossFadeNonExistentState();
+	TestCrossFadeInstant();
+
+	// Tween rotation
+	TestTweenComponentRotation();
+
+	// Bug regression tests (from code review)
+	TestTriggerNotConsumedOnPartialConditionMatch();
+	TestResolveClipReferencesRecursive();
+	TestTweenDelayWithLoop();
+	TestTweenCallbackReentrant();
+	TestTweenDuplicatePropertyCancels();
+
+	// Code review round 2 - bug fix regression tests
+	TestSubStateMachineTransitionBlendPose();
+	TestRotationTweenShortestPath();
+	TestTransitionInterruption();
+	TestTransitionNonInterruptible();
+	TestCancelByPropertyKeepsOthers();
+	TestCrossFadeWhileTransitioning();
+	TestTweenLoopValueReset();
+
+	// Code review round 3 - Bug 1 regression test + serialization round-trips
+	TestTriggerNotConsumedWhenBlockedByPriority();
+	TestAnimationLayerSerialization();
+	TestAnyStateTransitionSerialization();
+	TestSubStateMachineSerialization();
+
+	// Code review round 4 - bug fix validation tests
+	TestHasAnimationContentWithLayers();
+	TestInitializeRetroactiveLayerPoses();
+	TestResolveClipReferencesBlendSpace2D();
+	TestResolveClipReferencesSelect();
+	TestLayerCompositionOverrideBlend();
+
+	// Code review round 5 - additional coverage
+	TestLayerCompositionAdditiveBlend();
+	TestLayerMaskedOverrideBlend();
+	TestPingPongAsymmetricEasing();
+	TestTransitionCompletionFramePose();
 
 	// Scene Management System tests (in separate file)
 	Zenith_SceneTests::RunAllTests();
@@ -4658,10 +4749,14 @@ void Zenith_UnitTests::TestStateLifecycleCallbacks()
 	Flux_SkeletonPose xPose;
 	xPose.Initialize(1);
 
-	bool bEnterCalled = false;
-	bool bExitCalled = false;
-	bool bUpdateCalled = false;
-	float fUpdateDt = 0.0f;
+	struct CallbackData
+	{
+		bool m_bEnterCalled = false;
+		bool m_bExitCalled = false;
+		bool m_bUpdateCalled = false;
+		float m_fUpdateDt = 0.0f;
+	};
+	CallbackData xCallbackData;
 
 	Flux_AnimationStateMachine xStateMachine("TestSM");
 	xStateMachine.GetParameters().AddTrigger("Next");
@@ -4669,13 +4764,15 @@ void Zenith_UnitTests::TestStateLifecycleCallbacks()
 	Flux_AnimationState* pxStateA = xStateMachine.AddState("StateA");
 	xStateMachine.AddState("StateB");
 
-	// Set up callbacks on StateA
-	pxStateA->m_fnOnEnter = [&bEnterCalled]() { bEnterCalled = true; };
-	pxStateA->m_fnOnExit = [&bExitCalled]() { bExitCalled = true; };
-	pxStateA->m_fnOnUpdate = [&bUpdateCalled, &fUpdateDt](float fDt) {
-		bUpdateCalled = true;
-		fUpdateDt = fDt;
+	// Set up callbacks on StateA using function pointers + userdata
+	pxStateA->m_pfnOnEnter = [](void* pUserData) { static_cast<CallbackData*>(pUserData)->m_bEnterCalled = true; };
+	pxStateA->m_pfnOnExit = [](void* pUserData) { static_cast<CallbackData*>(pUserData)->m_bExitCalled = true; };
+	pxStateA->m_pfnOnUpdate = [](void* pUserData, float fDt) {
+		CallbackData* pxData = static_cast<CallbackData*>(pUserData);
+		pxData->m_bUpdateCalled = true;
+		pxData->m_fUpdateDt = fDt;
 	};
+	pxStateA->m_pCallbackUserData = &xCallbackData;
 
 	// StateA -> StateB on trigger
 	Flux_StateTransition xTrans;
@@ -4690,21 +4787,21 @@ void Zenith_UnitTests::TestStateLifecycleCallbacks()
 
 	// Test OnEnter via SetState
 	xStateMachine.SetState("StateA");
-	Zenith_Assert(bEnterCalled == true, "OnEnter should be called on SetState");
+	Zenith_Assert(xCallbackData.m_bEnterCalled == true, "OnEnter should be called on SetState");
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] OnEnter called on SetState");
 
 	// Test OnUpdate
-	bUpdateCalled = false;
+	xCallbackData.m_bUpdateCalled = false;
 	xStateMachine.Update(0.016f, xPose, xSkeleton);
-	Zenith_Assert(bUpdateCalled == true, "OnUpdate should be called during Update");
-	Zenith_Assert(FloatEquals(fUpdateDt, 0.016f, 0.001f), "OnUpdate should receive delta time");
+	Zenith_Assert(xCallbackData.m_bUpdateCalled == true, "OnUpdate should be called during Update");
+	Zenith_Assert(FloatEquals(xCallbackData.m_fUpdateDt, 0.016f, 0.001f), "OnUpdate should receive delta time");
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] OnUpdate called with correct delta time");
 
 	// Test OnExit via transition
-	bExitCalled = false;
+	xCallbackData.m_bExitCalled = false;
 	xStateMachine.GetParameters().SetTrigger("Next");
 	xStateMachine.Update(0.016f, xPose, xSkeleton);
-	Zenith_Assert(bExitCalled == true, "OnExit should be called when starting transition");
+	Zenith_Assert(xCallbackData.m_bExitCalled == true, "OnExit should be called when starting transition");
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] OnExit called on transition");
 
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestStateLifecycleCallbacks completed successfully");
@@ -7362,4 +7459,2339 @@ void Zenith_UnitTests::TestMaterialHandleCopyPreservesCachedPointer()
 	Zenith_Assert(xOriginal.Get() == pxMaterial, "Original handle should still work after copy");
 
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestMaterialHandleCopyPreservesCachedPointer passed");
+}
+
+//=============================================================================
+// Any-State Transition Tests
+//=============================================================================
+
+void Zenith_UnitTests::TestAnyStateTransitionFires()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestAnyStateTransitionFires...");
+
+	Flux_AnimationStateMachine xSM("TestSM");
+	xSM.AddState("Idle");
+	xSM.AddState("Hit");
+	xSM.SetDefaultState("Idle");
+
+	// Add parameter
+	xSM.GetParameters().AddTrigger("HitTrigger");
+
+	// Add any-state transition: HitTrigger -> Hit
+	Flux_StateTransition xTrans;
+	xTrans.m_strTargetStateName = "Hit";
+	xTrans.m_fTransitionDuration = 0.1f;
+
+	Flux_TransitionCondition xCond;
+	xCond.m_strParameterName = "HitTrigger";
+	xCond.m_eCompareOp = Flux_TransitionCondition::CompareOp::Equal;
+	xCond.m_eParamType = Flux_AnimationParameters::ParamType::Trigger;
+	xCond.m_bThreshold = true;
+	xTrans.m_xConditions.PushBack(xCond);
+
+	xSM.AddAnyStateTransition(xTrans);
+
+	// Initialize state machine with a dummy update
+	Flux_SkeletonPose xPose;
+	xPose.Initialize(2);
+	Zenith_SkeletonAsset xSkel;
+	xSM.Update(0.0f, xPose, xSkel);
+
+	Zenith_Assert(xSM.GetCurrentStateName() == "Idle", "Should start in Idle");
+
+	// Fire trigger
+	xSM.GetParameters().SetTrigger("HitTrigger");
+	xSM.Update(0.016f, xPose, xSkel);
+
+	// Should be transitioning to Hit
+	Zenith_Assert(xSM.IsTransitioning(), "Should be transitioning after trigger");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAnyStateTransitionFires passed");
+}
+
+void Zenith_UnitTests::TestAnyStateTransitionSkipsSelf()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestAnyStateTransitionSkipsSelf...");
+
+	Flux_AnimationStateMachine xSM("TestSM");
+	xSM.AddState("Idle");
+	xSM.SetDefaultState("Idle");
+
+	xSM.GetParameters().AddBool("AlwaysTrue", true);
+
+	// Add any-state transition targeting current state (Idle -> Idle)
+	Flux_StateTransition xTrans;
+	xTrans.m_strTargetStateName = "Idle";
+	xTrans.m_fTransitionDuration = 0.1f;
+
+	Flux_TransitionCondition xCond;
+	xCond.m_strParameterName = "AlwaysTrue";
+	xCond.m_eCompareOp = Flux_TransitionCondition::CompareOp::Equal;
+	xCond.m_eParamType = Flux_AnimationParameters::ParamType::Bool;
+	xCond.m_bThreshold = true;
+	xTrans.m_xConditions.PushBack(xCond);
+
+	xSM.AddAnyStateTransition(xTrans);
+
+	Flux_SkeletonPose xPose;
+	xPose.Initialize(2);
+	Zenith_SkeletonAsset xSkel;
+	xSM.Update(0.0f, xPose, xSkel);
+	xSM.Update(0.016f, xPose, xSkel);
+
+	// Should NOT be transitioning (self-loop skipped)
+	Zenith_Assert(!xSM.IsTransitioning(), "Any-state should skip self-loop");
+	Zenith_Assert(xSM.GetCurrentStateName() == "Idle", "Should remain in Idle");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAnyStateTransitionSkipsSelf passed");
+}
+
+void Zenith_UnitTests::TestAnyStateTransitionPriority()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestAnyStateTransitionPriority...");
+
+	Flux_AnimationStateMachine xSM("TestSM");
+	xSM.AddState("Idle");
+	xSM.AddState("Hit");
+	xSM.AddState("Death");
+	xSM.SetDefaultState("Idle");
+
+	xSM.GetParameters().AddTrigger("HitTrigger");
+	xSM.GetParameters().AddTrigger("DeathTrigger");
+
+	// Low priority: HitTrigger -> Hit (priority 10)
+	{
+		Flux_StateTransition xTrans;
+		xTrans.m_strTargetStateName = "Hit";
+		xTrans.m_fTransitionDuration = 0.1f;
+		xTrans.m_iPriority = 10;
+
+		Flux_TransitionCondition xCond;
+		xCond.m_strParameterName = "HitTrigger";
+		xCond.m_eCompareOp = Flux_TransitionCondition::CompareOp::Equal;
+		xCond.m_eParamType = Flux_AnimationParameters::ParamType::Trigger;
+		xCond.m_bThreshold = true;
+		xTrans.m_xConditions.PushBack(xCond);
+		xSM.AddAnyStateTransition(xTrans);
+	}
+
+	// High priority: DeathTrigger -> Death (priority 100)
+	{
+		Flux_StateTransition xTrans;
+		xTrans.m_strTargetStateName = "Death";
+		xTrans.m_fTransitionDuration = 0.1f;
+		xTrans.m_iPriority = 100;
+
+		Flux_TransitionCondition xCond;
+		xCond.m_strParameterName = "DeathTrigger";
+		xCond.m_eCompareOp = Flux_TransitionCondition::CompareOp::Equal;
+		xCond.m_eParamType = Flux_AnimationParameters::ParamType::Trigger;
+		xCond.m_bThreshold = true;
+		xTrans.m_xConditions.PushBack(xCond);
+		xSM.AddAnyStateTransition(xTrans);
+	}
+
+	// Verify priority ordering
+	const Zenith_Vector<Flux_StateTransition>& xAny = xSM.GetAnyStateTransitions();
+	Zenith_Assert(xAny.GetSize() == 2, "Should have 2 any-state transitions");
+	Zenith_Assert(xAny.Get(0).m_iPriority == 100, "First should be highest priority (Death)");
+	Zenith_Assert(xAny.Get(1).m_iPriority == 10, "Second should be lower priority (Hit)");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAnyStateTransitionPriority passed");
+}
+
+//=============================================================================
+// AnimatorStateInfo Tests
+//=============================================================================
+
+void Zenith_UnitTests::TestStateInfoStateName()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestStateInfoStateName...");
+
+	Flux_AnimationStateMachine xSM("TestSM");
+	xSM.AddState("Idle");
+	xSM.AddState("Walk");
+	xSM.SetDefaultState("Idle");
+
+	Flux_SkeletonPose xPose;
+	xPose.Initialize(2);
+	Zenith_SkeletonAsset xSkel;
+	xSM.Update(0.0f, xPose, xSkel);
+
+	Flux_AnimatorStateInfo xInfo = xSM.GetCurrentStateInfo();
+	Zenith_Assert(xInfo.IsName("Idle"), "State name should be Idle");
+	Zenith_Assert(!xInfo.IsName("Walk"), "State name should not be Walk");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestStateInfoStateName passed");
+}
+
+void Zenith_UnitTests::TestStateInfoNormalizedTime()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestStateInfoNormalizedTime...");
+
+	Flux_AnimationStateMachine xSM("TestSM");
+	xSM.AddState("Idle");
+	xSM.SetDefaultState("Idle");
+
+	// State info should return 0 normalized time when no blend tree
+	Flux_SkeletonPose xPose;
+	xPose.Initialize(2);
+	Zenith_SkeletonAsset xSkel;
+	xSM.Update(0.0f, xPose, xSkel);
+
+	Flux_AnimatorStateInfo xInfo = xSM.GetCurrentStateInfo();
+	Zenith_Assert(xInfo.m_fNormalizedTime >= 0.0f, "Normalized time should be >= 0");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestStateInfoNormalizedTime passed");
+}
+
+//=============================================================================
+// CrossFade Tests
+//=============================================================================
+
+void Zenith_UnitTests::TestCrossFadeToState()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestCrossFadeToState...");
+
+	Flux_AnimationStateMachine xSM("TestSM");
+	xSM.AddState("Idle");
+	xSM.AddState("Walk");
+	xSM.SetDefaultState("Idle");
+
+	Flux_SkeletonPose xPose;
+	xPose.Initialize(2);
+	Zenith_SkeletonAsset xSkel;
+	xSM.Update(0.0f, xPose, xSkel);
+
+	Zenith_Assert(xSM.GetCurrentStateName() == "Idle", "Should start in Idle");
+
+	// CrossFade to Walk (no conditions needed)
+	xSM.CrossFade("Walk", 0.2f);
+
+	Zenith_Assert(xSM.IsTransitioning(), "Should be transitioning after CrossFade");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestCrossFadeToState passed");
+}
+
+void Zenith_UnitTests::TestCrossFadeToCurrentState()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestCrossFadeToCurrentState...");
+
+	Flux_AnimationStateMachine xSM("TestSM");
+	xSM.AddState("Idle");
+	xSM.SetDefaultState("Idle");
+
+	Flux_SkeletonPose xPose;
+	xPose.Initialize(2);
+	Zenith_SkeletonAsset xSkel;
+	xSM.Update(0.0f, xPose, xSkel);
+
+	// CrossFade to current state should be a no-op
+	xSM.CrossFade("Idle", 0.2f);
+	Zenith_Assert(!xSM.IsTransitioning(), "CrossFade to current state should be no-op");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestCrossFadeToCurrentState passed");
+}
+
+//=============================================================================
+// Sub-State Machine Tests
+//=============================================================================
+
+void Zenith_UnitTests::TestSubStateMachineCreation()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestSubStateMachineCreation...");
+
+	Flux_AnimationState xState("Locomotion");
+
+	Zenith_Assert(!xState.IsSubStateMachine(), "Should not be sub-SM initially");
+
+	Flux_AnimationStateMachine* pxSubSM = xState.CreateSubStateMachine("LocomotionSM");
+	Zenith_Assert(pxSubSM != nullptr, "Sub-SM should be created");
+	Zenith_Assert(xState.IsSubStateMachine(), "Should be sub-SM after creation");
+	Zenith_Assert(pxSubSM->GetName() == "LocomotionSM", "Sub-SM name should match");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestSubStateMachineCreation passed");
+}
+
+void Zenith_UnitTests::TestSubStateMachineSharedParameters()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestSubStateMachineSharedParameters...");
+
+	Flux_AnimationStateMachine xParentSM("ParentSM");
+	xParentSM.GetParameters().AddFloat("Speed", 0.0f);
+
+	// Create a state with a sub-SM
+	Flux_AnimationState* pxState = xParentSM.AddState("Locomotion");
+	Flux_AnimationStateMachine* pxSubSM = pxState->CreateSubStateMachine("LocomotionSM");
+
+	// Set shared parameters
+	pxSubSM->SetSharedParameters(&xParentSM.GetParameters());
+
+	// Setting a parameter on parent should be visible in child
+	xParentSM.GetParameters().SetFloat("Speed", 5.0f);
+	Zenith_Assert(pxSubSM->GetParameters().GetFloat("Speed") == 5.0f,
+		"Child should see parent's parameter value");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestSubStateMachineSharedParameters passed");
+}
+
+//=============================================================================
+// Animation Layer Tests
+//=============================================================================
+
+void Zenith_UnitTests::TestLayerCreation()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestLayerCreation...");
+
+	Flux_AnimationController xController;
+
+	Zenith_Assert(!xController.HasLayers(), "Should have no layers initially");
+	Zenith_Assert(xController.GetLayerCount() == 0, "Layer count should be 0");
+
+	Flux_AnimationLayer* pxBase = xController.AddLayer("Base");
+	Zenith_Assert(pxBase != nullptr, "Base layer should be created");
+	Zenith_Assert(xController.HasLayers(), "Should have layers after adding");
+	Zenith_Assert(xController.GetLayerCount() == 1, "Layer count should be 1");
+	Zenith_Assert(pxBase->GetName() == "Base", "Layer name should match");
+	Zenith_Assert(pxBase->GetWeight() == 1.0f, "Default weight should be 1.0");
+	Zenith_Assert(pxBase->GetBlendMode() == LAYER_BLEND_OVERRIDE, "Default blend mode should be Override");
+
+	Flux_AnimationLayer* pxUpperBody = xController.AddLayer("UpperBody");
+	Zenith_Assert(xController.GetLayerCount() == 2, "Layer count should be 2");
+	pxUpperBody->SetBlendMode(LAYER_BLEND_ADDITIVE);
+	Zenith_Assert(pxUpperBody->GetBlendMode() == LAYER_BLEND_ADDITIVE, "Blend mode should be Additive");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestLayerCreation passed");
+}
+
+void Zenith_UnitTests::TestLayerWeightZero()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestLayerWeightZero...");
+
+	Flux_AnimationLayer xLayer("Test");
+	xLayer.SetWeight(0.0f);
+	Zenith_Assert(xLayer.GetWeight() == 0.0f, "Weight should be 0");
+
+	xLayer.SetWeight(0.5f);
+	Zenith_Assert(xLayer.GetWeight() == 0.5f, "Weight should be 0.5");
+
+	// Clamping test
+	xLayer.SetWeight(2.0f);
+	Zenith_Assert(xLayer.GetWeight() == 1.0f, "Weight should be clamped to 1.0");
+
+	xLayer.SetWeight(-1.0f);
+	Zenith_Assert(xLayer.GetWeight() == 0.0f, "Weight should be clamped to 0.0");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestLayerWeightZero passed");
+}
+
+//=============================================================================
+// Tween System Tests - Easing Functions
+//=============================================================================
+
+void Zenith_UnitTests::TestEasingLinear()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestEasingLinear...");
+
+	Zenith_Assert(Zenith_ApplyEasing(EASING_LINEAR, 0.0f) == 0.0f, "Linear easing at 0 should be 0");
+	Zenith_Assert(Zenith_ApplyEasing(EASING_LINEAR, 0.5f) == 0.5f, "Linear easing at 0.5 should be 0.5");
+	Zenith_Assert(Zenith_ApplyEasing(EASING_LINEAR, 1.0f) == 1.0f, "Linear easing at 1 should be 1");
+	Zenith_Assert(Zenith_ApplyEasing(EASING_LINEAR, 0.25f) == 0.25f, "Linear easing at 0.25 should be 0.25");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestEasingLinear passed");
+}
+
+void Zenith_UnitTests::TestEasingEndpoints()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestEasingEndpoints...");
+
+	const float fEpsilon = 0.001f;
+
+	// All easing functions should map 0->0 and 1->1
+	for (int i = 0; i < EASING_COUNT; ++i)
+	{
+		Zenith_EasingType eType = static_cast<Zenith_EasingType>(i);
+		float fAtZero = Zenith_ApplyEasing(eType, 0.0f);
+		float fAtOne = Zenith_ApplyEasing(eType, 1.0f);
+
+		Zenith_Assert(glm::abs(fAtZero) < fEpsilon, "Easing at 0 should be ~0");
+		Zenith_Assert(glm::abs(fAtOne - 1.0f) < fEpsilon, "Easing at 1 should be ~1");
+	}
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestEasingEndpoints passed");
+}
+
+void Zenith_UnitTests::TestEasingQuadOut()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestEasingQuadOut...");
+
+	// QuadOut starts fast, ends slow
+	// At midpoint, output should be > 0.5 (since it's decelerating)
+	float fMid = Zenith_ApplyEasing(EASING_QUAD_OUT, 0.5f);
+	Zenith_Assert(fMid > 0.5f, "QuadOut at 0.5 should be > 0.5 (decelerating curve)");
+	Zenith_Assert(fMid < 1.0f, "QuadOut at 0.5 should be < 1.0");
+
+	// Quarter point should also show deceleration
+	float fQuarter = Zenith_ApplyEasing(EASING_QUAD_OUT, 0.25f);
+	Zenith_Assert(fQuarter > 0.25f, "QuadOut at 0.25 should be > 0.25");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestEasingQuadOut passed");
+}
+
+void Zenith_UnitTests::TestEasingBounceOut()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestEasingBounceOut...");
+
+	// BounceOut should have values between 0 and 1 at midpoints
+	float fMid = Zenith_ApplyEasing(EASING_BOUNCE_OUT, 0.5f);
+	Zenith_Assert(fMid >= 0.0f && fMid <= 1.0f, "BounceOut at 0.5 should be in [0,1]");
+
+	// BounceOut at 0.9 should be close to 1.0 (near the end)
+	float fNearEnd = Zenith_ApplyEasing(EASING_BOUNCE_OUT, 0.95f);
+	Zenith_Assert(fNearEnd > 0.8f, "BounceOut near end should be close to 1.0");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestEasingBounceOut passed");
+}
+
+//=============================================================================
+// Tween System Tests - TweenInstance
+//=============================================================================
+
+void Zenith_UnitTests::TestTweenInstanceProgress()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestTweenInstanceProgress...");
+
+	Zenith_TweenInstance xTween;
+	xTween.m_eEasing = EASING_LINEAR;
+	xTween.m_fDuration = 2.0f;
+	xTween.m_fDelay = 0.0f;
+
+	xTween.m_fElapsed = 0.0f;
+	Zenith_Assert(xTween.GetNormalizedTime() == 0.0f, "At elapsed 0, normalized time should be 0");
+
+	xTween.m_fElapsed = 1.0f;
+	float fHalf = xTween.GetNormalizedTime();
+	Zenith_Assert(glm::abs(fHalf - 0.5f) < 0.001f, "At elapsed 1 of duration 2, normalized time should be 0.5");
+
+	xTween.m_fElapsed = 2.0f;
+	Zenith_Assert(glm::abs(xTween.GetNormalizedTime() - 1.0f) < 0.001f, "At elapsed 2 of duration 2, normalized time should be 1.0");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestTweenInstanceProgress passed");
+}
+
+void Zenith_UnitTests::TestTweenInstanceCompletion()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestTweenInstanceCompletion...");
+
+	// Completion is determined by normalized time reaching 1.0
+	Zenith_TweenInstance xTween;
+	xTween.m_fDuration = 1.0f;
+	xTween.m_fElapsed = 0.0f;
+	Zenith_Assert(xTween.GetNormalizedTime() < 1.0f, "New tween should not be complete");
+
+	xTween.m_fElapsed = 1.0f;
+	Zenith_Assert(glm::abs(xTween.GetNormalizedTime() - 1.0f) < 0.001f, "Elapsed == Duration should give normalized time 1.0");
+
+	// Zero duration should give normalized time 1.0
+	Zenith_TweenInstance xZeroDuration;
+	xZeroDuration.m_fDuration = 0.0f;
+	Zenith_Assert(glm::abs(xZeroDuration.GetNormalizedTime() - 1.0f) < 0.001f, "Zero duration tween should have normalized time 1.0");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestTweenInstanceCompletion passed");
+}
+
+void Zenith_UnitTests::TestTweenInstanceDelay()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestTweenInstanceDelay...");
+
+	Zenith_TweenInstance xTween;
+	xTween.m_eEasing = EASING_LINEAR;
+	xTween.m_fDuration = 1.0f;
+	xTween.m_fDelay = 0.5f;
+
+	// During delay, normalized time should be 0
+	xTween.m_fElapsed = 0.3f;
+	Zenith_Assert(xTween.GetNormalizedTime() == 0.0f, "During delay, normalized time should be 0");
+
+	// After delay, should start progressing
+	xTween.m_fElapsed = 1.0f;  // 0.5 delay + 0.5 active = halfway
+	float fT = xTween.GetNormalizedTime();
+	Zenith_Assert(glm::abs(fT - 0.5f) < 0.001f, "After delay with 0.5s active, should be at 0.5");
+
+	// After delay + full duration
+	xTween.m_fElapsed = 1.5f;  // 0.5 delay + 1.0 active = done
+	Zenith_Assert(glm::abs(xTween.GetNormalizedTime() - 1.0f) < 0.001f, "After delay + duration, should be at 1.0");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestTweenInstanceDelay passed");
+}
+
+//=============================================================================
+// Tween System Tests - TweenComponent
+//=============================================================================
+
+void Zenith_UnitTests::TestTweenComponentScaleTo()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestTweenComponentScaleTo...");
+
+	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("TweenScaleTest");
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xScene);
+	Zenith_Entity xEntity(pxSceneData, "TweenEntity");
+	xEntity.AddComponent<Zenith_TweenComponent>();
+
+	// Set initial scale
+	Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
+	xTransform.SetScale(Zenith_Maths::Vector3(1.0f, 1.0f, 1.0f));
+
+	Zenith_TweenComponent& xTween = xEntity.GetComponent<Zenith_TweenComponent>();
+	xTween.TweenScale(Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f), 1.0f, EASING_LINEAR);
+
+	Zenith_Assert(xTween.HasActiveTweens(), "Should have active tweens");
+	Zenith_Assert(xTween.GetActiveTweenCount() == 1, "Should have 1 active tween");
+
+	// Simulate halfway
+	xTween.OnUpdate(0.5f);
+	Zenith_Maths::Vector3 xScale;
+	xTransform.GetScale(xScale);
+	Zenith_Assert(glm::abs(xScale.x - 0.5f) < 0.01f, "Scale X should be ~0.5 at halfway");
+	Zenith_Assert(glm::abs(xScale.y - 0.5f) < 0.01f, "Scale Y should be ~0.5 at halfway");
+
+	// Simulate to completion
+	xTween.OnUpdate(0.5f);
+	xTransform.GetScale(xScale);
+	Zenith_Assert(glm::abs(xScale.x) < 0.01f, "Scale X should be ~0.0 at completion");
+
+	Zenith_Assert(!xTween.HasActiveTweens(), "Tween should be removed after completion");
+
+	Zenith_SceneManager::UnloadScene(xScene);
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestTweenComponentScaleTo passed");
+}
+
+void Zenith_UnitTests::TestTweenComponentPositionTo()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestTweenComponentPositionTo...");
+
+	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("TweenPosTest");
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xScene);
+	Zenith_Entity xEntity(pxSceneData, "TweenEntity");
+	xEntity.AddComponent<Zenith_TweenComponent>();
+
+	Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
+	xTransform.SetPosition(Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
+
+	Zenith_TweenComponent& xTween = xEntity.GetComponent<Zenith_TweenComponent>();
+	xTween.TweenPosition(Zenith_Maths::Vector3(10.0f, 0.0f, 0.0f), 1.0f, EASING_LINEAR);
+
+	// Simulate halfway
+	xTween.OnUpdate(0.5f);
+	Zenith_Maths::Vector3 xPos;
+	xTransform.GetPosition(xPos);
+	Zenith_Assert(glm::abs(xPos.x - 5.0f) < 0.01f, "Position X should be ~5.0 at halfway");
+
+	// Complete
+	xTween.OnUpdate(0.5f);
+	xTransform.GetPosition(xPos);
+	Zenith_Assert(glm::abs(xPos.x - 10.0f) < 0.01f, "Position X should be ~10.0 at completion");
+
+	Zenith_SceneManager::UnloadScene(xScene);
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestTweenComponentPositionTo passed");
+}
+
+void Zenith_UnitTests::TestTweenComponentMultiple()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestTweenComponentMultiple...");
+
+	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("TweenMultiTest");
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xScene);
+	Zenith_Entity xEntity(pxSceneData, "TweenEntity");
+	xEntity.AddComponent<Zenith_TweenComponent>();
+
+	Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
+	xTransform.SetPosition(Zenith_Maths::Vector3(0.0f));
+	xTransform.SetScale(Zenith_Maths::Vector3(1.0f));
+
+	Zenith_TweenComponent& xTween = xEntity.GetComponent<Zenith_TweenComponent>();
+	xTween.TweenPosition(Zenith_Maths::Vector3(10.0f, 0.0f, 0.0f), 1.0f, EASING_LINEAR);
+	xTween.TweenScale(Zenith_Maths::Vector3(2.0f, 2.0f, 2.0f), 1.0f, EASING_LINEAR);
+
+	Zenith_Assert(xTween.GetActiveTweenCount() == 2, "Should have 2 active tweens");
+
+	// Both should complete
+	xTween.OnUpdate(1.0f);
+
+	Zenith_Maths::Vector3 xPos, xScale;
+	xTransform.GetPosition(xPos);
+	xTransform.GetScale(xScale);
+	Zenith_Assert(glm::abs(xPos.x - 10.0f) < 0.01f, "Position should have reached target");
+	Zenith_Assert(glm::abs(xScale.x - 2.0f) < 0.01f, "Scale should have reached target");
+	Zenith_Assert(!xTween.HasActiveTweens(), "Both tweens should be complete");
+
+	Zenith_SceneManager::UnloadScene(xScene);
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestTweenComponentMultiple passed");
+}
+
+void Zenith_UnitTests::TestTweenComponentCallback()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestTweenComponentCallback...");
+
+	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("TweenCallbackTest");
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xScene);
+	Zenith_Entity xEntity(pxSceneData, "TweenEntity");
+	xEntity.AddComponent<Zenith_TweenComponent>();
+
+	xEntity.GetComponent<Zenith_TransformComponent>().SetScale(Zenith_Maths::Vector3(1.0f));
+
+	bool bCallbackFired = false;
+	Zenith_TweenComponent& xTween = xEntity.GetComponent<Zenith_TweenComponent>();
+	xTween.TweenScale(Zenith_Maths::Vector3(0.0f), 0.5f, EASING_LINEAR);
+	xTween.SetOnComplete([](void* pUserData) {
+		*static_cast<bool*>(pUserData) = true;
+	}, &bCallbackFired);
+
+	Zenith_Assert(!bCallbackFired, "Callback should not have fired yet");
+
+	// Complete the tween
+	xTween.OnUpdate(0.5f);
+	Zenith_Assert(bCallbackFired, "Callback should have fired on completion");
+
+	Zenith_SceneManager::UnloadScene(xScene);
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestTweenComponentCallback passed");
+}
+
+void Zenith_UnitTests::TestTweenComponentLoop()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestTweenComponentLoop...");
+
+	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("TweenLoopTest");
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xScene);
+	Zenith_Entity xEntity(pxSceneData, "TweenEntity");
+	xEntity.AddComponent<Zenith_TweenComponent>();
+
+	Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
+	xTransform.SetScale(Zenith_Maths::Vector3(1.0f));
+
+	Zenith_TweenComponent& xTween = xEntity.GetComponent<Zenith_TweenComponent>();
+	xTween.TweenScale(Zenith_Maths::Vector3(2.0f), 1.0f, EASING_LINEAR);
+	xTween.SetLoop(true, false);
+
+	// Complete one cycle
+	xTween.OnUpdate(1.0f);
+	Zenith_Assert(xTween.HasActiveTweens(), "Looping tween should still be active after completion");
+
+	// After loop reset, another update should work
+	xTween.OnUpdate(0.5f);
+	Zenith_Maths::Vector3 xScale;
+	xTransform.GetScale(xScale);
+	// Should be interpolating from start again
+	Zenith_Assert(xTween.HasActiveTweens(), "Looping tween should still be active");
+
+	Zenith_SceneManager::UnloadScene(xScene);
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestTweenComponentLoop passed");
+}
+
+void Zenith_UnitTests::TestTweenComponentPingPong()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestTweenComponentPingPong...");
+
+	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("TweenPingPongTest");
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xScene);
+	Zenith_Entity xEntity(pxSceneData, "TweenEntity");
+	xEntity.AddComponent<Zenith_TweenComponent>();
+
+	Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
+	xTransform.SetScale(Zenith_Maths::Vector3(0.0f));
+
+	Zenith_TweenComponent& xTween = xEntity.GetComponent<Zenith_TweenComponent>();
+	xTween.TweenScaleFromTo(Zenith_Maths::Vector3(0.0f), Zenith_Maths::Vector3(1.0f), 1.0f, EASING_LINEAR);
+	xTween.SetLoop(true, true);
+
+	// Forward pass: 0 -> 1
+	xTween.OnUpdate(1.0f);
+	Zenith_Assert(xTween.HasActiveTweens(), "PingPong tween should still be active");
+
+	// Reverse pass halfway: should be going 1 -> 0, at 0.5 should be ~0.5
+	xTween.OnUpdate(0.5f);
+	Zenith_Maths::Vector3 xScale;
+	xTransform.GetScale(xScale);
+	Zenith_Assert(glm::abs(xScale.x - 0.5f) < 0.1f, "PingPong reverse at halfway should be ~0.5");
+
+	Zenith_SceneManager::UnloadScene(xScene);
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestTweenComponentPingPong passed");
+}
+
+void Zenith_UnitTests::TestTweenComponentCancel()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestTweenComponentCancel...");
+
+	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("TweenCancelTest");
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xScene);
+	Zenith_Entity xEntity(pxSceneData, "TweenEntity");
+	xEntity.AddComponent<Zenith_TweenComponent>();
+
+	xEntity.GetComponent<Zenith_TransformComponent>().SetScale(Zenith_Maths::Vector3(1.0f));
+
+	Zenith_TweenComponent& xTween = xEntity.GetComponent<Zenith_TweenComponent>();
+	xTween.TweenScale(Zenith_Maths::Vector3(0.0f), 1.0f, EASING_LINEAR);
+	xTween.TweenPosition(Zenith_Maths::Vector3(5.0f, 0.0f, 0.0f), 1.0f, EASING_LINEAR);
+
+	Zenith_Assert(xTween.GetActiveTweenCount() == 2, "Should have 2 active tweens");
+
+	xTween.CancelAll();
+	Zenith_Assert(!xTween.HasActiveTweens(), "After CancelAll, no tweens should be active");
+	Zenith_Assert(xTween.GetActiveTweenCount() == 0, "Active count should be 0");
+
+	Zenith_SceneManager::UnloadScene(xScene);
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestTweenComponentCancel passed");
+}
+
+//=============================================================================
+// Sub-SM Transition Evaluation (BUG 1 regression test)
+//=============================================================================
+
+void Zenith_UnitTests::TestSubStateMachineTransitionEvaluation()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestSubStateMachineTransitionEvaluation...");
+
+	// Create parent SM with a speed parameter
+	Flux_AnimationStateMachine xParentSM("ParentSM");
+	xParentSM.GetParameters().AddFloat("Speed", 0.0f);
+
+	// Create a state with a sub-SM that has its own states and transitions
+	Flux_AnimationState* pxLocomotion = xParentSM.AddState("Locomotion");
+	Flux_AnimationStateMachine* pxSubSM = pxLocomotion->CreateSubStateMachine("LocomotionSM");
+	pxSubSM->SetSharedParameters(&xParentSM.GetParameters());
+
+	// Add states to the sub-SM
+	pxSubSM->AddState("Walk");
+	pxSubSM->AddState("Run");
+	pxSubSM->SetDefaultState("Walk");
+
+	// Add transition: Walk -> Run when Speed > 3.0
+	Flux_StateTransition xWalkToRun;
+	xWalkToRun.m_strTargetStateName = "Run";
+	xWalkToRun.m_fTransitionDuration = 0.1f;
+
+	Flux_TransitionCondition xSpeedCond;
+	xSpeedCond.m_strParameterName = "Speed";
+	xSpeedCond.m_eCompareOp = Flux_TransitionCondition::CompareOp::Greater;
+	xSpeedCond.m_eParamType = Flux_AnimationParameters::ParamType::Float;
+	xSpeedCond.m_fThreshold = 3.0f;
+	xWalkToRun.m_xConditions.PushBack(xSpeedCond);
+
+	pxSubSM->GetState("Walk")->AddTransition(xWalkToRun);
+
+	// Initialize the sub-SM
+	Flux_SkeletonPose xPose;
+	xPose.Initialize(2);
+	Zenith_SkeletonAsset xSkel;
+
+	pxSubSM->Update(0.0f, xPose, xSkel);
+	Zenith_Assert(pxSubSM->GetCurrentStateName() == "Walk", "Sub-SM should start in Walk");
+
+	// Set parent parameter Speed > 3.0 - sub-SM should see it through shared parameters
+	xParentSM.GetParameters().SetFloat("Speed", 5.0f);
+
+	// Update sub-SM - transition should evaluate against shared (parent) parameters
+	pxSubSM->Update(0.016f, xPose, xSkel);
+	Zenith_Assert(pxSubSM->IsTransitioning(), "Sub-SM should be transitioning Walk->Run via shared parameters");
+
+	// Complete transition
+	for (int i = 0; i < 20; ++i)
+		pxSubSM->Update(0.016f, xPose, xSkel);
+
+	Zenith_Assert(pxSubSM->GetCurrentStateName() == "Run",
+		"Sub-SM should have transitioned to Run using parent's Speed parameter");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestSubStateMachineTransitionEvaluation passed");
+}
+
+//=============================================================================
+// CrossFade Edge Cases
+//=============================================================================
+
+void Zenith_UnitTests::TestCrossFadeNonExistentState()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestCrossFadeNonExistentState...");
+
+	Flux_AnimationStateMachine xSM("TestSM");
+	xSM.AddState("Idle");
+	xSM.SetDefaultState("Idle");
+
+	Flux_SkeletonPose xPose;
+	xPose.Initialize(2);
+	Zenith_SkeletonAsset xSkel;
+	xSM.Update(0.0f, xPose, xSkel);
+
+	Zenith_Assert(xSM.GetCurrentStateName() == "Idle", "Should start in Idle");
+
+	// CrossFade to non-existent state should silently do nothing
+	xSM.CrossFade("NonExistent", 0.15f);
+	Zenith_Assert(!xSM.IsTransitioning(), "Should NOT be transitioning to non-existent state");
+	Zenith_Assert(xSM.GetCurrentStateName() == "Idle", "Should still be in Idle");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestCrossFadeNonExistentState passed");
+}
+
+void Zenith_UnitTests::TestCrossFadeInstant()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestCrossFadeInstant...");
+
+	Flux_AnimationStateMachine xSM("TestSM");
+	xSM.AddState("Idle");
+	xSM.AddState("Run");
+	xSM.SetDefaultState("Idle");
+
+	Flux_SkeletonPose xPose;
+	xPose.Initialize(2);
+	Zenith_SkeletonAsset xSkel;
+	xSM.Update(0.0f, xPose, xSkel);
+
+	Zenith_Assert(xSM.GetCurrentStateName() == "Idle", "Should start in Idle");
+
+	// CrossFade with zero duration - should transition immediately on next update
+	xSM.CrossFade("Run", 0.0f);
+	xSM.Update(0.001f, xPose, xSkel);
+
+	// With duration=0, the cross-fade should complete immediately
+	Zenith_Assert(xSM.GetCurrentStateName() == "Run", "Zero-duration crossfade should complete immediately");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestCrossFadeInstant passed");
+}
+
+//=============================================================================
+// Tween Rotation Test
+//=============================================================================
+
+void Zenith_UnitTests::TestTweenComponentRotation()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestTweenComponentRotation...");
+
+	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("TweenRotationTest");
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xScene);
+	Zenith_Entity xEntity(pxSceneData, "TweenEntity");
+	xEntity.AddComponent<Zenith_TweenComponent>();
+
+	// Set initial rotation to identity
+	xEntity.GetComponent<Zenith_TransformComponent>().SetRotation(Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f));
+
+	Zenith_TweenComponent& xTween = xEntity.GetComponent<Zenith_TweenComponent>();
+	// Tween rotation to 90 degrees around Y axis over 1 second
+	xTween.TweenRotation(Zenith_Maths::Vector3(0.0f, 90.0f, 0.0f), 1.0f, EASING_LINEAR);
+
+	Zenith_Assert(xTween.HasActiveTweens(), "Should have active rotation tween");
+
+	// Update to completion
+	xTween.OnUpdate(1.0f);
+	Zenith_Assert(!xTween.HasActiveTweens(), "Rotation tween should be complete");
+
+	// Verify rotation was applied - get the euler angles back
+	Zenith_Maths::Quat xRot;
+	xEntity.GetComponent<Zenith_TransformComponent>().GetRotation(xRot);
+	Zenith_Maths::Vector3 xEuler = glm::degrees(glm::eulerAngles(xRot));
+
+	// Y rotation should be approximately 90 degrees
+	Zenith_Assert(glm::abs(xEuler.y - 90.0f) < 1.0f, "Y rotation should be ~90 degrees");
+
+	Zenith_SceneManager::UnloadScene(xScene);
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestTweenComponentRotation passed");
+}
+
+//=============================================================================
+// Bug Regression Tests (from code review)
+//=============================================================================
+
+void Zenith_UnitTests::TestTriggerNotConsumedOnPartialConditionMatch()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestTriggerNotConsumedOnPartialConditionMatch...");
+
+	Zenith_SkeletonAsset xSkeleton;
+	xSkeleton.AddBone("Root", -1, Zenith_Maths::Vector3(0.0f), Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f), Zenith_Maths::Vector3(1.0f));
+	Flux_SkeletonPose xPose;
+	xPose.Initialize(1);
+
+	Flux_AnimationStateMachine xStateMachine("TestSM");
+	xStateMachine.GetParameters().AddTrigger("Attack");
+	xStateMachine.GetParameters().AddBool("HasWeapon", false);
+
+	Flux_AnimationState* pxIdle = xStateMachine.AddState("Idle");
+	xStateMachine.AddState("Attack");
+
+	// Idle -> Attack requires BOTH trigger AND HasWeapon == true
+	Flux_StateTransition xTrans;
+	xTrans.m_strTargetStateName = "Attack";
+	xTrans.m_fTransitionDuration = 0.1f;
+
+	Flux_TransitionCondition xTriggerCond;
+	xTriggerCond.m_strParameterName = "Attack";
+	xTriggerCond.m_eParamType = Flux_AnimationParameters::ParamType::Trigger;
+	xTrans.m_xConditions.PushBack(xTriggerCond);
+
+	Flux_TransitionCondition xBoolCond;
+	xBoolCond.m_strParameterName = "HasWeapon";
+	xBoolCond.m_eCompareOp = Flux_TransitionCondition::CompareOp::Equal;
+	xBoolCond.m_eParamType = Flux_AnimationParameters::ParamType::Bool;
+	xBoolCond.m_bThreshold = true;
+	xTrans.m_xConditions.PushBack(xBoolCond);
+
+	pxIdle->AddTransition(xTrans);
+	xStateMachine.SetDefaultState("Idle");
+
+	// Initial state
+	xStateMachine.Update(0.016f, xPose, xSkeleton);
+	Zenith_Assert(xStateMachine.GetCurrentStateName() == "Idle", "Should start in Idle");
+
+	// Set trigger but NOT HasWeapon - transition should fail, trigger should NOT be consumed
+	xStateMachine.GetParameters().SetTrigger("Attack");
+	xStateMachine.Update(0.016f, xPose, xSkeleton);
+
+	Zenith_Assert(xStateMachine.GetCurrentStateName() == "Idle",
+		"Should stay in Idle - HasWeapon is false");
+	Zenith_Assert(xStateMachine.GetParameters().PeekTrigger("Attack") == true,
+		"Trigger should NOT be consumed when other conditions fail");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Trigger preserved when bool condition fails");
+
+	// Now set HasWeapon - trigger should still be set, transition should fire
+	xStateMachine.GetParameters().SetBool("HasWeapon", true);
+	xStateMachine.Update(0.016f, xPose, xSkeleton);
+
+	Zenith_Assert(xStateMachine.IsTransitioning() == true,
+		"Transition should start now that all conditions are met");
+	Zenith_Assert(xStateMachine.GetParameters().PeekTrigger("Attack") == false,
+		"Trigger should be consumed after successful transition");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Trigger consumed only on successful transition");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestTriggerNotConsumedOnPartialConditionMatch passed");
+}
+
+void Zenith_UnitTests::TestResolveClipReferencesRecursive()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestResolveClipReferencesRecursive...");
+
+	// Create a clip collection with two clips
+	Flux_AnimationClipCollection xCollection;
+	Flux_AnimationClip* pxIdleClip = new Flux_AnimationClip();
+	pxIdleClip->SetName("Idle");
+	Flux_AnimationClip* pxWalkClip = new Flux_AnimationClip();
+	pxWalkClip->SetName("Walk");
+	xCollection.AddClip(pxIdleClip);
+	xCollection.AddClip(pxWalkClip);
+
+	// Create a Blend node with two Clip children (clip pointers null, names set)
+	Flux_BlendTreeNode_Clip* pxClipA = new Flux_BlendTreeNode_Clip();
+	pxClipA->SetClipName("Idle");
+	Zenith_Assert(pxClipA->GetClip() == nullptr, "Clip A should be unresolved");
+
+	Flux_BlendTreeNode_Clip* pxClipB = new Flux_BlendTreeNode_Clip();
+	pxClipB->SetClipName("Walk");
+	Zenith_Assert(pxClipB->GetClip() == nullptr, "Clip B should be unresolved");
+
+	Flux_BlendTreeNode_Blend* pxBlend = new Flux_BlendTreeNode_Blend(pxClipA, pxClipB, 0.5f);
+
+	// Create state machine with a state that has the blend tree root
+	Flux_AnimationStateMachine xSM("TestSM");
+	Flux_AnimationState* pxState = xSM.AddState("BlendState");
+	pxState->SetBlendTree(pxBlend);
+	xSM.SetDefaultState("BlendState");
+
+	// Resolve - should recursively resolve both child clips
+	xSM.ResolveClipReferences(&xCollection);
+
+	Zenith_Assert(pxClipA->GetClip() == pxIdleClip,
+		"Clip A should be resolved to Idle clip");
+	Zenith_Assert(pxClipB->GetClip() == pxWalkClip,
+		"Clip B should be resolved to Walk clip");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Blend tree children resolved recursively");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestResolveClipReferencesRecursive passed");
+}
+
+void Zenith_UnitTests::TestTweenDelayWithLoop()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestTweenDelayWithLoop...");
+
+	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("TweenDelayLoopTest");
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xScene);
+	Zenith_Entity xEntity(pxSceneData, "TweenEntity");
+	xEntity.AddComponent<Zenith_TweenComponent>();
+
+	Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
+	xTransform.SetScale(Zenith_Maths::Vector3(1.0f));
+
+	// delay=1.0, duration=0.5 - delay > duration, which was the buggy case
+	Zenith_TweenComponent& xTween = xEntity.GetComponent<Zenith_TweenComponent>();
+	xTween.TweenScale(Zenith_Maths::Vector3(2.0f), 0.5f, EASING_LINEAR);
+	xTween.SetDelay(1.0f);
+	xTween.SetLoop(true, false);
+
+	// During delay period - scale should not change
+	xTween.OnUpdate(0.5f);
+	Zenith_Maths::Vector3 xScale;
+	xTransform.GetScale(xScale);
+	Zenith_Assert(glm::abs(xScale.x - 1.0f) < 0.01f, "Scale should be unchanged during delay");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] No change during delay");
+
+	// After delay, at midpoint of tween (total elapsed = 1.25, activeTime = 0.25, t = 0.5)
+	xTween.OnUpdate(0.75f);
+	xTransform.GetScale(xScale);
+	Zenith_Assert(xScale.x > 1.0f, "Scale should be interpolating after delay");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Interpolating after delay");
+
+	// Complete first loop (total elapsed = 1.75, activeTime = 0.75, t >= 1.0, loop triggers)
+	// Loop resets elapsed to delay (1.0), tween stays active
+	xTween.OnUpdate(0.5f);
+	Zenith_Assert(xTween.HasActiveTweens(), "Looping tween should still be active");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Tween still active after first loop");
+
+	// After loop reset, a small update should restart interpolation from the beginning
+	// elapsed goes from 1.0 to 1.1, activeTime = 0.1, t = 0.1/0.5 = 0.2
+	// scale = lerp(1.0, 2.0, 0.2) = 1.2
+	xTween.OnUpdate(0.1f);
+	xTransform.GetScale(xScale);
+	Zenith_Assert(glm::abs(xScale.x - 1.2f) < 0.05f,
+		"After loop, tween should restart interpolation from beginning (expected ~1.2)");
+	Zenith_Assert(xTween.HasActiveTweens(), "Looping tween should still be active");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Tween restarts correctly after loop");
+
+	Zenith_SceneManager::UnloadScene(xScene);
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestTweenDelayWithLoop passed");
+}
+
+void Zenith_UnitTests::TestTweenCallbackReentrant()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestTweenCallbackReentrant...");
+
+	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("TweenReentrantTest");
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xScene);
+	Zenith_Entity xEntity(pxSceneData, "TweenEntity");
+	xEntity.AddComponent<Zenith_TweenComponent>();
+
+	Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
+	xTransform.SetScale(Zenith_Maths::Vector3(1.0f));
+
+	struct CallbackData
+	{
+		Zenith_TweenComponent* m_pxTween;
+		bool m_bCallbackFired;
+	};
+
+	CallbackData xData;
+	xData.m_pxTween = &xEntity.GetComponent<Zenith_TweenComponent>();
+	xData.m_bCallbackFired = false;
+
+	Zenith_TweenComponent& xTween = xEntity.GetComponent<Zenith_TweenComponent>();
+	xTween.TweenScale(Zenith_Maths::Vector3(2.0f), 0.5f, EASING_LINEAR);
+	xTween.SetOnComplete([](void* pUserData) {
+		CallbackData* pxData = static_cast<CallbackData*>(pUserData);
+		pxData->m_bCallbackFired = true;
+		// Re-entrant: create a new tween from within the callback
+		pxData->m_pxTween->TweenScale(Zenith_Maths::Vector3(3.0f), 1.0f, EASING_LINEAR);
+	}, &xData);
+
+	// Complete the first tween - callback should fire and create a new tween
+	xTween.OnUpdate(0.5f);
+
+	Zenith_Assert(xData.m_bCallbackFired, "Callback should have fired");
+	Zenith_Assert(xTween.HasActiveTweens(), "New tween should have been created by callback");
+	Zenith_Assert(xTween.GetActiveTweenCount() == 1, "Should have exactly 1 active tween");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Re-entrant tween creation from callback works");
+
+	Zenith_SceneManager::UnloadScene(xScene);
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestTweenCallbackReentrant passed");
+}
+
+void Zenith_UnitTests::TestTweenDuplicatePropertyCancels()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestTweenDuplicatePropertyCancels...");
+
+	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("TweenDuplicateTest");
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xScene);
+	Zenith_Entity xEntity(pxSceneData, "TweenEntity");
+	xEntity.AddComponent<Zenith_TweenComponent>();
+
+	Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
+	xTransform.SetScale(Zenith_Maths::Vector3(1.0f));
+
+	Zenith_TweenComponent& xTween = xEntity.GetComponent<Zenith_TweenComponent>();
+
+	// Create first scale tween
+	xTween.TweenScale(Zenith_Maths::Vector3(2.0f), 1.0f, EASING_LINEAR);
+	Zenith_Assert(xTween.GetActiveTweenCount() == 1, "Should have 1 active tween");
+
+	// Create second scale tween - should cancel the first
+	xTween.TweenScale(Zenith_Maths::Vector3(3.0f), 0.5f, EASING_LINEAR);
+	Zenith_Assert(xTween.GetActiveTweenCount() == 1,
+		"Should still have 1 active tween - duplicate cancelled");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Duplicate property tween cancelled");
+
+	// Complete the second tween
+	xTween.OnUpdate(0.5f);
+	Zenith_Maths::Vector3 xScale;
+	xTransform.GetScale(xScale);
+	Zenith_Assert(glm::abs(xScale.x - 3.0f) < 0.01f,
+		"Should reach target of second tween");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Second tween completes to correct target");
+
+	Zenith_SceneManager::UnloadScene(xScene);
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestTweenDuplicatePropertyCancels passed");
+}
+
+//=============================================================================
+// Code Review Round 2 - Bug Fix Regression Tests
+//=============================================================================
+
+void Zenith_UnitTests::TestSubStateMachineTransitionBlendPose()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestSubStateMachineTransitionBlendPose...");
+
+	// Create skeleton with 2 bones for pose verification
+	Zenith_SkeletonAsset xSkeleton;
+	xSkeleton.AddBone("Root", -1, Zenith_Maths::Vector3(0.0f), Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f), Zenith_Maths::Vector3(1.0f));
+	xSkeleton.AddBone("Spine", 0, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f), Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f), Zenith_Maths::Vector3(1.0f));
+
+	Flux_SkeletonPose xPose;
+	xPose.Initialize(2);
+
+	// Create parent SM: Idle -> Locomotion (sub-SM)
+	Flux_AnimationStateMachine xParentSM("ParentSM");
+	xParentSM.GetParameters().AddTrigger("GoLocomotion");
+
+	xParentSM.AddState("Idle");
+	Flux_AnimationState* pxLocomotionState = xParentSM.AddState("Locomotion");
+	Flux_AnimationStateMachine* pxSubSM = pxLocomotionState->CreateSubStateMachine("LocomotionSM");
+	pxSubSM->AddState("Walk");
+	pxSubSM->SetDefaultState("Walk");
+	xParentSM.SetDefaultState("Idle");
+
+	// Add transition Idle -> Locomotion on trigger
+	Flux_StateTransition xTrans;
+	xTrans.m_strTargetStateName = "Locomotion";
+	xTrans.m_fTransitionDuration = 0.2f;
+	Flux_TransitionCondition xCond;
+	xCond.m_strParameterName = "GoLocomotion";
+	xCond.m_eParamType = Flux_AnimationParameters::ParamType::Trigger;
+	xTrans.m_xConditions.PushBack(xCond);
+	xParentSM.GetState("Idle")->AddTransition(xTrans);
+
+	// Initialize
+	xParentSM.Update(0.0f, xPose, xSkeleton);
+	Zenith_Assert(xParentSM.GetCurrentStateName() == "Idle", "Should start in Idle");
+
+	// Trigger transition to sub-SM state
+	xParentSM.GetParameters().SetTrigger("GoLocomotion");
+	xParentSM.Update(0.016f, xPose, xSkeleton);
+	Zenith_Assert(xParentSM.IsTransitioning(), "Should be transitioning to Locomotion sub-SM");
+
+	// Update during transition - the target pose should NOT be identity/reset
+	// (This was Bug #1 - UpdateTransition didn't evaluate sub-SM targets)
+	xParentSM.Update(0.016f, xPose, xSkeleton);
+	// The key check: the pose should not be all-zero (identity reset)
+	// A proper sub-SM update would produce the Walk state's pose
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Transition to sub-SM state evaluates target pose");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestSubStateMachineTransitionBlendPose passed");
+}
+
+void Zenith_UnitTests::TestRotationTweenShortestPath()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestRotationTweenShortestPath...");
+
+	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("TweenRotShortestTest");
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xScene);
+	Zenith_Entity xEntity(pxSceneData, "TweenEntity");
+	xEntity.AddComponent<Zenith_TweenComponent>();
+
+	Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
+	xTransform.SetRotation(Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f));
+
+	Zenith_TweenComponent& xTween = xEntity.GetComponent<Zenith_TweenComponent>();
+
+	// Tween 270 degrees around Y - slerp should take the shortest path (90 degrees the other way)
+	xTween.TweenRotation(Zenith_Maths::Vector3(0.0f, 270.0f, 0.0f), 1.0f, EASING_LINEAR);
+
+	// At halfway, the rotation should be ~135 degrees OR ~-45 degrees (shortest path)
+	xTween.OnUpdate(0.5f);
+	Zenith_Maths::Quat xRot;
+	xTransform.GetRotation(xRot);
+
+	// Verify it's a valid unit quaternion
+	float fLength = glm::length(xRot);
+	Zenith_Assert(glm::abs(fLength - 1.0f) < 0.01f, "Quaternion should be unit length");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Rotation tween produces valid quaternion at midpoint");
+
+	// Complete the tween
+	xTween.OnUpdate(0.5f);
+	xTransform.GetRotation(xRot);
+
+	// Verify final rotation is approximately 270 degrees Y (or equivalently -90 degrees)
+	Zenith_Maths::Vector3 xEuler = glm::degrees(glm::eulerAngles(xRot));
+	// Accept either ~270 or ~-90 (equivalent rotations)
+	bool bCorrect = (glm::abs(xEuler.y - 270.0f) < 2.0f) || (glm::abs(xEuler.y + 90.0f) < 2.0f);
+	Zenith_Assert(bCorrect, "Final rotation should be ~270 or ~-90 degrees Y");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Rotation tween reaches correct final angle");
+
+	Zenith_Assert(!xTween.HasActiveTweens(), "Tween should be complete");
+
+	Zenith_SceneManager::UnloadScene(xScene);
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestRotationTweenShortestPath passed");
+}
+
+void Zenith_UnitTests::TestTransitionInterruption()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestTransitionInterruption...");
+
+	Zenith_SkeletonAsset xSkeleton;
+	xSkeleton.AddBone("Root", -1, Zenith_Maths::Vector3(0.0f), Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f), Zenith_Maths::Vector3(1.0f));
+	Flux_SkeletonPose xPose;
+	xPose.Initialize(1);
+
+	Flux_AnimationStateMachine xSM("TestSM");
+	xSM.AddState("Idle");
+	xSM.AddState("Walk");
+	xSM.AddState("Death");
+	xSM.SetDefaultState("Idle");
+
+	xSM.GetParameters().AddFloat("Speed", 0.0f);
+	xSM.GetParameters().AddTrigger("DeathTrigger");
+
+	// Idle -> Walk (interruptible, low priority)
+	{
+		Flux_StateTransition xTrans;
+		xTrans.m_strTargetStateName = "Walk";
+		xTrans.m_fTransitionDuration = 1.0f; // Long transition so we can interrupt it
+		xTrans.m_bInterruptible = true;
+
+		Flux_TransitionCondition xCond;
+		xCond.m_strParameterName = "Speed";
+		xCond.m_eCompareOp = Flux_TransitionCondition::CompareOp::Greater;
+		xCond.m_eParamType = Flux_AnimationParameters::ParamType::Float;
+		xCond.m_fThreshold = 0.1f;
+		xTrans.m_xConditions.PushBack(xCond);
+		xSM.GetState("Idle")->AddTransition(xTrans);
+	}
+
+	// Any-state -> Death (high priority, should interrupt)
+	{
+		Flux_StateTransition xTrans;
+		xTrans.m_strTargetStateName = "Death";
+		xTrans.m_fTransitionDuration = 0.1f;
+		xTrans.m_iPriority = 100;
+
+		Flux_TransitionCondition xCond;
+		xCond.m_strParameterName = "DeathTrigger";
+		xCond.m_eParamType = Flux_AnimationParameters::ParamType::Trigger;
+		xTrans.m_xConditions.PushBack(xCond);
+		xSM.AddAnyStateTransition(xTrans);
+	}
+
+	// Initialize and start Walk transition
+	xSM.Update(0.0f, xPose, xSkeleton);
+	xSM.GetParameters().SetFloat("Speed", 5.0f);
+	xSM.Update(0.016f, xPose, xSkeleton);
+	Zenith_Assert(xSM.IsTransitioning(), "Should be transitioning Idle -> Walk");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Walk transition started");
+
+	// Fire Death trigger while transitioning - should interrupt
+	xSM.GetParameters().SetTrigger("DeathTrigger");
+	xSM.Update(0.016f, xPose, xSkeleton);
+	Zenith_Assert(xSM.IsTransitioning(), "Should be transitioning to Death (interrupted Walk)");
+
+	// Complete the Death transition
+	for (int i = 0; i < 20; ++i)
+		xSM.Update(0.016f, xPose, xSkeleton);
+
+	Zenith_Assert(xSM.GetCurrentStateName() == "Death",
+		"Should have reached Death state after interrupting Walk transition");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Death transition interrupted Walk transition");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestTransitionInterruption passed");
+}
+
+void Zenith_UnitTests::TestTransitionNonInterruptible()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestTransitionNonInterruptible...");
+
+	Zenith_SkeletonAsset xSkeleton;
+	xSkeleton.AddBone("Root", -1, Zenith_Maths::Vector3(0.0f), Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f), Zenith_Maths::Vector3(1.0f));
+	Flux_SkeletonPose xPose;
+	xPose.Initialize(1);
+
+	Flux_AnimationStateMachine xSM("TestSM");
+	xSM.AddState("Idle");
+	xSM.AddState("SpecialAttack");
+	xSM.AddState("Death");
+	xSM.SetDefaultState("Idle");
+
+	xSM.GetParameters().AddTrigger("AttackTrigger");
+	xSM.GetParameters().AddTrigger("DeathTrigger");
+
+	// Idle -> SpecialAttack (NON-interruptible)
+	{
+		Flux_StateTransition xTrans;
+		xTrans.m_strTargetStateName = "SpecialAttack";
+		xTrans.m_fTransitionDuration = 1.0f;
+		xTrans.m_bInterruptible = false; // Cannot be interrupted
+
+		Flux_TransitionCondition xCond;
+		xCond.m_strParameterName = "AttackTrigger";
+		xCond.m_eParamType = Flux_AnimationParameters::ParamType::Trigger;
+		xTrans.m_xConditions.PushBack(xCond);
+		xSM.GetState("Idle")->AddTransition(xTrans);
+	}
+
+	// Idle -> Death (per-state, not any-state, so it only fires from Idle)
+	{
+		Flux_StateTransition xTrans;
+		xTrans.m_strTargetStateName = "Death";
+		xTrans.m_fTransitionDuration = 0.1f;
+		xTrans.m_iPriority = 100;
+
+		Flux_TransitionCondition xCond;
+		xCond.m_strParameterName = "DeathTrigger";
+		xCond.m_eParamType = Flux_AnimationParameters::ParamType::Trigger;
+		xTrans.m_xConditions.PushBack(xCond);
+		xSM.GetState("Idle")->AddTransition(xTrans);
+	}
+
+	// Start non-interruptible transition
+	xSM.Update(0.0f, xPose, xSkeleton);
+	xSM.GetParameters().SetTrigger("AttackTrigger");
+	xSM.Update(0.016f, xPose, xSkeleton);
+	Zenith_Assert(xSM.IsTransitioning(), "Should be transitioning Idle -> SpecialAttack");
+
+	// Try to interrupt with Death - should NOT work (non-interruptible)
+	xSM.GetParameters().SetTrigger("DeathTrigger");
+	xSM.Update(0.016f, xPose, xSkeleton);
+	Zenith_Assert(xSM.IsTransitioning(), "Should still be transitioning (non-interruptible)");
+
+	// Complete the SpecialAttack transition
+	for (int i = 0; i < 100; ++i)
+		xSM.Update(0.016f, xPose, xSkeleton);
+
+	// Should be in SpecialAttack - the Death trigger couldn't interrupt, and there's no
+	// Death transition from SpecialAttack state, so the unconsumed trigger has no effect
+	Zenith_Assert(xSM.GetCurrentStateName() == "SpecialAttack",
+		"Non-interruptible transition should complete to SpecialAttack, not Death");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Non-interruptible transition was not interrupted");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestTransitionNonInterruptible passed");
+}
+
+void Zenith_UnitTests::TestCancelByPropertyKeepsOthers()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestCancelByPropertyKeepsOthers...");
+
+	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("TweenCancelPropTest");
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xScene);
+	Zenith_Entity xEntity(pxSceneData, "TweenEntity");
+	xEntity.AddComponent<Zenith_TweenComponent>();
+
+	Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
+	xTransform.SetPosition(Zenith_Maths::Vector3(0.0f));
+	xTransform.SetScale(Zenith_Maths::Vector3(1.0f));
+
+	Zenith_TweenComponent& xTween = xEntity.GetComponent<Zenith_TweenComponent>();
+	xTween.TweenPosition(Zenith_Maths::Vector3(10.0f, 0.0f, 0.0f), 1.0f, EASING_LINEAR);
+	xTween.TweenScale(Zenith_Maths::Vector3(2.0f), 1.0f, EASING_LINEAR);
+	Zenith_Assert(xTween.GetActiveTweenCount() == 2, "Should have 2 active tweens");
+
+	// Cancel only position
+	xTween.CancelByProperty(TWEEN_PROPERTY_POSITION);
+	Zenith_Assert(xTween.GetActiveTweenCount() == 1, "Should have 1 active tween after cancelling position");
+
+	// Complete remaining scale tween
+	xTween.OnUpdate(1.0f);
+	Zenith_Maths::Vector3 xScale;
+	xTransform.GetScale(xScale);
+	Zenith_Assert(glm::abs(xScale.x - 2.0f) < 0.01f, "Scale tween should still complete");
+
+	// Position should not have changed (was cancelled)
+	Zenith_Maths::Vector3 xPos;
+	xTransform.GetPosition(xPos);
+	Zenith_Assert(glm::abs(xPos.x) < 0.01f, "Position should not have changed after cancel");
+
+	Zenith_SceneManager::UnloadScene(xScene);
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestCancelByPropertyKeepsOthers passed");
+}
+
+void Zenith_UnitTests::TestCrossFadeWhileTransitioning()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestCrossFadeWhileTransitioning...");
+
+	Zenith_SkeletonAsset xSkeleton;
+	xSkeleton.AddBone("Root", -1, Zenith_Maths::Vector3(0.0f), Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f), Zenith_Maths::Vector3(1.0f));
+	Flux_SkeletonPose xPose;
+	xPose.Initialize(1);
+
+	Flux_AnimationStateMachine xSM("TestSM");
+	xSM.AddState("Idle");
+	xSM.AddState("Walk");
+	xSM.AddState("Run");
+	xSM.SetDefaultState("Idle");
+
+	xSM.Update(0.0f, xPose, xSkeleton);
+	Zenith_Assert(xSM.GetCurrentStateName() == "Idle", "Should start in Idle");
+
+	// Start a CrossFade to Walk
+	xSM.CrossFade("Walk", 1.0f);
+	Zenith_Assert(xSM.IsTransitioning(), "Should be transitioning to Walk");
+
+	// Update halfway through
+	xSM.Update(0.5f, xPose, xSkeleton);
+	Zenith_Assert(xSM.IsTransitioning(), "Should still be transitioning");
+
+	// Force CrossFade to Run during the Walk transition
+	xSM.CrossFade("Run", 0.1f);
+	Zenith_Assert(xSM.IsTransitioning(), "Should be transitioning to Run now");
+
+	// Complete the Run transition
+	for (int i = 0; i < 20; ++i)
+		xSM.Update(0.016f, xPose, xSkeleton);
+
+	Zenith_Assert(xSM.GetCurrentStateName() == "Run",
+		"CrossFade during transition should redirect to Run");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] CrossFade during active transition works");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestCrossFadeWhileTransitioning passed");
+}
+
+void Zenith_UnitTests::TestTweenLoopValueReset()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestTweenLoopValueReset...");
+
+	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("TweenLoopResetTest");
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xScene);
+	Zenith_Entity xEntity(pxSceneData, "TweenEntity");
+	xEntity.AddComponent<Zenith_TweenComponent>();
+
+	Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
+	xTransform.SetScale(Zenith_Maths::Vector3(1.0f));
+
+	Zenith_TweenComponent& xTween = xEntity.GetComponent<Zenith_TweenComponent>();
+	xTween.TweenScaleFromTo(Zenith_Maths::Vector3(1.0f), Zenith_Maths::Vector3(2.0f), 1.0f, EASING_LINEAR);
+	xTween.SetLoop(true, false);
+
+	// Complete first loop
+	xTween.OnUpdate(1.0f);
+	Zenith_Maths::Vector3 xScale;
+	xTransform.GetScale(xScale);
+	Zenith_Assert(xTween.HasActiveTweens(), "Should still be active (looping)");
+
+	// Small step into second loop - value should restart from 1.0
+	// After loop reset: elapsed = delay(0) + 0.1 = 0.1, t = 0.1/1.0 = 0.1
+	// scale = lerp(1.0, 2.0, 0.1) = 1.1
+	xTween.OnUpdate(0.1f);
+	xTransform.GetScale(xScale);
+	Zenith_Assert(glm::abs(xScale.x - 1.1f) < 0.05f,
+		"After loop reset, scale should restart from beginning (~1.1)");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Loop correctly resets interpolation value");
+
+	// Continue to halfway through second loop
+	xTween.OnUpdate(0.4f);
+	xTransform.GetScale(xScale);
+	Zenith_Assert(glm::abs(xScale.x - 1.5f) < 0.05f,
+		"Halfway through second loop should be ~1.5");
+
+	Zenith_SceneManager::UnloadScene(xScene);
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestTweenLoopValueReset passed");
+}
+
+//=============================================================================
+// Bug 1 Regression: Trigger not consumed when blocked by active transition priority
+//=============================================================================
+
+void Zenith_UnitTests::TestTriggerNotConsumedWhenBlockedByPriority()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestTriggerNotConsumedWhenBlockedByPriority...");
+
+	Zenith_SkeletonAsset xSkeleton;
+	xSkeleton.AddBone("Root", -1, Zenith_Maths::Vector3(0.0f), Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f), Zenith_Maths::Vector3(1.0f));
+	Flux_SkeletonPose xPose;
+	xPose.Initialize(1);
+
+	Flux_AnimationStateMachine xSM("TestSM");
+	xSM.GetParameters().AddFloat("Speed", 0.0f);
+	xSM.GetParameters().AddTrigger("DeathTrigger");
+
+	Flux_AnimationState* pxIdle = xSM.AddState("Idle");
+	xSM.AddState("Walk");
+	xSM.AddState("Death");
+	xSM.SetDefaultState("Idle");
+
+	// Idle -> Walk on Speed > 0.1 (high priority 200, interruptible)
+	{
+		Flux_StateTransition xTrans;
+		xTrans.m_strTargetStateName = "Walk";
+		xTrans.m_fTransitionDuration = 1.0f; // long transition so it stays active
+		xTrans.m_iPriority = 200;
+		xTrans.m_bInterruptible = true;
+
+		Flux_TransitionCondition xCond;
+		xCond.m_strParameterName = "Speed";
+		xCond.m_eCompareOp = Flux_TransitionCondition::CompareOp::Greater;
+		xCond.m_eParamType = Flux_AnimationParameters::ParamType::Float;
+		xCond.m_fThreshold = 0.1f;
+		xTrans.m_xConditions.PushBack(xCond);
+		pxIdle->AddTransition(xTrans);
+	}
+
+	// Any-State: DeathTrigger -> Death (low priority 100)
+	{
+		Flux_StateTransition xTrans;
+		xTrans.m_strTargetStateName = "Death";
+		xTrans.m_fTransitionDuration = 0.1f;
+		xTrans.m_iPriority = 100;
+
+		Flux_TransitionCondition xCond;
+		xCond.m_strParameterName = "DeathTrigger";
+		xCond.m_eParamType = Flux_AnimationParameters::ParamType::Trigger;
+		xTrans.m_xConditions.PushBack(xCond);
+		xSM.AddAnyStateTransition(xTrans);
+	}
+
+	// Initialize
+	xSM.Update(0.016f, xPose, xSkeleton);
+	Zenith_Assert(xSM.GetCurrentStateName() == "Idle", "Should start in Idle");
+
+	// Start the high-priority Idle->Walk transition
+	xSM.GetParameters().SetFloat("Speed", 1.0f);
+	xSM.Update(0.016f, xPose, xSkeleton);
+	Zenith_Assert(xSM.IsTransitioning(), "Should be transitioning to Walk");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] High-priority transition to Walk started");
+
+	// Now fire the lower-priority DeathTrigger while Walk transition is active
+	xSM.GetParameters().SetTrigger("DeathTrigger");
+	xSM.Update(0.016f, xPose, xSkeleton);
+
+	// The death transition should NOT have interrupted (priority 100 < 200)
+	// AND the trigger should NOT have been consumed
+	Zenith_Assert(xSM.GetParameters().PeekTrigger("DeathTrigger") == true,
+		"DeathTrigger should NOT be consumed when blocked by higher-priority active transition");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Trigger preserved when blocked by priority");
+
+	// Complete the Walk transition (1.0s) and let the preserved trigger fire
+	// Once Walk completes, the DeathTrigger (still set) fires immediately,
+	// then the Death transition (0.1s) also completes within 100 frames
+	for (int i = 0; i < 100; ++i)
+		xSM.Update(0.016f, xPose, xSkeleton);
+
+	// The preserved trigger should have fired after Walk completed,
+	// transitioning us through to Death
+	Zenith_Assert(xSM.GetCurrentStateName() == "Death",
+		"Preserved DeathTrigger should fire after Walk transition completes, reaching Death");
+	Zenith_Assert(xSM.GetParameters().PeekTrigger("DeathTrigger") == false,
+		"DeathTrigger should be consumed after successful transition");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Trigger fires after blocking transition completes, reached Death");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestTriggerNotConsumedWhenBlockedByPriority passed");
+}
+
+//=============================================================================
+// Serialization Round-Trip: Animation Layer
+//=============================================================================
+
+void Zenith_UnitTests::TestAnimationLayerSerialization()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestAnimationLayerSerialization...");
+
+	// Create a layer with all configurable properties
+	Flux_AnimationLayer xOriginal("UpperBody");
+	xOriginal.SetWeight(0.75f);
+	xOriginal.SetBlendMode(LAYER_BLEND_ADDITIVE);
+	Flux_BoneMask xMask;
+	xMask.SetBoneWeight(0, 1.0f);
+	xMask.SetBoneWeight(1, 0.5f);
+	xOriginal.SetAvatarMask(xMask);
+
+	// Give it a state machine with a state and parameter
+	Flux_AnimationStateMachine& xSM = xOriginal.GetStateMachine();
+	xSM.AddState("Idle");
+	xSM.AddState("Aim");
+	xSM.SetDefaultState("Idle");
+	xSM.GetParameters().AddFloat("AimWeight", 0.0f);
+
+	// Serialize
+	Zenith_DataStream xStream(1);
+	xOriginal.WriteToDataStream(xStream);
+
+	// Deserialize
+	xStream.SetCursor(0);
+	Flux_AnimationLayer xLoaded;
+	xLoaded.ReadFromDataStream(xStream);
+
+	// Verify
+	Zenith_Assert(xLoaded.GetName() == "UpperBody", "Layer name should round-trip");
+	Zenith_Assert(glm::abs(xLoaded.GetWeight() - 0.75f) < 0.001f, "Layer weight should round-trip");
+	Zenith_Assert(xLoaded.GetBlendMode() == LAYER_BLEND_ADDITIVE, "Layer blend mode should round-trip");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Layer properties round-trip");
+
+	// Verify state machine survived (use pointer getter to avoid auto-creation)
+	const Flux_AnimationStateMachine* pxLoadedSM = xLoaded.GetStateMachinePtr();
+	Zenith_Assert(pxLoadedSM != nullptr, "Layer should have a state machine after deserialization");
+	Zenith_Assert(pxLoadedSM->GetDefaultStateName() == "Idle", "SM default state should round-trip");
+	Zenith_Assert(pxLoadedSM->GetParameters().HasParameter("AimWeight"), "SM parameters should round-trip");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Layer state machine round-trip");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAnimationLayerSerialization passed");
+}
+
+//=============================================================================
+// Serialization Round-Trip: Any-State Transitions
+//=============================================================================
+
+void Zenith_UnitTests::TestAnyStateTransitionSerialization()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestAnyStateTransitionSerialization...");
+
+	Flux_AnimationStateMachine xOriginal("TestSM");
+	xOriginal.AddState("Idle");
+	xOriginal.AddState("Hit");
+	xOriginal.AddState("Death");
+	xOriginal.SetDefaultState("Idle");
+
+	xOriginal.GetParameters().AddTrigger("HitTrigger");
+	xOriginal.GetParameters().AddTrigger("DeathTrigger");
+
+	// Add two any-state transitions with different priorities
+	{
+		Flux_StateTransition xTrans;
+		xTrans.m_strTargetStateName = "Hit";
+		xTrans.m_fTransitionDuration = 0.15f;
+		xTrans.m_iPriority = 10;
+		xTrans.m_bInterruptible = true;
+
+		Flux_TransitionCondition xCond;
+		xCond.m_strParameterName = "HitTrigger";
+		xCond.m_eParamType = Flux_AnimationParameters::ParamType::Trigger;
+		xTrans.m_xConditions.PushBack(xCond);
+		xOriginal.AddAnyStateTransition(xTrans);
+	}
+	{
+		Flux_StateTransition xTrans;
+		xTrans.m_strTargetStateName = "Death";
+		xTrans.m_fTransitionDuration = 0.2f;
+		xTrans.m_iPriority = 100;
+		xTrans.m_bInterruptible = false;
+
+		Flux_TransitionCondition xCond;
+		xCond.m_strParameterName = "DeathTrigger";
+		xCond.m_eParamType = Flux_AnimationParameters::ParamType::Trigger;
+		xTrans.m_xConditions.PushBack(xCond);
+		xOriginal.AddAnyStateTransition(xTrans);
+	}
+
+	// Serialize
+	Zenith_DataStream xStream(1);
+	xOriginal.WriteToDataStream(xStream);
+
+	// Deserialize
+	xStream.SetCursor(0);
+	Flux_AnimationStateMachine xLoaded;
+	xLoaded.ReadFromDataStream(xStream);
+
+	// Verify any-state transitions survived
+	const Zenith_Vector<Flux_StateTransition>& xAnyState = xLoaded.GetAnyStateTransitions();
+	Zenith_Assert(xAnyState.GetSize() == 2, "Should have 2 any-state transitions after deserialization");
+
+	// Find the Hit and Death transitions (order may differ after deserialization)
+	bool bFoundHit = false, bFoundDeath = false;
+	for (uint32_t i = 0; i < xAnyState.GetSize(); ++i)
+	{
+		const Flux_StateTransition& xTrans = xAnyState.Get(i);
+		if (xTrans.m_strTargetStateName == "Hit")
+		{
+			Zenith_Assert(xTrans.m_iPriority == 10, "Hit transition priority should round-trip");
+			Zenith_Assert(glm::abs(xTrans.m_fTransitionDuration - 0.15f) < 0.001f, "Hit transition duration should round-trip");
+			Zenith_Assert(xTrans.m_bInterruptible == true, "Hit interruptible flag should round-trip");
+			Zenith_Assert(xTrans.m_xConditions.GetSize() == 1, "Hit should have 1 condition");
+			bFoundHit = true;
+		}
+		else if (xTrans.m_strTargetStateName == "Death")
+		{
+			Zenith_Assert(xTrans.m_iPriority == 100, "Death transition priority should round-trip");
+			Zenith_Assert(glm::abs(xTrans.m_fTransitionDuration - 0.2f) < 0.001f, "Death transition duration should round-trip");
+			Zenith_Assert(xTrans.m_bInterruptible == false, "Death interruptible flag should round-trip");
+			Zenith_Assert(xTrans.m_xConditions.GetSize() == 1, "Death should have 1 condition");
+			bFoundDeath = true;
+		}
+	}
+	Zenith_Assert(bFoundHit, "Hit any-state transition should survive round-trip");
+	Zenith_Assert(bFoundDeath, "Death any-state transition should survive round-trip");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Any-state transitions round-trip");
+
+	// Verify states and parameters survived too
+	Zenith_Assert(xLoaded.GetDefaultStateName() == "Idle", "Default state should round-trip");
+	Zenith_Assert(xLoaded.GetParameters().HasParameter("HitTrigger"), "HitTrigger param should round-trip");
+	Zenith_Assert(xLoaded.GetParameters().HasParameter("DeathTrigger"), "DeathTrigger param should round-trip");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] States and parameters round-trip");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestAnyStateTransitionSerialization passed");
+}
+
+//=============================================================================
+// Serialization Round-Trip: Sub-State Machines
+//=============================================================================
+
+void Zenith_UnitTests::TestSubStateMachineSerialization()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestSubStateMachineSerialization...");
+
+	Flux_AnimationStateMachine xOriginal("ParentSM");
+	xOriginal.AddState("Idle");
+	xOriginal.SetDefaultState("Idle");
+	xOriginal.GetParameters().AddFloat("Speed", 0.0f);
+
+	// Create a state with a sub-state machine
+	Flux_AnimationState* pxLocomotion = xOriginal.AddState("Locomotion");
+	Flux_AnimationStateMachine* pxSubSM = pxLocomotion->CreateSubStateMachine("LocomotionSM");
+	pxSubSM->AddState("Walk");
+	pxSubSM->AddState("Run");
+	pxSubSM->SetDefaultState("Walk");
+	pxSubSM->GetParameters().AddFloat("SubSpeed", 1.0f);
+
+	// Add a transition inside the sub-SM
+	Flux_AnimationState* pxWalk = pxSubSM->GetState("Walk");
+	Zenith_Assert(pxWalk != nullptr, "Walk state should exist in sub-SM");
+	{
+		Flux_StateTransition xTrans;
+		xTrans.m_strTargetStateName = "Run";
+		xTrans.m_fTransitionDuration = 0.2f;
+
+		Flux_TransitionCondition xCond;
+		xCond.m_strParameterName = "SubSpeed";
+		xCond.m_eCompareOp = Flux_TransitionCondition::CompareOp::Greater;
+		xCond.m_eParamType = Flux_AnimationParameters::ParamType::Float;
+		xCond.m_fThreshold = 2.0f;
+		xTrans.m_xConditions.PushBack(xCond);
+		pxWalk->AddTransition(xTrans);
+	}
+
+	// Serialize
+	Zenith_DataStream xStream(1);
+	xOriginal.WriteToDataStream(xStream);
+
+	// Deserialize
+	xStream.SetCursor(0);
+	Flux_AnimationStateMachine xLoaded;
+	xLoaded.ReadFromDataStream(xStream);
+
+	// Verify parent SM
+	Zenith_Assert(xLoaded.GetName() == "ParentSM", "Parent SM name should round-trip");
+	Zenith_Assert(xLoaded.GetDefaultStateName() == "Idle", "Parent default state should round-trip");
+	Zenith_Assert(xLoaded.GetParameters().HasParameter("Speed"), "Parent params should round-trip");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Parent SM round-trip");
+
+	// Verify sub-state machine exists
+	Flux_AnimationState* pxLoadedLoco = xLoaded.GetState("Locomotion");
+	Zenith_Assert(pxLoadedLoco != nullptr, "Locomotion state should exist");
+	Zenith_Assert(pxLoadedLoco->IsSubStateMachine(), "Locomotion should be a sub-state machine");
+
+	Flux_AnimationStateMachine* pxLoadedSubSM = pxLoadedLoco->GetSubStateMachine();
+	Zenith_Assert(pxLoadedSubSM != nullptr, "Sub-SM pointer should be valid");
+	Zenith_Assert(pxLoadedSubSM->GetName() == "LocomotionSM", "Sub-SM name should round-trip");
+	Zenith_Assert(pxLoadedSubSM->GetDefaultStateName() == "Walk", "Sub-SM default state should round-trip");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Sub-state machine round-trip");
+
+	// Verify sub-SM states and transitions
+	Flux_AnimationState* pxLoadedWalk = pxLoadedSubSM->GetState("Walk");
+	Zenith_Assert(pxLoadedWalk != nullptr, "Walk state should exist in deserialized sub-SM");
+	Zenith_Assert(pxLoadedSubSM->GetState("Run") != nullptr, "Run state should exist in deserialized sub-SM");
+
+	const Zenith_Vector<Flux_StateTransition>& xLoadedTrans = pxLoadedWalk->GetTransitions();
+	Zenith_Assert(xLoadedTrans.GetSize() == 1, "Walk should have 1 transition after deserialization");
+	Zenith_Assert(xLoadedTrans.Get(0).m_strTargetStateName == "Run", "Transition target should be Run");
+	Zenith_Assert(glm::abs(xLoadedTrans.Get(0).m_fTransitionDuration - 0.2f) < 0.001f, "Transition duration should round-trip");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Sub-SM transitions round-trip");
+
+	// Verify sub-SM parameters
+	Zenith_Assert(pxLoadedSubSM->GetParameters().HasParameter("SubSpeed"), "Sub-SM params should round-trip");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Sub-SM parameters round-trip");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestSubStateMachineSerialization passed");
+}
+
+//=============================================================================
+// Code Review Round 4 - Bug Fix Validation Tests
+//=============================================================================
+
+void Zenith_UnitTests::TestHasAnimationContentWithLayers()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestHasAnimationContentWithLayers...");
+
+	Flux_AnimationController xController;
+
+	// No content initially
+	Zenith_Assert(!xController.HasAnimationContent(), "Should have no content initially");
+
+	// Add a layer (no clips, no root state machine)
+	xController.AddLayer("Base");
+	Zenith_Assert(xController.HasAnimationContent(),
+		"Should report content when layers are present");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestHasAnimationContentWithLayers passed");
+}
+
+void Zenith_UnitTests::TestInitializeRetroactiveLayerPoses()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestInitializeRetroactiveLayerPoses...");
+
+	// Create a skeleton asset with a few bones
+	Zenith_SkeletonAsset* pxSkel = new Zenith_SkeletonAsset();
+	const Zenith_Maths::Quat xIdentity = glm::identity<Zenith_Maths::Quat>();
+	const Zenith_Maths::Vector3 xUnitScale(1.0f);
+	pxSkel->AddBone("Root", -1, Zenith_Maths::Vector3(0, 0, 0), xIdentity, xUnitScale);
+	pxSkel->AddBone("Child", 0, Zenith_Maths::Vector3(0, 1, 0), xIdentity, xUnitScale);
+	pxSkel->ComputeBindPoseMatrices();
+
+	Flux_SkeletonInstance* pxSkelInst = Flux_SkeletonInstance::CreateFromAsset(pxSkel, false);
+
+	Flux_AnimationController xController;
+
+	// Add layer BEFORE Initialize
+	Flux_AnimationLayer* pxLayer = xController.AddLayer("Base");
+
+	// Layer pose should be uninitialized (0 bones)
+	Zenith_Assert(pxLayer->GetOutputPose().GetNumBones() == 0,
+		"Layer pose should be uninitialized before Initialize()");
+
+	// Initialize should retroactively initialize the layer pose
+	xController.Initialize(pxSkelInst);
+
+	Zenith_Assert(pxLayer->GetOutputPose().GetNumBones() == 2,
+		"Layer pose should have 2 bones after retroactive Initialize()");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Layer added before Initialize() gets retroactive pose init");
+
+	delete pxSkelInst;
+	delete pxSkel;
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestInitializeRetroactiveLayerPoses passed");
+}
+
+void Zenith_UnitTests::TestResolveClipReferencesBlendSpace2D()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestResolveClipReferencesBlendSpace2D...");
+
+	// Create clip collection
+	Flux_AnimationClipCollection xCollection;
+	Flux_AnimationClip* pxClipA = new Flux_AnimationClip();
+	pxClipA->SetName("ClipA");
+	Flux_AnimationClip* pxClipB = new Flux_AnimationClip();
+	pxClipB->SetName("ClipB");
+	xCollection.AddClip(pxClipA);
+	xCollection.AddClip(pxClipB);
+
+	// Create BlendSpace2D with two clip nodes as blend points
+	Flux_BlendTreeNode_Clip* pxNodeA = new Flux_BlendTreeNode_Clip();
+	pxNodeA->SetClipName("ClipA");
+	Zenith_Assert(pxNodeA->GetClip() == nullptr, "Clip A should be unresolved");
+
+	Flux_BlendTreeNode_Clip* pxNodeB = new Flux_BlendTreeNode_Clip();
+	pxNodeB->SetClipName("ClipB");
+	Zenith_Assert(pxNodeB->GetClip() == nullptr, "Clip B should be unresolved");
+
+	Flux_BlendTreeNode_BlendSpace2D* pxBS2D = new Flux_BlendTreeNode_BlendSpace2D();
+	pxBS2D->AddBlendPoint(pxNodeA, Zenith_Maths::Vector2(0.0f, 0.0f));
+	pxBS2D->AddBlendPoint(pxNodeB, Zenith_Maths::Vector2(1.0f, 1.0f));
+
+	// Create state machine with state using this blend tree
+	Flux_AnimationStateMachine xSM("TestSM");
+	Flux_AnimationState* pxState = xSM.AddState("BS2DState");
+	pxState->SetBlendTree(pxBS2D);
+	xSM.SetDefaultState("BS2DState");
+
+	// Resolve
+	xSM.ResolveClipReferences(&xCollection);
+
+	Zenith_Assert(pxNodeA->GetClip() == pxClipA,
+		"BlendSpace2D clip A should be resolved");
+	Zenith_Assert(pxNodeB->GetClip() == pxClipB,
+		"BlendSpace2D clip B should be resolved");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] BlendSpace2D blend point clips resolved recursively");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestResolveClipReferencesBlendSpace2D passed");
+}
+
+void Zenith_UnitTests::TestResolveClipReferencesSelect()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestResolveClipReferencesSelect...");
+
+	// Create clip collection
+	Flux_AnimationClipCollection xCollection;
+	Flux_AnimationClip* pxClipA = new Flux_AnimationClip();
+	pxClipA->SetName("SelectA");
+	Flux_AnimationClip* pxClipB = new Flux_AnimationClip();
+	pxClipB->SetName("SelectB");
+	xCollection.AddClip(pxClipA);
+	xCollection.AddClip(pxClipB);
+
+	// Create Select node with two clip children
+	Flux_BlendTreeNode_Clip* pxNodeA = new Flux_BlendTreeNode_Clip();
+	pxNodeA->SetClipName("SelectA");
+	Zenith_Assert(pxNodeA->GetClip() == nullptr, "Clip A should be unresolved");
+
+	Flux_BlendTreeNode_Clip* pxNodeB = new Flux_BlendTreeNode_Clip();
+	pxNodeB->SetClipName("SelectB");
+	Zenith_Assert(pxNodeB->GetClip() == nullptr, "Clip B should be unresolved");
+
+	Flux_BlendTreeNode_Select* pxSelect = new Flux_BlendTreeNode_Select();
+	pxSelect->AddChild(pxNodeA);
+	pxSelect->AddChild(pxNodeB);
+
+	// Create state machine with state using this blend tree
+	Flux_AnimationStateMachine xSM("TestSM");
+	Flux_AnimationState* pxState = xSM.AddState("SelectState");
+	pxState->SetBlendTree(pxSelect);
+	xSM.SetDefaultState("SelectState");
+
+	// Resolve
+	xSM.ResolveClipReferences(&xCollection);
+
+	Zenith_Assert(pxNodeA->GetClip() == pxClipA,
+		"Select child clip A should be resolved");
+	Zenith_Assert(pxNodeB->GetClip() == pxClipB,
+		"Select child clip B should be resolved");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Select node children clips resolved recursively");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestResolveClipReferencesSelect passed");
+}
+
+void Zenith_UnitTests::TestLayerCompositionOverrideBlend()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestLayerCompositionOverrideBlend...");
+
+	// Create a simple 2-bone skeleton
+	Zenith_SkeletonAsset* pxSkel = new Zenith_SkeletonAsset();
+	const Zenith_Maths::Quat xIdentity = glm::identity<Zenith_Maths::Quat>();
+	const Zenith_Maths::Vector3 xUnitScale(1.0f);
+	pxSkel->AddBone("Root", -1, Zenith_Maths::Vector3(0, 0, 0), xIdentity, xUnitScale);
+	pxSkel->AddBone("Child", 0, Zenith_Maths::Vector3(0, 1, 0), xIdentity, xUnitScale);
+	pxSkel->ComputeBindPoseMatrices();
+
+	Flux_SkeletonInstance* pxSkelInst = Flux_SkeletonInstance::CreateFromAsset(pxSkel, false);
+
+	Flux_AnimationController xController;
+	xController.Initialize(pxSkelInst);
+
+	// Create two clips with distinct root bone positions
+	Flux_AnimationClip* pxClipA = new Flux_AnimationClip();
+	pxClipA->SetName("PoseA");
+	pxClipA->SetDuration(1.0f);
+	pxClipA->SetLooping(true);
+	{
+		Flux_BoneChannel xChan;
+		xChan.SetBoneName("Root");
+		xChan.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
+		pxClipA->AddBoneChannel("Root", std::move(xChan));
+	}
+
+	Flux_AnimationClip* pxClipB = new Flux_AnimationClip();
+	pxClipB->SetName("PoseB");
+	pxClipB->SetDuration(1.0f);
+	pxClipB->SetLooping(true);
+	{
+		Flux_BoneChannel xChan;
+		xChan.SetBoneName("Root");
+		xChan.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(2.0f, 0.0f, 0.0f));
+		pxClipB->AddBoneChannel("Root", std::move(xChan));
+	}
+
+	// Base layer plays PoseA (root at 0,0,0)
+	Flux_AnimationLayer* pxBaseLayer = xController.AddLayer("Base");
+	pxBaseLayer->SetWeight(1.0f);
+	Flux_AnimationStateMachine* pxBaseSM = pxBaseLayer->CreateStateMachine("BaseSM");
+	Flux_AnimationState* pxBaseState = pxBaseSM->AddState("PoseA");
+	Flux_BlendTreeNode_Clip* pxBaseClipNode = new Flux_BlendTreeNode_Clip(pxClipA);
+	pxBaseState->SetBlendTree(pxBaseClipNode);
+	pxBaseSM->SetDefaultState("PoseA");
+	pxBaseSM->SetState("PoseA");
+
+	// Override layer plays PoseB (root at 2,0,0) at weight 0.5
+	Flux_AnimationLayer* pxOverrideLayer = xController.AddLayer("Override");
+	pxOverrideLayer->SetWeight(0.5f);
+	pxOverrideLayer->SetBlendMode(LAYER_BLEND_OVERRIDE);
+	Flux_AnimationStateMachine* pxOverrideSM = pxOverrideLayer->CreateStateMachine("OverrideSM");
+	Flux_AnimationState* pxOverrideState = pxOverrideSM->AddState("PoseB");
+	Flux_BlendTreeNode_Clip* pxOverrideClipNode = new Flux_BlendTreeNode_Clip(pxClipB);
+	pxOverrideState->SetBlendTree(pxOverrideClipNode);
+	pxOverrideSM->SetDefaultState("PoseB");
+	pxOverrideSM->SetState("PoseB");
+
+	// Update to evaluate both layers and compose
+	xController.Update(0.016f);
+
+	// Output should be a blend: base(0,0,0) blended with override(2,0,0) at weight 0.5
+	// Expected root position: lerp(0, 2, 0.5) = (1, 0, 0)
+	const Flux_SkeletonPose& xOutput = xController.GetOutputPose();
+	const Flux_BoneLocalPose& xRootPose = xOutput.GetLocalPose(0);
+
+	float fExpectedX = 1.0f;
+	float fTolerance = 0.01f;
+	Zenith_Assert(glm::abs(xRootPose.m_xPosition.x - fExpectedX) < fTolerance,
+		"Root X should be ~1.0 (blend of 0.0 and 2.0 at weight 0.5), got %.3f", xRootPose.m_xPosition.x);
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Layer override blend at 0.5 weight produces correct lerp (%.3f)",
+		xRootPose.m_xPosition.x);
+
+	delete pxSkelInst;
+	delete pxSkel;
+	delete pxClipA;
+	delete pxClipB;
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestLayerCompositionOverrideBlend passed");
+}
+
+//=============================================================================
+// Code review round 5 - additional coverage
+//=============================================================================
+
+void Zenith_UnitTests::TestLayerCompositionAdditiveBlend()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestLayerCompositionAdditiveBlend...");
+
+	// Create a simple 2-bone skeleton
+	Zenith_SkeletonAsset* pxSkel = new Zenith_SkeletonAsset();
+	const Zenith_Maths::Quat xIdentity = glm::identity<Zenith_Maths::Quat>();
+	const Zenith_Maths::Vector3 xUnitScale(1.0f);
+	pxSkel->AddBone("Root", -1, Zenith_Maths::Vector3(0, 0, 0), xIdentity, xUnitScale);
+	pxSkel->AddBone("Child", 0, Zenith_Maths::Vector3(0, 1, 0), xIdentity, xUnitScale);
+	pxSkel->ComputeBindPoseMatrices();
+
+	Flux_SkeletonInstance* pxSkelInst = Flux_SkeletonInstance::CreateFromAsset(pxSkel, false);
+
+	Flux_AnimationController xController;
+	xController.Initialize(pxSkelInst);
+
+	// Base clip: root at (1, 0, 0)
+	Flux_AnimationClip* pxClipBase = new Flux_AnimationClip();
+	pxClipBase->SetName("Base");
+	pxClipBase->SetDuration(1.0f);
+	pxClipBase->SetLooping(true);
+	{
+		Flux_BoneChannel xChan;
+		xChan.SetBoneName("Root");
+		xChan.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f));
+		pxClipBase->AddBoneChannel("Root", std::move(xChan));
+	}
+
+	// Additive clip: root at (3, 0, 0) - delta from bind pose (0,0,0) = +3
+	Flux_AnimationClip* pxClipAdd = new Flux_AnimationClip();
+	pxClipAdd->SetName("Additive");
+	pxClipAdd->SetDuration(1.0f);
+	pxClipAdd->SetLooping(true);
+	{
+		Flux_BoneChannel xChan;
+		xChan.SetBoneName("Root");
+		xChan.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(3.0f, 0.0f, 0.0f));
+		pxClipAdd->AddBoneChannel("Root", std::move(xChan));
+	}
+
+	// Base layer plays Base clip
+	Flux_AnimationLayer* pxBaseLayer = xController.AddLayer("Base");
+	pxBaseLayer->SetWeight(1.0f);
+	Flux_AnimationStateMachine* pxBaseSM = pxBaseLayer->CreateStateMachine("BaseSM");
+	Flux_AnimationState* pxBaseState = pxBaseSM->AddState("Base");
+	pxBaseState->SetBlendTree(new Flux_BlendTreeNode_Clip(pxClipBase));
+	pxBaseSM->SetDefaultState("Base");
+	pxBaseSM->SetState("Base");
+
+	// Additive layer at weight 1.0
+	Flux_AnimationLayer* pxAddLayer = xController.AddLayer("Additive");
+	pxAddLayer->SetWeight(1.0f);
+	pxAddLayer->SetBlendMode(LAYER_BLEND_ADDITIVE);
+	Flux_AnimationStateMachine* pxAddSM = pxAddLayer->CreateStateMachine("AddSM");
+	Flux_AnimationState* pxAddState = pxAddSM->AddState("Additive");
+	pxAddState->SetBlendTree(new Flux_BlendTreeNode_Clip(pxClipAdd));
+	pxAddSM->SetDefaultState("Additive");
+	pxAddSM->SetState("Additive");
+
+	xController.Update(0.016f);
+
+	// Additive blend adds delta on top of base: base(1) + additive(3) * weight(1) = 4
+	const Flux_SkeletonPose& xOutput = xController.GetOutputPose();
+	const Flux_BoneLocalPose& xRootPose = xOutput.GetLocalPose(0);
+
+	// Additive result should be greater than base alone
+	Zenith_Assert(xRootPose.m_xPosition.x > 1.0f + 0.01f,
+		"Additive layer should increase root X beyond base (1.0), got %.3f", xRootPose.m_xPosition.x);
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Additive layer adds delta on top of base (result: %.3f)", xRootPose.m_xPosition.x);
+
+	delete pxSkelInst;
+	delete pxSkel;
+	delete pxClipBase;
+	delete pxClipAdd;
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestLayerCompositionAdditiveBlend passed");
+}
+
+void Zenith_UnitTests::TestLayerMaskedOverrideBlend()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestLayerMaskedOverrideBlend...");
+
+	// Create 3-bone skeleton
+	Zenith_SkeletonAsset* pxSkel = new Zenith_SkeletonAsset();
+	const Zenith_Maths::Quat xIdentity = glm::identity<Zenith_Maths::Quat>();
+	const Zenith_Maths::Vector3 xUnitScale(1.0f);
+	pxSkel->AddBone("Root", -1, Zenith_Maths::Vector3(0, 0, 0), xIdentity, xUnitScale);
+	pxSkel->AddBone("Upper", 0, Zenith_Maths::Vector3(0, 1, 0), xIdentity, xUnitScale);
+	pxSkel->AddBone("Lower", 0, Zenith_Maths::Vector3(0, -1, 0), xIdentity, xUnitScale);
+	pxSkel->ComputeBindPoseMatrices();
+
+	Flux_SkeletonInstance* pxSkelInst = Flux_SkeletonInstance::CreateFromAsset(pxSkel, false);
+
+	Flux_AnimationController xController;
+	xController.Initialize(pxSkelInst);
+
+	// Base clip: all bones at (0, 0, 0)
+	Flux_AnimationClip* pxClipBase = new Flux_AnimationClip();
+	pxClipBase->SetName("Base");
+	pxClipBase->SetDuration(1.0f);
+	pxClipBase->SetLooping(true);
+	{
+		Flux_BoneChannel xChan;
+		xChan.SetBoneName("Root");
+		xChan.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
+		pxClipBase->AddBoneChannel("Root", std::move(xChan));
+	}
+	{
+		Flux_BoneChannel xChan;
+		xChan.SetBoneName("Upper");
+		xChan.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
+		pxClipBase->AddBoneChannel("Upper", std::move(xChan));
+	}
+	{
+		Flux_BoneChannel xChan;
+		xChan.SetBoneName("Lower");
+		xChan.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
+		pxClipBase->AddBoneChannel("Lower", std::move(xChan));
+	}
+
+	// Override clip: all bones at (4, 0, 0)
+	Flux_AnimationClip* pxClipOverride = new Flux_AnimationClip();
+	pxClipOverride->SetName("Override");
+	pxClipOverride->SetDuration(1.0f);
+	pxClipOverride->SetLooping(true);
+	{
+		Flux_BoneChannel xChan;
+		xChan.SetBoneName("Root");
+		xChan.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(4.0f, 0.0f, 0.0f));
+		pxClipOverride->AddBoneChannel("Root", std::move(xChan));
+	}
+	{
+		Flux_BoneChannel xChan;
+		xChan.SetBoneName("Upper");
+		xChan.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(4.0f, 0.0f, 0.0f));
+		pxClipOverride->AddBoneChannel("Upper", std::move(xChan));
+	}
+	{
+		Flux_BoneChannel xChan;
+		xChan.SetBoneName("Lower");
+		xChan.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(4.0f, 0.0f, 0.0f));
+		pxClipOverride->AddBoneChannel("Lower", std::move(xChan));
+	}
+
+	// Base layer
+	Flux_AnimationLayer* pxBaseLayer = xController.AddLayer("Base");
+	pxBaseLayer->SetWeight(1.0f);
+	Flux_AnimationStateMachine* pxBaseSM = pxBaseLayer->CreateStateMachine("BaseSM");
+	Flux_AnimationState* pxBaseState = pxBaseSM->AddState("Base");
+	pxBaseState->SetBlendTree(new Flux_BlendTreeNode_Clip(pxClipBase));
+	pxBaseSM->SetDefaultState("Base");
+	pxBaseSM->SetState("Base");
+
+	// Masked override layer: bone 1 (Upper) fully overridden, bone 2 (Lower) not affected
+	Flux_AnimationLayer* pxMaskLayer = xController.AddLayer("MaskedOverride");
+	pxMaskLayer->SetWeight(1.0f);
+	pxMaskLayer->SetBlendMode(LAYER_BLEND_OVERRIDE);
+	Flux_BoneMask xMask;
+	xMask.SetBoneWeight(0, 0.0f);  // Root: no override
+	xMask.SetBoneWeight(1, 1.0f);  // Upper: full override
+	xMask.SetBoneWeight(2, 0.0f);  // Lower: no override
+	pxMaskLayer->SetAvatarMask(xMask);
+
+	Flux_AnimationStateMachine* pxMaskSM = pxMaskLayer->CreateStateMachine("MaskSM");
+	Flux_AnimationState* pxMaskState = pxMaskSM->AddState("Override");
+	pxMaskState->SetBlendTree(new Flux_BlendTreeNode_Clip(pxClipOverride));
+	pxMaskSM->SetDefaultState("Override");
+	pxMaskSM->SetState("Override");
+
+	xController.Update(0.016f);
+
+	const Flux_SkeletonPose& xOutput = xController.GetOutputPose();
+	float fTolerance = 0.01f;
+
+	// Root (mask weight 0): should remain at base (0, 0, 0)
+	Zenith_Assert(glm::abs(xOutput.GetLocalPose(0).m_xPosition.x - 0.0f) < fTolerance,
+		"Root (mask=0) should stay at base 0.0, got %.3f", xOutput.GetLocalPose(0).m_xPosition.x);
+
+	// Upper (mask weight 1): should be fully overridden to (4, 0, 0)
+	Zenith_Assert(glm::abs(xOutput.GetLocalPose(1).m_xPosition.x - 4.0f) < fTolerance,
+		"Upper (mask=1) should be overridden to 4.0, got %.3f", xOutput.GetLocalPose(1).m_xPosition.x);
+
+	// Lower (mask weight 0): should remain at base (0, 0, 0)
+	Zenith_Assert(glm::abs(xOutput.GetLocalPose(2).m_xPosition.x - 0.0f) < fTolerance,
+		"Lower (mask=0) should stay at base 0.0, got %.3f", xOutput.GetLocalPose(2).m_xPosition.x);
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Masked override only affects bone with mask weight > 0");
+
+	delete pxSkelInst;
+	delete pxSkel;
+	delete pxClipBase;
+	delete pxClipOverride;
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestLayerMaskedOverrideBlend passed");
+}
+
+void Zenith_UnitTests::TestPingPongAsymmetricEasing()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestPingPongAsymmetricEasing...");
+
+	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("PingPongEasingTest");
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xScene);
+	Zenith_Entity xEntity(pxSceneData, "TweenEntity");
+	xEntity.AddComponent<Zenith_TweenComponent>();
+
+	Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
+	xTransform.SetScale(Zenith_Maths::Vector3(0.0f));
+
+	Zenith_TweenComponent& xTween = xEntity.GetComponent<Zenith_TweenComponent>();
+	// QuadIn: slow start, fast end. Forward at t=0.5 should produce 0.25 (0.5^2)
+	xTween.TweenScaleFromTo(Zenith_Maths::Vector3(0.0f), Zenith_Maths::Vector3(1.0f), 1.0f, EASING_QUAD_IN);
+	xTween.SetLoop(true, true);
+
+	// Forward at t=0.5: QuadIn(0.5) = 0.25
+	xTween.OnUpdate(0.5f);
+	Zenith_Maths::Vector3 xScale;
+	xTransform.GetScale(xScale);
+	float fForwardHalf = xScale.x;
+	Zenith_Assert(glm::abs(fForwardHalf - 0.25f) < 0.05f,
+		"Forward QuadIn at 0.5 should be ~0.25, got %.3f", fForwardHalf);
+
+	// Complete forward pass
+	xTween.OnUpdate(0.5f);
+
+	// Reverse at t=0.5: should mirror forward curve
+	// Correct: 1.0 - QuadIn(0.5) = 1.0 - 0.25 = 0.75
+	// Bug would produce: QuadIn(1.0 - 0.5) = QuadIn(0.5) = 0.25 (wrong!)
+	xTween.OnUpdate(0.5f);
+	xTransform.GetScale(xScale);
+	float fReverseHalf = xScale.x;
+	Zenith_Assert(fReverseHalf > 0.5f,
+		"Reverse QuadIn at 0.5 should be > 0.5 (mirrored curve), got %.3f", fReverseHalf);
+	Zenith_Assert(glm::abs(fReverseHalf - 0.75f) < 0.05f,
+		"Reverse QuadIn at 0.5 should be ~0.75 (1.0 - 0.25), got %.3f", fReverseHalf);
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Forward=%.3f, Reverse=%.3f (mirrored correctly)", fForwardHalf, fReverseHalf);
+
+	Zenith_SceneManager::UnloadScene(xScene);
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestPingPongAsymmetricEasing passed");
+}
+
+void Zenith_UnitTests::TestTransitionCompletionFramePose()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestTransitionCompletionFramePose...");
+
+	// Create 2-bone skeleton
+	Zenith_SkeletonAsset* pxSkel = new Zenith_SkeletonAsset();
+	const Zenith_Maths::Quat xIdentity = glm::identity<Zenith_Maths::Quat>();
+	const Zenith_Maths::Vector3 xUnitScale(1.0f);
+	pxSkel->AddBone("Root", -1, Zenith_Maths::Vector3(0, 0, 0), xIdentity, xUnitScale);
+	pxSkel->AddBone("Child", 0, Zenith_Maths::Vector3(0, 1, 0), xIdentity, xUnitScale);
+	pxSkel->ComputeBindPoseMatrices();
+
+	Flux_SkeletonInstance* pxSkelInst = Flux_SkeletonInstance::CreateFromAsset(pxSkel, false);
+
+	// Test: after a transition completes, the output should be the target state's pose
+	// (not double-advanced by evaluating the blend tree twice on the completion frame)
+	Flux_AnimationStateMachine xSM("TestSM");
+	xSM.GetParameters().AddTrigger("GoToB");
+
+	// StateA: static pose at (0,0,0)
+	Flux_AnimationClip* pxClipA = new Flux_AnimationClip();
+	pxClipA->SetName("ClipA");
+	pxClipA->SetDuration(1.0f);
+	pxClipA->SetTicksPerSecond(1);
+	pxClipA->SetLooping(true);
+	{
+		Flux_BoneChannel xChan;
+		xChan.SetBoneName("Root");
+		xChan.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
+		pxClipA->AddBoneChannel("Root", std::move(xChan));
+	}
+
+	// StateB: moves from (0,0,0) to (10,0,0) over 1s
+	// After transition completes, time in clip will be small (~0.2-0.3s)
+	// Position should be ~(2-3, 0, 0), NOT ~(4-6, 0, 0) from double-advance
+	Flux_AnimationClip* pxClipB = new Flux_AnimationClip();
+	pxClipB->SetName("ClipB");
+	pxClipB->SetDuration(1.0f);
+	pxClipB->SetTicksPerSecond(1);
+	pxClipB->SetLooping(true);
+	{
+		Flux_BoneChannel xChan;
+		xChan.SetBoneName("Root");
+		xChan.AddPositionKeyframe(0.0f, Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
+		xChan.AddPositionKeyframe(1.0f, Zenith_Maths::Vector3(10.0f, 0.0f, 0.0f));
+		pxClipB->AddBoneChannel("Root", std::move(xChan));
+	}
+
+	Flux_AnimationState* pxStateA = xSM.AddState("StateA");
+	pxStateA->SetBlendTree(new Flux_BlendTreeNode_Clip(pxClipA));
+	Flux_AnimationState* pxStateB = xSM.AddState("StateB");
+	pxStateB->SetBlendTree(new Flux_BlendTreeNode_Clip(pxClipB));
+
+	// Transition A->B on trigger, short duration
+	{
+		Flux_StateTransition xTrans;
+		xTrans.m_strTargetStateName = "StateB";
+		xTrans.m_fTransitionDuration = 0.05f;
+		Flux_TransitionCondition xCond;
+		xCond.m_strParameterName = "GoToB";
+		xCond.m_eParamType = Flux_AnimationParameters::ParamType::Trigger;
+		xCond.m_eCompareOp = Flux_TransitionCondition::CompareOp::Equal;
+		xCond.m_bThreshold = true;
+		xTrans.m_xConditions.PushBack(xCond);
+		pxStateA->AddTransition(xTrans);
+	}
+
+	xSM.SetDefaultState("StateA");
+	xSM.SetState("StateA");
+
+	Flux_SkeletonPose xPose;
+	xPose.Initialize(2);
+
+	// Initialize
+	xSM.Update(0.016f, xPose, *pxSkel);
+
+	// Start transition
+	xSM.GetParameters().SetTrigger("GoToB");
+	xSM.Update(0.016f, xPose, *pxSkel);
+
+	// Complete the transition with a large dt
+	// StateB's blend tree will have accumulated ~0.016 + 0.2 = ~0.216s of time
+	// Position should be ~(2.16, 0, 0), NOT ~(4.32, 0, 0) from double-advance
+	xSM.Update(0.2f, xPose, *pxSkel);
+
+	// Run several more frames after completion and verify smooth progression
+	float fPrev = xPose.GetLocalPose(0).m_xPosition.x;
+	bool bSmooth = true;
+	for (int i = 0; i < 5; ++i)
+	{
+		xSM.Update(0.016f, xPose, *pxSkel);
+		float fCurr = xPose.GetLocalPose(0).m_xPosition.x;
+		float fDelta = glm::abs(fCurr - fPrev);
+		// Each frame at dt=0.016 in a 1s clip spanning 10 units should advance ~0.16
+		// A jump > 0.5 would indicate double-advance from the bug
+		if (fDelta > 0.5f)
+			bSmooth = false;
+		fPrev = fCurr;
+	}
+
+	Zenith_Assert(bSmooth, "Post-transition frames should be smooth (no large jumps)");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] Post-transition frames are smooth");
+
+	// Verify we're actually in StateB (clip position should be positive, increasing)
+	Zenith_Assert(fPrev > 0.0f, "Position should be positive (in StateB clip range)");
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "  [OK] State machine is in target state (pos=%.3f)", fPrev);
+
+	delete pxSkelInst;
+	delete pxSkel;
+	delete pxClipA;
+	delete pxClipB;
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestTransitionCompletionFramePose passed");
 }

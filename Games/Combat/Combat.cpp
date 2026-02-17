@@ -66,6 +66,60 @@ namespace Combat
 	Flux_ParticleEmitterConfig* g_pxFlameConfig = nullptr;  // Candle flame particles
 }
 
+// Lazy initialization of stick figure model asset.
+// Called from InitializeCombatResources and again from CreateArena if assets
+// were not available at init time (unit tests create them after init).
+void Combat::TryInitializeStickFigureModel()
+{
+	// Already initialized
+	if (!g_strStickFigureModelPath.empty())
+		return;
+
+	std::string strStickFigureMeshGeomPath = std::string(ENGINE_ASSETS_DIR) + "Meshes/StickFigure/StickFigure.zmesh";
+	std::string strStickFigureMeshAssetPath = std::string(ENGINE_ASSETS_DIR) + "Meshes/StickFigure/StickFigure.zasset";
+	std::string strStickFigureSkeletonPath = std::string(ENGINE_ASSETS_DIR) + "Meshes/StickFigure/StickFigure.zskel";
+
+	if (std::filesystem::exists(strStickFigureMeshAssetPath) && std::filesystem::exists(strStickFigureSkeletonPath))
+	{
+		// Load the mesh geometry through registry
+		if (std::filesystem::exists(strStickFigureMeshGeomPath))
+		{
+			g_pxStickFigureGeometryAsset = Zenith_AssetRegistry::Get().Get<Zenith_MeshGeometryAsset>(strStickFigureMeshGeomPath);
+			if (g_pxStickFigureGeometryAsset)
+			{
+				g_pxStickFigureGeometry = g_pxStickFigureGeometryAsset->GetGeometry();
+				Zenith_Log(LOG_CATEGORY_MESH, "[Combat] Loaded stick figure mesh from %s", strStickFigureMeshGeomPath.c_str());
+			}
+		}
+
+		// Create model asset via registry
+		g_pxStickFigureModelAsset = Zenith_AssetRegistry::Get().Create<Zenith_ModelAsset>();
+		g_pxStickFigureModelAsset->SetName("StickFigure");
+		g_pxStickFigureModelAsset->SetSkeletonPath(strStickFigureSkeletonPath);
+
+		Zenith_Vector<std::string> xEmptyMaterials;
+		g_pxStickFigureModelAsset->AddMeshByPath(strStickFigureMeshAssetPath, xEmptyMaterials);
+
+		// Export model asset
+		g_strStickFigureModelPath = std::string(ENGINE_ASSETS_DIR) + "Meshes/StickFigure/StickFigure.zmodel";
+		g_pxStickFigureModelAsset->Export(g_strStickFigureModelPath.c_str());
+		Zenith_Log(LOG_CATEGORY_MESH, "[Combat] Created model asset at %s", g_strStickFigureModelPath.c_str());
+	}
+	else
+	{
+		Zenith_Log(LOG_CATEGORY_MESH, "[Combat] Stick figure assets not found (.zasset=%s, .zskel=%s), using capsule fallback",
+			std::filesystem::exists(strStickFigureMeshAssetPath) ? "exists" : "MISSING",
+			std::filesystem::exists(strStickFigureSkeletonPath) ? "exists" : "MISSING");
+
+		// Use capsule as fallback geometry only if not already set
+		if (!g_pxStickFigureGeometry)
+		{
+			g_pxStickFigureGeometryAsset = g_pxCapsuleAsset;
+			g_pxStickFigureGeometry = g_pxCapsuleGeometry;
+		}
+	}
+}
+
 static bool s_bResourcesInitialized = false;
 
 // ============================================================================
@@ -415,44 +469,8 @@ static void InitializeCombatResources()
 	g_pxConeGeometry->m_strSourcePath = strConePath;
 #endif
 
-	// Load stick figure mesh (skinned version with bone data for animated rendering)
-	std::string strStickFigureMeshGeomPath = std::string(ENGINE_ASSETS_DIR) + "Meshes/StickFigure/StickFigure.zmesh";
-	std::string strStickFigureMeshAssetPath = std::string(ENGINE_ASSETS_DIR) + "Meshes/StickFigure/StickFigure.zasset";
-	std::string strStickFigureSkeletonPath = std::string(ENGINE_ASSETS_DIR) + "Meshes/StickFigure/StickFigure.zskel";
-
-	if (std::filesystem::exists(strStickFigureMeshAssetPath) && std::filesystem::exists(strStickFigureSkeletonPath))
-	{
-		// Load the mesh geometry through registry
-		if (std::filesystem::exists(strStickFigureMeshGeomPath))
-		{
-			g_pxStickFigureGeometryAsset = Zenith_AssetRegistry::Get().Get<Zenith_MeshGeometryAsset>(strStickFigureMeshGeomPath);
-			if (g_pxStickFigureGeometryAsset)
-			{
-				g_pxStickFigureGeometry = g_pxStickFigureGeometryAsset->GetGeometry();
-				Zenith_Log(LOG_CATEGORY_MESH, "[Combat] Loaded stick figure mesh from %s", strStickFigureMeshGeomPath.c_str());
-			}
-		}
-
-		// Create model asset via registry
-		g_pxStickFigureModelAsset = Zenith_AssetRegistry::Get().Create<Zenith_ModelAsset>();
-		g_pxStickFigureModelAsset->SetName("StickFigure");
-		g_pxStickFigureModelAsset->SetSkeletonPath(strStickFigureSkeletonPath);
-
-		Zenith_Vector<std::string> xEmptyMaterials;
-		g_pxStickFigureModelAsset->AddMeshByPath(strStickFigureMeshAssetPath, xEmptyMaterials);
-
-		// Export model asset
-		g_strStickFigureModelPath = std::string(ENGINE_ASSETS_DIR) + "Meshes/StickFigure/StickFigure.zmodel";
-		g_pxStickFigureModelAsset->Export(g_strStickFigureModelPath.c_str());
-		Zenith_Log(LOG_CATEGORY_MESH, "[Combat] Created model asset at %s", g_strStickFigureModelPath.c_str());
-	}
-	else
-	{
-		Zenith_Log(LOG_CATEGORY_MESH, "[Combat] Stick figure assets not found, using capsule");
-		g_pxStickFigureGeometryAsset = g_pxCapsuleAsset;
-		g_pxStickFigureGeometry = g_pxCapsuleGeometry;
-		g_strStickFigureModelPath.clear();
-	}
+	// Try to load stick figure assets (may not exist yet on first run - unit tests create them)
+	Combat::TryInitializeStickFigureModel();
 
 	// Create textures directory
 	std::string strTexturesDir = std::string(GAME_ASSETS_DIR) + "/Textures";

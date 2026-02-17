@@ -4,10 +4,10 @@
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_ComponentMeta.h"
 #include "DataStream/Zenith_DataStream.h"
-#include "Flux/MeshAnimation/Flux_AnimationController.h"
 #include "Flux/Flux_ModelInstance.h"
 #include "Flux/MeshGeometry/Flux_MeshInstance.h"
 #include "Flux/MeshAnimation/Flux_SkeletonInstance.h"
+#include "Flux/MeshAnimation/Flux_MeshAnimation.h"
 #include "AssetHandling/Zenith_ModelAsset.h"
 #include "AssetHandling/Zenith_MeshGeometryAsset.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
@@ -44,7 +44,6 @@ Zenith_ModelComponent::~Zenith_ModelComponent()
 Zenith_ModelComponent::Zenith_ModelComponent(Zenith_ModelComponent&& xOther) noexcept
 	: m_xParentEntity(xOther.m_xParentEntity)
 	, m_pxModelInstance(xOther.m_pxModelInstance)
-	, m_pxAnimController(xOther.m_pxAnimController)
 	, m_xModel(std::move(xOther.m_xModel))
 	, m_strModelPath(std::move(xOther.m_strModelPath))
 	, m_xMeshEntries(std::move(xOther.m_xMeshEntries))
@@ -54,7 +53,6 @@ Zenith_ModelComponent::Zenith_ModelComponent(Zenith_ModelComponent&& xOther) noe
 {
 	// Nullify source pointers so its destructor doesn't delete our resources
 	xOther.m_pxModelInstance = nullptr;
-	xOther.m_pxAnimController = nullptr;
 	xOther.m_pxPhysicsMeshAsset = nullptr;
 }
 
@@ -69,7 +67,6 @@ Zenith_ModelComponent& Zenith_ModelComponent::operator=(Zenith_ModelComponent&& 
 		// Take ownership from source
 		m_xParentEntity = xOther.m_xParentEntity;
 		m_pxModelInstance = xOther.m_pxModelInstance;
-		m_pxAnimController = xOther.m_pxAnimController;
 		m_xModel = std::move(xOther.m_xModel);
 		m_strModelPath = std::move(xOther.m_strModelPath);
 		m_xMeshEntries = std::move(xOther.m_xMeshEntries);
@@ -79,7 +76,6 @@ Zenith_ModelComponent& Zenith_ModelComponent::operator=(Zenith_ModelComponent&& 
 
 		// Nullify source pointers
 		xOther.m_pxModelInstance = nullptr;
-		xOther.m_pxAnimController = nullptr;
 		xOther.m_pxPhysicsMeshAsset = nullptr;
 	}
 	return *this;
@@ -173,13 +169,6 @@ void Zenith_ModelComponent::LoadModel(const std::string& strPath)
 
 void Zenith_ModelComponent::ClearModel()
 {
-	// Delete animation controller (owned by component)
-	if (m_pxAnimController)
-	{
-		delete m_pxAnimController;
-		m_pxAnimController = nullptr;
-	}
-
 	// Delete model instance (handles cleanup of mesh instances, skeleton instance, etc.)
 	if (m_pxModelInstance)
 	{
@@ -247,173 +236,6 @@ Flux_SkeletonInstance* Zenith_ModelComponent::GetSkeletonInstance() const
 		return m_pxModelInstance->GetSkeletonInstance();
 	}
 	return nullptr;
-}
-
-//=============================================================================
-// Animation System Integration
-//=============================================================================
-
-Flux_AnimationController* Zenith_ModelComponent::GetOrCreateAnimationController()
-{
-	if (m_pxAnimController)
-	{
-		return m_pxAnimController;
-	}
-
-	// Create new controller at component level
-	m_pxAnimController = new Flux_AnimationController();
-
-	if (m_pxModelInstance && m_pxModelInstance->HasSkeleton())
-	{
-		// Initialize with skeleton instance
-		Flux_SkeletonInstance* pxSkeleton = m_pxModelInstance->GetSkeletonInstance();
-		if (pxSkeleton)
-		{
-			m_pxAnimController->Initialize(pxSkeleton);
-			Zenith_Log(LOG_CATEGORY_ANIMATION, "Created animation controller for model instance (bones: %u)",
-				pxSkeleton->GetNumBones());
-		}
-		else
-		{
-			Zenith_Log(LOG_CATEGORY_ANIMATION, "Model has skeleton but GetSkeletonInstance() returned null");
-		}
-	}
-
-	return m_pxAnimController;
-}
-
-void Zenith_ModelComponent::Update(float fDt)
-{
-	// Update world matrices for animation controller
-	UpdateAnimationWorldMatrix();
-
-	// Update component-level animation controller
-	if (m_pxAnimController)
-	{
-		m_pxAnimController->Update(fDt);
-	}
-
-	// If using new model instance with skeleton, update animation
-	if (m_pxModelInstance && m_pxModelInstance->HasSkeleton())
-	{
-		m_pxModelInstance->UpdateAnimation();
-	}
-}
-
-void Zenith_ModelComponent::PlayAnimation(const std::string& strClipName, float fBlendTime)
-{
-	if (m_pxAnimController)
-	{
-		m_pxAnimController->PlayClip(strClipName, fBlendTime);
-	}
-}
-
-void Zenith_ModelComponent::StopAnimations()
-{
-	if (m_pxAnimController)
-	{
-		m_pxAnimController->Stop();
-	}
-}
-
-void Zenith_ModelComponent::SetAnimationsPaused(bool bPaused)
-{
-	if (m_pxAnimController)
-	{
-		m_pxAnimController->SetPaused(bPaused);
-	}
-}
-
-bool Zenith_ModelComponent::AreAnimationsPaused() const
-{
-	if (m_pxAnimController)
-	{
-		return m_pxAnimController->IsPaused();
-	}
-	return false;
-}
-
-void Zenith_ModelComponent::SetAnimationPlaybackSpeed(float fSpeed)
-{
-	if (m_pxAnimController)
-	{
-		m_pxAnimController->SetPlaybackSpeed(fSpeed);
-	}
-}
-
-float Zenith_ModelComponent::GetAnimationPlaybackSpeed() const
-{
-	if (m_pxAnimController)
-	{
-		return m_pxAnimController->GetPlaybackSpeed();
-	}
-	return 1.0f;
-}
-
-void Zenith_ModelComponent::SetAnimationFloat(const std::string& strName, float fValue)
-{
-	if (m_pxAnimController)
-	{
-		m_pxAnimController->SetFloat(strName, fValue);
-	}
-}
-
-void Zenith_ModelComponent::SetAnimationInt(const std::string& strName, int32_t iValue)
-{
-	if (m_pxAnimController)
-	{
-		m_pxAnimController->SetInt(strName, iValue);
-	}
-}
-
-void Zenith_ModelComponent::SetAnimationBool(const std::string& strName, bool bValue)
-{
-	if (m_pxAnimController)
-	{
-		m_pxAnimController->SetBool(strName, bValue);
-	}
-}
-
-void Zenith_ModelComponent::SetAnimationTrigger(const std::string& strName)
-{
-	if (m_pxAnimController)
-	{
-		m_pxAnimController->SetTrigger(strName);
-	}
-}
-
-void Zenith_ModelComponent::SetIKTarget(const std::string& strChainName, const Zenith_Maths::Vector3& xPosition, float fWeight)
-{
-	if (m_pxAnimController)
-	{
-		m_pxAnimController->SetIKTarget(strChainName, xPosition, fWeight);
-	}
-}
-
-void Zenith_ModelComponent::ClearIKTarget(const std::string& strChainName)
-{
-	if (m_pxAnimController)
-	{
-		m_pxAnimController->ClearIKTarget(strChainName);
-	}
-}
-
-void Zenith_ModelComponent::UpdateAnimationWorldMatrix()
-{
-	if (!m_xParentEntity.HasComponent<Zenith_TransformComponent>())
-	{
-		return;
-	}
-
-	Zenith_TransformComponent& xTransform = m_xParentEntity.GetComponent<Zenith_TransformComponent>();
-	Zenith_Maths::Matrix4 xWorldMatrix;
-	xTransform.BuildModelMatrix(xWorldMatrix);
-
-	// Update component-level controller
-	if (m_pxAnimController)
-	{
-		m_pxAnimController->SetWorldMatrix(xWorldMatrix);
-	}
 }
 
 //=============================================================================

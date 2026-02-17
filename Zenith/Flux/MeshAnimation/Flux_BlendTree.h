@@ -224,6 +224,7 @@ public:
 	// Accessors
 	const Zenith_Maths::Vector2& GetParameter() const { return m_xParameter; }
 	void SetParameter(const Zenith_Maths::Vector2& xValue) { m_xParameter = xValue; }
+	const Zenith_Vector<BlendPoint>& GetBlendPoints() const { return m_xBlendPoints; }
 
 private:
 	// Find the triangle containing the parameter point and compute barycentric weights
@@ -360,6 +361,7 @@ public:
 	// Accessors
 	int32_t GetSelectedIndex() const { return m_iSelectedIndex; }
 	void SetSelectedIndex(int32_t iIndex);
+	const Zenith_Vector<Flux_BlendTreeNode*>& GetChildren() const { return m_xChildren; }
 
 private:
 	Zenith_Vector<Flux_BlendTreeNode*> m_xChildren;

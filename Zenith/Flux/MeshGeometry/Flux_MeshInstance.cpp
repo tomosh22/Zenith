@@ -4,9 +4,6 @@
 #include "AssetHandling/Zenith_SkeletonAsset.h"
 #include "Flux/Flux.h"
 
-// Debug counter to limit logging
-static uint32_t s_uDebugVertexLogCount = 0;
-static const uint32_t s_uMaxDebugVertexLogs = 10;
 
 // Helper function to apply bind pose skinning transformation
 // This applies the full skinning equation at bind pose:
@@ -22,16 +19,6 @@ static Zenith_Maths::Vector3 ApplyBindPoseSkinning(
 	float fTotalWeight = 0.0f;
 	Zenith_Maths::Vector3 xSkinnedPos(0.0f);
 
-	// Debug log first few vertices
-	bool bLogThis = (s_uDebugVertexLogCount < s_uMaxDebugVertexLogs);
-	if (bLogThis)
-	{
-		Zenith_Log(LOG_CATEGORY_MESH, "[ApplyBindPoseSkinning] Vertex %u: OrigPos=(%.3f, %.3f, %.3f), BoneIdx=(%u,%u,%u,%u), Weights=(%.3f,%.3f,%.3f,%.3f)",
-			s_uDebugVertexLogCount, xOriginalPos.x, xOriginalPos.y, xOriginalPos.z,
-			xBoneIndices.x, xBoneIndices.y, xBoneIndices.z, xBoneIndices.w,
-			xBoneWeights.x, xBoneWeights.y, xBoneWeights.z, xBoneWeights.w);
-	}
-
 	for (int i = 0; i < 4; i++)
 	{
 		float fWeight = xBoneWeights[i];
@@ -43,10 +30,6 @@ static Zenith_Maths::Vector3 ApplyBindPoseSkinning(
 		uint32_t uBoneIndex = xBoneIndices[i];
 		if (uBoneIndex >= pxSkeleton->GetNumBones())
 		{
-			if (bLogThis)
-			{
-				Zenith_Log(LOG_CATEGORY_MESH, "[ApplyBindPoseSkinning]   Bone %u out of range (skeleton has %u bones)", uBoneIndex, pxSkeleton->GetNumBones());
-			}
 			continue;
 		}
 
@@ -59,32 +42,12 @@ static Zenith_Maths::Vector3 ApplyBindPoseSkinning(
 		Zenith_Maths::Matrix4 xSkinningMatrix = xBone.m_xBindPoseModel * xBone.m_xInverseBindPose;
 		Zenith_Maths::Vector4 xTransformed = xSkinningMatrix * Zenith_Maths::Vector4(xOriginalPos, 1.0f);
 		xSkinnedPos += fWeight * Zenith_Maths::Vector3(xTransformed);
-
-		if (bLogThis)
-		{
-			Zenith_Maths::Vector3 xBoneBindPos = Zenith_Maths::Vector3(xBone.m_xBindPoseModel[3]);
-			Zenith_Log(LOG_CATEGORY_MESH, "[ApplyBindPoseSkinning]   Bone[%u] '%s': BindPoseModelTrans=(%.3f,%.3f,%.3f), Transformed=(%.3f,%.3f,%.3f)",
-				uBoneIndex, xBone.m_strName.c_str(),
-				xBoneBindPos.x, xBoneBindPos.y, xBoneBindPos.z,
-				xTransformed.x, xTransformed.y, xTransformed.z);
-		}
 	}
 
 	// If no valid bones contributed, return original position unchanged
 	if (fTotalWeight <= 0.0f)
 	{
-		if (bLogThis)
-		{
-			Zenith_Log(LOG_CATEGORY_MESH, "[ApplyBindPoseSkinning]   No valid bones contributed, returning original pos");
-		}
-		s_uDebugVertexLogCount++;
 		return xOriginalPos;
-	}
-
-	if (bLogThis)
-	{
-		Zenith_Log(LOG_CATEGORY_MESH, "[ApplyBindPoseSkinning]   Result: (%.3f, %.3f, %.3f)", xSkinnedPos.x, xSkinnedPos.y, xSkinnedPos.z);
-		s_uDebugVertexLogCount++;
 	}
 
 	return xSkinnedPos;
@@ -478,9 +441,6 @@ Flux_MeshInstance* Flux_MeshInstance::CreateFromAsset(Zenith_MeshAsset* pxAsset,
 		Zenith_Log(LOG_CATEGORY_MESH, "[MeshInstance] CreateFromAsset: No skeleton or no skinning, delegating to simple version");
 		return CreateFromAsset(pxAsset);
 	}
-
-	// Reset debug counter for new mesh
-	s_uDebugVertexLogCount = 0;
 
 	Zenith_Log(LOG_CATEGORY_MESH, "[MeshInstance] CreateFromAsset with skeleton: %u bones, mesh has %u verts",
 		pxSkeleton->GetNumBones(), pxAsset->GetNumVerts());

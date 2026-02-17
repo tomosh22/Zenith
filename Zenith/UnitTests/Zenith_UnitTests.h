@@ -252,6 +252,92 @@ private:
 	static void TestModelInstanceMaterialSetAndGet();
 	static void TestMaterialHandleCopyPreservesCachedPointer();
 
+	// Any-State Transition tests
+	static void TestAnyStateTransitionFires();
+	static void TestAnyStateTransitionSkipsSelf();
+	static void TestAnyStateTransitionPriority();
+
+	// AnimatorStateInfo tests
+	static void TestStateInfoStateName();
+	static void TestStateInfoNormalizedTime();
+
+	// CrossFade tests
+	static void TestCrossFadeToState();
+	static void TestCrossFadeToCurrentState();
+
+	// Sub-State Machine tests
+	static void TestSubStateMachineCreation();
+	static void TestSubStateMachineSharedParameters();
+
+	// Animation Layer tests
+	static void TestLayerCreation();
+	static void TestLayerWeightZero();
+
+	// Tween system tests - Easing functions
+	static void TestEasingLinear();
+	static void TestEasingEndpoints();
+	static void TestEasingQuadOut();
+	static void TestEasingBounceOut();
+
+	// Tween system tests - TweenInstance
+	static void TestTweenInstanceProgress();
+	static void TestTweenInstanceCompletion();
+	static void TestTweenInstanceDelay();
+
+	// Tween system tests - TweenComponent
+	static void TestTweenComponentScaleTo();
+	static void TestTweenComponentPositionTo();
+	static void TestTweenComponentMultiple();
+	static void TestTweenComponentCallback();
+	static void TestTweenComponentLoop();
+	static void TestTweenComponentPingPong();
+	static void TestTweenComponentCancel();
+
+	// Sub-SM transition evaluation (BUG 1 regression test)
+	static void TestSubStateMachineTransitionEvaluation();
+
+	// CrossFade edge cases
+	static void TestCrossFadeNonExistentState();
+	static void TestCrossFadeInstant();
+
+	// Tween rotation
+	static void TestTweenComponentRotation();
+
+	// Bug regression tests (from code review)
+	static void TestTriggerNotConsumedOnPartialConditionMatch();
+	static void TestResolveClipReferencesRecursive();
+	static void TestTweenDelayWithLoop();
+	static void TestTweenCallbackReentrant();
+	static void TestTweenDuplicatePropertyCancels();
+
+	// Code review round 2 - bug fix regression tests
+	static void TestSubStateMachineTransitionBlendPose();
+	static void TestRotationTweenShortestPath();
+	static void TestTransitionInterruption();
+	static void TestTransitionNonInterruptible();
+	static void TestCancelByPropertyKeepsOthers();
+	static void TestCrossFadeWhileTransitioning();
+	static void TestTweenLoopValueReset();
+
+	// Code review round 3 - Bug 1 regression test + serialization round-trips
+	static void TestTriggerNotConsumedWhenBlockedByPriority();
+	static void TestAnimationLayerSerialization();
+	static void TestAnyStateTransitionSerialization();
+	static void TestSubStateMachineSerialization();
+
+	// Code review round 4 - bug fix validation tests
+	static void TestHasAnimationContentWithLayers();
+	static void TestInitializeRetroactiveLayerPoses();
+	static void TestResolveClipReferencesBlendSpace2D();
+	static void TestResolveClipReferencesSelect();
+	static void TestLayerCompositionOverrideBlend();
+
+	// Code review round 5 - additional coverage
+	static void TestLayerCompositionAdditiveBlend();
+	static void TestLayerMaskedOverrideBlend();
+	static void TestPingPongAsymmetricEasing();
+	static void TestTransitionCompletionFramePose();
+
 	// Scene Management tests moved to Zenith_SceneTests.h/.cpp
 };
 

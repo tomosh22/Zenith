@@ -22,8 +22,13 @@ Flux_AnimationController::~Flux_AnimationController()
 {
 	delete m_pxStateMachine;
 	delete m_pxIKSolver;
+#ifdef ZENITH_TOOLS
 	delete m_pxDirectPlayNode;
 	delete m_pxDirectTransition;
+#endif
+
+	for (uint32_t i = 0; i < m_xLayers.GetSize(); ++i)
+		delete m_xLayers.Get(i);
 }
 
 Flux_AnimationController::Flux_AnimationController(Flux_AnimationController&& xOther) noexcept
@@ -36,20 +41,31 @@ Flux_AnimationController::Flux_AnimationController(Flux_AnimationController&& xO
 	, m_xOutputPose(std::move(xOther.m_xOutputPose))
 	, m_bPaused(xOther.m_bPaused)
 	, m_fPlaybackSpeed(xOther.m_fPlaybackSpeed)
+	, m_eUpdateMode(xOther.m_eUpdateMode)
+#ifdef ZENITH_TOOLS
 	, m_pxDirectPlayNode(xOther.m_pxDirectPlayNode)
 	, m_pxDirectTransition(xOther.m_pxDirectTransition)
+#endif
 	, m_xBoneBuffer(std::move(xOther.m_xBoneBuffer))
 	, m_xWorldMatrix(xOther.m_xWorldMatrix)
-	, m_fnEventCallback(std::move(xOther.m_fnEventCallback))
+	, m_xLayers(std::move(xOther.m_xLayers))
+	, m_xTempBlendPose(std::move(xOther.m_xTempBlendPose))
+	, m_xScaledMaskWeights(std::move(xOther.m_xScaledMaskWeights))
+	, m_pfnEventCallback(xOther.m_pfnEventCallback)
+	, m_pEventCallbackUserData(xOther.m_pEventCallbackUserData)
 	, m_fLastEventCheckTime(xOther.m_fLastEventCheckTime)
 {
 	// Null out moved-from object's owned pointers to prevent double-delete
 	xOther.m_pxStateMachine = nullptr;
 	xOther.m_pxIKSolver = nullptr;
+#ifdef ZENITH_TOOLS
 	xOther.m_pxDirectPlayNode = nullptr;
 	xOther.m_pxDirectTransition = nullptr;
+#endif
 	xOther.m_pxSkeletonInstance = nullptr;
 	xOther.m_pxSkeletonAsset = nullptr;
+	xOther.m_pfnEventCallback = nullptr;
+	xOther.m_pEventCallbackUserData = nullptr;
 }
 
 Flux_AnimationController& Flux_AnimationController::operator=(Flux_AnimationController&& xOther) noexcept
@@ -59,8 +75,10 @@ Flux_AnimationController& Flux_AnimationController::operator=(Flux_AnimationCont
 		// Delete our owned resources
 		delete m_pxStateMachine;
 		delete m_pxIKSolver;
+#ifdef ZENITH_TOOLS
 		delete m_pxDirectPlayNode;
 		delete m_pxDirectTransition;
+#endif
 
 		// Transfer non-owned pointers
 		m_pxSkeletonInstance = xOther.m_pxSkeletonInstance;
@@ -72,24 +90,39 @@ Flux_AnimationController& Flux_AnimationController::operator=(Flux_AnimationCont
 		m_xOutputPose = std::move(xOther.m_xOutputPose);
 		m_bPaused = xOther.m_bPaused;
 		m_fPlaybackSpeed = xOther.m_fPlaybackSpeed;
+		m_eUpdateMode = xOther.m_eUpdateMode;
 		m_xBoneBuffer = std::move(xOther.m_xBoneBuffer);
 		m_xWorldMatrix = xOther.m_xWorldMatrix;
-		m_fnEventCallback = std::move(xOther.m_fnEventCallback);
+		m_pfnEventCallback = xOther.m_pfnEventCallback;
+		m_pEventCallbackUserData = xOther.m_pEventCallbackUserData;
 		m_fLastEventCheckTime = xOther.m_fLastEventCheckTime;
 
 		// Transfer owned pointers
 		m_pxStateMachine = xOther.m_pxStateMachine;
 		m_pxIKSolver = xOther.m_pxIKSolver;
+#ifdef ZENITH_TOOLS
 		m_pxDirectPlayNode = xOther.m_pxDirectPlayNode;
 		m_pxDirectTransition = xOther.m_pxDirectTransition;
+#endif
+
+		// Transfer layers and cached blending data
+		for (uint32_t i = 0; i < m_xLayers.GetSize(); ++i)
+			delete m_xLayers.Get(i);
+		m_xLayers = std::move(xOther.m_xLayers);
+		m_xTempBlendPose = std::move(xOther.m_xTempBlendPose);
+		m_xScaledMaskWeights = std::move(xOther.m_xScaledMaskWeights);
 
 		// Null out moved-from object's owned pointers
 		xOther.m_pxStateMachine = nullptr;
 		xOther.m_pxIKSolver = nullptr;
+#ifdef ZENITH_TOOLS
 		xOther.m_pxDirectPlayNode = nullptr;
 		xOther.m_pxDirectTransition = nullptr;
+#endif
 		xOther.m_pxSkeletonInstance = nullptr;
 		xOther.m_pxSkeletonAsset = nullptr;
+		xOther.m_pfnEventCallback = nullptr;
+		xOther.m_pEventCallbackUserData = nullptr;
 	}
 	return *this;
 }
@@ -106,6 +139,12 @@ void Flux_AnimationController::Initialize(Flux_SkeletonInstance* pxSkeleton)
 		// Initialize pose with number of bones
 		uint32_t uNumBones = m_pxSkeletonInstance->GetNumBones();
 		m_xOutputPose.Initialize(uNumBones);
+
+		// Initialize any layers that were added before Initialize() was called
+		for (uint32_t i = 0; i < m_xLayers.GetSize(); ++i)
+		{
+			m_xLayers.Get(i)->InitializePose(uNumBones);
+		}
 
 		// Note: The skeleton instance owns its own bone buffer
 		// We don't need to create one here - the skeleton instance will be updated
@@ -126,10 +165,9 @@ uint32_t Flux_AnimationController::GetNumBones() const
 
 bool Flux_AnimationController::HasAnimationContent() const
 {
-	// Check if we have clips loaded, state machine, or active direct playback
 	return !m_xClipCollection.GetClips().empty() ||
 		m_pxStateMachine != nullptr ||
-		m_pxDirectPlayNode != nullptr;
+		m_xLayers.GetSize() > 0;
 }
 
 void Flux_AnimationController::Update(float fDt)
@@ -137,16 +175,24 @@ void Flux_AnimationController::Update(float fDt)
 	if (!m_pxSkeletonInstance || !m_pxSkeletonAsset || m_bPaused)
 		return;
 
+	// #TODO: Implement ANIMATION_UPDATE_FIXED and ANIMATION_UPDATE_UNSCALED when engine time scale support is added
+	// Currently only ANIMATION_UPDATE_NORMAL is functional
+	Zenith_Assert(m_eUpdateMode == ANIMATION_UPDATE_NORMAL,
+		"Flux_AnimationUpdateMode FIXED/UNSCALED not yet implemented");
 	fDt *= m_fPlaybackSpeed;
-
-	float fPrevTime = m_fLastEventCheckTime;
 
 	UpdateWithSkeletonInstance(fDt);
 
-	// Process animation events
-	float fCurrentTime = m_pxDirectPlayNode ? m_pxDirectPlayNode->GetNormalizedTime() : 0.0f;
-	ProcessEvents(fPrevTime, fCurrentTime);
-	m_fLastEventCheckTime = fCurrentTime;
+#ifdef ZENITH_TOOLS
+	// Process animation events (only for direct clip playback - state machine uses state callbacks)
+	if (m_pxDirectPlayNode)
+	{
+		float fPrevTime = m_fLastEventCheckTime;
+		float fCurrentTime = m_pxDirectPlayNode->GetNormalizedTime();
+		ProcessEvents(fPrevTime, fCurrentTime);
+		m_fLastEventCheckTime = fCurrentTime;
+	}
+#endif
 }
 
 void Flux_AnimationController::UpdateWithSkeletonInstance(float fDt)
@@ -154,30 +200,70 @@ void Flux_AnimationController::UpdateWithSkeletonInstance(float fDt)
 	// This path handles animation for the new model instance system
 	// using Flux_SkeletonInstance instead of Flux_MeshGeometry
 
-	// Handle state machine if present (takes priority)
-	if (m_pxStateMachine)
+	// Multi-layer path: evaluate all layers and compose
+	if (m_xLayers.GetSize() > 0)
 	{
-		// Update state machine using skeleton asset
-		m_pxStateMachine->Update(fDt, m_xOutputPose, *m_pxSkeletonAsset);
-
-		// Apply the output pose to the skeleton instance
 		uint32_t uNumBones = m_pxSkeletonInstance->GetNumBones();
-		for (uint32_t i = 0; i < uNumBones && i < FLUX_MAX_BONES; ++i)
+
+		// Update all layers
+		for (uint32_t i = 0; i < m_xLayers.GetSize(); ++i)
 		{
-			const Flux_BoneLocalPose& xLocalPose = m_xOutputPose.GetLocalPose(i);
-			m_pxSkeletonInstance->SetBoneLocalTransform(i,
-				xLocalPose.m_xPosition,
-				xLocalPose.m_xRotation,
-				xLocalPose.m_xScale);
+			m_xLayers.Get(i)->Update(fDt, *m_pxSkeletonAsset);
 		}
 
-		// Have skeleton instance compute skinning matrices and upload to GPU
-		m_pxSkeletonInstance->ComputeSkinningMatrices();
-		m_pxSkeletonInstance->UploadToGPU();
+		// Start with layer 0 as the base
+		m_xOutputPose.CopyFrom(m_xLayers.Get(0)->GetOutputPose());
+
+		// Initialize cached temp pose if needed
+		if (m_xTempBlendPose.GetNumBones() != uNumBones)
+			m_xTempBlendPose.Initialize(uNumBones);
+
+		// Compose additional layers on top
+		for (uint32_t i = 1; i < m_xLayers.GetSize(); ++i)
+		{
+			Flux_AnimationLayer* pxLayer = m_xLayers.Get(i);
+			float fWeight = pxLayer->GetWeight();
+			if (fWeight <= 0.0f)
+				continue;
+
+			const Flux_SkeletonPose& xLayerPose = pxLayer->GetOutputPose();
+
+			if (pxLayer->GetBlendMode() == LAYER_BLEND_ADDITIVE)
+			{
+				// Additive: add layer's pose on top of current
+				Flux_SkeletonPose::AdditiveBlend(m_xTempBlendPose, m_xOutputPose, xLayerPose, fWeight);
+				m_xOutputPose.CopyFrom(m_xTempBlendPose);
+			}
+			else // LAYER_BLEND_OVERRIDE
+			{
+				if (pxLayer->HasAvatarMask())
+				{
+					// Masked override: blend based on per-bone weights
+					const std::vector<float>& xWeights = pxLayer->GetAvatarMask().GetWeights();
+
+					// Scale mask weights by layer weight using cached vector
+					m_xScaledMaskWeights.resize(xWeights.size());
+					for (size_t j = 0; j < xWeights.size(); ++j)
+						m_xScaledMaskWeights[j] = xWeights[j] * fWeight;
+
+					Flux_SkeletonPose::MaskedBlend(m_xTempBlendPose, m_xOutputPose, xLayerPose, m_xScaledMaskWeights);
+					m_xOutputPose.CopyFrom(m_xTempBlendPose);
+				}
+				else
+				{
+					// Full override: simple blend by weight
+					Flux_SkeletonPose::Blend(m_xTempBlendPose, m_xOutputPose, xLayerPose, fWeight);
+					m_xOutputPose.CopyFrom(m_xTempBlendPose);
+				}
+			}
+		}
+
+		ApplyOutputPoseToSkeleton();
 		return;
 	}
 
-	// Handle direct clip playback
+#ifdef ZENITH_TOOLS
+	// Handle direct clip playback (editor preview only, takes priority over state machine)
 	if (m_pxDirectPlayNode)
 	{
 		Flux_AnimationClip* pxClip = m_pxDirectPlayNode->GetClip();
@@ -222,43 +308,53 @@ void Flux_AnimationController::UpdateWithSkeletonInstance(float fDt)
 			// This overwrites bind pose values for bones that have animation channels
 			m_xOutputPose.SampleFromClip(*pxClip, fCurrentTime, *m_pxSkeletonAsset);
 
-			// Debug: Log scale values once
-			static bool s_bLoggedScales = false;
-			if (!s_bLoggedScales)
+			// If crossfading between direct clips, blend from the snapshot pose
+			if (m_pxDirectTransition)
 			{
-				Zenith_Log(LOG_CATEGORY_ANIMATION, "[AnimationController] Scale values after sampling:");
-				for (uint32_t i = 0; i < uNumBones && i < 5; ++i)
+				m_pxDirectTransition->Update(fDt);
+				if (m_pxDirectTransition->IsComplete())
 				{
-					const Flux_BoneLocalPose& xLocalPose = m_xOutputPose.GetLocalPose(i);
-					const Zenith_SkeletonAsset::Bone& xBone = m_pxSkeletonAsset->GetBone(i);
-					Zenith_Log(LOG_CATEGORY_ANIMATION, "  [%u] '%s': scale=(%.3f, %.3f, %.3f), bindScale=(%.3f, %.3f, %.3f)",
-						i, xBone.m_strName.c_str(),
-						xLocalPose.m_xScale.x, xLocalPose.m_xScale.y, xLocalPose.m_xScale.z,
-						xBone.m_xBindScale.x, xBone.m_xBindScale.y, xBone.m_xBindScale.z);
+					delete m_pxDirectTransition;
+					m_pxDirectTransition = nullptr;
 				}
-				s_bLoggedScales = true;
+				else
+				{
+					m_pxDirectTransition->Blend(m_xOutputPose, m_xOutputPose);
+				}
 			}
 
-			// Apply the sampled pose to the skeleton instance
-			for (uint32_t i = 0; i < uNumBones && i < FLUX_MAX_BONES; ++i)
-			{
-				const Flux_BoneLocalPose& xLocalPose = m_xOutputPose.GetLocalPose(i);
-				m_pxSkeletonInstance->SetBoneLocalTransform(i,
-					xLocalPose.m_xPosition,
-					xLocalPose.m_xRotation,
-					xLocalPose.m_xScale);
-			}
-
-			// Have skeleton instance compute skinning matrices and upload to GPU
-			m_pxSkeletonInstance->ComputeSkinningMatrices();
-			m_pxSkeletonInstance->UploadToGPU();
+			ApplyOutputPoseToSkeleton();
 		}
+	}
+	else
+#endif
+	if (m_pxStateMachine)
+	{
+		// State machine drives animation when no direct clip is playing
+		m_pxStateMachine->Update(fDt, m_xOutputPose, *m_pxSkeletonAsset);
+		ApplyOutputPoseToSkeleton();
 	}
 	else
 	{
 		// No animation playing - skeleton instance stays at bind pose
 		// (which was set when it was created)
 	}
+}
+
+void Flux_AnimationController::ApplyOutputPoseToSkeleton()
+{
+	uint32_t uNumBones = m_pxSkeletonInstance->GetNumBones();
+	for (uint32_t i = 0; i < uNumBones && i < FLUX_MAX_BONES; ++i)
+	{
+		const Flux_BoneLocalPose& xLocalPose = m_xOutputPose.GetLocalPose(i);
+		m_pxSkeletonInstance->SetBoneLocalTransform(i,
+			xLocalPose.m_xPosition,
+			xLocalPose.m_xRotation,
+			xLocalPose.m_xScale);
+	}
+
+	m_pxSkeletonInstance->ComputeSkinningMatrices();
+	m_pxSkeletonInstance->UploadToGPU();
 }
 
 const Zenith_Maths::Matrix4* Flux_AnimationController::GetSkinningMatrices() const
@@ -278,7 +374,7 @@ Flux_AnimationClip* Flux_AnimationController::AddClipFromFile(const std::string&
 	Zenith_Assert(pxClip != nullptr, "Animation asset has no clip: %s", strPath.c_str());
 
 	// Store the handle to keep the asset alive
-	m_xAnimationAssets.push_back(std::move(xHandle));
+	m_xAnimationAssets.PushBack(std::move(xHandle));
 
 	// Add as a non-owning reference (asset owns the clip)
 	m_xClipCollection.AddClipReference(pxClip);
@@ -318,6 +414,37 @@ Flux_AnimationStateMachine* Flux_AnimationController::CreateStateMachine(const s
 	return m_pxStateMachine;
 }
 
+Flux_AnimatorStateInfo Flux_AnimationController::GetCurrentAnimatorStateInfo() const
+{
+#ifdef ZENITH_TOOLS
+	// Direct clip playback takes priority (matches Update evaluation order)
+	if (m_pxDirectPlayNode)
+	{
+		Flux_AnimatorStateInfo xInfo;
+		Flux_AnimationClip* pxClip = m_pxDirectPlayNode->GetClip();
+		if (pxClip)
+		{
+			xInfo.m_strStateName = pxClip->GetName();
+			xInfo.m_fLength = pxClip->GetDuration();
+			xInfo.m_bHasLooped = m_pxDirectPlayNode->GetNormalizedTime() > 1.0f;
+			xInfo.m_fSpeed = m_pxDirectPlayNode->GetPlaybackRate();
+			xInfo.m_fNormalizedTime = m_pxDirectPlayNode->GetNormalizedTime();
+		}
+		return xInfo;
+	}
+#endif
+
+	if (m_pxStateMachine)
+		return m_pxStateMachine->GetCurrentStateInfo();
+	return Flux_AnimatorStateInfo();
+}
+
+void Flux_AnimationController::CrossFade(const std::string& strStateName, float fDuration)
+{
+	if (m_pxStateMachine)
+		m_pxStateMachine->CrossFade(strStateName, fDuration);
+}
+
 bool Flux_AnimationController::LoadStateMachineFromFile(const std::string& strPath)
 {
 	Flux_AnimationStateMachine* pxNewSM = Flux_AnimationStateMachine::LoadFromFile(strPath);
@@ -349,6 +476,42 @@ Flux_IKSolver* Flux_AnimationController::CreateIKSolver()
 	return m_pxIKSolver;
 }
 
+//=============================================================================
+// Animation Layers
+//=============================================================================
+
+Flux_AnimationLayer* Flux_AnimationController::AddLayer(const std::string& strName)
+{
+	Flux_AnimationLayer* pxLayer = new Flux_AnimationLayer(strName);
+	if (m_pxSkeletonInstance)
+	{
+		pxLayer->InitializePose(m_pxSkeletonInstance->GetNumBones());
+	}
+	m_xLayers.PushBack(pxLayer);
+	return pxLayer;
+}
+
+Flux_AnimationLayer* Flux_AnimationController::GetLayer(uint32_t uIndex)
+{
+	if (uIndex < m_xLayers.GetSize())
+		return m_xLayers.Get(uIndex);
+	return nullptr;
+}
+
+const Flux_AnimationLayer* Flux_AnimationController::GetLayer(uint32_t uIndex) const
+{
+	if (uIndex < m_xLayers.GetSize())
+		return m_xLayers.Get(uIndex);
+	return nullptr;
+}
+
+void Flux_AnimationController::SetLayerWeight(uint32_t uIndex, float fWeight)
+{
+	if (uIndex < m_xLayers.GetSize())
+		m_xLayers.Get(uIndex)->SetWeight(fWeight);
+}
+
+#ifdef ZENITH_TOOLS
 void Flux_AnimationController::PlayClip(const std::string& strClipName, float fBlendTime)
 {
 	Flux_AnimationClip* pxClip = m_xClipCollection.GetClip(strClipName);
@@ -377,39 +540,46 @@ void Flux_AnimationController::PlayClip(const std::string& strClipName, float fB
 	delete m_pxDirectPlayNode;
 	m_pxDirectPlayNode = pxNewNode;
 }
+#endif
 
 void Flux_AnimationController::Stop()
 {
+#ifdef ZENITH_TOOLS
 	delete m_pxDirectPlayNode;
 	m_pxDirectPlayNode = nullptr;
 
 	delete m_pxDirectTransition;
 	m_pxDirectTransition = nullptr;
+#endif
 
 	m_xOutputPose.Reset();
 }
 
-void Flux_AnimationController::SetEventCallback(Flux_AnimationEventCallback fnCallback)
+void Flux_AnimationController::SetEventCallback(Flux_AnimationEventCallback pfnCallback, void* pUserData)
 {
-	m_fnEventCallback = fnCallback;
+	m_pfnEventCallback = pfnCallback;
+	m_pEventCallbackUserData = pUserData;
 }
 
 void Flux_AnimationController::ClearEventCallback()
 {
-	m_fnEventCallback = nullptr;
+	m_pfnEventCallback = nullptr;
+	m_pEventCallbackUserData = nullptr;
 }
 
 void Flux_AnimationController::ProcessEvents(float fPrevTime, float fCurrentTime)
 {
-	if (!m_fnEventCallback)
+	if (!m_pfnEventCallback)
 		return;
 
 	// Get current clip for event checking
 	Flux_AnimationClip* pxClip = nullptr;
+#ifdef ZENITH_TOOLS
 	if (m_pxDirectPlayNode)
 	{
 		pxClip = m_pxDirectPlayNode->GetClip();
 	}
+#endif
 
 	if (!pxClip)
 		return;
@@ -433,7 +603,7 @@ void Flux_AnimationController::ProcessEvents(float fPrevTime, float fCurrentTime
 
 		if (bTriggered)
 		{
-			m_fnEventCallback(xEvent.m_strEventName, xEvent.m_xData);
+			m_pfnEventCallback(m_pEventCallbackUserData, xEvent.m_strEventName, xEvent.m_xData);
 		}
 	}
 }
@@ -511,14 +681,12 @@ void Flux_AnimationController::WriteToDataStream(Zenith_DataStream& xStream) con
 		m_pxIKSolver->WriteToDataStream(xStream);
 	}
 
-	// Direct play clip name (if playing)
-	bool bHasDirectPlay = (m_pxDirectPlayNode != nullptr && m_pxDirectPlayNode->GetClip() != nullptr);
-	xStream << bHasDirectPlay;
-	if (bHasDirectPlay)
+	// Animation layers
+	uint32_t uNumLayers = m_xLayers.GetSize();
+	xStream << uNumLayers;
+	for (uint32_t i = 0; i < uNumLayers; ++i)
 	{
-		xStream << m_pxDirectPlayNode->GetClipName();
-		xStream << m_pxDirectPlayNode->GetPlaybackRate();
-		xStream << m_pxDirectPlayNode->GetCurrentTimestamp();
+		m_xLayers.Get(i)->WriteToDataStream(xStream);
 	}
 }
 
@@ -559,31 +727,27 @@ void Flux_AnimationController::ReadFromDataStream(Zenith_DataStream& xStream)
 		// Note: Bone indices will be resolved when skeleton instance is set via Initialize()
 	}
 
-	// Direct play clip
-	bool bHasDirectPlay = false;
-	xStream >> bHasDirectPlay;
-	if (bHasDirectPlay)
+	// Animation layers
+	uint32_t uNumLayers = 0;
+	xStream >> uNumLayers;
+	for (uint32_t i = 0; i < m_xLayers.GetSize(); ++i)
+		delete m_xLayers.Get(i);
+	m_xLayers.Clear();
+	for (uint32_t i = 0; i < uNumLayers; ++i)
 	{
-		std::string strClipName;
-		float fPlaybackRate = 1.0f;
-		float fCurrentTime = 0.0f;
-
-		xStream >> strClipName;
-		xStream >> fPlaybackRate;
-		xStream >> fCurrentTime;
-
-		Flux_AnimationClip* pxClip = m_xClipCollection.GetClip(strClipName);
-		if (pxClip)
-		{
-			delete m_pxDirectPlayNode;
-			m_pxDirectPlayNode = new Flux_BlendTreeNode_Clip(pxClip, fPlaybackRate);
-			m_pxDirectPlayNode->SetCurrentTimestamp(fCurrentTime);
-		}
+		Flux_AnimationLayer* pxLayer = new Flux_AnimationLayer();
+		pxLayer->ReadFromDataStream(xStream);
+		m_xLayers.PushBack(pxLayer);
 	}
 
 	// Re-initialize pose if skeleton instance is set
 	if (m_pxSkeletonInstance)
 	{
-		m_xOutputPose.Initialize(m_pxSkeletonInstance->GetNumBones());
+		uint32_t uNumBones = m_pxSkeletonInstance->GetNumBones();
+		m_xOutputPose.Initialize(uNumBones);
+		for (uint32_t i = 0; i < m_xLayers.GetSize(); ++i)
+		{
+			m_xLayers.Get(i)->InitializePose(uNumBones);
+		}
 	}
 }

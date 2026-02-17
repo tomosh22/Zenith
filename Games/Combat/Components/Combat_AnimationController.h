@@ -2,17 +2,16 @@
 /**
  * Combat_AnimationController.h - Animation state machine for combat
  *
- * Uses Flux_AnimationController with real skeletal animation:
- * - Flux_AnimationStateMachine for state management
- * - Animation clips for Idle, Walk, Attack1-3, Dodge, Hit, Death
- * - 3-hit combo system with exit time transitions
- * - Trigger-based state changes
+ * Uses Zenith_AnimatorComponent for animation lifecycle management:
+ * - AnimatorComponent owns the Flux_AnimationController
+ * - Auto-discovers skeleton from ModelComponent via OnStart
+ * - Auto-updates animation via OnUpdate (ECS lifecycle)
+ * - This class sets up clips/state machine and provides high-level combat API
  */
 
-#include "Flux/MeshAnimation/Flux_AnimationController.h"
+#include "EntityComponent/Components/Zenith_AnimatorComponent.h"
 #include "Flux/MeshAnimation/Flux_AnimationStateMachine.h"
 #include "Flux/MeshAnimation/Flux_BlendTree.h"
-#include "Flux/MeshAnimation/Flux_SkeletonInstance.h"
 #include "Combat_PlayerController.h"
 
 // ============================================================================
@@ -51,8 +50,18 @@ namespace CombatAnimParams
 /**
  * Combat_AnimationController - Manages combat animation state machine
  *
- * Wraps Flux_AnimationController to provide high-level animation control
+ * Wraps Zenith_AnimatorComponent to provide high-level animation control
  * for combat gameplay. Uses the stick figure skeleton and animation clips.
+ *
+ * The AnimatorComponent owns the Flux_AnimationController and handles:
+ * - Skeleton discovery (OnStart)
+ * - Animation evaluation (OnUpdate)
+ * - World matrix updates
+ *
+ * This class handles:
+ * - Loading animation clips
+ * - Setting up the combat state machine
+ * - Setting parameters from gameplay
  */
 class Combat_AnimationController
 {
@@ -62,16 +71,14 @@ public:
 	// ========================================================================
 
 	/**
-	 * Initialize - Set up the animation controller with skeleton instance
+	 * Initialize - Set up animation clips and state machine on the AnimatorComponent
+	 * Call AFTER adding AnimatorComponent to the entity
 	 */
-	void Initialize(Flux_SkeletonInstance* pxSkeleton)
+	void Initialize(Zenith_AnimatorComponent& xAnimator)
 	{
-		if (!pxSkeleton)
-			return;
+		m_pxAnimator = &xAnimator;
 
-		m_xController.Initialize(pxSkeleton);
-
-		// Load animation clips
+		// Load animation clips into the animator's controller
 		LoadAnimationClips();
 
 		// Set up state machine
@@ -83,7 +90,7 @@ public:
 	 */
 	void Shutdown()
 	{
-		// Flux_AnimationController handles cleanup in destructor
+		m_pxAnimator = nullptr;
 	}
 
 	/**
@@ -91,9 +98,9 @@ public:
 	 */
 	void Reset()
 	{
-		if (m_xController.HasStateMachine())
+		if (m_pxAnimator && m_pxAnimator->HasStateMachine())
 		{
-			m_xController.GetStateMachine().SetState(CombatAnimStates::IDLE);
+			m_pxAnimator->GetStateMachine().SetState(CombatAnimStates::IDLE);
 		}
 		// Reset state tracking
 		m_bWasAttacking = false;
@@ -106,15 +113,16 @@ public:
 	// ========================================================================
 
 	/**
-	 * UpdateFromPlayerState - Sync animation with player controller
+	 * UpdateFromPlayerState - Sync animation parameters with player controller
+	 * Note: Animation evaluation is handled by AnimatorComponent::OnUpdate
 	 */
-	void UpdateFromPlayerState(const Combat_PlayerController& xPlayer, float fDt)
+	void UpdateFromPlayerState(const Combat_PlayerController& xPlayer)
 	{
-		if (!m_xController.IsInitialized())
+		if (!m_pxAnimator)
 			return;
 
 		// Set speed parameter for locomotion transitions
-		m_xController.SetFloat(CombatAnimParams::SPEED, xPlayer.GetMoveSpeed());
+		m_pxAnimator->SetFloat(CombatAnimParams::SPEED, xPlayer.GetMoveSpeed());
 
 		// Trigger state changes based on player state transitions
 		switch (xPlayer.GetState())
@@ -153,23 +161,21 @@ public:
 		default:
 			break;
 		}
-
-		// Update animation controller
-		m_xController.Update(fDt);
 	}
 
 	/**
 	 * UpdateForEnemy - Simpler update for enemy animations
+	 * Note: Animation evaluation is handled by AnimatorComponent::OnUpdate
 	 */
-	void UpdateForEnemy(float fSpeed, bool bIsAttacking, bool bIsHit, bool bIsDead, float fDt)
+	void UpdateForEnemy(float fSpeed, bool bIsAttacking, bool bIsHit, bool bIsDead)
 	{
-		if (!m_xController.IsInitialized())
+		if (!m_pxAnimator)
 		{
-			Zenith_Log(LOG_CATEGORY_ANIMATION, "[Enemy] Controller not initialized!");
+			Zenith_Log(LOG_CATEGORY_ANIMATION, "[Enemy] Animator not set!");
 			return;
 		}
 
-		m_xController.SetFloat(CombatAnimParams::SPEED, fSpeed);
+		m_pxAnimator->SetFloat(CombatAnimParams::SPEED, fSpeed);
 
 		// Handle state triggers (per-instance tracking, not static!)
 		if (bIsDead && !m_bWasDead)
@@ -193,8 +199,6 @@ public:
 		m_bWasHit = bIsHit;
 		m_bWasDead = bIsDead;
 
-		m_xController.Update(fDt);
-
 		// Debug: Log state changes (per-instance tracking)
 		const std::string& strCurrentState = GetCurrentState();
 		if (strCurrentState != m_strLastState)
@@ -211,30 +215,31 @@ public:
 
 	void TriggerAttack()
 	{
-		// Attack trigger is consumed and handles combo chaining via exit time
-		if (!m_xController.HasStateMachine())
+		if (!m_pxAnimator || !m_pxAnimator->HasStateMachine())
 		{
 			Zenith_Log(LOG_CATEGORY_ANIMATION, "[Enemy] TriggerAttack: NO STATE MACHINE!");
 			return;
 		}
-		Zenith_Log(LOG_CATEGORY_ANIMATION, "[Enemy] TriggerAttack: Setting trigger, has SM: %d",
-			m_xController.HasStateMachine());
-		m_xController.SetTrigger(CombatAnimParams::ATTACK_TRIGGER);
+		Zenith_Log(LOG_CATEGORY_ANIMATION, "[Enemy] TriggerAttack: Setting trigger");
+		m_pxAnimator->SetTrigger(CombatAnimParams::ATTACK_TRIGGER);
 	}
 
 	void TriggerDodge()
 	{
-		m_xController.SetTrigger(CombatAnimParams::DODGE_TRIGGER);
+		if (m_pxAnimator)
+			m_pxAnimator->SetTrigger(CombatAnimParams::DODGE_TRIGGER);
 	}
 
 	void TriggerHit()
 	{
-		m_xController.SetTrigger(CombatAnimParams::HIT_TRIGGER);
+		if (m_pxAnimator)
+			m_pxAnimator->SetTrigger(CombatAnimParams::HIT_TRIGGER);
 	}
 
 	void TriggerDeath()
 	{
-		m_xController.SetTrigger(CombatAnimParams::DEATH_TRIGGER);
+		if (m_pxAnimator)
+			m_pxAnimator->SetTrigger(CombatAnimParams::DEATH_TRIGGER);
 	}
 
 	// ========================================================================
@@ -244,48 +249,45 @@ public:
 	const std::string& GetCurrentState() const
 	{
 		static const std::string s_strEmpty;
-		const Flux_AnimationStateMachine* pxSM = m_xController.GetStateMachinePtr();
-		if (pxSM)
-		{
-			return pxSM->GetCurrentStateName();
-		}
-		return s_strEmpty;
+		if (!m_pxAnimator || !m_pxAnimator->HasStateMachine())
+			return s_strEmpty;
+		return m_pxAnimator->GetStateMachine().GetCurrentStateName();
 	}
 
 	bool IsTransitioning() const
 	{
-		const Flux_AnimationStateMachine* pxSM = m_xController.GetStateMachinePtr();
-		return pxSM && pxSM->IsTransitioning();
+		if (!m_pxAnimator || !m_pxAnimator->HasStateMachine())
+			return false;
+		return m_pxAnimator->GetStateMachine().IsTransitioning();
 	}
 
 	/**
 	 * IsAttackHitFrame - Check if current frame is the "hit" frame of an attack
-	 * This is when damage should be applied (40-60% of animation)
+	 * Damage is applied during 30-70% of the attack animation
 	 */
 	bool IsAttackHitFrame() const
 	{
-		const std::string& strState = GetCurrentState();
-		if (strState == CombatAnimStates::ATTACK1 ||
-			strState == CombatAnimStates::ATTACK2 ||
-			strState == CombatAnimStates::ATTACK3)
+		if (!m_pxAnimator)
+			return false;
+
+		Flux_AnimatorStateInfo xInfo = m_pxAnimator->GetCurrentAnimatorStateInfo();
+		if (xInfo.IsName(CombatAnimStates::ATTACK1) ||
+			xInfo.IsName(CombatAnimStates::ATTACK2) ||
+			xInfo.IsName(CombatAnimStates::ATTACK3))
 		{
-			// Get normalized time from current state blend tree
-			// For now, use a simple time-based check
-			// Attack animations are 0.4s, hit frame at 40-60%
-			return true;  // Hit detection handled by player controller
+			return xInfo.m_fNormalizedTime >= 0.3f && xInfo.m_fNormalizedTime <= 0.7f;
 		}
 		return false;
 	}
 
 	// ========================================================================
-	// Animation Controller Access
+	// Animator Access
 	// ========================================================================
 
-	Flux_AnimationController& GetController() { return m_xController; }
-	const Flux_AnimationController& GetController() const { return m_xController; }
+	Zenith_AnimatorComponent* GetAnimator() { return m_pxAnimator; }
+	const Zenith_AnimatorComponent* GetAnimator() const { return m_pxAnimator; }
 
-	// Get bone buffer for rendering
-	const Flux_DynamicConstantBuffer& GetBoneBuffer() const { return m_xController.GetBoneBuffer(); }
+	bool IsInitialized() const { return m_pxAnimator != nullptr; }
 
 private:
 	// ========================================================================
@@ -294,23 +296,31 @@ private:
 
 	void LoadAnimationClips()
 	{
+		if (!m_pxAnimator)
+			return;
+
 		// Load stick figure animation clips
 		static const char* s_strAssetDir = ENGINE_ASSETS_DIR "Meshes/StickFigure/";
 
-		m_xController.AddClipFromFile(std::string(s_strAssetDir) + "StickFigure_Idle.zanim");
-		m_xController.AddClipFromFile(std::string(s_strAssetDir) + "StickFigure_Walk.zanim");
-		m_xController.AddClipFromFile(std::string(s_strAssetDir) + "StickFigure_Attack1.zanim");
-		m_xController.AddClipFromFile(std::string(s_strAssetDir) + "StickFigure_Attack2.zanim");
-		m_xController.AddClipFromFile(std::string(s_strAssetDir) + "StickFigure_Attack3.zanim");
-		m_xController.AddClipFromFile(std::string(s_strAssetDir) + "StickFigure_Dodge.zanim");
-		m_xController.AddClipFromFile(std::string(s_strAssetDir) + "StickFigure_Hit.zanim");
-		m_xController.AddClipFromFile(std::string(s_strAssetDir) + "StickFigure_Death.zanim");
+		Flux_AnimationController& xController = m_pxAnimator->GetController();
+		xController.AddClipFromFile(std::string(s_strAssetDir) + "StickFigure_Idle.zanim");
+		xController.AddClipFromFile(std::string(s_strAssetDir) + "StickFigure_Walk.zanim");
+		xController.AddClipFromFile(std::string(s_strAssetDir) + "StickFigure_Attack1.zanim");
+		xController.AddClipFromFile(std::string(s_strAssetDir) + "StickFigure_Attack2.zanim");
+		xController.AddClipFromFile(std::string(s_strAssetDir) + "StickFigure_Attack3.zanim");
+		xController.AddClipFromFile(std::string(s_strAssetDir) + "StickFigure_Dodge.zanim");
+		xController.AddClipFromFile(std::string(s_strAssetDir) + "StickFigure_Hit.zanim");
+		xController.AddClipFromFile(std::string(s_strAssetDir) + "StickFigure_Death.zanim");
 	}
 
 	void SetupStateMachine()
 	{
-		Flux_AnimationStateMachine* pxSM = m_xController.CreateStateMachine("CombatStateMachine");
-		Flux_AnimationClipCollection& xClips = m_xController.GetClipCollection();
+		if (!m_pxAnimator)
+			return;
+
+		Flux_AnimationController& xController = m_pxAnimator->GetController();
+		Flux_AnimationStateMachine* pxSM = xController.CreateStateMachine("CombatStateMachine");
+		Flux_AnimationClipCollection& xClips = xController.GetClipCollection();
 
 		// Add parameters
 		pxSM->GetParameters().AddFloat(CombatAnimParams::SPEED, 0.0f);
@@ -455,38 +465,42 @@ private:
 		AddExitTimeTransition(pxSM, CombatAnimStates::DODGE, CombatAnimStates::IDLE, 1.0f, 0);
 
 		// ================================================================
-		// Hit transitions (priority 100 - can interrupt most states)
+		// Hit - Any-State transition (priority 100 - fires from any state)
 		// ================================================================
 
-		const char* aszHitFromStates[] = {
-			CombatAnimStates::IDLE, CombatAnimStates::WALK,
-			CombatAnimStates::ATTACK1, CombatAnimStates::ATTACK2, CombatAnimStates::ATTACK3,
-			CombatAnimStates::DODGE
-		};
-
-		for (const char* szFromState : aszHitFromStates)
 		{
-			AddTriggerTransition(pxSM, szFromState, CombatAnimStates::HIT,
-				CombatAnimParams::HIT_TRIGGER, 100);
+			Flux_StateTransition xHitTrans;
+			xHitTrans.m_strTargetStateName = CombatAnimStates::HIT;
+			xHitTrans.m_fTransitionDuration = 0.1f;
+			xHitTrans.m_iPriority = 100;
+
+			Flux_TransitionCondition xCond;
+			xCond.m_strParameterName = CombatAnimParams::HIT_TRIGGER;
+			xCond.m_eParamType = Flux_AnimationParameters::ParamType::Trigger;
+			xHitTrans.m_xConditions.PushBack(xCond);
+
+			pxSM->AddAnyStateTransition(xHitTrans);
 		}
 
 		// Hit -> Idle at exit time
 		AddExitTimeTransition(pxSM, CombatAnimStates::HIT, CombatAnimStates::IDLE, 1.0f, 0);
 
 		// ================================================================
-		// Death transitions (priority 200 - highest priority, terminal state)
+		// Death - Any-State transition (priority 200 - highest priority, terminal)
 		// ================================================================
 
-		const char* aszDeathFromStates[] = {
-			CombatAnimStates::IDLE, CombatAnimStates::WALK,
-			CombatAnimStates::ATTACK1, CombatAnimStates::ATTACK2, CombatAnimStates::ATTACK3,
-			CombatAnimStates::DODGE, CombatAnimStates::HIT
-		};
-
-		for (const char* szFromState : aszDeathFromStates)
 		{
-			AddTriggerTransition(pxSM, szFromState, CombatAnimStates::DEATH,
-				CombatAnimParams::DEATH_TRIGGER, 200);
+			Flux_StateTransition xDeathTrans;
+			xDeathTrans.m_strTargetStateName = CombatAnimStates::DEATH;
+			xDeathTrans.m_fTransitionDuration = 0.1f;
+			xDeathTrans.m_iPriority = 200;
+
+			Flux_TransitionCondition xCond;
+			xCond.m_strParameterName = CombatAnimParams::DEATH_TRIGGER;
+			xCond.m_eParamType = Flux_AnimationParameters::ParamType::Trigger;
+			xDeathTrans.m_xConditions.PushBack(xCond);
+
+			pxSM->AddAnyStateTransition(xDeathTrans);
 		}
 
 		// Death is a terminal state - no exit transition
@@ -552,7 +566,7 @@ private:
 	// Data
 	// ========================================================================
 
-	Flux_AnimationController m_xController;
+	Zenith_AnimatorComponent* m_pxAnimator = nullptr;  // Non-owning reference to ECS component
 
 	// Per-instance state tracking for enemy updates (NOT static!)
 	bool m_bWasAttacking = false;

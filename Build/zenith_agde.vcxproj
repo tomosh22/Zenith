@@ -856,7 +856,9 @@
     <ClInclude Include="..\Zenith\Core\ZenithConfig.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_Core.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_FileWatcher.h" />
+    <ClInclude Include="..\Zenith\Core\Zenith_GraphicsOptions.h" />
     <ClInclude Include="..\Zenith\Core\Zenith_String.h" />
+    <ClInclude Include="..\Zenith\Core\Zenith_Tween.h" />
     <ClInclude Include="..\Zenith\DataStream\Zenith_DataStream.h" />
     <ClInclude Include="..\Zenith\DebugVariables\Zenith_DebugVariables.h" />
     <ClInclude Include="..\Zenith\Editor\Panels\Zenith_EditorPanel.h" />
@@ -874,6 +876,7 @@
     <ClInclude Include="..\Zenith\Editor\Zenith_Gizmo.h" />
     <ClInclude Include="..\Zenith\Editor\Zenith_SelectionSystem.h" />
     <ClInclude Include="..\Zenith\Editor\Zenith_UndoSystem.h" />
+    <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_AnimatorComponent.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_CameraComponent.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_ColliderComponent.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_InstancedMeshComponent.h" />
@@ -883,6 +886,7 @@
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_ScriptComponent.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_TerrainComponent.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_TransformComponent.h" />
+    <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_TweenComponent.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Components\Zenith_UIComponent.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_ComponentMeta.h" />
     <ClInclude Include="..\Zenith\EntityComponent\Zenith_ComponentRegistry.h" />
@@ -923,6 +927,7 @@
     <ClInclude Include="..\Zenith\Flux\InstancedMeshes\Flux_InstanceGroup.h" />
     <ClInclude Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationClip.h" />
     <ClInclude Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationController.h" />
+    <ClInclude Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationLayer.h" />
     <ClInclude Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationStateMachine.h" />
     <ClInclude Include="..\Zenith\Flux\MeshAnimation\Flux_BlendTree.h" />
     <ClInclude Include="..\Zenith\Flux\MeshAnimation\Flux_BonePose.h" />
@@ -998,6 +1003,7 @@
     <ClInclude Include="..\Zenith\Flux\Shaders\Skybox\Flux_Atmosphere.frag" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Skybox\Flux_AtmosphereCommon.fxh" />
     <ClInclude Include="..\Zenith\Flux\Shaders\Skybox\Flux_Skybox.frag" />
+    <ClInclude Include="..\Zenith\Flux\Shaders\Skybox\Flux_SkyboxSolidColour.frag" />
     <ClInclude Include="..\Zenith\Flux\Shaders\SSAO\Flux_SSAO.frag" />
     <ClInclude Include="..\Zenith\Flux\Shaders\SSGI\Flux_SSGI_Denoise.frag" />
     <ClInclude Include="..\Zenith\Flux\Shaders\SSGI\Flux_SSGI_RayMarch.frag" />
@@ -1726,6 +1732,7 @@
     <ClCompile Include="..\Zenith\Core\Zenith_Core.cpp" />
     <ClCompile Include="..\Zenith\Core\Zenith_Main.cpp" />
     <ClCompile Include="..\Zenith\Core\Zenith_String.cpp" />
+    <ClCompile Include="..\Zenith\Core\Zenith_Tween.cpp" />
     <ClCompile Include="..\Zenith\DataStream\Zenith_DataStream.cpp" />
     <ClCompile Include="..\Zenith\DebugVariables\Zenith_DebugVariables.cpp" />
     <ClCompile Include="..\Zenith\Editor\Panels\Zenith_EditorPanel_Console.cpp">
@@ -1784,6 +1791,7 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
     </ClCompile>
+    <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_AnimatorComponent.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_CameraComponent.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_ColliderComponent.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_InstancedMeshComponent.cpp" />
@@ -1795,6 +1803,7 @@
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_TerrainComponent.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_TerrainComponent_Editor.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_TransformComponent.cpp" />
+    <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_TweenComponent.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Components\Zenith_UIComponent.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_ComponentMeta.cpp" />
     <ClCompile Include="..\Zenith\EntityComponent\Zenith_ComponentRegistry.cpp" />
@@ -1829,6 +1838,7 @@
     <ClCompile Include="..\Zenith\Flux\InstancedMeshes\Flux_InstanceGroup.cpp" />
     <ClCompile Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationClip.cpp" />
     <ClCompile Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationController.cpp" />
+    <ClCompile Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationLayer.cpp" />
     <ClCompile Include="..\Zenith\Flux\MeshAnimation\Flux_AnimationStateMachine.cpp" />
     <ClCompile Include="..\Zenith\Flux\MeshAnimation\Flux_BlendTree.cpp" />
     <ClCompile Include="..\Zenith\Flux\MeshAnimation\Flux_BonePose.cpp" />

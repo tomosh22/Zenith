@@ -23,6 +23,8 @@ u_int Zenith_ComponentMetaRegistry::GetSerializationOrder(const std::string& str
 	static const std::unordered_map<std::string, u_int> s_xOrderMap = {
 		{"Transform", 0},
 		{"Model", 10},
+		{"Tween", 12},
+		{"Animator", 15},
 		{"Camera", 20},
 		{"Light", 25},     // Dynamic lights (point, spot, directional)
 		{"Text", 30},

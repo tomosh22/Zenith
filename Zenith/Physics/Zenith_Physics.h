@@ -122,7 +122,7 @@ private:
 
 	// Thread-safe deferred event queue
 	static Zenith_Vector<DeferredCollisionEvent> s_xDeferredEvents;
-	static Zenith_Mutex s_xEventQueueMutex;
+	static Zenith_Mutex_NoProfiling s_xEventQueueMutex; // No profiling - accessed from Jolt worker threads which aren't registered with Zenith threading
 
 	// Dispatch a collision event to an entity's script component
 	static void DispatchCollisionToEntity(Zenith_Entity& xEntity, Zenith_Entity& xOtherEntity, Zenith_EntityID xOtherID, CollisionEventType eEventType);

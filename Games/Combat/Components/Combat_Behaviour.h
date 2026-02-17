@@ -18,6 +18,7 @@
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
 #include "EntityComponent/Components/Zenith_UIComponent.h"
 #include "EntityComponent/Components/Zenith_ModelComponent.h"
+#include "EntityComponent/Components/Zenith_AnimatorComponent.h"
 #include "Flux/Flux_ModelInstance.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
@@ -86,6 +87,9 @@ namespace Combat
 	extern Flux_ParticleEmitterConfig* g_pxHitSparkConfig;
 	extern Zenith_EntityID g_uHitSparkEmitterID;
 	extern Flux_ParticleEmitterConfig* g_pxFlameConfig;
+
+	// Lazy init for stick figure model (assets may be created after first init attempt)
+	void TryInitializeStickFigureModel();
 }
 
 // ============================================================================
@@ -559,6 +563,11 @@ private:
 		xPlayerTransform.SetScale(Zenith_Maths::Vector3(1.0f, 1.0f, 1.0f));
 
 		Zenith_ModelComponent& xPlayerModel = xPlayer.AddComponent<Zenith_ModelComponent>();
+
+		// Retry model asset creation if it wasn't available at init time
+		// (unit tests create stick figure assets after InitializeCombatResources)
+		Combat::TryInitializeStickFigureModel();
+
 		bool bUsingModelInstance = false;
 		if (!Combat::g_strStickFigureModelPath.empty())
 		{
@@ -571,8 +580,19 @@ private:
 		}
 		if (!bUsingModelInstance)
 		{
+			Zenith_Log(LOG_CATEGORY_ANIMATION, "[Combat] Player model instance fallback to static mesh (modelPath empty=%s, hasModelInst=%s, hasSkeleton=%s)",
+				Combat::g_strStickFigureModelPath.empty() ? "yes" : "no",
+				xPlayerModel.IsUsingModelInstance() ? "yes" : "no",
+				xPlayerModel.IsUsingModelInstance() && xPlayerModel.HasSkeleton() ? "yes" : "no");
 			xPlayerModel.AddMeshEntry(*m_pxStickFigureGeometry, *m_xPlayerMaterial.Get());
 		}
+		else
+		{
+			Zenith_Log(LOG_CATEGORY_ANIMATION, "[Combat] Player using model instance with skeleton");
+		}
+
+		// Add AnimatorComponent for skeletal animation (auto-discovers skeleton from ModelComponent)
+		xPlayer.AddComponent<Zenith_AnimatorComponent>();
 
 		Zenith_ColliderComponent& xPlayerCollider = xPlayer.AddComponent<Zenith_ColliderComponent>();
 		xPlayerCollider.AddCapsuleCollider(0.3f, 0.6f, RIGIDBODY_TYPE_DYNAMIC);
@@ -604,18 +624,11 @@ private:
 			return;
 
 		Zenith_Entity xPlayer = pxSceneData->GetEntity(m_xLevelEntities.m_uPlayerEntityID);
-		if (!xPlayer.HasComponent<Zenith_ModelComponent>())
+		if (!xPlayer.HasComponent<Zenith_AnimatorComponent>())
 			return;
 
-		Zenith_ModelComponent& xModel = xPlayer.GetComponent<Zenith_ModelComponent>();
-		if (xModel.HasSkeleton())
-		{
-			Flux_SkeletonInstance* pxSkeleton = xModel.GetSkeletonInstance();
-			if (pxSkeleton)
-			{
-				m_xPlayerAnimController.Initialize(pxSkeleton);
-			}
-		}
+		Zenith_AnimatorComponent& xAnimator = xPlayer.GetComponent<Zenith_AnimatorComponent>();
+		m_xPlayerAnimController.Initialize(xAnimator);
 	}
 
 	void SpawnEnemies()
@@ -660,6 +673,9 @@ private:
 				xModel.AddMeshEntry(*m_pxStickFigureGeometry, *m_xEnemyMaterial.Get());
 			}
 
+			// Add AnimatorComponent for skeletal animation (auto-discovers skeleton from ModelComponent)
+			Zenith_AnimatorComponent& xEnemyAnimator = xEnemy.AddComponent<Zenith_AnimatorComponent>();
+
 			Zenith_ColliderComponent& xCollider = xEnemy.AddComponent<Zenith_ColliderComponent>();
 			xCollider.AddCapsuleCollider(0.27f, 0.54f, RIGIDBODY_TYPE_DYNAMIC);
 			Zenith_Physics::LockRotation(xCollider.GetBodyID(), true, false, true);
@@ -674,8 +690,7 @@ private:
 			xConfig.m_fAttackRange = 1.5f;
 			xConfig.m_fAttackCooldown = 1.5f;
 
-			Flux_SkeletonInstance* pxSkeleton = xModel.HasSkeleton() ? xModel.GetSkeletonInstance() : nullptr;
-			m_xEnemyManager.RegisterEnemy(xEnemy.GetEntityID(), xConfig, pxSkeleton);
+			m_xEnemyManager.RegisterEnemy(xEnemy.GetEntityID(), xConfig, &xEnemyAnimator);
 		}
 	}
 
@@ -711,7 +726,7 @@ private:
 		}
 
 		m_xPlayerController.Update(xTransform, xCollider, fDt);
-		m_xPlayerAnimController.UpdateFromPlayerState(m_xPlayerController, fDt);
+		m_xPlayerAnimController.UpdateFromPlayerState(m_xPlayerController);
 
 		bool bCanUseIK = !m_xPlayerController.IsDodging() &&
 			m_xPlayerController.GetState() != Combat_PlayerState::DEAD;

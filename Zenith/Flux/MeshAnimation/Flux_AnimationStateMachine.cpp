@@ -6,42 +6,51 @@
 #include <fstream>
 
 //=============================================================================
+// Flux_AnimatorStateInfo
+//=============================================================================
+
+bool Flux_AnimatorStateInfo::IsName(const char* szName) const
+{
+	return m_strStateName == szName;
+}
+
+//=============================================================================
 // Flux_AnimationParameters
 //=============================================================================
 void Flux_AnimationParameters::AddFloat(const std::string& strName, float fDefault)
 {
-	Parameter param;
-	param.m_eType = ParamType::Float;
-	param.m_strName = strName;
-	param.m_fValue = fDefault;
-	m_xParameters[strName] = param;
+	Parameter xParam;
+	xParam.m_eType = ParamType::Float;
+	xParam.m_strName = strName;
+	xParam.m_fValue = fDefault;
+	m_xParameters[strName] = xParam;
 }
 
 void Flux_AnimationParameters::AddInt(const std::string& strName, int32_t iDefault)
 {
-	Parameter param;
-	param.m_eType = ParamType::Int;
-	param.m_strName = strName;
-	param.m_iValue = iDefault;
-	m_xParameters[strName] = param;
+	Parameter xParam;
+	xParam.m_eType = ParamType::Int;
+	xParam.m_strName = strName;
+	xParam.m_iValue = iDefault;
+	m_xParameters[strName] = xParam;
 }
 
 void Flux_AnimationParameters::AddBool(const std::string& strName, bool bDefault)
 {
-	Parameter param;
-	param.m_eType = ParamType::Bool;
-	param.m_strName = strName;
-	param.m_bValue = bDefault;
-	m_xParameters[strName] = param;
+	Parameter xParam;
+	xParam.m_eType = ParamType::Bool;
+	xParam.m_strName = strName;
+	xParam.m_bValue = bDefault;
+	m_xParameters[strName] = xParam;
 }
 
 void Flux_AnimationParameters::AddTrigger(const std::string& strName)
 {
-	Parameter param;
-	param.m_eType = ParamType::Trigger;
-	param.m_strName = strName;
-	param.m_bValue = false;
-	m_xParameters[strName] = param;
+	Parameter xParam;
+	xParam.m_eType = ParamType::Trigger;
+	xParam.m_strName = strName;
+	xParam.m_bValue = false;
+	m_xParameters[strName] = xParam;
 }
 
 void Flux_AnimationParameters::SetFloat(const std::string& strName, float fValue)
@@ -96,6 +105,14 @@ bool Flux_AnimationParameters::GetBool(const std::string& strName) const
 	return false;
 }
 
+bool Flux_AnimationParameters::PeekTrigger(const std::string& strName) const
+{
+	auto it = m_xParameters.find(strName);
+	if (it != m_xParameters.end() && it->second.m_eType == ParamType::Trigger)
+		return it->second.m_bValue;
+	return false;
+}
+
 bool Flux_AnimationParameters::ConsumeTrigger(const std::string& strName)
 {
 	auto it = m_xParameters.find(strName);
@@ -142,21 +159,21 @@ void Flux_AnimationParameters::WriteToDataStream(Zenith_DataStream& xStream) con
 
 	for (const auto& xPair : m_xParameters)
 	{
-		const Parameter& param = xPair.second;
-		xStream << param.m_strName;
-		xStream << static_cast<uint8_t>(param.m_eType);
+		const Parameter& xParam = xPair.second;
+		xStream << xParam.m_strName;
+		xStream << static_cast<uint8_t>(xParam.m_eType);
 
-		switch (param.m_eType)
+		switch (xParam.m_eType)
 		{
 		case ParamType::Float:
-			xStream << param.m_fValue;
+			xStream << xParam.m_fValue;
 			break;
 		case ParamType::Int:
-			xStream << param.m_iValue;
+			xStream << xParam.m_iValue;
 			break;
 		case ParamType::Bool:
 		case ParamType::Trigger:
-			xStream << param.m_bValue;
+			xStream << xParam.m_bValue;
 			break;
 		}
 	}
@@ -177,31 +194,31 @@ void Flux_AnimationParameters::ReadFromDataStream(Zenith_DataStream& xStream)
 
 	for (uint32_t i = 0; i < uNumParams; ++i)
 	{
-		Parameter param;
-		xStream >> param.m_strName;
+		Parameter xParam;
+		xStream >> xParam.m_strName;
 
 		uint8_t uType = 0;
 		xStream >> uType;
 
 		Zenith_Assert(uType <= static_cast<uint8_t>(ParamType::Trigger), "AnimationParameters: Invalid param type %u for '%s' - skipping",
-			uType, param.m_strName.c_str());
-		param.m_eType = static_cast<ParamType>(uType);
+			uType, xParam.m_strName.c_str());
+		xParam.m_eType = static_cast<ParamType>(uType);
 
-		switch (param.m_eType)
+		switch (xParam.m_eType)
 		{
 		case ParamType::Float:
-			xStream >> param.m_fValue;
+			xStream >> xParam.m_fValue;
 			break;
 		case ParamType::Int:
-			xStream >> param.m_iValue;
+			xStream >> xParam.m_iValue;
 			break;
 		case ParamType::Bool:
 		case ParamType::Trigger:
-			xStream >> param.m_bValue;
+			xStream >> xParam.m_bValue;
 			break;
 		}
 
-		m_xParameters[param.m_strName] = param;
+		m_xParameters[xParam.m_strName] = xParam;
 	}
 }
 
@@ -259,10 +276,9 @@ bool Flux_TransitionCondition::Evaluate(const Flux_AnimationParameters& xParams)
 
 	case Flux_AnimationParameters::ParamType::Trigger:
 	{
-		// Triggers are handled specially - just check if it's true
-		// The trigger will be consumed after evaluation
-		// Note: This cast away const is intentional for trigger consumption
-		return const_cast<Flux_AnimationParameters&>(xParams).ConsumeTrigger(m_strParameterName);
+		// Only peek at trigger value - consumption happens in CanTransition
+		// after ALL conditions pass, to avoid losing triggers on partial matches
+		return xParams.PeekTrigger(m_strParameterName);
 	}
 	}
 
@@ -318,7 +334,7 @@ void Flux_TransitionCondition::ReadFromDataStream(Zenith_DataStream& xStream)
 //=============================================================================
 // Flux_StateTransition
 //=============================================================================
-bool Flux_StateTransition::CanTransition(const Flux_AnimationParameters& xParams,
+bool Flux_StateTransition::CanTransition(Flux_AnimationParameters& xParams,
 	float fCurrentNormalizedTime) const
 {
 	// Check exit time condition
@@ -328,11 +344,18 @@ bool Flux_StateTransition::CanTransition(const Flux_AnimationParameters& xParams
 			return false;
 	}
 
-	// All conditions must be true (AND logic)
+	// Check all conditions (Evaluate now only peeks at triggers, doesn't consume)
 	for (Zenith_Vector<Flux_TransitionCondition>::Iterator xIt(m_xConditions); !xIt.Done(); xIt.Next())
 	{
 		if (!xIt.GetData().Evaluate(xParams))
 			return false;
+	}
+
+	// All conditions passed - now consume any triggers
+	for (Zenith_Vector<Flux_TransitionCondition>::Iterator xIt(m_xConditions); !xIt.Done(); xIt.Next())
+	{
+		if (xIt.GetData().m_eParamType == Flux_AnimationParameters::ParamType::Trigger)
+			xParams.ConsumeTrigger(xIt.GetData().m_strParameterName);
 	}
 
 	return true;
@@ -387,6 +410,14 @@ Flux_AnimationState::Flux_AnimationState(const std::string& strName)
 Flux_AnimationState::~Flux_AnimationState()
 {
 	delete m_pxBlendTree;
+	delete m_pxSubStateMachine;
+}
+
+Flux_AnimationStateMachine* Flux_AnimationState::CreateSubStateMachine(const std::string& strName)
+{
+	delete m_pxSubStateMachine;
+	m_pxSubStateMachine = new Flux_AnimationStateMachine(strName);
+	return m_pxSubStateMachine;
 }
 
 void Flux_AnimationState::AddTransition(const Flux_StateTransition& xTransition)
@@ -408,19 +439,23 @@ void Flux_AnimationState::AddTransition(const Flux_StateTransition& xTransition)
 	}
 }
 
-void Flux_AnimationState::RemoveTransition(size_t uIndex)
+void Flux_AnimationState::RemoveTransition(uint32_t uIndex)
 {
 	if (uIndex < m_xTransitions.GetSize())
 		m_xTransitions.Remove(static_cast<u_int>(uIndex));
 }
 
-const Flux_StateTransition* Flux_AnimationState::CheckTransitions(const Flux_AnimationParameters& xParams) const
+const Flux_StateTransition* Flux_AnimationState::CheckTransitions(Flux_AnimationParameters& xParams, int32_t iMinPriority) const
 {
 	float fNormalizedTime = m_pxBlendTree ? m_pxBlendTree->GetNormalizedTime() : 0.0f;
 
-	// Check transitions in priority order
+	// Check transitions in priority order (sorted highest first)
 	for (u_int i = 0; i < m_xTransitions.GetSize(); ++i)
 	{
+		// Transitions are sorted by priority descending - stop early once below threshold
+		if (m_xTransitions.Get(i).m_iPriority <= iMinPriority)
+			break;
+
 		if (m_xTransitions.Get(i).CanTransition(xParams, fNormalizedTime))
 			return &m_xTransitions.Get(i);
 	}
@@ -448,6 +483,14 @@ void Flux_AnimationState::WriteToDataStream(Zenith_DataStream& xStream) const
 		std::string strType = m_pxBlendTree->GetNodeTypeName();
 		xStream << strType;
 		m_pxBlendTree->WriteToDataStream(xStream);
+	}
+
+	// Sub-state machine
+	bool bHasSubSM = (m_pxSubStateMachine != nullptr);
+	xStream << bHasSubSM;
+	if (bHasSubSM)
+	{
+		m_pxSubStateMachine->WriteToDataStream(xStream);
 	}
 
 	// Transitions
@@ -480,6 +523,16 @@ void Flux_AnimationState::ReadFromDataStream(Zenith_DataStream& xStream)
 		m_pxBlendTree = Flux_BlendTreeNode::CreateFromTypeName(strType);
 		if (m_pxBlendTree)
 			m_pxBlendTree->ReadFromDataStream(xStream);
+	}
+
+	// Sub-state machine
+	bool bHasSubSM = false;
+	xStream >> bHasSubSM;
+	if (bHasSubSM)
+	{
+		delete m_pxSubStateMachine;
+		m_pxSubStateMachine = new Flux_AnimationStateMachine();
+		m_pxSubStateMachine->ReadFromDataStream(xStream);
 	}
 
 	// Transitions
@@ -573,6 +626,118 @@ const std::string& Flux_AnimationStateMachine::GetCurrentStateName() const
 	return m_pxCurrentState ? m_pxCurrentState->GetName() : s_strEmpty;
 }
 
+Flux_AnimatorStateInfo Flux_AnimationStateMachine::GetCurrentStateInfo() const
+{
+	Flux_AnimatorStateInfo xInfo;
+
+	if (!m_pxCurrentState)
+		return xInfo;
+
+	xInfo.m_strStateName = m_pxCurrentState->GetName();
+
+	Flux_BlendTreeNode* pxBlendTree = m_pxCurrentState->GetBlendTree();
+	if (pxBlendTree)
+	{
+		xInfo.m_fNormalizedTime = pxBlendTree->GetNormalizedTime();
+		xInfo.m_bHasLooped = !pxBlendTree->IsFinished() && pxBlendTree->GetNormalizedTime() > 1.0f;
+	}
+
+	xInfo.m_bIsTransitioning = (m_pxActiveTransition != nullptr);
+	if (m_pxActiveTransition)
+	{
+		xInfo.m_fTransitionProgress = m_pxActiveTransition->GetBlendWeight();
+	}
+
+	return xInfo;
+}
+
+//=============================================================================
+// Any-State Transitions
+//=============================================================================
+
+void Flux_AnimationStateMachine::AddAnyStateTransition(const Flux_StateTransition& xTransition)
+{
+	// Insert sorted by priority (highest first) for deterministic evaluation
+	bool bInserted = false;
+	for (uint32_t i = 0; i < m_xAnyStateTransitions.GetSize(); ++i)
+	{
+		if (xTransition.m_iPriority > m_xAnyStateTransitions.Get(i).m_iPriority)
+		{
+			// Insert before this element
+			m_xAnyStateTransitions.PushBack(xTransition);
+			// Shift the new element into position
+			for (uint32_t j = m_xAnyStateTransitions.GetSize() - 1; j > i; --j)
+			{
+				std::swap(m_xAnyStateTransitions.Get(j), m_xAnyStateTransitions.Get(j - 1));
+			}
+			bInserted = true;
+			break;
+		}
+	}
+	if (!bInserted)
+	{
+		m_xAnyStateTransitions.PushBack(xTransition);
+	}
+}
+
+void Flux_AnimationStateMachine::RemoveAnyStateTransition(uint32_t uIndex)
+{
+	if (uIndex < m_xAnyStateTransitions.GetSize())
+	{
+		m_xAnyStateTransitions.Remove(static_cast<u_int>(uIndex));
+	}
+}
+
+const Flux_StateTransition* Flux_AnimationStateMachine::CheckAnyStateTransitions(int32_t iMinPriority)
+{
+	if (!m_pxCurrentState)
+		return nullptr;
+
+	const std::string& strCurrentName = m_pxCurrentState->GetName();
+
+	for (uint32_t i = 0; i < m_xAnyStateTransitions.GetSize(); ++i)
+	{
+		const Flux_StateTransition& xTrans = m_xAnyStateTransitions.Get(i);
+
+		// Any-state transitions are sorted by priority descending - stop early once below threshold
+		if (xTrans.m_iPriority <= iMinPriority)
+			break;
+
+		// Skip transitions targeting the current state (prevents self-loops)
+		if (xTrans.m_strTargetStateName == strCurrentName)
+			continue;
+
+		// Get normalized time from current state's blend tree
+		float fNormalizedTime = 0.0f;
+		if (m_pxCurrentState->GetBlendTree())
+			fNormalizedTime = m_pxCurrentState->GetBlendTree()->GetNormalizedTime();
+
+		if (xTrans.CanTransition(GetParameters(), fNormalizedTime))
+			return &xTrans;
+	}
+
+	return nullptr;
+}
+
+void Flux_AnimationStateMachine::CrossFade(const std::string& strStateName, float fDuration)
+{
+	if (!HasState(strStateName))
+		return;
+
+	// If we're already in this state and not transitioning, do nothing
+	if (m_pxCurrentState && m_pxCurrentState->GetName() == strStateName && !m_pxActiveTransition)
+		return;
+
+	// Create a synthetic transition with no conditions
+	Flux_StateTransition xTransition;
+	xTransition.m_strTargetStateName = strStateName;
+	xTransition.m_fTransitionDuration = fDuration;
+	xTransition.m_bHasExitTime = false;
+	xTransition.m_bInterruptible = true;
+
+	StartTransition(xTransition);
+}
+
 void Flux_AnimationStateMachine::SetState(const std::string& strStateName)
 {
 	Flux_AnimationState* pxNewState = GetState(strStateName);
@@ -580,8 +745,8 @@ void Flux_AnimationStateMachine::SetState(const std::string& strStateName)
 		return;
 
 	// Call exit callback on old state
-	if (m_pxCurrentState && m_pxCurrentState->m_fnOnExit)
-		m_pxCurrentState->m_fnOnExit();
+	if (m_pxCurrentState && m_pxCurrentState->m_pfnOnExit)
+		m_pxCurrentState->m_pfnOnExit(m_pxCurrentState->m_pCallbackUserData);
 
 	// Cancel any active transition
 	delete m_pxActiveTransition;
@@ -591,13 +756,21 @@ void Flux_AnimationStateMachine::SetState(const std::string& strStateName)
 	// Set new state
 	m_pxCurrentState = pxNewState;
 
-	// Reset blend tree
-	if (m_pxCurrentState->GetBlendTree())
+	// Reset blend tree or sub-state machine
+	if (m_pxCurrentState->IsSubStateMachine())
+	{
+		Flux_AnimationStateMachine* pxSubSM = m_pxCurrentState->GetSubStateMachine();
+		pxSubSM->SetSharedParameters(&GetParameters());
+		pxSubSM->SetState(pxSubSM->GetDefaultStateName());
+	}
+	else if (m_pxCurrentState->GetBlendTree())
+	{
 		m_pxCurrentState->GetBlendTree()->Reset();
+	}
 
 	// Call enter callback
-	if (m_pxCurrentState->m_fnOnEnter)
-		m_pxCurrentState->m_fnOnEnter();
+	if (m_pxCurrentState->m_pfnOnEnter)
+		m_pxCurrentState->m_pfnOnEnter(m_pxCurrentState->m_pCallbackUserData);
 }
 
 void Flux_AnimationStateMachine::Update(float fDt,
@@ -616,10 +789,20 @@ void Flux_AnimationStateMachine::Update(float fDt,
 		return;
 	}
 
-	// Check for new transitions (only if not already transitioning)
-	if (!m_pxActiveTransition)
+	// Check for new transitions (when not transitioning, or when active transition is interruptible)
+	if (!m_pxActiveTransition || m_bActiveTransitionInterruptible)
 	{
-		const Flux_StateTransition* pxTransition = m_pxCurrentState->CheckTransitions(m_xParameters);
+		// Pre-filter by active transition priority so triggers are never consumed
+		// for transitions that can't actually start (prevents lost triggers)
+		int32_t iMinPriority = m_pxActiveTransition ? m_iActiveTransitionPriority : INT32_MIN;
+
+		// Any-state transitions are checked first (highest priority)
+		const Flux_StateTransition* pxTransition = CheckAnyStateTransitions(iMinPriority);
+
+		// Fall back to per-state transitions
+		if (!pxTransition)
+			pxTransition = m_pxCurrentState->CheckTransitions(GetParameters(), iMinPriority);
+
 		if (pxTransition)
 		{
 			StartTransition(*pxTransition);
@@ -634,6 +817,10 @@ void Flux_AnimationStateMachine::Update(float fDt,
 		if (m_pxActiveTransition->IsComplete())
 		{
 			CompleteTransition();
+			// Target pose was already evaluated in UpdateTransition() - use it directly
+			// (falling through to normal state update would double-advance the blend tree)
+			xOutPose.CopyFrom(m_xCurrentPose);
+			return;
 		}
 		else
 		{
@@ -644,7 +831,13 @@ void Flux_AnimationStateMachine::Update(float fDt,
 	}
 
 	// Normal state update
-	if (m_pxCurrentState->GetBlendTree())
+	if (m_pxCurrentState->IsSubStateMachine())
+	{
+		// Delegate to child state machine
+		Flux_AnimationStateMachine* pxSubSM = m_pxCurrentState->GetSubStateMachine();
+		pxSubSM->Update(fDt, m_xCurrentPose, xSkeleton);
+	}
+	else if (m_pxCurrentState->GetBlendTree())
 	{
 		m_pxCurrentState->GetBlendTree()->Evaluate(fDt, m_xCurrentPose, xSkeleton);
 	}
@@ -654,8 +847,8 @@ void Flux_AnimationStateMachine::Update(float fDt,
 	}
 
 	// Call update callback
-	if (m_pxCurrentState->m_fnOnUpdate)
-		m_pxCurrentState->m_fnOnUpdate(fDt);
+	if (m_pxCurrentState->m_pfnOnUpdate)
+		m_pxCurrentState->m_pfnOnUpdate(m_pxCurrentState->m_pCallbackUserData, fDt);
 
 	xOutPose.CopyFrom(m_xCurrentPose);
 }
@@ -667,8 +860,8 @@ void Flux_AnimationStateMachine::StartTransition(const Flux_StateTransition& xTr
 		return;
 
 	// Call exit callback on current state
-	if (m_pxCurrentState && m_pxCurrentState->m_fnOnExit)
-		m_pxCurrentState->m_fnOnExit();
+	if (m_pxCurrentState && m_pxCurrentState->m_pfnOnExit)
+		m_pxCurrentState->m_pfnOnExit(m_pxCurrentState->m_pCallbackUserData);
 
 	// Create transition
 	delete m_pxActiveTransition;
@@ -676,14 +869,24 @@ void Flux_AnimationStateMachine::StartTransition(const Flux_StateTransition& xTr
 	m_pxActiveTransition->Start(m_xCurrentPose, xTransition.m_fTransitionDuration);
 
 	m_pxTransitionTargetState = pxTargetState;
+	m_bActiveTransitionInterruptible = xTransition.m_bInterruptible;
+	m_iActiveTransitionPriority = xTransition.m_iPriority;
 
-	// Reset target blend tree
-	if (m_pxTransitionTargetState->GetBlendTree())
+	// Reset target blend tree or sub-state machine
+	if (m_pxTransitionTargetState->IsSubStateMachine())
+	{
+		Flux_AnimationStateMachine* pxSubSM = m_pxTransitionTargetState->GetSubStateMachine();
+		pxSubSM->SetSharedParameters(&GetParameters());
+		pxSubSM->SetState(pxSubSM->GetDefaultStateName());
+	}
+	else if (m_pxTransitionTargetState->GetBlendTree())
+	{
 		m_pxTransitionTargetState->GetBlendTree()->Reset();
+	}
 
 	// Call enter callback on target state
-	if (m_pxTransitionTargetState->m_fnOnEnter)
-		m_pxTransitionTargetState->m_fnOnEnter();
+	if (m_pxTransitionTargetState->m_pfnOnEnter)
+		m_pxTransitionTargetState->m_pfnOnEnter(m_pxTransitionTargetState->m_pCallbackUserData);
 }
 
 void Flux_AnimationStateMachine::UpdateTransition(float fDt, const Zenith_SkeletonAsset& xSkeleton)
@@ -695,7 +898,12 @@ void Flux_AnimationStateMachine::UpdateTransition(float fDt, const Zenith_Skelet
 	m_pxActiveTransition->Update(fDt);
 
 	// Evaluate target state
-	if (m_pxTransitionTargetState->GetBlendTree())
+	if (m_pxTransitionTargetState->IsSubStateMachine())
+	{
+		Flux_AnimationStateMachine* pxSubSM = m_pxTransitionTargetState->GetSubStateMachine();
+		pxSubSM->Update(fDt, m_xTargetPose, xSkeleton);
+	}
+	else if (m_pxTransitionTargetState->GetBlendTree())
 	{
 		m_pxTransitionTargetState->GetBlendTree()->Evaluate(fDt, m_xTargetPose, xSkeleton);
 	}
@@ -715,26 +923,73 @@ void Flux_AnimationStateMachine::CompleteTransition()
 
 	delete m_pxActiveTransition;
 	m_pxActiveTransition = nullptr;
+	m_bActiveTransitionInterruptible = true;
+	m_iActiveTransitionPriority = 0;
 
 	// Copy target pose to current
 	m_xCurrentPose.CopyFrom(m_xTargetPose);
 }
 
+static void ResolveClipReferencesRecursive(Flux_BlendTreeNode* pxNode, Flux_AnimationClipCollection* pxCollection)
+{
+	if (!pxNode)
+		return;
+
+	const char* szType = pxNode->GetNodeTypeName();
+
+	if (strcmp(szType, "Clip") == 0)
+	{
+		static_cast<Flux_BlendTreeNode_Clip*>(pxNode)->ResolveClip(pxCollection);
+	}
+	else if (strcmp(szType, "Blend") == 0)
+	{
+		Flux_BlendTreeNode_Blend* pxBlend = static_cast<Flux_BlendTreeNode_Blend*>(pxNode);
+		ResolveClipReferencesRecursive(pxBlend->GetChildA(), pxCollection);
+		ResolveClipReferencesRecursive(pxBlend->GetChildB(), pxCollection);
+	}
+	else if (strcmp(szType, "BlendSpace1D") == 0)
+	{
+		Flux_BlendTreeNode_BlendSpace1D* pxBS = static_cast<Flux_BlendTreeNode_BlendSpace1D*>(pxNode);
+		const Zenith_Vector<Flux_BlendTreeNode_BlendSpace1D::BlendPoint>& xPoints = pxBS->GetBlendPoints();
+		for (uint32_t i = 0; i < xPoints.GetSize(); ++i)
+			ResolveClipReferencesRecursive(xPoints.Get(i).m_pxNode, pxCollection);
+	}
+	else if (strcmp(szType, "BlendSpace2D") == 0)
+	{
+		Flux_BlendTreeNode_BlendSpace2D* pxBS = static_cast<Flux_BlendTreeNode_BlendSpace2D*>(pxNode);
+		const Zenith_Vector<Flux_BlendTreeNode_BlendSpace2D::BlendPoint>& xPoints = pxBS->GetBlendPoints();
+		for (uint32_t i = 0; i < xPoints.GetSize(); ++i)
+			ResolveClipReferencesRecursive(xPoints.Get(i).m_pxNode, pxCollection);
+	}
+	else if (strcmp(szType, "Additive") == 0)
+	{
+		Flux_BlendTreeNode_Additive* pxAdditive = static_cast<Flux_BlendTreeNode_Additive*>(pxNode);
+		ResolveClipReferencesRecursive(pxAdditive->GetBaseNode(), pxCollection);
+		ResolveClipReferencesRecursive(pxAdditive->GetAdditiveNode(), pxCollection);
+	}
+	else if (strcmp(szType, "Masked") == 0)
+	{
+		Flux_BlendTreeNode_Masked* pxMasked = static_cast<Flux_BlendTreeNode_Masked*>(pxNode);
+		ResolveClipReferencesRecursive(pxMasked->GetBaseNode(), pxCollection);
+		ResolveClipReferencesRecursive(pxMasked->GetOverrideNode(), pxCollection);
+	}
+	else if (strcmp(szType, "Select") == 0)
+	{
+		Flux_BlendTreeNode_Select* pxSelect = static_cast<Flux_BlendTreeNode_Select*>(pxNode);
+		const Zenith_Vector<Flux_BlendTreeNode*>& xChildren = pxSelect->GetChildren();
+		for (uint32_t i = 0; i < xChildren.GetSize(); ++i)
+			ResolveClipReferencesRecursive(xChildren.Get(i), pxCollection);
+	}
+}
+
 void Flux_AnimationStateMachine::ResolveClipReferences(Flux_AnimationClipCollection* pxCollection)
 {
-	// Recursively resolve clip references in all blend trees
 	for (auto& xPair : m_xStates)
 	{
 		Flux_BlendTreeNode* pxBlendTree = xPair.second->GetBlendTree();
 		if (pxBlendTree)
 		{
-			// Use type name check instead of dynamic_cast to avoid RTTI issues
-			// across compilation units
-			if (strcmp(pxBlendTree->GetNodeTypeName(), "Clip") == 0)
-			{
-				Flux_BlendTreeNode_Clip* pxClipNode = static_cast<Flux_BlendTreeNode_Clip*>(pxBlendTree);
-				pxClipNode->ResolveClip(pxCollection);
-			}
+			ResolveClipReferencesRecursive(pxBlendTree, pxCollection);
 		}
 	}
 }
@@ -781,6 +1036,14 @@ void Flux_AnimationStateMachine::WriteToDataStream(Zenith_DataStream& xStream) c
 	{
 		xPair.second->WriteToDataStream(xStream);
 	}
+
+	// Any-state transitions
+	uint32_t uNumAnyState = m_xAnyStateTransitions.GetSize();
+	xStream << uNumAnyState;
+	for (uint32_t i = 0; i < uNumAnyState; ++i)
+	{
+		m_xAnyStateTransitions.Get(i).WriteToDataStream(xStream);
+	}
 }
 
 void Flux_AnimationStateMachine::ReadFromDataStream(Zenith_DataStream& xStream)
@@ -804,6 +1067,17 @@ void Flux_AnimationStateMachine::ReadFromDataStream(Zenith_DataStream& xStream)
 		Flux_AnimationState* pxState = new Flux_AnimationState();
 		pxState->ReadFromDataStream(xStream);
 		m_xStates[pxState->GetName()] = pxState;
+	}
+
+	// Any-state transitions
+	uint32_t uNumAnyState = 0;
+	xStream >> uNumAnyState;
+	m_xAnyStateTransitions.Clear();
+	for (uint32_t i = 0; i < uNumAnyState; ++i)
+	{
+		Flux_StateTransition xTrans;
+		xTrans.ReadFromDataStream(xStream);
+		m_xAnyStateTransitions.PushBack(std::move(xTrans));
 	}
 
 	m_pxCurrentState = nullptr;

@@ -68,61 +68,36 @@ public:
 	{
 		s_xConfig = xConfig;
 
-		// In a real implementation, we would:
-		// 1. Create Flux_AnimationStateMachine
-		// 2. Add states with blend trees
-		// 3. Set up transitions
+		// In a real implementation with skeletal meshes, we would:
+		// 1. Add Zenith_AnimatorComponent to the entity (auto-discovers skeleton from ModelComponent)
+		// 2. Set up clips and state machine on the AnimatorComponent's controller
+		// 3. Set parameters each frame from gameplay code
+		// AnimatorComponent::OnUpdate handles evaluation, GPU upload, etc.
 
 		/*
-		// EXAMPLE: How to set up animation state machine (pseudocode)
+		// EXAMPLE: How to set up animation with Zenith_AnimatorComponent
 
-		s_pxStateMachine = new Flux_AnimationStateMachine("RunnerAnimations");
+		// Entity creation:
+		Zenith_AnimatorComponent& xAnimator = xEntity.AddComponent<Zenith_AnimatorComponent>();
+		// Skeleton is auto-discovered from ModelComponent during OnStart
 
-		// Add animation parameters
-		s_pxStateMachine->GetParameters().AddFloat("Speed", 0.0f);
-		s_pxStateMachine->GetParameters().AddBool("IsGrounded", true);
-		s_pxStateMachine->GetParameters().AddTrigger("Jump");
-		s_pxStateMachine->GetParameters().AddTrigger("Slide");
+		// Load clips and set up state machine:
+		Flux_AnimationController& xController = xAnimator.GetController();
+		xController.AddClipFromFile("Meshes/Character/Idle.zanim");
+		xController.AddClipFromFile("Meshes/Character/Walk.zanim");
 
-		// Create Idle state with single clip
-		Flux_AnimationState* pxIdleState = s_pxStateMachine->AddState("Idle");
-		pxIdleState->SetBlendTree(new Flux_BlendTreeNode_Clip(pxIdleClip));
+		Flux_AnimationStateMachine* pxSM = xController.CreateStateMachine("RunnerAnimations");
+		pxSM->GetParameters().AddFloat("Speed", 0.0f);
+		pxSM->GetParameters().AddTrigger("Jump");
+		pxSM->GetParameters().AddTrigger("Slide");
 
-		// Create Run state with BlendSpace1D for speed-based blending
-		Flux_AnimationState* pxRunState = s_pxStateMachine->AddState("Run");
-		Flux_BlendTreeNode_BlendSpace1D* pxRunBlendSpace = new Flux_BlendTreeNode_BlendSpace1D();
-		pxRunBlendSpace->AddBlendPoint(new Flux_BlendTreeNode_Clip(pxWalkClip), 0.0f);     // Walk at speed 0
-		pxRunBlendSpace->AddBlendPoint(new Flux_BlendTreeNode_Clip(pxJogClip), 15.0f);     // Jog at speed 15
-		pxRunBlendSpace->AddBlendPoint(new Flux_BlendTreeNode_Clip(pxSprintClip), 35.0f);  // Sprint at speed 35
-		pxRunBlendSpace->SortBlendPoints();
-		pxRunState->SetBlendTree(pxRunBlendSpace);
+		// Create states, transitions, etc. (same as Combat_AnimationController pattern)
+		pxSM->SetDefaultState("Idle");
 
-		// Create Jump state
-		Flux_AnimationState* pxJumpState = s_pxStateMachine->AddState("Jump");
-		pxJumpState->SetBlendTree(new Flux_BlendTreeNode_Clip(pxJumpClip));
-
-		// Create Slide state
-		Flux_AnimationState* pxSlideState = s_pxStateMachine->AddState("Slide");
-		pxSlideState->SetBlendTree(new Flux_BlendTreeNode_Clip(pxSlideClip));
-
-		// Set up transitions
-		// Idle -> Run (when speed > 0.1)
-		Flux_StateTransition xIdleToRun;
-		xIdleToRun.m_strTargetStateName = "Run";
-		xIdleToRun.m_fTransitionDuration = 0.2f;
-		Flux_TransitionCondition xSpeedCondition;
-		xSpeedCondition.m_strParameterName = "Speed";
-		xSpeedCondition.m_eCompareOp = Flux_TransitionCondition::CompareOp::Greater;
-		xSpeedCondition.m_fThreshold = 0.1f;
-		xIdleToRun.m_xConditions.PushBack(xSpeedCondition);
-		pxIdleState->AddTransition(xIdleToRun);
-
-		// Run -> Jump (on jump trigger)
-		// Run -> Slide (on slide trigger)
-		// Jump -> Run (when grounded)
-		// etc.
-
-		s_pxStateMachine->SetDefaultState("Idle");
+		// Each frame, just set parameters - AnimatorComponent handles the rest:
+		xAnimator.SetFloat("Speed", fCurrentSpeed);
+		if (bJumped)
+			xAnimator.SetTrigger("Jump");
 		*/
 
 		Reset();
@@ -193,27 +168,13 @@ public:
 		ApplyProceduralAnimation(fDt, xTransform);
 
 		/*
-		// In a real implementation:
-		s_pxStateMachine->GetParameters().SetFloat("Speed", fSpeed);
-		s_pxStateMachine->GetParameters().SetBool("IsGrounded", bGrounded);
-
-		if (eCharState == RunnerCharacterState::JUMPING && s_eCurrentState != RunnerAnimState::JUMP)
-		{
-			s_pxStateMachine->GetParameters().SetTrigger("Jump");
-		}
-		if (eCharState == RunnerCharacterState::SLIDING && s_eCurrentState != RunnerAnimState::SLIDE)
-		{
-			s_pxStateMachine->GetParameters().SetTrigger("Slide");
-		}
-
-		// Update state machine and get pose
-		Flux_SkeletonPose xPose;
-		s_pxStateMachine->Update(fDt, xPose, *pxMeshGeometry);
-
-		// Apply pose to skeleton instance
-		pxSkeletonInstance->ApplyPose(xPose);
-		pxSkeletonInstance->ComputeSkinningMatrices();
-		pxSkeletonInstance->UploadToGPU();
+		// In a real implementation with Zenith_AnimatorComponent:
+		// Just set parameters each frame - AnimatorComponent::OnUpdate handles everything else
+		xAnimator.SetFloat("Speed", fSpeed);
+		if (eCharState == RunnerCharacterState::JUMPING)
+			xAnimator.SetTrigger("Jump");
+		if (eCharState == RunnerCharacterState::SLIDING)
+			xAnimator.SetTrigger("Slide");
 		*/
 	}
 
@@ -321,7 +282,6 @@ private:
 	static inline float s_fStateTime = 0.0f;
 	static inline float s_fJumpPhase = 0.0f;
 
-	// In real implementation:
-	// static inline Flux_AnimationStateMachine* s_pxStateMachine = nullptr;
-	// static inline Flux_BlendTreeNode_BlendSpace1D* s_pxRunBlendSpace = nullptr;
+	// In real implementation with skeletal meshes:
+	// Use Zenith_AnimatorComponent on the entity (auto-discovers skeleton, auto-updates)
 };

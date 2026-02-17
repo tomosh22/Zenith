@@ -82,10 +82,11 @@ skinningMatrix = modelSpaceTransform * inverseBindPose
 High-level animation control using a state-based model (Flux_AnimationStateMachine.h/cpp).
 
 **Components:**
-- **States** (`Flux_AnimationState`): Named states with blend trees and outgoing transitions
+- **States** (`Flux_AnimationState`): Named states with blend trees, outgoing transitions, and optional sub-state machines
 - **Transitions** (`Flux_StateTransition`): Rules for changing states with conditions, duration, and priority
 - **Parameters** (`Flux_AnimationParameters`): Float, Int, Bool, and Trigger values used in transition conditions
 - **Conditions** (`Flux_TransitionCondition`): Comparisons (Greater, Less, Equal, etc.) against parameters
+- **Any-State Transitions**: Transitions that fire from any current state (checked before per-state transitions, skip self-loops)
 
 **Key Design Decisions:**
 
@@ -93,26 +94,61 @@ High-level animation control using a state-based model (Flux_AnimationStateMachi
    - Same transition being restarted every frame (causing transitions to never complete)
    - Lower priority transitions from interrupting higher priority ones
 
-2. **Trigger Consumption**: Trigger parameters are consumed (reset to false) when evaluated. This ensures one-shot transitions.
+2. **Any-State transitions checked first**: `CheckAnyStateTransitions()` runs before per-state `CheckTransitions()`. Self-loops are skipped.
 
-3. **Exit Time Transitions**: Transitions with `m_bHasExitTime = true` only fire after the source animation reaches `m_fExitTime` (normalized 0-1).
+3. **Trigger Consumption**: Trigger parameters are consumed (reset to false) when evaluated. This ensures one-shot transitions.
 
-4. **Priority Ordering**: Transitions are sorted by priority (highest first). When checking transitions, the first valid one wins.
+4. **Exit Time Transitions**: Transitions with `m_bHasExitTime = true` only fire after the source animation reaches `m_fExitTime` (normalized 0-1).
+
+5. **Priority Ordering**: Transitions are sorted by priority (highest first). When checking transitions, the first valid one wins.
+
+6. **CrossFade API**: `CrossFade(stateName, duration)` creates a synthetic transition bypassing conditions. No-ops if already in the target state.
 
 **Common Pitfall - Transition Restart Bug:**
 If transitions are checked during an active transition AND the transition condition is still true (e.g., Speed > 0.1 remains true), calling `StartTransition()` will restart the transition, resetting elapsed time. The fix is to only check transitions when not already transitioning.
+
+### AnimatorStateInfo (Flux_AnimatorStateInfo)
+Runtime state introspection struct (Unity's `GetCurrentAnimatorStateInfo()`):
+- `m_szStateName` - Current state name
+- `m_fNormalizedTime` - Progress [0-1], integer part = loop count
+- `m_bIsTransitioning` / `m_fTransitionProgress` - Transition state
+- `IsName(const char*)` - Name comparison
+
+### Sub-State Machines
+States can contain nested state machines via `Flux_AnimationState::CreateSubStateMachine()`. Child state machines share the parent's parameters via `SetSharedParameters()`. Entry starts at the child's default state.
+
+### Animation Layers (Flux_AnimationLayer)
+Multiple independent state machines composing poses:
+- Each layer has its own `Flux_AnimationStateMachine`, weight, and blend mode
+- **Override** (`LAYER_BLEND_OVERRIDE`): Replaces lower layers, optionally masked by `Flux_BoneMask`
+- **Additive** (`LAYER_BLEND_ADDITIVE`): Adds on top of lower layers
+- Layer 0 is the base; additional layers compose on top
+- Managed by `Flux_AnimationController::AddLayer()`, `GetLayer()`, `SetLayerWeight()`
+
+### Update Modes (Flux_AnimationUpdateMode)
+- `ANIMATION_UPDATE_NORMAL` - Uses scaled deltaTime
+- `ANIMATION_UPDATE_FIXED` - For physics-synced animation
+- `ANIMATION_UPDATE_UNSCALED` - For UI/pause menu animations
+
+### Callbacks
+State lifecycle hooks use function pointers + void* userdata (NOT std::function):
+```cpp
+using Flux_AnimStateCallback = void(*)(void* pUserData);
+using Flux_AnimStateUpdateCallback = void(*)(void* pUserData, float fDt);
+```
 
 ## File Structure
 
 ```
 MeshAnimation/
   Flux_AnimationClip.h/cpp           - Animation keyframe storage
-  Flux_AnimationController.h/cpp     - Playback control
-  Flux_AnimationStateMachine.h/cpp   - State machine for animation control
+  Flux_AnimationController.h/cpp     - Playback control (owns clips, state machine, IK, layers)
+  Flux_AnimationStateMachine.h/cpp   - State machine (states, transitions, any-state, sub-SM)
+  Flux_AnimationLayer.h/cpp          - Animation layer (weight, blend mode, avatar mask)
   Flux_SkeletonInstance.h/cpp        - Runtime skeleton state
-  Flux_BonePose.h/cpp                - Bone transform utilities
-  Flux_BlendTree.h/cpp               - Animation blending
-  Flux_InverseKinematics.h/cpp       - IK solving
+  Flux_BonePose.h/cpp                - Bone transform utilities (Blend, MaskedBlend, AdditiveBlend)
+  Flux_BlendTree.h/cpp               - Animation blending (Clip, 1D, 2D, Masked nodes)
+  Flux_InverseKinematics.h/cpp       - IK solving (FABRIK, CCD)
 ```
 
 ## Constants

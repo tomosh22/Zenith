@@ -22,7 +22,7 @@ JPH::PhysicsSystem* Zenith_Physics::s_pxPhysicsSystem = nullptr;
 double Zenith_Physics::s_fTimestepAccumulator = 0;
 Zenith_Physics::PhysicsContactListener Zenith_Physics::s_xContactListener;
 Zenith_Vector<Zenith_Physics::DeferredCollisionEvent> Zenith_Physics::s_xDeferredEvents;
-Zenith_Mutex Zenith_Physics::s_xEventQueueMutex;
+Zenith_Mutex_NoProfiling Zenith_Physics::s_xEventQueueMutex;
 uint32_t Zenith_Physics::s_uDroppedEventCount = 0;
 
 static bool g_bInitialised = false;
@@ -320,7 +320,7 @@ void QueueCollisionEventInternal(Zenith_EntityID xEntityID1, Zenith_EntityID xEn
 	xEvent.uEntityID2 = xEntityID2;
 	xEvent.eEventType = eEventType;
 
-	Zenith_ScopedMutexLock xLock(Zenith_Physics::s_xEventQueueMutex);
+	Zenith_ScopedMutexLock_T<Zenith_Mutex_NoProfiling> xLock(Zenith_Physics::s_xEventQueueMutex);
 	if (Zenith_Physics::s_xDeferredEvents.GetSize() >= uMAX_DEFERRED_COLLISION_EVENTS)
 	{
 		Zenith_Physics::s_uDroppedEventCount++;
@@ -364,7 +364,7 @@ void Zenith_Physics::ProcessDeferredCollisionEvents()
 	// Swap out the events to minimize lock time
 	Zenith_Vector<DeferredCollisionEvent> xEventsToProcess;
 	{
-		Zenith_ScopedMutexLock xLock(s_xEventQueueMutex);
+		Zenith_ScopedMutexLock_T<Zenith_Mutex_NoProfiling> xLock(s_xEventQueueMutex);
 		xEventsToProcess = std::move(s_xDeferredEvents);
 	}
 
