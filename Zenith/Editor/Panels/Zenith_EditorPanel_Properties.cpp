@@ -3,6 +3,7 @@
 #ifdef ZENITH_TOOLS
 
 #include "Zenith_EditorPanel_Properties.h"
+#include "Editor/Zenith_Editor.h"
 #include "EntityComponent/Zenith_ComponentRegistry.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneManager.h"
@@ -105,22 +106,7 @@ void Render(Zenith_Entity* pxSelectedEntity, Zenith_EntityID uPrimarySelectedEnt
 					bAnyAvailable = true;
 					if (ImGui::MenuItem(xEntry.m_strDisplayName.c_str()))
 					{
-						Zenith_Log(LOG_CATEGORY_EDITOR, "[Editor] User selected to add component: %s to Entity %u",
-							xEntry.m_strDisplayName.c_str(), uPrimarySelectedEntityID);
-
-						// Add the component through the registry
-						bool bSuccess = xRegistry.TryAddComponent(i, *pxSelectedEntity);
-
-						if (bSuccess)
-						{
-							Zenith_Log(LOG_CATEGORY_EDITOR, "[Editor] Successfully added %s component to Entity %u",
-								xEntry.m_strDisplayName.c_str(), uPrimarySelectedEntityID);
-						}
-						else
-						{
-							Zenith_Log(LOG_CATEGORY_EDITOR, "[Editor] ERROR: Failed to add %s component to Entity %u",
-								xEntry.m_strDisplayName.c_str(), uPrimarySelectedEntityID);
-						}
+						Zenith_Editor::AddComponentToSelected(xEntry.m_strDisplayName.c_str());
 					}
 				}
 			}

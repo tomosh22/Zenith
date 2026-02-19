@@ -183,8 +183,8 @@ All constants in `Flux_TerrainConfig.h`:
 - `MAX_UPLOADS_PER_FRAME = 8`
 - `MAX_EVICTIONS_PER_FRAME = 16`
 
-**Vertex Format:**
-- `VERTEX_STRIDE_BYTES = 60` (Position + UV + Normal + Tangent + Bitangent + MaterialLerp)
+**Vertex Format (28 bytes, packed):**
+- `VERTEX_STRIDE_BYTES = 28` (FLOAT3 Position + HALF2 UV + SNORM10:10:10:2 Normal + SNORM10:10:10:2 Tangent+BitangentSign + FLOAT MaterialLerp)
 
 ## Important Constraints
 

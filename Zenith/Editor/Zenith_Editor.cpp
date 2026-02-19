@@ -22,6 +22,7 @@ void Zenith_EditorAddLogMessage(const char* szMessage, int eLevel, Zenith_LogCat
 	Zenith_Editor::AddLogMessage(szMessage, xLevel, eCategory);
 }
 
+#include "Zenith_EditorAutomation.h"
 #include "Zenith_SelectionSystem.h"
 #include "Zenith_Gizmo.h"
 #include "Zenith_UndoSystem.h"
@@ -653,8 +654,20 @@ bool Zenith_Editor::Update()
 		}
 	}
 
+	// Execute one automation step per frame during scene generation.
+	// Runs here (after pending ops, before rendering) so each step gets a full
+	// frame tick — matching real editor behaviour (one action = one mouse click).
+	// Returns early to skip editor camera sync and other editor logic — those
+	// should only fire after automation completes and the real scene is loaded.
+	if (Zenith_EditorAutomation::IsRunning())
+	{
+		Zenith_EditorAutomation::ExecuteNextStep();
+		return true;
+	}
+
 	// One-time initialization: copy game camera position to editor camera on first frame
-	// This happens after the game's OnEnter has set up the scene camera
+	// This happens after the game's OnEnter has set up the scene camera.
+	// Placed after automation check so the sync only fires once automation is done.
 	static bool s_bFirstFrameAfterInit = true;
 	if (s_bFirstFrameAfterInit && s_eEditorMode == EditorMode::Stopped)
 	{
@@ -1672,6 +1685,175 @@ Zenith_Entity* Zenith_Editor::GetSelectedEntity()
 	static Zenith_Entity s_xSelectedEntity;
 	s_xSelectedEntity = pxSceneData->GetEntity(s_uPrimarySelectedEntityID);
 	return &s_xSelectedEntity;
+}
+
+//------------------------------------------------------------------------------
+// Editor Operations (shared between ImGui panels and automation)
+//------------------------------------------------------------------------------
+
+Zenith_EntityID Zenith_Editor::CreateEntity(const char* szName)
+{
+	Zenith_Scene xScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxData = Zenith_SceneManager::GetSceneData(xScene);
+	Zenith_Assert(pxData, "No active scene data");
+
+	Zenith_Entity xEntity(pxData, szName);
+	xEntity.SetTransient(false);
+	Zenith_EntityID uID = xEntity.GetEntityID();
+	SelectEntity(uID);
+
+	Zenith_Log(LOG_CATEGORY_EDITOR, "[EditorOp] Created entity '%s' (ID: %u)", szName, uID);
+	return uID;
+}
+
+void Zenith_Editor::SelectEntityByName(const char* szName)
+{
+	Zenith_Scene xScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxData = Zenith_SceneManager::GetSceneData(xScene);
+	Zenith_Assert(pxData, "No active scene data");
+
+	Zenith_Entity xEntity = pxData->FindEntityByName(szName);
+	Zenith_Assert(xEntity.IsValid(), "Entity not found: %s", szName);
+	SelectEntity(xEntity.GetEntityID());
+
+	Zenith_Log(LOG_CATEGORY_EDITOR, "[EditorOp] Selected entity '%s'", szName);
+}
+
+void Zenith_Editor::SetSelectedEntityTransient(bool bTransient)
+{
+	Zenith_Entity* pxEntity = GetSelectedEntity();
+	Zenith_Assert(pxEntity, "No entity selected");
+	pxEntity->SetTransient(bTransient);
+}
+
+bool Zenith_Editor::AddComponentToSelected(const char* szDisplayName)
+{
+	Zenith_Entity* pxEntity = GetSelectedEntity();
+	Zenith_Assert(pxEntity, "No entity selected");
+
+	Zenith_ComponentRegistry& xRegistry = Zenith_ComponentRegistry::Get();
+	const auto& xEntries = xRegistry.GetEntries();
+
+	for (size_t i = 0; i < xEntries.size(); ++i)
+	{
+		if (xEntries[i].m_strDisplayName == szDisplayName)
+		{
+			bool bSuccess = xRegistry.TryAddComponent(i, *pxEntity);
+			if (bSuccess)
+			{
+				Zenith_Log(LOG_CATEGORY_EDITOR, "[EditorOp] Added component '%s' to entity %u", szDisplayName, pxEntity->GetEntityID());
+			}
+			return bSuccess;
+		}
+	}
+
+	Zenith_Error(LOG_CATEGORY_EDITOR, "[EditorOp] Component '%s' not found in registry", szDisplayName);
+	return false;
+}
+
+void Zenith_Editor::SetSelectedAsMainCamera()
+{
+	Zenith_Entity* pxEntity = GetSelectedEntity();
+	Zenith_Assert(pxEntity, "No entity selected");
+
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneDataForEntity(pxEntity->GetEntityID());
+	Zenith_Assert(pxSceneData, "Entity not in any scene");
+	if (!pxSceneData)
+	{
+		return;
+	}
+
+	pxSceneData->SetMainCameraEntity(pxEntity->GetEntityID());
+	Zenith_Log(LOG_CATEGORY_EDITOR, "[EditorOp] Set entity '%s' as main camera", pxEntity->GetName().c_str());
+}
+
+void Zenith_Editor::SetBehaviourOnSelected(const char* szBehaviourName)
+{
+	Zenith_Entity* pxEntity = GetSelectedEntity();
+	Zenith_Assert(pxEntity, "No entity selected");
+	Zenith_Assert(pxEntity->HasComponent<Zenith_ScriptComponent>(), "Selected entity has no ScriptComponent");
+
+	Zenith_ScriptComponent& xScript = pxEntity->GetComponent<Zenith_ScriptComponent>();
+
+	// Delete existing behaviour if any
+	if (xScript.GetBehaviourRaw())
+	{
+		xScript.GetBehaviourRaw()->OnDestroy();
+		delete xScript.GetBehaviourRaw();
+		xScript.SetBehaviourRaw(nullptr);
+	}
+
+	// Create new behaviour by name
+	xScript.SetBehaviourRaw(Zenith_BehaviourRegistry::Get().CreateBehaviour(szBehaviourName, *pxEntity));
+	Zenith_Assert(xScript.GetBehaviourRaw(), "Failed to create behaviour: %s", szBehaviourName);
+
+	xScript.SetBehaviourParentEntity(*pxEntity);
+	xScript.GetBehaviourRaw()->OnAwake();
+
+	// Mark entity as awoken to prevent duplicate dispatch in Scene::Update()
+	if (pxEntity->IsValid())
+	{
+		Zenith_SceneData* pxSceneData = pxEntity->GetSceneData();
+		if (pxSceneData)
+		{
+			pxSceneData->MarkEntityAwoken(pxEntity->GetEntityID());
+		}
+	}
+
+	Zenith_Log(LOG_CATEGORY_EDITOR, "[EditorOp] Set behaviour '%s' on entity '%s'", szBehaviourName, pxEntity->GetName().c_str());
+}
+
+void Zenith_Editor::SetBehaviourForSerializationOnSelected(const char* szBehaviourName)
+{
+	Zenith_Entity* pxEntity = GetSelectedEntity();
+	Zenith_Assert(pxEntity, "No entity selected");
+	Zenith_Assert(pxEntity->HasComponent<Zenith_ScriptComponent>(), "Selected entity has no ScriptComponent");
+
+	Zenith_ScriptComponent& xScript = pxEntity->GetComponent<Zenith_ScriptComponent>();
+
+	// Delete existing behaviour if any (no lifecycle hooks — serialization mode)
+	if (xScript.GetBehaviourRaw())
+	{
+		delete xScript.GetBehaviourRaw();
+		xScript.SetBehaviourRaw(nullptr);
+	}
+
+	// Create new behaviour by name — no OnAwake, matching SetBehaviourForSerialization<T>()
+	xScript.SetBehaviourRaw(Zenith_BehaviourRegistry::Get().CreateBehaviour(szBehaviourName, *pxEntity));
+	Zenith_Assert(xScript.GetBehaviourRaw(), "Failed to create behaviour: %s", szBehaviourName);
+
+	xScript.SetBehaviourParentEntity(*pxEntity);
+	// OnAwake is NOT called — lifecycle hooks will be dispatched when Play mode is entered
+
+	Zenith_Log(LOG_CATEGORY_EDITOR, "[EditorOp] Set behaviour for serialization '%s' on entity '%s'", szBehaviourName, pxEntity->GetName().c_str());
+}
+
+void Zenith_Editor::CreateNewScene(const char* szName)
+{
+	Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene(szName);
+	Zenith_SceneManager::SetActiveScene(xScene);
+	ClearSelection();
+
+	Zenith_Log(LOG_CATEGORY_EDITOR, "[EditorOp] Created scene '%s'", szName);
+}
+
+void Zenith_Editor::SaveActiveScene(const char* szPath)
+{
+	Zenith_Scene xScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxData = Zenith_SceneManager::GetSceneData(xScene);
+	Zenith_Assert(pxData, "No active scene data");
+
+	pxData->SaveToFile(szPath);
+	Zenith_Log(LOG_CATEGORY_EDITOR, "[EditorOp] Saved scene to '%s'", szPath);
+}
+
+void Zenith_Editor::UnloadActiveScene()
+{
+	ClearSelection();
+	Zenith_Scene xScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneManager::UnloadScene(xScene);
+
+	Zenith_Log(LOG_CATEGORY_EDITOR, "[EditorOp] Unloaded active scene");
 }
 
 //------------------------------------------------------------------------------

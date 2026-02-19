@@ -1221,6 +1221,8 @@ vk::Format Zenith_Vulkan::ShaderDataTypeToVulkanFormat(ShaderDataType t)
 	case SHADER_DATA_TYPE_UINT2:	return vk::Format::eR32G32Uint;
 	case SHADER_DATA_TYPE_UINT3:	return vk::Format::eR32G32B32Uint;
 	case SHADER_DATA_TYPE_UINT4:	return vk::Format::eR32G32B32A32Uint;
+	case SHADER_DATA_TYPE_HALF2:				return vk::Format::eR16G16Sfloat;
+	case SHADER_DATA_TYPE_SNORM10_10_10_2:		return vk::Format::eA2B10G10R10SnormPack32;
 	default:
 		Zenith_Assert(false, "Unknown shader data type");
 		return vk::Format::eUndefined;

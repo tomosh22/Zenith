@@ -5,6 +5,7 @@
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "Core/Zenith_GraphicsOptions.h"
 #include "DebugVariables/Zenith_DebugVariables.h"
+#include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneManager.h"
 #include "Flux/Flux.h"
 #include "Flux/Flux_Graphics.h"
@@ -15,6 +16,7 @@
 #include "Flux/Skybox/Flux_Skybox.h"
 #ifdef ZENITH_TOOLS
 #include "Editor/Zenith_Editor.h"
+#include "Editor/Zenith_EditorAutomation.h"
 #endif
 #include "Physics/Zenith_Physics.h"
 #include "Profiling/Zenith_Profiling.h"
@@ -32,9 +34,13 @@ extern void GenerateTestAssets();
 
 extern void Project_SetGraphicsOptions(Zenith_GraphicsOptions& xOptions);
 extern void Project_RegisterScriptBehaviours();
-extern void Project_CreateScenes();
-extern void Project_LoadInitialScene();
 extern void Project_Shutdown();
+
+#ifdef ZENITH_TOOLS
+extern void Project_InitializeResources();
+extern void Project_RegisterEditorAutomationSteps();
+#endif
+extern void Project_LoadInitialScene();
 
 static Zenith_GraphicsOptions s_xGraphicsOptions;
 
@@ -120,18 +126,28 @@ void Zenith_Core::Zenith_Init()
 	// This ensures tests don't corrupt game entities - scene loads fresh after tests
 	Zenith_UnitTests::RunAllTests();
 
-	// Create and register all project scenes (writes .zscen files, populates build index registry)
+#ifdef ZENITH_TOOLS
+	// Initialize game-specific resources (geometry, materials, prefabs, particle configs)
+	// Must be inside BeginFrame/EndFrame for GPU resource allocation
 	Flux_MemoryManager::BeginFrame();
-	Project_CreateScenes();
+	Project_InitializeResources();
 	Flux_MemoryManager::EndFrame(false);
 
+	// Register automation steps and begin execution (one step per frame in main loop)
+	Project_RegisterEditorAutomationSteps();
+	Zenith_EditorAutomation::Begin();
+#else
+	// Non-tools: load pre-generated scene files
+	// Run a tools build first to generate .zscen files
 	Flux_MemoryManager::BeginFrame();
-	//#TO_TODO: Flux_Graphics::UploadFrameConstants crashes if we don't do this because there is no game camera
 	Zenith_SceneManager::SetInitialSceneLoadCallback(&Project_LoadInitialScene);
 	Zenith_SceneManager::SetLoadingScene(true);
 	Project_LoadInitialScene();
 	Zenith_SceneManager::SetLoadingScene(false);
 	Flux_MemoryManager::EndFrame(false);
+	Zenith_Assert(Zenith_SceneManager::GetActiveScene().IsValid(),
+		"No scene loaded. Run a ZENITH_TOOLS build first to generate .zscen files.");
+#endif
 
 	Zenith_Core::g_xLastFrameTime = std::chrono::high_resolution_clock::now();
 }

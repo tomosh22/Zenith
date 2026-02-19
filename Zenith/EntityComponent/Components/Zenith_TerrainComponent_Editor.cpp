@@ -11,6 +11,7 @@
 #include "Editor/Zenith_Editor_MaterialUI.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
+#include "Flux/Terrain/Flux_Terrain.h"
 #include "Flux/Terrain/Flux_TerrainStreamingManager.h"
 #include <filesystem>
 
@@ -23,7 +24,7 @@
 #pragma comment(lib, "Comdlg32.lib")
 
 // Terrain export functionality (extern declaration to avoid include path issues)
-extern void ExportHeightmapFromPaths(const std::string& strHeightmapPath, const std::string& strMaterialPath, const std::string& strOutputDir);
+extern void ExportHeightmapFromPaths(const std::string& strHeightmapPath, const std::string& strOutputDir);
 
 //=============================================================================
 // TerrainComponent Editor UI
@@ -34,7 +35,6 @@ extern void ExportHeightmapFromPaths(const std::string& strHeightmapPath, const 
 
 // Static state for terrain creation UI
 static char s_szHeightmapPath[512] = "";
-static char s_szMaterialPath[512] = "";
 static bool s_bTerrainExportInProgress = false;
 static std::string s_strTerrainExportStatus = "";
 
@@ -77,7 +77,7 @@ void Zenith_TerrainComponent::RenderPropertiesPanel()
 		{
 			if (ImGui::TreeNode("Create Terrain From Heightmap"))
 			{
-				ImGui::TextWrapped("Specify heightmap and material interpolation textures to generate terrain geometry. Use .ztxtr files (exported from .tif via content browser) or .tif files directly. Textures should be 4096x4096 single-channel (grayscale).");
+				ImGui::TextWrapped("Specify a heightmap texture to generate terrain geometry. Use .ztxtr files (exported from .tif via content browser) or .tif files directly. Textures should be 4096x4096 single-channel (grayscale).");
 				ImGui::Separator();
 
 				// Heightmap path input
@@ -110,36 +110,6 @@ void Zenith_TerrainComponent::RenderPropertiesPanel()
 					}
 				}
 
-				// Material path input
-				ImGui::Text("Material Interpolation Texture:");
-				ImGui::PushItemWidth(300);
-				ImGui::InputText("##MaterialPath", s_szMaterialPath, sizeof(s_szMaterialPath), ImGuiInputTextFlags_ReadOnly);
-				ImGui::PopItemWidth();
-
-				// Drag-drop target for material interpolation texture
-				if (ImGui::BeginDragDropTarget())
-				{
-					if (const ImGuiPayload* pPayload = ImGui::AcceptDragDropPayload(DRAGDROP_PAYLOAD_TEXTURE))
-					{
-						const DragDropFilePayload* pFilePayload =
-							static_cast<const DragDropFilePayload*>(pPayload->Data);
-						strncpy_s(s_szMaterialPath, sizeof(s_szMaterialPath), pFilePayload->m_szFilePath, _TRUNCATE);
-						Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Dropped material texture: %s", s_szMaterialPath);
-					}
-					ImGui::EndDragDropTarget();
-				}
-
-				ImGui::SameLine();
-				if (ImGui::Button("Browse...##Material"))
-				{
-					std::string strPath = ShowTifOpenFileDialog();
-					if (!strPath.empty())
-					{
-						strncpy_s(s_szMaterialPath, sizeof(s_szMaterialPath), strPath.c_str(), _TRUNCATE);
-						Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Selected material texture: %s", s_szMaterialPath);
-					}
-				}
-
 				ImGui::Separator();
 
 				// Output directory info
@@ -147,7 +117,7 @@ void Zenith_TerrainComponent::RenderPropertiesPanel()
 				ImGui::Text("Output Directory: %s", strOutputDir.c_str());
 
 				// Create terrain button
-				bool bCanCreate = strlen(s_szHeightmapPath) > 0 && strlen(s_szMaterialPath) > 0 && !s_bTerrainExportInProgress;
+				bool bCanCreate = strlen(s_szHeightmapPath) > 0 && !s_bTerrainExportInProgress;
 
 				if (!bCanCreate)
 					ImGui::BeginDisabled();
@@ -159,11 +129,10 @@ void Zenith_TerrainComponent::RenderPropertiesPanel()
 
 					Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Starting terrain export...");
 					Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent]   Heightmap: %s", s_szHeightmapPath);
-					Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent]   Material: %s", s_szMaterialPath);
 					Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent]   Output: %s", strOutputDir.c_str());
 
 					// Perform the terrain export
-					ExportHeightmapFromPaths(s_szHeightmapPath, s_szMaterialPath, strOutputDir);
+					ExportHeightmapFromPaths(s_szHeightmapPath, strOutputDir);
 
 					s_strTerrainExportStatus = "Export complete. Initializing terrain...";
 					Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Export complete. Initializing terrain...");
@@ -182,8 +151,8 @@ void Zenith_TerrainComponent::RenderPropertiesPanel()
 					{
 						pxMat1->SetName(strEntityName + "_Terrain_Mat1");
 					}
-					m_xMaterial0.Set(pxMat0);
-					m_xMaterial1.Set(pxMat1);
+					m_axMaterials[0].Set(pxMat0);
+					m_axMaterials[1].Set(pxMat1);
 
 					// Load physics geometry (same as constructor/deserialization)
 					if (m_pxPhysicsGeometry == nullptr)
@@ -243,7 +212,7 @@ void Zenith_TerrainComponent::RenderPropertiesPanel()
 					}
 
 					// Initialize render resources (LOW LOD meshes, buffers, culling)
-					InitializeRenderResources(*m_xMaterial0.Get(), *m_xMaterial1.Get());
+					InitializeRenderResources();
 
 					s_bTerrainExportInProgress = false;
 					s_strTerrainExportStatus = "Terrain created successfully!";
@@ -318,36 +287,6 @@ void Zenith_TerrainComponent::RenderPropertiesPanel()
 					}
 				}
 
-				// Material path input
-				ImGui::Text("New Material Interpolation Texture:");
-				ImGui::PushItemWidth(300);
-				ImGui::InputText("##RegenMaterialPath", s_szMaterialPath, sizeof(s_szMaterialPath), ImGuiInputTextFlags_ReadOnly);
-				ImGui::PopItemWidth();
-
-				// Drag-drop target for material interpolation texture
-				if (ImGui::BeginDragDropTarget())
-				{
-					if (const ImGuiPayload* pPayload = ImGui::AcceptDragDropPayload(DRAGDROP_PAYLOAD_TEXTURE))
-					{
-						const DragDropFilePayload* pFilePayload =
-							static_cast<const DragDropFilePayload*>(pPayload->Data);
-						strncpy_s(s_szMaterialPath, sizeof(s_szMaterialPath), pFilePayload->m_szFilePath, _TRUNCATE);
-						Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Dropped new material texture: %s", s_szMaterialPath);
-					}
-					ImGui::EndDragDropTarget();
-				}
-
-				ImGui::SameLine();
-				if (ImGui::Button("Browse...##RegenMaterial"))
-				{
-					std::string strPath = ShowTifOpenFileDialog();
-					if (!strPath.empty())
-					{
-						strncpy_s(s_szMaterialPath, sizeof(s_szMaterialPath), strPath.c_str(), _TRUNCATE);
-						Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Selected new material texture: %s", s_szMaterialPath);
-					}
-				}
-
 				ImGui::Separator();
 
 				// Output directory info
@@ -355,7 +294,7 @@ void Zenith_TerrainComponent::RenderPropertiesPanel()
 				ImGui::Text("Output Directory: %s", strOutputDir.c_str());
 
 				// Regenerate terrain button
-				bool bCanRegenerate = strlen(s_szHeightmapPath) > 0 && strlen(s_szMaterialPath) > 0 && !s_bTerrainExportInProgress;
+				bool bCanRegenerate = strlen(s_szHeightmapPath) > 0 && !s_bTerrainExportInProgress;
 
 				if (!bCanRegenerate)
 					ImGui::BeginDisabled();
@@ -417,10 +356,9 @@ void Zenith_TerrainComponent::RenderPropertiesPanel()
 					s_strTerrainExportStatus = "Exporting new terrain meshes...";
 					Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Exporting new terrain...");
 					Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent]   Heightmap: %s", s_szHeightmapPath);
-					Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent]   Material: %s", s_szMaterialPath);
 					Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent]   Output: %s", strOutputDir.c_str());
 
-					ExportHeightmapFromPaths(s_szHeightmapPath, s_szMaterialPath, strOutputDir);
+					ExportHeightmapFromPaths(s_szHeightmapPath, strOutputDir);
 
 					// ========== Step 4: Reload physics geometry ==========
 					s_strTerrainExportStatus = "Loading physics geometry...";
@@ -431,31 +369,23 @@ void Zenith_TerrainComponent::RenderPropertiesPanel()
 					s_strTerrainExportStatus = "Initializing render resources...";
 					Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Reinitializing render resources...");
 
-					// Use existing materials or create new ones if needed
-					if (!m_xMaterial0.Get())
+					// Ensure all material slots are populated
 					{
 						std::string strEntityName = m_xParentEntity.GetName().empty() ?
 							("Entity_" + std::to_string(m_xParentEntity.GetEntityID().m_uIndex)) : m_xParentEntity.GetName();
-						Zenith_MaterialAsset* pxMat0 = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
-						if (pxMat0)
+						for (u_int u = 0; u < TERRAIN_MATERIAL_COUNT; u++)
 						{
-							pxMat0->SetName(strEntityName + "_Terrain_Mat0");
+							if (!m_axMaterials[u].Get())
+							{
+								Zenith_MaterialAsset* pxMat = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
+								if (pxMat)
+									pxMat->SetName(strEntityName + "_Terrain_Mat" + std::to_string(u));
+								m_axMaterials[u].Set(pxMat);
+							}
 						}
-						m_xMaterial0.Set(pxMat0);
-					}
-					if (!m_xMaterial1.Get())
-					{
-						std::string strEntityName = m_xParentEntity.GetName().empty() ?
-							("Entity_" + std::to_string(m_xParentEntity.GetEntityID().m_uIndex)) : m_xParentEntity.GetName();
-						Zenith_MaterialAsset* pxMat1 = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
-						if (pxMat1)
-						{
-							pxMat1->SetName(strEntityName + "_Terrain_Mat1");
-						}
-						m_xMaterial1.Set(pxMat1);
 					}
 
-					InitializeRenderResources(*m_xMaterial0.Get(), *m_xMaterial1.Get());
+					InitializeRenderResources();
 
 					s_bTerrainExportInProgress = false;
 					s_strTerrainExportStatus = "Terrain regenerated successfully!";
@@ -505,54 +435,136 @@ void Zenith_TerrainComponent::RenderPropertiesPanel()
 			ImGui::TreePop();
 		}
 
+		// ========== Debug Visualization Section ==========
+		if (ImGui::TreeNode("Debug Visualization"))
+		{
+			// Visualization mode combo
+			static const char* aszDebugModeNames[] = {
+				"Off",
+				"LOD Level",
+				"World Normals",
+				"UVs",
+				"Material Blend",
+				"Roughness",
+				"Metallic",
+				"Occlusion",
+				"World Position",
+				"Chunk Grid",
+				"Tangent",
+				"Bitangent Sign"
+			};
+			u_int& uDebugMode = Flux_Terrain::GetDebugMode();
+			int iDebugMode = static_cast<int>(uDebugMode);
+			if (ImGui::Combo("Visualization Mode", &iDebugMode, aszDebugModeNames, IM_ARRAYSIZE(aszDebugModeNames)))
+			{
+				uDebugMode = static_cast<u_int>(iDebugMode);
+			}
+
+			// Wireframe toggle
+			bool& bWireframe = Flux_Terrain::GetWireframeMode();
+			ImGui::Checkbox("Wireframe", &bWireframe);
+
+			ImGui::Separator();
+
+			// Streaming statistics
+			ImGui::Text("Streaming Statistics");
+			const Flux_TerrainStreamingManager::StreamingStats& xStats = Flux_TerrainStreamingManager::GetStats();
+
+			ImGui::Text("HIGH LOD Chunks: %u / %u", xStats.m_uHighLODChunksResident, TOTAL_CHUNKS);
+			ImGui::Text("Streams This Frame: %u", xStats.m_uStreamsThisFrame);
+			ImGui::Text("Evictions This Frame: %u", xStats.m_uEvictionsThisFrame);
+
+			ImGui::Separator();
+
+			// Vertex buffer usage
+			float fVertexUsage = xStats.m_uVertexBufferTotalMB > 0
+				? static_cast<float>(xStats.m_uVertexBufferUsedMB) / static_cast<float>(xStats.m_uVertexBufferTotalMB)
+				: 0.0f;
+			char szVertexLabel[64];
+			snprintf(szVertexLabel, sizeof(szVertexLabel), "Vertex Buffer: %u / %u MB", xStats.m_uVertexBufferUsedMB, xStats.m_uVertexBufferTotalMB);
+			ImGui::ProgressBar(fVertexUsage, ImVec2(-1, 0), szVertexLabel);
+			ImGui::Text("Vertex Fragments: %u", xStats.m_uVertexFragments);
+
+			// Index buffer usage
+			float fIndexUsage = xStats.m_uIndexBufferTotalMB > 0
+				? static_cast<float>(xStats.m_uIndexBufferUsedMB) / static_cast<float>(xStats.m_uIndexBufferTotalMB)
+				: 0.0f;
+			char szIndexLabel[64];
+			snprintf(szIndexLabel, sizeof(szIndexLabel), "Index Buffer: %u / %u MB", xStats.m_uIndexBufferUsedMB, xStats.m_uIndexBufferTotalMB);
+			ImGui::ProgressBar(fIndexUsage, ImVec2(-1, 0), szIndexLabel);
+			ImGui::Text("Index Fragments: %u", xStats.m_uIndexFragments);
+
+			ImGui::TreePop();
+		}
+
 		ImGui::Separator();
 
-		// Material 0 editing (full material system)
-		Zenith_MaterialAsset* pxMat0 = m_xMaterial0.Get();
-		if (pxMat0)
+		// ========== Material Palette (4 materials) ==========
+		static const char* aszMaterialNames[] = { "Material 0", "Material 1", "Material 2", "Material 3" };
+		for (u_int u = 0; u < TERRAIN_MATERIAL_COUNT; u++)
 		{
-			if (ImGui::TreeNode("Material 0 (Base)"))
+			Zenith_MaterialAsset* pxMat = m_axMaterials[u].Get();
+			if (pxMat)
 			{
-				ImGui::Text("Name: %s", pxMat0->GetName().c_str());
+				char szLabel[64];
+				snprintf(szLabel, sizeof(szLabel), "%s##TerrainMat%u", aszMaterialNames[u], u);
+				if (ImGui::TreeNode(szLabel))
+				{
+					ImGui::Text("Name: %s", pxMat->GetName().c_str());
 
-				// Full material properties (same as static meshes)
-				Zenith_Editor_MaterialUI::RenderMaterialProperties(pxMat0, "TerrainMat0");
+					char szImGuiId[32];
+					snprintf(szImGuiId, sizeof(szImGuiId), "TerrainMat%u", u);
+					Zenith_Editor_MaterialUI::RenderMaterialProperties(pxMat, szImGuiId);
 
-				// Texture slots
-				ImGui::Separator();
-				ImGui::Text("Textures:");
-				Zenith_Editor_MaterialUI::RenderAllTextureSlots(*pxMat0, false);
+					ImGui::Separator();
+					ImGui::Text("Textures:");
+					Zenith_Editor_MaterialUI::RenderAllTextureSlots(*pxMat, false);
 
-				ImGui::TreePop();
+					ImGui::TreePop();
+				}
+			}
+			else
+			{
+				ImGui::TextDisabled("%s: (not set)", aszMaterialNames[u]);
 			}
 		}
-		else
-		{
-			ImGui::TextDisabled("Material 0: (not set)");
-		}
 
-		// Material 1 editing (full material system)
-		Zenith_MaterialAsset* pxMat1 = m_xMaterial1.Get();
-		if (pxMat1)
+		// ========== Splatmap Texture ==========
+		ImGui::Separator();
+		if (ImGui::TreeNode("Splatmap Texture"))
 		{
-			if (ImGui::TreeNode("Material 1 (Blend)"))
+			Zenith_TextureAsset* pxSplatmap = m_xSplatmap.Get();
+			if (pxSplatmap)
 			{
-				ImGui::Text("Name: %s", pxMat1->GetName().c_str());
-
-				// Full material properties (same as static meshes)
-				Zenith_Editor_MaterialUI::RenderMaterialProperties(pxMat1, "TerrainMat1");
-
-				// Texture slots
-				ImGui::Separator();
-				ImGui::Text("Textures:");
-				Zenith_Editor_MaterialUI::RenderAllTextureSlots(*pxMat1, false);
-
-				ImGui::TreePop();
+				Flux_ImGuiTextureHandle xSplatmapHandle = Zenith_Editor_MaterialUI::GetOrCreateTexturePreviewHandle(pxSplatmap);
+				if (xSplatmapHandle.IsValid())
+				{
+					ImGui::Image(
+						(ImTextureID)Flux_ImGuiIntegration::GetImTextureID(xSplatmapHandle),
+						ImVec2(128, 128)
+					);
+				}
+				ImGui::TextWrapped("%s", m_xSplatmap.GetPath().c_str());
 			}
-		}
-		else
-		{
-			ImGui::TextDisabled("Material 1: (not set)");
+			else
+			{
+				ImGui::TextDisabled("(not set)");
+			}
+
+			// Drag-drop target for splatmap
+			if (ImGui::BeginDragDropTarget())
+			{
+				if (const ImGuiPayload* pPayload = ImGui::AcceptDragDropPayload(DRAGDROP_PAYLOAD_TEXTURE))
+				{
+					const DragDropFilePayload* pFilePayload =
+						static_cast<const DragDropFilePayload*>(pPayload->Data);
+					m_xSplatmap.SetPath(pFilePayload->m_szFilePath);
+					Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Set splatmap: %s", pFilePayload->m_szFilePath);
+				}
+				ImGui::EndDragDropTarget();
+			}
+
+			ImGui::TreePop();
 		}
 	}
 }

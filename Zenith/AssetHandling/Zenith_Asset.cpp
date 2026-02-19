@@ -15,7 +15,7 @@ uint32_t Zenith_Asset::AddRef()
 uint32_t Zenith_Asset::Release()
 {
 	uint32_t uPrev = m_uRefCount.fetch_sub(1, std::memory_order_acq_rel);
-	ZENITH_ASSERT(uPrev > 0, "Release called on asset with 0 ref count");
+	Zenith_Assert(uPrev > 0, "Release called on asset with 0 ref count");
 	return uPrev - 1;
 }
 

@@ -392,9 +392,7 @@ void Render(Zenith_EntityID& uGameCameraEntityID)
 
 			if (ImGui::MenuItem("Create Empty Entity"))
 			{
-				Zenith_Entity xNewEntity(pxSceneData, "New Entity");
-				xNewEntity.SetTransient(false);
-				Zenith_Editor::SelectEntity(xNewEntity.GetEntityID());
+				Zenith_Editor::CreateEntity("New Entity");
 			}
 
 			if (!bIsPersistentScene)
@@ -500,14 +498,7 @@ end_scene_loop:
 	ImGui::Separator();
 	if (ImGui::Button("+ Create Entity"))
 	{
-		Zenith_Scene xCreateScene = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxCreateData = Zenith_SceneManager::GetSceneData(xCreateScene);
-		if (pxCreateData)
-		{
-			Zenith_Entity xNewEntity(pxCreateData, "New Entity");
-			xNewEntity.SetTransient(false);
-			Zenith_Editor::SelectEntity(xNewEntity.GetEntityID());
-		}
+		Zenith_Editor::CreateEntity("New Entity");
 	}
 
 	ImGui::End();

@@ -6,6 +6,10 @@
 #include "Zenith_OS_Include.h"
 #include "DataStream/Zenith_DataStream.h"
 
+#ifdef ZENITH_TOOLS
+#include "Editor/Zenith_Editor.h"
+#endif
+
 ZENITH_REGISTER_COMPONENT(Zenith_CameraComponent, "Camera")
 
 Zenith_CameraComponent::Zenith_CameraComponent(Zenith_Entity& xParentEntity)
@@ -191,3 +195,115 @@ void Zenith_CameraComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 
 	// m_xParentEntity will be set by the entity deserialization system
 }
+
+#ifdef ZENITH_TOOLS
+void Zenith_CameraComponent::RenderPropertiesPanel()
+{
+	if (ImGui::CollapsingHeader("Camera", ImGuiTreeNodeFlags_DefaultOpen))
+	{
+		// Camera type selection
+		const char* szCameraTypes[] = { "Perspective", "Orthographic" };
+		int iCameraType = static_cast<int>(m_eType);
+		if (ImGui::Combo("Camera Type", &iCameraType, szCameraTypes, 2))
+		{
+			m_eType = static_cast<CameraType>(iCameraType);
+		}
+
+		ImGui::Separator();
+
+		// Set as Main Camera button
+		Zenith_SceneData* pxSceneData = m_xParentEntity.GetSceneData();
+		bool bIsMainCamera = false;
+		if (pxSceneData && pxSceneData->GetMainCameraEntity() != INVALID_ENTITY_ID)
+		{
+			bIsMainCamera = (pxSceneData->GetMainCameraEntity() == m_xParentEntity.GetEntityID());
+		}
+
+		if (bIsMainCamera)
+		{
+			ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "This is the Main Camera");
+		}
+		else
+		{
+			if (ImGui::Button("Set as Main Camera"))
+			{
+				Zenith_Editor::SetSelectedAsMainCamera();
+			}
+		}
+
+		ImGui::Separator();
+
+		// Editable camera properties for perspective camera
+		if (m_eType == CAMERA_TYPE_PERSPECTIVE)
+		{
+			// FOV editing
+			float fFOV = GetFOV();
+			if (ImGui::SliderFloat("FOV", &fFOV, 30.0f, 120.0f, "%.1f"))
+			{
+				m_fFOV = fFOV;
+			}
+
+			// Near plane editing
+			float fNear = GetNearPlane();
+			if (ImGui::DragFloat("Near Plane", &fNear, 0.01f, 0.001f, 10.0f, "%.3f"))
+			{
+				m_fNear = fNear;
+			}
+
+			// Far plane editing
+			float fFar = GetFarPlane();
+			if (ImGui::DragFloat("Far Plane", &fFar, 10.0f, 10.0f, 10000.0f, "%.1f"))
+			{
+				m_fFar = fFar;
+			}
+
+			// Aspect ratio editing
+			float fAspect = GetAspectRatio();
+			if (ImGui::DragFloat("Aspect Ratio", &fAspect, 0.01f, 0.1f, 4.0f, "%.3f"))
+			{
+				m_fAspect = fAspect;
+			}
+
+			ImGui::Separator();
+
+			// Pitch editing
+			float fPitch = static_cast<float>(GetPitch());
+			if (ImGui::DragFloat("Pitch", &fPitch, 0.01f, -1.5f, 1.5f, "%.3f rad"))
+			{
+				m_fPitch = fPitch;
+			}
+
+			// Yaw editing
+			float fYaw = static_cast<float>(GetYaw());
+			if (ImGui::DragFloat("Yaw", &fYaw, 0.01f, 0.0f, 6.28318f, "%.3f rad"))
+			{
+				m_fYaw = fYaw;
+			}
+		}
+		else if (m_eType == CAMERA_TYPE_ORTHOGRAPHIC)
+		{
+			// Orthographic camera properties
+			ImGui::DragFloat("Left", &m_fLeft, 1.0f);
+			ImGui::DragFloat("Right", &m_fRight, 1.0f);
+			ImGui::DragFloat("Top", &m_fTop, 1.0f);
+			ImGui::DragFloat("Bottom", &m_fBottom, 1.0f);
+			ImGui::DragFloat("Near", &m_fNear, 0.1f);
+			ImGui::DragFloat("Far", &m_fFar, 1.0f);
+		}
+
+		ImGui::Separator();
+
+		// Camera position editing
+		// Use PushID to avoid ImGui ID collision with TransformComponent's Position field
+		ImGui::PushID("CameraPosition");
+		Zenith_Maths::Vector3 xPos;
+		GetPosition(xPos);
+		float afPos[3] = { static_cast<float>(xPos.x), static_cast<float>(xPos.y), static_cast<float>(xPos.z) };
+		if (ImGui::DragFloat3("Position", afPos, 1.0f))
+		{
+			SetPosition({ afPos[0], afPos[1], afPos[2] });
+		}
+		ImGui::PopID();
+	}
+}
+#endif

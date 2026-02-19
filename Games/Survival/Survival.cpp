@@ -24,6 +24,10 @@
 #include <vector>
 #include <filesystem>
 
+#ifdef ZENITH_TOOLS
+#include "Editor/Zenith_EditorAutomation.h"
+#endif
+
 // ============================================================================
 // Survival Resources - Global access for behaviours
 // ============================================================================
@@ -640,162 +644,195 @@ void Project_Shutdown()
 	// Survival has no resources that need explicit cleanup
 }
 
-void Project_CreateScenes()
+void Project_LoadInitialScene(); // Forward declaration for automation steps
+
+#ifdef ZENITH_TOOLS
+void Project_InitializeResources()
+{
+	// All resources initialized in Project_RegisterScriptBehaviours
+}
+
+void Project_RegisterEditorAutomationSteps()
 {
 	// ---- MainMenu scene (build index 0) ----
-	{
-		const std::string strMenuPath = GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT;
-
-		Zenith_Scene xMenuScene = Zenith_SceneManager::CreateEmptyScene("MainMenu");
-		Zenith_SceneData* pxMenuData = Zenith_SceneManager::GetSceneData(xMenuScene);
-
-		Zenith_Entity xMenuManager(pxMenuData, "MenuManager");
-		xMenuManager.SetTransient(false);
-
-		// Camera - third-person perspective behind player
-		Zenith_CameraComponent& xCamera = xMenuManager.AddComponent<Zenith_CameraComponent>();
-		xCamera.InitialisePerspective({
-			.m_xPosition = Zenith_Maths::Vector3(0.f, 10.f, -15.f),
-			.m_fPitch = -0.5f,
-			.m_fFOV = glm::radians(50.f),
-		});
-		pxMenuData->SetMainCameraEntity(xMenuManager.GetEntityID());
-
-		Zenith_UIComponent& xUI = xMenuManager.AddComponent<Zenith_UIComponent>();
-
-		Zenith_UI::Zenith_UIText* pxMenuTitle = xUI.CreateText("MenuTitle", "SURVIVAL");
-		pxMenuTitle->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
-		pxMenuTitle->SetPosition(0.f, -120.f);
-		pxMenuTitle->SetFontSize(48.f);
-		pxMenuTitle->SetColor(Zenith_Maths::Vector4(0.2f, 1.f, 0.2f, 1.f));
-
-		Zenith_UI::Zenith_UIButton* pxPlayButton = xUI.CreateButton("MenuPlay", "Play");
-		pxPlayButton->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
-		pxPlayButton->SetPosition(0.f, 0.f);
-		pxPlayButton->SetSize(200.f, 50.f);
-
-		Zenith_ScriptComponent& xScript = xMenuManager.AddComponent<Zenith_ScriptComponent>();
-		xScript.SetBehaviourForSerialization<Survival_Behaviour>();
-
-		pxMenuData->SaveToFile(strMenuPath);
-		Zenith_SceneManager::RegisterSceneBuildIndex(0, strMenuPath);
-		Zenith_SceneManager::UnloadScene(xMenuScene);
-	}
+	Zenith_EditorAutomation::AddStep_CreateScene("MainMenu");
+	Zenith_EditorAutomation::AddStep_CreateEntity("MenuManager");
+	Zenith_EditorAutomation::AddStep_AddCamera();
+	Zenith_EditorAutomation::AddStep_SetCameraPosition(0.f, 10.f, -15.f);
+	Zenith_EditorAutomation::AddStep_SetCameraPitch(-0.5f);
+	Zenith_EditorAutomation::AddStep_SetCameraFOV(glm::radians(50.f));
+	Zenith_EditorAutomation::AddStep_SetAsMainCamera();
+	Zenith_EditorAutomation::AddStep_AddUI();
+	Zenith_EditorAutomation::AddStep_CreateUIText("MenuTitle", "SURVIVAL");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("MenuTitle", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("MenuTitle", 0.f, -120.f);
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("MenuTitle", 48.f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("MenuTitle", 0.2f, 1.f, 0.2f, 1.f);
+	Zenith_EditorAutomation::AddStep_CreateUIButton("MenuPlay", "Play");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("MenuPlay", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("MenuPlay", 0.f, 0.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("MenuPlay", 200.f, 50.f);
+	Zenith_EditorAutomation::AddStep_AddScript();
+	Zenith_EditorAutomation::AddStep_SetBehaviourForSerialization("Survival_Behaviour");
+	Zenith_EditorAutomation::AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT);
+	Zenith_EditorAutomation::AddStep_UnloadScene();
 
 	// ---- Survival gameplay scene (build index 1) ----
-	{
-		const std::string strGamePath = GAME_ASSETS_DIR "Scenes/Survival" ZENITH_SCENE_EXT;
+	Zenith_EditorAutomation::AddStep_CreateScene("Survival");
+	Zenith_EditorAutomation::AddStep_CreateEntity("GameManager");
+	Zenith_EditorAutomation::AddStep_AddCamera();
+	Zenith_EditorAutomation::AddStep_SetCameraPosition(0.f, 10.f, -15.f);
+	Zenith_EditorAutomation::AddStep_SetCameraPitch(-0.5f);
+	Zenith_EditorAutomation::AddStep_SetCameraFOV(glm::radians(50.f));
+	Zenith_EditorAutomation::AddStep_SetAsMainCamera();
+	Zenith_EditorAutomation::AddStep_AddUI();
 
-		Zenith_Scene xGameScene = Zenith_SceneManager::CreateEmptyScene("Survival");
-		Zenith_SceneData* pxGameData = Zenith_SceneManager::GetSceneData(xGameScene);
+	// Top-left HUD (constants: marginLeft=30, marginTop=30, baseTextSize=15, lineHeight=24)
+	// Title: y=30+0=30, fontSize=15*4.8=72
+	Zenith_EditorAutomation::AddStep_CreateUIText("Title", "SURVIVAL");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("Title", static_cast<int>(Zenith_UI::AnchorPreset::TopLeft));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("Title", 30.f, 30.f);
+	Zenith_EditorAutomation::AddStep_SetUIAlignment("Title", static_cast<int>(Zenith_UI::TextAlignment::Left));
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("Title", 72.f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("Title", 1.f, 1.f, 1.f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIVisible("Title", false);
 
-		Zenith_Entity xGameManager(pxGameData, "GameManager");
-		xGameManager.SetTransient(false);
+	// ControlsHeader: y=30+48=78, fontSize=15*3.0=45
+	Zenith_EditorAutomation::AddStep_CreateUIText("ControlsHeader", "Controls:");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("ControlsHeader", static_cast<int>(Zenith_UI::AnchorPreset::TopLeft));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("ControlsHeader", 30.f, 78.f);
+	Zenith_EditorAutomation::AddStep_SetUIAlignment("ControlsHeader", static_cast<int>(Zenith_UI::TextAlignment::Left));
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("ControlsHeader", 45.f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("ControlsHeader", 0.9f, 0.9f, 0.2f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIVisible("ControlsHeader", false);
 
-		// Camera - third-person perspective behind player
-		Zenith_CameraComponent& xCamera = xGameManager.AddComponent<Zenith_CameraComponent>();
-		xCamera.InitialisePerspective({
-			.m_xPosition = Zenith_Maths::Vector3(0.f, 10.f, -15.f),
-			.m_fPitch = -0.5f,
-			.m_fFOV = glm::radians(50.f),
-		});
-		pxGameData->SetMainCameraEntity(xGameManager.GetEntityID());
+	// MoveInstr: y=30+72=102, fontSize=15*2.5=37.5
+	Zenith_EditorAutomation::AddStep_CreateUIText("MoveInstr", "WASD: Move | E: Interact | Tab: Inventory");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("MoveInstr", static_cast<int>(Zenith_UI::AnchorPreset::TopLeft));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("MoveInstr", 30.f, 102.f);
+	Zenith_EditorAutomation::AddStep_SetUIAlignment("MoveInstr", static_cast<int>(Zenith_UI::TextAlignment::Left));
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("MoveInstr", 37.5f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("MoveInstr", 0.7f, 0.7f, 0.7f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIVisible("MoveInstr", false);
 
-		Zenith_UIComponent& xUI = xGameManager.AddComponent<Zenith_UIComponent>();
+	// CraftInstr: y=30+96=126, fontSize=15*2.5=37.5
+	Zenith_EditorAutomation::AddStep_CreateUIText("CraftInstr", "C: Crafting | R: Reset | Esc: Menu");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("CraftInstr", static_cast<int>(Zenith_UI::AnchorPreset::TopLeft));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("CraftInstr", 30.f, 126.f);
+	Zenith_EditorAutomation::AddStep_SetUIAlignment("CraftInstr", static_cast<int>(Zenith_UI::TextAlignment::Left));
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("CraftInstr", 37.5f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("CraftInstr", 0.7f, 0.7f, 0.7f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIVisible("CraftInstr", false);
 
-		// ---- HUD UI (hidden initially) ----
-		static constexpr float s_fMarginLeft = 30.f;
-		static constexpr float s_fMarginTop = 30.f;
-		static constexpr float s_fBaseTextSize = 15.f;
-		static constexpr float s_fLineHeight = 24.f;
+	// Top-right HUD (inventory)
+	// InventoryHeader: y=30+0=30, fontSize=15*3.6=54
+	Zenith_EditorAutomation::AddStep_CreateUIText("InventoryHeader", "Inventory:");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("InventoryHeader", static_cast<int>(Zenith_UI::AnchorPreset::TopRight));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("InventoryHeader", -30.f, 30.f);
+	Zenith_EditorAutomation::AddStep_SetUIAlignment("InventoryHeader", static_cast<int>(Zenith_UI::TextAlignment::Right));
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("InventoryHeader", 54.f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("InventoryHeader", 0.9f, 0.9f, 0.2f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIVisible("InventoryHeader", false);
 
-		auto CreateHUDTextTopLeft = [&](const char* szName, const char* szText, float fYOffset,
-			float fSizeMultiplier, const Zenith_Maths::Vector4& xColor) -> Zenith_UI::Zenith_UIText*
-		{
-			Zenith_UI::Zenith_UIText* pxText = xUI.CreateText(szName, szText);
-			pxText->SetAnchorAndPivot(Zenith_UI::AnchorPreset::TopLeft);
-			pxText->SetPosition(s_fMarginLeft, s_fMarginTop + fYOffset);
-			pxText->SetAlignment(Zenith_UI::TextAlignment::Left);
-			pxText->SetFontSize(s_fBaseTextSize * fSizeMultiplier);
-			pxText->SetColor(xColor);
-			pxText->SetVisible(false);
-			return pxText;
-		};
+	// WoodCount: y=30+24=54, fontSize=15*3.0=45
+	Zenith_EditorAutomation::AddStep_CreateUIText("WoodCount", "Wood: 0");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("WoodCount", static_cast<int>(Zenith_UI::AnchorPreset::TopRight));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("WoodCount", -30.f, 54.f);
+	Zenith_EditorAutomation::AddStep_SetUIAlignment("WoodCount", static_cast<int>(Zenith_UI::TextAlignment::Right));
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("WoodCount", 45.f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("WoodCount", 0.8f, 0.6f, 0.3f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIVisible("WoodCount", false);
 
-		auto CreateHUDTextTopRight = [&](const char* szName, const char* szText, float fYOffset,
-			float fSizeMultiplier, const Zenith_Maths::Vector4& xColor) -> Zenith_UI::Zenith_UIText*
-		{
-			Zenith_UI::Zenith_UIText* pxText = xUI.CreateText(szName, szText);
-			pxText->SetAnchorAndPivot(Zenith_UI::AnchorPreset::TopRight);
-			pxText->SetPosition(-30.f, 30.f + fYOffset);
-			pxText->SetAlignment(Zenith_UI::TextAlignment::Right);
-			pxText->SetFontSize(s_fBaseTextSize * fSizeMultiplier);
-			pxText->SetColor(xColor);
-			pxText->SetVisible(false);
-			return pxText;
-		};
+	// StoneCount: y=30+48=78, fontSize=15*3.0=45
+	Zenith_EditorAutomation::AddStep_CreateUIText("StoneCount", "Stone: 0");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("StoneCount", static_cast<int>(Zenith_UI::AnchorPreset::TopRight));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("StoneCount", -30.f, 78.f);
+	Zenith_EditorAutomation::AddStep_SetUIAlignment("StoneCount", static_cast<int>(Zenith_UI::TextAlignment::Right));
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("StoneCount", 45.f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("StoneCount", 0.6f, 0.6f, 0.7f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIVisible("StoneCount", false);
 
-		// Top-left HUD
-		CreateHUDTextTopLeft("Title", "SURVIVAL", 0.f, 4.8f,
-			Zenith_Maths::Vector4(1.f, 1.f, 1.f, 1.f));
-		CreateHUDTextTopLeft("ControlsHeader", "Controls:", s_fLineHeight * 2, 3.0f,
-			Zenith_Maths::Vector4(0.9f, 0.9f, 0.2f, 1.f));
-		CreateHUDTextTopLeft("MoveInstr", "WASD: Move | E: Interact | Tab: Inventory", s_fLineHeight * 3, 2.5f,
-			Zenith_Maths::Vector4(0.7f, 0.7f, 0.7f, 1.f));
-		CreateHUDTextTopLeft("CraftInstr", "C: Crafting | R: Reset | Esc: Menu", s_fLineHeight * 4, 2.5f,
-			Zenith_Maths::Vector4(0.7f, 0.7f, 0.7f, 1.f));
+	// BerriesCount: y=30+72=102, fontSize=15*3.0=45
+	Zenith_EditorAutomation::AddStep_CreateUIText("BerriesCount", "Berries: 0");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("BerriesCount", static_cast<int>(Zenith_UI::AnchorPreset::TopRight));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("BerriesCount", -30.f, 102.f);
+	Zenith_EditorAutomation::AddStep_SetUIAlignment("BerriesCount", static_cast<int>(Zenith_UI::TextAlignment::Right));
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("BerriesCount", 45.f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("BerriesCount", 0.8f, 0.3f, 0.4f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIVisible("BerriesCount", false);
 
-		// Top-right HUD (inventory)
-		CreateHUDTextTopRight("InventoryHeader", "Inventory:", 0.f, 3.6f,
-			Zenith_Maths::Vector4(0.9f, 0.9f, 0.2f, 1.f));
-		CreateHUDTextTopRight("WoodCount", "Wood: 0", s_fLineHeight * 1, 3.0f,
-			Zenith_Maths::Vector4(0.8f, 0.6f, 0.3f, 1.f));
-		CreateHUDTextTopRight("StoneCount", "Stone: 0", s_fLineHeight * 2, 3.0f,
-			Zenith_Maths::Vector4(0.6f, 0.6f, 0.7f, 1.f));
-		CreateHUDTextTopRight("BerriesCount", "Berries: 0", s_fLineHeight * 3, 3.0f,
-			Zenith_Maths::Vector4(0.8f, 0.3f, 0.4f, 1.f));
-		CreateHUDTextTopRight("CraftedHeader", "Crafted:", s_fLineHeight * 5, 3.0f,
-			Zenith_Maths::Vector4(0.9f, 0.9f, 0.2f, 1.f));
-		CreateHUDTextTopRight("AxeCount", "Axe: 0", s_fLineHeight * 6, 3.0f,
-			Zenith_Maths::Vector4(0.6f, 0.8f, 1.f, 1.f));
-		CreateHUDTextTopRight("PickaxeCount", "Pickaxe: 0", s_fLineHeight * 7, 3.0f,
-			Zenith_Maths::Vector4(0.6f, 0.8f, 1.f, 1.f));
+	// CraftedHeader: y=30+120=150, fontSize=15*3.0=45
+	Zenith_EditorAutomation::AddStep_CreateUIText("CraftedHeader", "Crafted:");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("CraftedHeader", static_cast<int>(Zenith_UI::AnchorPreset::TopRight));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("CraftedHeader", -30.f, 150.f);
+	Zenith_EditorAutomation::AddStep_SetUIAlignment("CraftedHeader", static_cast<int>(Zenith_UI::TextAlignment::Right));
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("CraftedHeader", 45.f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("CraftedHeader", 0.9f, 0.9f, 0.2f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIVisible("CraftedHeader", false);
 
-		// Center/bottom HUD
-		Zenith_UI::Zenith_UIText* pxInteract = xUI.CreateText("InteractPrompt", "");
-		pxInteract->SetAnchorAndPivot(Zenith_UI::AnchorPreset::BottomCenter);
-		pxInteract->SetPosition(0.f, -100.f);
-		pxInteract->SetAlignment(Zenith_UI::TextAlignment::Center);
-		pxInteract->SetFontSize(s_fBaseTextSize * 4.0f);
-		pxInteract->SetColor(Zenith_Maths::Vector4(1.f, 1.f, 0.6f, 1.f));
-		pxInteract->SetVisible(false);
+	// AxeCount: y=30+144=174, fontSize=15*3.0=45
+	Zenith_EditorAutomation::AddStep_CreateUIText("AxeCount", "Axe: 0");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("AxeCount", static_cast<int>(Zenith_UI::AnchorPreset::TopRight));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("AxeCount", -30.f, 174.f);
+	Zenith_EditorAutomation::AddStep_SetUIAlignment("AxeCount", static_cast<int>(Zenith_UI::TextAlignment::Right));
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("AxeCount", 45.f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("AxeCount", 0.6f, 0.8f, 1.f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIVisible("AxeCount", false);
 
-		Zenith_UI::Zenith_UIText* pxCraftProgress = xUI.CreateText("CraftProgress", "");
-		pxCraftProgress->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
-		pxCraftProgress->SetPosition(0.f, 100.f);
-		pxCraftProgress->SetAlignment(Zenith_UI::TextAlignment::Center);
-		pxCraftProgress->SetFontSize(s_fBaseTextSize * 3.5f);
-		pxCraftProgress->SetColor(Zenith_Maths::Vector4(0.6f, 1.f, 0.6f, 1.f));
-		pxCraftProgress->SetVisible(false);
+	// PickaxeCount: y=30+168=198, fontSize=15*3.0=45
+	Zenith_EditorAutomation::AddStep_CreateUIText("PickaxeCount", "Pickaxe: 0");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("PickaxeCount", static_cast<int>(Zenith_UI::AnchorPreset::TopRight));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("PickaxeCount", -30.f, 198.f);
+	Zenith_EditorAutomation::AddStep_SetUIAlignment("PickaxeCount", static_cast<int>(Zenith_UI::TextAlignment::Right));
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("PickaxeCount", 45.f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("PickaxeCount", 0.6f, 0.8f, 1.f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIVisible("PickaxeCount", false);
 
-		Zenith_UI::Zenith_UIText* pxStatus = xUI.CreateText("Status", "");
-		pxStatus->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
-		pxStatus->SetPosition(0.f, 0.f);
-		pxStatus->SetAlignment(Zenith_UI::TextAlignment::Center);
-		pxStatus->SetFontSize(s_fBaseTextSize * 5.0f);
-		pxStatus->SetColor(Zenith_Maths::Vector4(0.2f, 1.f, 0.2f, 1.f));
-		pxStatus->SetVisible(false);
+	// Center/bottom HUD
+	// InteractPrompt: BottomCenter, (0,-100), Center align, fontSize=15*4.0=60
+	Zenith_EditorAutomation::AddStep_CreateUIText("InteractPrompt", "");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("InteractPrompt", static_cast<int>(Zenith_UI::AnchorPreset::BottomCenter));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("InteractPrompt", 0.f, -100.f);
+	Zenith_EditorAutomation::AddStep_SetUIAlignment("InteractPrompt", static_cast<int>(Zenith_UI::TextAlignment::Center));
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("InteractPrompt", 60.f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("InteractPrompt", 1.f, 1.f, 0.6f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIVisible("InteractPrompt", false);
 
-		Zenith_ScriptComponent& xScript = xGameManager.AddComponent<Zenith_ScriptComponent>();
-		xScript.SetBehaviourForSerialization<Survival_Behaviour>();
+	// CraftProgress: Center, (0,100), Center align, fontSize=15*3.5=52.5
+	Zenith_EditorAutomation::AddStep_CreateUIText("CraftProgress", "");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("CraftProgress", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("CraftProgress", 0.f, 100.f);
+	Zenith_EditorAutomation::AddStep_SetUIAlignment("CraftProgress", static_cast<int>(Zenith_UI::TextAlignment::Center));
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("CraftProgress", 52.5f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("CraftProgress", 0.6f, 1.f, 0.6f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIVisible("CraftProgress", false);
 
-		pxGameData->SaveToFile(strGamePath);
-		Zenith_SceneManager::RegisterSceneBuildIndex(1, strGamePath);
-		Zenith_SceneManager::UnloadScene(xGameScene);
-	}
+	// Status: Center, (0,0), Center align, fontSize=15*5.0=75
+	Zenith_EditorAutomation::AddStep_CreateUIText("Status", "");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("Status", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("Status", 0.f, 0.f);
+	Zenith_EditorAutomation::AddStep_SetUIAlignment("Status", static_cast<int>(Zenith_UI::TextAlignment::Center));
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("Status", 75.f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("Status", 0.2f, 1.f, 0.2f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIVisible("Status", false);
+
+	Zenith_EditorAutomation::AddStep_AddScript();
+	Zenith_EditorAutomation::AddStep_SetBehaviourForSerialization("Survival_Behaviour");
+
+	Zenith_EditorAutomation::AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/Survival" ZENITH_SCENE_EXT);
+	Zenith_EditorAutomation::AddStep_UnloadScene();
+
+	// ---- Final scene loading ----
+	Zenith_EditorAutomation::AddStep_SetInitialSceneLoadCallback(&Project_LoadInitialScene);
+	Zenith_EditorAutomation::AddStep_SetLoadingScene(true);
+	Zenith_EditorAutomation::AddStep_Custom(&Project_LoadInitialScene);
+	Zenith_EditorAutomation::AddStep_SetLoadingScene(false);
 }
+#endif
 
 void Project_LoadInitialScene()
 {
+	Zenith_SceneManager::RegisterSceneBuildIndex(0, GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT);
+	Zenith_SceneManager::RegisterSceneBuildIndex(1, GAME_ASSETS_DIR "Scenes/Survival" ZENITH_SCENE_EXT);
 	Zenith_SceneManager::LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
 }

@@ -42,6 +42,7 @@ static uint32_t s_uCachedHighLODVertexCount = 0;
 static uint32_t s_uCachedHighLODIndexCount = 0;
 
 // ========== Buffer Allocator Implementation ==========
+// Best-fit allocator with coalescing. Free list sorted by offset.
 
 Flux_TerrainBufferAllocator::Flux_TerrainBufferAllocator()
 	: m_uTotalSize(0)
@@ -56,17 +57,17 @@ void Flux_TerrainBufferAllocator::Initialize(uint32_t uTotalSize, const char* sz
 	m_uUnusedSpace = uTotalSize;
 	m_szDebugName = szDebugName;
 
-	while (!m_xFreeBlocks.empty()) m_xFreeBlocks.pop();
+	m_axFreeBlocks.clear();
 
-	FreeBlock initialBlock;
-	initialBlock.m_uOffset = 0;
-	initialBlock.m_uSize = uTotalSize;
-	m_xFreeBlocks.push(initialBlock);
+	FreeBlock xInitialBlock;
+	xInitialBlock.m_uOffset = 0;
+	xInitialBlock.m_uSize = uTotalSize;
+	m_axFreeBlocks.push_back(xInitialBlock);
 }
 
 void Flux_TerrainBufferAllocator::Reset()
 {
-	while (!m_xFreeBlocks.empty()) m_xFreeBlocks.pop();
+	m_axFreeBlocks.clear();
 	m_uTotalSize = 0;
 	m_uUnusedSpace = 0;
 }
@@ -77,39 +78,42 @@ uint32_t Flux_TerrainBufferAllocator::Allocate(uint32_t uSize)
 	if (uSize == 0 || uSize > m_uUnusedSpace)
 		return UINT32_MAX;
 
-	std::vector<FreeBlock> rejectedBlocks;
-	uint32_t uAllocatedOffset = UINT32_MAX;
+	// Best-fit: find smallest block that fits
+	uint32_t uBestIdx = UINT32_MAX;
+	uint32_t uBestSize = UINT32_MAX;
 
-	while (!m_xFreeBlocks.empty())
+	for (uint32_t i = 0; i < static_cast<uint32_t>(m_axFreeBlocks.size()); ++i)
 	{
-		FreeBlock block = m_xFreeBlocks.top();
-		m_xFreeBlocks.pop();
-
-		if (block.m_uSize >= uSize)
+		if (m_axFreeBlocks[i].m_uSize >= uSize && m_axFreeBlocks[i].m_uSize < uBestSize)
 		{
-			uAllocatedOffset = block.m_uOffset;
+			uBestIdx = i;
+			uBestSize = m_axFreeBlocks[i].m_uSize;
 
-			uint32_t uRemainder = block.m_uSize - uSize;
-			if (uRemainder > 0)
-			{
-				FreeBlock remainderBlock;
-				remainderBlock.m_uOffset = block.m_uOffset + uSize;
-				remainderBlock.m_uSize = uRemainder;
-				m_xFreeBlocks.push(remainderBlock);
-			}
-
-			m_uUnusedSpace -= uSize;
-			break;
-		}
-		else
-		{
-			rejectedBlocks.push_back(block);
+			// Exact fit - can't do better
+			if (uBestSize == uSize)
+				break;
 		}
 	}
 
-	for (const FreeBlock& block : rejectedBlocks)
-		m_xFreeBlocks.push(block);
+	if (uBestIdx == UINT32_MAX)
+		return UINT32_MAX;
 
+	uint32_t uAllocatedOffset = m_axFreeBlocks[uBestIdx].m_uOffset;
+	uint32_t uRemainder = m_axFreeBlocks[uBestIdx].m_uSize - uSize;
+
+	if (uRemainder > 0)
+	{
+		// Shrink the block in-place (keep sorted order since offset increases)
+		m_axFreeBlocks[uBestIdx].m_uOffset += uSize;
+		m_axFreeBlocks[uBestIdx].m_uSize = uRemainder;
+	}
+	else
+	{
+		// Exact fit - remove the block
+		m_axFreeBlocks.erase(m_axFreeBlocks.begin() + uBestIdx);
+	}
+
+	m_uUnusedSpace -= uSize;
 	return uAllocatedOffset;
 }
 
@@ -118,11 +122,53 @@ void Flux_TerrainBufferAllocator::Free(uint32_t uOffset, uint32_t uSize)
 	if (uSize == 0)
 		return;
 
-	FreeBlock newBlock;
-	newBlock.m_uOffset = uOffset;
-	newBlock.m_uSize = uSize;
-	m_xFreeBlocks.push(newBlock);
 	m_uUnusedSpace += uSize;
+
+	// Binary search for insertion point (list is sorted by offset)
+	uint32_t uInsertIdx = 0;
+	{
+		uint32_t uLow = 0;
+		uint32_t uHigh = static_cast<uint32_t>(m_axFreeBlocks.size());
+		while (uLow < uHigh)
+		{
+			uint32_t uMid = (uLow + uHigh) / 2;
+			if (m_axFreeBlocks[uMid].m_uOffset < uOffset)
+				uLow = uMid + 1;
+			else
+				uHigh = uMid;
+		}
+		uInsertIdx = uLow;
+	}
+
+	// Insert the new free block
+	FreeBlock xNewBlock;
+	xNewBlock.m_uOffset = uOffset;
+	xNewBlock.m_uSize = uSize;
+	m_axFreeBlocks.insert(m_axFreeBlocks.begin() + uInsertIdx, xNewBlock);
+
+	// Coalesce with right neighbor
+	if (uInsertIdx + 1 < static_cast<uint32_t>(m_axFreeBlocks.size()))
+	{
+		FreeBlock& xCurrent = m_axFreeBlocks[uInsertIdx];
+		FreeBlock& xRight = m_axFreeBlocks[uInsertIdx + 1];
+		if (xCurrent.m_uOffset + xCurrent.m_uSize == xRight.m_uOffset)
+		{
+			xCurrent.m_uSize += xRight.m_uSize;
+			m_axFreeBlocks.erase(m_axFreeBlocks.begin() + uInsertIdx + 1);
+		}
+	}
+
+	// Coalesce with left neighbor
+	if (uInsertIdx > 0)
+	{
+		FreeBlock& xLeft = m_axFreeBlocks[uInsertIdx - 1];
+		FreeBlock& xCurrent = m_axFreeBlocks[uInsertIdx];
+		if (xLeft.m_uOffset + xLeft.m_uSize == xCurrent.m_uOffset)
+		{
+			xLeft.m_uSize += xCurrent.m_uSize;
+			m_axFreeBlocks.erase(m_axFreeBlocks.begin() + uInsertIdx);
+		}
+	}
 }
 
 // ========== Streaming Manager Implementation ==========
@@ -196,22 +242,23 @@ void Flux_TerrainStreamingManager::Shutdown()
 	s_bInitialized = false;
 }
 
-void Flux_TerrainStreamingManager::RegisterTerrainBuffers(Zenith_TerrainComponent* pxTerrainComponent)
+void Flux_TerrainStreamingManager::RegisterTerrainBuffers(Zenith_TerrainComponent* pxTerrainComponent, const Flux_TerrainChunkInitData* pxChunkInitData)
 {
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "Flux_TerrainStreamingManager::RegisterTerrainBuffers()");
 
 	s_pxTerrainComponent = pxTerrainComponent;
 
-	// Initialize allocators for the streaming region (after LOD3)
+	// Initialize allocators for the streaming region (after LOW LOD)
 	const uint32_t uMaxStreamingVertices = static_cast<uint32_t>(STREAMING_VERTEX_BUFFER_SIZE / s_pxTerrainComponent->m_uVertexStride);
 	const uint32_t uMaxStreamingIndices = static_cast<uint32_t>(STREAMING_INDEX_BUFFER_SIZE / sizeof(uint32_t));
 
 	s_xVertexAllocator.Initialize(uMaxStreamingVertices, "StreamingVertices");
 	s_xIndexAllocator.Initialize(uMaxStreamingIndices, "StreamingIndices");
 
-	// Initialize LOW LOD as RESIDENT for all chunks (it's pre-loaded in the unified buffer)
-	uint32_t uCurrentLowLODIndexOffset = 0;
+	// Initialize LOW LOD as RESIDENT for all chunks using pre-computed data
+	// (vertex/index counts and AABBs were collected during LOW LOD loading in InitializeRenderResources)
 	uint32_t uCurrentLowLODVertexOffset = 0;
+	uint32_t uCurrentLowLODIndexOffset = 0;
 
 	for (uint32_t x = 0; x < CHUNK_GRID_SIZE; ++x)
 	{
@@ -219,57 +266,28 @@ void Flux_TerrainStreamingManager::RegisterTerrainBuffers(Zenith_TerrainComponen
 		{
 			uint32_t uChunkIndex = ChunkCoordsToIndex(x, y);
 			Flux_TerrainChunkResidency& xResidency = s_axChunkResidency[uChunkIndex];
-
-			// Load LOW LOD mesh to get vertex/index counts
-			std::string strChunkPath = std::string(Project_GetGameAssetsDirectory()) + "Terrain/Render_LOW_" + std::to_string(x) + "_" + std::to_string(y) + ZENITH_MESH_EXT;
-
-			std::ifstream lodFile(strChunkPath);
-			if (!lodFile.good())
-				strChunkPath = std::string(Project_GetGameAssetsDirectory()) + "Terrain/Render_" + std::to_string(x) + "_" + std::to_string(y) + ZENITH_MESH_EXT;
-
-			//false so we don't upload to GPU
-			Flux_MeshGeometry xChunkMesh;
-			Flux_MeshGeometry::LoadFromFile(strChunkPath.c_str(), xChunkMesh, 1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__POSITION, false);
+			const Flux_TerrainChunkInitData& xInitData = pxChunkInitData[uChunkIndex];
 
 			// Mark LOW LOD as resident with its allocation info
 			xResidency.m_aeStates[LOD_LOW] = Flux_TerrainLODResidencyState::RESIDENT;
 			xResidency.m_axAllocations[LOD_LOW].m_uVertexOffset = uCurrentLowLODVertexOffset;
-			xResidency.m_axAllocations[LOD_LOW].m_uVertexCount = xChunkMesh.GetNumVerts();
+			xResidency.m_axAllocations[LOD_LOW].m_uVertexCount = xInitData.m_uVertexCount;
 			xResidency.m_axAllocations[LOD_LOW].m_uIndexOffset = uCurrentLowLODIndexOffset;
-			xResidency.m_axAllocations[LOD_LOW].m_uIndexCount = xChunkMesh.GetNumIndices();
+			xResidency.m_axAllocations[LOD_LOW].m_uIndexCount = xInitData.m_uIndexCount;
 
-			uCurrentLowLODVertexOffset += xChunkMesh.GetNumVerts();
-			uCurrentLowLODIndexOffset += xChunkMesh.GetNumIndices();
-			// xChunkMesh automatically destroyed when going out of scope
+			uCurrentLowLODVertexOffset += xInitData.m_uVertexCount;
+			uCurrentLowLODIndexOffset += xInitData.m_uIndexCount;
 
 			// HIGH LOD starts as NOT_LOADED
 			xResidency.m_aeStates[LOD_HIGH] = Flux_TerrainLODResidencyState::NOT_LOADED;
-		}
-	}
 
-	// Cache AABBs for all chunks (needed for distance calculations)
-	for (uint32_t x = 0; x < CHUNK_GRID_SIZE; ++x)
-	{
-		for (uint32_t y = 0; y < CHUNK_GRID_SIZE; ++y)
-		{
-			uint32_t uChunkIndex = ChunkCoordsToIndex(x, y);
-
-			std::string strChunkPath = std::string(Project_GetGameAssetsDirectory()) + "Terrain/Render_" + std::to_string(x) + "_" + std::to_string(y) + ZENITH_MESH_EXT;
-
-			//false so we don't upload to GPU
-			Flux_MeshGeometry xChunkMesh;
-			Flux_MeshGeometry::LoadFromFile(strChunkPath.c_str(), xChunkMesh, 1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__POSITION, false);
-
-			s_axChunkAABBs[uChunkIndex] = Zenith_FrustumCulling::GenerateAABBFromVertices(
-				xChunkMesh.m_pxPositions,
-				xChunkMesh.GetNumVerts()
-			);
-			// xChunkMesh automatically destroyed when going out of scope
+			// Cache AABB from pre-computed data
+			s_axChunkAABBs[uChunkIndex] = xInitData.m_xAABB;
 		}
 	}
 	s_bAABBsCached = true;
 
-	Zenith_Log(LOG_CATEGORY_TERRAIN, "Terrain buffers registered: LOW LOD resident for all %u chunks", TOTAL_CHUNKS);
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "Terrain buffers registered: LOW LOD resident for all %u chunks (zero redundant file reads)", TOTAL_CHUNKS);
 }
 
 void Flux_TerrainStreamingManager::UnregisterTerrainBuffers()
@@ -364,7 +382,9 @@ void Flux_TerrainStreamingManager::UpdateStreaming(const Zenith_Maths::Vector3& 
 	}
 
 	// Evict distant HIGH LODs that are no longer needed (LOW is always resident)
-	for (uint32_t i = 0; i < TOTAL_CHUNKS; ++i)
+	// Limit evictions per frame to avoid mass pop-in when camera teleports
+	uint32_t uEvictionsThisFrame = 0;
+	for (uint32_t i = 0; i < TOTAL_CHUNKS && uEvictionsThisFrame < MAX_EVICTIONS_PER_FRAME; ++i)
 	{
 		Flux_TerrainChunkResidency& xResidency = s_axChunkResidency[i];
 
@@ -378,10 +398,11 @@ void Flux_TerrainStreamingManager::UpdateStreaming(const Zenith_Maths::Vector3& 
 		float fDistanceSq = glm::distance2(xCameraPos, xChunkCenter);
 
 		// Evict if chunk is well beyond HIGH LOD's range (with hysteresis)
-		float fEvictionThreshold = LOD_HIGH_MAX_DISTANCE_SQ * 1.5f;
+		float fEvictionThreshold = LOD_HIGH_MAX_DISTANCE_SQ * LOD_EVICTION_HYSTERESIS;
 		if (fDistanceSq > fEvictionThreshold)
 		{
 			EvictLOD(i, LOD_HIGH);
+			uEvictionsThisFrame++;
 			s_xStats.m_uEvictionsThisFrame++;
 			s_bChunkDataDirty.store(true, std::memory_order_release);
 
@@ -470,15 +491,32 @@ bool Flux_TerrainStreamingManager::StreamInLOD(uint32_t uChunkIndex, uint32_t uL
 	uint32_t uVertexOffset = s_xVertexAllocator.Allocate(uNumVerts);
 	uint32_t uIndexOffset = s_xIndexAllocator.Allocate(uNumIndices);
 
-	// If allocation failed, clean up and return
+	// If allocation failed, try evicting distant chunks to make space
 	if (uVertexOffset == UINT32_MAX || uIndexOffset == UINT32_MAX)
 	{
+		// Clean up any partial allocation before eviction attempt
 		if (uVertexOffset != UINT32_MAX)
 			s_xVertexAllocator.Free(uVertexOffset, uNumVerts);
 		if (uIndexOffset != UINT32_MAX)
 			s_xIndexAllocator.Free(uIndexOffset, uNumIndices);
 
-		return false;
+		// Try to evict distant chunks to free space
+		if (!EvictToMakeSpace(uNumVerts, uNumIndices, s_xLastCameraPos))
+			return false;
+
+		// Retry allocation after eviction
+		uVertexOffset = s_xVertexAllocator.Allocate(uNumVerts);
+		uIndexOffset = s_xIndexAllocator.Allocate(uNumIndices);
+
+		if (uVertexOffset == UINT32_MAX || uIndexOffset == UINT32_MAX)
+		{
+			if (uVertexOffset != UINT32_MAX)
+				s_xVertexAllocator.Free(uVertexOffset, uNumVerts);
+			if (uIndexOffset != UINT32_MAX)
+				s_xIndexAllocator.Free(uIndexOffset, uNumIndices);
+
+			return false;
+		}
 	}
 
 	// Calculate absolute offsets in unified buffer (streaming region starts after LOW LOD)
@@ -567,7 +605,7 @@ bool Flux_TerrainStreamingManager::EvictToMakeSpace(uint32_t uVertexSpaceNeeded,
 		float fDistanceSq = glm::distance2(xCameraPos, xChunkCenter);
 
 		// Only consider for eviction if beyond HIGH LOD's range
-		if (fDistanceSq > LOD_HIGH_MAX_DISTANCE_SQ * 1.2f)
+		if (fDistanceSq > LOD_HIGH_MAX_DISTANCE_SQ * LOD_FORCED_EVICTION_HYSTERESIS)
 		{
 			EvictionCandidate candidate;
 			candidate.m_uChunkIndex = i;

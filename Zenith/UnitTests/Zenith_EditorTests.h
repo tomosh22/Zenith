@@ -177,6 +177,13 @@ private:
 	static void TestMaterialCheckboxTransparent();
 	static void TestEntityNameChange();
 	static void TestTransformDragPosition();
+
+	//--------------------------------------------------------------------------
+	// Editor Operation Tests (shared code paths with automation)
+	//--------------------------------------------------------------------------
+	static void TestCreateEntityViaEditor();
+	static void TestAddInvalidComponent();
+	static void TestSetSelectedEntityTransient();
 };
 
 #endif // ZENITH_TOOLS

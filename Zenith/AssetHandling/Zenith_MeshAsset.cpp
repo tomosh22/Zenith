@@ -565,7 +565,7 @@ void Zenith_MeshAsset::EnsureGPUBuffers(bool bSkinned)
 
 	// Expected stride: 72 bytes for static, 104 bytes for skinned
 	const uint32_t uExpectedStride = bSkinned ? 104 : 72;
-	ZENITH_ASSERT(m_xBufferLayout.GetStride() == uExpectedStride,
+	Zenith_Assert(m_xBufferLayout.GetStride() == uExpectedStride,
 		"Mesh vertex stride mismatch! Expected %u, got %u", uExpectedStride, m_xBufferLayout.GetStride());
 
 	// Generate interleaved vertex data

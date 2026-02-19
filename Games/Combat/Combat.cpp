@@ -29,6 +29,10 @@
 #include <cmath>
 #include <filesystem>
 
+#ifdef ZENITH_TOOLS
+#include "Editor/Zenith_EditorAutomation.h"
+#endif
+
 // ============================================================================
 // Combat Resources - Global access for behaviours
 // ============================================================================
@@ -637,124 +641,128 @@ void Project_Shutdown()
 	CleanupCombatResources();
 }
 
-void Project_CreateScenes()
+void Project_LoadInitialScene(); // Forward declaration for automation steps
+
+#ifdef ZENITH_TOOLS
+void Project_InitializeResources()
+{
+	// All combat resources initialized in Project_RegisterScriptBehaviours via InitializeCombatResources
+}
+
+void Project_RegisterEditorAutomationSteps()
 {
 	// ---- MainMenu scene (build index 0) ----
-	{
-		const std::string strMenuPath = GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT;
-
-		Zenith_Scene xMenuScene = Zenith_SceneManager::CreateEmptyScene("MainMenu");
-		Zenith_SceneData* pxMenuData = Zenith_SceneManager::GetSceneData(xMenuScene);
-
-		Zenith_Entity xMenuManager(pxMenuData, "GameManager");
-		xMenuManager.SetTransient(false);
-
-		Zenith_CameraComponent& xCamera = xMenuManager.AddComponent<Zenith_CameraComponent>();
-		xCamera.InitialisePerspective({
-			.m_xPosition = Zenith_Maths::Vector3(0.0f, 12.0f, -15.0f),
-			.m_fPitch = -0.7f,
-			.m_fFOV = glm::radians(50.0f),
-		});
-		pxMenuData->SetMainCameraEntity(xMenuManager.GetEntityID());
-
-		Zenith_UIComponent& xUI = xMenuManager.AddComponent<Zenith_UIComponent>();
-
-		Zenith_UI::Zenith_UIText* pxMenuTitle = xUI.CreateText("MenuTitle", "COMBAT ARENA");
-		pxMenuTitle->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
-		pxMenuTitle->SetPosition(0.0f, -120.0f);
-		pxMenuTitle->SetFontSize(15.0f * 4.8f);
-		pxMenuTitle->SetColor(Zenith_Maths::Vector4(1.0f, 0.2f, 0.2f, 1.0f));
-
-		Zenith_UI::Zenith_UIButton* pxPlayButton = xUI.CreateButton("MenuPlay", "Play");
-		pxPlayButton->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
-		pxPlayButton->SetPosition(0.0f, 0.0f);
-		pxPlayButton->SetSize(200.0f, 50.0f);
-
-		Zenith_ScriptComponent& xScript = xMenuManager.AddComponent<Zenith_ScriptComponent>();
-		xScript.SetBehaviourForSerialization<Combat_Behaviour>();
-
-		pxMenuData->SaveToFile(strMenuPath);
-		Zenith_SceneManager::RegisterSceneBuildIndex(0, strMenuPath);
-		Zenith_SceneManager::UnloadScene(xMenuScene);
-	}
+	Zenith_EditorAutomation::AddStep_CreateScene("MainMenu");
+	Zenith_EditorAutomation::AddStep_CreateEntity("GameManager");
+	Zenith_EditorAutomation::AddStep_AddCamera();
+	Zenith_EditorAutomation::AddStep_SetCameraPosition(0.0f, 12.0f, -15.0f);
+	Zenith_EditorAutomation::AddStep_SetCameraPitch(-0.7f);
+	Zenith_EditorAutomation::AddStep_SetCameraFOV(glm::radians(50.0f));
+	Zenith_EditorAutomation::AddStep_SetAsMainCamera();
+	Zenith_EditorAutomation::AddStep_AddUI();
+	Zenith_EditorAutomation::AddStep_CreateUIText("MenuTitle", "COMBAT ARENA");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("MenuTitle", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("MenuTitle", 0.0f, -120.0f);
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("MenuTitle", 72.0f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("MenuTitle", 1.0f, 0.2f, 0.2f, 1.0f);
+	Zenith_EditorAutomation::AddStep_CreateUIButton("MenuPlay", "Play");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("MenuPlay", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("MenuPlay", 0.0f, 0.0f);
+	Zenith_EditorAutomation::AddStep_SetUISize("MenuPlay", 200.0f, 50.0f);
+	Zenith_EditorAutomation::AddStep_AddScript();
+	Zenith_EditorAutomation::AddStep_SetBehaviourForSerialization("Combat_Behaviour");
+	Zenith_EditorAutomation::AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT);
+	Zenith_EditorAutomation::AddStep_UnloadScene();
 
 	// ---- Arena gameplay scene (build index 1) ----
-	{
-		const std::string strArenaPath = GAME_ASSETS_DIR "Scenes/Arena" ZENITH_SCENE_EXT;
+	Zenith_EditorAutomation::AddStep_CreateScene("Arena");
+	Zenith_EditorAutomation::AddStep_CreateEntity("GameManager");
+	Zenith_EditorAutomation::AddStep_AddCamera();
+	Zenith_EditorAutomation::AddStep_SetCameraPosition(0.0f, 12.0f, -15.0f);
+	Zenith_EditorAutomation::AddStep_SetCameraPitch(-0.7f);
+	Zenith_EditorAutomation::AddStep_SetCameraFOV(glm::radians(50.0f));
+	Zenith_EditorAutomation::AddStep_SetAsMainCamera();
+	Zenith_EditorAutomation::AddStep_AddUI();
 
-		Zenith_Scene xArenaScene = Zenith_SceneManager::CreateEmptyScene("Arena");
-		Zenith_SceneData* pxArenaData = Zenith_SceneManager::GetSceneData(xArenaScene);
+	// PlayerHealth: TopLeft, x=30, y=30+24*3=102, size=15*3=45
+	Zenith_EditorAutomation::AddStep_CreateUIText("PlayerHealth", "Health: 100 / 100");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("PlayerHealth", static_cast<int>(Zenith_UI::AnchorPreset::TopLeft));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("PlayerHealth", 30.0f, 102.0f);
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("PlayerHealth", 45.0f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("PlayerHealth", 0.2f, 1.0f, 0.2f, 1.0f);
+	Zenith_EditorAutomation::AddStep_SetUIAlignment("PlayerHealth", static_cast<int>(Zenith_UI::TextAlignment::Left));
+	Zenith_EditorAutomation::AddStep_SetUIVisible("PlayerHealth", false);
 
-		Zenith_Entity xGameManager(pxArenaData, "GameManager");
-		xGameManager.SetTransient(false);
+	// PlayerHealthBar: TopLeft, x=30, y=30+24*4=126, size=15*2.5=37.5
+	Zenith_EditorAutomation::AddStep_CreateUIText("PlayerHealthBar", "[||||||||||||||||||||]");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("PlayerHealthBar", static_cast<int>(Zenith_UI::AnchorPreset::TopLeft));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("PlayerHealthBar", 30.0f, 126.0f);
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("PlayerHealthBar", 37.5f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("PlayerHealthBar", 0.2f, 1.0f, 0.2f, 1.0f);
+	Zenith_EditorAutomation::AddStep_SetUIAlignment("PlayerHealthBar", static_cast<int>(Zenith_UI::TextAlignment::Left));
+	Zenith_EditorAutomation::AddStep_SetUIVisible("PlayerHealthBar", false);
 
-		Zenith_CameraComponent& xCamera = xGameManager.AddComponent<Zenith_CameraComponent>();
-		xCamera.InitialisePerspective({
-			.m_xPosition = Zenith_Maths::Vector3(0.0f, 12.0f, -15.0f),
-			.m_fPitch = -0.7f,
-			.m_fFOV = glm::radians(50.0f),
-		});
-		pxArenaData->SetMainCameraEntity(xGameManager.GetEntityID());
+	// EnemyCount: TopLeft, x=30, y=30+24*6=174, size=15*3=45
+	Zenith_EditorAutomation::AddStep_CreateUIText("EnemyCount", "Enemies: 3 / 3");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("EnemyCount", static_cast<int>(Zenith_UI::AnchorPreset::TopLeft));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("EnemyCount", 30.0f, 174.0f);
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("EnemyCount", 45.0f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("EnemyCount", 0.8f, 0.8f, 0.8f, 1.0f);
+	Zenith_EditorAutomation::AddStep_SetUIAlignment("EnemyCount", static_cast<int>(Zenith_UI::TextAlignment::Left));
+	Zenith_EditorAutomation::AddStep_SetUIVisible("EnemyCount", false);
 
-		static constexpr float s_fMarginLeft = 30.0f;
-		static constexpr float s_fMarginTop = 30.0f;
-		static constexpr float s_fBaseTextSize = 15.0f;
-		static constexpr float s_fLineHeight = 24.0f;
+	// ComboCount: Center, x=0, y=-100, size=15*8=120
+	Zenith_EditorAutomation::AddStep_CreateUIText("ComboCount", "");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("ComboCount", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("ComboCount", 0.0f, -100.0f);
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("ComboCount", 120.0f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("ComboCount", 1.0f, 0.8f, 0.2f, 1.0f);
+	Zenith_EditorAutomation::AddStep_SetUIAlignment("ComboCount", static_cast<int>(Zenith_UI::TextAlignment::Center));
+	Zenith_EditorAutomation::AddStep_SetUIVisible("ComboCount", false);
 
-		Zenith_UIComponent& xUI = xGameManager.AddComponent<Zenith_UIComponent>();
+	// ComboText: Center, x=0, y=-60, size=15*4=60
+	Zenith_EditorAutomation::AddStep_CreateUIText("ComboText", "");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("ComboText", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("ComboText", 0.0f, -60.0f);
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("ComboText", 60.0f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("ComboText", 1.0f, 0.8f, 0.2f, 1.0f);
+	Zenith_EditorAutomation::AddStep_SetUIAlignment("ComboText", static_cast<int>(Zenith_UI::TextAlignment::Center));
+	Zenith_EditorAutomation::AddStep_SetUIVisible("ComboText", false);
 
-		auto CreateHUDText = [&](const char* szName, const char* szText,
-			Zenith_UI::AnchorPreset eAnchor, float fX, float fY, float fSize,
-			Zenith_Maths::Vector4 xColor,
-			Zenith_UI::TextAlignment eAlign = Zenith_UI::TextAlignment::Left)
-		{
-			Zenith_UI::Zenith_UIText* pxText = xUI.CreateText(szName, szText);
-			pxText->SetAnchorAndPivot(eAnchor);
-			pxText->SetPosition(fX, fY);
-			pxText->SetFontSize(fSize);
-			pxText->SetColor(xColor);
-			pxText->SetAlignment(eAlign);
-			pxText->SetVisible(false);
-		};
+	// Controls: BottomLeft, x=30, y=30, size=15*2.5=37.5
+	Zenith_EditorAutomation::AddStep_CreateUIText("Controls", "WASD: Move | LMB: Attack | RMB: Heavy | Space: Dodge | R: Reset | Esc: Menu");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("Controls", static_cast<int>(Zenith_UI::AnchorPreset::BottomLeft));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("Controls", 30.0f, 30.0f);
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("Controls", 37.5f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("Controls", 0.7f, 0.7f, 0.7f, 1.0f);
+	Zenith_EditorAutomation::AddStep_SetUIAlignment("Controls", static_cast<int>(Zenith_UI::TextAlignment::Left));
+	Zenith_EditorAutomation::AddStep_SetUIVisible("Controls", false);
 
-		CreateHUDText("PlayerHealth", "Health: 100 / 100",
-			Zenith_UI::AnchorPreset::TopLeft, s_fMarginLeft, s_fMarginTop + s_fLineHeight * 3,
-			s_fBaseTextSize * 3.0f, {0.2f, 1.0f, 0.2f, 1.0f});
+	// Status: Center, x=0, y=0, size=15*8=120
+	Zenith_EditorAutomation::AddStep_CreateUIText("Status", "");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("Status", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("Status", 0.0f, 0.0f);
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("Status", 120.0f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("Status", 0.2f, 1.0f, 0.2f, 1.0f);
+	Zenith_EditorAutomation::AddStep_SetUIAlignment("Status", static_cast<int>(Zenith_UI::TextAlignment::Center));
+	Zenith_EditorAutomation::AddStep_SetUIVisible("Status", false);
 
-		CreateHUDText("PlayerHealthBar", "[||||||||||||||||||||]",
-			Zenith_UI::AnchorPreset::TopLeft, s_fMarginLeft, s_fMarginTop + s_fLineHeight * 4,
-			s_fBaseTextSize * 2.5f, {0.2f, 1.0f, 0.2f, 1.0f});
+	Zenith_EditorAutomation::AddStep_AddScript();
+	Zenith_EditorAutomation::AddStep_SetBehaviourForSerialization("Combat_Behaviour");
+	Zenith_EditorAutomation::AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/Arena" ZENITH_SCENE_EXT);
+	Zenith_EditorAutomation::AddStep_UnloadScene();
 
-		CreateHUDText("EnemyCount", "Enemies: 3 / 3",
-			Zenith_UI::AnchorPreset::TopLeft, s_fMarginLeft, s_fMarginTop + s_fLineHeight * 6,
-			s_fBaseTextSize * 3.0f, {0.8f, 0.8f, 0.8f, 1.0f});
-
-		CreateHUDText("ComboCount", "",
-			Zenith_UI::AnchorPreset::Center, 0.0f, -100.0f,
-			s_fBaseTextSize * 8.0f, {1.0f, 0.8f, 0.2f, 1.0f}, Zenith_UI::TextAlignment::Center);
-
-		CreateHUDText("ComboText", "",
-			Zenith_UI::AnchorPreset::Center, 0.0f, -60.0f,
-			s_fBaseTextSize * 4.0f, {1.0f, 0.8f, 0.2f, 1.0f}, Zenith_UI::TextAlignment::Center);
-
-		CreateHUDText("Controls", "WASD: Move | LMB: Attack | RMB: Heavy | Space: Dodge | R: Reset | Esc: Menu",
-			Zenith_UI::AnchorPreset::BottomLeft, s_fMarginLeft, s_fMarginTop,
-			s_fBaseTextSize * 2.5f, {0.7f, 0.7f, 0.7f, 1.0f});
-
-		CreateHUDText("Status", "",
-			Zenith_UI::AnchorPreset::Center, 0.0f, 0.0f,
-			s_fBaseTextSize * 8.0f, {0.2f, 1.0f, 0.2f, 1.0f}, Zenith_UI::TextAlignment::Center);
-
-		Zenith_ScriptComponent& xScript = xGameManager.AddComponent<Zenith_ScriptComponent>();
-		xScript.SetBehaviourForSerialization<Combat_Behaviour>();
-
-		pxArenaData->SaveToFile(strArenaPath);
-		Zenith_SceneManager::RegisterSceneBuildIndex(1, strArenaPath);
-		Zenith_SceneManager::UnloadScene(xArenaScene);
-	}
+	// ---- Final scene loading ----
+	Zenith_EditorAutomation::AddStep_SetInitialSceneLoadCallback(&Project_LoadInitialScene);
+	Zenith_EditorAutomation::AddStep_SetLoadingScene(true);
+	Zenith_EditorAutomation::AddStep_Custom(&Project_LoadInitialScene);
+	Zenith_EditorAutomation::AddStep_SetLoadingScene(false);
 }
+#endif
 
 void Project_LoadInitialScene()
 {
+	Zenith_SceneManager::RegisterSceneBuildIndex(0, GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT);
+	Zenith_SceneManager::RegisterSceneBuildIndex(1, GAME_ASSETS_DIR "Scenes/Arena" ZENITH_SCENE_EXT);
 	Zenith_SceneManager::LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
 }

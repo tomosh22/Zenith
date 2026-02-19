@@ -2,17 +2,14 @@
 
 // ========== Vertex Attributes ==========
 // Position is in world space (terrain is static, no model matrix needed)
+// Packed format (24 bytes): FLOAT3 + HALF2 + SNORM10:10:10:2 + SNORM10:10:10:2
 layout(location = 0) in vec3 a_xPosition;
-layout(location = 1) in vec2 a_xUV;
-layout(location = 2) in vec3 a_xNormal;
-layout(location = 3) in vec3 a_xTangent;
-layout(location = 4) in vec3 a_xBitangent;
-layout(location = 5) in float a_fMaterialLerp;
+layout(location = 1) in vec2 a_xUV;              // Half-float, auto-unpacked by Vulkan
+layout(location = 2) in vec4 a_xNormalPacked;     // SNORM10:10:10:2, xyz = normal, w = unused
+layout(location = 3) in vec4 a_xTangentPacked;    // SNORM10:10:10:2, xyz = tangent, w = bitangent sign
 
 // ========== Vertex Outputs ==========
 // OPTIMIZATION: Reduced varying count by packing TBN more efficiently
-// Previously: 7 varyings (UV, Normal, WorldPos, MaterialLerp, TBN mat3, LOD)
-// Now: 6 varyings with TBN packed into normal + tangent + sign
 // Varyings only output when not doing shadow pass (fragment shader doesn't need them)
 
 #ifndef SHADOWS
@@ -20,11 +17,8 @@ layout(location = 0) out vec2 o_xUV;
 layout(location = 1) out vec3 o_xNormal;      // World-space normal
 layout(location = 2) out vec3 o_xWorldPos;    // World position for lighting
 layout(location = 3) out vec3 o_xTangent;     // World-space tangent (bitangent reconstructed in frag)
-layout(location = 4) out float o_fMaterialLerp;
-layout(location = 5) flat out uint o_uLODLevel;  // Flat = only read once per primitive
-// OPTIMIZATION: Bitangent sign packed with material lerp to save a varying
-// Sign is +1 or -1, we use the sign bit of a flag
-layout(location = 6) out float o_fBitangentSign;
+layout(location = 4) flat out uint o_uLODLevel;  // Flat = only read once per primitive
+layout(location = 5) out float o_fBitangentSign;
 #endif
 
 #ifndef SHADOWS
@@ -63,16 +57,12 @@ void main()
 	// OPTIMIZATION: UV scale applied here once per-vertex instead of in fragment
 	o_xUV = a_xUV * g_fUVScale;
 
-	// Pass through normalized TBN components
-	// Normal and tangent are passed directly; bitangent reconstructed in fragment
-	o_xNormal = a_xNormal;  // Assume normalized from export
-	o_xTangent = a_xTangent;
+	// Pass through TBN components from packed SNORM10:10:10:2 attributes
+	o_xNormal = normalize(a_xNormalPacked.xyz);
+	o_xTangent = normalize(a_xTangentPacked.xyz);
 
-	// Compute bitangent sign (handedness) - cross product gives direction
-	// If dot(cross(N,T), B) > 0, sign is +1, else -1
-	o_fBitangentSign = sign(dot(cross(a_xNormal, a_xTangent), a_xBitangent));
-
-	o_fMaterialLerp = a_fMaterialLerp;
+	// Bitangent sign was pre-computed at export and stored in tangent.w (2-bit SNORM)
+	o_fBitangentSign = a_xTangentPacked.w >= 0.0 ? 1.0 : -1.0;
 
 	// Read LOD level for this draw call
 	// gl_InstanceIndex = firstInstance + instanceID. Since instanceCount=1 and instanceID=0,

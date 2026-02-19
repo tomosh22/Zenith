@@ -25,4 +25,7 @@ public:
 	 * Used by Zenith_TerrainComponent to bind the pipeline before dispatching culling
 	 */
 	static Flux_Pipeline& GetCullingPipeline();
+
+	static u_int& GetDebugMode();
+	static bool& GetWireframeMode();
 };

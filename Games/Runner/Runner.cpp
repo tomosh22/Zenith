@@ -22,6 +22,10 @@
 
 #include <cmath>
 
+#ifdef ZENITH_TOOLS
+#include "Editor/Zenith_EditorAutomation.h"
+#endif
+
 // ============================================================================
 // Runner Resources - Global access for behaviours
 // ============================================================================
@@ -458,133 +462,132 @@ void Project_Shutdown()
 	// Runner has no resources that need explicit cleanup
 }
 
-void Project_CreateScenes()
+void Project_LoadInitialScene(); // Forward declaration for automation steps
+
+#ifdef ZENITH_TOOLS
+void Project_InitializeResources()
+{
+	// All resources initialized in Project_RegisterScriptBehaviours
+}
+
+void Project_RegisterEditorAutomationSteps()
 {
 	// --- MainMenu scene (build index 0) ---
-	{
-		const std::string strScenePath = GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT;
-
-		Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("MainMenu");
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xScene);
-
-		Zenith_Entity xGameManager(pxSceneData, "GameManager");
-		xGameManager.SetTransient(false);
-
-		// Camera
-		Zenith_CameraComponent& xCamera = xGameManager.AddComponent<Zenith_CameraComponent>();
-		xCamera.InitialisePerspective({
-			.m_xPosition = Zenith_Maths::Vector3(0.f, 4.f, -8.f),
-			.m_fPitch = -0.3f,
-			.m_fFOV = glm::radians(60.f),
-		});
-		pxSceneData->SetMainCameraEntity(xGameManager.GetEntityID());
-
-		// UI
-		static constexpr float s_fBaseTextSize = 15.f;
-
-		Zenith_UIComponent& xUI = xGameManager.AddComponent<Zenith_UIComponent>();
-
-		Zenith_UI::Zenith_UIText* pxMenuTitle = xUI.CreateText("MenuTitle", "ENDLESS RUNNER");
-		pxMenuTitle->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
-		pxMenuTitle->SetPosition(0.f, -120.f);
-		pxMenuTitle->SetAlignment(Zenith_UI::TextAlignment::Center);
-		pxMenuTitle->SetFontSize(s_fBaseTextSize * 6.0f);
-		pxMenuTitle->SetColor(Zenith_Maths::Vector4(0.3f, 0.6f, 1.f, 1.f));
-
-		Zenith_UI::Zenith_UIButton* pxPlayBtn = xUI.CreateButton("MenuPlay", "Play");
-		pxPlayBtn->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
-		pxPlayBtn->SetPosition(0.f, 0.f);
-		pxPlayBtn->SetSize(200.f, 50.f);
-
-		// Script
-		Zenith_ScriptComponent& xScript = xGameManager.AddComponent<Zenith_ScriptComponent>();
-		xScript.SetBehaviourForSerialization<Runner_Behaviour>();
-
-		pxSceneData->SaveToFile(strScenePath);
-		Zenith_SceneManager::RegisterSceneBuildIndex(0, strScenePath);
-		Zenith_SceneManager::UnloadScene(xScene);
-	}
+	Zenith_EditorAutomation::AddStep_CreateScene("MainMenu");
+	Zenith_EditorAutomation::AddStep_CreateEntity("GameManager");
+	Zenith_EditorAutomation::AddStep_AddCamera();
+	Zenith_EditorAutomation::AddStep_SetCameraPosition(0.f, 4.f, -8.f);
+	Zenith_EditorAutomation::AddStep_SetCameraPitch(-0.3f);
+	Zenith_EditorAutomation::AddStep_SetCameraFOV(glm::radians(60.f));
+	Zenith_EditorAutomation::AddStep_SetAsMainCamera();
+	Zenith_EditorAutomation::AddStep_AddUI();
+	// MenuTitle: Center, fontSize=90, alignment=Center
+	Zenith_EditorAutomation::AddStep_CreateUIText("MenuTitle", "ENDLESS RUNNER");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("MenuTitle", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("MenuTitle", 0.f, -120.f);
+	Zenith_EditorAutomation::AddStep_SetUIAlignment("MenuTitle", static_cast<int>(Zenith_UI::TextAlignment::Center));
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("MenuTitle", 90.f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("MenuTitle", 0.3f, 0.6f, 1.f, 1.f);
+	Zenith_EditorAutomation::AddStep_CreateUIButton("MenuPlay", "Play");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("MenuPlay", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("MenuPlay", 0.f, 0.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("MenuPlay", 200.f, 50.f);
+	Zenith_EditorAutomation::AddStep_AddScript();
+	Zenith_EditorAutomation::AddStep_SetBehaviourForSerialization("Runner_Behaviour");
+	Zenith_EditorAutomation::AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT);
+	Zenith_EditorAutomation::AddStep_UnloadScene();
 
 	// --- Runner scene (build index 1) ---
-	{
-		const std::string strScenePath = GAME_ASSETS_DIR "Scenes/Runner" ZENITH_SCENE_EXT;
+	Zenith_EditorAutomation::AddStep_CreateScene("Runner");
+	Zenith_EditorAutomation::AddStep_CreateEntity("GameManager");
+	Zenith_EditorAutomation::AddStep_AddCamera();
+	Zenith_EditorAutomation::AddStep_SetCameraPosition(0.f, 4.f, -8.f);
+	Zenith_EditorAutomation::AddStep_SetCameraPitch(-0.3f);
+	Zenith_EditorAutomation::AddStep_SetCameraFOV(glm::radians(60.f));
+	Zenith_EditorAutomation::AddStep_SetAsMainCamera();
+	Zenith_EditorAutomation::AddStep_AddUI();
 
-		Zenith_Scene xScene = Zenith_SceneManager::CreateEmptyScene("Runner");
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xScene);
+	// HUD UI: marginLeft=30, marginTop=30, baseTextSize=15, lineHeight=28
+	// Title: TopLeft, (30, 30), fontSize=72, white, alignment=Left, hidden
+	Zenith_EditorAutomation::AddStep_CreateUIText("Title", "ENDLESS RUNNER");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("Title", static_cast<int>(Zenith_UI::AnchorPreset::TopLeft));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("Title", 30.f, 30.f);
+	Zenith_EditorAutomation::AddStep_SetUIAlignment("Title", static_cast<int>(Zenith_UI::TextAlignment::Left));
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("Title", 72.f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("Title", 1.f, 1.f, 1.f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIVisible("Title", false);
 
-		Zenith_Entity xGameManager(pxSceneData, "GameManager");
-		xGameManager.SetTransient(false);
+	// Distance: TopLeft, (30, 100), fontSize=90, white, hidden
+	Zenith_EditorAutomation::AddStep_CreateUIText("Distance", "0m");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("Distance", static_cast<int>(Zenith_UI::AnchorPreset::TopLeft));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("Distance", 30.f, 100.f);
+	Zenith_EditorAutomation::AddStep_SetUIAlignment("Distance", static_cast<int>(Zenith_UI::TextAlignment::Left));
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("Distance", 90.f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("Distance", 1.f, 1.f, 1.f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIVisible("Distance", false);
 
-		// Camera
-		Zenith_CameraComponent& xCamera = xGameManager.AddComponent<Zenith_CameraComponent>();
-		xCamera.InitialisePerspective({
-			.m_xPosition = Zenith_Maths::Vector3(0.f, 4.f, -8.f),
-			.m_fPitch = -0.3f,
-			.m_fFOV = glm::radians(60.f),
-		});
-		pxSceneData->SetMainCameraEntity(xGameManager.GetEntityID());
+	// Score: TopLeft, (30, 170), fontSize=45, blue-ish, hidden
+	Zenith_EditorAutomation::AddStep_CreateUIText("Score", "Score: 0");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("Score", static_cast<int>(Zenith_UI::AnchorPreset::TopLeft));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("Score", 30.f, 170.f);
+	Zenith_EditorAutomation::AddStep_SetUIAlignment("Score", static_cast<int>(Zenith_UI::TextAlignment::Left));
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("Score", 45.f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("Score", 0.6f, 0.8f, 1.f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIVisible("Score", false);
 
-		// UI
-		static constexpr float s_fMarginLeft = 30.f;
-		static constexpr float s_fMarginTop = 30.f;
-		static constexpr float s_fBaseTextSize = 15.f;
-		static constexpr float s_fLineHeight = 28.f;
+	// HighScore: TopLeft, (30, 198), fontSize=45, gold, hidden
+	Zenith_EditorAutomation::AddStep_CreateUIText("HighScore", "Best: 0");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("HighScore", static_cast<int>(Zenith_UI::AnchorPreset::TopLeft));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("HighScore", 30.f, 198.f);
+	Zenith_EditorAutomation::AddStep_SetUIAlignment("HighScore", static_cast<int>(Zenith_UI::TextAlignment::Left));
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("HighScore", 45.f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("HighScore", 1.f, 0.84f, 0.f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIVisible("HighScore", false);
 
-		Zenith_UIComponent& xUI = xGameManager.AddComponent<Zenith_UIComponent>();
+	// Speed: TopLeft, (30, 226), fontSize=45, blue-ish, hidden
+	Zenith_EditorAutomation::AddStep_CreateUIText("Speed", "Speed: 15.0");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("Speed", static_cast<int>(Zenith_UI::AnchorPreset::TopLeft));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("Speed", 30.f, 226.f);
+	Zenith_EditorAutomation::AddStep_SetUIAlignment("Speed", static_cast<int>(Zenith_UI::TextAlignment::Left));
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("Speed", 45.f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("Speed", 0.6f, 0.8f, 1.f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIVisible("Speed", false);
 
-		auto CreateHUDText = [&](const char* szName, const char* szText, float fYOffset) -> Zenith_UI::Zenith_UIText*
-		{
-			Zenith_UI::Zenith_UIText* pxText = xUI.CreateText(szName, szText);
-			pxText->SetAnchorAndPivot(Zenith_UI::AnchorPreset::TopLeft);
-			pxText->SetPosition(s_fMarginLeft, s_fMarginTop + fYOffset);
-			pxText->SetAlignment(Zenith_UI::TextAlignment::Left);
-			pxText->SetVisible(false);
-			return pxText;
-		};
+	// Controls: TopLeft, (30, 282), fontSize=37.5, gray, hidden
+	Zenith_EditorAutomation::AddStep_CreateUIText("Controls", "A/D: Lanes | Space/W: Jump | S: Slide | R: Reset | Esc: Menu");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("Controls", static_cast<int>(Zenith_UI::AnchorPreset::TopLeft));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("Controls", 30.f, 282.f);
+	Zenith_EditorAutomation::AddStep_SetUIAlignment("Controls", static_cast<int>(Zenith_UI::TextAlignment::Left));
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("Controls", 37.5f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("Controls", 0.7f, 0.7f, 0.7f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIVisible("Controls", false);
 
-		Zenith_UI::Zenith_UIText* pxTitle = CreateHUDText("Title", "ENDLESS RUNNER", 0.f);
-		pxTitle->SetFontSize(s_fBaseTextSize * 4.8f);
-		pxTitle->SetColor(Zenith_Maths::Vector4(1.f, 1.f, 1.f, 1.f));
+	// Status: Center, (0, 0), alignment=Center, fontSize=75, red, hidden
+	Zenith_EditorAutomation::AddStep_CreateUIText("Status", "");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("Status", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("Status", 0.f, 0.f);
+	Zenith_EditorAutomation::AddStep_SetUIAlignment("Status", static_cast<int>(Zenith_UI::TextAlignment::Center));
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("Status", 75.f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("Status", 1.f, 0.3f, 0.3f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIVisible("Status", false);
 
-		Zenith_UI::Zenith_UIText* pxDistance = CreateHUDText("Distance", "0m", s_fLineHeight * 2.5f);
-		pxDistance->SetFontSize(s_fBaseTextSize * 6.0f);
-		pxDistance->SetColor(Zenith_Maths::Vector4(1.f, 1.f, 1.f, 1.f));
+	// Script
+	Zenith_EditorAutomation::AddStep_AddScript();
+	Zenith_EditorAutomation::AddStep_SetBehaviourForSerialization("Runner_Behaviour");
+	Zenith_EditorAutomation::AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/Runner" ZENITH_SCENE_EXT);
+	Zenith_EditorAutomation::AddStep_UnloadScene();
 
-		Zenith_UI::Zenith_UIText* pxScore = CreateHUDText("Score", "Score: 0", s_fLineHeight * 5);
-		pxScore->SetFontSize(s_fBaseTextSize * 3.0f);
-		pxScore->SetColor(Zenith_Maths::Vector4(0.6f, 0.8f, 1.f, 1.f));
-
-		Zenith_UI::Zenith_UIText* pxHighScore = CreateHUDText("HighScore", "Best: 0", s_fLineHeight * 6);
-		pxHighScore->SetFontSize(s_fBaseTextSize * 3.0f);
-		pxHighScore->SetColor(Zenith_Maths::Vector4(1.f, 0.84f, 0.f, 1.f));
-
-		Zenith_UI::Zenith_UIText* pxSpeed = CreateHUDText("Speed", "Speed: 15.0", s_fLineHeight * 7);
-		pxSpeed->SetFontSize(s_fBaseTextSize * 3.0f);
-		pxSpeed->SetColor(Zenith_Maths::Vector4(0.6f, 0.8f, 1.f, 1.f));
-
-		Zenith_UI::Zenith_UIText* pxControls = CreateHUDText("Controls", "A/D: Lanes | Space/W: Jump | S: Slide | R: Reset | Esc: Menu", s_fLineHeight * 9);
-		pxControls->SetFontSize(s_fBaseTextSize * 2.5f);
-		pxControls->SetColor(Zenith_Maths::Vector4(0.7f, 0.7f, 0.7f, 1.f));
-
-		Zenith_UI::Zenith_UIText* pxStatus = xUI.CreateText("Status", "");
-		pxStatus->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
-		pxStatus->SetPosition(0.f, 0.f);
-		pxStatus->SetAlignment(Zenith_UI::TextAlignment::Center);
-		pxStatus->SetFontSize(s_fBaseTextSize * 5.0f);
-		pxStatus->SetColor(Zenith_Maths::Vector4(1.f, 0.3f, 0.3f, 1.f));
-		pxStatus->SetVisible(false);
-
-		// Script
-		Zenith_ScriptComponent& xScript = xGameManager.AddComponent<Zenith_ScriptComponent>();
-		xScript.SetBehaviourForSerialization<Runner_Behaviour>();
-
-		pxSceneData->SaveToFile(strScenePath);
-		Zenith_SceneManager::RegisterSceneBuildIndex(1, strScenePath);
-		Zenith_SceneManager::UnloadScene(xScene);
-	}
+	// ---- Final scene loading ----
+	Zenith_EditorAutomation::AddStep_SetInitialSceneLoadCallback(&Project_LoadInitialScene);
+	Zenith_EditorAutomation::AddStep_SetLoadingScene(true);
+	Zenith_EditorAutomation::AddStep_Custom(&Project_LoadInitialScene);
+	Zenith_EditorAutomation::AddStep_SetLoadingScene(false);
 }
+#endif
 
 void Project_LoadInitialScene()
 {
+	Zenith_SceneManager::RegisterSceneBuildIndex(0, GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT);
+	Zenith_SceneManager::RegisterSceneBuildIndex(1, GAME_ASSETS_DIR "Scenes/Runner" ZENITH_SCENE_EXT);
 	Zenith_SceneManager::LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
 }

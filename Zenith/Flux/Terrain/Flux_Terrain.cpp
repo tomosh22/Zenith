@@ -74,13 +74,27 @@ static Flux_BindingHandle s_xNormalTex1Binding;
 static Flux_BindingHandle s_xRoughnessMetallicTex1Binding;
 static Flux_BindingHandle s_xOcclusionTex1Binding;
 static Flux_BindingHandle s_xEmissiveTex1Binding;
+// Material 2 textures
+static Flux_BindingHandle s_xDiffuseTex2Binding;
+static Flux_BindingHandle s_xNormalTex2Binding;
+static Flux_BindingHandle s_xRoughnessMetallicTex2Binding;
+static Flux_BindingHandle s_xOcclusionTex2Binding;
+static Flux_BindingHandle s_xEmissiveTex2Binding;
+// Material 3 textures
+static Flux_BindingHandle s_xDiffuseTex3Binding;
+static Flux_BindingHandle s_xNormalTex3Binding;
+static Flux_BindingHandle s_xRoughnessMetallicTex3Binding;
+static Flux_BindingHandle s_xOcclusionTex3Binding;
+static Flux_BindingHandle s_xEmissiveTex3Binding;
+// Splatmap texture
+static Flux_BindingHandle s_xSplatmapBinding;
 
 DEBUGVAR bool dbg_bEnableTerrain = true;
-DEBUGVAR bool dbg_bWireframe = false;
+bool dbg_bWireframe = false;
 DEBUGVAR float dbg_fVisibilityThresholdMultiplier = 0.5f;
 DEBUGVAR bool dbg_bIgnoreVisibilityCheck = false;
 DEBUGVAR bool dbg_bLogTerrainMetrics = false;  // Log terrain performance metrics
-DEBUGVAR bool dbg_bVisualizeLOD = false;  // Toggle LOD visualization (Red=LOD0, Green=LOD1, Blue=LOD2, Magenta=LOD3)
+u_int dbg_uDebugMode = 0;  // Debug visualization mode (0=Off, 1=LOD, 2=Normals, 3=UVs, etc.)
 
 void Flux_Terrain::Initialise()
 {
@@ -90,12 +104,10 @@ void Flux_Terrain::Initialise()
 
 	Flux_VertexInputDescription xVertexDesc;
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_TRIANGLES;
-	xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT3);
-	xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT2);
-	xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT3);
-	xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT3);
-	xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT3);
-	xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT);
+	xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_FLOAT3);           // Position (12 bytes)
+	xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_HALF2);             // UV (4 bytes)
+	xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_SNORM10_10_10_2);   // Normal (4 bytes)
+	xVertexDesc.m_xPerVertexLayout.GetElements().PushBack(SHADER_DATA_TYPE_SNORM10_10_10_2);   // Tangent + BitangentSign (4 bytes)
 	xVertexDesc.m_xPerVertexLayout.CalculateOffsetsAndStrides();
 
 	{
@@ -139,6 +151,20 @@ void Flux_Terrain::Initialise()
 		s_xRoughnessMetallicTex1Binding = xGBufferReflection.GetBinding("g_xRoughnessMetallicTex1");
 		s_xOcclusionTex1Binding = xGBufferReflection.GetBinding("g_xOcclusionTex1");
 		s_xEmissiveTex1Binding = xGBufferReflection.GetBinding("g_xEmissiveTex1");
+		// Material 2 texture bindings
+		s_xDiffuseTex2Binding = xGBufferReflection.GetBinding("g_xDiffuseTex2");
+		s_xNormalTex2Binding = xGBufferReflection.GetBinding("g_xNormalTex2");
+		s_xRoughnessMetallicTex2Binding = xGBufferReflection.GetBinding("g_xRoughnessMetallicTex2");
+		s_xOcclusionTex2Binding = xGBufferReflection.GetBinding("g_xOcclusionTex2");
+		s_xEmissiveTex2Binding = xGBufferReflection.GetBinding("g_xEmissiveTex2");
+		// Material 3 texture bindings
+		s_xDiffuseTex3Binding = xGBufferReflection.GetBinding("g_xDiffuseTex3");
+		s_xNormalTex3Binding = xGBufferReflection.GetBinding("g_xNormalTex3");
+		s_xRoughnessMetallicTex3Binding = xGBufferReflection.GetBinding("g_xRoughnessMetallicTex3");
+		s_xOcclusionTex3Binding = xGBufferReflection.GetBinding("g_xOcclusionTex3");
+		s_xEmissiveTex3Binding = xGBufferReflection.GetBinding("g_xEmissiveTex3");
+		// Splatmap texture binding
+		s_xSplatmapBinding = xGBufferReflection.GetBinding("g_xSplatmap");
 	}
 
 
@@ -190,7 +216,7 @@ void Flux_Terrain::Initialise()
 	Zenith_DebugVariables::AddBoolean({ "Render", "Terrain", "Wireframe" }, dbg_bWireframe);
 	Zenith_DebugVariables::AddFloat({ "Render", "Terrain", "Visiblity Multiplier" }, dbg_fVisibilityThresholdMultiplier, 0.1f, 1.f);
 	Zenith_DebugVariables::AddBoolean({ "Render", "Terrain", "Ignore Visibility Check" }, dbg_bIgnoreVisibilityCheck);
-	Zenith_DebugVariables::AddBoolean({ "Render", "Terrain", "Visualize LOD" }, dbg_bVisualizeLOD);
+	Zenith_DebugVariables::AddUInt32({ "Render", "Terrain", "Debug Mode" }, dbg_uDebugMode, 0, 11);
 	Zenith_DebugVariables::AddBoolean({ "Render", "Terrain", "Log Metrics" }, dbg_bLogTerrainMetrics);
 #endif
 
@@ -317,12 +343,15 @@ void Flux_Terrain::RenderToGBuffer(void*)
 		Zenith_TerrainComponent* const pxTerrain = g_xTerrainComponentsToRender.Get(u);
 		if(!pxTerrain->GetUnifiedVertexBuffer().GetBuffer().m_ulSize) continue;
 
-		Zenith_MaterialAsset& xMaterial0 = *pxTerrain->GetMaterial0();
-		Zenith_MaterialAsset& xMaterial1 = *pxTerrain->GetMaterial1();
+		// Gather 4 material pointers
+		Zenith_MaterialAsset* apxMaterials[4];
+		for (u_int m = 0; m < 4; m++)
+			apxMaterials[m] = pxTerrain->GetMaterial(m);
 
-		// Build and push terrain material constants (128 bytes) - uses scratch buffer in set 1
+		// Build and push terrain material constants (288 bytes) - uses scratch buffer in set 1
 		TerrainMaterialPushConstants xTerrainMatConst;
-		BuildTerrainMaterialPushConstants(xTerrainMatConst, &xMaterial0, &xMaterial1, dbg_bVisualizeLOD);
+		BuildTerrainMaterialPushConstants(xTerrainMatConst, apxMaterials, 4, dbg_uDebugMode,
+			0.0f, 0.0f, Flux_TerrainConfig::TERRAIN_SIZE, Flux_TerrainConfig::TERRAIN_SIZE);
 		xBinder.PushConstant(s_xScratchBufferBinding, &xTerrainMatConst, sizeof(xTerrainMatConst));
 
 		// Bind LOD level buffer (per-terrain, set 1)
@@ -331,19 +360,35 @@ void Flux_Terrain::RenderToGBuffer(void*)
 		g_xTerrainCommandList.AddCommand<Flux_CommandSetVertexBuffer>(&pxTerrain->GetUnifiedVertexBuffer());
 		g_xTerrainCommandList.AddCommand<Flux_CommandSetIndexBuffer>(&pxTerrain->GetUnifiedIndexBuffer());
 
-		// Bind material textures (set 1, named bindings) - full material system (5 textures per material)
+		// Bind splatmap texture
+		if (pxTerrain->GetSplatmapTexture())
+			xBinder.BindSRV(s_xSplatmapBinding, &pxTerrain->GetSplatmapTexture()->m_xSRV);
+
+		// Bind material textures (set 1, named bindings) - 4 materials x 5 textures each
 		// Material 0 textures
-		xBinder.BindSRV(s_xDiffuseTex0Binding, &xMaterial0.GetDiffuseTexture()->m_xSRV);
-		xBinder.BindSRV(s_xNormalTex0Binding, &xMaterial0.GetNormalTexture()->m_xSRV);
-		xBinder.BindSRV(s_xRoughnessMetallicTex0Binding, &xMaterial0.GetRoughnessMetallicTexture()->m_xSRV);
-		xBinder.BindSRV(s_xOcclusionTex0Binding, &xMaterial0.GetOcclusionTexture()->m_xSRV);
-		xBinder.BindSRV(s_xEmissiveTex0Binding, &xMaterial0.GetEmissiveTexture()->m_xSRV);
+		xBinder.BindSRV(s_xDiffuseTex0Binding, &apxMaterials[0]->GetDiffuseTexture()->m_xSRV);
+		xBinder.BindSRV(s_xNormalTex0Binding, &apxMaterials[0]->GetNormalTexture()->m_xSRV);
+		xBinder.BindSRV(s_xRoughnessMetallicTex0Binding, &apxMaterials[0]->GetRoughnessMetallicTexture()->m_xSRV);
+		xBinder.BindSRV(s_xOcclusionTex0Binding, &apxMaterials[0]->GetOcclusionTexture()->m_xSRV);
+		xBinder.BindSRV(s_xEmissiveTex0Binding, &apxMaterials[0]->GetEmissiveTexture()->m_xSRV);
 		// Material 1 textures
-		xBinder.BindSRV(s_xDiffuseTex1Binding, &xMaterial1.GetDiffuseTexture()->m_xSRV);
-		xBinder.BindSRV(s_xNormalTex1Binding, &xMaterial1.GetNormalTexture()->m_xSRV);
-		xBinder.BindSRV(s_xRoughnessMetallicTex1Binding, &xMaterial1.GetRoughnessMetallicTexture()->m_xSRV);
-		xBinder.BindSRV(s_xOcclusionTex1Binding, &xMaterial1.GetOcclusionTexture()->m_xSRV);
-		xBinder.BindSRV(s_xEmissiveTex1Binding, &xMaterial1.GetEmissiveTexture()->m_xSRV);
+		xBinder.BindSRV(s_xDiffuseTex1Binding, &apxMaterials[1]->GetDiffuseTexture()->m_xSRV);
+		xBinder.BindSRV(s_xNormalTex1Binding, &apxMaterials[1]->GetNormalTexture()->m_xSRV);
+		xBinder.BindSRV(s_xRoughnessMetallicTex1Binding, &apxMaterials[1]->GetRoughnessMetallicTexture()->m_xSRV);
+		xBinder.BindSRV(s_xOcclusionTex1Binding, &apxMaterials[1]->GetOcclusionTexture()->m_xSRV);
+		xBinder.BindSRV(s_xEmissiveTex1Binding, &apxMaterials[1]->GetEmissiveTexture()->m_xSRV);
+		// Material 2 textures
+		xBinder.BindSRV(s_xDiffuseTex2Binding, &apxMaterials[2]->GetDiffuseTexture()->m_xSRV);
+		xBinder.BindSRV(s_xNormalTex2Binding, &apxMaterials[2]->GetNormalTexture()->m_xSRV);
+		xBinder.BindSRV(s_xRoughnessMetallicTex2Binding, &apxMaterials[2]->GetRoughnessMetallicTexture()->m_xSRV);
+		xBinder.BindSRV(s_xOcclusionTex2Binding, &apxMaterials[2]->GetOcclusionTexture()->m_xSRV);
+		xBinder.BindSRV(s_xEmissiveTex2Binding, &apxMaterials[2]->GetEmissiveTexture()->m_xSRV);
+		// Material 3 textures
+		xBinder.BindSRV(s_xDiffuseTex3Binding, &apxMaterials[3]->GetDiffuseTexture()->m_xSRV);
+		xBinder.BindSRV(s_xNormalTex3Binding, &apxMaterials[3]->GetNormalTexture()->m_xSRV);
+		xBinder.BindSRV(s_xRoughnessMetallicTex3Binding, &apxMaterials[3]->GetRoughnessMetallicTexture()->m_xSRV);
+		xBinder.BindSRV(s_xOcclusionTex3Binding, &apxMaterials[3]->GetOcclusionTexture()->m_xSRV);
+		xBinder.BindSRV(s_xEmissiveTex3Binding, &apxMaterials[3]->GetEmissiveTexture()->m_xSRV);
 
 		// GPU-driven indirect rendering with front-to-back sorted visible chunks
 		// Each component uses its own indirect draw buffer and visible count buffer
@@ -379,4 +424,14 @@ Flux_DynamicConstantBuffer& Flux_Terrain::GetTerrainConstantsBuffer()
 Flux_Pipeline& Flux_Terrain::GetCullingPipeline()
 {
 	return s_xCullingPipeline;
+}
+
+u_int& Flux_Terrain::GetDebugMode()
+{
+	return dbg_uDebugMode;
+}
+
+bool& Flux_Terrain::GetWireframeMode()
+{
+	return dbg_bWireframe;
 }

@@ -166,7 +166,7 @@ Zenith_Mutex_NoProfiling& Zenith_AssetRegistry::GetSerializableTypeRegistryMutex
 
 Zenith_AssetRegistry& Zenith_AssetRegistry::Get()
 {
-	ZENITH_ASSERT(s_pxInstance != nullptr, "Zenith_AssetRegistry not initialized! Call Initialize() first.");
+	Zenith_Assert(s_pxInstance != nullptr, "Zenith_AssetRegistry not initialized! Call Initialize() first.");
 	return *s_pxInstance;
 }
 
@@ -274,7 +274,7 @@ std::string Zenith_AssetRegistry::MakeRelativePath(const std::string& strAbsolut
 
 void Zenith_AssetRegistry::Initialize()
 {
-	ZENITH_ASSERT(s_pxInstance == nullptr, "Zenith_AssetRegistry already initialized!");
+	Zenith_Assert(s_pxInstance == nullptr, "Zenith_AssetRegistry already initialized!");
 	s_pxInstance = new Zenith_AssetRegistry();
 
 	// Register asset loaders

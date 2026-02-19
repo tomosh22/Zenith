@@ -54,8 +54,22 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Zenith_MaterialAsset& xMaterial
 	IncrementInstanceCount();
 
 	// Store material handles (auto ref-counting)
-	m_xMaterial0.Set(&xMaterial0);
-	m_xMaterial1.Set(&xMaterial1);
+	m_axMaterials[0].Set(&xMaterial0);
+	m_axMaterials[1].Set(&xMaterial1);
+
+	// Ensure all 4 material slots have valid assets (blank fallback for 2-3)
+	for (u_int u = 2; u < TERRAIN_MATERIAL_COUNT; u++)
+	{
+		if (!m_axMaterials[u].Get())
+		{
+			Zenith_MaterialAsset* pxBlank = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
+			if (pxBlank)
+			{
+				pxBlank->SetName("Terrain_Mat" + std::to_string(u));
+				m_axMaterials[u].Set(pxBlank);
+			}
+		}
+	}
 
 	// Ensure streaming manager is initialized (may have been shut down after previous terrain was destroyed)
 	if (!Flux_TerrainStreamingManager::IsInitialized())
@@ -68,7 +82,7 @@ Zenith_TerrainComponent::Zenith_TerrainComponent(Zenith_MaterialAsset& xMaterial
 {
 	// Initialize render resources (LOW LOD meshes, unified buffers, culling)
 	// This is the same initialization performed during deserialization
-	InitializeRenderResources(xMaterial0, xMaterial1);
+	InitializeRenderResources();
 
 	// NOTE: The following old code has been extracted into InitializeRenderResources()
 	// to allow reuse during deserialization
@@ -259,7 +273,7 @@ Zenith_TerrainComponent::~Zenith_TerrainComponent()
 	delete m_pxPhysicsGeometry;
 	m_pxPhysicsGeometry = nullptr;
 
-	// MaterialHandle members (m_xMaterial0, m_xMaterial1) auto-release when destroyed
+	// MaterialHandle members (m_axMaterials[]) auto-release when destroyed
 
 	// Decrement instance count - this may trigger streaming manager shutdown if last instance
 	DecrementInstanceCount();
@@ -268,7 +282,7 @@ Zenith_TerrainComponent::~Zenith_TerrainComponent()
 void Zenith_TerrainComponent::WriteToDataStream(Zenith_DataStream& xStream) const
 {
 	// Serialization version
-	uint32_t uVersion = 2;
+	uint32_t uVersion = 3;
 	xStream << uVersion;
 
 	// NOTE: Terrain component uses hardcoded paths for physics geometry during construction
@@ -276,28 +290,24 @@ void Zenith_TerrainComponent::WriteToDataStream(Zenith_DataStream& xStream) cons
 	std::string strPhysicsGeometryPath = m_pxPhysicsGeometry ? m_pxPhysicsGeometry->m_strSourcePath : "";
 	xStream << strPhysicsGeometryPath;
 
-	// Version 2: Serialize full materials with texture paths
-	Zenith_MaterialAsset* pxMat0 = m_xMaterial0.Get();
-	if (pxMat0)
+	// Version 3: Serialize 4 materials + splatmap path
+	for (u_int u = 0; u < TERRAIN_MATERIAL_COUNT; u++)
 	{
-		pxMat0->WriteToDataStream(xStream);
-	}
-	else
-	{
-		Zenith_MaterialAsset xEmptyMat;
-		xEmptyMat.WriteToDataStream(xStream);
+		Zenith_MaterialAsset* pxMat = m_axMaterials[u].Get();
+		if (pxMat)
+		{
+			pxMat->WriteToDataStream(xStream);
+		}
+		else
+		{
+			Zenith_MaterialAsset xEmptyMat;
+			xEmptyMat.WriteToDataStream(xStream);
+		}
 	}
 
-	Zenith_MaterialAsset* pxMat1 = m_xMaterial1.Get();
-	if (pxMat1)
-	{
-		pxMat1->WriteToDataStream(xStream);
-	}
-	else
-	{
-		Zenith_MaterialAsset xEmptyMat;
-		xEmptyMat.WriteToDataStream(xStream);
-	}
+	// Splatmap path
+	std::string strSplatmapPath = m_xSplatmap.GetPath();
+	xStream << strSplatmapPath;
 }
 
 void Zenith_TerrainComponent::ReadFromDataStream(Zenith_DataStream& xStream)
@@ -321,48 +331,54 @@ void Zenith_TerrainComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 	// This is necessary for terrain colliders to cover the entire terrain, not just the first chunk
 	LoadCombinedPhysicsGeometry();
 
-	// Version 2+: Read full materials with texture paths
-	if (uVersion >= 2)
+	// Create fresh materials with descriptive names including entity name
+	std::string strEntityName = m_xParentEntity.GetName().empty() ?
+		("Entity_" + std::to_string(m_xParentEntity.GetEntityID().m_uIndex)) : m_xParentEntity.GetName();
+
+	if (uVersion >= 3)
 	{
-		// Create fresh materials with descriptive names including entity name
-		std::string strEntityName = m_xParentEntity.GetName().empty() ?
-			("Entity_" + std::to_string(m_xParentEntity.GetEntityID().m_uIndex)) : m_xParentEntity.GetName();
-
-		// Create materials via registry and store in handles (handles manage ref counting)
-		Zenith_MaterialAsset* pxNewMat0 = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
-		Zenith_MaterialAsset* pxNewMat1 = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
-
-		if (pxNewMat0)
+		// Version 3: 4 materials + splatmap
+		for (u_int u = 0; u < TERRAIN_MATERIAL_COUNT; u++)
 		{
-			pxNewMat0->SetName(strEntityName + "_Terrain_Mat0");
-			m_xMaterial0.Set(pxNewMat0);
-		}
-		if (pxNewMat1)
-		{
-			pxNewMat1->SetName(strEntityName + "_Terrain_Mat1");
-			m_xMaterial1.Set(pxNewMat1);
+			Zenith_MaterialAsset* pxNewMat = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
+			if (pxNewMat)
+			{
+				pxNewMat->SetName(strEntityName + "_Terrain_Mat" + std::to_string(u));
+				m_axMaterials[u].Set(pxNewMat);
+				pxNewMat->ReadFromDataStream(xStream);
+			}
+			else
+			{
+				Zenith_MaterialAsset xTempMat;
+				xTempMat.ReadFromDataStream(xStream);
+			}
 		}
 
-		// Read material data (this will also load textures from paths)
-		if (m_xMaterial0.Get())
+		// Read splatmap path
+		std::string strSplatmapPath;
+		xStream >> strSplatmapPath;
+		if (!strSplatmapPath.empty())
 		{
-			m_xMaterial0.Get()->ReadFromDataStream(xStream);
+			m_xSplatmap.SetPath(strSplatmapPath);
 		}
-		else
+	}
+	else if (uVersion >= 2)
+	{
+		// Version 2: 2 materials (backwards compat)
+		for (u_int u = 0; u < 2; u++)
 		{
-			// Skip material data if we couldn't create material
-			Zenith_MaterialAsset xTempMat;
-			xTempMat.ReadFromDataStream(xStream);
-		}
-
-		if (m_xMaterial1.Get())
-		{
-			m_xMaterial1.Get()->ReadFromDataStream(xStream);
-		}
-		else
-		{
-			Zenith_MaterialAsset xTempMat;
-			xTempMat.ReadFromDataStream(xStream);
+			Zenith_MaterialAsset* pxNewMat = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
+			if (pxNewMat)
+			{
+				pxNewMat->SetName(strEntityName + "_Terrain_Mat" + std::to_string(u));
+				m_axMaterials[u].Set(pxNewMat);
+				pxNewMat->ReadFromDataStream(xStream);
+			}
+			else
+			{
+				Zenith_MaterialAsset xTempMat;
+				xTempMat.ReadFromDataStream(xStream);
+			}
 		}
 	}
 	else
@@ -378,43 +394,35 @@ void Zenith_TerrainComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 		xStream >> xMat1Color.z;
 		xStream >> xMat1Color.w;
 
-		// Apply loaded colors to materials if they exist
-		if (m_xMaterial0.Get())
+		if (m_axMaterials[0].Get())
+			m_axMaterials[0].Get()->SetBaseColor(xMat0Color);
+		if (m_axMaterials[1].Get())
+			m_axMaterials[1].Get()->SetBaseColor(xMat1Color);
+	}
+
+	// Ensure all 4 material slots have valid assets (use blank material as fallback)
+	for (u_int u = 0; u < TERRAIN_MATERIAL_COUNT; u++)
+	{
+		if (!m_axMaterials[u].Get())
 		{
-			m_xMaterial0.Get()->SetBaseColor(xMat0Color);
-		}
-		if (m_xMaterial1.Get())
-		{
-			m_xMaterial1.Get()->SetBaseColor(xMat1Color);
+			Zenith_MaterialAsset* pxBlank = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
+			if (pxBlank)
+			{
+				pxBlank->SetName(strEntityName + "_Terrain_Mat" + std::to_string(u));
+				m_axMaterials[u].Set(pxBlank);
+			}
 		}
 	}
 
 	// CRITICAL: Initialize render resources (LOW LOD meshes, buffers, culling)
-	// This recreates the GPU resources that were destroyed when the old terrain component was deleted
-	// Note: This takes several seconds to load and combine all LOW LOD meshes, which is expected
-	// when loading a scene
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "Terrain deserialization: Initializing render resources...");
-
-	// Use blank material as fallback if materials not provided
-	// This ensures terrain is visible (though with default textures) rather than invisible
-	// The game code can set proper materials after scene load if needed
-	Zenith_MaterialAsset* pxMat0 = m_xMaterial0.Get() ? m_xMaterial0.Get() : Flux_Graphics::s_pxBlankMaterial;
-	Zenith_MaterialAsset* pxMat1 = m_xMaterial1.Get() ? m_xMaterial1.Get() : Flux_Graphics::s_pxBlankMaterial;
-
-	if (pxMat0 && pxMat1)
-	{
-		InitializeRenderResources(*pxMat0, *pxMat1);
-		Zenith_Log(LOG_CATEGORY_TERRAIN, "Terrain deserialization: Render resources initialized successfully");
-	}
-	else
-	{
-		Zenith_Log(LOG_CATEGORY_TERRAIN, "ERROR: Terrain deserialization: Blank material not available!");
-	}
+	InitializeRenderResources();
+	Zenith_Log(LOG_CATEGORY_TERRAIN, "Terrain deserialization: Render resources initialized successfully");
 }
 
 // ========== Render Resources Initialization ==========
 
-void Zenith_TerrainComponent::InitializeRenderResources(Zenith_MaterialAsset&, Zenith_MaterialAsset&)
+void Zenith_TerrainComponent::InitializeRenderResources()
 {
 	// Ensure streaming manager is initialized (may have been shut down after previous terrain was destroyed)
 	if (!Flux_TerrainStreamingManager::IsInitialized())
@@ -423,7 +431,7 @@ void Zenith_TerrainComponent::InitializeRenderResources(Zenith_MaterialAsset&, Z
 		Flux_TerrainStreamingManager::Initialize();
 	}
 
-	// NOTE: Materials are stored in m_xMaterial0/m_xMaterial1 handles by the caller
+	// NOTE: Materials are stored in m_axMaterials[] handles by the caller
 	// (constructor or ReadFromDataStream) before this method is invoked
 
 	// Calculate expected LOW LOD buffer requirements
@@ -471,14 +479,31 @@ void Zenith_TerrainComponent::InitializeRenderResources(Zenith_MaterialAsset&, Z
 	// ========== Load and Combine LOW LOD Chunks ==========
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "Loading LOW LOD meshes for all %u chunks...", TOTAL_CHUNKS);
 
+	// Pre-allocate per-chunk init data to collect vertex/index counts and AABBs
+	// during combining. This eliminates 8192 redundant file reads in RegisterTerrainBuffers.
+	Flux_TerrainChunkInitData* pxChunkInitData = new Flux_TerrainChunkInitData[TOTAL_CHUNKS];
+
 	// Load first chunk to get buffer layout (stored as owned pointer for later cleanup)
 	Flux_MeshGeometry* pxLowLODGeometry = new Flux_MeshGeometry();
 	Flux_MeshGeometry::LoadFromFile(
-		(std::string(Project_GetGameAssetsDirectory()) + "Terrain/Render_LOW_0_0" ZENITH_MESH_EXT).c_str(), *pxLowLODGeometry, 0);  // 0 = load all attributes
+		(std::string(Project_GetGameAssetsDirectory()) + "Terrain/Render_LOW_0_0" ZENITH_MESH_EXT).c_str(), *pxLowLODGeometry,
+		1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__POSITION);  // Load positions for AABB computation
 	Flux_MeshGeometry& xLowLODGeometry = *pxLowLODGeometry;
 
 	// Store vertex stride for buffer calculations
 	m_uVertexStride = xLowLODGeometry.GetBufferLayout().GetStride();
+
+	// Collect init data for chunk (0,0)
+	{
+		uint32_t uChunkIndex = Flux_TerrainConfig::ChunkCoordsToIndex(0, 0);
+		pxChunkInitData[uChunkIndex].m_uVertexCount = xLowLODGeometry.GetNumVerts();
+		pxChunkInitData[uChunkIndex].m_uIndexCount = xLowLODGeometry.GetNumIndices();
+		if (xLowLODGeometry.m_pxPositions)
+		{
+			pxChunkInitData[uChunkIndex].m_xAABB = Zenith_FrustumCulling::GenerateAABBFromVertices(
+				xLowLODGeometry.m_pxPositions, xLowLODGeometry.GetNumVerts());
+		}
+	}
 
 	// Pre-allocate for all LOW LOD chunks
 	const uint64_t ulLowLODVertexDataSize = static_cast<uint64_t>(uLowLODTotalVerts) * m_uVertexStride;
@@ -497,7 +522,7 @@ void Zenith_TerrainComponent::InitializeRenderResources(Zenith_MaterialAsset&, Z
 		xLowLODGeometry.m_ulReservedPositionDataSize = ulLowLODPositionDataSize;
 	}
 
-	// Combine all LOW LOD chunks
+	// Combine all LOW LOD chunks, collecting per-chunk data during the pass
 	for (uint32_t x = 0; x < CHUNK_GRID_SIZE; ++x)
 	{
 		for (uint32_t y = 0; y < CHUNK_GRID_SIZE; ++y)
@@ -516,7 +541,19 @@ void Zenith_TerrainComponent::InitializeRenderResources(Zenith_MaterialAsset&, Z
 			}
 
 			Flux_MeshGeometry xChunkMesh;
-			Flux_MeshGeometry::LoadFromFile(strChunkPath.c_str(), xChunkMesh, 0);  // 0 = all attributes
+			Flux_MeshGeometry::LoadFromFile(strChunkPath.c_str(), xChunkMesh,
+				1 << Flux_MeshGeometry::FLUX_VERTEX_ATTRIBUTE__POSITION);  // Load positions for AABB computation
+
+			// Collect per-chunk init data before combining
+			uint32_t uChunkIndex = Flux_TerrainConfig::ChunkCoordsToIndex(x, y);
+			pxChunkInitData[uChunkIndex].m_uVertexCount = xChunkMesh.GetNumVerts();
+			pxChunkInitData[uChunkIndex].m_uIndexCount = xChunkMesh.GetNumIndices();
+			if (xChunkMesh.m_pxPositions)
+			{
+				pxChunkInitData[uChunkIndex].m_xAABB = Zenith_FrustumCulling::GenerateAABBFromVertices(
+					xChunkMesh.m_pxPositions, xChunkMesh.GetNumVerts());
+			}
+
 			Flux_MeshGeometry::Combine(xLowLODGeometry, xChunkMesh);
 			// xChunkMesh automatically destroyed when going out of scope
 
@@ -580,7 +617,9 @@ void Zenith_TerrainComponent::InitializeRenderResources(Zenith_MaterialAsset&, Z
 	pxLowLODGeometry = nullptr;
 
 	// ========== Register buffers with streaming manager ==========
-	Flux_TerrainStreamingManager::RegisterTerrainBuffers(this);
+	// Pass pre-computed per-chunk data to avoid 8192 redundant file reads
+	Flux_TerrainStreamingManager::RegisterTerrainBuffers(this, pxChunkInitData);
+	delete[] pxChunkInitData;
 
 	Zenith_Log(LOG_CATEGORY_TERRAIN, "Terrain render geometry facade setup complete (references component-owned buffers)");
 
@@ -839,11 +878,14 @@ void Zenith_TerrainComponent::UpdateCullingAndLod(Flux_CommandList& xCmdList, co
 	Zenith_Maths::Vector3 xCameraPos = Flux_Graphics::GetCameraPosition();
 	xCameraData.m_xCameraPosition = Zenith_Maths::Vector4(xCameraPos, 0.0f);
 
-	Flux_MemoryManager::UploadBufferData(m_xFrustumPlanesBuffer.GetBuffer().m_xVRAMHandle, &xCameraData, sizeof(Zenith_CameraDataGPU));
+	// CRITICAL: Use UploadBufferDataAtOffset (synchronous) so the compute shader
+	// dispatched in the same frame reads the correct frustum planes and visible count.
+	// The regular UploadBufferData is deferred and would not be visible this frame.
+	Flux_MemoryManager::UploadBufferDataAtOffset(m_xFrustumPlanesBuffer.GetBuffer().m_xVRAMHandle, &xCameraData, sizeof(Zenith_CameraDataGPU), 0);
 
 	// Reset visible chunk counter to 0
 	uint32_t uZero = 0;
-	Flux_MemoryManager::UploadBufferData(m_xVisibleCountBuffer.GetBuffer().m_xVRAMHandle, &uZero, sizeof(uint32_t));
+	Flux_MemoryManager::UploadBufferDataAtOffset(m_xVisibleCountBuffer.GetBuffer().m_xVRAMHandle, &uZero, sizeof(uint32_t), 0);
 
 	// IMPORTANT: Assumes the terrain culling compute pipeline is already bound by Flux_Terrain
 	// We only record buffer bindings and dispatch here

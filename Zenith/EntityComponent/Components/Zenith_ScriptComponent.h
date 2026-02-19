@@ -199,6 +199,11 @@ public:
 	Zenith_ScriptComponent(const Zenith_ScriptComponent&) = delete;
 	Zenith_ScriptComponent& operator=(const Zenith_ScriptComponent&) = delete;
 
+	// Accessors for behaviour pointer (prefer these over direct member access)
+	Zenith_ScriptBehaviour* GetBehaviourRaw() { return m_pxScriptBehaviour; }
+	const Zenith_ScriptBehaviour* GetBehaviourRaw() const { return m_pxScriptBehaviour; }
+	void SetBehaviourRaw(Zenith_ScriptBehaviour* pxBehaviour) { m_pxScriptBehaviour = pxBehaviour; }
+
 	Zenith_ScriptBehaviour* m_pxScriptBehaviour = nullptr;
 
 	Zenith_Entity m_xParentEntity;
@@ -284,6 +289,16 @@ public:
 		m_pxScriptBehaviour = new T(m_xParentEntity);
 		m_pxScriptBehaviour->m_xParentEntity = m_xParentEntity;
 		// OnAwake is NOT called - will be dispatched when entering Play mode
+	}
+
+	// Sets m_xParentEntity on the current behaviour (friend access to Zenith_ScriptBehaviour)
+	// Used by Zenith_Editor when attaching behaviours by name
+	void SetBehaviourParentEntity(Zenith_Entity& xEntity)
+	{
+		if (m_pxScriptBehaviour)
+		{
+			m_pxScriptBehaviour->m_xParentEntity = xEntity;
+		}
 	}
 
 	template<typename T>

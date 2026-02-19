@@ -619,6 +619,9 @@
     <ClCompile Include="..\Zenith\Editor\Zenith_Editor.cpp">
       <Filter>Editor</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\Editor\Zenith_EditorAutomation.cpp">
+      <Filter>Editor</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Editor\Zenith_EditorCamera.cpp">
       <Filter>Editor</Filter>
     </ClCompile>
@@ -908,6 +911,9 @@
       <Filter>UnitTests</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\UnitTests\Zenith_EditorTestFixture.cpp">
+      <Filter>UnitTests</Filter>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\UnitTests\Zenith_AutomationTests.cpp">
       <Filter>UnitTests</Filter>
     </ClCompile>
     <ClCompile Include="..\Zenith\UnitTests\Zenith_EditorTests.cpp">
@@ -3192,6 +3198,9 @@
     <ClInclude Include="..\Zenith\Editor\Zenith_Editor.h">
       <Filter>Editor</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Editor\Zenith_EditorAutomation.h">
+      <Filter>Editor</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Editor\Zenith_EditorState.h">
       <Filter>Editor</Filter>
     </ClInclude>
@@ -3772,6 +3781,9 @@
       <Filter>UI</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\UnitTests\Zenith_EditorTestFixture.h">
+      <Filter>UnitTests</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\UnitTests\Zenith_AutomationTests.h">
       <Filter>UnitTests</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\UnitTests\Zenith_EditorTests.h">

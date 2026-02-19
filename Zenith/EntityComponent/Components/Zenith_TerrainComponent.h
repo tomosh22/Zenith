@@ -9,6 +9,7 @@ using namespace Flux_TerrainConfig;
 #include "Flux/Flux.h"
 #include "Flux/Flux_Buffers.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
+#include "AssetHandling/Zenith_TextureAsset.h"
 #include "AssetHandling/Zenith_AssetHandle.h"
 #include "Maths/Zenith_FrustumCulling.h"
 
@@ -78,10 +79,18 @@ public:
 	const Flux_IndexBuffer& GetUnifiedIndexBuffer() const { return m_xUnifiedIndexBuffer; }
 
 	const Flux_MeshGeometry& GetPhysicsMeshGeometry() const { return *m_pxPhysicsGeometry; }
-	Zenith_MaterialAsset* GetMaterial0() const { return m_xMaterial0.Get(); }
-	Zenith_MaterialAsset* GetMaterial1() const { return m_xMaterial1.Get(); }
-	MaterialHandle& GetMaterial0Handle() { return m_xMaterial0; }
-	MaterialHandle& GetMaterial1Handle() { return m_xMaterial1; }
+	// Material accessors (4-material palette)
+	static constexpr u_int TERRAIN_MATERIAL_COUNT = 4;
+	Zenith_MaterialAsset* GetMaterial(u_int uIndex) const { Zenith_Assert(uIndex < TERRAIN_MATERIAL_COUNT, "Invalid material index"); return m_axMaterials[uIndex].Get(); }
+	MaterialHandle& GetMaterialHandle(u_int uIndex) { Zenith_Assert(uIndex < TERRAIN_MATERIAL_COUNT, "Invalid material index"); return m_axMaterials[uIndex]; }
+
+	// Splatmap texture (RGBA8, weights for 4 materials)
+	Zenith_TextureAsset* GetSplatmapTexture() const { return m_xSplatmap.Get(); }
+	TextureHandle& GetSplatmapHandle() { return m_xSplatmap; }
+
+	// Backward compatibility wrappers
+	Zenith_MaterialAsset* GetMaterial0() const { return m_axMaterials[0].Get(); }
+	Zenith_MaterialAsset* GetMaterial1() const { return m_axMaterials[1].Get(); }
 
 	Zenith_Entity GetParentEntity() const { return m_xParentEntity; }
 	// Serialization methods for Zenith_DataStream
@@ -146,8 +155,8 @@ public:
 	Zenith_Entity m_xParentEntity;
 
 	Flux_MeshGeometry* m_pxPhysicsGeometry = nullptr;
-	MaterialHandle m_xMaterial0;
-	MaterialHandle m_xMaterial1;
+	MaterialHandle m_axMaterials[4];
+	TextureHandle m_xSplatmap;
 
 	// ========== Unified Terrain Buffers (owned by this component) ==========
 	// Contains LOW LOD (always-resident) data at the beginning, followed by streaming space for HIGH LOD
@@ -177,7 +186,7 @@ public:
 	void ExtractFrustumPlanes(const Zenith_Maths::Matrix4& xViewProjMatrix, Zenith_FrustumPlaneGPU* pxOutPlanes);
 
 	// Helper method to initialize render resources (called by constructor and deserialization)
-	void InitializeRenderResources(Zenith_MaterialAsset& xMaterial0, Zenith_MaterialAsset& xMaterial1);
+	void InitializeRenderResources();
 
 	// Helper method to load and combine all physics chunks
 	void LoadCombinedPhysicsGeometry();

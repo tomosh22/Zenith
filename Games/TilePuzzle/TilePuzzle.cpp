@@ -24,6 +24,11 @@
 
 #include <unordered_set>
 
+#ifdef ZENITH_TOOLS
+#include "Editor/Zenith_EditorAutomation.h"
+#include "Editor/Zenith_Editor.h"
+#endif
+
 // ============================================================================
 // TilePuzzle Resources - Global access for behaviours
 // ============================================================================
@@ -673,268 +678,299 @@ void Project_Shutdown()
 	// TilePuzzle has no resources that need explicit cleanup
 }
 
-void Project_CreateScenes()
+void Project_LoadInitialScene(); // Forward declaration for automation steps
+
+#ifdef ZENITH_TOOLS
+void Project_InitializeResources()
+{
+	// All TilePuzzle resources initialized in Project_RegisterScriptBehaviours
+}
+
+// Static string arrays for level select grid (safe for deferred const char* in automation actions)
+static const char* s_aszLevelBtnNames[20] = {
+	"LevelBtn_0", "LevelBtn_1", "LevelBtn_2", "LevelBtn_3", "LevelBtn_4",
+	"LevelBtn_5", "LevelBtn_6", "LevelBtn_7", "LevelBtn_8", "LevelBtn_9",
+	"LevelBtn_10", "LevelBtn_11", "LevelBtn_12", "LevelBtn_13", "LevelBtn_14",
+	"LevelBtn_15", "LevelBtn_16", "LevelBtn_17", "LevelBtn_18", "LevelBtn_19"
+};
+static const char* s_aszLevelLabels[20] = {
+	"1", "2", "3", "4", "5", "6", "7", "8", "9", "10",
+	"11", "12", "13", "14", "15", "16", "17", "18", "19", "20"
+};
+
+void Project_RegisterEditorAutomationSteps()
 {
 	// ---- MainMenu scene (build index 0) ----
+	Zenith_EditorAutomation::AddStep_CreateScene("MainMenu");
+	Zenith_EditorAutomation::AddStep_CreateEntity("GameManager");
+	Zenith_EditorAutomation::AddStep_AddCamera();
+	Zenith_EditorAutomation::AddStep_SetCameraPosition(0.f, 12.f, 0.f);
+	Zenith_EditorAutomation::AddStep_SetCameraPitch(-1.5f);
+	Zenith_EditorAutomation::AddStep_SetCameraFOV(glm::radians(45.f));
+	Zenith_EditorAutomation::AddStep_SetCameraAspect(9.f / 16.f);
+	Zenith_EditorAutomation::AddStep_SetAsMainCamera();
+	Zenith_EditorAutomation::AddStep_AddUI();
+
+	// Main menu background
+	Zenith_EditorAutomation::AddStep_CreateUIRect("MenuBackground");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("MenuBackground", static_cast<int>(Zenith_UI::AnchorPreset::TopLeft));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("MenuBackground", 0.f, 0.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("MenuBackground", 4000.f, 4000.f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("MenuBackground", 0.08f, 0.08f, 0.15f, 1.f);
+
+	// Menu title
+	Zenith_EditorAutomation::AddStep_CreateUIText("MenuTitle", "TILE PUZZLE");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("MenuTitle", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("MenuTitle", 0.f, -180.f);
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("MenuTitle", 72.f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("MenuTitle", 1.f, 1.f, 1.f, 1.f);
+
+	// Continue button
+	Zenith_EditorAutomation::AddStep_CreateUIButton("ContinueButton", "Continue");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("ContinueButton", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("ContinueButton", 0.f, -20.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("ContinueButton", 300.f, 80.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("ContinueButton", 32.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("ContinueButton", 0.2f, 0.25f, 0.4f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("ContinueButton", 0.3f, 0.35f, 0.55f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonPressedColor("ContinueButton", 0.12f, 0.15f, 0.25f, 1.f);
+
+	// Level Select button
+	Zenith_EditorAutomation::AddStep_CreateUIButton("LevelSelectButton", "Level Select");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("LevelSelectButton", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("LevelSelectButton", 0.f, 80.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("LevelSelectButton", 300.f, 80.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("LevelSelectButton", 32.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("LevelSelectButton", 0.2f, 0.25f, 0.4f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("LevelSelectButton", 0.3f, 0.35f, 0.55f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonPressedColor("LevelSelectButton", 0.12f, 0.15f, 0.25f, 1.f);
+
+	// New Game button
+	Zenith_EditorAutomation::AddStep_CreateUIButton("NewGameButton", "New Game");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("NewGameButton", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("NewGameButton", 0.f, 180.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("NewGameButton", 300.f, 80.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("NewGameButton", 32.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("NewGameButton", 0.2f, 0.25f, 0.4f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("NewGameButton", 0.3f, 0.35f, 0.55f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonPressedColor("NewGameButton", 0.12f, 0.15f, 0.25f, 1.f);
+
+	// Level select background (starts hidden)
+	Zenith_EditorAutomation::AddStep_CreateUIRect("LevelSelectBg");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("LevelSelectBg", static_cast<int>(Zenith_UI::AnchorPreset::TopLeft));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("LevelSelectBg", 0.f, 0.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("LevelSelectBg", 4000.f, 4000.f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("LevelSelectBg", 0.08f, 0.08f, 0.15f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIVisible("LevelSelectBg", false);
+
+	// Level select title (starts hidden)
+	Zenith_EditorAutomation::AddStep_CreateUIText("LevelSelectTitle", "Select Level");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("LevelSelectTitle", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("LevelSelectTitle", 0.f, -260.f);
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("LevelSelectTitle", 48.f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("LevelSelectTitle", 1.f, 1.f, 1.f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIVisible("LevelSelectTitle", false);
+
+	// Page text (starts hidden)
+	Zenith_EditorAutomation::AddStep_CreateUIText("PageText", "Page 1 / 5");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("PageText", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("PageText", 0.f, -200.f);
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("PageText", 32.f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("PageText", 0.7f, 0.7f, 0.8f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIVisible("PageText", false);
+
+	// Level select grid (4x5)
+	for (uint32_t u = 0; u < 20; ++u)
 	{
-		const std::string strMenuPath = GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT;
-
-		Zenith_Scene xMenuScene = Zenith_SceneManager::CreateEmptyScene("MainMenu");
-		Zenith_SceneData* pxMenuData = Zenith_SceneManager::GetSceneData(xMenuScene);
-
-		Zenith_Entity xMenuManager(pxMenuData, "GameManager");
-		xMenuManager.SetTransient(false);
-
-		Zenith_CameraComponent& xCamera = xMenuManager.AddComponent<Zenith_CameraComponent>();
-		xCamera.InitialisePerspective({
-			.m_xPosition = Zenith_Maths::Vector3(0.f, 12.f, 0.f),
-			.m_fPitch = -1.5f,
-			.m_fFOV = glm::radians(45.f),
-			.m_fAspectRatio = 9.f / 16.f,
-		});
-		pxMenuData->SetMainCameraEntity(xMenuManager.GetEntityID());
-
-		Zenith_UIComponent& xUI = xMenuManager.AddComponent<Zenith_UIComponent>();
-
-		// ---- Main Menu UI ----
-
-		Zenith_UI::Zenith_UIRect* pxMenuBg = xUI.CreateRect("MenuBackground");
-		pxMenuBg->SetAnchorAndPivot(Zenith_UI::AnchorPreset::TopLeft);
-		pxMenuBg->SetPosition(0.f, 0.f);
-		pxMenuBg->SetSize(4000.f, 4000.f);
-		pxMenuBg->SetColor({0.08f, 0.08f, 0.15f, 1.f});
-
-		Zenith_UI::Zenith_UIText* pxMenuTitle = xUI.CreateText("MenuTitle", "TILE PUZZLE");
-		pxMenuTitle->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
-		pxMenuTitle->SetPosition(0.f, -180.f);
-		pxMenuTitle->SetFontSize(72.f);
-		pxMenuTitle->SetColor({1.f, 1.f, 1.f, 1.f});
-
-		Zenith_UI::Zenith_UIButton* pxContinueBtn = xUI.CreateButton("ContinueButton", "Continue");
-		pxContinueBtn->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
-		pxContinueBtn->SetPosition(0.f, -20.f);
-		pxContinueBtn->SetSize(300.f, 80.f);
-		pxContinueBtn->SetFontSize(32.f);
-		pxContinueBtn->SetNormalColor({0.2f, 0.25f, 0.4f, 1.f});
-		pxContinueBtn->SetHoverColor({0.3f, 0.35f, 0.55f, 1.f});
-		pxContinueBtn->SetPressedColor({0.12f, 0.15f, 0.25f, 1.f});
-
-		Zenith_UI::Zenith_UIButton* pxLevelSelectBtn = xUI.CreateButton("LevelSelectButton", "Level Select");
-		pxLevelSelectBtn->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
-		pxLevelSelectBtn->SetPosition(0.f, 80.f);
-		pxLevelSelectBtn->SetSize(300.f, 80.f);
-		pxLevelSelectBtn->SetFontSize(32.f);
-		pxLevelSelectBtn->SetNormalColor({0.2f, 0.25f, 0.4f, 1.f});
-		pxLevelSelectBtn->SetHoverColor({0.3f, 0.35f, 0.55f, 1.f});
-		pxLevelSelectBtn->SetPressedColor({0.12f, 0.15f, 0.25f, 1.f});
-
-		Zenith_UI::Zenith_UIButton* pxNewGameBtn = xUI.CreateButton("NewGameButton", "New Game");
-		pxNewGameBtn->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
-		pxNewGameBtn->SetPosition(0.f, 180.f);
-		pxNewGameBtn->SetSize(300.f, 80.f);
-		pxNewGameBtn->SetFontSize(32.f);
-		pxNewGameBtn->SetNormalColor({0.2f, 0.25f, 0.4f, 1.f});
-		pxNewGameBtn->SetHoverColor({0.3f, 0.35f, 0.55f, 1.f});
-		pxNewGameBtn->SetPressedColor({0.12f, 0.15f, 0.25f, 1.f});
-
-		// ---- Level Select UI (starts hidden, toggled by behaviour) ----
-
-		Zenith_UI::Zenith_UIRect* pxLevelSelectBg = xUI.CreateRect("LevelSelectBg");
-		pxLevelSelectBg->SetAnchorAndPivot(Zenith_UI::AnchorPreset::TopLeft);
-		pxLevelSelectBg->SetPosition(0.f, 0.f);
-		pxLevelSelectBg->SetSize(4000.f, 4000.f);
-		pxLevelSelectBg->SetColor({0.08f, 0.08f, 0.15f, 1.f});
-		pxLevelSelectBg->SetVisible(false);
-
-		Zenith_UI::Zenith_UIText* pxLevelSelectTitle = xUI.CreateText("LevelSelectTitle", "Select Level");
-		pxLevelSelectTitle->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
-		pxLevelSelectTitle->SetPosition(0.f, -260.f);
-		pxLevelSelectTitle->SetFontSize(48.f);
-		pxLevelSelectTitle->SetColor({1.f, 1.f, 1.f, 1.f});
-		pxLevelSelectTitle->SetVisible(false);
-
-		Zenith_UI::Zenith_UIText* pxPageText = xUI.CreateText("PageText", "Page 1 / 5");
-		pxPageText->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
-		pxPageText->SetPosition(0.f, -200.f);
-		pxPageText->SetFontSize(32.f);
-		pxPageText->SetColor({0.7f, 0.7f, 0.8f, 1.f});
-		pxPageText->SetVisible(false);
-
-		// Level select buttons (4 rows x 5 columns)
-		for (uint32_t uRow = 0; uRow < 4; ++uRow)
-		{
-			for (uint32_t uCol = 0; uCol < 5; ++uCol)
-			{
-				uint32_t uIdx = uRow * 5 + uCol;
-				char szBtnName[32];
-				snprintf(szBtnName, sizeof(szBtnName), "LevelBtn_%u", uIdx);
-				char szLabel[8];
-				snprintf(szLabel, sizeof(szLabel), "%u", uIdx + 1);
-
-				Zenith_UI::Zenith_UIButton* pxLevelBtn = xUI.CreateButton(szBtnName, szLabel);
-				pxLevelBtn->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
-				float fX = (static_cast<float>(uCol) - 2.f) * 105.f;
-				float fY = -50.f + (static_cast<float>(uRow) - 1.5f) * 65.f;
-				pxLevelBtn->SetPosition(fX, fY);
-				pxLevelBtn->SetSize(90.f, 55.f);
-				pxLevelBtn->SetFontSize(20.f);
-				pxLevelBtn->SetNormalColor({0.2f, 0.3f, 0.5f, 1.f});
-				pxLevelBtn->SetHoverColor({0.3f, 0.4f, 0.6f, 1.f});
-				pxLevelBtn->SetPressedColor({0.1f, 0.15f, 0.3f, 1.f});
-				pxLevelBtn->SetVisible(false);
-			}
-		}
-
-		Zenith_UI::Zenith_UIButton* pxPrevPageBtn = xUI.CreateButton("PrevPageButton", "<");
-		pxPrevPageBtn->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
-		pxPrevPageBtn->SetPosition(-160.f, 180.f);
-		pxPrevPageBtn->SetSize(100.f, 50.f);
-		pxPrevPageBtn->SetFontSize(28.f);
-		pxPrevPageBtn->SetNormalColor({0.15f, 0.2f, 0.3f, 1.f});
-		pxPrevPageBtn->SetHoverColor({0.25f, 0.3f, 0.45f, 1.f});
-		pxPrevPageBtn->SetVisible(false);
-
-		Zenith_UI::Zenith_UIButton* pxBackBtn = xUI.CreateButton("BackButton", "Back");
-		pxBackBtn->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
-		pxBackBtn->SetPosition(0.f, 180.f);
-		pxBackBtn->SetSize(120.f, 50.f);
-		pxBackBtn->SetFontSize(24.f);
-		pxBackBtn->SetNormalColor({0.15f, 0.2f, 0.3f, 1.f});
-		pxBackBtn->SetHoverColor({0.25f, 0.3f, 0.45f, 1.f});
-		pxBackBtn->SetVisible(false);
-
-		Zenith_UI::Zenith_UIButton* pxNextPageBtn = xUI.CreateButton("NextPageButton", ">");
-		pxNextPageBtn->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
-		pxNextPageBtn->SetPosition(160.f, 180.f);
-		pxNextPageBtn->SetSize(100.f, 50.f);
-		pxNextPageBtn->SetFontSize(28.f);
-		pxNextPageBtn->SetNormalColor({0.15f, 0.2f, 0.3f, 1.f});
-		pxNextPageBtn->SetHoverColor({0.25f, 0.3f, 0.45f, 1.f});
-		pxNextPageBtn->SetVisible(false);
-
-		Zenith_ScriptComponent& xScript = xMenuManager.AddComponent<Zenith_ScriptComponent>();
-		xScript.SetBehaviourForSerialization<TilePuzzle_Behaviour>();
-
-		pxMenuData->SaveToFile(strMenuPath);
-		Zenith_SceneManager::RegisterSceneBuildIndex(0, strMenuPath);
-		Zenith_SceneManager::UnloadScene(xMenuScene);
+		float fX = (static_cast<float>(u % 5) - 2.f) * 105.f;
+		float fY = -50.f + (static_cast<float>(u / 5) - 1.5f) * 65.f;
+		Zenith_EditorAutomation::AddStep_CreateUIButton(s_aszLevelBtnNames[u], s_aszLevelLabels[u]);
+		Zenith_EditorAutomation::AddStep_SetUIAnchor(s_aszLevelBtnNames[u], static_cast<int>(Zenith_UI::AnchorPreset::Center));
+		Zenith_EditorAutomation::AddStep_SetUIPosition(s_aszLevelBtnNames[u], fX, fY);
+		Zenith_EditorAutomation::AddStep_SetUISize(s_aszLevelBtnNames[u], 90.f, 55.f);
+		Zenith_EditorAutomation::AddStep_SetUIButtonFontSize(s_aszLevelBtnNames[u], 20.f);
+		Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor(s_aszLevelBtnNames[u], 0.2f, 0.3f, 0.5f, 1.f);
+		Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor(s_aszLevelBtnNames[u], 0.3f, 0.4f, 0.6f, 1.f);
+		Zenith_EditorAutomation::AddStep_SetUIButtonPressedColor(s_aszLevelBtnNames[u], 0.1f, 0.15f, 0.3f, 1.f);
+		Zenith_EditorAutomation::AddStep_SetUIVisible(s_aszLevelBtnNames[u], false);
 	}
+
+	// PrevPage button
+	Zenith_EditorAutomation::AddStep_CreateUIButton("PrevPageButton", "<");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("PrevPageButton", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("PrevPageButton", -160.f, 180.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("PrevPageButton", 100.f, 50.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("PrevPageButton", 28.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("PrevPageButton", 0.15f, 0.2f, 0.3f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("PrevPageButton", 0.25f, 0.3f, 0.45f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIVisible("PrevPageButton", false);
+
+	// Back button
+	Zenith_EditorAutomation::AddStep_CreateUIButton("BackButton", "Back");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("BackButton", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("BackButton", 0.f, 180.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("BackButton", 120.f, 50.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("BackButton", 24.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("BackButton", 0.15f, 0.2f, 0.3f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("BackButton", 0.25f, 0.3f, 0.45f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIVisible("BackButton", false);
+
+	// NextPage button
+	Zenith_EditorAutomation::AddStep_CreateUIButton("NextPageButton", ">");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("NextPageButton", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("NextPageButton", 160.f, 180.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("NextPageButton", 100.f, 50.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("NextPageButton", 28.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("NextPageButton", 0.15f, 0.2f, 0.3f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("NextPageButton", 0.25f, 0.3f, 0.45f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIVisible("NextPageButton", false);
+
+	// Script
+	Zenith_EditorAutomation::AddStep_AddScript();
+	Zenith_EditorAutomation::AddStep_SetBehaviourForSerialization("TilePuzzle_Behaviour");
+
+	Zenith_EditorAutomation::AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT);
+	Zenith_EditorAutomation::AddStep_UnloadScene();
 
 	// ---- TilePuzzle gameplay scene (build index 1) ----
-	{
-		const std::string strGamePath = GAME_ASSETS_DIR "Scenes/TilePuzzle" ZENITH_SCENE_EXT;
+	Zenith_EditorAutomation::AddStep_CreateScene("TilePuzzle");
+	Zenith_EditorAutomation::AddStep_CreateEntity("GameManager");
+	Zenith_EditorAutomation::AddStep_AddCamera();
+	Zenith_EditorAutomation::AddStep_SetCameraPosition(0.f, 12.f, 0.f);
+	Zenith_EditorAutomation::AddStep_SetCameraPitch(-1.5f);
+	Zenith_EditorAutomation::AddStep_SetCameraFOV(glm::radians(45.f));
+	Zenith_EditorAutomation::AddStep_SetCameraAspect(9.f / 16.f);
+	Zenith_EditorAutomation::AddStep_SetAsMainCamera();
+	Zenith_EditorAutomation::AddStep_AddUI();
 
-		Zenith_Scene xGameScene = Zenith_SceneManager::CreateEmptyScene("TilePuzzle");
-		Zenith_SceneData* pxGameData = Zenith_SceneManager::GetSceneData(xGameScene);
+	// UI layout constants: margin=30, marginTop=30, baseText=15, lineH=24
+	// Title (y = 30 + 0 = 30)
+	Zenith_EditorAutomation::AddStep_CreateUIText("Title", "TILE PUZZLE");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("Title", static_cast<int>(Zenith_UI::AnchorPreset::TopRight));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("Title", -30.f, 30.f);
+	Zenith_EditorAutomation::AddStep_SetUIAlignment("Title", static_cast<int>(Zenith_UI::TextAlignment::Right));
+	Zenith_EditorAutomation::AddStep_SetUIVisible("Title", false);
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("Title", 72.f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("Title", 1.f, 1.f, 1.f, 1.f);
 
-		Zenith_Entity xGameManager(pxGameData, "GameManager");
-		xGameManager.SetTransient(false);
+	// ControlsHeader (y = 30 + lineH*2 = 78)
+	Zenith_EditorAutomation::AddStep_CreateUIText("ControlsHeader", "How to Play:");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("ControlsHeader", static_cast<int>(Zenith_UI::AnchorPreset::TopRight));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("ControlsHeader", -30.f, 78.f);
+	Zenith_EditorAutomation::AddStep_SetUIAlignment("ControlsHeader", static_cast<int>(Zenith_UI::TextAlignment::Right));
+	Zenith_EditorAutomation::AddStep_SetUIVisible("ControlsHeader", false);
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("ControlsHeader", 54.f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("ControlsHeader", 0.9f, 0.9f, 0.2f, 1.f);
 
-		Zenith_CameraComponent& xCamera = xGameManager.AddComponent<Zenith_CameraComponent>();
-		xCamera.InitialisePerspective({
-			.m_xPosition = Zenith_Maths::Vector3(0.f, 12.f, 0.f),
-			.m_fPitch = -1.5f,
-			.m_fFOV = glm::radians(45.f),
-			.m_fAspectRatio = 9.f / 16.f,
-		});
-		pxGameData->SetMainCameraEntity(xGameManager.GetEntityID());
+	// MoveInstr (y = 30 + lineH*3 = 102)
+	Zenith_EditorAutomation::AddStep_CreateUIText("MoveInstr", "Click+Drag or Arrows: Move");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("MoveInstr", static_cast<int>(Zenith_UI::AnchorPreset::TopRight));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("MoveInstr", -30.f, 102.f);
+	Zenith_EditorAutomation::AddStep_SetUIAlignment("MoveInstr", static_cast<int>(Zenith_UI::TextAlignment::Right));
+	Zenith_EditorAutomation::AddStep_SetUIVisible("MoveInstr", false);
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("MoveInstr", 45.f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("MoveInstr", 0.8f, 0.8f, 0.8f, 1.f);
 
-		Zenith_UIComponent& xUI = xGameManager.AddComponent<Zenith_UIComponent>();
+	// ResetInstr (y = 30 + lineH*4 = 126)
+	Zenith_EditorAutomation::AddStep_CreateUIText("ResetInstr", "R: Reset  Esc: Menu");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("ResetInstr", static_cast<int>(Zenith_UI::AnchorPreset::TopRight));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("ResetInstr", -30.f, 126.f);
+	Zenith_EditorAutomation::AddStep_SetUIAlignment("ResetInstr", static_cast<int>(Zenith_UI::TextAlignment::Right));
+	Zenith_EditorAutomation::AddStep_SetUIVisible("ResetInstr", false);
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("ResetInstr", 45.f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("ResetInstr", 0.8f, 0.8f, 0.8f, 1.f);
 
-		static constexpr float s_fMarginRight = 30.f;
-		static constexpr float s_fMarginTop = 30.f;
-		static constexpr float s_fBaseTextSize = 15.f;
-		static constexpr float s_fLineHeight = 24.f;
+	// GoalHeader (y = 30 + lineH*6 = 174)
+	Zenith_EditorAutomation::AddStep_CreateUIText("GoalHeader", "Goal:");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("GoalHeader", static_cast<int>(Zenith_UI::AnchorPreset::TopRight));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("GoalHeader", -30.f, 174.f);
+	Zenith_EditorAutomation::AddStep_SetUIAlignment("GoalHeader", static_cast<int>(Zenith_UI::TextAlignment::Right));
+	Zenith_EditorAutomation::AddStep_SetUIVisible("GoalHeader", false);
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("GoalHeader", 54.f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("GoalHeader", 0.9f, 0.9f, 0.2f, 1.f);
 
-		auto SetupTopRightText = [](Zenith_UI::Zenith_UIText* pxText, float fYOffset, bool bVisible)
-		{
-			pxText->SetAnchorAndPivot(Zenith_UI::AnchorPreset::TopRight);
-			pxText->SetPosition(-s_fMarginRight, s_fMarginTop + fYOffset);
-			pxText->SetAlignment(Zenith_UI::TextAlignment::Right);
-			pxText->SetVisible(bVisible);
-		};
+	// GoalDesc (y = 30 + lineH*7 = 198)
+	Zenith_EditorAutomation::AddStep_CreateUIText("GoalDesc", "Match shapes to cats");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("GoalDesc", static_cast<int>(Zenith_UI::AnchorPreset::TopRight));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("GoalDesc", -30.f, 198.f);
+	Zenith_EditorAutomation::AddStep_SetUIAlignment("GoalDesc", static_cast<int>(Zenith_UI::TextAlignment::Right));
+	Zenith_EditorAutomation::AddStep_SetUIVisible("GoalDesc", false);
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("GoalDesc", 45.f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("GoalDesc", 0.8f, 0.8f, 0.8f, 1.f);
 
-		Zenith_UI::Zenith_UIText* pxTitle = xUI.CreateText("Title", "TILE PUZZLE");
-		SetupTopRightText(pxTitle, 0.f, false);
-		pxTitle->SetFontSize(s_fBaseTextSize * 4.8f);
-		pxTitle->SetColor(Zenith_Maths::Vector4(1.f, 1.f, 1.f, 1.f));
+	// Status (y = 30 + lineH*9 = 246)
+	Zenith_EditorAutomation::AddStep_CreateUIText("Status", "Level: 1  Moves: 0");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("Status", static_cast<int>(Zenith_UI::AnchorPreset::TopRight));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("Status", -30.f, 246.f);
+	Zenith_EditorAutomation::AddStep_SetUIAlignment("Status", static_cast<int>(Zenith_UI::TextAlignment::Right));
+	Zenith_EditorAutomation::AddStep_SetUIVisible("Status", false);
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("Status", 45.f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("Status", 0.6f, 0.8f, 1.f, 1.f);
 
-		Zenith_UI::Zenith_UIText* pxControls = xUI.CreateText("ControlsHeader", "How to Play:");
-		SetupTopRightText(pxControls, s_fLineHeight * 2, false);
-		pxControls->SetFontSize(s_fBaseTextSize * 3.6f);
-		pxControls->SetColor(Zenith_Maths::Vector4(0.9f, 0.9f, 0.2f, 1.f));
+	// Progress (y = 30 + lineH*10 = 270)
+	Zenith_EditorAutomation::AddStep_CreateUIText("Progress", "Cats: 0 / 3");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("Progress", static_cast<int>(Zenith_UI::AnchorPreset::TopRight));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("Progress", -30.f, 270.f);
+	Zenith_EditorAutomation::AddStep_SetUIAlignment("Progress", static_cast<int>(Zenith_UI::TextAlignment::Right));
+	Zenith_EditorAutomation::AddStep_SetUIVisible("Progress", false);
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("Progress", 45.f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("Progress", 0.6f, 0.8f, 1.f, 1.f);
 
-		Zenith_UI::Zenith_UIText* pxMove = xUI.CreateText("MoveInstr", "Click+Drag or Arrows: Move");
-		SetupTopRightText(pxMove, s_fLineHeight * 3, false);
-		pxMove->SetFontSize(s_fBaseTextSize * 3.0f);
-		pxMove->SetColor(Zenith_Maths::Vector4(0.8f, 0.8f, 0.8f, 1.f));
+	// WinText (y = 30 + lineH*12 = 318)
+	Zenith_EditorAutomation::AddStep_CreateUIText("WinText", "");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("WinText", static_cast<int>(Zenith_UI::AnchorPreset::TopRight));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("WinText", -30.f, 318.f);
+	Zenith_EditorAutomation::AddStep_SetUIAlignment("WinText", static_cast<int>(Zenith_UI::TextAlignment::Right));
+	Zenith_EditorAutomation::AddStep_SetUIVisible("WinText", false);
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("WinText", 63.f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("WinText", 0.2f, 1.f, 0.2f, 1.f);
 
-		Zenith_UI::Zenith_UIText* pxReset = xUI.CreateText("ResetInstr", "R: Reset  Esc: Menu");
-		SetupTopRightText(pxReset, s_fLineHeight * 4, false);
-		pxReset->SetFontSize(s_fBaseTextSize * 3.0f);
-		pxReset->SetColor(Zenith_Maths::Vector4(0.8f, 0.8f, 0.8f, 1.f));
+	// Reset button
+	Zenith_EditorAutomation::AddStep_CreateUIButton("ResetBtn", "Reset");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("ResetBtn", static_cast<int>(Zenith_UI::AnchorPreset::TopLeft));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("ResetBtn", 20.f, 20.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("ResetBtn", 100.f, 50.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("ResetBtn", 20.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("ResetBtn", 0.2f, 0.25f, 0.35f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("ResetBtn", 0.3f, 0.35f, 0.5f, 1.f);
 
-		Zenith_UI::Zenith_UIText* pxGoal = xUI.CreateText("GoalHeader", "Goal:");
-		SetupTopRightText(pxGoal, s_fLineHeight * 6, false);
-		pxGoal->SetFontSize(s_fBaseTextSize * 3.6f);
-		pxGoal->SetColor(Zenith_Maths::Vector4(0.9f, 0.9f, 0.2f, 1.f));
+	// Menu button
+	Zenith_EditorAutomation::AddStep_CreateUIButton("MenuBtn", "Menu");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("MenuBtn", static_cast<int>(Zenith_UI::AnchorPreset::TopLeft));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("MenuBtn", 20.f, 80.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("MenuBtn", 100.f, 50.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("MenuBtn", 20.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("MenuBtn", 0.2f, 0.25f, 0.35f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("MenuBtn", 0.3f, 0.35f, 0.5f, 1.f);
 
-		Zenith_UI::Zenith_UIText* pxGoalDesc = xUI.CreateText("GoalDesc", "Match shapes to cats");
-		SetupTopRightText(pxGoalDesc, s_fLineHeight * 7, false);
-		pxGoalDesc->SetFontSize(s_fBaseTextSize * 3.0f);
-		pxGoalDesc->SetColor(Zenith_Maths::Vector4(0.8f, 0.8f, 0.8f, 1.f));
+	// Next Level button
+	Zenith_EditorAutomation::AddStep_CreateUIButton("NextLevelBtn", "Next Level");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("NextLevelBtn", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("NextLevelBtn", 0.f, 80.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("NextLevelBtn", 200.f, 60.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("NextLevelBtn", 28.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("NextLevelBtn", 0.15f, 0.4f, 0.2f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("NextLevelBtn", 0.25f, 0.55f, 0.3f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIVisible("NextLevelBtn", false);
 
-		Zenith_UI::Zenith_UIText* pxStatus = xUI.CreateText("Status", "Level: 1  Moves: 0");
-		SetupTopRightText(pxStatus, s_fLineHeight * 9, false);
-		pxStatus->SetFontSize(s_fBaseTextSize * 3.0f);
-		pxStatus->SetColor(Zenith_Maths::Vector4(0.6f, 0.8f, 1.f, 1.f));
+	// Script
+	Zenith_EditorAutomation::AddStep_AddScript();
+	Zenith_EditorAutomation::AddStep_SetBehaviourForSerialization("TilePuzzle_Behaviour");
 
-		Zenith_UI::Zenith_UIText* pxProgress = xUI.CreateText("Progress", "Cats: 0 / 3");
-		SetupTopRightText(pxProgress, s_fLineHeight * 10, false);
-		pxProgress->SetFontSize(s_fBaseTextSize * 3.0f);
-		pxProgress->SetColor(Zenith_Maths::Vector4(0.6f, 0.8f, 1.f, 1.f));
+	Zenith_EditorAutomation::AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/TilePuzzle" ZENITH_SCENE_EXT);
+	Zenith_EditorAutomation::AddStep_UnloadScene();
 
-		Zenith_UI::Zenith_UIText* pxWin = xUI.CreateText("WinText", "");
-		SetupTopRightText(pxWin, s_fLineHeight * 12, false);
-		pxWin->SetFontSize(s_fBaseTextSize * 4.2f);
-		pxWin->SetColor(Zenith_Maths::Vector4(0.2f, 1.f, 0.2f, 1.f));
-
-		// Gameplay action buttons
-		Zenith_UI::Zenith_UIButton* pxResetBtn = xUI.CreateButton("ResetBtn", "Reset");
-		pxResetBtn->SetAnchorAndPivot(Zenith_UI::AnchorPreset::TopLeft);
-		pxResetBtn->SetPosition(20.f, 20.f);
-		pxResetBtn->SetSize(100.f, 50.f);
-		pxResetBtn->SetFontSize(20.f);
-		pxResetBtn->SetNormalColor({0.2f, 0.25f, 0.35f, 1.f});
-		pxResetBtn->SetHoverColor({0.3f, 0.35f, 0.5f, 1.f});
-
-		Zenith_UI::Zenith_UIButton* pxMenuBtn = xUI.CreateButton("MenuBtn", "Menu");
-		pxMenuBtn->SetAnchorAndPivot(Zenith_UI::AnchorPreset::TopLeft);
-		pxMenuBtn->SetPosition(20.f, 80.f);
-		pxMenuBtn->SetSize(100.f, 50.f);
-		pxMenuBtn->SetFontSize(20.f);
-		pxMenuBtn->SetNormalColor({0.2f, 0.25f, 0.35f, 1.f});
-		pxMenuBtn->SetHoverColor({0.3f, 0.35f, 0.5f, 1.f});
-
-		Zenith_UI::Zenith_UIButton* pxNextLevelBtn = xUI.CreateButton("NextLevelBtn", "Next Level");
-		pxNextLevelBtn->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
-		pxNextLevelBtn->SetPosition(0.f, 80.f);
-		pxNextLevelBtn->SetSize(200.f, 60.f);
-		pxNextLevelBtn->SetFontSize(28.f);
-		pxNextLevelBtn->SetNormalColor({0.15f, 0.4f, 0.2f, 1.f});
-		pxNextLevelBtn->SetHoverColor({0.25f, 0.55f, 0.3f, 1.f});
-		pxNextLevelBtn->SetVisible(false);
-
-		Zenith_ScriptComponent& xScript = xGameManager.AddComponent<Zenith_ScriptComponent>();
-		xScript.SetBehaviourForSerialization<TilePuzzle_Behaviour>();
-
-		pxGameData->SaveToFile(strGamePath);
-		Zenith_SceneManager::RegisterSceneBuildIndex(1, strGamePath);
-		Zenith_SceneManager::UnloadScene(xGameScene);
-	}
+	// ---- Final scene loading ----
+	Zenith_EditorAutomation::AddStep_SetInitialSceneLoadCallback(&Project_LoadInitialScene);
+	Zenith_EditorAutomation::AddStep_SetLoadingScene(true);
+	Zenith_EditorAutomation::AddStep_Custom(&Project_LoadInitialScene);
+	Zenith_EditorAutomation::AddStep_SetLoadingScene(false);
 }
+#endif
 
 void Project_LoadInitialScene()
 {
+	Zenith_SceneManager::RegisterSceneBuildIndex(0, GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT);
+	Zenith_SceneManager::RegisterSceneBuildIndex(1, GAME_ASSETS_DIR "Scenes/TilePuzzle" ZENITH_SCENE_EXT);
 	Zenith_SceneManager::LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
 }

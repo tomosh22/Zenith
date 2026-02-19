@@ -197,6 +197,48 @@ public:
 	static void ClearMaterialSelection();
 	static Zenith_MaterialAsset* GetSelectedMaterial() { return s_pxSelectedMaterial; }
 
+	//--------------------------------------------------------------------------
+	// Editor Operations
+	// Called by BOTH ImGui panel handlers AND the editor automation system.
+	// These encapsulate the multi-step operations that correspond to user
+	// interactions in the editor UI.
+	//--------------------------------------------------------------------------
+
+	/// Corresponds to: Hierarchy panel > right-click > "Create Empty Entity"
+	/// Creates entity, sets non-transient, and selects it (matching editor UI behaviour).
+	static Zenith_EntityID CreateEntity(const char* szName);
+
+	/// Corresponds to: clicking an entity by name in the Hierarchy panel.
+	static void SelectEntityByName(const char* szName);
+
+	/// Corresponds to: toggling the "Transient" checkbox in Properties panel.
+	static void SetSelectedEntityTransient(bool bTransient);
+
+	/// Corresponds to: Properties panel > "Add Component" popup > selecting a component.
+	static bool AddComponentToSelected(const char* szDisplayName);
+
+	/// Corresponds to: Properties panel > Camera section > "Set As Main Camera" button.
+	static void SetSelectedAsMainCamera();
+
+	/// Corresponds to: Properties panel > Script section > behaviour combo box selection.
+	/// Destroys existing behaviour (with OnDestroy), creates + awakes new one, marks entity awoken.
+	static void SetBehaviourOnSelected(const char* szBehaviourName);
+
+	/// Corresponds to: serialization-time behaviour assignment (no lifecycle hooks called).
+	/// Destroys existing behaviour (no OnDestroy), creates new one without OnAwake.
+	static void SetBehaviourForSerializationOnSelected(const char* szBehaviourName);
+
+	/// Corresponds to: File > New Scene menu item.
+	/// Creates empty scene, sets active, clears selection.
+	static void CreateNewScene(const char* szName);
+
+	/// Corresponds to: File > Save Scene menu item (with specific path).
+	static void SaveActiveScene(const char* szPath);
+
+	/// Corresponds to: File > Unload Scene menu item.
+	/// Clears selection, then unloads the active scene.
+	static void UnloadActiveScene();
+
 private:
 	static void RenderConsolePanel();
 	static void RenderMainMenuBar();

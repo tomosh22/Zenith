@@ -70,6 +70,7 @@
 
 #ifdef ZENITH_TOOLS
 #include "UnitTests/Zenith_EditorTests.h"
+#include "UnitTests/Zenith_AutomationTests.h"
 #endif
 
 void Zenith_UnitTests::RunAllTests()
@@ -411,6 +412,9 @@ void Zenith_UnitTests::RunAllTests()
 #ifdef ZENITH_TOOLS
 	// Editor tests (only in tools builds)
 	Zenith_EditorTests::RunAllTests();
+
+	// Automation system tests
+	Zenith_AutomationTests::RunAllTests();
 #endif
 
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "All Unit Tests Passed");

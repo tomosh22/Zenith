@@ -66,6 +66,7 @@ void Zenith_ScriptComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "imgui.h"
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
+#include "Editor/Zenith_Editor.h"
 
 void Zenith_ScriptComponent::RenderPropertiesPanel()
 {
@@ -107,35 +108,19 @@ void Zenith_ScriptComponent::RenderPropertiesPanel()
 
 			if (ImGui::Combo("Behaviour", &iCurrentIndex, xItems.data(), static_cast<int>(xItems.size())))
 			{
-				// Delete old behaviour
-				if (m_pxScriptBehaviour)
-				{
-					m_pxScriptBehaviour->OnDestroy();
-					delete m_pxScriptBehaviour;
-					m_pxScriptBehaviour = nullptr;
-				}
-
-				// Create new behaviour
 				if (iCurrentIndex > 0)
 				{
 					const char* szSelectedName = xBehaviourNames[iCurrentIndex - 1].c_str();
-					m_pxScriptBehaviour = Zenith_BehaviourRegistry::Get().CreateBehaviour(szSelectedName, m_xParentEntity);
+					Zenith_Editor::SetBehaviourOnSelected(szSelectedName);
+				}
+				else
+				{
+					// "(None)" selected - clear the current behaviour
 					if (m_pxScriptBehaviour)
 					{
-						m_pxScriptBehaviour->m_xParentEntity = m_xParentEntity;
-						m_pxScriptBehaviour->OnAwake();
-
-						// Mark entity as awoken to prevent duplicate dispatch in Scene::Update()
-						if (m_xParentEntity.IsValid())
-						{
-							Zenith_SceneData* pxSceneData = m_xParentEntity.GetSceneData();
-							if (pxSceneData)
-							{
-								pxSceneData->MarkEntityAwoken(m_xParentEntity.GetEntityID());
-							}
-						}
-
-						Zenith_Log(LOG_CATEGORY_ECS, "[ScriptComponent] Set behaviour to: %s", szSelectedName);
+						m_pxScriptBehaviour->OnDestroy();
+						delete m_pxScriptBehaviour;
+						m_pxScriptBehaviour = nullptr;
 					}
 				}
 			}

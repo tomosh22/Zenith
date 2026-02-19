@@ -362,12 +362,9 @@ private:
 		SetMenuVisible(false);
 		SetHUDVisible(true);
 
-		// Create world scene
-		m_xWorldScene = Zenith_SceneManager::CreateEmptyScene("World");
-		Zenith_SceneManager::SetActiveScene(m_xWorldScene);
-
-		// Create terrain + trees in the world scene
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(m_xWorldScene);
+		// Create terrain + trees in the current scene
+		Zenith_Scene xCurrentScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xCurrentScene);
 		Exploration_CreateWorldContent(pxSceneData);
 
 		m_eGameState = ExplorationGameState::PLAYING;
@@ -375,15 +372,7 @@ private:
 
 	void ReturnToMenu()
 	{
-		// Cleanup world content references
 		Exploration_CleanupWorldContent();
-
-		if (m_xWorldScene.IsValid())
-		{
-			Zenith_SceneManager::UnloadScene(m_xWorldScene);
-			m_xWorldScene = Zenith_Scene();
-		}
-
 		Zenith_SceneManager::LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
 	}
 
@@ -541,6 +530,5 @@ private:
 
 	// Game state
 	ExplorationGameState m_eGameState;
-	Zenith_Scene m_xWorldScene;
 	int32_t m_iFocusIndex;
 };

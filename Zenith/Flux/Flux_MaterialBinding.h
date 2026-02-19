@@ -20,24 +20,23 @@ struct MaterialPushConstants
 static_assert(sizeof(MaterialPushConstants) == 128, "MaterialPushConstants must be 128 bytes");
 
 // ============================================================================
-// Terrain Material Push Constants (128 bytes)
-// Holds properties for 2 blended materials - uses full material system
+// Terrain Material Push Constants (288 bytes)
+// Holds properties for 4 splatmap-blended materials + terrain params
+// Uploaded via scratch buffer UBO (not hardware push constants)
 // ============================================================================
 struct TerrainMaterialPushConstants
 {
-	// Material 0 properties (64 bytes)
-	Zenith_Maths::Vector4 m_xBaseColor0;        // 16 bytes
-	Zenith_Maths::Vector4 m_xUVParams0;         // 16 bytes (tilingX, tilingY, offsetX, offsetY)
-	Zenith_Maths::Vector4 m_xMaterialParams0;   // 16 bytes (metallic, roughness, occlusionStrength, visualizeLOD as float)
-	Zenith_Maths::Vector4 m_xEmissiveParams0;   // 16 bytes (R, G, B, intensity)
+	// Per-material arrays (4 materials, 256 bytes total)
+	Zenith_Maths::Vector4 m_axBaseColors[4];       // 64 bytes
+	Zenith_Maths::Vector4 m_axUVParams[4];         // 64 bytes (tilingX, tilingY, offsetX, offsetY)
+	Zenith_Maths::Vector4 m_axMaterialParams[4];   // 64 bytes (metallic, roughness, occlusionStrength, 0)
+	Zenith_Maths::Vector4 m_axEmissiveParams[4];   // 64 bytes (R, G, B, intensity)
 
-	// Material 1 properties (64 bytes)
-	Zenith_Maths::Vector4 m_xBaseColor1;        // 16 bytes
-	Zenith_Maths::Vector4 m_xUVParams1;         // 16 bytes (tilingX, tilingY, offsetX, offsetY)
-	Zenith_Maths::Vector4 m_xMaterialParams1;   // 16 bytes (metallic, roughness, occlusionStrength, unused)
-	Zenith_Maths::Vector4 m_xEmissiveParams1;   // 16 bytes (R, G, B, intensity)
+	// Terrain params (32 bytes)
+	Zenith_Maths::Vector4 m_xTerrainParams;        // 16 bytes (originX, originZ, sizeX, sizeZ)
+	Zenith_Maths::Vector4 m_xTerrainParams2;       // 16 bytes (materialCount as uint bits, debugMode as uint bits, 0, 0)
 };
-static_assert(sizeof(TerrainMaterialPushConstants) == 128, "TerrainMaterialPushConstants must be 128 bytes");
+static_assert(sizeof(TerrainMaterialPushConstants) == 288, "TerrainMaterialPushConstants must be 288 bytes");
 
 // ============================================================================
 // Helper Functions
@@ -84,45 +83,47 @@ inline void BuildMaterialPushConstants(
 
 inline void BuildTerrainMaterialPushConstants(
 	TerrainMaterialPushConstants& xOut,
-	const Zenith_MaterialAsset* pxMaterial0,
-	const Zenith_MaterialAsset* pxMaterial1,
-	bool bVisualizeLOD)
+	const Zenith_MaterialAsset* const* ppxMaterials,
+	u_int uMaterialCount,
+	u_int uDebugMode,
+	float fOriginX, float fOriginZ,
+	float fSizeX, float fSizeZ)
 {
-	auto BuildSingleMaterial = [](
-		Zenith_Maths::Vector4& xBaseColorOut,
-		Zenith_Maths::Vector4& xUVParamsOut,
-		Zenith_Maths::Vector4& xMaterialParamsOut,
-		Zenith_Maths::Vector4& xEmissiveParamsOut,
-		const Zenith_MaterialAsset* pxMat,
-		float fExtraParam = 0.0f)  // For visualizeLOD or other per-material flags
+	for (u_int u = 0; u < 4; u++)
 	{
+		const Zenith_MaterialAsset* pxMat = (u < uMaterialCount) ? ppxMaterials[u] : nullptr;
 		if (pxMat)
 		{
-			xBaseColorOut = pxMat->GetBaseColor();
+			xOut.m_axBaseColors[u] = pxMat->GetBaseColor();
 			const Zenith_Maths::Vector2& xTiling = pxMat->GetUVTiling();
 			const Zenith_Maths::Vector2& xOffset = pxMat->GetUVOffset();
-			xUVParamsOut = Zenith_Maths::Vector4(xTiling.x, xTiling.y, xOffset.x, xOffset.y);
-			xMaterialParamsOut = Zenith_Maths::Vector4(
+			xOut.m_axUVParams[u] = Zenith_Maths::Vector4(xTiling.x, xTiling.y, xOffset.x, xOffset.y);
+			xOut.m_axMaterialParams[u] = Zenith_Maths::Vector4(
 				pxMat->GetMetallic(), pxMat->GetRoughness(),
-				pxMat->GetOcclusionStrength(), fExtraParam);
+				pxMat->GetOcclusionStrength(), 0.0f);
 			const Zenith_Maths::Vector3& xEmissive = pxMat->GetEmissiveColor();
-			xEmissiveParamsOut = Zenith_Maths::Vector4(
+			xOut.m_axEmissiveParams[u] = Zenith_Maths::Vector4(
 				xEmissive.x, xEmissive.y, xEmissive.z,
 				pxMat->GetEmissiveIntensity());
 		}
 		else
 		{
-			xBaseColorOut = Zenith_Maths::Vector4(1.0f, 1.0f, 1.0f, 1.0f);
-			xUVParamsOut = Zenith_Maths::Vector4(1.0f, 1.0f, 0.0f, 0.0f);
-			xMaterialParamsOut = Zenith_Maths::Vector4(0.0f, 0.5f, 1.0f, fExtraParam);
-			xEmissiveParamsOut = Zenith_Maths::Vector4(0.0f, 0.0f, 0.0f, 0.0f);
+			xOut.m_axBaseColors[u] = Zenith_Maths::Vector4(1.0f, 1.0f, 1.0f, 1.0f);
+			xOut.m_axUVParams[u] = Zenith_Maths::Vector4(1.0f, 1.0f, 0.0f, 0.0f);
+			xOut.m_axMaterialParams[u] = Zenith_Maths::Vector4(0.0f, 0.5f, 1.0f, 0.0f);
+			xOut.m_axEmissiveParams[u] = Zenith_Maths::Vector4(0.0f, 0.0f, 0.0f, 0.0f);
 		}
-	};
+	}
 
-	// Pack visualizeLOD flag into material 0's w component
-	float fVisualizeLOD = bVisualizeLOD ? 1.0f : 0.0f;
-	BuildSingleMaterial(xOut.m_xBaseColor0, xOut.m_xUVParams0, xOut.m_xMaterialParams0, xOut.m_xEmissiveParams0, pxMaterial0, fVisualizeLOD);
-	BuildSingleMaterial(xOut.m_xBaseColor1, xOut.m_xUVParams1, xOut.m_xMaterialParams1, xOut.m_xEmissiveParams1, pxMaterial1, 0.0f);
+	// Terrain params
+	xOut.m_xTerrainParams = Zenith_Maths::Vector4(fOriginX, fOriginZ, fSizeX, fSizeZ);
+
+	// Pack materialCount and debugMode as uint bits
+	u_int uMatCount = uMaterialCount;
+	Zenith_Maths::Vector4 xParams2(0.0f);
+	memcpy(&xParams2.x, &uMatCount, sizeof(u_int));
+	memcpy(&xParams2.y, &uDebugMode, sizeof(u_int));
+	xOut.m_xTerrainParams2 = xParams2;
 }
 
 // Bind 5 material textures (diffuse, normal, RM, occlusion, emissive)

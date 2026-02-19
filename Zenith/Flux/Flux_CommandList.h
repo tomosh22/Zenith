@@ -85,7 +85,7 @@ public:
 	}
 private:
 	//#TO minimum that Vulkan requires for push constants
-	static constexpr u_int uMAX_SIZE = 128;
+	static constexpr u_int uMAX_SIZE = 512;
 
 	u_int8 m_acData[uMAX_SIZE];
 	u_int m_uSize;

@@ -31,6 +31,10 @@ const char* Project_GetGameAssetsDirectory()
 #include "AssetHandling/Zenith_MaterialAsset.h"
 #include <filesystem>
 
+#ifdef ZENITH_TOOLS
+#include "Editor/Zenith_EditorAutomation.h"
+#endif
+
 void Project_SetGraphicsOptions(Zenith_GraphicsOptions&)
 {
 }
@@ -47,66 +51,53 @@ void Project_Shutdown()
 	// Test game has no resources that need explicit cleanup
 }
 
-void Project_CreateScenes()
+void Project_LoadInitialScene(); // Forward declaration for automation steps
+
+#ifdef ZENITH_TOOLS
+void Project_InitializeResources()
+{
+	// Test game has no resources that need initialization
+}
+
+void Project_RegisterEditorAutomationSteps()
 {
 	// ---- MainMenu scene (build index 0) ----
-	{
-		const std::string strMenuPath = GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT;
-
-		Zenith_Scene xMenuScene = Zenith_SceneManager::CreateEmptyScene("MainMenu");
-		Zenith_SceneData* pxMenuData = Zenith_SceneManager::GetSceneData(xMenuScene);
-
-		Zenith_Entity xMenuManager(pxMenuData, "MenuManager");
-		xMenuManager.SetTransient(false);
-
-		// Camera - default perspective at origin
-		Zenith_CameraComponent& xCamera = xMenuManager.AddComponent<Zenith_CameraComponent>();
-		xCamera.InitialisePerspective({
-			.m_fFOV = glm::radians(45.f),
-		});
-
-		// Menu UI
-		Zenith_UIComponent& xUI = xMenuManager.AddComponent<Zenith_UIComponent>();
-
-		Zenith_UI::Zenith_UIText* pxMenuTitle = xUI.CreateText("MenuTitle", "TEST");
-		pxMenuTitle->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
-		pxMenuTitle->SetPosition(0.f, -120.f);
-		pxMenuTitle->SetFontSize(72.f);
-		pxMenuTitle->SetColor(Zenith_Maths::Vector4(1.f, 1.f, 1.f, 1.f));
-
-		Zenith_UI::Zenith_UIButton* pxPlayButton = xUI.CreateButton("MenuPlay", "Play");
-		pxPlayButton->SetAnchorAndPivot(Zenith_UI::AnchorPreset::Center);
-		pxPlayButton->SetPosition(0.f, 0.f);
-		pxPlayButton->SetSize(200.f, 50.f);
-
-		pxMenuData->SaveToFile(strMenuPath);
-		Zenith_SceneManager::RegisterSceneBuildIndex(0, strMenuPath);
-		Zenith_SceneManager::UnloadScene(xMenuScene);
-	}
+	Zenith_EditorAutomation::AddStep_CreateScene("MainMenu");
+	Zenith_EditorAutomation::AddStep_CreateEntity("MenuManager");
+	Zenith_EditorAutomation::AddStep_AddCamera();
+	Zenith_EditorAutomation::AddStep_SetCameraFOV(glm::radians(45.f));
+	Zenith_EditorAutomation::AddStep_AddUI();
+	Zenith_EditorAutomation::AddStep_CreateUIText("MenuTitle", "TEST");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("MenuTitle", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("MenuTitle", 0.f, -120.f);
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("MenuTitle", 72.f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("MenuTitle", 1.f, 1.f, 1.f, 1.f);
+	Zenith_EditorAutomation::AddStep_CreateUIButton("MenuPlay", "Play");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("MenuPlay", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("MenuPlay", 0.f, 0.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("MenuPlay", 200.f, 50.f);
+	Zenith_EditorAutomation::AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT);
+	Zenith_EditorAutomation::AddStep_UnloadScene();
 
 	// ---- Test gameplay scene (build index 1) ----
-	{
-		const std::string strGamePath = GAME_ASSETS_DIR "Scenes/Test" ZENITH_SCENE_EXT;
+	Zenith_EditorAutomation::AddStep_CreateScene("Test");
+	Zenith_EditorAutomation::AddStep_CreateEntity("GameManager");
+	Zenith_EditorAutomation::AddStep_AddCamera();
+	Zenith_EditorAutomation::AddStep_SetCameraFOV(glm::radians(45.f));
+	Zenith_EditorAutomation::AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/Test" ZENITH_SCENE_EXT);
+	Zenith_EditorAutomation::AddStep_UnloadScene();
 
-		Zenith_Scene xGameScene = Zenith_SceneManager::CreateEmptyScene("Test");
-		Zenith_SceneData* pxGameData = Zenith_SceneManager::GetSceneData(xGameScene);
-
-		Zenith_Entity xGameManager(pxGameData, "GameManager");
-		xGameManager.SetTransient(false);
-
-		// Camera - default perspective at origin
-		Zenith_CameraComponent& xCamera = xGameManager.AddComponent<Zenith_CameraComponent>();
-		xCamera.InitialisePerspective({
-			.m_fFOV = glm::radians(45.f),
-		});
-
-		pxGameData->SaveToFile(strGamePath);
-		Zenith_SceneManager::RegisterSceneBuildIndex(1, strGamePath);
-		Zenith_SceneManager::UnloadScene(xGameScene);
-	}
+	// ---- Final scene loading ----
+	Zenith_EditorAutomation::AddStep_SetInitialSceneLoadCallback(&Project_LoadInitialScene);
+	Zenith_EditorAutomation::AddStep_SetLoadingScene(true);
+	Zenith_EditorAutomation::AddStep_Custom(&Project_LoadInitialScene);
+	Zenith_EditorAutomation::AddStep_SetLoadingScene(false);
 }
+#endif
 
 void Project_LoadInitialScene()
 {
+	Zenith_SceneManager::RegisterSceneBuildIndex(0, GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT);
+	Zenith_SceneManager::RegisterSceneBuildIndex(1, GAME_ASSETS_DIR "Scenes/Test" ZENITH_SCENE_EXT);
 	Zenith_SceneManager::LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
 }

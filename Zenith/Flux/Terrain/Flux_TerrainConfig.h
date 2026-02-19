@@ -84,9 +84,11 @@ static constexpr uint32_t MAX_QUEUE_SIZE = 256;
 // Camera movement threshold before re-evaluating LODs (squared distance)
 static constexpr float CAMERA_MOVE_THRESHOLD_SQ = 100.0f;  // ~10m movement
 
-// LOD hysteresis factor - prevents LOD thrashing at boundaries
-// Chunks must move past threshold * hysteresis to change LOD
-static constexpr float LOD_HYSTERESIS_FACTOR = 1.1f;  // 10% hysteresis band
+// LOD hysteresis factors - prevent thrashing at LOD boundaries
+// Eviction threshold: chunks must move beyond this to be evicted in the main distance-based loop
+// Forced eviction threshold: used by EvictToMakeSpace when buffer is full (tighter = more aggressive)
+static constexpr float LOD_EVICTION_HYSTERESIS = 1.5f;        // 50% beyond LOD threshold for main eviction
+static constexpr float LOD_FORCED_EVICTION_HYSTERESIS = 1.2f;  // 20% beyond LOD threshold for forced eviction
 
 // Active chunk radius - only consider chunks within this many chunks of camera
 // Reduces streaming updates from 4096 to ~1024 chunks
@@ -96,9 +98,9 @@ static constexpr uint32_t ACTIVE_CHUNK_RADIUS = 16;
 static constexpr uint32_t STREAMING_UPDATE_INTERVAL = 2;
 
 // ========== Vertex Format ==========
-// Terrain vertex stride (Position + UV + Normal + Tangent + Bitangent + MaterialLerp)
-// = 12 + 8 + 12 + 12 + 12 + 4 = 60 bytes
-static constexpr uint32_t VERTEX_STRIDE_BYTES = 60;
+// Terrain vertex stride (Position + UV + Normal + Tangent+Sign)
+// = FLOAT3(12) + HALF2(4) + SNORM10:10:10:2(4) + SNORM10:10:10:2(4) = 24 bytes
+static constexpr uint32_t VERTEX_STRIDE_BYTES = 24;
 
 // ========== Helper Functions ==========
 

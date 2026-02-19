@@ -341,7 +341,8 @@ private:
 	// Scene Management tests moved to Zenith_SceneTests.h/.cpp
 };
 
-// Include editor tests separately as they are only available in ZENITH_TOOLS builds
+// Include editor/tools-only tests separately as they are only available in ZENITH_TOOLS builds
 #ifdef ZENITH_TOOLS
 #include "Zenith_EditorTests.h"
+#include "Zenith_AutomationTests.h"
 #endif

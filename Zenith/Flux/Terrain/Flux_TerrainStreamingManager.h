@@ -5,7 +5,6 @@
 #include "Maths/Zenith_Maths.h"
 #include "Maths/Zenith_FrustumCulling.h"
 #include <vector>
-#include <queue>
 #include <cstdint>
 #include <atomic>
 
@@ -42,8 +41,9 @@ struct Flux_TerrainChunkResidency
 	Flux_TerrainLODAllocation m_axAllocations[LOD_COUNT];
 };
 
-// ========== Simple Buffer Allocator ==========
-// Best-fit allocator for managing streaming buffer space
+// ========== Buffer Allocator ==========
+// Best-fit allocator with coalescing for managing streaming buffer space.
+// Uses a sorted free list (by offset) to enable O(1) neighbor merging on free.
 class Flux_TerrainBufferAllocator
 {
 public:
@@ -55,25 +55,34 @@ public:
 	// Allocate a block of the given size. Returns offset, or UINT32_MAX on failure.
 	uint32_t Allocate(uint32_t uSize);
 
-	// Free a previously allocated block
+	// Free a previously allocated block. Coalesces with adjacent free blocks.
 	void Free(uint32_t uOffset, uint32_t uSize);
 
 	uint32_t GetUnusedSpace() const { return m_uUnusedSpace; }
 	uint32_t GetTotalSpace() const { return m_uTotalSize; }
-	uint32_t GetFragmentationCount() const { return static_cast<uint32_t>(m_xFreeBlocks.size()); }
+	uint32_t GetFragmentationCount() const { return static_cast<uint32_t>(m_axFreeBlocks.size()); }
 
 private:
 	struct FreeBlock
 	{
 		uint32_t m_uOffset;
 		uint32_t m_uSize;
-		bool operator<(const FreeBlock& other) const { return m_uSize < other.m_uSize; }
 	};
 
-	std::priority_queue<FreeBlock> m_xFreeBlocks;
+	// Sorted by offset for O(log n) neighbor lookup and coalescing
+	std::vector<FreeBlock> m_axFreeBlocks;
 	uint32_t m_uTotalSize;
 	uint32_t m_uUnusedSpace;
 	const char* m_szDebugName;
+};
+
+// ========== Per-Chunk Init Data ==========
+// Pre-computed during LOW LOD loading to avoid redundant file reads during registration
+struct Flux_TerrainChunkInitData
+{
+	uint32_t m_uVertexCount;
+	uint32_t m_uIndexCount;
+	Zenith_AABB m_xAABB;
 };
 
 // ========== Terrain Streaming Manager ==========
@@ -91,8 +100,10 @@ public:
 	static bool IsInitialized() { return s_bInitialized; }
 
 	// ========== Buffer Registration ==========
-	// Called by Zenith_TerrainComponent to register its unified buffers
-	static void RegisterTerrainBuffers(Zenith_TerrainComponent* pxTerrainComponent);
+	// Called by Zenith_TerrainComponent to register its unified buffers.
+	// pxChunkInitData contains pre-computed per-chunk vertex/index counts and AABBs
+	// from the LOW LOD loading pass, avoiding redundant file reads.
+	static void RegisterTerrainBuffers(Zenith_TerrainComponent* pxTerrainComponent, const Flux_TerrainChunkInitData* pxChunkInitData);
 	static void UnregisterTerrainBuffers();
 
 	// ========== Main Update ==========

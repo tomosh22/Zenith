@@ -151,6 +151,11 @@ void Zenith_EditorTests::RunAllTests()
 	TestEntityNameChange();
 	TestTransformDragPosition();
 
+	// Editor Operation tests (shared code paths with automation)
+	TestCreateEntityViaEditor();
+	TestAddInvalidComponent();
+	TestSetSelectedEntityTransient();
+
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "[EditorTests] All editor tests passed");
 }
 
@@ -1685,6 +1690,62 @@ void Zenith_EditorTests::TestTransformDragPosition()
 		"Position should be updated from drag control");
 
 	EDITOR_TEST_END(TestTransformDragPosition);
+}
+
+//=============================================================================
+// Editor Operation Tests (shared code paths with automation)
+//=============================================================================
+
+void Zenith_EditorTests::TestCreateEntityViaEditor()
+{
+	EDITOR_TEST_BEGIN(TestCreateEntityViaEditor);
+
+	// CreateEntity should create, set non-transient, and select the entity
+	Zenith_EntityID uEntityID = Zenith_Editor::CreateEntity("EditorOpTestEntity");
+
+	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+	Zenith_Assert(pxEntity != nullptr, "Entity should be selected after CreateEntity");
+	Zenith_Assert(pxEntity->GetEntityID() == uEntityID, "Selected entity should match returned ID");
+	Zenith_Assert(strcmp(pxEntity->GetName().c_str(), "EditorOpTestEntity") == 0,
+		"Entity name should match");
+	Zenith_Assert(!pxEntity->IsTransient(), "Entity should be non-transient by default");
+
+	EDITOR_TEST_END(TestCreateEntityViaEditor);
+}
+
+void Zenith_EditorTests::TestAddInvalidComponent()
+{
+	EDITOR_TEST_BEGIN(TestAddInvalidComponent);
+
+	Zenith_Editor::CreateEntity("InvalidCompEntity");
+
+	// Adding a non-existent component should return false
+	bool bResult = Zenith_Editor::AddComponentToSelected("NonexistentComponent");
+	Zenith_Assert(!bResult, "AddComponentToSelected should return false for unknown component name");
+
+	EDITOR_TEST_END(TestAddInvalidComponent);
+}
+
+void Zenith_EditorTests::TestSetSelectedEntityTransient()
+{
+	EDITOR_TEST_BEGIN(TestSetSelectedEntityTransient);
+
+	Zenith_Editor::CreateEntity("TransientTestEntity");
+	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+
+	// Initially non-transient (set by CreateEntity)
+	Zenith_Assert(!pxEntity->IsTransient(), "Should be non-transient initially");
+
+	// Set transient
+	Zenith_Editor::SetSelectedEntityTransient(true);
+	Zenith_Assert(pxEntity->IsTransient(), "Should be transient after SetSelectedEntityTransient(true)");
+
+	// Set back to non-transient
+	Zenith_Editor::SetSelectedEntityTransient(false);
+	Zenith_Assert(!pxEntity->IsTransient(), "Should be non-transient after SetSelectedEntityTransient(false)");
+
+	EDITOR_TEST_END(TestSetSelectedEntityTransient);
 }
 
 #endif // ZENITH_TOOLS

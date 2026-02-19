@@ -19,7 +19,129 @@ static std::string GetGameAssetsDirectory()
 #pragma warning(pop)
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
 
+#include <cstring>
+#include <cmath>
+
+#include "TaskSystem/Zenith_TaskSystem.h"
+
 #define MAX_TERRAIN_HEIGHT 4096
+
+//-----------------------------------------------------------------------------
+// Packing helpers for terrain vertex format optimization
+//-----------------------------------------------------------------------------
+
+// Pack 3 floats (xyz) + 1 float (w) into A2B10G10R10 SNORM format (4 bytes)
+// R,G,B = 10-bit signed normalized [-1,1], A = 2-bit signed normalized [-1,1]
+static uint32_t PackSNORM10_10_10_2(float fX, float fY, float fZ, float fW)
+{
+	auto Clamp = [](float f) { return std::max(-1.0f, std::min(1.0f, f)); };
+	fX = Clamp(fX);
+	fY = Clamp(fY);
+	fZ = Clamp(fZ);
+	fW = Clamp(fW);
+
+	// 10-bit snorm: [-1.0, 1.0] -> [-511, 511]
+	int32_t iR = static_cast<int32_t>(std::round(fX * 511.0f));
+	int32_t iG = static_cast<int32_t>(std::round(fY * 511.0f));
+	int32_t iB = static_cast<int32_t>(std::round(fZ * 511.0f));
+	// 2-bit snorm: [-1.0, 1.0] -> [-1, 1]
+	int32_t iA = static_cast<int32_t>(std::round(fW * 1.0f));
+
+	uint32_t uResult = 0;
+	uResult |= (static_cast<uint32_t>(iR) & 0x3FF);
+	uResult |= (static_cast<uint32_t>(iG) & 0x3FF) << 10;
+	uResult |= (static_cast<uint32_t>(iB) & 0x3FF) << 20;
+	uResult |= (static_cast<uint32_t>(iA) & 0x3) << 30;
+	return uResult;
+}
+
+// Convert float32 to float16 (IEEE 754 half-precision)
+static uint16_t FloatToHalf(float fValue)
+{
+	uint32_t uBits;
+	memcpy(&uBits, &fValue, sizeof(uint32_t));
+
+	uint32_t uSign = (uBits >> 16) & 0x8000;
+	int32_t iExponent = static_cast<int32_t>((uBits >> 23) & 0xFF) - 127;
+	uint32_t uMantissa = uBits & 0x7FFFFF;
+
+	// Handle special cases
+	if (iExponent == 128) // Inf/NaN
+		return static_cast<uint16_t>(uSign | 0x7C00 | (uMantissa ? 0x200 : 0));
+	if (iExponent < -24) // Too small, underflow to zero
+		return static_cast<uint16_t>(uSign);
+
+	int32_t iHalfExp = iExponent + 15;
+	if (iHalfExp <= 0)
+	{
+		// Denormalized half
+		uMantissa = (uMantissa | 0x800000) >> (1 - iHalfExp);
+		return static_cast<uint16_t>(uSign | (uMantissa >> 13));
+	}
+	if (iHalfExp >= 31) // Overflow to infinity
+		return static_cast<uint16_t>(uSign | 0x7C00);
+
+	return static_cast<uint16_t>(uSign | (iHalfExp << 10) | (uMantissa >> 13));
+}
+
+// Generate packed terrain vertex data (24 bytes/vertex)
+// Layout: Position(FLOAT3,12) + UV(HALF2,4) + Normal(SNORM10,4) + Tangent+Sign(SNORM10,4)
+static void GenerateTerrainLayoutAndVertexData(Flux_MeshGeometry& xMesh)
+{
+	xMesh.m_xBufferLayout.GetElements().PushBack({ SHADER_DATA_TYPE_FLOAT3 });
+	xMesh.m_xBufferLayout.GetElements().PushBack({ SHADER_DATA_TYPE_HALF2 });
+	xMesh.m_xBufferLayout.GetElements().PushBack({ SHADER_DATA_TYPE_SNORM10_10_10_2 });
+	xMesh.m_xBufferLayout.GetElements().PushBack({ SHADER_DATA_TYPE_SNORM10_10_10_2 });
+	xMesh.m_xBufferLayout.CalculateOffsetsAndStrides();
+
+	const uint32_t uStride = xMesh.m_xBufferLayout.GetStride();
+	Zenith_Assert(uStride == 24, "Terrain vertex stride should be 24 bytes");
+
+	xMesh.m_pVertexData = static_cast<u_int8*>(Zenith_MemoryManagement::Allocate(xMesh.m_uNumVerts * uStride));
+
+	for (uint32_t i = 0; i < xMesh.m_uNumVerts; i++)
+	{
+		u_int8* pVertex = xMesh.m_pVertexData + i * uStride;
+		uint32_t uOffset = 0;
+
+		// Position: float3 (12 bytes)
+		float* pPos = reinterpret_cast<float*>(pVertex + uOffset);
+		pPos[0] = xMesh.m_pxPositions[i].x;
+		pPos[1] = xMesh.m_pxPositions[i].y;
+		pPos[2] = xMesh.m_pxPositions[i].z;
+		uOffset += 12;
+
+		// UV: half2 (4 bytes)
+		uint16_t* pUV = reinterpret_cast<uint16_t*>(pVertex + uOffset);
+		pUV[0] = FloatToHalf(xMesh.m_pxUVs[i].x);
+		pUV[1] = FloatToHalf(xMesh.m_pxUVs[i].y);
+		uOffset += 4;
+
+		// Normal: SNORM10:10:10:2 (4 bytes), w=0
+		uint32_t* pNormal = reinterpret_cast<uint32_t*>(pVertex + uOffset);
+		*pNormal = PackSNORM10_10_10_2(
+			xMesh.m_pxNormals[i].x,
+			xMesh.m_pxNormals[i].y,
+			xMesh.m_pxNormals[i].z,
+			0.0f
+		);
+		uOffset += 4;
+
+		// Tangent + BitangentSign: SNORM10:10:10:2 (4 bytes)
+		float fBitangentSign = glm::dot(
+			glm::cross(glm::vec3(xMesh.m_pxNormals[i]), glm::vec3(xMesh.m_pxTangents[i])),
+			glm::vec3(xMesh.m_pxBitangents[i])
+		) > 0.0f ? 1.0f : -1.0f;
+
+		uint32_t* pTangent = reinterpret_cast<uint32_t*>(pVertex + uOffset);
+		*pTangent = PackSNORM10_10_10_2(
+			xMesh.m_pxTangents[i].x,
+			xMesh.m_pxTangents[i].y,
+			xMesh.m_pxTangents[i].z,
+			fBitangentSign
+		);
+	}
+}
 
 //-----------------------------------------------------------------------------
 // Load heightmap from .ztxtr file and return as cv::Mat in CV_32FC1 format
@@ -133,7 +255,7 @@ static cv::Mat LoadHeightmapAuto(const std::string& strPath)
 //#TO multiplier for vertex positions
 #define TERRAIN_SCALE 1
 
-void GenerateFullTerrain(cv::Mat& xHeightmapImage, cv::Mat& xMaterialImage, Flux_MeshGeometry& xMesh, u_int uDensityDivisor)
+void GenerateFullTerrain(const cv::Mat& xHeightmapImage, Flux_MeshGeometry& xMesh, u_int uDensityDivisor)
 {
 	Zenith_Assert((uDensityDivisor & (uDensityDivisor - 1)) == 0, "Density divisor must be a power of 2");
 
@@ -144,12 +266,11 @@ void GenerateFullTerrain(cv::Mat& xHeightmapImage, cv::Mat& xMaterialImage, Flux
 
 	xMesh.m_uNumVerts = static_cast<u_int>(uWidth * uHeight * fDensity * fDensity);
 	xMesh.m_uNumIndices = static_cast<u_int>(((uWidth * fDensity) - 1) * ((uHeight * fDensity) - 1) * 6);
-	xMesh.m_pxPositions = new glm::highp_vec3[xMesh.m_uNumVerts];
-	xMesh.m_pxUVs = new glm::vec2[xMesh.m_uNumVerts];
-	xMesh.m_pxNormals = new glm::vec3[xMesh.m_uNumVerts];
-	xMesh.m_pxTangents = new glm::vec3[xMesh.m_uNumVerts];
-	xMesh.m_pxBitangents = new glm::vec3[xMesh.m_uNumVerts];
-	xMesh.m_pfMaterialLerps = new float[xMesh.m_uNumIndices];
+	xMesh.m_pxPositions = static_cast<glm::highp_vec3*>(Zenith_MemoryManagement::Allocate(xMesh.m_uNumVerts * sizeof(glm::highp_vec3)));
+	xMesh.m_pxUVs = static_cast<glm::vec2*>(Zenith_MemoryManagement::Allocate(xMesh.m_uNumVerts * sizeof(glm::vec2)));
+	xMesh.m_pxNormals = static_cast<glm::vec3*>(Zenith_MemoryManagement::Allocate(xMesh.m_uNumVerts * sizeof(glm::vec3)));
+	xMesh.m_pxTangents = static_cast<glm::vec3*>(Zenith_MemoryManagement::Allocate(xMesh.m_uNumVerts * sizeof(glm::vec3)));
+	xMesh.m_pxBitangents = static_cast<glm::vec3*>(Zenith_MemoryManagement::Allocate(xMesh.m_uNumVerts * sizeof(glm::vec3)));
 	for (size_t i = 0; i < xMesh.m_uNumVerts; i++)
 	{
 		xMesh.m_pxPositions[i] = { 0,0,0 };
@@ -157,9 +278,8 @@ void GenerateFullTerrain(cv::Mat& xHeightmapImage, cv::Mat& xMaterialImage, Flux
 		xMesh.m_pxNormals[i] = { 0,0,0 };
 		xMesh.m_pxTangents[i] = { 0,0,0 };
 		xMesh.m_pxBitangents[i] = { 0,0,0 };
-		xMesh.m_pfMaterialLerps[i] = 0;
 	}
-	xMesh.m_puIndices = new Flux_MeshGeometry::IndexType[xMesh.m_uNumIndices];
+	xMesh.m_puIndices = static_cast<Flux_MeshGeometry::IndexType*>(Zenith_MemoryManagement::Allocate(xMesh.m_uNumIndices * sizeof(Flux_MeshGeometry::IndexType)));
 
 	for (u_int z = 0; z < static_cast<u_int>(uHeight * fDensity); ++z)
 	{
@@ -189,26 +309,9 @@ void GenerateFullTerrain(cv::Mat& xHeightmapImage, cv::Mat& xMaterialImage, Flux
 				dHeight = dBottom * dWeightY + dTop * (1.f - dWeightY);
 			}
 
-			double dMaterialLerp;
-			{
-				float fTopLeft = xMaterialImage.at<cv::Vec<float, 1>>(y0, x0).val[0];
-				float fTopRight = xMaterialImage.at<cv::Vec<float, 1>>(y0, x1).val[0];
-				float fBottomLeft = xMaterialImage.at<cv::Vec<float, 1>>(y1, x0).val[0];
-				float fBottomRight = xMaterialImage.at<cv::Vec<float, 1>>(y1, x1).val[0];
-
-				double dWeightX = xUV.x - x0;
-				double dWeightY = xUV.y - y0;
-
-				double dTop = fTopRight * dWeightX + fTopLeft * (1.f - dWeightX);
-				double dBottom = fBottomRight * dWeightX + fBottomLeft * (1.f - dWeightX);
-
-				dMaterialLerp = dBottom * dWeightY + dTop * (1.f - dWeightY);
-			}
-
 			xMesh.m_pxPositions[offset] = glm::highp_vec3((double)x / fDensity, dHeight * MAX_TERRAIN_HEIGHT - 1000, (double)z / fDensity) * static_cast<float>(TERRAIN_SCALE);
 			glm::vec2 fUV = glm::vec2(x, z);
 			xMesh.m_pxUVs[offset] = fUV / fDensity;
-			xMesh.m_pfMaterialLerps[offset] = static_cast<float>(dMaterialLerp);
 		}
 	}
 
@@ -235,31 +338,295 @@ void GenerateFullTerrain(cv::Mat& xHeightmapImage, cv::Mat& xMaterialImage, Flux
 	xMesh.GenerateBitangents();
 }
 
-void ExportMesh(u_int uDensityDivisor, std::string strName, const std::string& strHeightmapPath, const std::string& strMaterialPath, const std::string& strOutputDir)
+struct ChunkExportData
+{
+	const Flux_MeshGeometry* pxFullMesh;
+	u_int uNumSplitsX;
+	u_int uNumSplitsZ;
+	u_int uTotalChunks;
+	float fDensity;
+	u_int uImageWidth;
+	std::string strOutputDir;
+	std::string strName;
+};
+
+static void ExportChunkBatch(void* pData, u_int uInvocationIndex, u_int uNumInvocations)
+{
+	const ChunkExportData* pxData = static_cast<const ChunkExportData*>(pData);
+	const Flux_MeshGeometry& xFullMesh = *pxData->pxFullMesh;
+	const u_int uNumSplitsX = pxData->uNumSplitsX;
+	const u_int uNumSplitsZ = pxData->uNumSplitsZ;
+	const u_int uTotalChunks = pxData->uTotalChunks;
+	const float fDensity = pxData->fDensity;
+	const u_int uImageWidth = pxData->uImageWidth;
+
+	u_int uChunksPerInvocation = (uTotalChunks + uNumInvocations - 1) / uNumInvocations;
+	u_int uStartChunk = uInvocationIndex * uChunksPerInvocation;
+	u_int uEndChunk = std::min(uStartChunk + uChunksPerInvocation, uTotalChunks);
+
+	for (u_int uChunkIndex = uStartChunk; uChunkIndex < uEndChunk; uChunkIndex++)
+	{
+	const u_int x = uChunkIndex % uNumSplitsX;
+	const u_int z = uChunkIndex / uNumSplitsX;
+
+	Flux_MeshGeometry xSubMesh;
+	xSubMesh.m_uNumVerts = static_cast<u_int>((TERRAIN_SIZE * fDensity + 1) * (TERRAIN_SIZE * fDensity + 1));
+	xSubMesh.m_uNumIndices = static_cast<u_int>((((TERRAIN_SIZE * fDensity + 1)) - 1) * (((TERRAIN_SIZE * fDensity + 1)) - 1) * 6);
+	xSubMesh.m_pxPositions = static_cast<glm::highp_vec3*>(Zenith_MemoryManagement::Allocate(xSubMesh.m_uNumVerts * sizeof(glm::highp_vec3)));
+	xSubMesh.m_pxUVs = static_cast<glm::vec2*>(Zenith_MemoryManagement::Allocate(xSubMesh.m_uNumVerts * sizeof(glm::vec2)));
+	xSubMesh.m_pxNormals = static_cast<glm::vec3*>(Zenith_MemoryManagement::Allocate(xSubMesh.m_uNumVerts * sizeof(glm::vec3)));
+	xSubMesh.m_pxTangents = static_cast<glm::vec3*>(Zenith_MemoryManagement::Allocate(xSubMesh.m_uNumVerts * sizeof(glm::vec3)));
+	xSubMesh.m_pxBitangents = static_cast<glm::vec3*>(Zenith_MemoryManagement::Allocate(xSubMesh.m_uNumVerts * sizeof(glm::vec3)));
+	for (size_t i = 0; i < xSubMesh.m_uNumVerts; i++)
+	{
+		xSubMesh.m_pxNormals[i] = { 0,0,0 };
+		xSubMesh.m_pxTangents[i] = { 0,0,0 };
+	}
+	xSubMesh.m_puIndices = static_cast<u_int*>(Zenith_MemoryManagement::Allocate(xSubMesh.m_uNumIndices * sizeof(u_int)));
+	memset(xSubMesh.m_puIndices, 0, xSubMesh.m_uNumIndices * sizeof(u_int));
+
+	u_int uHeighestNewOffset = 0;
+#ifdef ZENITH_ASSERT
+	std::set<u_int> xFoundOldIndices;
+	std::set<u_int> xFoundNewIndices;
+#endif
+	u_int* puRightEdgeIndices = static_cast<u_int*>(Zenith_MemoryManagement::Allocate(static_cast<u_int>(TERRAIN_SIZE * fDensity) * sizeof(u_int)));
+	u_int* puTopEdgeIndices = static_cast<u_int*>(Zenith_MemoryManagement::Allocate(static_cast<u_int>(TERRAIN_SIZE * fDensity) * sizeof(u_int)));
+	u_int uTopRightFromBoth = 0;
+
+	for (u_int subZ = 0; subZ < static_cast<u_int>(TERRAIN_SIZE * fDensity); subZ++)
+	{
+		for (u_int subX = 0; subX < static_cast<u_int>(TERRAIN_SIZE * fDensity); subX++)
+		{
+			u_int uNewOffset = static_cast<u_int>((subZ * TERRAIN_SIZE * fDensity) + subX);
+
+			u_int uStartOfRow = static_cast<u_int>((subZ * TERRAIN_SIZE * fDensity * uNumSplitsZ) + (z * uImageWidth * fDensity * TERRAIN_SIZE * fDensity));
+			Zenith_Assert(uStartOfRow < xFullMesh.m_uNumVerts, "Start of row has gone past end of mesh");
+			u_int uIndexIntoRow = static_cast<u_int>(subX + x * TERRAIN_SIZE * fDensity);
+			Zenith_Assert(uIndexIntoRow < fDensity * uImageWidth, "Gone past end of row");
+			u_int uOldOffset = uStartOfRow + uIndexIntoRow;
+
+			Zenith_Assert(uOldOffset < xFullMesh.m_uNumVerts, "Incorrect index somewhere");
+
+			Zenith_Assert(xFoundOldIndices.find(uOldOffset) == xFoundOldIndices.end(), "Duplicate old index");
+			Zenith_Assert(xFoundNewIndices.find(uNewOffset) == xFoundNewIndices.end(), "Duplicate new index");
+
+			xSubMesh.m_pxPositions[uNewOffset] = xFullMesh.m_pxPositions[uOldOffset];
+			xSubMesh.m_pxUVs[uNewOffset] = xFullMesh.m_pxUVs[uOldOffset];
+			xSubMesh.m_pxNormals[uNewOffset] = xFullMesh.m_pxNormals[uOldOffset];
+			xSubMesh.m_pxTangents[uNewOffset] = xFullMesh.m_pxTangents[uOldOffset];
+			xSubMesh.m_pxBitangents[uNewOffset] = xFullMesh.m_pxBitangents[uOldOffset];
+
+			if (subX == static_cast<u_int>(TERRAIN_SIZE * fDensity - 1))
+				puRightEdgeIndices[subZ] = uNewOffset;
+			if (subZ == static_cast<u_int>(TERRAIN_SIZE * fDensity - 1))
+				puTopEdgeIndices[subX] = uNewOffset;
+			if (subX == static_cast<u_int>(TERRAIN_SIZE * fDensity - 1) && subZ == static_cast<u_int>(TERRAIN_SIZE * fDensity - 1))
+				uTopRightFromBoth = uNewOffset;
+
+#ifdef ZENITH_ASSERT
+			uHeighestNewOffset = std::max(uHeighestNewOffset, uNewOffset);
+			xFoundOldIndices.insert(uOldOffset);
+			xFoundNewIndices.insert(uNewOffset);
+#endif
+		}
+	}
+
+	size_t indexIndex = 0;
+	for (u_int indexZ = 0; indexZ < static_cast<u_int>(TERRAIN_SIZE * fDensity - 1); indexZ++)
+	{
+		for (u_int indexX = 0; indexX < static_cast<u_int>(TERRAIN_SIZE * fDensity - 1); indexX++)
+		{
+			u_int a = static_cast<u_int>((indexZ * TERRAIN_SIZE * fDensity) + indexX);
+			u_int b = static_cast<u_int>((indexZ * TERRAIN_SIZE * fDensity) + indexX + 1);
+			u_int c = static_cast<u_int>(((indexZ + 1) * TERRAIN_SIZE * fDensity) + indexX + 1);
+			u_int d = static_cast<u_int>(((indexZ + 1) * TERRAIN_SIZE * fDensity) + indexX);
+			xSubMesh.m_puIndices[indexIndex++] = a;
+			xSubMesh.m_puIndices[indexIndex++] = c;
+			xSubMesh.m_puIndices[indexIndex++] = b;
+			xSubMesh.m_puIndices[indexIndex++] = c;
+			xSubMesh.m_puIndices[indexIndex++] = a;
+			xSubMesh.m_puIndices[indexIndex++] = d;
+			Zenith_Assert(indexIndex <= xSubMesh.m_uNumIndices, "Index index too big");
+		}
+	}
+
+	u_int uTopRightFromX = 0;
+	if (x < uNumSplitsX - 1)
+	{
+		u_int subX = static_cast<u_int>(TERRAIN_SIZE * fDensity);
+		for (u_int subZ = 0; subZ < static_cast<u_int>(TERRAIN_SIZE * fDensity); subZ++)
+		{
+			u_int uNewOffset = ++uHeighestNewOffset;
+
+			Zenith_Assert(uNewOffset < xSubMesh.m_uNumVerts, "Offset too big for submesh");
+
+			u_int uStartOfRow = static_cast<u_int>((subZ * TERRAIN_SIZE * fDensity * uNumSplitsZ) + (z * uImageWidth * fDensity * TERRAIN_SIZE * fDensity));
+			Zenith_Assert(uStartOfRow < xFullMesh.m_uNumVerts, "Start of row has gone past end of mesh");
+			u_int uIndexIntoRow = static_cast<u_int>(subX + x * TERRAIN_SIZE * fDensity);
+			Zenith_Assert(uIndexIntoRow < fDensity * uImageWidth, "Gone past end of row");
+			u_int uOldOffset = uStartOfRow + uIndexIntoRow;
+
+			Zenith_Assert(uOldOffset < xFullMesh.m_uNumVerts, "Incorrect index somewhere");
+
+			Zenith_Assert(xFoundOldIndices.find(uOldOffset) == xFoundOldIndices.end(), "Duplicate old index");
+			Zenith_Assert(xFoundNewIndices.find(uNewOffset) == xFoundNewIndices.end(), "Duplicate new index");
+
+			xSubMesh.m_pxPositions[uNewOffset] = xFullMesh.m_pxPositions[uOldOffset];
+			xSubMesh.m_pxUVs[uNewOffset] = xFullMesh.m_pxUVs[uOldOffset];
+			xSubMesh.m_pxNormals[uNewOffset] = xFullMesh.m_pxNormals[uOldOffset];
+			xSubMesh.m_pxTangents[uNewOffset] = xFullMesh.m_pxTangents[uOldOffset];
+			xSubMesh.m_pxBitangents[uNewOffset] = xFullMesh.m_pxBitangents[uOldOffset];
+
+			if (subZ == static_cast<u_int>(TERRAIN_SIZE * fDensity - 1))
+				uTopRightFromX = uNewOffset;
+
+			uHeighestNewOffset = std::max(uHeighestNewOffset, uNewOffset);
+#ifdef ZENITH_ASSERT
+			xFoundOldIndices.insert(uOldOffset);
+			xFoundNewIndices.insert(uNewOffset);
+#endif
+		}
+
+		uHeighestNewOffset -= static_cast<u_int>(TERRAIN_SIZE * fDensity - 1);
+
+		for (u_int indexZ = 0; indexZ < static_cast<u_int>(TERRAIN_SIZE * fDensity - 1); indexZ++)
+		{
+			u_int a = puRightEdgeIndices[indexZ + 1];
+			u_int c = uHeighestNewOffset++;
+			u_int b = puRightEdgeIndices[indexZ];
+			u_int d = uHeighestNewOffset;
+
+			xSubMesh.m_puIndices[indexIndex++] = a;
+			xSubMesh.m_puIndices[indexIndex++] = c;
+			xSubMesh.m_puIndices[indexIndex++] = b;
+			xSubMesh.m_puIndices[indexIndex++] = c;
+			xSubMesh.m_puIndices[indexIndex++] = a;
+			xSubMesh.m_puIndices[indexIndex++] = d;
+			Zenith_Assert(indexIndex <= xSubMesh.m_uNumIndices, "Index index too big");
+		}
+	}
+
+	u_int uTopRightFromZ = 0;
+
+	if (z < uNumSplitsZ - 1)
+	{
+		u_int subZ = static_cast<u_int>(TERRAIN_SIZE * fDensity);
+		for (u_int subX = 0; subX < static_cast<u_int>(TERRAIN_SIZE * fDensity); subX++)
+		{
+			u_int uNewOffset = ++uHeighestNewOffset;
+
+			Zenith_Assert(uNewOffset < xSubMesh.m_uNumVerts, "Offset too big for submesh");
+
+			u_int uStartOfRow = static_cast<u_int>((subZ * TERRAIN_SIZE * fDensity * uNumSplitsZ) + (z * uImageWidth * fDensity * TERRAIN_SIZE * fDensity));
+			Zenith_Assert(uStartOfRow < xFullMesh.m_uNumVerts, "Start of row has gone past end of mesh");
+			u_int uIndexIntoRow = static_cast<u_int>(subX + x * TERRAIN_SIZE * fDensity);
+			Zenith_Assert(uIndexIntoRow < fDensity* uImageWidth, "Gone past end of row");
+			u_int uOldOffset = uStartOfRow + uIndexIntoRow;
+
+			Zenith_Assert(uOldOffset < xFullMesh.m_uNumVerts, "Incorrect index somewhere");
+
+			Zenith_Assert(xFoundOldIndices.find(uOldOffset) == xFoundOldIndices.end(), "Duplicate old index");
+			Zenith_Assert(xFoundNewIndices.find(uNewOffset) == xFoundNewIndices.end(), "Duplicate new index");
+
+			xSubMesh.m_pxPositions[uNewOffset] = xFullMesh.m_pxPositions[uOldOffset];
+			xSubMesh.m_pxUVs[uNewOffset] = xFullMesh.m_pxUVs[uOldOffset];
+			xSubMesh.m_pxNormals[uNewOffset] = xFullMesh.m_pxNormals[uOldOffset];
+			xSubMesh.m_pxTangents[uNewOffset] = xFullMesh.m_pxTangents[uOldOffset];
+			xSubMesh.m_pxBitangents[uNewOffset] = xFullMesh.m_pxBitangents[uOldOffset];
+
+			if (subX == static_cast<u_int>(TERRAIN_SIZE * fDensity - 1))
+				uTopRightFromZ = uNewOffset;
+
+			uHeighestNewOffset = std::max(uHeighestNewOffset, uNewOffset);
+#ifdef ZENITH_ASSERT
+			xFoundOldIndices.insert(uOldOffset);
+			xFoundNewIndices.insert(uNewOffset);
+#endif
+		}
+
+		uHeighestNewOffset -= static_cast<u_int>(TERRAIN_SIZE * fDensity - 1);
+
+		for (u_int indexX = 0; indexX < static_cast<u_int>(TERRAIN_SIZE * fDensity - 1); indexX++)
+		{
+			u_int c = puTopEdgeIndices[indexX + 1];
+			u_int a = uHeighestNewOffset++;
+			u_int b = puTopEdgeIndices[indexX];
+			u_int d = uHeighestNewOffset;
+
+			xSubMesh.m_puIndices[indexIndex++] = a;
+			xSubMesh.m_puIndices[indexIndex++] = c;
+			xSubMesh.m_puIndices[indexIndex++] = b;
+			xSubMesh.m_puIndices[indexIndex++] = c;
+			xSubMesh.m_puIndices[indexIndex++] = a;
+			xSubMesh.m_puIndices[indexIndex++] = d;
+			Zenith_Assert(indexIndex <= xSubMesh.m_uNumIndices, "Index index too big");
+		}
+	}
+
+	if (x < uNumSplitsX - 1 && z < uNumSplitsZ - 1)
+	{
+		u_int subZ = static_cast<u_int>(TERRAIN_SIZE * fDensity);
+		u_int subX = static_cast<u_int>(TERRAIN_SIZE * fDensity);
+		u_int uNewOffset = ++uHeighestNewOffset;
+
+		Zenith_Assert(uNewOffset < xSubMesh.m_uNumVerts, "Offset too big for submesh");
+
+		u_int uStartOfRow = static_cast<u_int>((subZ * TERRAIN_SIZE * fDensity * uNumSplitsZ) + (z * uImageWidth * fDensity * TERRAIN_SIZE * fDensity));
+		Zenith_Assert(uStartOfRow < xFullMesh.m_uNumVerts, "Start of row has gone past end of mesh");
+		u_int uIndexIntoRow = static_cast<u_int>(subX + x * TERRAIN_SIZE * fDensity);
+		Zenith_Assert(uIndexIntoRow < fDensity* uImageWidth, "Gone past end of row");
+		u_int uOldOffset = uStartOfRow + uIndexIntoRow;
+
+		Zenith_Assert(uOldOffset < xFullMesh.m_uNumVerts, "Incorrect index somewhere");
+
+		Zenith_Assert(xFoundOldIndices.find(uOldOffset) == xFoundOldIndices.end(), "Duplicate old index");
+		Zenith_Assert(xFoundNewIndices.find(uNewOffset) == xFoundNewIndices.end(), "Duplicate new index");
+
+		xSubMesh.m_pxPositions[uNewOffset] = xFullMesh.m_pxPositions[uOldOffset];
+		xSubMesh.m_pxUVs[uNewOffset] = xFullMesh.m_pxUVs[uOldOffset];
+		xSubMesh.m_pxNormals[uNewOffset] = xFullMesh.m_pxNormals[uOldOffset];
+		xSubMesh.m_pxTangents[uNewOffset] = xFullMesh.m_pxTangents[uOldOffset];
+		xSubMesh.m_pxBitangents[uNewOffset] = xFullMesh.m_pxBitangents[uOldOffset];
+
+		uHeighestNewOffset = std::max(uHeighestNewOffset, uNewOffset);
+#ifdef ZENITH_ASSERT
+		xFoundOldIndices.insert(uOldOffset);
+		xFoundNewIndices.insert(uNewOffset);
+#endif
+
+		u_int a = uTopRightFromX;
+		u_int d = uTopRightFromBoth;
+		u_int c = uTopRightFromZ;
+		u_int b = uHeighestNewOffset;
+
+		xSubMesh.m_puIndices[indexIndex++] = a;
+		xSubMesh.m_puIndices[indexIndex++] = c;
+		xSubMesh.m_puIndices[indexIndex++] = b;
+		xSubMesh.m_puIndices[indexIndex++] = c;
+		xSubMesh.m_puIndices[indexIndex++] = a;
+		xSubMesh.m_puIndices[indexIndex++] = d;
+		Zenith_Assert(indexIndex <= xSubMesh.m_uNumIndices, "Index index too big");
+	}
+
+	GenerateTerrainLayoutAndVertexData(xSubMesh);
+	xSubMesh.Export((pxData->strOutputDir + pxData->strName + std::string("_") + std::to_string(x) + std::string("_") + std::to_string(z) + std::string(ZENITH_MESH_EXT)).c_str());
+
+	Zenith_MemoryManagement::Deallocate(puRightEdgeIndices);
+	Zenith_MemoryManagement::Deallocate(puTopEdgeIndices);
+	} // end for uChunkIndex
+}
+
+void ExportMesh(u_int uDensityDivisor, std::string strName, const cv::Mat& xHeightmap, const std::string& strOutputDir)
 {
 	Zenith_Assert((uDensityDivisor & (uDensityDivisor-1)) == 0, "Density divisor must be a power of 2");
 
 	float fDensity = 1.f / uDensityDivisor;
 
-	// Load heightmap and material textures (supports both .ztxtr and .tif)
-	cv::Mat xHeightmap = LoadHeightmapAuto(strHeightmapPath);
-	cv::Mat xMaterialLerpMap = LoadHeightmapAuto(strMaterialPath);
-
 	Zenith_Assert(!xHeightmap.empty(), "Invalid heightmap image");
 
 	u_int uImageWidth = xHeightmap.cols;
 	u_int uImageHeight = xHeightmap.rows;
-
-#if 0
-	GUID xFoliageMaterialGUID;
-	GUID xFoliageAlbedoGUID;
-	GUID xFoliageNormalGUID;
-	GUID xFoliageRoughnessGUID;
-	GUID xFoliageHeightmapGUID;
-	GUID xFoliageAlphaGUID;
-	GUID xFoliageTranslucencyGUID;
-	WriteFoliageMaterialAsset(xFoliageMaterialGUID, xFoliageAlbedoGUID, xFoliageNormalGUID, xFoliageRoughnessGUID, xFoliageHeightmapGUID, xFoliageAlphaGUID, xFoliageTranslucencyGUID);
-#endif
 
 	Zenith_Assert(static_cast<u_int>(uImageWidth * fDensity) % TERRAIN_SIZE == 0, "Invalid terrain width");
 	Zenith_Assert(static_cast<u_int>(uImageHeight * fDensity) % TERRAIN_SIZE == 0, "Invalid terrain height");
@@ -268,287 +635,56 @@ void ExportMesh(u_int uDensityDivisor, std::string strName, const std::string& s
 	u_int uNumSplitsZ = uImageHeight / TERRAIN_SIZE;
 
 	Flux_MeshGeometry xFullMesh;
-	GenerateFullTerrain(xHeightmap, xMaterialLerpMap, xFullMesh, uDensityDivisor);
+	GenerateFullTerrain(xHeightmap, xFullMesh, uDensityDivisor);
 
-	for (u_int z = 0; z < uNumSplitsZ; z++)
-	{
-		for (u_int x = 0; x < uNumSplitsX; x++)
-		{
-			Flux_MeshGeometry xSubMesh;
-			xSubMesh.m_uNumVerts = static_cast<u_int>((TERRAIN_SIZE * fDensity + 1) * (TERRAIN_SIZE * fDensity + 1));
-			xSubMesh.m_uNumIndices = static_cast<u_int>((((TERRAIN_SIZE * fDensity + 1)) - 1) * (((TERRAIN_SIZE * fDensity + 1)) - 1) * 6);
-			xSubMesh.m_pxPositions = new glm::highp_vec3[xSubMesh.m_uNumVerts];
-			xSubMesh.m_pxUVs = new glm::vec2[xSubMesh.m_uNumVerts];
-			xSubMesh.m_pxNormals = new glm::vec3[xSubMesh.m_uNumVerts];
-			xSubMesh.m_pxTangents = new glm::vec3[xSubMesh.m_uNumVerts];
-			xSubMesh.m_pxBitangents = new glm::vec3[xSubMesh.m_uNumVerts];
-			for (size_t i = 0; i < xSubMesh.m_uNumVerts; i++)
-			{
-				xSubMesh.m_pxNormals[i] = { 0,0,0 };
-				xSubMesh.m_pxTangents[i] = { 0,0,0 };
-			}
-			xSubMesh.m_puIndices = new u_int[xSubMesh.m_uNumIndices]{ 0 };
-			xSubMesh.m_pfMaterialLerps = new float[xSubMesh.m_uNumIndices];
+	u_int uTotalChunks = uNumSplitsX * uNumSplitsZ;
 
-			u_int uHeighestNewOffset = 0;
-#ifdef ZENITH_ASSERT
-			std::set<u_int> xFoundOldIndices;
-			std::set<u_int> xFoundNewIndices;
-#endif
-			u_int* puRightEdgeIndices = new u_int[static_cast<u_int>(TERRAIN_SIZE * fDensity)];
-			u_int* puTopEdgeIndices = new u_int[static_cast<u_int>(TERRAIN_SIZE * fDensity)];
-			u_int uTopRightFromBoth = 0;
+	ChunkExportData xChunkData;
+	xChunkData.pxFullMesh = &xFullMesh;
+	xChunkData.uNumSplitsX = uNumSplitsX;
+	xChunkData.uNumSplitsZ = uNumSplitsZ;
+	xChunkData.uTotalChunks = uTotalChunks;
+	xChunkData.fDensity = fDensity;
+	xChunkData.uImageWidth = uImageWidth;
+	xChunkData.strOutputDir = strOutputDir;
+	xChunkData.strName = strName;
 
-			std::vector<glm::vec3> xFoliagePositions;
-
-			glm::highp_vec3 xOrigin = { x, 0, z };
-			for (u_int subZ = 0; subZ < static_cast<u_int>(TERRAIN_SIZE * fDensity); subZ++)
-			{
-				for (u_int subX = 0; subX < static_cast<u_int>(TERRAIN_SIZE * fDensity); subX++)
-				{
-					u_int uNewOffset = static_cast<u_int>((subZ * TERRAIN_SIZE * fDensity) + subX);
-
-					u_int uStartOfRow = static_cast<u_int>((subZ * TERRAIN_SIZE * fDensity * uNumSplitsZ) + (z * uImageWidth * fDensity * TERRAIN_SIZE * fDensity));
-					Zenith_Assert(uStartOfRow < xFullMesh.m_uNumVerts, "Start of row has gone past end of mesh");
-					u_int uIndexIntoRow = static_cast<u_int>(subX + x * TERRAIN_SIZE * fDensity);
-					Zenith_Assert(uIndexIntoRow < fDensity * uImageWidth, "Gone past end of row");
-					u_int uOldOffset = uStartOfRow + uIndexIntoRow;
-
-					Zenith_Assert(uOldOffset < xFullMesh.m_uNumVerts, "Incorrect index somewhere");
-
-					Zenith_Assert(xFoundOldIndices.find(uOldOffset) == xFoundOldIndices.end(), "Duplicate old index");
-					Zenith_Assert(xFoundNewIndices.find(uNewOffset) == xFoundNewIndices.end(), "Duplicate new index");
-
-					xSubMesh.m_pxPositions[uNewOffset] = xFullMesh.m_pxPositions[uOldOffset];
-					xSubMesh.m_pxUVs[uNewOffset] = xFullMesh.m_pxUVs[uOldOffset];
-					xSubMesh.m_pxNormals[uNewOffset] = xFullMesh.m_pxNormals[uOldOffset];
-					xSubMesh.m_pxTangents[uNewOffset] = xFullMesh.m_pxTangents[uOldOffset];
-					xSubMesh.m_pxBitangents[uNewOffset] = xFullMesh.m_pxBitangents[uOldOffset];
-					xSubMesh.m_pfMaterialLerps[uNewOffset] = xFullMesh.m_pfMaterialLerps[uOldOffset];
-
-					if (subX == static_cast<u_int>(TERRAIN_SIZE * fDensity - 1))
-						puRightEdgeIndices[subZ] = uNewOffset;
-					if (subZ == static_cast<u_int>(TERRAIN_SIZE * fDensity - 1))
-						puTopEdgeIndices[subX] = uNewOffset;
-					if (subX == static_cast<u_int>(TERRAIN_SIZE * fDensity - 1) && subZ == static_cast<u_int>(TERRAIN_SIZE * fDensity - 1))
-						uTopRightFromBoth = uNewOffset;
-
-#ifdef ZENITH_ASSERT
-					uHeighestNewOffset = std::max(uHeighestNewOffset, uNewOffset);
-					xFoundOldIndices.insert(uOldOffset);
-					xFoundNewIndices.insert(uNewOffset);
-#endif
-
-					if (rand() / static_cast<float>(RAND_MAX) < 0.2f && glm::dot(xFullMesh.m_pxNormals[uOldOffset], { 0,1,0 }) > 0.95f)
-						xFoliagePositions.push_back(xFullMesh.m_pxPositions[uOldOffset]);
-				}
-			}
-
-			size_t indexIndex = 0;
-			for (u_int indexZ = 0; indexZ < static_cast<u_int>(TERRAIN_SIZE * fDensity - 1); indexZ++)
-			{
-				for (u_int indexX = 0; indexX < static_cast<u_int>(TERRAIN_SIZE * fDensity - 1); indexX++)
-				{
-					u_int a = static_cast<u_int>((indexZ * TERRAIN_SIZE * fDensity) + indexX);
-					u_int b = static_cast<u_int>((indexZ * TERRAIN_SIZE * fDensity) + indexX + 1);
-					u_int c = static_cast<u_int>(((indexZ + 1) * TERRAIN_SIZE * fDensity) + indexX + 1);
-					u_int d = static_cast<u_int>(((indexZ + 1) * TERRAIN_SIZE * fDensity) + indexX);
-					xSubMesh.m_puIndices[indexIndex++] = a;
-					xSubMesh.m_puIndices[indexIndex++] = c;
-					xSubMesh.m_puIndices[indexIndex++] = b;
-					xSubMesh.m_puIndices[indexIndex++] = c;
-					xSubMesh.m_puIndices[indexIndex++] = a;
-					xSubMesh.m_puIndices[indexIndex++] = d;
-					Zenith_Assert(indexIndex <= xSubMesh.m_uNumIndices, "Index index too big");
-				}
-			}
-
-			u_int uTopRightFromX = 0;
-			if (x < uNumSplitsX - 1)
-			{
-				u_int subX = static_cast<u_int>(TERRAIN_SIZE * fDensity);
-				for (u_int subZ = 0; subZ < static_cast<u_int>(TERRAIN_SIZE * fDensity); subZ++)
-				{
-					u_int uNewOffset = ++uHeighestNewOffset;
-
-					Zenith_Assert(uNewOffset < xSubMesh.m_uNumVerts, "Offset too big for submesh");
-
-					u_int uStartOfRow = static_cast<u_int>((subZ * TERRAIN_SIZE * fDensity * uNumSplitsZ) + (z * uImageWidth * fDensity * TERRAIN_SIZE * fDensity));
-					Zenith_Assert(uStartOfRow < xFullMesh.m_uNumVerts, "Start of row has gone past end of mesh");
-					u_int uIndexIntoRow = static_cast<u_int>(subX + x * TERRAIN_SIZE * fDensity);
-					Zenith_Assert(uIndexIntoRow < fDensity * uImageWidth, "Gone past end of row");
-					u_int uOldOffset = uStartOfRow + uIndexIntoRow;
-
-					Zenith_Assert(uOldOffset < xFullMesh.m_uNumVerts, "Incorrect index somewhere");
-
-					Zenith_Assert(xFoundOldIndices.find(uOldOffset) == xFoundOldIndices.end(), "Duplicate old index");
-					Zenith_Assert(xFoundNewIndices.find(uNewOffset) == xFoundNewIndices.end(), "Duplicate new index");
-
-					xSubMesh.m_pxPositions[uNewOffset] = xFullMesh.m_pxPositions[uOldOffset];
-					xSubMesh.m_pxUVs[uNewOffset] = xFullMesh.m_pxUVs[uOldOffset];
-					xSubMesh.m_pxNormals[uNewOffset] = xFullMesh.m_pxNormals[uOldOffset];
-					xSubMesh.m_pxTangents[uNewOffset] = xFullMesh.m_pxTangents[uOldOffset];
-					xSubMesh.m_pxBitangents[uNewOffset] = xFullMesh.m_pxBitangents[uOldOffset];
-					xSubMesh.m_pfMaterialLerps[uNewOffset] = xFullMesh.m_pfMaterialLerps[uOldOffset];
-
-					if (subZ == static_cast<u_int>(TERRAIN_SIZE * fDensity - 1))
-						uTopRightFromX = uNewOffset;
-
-					uHeighestNewOffset = std::max(uHeighestNewOffset, uNewOffset);
-#ifdef ZENITH_ASSERT
-					xFoundOldIndices.insert(uOldOffset);
-					xFoundNewIndices.insert(uNewOffset);
-					//xPositionsSet.insert(pxSubMesh->m_pxVertexPositions[uNewOffset]);
-#endif
-				}
-
-				uHeighestNewOffset -= static_cast<u_int>(TERRAIN_SIZE * fDensity - 1);
-
-				for (u_int indexZ = 0; indexZ < static_cast<u_int>(TERRAIN_SIZE * fDensity - 1); indexZ++)
-				{
-					u_int a = puRightEdgeIndices[indexZ + 1];
-					u_int c = uHeighestNewOffset++;
-					u_int b = puRightEdgeIndices[indexZ];
-					u_int d = uHeighestNewOffset;
-
-					xSubMesh.m_puIndices[indexIndex++] = a;
-					xSubMesh.m_puIndices[indexIndex++] = c;
-					xSubMesh.m_puIndices[indexIndex++] = b;
-					xSubMesh.m_puIndices[indexIndex++] = c;
-					xSubMesh.m_puIndices[indexIndex++] = a;
-					xSubMesh.m_puIndices[indexIndex++] = d;
-					Zenith_Assert(indexIndex <= xSubMesh.m_uNumIndices, "Index index too big");
-				}
-			}
-
-			u_int uTopRightFromZ = 0;
-
-			if (z < uNumSplitsZ - 1)
-			{
-				u_int subZ = static_cast<u_int>(TERRAIN_SIZE * fDensity);
-				for (u_int subX = 0; subX < static_cast<u_int>(TERRAIN_SIZE * fDensity); subX++)
-				{
-					u_int uNewOffset = ++uHeighestNewOffset;
-
-					Zenith_Assert(uNewOffset < xSubMesh.m_uNumVerts, "Offset too big for submesh");
-
-					u_int uStartOfRow = static_cast<u_int>((subZ * TERRAIN_SIZE * fDensity * uNumSplitsZ) + (z * uImageWidth * fDensity * TERRAIN_SIZE * fDensity));
-					Zenith_Assert(uStartOfRow < xFullMesh.m_uNumVerts, "Start of row has gone past end of mesh");
-					u_int uIndexIntoRow = static_cast<u_int>(subX + x * TERRAIN_SIZE * fDensity);
-					Zenith_Assert(uIndexIntoRow < fDensity* uImageWidth, "Gone past end of row");
-					u_int uOldOffset = uStartOfRow + uIndexIntoRow;
-
-					Zenith_Assert(uOldOffset < xFullMesh.m_uNumVerts, "Incorrect index somewhere");
-
-					Zenith_Assert(xFoundOldIndices.find(uOldOffset) == xFoundOldIndices.end(), "Duplicate old index");
-					Zenith_Assert(xFoundNewIndices.find(uNewOffset) == xFoundNewIndices.end(), "Duplicate new index");
-
-					xSubMesh.m_pxPositions[uNewOffset] = xFullMesh.m_pxPositions[uOldOffset];
-					xSubMesh.m_pxUVs[uNewOffset] = xFullMesh.m_pxUVs[uOldOffset];
-					xSubMesh.m_pxNormals[uNewOffset] = xFullMesh.m_pxNormals[uOldOffset];
-					xSubMesh.m_pxTangents[uNewOffset] = xFullMesh.m_pxTangents[uOldOffset];
-					xSubMesh.m_pxBitangents[uNewOffset] = xFullMesh.m_pxBitangents[uOldOffset];
-					xSubMesh.m_pfMaterialLerps[uNewOffset] = xFullMesh.m_pfMaterialLerps[uOldOffset];
-
-					if (subX == static_cast<u_int>(TERRAIN_SIZE * fDensity - 1))
-						uTopRightFromZ = uNewOffset;
-
-					uHeighestNewOffset = std::max(uHeighestNewOffset, uNewOffset);
-#ifdef ZENITH_ASSERT
-					xFoundOldIndices.insert(uOldOffset);
-					xFoundNewIndices.insert(uNewOffset);
-#endif
-				}
-
-				uHeighestNewOffset -= static_cast<u_int>(TERRAIN_SIZE * fDensity - 1);
-
-				for (u_int indexX = 0; indexX < static_cast<u_int>(TERRAIN_SIZE * fDensity - 1); indexX++)
-				{
-					u_int c = puTopEdgeIndices[indexX + 1];
-					u_int a = uHeighestNewOffset++;
-					u_int b = puTopEdgeIndices[indexX];
-					u_int d = uHeighestNewOffset;
-
-					xSubMesh.m_puIndices[indexIndex++] = a;
-					xSubMesh.m_puIndices[indexIndex++] = c;
-					xSubMesh.m_puIndices[indexIndex++] = b;
-					xSubMesh.m_puIndices[indexIndex++] = c;
-					xSubMesh.m_puIndices[indexIndex++] = a;
-					xSubMesh.m_puIndices[indexIndex++] = d;
-					Zenith_Assert(indexIndex <= xSubMesh.m_uNumIndices, "Index index too big");
-				}
-			}
-
-			if (x < uNumSplitsX - 1 && z < uNumSplitsZ - 1)
-			{
-				u_int subZ = static_cast<u_int>(TERRAIN_SIZE * fDensity);
-				u_int subX = static_cast<u_int>(TERRAIN_SIZE * fDensity);
-				u_int uNewOffset = ++uHeighestNewOffset;
-
-				Zenith_Assert(uNewOffset < xSubMesh.m_uNumVerts, "Offset too big for submesh");
-
-				u_int uStartOfRow = static_cast<u_int>((subZ * TERRAIN_SIZE * fDensity * uNumSplitsZ) + (z * uImageWidth * fDensity * TERRAIN_SIZE * fDensity));
-				Zenith_Assert(uStartOfRow < xFullMesh.m_uNumVerts, "Start of row has gone past end of mesh");
-				u_int uIndexIntoRow = static_cast<u_int>(subX + x * TERRAIN_SIZE * fDensity);
-				Zenith_Assert(uIndexIntoRow < fDensity* uImageWidth, "Gone past end of row");
-				u_int uOldOffset = uStartOfRow + uIndexIntoRow;
-
-				Zenith_Assert(uOldOffset < xFullMesh.m_uNumVerts, "Incorrect index somewhere");
-
-				Zenith_Assert(xFoundOldIndices.find(uOldOffset) == xFoundOldIndices.end(), "Duplicate old index");
-				Zenith_Assert(xFoundNewIndices.find(uNewOffset) == xFoundNewIndices.end(), "Duplicate new index");
-
-				xSubMesh.m_pxPositions[uNewOffset] = xFullMesh.m_pxPositions[uOldOffset];
-				xSubMesh.m_pxUVs[uNewOffset] = xFullMesh.m_pxUVs[uOldOffset];
-				xSubMesh.m_pxNormals[uNewOffset] = xFullMesh.m_pxNormals[uOldOffset];
-				xSubMesh.m_pxTangents[uNewOffset] = xFullMesh.m_pxTangents[uOldOffset];
-				xSubMesh.m_pxBitangents[uNewOffset] = xFullMesh.m_pxBitangents[uOldOffset];
-				xSubMesh.m_pfMaterialLerps[uNewOffset] = xFullMesh.m_pfMaterialLerps[uOldOffset];
-
-				uHeighestNewOffset = std::max(uHeighestNewOffset, uNewOffset);
-#ifdef ZENITH_ASSERT
-				xFoundOldIndices.insert(uOldOffset);
-				xFoundNewIndices.insert(uNewOffset);
-#endif
-
-				u_int a = uTopRightFromX;
-				u_int d = uTopRightFromBoth;
-				u_int c = uTopRightFromZ;
-				u_int b = uHeighestNewOffset;
-
-				xSubMesh.m_puIndices[indexIndex++] = a;
-				xSubMesh.m_puIndices[indexIndex++] = c;
-				xSubMesh.m_puIndices[indexIndex++] = b;
-				xSubMesh.m_puIndices[indexIndex++] = c;
-				xSubMesh.m_puIndices[indexIndex++] = a;
-			 xSubMesh.m_puIndices[indexIndex++] = d;
-				Zenith_Assert(indexIndex <= xSubMesh.m_uNumIndices, "Index index too big");
-			}
-
-			xSubMesh.GenerateLayoutAndVertexData();
-			xSubMesh.Export((strOutputDir + strName + std::string("_") + std::to_string(x) + std::string("_") + std::to_string(z) + std::string(ZENITH_MESH_EXT)).c_str());
-
-			delete[] puRightEdgeIndices;
-			delete[] puTopEdgeIndices;
-		}
-	}
+	u_int uNumInvocations = std::min(static_cast<u_int>(64), uTotalChunks);
+	Zenith_TaskArray xChunkTask(ZENITH_PROFILE_INDEX__FLUX_TERRAIN, ExportChunkBatch, &xChunkData, uNumInvocations, true);
+	Zenith_TaskSystem::SubmitTaskArray(&xChunkTask);
+	xChunkTask.WaitUntilComplete();
 }
 
-void ExportHeightmapFromPaths(const std::string& strHeightmapPath, const std::string& strMaterialPath, const std::string& strOutputDir)
+static void ExportHeightmapInternal(const cv::Mat& xHeightmap, const std::string& strOutputDir)
 {
-	Zenith_Log(LOG_CATEGORY_TOOLS, "ExportHeightmapFromPaths: Heightmap=%s, Material=%s, Output=%s",
-		strHeightmapPath.c_str(), strMaterialPath.c_str(), strOutputDir.c_str());
+	Zenith_Assert(!xHeightmap.empty(), "Invalid heightmap");
 
 	// Export HIGH detail render meshes (density divisor 1, streamed dynamically)
-	ExportMesh(1, "Render", strHeightmapPath, strMaterialPath, strOutputDir);
+	ExportMesh(1, "Render", xHeightmap, strOutputDir);
 
 	// Export LOW detail render meshes (density divisor 4, always resident)
-	ExportMesh(4, "Render_LOW", strHeightmapPath, strMaterialPath, strOutputDir);
+	ExportMesh(4, "Render_LOW", xHeightmap, strOutputDir);
 
 	// Export physics mesh (density divisor 8)
-	ExportMesh(8, "Physics", strHeightmapPath, strMaterialPath, strOutputDir);
+	ExportMesh(8, "Physics", xHeightmap, strOutputDir);
+}
+
+void ExportHeightmapFromPaths(const std::string& strHeightmapPath, const std::string& strOutputDir)
+{
+	Zenith_Log(LOG_CATEGORY_TOOLS, "ExportHeightmapFromPaths: Heightmap=%s, Output=%s",
+		strHeightmapPath.c_str(), strOutputDir.c_str());
+
+	cv::Mat xHeightmap = LoadHeightmapAuto(strHeightmapPath);
+	ExportHeightmapInternal(xHeightmap, strOutputDir);
 
 	Zenith_Log(LOG_CATEGORY_TOOLS, "ExportHeightmapFromPaths: Export complete");
+}
+
+void ExportHeightmapFromMat(const cv::Mat& xHeightmap, const std::string& strOutputDir)
+{
+	Zenith_Log(LOG_CATEGORY_TOOLS, "ExportHeightmapFromMat: Output=%s", strOutputDir.c_str());
+	ExportHeightmapInternal(xHeightmap, strOutputDir);
+	Zenith_Log(LOG_CATEGORY_TOOLS, "ExportHeightmapFromMat: Export complete");
 }
 
 void ExportHeightmap()
@@ -556,8 +692,7 @@ void ExportHeightmap()
 	// Use default paths for backward compatibility
 	std::string strAssetsDir = GetGameAssetsDirectory();
 	std::string strHeightmapPath = strAssetsDir + "Textures/Heightmaps/Test/gaeaHeight.tif";
-	std::string strMaterialPath = strAssetsDir + "Textures/Heightmaps/Test/gaeaMaterial.tif";
 	std::string strOutputDir = strAssetsDir + "Terrain/";
 
-	ExportHeightmapFromPaths(strHeightmapPath, strMaterialPath, strOutputDir);
+	ExportHeightmapFromPaths(strHeightmapPath, strOutputDir);
 }

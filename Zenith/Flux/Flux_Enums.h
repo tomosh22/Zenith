@@ -146,6 +146,9 @@ enum ShaderDataType
 	SHADER_DATA_TYPE_MAT3,
 	SHADER_DATA_TYPE_MAT4,
 	SHADER_DATA_TYPE_BOOL,
+	// Packed vertex attribute types
+	SHADER_DATA_TYPE_HALF2,				// float16x2 (4 bytes) - maps to VK_FORMAT_R16G16_SFLOAT
+	SHADER_DATA_TYPE_SNORM10_10_10_2,	// A2B10G10R10 signed normalized (4 bytes) - maps to VK_FORMAT_A2B10G10R10_SNORM_PACK32
 	SHADER_DATA_TYPE_NONE
 };
 
