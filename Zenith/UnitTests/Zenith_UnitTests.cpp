@@ -409,6 +409,9 @@ void Zenith_UnitTests::RunAllTests()
 	// Scene Management System tests (in separate file)
 	Zenith_SceneTests::RunAllTests();
 
+	// Physics System tests (in separate file)
+	Zenith_PhysicsTests::RunAllTests();
+
 #ifdef ZENITH_TOOLS
 	// Editor tests (only in tools builds)
 	Zenith_EditorTests::RunAllTests();

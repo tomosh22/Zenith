@@ -577,6 +577,10 @@ void Zenith_Physics::SetGravityEnabled(const JPH::BodyID& xBodyID, bool bEnabled
 	if (xBodyID.IsInvalid()) return;
 	JPH::BodyInterface& xBodyInterface = s_pxPhysicsSystem->GetBodyInterface();
 	xBodyInterface.SetGravityFactor(xBodyID, bEnabled ? 1.0f : 0.0f);
+	if (bEnabled)
+	{
+		xBodyInterface.ActivateBody(xBodyID);
+	}
 }
 
 void Zenith_Physics::LockRotation(const JPH::BodyID& xBodyID, bool bLockX, bool bLockY, bool bLockZ)
