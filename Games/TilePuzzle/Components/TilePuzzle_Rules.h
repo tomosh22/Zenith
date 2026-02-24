@@ -15,6 +15,10 @@
 
 #include "TilePuzzle_Types.h"
 
+#ifdef _MSC_VER
+#include <intrin.h>
+#endif
+
 namespace TilePuzzle_Rules
 {
 	// ========================================================================
@@ -71,13 +75,7 @@ namespace TilePuzzle_Rules
 		// Conditional shape check: requires enough cats eliminated to unlock
 		if (xMoving.uUnlockThreshold > 0)
 		{
-			uint32_t uEliminatedCount = 0;
-			uint32_t uMask = uEliminatedCatsMask;
-			while (uMask)
-			{
-				uEliminatedCount += uMask & 1u;
-				uMask >>= 1;
-			}
+			uint32_t uEliminatedCount = __popcnt(uEliminatedCatsMask);
 			if (uEliminatedCount < xMoving.uUnlockThreshold)
 				return false;
 		}
@@ -299,6 +297,95 @@ namespace TilePuzzle_Rules
 		}
 
 		return uNewlyEliminated;
+	}
+
+	// ========================================================================
+	// Directional slide
+	// ========================================================================
+
+	/**
+	 * SlideResult - Outcome of sliding a shape in one direction until blocked
+	 */
+	struct SlideResult
+	{
+		int32_t iEndOriginX;
+		int32_t iEndOriginY;
+		uint32_t uEliminatedMask;  // Combined: prior + newly eliminated during slide
+		bool bMoved;               // true if shape moved at least one cell
+	};
+
+	/**
+	 * SlideShape - Slide a shape in one direction until blocked
+	 *
+	 * Canonical implementation of directional sliding. Steps one cell at a time,
+	 * validates each step via CanMoveShape, and accumulates cat eliminations at
+	 * each intermediate position. Cats eliminated mid-slide unblock subsequent steps.
+	 *
+	 * @param xLevel              Level data
+	 * @param axDraggableShapes   Array of all draggable shapes (will be temporarily mutated and restored)
+	 * @param uNumDraggableShapes Number of draggable shapes
+	 * @param axCats              Array of cat states
+	 * @param uNumCats            Number of cats
+	 * @param uMovingShapeIdx     Index of shape to slide
+	 * @param eDirection          Direction to slide
+	 * @param uEliminatedCatsMask Current eliminated cat bitmask
+	 */
+	inline SlideResult SlideShape(
+		const TilePuzzleLevelData& xLevel,
+		ShapeState* axDraggableShapes, size_t uNumDraggableShapes,
+		const CatState* axCats, size_t uNumCats,
+		size_t uMovingShapeIdx,
+		TilePuzzleDirection eDirection,
+		uint32_t uEliminatedCatsMask)
+	{
+		SlideResult xResult;
+		xResult.iEndOriginX = axDraggableShapes[uMovingShapeIdx].iOriginX;
+		xResult.iEndOriginY = axDraggableShapes[uMovingShapeIdx].iOriginY;
+		xResult.uEliminatedMask = uEliminatedCatsMask;
+		xResult.bMoved = false;
+
+		int32_t iDeltaX, iDeltaY;
+		TilePuzzleDirections::GetDelta(eDirection, iDeltaX, iDeltaY);
+
+		// Save original position to restore after
+		int32_t iOrigX = axDraggableShapes[uMovingShapeIdx].iOriginX;
+		int32_t iOrigY = axDraggableShapes[uMovingShapeIdx].iOriginY;
+
+		while (true)
+		{
+			int32_t iNewX = axDraggableShapes[uMovingShapeIdx].iOriginX + iDeltaX;
+			int32_t iNewY = axDraggableShapes[uMovingShapeIdx].iOriginY + iDeltaY;
+
+			if (!CanMoveShape(xLevel,
+				axDraggableShapes, uNumDraggableShapes,
+				uMovingShapeIdx,
+				iNewX, iNewY,
+				axCats, uNumCats,
+				xResult.uEliminatedMask))
+			{
+				break;
+			}
+
+			// Step is valid — update position
+			axDraggableShapes[uMovingShapeIdx].iOriginX = iNewX;
+			axDraggableShapes[uMovingShapeIdx].iOriginY = iNewY;
+			xResult.iEndOriginX = iNewX;
+			xResult.iEndOriginY = iNewY;
+			xResult.bMoved = true;
+
+			// Accumulate cat eliminations at this position
+			uint32_t uNewlyEliminated = ComputeNewlyEliminatedCats(
+				axDraggableShapes, uNumDraggableShapes,
+				axCats, uNumCats,
+				xResult.uEliminatedMask);
+			xResult.uEliminatedMask |= uNewlyEliminated;
+		}
+
+		// Restore original position (caller manages state)
+		axDraggableShapes[uMovingShapeIdx].iOriginX = iOrigX;
+		axDraggableShapes[uMovingShapeIdx].iOriginY = iOrigY;
+
+		return xResult;
 	}
 
 	// ========================================================================

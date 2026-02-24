@@ -1,0 +1,138 @@
+{
+  "levelNumber": 5,
+  "gridWidth": 8,
+  "gridHeight": 8,
+  "minimumMoves": 7,
+  "grid": [
+    "........",
+    ".######.",
+    ".######.",
+    ".######.",
+    ".######.",
+    ".######.",
+    ".######.",
+    "........"
+  ],
+  "shapes": [
+    {
+      "color": "None",
+      "originX": 4,
+      "originY": 3,
+      "type": "Single",
+      "draggable": false,
+      "cells": [[0, 0]]
+    },
+    {
+      "color": "None",
+      "originX": 4,
+      "originY": 4,
+      "type": "Single",
+      "draggable": false,
+      "cells": [[0, 0]]
+    },
+    {
+      "color": "None",
+      "originX": 2,
+      "originY": 4,
+      "type": "Single",
+      "draggable": false,
+      "cells": [[0, 0]]
+    },
+    {
+      "color": "Red",
+      "originX": 6,
+      "originY": 1,
+      "type": "Single",
+      "draggable": true,
+      "cells": [[0, 0]]
+    },
+    {
+      "color": "Green",
+      "originX": 3,
+      "originY": 2,
+      "type": "Domino",
+      "draggable": true,
+      "cells": [[0, 0], [1, 0]]
+    },
+    {
+      "color": "Blue",
+      "originX": 2,
+      "originY": 3,
+      "type": "Domino",
+      "draggable": true,
+      "cells": [[0, 0], [1, 0]]
+    }
+  ],
+  "cats": [
+    {
+      "color": "Red",
+      "gridX": 6,
+      "gridY": 3,
+      "onBlocker": false
+    },
+    {
+      "color": "Red",
+      "gridX": 1,
+      "gridY": 2,
+      "onBlocker": false
+    },
+    {
+      "color": "Red",
+      "gridX": 4,
+      "gridY": 5,
+      "onBlocker": false
+    },
+    {
+      "color": "Green",
+      "gridX": 2,
+      "gridY": 2,
+      "onBlocker": false
+    },
+    {
+      "color": "Green",
+      "gridX": 5,
+      "gridY": 4,
+      "onBlocker": false
+    },
+    {
+      "color": "Green",
+      "gridX": 4,
+      "gridY": 6,
+      "onBlocker": false
+    },
+    {
+      "color": "Blue",
+      "gridX": 1,
+      "gridY": 3,
+      "onBlocker": false
+    },
+    {
+      "color": "Blue",
+      "gridX": 5,
+      "gridY": 3,
+      "onBlocker": false
+    },
+    {
+      "color": "Blue",
+      "gridX": 6,
+      "gridY": 5,
+      "onBlocker": false
+    },
+    {
+      "color": "Red",
+      "gridX": 4,
+      "gridY": 3,
+      "onBlocker": true
+    }
+  ],
+  "analytics": {
+    "generationTimeMs": 119709.6,
+    "numColors": 3,
+    "numCatsPerColor": 3,
+    "maxShapeComplexity": 2,
+    "totalAttempts": 1000,
+    "scrambleFailures": 400,
+    "solverTooEasy": 407,
+    "solverUnsolvable": 145
+  }
+}

@@ -1,0 +1,99 @@
+{
+  "levelNumber": 1,
+  "gridWidth": 8,
+  "gridHeight": 8,
+  "minimumMoves": 5,
+  "grid": [
+    "........",
+    ".######.",
+    ".######.",
+    ".######.",
+    ".######.",
+    ".######.",
+    ".######.",
+    "........"
+  ],
+  "shapes": [
+    {
+      "color": "None",
+      "originX": 6,
+      "originY": 4,
+      "type": "Single",
+      "draggable": false,
+      "cells": [[0, 0]]
+    },
+    {
+      "color": "Red",
+      "originX": 1,
+      "originY": 3,
+      "type": "I",
+      "draggable": true,
+      "cells": [[0, 0], [1, 0], [2, 0]]
+      ,"unlockThreshold": 1
+    },
+    {
+      "color": "Green",
+      "originX": 3,
+      "originY": 4,
+      "type": "L",
+      "draggable": true,
+      "cells": [[0, 0], [1, 0], [2, 0], [2, 1]]
+    },
+    {
+      "color": "Blue",
+      "originX": 6,
+      "originY": 5,
+      "type": "Single",
+      "draggable": true,
+      "cells": [[0, 0]]
+    }
+  ],
+  "cats": [
+    {
+      "color": "Red",
+      "gridX": 5,
+      "gridY": 6,
+      "onBlocker": false
+    },
+    {
+      "color": "Red",
+      "gridX": 6,
+      "gridY": 2,
+      "onBlocker": false
+    },
+    {
+      "color": "Green",
+      "gridX": 1,
+      "gridY": 4,
+      "onBlocker": false
+    },
+    {
+      "color": "Green",
+      "gridX": 3,
+      "gridY": 2,
+      "onBlocker": false
+    },
+    {
+      "color": "Blue",
+      "gridX": 2,
+      "gridY": 5,
+      "onBlocker": false
+    },
+    {
+      "color": "Blue",
+      "gridX": 6,
+      "gridY": 6,
+      "onBlocker": false
+    }
+  ],
+  "analytics": {
+    "generationTimeMs": 9092.7,
+    "numColors": 3,
+    "numCatsPerColor": 2,
+    "maxShapeComplexity": 3,
+    "totalAttempts": 1000,
+    "scrambleFailures": 848,
+    "solverTooEasy": 142,
+    "solverUnsolvable": 8
+  }
+}

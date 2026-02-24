@@ -1,0 +1,111 @@
+{
+  "levelNumber": 3,
+  "gridWidth": 8,
+  "gridHeight": 8,
+  "minimumMoves": 4,
+  "grid": [
+    "........",
+    ".######.",
+    ".######.",
+    ".######.",
+    ".######.",
+    ".######.",
+    ".######.",
+    "........"
+  ],
+  "shapes": [
+    {
+      "color": "Red",
+      "originX": 6,
+      "originY": 5,
+      "type": "Single",
+      "draggable": true,
+      "cells": [[0, 0]]
+      ,"unlockThreshold": 2
+    },
+    {
+      "color": "Green",
+      "originX": 3,
+      "originY": 5,
+      "type": "Domino",
+      "draggable": true,
+      "cells": [[0, 0], [1, 0]]
+    },
+    {
+      "color": "Blue",
+      "originX": 3,
+      "originY": 1,
+      "type": "Domino",
+      "draggable": true,
+      "cells": [[0, 0], [1, 0]]
+    },
+    {
+      "color": "Yellow",
+      "originX": 5,
+      "originY": 3,
+      "type": "Domino",
+      "draggable": true,
+      "cells": [[0, 0], [1, 0]]
+    }
+  ],
+  "cats": [
+    {
+      "color": "Red",
+      "gridX": 1,
+      "gridY": 1,
+      "onBlocker": false
+    },
+    {
+      "color": "Red",
+      "gridX": 3,
+      "gridY": 3,
+      "onBlocker": false
+    },
+    {
+      "color": "Green",
+      "gridX": 5,
+      "gridY": 4,
+      "onBlocker": false
+    },
+    {
+      "color": "Green",
+      "gridX": 1,
+      "gridY": 5,
+      "onBlocker": false
+    },
+    {
+      "color": "Blue",
+      "gridX": 2,
+      "gridY": 4,
+      "onBlocker": false
+    },
+    {
+      "color": "Blue",
+      "gridX": 3,
+      "gridY": 2,
+      "onBlocker": false
+    },
+    {
+      "color": "Yellow",
+      "gridX": 4,
+      "gridY": 3,
+      "onBlocker": false
+    },
+    {
+      "color": "Yellow",
+      "gridX": 2,
+      "gridY": 1,
+      "onBlocker": false
+    }
+  ],
+  "analytics": {
+    "generationTimeMs": 6006.2,
+    "numColors": 4,
+    "numCatsPerColor": 2,
+    "maxShapeComplexity": 2,
+    "totalAttempts": 1000,
+    "scrambleFailures": 33,
+    "solverTooEasy": 0,
+    "solverUnsolvable": 11
+  }
+}

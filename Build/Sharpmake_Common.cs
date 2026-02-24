@@ -165,10 +165,11 @@ public class ZenithSolution : Solution
 		conf.AddProject<TilePuzzleGameProject>(target);
 		conf.AddProject<AIShowcaseGameProject>(target);
 
-		// FluxCompiler is Windows-only
+		// Windows-only tools
 		if (target.Platform == Platform.win64)
 		{
 			conf.AddProject<FluxCompilerProject>(target);
+			conf.AddProject<TilePuzzleLevelGenProject>(target);
 		}
 	}
 }

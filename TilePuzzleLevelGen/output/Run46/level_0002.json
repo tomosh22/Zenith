@@ -1,0 +1,170 @@
+{
+  "levelNumber": 2,
+  "gridWidth": 8,
+  "gridHeight": 8,
+  "minimumMoves": 12,
+  "grid": [
+    "........",
+    ".######.",
+    ".######.",
+    ".######.",
+    ".######.",
+    ".######.",
+    ".######.",
+    "........"
+  ],
+  "shapes": [
+    {
+      "color": "None",
+      "originX": 6,
+      "originY": 2,
+      "type": "Single",
+      "draggable": false,
+      "cells": [[0, 0]]
+    },
+    {
+      "color": "Red",
+      "originX": 2,
+      "originY": 5,
+      "type": "I",
+      "draggable": true,
+      "cells": [[0, 0], [1, 0], [2, 0]],
+      "unlockThreshold": 1
+    },
+    {
+      "color": "Green",
+      "originX": 4,
+      "originY": 1,
+      "type": "T",
+      "draggable": true,
+      "cells": [[0, 0], [1, 0], [2, 0], [1, 1]]
+    },
+    {
+      "color": "Blue",
+      "originX": 2,
+      "originY": 4,
+      "type": "I",
+      "draggable": true,
+      "cells": [[0, 0], [1, 0], [2, 0]]
+    }
+  ],
+  "cats": [
+    {
+      "color": "Red",
+      "gridX": 5,
+      "gridY": 4,
+      "onBlocker": false
+    },
+    {
+      "color": "Red",
+      "gridX": 2,
+      "gridY": 1,
+      "onBlocker": false
+    },
+    {
+      "color": "Red",
+      "gridX": 6,
+      "gridY": 6,
+      "onBlocker": false
+    },
+    {
+      "color": "Green",
+      "gridX": 4,
+      "gridY": 2,
+      "onBlocker": false
+    },
+    {
+      "color": "Green",
+      "gridX": 1,
+      "gridY": 4,
+      "onBlocker": false
+    },
+    {
+      "color": "Green",
+      "gridX": 5,
+      "gridY": 5,
+      "onBlocker": false
+    },
+    {
+      "color": "Blue",
+      "gridX": 1,
+      "gridY": 3,
+      "onBlocker": false
+    },
+    {
+      "color": "Blue",
+      "gridX": 3,
+      "gridY": 3,
+      "onBlocker": false
+    },
+    {
+      "color": "Blue",
+      "gridX": 2,
+      "gridY": 6,
+      "onBlocker": false
+    }
+  ],
+  "composition": {
+    "floorCells": 36,
+    "totalShapes": 4,
+    "draggableShapes": 3,
+    "blockerShapes": 1,
+    "conditionalShapes": 1,
+    "totalCats": 9,
+    "blockerCats": 0
+  },
+  "generation": {
+    "timeMs": 917493.8,
+    "retryRounds": 4,
+    "totalAttempts": 3000,
+    "scrambleFailures": 1633,
+    "scrambleRate": 54.4,
+    "solverTooEasy": 899,
+    "solverUnsolvable": 422,
+    "totalSuccesses": 46,
+    "successRate": 1.5,
+    "ofSolverPassed": {
+      "total": 1367,
+      "tooEasyRate": 65.8,
+      "unsolvableRate": 30.9
+    },
+    "winningParams": {
+      "colors": 0,
+      "catsPerColor": 0,
+      "shapeComplexity": 0,
+      "blockers": 0,
+      "blockerCats": 0,
+      "conditionalShapes": 0,
+      "conditionalThreshold": 0
+    },
+    "config": {
+      "maxAttempts": 1000,
+      "gridWidth": [8, 8],
+      "gridHeight": [8, 8],
+      "colors": [3, 3],
+      "catsPerColor": [3, 3],
+      "shapesPerColor": 1,
+      "blockers": [1, 2],
+      "shapeComplexity": [3, 4],
+      "scrambleMoves": 600,
+      "blockerCats": [0, 1],
+      "conditionalShapes": [0, 1],
+      "conditionalThreshold": [0, 2],
+      "minSolverMoves": 6,
+      "solverStateLimit": 500000,
+      "minScrambleMoves": 100
+    },
+    "parameterStats": {
+      "colors": {
+        "3": { "total": 3000, "scrambleFail": 1633, "tooEasy": 899, "unsolvable": 422, "success": 46, "successRate": 1.5, "scrambleRate": 54.4, "tooEasyRate": 30.0, "unsolvableRate": 14.1 }
+      },
+      "catsPerColor": {
+        "3": { "total": 3000, "scrambleFail": 1633, "tooEasy": 899, "unsolvable": 422, "success": 46, "successRate": 1.5, "scrambleRate": 54.4, "tooEasyRate": 30.0, "unsolvableRate": 14.1 }
+      },
+      "shapeComplexity": {
+        "3": { "total": 1501, "scrambleFail": 809, "tooEasy": 444, "unsolvable": 223, "success": 25, "successRate": 1.7, "scrambleRate": 53.9, "tooEasyRate": 29.6, "unsolvableRate": 14.9 },
+        "4": { "total": 1499, "scrambleFail": 824, "tooEasy": 455, "unsolvable": 199, "success": 21, "successRate": 1.4, "scrambleRate": 55.0, "tooEasyRate": 30.4, "unsolvableRate": 13.3 }
+      }
+    }
+  }
+}

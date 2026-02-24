@@ -1,0 +1,174 @@
+{
+  "levelNumber": 19,
+  "gridWidth": 8,
+  "gridHeight": 8,
+  "minimumMoves": 9,
+  "grid": [
+    "........",
+    ".######.",
+    ".######.",
+    ".######.",
+    ".######.",
+    ".######.",
+    ".######.",
+    "........"
+  ],
+  "shapes": [
+    {
+      "color": "None",
+      "originX": 1,
+      "originY": 3,
+      "type": "Single",
+      "draggable": false,
+      "cells": [[0, 0]]
+    },
+    {
+      "color": "Red",
+      "originX": 6,
+      "originY": 6,
+      "type": "Single",
+      "draggable": true,
+      "cells": [[0, 0]]
+    },
+    {
+      "color": "Green",
+      "originX": 4,
+      "originY": 4,
+      "type": "L",
+      "draggable": true,
+      "cells": [[0, 0], [1, 0], [2, 0], [2, 1]]
+    },
+    {
+      "color": "Blue",
+      "originX": 1,
+      "originY": 2,
+      "type": "Z",
+      "draggable": true,
+      "cells": [[0, 0], [1, 0], [1, 1], [2, 1]]
+    }
+  ],
+  "cats": [
+    {
+      "color": "Red",
+      "gridX": 5,
+      "gridY": 6,
+      "onBlocker": false
+    },
+    {
+      "color": "Red",
+      "gridX": 4,
+      "gridY": 2,
+      "onBlocker": false
+    },
+    {
+      "color": "Red",
+      "gridX": 1,
+      "gridY": 6,
+      "onBlocker": false
+    },
+    {
+      "color": "Green",
+      "gridX": 4,
+      "gridY": 5,
+      "onBlocker": false
+    },
+    {
+      "color": "Green",
+      "gridX": 2,
+      "gridY": 1,
+      "onBlocker": false
+    },
+    {
+      "color": "Green",
+      "gridX": 4,
+      "gridY": 1,
+      "onBlocker": false
+    },
+    {
+      "color": "Blue",
+      "gridX": 3,
+      "gridY": 4,
+      "onBlocker": false
+    },
+    {
+      "color": "Blue",
+      "gridX": 5,
+      "gridY": 2,
+      "onBlocker": false
+    },
+    {
+      "color": "Blue",
+      "gridX": 4,
+      "gridY": 6,
+      "onBlocker": false
+    },
+    {
+      "color": "Red",
+      "gridX": 1,
+      "gridY": 3,
+      "onBlocker": true
+    }
+  ],
+  "composition": {
+    "floorCells": 36,
+    "totalShapes": 4,
+    "draggableShapes": 3,
+    "blockerShapes": 1,
+    "conditionalShapes": 0,
+    "totalCats": 10,
+    "blockerCats": 1
+  },
+  "generation": {
+    "timeMs": 72036.8,
+    "totalAttempts": 1000,
+    "scrambleFailures": 543,
+    "scrambleRate": 54.3,
+    "solverTooEasy": 209,
+    "solverUnsolvable": 228,
+    "totalSuccesses": 20,
+    "successRate": 2.0,
+    "ofSolverPassed": {
+      "total": 457,
+      "tooEasyRate": 45.7,
+      "unsolvableRate": 49.9
+    },
+    "winningParams": {
+      "colors": 3,
+      "catsPerColor": 3,
+      "shapeComplexity": 4,
+      "blockers": 1,
+      "blockerCats": 1,
+      "conditionalShapes": 0,
+      "conditionalThreshold": 0
+    },
+    "config": {
+      "maxAttempts": 1000,
+      "gridWidth": [8, 8],
+      "gridHeight": [8, 8],
+      "colors": [3, 3],
+      "catsPerColor": [3, 3],
+      "shapesPerColor": 1,
+      "blockers": [1, 2],
+      "shapeComplexity": [3, 4],
+      "scrambleMoves": 600,
+      "blockerCats": [0, 1],
+      "conditionalShapes": [0, 1],
+      "conditionalThreshold": [0, 2],
+      "minSolverMoves": 6,
+      "solverStateLimit": 500000,
+      "minScrambleMoves": 100
+    },
+    "parameterStats": {
+      "colors": {
+        "3": { "total": 1000, "scrambleFail": 543, "tooEasy": 209, "unsolvable": 228, "success": 20, "successRate": 2.0, "scrambleRate": 54.3, "tooEasyRate": 20.9, "unsolvableRate": 22.8 }
+      },
+      "catsPerColor": {
+        "3": { "total": 1000, "scrambleFail": 543, "tooEasy": 209, "unsolvable": 228, "success": 20, "successRate": 2.0, "scrambleRate": 54.3, "tooEasyRate": 20.9, "unsolvableRate": 22.8 }
+      },
+      "shapeComplexity": {
+        "3": { "total": 503, "scrambleFail": 279, "tooEasy": 106, "unsolvable": 108, "success": 10, "successRate": 2.0, "scrambleRate": 55.5, "tooEasyRate": 21.1, "unsolvableRate": 21.5 },
+        "4": { "total": 497, "scrambleFail": 264, "tooEasy": 103, "unsolvable": 120, "success": 10, "successRate": 2.0, "scrambleRate": 53.1, "tooEasyRate": 20.7, "unsolvableRate": 24.1 }
+      }
+    }
+  }
+}

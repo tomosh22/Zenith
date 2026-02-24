@@ -1,0 +1,57 @@
+==========================================================
+TilePuzzle Level Generator - Run Analytics
+==========================================================
+
+SUMMARY
+-------
+Total levels attempted:  2
+Total levels succeeded:  2
+Total levels failed:     0
+Overall success rate:    100.0%
+Total time:              4363555.5 ms (4363.6 s)
+Avg time per level:      2181777.8 ms
+Avg solver moves:        18.5
+
+RETRY STATISTICS
+----------------
+Total retry rounds:      9
+Avg rounds per level:    4.5
+Max rounds for a level:  5
+Timed-out levels:        2
+
+
+PARAMETER INFLUENCE ANALYSIS
+============================
+
+--- Colors ---
+Value    ScrambleFail TooEasy      Unsolvable     Success      SuccRate% 
+----------------------------------------------------------------------
+5        14332        296          5422           950          4.5       
+
+--- CatsPerColor ---
+Value    ScrambleFail TooEasy      Unsolvable     Success      SuccRate% 
+----------------------------------------------------------------------
+2        14332        296          5422           950          4.5       
+
+--- ShapeComplexity ---
+Value    ScrambleFail TooEasy      Unsolvable     Success      SuccRate% 
+----------------------------------------------------------------------
+2        2074         171          4462           336          4.8       
+3        5974         75           548            343          4.9       
+4        6284         50           412            271          3.9       
+
+
+KEY FINDINGS
+============
+  [LOW SUCCESS]  Colors=5: 4.5% success rate (950/21000)
+  [SCRAMBLE BOTTLENECK] Colors=5: 68.2% scramble failures
+  [LOW SUCCESS]  CatsPerColor=2: 4.5% success rate (950/21000)
+  [SCRAMBLE BOTTLENECK] CatsPerColor=2: 68.2% scramble failures
+  [LOW SUCCESS]  ShapeComplexity=2: 4.8% success rate (336/7043)
+  [SOLVER BOTTLENECK] ShapeComplexity=2: 63.4% solver unsolvable
+  [LOW SUCCESS]  ShapeComplexity=3: 4.9% success rate (343/6940)
+  [SCRAMBLE BOTTLENECK] ShapeComplexity=3: 86.1% scramble failures
+  [LOW SUCCESS]  ShapeComplexity=4: 3.9% success rate (271/7017)
+  [SCRAMBLE BOTTLENECK] ShapeComplexity=4: 89.6% scramble failures
+
+==========================================================

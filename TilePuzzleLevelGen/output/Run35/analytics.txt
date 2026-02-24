@@ -1,0 +1,54 @@
+==========================================================
+TilePuzzle Level Generator - Run Analytics
+==========================================================
+
+SUMMARY
+-------
+Total levels attempted:  1
+Total levels succeeded:  1
+Total levels failed:     0
+Overall success rate:    100.0%
+Total time:              626887.9 ms (626.9 s)
+Avg time per level:      626887.9 ms
+Avg solver moves:        9.0
+
+RETRY STATISTICS
+----------------
+Total retry rounds:      5
+Avg rounds per level:    5.0
+Max rounds for a level:  5
+Timed-out levels:        1
+
+
+PARAMETER INFLUENCE ANALYSIS
+============================
+
+--- Colors ---
+Value    ScrambleFail TooEasy      Unsolvable     Success      SuccRate% 
+----------------------------------------------------------------------
+3        2215         1020         697            68           1.7       
+
+--- CatsPerColor ---
+Value    ScrambleFail TooEasy      Unsolvable     Success      SuccRate% 
+----------------------------------------------------------------------
+3        2215         1020         697            68           1.7       
+
+--- ShapeComplexity ---
+Value    ScrambleFail TooEasy      Unsolvable     Success      SuccRate% 
+----------------------------------------------------------------------
+3        1102         492          345            38           1.9       
+4        1113         528          352            30           1.5       
+
+
+KEY FINDINGS
+============
+  [LOW SUCCESS]  Colors=3: 1.7% success rate (68/4000)
+  [SCRAMBLE BOTTLENECK] Colors=3: 55.4% scramble failures
+  [LOW SUCCESS]  CatsPerColor=3: 1.7% success rate (68/4000)
+  [SCRAMBLE BOTTLENECK] CatsPerColor=3: 55.4% scramble failures
+  [LOW SUCCESS]  ShapeComplexity=3: 1.9% success rate (38/1977)
+  [SCRAMBLE BOTTLENECK] ShapeComplexity=3: 55.7% scramble failures
+  [LOW SUCCESS]  ShapeComplexity=4: 1.5% success rate (30/2023)
+  [SCRAMBLE BOTTLENECK] ShapeComplexity=4: 55.0% scramble failures
+
+==========================================================

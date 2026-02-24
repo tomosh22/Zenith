@@ -1,0 +1,47 @@
+==========================================================
+TilePuzzle Level Generator - Run Analytics
+==========================================================
+
+SUMMARY
+-------
+Total levels attempted:  5
+Total levels succeeded:  5
+Total levels failed:     0
+Overall success rate:    100.0%
+Total time:              946727.3 ms (946.7 s)
+Avg time per level:      189345.5 ms
+Avg solver moves:        7.6
+
+
+PARAMETER INFLUENCE ANALYSIS
+============================
+
+--- Colors ---
+Value    ScrambleFail TooEasy      Unsolvable     Success      SuccRate% 
+----------------------------------------------------------------------
+3        1864         2070         811            255          5.1       
+
+--- CatsPerColor ---
+Value    ScrambleFail TooEasy      Unsolvable     Success      SuccRate% 
+----------------------------------------------------------------------
+2        730          1312         362            102          4.1       
+3        1134         758          449            153          6.1       
+
+--- ShapeComplexity ---
+Value    ScrambleFail TooEasy      Unsolvable     Success      SuccRate% 
+----------------------------------------------------------------------
+2        330          1047         167            103          6.3       
+3        772          507          321            80           4.8       
+4        762          516          323            72           4.3       
+
+
+KEY FINDINGS
+============
+  [LOW SUCCESS]  Colors=3: 5.1% success rate (255/5000)
+  [LOW SUCCESS]  CatsPerColor=2: 4.1% success rate (102/2506)
+  [LOW SUCCESS]  CatsPerColor=3: 6.1% success rate (153/2494)
+  [LOW SUCCESS]  ShapeComplexity=2: 6.3% success rate (103/1647)
+  [LOW SUCCESS]  ShapeComplexity=3: 4.8% success rate (80/1680)
+  [LOW SUCCESS]  ShapeComplexity=4: 4.3% success rate (72/1673)
+
+==========================================================

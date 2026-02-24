@@ -1,0 +1,182 @@
+{
+  "levelNumber": 57,
+  "gridWidth": 8,
+  "gridHeight": 8,
+  "minimumMoves": 10,
+  "grid": [
+    "........",
+    ".######.",
+    ".######.",
+    ".######.",
+    ".######.",
+    ".######.",
+    ".######.",
+    "........"
+  ],
+  "shapes": [
+    {
+      "color": "None",
+      "originX": 6,
+      "originY": 5,
+      "type": "Single",
+      "draggable": false,
+      "cells": [[0, 0]]
+    },
+    {
+      "color": "None",
+      "originX": 6,
+      "originY": 2,
+      "type": "Single",
+      "draggable": false,
+      "cells": [[0, 0]]
+    },
+    {
+      "color": "Red",
+      "originX": 1,
+      "originY": 2,
+      "type": "T",
+      "draggable": true,
+      "cells": [[0, 0], [1, 0], [2, 0], [1, 1]]
+    },
+    {
+      "color": "Green",
+      "originX": 3,
+      "originY": 3,
+      "type": "T",
+      "draggable": true,
+      "cells": [[0, 0], [1, 0], [2, 0], [1, 1]]
+    },
+    {
+      "color": "Blue",
+      "originX": 1,
+      "originY": 4,
+      "type": "I",
+      "draggable": true,
+      "cells": [[0, 0], [1, 0], [2, 0]]
+    }
+  ],
+  "cats": [
+    {
+      "color": "Red",
+      "gridX": 3,
+      "gridY": 1,
+      "onBlocker": false
+    },
+    {
+      "color": "Red",
+      "gridX": 3,
+      "gridY": 6,
+      "onBlocker": false
+    },
+    {
+      "color": "Red",
+      "gridX": 6,
+      "gridY": 4,
+      "onBlocker": false
+    },
+    {
+      "color": "Green",
+      "gridX": 6,
+      "gridY": 3,
+      "onBlocker": false
+    },
+    {
+      "color": "Green",
+      "gridX": 4,
+      "gridY": 6,
+      "onBlocker": false
+    },
+    {
+      "color": "Green",
+      "gridX": 6,
+      "gridY": 1,
+      "onBlocker": false
+    },
+    {
+      "color": "Blue",
+      "gridX": 5,
+      "gridY": 5,
+      "onBlocker": false
+    },
+    {
+      "color": "Blue",
+      "gridX": 3,
+      "gridY": 5,
+      "onBlocker": false
+    },
+    {
+      "color": "Blue",
+      "gridX": 5,
+      "gridY": 2,
+      "onBlocker": false
+    },
+    {
+      "color": "Green",
+      "gridX": 6,
+      "gridY": 5,
+      "onBlocker": true
+    }
+  ],
+  "composition": {
+    "floorCells": 36,
+    "totalShapes": 5,
+    "draggableShapes": 3,
+    "blockerShapes": 2,
+    "conditionalShapes": 0,
+    "totalCats": 10,
+    "blockerCats": 1
+  },
+  "generation": {
+    "timeMs": 120107.2,
+    "totalAttempts": 1000,
+    "scrambleFailures": 537,
+    "scrambleRate": 53.7,
+    "solverTooEasy": 202,
+    "solverUnsolvable": 231,
+    "totalSuccesses": 30,
+    "successRate": 3.0,
+    "ofSolverPassed": {
+      "total": 463,
+      "tooEasyRate": 43.6,
+      "unsolvableRate": 49.9
+    },
+    "winningParams": {
+      "colors": 3,
+      "catsPerColor": 3,
+      "shapeComplexity": 3,
+      "blockers": 2,
+      "blockerCats": 1,
+      "conditionalShapes": 0,
+      "conditionalThreshold": 0
+    },
+    "config": {
+      "maxAttempts": 1000,
+      "gridWidth": [8, 8],
+      "gridHeight": [8, 8],
+      "colors": [3, 3],
+      "catsPerColor": [3, 3],
+      "shapesPerColor": 1,
+      "blockers": [1, 2],
+      "shapeComplexity": [3, 4],
+      "scrambleMoves": 600,
+      "blockerCats": [0, 1],
+      "conditionalShapes": [0, 1],
+      "conditionalThreshold": [0, 2],
+      "minSolverMoves": 6,
+      "solverStateLimit": 500000,
+      "minScrambleMoves": 100
+    },
+    "parameterStats": {
+      "colors": {
+        "3": { "total": 1000, "scrambleFail": 537, "tooEasy": 202, "unsolvable": 231, "success": 30, "successRate": 3.0, "scrambleRate": 53.7, "tooEasyRate": 20.2, "unsolvableRate": 23.1 }
+      },
+      "catsPerColor": {
+        "3": { "total": 1000, "scrambleFail": 537, "tooEasy": 202, "unsolvable": 231, "success": 30, "successRate": 3.0, "scrambleRate": 53.7, "tooEasyRate": 20.2, "unsolvableRate": 23.1 }
+      },
+      "shapeComplexity": {
+        "3": { "total": 477, "scrambleFail": 243, "tooEasy": 104, "unsolvable": 119, "success": 11, "successRate": 2.3, "scrambleRate": 50.9, "tooEasyRate": 21.8, "unsolvableRate": 24.9 },
+        "4": { "total": 523, "scrambleFail": 294, "tooEasy": 98, "unsolvable": 112, "success": 19, "successRate": 3.6, "scrambleRate": 56.2, "tooEasyRate": 18.7, "unsolvableRate": 21.4 }
+      }
+    }
+  }
+}

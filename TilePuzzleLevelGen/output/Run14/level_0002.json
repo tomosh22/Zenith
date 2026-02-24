@@ -1,0 +1,166 @@
+{
+  "levelNumber": 2,
+  "gridWidth": 8,
+  "gridHeight": 8,
+  "minimumMoves": 9,
+  "grid": [
+    "........",
+    ".######.",
+    ".######.",
+    ".######.",
+    ".######.",
+    ".######.",
+    ".######.",
+    "........"
+  ],
+  "shapes": [
+    {
+      "color": "None",
+      "originX": 6,
+      "originY": 4,
+      "type": "Single",
+      "draggable": false,
+      "cells": [[0, 0]]
+    },
+    {
+      "color": "Red",
+      "originX": 2,
+      "originY": 5,
+      "type": "L",
+      "draggable": true,
+      "cells": [[0, 0], [1, 0], [2, 0], [2, 1]]
+    },
+    {
+      "color": "Green",
+      "originX": 3,
+      "originY": 3,
+      "type": "L",
+      "draggable": true,
+      "cells": [[0, 0], [1, 0], [2, 0], [2, 1]]
+    },
+    {
+      "color": "Blue",
+      "originX": 2,
+      "originY": 4,
+      "type": "Single",
+      "draggable": true,
+      "cells": [[0, 0]]
+    }
+  ],
+  "cats": [
+    {
+      "color": "Red",
+      "gridX": 1,
+      "gridY": 5,
+      "onBlocker": false
+    },
+    {
+      "color": "Red",
+      "gridX": 2,
+      "gridY": 3,
+      "onBlocker": false
+    },
+    {
+      "color": "Red",
+      "gridX": 5,
+      "gridY": 1,
+      "onBlocker": false
+    },
+    {
+      "color": "Green",
+      "gridX": 3,
+      "gridY": 4,
+      "onBlocker": false
+    },
+    {
+      "color": "Green",
+      "gridX": 1,
+      "gridY": 3,
+      "onBlocker": false
+    },
+    {
+      "color": "Green",
+      "gridX": 3,
+      "gridY": 1,
+      "onBlocker": false
+    },
+    {
+      "color": "Blue",
+      "gridX": 1,
+      "gridY": 4,
+      "onBlocker": false
+    },
+    {
+      "color": "Blue",
+      "gridX": 5,
+      "gridY": 2,
+      "onBlocker": false
+    },
+    {
+      "color": "Blue",
+      "gridX": 2,
+      "gridY": 2,
+      "onBlocker": false
+    }
+  ],
+  "composition": {
+    "floorCells": 36,
+    "totalShapes": 4,
+    "draggableShapes": 3,
+    "blockerShapes": 1,
+    "conditionalShapes": 0,
+    "totalCats": 9,
+    "blockerCats": 0
+  },
+  "generation": {
+    "timeMs": 301870.2,
+    "totalAttempts": 1000,
+    "scrambleFailures": 500,
+    "scrambleRate": 50.0,
+    "solverTooEasy": 237,
+    "solverUnsolvable": 205,
+    "totalSuccesses": 58,
+    "successRate": 5.8,
+    "ofSolverPassed": {
+      "total": 500,
+      "tooEasyRate": 47.4,
+      "unsolvableRate": 41.0
+    },
+    "winningParams": {
+      "colors": 3,
+      "catsPerColor": 3,
+      "shapeComplexity": 4,
+      "blockers": 1,
+      "blockerCats": 0,
+      "conditionalShapes": 0,
+      "conditionalThreshold": 0
+    },
+    "config": {
+      "maxAttempts": 1000,
+      "gridWidth": [8, 8],
+      "gridHeight": [8, 8],
+      "colors": [3, 3],
+      "catsPerColor": [3, 3],
+      "shapesPerColor": 1,
+      "blockers": [1, 2],
+      "shapeComplexity": [3, 4],
+      "scrambleMoves": 400,
+      "blockerCats": [0, 1],
+      "conditionalShapes": [0, 1],
+      "conditionalThreshold": [0, 2],
+      "minSolverMoves": 5
+    },
+    "parameterStats": {
+      "colors": {
+        "3": { "total": 1000, "scrambleFail": 500, "tooEasy": 237, "unsolvable": 205, "success": 58, "successRate": 5.8, "scrambleRate": 50.0, "tooEasyRate": 23.7, "unsolvableRate": 20.5 }
+      },
+      "catsPerColor": {
+        "3": { "total": 1000, "scrambleFail": 500, "tooEasy": 237, "unsolvable": 205, "success": 58, "successRate": 5.8, "scrambleRate": 50.0, "tooEasyRate": 23.7, "unsolvableRate": 20.5 }
+      },
+      "shapeComplexity": {
+        "3": { "total": 513, "scrambleFail": 261, "tooEasy": 118, "unsolvable": 107, "success": 27, "successRate": 5.3, "scrambleRate": 50.9, "tooEasyRate": 23.0, "unsolvableRate": 20.9 },
+        "4": { "total": 487, "scrambleFail": 239, "tooEasy": 119, "unsolvable": 98, "success": 31, "successRate": 6.4, "scrambleRate": 49.1, "tooEasyRate": 24.4, "unsolvableRate": 20.1 }
+      }
+    }
+  }
+}

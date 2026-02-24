@@ -927,6 +927,8 @@ private:
 	uint32_t m_uCurrentLevelNumber;
 	uint32_t m_uMoveCount;
 
+	int32_t m_iLastMovedShapeIndex = -1;  // Track which shape was last moved for move counting
+
 	// Selection/Cursor
 	int32_t m_iCursorX;
 	int32_t m_iCursorY;
@@ -1005,6 +1007,7 @@ private:
 		}
 
 		m_uMoveCount = 0;
+		m_iLastMovedShapeIndex = -1;
 		m_iSelectedShapeIndex = -1;
 		m_iPreviousSelectedShapeIndex = -1;
 		m_iPreviousCursorX = -1;
@@ -1135,7 +1138,11 @@ private:
 		xShape.iOriginX += iDeltaX;
 		xShape.iOriginY += iDeltaY;
 
-		m_uMoveCount++;
+		if (m_iLastMovedShapeIndex != iShapeIndex)
+		{
+			m_uMoveCount++;
+			m_iLastMovedShapeIndex = iShapeIndex;
+		}
 		m_eState = TILEPUZZLE_STATE_SHAPE_SLIDING;
 		return true;
 	}
@@ -1159,7 +1166,12 @@ private:
 
 		xShape.iOriginX += iDeltaX;
 		xShape.iOriginY += iDeltaY;
-		m_uMoveCount++;
+
+		if (m_iLastMovedShapeIndex != iShapeIndex)
+		{
+			m_uMoveCount++;
+			m_iLastMovedShapeIndex = iShapeIndex;
+		}
 
 		CheckCatElimination();
 		if (IsLevelComplete())
@@ -1280,7 +1292,6 @@ private:
 
 		// Build ShapeState array for all draggable shapes (skip removed)
 		Zenith_Vector<TilePuzzle_Rules::ShapeState> axDraggableStates;
-		Zenith_Vector<size_t> axDraggableToLevelIndex;
 		for (size_t i = 0; i < m_xCurrentLevel.axShapes.size(); ++i)
 		{
 			const TilePuzzleShapeInstance& xShape = m_xCurrentLevel.axShapes[i];
@@ -1296,7 +1307,6 @@ private:
 			xState.eColor = xShape.eColor;
 			xState.uUnlockThreshold = xShape.uUnlockThreshold;
 			axDraggableStates.PushBack(xState);
-			axDraggableToLevelIndex.PushBack(i);
 		}
 
 		// Build CatState array and current elimination mask
@@ -1315,12 +1325,10 @@ private:
 				uOldMask |= (1u << i);
 		}
 
-		int32_t aiAttribution[32];
-		uint32_t uNewlyEliminated = TilePuzzle_Rules::ComputeNewlyEliminatedCatsWithAttribution(
+		uint32_t uNewlyEliminated = TilePuzzle_Rules::ComputeNewlyEliminatedCats(
 			axDraggableStates.GetDataPointer(), axDraggableStates.GetSize(),
 			axCatStates.GetDataPointer(), axCatStates.GetSize(),
-			uOldMask,
-			aiAttribution);
+			uOldMask);
 
 		// Apply elimination: set bEliminated and destroy entities for newly eliminated cats
 		for (size_t i = 0; i < m_xCurrentLevel.axCats.size(); ++i)
@@ -1343,43 +1351,42 @@ private:
 			xCat.uEntityID = Zenith_EntityID();
 		}
 
-		// Decrement uses for shapes that eliminated cats and remove exhausted shapes
-		uint32_t auEliminationsPerShape[32] = {};
-		for (size_t i = 0; i < m_xCurrentLevel.axCats.size(); ++i)
+		// Per-color removal: if all cats of a color are eliminated, remove all shapes of that color
+		if (uNewlyEliminated != 0)
 		{
-			if (!(uNewlyEliminated & (1u << i)))
-				continue;
-			if (aiAttribution[i] >= 0 && aiAttribution[i] < static_cast<int32_t>(axDraggableStates.GetSize()))
+			uint32_t uFullMask = uOldMask | uNewlyEliminated;
+
+			for (size_t i = 0; i < m_xCurrentLevel.axShapes.size(); ++i)
 			{
-				auEliminationsPerShape[aiAttribution[i]]++;
-			}
-		}
+				TilePuzzleShapeInstance& xShape = m_xCurrentLevel.axShapes[i];
+				if (!xShape.pxDefinition || !xShape.pxDefinition->bDraggable)
+					continue;
+				if (xShape.bRemoved)
+					continue;
 
-		for (uint32_t uDragIdx = 0; uDragIdx < axDraggableStates.GetSize(); ++uDragIdx)
-		{
-			if (auEliminationsPerShape[uDragIdx] == 0)
-				continue;
+				// Check if all cats of this shape's color are eliminated
+				bool bAllColorCatsEliminated = true;
+				for (size_t j = 0; j < m_xCurrentLevel.axCats.size(); ++j)
+				{
+					if (m_xCurrentLevel.axCats[j].eColor == xShape.eColor &&
+						!(uFullMask & (1u << j)))
+					{
+						bAllColorCatsEliminated = false;
+						break;
+					}
+				}
 
-			size_t uLevelIdx = axDraggableToLevelIndex.Get(uDragIdx);
-			TilePuzzleShapeInstance& xShape = m_xCurrentLevel.axShapes[uLevelIdx];
-
-			if (xShape.uRemainingUses == 0)
-				continue;
-
-			if (xShape.uRemainingUses <= auEliminationsPerShape[uDragIdx])
-			{
-				xShape.uRemainingUses = 0;
-				RemoveShape(uLevelIdx);
-			}
-			else
-			{
-				xShape.uRemainingUses -= auEliminationsPerShape[uDragIdx];
+				if (bAllColorCatsEliminated)
+				{
+					RemoveShape(i);
+				}
 			}
 		}
 	}
 
 	bool IsLevelComplete() const
 	{
+		// All cats must be eliminated (shapes auto-remove via per-color pool)
 		uint32_t uEliminatedMask = 0;
 		for (size_t i = 0; i < m_xCurrentLevel.axCats.size(); ++i)
 		{
@@ -1715,6 +1722,17 @@ private:
 		if (iWinWidth <= 0 || iWinHeight <= 0)
 			return;
 
+		// Count remaining cats per color
+		uint32_t auRemainingCatsPerColor[TILEPUZZLE_COLOR_COUNT] = {};
+		for (size_t i = 0; i < m_xCurrentLevel.axCats.size(); ++i)
+		{
+			if (!m_xCurrentLevel.axCats[i].bEliminated &&
+				m_xCurrentLevel.axCats[i].eColor < TILEPUZZLE_COLOR_COUNT)
+			{
+				auRemainingCatsPerColor[m_xCurrentLevel.axCats[i].eColor]++;
+			}
+		}
+
 		for (size_t i = 0; i < m_xCurrentLevel.axShapes.size(); ++i)
 		{
 			const TilePuzzleShapeInstance& xShape = m_xCurrentLevel.axShapes[i];
@@ -1722,7 +1740,11 @@ private:
 				continue;
 			if (xShape.bRemoved)
 				continue;
-			if (xShape.uRemainingUses == 0)
+			if (xShape.eColor >= TILEPUZZLE_COLOR_COUNT)
+				continue;
+
+			uint32_t uRemaining = auRemainingCatsPerColor[xShape.eColor];
+			if (uRemaining == 0)
 				continue;
 
 			Zenith_Maths::Vector3 xWorldPos = GridToWorld(
@@ -1740,7 +1762,7 @@ private:
 			float fScreenY = (xClipPos.y + 1.0f) * 0.5f * static_cast<float>(iWinHeight);
 
 			char szText[8];
-			snprintf(szText, sizeof(szText), "%u", xShape.uRemainingUses);
+			snprintf(szText, sizeof(szText), "%u", uRemaining);
 
 			pxCanvas->SubmitText(
 				szText,
@@ -1865,7 +1887,7 @@ private:
 
 		// Update status text
 		char szBuffer[64];
-		snprintf(szBuffer, sizeof(szBuffer), "Level: %u  Moves: %u", m_uCurrentLevelNumber, m_uMoveCount);
+		snprintf(szBuffer, sizeof(szBuffer), "Level: %u  Moves: %u  (Min: %u)", m_uCurrentLevelNumber, m_uMoveCount, m_xCurrentLevel.uMinimumMoves);
 		Zenith_UI::Zenith_UIText* pxStatus = xUI.FindElement<Zenith_UI::Zenith_UIText>("Status");
 		if (pxStatus)
 		{

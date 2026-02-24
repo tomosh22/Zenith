@@ -448,6 +448,7 @@ void* operator new(size_t ullSize, const int32_t iLine, const char* szFile)
 #ifdef ZENITH_MEMORY_MANAGEMENT_ENABLED
 	return Zenith_MemoryManagement::AllocateTracked(ullSize, 0, Zenith_MemoryManagement::GetCurrentCategory(), szFile, iLine);
 #else
+	(void)iLine, (void)szFile;
 	return Zenith_MemoryManagement::Allocate(ullSize);
 #endif
 }
@@ -493,6 +494,7 @@ void* operator new[](size_t ullSize, const int32_t iLine, const char* szFile)
 #ifdef ZENITH_MEMORY_MANAGEMENT_ENABLED
 	return Zenith_MemoryManagement::AllocateTracked(ullSize, 0, Zenith_MemoryManagement::GetCurrentCategory(), szFile, iLine);
 #else
+	(void)iLine, (void)szFile;
 	return Zenith_MemoryManagement::Allocate(ullSize);
 #endif
 }

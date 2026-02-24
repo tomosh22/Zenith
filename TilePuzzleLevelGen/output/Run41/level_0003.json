@@ -1,0 +1,170 @@
+{
+  "levelNumber": 3,
+  "gridWidth": 8,
+  "gridHeight": 8,
+  "minimumMoves": 10,
+  "grid": [
+    "........",
+    ".######.",
+    ".######.",
+    ".######.",
+    ".######.",
+    ".######.",
+    ".######.",
+    "........"
+  ],
+  "shapes": [
+    {
+      "color": "None",
+      "originX": 6,
+      "originY": 2,
+      "type": "Single",
+      "draggable": false,
+      "cells": [[0, 0]]
+    },
+    {
+      "color": "Red",
+      "originX": 3,
+      "originY": 3,
+      "type": "T",
+      "draggable": true,
+      "cells": [[0, 0], [1, 0], [2, 0], [1, 1]],
+      "unlockThreshold": 2
+    },
+    {
+      "color": "Green",
+      "originX": 2,
+      "originY": 1,
+      "type": "Single",
+      "draggable": true,
+      "cells": [[0, 0]]
+    },
+    {
+      "color": "Blue",
+      "originX": 3,
+      "originY": 5,
+      "type": "L",
+      "draggable": true,
+      "cells": [[0, 0], [1, 0], [2, 0], [2, 1]]
+    }
+  ],
+  "cats": [
+    {
+      "color": "Red",
+      "gridX": 1,
+      "gridY": 2,
+      "onBlocker": false
+    },
+    {
+      "color": "Red",
+      "gridX": 4,
+      "gridY": 4,
+      "onBlocker": false
+    },
+    {
+      "color": "Red",
+      "gridX": 3,
+      "gridY": 6,
+      "onBlocker": false
+    },
+    {
+      "color": "Green",
+      "gridX": 5,
+      "gridY": 2,
+      "onBlocker": false
+    },
+    {
+      "color": "Green",
+      "gridX": 1,
+      "gridY": 4,
+      "onBlocker": false
+    },
+    {
+      "color": "Green",
+      "gridX": 5,
+      "gridY": 4,
+      "onBlocker": false
+    },
+    {
+      "color": "Blue",
+      "gridX": 6,
+      "gridY": 6,
+      "onBlocker": false
+    },
+    {
+      "color": "Blue",
+      "gridX": 6,
+      "gridY": 4,
+      "onBlocker": false
+    },
+    {
+      "color": "Blue",
+      "gridX": 1,
+      "gridY": 1,
+      "onBlocker": false
+    }
+  ],
+  "composition": {
+    "floorCells": 36,
+    "totalShapes": 4,
+    "draggableShapes": 3,
+    "blockerShapes": 1,
+    "conditionalShapes": 1,
+    "totalCats": 9,
+    "blockerCats": 0
+  },
+  "generation": {
+    "timeMs": 1015802.3,
+    "retryRounds": 6,
+    "totalAttempts": 5000,
+    "scrambleFailures": 2675,
+    "scrambleRate": 53.5,
+    "solverTooEasy": 1187,
+    "solverUnsolvable": 1045,
+    "totalSuccesses": 93,
+    "successRate": 1.9,
+    "ofSolverPassed": {
+      "total": 2325,
+      "tooEasyRate": 51.1,
+      "unsolvableRate": 44.9
+    },
+    "winningParams": {
+      "colors": 0,
+      "catsPerColor": 0,
+      "shapeComplexity": 0,
+      "blockers": 0,
+      "blockerCats": 0,
+      "conditionalShapes": 0,
+      "conditionalThreshold": 0
+    },
+    "config": {
+      "maxAttempts": 1000,
+      "gridWidth": [8, 8],
+      "gridHeight": [8, 8],
+      "colors": [3, 3],
+      "catsPerColor": [3, 3],
+      "shapesPerColor": 1,
+      "blockers": [1, 2],
+      "shapeComplexity": [3, 4],
+      "scrambleMoves": 600,
+      "blockerCats": [0, 1],
+      "conditionalShapes": [0, 1],
+      "conditionalThreshold": [0, 2],
+      "minSolverMoves": 6,
+      "solverStateLimit": 500000,
+      "minScrambleMoves": 100
+    },
+    "parameterStats": {
+      "colors": {
+        "3": { "total": 5000, "scrambleFail": 2675, "tooEasy": 1187, "unsolvable": 1045, "success": 93, "successRate": 1.9, "scrambleRate": 53.5, "tooEasyRate": 23.7, "unsolvableRate": 20.9 }
+      },
+      "catsPerColor": {
+        "3": { "total": 5000, "scrambleFail": 2675, "tooEasy": 1187, "unsolvable": 1045, "success": 93, "successRate": 1.9, "scrambleRate": 53.5, "tooEasyRate": 23.7, "unsolvableRate": 20.9 }
+      },
+      "shapeComplexity": {
+        "3": { "total": 2518, "scrambleFail": 1341, "tooEasy": 612, "unsolvable": 523, "success": 42, "successRate": 1.7, "scrambleRate": 53.3, "tooEasyRate": 24.3, "unsolvableRate": 20.8 },
+        "4": { "total": 2482, "scrambleFail": 1334, "tooEasy": 575, "unsolvable": 522, "success": 51, "successRate": 2.1, "scrambleRate": 53.7, "tooEasyRate": 23.2, "unsolvableRate": 21.0 }
+      }
+    }
+  }
+}

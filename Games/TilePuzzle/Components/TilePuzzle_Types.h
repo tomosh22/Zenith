@@ -23,6 +23,7 @@ enum TilePuzzleColor : uint8_t
 	TILEPUZZLE_COLOR_GREEN,
 	TILEPUZZLE_COLOR_BLUE,
 	TILEPUZZLE_COLOR_YELLOW,
+	TILEPUZZLE_COLOR_PURPLE,
 	TILEPUZZLE_COLOR_COUNT,
 	TILEPUZZLE_COLOR_NONE        // For static blockers
 };
@@ -86,8 +87,7 @@ struct TilePuzzleShapeInstance
 	int32_t iOriginY;                            // Grid position Y
 	TilePuzzleColor eColor;                      // Color (NONE for blockers)
 	uint32_t uUnlockThreshold = 0;              // If > 0, shape can only move after this many cats are eliminated
-	uint32_t uRemainingUses = 0;                // 0 = unlimited, 1-3 = remaining eliminations before removal
-	bool bRemoved = false;                       // Set when uses exhausted; skip in all logic
+	bool bRemoved = false;                       // Set when all cats of this color are eliminated
 	Zenith_EntityID xEntityID;                    // Single visual entity for merged shape mesh
 };
 
@@ -214,6 +214,38 @@ namespace TilePuzzleShapes
 		case TILEPUZZLE_SHAPE_O: return GetOShape(bDraggable);
 		default: return GetSingleShape(bDraggable);
 		}
+	}
+
+	// Rotate shape 90 degrees clockwise: (x, y) -> (maxY - y, x)
+	// Then normalize so minimum x and y offsets are 0
+	inline TilePuzzleShapeDefinition RotateShape90(const TilePuzzleShapeDefinition& xDef)
+	{
+		TilePuzzleShapeDefinition xRotated;
+		xRotated.eType = xDef.eType;
+		xRotated.bDraggable = xDef.bDraggable;
+		xRotated.axCells.resize(xDef.axCells.size());
+
+		for (size_t i = 0; i < xDef.axCells.size(); ++i)
+		{
+			xRotated.axCells[i].iX = -xDef.axCells[i].iY;
+			xRotated.axCells[i].iY = xDef.axCells[i].iX;
+		}
+
+		// Normalize: shift so min offsets are 0
+		int32_t iMinX = xRotated.axCells[0].iX;
+		int32_t iMinY = xRotated.axCells[0].iY;
+		for (size_t i = 1; i < xRotated.axCells.size(); ++i)
+		{
+			if (xRotated.axCells[i].iX < iMinX) iMinX = xRotated.axCells[i].iX;
+			if (xRotated.axCells[i].iY < iMinY) iMinY = xRotated.axCells[i].iY;
+		}
+		for (size_t i = 0; i < xRotated.axCells.size(); ++i)
+		{
+			xRotated.axCells[i].iX -= iMinX;
+			xRotated.axCells[i].iY -= iMinY;
+		}
+
+		return xRotated;
 	}
 }
 

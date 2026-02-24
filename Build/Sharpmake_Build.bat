@@ -2,7 +2,7 @@
 REM Zenith Engine - Sharpmake Build Script
 REM Generates Visual Studio solution files for all platforms
 
-..\Sharpmake\Sharpmake.Application.exe /sources('Sharpmake_Common.cs', 'Sharpmake_Zenith.cs', 'Sharpmake_FluxCompiler.cs', 'Sharpmake_Games.cs')
+..\Sharpmake\Sharpmake.Application.exe /sources('Sharpmake_Common.cs', 'Sharpmake_Zenith.cs', 'Sharpmake_FluxCompiler.cs', 'Sharpmake_Games.cs', 'Sharpmake_TilePuzzleLevelGen.cs')
 
 if %ERRORLEVEL% NEQ 0 (
     echo.
