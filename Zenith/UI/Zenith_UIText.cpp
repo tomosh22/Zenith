@@ -1,6 +1,7 @@
 #include "Zenith.h"
 #include "UI/Zenith_UIText.h"
 #include "UI/Zenith_UICanvas.h"
+#include "Flux/Text/Flux_Text.h"
 #include "DataStream/Zenith_DataStream.h"
 
 #ifdef ZENITH_TOOLS
@@ -12,14 +13,6 @@
 namespace Zenith_UI {
 
 static constexpr uint32_t UI_TEXT_VERSION = 1;
-
-// Character width as fraction of height (typical monospace ratio is ~0.5-0.6)
-// Must match CHAR_ASPECT_RATIO in Flux_Text.vert and Flux_Text.cpp
-static constexpr float CHAR_ASPECT_RATIO = 0.5f;
-
-// Character spacing includes a small gap (10% of char width) for natural appearance
-// Must match CHAR_SPACING in Flux_Text.cpp
-static constexpr float CHAR_SPACING = CHAR_ASPECT_RATIO * 1.1f;
 
 Zenith_UIText::Zenith_UIText(const std::string& strText, const std::string& strName)
     : Zenith_UIElement(strName)
@@ -39,8 +32,7 @@ void Zenith_UIText::Render(Zenith_UICanvas& xCanvas)
     float fWidth = xBounds.z - xBounds.x;
     float fHeight = xBounds.w - xBounds.y;
 
-    // Character spacing matches CHAR_SPACING used in shader (includes small gap for natural look)
-    float fCharWidth = m_fFontSize * CHAR_SPACING;
+    float fCharWidth = m_fFontSize * fCHAR_SPACING;
     float fTextWidth = m_strText.length() * fCharWidth;
     float fTextHeight = m_fFontSize;
 

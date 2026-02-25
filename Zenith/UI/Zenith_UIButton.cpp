@@ -1,6 +1,7 @@
 #include "Zenith.h"
 #include "UI/Zenith_UIButton.h"
 #include "UI/Zenith_UICanvas.h"
+#include "Flux/Text/Flux_Text.h"
 #include "Input/Zenith_Input.h"
 #include "DataStream/Zenith_DataStream.h"
 
@@ -14,10 +15,6 @@
 namespace Zenith_UI {
 
 static constexpr uint32_t UI_BUTTON_VERSION = 1;
-
-// Character width as fraction of height (must match Flux_Text.vert and Flux_Text.cpp)
-static constexpr float CHAR_ASPECT_RATIO = 0.5f;
-static constexpr float CHAR_SPACING = CHAR_ASPECT_RATIO * 1.1f;
 
 Zenith_UIButton::Zenith_UIButton(const std::string& strText, const std::string& strName)
 	: Zenith_UIElement(strName)
@@ -167,7 +164,7 @@ void Zenith_UIButton::Render(Zenith_UICanvas& xCanvas)
 	// 3. Render centered text
 	if (!m_strText.empty())
 	{
-		float fCharWidth = m_fFontSize * CHAR_SPACING;
+		float fCharWidth = m_fFontSize * fCHAR_SPACING;
 		float fTextWidth = m_strText.length() * fCharWidth;
 		float fTextHeight = m_fFontSize;
 

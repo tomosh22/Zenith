@@ -99,4 +99,9 @@ private:
 	//==========================================================================
 	static void TestUnloadSceneDestroysPhysicsBodies();
 	static void TestMultipleScenePhysicsIndependence();
+
+	//==========================================================================
+	// Cat 11: Gravity Toggle + Impulse Launch
+	//==========================================================================
+	static void TestGravityOffThenImpulseLaunch();
 };

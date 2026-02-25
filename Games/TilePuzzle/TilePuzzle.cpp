@@ -3,6 +3,7 @@
 #include "Core/Zenith_GraphicsOptions.h"
 #include "TilePuzzle/Components/TilePuzzle_Types.h"
 #include "TilePuzzle/Components/TilePuzzle_Behaviour.h"
+#include "TilePuzzle/Components/Pinball_Behaviour.h"
 #include "EntityComponent/Components/Zenith_ScriptComponent.h"
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "EntityComponent/Zenith_SceneManager.h"
@@ -583,12 +584,13 @@ static void InitializeTilePuzzleResources()
 	g_xBlockerMaterial.Get()->SetBaseColor({ 80.f/255.f, 50.f/255.f, 30.f/255.f, 1.f });
 
 	// Shape materials with distinct colors
-	const char* aszShapeColorNames[] = { "Red", "Green", "Blue", "Yellow" };
+	const char* aszShapeColorNames[] = { "Red", "Green", "Blue", "Yellow", "Purple" };
 	const Zenith_Maths::Vector4 axShapeColors[] = {
 		{ 230.f/255.f, 60.f/255.f, 60.f/255.f, 1.f },    // Red
 		{ 60.f/255.f, 200.f/255.f, 60.f/255.f, 1.f },    // Green
 		{ 60.f/255.f, 100.f/255.f, 230.f/255.f, 1.f },   // Blue
-		{ 230.f/255.f, 230.f/255.f, 60.f/255.f, 1.f }    // Yellow
+		{ 230.f/255.f, 230.f/255.f, 60.f/255.f, 1.f },   // Yellow
+		{ 180.f/255.f, 60.f/255.f, 220.f/255.f, 1.f }    // Purple
 	};
 	for (uint32_t i = 0; i < TILEPUZZLE_COLOR_COUNT; ++i)
 	{
@@ -671,6 +673,7 @@ void Project_RegisterScriptBehaviours()
 	Zenith_SaveData::Initialise("TilePuzzle");
 	InitializeTilePuzzleResources();
 	TilePuzzle_Behaviour::RegisterBehaviour();
+	Pinball_Behaviour::RegisterBehaviour();
 }
 
 void Project_Shutdown()
@@ -683,7 +686,8 @@ void Project_LoadInitialScene(); // Forward declaration for automation steps
 #ifdef ZENITH_TOOLS
 void Project_InitializeResources()
 {
-	// All TilePuzzle resources initialized in Project_RegisterScriptBehaviours
+	// Generate pinball peg layouts and write to disk
+	Pinball_Behaviour::GenerateAndWriteLayouts();
 }
 
 // Static string arrays for level select grid (safe for deferred const char* in automation actions)
@@ -724,6 +728,7 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_SetUIPosition("MenuTitle", 0.f, -180.f);
 	Zenith_EditorAutomation::AddStep_SetUIFontSize("MenuTitle", 72.f);
 	Zenith_EditorAutomation::AddStep_SetUIColor("MenuTitle", 1.f, 1.f, 1.f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIAlignment("MenuTitle", static_cast<int>(Zenith_UI::TextAlignment::Center));
 
 	// Continue button
 	Zenith_EditorAutomation::AddStep_CreateUIButton("ContinueButton", "Continue");
@@ -754,6 +759,16 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("NewGameButton", 0.2f, 0.25f, 0.4f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("NewGameButton", 0.3f, 0.35f, 0.55f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonPressedColor("NewGameButton", 0.12f, 0.15f, 0.25f, 1.f);
+
+	// Pinball button
+	Zenith_EditorAutomation::AddStep_CreateUIButton("PinballButton", "Pinball");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("PinballButton", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("PinballButton", 0.f, 280.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("PinballButton", 300.f, 80.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("PinballButton", 32.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("PinballButton", 0.2f, 0.25f, 0.4f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("PinballButton", 0.3f, 0.35f, 0.55f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonPressedColor("PinballButton", 0.12f, 0.15f, 0.25f, 1.f);
 
 	// Level select background (starts hidden)
 	Zenith_EditorAutomation::AddStep_CreateUIRect("LevelSelectBg");
@@ -960,6 +975,58 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/TilePuzzle" ZENITH_SCENE_EXT);
 	Zenith_EditorAutomation::AddStep_UnloadScene();
 
+	// ---- Pinball scene (build index 2) ----
+	Zenith_EditorAutomation::AddStep_CreateScene("Pinball");
+	Zenith_EditorAutomation::AddStep_CreateEntity("PinballManager");
+	Zenith_EditorAutomation::AddStep_AddCamera();
+	Zenith_EditorAutomation::AddStep_SetCameraPosition(0.f, 4.f, -12.f);
+	Zenith_EditorAutomation::AddStep_SetCameraPitch(0.f);
+	Zenith_EditorAutomation::AddStep_SetCameraFOV(glm::radians(45.f));
+	Zenith_EditorAutomation::AddStep_SetCameraAspect(9.f / 16.f);
+	Zenith_EditorAutomation::AddStep_SetAsMainCamera();
+	Zenith_EditorAutomation::AddStep_AddUI();
+
+	// Score text
+	Zenith_EditorAutomation::AddStep_CreateUIText("PinballScore", "Score: 0");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("PinballScore", static_cast<int>(Zenith_UI::AnchorPreset::TopRight));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("PinballScore", -30.f, 30.f);
+	Zenith_EditorAutomation::AddStep_SetUIAlignment("PinballScore", static_cast<int>(Zenith_UI::TextAlignment::Right));
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("PinballScore", 54.f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("PinballScore", 1.f, 1.f, 1.f, 1.f);
+
+	// Total score text
+	Zenith_EditorAutomation::AddStep_CreateUIText("PinballHighScore", "Total: 0");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("PinballHighScore", static_cast<int>(Zenith_UI::AnchorPreset::TopRight));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("PinballHighScore", -30.f, 70.f);
+	Zenith_EditorAutomation::AddStep_SetUIAlignment("PinballHighScore", static_cast<int>(Zenith_UI::TextAlignment::Right));
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("PinballHighScore", 36.f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("PinballHighScore", 0.7f, 0.7f, 0.8f, 1.f);
+
+	// Back button
+	Zenith_EditorAutomation::AddStep_CreateUIButton("PinballBackBtn", "Menu");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("PinballBackBtn", static_cast<int>(Zenith_UI::AnchorPreset::TopLeft));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("PinballBackBtn", 20.f, 20.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("PinballBackBtn", 100.f, 50.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("PinballBackBtn", 20.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("PinballBackBtn", 0.2f, 0.25f, 0.35f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("PinballBackBtn", 0.3f, 0.35f, 0.5f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonPressedColor("PinballBackBtn", 0.12f, 0.15f, 0.25f, 1.f);
+
+	// Launch hint
+	Zenith_EditorAutomation::AddStep_CreateUIText("PinballLaunchHint", "Drag plunger to launch");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("PinballLaunchHint", static_cast<int>(Zenith_UI::AnchorPreset::BottomCenter));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("PinballLaunchHint", 0.f, -30.f);
+	Zenith_EditorAutomation::AddStep_SetUIAlignment("PinballLaunchHint", static_cast<int>(Zenith_UI::TextAlignment::Center));
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("PinballLaunchHint", 36.f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("PinballLaunchHint", 0.6f, 0.6f, 0.7f, 1.f);
+
+	// Script
+	Zenith_EditorAutomation::AddStep_AddScript();
+	Zenith_EditorAutomation::AddStep_SetBehaviourForSerialization("Pinball_Behaviour");
+
+	Zenith_EditorAutomation::AddStep_SaveScene(GAME_ASSETS_DIR "Scenes/Pinball" ZENITH_SCENE_EXT);
+	Zenith_EditorAutomation::AddStep_UnloadScene();
+
 	// ---- Final scene loading ----
 	Zenith_EditorAutomation::AddStep_SetInitialSceneLoadCallback(&Project_LoadInitialScene);
 	Zenith_EditorAutomation::AddStep_SetLoadingScene(true);
@@ -972,5 +1039,6 @@ void Project_LoadInitialScene()
 {
 	Zenith_SceneManager::RegisterSceneBuildIndex(0, GAME_ASSETS_DIR "Scenes/MainMenu" ZENITH_SCENE_EXT);
 	Zenith_SceneManager::RegisterSceneBuildIndex(1, GAME_ASSETS_DIR "Scenes/TilePuzzle" ZENITH_SCENE_EXT);
+	Zenith_SceneManager::RegisterSceneBuildIndex(2, GAME_ASSETS_DIR "Scenes/Pinball" ZENITH_SCENE_EXT);
 	Zenith_SceneManager::LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
 }

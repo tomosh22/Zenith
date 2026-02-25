@@ -125,20 +125,22 @@ void Zenith_ColliderComponent::AddCollider(CollisionVolumeType eVolumeType, Rigi
 	case COLLISION_VOLUME_TYPE_AABB:
 	{
 		// AABB uses BoxShape but ignores entity rotation (always axis-aligned)
-		pxShape = new JPH::BoxShape(JPH::Vec3(xScale.x, xScale.y, xScale.z));
+		// BoxShape takes half-extents; unit cube is -0.5..0.5 so half-extent = scale * 0.5
+		pxShape = new JPH::BoxShape(JPH::Vec3(xScale.x * 0.5f, xScale.y * 0.5f, xScale.z * 0.5f));
 	}
 	break;
 	case COLLISION_VOLUME_TYPE_OBB:
 	{
 		// OBB uses BoxShape and respects entity rotation
-		pxShape = new JPH::BoxShape(JPH::Vec3(xScale.x, xScale.y, xScale.z));
+		// BoxShape takes half-extents; unit cube is -0.5..0.5 so half-extent = scale * 0.5
+		pxShape = new JPH::BoxShape(JPH::Vec3(xScale.x * 0.5f, xScale.y * 0.5f, xScale.z * 0.5f));
 	}
 	break;
 	case COLLISION_VOLUME_TYPE_SPHERE:
 	{
-		// Sphere uses the maximum scale component as radius
-		// (using glm::length was incorrect - it computes vector magnitude, not max component)
-		float fRadius = std::max({ xScale.x, xScale.y, xScale.z });
+		// Sphere uses the maximum scale component as diameter
+		// Unit sphere has radius 0.5, so physics radius = max_scale * 0.5
+		float fRadius = std::max({ xScale.x, xScale.y, xScale.z }) * 0.5f;
 		pxShape = new JPH::SphereShape(fRadius);
 	}
 	break;
@@ -148,21 +150,22 @@ void Zenith_ColliderComponent::AddCollider(CollisionVolumeType eVolumeType, Rigi
 
 		if (m_bUseExplicitCapsuleDimensions)
 		{
-			// Use explicitly specified dimensions
+			// Use explicitly specified dimensions (caller provides exact values)
 			fRadius = m_fExplicitCapsuleRadius;
 			fHalfHeight = m_fExplicitCapsuleHalfHeight;
 		}
 		else
 		{
 			// Capsule extends along Y axis (vertical orientation)
+			// Unit geometry goes -0.5..0.5, so actual dimensions = scale * 0.5
 			// Radius is based on horizontal extents (X and Z)
-			// Half-height is the cylindrical portion's half-length (Y scale minus radius for cap)
-			fRadius = std::max(xScale.x, xScale.z);
-			// Ensure half-height is non-negative (if Y <= radius, we get a sphere-like capsule)
-			fHalfHeight = std::max(fMinScale, xScale.y - fRadius);
-			if (xScale.y <= fRadius)
+			// Half-height is the cylindrical portion's half-length (Y half minus radius for cap)
+			fRadius = std::max(xScale.x, xScale.z) * 0.5f;
+			float fHalfY = xScale.y * 0.5f;
+			fHalfHeight = std::max(fMinScale, fHalfY - fRadius);
+			if (fHalfY <= fRadius)
 			{
-				// Y scale is smaller than radius - use Y as half-height to prevent degenerate capsule
+				// Y half-extent is smaller than radius - degenerate capsule
 				fHalfHeight = fMinScale;
 			}
 		}
@@ -228,7 +231,7 @@ void Zenith_ColliderComponent::AddCollider(CollisionVolumeType eVolumeType, Rigi
 		if (!pxPhysicsMesh || !pxPhysicsMesh->m_pxPositions || pxPhysicsMesh->GetNumVerts() < 3)
 		{
 			Zenith_Log(LOG_CATEGORY_PHYSICS, " Invalid physics mesh, falling back to OBB collider");
-			pxShape = new JPH::BoxShape(JPH::Vec3(xTrans.m_xScale.x, xTrans.m_xScale.y, xTrans.m_xScale.z));
+			pxShape = new JPH::BoxShape(JPH::Vec3(xScale.x * 0.5f, xScale.y * 0.5f, xScale.z * 0.5f));
 			break;
 		}
 
@@ -288,7 +291,7 @@ void Zenith_ColliderComponent::AddCollider(CollisionVolumeType eVolumeType, Rigi
 			if (eRigidBodyType == RIGIDBODY_TYPE_DYNAMIC)
 			{
 				Zenith_Log(LOG_CATEGORY_PHYSICS, " WARNING: Dynamic body requires convex shape, using box fallback");
-				pxShape = new JPH::BoxShape(JPH::Vec3(xTrans.m_xScale.x, xTrans.m_xScale.y, xTrans.m_xScale.z));
+				pxShape = new JPH::BoxShape(JPH::Vec3(xScale.x * 0.5f, xScale.y * 0.5f, xScale.z * 0.5f));
 			}
 			else
 			{
@@ -317,7 +320,7 @@ void Zenith_ColliderComponent::AddCollider(CollisionVolumeType eVolumeType, Rigi
 				else
 				{
 					Zenith_Log(LOG_CATEGORY_PHYSICS, " Mesh shape failed, using box fallback");
-					pxShape = new JPH::BoxShape(JPH::Vec3(xTrans.m_xScale.x, xTrans.m_xScale.y, xTrans.m_xScale.z));
+					pxShape = new JPH::BoxShape(JPH::Vec3(xScale.x * 0.5f, xScale.y * 0.5f, xScale.z * 0.5f));
 				}
 			}
 		}

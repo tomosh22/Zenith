@@ -56,6 +56,8 @@ Green wireframe overlay rendered via `Flux_Primitives`. Controlled by `g_xPhysic
 
 **Gravity:** Per-body gravity control via `SetGravityEnabled()`. Default gravity is -9.81 m/s² on Y-axis (down in left-handed coordinates).
 
+**Material Properties:** Per-body restitution (bounciness) and friction via `SetRestitution()`/`GetRestitution()` and `SetFriction()`/`GetFriction()`. Restitution range 0.0 (no bounce) to 1.0 (perfectly elastic). Jolt combines restitution with `max(body1, body2)` and friction with `sqrt(body1 * body2)`.
+
 **Body Limits:** Max 65536 bodies, 65536 body pairs, 10240 contact constraints. Configured via constants in implementation file.
 
 ## Scene Load/Reset Integration

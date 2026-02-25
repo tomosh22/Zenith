@@ -197,6 +197,12 @@ public:
 				pxNewGameBtn->SetOnClick(&OnNewGameClicked, this);
 			}
 
+			Zenith_UI::Zenith_UIButton* pxPinballBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("PinballButton");
+			if (pxPinballBtn)
+			{
+				pxPinballBtn->SetOnClick(&OnPinballClicked, this);
+			}
+
 			// Legacy: support old single Play button as fallback
 			if (!bHasMenu)
 			{
@@ -430,6 +436,11 @@ private:
 			TilePuzzle_WriteSaveData, &pxSelf->m_xSaveData);
 		pxSelf->m_uCurrentLevelNumber = 1;
 		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+	}
+
+	static void OnPinballClicked(void* /*pxUserData*/)
+	{
+		Zenith_SceneManager::LoadSceneByIndex(2, SCENE_LOAD_SINGLE);
 	}
 
 	static void OnLevelButtonClicked(void* pxUserData)
@@ -745,7 +756,7 @@ private:
 		if (pxTitle) pxTitle->SetVisible(bVisible);
 
 		// New menu buttons
-		const char* aszMenuBtns[] = { "ContinueButton", "LevelSelectButton", "NewGameButton" };
+		const char* aszMenuBtns[] = { "ContinueButton", "LevelSelectButton", "NewGameButton", "PinballButton" };
 		for (const char* szName : aszMenuBtns)
 		{
 			Zenith_UI::Zenith_UIButton* pxBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>(szName);
@@ -876,7 +887,7 @@ private:
 
 	void UpdateMenuInput()
 	{
-		static constexpr int32_t s_iButtonCount = 3;
+		static constexpr int32_t s_iButtonCount = 4;
 
 		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_UP) ||
 			Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_W))
@@ -893,7 +904,7 @@ private:
 		{
 			Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
 
-			const char* aszBtnNames[] = { "ContinueButton", "LevelSelectButton", "NewGameButton" };
+			const char* aszBtnNames[] = { "ContinueButton", "LevelSelectButton", "NewGameButton", "PinballButton" };
 			for (int32_t i = 0; i < s_iButtonCount; ++i)
 			{
 				Zenith_UI::Zenith_UIButton* pxBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>(aszBtnNames[i]);

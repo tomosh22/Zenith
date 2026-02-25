@@ -199,6 +199,9 @@ void Zenith_PhysicsTests::RunAllTests()
 	TestUnloadSceneDestroysPhysicsBodies();
 	TestMultipleScenePhysicsIndependence();
 
+	// Cat 11: Gravity Toggle + Impulse Launch
+	TestGravityOffThenImpulseLaunch();
+
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "=== Physics Tests Complete ===");
 }
 
@@ -617,22 +620,22 @@ void Zenith_PhysicsTests::TestSphereOnBoxCollision()
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xTestScene);
 	ResetPhysicsState();
 
-	// Static floor - AABB with half-extents (10, 0.5, 10), center at Y=0
-	// So floor top surface is at Y = 0.5
+	// Static floor - AABB with scale (10, 0.5, 10), center at Y=0
+	// Half-extents = scale * 0.5, so floor top surface is at Y = 0.25
 	CreatePhysicsBox(pxSceneData, "Floor",
 		Zenith_Maths::Vector3(0, 0, 0), Zenith_Maths::Vector3(10, 0.5f, 10),
 		RIGIDBODY_TYPE_STATIC);
 
-	// Dynamic sphere with radius 0.5 (scale = 0.5, sphere radius = max scale component)
+	// Dynamic sphere (scale = 0.5, physics radius = scale * 0.5 = 0.25)
 	Zenith_Entity xSphere = CreatePhysicsSphere(pxSceneData, "Sphere",
 		Zenith_Maths::Vector3(0, 5, 0), RIGIDBODY_TYPE_DYNAMIC, 0.5f);
 	Zenith_ColliderComponent& xCollider = xSphere.GetComponent<Zenith_ColliderComponent>();
 
 	StepPhysics(300);
 
-	// Sphere should rest at approximately: floor_top + sphere_radius = 0.5 + 0.5 = 1.0
+	// Sphere should rest at approximately: floor_top + sphere_radius = 0.25 + 0.25 = 0.5
 	Zenith_Maths::Vector3 xPos = GetBodyPosition(xCollider);
-	Zenith_Assert(xPos.y > 0.5f, "TestSphereOnBoxCollision: Sphere should be above floor surface (got Y=%f)", xPos.y);
+	Zenith_Assert(xPos.y > 0.2f, "TestSphereOnBoxCollision: Sphere should be above floor surface (got Y=%f)", xPos.y);
 	Zenith_Assert(xPos.y < 2.0f, "TestSphereOnBoxCollision: Sphere should have settled near floor (got Y=%f)", xPos.y);
 
 	Zenith_SceneManager::UnloadScene(xTestScene);
@@ -1215,4 +1218,53 @@ void Zenith_PhysicsTests::TestMultipleScenePhysicsIndependence()
 
 	Zenith_SceneManager::UnloadScene(xSceneB);
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestMultipleScenePhysicsIndependence PASSED");
+}
+
+//==============================================================================
+// Cat 11: Gravity Toggle + Impulse Launch
+//==============================================================================
+
+void Zenith_PhysicsTests::TestGravityOffThenImpulseLaunch()
+{
+	Zenith_Scene xTestScene = Zenith_SceneManager::CreateEmptyScene("PhysicsTest_GravImpulseLaunch");
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xTestScene);
+	ResetPhysicsState();
+
+	// Create a dynamic sphere at Y=5 with gravity OFF (simulating a ball resting on a plunger)
+	Zenith_Entity xSphere = CreatePhysicsSphere(pxSceneData, "LaunchSphere",
+		Zenith_Maths::Vector3(0, 5, 0), RIGIDBODY_TYPE_DYNAMIC);
+	Zenith_ColliderComponent& xCollider = xSphere.GetComponent<Zenith_ColliderComponent>();
+	Zenith_Physics::SetGravityEnabled(xCollider.GetBodyID(), false);
+	Zenith_Physics::LockRotation(xCollider.GetBodyID(), true, true, true);
+
+	// Simulate the "resting on plunger" phase: zero velocity each frame for 30 frames
+	for (uint32_t i = 0; i < 30; i++)
+	{
+		Zenith_Physics::SetLinearVelocity(xCollider.GetBodyID(), Zenith_Maths::Vector3(0.f));
+		Zenith_Physics::Update(1.0f / 60.0f);
+	}
+
+	// Ball should still be at Y=5 after being held in place
+	Zenith_Maths::Vector3 xPosHeld = GetBodyPosition(xCollider);
+	Zenith_Assert(ApproxEqual(xPosHeld.y, 5.0f),
+		"TestGravityOffThenImpulseLaunch: Ball should remain at Y=5 while held (got %f)", xPosHeld.y);
+
+	// Now simulate launch: enable gravity, apply upward impulse
+	Zenith_Physics::SetGravityEnabled(xCollider.GetBodyID(), true);
+	Zenith_Physics::AddImpulse(xCollider.GetBodyID(), Zenith_Maths::Vector3(0, 20, 0));
+
+	// Step a few frames — ball should rise above launch position
+	StepPhysics(10);
+	Zenith_Maths::Vector3 xPosRising = GetBodyPosition(xCollider);
+	Zenith_Assert(xPosRising.y > 5.0f,
+		"TestGravityOffThenImpulseLaunch: Ball should rise above Y=5 after impulse (got %f)", xPosRising.y);
+
+	// Step many more frames — gravity should pull ball back below launch height
+	StepPhysics(300);
+	Zenith_Maths::Vector3 xPosFallen = GetBodyPosition(xCollider);
+	Zenith_Assert(xPosFallen.y < 5.0f,
+		"TestGravityOffThenImpulseLaunch: Ball should fall below Y=5 after gravity takes over (got %f)", xPosFallen.y);
+
+	Zenith_SceneManager::UnloadScene(xTestScene);
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestGravityOffThenImpulseLaunch PASSED");
 }

@@ -16,17 +16,19 @@ struct TilePuzzleLevelRecord
 struct TilePuzzleSaveData
 {
 	static constexpr uint32_t uMAX_LEVELS = 100;
-	static constexpr uint32_t uGAME_SAVE_VERSION = 1;
+	static constexpr uint32_t uGAME_SAVE_VERSION = 2;
 
 	uint32_t uHighestLevelReached;
 	uint32_t uCurrentLevel;
 	TilePuzzleLevelRecord axLevelRecords[uMAX_LEVELS];
+	uint32_t uPinballScore;
 
 	void Reset()
 	{
 		uHighestLevelReached = 1;
 		uCurrentLevel = 1;
 		memset(axLevelRecords, 0, sizeof(axLevelRecords));
+		uPinballScore = 0;
 	}
 };
 
@@ -42,6 +44,7 @@ static void TilePuzzle_WriteSaveData(Zenith_DataStream& xStream, void* pxUserDat
 		xStream << pxData->axLevelRecords[i].uBestMoves;
 		xStream << pxData->axLevelRecords[i].fBestTime;
 	}
+	xStream << pxData->uPinballScore;
 }
 
 // Static read callback for Zenith_SaveData
@@ -59,5 +62,9 @@ static void TilePuzzle_ReadSaveData(Zenith_DataStream& xStream, uint32_t uGameVe
 			xStream >> pxData->axLevelRecords[i].uBestMoves;
 			xStream >> pxData->axLevelRecords[i].fBestTime;
 		}
+	}
+	if (uGameVersion >= 2)
+	{
+		xStream >> pxData->uPinballScore;
 	}
 }

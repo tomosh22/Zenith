@@ -648,6 +648,34 @@ void Zenith_Physics::EnforceUpright(const JPH::BodyID& xBodyID)
 	xBodyInterface.SetRotation(xBodyID, xUprightRot, JPH::EActivation::DontActivate);
 }
 
+void Zenith_Physics::SetRestitution(const JPH::BodyID& xBodyID, float fRestitution)
+{
+	if (xBodyID.IsInvalid()) return;
+	JPH::BodyInterface& xBodyInterface = s_pxPhysicsSystem->GetBodyInterface();
+	xBodyInterface.SetRestitution(xBodyID, fRestitution);
+}
+
+float Zenith_Physics::GetRestitution(const JPH::BodyID& xBodyID)
+{
+	if (xBodyID.IsInvalid()) return 0.f;
+	JPH::BodyInterface& xBodyInterface = s_pxPhysicsSystem->GetBodyInterface();
+	return xBodyInterface.GetRestitution(xBodyID);
+}
+
+void Zenith_Physics::SetFriction(const JPH::BodyID& xBodyID, float fFriction)
+{
+	if (xBodyID.IsInvalid()) return;
+	JPH::BodyInterface& xBodyInterface = s_pxPhysicsSystem->GetBodyInterface();
+	xBodyInterface.SetFriction(xBodyID, fFriction);
+}
+
+float Zenith_Physics::GetFriction(const JPH::BodyID& xBodyID)
+{
+	if (xBodyID.IsInvalid()) return 0.f;
+	JPH::BodyInterface& xBodyInterface = s_pxPhysicsSystem->GetBodyInterface();
+	return xBodyInterface.GetFriction(xBodyID);
+}
+
 Zenith_Physics::RaycastResult Zenith_Physics::Raycast(const Zenith_Maths::Vector3& xOrigin,
 	const Zenith_Maths::Vector3& xDirection, float fMaxDistance)
 {

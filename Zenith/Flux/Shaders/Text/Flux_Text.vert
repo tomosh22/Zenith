@@ -14,6 +14,7 @@ layout(location = 0) out vec2 o_xUV;
 layout(location = 1) out vec4 o_xColour;
 
 // Character width as fraction of height (typical monospace ratio is ~0.5-0.6)
+// Must match fCHAR_ASPECT_RATIO in Flux_Text.h
 const float CHAR_ASPECT_RATIO = 0.5;
 
 void main()

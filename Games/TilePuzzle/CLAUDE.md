@@ -145,6 +145,39 @@ Add new collision types or movement constraints here. Both gameplay and scramble
 
 The scramble loop itself never needs to change when adding new object types.
 
+## Pinball Minigame
+
+`Components/Pinball_Behaviour.h` — A pinball-style minigame with a plunger launcher, physics ball, walls, curves, pegs, and a scoring target.
+
+### Peg Layout System
+
+Peg positions are **pre-generated during ZENITH_TOOLS boot** and saved to disk, then loaded at runtime. This ensures layouts are predetermined and logical rather than randomly scattered at runtime.
+
+**Generation (tools only):**
+- `Pinball_Behaviour::GenerateAndWriteLayouts()` is called from `Project_InitializeResources()`
+- Generates 6 layouts, each with 8 pegs placed within the main playfield area
+- Uses seeded `std::mt19937` (seed = `layoutIndex * 31337 + 42`) for deterministic output
+- Enforces minimum 0.7 unit separation between pegs to prevent overlap
+- Writes to `GAME_ASSETS_DIR "Pinball/PegLayouts.bin"`
+
+**File format (`PegLayouts.bin`):**
+```
+uint32_t  layoutCount
+[for each layout]
+  uint32_t  pegCount
+  [for each peg]
+    float x, float y
+```
+
+**Runtime loading:**
+- `LoadPegLayouts()` reads the binary file via `Zenith_DataStream::ReadFromFile()` during `CreatePlayfield()`
+- `CreatePegs(layoutIndex)` spawns static sphere colliders from the selected layout
+- `DestroyPegs()` removes all current peg entities
+
+**Layout cycling:**
+- On ball reset (`RespawnBall()`), the layout index increments (wrapping at `layoutCount`)
+- Each attempt uses a different peg arrangement
+
 ## Engine Features Demonstrated
 
 | Feature | Engine Class | Usage |

@@ -22,12 +22,7 @@ static Flux_Pipeline s_xPipeline;
 
 static constexpr uint32_t s_uMaxCharsPerFrame = 65536;
 
-// Character width as fraction of height (typical monospace ratio is ~0.5-0.6)
-// Must match CHAR_ASPECT_RATIO in Flux_Text.vert
-static constexpr float fCHAR_ASPECT_RATIO = 0.5f;
-
-// Character spacing
-static constexpr float fCHAR_SPACING = fCHAR_ASPECT_RATIO * 0.5f;
+// fCHAR_ASPECT_RATIO and fCHAR_SPACING defined in Flux_Text.h
 
 struct TextVertex
 {

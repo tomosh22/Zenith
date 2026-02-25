@@ -61,6 +61,12 @@ public:
 	static void LockRotation(const JPH::BodyID& xBodyID, bool bLockX, bool bLockY, bool bLockZ);
 	static void EnforceUpright(const JPH::BodyID& xBodyID); // Call every frame to keep body upright
 
+	// Material properties
+	static void SetRestitution(const JPH::BodyID& xBodyID, float fRestitution);
+	static float GetRestitution(const JPH::BodyID& xBodyID);
+	static void SetFriction(const JPH::BodyID& xBodyID, float fFriction);
+	static float GetFriction(const JPH::BodyID& xBodyID);
+
 	struct RaycastInfo
 	{
 		Zenith_Maths::Vector3 m_xOrigin;
