@@ -2,6 +2,7 @@
 #pragma warning(disable: 4005) // APIENTRY macro redefinition (GLFW vs Windows SDK)
 #include "Core/Memory/Zenith_MemoryManagement_Disabled.h"
 #include "Flux/Slang/Flux_SlangCompiler.h"
+#include "DataStream/Zenith_DataStream.h"
 
 #include <filesystem>
 #include <fstream>
@@ -119,6 +120,13 @@ int main()
 		if (Flux_SlangCompiler::Compile(strPath, eStage, xResult))
 		{
 			WriteSpirv(strOutputPath, xResult.m_axSpirv);
+
+			// Write reflection data alongside SPIR-V
+			std::string strReflPath = strOutputPath + ".refl";
+			Zenith_DataStream xReflStream;
+			xResult.m_xReflection.WriteToDataStream(xReflStream);
+			xReflStream.WriteToFile(strReflPath.c_str());
+
 			printf("  -> Success (%u bytes, %u bindings)\n",
 				   static_cast<u_int>(xResult.m_axSpirv.GetSize() * sizeof(uint32_t)),
 				   xResult.m_xReflection.GetBindings().GetSize());

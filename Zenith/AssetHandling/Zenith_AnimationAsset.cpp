@@ -3,11 +3,13 @@
 #include "Flux/MeshAnimation/Flux_AnimationClip.h"
 #include "DataStream/Zenith_DataStream.h"
 
+#ifdef ZENITH_TOOLS
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
+#endif
 
 Zenith_AnimationAsset::Zenith_AnimationAsset()
 	: m_pxClip(nullptr)
@@ -78,6 +80,7 @@ bool Zenith_AnimationAsset::LoadFromFile(const std::string& strPath)
 	}
 	else
 	{
+#ifdef ZENITH_TOOLS
 		// Load from source format (FBX, glTF, etc.) via Assimp
 		Assimp::Importer xImporter;
 		const aiScene* pxScene = xImporter.ReadFile(strPath,
@@ -105,5 +108,9 @@ bool Zenith_AnimationAsset::LoadFromFile(const std::string& strPath)
 
 		Zenith_Log(LOG_CATEGORY_ANIMATION, "Loaded animation via Assimp: %s", strPath.c_str());
 		return true;
+#else
+		Zenith_Log(LOG_CATEGORY_ANIMATION, "Source format loading not supported without tools: %s", strPath.c_str());
+		return false;
+#endif
 	}
 }

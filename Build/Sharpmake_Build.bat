@@ -11,6 +11,9 @@ if %ERRORLEVEL% NEQ 0 (
     exit /b 1
 )
 
+REM Fix AGDE C++ standard: Sharpmake generates "cpp20" but AGDE only accepts "cpp2a"
+powershell -Command "Get-ChildItem -Path '%~dp0..' -Recurse -Filter '*_agde.vcxproj' | ForEach-Object { (Get-Content $_.FullName) -replace '<CppLanguageStandard>cpp20</CppLanguageStandard>','<CppLanguageStandard>cpp2a</CppLanguageStandard>' | Set-Content $_.FullName }"
+
 echo.
 echo Solution files generated successfully.
 echo Generated solutions:

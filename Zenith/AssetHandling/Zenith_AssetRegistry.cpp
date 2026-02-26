@@ -278,14 +278,14 @@ void Zenith_AssetRegistry::Initialize()
 	s_pxInstance = new Zenith_AssetRegistry();
 
 	// Register asset loaders
-	s_pxInstance->RegisterLoader(std::type_index(typeid(Zenith_TextureAsset)), LoadTextureAsset);
-	s_pxInstance->RegisterLoader(std::type_index(typeid(Zenith_MaterialAsset)), LoadMaterialAsset);
-	s_pxInstance->RegisterLoader(std::type_index(typeid(Zenith_MeshAsset)), LoadMeshAsset);
-	s_pxInstance->RegisterLoader(std::type_index(typeid(Zenith_SkeletonAsset)), LoadSkeletonAsset);
-	s_pxInstance->RegisterLoader(std::type_index(typeid(Zenith_ModelAsset)), LoadModelAsset);
-	s_pxInstance->RegisterLoader(std::type_index(typeid(Zenith_Prefab)), LoadPrefabAsset);
-	s_pxInstance->RegisterLoader(std::type_index(typeid(Zenith_AnimationAsset)), LoadAnimationAsset);
-	s_pxInstance->RegisterLoader(std::type_index(typeid(Zenith_MeshGeometryAsset)), LoadMeshGeometryAsset);
+	s_pxInstance->RegisterLoader(Zenith_TypeIndex::Of<Zenith_TextureAsset>(), LoadTextureAsset);
+	s_pxInstance->RegisterLoader(Zenith_TypeIndex::Of<Zenith_MaterialAsset>(), LoadMaterialAsset);
+	s_pxInstance->RegisterLoader(Zenith_TypeIndex::Of<Zenith_MeshAsset>(), LoadMeshAsset);
+	s_pxInstance->RegisterLoader(Zenith_TypeIndex::Of<Zenith_SkeletonAsset>(), LoadSkeletonAsset);
+	s_pxInstance->RegisterLoader(Zenith_TypeIndex::Of<Zenith_ModelAsset>(), LoadModelAsset);
+	s_pxInstance->RegisterLoader(Zenith_TypeIndex::Of<Zenith_Prefab>(), LoadPrefabAsset);
+	s_pxInstance->RegisterLoader(Zenith_TypeIndex::Of<Zenith_AnimationAsset>(), LoadAnimationAsset);
+	s_pxInstance->RegisterLoader(Zenith_TypeIndex::Of<Zenith_MeshGeometryAsset>(), LoadMeshGeometryAsset);
 
 	// Note: Zenith_MaterialAsset::InitializeDefaults() must be called AFTER Vulkan/VMA
 	// is initialized (after Flux::EarlyInitialise). See InitializeGPUDependentAssets().
@@ -416,12 +416,12 @@ void Zenith_AssetRegistry::LogLoadedAssets() const
 	Zenith_Log(LOG_CATEGORY_ASSET, "=================================");
 }
 
-void Zenith_AssetRegistry::RegisterLoader(std::type_index xType, AssetLoaderFn pfnLoader)
+void Zenith_AssetRegistry::RegisterLoader(Zenith_TypeIndex xType, AssetLoaderFn pfnLoader)
 {
 	m_xLoaders[xType] = pfnLoader;
 }
 
-Zenith_Asset* Zenith_AssetRegistry::GetInternal(std::type_index xType, const std::string& strPath)
+Zenith_Asset* Zenith_AssetRegistry::GetInternal(Zenith_TypeIndex xType, const std::string& strPath)
 {
 	if (strPath.empty())
 	{
@@ -468,7 +468,7 @@ Zenith_Asset* Zenith_AssetRegistry::GetInternal(std::type_index xType, const std
 	return pxAsset;
 }
 
-Zenith_Asset* Zenith_AssetRegistry::CreateInternal(std::type_index xType)
+Zenith_Asset* Zenith_AssetRegistry::CreateInternal(Zenith_TypeIndex xType)
 {
 	Zenith_ScopedMutexLock xLock(m_xMutex);
 
@@ -503,7 +503,7 @@ Zenith_Asset* Zenith_AssetRegistry::CreateInternal(std::type_index xType)
 	return pxAsset;
 }
 
-Zenith_Asset* Zenith_AssetRegistry::CreateInternal(std::type_index xType, const std::string& strPath)
+Zenith_Asset* Zenith_AssetRegistry::CreateInternal(Zenith_TypeIndex xType, const std::string& strPath)
 {
 	Zenith_ScopedMutexLock xLock(m_xMutex);
 

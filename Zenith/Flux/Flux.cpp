@@ -6,9 +6,11 @@
 #include "Flux/StaticMeshes/Flux_StaticMeshes.h"
 #include "Flux/AnimatedMeshes/Flux_AnimatedMeshes.h"
 #include "Flux/Terrain/Flux_Terrain.h"
+#ifdef ZENITH_WINDOWS
+#include "Flux/Slang/Flux_SlangCompiler.h"
+#endif
 #ifdef ZENITH_TOOLS
 #include "Flux/Gizmos/Flux_Gizmos.h"
-#include "Flux/Slang/Flux_SlangCompiler.h"
 #include "Flux/Slang/Flux_ShaderHotReload.h"
 #endif
 #include "Flux/Primitives/Flux_Primitives.h"
@@ -90,9 +92,8 @@ void Flux::LateInitialise()
 	Flux_MemoryManager::BeginFrame();
 	Flux_Swapchain::Initialise();
 
-#if 1//def ZENITH_TOOLS
-	// Initialize Slang compiler for runtime compilation FIRST
-	// This must be done before any shaders are loaded so they can use runtime compilation
+#ifdef ZENITH_WINDOWS
+	// Initialize Slang compiler for runtime compilation (Windows only)
 	Flux_SlangCompiler::Initialise();
 #endif
 
@@ -149,11 +150,12 @@ void Flux::Shutdown()
 	Flux_Skybox::Shutdown();
 	Flux_Shadows::Shutdown();
 
-#ifdef ZENITH_TOOLS
-	// Shutdown shader hot reload and Slang compiler
-	Flux_ShaderHotReload::Shutdown();
+#ifdef ZENITH_WINDOWS
 	Flux_SlangCompiler::Shutdown();
+#endif
 
+#ifdef ZENITH_TOOLS
+	Flux_ShaderHotReload::Shutdown();
 	Flux_Gizmos::Shutdown();
 	Flux_PlatformAPI::ShutdownImGui();
 #endif

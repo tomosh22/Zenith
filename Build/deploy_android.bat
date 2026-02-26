@@ -67,56 +67,7 @@ set LIB_AIShowcase=libaishowcase.so
 set STAGED=0
 set FAILED=0
 
-for %%G in (%GAMES%) do (
-	REM Skip if single game specified and this isn't it
-	if not "%SINGLE_GAME%"=="" (
-		if /I not "%%G"=="%SINGLE_GAME%" (
-			goto :skip_%%G
-		)
-	)
-
-	set GAME_NAME=%%G
-	set LIB_NAME=!LIB_%%G!
-	set AGDE_OUTPUT=%GAMES_DIR%\%%G\Build\output\agde\%AGDE_CONFIG%\!LIB_NAME!
-	set JNILIB_DIR=%GAMES_DIR%\%%G\Android\app\jniLibs\%ABI%
-
-	echo.
-	echo === %%G ===
-
-	REM Check if the .so exists
-	if not exist "!AGDE_OUTPUT!" (
-		echo   WARNING: !AGDE_OUTPUT! not found
-		echo   Build the AGDE solution first:
-		echo     msbuild zenith_agde.sln /p:Configuration=%AGDE_CONFIG% /p:Platform=Android-arm64-v8a
-		set /a FAILED+=1
-		goto :skip_%%G
-	)
-
-	REM Create jniLibs directory
-	if not exist "!JNILIB_DIR!" mkdir "!JNILIB_DIR!"
-
-	REM Copy game .so
-	echo   Copying !LIB_NAME! ...
-	copy /Y "!AGDE_OUTPUT!" "!JNILIB_DIR!\!LIB_NAME!" >nul
-	if errorlevel 1 (
-		echo   ERROR: Failed to copy !LIB_NAME!
-		set /a FAILED+=1
-		goto :skip_%%G
-	)
-
-	REM Copy libc++_shared.so if found
-	if defined CPP_SHARED (
-		if exist "%CPP_SHARED%" (
-			echo   Copying libc++_shared.so ...
-			copy /Y "%CPP_SHARED%" "!JNILIB_DIR!\libc++_shared.so" >nul
-		)
-	)
-
-	echo   Staged to !JNILIB_DIR!
-	set /a STAGED+=1
-
-	:skip_%%G
-)
+for %%G in (%GAMES%) do call :process_game %%G
 
 echo.
 echo ============================================================================
@@ -131,3 +82,55 @@ if %STAGED% gtr 0 (
 echo ============================================================================
 
 endlocal
+goto :eof
+
+REM ============================================================================
+REM Subroutine: process a single game
+REM ============================================================================
+:process_game
+set GAME_NAME=%1
+
+REM Skip if single game specified and this isn't it
+if not "%SINGLE_GAME%"=="" (
+	if /I not "%GAME_NAME%"=="%SINGLE_GAME%" goto :eof
+)
+
+set LIB_NAME=!LIB_%GAME_NAME%!
+set AGDE_OUTPUT=%GAMES_DIR%\%GAME_NAME%\Build\output\agde\%AGDE_CONFIG%\!LIB_NAME!
+set JNILIB_DIR=%GAMES_DIR%\%GAME_NAME%\Android\app\jniLibs\%ABI%
+
+echo.
+echo === %GAME_NAME% ===
+
+REM Check if the .so exists
+if not exist "!AGDE_OUTPUT!" (
+	echo   WARNING: !AGDE_OUTPUT! not found
+	echo   Build the AGDE solution first:
+	echo     msbuild zenith_agde.sln /p:Configuration=%AGDE_CONFIG% /p:Platform=Android-arm64-v8a
+	set /a FAILED+=1
+	goto :eof
+)
+
+REM Create jniLibs directory
+if not exist "!JNILIB_DIR!" mkdir "!JNILIB_DIR!"
+
+REM Copy game .so
+echo   Copying !LIB_NAME! ...
+copy /Y "!AGDE_OUTPUT!" "!JNILIB_DIR!\!LIB_NAME!" >nul
+if errorlevel 1 (
+	echo   ERROR: Failed to copy !LIB_NAME!
+	set /a FAILED+=1
+	goto :eof
+)
+
+REM Copy libc++_shared.so if found
+if defined CPP_SHARED (
+	if exist "%CPP_SHARED%" (
+		echo   Copying libc++_shared.so ...
+		copy /Y "%CPP_SHARED%" "!JNILIB_DIR!\libc++_shared.so" >nul
+	)
+)
+
+echo   Staged to !JNILIB_DIR!
+set /a STAGED+=1
+goto :eof

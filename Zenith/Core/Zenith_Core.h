@@ -5,7 +5,9 @@
 // (classes should have instance state; use namespaces for grouping related functions)
 namespace Zenith_Core
 {
+#ifdef ZENITH_WINDOWS
 	void Zenith_Main();
+#endif
 	void Zenith_Init();
 	void Zenith_Shutdown();
 

@@ -82,7 +82,7 @@ BTNodeStatus Zenith_BTRepeater::Execute(Zenith_Entity& xAgent, Zenith_Blackboard
 	}
 
 	// Check if we've completed all iterations (for non-infinite)
-	if (m_iRepeatCount != INFINITE && m_iCurrentIteration >= m_iRepeatCount)
+	if (m_iRepeatCount != REPEAT_INFINITE && m_iCurrentIteration >= m_iRepeatCount)
 	{
 		m_eLastStatus = BTNodeStatus::SUCCESS;
 		return m_eLastStatus;
@@ -109,7 +109,7 @@ BTNodeStatus Zenith_BTRepeater::Execute(Zenith_Entity& xAgent, Zenith_Blackboard
 	++m_iCurrentIteration;
 
 	// Check if we need to continue
-	if (m_iRepeatCount == INFINITE || m_iCurrentIteration < m_iRepeatCount)
+	if (m_iRepeatCount == REPEAT_INFINITE || m_iCurrentIteration < m_iRepeatCount)
 	{
 		// Restart child
 		pxChild->OnEnter(xAgent, xBlackboard);

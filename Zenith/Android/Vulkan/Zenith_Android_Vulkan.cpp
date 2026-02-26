@@ -2,6 +2,7 @@
 #include "Vulkan/Zenith_Vulkan_Platform.h"
 
 #include <vulkan/vulkan.h>
+#include <vulkan/vulkan_android.h>
 #include <android/native_window.h>
 
 // Forward declare - will be implemented in Android window implementation

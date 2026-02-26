@@ -191,6 +191,7 @@ void Zenith_Core::Zenith_Shutdown()
 	Zenith_Log(LOG_CATEGORY_CORE, "Shutdown complete");
 }
 
+#ifdef ZENITH_WINDOWS
 void Zenith_Core::Zenith_Main()
 {
 	Project_SetGraphicsOptions(s_xGraphicsOptions);
@@ -207,3 +208,4 @@ void Zenith_Core::Zenith_Main()
 	Zenith_Shutdown();
 	delete Zenith_Window::GetInstance();
 }
+#endif

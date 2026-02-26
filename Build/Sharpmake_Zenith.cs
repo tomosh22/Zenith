@@ -86,10 +86,13 @@ public class ZenithProject : ZenithBaseProject
 		// Configure platform-specific excludes
 		ConfigurePlatformExcludes(conf, target);
 
-		// Android also excludes ImGui Android backend (we use custom implementation)
+		// Android excludes Windows/GLFW-specific ImGui backends and editor
 		if (target.Platform == Platform.agde)
 		{
 			conf.SourceFilesBuildExcludeRegex.Add(@".*imgui-docking\\backends\\imgui_impl_android.*");
+			conf.SourceFilesBuildExcludeRegex.Add(@".*imgui-docking\\backends\\imgui_impl_glfw.*");
+			conf.SourceFilesBuildExcludeRegex.Add(@".*imgui-docking\\backends\\imgui_impl_win32.*");
+			conf.SourceFilesBuildExcludeRegex.Add(@".*imgui-docking\\backends\\imgui_impl_vulkan.*");
 			// Exclude editor on Android
 			conf.SourceFilesBuildExcludeRegex.Add(@".*Editor\\.*");
 		}
@@ -102,6 +105,8 @@ public class ZenithProject : ZenithBaseProject
 		conf.PrecompSource = "Zenith.cpp";
 		conf.PrecompSourceExcludeFolders.Add(RootPath + "/Middleware/JoltPhysics-5.4.0");
 		conf.PrecompSourceExcludeFolders.Add(RootPath + "/Middleware/imgui-docking");
+		// android_native_app_glue is a plain C file from the NDK, no PCH
+		conf.PrecompSourceExcludeFolders.Add(RootPath + "/Zenith/Android/NativeGlue");
 
 		// Common configuration
 		ConfigureCommonSettings(conf, target);
@@ -120,13 +125,28 @@ public class ZenithProject : ZenithBaseProject
 
 		// Asset paths use absolute paths so they work regardless of working directory
 		string engineAssetRoot = zenithRoot + "/Zenith/Assets/";
-		conf.Defines.Add($"ENGINE_ASSETS_DIR=\"{engineAssetRoot}\"");
+		if (target.Platform == Platform.agde)
+		{
+			// On Android, assets are bundled into the APK by Gradle.
+			// AAssetManager expects relative paths within the APK's assets directory.
+			conf.Defines.Add("ENGINE_ASSETS_DIR=\"\"");
+		}
+		else
+		{
+			conf.Defines.Add($"ENGINE_ASSETS_DIR=\"{engineAssetRoot}\"");
+		}
 
-		// Shader source path for runtime compilation (Windows only)
+		// Shader source/asset path
 		if (target.Platform == Platform.win64)
 		{
 			string shaderSourceRoot = zenithRoot + "/Zenith/Flux/Shaders/";
 			conf.Defines.Add($"SHADER_SOURCE_ROOT=\"{shaderSourceRoot}\"");
+		}
+		else if (target.Platform == Platform.agde)
+		{
+			// On Android, pre-compiled shaders are bundled as APK assets.
+			// Empty root so paths are relative for AAssetManager.
+			conf.Defines.Add("SHADER_SOURCE_ROOT=\"\"");
 		}
 
 		// Output type

@@ -10,9 +10,11 @@
 #define ZENITH_ANIMATION_EXT ".zanim"
 
 // Forward declarations
+#ifdef ZENITH_TOOLS
 struct aiNodeAnim;
 struct aiAnimation;
 struct aiNode;
+#endif
 class Flux_MeshGeometry;
 
 //=============================================================================
@@ -37,7 +39,9 @@ class Flux_BoneChannel
 {
 public:
 	Flux_BoneChannel() = default;
+#ifdef ZENITH_TOOLS
 	Flux_BoneChannel(const aiNodeAnim* pxChannel);
+#endif
 
 	// Sample the channel at a specific time, returns local bone transform
 	Zenith_Maths::Matrix4 Sample(float fTime) const;
@@ -135,8 +139,10 @@ public:
 	Flux_AnimationClip() = default;
 	~Flux_AnimationClip() = default;
 
+#ifdef ZENITH_TOOLS
 	// Load from Assimp animation data (use Zenith_AnimationAsset for file loading)
 	void LoadFromAssimp(const aiAnimation* pxAnimation, const aiNode* pxRootNode);
+#endif
 
 	// Export to .zanim file
 	void Export(const std::string& strPath) const;
@@ -225,8 +231,10 @@ public:
 	const std::vector<Flux_AnimationClip*>& GetClips() const { return m_xClips; }
 	uint32_t GetClipCount() const { return static_cast<uint32_t>(m_xClips.size()); }
 
+#ifdef ZENITH_TOOLS
 	// Load all animations from a file (may contain multiple clips)
 	void LoadFromFile(const std::string& strPath);
+#endif
 
 	// Serialization
 	void WriteToDataStream(Zenith_DataStream& xStream) const;

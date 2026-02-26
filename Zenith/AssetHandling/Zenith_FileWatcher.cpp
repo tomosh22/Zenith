@@ -237,15 +237,11 @@ bool Zenith_FileWatcher::IsIgnoredFile(const std::string& strPath)
 
 uint64_t Zenith_FileWatcher::GetFileModificationTime(const std::string& strPath)
 {
-	try
-	{
-		auto xTime = std::filesystem::last_write_time(strPath);
-		return static_cast<uint64_t>(xTime.time_since_epoch().count());
-	}
-	catch (...)
-	{
+	std::error_code xEC;
+	auto xTime = std::filesystem::last_write_time(strPath, xEC);
+	if (xEC)
 		return 0;
-	}
+	return static_cast<uint64_t>(xTime.time_since_epoch().count());
 }
 
 //=============================================================================
@@ -444,7 +440,8 @@ void Zenith_FileWatcher::Platform_CheckForChanges()
 	// Polling: Check modification times periodically
 	// This is less efficient but works on all platforms
 
-	if (s_strWatchPath.empty() || !std::filesystem::exists(s_strWatchPath))
+	std::error_code xEC;
+	if (s_strWatchPath.empty() || !std::filesystem::exists(s_strWatchPath, xEC))
 	{
 		return;
 	}
@@ -452,21 +449,20 @@ void Zenith_FileWatcher::Platform_CheckForChanges()
 	std::unordered_map<std::string, uint64_t> xCurrentFiles;
 
 	// Scan for current files
-	try
+	for (const auto& xEntry : std::filesystem::recursive_directory_iterator(s_strWatchPath, std::filesystem::directory_options::skip_permission_denied, xEC))
 	{
-		for (const auto& xEntry : std::filesystem::recursive_directory_iterator(s_strWatchPath))
+		if (xEC)
+			break;
+		if (xEntry.is_regular_file(xEC))
 		{
-			if (xEntry.is_regular_file())
+			std::string strPath = xEntry.path().string();
+			if (!IsIgnoredFile(strPath))
 			{
-				std::string strPath = xEntry.path().string();
-				if (!IsIgnoredFile(strPath))
-				{
-					xCurrentFiles[strPath] = GetFileModificationTime(strPath);
-				}
+				xCurrentFiles[strPath] = GetFileModificationTime(strPath);
 			}
 		}
 	}
-	catch (...)
+	if (xEC)
 	{
 		// Ignore filesystem errors during scan
 		return;

@@ -59,8 +59,20 @@ public class GameProject : ZenithBaseProject
 		// Asset paths constructed from ZENITH_ROOT
 		string gameAssetRoot = zenithRoot + "/Games/" + GameName + "/Assets/";
 		string engineAssetRoot = zenithRoot + "/Zenith/Assets/";
-		conf.Defines.Add($"GAME_ASSETS_DIR=\"{gameAssetRoot}\"");
-		conf.Defines.Add($"ENGINE_ASSETS_DIR=\"{engineAssetRoot}\"");
+
+		if (target.Platform == Platform.agde)
+		{
+			// On Android, assets are bundled into the APK by Gradle.
+			// AAssetManager expects relative paths within the APK's assets directory.
+			// Empty prefix: "" "Levels/level_0001.tlvl" = "Levels/level_0001.tlvl"
+			conf.Defines.Add("GAME_ASSETS_DIR=\"\"");
+			conf.Defines.Add("ENGINE_ASSETS_DIR=\"\"");
+		}
+		else
+		{
+			conf.Defines.Add($"GAME_ASSETS_DIR=\"{gameAssetRoot}\"");
+			conf.Defines.Add($"ENGINE_ASSETS_DIR=\"{engineAssetRoot}\"");
+		}
 
 		// Shader source path for runtime shader compilation (Windows only)
 		if (target.Platform == Platform.win64)
@@ -83,6 +95,11 @@ public class GameProject : ZenithBaseProject
 		else if (target.Platform == Platform.agde)
 		{
 			conf.Output = Configuration.OutputType.Dll; // Shared library for Android
+
+			// Android system libraries (shared, link with -l flags)
+			conf.AdditionalLinkerOptions.Add("-landroid");
+			conf.AdditionalLinkerOptions.Add("-llog");
+			conf.AdditionalLinkerOptions.Add("-lvulkan");
 		}
 
 		// Add Zenith engine dependency (includes Tools when ToolsEnabled)

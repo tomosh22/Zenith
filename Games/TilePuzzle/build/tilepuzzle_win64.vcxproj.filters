@@ -4,6 +4,12 @@
     <ClCompile Include="..\TilePuzzle.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\Components\Pinball_Behaviour.h">
+      <Filter>Components</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Components\TilePuzzleLevelData_Serialize.h">
+      <Filter>Components</Filter>
+    </ClInclude>
     <ClInclude Include="..\Components\TilePuzzle_Behaviour.h">
       <Filter>Components</Filter>
     </ClInclude>

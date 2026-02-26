@@ -2,11 +2,13 @@
 #include "Flux_AnimationClip.h"
 #include "Core/Zenith_Core.h"
 
+#ifdef ZENITH_TOOLS
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include <assimp/Importer.hpp>
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
+#endif
 
 //=============================================================================
 // Flux_AnimationEvent
@@ -164,6 +166,7 @@ void Flux_RootMotion::ReadFromDataStream(Zenith_DataStream& xStream)
 //=============================================================================
 // Flux_BoneChannel
 //=============================================================================
+#ifdef ZENITH_TOOLS
 Flux_BoneChannel::Flux_BoneChannel(const aiNodeAnim* pxChannel)
 {
 	m_strBoneName = pxChannel->mNodeName.data;
@@ -202,6 +205,7 @@ Flux_BoneChannel::Flux_BoneChannel(const aiNodeAnim* pxChannel)
 		);
 	}
 }
+#endif // ZENITH_TOOLS
 
 uint32_t Flux_BoneChannel::GetPositionIndex(float fTime) const
 {
@@ -437,6 +441,7 @@ void Flux_BoneChannel::SortKeyframes()
 //=============================================================================
 // Flux_AnimationClip
 //=============================================================================
+#ifdef ZENITH_TOOLS
 void Flux_AnimationClip::LoadFromAssimp(const aiAnimation* pxAnimation, const aiNode*)
 {
 	// Extract metadata
@@ -457,6 +462,7 @@ void Flux_AnimationClip::LoadFromAssimp(const aiAnimation* pxAnimation, const ai
 		m_xBoneChannels.emplace(strBoneName, Flux_BoneChannel(pxChannel));
 	}
 }
+#endif // ZENITH_TOOLS
 
 void Flux_AnimationClip::Export(const std::string& strPath) const
 {
@@ -696,6 +702,7 @@ bool Flux_AnimationClipCollection::HasClip(const std::string& strName) const
 	return m_xClipsByName.find(strName) != m_xClipsByName.end();
 }
 
+#ifdef ZENITH_TOOLS
 void Flux_AnimationClipCollection::LoadFromFile(const std::string& strPath)
 {
 	Assimp::Importer xImporter;
@@ -730,6 +737,7 @@ void Flux_AnimationClipCollection::LoadFromFile(const std::string& strPath)
 	Zenith_Log(LOG_CATEGORY_ANIMATION, "[AnimationClipCollection] Loaded %u animations from: %s",
 		pxScene->mNumAnimations, strPath.c_str());
 }
+#endif // ZENITH_TOOLS
 
 void Flux_AnimationClipCollection::WriteToDataStream(Zenith_DataStream& xStream) const
 {

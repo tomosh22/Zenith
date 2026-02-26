@@ -1056,6 +1056,7 @@
     <ClInclude Include="..\Zenith\AI\Zenith_AIDebugVariables.h" />
     <ClInclude Include="..\Zenith\Android\Callstack\Zenith_Android_Callstack.h" />
     <ClInclude Include="..\Zenith\Android\Multithreading\Zenith_Android_Multithreading.h" />
+    <ClInclude Include="..\Zenith\Android\NativeGlue\android_native_app_glue.h" />
     <ClInclude Include="..\Zenith\Android\Zenith_Android_Window.h" />
     <ClInclude Include="..\Zenith\Android\Zenith_OS_Include.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_AnimationAsset.h" />
@@ -2244,6 +2245,12 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Zenith\Android\Multithreading\Zenith_Android_Multithreading.cpp">
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_True|x64'">true</ExcludedFromBuild>
+    </ClCompile>
+    <ClCompile Include="..\Zenith\Android\NativeGlue\android_native_app_glue.c">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_False|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Debug_Win64_True|x64'">true</ExcludedFromBuild>
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='vs2022_Release_Win64_False|x64'">true</ExcludedFromBuild>

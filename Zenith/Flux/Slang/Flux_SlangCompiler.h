@@ -5,6 +5,8 @@
 #include <string>
 #include <unordered_map>
 
+class Zenith_DataStream;
+
 struct Flux_BindingHandle
 {
 	u_int m_uSet = UINT32_MAX;
@@ -35,6 +37,9 @@ public:
 
 	void AddBinding(const Flux_ReflectedBinding& xBinding);
 	void BuildLookupMap();
+
+	void WriteToDataStream(Zenith_DataStream& xStream) const;
+	void ReadFromDataStream(Zenith_DataStream& xStream);
 
 	const Zenith_Vector<Flux_ReflectedBinding>& GetBindings() const { return m_axBindings; }
 

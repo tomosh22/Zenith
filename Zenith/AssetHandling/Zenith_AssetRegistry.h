@@ -3,8 +3,31 @@
 #include "Core/Multithreading/Zenith_Multithreading.h"
 #include <string>
 #include <unordered_map>
-#include <typeindex>
 #include <functional>
+
+// Compile-time type index (no RTTI required)
+// Each unique type T gets a unique address via function-local static
+struct Zenith_TypeIndex
+{
+	size_t m_uId;
+
+	bool operator==(const Zenith_TypeIndex& xOther) const { return m_uId == xOther.m_uId; }
+
+	template<typename T>
+	static Zenith_TypeIndex Of()
+	{
+		static const char s_cTag = 0;
+		return Zenith_TypeIndex{ reinterpret_cast<size_t>(&s_cTag) };
+	}
+};
+
+namespace std
+{
+	template<> struct hash<Zenith_TypeIndex>
+	{
+		size_t operator()(const Zenith_TypeIndex& x) const { return x.m_uId; }
+	};
+}
 
 // Forward declarations
 class Zenith_Asset;
@@ -203,7 +226,7 @@ public:
 		// Also register a loader for this type if instance exists
 		if (s_pxInstance)
 		{
-			s_pxInstance->RegisterLoader(std::type_index(typeid(T)), [](const std::string& strPath) -> Zenith_Asset* {
+			s_pxInstance->RegisterLoader(Zenith_TypeIndex::Of<T>(), [](const std::string& strPath) -> Zenith_Asset* {
 				if (strPath.empty())
 				{
 					// Create empty instance for procedural assets
@@ -268,12 +291,12 @@ private:
 
 	// Internal loader registration (called by template specializations)
 	using AssetLoaderFn = std::function<Zenith_Asset*(const std::string&)>;
-	void RegisterLoader(std::type_index xType, AssetLoaderFn pfnLoader);
+	void RegisterLoader(Zenith_TypeIndex xType, AssetLoaderFn pfnLoader);
 
 	// Internal getter for non-template code
-	Zenith_Asset* GetInternal(std::type_index xType, const std::string& strPath);
-	Zenith_Asset* CreateInternal(std::type_index xType);
-	Zenith_Asset* CreateInternal(std::type_index xType, const std::string& strPath);
+	Zenith_Asset* GetInternal(Zenith_TypeIndex xType, const std::string& strPath);
+	Zenith_Asset* CreateInternal(Zenith_TypeIndex xType);
+	Zenith_Asset* CreateInternal(Zenith_TypeIndex xType, const std::string& strPath);
 
 	// Generate a unique path for procedural assets
 	std::string GenerateProceduralPath(const std::string& strPrefix);
@@ -298,7 +321,7 @@ private:
 	std::unordered_map<std::string, Zenith_Asset*> m_xAssetsByPath;
 
 	// Type-specific loaders
-	std::unordered_map<std::type_index, AssetLoaderFn> m_xLoaders;
+	std::unordered_map<Zenith_TypeIndex, AssetLoaderFn> m_xLoaders;
 
 	// Thread safety
 	mutable Zenith_Mutex m_xMutex;
@@ -317,17 +340,17 @@ private:
 template<typename T>
 T* Zenith_AssetRegistry::Get(const std::string& strPath)
 {
-	return static_cast<T*>(GetInternal(std::type_index(typeid(T)), strPath));
+	return static_cast<T*>(GetInternal(Zenith_TypeIndex::Of<T>(), strPath));
 }
 
 template<typename T>
 T* Zenith_AssetRegistry::Create()
 {
-	return static_cast<T*>(CreateInternal(std::type_index(typeid(T))));
+	return static_cast<T*>(CreateInternal(Zenith_TypeIndex::Of<T>()));
 }
 
 template<typename T>
 T* Zenith_AssetRegistry::Create(const std::string& strPath)
 {
-	return static_cast<T*>(CreateInternal(std::type_index(typeid(T)), strPath));
+	return static_cast<T*>(CreateInternal(Zenith_TypeIndex::Of<T>(), strPath));
 }

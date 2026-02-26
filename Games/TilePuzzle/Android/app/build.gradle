@@ -27,10 +27,11 @@ android {
 
 	sourceSets {
 		main {
-			// Bundle game assets and engine assets into the APK
+			// Bundle game assets, engine assets, and pre-compiled shaders into the APK
 			assets.srcDirs = [
 				'../../Assets',
-				'../../../../Zenith/Assets'
+				'../../../../Zenith/Assets',
+				'../../../../Zenith/Flux/Shaders'
 			]
 			// Native libraries staged by deploy_android.bat
 			jniLibs.srcDirs = ['jniLibs']

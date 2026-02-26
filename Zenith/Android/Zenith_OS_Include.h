@@ -2,6 +2,7 @@
 
 // Android platform includes - mirrors Windows/Zenith_OS_Include.h
 
+#include "Android/Zenith_Android_Window.h"
 #include "Android/Multithreading/Zenith_Android_Multithreading.h"
 #include "Android/Callstack/Zenith_Android_Callstack.h"
 

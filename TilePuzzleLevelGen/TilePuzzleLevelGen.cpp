@@ -3,7 +3,7 @@
 #include "Core/Memory/Zenith_MemoryManagement_Disabled.h"
 
 #include "Components/TilePuzzle_LevelGenerator.h"
-#include "TilePuzzleLevelData_Serialize.h"
+#include "Components/TilePuzzleLevelData_Serialize.h"
 #include "TilePuzzleLevelData_Json.h"
 #include "TilePuzzleLevelData_Image.h"
 #include "TilePuzzleLevelGen_Analytics.h"

@@ -285,25 +285,25 @@ public:
 	// Get a random lifetime within the configured range
 	float GetRandomLifetime() const
 	{
-		return m_fLifetimeMin + (static_cast<float>(rand()) / RAND_MAX) * (m_fLifetimeMax - m_fLifetimeMin);
+		return m_fLifetimeMin + (static_cast<float>(rand()) / static_cast<float>(RAND_MAX)) * (m_fLifetimeMax - m_fLifetimeMin);
 	}
 
 	// Get a random speed within the configured range
 	float GetRandomSpeed() const
 	{
-		return m_fSpeedMin + (static_cast<float>(rand()) / RAND_MAX) * (m_fSpeedMax - m_fSpeedMin);
+		return m_fSpeedMin + (static_cast<float>(rand()) / static_cast<float>(RAND_MAX)) * (m_fSpeedMax - m_fSpeedMin);
 	}
 
 	// Get a random rotation within the configured range
 	float GetRandomRotation() const
 	{
-		return m_fRotationMin + (static_cast<float>(rand()) / RAND_MAX) * (m_fRotationMax - m_fRotationMin);
+		return m_fRotationMin + (static_cast<float>(rand()) / static_cast<float>(RAND_MAX)) * (m_fRotationMax - m_fRotationMin);
 	}
 
 	// Get a random rotation speed within the configured range
 	float GetRandomRotationSpeed() const
 	{
-		return m_fRotationSpeedMin + (static_cast<float>(rand()) / RAND_MAX) * (m_fRotationSpeedMax - m_fRotationSpeedMin);
+		return m_fRotationSpeedMin + (static_cast<float>(rand()) / static_cast<float>(RAND_MAX)) * (m_fRotationSpeedMax - m_fRotationSpeedMin);
 	}
 
 	// Get a random direction within the emission cone
@@ -316,8 +316,8 @@ public:
 
 		// Generate a random direction within a cone
 		float fSpreadRad = glm::radians(m_fSpreadAngleDegrees);
-		float fPhi = static_cast<float>(rand()) / RAND_MAX * 2.0f * 3.14159265359f;
-		float fCosTheta = 1.0f - (static_cast<float>(rand()) / RAND_MAX) * (1.0f - cos(fSpreadRad));
+		float fPhi = static_cast<float>(rand()) / static_cast<float>(RAND_MAX) * 2.0f * 3.14159265359f;
+		float fCosTheta = 1.0f - (static_cast<float>(rand()) / static_cast<float>(RAND_MAX)) * (1.0f - cos(fSpreadRad));
 		float fSinTheta = sqrt(1.0f - fCosTheta * fCosTheta);
 
 		// Local direction in cone space (pointing up +Y)

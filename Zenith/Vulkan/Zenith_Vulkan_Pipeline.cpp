@@ -13,9 +13,9 @@ License: MIT (see LICENSE file at the top of the source tree)
 #include "Flux/Flux.h"
 #include "Flux/Flux_RenderTargets.h"
 #include "FileAccess/Zenith_FileAccess.h"
+#include "DataStream/Zenith_DataStream.h"
 
 #ifdef ZENITH_TOOLS
-#include "Flux/Slang/Flux_SlangCompiler.h"
 #include "Flux/Slang/Flux_ShaderHotReload.h"
 #include <unordered_map>
 
@@ -27,12 +27,10 @@ static std::unordered_map<Zenith_Vulkan_Pipeline*, Flux_PipelineSpecification> s
 
 void Zenith_Vulkan_Shader::Initialise(const std::string& strVertex, const std::string& strFragment, const std::string&, const std::string& strDomain, const std::string& strHull)
 {
-#if 1//def ZENITH_TOOLS
-	// Use runtime compilation when tools are enabled and Slang compiler is available
-	// This enables shader hot reloading during development
+#ifdef ZENITH_WINDOWS
+	// Use runtime compilation when Slang compiler is available (Windows only)
 	if (Flux_SlangCompiler::IsInitialised() && strDomain.empty() && strHull.empty())
 	{
-		// Store paths for hot reload
 		m_strVertexPath = strVertex;
 		m_strFragmentPath = strFragment;
 
@@ -46,6 +44,9 @@ void Zenith_Vulkan_Shader::Initialise(const std::string& strVertex, const std::s
 	std::string strShaderRoot(SHADER_SOURCE_ROOT);
 	m_pcVertShaderCode = Zenith_FileAccess::ReadFile((strShaderRoot + strVertex + strExtension).c_str(), m_pcVertShaderCodeSize);
 	m_pcFragShaderCode = Zenith_FileAccess::ReadFile((strShaderRoot + strFragment + strExtension).c_str(), m_pcFragShaderCodeSize);
+
+	Zenith_Assert(m_pcVertShaderCode != nullptr, "Failed to load precompiled shader: %s%s%s", strShaderRoot.c_str(), strVertex.c_str(), strExtension.c_str());
+	Zenith_Assert(m_pcFragShaderCode != nullptr, "Failed to load precompiled shader: %s%s%s", strShaderRoot.c_str(), strFragment.c_str(), strExtension.c_str());
 
 	m_uStageCount = 2;
 
@@ -63,12 +64,10 @@ void Zenith_Vulkan_Shader::Initialise(const std::string& strVertex, const std::s
 
 	m_xInfos = new vk::PipelineShaderStageCreateInfo[m_uStageCount];
 
-	//vert
 	m_xInfos[0].stage = vk::ShaderStageFlagBits::eVertex;
 	m_xInfos[0].module = m_xVertShaderModule;
 	m_xInfos[0].pName = "main";
 
-	//frag
 	m_xInfos[1].stage = vk::ShaderStageFlagBits::eFragment;
 	m_xInfos[1].module = m_xFragShaderModule;
 	m_xInfos[1].pName = "main";
@@ -77,22 +76,42 @@ void Zenith_Vulkan_Shader::Initialise(const std::string& strVertex, const std::s
 		m_xTescShaderModule = CreateShaderModule(m_pcTescShaderCode, m_pcTescShaderCodeSize);
 		m_xTeseShaderModule = CreateShaderModule(m_pcTeseShaderCode, m_pcTeseShaderCodeSize);
 
-		//vert
 		m_xInfos[2].stage = vk::ShaderStageFlagBits::eTessellationControl;
 		m_xInfos[2].module = m_xTescShaderModule;
 		m_xInfos[2].pName = "main";
 
-		//frag
 		m_xInfos[3].stage = vk::ShaderStageFlagBits::eTessellationEvaluation;
 		m_xInfos[3].module = m_xTeseShaderModule;
 		m_xInfos[3].pName = "main";
+	}
+
+	// Load pre-compiled reflection data
+	{
+		const std::string strReflExt = ".spv.refl";
+		Zenith_DataStream xVertReflStream;
+		xVertReflStream.ReadFromFile((strShaderRoot + strVertex + strReflExt).c_str());
+		if (xVertReflStream.IsValid())
+		{
+			Flux_ShaderReflection xVertRefl;
+			xVertRefl.ReadFromDataStream(xVertReflStream);
+			MergeReflection(xVertRefl);
+		}
+
+		Zenith_DataStream xFragReflStream;
+		xFragReflStream.ReadFromFile((strShaderRoot + strFragment + strReflExt).c_str());
+		if (xFragReflStream.IsValid())
+		{
+			Flux_ShaderReflection xFragRefl;
+			xFragRefl.ReadFromDataStream(xFragReflStream);
+			MergeReflection(xFragRefl);
+		}
 	}
 }
 
 void Zenith_Vulkan_Shader::InitialiseCompute(const std::string& strCompute)
 {
-#if 1//def ZENITH_TOOLS
-	// Use runtime compilation when tools are enabled and Slang compiler is available
+#ifdef ZENITH_WINDOWS
+	// Use runtime compilation when Slang compiler is available (Windows only)
 	if (Flux_SlangCompiler::IsInitialised())
 	{
 		m_strComputePath = strCompute;
@@ -101,13 +120,22 @@ void Zenith_Vulkan_Shader::InitialiseCompute(const std::string& strCompute)
 		return;
 	}
 #endif
-	// Non-tools builds: load precompiled SPV
+	// Load precompiled SPV
 	const std::string strExtension = ".spv";
 	std::string strShaderRoot(SHADER_SOURCE_ROOT);
 	m_pcCompShaderCode = Zenith_FileAccess::ReadFile((strShaderRoot + strCompute + strExtension).c_str(), m_pcCompShaderCodeSize);
 	Zenith_Assert(m_pcCompShaderCode != nullptr, "Failed to load precompiled shader: %s%s", strCompute.c_str(), strExtension.c_str());
 	m_xCompShaderModule = CreateShaderModule(m_pcCompShaderCode, m_pcCompShaderCodeSize);
 	m_uStageCount = 1;
+
+	// Load pre-compiled reflection data
+	const std::string strReflExt = ".spv.refl";
+	Zenith_DataStream xReflStream;
+	xReflStream.ReadFromFile((strShaderRoot + strCompute + strReflExt).c_str());
+	if (xReflStream.IsValid())
+	{
+		m_xReflection.ReadFromDataStream(xReflStream);
+	}
 }
 
 Zenith_Vulkan_Shader::~Zenith_Vulkan_Shader()
@@ -182,7 +210,7 @@ void Zenith_Vulkan_Shader::MergeReflection(const Flux_ShaderReflection& xStageRe
 	m_xReflection.BuildLookupMap();
 }
 
-#if 1//def ZENITH_TOOLS
+#ifdef ZENITH_WINDOWS
 bool Zenith_Vulkan_Shader::InitialiseFromSource(const std::string& strVertexPath, const std::string& strFragmentPath)
 {
 	if (!Flux_SlangCompiler::IsInitialised())
@@ -277,7 +305,7 @@ bool Zenith_Vulkan_Shader::InitialiseComputeFromSource(const std::string& strCom
 
 	return true;
 }
-#endif // ZENITH_TOOLS
+#endif // ZENITH_WINDOWS
 
 class Zenith_Vulkan_DescriptorSetLayoutBuilder
 {

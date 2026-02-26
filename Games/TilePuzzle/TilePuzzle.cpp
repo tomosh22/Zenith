@@ -545,6 +545,11 @@ static void GenerateShapeMesh(const TilePuzzleShapeDefinition& xDef, Flux_MeshGe
 		xGeometryOut.GetIndexData(), xGeometryOut.GetIndexDataSize(), xGeometryOut.m_xIndexBuffer);
 }
 
+void TilePuzzle::GenerateShapeMeshFromDefinition(const TilePuzzleShapeDefinition& xDef, Flux_MeshGeometry& xGeometryOut)
+{
+	GenerateShapeMesh(xDef, xGeometryOut);
+}
+
 static void InitializeTilePuzzleResources()
 {
 	if (s_bResourcesInitialized)

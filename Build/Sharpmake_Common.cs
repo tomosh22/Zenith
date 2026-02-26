@@ -68,6 +68,10 @@ public abstract class ZenithBaseProject : Project
 		else if (target.Platform == Platform.agde)
 		{
 			conf.Defines.Add("ZENITH_ANDROID");
+			// vulkan.hpp uses throw, but exceptions are disabled on Android
+			conf.Defines.Add("VULKAN_HPP_NO_EXCEPTIONS");
+			// Set C++20 for AGDE (Options.Vc.Compiler.CppLanguageStandard.CPP20 only works for Win64)
+			conf.Options.Add(Options.Agde.Compiler.CppLanguageStandard.Cpp20);
 		}
 
 		conf.Defines.Add("ZENITH_VULKAN");
@@ -96,7 +100,10 @@ public abstract class ZenithBaseProject : Project
 		else if (target.Platform == Platform.agde)
 		{
 			conf.IncludePaths.Add(RootPath + "/Zenith/Android");
-			// Android NDK Vulkan headers are provided by the toolchain
+			// android_native_app_glue.h lives in NativeGlue subfolder
+			conf.IncludePaths.Add(RootPath + "/Zenith/Android/NativeGlue");
+			// Vulkan C++ headers (vulkan.hpp) from SDK - header-only, works with NDK's Vulkan
+			conf.IncludePaths.Add(RootPath + "/Middleware/VulkanSDK/1.3.280.0/Include");
 		}
 	}
 

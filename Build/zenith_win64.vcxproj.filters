@@ -508,6 +508,9 @@
     <ClCompile Include="..\Zenith\Android\Multithreading\Zenith_Android_Multithreading.cpp">
       <Filter>Android\Multithreading</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\Android\NativeGlue\android_native_app_glue.c">
+      <Filter>Android\NativeGlue</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Android\Vulkan\Zenith_Android_Vulkan.cpp">
       <Filter>Android\Vulkan</Filter>
     </ClCompile>
@@ -3069,6 +3072,9 @@
     <ClInclude Include="..\Zenith\Android\Multithreading\Zenith_Android_Multithreading.h">
       <Filter>Android\Multithreading</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\Android\NativeGlue\android_native_app_glue.h">
+      <Filter>Android\NativeGlue</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\Android\Zenith_Android_Window.h">
       <Filter>Android</Filter>
     </ClInclude>
@@ -3880,6 +3886,9 @@
     </Filter>
     <Filter Include="Android\Multithreading">
       <UniqueIdentifier>{6fe22188-783d-fee5-e4a8-3f58560c1dfa}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Android\NativeGlue">
+      <UniqueIdentifier>{5aeee7dc-15db-0d52-0641-9c47a0bdaa2f}</UniqueIdentifier>
     </Filter>
     <Filter Include="Android\Vulkan">
       <UniqueIdentifier>{d57f3a1d-2d0e-30a9-3fdc-68e080c64442}</UniqueIdentifier>

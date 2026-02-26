@@ -2,7 +2,9 @@
 #include "Flux/Slang/Flux_SlangCompiler.h"
 #include "Flux/Flux_Types.h"
 #include "FileAccess/Zenith_FileAccess.h"
+#include "DataStream/Zenith_DataStream.h"
 
+#ifdef ZENITH_WINDOWS
 #pragma warning(push)
 #pragma warning(disable: 4996)
 #include <slang.h>
@@ -11,6 +13,7 @@
 #pragma warning(pop)
 
 static Slang::ComPtr<slang::IGlobalSession> s_pxGlobalSession;
+#endif // ZENITH_WINDOWS
 
 Flux_BindingHandle Flux_ShaderReflection::GetBinding(const char* szName) const
 {
@@ -108,6 +111,41 @@ void Flux_ShaderReflection::BuildLookupMap()
 	}
 }
 
+void Flux_ShaderReflection::WriteToDataStream(Zenith_DataStream& xStream) const
+{
+	const u_int uCount = m_axBindings.GetSize();
+	xStream << uCount;
+	for (u_int u = 0; u < uCount; u++)
+	{
+		const Flux_ReflectedBinding& xBinding = m_axBindings.Get(u);
+		xStream << static_cast<u_int>(xBinding.m_eType);
+		xStream << xBinding.m_uSet;
+		xStream << xBinding.m_uBinding;
+		xStream << xBinding.m_strName;
+		xStream << xBinding.m_uSize;
+	}
+}
+
+void Flux_ShaderReflection::ReadFromDataStream(Zenith_DataStream& xStream)
+{
+	u_int uCount;
+	xStream >> uCount;
+	for (u_int u = 0; u < uCount; u++)
+	{
+		Flux_ReflectedBinding xBinding;
+		u_int uType;
+		xStream >> uType;
+		xBinding.m_eType = static_cast<DescriptorType>(uType);
+		xStream >> xBinding.m_uSet;
+		xStream >> xBinding.m_uBinding;
+		xStream >> xBinding.m_strName;
+		xStream >> xBinding.m_uSize;
+		m_axBindings.PushBack(xBinding);
+	}
+	BuildLookupMap();
+}
+
+#ifdef ZENITH_WINDOWS
 void Flux_SlangCompiler::Initialise()
 {
 	if (s_pxGlobalSession)
@@ -666,3 +704,4 @@ DescriptorType Flux_SlangCompiler::SlangTypeToDescriptorType(void* pxTypeLayoutV
 		return DESCRIPTOR_TYPE_BUFFER;
 	}
 }
+#endif // ZENITH_WINDOWS

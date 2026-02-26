@@ -9,7 +9,9 @@ public:
 	class AnimBone
 	{
 	public:
+#ifdef ZENITH_TOOLS
 		AnimBone(const struct aiNodeAnim* pxChannel);
+#endif
 		~AnimBone() = default;
 
         void Update(const float fTimestamp)
@@ -135,7 +137,9 @@ public:
     void CalculateBoneTransform(const Node* const node, const glm::mat4& parentTransform, bool bDebug = false);
 
     Flux_MeshAnimation() = delete;
+#ifdef ZENITH_TOOLS
     Flux_MeshAnimation(const std::string& strPath, class Flux_MeshGeometry& xParentGeometry);
+#endif
     ~Flux_MeshAnimation();
 
     // Get the source file path for this animation (for serialization)

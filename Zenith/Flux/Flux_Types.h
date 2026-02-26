@@ -67,6 +67,7 @@ static uint32_t Flux_ShaderDataTypeSize(ShaderDataType t)
 	case SHADER_DATA_TYPE_BOOL:		return sizeof(bool);
 	case SHADER_DATA_TYPE_HALF2:				return 4;
 	case SHADER_DATA_TYPE_SNORM10_10_10_2:		return 4;
+	case SHADER_DATA_TYPE_NONE: break;
 	}
 	Zenith_Assert(false, "Trying to calculate size of ShaderDataType::None");
 	return 0;
@@ -110,6 +111,7 @@ struct Flux_BufferElement
 		case SHADER_DATA_TYPE_BOOL:		return 1;
 		case SHADER_DATA_TYPE_HALF2:				return 2;
 		case SHADER_DATA_TYPE_SNORM10_10_10_2:		return 4;
+		case SHADER_DATA_TYPE_NONE: break;
 		}
 		Zenith_Assert(false, "Unknown ShaderDataType");
 		return 0;

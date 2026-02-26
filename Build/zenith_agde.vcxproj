@@ -30,7 +30,7 @@
     <ThumbMode>Disabled</ThumbMode>
     <LinkTimeOptimization>None</LinkTimeOptimization>
     <ClangLinkType>lld</ClangLinkType>
-    <CppLanguageStandard>cpp11</CppLanguageStandard>
+    <CppLanguageStandard>cpp2a</CppLanguageStandard>
     <CLanguageStandard>c11</CLanguageStandard>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'" Label="Configuration">
@@ -40,7 +40,7 @@
     <ThumbMode>Disabled</ThumbMode>
     <LinkTimeOptimization>None</LinkTimeOptimization>
     <ClangLinkType>lld</ClangLinkType>
-    <CppLanguageStandard>cpp11</CppLanguageStandard>
+    <CppLanguageStandard>cpp2a</CppLanguageStandard>
     <CLanguageStandard>c11</CLanguageStandard>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
@@ -73,8 +73,8 @@
       <PrecompiledHeader>Use</PrecompiledHeader>
       <WarningLevel>EnableFormatWarnings</WarningLevel>
       <Optimization>Disabled</Optimization>
-      <PreprocessorDefinitions>ENGINE_ASSETS_DIR="c:/dev/zenith/Zenith/Assets/";GLM_ENABLE_EXPERIMENTAL;NOMINMAX;ZENITH_ANDROID;ZENITH_DEBUG;ZENITH_VULKAN;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>..\middleware;..\middleware\glm-master;..\middleware\imgui-docking;..\middleware\joltphysics-5.4.0;..\middleware\stb;..\middleware\vma;..\zenith;..\zenith\android;..\zenith\core;..\zenith\vulkan;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>ENGINE_ASSETS_DIR="";GLM_ENABLE_EXPERIMENTAL;NOMINMAX;VULKAN_HPP_NO_EXCEPTIONS;ZENITH_ANDROID;ZENITH_DEBUG;ZENITH_VULKAN;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>..\middleware;..\middleware\glm-master;..\middleware\imgui-docking;..\middleware\joltphysics-5.4.0;..\middleware\stb;..\middleware\vma;..\middleware\vulkansdk\1.3.280.0\include;..\zenith;..\zenith\android;..\zenith\android\nativeglue;..\zenith\core;..\zenith\vulkan;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <ClangDebugInformationFormat>FullDebug</ClangDebugInformationFormat>
       <FloatABI>Default</FloatABI>
       <TreatWarningAsError>true</TreatWarningAsError>
@@ -104,8 +104,8 @@
       <PrecompiledHeader>Use</PrecompiledHeader>
       <WarningLevel>EnableFormatWarnings</WarningLevel>
       <Optimization>MaxSpeed</Optimization>
-      <PreprocessorDefinitions>ENGINE_ASSETS_DIR="c:/dev/zenith/Zenith/Assets/";GLM_ENABLE_EXPERIMENTAL;NDEBUG;NOMINMAX;ZENITH_ANDROID;ZENITH_VULKAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>..\middleware;..\middleware\glm-master;..\middleware\imgui-docking;..\middleware\joltphysics-5.4.0;..\middleware\stb;..\middleware\vma;..\zenith;..\zenith\android;..\zenith\core;..\zenith\vulkan;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>ENGINE_ASSETS_DIR="";GLM_ENABLE_EXPERIMENTAL;NDEBUG;NOMINMAX;VULKAN_HPP_NO_EXCEPTIONS;ZENITH_ANDROID;ZENITH_VULKAN;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>..\middleware;..\middleware\glm-master;..\middleware\imgui-docking;..\middleware\joltphysics-5.4.0;..\middleware\stb;..\middleware\vma;..\middleware\vulkansdk\1.3.280.0\include;..\zenith;..\zenith\android;..\zenith\android\nativeglue;..\zenith\core;..\zenith\vulkan;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <ClangDebugInformationFormat>FullDebug</ClangDebugInformationFormat>
       <FloatABI>Default</FloatABI>
       <TreatWarningAsError>true</TreatWarningAsError>
@@ -827,6 +827,7 @@
     <ClInclude Include="..\Zenith\AI\Zenith_AIDebugVariables.h" />
     <ClInclude Include="..\Zenith\Android\Callstack\Zenith_Android_Callstack.h" />
     <ClInclude Include="..\Zenith\Android\Multithreading\Zenith_Android_Multithreading.h" />
+    <ClInclude Include="..\Zenith\Android\NativeGlue\android_native_app_glue.h" />
     <ClInclude Include="..\Zenith\Android\Zenith_Android_Window.h" />
     <ClInclude Include="..\Zenith\Android\Zenith_OS_Include.h" />
     <ClInclude Include="..\Zenith\AssetHandling\Zenith_AnimationAsset.h" />
@@ -1096,16 +1097,16 @@
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Middleware\imgui-docking\backends\imgui_impl_glfw.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Middleware\imgui-docking\backends\imgui_impl_vulkan.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Middleware\imgui-docking\backends\imgui_impl_win32.cpp">
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
-      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
+      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">true</ExcludedFromBuild>
     </ClCompile>
     <ClCompile Include="..\Middleware\imgui-docking\imgui.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
@@ -1707,6 +1708,10 @@
     <ClCompile Include="..\Zenith\Android\Callstack\Zenith_Android_Callstack.cpp" />
     <ClCompile Include="..\Zenith\Android\FileAccess\Zenith_Android_FileAccess.cpp" />
     <ClCompile Include="..\Zenith\Android\Multithreading\Zenith_Android_Multithreading.cpp" />
+    <ClCompile Include="..\Zenith\Android\NativeGlue\android_native_app_glue.c">
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+      <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Release_Agde_False|Android-arm64-v8a'">NotUsing</PrecompiledHeader>
+    </ClCompile>
     <ClCompile Include="..\Zenith\Android\Vulkan\Zenith_Android_Vulkan.cpp" />
     <ClCompile Include="..\Zenith\Android\Zenith_Android_DebugBreak.cpp" />
     <ClCompile Include="..\Zenith\Android\Zenith_Android_Main.cpp" />

@@ -104,13 +104,13 @@ public:
 			if (xEntity.HasComponent<T>())
 			{
 				Zenith_Error(LOG_CATEGORY_ECS, "Cannot add %s: Entity %u already has this component",
-					typeid(T).name(), xEntity.GetEntityID());
+					"Component", xEntity.GetEntityID());
 				return false;
 			}
 
 			xEntity.AddComponent<T>();
 			Zenith_Log(LOG_CATEGORY_ECS, "Added %s to Entity %u (TypeID: %u)",
-				typeid(T).name(), xEntity.GetEntityID(),
+				"Component", xEntity.GetEntityID(),
 				Zenith_SceneData::TypeIDGenerator::GetTypeID<T>());
 			return true;
 		};

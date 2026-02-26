@@ -456,6 +456,8 @@
     </PostBuildEvent>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="..\Components\Pinball_Behaviour.h" />
+    <ClInclude Include="..\Components\TilePuzzleLevelData_Serialize.h" />
     <ClInclude Include="..\Components\TilePuzzle_Behaviour.h" />
     <ClInclude Include="..\Components\TilePuzzle_LevelGenerator.h" />
     <ClInclude Include="..\Components\TilePuzzle_Rules.h" />

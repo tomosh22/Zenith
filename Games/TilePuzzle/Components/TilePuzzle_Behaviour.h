@@ -30,14 +30,15 @@
 
 #include "TilePuzzle/Components/TilePuzzle_Types.h"
 #include "TilePuzzle/Components/TilePuzzle_Rules.h"
-#include "TilePuzzle/Components/TilePuzzle_LevelGenerator.h"
+#include "TilePuzzle/Components/TilePuzzleLevelData_Serialize.h"
 #include "TilePuzzle/Components/TilePuzzle_SaveData.h"
 #include "SaveData/Zenith_SaveData.h"
 #include "Input/Zenith_TouchInput.h"
 #include "UI/Zenith_UICanvas.h"
 #include "EntityComponent/Components/Zenith_TweenComponent.h"
+#include "DataStream/Zenith_DataStream.h"
+#include "FileAccess/Zenith_FileAccess.h"
 
-#include <random>
 #include <vector>
 #include <unordered_map>
 #include <cmath>
@@ -64,6 +65,7 @@ namespace TilePuzzle
 	extern Zenith_Prefab* g_pxShapeCubePrefab;
 	extern Zenith_Prefab* g_pxCatPrefab;
 	extern Flux_MeshGeometry* g_apxShapeMeshes[TILEPUZZLE_SHAPE_COUNT];
+	void GenerateShapeMeshFromDefinition(const TilePuzzleShapeDefinition& xDef, Flux_MeshGeometry& xGeometryOut);
 }
 
 // Forward declaration for level select button user data
@@ -106,10 +108,10 @@ public:
 		, m_iSelectedShapeIndex(-1)
 		, m_fSlideProgress(0.0f)
 		, m_eSlideDirection(TILEPUZZLE_DIR_NONE)
-		, m_xRng(std::random_device{}())
 		, m_iFocusIndex(0)
 		, m_fLevelTimer(0.f)
 		, m_uLevelSelectPage(0)
+		, m_uAvailableLevelCount(0)
 	{
 		m_xSaveData.Reset();
 	}
@@ -128,6 +130,21 @@ public:
 			m_xSaveData.Reset();
 		}
 		m_uCurrentLevelNumber = m_xSaveData.uCurrentLevel;
+
+		// Scan for available level files
+		m_uAvailableLevelCount = 0;
+		for (uint32_t u = 1; u <= TilePuzzleSaveData::uMAX_LEVELS; ++u)
+		{
+			char szPath[ZENITH_MAX_PATH_LENGTH];
+			snprintf(szPath, sizeof(szPath), GAME_ASSETS_DIR "Levels/level_%04u.tlvl", u);
+			if (!Zenith_FileAccess::FileExists(szPath))
+				break;
+			m_uAvailableLevelCount++;
+		}
+
+		// Clamp saved level to available range
+		if (m_uCurrentLevelNumber > m_uAvailableLevelCount)
+			m_uCurrentLevelNumber = (m_uAvailableLevelCount > 0) ? m_uAvailableLevelCount : 1;
 
 		// Cache global resources (lightweight)
 		m_pxCubeGeometry = TilePuzzle::g_pxCubeGeometry;
@@ -348,8 +365,6 @@ public:
 			HandleLevelCompleteInput();
 			break;
 
-		case TILEPUZZLE_STATE_GENERATING:
-			break;
 		}
 
 		// Only update visuals/UI while playing
@@ -369,10 +384,10 @@ public:
 		ImGui::Text("Moves: %u", m_uMoveCount);
 		ImGui::Text("Cats remaining: %zu", CountRemainingCats());
 
-		const char* aszStateNames[] = { "Menu", "Playing", "Sliding", "Checking", "Complete", "Generating", "LevelSelect" };
+		const char* aszStateNames[] = { "Menu", "Playing", "Sliding", "Checking", "Complete", "LevelSelect" };
 		ImGui::Text("State: %s", aszStateNames[m_eState]);
 
-		if (ImGui::Button("New Level"))
+		if (ImGui::Button("Reload Level"))
 		{
 			StartNewLevel();
 		}
@@ -446,7 +461,7 @@ private:
 	static void OnLevelButtonClicked(void* pxUserData)
 	{
 		TilePuzzleLevelButtonData* pxData = static_cast<TilePuzzleLevelButtonData*>(pxUserData);
-		if (pxData->uLevelNumber == 0 || pxData->uLevelNumber > TilePuzzleSaveData::uMAX_LEVELS)
+		if (pxData->uLevelNumber == 0 || pxData->uLevelNumber > pxData->pxBehaviour->m_uAvailableLevelCount)
 			return;
 
 		// Only allow unlocked levels
@@ -471,7 +486,9 @@ private:
 	static void OnNextPageClicked(void* pxUserData)
 	{
 		TilePuzzle_Behaviour* pxSelf = static_cast<TilePuzzle_Behaviour*>(pxUserData);
-		if (pxSelf->m_uLevelSelectPage < 4)
+		uint32_t uTotalPages = (pxSelf->m_uAvailableLevelCount + 19) / 20;
+		if (uTotalPages == 0) uTotalPages = 1;
+		if (pxSelf->m_uLevelSelectPage < uTotalPages - 1)
 		{
 			pxSelf->m_uLevelSelectPage++;
 			pxSelf->UpdateLevelSelectUI();
@@ -523,7 +540,7 @@ private:
 		m_xPuzzleScene = Zenith_SceneManager::CreateEmptyScene("Puzzle");
 		Zenith_SceneManager::SetActiveScene(m_xPuzzleScene);
 
-		GenerateNewLevel();
+		LoadLevelFromFile();
 	}
 
 	void StartNewLevel()
@@ -550,8 +567,7 @@ private:
 		m_xPuzzleScene = Zenith_SceneManager::CreateEmptyScene("Puzzle");
 		Zenith_SceneManager::SetActiveScene(m_xPuzzleScene);
 
-		m_eState = TILEPUZZLE_STATE_GENERATING;
-		GenerateNewLevel();
+		LoadLevelFromFile();
 	}
 
 	void ReturnToMenu()
@@ -605,8 +621,9 @@ private:
 		Zenith_SaveData::Save("autosave", TilePuzzleSaveData::uGAME_SAVE_VERSION,
 			TilePuzzle_WriteSaveData, &m_xSaveData);
 
-		// Show next level button
-		if (m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		// Show next level button (unless this is the last level)
+		bool bIsLastLevel = (m_uCurrentLevelNumber >= m_uAvailableLevelCount);
+		if (!bIsLastLevel && m_xParentEntity.HasComponent<Zenith_UIComponent>())
 		{
 			Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
 			Zenith_UI::Zenith_UIButton* pxNextBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("NextLevelBtn");
@@ -829,11 +846,14 @@ private:
 		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
 
 		// Update page text
+		uint32_t uTotalPages = (m_uAvailableLevelCount + 19) / 20;
+		if (uTotalPages == 0) uTotalPages = 1;
+
 		Zenith_UI::Zenith_UIText* pxPageText = xUI.FindElement<Zenith_UI::Zenith_UIText>("PageText");
 		if (pxPageText)
 		{
 			char szPage[32];
-			snprintf(szPage, sizeof(szPage), "Page %u / 5", m_uLevelSelectPage + 1);
+			snprintf(szPage, sizeof(szPage), "Page %u / %u", m_uLevelSelectPage + 1, uTotalPages);
 			pxPageText->SetText(szPage);
 		}
 
@@ -853,7 +873,7 @@ private:
 
 			// Update label
 			char szLabel[16];
-			if (uLevel > TilePuzzleSaveData::uMAX_LEVELS)
+			if (uLevel > m_uAvailableLevelCount)
 			{
 				pxBtn->SetVisible(false);
 				continue;
@@ -954,8 +974,10 @@ private:
 	Zenith_Maths::Vector3 m_xSlideStartPos;
 	Zenith_Maths::Vector3 m_xSlideEndPos;
 
-	// Random number generator
-	std::mt19937 m_xRng;
+	// Level file loading
+	uint32_t m_uAvailableLevelCount;
+	std::vector<TilePuzzleShapeDefinition> m_axLoadedShapeDefs;  // Owns shape defs for loaded level (must outlive m_xCurrentLevel)
+	std::vector<Flux_MeshGeometry*> m_apxGeneratedShapeMeshes;  // Per-shape meshes generated from loaded cell offsets
 
 	// Entity IDs - floor entities indexed by grid position (y * 1000 + x)
 	std::unordered_map<uint32_t, Zenith_EntityID> m_axFloorEntityIDs; // #TODO: Replace with engine hash map
@@ -993,13 +1015,53 @@ private:
 	uint32_t m_uLevelSelectPage;
 
 	// ========================================================================
-	// Level Generation
+	// Level Loading
 	// ========================================================================
-	void GenerateNewLevel()
+	void LoadLevelFromFile()
 	{
-		// Generate a solvable level using the level generator
-		TilePuzzle_LevelGenerator::GenerateLevel(
-			m_xCurrentLevel, m_xRng, m_uCurrentLevelNumber);
+		// Build path for current level number
+		char szPath[ZENITH_MAX_PATH_LENGTH];
+		snprintf(szPath, sizeof(szPath), GAME_ASSETS_DIR "Levels/level_%04u.tlvl", m_uCurrentLevelNumber);
+
+		// Load and deserialize
+		Zenith_DataStream xStream;
+		xStream.ReadFromFile(szPath);
+		Zenith_Assert(xStream.IsValid(), "Failed to load level file: %s", szPath);
+
+		// Clean up previously generated per-shape meshes
+		for (Flux_MeshGeometry* pxMesh : m_apxGeneratedShapeMeshes)
+			delete pxMesh;
+		m_apxGeneratedShapeMeshes.clear();
+
+		m_axLoadedShapeDefs.clear();
+		bool bParsed = TilePuzzleLevelSerialize::Read(xStream, m_xCurrentLevel, m_axLoadedShapeDefs);
+		Zenith_Assert(bParsed, "Failed to parse level file: %s", szPath);
+
+		// Flip board vertically so gridY=0 appears at screen top (matching PNG layout)
+		{
+			uint32_t uW = m_xCurrentLevel.uGridWidth;
+			uint32_t uH = m_xCurrentLevel.uGridHeight;
+
+			// Reverse cell array rows
+			std::vector<TilePuzzleCellType> aFlipped(m_xCurrentLevel.aeCells.size());
+			for (uint32_t y = 0; y < uH; ++y)
+				for (uint32_t x = 0; x < uW; ++x)
+					aFlipped[y * uW + x] = m_xCurrentLevel.aeCells[(uH - 1 - y) * uW + x];
+			m_xCurrentLevel.aeCells = std::move(aFlipped);
+
+			// Flip shape origins
+			for (auto& xShape : m_xCurrentLevel.axShapes)
+				xShape.iOriginY = static_cast<int32_t>(uH - 1) - xShape.iOriginY;
+
+			// Negate cell offset Y in owned shape definitions
+			for (auto& xDef : m_axLoadedShapeDefs)
+				for (auto& xCell : xDef.axCells)
+					xCell.iY = -xCell.iY;
+
+			// Flip cat positions
+			for (auto& xCat : m_xCurrentLevel.axCats)
+				xCat.iGridY = static_cast<int32_t>(uH - 1) - xCat.iGridY;
+		}
 
 		CreateLevelVisuals();
 		UpdateCameraForGridSize();
@@ -1029,6 +1091,7 @@ private:
 		m_iDragShapeIndex = -1;
 		m_iDragGrabOffsetX = 0;
 		m_iDragGrabOffsetY = 0;
+		m_fLevelTimer = 0.f;
 		m_eState = TILEPUZZLE_STATE_PLAYING;
 
 		UpdateSelectionHighlight();
@@ -1041,6 +1104,9 @@ private:
 
 	void NextLevel()
 	{
+		if (m_uCurrentLevelNumber >= m_uAvailableLevelCount)
+			return;
+
 		m_uCurrentLevelNumber++;
 		m_xSaveData.uCurrentLevel = m_uCurrentLevelNumber;
 		Zenith_SaveData::Save("autosave", TilePuzzleSaveData::uGAME_SAVE_VERSION,
@@ -1089,6 +1155,9 @@ private:
 
 	void HandleLevelCompleteInput()
 	{
+		if (m_uCurrentLevelNumber >= m_uAvailableLevelCount)
+			return;  // No more levels
+
 		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_N) ||
 			Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_SPACE))
 		{
@@ -1506,7 +1575,10 @@ private:
 				pxMaterial = m_axShapeMaterials[xShape.eColor].Get();
 			}
 
-			Flux_MeshGeometry* pxShapeMesh = TilePuzzle::g_apxShapeMeshes[xShape.pxDefinition->eType];
+			// Generate mesh from actual loaded cell offsets (which may be rotated)
+			Flux_MeshGeometry* pxShapeMesh = new Flux_MeshGeometry();
+			TilePuzzle::GenerateShapeMeshFromDefinition(*xShape.pxDefinition, *pxShapeMesh);
+			m_apxGeneratedShapeMeshes.push_back(pxShapeMesh);
 
 			Zenith_Entity xShapeEntity = TilePuzzle::g_pxShapeCubePrefab->Instantiate(pxSceneData, "Shape");
 			Zenith_TransformComponent& xTransform = xShapeEntity.GetComponent<Zenith_TransformComponent>();
@@ -1921,7 +1993,14 @@ private:
 		{
 			if (m_eState == TILEPUZZLE_STATE_LEVEL_COMPLETE)
 			{
-				pxWin->SetText("LEVEL COMPLETE! Press N");
+				if (m_uCurrentLevelNumber >= m_uAvailableLevelCount)
+				{
+					pxWin->SetText("GAME COMPLETED!");
+				}
+				else
+				{
+					pxWin->SetText("LEVEL COMPLETE! Press N");
+				}
 			}
 			else
 			{

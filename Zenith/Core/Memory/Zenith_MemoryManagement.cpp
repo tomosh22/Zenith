@@ -74,7 +74,8 @@ void* Zenith_MemoryManagement::AllocateAligned(size_t ullSize, size_t ulAlignmen
 #ifdef ZENITH_WINDOWS
 	void* pResult = _aligned_malloc(ullSize, ulAlignment);
 #else
-	void* pResult = aligned_alloc(ulAlignment, ullSize);
+	void* pResult = nullptr;
+	posix_memalign(&pResult, ulAlignment, ullSize);
 #endif
 	if (pResult == nullptr && ullSize > 0)
 	{

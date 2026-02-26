@@ -1,6 +1,7 @@
 #include "Zenith.h"
 #include "Flux_MeshAnimation.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
+#ifdef ZENITH_TOOLS
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include <assimp/anim.h>
 #include <assimp/Importer.hpp>
@@ -69,6 +70,7 @@ static void ReadHierarchy(Flux_MeshAnimation::Node& xDst, const aiNode& xSrc)
 		xDst.m_xChildren.push_back(xNewNode);
 	}
 }
+#endif // ZENITH_TOOLS
 
 void Flux_MeshAnimation::CalculateBoneTransform(const Node* const pxNode, const glm::mat4& xParentTransform, bool bDebug /*= false*/)
 {
@@ -113,6 +115,7 @@ void Flux_MeshAnimation::CalculateBoneTransform(const Node* const pxNode, const 
 	}
 }
 
+#ifdef ZENITH_TOOLS
 Flux_MeshAnimation::Flux_MeshAnimation(const std::string& strPath, Flux_MeshGeometry& xParentGeometry)
 	: m_xParentGeometry(xParentGeometry)
 	, m_strSourcePath(strPath)
@@ -128,7 +131,7 @@ Flux_MeshAnimation::Flux_MeshAnimation(const std::string& strPath, Flux_MeshGeom
 	const aiAnimation* pxAnimation = pxScene->mAnimations[0];
 	m_fDuration = static_cast<float>(pxAnimation->mDuration);
 	m_uTicksPerSecond = static_cast<u_int>(pxAnimation->mTicksPerSecond);
-	
+
 
 	ReadHierarchy(m_xRootNode, *pxScene->mRootNode);
 
@@ -158,6 +161,7 @@ Flux_MeshAnimation::Flux_MeshAnimation(const std::string& strPath, Flux_MeshGeom
 
 	Flux_MemoryManager::InitialiseDynamicConstantBuffer(m_axAnimMatrices, sizeof(m_axAnimMatrices), m_xBoneBuffer);
 }
+#endif // ZENITH_TOOLS
 
 Flux_MeshAnimation::~Flux_MeshAnimation()
 {
