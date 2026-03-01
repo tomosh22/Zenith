@@ -4,7 +4,7 @@
 
 #include "UnitTests/Zenith_EditorTests.h"
 #include "UnitTests/Zenith_EditorTestFixture.h"
-#include "UnitTests/Zenith_MockInput.h"
+#include "Input/Zenith_InputSimulator.h"
 #include "Editor/Zenith_SelectionSystem.h"
 #include "Editor/Zenith_Editor.h"
 #include "Editor/Zenith_UndoSystem.h"
@@ -608,17 +608,17 @@ void Zenith_EditorTests::TestGizmoModeViaKeyboard()
 	EDITOR_TEST_BEGIN(TestGizmoModeViaKeyboard);
 
 	// Simulate pressing W key for translate mode
-	Zenith_MockInput::SimulateKeyPress(ZENITH_KEY_W);
+	Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_W);
 	// In real implementation, this would trigger gizmo mode change
 	// For now, we just test the mock input works
-	Zenith_Assert(Zenith_MockInput::WasKeyPressedThisFrameMocked(ZENITH_KEY_W),
+	Zenith_Assert(Zenith_InputSimulator::WasKeyPressedThisFrameSimulated(ZENITH_KEY_W),
 		"W key should be registered as pressed");
 
-	Zenith_MockInput::BeginTestFrame();
+	Zenith_InputSimulator::BeginTestFrame();
 
 	// Simulate pressing E key for rotate mode
-	Zenith_MockInput::SimulateKeyPress(ZENITH_KEY_E);
-	Zenith_Assert(Zenith_MockInput::WasKeyPressedThisFrameMocked(ZENITH_KEY_E),
+	Zenith_InputSimulator::SimulateKeyPress(ZENITH_KEY_E);
+	Zenith_Assert(Zenith_InputSimulator::WasKeyPressedThisFrameSimulated(ZENITH_KEY_E),
 		"E key should be registered as pressed");
 
 	EDITOR_TEST_END(TestGizmoModeViaKeyboard);

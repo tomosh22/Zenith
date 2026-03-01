@@ -1,6 +1,9 @@
 #include "Zenith.h"
 #include "Zenith_Core.h"
 
+#ifdef ZENITH_INPUT_SIMULATOR
+#include "Input/Zenith_InputSimulator.h"
+#endif
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "EntityComponent/Zenith_Scene.h"
 #include "EntityComponent/Zenith_SceneManager.h"
@@ -52,7 +55,16 @@ void Zenith_Core::UpdateTimers()
 {
 	std::chrono::high_resolution_clock::time_point xCurrentTime = std::chrono::high_resolution_clock::now();
 
-	Zenith_Core::SetDt(static_cast<float>(std::chrono::duration_cast<std::chrono::nanoseconds>(xCurrentTime - g_xLastFrameTime).count() / 1.e9));
+#ifdef ZENITH_INPUT_SIMULATOR
+	if (Zenith_InputSimulator::HasFixedDtOverride())
+	{
+		Zenith_Core::SetDt(Zenith_InputSimulator::GetFixedDt());
+	}
+	else
+#endif
+	{
+		Zenith_Core::SetDt(static_cast<float>(std::chrono::duration_cast<std::chrono::nanoseconds>(xCurrentTime - g_xLastFrameTime).count() / 1.e9));
+	}
 	g_xLastFrameTime = xCurrentTime;
 
 	Zenith_Core::AddTimePassed(Zenith_Core::GetDt());

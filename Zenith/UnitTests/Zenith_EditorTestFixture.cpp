@@ -3,7 +3,7 @@
 #ifdef ZENITH_TOOLS
 
 #include "UnitTests/Zenith_EditorTestFixture.h"
-#include "UnitTests/Zenith_MockInput.h"
+#include "Input/Zenith_InputSimulator.h"
 #include "Editor/Zenith_Editor.h"
 #include "Editor/Zenith_UndoSystem.h"
 #include "EntityComponent/Components/Zenith_TransformComponent.h"
@@ -22,7 +22,7 @@ void Zenith_EditorTestFixture::SetUp()
 	}
 
 	// Enable mock input for tests
-	Zenith_MockInput::EnableMocking(true);
+	Zenith_InputSimulator::Enable();
 
 	// Reset editor state
 	ResetEditorState();
@@ -54,7 +54,7 @@ void Zenith_EditorTestFixture::TearDown()
 	ResetEditorState();
 
 	// Disable mock input
-	Zenith_MockInput::EnableMocking(false);
+	Zenith_InputSimulator::Disable();
 
 	s_bIsSetUp = false;
 }
@@ -135,7 +135,7 @@ void Zenith_EditorTestFixture::ResetEditorState()
 	Zenith_UndoSystem::Clear();
 
 	// Reset mock input state
-	Zenith_MockInput::Reset();
+	Zenith_InputSimulator::ResetAllInputState();
 }
 
 Zenith_SceneData* Zenith_EditorTestFixture::GetTestScene()

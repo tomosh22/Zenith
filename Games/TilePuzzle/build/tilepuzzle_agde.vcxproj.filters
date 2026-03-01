@@ -16,6 +16,9 @@
     <ClInclude Include="..\Components\TilePuzzle_LevelGenerator.h">
       <Filter>Components</Filter>
     </ClInclude>
+    <ClInclude Include="..\Components\TilePuzzle_MetaGame.h">
+      <Filter>Components</Filter>
+    </ClInclude>
     <ClInclude Include="..\Components\TilePuzzle_Rules.h">
       <Filter>Components</Filter>
     </ClInclude>
@@ -28,10 +31,16 @@
     <ClInclude Include="..\Components\TilePuzzle_Types.h">
       <Filter>Components</Filter>
     </ClInclude>
+    <ClInclude Include="..\Tests\TilePuzzle_AutoTest.h">
+      <Filter>Tests</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Components">
       <UniqueIdentifier>{3bb4bb05-923d-8332-e0b6-ffafd088f41f}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Tests">
+      <UniqueIdentifier>{e52d7990-6129-41c3-18f9-76ebe4af3a75}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
 </Project>

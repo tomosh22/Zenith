@@ -3,8 +3,8 @@
 #include "Input/Zenith_Input.h"
 #include "Zenith_OS_Include.h"
 
-#ifdef ZENITH_TOOLS
-#include "UnitTests/Zenith_MockInput.h"
+#ifdef ZENITH_INPUT_SIMULATOR
+#include "Input/Zenith_InputSimulator.h"
 #endif
 
 static std::unordered_set<Zenith_KeyCode> s_xFrameKeyPresses;
@@ -20,6 +20,14 @@ static bool s_bGamepadStateInitialized[MAX_GAMEPADS] = { false };
 
 void Zenith_Input::BeginFrame()
 {
+#ifdef ZENITH_INPUT_SIMULATOR
+	if (Zenith_InputSimulator::IsEnabled())
+	{
+		Zenith_InputSimulator::ProcessAutoReleases();
+		return;
+	}
+#endif
+
 	s_xFrameKeyPresses.clear();
 
 	// Calculate mouse delta
@@ -76,10 +84,10 @@ void Zenith_Input::MouseButtonPressedCallback(Zenith_KeyCode iKey)
 
 void Zenith_Input::GetMousePosition(Zenith_Maths::Vector2_64& xOut)
 {
-#ifdef ZENITH_TOOLS
-	if (Zenith_MockInput::IsMockingEnabled())
+#ifdef ZENITH_INPUT_SIMULATOR
+	if (Zenith_InputSimulator::IsEnabled())
 	{
-		Zenith_MockInput::GetMousePositionMocked(xOut);
+		Zenith_InputSimulator::GetMousePositionSimulated(xOut);
 		return;
 	}
 #endif
@@ -93,10 +101,10 @@ void Zenith_Input::GetMouseDelta(Zenith_Maths::Vector2_64& xOut)
 
 bool Zenith_Input::IsKeyDown(Zenith_KeyCode iKey)
 {
-#ifdef ZENITH_TOOLS
-	if (Zenith_MockInput::IsMockingEnabled())
+#ifdef ZENITH_INPUT_SIMULATOR
+	if (Zenith_InputSimulator::IsEnabled())
 	{
-		return Zenith_MockInput::IsKeyHeldMocked(iKey);
+		return Zenith_InputSimulator::IsKeyDownSimulated(iKey);
 	}
 #endif
 	return Zenith_Window::GetInstance()->IsKeyDown(iKey);
@@ -104,10 +112,10 @@ bool Zenith_Input::IsKeyDown(Zenith_KeyCode iKey)
 
 bool Zenith_Input::WasKeyPressedThisFrame(Zenith_KeyCode iKey)
 {
-#ifdef ZENITH_TOOLS
-	if (Zenith_MockInput::IsMockingEnabled())
+#ifdef ZENITH_INPUT_SIMULATOR
+	if (Zenith_InputSimulator::IsEnabled())
 	{
-		return Zenith_MockInput::WasKeyPressedThisFrameMocked(iKey);
+		return Zenith_InputSimulator::WasKeyPressedThisFrameSimulated(iKey);
 	}
 #endif
 	return s_xFrameKeyPresses.find(iKey) != s_xFrameKeyPresses.end();

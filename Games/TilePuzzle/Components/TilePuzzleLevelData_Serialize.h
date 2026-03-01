@@ -11,7 +11,7 @@
 #include "TilePuzzle_Types.h"
 
 static constexpr uint32_t s_uTLVL_MAGIC = 0x54504C56; // "TPLV"
-static constexpr uint32_t s_uTLVL_VERSION = 1;
+static constexpr uint32_t s_uTLVL_VERSION = 2;
 
 namespace TilePuzzleLevelSerialize
 {
@@ -84,6 +84,16 @@ namespace TilePuzzleLevelSerialize
 			uint8_t uOnBlocker = xCat.bOnBlocker ? 1 : 0;
 			xStream << uOnBlocker;
 		}
+
+		// Solution (v2+)
+		uint32_t uNumSolutionMoves = static_cast<uint32_t>(xLevel.axSolution.size());
+		xStream << uNumSolutionMoves;
+		for (uint32_t i = 0; i < uNumSolutionMoves; ++i)
+		{
+			xStream << xLevel.axSolution[i].uShapeIndex;
+			xStream << xLevel.axSolution[i].iEndX;
+			xStream << xLevel.axSolution[i].iEndY;
+		}
 	}
 
 	[[maybe_unused]] static bool Read(Zenith_DataStream& xStream, TilePuzzleLevelData& xLevel, std::vector<TilePuzzleShapeDefinition>& axShapeDefsOut)
@@ -94,7 +104,7 @@ namespace TilePuzzleLevelSerialize
 		uint32_t uMagic, uVersion;
 		xStream >> uMagic;
 		xStream >> uVersion;
-		if (uMagic != s_uTLVL_MAGIC || uVersion != s_uTLVL_VERSION)
+		if (uMagic != s_uTLVL_MAGIC || uVersion > s_uTLVL_VERSION)
 			return false;
 
 		// Grid
@@ -184,6 +194,21 @@ namespace TilePuzzleLevelSerialize
 			xCat.bOnBlocker = uOnBlocker != 0;
 			xCat.bEliminated = false;
 			xCat.fEliminationProgress = 0.f;
+		}
+
+		// Solution (v2+)
+		xLevel.axSolution.clear();
+		if (uVersion >= 2)
+		{
+			uint32_t uNumSolutionMoves;
+			xStream >> uNumSolutionMoves;
+			xLevel.axSolution.resize(uNumSolutionMoves);
+			for (uint32_t i = 0; i < uNumSolutionMoves; ++i)
+			{
+				xStream >> xLevel.axSolution[i].uShapeIndex;
+				xStream >> xLevel.axSolution[i].iEndX;
+				xStream >> xLevel.axSolution[i].iEndY;
+			}
 		}
 
 		return true;

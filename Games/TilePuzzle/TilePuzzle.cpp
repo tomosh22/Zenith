@@ -22,12 +22,24 @@
 #include "UI/Zenith_UIButton.h"
 #include "UI/Zenith_UIRect.h"
 #include "SaveData/Zenith_SaveData.h"
+#include "DataStream/Zenith_DataStream.h"
+#include "FileAccess/Zenith_FileAccess.h"
 
 #include <unordered_set>
+
+#ifdef ZENITH_INPUT_SIMULATOR
+#include "TilePuzzle/Tests/TilePuzzle_AutoTest.h"
+#include "Input/Zenith_InputSimulator.h"
+#endif
 
 #ifdef ZENITH_TOOLS
 #include "Editor/Zenith_EditorAutomation.h"
 #include "Editor/Zenith_Editor.h"
+#endif
+
+#ifdef ZENITH_WINDOWS
+#include <cstdlib> // __argc, __argv
+#include <cstring> // strcmp
 #endif
 
 // ============================================================================
@@ -62,6 +74,9 @@ namespace TilePuzzle
 
 	// Pre-generated merged meshes for each shape type
 	Flux_MeshGeometry* g_apxShapeMeshes[TILEPUZZLE_SHAPE_COUNT] = {};
+
+	// Highlight emissive intensity (loaded from materials.bin)
+	float g_fHighlightEmissiveIntensity = 0.5f;
 }
 
 static bool s_bResourcesInitialized = false;
@@ -550,6 +565,67 @@ void TilePuzzle::GenerateShapeMeshFromDefinition(const TilePuzzleShapeDefinition
 	GenerateShapeMesh(xDef, xGeometryOut);
 }
 
+// ============================================================================
+// Shape Mesh Deserialization (runtime)
+// ============================================================================
+static bool ReadShapeMeshFromStream(Zenith_DataStream& xStream, Flux_MeshGeometry& xGeometry)
+{
+	uint32_t uNumVerts = 0;
+	uint32_t uNumIndices = 0;
+	xStream >> uNumVerts;
+	xStream >> uNumIndices;
+
+	if (uNumVerts == 0 || uNumIndices == 0)
+		return false;
+
+	xGeometry.m_uNumVerts = uNumVerts;
+	xGeometry.m_uNumIndices = uNumIndices;
+
+	// Allocate and read positions
+	xGeometry.m_pxPositions = static_cast<Zenith_Maths::Vector3*>(
+		Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector3)));
+	xStream.ReadData(xGeometry.m_pxPositions, uNumVerts * sizeof(Zenith_Maths::Vector3));
+
+	// Allocate and read UVs
+	xGeometry.m_pxUVs = static_cast<Zenith_Maths::Vector2*>(
+		Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector2)));
+	xStream.ReadData(xGeometry.m_pxUVs, uNumVerts * sizeof(Zenith_Maths::Vector2));
+
+	// Allocate and read normals
+	xGeometry.m_pxNormals = static_cast<Zenith_Maths::Vector3*>(
+		Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector3)));
+	xStream.ReadData(xGeometry.m_pxNormals, uNumVerts * sizeof(Zenith_Maths::Vector3));
+
+	// Allocate and read tangents
+	xGeometry.m_pxTangents = static_cast<Zenith_Maths::Vector3*>(
+		Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector3)));
+	xStream.ReadData(xGeometry.m_pxTangents, uNumVerts * sizeof(Zenith_Maths::Vector3));
+
+	// Allocate and read bitangents
+	xGeometry.m_pxBitangents = static_cast<Zenith_Maths::Vector3*>(
+		Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector3)));
+	xStream.ReadData(xGeometry.m_pxBitangents, uNumVerts * sizeof(Zenith_Maths::Vector3));
+
+	// Allocate and read colors
+	xGeometry.m_pxColors = static_cast<Zenith_Maths::Vector4*>(
+		Zenith_MemoryManagement::Allocate(uNumVerts * sizeof(Zenith_Maths::Vector4)));
+	xStream.ReadData(xGeometry.m_pxColors, uNumVerts * sizeof(Zenith_Maths::Vector4));
+
+	// Allocate and read indices
+	xGeometry.m_puIndices = static_cast<Flux_MeshGeometry::IndexType*>(
+		Zenith_MemoryManagement::Allocate(uNumIndices * sizeof(Flux_MeshGeometry::IndexType)));
+	xStream.ReadData(xGeometry.m_puIndices, uNumIndices * sizeof(Flux_MeshGeometry::IndexType));
+
+	// Generate interleaved vertex data and upload to GPU
+	xGeometry.GenerateLayoutAndVertexData();
+	Flux_MemoryManager::InitialiseVertexBuffer(
+		xGeometry.GetVertexData(), xGeometry.GetVertexDataSize(), xGeometry.m_xVertexBuffer);
+	Flux_MemoryManager::InitialiseIndexBuffer(
+		xGeometry.GetIndexData(), xGeometry.GetIndexDataSize(), xGeometry.m_xIndexBuffer);
+
+	return true;
+}
+
 static void InitializeTilePuzzleResources()
 {
 	if (s_bResourcesInitialized)
@@ -564,39 +640,107 @@ static void InitializeTilePuzzleResources()
 	g_pxSphereAsset = Zenith_MeshGeometryAsset::CreateUnitSphere(16);
 	g_pxSphereGeometry = g_pxSphereAsset->GetGeometry();
 
-	// Generate merged polyomino meshes for each shape type
+	// Load pre-generated merged polyomino meshes from disk
 	for (uint32_t u = 0; u < TILEPUZZLE_SHAPE_COUNT; ++u)
 	{
-		TilePuzzleShapeDefinition xDef = TilePuzzleShapes::GetShape(
-			static_cast<TilePuzzleShapeType>(u), true);
+		char szPath[ZENITH_MAX_PATH_LENGTH];
+		snprintf(szPath, sizeof(szPath), GAME_ASSETS_DIR "Meshes/shape_%u.bin", u);
+
+		Zenith_DataStream xStream;
+		xStream.ReadFromFile(szPath);
+
 		g_apxShapeMeshes[u] = new Flux_MeshGeometry();
-		GenerateShapeMesh(xDef, *g_apxShapeMeshes[u]);
+		ReadShapeMeshFromStream(xStream, *g_apxShapeMeshes[u]);
 	}
+
+	// Load material color definitions from disk
+	Zenith_Maths::Vector4 axShapeColors[TILEPUZZLE_COLOR_COUNT];
+	Zenith_Maths::Vector4 xFloorColor = { 77.f/255.f, 77.f/255.f, 89.f/255.f, 1.f };
+	Zenith_Maths::Vector4 xBlockerColor = { 80.f/255.f, 50.f/255.f, 30.f/255.f, 1.f };
+	float fHighlightEmissive = 0.5f;
+
+	// Default fallback colors
+	axShapeColors[0] = { 230.f/255.f, 60.f/255.f, 60.f/255.f, 1.f };    // Red
+	axShapeColors[1] = { 60.f/255.f, 200.f/255.f, 60.f/255.f, 1.f };    // Green
+	axShapeColors[2] = { 60.f/255.f, 100.f/255.f, 230.f/255.f, 1.f };   // Blue
+	axShapeColors[3] = { 230.f/255.f, 230.f/255.f, 60.f/255.f, 1.f };   // Yellow
+	axShapeColors[4] = { 180.f/255.f, 60.f/255.f, 220.f/255.f, 1.f };   // Purple
+
+	{
+		Zenith_DataStream xStream;
+		xStream.ReadFromFile(GAME_ASSETS_DIR "Materials/materials.bin");
+
+		uint32_t uVersion;
+		xStream >> uVersion;
+
+		if (uVersion == 1)
+		{
+			uint32_t uColorCount;
+			xStream >> uColorCount;
+
+			for (uint32_t i = 0; i < uColorCount && i < TILEPUZZLE_COLOR_COUNT; ++i)
+			{
+				uint8_t uR, uG, uB;
+				xStream >> uR;
+				xStream >> uG;
+				xStream >> uB;
+				axShapeColors[i] = {
+					static_cast<float>(uR) / 255.f,
+					static_cast<float>(uG) / 255.f,
+					static_cast<float>(uB) / 255.f,
+					1.f
+				};
+			}
+
+			// Floor color
+			{
+				uint8_t uR, uG, uB;
+				xStream >> uR; xStream >> uG; xStream >> uB;
+				xFloorColor = {
+					static_cast<float>(uR) / 255.f,
+					static_cast<float>(uG) / 255.f,
+					static_cast<float>(uB) / 255.f,
+					1.f
+				};
+			}
+
+			// Blocker color
+			{
+				uint8_t uR, uG, uB;
+				xStream >> uR; xStream >> uG; xStream >> uB;
+				xBlockerColor = {
+					static_cast<float>(uR) / 255.f,
+					static_cast<float>(uG) / 255.f,
+					static_cast<float>(uB) / 255.f,
+					1.f
+				};
+			}
+
+			// Highlight emissive intensity
+			xStream >> fHighlightEmissive;
+		}
+	}
+
+	// Store loaded highlight emissive intensity globally for behaviours
+	g_fHighlightEmissiveIntensity = fHighlightEmissive;
 
 	// Use grid pattern texture with BaseColor for all materials
 	Zenith_TextureAsset* pxGridTex = Flux_Graphics::s_pxGridTexture;
 
-	// Create materials with grid texture and BaseColor
+	// Create materials with loaded colors
 	auto& xRegistry = Zenith_AssetRegistry::Get();
 	g_xFloorMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
 	g_xFloorMaterial.Get()->SetName("TilePuzzleFloor");
 	g_xFloorMaterial.Get()->SetDiffuseTextureDirectly(pxGridTex);
-	g_xFloorMaterial.Get()->SetBaseColor({ 77.f/255.f, 77.f/255.f, 89.f/255.f, 1.f });
+	g_xFloorMaterial.Get()->SetBaseColor(xFloorColor);
 
 	g_xBlockerMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
 	g_xBlockerMaterial.Get()->SetName("TilePuzzleBlocker");
 	g_xBlockerMaterial.Get()->SetDiffuseTextureDirectly(pxGridTex);
-	g_xBlockerMaterial.Get()->SetBaseColor({ 80.f/255.f, 50.f/255.f, 30.f/255.f, 1.f });
+	g_xBlockerMaterial.Get()->SetBaseColor(xBlockerColor);
 
-	// Shape materials with distinct colors
+	// Shape materials with loaded colors
 	const char* aszShapeColorNames[] = { "Red", "Green", "Blue", "Yellow", "Purple" };
-	const Zenith_Maths::Vector4 axShapeColors[] = {
-		{ 230.f/255.f, 60.f/255.f, 60.f/255.f, 1.f },    // Red
-		{ 60.f/255.f, 200.f/255.f, 60.f/255.f, 1.f },    // Green
-		{ 60.f/255.f, 100.f/255.f, 230.f/255.f, 1.f },   // Blue
-		{ 230.f/255.f, 230.f/255.f, 60.f/255.f, 1.f },   // Yellow
-		{ 180.f/255.f, 60.f/255.f, 220.f/255.f, 1.f }    // Purple
-	};
 	for (uint32_t i = 0; i < TILEPUZZLE_COLOR_COUNT; ++i)
 	{
 		char szName[64];
@@ -673,12 +817,20 @@ void Project_SetGraphicsOptions(Zenith_GraphicsOptions& xOptions)
 	xOptions.m_xSkyboxColour = Zenith_Maths::Vector3(0.1f, 0.1f, 0.15f);
 }
 
+#ifdef ZENITH_INPUT_SIMULATOR
+static bool TilePuzzle_HasAutoTestFlag();
+#endif
+
 void Project_RegisterScriptBehaviours()
 {
 	Zenith_SaveData::Initialise("TilePuzzle");
 	InitializeTilePuzzleResources();
 	TilePuzzle_Behaviour::RegisterBehaviour();
 	Pinball_Behaviour::RegisterBehaviour();
+
+#ifdef ZENITH_INPUT_SIMULATOR
+	TilePuzzle_AutoTest::RegisterBehaviour();
+#endif
 }
 
 void Project_Shutdown()
@@ -689,11 +841,164 @@ void Project_Shutdown()
 void Project_LoadInitialScene(); // Forward declaration for automation steps
 
 #ifdef ZENITH_TOOLS
+
+// ============================================================================
+// Shape Mesh Serialization (tools only)
+// ============================================================================
+static void WriteShapeMeshToStream(Zenith_DataStream& xStream, const Flux_MeshGeometry& xGeometry)
+{
+	xStream << xGeometry.m_uNumVerts;
+	xStream << xGeometry.m_uNumIndices;
+
+	// Write positions
+	xStream.WriteData(xGeometry.m_pxPositions,
+		xGeometry.m_uNumVerts * sizeof(Zenith_Maths::Vector3));
+
+	// Write UVs
+	xStream.WriteData(xGeometry.m_pxUVs,
+		xGeometry.m_uNumVerts * sizeof(Zenith_Maths::Vector2));
+
+	// Write normals
+	xStream.WriteData(xGeometry.m_pxNormals,
+		xGeometry.m_uNumVerts * sizeof(Zenith_Maths::Vector3));
+
+	// Write tangents
+	xStream.WriteData(xGeometry.m_pxTangents,
+		xGeometry.m_uNumVerts * sizeof(Zenith_Maths::Vector3));
+
+	// Write bitangents
+	xStream.WriteData(xGeometry.m_pxBitangents,
+		xGeometry.m_uNumVerts * sizeof(Zenith_Maths::Vector3));
+
+	// Write colors
+	xStream.WriteData(xGeometry.m_pxColors,
+		xGeometry.m_uNumVerts * sizeof(Zenith_Maths::Vector4));
+
+	// Write indices
+	xStream.WriteData(xGeometry.m_puIndices,
+		xGeometry.m_uNumIndices * sizeof(Flux_MeshGeometry::IndexType));
+}
+
 void Project_InitializeResources()
 {
-	// Generate pinball peg layouts and write to disk
+	// ================================================================
+	// 1. Validate level files exist
+	// ================================================================
+	{
+		uint32_t uFoundCount = 0;
+		for (uint32_t u = 1; u <= 100; ++u)
+		{
+			char szPath[ZENITH_MAX_PATH_LENGTH];
+			snprintf(szPath, sizeof(szPath), GAME_ASSETS_DIR "Levels/level_%04u.tlvl", u);
+			if (Zenith_FileAccess::FileExists(szPath))
+			{
+				uFoundCount++;
+			}
+			else
+			{
+				Zenith_Warning(LOG_CATEGORY_GENERAL,
+					"Level file missing: %s (generate with TilePuzzleLevelGen tool)", szPath);
+			}
+		}
+		Zenith_Log(LOG_CATEGORY_GENERAL,
+			"Level validation: %u/100 level files found", uFoundCount);
+	}
+
+	// ================================================================
+	// 2. Generate and write shape meshes to disk
+	// ================================================================
+	{
+		std::filesystem::create_directories(GAME_ASSETS_DIR "Meshes");
+
+		for (uint32_t u = 0; u < TILEPUZZLE_SHAPE_COUNT; ++u)
+		{
+			TilePuzzleShapeDefinition xDef = TilePuzzleShapes::GetShape(
+				static_cast<TilePuzzleShapeType>(u), true);
+
+			Flux_MeshGeometry xMesh;
+			GenerateShapeMesh(xDef, xMesh);
+
+			Zenith_DataStream xStream;
+			WriteShapeMeshToStream(xStream, xMesh);
+
+			char szPath[ZENITH_MAX_PATH_LENGTH];
+			snprintf(szPath, sizeof(szPath), GAME_ASSETS_DIR "Meshes/shape_%u.bin", u);
+			xStream.WriteToFile(szPath);
+		}
+
+		Zenith_Log(LOG_CATEGORY_GENERAL,
+			"Wrote %u shape meshes to " GAME_ASSETS_DIR "Meshes/", TILEPUZZLE_SHAPE_COUNT);
+	}
+
+	// ================================================================
+	// 3. Generate and write material color definitions
+	// ================================================================
+	{
+		std::filesystem::create_directories(GAME_ASSETS_DIR "Materials");
+
+		Zenith_DataStream xStream;
+
+		// Version header
+		uint32_t uVersion = 1;
+		xStream << uVersion;
+
+		// Shape colors (5 colors, each as 3 uint8_t RGB values)
+		uint32_t uColorCount = TILEPUZZLE_COLOR_COUNT;
+		xStream << uColorCount;
+
+		// Red
+		uint8_t uR = 230; uint8_t uG = 60; uint8_t uB = 60;
+		xStream << uR; xStream << uG; xStream << uB;
+		// Green
+		uR = 60; uG = 200; uB = 60;
+		xStream << uR; xStream << uG; xStream << uB;
+		// Blue
+		uR = 60; uG = 100; uB = 230;
+		xStream << uR; xStream << uG; xStream << uB;
+		// Yellow
+		uR = 230; uG = 230; uB = 60;
+		xStream << uR; xStream << uG; xStream << uB;
+		// Purple
+		uR = 180; uG = 60; uB = 220;
+		xStream << uR; xStream << uG; xStream << uB;
+
+		// Floor color
+		uR = 77; uG = 77; uB = 89;
+		xStream << uR; xStream << uG; xStream << uB;
+
+		// Blocker color
+		uR = 80; uG = 50; uB = 30;
+		xStream << uR; xStream << uG; xStream << uB;
+
+		// Highlight emissive intensity
+		float fHighlightEmissive = 0.5f;
+		xStream << fHighlightEmissive;
+
+		xStream.WriteToFile(GAME_ASSETS_DIR "Materials/materials.bin");
+
+		Zenith_Log(LOG_CATEGORY_GENERAL,
+			"Wrote material definitions to " GAME_ASSETS_DIR "Materials/materials.bin");
+	}
+
+	// ================================================================
+	// 4. Generate and write pinball data
+	// ================================================================
 	Pinball_Behaviour::GenerateAndWriteLayouts();
+	Pinball_Behaviour::GenerateAndWriteGateData();
+
+	Zenith_Log(LOG_CATEGORY_GENERAL,
+		"Wrote pinball peg layouts and gate data to " GAME_ASSETS_DIR "Pinball/");
 }
+
+// Static string arrays for cat cafe cards (safe for deferred const char* in automation actions)
+static const char* s_aszCatCardBgNames[8] = {
+	"CatCardBg_0", "CatCardBg_1", "CatCardBg_2", "CatCardBg_3",
+	"CatCardBg_4", "CatCardBg_5", "CatCardBg_6", "CatCardBg_7"
+};
+static const char* s_aszCatCardNames[8] = {
+	"CatCard_0", "CatCard_1", "CatCard_2", "CatCard_3",
+	"CatCard_4", "CatCard_5", "CatCard_6", "CatCard_7"
+};
 
 // Static string arrays for level select grid (safe for deferred const char* in automation actions)
 static const char* s_aszLevelBtnNames[20] = {
@@ -774,6 +1079,140 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("PinballButton", 0.2f, 0.25f, 0.4f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("PinballButton", 0.3f, 0.35f, 0.55f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonPressedColor("PinballButton", 0.12f, 0.15f, 0.25f, 1.f);
+
+	// Cat Cafe button
+	Zenith_EditorAutomation::AddStep_CreateUIButton("CatCafeButton", "Cat Cafe");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("CatCafeButton", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("CatCafeButton", 0.f, 380.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("CatCafeButton", 300.f, 80.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("CatCafeButton", 32.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("CatCafeButton", 0.4f, 0.25f, 0.3f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("CatCafeButton", 0.5f, 0.35f, 0.4f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonPressedColor("CatCafeButton", 0.25f, 0.15f, 0.2f, 1.f);
+
+	// Daily Puzzle button
+	Zenith_EditorAutomation::AddStep_CreateUIButton("DailyPuzzleButton", "Daily Puzzle");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("DailyPuzzleButton", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("DailyPuzzleButton", 0.f, 480.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("DailyPuzzleButton", 300.f, 80.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("DailyPuzzleButton", 32.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("DailyPuzzleButton", 0.25f, 0.35f, 0.2f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("DailyPuzzleButton", 0.35f, 0.45f, 0.3f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonPressedColor("DailyPuzzleButton", 0.15f, 0.2f, 0.12f, 1.f);
+
+	// Coin display text (top-right of menu)
+	Zenith_EditorAutomation::AddStep_CreateUIText("CoinText", "Coins: 0");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("CoinText", static_cast<int>(Zenith_UI::AnchorPreset::TopRight));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("CoinText", -20.f, 20.f);
+	Zenith_EditorAutomation::AddStep_SetUIAlignment("CoinText", static_cast<int>(Zenith_UI::TextAlignment::Right));
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("CoinText", 36.f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("CoinText", 1.f, 0.85f, 0.2f, 1.f);
+
+	// Lives display text (top-left of menu)
+	Zenith_EditorAutomation::AddStep_CreateUIText("LivesText", "Lives: 5/5");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("LivesText", static_cast<int>(Zenith_UI::AnchorPreset::TopLeft));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("LivesText", 20.f, 20.f);
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("LivesText", 36.f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("LivesText", 1.f, 0.3f, 0.3f, 1.f);
+
+	// Lives Refill button (hidden by default)
+	Zenith_EditorAutomation::AddStep_CreateUIButton("RefillLivesButton", "Refill (50)");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("RefillLivesButton", static_cast<int>(Zenith_UI::AnchorPreset::TopLeft));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("RefillLivesButton", 20.f, 60.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("RefillLivesButton", 160.f, 40.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("RefillLivesButton", 20.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("RefillLivesButton", 0.5f, 0.2f, 0.2f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("RefillLivesButton", 0.6f, 0.3f, 0.3f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonPressedColor("RefillLivesButton", 0.35f, 0.12f, 0.12f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIVisible("RefillLivesButton", false);
+
+	// Daily streak text (bottom-left of menu)
+	Zenith_EditorAutomation::AddStep_CreateUIText("DailyStreakText", "Streak: 0 days");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("DailyStreakText", static_cast<int>(Zenith_UI::AnchorPreset::BottomLeft));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("DailyStreakText", 20.f, -20.f);
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("DailyStreakText", 28.f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("DailyStreakText", 0.6f, 0.8f, 0.6f, 1.f);
+
+	// ---- Cat Cafe UI elements (starts hidden) ----
+
+	// Cat Cafe background
+	Zenith_EditorAutomation::AddStep_CreateUIRect("CatCafeBg");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("CatCafeBg", static_cast<int>(Zenith_UI::AnchorPreset::TopLeft));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("CatCafeBg", 0.f, 0.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("CatCafeBg", 4000.f, 4000.f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("CatCafeBg", 0.1f, 0.06f, 0.08f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIVisible("CatCafeBg", false);
+
+	// Cat Cafe title
+	Zenith_EditorAutomation::AddStep_CreateUIText("CatCafeTitle", "Cat Cafe");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("CatCafeTitle", static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("CatCafeTitle", 0.f, 30.f);
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("CatCafeTitle", 56.f);
+	Zenith_EditorAutomation::AddStep_SetUIAlignment("CatCafeTitle", static_cast<int>(Zenith_UI::TextAlignment::Center));
+	Zenith_EditorAutomation::AddStep_SetUIColor("CatCafeTitle", 1.f, 0.8f, 0.6f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIVisible("CatCafeTitle", false);
+
+	// Cat Cafe count
+	Zenith_EditorAutomation::AddStep_CreateUIText("CatCafeCount", "0 / 100 cats rescued");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("CatCafeCount", static_cast<int>(Zenith_UI::AnchorPreset::TopCenter));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("CatCafeCount", 0.f, 80.f);
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("CatCafeCount", 32.f);
+	Zenith_EditorAutomation::AddStep_SetUIAlignment("CatCafeCount", static_cast<int>(Zenith_UI::TextAlignment::Center));
+	Zenith_EditorAutomation::AddStep_SetUIColor("CatCafeCount", 0.8f, 0.8f, 0.8f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIVisible("CatCafeCount", false);
+
+	// Cat cards (8 per page, arranged in 2x4 grid)
+	for (uint32_t u = 0; u < 8; ++u)
+	{
+		float fX = (static_cast<float>(u % 2) - 0.5f) * 280.f;
+		float fY = 140.f + static_cast<float>(u / 2) * 120.f;
+
+		// Card background rect
+		Zenith_EditorAutomation::AddStep_CreateUIRect(s_aszCatCardBgNames[u]);
+		Zenith_EditorAutomation::AddStep_SetUIAnchor(s_aszCatCardBgNames[u], static_cast<int>(Zenith_UI::AnchorPreset::Center));
+		Zenith_EditorAutomation::AddStep_SetUIPosition(s_aszCatCardBgNames[u], fX, fY);
+		Zenith_EditorAutomation::AddStep_SetUISize(s_aszCatCardBgNames[u], 250.f, 100.f);
+		Zenith_EditorAutomation::AddStep_SetUIColor(s_aszCatCardBgNames[u], 0.15f, 0.12f, 0.14f, 1.f);
+		Zenith_EditorAutomation::AddStep_SetUIVisible(s_aszCatCardBgNames[u], false);
+
+		// Card text
+		Zenith_EditorAutomation::AddStep_CreateUIText(s_aszCatCardNames[u], "???");
+		Zenith_EditorAutomation::AddStep_SetUIAnchor(s_aszCatCardNames[u], static_cast<int>(Zenith_UI::AnchorPreset::Center));
+		Zenith_EditorAutomation::AddStep_SetUIPosition(s_aszCatCardNames[u], fX, fY);
+		Zenith_EditorAutomation::AddStep_SetUIFontSize(s_aszCatCardNames[u], 20.f);
+		Zenith_EditorAutomation::AddStep_SetUIAlignment(s_aszCatCardNames[u], static_cast<int>(Zenith_UI::TextAlignment::Center));
+		Zenith_EditorAutomation::AddStep_SetUIColor(s_aszCatCardNames[u], 0.9f, 0.9f, 0.9f, 1.f);
+		Zenith_EditorAutomation::AddStep_SetUIVisible(s_aszCatCardNames[u], false);
+	}
+
+	// Cat Cafe back button
+	Zenith_EditorAutomation::AddStep_CreateUIButton("CatCafeBackButton", "Back");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("CatCafeBackButton", static_cast<int>(Zenith_UI::AnchorPreset::BottomCenter));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("CatCafeBackButton", 0.f, -40.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("CatCafeBackButton", 120.f, 50.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("CatCafeBackButton", 24.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("CatCafeBackButton", 0.15f, 0.2f, 0.3f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("CatCafeBackButton", 0.25f, 0.3f, 0.45f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIVisible("CatCafeBackButton", false);
+
+	// Cat Cafe pagination
+	Zenith_EditorAutomation::AddStep_CreateUIButton("CatCafePrevPage", "<");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("CatCafePrevPage", static_cast<int>(Zenith_UI::AnchorPreset::BottomCenter));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("CatCafePrevPage", -100.f, -40.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("CatCafePrevPage", 60.f, 50.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("CatCafePrevPage", 28.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("CatCafePrevPage", 0.15f, 0.2f, 0.3f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("CatCafePrevPage", 0.25f, 0.3f, 0.45f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIVisible("CatCafePrevPage", false);
+
+	Zenith_EditorAutomation::AddStep_CreateUIButton("CatCafeNextPage", ">");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("CatCafeNextPage", static_cast<int>(Zenith_UI::AnchorPreset::BottomCenter));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("CatCafeNextPage", 100.f, -40.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("CatCafeNextPage", 60.f, 50.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("CatCafeNextPage", 28.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("CatCafeNextPage", 0.15f, 0.2f, 0.3f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("CatCafeNextPage", 0.25f, 0.3f, 0.45f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIVisible("CatCafeNextPage", false);
 
 	// Level select background (starts hidden)
 	Zenith_EditorAutomation::AddStep_CreateUIRect("LevelSelectBg");
@@ -973,6 +1412,52 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("NextLevelBtn", 0.25f, 0.55f, 0.3f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIVisible("NextLevelBtn", false);
 
+	// ---- Victory Overlay UI elements (starts hidden) ----
+
+	// Victory background
+	Zenith_EditorAutomation::AddStep_CreateUIRect("VictoryBg");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("VictoryBg", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("VictoryBg", 0.f, 0.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("VictoryBg", 500.f, 400.f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("VictoryBg", 0.05f, 0.05f, 0.15f, 0.9f);
+	Zenith_EditorAutomation::AddStep_SetUIVisible("VictoryBg", false);
+
+	// Victory title
+	Zenith_EditorAutomation::AddStep_CreateUIText("VictoryTitle", "Level Complete!");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("VictoryTitle", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("VictoryTitle", 0.f, -120.f);
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("VictoryTitle", 56.f);
+	Zenith_EditorAutomation::AddStep_SetUIAlignment("VictoryTitle", static_cast<int>(Zenith_UI::TextAlignment::Center));
+	Zenith_EditorAutomation::AddStep_SetUIColor("VictoryTitle", 1.f, 1.f, 0.5f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIVisible("VictoryTitle", false);
+
+	// Victory stars
+	Zenith_EditorAutomation::AddStep_CreateUIText("VictoryStars", "- - -");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("VictoryStars", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("VictoryStars", 0.f, -50.f);
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("VictoryStars", 72.f);
+	Zenith_EditorAutomation::AddStep_SetUIAlignment("VictoryStars", static_cast<int>(Zenith_UI::TextAlignment::Center));
+	Zenith_EditorAutomation::AddStep_SetUIColor("VictoryStars", 1.f, 0.85f, 0.1f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIVisible("VictoryStars", false);
+
+	// Victory cat text
+	Zenith_EditorAutomation::AddStep_CreateUIText("VictoryCatText", "Cat rescued!");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("VictoryCatText", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("VictoryCatText", 0.f, 20.f);
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("VictoryCatText", 36.f);
+	Zenith_EditorAutomation::AddStep_SetUIAlignment("VictoryCatText", static_cast<int>(Zenith_UI::TextAlignment::Center));
+	Zenith_EditorAutomation::AddStep_SetUIColor("VictoryCatText", 0.9f, 0.7f, 0.5f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIVisible("VictoryCatText", false);
+
+	// Victory coins text
+	Zenith_EditorAutomation::AddStep_CreateUIText("VictoryCoinsText", "+10 coins");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("VictoryCoinsText", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("VictoryCoinsText", 0.f, 70.f);
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("VictoryCoinsText", 32.f);
+	Zenith_EditorAutomation::AddStep_SetUIAlignment("VictoryCoinsText", static_cast<int>(Zenith_UI::TextAlignment::Center));
+	Zenith_EditorAutomation::AddStep_SetUIColor("VictoryCoinsText", 1.f, 0.85f, 0.2f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIVisible("VictoryCoinsText", false);
+
 	// Script
 	Zenith_EditorAutomation::AddStep_AddScript();
 	Zenith_EditorAutomation::AddStep_SetBehaviourForSerialization("TilePuzzle_Behaviour");
@@ -1046,4 +1531,48 @@ void Project_LoadInitialScene()
 	Zenith_SceneManager::RegisterSceneBuildIndex(1, GAME_ASSETS_DIR "Scenes/TilePuzzle" ZENITH_SCENE_EXT);
 	Zenith_SceneManager::RegisterSceneBuildIndex(2, GAME_ASSETS_DIR "Scenes/Pinball" ZENITH_SCENE_EXT);
 	Zenith_SceneManager::LoadSceneByIndex(0, SCENE_LOAD_SINGLE);
+
+#ifdef ZENITH_INPUT_SIMULATOR
+	if (TilePuzzle_HasAutoTestFlag())
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "====================================");
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "TilePuzzle --autotest mode enabled");
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "====================================");
+
+		// Create an entity in the active scene with the autotest behaviour
+		Zenith_Scene xScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xScene);
+
+		Zenith_Entity xTestEntity(pxSceneData, "AutoTestRunner");
+		Zenith_SceneManager::MarkEntityPersistent(xTestEntity);
+		Zenith_ScriptComponent& xScript = xTestEntity.AddComponent<Zenith_ScriptComponent>();
+		xScript.SetBehaviour<TilePuzzle_AutoTest>();
+
+#ifdef ZENITH_TOOLS
+		// Switch editor to Playing mode so SceneManager::Update runs
+		// (Stopped mode skips scene updates, preventing OnStart/OnUpdate)
+		Zenith_Editor::SetEditorMode(EditorMode::Playing);
+#endif
+	}
+#endif
 }
+
+// ============================================================================
+// AutoTest Support
+// ============================================================================
+
+#ifdef ZENITH_INPUT_SIMULATOR
+
+static bool TilePuzzle_HasAutoTestFlag()
+{
+#ifdef ZENITH_WINDOWS
+	for (int i = 1; i < __argc; ++i)
+	{
+		if (strcmp(__argv[i], "--autotest") == 0)
+			return true;
+	}
+#endif
+	return false;
+}
+
+#endif // ZENITH_INPUT_SIMULATOR

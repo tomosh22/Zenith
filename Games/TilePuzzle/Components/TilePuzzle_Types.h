@@ -46,7 +46,9 @@ enum TilePuzzleGameState : uint8_t
 	TILEPUZZLE_STATE_SHAPE_SLIDING,
 	TILEPUZZLE_STATE_CHECK_ELIMINATION,
 	TILEPUZZLE_STATE_LEVEL_COMPLETE,
-	TILEPUZZLE_STATE_LEVEL_SELECT
+	TILEPUZZLE_STATE_LEVEL_SELECT,
+	TILEPUZZLE_STATE_CAT_CAFE,
+	TILEPUZZLE_STATE_VICTORY_OVERLAY
 };
 
 // Shape types (polyomino templates)
@@ -102,6 +104,14 @@ struct TilePuzzleCatData
 	float fEliminationProgress;  // 0.0 to 1.0 for animation
 };
 
+// Solution move (one drag: pick shape, slide to destination)
+struct TilePuzzleSolutionMove
+{
+	uint32_t uShapeIndex;  // Index in the full axShapes array
+	int32_t iEndX;         // Shape origin X after this drag
+	int32_t iEndY;         // Shape origin Y after this drag
+};
+
 // Level data
 struct TilePuzzleLevelData
 {
@@ -111,6 +121,7 @@ struct TilePuzzleLevelData
 	std::vector<TilePuzzleShapeInstance> axShapes;
 	std::vector<TilePuzzleCatData> axCats;
 	uint32_t uMinimumMoves;                      // For scoring
+	std::vector<TilePuzzleSolutionMove> axSolution; // Optimal solution (fewest drag-moves)
 };
 
 // ============================================================================
