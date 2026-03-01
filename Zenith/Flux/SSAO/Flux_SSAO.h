@@ -6,11 +6,20 @@ public:
 	static bool s_bEnabled;
 
 	static void Initialise();
+	static void Shutdown();
 
-	static void Reset();  // Clear state when scene resets (e.g., Play/Stop transitions)
+	static void Reset();
 
 	static void Render(void*);
 
 	static void SubmitRenderTask();
 	static void WaitForRenderTask();
+
+private:
+	static void RenderCompute();
+	static void RenderBlur();
+	static void RenderUpsample();
+
+	static void CreateRenderTargets();
+	static void DestroyRenderTargets();
 };

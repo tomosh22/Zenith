@@ -51,7 +51,9 @@ enum RenderOrder
 	RENDER_ORDER_APPLY_LIGHTING,
 	RENDER_ORDER_POINT_LIGHTS,
 	RENDER_ORDER_WATER,
-	RENDER_ORDER_SSAO,
+	RENDER_ORDER_SSAO,                // Half-res SSAO occlusion generation
+	RENDER_ORDER_SSAO_BLUR,           // Half-res bilateral blur
+	RENDER_ORDER_SSAO_UPSAMPLE,       // Bilateral upsample + HDR composite
 	RENDER_ORDER_VOLUMEFOG_INJECT,    // Volumetric fog density injection (compute)
 	RENDER_ORDER_VOLUMEFOG_LIGHT,     // Volumetric fog lighting pass (compute)
 	RENDER_ORDER_VOLUMEFOG_TEMPORAL,  // Volumetric fog temporal resolve (compute)
@@ -93,8 +95,9 @@ enum TextureFormat
 	TEXTURE_FORMAT_BC3_RGBA_UNORM,     // 8 bits/pixel, RGB + smooth alpha (4:1 compression)
 	TEXTURE_FORMAT_BC5_RG_UNORM,       // 8 bits/pixel, RG only, ideal for normal maps (4:1 compression)
 	TEXTURE_FORMAT_BC7_RGBA_UNORM,     // 8 bits/pixel, high quality RGBA (4:1 compression)
-	// Single-channel formats (for heightmaps) - added at end for backwards compatibility
-	TEXTURE_FORMAT_R16_UNORM,          // 16-bit unsigned normalized
+	// Single-channel formats
+	TEXTURE_FORMAT_R8_UNORM,           // 8-bit unsigned normalized (SSAO, masks)
+	TEXTURE_FORMAT_R16_UNORM,          // 16-bit unsigned normalized (heightmaps)
 	TEXTURE_FORMAT_R32_SFLOAT,         // 32-bit float
 	TEXTURE_FORMAT_R16G16_SFLOAT,      // 32-bit RG float (for BRDF LUT, etc.)
 	TEXTURE_FORMAT_COLOUR_END,/////////////////////////

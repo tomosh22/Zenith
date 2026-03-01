@@ -77,7 +77,7 @@ void Flux::LateInitialise()
 {
 	// Subsystem dependency graph (A -> B means A must init before B):
 	//
-	// MemoryManager -> Swapchain -> SlangCompiler -> Graphics
+	// MemoryManager -> SlangCompiler -> Swapchain -> Graphics
 	// Graphics -> HDR -> DeferredShading
 	// Graphics -> Shadows, Skybox, StaticMeshes, AnimatedMeshes, InstancedMeshes, Primitives
 	// Skybox -> IBL (environment probes use skybox cubemap)
@@ -90,12 +90,13 @@ void Flux::LateInitialise()
 	// Independent (no ordering constraint): SSAO, Fog, SDFs, Particles, Quads, Text
 
 	Flux_MemoryManager::BeginFrame();
-	Flux_Swapchain::Initialise();
 
 #ifdef ZENITH_WINDOWS
-	// Initialize Slang compiler for runtime compilation (Windows only)
+	// Initialize Slang compiler before any shader loading
 	Flux_SlangCompiler::Initialise();
 #endif
+
+	Flux_Swapchain::Initialise();
 
 	Flux_Graphics::Initialise();
 	Flux_HDR::Initialise();  // Must be before DeferredShading - deferred renders to HDR target
@@ -131,13 +132,14 @@ void Flux::Shutdown()
 {
 	// Shutdown Flux subsystems in REVERSE order of initialization
 	// This ensures dependencies are destroyed after their dependents
-	// NOTE: Some subsystems (Fog, SSAO, DeferredShading, Primitives, AnimatedMeshes, StaticMeshes)
+	// NOTE: Some subsystems (Fog, DeferredShading, Primitives, AnimatedMeshes, StaticMeshes)
 	// don't have Shutdown() methods - they rely on RAII or are stateless
 	Flux_Text::Shutdown();
 	Flux_Quads::Shutdown();
 	Flux_Particles::Shutdown();
 	Flux_SDFs::Shutdown();
-	// Flux_Fog, Flux_SSAO, Flux_DeferredShading, Flux_Primitives - no Shutdown() methods
+	// Flux_Fog, Flux_DeferredShading, Flux_Primitives - no Shutdown() methods
+	Flux_SSAO::Shutdown();           // SSAO render targets
 	Flux_DynamicLights::Shutdown();  // Dynamic lights (after DeferredShading in init order)
 	Flux_SSGI::Shutdown();         // Before HiZ (SSGI uses Hi-Z)
 	Flux_SSR::Shutdown();          // Before HiZ (SSR uses Hi-Z)
