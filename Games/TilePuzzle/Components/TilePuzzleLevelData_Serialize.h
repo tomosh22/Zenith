@@ -12,6 +12,7 @@
 
 static constexpr uint32_t s_uTLVL_MAGIC = 0x54504C56; // "TPLV"
 static constexpr uint32_t s_uTLVL_VERSION = 2;
+static constexpr uint32_t s_uMETA_MAGIC = 0x4D455441; // "META" - metadata header from TilePuzzleLevelGen
 
 namespace TilePuzzleLevelSerialize
 {
@@ -100,9 +101,25 @@ namespace TilePuzzleLevelSerialize
 	{
 		axShapeDefsOut.clear();
 
-		// Header
+		// Header - skip META header from TilePuzzleLevelGen if present
 		uint32_t uMagic, uVersion;
 		xStream >> uMagic;
+		if (uMagic == s_uMETA_MAGIC)
+		{
+			// Skip metadata: version + 11 uint32_t fields + 1 uint64_t
+			uint32_t uMetaVersion;
+			xStream >> uMetaVersion;
+			for (uint32_t i = 0; i < 11; ++i)
+			{
+				uint32_t uSkip;
+				xStream >> uSkip;
+			}
+			uint64_t ulSkip;
+			xStream >> ulSkip;
+
+			// Now read the real TPLV magic
+			xStream >> uMagic;
+		}
 		xStream >> uVersion;
 		if (uMagic != s_uTLVL_MAGIC || uVersion > s_uTLVL_VERSION)
 			return false;

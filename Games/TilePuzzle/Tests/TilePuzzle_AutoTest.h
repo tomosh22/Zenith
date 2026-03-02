@@ -18,6 +18,7 @@
 #include "Input/Zenith_InputSimulator.h"
 #include "Input/Zenith_KeyCodes.h"
 #include "TilePuzzle/Components/TilePuzzle_Behaviour.h"
+#include "TilePuzzle/Components/Pinball_Behaviour.h"
 #include "TilePuzzle/Components/TilePuzzle_Types.h"
 #include "TilePuzzle/Components/TilePuzzle_Rules.h"
 #include "TilePuzzle/Components/TilePuzzle_Solver.h"
@@ -54,13 +55,19 @@ public:
 		PHASE_TEST_PINBALL_GATES,
 		PHASE_TEST_SAVE_LOAD,
 		PHASE_TEST_COIN_SYSTEM,
-		// Visual puzzle test (keyboard input, multi-frame)
-		PHASE_VISUAL_PUZZLE_START,
-		PHASE_VISUAL_PUZZLE_WAIT_FOR_PLAYING,
-		PHASE_VISUAL_PUZZLE_COMPUTE_SOLUTION,
-		PHASE_VISUAL_PUZZLE_SELECT_AND_MOVE,
-		PHASE_VISUAL_PUZZLE_WAIT_SETTLE,
-		PHASE_VISUAL_PUZZLE_CHECK_COMPLETE,
+		// Full-game test (plays ALL levels + pinball gates)
+		PHASE_FULL_GAME_RESET_SAVE,
+		PHASE_FULL_GAME_WAIT_PLAYING,
+		PHASE_FULL_GAME_COMPUTE_SOLUTION,
+		PHASE_FULL_GAME_SELECT_AND_MOVE,
+		PHASE_FULL_GAME_WAIT_SETTLE,
+		PHASE_FULL_GAME_CHECK_COMPLETE,
+		PHASE_FULL_GAME_NEXT_LEVEL,
+		PHASE_FULL_GAME_PINBALL_ENTER,
+		PHASE_FULL_GAME_PINBALL_WAIT,
+		PHASE_FULL_GAME_PINBALL_CLEAR,
+		PHASE_FULL_GAME_PINBALL_RETURN,
+		PHASE_FULL_GAME_VERIFY,
 		// Summary
 		PHASE_COMPLETE,
 		PHASE_DONE
@@ -139,71 +146,48 @@ public:
 
 		case PHASE_TEST_COIN_SYSTEM:
 			RunSingleTest("Test_CoinSystem", &Test_CoinSystem);
-			m_ePhase = PHASE_VISUAL_PUZZLE_START;
+			m_ePhase = PHASE_FULL_GAME_RESET_SAVE;
 			m_uFrameDelay = 5;
 			break;
 
 		// ==============================================================
-		// Visual puzzle test - plays a real level using simulated touch
+		// Full-game test - plays ALL levels + pinball gates
 		// ==============================================================
-		case PHASE_VISUAL_PUZZLE_START:
-			UpdateVisualPuzzle_Start();
+		case PHASE_FULL_GAME_RESET_SAVE:
+			UpdateFullGame_ResetSave();
 			break;
-		case PHASE_VISUAL_PUZZLE_WAIT_FOR_PLAYING:
-			UpdateVisualPuzzle_WaitForPlaying();
+		case PHASE_FULL_GAME_WAIT_PLAYING:
+			UpdateFullGame_WaitForPlaying();
 			break;
-		case PHASE_VISUAL_PUZZLE_COMPUTE_SOLUTION:
-		{
-			const TilePuzzleLevelData& xLevel = m_pxPuzzleBehaviour->m_xCurrentLevel;
-			Zenith_Log(LOG_CATEGORY_UNITTEST, "  Grid: %ux%u, Shapes: %u, Cats: %u, Par: %u",
-				xLevel.uGridWidth, xLevel.uGridHeight,
-				static_cast<uint32_t>(xLevel.axShapes.size()),
-				static_cast<uint32_t>(xLevel.axCats.size()),
-				xLevel.uMinimumMoves);
-
-			// Use pre-computed solution as primary plan
-			const TilePuzzleLevelData& xLvl = m_pxPuzzleBehaviour->m_xCurrentLevel;
-			if (xLvl.axSolution.empty())
-			{
-				Zenith_Log(LOG_CATEGORY_UNITTEST, "  No pre-computed solution, computing live...");
-				ResolveFromCurrentState();
-			}
-			else
-			{
-				m_axLiveSolution = xLvl.axSolution;
-			}
-			if (m_axLiveSolution.empty())
-			{
-				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Solver could not find a solution");
-				Zenith_Log(LOG_CATEGORY_UNITTEST, "[AutoTest] FAIL: Test_VisualPuzzle_TouchSolve");
-				m_uFailed++;
-				Zenith_InputSimulator::Disable();
-				m_ePhase = PHASE_COMPLETE;
-				break;
-			}
-
-			Zenith_Log(LOG_CATEGORY_UNITTEST, "  Solution has %u drag moves", static_cast<uint32_t>(m_axLiveSolution.size()));
-			for (uint32_t i = 0; i < static_cast<uint32_t>(m_axLiveSolution.size()); ++i)
-			{
-				const auto& xM = m_axLiveSolution[i];
-				const auto& xS = xLvl.axShapes[xM.uShapeIndex];
-				Zenith_Log(LOG_CATEGORY_UNITTEST, "    Move %u: shape %u (%d,%d)->(%d,%d) color=%u",
-					i + 1, xM.uShapeIndex, xS.iOriginX, xS.iOriginY, xM.iEndX, xM.iEndY,
-					static_cast<uint32_t>(xS.eColor));
-			}
-			m_uCurrentDragIndex = 0;
-			m_ePhase = PHASE_VISUAL_PUZZLE_SELECT_AND_MOVE;
-			m_uFrameDelay = 2;
+		case PHASE_FULL_GAME_COMPUTE_SOLUTION:
+			UpdateFullGame_ComputeSolution();
 			break;
-		}
-		case PHASE_VISUAL_PUZZLE_SELECT_AND_MOVE:
-			UpdateVisualPuzzle_SelectAndMove();
+		case PHASE_FULL_GAME_SELECT_AND_MOVE:
+			UpdateFullGame_SelectAndMove();
 			break;
-		case PHASE_VISUAL_PUZZLE_WAIT_SETTLE:
-			UpdateVisualPuzzle_WaitSettle();
+		case PHASE_FULL_GAME_WAIT_SETTLE:
+			UpdateFullGame_WaitSettle();
 			break;
-		case PHASE_VISUAL_PUZZLE_CHECK_COMPLETE:
-			UpdateVisualPuzzle_CheckComplete();
+		case PHASE_FULL_GAME_CHECK_COMPLETE:
+			UpdateFullGame_CheckComplete();
+			break;
+		case PHASE_FULL_GAME_NEXT_LEVEL:
+			UpdateFullGame_NextLevel();
+			break;
+		case PHASE_FULL_GAME_PINBALL_ENTER:
+			UpdateFullGame_PinballEnter();
+			break;
+		case PHASE_FULL_GAME_PINBALL_WAIT:
+			UpdateFullGame_PinballWait();
+			break;
+		case PHASE_FULL_GAME_PINBALL_CLEAR:
+			UpdateFullGame_PinballClear();
+			break;
+		case PHASE_FULL_GAME_PINBALL_RETURN:
+			UpdateFullGame_PinballReturn();
+			break;
+		case PHASE_FULL_GAME_VERIFY:
+			UpdateFullGame_Verify();
 			break;
 
 		case PHASE_COMPLETE:
@@ -237,23 +221,40 @@ private:
 	uint32_t m_uFrameDelay = 0;
 
 	// ========================================================================
-	// Visual puzzle test state
+	// Full-game test state
 	// ========================================================================
 	TilePuzzle_Behaviour* m_pxPuzzleBehaviour = nullptr;
 
-	// Solution replay state
-	uint32_t m_uCurrentDragIndex = 0;     // Index into live solution
-	uint32_t m_uTotalCellMoves = 0;       // Total single-cell moves executed
-	uint32_t m_uTotalMovesExecuted = 0;   // Total drag moves completed
+	// Full-game progression
+	uint32_t m_uFullGameLevelCount = 0;       // Total available levels
+	uint32_t m_uFullGameCurrentLevel = 0;     // Current level being played (1-based)
+	uint32_t m_uFullGameNextGate = 0;         // Next pinball gate to clear (0-based)
+	uint32_t m_uFullGameLevelsCompleted = 0;  // Counter for reporting
+	uint32_t m_uFullGameGatesCleared = 0;     // Counter for reporting
+
+	// Per-level solution replay state
+	uint32_t m_uTotalCellMoves = 0;       // Total single-cell moves for current level
 	uint32_t m_uWaitFrames = 0;
 	uint32_t m_uResolvesUsed = 0;         // How many times we re-solved
 
-	// Live solution (re-computed from current game state when needed)
+	// Full solution from solver: ALL moves, not just the first
 	std::vector<TilePuzzleSolutionMove> m_axLiveSolution;
+	uint32_t m_uCurrentSolutionMoveIndex = 0; // Which move in the solution we're currently executing
+	TilePuzzleLevelData m_xCleanLevel;    // Clean level used for BFS path finding (solver's expected state)
+	TilePuzzleLevelData m_xSolverCleanLevel; // Clean level at solve time (updated to track solver's state)
+	uint32_t m_uSolverPreviousMask = 0;  // Cumulative elimination mask from solver's perspective
+	uint32_t m_uCurrentTargetShape = 0;   // Shape index in ORIGINAL level for TryMoveShape
+	uint32_t m_uCleanTargetShape = 0;     // Shape index in CLEAN level for BFS path finding
+	int32_t m_iCurrentTargetX = 0;        // Target X for current outer move
+	int32_t m_iCurrentTargetY = 0;        // Target Y for current outer move
 
-	// Pre-computed cell path for current drag
-	static constexpr uint32_t uMAX_PATH_LENGTH = 64;
-	TilePuzzleDirection m_aeCellPath[uMAX_PATH_LENGTH];
+	// Mapping from original shape index to clean level index (built at solve time, stable for full chain)
+	uint32_t m_auOrigToClean[16];
+	uint32_t m_uOrigToCleanCount = 0;
+
+	// Cell-by-cell path from BFS (for current outer move)
+	static constexpr uint32_t uMAX_CELL_PATH = 128;
+	TilePuzzleDirection m_aeCellPath[uMAX_CELL_PATH];
 	uint32_t m_uCellPathLength = 0;
 	uint32_t m_uCellPathIndex = 0;
 
@@ -306,47 +307,64 @@ private:
 		return nullptr;
 	}
 
-	// Start: trigger "Continue" to load a puzzle level
-	void UpdateVisualPuzzle_Start()
+	// ========================================================================
+	// Full-Game Test: Reset save and start from level 1
+	// ========================================================================
+	void UpdateFullGame_ResetSave()
 	{
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "[AutoTest] Running Test_VisualPuzzle_TouchSolve...");
-		Zenith_Log(LOG_CATEGORY_UNITTEST, "  Starting puzzle level via Continue...");
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "[AutoTest] Running Test_FullGame...");
 
-		// Enable the input simulator so Zenith_Input reads from simulated state
 		Zenith_InputSimulator::Enable();
 
 		m_pxPuzzleBehaviour = FindPuzzleBehaviour();
 		if (!m_pxPuzzleBehaviour)
 		{
 			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Could not find TilePuzzle_Behaviour on GameManager");
-			Zenith_Log(LOG_CATEGORY_UNITTEST, "[AutoTest] FAIL: Test_VisualPuzzle_TouchSolve");
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "[AutoTest] FAIL: Test_FullGame");
 			m_uFailed++;
 			Zenith_InputSimulator::Disable();
 			m_ePhase = PHASE_COMPLETE;
 			return;
 		}
 
-		// Ensure we have lives and start from level 1
-		m_pxPuzzleBehaviour->m_xSaveData.uLives = TilePuzzleSaveData::uMAX_LIVES;
+		// Reset save data for clean full-game run
+		m_pxPuzzleBehaviour->m_xSaveData.Reset();
+		Zenith_SaveData::Save("autosave", TilePuzzleSaveData::uGAME_SAVE_VERSION,
+			TilePuzzle_WriteSaveData, &m_pxPuzzleBehaviour->m_xSaveData);
+
+		m_uFullGameLevelCount = m_pxPuzzleBehaviour->m_uAvailableLevelCount;
+		Zenith_Assert(m_uFullGameLevelCount >= TilePuzzleSaveData::uMAX_LEVELS,
+			"Not enough levels: %u/%u", m_uFullGameLevelCount, TilePuzzleSaveData::uMAX_LEVELS);
+
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "  Available levels: %u", m_uFullGameLevelCount);
+
+		// Start from level 1
 		m_pxPuzzleBehaviour->m_uCurrentLevelNumber = 1;
 		m_pxPuzzleBehaviour->m_xSaveData.uCurrentLevel = 1;
-
-		// Directly call StartGame to load the puzzle scene
+		m_pxPuzzleBehaviour->m_xSaveData.uLives = TilePuzzleSaveData::uMAX_LIVES;
 		m_pxPuzzleBehaviour->StartGame();
 
+		m_uFullGameCurrentLevel = 1;
+		m_uFullGameNextGate = 0;
+		m_uFullGameLevelsCompleted = 0;
+		m_uFullGameGatesCleared = 0;
+		ResetPerLevelState();
+		m_ePhase = PHASE_FULL_GAME_WAIT_PLAYING;
+	}
+
+	void ResetPerLevelState()
+	{
 		m_uWaitFrames = 0;
-		m_uTotalMovesExecuted = 0;
 		m_uTotalCellMoves = 0;
-		m_uCurrentDragIndex = 0;
+		m_uResolvesUsed = 0;
 		m_uCellPathLength = 0;
 		m_uCellPathIndex = 0;
-		m_uResolvesUsed = 0;
 		m_axLiveSolution.clear();
-		m_ePhase = PHASE_VISUAL_PUZZLE_WAIT_FOR_PLAYING;
+		m_uCurrentSolutionMoveIndex = 0;
 	}
 
 	// Wait for the puzzle to be in PLAYING state
-	void UpdateVisualPuzzle_WaitForPlaying()
+	void UpdateFullGame_WaitForPlaying()
 	{
 		m_pxPuzzleBehaviour = FindPuzzleBehaviour();
 		if (!m_pxPuzzleBehaviour)
@@ -354,8 +372,9 @@ private:
 			m_uWaitFrames++;
 			if (m_uWaitFrames > 120)
 			{
-				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Timed out waiting for GameManager after scene load");
-				Zenith_Log(LOG_CATEGORY_UNITTEST, "[AutoTest] FAIL: Test_VisualPuzzle_TouchSolve");
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Timed out waiting for GameManager (level %u)",
+					m_uFullGameCurrentLevel);
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "[AutoTest] FAIL: Test_FullGame");
 				m_uFailed++;
 				Zenith_InputSimulator::Disable();
 				m_ePhase = PHASE_COMPLETE;
@@ -365,20 +384,227 @@ private:
 
 		if (m_pxPuzzleBehaviour->m_eState == TILEPUZZLE_STATE_PLAYING)
 		{
-			Zenith_Log(LOG_CATEGORY_UNITTEST, "  Puzzle level loaded, state=PLAYING");
-			m_ePhase = PHASE_VISUAL_PUZZLE_COMPUTE_SOLUTION;
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  Level %u loaded, state=PLAYING", m_uFullGameCurrentLevel);
+			m_ePhase = PHASE_FULL_GAME_COMPUTE_SOLUTION;
 			return;
 		}
 
 		m_uWaitFrames++;
 		if (m_uWaitFrames > 120)
 		{
-			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Timed out waiting for PLAYING state (state=%u)", m_pxPuzzleBehaviour->m_eState);
-			Zenith_Log(LOG_CATEGORY_UNITTEST, "[AutoTest] FAIL: Test_VisualPuzzle_TouchSolve");
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Timed out waiting for PLAYING state (level %u, state=%u)",
+				m_uFullGameCurrentLevel, m_pxPuzzleBehaviour->m_eState);
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "[AutoTest] FAIL: Test_FullGame");
 			m_uFailed++;
 			Zenith_InputSimulator::Disable();
 			m_ePhase = PHASE_COMPLETE;
 		}
+	}
+
+	// Build a clean level from the current game state (no removed shapes, no eliminated cats)
+	// and populate the original→clean index mapping.
+	void BuildCleanLevelFromCurrentState()
+	{
+		const TilePuzzleLevelData& xOriginal = m_pxPuzzleBehaviour->m_xCurrentLevel;
+
+		m_xCleanLevel = TilePuzzleLevelData();
+		m_xCleanLevel.uGridWidth = xOriginal.uGridWidth;
+		m_xCleanLevel.uGridHeight = xOriginal.uGridHeight;
+		m_xCleanLevel.aeCells = xOriginal.aeCells;
+		m_xCleanLevel.uMinimumMoves = 0;
+
+		memset(m_auOrigToClean, 0xFF, sizeof(m_auOrigToClean));
+		m_uOrigToCleanCount = 0;
+
+		for (size_t i = 0; i < xOriginal.axShapes.size(); ++i)
+		{
+			const TilePuzzleShapeInstance& xs = xOriginal.axShapes[i];
+			if (xs.bRemoved)
+				continue;
+			uint32_t uCleanIdx = static_cast<uint32_t>(m_xCleanLevel.axShapes.size());
+			if (i < 16)
+				m_auOrigToClean[i] = uCleanIdx;
+			m_uOrigToCleanCount++;
+			m_xCleanLevel.axShapes.push_back(xs);
+		}
+
+		for (const auto& xCat : xOriginal.axCats)
+		{
+			if (!xCat.bEliminated)
+				m_xCleanLevel.axCats.push_back(xCat);
+		}
+	}
+
+	void UpdateFullGame_ComputeSolution()
+	{
+		const TilePuzzleLevelData& xLevel = m_pxPuzzleBehaviour->m_xCurrentLevel;
+
+		// Log level info only on first solve for this level
+		if (m_uResolvesUsed == 0)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  Level %u: Grid %ux%u, Shapes: %u, Cats: %u, Par: %u",
+				m_uFullGameCurrentLevel,
+				xLevel.uGridWidth, xLevel.uGridHeight,
+				static_cast<uint32_t>(xLevel.axShapes.size()),
+				static_cast<uint32_t>(xLevel.axCats.size()),
+				xLevel.uMinimumMoves);
+		}
+
+		// Safety limit: prevent infinite re-solve loops
+		if (m_uResolvesUsed >= 100)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Re-solve limit reached (level %u, %u re-solves)",
+				m_uFullGameCurrentLevel, m_uResolvesUsed);
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "[AutoTest] FAIL: Test_FullGame");
+			m_uFailed++;
+			Zenith_InputSimulator::Disable();
+			m_ePhase = PHASE_COMPLETE;
+			return;
+		}
+
+		// If we still have moves remaining from a previous solve, try each one
+		// Skip moves whose cell paths fail (intermediate state may have diverged)
+		while (m_uCurrentSolutionMoveIndex < static_cast<uint32_t>(m_axLiveSolution.size()))
+		{
+			if (SetupNextSolutionMove())
+				return;
+			// Cell path failed — skip this move and try the next one
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "    Cell path failed for move %u/%u, skipping",
+				m_uCurrentSolutionMoveIndex, static_cast<uint32_t>(m_axLiveSolution.size()));
+		}
+
+		// Re-solve from current board state
+		ResolveFromCurrentState();
+		m_uCurrentSolutionMoveIndex = 0;
+
+		if (m_axLiveSolution.empty())
+		{
+			uint32_t uAlive = 0;
+			for (const auto& xC : xLevel.axCats) if (!xC.bEliminated) uAlive++;
+			if (uAlive > 0)
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "    solve#%u: EMPTY solution (cats_alive=%u)", m_uResolvesUsed, uAlive);
+			m_uWaitFrames = 0;
+			m_ePhase = PHASE_FULL_GAME_CHECK_COMPLETE;
+			return;
+		}
+
+		// Log solve info
+		if (m_uResolvesUsed <= 5 || m_uResolvesUsed % 10 == 0)
+		{
+			uint32_t uAlive = 0;
+			for (const auto& xC : xLevel.axCats) if (!xC.bEliminated) uAlive++;
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "    solve#%u: cats_alive=%u sol_len=%u",
+				m_uResolvesUsed, uAlive, static_cast<uint32_t>(m_axLiveSolution.size()));
+		}
+
+		// Try each move in the fresh solution until one succeeds
+		bool bFoundMove = false;
+		while (m_uCurrentSolutionMoveIndex < static_cast<uint32_t>(m_axLiveSolution.size()))
+		{
+			if (SetupNextSolutionMove())
+			{
+				bFoundMove = true;
+				break;
+			}
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "    Cell path failed for move %u/%u of solve#%u, skipping",
+				m_uCurrentSolutionMoveIndex, static_cast<uint32_t>(m_axLiveSolution.size()), m_uResolvesUsed);
+		}
+		if (!bFoundMove)
+		{
+			// All moves in fresh solve failed — wait and retry
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "    All moves failed for solve#%u, will retry", m_uResolvesUsed);
+			m_axLiveSolution.clear();
+			m_uFrameDelay = 5;
+		}
+	}
+
+	// Set up the next move from the current solution. Returns true if cell path was found.
+	bool SetupNextSolutionMove()
+	{
+		const TilePuzzleLevelData& xLevel = m_pxPuzzleBehaviour->m_xCurrentLevel;
+		const TilePuzzleSolutionMove& xMove = m_axLiveSolution[m_uCurrentSolutionMoveIndex];
+		m_uCurrentSolutionMoveIndex++;
+
+		m_uCurrentTargetShape = xMove.uShapeIndex;
+		m_iCurrentTargetX = xMove.iEndX;
+		m_iCurrentTargetY = xMove.iEndY;
+
+		// Check if the target shape is still valid (not removed in game)
+		if (m_uCurrentTargetShape >= static_cast<uint32_t>(xLevel.axShapes.size()) ||
+			xLevel.axShapes[m_uCurrentTargetShape].bRemoved)
+		{
+			return false;
+		}
+
+		// Map original shape index to clean level index (mapping built at solve time)
+		if (m_uCurrentTargetShape < 16)
+			m_uCleanTargetShape = m_auOrigToClean[m_uCurrentTargetShape];
+		else
+			return false;
+
+		if (m_uCleanTargetShape == UINT32_MAX)
+			return false;
+
+		// Use the SOLVER'S clean level (tracks solver's expected state, not game state).
+		// This ensures FindSolverInnerPath finds the exact same cell path the solver planned.
+		// Pass the required elimination mask so we match the solver's expected cat eliminations.
+		int32_t iPathLen = FindSolverInnerPath(m_xSolverCleanLevel, m_uCleanTargetShape,
+			m_iCurrentTargetX, m_iCurrentTargetY, m_aeCellPath, uMAX_CELL_PATH,
+			xMove.uExpectedElimMask);
+
+		if (iPathLen < 0)
+		{
+			const TilePuzzleShapeInstance& xShape = xLevel.axShapes[m_uCurrentTargetShape];
+			bool bRoundTrip = (xShape.iOriginX == m_iCurrentTargetX &&
+				xShape.iOriginY == m_iCurrentTargetY);
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "    No cell path for shape %u (%d,%d)->(%d,%d) mask=0x%X%s",
+				m_uCurrentTargetShape, xShape.iOriginX, xShape.iOriginY,
+				m_iCurrentTargetX, m_iCurrentTargetY, xMove.uExpectedElimMask,
+				bRoundTrip ? " [round-trip]" : "");
+			return false;
+		}
+
+		// Update solver's clean level to reflect this move's result
+		// (so next move's BFS starts from the correct state)
+		m_xSolverCleanLevel.axShapes[m_uCleanTargetShape].iOriginX = m_iCurrentTargetX;
+		m_xSolverCleanLevel.axShapes[m_uCleanTargetShape].iOriginY = m_iCurrentTargetY;
+
+		// Mark newly eliminated cats and removed shapes in solver's clean level
+		uint32_t uNewlyElim = xMove.uExpectedElimMask & ~m_uSolverPreviousMask;
+		if (uNewlyElim != 0)
+		{
+			for (size_t ci = 0; ci < m_xSolverCleanLevel.axCats.size(); ++ci)
+			{
+				if (uNewlyElim & (1u << ci))
+					m_xSolverCleanLevel.axCats[ci].bEliminated = true;
+			}
+			// Check for shape removal (all cats of a color eliminated)
+			for (size_t si = 0; si < m_xSolverCleanLevel.axShapes.size(); ++si)
+			{
+				TilePuzzleShapeInstance& xs = m_xSolverCleanLevel.axShapes[si];
+				if (!xs.pxDefinition || !xs.pxDefinition->bDraggable || xs.bRemoved)
+					continue;
+				bool bAllElim = true;
+				for (size_t ci = 0; ci < m_xSolverCleanLevel.axCats.size(); ++ci)
+				{
+					if (m_xSolverCleanLevel.axCats[ci].eColor == xs.eColor &&
+						!m_xSolverCleanLevel.axCats[ci].bEliminated)
+					{
+						bAllElim = false;
+						break;
+					}
+				}
+				if (bAllElim) xs.bRemoved = true;
+			}
+		}
+		m_uSolverPreviousMask = xMove.uExpectedElimMask;
+
+		m_uCellPathLength = static_cast<uint32_t>(iPathLen);
+		m_uCellPathIndex = 0;
+
+		m_ePhase = PHASE_FULL_GAME_SELECT_AND_MOVE;
+		m_uFrameDelay = 1;
+		return true;
 	}
 
 
@@ -399,6 +625,7 @@ private:
 	// Re-solve from the current game state using BFS solver.
 	// Creates a clean level copy (without eliminated cats or removed shapes),
 	// solves it, then maps the solution indices back to the original level.
+	// Stores the FULL solution so we can execute all moves before re-solving.
 	void ResolveFromCurrentState()
 	{
 		const TilePuzzleLevelData& xOriginal = m_pxPuzzleBehaviour->m_xCurrentLevel;
@@ -435,34 +662,45 @@ private:
 		std::vector<TilePuzzleSolutionMove> axSolution;
 		TilePuzzle_Solver::SolveLevelWithPath(xClean, axSolution);
 
-		// Map solution indices back to original level's shape array
+		// Store the solver's clean level for cell path BFS (updated as moves execute)
+		m_xSolverCleanLevel = xClean;
+		m_uSolverPreviousMask = 0;
+
+		// Build orig→clean index mapping (stable for the full solution chain)
+		memset(m_auOrigToClean, 0xFF, sizeof(m_auOrigToClean));
+		m_uOrigToCleanCount = 0;
+		for (uint32_t i = 0; i < uShapeMapCount && i < 16; ++i)
+		{
+			m_auOrigToClean[auShapeMap[i]] = i;
+			m_uOrigToCleanCount++;
+		}
+
+		// Map solution from clean level indices to original level indices
 		m_axLiveSolution.clear();
 		for (const auto& xMove : axSolution)
 		{
 			TilePuzzleSolutionMove xMapped;
-			// xMove.uShapeIndex is the full index in the CLEAN shapes array
 			if (xMove.uShapeIndex < uShapeMapCount)
 				xMapped.uShapeIndex = auShapeMap[xMove.uShapeIndex];
 			else
-				xMapped.uShapeIndex = xMove.uShapeIndex; // fallback
+				xMapped.uShapeIndex = xMove.uShapeIndex;
 			xMapped.iEndX = xMove.iEndX;
 			xMapped.iEndY = xMove.iEndY;
+			xMapped.uExpectedElimMask = xMove.uExpectedElimMask;
 			m_axLiveSolution.push_back(xMapped);
 		}
 
-		m_uCurrentDragIndex = 0;
-		m_uCellPathLength = 0;
-		m_uCellPathIndex = 0;
 		m_uResolvesUsed++;
 	}
 
-	void UpdateVisualPuzzle_SelectAndMove()
+	void UpdateFullGame_SelectAndMove()
 	{
 		m_pxPuzzleBehaviour = FindPuzzleBehaviour();
 		if (!m_pxPuzzleBehaviour)
 		{
-			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Lost reference to puzzle behaviour");
-			Zenith_Log(LOG_CATEGORY_UNITTEST, "[AutoTest] FAIL: Test_VisualPuzzle_TouchSolve");
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Lost reference to puzzle behaviour (level %u)",
+				m_uFullGameCurrentLevel);
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "[AutoTest] FAIL: Test_FullGame");
 			m_uFailed++;
 			m_ePhase = PHASE_COMPLETE;
 			return;
@@ -471,40 +709,31 @@ private:
 		if (m_pxPuzzleBehaviour->m_eState == TILEPUZZLE_STATE_LEVEL_COMPLETE ||
 			m_pxPuzzleBehaviour->m_eState == TILEPUZZLE_STATE_VICTORY_OVERLAY)
 		{
-			m_ePhase = PHASE_VISUAL_PUZZLE_CHECK_COMPLETE;
+			m_uWaitFrames = 0;
+			m_ePhase = PHASE_FULL_GAME_CHECK_COMPLETE;
 			return;
 		}
 
 		if (m_pxPuzzleBehaviour->m_eState != TILEPUZZLE_STATE_PLAYING)
-		{
 			return;
-		}
 
-		const TilePuzzleLevelData& xLevel = m_pxPuzzleBehaviour->m_xCurrentLevel;
-
-		if (m_uCurrentDragIndex >= static_cast<uint32_t>(m_axLiveSolution.size()))
+		if (m_uTotalCellMoves >= 10000)
 		{
-			m_ePhase = PHASE_VISUAL_PUZZLE_CHECK_COMPLETE;
-			return;
-		}
-
-		if (m_uTotalCellMoves >= 2000)
-		{
-			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Exceeded 2000 cell moves");
-			Zenith_Log(LOG_CATEGORY_UNITTEST, "[AutoTest] FAIL: Test_VisualPuzzle_TouchSolve");
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Exceeded 10000 cell moves (level %u)", m_uFullGameCurrentLevel);
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "[AutoTest] FAIL: Test_FullGame");
 			m_uFailed++;
 			Zenith_InputSimulator::Disable();
 			m_ePhase = PHASE_COMPLETE;
 			return;
 		}
 
-		const TilePuzzleSolutionMove& xDrag = m_axLiveSolution[m_uCurrentDragIndex];
-		uint32_t uShapeIdx = xDrag.uShapeIndex;
+		const TilePuzzleLevelData& xLevel = m_pxPuzzleBehaviour->m_xCurrentLevel;
+		uint32_t uShapeIdx = m_uCurrentTargetShape;
 
 		if (uShapeIdx >= static_cast<uint32_t>(xLevel.axShapes.size()))
 		{
-			Zenith_Log(LOG_CATEGORY_UNITTEST, "  Invalid shape index %u, skipping drag", uShapeIdx);
-			m_uCurrentDragIndex++;
+			m_ePhase = PHASE_FULL_GAME_COMPUTE_SOLUTION;
+			m_uFrameDelay = 2;
 			return;
 		}
 
@@ -512,114 +741,66 @@ private:
 
 		if (xShape.bRemoved)
 		{
-			Zenith_Log(LOG_CATEGORY_UNITTEST, "  Drag %u: shape %u removed, skipping",
-				m_uCurrentDragIndex + 1, uShapeIdx);
-			m_uCurrentDragIndex++;
-			m_uCellPathLength = 0;
-			m_uCellPathIndex = 0;
+			// Shape was removed during elimination — continue to next solution move
+			m_ePhase = PHASE_FULL_GAME_COMPUTE_SOLUTION;
+			m_uFrameDelay = 2;
 			return;
 		}
 
-		int32_t iTargetX = xDrag.iEndX;
-		int32_t iTargetY = xDrag.iEndY;
-
-		// If we completed a cell path for a previous drag, check if shape reached target
-		if (m_uCellPathLength > 0 && m_uCellPathIndex >= m_uCellPathLength)
-		{
-			// Previous cell path was consumed - advance to next drag
-			Zenith_Log(LOG_CATEGORY_UNITTEST, "  Drag %u complete: shape %u now at (%d,%d)",
-				m_uCurrentDragIndex + 1, uShapeIdx, xShape.iOriginX, xShape.iOriginY);
-			m_uCurrentDragIndex++;
-			m_uCellPathLength = 0;
-			m_uCellPathIndex = 0;
-			return;
-		}
-
-		// Compute cell path if needed
+		// Check if we've completed the cell path for this outer move
 		if (m_uCellPathIndex >= m_uCellPathLength)
 		{
-			int32_t iPathLen;
-			if (xShape.iOriginX == iTargetX && xShape.iOriginY == iTargetY)
-			{
-				// Start == target: solver round-trip to trigger eliminations
-				iPathLen = FindRoundTripPath(xLevel, uShapeIdx, m_aeCellPath, uMAX_PATH_LENGTH);
-				if (iPathLen <= 0)
-				{
-					// No round-trip needed or possible - skip
-					Zenith_Log(LOG_CATEGORY_UNITTEST, "  Drag %u: shape %u at (%d,%d) start==target, no round-trip found, skipping",
-						m_uCurrentDragIndex + 1, uShapeIdx, xShape.iOriginX, xShape.iOriginY);
-					m_uCurrentDragIndex++;
-					m_uCellPathLength = 0;
-					m_uCellPathIndex = 0;
-					return;
-				}
-				Zenith_Log(LOG_CATEGORY_UNITTEST, "  Drag %u: shape %u round-trip path len=%d",
-					m_uCurrentDragIndex + 1, uShapeIdx, iPathLen);
-			}
-			else
-			{
-				iPathLen = FindCellPath(xLevel, uShapeIdx, iTargetX, iTargetY,
-					m_aeCellPath, uMAX_PATH_LENGTH);
-			}
-
-			if (iPathLen <= 0)
-			{
-				// Can't find path to target - re-solve from current state
-				if (m_uResolvesUsed < 20)
-				{
-					Zenith_Log(LOG_CATEGORY_UNITTEST, "  No path from (%d,%d) to (%d,%d) for shape %u, re-solving...",
-						xShape.iOriginX, xShape.iOriginY, iTargetX, iTargetY, uShapeIdx);
-					ResolveFromCurrentState();
-					return;
-				}
-				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: No path and resolve limit reached");
-				Zenith_Log(LOG_CATEGORY_UNITTEST, "[AutoTest] FAIL: Test_VisualPuzzle_TouchSolve");
-				m_uFailed++;
-				Zenith_InputSimulator::Disable();
-				m_ePhase = PHASE_COMPLETE;
-				return;
-			}
-
-			m_uCellPathLength = static_cast<uint32_t>(iPathLen);
-			m_uCellPathIndex = 0;
+			// Move to next solution move (solver's clean level already updated)
+			m_ePhase = PHASE_FULL_GAME_COMPUTE_SOLUTION;
+			m_uFrameDelay = 1;
+			return;
 		}
 
-		TilePuzzleDirection eChosenDir = m_aeCellPath[m_uCellPathIndex];
+		// Execute the next step in the cell path via direct TryMoveShape call
+		TilePuzzleDirection eDir = m_aeCellPath[m_uCellPathIndex];
 		m_uCellPathIndex++;
 
-		m_pxPuzzleBehaviour->m_iSelectedShapeIndex = static_cast<int32_t>(uShapeIdx);
-		Zenith_KeyCode eKey = DirectionToKeyCode(eChosenDir);
-		Zenith_InputSimulator::SimulateKeyPress(eKey);
-		m_uTotalCellMoves++;
+		bool bMoved = m_pxPuzzleBehaviour->TryMoveShape(static_cast<int32_t>(uShapeIdx), eDir);
+		if (!bMoved)
+		{
+			// Move rejected — game state diverged from BFS expectation. Force re-solve.
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "    REJECTED: shape %u step %u/%u, forcing re-solve",
+				uShapeIdx, m_uCellPathIndex, m_uCellPathLength);
+			m_axLiveSolution.clear(); // Force full re-solve
+			m_uCurrentSolutionMoveIndex = 0;
+			m_ePhase = PHASE_FULL_GAME_COMPUTE_SOLUTION;
+			m_uFrameDelay = 2;
+			return;
+		}
 
+		m_uTotalCellMoves++;
 		m_uWaitFrames = 0;
-		m_ePhase = PHASE_VISUAL_PUZZLE_WAIT_SETTLE;
-		m_uFrameDelay = 2;
+		m_ePhase = PHASE_FULL_GAME_WAIT_SETTLE;
+		m_uFrameDelay = 0;
 	}
 
-	// Wait for game state to settle (animations, eliminations)
-	void UpdateVisualPuzzle_WaitSettle()
+	void UpdateFullGame_WaitSettle()
 	{
 		m_pxPuzzleBehaviour = FindPuzzleBehaviour();
 		if (!m_pxPuzzleBehaviour)
 		{
-			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Lost reference during settle wait");
-			Zenith_Log(LOG_CATEGORY_UNITTEST, "[AutoTest] FAIL: Test_VisualPuzzle_TouchSolve");
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Lost reference during settle (level %u)",
+				m_uFullGameCurrentLevel);
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "[AutoTest] FAIL: Test_FullGame");
 			m_uFailed++;
 			m_ePhase = PHASE_COMPLETE;
 			return;
 		}
 
-		// Wait until back in PLAYING or LEVEL_COMPLETE state
 		if (m_pxPuzzleBehaviour->m_eState == TILEPUZZLE_STATE_SHAPE_SLIDING ||
 			m_pxPuzzleBehaviour->m_eState == TILEPUZZLE_STATE_CHECK_ELIMINATION)
 		{
 			m_uWaitFrames++;
 			if (m_uWaitFrames > 120)
 			{
-				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Timed out waiting for game to settle (state=%u)",
-					m_pxPuzzleBehaviour->m_eState);
-				Zenith_Log(LOG_CATEGORY_UNITTEST, "[AutoTest] FAIL: Test_VisualPuzzle_TouchSolve");
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Settle timeout (level %u, state=%u)",
+					m_uFullGameCurrentLevel, m_pxPuzzleBehaviour->m_eState);
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "[AutoTest] FAIL: Test_FullGame");
 				m_uFailed++;
 				m_ePhase = PHASE_COMPLETE;
 			}
@@ -629,23 +810,31 @@ private:
 		if (m_pxPuzzleBehaviour->m_eState == TILEPUZZLE_STATE_LEVEL_COMPLETE ||
 			m_pxPuzzleBehaviour->m_eState == TILEPUZZLE_STATE_VICTORY_OVERLAY)
 		{
-			// Level solved!
-			m_ePhase = PHASE_VISUAL_PUZZLE_CHECK_COMPLETE;
+			m_uWaitFrames = 0;
+			m_ePhase = PHASE_FULL_GAME_CHECK_COMPLETE;
 			return;
 		}
 
-		// Back to PLAYING - continue navigating toward target
-		m_ePhase = PHASE_VISUAL_PUZZLE_SELECT_AND_MOVE;
+		// Shape may have been removed during elimination check
+		if (m_uCurrentTargetShape < static_cast<uint32_t>(m_pxPuzzleBehaviour->m_xCurrentLevel.axShapes.size()) &&
+			m_pxPuzzleBehaviour->m_xCurrentLevel.axShapes[m_uCurrentTargetShape].bRemoved)
+		{
+			m_ePhase = PHASE_FULL_GAME_COMPUTE_SOLUTION;
+			m_uFrameDelay = 2;
+			return;
+		}
+
+		m_ePhase = PHASE_FULL_GAME_SELECT_AND_MOVE;
 	}
 
-	// Verify level completion
-	void UpdateVisualPuzzle_CheckComplete()
+	void UpdateFullGame_CheckComplete()
 	{
 		m_pxPuzzleBehaviour = FindPuzzleBehaviour();
 		if (!m_pxPuzzleBehaviour)
 		{
-			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Lost reference during completion check");
-			Zenith_Log(LOG_CATEGORY_UNITTEST, "[AutoTest] FAIL: Test_VisualPuzzle_TouchSolve");
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Lost reference during check (level %u)",
+				m_uFullGameCurrentLevel);
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "[AutoTest] FAIL: Test_FullGame");
 			m_uFailed++;
 			Zenith_InputSimulator::Disable();
 			m_ePhase = PHASE_COMPLETE;
@@ -655,42 +844,295 @@ private:
 		if (m_pxPuzzleBehaviour->m_eState == TILEPUZZLE_STATE_LEVEL_COMPLETE ||
 			m_pxPuzzleBehaviour->m_eState == TILEPUZZLE_STATE_VICTORY_OVERLAY)
 		{
-			Zenith_Log(LOG_CATEGORY_UNITTEST, "  Level completed! Drags: %u, Cell moves: %u, Game moves: %u, Stars: %u, Re-solves: %u",
-				m_uTotalMovesExecuted, m_uTotalCellMoves,
-				m_pxPuzzleBehaviour->m_uMoveCount, m_pxPuzzleBehaviour->m_uStarsEarned, m_uResolvesUsed);
-			Zenith_Log(LOG_CATEGORY_UNITTEST, "[AutoTest] PASS: Test_VisualPuzzle_TouchSolve");
+			m_uFullGameLevelsCompleted++;
+			m_uWaitFrames = 0;
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  Level %u/%u COMPLETE (stars=%u, moves=%u, re-solves=%u)",
+				m_uFullGameCurrentLevel, m_uFullGameLevelCount,
+				m_pxPuzzleBehaviour->m_uStarsEarned, m_pxPuzzleBehaviour->m_uMoveCount, m_uResolvesUsed);
+
+			// Check if we should enter pinball (every 10th level)
+			if (m_uFullGameCurrentLevel % 10 == 0 && m_uFullGameNextGate < 10)
+			{
+				m_ePhase = PHASE_FULL_GAME_PINBALL_ENTER;
+				m_uFrameDelay = 5;
+				return;
+			}
+
+			// More levels to play?
+			if (m_uFullGameCurrentLevel < m_uFullGameLevelCount)
+			{
+				m_ePhase = PHASE_FULL_GAME_NEXT_LEVEL;
+				m_uFrameDelay = 2;
+				return;
+			}
+
+			// All levels done - clear any remaining pinball gates
+			if (m_uFullGameNextGate < 10)
+			{
+				m_ePhase = PHASE_FULL_GAME_PINBALL_ENTER;
+				m_uFrameDelay = 5;
+				return;
+			}
+
+			// Everything done
+			m_ePhase = PHASE_FULL_GAME_VERIFY;
+			m_uFrameDelay = 5;
+		}
+		else if (m_pxPuzzleBehaviour->m_eState == TILEPUZZLE_STATE_SHAPE_SLIDING ||
+			m_pxPuzzleBehaviour->m_eState == TILEPUZZLE_STATE_CHECK_ELIMINATION)
+		{
+			// Still settling, wait
+			m_uWaitFrames++;
+			if (m_uWaitFrames > 120)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Level %u settle timeout in CheckComplete (state=%u)",
+					m_uFullGameCurrentLevel, m_pxPuzzleBehaviour->m_eState);
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "[AutoTest] FAIL: Test_FullGame");
+				m_uFailed++;
+				Zenith_InputSimulator::Disable();
+				m_ePhase = PHASE_COMPLETE;
+			}
+		}
+		else if (m_pxPuzzleBehaviour->m_eState == TILEPUZZLE_STATE_PLAYING)
+		{
+			// Wait a few frames for the game to detect completion
+			m_uWaitFrames++;
+			if (m_uWaitFrames > 10)
+			{
+				// Still PLAYING after waiting - re-solve via COMPUTE_SOLUTION
+				m_ePhase = PHASE_FULL_GAME_COMPUTE_SOLUTION;
+				m_uFrameDelay = 2;
+			}
+		}
+		else
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Level %u unexpected state %u",
+				m_uFullGameCurrentLevel, m_pxPuzzleBehaviour->m_eState);
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "[AutoTest] FAIL: Test_FullGame");
+			m_uFailed++;
+			Zenith_InputSimulator::Disable();
+			m_ePhase = PHASE_COMPLETE;
+		}
+	}
+
+	void UpdateFullGame_NextLevel()
+	{
+		m_pxPuzzleBehaviour = FindPuzzleBehaviour();
+		if (!m_pxPuzzleBehaviour)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Lost reference during NextLevel");
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "[AutoTest] FAIL: Test_FullGame");
+			m_uFailed++;
+			Zenith_InputSimulator::Disable();
+			m_ePhase = PHASE_COMPLETE;
+			return;
+		}
+
+		m_uFullGameCurrentLevel++;
+		// Ensure lives don't run out
+		m_pxPuzzleBehaviour->m_xSaveData.uLives = TilePuzzleSaveData::uMAX_LIVES;
+		m_pxPuzzleBehaviour->NextLevel();
+		ResetPerLevelState();
+		m_ePhase = PHASE_FULL_GAME_WAIT_PLAYING;
+	}
+
+	// ========================================================================
+	// Pinball gate phases
+	// ========================================================================
+
+	Pinball_Behaviour* FindPinballBehaviour()
+	{
+		for (uint32_t uSlot = 0; uSlot < 16; ++uSlot)
+		{
+			Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneDataAtSlot(uSlot);
+			if (!pxScene)
+				continue;
+			Zenith_Entity xEntity = pxScene->FindEntityByName("PinballManager");
+			if (!xEntity.IsValid())
+				continue;
+			if (!xEntity.HasComponent<Zenith_ScriptComponent>())
+				continue;
+			Zenith_ScriptComponent& xScript = xEntity.GetComponent<Zenith_ScriptComponent>();
+			Pinball_Behaviour* pxBehaviour = xScript.GetBehaviour<Pinball_Behaviour>();
+			if (pxBehaviour)
+				return pxBehaviour;
+		}
+		return nullptr;
+	}
+
+	void UpdateFullGame_PinballEnter()
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "  Entering pinball for gate %u...", m_uFullGameNextGate);
+		Zenith_SceneManager::LoadSceneByIndex(2, SCENE_LOAD_SINGLE);
+		m_uWaitFrames = 0;
+		m_ePhase = PHASE_FULL_GAME_PINBALL_WAIT;
+		m_uFrameDelay = 10;
+	}
+
+	void UpdateFullGame_PinballWait()
+	{
+		Pinball_Behaviour* pxPinball = FindPinballBehaviour();
+		if (!pxPinball)
+		{
+			m_uWaitFrames++;
+			if (m_uWaitFrames > 120)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Timed out waiting for Pinball_Behaviour");
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "[AutoTest] FAIL: Test_FullGame");
+				m_uFailed++;
+				Zenith_InputSimulator::Disable();
+				m_ePhase = PHASE_COMPLETE;
+			}
+			return;
+		}
+
+		// Pinball is loaded and ready
+		m_ePhase = PHASE_FULL_GAME_PINBALL_CLEAR;
+		m_uFrameDelay = 5;
+	}
+
+	void UpdateFullGame_PinballClear()
+	{
+		Pinball_Behaviour* pxPinball = FindPinballBehaviour();
+		if (!pxPinball)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Lost Pinball_Behaviour");
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "[AutoTest] FAIL: Test_FullGame");
+			m_uFailed++;
+			Zenith_InputSimulator::Disable();
+			m_ePhase = PHASE_COMPLETE;
+			return;
+		}
+
+		// Directly mark the gate as cleared
+		pxPinball->m_xSaveData.SetPinballGateCleared(m_uFullGameNextGate);
+		Zenith_SaveData::Save("autosave", TilePuzzleSaveData::uGAME_SAVE_VERSION,
+			TilePuzzle_WriteSaveData, &pxPinball->m_xSaveData);
+
+		m_uFullGameGatesCleared++;
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "  Gate %u cleared (%u/10)", m_uFullGameNextGate, m_uFullGameGatesCleared);
+
+		m_uFullGameNextGate++;
+
+		// Return to menu
+		pxPinball->ReturnToMenu();
+		m_uWaitFrames = 0;
+		m_ePhase = PHASE_FULL_GAME_PINBALL_RETURN;
+		m_uFrameDelay = 10;
+	}
+
+	void UpdateFullGame_PinballReturn()
+	{
+		m_pxPuzzleBehaviour = FindPuzzleBehaviour();
+		if (!m_pxPuzzleBehaviour)
+		{
+			m_uWaitFrames++;
+			if (m_uWaitFrames > 120)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Timed out returning from pinball to menu");
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "[AutoTest] FAIL: Test_FullGame");
+				m_uFailed++;
+				Zenith_InputSimulator::Disable();
+				m_ePhase = PHASE_COMPLETE;
+			}
+			return;
+		}
+
+		// We're back on the menu. Continue with next level or verify.
+		if (m_uFullGameCurrentLevel < m_uFullGameLevelCount)
+		{
+			// More levels to play
+			m_pxPuzzleBehaviour->m_xSaveData.uLives = TilePuzzleSaveData::uMAX_LIVES;
+			m_pxPuzzleBehaviour->m_uCurrentLevelNumber = m_uFullGameCurrentLevel + 1;
+			m_pxPuzzleBehaviour->m_xSaveData.uCurrentLevel = m_uFullGameCurrentLevel + 1;
+			m_pxPuzzleBehaviour->StartGame();
+			m_uFullGameCurrentLevel++;
+			ResetPerLevelState();
+			m_ePhase = PHASE_FULL_GAME_WAIT_PLAYING;
+			return;
+		}
+
+		// All levels done - any remaining gates?
+		if (m_uFullGameNextGate < 10)
+		{
+			m_ePhase = PHASE_FULL_GAME_PINBALL_ENTER;
+			m_uFrameDelay = 5;
+			return;
+		}
+
+		// All done
+		m_ePhase = PHASE_FULL_GAME_VERIFY;
+		m_uFrameDelay = 5;
+	}
+
+	void UpdateFullGame_Verify()
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "  ---- Full-Game Verification ----");
+
+		m_pxPuzzleBehaviour = FindPuzzleBehaviour();
+		if (!m_pxPuzzleBehaviour)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Cannot find behaviour for verification");
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "[AutoTest] FAIL: Test_FullGame");
+			m_uFailed++;
+			Zenith_InputSimulator::Disable();
+			m_ePhase = PHASE_COMPLETE;
+			return;
+		}
+
+		const TilePuzzleSaveData& xSave = m_pxPuzzleBehaviour->m_xSaveData;
+		bool bPass = true;
+
+		// Verify all levels completed
+		uint32_t uCompletedCount = 0;
+		uint32_t uTotalStars = 0;
+		for (uint32_t i = 0; i < m_uFullGameLevelCount; ++i)
+		{
+			if (xSave.axLevelRecords[i].bCompleted)
+			{
+				uCompletedCount++;
+				uTotalStars += xSave.axLevelRecords[i].uBestStars;
+			}
+		}
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "  Levels completed: %u/%u", uCompletedCount, m_uFullGameLevelCount);
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "  Total stars: %u", uTotalStars);
+		if (uCompletedCount != m_uFullGameLevelCount)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Not all levels completed");
+			bPass = false;
+		}
+
+		// Verify all pinball gates cleared
+		uint32_t uGatesCleared = 0;
+		for (uint32_t i = 0; i < 10; ++i)
+		{
+			if (xSave.IsPinballGateCleared(i))
+				uGatesCleared++;
+		}
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "  Pinball gates cleared: %u/10", uGatesCleared);
+		if (uGatesCleared != 10)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Not all pinball gates cleared");
+			bPass = false;
+		}
+
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "  Coins: %u, Cats collected: %u",
+			xSave.uCoins, xSave.uCatsCollectedCount);
+
+		if (bPass)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "[AutoTest] PASS: Test_FullGame");
 			m_uPassed++;
 		}
 		else
 		{
-			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Level not complete (state=%u, drags=%u, cell moves=%u, re-solves=%u)",
-				m_pxPuzzleBehaviour->m_eState, m_uTotalMovesExecuted,
-				m_uTotalCellMoves, m_uResolvesUsed);
-
-			// Log remaining cats and shape positions for debugging
-			uint32_t uRemainingCats = 0;
-			for (const auto& xCat : m_pxPuzzleBehaviour->m_xCurrentLevel.axCats)
-			{
-				if (!xCat.bEliminated)
-					uRemainingCats++;
-			}
-			Zenith_Log(LOG_CATEGORY_UNITTEST, "  Remaining cats: %u", uRemainingCats);
-			for (size_t i = 0; i < m_pxPuzzleBehaviour->m_xCurrentLevel.axShapes.size(); ++i)
-			{
-				const auto& xShape = m_pxPuzzleBehaviour->m_xCurrentLevel.axShapes[i];
-				if (xShape.pxDefinition && xShape.pxDefinition->bDraggable && !xShape.bRemoved)
-				{
-					Zenith_Log(LOG_CATEGORY_UNITTEST, "  Shape %u: pos=(%d,%d) color=%u",
-						static_cast<uint32_t>(i), xShape.iOriginX, xShape.iOriginY, xShape.eColor);
-				}
-			}
-			Zenith_Log(LOG_CATEGORY_UNITTEST, "[AutoTest] FAIL: Test_VisualPuzzle_TouchSolve");
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "[AutoTest] FAIL: Test_FullGame");
 			m_uFailed++;
 		}
 
 		Zenith_InputSimulator::Disable();
 		m_ePhase = PHASE_COMPLETE;
-		m_uFrameDelay = 30; // Let user see the result
+		m_uFrameDelay = 30;
 	}
 
 	// ========================================================================
@@ -713,7 +1155,92 @@ private:
 	// BFS Pathfinder: find cell-by-cell path for a shape
 	// ========================================================================
 
+	// Diagnostic: dump board state when cell path fails
+	static void DumpBoardState(const TilePuzzleLevelData& xLevel, uint32_t uShapeIndex, int32_t iTargetX, int32_t iTargetY)
+	{
+		int32_t iW = static_cast<int32_t>(xLevel.uGridWidth);
+		int32_t iH = static_cast<int32_t>(xLevel.uGridHeight);
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "    === Board Dump (grid %dx%d) ===", iW, iH);
+
+		// Print grid with shape/cat positions marked
+		for (int32_t y = 0; y < iH; ++y)
+		{
+			char acRow[64];
+			for (int32_t x = 0; x < iW; ++x)
+			{
+				uint32_t uIdx = y * iW + x;
+				if (xLevel.aeCells[uIdx] != TILEPUZZLE_CELL_FLOOR)
+					acRow[x] = '#';
+				else
+					acRow[x] = '.';
+			}
+			acRow[iW] = '\0';
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "    Row %d: %s", y, acRow);
+		}
+
+		// Shapes
+		for (size_t s = 0; s < xLevel.axShapes.size(); ++s)
+		{
+			const TilePuzzleShapeInstance& xs = xLevel.axShapes[s];
+			if (!xs.pxDefinition) continue;
+			const char* pszType = xs.pxDefinition->bDraggable ? "DRAG" : "STATIC";
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "    Shape[%u] %s origin=(%d,%d) color=%d removed=%d unlock=%u cells=%u%s",
+				static_cast<uint32_t>(s), pszType, xs.iOriginX, xs.iOriginY,
+				static_cast<int>(xs.eColor), xs.bRemoved ? 1 : 0,
+				xs.uUnlockThreshold,
+				static_cast<uint32_t>(xs.pxDefinition->axCells.size()),
+				s == uShapeIndex ? " <-- MOVING" : "");
+			// Print cell offsets
+			for (size_t c = 0; c < xs.pxDefinition->axCells.size(); ++c)
+			{
+				const TilePuzzleCellOffset& xOff = xs.pxDefinition->axCells[c];
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "      cell[%u] offset=(%d,%d) -> world=(%d,%d)",
+					static_cast<uint32_t>(c), xOff.iX, xOff.iY,
+					xs.iOriginX + xOff.iX, xs.iOriginY + xOff.iY);
+			}
+		}
+
+		// Cats
+		for (size_t c = 0; c < xLevel.axCats.size(); ++c)
+		{
+			const TilePuzzleCatData& xCat = xLevel.axCats[c];
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "    Cat[%u] pos=(%d,%d) color=%d elim=%d blocker=%d",
+				static_cast<uint32_t>(c), xCat.iGridX, xCat.iGridY,
+				static_cast<int>(xCat.eColor), xCat.bEliminated ? 1 : 0,
+				xCat.bOnBlocker ? 1 : 0);
+		}
+
+		// Target
+		const TilePuzzleShapeInstance& xMoving = xLevel.axShapes[uShapeIndex];
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "    Target: shape %u (%d,%d)->(%d,%d)",
+			uShapeIndex, xMoving.iOriginX, xMoving.iOriginY, iTargetX, iTargetY);
+
+		// Test 4 directions from start
+		TilePuzzleDirection aeDirs[] = { TILEPUZZLE_DIR_UP, TILEPUZZLE_DIR_DOWN, TILEPUZZLE_DIR_LEFT, TILEPUZZLE_DIR_RIGHT };
+		const char* apszDirNames[] = { "UP", "DOWN", "LEFT", "RIGHT" };
+		for (int d = 0; d < 4; ++d)
+		{
+			int32_t iDX, iDY;
+			TilePuzzleDirections::GetDelta(aeDirs[d], iDX, iDY);
+			bool bCan = CanMoveShapeOnLevel(xLevel, uShapeIndex, iDX, iDY);
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "    Direction %s (%d,%d): %s",
+				apszDirNames[d], iDX, iDY, bCan ? "OK" : "BLOCKED");
+		}
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "    === End Board Dump ===");
+	}
+
 	// Check if a shape can move in a direction on the live game state
+	static uint32_t CountEliminatedCats(const TilePuzzleLevelData& xLevel)
+	{
+		uint32_t uCount = 0;
+		for (size_t i = 0; i < xLevel.axCats.size(); ++i)
+		{
+			if (xLevel.axCats[i].bEliminated)
+				uCount++;
+		}
+		return uCount;
+	}
+
 	static bool CanMoveShapeOnLevel(const TilePuzzleLevelData& xLevel, uint32_t uShapeIndex, int32_t iDeltaX, int32_t iDeltaY)
 	{
 		const TilePuzzleShapeInstance& xShape = xLevel.axShapes[uShapeIndex];
@@ -836,6 +1363,298 @@ private:
 		}
 	}
 
+	// Find cell-by-cell path using the EXACT same BFS logic as the solver's
+	// inner BFS. This ensures the path eliminates the same cats the solver expects.
+	// Mirrors TilePuzzle_Solver.h lines 694-828 precisely.
+	// uRequiredElimMask: if non-zero, only accept paths that produce EXACTLY this mask.
+	// This ensures we follow the same elimination sequence the solver planned.
+	int32_t FindSolverInnerPath(const TilePuzzleLevelData& xLevel, uint32_t uShapeIndex,
+		int32_t iTargetX, int32_t iTargetY,
+		TilePuzzleDirection* aePathOut, uint32_t uMaxPathLen,
+		uint32_t uRequiredElimMask = 0)
+	{
+		uint32_t uGridWidth = xLevel.uGridWidth;
+		uint32_t uGridHeight = xLevel.uGridHeight;
+
+		// Collect draggable shapes (same as solver setup)
+		static constexpr uint32_t uMaxDrag = 5;
+		const TilePuzzleShapeDefinition* apxDefs[uMaxDrag];
+		TilePuzzleColor aeColors[uMaxDrag];
+		uint32_t auColorCatMasks[uMaxDrag];
+		int32_t aiPosX[uMaxDrag], aiPosY[uMaxDrag];
+		uint32_t auFullToLocal[16]; // maps full shape index → draggable index
+		memset(auFullToLocal, 0xFF, sizeof(auFullToLocal));
+		uint32_t uNumDraggable = 0;
+		uint32_t uDragIdx = UINT32_MAX; // local index of the shape we're moving
+
+		uint32_t uNumCats = static_cast<uint32_t>(xLevel.axCats.size());
+		if (uNumCats > 16) return -1;
+
+		for (size_t i = 0; i < xLevel.axShapes.size(); ++i)
+		{
+			const TilePuzzleShapeInstance& xs = xLevel.axShapes[i];
+			if (!xs.pxDefinition || !xs.pxDefinition->bDraggable || xs.bRemoved)
+				continue;
+			if (uNumDraggable >= uMaxDrag) return -1;
+			auFullToLocal[i] = uNumDraggable;
+			if (static_cast<uint32_t>(i) == uShapeIndex)
+				uDragIdx = uNumDraggable;
+			apxDefs[uNumDraggable] = xs.pxDefinition;
+			aeColors[uNumDraggable] = xs.eColor;
+			aiPosX[uNumDraggable] = xs.iOriginX;
+			aiPosY[uNumDraggable] = xs.iOriginY;
+			uint32_t uMask = 0;
+			for (uint32_t j = 0; j < uNumCats; ++j)
+			{
+				if (xLevel.axCats[j].eColor == xs.eColor)
+					uMask |= (1u << j);
+			}
+			auColorCatMasks[uNumDraggable] = uMask;
+			uNumDraggable++;
+		}
+		if (uDragIdx == UINT32_MAX) return -1;
+
+		// Pre-compute walkable grid (same as solver)
+		bool abWalkable[256];
+		memset(abWalkable, 0, sizeof(abWalkable));
+		for (uint32_t y = 0; y < uGridHeight; y++)
+			for (uint32_t x = 0; x < uGridWidth; x++)
+				abWalkable[y * uGridWidth + x] = (xLevel.aeCells[y * uGridWidth + x] == TILEPUZZLE_CELL_FLOOR);
+
+		// Mark static (non-draggable) shape cells as non-walkable
+		for (size_t i = 0; i < xLevel.axShapes.size(); ++i)
+		{
+			const TilePuzzleShapeInstance& xs = xLevel.axShapes[i];
+			if (!xs.pxDefinition || xs.pxDefinition->bDraggable) continue;
+			for (size_t j = 0; j < xs.pxDefinition->axCells.size(); ++j)
+			{
+				int32_t cx = xs.iOriginX + xs.pxDefinition->axCells[j].iX;
+				int32_t cy = xs.iOriginY + xs.pxDefinition->axCells[j].iY;
+				if (cx >= 0 && cy >= 0 && static_cast<uint32_t>(cx) < uGridWidth && static_cast<uint32_t>(cy) < uGridHeight)
+					abWalkable[cy * uGridWidth + cx] = false;
+			}
+		}
+
+		// Cat positions and colors
+		int32_t aiCatX[16], aiCatY[16];
+		TilePuzzleColor aeCatColors[16];
+		bool abCatOnBlocker[16];
+		for (uint32_t i = 0; i < uNumCats; ++i)
+		{
+			aiCatX[i] = xLevel.axCats[i].iGridX;
+			aiCatY[i] = xLevel.axCats[i].iGridY;
+			aeCatColors[i] = xLevel.axCats[i].eColor;
+			abCatOnBlocker[i] = xLevel.axCats[i].bOnBlocker;
+		}
+
+		// Cat-at-cell lookup
+		int8_t aiCatAtCell[256];
+		memset(aiCatAtCell, -1, sizeof(aiCatAtCell));
+		for (uint32_t i = 0; i < uNumCats; ++i)
+		{
+			uint32_t uIdx = static_cast<uint32_t>(aiCatY[i]) * uGridWidth + static_cast<uint32_t>(aiCatX[i]);
+			aiCatAtCell[uIdx] = static_cast<int8_t>(i);
+		}
+
+		// Initial elimination mask
+		uint32_t uInitMask = 0;
+		for (uint32_t i = 0; i < uNumCats; ++i)
+		{
+			if (xLevel.axCats[i].bEliminated)
+				uInitMask |= (1u << i);
+		}
+
+		// Inner BFS state: pack (x, y, elimMask) into uint64_t (matches solver)
+		auto PackInner = [](int32_t x, int32_t y, uint32_t mask) -> uint64_t {
+			return (static_cast<uint64_t>(x) << 32) | (static_cast<uint64_t>(y) << 16) | static_cast<uint64_t>(mask);
+		};
+
+		struct InnerNode
+		{
+			int32_t iX, iY;
+			uint32_t uMask;
+			int32_t iParent;
+			TilePuzzleDirection eDir;
+		};
+
+		static constexpr int32_t iMAX_NODES = 65536;
+		InnerNode* axNodes = new InnerNode[iMAX_NODES];
+		uint32_t uNodeCount = 0;
+		uint32_t uFront = 0;
+
+		std::unordered_set<uint64_t> xVisited; // #TODO: Replace with engine hash map
+		xVisited.reserve(4096);
+
+		int32_t iStartX = aiPosX[uDragIdx];
+		int32_t iStartY = aiPosY[uDragIdx];
+		bool bRoundTrip = (iStartX == iTargetX && iStartY == iTargetY);
+
+		uint64_t uStartKey = PackInner(iStartX, iStartY, uInitMask);
+		xVisited.insert(uStartKey);
+		axNodes[uNodeCount++] = { iStartX, iStartY, uInitMask, -1, TILEPUZZLE_DIR_NONE };
+
+		// Direction order matches solver exactly: UP, DOWN, LEFT, RIGHT
+		int32_t aiDeltaX[] = {0, 0, -1, 1};
+		int32_t aiDeltaY[] = {-1, 1, 0, 0};
+		TilePuzzleDirection aeDir[] = {
+			TILEPUZZLE_DIR_UP, TILEPUZZLE_DIR_DOWN,
+			TILEPUZZLE_DIR_LEFT, TILEPUZZLE_DIR_RIGHT
+		};
+
+		int32_t iBestNode = -1;
+
+		while (uFront < uNodeCount)
+		{
+			InnerNode& xCur = axNodes[uFront++];
+
+			for (int32_t iDir = 0; iDir < 4; ++iDir)
+			{
+				int32_t iNewX = xCur.iX + aiDeltaX[iDir];
+				int32_t iNewY = xCur.iY + aiDeltaY[iDir];
+
+				// Bounds + walkable check for all cells of the moving shape
+				bool bValid = true;
+				const std::vector<TilePuzzleCellOffset>& axMovingCells = apxDefs[uDragIdx]->axCells;
+				for (size_t c = 0; c < axMovingCells.size(); ++c)
+				{
+					int32_t iCellX = iNewX + axMovingCells[c].iX;
+					int32_t iCellY = iNewY + axMovingCells[c].iY;
+
+					if (iCellX < 0 || iCellY < 0 ||
+						static_cast<uint32_t>(iCellX) >= uGridWidth ||
+						static_cast<uint32_t>(iCellY) >= uGridHeight)
+					{ bValid = false; break; }
+
+					uint32_t uCellIdx = static_cast<uint32_t>(iCellY) * uGridWidth + static_cast<uint32_t>(iCellX);
+					if (!abWalkable[uCellIdx])
+					{ bValid = false; break; }
+
+					// Check collision with other draggable shapes
+					for (uint32_t si = 0; si < uNumDraggable; ++si)
+					{
+						if (si == uDragIdx) continue;
+						if ((auColorCatMasks[si] & ~xCur.uMask) == 0) continue; // removed
+						const std::vector<TilePuzzleCellOffset>& axOtherCells = apxDefs[si]->axCells;
+						for (size_t sc = 0; sc < axOtherCells.size(); ++sc)
+						{
+							if (aiPosX[si] + axOtherCells[sc].iX == iCellX &&
+								aiPosY[si] + axOtherCells[sc].iY == iCellY)
+							{ bValid = false; break; }
+						}
+						if (!bValid) break;
+					}
+					if (!bValid) break;
+
+					// Check wrong-color cat blocking
+					int8_t iCatIdx = aiCatAtCell[uCellIdx];
+					if (iCatIdx >= 0 &&
+						!(xCur.uMask & (1u << static_cast<uint32_t>(iCatIdx))) &&
+						aeCatColors[iCatIdx] != aeColors[uDragIdx])
+					{ bValid = false; break; }
+				}
+
+				if (!bValid) continue;
+
+				// Compute newly eliminated cats (same as solver)
+				uint32_t uNewlyEliminated = 0;
+				for (uint32_t si = 0; si < uNumDraggable; ++si)
+				{
+					if ((auColorCatMasks[si] & ~xCur.uMask) == 0) continue;
+					int32_t iShapeX = (si == uDragIdx) ? iNewX : aiPosX[si];
+					int32_t iShapeY = (si == uDragIdx) ? iNewY : aiPosY[si];
+					const std::vector<TilePuzzleCellOffset>& axShapeCells = apxDefs[si]->axCells;
+					for (size_t c = 0; c < axShapeCells.size(); ++c)
+					{
+						int32_t iCellX = iShapeX + axShapeCells[c].iX;
+						int32_t iCellY = iShapeY + axShapeCells[c].iY;
+						for (uint32_t ci = 0; ci < uNumCats; ++ci)
+						{
+							if ((xCur.uMask | uNewlyEliminated) & (1u << ci)) continue;
+							if (aeCatColors[ci] != aeColors[si]) continue;
+							if (abCatOnBlocker[ci])
+							{
+								int32_t iDX = iCellX - aiCatX[ci];
+								int32_t iDY = iCellY - aiCatY[ci];
+								if ((iDX == 0 && (iDY == 1 || iDY == -1)) ||
+									(iDY == 0 && (iDX == 1 || iDX == -1)))
+									uNewlyEliminated |= (1u << ci);
+							}
+							else
+							{
+								if (aiCatX[ci] == iCellX && aiCatY[ci] == iCellY)
+									uNewlyEliminated |= (1u << ci);
+							}
+						}
+					}
+				}
+
+				uint32_t uNewMask = xCur.uMask | uNewlyEliminated;
+				uint64_t uNextKey = PackInner(iNewX, iNewY, uNewMask);
+				if (xVisited.count(uNextKey) > 0)
+					continue;
+				xVisited.insert(uNextKey);
+
+				if (uNodeCount >= iMAX_NODES)
+					break;
+
+				axNodes[uNodeCount++] = { iNewX, iNewY, uNewMask, static_cast<int32_t>(uFront - 1), aeDir[iDir] };
+
+				// Check if we reached target
+				if (bRoundTrip)
+				{
+					// Round-trip: must return to start with more cats eliminated
+					if (iNewX == iTargetX && iNewY == iTargetY && uNewMask != uInitMask)
+					{
+						if (uRequiredElimMask == 0 || uNewMask == uRequiredElimMask)
+						{
+							iBestNode = static_cast<int32_t>(uNodeCount - 1);
+							goto found;
+						}
+					}
+				}
+				else
+				{
+					if (iNewX == iTargetX && iNewY == iTargetY)
+					{
+						if (uRequiredElimMask == 0 || uNewMask == uRequiredElimMask)
+						{
+							iBestNode = static_cast<int32_t>(uNodeCount - 1);
+							goto found;
+						}
+					}
+				}
+			}
+		}
+		found:
+
+		if (iBestNode < 0)
+		{
+			delete[] axNodes;
+			return -1;
+		}
+
+		// Trace back
+		int32_t aiRev[256];
+		int32_t iLen = 0;
+		int32_t iNode = iBestNode;
+		while (axNodes[iNode].iParent >= 0)
+		{
+			if (iLen >= 256) { delete[] axNodes; return -1; }
+			aiRev[iLen++] = iNode;
+			iNode = axNodes[iNode].iParent;
+		}
+		if (static_cast<uint32_t>(iLen) > uMaxPathLen)
+		{
+			delete[] axNodes;
+			return -1;
+		}
+		for (int32_t i = 0; i < iLen; ++i)
+			aePathOut[i] = axNodes[aiRev[iLen - 1 - i]].eDir;
+
+		delete[] axNodes;
+		return iLen;
+	}
+
 	// BFS to find a round-trip path from start back to start that eliminates
 	// at least one new cat. Used for solver round-trip moves (start == target).
 	int32_t FindRoundTripPath(const TilePuzzleLevelData& xLevel, uint32_t uShapeIndex,
@@ -853,7 +1672,7 @@ private:
 			uint32_t uElimMask;
 		};
 
-		static constexpr int32_t iMAX_BFS_NODES = 4096;
+		static constexpr int32_t iMAX_BFS_NODES = 65536;
 		BFSNode* axNodes = new BFSNode[iMAX_BFS_NODES];
 		uint32_t uNodeCount = 0;
 		uint32_t uFront = 0;
@@ -877,12 +1696,11 @@ private:
 		xVisited.insert(MakeVisitedKey(iStartX, iStartY, uInitElimMask));
 
 		TilePuzzleDirection aeDirections[] = {
-			TILEPUZZLE_DIR_RIGHT, TILEPUZZLE_DIR_LEFT,
-			TILEPUZZLE_DIR_DOWN, TILEPUZZLE_DIR_UP
+			TILEPUZZLE_DIR_UP, TILEPUZZLE_DIR_DOWN,
+			TILEPUZZLE_DIR_LEFT, TILEPUZZLE_DIR_RIGHT
 		};
 
 		int32_t iBestTargetNode = -1;
-		uint32_t uBestElimCount = 0;
 
 		TilePuzzleLevelData xBFSLevel = xLevel;
 
@@ -962,18 +1780,15 @@ private:
 
 				axNodes[uNodeCount++] = { iNX, iNY, static_cast<int32_t>(uFront - 1), eDir, uNewElimMask };
 
-				// Check: reached start position with MORE eliminations
+				// Use first round-trip found (shortest)
 				if (iNX == iStartX && iNY == iStartY && uNewElimMask != uInitElimMask)
 				{
-					uint32_t uElimCount = TILEPUZZLE_POPCNT(uNewElimMask);
-					if (iBestTargetNode < 0 || uElimCount > uBestElimCount)
-					{
-						iBestTargetNode = static_cast<int32_t>(uNodeCount - 1);
-						uBestElimCount = uElimCount;
-					}
+					iBestTargetNode = static_cast<int32_t>(uNodeCount - 1);
+					goto roundtrip_done;
 				}
 			}
 		}
+		roundtrip_done:
 
 		if (iBestTargetNode < 0)
 		{
@@ -1004,10 +1819,10 @@ private:
 		return iPathLen;
 	}
 
-	// BFS to find cell path that maximizes eliminations along the way.
+	// BFS to find shortest cell path to the target position.
 	// Uses (position, elimination_mask) as the full BFS state key so that
-	// round-trip paths through same-color cats are explored. Among all paths
-	// reaching the target, returns the one with the most cat eliminations.
+	// paths through same-color cats are explored.
+	// Returns the first (shortest) path found to minimize unplanned eliminations.
 	int32_t FindCellPath(const TilePuzzleLevelData& xLevel, uint32_t uShapeIndex,
 		int32_t iTargetX, int32_t iTargetY,
 		TilePuzzleDirection* aePathOut, uint32_t uMaxPathLen)
@@ -1027,7 +1842,7 @@ private:
 			uint32_t uElimMask;
 		};
 
-		static constexpr int32_t iMAX_BFS_NODES = 4096;
+		static constexpr int32_t iMAX_BFS_NODES = 65536;
 		BFSNode* axNodes = new BFSNode[iMAX_BFS_NODES];
 		uint32_t uNodeCount = 0;
 		uint32_t uFront = 0;
@@ -1054,13 +1869,12 @@ private:
 		xVisited.insert(MakeVisitedKey(iStartX, iStartY, uInitElimMask));
 
 		TilePuzzleDirection aeDirections[] = {
-			TILEPUZZLE_DIR_RIGHT, TILEPUZZLE_DIR_LEFT,
-			TILEPUZZLE_DIR_DOWN, TILEPUZZLE_DIR_UP
+			TILEPUZZLE_DIR_UP, TILEPUZZLE_DIR_DOWN,
+			TILEPUZZLE_DIR_LEFT, TILEPUZZLE_DIR_RIGHT
 		};
 
-		// Track the best target node (most eliminations)
+		// Track the first target node found (shortest BFS path)
 		int32_t iBestTargetNode = -1;
-		uint32_t uBestElimCount = 0;
 
 		// Create a mutable copy of the level for testing moves
 		TilePuzzleLevelData xBFSLevel = xLevel;
@@ -1161,23 +1975,21 @@ private:
 
 				axNodes[uNodeCount++] = { iNX, iNY, static_cast<int32_t>(uFront - 1), eDir, uNewElimMask };
 
-				// Check if we reached the target
+				// Use first (shortest) path found to minimize unplanned eliminations
 				if (iNX == iTargetX && iNY == iTargetY)
 				{
-					uint32_t uElimCount = TILEPUZZLE_POPCNT(uNewElimMask);
-					if (iBestTargetNode < 0 || uElimCount > uBestElimCount)
-					{
-						iBestTargetNode = static_cast<int32_t>(uNodeCount - 1);
-						uBestElimCount = uElimCount;
-					}
-					// Don't return - continue BFS to find paths with more eliminations
+					iBestTargetNode = static_cast<int32_t>(uNodeCount - 1);
+					goto bfs_done;
 				}
 			}
 		}
+		bfs_done:
 
 		// No path found
 		if (iBestTargetNode < 0)
 		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "    BFS exhausted: %u nodes explored, %u visited states",
+				uNodeCount, static_cast<uint32_t>(xVisited.size()));
 			delete[] axNodes;
 			return -1;
 		}

@@ -718,7 +718,7 @@ public:
 
 								if (TilePuzzle_Rules::AreAllCatsEliminated(uCurMask, uNumCats))
 								{
-									// Solution found - extract path
+									// Solution found - extract path with elimination masks
 									uint32_t uTraceIdx = uNewIdx;
 									while (axAllStates[uTraceIdx].uParentIdx != UINT32_MAX)
 									{
@@ -727,6 +727,7 @@ public:
 										xMove.uShapeIndex = auDraggableToFull[xEntry.uDragShape];
 										xMove.iEndX = xEntry.iEndX;
 										xMove.iEndY = xEntry.iEndY;
+										xMove.uExpectedElimMask = GetElimMask(xEntry.uPacked);
 										axPathOut.push_back(xMove);
 										uTraceIdx = xEntry.uParentIdx;
 									}

@@ -302,6 +302,12 @@ public:
 				pxPinballBtn->SetOnClick(&OnPinballClicked, this);
 			}
 
+			Zenith_UI::Zenith_UIButton* pxResetSaveBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("ResetSaveButton");
+			if (pxResetSaveBtn)
+			{
+				pxResetSaveBtn->SetOnClick(&OnResetSaveClicked, this);
+			}
+
 			// Legacy: support old single Play button as fallback
 			if (!bHasMenu)
 			{
@@ -613,6 +619,47 @@ private:
 			TilePuzzle_WriteSaveData, &pxSelf->m_xSaveData);
 		pxSelf->m_uCurrentLevelNumber = 1;
 		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
+	}
+
+	static void OnResetSaveClicked(void* pxUserData)
+	{
+		TilePuzzle_Behaviour* pxSelf = static_cast<TilePuzzle_Behaviour*>(pxUserData);
+		pxSelf->m_xSaveData.Reset();
+		Zenith_SaveData::Save("autosave", TilePuzzleSaveData::uGAME_SAVE_VERSION,
+			TilePuzzle_WriteSaveData, &pxSelf->m_xSaveData);
+		pxSelf->m_uCurrentLevelNumber = 1;
+
+		// Update menu texts to reflect reset state
+		if (pxSelf->m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		{
+			Zenith_UIComponent& xUI = pxSelf->m_xParentEntity.GetComponent<Zenith_UIComponent>();
+
+			char szBuffer[64];
+
+			Zenith_UI::Zenith_UIText* pxCoinText = xUI.FindElement<Zenith_UI::Zenith_UIText>("CoinText");
+			if (pxCoinText)
+			{
+				snprintf(szBuffer, sizeof(szBuffer), "Coins: %u", pxSelf->m_xSaveData.uCoins);
+				pxCoinText->SetText(szBuffer);
+			}
+
+			Zenith_UI::Zenith_UIText* pxLivesText = xUI.FindElement<Zenith_UI::Zenith_UIText>("LivesText");
+			if (pxLivesText)
+			{
+				snprintf(szBuffer, sizeof(szBuffer), "Lives: %u/%u", pxSelf->m_xSaveData.uLives, TilePuzzleSaveData::uMAX_LIVES);
+				pxLivesText->SetText(szBuffer);
+			}
+
+			Zenith_UI::Zenith_UIText* pxStreakText = xUI.FindElement<Zenith_UI::Zenith_UIText>("DailyStreakText");
+			if (pxStreakText)
+			{
+				pxStreakText->SetText("Streak: 0 days");
+			}
+
+			// Hide refill button since lives are full
+			Zenith_UI::Zenith_UIButton* pxRefill = xUI.FindElement<Zenith_UI::Zenith_UIButton>("RefillLivesButton");
+			if (pxRefill) pxRefill->SetVisible(false);
+		}
 	}
 
 	static void OnPinballClicked(void* /*pxUserData*/)
@@ -1013,7 +1060,7 @@ private:
 		// Menu buttons (including new meta-game buttons)
 		const char* aszMenuBtns[] = {
 			"ContinueButton", "LevelSelectButton", "NewGameButton",
-			"PinballButton", "CatCafeButton", "DailyPuzzleButton"
+			"PinballButton", "ResetSaveButton", "CatCafeButton", "DailyPuzzleButton"
 		};
 		for (const char* szName : aszMenuBtns)
 		{
@@ -1194,7 +1241,7 @@ private:
 
 	void UpdateMenuInput()
 	{
-		static constexpr int32_t s_iButtonCount = 7;
+		static constexpr int32_t s_iButtonCount = 8;
 
 		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_UP) ||
 			Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_W))
@@ -1213,7 +1260,7 @@ private:
 
 			const char* aszBtnNames[] = {
 				"ContinueButton", "LevelSelectButton", "NewGameButton",
-				"PinballButton", "CatCafeButton", "DailyPuzzleButton",
+				"PinballButton", "ResetSaveButton", "CatCafeButton", "DailyPuzzleButton",
 				"RefillLivesButton"
 			};
 			for (int32_t i = 0; i < s_iButtonCount; ++i)

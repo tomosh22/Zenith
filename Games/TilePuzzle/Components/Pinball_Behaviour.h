@@ -181,6 +181,7 @@ private:
 class Pinball_Behaviour ZENITH_FINAL : Zenith_ScriptBehaviour
 {
 	friend class Zenith_ScriptComponent;
+	friend class TilePuzzle_AutoTest;
 public:
 	ZENITH_BEHAVIOUR_TYPE_NAME(Pinball_Behaviour)
 

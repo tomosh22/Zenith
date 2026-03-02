@@ -110,6 +110,7 @@ struct TilePuzzleSolutionMove
 	uint32_t uShapeIndex;  // Index in the full axShapes array
 	int32_t iEndX;         // Shape origin X after this drag
 	int32_t iEndY;         // Shape origin Y after this drag
+	uint32_t uExpectedElimMask = 0; // Cat elimination bitmask the solver expects after this move's inner BFS
 };
 
 // Level data

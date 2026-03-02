@@ -147,7 +147,7 @@ static TilePuzzle_LevelGenerator::DifficultyParams GetDifficultyPresetV1(uint32_
 		xParams.uMaxShapeSize = 1;
 		xParams.uMinScrambleMoves = 10;
 		xParams.uScrambleMoves = 100;
-		xParams.uMinSolverMoves = 4;
+		xParams.uMinSolverMoves = 2;
 		xParams.uSolverStateLimit = 100000;
 		xParams.uDeepSolverStateLimit = 0;
 		xParams.uMaxDeepVerificationsPerWorker = 0;
@@ -321,7 +321,7 @@ static uint32_t GetMinMovesForTier(DifficultyTier eTier)
 {
 	switch (eTier)
 	{
-	case DIFFICULTY_TIER_TUTORIAL: return 4;
+	case DIFFICULTY_TIER_TUTORIAL: return 2;
 	case DIFFICULTY_TIER_EASY:    return 6;
 	case DIFFICULTY_TIER_MEDIUM:  return 6;
 	case DIFFICULTY_TIER_HARD:    return 8;
@@ -925,14 +925,19 @@ static bool IsLevelValidForTier(const TilePuzzleLevelData& xLevel, DifficultyTie
 		}
 	}
 
+	// Blocker cell limit scales with tier
+	uint32_t uMaxBlockerCells = 3;
+	if (eTier >= DIFFICULTY_TIER_HARD) uMaxBlockerCells = 6;
+	if (eTier >= DIFFICULTY_TIER_EXPERT) uMaxBlockerCells = 8;
+
 	// Tutorial and Easy tiers: just need draggable shapes, no complexity requirement
 	if (eTier <= DIFFICULTY_TIER_EASY)
 	{
-		return uDraggableShapes >= 1 && uTotalBlockerCells <= 3;
+		return uDraggableShapes >= 1 && uTotalBlockerCells <= uMaxBlockerCells;
 	}
 
 	// Medium and above: require at least one complex draggable shape
-	return uDraggableShapes >= 2 && bHasDraggableComplex && uTotalBlockerCells <= 3;
+	return uDraggableShapes >= 2 && bHasDraggableComplex && uTotalBlockerCells <= uMaxBlockerCells;
 }
 
 // ============================================================================

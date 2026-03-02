@@ -1,0 +1,1 @@
+Assertion failed: m_pMetadata->IsEmpty() && "Some allocations were not freed before destruction of this memory block!", file C:\dev\Zenith\middleware\vma\vk_mem_alloc.h, line 10492

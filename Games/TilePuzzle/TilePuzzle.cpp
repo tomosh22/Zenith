@@ -1080,10 +1080,20 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("PinballButton", 0.3f, 0.35f, 0.55f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonPressedColor("PinballButton", 0.12f, 0.15f, 0.25f, 1.f);
 
+	// Reset Save button
+	Zenith_EditorAutomation::AddStep_CreateUIButton("ResetSaveButton", "Reset Save");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("ResetSaveButton", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("ResetSaveButton", 0.f, 380.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("ResetSaveButton", 300.f, 80.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("ResetSaveButton", 32.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("ResetSaveButton", 0.5f, 0.15f, 0.15f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("ResetSaveButton", 0.65f, 0.2f, 0.2f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonPressedColor("ResetSaveButton", 0.35f, 0.1f, 0.1f, 1.f);
+
 	// Cat Cafe button
 	Zenith_EditorAutomation::AddStep_CreateUIButton("CatCafeButton", "Cat Cafe");
 	Zenith_EditorAutomation::AddStep_SetUIAnchor("CatCafeButton", static_cast<int>(Zenith_UI::AnchorPreset::Center));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("CatCafeButton", 0.f, 380.f);
+	Zenith_EditorAutomation::AddStep_SetUIPosition("CatCafeButton", 0.f, 480.f);
 	Zenith_EditorAutomation::AddStep_SetUISize("CatCafeButton", 300.f, 80.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("CatCafeButton", 32.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("CatCafeButton", 0.4f, 0.25f, 0.3f, 1.f);
@@ -1093,7 +1103,7 @@ void Project_RegisterEditorAutomationSteps()
 	// Daily Puzzle button
 	Zenith_EditorAutomation::AddStep_CreateUIButton("DailyPuzzleButton", "Daily Puzzle");
 	Zenith_EditorAutomation::AddStep_SetUIAnchor("DailyPuzzleButton", static_cast<int>(Zenith_UI::AnchorPreset::Center));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("DailyPuzzleButton", 0.f, 480.f);
+	Zenith_EditorAutomation::AddStep_SetUIPosition("DailyPuzzleButton", 0.f, 580.f);
 	Zenith_EditorAutomation::AddStep_SetUISize("DailyPuzzleButton", 300.f, 80.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("DailyPuzzleButton", 32.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("DailyPuzzleButton", 0.25f, 0.35f, 0.2f, 1.f);
