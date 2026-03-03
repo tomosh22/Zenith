@@ -5,7 +5,6 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="TilePuzzleLevelData_Image.h" />
-    <ClInclude Include="TilePuzzleLevelData_Json.h" />
     <ClInclude Include="TilePuzzleLevelGen_Analytics.h" />
   </ItemGroup>
 </Project>

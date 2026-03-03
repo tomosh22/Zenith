@@ -163,13 +163,12 @@ static void OnCatCafeNextPageClicked(void* pxUserData)
 
 uint8_t CalculateStarRating() const
 {
-	if (m_xCurrentLevel.uMinimumMoves == 0)
-		return 3; // No par defined, always 3 stars
+	uint32_t uPar = m_xCurrentLevel.uMinimumMoves;
+	if (uPar == 0) uPar = 1;
 
-	float fRatio = static_cast<float>(m_uMoveCount) / static_cast<float>(m_xCurrentLevel.uMinimumMoves);
-	if (fRatio <= 1.0f)
+	if (m_uMoveCount <= uPar)
 		return 3;
-	else if (fRatio <= 1.5f)
+	else if (m_uMoveCount <= uPar + 2)
 		return 2;
 	else
 		return 1;

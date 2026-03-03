@@ -40,7 +40,8 @@
 #include "DataStream/Zenith_DataStream.h"
 #include "FileAccess/Zenith_FileAccess.h"
 
-#include <vector>
+#include "Collections/Zenith_Vector.h"
+
 #include <unordered_map>
 #include <utility>
 #include <cmath>
@@ -102,18 +103,36 @@ static constexpr uint32_t s_uResetsBeforeSkipOffer = 3;
 // ============================================================================
 // Cat Data Pools
 // ============================================================================
-static constexpr uint32_t s_uCatNameCount = 20;
+static constexpr uint32_t s_uCatNameCount = 100;
 static const char* s_aszCatNames[s_uCatNameCount] = {
 	"Whiskers", "Mittens", "Shadow", "Luna", "Ginger",
 	"Patches", "Smokey", "Tiger", "Cleo", "Mochi",
 	"Noodle", "Biscuit", "Pepper", "Marble", "Cinnamon",
-	"Oreo", "Pumpkin", "Willow", "Ziggy", "Felix"
+	"Oreo", "Pumpkin", "Willow", "Ziggy", "Felix",
+	"Clover", "Jasper", "Hazel", "Cosmo", "Maple",
+	"Pickles", "Mango", "Basil", "Nutmeg", "Waffles",
+	"Sprout", "Olive", "Truffle", "Toffee", "Butterscotch",
+	"Mocha", "Latte", "Espresso", "Chai", "Caramel",
+	"Socks", "Boots", "Domino", "Checkers", "Phantom",
+	"Ember", "Ash", "Slate", "Flint", "Cobalt",
+	"Saffron", "Clementine", "Tangerine", "Peach", "Apricot",
+	"Velvet", "Silk", "Satin", "Cashmere", "Chenille",
+	"Nimbus", "Cirrus", "Stratus", "Misty", "Foggy",
+	"Cricket", "Sparrow", "Finch", "Wren", "Robin",
+	"Pudding", "Crumble", "Scone", "Brioche", "Croissant",
+	"Pixel", "Widget", "Gadget", "Rascal", "Bandit",
+	"Sage", "Thyme", "Rosemary", "Dill", "Fennel",
+	"Copper", "Bronze", "Sterling", "Pewter", "Onyx",
+	"Breezy", "Sunny", "Stormy", "Frosty", "Dusty",
+	"Pip", "Kit", "Dot", "Dash", "Jinx"
 };
 
-static constexpr uint32_t s_uCatBreedCount = 10;
+static constexpr uint32_t s_uCatBreedCount = 20;
 static const char* s_aszCatBreeds[s_uCatBreedCount] = {
 	"Tabby", "Calico", "Siamese", "Persian", "Bengal",
-	"Ragdoll", "Sphynx", "Maine Coon", "British Shorthair", "Abyssinian"
+	"Ragdoll", "Sphynx", "Maine Coon", "British Shorthair", "Abyssinian",
+	"Scottish Fold", "Russian Blue", "Norwegian Forest", "Birman", "Burmese",
+	"Tonkinese", "Chartreux", "Turkish Van", "Somali", "Manx"
 };
 
 // ============================================================================
@@ -147,9 +166,9 @@ static uint32_t GetCurrentTimestamp()
 // Snapshot of game state for undo stack
 struct TilePuzzleUndoState
 {
-	std::vector<std::pair<int32_t, int32_t>> axShapePositions;  // (iOriginX, iOriginY) per shape
-	std::vector<bool> abCatEliminated;                          // per cat
-	std::vector<bool> abShapeRemoved;                           // per shape
+	Zenith_Vector<std::pair<int32_t, int32_t>> axShapePositions;  // (iOriginX, iOriginY) per shape
+	Zenith_Vector<bool> abCatEliminated;                          // per cat
+	Zenith_Vector<bool> abShapeRemoved;                           // per shape
 	uint32_t uMoveCount;
 	int32_t iLastMovedShapeIndex;
 };
@@ -1314,8 +1333,8 @@ private:
 
 	// Level file loading
 	uint32_t m_uAvailableLevelCount;
-	std::vector<TilePuzzleShapeDefinition> m_axLoadedShapeDefs;  // Owns shape defs for loaded level (must outlive m_xCurrentLevel)
-	std::vector<Flux_MeshGeometry*> m_apxGeneratedShapeMeshes;  // Per-shape meshes generated from loaded cell offsets
+	Zenith_Vector<TilePuzzleShapeDefinition> m_axLoadedShapeDefs;  // Owns shape defs for loaded level (must outlive m_xCurrentLevel)
+	Zenith_Vector<Flux_MeshGeometry*> m_apxGeneratedShapeMeshes;  // Per-shape meshes generated from loaded cell offsets
 
 	// Entity IDs - floor entities indexed by grid position (y * 1000 + x)
 	std::unordered_map<uint32_t, Zenith_EntityID> m_axFloorEntityIDs; // #TODO: Replace with engine hash map
@@ -1353,7 +1372,7 @@ private:
 	uint32_t m_uLevelSelectPage;
 
 	// Undo system
-	std::vector<TilePuzzleUndoState> m_axUndoStack;
+	Zenith_Vector<TilePuzzleUndoState> m_axUndoStack;
 	bool m_bFreeUndoAvailable = true;
 	bool m_bDragUndoPushed = false;
 
@@ -1403,11 +1422,11 @@ private:
 		Zenith_Assert(xStream.IsValid(), "Failed to load level file: %s", szPath);
 
 		// Clean up previously generated per-shape meshes
-		for (Flux_MeshGeometry* pxMesh : m_apxGeneratedShapeMeshes)
-			delete pxMesh;
-		m_apxGeneratedShapeMeshes.clear();
+		for (uint32_t i = 0; i < m_apxGeneratedShapeMeshes.GetSize(); ++i)
+			delete m_apxGeneratedShapeMeshes.Get(i);
+		m_apxGeneratedShapeMeshes.Clear();
 
-		m_axLoadedShapeDefs.clear();
+		m_axLoadedShapeDefs.Clear();
 		bool bParsed = TilePuzzleLevelSerialize::Read(xStream, m_xCurrentLevel, m_axLoadedShapeDefs);
 		Zenith_Assert(bParsed, "Failed to parse level file: %s", szPath);
 
@@ -1441,9 +1460,9 @@ private:
 				xShape.iOriginY = static_cast<int32_t>(uH - 1) - xShape.iOriginY;
 
 			// Negate cell offset Y in owned shape definitions
-			for (auto& xDef : m_axLoadedShapeDefs)
-				for (auto& xCell : xDef.axCells)
-					xCell.iY = -xCell.iY;
+			for (uint32_t d = 0; d < m_axLoadedShapeDefs.GetSize(); ++d)
+				for (size_t c = 0; c < m_axLoadedShapeDefs.Get(d).axCells.size(); ++c)
+					m_axLoadedShapeDefs.Get(d).axCells[c].iY = -m_axLoadedShapeDefs.Get(d).axCells[c].iY;
 
 			// Flip cat positions
 			for (auto& xCat : m_xCurrentLevel.axCats)
@@ -1487,7 +1506,7 @@ private:
 		m_eState = TILEPUZZLE_STATE_PLAYING;
 
 		// Reset undo stack and hint for new level
-		m_axUndoStack.clear();
+		m_axUndoStack.Clear();
 		m_bFreeUndoAvailable = true;
 		ClearHint();
 		m_uStarsEarned = 0;
@@ -2032,7 +2051,7 @@ private:
 			// Generate mesh from actual loaded cell offsets (which may be rotated)
 			Flux_MeshGeometry* pxShapeMesh = new Flux_MeshGeometry();
 			TilePuzzle::GenerateShapeMeshFromDefinition(*xShape.pxDefinition, *pxShapeMesh);
-			m_apxGeneratedShapeMeshes.push_back(pxShapeMesh);
+			m_apxGeneratedShapeMeshes.PushBack(pxShapeMesh);
 
 			Zenith_Entity xShapeEntity = TilePuzzle::g_pxShapeCubePrefab->Instantiate(pxSceneData, "Shape");
 			Zenith_TransformComponent& xTransform = xShapeEntity.GetComponent<Zenith_TransformComponent>();
@@ -2471,11 +2490,11 @@ private:
 		Zenith_UI::Zenith_UIButton* pxUndoBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("UndoBtn");
 		if (pxUndoBtn)
 		{
-			if (m_bFreeUndoAvailable && !m_axUndoStack.empty())
+			if (m_bFreeUndoAvailable && m_axUndoStack.GetSize() > 0)
 			{
 				pxUndoBtn->SetText("Undo (Free)");
 			}
-			else if (!m_axUndoStack.empty())
+			else if (m_axUndoStack.GetSize() > 0)
 			{
 				char szUndoLabel[32];
 				snprintf(szUndoLabel, sizeof(szUndoLabel), "Undo (%u)", s_uUndoCoinCost);
@@ -2516,26 +2535,26 @@ private:
 		xState.uMoveCount = m_uMoveCount;
 		xState.iLastMovedShapeIndex = m_iLastMovedShapeIndex;
 
-		xState.axShapePositions.resize(m_xCurrentLevel.axShapes.size());
-		xState.abShapeRemoved.resize(m_xCurrentLevel.axShapes.size());
+		xState.axShapePositions.Reserve(static_cast<uint32_t>(m_xCurrentLevel.axShapes.size()));
+		xState.abShapeRemoved.Reserve(static_cast<uint32_t>(m_xCurrentLevel.axShapes.size()));
 		for (size_t i = 0; i < m_xCurrentLevel.axShapes.size(); ++i)
 		{
-			xState.axShapePositions[i] = { m_xCurrentLevel.axShapes[i].iOriginX, m_xCurrentLevel.axShapes[i].iOriginY };
-			xState.abShapeRemoved[i] = m_xCurrentLevel.axShapes[i].bRemoved;
+			xState.axShapePositions.PushBack({ m_xCurrentLevel.axShapes[i].iOriginX, m_xCurrentLevel.axShapes[i].iOriginY });
+			xState.abShapeRemoved.PushBack(m_xCurrentLevel.axShapes[i].bRemoved);
 		}
 
-		xState.abCatEliminated.resize(m_xCurrentLevel.axCats.size());
+		xState.abCatEliminated.Reserve(static_cast<uint32_t>(m_xCurrentLevel.axCats.size()));
 		for (size_t i = 0; i < m_xCurrentLevel.axCats.size(); ++i)
 		{
-			xState.abCatEliminated[i] = m_xCurrentLevel.axCats[i].bEliminated;
+			xState.abCatEliminated.PushBack(m_xCurrentLevel.axCats[i].bEliminated);
 		}
 
-		m_axUndoStack.push_back(std::move(xState));
+		m_axUndoStack.PushBack(std::move(xState));
 	}
 
 	void PerformUndo()
 	{
-		if (m_axUndoStack.empty())
+		if (m_axUndoStack.GetSize() == 0)
 			return;
 
 		// Check if undo costs coins
@@ -2549,40 +2568,40 @@ private:
 			m_bFreeUndoAvailable = false;
 		}
 
-		const TilePuzzleUndoState& xState = m_axUndoStack.back();
+		const TilePuzzleUndoState& xState = m_axUndoStack.GetBack();
 
 		// Restore move count
 		m_uMoveCount = xState.uMoveCount;
 		m_iLastMovedShapeIndex = xState.iLastMovedShapeIndex;
 
 		// Restore shape positions and removed state
-		for (size_t i = 0; i < m_xCurrentLevel.axShapes.size() && i < xState.axShapePositions.size(); ++i)
+		for (uint32_t i = 0; i < m_xCurrentLevel.axShapes.size() && i < xState.axShapePositions.GetSize(); ++i)
 		{
-			m_xCurrentLevel.axShapes[i].iOriginX = xState.axShapePositions[i].first;
-			m_xCurrentLevel.axShapes[i].iOriginY = xState.axShapePositions[i].second;
+			m_xCurrentLevel.axShapes[i].iOriginX = xState.axShapePositions.Get(i).first;
+			m_xCurrentLevel.axShapes[i].iOriginY = xState.axShapePositions.Get(i).second;
 
 			// If shape was removed but shouldn't be, we need to recreate its visual
-			if (m_xCurrentLevel.axShapes[i].bRemoved && !xState.abShapeRemoved[i])
+			if (m_xCurrentLevel.axShapes[i].bRemoved && !xState.abShapeRemoved.Get(i))
 			{
 				m_xCurrentLevel.axShapes[i].bRemoved = false;
 				RecreateShapeVisual(i);
 			}
-			m_xCurrentLevel.axShapes[i].bRemoved = xState.abShapeRemoved[i];
+			m_xCurrentLevel.axShapes[i].bRemoved = xState.abShapeRemoved.Get(i);
 		}
 
 		// Restore cat eliminated state
-		for (size_t i = 0; i < m_xCurrentLevel.axCats.size() && i < xState.abCatEliminated.size(); ++i)
+		for (uint32_t i = 0; i < m_xCurrentLevel.axCats.size() && i < xState.abCatEliminated.GetSize(); ++i)
 		{
 			// If cat was eliminated but shouldn't be, recreate its visual
-			if (m_xCurrentLevel.axCats[i].bEliminated && !xState.abCatEliminated[i])
+			if (m_xCurrentLevel.axCats[i].bEliminated && !xState.abCatEliminated.Get(i))
 			{
 				m_xCurrentLevel.axCats[i].bEliminated = false;
 				RecreateCatVisual(i);
 			}
-			m_xCurrentLevel.axCats[i].bEliminated = xState.abCatEliminated[i];
+			m_xCurrentLevel.axCats[i].bEliminated = xState.abCatEliminated.Get(i);
 		}
 
-		m_axUndoStack.pop_back();
+		m_axUndoStack.PopBack();
 
 		// Update all shape positions visually
 		RefreshAllShapeVisuals();
@@ -2615,7 +2634,7 @@ private:
 		// Find or create mesh for this shape
 		Flux_MeshGeometry* pxShapeMesh = new Flux_MeshGeometry();
 		TilePuzzle::GenerateShapeMeshFromDefinition(*xShape.pxDefinition, *pxShapeMesh);
-		m_apxGeneratedShapeMeshes.push_back(pxShapeMesh);
+		m_apxGeneratedShapeMeshes.PushBack(pxShapeMesh);
 
 		Zenith_Entity xShapeEntity = TilePuzzle::g_pxShapeCubePrefab->Instantiate(pxSceneData, "Shape");
 		Zenith_TransformComponent& xTransform = xShapeEntity.GetComponent<Zenith_TransformComponent>();

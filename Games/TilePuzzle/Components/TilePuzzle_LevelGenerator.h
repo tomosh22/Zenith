@@ -133,33 +133,118 @@ public:
 
 	/**
 	 * GetDifficultyForLevel - Get difficulty parameters based on level number
+	 *
+	 * 6-tier progressive difficulty curve:
+	 *   Tutorial (1-10):  Small grids, 1-2 colors, no blockers, simple shapes
+	 *   Easy     (11-25): Medium grids, 2 colors, few blockers, +I-shape
+	 *   Medium   (26-45): Larger grids, 2-3 colors, blocker-cats introduced
+	 *   Hard     (46-65): Full grids, 3 colors, conditional shapes
+	 *   Expert   (66-80): Large grids, 3-4 colors, multiple conditionals
+	 *   Master   (81-100): Largest grids, 4-5 colors, all mechanics combined
 	 */
-	static DifficultyParams GetDifficultyForLevel(uint32_t /*uLevelNumber*/)
+	static DifficultyParams GetDifficultyForLevel(uint32_t uLevelNumber)
 	{
 		DifficultyParams xParams;
-		xParams.uMinGridWidth = s_uGenMinGridWidth;
-		xParams.uMaxGridWidth = s_uGenMaxGridWidth;
-		xParams.uMinGridHeight = s_uGenMinGridHeight;
-		xParams.uMaxGridHeight = s_uGenMaxGridHeight;
-		xParams.uMinNumColors = s_uGenMinColors;
-		xParams.uNumColors = s_uGenMaxColors;
-		xParams.uMinCatsPerColor = s_uGenMinCatsPerColor;
-		xParams.uNumCatsPerColor = s_uGenMaxCatsPerColor;
 		xParams.uNumShapesPerColor = s_uGenNumShapesPerColor;
-		xParams.uMinBlockers = s_uGenMinBlockers;
-		xParams.uNumBlockers = s_uGenMaxBlockers;
-		xParams.uMinMaxShapeSize = s_uGenMinShapeComplexity;
-		xParams.uMaxShapeSize = s_uGenMaxShapeComplexity;
-		xParams.uScrambleMoves = s_uGenScrambleMoves;
-		xParams.uMinBlockerCats = s_uGenMinBlockerCats;
-		xParams.uNumBlockerCats = s_uGenMaxBlockerCats;
-		xParams.uMinConditionalShapes = s_uGenMinConditionalShapes;
-		xParams.uNumConditionalShapes = s_uGenMaxConditionalShapes;
-		xParams.uConditionalThreshold = s_uGenMaxConditionalThreshold;
-		xParams.uMinSolverMoves = s_uGenMinSolverMoves;
 		xParams.uSolverStateLimit = s_uGenSolverStateLimit;
-		xParams.uMinScrambleMoves = s_uGenMinScrambleMoves;
 		xParams.uMaxAttempts = static_cast<uint32_t>(s_iTilePuzzleMaxGenerationAttempts);
+
+		if (uLevelNumber <= 10)
+		{
+			// Tutorial: gentle introduction
+			xParams.uMinGridWidth = 5;   xParams.uMaxGridWidth = 6;
+			xParams.uMinGridHeight = 5;  xParams.uMaxGridHeight = 6;
+			xParams.uMinNumColors = 1;   xParams.uNumColors = 2;
+			xParams.uMinCatsPerColor = 1; xParams.uNumCatsPerColor = 1;
+			xParams.uMinBlockers = 0;    xParams.uNumBlockers = 0;
+			xParams.uMinMaxShapeSize = 1; xParams.uMaxShapeSize = 2;
+			xParams.uScrambleMoves = 50;
+			xParams.uMinBlockerCats = 0; xParams.uNumBlockerCats = 0;
+			xParams.uMinConditionalShapes = 0; xParams.uNumConditionalShapes = 0;
+			xParams.uConditionalThreshold = 0;
+			xParams.uMinSolverMoves = 2;
+			xParams.uMinScrambleMoves = 10;
+		}
+		else if (uLevelNumber <= 25)
+		{
+			// Easy: introduce more colors and I-shape
+			xParams.uMinGridWidth = 6;   xParams.uMaxGridWidth = 7;
+			xParams.uMinGridHeight = 6;  xParams.uMaxGridHeight = 7;
+			xParams.uMinNumColors = 2;   xParams.uNumColors = 2;
+			xParams.uMinCatsPerColor = 1; xParams.uNumCatsPerColor = 2;
+			xParams.uMinBlockers = 1;    xParams.uNumBlockers = 2;
+			xParams.uMinMaxShapeSize = 1; xParams.uMaxShapeSize = 3;
+			xParams.uScrambleMoves = 100;
+			xParams.uMinBlockerCats = 0; xParams.uNumBlockerCats = 0;
+			xParams.uMinConditionalShapes = 0; xParams.uNumConditionalShapes = 0;
+			xParams.uConditionalThreshold = 0;
+			xParams.uMinSolverMoves = 3;
+			xParams.uMinScrambleMoves = 30;
+		}
+		else if (uLevelNumber <= 45)
+		{
+			// Medium: blocker-cats introduced, more colors
+			xParams.uMinGridWidth = 7;   xParams.uMaxGridWidth = 8;
+			xParams.uMinGridHeight = 7;  xParams.uMaxGridHeight = 8;
+			xParams.uMinNumColors = 2;   xParams.uNumColors = 3;
+			xParams.uMinCatsPerColor = 2; xParams.uNumCatsPerColor = 2;
+			xParams.uMinBlockers = 1;    xParams.uNumBlockers = 2;
+			xParams.uMinMaxShapeSize = 2; xParams.uMaxShapeSize = 3;
+			xParams.uScrambleMoves = 200;
+			xParams.uMinBlockerCats = 0; xParams.uNumBlockerCats = 1;
+			xParams.uMinConditionalShapes = 0; xParams.uNumConditionalShapes = 0;
+			xParams.uConditionalThreshold = 0;
+			xParams.uMinSolverMoves = 4;
+			xParams.uMinScrambleMoves = 50;
+		}
+		else if (uLevelNumber <= 65)
+		{
+			// Hard: conditional shapes, all shape types
+			xParams.uMinGridWidth = 8;   xParams.uMaxGridWidth = 8;
+			xParams.uMinGridHeight = 8;  xParams.uMaxGridHeight = 8;
+			xParams.uMinNumColors = 3;   xParams.uNumColors = 3;
+			xParams.uMinCatsPerColor = 2; xParams.uNumCatsPerColor = 3;
+			xParams.uMinBlockers = 1;    xParams.uNumBlockers = 2;
+			xParams.uMinMaxShapeSize = 3; xParams.uMaxShapeSize = 4;
+			xParams.uScrambleMoves = 400;
+			xParams.uMinBlockerCats = 0; xParams.uNumBlockerCats = 1;
+			xParams.uMinConditionalShapes = 0; xParams.uNumConditionalShapes = 1;
+			xParams.uConditionalThreshold = 2;
+			xParams.uMinSolverMoves = 5;
+			xParams.uMinScrambleMoves = 80;
+		}
+		else if (uLevelNumber <= 80)
+		{
+			// Expert: larger grids, more colors, multiple conditionals
+			xParams.uMinGridWidth = 8;   xParams.uMaxGridWidth = 9;
+			xParams.uMinGridHeight = 8;  xParams.uMaxGridHeight = 9;
+			xParams.uMinNumColors = 3;   xParams.uNumColors = 4;
+			xParams.uMinCatsPerColor = 2; xParams.uNumCatsPerColor = 3;
+			xParams.uMinBlockers = 1;    xParams.uNumBlockers = 2;
+			xParams.uMinMaxShapeSize = 3; xParams.uMaxShapeSize = 4;
+			xParams.uScrambleMoves = 500;
+			xParams.uMinBlockerCats = 0; xParams.uNumBlockerCats = 1;
+			xParams.uMinConditionalShapes = 0; xParams.uNumConditionalShapes = 1;
+			xParams.uConditionalThreshold = 2;
+			xParams.uMinSolverMoves = 5;
+			xParams.uMinScrambleMoves = 80;
+		}
+		else
+		{
+			// Master (81-100): everything combined, maximum challenge
+			xParams.uMinGridWidth = 8;   xParams.uMaxGridWidth = 8;
+			xParams.uMinGridHeight = 8;  xParams.uMaxGridHeight = 8;
+			xParams.uMinNumColors = 3;   xParams.uNumColors = 3;
+			xParams.uMinCatsPerColor = 3; xParams.uNumCatsPerColor = 3;
+			xParams.uMinBlockers = 1;    xParams.uNumBlockers = 2;
+			xParams.uMinMaxShapeSize = 3; xParams.uMaxShapeSize = 4;
+			xParams.uScrambleMoves = s_uGenScrambleMoves;
+			xParams.uMinBlockerCats = 0; xParams.uNumBlockerCats = 1;
+			xParams.uMinConditionalShapes = 0; xParams.uNumConditionalShapes = 1;
+			xParams.uConditionalThreshold = s_uGenMaxConditionalThreshold;
+			xParams.uMinSolverMoves = s_uGenMinSolverMoves;
+			xParams.uMinScrambleMoves = s_uGenMinScrambleMoves;
+		}
 
 		// Clamp values
 		xParams.uNumColors = std::min(xParams.uNumColors, static_cast<uint32_t>(TILEPUZZLE_COLOR_COUNT));

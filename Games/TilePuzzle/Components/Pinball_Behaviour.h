@@ -939,7 +939,7 @@ private:
 		{
 			Zenith_Entity xTarget = CreateStaticBox(pxScene, "PB_Target",
 				{ 0.f, 0.8f, 0.f },
-				{ 1.0f, 0.3f, 0.5f },
+				{ 1.5f, 0.3f, 0.5f },
 				m_xTargetMaterial);
 			m_xTargetEntityID = xTarget.GetEntityID();
 		}

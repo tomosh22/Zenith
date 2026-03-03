@@ -35,6 +35,8 @@ public class TilePuzzleLevelGenProject : ZenithBaseProject
 		// Output directory define
 		string outputDir = zenithRoot + "/TilePuzzleLevelGen/Output/";
 		conf.Defines.Add($"LEVELGEN_OUTPUT_DIR=\"{outputDir}\"");
+		string registryDir = zenithRoot + "/TilePuzzleLevelGen/LevelRegistry/";
+		conf.Defines.Add($"LEVELGEN_REGISTRY_DIR=\"{registryDir}\"");
 		conf.Defines.Add("GLM_ENABLE_EXPERIMENTAL");
 		conf.Defines.Add("NOMINMAX");
 		conf.Defines.Add("_CRT_SECURE_NO_WARNINGS");

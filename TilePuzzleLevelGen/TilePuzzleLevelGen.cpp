@@ -4,7 +4,6 @@
 
 #include "Components/TilePuzzle_LevelGenerator.h"
 #include "Components/TilePuzzleLevelData_Serialize.h"
-#include "TilePuzzleLevelData_Json.h"
 #include "TilePuzzleLevelData_Image.h"
 #include "TilePuzzleLevelGen_Analytics.h"
 
@@ -12,6 +11,7 @@
 #include <chrono>
 #include <cstdio>
 #include <cstring>
+#include <ctime>
 #include <random>
 #include <csignal>
 #include <unordered_map>
@@ -38,8 +38,7 @@ static void SignalHandler(int)
 // ============================================================================
 enum GenerationMode : uint8_t
 {
-	GENMODE_LEGACY = 0,    // Original continuous/count mode
-	GENMODE_BATCH,         // --batch START-END with preset difficulty
+	GENMODE_BATCH = 0,     // --batch START-END with preset difficulty
 	GENMODE_DAILY          // --daily YEAR for daily puzzles
 };
 
@@ -72,10 +71,11 @@ static const char* DifficultyTierToString(DifficultyTier eTier)
 }
 
 // ============================================================================
-// TilePuzzleLevelMetadata
+// TilePuzzleLevelMetadata (v2)
 // ============================================================================
 struct TilePuzzleLevelMetadata
 {
+	// === Level structure (from v1) ===
 	uint32_t uLevelNumber;
 	uint32_t uGridWidth;
 	uint32_t uGridHeight;
@@ -85,14 +85,49 @@ struct TilePuzzleLevelMetadata
 	uint32_t uNumStaticBlockers;
 	uint32_t uNumBlockerCats;
 	uint32_t uNumConditionalShapes;
-	uint32_t uParMoves;            // Solver-verified minimum
-	uint32_t uDifficultyTier;      // DifficultyTier enum value
-	uint64_t ulLayoutHash;         // Color-independent hash for duplicate detection
+	uint32_t uParMoves;
+	uint32_t uDifficultyTier;
+	uint64_t ulLayoutHash;
+
+	// === Registry matching (new) ===
+	uint32_t uMaxShapeComplexity;       // Highest complexity tier (1-4) among draggable shapes
+	uint32_t uMinShapeComplexity;       // Lowest complexity tier among draggable shapes
+	uint32_t uMaxConditionalThreshold;  // Highest unlock threshold (0 if no conditionals)
+	uint32_t uNumShapesPerColor;        // Draggable shapes / num colors
+	uint32_t uTotalCats;                // Total cat count across all colors
+	uint32_t uNumFloorCells;            // Number of floor cells (playable area)
+
+	// === Generation provenance (new) ===
+	uint64_t ulGenerationTimestamp;     // Unix timestamp (seconds since epoch)
+	uint32_t uGenerationSeed;           // Global seed counter at time of generation
+	uint32_t uGenerationTimeMs;         // Wall-clock generation time in milliseconds
+	uint32_t uGenerationRetryRounds;    // Number of retry rounds needed
+	uint32_t uGenerationTotalAttempts;  // Total attempts across all rounds
+	uint32_t bGenerationTimedOut;       // Whether generation hit the timeout
 };
 
-// Metadata magic and version for .tlvl header extension
-static constexpr uint32_t s_uMETA_MAGIC = 0x4D455441;   // "META"
-static constexpr uint32_t s_uMETA_VERSION = 1;
+// Metadata version for .tlvl header extension (s_uMETA_MAGIC defined in TilePuzzleLevelData_Serialize.h)
+static constexpr uint32_t s_uMETA_VERSION = 2;
+
+// ============================================================================
+// Shape Type to Complexity Mapping
+// ============================================================================
+
+static uint32_t ShapeTypeToComplexity(TilePuzzleShapeType eType)
+{
+	switch (eType)
+	{
+	case TILEPUZZLE_SHAPE_SINGLE: return 1;
+	case TILEPUZZLE_SHAPE_DOMINO: return 2;
+	case TILEPUZZLE_SHAPE_L:
+	case TILEPUZZLE_SHAPE_T:
+	case TILEPUZZLE_SHAPE_I:      return 3;
+	case TILEPUZZLE_SHAPE_S:
+	case TILEPUZZLE_SHAPE_Z:
+	case TILEPUZZLE_SHAPE_O:      return 4;
+	default:                      return 0;
+	}
+}
 
 // ============================================================================
 // V1 Difficulty Presets (6-tier curve)
@@ -625,10 +660,76 @@ static void WriteMetadataAndLevel(
 	xStream << xMeta.uDifficultyTier;
 	xStream << xMeta.ulLayoutHash;
 
+	// v2 fields: registry matching
+	xStream << xMeta.uMaxShapeComplexity;
+	xStream << xMeta.uMinShapeComplexity;
+	xStream << xMeta.uMaxConditionalThreshold;
+	xStream << xMeta.uNumShapesPerColor;
+	xStream << xMeta.uTotalCats;
+	xStream << xMeta.uNumFloorCells;
+
+	// v2 fields: generation provenance
+	xStream << xMeta.ulGenerationTimestamp;
+	xStream << xMeta.uGenerationSeed;
+	xStream << xMeta.uGenerationTimeMs;
+	xStream << xMeta.uGenerationRetryRounds;
+	xStream << xMeta.uGenerationTotalAttempts;
+	xStream << xMeta.bGenerationTimedOut;
+
 	// Write standard level data (includes TPLV magic)
 	TilePuzzleLevelSerialize::Write(xStream, xLevel);
 
 	xStream.WriteToFile(szPath);
+}
+
+/**
+ * ReadMetadataFromFile - Read v2 metadata header from a .tlvl file
+ *
+ * @return false if file lacks META header or is not v2
+ */
+static bool ReadMetadataFromFile(const char* szPath, TilePuzzleLevelMetadata& xMetaOut)
+{
+	Zenith_DataStream xStream;
+	xStream.ReadFromFile(szPath);
+	if (!xStream.IsValid())
+		return false;
+
+	uint32_t uMagic;
+	xStream >> uMagic;
+	if (uMagic != s_uMETA_MAGIC)
+		return false;
+
+	uint32_t uMetaVersion;
+	xStream >> uMetaVersion;
+	if (uMetaVersion != s_uMETA_VERSION)
+		return false;
+
+	xStream >> xMetaOut.uLevelNumber;
+	xStream >> xMetaOut.uGridWidth;
+	xStream >> xMetaOut.uGridHeight;
+	xStream >> xMetaOut.uNumColors;
+	xStream >> xMetaOut.uNumCatsPerColor;
+	xStream >> xMetaOut.uNumDraggableShapes;
+	xStream >> xMetaOut.uNumStaticBlockers;
+	xStream >> xMetaOut.uNumBlockerCats;
+	xStream >> xMetaOut.uNumConditionalShapes;
+	xStream >> xMetaOut.uParMoves;
+	xStream >> xMetaOut.uDifficultyTier;
+	xStream >> xMetaOut.ulLayoutHash;
+	xStream >> xMetaOut.uMaxShapeComplexity;
+	xStream >> xMetaOut.uMinShapeComplexity;
+	xStream >> xMetaOut.uMaxConditionalThreshold;
+	xStream >> xMetaOut.uNumShapesPerColor;
+	xStream >> xMetaOut.uTotalCats;
+	xStream >> xMetaOut.uNumFloorCells;
+	xStream >> xMetaOut.ulGenerationTimestamp;
+	xStream >> xMetaOut.uGenerationSeed;
+	xStream >> xMetaOut.uGenerationTimeMs;
+	xStream >> xMetaOut.uGenerationRetryRounds;
+	xStream >> xMetaOut.uGenerationTotalAttempts;
+	xStream >> xMetaOut.bGenerationTimedOut;
+
+	return true;
 }
 
 /**
@@ -638,7 +739,12 @@ static TilePuzzleLevelMetadata BuildMetadata(
 	uint32_t uLevelNumber,
 	const TilePuzzleLevelData& xLevel,
 	DifficultyTier eTier,
-	uint64_t ulLayoutHash)
+	uint64_t ulLayoutHash,
+	uint32_t uGenerationSeed,
+	double fGenerationTimeMs,
+	uint32_t uRetryRounds,
+	const TilePuzzle_LevelGenerator::GenerationStats* pxStats,
+	bool bTimedOut)
 {
 	TilePuzzleLevelMetadata xMeta = {};
 	xMeta.uLevelNumber = uLevelNumber;
@@ -673,10 +779,13 @@ static TilePuzzleLevelMetadata BuildMetadata(
 	}
 	xMeta.uNumCatsPerColor = uMaxCatsPerColor;
 
-	// Count shapes and blockers
+	// Count shapes, blockers, conditionals, and compute complexity
 	uint32_t uDraggable = 0;
 	uint32_t uBlockers = 0;
 	uint32_t uConditional = 0;
+	uint32_t uMaxComplexity = 0;
+	uint32_t uMinComplexity = UINT32_MAX;
+	uint32_t uMaxThreshold = 0;
 	for (size_t i = 0; i < xLevel.axShapes.size(); ++i)
 	{
 		const TilePuzzleShapeInstance& xShape = xLevel.axShapes[i];
@@ -685,6 +794,14 @@ static TilePuzzleLevelMetadata BuildMetadata(
 			uDraggable++;
 			if (xShape.uUnlockThreshold > 0)
 				uConditional++;
+			if (xShape.uUnlockThreshold > uMaxThreshold)
+				uMaxThreshold = xShape.uUnlockThreshold;
+
+			uint32_t uComplexity = ShapeTypeToComplexity(xShape.pxDefinition->eType);
+			if (uComplexity > uMaxComplexity)
+				uMaxComplexity = uComplexity;
+			if (uComplexity < uMinComplexity)
+				uMinComplexity = uComplexity;
 		}
 		else
 		{
@@ -694,6 +811,10 @@ static TilePuzzleLevelMetadata BuildMetadata(
 	xMeta.uNumDraggableShapes = uDraggable;
 	xMeta.uNumStaticBlockers = uBlockers;
 	xMeta.uNumConditionalShapes = uConditional;
+	xMeta.uMaxShapeComplexity = uMaxComplexity;
+	xMeta.uMinShapeComplexity = (uDraggable > 0) ? uMinComplexity : 0;
+	xMeta.uMaxConditionalThreshold = uMaxThreshold;
+	xMeta.uNumShapesPerColor = (xMeta.uNumColors > 0) ? (uDraggable / xMeta.uNumColors) : 0;
 
 	// Count blocker cats
 	uint32_t uBlockerCats = 0;
@@ -704,166 +825,383 @@ static TilePuzzleLevelMetadata BuildMetadata(
 	}
 	xMeta.uNumBlockerCats = uBlockerCats;
 
+	// Total cats
+	xMeta.uTotalCats = static_cast<uint32_t>(xLevel.axCats.size());
+
+	// Count floor cells
+	uint32_t uFloorCells = 0;
+	for (size_t i = 0; i < xLevel.aeCells.size(); ++i)
+	{
+		if (xLevel.aeCells[i] == TILEPUZZLE_CELL_FLOOR)
+			uFloorCells++;
+	}
+	xMeta.uNumFloorCells = uFloorCells;
+
+	// Generation provenance
+	xMeta.ulGenerationTimestamp = static_cast<uint64_t>(std::time(nullptr));
+	xMeta.uGenerationSeed = uGenerationSeed;
+	xMeta.uGenerationTimeMs = static_cast<uint32_t>(fGenerationTimeMs);
+	xMeta.uGenerationRetryRounds = uRetryRounds;
+	xMeta.uGenerationTotalAttempts = pxStats ? pxStats->uTotalAttempts : 0;
+	xMeta.bGenerationTimedOut = bTimedOut ? 1 : 0;
+
 	return xMeta;
 }
 
 // ============================================================================
-// Level Manifest (JSON output)
+// DoesLevelMatchParams - Range-based matching for registry lookup
 // ============================================================================
 
-/**
- * ManifestStats - Accumulated stats for level manifest output
- */
-struct ManifestStats
+static bool DoesLevelMatchParams(
+	const TilePuzzleLevelMetadata& xMeta,
+	const TilePuzzle_LevelGenerator::DifficultyParams& xParams,
+	uint32_t uMinMoves)
 {
-	// Per-tier counts
-	uint32_t auLevelsPerTier[DIFFICULTY_TIER_COUNT] = {};
+	if (xMeta.uGridWidth < xParams.uMinGridWidth || xMeta.uGridWidth > xParams.uMaxGridWidth)
+		return false;
+	if (xMeta.uGridHeight < xParams.uMinGridHeight || xMeta.uGridHeight > xParams.uMaxGridHeight)
+		return false;
+	if (xMeta.uNumColors < xParams.uMinNumColors || xMeta.uNumColors > xParams.uNumColors)
+		return false;
+	if (xMeta.uNumCatsPerColor < xParams.uMinCatsPerColor || xMeta.uNumCatsPerColor > xParams.uNumCatsPerColor)
+		return false;
+	if (xMeta.uNumShapesPerColor != xParams.uNumShapesPerColor)
+		return false;
+	if (xMeta.uNumStaticBlockers < xParams.uMinBlockers || xMeta.uNumStaticBlockers > xParams.uNumBlockers)
+		return false;
+	if (xMeta.uNumBlockerCats < xParams.uMinBlockerCats || xMeta.uNumBlockerCats > xParams.uNumBlockerCats)
+		return false;
+	if (xMeta.uNumConditionalShapes < xParams.uMinConditionalShapes || xMeta.uNumConditionalShapes > xParams.uNumConditionalShapes)
+		return false;
+	if (xMeta.uMaxShapeComplexity < xParams.uMinMaxShapeSize || xMeta.uMaxShapeComplexity > xParams.uMaxShapeSize)
+		return false;
+	if (xMeta.uMinShapeComplexity < xParams.uMinMaxShapeSize)
+		return false;
+	if (xMeta.uMaxConditionalThreshold > xParams.uConditionalThreshold)
+		return false;
+	if (xMeta.uNumConditionalShapes > 0 && xMeta.uMaxConditionalThreshold < xParams.uMinConditionalThreshold)
+		return false;
+	if (xMeta.uParMoves < uMinMoves)
+		return false;
+	return true;
+}
 
-	// Per-tier par move distribution
-	uint32_t auParMin[DIFFICULTY_TIER_COUNT] = {};
-	uint32_t auParMax[DIFFICULTY_TIER_COUNT] = {};
-	uint32_t auParSum[DIFFICULTY_TIER_COUNT] = {};
+// ============================================================================
+// Level Registry - Cache for reusing previously generated levels
+// ============================================================================
 
-	// Shape type usage counts
-	uint32_t auShapeTypeCounts[TILEPUZZLE_SHAPE_COUNT] = {};
+struct RegistryEntry
+{
+	std::string strFilePath;
+	TilePuzzleLevelMetadata xMetadata;
+};
 
-	// Duplicate rejection count
-	uint32_t uDuplicateRejections = 0;
+struct LevelRegistry
+{
+	std::vector<RegistryEntry> axEntriesPerTier[DIFFICULTY_TIER_COUNT];
+	std::unordered_set<std::string> xConsumedPaths;
 
-	void AccumulateLevel(const TilePuzzleLevelMetadata& xMeta, const TilePuzzleLevelData& xLevel)
+	uint32_t uTotalEntries = 0;
+	uint32_t uDuplicatesRemoved = 0;
+	uint32_t uCacheHits = 0;
+	uint32_t uCacheMisses = 0;
+
+	void ScanAndLoad(const std::string& strRegistryDir)
 	{
-		uint32_t uTier = xMeta.uDifficultyTier;
-		if (uTier >= DIFFICULTY_TIER_COUNT)
-			uTier = DIFFICULTY_TIER_COUNT - 1;
+		printf("Scanning level registry: %s\n", strRegistryDir.c_str());
+		fflush(stdout);
 
-		auLevelsPerTier[uTier]++;
-		auParSum[uTier] += xMeta.uParMoves;
-
-		if (auLevelsPerTier[uTier] == 1)
+		if (!std::filesystem::exists(strRegistryDir))
 		{
-			auParMin[uTier] = xMeta.uParMoves;
-			auParMax[uTier] = xMeta.uParMoves;
-		}
-		else
-		{
-			if (xMeta.uParMoves < auParMin[uTier])
-				auParMin[uTier] = xMeta.uParMoves;
-			if (xMeta.uParMoves > auParMax[uTier])
-				auParMax[uTier] = xMeta.uParMoves;
+			printf("  Registry directory does not exist, will be created on first cache miss.\n\n");
+			fflush(stdout);
+			return;
 		}
 
-		// Count shape types
-		for (size_t i = 0; i < xLevel.axShapes.size(); ++i)
+		for (uint32_t uTier = 0; uTier < DIFFICULTY_TIER_COUNT; ++uTier)
 		{
-			if (xLevel.axShapes[i].pxDefinition)
+			std::string strTierDir = strRegistryDir + "/" + DifficultyTierToString(static_cast<DifficultyTier>(uTier));
+
+			if (!std::filesystem::exists(strTierDir))
+				continue;
+
+			// Collect all .tlvl files and their metadata
+			std::unordered_map<uint64_t, std::vector<size_t>> xHashToIndices;
+
+			for (auto& xEntry : std::filesystem::directory_iterator(strTierDir))
 			{
-				uint8_t uType = static_cast<uint8_t>(xLevel.axShapes[i].pxDefinition->eType);
-				if (uType < TILEPUZZLE_SHAPE_COUNT)
-					auShapeTypeCounts[uType]++;
+				if (!xEntry.is_regular_file())
+					continue;
+				if (xEntry.path().extension() != ".tlvl")
+					continue;
+
+				TilePuzzleLevelMetadata xMeta = {};
+				std::string strPath = xEntry.path().string();
+				if (!ReadMetadataFromFile(strPath.c_str(), xMeta))
+				{
+					printf("  WARNING: Failed to read metadata from %s\n", strPath.c_str());
+					continue;
+				}
+
+				if (xMeta.uDifficultyTier != uTier)
+				{
+					printf("  WARNING: Tier mismatch in %s (meta=%u, dir=%u)\n",
+						strPath.c_str(), xMeta.uDifficultyTier, uTier);
+					continue;
+				}
+
+				size_t uIdx = axEntriesPerTier[uTier].size();
+				axEntriesPerTier[uTier].push_back({strPath, xMeta});
+				xHashToIndices[xMeta.ulLayoutHash].push_back(uIdx);
 			}
+
+			// Deduplicate within this tier
+			DeduplicateTier(uTier, xHashToIndices);
+		}
+
+		uTotalEntries = 0;
+		for (uint32_t t = 0; t < DIFFICULTY_TIER_COUNT; ++t)
+			uTotalEntries += static_cast<uint32_t>(axEntriesPerTier[t].size());
+
+		printf("  Registry loaded: %u entries across %u tiers", uTotalEntries, DIFFICULTY_TIER_COUNT);
+		if (uDuplicatesRemoved > 0)
+			printf(", %u duplicates removed", uDuplicatesRemoved);
+		printf("\n");
+		for (uint32_t t = 0; t < DIFFICULTY_TIER_COUNT; ++t)
+		{
+			if (!axEntriesPerTier[t].empty())
+			{
+				printf("    %s: %zu levels\n",
+					DifficultyTierToString(static_cast<DifficultyTier>(t)),
+					axEntriesPerTier[t].size());
+			}
+		}
+		printf("\n");
+		fflush(stdout);
+	}
+
+	const RegistryEntry* FindMatch(
+		DifficultyTier eTier,
+		const TilePuzzle_LevelGenerator::DifficultyParams& xParams,
+		uint32_t uMinMoves,
+		const DuplicateDetector& xDuplicateDetector) const
+	{
+		if (eTier >= DIFFICULTY_TIER_COUNT)
+			return nullptr;
+
+		const auto& axEntries = axEntriesPerTier[eTier];
+		for (size_t i = 0; i < axEntries.size(); ++i)
+		{
+			const RegistryEntry& xEntry = axEntries[i];
+
+			if (xConsumedPaths.count(xEntry.strFilePath))
+				continue;
+
+			if (!DoesLevelMatchParams(xEntry.xMetadata, xParams, uMinMoves))
+				continue;
+
+			if (xDuplicateDetector.xHashToSignatures.count(xEntry.xMetadata.ulLayoutHash))
+				continue;
+
+			return &xEntry;
+		}
+
+		return nullptr;
+	}
+
+	void MarkConsumed(const RegistryEntry& xEntry)
+	{
+		xConsumedPaths.insert(xEntry.strFilePath);
+	}
+
+private:
+	void DeduplicateTier(
+		uint32_t uTier,
+		const std::unordered_map<uint64_t, std::vector<size_t>>& xHashToIndices)
+	{
+		std::unordered_set<size_t> xIndicesToRemove;
+
+		for (auto& xPair : xHashToIndices)
+		{
+			if (xPair.second.size() <= 1)
+				continue;
+
+			// Multiple entries with same hash - need full structural comparison
+			struct LoadedEntry
+			{
+				size_t uOrigIndex;
+				LevelLayoutSignature xSig;
+			};
+			std::vector<LoadedEntry> axLoaded;
+
+			for (size_t idx : xPair.second)
+			{
+				const RegistryEntry& xRegEntry = axEntriesPerTier[uTier][idx];
+
+				Zenith_DataStream xStream;
+				xStream.ReadFromFile(xRegEntry.strFilePath.c_str());
+				if (!xStream.IsValid())
+					continue;
+
+				TilePuzzleLevelData xLevel = {};
+				Zenith_Vector<TilePuzzleShapeDefinition> axDefs;
+				if (!TilePuzzleLevelSerialize::Read(xStream, xLevel, axDefs))
+					continue;
+
+				LoadedEntry xLE;
+				xLE.uOrigIndex = idx;
+				xLE.xSig = ComputeLayoutSignature(xLevel);
+				axLoaded.push_back(std::move(xLE));
+			}
+
+			// Compare all pairs, mark duplicates for removal
+			for (size_t i = 0; i < axLoaded.size(); ++i)
+			{
+				if (xIndicesToRemove.count(axLoaded[i].uOrigIndex))
+					continue;
+
+				for (size_t j = i + 1; j < axLoaded.size(); ++j)
+				{
+					if (xIndicesToRemove.count(axLoaded[j].uOrigIndex))
+						continue;
+
+					if (axLoaded[i].xSig == axLoaded[j].xSig)
+					{
+						// True duplicate - delete the second one
+						xIndicesToRemove.insert(axLoaded[j].uOrigIndex);
+
+						const std::string& strPath = axEntriesPerTier[uTier][axLoaded[j].uOrigIndex].strFilePath;
+						std::filesystem::remove(strPath);
+						// Also remove companion .png
+						std::string strPngPath = strPath.substr(0, strPath.size() - 5) + ".png";
+						std::filesystem::remove(strPngPath);
+						printf("  Removed duplicate: %s\n", strPath.c_str());
+						uDuplicatesRemoved++;
+					}
+				}
+			}
+		}
+
+		// Remove marked entries from vector
+		if (!xIndicesToRemove.empty())
+		{
+			std::vector<RegistryEntry> axFiltered;
+			for (size_t i = 0; i < axEntriesPerTier[uTier].size(); ++i)
+			{
+				if (!xIndicesToRemove.count(i))
+					axFiltered.push_back(std::move(axEntriesPerTier[uTier][i]));
+			}
+			axEntriesPerTier[uTier] = std::move(axFiltered);
 		}
 	}
 };
 
-static const char* ShapeTypeToString(TilePuzzleShapeType eType)
+// ============================================================================
+// Registry Helper Functions
+// ============================================================================
+
+static bool CopyRegistryLevelToDestination(
+	const RegistryEntry& xEntry,
+	const std::string& strOutputDir,
+	uint32_t uDestLevelNumber,
+	TilePuzzleLevelData& xLevelOut,
+	std::vector<TilePuzzleShapeDefinition>& axDefsOut)
 {
-	switch (eType)
+	char szBaseName[64];
+	snprintf(szBaseName, sizeof(szBaseName), "level_%04u", uDestLevelNumber);
+
+	std::string strDestTlvl = strOutputDir + "/" + szBaseName + ".tlvl";
+	std::string strDestPng = strOutputDir + "/" + szBaseName + ".png";
+
+	// Copy .tlvl
+	std::error_code xEc;
+	std::filesystem::copy_file(
+		xEntry.strFilePath, strDestTlvl,
+		std::filesystem::copy_options::overwrite_existing, xEc);
+	if (xEc)
 	{
-	case TILEPUZZLE_SHAPE_SINGLE: return "Single";
-	case TILEPUZZLE_SHAPE_DOMINO: return "Domino";
-	case TILEPUZZLE_SHAPE_L:      return "L";
-	case TILEPUZZLE_SHAPE_T:      return "T";
-	case TILEPUZZLE_SHAPE_I:      return "I";
-	case TILEPUZZLE_SHAPE_S:      return "S";
-	case TILEPUZZLE_SHAPE_Z:      return "Z";
-	case TILEPUZZLE_SHAPE_O:      return "O";
-	default:                      return "Unknown";
+		printf(" [REGISTRY COPY FAILED: %s]", xEc.message().c_str());
+		return false;
 	}
+
+	// Copy .png
+	std::string strRegistryPng = xEntry.strFilePath.substr(0, xEntry.strFilePath.size() - 5) + ".png";
+	std::filesystem::copy_file(
+		strRegistryPng, strDestPng,
+		std::filesystem::copy_options::overwrite_existing, xEc);
+	if (xEc)
+	{
+		printf(" [REGISTRY PNG COPY FAILED: %s]", xEc.message().c_str());
+		// Non-fatal - .tlvl was copied successfully
+	}
+
+	// Load level data for DuplicateDetector registration
+	Zenith_DataStream xStream;
+	xStream.ReadFromFile(xEntry.strFilePath.c_str());
+	if (!xStream.IsValid())
+		return false;
+
+	Zenith_Vector<TilePuzzleShapeDefinition> axEngineDefs;
+	if (!TilePuzzleLevelSerialize::Read(xStream, xLevelOut, axEngineDefs))
+		return false;
+
+	// Copy defs to std::vector
+	axDefsOut.clear();
+	for (uint32_t i = 0; i < axEngineDefs.GetSize(); ++i)
+		axDefsOut.push_back(axEngineDefs.Get(i));
+
+	// Remap shape definition pointers
+	uint32_t uDefIdx = 0;
+	for (size_t i = 0; i < xLevelOut.axShapes.size(); ++i)
+	{
+		if (xLevelOut.axShapes[i].pxDefinition)
+		{
+			xLevelOut.axShapes[i].pxDefinition = &axDefsOut[uDefIdx];
+			uDefIdx++;
+		}
+	}
+
+	return true;
 }
 
-static void WriteManifest(const char* szPath, const ManifestStats& xStats)
+static void RegisterLevelInRegistry(
+	const std::string& strRegistryDir,
+	const TilePuzzleLevelMetadata& xMeta,
+	const TilePuzzleLevelData& xLevel,
+	LevelRegistry& xRegistry)
 {
-	FILE* pFile = fopen(szPath, "w");
-	if (!pFile)
+	DifficultyTier eTier = static_cast<DifficultyTier>(xMeta.uDifficultyTier);
+	if (eTier >= DIFFICULTY_TIER_COUNT)
 		return;
 
-	fprintf(pFile, "{\n");
+	std::string strTierDir = strRegistryDir + "/" + DifficultyTierToString(eTier);
+	std::filesystem::create_directories(strTierDir);
 
-	// Per-tier summary
-	fprintf(pFile, "  \"tiers\": {\n");
-	for (uint32_t t = 0; t < DIFFICULTY_TIER_COUNT; ++t)
-	{
-		fprintf(pFile, "    \"%s\": {\n", DifficultyTierToString(static_cast<DifficultyTier>(t)));
-		fprintf(pFile, "      \"count\": %u", xStats.auLevelsPerTier[t]);
-		if (xStats.auLevelsPerTier[t] > 0)
-		{
-			float fMean = static_cast<float>(xStats.auParSum[t]) / xStats.auLevelsPerTier[t];
-			fprintf(pFile, ",\n      \"parMoves\": {\n");
-			fprintf(pFile, "        \"min\": %u,\n", xStats.auParMin[t]);
-			fprintf(pFile, "        \"max\": %u,\n", xStats.auParMax[t]);
-			fprintf(pFile, "        \"mean\": %.1f\n", fMean);
-			fprintf(pFile, "      }");
-		}
-		fprintf(pFile, "\n    }%s\n", (t < DIFFICULTY_TIER_COUNT - 1) ? "," : "");
-	}
-	fprintf(pFile, "  },\n");
+	char szFileName[128];
+	snprintf(szFileName, sizeof(szFileName), "%016llx_%u.tlvl",
+		static_cast<unsigned long long>(xMeta.ulLayoutHash), xMeta.uParMoves);
 
-	// Shape type usage
-	fprintf(pFile, "  \"shapeUsage\": {\n");
-	bool bFirstShape = true;
-	for (uint32_t s = 0; s < TILEPUZZLE_SHAPE_COUNT; ++s)
-	{
-		if (xStats.auShapeTypeCounts[s] == 0)
-			continue;
-		if (!bFirstShape)
-			fprintf(pFile, ",\n");
-		bFirstShape = false;
-		fprintf(pFile, "    \"%s\": %u", ShapeTypeToString(static_cast<TilePuzzleShapeType>(s)), xStats.auShapeTypeCounts[s]);
-	}
-	fprintf(pFile, "\n  },\n");
+	std::string strRegistryTlvl = strTierDir + "/" + szFileName;
 
-	// Duplicate rejections
-	fprintf(pFile, "  \"duplicateRejections\": %u\n", xStats.uDuplicateRejections);
+	if (std::filesystem::exists(strRegistryTlvl))
+		return;
 
-	fprintf(pFile, "}\n");
+	WriteMetadataAndLevel(strRegistryTlvl.c_str(), xMeta, xLevel);
 
-	fclose(pFile);
+	// Write companion .png
+	std::string strRegistryPng = strRegistryTlvl.substr(0, strRegistryTlvl.size() - 5) + ".png";
+	TilePuzzleLevelImage::Write(strRegistryPng.c_str(), xLevel);
+
+	RegistryEntry xEntry;
+	xEntry.strFilePath = strRegistryTlvl;
+	xEntry.xMetadata = xMeta;
+	xRegistry.axEntriesPerTier[eTier].push_back(std::move(xEntry));
+	xRegistry.uTotalEntries++;
 }
 
 // ============================================================================
 // Utility Functions
 // ============================================================================
-
-static uint32_t FindNextRunNumber(const std::string& strOutputDir)
-{
-	uint32_t uMaxRun = 0;
-	bool bFoundAny = false;
-
-	if (!std::filesystem::exists(strOutputDir))
-		return 0;
-
-	for (auto& xEntry : std::filesystem::directory_iterator(strOutputDir))
-	{
-		if (!xEntry.is_directory())
-			continue;
-
-		std::string strName = xEntry.path().filename().string();
-		if (strName.substr(0, 3) == "Run")
-		{
-			uint32_t uNum = 0;
-			if (sscanf(strName.c_str() + 3, "%u", &uNum) == 1)
-			{
-				if (!bFoundAny || uNum >= uMaxRun)
-				{
-					uMaxRun = uNum;
-					bFoundAny = true;
-				}
-			}
-		}
-	}
-
-	return bFoundAny ? uMaxRun + 1 : 0;
-}
 
 static void AccumulateGenerationStats(
 	TilePuzzle_LevelGenerator::GenerationStats& xAccum,
@@ -1115,13 +1453,9 @@ int main(int argc, char* argv[])
 
 	// Parse CLI arguments
 	std::string strOutputDir = LEVELGEN_OUTPUT_DIR;
-	uint32_t uMaxLevels = 0; // 0 = infinite
 	uint32_t uTimeoutSeconds = 1800; // 30 minutes default
-	uint32_t uMinMoves = 20;
-	uint32_t uSolverLimit = 500000;
 	uint32_t uStartSeed = 0;
-	// New CLI arguments
-	GenerationMode eMode = GENMODE_LEGACY;
+	GenerationMode eMode = GENMODE_BATCH;
 	uint32_t uBatchStart = 0;
 	uint32_t uBatchEnd = 0;
 	bool bPresetV1 = false;
@@ -1133,21 +1467,9 @@ int main(int argc, char* argv[])
 		{
 			strOutputDir = argv[++i];
 		}
-		else if (strcmp(argv[i], "--count") == 0 && i + 1 < argc)
-		{
-			uMaxLevels = static_cast<uint32_t>(atoi(argv[++i]));
-		}
 		else if (strcmp(argv[i], "--timeout") == 0 && i + 1 < argc)
 		{
 			uTimeoutSeconds = static_cast<uint32_t>(atoi(argv[++i]));
-		}
-		else if (strcmp(argv[i], "--min-moves") == 0 && i + 1 < argc)
-		{
-			uMinMoves = static_cast<uint32_t>(atoi(argv[++i]));
-		}
-		else if (strcmp(argv[i], "--solver-limit") == 0 && i + 1 < argc)
-		{
-			uSolverLimit = static_cast<uint32_t>(atoi(argv[++i]));
 		}
 		else if (strcmp(argv[i], "--seed") == 0 && i + 1 < argc)
 		{
@@ -1194,6 +1516,13 @@ int main(int argc, char* argv[])
 		}
 	}
 
+	// Validate that a mode was specified
+	if (eMode == GENMODE_BATCH && uBatchStart == 0 && uBatchEnd == 0)
+	{
+		fprintf(stderr, "Error: No generation mode specified. Use --batch START-END or --daily YEAR.\n");
+		return 1;
+	}
+
 	// Minimal engine init (same sequence as Zenith_Core::Zenith_Init, first 4 calls)
 	Zenith_MemoryManagement::Initialise();
 	Zenith_Profiling::Initialise();
@@ -1224,12 +1553,16 @@ int main(int argc, char* argv[])
 		printf("Output directory: %s\n\n", strOutputDir.c_str());
 		fflush(stdout);
 
-		// Duplicate detection and manifest tracking
+		// Duplicate detection and analytics tracking
 		DuplicateDetector xDuplicateDetector;
-		ManifestStats xManifestStats;
 		TilePuzzleLevelGenAnalytics::RunStats xRunStats = {};
 
 		uint32_t uGlobalSeedCounter = uStartSeed;
+
+		// Registry initialization
+		std::string strRegistryDir = LEVELGEN_REGISTRY_DIR;
+		LevelRegistry xRegistry;
+		xRegistry.ScanAndLoad(strRegistryDir);
 
 		for (uint32_t uLevel = uBatchStart; uLevel <= uBatchEnd && s_bRunning; ++uLevel)
 		{
@@ -1238,7 +1571,7 @@ int main(int argc, char* argv[])
 				? GetDifficultyPresetV1(uLevel)
 				: TilePuzzle_LevelGenerator::GetDifficultyForLevel(uLevel);
 
-			uint32_t uLevelMinMoves = bPresetV1 ? GetMinMovesForTier(eTier) : uMinMoves;
+			uint32_t uLevelMinMoves = GetMinMovesForTier(eTier);
 			uint32_t uLevelTimeout = uTimeoutSeconds;
 
 			// For lower tiers, use shorter timeout since they should generate quickly
@@ -1250,6 +1583,30 @@ int main(int argc, char* argv[])
 				bPresetV1 ? "v1" : "default",
 				DifficultyTierToString(eTier));
 			fflush(stdout);
+
+			// Registry lookup
+			const RegistryEntry* pxMatch = xRegistry.FindMatch(eTier, xLevelParams, uLevelMinMoves, xDuplicateDetector);
+			if (pxMatch)
+			{
+				TilePuzzleLevelData xCachedLevel = {};
+				std::vector<TilePuzzleShapeDefinition> axCachedDefs;
+				if (CopyRegistryLevelToDestination(*pxMatch, strOutputDir, uLevel, xCachedLevel, axCachedDefs))
+				{
+					uint64_t ulHash = pxMatch->xMetadata.ulLayoutHash;
+					xDuplicateDetector.RegisterLevel(xCachedLevel, ulHash);
+					xRegistry.MarkConsumed(*pxMatch);
+					xRegistry.uCacheHits++;
+
+					printf(" CACHE HIT (registry, solver=%u moves, tier=%s)\n",
+						pxMatch->xMetadata.uParMoves,
+						DifficultyTierToString(eTier));
+					fflush(stdout);
+
+					TilePuzzleLevelGenAnalytics::AccumulateLevel(xRunStats, true, pxMatch->xMetadata.uParMoves, 0.0, nullptr, 0, false);
+					continue;
+				}
+			}
+			xRegistry.uCacheMisses++;
 
 			auto xStartTime = std::chrono::high_resolution_clock::now();
 
@@ -1295,24 +1652,24 @@ int main(int argc, char* argv[])
 					bAccepted = true;
 
 					// Build metadata
-					TilePuzzleLevelMetadata xMeta = BuildMetadata(uLevel, xBestLevel, eTier, ulLayoutHash);
+					TilePuzzleLevelMetadata xMeta = BuildMetadata(uLevel, xBestLevel, eTier, ulLayoutHash,
+						uGlobalSeedCounter, fTimeMs, uRetryRounds, &xAccumulatedStats, bTimedOut);
 
 					// Build output file paths
 					char szBaseName[64];
 					snprintf(szBaseName, sizeof(szBaseName), "level_%04u", uLevel);
 
 					std::string strTlvlPath = strOutputDir + "/" + szBaseName + ".tlvl";
-					std::string strJsonPath = strOutputDir + "/" + szBaseName + ".json";
 					std::string strPngPath = strOutputDir + "/" + szBaseName + ".png";
 
 					// Write binary with metadata header
 					WriteMetadataAndLevel(strTlvlPath.c_str(), xMeta, xBestLevel);
 
-					// Write JSON
-					TilePuzzleLevelJson::Write(strJsonPath.c_str(), xBestLevel, uLevel, &xAccumulatedStats, fTimeMs, uRetryRounds, &xLevelParams);
-
 					// Write PNG
 					TilePuzzleLevelImage::Write(strPngPath.c_str(), xBestLevel);
+
+					// Register in level registry
+					RegisterLevelInRegistry(strRegistryDir, xMeta, xBestLevel, xRegistry);
 
 					printf(" OK (solver=%u moves, tier=%s, %.1fs, %u rounds%s)\n",
 						uBestMoves,
@@ -1321,7 +1678,6 @@ int main(int argc, char* argv[])
 						bTimedOut ? " TIMEOUT" : "");
 
 					// Accumulate stats
-					xManifestStats.AccumulateLevel(xMeta, xBestLevel);
 					TilePuzzleLevelGenAnalytics::AccumulateLevel(xRunStats, true, uBestMoves, fTimeMs, &xAccumulatedStats, uRetryRounds, bTimedOut);
 				}
 				else
@@ -1342,16 +1698,13 @@ int main(int argc, char* argv[])
 			}
 		}
 
-		// Write manifest
-		xManifestStats.uDuplicateRejections = xDuplicateDetector.uDuplicateRejections;
-		std::string strManifestPath = strOutputDir + "/level_manifest.json";
-		WriteManifest(strManifestPath.c_str(), xManifestStats);
-		printf("\nManifest written to: %s\n", strManifestPath.c_str());
-
 		// Write run analytics
 		std::string strAnalyticsPath = strOutputDir + "/analytics.txt";
 		TilePuzzleLevelGenAnalytics::WriteAnalytics(strAnalyticsPath.c_str(), xRunStats);
-		printf("Analytics written to: %s\n", strAnalyticsPath.c_str());
+		printf("\nAnalytics written to: %s\n", strAnalyticsPath.c_str());
+
+		printf("Registry: %u cache hits, %u cache misses, %u total entries\n",
+			xRegistry.uCacheHits, xRegistry.uCacheMisses, xRegistry.uTotalEntries);
 	}
 	else if (eMode == GENMODE_DAILY)
 	{
@@ -1369,8 +1722,12 @@ int main(int argc, char* argv[])
 		fflush(stdout);
 
 		DuplicateDetector xDuplicateDetector;
-		ManifestStats xManifestStats;
 		TilePuzzleLevelGenAnalytics::RunStats xRunStats = {};
+
+		// Registry initialization
+		std::string strRegistryDir = LEVELGEN_REGISTRY_DIR;
+		LevelRegistry xRegistry;
+		xRegistry.ScanAndLoad(strRegistryDir);
 
 		for (uint32_t uDay = 1; uDay <= uNumDays && s_bRunning; ++uDay)
 		{
@@ -1391,6 +1748,61 @@ int main(int argc, char* argv[])
 				uDate, uDay, uNumDays, DifficultyTierToString(eTier));
 			fflush(stdout);
 
+			// Registry lookup
+			const RegistryEntry* pxMatch = xRegistry.FindMatch(eTier, xDailyParams, uDailyMinMoves, xDuplicateDetector);
+			if (pxMatch)
+			{
+				TilePuzzleLevelData xCachedLevel = {};
+				std::vector<TilePuzzleShapeDefinition> axCachedDefs;
+
+				// Build daily output path
+				char szBaseName[64];
+				snprintf(szBaseName, sizeof(szBaseName), "daily_%08u", uDate);
+				std::string strDailyOutputDir = strOutputDir;
+
+				// Copy using daily filename
+				std::string strDestTlvl = strDailyOutputDir + "/" + szBaseName + ".tlvl";
+				std::string strDestPng = strDailyOutputDir + "/" + szBaseName + ".png";
+
+				std::error_code xEc;
+				std::filesystem::copy_file(
+					pxMatch->strFilePath, strDestTlvl,
+					std::filesystem::copy_options::overwrite_existing, xEc);
+
+				if (!xEc)
+				{
+					// Copy .png
+					std::string strRegistryPng = pxMatch->strFilePath.substr(0, pxMatch->strFilePath.size() - 5) + ".png";
+					std::filesystem::copy_file(
+						strRegistryPng, strDestPng,
+						std::filesystem::copy_options::overwrite_existing, xEc);
+
+					// Load for duplicate detector
+					Zenith_DataStream xStream;
+					xStream.ReadFromFile(pxMatch->strFilePath.c_str());
+					if (xStream.IsValid())
+					{
+						Zenith_Vector<TilePuzzleShapeDefinition> axEngineDefs;
+						if (TilePuzzleLevelSerialize::Read(xStream, xCachedLevel, axEngineDefs))
+						{
+							uint64_t ulHash = pxMatch->xMetadata.ulLayoutHash;
+							xDuplicateDetector.RegisterLevel(xCachedLevel, ulHash);
+							xRegistry.MarkConsumed(*pxMatch);
+							xRegistry.uCacheHits++;
+
+							printf(" CACHE HIT (registry, solver=%u moves, tier=%s)\n",
+								pxMatch->xMetadata.uParMoves,
+								DifficultyTierToString(eTier));
+							fflush(stdout);
+
+							TilePuzzleLevelGenAnalytics::AccumulateLevel(xRunStats, true, pxMatch->xMetadata.uParMoves, 0.0, nullptr, 0, false);
+							continue;
+						}
+					}
+				}
+			}
+			xRegistry.uCacheMisses++;
+
 			auto xStartTime = std::chrono::high_resolution_clock::now();
 
 			TilePuzzleLevelData xBestLevel = {};
@@ -1398,6 +1810,7 @@ int main(int argc, char* argv[])
 			TilePuzzle_LevelGenerator::GenerationStats xAccumulatedStats = {};
 			uint32_t uRetryRounds = 0;
 			bool bTimedOut = false;
+
 			uint32_t uSeedCounter = uDailySeed;
 
 			uint32_t uBestMoves = GenerateSingleLevel(
@@ -1415,7 +1828,8 @@ int main(int argc, char* argv[])
 				uint64_t ulLayoutHash = ComputeLayoutHash(xBestLevel);
 
 				// Build metadata
-				TilePuzzleLevelMetadata xMeta = BuildMetadata(uDate, xBestLevel, eTier, ulLayoutHash);
+				TilePuzzleLevelMetadata xMeta = BuildMetadata(uDate, xBestLevel, eTier, ulLayoutHash,
+					uSeedCounter, fTimeMs, uRetryRounds, &xAccumulatedStats, bTimedOut);
 				xDuplicateDetector.RegisterLevel(xBestLevel, ulLayoutHash);
 
 				// Build output file paths
@@ -1423,23 +1837,21 @@ int main(int argc, char* argv[])
 				snprintf(szBaseName, sizeof(szBaseName), "daily_%08u", uDate);
 
 				std::string strTlvlPath = strOutputDir + "/" + szBaseName + ".tlvl";
-				std::string strJsonPath = strOutputDir + "/" + szBaseName + ".json";
 				std::string strPngPath = strOutputDir + "/" + szBaseName + ".png";
 
 				// Write binary with metadata
 				WriteMetadataAndLevel(strTlvlPath.c_str(), xMeta, xBestLevel);
 
-				// Write JSON
-				TilePuzzleLevelJson::Write(strJsonPath.c_str(), xBestLevel, uDate, &xAccumulatedStats, fTimeMs, uRetryRounds, &xDailyParams);
-
 				// Write PNG
 				TilePuzzleLevelImage::Write(strPngPath.c_str(), xBestLevel);
+
+				// Register in level registry
+				RegisterLevelInRegistry(strRegistryDir, xMeta, xBestLevel, xRegistry);
 
 				printf(" OK (solver=%u moves, %.1fs, %u rounds%s)\n",
 					uBestMoves, fTimeMs / 1000.0, uRetryRounds,
 					bTimedOut ? " TIMEOUT" : "");
 
-				xManifestStats.AccumulateLevel(xMeta, xBestLevel);
 				TilePuzzleLevelGenAnalytics::AccumulateLevel(xRunStats, true, uBestMoves, fTimeMs, &xAccumulatedStats, uRetryRounds, bTimedOut);
 			}
 			else
@@ -1452,269 +1864,13 @@ int main(int argc, char* argv[])
 			fflush(stdout);
 		}
 
-		// Write manifest
-		xManifestStats.uDuplicateRejections = xDuplicateDetector.uDuplicateRejections;
-		std::string strManifestPath = strOutputDir + "/level_manifest.json";
-		WriteManifest(strManifestPath.c_str(), xManifestStats);
-		printf("\nManifest written to: %s\n", strManifestPath.c_str());
-
 		// Write analytics
 		std::string strAnalyticsPath = strOutputDir + "/analytics.txt";
 		TilePuzzleLevelGenAnalytics::WriteAnalytics(strAnalyticsPath.c_str(), xRunStats);
-		printf("Analytics written to: %s\n", strAnalyticsPath.c_str());
-	}
-	else
-	{
-		// ====================================================================
-		// Legacy mode: original continuous/count generation
-		// ====================================================================
-
-		// Create run directory
-		std::filesystem::create_directories(strOutputDir);
-		uint32_t uRunNumber = FindNextRunNumber(strOutputDir);
-		std::string strRunDir = strOutputDir + "/Run" + std::to_string(uRunNumber);
-		std::filesystem::create_directories(strRunDir);
-
-		printf("Output directory: %s\n", strRunDir.c_str());
-		printf("Min moves: %u, Solver limit: %u, Timeout: %us, Seed: %u\n", uMinMoves, uSolverLimit, uTimeoutSeconds, uStartSeed);
-		if (uMaxLevels > 0)
-			printf("Generating %u levels\n\n", uMaxLevels);
-		else
-			printf("Running continuously (Ctrl+C to stop)\n\n");
-		fflush(stdout);
-
-		// Build tool-specific difficulty params
-		// NOTE: uMinSolverMoves is the INTERNAL per-attempt filter (keep low so candidates survive).
-		// The OUTER retry loop enforces the actual target (uMinMoves) by retrying until best >= target.
-		//
-		// Strategy for high-move solutions with flood-fill solver:
-		// - 5 colors x 1 shape x 2 cats = 10 cats, 5 draggable shapes
-		// - 2^10=1024 elimination states (vs 2^15=32K for 3 cats - unsolvable by BFS)
-		// - 9x9 grid: 49 playable cells for 10 cats + 5 shapes + blocker
-		// - 1-2 conditional shapes (threshold 1-4): phase gates force sequential solving
-		// - 1 blocker (max 3 cells, post-validated)
-		// - 500K fast solver + 5M deep verify (5 per worker)
-		// - 3000 attempts/round
-		TilePuzzle_LevelGenerator::DifficultyParams xToolParams = TilePuzzle_LevelGenerator::GetDifficultyForLevel(1);
-		xToolParams.uMinSolverMoves = 6;               // Internal filter: accept anything >= 6
-		xToolParams.uSolverStateLimit = uSolverLimit;   // BFS state limit
-		// Deep verify: re-solve "unsolvable" candidates with 5M limit to recover deep solutions.
-		// 81% of solver-passed candidates are "unsolvable" at 500K - many contain 18+ move solutions.
-		// 5 verifications per worker (up from 3) catches more deep solutions while keeping rounds fast.
-		// Fast rounds (5-8 min) allow more retry rounds, which matters more than deep-but-slow rounds.
-		xToolParams.uDeepSolverStateLimit = 5000000;
-		xToolParams.uMaxDeepVerificationsPerWorker = 5;
-
-		// 9x9 grid: 49 playable cells for 10 cats + 5 shapes + blocker
-		xToolParams.uMinGridWidth = 9;
-		xToolParams.uMaxGridWidth = 9;
-		xToolParams.uMinGridHeight = 9;
-		xToolParams.uMaxGridHeight = 9;
-
-		// Fixed 5 colors (1 draggable shape per color) x 2 cats = 10 cats, 5 shapes
-		// NOTE: 3 cats/color (15 cats) creates 2^15=32K elimination states - unsolvable by BFS.
-		// 2 cats/color (10 cats) = 2^10=1024 elimination states - tractable.
-		xToolParams.uMinNumColors = 5;
-		xToolParams.uNumColors = 5;
-		xToolParams.uMinCatsPerColor = 2;
-		xToolParams.uNumCatsPerColor = 2;
-
-		// Fixed 1 blocker: max 3 blocker cells constraint means 2 blockers never works
-		// (2 Dominoes = 4 cells > 3). Single blocker = 2-3 cells (Domino/I-shape).
-		xToolParams.uMinBlockers = 1;
-		xToolParams.uNumBlockers = 1;
-
-		// Conditional shapes: 1-2 with threshold randomized 1-4 per attempt
-		// More phase gates create deeper sequential solving (more moves)
-		xToolParams.uMinConditionalShapes = 1;
-		xToolParams.uNumConditionalShapes = 2;
-		xToolParams.uConditionalThreshold = 4;
-
-		// Shape complexity: 2-4 (Domino to L/T/S/Z)
-		// At least one draggable shape must be complexity >= 2, so floor is 2
-		xToolParams.uMinMaxShapeSize = 2;
-		xToolParams.uMaxShapeSize = 4;
-
-		// Lower scramble threshold for multi-cell shapes
-		xToolParams.uMinScrambleMoves = 30;
-		xToolParams.uScrambleMoves = 1000;
-
-		// 3000 attempts per round: generates ~930 solver candidates (31% pass scramble),
-		// of which ~750 are "unsolvable" - larger candidate pool for deep verification
-		xToolParams.uMaxAttempts = 3000;
-
-		// Run-wide analytics
-		TilePuzzleLevelGenAnalytics::RunStats xRunStats = {};
-
-		std::mt19937 xRng(42); // Unused by GenerateLevel but required by API
-
-		// Global seed counter: each round uses a unique base seed regardless of which
-		// level we're generating. This avoids getting stuck in bad seed regions -
-		// previously level 2's seed space (base 120567) never contained 15-move puzzles,
-		// while level 1's (base 112648) did. Now all levels share the same seed space.
-		uint32_t uGlobalSeedCounter = uStartSeed;
-
-		uint32_t uCurrentLevel = 1;
-		while (s_bRunning && (uMaxLevels == 0 || uCurrentLevel <= uMaxLevels))
-		{
-			// All levels use same params: 1-2 blockers (max 3 cells), shapes 2-4
-			// Post-generation validation enforces: >= 1 draggable Domino+ and <= 3 blocker cells
-			TilePuzzle_LevelGenerator::DifficultyParams xLevelParams = xToolParams;
-			const char* pszProfileName = "default";
-
-			printf("Generating level %u [%s]...", uCurrentLevel, pszProfileName);
-			fflush(stdout);
-
-			// Validation: 4-5 draggable shapes, at least one with 2+ cells, max 3 total blocker cells
-			auto IsLevelValid = [](const TilePuzzleLevelData& xLevel) -> bool
-			{
-				uint32_t uDraggableShapes = 0;
-				bool bHasDraggableComplex = false;
-				uint32_t uTotalBlockerCells = 0;
-				for (size_t i = 0; i < xLevel.axShapes.size(); ++i)
-				{
-					const auto& xShape = xLevel.axShapes[i];
-					if (!xShape.pxDefinition)
-						continue;
-					if (xShape.pxDefinition->bDraggable)
-					{
-						uDraggableShapes++;
-						if (xShape.pxDefinition->axCells.size() >= 2)
-							bHasDraggableComplex = true;
-					}
-					else
-					{
-						uTotalBlockerCells += static_cast<uint32_t>(xShape.pxDefinition->axCells.size());
-					}
-				}
-				bool bValid = uDraggableShapes >= 4 && uDraggableShapes <= 5
-					&& bHasDraggableComplex && uTotalBlockerCells <= 3;
-				if (!bValid)
-				{
-					printf(" [REJECT: drag=%u complex=%d blockerCells=%u]",
-						uDraggableShapes, bHasDraggableComplex ? 1 : 0, uTotalBlockerCells);
-				}
-				return bValid;
-			};
-
-			auto xStartTime = std::chrono::high_resolution_clock::now();
-
-			TilePuzzleLevelData xBestLevel = {};
-			std::vector<TilePuzzleShapeDefinition> axBestLevelDefs; // Local ownership of best level's shape definitions
-			uint32_t uBestMoves = 0;
-			uint32_t uRetryRound = 0;
-			bool bTimedOut = false;
-			TilePuzzle_LevelGenerator::GenerationStats xAccumulatedStats = {};
-
-			// Retry loop: generate rounds until target move count reached or timeout
-			while (s_bRunning)
-			{
-				TilePuzzleLevelData xLevel = {};
-				TilePuzzle_LevelGenerator::GenerationStats xStats = {};
-				bool bSuccess = TilePuzzle_LevelGenerator::GenerateLevel(
-					xLevel, xRng, uGlobalSeedCounter, &xStats,
-					uRetryRound, &xLevelParams);
-				uGlobalSeedCounter++;
-
-				AccumulateGenerationStats(xAccumulatedStats, xStats);
-
-				if (bSuccess && IsLevelValid(xLevel) && xLevel.uMinimumMoves > uBestMoves)
-				{
-					xBestLevel = std::move(xLevel);
-					uBestMoves = xBestLevel.uMinimumMoves;
-
-					// Copy shape definitions to local storage so they survive
-					// subsequent GenerateLevel calls (which Clear the static vector)
-					axBestLevelDefs.clear();
-					for (size_t i = 0; i < xBestLevel.axShapes.size(); ++i)
-					{
-						if (xBestLevel.axShapes[i].pxDefinition)
-							axBestLevelDefs.push_back(*xBestLevel.axShapes[i].pxDefinition);
-					}
-					// Remap pointers to local storage
-					size_t uDefIdx = 0;
-					for (size_t i = 0; i < xBestLevel.axShapes.size(); ++i)
-					{
-						if (xBestLevel.axShapes[i].pxDefinition)
-						{
-							xBestLevel.axShapes[i].pxDefinition = &axBestLevelDefs[uDefIdx];
-							uDefIdx++;
-						}
-					}
-				}
-
-				// Progress output per round
-				auto xNow = std::chrono::high_resolution_clock::now();
-				double fElapsedSec = std::chrono::duration<double>(xNow - xStartTime).count();
-				printf(" [round %u: best=%u, %.0fs]", uRetryRound + 1, uBestMoves, fElapsedSec);
-				fflush(stdout);
-
-				if (uBestMoves >= uMinMoves)
-					break;
-
-				uRetryRound++;
-
-				// Check timeout
-				if (fElapsedSec >= static_cast<double>(uTimeoutSeconds))
-				{
-					bTimedOut = true;
-					break;
-				}
-			}
-
-			auto xEndTime = std::chrono::high_resolution_clock::now();
-			double fTimeMs = std::chrono::duration<double, std::milli>(xEndTime - xStartTime).count();
-
-			// Copy winning params into accumulated stats for JSON output
-			if (uBestMoves > 0)
-			{
-				// Build output file paths
-				char szBaseName[64];
-				snprintf(szBaseName, sizeof(szBaseName), "level_%04u", uCurrentLevel);
-
-				std::string strTlvlPath = strRunDir + "/" + szBaseName + ".tlvl";
-				std::string strJsonPath = strRunDir + "/" + szBaseName + ".json";
-				std::string strPngPath = strRunDir + "/" + szBaseName + ".png";
-
-				// Compute optimal solution path
-				if (xBestLevel.axSolution.empty())
-				{
-					TilePuzzle_Solver::SolveLevelWithPath(xBestLevel, xBestLevel.axSolution);
-				}
-
-				// Write binary
-				Zenith_DataStream xStream;
-				TilePuzzleLevelSerialize::Write(xStream, xBestLevel);
-				xStream.WriteToFile(strTlvlPath.c_str());
-
-				// Write JSON
-				TilePuzzleLevelJson::Write(strJsonPath.c_str(), xBestLevel, uCurrentLevel, &xAccumulatedStats, fTimeMs, uRetryRound + 1, &xLevelParams);
-
-				// Write PNG
-				TilePuzzleLevelImage::Write(strPngPath.c_str(), xBestLevel);
-
-				printf(" OK (solver=%u moves, %.1fs, %u rounds%s)\n",
-					uBestMoves, fTimeMs / 1000.0, uRetryRound + 1,
-					bTimedOut ? " TIMEOUT" : "");
-
-				TilePuzzleLevelGenAnalytics::AccumulateLevel(xRunStats, true, uBestMoves, fTimeMs, &xAccumulatedStats, uRetryRound + 1, bTimedOut);
-			}
-			else
-			{
-				printf(" FAILED (%.1fs, %u rounds%s)\n",
-					fTimeMs / 1000.0, uRetryRound + 1,
-					bTimedOut ? " TIMEOUT" : "");
-				TilePuzzleLevelGenAnalytics::AccumulateLevel(xRunStats, false, 0, fTimeMs, &xAccumulatedStats, uRetryRound + 1, bTimedOut);
-			}
-			fflush(stdout);
-
-			uCurrentLevel++;
-		}
-
-		// Write run analytics
-		std::string strAnalyticsPath = strRunDir + "/analytics.txt";
-		TilePuzzleLevelGenAnalytics::WriteAnalytics(strAnalyticsPath.c_str(), xRunStats);
 		printf("\nAnalytics written to: %s\n", strAnalyticsPath.c_str());
+
+		printf("Registry: %u cache hits, %u cache misses, %u total entries\n",
+			xRegistry.uCacheHits, xRegistry.uCacheMisses, xRegistry.uTotalEntries);
 	}
 
 	// Shutdown

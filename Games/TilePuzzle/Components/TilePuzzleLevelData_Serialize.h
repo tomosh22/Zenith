@@ -8,6 +8,7 @@
  */
 
 #include "DataStream/Zenith_DataStream.h"
+#include "Collections/Zenith_Vector.h"
 #include "TilePuzzle_Types.h"
 
 static constexpr uint32_t s_uTLVL_MAGIC = 0x54504C56; // "TPLV"
@@ -97,28 +98,25 @@ namespace TilePuzzleLevelSerialize
 		}
 	}
 
-	[[maybe_unused]] static bool Read(Zenith_DataStream& xStream, TilePuzzleLevelData& xLevel, std::vector<TilePuzzleShapeDefinition>& axShapeDefsOut)
+	[[maybe_unused]] static bool Read(Zenith_DataStream& xStream, TilePuzzleLevelData& xLevel, Zenith_Vector<TilePuzzleShapeDefinition>& axShapeDefsOut)
 	{
-		axShapeDefsOut.clear();
+		axShapeDefsOut.Clear();
 
 		// Header - skip META header from TilePuzzleLevelGen if present
 		uint32_t uMagic, uVersion;
 		xStream >> uMagic;
 		if (uMagic == s_uMETA_MAGIC)
 		{
-			// Skip metadata: version + 11 uint32_t fields + 1 uint64_t
 			uint32_t uMetaVersion;
 			xStream >> uMetaVersion;
-			for (uint32_t i = 0; i < 11; ++i)
-			{
-				uint32_t uSkip;
-				xStream >> uSkip;
-			}
-			uint64_t ulSkip;
-			xStream >> ulSkip;
-
-			// Now read the real TPLV magic
-			xStream >> uMagic;
+			// Skip v2 metadata fields in order:
+			// 11 uint32_t, 1 uint64_t, 6 uint32_t, 1 uint64_t, 5 uint32_t
+			for (uint32_t i = 0; i < 11; ++i) { uint32_t uSkip; xStream >> uSkip; }
+			{ uint64_t ulSkip; xStream >> ulSkip; } // ulLayoutHash
+			for (uint32_t i = 0; i < 6; ++i) { uint32_t uSkip; xStream >> uSkip; }
+			{ uint64_t ulSkip; xStream >> ulSkip; } // ulGenerationTimestamp
+			for (uint32_t i = 0; i < 5; ++i) { uint32_t uSkip; xStream >> uSkip; }
+			xStream >> uMagic; // Now read TPLV magic
 		}
 		xStream >> uVersion;
 		if (uMagic != s_uTLVL_MAGIC || uVersion > s_uTLVL_VERSION)
@@ -174,8 +172,8 @@ namespace TilePuzzleLevelSerialize
 					xStream >> xDef.axCells[c].iX;
 					xStream >> xDef.axCells[c].iY;
 				}
-				axShapeDefsOut.push_back(std::move(xDef));
-				xShape.pxDefinition = &axShapeDefsOut.back();
+				axShapeDefsOut.PushBack(std::move(xDef));
+				xShape.pxDefinition = &axShapeDefsOut.GetBack();
 			}
 			else
 			{
@@ -183,13 +181,13 @@ namespace TilePuzzleLevelSerialize
 			}
 		}
 
-		// Remap pointers (definitions may have been relocated during push_back)
-		size_t uDefIdx = 0;
+		// Remap pointers (definitions may have been relocated during PushBack)
+		uint32_t uDefIdx = 0;
 		for (uint32_t i = 0; i < uNumShapes; ++i)
 		{
 			if (xLevel.axShapes[i].pxDefinition)
 			{
-				xLevel.axShapes[i].pxDefinition = &axShapeDefsOut[uDefIdx];
+				xLevel.axShapes[i].pxDefinition = &axShapeDefsOut.Get(uDefIdx);
 				uDefIdx++;
 			}
 		}
