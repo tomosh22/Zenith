@@ -27,6 +27,7 @@
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "Prefab/Zenith_Prefab.h"
 #include "UI/Zenith_UIButton.h"
+#include "UI/Zenith_UIImage.h"
 
 #include "TilePuzzle/Components/TilePuzzle_Types.h"
 #include "TilePuzzle/Components/TilePuzzle_Rules.h"
@@ -37,6 +38,7 @@
 #include "Input/Zenith_TouchInput.h"
 #include "UI/Zenith_UICanvas.h"
 #include "EntityComponent/Components/Zenith_TweenComponent.h"
+#include "EntityComponent/Components/Zenith_ParticleEmitterComponent.h"
 #include "DataStream/Zenith_DataStream.h"
 #include "FileAccess/Zenith_FileAccess.h"
 
@@ -459,6 +461,18 @@ public:
 
 	void OnStart() ZENITH_FINAL override
 	{
+		// Find particle emitter entities in the parent scene
+		Zenith_SceneData* pxSceneData = m_xParentEntity.GetSceneData();
+		if (pxSceneData)
+		{
+			Zenith_Entity xElimEmitter = pxSceneData->FindEntityByName("EliminationEmitter");
+			if (xElimEmitter.IsValid())
+				m_uEliminationEmitterID = xElimEmitter.GetEntityID();
+			Zenith_Entity xConfettiEmitter = pxSceneData->FindEntityByName("VictoryConfettiEmitter");
+			if (xConfettiEmitter.IsValid())
+				m_uVictoryConfettiEmitterID = xConfettiEmitter.GetEntityID();
+		}
+
 		if (m_eState == TILEPUZZLE_STATE_MAIN_MENU)
 		{
 			SetMenuVisible(true);
@@ -923,6 +937,14 @@ private:
 		m_uVictoryStarsShown = 0;
 		m_uVictoryStarRating = static_cast<uint8_t>(m_uStarsEarned);
 		SetVictoryOverlayVisible(true);
+
+		// Burst victory confetti
+		Zenith_SceneData* pxParentSceneData = m_xParentEntity.GetSceneData();
+		if (m_uVictoryConfettiEmitterID.IsValid() && pxParentSceneData && pxParentSceneData->EntityExists(m_uVictoryConfettiEmitterID))
+		{
+			Zenith_Entity xEmitter = pxParentSceneData->GetEntity(m_uVictoryConfettiEmitterID);
+			xEmitter.GetComponent<Zenith_ParticleEmitterComponent>().Emit(80);
+		}
 
 		// Show next level button (unless this is the last level)
 		bool bIsLastLevel = (m_uCurrentLevelNumber >= m_uAvailableLevelCount);
@@ -1395,6 +1417,10 @@ private:
 	uint32_t m_uVictoryCoinsEarned;
 	uint8_t m_uVictoryStarRating;
 	bool m_bVictoryOverlayActive;
+
+	// Particle emitter entity IDs (in parent scene, persist across levels)
+	Zenith_EntityID m_uEliminationEmitterID;
+	Zenith_EntityID m_uVictoryConfettiEmitterID;
 
 	// Cat cafe state
 	uint32_t m_uCatCafePage;
@@ -1901,6 +1927,17 @@ private:
 					Zenith_SceneManager::Destroy(xCatEntity, s_fEliminationDuration + 0.01f);
 				}
 			}
+
+			// Burst elimination particles at cat position
+			Zenith_SceneData* pxParentSceneData = m_xParentEntity.GetSceneData();
+			if (m_uEliminationEmitterID.IsValid() && pxParentSceneData && pxParentSceneData->EntityExists(m_uEliminationEmitterID))
+			{
+				Zenith_Entity xEmitter = pxParentSceneData->GetEntity(m_uEliminationEmitterID);
+				xEmitter.GetComponent<Zenith_TransformComponent>().SetPosition(
+					GridToWorld(static_cast<float>(xCat.iGridX), static_cast<float>(xCat.iGridY), s_fCatHeight));
+				xEmitter.GetComponent<Zenith_ParticleEmitterComponent>().Emit(25);
+			}
+
 			xCat.uEntityID = Zenith_EntityID();
 		}
 

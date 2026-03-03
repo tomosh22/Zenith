@@ -18,6 +18,9 @@
 #include "UI/Zenith_UIText.h"
 #include "UI/Zenith_UIButton.h"
 #include "UI/Zenith_UIRect.h"
+#include "UI/Zenith_UIImage.h"
+#include "EntityComponent/Components/Zenith_ParticleEmitterComponent.h"
+#include "Flux/Particles/Flux_ParticleEmitterConfig.h"
 #include "FileAccess/Zenith_FileAccess.h"
 #include <cmath>
 #include <filesystem>
@@ -68,6 +71,13 @@ void Zenith_AutomationTests::RunAllTests()
 	TestCreateUIRectStep();
 	TestSetUIPropertiesStep();
 	TestSetUIButtonStyleStep();
+
+	// UI Image tests
+	TestCreateUIImageStep();
+	TestSetUIImageTexturePathStep();
+
+	// Particle Config By Name tests
+	TestSetParticleConfigByNameStep();
 
 	// Script/Behaviour tests
 	TestSetBehaviourStep();
@@ -1079,6 +1089,118 @@ void Zenith_AutomationTests::TestDoubleBeginWithoutReset()
 	Zenith_EditorAutomation::Reset();
 
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "[AutomationTests] TestDoubleBeginWithoutReset passed");
+}
+
+//=============================================================================
+// UI Image Operation Tests
+//=============================================================================
+
+void Zenith_AutomationTests::TestCreateUIImageStep()
+{
+	EDITOR_TEST_BEGIN(TestCreateUIImageStep);
+
+	Zenith_EditorAutomation::Reset();
+
+	Zenith_EditorAutomation::AddStep_CreateEntity("AutoUIImageEntity");
+	Zenith_EditorAutomation::AddStep_AddUI();
+	Zenith_EditorAutomation::AddStep_CreateUIImage("Img1");
+	Zenith_EditorAutomation::Begin();
+
+	Zenith_EditorAutomation::ExecuteNextStep(); // Create entity
+	Zenith_EditorAutomation::ExecuteNextStep(); // Add UI
+	Zenith_EditorAutomation::ExecuteNextStep(); // Create image
+
+	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+
+	Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+	Zenith_UI::Zenith_UIImage* pxImage = xUI.FindElement<Zenith_UI::Zenith_UIImage>("Img1");
+	Zenith_Assert(pxImage != nullptr, "Should find UI image 'Img1'");
+	Zenith_Assert(pxImage->GetType() == Zenith_UI::UIElementType::Image,
+		"Element type should be Image");
+
+	Zenith_EditorAutomation::ExecuteNextStep();
+	Zenith_EditorAutomation::Reset();
+
+	EDITOR_TEST_END(TestCreateUIImageStep);
+}
+
+void Zenith_AutomationTests::TestSetUIImageTexturePathStep()
+{
+	EDITOR_TEST_BEGIN(TestSetUIImageTexturePathStep);
+
+	Zenith_EditorAutomation::Reset();
+
+	Zenith_EditorAutomation::AddStep_CreateEntity("AutoUIImgTexEntity");
+	Zenith_EditorAutomation::AddStep_AddUI();
+	Zenith_EditorAutomation::AddStep_CreateUIImage("TexImg");
+	Zenith_EditorAutomation::AddStep_SetUIImageTexturePath("TexImg",
+		ENGINE_ASSETS_DIR "Textures/Font/FontAtlas.ztxtr");
+	Zenith_EditorAutomation::Begin();
+
+	for (uint32_t i = 0; i < 4; i++)
+		Zenith_EditorAutomation::ExecuteNextStep();
+
+	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+
+	Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+	Zenith_UI::Zenith_UIImage* pxImage = xUI.FindElement<Zenith_UI::Zenith_UIImage>("TexImg");
+	Zenith_Assert(pxImage != nullptr, "Should find UI image 'TexImg'");
+	Zenith_Assert(pxImage->GetTexturePath() == ENGINE_ASSETS_DIR "Textures/Font/FontAtlas.ztxtr",
+		"Texture path should be set");
+
+	Zenith_EditorAutomation::ExecuteNextStep();
+	Zenith_EditorAutomation::Reset();
+
+	EDITOR_TEST_END(TestSetUIImageTexturePathStep);
+}
+
+//=============================================================================
+// Particle Config By Name Tests
+//=============================================================================
+
+void Zenith_AutomationTests::TestSetParticleConfigByNameStep()
+{
+	EDITOR_TEST_BEGIN(TestSetParticleConfigByNameStep);
+
+	// Register a temporary test config
+	Flux_ParticleEmitterConfig xTestConfig;
+	xTestConfig.m_uBurstCount = 42;
+	Flux_ParticleEmitterConfig::Register("AutoTestConfig", &xTestConfig);
+
+	Zenith_EditorAutomation::Reset();
+
+	Zenith_EditorAutomation::AddStep_CreateEntity("AutoParticleEntity");
+	Zenith_EditorAutomation::AddStep_AddParticleEmitter();
+	Zenith_EditorAutomation::AddStep_SetParticleConfigByName("AutoTestConfig");
+	Zenith_EditorAutomation::AddStep_SetParticleEmitting(false);
+	Zenith_EditorAutomation::Begin();
+
+	for (uint32_t i = 0; i < 4; i++)
+		Zenith_EditorAutomation::ExecuteNextStep();
+
+	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+	Zenith_Assert(pxEntity->HasComponent<Zenith_ParticleEmitterComponent>(),
+		"Entity should have ParticleEmitterComponent");
+
+	Zenith_ParticleEmitterComponent& xEmitter =
+		pxEntity->GetComponent<Zenith_ParticleEmitterComponent>();
+	Zenith_Assert(xEmitter.GetConfig() != nullptr,
+		"Particle emitter should have config assigned");
+	Zenith_Assert(xEmitter.GetConfig()->m_uBurstCount == 42,
+		"Config burst count should be 42");
+	Zenith_Assert(!xEmitter.IsEmitting(),
+		"Emitter should not be emitting");
+
+	// Cleanup
+	Flux_ParticleEmitterConfig::Unregister("AutoTestConfig");
+
+	Zenith_EditorAutomation::ExecuteNextStep();
+	Zenith_EditorAutomation::Reset();
+
+	EDITOR_TEST_END(TestSetParticleConfigByNameStep);
 }
 
 #endif // ZENITH_TOOLS

@@ -64,6 +64,8 @@ enum class Zenith_EditorActionType
 	CREATE_UI_TEXT,
 	CREATE_UI_BUTTON,
 	CREATE_UI_RECT,
+	CREATE_UI_IMAGE,
+	SET_UI_IMAGE_TEXTURE_PATH,
 	SET_UI_ANCHOR,
 	SET_UI_POSITION,
 	SET_UI_SIZE,
@@ -84,6 +86,7 @@ enum class Zenith_EditorActionType
 
 	// Particles
 	SET_PARTICLE_CONFIG,
+	SET_PARTICLE_CONFIG_BY_NAME,
 	SET_PARTICLE_EMITTING,
 
 	// Collider
@@ -157,7 +160,7 @@ public:
 	static void AddStep_AddCamera() { AddStep_AddComponent("Camera"); }
 	static void AddStep_AddUI() { AddStep_AddComponent("UI"); }
 	static void AddStep_AddScript() { AddStep_AddComponent("Script"); }
-	static void AddStep_AddParticleEmitter() { AddStep_AddComponent("Particle Emitter"); }
+	static void AddStep_AddParticleEmitter() { AddStep_AddComponent("ParticleEmitter"); }
 	static void AddStep_AddCollider() { AddStep_AddComponent("Collider"); }
 	static void AddStep_AddModel() { AddStep_AddComponent("Model"); }
 	static void AddStep_AddAnimator() { AddStep_AddComponent("Animator"); }
@@ -186,6 +189,8 @@ public:
 	static void AddStep_CreateUIText(const char* szName, const char* szText);
 	static void AddStep_CreateUIButton(const char* szName, const char* szText);
 	static void AddStep_CreateUIRect(const char* szName);
+	static void AddStep_CreateUIImage(const char* szName);
+	static void AddStep_SetUIImageTexturePath(const char* szElement, const char* szTexturePath);
 	static void AddStep_SetUIAnchor(const char* szElement, int iPreset);
 	static void AddStep_SetUIPosition(const char* szElement, float fX, float fY);
 	static void AddStep_SetUISize(const char* szElement, float fW, float fH);
@@ -212,6 +217,7 @@ public:
 	// Particle Step Helpers
 	//--------------------------------------------------------------------------
 	static void AddStep_SetParticleConfig(Flux_ParticleEmitterConfig* pxConfig);
+	static void AddStep_SetParticleConfigByName(const char* szConfigName);
 	static void AddStep_SetParticleEmitting(bool bEmitting);
 
 	//--------------------------------------------------------------------------

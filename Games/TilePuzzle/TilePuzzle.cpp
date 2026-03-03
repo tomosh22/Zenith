@@ -24,6 +24,7 @@
 #include "SaveData/Zenith_SaveData.h"
 #include "DataStream/Zenith_DataStream.h"
 #include "FileAccess/Zenith_FileAccess.h"
+#include "Flux/Particles/Flux_ParticleEmitterConfig.h"
 
 #include <unordered_set>
 
@@ -77,7 +78,42 @@ namespace TilePuzzle
 
 	// Highlight emissive intensity (loaded from materials.bin)
 	float g_fHighlightEmissiveIntensity = 0.5f;
+
+	// UI Icon textures (loaded via AssetRegistry from .ztxtr files)
+	Zenith_TextureAsset* g_pxIconStarFilled = nullptr;
+	Zenith_TextureAsset* g_pxIconStarEmpty = nullptr;
+	Zenith_TextureAsset* g_pxIconCoin = nullptr;
+	Zenith_TextureAsset* g_pxIconHeart = nullptr;
+	Zenith_TextureAsset* g_pxIconUndo = nullptr;
+	Zenith_TextureAsset* g_pxIconSkip = nullptr;
+	Zenith_TextureAsset* g_pxIconLock = nullptr;
+	Zenith_TextureAsset* g_pxIconMenu = nullptr;
+	Zenith_TextureAsset* g_pxIconBack = nullptr;
+	Zenith_TextureAsset* g_pxIconSoundOn = nullptr;
+	Zenith_TextureAsset* g_pxIconSoundOff = nullptr;
+	Zenith_TextureAsset* g_pxIconReset = nullptr;
+	Zenith_TextureAsset* g_pxIconGear = nullptr;
+	Zenith_TextureAsset* g_pxIconCatSilhouette = nullptr;
+	Zenith_TextureAsset* g_pxIconHint = nullptr;
+
+	// Cat face textures (one per color)
+	Zenith_TextureAsset* g_apxCatFaceTextures[TILEPUZZLE_COLOR_COUNT] = {};
+
+	// Gameplay textures
+	Zenith_TextureAsset* g_pxFloorTileTexture = nullptr;
+	Zenith_TextureAsset* g_pxBlockerTexture = nullptr;
+
+	// Pinball materials (loaded from .zmtrl files)
+	Zenith_MaterialAsset* g_pxPinballBallMaterial = nullptr;
+	Zenith_MaterialAsset* g_pxPinballPegMaterial = nullptr;
+	Zenith_MaterialAsset* g_pxPinballPegHitMaterial = nullptr;
+
+	// Particle configs
+	Flux_ParticleEmitterConfig* g_pxEliminationParticleConfig = nullptr;
+	Flux_ParticleEmitterConfig* g_pxVictoryConfettiConfig = nullptr;
 }
+
+#include "TilePuzzle/Components/TilePuzzle_AssetGen.h"
 
 static bool s_bResourcesInitialized = false;
 
@@ -626,6 +662,58 @@ static bool ReadShapeMeshFromStream(Zenith_DataStream& xStream, Flux_MeshGeometr
 	return true;
 }
 
+static void LoadProceduralAssets(Zenith_AssetRegistry& xRegistry)
+{
+	using namespace TilePuzzle;
+
+	// Load procedural textures from .ztxtr files via AssetRegistry
+	g_pxIconStarFilled = xRegistry.Get<Zenith_TextureAsset>(GAME_ASSETS_DIR "Textures/Icons/star_filled" ZENITH_TEXTURE_EXT);
+	g_pxIconStarEmpty = xRegistry.Get<Zenith_TextureAsset>(GAME_ASSETS_DIR "Textures/Icons/star_empty" ZENITH_TEXTURE_EXT);
+	g_pxIconCoin = xRegistry.Get<Zenith_TextureAsset>(GAME_ASSETS_DIR "Textures/Icons/coin" ZENITH_TEXTURE_EXT);
+	g_pxIconHeart = xRegistry.Get<Zenith_TextureAsset>(GAME_ASSETS_DIR "Textures/Icons/heart" ZENITH_TEXTURE_EXT);
+	g_pxIconUndo = xRegistry.Get<Zenith_TextureAsset>(GAME_ASSETS_DIR "Textures/Icons/undo" ZENITH_TEXTURE_EXT);
+	g_pxIconSkip = xRegistry.Get<Zenith_TextureAsset>(GAME_ASSETS_DIR "Textures/Icons/skip" ZENITH_TEXTURE_EXT);
+	g_pxIconLock = xRegistry.Get<Zenith_TextureAsset>(GAME_ASSETS_DIR "Textures/Icons/lock" ZENITH_TEXTURE_EXT);
+	g_pxIconMenu = xRegistry.Get<Zenith_TextureAsset>(GAME_ASSETS_DIR "Textures/Icons/menu" ZENITH_TEXTURE_EXT);
+	g_pxIconBack = xRegistry.Get<Zenith_TextureAsset>(GAME_ASSETS_DIR "Textures/Icons/back" ZENITH_TEXTURE_EXT);
+	g_pxIconSoundOn = xRegistry.Get<Zenith_TextureAsset>(GAME_ASSETS_DIR "Textures/Icons/sound_on" ZENITH_TEXTURE_EXT);
+	g_pxIconSoundOff = xRegistry.Get<Zenith_TextureAsset>(GAME_ASSETS_DIR "Textures/Icons/sound_off" ZENITH_TEXTURE_EXT);
+	g_pxIconReset = xRegistry.Get<Zenith_TextureAsset>(GAME_ASSETS_DIR "Textures/Icons/reset" ZENITH_TEXTURE_EXT);
+	g_pxIconGear = xRegistry.Get<Zenith_TextureAsset>(GAME_ASSETS_DIR "Textures/Icons/gear" ZENITH_TEXTURE_EXT);
+	g_pxIconCatSilhouette = xRegistry.Get<Zenith_TextureAsset>(GAME_ASSETS_DIR "Textures/Icons/cat_silhouette" ZENITH_TEXTURE_EXT);
+	g_pxIconHint = xRegistry.Get<Zenith_TextureAsset>(GAME_ASSETS_DIR "Textures/Icons/hint" ZENITH_TEXTURE_EXT);
+
+	// Load cat face textures
+	for (uint32_t i = 0; i < TILEPUZZLE_COLOR_COUNT; ++i)
+	{
+		char szPath[ZENITH_MAX_PATH_LENGTH];
+		snprintf(szPath, sizeof(szPath), GAME_ASSETS_DIR "Textures/CatFaces/cat_face_%u" ZENITH_TEXTURE_EXT, i);
+		g_apxCatFaceTextures[i] = xRegistry.Get<Zenith_TextureAsset>(szPath);
+	}
+
+	// Load gameplay textures and apply to materials
+	g_pxFloorTileTexture = xRegistry.Get<Zenith_TextureAsset>(GAME_ASSETS_DIR "Textures/Gameplay/floor_tile" ZENITH_TEXTURE_EXT);
+	g_pxBlockerTexture = xRegistry.Get<Zenith_TextureAsset>(GAME_ASSETS_DIR "Textures/Gameplay/blocker" ZENITH_TEXTURE_EXT);
+
+	if (g_pxFloorTileTexture)
+		g_xFloorMaterial.Get()->SetDiffuseTextureDirectly(g_pxFloorTileTexture);
+	if (g_pxBlockerTexture)
+		g_xBlockerMaterial.Get()->SetDiffuseTextureDirectly(g_pxBlockerTexture);
+	for (uint32_t i = 0; i < TILEPUZZLE_COLOR_COUNT; ++i)
+	{
+		if (g_apxCatFaceTextures[i])
+			g_axCatMaterials[i].Get()->SetDiffuseTextureDirectly(g_apxCatFaceTextures[i]);
+	}
+
+	// Load pinball materials from .zmtrl files
+	g_pxPinballBallMaterial = xRegistry.Get<Zenith_MaterialAsset>(GAME_ASSETS_DIR "Materials/pinball_ball" ZENITH_MATERIAL_EXT);
+	g_pxPinballPegMaterial = xRegistry.Get<Zenith_MaterialAsset>(GAME_ASSETS_DIR "Materials/pinball_peg" ZENITH_MATERIAL_EXT);
+	g_pxPinballPegHitMaterial = xRegistry.Get<Zenith_MaterialAsset>(GAME_ASSETS_DIR "Materials/pinball_peg_hit" ZENITH_MATERIAL_EXT);
+
+	// Load particle configs
+	TilePuzzle_AssetGen::LoadParticleConfigs();
+}
+
 static void InitializeTilePuzzleResources()
 {
 	if (s_bResourcesInitialized)
@@ -761,6 +849,12 @@ static void InitializeTilePuzzleResources()
 		g_axCatMaterials[i].Get()->SetDiffuseTextureDirectly(pxGridTex);
 		g_axCatMaterials[i].Get()->SetBaseColor(axShapeColors[i]);
 	}
+
+#ifndef ZENITH_TOOLS
+	// Non-tools: load procedural assets from disk (generated by a prior ZENITH_TOOLS run)
+	// In ZENITH_TOOLS builds, these are generated and loaded in Project_InitializeResources()
+	LoadProceduralAssets(xRegistry);
+#endif
 
 	// Create prefabs for runtime instantiation
 	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
@@ -988,6 +1082,26 @@ void Project_InitializeResources()
 
 	Zenith_Log(LOG_CATEGORY_GENERAL,
 		"Wrote pinball peg layouts and gate data to " GAME_ASSETS_DIR "Pinball/");
+
+	// ================================================================
+	// 5. Generate procedural textures (icons, cat faces, gameplay)
+	// ================================================================
+	TilePuzzle_AssetGen::GenerateAllTextures();
+
+	// ================================================================
+	// 6. Generate pinball materials (.zmtrl files)
+	// ================================================================
+	TilePuzzle_AssetGen::GeneratePinballMaterials();
+
+	// ================================================================
+	// 7. Generate particle configs (.zptcl files)
+	// ================================================================
+	TilePuzzle_AssetGen::GenerateParticleConfigs();
+
+	// ================================================================
+	// 8. Load generated procedural assets
+	// ================================================================
+	LoadProceduralAssets(Zenith_AssetRegistry::Get());
 }
 
 // Static string arrays for cat cafe cards (safe for deferred const char* in automation actions)
@@ -1118,12 +1232,30 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_SetUIFontSize("CoinText", 36.f);
 	Zenith_EditorAutomation::AddStep_SetUIColor("CoinText", 1.f, 0.85f, 0.2f, 1.f);
 
+	// Coin icon (next to coin text)
+	Zenith_EditorAutomation::AddStep_CreateUIImage("CoinIcon");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("CoinIcon", static_cast<int>(Zenith_UI::AnchorPreset::TopRight));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("CoinIcon", -170.f, 22.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("CoinIcon", 28.f, 28.f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("CoinIcon", 1.f, 0.85f, 0.2f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIImageTexturePath("CoinIcon",
+		GAME_ASSETS_DIR "Textures/Icons/coin" ZENITH_TEXTURE_EXT);
+
 	// Lives display text (top-left of menu)
 	Zenith_EditorAutomation::AddStep_CreateUIText("LivesText", "Lives: 5/5");
 	Zenith_EditorAutomation::AddStep_SetUIAnchor("LivesText", static_cast<int>(Zenith_UI::AnchorPreset::TopLeft));
 	Zenith_EditorAutomation::AddStep_SetUIPosition("LivesText", 20.f, 20.f);
 	Zenith_EditorAutomation::AddStep_SetUIFontSize("LivesText", 36.f);
 	Zenith_EditorAutomation::AddStep_SetUIColor("LivesText", 1.f, 0.3f, 0.3f, 1.f);
+
+	// Heart icon (next to lives text)
+	Zenith_EditorAutomation::AddStep_CreateUIImage("HeartIcon");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("HeartIcon", static_cast<int>(Zenith_UI::AnchorPreset::TopLeft));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("HeartIcon", 150.f, 22.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("HeartIcon", 28.f, 28.f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("HeartIcon", 1.f, 0.3f, 0.3f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIImageTexturePath("HeartIcon",
+		GAME_ASSETS_DIR "Textures/Icons/heart" ZENITH_TEXTURE_EXT);
 
 	// Lives Refill button (hidden by default)
 	Zenith_EditorAutomation::AddStep_CreateUIButton("RefillLivesButton", "Refill (50)");
@@ -1385,6 +1517,16 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_SetUIFontSize("Progress", 45.f);
 	Zenith_EditorAutomation::AddStep_SetUIColor("Progress", 0.6f, 0.8f, 1.f, 1.f);
 
+	// HUD coin icon (next to progress/status area)
+	Zenith_EditorAutomation::AddStep_CreateUIImage("HUDCoinIcon");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("HUDCoinIcon", static_cast<int>(Zenith_UI::AnchorPreset::TopRight));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("HUDCoinIcon", -170.f, 270.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("HUDCoinIcon", 24.f, 24.f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("HUDCoinIcon", 1.f, 0.85f, 0.2f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIImageTexturePath("HUDCoinIcon",
+		GAME_ASSETS_DIR "Textures/Icons/coin" ZENITH_TEXTURE_EXT);
+	Zenith_EditorAutomation::AddStep_SetUIVisible("HUDCoinIcon", false);
+
 	// WinText (y = 30 + lineH*12 = 318)
 	Zenith_EditorAutomation::AddStep_CreateUIText("WinText", "");
 	Zenith_EditorAutomation::AddStep_SetUIAnchor("WinText", static_cast<int>(Zenith_UI::AnchorPreset::TopRight));
@@ -1450,6 +1592,24 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_SetUIColor("VictoryStars", 1.f, 0.85f, 0.1f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIVisible("VictoryStars", false);
 
+	// Victory star images (3 stars for rating display)
+	{
+		static const char* s_aszVictoryStarNames[] = { "VictoryStar0", "VictoryStar1", "VictoryStar2" };
+		for (uint32_t u = 0; u < 3; ++u)
+		{
+			float fStarX = (static_cast<float>(u) - 1.f) * 60.f;
+			Zenith_EditorAutomation::AddStep_CreateUIImage(s_aszVictoryStarNames[u]);
+			Zenith_EditorAutomation::AddStep_SetUIAnchor(s_aszVictoryStarNames[u],
+				static_cast<int>(Zenith_UI::AnchorPreset::Center));
+			Zenith_EditorAutomation::AddStep_SetUIPosition(s_aszVictoryStarNames[u], fStarX, -50.f);
+			Zenith_EditorAutomation::AddStep_SetUISize(s_aszVictoryStarNames[u], 48.f, 48.f);
+			Zenith_EditorAutomation::AddStep_SetUIColor(s_aszVictoryStarNames[u], 1.f, 0.85f, 0.1f, 1.f);
+			Zenith_EditorAutomation::AddStep_SetUIImageTexturePath(s_aszVictoryStarNames[u],
+				GAME_ASSETS_DIR "Textures/Icons/star_empty" ZENITH_TEXTURE_EXT);
+			Zenith_EditorAutomation::AddStep_SetUIVisible(s_aszVictoryStarNames[u], false);
+		}
+	}
+
 	// Victory cat text
 	Zenith_EditorAutomation::AddStep_CreateUIText("VictoryCatText", "Cat rescued!");
 	Zenith_EditorAutomation::AddStep_SetUIAnchor("VictoryCatText", static_cast<int>(Zenith_UI::AnchorPreset::Center));
@@ -1467,6 +1627,22 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_SetUIAlignment("VictoryCoinsText", static_cast<int>(Zenith_UI::TextAlignment::Center));
 	Zenith_EditorAutomation::AddStep_SetUIColor("VictoryCoinsText", 1.f, 0.85f, 0.2f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIVisible("VictoryCoinsText", false);
+
+	// Elimination particle emitter
+	Zenith_EditorAutomation::AddStep_CreateEntity("EliminationEmitter");
+	Zenith_EditorAutomation::AddStep_AddParticleEmitter();
+	Zenith_EditorAutomation::AddStep_SetParticleConfigByName("Elimination");
+	Zenith_EditorAutomation::AddStep_SetParticleEmitting(false);
+
+	// Victory confetti particle emitter
+	Zenith_EditorAutomation::AddStep_CreateEntity("VictoryConfettiEmitter");
+	Zenith_EditorAutomation::AddStep_SetTransformPosition(0.f, 8.f, 0.f);
+	Zenith_EditorAutomation::AddStep_AddParticleEmitter();
+	Zenith_EditorAutomation::AddStep_SetParticleConfigByName("VictoryConfetti");
+	Zenith_EditorAutomation::AddStep_SetParticleEmitting(false);
+
+	// Re-select GameManager for the script step
+	Zenith_EditorAutomation::AddStep_SelectEntity("GameManager");
 
 	// Script
 	Zenith_EditorAutomation::AddStep_AddScript();

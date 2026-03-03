@@ -211,7 +211,8 @@ void SetVictoryOverlayVisible(bool bVisible)
 
 	const char* aszVictoryElements[] = {
 		"VictoryBg", "VictoryTitle", "VictoryStars",
-		"VictoryCatText", "VictoryCoinsText", "NextLevelBtn"
+		"VictoryCatText", "VictoryCoinsText", "NextLevelBtn",
+		"VictoryStar0", "VictoryStar1", "VictoryStar2"
 	};
 	for (const char* szName : aszVictoryElements)
 	{
@@ -264,6 +265,22 @@ void UpdateVictoryOverlay(float fDeltaTime)
 			}
 		}
 		pxStars->SetText(szStars);
+	}
+
+	// Update star images (filled vs empty based on rating)
+	{
+		static const char* s_aszStarNames[] = { "VictoryStar0", "VictoryStar1", "VictoryStar2" };
+		for (uint32_t u = 0; u < 3; ++u)
+		{
+			Zenith_UI::Zenith_UIImage* pxStar = xUI.FindElement<Zenith_UI::Zenith_UIImage>(s_aszStarNames[u]);
+			if (pxStar)
+			{
+				bool bFilled = u < m_uVictoryStarsShown;
+				pxStar->SetTexturePath(bFilled
+					? GAME_ASSETS_DIR "Textures/Icons/star_filled" ZENITH_TEXTURE_EXT
+					: GAME_ASSETS_DIR "Textures/Icons/star_empty" ZENITH_TEXTURE_EXT);
+			}
+		}
 	}
 
 	// Update cat rescued text

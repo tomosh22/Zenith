@@ -54,6 +54,9 @@ namespace TilePuzzle
 {
 	extern Flux_MeshGeometry* g_pxCubeGeometry;
 	extern Flux_MeshGeometry* g_pxSphereGeometry;
+	extern Zenith_MaterialAsset* g_pxPinballBallMaterial;
+	extern Zenith_MaterialAsset* g_pxPinballPegMaterial;
+	extern Zenith_MaterialAsset* g_pxPinballPegHitMaterial;
 }
 
 // ============================================================================
@@ -704,6 +707,14 @@ private:
 		m_xPegFlashMaterial.Get()->SetBaseColor({ 0.5f, 0.9f, 1.0f, 1.f });
 		m_xPegFlashMaterial.Get()->SetEmissiveColor(Zenith_Maths::Vector3(0.4f, 1.0f, 1.0f));
 		m_xPegFlashMaterial.Get()->SetEmissiveIntensity(3.0f);
+
+		// Use loaded procedural materials when available
+		if (TilePuzzle::g_pxPinballBallMaterial)
+			m_xBallMaterial.Set(TilePuzzle::g_pxPinballBallMaterial);
+		if (TilePuzzle::g_pxPinballPegMaterial)
+			m_xObstacleMaterial.Set(TilePuzzle::g_pxPinballPegMaterial);
+		if (TilePuzzle::g_pxPinballPegHitMaterial)
+			m_xPegHitMaterial.Set(TilePuzzle::g_pxPinballPegHitMaterial);
 	}
 
 	// ========================================================================

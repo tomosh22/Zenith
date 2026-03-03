@@ -76,13 +76,13 @@ void Zenith_UIImage::Render(Zenith_UICanvas& xCanvas)
         xCanvas.SubmitQuad(xGlowBounds, m_xGlowColor, 0);
     }
 
-    // Render the image
-    // TODO: Implement proper texture ID retrieval from Flux_Texture
+    // Render the image with bindless texture
     uint32_t uTextureID = 0;
-    // if (m_pxTexture)
-    // {
-    //     uTextureID = ???;  // Need to determine correct way to get texture ID
-    // }
+    Zenith_TextureAsset* pxTexture = m_xTexture.Get();
+    if (pxTexture && pxTexture->IsValid() && pxTexture->m_xSRV.m_xImageViewHandle.IsValid())
+    {
+        uTextureID = pxTexture->m_xSRV.m_xImageViewHandle.AsUInt();
+    }
 
     // Apply color tint
     xCanvas.SubmitQuadWithUV(xBounds, m_xColor, uTextureID, m_xUVMin, m_xUVMax);

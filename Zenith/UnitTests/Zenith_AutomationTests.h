@@ -72,6 +72,17 @@ private:
 	static void TestSetUIButtonStyleStep();
 
 	//--------------------------------------------------------------------------
+	// UI Image Operation Tests
+	//--------------------------------------------------------------------------
+	static void TestCreateUIImageStep();
+	static void TestSetUIImageTexturePathStep();
+
+	//--------------------------------------------------------------------------
+	// Particle Config By Name Tests
+	//--------------------------------------------------------------------------
+	static void TestSetParticleConfigByNameStep();
+
+	//--------------------------------------------------------------------------
 	// Script/Behaviour Tests
 	//--------------------------------------------------------------------------
 	static void TestSetBehaviourStep();

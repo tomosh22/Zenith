@@ -14,6 +14,7 @@
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "UI/Zenith_UI.h"
 #include "UI/Zenith_UIButton.h"
+#include "UI/Zenith_UIImage.h"
 #include "Flux/Particles/Flux_ParticleEmitterConfig.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 
@@ -257,6 +258,23 @@ void Zenith_EditorAutomation::AddStep_CreateUIRect(const char* szName)
 	s_axActions.PushBack(xAction);
 }
 
+void Zenith_EditorAutomation::AddStep_CreateUIImage(const char* szName)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = Zenith_EditorActionType::CREATE_UI_IMAGE;
+	xAction.m_szArg1 = szName;
+	s_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_SetUIImageTexturePath(const char* szElement, const char* szTexturePath)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = Zenith_EditorActionType::SET_UI_IMAGE_TEXTURE_PATH;
+	xAction.m_szArg1 = szElement;
+	xAction.m_szArg2 = szTexturePath;
+	s_axActions.PushBack(xAction);
+}
+
 void Zenith_EditorAutomation::AddStep_SetUIAnchor(const char* szElement, int iPreset)
 {
 	Zenith_EditorAction xAction = {};
@@ -397,6 +415,14 @@ void Zenith_EditorAutomation::AddStep_SetParticleConfig(Flux_ParticleEmitterConf
 	Zenith_EditorAction xAction = {};
 	xAction.m_eType = Zenith_EditorActionType::SET_PARTICLE_CONFIG;
 	xAction.m_pArg = pxConfig;
+	s_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_SetParticleConfigByName(const char* szConfigName)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = Zenith_EditorActionType::SET_PARTICLE_CONFIG_BY_NAME;
+	xAction.m_szArg1 = szConfigName;
 	s_axActions.PushBack(xAction);
 }
 
@@ -618,6 +644,26 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 		break;
 	}
 
+	case Zenith_EditorActionType::CREATE_UI_IMAGE:
+	{
+		Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for CREATE_UI_IMAGE");
+		Zenith_Assert(pxEntity->HasComponent<Zenith_UIComponent>(), "Selected entity has no UIComponent");
+		pxEntity->GetComponent<Zenith_UIComponent>().CreateImage(xAction.m_szArg1);
+		break;
+	}
+
+	case Zenith_EditorActionType::SET_UI_IMAGE_TEXTURE_PATH:
+	{
+		Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for SET_UI_IMAGE_TEXTURE_PATH");
+		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+		Zenith_UI::Zenith_UIImage* pxImage = xUI.FindElement<Zenith_UI::Zenith_UIImage>(xAction.m_szArg1);
+		Zenith_Assert(pxImage, "UI image not found: %s", xAction.m_szArg1);
+		pxImage->SetTexturePath(xAction.m_szArg2);
+		break;
+	}
+
 	case Zenith_EditorActionType::SET_UI_ANCHOR:
 	{
 		Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
@@ -764,6 +810,17 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 		Zenith_Assert(pxEntity->HasComponent<Zenith_ParticleEmitterComponent>(), "Selected entity has no ParticleEmitterComponent");
 		pxEntity->GetComponent<Zenith_ParticleEmitterComponent>().SetConfig(
 			static_cast<Flux_ParticleEmitterConfig*>(xAction.m_pArg));
+		break;
+	}
+
+	case Zenith_EditorActionType::SET_PARTICLE_CONFIG_BY_NAME:
+	{
+		Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for SET_PARTICLE_CONFIG_BY_NAME");
+		Zenith_Assert(pxEntity->HasComponent<Zenith_ParticleEmitterComponent>(), "Selected entity has no ParticleEmitterComponent");
+		Flux_ParticleEmitterConfig* pxConfig = Flux_ParticleEmitterConfig::Find(xAction.m_szArg1);
+		Zenith_Assert(pxConfig, "Particle config not found: %s", xAction.m_szArg1);
+		pxEntity->GetComponent<Zenith_ParticleEmitterComponent>().SetConfig(pxConfig);
 		break;
 	}
 
