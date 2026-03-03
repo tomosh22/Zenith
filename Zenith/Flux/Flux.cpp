@@ -71,6 +71,7 @@ void Flux::EarlyInitialise()
 	Flux_PlatformAPI::Initialise();
 	Flux_MemoryManager::Initialise();
 	Flux_PlatformAPI::InitialiseScratchBuffers(); // Must be after memory manager init
+	Flux_Graphics::InitialiseSamplers(); // Must be before any CreateShaderResourceView calls (bindless registration)
 }
 
 void Flux::LateInitialise()

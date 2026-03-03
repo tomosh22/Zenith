@@ -812,6 +812,24 @@ void Zenith_Vulkan::CreateBindlessTexturesDescriptorPool()
 	s_xBindlessTexturesDescriptorSet = s_xDevice.allocateDescriptorSets(xSetInfo)[0];
 }
 
+void Zenith_Vulkan::WriteBindlessDescriptor(uint32_t uIndex, vk::ImageView xImageView, vk::Sampler xSampler)
+{
+	vk::DescriptorImageInfo xImageInfo = vk::DescriptorImageInfo()
+		.setImageLayout(vk::ImageLayout::eShaderReadOnlyOptimal)
+		.setImageView(xImageView)
+		.setSampler(xSampler);
+
+	vk::WriteDescriptorSet xWrite = vk::WriteDescriptorSet()
+		.setDstSet(s_xBindlessTexturesDescriptorSet)
+		.setDstBinding(0)
+		.setDstArrayElement(uIndex)
+		.setDescriptorType(vk::DescriptorType::eCombinedImageSampler)
+		.setDescriptorCount(1)
+		.setPImageInfo(&xImageInfo);
+
+	s_xDevice.updateDescriptorSets(1, &xWrite, 0, nullptr);
+}
+
 #ifdef ZENITH_TOOLS
 
 void Zenith_Vulkan::InitialiseImGui()

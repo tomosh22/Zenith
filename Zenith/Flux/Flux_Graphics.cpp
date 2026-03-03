@@ -54,11 +54,14 @@ DEBUGVAR u_int dbg_uTargetPixelsPerTri = 10;
 DEBUGVAR bool dbg_bOverrideViewProjMat = false;
 DEBUGVAR u_int dbg_uOverrideViewProjMatIndex = 0;
 
-void Flux_Graphics::Initialise()
+void Flux_Graphics::InitialiseSamplers()
 {
 	Flux_Sampler::InitialiseRepeat(s_xRepeatSampler);
 	Flux_Sampler::InitialiseClamp(s_xClampSampler);
+}
 
+void Flux_Graphics::Initialise()
+{
 	Flux_SurfaceInfo xTexInfo;
 	xTexInfo.m_eFormat = TEXTURE_FORMAT_RGBA8_UNORM;
 	xTexInfo.m_uWidth = 1;

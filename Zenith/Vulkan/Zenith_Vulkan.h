@@ -133,6 +133,7 @@ public:
 
 	static vk::DescriptorSet& GetBindlessTexturesDescriptorSet() { return s_xBindlessTexturesDescriptorSet; }
 	static vk::DescriptorSetLayout& GetBindlessTexturesDescriptorSetLayout() { return s_xBindlessTexturesDescriptorSetLayout; }
+	static void WriteBindlessDescriptor(uint32_t uIndex, vk::ImageView xImageView, vk::Sampler xSampler);
 
 	// VRAM Registry
 	static Flux_VRAMHandle RegisterVRAM(Zenith_Vulkan_VRAM* pxVRAM);

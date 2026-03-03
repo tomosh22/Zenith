@@ -8,6 +8,7 @@
 
 #include "DebugVariables/Zenith_DebugVariables.h"
 #include "Flux/Flux_Buffers.h"
+#include "Flux/Flux_Graphics.h"
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 
 Zenith_Vulkan_CommandBuffer Zenith_Vulkan_MemoryManager::s_xCommandBuffer;
@@ -866,6 +867,15 @@ Flux_ShaderResourceView Zenith_Vulkan_MemoryManager::CreateShaderResourceView(Fl
 	xView.m_bIsDepthStencil = bIsDepth;
 	xView.m_uBaseMip = uBaseMip;    // Store mip level for barrier tracking
 	xView.m_uMipCount = uMipCount;  // Store mip count for barrier tracking
+
+	if (!bIsDepth && xView.m_xImageViewHandle.IsValid())
+	{
+		Zenith_Vulkan::WriteBindlessDescriptor(
+			xView.m_xImageViewHandle.AsUInt(),
+			xVkView,
+			Flux_Graphics::s_xClampSampler.GetSampler());
+	}
+
 	return xView;
 }
 
@@ -901,6 +911,15 @@ Flux_ShaderResourceView Zenith_Vulkan_MemoryManager::CreateShaderResourceViewFor
 	xView.m_bIsDepthStencil = bIsDepth;
 	xView.m_uBaseMip = uBaseMip;    // Store mip level for barrier tracking
 	xView.m_uMipCount = uMipCount;  // Store mip count for barrier tracking
+
+	if (!bIsDepth && xView.m_xImageViewHandle.IsValid())
+	{
+		Zenith_Vulkan::WriteBindlessDescriptor(
+			xView.m_xImageViewHandle.AsUInt(),
+			xVkView,
+			Flux_Graphics::s_xClampSampler.GetSampler());
+	}
+
 	return xView;
 }
 

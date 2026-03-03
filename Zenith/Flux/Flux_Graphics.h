@@ -8,6 +8,7 @@ public:
 	Flux_Graphics() = delete;
 	~Flux_Graphics() = delete;
 
+	static void InitialiseSamplers();
 	static void Initialise();
 	static void InitialiseRenderTargets();
 	static void Shutdown();
