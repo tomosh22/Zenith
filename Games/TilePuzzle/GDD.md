@@ -316,20 +316,31 @@ MAIN_MENU -> LEVEL_SELECT -> PLAYING -> SHAPE_SLIDING -> CHECK_ELIMINATION
 - Move counter
 - Cats remaining counter
 - Progress bar
-- Buttons: Reset (R), Undo (U), Hint (H), Skip (offered after 3 resets), Menu (Esc)
+- Buttons: Reset, Undo, Hint, Skip (offered after 3 resets), Menu
 
 ### 7.5 Victory Overlay
 
-- Star rating (sequential appearance, 0.4s per star)
-- Cat name announcement ("Cat rescued: [Name]!")
-- Coins earned display
-- Next Level button
+Staggered reveal sequence (~2.5s total):
+
+| Time | Element | Animation |
+|------|---------|-----------|
+| 0.0s | Background | Fades in (alpha 0 -> 0.9, 0.25s) |
+| 0.3s | "Level Complete!" title | Scales up with back-out easing (0.3s) |
+| 0.6s | Star 1 | Scale bounce from 0 to 48px (back-out, 0.3s) + gold particle burst |
+| 1.0s | Star 2 | Same animation |
+| 1.4s | Star 3 | Same animation (filled or empty based on rating) |
+| 1.8s | "Cat rescued: [Name]!" | Fades in + slides up (0.3s) |
+| 2.2s | "+N coins" counter | Animated count-up from 0 to earned amount (0.4s) |
+| 2.5s | "Next Level" button | Fades in (0.25s) |
+
+- Star images use `star_filled`/`star_empty` textures (not text asterisks)
+- Each star appearance triggers a gold particle burst at grid center
 
 ### 7.6 Input
 
-**Keyboard:** WASD/Arrows to move, Space to select/deselect, R reset, U undo, H hint, N next level, Esc menu
+**Mouse/Touch (Primary):** Tap to select shape (emissive glow highlight + breathing pulse), drag to move shape in dominant direction, up to 4 cells per drag update, auto-snap on release. All menus are touch/click navigated.
 
-**Mouse/Touch:** Click to select shape (emissive glow highlight), drag to move shape in dominant direction, up to 4 cells per drag update, auto-snap on release
+**Keyboard (Development Only):** Escape key available in `#ifdef ZENITH_TOOLS` builds for quick menu return. No keyboard gameplay controls — the game targets mobile touch input exclusively.
 
 ---
 
@@ -360,17 +371,34 @@ MAIN_MENU -> LEVEL_SELECT -> PLAYING -> SHAPE_SLIDING -> CHECK_ELIMINATION
 
 | Animation | Duration | Style |
 |-----------|----------|-------|
-| Shape slide | 0.15s | Linear interpolation |
-| Cat elimination | 0.3s | Fade out (opacity driven by progress) |
+| Shape slide | 0.15s | Ease-out cubic (`1 - (1-t)^3`) |
+| Shape bounce on arrival | 0.1s | Scale 1.08x -> 1.0x, cubic-out |
+| Shape pickup | Instant | Scale bump to 1.1x on select |
+| Shape breathing pulse | 0.8s period | ±5% scale oscillation (sine), loops while selected |
+| Cat elimination pop | 0.28s | Scale up 1.3x (0.08s quad-out), then shrink to 0 (0.2s back-in) |
+| Screen shake (blocked) | 0.15s | ±0.05 unit XZ offset, dampened decay |
+| Camera zoom pulse (victory) | 0.6s | 5% zoom-in (0.2s quad-out), ease back (0.4s quad-in-out) |
+| Locked shape wiggle | 0.325s | ±2 degree Y rotation oscillation, decaying |
+| Shape unlock celebration | 0.2s | Scale 1.15x -> 1.0x, elastic-out + golden particles |
 | Hint flash | ~0.1s | On/off blink cycle |
-| Victory stars | 0.4s each | Sequential appearance |
+| Victory stars | 0.3s each | Scale bounce (back-out), staggered at 0.4s intervals |
 | Gate celebration | 2.5s | Success/failure display |
+
+### 8.6 Particle Effects
+
+| Effect | Trigger | Description |
+|--------|---------|-------------|
+| Elimination sparkle | Cat eliminated | 25 particles, color-matched to cat color, burst upward |
+| Shape unlock flash | Conditional shape unlocked | 15 golden particles at shape position |
+| Victory star sparkle | Star revealed in victory overlay | 10 gold particles at grid center |
+| Victory confetti | Level complete | 80 confetti particles from above |
 
 ### 8.4 Camera
 
-- Orthographic overhead view, centered on grid
-- Zoom adjusted per grid size (max 12x12)
-- Looking down at -Y axis
+- Perspective overhead view, centered on grid, looking down -Y axis
+- Camera height auto-adjusted per grid size to fit all cells in view
+- Screen shake offset (XZ plane) on blocked moves
+- Zoom pulse (Y position) on level complete
 
 ### 8.5 Art Direction Goals (Store Release)
 
@@ -487,7 +515,7 @@ Already implemented:
 | Touch input | Implemented (touch-to-mouse emulation) |
 | Pre-compiled shaders (.spv) | Pipeline exists (FluxCompiler) |
 | Asset pipeline (.zmesh, .zmat, .ztex) | Implemented |
-| Portrait orientation | Needs implementation (currently landscape) |
+| Portrait orientation (720x1280) | Implemented |
 | App icon (512x512) | Needs creation |
 | Feature graphic (1024x500) | Needs creation |
 | Screenshots (min 2) | Needs creation |
@@ -643,29 +671,99 @@ Pinball:
 
 ## Appendix C: Implementation Priority
 
-### Phase 1: Art Polish (Pre-Store)
-1. Replace placeholder cubes/spheres with stylized meshes (cats, shapes)
-2. Add particle effects (elimination sparkles, victory confetti)
-3. Create consistent UI icon set
-4. Implement portrait orientation support
-5. Create store listing assets (icon, feature graphic, screenshots)
+### Phase 1: Game Feel & Juice (COMPLETED)
+1. ~~Fix shape mesh generation bugs + remove bottom faces~~ Done
+2. ~~Animation easing & timing (ease-out cubic, bounce, cat pop, breathing pulse)~~ Done
+3. ~~Remove keyboard input & floor cursor~~ Done
+4. ~~Screen shake & emphasis (blocked shake, victory zoom, locked wiggle)~~ Done
+5. ~~Particle effect enhancements (color-matched, unlock particles)~~ Done
+6. ~~Victory overlay redesign (staggered reveal sequence)~~ Done
 
-### Phase 2: Audio Integration
-1. Integrate audio library (miniaudio or OpenAL Soft)
+### Phase 2: Onboarding & Tutorial
+1. Contextual tutorial overlays (levels 1, 6, 11, 26, 46)
+2. First-time user experience (progressive menu disclosure)
+
+### Phase 3: Visual Polish
+1. Per-color material PBR variation (roughness/metallic)
+2. Cat mesh upgrade (ear shapes, idle bob animation)
+3. Background gradient per difficulty tier
+4. Screen transitions between menus
+
+### Phase 4: Meta-Game Polish
+1. New cat unlock celebration sequence
+2. Level select visual upgrade (star icons, lock icons, color coding)
+3. Cat Cafe visual upgrade (cat face images, collection progress bar)
+4. Settings screen (sound, music, haptics toggles)
+5. Retention features (milestones, "New Best!" indicator, total star counter)
+
+### Phase 5: Audio Integration
+1. Integrate audio library (miniaudio)
 2. Add SFX for all gameplay events
-3. Add background music (menu, puzzle, pinball, cafe)
+3. Add background music (menu, puzzle, pinball)
 
-### Phase 3: Monetization
+### Phase 6: Monetization & Store
 1. Integrate ad SDK (AdMob)
 2. Add rewarded video ad placements
-3. Add interstitial ad placements
-4. Integrate Google Play Billing for IAPs
-5. Implement remove-ads purchase
+3. Integrate Google Play Billing for IAPs
+4. Create store listing assets (icon, feature graphic, screenshots)
 
-### Phase 4: Polish & Launch
-1. Onboarding tutorial overlays
-2. Settings screen (sound, music, haptics toggles)
-3. Localization support
-4. Crash reporting integration
-5. Analytics integration
-6. Store listing optimization (ASO)
+---
+
+## Appendix D: Test Plan
+
+### D.1 Existing Automated Tests
+
+These tests are implemented in `Games/TilePuzzle/Tests/TilePuzzle_AutoTest.h` and run via the `--autotest` flag.
+
+| Test | Coverage |
+|------|----------|
+| `Test_PuzzleLevel_StarRating` | Star calculation: 3-star at par, 2-star at par+2, 1-star at par+3 |
+| `Test_PuzzleLevel_Undo` | Undo restores shape positions, cat states, and move count |
+| `Test_PuzzleLevel_Hint` | BFS solver returns valid next move from current state |
+| `Test_Pinball_LaunchAndScore` | Ball launches, pegs score correctly, ball drains |
+| `Test_Pinball_GateObjectives` | All 10 gate types verify correctly |
+| `Test_SaveLoad_Integrity` | Save -> load round-trip preserves all fields |
+| `Test_CoinSystem` | Earning, spending, balance, coin sinks |
+| `Test_FullGame` | Visual playthrough of all 100 levels + 10 pinball gates |
+
+### D.2 Manual Test Checklist: Game Feel
+
+| ID | What to Verify | Pass Criteria |
+|----|---------------|---------------|
+| M-FEEL-01 | Shape slide uses ease-out | Shape decelerates on arrival, no constant speed |
+| M-FEEL-02 | Shape bounce on arrival | Visible overshoot + spring-back after slide |
+| M-FEEL-03 | Cat elimination pop | Cat scales up 1.3x then shrinks to 0 (not just fade) |
+| M-FEEL-04 | Selected shape breathing pulse | Shape oscillates ±5% scale while selected |
+| M-FEEL-05 | Screen shake on blocked move | Camera shakes when shape can't move |
+| M-FEEL-06 | Locked shape wiggle | Conditional shape wiggles when tapped before unlocked |
+| M-FEEL-07 | Color-matched elimination particles | Particle color matches eliminated cat |
+| M-FEEL-08 | Touch-only input | All gameplay works via tap + drag, no keyboard needed |
+
+### D.3 Manual Test Checklist: Victory & Rewards
+
+| ID | What to Verify | Pass Criteria |
+|----|---------------|---------------|
+| M-VIC-01 | Staggered victory reveal | Elements appear sequentially, not all at once |
+| M-VIC-02 | Star scale animation | Each star scales from 0 with bounce easing |
+| M-VIC-03 | Coin count-up animation | Coin display ticks up from 0, not instant |
+| M-VIC-04 | Camera zoom pulse on win | Camera briefly zooms in 5% then eases back |
+| M-VIC-05 | Victory confetti particles | Confetti bursts from above on level complete |
+
+### D.4 Regression Test Protocol
+
+After any code change:
+1. Run full automated test suite via `--autotest` flag
+2. Build both Debug and Release: `msbuild zenith_win64.sln /p:Configuration=vs2022_Debug_Win64_True /p:Platform=x64`
+3. Play levels 1, 25, 50, 75, 100 manually for visual correctness
+4. Test save data migration: load previous version save, verify no data loss
+
+### D.5 Performance Benchmarks
+
+| Metric | Target |
+|--------|--------|
+| Puzzle frame rate | 60 FPS stable |
+| Pinball frame rate | 60 FPS stable |
+| Level load time | < 0.5s |
+| Cold start time | < 3s |
+| Memory usage | < 150 MB |
+| APK size | < 100 MB |

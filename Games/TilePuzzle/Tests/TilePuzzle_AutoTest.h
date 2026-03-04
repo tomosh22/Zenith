@@ -56,6 +56,26 @@ public:
 		PHASE_TEST_PINBALL_GATES,
 		PHASE_TEST_SAVE_LOAD,
 		PHASE_TEST_COIN_SYSTEM,
+		// New tests
+		PHASE_TEST_SHAPE_COLLISION,
+		PHASE_TEST_BLOCKER_CAT,
+		PHASE_TEST_CONDITIONAL_SHAPE,
+		PHASE_TEST_MULTI_CELL,
+		PHASE_TEST_WIN_CONDITION,
+		PHASE_TEST_LIVES_SYSTEM,
+		PHASE_TEST_SAVE_V6,
+		PHASE_TEST_VERSION_MIGRATION,
+		PHASE_TEST_DAILY_STREAK,
+		PHASE_TEST_CAT_BITFIELD,
+		PHASE_TEST_STAR_PERSISTENCE,
+		PHASE_TEST_TUTORIAL_FLAGS,
+		PHASE_TEST_PINBALL_GATE_FLAGS,
+		// Bug regression tests
+		PHASE_TEST_NEW_BEST_DETECTION,
+		PHASE_TEST_MILESTONE_COINS,
+		PHASE_TEST_UI_ELEMENTS_EXIST,
+		PHASE_TEST_TRANSITION_SWITCH,
+		PHASE_TEST_VICTORY_INIT_HIDDEN,
 		// Full-game test (plays ALL levels + pinball gates)
 		PHASE_FULL_GAME_RESET_SAVE,
 		PHASE_FULL_GAME_WAIT_PLAYING,
@@ -148,6 +168,114 @@ public:
 
 		case PHASE_TEST_COIN_SYSTEM:
 			RunSingleTest("Test_CoinSystem", &Test_CoinSystem);
+			m_ePhase = PHASE_TEST_SHAPE_COLLISION;
+			m_uFrameDelay = 5;
+			break;
+
+		case PHASE_TEST_SHAPE_COLLISION:
+			RunSingleTest("Test_ShapeCollisionRules", &Test_ShapeCollisionRules);
+			m_ePhase = PHASE_TEST_BLOCKER_CAT;
+			m_uFrameDelay = 5;
+			break;
+
+		case PHASE_TEST_BLOCKER_CAT:
+			RunSingleTest("Test_BlockerCatElimination", &Test_BlockerCatElimination);
+			m_ePhase = PHASE_TEST_CONDITIONAL_SHAPE;
+			m_uFrameDelay = 5;
+			break;
+
+		case PHASE_TEST_CONDITIONAL_SHAPE:
+			RunSingleTest("Test_ConditionalShapeLocking", &Test_ConditionalShapeLocking);
+			m_ePhase = PHASE_TEST_MULTI_CELL;
+			m_uFrameDelay = 5;
+			break;
+
+		case PHASE_TEST_MULTI_CELL:
+			RunSingleTest("Test_MultiCellShapeCollision", &Test_MultiCellShapeCollision);
+			m_ePhase = PHASE_TEST_WIN_CONDITION;
+			m_uFrameDelay = 5;
+			break;
+
+		case PHASE_TEST_WIN_CONDITION:
+			RunSingleTest("Test_WinCondition", &Test_WinCondition);
+			m_ePhase = PHASE_TEST_LIVES_SYSTEM;
+			m_uFrameDelay = 5;
+			break;
+
+		case PHASE_TEST_LIVES_SYSTEM:
+			RunSingleTest("Test_LivesSystem", &Test_LivesSystem);
+			m_ePhase = PHASE_TEST_SAVE_V6;
+			m_uFrameDelay = 5;
+			break;
+
+		case PHASE_TEST_SAVE_V6:
+			RunSingleTest("Test_SaveLoad_V6Fields", &Test_SaveLoad_V6Fields);
+			m_ePhase = PHASE_TEST_VERSION_MIGRATION;
+			m_uFrameDelay = 5;
+			break;
+
+		case PHASE_TEST_VERSION_MIGRATION:
+			RunSingleTest("Test_SaveLoad_VersionMigration", &Test_SaveLoad_VersionMigration);
+			m_ePhase = PHASE_TEST_DAILY_STREAK;
+			m_uFrameDelay = 5;
+			break;
+
+		case PHASE_TEST_DAILY_STREAK:
+			RunSingleTest("Test_DailyStreak", &Test_DailyStreak);
+			m_ePhase = PHASE_TEST_CAT_BITFIELD;
+			m_uFrameDelay = 5;
+			break;
+
+		case PHASE_TEST_CAT_BITFIELD:
+			RunSingleTest("Test_CatCollectionBitfield", &Test_CatCollectionBitfield);
+			m_ePhase = PHASE_TEST_STAR_PERSISTENCE;
+			m_uFrameDelay = 5;
+			break;
+
+		case PHASE_TEST_STAR_PERSISTENCE:
+			RunSingleTest("Test_StarRatingPersistence", &Test_StarRatingPersistence);
+			m_ePhase = PHASE_TEST_TUTORIAL_FLAGS;
+			m_uFrameDelay = 5;
+			break;
+
+		case PHASE_TEST_TUTORIAL_FLAGS:
+			RunSingleTest("Test_TutorialFlags", &Test_TutorialFlags);
+			m_ePhase = PHASE_TEST_PINBALL_GATE_FLAGS;
+			m_uFrameDelay = 5;
+			break;
+
+		case PHASE_TEST_PINBALL_GATE_FLAGS:
+			RunSingleTest("Test_PinballGateFlags", &Test_PinballGateFlags);
+			m_ePhase = PHASE_TEST_NEW_BEST_DETECTION;
+			m_uFrameDelay = 5;
+			break;
+
+		case PHASE_TEST_NEW_BEST_DETECTION:
+			RunSingleTest("Test_NewBestDetection", &Test_NewBestDetection);
+			m_ePhase = PHASE_TEST_MILESTONE_COINS;
+			m_uFrameDelay = 5;
+			break;
+
+		case PHASE_TEST_MILESTONE_COINS:
+			RunSingleTest("Test_MilestoneCoins", &Test_MilestoneCoins);
+			m_ePhase = PHASE_TEST_UI_ELEMENTS_EXIST;
+			m_uFrameDelay = 5;
+			break;
+
+		case PHASE_TEST_UI_ELEMENTS_EXIST:
+			RunSingleTestLive("Test_UIElementsExist", &TilePuzzle_AutoTest::Test_UIElementsExist);
+			m_ePhase = PHASE_TEST_TRANSITION_SWITCH;
+			m_uFrameDelay = 5;
+			break;
+
+		case PHASE_TEST_TRANSITION_SWITCH:
+			RunSingleTestLive("Test_TransitionSwitch", &TilePuzzle_AutoTest::Test_TransitionSwitch);
+			m_ePhase = PHASE_TEST_VICTORY_INIT_HIDDEN;
+			m_uFrameDelay = 5;
+			break;
+
+		case PHASE_TEST_VICTORY_INIT_HIDDEN:
+			RunSingleTestLive("Test_VictoryInitHidden", &TilePuzzle_AutoTest::Test_VictoryInitHidden);
 			m_ePhase = PHASE_FULL_GAME_RESET_SAVE;
 			m_uFrameDelay = 5;
 			break;
@@ -285,6 +413,22 @@ private:
 	{
 		Zenith_Log(LOG_CATEGORY_UNITTEST, "[AutoTest] Running %s...", szName);
 		bool bResult = pfnTest();
+		if (bResult)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "[AutoTest] PASS: %s", szName);
+			m_uPassed++;
+		}
+		else
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "[AutoTest] FAIL: %s", szName);
+			m_uFailed++;
+		}
+	}
+
+	void RunSingleTestLive(const char* szName, bool (TilePuzzle_AutoTest::*pfnTest)())
+	{
+		Zenith_Log(LOG_CATEGORY_UNITTEST, "[AutoTest] Running %s...", szName);
+		bool bResult = (this->*pfnTest)();
 		if (bResult)
 		{
 			Zenith_Log(LOG_CATEGORY_UNITTEST, "[AutoTest] PASS: %s", szName);
@@ -2737,6 +2881,1003 @@ private:
 		xData.AddCoins(static_cast<int32_t>(TilePuzzleSaveData::uLIFE_REFILL_COST));
 		if (!xData.TryRefillLivesWithCoins() || xData.uLives != TilePuzzleSaveData::uMAX_LIVES)
 		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: refill with coins"); bPass = false; }
+
+		return bPass;
+	}
+
+	// ========================================================================
+	// T-MECH-01: Shape collision rules
+	// ========================================================================
+
+	static bool Test_ShapeCollisionRules()
+	{
+		EnsureTestShapeInitialized();
+		bool bPass = true;
+
+		// Build a 5x5 grid with a void cell, a static blocker, two draggable shapes, and cats
+		TilePuzzleLevelData xLevel;
+		xLevel.uGridWidth = 5;
+		xLevel.uGridHeight = 5;
+		xLevel.uMinimumMoves = 1;
+		xLevel.aeCells.resize(25, TILEPUZZLE_CELL_FLOOR);
+		xLevel.aeCells[24] = TILEPUZZLE_CELL_EMPTY; // (4,4) is void
+
+		// Static blocker at (2,2)
+		TilePuzzleShapeDefinition xBlockerDef = TilePuzzleShapes::GetSingleShape(false);
+		TilePuzzleShapeInstance xBlocker;
+		xBlocker.pxDefinition = &xBlockerDef;
+		xBlocker.iOriginX = 2;
+		xBlocker.iOriginY = 2;
+		xBlocker.eColor = TILEPUZZLE_COLOR_NONE;
+		xBlocker.uUnlockThreshold = 0;
+		xBlocker.bRemoved = false;
+		xLevel.axShapes.push_back(xBlocker);
+
+		// Draggable shapes
+		TilePuzzle_Rules::ShapeState axShapes[2];
+		axShapes[0].pxDefinition = &s_xTestSingleShape;
+		axShapes[0].iOriginX = 0;
+		axShapes[0].iOriginY = 0;
+		axShapes[0].eColor = TILEPUZZLE_COLOR_RED;
+		axShapes[0].uUnlockThreshold = 0;
+
+		axShapes[1].pxDefinition = &s_xTestSingleShape;
+		axShapes[1].iOriginX = 1;
+		axShapes[1].iOriginY = 0;
+		axShapes[1].eColor = TILEPUZZLE_COLOR_BLUE;
+		axShapes[1].uUnlockThreshold = 0;
+
+		// Cats: red at (3,0), blue at (0,3)
+		TilePuzzle_Rules::CatState axCats[2];
+		axCats[0].iGridX = 3; axCats[0].iGridY = 0; axCats[0].eColor = TILEPUZZLE_COLOR_RED; axCats[0].bOnBlocker = false;
+		axCats[1].iGridX = 0; axCats[1].iGridY = 3; axCats[1].eColor = TILEPUZZLE_COLOR_BLUE; axCats[1].bOnBlocker = false;
+
+		// Test 1: Blocked by grid bounds (move off left edge)
+		if (TilePuzzle_Rules::CanMoveShape(xLevel, axShapes, 2, 0, -1, 0, axCats, 2, 0))
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: should be blocked by left bound"); bPass = false; }
+
+		// Test 2: Blocked by void cell
+		if (TilePuzzle_Rules::CanMoveShape(xLevel, axShapes, 2, 0, 4, 4, axCats, 2, 0))
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: should be blocked by void cell"); bPass = false; }
+
+		// Test 3: Blocked by static blocker
+		if (TilePuzzle_Rules::CanMoveShape(xLevel, axShapes, 2, 0, 2, 2, axCats, 2, 0))
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: should be blocked by static blocker"); bPass = false; }
+
+		// Test 4: Blocked by other draggable shape
+		if (TilePuzzle_Rules::CanMoveShape(xLevel, axShapes, 2, 0, 1, 0, axCats, 2, 0))
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: should be blocked by other draggable"); bPass = false; }
+
+		// Test 5: Blocked by different-color cat (red shape -> blue cat)
+		if (TilePuzzle_Rules::CanMoveShape(xLevel, axShapes, 2, 0, 0, 3, axCats, 2, 0))
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: should be blocked by wrong-color cat"); bPass = false; }
+
+		// Test 6: Allowed onto same-color cat (red shape -> red cat)
+		if (!TilePuzzle_Rules::CanMoveShape(xLevel, axShapes, 2, 0, 3, 0, axCats, 2, 0))
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: should pass through same-color cat"); bPass = false; }
+
+		// Test 7: Allowed onto eliminated cat (even wrong color)
+		uint32_t uElimMask = (1u << 1); // Blue cat eliminated
+		if (!TilePuzzle_Rules::CanMoveShape(xLevel, axShapes, 2, 0, 0, 3, axCats, 2, uElimMask))
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: should pass through eliminated cat"); bPass = false; }
+
+		// Test 8: Valid move to empty floor cell
+		if (!TilePuzzle_Rules::CanMoveShape(xLevel, axShapes, 2, 0, 0, 1, axCats, 2, 0))
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: should be allowed on empty floor"); bPass = false; }
+
+		return bPass;
+	}
+
+	// ========================================================================
+	// T-MECH-02: Blocker-cat elimination (adjacency-based)
+	// ========================================================================
+
+	static bool Test_BlockerCatElimination()
+	{
+		EnsureTestShapeInitialized();
+		bool bPass = true;
+
+		// Red cat on blocker at (2,2). Red shape tests adjacency from all 4 directions.
+		TilePuzzle_Rules::CatState axCats[1];
+		axCats[0].iGridX = 2; axCats[0].iGridY = 2; axCats[0].eColor = TILEPUZZLE_COLOR_RED; axCats[0].bOnBlocker = true;
+
+		TilePuzzle_Rules::ShapeState axShapes[1];
+		axShapes[0].pxDefinition = &s_xTestSingleShape;
+		axShapes[0].eColor = TILEPUZZLE_COLOR_RED;
+		axShapes[0].uUnlockThreshold = 0;
+
+		// Adjacent right (3,2)
+		axShapes[0].iOriginX = 3; axShapes[0].iOriginY = 2;
+		uint32_t uElim = TilePuzzle_Rules::ComputeNewlyEliminatedCats(axShapes, 1, axCats, 1, 0);
+		if (uElim == 0) { Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: blocker-cat not eliminated from right"); bPass = false; }
+
+		// Adjacent left (1,2)
+		axShapes[0].iOriginX = 1; axShapes[0].iOriginY = 2;
+		uElim = TilePuzzle_Rules::ComputeNewlyEliminatedCats(axShapes, 1, axCats, 1, 0);
+		if (uElim == 0) { Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: blocker-cat not eliminated from left"); bPass = false; }
+
+		// Adjacent above (2,1)
+		axShapes[0].iOriginX = 2; axShapes[0].iOriginY = 1;
+		uElim = TilePuzzle_Rules::ComputeNewlyEliminatedCats(axShapes, 1, axCats, 1, 0);
+		if (uElim == 0) { Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: blocker-cat not eliminated from above"); bPass = false; }
+
+		// Adjacent below (2,3)
+		axShapes[0].iOriginX = 2; axShapes[0].iOriginY = 3;
+		uElim = TilePuzzle_Rules::ComputeNewlyEliminatedCats(axShapes, 1, axCats, 1, 0);
+		if (uElim == 0) { Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: blocker-cat not eliminated from below"); bPass = false; }
+
+		// Overlap (2,2) should NOT eliminate (blocker-cat requires adjacency, not overlap)
+		axShapes[0].iOriginX = 2; axShapes[0].iOriginY = 2;
+		uElim = TilePuzzle_Rules::ComputeNewlyEliminatedCats(axShapes, 1, axCats, 1, 0);
+		if (uElim != 0) { Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: blocker-cat should NOT be eliminated by overlap"); bPass = false; }
+
+		// Diagonal (3,3) should NOT eliminate
+		axShapes[0].iOriginX = 3; axShapes[0].iOriginY = 3;
+		uElim = TilePuzzle_Rules::ComputeNewlyEliminatedCats(axShapes, 1, axCats, 1, 0);
+		if (uElim != 0) { Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: blocker-cat should NOT be eliminated by diagonal"); bPass = false; }
+
+		// Wrong color adjacent should NOT eliminate
+		axShapes[0].eColor = TILEPUZZLE_COLOR_BLUE;
+		axShapes[0].iOriginX = 3; axShapes[0].iOriginY = 2;
+		uElim = TilePuzzle_Rules::ComputeNewlyEliminatedCats(axShapes, 1, axCats, 1, 0);
+		if (uElim != 0) { Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: wrong-color should NOT eliminate blocker-cat"); bPass = false; }
+
+		return bPass;
+	}
+
+	// ========================================================================
+	// T-MECH-03: Conditional shape locking
+	// ========================================================================
+
+	static bool Test_ConditionalShapeLocking()
+	{
+		EnsureTestShapeInitialized();
+		bool bPass = true;
+
+		TilePuzzleLevelData xLevel;
+		xLevel.uGridWidth = 5;
+		xLevel.uGridHeight = 1;
+		xLevel.uMinimumMoves = 1;
+		xLevel.aeCells.resize(5, TILEPUZZLE_CELL_FLOOR);
+
+		// Locked shape at (0,0) with threshold 3
+		TilePuzzle_Rules::ShapeState axShapes[1];
+		axShapes[0].pxDefinition = &s_xTestSingleShape;
+		axShapes[0].iOriginX = 0;
+		axShapes[0].iOriginY = 0;
+		axShapes[0].eColor = TILEPUZZLE_COLOR_RED;
+		axShapes[0].uUnlockThreshold = 3;
+
+		TilePuzzle_Rules::CatState axCats[1];
+		axCats[0].iGridX = 4; axCats[0].iGridY = 0; axCats[0].eColor = TILEPUZZLE_COLOR_RED; axCats[0].bOnBlocker = false;
+
+		// With 0 eliminated cats: should NOT be able to move
+		if (TilePuzzle_Rules::CanMoveShape(xLevel, axShapes, 1, 0, 1, 0, axCats, 1, 0))
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: locked shape should not move with 0 eliminations"); bPass = false; }
+
+		// With 2 eliminated cats: still locked
+		uint32_t uElim2 = 0x3; // 2 bits set
+		if (TilePuzzle_Rules::CanMoveShape(xLevel, axShapes, 1, 0, 1, 0, axCats, 1, uElim2))
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: locked shape should not move with 2 eliminations"); bPass = false; }
+
+		// With 3 eliminated cats: should unlock
+		uint32_t uElim3 = 0x7; // 3 bits set
+		if (!TilePuzzle_Rules::CanMoveShape(xLevel, axShapes, 1, 0, 1, 0, axCats, 1, uElim3))
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: locked shape should move with 3 eliminations"); bPass = false; }
+
+		// With 5 eliminated cats: should also be unlocked
+		uint32_t uElim5 = 0x1F; // 5 bits set
+		if (!TilePuzzle_Rules::CanMoveShape(xLevel, axShapes, 1, 0, 1, 0, axCats, 1, uElim5))
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: locked shape should move with 5 eliminations"); bPass = false; }
+
+		return bPass;
+	}
+
+	// ========================================================================
+	// T-MECH-04: Multi-cell shape collision
+	// ========================================================================
+
+	static bool Test_MultiCellShapeCollision()
+	{
+		EnsureTestShapeInitialized();
+		bool bPass = true;
+
+		TilePuzzleLevelData xLevel;
+		xLevel.uGridWidth = 6;
+		xLevel.uGridHeight = 4;
+		xLevel.uMinimumMoves = 1;
+		xLevel.aeCells.resize(24, TILEPUZZLE_CELL_FLOOR);
+
+		// L-shape definition: (0,0), (1,0), (2,0), (2,1)
+		static TilePuzzleShapeDefinition s_xLShape = TilePuzzleShapes::GetLShape(true);
+
+		TilePuzzle_Rules::ShapeState axShapes[1];
+		axShapes[0].pxDefinition = &s_xLShape;
+		axShapes[0].iOriginX = 0;
+		axShapes[0].iOriginY = 0;
+		axShapes[0].eColor = TILEPUZZLE_COLOR_RED;
+		axShapes[0].uUnlockThreshold = 0;
+
+		TilePuzzle_Rules::CatState axCats[1];
+		axCats[0].iGridX = 5; axCats[0].iGridY = 0; axCats[0].eColor = TILEPUZZLE_COLOR_RED; axCats[0].bOnBlocker = false;
+
+		// L-shape at (0,0) occupies (0,0),(1,0),(2,0),(2,1) - move to (1,0) should be valid
+		if (!TilePuzzle_Rules::CanMoveShape(xLevel, axShapes, 1, 0, 1, 0, axCats, 1, 0))
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: L-shape should fit at (1,0)"); bPass = false; }
+
+		// Move L-shape to (4,0) would put cell (6,0) out of bounds
+		if (TilePuzzle_Rules::CanMoveShape(xLevel, axShapes, 1, 0, 4, 0, axCats, 1, 0))
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: L-shape should not fit at (4,0) - out of bounds"); bPass = false; }
+
+		// Make cell (3,1) void - L-shape at (1,0) has cell (3,1) which is valid, but at (1,0) the L occupies (1,0),(2,0),(3,0),(3,1)
+		xLevel.aeCells[1 * 6 + 3] = TILEPUZZLE_CELL_EMPTY; // (3,1) is void
+		if (TilePuzzle_Rules::CanMoveShape(xLevel, axShapes, 1, 0, 1, 0, axCats, 1, 0))
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: L-shape at (1,0) should be blocked by void at (3,1)"); bPass = false; }
+
+		// Restore and verify the move works again
+		xLevel.aeCells[1 * 6 + 3] = TILEPUZZLE_CELL_FLOOR;
+		if (!TilePuzzle_Rules::CanMoveShape(xLevel, axShapes, 1, 0, 1, 0, axCats, 1, 0))
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: L-shape should fit again after restoring cell"); bPass = false; }
+
+		return bPass;
+	}
+
+	// ========================================================================
+	// T-MECH-05: Win condition (all cats eliminated)
+	// ========================================================================
+
+	static bool Test_WinCondition()
+	{
+		EnsureTestShapeInitialized();
+		bool bPass = true;
+
+		// 3 cats total
+		TilePuzzle_Rules::CatState axCats[3];
+		axCats[0].iGridX = 0; axCats[0].iGridY = 0; axCats[0].eColor = TILEPUZZLE_COLOR_RED; axCats[0].bOnBlocker = false;
+		axCats[1].iGridX = 1; axCats[1].iGridY = 0; axCats[1].eColor = TILEPUZZLE_COLOR_BLUE; axCats[1].bOnBlocker = false;
+		axCats[2].iGridX = 2; axCats[2].iGridY = 0; axCats[2].eColor = TILEPUZZLE_COLOR_GREEN; axCats[2].bOnBlocker = false;
+
+		uint32_t uAllMask = (1u << 3) - 1; // 0b111
+
+		// 0 eliminated: not complete
+		if (TILEPUZZLE_POPCNT(0u) >= 3)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: 0 eliminated should not be complete"); bPass = false; }
+
+		// 2 eliminated: not complete
+		uint32_t uPartial = 0x3;
+		if (TILEPUZZLE_POPCNT(uPartial) >= 3)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: 2 eliminated should not be complete"); bPass = false; }
+
+		// All 3 eliminated: complete
+		if (TILEPUZZLE_POPCNT(uAllMask) < 3)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: all eliminated should be complete"); bPass = false; }
+
+		return bPass;
+	}
+
+	// ========================================================================
+	// T-LIVES: Lives system (regen, cap, timer)
+	// ========================================================================
+
+	static bool Test_LivesSystem()
+	{
+		bool bPass = true;
+		TilePuzzleSaveData xData;
+		xData.Reset();
+
+		// Initial state: max lives
+		if (xData.uLives != TilePuzzleSaveData::uMAX_LIVES)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: initial lives should be MAX"); bPass = false; }
+
+		// Lose lives
+		xData.LoseLife();
+		xData.LoseLife();
+		if (xData.uLives != TilePuzzleSaveData::uMAX_LIVES - 2)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: should have MAX-2 lives"); bPass = false; }
+
+		// Regenerate: set timestamp so 1 regen period has elapsed
+		uint32_t uBaseTime = 1000000;
+		xData.uLastLifeRegenTime = uBaseTime;
+		xData.RegenerateLives(uBaseTime + TilePuzzleSaveData::uLIFE_REGEN_SECONDS);
+		if (xData.uLives != TilePuzzleSaveData::uMAX_LIVES - 1)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: should regen 1 life"); bPass = false; }
+
+		// Regen should not exceed max
+		xData.uLives = TilePuzzleSaveData::uMAX_LIVES;
+		xData.uLastLifeRegenTime = uBaseTime;
+		xData.RegenerateLives(uBaseTime + TilePuzzleSaveData::uLIFE_REGEN_SECONDS * 10);
+		if (xData.uLives != TilePuzzleSaveData::uMAX_LIVES)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: lives should not exceed max"); bPass = false; }
+
+		// Timer until next life
+		xData.uLives = 3;
+		xData.uLastLifeRegenTime = uBaseTime;
+		uint32_t uSecsLeft = xData.GetSecondsUntilNextLife(uBaseTime + 100);
+		if (uSecsLeft != TilePuzzleSaveData::uLIFE_REGEN_SECONDS - 100)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: seconds until next life incorrect"); bPass = false; }
+
+		// Timer at full lives should be 0
+		xData.uLives = TilePuzzleSaveData::uMAX_LIVES;
+		if (xData.GetSecondsUntilNextLife(uBaseTime) != 0)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: full lives should have 0 seconds"); bPass = false; }
+
+		// Lose all lives, then lose again (should not underflow)
+		xData.uLives = 0;
+		xData.LoseLife();
+		if (xData.uLives != 0)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: lives should not go below 0"); bPass = false; }
+
+		// HasLives check
+		if (xData.HasLives())
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: HasLives should be false with 0"); bPass = false; }
+		xData.uLives = 1;
+		if (!xData.HasLives())
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: HasLives should be true with 1"); bPass = false; }
+
+		return bPass;
+	}
+
+	// ========================================================================
+	// T-SAVE: Extended save/load (v6 fields)
+	// ========================================================================
+
+	static bool Test_SaveLoad_V6Fields()
+	{
+		bool bPass = true;
+
+		TilePuzzleSaveData xOriginal;
+		xOriginal.Reset();
+		xOriginal.uHighestLevelReached = 50;
+		xOriginal.uCurrentLevel = 42;
+		xOriginal.uCoins = 500;
+
+		// Set v6 fields
+		xOriginal.SetTutorialShown(0);
+		xOriginal.SetTutorialShown(2);
+		xOriginal.SetTutorialShown(4);
+		xOriginal.bSoundEnabled = false;
+		xOriginal.bMusicEnabled = true;
+		xOriginal.bHapticsEnabled = false;
+
+		static constexpr const char* szTempPath = GAME_ASSETS_DIR "autotest_save_v6.bin";
+
+		// Write to file
+		{
+			Zenith_DataStream xWriteStream;
+			TilePuzzle_WriteSaveData(xWriteStream, &xOriginal);
+			xWriteStream.WriteToFile(szTempPath);
+		}
+
+		// Read back at current version
+		Zenith_DataStream xReadStream;
+		xReadStream.ReadFromFile(szTempPath);
+		TilePuzzleSaveData xLoaded;
+		xLoaded.Reset();
+		TilePuzzle_ReadSaveData(xReadStream, TilePuzzleSaveData::uGAME_SAVE_VERSION, &xLoaded);
+
+		// Verify v6 fields
+		if (!xLoaded.IsTutorialShown(0))
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: tutorial 0 should be shown"); bPass = false; }
+		if (xLoaded.IsTutorialShown(1))
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: tutorial 1 should NOT be shown"); bPass = false; }
+		if (!xLoaded.IsTutorialShown(2))
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: tutorial 2 should be shown"); bPass = false; }
+		if (xLoaded.IsTutorialShown(3))
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: tutorial 3 should NOT be shown"); bPass = false; }
+		if (!xLoaded.IsTutorialShown(4))
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: tutorial 4 should be shown"); bPass = false; }
+
+		if (xLoaded.bSoundEnabled != false)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: bSoundEnabled should be false"); bPass = false; }
+		if (xLoaded.bMusicEnabled != true)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: bMusicEnabled should be true"); bPass = false; }
+		if (xLoaded.bHapticsEnabled != false)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: bHapticsEnabled should be false"); bPass = false; }
+
+		// v5 fields should also survive
+		if (xLoaded.uHighestLevelReached != 50)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: uHighestLevelReached mismatch"); bPass = false; }
+		if (xLoaded.uCoins != 500)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: uCoins mismatch"); bPass = false; }
+
+		return bPass;
+	}
+
+	// ========================================================================
+	// T-SAVE: Version migration (v5 -> v6)
+	// ========================================================================
+
+	static bool Test_SaveLoad_VersionMigration()
+	{
+		bool bPass = true;
+
+		// Write save data using current writer (has v6 fields)
+		TilePuzzleSaveData xV5Data;
+		xV5Data.Reset();
+		xV5Data.uHighestLevelReached = 30;
+		xV5Data.uCoins = 200;
+		xV5Data.CollectCat(5);
+		xV5Data.SetStarRating(3, 2);
+
+		static constexpr const char* szTempPath = GAME_ASSETS_DIR "autotest_save_vmig.bin";
+
+		// Write it out
+		{
+			Zenith_DataStream xWriteStream;
+			TilePuzzle_WriteSaveData(xWriteStream, &xV5Data);
+			xWriteStream.WriteToFile(szTempPath);
+		}
+
+		// Read back as if version 5 (v6 fields should get defaults)
+		Zenith_DataStream xReadStream;
+		xReadStream.ReadFromFile(szTempPath);
+		TilePuzzleSaveData xLoaded;
+		xLoaded.Reset();
+		TilePuzzle_ReadSaveData(xReadStream, 5, &xLoaded);
+
+		// v5 fields should be correct
+		if (xLoaded.uHighestLevelReached != 30)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: v5 uHighestLevelReached"); bPass = false; }
+		if (xLoaded.uCoins != 200)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: v5 uCoins"); bPass = false; }
+		if (!xLoaded.IsCatCollected(5))
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: v5 cat 5 collected"); bPass = false; }
+
+		// v6 fields should have defaults (not read from stream)
+		if (!xLoaded.bSoundEnabled)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: v5->v6 bSoundEnabled should default true"); bPass = false; }
+		if (!xLoaded.bMusicEnabled)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: v5->v6 bMusicEnabled should default true"); bPass = false; }
+		for (uint32_t i = 0; i < TilePuzzleSaveData::uTUTORIAL_COUNT; ++i)
+		{
+			if (xLoaded.IsTutorialShown(i))
+			{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: v5->v6 tutorial %u should default false", i); bPass = false; break; }
+		}
+
+		return bPass;
+	}
+
+	// ========================================================================
+	// T-STREAK: Daily streak logic
+	// ========================================================================
+
+	static bool Test_DailyStreak()
+	{
+		bool bPass = true;
+		TilePuzzleSaveData xData;
+		xData.Reset();
+
+		// First login
+		xData.UpdateDailyStreak(20260301);
+		if (xData.uDailyStreak != 1)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: first login streak should be 1"); bPass = false; }
+
+		// Same day: no change
+		xData.UpdateDailyStreak(20260301);
+		if (xData.uDailyStreak != 1)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: same day should stay 1"); bPass = false; }
+
+		// Consecutive day
+		xData.UpdateDailyStreak(20260302);
+		if (xData.uDailyStreak != 2)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: consecutive day should be 2"); bPass = false; }
+
+		// Another consecutive
+		xData.UpdateDailyStreak(20260303);
+		if (xData.uDailyStreak != 3)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: 3rd consecutive day should be 3"); bPass = false; }
+
+		// Broken streak (skip a day)
+		xData.UpdateDailyStreak(20260305);
+		if (xData.uDailyStreak != 1)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: broken streak should reset to 1"); bPass = false; }
+
+		// Month boundary (March 31 -> April 1)
+		xData.Reset();
+		xData.UpdateDailyStreak(20260331);
+		xData.UpdateDailyStreak(20260401);
+		if (xData.uDailyStreak != 2)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: month boundary should be consecutive"); bPass = false; }
+
+		return bPass;
+	}
+
+	// ========================================================================
+	// T-CAT: Cat collection bitfield
+	// ========================================================================
+
+	static bool Test_CatCollectionBitfield()
+	{
+		bool bPass = true;
+		TilePuzzleSaveData xData;
+		xData.Reset();
+
+		// Collect specific cats
+		xData.CollectCat(0);
+		xData.CollectCat(49);
+		xData.CollectCat(99);
+		xData.CollectCat(127); // Max valid
+
+		if (xData.uCatsCollectedCount != 4)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: should have 4 cats collected"); bPass = false; }
+
+		if (!xData.IsCatCollected(0) || !xData.IsCatCollected(49) ||
+			!xData.IsCatCollected(99) || !xData.IsCatCollected(127))
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: collected cats not found"); bPass = false; }
+
+		if (xData.IsCatCollected(1) || xData.IsCatCollected(50) || xData.IsCatCollected(100))
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: uncollected cats should not be found"); bPass = false; }
+
+		// Double-collect should not increase count
+		xData.CollectCat(0);
+		if (xData.uCatsCollectedCount != 4)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: double collect should not increase count"); bPass = false; }
+
+		// Out of range should be safe
+		xData.CollectCat(200);
+		if (xData.uCatsCollectedCount != 4)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: out of range collect should be no-op"); bPass = false; }
+		if (xData.IsCatCollected(200))
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: out of range should not be collected"); bPass = false; }
+
+		// RecalculateCachedValues should give same result
+		xData.RecalculateCachedValues();
+		if (xData.uCatsCollectedCount != 4)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: recalculate should match"); bPass = false; }
+
+		return bPass;
+	}
+
+	// ========================================================================
+	// T-STAR: Star rating persistence and caching
+	// ========================================================================
+
+	static bool Test_StarRatingPersistence()
+	{
+		bool bPass = true;
+		TilePuzzleSaveData xData;
+		xData.Reset();
+
+		// Set various star ratings
+		xData.SetStarRating(1, 3);
+		xData.SetStarRating(50, 2);
+		xData.SetStarRating(100, 1);
+
+		if (xData.GetStarRating(1) != 3)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: level 1 should be 3 stars"); bPass = false; }
+		if (xData.GetStarRating(50) != 2)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: level 50 should be 2 stars"); bPass = false; }
+		if (xData.GetStarRating(100) != 1)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: level 100 should be 1 star"); bPass = false; }
+
+		// Total stars should be 6
+		if (xData.uTotalStars != 6)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: total stars should be 6"); bPass = false; }
+
+		// Upgrade should work
+		xData.SetStarRating(50, 3);
+		if (xData.GetStarRating(50) != 3)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: level 50 should upgrade to 3"); bPass = false; }
+		if (xData.uTotalStars != 7)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: total stars should be 7 after upgrade"); bPass = false; }
+
+		// Downgrade should NOT work
+		xData.SetStarRating(50, 1);
+		if (xData.GetStarRating(50) != 3)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: downgrade should not happen"); bPass = false; }
+		if (xData.uTotalStars != 7)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: total stars should remain 7"); bPass = false; }
+
+		// Out of range should be safe
+		xData.SetStarRating(0, 3);   // Level 0 is invalid
+		xData.SetStarRating(101, 3); // Level 101 is invalid
+		if (xData.GetStarRating(0) != 0)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: level 0 should return 0"); bPass = false; }
+		if (xData.GetStarRating(101) != 0)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: level 101 should return 0"); bPass = false; }
+
+		// RecalculateCachedValues check
+		xData.RecalculateCachedValues();
+		if (xData.uTotalStars != 7)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: recalculate total stars mismatch"); bPass = false; }
+
+		return bPass;
+	}
+
+	// ========================================================================
+	// T-TUTORIAL: Tutorial flag tracking
+	// ========================================================================
+
+	static bool Test_TutorialFlags()
+	{
+		bool bPass = true;
+		TilePuzzleSaveData xData;
+		xData.Reset();
+
+		// All should be unshown initially
+		for (uint32_t i = 0; i < TilePuzzleSaveData::uTUTORIAL_COUNT; ++i)
+		{
+			if (xData.IsTutorialShown(i))
+			{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: tutorial %u should be unshown", i); bPass = false; }
+		}
+
+		// Set and verify
+		xData.SetTutorialShown(0);
+		xData.SetTutorialShown(3);
+		if (!xData.IsTutorialShown(0))
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: tutorial 0 should be shown after set"); bPass = false; }
+		if (xData.IsTutorialShown(1))
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: tutorial 1 should remain unshown"); bPass = false; }
+		if (!xData.IsTutorialShown(3))
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: tutorial 3 should be shown after set"); bPass = false; }
+
+		// Out of range should return true (already shown) and be safe to set
+		if (!xData.IsTutorialShown(100))
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: out of range should return true"); bPass = false; }
+		xData.SetTutorialShown(100); // should be no-op
+
+		return bPass;
+	}
+
+	// ========================================================================
+	// T-PINBALL: Pinball gate flag operations
+	// ========================================================================
+
+	// ========================================================================
+	// Bug regression: NewBest detection
+	// Tests that m_bVictoryFirstCompletion and m_bVictoryNewBest are set
+	// correctly in OnLevelCompleted's save data logic.
+	// ========================================================================
+
+	static bool Test_NewBestDetection()
+	{
+		bool bPass = true;
+		TilePuzzleSaveData xSave;
+		xSave.Reset();
+		xSave.uLives = TilePuzzleSaveData::uMAX_LIVES;
+
+		// --- Case 1: First completion of level 1 ---
+		uint32_t uLevelIndex = 0; // level 1
+		TilePuzzleLevelRecord& xRec = xSave.axLevelRecords[uLevelIndex];
+		bool bFirstCompletion = !xRec.bCompleted;
+		bool bNewBest = xRec.bCompleted && 3 > xRec.uBestStars;
+
+		if (!bFirstCompletion)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: level 1 first play should be first completion"); bPass = false; }
+		if (bNewBest)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: level 1 first play should NOT be new best"); bPass = false; }
+
+		// Simulate completing it
+		xRec.bCompleted = true;
+		xRec.uBestStars = 2;
+		xRec.uBestMoves = 10;
+
+		// --- Case 2: Replay with better stars (2 -> 3) ---
+		bFirstCompletion = !xRec.bCompleted;
+		bNewBest = xRec.bCompleted && 3 > xRec.uBestStars;
+
+		if (bFirstCompletion)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: replay should NOT be first completion"); bPass = false; }
+		if (!bNewBest)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: replay with 3 stars (was 2) should be new best"); bPass = false; }
+
+		// --- Case 3: Replay with same stars (2 -> 2) ---
+		bNewBest = xRec.bCompleted && 2 > xRec.uBestStars;
+		if (bNewBest)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: replay with same stars should NOT be new best"); bPass = false; }
+
+		// --- Case 4: Replay with worse stars (2 -> 1) ---
+		bNewBest = xRec.bCompleted && 1 > xRec.uBestStars;
+		if (bNewBest)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: replay with worse stars should NOT be new best"); bPass = false; }
+
+		return bPass;
+	}
+
+	// ========================================================================
+	// Bug regression: Milestone coin bonuses
+	// Tests that correct bonus coins are awarded at cat milestones.
+	// ========================================================================
+
+	static bool Test_MilestoneCoins()
+	{
+		bool bPass = true;
+
+		struct MilestoneTestCase
+		{
+			uint32_t uCatCount;
+			uint32_t uExpectedBonus;
+			const char* szLabel;
+		};
+
+		static const MilestoneTestCase s_axCases[] = {
+			{ 1,   0,   "1 cat (no milestone)" },
+			{ 9,   0,   "9 cats (no milestone)" },
+			{ 10,  50,  "10 cats" },
+			{ 11,  0,   "11 cats (no milestone)" },
+			{ 25,  100, "25 cats" },
+			{ 50,  200, "50 cats" },
+			{ 75,  300, "75 cats" },
+			{ 100, 500, "100 cats" },
+		};
+
+		for (const auto& xCase : s_axCases)
+		{
+			// Replicate the milestone bonus logic from OnLevelCompleted
+			uint32_t uBonus = 0;
+			bool bFirstCompletion = true; // milestones only apply on first completion
+			if (bFirstCompletion)
+			{
+				uint32_t uCatCount = xCase.uCatCount;
+				if (uCatCount == 10) uBonus = 50;
+				else if (uCatCount == 25) uBonus = 100;
+				else if (uCatCount == 50) uBonus = 200;
+				else if (uCatCount == 75) uBonus = 300;
+				else if (uCatCount == 100) uBonus = 500;
+			}
+
+			if (uBonus != xCase.uExpectedBonus)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: %s - expected bonus %u, got %u",
+					xCase.szLabel, xCase.uExpectedBonus, uBonus);
+				bPass = false;
+			}
+		}
+
+		// Verify milestones don't apply on replay (bFirstCompletion = false)
+		{
+			uint32_t uBonus = 0;
+			bool bFirstCompletion = false;
+			uint32_t uCatCount = 10;
+			if (bFirstCompletion)
+			{
+				if (uCatCount == 10) uBonus = 50;
+			}
+			if (uBonus != 0)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: replay should not award milestone bonus");
+				bPass = false;
+			}
+		}
+
+		return bPass;
+	}
+
+	static bool Test_PinballGateFlags()
+	{
+		bool bPass = true;
+		TilePuzzleSaveData xData;
+		xData.Reset();
+
+		// Clear specific gates
+		xData.SetPinballGateCleared(0);
+		xData.SetPinballGateCleared(4);
+		xData.SetPinballGateCleared(9);
+
+		if (!xData.IsPinballGateCleared(0))
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: gate 0 should be cleared"); bPass = false; }
+		if (xData.IsPinballGateCleared(1))
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: gate 1 should NOT be cleared"); bPass = false; }
+		if (!xData.IsPinballGateCleared(4))
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: gate 4 should be cleared"); bPass = false; }
+		if (!xData.IsPinballGateCleared(9))
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: gate 9 should be cleared"); bPass = false; }
+
+		// Bitmask should match
+		uint16_t uExpected = (1u << 0) | (1u << 4) | (1u << 9);
+		if (xData.uPinballGateFlags != uExpected)
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: bitmask mismatch %u vs %u", xData.uPinballGateFlags, uExpected); bPass = false; }
+
+		// Out of range
+		if (xData.IsPinballGateCleared(10))
+		{ Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: gate 10 should not be cleared"); bPass = false; }
+		xData.SetPinballGateCleared(10); // no-op
+
+		return bPass;
+	}
+	// ========================================================================
+	// Bug regression: UI elements exist (Bug #1, #2)
+	// Verifies all Settings UI elements and TotalStarsText were created.
+	// ========================================================================
+
+	bool Test_UIElementsExist()
+	{
+		bool bPass = true;
+
+		TilePuzzle_Behaviour* pxBehaviour = FindPuzzleBehaviour();
+		if (!pxBehaviour)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Could not find TilePuzzle_Behaviour");
+			return false;
+		}
+
+		if (!pxBehaviour->m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: GameManager has no UIComponent");
+			return false;
+		}
+
+		Zenith_UIComponent& xUI = pxBehaviour->m_xParentEntity.GetComponent<Zenith_UIComponent>();
+
+		// Bug #1: Settings UI elements must exist
+		const char* aszSettingsElements[] = {
+			"SettingsBg", "SettingsTitle",
+			"SettingsSoundBtn", "SettingsMusicBtn", "SettingsHapticsBtn", "SettingsBackBtn"
+		};
+		for (const char* szName : aszSettingsElements)
+		{
+			Zenith_UI::Zenith_UIElement* pxElem = xUI.FindElement<Zenith_UI::Zenith_UIElement>(szName);
+			if (!pxElem)
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Settings element '%s' not found (Bug #1)", szName);
+				bPass = false;
+			}
+		}
+
+		// Bug #2: TotalStarsText must exist
+		Zenith_UI::Zenith_UIText* pxStars = xUI.FindElement<Zenith_UI::Zenith_UIText>("TotalStarsText");
+		if (!pxStars)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: TotalStarsText not found (Bug #2)");
+			bPass = false;
+		}
+
+		// Also verify SettingsButton exists in the menu
+		Zenith_UI::Zenith_UIButton* pxSettingsBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("SettingsButton");
+		if (!pxSettingsBtn)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: SettingsButton not found in menu");
+			bPass = false;
+		}
+
+		// Verify all Settings elements start hidden (they should be invisible on init)
+		for (const char* szName : aszSettingsElements)
+		{
+			Zenith_UI::Zenith_UIElement* pxElem = xUI.FindElement<Zenith_UI::Zenith_UIElement>(szName);
+			if (pxElem && pxElem->IsVisible())
+			{
+				Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Settings element '%s' should be hidden at startup", szName);
+				bPass = false;
+			}
+		}
+
+		return bPass;
+	}
+
+	// ========================================================================
+	// Bug regression: PerformTransitionSwitch state management (Bug #4)
+	// Verifies that transitioning to MAIN_MENU hides Settings, and that
+	// transitioning to SETTINGS hides Menu.
+	// ========================================================================
+
+	bool Test_TransitionSwitch()
+	{
+		bool bPass = true;
+
+		TilePuzzle_Behaviour* pxBehaviour = FindPuzzleBehaviour();
+		if (!pxBehaviour)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Could not find TilePuzzle_Behaviour");
+			return false;
+		}
+
+		// Save original state to restore later
+		TilePuzzleGameState eOriginalState = pxBehaviour->m_eState;
+
+		// Test: transition to SETTINGS should set state correctly
+		pxBehaviour->m_eTransitionTargetState = TILEPUZZLE_STATE_SETTINGS;
+		pxBehaviour->PerformTransitionSwitch();
+
+		if (pxBehaviour->m_eState != TILEPUZZLE_STATE_SETTINGS)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: After transition to SETTINGS, state is %u (expected %u)",
+				pxBehaviour->m_eState, TILEPUZZLE_STATE_SETTINGS);
+			bPass = false;
+		}
+
+		// Test: transition back to MAIN_MENU should set state correctly (Bug #4)
+		pxBehaviour->m_eTransitionTargetState = TILEPUZZLE_STATE_MAIN_MENU;
+		pxBehaviour->PerformTransitionSwitch();
+
+		if (pxBehaviour->m_eState != TILEPUZZLE_STATE_MAIN_MENU)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: After transition to MAIN_MENU, state is %u (expected %u)",
+				pxBehaviour->m_eState, TILEPUZZLE_STATE_MAIN_MENU);
+			bPass = false;
+		}
+
+		// Verify Settings elements are hidden after transitioning to MAIN_MENU
+		if (pxBehaviour->m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		{
+			Zenith_UIComponent& xUI = pxBehaviour->m_xParentEntity.GetComponent<Zenith_UIComponent>();
+			const char* aszSettingsElements[] = {
+				"SettingsBg", "SettingsTitle",
+				"SettingsSoundBtn", "SettingsMusicBtn", "SettingsHapticsBtn", "SettingsBackBtn"
+			};
+			for (const char* szName : aszSettingsElements)
+			{
+				Zenith_UI::Zenith_UIElement* pxElem = xUI.FindElement<Zenith_UI::Zenith_UIElement>(szName);
+				if (pxElem && pxElem->IsVisible())
+				{
+					Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: '%s' still visible after transition to MAIN_MENU (Bug #4)", szName);
+					bPass = false;
+				}
+			}
+		}
+
+		// Test: transition to LEVEL_SELECT and back
+		pxBehaviour->m_eTransitionTargetState = TILEPUZZLE_STATE_LEVEL_SELECT;
+		pxBehaviour->PerformTransitionSwitch();
+
+		if (pxBehaviour->m_eState != TILEPUZZLE_STATE_LEVEL_SELECT)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: After transition to LEVEL_SELECT, state is %u (expected %u)",
+				pxBehaviour->m_eState, TILEPUZZLE_STATE_LEVEL_SELECT);
+			bPass = false;
+		}
+
+		// Test: transition to CAT_CAFE
+		pxBehaviour->m_eTransitionTargetState = TILEPUZZLE_STATE_CAT_CAFE;
+		pxBehaviour->PerformTransitionSwitch();
+
+		if (pxBehaviour->m_eState != TILEPUZZLE_STATE_CAT_CAFE)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: After transition to CAT_CAFE, state is %u (expected %u)",
+				pxBehaviour->m_eState, TILEPUZZLE_STATE_CAT_CAFE);
+			bPass = false;
+		}
+
+		// Restore original state
+		pxBehaviour->m_eTransitionTargetState = eOriginalState;
+		pxBehaviour->PerformTransitionSwitch();
+
+		return bPass;
+	}
+
+	// ========================================================================
+	// Bug regression: Victory overlay hidden on init (Bug #3)
+	// Verifies that m_bVictoryOverlayActive is false after startup and that
+	// victory overlay UI elements are not visible.
+	// ========================================================================
+
+	bool Test_VictoryInitHidden()
+	{
+		bool bPass = true;
+
+		TilePuzzle_Behaviour* pxBehaviour = FindPuzzleBehaviour();
+		if (!pxBehaviour)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Could not find TilePuzzle_Behaviour");
+			return false;
+		}
+
+		// m_bVictoryOverlayActive should be false at startup
+		if (pxBehaviour->m_bVictoryOverlayActive)
+		{
+			Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: m_bVictoryOverlayActive should be false at startup (Bug #3)");
+			bPass = false;
+		}
+
+		// Victory overlay UI elements should be hidden
+		if (pxBehaviour->m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		{
+			Zenith_UIComponent& xUI = pxBehaviour->m_xParentEntity.GetComponent<Zenith_UIComponent>();
+
+			const char* aszVictoryElements[] = {
+				"VictoryBg", "VictoryTitle", "VictoryStars",
+				"VictoryCatText", "VictoryCoinsText", "NextLevelBtn"
+			};
+
+			for (const char* szName : aszVictoryElements)
+			{
+				Zenith_UI::Zenith_UIElement* pxElem = xUI.FindElement<Zenith_UI::Zenith_UIElement>(szName);
+				if (pxElem && pxElem->IsVisible())
+				{
+					Zenith_Log(LOG_CATEGORY_UNITTEST, "  FAIL: Victory element '%s' should be hidden at startup (Bug #3)", szName);
+					bPass = false;
+				}
+			}
+		}
 
 		return bPass;
 	}

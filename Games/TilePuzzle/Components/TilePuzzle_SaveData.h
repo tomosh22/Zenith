@@ -23,7 +23,8 @@ struct TilePuzzleSaveData
 	static constexpr uint32_t uMAX_LIVES = 5;
 	static constexpr uint32_t uLIFE_REGEN_SECONDS = 1200; // 20 minutes
 	static constexpr uint32_t uLIFE_REFILL_COST = 50;
-	static constexpr uint32_t uGAME_SAVE_VERSION = 5;
+	static constexpr uint32_t uGAME_SAVE_VERSION = 6;
+	static constexpr uint32_t uTUTORIAL_COUNT = 6;
 
 	// v1 fields
 	uint32_t uHighestLevelReached;
@@ -52,6 +53,12 @@ struct TilePuzzleSaveData
 	uint32_t uLives;                           // Current lives count
 	uint32_t uLastLifeRegenTime;               // Timestamp for life regeneration
 
+	// v6 fields
+	bool abTutorialShown[uTUTORIAL_COUNT];     // Tutorial overlays shown (level 1,6,11,26,46,+spare)
+	bool bSoundEnabled;
+	bool bMusicEnabled;
+	bool bHapticsEnabled;
+
 	void Reset()
 	{
 		uHighestLevelReached = 1;
@@ -71,6 +78,10 @@ struct TilePuzzleSaveData
 		uLastDailyPuzzleDate = 0;
 		uLives = uMAX_LIVES;
 		uLastLifeRegenTime = 0;
+		memset(abTutorialShown, 0, sizeof(abTutorialShown));
+		bSoundEnabled = true;
+		bMusicEnabled = true;
+		bHapticsEnabled = true;
 	}
 
 	// ========================================================================
@@ -236,6 +247,23 @@ struct TilePuzzleSaveData
 	}
 
 	// ========================================================================
+	// Tutorial Tracking
+	// ========================================================================
+
+	void SetTutorialShown(uint32_t uIndex)
+	{
+		if (uIndex < uTUTORIAL_COUNT)
+			abTutorialShown[uIndex] = true;
+	}
+
+	bool IsTutorialShown(uint32_t uIndex) const
+	{
+		if (uIndex >= uTUTORIAL_COUNT)
+			return true;
+		return abTutorialShown[uIndex];
+	}
+
+	// ========================================================================
 	// Daily Streak
 	// ========================================================================
 
@@ -345,6 +373,14 @@ static void TilePuzzle_WriteSaveData(Zenith_DataStream& xStream, void* pxUserDat
 	xStream << pxData->uLastDailyPuzzleDate;
 	xStream << pxData->uLives;
 	xStream << pxData->uLastLifeRegenTime;
+	// v6 fields
+	for (uint32_t i = 0; i < TilePuzzleSaveData::uTUTORIAL_COUNT; ++i)
+	{
+		xStream << pxData->abTutorialShown[i];
+	}
+	xStream << pxData->bSoundEnabled;
+	xStream << pxData->bMusicEnabled;
+	xStream << pxData->bHapticsEnabled;
 }
 
 // Static read callback for Zenith_SaveData
@@ -401,5 +437,15 @@ static void TilePuzzle_ReadSaveData(Zenith_DataStream& xStream, uint32_t uGameVe
 		xStream >> pxData->uLastDailyPuzzleDate;
 		xStream >> pxData->uLives;
 		xStream >> pxData->uLastLifeRegenTime;
+	}
+	if (uGameVersion >= 6)
+	{
+		for (uint32_t i = 0; i < TilePuzzleSaveData::uTUTORIAL_COUNT; ++i)
+		{
+			xStream >> pxData->abTutorialShown[i];
+		}
+		xStream >> pxData->bSoundEnabled;
+		xStream >> pxData->bMusicEnabled;
+		xStream >> pxData->bHapticsEnabled;
 	}
 }

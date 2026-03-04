@@ -119,8 +119,10 @@ public:
     void SetColor(const Zenith_Maths::Vector4& xColor) { m_xColor = xColor; }
     Zenith_Maths::Vector4 GetColor() const { return m_xColor; }
 
-    void SetVisible(bool bVisible) { m_bVisible = bVisible; }
+    void SetVisible(bool bVisible) { m_bVisible = bVisible; if (m_pxParent) m_pxParent->OnChildVisibilityChanged(); }
     bool IsVisible() const { return m_bVisible; }
+
+    virtual void OnChildVisibilityChanged() {}
 
     // ========== Hierarchy ==========
 

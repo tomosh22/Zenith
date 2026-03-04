@@ -39,10 +39,12 @@
 #include "UI/Zenith_UICanvas.h"
 #include "EntityComponent/Components/Zenith_TweenComponent.h"
 #include "EntityComponent/Components/Zenith_ParticleEmitterComponent.h"
+#include "Flux/Particles/Flux_ParticleEmitterConfig.h"
 #include "DataStream/Zenith_DataStream.h"
 #include "FileAccess/Zenith_FileAccess.h"
 
 #include "Collections/Zenith_Vector.h"
+#include "Flux/Skybox/Flux_Skybox.h"
 
 #include <unordered_map>
 #include <utility>
@@ -192,12 +194,9 @@ public:
 		: m_eState(TILEPUZZLE_STATE_MAIN_MENU)
 		, m_uCurrentLevelNumber(1)
 		, m_uMoveCount(0)
-		, m_iCursorX(0)
-		, m_iCursorY(0)
 		, m_iSelectedShapeIndex(-1)
 		, m_fSlideProgress(0.0f)
 		, m_eSlideDirection(TILEPUZZLE_DIR_NONE)
-		, m_iFocusIndex(0)
 		, m_fLevelTimer(0.f)
 		, m_uLevelSelectPage(0)
 		, m_uAvailableLevelCount(0)
@@ -277,17 +276,6 @@ public:
 			pxHighlighted->SetEmissiveIntensity(TilePuzzle::g_fHighlightEmissiveIntensity);
 
 			m_axShapeMaterialsHighlighted[i].Set(pxHighlighted);
-		}
-
-		// Create highlighted floor material for cursor position
-		{
-			Zenith_MaterialAsset* pxFloorHighlighted = xRegistry.Create<Zenith_MaterialAsset>();
-			pxFloorHighlighted->SetName("TilePuzzleFloor_Cursor");
-			pxFloorHighlighted->SetDiffuseTextureDirectly(m_xFloorMaterial.Get()->GetDiffuseTexture());
-			pxFloorHighlighted->SetBaseColor({ 150.f/255.f, 150.f/255.f, 180.f/255.f, 1.f });
-			pxFloorHighlighted->SetEmissiveColor(Zenith_Maths::Vector3(0.5f, 0.5f, 0.7f));
-			pxFloorHighlighted->SetEmissiveIntensity(0.3f);
-			m_xFloorMaterialHighlighted.Set(pxFloorHighlighted);
 		}
 
 		// Wire up button callbacks
@@ -438,6 +426,28 @@ public:
 			Zenith_UI::Zenith_UIButton* pxRefillBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("RefillLivesButton");
 			if (pxRefillBtn)
 				pxRefillBtn->SetOnClick(&OnRefillLivesClicked, this);
+
+			// Settings button
+			Zenith_UI::Zenith_UIButton* pxSettingsBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("SettingsButton");
+			if (pxSettingsBtn)
+				pxSettingsBtn->SetOnClick(&OnSettingsClicked, this);
+
+			// Settings screen buttons
+			Zenith_UI::Zenith_UIButton* pxSettingsBackBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("SettingsBackBtn");
+			if (pxSettingsBackBtn)
+				pxSettingsBackBtn->SetOnClick(&OnSettingsBackClicked, this);
+
+			Zenith_UI::Zenith_UIButton* pxSoundToggle = xUI.FindElement<Zenith_UI::Zenith_UIButton>("SettingsSoundBtn");
+			if (pxSoundToggle)
+				pxSoundToggle->SetOnClick(&OnToggleSoundClicked, this);
+
+			Zenith_UI::Zenith_UIButton* pxMusicToggle = xUI.FindElement<Zenith_UI::Zenith_UIButton>("SettingsMusicBtn");
+			if (pxMusicToggle)
+				pxMusicToggle->SetOnClick(&OnToggleMusicClicked, this);
+
+			Zenith_UI::Zenith_UIButton* pxHapticsToggle = xUI.FindElement<Zenith_UI::Zenith_UIButton>("SettingsHapticsBtn");
+			if (pxHapticsToggle)
+				pxHapticsToggle->SetOnClick(&OnToggleHapticsClicked, this);
 		}
 
 		// Regenerate lives on startup
@@ -451,6 +461,8 @@ public:
 			SetHUDVisible(false);
 			SetLevelSelectVisible(false);
 			SetCatCafeVisible(false);
+			SetSettingsVisible(false);
+			SetVictoryOverlayVisible(false);
 		}
 		else
 		{
@@ -485,33 +497,39 @@ public:
 		switch (m_eState)
 		{
 		case TILEPUZZLE_STATE_MAIN_MENU:
-			UpdateMenuInput();
 			break;
 
 		case TILEPUZZLE_STATE_LEVEL_SELECT:
+#ifdef ZENITH_TOOLS
 			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
 			{
-				m_eState = TILEPUZZLE_STATE_MAIN_MENU;
-				SetMenuVisible(true);
-				SetLevelSelectVisible(false);
+				StartTransition(TILEPUZZLE_STATE_MAIN_MENU);
 				return;
 			}
+#endif
 			break;
 
 		case TILEPUZZLE_STATE_PLAYING:
-			// Escape returns to menu
+#ifdef ZENITH_TOOLS
 			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
 			{
 				ReturnToMenu();
 				return;
 			}
-			m_fLevelTimer += fDeltaTime;
-			if (m_bHintActive)
+#endif
+			if (m_bTutorialActive)
 			{
-				m_fHintFlashTimer += fDeltaTime;
+				UpdateTutorialOverlay(fDeltaTime);
 			}
-			HandleInput();
-			HandleDragInput();
+			else
+			{
+				m_fLevelTimer += fDeltaTime;
+				if (m_bHintActive)
+				{
+					m_fHintFlashTimer += fDeltaTime;
+				}
+				HandleDragInput();
+			}
 			break;
 
 		case TILEPUZZLE_STATE_SHAPE_SLIDING:
@@ -531,27 +549,37 @@ public:
 			break;
 
 		case TILEPUZZLE_STATE_LEVEL_COMPLETE:
-			// Escape returns to menu even from level complete
+#ifdef ZENITH_TOOLS
 			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
 			{
 				ReturnToMenu();
 				return;
 			}
+#endif
 			if (m_bVictoryOverlayActive)
 			{
 				UpdateVictoryOverlay(fDeltaTime);
 			}
-			HandleLevelCompleteInput();
 			break;
 
 		case TILEPUZZLE_STATE_CAT_CAFE:
+#ifdef ZENITH_TOOLS
 			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
 			{
-				m_eState = TILEPUZZLE_STATE_MAIN_MENU;
-				SetCatCafeVisible(false);
-				SetMenuVisible(true);
+				StartTransition(TILEPUZZLE_STATE_MAIN_MENU);
 				return;
 			}
+#endif
+			break;
+
+		case TILEPUZZLE_STATE_SETTINGS:
+#ifdef ZENITH_TOOLS
+			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
+			{
+				OnSettingsBackClicked(this);
+				return;
+			}
+#endif
 			break;
 
 		}
@@ -569,6 +597,9 @@ public:
 			UpdateVisuals(fDeltaTime);
 			UpdateUI();
 		}
+
+		// Screen transition overlay (rendered on top of everything)
+		UpdateTransition(fDeltaTime);
 	}
 
 	void RenderPropertiesPanel() override
@@ -580,7 +611,7 @@ public:
 		ImGui::Text("Moves: %u", m_uMoveCount);
 		ImGui::Text("Cats remaining: %zu", CountRemainingCats());
 
-		const char* aszStateNames[] = { "Menu", "Playing", "Sliding", "Checking", "Complete", "LevelSelect", "CatCafe", "Victory" };
+		const char* aszStateNames[] = { "Menu", "Playing", "Sliding", "Checking", "Complete", "LevelSelect", "CatCafe", "Victory", "Settings" };
 		ImGui::Text("State: %s", aszStateNames[m_eState]);
 		ImGui::Text("Coins: %u  Lives: %u  Stars: %u", m_xSaveData.uCoins, m_xSaveData.uLives, m_xSaveData.uTotalStars);
 
@@ -638,10 +669,7 @@ private:
 	{
 		TilePuzzle_Behaviour* pxSelf = static_cast<TilePuzzle_Behaviour*>(pxUserData);
 		pxSelf->m_uLevelSelectPage = 0;
-		pxSelf->m_eState = TILEPUZZLE_STATE_LEVEL_SELECT;
-		pxSelf->SetMenuVisible(false);
-		pxSelf->SetLevelSelectVisible(true);
-		pxSelf->UpdateLevelSelectUI();
+		pxSelf->StartTransition(TILEPUZZLE_STATE_LEVEL_SELECT);
 	}
 
 	static void OnNewGameClicked(void* pxUserData)
@@ -745,9 +773,7 @@ private:
 	static void OnBackClicked(void* pxUserData)
 	{
 		TilePuzzle_Behaviour* pxSelf = static_cast<TilePuzzle_Behaviour*>(pxUserData);
-		pxSelf->m_eState = TILEPUZZLE_STATE_MAIN_MENU;
-		pxSelf->SetMenuVisible(true);
-		pxSelf->SetLevelSelectVisible(false);
+		pxSelf->StartTransition(TILEPUZZLE_STATE_MAIN_MENU);
 	}
 
 	static void OnResetClicked(void* pxUserData)
@@ -884,6 +910,8 @@ private:
 		if (uLevelIndex < TilePuzzleSaveData::uMAX_LEVELS)
 		{
 			TilePuzzleLevelRecord& xRecord = m_xSaveData.axLevelRecords[uLevelIndex];
+			m_bVictoryFirstCompletion = !xRecord.bCompleted;
+			m_bVictoryNewBest = xRecord.bCompleted && m_uStarsEarned > xRecord.uBestStars;
 			xRecord.bCompleted = true;
 			if (xRecord.uBestMoves == 0 || m_uMoveCount < xRecord.uBestMoves)
 			{
@@ -918,6 +946,18 @@ private:
 		{
 			m_uVictoryCoinsEarned += s_uCoinsPerThreeStar;
 		}
+
+		// Milestone coin bonuses on first completion (10/25/50/75/100 cats)
+		if (m_bVictoryFirstCompletion)
+		{
+			uint32_t uCatCount = m_xSaveData.uCatsCollectedCount;
+			if (uCatCount == 10) m_uVictoryCoinsEarned += 50;
+			else if (uCatCount == 25) m_uVictoryCoinsEarned += 100;
+			else if (uCatCount == 50) m_uVictoryCoinsEarned += 200;
+			else if (uCatCount == 75) m_uVictoryCoinsEarned += 300;
+			else if (uCatCount == 100) m_uVictoryCoinsEarned += 500;
+		}
+
 		m_xSaveData.AddCoins(static_cast<int32_t>(m_uVictoryCoinsEarned));
 		m_xSaveData.SetStarRating(m_uCurrentLevelNumber, static_cast<uint8_t>(m_uStarsEarned));
 
@@ -937,6 +977,9 @@ private:
 		m_uVictoryStarsShown = 0;
 		m_uVictoryStarRating = static_cast<uint8_t>(m_uStarsEarned);
 		SetVictoryOverlayVisible(true);
+
+		// Camera zoom pulse for emphasis
+		TriggerZoomPulse();
 
 		// Burst victory confetti
 		Zenith_SceneData* pxParentSceneData = m_xParentEntity.GetSceneData();
@@ -963,44 +1006,6 @@ private:
 	// Touch/Swipe Input
 	// ========================================================================
 
-	void HandleDirectionInput(TilePuzzleDirection eDir)
-	{
-		if (m_iSelectedShapeIndex >= 0)
-		{
-			TryMoveShape(m_iSelectedShapeIndex, eDir);
-		}
-		else
-		{
-			int32_t iDeltaX, iDeltaY;
-			TilePuzzleDirections::GetDelta(eDir, iDeltaX, iDeltaY);
-			int32_t iNewX = m_iCursorX + iDeltaX;
-			int32_t iNewY = m_iCursorY + iDeltaY;
-
-			if (iNewX >= 0 && iNewX < static_cast<int32_t>(m_xCurrentLevel.uGridWidth) &&
-				iNewY >= 0 && iNewY < static_cast<int32_t>(m_xCurrentLevel.uGridHeight))
-			{
-				uint32_t uCellIndex = iNewY * m_xCurrentLevel.uGridWidth + iNewX;
-				if (m_xCurrentLevel.aeCells[uCellIndex] == TILEPUZZLE_CELL_FLOOR)
-				{
-					m_iCursorX = iNewX;
-					m_iCursorY = iNewY;
-				}
-			}
-		}
-	}
-
-	void ToggleSelection()
-	{
-		if (m_iSelectedShapeIndex >= 0)
-		{
-			m_iSelectedShapeIndex = -1;
-		}
-		else
-		{
-			m_iSelectedShapeIndex = GetShapeAtPosition(m_iCursorX, m_iCursorY);
-		}
-	}
-
 	void HandleDragInput()
 	{
 		if (m_eState != TILEPUZZLE_STATE_PLAYING && !m_bDragging)
@@ -1021,14 +1026,22 @@ private:
 				int32_t iShape = GetShapeAtPosition(iGridX, iGridY);
 				if (iShape >= 0)
 				{
-					m_bDragging = true;
-					m_bDragUndoPushed = false;
-					m_iDragShapeIndex = iShape;
-					m_iSelectedShapeIndex = iShape;
+					if (IsShapeLocked(iShape))
+					{
+						// Shape is locked - wiggle it and don't start drag
+						TriggerShapeWiggle(iShape);
+					}
+					else
+					{
+						m_bDragging = true;
+						m_bDragUndoPushed = false;
+						m_iDragShapeIndex = iShape;
+						m_iSelectedShapeIndex = iShape;
 
-					const TilePuzzleShapeInstance& xShape = m_xCurrentLevel.axShapes[iShape];
-					m_iDragGrabOffsetX = iGridX - xShape.iOriginX;
-					m_iDragGrabOffsetY = iGridY - xShape.iOriginY;
+						const TilePuzzleShapeInstance& xShape = m_xCurrentLevel.axShapes[iShape];
+						m_iDragGrabOffsetX = iGridX - xShape.iOriginX;
+						m_iDragGrabOffsetY = iGridY - xShape.iOriginY;
+					}
 				}
 			}
 		}
@@ -1062,7 +1075,12 @@ private:
 						eDir = (iDY > 0) ? TILEPUZZLE_DIR_DOWN : TILEPUZZLE_DIR_UP;
 
 					if (!MoveShapeImmediate(m_iDragShapeIndex, eDir))
+					{
+						// Micro screen shake on blocked move (only if no shake already active)
+						if (m_fScreenShakeTimer <= 0.0f)
+							TriggerScreenShake(0.05f, 0.15f);
 						break;
+					}
 				}
 			}
 		}
@@ -1107,7 +1125,7 @@ private:
 		if (pxBg) pxBg->SetVisible(bVisible);
 
 		// Meta-game info texts
-		const char* aszInfoTexts[] = { "CoinText", "LivesText", "DailyStreakText" };
+		const char* aszInfoTexts[] = { "CoinText", "LivesText", "DailyStreakText", "TotalStarsText" };
 		for (const char* szName : aszInfoTexts)
 		{
 			Zenith_UI::Zenith_UIText* pxText = xUI.FindElement<Zenith_UI::Zenith_UIText>(szName);
@@ -1117,6 +1135,21 @@ private:
 		// Lives refill button (only when visible and lives < max)
 		Zenith_UI::Zenith_UIButton* pxRefill = xUI.FindElement<Zenith_UI::Zenith_UIButton>("RefillLivesButton");
 		if (pxRefill) pxRefill->SetVisible(bVisible && m_xSaveData.uLives < TilePuzzleSaveData::uMAX_LIVES);
+
+		// FTUE progressive disclosure: hide buttons until player reaches milestone levels
+		uint32_t uProgress = m_xSaveData.uHighestLevelReached;
+
+		Zenith_UI::Zenith_UIButton* pxLevelSelectBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("LevelSelectButton");
+		if (pxLevelSelectBtn) pxLevelSelectBtn->SetVisible(bVisible && uProgress >= 5);
+
+		Zenith_UI::Zenith_UIButton* pxCatCafeBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("CatCafeButton");
+		if (pxCatCafeBtn) pxCatCafeBtn->SetVisible(bVisible && uProgress >= 3);
+
+		Zenith_UI::Zenith_UIButton* pxDailyBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("DailyPuzzleButton");
+		if (pxDailyBtn) pxDailyBtn->SetVisible(bVisible && uProgress >= 10);
+
+		Zenith_UI::Zenith_UIButton* pxPinballBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("PinballButton");
+		if (pxPinballBtn) pxPinballBtn->SetVisible(bVisible && uProgress >= 10);
 
 		// Legacy fallback
 		Zenith_UI::Zenith_UIButton* pxPlay = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuPlay");
@@ -1130,30 +1163,15 @@ private:
 
 		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
 
-		const char* aszHUDElements[] = {
-			"Title", "ControlsHeader", "MoveInstr", "ResetInstr",
-			"GoalHeader", "GoalDesc", "Status", "WinText"
-		};
-
-		for (const char* szName : aszHUDElements)
+		// HUD layout groups (GDD section 7.4)
+		const char* aszHUDGroups[] = { "HUDInfoGroup", "HUDCoinGroup", "HUDButtonGroup" };
+		for (const char* szName : aszHUDGroups)
 		{
-			Zenith_UI::Zenith_UIText* pxText = xUI.FindElement<Zenith_UI::Zenith_UIText>(szName);
-			if (pxText) pxText->SetVisible(bVisible);
+			Zenith_UI::Zenith_UIElement* pxGroup = xUI.FindElement<Zenith_UI::Zenith_UIElement>(szName);
+			if (pxGroup) pxGroup->SetVisible(bVisible);
 		}
 
-		// HUD coin layout group (icon + Progress text)
-		Zenith_UI::Zenith_UIElement* pxHUDCoinGroup = xUI.FindElement<Zenith_UI::Zenith_UIElement>("HUDCoinGroup");
-		if (pxHUDCoinGroup) pxHUDCoinGroup->SetVisible(bVisible);
-
-		// HUD buttons
-		const char* aszHUDButtons[] = { "UndoBtn", "HintBtn" };
-		for (const char* szName : aszHUDButtons)
-		{
-			Zenith_UI::Zenith_UIButton* pxBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>(szName);
-			if (pxBtn) pxBtn->SetVisible(bVisible);
-		}
-
-		// Skip button only shows when skip is offered
+		// Skip button only shows when skip is offered (within HUDButtonGroup)
 		Zenith_UI::Zenith_UIButton* pxSkipBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("SkipBtn");
 		if (pxSkipBtn) pxSkipBtn->SetVisible(bVisible && m_bSkipOffered);
 	}
@@ -1235,79 +1253,47 @@ private:
 			pxBtn->SetVisible(true);
 
 			uint32_t uIndex = uLevel - 1;
-			if (m_xSaveData.axLevelRecords[uIndex].bCompleted)
-			{
-				uint32_t uStars = m_xSaveData.axLevelRecords[uIndex].uBestStars;
-				snprintf(szLabel, sizeof(szLabel), "%u %s", uLevel, GetStarString(uStars));
-			}
-			else
-			{
-				snprintf(szLabel, sizeof(szLabel), "%u", uLevel);
-			}
-			pxBtn->SetText(szLabel);
-
-			// Color based on lock state, star rating, and special nodes
 			bool bUnlocked = uLevel <= m_xSaveData.uHighestLevelReached;
 			bool bIsPinballGate = (uLevel % 10 == 0) && (uLevel / 10 <= TilePuzzleSaveData::uMAX_PINBALL_GATES);
-			if (bUnlocked)
+
+			if (!bUnlocked)
 			{
+				// Locked level: show lock symbol
+				snprintf(szLabel, sizeof(szLabel), "[%u]", uLevel);
+				pxBtn->SetText(szLabel);
+				pxBtn->SetNormalColor(Zenith_Maths::Vector4(0.12f, 0.12f, 0.12f, 1.f));
+			}
+			else if (m_xSaveData.axLevelRecords[uIndex].bCompleted)
+			{
+				// Completed: show star rating
 				uint8_t uStarRating = m_xSaveData.GetStarRating(uLevel);
+				const char* szStars = GetStarString(uStarRating);
+				snprintf(szLabel, sizeof(szLabel), "%u\n%s", uLevel, szStars);
+				pxBtn->SetText(szLabel);
+
 				if (uStarRating >= 3)
-				{
-					// Gold for 3-star levels
 					pxBtn->SetNormalColor(Zenith_Maths::Vector4(0.5f, 0.4f, 0.1f, 1.f));
-				}
 				else if (bIsPinballGate)
-				{
-					// Purple for pinball gate nodes
 					pxBtn->SetNormalColor(Zenith_Maths::Vector4(0.4f, 0.2f, 0.5f, 1.f));
-				}
-				else if (uLevel == m_xSaveData.uCurrentLevel)
-				{
-					// Green for current level
-					pxBtn->SetNormalColor(Zenith_Maths::Vector4(0.2f, 0.5f, 0.3f, 1.f));
-				}
 				else
-				{
 					pxBtn->SetNormalColor(Zenith_Maths::Vector4(0.2f, 0.3f, 0.5f, 1.f));
-				}
 			}
 			else
 			{
-				// Dimmed locked levels
-				pxBtn->SetNormalColor(Zenith_Maths::Vector4(0.15f, 0.15f, 0.15f, 1.f));
-			}
-		}
-	}
+				// Unlocked but not completed
+				snprintf(szLabel, sizeof(szLabel), "%u", uLevel);
+				pxBtn->SetText(szLabel);
 
-	void UpdateMenuInput()
-	{
-		static constexpr int32_t s_iButtonCount = 8;
-
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_UP) ||
-			Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_W))
-		{
-			m_iFocusIndex = (m_iFocusIndex - 1 + s_iButtonCount) % s_iButtonCount;
-		}
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_DOWN) ||
-			Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_S))
-		{
-			m_iFocusIndex = (m_iFocusIndex + 1) % s_iButtonCount;
-		}
-
-		if (m_xParentEntity.HasComponent<Zenith_UIComponent>())
-		{
-			Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
-
-			const char* aszBtnNames[] = {
-				"ContinueButton", "LevelSelectButton", "NewGameButton",
-				"PinballButton", "ResetSaveButton", "CatCafeButton", "DailyPuzzleButton",
-				"RefillLivesButton"
-			};
-			for (int32_t i = 0; i < s_iButtonCount; ++i)
-			{
-				Zenith_UI::Zenith_UIButton* pxBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>(aszBtnNames[i]);
-				if (pxBtn) pxBtn->SetFocused(m_iFocusIndex == i);
+				if (uLevel == m_xSaveData.uHighestLevelReached)
+				{
+					// Current frontier level: pulsing green highlight
+					float fPulse = 0.5f + 0.1f * sinf(static_cast<float>(uLevel) * 0.5f);
+					pxBtn->SetNormalColor(Zenith_Maths::Vector4(0.15f, fPulse, 0.2f, 1.f));
+				}
+				else if (bIsPinballGate)
+					pxBtn->SetNormalColor(Zenith_Maths::Vector4(0.4f, 0.2f, 0.5f, 1.f));
+				else
+					pxBtn->SetNormalColor(Zenith_Maths::Vector4(0.2f, 0.35f, 0.45f, 1.f));
 			}
 		}
 	}
@@ -1339,11 +1325,7 @@ private:
 
 	int32_t m_iLastMovedShapeIndex = -1;  // Track which shape was last moved for move counting
 
-	// Selection/Cursor
-	int32_t m_iCursorX;
-	int32_t m_iCursorY;
-	int32_t m_iPreviousCursorX = -1;
-	int32_t m_iPreviousCursorY = -1;
+	// Selection
 	int32_t m_iSelectedShapeIndex;
 
 	// Animation
@@ -1365,7 +1347,6 @@ private:
 	Flux_MeshGeometry* m_pxCubeGeometry = nullptr;
 	Flux_MeshGeometry* m_pxSphereGeometry = nullptr;
 	MaterialHandle m_xFloorMaterial;
-	MaterialHandle m_xFloorMaterialHighlighted;
 	MaterialHandle m_xBlockerMaterial;
 	MaterialHandle m_axShapeMaterials[TILEPUZZLE_COLOR_COUNT];
 	MaterialHandle m_axShapeMaterialsHighlighted[TILEPUZZLE_COLOR_COUNT];
@@ -1381,9 +1362,6 @@ private:
 	int32_t m_iDragShapeIndex = -1;
 	int32_t m_iDragGrabOffsetX = 0;
 	int32_t m_iDragGrabOffsetY = 0;
-
-	// Menu state
-	int32_t m_iFocusIndex;
 
 	// Scene handle for the puzzle scene (created/destroyed on transitions)
 	Zenith_Scene m_xPuzzleScene;
@@ -1415,8 +1393,22 @@ private:
 	float m_fVictoryTimer;
 	uint32_t m_uVictoryStarsShown;
 	uint32_t m_uVictoryCoinsEarned;
+	uint32_t m_uVictoryDisplayedCoins = 0; // Animated coin counter
 	uint8_t m_uVictoryStarRating;
 	bool m_bVictoryOverlayActive;
+	bool m_bVictoryFirstCompletion = false; // True if this is first time completing the level
+	bool m_bVictoryNewBest = false;         // True if player improved their star rating
+
+	// Screen shake
+	float m_fScreenShakeTimer = 0.0f;
+	float m_fScreenShakeDuration = 0.0f;
+	float m_fScreenShakeIntensity = 0.0f;
+	Zenith_Maths::Vector3 m_xCameraBasePosition = Zenith_Maths::Vector3(0.0f);
+
+	// Camera zoom pulse (level complete)
+	float m_fZoomPulseTimer = 0.0f;
+	float m_fZoomPulseDuration = 0.6f;
+	float m_fZoomPulseInDuration = 0.2f; // Time to zoom in (remainder is ease back)
 
 	// Particle emitter entity IDs (in parent scene, persist across levels)
 	Zenith_EntityID m_uEliminationEmitterID;
@@ -1427,6 +1419,177 @@ private:
 
 	// Daily puzzle mode
 	bool m_bDailyPuzzleMode;
+
+	// Cat idle bob
+	float m_fCatBobTimer = 0.0f;
+
+	// Screen transitions
+	bool m_bTransitionActive = false;
+	float m_fTransitionTimer = 0.0f;
+	bool m_bTransitionHalfDone = false;   // True once we've performed the state switch at the midpoint
+	static constexpr float s_fTransitionHalfDuration = 0.15f; // Fade to black duration
+	static constexpr float s_fTransitionFullDuration = 0.30f; // Total duration
+
+	// Deferred transition target
+	TilePuzzleGameState m_eTransitionTargetState = TILEPUZZLE_STATE_MAIN_MENU;
+	uint32_t m_uTransitionTargetLevel = 0;  // For level select -> playing
+
+	// Tutorial overlay
+	bool m_bTutorialActive = false;
+	uint32_t m_uTutorialIndex = 0;      // Which tutorial (0-5)
+	uint32_t m_uTutorialStep = 0;       // Current step within tutorial
+	float m_fTutorialFadeProgress = 0.0f;
+	bool m_bTutorialMouseWasDown = false;
+	static constexpr float s_fTutorialFadeDuration = 0.3f;
+
+	// ========================================================================
+	// Tutorial Overlay System
+	// ========================================================================
+
+	// Tutorial index mapping:
+	// 0 = Level 1 (basic drag)
+	// 1 = Level 6 (first domino/multi-cell shape)
+	// 2 = Level 11 (first static blocker)
+	// 3 = Level 26 (first blocker-cat)
+	// 4 = Level 46 (first conditional/locked shape)
+	// 5 = (spare)
+
+	int32_t GetTutorialIndexForLevel(uint32_t uLevel) const
+	{
+		switch (uLevel)
+		{
+		case 1:  return 0;
+		case 6:  return 1;
+		case 11: return 2;
+		case 26: return 3;
+		case 46: return 4;
+		default: return -1;
+		}
+	}
+
+	void TryShowTutorial()
+	{
+		if (m_bDailyPuzzleMode)
+			return;
+
+		int32_t iTutIdx = GetTutorialIndexForLevel(m_uCurrentLevelNumber);
+		if (iTutIdx < 0)
+			return;
+
+		if (m_xSaveData.IsTutorialShown(static_cast<uint32_t>(iTutIdx)))
+			return;
+
+		// Show tutorial overlay
+		m_bTutorialActive = true;
+		m_uTutorialIndex = static_cast<uint32_t>(iTutIdx);
+		m_uTutorialStep = 0;
+		m_fTutorialFadeProgress = 0.0f;
+	}
+
+	const char* GetTutorialText() const
+	{
+		switch (m_uTutorialIndex)
+		{
+		case 0:
+			switch (m_uTutorialStep)
+			{
+			case 0: return "Tap a colored shape to select it";
+			case 1: return "Drag to slide it onto the matching cat";
+			case 2: return "Match all cats to complete the level!";
+			default: return nullptr;
+			}
+		case 1: return "This shape covers multiple tiles.\nIt slides as one piece!";
+		case 2: return "Dark shapes are blockers.\nThey can't be moved!";
+		case 3: return "This cat sits on a blocker.\nGet a matching shape next to it!";
+		case 4: return "Locked shapes need cats\neliminated first to unlock!";
+		default: return nullptr;
+		}
+	}
+
+	uint32_t GetTutorialStepCount() const
+	{
+		if (m_uTutorialIndex == 0)
+			return 3;
+		return 1;
+	}
+
+	void UpdateTutorialOverlay(float fDeltaTime)
+	{
+		if (!m_bTutorialActive)
+			return;
+
+		m_fTutorialFadeProgress += fDeltaTime / s_fTutorialFadeDuration;
+		if (m_fTutorialFadeProgress > 1.0f)
+			m_fTutorialFadeProgress = 1.0f;
+
+		// Render the tutorial overlay using canvas direct rendering
+		Zenith_UI::Zenith_UICanvas* pxCanvas = Zenith_UI::Zenith_UICanvas::GetPrimaryCanvas();
+		if (!pxCanvas)
+			return;
+
+		int32_t iWinWidth, iWinHeight;
+		Zenith_Window::GetInstance()->GetSize(iWinWidth, iWinHeight);
+		if (iWinWidth <= 0 || iWinHeight <= 0)
+			return;
+
+		float fAlpha = m_fTutorialFadeProgress * 0.7f;
+
+		// Semi-transparent dark overlay background (bounds: left, top, right, bottom)
+		float fW = static_cast<float>(iWinWidth);
+		float fH = static_cast<float>(iWinHeight);
+		pxCanvas->SubmitQuad(
+			Zenith_Maths::Vector4(0.0f, 0.0f, fW, fH),
+			Zenith_Maths::Vector4(0.0f, 0.0f, 0.0f, fAlpha));
+
+		// Tutorial text box at bottom third of screen
+		const char* szText = GetTutorialText();
+		if (szText)
+		{
+			float fTextY = static_cast<float>(iWinHeight) * 0.65f;
+			float fTextX = static_cast<float>(iWinWidth) * 0.5f - 200.0f;
+
+			// Text background panel (bounds: left, top, right, bottom)
+			pxCanvas->SubmitQuad(
+				Zenith_Maths::Vector4(fTextX - 20.0f, fTextY - 20.0f, fTextX + 420.0f, fTextY + 100.0f),
+				Zenith_Maths::Vector4(0.1f, 0.1f, 0.25f, m_fTutorialFadeProgress * 0.9f));
+
+			pxCanvas->SubmitText(
+				szText,
+				Zenith_Maths::Vector2(fTextX, fTextY),
+				64.0f,
+				Zenith_Maths::Vector4(1.0f, 1.0f, 0.8f, m_fTutorialFadeProgress));
+
+			// "Tap to continue" hint at bottom
+			float fHintAlpha = m_fTutorialFadeProgress * (0.5f + 0.5f * sinf(m_fTutorialFadeProgress * 6.0f));
+			pxCanvas->SubmitText(
+				"Tap to continue",
+				Zenith_Maths::Vector2(fTextX + 80.0f, fTextY + 80.0f),
+				48.0f,
+				Zenith_Maths::Vector4(0.7f, 0.7f, 0.7f, fHintAlpha));
+		}
+
+		// Check for tap to advance/dismiss (detect mouse-down transition)
+		bool bMouseDown = Zenith_Input::IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_LEFT);
+		if (bMouseDown && !m_bTutorialMouseWasDown && m_fTutorialFadeProgress >= 0.5f)
+		{
+			m_uTutorialStep++;
+			m_fTutorialFadeProgress = 0.0f;
+
+			if (m_uTutorialStep >= GetTutorialStepCount())
+			{
+				DismissTutorial();
+			}
+		}
+		m_bTutorialMouseWasDown = bMouseDown;
+	}
+
+	void DismissTutorial()
+	{
+		m_bTutorialActive = false;
+		m_xSaveData.SetTutorialShown(m_uTutorialIndex);
+		Zenith_SaveData::Save("autosave", TilePuzzleSaveData::uGAME_SAVE_VERSION,
+			TilePuzzle_WriteSaveData, &m_xSaveData);
+	}
 
 	// ========================================================================
 	// Meta-game systems (Cat Cafe, Victory, Coins, Lives, Daily Puzzle)
@@ -1502,25 +1665,10 @@ private:
 		CreateLevelVisuals();
 		UpdateCameraForGridSize();
 
-		// Reset cursor to first draggable shape
-		m_iCursorX = 1;
-		m_iCursorY = 1;
-		for (const auto& xShape : m_xCurrentLevel.axShapes)
-		{
-			if (xShape.pxDefinition && xShape.pxDefinition->bDraggable)
-			{
-				m_iCursorX = xShape.iOriginX;
-				m_iCursorY = xShape.iOriginY;
-				break;
-			}
-		}
-
 		m_uMoveCount = 0;
 		m_iLastMovedShapeIndex = -1;
 		m_iSelectedShapeIndex = -1;
 		m_iPreviousSelectedShapeIndex = -1;
-		m_iPreviousCursorX = -1;
-		m_iPreviousCursorY = -1;
 		m_bDragging = false;
 		m_bMouseWasDown = false;
 		m_bPendingLevelComplete = false;
@@ -1538,6 +1686,12 @@ private:
 		m_uStarsEarned = 0;
 
 		UpdateSelectionHighlight();
+
+		// Check if this level has a tutorial to show
+		TryShowTutorial();
+
+		// Set background color based on difficulty tier
+		Flux_Skybox::s_xOverrideColour = GetBackgroundColorForLevel(m_uCurrentLevelNumber);
 	}
 
 	void ResetLevel()
@@ -1588,68 +1742,6 @@ private:
 	// ========================================================================
 	// Input Handling
 	// ========================================================================
-	void HandleInput()
-	{
-		if (m_bDragging)
-			return;
-
-		// Reset level
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_R))
-		{
-			ResetLevel();
-			return;
-		}
-
-		// Undo (U key)
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_U))
-		{
-			PerformUndo();
-			return;
-		}
-
-		// Hint (H key)
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_H))
-		{
-			PerformHint();
-			return;
-		}
-
-		// Get keyboard direction
-		TilePuzzleDirection eDir = TILEPUZZLE_DIR_NONE;
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_W) || Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_UP))
-			eDir = TILEPUZZLE_DIR_DOWN;
-		else if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_S) || Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_DOWN))
-			eDir = TILEPUZZLE_DIR_UP;
-		else if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_A) || Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_LEFT))
-			eDir = TILEPUZZLE_DIR_LEFT;
-		else if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_D) || Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_RIGHT))
-			eDir = TILEPUZZLE_DIR_RIGHT;
-
-		// Selection toggle
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_SPACE))
-		{
-			ToggleSelection();
-			return;
-		}
-
-		if (eDir != TILEPUZZLE_DIR_NONE)
-		{
-			HandleDirectionInput(eDir);
-		}
-	}
-
-	void HandleLevelCompleteInput()
-	{
-		if (m_uCurrentLevelNumber >= m_uAvailableLevelCount)
-			return;  // No more levels
-
-		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_N) ||
-			Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_SPACE))
-		{
-			NextLevel();
-		}
-	}
-
 	int32_t GetShapeAtPosition(int32_t iX, int32_t iY) const
 	{
 		for (size_t i = 0; i < m_xCurrentLevel.axShapes.size(); ++i)
@@ -1923,22 +2015,108 @@ private:
 				Zenith_Entity xCatEntity = pxSceneData->GetEntity(xCat.uEntityID);
 				if (xCatEntity.IsValid())
 				{
-					Zenith_TweenComponent::ScaleTo(xCatEntity, Zenith_Maths::Vector3(0.0f), s_fEliminationDuration, EASING_BACK_IN);
+					// Pop: scale up 1.3x briefly, then shrink to 0
+					Zenith_Maths::Vector3 xCatScale(s_fCatRadius * 2.0f);
+					Zenith_Maths::Vector3 xPopScale = xCatScale * 1.3f;
+
+					Zenith_TweenComponent& xTween = xCatEntity.HasComponent<Zenith_TweenComponent>()
+						? xCatEntity.GetComponent<Zenith_TweenComponent>()
+						: xCatEntity.AddComponent<Zenith_TweenComponent>();
+					xTween.TweenScaleFromTo(xCatScale, xPopScale, 0.08f, EASING_QUAD_OUT);
+
+					// After pop, shrink to 0
+					xTween.TweenScaleFromTo(xPopScale, Zenith_Maths::Vector3(0.0f), 0.2f, EASING_BACK_IN);
+					xTween.SetDelay(0.08f);
+
 					Zenith_SceneManager::Destroy(xCatEntity, s_fEliminationDuration + 0.01f);
 				}
 			}
 
-			// Burst elimination particles at cat position
+			// Burst color-matched elimination particles at cat position
 			Zenith_SceneData* pxParentSceneData = m_xParentEntity.GetSceneData();
 			if (m_uEliminationEmitterID.IsValid() && pxParentSceneData && pxParentSceneData->EntityExists(m_uEliminationEmitterID))
 			{
 				Zenith_Entity xEmitter = pxParentSceneData->GetEntity(m_uEliminationEmitterID);
 				xEmitter.GetComponent<Zenith_TransformComponent>().SetPosition(
 					GridToWorld(static_cast<float>(xCat.iGridX), static_cast<float>(xCat.iGridY), s_fCatHeight));
+
+				// Tint particles to match the eliminated cat's color
+				Flux_ParticleEmitterConfig* pxConfig = xEmitter.GetComponent<Zenith_ParticleEmitterComponent>().GetConfig();
+				if (pxConfig)
+				{
+					pxConfig->m_xColorStart = GetParticleColorForTile(xCat.eColor);
+				}
+
 				xEmitter.GetComponent<Zenith_ParticleEmitterComponent>().Emit(25);
 			}
 
 			xCat.uEntityID = Zenith_EntityID();
+		}
+
+		// Check if any conditional shapes just became unlocked
+		if (uNewlyEliminated != 0)
+		{
+			uint32_t uNewEliminatedCount = 0;
+			for (size_t i = 0; i < m_xCurrentLevel.axCats.size(); ++i)
+			{
+				if (m_xCurrentLevel.axCats[i].bEliminated)
+					uNewEliminatedCount++;
+			}
+
+			uint32_t uOldEliminatedCount = 0;
+			for (size_t i = 0; i < m_xCurrentLevel.axCats.size(); ++i)
+			{
+				if (uOldMask & (1u << i))
+					uOldEliminatedCount++;
+			}
+
+			for (size_t i = 0; i < m_xCurrentLevel.axShapes.size(); ++i)
+			{
+				const TilePuzzleShapeInstance& xShape = m_xCurrentLevel.axShapes[i];
+				if (!xShape.pxDefinition || !xShape.pxDefinition->bDraggable || xShape.bRemoved)
+					continue;
+				if (xShape.uUnlockThreshold == 0)
+					continue;
+
+				// Was locked before, now unlocked
+				if (uOldEliminatedCount < xShape.uUnlockThreshold && uNewEliminatedCount >= xShape.uUnlockThreshold)
+				{
+					// Burst golden particles at the shape's position
+					Zenith_SceneData* pxParentSceneData2 = m_xParentEntity.GetSceneData();
+					if (m_uEliminationEmitterID.IsValid() && pxParentSceneData2 && pxParentSceneData2->EntityExists(m_uEliminationEmitterID))
+					{
+						Zenith_Entity xEmitter = pxParentSceneData2->GetEntity(m_uEliminationEmitterID);
+						xEmitter.GetComponent<Zenith_TransformComponent>().SetPosition(
+							GridToWorld(static_cast<float>(xShape.iOriginX), static_cast<float>(xShape.iOriginY), s_fShapeHeight + 0.3f));
+
+						Flux_ParticleEmitterConfig* pxConfig = xEmitter.GetComponent<Zenith_ParticleEmitterComponent>().GetConfig();
+						if (pxConfig)
+						{
+							pxConfig->m_xColorStart = Zenith_Maths::Vector4(1.0f, 0.85f, 0.2f, 1.0f); // Golden
+						}
+						xEmitter.GetComponent<Zenith_ParticleEmitterComponent>().Emit(15);
+					}
+
+					// Scale bounce to celebrate unlock
+					if (m_xPuzzleScene.IsValid())
+					{
+						Zenith_SceneData* pxSD = Zenith_SceneManager::GetSceneData(m_xPuzzleScene);
+						if (pxSD && pxSD->EntityExists(xShape.xEntityID))
+						{
+							Zenith_Entity xShapeEntity = pxSD->GetEntity(xShape.xEntityID);
+							if (xShapeEntity.IsValid())
+							{
+								Zenith_Maths::Vector3 xBaseScale(s_fCellSize, s_fShapeHeight * 2.0f, s_fCellSize);
+								Zenith_TweenComponent& xTween = xShapeEntity.HasComponent<Zenith_TweenComponent>()
+									? xShapeEntity.GetComponent<Zenith_TweenComponent>()
+									: xShapeEntity.AddComponent<Zenith_TweenComponent>();
+								xTween.CancelByProperty(TWEEN_PROPERTY_SCALE);
+								xTween.TweenScaleFromTo(xBaseScale * 1.15f, xBaseScale, 0.2f, EASING_ELASTIC_OUT);
+							}
+						}
+					}
+				}
+			}
 		}
 
 		// Per-color removal: if all cats of a color are eliminated, remove all shapes of that color
@@ -2008,9 +2186,40 @@ private:
 		if (m_fSlideProgress >= 1.0f)
 		{
 			m_fSlideProgress = 1.0f;
+
+			// Bounce on arrival: quick scale overshoot then settle
+			BounceShapeOnArrival(m_iSlidingShapeIndex);
+
 			m_iSlidingShapeIndex = -1;
 			m_eState = TILEPUZZLE_STATE_CHECK_ELIMINATION;
 		}
+	}
+
+	void BounceShapeOnArrival(int32_t iShapeIndex)
+	{
+		if (iShapeIndex < 0 || !m_xPuzzleScene.IsValid())
+			return;
+
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(m_xPuzzleScene);
+		if (!pxSceneData)
+			return;
+
+		TilePuzzleShapeInstance& xShape = m_xCurrentLevel.axShapes[iShapeIndex];
+		if (!pxSceneData->EntityExists(xShape.xEntityID))
+			return;
+
+		Zenith_Entity xEntity = pxSceneData->GetEntity(xShape.xEntityID);
+		if (!xEntity.IsValid())
+			return;
+
+		Zenith_Maths::Vector3 xBaseScale(s_fCellSize, s_fShapeHeight * 2.0f, s_fCellSize);
+		Zenith_Maths::Vector3 xBounceScale = xBaseScale * 1.08f;
+
+		Zenith_TweenComponent& xTween = xEntity.HasComponent<Zenith_TweenComponent>()
+			? xEntity.GetComponent<Zenith_TweenComponent>()
+			: xEntity.AddComponent<Zenith_TweenComponent>();
+		xTween.CancelByProperty(TWEEN_PROPERTY_SCALE);
+		xTween.TweenScaleFromTo(xBounceScale, xBaseScale, 0.1f, EASING_CUBIC_OUT);
 	}
 
 	void SnapShapeVisuals(int32_t iShapeIndex)
@@ -2128,11 +2337,12 @@ private:
 		if (!pxSceneData)
 			return;
 
-		// Update shape position (for keyboard sliding animation)
+		// Update shape position (slide animation with ease-out cubic)
 		if (m_eState == TILEPUZZLE_STATE_SHAPE_SLIDING && m_iSlidingShapeIndex >= 0)
 		{
 			TilePuzzleShapeInstance& xShape = m_xCurrentLevel.axShapes[m_iSlidingShapeIndex];
-			Zenith_Maths::Vector3 xCurrentPos = m_xSlideStartPos + (m_xSlideEndPos - m_xSlideStartPos) * m_fSlideProgress;
+			float fEased = Zenith_ApplyEasing(EASING_CUBIC_OUT, m_fSlideProgress);
+			Zenith_Maths::Vector3 xCurrentPos = m_xSlideStartPos + (m_xSlideEndPos - m_xSlideStartPos) * fEased;
 
 			if (pxSceneData->EntityExists(xShape.xEntityID))
 			{
@@ -2213,6 +2423,38 @@ private:
 				m_bPendingLevelComplete = false;
 				OnLevelCompleted();
 			}
+		}
+
+		// Cat idle bob animation
+		m_fCatBobTimer += fDeltaTime;
+		for (size_t i = 0; i < m_xCurrentLevel.axCats.size(); ++i)
+		{
+			TilePuzzleCatData& xCat = m_xCurrentLevel.axCats[i];
+			if (xCat.bEliminated || !xCat.uEntityID.IsValid())
+				continue;
+			if (!pxSceneData->EntityExists(xCat.uEntityID))
+				continue;
+
+			Zenith_Entity xCatEntity = pxSceneData->GetEntity(xCat.uEntityID);
+			if (!xCatEntity.IsValid())
+				continue;
+
+			// Each cat has a phase offset based on index so they don't all bob in sync
+			float fPhase = static_cast<float>(i) * 1.2f;
+			float fBob = sinf(m_fCatBobTimer * 3.14159f + fPhase) * 0.02f;
+
+			Zenith_Maths::Vector3 xBasePos = GridToWorld(
+				static_cast<float>(xCat.iGridX), static_cast<float>(xCat.iGridY), s_fCatHeight);
+			xBasePos.y += fBob;
+			xCatEntity.GetComponent<Zenith_TransformComponent>().SetPosition(xBasePos);
+		}
+
+		// Camera effects (shake / zoom pulse)
+		UpdateScreenShake(fDeltaTime);
+		UpdateZoomPulse(fDeltaTime);
+		if (m_fScreenShakeTimer <= 0.0f && m_fZoomPulseTimer <= 0.0f && m_xParentEntity.HasComponent<Zenith_CameraComponent>())
+		{
+			m_xParentEntity.GetComponent<Zenith_CameraComponent>().SetPosition(m_xCameraBasePosition);
 		}
 
 		// Render text indicators above conditional (locked) shapes
@@ -2376,11 +2618,11 @@ private:
 			return;
 
 		bool bShapeSelectionChanged = (m_iPreviousSelectedShapeIndex != m_iSelectedShapeIndex);
-		bool bCursorMoved = (m_iPreviousCursorX != m_iCursorX || m_iPreviousCursorY != m_iCursorY);
-
 		// Update shape highlighting if selection changed
 		if (bShapeSelectionChanged)
 		{
+			Zenith_Maths::Vector3 xBaseScale(s_fCellSize, s_fShapeHeight * 2.0f, s_fCellSize);
+
 			// Remove highlight from previously selected shape
 			if (m_iPreviousSelectedShapeIndex >= 0 &&
 				m_iPreviousSelectedShapeIndex < static_cast<int32_t>(m_xCurrentLevel.axShapes.size()))
@@ -2399,6 +2641,14 @@ private:
 							{
 								xModel.GetMaterialHandleAtIndex(0).Set(pxNormalMaterial);
 							}
+						}
+
+						// Reset scale: cancel breathing pulse, return to base
+						if (xEntity.HasComponent<Zenith_TweenComponent>())
+						{
+							Zenith_TweenComponent& xTween = xEntity.GetComponent<Zenith_TweenComponent>();
+							xTween.CancelByProperty(TWEEN_PROPERTY_SCALE);
+							xTween.TweenScale(xBaseScale, 0.1f, EASING_CUBIC_OUT);
 						}
 					}
 				}
@@ -2423,6 +2673,18 @@ private:
 								xModel.GetMaterialHandleAtIndex(0).Set(pxHighlightMaterial);
 							}
 						}
+
+						// Pickup bump + breathing pulse
+						Zenith_TweenComponent& xTween = xEntity.HasComponent<Zenith_TweenComponent>()
+							? xEntity.GetComponent<Zenith_TweenComponent>()
+							: xEntity.AddComponent<Zenith_TweenComponent>();
+						xTween.CancelByProperty(TWEEN_PROPERTY_SCALE);
+
+						// Breathing pulse: oscillate +-5% around base scale
+						Zenith_Maths::Vector3 xPulseMin = xBaseScale * 0.97f;
+						Zenith_Maths::Vector3 xPulseMax = xBaseScale * 1.05f;
+						xTween.TweenScaleFromTo(xPulseMin, xPulseMax, 0.8f, EASING_SINE_IN_OUT);
+						xTween.SetLoop(true, true);
 					}
 				}
 			}
@@ -2430,47 +2692,6 @@ private:
 			m_iPreviousSelectedShapeIndex = m_iSelectedShapeIndex;
 		}
 
-		// Update cursor floor highlighting if cursor moved
-		if (bCursorMoved)
-		{
-			// Remove highlight from previous cursor floor tile
-			if (m_iPreviousCursorX >= 0 && m_iPreviousCursorY >= 0)
-			{
-				uint32_t uPrevKey = m_iPreviousCursorY * 1000 + m_iPreviousCursorX;
-				auto itPrev = m_axFloorEntityIDs.find(uPrevKey);
-				if (itPrev != m_axFloorEntityIDs.end() && pxSceneData->EntityExists(itPrev->second))
-				{
-					Zenith_Entity xFloor = pxSceneData->GetEntity(itPrev->second);
-					if (xFloor.IsValid() && xFloor.HasComponent<Zenith_ModelComponent>())
-					{
-						Zenith_ModelComponent& xModel = xFloor.GetComponent<Zenith_ModelComponent>();
-						if (xModel.GetNumMeshEntries() > 0)
-						{
-							xModel.GetMaterialHandleAtIndex(0).Set(m_xFloorMaterial.Get());
-						}
-					}
-				}
-			}
-
-			// Apply highlight to current cursor floor tile
-			uint32_t uCurKey = m_iCursorY * 1000 + m_iCursorX;
-			auto itCur = m_axFloorEntityIDs.find(uCurKey);
-			if (itCur != m_axFloorEntityIDs.end() && pxSceneData->EntityExists(itCur->second))
-			{
-				Zenith_Entity xFloor = pxSceneData->GetEntity(itCur->second);
-				if (xFloor.IsValid() && xFloor.HasComponent<Zenith_ModelComponent>())
-				{
-					Zenith_ModelComponent& xModel = xFloor.GetComponent<Zenith_ModelComponent>();
-					if (xModel.GetNumMeshEntries() > 0)
-					{
-						xModel.GetMaterialHandleAtIndex(0).Set(m_xFloorMaterialHighlighted.Get());
-					}
-				}
-			}
-
-			m_iPreviousCursorX = m_iCursorX;
-			m_iPreviousCursorY = m_iCursorY;
-		}
 	}
 
 	void UpdateUI()
@@ -2479,48 +2700,39 @@ private:
 			return;
 		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
 
-		// Update status text with par display: "Level: X  Moves: Y / Par: Z"
+		// Update level text
 		char szBuffer[128];
-		snprintf(szBuffer, sizeof(szBuffer), "Level: %u  Moves: %u / Par: %u", m_uCurrentLevelNumber, m_uMoveCount, m_xCurrentLevel.uMinimumMoves);
-		Zenith_UI::Zenith_UIText* pxStatus = xUI.FindElement<Zenith_UI::Zenith_UIText>("Status");
-		if (pxStatus)
+		Zenith_UI::Zenith_UIText* pxLevel = xUI.FindElement<Zenith_UI::Zenith_UIText>("LevelText");
+		if (pxLevel)
 		{
-			pxStatus->SetText(szBuffer);
+			snprintf(szBuffer, sizeof(szBuffer), "Level %u", m_uCurrentLevelNumber);
+			pxLevel->SetText(szBuffer);
 		}
 
-		// Update progress
+		// Update move counter
+		Zenith_UI::Zenith_UIText* pxMoves = xUI.FindElement<Zenith_UI::Zenith_UIText>("MovesText");
+		if (pxMoves)
+		{
+			snprintf(szBuffer, sizeof(szBuffer), "Moves: %u / Par: %u", m_uMoveCount, m_xCurrentLevel.uMinimumMoves);
+			pxMoves->SetText(szBuffer);
+		}
+
+		// Update cats remaining
 		size_t uRemaining = CountRemainingCats();
 		size_t uTotal = m_xCurrentLevel.axCats.size();
-		snprintf(szBuffer, sizeof(szBuffer), "Cats: %zu / %zu  Coins: %u", uTotal - uRemaining, uTotal, m_xSaveData.uCoins);
-		Zenith_UI::Zenith_UIText* pxProgress = xUI.FindElement<Zenith_UI::Zenith_UIText>("Progress");
-		if (pxProgress)
+		Zenith_UI::Zenith_UIText* pxCats = xUI.FindElement<Zenith_UI::Zenith_UIText>("CatsText");
+		if (pxCats)
 		{
-			pxProgress->SetText(szBuffer);
+			snprintf(szBuffer, sizeof(szBuffer), "Cats: %zu / %zu", uTotal - uRemaining, uTotal);
+			pxCats->SetText(szBuffer);
 		}
 
-		// Update win text with star rating
-		Zenith_UI::Zenith_UIText* pxWin = xUI.FindElement<Zenith_UI::Zenith_UIText>("WinText");
-		if (pxWin)
+		// Update coin display
+		Zenith_UI::Zenith_UIText* pxCoins = xUI.FindElement<Zenith_UI::Zenith_UIText>("HUDCoinsText");
+		if (pxCoins)
 		{
-			if (m_eState == TILEPUZZLE_STATE_LEVEL_COMPLETE)
-			{
-				if (m_uCurrentLevelNumber >= m_uAvailableLevelCount)
-				{
-					snprintf(szBuffer, sizeof(szBuffer), "GAME COMPLETED!  %s  +%u coins",
-						GetStarString(m_uStarsEarned), m_uStarsEarned * 10);
-					pxWin->SetText(szBuffer);
-				}
-				else
-				{
-					snprintf(szBuffer, sizeof(szBuffer), "LEVEL COMPLETE!  %s  +%u coins  Press N",
-						GetStarString(m_uStarsEarned), m_uStarsEarned * 10);
-					pxWin->SetText(szBuffer);
-				}
-			}
-			else
-			{
-				pxWin->SetText("");
-			}
+			snprintf(szBuffer, sizeof(szBuffer), "%u", m_xSaveData.uCoins);
+			pxCoins->SetText(szBuffer);
 		}
 
 		// Update undo button label with cost info
@@ -3037,6 +3249,267 @@ private:
 		float fRequiredHeight = fHeightForZ > fHeightForX ? fHeightForZ : fHeightForX;
 		fRequiredHeight *= 0.9f;
 
-		xCam.SetPosition(Zenith_Maths::Vector3(0.f, fRequiredHeight, 0.f));
+		m_xCameraBasePosition = Zenith_Maths::Vector3(0.f, fRequiredHeight, 0.f);
+		xCam.SetPosition(m_xCameraBasePosition);
+	}
+
+	// ========================================================================
+	// Screen Shake
+	// ========================================================================
+	void TriggerScreenShake(float fIntensity, float fDuration)
+	{
+		m_fScreenShakeIntensity = fIntensity;
+		m_fScreenShakeDuration = fDuration;
+		m_fScreenShakeTimer = fDuration;
+	}
+
+	void UpdateScreenShake(float fDeltaTime)
+	{
+		if (m_fScreenShakeTimer <= 0.0f)
+			return;
+
+		m_fScreenShakeTimer -= fDeltaTime;
+
+		if (m_fScreenShakeTimer <= 0.0f)
+		{
+			m_fScreenShakeTimer = 0.0f;
+			return;
+		}
+
+		// Dampened intensity decreases linearly
+		float fProgress = m_fScreenShakeTimer / m_fScreenShakeDuration;
+		float fCurrentIntensity = m_fScreenShakeIntensity * fProgress;
+
+		// Random offset in XZ plane (camera looks down Y axis)
+		float fOffsetX = (static_cast<float>(rand()) / RAND_MAX * 2.0f - 1.0f) * fCurrentIntensity;
+		float fOffsetZ = (static_cast<float>(rand()) / RAND_MAX * 2.0f - 1.0f) * fCurrentIntensity;
+
+		if (m_xParentEntity.HasComponent<Zenith_CameraComponent>())
+		{
+			Zenith_CameraComponent& xCam = m_xParentEntity.GetComponent<Zenith_CameraComponent>();
+			xCam.SetPosition(m_xCameraBasePosition + Zenith_Maths::Vector3(fOffsetX, 0.0f, fOffsetZ));
+		}
+	}
+
+	// ========================================================================
+	// Camera Zoom Pulse (level complete)
+	// ========================================================================
+	void TriggerZoomPulse()
+	{
+		m_fZoomPulseTimer = m_fZoomPulseDuration;
+	}
+
+	void UpdateZoomPulse(float fDeltaTime)
+	{
+		if (m_fZoomPulseTimer <= 0.0f)
+			return;
+
+		m_fZoomPulseTimer -= fDeltaTime;
+		if (m_fZoomPulseTimer <= 0.0f)
+			m_fZoomPulseTimer = 0.0f;
+
+		float fElapsed = m_fZoomPulseDuration - m_fZoomPulseTimer;
+		float fZoomOffset = 0.0f;
+		float fMaxZoom = m_xCameraBasePosition.y * 0.05f; // 5% of camera height
+
+		if (fElapsed < m_fZoomPulseInDuration)
+		{
+			// Zoom in phase: ease-out quad
+			float fT = fElapsed / m_fZoomPulseInDuration;
+			fZoomOffset = -fMaxZoom * Zenith_ApplyEasing(EASING_QUAD_OUT, fT);
+		}
+		else
+		{
+			// Ease back phase
+			float fEaseBackDuration = m_fZoomPulseDuration - m_fZoomPulseInDuration;
+			float fT = (fElapsed - m_fZoomPulseInDuration) / fEaseBackDuration;
+			fZoomOffset = -fMaxZoom * (1.0f - Zenith_ApplyEasing(EASING_QUAD_IN_OUT, fT));
+		}
+
+		if (m_xParentEntity.HasComponent<Zenith_CameraComponent>())
+		{
+			Zenith_CameraComponent& xCam = m_xParentEntity.GetComponent<Zenith_CameraComponent>();
+			Zenith_Maths::Vector3 xPos = m_xCameraBasePosition;
+			xPos.y += fZoomOffset;
+			xCam.SetPosition(xPos);
+		}
+	}
+
+	// ========================================================================
+	// Shape Wiggle (locked/conditional shapes)
+	// ========================================================================
+	void TriggerShapeWiggle(int32_t iShapeIndex)
+	{
+		if (iShapeIndex < 0 || iShapeIndex >= static_cast<int32_t>(m_xCurrentLevel.axShapes.size()))
+			return;
+
+		if (!m_xPuzzleScene.IsValid())
+			return;
+
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(m_xPuzzleScene);
+		if (!pxSceneData)
+			return;
+
+		const TilePuzzleShapeInstance& xShape = m_xCurrentLevel.axShapes[iShapeIndex];
+		if (!pxSceneData->EntityExists(xShape.xEntityID))
+			return;
+
+		Zenith_Entity xEntity = pxSceneData->GetEntity(xShape.xEntityID);
+		if (!xEntity.IsValid())
+			return;
+
+		// Rapid ±2 degree rotation wiggle via tween: rotate to +2deg, then -2deg, then back to 0
+		Zenith_TweenComponent& xTween = xEntity.HasComponent<Zenith_TweenComponent>()
+			? xEntity.GetComponent<Zenith_TweenComponent>()
+			: xEntity.AddComponent<Zenith_TweenComponent>();
+
+		xTween.CancelByProperty(TWEEN_PROPERTY_ROTATION);
+
+		// Wiggle: 0 -> +2deg -> -2deg -> 0 via chained rotation tweens around Y axis
+		Zenith_Maths::Vector3 xZeroRot(0.0f, 0.0f, 0.0f);
+		Zenith_Maths::Vector3 xPosRot(0.0f, 2.0f, 0.0f);
+		Zenith_Maths::Vector3 xNegRot(0.0f, -2.0f, 0.0f);
+
+		xTween.TweenRotation(xPosRot, 0.075f, EASING_SINE_OUT);
+		xTween.TweenRotation(xNegRot, 0.075f, EASING_SINE_IN_OUT);
+		xTween.SetDelay(0.075f);
+		xTween.TweenRotation(xZeroRot, 0.075f, EASING_SINE_IN_OUT);
+		xTween.SetDelay(0.15f);
+		xTween.TweenRotation(xPosRot, 0.05f, EASING_SINE_IN_OUT);
+		xTween.SetDelay(0.225f);
+		xTween.TweenRotation(xZeroRot, 0.05f, EASING_SINE_IN);
+		xTween.SetDelay(0.275f);
+	}
+
+	// ========================================================================
+	// Screen Transitions
+	// ========================================================================
+	void StartTransition(TilePuzzleGameState eTarget)
+	{
+		if (m_bTransitionActive)
+			return;
+		m_bTransitionActive = true;
+		m_fTransitionTimer = 0.0f;
+		m_bTransitionHalfDone = false;
+		m_eTransitionTargetState = eTarget;
+	}
+
+	void UpdateTransition(float fDeltaTime)
+	{
+		if (!m_bTransitionActive)
+			return;
+
+		m_fTransitionTimer += fDeltaTime;
+
+		// At halfway point, perform the actual state switch
+		if (!m_bTransitionHalfDone && m_fTransitionTimer >= s_fTransitionHalfDuration)
+		{
+			m_bTransitionHalfDone = true;
+			PerformTransitionSwitch();
+		}
+
+		// Render fade overlay
+		float fAlpha = 0.0f;
+		if (m_fTransitionTimer < s_fTransitionHalfDuration)
+		{
+			// Fade in
+			fAlpha = m_fTransitionTimer / s_fTransitionHalfDuration;
+		}
+		else if (m_fTransitionTimer < s_fTransitionFullDuration)
+		{
+			// Fade out
+			fAlpha = 1.0f - (m_fTransitionTimer - s_fTransitionHalfDuration) / s_fTransitionHalfDuration;
+		}
+		else
+		{
+			m_bTransitionActive = false;
+			return;
+		}
+
+		Zenith_UI::Zenith_UICanvas* pxCanvas = Zenith_UI::Zenith_UICanvas::GetPrimaryCanvas();
+		if (pxCanvas)
+		{
+			int32_t iW, iH;
+			Zenith_Window::GetInstance()->GetSize(iW, iH);
+			pxCanvas->SubmitQuad(
+				Zenith_Maths::Vector4(0.0f, 0.0f, static_cast<float>(iW), static_cast<float>(iH)),
+				Zenith_Maths::Vector4(0.0f, 0.0f, 0.0f, fAlpha));
+		}
+	}
+
+	void PerformTransitionSwitch()
+	{
+		switch (m_eTransitionTargetState)
+		{
+		case TILEPUZZLE_STATE_MAIN_MENU:
+			SetLevelSelectVisible(false);
+			SetCatCafeVisible(false);
+			SetSettingsVisible(false);
+			SetMenuVisible(true);
+			m_eState = TILEPUZZLE_STATE_MAIN_MENU;
+			break;
+		case TILEPUZZLE_STATE_LEVEL_SELECT:
+			SetMenuVisible(false);
+			SetLevelSelectVisible(true);
+			UpdateLevelSelectUI();
+			m_eState = TILEPUZZLE_STATE_LEVEL_SELECT;
+			break;
+		case TILEPUZZLE_STATE_CAT_CAFE:
+			SetMenuVisible(false);
+			SetCatCafeVisible(true);
+			UpdateCatCafeUI();
+			m_eState = TILEPUZZLE_STATE_CAT_CAFE;
+			break;
+		case TILEPUZZLE_STATE_SETTINGS:
+			SetMenuVisible(false);
+			SetSettingsVisible(true);
+			UpdateSettingsUI();
+			m_eState = TILEPUZZLE_STATE_SETTINGS;
+			break;
+		default:
+			break;
+		}
+	}
+
+	static Zenith_Maths::Vector3 GetBackgroundColorForLevel(uint32_t uLevel)
+	{
+		if (uLevel <= 10)       return Zenith_Maths::Vector3(0.18f, 0.15f, 0.12f);  // Warm cream/beige
+		else if (uLevel <= 25)  return Zenith_Maths::Vector3(0.10f, 0.13f, 0.20f);  // Soft sky blue
+		else if (uLevel <= 45)  return Zenith_Maths::Vector3(0.13f, 0.10f, 0.18f);  // Gentle lavender
+		else if (uLevel <= 65)  return Zenith_Maths::Vector3(0.08f, 0.14f, 0.15f);  // Muted teal
+		else if (uLevel <= 80)  return Zenith_Maths::Vector3(0.08f, 0.06f, 0.16f);  // Deep indigo
+		else                    return Zenith_Maths::Vector3(0.10f, 0.04f, 0.12f);  // Rich purple-black
+	}
+
+	static Zenith_Maths::Vector4 GetParticleColorForTile(TilePuzzleColor eColor)
+	{
+		switch (eColor)
+		{
+		case TILEPUZZLE_COLOR_RED:    return Zenith_Maths::Vector4(1.0f, 0.3f, 0.3f, 1.0f);
+		case TILEPUZZLE_COLOR_GREEN:  return Zenith_Maths::Vector4(0.3f, 1.0f, 0.3f, 1.0f);
+		case TILEPUZZLE_COLOR_BLUE:   return Zenith_Maths::Vector4(0.3f, 0.5f, 1.0f, 1.0f);
+		case TILEPUZZLE_COLOR_YELLOW: return Zenith_Maths::Vector4(1.0f, 1.0f, 0.3f, 1.0f);
+		case TILEPUZZLE_COLOR_PURPLE: return Zenith_Maths::Vector4(0.8f, 0.3f, 1.0f, 1.0f);
+		default:                      return Zenith_Maths::Vector4(1.0f, 1.0f, 1.0f, 1.0f);
+		}
+	}
+
+	bool IsShapeLocked(int32_t iShapeIndex) const
+	{
+		if (iShapeIndex < 0 || iShapeIndex >= static_cast<int32_t>(m_xCurrentLevel.axShapes.size()))
+			return false;
+
+		const TilePuzzleShapeInstance& xShape = m_xCurrentLevel.axShapes[iShapeIndex];
+		if (xShape.uUnlockThreshold == 0)
+			return false;
+
+		uint32_t uEliminatedCount = 0;
+		for (size_t i = 0; i < m_xCurrentLevel.axCats.size(); ++i)
+		{
+			if (m_xCurrentLevel.axCats[i].bEliminated)
+				uEliminatedCount++;
+		}
+
+		return uEliminatedCount < xShape.uUnlockThreshold;
 	}
 };

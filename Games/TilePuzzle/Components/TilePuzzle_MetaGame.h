@@ -59,13 +59,14 @@ void UpdateCatCafeUI()
 
 	Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
 
-	// Update total count
+	// Update total count with progress percentage
 	Zenith_UI::Zenith_UIText* pxCount = xUI.FindElement<Zenith_UI::Zenith_UIText>("CatCafeCount");
 	if (pxCount)
 	{
-		char szCount[64];
-		snprintf(szCount, sizeof(szCount), "%u / %u cats rescued",
-			m_xSaveData.uCatsCollectedCount, TilePuzzleSaveData::uMAX_CATS);
+		uint32_t uPercent = (m_xSaveData.uCatsCollectedCount * 100) / TilePuzzleSaveData::uMAX_CATS;
+		char szCount[96];
+		snprintf(szCount, sizeof(szCount), "%u / %u cats rescued (%u%%)",
+			m_xSaveData.uCatsCollectedCount, TilePuzzleSaveData::uMAX_CATS, uPercent);
 		pxCount->SetText(szCount);
 	}
 
@@ -95,28 +96,33 @@ void UpdateCatCafeUI()
 
 		if (m_xSaveData.IsCatCollected(uCatID))
 		{
-			// Deterministic name/breed from cat ID
 			const char* szName = s_aszCatNames[uCatID % s_uCatNameCount];
 			const char* szBreed = s_aszCatBreeds[uCatID % s_uCatBreedCount];
 			uint32_t uLevel = uCatID + 1;
-			bool bThreeStarred = m_xSaveData.GetStarRating(uLevel) >= 3;
+			uint8_t uStars = m_xSaveData.GetStarRating(uLevel);
 
 			char szText[128];
-			if (bThreeStarred)
-			{
-				snprintf(szText, sizeof(szText), "%s\n%s\nLvl %u ***", szName, szBreed, uLevel);
-			}
-			else
-			{
-				snprintf(szText, sizeof(szText), "%s\n%s\nLvl %u", szName, szBreed, uLevel);
-			}
+			snprintf(szText, sizeof(szText), "%s\n%s\nLvl %u %s", szName, szBreed, uLevel, GetStarString(uStars));
 			pxCard->SetText(szText);
 			pxCard->SetFontSize(20.f);
+
+			// Tint card background based on cat color (derived from level)
+			if (pxBg)
+			{
+				TilePuzzleColor eColor = static_cast<TilePuzzleColor>(uCatID % TILEPUZZLE_COLOR_COUNT);
+				Zenith_Maths::Vector4 xTint = GetParticleColorForTile(eColor);
+				xTint.w = 0.3f; // Subtle tint
+				pxBg->SetColor(xTint);
+			}
 		}
 		else
 		{
 			pxCard->SetText("???");
 			pxCard->SetFontSize(28.f);
+			if (pxBg)
+			{
+				pxBg->SetColor(Zenith_Maths::Vector4(0.15f, 0.15f, 0.15f, 0.5f));
+			}
 		}
 	}
 }
@@ -124,19 +130,14 @@ void UpdateCatCafeUI()
 static void OnCatCafeClicked(void* pxUserData)
 {
 	TilePuzzle_Behaviour* pxSelf = static_cast<TilePuzzle_Behaviour*>(pxUserData);
-	pxSelf->m_eState = TILEPUZZLE_STATE_CAT_CAFE;
 	pxSelf->m_uCatCafePage = 0;
-	pxSelf->SetMenuVisible(false);
-	pxSelf->SetCatCafeVisible(true);
-	pxSelf->UpdateCatCafeUI();
+	pxSelf->StartTransition(TILEPUZZLE_STATE_CAT_CAFE);
 }
 
 static void OnCatCafeBackClicked(void* pxUserData)
 {
 	TilePuzzle_Behaviour* pxSelf = static_cast<TilePuzzle_Behaviour*>(pxUserData);
-	pxSelf->m_eState = TILEPUZZLE_STATE_MAIN_MENU;
-	pxSelf->SetCatCafeVisible(false);
-	pxSelf->SetMenuVisible(true);
+	pxSelf->StartTransition(TILEPUZZLE_STATE_MAIN_MENU);
 }
 
 static void OnCatCafePrevPageClicked(void* pxUserData)
@@ -164,47 +165,6 @@ static void OnCatCafeNextPageClicked(void* pxUserData)
 // Victory Overlay
 // ============================================================================
 
-uint8_t CalculateStarRating() const
-{
-	uint32_t uPar = m_xCurrentLevel.uMinimumMoves;
-	if (uPar == 0) uPar = 1;
-
-	if (m_uMoveCount <= uPar)
-		return 3;
-	else if (m_uMoveCount <= uPar + 2)
-		return 2;
-	else
-		return 1;
-}
-
-void ShowVictoryOverlay()
-{
-	m_bVictoryOverlayActive = true;
-	m_fVictoryTimer = 0.f;
-	m_uVictoryStarsShown = 0;
-	m_uVictoryStarRating = CalculateStarRating();
-
-	// Calculate coins earned
-	m_uVictoryCoinsEarned = s_uCoinsPerLevelComplete;
-	if (m_uVictoryStarRating >= 3)
-	{
-		m_uVictoryCoinsEarned += s_uCoinsPerThreeStar;
-	}
-
-	// Award coins
-	m_xSaveData.AddCoins(static_cast<int32_t>(m_uVictoryCoinsEarned));
-
-	// Update star rating (only if better)
-	m_xSaveData.SetStarRating(m_uCurrentLevelNumber, m_uVictoryStarRating);
-
-	// Collect cat for this level
-	uint32_t uCatID = m_uCurrentLevelNumber - 1;
-	m_xSaveData.CollectCat(uCatID);
-
-	// Show victory UI elements
-	SetVictoryOverlayVisible(true);
-}
-
 void SetVictoryOverlayVisible(bool bVisible)
 {
 	if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
@@ -217,10 +177,43 @@ void SetVictoryOverlayVisible(bool bVisible)
 		"VictoryCatText", "VictoryCoinsText", "NextLevelBtn",
 		"VictoryStarGroup", "VictoryStar0", "VictoryStar1", "VictoryStar2"
 	};
-	for (const char* szName : aszVictoryElements)
+
+	if (bVisible)
 	{
-		Zenith_UI::Zenith_UIElement* pxElem = xUI.FindElement<Zenith_UI::Zenith_UIElement>(szName);
-		if (pxElem) pxElem->SetVisible(bVisible);
+		// Show all elements but start fully transparent for staggered reveal
+		for (const char* szName : aszVictoryElements)
+		{
+			Zenith_UI::Zenith_UIElement* pxElem = xUI.FindElement<Zenith_UI::Zenith_UIElement>(szName);
+			if (pxElem)
+			{
+				pxElem->SetVisible(true);
+				Zenith_Maths::Vector4 xColor = pxElem->GetColor();
+				xColor.w = 0.0f;
+				pxElem->SetColor(xColor);
+			}
+		}
+
+		// Reset star sizes to 0 for scale-in animation
+		static const char* s_aszStarNames[] = { "VictoryStar0", "VictoryStar1", "VictoryStar2" };
+		for (uint32_t u = 0; u < 3; ++u)
+		{
+			Zenith_UI::Zenith_UIImage* pxStar = xUI.FindElement<Zenith_UI::Zenith_UIImage>(s_aszStarNames[u]);
+			if (pxStar)
+			{
+				pxStar->SetSize(0.0f, 0.0f);
+			}
+		}
+
+		// Reset coin display counter
+		m_uVictoryDisplayedCoins = 0;
+	}
+	else
+	{
+		for (const char* szName : aszVictoryElements)
+		{
+			Zenith_UI::Zenith_UIElement* pxElem = xUI.FindElement<Zenith_UI::Zenith_UIElement>(szName);
+			if (pxElem) pxElem->SetVisible(false);
+		}
 	}
 }
 
@@ -233,77 +226,202 @@ void UpdateVictoryOverlay(float fDeltaTime)
 
 	Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
 
-	// Animate stars appearing sequentially (one every 0.4 seconds)
-	uint32_t uTargetStars = static_cast<uint32_t>(m_fVictoryTimer / 0.4f);
-	if (uTargetStars > m_uVictoryStarRating)
-		uTargetStars = m_uVictoryStarRating;
+	// Staggered reveal timing constants
+	static constexpr float s_fBgFadeStart    = 0.0f;
+	static constexpr float s_fBgFadeDuration = 0.25f;
+	static constexpr float s_fTitleStart     = 0.3f;
+	static constexpr float s_fTitleDuration  = 0.3f;
+	static constexpr float s_fStar0Start     = 0.6f;
+	static constexpr float s_fStar1Start     = 1.0f;
+	static constexpr float s_fStar2Start     = 1.4f;
+	static constexpr float s_fStarDuration   = 0.3f;
+	static constexpr float s_fCatTextStart   = 1.8f;
+	static constexpr float s_fCatTextDuration = 0.3f;
+	static constexpr float s_fCoinsStart     = 2.2f;
+	static constexpr float s_fCoinsDuration  = 0.4f;
+	static constexpr float s_fButtonsStart   = 2.5f;
+	static constexpr float s_fButtonsDuration = 0.25f;
 
-	if (uTargetStars > m_uVictoryStarsShown)
-	{
-		m_uVictoryStarsShown = uTargetStars;
-	}
+	float fT = m_fVictoryTimer;
 
-	// Update star display text
-	Zenith_UI::Zenith_UIText* pxStars = xUI.FindElement<Zenith_UI::Zenith_UIText>("VictoryStars");
-	if (pxStars)
+	// Helper: compute 0-1 progress for a timed element
+	auto EaseInRange = [](float fTime, float fStart, float fDuration) -> float
 	{
-		char szStars[16] = "";
-		for (uint32_t i = 0; i < 3; ++i)
+		if (fTime < fStart) return 0.0f;
+		if (fTime >= fStart + fDuration) return 1.0f;
+		return (fTime - fStart) / fDuration;
+	};
+
+	// (0.0s) Background fades in
+	{
+		Zenith_UI::Zenith_UIElement* pxBg = xUI.FindElement<Zenith_UI::Zenith_UIElement>("VictoryBg");
+		if (pxBg)
 		{
-			size_t uLen = strlen(szStars);
-			if (uLen + 2 < sizeof(szStars))
-			{
-				if (i < m_uVictoryStarsShown)
-				{
-					szStars[uLen] = '*';
-					szStars[uLen + 1] = ' ';
-					szStars[uLen + 2] = '\0';
-				}
-				else
-				{
-					szStars[uLen] = '-';
-					szStars[uLen + 1] = ' ';
-					szStars[uLen + 2] = '\0';
-				}
-			}
+			float fProgress = EaseInRange(fT, s_fBgFadeStart, s_fBgFadeDuration);
+			pxBg->SetColor(Zenith_Maths::Vector4(0.05f, 0.05f, 0.15f, 0.9f * fProgress));
 		}
-		pxStars->SetText(szStars);
 	}
 
-	// Update star images (filled vs empty based on rating)
+	// (0.3s) Title scales up with bounce easing
+	{
+		Zenith_UI::Zenith_UIText* pxTitle = xUI.FindElement<Zenith_UI::Zenith_UIText>("VictoryTitle");
+		if (pxTitle)
+		{
+			float fProgress = EaseInRange(fT, s_fTitleStart, s_fTitleDuration);
+			float fEased = Zenith_ApplyEasing(EASING_BACK_OUT, fProgress);
+			pxTitle->SetColor(Zenith_Maths::Vector4(1.0f, 1.0f, 0.5f, fProgress));
+			// Simulate scale via font size (base 56)
+			float fFontSize = 56.0f * fEased;
+			if (fFontSize > 0.1f)
+				pxTitle->SetFontSize(fFontSize);
+		}
+	}
+
+	// (0.6s, 1.0s, 1.4s) Stars appear with scale bounce
 	{
 		static const char* s_aszStarNames[] = { "VictoryStar0", "VictoryStar1", "VictoryStar2" };
+		static constexpr float s_afStarStarts[] = { s_fStar0Start, s_fStar1Start, s_fStar2Start };
+		static constexpr float s_fStarTargetSize = 48.0f;
+
+		uint32_t uPrevStarsShown = m_uVictoryStarsShown;
+
 		for (uint32_t u = 0; u < 3; ++u)
 		{
 			Zenith_UI::Zenith_UIImage* pxStar = xUI.FindElement<Zenith_UI::Zenith_UIImage>(s_aszStarNames[u]);
-			if (pxStar)
+			if (!pxStar)
+				continue;
+
+			float fProgress = EaseInRange(fT, s_afStarStarts[u], s_fStarDuration);
+			if (fProgress <= 0.0f)
+				continue;
+
+			bool bFilled = u < m_uVictoryStarRating;
+			pxStar->SetTexturePath(bFilled
+				? GAME_ASSETS_DIR "Textures/Icons/star_filled" ZENITH_TEXTURE_EXT
+				: GAME_ASSETS_DIR "Textures/Icons/star_empty" ZENITH_TEXTURE_EXT);
+
+			// Scale with bounce easing (overshoot to 1.2x then settle)
+			float fEased = Zenith_ApplyEasing(EASING_BACK_OUT, fProgress);
+			float fSize = s_fStarTargetSize * fEased;
+			pxStar->SetSize(fSize, fSize);
+
+			Zenith_Maths::Vector4 xStarColor = pxStar->GetColor();
+			xStarColor.w = fProgress;
+			pxStar->SetColor(xStarColor);
+
+			// Track stars shown for particle burst
+			if (fProgress >= 1.0f && u >= m_uVictoryStarsShown)
+				m_uVictoryStarsShown = u + 1;
+		}
+
+		// Burst particles when a new star appears
+		if (m_uVictoryStarsShown > uPrevStarsShown)
+		{
+			Zenith_SceneData* pxParentSceneData = m_xParentEntity.GetSceneData();
+			if (m_uEliminationEmitterID.IsValid() && pxParentSceneData && pxParentSceneData->EntityExists(m_uEliminationEmitterID))
 			{
-				bool bFilled = u < m_uVictoryStarsShown;
-				pxStar->SetTexturePath(bFilled
-					? GAME_ASSETS_DIR "Textures/Icons/star_filled" ZENITH_TEXTURE_EXT
-					: GAME_ASSETS_DIR "Textures/Icons/star_empty" ZENITH_TEXTURE_EXT);
+				Zenith_Entity xEmitter = pxParentSceneData->GetEntity(m_uEliminationEmitterID);
+				Flux_ParticleEmitterConfig* pxConfig = xEmitter.GetComponent<Zenith_ParticleEmitterComponent>().GetConfig();
+				if (pxConfig)
+				{
+					pxConfig->m_xColorStart = Zenith_Maths::Vector4(1.0f, 0.85f, 0.1f, 1.0f); // Gold sparkle
+				}
+				// Position roughly above the grid center (victory stars are at screen center)
+				xEmitter.GetComponent<Zenith_TransformComponent>().SetPosition(
+					Zenith_Maths::Vector3(0.0f, s_fShapeHeight + 0.5f, 0.0f));
+				xEmitter.GetComponent<Zenith_ParticleEmitterComponent>().Emit(10);
 			}
+		}
+
+		// Keep the star group visible
+		Zenith_UI::Zenith_UIElement* pxStarGroup = xUI.FindElement<Zenith_UI::Zenith_UIElement>("VictoryStarGroup");
+		if (pxStarGroup)
+		{
+			float fGroupAlpha = EaseInRange(fT, s_fStar0Start, 0.1f);
+			Zenith_Maths::Vector4 xGroupColor = pxStarGroup->GetColor();
+			xGroupColor.w = fGroupAlpha;
+			pxStarGroup->SetColor(xGroupColor);
+		}
+
+		// Hide old text stars
+		Zenith_UI::Zenith_UIText* pxStarsText = xUI.FindElement<Zenith_UI::Zenith_UIText>("VictoryStars");
+		if (pxStarsText) pxStarsText->SetVisible(false);
+	}
+
+	// (1.8s) Cat rescued text fades in from below
+	{
+		Zenith_UI::Zenith_UIText* pxCatText = xUI.FindElement<Zenith_UI::Zenith_UIText>("VictoryCatText");
+		if (pxCatText)
+		{
+			float fProgress = EaseInRange(fT, s_fCatTextStart, s_fCatTextDuration);
+			float fEased = Zenith_ApplyEasing(EASING_QUAD_OUT, fProgress);
+
+			uint32_t uCatID = m_uCurrentLevelNumber - 1;
+			const char* szCatName = s_aszCatNames[uCatID % s_uCatNameCount];
+			const char* szBreed = s_aszCatBreeds[uCatID % s_uCatBreedCount];
+
+			char szText[192];
+			if (m_bVictoryFirstCompletion)
+			{
+				snprintf(szText, sizeof(szText), "%s the %s rescued!\nAdded to Cat Cafe!", szCatName, szBreed);
+
+				// Check for milestones
+				uint32_t uCatCount = m_xSaveData.uCatsCollectedCount;
+				if (uCatCount == 10 || uCatCount == 25 || uCatCount == 50 || uCatCount == 75 || uCatCount == 100)
+				{
+					char szMilestone[192];
+					snprintf(szMilestone, sizeof(szMilestone), "%s\nMilestone! %u cats rescued!", szText, uCatCount);
+					memcpy(szText, szMilestone, sizeof(szText));
+				}
+			}
+			else if (m_bVictoryNewBest)
+			{
+				snprintf(szText, sizeof(szText), "New Best! %u stars!", m_uStarsEarned);
+			}
+			else
+			{
+				snprintf(szText, sizeof(szText), "Cat rescued: %s!", szCatName);
+			}
+			pxCatText->SetText(szText);
+
+			// Slide up from +10 offset
+			pxCatText->SetPosition(0.0f, 20.0f + 10.0f * (1.0f - fEased));
+			pxCatText->SetColor(Zenith_Maths::Vector4(0.9f, 0.7f, 0.5f, fProgress));
 		}
 	}
 
-	// Update cat rescued text
-	Zenith_UI::Zenith_UIText* pxCatText = xUI.FindElement<Zenith_UI::Zenith_UIText>("VictoryCatText");
-	if (pxCatText)
+	// (2.2s) Coin counter ticks up
 	{
-		uint32_t uCatID = m_uCurrentLevelNumber - 1;
-		const char* szCatName = s_aszCatNames[uCatID % s_uCatNameCount];
-		char szText[64];
-		snprintf(szText, sizeof(szText), "Cat rescued: %s!", szCatName);
-		pxCatText->SetText(szText);
+		Zenith_UI::Zenith_UIText* pxCoins = xUI.FindElement<Zenith_UI::Zenith_UIText>("VictoryCoinsText");
+		if (pxCoins)
+		{
+			float fProgress = EaseInRange(fT, s_fCoinsStart, s_fCoinsDuration);
+
+			if (fProgress > 0.0f)
+			{
+				uint32_t uTarget = static_cast<uint32_t>(static_cast<float>(m_uVictoryCoinsEarned) * fProgress);
+				if (uTarget > m_uVictoryCoinsEarned) uTarget = m_uVictoryCoinsEarned;
+				m_uVictoryDisplayedCoins = uTarget;
+
+				char szText[32];
+				snprintf(szText, sizeof(szText), "+%u coins", m_uVictoryDisplayedCoins);
+				pxCoins->SetText(szText);
+			}
+
+			pxCoins->SetColor(Zenith_Maths::Vector4(1.0f, 0.85f, 0.2f, fProgress));
+		}
 	}
 
-	// Update coins earned text
-	Zenith_UI::Zenith_UIText* pxCoins = xUI.FindElement<Zenith_UI::Zenith_UIText>("VictoryCoinsText");
-	if (pxCoins)
+	// (2.5s) Buttons fade in
 	{
-		char szText[32];
-		snprintf(szText, sizeof(szText), "+%u coins", m_uVictoryCoinsEarned);
-		pxCoins->SetText(szText);
+		Zenith_UI::Zenith_UIButton* pxNextBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("NextLevelBtn");
+		if (pxNextBtn)
+		{
+			float fProgress = EaseInRange(fT, s_fButtonsStart, s_fButtonsDuration);
+			Zenith_Maths::Vector4 xColor = pxNextBtn->GetColor();
+			xColor.w = fProgress;
+			pxNextBtn->SetColor(xColor);
+		}
 	}
 }
 
@@ -464,6 +582,106 @@ void OnDailyPuzzleCompleted()
 }
 
 // ============================================================================
+// Settings Screen
+// ============================================================================
+
+void SetSettingsVisible(bool bVisible)
+{
+	if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		return;
+
+	Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+
+	const char* aszSettingsElements[] = {
+		"SettingsBg", "SettingsTitle"
+	};
+	for (const char* szName : aszSettingsElements)
+	{
+		Zenith_UI::Zenith_UIElement* pxElem = xUI.FindElement<Zenith_UI::Zenith_UIElement>(szName);
+		if (pxElem) pxElem->SetVisible(bVisible);
+	}
+
+	const char* aszSettingsButtons[] = {
+		"SettingsSoundBtn", "SettingsMusicBtn", "SettingsHapticsBtn", "SettingsBackBtn"
+	};
+	for (const char* szName : aszSettingsButtons)
+	{
+		Zenith_UI::Zenith_UIButton* pxBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>(szName);
+		if (pxBtn) pxBtn->SetVisible(bVisible);
+	}
+}
+
+void UpdateSettingsUI()
+{
+	if (!m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		return;
+
+	Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+
+	Zenith_UI::Zenith_UIButton* pxSoundBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("SettingsSoundBtn");
+	if (pxSoundBtn)
+	{
+		pxSoundBtn->SetText(m_xSaveData.bSoundEnabled ? "Sound: ON" : "Sound: OFF");
+		pxSoundBtn->SetNormalColor(m_xSaveData.bSoundEnabled
+			? Zenith_Maths::Vector4(0.2f, 0.4f, 0.3f, 1.0f)
+			: Zenith_Maths::Vector4(0.3f, 0.15f, 0.15f, 1.0f));
+	}
+
+	Zenith_UI::Zenith_UIButton* pxMusicBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("SettingsMusicBtn");
+	if (pxMusicBtn)
+	{
+		pxMusicBtn->SetText(m_xSaveData.bMusicEnabled ? "Music: ON" : "Music: OFF");
+		pxMusicBtn->SetNormalColor(m_xSaveData.bMusicEnabled
+			? Zenith_Maths::Vector4(0.2f, 0.4f, 0.3f, 1.0f)
+			: Zenith_Maths::Vector4(0.3f, 0.15f, 0.15f, 1.0f));
+	}
+
+	Zenith_UI::Zenith_UIButton* pxHapticsBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("SettingsHapticsBtn");
+	if (pxHapticsBtn)
+	{
+		pxHapticsBtn->SetText(m_xSaveData.bHapticsEnabled ? "Haptics: ON" : "Haptics: OFF");
+		pxHapticsBtn->SetNormalColor(m_xSaveData.bHapticsEnabled
+			? Zenith_Maths::Vector4(0.2f, 0.4f, 0.3f, 1.0f)
+			: Zenith_Maths::Vector4(0.3f, 0.15f, 0.15f, 1.0f));
+	}
+}
+
+static void OnSettingsClicked(void* pxUserData)
+{
+	TilePuzzle_Behaviour* pxSelf = static_cast<TilePuzzle_Behaviour*>(pxUserData);
+	pxSelf->StartTransition(TILEPUZZLE_STATE_SETTINGS);
+}
+
+static void OnSettingsBackClicked(void* pxUserData)
+{
+	TilePuzzle_Behaviour* pxSelf = static_cast<TilePuzzle_Behaviour*>(pxUserData);
+	Zenith_SaveData::Save("autosave", TilePuzzleSaveData::uGAME_SAVE_VERSION,
+		TilePuzzle_WriteSaveData, &pxSelf->m_xSaveData);
+	pxSelf->StartTransition(TILEPUZZLE_STATE_MAIN_MENU);
+}
+
+static void OnToggleSoundClicked(void* pxUserData)
+{
+	TilePuzzle_Behaviour* pxSelf = static_cast<TilePuzzle_Behaviour*>(pxUserData);
+	pxSelf->m_xSaveData.bSoundEnabled = !pxSelf->m_xSaveData.bSoundEnabled;
+	pxSelf->UpdateSettingsUI();
+}
+
+static void OnToggleMusicClicked(void* pxUserData)
+{
+	TilePuzzle_Behaviour* pxSelf = static_cast<TilePuzzle_Behaviour*>(pxUserData);
+	pxSelf->m_xSaveData.bMusicEnabled = !pxSelf->m_xSaveData.bMusicEnabled;
+	pxSelf->UpdateSettingsUI();
+}
+
+static void OnToggleHapticsClicked(void* pxUserData)
+{
+	TilePuzzle_Behaviour* pxSelf = static_cast<TilePuzzle_Behaviour*>(pxUserData);
+	pxSelf->m_xSaveData.bHapticsEnabled = !pxSelf->m_xSaveData.bHapticsEnabled;
+	pxSelf->UpdateSettingsUI();
+}
+
+// ============================================================================
 // Menu-Level Rendering with Meta-Game Info
 // ============================================================================
 
@@ -472,6 +690,20 @@ void UpdateMainMenuUI()
 	UpdateCoinDisplay();
 	UpdateLivesDisplay();
 	UpdateDailyStreakDisplay();
+
+	// Star counter on main menu
+	if (m_xParentEntity.HasComponent<Zenith_UIComponent>())
+	{
+		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+		Zenith_UI::Zenith_UIText* pxStars = xUI.FindElement<Zenith_UI::Zenith_UIText>("TotalStarsText");
+		if (pxStars)
+		{
+			uint32_t uMaxStars = TilePuzzleSaveData::uMAX_LEVELS * 3;
+			char szStars[48];
+			snprintf(szStars, sizeof(szStars), "Stars: %u / %u", m_xSaveData.uTotalStars, uMaxStars);
+			pxStars->SetText(szStars);
+		}
+	}
 
 	// Regenerate lives periodically
 	m_xSaveData.RegenerateLives(GetCurrentTimestamp());

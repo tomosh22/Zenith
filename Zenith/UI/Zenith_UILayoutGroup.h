@@ -58,6 +58,8 @@ public:
 
 	void MarkLayoutDirty() { m_bLayoutDirty = true; }
 
+	virtual void OnChildVisibilityChanged() override { m_bLayoutDirty = true; }
+
 	// ========== Overrides ==========
 
 	virtual void Update(float fDt) override;
