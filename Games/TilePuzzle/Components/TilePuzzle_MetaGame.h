@@ -26,14 +26,17 @@ void SetCatCafeVisible(bool bVisible)
 	Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
 
 	const char* aszCatCafeElements[] = {
-		"CatCafeBg", "CatCafeTitle", "CatCafeCount",
-		"CatCafeBackButton", "CatCafePrevPage", "CatCafeNextPage"
+		"CatCafeBg", "CatCafeTitle", "CatCafeCount"
 	};
 	for (const char* szName : aszCatCafeElements)
 	{
 		Zenith_UI::Zenith_UIElement* pxElem = xUI.FindElement<Zenith_UI::Zenith_UIElement>(szName);
 		if (pxElem) pxElem->SetVisible(bVisible);
 	}
+
+	// Cat Cafe navigation layout group
+	Zenith_UI::Zenith_UIElement* pxNavGroup = xUI.FindElement<Zenith_UI::Zenith_UIElement>("CatCafeNavGroup");
+	if (pxNavGroup) pxNavGroup->SetVisible(bVisible);
 
 	// Cat card text elements (8 per page)
 	for (uint32_t i = 0; i < 8; ++i)

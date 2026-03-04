@@ -1098,16 +1098,9 @@ private:
 		Zenith_UI::Zenith_UIText* pxTitle = xUI.FindElement<Zenith_UI::Zenith_UIText>("MenuTitle");
 		if (pxTitle) pxTitle->SetVisible(bVisible);
 
-		// Menu buttons (including new meta-game buttons)
-		const char* aszMenuBtns[] = {
-			"ContinueButton", "LevelSelectButton", "NewGameButton",
-			"PinballButton", "ResetSaveButton", "CatCafeButton", "DailyPuzzleButton"
-		};
-		for (const char* szName : aszMenuBtns)
-		{
-			Zenith_UI::Zenith_UIButton* pxBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>(szName);
-			if (pxBtn) pxBtn->SetVisible(bVisible);
-		}
+		// Menu buttons layout group
+		Zenith_UI::Zenith_UIElement* pxMenuBtnGroup = xUI.FindElement<Zenith_UI::Zenith_UIElement>("MenuButtonGroup");
+		if (pxMenuBtnGroup) pxMenuBtnGroup->SetVisible(bVisible);
 
 		// Background
 		Zenith_UI::Zenith_UIElement* pxBg = xUI.FindElement<Zenith_UI::Zenith_UIElement>("MenuBackground");
@@ -1139,7 +1132,7 @@ private:
 
 		const char* aszHUDElements[] = {
 			"Title", "ControlsHeader", "MoveInstr", "ResetInstr",
-			"GoalHeader", "GoalDesc", "Status", "Progress", "WinText"
+			"GoalHeader", "GoalDesc", "Status", "WinText"
 		};
 
 		for (const char* szName : aszHUDElements)
@@ -1147,6 +1140,10 @@ private:
 			Zenith_UI::Zenith_UIText* pxText = xUI.FindElement<Zenith_UI::Zenith_UIText>(szName);
 			if (pxText) pxText->SetVisible(bVisible);
 		}
+
+		// HUD coin layout group (icon + Progress text)
+		Zenith_UI::Zenith_UIElement* pxHUDCoinGroup = xUI.FindElement<Zenith_UI::Zenith_UIElement>("HUDCoinGroup");
+		if (pxHUDCoinGroup) pxHUDCoinGroup->SetVisible(bVisible);
 
 		// HUD buttons
 		const char* aszHUDButtons[] = { "UndoBtn", "HintBtn" };
@@ -1169,14 +1166,17 @@ private:
 		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
 
 		const char* aszElements[] = {
-			"LevelSelectTitle", "PageText",
-			"PrevPageButton", "NextPageButton", "BackButton"
+			"LevelSelectTitle", "PageText"
 		};
 		for (const char* szName : aszElements)
 		{
 			Zenith_UI::Zenith_UIElement* pxElem = xUI.FindElement<Zenith_UI::Zenith_UIElement>(szName);
 			if (pxElem) pxElem->SetVisible(bVisible);
 		}
+
+		// Level select navigation layout group
+		Zenith_UI::Zenith_UIElement* pxNavGroup = xUI.FindElement<Zenith_UI::Zenith_UIElement>("LevelSelectNavGroup");
+		if (pxNavGroup) pxNavGroup->SetVisible(bVisible);
 
 		// Level select background
 		Zenith_UI::Zenith_UIElement* pxBg = xUI.FindElement<Zenith_UI::Zenith_UIElement>("LevelSelectBg");
