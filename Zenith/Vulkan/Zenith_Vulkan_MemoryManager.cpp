@@ -868,7 +868,7 @@ Flux_ShaderResourceView Zenith_Vulkan_MemoryManager::CreateShaderResourceView(Fl
 	xView.m_uBaseMip = uBaseMip;    // Store mip level for barrier tracking
 	xView.m_uMipCount = uMipCount;  // Store mip count for barrier tracking
 
-	if (!bIsDepth && xView.m_xImageViewHandle.IsValid())
+	if ((xInfo.m_uMemoryFlags & (1 << MEMORY_FLAGS__BINDLESS)) && xView.m_xImageViewHandle.IsValid())
 	{
 		Zenith_Vulkan::WriteBindlessDescriptor(
 			xView.m_xImageViewHandle.AsUInt(),
@@ -912,7 +912,7 @@ Flux_ShaderResourceView Zenith_Vulkan_MemoryManager::CreateShaderResourceViewFor
 	xView.m_uBaseMip = uBaseMip;    // Store mip level for barrier tracking
 	xView.m_uMipCount = uMipCount;  // Store mip count for barrier tracking
 
-	if (!bIsDepth && xView.m_xImageViewHandle.IsValid())
+	if ((xInfo.m_uMemoryFlags & (1 << MEMORY_FLAGS__BINDLESS)) && xView.m_xImageViewHandle.IsValid())
 	{
 		Zenith_Vulkan::WriteBindlessDescriptor(
 			xView.m_xImageViewHandle.AsUInt(),

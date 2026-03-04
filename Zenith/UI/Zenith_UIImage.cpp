@@ -42,7 +42,11 @@ void Zenith_UIImage::LoadTexture()
     // Load texture via handle (handles caching and ref counting)
     Zenith_TextureAsset* pxTexture = m_xTexture.Get();
 
-    if (!pxTexture)
+    if (pxTexture)
+    {
+        pxTexture->MarkAsBindless();
+    }
+    else
     {
         Zenith_Log(LOG_CATEGORY_UI, "[UIImage] Failed to load texture: %s", m_xTexture.GetPath().c_str());
     }

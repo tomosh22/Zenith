@@ -6,6 +6,7 @@
 #include "DataStream/Zenith_DataStream.h"
 #include "Flux/Flux_Enums.h"
 #include "Flux/Flux_Types.h"
+#include "Flux/Flux_Graphics.h"
 
 // Unified data size calculation for both compressed and uncompressed textures
 static size_t CalculateTextureDataSize(TextureFormat eFormat, uint32_t uWidth, uint32_t uHeight, uint32_t uDepth = 1)
@@ -40,6 +41,20 @@ Zenith_TextureAsset::Zenith_TextureAsset()
 Zenith_TextureAsset::~Zenith_TextureAsset()
 {
 	ReleaseGPU();
+}
+
+void Zenith_TextureAsset::MarkAsBindless()
+{
+	m_xSurfaceInfo.m_uMemoryFlags |= (1 << MEMORY_FLAGS__BINDLESS);
+
+	if (m_xSRV.m_xImageViewHandle.IsValid())
+	{
+		vk::ImageView xVkView = Zenith_Vulkan_MemoryManager::GetImageView(m_xSRV.m_xImageViewHandle);
+		Zenith_Vulkan::WriteBindlessDescriptor(
+			m_xSRV.m_xImageViewHandle.AsUInt(),
+			xVkView,
+			Flux_Graphics::s_xClampSampler.GetSampler());
+	}
 }
 
 bool Zenith_TextureAsset::LoadFromFile(const std::string& strPath, bool bCreateMips)

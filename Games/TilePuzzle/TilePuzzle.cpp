@@ -1235,8 +1235,8 @@ void Project_RegisterEditorAutomationSteps()
 	// Coin icon (next to coin text)
 	Zenith_EditorAutomation::AddStep_CreateUIImage("CoinIcon");
 	Zenith_EditorAutomation::AddStep_SetUIAnchor("CoinIcon", static_cast<int>(Zenith_UI::AnchorPreset::TopRight));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("CoinIcon", -170.f, 22.f);
-	Zenith_EditorAutomation::AddStep_SetUISize("CoinIcon", 28.f, 28.f);
+	Zenith_EditorAutomation::AddStep_SetUIPosition("CoinIcon", -220.f, 13.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("CoinIcon", 36.f, 36.f);
 	Zenith_EditorAutomation::AddStep_SetUIColor("CoinIcon", 1.f, 0.85f, 0.2f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIImageTexturePath("CoinIcon",
 		GAME_ASSETS_DIR "Textures/Icons/coin" ZENITH_TEXTURE_EXT);
@@ -1251,8 +1251,8 @@ void Project_RegisterEditorAutomationSteps()
 	// Heart icon (next to lives text)
 	Zenith_EditorAutomation::AddStep_CreateUIImage("HeartIcon");
 	Zenith_EditorAutomation::AddStep_SetUIAnchor("HeartIcon", static_cast<int>(Zenith_UI::AnchorPreset::TopLeft));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("HeartIcon", 150.f, 22.f);
-	Zenith_EditorAutomation::AddStep_SetUISize("HeartIcon", 28.f, 28.f);
+	Zenith_EditorAutomation::AddStep_SetUIPosition("HeartIcon", 210.f, 13.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("HeartIcon", 36.f, 36.f);
 	Zenith_EditorAutomation::AddStep_SetUIColor("HeartIcon", 1.f, 0.3f, 0.3f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIImageTexturePath("HeartIcon",
 		GAME_ASSETS_DIR "Textures/Icons/heart" ZENITH_TEXTURE_EXT);

@@ -78,6 +78,13 @@ public:
 
 	bool IsValid() const { return m_xVRAMHandle.IsValid(); }
 
+	/**
+	 * Mark this texture for bindless access
+	 * Registers the SRV in the bindless descriptor set so it can be
+	 * indexed by g_axBindlessTextures[handle] in shaders
+	 */
+	void MarkAsBindless();
+
 	//--------------------------------------------------------------------------
 	// GPU Resources
 	//--------------------------------------------------------------------------

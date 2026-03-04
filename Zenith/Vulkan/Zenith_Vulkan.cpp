@@ -712,6 +712,7 @@ void Zenith_Vulkan::CreateDevice()
 
 	vk::PhysicalDeviceDescriptorIndexingFeatures xIndexingFeatures = vk::PhysicalDeviceDescriptorIndexingFeatures()
 		.setDescriptorBindingSampledImageUpdateAfterBind(true)
+		.setDescriptorBindingPartiallyBound(true)
 		.setRuntimeDescriptorArray(true)
 		.setPNext(&xShaderDrawFeatures);
 
@@ -797,10 +798,17 @@ void Zenith_Vulkan::CreateBindlessTexturesDescriptorPool()
 		.setStageFlags(vk::ShaderStageFlagBits::eAll)
 		.setPImmutableSamplers(nullptr);
 
+	vk::DescriptorBindingFlags xBindingFlags = vk::DescriptorBindingFlagBits::eUpdateAfterBind | vk::DescriptorBindingFlagBits::ePartiallyBound;
+
+	vk::DescriptorSetLayoutBindingFlagsCreateInfo xBindingFlagsInfo = vk::DescriptorSetLayoutBindingFlagsCreateInfo()
+		.setBindingCount(1)
+		.setPBindingFlags(&xBindingFlags);
+
 	vk::DescriptorSetLayoutCreateInfo xLayoutInfo = vk::DescriptorSetLayoutCreateInfo()
 		.setBindingCount(1)
 		.setPBindings(&xBind)
-		.setFlags(vk::DescriptorSetLayoutCreateFlagBits::eUpdateAfterBindPool);
+		.setFlags(vk::DescriptorSetLayoutCreateFlagBits::eUpdateAfterBindPool)
+		.setPNext(&xBindingFlagsInfo);
 
 	s_xBindlessTexturesDescriptorSetLayout = s_xDevice.createDescriptorSetLayout(xLayoutInfo);
 
