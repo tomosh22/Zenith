@@ -167,9 +167,6 @@ class CppAnalyzer:
         'sizeof', 'alignof', 'typeid', 'new', 'delete', 'throw', 'co_await', 'co_yield',
     }
     
-    # Keywords that increase cyclomatic complexity
-    CC_KEYWORDS = {'if', 'else', 'for', 'while', 'do', 'switch', 'case', 'catch', '&&', '||', '?'}
-    
     # Keywords that increase cognitive complexity
     COGNITIVE_KEYWORDS = {'if', 'else', 'for', 'while', 'do', 'switch', 'catch', 'goto', 'break', 'continue'}
     COGNITIVE_NESTING = {'if', 'for', 'while', 'do', 'switch', 'catch', 'try'}
@@ -260,31 +257,27 @@ class CppAnalyzer:
         
         return ''.join(result), len(comment_lines)
     
-    def count_lines(self, code: str) -> Tuple[int, int, int, int]:
+    def count_lines(self, code: str, comment_count: int) -> Tuple[int, int, int, int]:
         """Count total, code, comment, and blank lines"""
         lines = code.split('\n')
         total = len(lines)
         blank = sum(1 for line in lines if not line.strip())
-        
-        # Get comment lines from original code
-        _, comment_count = self.remove_comments_and_strings(code)
-        
+
         # Code lines = total - blank - pure comment lines (approximation)
         code_lines = total - blank - comment_count
         code_lines = max(0, code_lines)
-        
+
         return total, code_lines, comment_count, blank
     
-    def calculate_cyclomatic_complexity(self, code: str) -> int:
+    def calculate_cyclomatic_complexity(self, cleaned_code: str) -> int:
         """Calculate McCabe's Cyclomatic Complexity"""
-        cleaned_code, _ = self.remove_comments_and_strings(code)
-        
         cc = 1  # Base complexity
         
         # Count decision points
         patterns = [
-            r'\bif\b', r'\belse\s+if\b', r'\bfor\b', r'\bwhile\b', 
-            r'\bdo\b', r'\bcase\b', r'\bcatch\b', r'\b\?\b',
+            r'\bif\b', r'\bfor\b', r'\bwhile\b',
+            r'\bdo\b', r'\bcase\b', r'\bcatch\b',
+            r'(?<![?!=<>])\?(?![?=])',  # ternary operator
             r'&&', r'\|\|'
         ]
         
@@ -293,13 +286,11 @@ class CppAnalyzer:
         
         return cc
     
-    def calculate_cognitive_complexity(self, code: str) -> int:
+    def calculate_cognitive_complexity(self, cleaned_code: str) -> int:
         """
         Calculate Cognitive Complexity (SonarSource metric)
         Measures how hard code is to understand
         """
-        cleaned_code, _ = self.remove_comments_and_strings(code)
-        
         cognitive = 0
         nesting_level = 0
         lines = cleaned_code.split('\n')
@@ -323,16 +314,17 @@ class CppAnalyzer:
                 cognitive += 1
             
             # Update nesting level
+            # NOTE: This counts ALL braces including namespace/class/function bodies,
+            # not just control-flow braces, which inflates nesting penalties.
+            # A proper fix would require contextual brace tracking (partial parser).
             nesting_level += stripped.count('{')
             nesting_level -= stripped.count('}')
             nesting_level = max(0, nesting_level)
         
         return cognitive
     
-    def calculate_halstead_metrics(self, code: str) -> HalsteadMetrics:
+    def calculate_halstead_metrics(self, cleaned_code: str) -> HalsteadMetrics:
         """Calculate Halstead complexity metrics"""
-        cleaned_code, _ = self.remove_comments_and_strings(code)
-        
         operators: Dict[str, int] = defaultdict(int)
         operands: Dict[str, int] = defaultdict(int)
         
@@ -393,10 +385,8 @@ class CppAnalyzer:
             N2=sum(operands.values())
         )
     
-    def count_functions_and_classes(self, code: str) -> Tuple[int, int]:
+    def count_functions_and_classes(self, cleaned_code: str) -> Tuple[int, int]:
         """Count functions and classes in the code"""
-        cleaned_code, _ = self.remove_comments_and_strings(code)
-        
         # Function pattern (simplified)
         func_pattern = r'\b\w+\s+\w+\s*\([^)]*\)\s*(?:const\s*)?(?:noexcept\s*)?(?:override\s*)?(?:final\s*)?\s*\{'
         functions = len(re.findall(func_pattern, cleaned_code))
@@ -407,10 +397,8 @@ class CppAnalyzer:
         
         return functions, classes
     
-    def calculate_max_nesting(self, code: str) -> int:
+    def calculate_max_nesting(self, cleaned_code: str) -> int:
         """Calculate maximum nesting depth"""
-        cleaned_code, _ = self.remove_comments_and_strings(code)
-        
         max_depth = 0
         current_depth = 0
         
@@ -432,12 +420,14 @@ class CppAnalyzer:
             print(f"Error reading {filepath}: {e}")
             return FileMetrics(filepath=str(filepath))
         
-        total, code_lines, comment_lines, blank = self.count_lines(code)
-        cc = self.calculate_cyclomatic_complexity(code)
-        cognitive = self.calculate_cognitive_complexity(code)
-        halstead = self.calculate_halstead_metrics(code)
-        functions, classes = self.count_functions_and_classes(code)
-        max_nesting = self.calculate_max_nesting(code)
+        cleaned_code, comment_count = self.remove_comments_and_strings(code)
+
+        total, code_lines, comment_lines, blank = self.count_lines(code, comment_count)
+        cc = self.calculate_cyclomatic_complexity(cleaned_code)
+        cognitive = self.calculate_cognitive_complexity(cleaned_code)
+        halstead = self.calculate_halstead_metrics(cleaned_code)
+        functions, classes = self.count_functions_and_classes(cleaned_code)
+        max_nesting = self.calculate_max_nesting(cleaned_code)
         
         return FileMetrics(
             filepath=str(filepath.relative_to(self.root_path)),
@@ -531,7 +521,7 @@ class CppAnalyzer:
         print("CODE COMPLEXITY AND MAINTAINABILITY REPORT")
         print("=" * 80)
         
-        print("\n?? OVERALL SUMMARY")
+        print("\n=== OVERALL SUMMARY ===")
         print("-" * 40)
         print(f"  Total Files:          {summary['total_files']:,}")
         print(f"  Total Lines:          {summary['total_lines']:,}")
@@ -541,7 +531,7 @@ class CppAnalyzer:
         print(f"  Total Functions:      {summary['total_functions']:,}")
         print(f"  Total Classes:        {summary['total_classes']:,}")
         
-        print("\n?? COMPLEXITY METRICS")
+        print("\n=== COMPLEXITY METRICS ===")
         print("-" * 40)
         print(f"  Avg Cyclomatic:       {summary['avg_cyclomatic']:.2f}")
         print(f"  Max Cyclomatic:       {summary['max_cyclomatic']}")
@@ -550,7 +540,7 @@ class CppAnalyzer:
         print(f"  Avg Halstead Volume:  {summary['avg_halstead_volume']:.2f}")
         print(f"  Est. Total Bugs:      {summary['total_estimated_bugs']:.2f}")
         
-        print("\n?? MAINTAINABILITY")
+        print("\n=== MAINTAINABILITY ===")
         print("-" * 40)
         print(f"  Avg Maintainability Index: {summary['avg_maintainability']:.2f}")
         print(f"  Min Maintainability Index: {summary['min_maintainability']:.2f}")
@@ -567,7 +557,7 @@ class CppAnalyzer:
         print(f"  Overall Rating:       {rating}")
         
         # Directory breakdown
-        print("\n?? TOP DIRECTORIES BY CODE LINES")
+        print("\n=== TOP DIRECTORIES BY CODE LINES ===")
         print("-" * 40)
         sorted_dirs = sorted(
             self.directory_metrics.values(),
@@ -581,7 +571,7 @@ class CppAnalyzer:
                   f"Avg CC: {dm.avg_cyclomatic:.1f}, MI: {dm.avg_maintainability:.1f}")
         
         # Most complex files
-        print("\n?? TOP 10 MOST COMPLEX FILES (by Cyclomatic Complexity)")
+        print("\n=== TOP 10 MOST COMPLEX FILES (by Cyclomatic Complexity) ===")
         print("-" * 40)
         sorted_files = sorted(
             self.file_metrics,
@@ -595,7 +585,7 @@ class CppAnalyzer:
                   f"MI: {fm.maintainability_index:.1f}")
         
         # Lowest maintainability
-        print("\n?? TOP 10 FILES NEEDING ATTENTION (lowest Maintainability Index)")
+        print("\n=== TOP 10 FILES NEEDING ATTENTION (lowest Maintainability Index) ===")
         print("-" * 40)
         sorted_mi = sorted(
             self.file_metrics,
@@ -610,11 +600,35 @@ class CppAnalyzer:
 
 class MetricsVisualizer:
     """Visualize code metrics"""
-    
+
+    # Colorblind-friendly palette (blue-salmon-red, avoids red-green confusion)
+    COLOR_GOOD = '#2166ac'      # Blue (good)
+    COLOR_MODERATE = '#f4a582'  # Light salmon (moderate)
+    COLOR_POOR = '#b2182b'      # Dark red (poor)
+    COLOR_PRIMARY = '#4393c3'   # Steel blue
+    COLOR_SECONDARY = '#d6604d' # Coral
+    COLOR_TERTIARY = '#92c5de'  # Light blue
+    COLOR_NEUTRAL = '#d9d9d9'   # Light gray
+
     def __init__(self, analyzer: CppAnalyzer, output_dir: str = None):
         self.analyzer = analyzer
         self.output_dir = Path(output_dir) if output_dir else Path.cwd()
         self.output_dir.mkdir(parents=True, exist_ok=True)
+
+    @staticmethod
+    def _short_dir_name(path: str, max_parts: int = 2) -> str:
+        """Get a short but unique directory label using up to max_parts path components."""
+        parts = path.replace('\\', '/').split('/')
+        relevant = parts[-max_parts:] if len(parts) >= max_parts else parts
+        result = '/'.join(relevant)
+        return result or path
+
+    @staticmethod
+    def _short_file_name(filepath: str, max_parts: int = 2) -> str:
+        """Get a short but unique file label using parent directory + filename."""
+        parts = Path(filepath).parts
+        relevant = parts[-max_parts:] if len(parts) >= max_parts else parts
+        return '/'.join(relevant)
     
     def create_all_visualizations(self) -> None:
         """Create all visualizations"""
@@ -630,7 +644,13 @@ class MetricsVisualizer:
         self.plot_loc_breakdown()
         self.plot_halstead_metrics()
         self.plot_top_complex_files()
-        
+        self.plot_complexity_vs_loc_scatter()
+        self.plot_nesting_depth_analysis()
+        self.plot_comment_ratio_by_directory()
+        self.plot_file_size_distribution()
+        self.plot_complexity_per_function()
+        self.plot_dashboard_summary()
+
         print(f"Visualizations saved to: {self.output_dir}")
     
     def plot_directory_comparison(self) -> None:
@@ -647,46 +667,46 @@ class MetricsVisualizer:
         fig, axes = plt.subplots(2, 2, figsize=(16, 12))
         fig.suptitle('Directory Metrics Comparison', fontsize=14, fontweight='bold')
         
-        names = [d.path.replace('\\', '/').split('/')[-1] or d.path for d in dirs]
-        
+        names = [self._short_dir_name(d.path) for d in dirs]
+
         # Code lines
         ax = axes[0, 0]
         values = [d.code_lines for d in dirs]
-        bars = ax.barh(names, values, color='steelblue')
+        bars = ax.barh(names, values, color=self.COLOR_PRIMARY)
         ax.set_xlabel('Lines of Code')
         ax.set_title('Code Lines by Directory')
         ax.invert_yaxis()
-        
+
         # Avg Cyclomatic Complexity
         ax = axes[0, 1]
         values = [d.avg_cyclomatic for d in dirs]
-        colors = ['green' if v < 10 else 'orange' if v < 20 else 'red' for v in values]
+        colors = [self.COLOR_GOOD if v < 10 else self.COLOR_MODERATE if v < 20 else self.COLOR_POOR for v in values]
         ax.barh(names, values, color=colors)
         ax.set_xlabel('Average Cyclomatic Complexity')
         ax.set_title('Avg Cyclomatic Complexity by Directory')
-        ax.axvline(x=10, color='orange', linestyle='--', alpha=0.7, label='Moderate (10)')
-        ax.axvline(x=20, color='red', linestyle='--', alpha=0.7, label='High (20)')
+        ax.axvline(x=10, color=self.COLOR_MODERATE, linestyle='--', alpha=0.7, label='Moderate (10)')
+        ax.axvline(x=20, color=self.COLOR_POOR, linestyle='--', alpha=0.7, label='High (20)')
         ax.legend()
         ax.invert_yaxis()
-        
+
         # Avg Cognitive Complexity
         ax = axes[1, 0]
         values = [d.avg_cognitive for d in dirs]
-        colors = ['green' if v < 15 else 'orange' if v < 30 else 'red' for v in values]
+        colors = [self.COLOR_GOOD if v < 15 else self.COLOR_MODERATE if v < 30 else self.COLOR_POOR for v in values]
         ax.barh(names, values, color=colors)
         ax.set_xlabel('Average Cognitive Complexity')
         ax.set_title('Avg Cognitive Complexity by Directory')
         ax.invert_yaxis()
-        
+
         # Maintainability Index
         ax = axes[1, 1]
         values = [d.avg_maintainability for d in dirs]
-        colors = ['green' if v >= 65 else 'orange' if v >= 40 else 'red' for v in values]
+        colors = [self.COLOR_GOOD if v >= 65 else self.COLOR_MODERATE if v >= 40 else self.COLOR_POOR for v in values]
         ax.barh(names, values, color=colors)
         ax.set_xlabel('Maintainability Index (0-100)')
         ax.set_title('Avg Maintainability Index by Directory')
-        ax.axvline(x=65, color='green', linestyle='--', alpha=0.7, label='Good (65)')
-        ax.axvline(x=40, color='orange', linestyle='--', alpha=0.7, label='Moderate (40)')
+        ax.axvline(x=65, color=self.COLOR_GOOD, linestyle='--', alpha=0.7, label='Good (65)')
+        ax.axvline(x=40, color=self.COLOR_MODERATE, linestyle='--', alpha=0.7, label='Moderate (40)')
         ax.legend()
         ax.invert_yaxis()
         
@@ -706,9 +726,9 @@ class MetricsVisualizer:
         
         # Cyclomatic Complexity Distribution
         ax = axes[0, 0]
-        ax.hist(cc_values, bins=30, color='steelblue', edgecolor='black', alpha=0.7)
-        ax.axvline(np.mean(cc_values), color='red', linestyle='--', label=f'Mean: {np.mean(cc_values):.1f}')
-        ax.axvline(np.median(cc_values), color='orange', linestyle='--', label=f'Median: {np.median(cc_values):.1f}')
+        ax.hist(cc_values, bins=30, color=self.COLOR_PRIMARY, edgecolor='black', alpha=0.7)
+        ax.axvline(np.mean(cc_values), color=self.COLOR_POOR, linestyle='--', label=f'Mean: {np.mean(cc_values):.1f}')
+        ax.axvline(np.median(cc_values), color=self.COLOR_MODERATE, linestyle='--', label=f'Median: {np.median(cc_values):.1f}')
         ax.set_xlabel('Cyclomatic Complexity')
         ax.set_ylabel('Number of Files')
         ax.set_title('Cyclomatic Complexity Distribution')
@@ -716,9 +736,9 @@ class MetricsVisualizer:
         
         # Cognitive Complexity Distribution
         ax = axes[0, 1]
-        ax.hist(cog_values, bins=30, color='darkorange', edgecolor='black', alpha=0.7)
-        ax.axvline(np.mean(cog_values), color='red', linestyle='--', label=f'Mean: {np.mean(cog_values):.1f}')
-        ax.axvline(np.median(cog_values), color='blue', linestyle='--', label=f'Median: {np.median(cog_values):.1f}')
+        ax.hist(cog_values, bins=30, color=self.COLOR_SECONDARY, edgecolor='black', alpha=0.7)
+        ax.axvline(np.mean(cog_values), color=self.COLOR_POOR, linestyle='--', label=f'Mean: {np.mean(cog_values):.1f}')
+        ax.axvline(np.median(cog_values), color=self.COLOR_PRIMARY, linestyle='--', label=f'Median: {np.median(cog_values):.1f}')
         ax.set_xlabel('Cognitive Complexity')
         ax.set_ylabel('Number of Files')
         ax.set_title('Cognitive Complexity Distribution')
@@ -726,11 +746,10 @@ class MetricsVisualizer:
         
         # Maintainability Index Distribution
         ax = axes[1, 0]
-        colors = ['red' if v < 40 else 'orange' if v < 65 else 'green' for v in sorted(mi_values)]
-        ax.hist(mi_values, bins=30, color='seagreen', edgecolor='black', alpha=0.7)
-        ax.axvline(np.mean(mi_values), color='red', linestyle='--', label=f'Mean: {np.mean(mi_values):.1f}')
-        ax.axvline(65, color='green', linestyle=':', label='Good threshold (65)')
-        ax.axvline(40, color='orange', linestyle=':', label='Moderate threshold (40)')
+        ax.hist(mi_values, bins=30, color=self.COLOR_GOOD, edgecolor='black', alpha=0.7)
+        ax.axvline(np.mean(mi_values), color=self.COLOR_POOR, linestyle='--', label=f'Mean: {np.mean(mi_values):.1f}')
+        ax.axvline(65, color=self.COLOR_GOOD, linestyle=':', label='Good threshold (65)')
+        ax.axvline(40, color=self.COLOR_MODERATE, linestyle=':', label='Moderate threshold (40)')
         ax.set_xlabel('Maintainability Index')
         ax.set_ylabel('Number of Files')
         ax.set_title('Maintainability Index Distribution')
@@ -739,7 +758,7 @@ class MetricsVisualizer:
         # Halstead Volume Distribution (log scale)
         ax = axes[1, 1]
         if vol_values:
-            ax.hist(vol_values, bins=30, color='purple', edgecolor='black', alpha=0.7)
+            ax.hist(vol_values, bins=30, color=self.COLOR_PRIMARY, edgecolor='black', alpha=0.7)
             ax.set_xlabel('Halstead Volume')
             ax.set_ylabel('Number of Files')
             ax.set_title('Halstead Volume Distribution')
@@ -764,7 +783,7 @@ class MetricsVisualizer:
         mi_values = [d.avg_maintainability for d in dirs]
         
         # Create color-coded horizontal bars
-        cmap = LinearSegmentedColormap.from_list('mi', ['red', 'orange', 'green'])
+        cmap = LinearSegmentedColormap.from_list('mi', [self.COLOR_POOR, self.COLOR_MODERATE, self.COLOR_GOOD])
         normalized = [v / 100 for v in mi_values]
         colors = [cmap(n) for n in normalized]
         
@@ -774,12 +793,12 @@ class MetricsVisualizer:
         ax.set_yticks(y_pos)
         ax.set_yticklabels(names, fontsize=8)
         ax.set_xlabel('Maintainability Index')
-        ax.set_title('Maintainability Index by Directory\n(Green=Good, Orange=Moderate, Red=Poor)')
+        ax.set_title('Maintainability Index by Directory\n(Blue=Good, Salmon=Moderate, Red=Poor)')
         ax.set_xlim(0, 100)
-        
+
         # Add threshold lines
-        ax.axvline(x=65, color='green', linestyle='--', alpha=0.5)
-        ax.axvline(x=40, color='orange', linestyle='--', alpha=0.5)
+        ax.axvline(x=65, color=self.COLOR_GOOD, linestyle='--', alpha=0.5)
+        ax.axvline(x=40, color=self.COLOR_MODERATE, linestyle='--', alpha=0.5)
         
         # Add value labels
         for bar, val in zip(bars, mi_values):
@@ -801,7 +820,7 @@ class MetricsVisualizer:
         ax = axes[0]
         sizes = [summary['total_code_lines'], summary['total_comment_lines'], summary['total_blank_lines']]
         labels = ['Code Lines', 'Comment Lines', 'Blank Lines']
-        colors = ['steelblue', 'seagreen', 'lightgray']
+        colors = [self.COLOR_PRIMARY, self.COLOR_TERTIARY, self.COLOR_NEUTRAL]
         explode = (0.05, 0, 0)
         
         ax.pie(sizes, explode=explode, labels=labels, colors=colors, autopct='%1.1f%%',
@@ -816,17 +835,17 @@ class MetricsVisualizer:
             reverse=True
         )[:12]
         
-        names = [d.path.replace('\\', '/').split('/')[-1] or d.path for d in dirs]
+        names = [self._short_dir_name(d.path) for d in dirs]
         code = [d.code_lines for d in dirs]
         comments = [d.comment_lines for d in dirs]
         blank = [d.blank_lines for d in dirs]
-        
+
         x = np.arange(len(names))
         width = 0.25
-        
-        ax.bar(x - width, code, width, label='Code', color='steelblue')
-        ax.bar(x, comments, width, label='Comments', color='seagreen')
-        ax.bar(x + width, blank, width, label='Blank', color='lightgray')
+
+        ax.bar(x - width, code, width, label='Code', color=self.COLOR_PRIMARY)
+        ax.bar(x, comments, width, label='Comments', color=self.COLOR_TERTIARY)
+        ax.bar(x + width, blank, width, label='Blank', color=self.COLOR_NEUTRAL)
         
         ax.set_xlabel('Directory')
         ax.set_ylabel('Lines')
@@ -852,7 +871,7 @@ class MetricsVisualizer:
         ax = axes[0, 0]
         volumes = [f.halstead.volume for f in files]
         difficulties = [f.halstead.difficulty for f in files]
-        ax.scatter(volumes, difficulties, alpha=0.5, c='steelblue')
+        ax.scatter(volumes, difficulties, alpha=0.5, c=self.COLOR_PRIMARY)
         ax.set_xlabel('Halstead Volume')
         ax.set_ylabel('Halstead Difficulty')
         ax.set_title('Volume vs Difficulty')
@@ -861,7 +880,7 @@ class MetricsVisualizer:
         # Effort distribution
         ax = axes[0, 1]
         efforts = [f.halstead.effort for f in files if f.halstead.effort > 0]
-        ax.hist(efforts, bins=30, color='darkorange', edgecolor='black', alpha=0.7)
+        ax.hist(efforts, bins=30, color=self.COLOR_SECONDARY, edgecolor='black', alpha=0.7)
         ax.set_xlabel('Halstead Effort')
         ax.set_ylabel('Number of Files')
         ax.set_title('Programming Effort Distribution')
@@ -875,10 +894,10 @@ class MetricsVisualizer:
             reverse=True
         )[:10]
         
-        names = [d.path.replace('\\', '/').split('/')[-1] or d.path for d in dirs]
+        names = [self._short_dir_name(d.path) for d in dirs]
         bugs = [sum(f.halstead.bugs_delivered for f in d.files) for d in dirs]
-        
-        ax.barh(names, bugs, color='crimson', alpha=0.7)
+
+        ax.barh(names, bugs, color=self.COLOR_POOR, alpha=0.7)
         ax.set_xlabel('Estimated Bugs (Halstead B)')
         ax.set_title('Estimated Bugs by Directory')
         ax.invert_yaxis()
@@ -886,7 +905,7 @@ class MetricsVisualizer:
         # Time to program
         ax = axes[1, 1]
         times = [f.halstead.time_to_program / 3600 for f in files if f.halstead.time_to_program > 0]  # Convert to hours
-        ax.hist(times, bins=30, color='purple', edgecolor='black', alpha=0.7)
+        ax.hist(times, bins=30, color=self.COLOR_TERTIARY, edgecolor='black', alpha=0.7)
         ax.set_xlabel('Estimated Time to Program (hours)')
         ax.set_ylabel('Number of Files')
         ax.set_title('Estimated Programming Time Distribution')
@@ -903,25 +922,25 @@ class MetricsVisualizer:
         # Top by Cyclomatic Complexity
         ax = axes[0]
         files = sorted(self.analyzer.file_metrics, key=lambda f: f.cyclomatic_complexity, reverse=True)[:15]
-        names = [Path(f.filepath).name for f in files]
+        names = [self._short_file_name(f.filepath) for f in files]
         values = [f.cyclomatic_complexity for f in files]
-        colors = ['green' if v < 10 else 'orange' if v < 20 else 'red' for v in values]
-        
+        colors = [self.COLOR_GOOD if v < 10 else self.COLOR_MODERATE if v < 20 else self.COLOR_POOR for v in values]
+
         bars = ax.barh(names, values, color=colors, edgecolor='black', alpha=0.8)
         ax.set_xlabel('Cyclomatic Complexity')
         ax.set_title('Top 15 Files by Cyclomatic Complexity')
         ax.invert_yaxis()
-        
+
         # Add threshold annotations
-        ax.axvline(x=10, color='orange', linestyle='--', alpha=0.7)
-        ax.axvline(x=20, color='red', linestyle='--', alpha=0.7)
-        
+        ax.axvline(x=10, color=self.COLOR_MODERATE, linestyle='--', alpha=0.7)
+        ax.axvline(x=20, color=self.COLOR_POOR, linestyle='--', alpha=0.7)
+
         # Lowest Maintainability
         ax = axes[1]
         files = sorted(self.analyzer.file_metrics, key=lambda f: f.maintainability_index)[:15]
-        names = [Path(f.filepath).name for f in files]
+        names = [self._short_file_name(f.filepath) for f in files]
         values = [f.maintainability_index for f in files]
-        colors = ['red' if v < 40 else 'orange' if v < 65 else 'green' for v in values]
+        colors = [self.COLOR_POOR if v < 40 else self.COLOR_MODERATE if v < 65 else self.COLOR_GOOD for v in values]
         
         bars = ax.barh(names, values, color=colors, edgecolor='black', alpha=0.8)
         ax.set_xlabel('Maintainability Index')
@@ -931,6 +950,261 @@ class MetricsVisualizer:
         
         plt.tight_layout()
         plt.savefig(self.output_dir / 'files_requiring_attention.png', dpi=150, bbox_inches='tight')
+        plt.close()
+
+    def plot_complexity_vs_loc_scatter(self) -> None:
+        """Risk quadrant: Complexity vs LOC scatter, colored by maintainability"""
+        files = self.analyzer.file_metrics
+        if not files:
+            return
+
+        fig, ax = plt.subplots(figsize=(12, 8))
+
+        locs = [f.code_lines for f in files]
+        ccs = [f.cyclomatic_complexity for f in files]
+        mis = [f.maintainability_index for f in files]
+
+        scatter = ax.scatter(locs, ccs, c=mis, cmap='RdYlBu', alpha=0.6,
+                             edgecolors='black', linewidth=0.3, s=30,
+                             vmin=0, vmax=100)
+
+        # Quadrant dividers at median
+        loc_med = np.median(locs)
+        cc_med = np.median(ccs)
+        ax.axvline(x=loc_med, color='gray', linestyle='--', alpha=0.4)
+        ax.axhline(y=cc_med, color='gray', linestyle='--', alpha=0.4)
+
+        # Label quadrants
+        x_min, x_max = ax.get_xlim()
+        y_min, y_max = ax.get_ylim()
+        ax.text(x_min + (loc_med - x_min) * 0.5, y_max * 0.95, 'Small & Complex',
+                ha='center', va='top', fontsize=9, color='gray', alpha=0.7)
+        ax.text(x_max * 0.75, y_max * 0.95, 'Large & Complex',
+                ha='center', va='top', fontsize=9, color='gray', alpha=0.7)
+        ax.text(x_min + (loc_med - x_min) * 0.5, y_min + (cc_med - y_min) * 0.1, 'Small & Simple',
+                ha='center', va='bottom', fontsize=9, color='gray', alpha=0.7)
+        ax.text(x_max * 0.75, y_min + (cc_med - y_min) * 0.1, 'Large & Simple',
+                ha='center', va='bottom', fontsize=9, color='gray', alpha=0.7)
+
+        # Annotate top 5 riskiest files (highest LOC * CC product)
+        risk_scores = [(l * c, i) for i, (l, c) in enumerate(zip(locs, ccs))]
+        risk_scores.sort(reverse=True)
+        for _, idx in risk_scores[:5]:
+            fm = files[idx]
+            ax.annotate(self._short_file_name(fm.filepath),
+                        (locs[idx], ccs[idx]), fontsize=7, alpha=0.8,
+                        xytext=(5, 5), textcoords='offset points')
+
+        plt.colorbar(scatter, label='Maintainability Index')
+        ax.set_xlabel('Lines of Code')
+        ax.set_ylabel('Cyclomatic Complexity')
+        ax.set_title('Risk Quadrant: Complexity vs Size (colored by Maintainability)')
+
+        plt.tight_layout()
+        plt.savefig(self.output_dir / 'risk_quadrant.png', dpi=150, bbox_inches='tight')
+        plt.close()
+
+    def plot_nesting_depth_analysis(self) -> None:
+        """Nesting depth: top files bar chart + distribution histogram"""
+        files = self.analyzer.file_metrics
+        if not files:
+            return
+
+        fig, axes = plt.subplots(1, 2, figsize=(16, 8))
+        fig.suptitle('Nesting Depth Analysis', fontsize=14, fontweight='bold')
+
+        # Left: top 15 files by nesting depth
+        ax = axes[0]
+        top_files = sorted(files, key=lambda f: f.max_nesting_depth, reverse=True)[:15]
+        names = [self._short_file_name(f.filepath) for f in top_files]
+        values = [f.max_nesting_depth for f in top_files]
+        colors = [self.COLOR_GOOD if v <= 4 else self.COLOR_MODERATE if v <= 7 else self.COLOR_POOR for v in values]
+
+        ax.barh(names, values, color=colors, edgecolor='black', alpha=0.8)
+        ax.set_xlabel('Max Nesting Depth')
+        ax.set_title('Top 15 Files by Nesting Depth')
+        ax.axvline(x=4, color=self.COLOR_MODERATE, linestyle='--', alpha=0.7, label='Moderate (4)')
+        ax.axvline(x=7, color=self.COLOR_POOR, linestyle='--', alpha=0.7, label='High (7)')
+        ax.legend()
+        ax.invert_yaxis()
+
+        # Right: histogram of all nesting depths
+        ax = axes[1]
+        all_depths = [f.max_nesting_depth for f in files]
+        ax.hist(all_depths, bins=max(1, max(all_depths) - min(all_depths)),
+                color=self.COLOR_PRIMARY, edgecolor='black', alpha=0.7)
+        ax.axvline(np.mean(all_depths), color=self.COLOR_POOR, linestyle='--',
+                   label=f'Mean: {np.mean(all_depths):.1f}')
+        ax.axvline(np.median(all_depths), color=self.COLOR_MODERATE, linestyle='--',
+                   label=f'Median: {np.median(all_depths):.1f}')
+        ax.set_xlabel('Max Nesting Depth')
+        ax.set_ylabel('Number of Files')
+        ax.set_title('Nesting Depth Distribution')
+        ax.legend()
+
+        plt.tight_layout()
+        plt.savefig(self.output_dir / 'nesting_depth.png', dpi=150, bbox_inches='tight')
+        plt.close()
+
+    def plot_comment_ratio_by_directory(self) -> None:
+        """Comment-to-code ratio by directory, highlights under-documented areas"""
+        # Filter to directories with at least 5 files to reduce noise
+        dirs = [d for d in self.analyzer.directory_metrics.values()
+                if d.file_count >= 5 and d.code_lines > 0]
+        if not dirs:
+            return
+
+        dirs = sorted(dirs, key=lambda d: d.comment_lines / d.code_lines)
+
+        fig, ax = plt.subplots(figsize=(12, max(6, len(dirs) * 0.35)))
+
+        names = [self._short_dir_name(d.path) for d in dirs]
+        ratios = [d.comment_lines / d.code_lines for d in dirs]
+
+        colors = [self.COLOR_POOR if r < 0.05 else self.COLOR_MODERATE if r < 0.1 else self.COLOR_GOOD for r in ratios]
+        ax.barh(names, ratios, color=colors, edgecolor='black', alpha=0.8)
+        ax.axvline(x=0.1, color=self.COLOR_GOOD, linestyle='--', alpha=0.7, label='10% target')
+        ax.set_xlabel('Comment / Code Ratio')
+        ax.set_title('Comment Ratio by Directory (min 5 files)\n(Blue=Good, Salmon=Low, Red=Very Low)')
+        ax.legend()
+
+        # Add percentage labels
+        for i, (bar_val, name) in enumerate(zip(ratios, names)):
+            ax.text(bar_val + 0.005, i, f'{bar_val:.1%}', va='center', fontsize=7)
+
+        plt.tight_layout()
+        plt.savefig(self.output_dir / 'comment_ratio.png', dpi=150, bbox_inches='tight')
+        plt.close()
+
+    def plot_file_size_distribution(self) -> None:
+        """Histogram of file sizes with percentile markers"""
+        files = self.analyzer.file_metrics
+        if not files:
+            return
+
+        fig, ax = plt.subplots(figsize=(12, 7))
+
+        sizes = [f.code_lines for f in files]
+        sizes_arr = np.array(sizes)
+
+        ax.hist(sizes, bins=50, color=self.COLOR_PRIMARY, edgecolor='black', alpha=0.7)
+
+        # Percentile lines
+        percentiles = [50, 75, 90, 95]
+        line_styles = ['--', '-.', ':', '-']
+        for pct, ls in zip(percentiles, line_styles):
+            val = np.percentile(sizes_arr, pct)
+            ax.axvline(x=val, color=self.COLOR_SECONDARY, linestyle=ls, alpha=0.8,
+                       label=f'P{pct}: {val:.0f}')
+
+        # Stats text box
+        stats_text = (f'Files: {len(sizes)}\n'
+                      f'Mean: {np.mean(sizes_arr):.0f}\n'
+                      f'Median: {np.median(sizes_arr):.0f}\n'
+                      f'P90: {np.percentile(sizes_arr, 90):.0f}\n'
+                      f'Max: {np.max(sizes_arr):.0f}')
+        ax.text(0.97, 0.97, stats_text, transform=ax.transAxes, fontsize=9,
+                verticalalignment='top', horizontalalignment='right',
+                bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+
+        ax.set_xlabel('Code Lines per File')
+        ax.set_ylabel('Number of Files')
+        ax.set_title('File Size Distribution (Code Lines)')
+        ax.legend(loc='upper left')
+
+        plt.tight_layout()
+        plt.savefig(self.output_dir / 'file_size_distribution.png', dpi=150, bbox_inches='tight')
+        plt.close()
+
+    def plot_complexity_per_function(self) -> None:
+        """Top files by cyclomatic complexity per function"""
+        files = [f for f in self.analyzer.file_metrics if f.function_count > 0]
+        if not files:
+            return
+
+        # Compute CC per function
+        files_with_ratio = [(f, f.cyclomatic_complexity / f.function_count) for f in files]
+        files_with_ratio.sort(key=lambda x: x[1], reverse=True)
+        top = files_with_ratio[:15]
+
+        fig, ax = plt.subplots(figsize=(12, 8))
+
+        names = [self._short_file_name(f.filepath) for f, _ in top]
+        values = [r for _, r in top]
+        colors = [self.COLOR_GOOD if v < 5 else self.COLOR_MODERATE if v < 10 else self.COLOR_POOR for v in values]
+
+        ax.barh(names, values, color=colors, edgecolor='black', alpha=0.8)
+        ax.axvline(x=5, color=self.COLOR_MODERATE, linestyle='--', alpha=0.7, label='Moderate (5)')
+        ax.axvline(x=10, color=self.COLOR_POOR, linestyle='--', alpha=0.7, label='High (10)')
+        ax.set_xlabel('Cyclomatic Complexity per Function')
+        ax.set_title('Top 15 Files by Average Function Complexity')
+        ax.legend()
+        ax.invert_yaxis()
+
+        plt.tight_layout()
+        plt.savefig(self.output_dir / 'complexity_per_function.png', dpi=150, bbox_inches='tight')
+        plt.close()
+
+    def plot_dashboard_summary(self) -> None:
+        """Health check dashboard with key metrics as big numbers"""
+        summary = self.analyzer.get_summary()
+        if not summary:
+            return
+
+        # Find worst file
+        worst_mi_file = min(self.analyzer.file_metrics, key=lambda f: f.maintainability_index)
+        max_cc_file = max(self.analyzer.file_metrics, key=lambda f: f.cyclomatic_complexity)
+
+        metrics = [
+            ('Total Files', f"{summary['total_files']:,}", None),
+            ('Code Lines (SLOC)', f"{summary['total_code_lines']:,}", None),
+            ('Avg Maintainability', f"{summary['avg_maintainability']:.1f}",
+             summary['avg_maintainability']),
+            ('Worst MI File', f"{self._short_file_name(worst_mi_file.filepath)}\nMI: {worst_mi_file.maintainability_index:.1f}",
+             worst_mi_file.maintainability_index),
+            ('Max Cyclomatic', f"{summary['max_cyclomatic']}\n{self._short_file_name(max_cc_file.filepath)}",
+             100 - min(summary['max_cyclomatic'], 100)),  # invert so low = bad
+            ('Est. Total Bugs', f"{summary['total_estimated_bugs']:.1f}",
+             max(0, 100 - summary['total_estimated_bugs'])),  # invert
+        ]
+
+        fig = plt.figure(figsize=(16, 8))
+        fig.suptitle('Codebase Health Dashboard', fontsize=16, fontweight='bold', y=0.98)
+
+        for i, (label, value, health_val) in enumerate(metrics):
+            ax = fig.add_subplot(2, 3, i + 1)
+            ax.axis('off')
+
+            # Background color based on health
+            if health_val is not None:
+                if health_val >= 65:
+                    bg_color = self.COLOR_GOOD + '22'  # with alpha via hex
+                    text_color = self.COLOR_GOOD
+                elif health_val >= 40:
+                    bg_color = self.COLOR_MODERATE + '22'
+                    text_color = '#b35900'
+                else:
+                    bg_color = self.COLOR_POOR + '22'
+                    text_color = self.COLOR_POOR
+            else:
+                bg_color = self.COLOR_NEUTRAL + '44'
+                text_color = '#333333'
+
+            ax.set_facecolor(bg_color)
+            for spine in ax.spines.values():
+                spine.set_visible(True)
+                spine.set_color('#cccccc')
+
+            # Render value
+            fontsize = 28 if len(value) < 10 else 18 if len(value) < 25 else 13
+            ax.text(0.5, 0.45, value, transform=ax.transAxes,
+                    fontsize=fontsize, ha='center', va='center',
+                    fontweight='bold', color=text_color)
+            ax.text(0.5, 0.88, label, transform=ax.transAxes,
+                    fontsize=11, ha='center', va='center', color='#666666')
+
+        plt.tight_layout(rect=[0, 0, 1, 0.95])
+        plt.savefig(self.output_dir / 'dashboard_summary.png', dpi=150, bbox_inches='tight')
         plt.close()
 
 
@@ -980,6 +1254,86 @@ def export_csv(analyzer: CppAnalyzer, output_dir: Path) -> None:
     print(f"  Directory metrics exported to: {dir_csv}")
 
 
+def export_json(analyzer: CppAnalyzer, output_dir: Path) -> None:
+    """Export comprehensive metrics to a JSON file for machine-readable analysis"""
+    import json
+
+    summary = analyzer.get_summary()
+
+    # Compute overall rating
+    mi_avg = summary.get('avg_maintainability', 0)
+    if mi_avg >= 80:
+        rating = "Excellent"
+    elif mi_avg >= 60:
+        rating = "Good"
+    elif mi_avg >= 40:
+        rating = "Fair"
+    else:
+        rating = "Poor"
+
+    summary['overall_rating'] = rating
+
+    def file_to_dict(fm: FileMetrics) -> dict:
+        return {
+            'filepath': fm.filepath,
+            'total_lines': fm.total_lines,
+            'code_lines': fm.code_lines,
+            'comment_lines': fm.comment_lines,
+            'blank_lines': fm.blank_lines,
+            'cyclomatic_complexity': fm.cyclomatic_complexity,
+            'cognitive_complexity': fm.cognitive_complexity,
+            'maintainability_index': round(fm.maintainability_index, 2),
+            'max_nesting_depth': fm.max_nesting_depth,
+            'function_count': fm.function_count,
+            'class_count': fm.class_count,
+            'halstead_volume': round(fm.halstead.volume, 2),
+            'halstead_difficulty': round(fm.halstead.difficulty, 2),
+            'halstead_effort': round(fm.halstead.effort, 2),
+            'estimated_bugs': round(fm.halstead.bugs_delivered, 3),
+        }
+
+    # Ranked lists (top 20 each)
+    top_complex = sorted(analyzer.file_metrics, key=lambda f: f.cyclomatic_complexity, reverse=True)[:20]
+    lowest_mi = sorted(analyzer.file_metrics, key=lambda f: f.maintainability_index)[:20]
+    deepest_nesting = sorted(analyzer.file_metrics, key=lambda f: f.max_nesting_depth, reverse=True)[:20]
+    largest = sorted(analyzer.file_metrics, key=lambda f: f.code_lines, reverse=True)[:20]
+
+    # Directories
+    dir_list = []
+    for dm in sorted(analyzer.directory_metrics.values(), key=lambda d: d.code_lines, reverse=True):
+        comment_ratio = dm.comment_lines / dm.code_lines if dm.code_lines > 0 else 0
+        dir_list.append({
+            'path': dm.path,
+            'file_count': dm.file_count,
+            'total_lines': dm.total_lines,
+            'code_lines': dm.code_lines,
+            'comment_lines': dm.comment_lines,
+            'blank_lines': dm.blank_lines,
+            'avg_cyclomatic': round(dm.avg_cyclomatic, 2),
+            'avg_cognitive': round(dm.avg_cognitive, 2),
+            'avg_maintainability': round(dm.avg_maintainability, 2),
+            'total_functions': dm.total_functions,
+            'total_classes': dm.total_classes,
+            'comment_ratio': round(comment_ratio, 4),
+        })
+
+    report = {
+        'summary': summary,
+        'directories': dir_list,
+        'top_complex_files': [file_to_dict(f) for f in top_complex],
+        'lowest_maintainability_files': [file_to_dict(f) for f in lowest_mi],
+        'deepest_nesting_files': [file_to_dict(f) for f in deepest_nesting],
+        'largest_files': [file_to_dict(f) for f in largest],
+        'all_files': [file_to_dict(f) for f in analyzer.file_metrics],
+    }
+
+    json_path = output_dir / 'analysis_report.json'
+    with open(json_path, 'w', encoding='utf-8') as f:
+        json.dump(report, f, indent=2, default=str)
+
+    print(f"  JSON report exported to: {json_path}")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='Analyze C/C++ codebase for complexity and maintainability metrics'
@@ -1011,6 +1365,11 @@ def main():
         action='store_true',
         help='Export metrics to CSV files'
     )
+    parser.add_argument(
+        '--no-json',
+        action='store_true',
+        help='Skip generating JSON report (generated by default)'
+    )
     
     args = parser.parse_args()
     
@@ -1027,19 +1386,25 @@ def main():
     # Print text report
     analyzer.print_report()
     
+    # Export JSON report (default: enabled)
+    if not args.no_json:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        print("\nExporting JSON report...")
+        export_json(analyzer, output_dir)
+
     # Export CSV if requested
     if args.csv:
         output_dir.mkdir(parents=True, exist_ok=True)
         print("\nExporting CSV files...")
         export_csv(analyzer, output_dir)
-    
+
     # Generate visualizations
     if not args.no_viz and HAS_MATPLOTLIB:
         output_dir.mkdir(parents=True, exist_ok=True)
         visualizer = MetricsVisualizer(analyzer, str(output_dir))
         visualizer.create_all_visualizations()
     
-    print("\n? Analysis complete!")
+    print("\n--- Analysis complete! ---")
     
     return analyzer
 

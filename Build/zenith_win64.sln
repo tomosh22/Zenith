@@ -20,6 +20,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "TilePuzzle", "..\Games\Tile
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "TilePuzzleLevelGen", "..\TilePuzzleLevelGen\tilepuzzlelevelgen_win64.vcxproj", "{4A285DDE-5E40-38BC-1C1F-45AF0B96C33B}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "TilePuzzleRegistryViewer", "..\TilePuzzleRegistryViewer\tilepuzzleregistryviewer_win64.vcxproj", "{4ED2B768-BCED-7ADE-94AD-F9D4B14B8389}"
+EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Zenith", "zenith_win64.vcxproj", "{11BEC1C0-98B7-E167-86B0-B8D5D8D10E27}"
 EndProject
 Global
@@ -110,6 +112,14 @@ Global
 		{4A285DDE-5E40-38BC-1C1F-45AF0B96C33B}.vs2022_Release_Win64_False|x64.Build.0 = vs2022_Release_Win64_False|x64
 		{4A285DDE-5E40-38BC-1C1F-45AF0B96C33B}.vs2022_Release_Win64_True|x64.ActiveCfg = vs2022_Release_Win64_True|x64
 		{4A285DDE-5E40-38BC-1C1F-45AF0B96C33B}.vs2022_Release_Win64_True|x64.Build.0 = vs2022_Release_Win64_True|x64
+		{4ED2B768-BCED-7ADE-94AD-F9D4B14B8389}.vs2022_Debug_Win64_False|x64.ActiveCfg = vs2022_Debug_Win64_False|x64
+		{4ED2B768-BCED-7ADE-94AD-F9D4B14B8389}.vs2022_Debug_Win64_False|x64.Build.0 = vs2022_Debug_Win64_False|x64
+		{4ED2B768-BCED-7ADE-94AD-F9D4B14B8389}.vs2022_Debug_Win64_True|x64.ActiveCfg = vs2022_Debug_Win64_True|x64
+		{4ED2B768-BCED-7ADE-94AD-F9D4B14B8389}.vs2022_Debug_Win64_True|x64.Build.0 = vs2022_Debug_Win64_True|x64
+		{4ED2B768-BCED-7ADE-94AD-F9D4B14B8389}.vs2022_Release_Win64_False|x64.ActiveCfg = vs2022_Release_Win64_False|x64
+		{4ED2B768-BCED-7ADE-94AD-F9D4B14B8389}.vs2022_Release_Win64_False|x64.Build.0 = vs2022_Release_Win64_False|x64
+		{4ED2B768-BCED-7ADE-94AD-F9D4B14B8389}.vs2022_Release_Win64_True|x64.ActiveCfg = vs2022_Release_Win64_True|x64
+		{4ED2B768-BCED-7ADE-94AD-F9D4B14B8389}.vs2022_Release_Win64_True|x64.Build.0 = vs2022_Release_Win64_True|x64
 		{11BEC1C0-98B7-E167-86B0-B8D5D8D10E27}.vs2022_Debug_Win64_False|x64.ActiveCfg = vs2022_Debug_Win64_False|x64
 		{11BEC1C0-98B7-E167-86B0-B8D5D8D10E27}.vs2022_Debug_Win64_False|x64.Build.0 = vs2022_Debug_Win64_False|x64
 		{11BEC1C0-98B7-E167-86B0-B8D5D8D10E27}.vs2022_Debug_Win64_True|x64.ActiveCfg = vs2022_Debug_Win64_True|x64

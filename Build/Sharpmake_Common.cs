@@ -177,6 +177,7 @@ public class ZenithSolution : Solution
 		{
 			conf.AddProject<FluxCompilerProject>(target);
 			conf.AddProject<TilePuzzleLevelGenProject>(target);
+			conf.AddProject<TilePuzzleRegistryViewerProject>(target);
 		}
 	}
 }
