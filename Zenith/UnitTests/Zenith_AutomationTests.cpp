@@ -19,6 +19,9 @@
 #include "UI/Zenith_UIButton.h"
 #include "UI/Zenith_UIRect.h"
 #include "UI/Zenith_UIImage.h"
+#include "UI/Zenith_UILayoutGroup.h"
+#include "UI/Zenith_UICanvas.h"
+#include "DataStream/Zenith_DataStream.h"
 #include "EntityComponent/Components/Zenith_ParticleEmitterComponent.h"
 #include "Flux/Particles/Flux_ParticleEmitterConfig.h"
 #include "FileAccess/Zenith_FileAccess.h"
@@ -93,6 +96,31 @@ void Zenith_AutomationTests::RunAllTests()
 	TestResetDuringExecution();
 	TestBeginWithZeroSteps();
 	TestDoubleBeginWithoutReset();
+
+	// Layout Group tests
+	TestCreateUILayoutGroupStep();
+	TestAddUIChildStep();
+	TestSetUILayoutDirectionStep();
+	TestSetUILayoutSpacingStep();
+	TestSetUILayoutChildAlignmentStep();
+	TestSetUILayoutPaddingStep();
+	TestSetUILayoutFitToContentStep();
+	TestSetUILayoutChildForceExpandStep();
+	TestSetUILayoutReverseStep();
+	TestLayoutHorizontalPositioning();
+	TestLayoutVerticalPositioning();
+	TestLayoutPaddingAffectsPositioning();
+	TestLayoutMiddleCenterAlignment();
+	TestLayoutUpperLeftAlignment();
+	TestLayoutLowerRightAlignment();
+	TestLayoutReverseArrangement();
+	TestLayoutChildForceExpand();
+	TestLayoutFitToContentResizing();
+	TestLayoutWithTextChild();
+	TestLayoutEmptyGroup();
+	TestLayoutSingleChild();
+	TestLayoutInvisibleChildrenSkipped();
+	TestLayoutSerializationRoundTrip();
 
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "[AutomationTests] All automation tests passed");
 }
@@ -1201,6 +1229,968 @@ void Zenith_AutomationTests::TestSetParticleConfigByNameStep()
 	Zenith_EditorAutomation::Reset();
 
 	EDITOR_TEST_END(TestSetParticleConfigByNameStep);
+}
+
+//=============================================================================
+// Layout Group Tests
+//=============================================================================
+
+void Zenith_AutomationTests::TestCreateUILayoutGroupStep()
+{
+	EDITOR_TEST_BEGIN(TestCreateUILayoutGroupStep);
+
+	Zenith_EditorAutomation::Reset();
+
+	Zenith_EditorAutomation::AddStep_CreateEntity("AutoLayoutEntity");
+	Zenith_EditorAutomation::AddStep_AddUI();
+	Zenith_EditorAutomation::AddStep_CreateUILayoutGroup("TestLayout");
+	Zenith_EditorAutomation::Begin();
+
+	Zenith_EditorAutomation::ExecuteNextStep(); // Create entity
+	Zenith_EditorAutomation::ExecuteNextStep(); // Add UI
+	Zenith_EditorAutomation::ExecuteNextStep(); // Create layout group
+
+	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+
+	Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+	Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>("TestLayout");
+	Zenith_Assert(pxLayout != nullptr, "Should find layout group 'TestLayout'");
+	Zenith_Assert(pxLayout->GetType() == Zenith_UI::UIElementType::LayoutGroup, "Element type should be LayoutGroup");
+	Zenith_Assert(pxLayout->GetDirection() == Zenith_UI::LayoutDirection::Horizontal, "Default direction should be Horizontal");
+	Zenith_Assert(pxLayout->GetChildAlignment() == Zenith_UI::ChildAlignment::MiddleCenter, "Default child alignment should be MiddleCenter");
+	Zenith_Assert(std::abs(pxLayout->GetSpacing()) < 0.001f, "Default spacing should be 0");
+	Zenith_Maths::Vector4 xPad = pxLayout->GetPadding();
+	Zenith_Assert(std::abs(xPad.x) < 0.001f && std::abs(xPad.y) < 0.001f && std::abs(xPad.z) < 0.001f && std::abs(xPad.w) < 0.001f, "Default padding should be all zeros");
+	Zenith_Assert(pxLayout->GetFitToContent() == true, "Default fit-to-content should be true");
+	Zenith_Assert(pxLayout->GetChildForceExpandWidth() == false, "Default childForceExpandWidth should be false");
+	Zenith_Assert(pxLayout->GetChildForceExpandHeight() == false, "Default childForceExpandHeight should be false");
+	Zenith_Assert(pxLayout->GetReverseArrangement() == false, "Default reverseArrangement should be false");
+
+	Zenith_EditorAutomation::ExecuteNextStep();
+	Zenith_EditorAutomation::Reset();
+
+	EDITOR_TEST_END(TestCreateUILayoutGroupStep);
+}
+
+void Zenith_AutomationTests::TestAddUIChildStep()
+{
+	EDITOR_TEST_BEGIN(TestAddUIChildStep);
+
+	Zenith_EditorAutomation::Reset();
+
+	Zenith_EditorAutomation::AddStep_CreateEntity("AutoChildEntity");
+	Zenith_EditorAutomation::AddStep_AddUI();
+	Zenith_EditorAutomation::AddStep_CreateUILayoutGroup("Parent");
+	Zenith_EditorAutomation::AddStep_CreateUIText("Child1", "Hello");
+	Zenith_EditorAutomation::AddStep_CreateUIImage("Child2");
+	Zenith_EditorAutomation::AddStep_AddUIChild("Parent", "Child1");
+	Zenith_EditorAutomation::AddStep_AddUIChild("Parent", "Child2");
+	Zenith_EditorAutomation::Begin();
+
+	for (uint32_t i = 0; i < 7; i++)
+		Zenith_EditorAutomation::ExecuteNextStep();
+
+	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+
+	Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+	Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>("Parent");
+	Zenith_Assert(pxLayout != nullptr, "Should find layout group 'Parent'");
+	Zenith_Assert(pxLayout->GetChildCount() == 2, "Layout group should have 2 children");
+	Zenith_Assert(pxLayout->GetChild(0)->GetName() == "Child1", "First child should be 'Child1'");
+	Zenith_Assert(pxLayout->GetChild(1)->GetName() == "Child2", "Second child should be 'Child2'");
+	Zenith_Assert(pxLayout->GetChild(0)->GetParent() == pxLayout, "Child1 parent should be layout group");
+	Zenith_Assert(pxLayout->GetChild(1)->GetParent() == pxLayout, "Child2 parent should be layout group");
+
+	Zenith_EditorAutomation::ExecuteNextStep();
+	Zenith_EditorAutomation::Reset();
+
+	EDITOR_TEST_END(TestAddUIChildStep);
+}
+
+void Zenith_AutomationTests::TestSetUILayoutDirectionStep()
+{
+	EDITOR_TEST_BEGIN(TestSetUILayoutDirectionStep);
+
+	Zenith_EditorAutomation::Reset();
+
+	Zenith_EditorAutomation::AddStep_CreateEntity("AutoDirEntity");
+	Zenith_EditorAutomation::AddStep_AddUI();
+	Zenith_EditorAutomation::AddStep_CreateUILayoutGroup("DirLayout");
+	Zenith_EditorAutomation::AddStep_SetUILayoutDirection("DirLayout", static_cast<int>(Zenith_UI::LayoutDirection::Vertical));
+	Zenith_EditorAutomation::Begin();
+
+	for (uint32_t i = 0; i < 4; i++)
+		Zenith_EditorAutomation::ExecuteNextStep();
+
+	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+
+	Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+	Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>("DirLayout");
+	Zenith_Assert(pxLayout != nullptr, "Should find layout group");
+	Zenith_Assert(pxLayout->GetDirection() == Zenith_UI::LayoutDirection::Vertical, "Direction should be Vertical");
+
+	Zenith_EditorAutomation::ExecuteNextStep();
+	Zenith_EditorAutomation::Reset();
+
+	EDITOR_TEST_END(TestSetUILayoutDirectionStep);
+}
+
+void Zenith_AutomationTests::TestSetUILayoutSpacingStep()
+{
+	EDITOR_TEST_BEGIN(TestSetUILayoutSpacingStep);
+
+	Zenith_EditorAutomation::Reset();
+
+	Zenith_EditorAutomation::AddStep_CreateEntity("AutoSpaceEntity");
+	Zenith_EditorAutomation::AddStep_AddUI();
+	Zenith_EditorAutomation::AddStep_CreateUILayoutGroup("SpaceLayout");
+	Zenith_EditorAutomation::AddStep_SetUILayoutSpacing("SpaceLayout", 15.f);
+	Zenith_EditorAutomation::Begin();
+
+	for (uint32_t i = 0; i < 4; i++)
+		Zenith_EditorAutomation::ExecuteNextStep();
+
+	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+
+	Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+	Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>("SpaceLayout");
+	Zenith_Assert(pxLayout != nullptr, "Should find layout group");
+	Zenith_Assert(std::abs(pxLayout->GetSpacing() - 15.f) < 0.001f, "Spacing should be 15");
+
+	Zenith_EditorAutomation::ExecuteNextStep();
+	Zenith_EditorAutomation::Reset();
+
+	EDITOR_TEST_END(TestSetUILayoutSpacingStep);
+}
+
+void Zenith_AutomationTests::TestSetUILayoutChildAlignmentStep()
+{
+	EDITOR_TEST_BEGIN(TestSetUILayoutChildAlignmentStep);
+
+	Zenith_EditorAutomation::Reset();
+
+	Zenith_EditorAutomation::AddStep_CreateEntity("AutoAlignEntity");
+	Zenith_EditorAutomation::AddStep_AddUI();
+	Zenith_EditorAutomation::AddStep_CreateUILayoutGroup("AlignLayout");
+	Zenith_EditorAutomation::AddStep_SetUILayoutChildAlignment("AlignLayout", static_cast<int>(Zenith_UI::ChildAlignment::UpperLeft));
+	Zenith_EditorAutomation::Begin();
+
+	for (uint32_t i = 0; i < 4; i++)
+		Zenith_EditorAutomation::ExecuteNextStep();
+
+	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+
+	Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+	Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>("AlignLayout");
+	Zenith_Assert(pxLayout != nullptr, "Should find layout group");
+	Zenith_Assert(pxLayout->GetChildAlignment() == Zenith_UI::ChildAlignment::UpperLeft, "Child alignment should be UpperLeft");
+
+	Zenith_EditorAutomation::ExecuteNextStep();
+	Zenith_EditorAutomation::Reset();
+
+	EDITOR_TEST_END(TestSetUILayoutChildAlignmentStep);
+}
+
+void Zenith_AutomationTests::TestSetUILayoutPaddingStep()
+{
+	EDITOR_TEST_BEGIN(TestSetUILayoutPaddingStep);
+
+	Zenith_EditorAutomation::Reset();
+
+	Zenith_EditorAutomation::AddStep_CreateEntity("AutoPadEntity");
+	Zenith_EditorAutomation::AddStep_AddUI();
+	Zenith_EditorAutomation::AddStep_CreateUILayoutGroup("PadLayout");
+	Zenith_EditorAutomation::AddStep_SetUILayoutPadding("PadLayout", 10.f, 20.f, 30.f, 40.f);
+	Zenith_EditorAutomation::Begin();
+
+	for (uint32_t i = 0; i < 4; i++)
+		Zenith_EditorAutomation::ExecuteNextStep();
+
+	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+
+	Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+	Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>("PadLayout");
+	Zenith_Assert(pxLayout != nullptr, "Should find layout group");
+	Zenith_Maths::Vector4 xPadding = pxLayout->GetPadding();
+	Zenith_Assert(std::abs(xPadding.x - 10.f) < 0.001f, "Padding left should be 10");
+	Zenith_Assert(std::abs(xPadding.y - 20.f) < 0.001f, "Padding top should be 20");
+	Zenith_Assert(std::abs(xPadding.z - 30.f) < 0.001f, "Padding right should be 30");
+	Zenith_Assert(std::abs(xPadding.w - 40.f) < 0.001f, "Padding bottom should be 40");
+
+	Zenith_EditorAutomation::ExecuteNextStep();
+	Zenith_EditorAutomation::Reset();
+
+	EDITOR_TEST_END(TestSetUILayoutPaddingStep);
+}
+
+void Zenith_AutomationTests::TestSetUILayoutFitToContentStep()
+{
+	EDITOR_TEST_BEGIN(TestSetUILayoutFitToContentStep);
+
+	Zenith_EditorAutomation::Reset();
+
+	Zenith_EditorAutomation::AddStep_CreateEntity("AutoFitEntity");
+	Zenith_EditorAutomation::AddStep_AddUI();
+	Zenith_EditorAutomation::AddStep_CreateUILayoutGroup("FitLayout");
+	Zenith_EditorAutomation::AddStep_SetUILayoutFitToContent("FitLayout", false);
+	Zenith_EditorAutomation::Begin();
+
+	for (uint32_t i = 0; i < 4; i++)
+		Zenith_EditorAutomation::ExecuteNextStep();
+
+	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+
+	Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+	Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>("FitLayout");
+	Zenith_Assert(pxLayout != nullptr, "Should find layout group");
+	Zenith_Assert(pxLayout->GetFitToContent() == false, "FitToContent should be false");
+
+	Zenith_EditorAutomation::ExecuteNextStep();
+	Zenith_EditorAutomation::Reset();
+
+	EDITOR_TEST_END(TestSetUILayoutFitToContentStep);
+}
+
+void Zenith_AutomationTests::TestSetUILayoutChildForceExpandStep()
+{
+	EDITOR_TEST_BEGIN(TestSetUILayoutChildForceExpandStep);
+
+	Zenith_EditorAutomation::Reset();
+
+	Zenith_EditorAutomation::AddStep_CreateEntity("AutoExpandEntity");
+	Zenith_EditorAutomation::AddStep_AddUI();
+	Zenith_EditorAutomation::AddStep_CreateUILayoutGroup("ExpandLayout");
+	Zenith_EditorAutomation::AddStep_SetUILayoutChildForceExpand("ExpandLayout", true, false);
+	Zenith_EditorAutomation::Begin();
+
+	for (uint32_t i = 0; i < 4; i++)
+		Zenith_EditorAutomation::ExecuteNextStep();
+
+	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+
+	Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+	Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>("ExpandLayout");
+	Zenith_Assert(pxLayout != nullptr, "Should find layout group");
+	Zenith_Assert(pxLayout->GetChildForceExpandWidth() == true, "ChildForceExpandWidth should be true");
+	Zenith_Assert(pxLayout->GetChildForceExpandHeight() == false, "ChildForceExpandHeight should be false");
+
+	Zenith_EditorAutomation::ExecuteNextStep();
+	Zenith_EditorAutomation::Reset();
+
+	EDITOR_TEST_END(TestSetUILayoutChildForceExpandStep);
+}
+
+void Zenith_AutomationTests::TestSetUILayoutReverseStep()
+{
+	EDITOR_TEST_BEGIN(TestSetUILayoutReverseStep);
+
+	Zenith_EditorAutomation::Reset();
+
+	Zenith_EditorAutomation::AddStep_CreateEntity("AutoRevEntity");
+	Zenith_EditorAutomation::AddStep_AddUI();
+	Zenith_EditorAutomation::AddStep_CreateUILayoutGroup("RevLayout");
+	Zenith_EditorAutomation::AddStep_SetUILayoutReverse("RevLayout", true);
+	Zenith_EditorAutomation::Begin();
+
+	for (uint32_t i = 0; i < 4; i++)
+		Zenith_EditorAutomation::ExecuteNextStep();
+
+	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+
+	Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+	Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>("RevLayout");
+	Zenith_Assert(pxLayout != nullptr, "Should find layout group");
+	Zenith_Assert(pxLayout->GetReverseArrangement() == true, "ReverseArrangement should be true");
+
+	Zenith_EditorAutomation::ExecuteNextStep();
+	Zenith_EditorAutomation::Reset();
+
+	EDITOR_TEST_END(TestSetUILayoutReverseStep);
+}
+
+void Zenith_AutomationTests::TestLayoutHorizontalPositioning()
+{
+	EDITOR_TEST_BEGIN(TestLayoutHorizontalPositioning);
+
+	Zenith_EditorAutomation::Reset();
+
+	Zenith_EditorAutomation::AddStep_CreateEntity("AutoHPosEntity");
+	Zenith_EditorAutomation::AddStep_AddUI();
+	Zenith_EditorAutomation::AddStep_CreateUILayoutGroup("HLayout");
+	Zenith_EditorAutomation::AddStep_SetUILayoutDirection("HLayout", static_cast<int>(Zenith_UI::LayoutDirection::Horizontal));
+	Zenith_EditorAutomation::AddStep_SetUILayoutSpacing("HLayout", 10.f);
+	Zenith_EditorAutomation::AddStep_SetUILayoutFitToContent("HLayout", true);
+	Zenith_EditorAutomation::AddStep_SetUILayoutChildAlignment("HLayout", static_cast<int>(Zenith_UI::ChildAlignment::UpperLeft));
+	Zenith_EditorAutomation::AddStep_CreateUIRect("RectA");
+	Zenith_EditorAutomation::AddStep_SetUISize("RectA", 50.f, 30.f);
+	Zenith_EditorAutomation::AddStep_CreateUIRect("RectB");
+	Zenith_EditorAutomation::AddStep_SetUISize("RectB", 80.f, 40.f);
+	Zenith_EditorAutomation::AddStep_CreateUIRect("RectC");
+	Zenith_EditorAutomation::AddStep_SetUISize("RectC", 60.f, 20.f);
+	Zenith_EditorAutomation::AddStep_AddUIChild("HLayout", "RectA");
+	Zenith_EditorAutomation::AddStep_AddUIChild("HLayout", "RectB");
+	Zenith_EditorAutomation::AddStep_AddUIChild("HLayout", "RectC");
+	Zenith_EditorAutomation::Begin();
+
+	for (uint32_t i = 0; i < 16; i++)
+		Zenith_EditorAutomation::ExecuteNextStep();
+
+	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+
+	Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+	Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>("HLayout");
+	Zenith_Assert(pxLayout != nullptr, "Should find layout group");
+
+	// Trigger layout recalculation
+	pxLayout->Update(0.f);
+
+	Zenith_UI::Zenith_UIElement* pxA = pxLayout->GetChild(0);
+	Zenith_UI::Zenith_UIElement* pxB = pxLayout->GetChild(1);
+	Zenith_UI::Zenith_UIElement* pxC = pxLayout->GetChild(2);
+
+	Zenith_Assert(std::abs(pxA->GetPosition().x - 0.f) < 0.001f, "Child A position.x should be 0");
+	Zenith_Assert(std::abs(pxB->GetPosition().x - 60.f) < 0.001f, "Child B position.x should be 60 (50 + 10 spacing)");
+	Zenith_Assert(std::abs(pxC->GetPosition().x - 150.f) < 0.001f, "Child C position.x should be 150 (60 + 80 + 10)");
+
+	// Fit-to-content: total width = 50 + 10 + 80 + 10 + 60 = 210
+	Zenith_Assert(std::abs(pxLayout->GetSize().x - 210.f) < 0.001f, "Layout width should be 210");
+	// Max child height = 40
+	Zenith_Assert(std::abs(pxLayout->GetSize().y - 40.f) < 0.001f, "Layout height should be 40");
+
+	Zenith_EditorAutomation::ExecuteNextStep();
+	Zenith_EditorAutomation::Reset();
+
+	EDITOR_TEST_END(TestLayoutHorizontalPositioning);
+}
+
+void Zenith_AutomationTests::TestLayoutVerticalPositioning()
+{
+	EDITOR_TEST_BEGIN(TestLayoutVerticalPositioning);
+
+	Zenith_EditorAutomation::Reset();
+
+	Zenith_EditorAutomation::AddStep_CreateEntity("AutoVPosEntity");
+	Zenith_EditorAutomation::AddStep_AddUI();
+	Zenith_EditorAutomation::AddStep_CreateUILayoutGroup("VLayout");
+	Zenith_EditorAutomation::AddStep_SetUILayoutDirection("VLayout", static_cast<int>(Zenith_UI::LayoutDirection::Vertical));
+	Zenith_EditorAutomation::AddStep_SetUILayoutSpacing("VLayout", 5.f);
+	Zenith_EditorAutomation::AddStep_SetUILayoutFitToContent("VLayout", true);
+	Zenith_EditorAutomation::AddStep_SetUILayoutChildAlignment("VLayout", static_cast<int>(Zenith_UI::ChildAlignment::UpperLeft));
+	Zenith_EditorAutomation::AddStep_CreateUIRect("VA");
+	Zenith_EditorAutomation::AddStep_SetUISize("VA", 100.f, 20.f);
+	Zenith_EditorAutomation::AddStep_CreateUIRect("VB");
+	Zenith_EditorAutomation::AddStep_SetUISize("VB", 80.f, 30.f);
+	Zenith_EditorAutomation::AddStep_AddUIChild("VLayout", "VA");
+	Zenith_EditorAutomation::AddStep_AddUIChild("VLayout", "VB");
+	Zenith_EditorAutomation::Begin();
+
+	for (uint32_t i = 0; i < 13; i++)
+		Zenith_EditorAutomation::ExecuteNextStep();
+
+	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+
+	Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+	Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>("VLayout");
+	Zenith_Assert(pxLayout != nullptr, "Should find layout group");
+
+	pxLayout->Update(0.f);
+
+	Zenith_UI::Zenith_UIElement* pxA = pxLayout->GetChild(0);
+	Zenith_UI::Zenith_UIElement* pxB = pxLayout->GetChild(1);
+
+	Zenith_Assert(std::abs(pxA->GetPosition().y - 0.f) < 0.001f, "Child A position.y should be 0");
+	Zenith_Assert(std::abs(pxB->GetPosition().y - 25.f) < 0.001f, "Child B position.y should be 25 (20 + 5 spacing)");
+
+	// Fit-to-content: total height = 20 + 5 + 30 = 55
+	Zenith_Assert(std::abs(pxLayout->GetSize().y - 55.f) < 0.001f, "Layout height should be 55");
+	// Max child width = 100
+	Zenith_Assert(std::abs(pxLayout->GetSize().x - 100.f) < 0.001f, "Layout width should be 100");
+
+	Zenith_EditorAutomation::ExecuteNextStep();
+	Zenith_EditorAutomation::Reset();
+
+	EDITOR_TEST_END(TestLayoutVerticalPositioning);
+}
+
+void Zenith_AutomationTests::TestLayoutPaddingAffectsPositioning()
+{
+	EDITOR_TEST_BEGIN(TestLayoutPaddingAffectsPositioning);
+
+	Zenith_EditorAutomation::Reset();
+
+	Zenith_EditorAutomation::AddStep_CreateEntity("AutoPadPosEntity");
+	Zenith_EditorAutomation::AddStep_AddUI();
+	Zenith_EditorAutomation::AddStep_CreateUILayoutGroup("PadPosLayout");
+	Zenith_EditorAutomation::AddStep_SetUILayoutDirection("PadPosLayout", static_cast<int>(Zenith_UI::LayoutDirection::Horizontal));
+	Zenith_EditorAutomation::AddStep_SetUILayoutSpacing("PadPosLayout", 0.f);
+	Zenith_EditorAutomation::AddStep_SetUILayoutPadding("PadPosLayout", 10.f, 20.f, 0.f, 0.f);
+	Zenith_EditorAutomation::AddStep_SetUILayoutFitToContent("PadPosLayout", true);
+	Zenith_EditorAutomation::AddStep_SetUILayoutChildAlignment("PadPosLayout", static_cast<int>(Zenith_UI::ChildAlignment::UpperLeft));
+	Zenith_EditorAutomation::AddStep_CreateUIRect("PadChild");
+	Zenith_EditorAutomation::AddStep_SetUISize("PadChild", 50.f, 30.f);
+	Zenith_EditorAutomation::AddStep_AddUIChild("PadPosLayout", "PadChild");
+	Zenith_EditorAutomation::Begin();
+
+	for (uint32_t i = 0; i < 11; i++)
+		Zenith_EditorAutomation::ExecuteNextStep();
+
+	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+
+	Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+	Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>("PadPosLayout");
+	Zenith_Assert(pxLayout != nullptr, "Should find layout group");
+
+	pxLayout->Update(0.f);
+
+	Zenith_UI::Zenith_UIElement* pxChild = pxLayout->GetChild(0);
+	Zenith_Assert(std::abs(pxChild->GetPosition().x - 10.f) < 0.001f, "Child position.x should be 10 (left padding)");
+	Zenith_Assert(std::abs(pxChild->GetPosition().y - 20.f) < 0.001f, "Child position.y should be 20 (top padding)");
+
+	// Layout size should include padding: 10 + 50 + 0 = 60, 20 + 30 + 0 = 50
+	Zenith_Assert(std::abs(pxLayout->GetSize().x - 60.f) < 0.001f, "Layout width should include padding");
+	Zenith_Assert(std::abs(pxLayout->GetSize().y - 50.f) < 0.001f, "Layout height should include padding");
+
+	Zenith_EditorAutomation::ExecuteNextStep();
+	Zenith_EditorAutomation::Reset();
+
+	EDITOR_TEST_END(TestLayoutPaddingAffectsPositioning);
+}
+
+void Zenith_AutomationTests::TestLayoutMiddleCenterAlignment()
+{
+	EDITOR_TEST_BEGIN(TestLayoutMiddleCenterAlignment);
+
+	Zenith_EditorAutomation::Reset();
+
+	Zenith_EditorAutomation::AddStep_CreateEntity("AutoMCEntity");
+	Zenith_EditorAutomation::AddStep_AddUI();
+	Zenith_EditorAutomation::AddStep_CreateUILayoutGroup("MCLayout");
+	Zenith_EditorAutomation::AddStep_SetUILayoutDirection("MCLayout", static_cast<int>(Zenith_UI::LayoutDirection::Horizontal));
+	Zenith_EditorAutomation::AddStep_SetUILayoutChildAlignment("MCLayout", static_cast<int>(Zenith_UI::ChildAlignment::MiddleCenter));
+	Zenith_EditorAutomation::AddStep_SetUILayoutFitToContent("MCLayout", false);
+	Zenith_EditorAutomation::AddStep_SetUISize("MCLayout", 400.f, 100.f);
+	Zenith_EditorAutomation::AddStep_CreateUIRect("MCChild");
+	Zenith_EditorAutomation::AddStep_SetUISize("MCChild", 50.f, 30.f);
+	Zenith_EditorAutomation::AddStep_AddUIChild("MCLayout", "MCChild");
+	Zenith_EditorAutomation::Begin();
+
+	for (uint32_t i = 0; i < 10; i++)
+		Zenith_EditorAutomation::ExecuteNextStep();
+
+	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+
+	Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+	Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>("MCLayout");
+	Zenith_Assert(pxLayout != nullptr, "Should find layout group");
+
+	pxLayout->Update(0.f);
+
+	Zenith_UI::Zenith_UIElement* pxChild = pxLayout->GetChild(0);
+	// Cross-axis (vertical) should be centered: (100 - 30) / 2 = 35
+	Zenith_Assert(std::abs(pxChild->GetPosition().y - 35.f) < 0.001f, "Child position.y should be 35 (centered on cross axis)");
+
+	Zenith_EditorAutomation::ExecuteNextStep();
+	Zenith_EditorAutomation::Reset();
+
+	EDITOR_TEST_END(TestLayoutMiddleCenterAlignment);
+}
+
+void Zenith_AutomationTests::TestLayoutUpperLeftAlignment()
+{
+	EDITOR_TEST_BEGIN(TestLayoutUpperLeftAlignment);
+
+	Zenith_EditorAutomation::Reset();
+
+	Zenith_EditorAutomation::AddStep_CreateEntity("AutoULEntity");
+	Zenith_EditorAutomation::AddStep_AddUI();
+	Zenith_EditorAutomation::AddStep_CreateUILayoutGroup("ULLayout");
+	Zenith_EditorAutomation::AddStep_SetUILayoutDirection("ULLayout", static_cast<int>(Zenith_UI::LayoutDirection::Horizontal));
+	Zenith_EditorAutomation::AddStep_SetUILayoutChildAlignment("ULLayout", static_cast<int>(Zenith_UI::ChildAlignment::UpperLeft));
+	Zenith_EditorAutomation::AddStep_SetUILayoutFitToContent("ULLayout", false);
+	Zenith_EditorAutomation::AddStep_SetUISize("ULLayout", 400.f, 100.f);
+	Zenith_EditorAutomation::AddStep_CreateUIRect("ULChild");
+	Zenith_EditorAutomation::AddStep_SetUISize("ULChild", 50.f, 30.f);
+	Zenith_EditorAutomation::AddStep_AddUIChild("ULLayout", "ULChild");
+	Zenith_EditorAutomation::Begin();
+
+	for (uint32_t i = 0; i < 10; i++)
+		Zenith_EditorAutomation::ExecuteNextStep();
+
+	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+
+	Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+	Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>("ULLayout");
+	Zenith_Assert(pxLayout != nullptr, "Should find layout group");
+
+	pxLayout->Update(0.f);
+
+	Zenith_UI::Zenith_UIElement* pxChild = pxLayout->GetChild(0);
+	// Upper = top-aligned, cross-axis Y should be 0
+	Zenith_Assert(std::abs(pxChild->GetPosition().y - 0.f) < 0.001f, "Child position.y should be 0 (top-aligned)");
+
+	Zenith_EditorAutomation::ExecuteNextStep();
+	Zenith_EditorAutomation::Reset();
+
+	EDITOR_TEST_END(TestLayoutUpperLeftAlignment);
+}
+
+void Zenith_AutomationTests::TestLayoutLowerRightAlignment()
+{
+	EDITOR_TEST_BEGIN(TestLayoutLowerRightAlignment);
+
+	Zenith_EditorAutomation::Reset();
+
+	Zenith_EditorAutomation::AddStep_CreateEntity("AutoLREntity");
+	Zenith_EditorAutomation::AddStep_AddUI();
+	Zenith_EditorAutomation::AddStep_CreateUILayoutGroup("LRLayout");
+	Zenith_EditorAutomation::AddStep_SetUILayoutDirection("LRLayout", static_cast<int>(Zenith_UI::LayoutDirection::Horizontal));
+	Zenith_EditorAutomation::AddStep_SetUILayoutChildAlignment("LRLayout", static_cast<int>(Zenith_UI::ChildAlignment::LowerRight));
+	Zenith_EditorAutomation::AddStep_SetUILayoutFitToContent("LRLayout", false);
+	Zenith_EditorAutomation::AddStep_SetUISize("LRLayout", 400.f, 100.f);
+	Zenith_EditorAutomation::AddStep_CreateUIRect("LRChild");
+	Zenith_EditorAutomation::AddStep_SetUISize("LRChild", 50.f, 30.f);
+	Zenith_EditorAutomation::AddStep_AddUIChild("LRLayout", "LRChild");
+	Zenith_EditorAutomation::Begin();
+
+	for (uint32_t i = 0; i < 10; i++)
+		Zenith_EditorAutomation::ExecuteNextStep();
+
+	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+
+	Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+	Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>("LRLayout");
+	Zenith_Assert(pxLayout != nullptr, "Should find layout group");
+
+	pxLayout->Update(0.f);
+
+	Zenith_UI::Zenith_UIElement* pxChild = pxLayout->GetChild(0);
+	// Lower = bottom-aligned, cross-axis Y should be 100 - 30 = 70
+	Zenith_Assert(std::abs(pxChild->GetPosition().y - 70.f) < 0.001f, "Child position.y should be 70 (bottom-aligned)");
+
+	Zenith_EditorAutomation::ExecuteNextStep();
+	Zenith_EditorAutomation::Reset();
+
+	EDITOR_TEST_END(TestLayoutLowerRightAlignment);
+}
+
+void Zenith_AutomationTests::TestLayoutReverseArrangement()
+{
+	EDITOR_TEST_BEGIN(TestLayoutReverseArrangement);
+
+	Zenith_EditorAutomation::Reset();
+
+	Zenith_EditorAutomation::AddStep_CreateEntity("AutoRevArrEntity");
+	Zenith_EditorAutomation::AddStep_AddUI();
+	Zenith_EditorAutomation::AddStep_CreateUILayoutGroup("RevArrLayout");
+	Zenith_EditorAutomation::AddStep_SetUILayoutDirection("RevArrLayout", static_cast<int>(Zenith_UI::LayoutDirection::Horizontal));
+	Zenith_EditorAutomation::AddStep_SetUILayoutSpacing("RevArrLayout", 10.f);
+	Zenith_EditorAutomation::AddStep_SetUILayoutReverse("RevArrLayout", true);
+	Zenith_EditorAutomation::AddStep_SetUILayoutFitToContent("RevArrLayout", true);
+	Zenith_EditorAutomation::AddStep_SetUILayoutChildAlignment("RevArrLayout", static_cast<int>(Zenith_UI::ChildAlignment::UpperLeft));
+	Zenith_EditorAutomation::AddStep_CreateUIRect("RevA");
+	Zenith_EditorAutomation::AddStep_SetUISize("RevA", 50.f, 30.f);
+	Zenith_EditorAutomation::AddStep_CreateUIRect("RevB");
+	Zenith_EditorAutomation::AddStep_SetUISize("RevB", 80.f, 30.f);
+	Zenith_EditorAutomation::AddStep_AddUIChild("RevArrLayout", "RevA");
+	Zenith_EditorAutomation::AddStep_AddUIChild("RevArrLayout", "RevB");
+	Zenith_EditorAutomation::Begin();
+
+	for (uint32_t i = 0; i < 14; i++)
+		Zenith_EditorAutomation::ExecuteNextStep();
+
+	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+
+	Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+	Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>("RevArrLayout");
+	Zenith_Assert(pxLayout != nullptr, "Should find layout group");
+
+	pxLayout->Update(0.f);
+
+	Zenith_UI::Zenith_UIElement* pxA = pxLayout->GetChild(0);
+	Zenith_UI::Zenith_UIElement* pxB = pxLayout->GetChild(1);
+
+	// Reversed: B is placed first (position.x == 0), then A (position.x == 90)
+	Zenith_Assert(std::abs(pxB->GetPosition().x - 0.f) < 0.001f, "Child B should be placed first at x=0 (reversed)");
+	Zenith_Assert(std::abs(pxA->GetPosition().x - 90.f) < 0.001f, "Child A should be placed second at x=90 (reversed)");
+
+	Zenith_EditorAutomation::ExecuteNextStep();
+	Zenith_EditorAutomation::Reset();
+
+	EDITOR_TEST_END(TestLayoutReverseArrangement);
+}
+
+void Zenith_AutomationTests::TestLayoutChildForceExpand()
+{
+	EDITOR_TEST_BEGIN(TestLayoutChildForceExpand);
+
+	Zenith_EditorAutomation::Reset();
+
+	Zenith_EditorAutomation::AddStep_CreateEntity("AutoForceExpEntity");
+	Zenith_EditorAutomation::AddStep_AddUI();
+	Zenith_EditorAutomation::AddStep_CreateUILayoutGroup("ForceExpLayout");
+	Zenith_EditorAutomation::AddStep_SetUILayoutDirection("ForceExpLayout", static_cast<int>(Zenith_UI::LayoutDirection::Horizontal));
+	Zenith_EditorAutomation::AddStep_SetUILayoutChildForceExpand("ForceExpLayout", true, false);
+	Zenith_EditorAutomation::AddStep_SetUILayoutFitToContent("ForceExpLayout", false);
+	Zenith_EditorAutomation::AddStep_SetUISize("ForceExpLayout", 300.f, 50.f);
+	Zenith_EditorAutomation::AddStep_SetUILayoutSpacing("ForceExpLayout", 0.f);
+	Zenith_EditorAutomation::AddStep_SetUILayoutChildAlignment("ForceExpLayout", static_cast<int>(Zenith_UI::ChildAlignment::UpperLeft));
+	Zenith_EditorAutomation::AddStep_CreateUIRect("ExpA");
+	Zenith_EditorAutomation::AddStep_SetUISize("ExpA", 50.f, 30.f);
+	Zenith_EditorAutomation::AddStep_CreateUIRect("ExpB");
+	Zenith_EditorAutomation::AddStep_SetUISize("ExpB", 50.f, 30.f);
+	Zenith_EditorAutomation::AddStep_AddUIChild("ForceExpLayout", "ExpA");
+	Zenith_EditorAutomation::AddStep_AddUIChild("ForceExpLayout", "ExpB");
+	Zenith_EditorAutomation::Begin();
+
+	for (uint32_t i = 0; i < 15; i++)
+		Zenith_EditorAutomation::ExecuteNextStep();
+
+	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+
+	Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+	Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>("ForceExpLayout");
+	Zenith_Assert(pxLayout != nullptr, "Should find layout group");
+
+	pxLayout->Update(0.f);
+
+	Zenith_UI::Zenith_UIElement* pxA = pxLayout->GetChild(0);
+	Zenith_UI::Zenith_UIElement* pxB = pxLayout->GetChild(1);
+
+	// Each child should get 300/2 = 150 width
+	Zenith_Assert(std::abs(pxA->GetSize().x - 150.f) < 0.001f, "Child A width should be 150 (force expanded)");
+	Zenith_Assert(std::abs(pxB->GetSize().x - 150.f) < 0.001f, "Child B width should be 150 (force expanded)");
+	Zenith_Assert(std::abs(pxA->GetPosition().x - 0.f) < 0.001f, "Child A position.x should be 0");
+	Zenith_Assert(std::abs(pxB->GetPosition().x - 150.f) < 0.001f, "Child B position.x should be 150");
+
+	Zenith_EditorAutomation::ExecuteNextStep();
+	Zenith_EditorAutomation::Reset();
+
+	EDITOR_TEST_END(TestLayoutChildForceExpand);
+}
+
+void Zenith_AutomationTests::TestLayoutFitToContentResizing()
+{
+	EDITOR_TEST_BEGIN(TestLayoutFitToContentResizing);
+
+	Zenith_EditorAutomation::Reset();
+
+	Zenith_EditorAutomation::AddStep_CreateEntity("AutoFitResEntity");
+	Zenith_EditorAutomation::AddStep_AddUI();
+	Zenith_EditorAutomation::AddStep_CreateUILayoutGroup("FitResLayout");
+	Zenith_EditorAutomation::AddStep_SetUILayoutDirection("FitResLayout", static_cast<int>(Zenith_UI::LayoutDirection::Horizontal));
+	Zenith_EditorAutomation::AddStep_SetUILayoutSpacing("FitResLayout", 10.f);
+	Zenith_EditorAutomation::AddStep_SetUILayoutFitToContent("FitResLayout", true);
+	Zenith_EditorAutomation::AddStep_SetUILayoutChildAlignment("FitResLayout", static_cast<int>(Zenith_UI::ChildAlignment::UpperLeft));
+	Zenith_EditorAutomation::AddStep_CreateUIRect("FitA");
+	Zenith_EditorAutomation::AddStep_SetUISize("FitA", 100.f, 40.f);
+	Zenith_EditorAutomation::AddStep_CreateUIRect("FitB");
+	Zenith_EditorAutomation::AddStep_SetUISize("FitB", 80.f, 30.f);
+	Zenith_EditorAutomation::AddStep_AddUIChild("FitResLayout", "FitA");
+	Zenith_EditorAutomation::AddStep_AddUIChild("FitResLayout", "FitB");
+	Zenith_EditorAutomation::Begin();
+
+	for (uint32_t i = 0; i < 13; i++)
+		Zenith_EditorAutomation::ExecuteNextStep();
+
+	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+
+	Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+	Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>("FitResLayout");
+	Zenith_Assert(pxLayout != nullptr, "Should find layout group");
+
+	pxLayout->Update(0.f);
+
+	// First check: width = 100 + 10 + 80 = 190, height = 40
+	float fFirstWidth = pxLayout->GetSize().x;
+	Zenith_Assert(std::abs(fFirstWidth - 190.f) < 0.001f, "Initial layout width should be 190");
+
+	// Now add another child directly (not via automation, since we're mid-test)
+	Zenith_UI::Zenith_UIRect* pxNewChild = new Zenith_UI::Zenith_UIRect("FitC");
+	pxNewChild->SetSize(60.f, 25.f);
+	xUI.GetCanvas().AddElement(pxNewChild);
+	xUI.GetCanvas().ReparentElement(pxNewChild, pxLayout);
+	pxLayout->MarkLayoutDirty();
+	pxLayout->Update(0.f);
+
+	// After adding 60px child: width = 100 + 10 + 80 + 10 + 60 = 260
+	float fSecondWidth = pxLayout->GetSize().x;
+	Zenith_Assert(fSecondWidth > fFirstWidth, "Layout width should grow after adding child");
+	Zenith_Assert(std::abs(fSecondWidth - 260.f) < 0.001f, "New layout width should be 260");
+
+	Zenith_EditorAutomation::ExecuteNextStep();
+	Zenith_EditorAutomation::Reset();
+
+	EDITOR_TEST_END(TestLayoutFitToContentResizing);
+}
+
+void Zenith_AutomationTests::TestLayoutWithTextChild()
+{
+	EDITOR_TEST_BEGIN(TestLayoutWithTextChild);
+
+	Zenith_EditorAutomation::Reset();
+
+	Zenith_EditorAutomation::AddStep_CreateEntity("AutoTextLayoutEntity");
+	Zenith_EditorAutomation::AddStep_AddUI();
+	Zenith_EditorAutomation::AddStep_CreateUILayoutGroup("TextLayout");
+	Zenith_EditorAutomation::AddStep_SetUILayoutDirection("TextLayout", static_cast<int>(Zenith_UI::LayoutDirection::Horizontal));
+	Zenith_EditorAutomation::AddStep_SetUILayoutSpacing("TextLayout", 8.f);
+	Zenith_EditorAutomation::AddStep_SetUILayoutChildAlignment("TextLayout", static_cast<int>(Zenith_UI::ChildAlignment::MiddleCenter));
+	Zenith_EditorAutomation::AddStep_SetUILayoutFitToContent("TextLayout", true);
+	Zenith_EditorAutomation::AddStep_CreateUIImage("TLImg");
+	Zenith_EditorAutomation::AddStep_SetUISize("TLImg", 36.f, 36.f);
+	Zenith_EditorAutomation::AddStep_CreateUIText("TLText", "Test");
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("TLText", 36.f);
+	Zenith_EditorAutomation::AddStep_AddUIChild("TextLayout", "TLImg");
+	Zenith_EditorAutomation::AddStep_AddUIChild("TextLayout", "TLText");
+	Zenith_EditorAutomation::Begin();
+
+	for (uint32_t i = 0; i < 13; i++)
+		Zenith_EditorAutomation::ExecuteNextStep();
+
+	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+
+	Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+	Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>("TextLayout");
+	Zenith_Assert(pxLayout != nullptr, "Should find layout group");
+
+	pxLayout->Update(0.f);
+
+	Zenith_UI::Zenith_UIText* pxText = static_cast<Zenith_UI::Zenith_UIText*>(pxLayout->GetChild(1));
+	Zenith_Assert(pxText != nullptr, "Should find text child");
+
+	// Text width should be calculated from GetTextWidth()
+	float fExpectedTextWidth = pxText->GetTextWidth();
+	Zenith_Assert(fExpectedTextWidth > 0.f, "Text width should be positive");
+
+	// Image (36px) + spacing (8px) + text width = total layout width
+	float fExpectedWidth = 36.f + 8.f + fExpectedTextWidth;
+	Zenith_Assert(std::abs(pxLayout->GetSize().x - fExpectedWidth) < 0.001f, "Layout width should include text width");
+
+	// Non-text children should be shifted up by the glyph correction when text siblings exist
+	Zenith_UI::Zenith_UIElement* pxImgChild = pxLayout->GetChild(0);
+	Zenith_Assert(pxImgChild->GetPosition().y < pxText->GetPosition().y, "Image should be shifted up relative to text for glyph alignment");
+
+	Zenith_EditorAutomation::ExecuteNextStep();
+	Zenith_EditorAutomation::Reset();
+
+	EDITOR_TEST_END(TestLayoutWithTextChild);
+}
+
+void Zenith_AutomationTests::TestLayoutEmptyGroup()
+{
+	EDITOR_TEST_BEGIN(TestLayoutEmptyGroup);
+
+	Zenith_EditorAutomation::Reset();
+
+	Zenith_EditorAutomation::AddStep_CreateEntity("AutoEmptyEntity");
+	Zenith_EditorAutomation::AddStep_AddUI();
+	Zenith_EditorAutomation::AddStep_CreateUILayoutGroup("EmptyLayout");
+	Zenith_EditorAutomation::AddStep_SetUILayoutPadding("EmptyLayout", 5.f, 10.f, 15.f, 20.f);
+	Zenith_EditorAutomation::AddStep_SetUILayoutFitToContent("EmptyLayout", true);
+	Zenith_EditorAutomation::Begin();
+
+	for (uint32_t i = 0; i < 5; i++)
+		Zenith_EditorAutomation::ExecuteNextStep();
+
+	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+
+	Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+	Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>("EmptyLayout");
+	Zenith_Assert(pxLayout != nullptr, "Should find layout group");
+
+	// Should not crash with no children
+	pxLayout->Update(0.f);
+
+	// With fit-to-content, size should be padding only: (5+15, 10+20) = (20, 30)
+	Zenith_Assert(std::abs(pxLayout->GetSize().x - 20.f) < 0.001f, "Empty layout width should be paddingLeft + paddingRight");
+	Zenith_Assert(std::abs(pxLayout->GetSize().y - 30.f) < 0.001f, "Empty layout height should be paddingTop + paddingBottom");
+
+	Zenith_EditorAutomation::ExecuteNextStep();
+	Zenith_EditorAutomation::Reset();
+
+	EDITOR_TEST_END(TestLayoutEmptyGroup);
+}
+
+void Zenith_AutomationTests::TestLayoutSingleChild()
+{
+	EDITOR_TEST_BEGIN(TestLayoutSingleChild);
+
+	Zenith_EditorAutomation::Reset();
+
+	Zenith_EditorAutomation::AddStep_CreateEntity("AutoSingleEntity");
+	Zenith_EditorAutomation::AddStep_AddUI();
+	Zenith_EditorAutomation::AddStep_CreateUILayoutGroup("SingleLayout");
+	Zenith_EditorAutomation::AddStep_SetUILayoutDirection("SingleLayout", static_cast<int>(Zenith_UI::LayoutDirection::Horizontal));
+	Zenith_EditorAutomation::AddStep_SetUILayoutSpacing("SingleLayout", 100.f);
+	Zenith_EditorAutomation::AddStep_SetUILayoutFitToContent("SingleLayout", true);
+	Zenith_EditorAutomation::AddStep_SetUILayoutChildAlignment("SingleLayout", static_cast<int>(Zenith_UI::ChildAlignment::UpperLeft));
+	Zenith_EditorAutomation::AddStep_CreateUIRect("SingleChild");
+	Zenith_EditorAutomation::AddStep_SetUISize("SingleChild", 50.f, 30.f);
+	Zenith_EditorAutomation::AddStep_AddUIChild("SingleLayout", "SingleChild");
+	Zenith_EditorAutomation::Begin();
+
+	for (uint32_t i = 0; i < 10; i++)
+		Zenith_EditorAutomation::ExecuteNextStep();
+
+	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+
+	Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+	Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>("SingleLayout");
+	Zenith_Assert(pxLayout != nullptr, "Should find layout group");
+
+	pxLayout->Update(0.f);
+
+	Zenith_UI::Zenith_UIElement* pxChild = pxLayout->GetChild(0);
+	Zenith_Assert(std::abs(pxChild->GetPosition().x - 0.f) < 0.001f, "Single child position.x should be 0");
+	Zenith_Assert(std::abs(pxChild->GetPosition().y - 0.f) < 0.001f, "Single child position.y should be 0");
+
+	// Spacing should have no effect with only 1 child: width = 50, not 50 + 100
+	Zenith_Assert(std::abs(pxLayout->GetSize().x - 50.f) < 0.001f, "Layout width should be 50 (spacing has no effect with 1 child)");
+	Zenith_Assert(std::abs(pxLayout->GetSize().y - 30.f) < 0.001f, "Layout height should be 30");
+
+	Zenith_EditorAutomation::ExecuteNextStep();
+	Zenith_EditorAutomation::Reset();
+
+	EDITOR_TEST_END(TestLayoutSingleChild);
+}
+
+void Zenith_AutomationTests::TestLayoutInvisibleChildrenSkipped()
+{
+	EDITOR_TEST_BEGIN(TestLayoutInvisibleChildrenSkipped);
+
+	Zenith_EditorAutomation::Reset();
+
+	Zenith_EditorAutomation::AddStep_CreateEntity("AutoInvisEntity");
+	Zenith_EditorAutomation::AddStep_AddUI();
+	Zenith_EditorAutomation::AddStep_CreateUILayoutGroup("InvisLayout");
+	Zenith_EditorAutomation::AddStep_SetUILayoutDirection("InvisLayout", static_cast<int>(Zenith_UI::LayoutDirection::Horizontal));
+	Zenith_EditorAutomation::AddStep_SetUILayoutSpacing("InvisLayout", 10.f);
+	Zenith_EditorAutomation::AddStep_SetUILayoutFitToContent("InvisLayout", true);
+	Zenith_EditorAutomation::AddStep_SetUILayoutChildAlignment("InvisLayout", static_cast<int>(Zenith_UI::ChildAlignment::UpperLeft));
+	Zenith_EditorAutomation::AddStep_CreateUIRect("InvisA");
+	Zenith_EditorAutomation::AddStep_SetUISize("InvisA", 50.f, 30.f);
+	Zenith_EditorAutomation::AddStep_CreateUIRect("InvisB");
+	Zenith_EditorAutomation::AddStep_SetUISize("InvisB", 80.f, 30.f);
+	Zenith_EditorAutomation::AddStep_SetUIVisible("InvisB", false);
+	Zenith_EditorAutomation::AddStep_CreateUIRect("InvisC");
+	Zenith_EditorAutomation::AddStep_SetUISize("InvisC", 60.f, 30.f);
+	Zenith_EditorAutomation::AddStep_AddUIChild("InvisLayout", "InvisA");
+	Zenith_EditorAutomation::AddStep_AddUIChild("InvisLayout", "InvisB");
+	Zenith_EditorAutomation::AddStep_AddUIChild("InvisLayout", "InvisC");
+	Zenith_EditorAutomation::Begin();
+
+	for (uint32_t i = 0; i < 17; i++)
+		Zenith_EditorAutomation::ExecuteNextStep();
+
+	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+
+	Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+	Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>("InvisLayout");
+	Zenith_Assert(pxLayout != nullptr, "Should find layout group");
+
+	pxLayout->Update(0.f);
+
+	Zenith_UI::Zenith_UIElement* pxA = pxLayout->GetChild(0);
+	Zenith_UI::Zenith_UIElement* pxC = pxLayout->GetChild(2);
+
+	Zenith_Assert(std::abs(pxA->GetPosition().x - 0.f) < 0.001f, "Child A position.x should be 0");
+	// B is invisible, so C follows A directly: 50 + 10 = 60
+	Zenith_Assert(std::abs(pxC->GetPosition().x - 60.f) < 0.001f, "Child C position.x should be 60 (B skipped)");
+
+	// Layout width = 50 + 10 + 60 = 120 (B excluded)
+	Zenith_Assert(std::abs(pxLayout->GetSize().x - 120.f) < 0.001f, "Layout width should be 120 (invisible child excluded)");
+
+	Zenith_EditorAutomation::ExecuteNextStep();
+	Zenith_EditorAutomation::Reset();
+
+	EDITOR_TEST_END(TestLayoutInvisibleChildrenSkipped);
+}
+
+void Zenith_AutomationTests::TestLayoutSerializationRoundTrip()
+{
+	EDITOR_TEST_BEGIN(TestLayoutSerializationRoundTrip);
+
+	Zenith_EditorAutomation::Reset();
+
+	// Create a layout group with non-default values
+	Zenith_UI::Zenith_UILayoutGroup xOriginal("SerLayout");
+	xOriginal.SetDirection(Zenith_UI::LayoutDirection::Vertical);
+	xOriginal.SetChildAlignment(Zenith_UI::ChildAlignment::LowerRight);
+	xOriginal.SetPadding(10.f, 20.f, 30.f, 40.f);
+	xOriginal.SetSpacing(15.f);
+	xOriginal.SetChildForceExpandWidth(true);
+	xOriginal.SetChildForceExpandHeight(false);
+	xOriginal.SetReverseArrangement(true);
+	xOriginal.SetFitToContent(false);
+	xOriginal.SetSize(400.f, 300.f);
+	xOriginal.SetPosition(50.f, 60.f);
+	xOriginal.SetColor({0.5f, 0.6f, 0.7f, 0.8f});
+
+	// Write to DataStream
+	Zenith_DataStream xWriteStream;
+	xOriginal.WriteToDataStream(xWriteStream);
+
+	// Read into a new layout group
+	Zenith_UI::Zenith_UILayoutGroup xLoaded("LoadedLayout");
+	xWriteStream.SetCursor(0);
+	xLoaded.ReadFromDataStream(xWriteStream);
+
+	// Verify all properties match
+	Zenith_Assert(xLoaded.GetDirection() == Zenith_UI::LayoutDirection::Vertical, "Serialized direction should be Vertical");
+	Zenith_Assert(xLoaded.GetChildAlignment() == Zenith_UI::ChildAlignment::LowerRight, "Serialized child alignment should be LowerRight");
+
+	Zenith_Maths::Vector4 xPad = xLoaded.GetPadding();
+	Zenith_Assert(std::abs(xPad.x - 10.f) < 0.001f, "Serialized padding left should be 10");
+	Zenith_Assert(std::abs(xPad.y - 20.f) < 0.001f, "Serialized padding top should be 20");
+	Zenith_Assert(std::abs(xPad.z - 30.f) < 0.001f, "Serialized padding right should be 30");
+	Zenith_Assert(std::abs(xPad.w - 40.f) < 0.001f, "Serialized padding bottom should be 40");
+
+	Zenith_Assert(std::abs(xLoaded.GetSpacing() - 15.f) < 0.001f, "Serialized spacing should be 15");
+	Zenith_Assert(xLoaded.GetChildForceExpandWidth() == true, "Serialized childForceExpandWidth should be true");
+	Zenith_Assert(xLoaded.GetChildForceExpandHeight() == false, "Serialized childForceExpandHeight should be false");
+	Zenith_Assert(xLoaded.GetReverseArrangement() == true, "Serialized reverseArrangement should be true");
+	Zenith_Assert(xLoaded.GetFitToContent() == false, "Serialized fitToContent should be false");
+
+	// Also verify base class properties survived
+	Zenith_Maths::Vector2 xSize = xLoaded.GetSize();
+	Zenith_Assert(std::abs(xSize.x - 400.f) < 0.001f, "Serialized size.x should be 400");
+	Zenith_Assert(std::abs(xSize.y - 300.f) < 0.001f, "Serialized size.y should be 300");
+
+	Zenith_Maths::Vector2 xPos = xLoaded.GetPosition();
+	Zenith_Assert(std::abs(xPos.x - 50.f) < 0.001f, "Serialized position.x should be 50");
+	Zenith_Assert(std::abs(xPos.y - 60.f) < 0.001f, "Serialized position.y should be 60");
+
+	Zenith_Maths::Vector4 xColor = xLoaded.GetColor();
+	Zenith_Assert(std::abs(xColor.x - 0.5f) < 0.001f, "Serialized color.r should be 0.5");
+	Zenith_Assert(std::abs(xColor.y - 0.6f) < 0.001f, "Serialized color.g should be 0.6");
+	Zenith_Assert(std::abs(xColor.z - 0.7f) < 0.001f, "Serialized color.b should be 0.7");
+	Zenith_Assert(std::abs(xColor.w - 0.8f) < 0.001f, "Serialized color.a should be 0.8");
+
+	Zenith_EditorAutomation::Reset();
+
+	EDITOR_TEST_END(TestLayoutSerializationRoundTrip);
 }
 
 #endif // ZENITH_TOOLS

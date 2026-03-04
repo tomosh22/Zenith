@@ -907,6 +907,9 @@
     <ClCompile Include="..\Zenith\UI\Zenith_UIImage.cpp">
       <Filter>UI</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\UI\Zenith_UILayoutGroup.cpp">
+      <Filter>UI</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\UI\Zenith_UIRect.cpp">
       <Filter>UI</Filter>
     </ClCompile>
@@ -3790,6 +3793,9 @@
       <Filter>UI</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\UI\Zenith_UIImage.h">
+      <Filter>UI</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\UI\Zenith_UILayoutGroup.h">
       <Filter>UI</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\UI\Zenith_UIRect.h">

@@ -31,6 +31,7 @@ enum class UIElementType : uint32_t
     Rect,
     Image,
     Button,
+    LayoutGroup,
     COUNT
 };
 

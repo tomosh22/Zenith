@@ -53,6 +53,11 @@ public:
     void SetVerticalAlignment(TextVerticalAlignment eAlign) { m_eVerticalAlignment = eAlign; }
     TextVerticalAlignment GetVerticalAlignment() const { return m_eVerticalAlignment; }
 
+    // ========== Text Metrics ==========
+
+    float GetTextWidth() const;
+    float GetTextHeight() const { return m_fFontSize; }
+
     // ========== Overrides ==========
 
     virtual void Render(Zenith_UICanvas& xCanvas) override;

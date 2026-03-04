@@ -7,6 +7,10 @@ static constexpr float fCHAR_ASPECT_RATIO = 0.5f;
 // Character spacing includes a small gap (10% of char width) for natural appearance
 static constexpr float fCHAR_SPACING = fCHAR_ASPECT_RATIO * 1.1f;
 
+// Fraction of font height consumed by the ascender in the SDF atlas
+// Used by layout groups to correct text vertical centering
+static constexpr float fFONT_ASCENDER_RATIO = 0.25f;
+
 class Flux_Text
 {
 public:

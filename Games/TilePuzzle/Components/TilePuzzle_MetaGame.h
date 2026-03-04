@@ -212,7 +212,7 @@ void SetVictoryOverlayVisible(bool bVisible)
 	const char* aszVictoryElements[] = {
 		"VictoryBg", "VictoryTitle", "VictoryStars",
 		"VictoryCatText", "VictoryCoinsText", "NextLevelBtn",
-		"VictoryStar0", "VictoryStar1", "VictoryStar2"
+		"VictoryStarGroup", "VictoryStar0", "VictoryStar1", "VictoryStar2"
 	};
 	for (const char* szName : aszVictoryElements)
 	{

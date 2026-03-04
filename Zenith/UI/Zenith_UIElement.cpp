@@ -5,6 +5,7 @@
 #include "UI/Zenith_UIRect.h"
 #include "UI/Zenith_UIImage.h"
 #include "UI/Zenith_UIButton.h"
+#include "UI/Zenith_UILayoutGroup.h"
 #include "DataStream/Zenith_DataStream.h"
 
 #ifdef ZENITH_TOOLS
@@ -38,6 +39,7 @@ const char* Zenith_UIElement::GetTypeName(UIElementType eType)
     case UIElementType::Rect:  return "Rect";
     case UIElementType::Image: return "Image";
     case UIElementType::Button: return "Button";
+    case UIElementType::LayoutGroup: return "LayoutGroup";
     default: return "Unknown";
     }
 }
@@ -51,6 +53,7 @@ Zenith_UIElement* Zenith_UIElement::CreateFromType(UIElementType eType, const st
     case UIElementType::Rect:  return new Zenith_UIRect(strName);
     case UIElementType::Image: return new Zenith_UIImage(strName);
     case UIElementType::Button: return new Zenith_UIButton("", strName);
+    case UIElementType::LayoutGroup: return new Zenith_UILayoutGroup(strName);
     default: return nullptr;
     }
 }

@@ -66,6 +66,9 @@ public:
     // Find element by name (searches entire hierarchy)
     Zenith_UIElement* FindElement(const std::string& strName) const;
 
+    // Move a child element under a new parent (removes from root elements if present)
+    void ReparentElement(Zenith_UIElement* pxChild, Zenith_UIElement* pxNewParent);
+
     // ========== Frame Updates ==========
 
     void Update(float fDt);

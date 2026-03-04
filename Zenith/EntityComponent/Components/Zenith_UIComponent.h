@@ -59,6 +59,7 @@ public:
     Zenith_UI::Zenith_UIRect* CreateRect(const std::string& strName);
     Zenith_UI::Zenith_UIImage* CreateImage(const std::string& strName);
     Zenith_UI::Zenith_UIButton* CreateButton(const std::string& strName, const std::string& strText = "");
+    Zenith_UI::Zenith_UILayoutGroup* CreateLayoutGroup(const std::string& strName);
     Zenith_UI::Zenith_UIElement* CreateElement(const std::string& strName);
 
     // Add an existing element (canvas takes ownership)

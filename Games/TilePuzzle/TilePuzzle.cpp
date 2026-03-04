@@ -1224,38 +1224,49 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("DailyPuzzleButton", 0.35f, 0.45f, 0.3f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonPressedColor("DailyPuzzleButton", 0.15f, 0.2f, 0.12f, 1.f);
 
-	// Coin display text (top-right of menu)
-	Zenith_EditorAutomation::AddStep_CreateUIText("CoinText", "Coins: 0");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("CoinText", static_cast<int>(Zenith_UI::AnchorPreset::TopRight));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("CoinText", -20.f, 20.f);
-	Zenith_EditorAutomation::AddStep_SetUIAlignment("CoinText", static_cast<int>(Zenith_UI::TextAlignment::Right));
-	Zenith_EditorAutomation::AddStep_SetUIFontSize("CoinText", 36.f);
-	Zenith_EditorAutomation::AddStep_SetUIColor("CoinText", 1.f, 0.85f, 0.2f, 1.f);
+	// Coin layout group (top-right of menu): icon + text
+	Zenith_EditorAutomation::AddStep_CreateUILayoutGroup("CoinGroup");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("CoinGroup", static_cast<int>(Zenith_UI::AnchorPreset::TopRight));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("CoinGroup", -20.f, 20.f);
+	Zenith_EditorAutomation::AddStep_SetUILayoutDirection("CoinGroup", static_cast<int>(Zenith_UI::LayoutDirection::Horizontal));
+	Zenith_EditorAutomation::AddStep_SetUILayoutSpacing("CoinGroup", 8.f);
+	Zenith_EditorAutomation::AddStep_SetUILayoutChildAlignment("CoinGroup", static_cast<int>(Zenith_UI::ChildAlignment::MiddleCenter));
+	Zenith_EditorAutomation::AddStep_SetUILayoutFitToContent("CoinGroup", true);
 
-	// Coin icon (next to coin text)
 	Zenith_EditorAutomation::AddStep_CreateUIImage("CoinIcon");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("CoinIcon", static_cast<int>(Zenith_UI::AnchorPreset::TopRight));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("CoinIcon", -220.f, 13.f);
 	Zenith_EditorAutomation::AddStep_SetUISize("CoinIcon", 36.f, 36.f);
 	Zenith_EditorAutomation::AddStep_SetUIColor("CoinIcon", 1.f, 0.85f, 0.2f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIImageTexturePath("CoinIcon",
 		GAME_ASSETS_DIR "Textures/Icons/coin" ZENITH_TEXTURE_EXT);
 
-	// Lives display text (top-left of menu)
-	Zenith_EditorAutomation::AddStep_CreateUIText("LivesText", "Lives: 5/5");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("LivesText", static_cast<int>(Zenith_UI::AnchorPreset::TopLeft));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("LivesText", 20.f, 20.f);
-	Zenith_EditorAutomation::AddStep_SetUIFontSize("LivesText", 36.f);
-	Zenith_EditorAutomation::AddStep_SetUIColor("LivesText", 1.f, 0.3f, 0.3f, 1.f);
+	Zenith_EditorAutomation::AddStep_CreateUIText("CoinText", "Coins: 0");
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("CoinText", 36.f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("CoinText", 1.f, 0.85f, 0.2f, 1.f);
 
-	// Heart icon (next to lives text)
+	Zenith_EditorAutomation::AddStep_AddUIChild("CoinGroup", "CoinIcon");
+	Zenith_EditorAutomation::AddStep_AddUIChild("CoinGroup", "CoinText");
+
+	// Lives layout group (top-left of menu): icon + text
+	Zenith_EditorAutomation::AddStep_CreateUILayoutGroup("LivesGroup");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("LivesGroup", static_cast<int>(Zenith_UI::AnchorPreset::TopLeft));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("LivesGroup", 20.f, 20.f);
+	Zenith_EditorAutomation::AddStep_SetUILayoutDirection("LivesGroup", static_cast<int>(Zenith_UI::LayoutDirection::Horizontal));
+	Zenith_EditorAutomation::AddStep_SetUILayoutSpacing("LivesGroup", 8.f);
+	Zenith_EditorAutomation::AddStep_SetUILayoutChildAlignment("LivesGroup", static_cast<int>(Zenith_UI::ChildAlignment::MiddleCenter));
+	Zenith_EditorAutomation::AddStep_SetUILayoutFitToContent("LivesGroup", true);
+
 	Zenith_EditorAutomation::AddStep_CreateUIImage("HeartIcon");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("HeartIcon", static_cast<int>(Zenith_UI::AnchorPreset::TopLeft));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("HeartIcon", 210.f, 13.f);
 	Zenith_EditorAutomation::AddStep_SetUISize("HeartIcon", 36.f, 36.f);
 	Zenith_EditorAutomation::AddStep_SetUIColor("HeartIcon", 1.f, 0.3f, 0.3f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIImageTexturePath("HeartIcon",
 		GAME_ASSETS_DIR "Textures/Icons/heart" ZENITH_TEXTURE_EXT);
+
+	Zenith_EditorAutomation::AddStep_CreateUIText("LivesText", "Lives: 5/5");
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("LivesText", 36.f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("LivesText", 1.f, 0.3f, 0.3f, 1.f);
+
+	Zenith_EditorAutomation::AddStep_AddUIChild("LivesGroup", "HeartIcon");
+	Zenith_EditorAutomation::AddStep_AddUIChild("LivesGroup", "LivesText");
 
 	// Lives Refill button (hidden by default)
 	Zenith_EditorAutomation::AddStep_CreateUIButton("RefillLivesButton", "Refill (50)");
@@ -1592,21 +1603,26 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_SetUIColor("VictoryStars", 1.f, 0.85f, 0.1f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIVisible("VictoryStars", false);
 
-	// Victory star images (3 stars for rating display)
+	// Victory star images layout group (3 stars for rating display)
+	Zenith_EditorAutomation::AddStep_CreateUILayoutGroup("VictoryStarGroup");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("VictoryStarGroup", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("VictoryStarGroup", 0.f, -50.f);
+	Zenith_EditorAutomation::AddStep_SetUILayoutDirection("VictoryStarGroup", static_cast<int>(Zenith_UI::LayoutDirection::Horizontal));
+	Zenith_EditorAutomation::AddStep_SetUILayoutSpacing("VictoryStarGroup", 12.f);
+	Zenith_EditorAutomation::AddStep_SetUILayoutChildAlignment("VictoryStarGroup", static_cast<int>(Zenith_UI::ChildAlignment::MiddleCenter));
+	Zenith_EditorAutomation::AddStep_SetUILayoutFitToContent("VictoryStarGroup", true);
+	Zenith_EditorAutomation::AddStep_SetUIVisible("VictoryStarGroup", false);
+
 	{
 		static const char* s_aszVictoryStarNames[] = { "VictoryStar0", "VictoryStar1", "VictoryStar2" };
 		for (uint32_t u = 0; u < 3; ++u)
 		{
-			float fStarX = (static_cast<float>(u) - 1.f) * 60.f;
 			Zenith_EditorAutomation::AddStep_CreateUIImage(s_aszVictoryStarNames[u]);
-			Zenith_EditorAutomation::AddStep_SetUIAnchor(s_aszVictoryStarNames[u],
-				static_cast<int>(Zenith_UI::AnchorPreset::Center));
-			Zenith_EditorAutomation::AddStep_SetUIPosition(s_aszVictoryStarNames[u], fStarX, -50.f);
 			Zenith_EditorAutomation::AddStep_SetUISize(s_aszVictoryStarNames[u], 48.f, 48.f);
 			Zenith_EditorAutomation::AddStep_SetUIColor(s_aszVictoryStarNames[u], 1.f, 0.85f, 0.1f, 1.f);
 			Zenith_EditorAutomation::AddStep_SetUIImageTexturePath(s_aszVictoryStarNames[u],
 				GAME_ASSETS_DIR "Textures/Icons/star_empty" ZENITH_TEXTURE_EXT);
-			Zenith_EditorAutomation::AddStep_SetUIVisible(s_aszVictoryStarNames[u], false);
+			Zenith_EditorAutomation::AddStep_AddUIChild("VictoryStarGroup", s_aszVictoryStarNames[u]);
 		}
 	}
 

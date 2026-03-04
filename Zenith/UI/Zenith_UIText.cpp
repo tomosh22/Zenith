@@ -20,6 +20,11 @@ Zenith_UIText::Zenith_UIText(const std::string& strText, const std::string& strN
 {
 }
 
+float Zenith_UIText::GetTextWidth() const
+{
+    return m_strText.length() * m_fFontSize * fCHAR_SPACING;
+}
+
 void Zenith_UIText::Render(Zenith_UICanvas& xCanvas)
 {
     if (!m_bVisible || m_strText.empty())

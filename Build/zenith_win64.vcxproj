@@ -1296,6 +1296,7 @@
     <ClInclude Include="..\Zenith\UI\Zenith_UICanvas.h" />
     <ClInclude Include="..\Zenith\UI\Zenith_UIElement.h" />
     <ClInclude Include="..\Zenith\UI\Zenith_UIImage.h" />
+    <ClInclude Include="..\Zenith\UI\Zenith_UILayoutGroup.h" />
     <ClInclude Include="..\Zenith\UI\Zenith_UIRect.h" />
     <ClInclude Include="..\Zenith\UI\Zenith_UIText.h" />
     <ClInclude Include="..\Zenith\UnitTests\Zenith_AutomationTests.h" />
@@ -2415,6 +2416,7 @@
     <ClCompile Include="..\Zenith\UI\Zenith_UICanvas.cpp" />
     <ClCompile Include="..\Zenith\UI\Zenith_UIElement.cpp" />
     <ClCompile Include="..\Zenith\UI\Zenith_UIImage.cpp" />
+    <ClCompile Include="..\Zenith\UI\Zenith_UILayoutGroup.cpp" />
     <ClCompile Include="..\Zenith\UI\Zenith_UIRect.cpp" />
     <ClCompile Include="..\Zenith\UI\Zenith_UIText.cpp" />
     <ClCompile Include="..\Zenith\UnitTests\Zenith_AITests.cpp" />

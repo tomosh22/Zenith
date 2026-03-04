@@ -130,6 +130,24 @@ void Zenith_UICanvas::RemoveElement(Zenith_UIElement* pxElement)
     delete pxElement;
 }
 
+void Zenith_UICanvas::ReparentElement(Zenith_UIElement* pxChild, Zenith_UIElement* pxNewParent)
+{
+    if (!pxChild || !pxNewParent)
+        return;
+
+    // Remove from root elements if present
+    m_xRootElements.EraseValue(pxChild);
+
+    // Remove from old parent if any
+    if (pxChild->GetParent())
+    {
+        pxChild->GetParent()->RemoveChild(pxChild);
+    }
+
+    // Add to new parent
+    pxNewParent->AddChild(pxChild);
+}
+
 void Zenith_UICanvas::Clear()
 {
     // Delete all elements

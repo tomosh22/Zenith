@@ -104,6 +104,33 @@ private:
 	static void TestResetDuringExecution();
 	static void TestBeginWithZeroSteps();
 	static void TestDoubleBeginWithoutReset();
+
+	//--------------------------------------------------------------------------
+	// Layout Group Tests
+	//--------------------------------------------------------------------------
+	static void TestCreateUILayoutGroupStep();
+	static void TestAddUIChildStep();
+	static void TestSetUILayoutDirectionStep();
+	static void TestSetUILayoutSpacingStep();
+	static void TestSetUILayoutChildAlignmentStep();
+	static void TestSetUILayoutPaddingStep();
+	static void TestSetUILayoutFitToContentStep();
+	static void TestSetUILayoutChildForceExpandStep();
+	static void TestSetUILayoutReverseStep();
+	static void TestLayoutHorizontalPositioning();
+	static void TestLayoutVerticalPositioning();
+	static void TestLayoutPaddingAffectsPositioning();
+	static void TestLayoutMiddleCenterAlignment();
+	static void TestLayoutUpperLeftAlignment();
+	static void TestLayoutLowerRightAlignment();
+	static void TestLayoutReverseArrangement();
+	static void TestLayoutChildForceExpand();
+	static void TestLayoutFitToContentResizing();
+	static void TestLayoutWithTextChild();
+	static void TestLayoutEmptyGroup();
+	static void TestLayoutSingleChild();
+	static void TestLayoutInvisibleChildrenSkipped();
+	static void TestLayoutSerializationRoundTrip();
 };
 
 #endif // ZENITH_TOOLS

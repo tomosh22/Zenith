@@ -147,6 +147,7 @@
   <ItemGroup>
     <ClInclude Include="..\Components\Pinball_Behaviour.h" />
     <ClInclude Include="..\Components\TilePuzzleLevelData_Serialize.h" />
+    <ClInclude Include="..\Components\TilePuzzle_AssetGen.h" />
     <ClInclude Include="..\Components\TilePuzzle_Behaviour.h" />
     <ClInclude Include="..\Components\TilePuzzle_LevelGenerator.h" />
     <ClInclude Include="..\Components\TilePuzzle_MetaGame.h" />

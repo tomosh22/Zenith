@@ -74,6 +74,17 @@ enum class Zenith_EditorActionType
 	SET_UI_ALIGNMENT,
 	SET_UI_VISIBLE,
 
+	// UI layout group creation and field edits
+	CREATE_UI_LAYOUT_GROUP,
+	ADD_UI_CHILD,
+	SET_UI_LAYOUT_DIRECTION,
+	SET_UI_LAYOUT_SPACING,
+	SET_UI_LAYOUT_CHILD_ALIGNMENT,
+	SET_UI_LAYOUT_PADDING,
+	SET_UI_LAYOUT_FIT_TO_CONTENT,
+	SET_UI_LAYOUT_CHILD_FORCE_EXPAND,
+	SET_UI_LAYOUT_REVERSE,
+
 	// UI button-specific field edits
 	SET_UI_BUTTON_NORMAL_COLOR,
 	SET_UI_BUTTON_HOVER_COLOR,
@@ -198,6 +209,19 @@ public:
 	static void AddStep_SetUIColor(const char* szElement, float fR, float fG, float fB, float fA);
 	static void AddStep_SetUIAlignment(const char* szElement, int iAlignment);
 	static void AddStep_SetUIVisible(const char* szElement, bool bVisible);
+
+	//--------------------------------------------------------------------------
+	// UI Layout Group Step Helpers
+	//--------------------------------------------------------------------------
+	static void AddStep_CreateUILayoutGroup(const char* szName);
+	static void AddStep_AddUIChild(const char* szParent, const char* szChild);
+	static void AddStep_SetUILayoutDirection(const char* szElement, int iDirection);
+	static void AddStep_SetUILayoutSpacing(const char* szElement, float fSpacing);
+	static void AddStep_SetUILayoutChildAlignment(const char* szElement, int iAlignment);
+	static void AddStep_SetUILayoutPadding(const char* szElement, float fL, float fT, float fR, float fB);
+	static void AddStep_SetUILayoutFitToContent(const char* szElement, bool bFit);
+	static void AddStep_SetUILayoutChildForceExpand(const char* szElement, bool bWidth, bool bHeight);
+	static void AddStep_SetUILayoutReverse(const char* szElement, bool bReverse);
 
 	//--------------------------------------------------------------------------
 	// UI Button Step Helpers

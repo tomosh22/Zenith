@@ -15,6 +15,7 @@
 #include "UI/Zenith_UI.h"
 #include "UI/Zenith_UIButton.h"
 #include "UI/Zenith_UIImage.h"
+#include "UI/Zenith_UILayoutGroup.h"
 #include "Flux/Particles/Flux_ParticleEmitterConfig.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 
@@ -340,6 +341,92 @@ void Zenith_EditorAutomation::AddStep_SetUIVisible(const char* szElement, bool b
 	xAction.m_eType = Zenith_EditorActionType::SET_UI_VISIBLE;
 	xAction.m_szArg1 = szElement;
 	xAction.m_bArg = bVisible;
+	s_axActions.PushBack(xAction);
+}
+
+// -- UI Layout Group --
+
+void Zenith_EditorAutomation::AddStep_CreateUILayoutGroup(const char* szName)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = Zenith_EditorActionType::CREATE_UI_LAYOUT_GROUP;
+	xAction.m_szArg1 = szName;
+	s_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_AddUIChild(const char* szParent, const char* szChild)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = Zenith_EditorActionType::ADD_UI_CHILD;
+	xAction.m_szArg1 = szParent;
+	xAction.m_szArg2 = szChild;
+	s_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_SetUILayoutDirection(const char* szElement, int iDirection)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = Zenith_EditorActionType::SET_UI_LAYOUT_DIRECTION;
+	xAction.m_szArg1 = szElement;
+	xAction.m_aiArgs[0] = iDirection;
+	s_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_SetUILayoutSpacing(const char* szElement, float fSpacing)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = Zenith_EditorActionType::SET_UI_LAYOUT_SPACING;
+	xAction.m_szArg1 = szElement;
+	xAction.m_afArgs[0] = fSpacing;
+	s_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_SetUILayoutChildAlignment(const char* szElement, int iAlignment)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = Zenith_EditorActionType::SET_UI_LAYOUT_CHILD_ALIGNMENT;
+	xAction.m_szArg1 = szElement;
+	xAction.m_aiArgs[0] = iAlignment;
+	s_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_SetUILayoutPadding(const char* szElement, float fL, float fT, float fR, float fB)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = Zenith_EditorActionType::SET_UI_LAYOUT_PADDING;
+	xAction.m_szArg1 = szElement;
+	xAction.m_afArgs[0] = fL;
+	xAction.m_afArgs[1] = fT;
+	xAction.m_afArgs[2] = fR;
+	xAction.m_afArgs[3] = fB;
+	s_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_SetUILayoutFitToContent(const char* szElement, bool bFit)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = Zenith_EditorActionType::SET_UI_LAYOUT_FIT_TO_CONTENT;
+	xAction.m_szArg1 = szElement;
+	xAction.m_bArg = bFit;
+	s_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_SetUILayoutChildForceExpand(const char* szElement, bool bWidth, bool bHeight)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = Zenith_EditorActionType::SET_UI_LAYOUT_CHILD_FORCE_EXPAND;
+	xAction.m_szArg1 = szElement;
+	xAction.m_aiArgs[0] = bWidth ? 1 : 0;
+	xAction.m_aiArgs[1] = bHeight ? 1 : 0;
+	s_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_SetUILayoutReverse(const char* szElement, bool bReverse)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = Zenith_EditorActionType::SET_UI_LAYOUT_REVERSE;
+	xAction.m_szArg1 = szElement;
+	xAction.m_bArg = bReverse;
 	s_axActions.PushBack(xAction);
 }
 
@@ -739,6 +826,109 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 		Zenith_UI::Zenith_UIElement* pxElement = xUI.FindElement(xAction.m_szArg1);
 		Zenith_Assert(pxElement, "UI element not found: %s", xAction.m_szArg1);
 		pxElement->SetVisible(xAction.m_bArg);
+		break;
+	}
+
+	//--------------------------------------------------------------------------
+	// UI layout group operations
+	//--------------------------------------------------------------------------
+	case Zenith_EditorActionType::CREATE_UI_LAYOUT_GROUP:
+	{
+		Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for CREATE_UI_LAYOUT_GROUP");
+		Zenith_Assert(pxEntity->HasComponent<Zenith_UIComponent>(), "Selected entity has no UIComponent");
+		pxEntity->GetComponent<Zenith_UIComponent>().CreateLayoutGroup(xAction.m_szArg1);
+		break;
+	}
+
+	case Zenith_EditorActionType::ADD_UI_CHILD:
+	{
+		Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for ADD_UI_CHILD");
+		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+		Zenith_UI::Zenith_UIElement* pxParent = xUI.FindElement(xAction.m_szArg1);
+		Zenith_Assert(pxParent, "UI parent element not found: %s", xAction.m_szArg1);
+		Zenith_UI::Zenith_UIElement* pxChild = xUI.FindElement(xAction.m_szArg2);
+		Zenith_Assert(pxChild, "UI child element not found: %s", xAction.m_szArg2);
+		xUI.GetCanvas().ReparentElement(pxChild, pxParent);
+		break;
+	}
+
+	case Zenith_EditorActionType::SET_UI_LAYOUT_DIRECTION:
+	{
+		Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for SET_UI_LAYOUT_DIRECTION");
+		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+		Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>(xAction.m_szArg1);
+		Zenith_Assert(pxLayout, "UI layout group not found: %s", xAction.m_szArg1);
+		pxLayout->SetDirection(static_cast<Zenith_UI::LayoutDirection>(xAction.m_aiArgs[0]));
+		break;
+	}
+
+	case Zenith_EditorActionType::SET_UI_LAYOUT_SPACING:
+	{
+		Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for SET_UI_LAYOUT_SPACING");
+		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+		Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>(xAction.m_szArg1);
+		Zenith_Assert(pxLayout, "UI layout group not found: %s", xAction.m_szArg1);
+		pxLayout->SetSpacing(xAction.m_afArgs[0]);
+		break;
+	}
+
+	case Zenith_EditorActionType::SET_UI_LAYOUT_CHILD_ALIGNMENT:
+	{
+		Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for SET_UI_LAYOUT_CHILD_ALIGNMENT");
+		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+		Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>(xAction.m_szArg1);
+		Zenith_Assert(pxLayout, "UI layout group not found: %s", xAction.m_szArg1);
+		pxLayout->SetChildAlignment(static_cast<Zenith_UI::ChildAlignment>(xAction.m_aiArgs[0]));
+		break;
+	}
+
+	case Zenith_EditorActionType::SET_UI_LAYOUT_PADDING:
+	{
+		Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for SET_UI_LAYOUT_PADDING");
+		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+		Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>(xAction.m_szArg1);
+		Zenith_Assert(pxLayout, "UI layout group not found: %s", xAction.m_szArg1);
+		pxLayout->SetPadding(xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2], xAction.m_afArgs[3]);
+		break;
+	}
+
+	case Zenith_EditorActionType::SET_UI_LAYOUT_FIT_TO_CONTENT:
+	{
+		Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for SET_UI_LAYOUT_FIT_TO_CONTENT");
+		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+		Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>(xAction.m_szArg1);
+		Zenith_Assert(pxLayout, "UI layout group not found: %s", xAction.m_szArg1);
+		pxLayout->SetFitToContent(xAction.m_bArg);
+		break;
+	}
+
+	case Zenith_EditorActionType::SET_UI_LAYOUT_CHILD_FORCE_EXPAND:
+	{
+		Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for SET_UI_LAYOUT_CHILD_FORCE_EXPAND");
+		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+		Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>(xAction.m_szArg1);
+		Zenith_Assert(pxLayout, "UI layout group not found: %s", xAction.m_szArg1);
+		pxLayout->SetChildForceExpandWidth(xAction.m_aiArgs[0] != 0);
+		pxLayout->SetChildForceExpandHeight(xAction.m_aiArgs[1] != 0);
+		break;
+	}
+
+	case Zenith_EditorActionType::SET_UI_LAYOUT_REVERSE:
+	{
+		Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for SET_UI_LAYOUT_REVERSE");
+		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+		Zenith_UI::Zenith_UILayoutGroup* pxLayout = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>(xAction.m_szArg1);
+		Zenith_Assert(pxLayout, "UI layout group not found: %s", xAction.m_szArg1);
+		pxLayout->SetReverseArrangement(xAction.m_bArg);
 		break;
 	}
 

@@ -10,6 +10,9 @@
     <ClInclude Include="..\Components\TilePuzzleLevelData_Serialize.h">
       <Filter>Components</Filter>
     </ClInclude>
+    <ClInclude Include="..\Components\TilePuzzle_AssetGen.h">
+      <Filter>Components</Filter>
+    </ClInclude>
     <ClInclude Include="..\Components\TilePuzzle_Behaviour.h">
       <Filter>Components</Filter>
     </ClInclude>

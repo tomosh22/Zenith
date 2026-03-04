@@ -72,6 +72,13 @@ Zenith_UI::Zenith_UIButton* Zenith_UIComponent::CreateButton(const std::string& 
     return pxButton;
 }
 
+Zenith_UI::Zenith_UILayoutGroup* Zenith_UIComponent::CreateLayoutGroup(const std::string& strName)
+{
+    Zenith_UI::Zenith_UILayoutGroup* pxLayout = new Zenith_UI::Zenith_UILayoutGroup(strName);
+    m_xCanvas.AddElement(pxLayout);
+    return pxLayout;
+}
+
 Zenith_UI::Zenith_UIElement* Zenith_UIComponent::CreateElement(const std::string& strName)
 {
     Zenith_UI::Zenith_UIElement* pxElement = new Zenith_UI::Zenith_UIElement(strName);
@@ -206,6 +213,15 @@ void Zenith_UIComponent::RenderPropertiesPanel()
             Zenith_UI::Zenith_UIButton* pxButton = CreateButton(strName, "Button");
             pxButton->SetSize(200, 50);
             m_pxSelectedElement = pxButton;
+        }
+        ImGui::SameLine();
+
+        if (ImGui::Button("+ Layout"))
+        {
+            static int s_iLayoutCount = 0;
+            std::string strName = "Layout_" + std::to_string(s_iLayoutCount++);
+            Zenith_UI::Zenith_UILayoutGroup* pxLayout = CreateLayoutGroup(strName);
+            m_pxSelectedElement = pxLayout;
         }
 
         ImGui::Separator();
