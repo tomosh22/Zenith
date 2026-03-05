@@ -69,19 +69,61 @@ static uint32_t ShapeTypeToComplexity(TilePuzzleShapeType eType)
 // ============================================================================
 
 /**
- * RandomizeDifficultyParams - Picks random values across the full parameter range
+ * RandomizeDifficultyParams - Picks random values with ranges biased by min-moves target
  *
  * Each parameter is sampled independently. Constraints enforced:
  * - colors * catsPerColor + blockerCats <= 16 (solver bitmask limit)
  * - blockerCats <= blockers
  * - conditionalShapes <= colors - 1
+ *
+ * When uMinMoves is high (>=10), ranges are narrowed to params known to produce
+ * harder puzzles (larger grids, more colors, higher complexity).
  */
-static TilePuzzle_LevelGenerator::DifficultyParams RandomizeDifficultyParams(std::mt19937& xRng)
+static TilePuzzle_LevelGenerator::DifficultyParams RandomizeDifficultyParams(std::mt19937& xRng, uint32_t uMinMoves)
 {
 	TilePuzzle_LevelGenerator::DifficultyParams xParams;
 
-	// Grid dimensions: [5, 10]
-	std::uniform_int_distribution<uint32_t> xGridDist(5, 10);
+	// Bias ranges based on min-moves target
+	uint32_t uMinGrid = 5, uMaxGrid = 10;
+	uint32_t uMinColors = 2, uMaxColors = 5;
+	uint32_t uMinCats = 1, uMaxCats = 2;
+	uint32_t uMinBlockers = 0, uMaxBlockers = 3;
+	uint32_t uMinComplexity = 1, uMaxComplexity = 4;
+	uint32_t uMinScramble = 100, uMaxScramble = 1500;
+
+	if (uMinMoves >= 20)
+	{
+		// Very hard: tight range based on proven Master preset
+		uMinGrid = 9; uMaxGrid = 10;
+		uMinColors = 5; uMaxColors = 5;
+		uMinCats = 2; uMaxCats = 2;
+		uMinBlockers = 2; uMaxBlockers = 2;
+		uMinComplexity = 2; uMaxComplexity = 4;
+		uMinScramble = 300; uMaxScramble = 1000;
+	}
+	else if (uMinMoves >= 10)
+	{
+		// Hard range: larger grids, more colors, always 2 cats
+		uMinGrid = 8; uMaxGrid = 10;
+		uMinColors = 4; uMaxColors = 5;
+		uMinCats = 2; uMaxCats = 2;
+		uMinBlockers = 1; uMaxBlockers = 2;
+		uMinComplexity = 2; uMaxComplexity = 4;
+		uMinScramble = 300; uMaxScramble = 1000;
+	}
+	else if (uMinMoves >= 5)
+	{
+		// Medium range
+		uMinGrid = 6; uMaxGrid = 9;
+		uMinColors = 3; uMaxColors = 5;
+		uMinCats = 1; uMaxCats = 2;
+		uMinBlockers = 0; uMaxBlockers = 2;
+		uMinComplexity = 2; uMaxComplexity = 4;
+		uMinScramble = 200; uMaxScramble = 1000;
+	}
+
+	// Grid dimensions
+	std::uniform_int_distribution<uint32_t> xGridDist(uMinGrid, uMaxGrid);
 	uint32_t uGridW = xGridDist(xRng);
 	uint32_t uGridH = xGridDist(xRng);
 	xParams.uMinGridWidth = uGridW;
@@ -89,28 +131,29 @@ static TilePuzzle_LevelGenerator::DifficultyParams RandomizeDifficultyParams(std
 	xParams.uMinGridHeight = uGridH;
 	xParams.uMaxGridHeight = uGridH;
 
-	// Colors: [2, 5]
-	std::uniform_int_distribution<uint32_t> xColorDist(2, 5);
+	// Colors
+	std::uniform_int_distribution<uint32_t> xColorDist(uMinColors, uMaxColors);
 	uint32_t uColors = xColorDist(xRng);
 	xParams.uMinNumColors = uColors;
 	xParams.uNumColors = uColors;
 
-	// Cats per color: [1, 2]
-	std::uniform_int_distribution<uint32_t> xCatDist(1, 2);
+	// Cats per color
+	std::uniform_int_distribution<uint32_t> xCatDist(uMinCats, uMaxCats);
 	uint32_t uCats = xCatDist(xRng);
 	xParams.uMinCatsPerColor = uCats;
 	xParams.uNumCatsPerColor = uCats;
 
 	xParams.uNumShapesPerColor = 1;
 
-	// Blockers: [0, 3]
-	std::uniform_int_distribution<uint32_t> xBlockerDist(0, 3);
+	// Blockers
+	std::uniform_int_distribution<uint32_t> xBlockerDist(uMinBlockers, uMaxBlockers);
 	uint32_t uBlockers = xBlockerDist(xRng);
 	xParams.uMinBlockers = uBlockers;
 	xParams.uNumBlockers = uBlockers;
 
-	// Blocker cats: [0, 2] but capped at blockers
-	std::uniform_int_distribution<uint32_t> xBlockerCatDist(0, std::min(2u, uBlockers));
+	// Blocker cats: [0, 2] but capped at blockers (force at least 1 for hard levels)
+	uint32_t uMinBlockerCatsRange = (uMinMoves >= 20 && uBlockers >= 1) ? 1 : 0;
+	std::uniform_int_distribution<uint32_t> xBlockerCatDist(uMinBlockerCatsRange, std::min(2u, uBlockers));
 	uint32_t uBlockerCats = (uBlockers > 0) ? xBlockerCatDist(xRng) : 0;
 	xParams.uMinBlockerCats = uBlockerCats;
 	xParams.uNumBlockerCats = uBlockerCats;
@@ -132,15 +175,16 @@ static TilePuzzle_LevelGenerator::DifficultyParams RandomizeDifficultyParams(std
 	xParams.uMinBlockerCats = uBlockerCats;
 	xParams.uNumBlockerCats = uBlockerCats;
 
-	// Shape complexity: [1, 4]
-	std::uniform_int_distribution<uint32_t> xComplexDist(1, 4);
+	// Shape complexity
+	std::uniform_int_distribution<uint32_t> xComplexDist(uMinComplexity, uMaxComplexity);
 	uint32_t uComplexity = xComplexDist(xRng);
 	xParams.uMinMaxShapeSize = uComplexity;
 	xParams.uMaxShapeSize = uComplexity;
 
 	// Conditional shapes: [0, 3] capped at (colors - 1)
 	uint32_t uMaxCond = std::min(3u, uColors - 1);
-	std::uniform_int_distribution<uint32_t> xCondDist(0, uMaxCond);
+	uint32_t uMinCond = (uMinMoves >= 10 && uMaxCond >= 1) ? 1 : 0;
+	std::uniform_int_distribution<uint32_t> xCondDist(uMinCond, uMaxCond);
 	uint32_t uCond = xCondDist(xRng);
 	xParams.uMinConditionalShapes = uCond;
 	xParams.uNumConditionalShapes = uCond;
@@ -148,7 +192,8 @@ static TilePuzzle_LevelGenerator::DifficultyParams RandomizeDifficultyParams(std
 	// Conditional threshold: [1, 5] if conditionals exist, else 0
 	if (uCond > 0)
 	{
-		std::uniform_int_distribution<uint32_t> xThreshDist(1, 5);
+		uint32_t uMaxThresh = (uMinMoves >= 15) ? 4 : 5;
+		std::uniform_int_distribution<uint32_t> xThreshDist(1, uMaxThresh);
 		uint32_t uThresh = xThreshDist(xRng);
 		xParams.uMinConditionalThreshold = uThresh;
 		xParams.uConditionalThreshold = uThresh;
@@ -159,18 +204,37 @@ static TilePuzzle_LevelGenerator::DifficultyParams RandomizeDifficultyParams(std
 		xParams.uConditionalThreshold = 0;
 	}
 
-	// Scramble moves: [100, 1500]
-	std::uniform_int_distribution<uint32_t> xScrambleDist(100, 1500);
+	// Scramble moves
+	std::uniform_int_distribution<uint32_t> xScrambleDist(uMinScramble, uMaxScramble);
 	xParams.uScrambleMoves = xScrambleDist(xRng);
 	xParams.uMinScrambleMoves = std::max(10u, xParams.uScrambleMoves / 10);
 
-	// Solver settings scale with grid area
-	uint32_t uGridArea = uGridW * uGridH;
+	// Solver settings - scale with target difficulty
 	xParams.uMinSolverMoves = 4;
-	xParams.uSolverStateLimit = 500000;
-	xParams.uDeepSolverStateLimit = (uGridArea >= 64) ? 5000000 : 3000000;
-	xParams.uMaxDeepVerificationsPerWorker = 5;
-	xParams.uMaxAttempts = 3000;
+	if (uMinMoves >= 20)
+	{
+		// Maximum depth for 20+ move targets
+		xParams.uSolverStateLimit = 2000000;
+		xParams.uDeepSolverStateLimit = 10000000;
+		xParams.uMaxDeepVerificationsPerWorker = 10;
+		xParams.uMaxAttempts = 3000;
+	}
+	else if (uMinMoves >= 10)
+	{
+		// Deeper solver for harder targets
+		xParams.uSolverStateLimit = 1000000;
+		xParams.uDeepSolverStateLimit = 5000000;
+		xParams.uMaxDeepVerificationsPerWorker = 5;
+		xParams.uMaxAttempts = 2000;
+	}
+	else
+	{
+		uint32_t uGridArea = uGridW * uGridH;
+		xParams.uSolverStateLimit = 500000;
+		xParams.uDeepSolverStateLimit = (uGridArea >= 64) ? 5000000 : 3000000;
+		xParams.uMaxDeepVerificationsPerWorker = 5;
+		xParams.uMaxAttempts = 3000;
+	}
 
 	return xParams;
 }
@@ -868,7 +932,7 @@ static bool IsLevelValid(const TilePuzzleLevelData& xLevel, DifficultyTier /*eTi
  *
  * @param xBestLevelOut     Output: best generated level data
  * @param axBestLevelDefs   Output: owned shape definitions for the best level
- * @param xLevelParams      Difficulty parameters to use
+ * @param xParamRng         RNG for randomizing params each retry round
  * @param uMinMoves         Minimum par moves target for retry loop
  * @param uTimeoutSeconds   Per-level timeout
  * @param uGlobalSeedCounter  In/out: global seed counter, incremented per round
@@ -885,7 +949,7 @@ typedef bool (*PfnLevelValidate)(const TilePuzzleLevelData& xLevel, DifficultyTi
 static uint32_t GenerateSingleLevel(
 	TilePuzzleLevelData& xBestLevelOut,
 	std::vector<TilePuzzleShapeDefinition>& axBestLevelDefs,
-	const TilePuzzle_LevelGenerator::DifficultyParams& xLevelParams,
+	std::mt19937& xParamRng,
 	uint32_t uMinMoves,
 	uint32_t uTimeoutSeconds,
 	uint32_t& uGlobalSeedCounter,
@@ -909,6 +973,9 @@ static uint32_t GenerateSingleLevel(
 
 	while (s_bRunning)
 	{
+		// Re-randomize params each retry round (biased by min-moves target)
+		TilePuzzle_LevelGenerator::DifficultyParams xLevelParams = RandomizeDifficultyParams(xParamRng, uMinMoves);
+
 		TilePuzzleLevelData xLevel = {};
 		TilePuzzle_LevelGenerator::GenerationStats xStats = {};
 		bool bSuccess = TilePuzzle_LevelGenerator::GenerateLevel(
@@ -983,7 +1050,8 @@ int main(int argc, char* argv[])
 	// Parse CLI arguments
 	std::string strOutputDir = LEVELGEN_OUTPUT_DIR;
 	uint32_t uTimeoutSeconds = 1800; // 30 minutes default
-	uint32_t uStartSeed = 0;
+	srand(time(0));
+	uint32_t uStartSeed = rand();
 	uint32_t uCount = 0;
 	uint32_t uMinMoves = 0;
 
@@ -1092,9 +1160,6 @@ int main(int argc, char* argv[])
 
 		auto xStartTime = std::chrono::high_resolution_clock::now();
 
-		// Randomize params for this level
-		TilePuzzle_LevelGenerator::DifficultyParams xLevelParams = RandomizeDifficultyParams(xParamRng);
-
 		// Retry with duplicate detection
 		static constexpr uint32_t s_uMAX_DUPLICATE_RETRIES = 10;
 		uint32_t uDuplicateRetries = 0;
@@ -1109,7 +1174,7 @@ int main(int argc, char* argv[])
 			bool bTimedOut = false;
 
 			uint32_t uBestMoves = GenerateSingleLevel(
-				xBestLevel, axBestLevelDefs, xLevelParams,
+				xBestLevel, axBestLevelDefs, xParamRng,
 				uMinMoves, uTimeoutSeconds,
 				uGlobalSeedCounter, uIdx,
 				xAccumulatedStats, uRetryRounds, bTimedOut,

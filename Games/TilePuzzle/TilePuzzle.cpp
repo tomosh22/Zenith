@@ -1829,7 +1829,7 @@ static bool TilePuzzle_HasAutoTestFlag()
 			return true;
 	}
 #endif
-	return true;
+	return false;
 }
 
 #endif // ZENITH_INPUT_SIMULATOR

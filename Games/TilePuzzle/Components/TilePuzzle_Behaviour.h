@@ -1081,12 +1081,21 @@ private:
 							TriggerScreenShake(0.05f, 0.15f);
 						break;
 					}
+
+					// Set overshoot offset in drag direction (decays in UpdateVisuals)
+					{
+						int32_t iOvDX, iOvDY;
+						TilePuzzleDirections::GetDelta(eDir, iOvDX, iOvDY);
+						m_xDragOvershootOffset = Zenith_Maths::Vector3(
+							static_cast<float>(iOvDX), 0.0f, static_cast<float>(iOvDY)) * s_fOvershootDistance;
+					}
 				}
 			}
 		}
 		else if (!bMouseDown && m_bDragging)
 		{
-			// Mouse released - snap to exact grid position and end drag
+			// Mouse released - snap to grid position and end drag
+			m_xDragOvershootOffset = Zenith_Maths::Vector3(0.0f);
 			SnapShapeVisuals(m_iDragShapeIndex);
 			m_bDragging = false;
 			m_iDragShapeIndex = -1;
@@ -1334,6 +1343,12 @@ private:
 	int32_t m_iSlidingShapeIndex = -1;
 	Zenith_Maths::Vector3 m_xSlideStartPos;
 	Zenith_Maths::Vector3 m_xSlideEndPos;
+	TilePuzzleDirection m_eLastDragDirection = TILEPUZZLE_DIR_NONE;
+
+	// Drag overshoot offset (decays over time, added on top of drag lerp)
+	Zenith_Maths::Vector3 m_xDragOvershootOffset = Zenith_Maths::Vector3(0.0f);
+	static constexpr float s_fOvershootDecaySpeed = 10.0f;
+	static constexpr float s_fOvershootDistance = 0.35f;
 
 	// Level file loading
 	uint32_t m_uAvailableLevelCount;
@@ -1546,25 +1561,25 @@ private:
 		if (szText)
 		{
 			float fTextY = static_cast<float>(iWinHeight) * 0.65f;
-			float fTextX = static_cast<float>(iWinWidth) * 0.5f - 200.0f;
+			float fTextX = static_cast<float>(iWinWidth) * 0.5f - 270.0f;
 
 			// Text background panel (bounds: left, top, right, bottom)
 			pxCanvas->SubmitQuad(
-				Zenith_Maths::Vector4(fTextX - 20.0f, fTextY - 20.0f, fTextX + 420.0f, fTextY + 100.0f),
+				Zenith_Maths::Vector4(fTextX - 30.0f, fTextY - 20.0f, fTextX + 570.0f, fTextY + 120.0f),
 				Zenith_Maths::Vector4(0.1f, 0.1f, 0.25f, m_fTutorialFadeProgress * 0.9f));
 
 			pxCanvas->SubmitText(
 				szText,
 				Zenith_Maths::Vector2(fTextX, fTextY),
-				64.0f,
+				32.0f,
 				Zenith_Maths::Vector4(1.0f, 1.0f, 0.8f, m_fTutorialFadeProgress));
 
 			// "Tap to continue" hint at bottom
 			float fHintAlpha = m_fTutorialFadeProgress * (0.5f + 0.5f * sinf(m_fTutorialFadeProgress * 6.0f));
 			pxCanvas->SubmitText(
 				"Tap to continue",
-				Zenith_Maths::Vector2(fTextX + 80.0f, fTextY + 80.0f),
-				48.0f,
+				Zenith_Maths::Vector2(fTextX + 170.0f, fTextY + 90.0f),
+				22.0f,
 				Zenith_Maths::Vector4(0.7f, 0.7f, 0.7f, fHintAlpha));
 		}
 
@@ -1837,6 +1852,7 @@ private:
 
 		xShape.iOriginX += iDeltaX;
 		xShape.iOriginY += iDeltaY;
+		m_eLastDragDirection = eDir;
 
 		if (m_iLastMovedShapeIndex != iShapeIndex)
 		{
@@ -2197,29 +2213,7 @@ private:
 
 	void BounceShapeOnArrival(int32_t iShapeIndex)
 	{
-		if (iShapeIndex < 0 || !m_xPuzzleScene.IsValid())
-			return;
-
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(m_xPuzzleScene);
-		if (!pxSceneData)
-			return;
-
-		TilePuzzleShapeInstance& xShape = m_xCurrentLevel.axShapes[iShapeIndex];
-		if (!pxSceneData->EntityExists(xShape.xEntityID))
-			return;
-
-		Zenith_Entity xEntity = pxSceneData->GetEntity(xShape.xEntityID);
-		if (!xEntity.IsValid())
-			return;
-
-		Zenith_Maths::Vector3 xBaseScale(s_fCellSize, s_fShapeHeight * 2.0f, s_fCellSize);
-		Zenith_Maths::Vector3 xBounceScale = xBaseScale * 1.08f;
-
-		Zenith_TweenComponent& xTween = xEntity.HasComponent<Zenith_TweenComponent>()
-			? xEntity.GetComponent<Zenith_TweenComponent>()
-			: xEntity.AddComponent<Zenith_TweenComponent>();
-		xTween.CancelByProperty(TWEEN_PROPERTY_SCALE);
-		xTween.TweenScaleFromTo(xBounceScale, xBaseScale, 0.1f, EASING_CUBIC_OUT);
+		SnapShapeVisuals(iShapeIndex);
 	}
 
 	void SnapShapeVisuals(int32_t iShapeIndex)
@@ -2354,7 +2348,18 @@ private:
 			}
 		}
 
-		// Lerp dragged shape toward its logical grid position
+		// Decay drag overshoot offset
+		if (glm::length(m_xDragOvershootOffset) > 0.001f)
+		{
+			float fDecay = s_fOvershootDecaySpeed * fDeltaTime;
+			m_xDragOvershootOffset *= glm::max(0.0f, 1.0f - fDecay);
+		}
+		else
+		{
+			m_xDragOvershootOffset = Zenith_Maths::Vector3(0.0f);
+		}
+
+		// Lerp dragged shape toward its logical grid position + overshoot offset
 		if (m_bDragging && m_iDragShapeIndex >= 0)
 		{
 			static constexpr float s_fDragLerpSpeed = 20.0f;
@@ -2377,7 +2382,8 @@ private:
 					Zenith_Maths::Vector3 xCurrentPos;
 					xTransform.GetPosition(xCurrentPos);
 
-					xTransform.SetPosition(glm::mix(xCurrentPos, xTargetPos, fLerpFactor));
+					Zenith_Maths::Vector3 xLerpTarget = xTargetPos + m_xDragOvershootOffset;
+					xTransform.SetPosition(glm::mix(xCurrentPos, xLerpTarget, fLerpFactor));
 				}
 			}
 		}

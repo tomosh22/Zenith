@@ -4,20 +4,20 @@ TilePuzzle Level Generator - Run Analytics
 
 SUMMARY
 -------
-Total levels attempted:  100
-Total levels succeeded:  100
+Total levels attempted:  10
+Total levels succeeded:  10
 Total levels failed:     0
 Overall success rate:    100.0%
-Total time:              28531209.1 ms (28531.2 s)
-Avg time per level:      285312.1 ms
-Avg solver moves:        9.8
+Total time:              17085686.1 ms (17085.7 s)
+Avg time per level:      1708568.6 ms
+Avg solver moves:        16.4
 
 RETRY STATISTICS
 ----------------
-Total retry rounds:      49
-Avg rounds per level:    0.5
-Max rounds for a level:  1
-Timed-out levels:        0
+Total retry rounds:      46
+Avg rounds per level:    4.6
+Max rounds for a level:  9
+Timed-out levels:        8
 
 
 PARAMETER INFLUENCE ANALYSIS
@@ -26,36 +26,32 @@ PARAMETER INFLUENCE ANALYSIS
 --- Colors ---
 Value    ScrambleFail TooEasy      Unsolvable     Success      SuccRate% 
 ----------------------------------------------------------------------
-3        3042         4895         1270           73           0.8       
-4        17320        3989         5466           1265         4.5       
-5        61572        1023         22575          3010         3.4       
+5        51110        0            22701          2189         2.9       
 
 --- CatsPerColor ---
 Value    ScrambleFail TooEasy      Unsolvable     Success      SuccRate% 
 ----------------------------------------------------------------------
-2        81934        9907         29311          4348         3.5       
+2        51110        0            22701          2189         2.9       
 
 --- ShapeComplexity ---
 Value    ScrambleFail TooEasy      Unsolvable     Success      SuccRate% 
 ----------------------------------------------------------------------
-2        13240        6100         20964          1678         4.0       
-3        33823        1979         4614           1446         3.5       
-4        34871        1828         3733           1224         2.9       
+2        7116         0            16421          463          1.9       
+3        17050        0            2336           614          3.1       
+4        26944        0            3944           1112         3.5       
 
 
 KEY FINDINGS
 ============
-  [LOW SUCCESS]  Colors=3: 0.8% success rate (73/9280)
-  [LOW SUCCESS]  Colors=4: 4.5% success rate (1265/28040)
-  [SCRAMBLE BOTTLENECK] Colors=4: 61.8% scramble failures
-  [LOW SUCCESS]  Colors=5: 3.4% success rate (3010/88180)
-  [SCRAMBLE BOTTLENECK] Colors=5: 69.8% scramble failures
-  [LOW SUCCESS]  CatsPerColor=2: 3.5% success rate (4348/125500)
-  [SCRAMBLE BOTTLENECK] CatsPerColor=2: 65.3% scramble failures
-  [LOW SUCCESS]  ShapeComplexity=2: 4.0% success rate (1678/41982)
-  [LOW SUCCESS]  ShapeComplexity=3: 3.5% success rate (1446/41862)
-  [SCRAMBLE BOTTLENECK] ShapeComplexity=3: 80.8% scramble failures
-  [LOW SUCCESS]  ShapeComplexity=4: 2.9% success rate (1224/41656)
-  [SCRAMBLE BOTTLENECK] ShapeComplexity=4: 83.7% scramble failures
+  [LOW SUCCESS]  Colors=5: 2.9% success rate (2189/76000)
+  [SCRAMBLE BOTTLENECK] Colors=5: 67.2% scramble failures
+  [LOW SUCCESS]  CatsPerColor=2: 2.9% success rate (2189/76000)
+  [SCRAMBLE BOTTLENECK] CatsPerColor=2: 67.2% scramble failures
+  [LOW SUCCESS]  ShapeComplexity=2: 1.9% success rate (463/24000)
+  [SOLVER BOTTLENECK] ShapeComplexity=2: 68.4% solver unsolvable
+  [LOW SUCCESS]  ShapeComplexity=3: 3.1% success rate (614/20000)
+  [SCRAMBLE BOTTLENECK] ShapeComplexity=3: 85.2% scramble failures
+  [LOW SUCCESS]  ShapeComplexity=4: 3.5% success rate (1112/32000)
+  [SCRAMBLE BOTTLENECK] ShapeComplexity=4: 84.2% scramble failures
 
 ==========================================================
