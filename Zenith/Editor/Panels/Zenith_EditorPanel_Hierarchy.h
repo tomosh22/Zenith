@@ -27,6 +27,16 @@ namespace Zenith_EditorPanelHierarchy
 	 * @param uGameCameraEntityID Reference to game camera entity (set to invalid if deleted)
 	 */
 	void Render(Zenith_EntityID& uGameCameraEntityID);
+
+	/**
+	 * Check whether uCandidateAncestor is an ancestor of uTarget in the entity hierarchy.
+	 * Returns false if uCandidateAncestor == uTarget (self is not an ancestor of self).
+	 *
+	 * @param uCandidateAncestor The entity to test as a potential ancestor
+	 * @param uTarget            The entity whose ancestry chain is walked
+	 * @return true if uCandidateAncestor appears in uTarget's parent chain
+	 */
+	bool IsAncestorOf(Zenith_EntityID uCandidateAncestor, Zenith_EntityID uTarget);
 }
 
 #endif // ZENITH_TOOLS

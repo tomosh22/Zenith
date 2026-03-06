@@ -87,6 +87,18 @@ struct Zenith_TacticalPointScore
 };
 
 /**
+ * Scoring callback for FindBestPointOfType.
+ * Returns a score for the given tactical point using the provided context data.
+ */
+typedef float(*TacticalScoreFn)(const Zenith_TacticalPoint& xPoint, const void* pCtx);
+
+/**
+ * Type filter callback for FindBestPointOfType.
+ * Returns true if the tactical point type is acceptable.
+ */
+typedef bool(*TacticalTypeFilterFn)(TacticalPointType eType);
+
+/**
  * Zenith_TacticalPointSystem - Manages tactical positions for AI decision-making
  *
  * Provides:
@@ -102,6 +114,18 @@ public:
 	static void Initialise();
 	static void Shutdown();
 	static void Update();
+
+	// Helper: resolve entity ID to world position
+	static bool GetEntityPosition(Zenith_EntityID xEntity, Zenith_Maths::Vector3& xOutPos);
+
+	// Generic best-point search with pluggable scoring
+	static const Zenith_TacticalPoint* FindBestPointOfType(
+		const Zenith_Maths::Vector3& xDistanceRef,
+		float fMinDistance,
+		float fMaxDistance,
+		TacticalTypeFilterFn pfnTypeFilter,
+		TacticalScoreFn pfnScore,
+		const void* pScoreCtx);
 
 	// Point registration
 	static uint32_t RegisterPoint(const Zenith_Maths::Vector3& xPos,
@@ -171,8 +195,16 @@ public:
 	static const Zenith_TacticalPoint* GetPointConst(uint32_t uPointID);
 	static uint32_t GetPointCount();
 
-	// Scoring (public for custom queries)
+	// Scoring (public for custom queries and score callbacks)
 	static Zenith_TacticalPointScore ScorePoint(const Zenith_TacticalPoint& xPoint, const Zenith_TacticalPointQuery& xQuery);
+	static float EvaluateCoverFromThreat(const Zenith_Maths::Vector3& xPoint, const Zenith_Maths::Vector3& xThreat);
+	static float EvaluateFlankAngle(const Zenith_Maths::Vector3& xPoint, const Zenith_Maths::Vector3& xTarget, const Zenith_Maths::Vector3& xTargetFacing);
+
+	// Scoring weights (public for score callbacks)
+	static float s_fDistanceWeight;
+	static float s_fCoverWeight;
+	static float s_fVisibilityWeight;
+	static float s_fElevationWeight;
 
 #ifdef ZENITH_TOOLS
 	static void DebugDraw();
@@ -185,16 +217,8 @@ private:
 	static uint32_t s_uNextPointID;
 	static bool s_bInitialised;
 
-	// Scoring weights
-	static float s_fDistanceWeight;
-	static float s_fCoverWeight;
-	static float s_fVisibilityWeight;
-	static float s_fElevationWeight;
-
 	static uint32_t AllocatePointSlot();
 	static void FreePointSlot(uint32_t uIndex);
-	static float EvaluateCoverFromThreat(const Zenith_Maths::Vector3& xPoint, const Zenith_Maths::Vector3& xThreat);
-	static float EvaluateFlankAngle(const Zenith_Maths::Vector3& xPoint, const Zenith_Maths::Vector3& xTarget, const Zenith_Maths::Vector3& xTargetFacing);
 };
 
 /**

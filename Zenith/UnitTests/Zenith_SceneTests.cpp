@@ -712,6 +712,12 @@ void Zenith_SceneTests::RunAllTests()
 	TestLoadSceneDeferredDuringUpdate();
 	TestLoadSceneSyncOutsideUpdate();
 
+	// Cat 43: Extract-Function Refactoring Verification
+	TestMakeInvalidSceneFields();
+	TestCircularLoadNoMatch();
+	TestCircularLoadWithMatch();
+	TestFireUnloadCallbacksAndSelectNewActive();
+
 	// Clean up any scene state left over from tests so it doesn't leak into the game.
 	// We can't unload the last scene (engine prevents it), so reset the active scene's
 	// data and clear its test name/path. Project_LoadInitialScene will populate it.
@@ -11604,4 +11610,140 @@ void Zenith_SceneTests::TestLoadSceneSyncOutsideUpdate()
 	CleanupTestSceneFile(strPath);
 
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestLoadSceneSyncOutsideUpdate passed");
+}
+
+//==============================================================================
+// Cat 43: Extract-Function Refactoring Verification
+//==============================================================================
+
+void Zenith_SceneTests::TestMakeInvalidSceneFields()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestMakeInvalidSceneFields...");
+
+	Zenith_Scene xScene = Zenith_SceneManager::MakeInvalidScene();
+	Zenith_Assert(!xScene.IsValid(), "MakeInvalidScene should return an invalid scene");
+	Zenith_Assert(xScene.m_iHandle == -1, "MakeInvalidScene handle should be -1");
+	Zenith_Assert(xScene.m_uGeneration == 0, "MakeInvalidScene generation should be 0");
+
+	// Verify it matches the INVALID_SCENE constant
+	Zenith_Assert(xScene == Zenith_Scene::INVALID_SCENE, "MakeInvalidScene should equal INVALID_SCENE");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestMakeInvalidSceneFields passed");
+}
+
+void Zenith_SceneTests::TestCircularLoadNoMatch()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestCircularLoadNoMatch...");
+
+	// Ensure the currently loading paths list is empty (clean state)
+	Zenith_Assert(Zenith_SceneManager::s_axCurrentlyLoadingPaths.GetSize() == 0,
+		"Currently loading paths should be empty at test start");
+	Zenith_Assert(Zenith_SceneManager::s_axLifecycleLoadStack.GetSize() == 0,
+		"Lifecycle load stack should be empty at test start");
+
+	// A path not in the pending load list should not be detected as circular
+	bool bResult = Zenith_SceneManager::CheckCircularLoadDependency("NonExistent/TestScene.zscen");
+	Zenith_Assert(!bResult, "CheckCircularLoadDependency should return false when path is not in pending loads");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestCircularLoadNoMatch passed");
+}
+
+void Zenith_SceneTests::TestCircularLoadWithMatch()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestCircularLoadWithMatch...");
+
+	const std::string strTestPath = "TestCircular/MyScene.zscen";
+
+	// Ensure clean state
+	Zenith_Assert(Zenith_SceneManager::s_axCurrentlyLoadingPaths.GetSize() == 0,
+		"Currently loading paths should be empty at test start");
+
+	// Add a path to the currently loading paths list
+	Zenith_SceneManager::s_axCurrentlyLoadingPaths.PushBack(strTestPath);
+
+	// The same path should be detected as circular
+	bool bResult = Zenith_SceneManager::CheckCircularLoadDependency(strTestPath);
+	Zenith_Assert(bResult, "CheckCircularLoadDependency should return true when path matches a pending load");
+
+	// A different path should not be detected as circular
+	bool bDifferent = Zenith_SceneManager::CheckCircularLoadDependency("Other/Scene.zscen");
+	Zenith_Assert(!bDifferent, "CheckCircularLoadDependency should return false for a different path");
+
+	// Cleanup: remove the test path
+	Zenith_SceneManager::s_axCurrentlyLoadingPaths.EraseValue(strTestPath);
+
+	// Also test the lifecycle load stack path
+	Zenith_SceneManager::s_axLifecycleLoadStack.PushBack(strTestPath);
+
+	bResult = Zenith_SceneManager::CheckCircularLoadDependency(strTestPath);
+	Zenith_Assert(bResult, "CheckCircularLoadDependency should detect path in lifecycle load stack");
+
+	// Cleanup
+	Zenith_SceneManager::s_axLifecycleLoadStack.EraseValue(strTestPath);
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestCircularLoadWithMatch passed");
+}
+
+void Zenith_SceneTests::TestFireUnloadCallbacksAndSelectNewActive()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestFireUnloadCallbacksAndSelectNewActive...");
+
+	// Track callback firing
+	static bool s_bUnloadingFired = false;
+	static bool s_bUnloadedFired = false;
+	static bool s_bActiveChangedFired = false;
+	static Zenith_Scene s_xOldActiveScene;
+	static Zenith_Scene s_xNewActiveScene;
+	s_bUnloadingFired = false;
+	s_bUnloadedFired = false;
+	s_bActiveChangedFired = false;
+
+	auto ulUnloadingHandle = Zenith_SceneManager::RegisterSceneUnloadingCallback(
+		[](Zenith_Scene) { s_bUnloadingFired = true; }
+	);
+	auto ulUnloadedHandle = Zenith_SceneManager::RegisterSceneUnloadedCallback(
+		[](Zenith_Scene) { s_bUnloadedFired = true; }
+	);
+	auto ulChangedHandle = Zenith_SceneManager::RegisterActiveSceneChangedCallback(
+		[](Zenith_Scene xOld, Zenith_Scene xNew) {
+			s_bActiveChangedFired = true;
+			s_xOldActiveScene = xOld;
+			s_xNewActiveScene = xNew;
+		}
+	);
+
+	// Create two scenes so we can unload one
+	Zenith_Scene xScene1 = Zenith_SceneManager::CreateEmptyScene("UnloadTest1");
+	Zenith_Scene xScene2 = Zenith_SceneManager::CreateEmptyScene("UnloadTest2");
+	Zenith_SceneManager::SetActiveScene(xScene1);
+
+	// Reset callback tracking after SetActiveScene fires its own callback
+	s_bActiveChangedFired = false;
+
+	// Use FireUnloadCallbacksAndSelectNewActive to unload the active scene
+	Zenith_SceneManager::FireUnloadCallbacksAndSelectNewActive(xScene1.m_iHandle, xScene1);
+
+	// Verify unloading and unloaded callbacks fired
+	Zenith_Assert(s_bUnloadingFired, "SceneUnloading callback should have fired");
+	Zenith_Assert(s_bUnloadedFired, "SceneUnloaded callback should have fired");
+
+	// Verify active scene changed callback fired (since xScene1 was active)
+	Zenith_Assert(s_bActiveChangedFired, "ActiveSceneChanged callback should fire when active scene is unloaded");
+	Zenith_Assert(s_xOldActiveScene == xScene1, "Old active scene should be the unloaded scene");
+
+	// Verify a new active scene was selected (should be xScene2 or persistent)
+	Zenith_Scene xCurrentActive = Zenith_SceneManager::GetActiveScene();
+	Zenith_Assert(xCurrentActive.IsValid(), "A new active scene should have been selected");
+	Zenith_Assert(xCurrentActive != xScene1, "The unloaded scene should no longer be active");
+
+	// Cleanup
+	Zenith_SceneManager::UnregisterSceneUnloadingCallback(ulUnloadingHandle);
+	Zenith_SceneManager::UnregisterSceneUnloadedCallback(ulUnloadedHandle);
+	Zenith_SceneManager::UnregisterActiveSceneChangedCallback(ulChangedHandle);
+
+	// Unload xScene2 if it's not the last scene
+	// (If xScene2 is the only remaining non-persistent scene, we can't unload it)
+	// The scene will be cleaned up during the test teardown in RunAllTests
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestFireUnloadCallbacksAndSelectNewActive passed");
 }

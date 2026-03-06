@@ -46,8 +46,14 @@ struct NavMeshGenerationConfig
  * 6. Build polygon mesh
  * 7. Compute adjacency
  */
+class Zenith_AITests;
+class Zenith_UnitTests;
+
 class Zenith_NavMeshGenerator
 {
+	friend class Zenith_AITests;
+	friend class Zenith_UnitTests;
+
 public:
 	/**
 	 * Generate a navigation mesh from scene static geometry
@@ -177,4 +183,66 @@ private:
 	static bool IsWalkableSlope(const Zenith_Maths::Vector3& xNormal, float fMaxSlopeDeg);
 	static void AddSpan(HeightfieldColumn& xColumn, uint16_t uMinY, uint16_t uMaxY, uint8_t uAreaType);
 	static void FreeHeightfield(GenerationContext& xContext);
+
+	// Extracted helpers for reduced cyclomatic complexity
+
+	/**
+	 * Flood-fill from a starting span, assigning regionID to all connected walkable spans.
+	 * Connectivity is determined by 4-directional adjacency and step height.
+	 *
+	 * @param axCompactSpans      All compact spans (read/write for region assignment)
+	 * @param axColumnSpanCounts  Span count per column
+	 * @param axColumnSpanStarts  First span index per column
+	 * @param axSpanToColumn      Mapping from span index to column index
+	 * @param iWidth              Grid width in cells
+	 * @param iHeight             Grid height (depth) in cells
+	 * @param iMaxStepCells       Maximum step height in cells for connectivity
+	 * @param uStartSpanIdx       Index of the span to start filling from
+	 * @param uRegionID           Region ID to assign to connected spans
+	 */
+	static void FloodFillRegion(
+		Zenith_Vector<CompactSpan>& axCompactSpans,
+		const Zenith_Vector<uint32_t>& axColumnSpanCounts,
+		const Zenith_Vector<uint32_t>& axColumnSpanStarts,
+		const Zenith_Vector<uint32_t>& axSpanToColumn,
+		int32_t iWidth,
+		int32_t iHeight,
+		int32_t iMaxStepCells,
+		uint32_t uStartSpanIdx,
+		uint16_t uRegionID);
+
+	/**
+	 * Check whether a column (iX, iZ) contains any span belonging to uRegion.
+	 *
+	 * @param axCompactSpans      All compact spans
+	 * @param axColumnSpanCounts  Span count per column
+	 * @param axColumnSpanStarts  First span index per column
+	 * @param iX                  Column X coordinate
+	 * @param iZ                  Column Z coordinate
+	 * @param iWidth              Grid width in cells
+	 * @param iHeight             Grid height (depth) in cells
+	 * @param uRegion             Region ID to search for
+	 * @return true if any span in the column belongs to uRegion
+	 */
+	static bool ColumnHasSpanInRegion(
+		const Zenith_Vector<CompactSpan>& axCompactSpans,
+		const Zenith_Vector<uint32_t>& axColumnSpanCounts,
+		const Zenith_Vector<uint32_t>& axColumnSpanStarts,
+		int32_t iX,
+		int32_t iZ,
+		int32_t iWidth,
+		int32_t iHeight,
+		uint16_t uRegion);
+
+	/**
+	 * Expand axis-aligned bounds to include a point.
+	 *
+	 * @param xMin  Current minimum (updated in place)
+	 * @param xMax  Current maximum (updated in place)
+	 * @param xPoint Point to include
+	 */
+	static inline void ExpandBoundsToInclude(
+		Zenith_Maths::Vector3& xMin,
+		Zenith_Maths::Vector3& xMax,
+		const Zenith_Maths::Vector3& xPoint);
 };

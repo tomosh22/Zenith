@@ -395,6 +395,7 @@ private:
 	friend class Zenith_Entity;
 	friend class Zenith_SceneManager;
 	friend class Zenith_SceneTests;
+	friend class Zenith_UnitTests;
 	friend class Zenith_ComponentMetaRegistry;
 #ifdef ZENITH_TOOLS
 	friend class Zenith_Editor;
@@ -705,6 +706,14 @@ private:
 
 	// Collect entity and all descendants depth-first (children before parent)
 	void CollectHierarchyDepthFirst(Zenith_EntityID xID, Zenith_Vector<Zenith_EntityID>& axOut);
+
+	// Shared destruction helpers (used by Reset and RemoveEntity)
+	void DisableEntity(Zenith_EntityID xID);
+	void DestroyEntityComponents(Zenith_EntityID xID);
+
+	// Shared deserialization helper
+	Zenith_EntityID ReadEntityFromDataStream(Zenith_DataStream& xStream, u_int uVersion,
+		std::unordered_map<uint32_t, Zenith_EntityID>& xFileIndexToNewID); // #TODO: Replace with engine hash map
 
 	// Shared helper: dispatch OnAwake for a single entity if not already awoken
 	void DispatchAwakeForEntity(Zenith_EntityID xEntityID);

@@ -36,17 +36,26 @@
  */
 
 #include <vector>
-#include <unordered_set>
+#include <unordered_map>
+#include <chrono>
 #include <cstdint>
 #include <cstring>
 
 #include "TilePuzzle_Types.h"
+#include "Profiling/Zenith_Profiling.h"
 #include "TilePuzzle_Rules.h"
 
 static constexpr uint32_t s_uTilePuzzleMaxSolverStates = 2000000;
 static constexpr uint32_t s_uMaxSolverShapes = 5;
 static constexpr uint32_t s_uMaxSolverCats = 16;
 static constexpr uint32_t s_uMaxGridCells = 256; // 16x16 max
+static constexpr uint32_t s_uMaxCellsPerShape = 4;
+
+struct FlatShapeCells
+{
+	TilePuzzleCellOffset aCells[s_uMaxCellsPerShape];
+	uint32_t uCount;
+};
 
 // ============================================================================
 // TilePuzzleFlatHashSet - Open-addressing hash set for uint64_t keys
@@ -91,6 +100,15 @@ public:
 
 	size_t Size() const { return m_uSize; }
 
+	void Clear()
+	{
+		if (m_uSize > 0)
+		{
+			std::fill(m_auKeys.begin(), m_auKeys.end(), s_uEMPTY);
+			m_uSize = 0;
+		}
+	}
+
 private:
 	static constexpr uint64_t s_uEMPTY = UINT64_MAX;
 
@@ -125,15 +143,20 @@ private:
 class TilePuzzle_Solver
 {
 public:
+	static inline bool s_bDetailedProfiling = false;
 	/**
 	 * SolveLevel - Find minimum player-moves to solve the level
 	 *
-	 * @param xLevel      The level data to solve
-	 * @param uMaxStates  Maximum BFS states to explore before giving up
+	 * @param xLevel            The level data to solve
+	 * @param uMaxStates        Maximum BFS states to explore before giving up
+	 * @param piLowerBoundOut   If non-null and state limit is hit, receives the proven lower bound
+	 *                          on minimum moves (all depths below this were fully explored with no solution).
+	 *                          Not set if state space is genuinely exhausted (puzzle truly unsolvable).
 	 * @return Minimum player-moves to solve, or -1 if unsolvable/too complex
 	 */
-	static int32_t SolveLevel(const TilePuzzleLevelData& xLevel, uint32_t uMaxStates = s_uTilePuzzleMaxSolverStates)
+	static int32_t SolveLevel(const TilePuzzleLevelData& xLevel, uint32_t uMaxStates = s_uTilePuzzleMaxSolverStates, int32_t* piLowerBoundOut = nullptr)
 	{
+		Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__TILEPUZZLE_SOLVER);
 		// Pre-build cat state array once (cats never move)
 		uint32_t uNumCats = static_cast<uint32_t>(xLevel.axCats.size());
 		Zenith_Assert(uNumCats <= s_uMaxSolverCats, "Too many cats for solver (%u > %u)", uNumCats, s_uMaxSolverCats);
@@ -184,6 +207,29 @@ public:
 
 		if (uNumDraggable == 0)
 			return xLevel.axCats.empty() ? 0 : -1;
+
+		// ================================================================
+		// Pre-copy shape cells to flat stack arrays (eliminate heap indirection)
+		// ================================================================
+		FlatShapeCells aFlatCells[s_uMaxSolverShapes];
+		for (uint32_t i = 0; i < uNumDraggable; ++i)
+		{
+			aFlatCells[i].uCount = static_cast<uint32_t>(apxDefinitions[i]->axCells.size());
+			Zenith_Assert(aFlatCells[i].uCount <= s_uMaxCellsPerShape, "Shape has too many cells");
+			for (uint32_t c = 0; c < aFlatCells[i].uCount; ++c)
+				aFlatCells[i].aCells[c] = apxDefinitions[i]->axCells[c];
+		}
+
+		// ================================================================
+		// Pre-compute color-indexed cat arrays (eliminate color filtering in hot loop)
+		// ================================================================
+		uint32_t auColorCatIndices[TILEPUZZLE_COLOR_COUNT][s_uMaxSolverCats];
+		uint32_t auColorCatCount[TILEPUZZLE_COLOR_COUNT] = {};
+		for (uint32_t ci = 0; ci < uNumCats; ++ci)
+		{
+			uint32_t uColor = static_cast<uint32_t>(aeCatColors[ci]);
+			auColorCatIndices[uColor][auColorCatCount[uColor]++] = ci;
+		}
 
 		// ================================================================
 		// Pre-compute walkable grid (floor + no static blocker = true)
@@ -242,16 +288,20 @@ public:
 
 		// Inner BFS containers (pre-allocated, reused)
 		std::vector<uint64_t> axInnerQueue;
-		std::unordered_set<uint64_t> xInnerVisited;
+		TilePuzzleFlatHashSet xInnerVisited;
 		axInnerQueue.reserve(512);
-		xInnerVisited.reserve(512);
+		xInnerVisited.Reserve(512);
 
 		int32_t aiDeltaX[] = {0, 0, -1, 1};
 		int32_t aiDeltaY[] = {-1, 1, 0, 0};
 		int32_t iMoves = 0;
 
+		// Fine-grained timing accumulators (nanoseconds)
+		double fCollisionNs = 0.0, fEliminationNs = 0.0, fInnerVisitedNs = 0.0;
+
 		while (!axCurrentLevel.empty() && xOuterVisited.Size() < uMaxStates)
 		{
+			Zenith_Profiling::Scope xDepthScope(ZENITH_PROFILE_INDEX__TILEPUZZLE_SOLVER_BFS_DEPTH);
 			axNextLevel.clear();
 
 			for (size_t uStateIdx = 0; uStateIdx < axCurrentLevel.size(); ++uStateIdx)
@@ -270,25 +320,41 @@ public:
 					if ((auColorCatMasks[uDragShape] & ~uOuterMask) == 0)
 						continue;
 
-					// Check unlock threshold
+					// Check unlock threshold (hardware popcount)
 					if (auUnlockThresholds[uDragShape] > 0)
 					{
-						uint32_t uEliminatedCount = 0;
-						uint32_t uTmp = uOuterMask;
-						while (uTmp) { uEliminatedCount += uTmp & 1u; uTmp >>= 1; }
+						uint32_t uEliminatedCount = TILEPUZZLE_POPCNT(uOuterMask);
 						if (uEliminatedCount < auUnlockThresholds[uDragShape])
 							continue;
 					}
 
+					// Build occupancy grid for other active shapes (valid for entire inner BFS)
+					bool abOccupied[s_uMaxGridCells];
+					memset(abOccupied, 0, uGridWidth * uGridHeight);
+					for (uint32_t si = 0; si < uNumDraggable; ++si)
+					{
+						if (si == uDragShape) continue;
+						if ((auColorCatMasks[si] & ~uOuterMask) == 0) continue;
+						for (uint32_t c = 0; c < aFlatCells[si].uCount; ++c)
+						{
+							int32_t cx = aiPosX[si] + aFlatCells[si].aCells[c].iX;
+							int32_t cy = aiPosY[si] + aFlatCells[si].aCells[c].iY;
+							abOccupied[cy * uGridWidth + cx] = true;
+						}
+					}
+
 					// Inner BFS: explore all positions reachable by dragging this shape
 					axInnerQueue.clear();
-					xInnerVisited.clear();
+					xInnerVisited.Clear();
 
 					int32_t iStartX = aiPosX[uDragShape];
 					int32_t iStartY = aiPosY[uDragShape];
 					uint64_t uStartKey = PackInnerState(iStartX, iStartY, uOuterMask);
 					axInnerQueue.push_back(uStartKey);
-					xInnerVisited.insert(uStartKey);
+					xInnerVisited.Insert(uStartKey);
+
+					const uint32_t uNumMovingCells = aFlatCells[uDragShape].uCount;
+					const TilePuzzleCellOffset* pMovingCells = aFlatCells[uDragShape].aCells;
 
 					size_t uInnerFront = 0;
 					while (uInnerFront < axInnerQueue.size())
@@ -318,28 +384,32 @@ public:
 								axNextLevel.push_back(uNewOuter);
 
 								if (xOuterVisited.Size() >= uMaxStates)
+								{
+									if (piLowerBoundOut)
+										*piLowerBoundOut = iMoves + 1;
 									return -1;
+								}
 							}
 						}
 
 						// ================================================
-						// Explore 4 directions with inlined collision checks
+						// Explore 4 directions with optimized collision/elimination
 						// ================================================
-						const std::vector<TilePuzzleCellOffset>& axMovingCells = apxDefinitions[uDragShape]->axCells;
-						size_t uNumMovingCells = axMovingCells.size();
-
 						for (int32_t iDir = 0; iDir < 4; ++iDir)
 						{
 							int32_t iNewX = iCurX + aiDeltaX[iDir];
 							int32_t iNewY = iCurY + aiDeltaY[iDir];
 
 							// --- Inline CanMoveShape (see TilePuzzle_Rules::CanMoveShape) ---
-						// Cross-validated in ZENITH_ASSERT builds below
+							// Cross-validated in ZENITH_ASSERT builds below
+							std::chrono::high_resolution_clock::time_point xCollisionT0;
+							if (s_bDetailedProfiling) xCollisionT0 = std::chrono::high_resolution_clock::now();
+
 							bool bValid = true;
-							for (size_t c = 0; c < uNumMovingCells; ++c)
+							for (uint32_t c = 0; c < uNumMovingCells; ++c)
 							{
-								int32_t iCellX = iNewX + axMovingCells[c].iX;
-								int32_t iCellY = iNewY + axMovingCells[c].iY;
+								int32_t iCellX = iNewX + pMovingCells[c].iX;
+								int32_t iCellY = iNewY + pMovingCells[c].iY;
 
 								// Bounds check
 								if (iCellX < 0 || iCellY < 0 ||
@@ -359,25 +429,12 @@ public:
 									break;
 								}
 
-								// Other draggable shapes collision
-								for (uint32_t si = 0; si < uNumDraggable; ++si)
+								// Occupancy grid collision (O(1) lookup replaces nested shape loop)
+								if (abOccupied[uCellIdx])
 								{
-									if (si == uDragShape) continue;
-									if ((auColorCatMasks[si] & ~uCurMask) == 0) continue;
-
-									const std::vector<TilePuzzleCellOffset>& axOtherCells = apxDefinitions[si]->axCells;
-									for (size_t sc = 0; sc < axOtherCells.size(); ++sc)
-									{
-										if (aiPosX[si] + axOtherCells[sc].iX == iCellX &&
-											aiPosY[si] + axOtherCells[sc].iY == iCellY)
-										{
-											bValid = false;
-											break;
-										}
-									}
-									if (!bValid) break;
+									bValid = false;
+									break;
 								}
-								if (!bValid) break;
 
 								// Wrong-color cat check (O(1) lookup)
 								int8_t iCatIdx = aiCatAtCell[uCellIdx];
@@ -390,10 +447,17 @@ public:
 								}
 							}
 
+							if (s_bDetailedProfiling)
+								fCollisionNs += std::chrono::duration<double, std::nano>(std::chrono::high_resolution_clock::now() - xCollisionT0).count();
+
 							if (!bValid) continue;
 
 							// --- Inline ComputeNewlyEliminatedCats (see TilePuzzle_Rules::ComputeNewlyEliminatedCats) ---
 							// Cross-validated in ZENITH_ASSERT builds below
+							// Optimized: iterate only same-color cats per shape (color-indexed)
+							std::chrono::high_resolution_clock::time_point xElimT0;
+							if (s_bDetailedProfiling) xElimT0 = std::chrono::high_resolution_clock::now();
+
 							uint32_t uNewlyEliminated = 0;
 							for (uint32_t si = 0; si < uNumDraggable; ++si)
 							{
@@ -401,36 +465,50 @@ public:
 
 								int32_t iShapeX = (si == uDragShape) ? iNewX : aiPosX[si];
 								int32_t iShapeY = (si == uDragShape) ? iNewY : aiPosY[si];
-								const std::vector<TilePuzzleCellOffset>& axShapeCells = apxDefinitions[si]->axCells;
+								const TilePuzzleCellOffset* pShapeCells = aFlatCells[si].aCells;
+								uint32_t uShapeCellCount = aFlatCells[si].uCount;
 
-								for (size_t c = 0; c < axShapeCells.size(); ++c)
+								uint32_t uColor = static_cast<uint32_t>(aeColors[si]);
+								uint32_t uSameColorCatCount = auColorCatCount[uColor];
+
+								for (uint32_t k = 0; k < uSameColorCatCount; ++k)
 								{
-									int32_t iCellX = iShapeX + axShapeCells[c].iX;
-									int32_t iCellY = iShapeY + axShapeCells[c].iY;
+									uint32_t ci = auColorCatIndices[uColor][k];
+									if ((uCurMask | uNewlyEliminated) & (1u << ci)) continue;
 
-									for (uint32_t ci = 0; ci < uNumCats; ++ci)
+									if (abCatOnBlocker[ci])
 									{
-										if ((uCurMask | uNewlyEliminated) & (1u << ci)) continue;
-										if (aeCatColors[ci] != aeColors[si]) continue;
-
-										if (abCatOnBlocker[ci])
+										for (uint32_t c = 0; c < uShapeCellCount; ++c)
 										{
+											int32_t iCellX = iShapeX + pShapeCells[c].iX;
+											int32_t iCellY = iShapeY + pShapeCells[c].iY;
 											int32_t iDX = iCellX - aiCatX[ci];
 											int32_t iDY = iCellY - aiCatY[ci];
 											if ((iDX == 0 && (iDY == 1 || iDY == -1)) ||
 												(iDY == 0 && (iDX == 1 || iDX == -1)))
 											{
 												uNewlyEliminated |= (1u << ci);
+												break;
 											}
 										}
-										else
+									}
+									else
+									{
+										for (uint32_t c = 0; c < uShapeCellCount; ++c)
 										{
-											if (aiCatX[ci] == iCellX && aiCatY[ci] == iCellY)
+											if (iShapeX + pShapeCells[c].iX == aiCatX[ci] &&
+												iShapeY + pShapeCells[c].iY == aiCatY[ci])
+											{
 												uNewlyEliminated |= (1u << ci);
+												break;
+											}
 										}
 									}
 								}
 							}
+
+							if (s_bDetailedProfiling)
+								fEliminationNs += std::chrono::duration<double, std::nano>(std::chrono::high_resolution_clock::now() - xElimT0).count();
 
 							// --- Cross-validate inlined logic against canonical Rules ---
 #ifdef ZENITH_ASSERT
@@ -443,9 +521,6 @@ public:
 									axValidationShapes[vi].iOriginY = (vi == uDragShape) ? iCurY : aiPosY[vi];
 									axValidationShapes[vi].eColor = aeColors[vi];
 									axValidationShapes[vi].uUnlockThreshold = auUnlockThresholds[vi];
-									// Mark removed shapes (all same-color cats eliminated)
-									// Skip the moving shape: it's still being dragged even if
-									// it eliminated all its own cats during this inner BFS
 									if (vi != uDragShape && (auColorCatMasks[vi] & ~uCurMask) == 0)
 										axValidationShapes[vi].pxDefinition = nullptr;
 								}
@@ -459,7 +534,6 @@ public:
 									axValidationCats[vi].bOnBlocker = abCatOnBlocker[vi];
 								}
 
-								// Validate CanMoveShape
 								bool bRulesValid = TilePuzzle_Rules::CanMoveShape(
 									xLevel,
 									axValidationShapes, uNumDraggable,
@@ -469,7 +543,6 @@ public:
 								Zenith_Assert(bRulesValid == bValid,
 									"SolveLevel: inlined CanMoveShape disagrees with Rules");
 
-								// Validate ComputeNewlyEliminatedCats
 								axValidationShapes[uDragShape].iOriginX = iNewX;
 								axValidationShapes[uDragShape].iOriginY = iNewY;
 								uint32_t uRulesElim = TilePuzzle_Rules::ComputeNewlyEliminatedCats(
@@ -481,8 +554,15 @@ public:
 							}
 #endif
 							uint64_t uNextKey = PackInnerState(iNewX, iNewY, uCurMask | uNewlyEliminated);
-							if (xInnerVisited.insert(uNextKey).second)
+
+							std::chrono::high_resolution_clock::time_point xVisitedT0;
+							if (s_bDetailedProfiling) xVisitedT0 = std::chrono::high_resolution_clock::now();
+
+							if (xInnerVisited.Insert(uNextKey))
 								axInnerQueue.push_back(uNextKey);
+
+							if (s_bDetailedProfiling)
+								fInnerVisitedNs += std::chrono::duration<double, std::nano>(std::chrono::high_resolution_clock::now() - xVisitedT0).count();
 						}
 					}
 				}
@@ -491,6 +571,19 @@ public:
 			axCurrentLevel.swap(axNextLevel);
 			iMoves++;
 		}
+
+		// Report detailed profiling breakdown
+		if (s_bDetailedProfiling)
+		{
+			fprintf(stderr, "[Solver] states=%zu collision=%.1fms elimination=%.1fms innerSet=%.1fms\n",
+				xOuterVisited.Size(),
+				fCollisionNs / 1e6, fEliminationNs / 1e6, fInnerVisitedNs / 1e6);
+		}
+
+		// If we exited because of state limit (not because state space was exhausted),
+		// provide the lower bound: all depths 0..iMoves-1 were fully explored
+		if (piLowerBoundOut && xOuterVisited.Size() >= uMaxStates)
+			*piLowerBoundOut = iMoves;
 
 		return -1;
 	}
@@ -518,6 +611,7 @@ public:
 		std::vector<TilePuzzleSolutionMove>& axPathOut,
 		uint32_t uMaxStates = s_uTilePuzzleMaxSolverStates)
 	{
+		Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__TILEPUZZLE_SOLVER_WITH_PATH);
 		axPathOut.clear();
 
 		// ================================================================
@@ -574,6 +668,29 @@ public:
 
 		if (uNumDraggable == 0)
 			return xLevel.axCats.empty() ? 0 : -1;
+
+		// ================================================================
+		// Pre-copy shape cells to flat stack arrays (eliminate heap indirection)
+		// ================================================================
+		FlatShapeCells aFlatCells[s_uMaxSolverShapes];
+		for (uint32_t i = 0; i < uNumDraggable; ++i)
+		{
+			aFlatCells[i].uCount = static_cast<uint32_t>(apxDefinitions[i]->axCells.size());
+			Zenith_Assert(aFlatCells[i].uCount <= s_uMaxCellsPerShape, "Shape has too many cells");
+			for (uint32_t c = 0; c < aFlatCells[i].uCount; ++c)
+				aFlatCells[i].aCells[c] = apxDefinitions[i]->axCells[c];
+		}
+
+		// ================================================================
+		// Pre-compute color-indexed cat arrays (eliminate color filtering in hot loop)
+		// ================================================================
+		uint32_t auColorCatIndices[TILEPUZZLE_COLOR_COUNT][s_uMaxSolverCats];
+		uint32_t auColorCatCount[TILEPUZZLE_COLOR_COUNT] = {};
+		for (uint32_t ci = 0; ci < uNumCats; ++ci)
+		{
+			uint32_t uColor = static_cast<uint32_t>(aeCatColors[ci]);
+			auColorCatIndices[uColor][auColorCatCount[uColor]++] = ci;
+		}
 
 		// Pre-compute walkable grid
 		bool abWalkable[s_uMaxGridCells];
@@ -644,16 +761,20 @@ public:
 
 		// Inner BFS containers (pre-allocated, reused)
 		std::vector<uint64_t> axInnerQueue;
-		std::unordered_set<uint64_t> xInnerVisited;
+		TilePuzzleFlatHashSet xInnerVisited;
 		axInnerQueue.reserve(512);
-		xInnerVisited.reserve(512);
+		xInnerVisited.Reserve(512);
 
 		int32_t aiDeltaX[] = {0, 0, -1, 1};
 		int32_t aiDeltaY[] = {-1, 1, 0, 0};
 		int32_t iMoves = 0;
 
+		// Fine-grained timing accumulators (nanoseconds)
+		double fCollisionNs = 0.0, fEliminationNs = 0.0, fInnerVisitedNs = 0.0;
+
 		while (!axCurrentLevel.empty() && axAllStates.size() < uMaxStates)
 		{
+			Zenith_Profiling::Scope xDepthScope(ZENITH_PROFILE_INDEX__TILEPUZZLE_SOLVER_BFS_DEPTH);
 			axNextLevel.clear();
 
 			for (size_t uIdx = 0; uIdx < axCurrentLevel.size(); ++uIdx)
@@ -673,22 +794,35 @@ public:
 
 					if (auUnlockThresholds[uDragShape] > 0)
 					{
-						uint32_t uEliminatedCount = 0;
-						uint32_t uTmp = uOuterMask;
-						while (uTmp) { uEliminatedCount += uTmp & 1u; uTmp >>= 1; }
+						uint32_t uEliminatedCount = TILEPUZZLE_POPCNT(uOuterMask);
 						if (uEliminatedCount < auUnlockThresholds[uDragShape])
 							continue;
 					}
 
+					// Build occupancy grid for other active shapes (valid for entire inner BFS)
+					bool abOccupied[s_uMaxGridCells];
+					memset(abOccupied, 0, uGridWidth * uGridHeight);
+					for (uint32_t si = 0; si < uNumDraggable; ++si)
+					{
+						if (si == uDragShape) continue;
+						if ((auColorCatMasks[si] & ~uOuterMask) == 0) continue;
+						for (uint32_t c = 0; c < aFlatCells[si].uCount; ++c)
+						{
+							int32_t cx = aiPosX[si] + aFlatCells[si].aCells[c].iX;
+							int32_t cy = aiPosY[si] + aFlatCells[si].aCells[c].iY;
+							abOccupied[cy * uGridWidth + cx] = true;
+						}
+					}
+
 					// Inner BFS: explore all positions reachable by dragging this shape
 					axInnerQueue.clear();
-					xInnerVisited.clear();
+					xInnerVisited.Clear();
 
 					int32_t iStartX = aiPosX[uDragShape];
 					int32_t iStartY = aiPosY[uDragShape];
 					uint64_t uStartKey = PackInnerState(iStartX, iStartY, uOuterMask);
 					axInnerQueue.push_back(uStartKey);
-					xInnerVisited.insert(uStartKey);
+					xInnerVisited.Insert(uStartKey);
 
 					size_t uInnerFront = 0;
 					while (uInnerFront < axInnerQueue.size())
@@ -742,90 +876,135 @@ public:
 							}
 						}
 
-						// Explore 4 directions (same inlined logic as SolveLevel)
-						const std::vector<TilePuzzleCellOffset>& axMovingCells = apxDefinitions[uDragShape]->axCells;
-						size_t uNumMovingCells = axMovingCells.size();
+						// ================================================
+						// Explore 4 directions with optimized collision/elimination
+						// ================================================
+						const uint32_t uNumMovingCells = aFlatCells[uDragShape].uCount;
+						const TilePuzzleCellOffset* pMovingCells = aFlatCells[uDragShape].aCells;
 
 						for (int32_t iDir = 0; iDir < 4; ++iDir)
 						{
 							int32_t iNewX = iCurX + aiDeltaX[iDir];
 							int32_t iNewY = iCurY + aiDeltaY[iDir];
 
-							bool bValid = true;
-							for (size_t c = 0; c < uNumMovingCells; ++c)
-							{
-								int32_t iCellX = iNewX + axMovingCells[c].iX;
-								int32_t iCellY = iNewY + axMovingCells[c].iY;
+							// --- Inline CanMoveShape (see TilePuzzle_Rules::CanMoveShape) ---
+							std::chrono::high_resolution_clock::time_point xCollisionT0;
+							if (s_bDetailedProfiling) xCollisionT0 = std::chrono::high_resolution_clock::now();
 
+							bool bValid = true;
+							for (uint32_t c = 0; c < uNumMovingCells; ++c)
+							{
+								int32_t iCellX = iNewX + pMovingCells[c].iX;
+								int32_t iCellY = iNewY + pMovingCells[c].iY;
+
+								// Bounds check
 								if (iCellX < 0 || iCellY < 0 ||
 									static_cast<uint32_t>(iCellX) >= uGridWidth ||
 									static_cast<uint32_t>(iCellY) >= uGridHeight)
-								{ bValid = false; break; }
+								{
+									bValid = false;
+									break;
+								}
 
 								uint32_t uCellIdx = static_cast<uint32_t>(iCellY) * uGridWidth + static_cast<uint32_t>(iCellX);
+
+								// Pre-computed walkable check (floor + no static blocker)
 								if (!abWalkable[uCellIdx])
-								{ bValid = false; break; }
-
-								for (uint32_t si = 0; si < uNumDraggable; ++si)
 								{
-									if (si == uDragShape) continue;
-									if ((auColorCatMasks[si] & ~uCurMask) == 0) continue;
-									const std::vector<TilePuzzleCellOffset>& axOtherCells = apxDefinitions[si]->axCells;
-									for (size_t sc = 0; sc < axOtherCells.size(); ++sc)
-									{
-										if (aiPosX[si] + axOtherCells[sc].iX == iCellX &&
-											aiPosY[si] + axOtherCells[sc].iY == iCellY)
-										{ bValid = false; break; }
-									}
-									if (!bValid) break;
+									bValid = false;
+									break;
 								}
-								if (!bValid) break;
 
+								// Occupancy grid collision (O(1) lookup replaces nested shape loop)
+								if (abOccupied[uCellIdx])
+								{
+									bValid = false;
+									break;
+								}
+
+								// Wrong-color cat check (O(1) lookup)
 								int8_t iCatIdx = aiCatAtCell[uCellIdx];
 								if (iCatIdx >= 0 &&
 									!(uCurMask & (1u << static_cast<uint32_t>(iCatIdx))) &&
 									aeCatColors[iCatIdx] != aeColors[uDragShape])
-								{ bValid = false; break; }
+								{
+									bValid = false;
+									break;
+								}
 							}
+
+							if (s_bDetailedProfiling)
+								fCollisionNs += std::chrono::duration<double, std::nano>(std::chrono::high_resolution_clock::now() - xCollisionT0).count();
 
 							if (!bValid) continue;
 
-							// Compute newly eliminated cats
+							// --- Inline ComputeNewlyEliminatedCats (see TilePuzzle_Rules::ComputeNewlyEliminatedCats) ---
+							// Optimized: iterate only same-color cats per shape (color-indexed)
+							std::chrono::high_resolution_clock::time_point xElimT0;
+							if (s_bDetailedProfiling) xElimT0 = std::chrono::high_resolution_clock::now();
+
 							uint32_t uNewlyEliminated = 0;
 							for (uint32_t si = 0; si < uNumDraggable; ++si)
 							{
 								if ((auColorCatMasks[si] & ~uCurMask) == 0) continue;
+
 								int32_t iShapeX = (si == uDragShape) ? iNewX : aiPosX[si];
 								int32_t iShapeY = (si == uDragShape) ? iNewY : aiPosY[si];
-								const std::vector<TilePuzzleCellOffset>& axShapeCells = apxDefinitions[si]->axCells;
-								for (size_t c = 0; c < axShapeCells.size(); ++c)
+								const TilePuzzleCellOffset* pShapeCells = aFlatCells[si].aCells;
+								uint32_t uShapeCellCount = aFlatCells[si].uCount;
+
+								uint32_t uColor = static_cast<uint32_t>(aeColors[si]);
+								uint32_t uSameColorCatCount = auColorCatCount[uColor];
+
+								for (uint32_t k = 0; k < uSameColorCatCount; ++k)
 								{
-									int32_t iCellX = iShapeX + axShapeCells[c].iX;
-									int32_t iCellY = iShapeY + axShapeCells[c].iY;
-									for (uint32_t ci = 0; ci < uNumCats; ++ci)
+									uint32_t ci = auColorCatIndices[uColor][k];
+									if ((uCurMask | uNewlyEliminated) & (1u << ci)) continue;
+
+									if (abCatOnBlocker[ci])
 									{
-										if ((uCurMask | uNewlyEliminated) & (1u << ci)) continue;
-										if (aeCatColors[ci] != aeColors[si]) continue;
-										if (abCatOnBlocker[ci])
+										for (uint32_t c = 0; c < uShapeCellCount; ++c)
 										{
+											int32_t iCellX = iShapeX + pShapeCells[c].iX;
+											int32_t iCellY = iShapeY + pShapeCells[c].iY;
 											int32_t iDX = iCellX - aiCatX[ci];
 											int32_t iDY = iCellY - aiCatY[ci];
 											if ((iDX == 0 && (iDY == 1 || iDY == -1)) ||
 												(iDY == 0 && (iDX == 1 || iDX == -1)))
+											{
 												uNewlyEliminated |= (1u << ci);
+												break;
+											}
 										}
-										else
+									}
+									else
+									{
+										for (uint32_t c = 0; c < uShapeCellCount; ++c)
 										{
-											if (aiCatX[ci] == iCellX && aiCatY[ci] == iCellY)
+											if (iShapeX + pShapeCells[c].iX == aiCatX[ci] &&
+												iShapeY + pShapeCells[c].iY == aiCatY[ci])
+											{
 												uNewlyEliminated |= (1u << ci);
+												break;
+											}
 										}
 									}
 								}
 							}
 
+							if (s_bDetailedProfiling)
+								fEliminationNs += std::chrono::duration<double, std::nano>(std::chrono::high_resolution_clock::now() - xElimT0).count();
+
 							uint64_t uNextKey = PackInnerState(iNewX, iNewY, uCurMask | uNewlyEliminated);
-							if (xInnerVisited.insert(uNextKey).second)
+
+							std::chrono::high_resolution_clock::time_point xVisitedT0;
+							if (s_bDetailedProfiling) xVisitedT0 = std::chrono::high_resolution_clock::now();
+
+							if (xInnerVisited.Insert(uNextKey))
 								axInnerQueue.push_back(uNextKey);
+
+							if (s_bDetailedProfiling)
+								fInnerVisitedNs += std::chrono::duration<double, std::nano>(std::chrono::high_resolution_clock::now() - xVisitedT0).count();
 						}
 					}
 				}
@@ -835,12 +1014,19 @@ public:
 			iMoves++;
 		}
 
+		// Report detailed profiling breakdown
+		if (s_bDetailedProfiling)
+		{
+			fprintf(stderr, "[SolverWithPath] states=%zu collision=%.1fms elimination=%.1fms innerSet=%.1fms\n",
+				axAllStates.size(),
+				fCollisionNs / 1e6, fEliminationNs / 1e6, fInnerVisitedNs / 1e6);
+		}
+
 		return -1;
 	}
 
-private:
 	// ========================================================================
-	// Outer state packing helpers
+	// State packing helpers (public for reverse BFS in level generator)
 	// ========================================================================
 
 	static uint64_t PackOuterState(const int32_t* aiX, const int32_t* aiY, uint32_t uElimMask,

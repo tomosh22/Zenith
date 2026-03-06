@@ -250,6 +250,13 @@ private:
 	static void RenderGizmos();
 	static void HandleGizmoInteraction();  // New method for Flux_Gizmos integration
 
+	// Deferred scene operations (extracted from Update)
+	static bool ProcessDeferredSceneOperations();
+	static bool HandlePendingSceneLoad();
+
+	// Editor input (extracted from Update)
+	static void UpdateEditorInput();
+
 	// Content Browser
 	static void RenderContentBrowser();
 	static void RefreshDirectoryContents();

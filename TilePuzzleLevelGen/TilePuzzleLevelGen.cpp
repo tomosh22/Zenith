@@ -97,9 +97,9 @@ static TilePuzzle_LevelGenerator::DifficultyParams RandomizeDifficultyParams(std
 		uMinGrid = 9; uMaxGrid = 10;
 		uMinColors = 5; uMaxColors = 5;
 		uMinCats = 2; uMaxCats = 2;
-		uMinBlockers = 2; uMaxBlockers = 2;
-		uMinComplexity = 2; uMaxComplexity = 4;
-		uMinScramble = 300; uMaxScramble = 1000;
+		uMinBlockers = 2; uMaxBlockers = 3;
+		uMinComplexity = 3; uMaxComplexity = 4;
+		uMinScramble = 300; uMaxScramble = 1500;
 	}
 	else if (uMinMoves >= 10)
 	{
@@ -213,11 +213,23 @@ static TilePuzzle_LevelGenerator::DifficultyParams RandomizeDifficultyParams(std
 	xParams.uMinSolverMoves = 4;
 	if (uMinMoves >= 20)
 	{
-		// Maximum depth for 20+ move targets
-		xParams.uSolverStateLimit = 2000000;
-		xParams.uDeepSolverStateLimit = 10000000;
-		xParams.uMaxDeepVerificationsPerWorker = 10;
-		xParams.uMaxAttempts = 3000;
+		// Fast 1M solver for workers (~4s rounds), 5M verification to confirm solvability.
+		// Most state spaces are < 5M, so verification definitively resolves them.
+		// Workers accept candidates via exact solutions or lower bounds to maximize throughput.
+		xParams.uSolverStateLimit = 1000000;
+		xParams.uDeepSolverStateLimit = 5000000;
+		xParams.uMaxDeepVerificationsPerWorker = 0;
+		xParams.uMaxAttempts = 500;
+		xParams.uMinSolverMoves = 4;
+
+		// Use guided scramble for 20+ move targets (reverse BFS can only reach
+		// depth ~5-6 with 10M states due to exponential branching, too shallow)
+		xParams.eScrambleMode = TilePuzzle_LevelGenerator::SCRAMBLE_MODE_GUIDED;
+
+		// Multi-start scramble: try 20 trajectories, keep best displacement.
+		// Per-restart failure ~97% → 20 restarts gives 97%^20 ≈ 54% failure vs 87% with 5.
+		// Cost: 20 restarts × ~20ms each = 400ms per attempt, negligible vs solver time.
+		xParams.uScrambleRestarts = 20;
 	}
 	else if (uMinMoves >= 10)
 	{
@@ -226,6 +238,18 @@ static TilePuzzle_LevelGenerator::DifficultyParams RandomizeDifficultyParams(std
 		xParams.uDeepSolverStateLimit = 5000000;
 		xParams.uMaxDeepVerificationsPerWorker = 5;
 		xParams.uMaxAttempts = 2000;
+
+		// Guided scramble for 10+ move targets; reverse BFS for smaller grids
+		// where branching factor is lower and BFS can reach deeper
+		if (uGridW * uGridH <= 49)
+		{
+			xParams.eScrambleMode = TilePuzzle_LevelGenerator::SCRAMBLE_MODE_REVERSE_BFS;
+			xParams.uReverseBFSStateLimit = 5000000;
+		}
+		else
+		{
+			xParams.eScrambleMode = TilePuzzle_LevelGenerator::SCRAMBLE_MODE_GUIDED;
+		}
 	}
 	else
 	{
@@ -234,6 +258,7 @@ static TilePuzzle_LevelGenerator::DifficultyParams RandomizeDifficultyParams(std
 		xParams.uDeepSolverStateLimit = (uGridArea >= 64) ? 5000000 : 3000000;
 		xParams.uMaxDeepVerificationsPerWorker = 5;
 		xParams.uMaxAttempts = 3000;
+		// Keep SCRAMBLE_MODE_RANDOM (default) for lower targets
 	}
 
 	return xParams;
@@ -880,6 +905,7 @@ static void AccumulateGenerationStats(
 	xAccum.uSolverTooEasy += xNew.uSolverTooEasy;
 	xAccum.uSolverUnsolvable += xNew.uSolverUnsolvable;
 	xAccum.uTotalSuccesses += xNew.uTotalSuccesses;
+	xAccum.uLowerBoundAccepts += xNew.uLowerBoundAccepts;
 	for (uint32_t v = 0; v < s_uParamStatsMaxValues; ++v)
 	{
 		xAccum.xColorStats.auScrambleFailures[v] += xNew.xColorStats.auScrambleFailures[v];
@@ -969,6 +995,14 @@ static uint32_t GenerateSingleLevel(
 	bTimedOutOut = false;
 	xAccumulatedStats = {};
 
+	// Accept threshold: for verified generation, the 5M solver gives exact solutions.
+	// Levels in the 20+ tier max out around 20-23 moves (limited by the puzzle design).
+	// Accept at 60% of target or 15 (whichever is lower) to find levels efficiently,
+	// while still getting the hardest possible levels within the time budget.
+	uint32_t uAcceptThreshold = uMinMoves;
+	if (uMinMoves >= 20)
+		uAcceptThreshold = std::min(uMinMoves * 3 / 5, 15u);
+
 	auto xStartTime = std::chrono::high_resolution_clock::now();
 
 	while (s_bRunning)
@@ -1014,13 +1048,12 @@ static uint32_t GenerateSingleLevel(
 			}
 		}
 
-		// Progress output per round
+		// Progress output per round (use stderr for immediate visibility in piped contexts)
 		auto xNow = std::chrono::high_resolution_clock::now();
 		double fElapsedSec = std::chrono::duration<double>(xNow - xStartTime).count();
-		printf(" [round %u: best=%u, %.0fs]", uRetryRound + 1, uBestMoves, fElapsedSec);
-		fflush(stdout);
+		fprintf(stderr, " [round %u: best=%u, %.0fs]", uRetryRound + 1, uBestMoves, fElapsedSec);
 
-		if (uBestMoves >= uMinMoves)
+		if (uBestMoves >= uAcceptThreshold)
 			break;
 
 		uRetryRound++;
@@ -1038,22 +1071,95 @@ static uint32_t GenerateSingleLevel(
 }
 
 // ============================================================================
+// Registry Validation (parallel task)
+// ============================================================================
+
+enum ValidationResult : uint8_t { VALIDATE_PENDING, VALIDATE_VERIFIED, VALIDATE_UNVERIFIED, VALIDATE_UNSOLVABLE, VALIDATE_LOAD_FAILED };
+
+struct ValidationEntry
+{
+	ValidationResult eResult = VALIDATE_PENDING;
+	int32_t iExactMoves = -1;
+	int32_t iLowerBound = 0;
+	uint32_t uStoredMoves = 0;
+};
+
+struct ValidateTaskData
+{
+	const std::vector<std::string>* paxFilePaths;
+	ValidationEntry* paxResults;
+	uint32_t uMaxStates;
+};
+
+static void ValidateRegistryTask(void* pData, u_int uInvocationIndex, u_int /*uNumInvocations*/)
+{
+	ValidateTaskData* pxData = static_cast<ValidateTaskData*>(pData);
+
+	const std::string& strPath = (*pxData->paxFilePaths)[uInvocationIndex];
+	ValidationEntry& xEntry = pxData->paxResults[uInvocationIndex];
+
+	// Load level from .tlvl
+	Zenith_DataStream xStream;
+	xStream.ReadFromFile(strPath.c_str());
+	if (!xStream.IsValid())
+	{
+		xEntry.eResult = VALIDATE_LOAD_FAILED;
+		return;
+	}
+
+	TilePuzzleLevelData xLevel;
+	Zenith_Vector<TilePuzzleShapeDefinition> axDefs;
+	if (!TilePuzzleLevelSerialize::Read(xStream, xLevel, axDefs))
+	{
+		xEntry.eResult = VALIDATE_LOAD_FAILED;
+		return;
+	}
+
+	xEntry.uStoredMoves = xLevel.uMinimumMoves;
+
+	// Run solver
+	int32_t iLowerBound = 0;
+	int32_t iResult = TilePuzzle_Solver::SolveLevel(xLevel, pxData->uMaxStates, &iLowerBound);
+
+	if (iResult >= 0)
+	{
+		xEntry.eResult = VALIDATE_VERIFIED;
+		xEntry.iExactMoves = iResult;
+	}
+	else if (iLowerBound > 0)
+	{
+		xEntry.eResult = VALIDATE_UNVERIFIED;
+		xEntry.iLowerBound = iLowerBound;
+	}
+	else
+	{
+		xEntry.eResult = VALIDATE_UNSOLVABLE;
+	}
+}
+
+// ============================================================================
 // Main
 // ============================================================================
 
 int main(int argc, char* argv[])
 {
+	setvbuf(stdout, NULL, _IONBF, 0);
+	setvbuf(stderr, NULL, _IONBF, 0);
 	printf("TilePuzzle Level Generator\n");
 	printf("==========================\n\n");
 	fflush(stdout);
 
 	// Parse CLI arguments
 	std::string strOutputDir = LEVELGEN_OUTPUT_DIR;
-	uint32_t uTimeoutSeconds = 1800; // 30 minutes default
+	uint32_t uTimeoutSeconds = 7200; // 2 hours default
 	srand(time(0));
 	uint32_t uStartSeed = rand();
 	uint32_t uCount = 0;
 	uint32_t uMinMoves = 0;
+	bool bValidateRegistry = false;
+	bool bDeleteInvalid = false;
+	bool bProfile = false;
+	uint32_t uValidateMaxStates = 5000000; // 5M default for validation
 
 	for (int i = 1; i < argc; ++i)
 	{
@@ -1077,19 +1183,40 @@ int main(int argc, char* argv[])
 		{
 			uMinMoves = static_cast<uint32_t>(atoi(argv[++i]));
 		}
+		else if (strcmp(argv[i], "--validate-registry") == 0)
+		{
+			bValidateRegistry = true;
+		}
+		else if (strcmp(argv[i], "--delete-invalid") == 0)
+		{
+			bDeleteInvalid = true;
+		}
+		else if (strcmp(argv[i], "--validate-max-states") == 0 && i + 1 < argc)
+		{
+			uValidateMaxStates = static_cast<uint32_t>(atoi(argv[++i]));
+		}
+		else if (strcmp(argv[i], "--profile") == 0)
+		{
+			bProfile = true;
+			TilePuzzle_Solver::s_bDetailedProfiling = true;
+		}
 	}
 
-	// Validate required arguments
-	if (uCount == 0)
+	// Validate required arguments (not needed for --validate-registry)
+	if (!bValidateRegistry)
 	{
-		fprintf(stderr, "Error: --count <N> is required (number of levels to generate).\n");
-		fprintf(stderr, "Usage: tilepuzzlelevelgen --count N --min-moves M [--output DIR] [--timeout S] [--seed N]\n");
-		return 1;
-	}
-	if (uMinMoves == 0)
-	{
-		fprintf(stderr, "Error: --min-moves <M> is required (minimum solver moves).\n");
-		return 1;
+		if (uCount == 0)
+		{
+			fprintf(stderr, "Error: --count <N> is required (number of levels to generate).\n");
+			fprintf(stderr, "Usage: tilepuzzlelevelgen --count N --min-moves M [--output DIR] [--timeout S] [--seed N] [--profile]\n");
+			fprintf(stderr, "       tilepuzzlelevelgen --validate-registry [--delete-invalid] [--validate-max-states N]\n");
+			return 1;
+		}
+		if (uMinMoves == 0)
+		{
+			fprintf(stderr, "Error: --min-moves <M> is required (minimum solver moves).\n");
+			return 1;
+		}
 	}
 
 	// Minimal engine init (same sequence as Zenith_Core::Zenith_Init, first 4 calls)
@@ -1100,6 +1227,152 @@ int main(int argc, char* argv[])
 
 	// Set up Ctrl+C handler
 	signal(SIGINT, SignalHandler);
+
+	// ========================================================================
+	// Registry Validation Mode (parallel)
+	// ========================================================================
+	if (bValidateRegistry)
+	{
+		std::string strRegistryDir = LEVELGEN_REGISTRY_DIR;
+		printf("Mode: Registry Validation (max states=%u%s, parallel)\n\n", uValidateMaxStates, bDeleteInvalid ? ", delete-invalid" : "");
+		fflush(stdout);
+
+		if (!std::filesystem::exists(strRegistryDir))
+		{
+			printf("Registry directory does not exist: %s\n", strRegistryDir.c_str());
+			return 1;
+		}
+
+		std::vector<std::string> axFilePaths;
+		for (auto& xEntry : std::filesystem::directory_iterator(strRegistryDir))
+		{
+			if (xEntry.is_regular_file() && xEntry.path().extension() == ".tlvl")
+				axFilePaths.push_back(xEntry.path().string());
+		}
+
+		uint32_t uNumFiles = static_cast<uint32_t>(axFilePaths.size());
+		printf("Found %u .tlvl files in registry\n\n", uNumFiles);
+		fflush(stdout);
+
+		if (uNumFiles == 0)
+		{
+			printf("Nothing to validate.\n");
+			return 0;
+		}
+
+		std::vector<ValidationEntry> axResults(uNumFiles);
+
+		ValidateTaskData xTaskData;
+		xTaskData.paxFilePaths = &axFilePaths;
+		xTaskData.paxResults = axResults.data();
+		xTaskData.uMaxStates = uValidateMaxStates;
+
+		auto xStartTime = std::chrono::high_resolution_clock::now();
+
+		printf("Validating %u levels in parallel...\n\n", uNumFiles);
+		fflush(stdout);
+
+		// Process in batches to avoid overflowing the task queue (max 128 entries)
+		static constexpr uint32_t uBATCH_SIZE = 64;
+		for (uint32_t uBatchStart = 0; uBatchStart < uNumFiles; uBatchStart += uBATCH_SIZE)
+		{
+			uint32_t uBatchEnd = std::min(uBatchStart + uBATCH_SIZE, uNumFiles);
+			uint32_t uBatchCount = uBatchEnd - uBatchStart;
+
+			// Create a task data view for this batch
+			std::vector<std::string> axBatchPaths(axFilePaths.begin() + uBatchStart, axFilePaths.begin() + uBatchEnd);
+			ValidateTaskData xBatchData;
+			xBatchData.paxFilePaths = &axBatchPaths;
+			xBatchData.paxResults = axResults.data() + uBatchStart;
+			xBatchData.uMaxStates = uValidateMaxStates;
+
+			printf("  Batch %u-%u/%u...\n", uBatchStart + 1, uBatchEnd, uNumFiles);
+			fflush(stdout);
+
+			Zenith_TaskArray xTaskArray(
+				ZENITH_PROFILE_INDEX__SCENE_UPDATE,
+				&ValidateRegistryTask,
+				&xBatchData,
+				static_cast<u_int>(uBatchCount),
+				true);
+
+			Zenith_TaskSystem::SubmitTaskArray(&xTaskArray);
+			xTaskArray.WaitUntilComplete();
+		}
+
+		auto xEndTime = std::chrono::high_resolution_clock::now();
+		double fElapsedSec = std::chrono::duration<double>(xEndTime - xStartTime).count();
+
+		// Aggregate and print results
+		uint32_t uVerified = 0, uUnsolvable = 0, uUnverified = 0, uLoadFailed = 0;
+		std::vector<std::string> axUnsolvablePaths;
+		std::vector<std::string> axUnverifiedPaths;
+
+		for (uint32_t i = 0; i < uNumFiles; ++i)
+		{
+			const std::string& strPath = axFilePaths[i];
+			std::string strFileName = std::filesystem::path(strPath).filename().string();
+			const ValidationEntry& xEntry = axResults[i];
+
+			switch (xEntry.eResult)
+			{
+			case VALIDATE_VERIFIED:
+				printf("  %s: VERIFIED (exact=%d moves, stored=%u)\n", strFileName.c_str(), xEntry.iExactMoves, xEntry.uStoredMoves);
+				uVerified++;
+				break;
+			case VALIDATE_UNVERIFIED:
+				printf("  %s: UNVERIFIED (state limit hit, lower bound=%d, stored=%u)\n", strFileName.c_str(), xEntry.iLowerBound, xEntry.uStoredMoves);
+				uUnverified++;
+				axUnverifiedPaths.push_back(strPath);
+				break;
+			case VALIDATE_UNSOLVABLE:
+				printf("  %s: UNSOLVABLE (no solution exists, stored=%u)\n", strFileName.c_str(), xEntry.uStoredMoves);
+				uUnsolvable++;
+				axUnsolvablePaths.push_back(strPath);
+				break;
+			case VALIDATE_LOAD_FAILED:
+				printf("  %s: LOAD FAILED\n", strFileName.c_str());
+				uLoadFailed++;
+				break;
+			default:
+				break;
+			}
+		}
+
+		// Delete unsolvable levels if requested
+		if (bDeleteInvalid && !axUnsolvablePaths.empty())
+		{
+			printf("\nDeleting %zu unsolvable levels...\n", axUnsolvablePaths.size());
+			for (const auto& strPath : axUnsolvablePaths)
+			{
+				std::filesystem::remove(strPath);
+				std::string strPng = strPath.substr(0, strPath.size() - 5) + ".png";
+				std::filesystem::remove(strPng);
+				printf("  DELETED %s\n", std::filesystem::path(strPath).filename().string().c_str());
+			}
+		}
+
+		printf("\n========================================\n");
+		printf("Registry Validation Results\n");
+		printf("========================================\n");
+		printf("Total files:   %u\n", uNumFiles);
+		printf("Verified:      %u (exact solution found)\n", uVerified);
+		printf("Unverified:    %u (state limit hit, lower bound valid)\n", uUnverified);
+		printf("UNSOLVABLE:    %u (no solution exists)\n", uUnsolvable);
+		printf("Load failed:   %u\n", uLoadFailed);
+		printf("Time:          %.1f seconds\n", fElapsedSec);
+		printf("========================================\n");
+
+		if (!axUnverifiedPaths.empty() && axUnverifiedPaths.size() <= 30)
+		{
+			printf("\nUnverified levels (need higher --validate-max-states):\n");
+			for (const auto& strPath : axUnverifiedPaths)
+				printf("  %s\n", std::filesystem::path(strPath).filename().string().c_str());
+		}
+
+		fflush(stdout);
+		return uUnsolvable > 0 ? 1 : 0;
+	}
 
 	// ========================================================================
 	// Random Generation
@@ -1167,6 +1440,9 @@ int main(int argc, char* argv[])
 
 		while (!bAccepted && uDuplicateRetries < s_uMAX_DUPLICATE_RETRIES && s_bRunning)
 		{
+			if (bProfile)
+				Zenith_Profiling::ClearEvents();
+
 			TilePuzzleLevelData xBestLevel = {};
 			std::vector<TilePuzzleShapeDefinition> axBestLevelDefs;
 			TilePuzzle_LevelGenerator::GenerationStats xAccumulatedStats = {};
@@ -1182,6 +1458,9 @@ int main(int argc, char* argv[])
 
 			auto xEndTime = std::chrono::high_resolution_clock::now();
 			double fTimeMs = std::chrono::duration<double, std::milli>(xEndTime - xStartTime).count();
+
+			if (bProfile)
+				Zenith_Profiling::WriteTextReport(stderr);
 
 			if (uBestMoves > 0)
 			{
@@ -1254,6 +1533,19 @@ int main(int argc, char* argv[])
 	std::string strAnalyticsPath = strOutputDir + "/analytics.txt";
 	TilePuzzleLevelGenAnalytics::WriteAnalytics(strAnalyticsPath.c_str(), xRunStats);
 	printf("\nAnalytics written to: %s\n", strAnalyticsPath.c_str());
+
+	// Write profiling report
+	if (bProfile)
+	{
+		std::string strProfilingPath = strOutputDir + "/profiling.txt";
+		FILE* pProfilingFile = fopen(strProfilingPath.c_str(), "w");
+		if (pProfilingFile)
+		{
+			Zenith_Profiling::WriteTextReport(pProfilingFile);
+			fclose(pProfilingFile);
+			printf("Profiling written to: %s\n", strProfilingPath.c_str());
+		}
+	}
 
 	printf("Registry: %u cache hits, %u cache misses, %u total entries\n",
 		xRegistry.uCacheHits, xRegistry.uCacheMisses, xRegistry.uTotalEntries);

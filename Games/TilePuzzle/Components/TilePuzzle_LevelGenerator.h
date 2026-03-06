@@ -28,6 +28,7 @@
 #include "TilePuzzle_Solver.h"
 #include "Collections/Zenith_Vector.h"
 #include "TaskSystem/Zenith_TaskSystem.h"
+#include "Profiling/Zenith_Profiling.h"
 
 // Generation constants
 static constexpr uint32_t s_uTilePuzzleMinGridSize = 5;
@@ -86,6 +87,7 @@ public:
 		uint32_t uSolverTooEasy = 0;
 		uint32_t uSolverUnsolvable = 0;
 		uint32_t uTotalSuccesses = 0;
+		uint32_t uLowerBoundAccepts = 0;
 		ParamValueStats xColorStats;
 		ParamValueStats xCatsPerColorStats;
 		ParamValueStats xShapeComplexityStats;
@@ -96,6 +98,15 @@ public:
 		uint32_t uWinningBlockerCats = 0;
 		uint32_t uWinningConditionalShapes = 0;
 		uint32_t uWinningConditionalThreshold = 0;
+	};
+
+	// Scramble mode for level generation
+	enum ScrambleMode : uint8_t
+	{
+		SCRAMBLE_MODE_RANDOM = 0,      // Current random scramble
+		SCRAMBLE_MODE_GUIDED = 1,      // Manhattan-distance guided scramble
+		SCRAMBLE_MODE_REVERSE_BFS = 2, // BFS from solved state
+		SCRAMBLE_MODE_COUNT
 	};
 
 	/**
@@ -129,6 +140,9 @@ public:
 		uint32_t uMaxDeepVerificationsPerWorker = 0; // Max deep verifications per worker thread (0 = disabled)
 		uint32_t uMinScrambleMoves = s_uGenMinScrambleMoves; // Min successful scramble moves to accept
 		uint32_t uMaxAttempts = static_cast<uint32_t>(s_iTilePuzzleMaxGenerationAttempts); // Total generation attempts per round
+		ScrambleMode eScrambleMode = SCRAMBLE_MODE_RANDOM; // Scramble algorithm
+		uint32_t uReverseBFSStateLimit = 0; // Max BFS states for reverse generation (0 = disabled)
+		uint32_t uScrambleRestarts = 1; // Multi-start scramble: try K times, keep best displacement (1 = no restarts)
 	};
 
 	/**
@@ -269,6 +283,7 @@ public:
 	 */
 	static bool GenerateLevel(TilePuzzleLevelData& xLevelOut, std::mt19937& /*xRng*/, uint32_t uLevelNumber, GenerationStats* pxStatsOut = nullptr, uint32_t uSeedOffset = 0, const DifficultyParams* pxParamsOverride = nullptr)
 	{
+		Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__TILEPUZZLE_GENERATE_LEVEL);
 		DifficultyParams xParams = pxParamsOverride ? *pxParamsOverride : GetDifficultyForLevel(uLevelNumber);
 
 		uint32_t uNumWorkers = std::max(1u, static_cast<uint32_t>(std::thread::hardware_concurrency()));
@@ -301,6 +316,7 @@ public:
 		uint32_t uTotalSolverTooEasy = 0;
 		uint32_t uTotalSolverUnsolvable = 0;
 		uint32_t uTotalSuccesses = 0;
+		uint32_t uTotalLowerBoundAccepts = 0;
 
 		// Aggregate per-parameter stats
 		ParamValueStats xTotalColorStats = {};
@@ -313,6 +329,7 @@ public:
 			uTotalSolverTooEasy += axResults[i].uSolverTooEasy;
 			uTotalSolverUnsolvable += axResults[i].uSolverUnsolvable;
 			uTotalSuccesses += axResults[i].uSuccessCount;
+			uTotalLowerBoundAccepts += axResults[i].uLowerBoundAccepts;
 
 			for (uint32_t v = 0; v < s_uParamStatsMaxValues; ++v)
 			{
@@ -332,10 +349,19 @@ public:
 				xTotalShapeStats.auSuccesses[v] += axResults[i].xShapeComplexityStats.auSuccesses[v];
 			}
 
-			if (axResults[i].bValid && axResults[i].iSolverResult > iBestSolverResult)
+			if (axResults[i].bValid)
 			{
-				iBestSolverResult = axResults[i].iSolverResult;
-				iBestWorkerIdx = static_cast<int32_t>(i);
+				bool bCurrentBestExact = (iBestWorkerIdx >= 0) ? axResults[iBestWorkerIdx].bExactSolution : false;
+				bool bBetter = false;
+				if (axResults[i].bExactSolution && !bCurrentBestExact)
+					bBetter = true; // Exact beats LB
+				else if (axResults[i].bExactSolution == bCurrentBestExact && axResults[i].iSolverResult > iBestSolverResult)
+					bBetter = true; // Same category, higher moves
+				if (bBetter)
+				{
+					iBestSolverResult = axResults[i].iSolverResult;
+					iBestWorkerIdx = static_cast<int32_t>(i);
+				}
 			}
 		}
 
@@ -352,6 +378,7 @@ public:
 			pxStatsOut->uSolverTooEasy = uTotalSolverTooEasy;
 			pxStatsOut->uSolverUnsolvable = uTotalSolverUnsolvable;
 			pxStatsOut->uTotalSuccesses = uTotalSuccesses;
+			pxStatsOut->uLowerBoundAccepts = uTotalLowerBoundAccepts;
 			pxStatsOut->xColorStats = xTotalColorStats;
 			pxStatsOut->xCatsPerColorStats = xTotalCatsStats;
 			pxStatsOut->xShapeComplexityStats = xTotalShapeStats;
@@ -359,14 +386,51 @@ public:
 
 		if (iBestWorkerIdx < 0)
 		{
-			Zenith_Log(LOG_CATEGORY_GAMEPLAY, "TilePuzzle: Failed to generate level %u after %u attempts across %u workers (scramble failures=%u, solver too easy=%u, solver unsolvable=%u)",
-				uLevelNumber, xData.uTotalAttempts, uNumWorkers, uTotalScrambleFailures, uTotalSolverTooEasy, uTotalSolverUnsolvable);
+			Zenith_Log(LOG_CATEGORY_GAMEPLAY, "TilePuzzle: Failed to generate level %u after %u attempts across %u workers (scramble failures=%u, solver too easy=%u, solver unsolvable=%u, lower-bound accepts=%u)",
+				uLevelNumber, xData.uTotalAttempts, uNumWorkers, uTotalScrambleFailures, uTotalSolverTooEasy, uTotalSolverUnsolvable, uTotalLowerBoundAccepts);
 			return false;
 		}
 
-		// Copy winning result's shape definitions to static storage and remap pointers
+		// Verify on the winner's ORIGINAL data (before any copy/remap) to avoid
+		// corruption from the pointer remapping process.
 		ParallelGenResult& xWinner = axResults[iBestWorkerIdx];
 
+		// Mandatory solvability verification: escalate state limit until exact solution or proven unsolvable.
+		// Lower bounds are NOT accepted — only an exact solution proves solvability.
+		uint32_t uVerifyLimit = (xParams.uDeepSolverStateLimit > 0) ? xParams.uDeepSolverStateLimit : s_uTilePuzzleMaxSolverStates;
+		int32_t iVerifyResult = -1;
+
+		for (uint32_t uEscalation = 0; uEscalation < 20; ++uEscalation)
+		{
+			int32_t iVerifyLowerBound = 0;
+			iVerifyResult = TilePuzzle_Solver::SolveLevel(xWinner.xLevel, uVerifyLimit, &iVerifyLowerBound);
+
+			if (iVerifyResult >= 0)
+			{
+				break;
+			}
+			else if (iVerifyLowerBound == 0)
+			{
+				Zenith_Log(LOG_CATEGORY_GAMEPLAY, "TilePuzzle: VERIFICATION FAILED for level %u — solver exhausted %u states with no solution (worker claimed %d moves). Rejecting.",
+					uLevelNumber, uVerifyLimit, iBestSolverResult);
+				return false;
+			}
+			else
+			{
+				Zenith_Log(LOG_CATEGORY_GAMEPLAY, "TilePuzzle: Verification escalating for level %u — state limit %u hit (LB=%d), doubling to %u",
+					uLevelNumber, uVerifyLimit, iVerifyLowerBound, uVerifyLimit * 2);
+				uVerifyLimit *= 2;
+			}
+		}
+
+		if (iVerifyResult < 0)
+		{
+			Zenith_Log(LOG_CATEGORY_GAMEPLAY, "TilePuzzle: VERIFICATION TIMEOUT for level %u — could not find exact solution after escalating to %u states (worker claimed %d moves). Rejecting.",
+				uLevelNumber, uVerifyLimit, iBestSolverResult);
+			return false;
+		}
+
+		// Verification passed — copy definitions to static storage and remap pointers
 		if (pxStatsOut)
 		{
 			pxStatsOut->uWinningColors = xWinner.uWinningColors;
@@ -385,8 +449,8 @@ public:
 			xStaticDefs.PushBack(xWinner.axShapeDefinitions[i]);
 		}
 
-		// Remap shape instance pointers from worker-local definitions to static storage
 		xLevelOut = std::move(xWinner.xLevel);
+		xLevelOut.uMinimumMoves = static_cast<uint32_t>(iVerifyResult);
 		size_t uDefIdx = 0;
 		for (size_t i = 0; i < xLevelOut.axShapes.size(); ++i)
 		{
@@ -398,13 +462,9 @@ public:
 			}
 		}
 
-		xLevelOut.uMinimumMoves = static_cast<uint32_t>(iBestSolverResult);
-
-		// Debug: verify solver result on final level
-		int32_t iVerifyResult = TilePuzzle_Solver::SolveLevel(xLevelOut);
-		Zenith_Log(LOG_CATEGORY_GAMEPLAY, "TilePuzzle: Level %u generated (solver=%d, verify=%d, scrambleFail=%u, tooEasy=%u, unsolvable=%u)",
-			uLevelNumber, iBestSolverResult, iVerifyResult,
-			uTotalScrambleFailures, uTotalSolverTooEasy, uTotalSolverUnsolvable);
+		Zenith_Log(LOG_CATEGORY_GAMEPLAY, "TilePuzzle: Level %u generated (worker solver=%d, verify=%d, verifyLimit=%u, scrambleFail=%u, tooEasy=%u, unsolvable=%u, lbAccepts=%u)",
+			uLevelNumber, iBestSolverResult, iVerifyResult, uVerifyLimit,
+			uTotalScrambleFailures, uTotalSolverTooEasy, uTotalSolverUnsolvable, uTotalLowerBoundAccepts);
 
 		return true;
 	}
@@ -416,11 +476,13 @@ private:
 		TilePuzzleLevelData xLevel;
 		std::vector<TilePuzzleShapeDefinition> axShapeDefinitions;
 		int32_t iSolverResult = -1;
+		bool bExactSolution = false; // true = solver found exact result, false = lower-bound accept
 		bool bValid = false;
 		uint32_t uScrambleFailures = 0;
 		uint32_t uSolverTooEasy = 0;
 		uint32_t uSolverUnsolvable = 0;
 		uint32_t uSuccessCount = 0;
+		uint32_t uLowerBoundAccepts = 0;
 		ParamValueStats xColorStats;
 		ParamValueStats xCatsPerColorStats;
 		ParamValueStats xShapeComplexityStats;
@@ -531,21 +593,39 @@ private:
 					continue;
 				}
 
-				int32_t iSolverResult = TilePuzzle_Solver::SolveLevel(xCandidateLevel, xParams.uSolverStateLimit);
-				if (iSolverResult == -1 && xParams.uDeepSolverStateLimit > 0
-					&& xParams.uMaxDeepVerificationsPerWorker > 0
-					&& uDeepVerifyCount < xParams.uMaxDeepVerificationsPerWorker)
-				{
-					// Two-tier solver: re-verify "unsolvable" candidates at higher limit.
-					// Limited per worker to control cost.
-					// The unsolvable candidates have large BFS state spaces that may contain
-					// deep 15+ move solutions the fast solver couldn't verify.
-					uDeepVerifyCount++;
-					iSolverResult = TilePuzzle_Solver::SolveLevel(xCandidateLevel, xParams.uDeepSolverStateLimit);
-				}
+				int32_t iLowerBound = 0;
+				int32_t iSolverResult = TilePuzzle_Solver::SolveLevel(xCandidateLevel, xParams.uSolverStateLimit, &iLowerBound);
+				bool bExact = (iSolverResult >= 0);
+
 				if (iSolverResult == -1)
 				{
-					// Solver hit state limit even at deep limit - reject and retry
+					// Fast solver hit state limit — check if lower bound already meets target
+					if (iLowerBound > 0 && xAttemptParams.uMinSolverMoves > 0
+						&& static_cast<uint32_t>(iLowerBound) >= xAttemptParams.uMinSolverMoves)
+					{
+						iSolverResult = iLowerBound;
+						xResult.uLowerBoundAccepts++;
+					}
+					else if (xParams.uDeepSolverStateLimit > 0
+						&& xParams.uMaxDeepVerificationsPerWorker > 0
+						&& uDeepVerifyCount < xParams.uMaxDeepVerificationsPerWorker)
+					{
+						uDeepVerifyCount++;
+						int32_t iDeepLower = 0;
+						iSolverResult = TilePuzzle_Solver::SolveLevel(xCandidateLevel, xParams.uDeepSolverStateLimit, &iDeepLower);
+						bExact = (iSolverResult >= 0);
+
+						if (iSolverResult == -1 && iDeepLower > 0 && xAttemptParams.uMinSolverMoves > 0
+							&& static_cast<uint32_t>(iDeepLower) >= xAttemptParams.uMinSolverMoves)
+						{
+							iSolverResult = iDeepLower;
+							xResult.uLowerBoundAccepts++;
+						}
+					}
+				}
+
+				if (iSolverResult == -1)
+				{
 					xResult.uSolverUnsolvable++;
 					xResult.xColorStats.auSolverUnsolvable[uColors]++;
 					xResult.xCatsPerColorStats.auSolverUnsolvable[uCats]++;
@@ -562,18 +642,27 @@ private:
 					continue;
 				}
 
-				// Found a valid result - record success stats
 				xResult.uSuccessCount++;
 				xResult.xColorStats.auSuccesses[uColors]++;
 				xResult.xCatsPerColorStats.auSuccesses[uCats]++;
 				xResult.xShapeComplexityStats.auSuccesses[uShape]++;
 
-				// Keep the result with the highest solver move count
-				if (iSolverResult > xResult.iSolverResult)
+				// Prefer exact solutions over lower-bound accepts (exact are proven solvable).
+				// Among same category, prefer higher move counts.
+				bool bBetter = false;
+				if (bExact && !xResult.bExactSolution)
+					bBetter = true; // Exact always beats LB
+				else if (bExact == xResult.bExactSolution && iSolverResult > xResult.iSolverResult)
+					bBetter = true; // Same category, higher moves
+				else if (!bExact && !xResult.bExactSolution && iSolverResult > xResult.iSolverResult)
+					bBetter = true; // Both LB, higher LB
+
+				if (bBetter)
 				{
 					xResult.xLevel = std::move(xCandidateLevel);
 					xResult.axShapeDefinitions = std::move(axCandidateDefs);
 					xResult.iSolverResult = iSolverResult;
+					xResult.bExactSolution = bExact;
 					xResult.bValid = true;
 					xResult.uWinningColors = uColors;
 					xResult.uWinningCatsPerColor = uCats;
@@ -690,6 +779,398 @@ private:
 	}
 
 	/**
+	 * ComputeManhattanScore - Sum of Manhattan distances of all shapes from their solved positions
+	 */
+	static uint32_t ComputeManhattanScore(
+		const TilePuzzle_Rules::ShapeState* axShapes, uint32_t uNumShapes,
+		const int32_t* aiSolvedX, const int32_t* aiSolvedY)
+	{
+		uint32_t uScore = 0;
+		for (uint32_t i = 0; i < uNumShapes; ++i)
+		{
+			uScore += static_cast<uint32_t>(
+				std::abs(axShapes[i].iOriginX - aiSolvedX[i]) +
+				std::abs(axShapes[i].iOriginY - aiSolvedY[i]));
+		}
+		return uScore;
+	}
+
+	/**
+	 * ReverseBFSScramble - BFS from solved state to find deep starting positions
+	 *
+	 * Runs the solver's BFS from the solved configuration (shapes on cats, elim=0).
+	 * States at BFS depth N are N player-moves from solved. Selects the deepest
+	 * reachable state with uElimMask==0 (no cats eliminated) and maximum Manhattan
+	 * distance from solved positions.
+	 *
+	 * Solvability: guaranteed. Every state explored is reachable from solved via
+	 * valid game moves, so the reverse path is a valid solution.
+	 */
+	static bool ReverseBFSScramble(
+		TilePuzzleLevelData& xLevel,
+		TilePuzzle_Rules::ShapeState* axDraggableShapes,
+		uint32_t uNumDraggable,
+		const std::vector<size_t>& axDraggableIndices,
+		const TilePuzzle_Rules::CatState* axCats,
+		uint32_t uNumCats,
+		const int32_t* aiSolvedX,
+		const int32_t* aiSolvedY,
+		uint32_t uMaxStates,
+		std::mt19937& xRng,
+		uint32_t& uBFSDepthOut)
+	{
+		Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__TILEPUZZLE_REVERSE_BFS_SCRAMBLE);
+		Zenith_Assert(uNumDraggable <= s_uMaxSolverShapes, "Too many draggable shapes for reverse BFS");
+		Zenith_Assert(uNumCats <= s_uMaxSolverCats, "Too many cats for reverse BFS");
+
+		uint32_t uGridWidth = xLevel.uGridWidth;
+		uint32_t uGridHeight = xLevel.uGridHeight;
+
+		// Collect shape metadata (same setup as SolveLevel)
+		const TilePuzzleShapeDefinition* apxDefinitions[s_uMaxSolverShapes];
+		TilePuzzleColor aeColors[s_uMaxSolverShapes];
+		uint32_t auColorCatMasks[s_uMaxSolverShapes];
+		int32_t aiCatX[s_uMaxSolverCats], aiCatY[s_uMaxSolverCats];
+		TilePuzzleColor aeCatColors[s_uMaxSolverCats];
+		bool abCatOnBlocker[s_uMaxSolverCats];
+
+		for (uint32_t i = 0; i < uNumCats; ++i)
+		{
+			aiCatX[i] = axCats[i].iGridX;
+			aiCatY[i] = axCats[i].iGridY;
+			aeCatColors[i] = axCats[i].eColor;
+			abCatOnBlocker[i] = axCats[i].bOnBlocker;
+		}
+
+		for (uint32_t i = 0; i < uNumDraggable; ++i)
+		{
+			apxDefinitions[i] = axDraggableShapes[i].pxDefinition;
+			aeColors[i] = axDraggableShapes[i].eColor;
+			uint32_t uMask = 0;
+			for (uint32_t j = 0; j < uNumCats; ++j)
+			{
+				if (aeCatColors[j] == aeColors[i])
+					uMask |= (1u << j);
+			}
+			auColorCatMasks[i] = uMask;
+		}
+
+		// Pre-compute walkable grid
+		bool abWalkable[s_uMaxGridCells];
+		memset(abWalkable, 0, sizeof(abWalkable));
+		for (uint32_t y = 0; y < uGridHeight; y++)
+			for (uint32_t x = 0; x < uGridWidth; x++)
+				abWalkable[y * uGridWidth + x] = (xLevel.aeCells[y * uGridWidth + x] == TILEPUZZLE_CELL_FLOOR);
+		for (size_t i = 0; i < xLevel.axShapes.size(); ++i)
+		{
+			const TilePuzzleShapeInstance& xShape = xLevel.axShapes[i];
+			if (!xShape.pxDefinition || xShape.pxDefinition->bDraggable)
+				continue;
+			for (size_t j = 0; j < xShape.pxDefinition->axCells.size(); ++j)
+			{
+				int32_t cx = xShape.iOriginX + xShape.pxDefinition->axCells[j].iX;
+				int32_t cy = xShape.iOriginY + xShape.pxDefinition->axCells[j].iY;
+				if (cx >= 0 && cy >= 0 &&
+					static_cast<uint32_t>(cx) < uGridWidth &&
+					static_cast<uint32_t>(cy) < uGridHeight)
+				{
+					abWalkable[cy * uGridWidth + cx] = false;
+				}
+			}
+		}
+
+		// Pre-compute cat-at-cell lookup
+		int8_t aiCatAtCell[s_uMaxGridCells];
+		memset(aiCatAtCell, -1, sizeof(aiCatAtCell));
+		for (uint32_t i = 0; i < uNumCats; ++i)
+		{
+			uint32_t uIdx = static_cast<uint32_t>(aiCatY[i]) * uGridWidth + static_cast<uint32_t>(aiCatX[i]);
+			aiCatAtCell[uIdx] = static_cast<int8_t>(i);
+		}
+
+		// Pack initial state: shapes at solved positions, elim mask = 0
+		uint64_t uInitPacked = TilePuzzle_Solver::PackOuterState(
+			aiSolvedX, aiSolvedY, 0, auColorCatMasks, uNumDraggable);
+
+		// BFS
+		std::vector<uint64_t> axCurrentLevel, axNextLevel;
+		axCurrentLevel.reserve(4096);
+		axNextLevel.reserve(4096);
+		TilePuzzleFlatHashSet xOuterVisited;
+		xOuterVisited.Reserve(8192);
+
+		axCurrentLevel.push_back(uInitPacked);
+		xOuterVisited.Insert(uInitPacked);
+
+		std::vector<uint64_t> axInnerQueue;
+		std::unordered_set<uint64_t> xInnerVisited;
+		axInnerQueue.reserve(512);
+		xInnerVisited.reserve(512);
+
+		int32_t aiDeltaX[] = {0, 0, -1, 1};
+		int32_t aiDeltaY[] = {-1, 1, 0, 0};
+		uint32_t uDepth = 0;
+
+		// Track candidates from last few levels (states with uElimMask == 0)
+		std::vector<uint64_t> axCandidates;
+		uint32_t uCandidateDepth = 0;
+
+		while (!axCurrentLevel.empty() && xOuterVisited.Size() < uMaxStates)
+		{
+			axNextLevel.clear();
+
+			// Collect candidates from this depth (uElimMask == 0)
+			std::vector<uint64_t> axLevelCandidates;
+			for (size_t i = 0; i < axCurrentLevel.size(); ++i)
+			{
+				if (TilePuzzle_Solver::GetElimMask(axCurrentLevel[i]) == 0)
+					axLevelCandidates.push_back(axCurrentLevel[i]);
+			}
+			if (!axLevelCandidates.empty())
+			{
+				axCandidates = std::move(axLevelCandidates);
+				uCandidateDepth = uDepth;
+			}
+
+			for (size_t uStateIdx = 0; uStateIdx < axCurrentLevel.size(); ++uStateIdx)
+			{
+				uint64_t uPacked = axCurrentLevel[uStateIdx];
+				uint32_t uOuterMask = TilePuzzle_Solver::GetElimMask(uPacked);
+
+				int32_t aiPosX[s_uMaxSolverShapes], aiPosY[s_uMaxSolverShapes];
+				for (uint32_t i = 0; i < uNumDraggable; ++i)
+					TilePuzzle_Solver::GetShapePos(uPacked, i, aiPosX[i], aiPosY[i]);
+
+				for (uint32_t uDragShape = 0; uDragShape < uNumDraggable; ++uDragShape)
+				{
+					// Skip removed shapes
+					if ((auColorCatMasks[uDragShape] & ~uOuterMask) == 0)
+						continue;
+
+					// Ignore unlock thresholds during scramble BFS
+					// (same as current scramble: line 1098 sets uUnlockThreshold=0)
+
+					// Inner BFS: explore all reachable positions for this shape drag
+					axInnerQueue.clear();
+					xInnerVisited.clear();
+
+					int32_t iStartX = aiPosX[uDragShape];
+					int32_t iStartY = aiPosY[uDragShape];
+					uint64_t uStartKey = TilePuzzle_Solver::PackInnerState(iStartX, iStartY, uOuterMask);
+					axInnerQueue.push_back(uStartKey);
+					xInnerVisited.insert(uStartKey);
+
+					size_t uInnerFront = 0;
+					while (uInnerFront < axInnerQueue.size())
+					{
+						uint64_t uInnerKey = axInnerQueue[uInnerFront++];
+						int32_t iCurX, iCurY;
+						uint32_t uCurMask;
+						TilePuzzle_Solver::UnpackInnerState(uInnerKey, iCurX, iCurY, uCurMask);
+
+						// Enqueue new outer state for non-start positions
+						if (uInnerKey != uStartKey)
+						{
+							uint64_t uNewOuter = uPacked;
+							uNewOuter = TilePuzzle_Solver::SetShapePos(uNewOuter, uDragShape, iCurX, iCurY);
+							uNewOuter = TilePuzzle_Solver::SetElimMask(uNewOuter, uCurMask);
+							for (uint32_t i = 0; i < uNumDraggable; ++i)
+							{
+								if ((auColorCatMasks[i] & ~uCurMask) == 0 &&
+									!TilePuzzle_Solver::IsShapeRemoved(uNewOuter, i))
+									uNewOuter = TilePuzzle_Solver::SetShapeRemoved(uNewOuter, i);
+							}
+
+							if (xOuterVisited.Insert(uNewOuter))
+							{
+								// No early termination — we want deep states, not shortest solution
+								axNextLevel.push_back(uNewOuter);
+
+								if (xOuterVisited.Size() >= uMaxStates)
+									goto bfs_done;
+							}
+						}
+
+						// Explore 4 directions (same inlined logic as SolveLevel)
+						const std::vector<TilePuzzleCellOffset>& axMovingCells = apxDefinitions[uDragShape]->axCells;
+						size_t uNumMovingCells = axMovingCells.size();
+
+						for (int32_t iDir = 0; iDir < 4; ++iDir)
+						{
+							int32_t iNewX = iCurX + aiDeltaX[iDir];
+							int32_t iNewY = iCurY + aiDeltaY[iDir];
+
+							// Inline CanMoveShape
+							bool bValid = true;
+							for (size_t c = 0; c < uNumMovingCells; ++c)
+							{
+								int32_t iCellX = iNewX + axMovingCells[c].iX;
+								int32_t iCellY = iNewY + axMovingCells[c].iY;
+
+								if (iCellX < 0 || iCellY < 0 ||
+									static_cast<uint32_t>(iCellX) >= uGridWidth ||
+									static_cast<uint32_t>(iCellY) >= uGridHeight)
+								{
+									bValid = false;
+									break;
+								}
+
+								uint32_t uCellIdx = static_cast<uint32_t>(iCellY) * uGridWidth + static_cast<uint32_t>(iCellX);
+
+								if (!abWalkable[uCellIdx])
+								{
+									bValid = false;
+									break;
+								}
+
+								// Other draggable shapes collision
+								for (uint32_t si = 0; si < uNumDraggable; ++si)
+								{
+									if (si == uDragShape) continue;
+									if ((auColorCatMasks[si] & ~uCurMask) == 0) continue;
+
+									const std::vector<TilePuzzleCellOffset>& axOtherCells = apxDefinitions[si]->axCells;
+									for (size_t sc = 0; sc < axOtherCells.size(); ++sc)
+									{
+										if (aiPosX[si] + axOtherCells[sc].iX == iCellX &&
+											aiPosY[si] + axOtherCells[sc].iY == iCellY)
+										{
+											bValid = false;
+											break;
+										}
+									}
+									if (!bValid) break;
+								}
+								if (!bValid) break;
+
+								// Wrong-color cat check
+								int8_t iCatIdx = aiCatAtCell[uCellIdx];
+								if (iCatIdx >= 0 &&
+									!(uCurMask & (1u << static_cast<uint32_t>(iCatIdx))) &&
+									aeCatColors[iCatIdx] != aeColors[uDragShape])
+								{
+									bValid = false;
+									break;
+								}
+							}
+
+							if (!bValid) continue;
+
+							// Inline ComputeNewlyEliminatedCats
+							uint32_t uNewlyEliminated = 0;
+							for (uint32_t si = 0; si < uNumDraggable; ++si)
+							{
+								if ((auColorCatMasks[si] & ~uCurMask) == 0) continue;
+
+								int32_t iShapeX = (si == uDragShape) ? iNewX : aiPosX[si];
+								int32_t iShapeY = (si == uDragShape) ? iNewY : aiPosY[si];
+								const std::vector<TilePuzzleCellOffset>& axShapeCells = apxDefinitions[si]->axCells;
+
+								for (size_t c = 0; c < axShapeCells.size(); ++c)
+								{
+									int32_t iCellX = iShapeX + axShapeCells[c].iX;
+									int32_t iCellY = iShapeY + axShapeCells[c].iY;
+
+									for (uint32_t ci = 0; ci < uNumCats; ++ci)
+									{
+										if ((uCurMask | uNewlyEliminated) & (1u << ci)) continue;
+										if (aeCatColors[ci] != aeColors[si]) continue;
+
+										if (abCatOnBlocker[ci])
+										{
+											int32_t iDX = iCellX - aiCatX[ci];
+											int32_t iDY = iCellY - aiCatY[ci];
+											if ((iDX == 0 && (iDY == 1 || iDY == -1)) ||
+												(iDY == 0 && (iDX == 1 || iDX == -1)))
+											{
+												uNewlyEliminated |= (1u << ci);
+											}
+										}
+										else
+										{
+											if (aiCatX[ci] == iCellX && aiCatY[ci] == iCellY)
+												uNewlyEliminated |= (1u << ci);
+										}
+									}
+								}
+							}
+
+							uint64_t uNextKey = TilePuzzle_Solver::PackInnerState(iNewX, iNewY, uCurMask | uNewlyEliminated);
+							if (xInnerVisited.insert(uNextKey).second)
+								axInnerQueue.push_back(uNextKey);
+						}
+					}
+				}
+			}
+
+			axCurrentLevel.swap(axNextLevel);
+			uDepth++;
+		}
+
+	bfs_done:
+		// Also collect candidates from the final next-level (partially explored)
+		if (!axNextLevel.empty())
+		{
+			std::vector<uint64_t> axFinalCandidates;
+			for (size_t i = 0; i < axNextLevel.size(); ++i)
+			{
+				if (TilePuzzle_Solver::GetElimMask(axNextLevel[i]) == 0)
+					axFinalCandidates.push_back(axNextLevel[i]);
+			}
+			if (!axFinalCandidates.empty())
+			{
+				axCandidates = std::move(axFinalCandidates);
+				uCandidateDepth = uDepth;
+			}
+		}
+
+		if (axCandidates.empty())
+			return false;
+
+		// Select best candidate by Manhattan distance from solved positions
+		uint64_t uBestState = axCandidates[0];
+		uint32_t uBestScore = 0;
+
+		for (size_t i = 0; i < axCandidates.size(); ++i)
+		{
+			int32_t aiCandX[s_uMaxSolverShapes], aiCandY[s_uMaxSolverShapes];
+			uint32_t uScore = 0;
+			for (uint32_t s = 0; s < uNumDraggable; ++s)
+			{
+				TilePuzzle_Solver::GetShapePos(axCandidates[i], s, aiCandX[s], aiCandY[s]);
+				if (aiCandX[s] >= 0 && aiCandY[s] >= 0)
+				{
+					uScore += static_cast<uint32_t>(
+						std::abs(aiCandX[s] - aiSolvedX[s]) +
+						std::abs(aiCandY[s] - aiSolvedY[s]));
+				}
+			}
+			if (uScore > uBestScore)
+			{
+				uBestScore = uScore;
+				uBestState = axCandidates[i];
+			}
+		}
+
+		// Unpack selected state back into level data
+		for (uint32_t i = 0; i < uNumDraggable; ++i)
+		{
+			int32_t iNewX, iNewY;
+			TilePuzzle_Solver::GetShapePos(uBestState, i, iNewX, iNewY);
+			if (iNewX >= 0 && iNewY >= 0)
+			{
+				axDraggableShapes[i].iOriginX = iNewX;
+				axDraggableShapes[i].iOriginY = iNewY;
+				xLevel.axShapes[axDraggableIndices[i]].iOriginX = iNewX;
+				xLevel.axShapes[axDraggableIndices[i]].iOriginY = iNewY;
+			}
+		}
+
+		uBFSDepthOut = uCandidateDepth;
+		return true;
+	}
+
+	/**
 	 * GenerateLevelAttempt - Single attempt using reverse scramble
 	 *
 	 * Phase 1: Create grid with borders, place static blockers
@@ -706,10 +1187,13 @@ private:
 		uint32_t& uSuccessfulMovesOut,
 		std::vector<TilePuzzleShapeDefinition>& axShapeDefsOut)
 	{
+		Zenith_Profiling::Scope xProfileScope(ZENITH_PROFILE_INDEX__TILEPUZZLE_GENERATE_ATTEMPT);
 		axShapeDefsOut.clear();
 		axShapeDefsOut.reserve(
 			xParams.uNumBlockers +
 			xParams.uNumColors * xParams.uNumShapesPerColor);
+
+		Zenith_Profiling::BeginProfile(ZENITH_PROFILE_INDEX__TILEPUZZLE_GRID_SETUP);
 
 		// ---- Phase 1: Grid + static blockers ----
 
@@ -1080,7 +1564,10 @@ private:
 			}
 		}
 
+		Zenith_Profiling::EndProfile(ZENITH_PROFILE_INDEX__TILEPUZZLE_GRID_SETUP);
+
 		// ---- Phase 4: Scramble ----
+		Zenith_Profiling::BeginProfile(ZENITH_PROFILE_INDEX__TILEPUZZLE_SCRAMBLE);
 
 		// Build draggable shape state arrays
 		std::vector<size_t> axDraggableIndices;
@@ -1115,164 +1602,309 @@ private:
 			axCatStates.PushBack(xCatState);
 		}
 
-		uint32_t uCoveredMask = ComputeCoveredMask(
-			axShapeStates.GetDataPointer(), axShapeStates.GetSize(),
-			axCatStates.GetDataPointer(), axCatStates.GetSize());
+		// Capture solved positions before scramble
+		int32_t aiSolvedX[s_uMaxSolverShapes] = {};
+		int32_t aiSolvedY[s_uMaxSolverShapes] = {};
+		for (uint32_t i = 0; i < axShapeStates.GetSize(); ++i)
+		{
+			aiSolvedX[i] = axShapeStates.Get(i).iOriginX;
+			aiSolvedY[i] = axShapeStates.Get(i).iOriginY;
+		}
 
+		// Branch on scramble mode
+		if (xParams.eScrambleMode == SCRAMBLE_MODE_REVERSE_BFS && xParams.uReverseBFSStateLimit > 0)
+		{
+			// Reverse BFS: explore outward from solved state, pick deepest reachable configuration
+			uint32_t uBFSDepth = 0;
+			bool bOK = ReverseBFSScramble(
+				xLevelOut,
+				axShapeStates.GetDataPointer(),
+				axShapeStates.GetSize(),
+				axDraggableIndices,
+				axCatStates.GetDataPointer(), axCatStates.GetSize(),
+				aiSolvedX, aiSolvedY,
+				xParams.uReverseBFSStateLimit,
+				xRng,
+				uBFSDepth);
+			if (!bOK)
+				return false;
+			uSuccessfulMovesOut = uBFSDepth;
+			return true;
+		}
+
+		// Multi-start scramble: try multiple scramble trajectories, keep best displacement
 		int32_t aiScrambleDeltaX[] = {0, 0, -1, 1};
 		int32_t aiScrambleDeltaY[] = {-1, 1, 0, 0};
 		std::uniform_int_distribution<int32_t> xDirDist(0, 3);
-
-		// Pre-scramble: move conditional shapes off their cats
-		for (uint32_t i = 0; i < axShapeStates.GetSize(); ++i)
-		{
-			if (xLevelOut.axShapes[axDraggableIndices[i]].uUnlockThreshold == 0)
-				continue;
-
-			for (uint32_t uAttempt = 0; uAttempt < 20; ++uAttempt)
-			{
-				int32_t iDir = xDirDist(xRng);
-				if (TryScrambleMove(
-					xLevelOut,
-					axShapeStates.GetDataPointer(), axShapeStates.GetSize(),
-					axDraggableIndices,
-					axCatStates.GetDataPointer(), axCatStates.GetSize(),
-					i,
-					aiScrambleDeltaX[iDir], aiScrambleDeltaY[iDir],
-					0,
-					xLevelOut))
-				{
-					uCoveredMask = ComputeCoveredMask(
-						axShapeStates.GetDataPointer(), axShapeStates.GetSize(),
-						axCatStates.GetDataPointer(), axCatStates.GetSize());
-					break;
-				}
-			}
-		}
-
-		// Main scramble - two modes:
-		// 1. Uncover: move shapes OFF cats they're currently covering
-		// 2. Random: random moves for distance
 		uint32_t uNumCats = static_cast<uint32_t>(xLevelOut.axCats.size());
 		size_t uNumDraggable = axDraggableIndices.size();
-		uint32_t uSuccessfulMoves = 0;
-		uint32_t uMaxIterations = xParams.uScrambleMoves * 10;
 		std::uniform_int_distribution<size_t> xShapeDist(0, axDraggableIndices.size() - 1);
+		std::uniform_real_distribution<float> xEpsilonDist(0.f, 1.f);
+		static constexpr float fGuidedEpsilon = 0.15f;
 
-		for (uint32_t uIter = 0; uIter < uMaxIterations; ++uIter)
+		// Save solved positions for restoring between restarts
+		int32_t aiBestX[s_uMaxSolverShapes] = {};
+		int32_t aiBestY[s_uMaxSolverShapes] = {};
+		uint32_t uBestManhattan = 0;
+		uint32_t uBestMoves = 0;
+		bool bAnyScrambleSuccess = false;
+
+		for (uint32_t uRestart = 0; uRestart < xParams.uScrambleRestarts; ++uRestart)
 		{
-			bool bMoved = false;
-
-			// Mode 1 - Uncover: when cats are currently covered, move the covering shape away
-			if (uCoveredMask != 0)
+			// Restore solved positions for each restart (except first)
+			if (uRestart > 0)
 			{
-				// Build shuffled shape order
-				size_t auShapeOrder[s_uMaxSolverShapes];
-				for (size_t i = 0; i < uNumDraggable; ++i)
-					auShapeOrder[i] = i;
-				for (size_t i = uNumDraggable; i > 1; --i)
+				for (uint32_t i = 0; i < axShapeStates.GetSize(); ++i)
 				{
-					std::uniform_int_distribution<size_t> xSwap(0, i - 1);
-					size_t j = xSwap(xRng);
-					size_t tmp = auShapeOrder[i - 1];
-					auShapeOrder[i - 1] = auShapeOrder[j];
-					auShapeOrder[j] = tmp;
+					axShapeStates.Get(i).iOriginX = aiSolvedX[i];
+					axShapeStates.Get(i).iOriginY = aiSolvedY[i];
+					xLevelOut.axShapes[axDraggableIndices[i]].iOriginX = aiSolvedX[i];
+					xLevelOut.axShapes[axDraggableIndices[i]].iOriginY = aiSolvedY[i];
 				}
+			}
 
-				for (size_t si = 0; si < uNumDraggable && !bMoved; ++si)
+			uint32_t uCoveredMask = ComputeCoveredMask(
+				axShapeStates.GetDataPointer(), axShapeStates.GetSize(),
+				axCatStates.GetDataPointer(), axCatStates.GetSize());
+
+			// Pre-scramble: move conditional shapes off their cats
+			for (uint32_t i = 0; i < axShapeStates.GetSize(); ++i)
+			{
+				if (xLevelOut.axShapes[axDraggableIndices[i]].uUnlockThreshold == 0)
+					continue;
+
+				for (uint32_t uAttempt = 0; uAttempt < 20; ++uAttempt)
 				{
-					size_t uShapeIdx = auShapeOrder[si];
-					const TilePuzzle_Rules::ShapeState& xShape = axShapeStates.Get(static_cast<uint32_t>(uShapeIdx));
-
-					// Check if this shape covers any same-color cat
-					bool bCoversCat = false;
-					for (uint32_t uCovCheckIdx = 0; uCovCheckIdx < uNumCats; ++uCovCheckIdx)
+					int32_t iDir = xDirDist(xRng);
+					if (TryScrambleMove(
+						xLevelOut,
+						axShapeStates.GetDataPointer(), axShapeStates.GetSize(),
+						axDraggableIndices,
+						axCatStates.GetDataPointer(), axCatStates.GetSize(),
+						i,
+						aiScrambleDeltaX[iDir], aiScrambleDeltaY[iDir],
+						0,
+						xLevelOut))
 					{
-						if (!(uCoveredMask & (1u << uCovCheckIdx)))
-							continue;
-						if (axCatStates.Get(uCovCheckIdx).eColor != xShape.eColor)
-							continue;
-						for (size_t k = 0; k < xShape.pxDefinition->axCells.size(); ++k)
+						uCoveredMask = ComputeCoveredMask(
+							axShapeStates.GetDataPointer(), axShapeStates.GetSize(),
+							axCatStates.GetDataPointer(), axCatStates.GetSize());
+						break;
+					}
+				}
+			}
+
+			// Main scramble
+			uint32_t uSuccessfulMoves = 0;
+			uint32_t uMaxIterations = xParams.uScrambleMoves * 10;
+
+			for (uint32_t uIter = 0; uIter < uMaxIterations; ++uIter)
+			{
+				bool bMoved = false;
+
+				// Mode 1 - Uncover: when cats are currently covered, move the covering shape away
+				if (uCoveredMask != 0)
+				{
+					// Build shuffled shape order
+					size_t auShapeOrder[s_uMaxSolverShapes];
+					for (size_t i = 0; i < uNumDraggable; ++i)
+						auShapeOrder[i] = i;
+					for (size_t i = uNumDraggable; i > 1; --i)
+					{
+						std::uniform_int_distribution<size_t> xSwap(0, i - 1);
+						size_t j = xSwap(xRng);
+						size_t tmp = auShapeOrder[i - 1];
+						auShapeOrder[i - 1] = auShapeOrder[j];
+						auShapeOrder[j] = tmp;
+					}
+
+					for (size_t si = 0; si < uNumDraggable && !bMoved; ++si)
+					{
+						size_t uShapeIdx = auShapeOrder[si];
+						const TilePuzzle_Rules::ShapeState& xShape = axShapeStates.Get(static_cast<uint32_t>(uShapeIdx));
+
+						// Check if this shape covers any same-color cat
+						bool bCoversCat = false;
+						for (uint32_t uCovCheckIdx = 0; uCovCheckIdx < uNumCats; ++uCovCheckIdx)
 						{
-							int32_t iCX = xShape.iOriginX + xShape.pxDefinition->axCells[k].iX;
-							int32_t iCY = xShape.iOriginY + xShape.pxDefinition->axCells[k].iY;
-							if (iCX == axCatStates.Get(uCovCheckIdx).iGridX && iCY == axCatStates.Get(uCovCheckIdx).iGridY)
+							if (!(uCoveredMask & (1u << uCovCheckIdx)))
+								continue;
+							if (axCatStates.Get(uCovCheckIdx).eColor != xShape.eColor)
+								continue;
+							for (size_t k = 0; k < xShape.pxDefinition->axCells.size(); ++k)
 							{
-								bCoversCat = true;
+								int32_t iCX = xShape.iOriginX + xShape.pxDefinition->axCells[k].iX;
+								int32_t iCY = xShape.iOriginY + xShape.pxDefinition->axCells[k].iY;
+								if (iCX == axCatStates.Get(uCovCheckIdx).iGridX && iCY == axCatStates.Get(uCovCheckIdx).iGridY)
+								{
+									bCoversCat = true;
+									break;
+								}
+							}
+							if (bCoversCat) break;
+						}
+
+						if (!bCoversCat)
+							continue;
+
+						// Try all 4 directions in random order
+						int32_t aiDirOrder[4] = {0, 1, 2, 3};
+						for (int32_t i = 3; i > 0; --i)
+						{
+							std::uniform_int_distribution<int32_t> xSwapDir(0, i);
+							int32_t j = xSwapDir(xRng);
+							int32_t tmp = aiDirOrder[i];
+							aiDirOrder[i] = aiDirOrder[j];
+							aiDirOrder[j] = tmp;
+						}
+
+						for (int32_t d = 0; d < 4; ++d)
+						{
+							if (TryScrambleMove(
+								xLevelOut,
+								axShapeStates.GetDataPointer(), axShapeStates.GetSize(),
+								axDraggableIndices,
+								axCatStates.GetDataPointer(), axCatStates.GetSize(),
+								uShapeIdx,
+								aiScrambleDeltaX[aiDirOrder[d]], aiScrambleDeltaY[aiDirOrder[d]],
+								0,
+								xLevelOut))
+							{
+								bMoved = true;
 								break;
 							}
 						}
-						if (bCoversCat) break;
 					}
+				}
 
-					if (!bCoversCat)
-						continue;
-
-					// Try all 4 directions in random order
-					int32_t aiDirOrder[4] = {0, 1, 2, 3};
-					for (int32_t i = 3; i > 0; --i)
+				// Mode 2 - Guided or Random depending on scramble mode
+				if (!bMoved)
+				{
+					if (xParams.eScrambleMode == SCRAMBLE_MODE_GUIDED && xEpsilonDist(xRng) >= fGuidedEpsilon)
 					{
-						std::uniform_int_distribution<int32_t> xSwapDir(0, i);
-						int32_t j = xSwapDir(xRng);
-						int32_t tmp = aiDirOrder[i];
-						aiDirOrder[i] = aiDirOrder[j];
-						aiDirOrder[j] = tmp;
+						// Guided: evaluate all valid moves and pick the one maximizing Manhattan distance
+						uint32_t uBestScore = 0;
+						size_t uBestShape = 0;
+						int32_t iBestDir = 0;
+						bool bFoundMove = false;
+
+						for (size_t si = 0; si < uNumDraggable; ++si)
+						{
+							for (int32_t d = 0; d < 4; ++d)
+							{
+								int32_t iOldX = axShapeStates.Get(static_cast<uint32_t>(si)).iOriginX;
+								int32_t iOldY = axShapeStates.Get(static_cast<uint32_t>(si)).iOriginY;
+
+								if (TryScrambleMove(
+									xLevelOut,
+									axShapeStates.GetDataPointer(), axShapeStates.GetSize(),
+									axDraggableIndices,
+									axCatStates.GetDataPointer(), axCatStates.GetSize(),
+									si,
+									aiScrambleDeltaX[d], aiScrambleDeltaY[d],
+									0,
+									xLevelOut))
+								{
+									uint32_t uScore = ComputeManhattanScore(
+										axShapeStates.GetDataPointer(), axShapeStates.GetSize(),
+										aiSolvedX, aiSolvedY);
+
+									if (uScore > uBestScore || !bFoundMove)
+									{
+										uBestScore = uScore;
+										uBestShape = si;
+										iBestDir = d;
+										bFoundMove = true;
+									}
+
+									// Undo the move
+									axShapeStates.Get(static_cast<uint32_t>(si)).iOriginX = iOldX;
+									axShapeStates.Get(static_cast<uint32_t>(si)).iOriginY = iOldY;
+									xLevelOut.axShapes[axDraggableIndices[si]].iOriginX = iOldX;
+									xLevelOut.axShapes[axDraggableIndices[si]].iOriginY = iOldY;
+								}
+							}
+						}
+
+						if (bFoundMove)
+						{
+							bMoved = TryScrambleMove(
+								xLevelOut,
+								axShapeStates.GetDataPointer(), axShapeStates.GetSize(),
+								axDraggableIndices,
+								axCatStates.GetDataPointer(), axCatStates.GetSize(),
+								uBestShape,
+								aiScrambleDeltaX[iBestDir], aiScrambleDeltaY[iBestDir],
+								0,
+								xLevelOut);
+						}
 					}
-
-					for (int32_t d = 0; d < 4; ++d)
+					else
 					{
-						if (TryScrambleMove(
+						// Random one-cell move (any shape, any direction) — original behavior
+						size_t uShapeIdx = xShapeDist(xRng);
+						int32_t iDir = xDirDist(xRng);
+						bMoved = TryScrambleMove(
 							xLevelOut,
 							axShapeStates.GetDataPointer(), axShapeStates.GetSize(),
 							axDraggableIndices,
 							axCatStates.GetDataPointer(), axCatStates.GetSize(),
 							uShapeIdx,
-							aiScrambleDeltaX[aiDirOrder[d]], aiScrambleDeltaY[aiDirOrder[d]],
+							aiScrambleDeltaX[iDir], aiScrambleDeltaY[iDir],
 							0,
-							xLevelOut))
-						{
-							bMoved = true;
-							break;
-						}
+							xLevelOut);
+					}
+				}
+
+				if (bMoved)
+				{
+					uCoveredMask = ComputeCoveredMask(
+						axShapeStates.GetDataPointer(), axShapeStates.GetSize(),
+						axCatStates.GetDataPointer(), axCatStates.GetSize());
+					uSuccessfulMoves++;
+
+					if (uCoveredMask == 0 &&
+						uSuccessfulMoves >= xParams.uScrambleMoves)
+					{
+						break;
 					}
 				}
 			}
-			// Mode 2 - Random one-cell move (any shape, any direction)
-			if (!bMoved)
-			{
-				size_t uShapeIdx = xShapeDist(xRng);
-				int32_t iDir = xDirDist(xRng);
-				bMoved = TryScrambleMove(
-					xLevelOut,
-					axShapeStates.GetDataPointer(), axShapeStates.GetSize(),
-					axDraggableIndices,
-					axCatStates.GetDataPointer(), axCatStates.GetSize(),
-					uShapeIdx,
-					aiScrambleDeltaX[iDir], aiScrambleDeltaY[iDir],
-					0,
-					xLevelOut);
-			}
 
-			if (bMoved)
+			// Evaluate this scramble result
+			if (uCoveredMask == 0)
 			{
-				uCoveredMask = ComputeCoveredMask(
+				uint32_t uManhattan = ComputeManhattanScore(
 					axShapeStates.GetDataPointer(), axShapeStates.GetSize(),
-					axCatStates.GetDataPointer(), axCatStates.GetSize());
-				uSuccessfulMoves++;
+					aiSolvedX, aiSolvedY);
 
-				if (uCoveredMask == 0 &&
-					uSuccessfulMoves >= xParams.uScrambleMoves)
+				if (uManhattan > uBestManhattan || !bAnyScrambleSuccess)
 				{
-					break;
+					uBestManhattan = uManhattan;
+					uBestMoves = uSuccessfulMoves;
+					for (uint32_t i = 0; i < axShapeStates.GetSize(); ++i)
+					{
+						aiBestX[i] = axShapeStates.Get(i).iOriginX;
+						aiBestY[i] = axShapeStates.Get(i).iOriginY;
+					}
+					bAnyScrambleSuccess = true;
 				}
 			}
-		}
+		} // end multi-start restarts
 
-		// No cats currently covered by same-color shapes
-		if (uCoveredMask != 0)
+		Zenith_Profiling::EndProfile(ZENITH_PROFILE_INDEX__TILEPUZZLE_SCRAMBLE);
+
+		if (!bAnyScrambleSuccess)
 			return false;
 
-		uSuccessfulMovesOut = uSuccessfulMoves;
+		// Apply best scramble result
+		for (uint32_t i = 0; i < axShapeStates.GetSize(); ++i)
+		{
+			xLevelOut.axShapes[axDraggableIndices[i]].iOriginX = aiBestX[i];
+			xLevelOut.axShapes[axDraggableIndices[i]].iOriginY = aiBestY[i];
+		}
+
+		uSuccessfulMovesOut = uBestMoves;
 		return true;
 	}
 

@@ -198,6 +198,40 @@ bool Flux_IKSolver::HasTarget(const std::string& strChainName) const
 	return m_xTargets.find(strChainName) != m_xTargets.end();
 }
 
+//=============================================================================
+// Static Helpers
+//=============================================================================
+Zenith_Maths::Vector3 Flux_IKSolver::SafeNormalize(const Zenith_Maths::Vector3& xVec,
+	const Zenith_Maths::Vector3& xFallback,
+	float fEpsilon)
+{
+	float fLen = glm::length(xVec);
+	if (fLen > fEpsilon)
+	{
+		return xVec / fLen;
+	}
+	return xFallback;
+}
+
+Zenith_Maths::Vector3 Flux_IKSolver::FindPerpendicularAxis(const Zenith_Maths::Vector3& xVec)
+{
+	Zenith_Maths::Vector3 xAxis = glm::cross(Zenith_Maths::Vector3(1, 0, 0), xVec);
+	if (glm::length(xAxis) < 0.0001f)
+	{
+		xAxis = glm::cross(Zenith_Maths::Vector3(0, 1, 0), xVec);
+	}
+	return glm::normalize(xAxis);
+}
+
+Zenith_Maths::Vector3 Flux_IKSolver::ConstrainBoneLength(const Zenith_Maths::Vector3& xChildPos,
+	const Zenith_Maths::Vector3& xParentPos,
+	float fLength)
+{
+	Zenith_Maths::Vector3 xDir = xChildPos - xParentPos;
+	Zenith_Maths::Vector3 xNormDir = SafeNormalize(xDir, Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f));
+	return xParentPos + xNormDir * fLength;
+}
+
 void Flux_IKSolver::Solve(Flux_SkeletonPose& xPose,
 	const Flux_MeshGeometry& xGeometry,
 	const Zenith_Maths::Matrix4& xWorldMatrix)
@@ -317,14 +351,7 @@ void Flux_IKSolver::ForwardReaching(std::vector<Zenith_Maths::Vector3>& xPositio
 	// Work backward to root
 	for (int32_t i = static_cast<int32_t>(uNumBones) - 2; i >= 0; --i)
 	{
-		Zenith_Maths::Vector3 xDir = xPositions[i] - xPositions[i + 1];
-		float fLen = glm::length(xDir);
-
-		if (fLen > 0.0001f)
-		{
-			xDir = xDir / fLen;
-			xPositions[i] = xPositions[i + 1] + xDir * xBoneLengths[i];
-		}
+		xPositions[i] = ConstrainBoneLength(xPositions[i], xPositions[i + 1], xBoneLengths[i]);
 	}
 }
 
@@ -342,13 +369,65 @@ void Flux_IKSolver::BackwardReaching(std::vector<Zenith_Maths::Vector3>& xPositi
 	// Work forward to end effector
 	for (size_t i = 0; i < uNumBones - 1; ++i)
 	{
-		Zenith_Maths::Vector3 xDir = xPositions[i + 1] - xPositions[i];
-		float fLen = glm::length(xDir);
+		xPositions[i + 1] = ConstrainBoneLength(xPositions[i + 1], xPositions[i], xBoneLengths[i]);
+	}
+}
 
-		if (fLen > 0.0001f)
+void Flux_IKSolver::ApplyHingeConstraint(std::vector<Zenith_Maths::Vector3>& xPositions,
+	size_t uJointIndex,
+	const Flux_JointConstraint& xConstraint,
+	float fBoneLength)
+{
+	if (uJointIndex == 0 || uJointIndex + 1 >= xPositions.size())
+		return;
+
+	// Project movement onto plane perpendicular to hinge axis
+	Zenith_Maths::Vector3 xBoneDir = xPositions[uJointIndex + 1] - xPositions[uJointIndex];
+	const Zenith_Maths::Vector3& xAxis = xConstraint.m_xHingeAxis;
+
+	// Remove component along hinge axis
+	float fDot = glm::dot(xBoneDir, xAxis);
+	xBoneDir = xBoneDir - xAxis * fDot;
+
+	Zenith_Maths::Vector3 xNormDir = SafeNormalize(xBoneDir);
+	if (glm::length(xNormDir) > 0.0001f)
+	{
+		xPositions[uJointIndex + 1] = xPositions[uJointIndex] + xNormDir * fBoneLength;
+	}
+}
+
+void Flux_IKSolver::ApplyBallSocketConstraint(std::vector<Zenith_Maths::Vector3>& xPositions,
+	size_t uJointIndex,
+	const Flux_JointConstraint& xConstraint,
+	const Flux_IKChain& xChain,
+	const Flux_SkeletonPose& xOriginalPose)
+{
+	if (uJointIndex == 0 || uJointIndex + 1 >= xPositions.size() || uJointIndex >= xChain.m_xBoneIndices.size())
+		return;
+
+	uint32_t uBoneIdx = xChain.m_xBoneIndices[uJointIndex];
+	if (uBoneIdx == ~0u)
+		return;
+
+	// Original bone direction from the pose
+	Zenith_Maths::Vector3 xOrigDir = Zenith_Maths::Vector3(
+		xOriginalPose.GetModelSpaceMatrix(uBoneIdx) *
+		Zenith_Maths::Vector4(0, 1, 0, 0)
+	);
+
+	Zenith_Maths::Vector3 xNewDir = glm::normalize(xPositions[uJointIndex + 1] - xPositions[uJointIndex]);
+	float fAngle = std::acos(glm::clamp(glm::dot(xOrigDir, xNewDir), -1.0f, 1.0f));
+
+	if (fAngle > xConstraint.m_fConeAngle)
+	{
+		// Clamp to cone boundary
+		Zenith_Maths::Vector3 xRotAxis = glm::cross(xOrigDir, xNewDir);
+		Zenith_Maths::Vector3 xNormAxis = SafeNormalize(xRotAxis);
+		if (glm::length(xNormAxis) > 0.0001f)
 		{
-			xDir = xDir / fLen;
-			xPositions[i + 1] = xPositions[i] + xDir * xBoneLengths[i];
+			Zenith_Maths::Quat xRotation = glm::angleAxis(xConstraint.m_fConeAngle, xNormAxis);
+			Zenith_Maths::Vector3 xClampedDir = xRotation * xOrigDir;
+			xPositions[uJointIndex + 1] = xPositions[uJointIndex] + xClampedDir * xChain.m_xBoneLengths[uJointIndex];
 		}
 	}
 }
@@ -357,10 +436,6 @@ void Flux_IKSolver::ApplyConstraints(std::vector<Zenith_Maths::Vector3>& xPositi
 	const Flux_IKChain& xChain,
 	const Flux_SkeletonPose& xOriginalPose)
 {
-	// Apply joint constraints
-	// For now, this is a simplified implementation
-	// A full implementation would properly handle each constraint type
-
 	// Loop must also check bone lengths bounds (m_xBoneLengths.size() == m_xBoneIndices.size() - 1)
 	const size_t uMaxIndex = std::min({xChain.m_xJointConstraints.size(), xPositions.size(), xChain.m_xBoneLengths.size()});
 	for (size_t i = 0; i < uMaxIndex; ++i)
@@ -370,58 +445,12 @@ void Flux_IKSolver::ApplyConstraints(std::vector<Zenith_Maths::Vector3>& xPositi
 		switch (xConstraint.m_eType)
 		{
 		case Flux_JointConstraint::ConstraintType::Hinge:
-		{
-			// Project movement onto plane perpendicular to hinge axis
-			if (i > 0 && i + 1 < xPositions.size())
-			{
-				Zenith_Maths::Vector3 xBoneDir = xPositions[i + 1] - xPositions[i];
-				Zenith_Maths::Vector3 xAxis = xConstraint.m_xHingeAxis;
-
-				// Remove component along hinge axis
-				float fDot = glm::dot(xBoneDir, xAxis);
-				xBoneDir = xBoneDir - xAxis * fDot;
-
-				if (glm::length(xBoneDir) > 0.0001f)
-				{
-					xBoneDir = glm::normalize(xBoneDir) * xChain.m_xBoneLengths[i];
-					xPositions[i + 1] = xPositions[i] + xBoneDir;
-				}
-			}
+			ApplyHingeConstraint(xPositions, i, xConstraint, xChain.m_xBoneLengths[i]);
 			break;
-		}
 
 		case Flux_JointConstraint::ConstraintType::BallSocket:
-		{
-			// Limit angle from original direction
-			if (i > 0 && i + 1 < xPositions.size() && i < xChain.m_xBoneIndices.size())
-			{
-				uint32_t uBoneIdx = xChain.m_xBoneIndices[i];
-				if (uBoneIdx != ~0u)
-				{
-					Zenith_Maths::Vector3 xOrigDir = Zenith_Maths::Vector3(
-						xOriginalPose.GetModelSpaceMatrix(uBoneIdx) *
-						Zenith_Maths::Vector4(0, 1, 0, 0)
-					);
-
-					Zenith_Maths::Vector3 xNewDir = glm::normalize(xPositions[i + 1] - xPositions[i]);
-					float fAngle = std::acos(glm::clamp(glm::dot(xOrigDir, xNewDir), -1.0f, 1.0f));
-
-					if (fAngle > xConstraint.m_fConeAngle)
-					{
-						// Clamp to cone
-						Zenith_Maths::Vector3 xAxis = glm::cross(xOrigDir, xNewDir);
-						if (glm::length(xAxis) > 0.0001f)
-						{
-							xAxis = glm::normalize(xAxis);
-							Zenith_Maths::Quat xRotation = glm::angleAxis(xConstraint.m_fConeAngle, xAxis);
-							Zenith_Maths::Vector3 xClampedDir = xRotation * xOrigDir;
-							xPositions[i + 1] = xPositions[i] + xClampedDir * xChain.m_xBoneLengths[i];
-						}
-					}
-				}
-			}
+			ApplyBallSocketConstraint(xPositions, i, xConstraint, xChain, xOriginalPose);
 			break;
-		}
 
 		default:
 			break;
@@ -442,21 +471,17 @@ void Flux_IKSolver::ApplyPoleVectorConstraint(std::vector<Zenith_Maths::Vector3>
 	const Zenith_Maths::Vector3& xEnd = xPositions[xPositions.size() - 1];
 
 	// Main axis from root to end
-	Zenith_Maths::Vector3 xMainAxis = xEnd - xRoot;
-	float fMainLength = glm::length(xMainAxis);
-	if (fMainLength < 0.0001f)
+	Zenith_Maths::Vector3 xMainAxis = SafeNormalize(xEnd - xRoot);
+	if (glm::length(xMainAxis) < 0.0001f)
 		return;
-
-	xMainAxis = xMainAxis / fMainLength;
 
 	// Project pole onto plane perpendicular to main axis
 	Zenith_Maths::Vector3 xToPole = xPolePosition - xRoot;
 	xToPole = xToPole - xMainAxis * glm::dot(xToPole, xMainAxis);
 
+	xToPole = SafeNormalize(xToPole);
 	if (glm::length(xToPole) < 0.0001f)
 		return;
-
-	xToPole = glm::normalize(xToPole);
 
 	// For each middle joint, ensure it's on the pole side
 	for (size_t i = 1; i < xPositions.size() - 1; ++i)
@@ -478,13 +503,7 @@ void Flux_IKSolver::ApplyPoleVectorConstraint(std::vector<Zenith_Maths::Vector3>
 	// Re-apply bone length constraints after pole adjustment
 	for (size_t i = 0; i < xPositions.size() - 1; ++i)
 	{
-		Zenith_Maths::Vector3 xDir = xPositions[i + 1] - xPositions[i];
-		float fLen = glm::length(xDir);
-		if (fLen > 0.0001f)
-		{
-			xDir = xDir / fLen;
-			xPositions[i + 1] = xPositions[i] + xDir * xChain.m_xBoneLengths[i];
-		}
+		xPositions[i + 1] = ConstrainBoneLength(xPositions[i + 1], xPositions[i], xChain.m_xBoneLengths[i]);
 	}
 }
 
@@ -504,12 +523,7 @@ Zenith_Maths::Quat RotationBetweenVectors(const Zenith_Maths::Vector3& xFrom,
 	if (fDot < -0.9999f)
 	{
 		// Opposite directions - find perpendicular axis
-		Zenith_Maths::Vector3 xAxis = glm::cross(Zenith_Maths::Vector3(1, 0, 0), xFromNorm);
-		if (glm::length(xAxis) < 0.0001f)
-		{
-			xAxis = glm::cross(Zenith_Maths::Vector3(0, 1, 0), xFromNorm);
-		}
-		xAxis = glm::normalize(xAxis);
+		Zenith_Maths::Vector3 xAxis = Flux_IKSolver::FindPerpendicularAxis(xFromNorm);
 		return glm::angleAxis(3.14159265f, xAxis);
 	}
 
@@ -522,12 +536,7 @@ Zenith_Maths::Quat RotationBetweenVectors(const Zenith_Maths::Vector3& xFrom,
 	if (s < fMinS)
 	{
 		// Fallback to 180-degree rotation around an arbitrary axis
-		Zenith_Maths::Vector3 xFallbackAxis = glm::cross(Zenith_Maths::Vector3(1, 0, 0), xFromNorm);
-		if (glm::length(xFallbackAxis) < 0.0001f)
-		{
-			xFallbackAxis = glm::cross(Zenith_Maths::Vector3(0, 1, 0), xFromNorm);
-		}
-		xFallbackAxis = glm::normalize(xFallbackAxis);
+		Zenith_Maths::Vector3 xFallbackAxis = Flux_IKSolver::FindPerpendicularAxis(xFromNorm);
 		return glm::angleAxis(3.14159265f, xFallbackAxis);
 	}
 
@@ -558,19 +567,15 @@ void Flux_IKSolver::ConvertPositionsToRotations(Flux_SkeletonPose& xPose,
 		// Current direction to child in model space
 		Zenith_Maths::Vector3 xCurrentChildPos = Zenith_Maths::Vector3(xPose.GetModelSpaceMatrix(uChildIndex)[3]);
 		Zenith_Maths::Vector3 xCurrentPos = Zenith_Maths::Vector3(xPose.GetModelSpaceMatrix(uBoneIndex)[3]);
-		Zenith_Maths::Vector3 xCurrentDir = xCurrentChildPos - xCurrentPos;
+		Zenith_Maths::Vector3 xCurrentDir = SafeNormalize(xCurrentChildPos - xCurrentPos);
 
 		if (glm::length(xCurrentDir) < 0.0001f)
 			continue;
 
-		xCurrentDir = glm::normalize(xCurrentDir);
-
 		// Target direction
-		Zenith_Maths::Vector3 xTargetDir = xPositions[i + 1] - xPositions[i];
+		Zenith_Maths::Vector3 xTargetDir = SafeNormalize(xPositions[i + 1] - xPositions[i]);
 		if (glm::length(xTargetDir) < 0.0001f)
 			continue;
-
-		xTargetDir = glm::normalize(xTargetDir);
 
 		// Compute rotation from current to target
 		Zenith_Maths::Quat xDeltaRotation = RotationBetweenVectors(xCurrentDir, xTargetDir);
@@ -730,19 +735,11 @@ bool SolveTwoBoneIK(const Zenith_Maths::Vector3& xRootPos,
 	// Compute plane normal from pole vector
 	Zenith_Maths::Vector3 xToPole = xPoleVector - xRootPos;
 	xToPole = xToPole - xToTargetDir * glm::dot(xToPole, xToTargetDir);
-	if (glm::length(xToPole) < 0.0001f)
-	{
-		xToPole = Zenith_Maths::Vector3(0, 0, 1);
-	}
-	xToPole = glm::normalize(xToPole);
+	xToPole = Flux_IKSolver::SafeNormalize(xToPole, Zenith_Maths::Vector3(0, 0, 1));
 
 	// Compute rotation axis (perpendicular to plane containing root, target, and pole)
 	Zenith_Maths::Vector3 xRotAxis = glm::cross(xToTargetDir, xToPole);
-	if (glm::length(xRotAxis) < 0.0001f)
-	{
-		xRotAxis = Zenith_Maths::Vector3(1, 0, 0);
-	}
-	xRotAxis = glm::normalize(xRotAxis);
+	xRotAxis = Flux_IKSolver::SafeNormalize(xRotAxis, Zenith_Maths::Vector3(1, 0, 0));
 
 	// Rotate target direction by angle to get upper bone direction
 	Zenith_Maths::Quat xRootRot = glm::angleAxis(fAngleRoot, xRotAxis);
@@ -768,13 +765,12 @@ Zenith_Maths::Quat SolveLookAtIK(const Zenith_Maths::Vector3& xBonePos,
 	const Zenith_Maths::Vector3& xTargetPos,
 	float fMaxAngle)
 {
-	Zenith_Maths::Vector3 xToTarget = xTargetPos - xBonePos;
+	Zenith_Maths::Vector3 xToTarget = Flux_IKSolver::SafeNormalize(xTargetPos - xBonePos);
 	if (glm::length(xToTarget) < 0.0001f)
 	{
 		return Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f);
 	}
 
-	xToTarget = glm::normalize(xToTarget);
 	Zenith_Maths::Vector3 xForward = glm::normalize(xForwardDir);
 
 	// Compute angle between current forward and target
@@ -785,12 +781,11 @@ Zenith_Maths::Quat SolveLookAtIK(const Zenith_Maths::Vector3& xBonePos,
 	if (fAngle > fMaxAngle)
 	{
 		// Limit rotation
-		Zenith_Maths::Vector3 xAxis = glm::cross(xForward, xToTarget);
+		Zenith_Maths::Vector3 xAxis = Flux_IKSolver::SafeNormalize(glm::cross(xForward, xToTarget));
 		if (glm::length(xAxis) < 0.0001f)
 		{
 			return Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f);
 		}
-		xAxis = glm::normalize(xAxis);
 		return glm::angleAxis(fMaxAngle, xAxis);
 	}
 

@@ -666,6 +666,27 @@ private:
 	static int AllocateSceneHandle();
 	static void FreeSceneHandle(int iHandle);
 
+	/**
+	 * Create and return an invalid scene handle (handle=-1, generation=0).
+	 * Used by query and load functions to return a sentinel when a scene cannot be found or loaded.
+	 */
+	static Zenith_Scene MakeInvalidScene();
+
+	/**
+	 * Check if the given canonical path is already in the pending load list or lifecycle stack.
+	 * Used by LoadScene and LoadSceneAsync to prevent circular scene loads.
+	 * @return true if the path is already being loaded (circular dependency detected)
+	 */
+	static bool CheckCircularLoadDependency(const std::string& strCanonicalPath);
+
+	/**
+	 * Fire unloading/unloaded callbacks and select a new active scene if needed.
+	 * Used by UnloadSceneInternal to consolidate the callback+active-scene-selection logic.
+	 * @param iHandle The scene handle being unloaded
+	 * @param xScene The scene being unloaded (with valid generation for callbacks)
+	 */
+	static void FireUnloadCallbacksAndSelectNewActive(int iHandle, Zenith_Scene xScene);
+
 	//==========================================================================
 	// Scene Storage
 	//==========================================================================

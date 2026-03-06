@@ -221,14 +221,36 @@ Zenith_Maths::Vector3 Zenith_Squad::GetFormationPositionFor(Zenith_EntityID xEnt
 	return Zenith_Maths::Vector3(0.0f);
 }
 
+// ========== Order Helpers ==========
+
+void Zenith_Squad::IssuePositionOrder(SquadOrderType eType, const Zenith_Maths::Vector3& xPosition)
+{
+	m_xCurrentOrder.m_eType = eType;
+	m_xCurrentOrder.m_xTargetPosition = xPosition;
+	m_xCurrentOrder.m_xTargetEntity = Zenith_EntityID();
+	m_xCurrentOrder.m_fTimeIssued = 0.0f;
+}
+
+void Zenith_Squad::IssueTargetOrder(SquadOrderType eType, Zenith_EntityID xTarget)
+{
+	m_xCurrentOrder.m_eType = eType;
+	m_xCurrentOrder.m_xTargetEntity = xTarget;
+	m_xCurrentOrder.m_fTimeIssued = 0.0f;
+}
+
+void Zenith_Squad::IssueSimpleOrder(SquadOrderType eType)
+{
+	m_xCurrentOrder.m_eType = eType;
+	m_xCurrentOrder.m_xTargetPosition = Zenith_Maths::Vector3(0.0f);
+	m_xCurrentOrder.m_xTargetEntity = Zenith_EntityID();
+	m_xCurrentOrder.m_fTimeIssued = 0.0f;
+}
+
 // ========== Orders ==========
 
 void Zenith_Squad::OrderMoveTo(const Zenith_Maths::Vector3& xPosition)
 {
-	m_xCurrentOrder.m_eType = SquadOrderType::MOVE_TO;
-	m_xCurrentOrder.m_xTargetPosition = xPosition;
-	m_xCurrentOrder.m_xTargetEntity = Zenith_EntityID();
-	m_xCurrentOrder.m_fTimeIssued = 0.0f; // Would use game time
+	IssuePositionOrder(SquadOrderType::MOVE_TO, xPosition);
 
 	Zenith_Log(LOG_CATEGORY_AI, "Squad '%s': Ordered to move to (%.1f, %.1f, %.1f)",
 		m_strName.c_str(), xPosition.x, xPosition.y, xPosition.z);
@@ -236,9 +258,7 @@ void Zenith_Squad::OrderMoveTo(const Zenith_Maths::Vector3& xPosition)
 
 void Zenith_Squad::OrderAttack(Zenith_EntityID xTarget)
 {
-	m_xCurrentOrder.m_eType = SquadOrderType::ATTACK;
-	m_xCurrentOrder.m_xTargetEntity = xTarget;
-	m_xCurrentOrder.m_fTimeIssued = 0.0f;
+	IssueTargetOrder(SquadOrderType::ATTACK, xTarget);
 
 	Zenith_Log(LOG_CATEGORY_AI, "Squad '%s': Ordered to attack target %u",
 		m_strName.c_str(), xTarget.m_uIndex);
@@ -246,10 +266,7 @@ void Zenith_Squad::OrderAttack(Zenith_EntityID xTarget)
 
 void Zenith_Squad::OrderDefend(const Zenith_Maths::Vector3& xPosition)
 {
-	m_xCurrentOrder.m_eType = SquadOrderType::DEFEND;
-	m_xCurrentOrder.m_xTargetPosition = xPosition;
-	m_xCurrentOrder.m_xTargetEntity = Zenith_EntityID();
-	m_xCurrentOrder.m_fTimeIssued = 0.0f;
+	IssuePositionOrder(SquadOrderType::DEFEND, xPosition);
 
 	Zenith_Log(LOG_CATEGORY_AI, "Squad '%s': Ordered to defend (%.1f, %.1f, %.1f)",
 		m_strName.c_str(), xPosition.x, xPosition.y, xPosition.z);
@@ -257,9 +274,7 @@ void Zenith_Squad::OrderDefend(const Zenith_Maths::Vector3& xPosition)
 
 void Zenith_Squad::OrderFlank(Zenith_EntityID xTarget)
 {
-	m_xCurrentOrder.m_eType = SquadOrderType::FLANK;
-	m_xCurrentOrder.m_xTargetEntity = xTarget;
-	m_xCurrentOrder.m_fTimeIssued = 0.0f;
+	IssueTargetOrder(SquadOrderType::FLANK, xTarget);
 
 	Zenith_Log(LOG_CATEGORY_AI, "Squad '%s': Ordered to flank target %u",
 		m_strName.c_str(), xTarget.m_uIndex);
@@ -267,10 +282,7 @@ void Zenith_Squad::OrderFlank(Zenith_EntityID xTarget)
 
 void Zenith_Squad::OrderSuppress(const Zenith_Maths::Vector3& xTargetArea)
 {
-	m_xCurrentOrder.m_eType = SquadOrderType::SUPPRESS;
-	m_xCurrentOrder.m_xTargetPosition = xTargetArea;
-	m_xCurrentOrder.m_xTargetEntity = Zenith_EntityID();
-	m_xCurrentOrder.m_fTimeIssued = 0.0f;
+	IssuePositionOrder(SquadOrderType::SUPPRESS, xTargetArea);
 
 	Zenith_Log(LOG_CATEGORY_AI, "Squad '%s': Ordered to suppress area (%.1f, %.1f, %.1f)",
 		m_strName.c_str(), xTargetArea.x, xTargetArea.y, xTargetArea.z);
@@ -278,19 +290,14 @@ void Zenith_Squad::OrderSuppress(const Zenith_Maths::Vector3& xTargetArea)
 
 void Zenith_Squad::OrderRegroup()
 {
-	m_xCurrentOrder.m_eType = SquadOrderType::REGROUP;
-	m_xCurrentOrder.m_xTargetEntity = Zenith_EntityID();
-	m_xCurrentOrder.m_fTimeIssued = 0.0f;
+	IssueSimpleOrder(SquadOrderType::REGROUP);
 
 	Zenith_Log(LOG_CATEGORY_AI, "Squad '%s': Ordered to regroup", m_strName.c_str());
 }
 
 void Zenith_Squad::OrderRetreat(const Zenith_Maths::Vector3& xFallbackPosition)
 {
-	m_xCurrentOrder.m_eType = SquadOrderType::RETREAT;
-	m_xCurrentOrder.m_xTargetPosition = xFallbackPosition;
-	m_xCurrentOrder.m_xTargetEntity = Zenith_EntityID();
-	m_xCurrentOrder.m_fTimeIssued = 0.0f;
+	IssuePositionOrder(SquadOrderType::RETREAT, xFallbackPosition);
 
 	Zenith_Log(LOG_CATEGORY_AI, "Squad '%s': Ordered to retreat to (%.1f, %.1f, %.1f)",
 		m_strName.c_str(), xFallbackPosition.x, xFallbackPosition.y, xFallbackPosition.z);
@@ -298,9 +305,7 @@ void Zenith_Squad::OrderRetreat(const Zenith_Maths::Vector3& xFallbackPosition)
 
 void Zenith_Squad::OrderHoldPosition()
 {
-	m_xCurrentOrder.m_eType = SquadOrderType::HOLD_POSITION;
-	m_xCurrentOrder.m_xTargetEntity = Zenith_EntityID();
-	m_xCurrentOrder.m_fTimeIssued = 0.0f;
+	IssueSimpleOrder(SquadOrderType::HOLD_POSITION);
 
 	Zenith_Log(LOG_CATEGORY_AI, "Squad '%s': Ordered to hold position", m_strName.c_str());
 }
@@ -316,16 +321,14 @@ void Zenith_Squad::ClearOrder()
 void Zenith_Squad::ShareTargetInfo(Zenith_EntityID xTarget, const Zenith_Maths::Vector3& xPosition, Zenith_EntityID xReportedBy)
 {
 	// Check if we already know about this target
-	for (uint32_t u = 0; u < m_axSharedTargets.GetSize(); ++u)
+	int32_t iIndex = FindSharedTargetIndex(xTarget);
+	if (iIndex >= 0)
 	{
-		if (m_axSharedTargets.Get(u).m_xTargetID == xTarget)
-		{
-			// Update existing info
-			m_axSharedTargets.Get(u).m_xLastKnownPosition = xPosition;
-			m_axSharedTargets.Get(u).m_fTimeLastSeen = 0.0f;
-			m_axSharedTargets.Get(u).m_xReportedBy = xReportedBy;
-			return;
-		}
+		Zenith_SharedTarget& xExisting = m_axSharedTargets.Get(static_cast<uint32_t>(iIndex));
+		xExisting.m_xLastKnownPosition = xPosition;
+		xExisting.m_fTimeLastSeen = 0.0f;
+		xExisting.m_xReportedBy = xReportedBy;
+		return;
 	}
 
 	// Add new target
@@ -343,49 +346,36 @@ void Zenith_Squad::ShareTargetInfo(Zenith_EntityID xTarget, const Zenith_Maths::
 
 bool Zenith_Squad::IsTargetKnown(Zenith_EntityID xTarget) const
 {
-	for (uint32_t u = 0; u < m_axSharedTargets.GetSize(); ++u)
-	{
-		if (m_axSharedTargets.Get(u).m_xTargetID == xTarget)
-		{
-			return true;
-		}
-	}
-	return false;
+	return FindSharedTargetIndex(xTarget) >= 0;
 }
 
 const Zenith_SharedTarget* Zenith_Squad::GetSharedTarget(Zenith_EntityID xTarget) const
 {
-	for (uint32_t u = 0; u < m_axSharedTargets.GetSize(); ++u)
+	int32_t iIndex = FindSharedTargetIndex(xTarget);
+	if (iIndex >= 0)
 	{
-		if (m_axSharedTargets.Get(u).m_xTargetID == xTarget)
-		{
-			return &m_axSharedTargets.Get(u);
-		}
+		return &m_axSharedTargets.Get(static_cast<uint32_t>(iIndex));
 	}
 	return nullptr;
 }
 
 void Zenith_Squad::SetTargetEngaged(Zenith_EntityID xTarget, Zenith_EntityID xEngagedBy)
 {
-	for (uint32_t u = 0; u < m_axSharedTargets.GetSize(); ++u)
+	int32_t iIndex = FindSharedTargetIndex(xTarget);
+	if (iIndex >= 0)
 	{
-		if (m_axSharedTargets.Get(u).m_xTargetID == xTarget)
-		{
-			m_axSharedTargets.Get(u).m_bEngaged = true;
-			m_axSharedTargets.Get(u).m_xEngagedBy = xEngagedBy;
-			return;
-		}
+		Zenith_SharedTarget& xExisting = m_axSharedTargets.Get(static_cast<uint32_t>(iIndex));
+		xExisting.m_bEngaged = true;
+		xExisting.m_xEngagedBy = xEngagedBy;
 	}
 }
 
 bool Zenith_Squad::IsTargetEngaged(Zenith_EntityID xTarget) const
 {
-	for (uint32_t u = 0; u < m_axSharedTargets.GetSize(); ++u)
+	int32_t iIndex = FindSharedTargetIndex(xTarget);
+	if (iIndex >= 0)
 	{
-		if (m_axSharedTargets.Get(u).m_xTargetID == xTarget)
-		{
-			return m_axSharedTargets.Get(u).m_bEngaged;
-		}
+		return m_axSharedTargets.Get(static_cast<uint32_t>(iIndex)).m_bEngaged;
 	}
 	return false;
 }
@@ -495,28 +485,29 @@ Zenith_Vector<Zenith_EntityID> Zenith_Squad::GetMembersWithRole(SquadRole eRole)
 	return axResult;
 }
 
-void Zenith_Squad::MarkMemberDead(Zenith_EntityID xEntity)
+void Zenith_Squad::UpdateMemberAliveStatus(Zenith_EntityID xEntity, bool bAlive)
 {
 	Zenith_SquadMember* pxMember = GetMember(xEntity);
 	if (pxMember)
 	{
-		pxMember->m_bAlive = false;
+		pxMember->m_bAlive = bAlive;
 
 		// If leader died, find new leader
-		if (xEntity == m_xLeaderID)
+		if (!bAlive && xEntity == m_xLeaderID)
 		{
 			AutoAssignLeader();
 		}
 	}
 }
 
+void Zenith_Squad::MarkMemberDead(Zenith_EntityID xEntity)
+{
+	UpdateMemberAliveStatus(xEntity, false);
+}
+
 void Zenith_Squad::MarkMemberAlive(Zenith_EntityID xEntity)
 {
-	Zenith_SquadMember* pxMember = GetMember(xEntity);
-	if (pxMember)
-	{
-		pxMember->m_bAlive = true;
-	}
+	UpdateMemberAliveStatus(xEntity, true);
 }
 
 bool Zenith_Squad::IsMemberAlive(Zenith_EntityID xEntity) const
@@ -549,7 +540,6 @@ void Zenith_Squad::DebugDraw() const
 		return;
 	}
 
-	// Get leader position
 	Zenith_Entity xLeaderEntity = pxSceneData->TryGetEntity(m_xLeaderID);
 	if (!xLeaderEntity.IsValid() || !xLeaderEntity.HasComponent<Zenith_TransformComponent>())
 	{
@@ -558,129 +548,148 @@ void Zenith_Squad::DebugDraw() const
 
 	Zenith_Maths::Vector3 xLeaderPos;
 	xLeaderEntity.GetComponent<Zenith_TransformComponent>().GetPosition(xLeaderPos);
-	xLeaderPos.y += 2.0f; // Raise above head
+	xLeaderPos.y += 2.0f;
 
-	// Draw lines from leader to all members (controlled by s_bDrawSquadLinks)
-	if (Zenith_AIDebugVariables::s_bDrawSquadLinks)
+	DebugDrawSquadLinks(pxSceneData, xLeaderPos);
+	DebugDrawFormationPositions();
+	DebugDrawSharedTargets();
+	DebugDrawRoleLabels(pxSceneData);
+}
+
+void Zenith_Squad::DebugDrawSquadLinks(Zenith_SceneData* pxSceneData, const Zenith_Maths::Vector3& xLeaderPos) const
+{
+	if (!Zenith_AIDebugVariables::s_bDrawSquadLinks)
 	{
-		for (uint32_t u = 0; u < m_axMembers.GetSize(); ++u)
-		{
-			const Zenith_SquadMember& xMember = m_axMembers.Get(u);
-			if (!xMember.m_bAlive || xMember.m_xEntityID == m_xLeaderID)
-			{
-				continue;
-			}
-
-			Zenith_Entity xMemberEntity = pxSceneData->TryGetEntity(xMember.m_xEntityID);
-			if (!xMemberEntity.IsValid() || !xMemberEntity.HasComponent<Zenith_TransformComponent>())
-			{
-				continue;
-			}
-
-			Zenith_Maths::Vector3 xMemberPos;
-			xMemberEntity.GetComponent<Zenith_TransformComponent>().GetPosition(xMemberPos);
-			xMemberPos.y += 2.0f;
-
-			Flux_Primitives::AddLine(xLeaderPos, xMemberPos, RoleToDebugColor(xMember.m_eRole));
-		}
-
-		// Draw leader marker (gold crown)
-		Flux_Primitives::AddSphere(xLeaderPos + Zenith_Maths::Vector3(0.0f, 0.5f, 0.0f), 0.2f, Zenith_Maths::Vector3(1.0f, 0.84f, 0.0f));
+		return;
 	}
 
-	// Draw formation target positions (controlled by s_bDrawFormationPositions)
-	if (Zenith_AIDebugVariables::s_bDrawFormationPositions)
+	for (uint32_t u = 0; u < m_axMembers.GetSize(); ++u)
 	{
-		for (uint32_t u = 0; u < m_axMembers.GetSize(); ++u)
+		const Zenith_SquadMember& xMember = m_axMembers.Get(u);
+		if (!xMember.m_bAlive || xMember.m_xEntityID == m_xLeaderID)
 		{
-			const Zenith_SquadMember& xMember = m_axMembers.Get(u);
-			if (!xMember.m_bAlive)
-			{
-				continue;
-			}
-
-			// Draw formation target position (dimmed color)
-			Flux_Primitives::AddSphere(xMember.m_xFormationOffset, 0.3f, RoleToDebugColor(xMember.m_eRole) * 0.5f);
+			continue;
 		}
+
+		Zenith_Entity xMemberEntity = pxSceneData->TryGetEntity(xMember.m_xEntityID);
+		if (!xMemberEntity.IsValid() || !xMemberEntity.HasComponent<Zenith_TransformComponent>())
+		{
+			continue;
+		}
+
+		Zenith_Maths::Vector3 xMemberPos;
+		xMemberEntity.GetComponent<Zenith_TransformComponent>().GetPosition(xMemberPos);
+		xMemberPos.y += 2.0f;
+
+		Flux_Primitives::AddLine(xLeaderPos, xMemberPos, RoleToDebugColor(xMember.m_eRole));
 	}
 
-	// Draw shared targets (controlled by s_bDrawSharedTargets)
-	if (Zenith_AIDebugVariables::s_bDrawSharedTargets)
-	{
-		for (uint32_t u = 0; u < m_axSharedTargets.GetSize(); ++u)
-		{
-			const Zenith_SharedTarget& xTarget = m_axSharedTargets.Get(u);
-			Zenith_Maths::Vector3 xTargetColor = xTarget.m_bEngaged
-				? Zenith_Maths::Vector3(0.5f, 0.0f, 0.0f)
-				: Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f);
+	// Draw leader marker (gold crown)
+	Flux_Primitives::AddSphere(xLeaderPos + Zenith_Maths::Vector3(0.0f, 0.5f, 0.0f), 0.2f, Zenith_Maths::Vector3(1.0f, 0.84f, 0.0f));
+}
 
-			Flux_Primitives::AddCross(xTarget.m_xLastKnownPosition + Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f), 0.5f, xTargetColor);
-		}
+void Zenith_Squad::DebugDrawFormationPositions() const
+{
+	if (!Zenith_AIDebugVariables::s_bDrawFormationPositions)
+	{
+		return;
 	}
 
-	// Draw role labels/indicators (controlled by s_bDrawRoleLabels)
-	if (Zenith_AIDebugVariables::s_bDrawRoleLabels)
+	for (uint32_t u = 0; u < m_axMembers.GetSize(); ++u)
 	{
-		for (uint32_t u = 0; u < m_axMembers.GetSize(); ++u)
+		const Zenith_SquadMember& xMember = m_axMembers.Get(u);
+		if (!xMember.m_bAlive)
 		{
-			const Zenith_SquadMember& xMember = m_axMembers.Get(u);
-			if (!xMember.m_bAlive)
-			{
-				continue;
-			}
+			continue;
+		}
 
-			Zenith_Entity xMemberEntity = pxSceneData->TryGetEntity(xMember.m_xEntityID);
-			if (!xMemberEntity.IsValid() || !xMemberEntity.HasComponent<Zenith_TransformComponent>())
-			{
-				continue;
-			}
+		Flux_Primitives::AddSphere(xMember.m_xFormationOffset, 0.3f, RoleToDebugColor(xMember.m_eRole) * 0.5f);
+	}
+}
 
-			Zenith_Maths::Vector3 xMemberPos;
-			xMemberEntity.GetComponent<Zenith_TransformComponent>().GetPosition(xMemberPos);
-			Zenith_Maths::Vector3 xLabelPos = xMemberPos + Zenith_Maths::Vector3(0.0f, 2.5f, 0.0f);
+void Zenith_Squad::DebugDrawSharedTargets() const
+{
+	if (!Zenith_AIDebugVariables::s_bDrawSharedTargets)
+	{
+		return;
+	}
 
-			// Draw role-specific icon/marker above agent
-			Zenith_Maths::Vector3 xRoleColor = RoleToDebugColor(xMember.m_eRole);
-			switch (xMember.m_eRole)
-			{
-			case SquadRole::LEADER:
-				Flux_Primitives::AddSphere(xLabelPos, 0.15f, xRoleColor);
-				Flux_Primitives::AddLine(xLabelPos, xLabelPos + Zenith_Maths::Vector3(-0.15f, 0.25f, 0.0f), xRoleColor);
-				Flux_Primitives::AddLine(xLabelPos, xLabelPos + Zenith_Maths::Vector3(0.0f, 0.3f, 0.0f), xRoleColor);
-				Flux_Primitives::AddLine(xLabelPos, xLabelPos + Zenith_Maths::Vector3(0.15f, 0.25f, 0.0f), xRoleColor);
-				break;
-			case SquadRole::ASSAULT:
-				Flux_Primitives::AddLine(xLabelPos + Zenith_Maths::Vector3(-0.15f, 0.0f, 0.15f),
-					xLabelPos + Zenith_Maths::Vector3(0.0f, 0.0f, -0.15f), xRoleColor, 0.03f);
-				Flux_Primitives::AddLine(xLabelPos + Zenith_Maths::Vector3(0.15f, 0.0f, 0.15f),
-					xLabelPos + Zenith_Maths::Vector3(0.0f, 0.0f, -0.15f), xRoleColor, 0.03f);
-				break;
-			case SquadRole::SUPPORT:
-				Flux_Primitives::AddLine(xLabelPos + Zenith_Maths::Vector3(-0.15f, 0.0f, 0.0f),
-					xLabelPos + Zenith_Maths::Vector3(0.15f, 0.0f, 0.0f), xRoleColor, 0.03f);
-				Flux_Primitives::AddLine(xLabelPos + Zenith_Maths::Vector3(0.0f, 0.0f, -0.15f),
-					xLabelPos + Zenith_Maths::Vector3(0.0f, 0.0f, 0.15f), xRoleColor, 0.03f);
-				break;
-			case SquadRole::FLANKER:
-				Flux_Primitives::AddLine(xLabelPos + Zenith_Maths::Vector3(-0.15f, 0.0f, 0.0f),
-					xLabelPos + Zenith_Maths::Vector3(0.0f, 0.0f, 0.15f), xRoleColor, 0.03f);
-				Flux_Primitives::AddLine(xLabelPos + Zenith_Maths::Vector3(0.0f, 0.0f, 0.15f),
-					xLabelPos + Zenith_Maths::Vector3(0.15f, 0.0f, 0.0f), xRoleColor, 0.03f);
-				break;
-			case SquadRole::OVERWATCH:
-				Flux_Primitives::AddCircle(xLabelPos, 0.12f, xRoleColor);
-				Flux_Primitives::AddSphere(xLabelPos, 0.05f, xRoleColor);
-				break;
-			case SquadRole::MEDIC:
-				Flux_Primitives::AddLine(xLabelPos + Zenith_Maths::Vector3(-0.12f, 0.0f, 0.0f),
-					xLabelPos + Zenith_Maths::Vector3(0.12f, 0.0f, 0.0f), xRoleColor, 0.04f);
-				Flux_Primitives::AddLine(xLabelPos + Zenith_Maths::Vector3(0.0f, 0.0f, -0.12f),
-					xLabelPos + Zenith_Maths::Vector3(0.0f, 0.0f, 0.12f), xRoleColor, 0.04f);
-				break;
-			default:
-				Flux_Primitives::AddSphere(xLabelPos, 0.1f, xRoleColor);
-				break;
-			}
+	for (uint32_t u = 0; u < m_axSharedTargets.GetSize(); ++u)
+	{
+		const Zenith_SharedTarget& xTarget = m_axSharedTargets.Get(u);
+		Zenith_Maths::Vector3 xTargetColor = xTarget.m_bEngaged
+			? Zenith_Maths::Vector3(0.5f, 0.0f, 0.0f)
+			: Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f);
+
+		Flux_Primitives::AddCross(xTarget.m_xLastKnownPosition + Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f), 0.5f, xTargetColor);
+	}
+}
+
+void Zenith_Squad::DebugDrawRoleLabels(Zenith_SceneData* pxSceneData) const
+{
+	if (!Zenith_AIDebugVariables::s_bDrawRoleLabels)
+	{
+		return;
+	}
+
+	for (uint32_t u = 0; u < m_axMembers.GetSize(); ++u)
+	{
+		const Zenith_SquadMember& xMember = m_axMembers.Get(u);
+		if (!xMember.m_bAlive)
+		{
+			continue;
+		}
+
+		Zenith_Entity xMemberEntity = pxSceneData->TryGetEntity(xMember.m_xEntityID);
+		if (!xMemberEntity.IsValid() || !xMemberEntity.HasComponent<Zenith_TransformComponent>())
+		{
+			continue;
+		}
+
+		Zenith_Maths::Vector3 xMemberPos;
+		xMemberEntity.GetComponent<Zenith_TransformComponent>().GetPosition(xMemberPos);
+		Zenith_Maths::Vector3 xLabelPos = xMemberPos + Zenith_Maths::Vector3(0.0f, 2.5f, 0.0f);
+
+		Zenith_Maths::Vector3 xRoleColor = RoleToDebugColor(xMember.m_eRole);
+		switch (xMember.m_eRole)
+		{
+		case SquadRole::LEADER:
+			Flux_Primitives::AddSphere(xLabelPos, 0.15f, xRoleColor);
+			Flux_Primitives::AddLine(xLabelPos, xLabelPos + Zenith_Maths::Vector3(-0.15f, 0.25f, 0.0f), xRoleColor);
+			Flux_Primitives::AddLine(xLabelPos, xLabelPos + Zenith_Maths::Vector3(0.0f, 0.3f, 0.0f), xRoleColor);
+			Flux_Primitives::AddLine(xLabelPos, xLabelPos + Zenith_Maths::Vector3(0.15f, 0.25f, 0.0f), xRoleColor);
+			break;
+		case SquadRole::ASSAULT:
+			Flux_Primitives::AddLine(xLabelPos + Zenith_Maths::Vector3(-0.15f, 0.0f, 0.15f),
+				xLabelPos + Zenith_Maths::Vector3(0.0f, 0.0f, -0.15f), xRoleColor, 0.03f);
+			Flux_Primitives::AddLine(xLabelPos + Zenith_Maths::Vector3(0.15f, 0.0f, 0.15f),
+				xLabelPos + Zenith_Maths::Vector3(0.0f, 0.0f, -0.15f), xRoleColor, 0.03f);
+			break;
+		case SquadRole::SUPPORT:
+			Flux_Primitives::AddLine(xLabelPos + Zenith_Maths::Vector3(-0.15f, 0.0f, 0.0f),
+				xLabelPos + Zenith_Maths::Vector3(0.15f, 0.0f, 0.0f), xRoleColor, 0.03f);
+			Flux_Primitives::AddLine(xLabelPos + Zenith_Maths::Vector3(0.0f, 0.0f, -0.15f),
+				xLabelPos + Zenith_Maths::Vector3(0.0f, 0.0f, 0.15f), xRoleColor, 0.03f);
+			break;
+		case SquadRole::FLANKER:
+			Flux_Primitives::AddLine(xLabelPos + Zenith_Maths::Vector3(-0.15f, 0.0f, 0.0f),
+				xLabelPos + Zenith_Maths::Vector3(0.0f, 0.0f, 0.15f), xRoleColor, 0.03f);
+			Flux_Primitives::AddLine(xLabelPos + Zenith_Maths::Vector3(0.0f, 0.0f, 0.15f),
+				xLabelPos + Zenith_Maths::Vector3(0.15f, 0.0f, 0.0f), xRoleColor, 0.03f);
+			break;
+		case SquadRole::OVERWATCH:
+			Flux_Primitives::AddCircle(xLabelPos, 0.12f, xRoleColor);
+			Flux_Primitives::AddSphere(xLabelPos, 0.05f, xRoleColor);
+			break;
+		case SquadRole::MEDIC:
+			Flux_Primitives::AddLine(xLabelPos + Zenith_Maths::Vector3(-0.12f, 0.0f, 0.0f),
+				xLabelPos + Zenith_Maths::Vector3(0.12f, 0.0f, 0.0f), xRoleColor, 0.04f);
+			Flux_Primitives::AddLine(xLabelPos + Zenith_Maths::Vector3(0.0f, 0.0f, -0.12f),
+				xLabelPos + Zenith_Maths::Vector3(0.0f, 0.0f, 0.12f), xRoleColor, 0.04f);
+			break;
+		default:
+			Flux_Primitives::AddSphere(xLabelPos, 0.1f, xRoleColor);
+			break;
 		}
 	}
 }
@@ -811,6 +820,18 @@ int32_t Zenith_Squad::FindMemberIndex(Zenith_EntityID xEntity) const
 	for (uint32_t u = 0; u < m_axMembers.GetSize(); ++u)
 	{
 		if (m_axMembers.Get(u).m_xEntityID == xEntity)
+		{
+			return static_cast<int32_t>(u);
+		}
+	}
+	return -1;
+}
+
+int32_t Zenith_Squad::FindSharedTargetIndex(Zenith_EntityID xTarget) const
+{
+	for (uint32_t u = 0; u < m_axSharedTargets.GetSize(); ++u)
+	{
+		if (m_axSharedTargets.Get(u).m_xTargetID == xTarget)
 		{
 			return static_cast<int32_t>(u);
 		}

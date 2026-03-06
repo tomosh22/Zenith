@@ -6,6 +6,44 @@
 #include <fstream>
 
 //=============================================================================
+// File-local helpers
+//=============================================================================
+
+template<typename T>
+static bool CompareNumericValues(T tValue, T tThreshold, Flux_TransitionCondition::CompareOp eOp)
+{
+	switch (eOp)
+	{
+	case Flux_TransitionCondition::CompareOp::Equal:        return tValue == tThreshold;
+	case Flux_TransitionCondition::CompareOp::NotEqual:     return tValue != tThreshold;
+	case Flux_TransitionCondition::CompareOp::Greater:      return tValue > tThreshold;
+	case Flux_TransitionCondition::CompareOp::Less:         return tValue < tThreshold;
+	case Flux_TransitionCondition::CompareOp::GreaterEqual: return tValue >= tThreshold;
+	case Flux_TransitionCondition::CompareOp::LessEqual:    return tValue <= tThreshold;
+	}
+	return false;
+}
+
+static void InsertTransitionSortedByPriority(Zenith_Vector<Flux_StateTransition>& xTransitions, const Flux_StateTransition& xTransition)
+{
+	uint32_t uInsertIdx = xTransitions.GetSize();
+	for (uint32_t i = 0; i < xTransitions.GetSize(); ++i)
+	{
+		if (xTransition.m_iPriority > xTransitions.Get(i).m_iPriority)
+		{
+			uInsertIdx = i;
+			break;
+		}
+	}
+
+	xTransitions.PushBack(xTransition);
+	for (uint32_t j = xTransitions.GetSize() - 1; j > uInsertIdx; --j)
+	{
+		std::swap(xTransitions.Get(j), xTransitions.Get(j - 1));
+	}
+}
+
+//=============================================================================
 // Flux_AnimatorStateInfo
 //=============================================================================
 
@@ -152,6 +190,40 @@ void Flux_AnimationParameters::ResetTriggers()
 	}
 }
 
+void Flux_AnimationParameters::WriteParamValueToStream(Zenith_DataStream& xStream, ParamType eType, float fVal, int32_t iVal, bool bVal)
+{
+	switch (eType)
+	{
+	case ParamType::Float:
+		xStream << fVal;
+		break;
+	case ParamType::Int:
+		xStream << iVal;
+		break;
+	case ParamType::Bool:
+	case ParamType::Trigger:
+		xStream << bVal;
+		break;
+	}
+}
+
+void Flux_AnimationParameters::ReadParamValueFromStream(Zenith_DataStream& xStream, ParamType eType, float& fVal, int32_t& iVal, bool& bVal)
+{
+	switch (eType)
+	{
+	case ParamType::Float:
+		xStream >> fVal;
+		break;
+	case ParamType::Int:
+		xStream >> iVal;
+		break;
+	case ParamType::Bool:
+	case ParamType::Trigger:
+		xStream >> bVal;
+		break;
+	}
+}
+
 void Flux_AnimationParameters::WriteToDataStream(Zenith_DataStream& xStream) const
 {
 	uint32_t uNumParams = static_cast<uint32_t>(m_xParameters.size());
@@ -162,20 +234,7 @@ void Flux_AnimationParameters::WriteToDataStream(Zenith_DataStream& xStream) con
 		const Parameter& xParam = xPair.second;
 		xStream << xParam.m_strName;
 		xStream << static_cast<uint8_t>(xParam.m_eType);
-
-		switch (xParam.m_eType)
-		{
-		case ParamType::Float:
-			xStream << xParam.m_fValue;
-			break;
-		case ParamType::Int:
-			xStream << xParam.m_iValue;
-			break;
-		case ParamType::Bool:
-		case ParamType::Trigger:
-			xStream << xParam.m_bValue;
-			break;
-		}
+		WriteParamValueToStream(xStream, xParam.m_eType, xParam.m_fValue, xParam.m_iValue, xParam.m_bValue);
 	}
 }
 
@@ -203,20 +262,7 @@ void Flux_AnimationParameters::ReadFromDataStream(Zenith_DataStream& xStream)
 		Zenith_Assert(uType <= static_cast<uint8_t>(ParamType::Trigger), "AnimationParameters: Invalid param type %u for '%s' - skipping",
 			uType, xParam.m_strName.c_str());
 		xParam.m_eType = static_cast<ParamType>(uType);
-
-		switch (xParam.m_eType)
-		{
-		case ParamType::Float:
-			xStream >> xParam.m_fValue;
-			break;
-		case ParamType::Int:
-			xStream >> xParam.m_iValue;
-			break;
-		case ParamType::Bool:
-		case ParamType::Trigger:
-			xStream >> xParam.m_bValue;
-			break;
-		}
+		ReadParamValueFromStream(xStream, xParam.m_eType, xParam.m_fValue, xParam.m_iValue, xParam.m_bValue);
 
 		m_xParameters[xParam.m_strName] = xParam;
 	}
@@ -233,34 +279,10 @@ bool Flux_TransitionCondition::Evaluate(const Flux_AnimationParameters& xParams)
 	switch (m_eParamType)
 	{
 	case Flux_AnimationParameters::ParamType::Float:
-	{
-		float fValue = xParams.GetFloat(m_strParameterName);
-		switch (m_eCompareOp)
-		{
-		case CompareOp::Equal:        return fValue == m_fThreshold;
-		case CompareOp::NotEqual:     return fValue != m_fThreshold;
-		case CompareOp::Greater:      return fValue > m_fThreshold;
-		case CompareOp::Less:         return fValue < m_fThreshold;
-		case CompareOp::GreaterEqual: return fValue >= m_fThreshold;
-		case CompareOp::LessEqual:    return fValue <= m_fThreshold;
-		}
-		break;
-	}
+		return CompareNumericValues(xParams.GetFloat(m_strParameterName), m_fThreshold, m_eCompareOp);
 
 	case Flux_AnimationParameters::ParamType::Int:
-	{
-		int32_t iValue = xParams.GetInt(m_strParameterName);
-		switch (m_eCompareOp)
-		{
-		case CompareOp::Equal:        return iValue == m_iThreshold;
-		case CompareOp::NotEqual:     return iValue != m_iThreshold;
-		case CompareOp::Greater:      return iValue > m_iThreshold;
-		case CompareOp::Less:         return iValue < m_iThreshold;
-		case CompareOp::GreaterEqual: return iValue >= m_iThreshold;
-		case CompareOp::LessEqual:    return iValue <= m_iThreshold;
-		}
-		break;
-	}
+		return CompareNumericValues(xParams.GetInt(m_strParameterName), m_iThreshold, m_eCompareOp);
 
 	case Flux_AnimationParameters::ParamType::Bool:
 	{
@@ -290,20 +312,7 @@ void Flux_TransitionCondition::WriteToDataStream(Zenith_DataStream& xStream) con
 	xStream << m_strParameterName;
 	xStream << static_cast<uint8_t>(m_eCompareOp);
 	xStream << static_cast<uint8_t>(m_eParamType);
-
-	switch (m_eParamType)
-	{
-	case Flux_AnimationParameters::ParamType::Float:
-		xStream << m_fThreshold;
-		break;
-	case Flux_AnimationParameters::ParamType::Int:
-		xStream << m_iThreshold;
-		break;
-	case Flux_AnimationParameters::ParamType::Bool:
-	case Flux_AnimationParameters::ParamType::Trigger:
-		xStream << m_bThreshold;
-		break;
-	}
+	Flux_AnimationParameters::WriteParamValueToStream(xStream, m_eParamType, m_fThreshold, m_iThreshold, m_bThreshold);
 }
 
 void Flux_TransitionCondition::ReadFromDataStream(Zenith_DataStream& xStream)
@@ -315,20 +324,7 @@ void Flux_TransitionCondition::ReadFromDataStream(Zenith_DataStream& xStream)
 	xStream >> uType;
 	m_eCompareOp = static_cast<CompareOp>(uOp);
 	m_eParamType = static_cast<Flux_AnimationParameters::ParamType>(uType);
-
-	switch (m_eParamType)
-	{
-	case Flux_AnimationParameters::ParamType::Float:
-		xStream >> m_fThreshold;
-		break;
-	case Flux_AnimationParameters::ParamType::Int:
-		xStream >> m_iThreshold;
-		break;
-	case Flux_AnimationParameters::ParamType::Bool:
-	case Flux_AnimationParameters::ParamType::Trigger:
-		xStream >> m_bThreshold;
-		break;
-	}
+	Flux_AnimationParameters::ReadParamValueFromStream(xStream, m_eParamType, m_fThreshold, m_iThreshold, m_bThreshold);
 }
 
 //=============================================================================
@@ -422,21 +418,7 @@ Flux_AnimationStateMachine* Flux_AnimationState::CreateSubStateMachine(const std
 
 void Flux_AnimationState::AddTransition(const Flux_StateTransition& xTransition)
 {
-	m_xTransitions.PushBack(xTransition);
-
-	// Sort by priority (higher first) using simple bubble sort
-	for (u_int i = 0; i < m_xTransitions.GetSize(); ++i)
-	{
-		for (u_int j = i + 1; j < m_xTransitions.GetSize(); ++j)
-		{
-			if (m_xTransitions.Get(j).m_iPriority > m_xTransitions.Get(i).m_iPriority)
-			{
-				Flux_StateTransition xTemp = m_xTransitions.Get(i);
-				m_xTransitions.Get(i) = m_xTransitions.Get(j);
-				m_xTransitions.Get(j) = xTemp;
-			}
-		}
-	}
+	InsertTransitionSortedByPriority(m_xTransitions, xTransition);
 }
 
 void Flux_AnimationState::RemoveTransition(uint32_t uIndex)
@@ -657,27 +639,7 @@ Flux_AnimatorStateInfo Flux_AnimationStateMachine::GetCurrentStateInfo() const
 
 void Flux_AnimationStateMachine::AddAnyStateTransition(const Flux_StateTransition& xTransition)
 {
-	// Insert sorted by priority (highest first) for deterministic evaluation
-	bool bInserted = false;
-	for (uint32_t i = 0; i < m_xAnyStateTransitions.GetSize(); ++i)
-	{
-		if (xTransition.m_iPriority > m_xAnyStateTransitions.Get(i).m_iPriority)
-		{
-			// Insert before this element
-			m_xAnyStateTransitions.PushBack(xTransition);
-			// Shift the new element into position
-			for (uint32_t j = m_xAnyStateTransitions.GetSize() - 1; j > i; --j)
-			{
-				std::swap(m_xAnyStateTransitions.Get(j), m_xAnyStateTransitions.Get(j - 1));
-			}
-			bInserted = true;
-			break;
-		}
-	}
-	if (!bInserted)
-	{
-		m_xAnyStateTransitions.PushBack(xTransition);
-	}
+	InsertTransitionSortedByPriority(m_xAnyStateTransitions, xTransition);
 }
 
 void Flux_AnimationStateMachine::RemoveAnyStateTransition(uint32_t uIndex)
@@ -831,20 +793,7 @@ void Flux_AnimationStateMachine::Update(float fDt,
 	}
 
 	// Normal state update
-	if (m_pxCurrentState->IsSubStateMachine())
-	{
-		// Delegate to child state machine
-		Flux_AnimationStateMachine* pxSubSM = m_pxCurrentState->GetSubStateMachine();
-		pxSubSM->Update(fDt, m_xCurrentPose, xSkeleton);
-	}
-	else if (m_pxCurrentState->GetBlendTree())
-	{
-		m_pxCurrentState->GetBlendTree()->Evaluate(fDt, m_xCurrentPose, xSkeleton);
-	}
-	else
-	{
-		m_xCurrentPose.Reset();
-	}
+	EvaluateState(m_pxCurrentState, fDt, m_xCurrentPose, xSkeleton);
 
 	// Call update callback
 	if (m_pxCurrentState->m_pfnOnUpdate)
@@ -898,18 +847,23 @@ void Flux_AnimationStateMachine::UpdateTransition(float fDt, const Zenith_Skelet
 	m_pxActiveTransition->Update(fDt);
 
 	// Evaluate target state
-	if (m_pxTransitionTargetState->IsSubStateMachine())
+	EvaluateState(m_pxTransitionTargetState, fDt, m_xTargetPose, xSkeleton);
+}
+
+void Flux_AnimationStateMachine::EvaluateState(Flux_AnimationState* pxState, float fDt, Flux_SkeletonPose& xOutPose, const Zenith_SkeletonAsset& xSkeleton)
+{
+	if (pxState->IsSubStateMachine())
 	{
-		Flux_AnimationStateMachine* pxSubSM = m_pxTransitionTargetState->GetSubStateMachine();
-		pxSubSM->Update(fDt, m_xTargetPose, xSkeleton);
+		Flux_AnimationStateMachine* pxSubSM = pxState->GetSubStateMachine();
+		pxSubSM->Update(fDt, xOutPose, xSkeleton);
 	}
-	else if (m_pxTransitionTargetState->GetBlendTree())
+	else if (pxState->GetBlendTree())
 	{
-		m_pxTransitionTargetState->GetBlendTree()->Evaluate(fDt, m_xTargetPose, xSkeleton);
+		pxState->GetBlendTree()->Evaluate(fDt, xOutPose, xSkeleton);
 	}
 	else
 	{
-		m_xTargetPose.Reset();
+		xOutPose.Reset();
 	}
 }
 

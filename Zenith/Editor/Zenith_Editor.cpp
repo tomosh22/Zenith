@@ -379,260 +379,8 @@ bool Zenith_Editor::Update()
 	// If render tasks are active while these operations occur, we risk:
 	// - Reading corrupted data during save (render tasks modifying while we read)
 	// - Crashes during load (destroying pools while render tasks access them)
-
-	// Handle pending scene reset
-	if (s_bPendingSceneReset)
+	if (!ProcessDeferredSceneOperations())
 	{
-		s_bPendingSceneReset = false;
-
-		// CRITICAL: Wait for CPU render tasks AND GPU to finish before destroying scene resources
-		// This matches the synchronization used for scene loading
-		Zenith_Log(LOG_CATEGORY_EDITOR, "Waiting for all render tasks to complete before resetting scene...");
-		Zenith_Core::WaitForAllRenderTasks();
-
-		Zenith_Log(LOG_CATEGORY_EDITOR, "Waiting for GPU to become idle before resetting scene...");
-		Flux_PlatformAPI::WaitForGPUIdle();
-
-		// Force process any pending deferred deletions
-		Zenith_Log(LOG_CATEGORY_EDITOR, "Processing deferred resource deletions...");
-		for (u_int u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
-		{
-			Flux_MemoryManager::ProcessDeferredDeletions();
-		}
-
-		// CRITICAL: Clear any pending command lists before resetting scene
-		Zenith_Log(LOG_CATEGORY_EDITOR, "Clearing pending command lists...");
-		Flux::ClearPendingCommandLists();
-
-		// Safe to reset now - no render tasks active, GPU idle, old resources deleted
-		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
-		if (pxSceneData)
-		{
-			pxSceneData->Reset();
-		}
-		Zenith_Log(LOG_CATEGORY_EDITOR, "Scene reset complete");
-
-		// Clear selection as entity pointers are now invalid
-		ClearSelection();
-
-		// Clear game camera reference as it now points to deleted memory
-		s_uGameCameraEntity = INVALID_ENTITY_ID;
-
-		// Reset editor camera to initial state
-		ResetEditorCameraToDefaults();
-
-		// Clear undo/redo history as entity IDs are now invalid
-		Zenith_UndoSystem::Clear();
-
-		return false;
-	}
-
-	// Handle pending scene save
-	if (s_bPendingSceneSave)
-	{
-		s_bPendingSceneSave = false;
-
-		try
-		{
-			// Safe to save now - no render tasks are accessing scene data
-			Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-			Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
-			if (pxSceneData)
-			{
-				pxSceneData->SaveToFile(s_strPendingSceneSavePath);
-				Zenith_Log(LOG_CATEGORY_EDITOR, "Scene saved to %s", s_strPendingSceneSavePath.c_str());
-			}
-		}
-		catch (const std::exception& e)
-		{
-			Zenith_Log(LOG_CATEGORY_EDITOR, "Failed to save scene: %s", e.what());
-		}
-
-		s_strPendingSceneSavePath.clear();
-	}
-
-	// Handle pending scene load
-	// Timeline when loading scene:
-	// 1. User clicks "Open Scene" in menu OR "Stop" button -> sets s_bPendingSceneLoad flag
-	// 2. Frame continues, ImGui rendered, render tasks submitted and complete
-	// 3. Next frame starts -> Update() called BEFORE any rendering
-	// 4. Scene loaded here when no render tasks are accessing scene data
-	if (s_bPendingSceneLoad)
-	{
-		s_bPendingSceneLoad = false;
-
-		// CRITICAL: Wait for CPU render tasks AND GPU to finish before destroying scene resources
-		// Two-phase synchronization:
-		// 1. Wait for CPU-side render tasks (worker threads recording commands into command lists)
-		// 2. Wait for GPU to finish executing command buffers
-		// Without both, we get access violations when LoadFromFile resets command lists or destroys resources
-		Zenith_Log(LOG_CATEGORY_EDITOR, "Waiting for all render tasks to complete before loading scene...");
-		Zenith_Core::WaitForAllRenderTasks();  // CPU synchronization
-
-
-		Zenith_Log(LOG_CATEGORY_EDITOR, "Waiting for GPU to become idle before loading scene...");
-		Flux_PlatformAPI::WaitForGPUIdle();  // GPU synchronization
-
-		// Force process any pending deferred deletions to ensure old descriptors are destroyed
-		// Without this, descriptor handles might collide between old/new scenes
-		Zenith_Log(LOG_CATEGORY_EDITOR, "Processing deferred resource deletions...");
-		for (u_int u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
-		{
-			Flux_MemoryManager::ProcessDeferredDeletions();
-		}
-
-		// CRITICAL: Clear any pending command lists before loading scene
-		// This prevents stale command list entries from previous frames that may
-		// contain pointers to resources that are about to be destroyed
-		Zenith_Log(LOG_CATEGORY_EDITOR, "Clearing pending command lists...");
-		Flux::ClearPendingCommandLists();
-
-		// Safe to load now - no render tasks active, GPU idle, old resources deleted
-
-		bool bIsBackupRestore = s_bHasSceneBackup && s_strPendingSceneLoadPath == s_strBackupScenePath;
-
-		// When restoring from backup (editor Stop), clean up all game scenes and persistent entities.
-		// The backup handle may be stale - games using SCENE_LOAD_SINGLE during Play destroy
-		// the original scene. We unload ALL non-persistent scenes unconditionally.
-		if (bIsBackupRestore)
-		{
-			// 1. Reset all Flux render systems BEFORE destroying entities.
-			// This clears Flux system state (registered meshes, particles, etc.)
-			// so entity destructors don't interact with stale render system references.
-			// Matches the SCENE_LOAD_SINGLE cleanup order (ResetAllRenderSystems -> UnloadAllNonPersistent).
-			Zenith_SceneManager::ResetAllRenderSystems();
-
-			Zenith_Scene xPersistentScene = Zenith_SceneManager::GetPersistentScene();
-
-			// 2. Force-unload all non-persistent scenes. Uses UnloadSceneForced to bypass
-			// the "last scene" guard - after SCENE_LOAD_SINGLE during play, only one
-			// game scene remains and UnloadScene would silently refuse to unload it.
-			Zenith_Vector<Zenith_Scene> axScenesToUnload;
-			uint32_t uSceneCount = Zenith_SceneManager::GetLoadedSceneCount();
-			for (uint32_t i = 0; i < uSceneCount; ++i)
-			{
-				Zenith_Scene xScene = Zenith_SceneManager::GetSceneAt(i);
-				if (!xScene.IsValid()) continue;
-				if (xScene == xPersistentScene) continue;
-				axScenesToUnload.PushBack(xScene);
-			}
-			for (u_int i = 0; i < axScenesToUnload.GetSize(); ++i)
-			{
-				Zenith_SceneManager::UnloadSceneForced(axScenesToUnload.Get(i));
-			}
-
-			// 3. Reset persistent scene entities (destroys all entities, clears component pools)
-			Zenith_SceneData* pxPersistentData = Zenith_SceneManager::GetSceneData(xPersistentScene);
-			if (pxPersistentData)
-			{
-				pxPersistentData->Reset();
-			}
-
-			// 4. Create fresh scene with the original name and restore metadata
-			Zenith_Scene xRestoredScene = Zenith_SceneManager::CreateEmptyScene(s_strBackupSceneName);
-			Zenith_SceneManager::SetActiveScene(xRestoredScene);
-
-			Zenith_SceneData* pxRestoredData = Zenith_SceneManager::GetSceneData(xRestoredScene);
-			if (pxRestoredData)
-			{
-				pxRestoredData->m_strPath = s_strBackupOriginalPath;
-				pxRestoredData->m_iBuildIndex = s_iBackupBuildIndex;
-			}
-		}
-
-		// Load the scene file into the active scene (backup restore or explicit scene load)
-		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
-		if (pxSceneData)
-		{
-			pxSceneData->LoadFromFile(s_strPendingSceneLoadPath);
-		}
-		Zenith_Log(LOG_CATEGORY_EDITOR, "Scene loaded from %s", s_strPendingSceneLoadPath.c_str());
-
-		// Clear selection as entity pointers are now invalid
-		ClearSelection();
-
-		// Clear undo/redo history as entity IDs are now invalid
-		Zenith_UndoSystem::Clear();
-
-		// Clear game camera entity pointer as it's now invalid (entity from old scene)
-		s_uGameCameraEntity = INVALID_ENTITY_ID;
-
-		if (bIsBackupRestore)
-		{
-			// Delete the temporary backup file
-			std::filesystem::remove(s_strBackupScenePath);
-			s_bHasSceneBackup = false;
-			s_strBackupScenePath = "";
-			s_iBackupSceneHandle = -1;
-			s_strBackupSceneName = "";
-			s_strBackupOriginalPath = "";
-			s_iBackupBuildIndex = -1;
-			Zenith_Log(LOG_CATEGORY_EDITOR, "Backup scene file cleaned up");
-		}
-
-		if (s_bEditorCameraInitialized)
-		{
-			SwitchToEditorCamera();
-		}
-
-		s_strPendingSceneLoadPath.clear();
-
-		return false;
-	}
-
-	// Handle pending registered scene load (from toolbar dropdown)
-	if (s_bPendingRegisteredSceneLoad)
-	{
-		s_bPendingRegisteredSceneLoad = false;
-
-		Zenith_Log(LOG_CATEGORY_EDITOR, "Waiting for all render tasks to complete before loading registered scene...");
-		Zenith_Core::WaitForAllRenderTasks();
-
-		Zenith_Log(LOG_CATEGORY_EDITOR, "Waiting for GPU to become idle before loading registered scene...");
-		Flux_PlatformAPI::WaitForGPUIdle();
-
-		Zenith_Log(LOG_CATEGORY_EDITOR, "Processing deferred resource deletions...");
-		for (u_int u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
-		{
-			Flux_MemoryManager::ProcessDeferredDeletions();
-		}
-
-		Zenith_Log(LOG_CATEGORY_EDITOR, "Clearing pending command lists...");
-		Flux::ClearPendingCommandLists();
-
-		Zenith_SceneManager::LoadSceneByIndex(s_iPendingRegisteredSceneBuildIndex, SCENE_LOAD_SINGLE);
-		Zenith_Log(LOG_CATEGORY_EDITOR, "Registered scene (build index %d) loaded", s_iPendingRegisteredSceneBuildIndex);
-
-		ClearSelection();
-		Zenith_UndoSystem::Clear();
-		s_uGameCameraEntity = INVALID_ENTITY_ID;
-
-		return false;
-	}
-
-	// Handle pending scene load from file path (content browser double-click)
-	if (s_bPendingSceneLoadFromFile)
-	{
-		s_bPendingSceneLoadFromFile = false;
-
-		Zenith_Core::WaitForAllRenderTasks();
-		Flux_PlatformAPI::WaitForGPUIdle();
-		for (u_int u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
-		{
-			Flux_MemoryManager::ProcessDeferredDeletions();
-		}
-		Flux::ClearPendingCommandLists();
-
-		Zenith_SceneManager::LoadScene(s_strPendingSceneLoadFromFilePath, SCENE_LOAD_SINGLE);
-		Zenith_Log(LOG_CATEGORY_EDITOR, "Scene loaded from file: %s", s_strPendingSceneLoadFromFilePath.c_str());
-
-		ClearSelection();
-		Zenith_UndoSystem::Clear();
-		s_uGameCameraEntity = INVALID_ENTITY_ID;
-		s_strPendingSceneLoadFromFilePath.clear();
-
 		return false;
 	}
 
@@ -715,12 +463,291 @@ bool Zenith_Editor::Update()
 		// Game is paused - don't update game logic
 	}
 
-	// Handle gizmo mode keyboard shortcuts (when viewport is focused and not playing)
+	// Handle editor input (gizmo shortcuts, undo/redo, object picking)
+	// Returns true to continue, or returns true early if in Playing mode
 	if (s_eEditorMode == EditorMode::Playing)
 	{
 		return true;
 	}
 
+	UpdateEditorInput();
+
+	// Handle gizmo interaction first (before object picking)
+	HandleGizmoInteraction();
+
+	// Handle object picking (only when not manipulating gizmo)
+	if (!Flux_Gizmos::IsInteracting() && !Zenith_Gizmo::IsManipulating())
+	{
+		HandleObjectPicking();
+	}
+
+	return true;
+}
+
+bool Zenith_Editor::ProcessDeferredSceneOperations()
+{
+	// Handle pending scene reset
+	if (s_bPendingSceneReset)
+	{
+		s_bPendingSceneReset = false;
+
+		// CRITICAL: Wait for CPU render tasks AND GPU to finish before destroying scene resources
+		// This matches the synchronization used for scene loading
+		Zenith_Log(LOG_CATEGORY_EDITOR, "Waiting for all render tasks to complete before resetting scene...");
+		Zenith_Core::WaitForAllRenderTasks();
+
+		Zenith_Log(LOG_CATEGORY_EDITOR, "Waiting for GPU to become idle before resetting scene...");
+		Flux_PlatformAPI::WaitForGPUIdle();
+
+		// Force process any pending deferred deletions
+		Zenith_Log(LOG_CATEGORY_EDITOR, "Processing deferred resource deletions...");
+		for (u_int u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
+		{
+			Flux_MemoryManager::ProcessDeferredDeletions();
+		}
+
+		// CRITICAL: Clear any pending command lists before resetting scene
+		Zenith_Log(LOG_CATEGORY_EDITOR, "Clearing pending command lists...");
+		Flux::ClearPendingCommandLists();
+
+		// Safe to reset now - no render tasks active, GPU idle, old resources deleted
+		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+		if (pxSceneData)
+		{
+			pxSceneData->Reset();
+		}
+		Zenith_Log(LOG_CATEGORY_EDITOR, "Scene reset complete");
+
+		// Clear selection as entity pointers are now invalid
+		ClearSelection();
+
+		// Clear game camera reference as it now points to deleted memory
+		s_uGameCameraEntity = INVALID_ENTITY_ID;
+
+		// Reset editor camera to initial state
+		ResetEditorCameraToDefaults();
+
+		// Clear undo/redo history as entity IDs are now invalid
+		Zenith_UndoSystem::Clear();
+
+		return false;
+	}
+
+	// Handle pending scene save
+	if (s_bPendingSceneSave)
+	{
+		s_bPendingSceneSave = false;
+
+		try
+		{
+			// Safe to save now - no render tasks are accessing scene data
+			Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+			Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+			if (pxSceneData)
+			{
+				pxSceneData->SaveToFile(s_strPendingSceneSavePath);
+				Zenith_Log(LOG_CATEGORY_EDITOR, "Scene saved to %s", s_strPendingSceneSavePath.c_str());
+			}
+		}
+		catch (const std::exception& e)
+		{
+			Zenith_Log(LOG_CATEGORY_EDITOR, "Failed to save scene: %s", e.what());
+		}
+
+		s_strPendingSceneSavePath.clear();
+	}
+
+	// Handle pending scene load (with backup-restore detection)
+	if (s_bPendingSceneLoad)
+	{
+		return HandlePendingSceneLoad();
+	}
+
+	// Handle pending registered scene load (from toolbar dropdown)
+	if (s_bPendingRegisteredSceneLoad)
+	{
+		s_bPendingRegisteredSceneLoad = false;
+
+		Zenith_Log(LOG_CATEGORY_EDITOR, "Waiting for all render tasks to complete before loading registered scene...");
+		Zenith_Core::WaitForAllRenderTasks();
+
+		Zenith_Log(LOG_CATEGORY_EDITOR, "Waiting for GPU to become idle before loading registered scene...");
+		Flux_PlatformAPI::WaitForGPUIdle();
+
+		Zenith_Log(LOG_CATEGORY_EDITOR, "Processing deferred resource deletions...");
+		for (u_int u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
+		{
+			Flux_MemoryManager::ProcessDeferredDeletions();
+		}
+
+		Zenith_Log(LOG_CATEGORY_EDITOR, "Clearing pending command lists...");
+		Flux::ClearPendingCommandLists();
+
+		Zenith_SceneManager::LoadSceneByIndex(s_iPendingRegisteredSceneBuildIndex, SCENE_LOAD_SINGLE);
+		Zenith_Log(LOG_CATEGORY_EDITOR, "Registered scene (build index %d) loaded", s_iPendingRegisteredSceneBuildIndex);
+
+		ClearSelection();
+		Zenith_UndoSystem::Clear();
+		s_uGameCameraEntity = INVALID_ENTITY_ID;
+
+		return false;
+	}
+
+	// Handle pending scene load from file path (content browser double-click)
+	if (s_bPendingSceneLoadFromFile)
+	{
+		s_bPendingSceneLoadFromFile = false;
+
+		Zenith_Core::WaitForAllRenderTasks();
+		Flux_PlatformAPI::WaitForGPUIdle();
+		for (u_int u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
+		{
+			Flux_MemoryManager::ProcessDeferredDeletions();
+		}
+		Flux::ClearPendingCommandLists();
+
+		Zenith_SceneManager::LoadScene(s_strPendingSceneLoadFromFilePath, SCENE_LOAD_SINGLE);
+		Zenith_Log(LOG_CATEGORY_EDITOR, "Scene loaded from file: %s", s_strPendingSceneLoadFromFilePath.c_str());
+
+		ClearSelection();
+		Zenith_UndoSystem::Clear();
+		s_uGameCameraEntity = INVALID_ENTITY_ID;
+		s_strPendingSceneLoadFromFilePath.clear();
+
+		return false;
+	}
+
+	return true;
+}
+
+bool Zenith_Editor::HandlePendingSceneLoad()
+{
+	s_bPendingSceneLoad = false;
+
+	// CRITICAL: Wait for CPU render tasks AND GPU to finish before destroying scene resources
+	// Two-phase synchronization:
+	// 1. Wait for CPU-side render tasks (worker threads recording commands into command lists)
+	// 2. Wait for GPU to finish executing command buffers
+	// Without both, we get access violations when LoadFromFile resets command lists or destroys resources
+	Zenith_Log(LOG_CATEGORY_EDITOR, "Waiting for all render tasks to complete before loading scene...");
+	Zenith_Core::WaitForAllRenderTasks();  // CPU synchronization
+
+
+	Zenith_Log(LOG_CATEGORY_EDITOR, "Waiting for GPU to become idle before loading scene...");
+	Flux_PlatformAPI::WaitForGPUIdle();  // GPU synchronization
+
+	// Force process any pending deferred deletions to ensure old descriptors are destroyed
+	// Without this, descriptor handles might collide between old/new scenes
+	Zenith_Log(LOG_CATEGORY_EDITOR, "Processing deferred resource deletions...");
+	for (u_int u = 0; u < MAX_FRAMES_IN_FLIGHT; u++)
+	{
+		Flux_MemoryManager::ProcessDeferredDeletions();
+	}
+
+	// CRITICAL: Clear any pending command lists before loading scene
+	// This prevents stale command list entries from previous frames that may
+	// contain pointers to resources that are about to be destroyed
+	Zenith_Log(LOG_CATEGORY_EDITOR, "Clearing pending command lists...");
+	Flux::ClearPendingCommandLists();
+
+	// Safe to load now - no render tasks active, GPU idle, old resources deleted
+
+	bool bIsBackupRestore = s_bHasSceneBackup && s_strPendingSceneLoadPath == s_strBackupScenePath;
+
+	// When restoring from backup (editor Stop), clean up all game scenes and persistent entities.
+	// The backup handle may be stale - games using SCENE_LOAD_SINGLE during Play destroy
+	// the original scene. We unload ALL non-persistent scenes unconditionally.
+	if (bIsBackupRestore)
+	{
+		// 1. Reset all Flux render systems BEFORE destroying entities.
+		// This clears Flux system state (registered meshes, particles, etc.)
+		// so entity destructors don't interact with stale render system references.
+		// Matches the SCENE_LOAD_SINGLE cleanup order (ResetAllRenderSystems -> UnloadAllNonPersistent).
+		Zenith_SceneManager::ResetAllRenderSystems();
+
+		Zenith_Scene xPersistentScene = Zenith_SceneManager::GetPersistentScene();
+
+		// 2. Force-unload all non-persistent scenes. Uses UnloadSceneForced to bypass
+		// the "last scene" guard - after SCENE_LOAD_SINGLE during play, only one
+		// game scene remains and UnloadScene would silently refuse to unload it.
+		Zenith_Vector<Zenith_Scene> axScenesToUnload;
+		uint32_t uSceneCount = Zenith_SceneManager::GetLoadedSceneCount();
+		for (uint32_t i = 0; i < uSceneCount; ++i)
+		{
+			Zenith_Scene xScene = Zenith_SceneManager::GetSceneAt(i);
+			if (!xScene.IsValid()) continue;
+			if (xScene == xPersistentScene) continue;
+			axScenesToUnload.PushBack(xScene);
+		}
+		for (u_int i = 0; i < axScenesToUnload.GetSize(); ++i)
+		{
+			Zenith_SceneManager::UnloadSceneForced(axScenesToUnload.Get(i));
+		}
+
+		// 3. Reset persistent scene entities (destroys all entities, clears component pools)
+		Zenith_SceneData* pxPersistentData = Zenith_SceneManager::GetSceneData(xPersistentScene);
+		if (pxPersistentData)
+		{
+			pxPersistentData->Reset();
+		}
+
+		// 4. Create fresh scene with the original name and restore metadata
+		Zenith_Scene xRestoredScene = Zenith_SceneManager::CreateEmptyScene(s_strBackupSceneName);
+		Zenith_SceneManager::SetActiveScene(xRestoredScene);
+
+		Zenith_SceneData* pxRestoredData = Zenith_SceneManager::GetSceneData(xRestoredScene);
+		if (pxRestoredData)
+		{
+			pxRestoredData->m_strPath = s_strBackupOriginalPath;
+			pxRestoredData->m_iBuildIndex = s_iBackupBuildIndex;
+		}
+	}
+
+	// Load the scene file into the active scene (backup restore or explicit scene load)
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	if (pxSceneData)
+	{
+		pxSceneData->LoadFromFile(s_strPendingSceneLoadPath);
+	}
+	Zenith_Log(LOG_CATEGORY_EDITOR, "Scene loaded from %s", s_strPendingSceneLoadPath.c_str());
+
+	// Clear selection as entity pointers are now invalid
+	ClearSelection();
+
+	// Clear undo/redo history as entity IDs are now invalid
+	Zenith_UndoSystem::Clear();
+
+	// Clear game camera entity pointer as it's now invalid (entity from old scene)
+	s_uGameCameraEntity = INVALID_ENTITY_ID;
+
+	if (bIsBackupRestore)
+	{
+		// Delete the temporary backup file
+		std::filesystem::remove(s_strBackupScenePath);
+		s_bHasSceneBackup = false;
+		s_strBackupScenePath = "";
+		s_iBackupSceneHandle = -1;
+		s_strBackupSceneName = "";
+		s_strBackupOriginalPath = "";
+		s_iBackupBuildIndex = -1;
+		Zenith_Log(LOG_CATEGORY_EDITOR, "Backup scene file cleaned up");
+	}
+
+	if (s_bEditorCameraInitialized)
+	{
+		SwitchToEditorCamera();
+	}
+
+	s_strPendingSceneLoadPath.clear();
+
+	return false;
+}
+
+void Zenith_Editor::UpdateEditorInput()
+{
+	// Handle gizmo mode keyboard shortcuts (when viewport is focused)
 	if (s_bViewportFocused)
 	{
 		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_W))
@@ -759,17 +786,6 @@ bool Zenith_Editor::Update()
 			Zenith_UndoSystem::Redo();
 		}
 	}
-
-	// Handle gizmo interaction first (before object picking)
-	HandleGizmoInteraction();
-
-	// Handle object picking (only when not manipulating gizmo)
-	if (!Flux_Gizmos::IsInteracting() && !Zenith_Gizmo::IsManipulating())
-	{
-		HandleObjectPicking();
-	}
-
-	return true;
 }
 
 void Zenith_Editor::Render()

@@ -57,6 +57,7 @@ private:
 	static void TestUnparentEntity();
 	static void TestHierarchyCircularPrevention();
 	static void TestDeleteParentWithChildren();
+	static void TestIsAncestorOf();
 
 	//--------------------------------------------------------------------------
 	// Selection System Tests (expanded)
@@ -184,6 +185,19 @@ private:
 	static void TestCreateEntityViaEditor();
 	static void TestAddInvalidComponent();
 	static void TestSetSelectedEntityTransient();
+
+	//--------------------------------------------------------------------------
+	// Deferred Scene Operation Tests
+	//--------------------------------------------------------------------------
+	static void TestDeferredOpClearedAfterExecution();
+	static void TestDeferredOpSkippedWhenFlagFalse();
+
+	//--------------------------------------------------------------------------
+	// Content Browser Tests
+	//--------------------------------------------------------------------------
+	static void TestTypeFilterMatchesTexture();
+	static void TestTypeFilterAllPass();
+	static void TestUniqueFilenameWithExisting();
 };
 
 #endif // ZENITH_TOOLS

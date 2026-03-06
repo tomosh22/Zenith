@@ -84,6 +84,52 @@ static bool VectorContainsString(const Zenith_Vector<std::string>& axVec, const 
 	return false;
 }
 
+Zenith_Scene Zenith_SceneManager::MakeInvalidScene()
+{
+	Zenith_Scene xScene;
+	xScene.m_iHandle = -1;
+	xScene.m_uGeneration = 0;
+	return xScene;
+}
+
+bool Zenith_SceneManager::CheckCircularLoadDependency(const std::string& strCanonicalPath)
+{
+	return VectorContainsString(s_axCurrentlyLoadingPaths, strCanonicalPath) ||
+		VectorContainsString(s_axLifecycleLoadStack, strCanonicalPath);
+}
+
+void Zenith_SceneManager::FireUnloadCallbacksAndSelectNewActive(int iHandle, Zenith_Scene xScene)
+{
+	// Track if we're unloading the active scene BEFORE callbacks
+	// (a callback could call SetActiveScene, so capture this first)
+	bool bWasActiveScene = (iHandle == s_iActiveSceneHandle);
+
+	// Fire unloading callback BEFORE destruction (allows access to scene data)
+	FireSceneUnloadingCallbacks(xScene);
+
+	// Free the scene data
+	if (iHandle >= 0 && iHandle < static_cast<int>(s_axScenes.GetSize()))
+	{
+		delete s_axScenes.Get(iHandle);
+		s_axScenes.Get(iHandle) = nullptr;
+
+		// Fire unloaded callback BEFORE incrementing generation so the handle
+		// is still valid for identification in callbacks (Unity parity)
+		FireSceneUnloadedCallbacks(xScene);
+
+		FreeSceneHandle(iHandle);
+	}
+
+	// If active scene was unloaded, select a new active scene
+	if (bWasActiveScene)
+	{
+		Zenith_Assert(!s_bRenderTasksActive, "Cannot change active scene while render tasks are in flight");
+		s_iActiveSceneHandle = SelectNewActiveScene();
+		Zenith_Scene xNewActive = GetActiveScene();
+		FireActiveSceneChangedCallbacks(xScene, xNewActive);
+	}
+}
+
 void Zenith_SceneManager::AddToSceneNameCache(int iHandle, const std::string& strName)
 {
 	SceneNameEntry xEntry;
@@ -429,9 +475,7 @@ Zenith_Scene Zenith_SceneManager::GetActiveScene()
 Zenith_Scene Zenith_SceneManager::GetSceneAt(uint32_t uIndex)
 {
 	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "GetSceneAt must be called from main thread");
-	Zenith_Scene xScene;
-	xScene.m_iHandle = -1;
-	xScene.m_uGeneration = 0;
+	Zenith_Scene xScene = MakeInvalidScene();
 
 	uint32_t uCurrent = 0;
 	for (u_int i = 0; i < s_axScenes.GetSize(); ++i)
@@ -453,9 +497,7 @@ Zenith_Scene Zenith_SceneManager::GetSceneAt(uint32_t uIndex)
 Zenith_Scene Zenith_SceneManager::GetSceneByBuildIndex(int iBuildIndex)
 {
 	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "GetSceneByBuildIndex must be called from main thread");
-	Zenith_Scene xScene;
-	xScene.m_iHandle = -1;
-	xScene.m_uGeneration = 0;
+	Zenith_Scene xScene = MakeInvalidScene();
 
 	for (u_int i = 0; i < s_axScenes.GetSize(); ++i)
 	{
@@ -473,9 +515,7 @@ Zenith_Scene Zenith_SceneManager::GetSceneByBuildIndex(int iBuildIndex)
 Zenith_Scene Zenith_SceneManager::GetSceneByName(const std::string& strName)
 {
 	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "GetSceneByName must be called from main thread");
-	Zenith_Scene xScene;
-	xScene.m_iHandle = -1;
-	xScene.m_uGeneration = 0;
+	Zenith_Scene xScene = MakeInvalidScene();
 
 	// Use name cache for O(n) scan over loaded scenes only (smaller than all scene slots)
 	for (u_int i = 0; i < s_axLoadedSceneNames.GetSize(); ++i)
@@ -527,9 +567,7 @@ Zenith_Scene Zenith_SceneManager::GetSceneByName(const std::string& strName)
 Zenith_Scene Zenith_SceneManager::GetSceneByPath(const std::string& strPath)
 {
 	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "GetSceneByPath must be called from main thread");
-	Zenith_Scene xScene;
-	xScene.m_iHandle = -1;
-	xScene.m_uGeneration = 0;
+	Zenith_Scene xScene = MakeInvalidScene();
 
 	// Canonicalize input path for consistent comparison
 	std::string strCanonical = CanonicalizeScenePath(strPath);
@@ -643,20 +681,14 @@ Zenith_Scene Zenith_SceneManager::LoadScene(const std::string& strPath, Zenith_S
 	if (!Zenith_FileAccess::FileExists(strPath.c_str()))
 	{
 		Zenith_Error(LOG_CATEGORY_SCENE, "LoadScene: File not found: %s", strPath.c_str());
-		Zenith_Scene xInvalid;
-		xInvalid.m_iHandle = -1;
-		return xInvalid;
+		return MakeInvalidScene();
 	}
 
 	// Circular load detection - prevent a scene from loading itself during OnAwake/OnStart
-	// Check both active loads and lifecycle dispatch (scenes currently in OnAwake/OnEnable)
-	if (VectorContainsString(s_axCurrentlyLoadingPaths, strCanonicalPath) ||
-		VectorContainsString(s_axLifecycleLoadStack, strCanonicalPath))
+	if (CheckCircularLoadDependency(strCanonicalPath))
 	{
 		Zenith_Error(LOG_CATEGORY_SCENE, "Circular scene load detected: %s", strCanonicalPath.c_str());
-		Zenith_Scene xInvalid;
-		xInvalid.m_iHandle = -1;
-		return xInvalid;
+		return MakeInvalidScene();
 	}
 	s_axCurrentlyLoadingPaths.PushBack(strCanonicalPath);
 
@@ -731,9 +763,7 @@ Zenith_Scene Zenith_SceneManager::LoadSceneByIndex(int iBuildIndex, Zenith_Scene
 	if (s_bIsUpdating)
 	{
 		LoadSceneAsyncByIndex(iBuildIndex, eMode);
-		Zenith_Scene xInvalid;
-		xInvalid.m_iHandle = -1;
-		return xInvalid;
+		return MakeInvalidScene();
 	}
 
 	const u_int uBuildIndex = static_cast<u_int>(iBuildIndex);
@@ -748,9 +778,7 @@ Zenith_Scene Zenith_SceneManager::LoadSceneByIndex(int iBuildIndex, Zenith_Scene
 	}
 
 	Zenith_Warning(LOG_CATEGORY_SCENE, "LoadSceneByIndex: No scene registered for build index %d", iBuildIndex);
-	Zenith_Scene xInvalid;
-	xInvalid.m_iHandle = -1;
-	return xInvalid;
+	return MakeInvalidScene();
 }
 
 //==========================================================================
@@ -805,13 +833,11 @@ Zenith_SceneOperationID Zenith_SceneManager::LoadSceneAsync(const std::string& s
 	std::string strCanonicalPath = CanonicalizeScenePath(strPath);
 
 	// Circular load detection - prevent loading a scene that's already being loaded
-	// Check both active loads and lifecycle dispatch (scenes currently in OnAwake/OnEnable)
 	// THREAD SAFETY NOTE: Both sets are only modified on the main thread:
 	//   - insert() called here in LoadSceneAsync() (main thread, asserted at function start)
 	//   - erase() called in ProcessPendingAsyncLoads() (main thread, called from Update)
 	// The worker thread (AsyncSceneLoadTask) never accesses these sets, so no synchronization needed.
-	if (VectorContainsString(s_axCurrentlyLoadingPaths, strCanonicalPath) ||
-		VectorContainsString(s_axLifecycleLoadStack, strCanonicalPath))
+	if (CheckCircularLoadDependency(strCanonicalPath))
 	{
 		Zenith_Error(LOG_CATEGORY_SCENE, "Circular async scene load detected: %s", strCanonicalPath.c_str());
 		pxOp->SetResultSceneHandle(-1);
@@ -940,33 +966,7 @@ bool Zenith_SceneManager::CanUnloadScene(Zenith_Scene xScene)
 
 void Zenith_SceneManager::UnloadSceneInternal(Zenith_Scene xScene)
 {
-	// Fire unloading callback BEFORE destruction (allows access to scene data)
-	FireSceneUnloadingCallbacks(xScene);
-
-	// Track if we're unloading the active scene
-	bool bWasActiveScene = (xScene.m_iHandle == s_iActiveSceneHandle);
-
-	// Free the scene data
-	if (xScene.m_iHandle >= 0 && xScene.m_iHandle < static_cast<int>(s_axScenes.GetSize()))
-	{
-		delete s_axScenes.Get(xScene.m_iHandle);
-		s_axScenes.Get(xScene.m_iHandle) = nullptr;
-
-		// Fire unloaded callback BEFORE incrementing generation so the handle
-		// is still valid for identification in callbacks (Unity parity)
-		FireSceneUnloadedCallbacks(xScene);
-
-		FreeSceneHandle(xScene.m_iHandle);
-	}
-
-	// If active scene was unloaded, select a new active scene
-	if (bWasActiveScene)
-	{
-		Zenith_Assert(!s_bRenderTasksActive, "Cannot change active scene while render tasks are in flight");
-		s_iActiveSceneHandle = SelectNewActiveScene();
-		Zenith_Scene xNewActive = GetActiveScene();
-		FireActiveSceneChangedCallbacks(xScene, xNewActive);
-	}
+	FireUnloadCallbacksAndSelectNewActive(xScene.m_iHandle, xScene);
 }
 
 void Zenith_SceneManager::UnloadSceneForced(Zenith_Scene xScene)

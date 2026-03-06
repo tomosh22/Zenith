@@ -12,6 +12,26 @@
 #include "Flux/Primitives/Flux_Primitives.h"
 #endif
 
+// Lookup table for tactical point type properties (color, display score, name)
+struct TacticalPointTypeInfo
+{
+	Zenith_Maths::Vector3 m_xColor;
+	float m_fBaseDisplayScore;
+};
+
+static const TacticalPointTypeInfo s_axTypeInfo[] =
+{
+	{ Zenith_Maths::Vector3(0.0f, 0.8f, 0.0f), 3.0f },  // COVER_FULL - Green
+	{ Zenith_Maths::Vector3(0.8f, 0.8f, 0.0f), 2.0f },  // COVER_HALF - Yellow
+	{ Zenith_Maths::Vector3(1.0f, 0.5f, 0.0f), 2.5f },  // FLANK_POSITION - Orange
+	{ Zenith_Maths::Vector3(0.5f, 0.0f, 0.8f), 3.0f },  // OVERWATCH - Purple
+	{ Zenith_Maths::Vector3(0.0f, 0.5f, 1.0f), 1.0f },  // PATROL_WAYPOINT - Blue
+	{ Zenith_Maths::Vector3(0.8f, 0.0f, 0.0f), 2.5f },  // AMBUSH - Red
+	{ Zenith_Maths::Vector3(0.5f, 0.5f, 0.5f), 1.5f },  // RETREAT - Gray
+};
+static_assert(sizeof(s_axTypeInfo) / sizeof(s_axTypeInfo[0]) == static_cast<size_t>(TacticalPointType::COUNT),
+	"s_axTypeInfo must match TacticalPointType::COUNT");
+
 // Static members
 Zenith_Vector<Zenith_TacticalPoint> Zenith_TacticalPointSystem::s_axPoints;
 Zenith_Vector<bool> Zenith_TacticalPointSystem::s_axPointActive;
@@ -23,6 +43,188 @@ float Zenith_TacticalPointSystem::s_fDistanceWeight = 1.0f;
 float Zenith_TacticalPointSystem::s_fCoverWeight = 2.0f;
 float Zenith_TacticalPointSystem::s_fVisibilityWeight = 1.5f;
 float Zenith_TacticalPointSystem::s_fElevationWeight = 0.5f;
+
+// ========== Entity Position Helper ==========
+
+bool Zenith_TacticalPointSystem::GetEntityPosition(Zenith_EntityID xEntity, Zenith_Maths::Vector3& xOutPos)
+{
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	if (!pxSceneData)
+	{
+		return false;
+	}
+
+	Zenith_Entity xEnt = pxSceneData->TryGetEntity(xEntity);
+	if (!xEnt.IsValid() || !xEnt.HasComponent<Zenith_TransformComponent>())
+	{
+		return false;
+	}
+
+	xEnt.GetComponent<Zenith_TransformComponent>().GetPosition(xOutPos);
+	return true;
+}
+
+// ========== Score Context Structs ==========
+
+struct CoverScoreContext
+{
+	Zenith_Maths::Vector3 m_xAgentPos;
+	Zenith_Maths::Vector3 m_xThreatPos;
+	float m_fMaxDistance;
+};
+
+struct FlankScoreContext
+{
+	Zenith_Maths::Vector3 m_xAgentPos;
+	Zenith_Maths::Vector3 m_xTargetPos;
+	Zenith_Maths::Vector3 m_xTargetFacing;
+};
+
+struct OverwatchScoreContext
+{
+	Zenith_Maths::Vector3 m_xAgentPos;
+	Zenith_Maths::Vector3 m_xAreaToWatch;
+};
+
+// ========== Score Functions (file-local) ==========
+
+static float ScoreCoverPoint(const Zenith_TacticalPoint& xPoint, const void* pCtx)
+{
+	const CoverScoreContext* pxCtx = static_cast<const CoverScoreContext*>(pCtx);
+
+	float fDist = Zenith_Maths::Length(xPoint.m_xPosition - pxCtx->m_xAgentPos);
+
+	// Score based on cover from threat
+	float fCoverScore = Zenith_TacticalPointSystem::EvaluateCoverFromThreat(xPoint.m_xPosition, pxCtx->m_xThreatPos);
+	float fDistScore = 1.0f - (fDist / pxCtx->m_fMaxDistance);  // Prefer closer points
+	float fTotalScore = fCoverScore * Zenith_TacticalPointSystem::s_fCoverWeight + fDistScore * Zenith_TacticalPointSystem::s_fDistanceWeight;
+
+	// Bonus for full cover
+	if (xPoint.m_eType == TacticalPointType::COVER_FULL)
+	{
+		fTotalScore *= 1.5f;
+	}
+
+	return fTotalScore;
+}
+
+static float ScoreFlankPoint(const Zenith_TacticalPoint& xPoint, const void* pCtx)
+{
+	const FlankScoreContext* pxCtx = static_cast<const FlankScoreContext*>(pCtx);
+
+	// Score based on flank angle (perpendicular to target facing is best)
+	float fFlankScore = Zenith_TacticalPointSystem::EvaluateFlankAngle(xPoint.m_xPosition, pxCtx->m_xTargetPos, pxCtx->m_xTargetFacing);
+
+	// Also consider distance from agent (prefer closer to agent's current path)
+	float fDistFromAgent = Zenith_Maths::Length(xPoint.m_xPosition - pxCtx->m_xAgentPos);
+	float fDistScore = 1.0f / (1.0f + fDistFromAgent * 0.1f);
+
+	float fTotalScore = fFlankScore * 2.0f + fDistScore;
+
+	return fTotalScore;
+}
+
+static float ScoreOverwatchPoint(const Zenith_TacticalPoint& xPoint, const void* pCtx)
+{
+	const OverwatchScoreContext* pxCtx = static_cast<const OverwatchScoreContext*>(pCtx);
+
+	// Score based on:
+	// 1. Elevation (higher is better for overwatch)
+	// 2. Line of sight to area
+	// 3. Distance from agent (prefer reachable)
+
+	float fElevationScore = (xPoint.m_uFlags & TACPOINT_FLAG_ELEVATED) ? 1.5f : 1.0f;
+	fElevationScore += xPoint.m_xPosition.y * 0.1f;  // Raw height bonus
+
+	// Line of sight check with physics raycast
+	Zenith_Maths::Vector3 xEyeLevel = xPoint.m_xPosition + Zenith_Maths::Vector3(0.0f, 1.5f, 0.0f);
+	Zenith_Maths::Vector3 xDirection = pxCtx->m_xAreaToWatch - xEyeLevel;
+	float fCheckDist = Zenith_Maths::Length(xDirection);
+	Zenith_Physics::RaycastResult xRayResult = Zenith_Physics::Raycast(xEyeLevel, xDirection, fCheckDist);
+	float fLOSScore = xRayResult.m_bHit ? 0.0f : 1.0f;  // Full score if clear LOS, zero if blocked
+
+	float fDistFromAgent = Zenith_Maths::Length(xPoint.m_xPosition - pxCtx->m_xAgentPos);
+	float fDistScore = 1.0f / (1.0f + fDistFromAgent * 0.05f);
+
+	// Bonus for actual overwatch type
+	float fTypeBonus = (xPoint.m_eType == TacticalPointType::OVERWATCH) ? 1.5f : 1.0f;
+
+	float fTotalScore = (fElevationScore * Zenith_TacticalPointSystem::s_fElevationWeight +
+		fLOSScore * Zenith_TacticalPointSystem::s_fVisibilityWeight +
+		fDistScore * Zenith_TacticalPointSystem::s_fDistanceWeight) * fTypeBonus;
+
+	return fTotalScore;
+}
+
+// ========== Type Filter Functions (file-local) ==========
+
+static bool FilterCoverTypes(TacticalPointType eType)
+{
+	return eType == TacticalPointType::COVER_FULL || eType == TacticalPointType::COVER_HALF;
+}
+
+static bool FilterFlankTypes(TacticalPointType eType)
+{
+	return eType == TacticalPointType::FLANK_POSITION || eType == TacticalPointType::COVER_HALF;
+}
+
+static bool FilterOverwatchTypes(TacticalPointType eType)
+{
+	return eType == TacticalPointType::OVERWATCH ||
+		eType == TacticalPointType::COVER_HALF ||
+		eType == TacticalPointType::COVER_FULL;
+}
+
+// ========== FindBestPointOfType ==========
+
+const Zenith_TacticalPoint* Zenith_TacticalPointSystem::FindBestPointOfType(
+	const Zenith_Maths::Vector3& xDistanceRef,
+	float fMinDistance,
+	float fMaxDistance,
+	TacticalTypeFilterFn pfnTypeFilter,
+	TacticalScoreFn pfnScore,
+	const void* pScoreCtx)
+{
+	const Zenith_TacticalPoint* pxBest = nullptr;
+	float fBestScore = -FLT_MAX;
+
+	for (uint32_t u = 0; u < s_axPoints.GetSize(); ++u)
+	{
+		if (!s_axPointActive.Get(u))
+		{
+			continue;
+		}
+
+		const Zenith_TacticalPoint& xPoint = s_axPoints.Get(u);
+
+		if (!pfnTypeFilter(xPoint.m_eType))
+		{
+			continue;
+		}
+
+		if (!xPoint.IsAvailable())
+		{
+			continue;
+		}
+
+		float fDist = Zenith_Maths::Length(xPoint.m_xPosition - xDistanceRef);
+		if (fDist < fMinDistance || fDist > fMaxDistance)
+		{
+			continue;
+		}
+
+		float fScore = pfnScore(xPoint, pScoreCtx);
+
+		if (fScore > fBestScore)
+		{
+			fBestScore = fScore;
+			pxBest = &xPoint;
+		}
+	}
+
+	return pxBest;
+}
 
 void Zenith_TacticalPointSystem::Initialise()
 {
@@ -230,22 +432,11 @@ Zenith_Maths::Vector3 Zenith_TacticalPointSystem::FindBestCoverPosition(
 	const Zenith_Maths::Vector3& xThreatPosition,
 	float fMaxDistance)
 {
-	// Get agent position from scene
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
-	if (!pxSceneData)
-	{
-		return Zenith_Maths::Vector3(0.0f);
-	}
-
-	Zenith_Entity xAgentEntity = pxSceneData->TryGetEntity(xAgent);
-	if (!xAgentEntity.IsValid() || !xAgentEntity.HasComponent<Zenith_TransformComponent>())
-	{
-		return Zenith_Maths::Vector3(0.0f);
-	}
-
 	Zenith_Maths::Vector3 xAgentPos;
-	xAgentEntity.GetComponent<Zenith_TransformComponent>().GetPosition(xAgentPos);
+	if (!GetEntityPosition(xAgent, xAgentPos))
+	{
+		return Zenith_Maths::Vector3(0.0f);
+	}
 
 	return FindBestCoverPosition(xAgentPos, xThreatPosition, fMaxDistance);
 }
@@ -255,63 +446,14 @@ Zenith_Maths::Vector3 Zenith_TacticalPointSystem::FindBestCoverPosition(
 	const Zenith_Maths::Vector3& xThreatPosition,
 	float fMaxDistance)
 {
-	Zenith_TacticalPointQuery xQuery;
-	xQuery.m_xSearchCenter = xAgentPos;
-	xQuery.m_fSearchRadius = fMaxDistance;
-	xQuery.m_bAnyType = true;  // Accept both full and half cover
-	xQuery.m_bMustBeAvailable = true;
-	xQuery.m_bHasThreat = true;
-	xQuery.m_xThreatPosition = xThreatPosition;
-	// xQuery.m_xRequestingAgent left as default (invalid) when using position-based overload
+	CoverScoreContext xCtx;
+	xCtx.m_xAgentPos = xAgentPos;
+	xCtx.m_xThreatPos = xThreatPosition;
+	xCtx.m_fMaxDistance = fMaxDistance;
 
-	// Find best cover point
-	const Zenith_TacticalPoint* pxBest = nullptr;
-	float fBestScore = -FLT_MAX;
-
-	for (uint32_t u = 0; u < s_axPoints.GetSize(); ++u)
-	{
-		if (!s_axPointActive.Get(u))
-		{
-			continue;
-		}
-
-		const Zenith_TacticalPoint& xPoint = s_axPoints.Get(u);
-
-		// Only consider cover points
-		if (xPoint.m_eType != TacticalPointType::COVER_FULL &&
-			xPoint.m_eType != TacticalPointType::COVER_HALF)
-		{
-			continue;
-		}
-
-		if (!xPoint.IsAvailable())
-		{
-			continue;
-		}
-
-		float fDist = Zenith_Maths::Length(xPoint.m_xPosition - xAgentPos);
-		if (fDist > fMaxDistance)
-		{
-			continue;
-		}
-
-		// Score based on cover from threat
-		float fCoverScore = EvaluateCoverFromThreat(xPoint.m_xPosition, xThreatPosition);
-		float fDistScore = 1.0f - (fDist / fMaxDistance);  // Prefer closer points
-		float fTotalScore = fCoverScore * s_fCoverWeight + fDistScore * s_fDistanceWeight;
-
-		// Bonus for full cover
-		if (xPoint.m_eType == TacticalPointType::COVER_FULL)
-		{
-			fTotalScore *= 1.5f;
-		}
-
-		if (fTotalScore > fBestScore)
-		{
-			fBestScore = fTotalScore;
-			pxBest = &xPoint;
-		}
-	}
+	const Zenith_TacticalPoint* pxBest = FindBestPointOfType(
+		xAgentPos, 0.0f, fMaxDistance,
+		FilterCoverTypes, ScoreCoverPoint, &xCtx);
 
 	if (pxBest)
 	{
@@ -328,22 +470,11 @@ Zenith_Maths::Vector3 Zenith_TacticalPointSystem::FindBestFlankPosition(
 	float fMinDistance,
 	float fMaxDistance)
 {
-	// Get agent position from scene
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
-	if (!pxSceneData)
-	{
-		return Zenith_Maths::Vector3(0.0f);
-	}
-
-	Zenith_Entity xAgentEntity = pxSceneData->TryGetEntity(xAgent);
-	if (!xAgentEntity.IsValid() || !xAgentEntity.HasComponent<Zenith_TransformComponent>())
-	{
-		return Zenith_Maths::Vector3(0.0f);
-	}
-
 	Zenith_Maths::Vector3 xAgentPos;
-	xAgentEntity.GetComponent<Zenith_TransformComponent>().GetPosition(xAgentPos);
+	if (!GetEntityPosition(xAgent, xAgentPos))
+	{
+		return Zenith_Maths::Vector3(0.0f);
+	}
 
 	return FindBestFlankPosition(xAgentPos, xTargetPosition, xTargetFacing, fMinDistance, fMaxDistance);
 }
@@ -355,51 +486,14 @@ Zenith_Maths::Vector3 Zenith_TacticalPointSystem::FindBestFlankPosition(
 	float fMinDistance,
 	float fMaxDistance)
 {
-	const Zenith_TacticalPoint* pxBest = nullptr;
-	float fBestScore = -FLT_MAX;
+	FlankScoreContext xCtx;
+	xCtx.m_xAgentPos = xAgentPos;
+	xCtx.m_xTargetPos = xTargetPosition;
+	xCtx.m_xTargetFacing = xTargetFacing;
 
-	for (uint32_t u = 0; u < s_axPoints.GetSize(); ++u)
-	{
-		if (!s_axPointActive.Get(u))
-		{
-			continue;
-		}
-
-		const Zenith_TacticalPoint& xPoint = s_axPoints.Get(u);
-
-		// Only consider flank points or any available point
-		if (xPoint.m_eType != TacticalPointType::FLANK_POSITION &&
-			xPoint.m_eType != TacticalPointType::COVER_HALF)
-		{
-			continue;
-		}
-
-		if (!xPoint.IsAvailable())
-		{
-			continue;
-		}
-
-		float fDistToTarget = Zenith_Maths::Length(xPoint.m_xPosition - xTargetPosition);
-		if (fDistToTarget < fMinDistance || fDistToTarget > fMaxDistance)
-		{
-			continue;
-		}
-
-		// Score based on flank angle (perpendicular to target facing is best)
-		float fFlankScore = EvaluateFlankAngle(xPoint.m_xPosition, xTargetPosition, xTargetFacing);
-
-		// Also consider distance from agent (prefer closer to agent's current path)
-		float fDistFromAgent = Zenith_Maths::Length(xPoint.m_xPosition - xAgentPos);
-		float fDistScore = 1.0f / (1.0f + fDistFromAgent * 0.1f);
-
-		float fTotalScore = fFlankScore * 2.0f + fDistScore;
-
-		if (fTotalScore > fBestScore)
-		{
-			fBestScore = fTotalScore;
-			pxBest = &xPoint;
-		}
-	}
+	const Zenith_TacticalPoint* pxBest = FindBestPointOfType(
+		xTargetPosition, fMinDistance, fMaxDistance,
+		FilterFlankTypes, ScoreFlankPoint, &xCtx);
 
 	if (pxBest)
 	{
@@ -431,22 +525,11 @@ Zenith_Maths::Vector3 Zenith_TacticalPointSystem::FindBestOverwatchPosition(
 	float fMinDistance,
 	float fMaxDistance)
 {
-	// Get agent position from scene
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
-	if (!pxSceneData)
-	{
-		return Zenith_Maths::Vector3(0.0f);
-	}
-
-	Zenith_Entity xAgentEntity = pxSceneData->TryGetEntity(xAgent);
-	if (!xAgentEntity.IsValid() || !xAgentEntity.HasComponent<Zenith_TransformComponent>())
-	{
-		return Zenith_Maths::Vector3(0.0f);
-	}
-
 	Zenith_Maths::Vector3 xAgentPos;
-	xAgentEntity.GetComponent<Zenith_TransformComponent>().GetPosition(xAgentPos);
+	if (!GetEntityPosition(xAgent, xAgentPos))
+	{
+		return Zenith_Maths::Vector3(0.0f);
+	}
 
 	return FindBestOverwatchPosition(xAgentPos, xAreaToWatch, fMinDistance, fMaxDistance);
 }
@@ -457,68 +540,13 @@ Zenith_Maths::Vector3 Zenith_TacticalPointSystem::FindBestOverwatchPosition(
 	float fMinDistance,
 	float fMaxDistance)
 {
-	const Zenith_TacticalPoint* pxBest = nullptr;
-	float fBestScore = -FLT_MAX;
+	OverwatchScoreContext xCtx;
+	xCtx.m_xAgentPos = xAgentPos;
+	xCtx.m_xAreaToWatch = xAreaToWatch;
 
-	for (uint32_t u = 0; u < s_axPoints.GetSize(); ++u)
-	{
-		if (!s_axPointActive.Get(u))
-		{
-			continue;
-		}
-
-		const Zenith_TacticalPoint& xPoint = s_axPoints.Get(u);
-
-		// Prefer overwatch points, but cover works too
-		if (xPoint.m_eType != TacticalPointType::OVERWATCH &&
-			xPoint.m_eType != TacticalPointType::COVER_HALF &&
-			xPoint.m_eType != TacticalPointType::COVER_FULL)
-		{
-			continue;
-		}
-
-		if (!xPoint.IsAvailable())
-		{
-			continue;
-		}
-
-		float fDistToArea = Zenith_Maths::Length(xPoint.m_xPosition - xAreaToWatch);
-		if (fDistToArea < fMinDistance || fDistToArea > fMaxDistance)
-		{
-			continue;
-		}
-
-		// Score based on:
-		// 1. Elevation (higher is better for overwatch)
-		// 2. Line of sight to area
-		// 3. Distance from agent (prefer reachable)
-
-		float fElevationScore = (xPoint.m_uFlags & TACPOINT_FLAG_ELEVATED) ? 1.5f : 1.0f;
-		fElevationScore += xPoint.m_xPosition.y * 0.1f;  // Raw height bonus
-
-		// Line of sight check with physics raycast
-		Zenith_Maths::Vector3 xEyeLevel = xPoint.m_xPosition + Zenith_Maths::Vector3(0.0f, 1.5f, 0.0f);
-		Zenith_Maths::Vector3 xDirection = xAreaToWatch - xEyeLevel;
-		float fCheckDist = Zenith_Maths::Length(xDirection);
-		Zenith_Physics::RaycastResult xRayResult = Zenith_Physics::Raycast(xEyeLevel, xDirection, fCheckDist);
-		float fLOSScore = xRayResult.m_bHit ? 0.0f : 1.0f;  // Full score if clear LOS, zero if blocked
-
-		float fDistFromAgent = Zenith_Maths::Length(xPoint.m_xPosition - xAgentPos);
-		float fDistScore = 1.0f / (1.0f + fDistFromAgent * 0.05f);
-
-		// Bonus for actual overwatch type
-		float fTypeBonus = (xPoint.m_eType == TacticalPointType::OVERWATCH) ? 1.5f : 1.0f;
-
-		float fTotalScore = (fElevationScore * s_fElevationWeight +
-			fLOSScore * s_fVisibilityWeight +
-			fDistScore * s_fDistanceWeight) * fTypeBonus;
-
-		if (fTotalScore > fBestScore)
-		{
-			fBestScore = fTotalScore;
-			pxBest = &xPoint;
-		}
-	}
+	const Zenith_TacticalPoint* pxBest = FindBestPointOfType(
+		xAreaToWatch, fMinDistance, fMaxDistance,
+		FilterOverwatchTypes, ScoreOverwatchPoint, &xCtx);
 
 	if (pxBest)
 	{
@@ -731,24 +759,22 @@ Zenith_TacticalPointScore Zenith_TacticalPointSystem::ScorePoint(
 	}
 
 	// Visibility score (based on type - overwatch has best visibility)
-	switch (xPoint.m_eType)
+	static const float s_afVisibilityByType[] =
 	{
-	case TacticalPointType::OVERWATCH:
-		xScore.m_fVisibilityScore = 1.0f;
-		break;
-	case TacticalPointType::COVER_HALF:
-		xScore.m_fVisibilityScore = 0.7f;
-		break;
-	case TacticalPointType::FLANK_POSITION:
-		xScore.m_fVisibilityScore = 0.6f;
-		break;
-	case TacticalPointType::COVER_FULL:
-		xScore.m_fVisibilityScore = 0.3f;  // Full cover limits visibility
-		break;
-	default:
-		xScore.m_fVisibilityScore = 0.5f;
-		break;
-	}
+		0.3f,  // COVER_FULL - limits visibility
+		0.7f,  // COVER_HALF
+		0.6f,  // FLANK_POSITION
+		1.0f,  // OVERWATCH
+		0.5f,  // PATROL_WAYPOINT
+		0.5f,  // AMBUSH
+		0.5f,  // RETREAT
+	};
+	static_assert(sizeof(s_afVisibilityByType) / sizeof(s_afVisibilityByType[0]) == static_cast<size_t>(TacticalPointType::COUNT),
+		"s_afVisibilityByType must match TacticalPointType::COUNT");
+	uint8_t uScoreTypeIndex = static_cast<uint8_t>(xPoint.m_eType);
+	xScore.m_fVisibilityScore = (uScoreTypeIndex < static_cast<uint8_t>(TacticalPointType::COUNT))
+		? s_afVisibilityByType[uScoreTypeIndex]
+		: 0.5f;
 
 	// Elevation score
 	xScore.m_fElevationScore = (xPoint.m_uFlags & TACPOINT_FLAG_ELEVATED) ? 1.0f : 0.0f;
@@ -809,35 +835,11 @@ void Zenith_TacticalPointSystem::DebugDraw()
 
 void Zenith_TacticalPointSystem::DebugDrawPoint(const Zenith_TacticalPoint& xPoint)
 {
-	// Color based on type
-	Zenith_Maths::Vector3 xColor;
-	switch (xPoint.m_eType)
-	{
-	case TacticalPointType::COVER_FULL:
-		xColor = Zenith_Maths::Vector3(0.0f, 0.8f, 0.0f);  // Green
-		break;
-	case TacticalPointType::COVER_HALF:
-		xColor = Zenith_Maths::Vector3(0.8f, 0.8f, 0.0f);  // Yellow
-		break;
-	case TacticalPointType::FLANK_POSITION:
-		xColor = Zenith_Maths::Vector3(1.0f, 0.5f, 0.0f);  // Orange
-		break;
-	case TacticalPointType::OVERWATCH:
-		xColor = Zenith_Maths::Vector3(0.5f, 0.0f, 0.8f);  // Purple
-		break;
-	case TacticalPointType::PATROL_WAYPOINT:
-		xColor = Zenith_Maths::Vector3(0.0f, 0.5f, 1.0f);  // Blue
-		break;
-	case TacticalPointType::AMBUSH:
-		xColor = Zenith_Maths::Vector3(0.8f, 0.0f, 0.0f);  // Red
-		break;
-	case TacticalPointType::RETREAT:
-		xColor = Zenith_Maths::Vector3(0.5f, 0.5f, 0.5f);  // Gray
-		break;
-	default:
-		xColor = Zenith_Maths::Vector3(1.0f, 1.0f, 1.0f);  // White
-		break;
-	}
+	// Color and score from lookup table
+	uint8_t uTypeIndex = static_cast<uint8_t>(xPoint.m_eType);
+	Zenith_Maths::Vector3 xColor = (uTypeIndex < static_cast<uint8_t>(TacticalPointType::COUNT))
+		? s_axTypeInfo[uTypeIndex].m_xColor
+		: Zenith_Maths::Vector3(1.0f, 1.0f, 1.0f);
 
 	// Dim if occupied
 	if (xPoint.IsOccupied())
@@ -868,20 +870,9 @@ void Zenith_TacticalPointSystem::DebugDrawPoint(const Zenith_TacticalPoint& xPoi
 	{
 		// Calculate a base score based on point type and properties
 		// (Since m_fScore is only set during queries, we compute a display score here)
-		float fDisplayScore = 0.0f;
-
-		// Base score by type
-		switch (xPoint.m_eType)
-		{
-		case TacticalPointType::COVER_FULL:      fDisplayScore = 3.0f; break;
-		case TacticalPointType::COVER_HALF:      fDisplayScore = 2.0f; break;
-		case TacticalPointType::FLANK_POSITION:  fDisplayScore = 2.5f; break;
-		case TacticalPointType::OVERWATCH:       fDisplayScore = 3.0f; break;
-		case TacticalPointType::PATROL_WAYPOINT: fDisplayScore = 1.0f; break;
-		case TacticalPointType::AMBUSH:          fDisplayScore = 2.5f; break;
-		case TacticalPointType::RETREAT:         fDisplayScore = 1.5f; break;
-		default:                                 fDisplayScore = 1.0f; break;
-		}
+		float fDisplayScore = (uTypeIndex < static_cast<uint8_t>(TacticalPointType::COUNT))
+			? s_axTypeInfo[uTypeIndex].m_fBaseDisplayScore
+			: 1.0f;
 
 		// Bonus for elevation
 		if (xPoint.m_uFlags & TACPOINT_FLAG_ELEVATED)

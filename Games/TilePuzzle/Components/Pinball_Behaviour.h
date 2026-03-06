@@ -1266,8 +1266,10 @@ private:
 					m_xSaveData.uPinballScore += s_uPB_PegScore;
 
 					// Start flash timer and swap to flash material
-					m_afPegFlashTimer[i] = s_fPB_PegFlashDuration;
-					SwapPegMaterial(pxScene, i, m_xPegFlashMaterial);
+					// Hit-all-pegs gates: short flash then steady glow
+					// Other gates: 1-second emissive then revert to normal
+					m_afPegFlashTimer[i] = IsHitAllPegsGate() ? s_fPB_PegFlashDuration : 1.0f;
+					SwapPegMaterial(pxScene, i, IsHitAllPegsGate() ? m_xPegFlashMaterial : m_xPegHitMaterial);
 				}
 			}
 		}
@@ -1361,6 +1363,14 @@ private:
 			m_uCurrentLayout = (m_uCurrentLayout + 1) % m_uLayoutCount;
 			CreatePegs(m_uCurrentLayout);
 		}
+	}
+
+	bool IsHitAllPegsGate() const
+	{
+		if (!m_bGateActive)
+			return false;
+		return m_xCurrentGateData.eObjectiveType == PINBALL_OBJ_HIT_ALL_PEGS
+			|| (m_xCurrentGateData.eObjectiveType == PINBALL_OBJ_COMBINED && m_xCurrentGateData.bHasAllPegsObjective);
 	}
 
 	bool CheckGateObjectiveMet() const
@@ -1459,9 +1469,9 @@ private:
 		if (xPeg.HasComponent<Zenith_ModelComponent>())
 		{
 			Zenith_ModelComponent& xModel = xPeg.GetComponent<Zenith_ModelComponent>();
-			if (xModel.GetModelInstance())
+			if (xModel.GetNumMeshEntries() > 0)
 			{
-				xModel.GetModelInstance()->SetMaterial(0, xMaterial.Get());
+				xModel.GetMaterialHandleAtIndex(0).Set(xMaterial.Get());
 			}
 		}
 	}
@@ -1480,10 +1490,19 @@ private:
 				if (m_afPegFlashTimer[i] <= 0.f)
 				{
 					m_afPegFlashTimer[i] = 0.f;
-					// Transition from flash to steady lit material
 					if (m_abPegHit[i])
 					{
-						SwapPegMaterial(pxScene, i, m_xPegHitMaterial);
+						if (IsHitAllPegsGate())
+						{
+							// Hit-all-pegs: flash -> steady emissive (stays lit)
+							SwapPegMaterial(pxScene, i, m_xPegHitMaterial);
+						}
+						else
+						{
+							// Other gates: revert to normal material
+							SwapPegMaterial(pxScene, i, m_xObstacleMaterial);
+							m_abPegHit[i] = false;
+						}
 					}
 				}
 			}

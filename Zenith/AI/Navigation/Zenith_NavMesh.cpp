@@ -378,17 +378,8 @@ void Zenith_NavMesh::BuildSpatialGrid()
 		const Zenith_NavMeshPolygon& xPoly = m_axPolygons.Get(uPoly);
 
 		// Get polygon bounds
-		Zenith_Maths::Vector3 xPolyMin = m_axVertices.Get(xPoly.m_axVertexIndices.Get(0));
-		Zenith_Maths::Vector3 xPolyMax = xPolyMin;
-
-		for (uint32_t u = 1; u < xPoly.m_axVertexIndices.GetSize(); ++u)
-		{
-			const Zenith_Maths::Vector3& xV = m_axVertices.Get(xPoly.m_axVertexIndices.Get(u));
-			xPolyMin.x = std::min(xPolyMin.x, xV.x);
-			xPolyMin.z = std::min(xPolyMin.z, xV.z);
-			xPolyMax.x = std::max(xPolyMax.x, xV.x);
-			xPolyMax.z = std::max(xPolyMax.z, xV.z);
-		}
+		Zenith_Maths::Vector3 xPolyMin, xPolyMax;
+		ComputePolygonBounds2D(xPoly, m_axVertices, xPolyMin, xPolyMax);
 
 		// Get cell range
 		int32_t iMinX, iMinZ, iMaxX, iMaxZ;
@@ -410,6 +401,25 @@ void Zenith_NavMesh::BuildSpatialGrid()
 	}
 }
 
+void Zenith_NavMesh::ComputePolygonBounds2D(const Zenith_NavMeshPolygon& xPoly,
+	const Zenith_Vector<Zenith_Maths::Vector3>& axVertices,
+	Zenith_Maths::Vector3& xPolyMinOut, Zenith_Maths::Vector3& xPolyMaxOut)
+{
+	Zenith_Assert(xPoly.m_axVertexIndices.GetSize() > 0, "Polygon has no vertices");
+
+	xPolyMinOut = axVertices.Get(xPoly.m_axVertexIndices.Get(0));
+	xPolyMaxOut = xPolyMinOut;
+
+	for (uint32_t u = 1; u < xPoly.m_axVertexIndices.GetSize(); ++u)
+	{
+		const Zenith_Maths::Vector3& xV = axVertices.Get(xPoly.m_axVertexIndices.Get(u));
+		xPolyMinOut.x = std::min(xPolyMinOut.x, xV.x);
+		xPolyMinOut.z = std::min(xPolyMinOut.z, xV.z);
+		xPolyMaxOut.x = std::max(xPolyMaxOut.x, xV.x);
+		xPolyMaxOut.z = std::max(xPolyMaxOut.z, xV.z);
+	}
+}
+
 void Zenith_NavMesh::GetGridCoords(const Zenith_Maths::Vector3& xPos, int32_t& iX, int32_t& iZ) const
 {
 	iX = static_cast<int32_t>((xPos.x - m_xBoundsMin.x) / m_fGridCellSize);
@@ -421,6 +431,33 @@ void Zenith_NavMesh::GetGridCoords(const Zenith_Maths::Vector3& xPos, int32_t& i
 uint32_t Zenith_NavMesh::GetGridCellIndex(int32_t iX, int32_t iZ) const
 {
 	return static_cast<uint32_t>(iZ) * m_uGridWidth + static_cast<uint32_t>(iX);
+}
+
+void Zenith_NavMesh::FindNearestPolygonInCell(uint32_t uCellIndex, const Zenith_Maths::Vector3& xPoint,
+	float& fMinDistSq, uint32_t& uPolyOut, Zenith_Maths::Vector3& xNearestOut) const
+{
+	if (uCellIndex >= m_axGridCells.GetSize())
+	{
+		return;
+	}
+
+	const GridCell& xCell = m_axGridCells.Get(uCellIndex);
+
+	for (uint32_t u = 0; u < xCell.m_axPolygonIndices.GetSize(); ++u)
+	{
+		uint32_t uPoly = xCell.m_axPolygonIndices.Get(u);
+		const Zenith_NavMeshPolygon& xPoly = m_axPolygons.Get(uPoly);
+
+		Zenith_Maths::Vector3 xClosest = xPoly.GetClosestPoint(xPoint, m_axVertices);
+		float fDistSq = Zenith_Maths::LengthSq(xPoint - xClosest);
+
+		if (fDistSq < fMinDistSq)
+		{
+			fMinDistSq = fDistSq;
+			uPolyOut = uPoly;
+			xNearestOut = xClosest;
+		}
+	}
 }
 
 bool Zenith_NavMesh::FindNearestPolygon(const Zenith_Maths::Vector3& xPoint,
@@ -463,23 +500,7 @@ bool Zenith_NavMesh::FindNearestPolygon(const Zenith_Maths::Vector3& xPoint,
 				}
 
 				uint32_t uCellIndex = GetGridCellIndex(iX, iZ);
-				const GridCell& xCell = m_axGridCells.Get(uCellIndex);
-
-				for (uint32_t u = 0; u < xCell.m_axPolygonIndices.GetSize(); ++u)
-				{
-					uint32_t uPoly = xCell.m_axPolygonIndices.Get(u);
-					const Zenith_NavMeshPolygon& xPoly = m_axPolygons.Get(uPoly);
-
-					Zenith_Maths::Vector3 xClosest = xPoly.GetClosestPoint(xPoint, m_axVertices);
-					float fDistSq = Zenith_Maths::LengthSq(xPoint - xClosest);
-
-					if (fDistSq < fMinDistSq)
-					{
-						fMinDistSq = fDistSq;
-						uPolyOut = uPoly;
-						xNearestOut = xClosest;
-					}
-				}
+				FindNearestPolygonInCell(uCellIndex, xPoint, fMinDistSq, uPolyOut, xNearestOut);
 			}
 		}
 
@@ -745,6 +766,81 @@ bool Zenith_NavMesh::SaveToFile(const std::string& strPath) const
 }
 
 #ifdef ZENITH_TOOLS
+void Zenith_NavMesh::DebugDrawEdges(const Zenith_NavMeshPolygon& xPoly, const Zenith_Maths::Vector3& xOffset,
+	const Zenith_Maths::Vector3& xEdgeColor) const
+{
+	for (uint32_t u = 0; u < xPoly.m_axVertexIndices.GetSize(); ++u)
+	{
+		const Zenith_Maths::Vector3& xV1 = m_axVertices.Get(xPoly.m_axVertexIndices.Get(u));
+		const Zenith_Maths::Vector3& xV2 = m_axVertices.Get(xPoly.m_axVertexIndices.Get((u + 1) % xPoly.m_axVertexIndices.GetSize()));
+
+		Flux_Primitives::AddLine(xV1 + xOffset, xV2 + xOffset, xEdgeColor, 0.02f);
+	}
+}
+
+void Zenith_NavMesh::DebugDrawBoundaryEdges(const Zenith_NavMeshPolygon& xPoly, const Zenith_Maths::Vector3& xOffset,
+	const Zenith_Maths::Vector3& xBoundaryColor) const
+{
+	for (uint32_t u = 0; u < xPoly.m_axVertexIndices.GetSize(); ++u)
+	{
+		// Check if THIS specific edge has a neighbor (check per-edge, not per-polygon)
+		bool bEdgeHasNeighbor = false;
+		if (u < xPoly.m_axNeighborIndices.GetSize())
+		{
+			int32_t iNeighborIdx = xPoly.m_axNeighborIndices.Get(u);
+			bEdgeHasNeighbor = (iNeighborIdx >= 0 && iNeighborIdx != static_cast<int32_t>(UINT32_MAX));
+		}
+
+		// Draw boundary edge if no neighbor on this edge
+		if (!bEdgeHasNeighbor)
+		{
+			const Zenith_Maths::Vector3& xV1 = m_axVertices.Get(xPoly.m_axVertexIndices.Get(u));
+			const Zenith_Maths::Vector3& xV2 = m_axVertices.Get(xPoly.m_axVertexIndices.Get((u + 1) % xPoly.m_axVertexIndices.GetSize()));
+			Flux_Primitives::AddLine(xV1 + xOffset, xV2 + xOffset, xBoundaryColor, 0.04f);
+		}
+	}
+}
+
+void Zenith_NavMesh::DebugDrawPolygonFill(const Zenith_NavMeshPolygon& xPoly, const Zenith_Maths::Vector3& xOffset,
+	const Zenith_Maths::Vector3& xWalkableColor) const
+{
+	// Triangulate the polygon using fan triangulation from first vertex
+	// Works for convex polygons (which NavMesh polygons should be)
+	if (xPoly.m_axVertexIndices.GetSize() >= 3)
+	{
+		const Zenith_Maths::Vector3& xV0 = m_axVertices.Get(xPoly.m_axVertexIndices.Get(0)) + xOffset;
+
+		for (uint32_t v = 1; v + 1 < xPoly.m_axVertexIndices.GetSize(); ++v)
+		{
+			const Zenith_Maths::Vector3& xV1 = m_axVertices.Get(xPoly.m_axVertexIndices.Get(v)) + xOffset;
+			const Zenith_Maths::Vector3& xV2 = m_axVertices.Get(xPoly.m_axVertexIndices.Get(v + 1)) + xOffset;
+
+			Flux_Primitives::AddTriangle(xV0, xV1, xV2, xWalkableColor);
+		}
+	}
+}
+
+void Zenith_NavMesh::DebugDrawNeighborConnections(uint32_t uPoly, const Zenith_NavMeshPolygon& xPoly,
+	const Zenith_Maths::Vector3& xOffset, const Zenith_Maths::Vector3& xNeighborColor) const
+{
+	for (uint32_t n = 0; n < xPoly.m_axNeighborIndices.GetSize(); ++n)
+	{
+		uint32_t uNeighborIdx = xPoly.m_axNeighborIndices.Get(n);
+		if (uNeighborIdx != UINT32_MAX && uNeighborIdx < m_axPolygons.GetSize())
+		{
+			// Only draw if this poly index is less than neighbor to avoid duplicates
+			if (uPoly < uNeighborIdx)
+			{
+				const Zenith_NavMeshPolygon& xNeighbor = m_axPolygons.Get(uNeighborIdx);
+				Flux_Primitives::AddLine(
+					xPoly.m_xCenter + xOffset,
+					xNeighbor.m_xCenter + xNeighbor.m_xNormal * 0.05f,
+					xNeighborColor, 0.01f);
+			}
+		}
+	}
+}
+
 void Zenith_NavMesh::DebugDraw() const
 {
 	if (!Zenith_AIDebugVariables::s_bEnableAllAIDebug)
@@ -793,79 +889,24 @@ void Zenith_NavMesh::DebugDraw() const
 		const Zenith_NavMeshPolygon& xPoly = m_axPolygons.Get(uPoly);
 		Zenith_Maths::Vector3 xOffset = xPoly.m_xNormal * fVisualOffset;
 
-		// Draw edges (controlled by s_bDrawNavMeshEdges)
 		if (Zenith_AIDebugVariables::s_bDrawNavMeshEdges)
 		{
-			for (uint32_t u = 0; u < xPoly.m_axVertexIndices.GetSize(); ++u)
-			{
-				const Zenith_Maths::Vector3& xV1 = m_axVertices.Get(xPoly.m_axVertexIndices.Get(u));
-				const Zenith_Maths::Vector3& xV2 = m_axVertices.Get(xPoly.m_axVertexIndices.Get((u + 1) % xPoly.m_axVertexIndices.GetSize()));
-
-				Flux_Primitives::AddLine(xV1 + xOffset, xV2 + xOffset, xEdgeColor, 0.02f);
-			}
+			DebugDrawEdges(xPoly, xOffset, xEdgeColor);
 		}
 
-		// Draw boundary edges (edges with no neighbor) in red
 		if (Zenith_AIDebugVariables::s_bDrawNavMeshBoundary)
 		{
-			for (uint32_t u = 0; u < xPoly.m_axVertexIndices.GetSize(); ++u)
-			{
-				// Check if THIS specific edge has a neighbor (check per-edge, not per-polygon)
-				bool bEdgeHasNeighbor = false;
-				if (u < xPoly.m_axNeighborIndices.GetSize())
-				{
-					int32_t iNeighborIdx = xPoly.m_axNeighborIndices.Get(u);
-					bEdgeHasNeighbor = (iNeighborIdx >= 0 && iNeighborIdx != static_cast<int32_t>(UINT32_MAX));
-				}
-
-				// Draw boundary edge if no neighbor on this edge
-				if (!bEdgeHasNeighbor)
-				{
-					const Zenith_Maths::Vector3& xV1 = m_axVertices.Get(xPoly.m_axVertexIndices.Get(u));
-					const Zenith_Maths::Vector3& xV2 = m_axVertices.Get(xPoly.m_axVertexIndices.Get((u + 1) % xPoly.m_axVertexIndices.GetSize()));
-					Flux_Primitives::AddLine(xV1 + xOffset, xV2 + xOffset, xBoundaryColor, 0.04f);
-				}
-			}
+			DebugDrawBoundaryEdges(xPoly, xOffset, xBoundaryColor);
 		}
 
-		// Draw polygon fill as triangles (controlled by s_bDrawNavMeshPolygons)
 		if (Zenith_AIDebugVariables::s_bDrawNavMeshPolygons)
 		{
-			// Triangulate the polygon using fan triangulation from first vertex
-			// Works for convex polygons (which NavMesh polygons should be)
-			if (xPoly.m_axVertexIndices.GetSize() >= 3)
-			{
-				const Zenith_Maths::Vector3& xV0 = m_axVertices.Get(xPoly.m_axVertexIndices.Get(0)) + xOffset;
-
-				for (uint32_t v = 1; v + 1 < xPoly.m_axVertexIndices.GetSize(); ++v)
-				{
-					const Zenith_Maths::Vector3& xV1 = m_axVertices.Get(xPoly.m_axVertexIndices.Get(v)) + xOffset;
-					const Zenith_Maths::Vector3& xV2 = m_axVertices.Get(xPoly.m_axVertexIndices.Get(v + 1)) + xOffset;
-
-					Flux_Primitives::AddTriangle(xV0, xV1, xV2, xWalkableColor);
-				}
-			}
+			DebugDrawPolygonFill(xPoly, xOffset, xWalkableColor);
 		}
 
-		// Draw neighbor connections (controlled by s_bDrawNavMeshNeighbors)
 		if (Zenith_AIDebugVariables::s_bDrawNavMeshNeighbors)
 		{
-			for (uint32_t n = 0; n < xPoly.m_axNeighborIndices.GetSize(); ++n)
-			{
-				uint32_t uNeighborIdx = xPoly.m_axNeighborIndices.Get(n);
-				if (uNeighborIdx != UINT32_MAX && uNeighborIdx < m_axPolygons.GetSize())
-				{
-					// Only draw if this poly index is less than neighbor to avoid duplicates
-					if (uPoly < uNeighborIdx)
-					{
-						const Zenith_NavMeshPolygon& xNeighbor = m_axPolygons.Get(uNeighborIdx);
-						Flux_Primitives::AddLine(
-							xPoly.m_xCenter + xOffset,
-							xNeighbor.m_xCenter + xNeighbor.m_xNormal * 0.05f,
-							xNeighborColor, 0.01f);
-					}
-				}
-			}
+			DebugDrawNeighborConnections(uPoly, xPoly, xOffset, xNeighborColor);
 		}
 	}
 }

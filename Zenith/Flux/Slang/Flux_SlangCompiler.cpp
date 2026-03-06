@@ -210,53 +210,37 @@ static SlangSourceLanguageType DetectSourceLanguage(const std::string& strPath)
 	return SLANG_LANG_GLSL;
 }
 
-bool Flux_SlangCompiler::Compile(const std::string& strPath, SlangShaderStage eStage, Flux_SlangCompileResult& xResultOut)
+void Flux_SlangCompiler::SplitFilePath(const std::string& strPath, std::string& strFileNameOut, std::string& strDirectoryOut)
 {
-	xResultOut.m_bSuccess = false;
-	xResultOut.m_strError.clear();
-	xResultOut.m_axSpirv.Clear();
-
-	uint64_t ulFileSize = 0;
-	char* pcFileData = Zenith_FileAccess::ReadFile(strPath.c_str(), ulFileSize);
-	if (!pcFileData)
-	{
-		xResultOut.m_strError = "Failed to read shader file: " + strPath;
-		return false;
-	}
-
-	std::string strSource(pcFileData, ulFileSize);
-	Zenith_MemoryManagement::Deallocate(pcFileData);
-
 	size_t ulLastSlash = strPath.find_last_of("/\\");
-	std::string strFileName = (ulLastSlash != std::string::npos) ? strPath.substr(ulLastSlash + 1) : strPath;
-	std::string strDirectory = (ulLastSlash != std::string::npos) ? strPath.substr(0, ulLastSlash) : ".";
-
-	SlangSourceLanguageType eLanguage = DetectSourceLanguage(strPath);
-	return CompileFromSource(strSource, "main", eStage, xResultOut, strFileName.c_str(), strDirectory.c_str(), eLanguage);
+	if (ulLastSlash != std::string::npos)
+	{
+		strFileNameOut = strPath.substr(ulLastSlash + 1);
+		strDirectoryOut = strPath.substr(0, ulLastSlash);
+	}
+	else
+	{
+		strFileNameOut = strPath;
+		strDirectoryOut = ".";
+	}
 }
 
-bool Flux_SlangCompiler::CompileFromSource(const std::string& strSource, const std::string& strEntryPoint,
-											SlangShaderStage eStage, Flux_SlangCompileResult& xResultOut,
-											const char* szSourceName, const char* szDirectory,
-											SlangSourceLanguageType eLanguage)
+bool Flux_SlangCompiler::CreateConfiguredCompileRequest(void*& pxRequestOut, int& iTargetIndexOut,
+														const char* const* aszSearchPaths, u_int uSearchPathCount,
+														std::string& strErrorOut)
 {
-	xResultOut.m_bSuccess = false;
-	xResultOut.m_strError.clear();
-	xResultOut.m_axSpirv.Clear();
-
 	if (!s_pxGlobalSession)
 	{
-		xResultOut.m_strError = "Slang compiler not initialized";
+		strErrorOut = "Slang compiler not initialized";
 		return false;
 	}
 
-	// Use the compile request API for explicit stage specification
 	SlangCompileRequest* pxRequest = nullptr;
 #pragma warning(suppress: 4996)
 	SlangResult xResult = s_pxGlobalSession->createCompileRequest(&pxRequest);
 	if (SLANG_FAILED(xResult) || !pxRequest)
 	{
-		xResultOut.m_strError = "Failed to create compile request";
+		strErrorOut = "Failed to create compile request";
 		return false;
 	}
 
@@ -275,13 +259,120 @@ bool Flux_SlangCompiler::CompileFromSource(const std::string& strSource, const s
 	spProcessCommandLineArguments(pxRequest, aszArgs, 2);
 
 	// Add search paths
-	if (szDirectory && szDirectory[0] != '\0')
+	for (u_int u = 0; u < uSearchPathCount; u++)
 	{
-		spAddSearchPath(pxRequest, szDirectory);
+		if (aszSearchPaths[u] && aszSearchPaths[u][0] != '\0')
+		{
+			spAddSearchPath(pxRequest, aszSearchPaths[u]);
+		}
 	}
 #ifdef SHADER_SOURCE_ROOT
 	spAddSearchPath(pxRequest, SHADER_SOURCE_ROOT);
 #endif
+
+	pxRequestOut = pxRequest;
+	iTargetIndexOut = iTargetIndex;
+	return true;
+}
+
+bool Flux_SlangCompiler::ExtractSpirvBlob(void* pxRequestVoid, int iEntryPoint, int iTargetIndex,
+										  Zenith_Vector<uint32_t>& axSpirvOut, std::string& strErrorOut)
+{
+	SlangCompileRequest* pxRequest = static_cast<SlangCompileRequest*>(pxRequestVoid);
+	Slang::ComPtr<slang::IBlob> pxCode;
+	SlangResult xResult = spGetEntryPointCodeBlob(pxRequest, iEntryPoint, iTargetIndex, pxCode.writeRef());
+	if (SLANG_FAILED(xResult) || !pxCode)
+	{
+		strErrorOut = "Failed to get SPIR-V output";
+		return false;
+	}
+
+	const uint32_t* puCode = (const uint32_t*)pxCode->getBufferPointer();
+	size_t ulCodeSize = pxCode->getBufferSize() / sizeof(uint32_t);
+	axSpirvOut.Reserve(static_cast<u_int>(ulCodeSize));
+	for (size_t u = 0; u < ulCodeSize; u++)
+	{
+		axSpirvOut.PushBack(puCode[u]);
+	}
+	return true;
+}
+
+bool Flux_SlangCompiler::ExtractParameterBinding(void* pxParamVoid, void* pxTypeLayoutVoid, Flux_ReflectedBinding& xBindingOut)
+{
+	slang::VariableLayoutReflection* pxParam = static_cast<slang::VariableLayoutReflection*>(pxParamVoid);
+	slang::TypeLayoutReflection* pxTypeLayout = static_cast<slang::TypeLayoutReflection*>(pxTypeLayoutVoid);
+
+	// Skip stage inputs/outputs (varyings) - we only want actual descriptor bindings
+	slang::ParameterCategory eCategory = pxParam->getCategory();
+	if (eCategory == slang::ParameterCategory::VaryingInput ||
+		eCategory == slang::ParameterCategory::VaryingOutput)
+	{
+		return false;
+	}
+
+	xBindingOut.m_strName = pxParam->getName() ? pxParam->getName() : "";
+
+	// For anonymous uniform blocks (common in GLSL), try to use the type name if no instance name
+	if (xBindingOut.m_strName.empty())
+	{
+		slang::TypeReflection* pxType = pxTypeLayout->getType();
+		if (pxType && pxType->getName())
+		{
+			xBindingOut.m_strName = pxType->getName();
+		}
+	}
+
+	xBindingOut.m_uSet = static_cast<u_int>(pxParam->getBindingSpace());
+	xBindingOut.m_uBinding = static_cast<u_int>(pxParam->getBindingIndex());
+	xBindingOut.m_eType = SlangTypeToDescriptorType(pxTypeLayout);
+	xBindingOut.m_uSize = static_cast<u_int>(pxTypeLayout->getSize());
+	return true;
+}
+
+bool Flux_SlangCompiler::Compile(const std::string& strPath, SlangShaderStage eStage, Flux_SlangCompileResult& xResultOut)
+{
+	xResultOut.m_bSuccess = false;
+	xResultOut.m_strError.clear();
+	xResultOut.m_axSpirv.Clear();
+
+	uint64_t ulFileSize = 0;
+	char* pcFileData = Zenith_FileAccess::ReadFile(strPath.c_str(), ulFileSize);
+	if (!pcFileData)
+	{
+		xResultOut.m_strError = "Failed to read shader file: " + strPath;
+		return false;
+	}
+
+	std::string strSource(pcFileData, ulFileSize);
+	Zenith_MemoryManagement::Deallocate(pcFileData);
+
+	std::string strFileName, strDirectory;
+	SplitFilePath(strPath, strFileName, strDirectory);
+
+	SlangSourceLanguageType eLanguage = DetectSourceLanguage(strPath);
+	return CompileFromSource(strSource, "main", eStage, xResultOut, strFileName.c_str(), strDirectory.c_str(), eLanguage);
+}
+
+bool Flux_SlangCompiler::CompileFromSource(const std::string& strSource, const std::string& strEntryPoint,
+											SlangShaderStage eStage, Flux_SlangCompileResult& xResultOut,
+											const char* szSourceName, const char* szDirectory,
+											SlangSourceLanguageType eLanguage)
+{
+	xResultOut.m_bSuccess = false;
+	xResultOut.m_strError.clear();
+	xResultOut.m_axSpirv.Clear();
+
+	// Create configured compile request
+	const char* aszSearchPaths[] = { szDirectory };
+	u_int uSearchPathCount = (szDirectory && szDirectory[0] != '\0') ? 1 : 0;
+
+	void* pxRequestVoid = nullptr;
+	int iTargetIndex = 0;
+	if (!CreateConfiguredCompileRequest(pxRequestVoid, iTargetIndex, aszSearchPaths, uSearchPathCount, xResultOut.m_strError))
+	{
+		return false;
+	}
+	SlangCompileRequest* pxRequest = static_cast<SlangCompileRequest*>(pxRequestVoid);
 
 	// Add translation unit with detected or specified language
 	// Cast our enum to the Slang API enum (values are intentionally matching)
@@ -307,7 +398,7 @@ bool Flux_SlangCompiler::CompileFromSource(const std::string& strSource, const s
 	spAddEntryPoint(pxRequest, iTranslationUnit, strEntryPoint.c_str(), eSlangStage);
 
 	// Compile
-	xResult = spCompile(pxRequest);
+	SlangResult xResult = spCompile(pxRequest);
 
 	// Get diagnostics
 	const char* szDiagnostics = spGetDiagnosticOutput(pxRequest);
@@ -329,21 +420,10 @@ bool Flux_SlangCompiler::CompileFromSource(const std::string& strSource, const s
 	}
 
 	// Get the SPIR-V output
-	Slang::ComPtr<slang::IBlob> pxCode;
-	xResult = spGetEntryPointCodeBlob(pxRequest, 0, iTargetIndex, pxCode.writeRef());
-	if (SLANG_FAILED(xResult) || !pxCode)
+	if (!ExtractSpirvBlob(pxRequest, 0, iTargetIndex, xResultOut.m_axSpirv, xResultOut.m_strError))
 	{
-		xResultOut.m_strError = "Failed to get SPIR-V output";
 		spDestroyCompileRequest(pxRequest);
 		return false;
-	}
-
-	const uint32_t* puCode = (const uint32_t*)pxCode->getBufferPointer();
-	size_t ulCodeSize = pxCode->getBufferSize() / sizeof(uint32_t);
-	xResultOut.m_axSpirv.Reserve(static_cast<u_int>(ulCodeSize));
-	for (size_t u = 0; u < ulCodeSize; u++)
-	{
-		xResultOut.m_axSpirv.PushBack(puCode[u]);
 	}
 
 	// Get reflection data (SlangReflection* is cast to ProgramLayout*)
@@ -365,12 +445,6 @@ bool Flux_SlangCompiler::CompileGraphicsPipeline(const std::string& strVertexPat
 	xResultOut.m_strError.clear();
 	xResultOut.m_axVertexSpirv.Clear();
 	xResultOut.m_axFragmentSpirv.Clear();
-
-	if (!s_pxGlobalSession)
-	{
-		xResultOut.m_strError = "Slang compiler not initialized";
-		return false;
-	}
 
 	// Read vertex shader source
 	uint64_t ulVertexSize = 0;
@@ -395,45 +469,29 @@ bool Flux_SlangCompiler::CompileGraphicsPipeline(const std::string& strVertexPat
 	Zenith_MemoryManagement::Deallocate(pcFragmentData);
 
 	// Extract file names and directories
-	size_t ulVertexSlash = strVertexPath.find_last_of("/\\");
-	std::string strVertexFileName = (ulVertexSlash != std::string::npos) ? strVertexPath.substr(ulVertexSlash + 1) : strVertexPath;
-	std::string strVertexDir = (ulVertexSlash != std::string::npos) ? strVertexPath.substr(0, ulVertexSlash) : ".";
+	std::string strVertexFileName, strVertexDir;
+	SplitFilePath(strVertexPath, strVertexFileName, strVertexDir);
 
-	size_t ulFragmentSlash = strFragmentPath.find_last_of("/\\");
-	std::string strFragmentFileName = (ulFragmentSlash != std::string::npos) ? strFragmentPath.substr(ulFragmentSlash + 1) : strFragmentPath;
-	std::string strFragmentDir = (ulFragmentSlash != std::string::npos) ? strFragmentPath.substr(0, ulFragmentSlash) : ".";
+	std::string strFragmentFileName, strFragmentDir;
+	SplitFilePath(strFragmentPath, strFragmentFileName, strFragmentDir);
 
-	// Create compile request
-	SlangCompileRequest* pxRequest = nullptr;
-#pragma warning(suppress: 4996)
-	SlangResult xResult = s_pxGlobalSession->createCompileRequest(&pxRequest);
-	if (SLANG_FAILED(xResult) || !pxRequest)
-	{
-		xResultOut.m_strError = "Failed to create compile request";
-		return false;
-	}
-
-	// Set target to SPIR-V
-	int iTargetIndex = spAddCodeGenTarget(pxRequest, SLANG_SPIRV);
-	spSetTargetProfile(pxRequest, iTargetIndex, s_pxGlobalSession->findProfile("spirv_1_3"));
-
-	// Compiler flags - preserve params is critical for interface matching
-	// Note: Avoid -fspv-reflect as it emits SPV_GOOGLE_user_type requiring VK_GOOGLE_user_type
-	const char* aszArgs[] = {
-		"-preserve-params",
-		"-O0"
-	};
-	spProcessCommandLineArguments(pxRequest, aszArgs, 2);
-
-	// Add search paths
-	spAddSearchPath(pxRequest, strVertexDir.c_str());
+	// Build search paths (deduplicate if both shaders are in the same directory)
+	const char* aszSearchPaths[2] = { strVertexDir.c_str(), nullptr };
+	u_int uSearchPathCount = 1;
 	if (strFragmentDir != strVertexDir)
 	{
-		spAddSearchPath(pxRequest, strFragmentDir.c_str());
+		aszSearchPaths[1] = strFragmentDir.c_str();
+		uSearchPathCount = 2;
 	}
-#ifdef SHADER_SOURCE_ROOT
-	spAddSearchPath(pxRequest, SHADER_SOURCE_ROOT);
-#endif
+
+	// Create configured compile request
+	void* pxRequestVoid = nullptr;
+	int iTargetIndex = 0;
+	if (!CreateConfiguredCompileRequest(pxRequestVoid, iTargetIndex, aszSearchPaths, uSearchPathCount, xResultOut.m_strError))
+	{
+		return false;
+	}
+	SlangCompileRequest* pxRequest = static_cast<SlangCompileRequest*>(pxRequestVoid);
 
 	// Detect source languages
 	SlangSourceLanguageType eVertexLang = DetectSourceLanguage(strVertexPath);
@@ -456,7 +514,7 @@ bool Flux_SlangCompiler::CompileGraphicsPipeline(const std::string& strVertexPat
 	int iFragmentEntry = spAddEntryPoint(pxRequest, iFragmentUnit, "main", SLANG_STAGE_FRAGMENT);
 
 	// Compile
-	xResult = spCompile(pxRequest);
+	SlangResult xResult = spCompile(pxRequest);
 
 	// Get diagnostics
 	const char* szDiagnostics = spGetDiagnosticOutput(pxRequest);
@@ -478,39 +536,17 @@ bool Flux_SlangCompiler::CompileGraphicsPipeline(const std::string& strVertexPat
 	}
 
 	// Get vertex shader SPIR-V
-	Slang::ComPtr<slang::IBlob> pxVertexCode;
-	xResult = spGetEntryPointCodeBlob(pxRequest, iVertexEntry, iTargetIndex, pxVertexCode.writeRef());
-	if (SLANG_FAILED(xResult) || !pxVertexCode)
+	if (!ExtractSpirvBlob(pxRequest, iVertexEntry, iTargetIndex, xResultOut.m_axVertexSpirv, xResultOut.m_strError))
 	{
-		xResultOut.m_strError = "Failed to get vertex SPIR-V output";
 		spDestroyCompileRequest(pxRequest);
 		return false;
-	}
-
-	const uint32_t* puVertexCode = (const uint32_t*)pxVertexCode->getBufferPointer();
-	size_t ulVertexCodeSize = pxVertexCode->getBufferSize() / sizeof(uint32_t);
-	xResultOut.m_axVertexSpirv.Reserve(static_cast<u_int>(ulVertexCodeSize));
-	for (size_t u = 0; u < ulVertexCodeSize; u++)
-	{
-		xResultOut.m_axVertexSpirv.PushBack(puVertexCode[u]);
 	}
 
 	// Get fragment shader SPIR-V
-	Slang::ComPtr<slang::IBlob> pxFragmentCode;
-	xResult = spGetEntryPointCodeBlob(pxRequest, iFragmentEntry, iTargetIndex, pxFragmentCode.writeRef());
-	if (SLANG_FAILED(xResult) || !pxFragmentCode)
+	if (!ExtractSpirvBlob(pxRequest, iFragmentEntry, iTargetIndex, xResultOut.m_axFragmentSpirv, xResultOut.m_strError))
 	{
-		xResultOut.m_strError = "Failed to get fragment SPIR-V output";
 		spDestroyCompileRequest(pxRequest);
 		return false;
-	}
-
-	const uint32_t* puFragmentCode = (const uint32_t*)pxFragmentCode->getBufferPointer();
-	size_t ulFragmentCodeSize = pxFragmentCode->getBufferSize() / sizeof(uint32_t);
-	xResultOut.m_axFragmentSpirv.Reserve(static_cast<u_int>(ulFragmentCodeSize));
-	for (size_t u = 0; u < ulFragmentCodeSize; u++)
-	{
-		xResultOut.m_axFragmentSpirv.PushBack(puFragmentCode[u]);
 	}
 
 	// Get reflection data
@@ -542,16 +578,6 @@ void Flux_SlangCompiler::ExtractReflection(void* pxLayoutVoid, Flux_ShaderReflec
 			continue;
 		}
 
-		// Skip stage inputs/outputs (varyings) - we only want actual descriptor bindings
-		// Varyings have location semantics, not binding/set semantics, and would conflict
-		// with actual uniform bindings when merging vertex + fragment reflection
-		slang::ParameterCategory eCategory = pxParam->getCategory();
-		if (eCategory == slang::ParameterCategory::VaryingInput ||
-			eCategory == slang::ParameterCategory::VaryingOutput)
-		{
-			continue;
-		}
-
 		slang::TypeLayoutReflection* pxTypeLayout = pxParam->getTypeLayout();
 		if (!pxTypeLayout)
 		{
@@ -559,24 +585,10 @@ void Flux_SlangCompiler::ExtractReflection(void* pxLayoutVoid, Flux_ShaderReflec
 		}
 
 		Flux_ReflectedBinding xBinding;
-		xBinding.m_strName = pxParam->getName() ? pxParam->getName() : "";
-
-		// For anonymous uniform blocks (common in GLSL), try to use the type name if no instance name
-		if (xBinding.m_strName.empty())
+		if (ExtractParameterBinding(pxParam, pxTypeLayout, xBinding))
 		{
-			slang::TypeReflection* pxType = pxTypeLayout->getType();
-			if (pxType && pxType->getName())
-			{
-				xBinding.m_strName = pxType->getName();
-			}
+			xReflectionOut.AddBinding(xBinding);
 		}
-
-		xBinding.m_uSet = static_cast<u_int>(pxParam->getBindingSpace());
-		xBinding.m_uBinding = static_cast<u_int>(pxParam->getBindingIndex());
-		xBinding.m_eType = SlangTypeToDescriptorType(pxTypeLayout);
-		xBinding.m_uSize = static_cast<u_int>(pxTypeLayout->getSize());
-
-		xReflectionOut.AddBinding(xBinding);
 	}
 
 	// For combined graphics pipelines, also check entry-point-specific parameters
@@ -597,15 +609,6 @@ void Flux_SlangCompiler::ExtractReflection(void* pxLayoutVoid, Flux_ShaderReflec
 				continue;
 			}
 
-			slang::ParameterCategory eCategory = pxParam->getCategory();
-
-			// Skip varyings
-			if (eCategory == slang::ParameterCategory::VaryingInput ||
-				eCategory == slang::ParameterCategory::VaryingOutput)
-			{
-				continue;
-			}
-
 			slang::TypeLayoutReflection* pxTypeLayout = pxParam->getTypeLayout();
 			if (!pxTypeLayout)
 			{
@@ -613,21 +616,10 @@ void Flux_SlangCompiler::ExtractReflection(void* pxLayoutVoid, Flux_ShaderReflec
 			}
 
 			Flux_ReflectedBinding xBinding;
-			xBinding.m_strName = pxParam->getName() ? pxParam->getName() : "";
-
-			if (xBinding.m_strName.empty())
+			if (!ExtractParameterBinding(pxParam, pxTypeLayout, xBinding))
 			{
-				slang::TypeReflection* pxType = pxTypeLayout->getType();
-				if (pxType && pxType->getName())
-				{
-					xBinding.m_strName = pxType->getName();
-				}
+				continue;
 			}
-
-			xBinding.m_uSet = static_cast<u_int>(pxParam->getBindingSpace());
-			xBinding.m_uBinding = static_cast<u_int>(pxParam->getBindingIndex());
-			xBinding.m_eType = SlangTypeToDescriptorType(pxTypeLayout);
-			xBinding.m_uSize = static_cast<u_int>(pxTypeLayout->getSize());
 
 			// Check if this binding already exists (avoid duplicates)
 			bool bExists = false;

@@ -170,4 +170,33 @@ private:
 	static Flux_MeshGeometry* CreateMeshFromData(
 		const Zenith_Vector<Zenith_Maths::Vector3>& xPositions,
 		const Zenith_Vector<uint32_t>& xIndices);
+
+	friend class Zenith_UnitTests;
+
+	/**
+	 * Find extreme vertex indices along all 6 axis directions
+	 * @param xPositions Vertex positions to scan
+	 * @param auOutIndices Output: [minX, maxX, minY, maxY, minZ, maxZ]
+	 */
+	static void FindExtremeVertexIndices(
+		const Zenith_Vector<Zenith_Maths::Vector3>& xPositions,
+		uint32_t auOutIndices[6]);
+
+	/**
+	 * Compute AABB from a positions array (overload of the mesh geometry version)
+	 */
+	static void ComputeAABBFromPositions(
+		const Zenith_Vector<Zenith_Maths::Vector3>& xPositions,
+		Zenith_Maths::Vector3& xMinOut,
+		Zenith_Maths::Vector3& xMaxOut);
+
+	/**
+	 * Compute smooth vertex normals from positions and indices
+	 */
+	static void ComputeVertexNormals(
+		Zenith_Maths::Vector3* pxNormals,
+		const Zenith_Maths::Vector3* pxPositions,
+		uint32_t uNumVerts,
+		const Flux_MeshGeometry::IndexType* puIndices,
+		uint32_t uNumIndices);
 };

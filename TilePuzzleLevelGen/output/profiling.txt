@@ -1,0 +1,7 @@
+
+=== Profiling Report ===
+Threads with events: 0 | Total events: 0
+
+Profile Zone                               Total (ms)      Calls     Avg (ms)     Min (ms)     Max (ms)
+---------------------------------------- ------------ ---------- ------------ ------------ ------------
+

@@ -80,6 +80,16 @@ enum Zenith_ProfileIndex
 	ZENITH_PROFILE_INDEX__AI_NAVMESH_GENERATE,
 	ZENITH_PROFILE_INDEX__AI_DEBUG_DRAW,
 
+	// TilePuzzle Level Generation
+	ZENITH_PROFILE_INDEX__TILEPUZZLE_GENERATE_LEVEL,
+	ZENITH_PROFILE_INDEX__TILEPUZZLE_GENERATE_ATTEMPT,
+	ZENITH_PROFILE_INDEX__TILEPUZZLE_GRID_SETUP,
+	ZENITH_PROFILE_INDEX__TILEPUZZLE_SCRAMBLE,
+	ZENITH_PROFILE_INDEX__TILEPUZZLE_REVERSE_BFS_SCRAMBLE,
+	ZENITH_PROFILE_INDEX__TILEPUZZLE_SOLVER,
+	ZENITH_PROFILE_INDEX__TILEPUZZLE_SOLVER_WITH_PATH,
+	ZENITH_PROFILE_INDEX__TILEPUZZLE_SOLVER_BFS_DEPTH,
+
 	#ifdef ZENITH_TOOLS
 	ZENITH_PROFILE_INDEX__RENDER_IMGUI,
 	ZENITH_PROFILE_INDEX__RENDER_IMGUI_PROFILING,
@@ -157,6 +167,16 @@ static const char* g_aszProfileNames[]
 	"AI NavMesh Generate",
 	"AI Debug Draw",
 
+	// TilePuzzle Level Generation
+	"TilePuzzle Generate Level",
+	"TilePuzzle Generate Attempt",
+	"TilePuzzle Grid Setup",
+	"TilePuzzle Scramble",
+	"TilePuzzle Reverse BFS Scramble",
+	"TilePuzzle Solver",
+	"TilePuzzle Solver With Path",
+	"TilePuzzle Solver BFS Depth",
+
 	#ifdef ZENITH_TOOLS
 	"ImGUI",
 	"ImGUI Profiling",
@@ -226,4 +246,7 @@ public:
 	static const Zenith_ProfileIndex GetCurrentIndex();
 
 	static const std::unordered_map<u_int, Zenith_Vector<Zenith_Profiling::Event>>& GetEvents();
+
+	static void ClearEvents();
+	static void WriteTextReport(FILE* pFile);
 };

@@ -63,6 +63,68 @@ static std::string ShowTifOpenFileDialog()
 }
 
 //-----------------------------------------------------------------------------
+// Helper: Render heightmap path input with drag-drop and browse button
+//-----------------------------------------------------------------------------
+static void RenderHeightmapPathInput(const char* szImGuiId)
+{
+	ImGui::Text("Heightmap Texture:");
+	ImGui::PushItemWidth(300);
+	char szInputId[64];
+	snprintf(szInputId, sizeof(szInputId), "##%s", szImGuiId);
+	ImGui::InputText(szInputId, s_szHeightmapPath, sizeof(s_szHeightmapPath), ImGuiInputTextFlags_ReadOnly);
+	ImGui::PopItemWidth();
+
+	if (ImGui::BeginDragDropTarget())
+	{
+		if (const ImGuiPayload* pPayload = ImGui::AcceptDragDropPayload(DRAGDROP_PAYLOAD_TEXTURE))
+		{
+			const DragDropFilePayload* pFilePayload =
+				static_cast<const DragDropFilePayload*>(pPayload->Data);
+			strncpy_s(s_szHeightmapPath, sizeof(s_szHeightmapPath), pFilePayload->m_szFilePath, _TRUNCATE);
+			Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Dropped heightmap: %s", s_szHeightmapPath);
+		}
+		ImGui::EndDragDropTarget();
+	}
+
+	ImGui::SameLine();
+	char szBrowseId[64];
+	snprintf(szBrowseId, sizeof(szBrowseId), "Browse...##%s", szImGuiId);
+	if (ImGui::Button(szBrowseId))
+	{
+		std::string strPath = ShowTifOpenFileDialog();
+		if (!strPath.empty())
+		{
+			strncpy_s(s_szHeightmapPath, sizeof(s_szHeightmapPath), strPath.c_str(), _TRUNCATE);
+			Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Selected heightmap: %s", s_szHeightmapPath);
+		}
+	}
+}
+
+//-----------------------------------------------------------------------------
+// Helper: Render terrain export status with color coding
+//-----------------------------------------------------------------------------
+static void RenderTerrainStatusDisplay()
+{
+	if (s_strTerrainExportStatus.empty())
+		return;
+
+	ImGui::Separator();
+	if (s_bTerrainExportInProgress)
+	{
+		ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "%s", s_strTerrainExportStatus.c_str());
+	}
+	else if (s_strTerrainExportStatus.find("success") != std::string::npos ||
+	         s_strTerrainExportStatus.find("complete") != std::string::npos)
+	{
+		ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "%s", s_strTerrainExportStatus.c_str());
+	}
+	else
+	{
+		ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "%s", s_strTerrainExportStatus.c_str());
+	}
+}
+
+//-----------------------------------------------------------------------------
 // RenderPropertiesPanel - Main editor UI for terrain component
 //-----------------------------------------------------------------------------
 void Zenith_TerrainComponent::RenderPropertiesPanel()
@@ -80,35 +142,7 @@ void Zenith_TerrainComponent::RenderPropertiesPanel()
 				ImGui::TextWrapped("Specify a heightmap texture to generate terrain geometry. Use .ztxtr files (exported from .tif via content browser) or .tif files directly. Textures should be 4096x4096 single-channel (grayscale).");
 				ImGui::Separator();
 
-				// Heightmap path input
-				ImGui::Text("Heightmap Texture:");
-				ImGui::PushItemWidth(300);
-				ImGui::InputText("##HeightmapPath", s_szHeightmapPath, sizeof(s_szHeightmapPath), ImGuiInputTextFlags_ReadOnly);
-				ImGui::PopItemWidth();
-
-				// Drag-drop target for heightmap texture
-				if (ImGui::BeginDragDropTarget())
-				{
-					if (const ImGuiPayload* pPayload = ImGui::AcceptDragDropPayload(DRAGDROP_PAYLOAD_TEXTURE))
-					{
-						const DragDropFilePayload* pFilePayload =
-							static_cast<const DragDropFilePayload*>(pPayload->Data);
-						strncpy_s(s_szHeightmapPath, sizeof(s_szHeightmapPath), pFilePayload->m_szFilePath, _TRUNCATE);
-						Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Dropped heightmap: %s", s_szHeightmapPath);
-					}
-					ImGui::EndDragDropTarget();
-				}
-
-				ImGui::SameLine();
-				if (ImGui::Button("Browse...##Heightmap"))
-				{
-					std::string strPath = ShowTifOpenFileDialog();
-					if (!strPath.empty())
-					{
-						strncpy_s(s_szHeightmapPath, sizeof(s_szHeightmapPath), strPath.c_str(), _TRUNCATE);
-						Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Selected heightmap: %s", s_szHeightmapPath);
-					}
-				}
+				RenderHeightmapPathInput("HeightmapPath");
 
 				ImGui::Separator();
 
@@ -222,24 +256,7 @@ void Zenith_TerrainComponent::RenderPropertiesPanel()
 				if (!bCanCreate)
 					ImGui::EndDisabled();
 
-				// Status display
-				if (!s_strTerrainExportStatus.empty())
-				{
-					ImGui::Separator();
-					if (s_bTerrainExportInProgress)
-					{
-						ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "%s", s_strTerrainExportStatus.c_str());
-					}
-					else if (s_strTerrainExportStatus.find("success") != std::string::npos ||
-					         s_strTerrainExportStatus.find("complete") != std::string::npos)
-					{
-						ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "%s", s_strTerrainExportStatus.c_str());
-					}
-					else
-					{
-						ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "%s", s_strTerrainExportStatus.c_str());
-					}
-				}
+				RenderTerrainStatusDisplay();
 
 				ImGui::TreePop();
 			}
@@ -257,35 +274,7 @@ void Zenith_TerrainComponent::RenderPropertiesPanel()
 				ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "Warning: This operation cannot be undone!");
 				ImGui::Separator();
 
-				// Heightmap path input
-				ImGui::Text("New Heightmap Texture:");
-				ImGui::PushItemWidth(300);
-				ImGui::InputText("##RegenHeightmapPath", s_szHeightmapPath, sizeof(s_szHeightmapPath), ImGuiInputTextFlags_ReadOnly);
-				ImGui::PopItemWidth();
-
-				// Drag-drop target for heightmap texture
-				if (ImGui::BeginDragDropTarget())
-				{
-					if (const ImGuiPayload* pPayload = ImGui::AcceptDragDropPayload(DRAGDROP_PAYLOAD_TEXTURE))
-					{
-						const DragDropFilePayload* pFilePayload =
-							static_cast<const DragDropFilePayload*>(pPayload->Data);
-						strncpy_s(s_szHeightmapPath, sizeof(s_szHeightmapPath), pFilePayload->m_szFilePath, _TRUNCATE);
-						Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Dropped new heightmap: %s", s_szHeightmapPath);
-					}
-					ImGui::EndDragDropTarget();
-				}
-
-				ImGui::SameLine();
-				if (ImGui::Button("Browse...##RegenHeightmap"))
-				{
-					std::string strPath = ShowTifOpenFileDialog();
-					if (!strPath.empty())
-					{
-						strncpy_s(s_szHeightmapPath, sizeof(s_szHeightmapPath), strPath.c_str(), _TRUNCATE);
-						Zenith_Log(LOG_CATEGORY_TERRAIN, "[TerrainComponent] Selected new heightmap: %s", s_szHeightmapPath);
-					}
-				}
+				RenderHeightmapPathInput("RegenHeightmapPath");
 
 				ImGui::Separator();
 
@@ -395,24 +384,7 @@ void Zenith_TerrainComponent::RenderPropertiesPanel()
 				if (!bCanRegenerate)
 					ImGui::EndDisabled();
 
-				// Status display
-				if (!s_strTerrainExportStatus.empty())
-				{
-					ImGui::Separator();
-					if (s_bTerrainExportInProgress)
-					{
-						ImGui::TextColored(ImVec4(1.0f, 1.0f, 0.0f, 1.0f), "%s", s_strTerrainExportStatus.c_str());
-					}
-					else if (s_strTerrainExportStatus.find("success") != std::string::npos ||
-					         s_strTerrainExportStatus.find("complete") != std::string::npos)
-					{
-						ImGui::TextColored(ImVec4(0.0f, 1.0f, 0.0f, 1.0f), "%s", s_strTerrainExportStatus.c_str());
-					}
-					else
-					{
-						ImGui::TextColored(ImVec4(1.0f, 0.0f, 0.0f, 1.0f), "%s", s_strTerrainExportStatus.c_str());
-					}
-				}
+				RenderTerrainStatusDisplay();
 
 				ImGui::TreePop();
 			}

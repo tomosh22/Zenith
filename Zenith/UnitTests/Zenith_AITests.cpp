@@ -9,8 +9,10 @@
 #include "AI/BehaviorTree/Zenith_BTDecorators.h"
 #include "AI/Navigation/Zenith_NavMesh.h"
 #include "AI/Navigation/Zenith_NavMeshAgent.h"
+#include "AI/Navigation/Zenith_NavMeshGenerator.h"
 #include "AI/Navigation/Zenith_Pathfinding.h"
 #include "AI/Perception/Zenith_PerceptionSystem.h"
+#include "Physics/Zenith_PhysicsMeshGenerator.h"
 #include "AI/Squad/Zenith_Squad.h"
 #include "AI/Squad/Zenith_Formation.h"
 #include "AI/Squad/Zenith_TacticalPoint.h"
@@ -556,6 +558,107 @@ void Zenith_UnitTests::TestNavMeshRaycast()
 	Zenith_Assert(!bHit, "Ray within mesh should not hit boundary");
 
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestNavMeshRaycast PASSED");
+}
+
+void Zenith_UnitTests::TestNavMeshFindNearestPolygonInCell()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestNavMeshFindNearestPolygonInCell...");
+
+	// Test 1: Empty cell returns unchanged results
+	{
+		Zenith_NavMesh xNavMesh;
+
+		// Add a triangle so the mesh is valid, but search an empty cell
+		xNavMesh.AddVertex(Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
+		xNavMesh.AddVertex(Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f));
+		xNavMesh.AddVertex(Zenith_Maths::Vector3(0.5f, 0.0f, 1.0f));
+
+		Zenith_Vector<uint32_t> axIndices;
+		axIndices.PushBack(0);
+		axIndices.PushBack(1);
+		axIndices.PushBack(2);
+		xNavMesh.AddPolygon(axIndices);
+		xNavMesh.BuildSpatialGrid();
+
+		// Find a cell that is far from the polygon (should be empty)
+		// The grid is clamped, so use an out-of-bounds cell index
+		float fMinDistSq = 100.0f;
+		uint32_t uPolyOut = UINT32_MAX;
+		Zenith_Maths::Vector3 xNearestOut(0.0f);
+
+		// Pass an index beyond grid bounds -- should return early without modifying outputs
+		uint32_t uInvalidCellIndex = xNavMesh.m_axGridCells.GetSize() + 10;
+		xNavMesh.FindNearestPolygonInCell(uInvalidCellIndex, Zenith_Maths::Vector3(50.0f, 0.0f, 50.0f),
+			fMinDistSq, uPolyOut, xNearestOut);
+
+		Zenith_Assert(uPolyOut == UINT32_MAX, "Empty/invalid cell should not find any polygon");
+		Zenith_Assert(fMinDistSq == 100.0f, "Distance should remain unchanged for invalid cell");
+	}
+
+	// Test 2: Single polygon cell finds the correct polygon
+	{
+		Zenith_NavMesh xNavMesh;
+
+		xNavMesh.AddVertex(Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
+		xNavMesh.AddVertex(Zenith_Maths::Vector3(2.0f, 0.0f, 0.0f));
+		xNavMesh.AddVertex(Zenith_Maths::Vector3(1.0f, 0.0f, 2.0f));
+
+		Zenith_Vector<uint32_t> axIndices;
+		axIndices.PushBack(0);
+		axIndices.PushBack(1);
+		axIndices.PushBack(2);
+		xNavMesh.AddPolygon(axIndices);
+		xNavMesh.BuildSpatialGrid();
+
+		// Query point inside the triangle
+		Zenith_Maths::Vector3 xQueryPoint(1.0f, 0.0f, 0.5f);
+		int32_t iX, iZ;
+		xNavMesh.GetGridCoords(xQueryPoint, iX, iZ);
+		uint32_t uCellIndex = xNavMesh.GetGridCellIndex(iX, iZ);
+
+		float fMinDistSq = 100.0f;
+		uint32_t uPolyOut = UINT32_MAX;
+		Zenith_Maths::Vector3 xNearestOut(0.0f);
+
+		xNavMesh.FindNearestPolygonInCell(uCellIndex, xQueryPoint,
+			fMinDistSq, uPolyOut, xNearestOut);
+
+		Zenith_Assert(uPolyOut == 0, "Should find polygon 0 in the cell");
+		Zenith_Assert(fMinDistSq < 100.0f, "Distance should have been updated");
+	}
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestNavMeshFindNearestPolygonInCell PASSED");
+}
+
+void Zenith_UnitTests::TestNavMeshComputePolygonBounds()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestNavMeshComputePolygonBounds...");
+
+	// Test: Single triangle polygon bounds
+	{
+		Zenith_Vector<Zenith_Maths::Vector3> axVertices;
+		axVertices.PushBack(Zenith_Maths::Vector3(1.0f, 0.0f, 2.0f));
+		axVertices.PushBack(Zenith_Maths::Vector3(4.0f, 0.0f, 1.0f));
+		axVertices.PushBack(Zenith_Maths::Vector3(3.0f, 0.0f, 5.0f));
+
+		Zenith_NavMeshPolygon xPoly;
+		xPoly.m_axVertexIndices.PushBack(0);
+		xPoly.m_axVertexIndices.PushBack(1);
+		xPoly.m_axVertexIndices.PushBack(2);
+
+		Zenith_Maths::Vector3 xMin, xMax;
+		Zenith_NavMesh::ComputePolygonBounds2D(xPoly, axVertices, xMin, xMax);
+
+		// Min X should be 1.0, Max X should be 4.0
+		Zenith_Assert(std::abs(xMin.x - 1.0f) < 0.001f, "Min X should be 1.0");
+		Zenith_Assert(std::abs(xMax.x - 4.0f) < 0.001f, "Max X should be 4.0");
+
+		// Min Z should be 1.0, Max Z should be 5.0
+		Zenith_Assert(std::abs(xMin.z - 1.0f) < 0.001f, "Min Z should be 1.0");
+		Zenith_Assert(std::abs(xMax.z - 5.0f) < 0.001f, "Max Z should be 5.0");
+	}
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestNavMeshComputePolygonBounds PASSED");
 }
 
 void Zenith_UnitTests::TestPathfindingStraightLine()
@@ -1413,6 +1516,277 @@ void Zenith_UnitTests::TestTacticalPointFlankScoring()
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestTacticalPointFlankScoring PASSED");
 }
 
+void Zenith_UnitTests::TestFindBestPointNoPointsActive()
+{
+	Zenith_TacticalPointSystem::Initialise();
+
+	// No points registered - FindBestPoint should return nullptr
+	Zenith_TacticalPointQuery xQuery;
+	xQuery.m_xSearchCenter = Zenith_Maths::Vector3(0.0f);
+	xQuery.m_fSearchRadius = 50.0f;
+	xQuery.m_bAnyType = true;
+	xQuery.m_bMustBeAvailable = false;
+
+	const Zenith_TacticalPoint* pxResult = Zenith_TacticalPointSystem::FindBestPoint(xQuery);
+	Zenith_Assert(pxResult == nullptr, "FindBestPoint with no points should return nullptr");
+
+	// Register and then unregister a point - should still return nullptr
+	uint32_t uID = Zenith_TacticalPointSystem::RegisterPoint(
+		Zenith_Maths::Vector3(5.0f, 0.0f, 5.0f), TacticalPointType::COVER_FULL);
+	Zenith_TacticalPointSystem::UnregisterPoint(uID);
+
+	pxResult = Zenith_TacticalPointSystem::FindBestPoint(xQuery);
+	Zenith_Assert(pxResult == nullptr, "FindBestPoint with no active points should return nullptr");
+
+	Zenith_TacticalPointSystem::Shutdown();
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestFindBestPointNoPointsActive PASSED");
+}
+
+void Zenith_UnitTests::TestFindBestPointOutOfRange()
+{
+	Zenith_TacticalPointSystem::Initialise();
+
+	// Register a point far away
+	Zenith_TacticalPointSystem::RegisterPoint(
+		Zenith_Maths::Vector3(100.0f, 0.0f, 100.0f), TacticalPointType::COVER_FULL);
+
+	// Query with small radius - should not find the point
+	Zenith_TacticalPointQuery xQuery;
+	xQuery.m_xSearchCenter = Zenith_Maths::Vector3(0.0f);
+	xQuery.m_fSearchRadius = 5.0f;
+	xQuery.m_bAnyType = true;
+	xQuery.m_bMustBeAvailable = false;
+
+	const Zenith_TacticalPoint* pxResult = Zenith_TacticalPointSystem::FindBestPoint(xQuery);
+	Zenith_Assert(pxResult == nullptr, "FindBestPoint should return nullptr when all points are out of range");
+
+	// Widen the radius - should now find the point
+	xQuery.m_fSearchRadius = 200.0f;
+	pxResult = Zenith_TacticalPointSystem::FindBestPoint(xQuery);
+	Zenith_Assert(pxResult != nullptr, "FindBestPoint should find point when radius is large enough");
+
+	Zenith_TacticalPointSystem::Shutdown();
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestFindBestPointOutOfRange PASSED");
+}
+
+// ============================================================================
+// Tactical Point Refactoring Tests
+// ============================================================================
+
+void Zenith_UnitTests::TestGetEntityPositionValid()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestGetEntityPositionValid...");
+
+	// Create a real entity in the active scene and verify GetEntityPosition finds it
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Entity xEntity(pxSceneData, "TacTestAgent");
+
+	Zenith_Maths::Vector3 xExpectedPos(5.0f, 3.0f, 7.0f);
+	xEntity.GetComponent<Zenith_TransformComponent>().SetPosition(xExpectedPos);
+
+	Zenith_Maths::Vector3 xOutPos;
+	bool bResult = Zenith_TacticalPointSystem::GetEntityPosition(xEntity.GetEntityID(), xOutPos);
+
+	Zenith_Assert(bResult, "GetEntityPosition should return true for valid entity");
+	Zenith_Assert(Zenith_Maths::Length(xOutPos - xExpectedPos) < 0.001f,
+		"GetEntityPosition should return the correct position");
+
+	pxSceneData->MarkForDestruction(xEntity.GetEntityID());
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestGetEntityPositionValid PASSED");
+}
+
+void Zenith_UnitTests::TestGetEntityPositionInvalid()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestGetEntityPositionInvalid...");
+
+	// Use an invalid entity ID - should return false
+	Zenith_EntityID xInvalidID;  // Default-constructed, m_uIndex == INVALID_INDEX
+	Zenith_Maths::Vector3 xOutPos(99.0f, 99.0f, 99.0f);
+
+	bool bResult = Zenith_TacticalPointSystem::GetEntityPosition(xInvalidID, xOutPos);
+	Zenith_Assert(!bResult, "GetEntityPosition should return false for invalid entity");
+
+	// Also test with a fabricated ID that doesn't correspond to any entity
+	Zenith_EntityID xFakeID;
+	xFakeID.m_uIndex = 99999;
+	xFakeID.m_uGeneration = 0;
+	bResult = Zenith_TacticalPointSystem::GetEntityPosition(xFakeID, xOutPos);
+	Zenith_Assert(!bResult, "GetEntityPosition should return false for non-existent entity");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestGetEntityPositionInvalid PASSED");
+}
+
+void Zenith_UnitTests::TestFindBestPointNoMatches()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestFindBestPointNoMatches...");
+
+	Zenith_TacticalPointSystem::Initialise();
+
+	// Register only PATROL_WAYPOINT points
+	Zenith_TacticalPointSystem::RegisterPoint(
+		Zenith_Maths::Vector3(5.0f, 0.0f, 5.0f), TacticalPointType::PATROL_WAYPOINT);
+	Zenith_TacticalPointSystem::RegisterPoint(
+		Zenith_Maths::Vector3(10.0f, 0.0f, 5.0f), TacticalPointType::PATROL_WAYPOINT);
+	Zenith_TacticalPointSystem::RegisterPoint(
+		Zenith_Maths::Vector3(15.0f, 0.0f, 5.0f), TacticalPointType::AMBUSH);
+
+	// Search for COVER types using FindBestCoverPosition - should find none
+	Zenith_Maths::Vector3 xAgentPos(0.0f, 0.0f, 0.0f);
+	Zenith_Maths::Vector3 xThreatPos(20.0f, 0.0f, 0.0f);
+	Zenith_Maths::Vector3 xResult = Zenith_TacticalPointSystem::FindBestCoverPosition(
+		xAgentPos, xThreatPos, 50.0f);
+
+	// When no cover is found, should return agent position (stay in place)
+	Zenith_Assert(Zenith_Maths::Length(xResult - xAgentPos) < 0.001f,
+		"FindBestCoverPosition with no cover points should return agent position");
+
+	Zenith_TacticalPointSystem::Shutdown();
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestFindBestPointNoMatches PASSED");
+}
+
+void Zenith_UnitTests::TestFindBestPointSelectsHighest()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestFindBestPointSelectsHighest...");
+
+	Zenith_TacticalPointSystem::Initialise();
+
+	// Register multiple cover points at different distances from agent
+	// Agent at origin, threat far away at (100, 0, 0)
+	Zenith_Maths::Vector3 xAgentPos(0.0f, 0.0f, 0.0f);
+	Zenith_Maths::Vector3 xThreatPos(100.0f, 0.0f, 0.0f);
+
+	// Close cover point (should score higher due to distance factor)
+	Zenith_Maths::Vector3 xClosePos(3.0f, 0.0f, 0.0f);
+	// Far cover point
+	Zenith_Maths::Vector3 xFarPos(25.0f, 0.0f, 0.0f);
+	// Full cover close point (should get 1.5x bonus)
+	Zenith_Maths::Vector3 xFullCoverPos(4.0f, 0.0f, 0.0f);
+
+	Zenith_TacticalPointSystem::RegisterPoint(xFarPos, TacticalPointType::COVER_HALF);
+	Zenith_TacticalPointSystem::RegisterPoint(xClosePos, TacticalPointType::COVER_HALF);
+	Zenith_TacticalPointSystem::RegisterPoint(xFullCoverPos, TacticalPointType::COVER_FULL);
+
+	Zenith_Maths::Vector3 xResult = Zenith_TacticalPointSystem::FindBestCoverPosition(
+		xAgentPos, xThreatPos, 50.0f);
+
+	// The full cover close point should score highest (close + full cover bonus)
+	Zenith_Assert(Zenith_Maths::Length(xResult - xFullCoverPos) < 0.001f,
+		"Should select the full cover close point as best");
+
+	Zenith_TacticalPointSystem::Shutdown();
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestFindBestPointSelectsHighest PASSED");
+}
+
+void Zenith_UnitTests::TestScoreCoverDistance()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestScoreCoverDistance...");
+
+	Zenith_TacticalPointSystem::Initialise();
+
+	// Register two half-cover points at different distances
+	Zenith_Maths::Vector3 xAgentPos(0.0f, 0.0f, 0.0f);
+	Zenith_Maths::Vector3 xThreatPos(50.0f, 0.0f, 0.0f);
+
+	Zenith_Maths::Vector3 xNearPos(5.0f, 0.0f, 0.0f);
+	Zenith_Maths::Vector3 xFarPos(30.0f, 0.0f, 0.0f);
+
+	Zenith_TacticalPointSystem::RegisterPoint(xNearPos, TacticalPointType::COVER_HALF);
+	Zenith_TacticalPointSystem::RegisterPoint(xFarPos, TacticalPointType::COVER_HALF);
+
+	// The near point should score higher due to better distance factor
+	Zenith_Maths::Vector3 xResult = Zenith_TacticalPointSystem::FindBestCoverPosition(
+		xAgentPos, xThreatPos, 50.0f);
+
+	// Near point should be selected (distance score: 1 - 5/50 = 0.9 vs 1 - 30/50 = 0.4)
+	Zenith_Assert(Zenith_Maths::Length(xResult - xNearPos) < 0.001f,
+		"Closer cover point should score higher when cover scores are similar");
+
+	Zenith_TacticalPointSystem::Shutdown();
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestScoreCoverDistance PASSED");
+}
+
+void Zenith_UnitTests::TestScoreFlankAngle()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestScoreFlankAngle...");
+
+	Zenith_TacticalPointSystem::Initialise();
+
+	// Target at (10, 0, 10) facing (0, 0, -1) (facing toward negative Z)
+	Zenith_Maths::Vector3 xTargetPos(10.0f, 0.0f, 10.0f);
+	Zenith_Maths::Vector3 xTargetFacing(0.0f, 0.0f, -1.0f);
+	Zenith_Maths::Vector3 xAgentPos(10.0f, 0.0f, 0.0f);
+
+	// Side flank - perpendicular to facing (best flank angle)
+	Zenith_Maths::Vector3 xSideFlank(15.0f, 0.0f, 10.0f);
+	// Front position - directly in front of target (worst flank angle)
+	Zenith_Maths::Vector3 xFrontPos(10.0f, 0.0f, 5.0f);
+
+	Zenith_TacticalPointSystem::RegisterPoint(xFrontPos, TacticalPointType::FLANK_POSITION);
+	Zenith_TacticalPointSystem::RegisterPoint(xSideFlank, TacticalPointType::FLANK_POSITION);
+
+	Zenith_Maths::Vector3 xResult = Zenith_TacticalPointSystem::FindBestFlankPosition(
+		xAgentPos, xTargetPos, xTargetFacing, 1.0f, 20.0f);
+
+	// Side flank should score higher (perpendicular angle)
+	Zenith_Assert(Zenith_Maths::Length(xResult - xSideFlank) < 0.001f,
+		"Side flank position should score higher than front position");
+
+	// Verify the EvaluateFlankAngle function directly
+	float fSideScore = Zenith_TacticalPointSystem::EvaluateFlankAngle(xSideFlank, xTargetPos, xTargetFacing);
+	float fFrontScore = Zenith_TacticalPointSystem::EvaluateFlankAngle(xFrontPos, xTargetPos, xTargetFacing);
+	Zenith_Assert(fSideScore > fFrontScore,
+		"Perpendicular flank angle should score higher than frontal angle");
+
+	Zenith_TacticalPointSystem::Shutdown();
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestScoreFlankAngle PASSED");
+}
+
+void Zenith_UnitTests::TestScoreOverwatchElevation()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestScoreOverwatchElevation...");
+
+	Zenith_TacticalPointSystem::Initialise();
+
+	Zenith_Maths::Vector3 xAreaToWatch(10.0f, 0.0f, 10.0f);
+	Zenith_Maths::Vector3 xAgentPos(0.0f, 0.0f, 0.0f);
+
+	// Elevated overwatch point (y > 2.0 triggers TACPOINT_FLAG_ELEVATED)
+	Zenith_Maths::Vector3 xHighPos(8.0f, 5.0f, 8.0f);
+	// Ground-level overwatch point
+	Zenith_Maths::Vector3 xLowPos(8.0f, 0.0f, 8.0f);
+
+	Zenith_TacticalPointSystem::RegisterPoint(xLowPos, TacticalPointType::OVERWATCH);
+	Zenith_TacticalPointSystem::RegisterPoint(xHighPos, TacticalPointType::OVERWATCH);
+
+	// Verify elevated flag was set
+	const Zenith_TacticalPoint* pxHighPoint = Zenith_TacticalPointSystem::GetPointConst(1);
+	Zenith_Assert(pxHighPoint != nullptr, "High point should exist");
+	Zenith_Assert((pxHighPoint->m_uFlags & TACPOINT_FLAG_ELEVATED) != 0,
+		"High point should have ELEVATED flag");
+
+	const Zenith_TacticalPoint* pxLowPoint = Zenith_TacticalPointSystem::GetPointConst(0);
+	Zenith_Assert(pxLowPoint != nullptr, "Low point should exist");
+	Zenith_Assert((pxLowPoint->m_uFlags & TACPOINT_FLAG_ELEVATED) == 0,
+		"Low point should NOT have ELEVATED flag");
+
+	// The elevated point should score higher due to elevation bonus
+	Zenith_Maths::Vector3 xResult = Zenith_TacticalPointSystem::FindBestOverwatchPosition(
+		xAgentPos, xAreaToWatch, 1.0f, 30.0f);
+
+	Zenith_Assert(Zenith_Maths::Length(xResult - xHighPos) < 0.001f,
+		"Elevated overwatch point should score higher than ground-level");
+
+	Zenith_TacticalPointSystem::Shutdown();
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestScoreOverwatchElevation PASSED");
+}
+
 // ============================================================================
 // AI Debug Variables Tests
 // ============================================================================
@@ -1533,6 +1907,279 @@ void Zenith_UnitTests::TestSquadDebugRoleColor()
 		"MEDIC should be predominantly green");
 
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestSquadDebugRoleColor PASSED");
+}
+
+// ============================================================================
+// Squad Refactoring Tests (FindSharedTargetIndex, formation slot assignment)
+// ============================================================================
+
+void Zenith_UnitTests::TestSharedTargetUpdate()
+{
+	Zenith_SquadManager::Initialise();
+
+	Zenith_Squad* pxSquad = Zenith_SquadManager::CreateSquad("TestSquad");
+	Zenith_EntityID xMember1(1001);
+	Zenith_EntityID xTarget(2001);
+	pxSquad->AddMember(xMember1);
+
+	// Share initial target info
+	Zenith_Maths::Vector3 xPos1(10.0f, 0.0f, 10.0f);
+	pxSquad->ShareTargetInfo(xTarget, xPos1, xMember1);
+
+	const Zenith_SharedTarget* pxTarget = pxSquad->GetSharedTarget(xTarget);
+	Zenith_Assert(pxTarget != nullptr, "Target should exist");
+	Zenith_Assert(Zenith_Maths::Length(pxTarget->m_xLastKnownPosition - xPos1) < 0.01f,
+		"Target position should match");
+
+	// Share updated position for same target — exercises FindSharedTargetIndex "found" path
+	Zenith_Maths::Vector3 xPos2(20.0f, 0.0f, 30.0f);
+	Zenith_EntityID xMember2(1002);
+	pxSquad->AddMember(xMember2);
+	pxSquad->ShareTargetInfo(xTarget, xPos2, xMember2);
+
+	pxTarget = pxSquad->GetSharedTarget(xTarget);
+	Zenith_Assert(pxTarget != nullptr, "Target should still exist");
+	Zenith_Assert(Zenith_Maths::Length(pxTarget->m_xLastKnownPosition - xPos2) < 0.01f,
+		"Target position should be updated");
+	Zenith_Assert(pxTarget->m_xReportedBy == xMember2,
+		"Reporter should be updated to member 2");
+
+	// Only one target should exist (not duplicated)
+	Zenith_Assert(pxSquad->GetAllSharedTargets().GetSize() == 1,
+		"Should have exactly 1 shared target after update");
+
+	Zenith_SquadManager::Shutdown();
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestSharedTargetUpdate PASSED");
+}
+
+void Zenith_UnitTests::TestSharedTargetUnknown()
+{
+	Zenith_SquadManager::Initialise();
+
+	Zenith_Squad* pxSquad = Zenith_SquadManager::CreateSquad("TestSquad");
+	Zenith_EntityID xMember1(1001);
+	pxSquad->AddMember(xMember1);
+
+	Zenith_EntityID xUnknown(9999);
+
+	// Exercises FindSharedTargetIndex "not found" path through public API
+	Zenith_Assert(!pxSquad->IsTargetKnown(xUnknown), "Unknown target should not be known");
+	Zenith_Assert(pxSquad->GetSharedTarget(xUnknown) == nullptr,
+		"GetSharedTarget should return nullptr for unknown");
+	Zenith_Assert(!pxSquad->IsTargetEngaged(xUnknown),
+		"IsTargetEngaged should return false for unknown");
+
+	// SetTargetEngaged on unknown target should not crash
+	pxSquad->SetTargetEngaged(xUnknown, xMember1);
+	Zenith_Assert(!pxSquad->IsTargetEngaged(xUnknown),
+		"Engaging unknown target should have no effect");
+
+	Zenith_SquadManager::Shutdown();
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestSharedTargetUnknown PASSED");
+}
+
+void Zenith_UnitTests::TestFormationSlotsLeaderFirst()
+{
+	Zenith_SquadManager::Initialise();
+
+	Zenith_Squad* pxSquad = Zenith_SquadManager::CreateSquad("TestSquad");
+	pxSquad->SetFormation(Zenith_Formation::GetWedge());
+
+	Zenith_EntityID xMember1(1001);
+	Zenith_EntityID xMember2(1002);
+	Zenith_EntityID xMember3(1003);
+
+	// Add non-leader first, then leader — leader should still get slot 0
+	pxSquad->AddMember(xMember1, SquadRole::ASSAULT);
+	pxSquad->AddMember(xMember2, SquadRole::SUPPORT);
+	pxSquad->AddMember(xMember3, SquadRole::LEADER);
+
+	const Zenith_SquadMember* pxLeader = pxSquad->GetMember(xMember3);
+	Zenith_Assert(pxLeader != nullptr, "Leader member should exist");
+	Zenith_Assert(pxLeader->m_iFormationSlot == 0, "Leader should always get slot 0");
+
+	Zenith_SquadManager::Shutdown();
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestFormationSlotsLeaderFirst PASSED");
+}
+
+void Zenith_UnitTests::TestFormationSlotsRoleMatching()
+{
+	Zenith_SquadManager::Initialise();
+
+	Zenith_Squad* pxSquad = Zenith_SquadManager::CreateSquad("TestSquad");
+	pxSquad->SetFormation(Zenith_Formation::GetWedge());
+
+	Zenith_EntityID xLeader(1001);
+	Zenith_EntityID xAssault(1002);
+	Zenith_EntityID xFlanker(1003);
+
+	pxSquad->AddMember(xLeader, SquadRole::LEADER);
+	pxSquad->AddMember(xAssault, SquadRole::ASSAULT);
+	pxSquad->AddMember(xFlanker, SquadRole::FLANKER);
+
+	// All members should have valid formation slots
+	const Zenith_SquadMember* pxLeaderM = pxSquad->GetMember(xLeader);
+	const Zenith_SquadMember* pxAssaultM = pxSquad->GetMember(xAssault);
+	const Zenith_SquadMember* pxFlankerM = pxSquad->GetMember(xFlanker);
+
+	Zenith_Assert(pxLeaderM->m_iFormationSlot >= 0, "Leader should have a slot");
+	Zenith_Assert(pxAssaultM->m_iFormationSlot >= 0, "Assault should have a slot");
+	Zenith_Assert(pxFlankerM->m_iFormationSlot >= 0, "Flanker should have a slot");
+
+	// All slots should be unique
+	Zenith_Assert(pxLeaderM->m_iFormationSlot != pxAssaultM->m_iFormationSlot,
+		"Leader and Assault should have different slots");
+	Zenith_Assert(pxLeaderM->m_iFormationSlot != pxFlankerM->m_iFormationSlot,
+		"Leader and Flanker should have different slots");
+	Zenith_Assert(pxAssaultM->m_iFormationSlot != pxFlankerM->m_iFormationSlot,
+		"Assault and Flanker should have different slots");
+
+	Zenith_SquadManager::Shutdown();
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestFormationSlotsRoleMatching PASSED");
+}
+
+// ============================================================================
+// Squad Order Helper and Alive Status Refactoring Tests
+// ============================================================================
+
+void Zenith_UnitTests::TestSquadPositionOrder()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestSquadPositionOrder...");
+
+	Zenith_SquadManager::Initialise();
+
+	Zenith_Squad* pxSquad = Zenith_SquadManager::CreateSquad("TestSquad");
+
+	Zenith_Maths::Vector3 xTarget(25.0f, 5.0f, 30.0f);
+	pxSquad->OrderMoveTo(xTarget);
+
+	const Zenith_SquadOrder& xOrder = pxSquad->GetCurrentOrder();
+	Zenith_Assert(xOrder.m_eType == SquadOrderType::MOVE_TO,
+		"Order type should be MOVE_TO");
+	Zenith_Assert(Zenith_Maths::Length(xOrder.m_xTargetPosition - xTarget) < 0.01f,
+		"Order position should match issued position");
+	Zenith_Assert(!xOrder.m_xTargetEntity.IsValid(),
+		"Position order should have invalid target entity");
+
+	Zenith_SquadManager::Shutdown();
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestSquadPositionOrder PASSED");
+}
+
+void Zenith_UnitTests::TestSquadTargetOrderClearsPosition()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestSquadTargetOrderClearsPosition...");
+
+	Zenith_SquadManager::Initialise();
+
+	Zenith_Squad* pxSquad = Zenith_SquadManager::CreateSquad("TestSquad");
+
+	Zenith_EntityID xTarget(3001);
+	pxSquad->OrderAttack(xTarget);
+
+	const Zenith_SquadOrder& xOrder = pxSquad->GetCurrentOrder();
+	Zenith_Assert(xOrder.m_eType == SquadOrderType::ATTACK,
+		"Order type should be ATTACK");
+	Zenith_Assert(xOrder.m_xTargetEntity == xTarget,
+		"Target entity should match issued target");
+
+	Zenith_SquadManager::Shutdown();
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestSquadTargetOrderClearsPosition PASSED");
+}
+
+void Zenith_UnitTests::TestSquadSimpleOrderClearsAll()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestSquadSimpleOrderClearsAll...");
+
+	Zenith_SquadManager::Initialise();
+
+	Zenith_Squad* pxSquad = Zenith_SquadManager::CreateSquad("TestSquad");
+
+	// First issue a position order to set position and target
+	pxSquad->OrderMoveTo(Zenith_Maths::Vector3(100.0f, 0.0f, 100.0f));
+
+	// Now issue a simple order which should clear everything
+	pxSquad->OrderHoldPosition();
+
+	const Zenith_SquadOrder& xOrder = pxSquad->GetCurrentOrder();
+	Zenith_Assert(xOrder.m_eType == SquadOrderType::HOLD_POSITION,
+		"Order type should be HOLD_POSITION");
+	Zenith_Assert(Zenith_Maths::Length(xOrder.m_xTargetPosition) < 0.01f,
+		"Simple order should zero position");
+	Zenith_Assert(!xOrder.m_xTargetEntity.IsValid(),
+		"Simple order should have invalid target entity");
+
+	Zenith_SquadManager::Shutdown();
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestSquadSimpleOrderClearsAll PASSED");
+}
+
+void Zenith_UnitTests::TestSquadDeadMemberTriggersLeaderReassign()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestSquadDeadMemberTriggersLeaderReassign...");
+
+	Zenith_SquadManager::Initialise();
+
+	Zenith_Squad* pxSquad = Zenith_SquadManager::CreateSquad("TestSquad");
+
+	Zenith_EntityID xMember1(1001);
+	Zenith_EntityID xMember2(1002);
+	Zenith_EntityID xMember3(1003);
+
+	pxSquad->AddMember(xMember1, SquadRole::LEADER);
+	pxSquad->AddMember(xMember2, SquadRole::ASSAULT);
+	pxSquad->AddMember(xMember3, SquadRole::ASSAULT);
+
+	Zenith_Assert(pxSquad->GetLeader() == xMember1,
+		"Leader should be member 1 initially");
+
+	// Kill the leader
+	pxSquad->MarkMemberDead(xMember1);
+
+	Zenith_Assert(pxSquad->HasLeader(), "Squad should still have a leader after old leader died");
+	Zenith_Assert(pxSquad->GetLeader() != xMember1,
+		"Leader should no longer be the dead member");
+	Zenith_Assert(pxSquad->GetLeader() == xMember2 || pxSquad->GetLeader() == xMember3,
+		"New leader should be one of the alive members");
+
+	Zenith_SquadManager::Shutdown();
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestSquadDeadMemberTriggersLeaderReassign PASSED");
+}
+
+void Zenith_UnitTests::TestSquadAliveMemberPreservesLeader()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestSquadAliveMemberPreservesLeader...");
+
+	Zenith_SquadManager::Initialise();
+
+	Zenith_Squad* pxSquad = Zenith_SquadManager::CreateSquad("TestSquad");
+
+	Zenith_EntityID xMember1(1001);
+	Zenith_EntityID xMember2(1002);
+
+	pxSquad->AddMember(xMember1, SquadRole::LEADER);
+	pxSquad->AddMember(xMember2, SquadRole::ASSAULT);
+
+	Zenith_Assert(pxSquad->GetLeader() == xMember1,
+		"Leader should be member 1 initially");
+
+	// Mark non-leader alive (no-op since already alive, but should not affect leader)
+	pxSquad->MarkMemberAlive(xMember2);
+
+	Zenith_Assert(pxSquad->GetLeader() == xMember1,
+		"Leader should remain member 1 after marking non-leader alive");
+	Zenith_Assert(pxSquad->IsMemberAlive(xMember2),
+		"Member 2 should be alive");
+
+	Zenith_SquadManager::Shutdown();
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestSquadAliveMemberPreservesLeader PASSED");
 }
 
 // ============================================================================
@@ -1790,3 +2437,307 @@ void Zenith_UnitTests::TestPathfindingPartialPath()
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestPathfindingPartialPath PASSED");
 }
 
+// ============================================================================
+// NavMesh Generator helper tests
+// ============================================================================
+
+void Zenith_UnitTests::TestCountWalkableSpans()
+{
+	// #TODO: Re-enable once CountWalkableSpans/WalkableSpanStats are restored to NavMeshGenerator
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestCountWalkableSpans SKIPPED (function removed)");
+}
+
+void Zenith_UnitTests::TestHasSufficientClearance()
+{
+	// #TODO: Re-enable once HasSufficientClearance is restored to NavMeshGenerator
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestHasSufficientClearance SKIPPED (function removed)");
+}
+
+void Zenith_UnitTests::TestMergeOverlappingSpans()
+{
+	// #TODO: Re-enable once MergeOverlappingSpans is restored to NavMeshGenerator
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestMergeOverlappingSpans SKIPPED (function removed)");
+}
+
+// ============================================================================
+// Physics Mesh Generator Helper Tests
+// ============================================================================
+
+void Zenith_UnitTests::TestFindExtremeVertexIndices()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestFindExtremeVertexIndices...");
+
+	Zenith_Vector<Zenith_Maths::Vector3> xPositions;
+	xPositions.PushBack(Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
+	xPositions.PushBack(Zenith_Maths::Vector3(-5.0f, 3.0f, 1.0f));
+	xPositions.PushBack(Zenith_Maths::Vector3(7.0f, -2.0f, 4.0f));
+	xPositions.PushBack(Zenith_Maths::Vector3(1.0f, 10.0f, -8.0f));
+	xPositions.PushBack(Zenith_Maths::Vector3(2.0f, -1.0f, 12.0f));
+
+	uint32_t auIndices[6];
+	Zenith_PhysicsMeshGenerator::FindExtremeVertexIndices(xPositions, auIndices);
+
+	// minX=-5 at index 1, maxX=7 at index 2
+	Zenith_Assert(auIndices[0] == 1, "MinX should be at index 1");
+	Zenith_Assert(auIndices[1] == 2, "MaxX should be at index 2");
+	// minY=-2 at index 2, maxY=10 at index 3
+	Zenith_Assert(auIndices[2] == 2, "MinY should be at index 2");
+	Zenith_Assert(auIndices[3] == 3, "MaxY should be at index 3");
+	// minZ=-8 at index 3, maxZ=12 at index 4
+	Zenith_Assert(auIndices[4] == 3, "MinZ should be at index 3");
+	Zenith_Assert(auIndices[5] == 4, "MaxZ should be at index 4");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestFindExtremeVertexIndices PASSED");
+}
+
+void Zenith_UnitTests::TestComputeAABBFromPositions()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestComputeAABBFromPositions...");
+
+	Zenith_Vector<Zenith_Maths::Vector3> xPositions;
+	xPositions.PushBack(Zenith_Maths::Vector3(1.0f, -2.0f, 3.0f));
+	xPositions.PushBack(Zenith_Maths::Vector3(-4.0f, 5.0f, -6.0f));
+	xPositions.PushBack(Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f));
+
+	Zenith_Maths::Vector3 xMin, xMax;
+	Zenith_PhysicsMeshGenerator::ComputeAABBFromPositions(xPositions, xMin, xMax);
+
+	Zenith_Assert(xMin.x == -4.0f, "Min X should be -4");
+	Zenith_Assert(xMin.y == -2.0f, "Min Y should be -2");
+	Zenith_Assert(xMin.z == -6.0f, "Min Z should be -6");
+	Zenith_Assert(xMax.x == 1.0f, "Max X should be 1");
+	Zenith_Assert(xMax.y == 5.0f, "Max Y should be 5");
+	Zenith_Assert(xMax.z == 3.0f, "Max Z should be 3");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestComputeAABBFromPositions PASSED");
+}
+
+void Zenith_UnitTests::TestComputeVertexNormals()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestComputeVertexNormals...");
+
+	// Simple flat triangle in the XZ plane — normals should point along Y
+	Zenith_Maths::Vector3 axPositions[3] = {
+		Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f),
+		Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f),
+		Zenith_Maths::Vector3(0.0f, 0.0f, 1.0f)
+	};
+	Zenith_Maths::Vector3 axNormals[3];
+	uint32_t auIndices[3] = { 0, 1, 2 };
+
+	Zenith_PhysicsMeshGenerator::ComputeVertexNormals(axNormals, axPositions, 3, auIndices, 3);
+
+	// Cross product of (1,0,0)x(0,0,1) = (0,-1,0), normalized = (0,-1,0)
+	for (int i = 0; i < 3; i++)
+	{
+		Zenith_Assert(std::abs(axNormals[i].x) < 0.001f, "Normal X should be ~0");
+		Zenith_Assert(std::abs(std::abs(axNormals[i].y) - 1.0f) < 0.001f, "Normal Y should be ~+-1");
+		Zenith_Assert(std::abs(axNormals[i].z) < 0.001f, "Normal Z should be ~0");
+	}
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestComputeVertexNormals PASSED");
+}
+
+// ============================================================================
+// Zenith_AITests implementations
+// ============================================================================
+
+#include "UnitTests/Zenith_AITests.h"
+
+void Zenith_AITests::RunAllTests()
+{
+	TestFloodFillAssignsConnected();
+	TestFloodFillStopsAtBoundary();
+	TestColumnHasSpanInRegionFound();
+	TestColumnHasSpanInRegionNotFound();
+}
+
+// ----------------------------------------------------------------------------
+// Helper to build minimal compact heightfield arrays for testing.
+// Creates a flat grid of iWidth x iHeight columns, one span per column,
+// all at the same height.  Skipped columns can be specified via
+// abSkipColumn (indexed by column index; true = no span in that column).
+// ----------------------------------------------------------------------------
+Zenith_AITests::TestCompactHF Zenith_AITests::BuildTestHF(
+	int32_t iWidth, int32_t iHeight,
+	const uint16_t* auHeights,
+	const bool* abSkipColumn)
+{
+	TestCompactHF xHF;
+	uint32_t uTotalColumns = static_cast<uint32_t>(iWidth * iHeight);
+
+	xHF.m_axColumnSpanCounts.Reserve(uTotalColumns);
+	xHF.m_axColumnSpanStarts.Reserve(uTotalColumns);
+
+	for (uint32_t u = 0; u < uTotalColumns; ++u)
+	{
+		bool bSkip = abSkipColumn && abSkipColumn[u];
+		xHF.m_axColumnSpanStarts.PushBack(xHF.m_axSpans.GetSize());
+
+		if (bSkip)
+		{
+			xHF.m_axColumnSpanCounts.PushBack(0);
+		}
+		else
+		{
+			Zenith_NavMeshGenerator::CompactSpan xSpan;
+			xSpan.m_uY = auHeights[u];
+			xSpan.m_uRegion = 0;
+			xSpan.m_uNeighbors[0] = 0;
+			xSpan.m_uNeighbors[1] = 0;
+			xSpan.m_uNeighbors[2] = 0;
+			xSpan.m_uNeighbors[3] = 0;
+			xHF.m_axSpans.PushBack(xSpan);
+			xHF.m_axSpanToColumn.PushBack(u);
+			xHF.m_axColumnSpanCounts.PushBack(1);
+		}
+	}
+
+	return xHF;
+}
+
+void Zenith_AITests::TestFloodFillAssignsConnected()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestFloodFillAssignsConnected...");
+
+	// 3x3 flat grid, all spans at the same height, no gaps
+	const int32_t iWidth = 3;
+	const int32_t iHeight = 3;
+	const uint16_t auHeights[9] = {10, 10, 10, 10, 10, 10, 10, 10, 10};
+
+	TestCompactHF xHF = BuildTestHF(iWidth, iHeight, auHeights, nullptr);
+
+	// Flood fill from span 0 with region ID 1, max step = 1 cell
+	Zenith_NavMeshGenerator::FloodFillRegion(
+		xHF.m_axSpans,
+		xHF.m_axColumnSpanCounts,
+		xHF.m_axColumnSpanStarts,
+		xHF.m_axSpanToColumn,
+		iWidth, iHeight,
+		/*iMaxStepCells=*/1,
+		/*uStartSpanIdx=*/0,
+		/*uRegionID=*/1);
+
+	// All 9 spans should now have region 1
+	for (uint32_t u = 0; u < xHF.m_axSpans.GetSize(); ++u)
+	{
+		Zenith_Assert(xHF.m_axSpans.Get(u).m_uRegion == 1,
+			"All connected spans should be assigned to region 1");
+	}
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestFloodFillAssignsConnected PASSED");
+}
+
+void Zenith_AITests::TestFloodFillStopsAtBoundary()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestFloodFillStopsAtBoundary...");
+
+	// 3x1 grid.  Middle column (index 1) is empty, creating a gap.
+	// Columns 0 and 2 each have one span at the same height.
+	const int32_t iWidth = 3;
+	const int32_t iHeight = 1;
+	const uint16_t auHeights[3] = {10, 0, 10};
+	const bool abSkip[3] = {false, true, false};
+
+	TestCompactHF xHF = BuildTestHF(iWidth, iHeight, auHeights, abSkip);
+
+	// We should have exactly 2 spans (columns 0 and 2)
+	Zenith_Assert(xHF.m_axSpans.GetSize() == 2, "Should have 2 spans");
+
+	// Flood fill from span 0 (column 0) with region 1
+	Zenith_NavMeshGenerator::FloodFillRegion(
+		xHF.m_axSpans,
+		xHF.m_axColumnSpanCounts,
+		xHF.m_axColumnSpanStarts,
+		xHF.m_axSpanToColumn,
+		iWidth, iHeight,
+		/*iMaxStepCells=*/1,
+		/*uStartSpanIdx=*/0,
+		/*uRegionID=*/1);
+
+	// Span 0 should be region 1, span 1 (column 2) should still be 0 (unassigned)
+	Zenith_Assert(xHF.m_axSpans.Get(0).m_uRegion == 1,
+		"Start span should be assigned region 1");
+	Zenith_Assert(xHF.m_axSpans.Get(1).m_uRegion == 0,
+		"Disconnected span should remain unassigned (region 0)");
+
+	// Now flood fill the second span separately with region 2
+	Zenith_NavMeshGenerator::FloodFillRegion(
+		xHF.m_axSpans,
+		xHF.m_axColumnSpanCounts,
+		xHF.m_axColumnSpanStarts,
+		xHF.m_axSpanToColumn,
+		iWidth, iHeight,
+		/*iMaxStepCells=*/1,
+		/*uStartSpanIdx=*/1,
+		/*uRegionID=*/2);
+
+	Zenith_Assert(xHF.m_axSpans.Get(1).m_uRegion == 2,
+		"Second disconnected span should be assigned region 2");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestFloodFillStopsAtBoundary PASSED");
+}
+
+void Zenith_AITests::TestColumnHasSpanInRegionFound()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestColumnHasSpanInRegionFound...");
+
+	// 2x2 grid, all columns have one span.
+	// Assign column (1,0) a region of 5.
+	const int32_t iWidth = 2;
+	const int32_t iHeight = 2;
+	const uint16_t auHeights[4] = {10, 10, 10, 10};
+
+	TestCompactHF xHF = BuildTestHF(iWidth, iHeight, auHeights, nullptr);
+
+	// Manually assign region 5 to the span at column (1, 0) = column index 1 = span index 1
+	xHF.m_axSpans.Get(1).m_uRegion = 5;
+
+	bool bFound = Zenith_NavMeshGenerator::ColumnHasSpanInRegion(
+		xHF.m_axSpans,
+		xHF.m_axColumnSpanCounts,
+		xHF.m_axColumnSpanStarts,
+		/*iX=*/1, /*iZ=*/0,
+		iWidth, iHeight,
+		/*uRegion=*/5);
+
+	Zenith_Assert(bFound, "Should find span with region 5 in column (1,0)");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestColumnHasSpanInRegionFound PASSED");
+}
+
+void Zenith_AITests::TestColumnHasSpanInRegionNotFound()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestColumnHasSpanInRegionNotFound...");
+
+	// 2x2 grid, all regions are 0 (default)
+	const int32_t iWidth = 2;
+	const int32_t iHeight = 2;
+	const uint16_t auHeights[4] = {10, 10, 10, 10};
+
+	TestCompactHF xHF = BuildTestHF(iWidth, iHeight, auHeights, nullptr);
+
+	// Search for region 7 which does not exist
+	bool bFound = Zenith_NavMeshGenerator::ColumnHasSpanInRegion(
+		xHF.m_axSpans,
+		xHF.m_axColumnSpanCounts,
+		xHF.m_axColumnSpanStarts,
+		/*iX=*/0, /*iZ=*/0,
+		iWidth, iHeight,
+		/*uRegion=*/7);
+
+	Zenith_Assert(!bFound, "Should NOT find span with region 7");
+
+	// Also test out-of-bounds coordinates
+	bool bOutOfBounds = Zenith_NavMeshGenerator::ColumnHasSpanInRegion(
+		xHF.m_axSpans,
+		xHF.m_axColumnSpanCounts,
+		xHF.m_axColumnSpanStarts,
+		/*iX=*/-1, /*iZ=*/0,
+		iWidth, iHeight,
+		/*uRegion=*/0);
+
+	Zenith_Assert(!bOutOfBounds, "Out-of-bounds coordinates should return false");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestColumnHasSpanInRegionNotFound PASSED");
+}

@@ -676,3 +676,98 @@ const std::unordered_map<u_int, Zenith_Vector<Zenith_Profiling::Event>>& Zenith_
 {
 	return g_xEvents;
 }
+
+void Zenith_Profiling::ClearEvents()
+{
+	Zenith_ScopedMutexLock_T xLock(g_xEventsMutex);
+	for (auto xIt = g_xEvents.begin(); xIt != g_xEvents.end(); xIt++)
+	{
+		xIt->second.Clear();
+	}
+}
+
+void Zenith_Profiling::WriteTextReport(FILE* pFile)
+{
+	Zenith_ScopedMutexLock_T xLock(g_xEventsMutex);
+
+	struct IndexStats
+	{
+		double fTotalMs = 0.0;
+		double fMinMs = 1e30;
+		double fMaxMs = 0.0;
+		uint32_t uCallCount = 0;
+		Zenith_ProfileIndex eIndex = ZENITH_PROFILE_INDEX__COUNT;
+	};
+
+	IndexStats axStats[ZENITH_PROFILE_INDEX__COUNT] = {};
+	for (u_int i = 0; i < ZENITH_PROFILE_INDEX__COUNT; ++i)
+		axStats[i].eIndex = static_cast<Zenith_ProfileIndex>(i);
+
+	u_int uTotalEvents = 0;
+	u_int uThreadCount = 0;
+
+	for (const auto& [uThreadID, xEvents] : g_xEvents)
+	{
+		u_int uEventCount = xEvents.GetSize();
+		if (uEventCount > 0)
+			uThreadCount++;
+		uTotalEvents += uEventCount;
+
+		for (u_int u = 0; u < uEventCount; ++u)
+		{
+			const Event& xEvent = xEvents.Get(u);
+			double fDurationMs = std::chrono::duration<double, std::milli>(xEvent.m_xEnd - xEvent.m_xBegin).count();
+
+			IndexStats& xStat = axStats[xEvent.m_eIndex];
+			xStat.uCallCount++;
+			xStat.fTotalMs += fDurationMs;
+			if (fDurationMs < xStat.fMinMs)
+				xStat.fMinMs = fDurationMs;
+			if (fDurationMs > xStat.fMaxMs)
+				xStat.fMaxMs = fDurationMs;
+		}
+	}
+
+	// Sort indices by total time descending
+	Zenith_ProfileIndex aeSorted[ZENITH_PROFILE_INDEX__COUNT];
+	u_int uSortedCount = 0;
+	for (u_int i = 0; i < ZENITH_PROFILE_INDEX__COUNT; ++i)
+	{
+		if (axStats[i].uCallCount > 0)
+			aeSorted[uSortedCount++] = static_cast<Zenith_ProfileIndex>(i);
+	}
+
+	for (u_int i = 0; i < uSortedCount; ++i)
+	{
+		for (u_int j = i + 1; j < uSortedCount; ++j)
+		{
+			if (axStats[aeSorted[j]].fTotalMs > axStats[aeSorted[i]].fTotalMs)
+			{
+				Zenith_ProfileIndex eTmp = aeSorted[i];
+				aeSorted[i] = aeSorted[j];
+				aeSorted[j] = eTmp;
+			}
+		}
+	}
+
+	fprintf(pFile, "\n=== Profiling Report ===\n");
+	fprintf(pFile, "Threads with events: %u | Total events: %u\n\n", uThreadCount, uTotalEvents);
+	fprintf(pFile, "%-40s %12s %10s %12s %12s %12s\n",
+		"Profile Zone", "Total (ms)", "Calls", "Avg (ms)", "Min (ms)", "Max (ms)");
+	fprintf(pFile, "---------------------------------------- ------------ ---------- ------------ ------------ ------------\n");
+
+	for (u_int i = 0; i < uSortedCount; ++i)
+	{
+		const IndexStats& xStat = axStats[aeSorted[i]];
+		double fAvgMs = xStat.fTotalMs / xStat.uCallCount;
+		fprintf(pFile, "%-40s %12.1f %10u %12.3f %12.3f %12.3f\n",
+			g_aszProfileNames[aeSorted[i]],
+			xStat.fTotalMs,
+			xStat.uCallCount,
+			fAvgMs,
+			xStat.fMinMs,
+			xStat.fMaxMs);
+	}
+
+	fprintf(pFile, "\n");
+}

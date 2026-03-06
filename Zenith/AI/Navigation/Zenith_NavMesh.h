@@ -200,6 +200,8 @@ public:
 #endif
 
 private:
+	friend class Zenith_UnitTests;
+
 	// Mesh data
 	Zenith_Vector<Zenith_Maths::Vector3> m_axVertices;
 	Zenith_Vector<Zenith_NavMeshPolygon> m_axPolygons;
@@ -222,4 +224,37 @@ private:
 	// Helper to get grid cell for a position
 	void GetGridCoords(const Zenith_Maths::Vector3& xPos, int32_t& iX, int32_t& iZ) const;
 	uint32_t GetGridCellIndex(int32_t iX, int32_t iZ) const;
+
+	/**
+	 * Search a single grid cell for the nearest polygon to a point
+	 * @param uCellIndex Index into m_axGridCells
+	 * @param xPoint Query point
+	 * @param fMinDistSq In/out: current minimum distance squared
+	 * @param uPolyOut In/out: current nearest polygon index
+	 * @param xNearestOut In/out: current nearest point on navmesh
+	 */
+	void FindNearestPolygonInCell(uint32_t uCellIndex, const Zenith_Maths::Vector3& xPoint,
+		float& fMinDistSq, uint32_t& uPolyOut, Zenith_Maths::Vector3& xNearestOut) const;
+
+	/**
+	 * Compute the 2D (XZ plane) axis-aligned bounding box of a polygon
+	 * @param xPoly The polygon to compute bounds for
+	 * @param xPolyMinOut Output: minimum bounds (only x and z are set)
+	 * @param xPolyMaxOut Output: maximum bounds (only x and z are set)
+	 */
+	static void ComputePolygonBounds2D(const Zenith_NavMeshPolygon& xPoly,
+		const Zenith_Vector<Zenith_Maths::Vector3>& axVertices,
+		Zenith_Maths::Vector3& xPolyMinOut, Zenith_Maths::Vector3& xPolyMaxOut);
+
+#ifdef ZENITH_TOOLS
+	// DebugDraw helpers (each draws one visual section per polygon)
+	void DebugDrawEdges(const Zenith_NavMeshPolygon& xPoly, const Zenith_Maths::Vector3& xOffset,
+		const Zenith_Maths::Vector3& xEdgeColor) const;
+	void DebugDrawBoundaryEdges(const Zenith_NavMeshPolygon& xPoly, const Zenith_Maths::Vector3& xOffset,
+		const Zenith_Maths::Vector3& xBoundaryColor) const;
+	void DebugDrawPolygonFill(const Zenith_NavMeshPolygon& xPoly, const Zenith_Maths::Vector3& xOffset,
+		const Zenith_Maths::Vector3& xWalkableColor) const;
+	void DebugDrawNeighborConnections(uint32_t uPoly, const Zenith_NavMeshPolygon& xPoly,
+		const Zenith_Maths::Vector3& xOffset, const Zenith_Maths::Vector3& xNeighborColor) const;
+#endif
 };

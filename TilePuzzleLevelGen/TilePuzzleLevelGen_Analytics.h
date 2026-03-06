@@ -26,6 +26,7 @@ namespace TilePuzzleLevelGenAnalytics
 		uint32_t uTotalRetryRounds = 0;
 		uint32_t uMaxRetryRounds = 0;
 		uint32_t uTimedOutLevels = 0;
+		uint32_t uTotalLowerBoundAccepts = 0;
 
 		TilePuzzle_LevelGenerator::ParamValueStats xColorStats;
 		TilePuzzle_LevelGenerator::ParamValueStats xCatsPerColorStats;
@@ -61,6 +62,8 @@ namespace TilePuzzleLevelGenAnalytics
 
 		if (pxStats)
 		{
+			xRunStats.uTotalLowerBoundAccepts += pxStats->uLowerBoundAccepts;
+
 			for (uint32_t v = 0; v < s_uMaxParamValues; ++v)
 			{
 				xRunStats.xColorStats.auScrambleFailures[v] += pxStats->xColorStats.auScrambleFailures[v];
@@ -191,6 +194,7 @@ namespace TilePuzzleLevelGenAnalytics
 		}
 		fprintf(pFile, "Max rounds for a level:  %u\n", xRunStats.uMaxRetryRounds);
 		fprintf(pFile, "Timed-out levels:        %u\n", xRunStats.uTimedOutLevels);
+		fprintf(pFile, "Lower-bound accepts:     %u\n", xRunStats.uTotalLowerBoundAccepts);
 
 		// Per-parameter tables
 		fprintf(pFile, "\n\nPARAMETER INFLUENCE ANALYSIS\n");

@@ -236,13 +236,7 @@ bool Zenith_NavMeshGenerator::ComputeBounds(
 
 	for (uint32_t u = 1; u < axVertices.GetSize(); ++u)
 	{
-		xContext.m_xBoundsMin.x = std::min(xContext.m_xBoundsMin.x, axVertices.Get(u).x);
-		xContext.m_xBoundsMin.y = std::min(xContext.m_xBoundsMin.y, axVertices.Get(u).y);
-		xContext.m_xBoundsMin.z = std::min(xContext.m_xBoundsMin.z, axVertices.Get(u).z);
-
-		xContext.m_xBoundsMax.x = std::max(xContext.m_xBoundsMax.x, axVertices.Get(u).x);
-		xContext.m_xBoundsMax.y = std::max(xContext.m_xBoundsMax.y, axVertices.Get(u).y);
-		xContext.m_xBoundsMax.z = std::max(xContext.m_xBoundsMax.z, axVertices.Get(u).z);
+		ExpandBoundsToInclude(xContext.m_xBoundsMin, xContext.m_xBoundsMax, axVertices.Get(u));
 	}
 
 	// Add padding for agent radius
@@ -538,6 +532,9 @@ bool Zenith_NavMeshGenerator::BuildRegions(GenerationContext& xContext)
 		}
 	}
 
+	int32_t iMaxStepCells = static_cast<int32_t>(
+		xContext.m_xConfig.m_fMaxStepHeight / xContext.m_xConfig.m_fCellHeight);
+
 	uint16_t uNextRegion = 1;
 
 	for (uint32_t u = 0; u < xContext.m_axCompactSpans.GetSize(); ++u)
@@ -547,72 +544,16 @@ bool Zenith_NavMeshGenerator::BuildRegions(GenerationContext& xContext)
 			continue;  // Already assigned
 		}
 
-		// Flood fill from this span
-		std::queue<uint32_t> xQueue;
-		xQueue.push(u);
-		xContext.m_axCompactSpans.Get(u).m_uRegion = uNextRegion;
-
-		while (!xQueue.empty())
-		{
-			uint32_t uCurrentSpan = xQueue.front();
-			xQueue.pop();
-
-			// Get column coordinates from span index
-			uint32_t uCurrentCol = axSpanToColumn.Get(uCurrentSpan);
-			int32_t iColX = uCurrentCol % xContext.m_iWidth;
-			int32_t iColZ = uCurrentCol / xContext.m_iWidth;
-
-			// Check 4 neighbors
-			const int32_t aiDx[] = {1, 0, -1, 0};
-			const int32_t aiDz[] = {0, 1, 0, -1};
-
-			for (int32_t iDir = 0; iDir < 4; ++iDir)
-			{
-				int32_t iNx = iColX + aiDx[iDir];
-				int32_t iNz = iColZ + aiDz[iDir];
-
-				if (iNx < 0 || iNx >= xContext.m_iWidth ||
-					iNz < 0 || iNz >= xContext.m_iHeight)
-				{
-					continue;
-				}
-
-				uint32_t uNeighborCol = GetColumnIndex(iNx, iNz, xContext.m_iWidth);
-				uint32_t uNeighborSpanCount = xContext.m_axColumnSpanCounts.Get(uNeighborCol);
-				if (uNeighborSpanCount == 0)
-				{
-					continue;  // No spans in neighbor column
-				}
-
-				uint32_t uNeighborSpanStart = xContext.m_axColumnSpanStarts.Get(uNeighborCol);
-				CompactSpan& xCurrent = xContext.m_axCompactSpans.Get(uCurrentSpan);
-
-				// Check all spans in the neighbor column
-				for (uint32_t s = 0; s < uNeighborSpanCount; ++s)
-				{
-					uint32_t uNeighborSpanIdx = uNeighborSpanStart + s;
-					CompactSpan& xNeighbor = xContext.m_axCompactSpans.Get(uNeighborSpanIdx);
-
-					if (xNeighbor.m_uRegion != 0)
-					{
-						continue;  // Already assigned
-					}
-
-					// Check height difference for connectivity
-					int32_t iHeightDiff = std::abs(static_cast<int32_t>(xNeighbor.m_uY) -
-						static_cast<int32_t>(xCurrent.m_uY));
-
-					int32_t iMaxStepCells = static_cast<int32_t>(
-						xContext.m_xConfig.m_fMaxStepHeight / xContext.m_xConfig.m_fCellHeight);
-
-					if (iHeightDiff <= iMaxStepCells)
-					{
-						xNeighbor.m_uRegion = uNextRegion;
-						xQueue.push(uNeighborSpanIdx);
-					}
-				}
-			}
-		}
+		FloodFillRegion(
+			xContext.m_axCompactSpans,
+			xContext.m_axColumnSpanCounts,
+			xContext.m_axColumnSpanStarts,
+			axSpanToColumn,
+			xContext.m_iWidth,
+			xContext.m_iHeight,
+			iMaxStepCells,
+			u,
+			uNextRegion);
 
 		++uNextRegion;
 	}
@@ -645,32 +586,6 @@ bool Zenith_NavMeshGenerator::TraceContours(GenerationContext& xContext)
 		Zenith_Vector<ContourVertex> xContour;
 		xContext.m_axContours.PushBack(std::move(xContour));
 	}
-
-	// Helper lambda to check if a column has a span in a given region
-	auto ColumnHasSpanInRegion = [&](int32_t iX, int32_t iZ, uint16_t uRegion) -> bool
-	{
-		if (iX < 0 || iX >= xContext.m_iWidth || iZ < 0 || iZ >= xContext.m_iHeight)
-		{
-			return false;
-		}
-
-		uint32_t uCol = GetColumnIndex(iX, iZ, xContext.m_iWidth);
-		uint32_t uSpanCount = xContext.m_axColumnSpanCounts.Get(uCol);
-		if (uSpanCount == 0)
-		{
-			return false;
-		}
-
-		uint32_t uSpanStart = xContext.m_axColumnSpanStarts.Get(uCol);
-		for (uint32_t s = 0; s < uSpanCount; ++s)
-		{
-			if (xContext.m_axCompactSpans.Get(uSpanStart + s).m_uRegion == uRegion)
-			{
-				return true;
-			}
-		}
-		return false;
-	};
 
 	// For each region, find boundary cells
 	for (uint16_t uRegion = 1; uRegion <= uMaxRegion; ++uRegion)
@@ -715,7 +630,7 @@ bool Zenith_NavMeshGenerator::TraceContours(GenerationContext& xContext)
 						{
 							bBoundary = true;
 						}
-						else if (!ColumnHasSpanInRegion(iNx, iNz, uRegion))
+						else if (!ColumnHasSpanInRegion(xContext.m_axCompactSpans, xContext.m_axColumnSpanCounts, xContext.m_axColumnSpanStarts, iNx, iNz, xContext.m_iWidth, xContext.m_iHeight, uRegion))
 						{
 							bBoundary = true;
 						}
@@ -997,6 +912,128 @@ void Zenith_NavMeshGenerator::AddSpan(HeightfieldColumn& xColumn, uint16_t uMinY
 			pxCurrent = pxCurrent->m_pxNext;
 		}
 	}
+}
+
+void Zenith_NavMeshGenerator::FloodFillRegion(
+	Zenith_Vector<CompactSpan>& axCompactSpans,
+	const Zenith_Vector<uint32_t>& axColumnSpanCounts,
+	const Zenith_Vector<uint32_t>& axColumnSpanStarts,
+	const Zenith_Vector<uint32_t>& axSpanToColumn,
+	int32_t iWidth,
+	int32_t iHeight,
+	int32_t iMaxStepCells,
+	uint32_t uStartSpanIdx,
+	uint16_t uRegionID)
+{
+	std::queue<uint32_t> xQueue;
+	xQueue.push(uStartSpanIdx);
+	axCompactSpans.Get(uStartSpanIdx).m_uRegion = uRegionID;
+
+	while (!xQueue.empty())
+	{
+		uint32_t uCurrentSpan = xQueue.front();
+		xQueue.pop();
+
+		// Get column coordinates from span index
+		uint32_t uCurrentCol = axSpanToColumn.Get(uCurrentSpan);
+		int32_t iColX = uCurrentCol % iWidth;
+		int32_t iColZ = uCurrentCol / iWidth;
+
+		// Check 4 neighbors
+		const int32_t aiDx[] = {1, 0, -1, 0};
+		const int32_t aiDz[] = {0, 1, 0, -1};
+
+		for (int32_t iDir = 0; iDir < 4; ++iDir)
+		{
+			int32_t iNx = iColX + aiDx[iDir];
+			int32_t iNz = iColZ + aiDz[iDir];
+
+			if (iNx < 0 || iNx >= iWidth ||
+				iNz < 0 || iNz >= iHeight)
+			{
+				continue;
+			}
+
+			uint32_t uNeighborCol = GetColumnIndex(iNx, iNz, iWidth);
+			uint32_t uNeighborSpanCount = axColumnSpanCounts.Get(uNeighborCol);
+			if (uNeighborSpanCount == 0)
+			{
+				continue;  // No spans in neighbor column
+			}
+
+			uint32_t uNeighborSpanStart = axColumnSpanStarts.Get(uNeighborCol);
+			CompactSpan& xCurrent = axCompactSpans.Get(uCurrentSpan);
+
+			// Check all spans in the neighbor column
+			for (uint32_t s = 0; s < uNeighborSpanCount; ++s)
+			{
+				uint32_t uNeighborSpanIdx = uNeighborSpanStart + s;
+				CompactSpan& xNeighbor = axCompactSpans.Get(uNeighborSpanIdx);
+
+				if (xNeighbor.m_uRegion != 0)
+				{
+					continue;  // Already assigned
+				}
+
+				// Check height difference for connectivity
+				int32_t iHeightDiff = std::abs(static_cast<int32_t>(xNeighbor.m_uY) -
+					static_cast<int32_t>(xCurrent.m_uY));
+
+				if (iHeightDiff <= iMaxStepCells)
+				{
+					xNeighbor.m_uRegion = uRegionID;
+					xQueue.push(uNeighborSpanIdx);
+				}
+			}
+		}
+	}
+}
+
+bool Zenith_NavMeshGenerator::ColumnHasSpanInRegion(
+	const Zenith_Vector<CompactSpan>& axCompactSpans,
+	const Zenith_Vector<uint32_t>& axColumnSpanCounts,
+	const Zenith_Vector<uint32_t>& axColumnSpanStarts,
+	int32_t iX,
+	int32_t iZ,
+	int32_t iWidth,
+	int32_t iHeight,
+	uint16_t uRegion)
+{
+	if (iX < 0 || iX >= iWidth || iZ < 0 || iZ >= iHeight)
+	{
+		return false;
+	}
+
+	uint32_t uCol = GetColumnIndex(iX, iZ, iWidth);
+	uint32_t uSpanCount = axColumnSpanCounts.Get(uCol);
+	if (uSpanCount == 0)
+	{
+		return false;
+	}
+
+	uint32_t uSpanStart = axColumnSpanStarts.Get(uCol);
+	for (uint32_t s = 0; s < uSpanCount; ++s)
+	{
+		if (axCompactSpans.Get(uSpanStart + s).m_uRegion == uRegion)
+		{
+			return true;
+		}
+	}
+	return false;
+}
+
+void Zenith_NavMeshGenerator::ExpandBoundsToInclude(
+	Zenith_Maths::Vector3& xMin,
+	Zenith_Maths::Vector3& xMax,
+	const Zenith_Maths::Vector3& xPoint)
+{
+	xMin.x = std::min(xMin.x, xPoint.x);
+	xMin.y = std::min(xMin.y, xPoint.y);
+	xMin.z = std::min(xMin.z, xPoint.z);
+
+	xMax.x = std::max(xMax.x, xPoint.x);
+	xMax.y = std::max(xMax.y, xPoint.y);
+	xMax.z = std::max(xMax.z, xPoint.z);
 }
 
 void Zenith_NavMeshGenerator::FreeHeightfield(GenerationContext& xContext)

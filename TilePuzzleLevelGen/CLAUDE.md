@@ -8,26 +8,27 @@ Standalone offline tool that generates solvable TilePuzzle levels and saves them
 
 Levels are generated backwards from a solved state:
 
-1. **Grid creation**: 9×9 grid with 1-cell empty border, 7×7 playable interior (49 floor cells)
-2. **Blocker placement**: Static non-draggable shapes placed on random floor cells. Restricted to I-shape (3 cells), Domino (2 cells), and Single (1 cell) to ensure max 3 blocker cells
+1. **Grid creation**: NxM grid (randomized per attempt based on difficulty) with 1-cell empty border, (N-2)x(M-2) playable interior
+2. **Blocker placement**: Static non-draggable shapes placed on random floor cells. Restricted to I-shape (3 cells), Domino (2 cells), and Single (1 cell) — these are the only entries in the `aeBlockerTypes` array in the generation code
 3. **Cat placement**: Colored cats placed on unoccupied floor cells (no same-color cats adjacent, including diagonals). Optionally some cats placed on blockers ("blocker cats")
 4. **Shape placement (solved state)**: Draggable shapes placed directly on their matching-color cats — this is the win condition
 5. **Conditional marking**: Some draggable shapes are marked as conditional with incrementing unlock thresholds, forcing sequential elimination order
 6. **Pre-scramble**: Conditional shapes are moved off their matching cats first (up to 20 random-direction attempts per shape) so they don't start in a trivially-solved position
-7. **Scramble**: Shapes are moved away from cats via random valid moves using the shared rules engine. Two modes alternate:
-   - **Uncover mode**: When shapes still cover same-color cats, prioritize moving those shapes away
-   - **Random mode**: Random moves for distance once all cats are uncovered
+7. **Scramble**: Shapes are moved away from cats using the shared rules engine. Three scramble modes are available (selected by `RandomizeDifficultyParams` based on min-moves target):
+   - **RANDOM**: Two internal phases alternate — *Uncover* (when shapes cover same-color cats, prioritize moving those shapes away) and *Random* (random one-cell moves for displacement)
+   - **GUIDED**: Same Uncover phase, but the Random phase is replaced by Manhattan-distance maximization — evaluates all valid moves and picks the one maximizing total Manhattan distance from solved positions. 15% epsilon-greedy: with probability `fGuidedEpsilon = 0.15`, falls back to random move instead of guided
+   - **REVERSE_BFS**: BFS outward from solved state, picks the deepest reachable configuration. Used for smaller grids (<=49 cells) where branching factor is manageable
 8. **Solver verification**: A BFS solver verifies the scrambled level is solvable and counts minimum player moves. Levels below the move threshold are rejected
-9. **Post-generation validation**: Levels must have 4-5 draggable shapes, at least one with 2+ cells, and max 3 total blocker cells
+9. **Post-generation validation**: `IsLevelValid` checks: at least 1 draggable shape and max 12 total blocker cells
 
 This "reverse scramble" approach guarantees solvability by construction — the reverse of the scramble sequence is always a valid solution.
 
 ### Parallel "Keep Best" Strategy
 
-Each level generation dispatches 3000 attempts across all CPU threads via `Zenith_TaskArray`. Each worker thread:
+Each level generation dispatches a configurable number of attempts (500-3000 depending on difficulty) across all CPU threads via `Zenith_TaskArray`. Each worker thread:
 
 - Gets a unique RNG seed based on level number + worker index + seed offset
-- Randomly samples parameter values from the configured ranges for each attempt
+- Randomly samples parameter values from the configured ranges for each attempt (within the per-round params set by `RandomizeDifficultyParams`)
 - Runs the full generate-scramble-solve pipeline
 - Keeps only its best result (highest solver move count)
 
@@ -39,7 +40,7 @@ The solver (`TilePuzzle_Solver.h`) counts minimum **player moves** (not cell mov
 
 - **Outer BFS**: State = all shape positions + eliminated cat bitmask (packed as `uint64_t`). Each transition = one shape pick (cost 1)
 - **Inner BFS**: For a given shape pick, explores all reachable positions via cell-by-cell movement. Handles intermediate cat eliminations during a drag (cats eliminated as shapes pass over them)
-- **State limit**: Configurable max states (default 2M for gameplay, 500K for generator fast pass). If exceeded, returns -1 (unsolvable/too complex)
+- **State limit**: Configurable max states (default `s_uTilePuzzleMaxSolverStates = 2000000` for gameplay). If exceeded, returns -1 (unsolvable/too complex)
 - **Win condition**: All cats eliminated. Shapes auto-remove when all same-color cats are eliminated
 
 ### Solver State Packing
@@ -52,14 +53,14 @@ The solver (`TilePuzzle_Solver.h`) counts minimum **player moves** (not cell mov
 - Bits [40..47]: shape 3 packed position
 - Bits [48..55]: shape 4 packed position
 - Bits [56..63]: unused
-- Supports up to 5 draggable shapes with grid dimensions up to 15×15
+- Supports up to 5 draggable shapes with grid dimensions up to 15x15
 - Constants: `s_uMaxSolverShapes = 5`, `s_uMaxSolverCats = 16`
 
-**Inner state** — Single `uint64_t`: bits [47..40]=X, [39..32]=Y, [31..0]=eliminatedMask.
+**Inner state** — Single `uint64_t`: bits [47..40]=X, [39..32]=Y, [31..0]=eliminatedMask (32-bit mask to track mid-drag eliminations).
 
 ### Solver Optimizations
 
-- **Open-addressing flat hash set** (`TilePuzzleFlatHashSet`) for outer visited set: Fibonacci hashing, linear probing, sentinel `UINT64_MAX`, 75% load factor auto-resize. Much better cache locality than `std::unordered_set`
+- **Open-addressing flat hash set** (`TilePuzzleFlatHashSet`) for outer visited set: Fibonacci hashing (`key * 11400714819323198485ull >> 32`), linear probing, sentinel `UINT64_MAX`, 75% load factor auto-resize. Much better cache locality than `std::unordered_set`
 - **Pre-computed walkable grid**: `bool abWalkable[256]` combines floor + static blocker checks into a single O(1) lookup
 - **Pre-computed cat-at-cell lookup**: `int8_t aiCatAtCell[256]` gives O(1) wrong-color cat blocking checks
 - **Inlined collision checking**: CanMoveShape and ComputeNewlyEliminatedCats are inlined in the hot BFS loop. Cross-validated against canonical `TilePuzzle_Rules` in `ZENITH_ASSERT` builds
@@ -67,59 +68,83 @@ The solver (`TilePuzzle_Solver.h`) counts minimum **player moves** (not cell mov
 
 ### Two-Tier Solver Strategy
 
-The tool uses a two-tier BFS to find deeper solutions:
+The tool uses a two-tier BFS to find deeper solutions. Limits scale with the `--min-moves` target:
 
-1. **Fast pass (500K states)**: All candidates verified at 500K state limit. Quickly identifies solutions up to ~12-15 moves. ~80% of candidates that pass scramble are rejected as "unsolvable" (exceeding the limit)
+| Min-Moves | Fast Limit | Deep Limit | Deep Verif/Worker |
+|-----------|-----------|------------|-------------------|
+| < 10 | 500K | 3-5M | 5 |
+| 10-19 | 1M | 5M | 5 |
+| >= 20 | 2M | 7M | 1 |
 
-2. **Deep pass (5M states)**: Up to 5 unsolvable candidates per worker thread (~80 total across 16 threads) are re-verified at 10× the fast limit. These "unsolvable" candidates have large BFS state spaces that may contain deep 18+ move solutions the fast solver couldn't verify
+1. **Fast pass**: All candidates verified at the fast limit. Quickly identifies solutions up to ~12-15 moves
+2. **Deep pass**: Unsolvable candidates (those exceeding the fast limit) are re-verified at the deep limit. These candidates have large BFS state spaces that may contain deep solutions the fast solver couldn't verify
 
 This is controlled by `DifficultyParams::uDeepSolverStateLimit` and `uMaxDeepVerificationsPerWorker`. The game runtime uses `uDeepSolverStateLimit = 0` (disabled) for fast single-round generation.
 
 ### Retry Loop
 
-The tool wraps generation in a retry loop:
-- Each "round" runs `GenerateLevel()` with the same level number but a different `seedOffset`
+The tool wraps generation in a retry loop (`GenerateSingleLevel`):
+- Each "round" calls `RandomizeDifficultyParams()` for fresh random parameters, then runs `GenerateLevel()` with a unique `seedOffset`
 - The best result across all rounds is kept (with shape definitions copied to local storage to avoid dangling pointers)
 - Rounds repeat until `--min-moves` target is met or `--timeout` expires
-- Round time: ~8-10 min on a 16-thread machine with current parameters
 - Fast rounds (more retry rounds) produce better results than slow rounds (fewer retries) because more seed regions are explored
+
+### Level Registry
+
+The tool maintains a level registry (`LevelRegistry/` directory) for caching and reusing previously generated levels:
+
+- **On startup**: Scans registry directory for `.tlvl` files, loads metadata, deduplicates structural duplicates
+- **Per level**: Before generating, checks the registry for a cached level meeting `uParMoves >= uMinMoves` that hasn't been used in this run. On cache hit, copies the `.tlvl` and `.png` to the output directory (no generation needed)
+- **After generation**: Saves newly generated levels to the registry as `{layoutHash:016llx}.tlvl` + `.png`
+- **Deduplication**: On scan, entries with the same layout hash are loaded and compared via full structural signature. True duplicates have their registry files deleted
+
+### Duplicate Detection
+
+Each generated level is checked for structural duplicates before acceptance:
+
+- **Color-independent layout hash**: Fibonacci hashing of grid dimensions, cell layout, sorted shape entries (position + type + draggable flag), and sorted cat entries (position + blocker flag). Colors are excluded so recolored variants of the same layout are detected
+- **Collision resolution**: On hash collision, full `LevelLayoutSignature` comparison (grid, cells, shapes, cats) distinguishes true duplicates from hash collisions
+- **Retry**: If a duplicate is detected, generation retries with a new seed (up to 10 retries per level)
 
 ## File Structure
 
 | File | Purpose |
 |------|---------|
-| `TilePuzzleLevelGen.cpp` | Main entry point, CLI argument parsing, retry loop, post-generation validation |
-| `TilePuzzleLevelData_Serialize.h` | Binary `.tlvl` serialization via `Zenith_DataStream` |
-| `TilePuzzleLevelData_Json.h` | Human-readable JSON export with grid visualization and analytics |
+| `TilePuzzleLevelGen.cpp` | Main entry point, CLI parsing, retry loop, validation, duplicate detection, registry |
+| `TilePuzzleLevelMetadata.h` | `TilePuzzleLevelMetadata` struct (v2), `WriteMetadataAndLevel()`, `ReadMetadataFromFile()` |
 | `TilePuzzleLevelData_Image.h` | PNG image rendering via `stb_image_write.h` |
 | `TilePuzzleLevelGen_Analytics.h` | Run-wide analytics accumulation and `analytics.txt` output |
 
-The actual generation logic lives in `Games/TilePuzzle/Components/TilePuzzle_LevelGenerator.h` (shared with the game runtime).
+The actual generation logic lives in `Games/TilePuzzle/Components/TilePuzzle_LevelGenerator.h` (shared with the game runtime). Binary serialization is in `Games/TilePuzzle/Components/TilePuzzleLevelData_Serialize.h`.
 
 ## Output Formats
 
-Each generated level produces 3 files:
+Each generated level produces 2 files:
 
-- **`.tlvl`** — Binary format (magic `0x54504C56` "TPLV", version 1). Contains grid, shapes with inline definitions, cats. Used by the game to load pre-generated levels
-- **`.json`** — Human-readable JSON with grid visualization (`.`=empty, `#`=floor), shape/cat data, solver move count, winning parameter values, and full per-attempt analytics breakdown
-- **`.png`** — 32px/cell top-down image. Colors match in-game materials: grey floor, brown blockers, colored shapes (2px inset), brighter diamond markers for cats
+- **`.tlvl`** — Binary format. Starts with metadata header (magic `0x4D455441` "META", version 2) containing level structure, generation provenance, and registry-matching fields. Followed by standard TPLV level data (magic `0x54504C56` "TPLV", version 2) with grid, shapes with inline definitions, and cats. Used by the game to load pre-generated levels
+- **`.png`** — 32px/cell top-down image. Colors match in-game materials: grey floor (`{77,77,89}`), brown blockers (`{80,50,30}`), colored shapes (2px inset), brighter diamond markers for cats
 
-Each run also produces an **`analytics.txt`** with aggregate statistics (written at end of run or Ctrl+C).
+Each run also produces an **`analytics.txt`** with aggregate statistics (written at end of run).
 
 ### Output Directory Structure
 
+Output goes directly to the specified output directory (default `LEVELGEN_OUTPUT_DIR`):
+
 ```
-TilePuzzleLevelGen/Output/
-    Run0/
-        level_0001.tlvl / .json / .png
-        level_0002.tlvl / .json / .png
-        ...
-        analytics.txt
-    Run1/
-        ...
+<output_dir>/
+    level_0001.tlvl / .png
+    level_0002.tlvl / .png
+    ...
+    analytics.txt
 ```
 
-Each execution auto-increments the run number by scanning existing `Run*` directories.
+Generated levels are also cached in the registry directory (`LEVELGEN_REGISTRY_DIR`):
+
+```
+TilePuzzleLevelGen/LevelRegistry/
+    {layoutHash}.tlvl / .png
+    ...
+```
 
 ## Building and Running
 
@@ -130,14 +155,11 @@ Sharpmake_Build.bat
 # Build (Release recommended for generation speed)
 msbuild Build/zenith_win64.sln /p:Configuration=vs2022_Release_Win64_True /p:Platform=x64 -maxCpuCount:1
 
-# Run (generates continuously until Ctrl+C)
-TilePuzzleLevelGen/output/win64/vs2022_release_win64_true/tilepuzzlelevelgen.exe
+# Run with required arguments
+tilepuzzlelevelgen.exe --count 10 --min-moves 12
 
-# Run with count limit and 30-minute timeout per level
-tilepuzzlelevelgen.exe --count 10
-
-# Custom output directory and seed
-tilepuzzlelevelgen.exe --output path/to/output --count 50 --seed 100
+# Custom output directory, seed, and timeout
+tilepuzzlelevelgen.exe --count 50 --min-moves 15 --output path/to/output --seed 100 --timeout 900
 ```
 
 **Important**: Always build with `-maxCpuCount:1` to avoid hanging compiler processes. Use Release builds for generation — Debug is significantly slower due to the heavy BFS solver.
@@ -146,40 +168,45 @@ tilepuzzlelevelgen.exe --output path/to/output --count 50 --seed 100
 
 | Argument | Default | Description |
 |----------|---------|-------------|
-| `--count N` | 0 (infinite) | Number of levels to generate |
+| `--count N` | *required* | Number of levels to generate (must be > 0) |
+| `--min-moves N` | *required* | Minimum solver moves target (saves best on timeout) |
 | `--output DIR` | `LEVELGEN_OUTPUT_DIR` | Output directory |
 | `--timeout N` | 1800 (30 min) | Per-level time budget in seconds |
-| `--min-moves N` | 20 | Minimum solver moves target (saves best on timeout) |
-| `--solver-limit N` | 500000 | BFS state limit for fast pass |
-| `--seed N` | 0 | Starting seed counter (each round increments) |
+| `--seed N` | random (`rand()`) | Starting seed counter (each round increments) |
 
-## Current Configuration
+## Parameter Ranges
 
-### Tool-Specific Parameters (in `TilePuzzleLevelGen.cpp`)
+### Randomized Parameters (in `RandomizeDifficultyParams`, `TilePuzzleLevelGen.cpp`)
 
-These override the game defaults at runtime:
+All generation parameters are randomized per retry round, with ranges biased by the `--min-moves` target. Each attempt within a round further randomizes within the per-round ranges via the `LevelGenerator`'s own internal distributions.
 
-| Parameter | Value | Description |
-|-----------|-------|-------------|
-| Grid | 9×9 fixed | 7×7 playable interior (49 floor cells) |
-| Colors | 5 fixed | Red, Green, Blue, Yellow, Purple |
-| Cats per color | 2 fixed | 10 total cats (2^10 = 1024 elimination states) |
-| Shapes per color | 1 | 5 draggable shapes total |
-| Blockers | 1 fixed | Restricted to I/Domino/Single (max 3 cells) |
-| Blocker cats | 0-1 | Cats on blockers require adjacency elimination |
-| Conditional shapes | 1-2 | Shapes requiring N eliminations to unlock |
-| Conditional threshold | 1-4 | Per-attempt random unlock threshold |
-| Shape complexity | 2-4 | Domino to L/T/S/Z/O range |
-| Scramble moves | 30-1000 | Min successful moves / target moves |
-| Attempts per round | 3000 | Distributed across all CPU threads |
-| Fast solver limit | 500K | BFS states for fast pass |
-| Deep solver limit | 5M | BFS states for deep verification |
-| Deep verifications/worker | 5 | Max deep re-verifications per worker thread |
-| Min solver moves (internal) | 6 | Per-attempt filter; outer loop enforces actual target |
+| Parameter | min-moves < 5 | 5-9 | 10-19 | >= 20 |
+|-----------|--------------|------|-------|-------|
+| Grid size | 5-10 | 6-9 | 8-10 | 9-10 |
+| Colors | 2-5 | 3-5 | 4-5 | 5 |
+| Cats/color | 1-2 | 1-2 | 2 | 2 |
+| Blockers | 0-3 | 0-2 | 1-2 | 2 |
+| Blocker cats | 0-2 (capped at blockers) | 0-2 | 0-2 | 1-2 (min 1 if blockers>=1) |
+| Shape complexity | 1-4 | 2-4 | 2-4 | 2-4 |
+| Scramble moves | 100-1500 | 200-1000 | 300-1000 | 300-1000 |
+| Cond shapes | 0-3 (capped at colors-1) | 0-3 | 1-3 | 1-3 |
+| Cond threshold | 0 or 1-5 | 0 or 1-5 | 0 or 1-4 | 0 or 1-4 |
+| Solver limit | 500K | 500K | 1M | 2M |
+| Deep solver limit | 3-5M | 3-5M | 5M | 7M |
+| Deep verif/worker | 5 | 5 | 5 | 1 |
+| Attempts/round | 3000 | 3000 | 2000 | 500 |
+| Scramble mode | RANDOM | RANDOM | REVERSE_BFS or GUIDED | GUIDED |
+| Min solver moves | 4 | 4 | 4 | 4 |
+| Shapes per color | 1 | 1 | 1 | 1 |
+
+**Constraints enforced after randomization**:
+- `colors * catsPerColor + blockerCats <= 16` (solver bitmask limit)
+- `blockerCats <= blockers`
+- `conditionalShapes <= colors - 1`
 
 ### Game Defaults (in `TilePuzzle_LevelGenerator.h`)
 
-The `static constexpr` values in `TilePuzzle_LevelGenerator.h` define defaults for in-game generation. The tool overrides most of these. Changing the constexpr values requires a rebuild.
+The `static constexpr` values in `TilePuzzle_LevelGenerator.h` define defaults for in-game generation (8x8 grid, 3 colors, 3 cats/color, etc.). The tool's `RandomizeDifficultyParams` overrides these entirely. The `GetDifficultyForLevel()` function provides a 6-tier progressive difficulty curve for in-game use (Tutorial through Master).
 
 ### Shape Complexity Values
 
@@ -203,9 +230,9 @@ Shape placement uses a **priority fallback**: at complexity 4, first tries a ran
 | `TILEPUZZLE_COLOR_PURPLE` | Purple | | |
 | `TILEPUZZLE_COLOR_NONE` | Brown | Blockers only | N/A |
 
-### Blocker Types (Restricted)
+### Blocker Types
 
-The generator restricts blocker shapes to those with ≤ 3 cells to satisfy the post-generation validation constraint:
+The generator restricts blocker shapes to three types via the `aeBlockerTypes` array in the generation code. These produce compact obstacles that create walls/corridors reducing per-drag reachable positions:
 
 | Type | Cells | Description |
 |------|-------|-------------|
@@ -213,65 +240,30 @@ The generator restricts blocker shapes to those with ≤ 3 cells to satisfy the 
 | `TILEPUZZLE_SHAPE_DOMINO` | 2 | Small wall |
 | `TILEPUZZLE_SHAPE_SINGLE` | 1 | Point obstacle |
 
-L-shape (4 cells) and T-shape (4 cells) were removed from the blocker pool because a single L or T blocker exceeds the 3-cell limit.
-
-## Failure Mode Breakdown
-
-Every generation attempt can fail in one of three ways:
-
-| Failure Mode | Typical Rate | Cause |
-|-------------|-------------|-------|
-| **Scramble failure** | ~68% | Shapes couldn't be moved far enough from cats. Higher with complex shapes (90% at complexity 4) due to more collision constraints |
-| **Solver too easy** | ~1-2% | Scramble achieved fewer than `minScrambleMoves` moves, or level solved in fewer than 6 moves |
-| **Solver unsolvable** | ~26% | Solver BFS exceeded 500K state limit. Level is technically solvable (by construction) but too complex for the fast solver. ~12% of these are recovered by deep verification |
-
-Overall success rate is ~4.5%. The keep-best strategy deliberately generates many candidates to find exceptional ones.
-
-### Per-Complexity Breakdown
-
-| Complexity | Scramble Fail | Unsolvable | Success Rate |
-|-----------|--------------|-----------|-------------|
-| 2 (Domino/Single) | ~30% | ~63% | ~4.8% |
-| 3 (L/T/I) | ~86% | ~9% | ~5.0% |
-| 4 (all shapes) | ~90% | ~6% | ~3.9% |
-
-Complexity 2 has the lowest scramble failure but highest unsolvable rate (small shapes have more reachable positions = wider BFS = harder to solve at 500K). Complexity 3-4 have high scramble failure but narrower BFS trees.
-
 ## Key Constraints and Tradeoffs
-
-### Why 2 Cats Per Color (Not 3)
-
-With 5 colors × 3 cats/color = 15 cats, the elimination bitmask has 2^15 = 32,768 states. This makes the BFS state space too large — **0% solver success rate** at any practical limit (tested 100K, 500K, 2M). The solver physically cannot find solutions.
-
-With 2 cats/color = 10 cats, 2^10 = 1,024 elimination states — tractable. The solver finds 12-19 move solutions at 500K-5M limits.
 
 ### Why 16-Bit Cat Mask (Not 32-Bit)
 
-The solver state was repacked to support 5 shapes: 16-bit cat mask (bits [0..15]) + 5 × 8-bit positions (bits [16..55]). This limits cats to 16 maximum (sufficient for 5 colors × 3 = 15, though only 10-11 are used currently). The old 32-bit mask supported only 4 shapes.
+The solver state was repacked to support 5 shapes: 16-bit cat mask (bits [0..15]) + 5 x 8-bit positions (bits [16..55]). This limits cats to 16 maximum (sufficient for 5 colors x 3 = 15). The old 32-bit mask supported only 4 shapes.
 
-### Why Fast Rounds Beat Deep Rounds
+### Why High Cat Counts Are Problematic
 
-Tested 10M deep solver with 8 verifications per worker: rounds took ~16 min, limiting to ~2 rounds per level. Result: best 15 moves. Tested 5M deep solver with 5 per worker: rounds took ~10 min, allowing ~3 rounds. Result: best 19 moves. **More rounds exploring different seed regions finds deeper solutions than fewer rounds with a more powerful solver.**
-
-### Why Fixed 9×9 Grid
-
-- 7×7 (25 playable cells): Too tight for 10 cats + 5 shapes + blocker
-- 8×8 (36 playable cells): Workable but tighter, less variety
-- 9×9 (49 playable cells): Good balance of space for shapes to move, proven 18-19 move results
-- 10×10 (64 playable cells): Tested — all candidates unsolvable at 500K (wider BFS from more positions)
+With 5 colors x 3 cats/color = 15 cats, the elimination bitmask has 2^15 = 32,768 states. This makes the BFS state space too large — solver success rate drops to near 0% at practical limits. With 2 cats/color = 10 cats, 2^10 = 1,024 elimination states — tractable.
 
 ### Dangling Pointer Prevention
 
 When saving the best level across retry rounds, shape definitions must be copied to local storage (`axBestLevelDefs` vector) because subsequent `GenerateLevel()` calls clear the static definition vector. All shape instance pointers are then remapped to the local copies.
 
-## Benchmark Results
+## Historical Benchmark Results
 
-### Run127 (5 Colors × 2 Cats, Solver Repack Validation)
+These benchmarks were gathered under specific fixed parameter configurations (before the switch to randomized parameters). They demonstrate the tool's capabilities and tradeoffs but exact rates may differ with current randomized settings.
+
+### Run127 (5 Colors x 2 Cats, Solver Repack Validation)
 - 1 level, min-moves 1, 500K solver, 300s timeout
 - **12 moves** in 1 round (326s). solver=12, verify=12 — confirmed 5-shape packing is correct
 - 55 successes / 2000 attempts = 2.8% success rate
 
-### Run129 (5 Colors × 2 Cats, Restricted Blockers, Min 20)
+### Run129 (5 Colors x 2 Cats, Restricted Blockers, Min 20)
 - 2 levels, 500K fast + 5M deep (3 per worker), 2000 attempts/round, 1800s timeout
 - **Level 1**: 18 moves (6 rounds, 35 min TIMEOUT)
 - **Level 2**: 16 moves (5 rounds, 30 min TIMEOUT)
@@ -284,26 +276,15 @@ When saving the best level across retry rounds, shape definitions must be copied
 - 950 total successes across both levels, 4.5% success rate
 - ~130 candidates per round, ~10 min per round
 
-### Expected Performance
-
-| Min Moves Target | Typical Result | Typical Time | Notes |
-|------------------|---------------|-------------|-------|
-| 12 | 12-15 moves | 1 round (~10 min) | Fast pass reliably finds 12+ |
-| 15 | 15-18 moves | 2-3 rounds (~20-30 min) | Deep verify needed for 15+ |
-| 18 | 18-19 moves | 3-5 rounds (~30-50 min) | Usually hits 18; 19 is lucky |
-| 20 | 18-19 moves (TIMEOUT) | 30+ min | 20 not reached; 19 is practical ceiling |
-
-The practical ceiling of 18-19 moves is limited by the BFS state budget (500K fast / 5M deep) with 5 shapes on a 9×9 grid. The branching factor (each shape can be dragged to many positions) consumes the state budget before reaching depth 20.
-
 ## Pitfalls and Gotchas
 
 ### stdout Buffering in Background Processes
 
-When running the generator as a background process, `fflush(stdout)` may not be sufficient to see real-time progress. **Monitor the output directory for new files instead of watching stdout.** The generator writes `.json` files immediately on level completion.
+When running the generator as a background process, `fflush(stdout)` may not be sufficient to see real-time progress. **Monitor the output directory for new files instead of watching stdout.** The generator writes `.tlvl` and `.png` files on level completion.
 
 ### Release Build Required for Practical Use
 
-Debug builds are ~5-10× slower due to the heavy BFS solver running thousands of times per level plus `ZENITH_ASSERT` cross-validation of inlined solver logic. Always use `vs2022_Release_Win64_True` for actual generation runs.
+Debug builds are ~5-10x slower due to the heavy BFS solver running thousands of times per level plus `ZENITH_ASSERT` cross-validation of inlined solver logic. Always use `vs2022_Release_Win64_True` for actual generation runs.
 
 ### RNG Determinism
 
@@ -311,4 +292,4 @@ Worker RNG seeds are derived from `levelNumber * 7919 + 104729 + workerIndex * 3
 
 ### Long-Running Processes
 
-Each level can take 30-50 minutes. The per-level timeout (default 1800s) is checked after each round completes, so actual time may exceed the timeout by one round duration (~10 min). For multi-level runs, total time = levels × (timeout + ~1 round overhead).
+Each level can take up to the timeout duration (default 1800s / 30 min). The timeout is checked after each round completes, so actual time may exceed the timeout by one round duration. For multi-level runs, total time = levels x (timeout + ~1 round overhead).

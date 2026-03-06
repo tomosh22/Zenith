@@ -48,6 +48,9 @@
 // Mesh geometry include (for exporting runtime-format meshes)
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 
+// Vulkan memory manager (for DetermineImageViewType tests)
+#include "Vulkan/Zenith_Vulkan_MemoryManager.h"
+
 // Animation texture include (for VAT baking)
 #include "Flux/InstancedMeshes/Flux_AnimationTexture.h"
 
@@ -68,9 +71,16 @@
 // Async asset loading
 #include "AssetHandling/Zenith_AsyncAssetLoader.h"
 
+// Terrain streaming (for chunk distance tests)
+#include "Flux/Terrain/Flux_TerrainStreamingManager.h"
+
+// Slang compiler (for SplitFilePath helper tests)
+#include "Flux/Slang/Flux_SlangCompiler.h"
+
 #ifdef ZENITH_TOOLS
 #include "UnitTests/Zenith_EditorTests.h"
 #include "UnitTests/Zenith_AutomationTests.h"
+#include "Flux/Gizmos/Flux_Gizmos.h"
 #endif
 
 void Zenith_UnitTests::RunAllTests()
@@ -103,6 +113,7 @@ void Zenith_UnitTests::RunAllTests()
 	TestEntitySerialization();
 	TestSceneSerialization();
 	TestSceneRoundTrip();
+	TestSceneDisableDestroyHelpers();
 
 	// Animation system tests
 	TestBoneLocalPoseBlending();
@@ -121,7 +132,13 @@ void Zenith_UnitTests::RunAllTests()
 	TestBlendSpace2D();
 	TestBlendTreeEvaluation();
 	TestBlendTreeSerialization();
+	TestBlendTreeWriteReadChildNode();
+	TestBlendTreeEvaluateChildOrReset();
+	TestBlendTreeSelectGetSelectedChild();
 	TestFABRIKSolver();
+	TestIKSafeNormalize();
+	TestIKFindPerpendicularAxis();
+	TestIKConstrainBoneLength();
 	TestAnimationEvents();
 	TestBoneMasking();
 
@@ -260,6 +277,8 @@ void Zenith_UnitTests::RunAllTests()
 	TestNavMeshFindNearestPolygon();
 	TestNavMeshIsPointOnMesh();
 	TestNavMeshRaycast();
+	TestNavMeshFindNearestPolygonInCell();
+	TestNavMeshComputePolygonBounds();
 	TestPathfindingStraightLine();
 	TestPathfindingAroundObstacle();
 	TestPathfindingNoPath();
@@ -275,6 +294,16 @@ void Zenith_UnitTests::RunAllTests()
 	TestPathfindingNoDuplicateWaypoints();
 	TestPathfindingBatchProcessing();
 	TestPathfindingPartialPath();
+
+	// NavMesh Generator helper tests
+	TestCountWalkableSpans();
+	TestHasSufficientClearance();
+	TestMergeOverlappingSpans();
+
+	// Physics mesh generator helper tests
+	TestFindExtremeVertexIndices();
+	TestComputeAABBFromPositions();
+	TestComputeVertexNormals();
 
 	// AI System tests - Perception
 	TestSightConeInRange();
@@ -300,10 +329,32 @@ void Zenith_UnitTests::RunAllTests()
 	TestTacticalPointRegistration();
 	TestTacticalPointCoverScoring();
 	TestTacticalPointFlankScoring();
+	TestFindBestPointNoPointsActive();
+	TestFindBestPointOutOfRange();
+
+	// AI System tests - Tactical Point refactoring tests
+	TestGetEntityPositionValid();
+	TestGetEntityPositionInvalid();
+	TestFindBestPointNoMatches();
+	TestFindBestPointSelectsHighest();
+	TestScoreCoverDistance();
+	TestScoreFlankAngle();
+	TestScoreOverwatchElevation();
 
 	// AI System tests - Debug Variables
 	TestTacticalPointDebugColor();
 	TestSquadDebugRoleColor();
+	TestSharedTargetUpdate();
+	TestSharedTargetUnknown();
+	TestFormationSlotsLeaderFirst();
+	TestFormationSlotsRoleMatching();
+
+	// Squad order helper and alive status refactoring tests
+	TestSquadPositionOrder();
+	TestSquadTargetOrderClearsPosition();
+	TestSquadSimpleOrderClearsAll();
+	TestSquadDeadMemberTriggersLeaderReassign();
+	TestSquadAliveMemberPreservesLeader();
 
 	// Asset Handle tests (operator bool fix for procedural assets)
 	TestAssetHandleProceduralBoolConversion();
@@ -405,6 +456,8 @@ void Zenith_UnitTests::RunAllTests()
 	TestLayerMaskedOverrideBlend();
 	TestPingPongAsymmetricEasing();
 	TestTransitionCompletionFramePose();
+	TestStateMachineUpdateNoStates();
+	TestStateMachineAutoInitDefaultState();
 
 	// Scene Management System tests (in separate file)
 	Zenith_SceneTests::RunAllTests();
@@ -412,7 +465,37 @@ void Zenith_UnitTests::RunAllTests()
 	// Physics System tests (in separate file)
 	Zenith_PhysicsTests::RunAllTests();
 
+	// Terrain streaming tests
+	TestChunkDistanceSymmetry();
+	TestChunkDistanceZero();
+
+	// Slang compiler helper tests
+	TestSlangSplitFilePath();
+	TestSlangSplitFilePathEdgeCases();
+
+	// Animation state machine helper tests
+	TestParamSerializationFloat();
+	TestParamSerializationBoolTrigger();
+	TestCompareNumericGreater();
+	TestCompareNumericLessEqual();
+	TestPriorityInsertionMiddle();
+	TestPriorityInsertionEmpty();
+
+	// Vulkan Memory Manager refactoring tests
+	TestImageViewType3D();
+	TestImageViewTypeCube();
+	TestImageViewTypeDefault2D();
+	TestDestroySkipsInvalidHandle();
+
+	// AI extracted-helper tests (in separate file)
+	Zenith_AITests::RunAllTests();
+
 #ifdef ZENITH_TOOLS
+	// Gizmo math helper tests
+	TestGizmosLineLineParallel();
+	TestGizmosLineLinePerpendicular();
+	TestGizmosTangentFrame();
+
 	// Editor tests (only in tools builds)
 	Zenith_EditorTests::RunAllTests();
 
@@ -1556,6 +1639,42 @@ void Zenith_UnitTests::TestSceneRoundTrip()
 	Zenith_Assert(!std::filesystem::exists(strTestScenePath), "Test scene file was not cleaned up");
 
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestSceneRoundTrip completed successfully - full data integrity verified!");
+}
+
+void Zenith_UnitTests::TestSceneDisableDestroyHelpers()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestSceneDisableDestroyHelpers...");
+
+	// Create a test scene with entities
+	Zenith_Scene xTestScene = Zenith_SceneManager::CreateEmptyScene("TestDisableDestroyScene");
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xTestScene);
+	Zenith_Assert(pxSceneData != nullptr, "Test scene should be created");
+
+	// Test DisableEntity with invalid ID — should not crash
+	pxSceneData->DisableEntity(INVALID_ENTITY_ID);
+
+	// Test DestroyEntityComponents with invalid ID — should not crash
+	pxSceneData->DestroyEntityComponents(INVALID_ENTITY_ID);
+
+	// Create an entity and verify DisableEntity/DestroyEntityComponents work
+	Zenith_Entity xEntity(pxSceneData, "TestEntity1");
+	Zenith_EntityID xID = xEntity.GetEntityID();
+	Zenith_Assert(pxSceneData->EntityExists(xID), "Entity should exist");
+
+	// DisableEntity on a non-enabled-dispatched entity should be a no-op
+	pxSceneData->DisableEntity(xID);
+	Zenith_Assert(pxSceneData->EntityExists(xID), "Entity should still exist after DisableEntity");
+
+	// DestroyEntityComponents removes all components
+	pxSceneData->DestroyEntityComponents(xID);
+
+	// Entity slot still exists (components removed but slot not freed)
+	Zenith_Assert(pxSceneData->EntityExists(xID), "Entity slot should still exist after DestroyEntityComponents");
+
+	// Clean up
+	Zenith_SceneManager::UnloadScene(xTestScene);
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestSceneDisableDestroyHelpers PASSED");
 }
 
 // ============================================================================
@@ -3165,6 +3284,134 @@ void Zenith_UnitTests::TestBlendTreeSerialization()
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestBlendTreeSerialization completed successfully");
 }
 
+void Zenith_UnitTests::TestBlendTreeWriteReadChildNode()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestBlendTreeWriteReadChildNode...");
+
+	// Test writing and reading a null child
+	{
+		Zenith_DataStream xStream;
+		Flux_BlendTreeNode::WriteChildNode(xStream, nullptr);
+		xStream.SetCursor(0);
+		Flux_BlendTreeNode* pxResult = Flux_BlendTreeNode::ReadChildNode(xStream);
+		Zenith_Assert(pxResult == nullptr, "Null child should deserialize as null");
+	}
+
+	// Test writing and reading a Clip node child
+	{
+		Flux_BlendTreeNode_Clip xClip;
+		xClip.SetPlaybackRate(2.5f);
+		xClip.SetClipName("TestClip");
+
+		Zenith_DataStream xStream;
+		Flux_BlendTreeNode::WriteChildNode(xStream, &xClip);
+		xStream.SetCursor(0);
+
+		Flux_BlendTreeNode* pxResult = Flux_BlendTreeNode::ReadChildNode(xStream);
+		Zenith_Assert(pxResult != nullptr, "Clip child should deserialize as non-null");
+		Zenith_Assert(std::string(pxResult->GetNodeTypeName()) == "Clip", "Should deserialize as Clip type");
+
+		Flux_BlendTreeNode_Clip* pxClipResult = static_cast<Flux_BlendTreeNode_Clip*>(pxResult);
+		Zenith_Assert(pxClipResult->GetPlaybackRate() == 2.5f, "Playback rate should be preserved");
+		Zenith_Assert(pxClipResult->GetClipName() == "TestClip", "Clip name should be preserved");
+
+		delete pxResult;
+	}
+
+	// Test round-trip with nested tree (Blend with two Clip children)
+	{
+		Flux_BlendTreeNode_Clip* pxClipA = new Flux_BlendTreeNode_Clip();
+		pxClipA->SetClipName("ClipA");
+		Flux_BlendTreeNode_Clip* pxClipB = new Flux_BlendTreeNode_Clip();
+		pxClipB->SetClipName("ClipB");
+
+		Flux_BlendTreeNode_Blend xBlend(pxClipA, pxClipB, 0.75f);
+
+		Zenith_DataStream xStream;
+		Flux_BlendTreeNode::WriteChildNode(xStream, &xBlend);
+		xStream.SetCursor(0);
+
+		Flux_BlendTreeNode* pxResult = Flux_BlendTreeNode::ReadChildNode(xStream);
+		Zenith_Assert(pxResult != nullptr, "Blend child should deserialize");
+		Zenith_Assert(std::string(pxResult->GetNodeTypeName()) == "Blend", "Should be Blend type");
+
+		Flux_BlendTreeNode_Blend* pxBlendResult = static_cast<Flux_BlendTreeNode_Blend*>(pxResult);
+		Zenith_Assert(pxBlendResult->GetBlendWeight() == 0.75f, "Blend weight should be preserved");
+		Zenith_Assert(pxBlendResult->GetChildA() != nullptr, "ChildA should exist");
+		Zenith_Assert(pxBlendResult->GetChildB() != nullptr, "ChildB should exist");
+
+		delete pxResult;
+		// pxClipA and pxClipB owned by xBlend, freed in its destructor
+	}
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestBlendTreeWriteReadChildNode PASSED");
+}
+
+void Zenith_UnitTests::TestBlendTreeEvaluateChildOrReset()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestBlendTreeEvaluateChildOrReset...");
+
+	// Test with null child — pose should be reset
+	{
+		Flux_SkeletonPose xPose;
+		Zenith_SkeletonAsset xSkeleton;
+		Flux_BlendTreeNode::EvaluateChildOrReset(nullptr, 0.016f, xPose, xSkeleton);
+		// If we get here without crashing, null child was handled safely
+	}
+
+	// Test with valid clip child — should not crash
+	{
+		Flux_BlendTreeNode_Clip xClip;
+		xClip.SetPlaybackRate(1.0f);
+		Flux_SkeletonPose xPose;
+		Zenith_SkeletonAsset xSkeleton;
+		Flux_BlendTreeNode::EvaluateChildOrReset(&xClip, 0.016f, xPose, xSkeleton);
+		// No clip set, but should not crash
+	}
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestBlendTreeEvaluateChildOrReset PASSED");
+}
+
+void Zenith_UnitTests::TestBlendTreeSelectGetSelectedChild()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestBlendTreeSelectGetSelectedChild...");
+
+	Flux_BlendTreeNode_Select xSelect;
+
+	// Empty select — should return null
+	Zenith_Assert(xSelect.GetSelectedChild() == nullptr, "Empty select should return null");
+
+	// Add children and test valid indices
+	Flux_BlendTreeNode_Clip* pxClip0 = new Flux_BlendTreeNode_Clip();
+	pxClip0->SetClipName("Clip0");
+	Flux_BlendTreeNode_Clip* pxClip1 = new Flux_BlendTreeNode_Clip();
+	pxClip1->SetClipName("Clip1");
+	Flux_BlendTreeNode_Clip* pxClip2 = new Flux_BlendTreeNode_Clip();
+	pxClip2->SetClipName("Clip2");
+
+	xSelect.AddChild(pxClip0);
+	xSelect.AddChild(pxClip1);
+	xSelect.AddChild(pxClip2);
+
+	// Default index is 0
+	Zenith_Assert(xSelect.GetSelectedChild() == pxClip0, "Index 0 should return first child");
+
+	// Change selection
+	xSelect.SetSelectedIndex(2);
+	Zenith_Assert(xSelect.GetSelectedChild() == pxClip2, "Index 2 should return third child");
+
+	// Out-of-bounds index (negative) — SetSelectedIndex won't change it
+	// but test boundary: manually force an invalid index to verify GetSelectedChild handles it
+	xSelect.SetSelectedIndex(1);
+	Zenith_Assert(xSelect.GetSelectedChild() == pxClip1, "Index 1 should return second child");
+
+	// Verify IsFinished/GetNormalizedTime use GetSelectedChild properly
+	Zenith_Assert(xSelect.GetNormalizedTime() == 0.0f, "Clip with no data should have 0 time");
+	Zenith_Assert(xSelect.IsFinished() == false, "Clip with null m_pxClip returns false");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestBlendTreeSelectGetSelectedChild PASSED");
+}
+
 /**
  * Test FABRIK IK Solver
  * Verifies IK chain setup and solving iterations
@@ -3279,6 +3526,165 @@ void Zenith_UnitTests::TestFABRIKSolver()
 	}
 
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestFABRIKSolver completed successfully");
+}
+
+void Zenith_UnitTests::TestIKSafeNormalize()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestIKSafeNormalize...");
+
+	// Normal vector should be normalized to unit length
+	{
+		Zenith_Maths::Vector3 xVec(3.0f, 0.0f, 0.0f);
+		Zenith_Maths::Vector3 xResult = Flux_IKSolver::SafeNormalize(xVec);
+		Zenith_Assert(Vec3Equals(xResult, Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f)),
+			"SafeNormalize of (3,0,0) should be (1,0,0)");
+	}
+
+	// Zero vector should return fallback
+	{
+		Zenith_Maths::Vector3 xZero(0.0f, 0.0f, 0.0f);
+		Zenith_Maths::Vector3 xFallback(0.0f, 1.0f, 0.0f);
+		Zenith_Maths::Vector3 xResult = Flux_IKSolver::SafeNormalize(xZero, xFallback);
+		Zenith_Assert(Vec3Equals(xResult, xFallback),
+			"SafeNormalize of zero vector should return fallback");
+	}
+
+	// Near-zero vector (below epsilon) should return fallback
+	{
+		Zenith_Maths::Vector3 xTiny(0.00001f, 0.0f, 0.0f);
+		Zenith_Maths::Vector3 xFallback(0.0f, 0.0f, 1.0f);
+		Zenith_Maths::Vector3 xResult = Flux_IKSolver::SafeNormalize(xTiny, xFallback);
+		Zenith_Assert(Vec3Equals(xResult, xFallback),
+			"SafeNormalize of near-zero vector should return fallback");
+	}
+
+	// Default fallback is zero vector
+	{
+		Zenith_Maths::Vector3 xZero(0.0f, 0.0f, 0.0f);
+		Zenith_Maths::Vector3 xResult = Flux_IKSolver::SafeNormalize(xZero);
+		Zenith_Assert(Vec3Equals(xResult, Zenith_Maths::Vector3(0.0f)),
+			"SafeNormalize with default fallback should return zero vector");
+	}
+
+	// Arbitrary direction should be unit length
+	{
+		Zenith_Maths::Vector3 xVec(1.0f, 2.0f, 3.0f);
+		Zenith_Maths::Vector3 xResult = Flux_IKSolver::SafeNormalize(xVec);
+		float fLen = glm::length(xResult);
+		Zenith_Assert(FloatEquals(fLen, 1.0f),
+			"SafeNormalize should produce unit-length vector");
+	}
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestIKSafeNormalize PASSED");
+}
+
+void Zenith_UnitTests::TestIKFindPerpendicularAxis()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestIKFindPerpendicularAxis...");
+
+	// Axis-aligned input: X axis
+	{
+		Zenith_Maths::Vector3 xAxis(1.0f, 0.0f, 0.0f);
+		Zenith_Maths::Vector3 xPerp = Flux_IKSolver::FindPerpendicularAxis(xAxis);
+		float fDot = glm::dot(xPerp, xAxis);
+		Zenith_Assert(FloatEquals(fDot, 0.0f, 0.001f),
+			"Perpendicular axis should be orthogonal to X axis");
+		float fLen = glm::length(xPerp);
+		Zenith_Assert(FloatEquals(fLen, 1.0f, 0.001f),
+			"Perpendicular axis should be unit length");
+	}
+
+	// Axis-aligned input: Y axis
+	{
+		Zenith_Maths::Vector3 xAxis(0.0f, 1.0f, 0.0f);
+		Zenith_Maths::Vector3 xPerp = Flux_IKSolver::FindPerpendicularAxis(xAxis);
+		float fDot = glm::dot(xPerp, xAxis);
+		Zenith_Assert(FloatEquals(fDot, 0.0f, 0.001f),
+			"Perpendicular axis should be orthogonal to Y axis");
+	}
+
+	// Axis-aligned input: Z axis
+	{
+		Zenith_Maths::Vector3 xAxis(0.0f, 0.0f, 1.0f);
+		Zenith_Maths::Vector3 xPerp = Flux_IKSolver::FindPerpendicularAxis(xAxis);
+		float fDot = glm::dot(xPerp, xAxis);
+		Zenith_Assert(FloatEquals(fDot, 0.0f, 0.001f),
+			"Perpendicular axis should be orthogonal to Z axis");
+	}
+
+	// Arbitrary input
+	{
+		Zenith_Maths::Vector3 xAxis = glm::normalize(Zenith_Maths::Vector3(1.0f, 2.0f, 3.0f));
+		Zenith_Maths::Vector3 xPerp = Flux_IKSolver::FindPerpendicularAxis(xAxis);
+		float fDot = glm::dot(xPerp, xAxis);
+		Zenith_Assert(FloatEquals(fDot, 0.0f, 0.001f),
+			"Perpendicular axis should be orthogonal to arbitrary input");
+		float fLen = glm::length(xPerp);
+		Zenith_Assert(FloatEquals(fLen, 1.0f, 0.001f),
+			"Perpendicular axis should be unit length for arbitrary input");
+	}
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestIKFindPerpendicularAxis PASSED");
+}
+
+void Zenith_UnitTests::TestIKConstrainBoneLength()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestIKConstrainBoneLength...");
+
+	// Child along X axis at distance 5, constrain to length 3
+	{
+		Zenith_Maths::Vector3 xParent(0.0f, 0.0f, 0.0f);
+		Zenith_Maths::Vector3 xChild(5.0f, 0.0f, 0.0f);
+		float fLength = 3.0f;
+
+		Zenith_Maths::Vector3 xResult = Flux_IKSolver::ConstrainBoneLength(xChild, xParent, fLength);
+		float fDist = glm::length(xResult - xParent);
+		Zenith_Assert(FloatEquals(fDist, fLength),
+			"Output distance should match target length (shrink)");
+		// Direction should be preserved
+		Zenith_Assert(Vec3Equals(glm::normalize(xResult - xParent), Zenith_Maths::Vector3(1.0f, 0.0f, 0.0f)),
+			"Direction should be preserved when constraining bone length");
+	}
+
+	// Child closer than target length, should extend
+	{
+		Zenith_Maths::Vector3 xParent(0.0f, 0.0f, 0.0f);
+		Zenith_Maths::Vector3 xChild(1.0f, 0.0f, 0.0f);
+		float fLength = 4.0f;
+
+		Zenith_Maths::Vector3 xResult = Flux_IKSolver::ConstrainBoneLength(xChild, xParent, fLength);
+		float fDist = glm::length(xResult - xParent);
+		Zenith_Assert(FloatEquals(fDist, fLength),
+			"Output distance should match target length (extend)");
+	}
+
+	// Non-axis-aligned direction
+	{
+		Zenith_Maths::Vector3 xParent(1.0f, 2.0f, 3.0f);
+		Zenith_Maths::Vector3 xChild(4.0f, 6.0f, 3.0f);
+		float fLength = 2.5f;
+
+		Zenith_Maths::Vector3 xResult = Flux_IKSolver::ConstrainBoneLength(xChild, xParent, fLength);
+		float fDist = glm::length(xResult - xParent);
+		Zenith_Assert(FloatEquals(fDist, fLength, 0.001f),
+			"Output distance should match target length for arbitrary positions");
+	}
+
+	// Child at exact distance (no change needed)
+	{
+		Zenith_Maths::Vector3 xParent(0.0f, 0.0f, 0.0f);
+		Zenith_Maths::Vector3 xChild(0.0f, 3.0f, 0.0f);
+		float fLength = 3.0f;
+
+		Zenith_Maths::Vector3 xResult = Flux_IKSolver::ConstrainBoneLength(xChild, xParent, fLength);
+		float fDist = glm::length(xResult - xParent);
+		Zenith_Assert(FloatEquals(fDist, fLength),
+			"Output distance should match when already at correct length");
+		Zenith_Assert(Vec3Equals(xResult, xChild, 0.001f),
+			"Position should not change when already at correct length");
+	}
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestIKConstrainBoneLength PASSED");
 }
 
 /**
@@ -9802,3 +10208,523 @@ void Zenith_UnitTests::TestTransitionCompletionFramePose()
 	delete pxClipB;
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestTransitionCompletionFramePose passed");
 }
+
+void Zenith_UnitTests::TestStateMachineUpdateNoStates()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestStateMachineUpdateNoStates...");
+
+	Zenith_SkeletonAsset xSkeleton;
+	xSkeleton.AddBone("Root", -1, Zenith_Maths::Vector3(0.0f), Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f), Zenith_Maths::Vector3(1.0f));
+	Flux_SkeletonPose xPose;
+	xPose.Initialize(1);
+
+	// Empty state machine with no states added
+	Flux_AnimationStateMachine xSM("EmptySM");
+
+	// Update should not crash and should reset pose
+	xSM.Update(0.016f, xPose, xSkeleton);
+
+	Zenith_Assert(!xSM.IsTransitioning(), "Empty SM should not be transitioning");
+	Zenith_Assert(xSM.GetCurrentStateName().empty(), "Empty SM should have no current state");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestStateMachineUpdateNoStates passed");
+}
+
+void Zenith_UnitTests::TestStateMachineAutoInitDefaultState()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestStateMachineAutoInitDefaultState...");
+
+	Zenith_SkeletonAsset xSkeleton;
+	xSkeleton.AddBone("Root", -1, Zenith_Maths::Vector3(0.0f), Zenith_Maths::Quat(1.0f, 0.0f, 0.0f, 0.0f), Zenith_Maths::Vector3(1.0f));
+	Flux_SkeletonPose xPose;
+	xPose.Initialize(1);
+
+	Flux_AnimationStateMachine xSM("TestSM");
+	xSM.AddState("Idle");
+	xSM.AddState("Walk");
+	xSM.SetDefaultState("Idle");
+
+	// Before Update, no current state
+	Zenith_Assert(xSM.GetCurrentStateName().empty(), "Should have no current state before first Update");
+
+	// First Update should auto-initialize to default state
+	xSM.Update(0.016f, xPose, xSkeleton);
+	Zenith_Assert(xSM.GetCurrentStateName() == "Idle", "Should auto-init to default state 'Idle'");
+
+	// Subsequent Update should stay in Idle (no transitions configured)
+	xSM.Update(0.016f, xPose, xSkeleton);
+	Zenith_Assert(xSM.GetCurrentStateName() == "Idle", "Should remain in Idle");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestStateMachineAutoInitDefaultState passed");
+}
+
+void Zenith_UnitTests::TestSlangSplitFilePath()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestSlangSplitFilePath...");
+
+	std::string strFileName, strDirectory;
+
+	// Basic forward-slash path
+	Flux_SlangCompiler::SplitFilePath("shaders/vertex/basic.vert", strFileName, strDirectory);
+	Zenith_Assert(strFileName == "basic.vert", "Forward-slash filename should be 'basic.vert'");
+	Zenith_Assert(strDirectory == "shaders/vertex", "Forward-slash directory should be 'shaders/vertex'");
+
+	// Path with no directory (just a filename)
+	Flux_SlangCompiler::SplitFilePath("shader.frag", strFileName, strDirectory);
+	Zenith_Assert(strFileName == "shader.frag", "No-directory filename should be 'shader.frag'");
+	Zenith_Assert(strDirectory == ".", "No-directory path should default to '.'");
+
+	// Backslash path (Windows-style)
+	Flux_SlangCompiler::SplitFilePath("C:\\shaders\\compute\\blur.comp", strFileName, strDirectory);
+	Zenith_Assert(strFileName == "blur.comp", "Backslash filename should be 'blur.comp'");
+	Zenith_Assert(strDirectory == "C:\\shaders\\compute", "Backslash directory should be 'C:\\shaders\\compute'");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestSlangSplitFilePath PASSED");
+}
+
+void Zenith_UnitTests::TestSlangSplitFilePathEdgeCases()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestSlangSplitFilePathEdgeCases...");
+
+	std::string strFileName, strDirectory;
+
+	// Empty string
+	Flux_SlangCompiler::SplitFilePath("", strFileName, strDirectory);
+	Zenith_Assert(strFileName == "", "Empty path filename should be empty");
+	Zenith_Assert(strDirectory == ".", "Empty path directory should default to '.'");
+
+	// Just a filename with no extension
+	Flux_SlangCompiler::SplitFilePath("Makefile", strFileName, strDirectory);
+	Zenith_Assert(strFileName == "Makefile", "Plain filename should be 'Makefile'");
+	Zenith_Assert(strDirectory == ".", "Plain filename directory should default to '.'");
+
+	// Trailing separator
+	Flux_SlangCompiler::SplitFilePath("shaders/vertex/", strFileName, strDirectory);
+	Zenith_Assert(strFileName == "", "Trailing separator should produce empty filename");
+	Zenith_Assert(strDirectory == "shaders/vertex", "Trailing separator directory should be 'shaders/vertex'");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestSlangSplitFilePathEdgeCases PASSED");
+}
+
+// ========== Animation State Machine Helper Tests ==========
+
+void Zenith_UnitTests::TestParamSerializationFloat()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestParamSerializationFloat...");
+
+	Flux_AnimationParameters xParams;
+	xParams.AddFloat("Speed", 3.14f);
+	xParams.AddInt("Combo", 42);
+
+	// Write
+	Zenith_DataStream xWriteStream(256);
+	xParams.WriteToDataStream(xWriteStream);
+
+	// Read back
+	Zenith_DataStream xReadStream(xWriteStream.GetData(), xWriteStream.GetSize());
+	Flux_AnimationParameters xLoaded;
+	xLoaded.ReadFromDataStream(xReadStream);
+
+	Zenith_Assert(xLoaded.HasParameter("Speed"), "Speed param should exist after round-trip");
+	Zenith_Assert(xLoaded.GetFloat("Speed") == 3.14f, "Speed should be 3.14f");
+	Zenith_Assert(xLoaded.HasParameter("Combo"), "Combo param should exist after round-trip");
+	Zenith_Assert(xLoaded.GetInt("Combo") == 42, "Combo should be 42");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestParamSerializationFloat PASSED");
+}
+
+void Zenith_UnitTests::TestParamSerializationBoolTrigger()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestParamSerializationBoolTrigger...");
+
+	Flux_AnimationParameters xParams;
+	xParams.AddBool("Grounded", true);
+	xParams.AddTrigger("Jump");
+	xParams.SetTrigger("Jump");
+
+	Zenith_DataStream xWriteStream(256);
+	xParams.WriteToDataStream(xWriteStream);
+
+	Zenith_DataStream xReadStream(xWriteStream.GetData(), xWriteStream.GetSize());
+	Flux_AnimationParameters xLoaded;
+	xLoaded.ReadFromDataStream(xReadStream);
+
+	Zenith_Assert(xLoaded.GetBool("Grounded") == true, "Grounded should be true");
+	Zenith_Assert(xLoaded.PeekTrigger("Jump") == true, "Jump trigger should be set");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestParamSerializationBoolTrigger PASSED");
+}
+
+void Zenith_UnitTests::TestCompareNumericGreater()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestCompareNumericGreater...");
+
+	Flux_AnimationParameters xParams;
+	xParams.AddFloat("Speed", 5.0f);
+
+	Flux_TransitionCondition xCond;
+	xCond.m_strParameterName = "Speed";
+	xCond.m_eParamType = Flux_AnimationParameters::ParamType::Float;
+	xCond.m_eCompareOp = Flux_TransitionCondition::CompareOp::Greater;
+	xCond.m_fThreshold = 3.0f;
+
+	Zenith_Assert(xCond.Evaluate(xParams) == true, "5.0 > 3.0 should be true");
+
+	xCond.m_fThreshold = 5.0f;
+	Zenith_Assert(xCond.Evaluate(xParams) == false, "5.0 > 5.0 should be false");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestCompareNumericGreater PASSED");
+}
+
+void Zenith_UnitTests::TestCompareNumericLessEqual()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestCompareNumericLessEqual...");
+
+	Flux_AnimationParameters xParams;
+	xParams.AddInt("Health", 10);
+
+	Flux_TransitionCondition xCond;
+	xCond.m_strParameterName = "Health";
+	xCond.m_eParamType = Flux_AnimationParameters::ParamType::Int;
+	xCond.m_eCompareOp = Flux_TransitionCondition::CompareOp::LessEqual;
+	xCond.m_iThreshold = 10;
+
+	Zenith_Assert(xCond.Evaluate(xParams) == true, "10 <= 10 should be true");
+
+	xCond.m_iThreshold = 5;
+	Zenith_Assert(xCond.Evaluate(xParams) == false, "10 <= 5 should be false");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestCompareNumericLessEqual PASSED");
+}
+
+void Zenith_UnitTests::TestPriorityInsertionMiddle()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestPriorityInsertionMiddle...");
+
+	Flux_AnimationState xState("TestState");
+
+	Flux_StateTransition xLow;
+	xLow.m_strTargetStateName = "Low";
+	xLow.m_iPriority = 1;
+
+	Flux_StateTransition xHigh;
+	xHigh.m_strTargetStateName = "High";
+	xHigh.m_iPriority = 10;
+
+	Flux_StateTransition xMid;
+	xMid.m_strTargetStateName = "Mid";
+	xMid.m_iPriority = 5;
+
+	xState.AddTransition(xLow);
+	xState.AddTransition(xHigh);
+	xState.AddTransition(xMid);
+
+	const Zenith_Vector<Flux_StateTransition>& xTransitions = xState.GetTransitions();
+	Zenith_Assert(xTransitions.GetSize() == 3, "Should have 3 transitions");
+	Zenith_Assert(xTransitions.Get(0).m_strTargetStateName == "High", "First should be High (priority 10)");
+	Zenith_Assert(xTransitions.Get(1).m_strTargetStateName == "Mid", "Second should be Mid (priority 5)");
+	Zenith_Assert(xTransitions.Get(2).m_strTargetStateName == "Low", "Third should be Low (priority 1)");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestPriorityInsertionMiddle PASSED");
+}
+
+void Zenith_UnitTests::TestPriorityInsertionEmpty()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestPriorityInsertionEmpty...");
+
+	Flux_AnimationStateMachine xSM("TestSM");
+
+	Flux_StateTransition xTrans;
+	xTrans.m_strTargetStateName = "Target";
+	xTrans.m_iPriority = 7;
+
+	xSM.AddAnyStateTransition(xTrans);
+
+	const Zenith_Vector<Flux_StateTransition>& xAny = xSM.GetAnyStateTransitions();
+	Zenith_Assert(xAny.GetSize() == 1, "Should have 1 any-state transition");
+	Zenith_Assert(xAny.Get(0).m_iPriority == 7, "Priority should be 7");
+	Zenith_Assert(xAny.Get(0).m_strTargetStateName == "Target", "Target name should match");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestPriorityInsertionEmpty PASSED");
+}
+
+// ========== Terrain Streaming Tests ==========
+
+void Zenith_UnitTests::TestChunkDistanceSymmetry()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestChunkDistanceSymmetry...");
+
+	// Use two distinct chunks: (2,3) and (5,7)
+	const uint32_t uChunkA = Flux_TerrainStreamingManager::ChunkCoordsToIndex(2, 3);
+	const uint32_t uChunkB = Flux_TerrainStreamingManager::ChunkCoordsToIndex(5, 7);
+
+	// Save original state
+	bool bOrigAABBsCached = Flux_TerrainStreamingManager::s_bAABBsCached;
+	Zenith_AABB xOrigA = Flux_TerrainStreamingManager::s_axChunkAABBs[uChunkA];
+	Zenith_AABB xOrigB = Flux_TerrainStreamingManager::s_axChunkAABBs[uChunkB];
+
+	// Set up test AABBs so GetChunkCenter uses the cached path
+	Flux_TerrainStreamingManager::s_bAABBsCached = true;
+	Flux_TerrainStreamingManager::s_axChunkAABBs[uChunkA] = Zenith_AABB(
+		Zenith_Maths::Vector3(100.0f, 0.0f, 200.0f),
+		Zenith_Maths::Vector3(164.0f, 100.0f, 264.0f)
+	);
+	Flux_TerrainStreamingManager::s_axChunkAABBs[uChunkB] = Zenith_AABB(
+		Zenith_Maths::Vector3(300.0f, 0.0f, 400.0f),
+		Zenith_Maths::Vector3(364.0f, 100.0f, 464.0f)
+	);
+
+	// Get chunk centers
+	Zenith_Maths::Vector3 xCenterA = Flux_TerrainStreamingManager::GetChunkCenter(2, 3);
+	Zenith_Maths::Vector3 xCenterB = Flux_TerrainStreamingManager::GetChunkCenter(5, 7);
+
+	// Distance from A's center to chunk B should equal distance from B's center to chunk A
+	float fDistAToB = Flux_TerrainStreamingManager::GetChunkDistanceSq(uChunkB, xCenterA);
+	float fDistBToA = Flux_TerrainStreamingManager::GetChunkDistanceSq(uChunkA, xCenterB);
+
+	// Squared distance is symmetric: |A-B|^2 == |B-A|^2
+	float fDifference = fabsf(fDistAToB - fDistBToA);
+	Zenith_Assert(fDifference < 0.001f, "Chunk distance should be symmetric (A->B == B->A), diff=%.6f", fDifference);
+
+	// Restore original state
+	Flux_TerrainStreamingManager::s_axChunkAABBs[uChunkA] = xOrigA;
+	Flux_TerrainStreamingManager::s_axChunkAABBs[uChunkB] = xOrigB;
+	Flux_TerrainStreamingManager::s_bAABBsCached = bOrigAABBsCached;
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestChunkDistanceSymmetry PASSED");
+}
+
+void Zenith_UnitTests::TestChunkDistanceZero()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestChunkDistanceZero...");
+
+	const uint32_t uChunkIndex = Flux_TerrainStreamingManager::ChunkCoordsToIndex(4, 4);
+
+	// Save original state
+	bool bOrigAABBsCached = Flux_TerrainStreamingManager::s_bAABBsCached;
+	Zenith_AABB xOrig = Flux_TerrainStreamingManager::s_axChunkAABBs[uChunkIndex];
+
+	// Set up a known AABB
+	Flux_TerrainStreamingManager::s_bAABBsCached = true;
+	Flux_TerrainStreamingManager::s_axChunkAABBs[uChunkIndex] = Zenith_AABB(
+		Zenith_Maths::Vector3(200.0f, 0.0f, 200.0f),
+		Zenith_Maths::Vector3(264.0f, 100.0f, 264.0f)
+	);
+
+	// Camera at exact chunk center should give distance 0
+	Zenith_Maths::Vector3 xChunkCenter = Flux_TerrainStreamingManager::GetChunkCenter(4, 4);
+	float fDistanceSq = Flux_TerrainStreamingManager::GetChunkDistanceSq(uChunkIndex, xChunkCenter);
+
+	Zenith_Assert(fDistanceSq < 0.001f, "Distance from chunk center to itself should be ~0, got %.6f", fDistanceSq);
+
+	// Restore original state
+	Flux_TerrainStreamingManager::s_axChunkAABBs[uChunkIndex] = xOrig;
+	Flux_TerrainStreamingManager::s_bAABBsCached = bOrigAABBsCached;
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestChunkDistanceZero PASSED");
+}
+
+// ========== Vulkan Memory Manager Tests ==========
+
+void Zenith_UnitTests::TestImageViewType3D()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestImageViewType3D...");
+
+	Flux_SurfaceInfo xInfo;
+	xInfo.m_eTextureType = TEXTURE_TYPE_3D;
+	xInfo.m_uWidth = 64;
+	xInfo.m_uHeight = 64;
+	xInfo.m_uDepth = 64;
+	xInfo.m_uNumLayers = 1;
+
+	vk::ImageViewType eResult = Zenith_Vulkan_MemoryManager::DetermineImageViewType(xInfo);
+	Zenith_Assert(eResult == vk::ImageViewType::e3D, "Expected VK_IMAGE_VIEW_TYPE_3D for 3D texture");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestImageViewType3D PASSED");
+}
+
+void Zenith_UnitTests::TestImageViewTypeCube()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestImageViewTypeCube...");
+
+	Flux_SurfaceInfo xInfoCube;
+	xInfoCube.m_eTextureType = TEXTURE_TYPE_CUBE;
+	xInfoCube.m_uWidth = 256;
+	xInfoCube.m_uHeight = 256;
+	xInfoCube.m_uNumLayers = 6;
+
+	vk::ImageViewType eResult = Zenith_Vulkan_MemoryManager::DetermineImageViewType(xInfoCube);
+	Zenith_Assert(eResult == vk::ImageViewType::eCube, "Expected VK_IMAGE_VIEW_TYPE_CUBE for cubemap texture");
+
+	Flux_SurfaceInfo xInfoSixLayers;
+	xInfoSixLayers.m_eTextureType = TEXTURE_TYPE_2D;
+	xInfoSixLayers.m_uWidth = 256;
+	xInfoSixLayers.m_uHeight = 256;
+	xInfoSixLayers.m_uNumLayers = 6;
+
+	eResult = Zenith_Vulkan_MemoryManager::DetermineImageViewType(xInfoSixLayers);
+	Zenith_Assert(eResult == vk::ImageViewType::eCube, "Expected VK_IMAGE_VIEW_TYPE_CUBE for 6-layer 2D texture");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestImageViewTypeCube PASSED");
+}
+
+void Zenith_UnitTests::TestImageViewTypeDefault2D()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestImageViewTypeDefault2D...");
+
+	Flux_SurfaceInfo xInfo;
+	xInfo.m_eTextureType = TEXTURE_TYPE_2D;
+	xInfo.m_uWidth = 512;
+	xInfo.m_uHeight = 512;
+	xInfo.m_uNumLayers = 1;
+
+	vk::ImageViewType eResult = Zenith_Vulkan_MemoryManager::DetermineImageViewType(xInfo);
+	Zenith_Assert(eResult == vk::ImageViewType::e2D, "Expected VK_IMAGE_VIEW_TYPE_2D for standard 2D texture");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestImageViewTypeDefault2D PASSED");
+}
+
+void Zenith_UnitTests::TestDestroySkipsInvalidHandle()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestDestroySkipsInvalidHandle...");
+
+	Flux_VRAMHandle xInvalidHandle;
+	Zenith_Assert(!xInvalidHandle.IsValid(), "Default-constructed handle should be invalid");
+
+	Flux_VertexBuffer xBuffer;
+	Zenith_Vulkan_MemoryManager::DestroyVertexBuffer(xBuffer);
+
+	Flux_ImageViewHandle xInvalidViewHandle;
+	Zenith_Assert(!xInvalidViewHandle.IsValid(), "Default-constructed image view handle should be invalid");
+
+	Zenith_Vulkan_MemoryManager::QueueImageViewDeletion(xInvalidViewHandle);
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestDestroySkipsInvalidHandle PASSED");
+}
+
+//=============================================================================
+// Gizmo math helper tests
+//=============================================================================
+#ifdef ZENITH_TOOLS
+
+void Zenith_UnitTests::TestGizmosLineLineParallel()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestGizmosLineLineParallel...");
+
+	// Two parallel lines along the X axis should return false (degenerate)
+	Zenith_Maths::Vector3 xAxisOrigin(0, 0, 0);
+	Zenith_Maths::Vector3 xAxis(1, 0, 0);
+	Zenith_Maths::Vector3 xRayOrigin(0, 1, 0);
+	Zenith_Maths::Vector3 xRayDir(1, 0, 0);	// Parallel to axis
+
+	float fOutT = 0.0f;
+	bool bResult = Flux_Gizmos::GetLineLineClosestPointParameter(xAxisOrigin, xAxis, xRayOrigin, xRayDir, fOutT);
+	Zenith_Assert(!bResult, "Parallel lines should return false");
+
+	// Also test with opposite direction (anti-parallel)
+	xRayDir = Zenith_Maths::Vector3(-1, 0, 0);
+	bResult = Flux_Gizmos::GetLineLineClosestPointParameter(xAxisOrigin, xAxis, xRayOrigin, xRayDir, fOutT);
+	Zenith_Assert(!bResult, "Anti-parallel lines should return false");
+
+	// Near-parallel lines (very small angle) should also return false
+	xRayDir = glm::normalize(Zenith_Maths::Vector3(1, 0.00001f, 0));
+	bResult = Flux_Gizmos::GetLineLineClosestPointParameter(xAxisOrigin, xAxis, xRayOrigin, xRayDir, fOutT);
+	Zenith_Assert(!bResult, "Near-parallel lines should return false");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestGizmosLineLineParallel PASSED");
+}
+
+void Zenith_UnitTests::TestGizmosLineLinePerpendicular()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestGizmosLineLinePerpendicular...");
+
+	// Axis along X, ray along Y passing through origin - closest point at t=0
+	{
+		Zenith_Maths::Vector3 xAxisOrigin(0, 0, 0);
+		Zenith_Maths::Vector3 xAxis(1, 0, 0);
+		Zenith_Maths::Vector3 xRayOrigin(0, -5, 0);
+		Zenith_Maths::Vector3 xRayDir(0, 1, 0);
+
+		float fOutT = -999.0f;
+		bool bResult = Flux_Gizmos::GetLineLineClosestPointParameter(xAxisOrigin, xAxis, xRayOrigin, xRayDir, fOutT);
+		Zenith_Assert(bResult, "Perpendicular lines should return true");
+		Zenith_Assert(glm::abs(fOutT) < 0.001f, "Closest point on axis should be at t=0");
+	}
+
+	// Axis along X at origin, ray along Z passing through (3, 2, -5) going +Z
+	// The closest point on the X axis to the ray should be at t=3
+	{
+		Zenith_Maths::Vector3 xAxisOrigin(0, 0, 0);
+		Zenith_Maths::Vector3 xAxis(1, 0, 0);
+		Zenith_Maths::Vector3 xRayOrigin(3, 2, -5);
+		Zenith_Maths::Vector3 xRayDir(0, 0, 1);
+
+		float fOutT = -999.0f;
+		bool bResult = Flux_Gizmos::GetLineLineClosestPointParameter(xAxisOrigin, xAxis, xRayOrigin, xRayDir, fOutT);
+		Zenith_Assert(bResult, "Perpendicular lines should return true");
+		Zenith_Assert(glm::abs(fOutT - 3.0f) < 0.001f, "Closest point should be at t=3");
+	}
+
+	// Axis along Y starting at (5,0,0), ray along X starting at (0,7,3)
+	// Closest point on axis should be at t=7 (where Y=7 is the closest to the ray's Y=7)
+	{
+		Zenith_Maths::Vector3 xAxisOrigin(5, 0, 0);
+		Zenith_Maths::Vector3 xAxis(0, 1, 0);
+		Zenith_Maths::Vector3 xRayOrigin(0, 7, 3);
+		Zenith_Maths::Vector3 xRayDir(1, 0, 0);
+
+		float fOutT = -999.0f;
+		bool bResult = Flux_Gizmos::GetLineLineClosestPointParameter(xAxisOrigin, xAxis, xRayOrigin, xRayDir, fOutT);
+		Zenith_Assert(bResult, "Perpendicular lines should return true");
+		Zenith_Assert(glm::abs(fOutT - 7.0f) < 0.001f, "Closest point should be at t=7");
+	}
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestGizmosLineLinePerpendicular PASSED");
+}
+
+void Zenith_UnitTests::TestGizmosTangentFrame()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestGizmosTangentFrame...");
+
+	auto TestAxis = [](const Zenith_Maths::Vector3& xAxis, const char* pszName)
+	{
+		Zenith_Maths::Vector3 xTangent, xBitangent;
+		Flux_Gizmos::ComputeTangentFrame(xAxis, xTangent, xBitangent);
+
+		// Tangent should be perpendicular to axis
+		float fDotAxisTangent = glm::abs(glm::dot(xAxis, xTangent));
+		Zenith_Assert(fDotAxisTangent < 0.001f, "Tangent must be perpendicular to axis (%s)", pszName);
+
+		// Bitangent should be perpendicular to axis
+		float fDotAxisBitangent = glm::abs(glm::dot(xAxis, xBitangent));
+		Zenith_Assert(fDotAxisBitangent < 0.001f, "Bitangent must be perpendicular to axis (%s)", pszName);
+
+		// Tangent should be perpendicular to bitangent
+		float fDotTangentBitangent = glm::abs(glm::dot(xTangent, xBitangent));
+		Zenith_Assert(fDotTangentBitangent < 0.001f, "Tangent and bitangent must be perpendicular (%s)", pszName);
+
+		// Tangent should be unit length
+		float fTangentLen = glm::length(xTangent);
+		Zenith_Assert(glm::abs(fTangentLen - 1.0f) < 0.001f, "Tangent must be unit length (%s)", pszName);
+
+		// Bitangent should be unit length (cross of unit axis and unit tangent)
+		float fBitangentLen = glm::length(xBitangent);
+		Zenith_Assert(glm::abs(fBitangentLen - 1.0f) < 0.001f, "Bitangent must be unit length (%s)", pszName);
+	};
+
+	// Test all three cardinal axes
+	TestAxis(Zenith_Maths::Vector3(1, 0, 0), "X axis");
+	TestAxis(Zenith_Maths::Vector3(0, 1, 0), "Y axis");
+	TestAxis(Zenith_Maths::Vector3(0, 0, 1), "Z axis");
+
+	// Test a diagonal axis
+	TestAxis(glm::normalize(Zenith_Maths::Vector3(1, 1, 1)), "Diagonal (1,1,1)");
+
+	// Test an axis near the X threshold (tests the branch that picks Y vs X as perpendicular)
+	TestAxis(glm::normalize(Zenith_Maths::Vector3(0.95f, 0.1f, 0.0f)), "Near-X axis");
+	TestAxis(glm::normalize(Zenith_Maths::Vector3(0.1f, 0.95f, 0.0f)), "Near-Y axis");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestGizmosTangentFrame PASSED");
+}
+
+#endif // ZENITH_TOOLS

@@ -95,9 +95,27 @@ struct Flux_IKChain
 //=============================================================================
 class Flux_IKSolver
 {
+	friend class Zenith_UnitTests;
 public:
 	Flux_IKSolver() = default;
 	~Flux_IKSolver() = default;
+
+	//=========================================================================
+	// Static Helpers
+	//=========================================================================
+
+	// Normalize a vector safely, returning xFallback if length is below epsilon
+	static Zenith_Maths::Vector3 SafeNormalize(const Zenith_Maths::Vector3& xVec,
+		const Zenith_Maths::Vector3& xFallback = Zenith_Maths::Vector3(0.0f),
+		float fEpsilon = 0.0001f);
+
+	// Find a perpendicular axis to the given vector
+	static Zenith_Maths::Vector3 FindPerpendicularAxis(const Zenith_Maths::Vector3& xVec);
+
+	// Constrain a child position to lie exactly fLength away from a parent position
+	static Zenith_Maths::Vector3 ConstrainBoneLength(const Zenith_Maths::Vector3& xChildPos,
+		const Zenith_Maths::Vector3& xParentPos,
+		float fLength);
 
 	//=========================================================================
 	// Chain Management
@@ -193,6 +211,19 @@ private:
 
 	// Apply joint constraints
 	void ApplyConstraints(std::vector<Zenith_Maths::Vector3>& xPositions,
+		const Flux_IKChain& xChain,
+		const Flux_SkeletonPose& xOriginalPose);
+
+	// Apply a hinge constraint to a single joint
+	void ApplyHingeConstraint(std::vector<Zenith_Maths::Vector3>& xPositions,
+		size_t uJointIndex,
+		const Flux_JointConstraint& xConstraint,
+		float fBoneLength);
+
+	// Apply a ball-socket (cone) constraint to a single joint
+	void ApplyBallSocketConstraint(std::vector<Zenith_Maths::Vector3>& xPositions,
+		size_t uJointIndex,
+		const Flux_JointConstraint& xConstraint,
 		const Flux_IKChain& xChain,
 		const Flux_SkeletonPose& xOriginalPose);
 

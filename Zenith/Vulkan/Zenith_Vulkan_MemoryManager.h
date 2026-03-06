@@ -129,7 +129,16 @@ public:
 	// Direct access to VMA allocator (for advanced buffer creation)
 	static VmaAllocator GetVMAAllocator() { return s_xAllocator; }
 
+	// Determines the VkImageViewType from surface info flags (3D, cube, array, or 2D)
+	static vk::ImageViewType DetermineImageViewType(const Flux_SurfaceInfo& xInfo);
+
 private:
+
+	// Common buffer destruction logic - validates handle, queues VRAM deletion
+	static void DestroySimpleBuffer(Flux_VRAMHandle& xHandle);
+
+	// Destroys an image view if the handle is valid, then releases the handle
+	static void DestroyImageViewIfValid(const vk::Device& xDevice, Flux_ImageViewHandle& xHandle);
 
 	static void InitialiseStagingBuffer();
 

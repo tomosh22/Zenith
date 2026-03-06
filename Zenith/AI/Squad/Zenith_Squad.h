@@ -159,6 +159,22 @@ private:
 	void AssignFormationSlots();
 	void UpdateSharedKnowledge(float fDt);
 	int32_t FindMemberIndex(Zenith_EntityID xEntity) const;
+	int32_t FindSharedTargetIndex(Zenith_EntityID xTarget) const;
+
+	// Order helpers (reduce duplication across 8 Order functions)
+	void IssuePositionOrder(SquadOrderType eType, const Zenith_Maths::Vector3& xPosition);
+	void IssueTargetOrder(SquadOrderType eType, Zenith_EntityID xTarget);
+	void IssueSimpleOrder(SquadOrderType eType);
+
+	// Alive status helper (consolidates MarkMemberDead/MarkMemberAlive)
+	void UpdateMemberAliveStatus(Zenith_EntityID xEntity, bool bAlive);
+
+#ifdef ZENITH_TOOLS
+	void DebugDrawSquadLinks(class Zenith_SceneData* pxSceneData, const Zenith_Maths::Vector3& xLeaderPos) const;
+	void DebugDrawFormationPositions() const;
+	void DebugDrawSharedTargets() const;
+	void DebugDrawRoleLabels(class Zenith_SceneData* pxSceneData) const;
+#endif
 };
 
 /**

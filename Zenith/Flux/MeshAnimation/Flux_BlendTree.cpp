@@ -28,6 +28,43 @@ Flux_BlendTreeNode* Flux_BlendTreeNode::CreateFromTypeName(const std::string& st
 	return nullptr;
 }
 
+void Flux_BlendTreeNode::WriteChildNode(Zenith_DataStream& xStream, const Flux_BlendTreeNode* pxChild)
+{
+	bool bHasChild = (pxChild != nullptr);
+	xStream << bHasChild;
+	if (bHasChild)
+	{
+		std::string strType = pxChild->GetNodeTypeName();
+		xStream << strType;
+		pxChild->WriteToDataStream(xStream);
+	}
+}
+
+Flux_BlendTreeNode* Flux_BlendTreeNode::ReadChildNode(Zenith_DataStream& xStream)
+{
+	bool bHasChild = false;
+	xStream >> bHasChild;
+	if (bHasChild)
+	{
+		std::string strType;
+		xStream >> strType;
+		Flux_BlendTreeNode* pxChild = CreateFromTypeName(strType);
+		if (pxChild)
+			pxChild->ReadFromDataStream(xStream);
+		return pxChild;
+	}
+	return nullptr;
+}
+
+void Flux_BlendTreeNode::EvaluateChildOrReset(Flux_BlendTreeNode* pxChild, float fDt,
+	Flux_SkeletonPose& xPose, const Zenith_SkeletonAsset& xSkeleton)
+{
+	if (pxChild)
+		pxChild->Evaluate(fDt, xPose, xSkeleton);
+	else
+		xPose.Reset();
+}
+
 //=============================================================================
 // Flux_BlendTreeNode_Clip
 //=============================================================================
@@ -144,15 +181,8 @@ void Flux_BlendTreeNode_Blend::Evaluate(float fDt,
 	const Zenith_SkeletonAsset& xSkeleton)
 {
 	// Evaluate both children
-	if (m_pxChildA)
-		m_pxChildA->Evaluate(fDt, m_xPoseA, xSkeleton);
-	else
-		m_xPoseA.Reset();
-
-	if (m_pxChildB)
-		m_pxChildB->Evaluate(fDt, m_xPoseB, xSkeleton);
-	else
-		m_xPoseB.Reset();
+	EvaluateChildOrReset(m_pxChildA, fDt, m_xPoseA, xSkeleton);
+	EvaluateChildOrReset(m_pxChildB, fDt, m_xPoseB, xSkeleton);
 
 	// Blend results
 	Flux_SkeletonPose::Blend(xOutPose, m_xPoseA, m_xPoseB, m_fBlendWeight);
@@ -184,55 +214,15 @@ bool Flux_BlendTreeNode_Blend::IsFinished() const
 void Flux_BlendTreeNode_Blend::WriteToDataStream(Zenith_DataStream& xStream) const
 {
 	xStream << m_fBlendWeight;
-
-	// Write child A
-	bool bHasChildA = (m_pxChildA != nullptr);
-	xStream << bHasChildA;
-	if (bHasChildA)
-	{
-		std::string strType = m_pxChildA->GetNodeTypeName();
-		xStream << strType;
-		m_pxChildA->WriteToDataStream(xStream);
-	}
-
-	// Write child B
-	bool bHasChildB = (m_pxChildB != nullptr);
-	xStream << bHasChildB;
-	if (bHasChildB)
-	{
-		std::string strType = m_pxChildB->GetNodeTypeName();
-		xStream << strType;
-		m_pxChildB->WriteToDataStream(xStream);
-	}
+	WriteChildNode(xStream, m_pxChildA);
+	WriteChildNode(xStream, m_pxChildB);
 }
 
 void Flux_BlendTreeNode_Blend::ReadFromDataStream(Zenith_DataStream& xStream)
 {
 	xStream >> m_fBlendWeight;
-
-	// Read child A
-	bool bHasChildA = false;
-	xStream >> bHasChildA;
-	if (bHasChildA)
-	{
-		std::string strType;
-		xStream >> strType;
-		m_pxChildA = Flux_BlendTreeNode::CreateFromTypeName(strType);
-		if (m_pxChildA)
-			m_pxChildA->ReadFromDataStream(xStream);
-	}
-
-	// Read child B
-	bool bHasChildB = false;
-	xStream >> bHasChildB;
-	if (bHasChildB)
-	{
-		std::string strType;
-		xStream >> strType;
-		m_pxChildB = Flux_BlendTreeNode::CreateFromTypeName(strType);
-		if (m_pxChildB)
-			m_pxChildB->ReadFromDataStream(xStream);
-	}
+	m_pxChildA = ReadChildNode(xStream);
+	m_pxChildB = ReadChildNode(xStream);
 }
 
 //=============================================================================
@@ -314,15 +304,8 @@ void Flux_BlendTreeNode_BlendSpace1D::Evaluate(float fDt,
 	}
 
 	// Evaluate both points
-	if (m_xBlendPoints.Get(uLowerIdx).m_pxNode)
-		m_xBlendPoints.Get(uLowerIdx).m_pxNode->Evaluate(fDt, m_xPoseA, xSkeleton);
-	else
-		m_xPoseA.Reset();
-
-	if (m_xBlendPoints.Get(uUpperIdx).m_pxNode)
-		m_xBlendPoints.Get(uUpperIdx).m_pxNode->Evaluate(fDt, m_xPoseB, xSkeleton);
-	else
-		m_xPoseB.Reset();
+	EvaluateChildOrReset(m_xBlendPoints.Get(uLowerIdx).m_pxNode, fDt, m_xPoseA, xSkeleton);
+	EvaluateChildOrReset(m_xBlendPoints.Get(uUpperIdx).m_pxNode, fDt, m_xPoseB, xSkeleton);
 
 	// Calculate blend factor
 	float fRange = m_xBlendPoints.Get(uUpperIdx).m_fPosition - m_xBlendPoints.Get(uLowerIdx).m_fPosition;
@@ -375,15 +358,7 @@ void Flux_BlendTreeNode_BlendSpace1D::WriteToDataStream(Zenith_DataStream& xStre
 	{
 		const BlendPoint& xPoint = m_xBlendPoints.Get(u);
 		xStream << xPoint.m_fPosition;
-
-		bool bHasNode = (xPoint.m_pxNode != nullptr);
-		xStream << bHasNode;
-		if (bHasNode)
-		{
-			std::string strType = xPoint.m_pxNode->GetNodeTypeName();
-			xStream << strType;
-			xPoint.m_pxNode->WriteToDataStream(xStream);
-		}
+		WriteChildNode(xStream, xPoint.m_pxNode);
 	}
 }
 
@@ -398,20 +373,7 @@ void Flux_BlendTreeNode_BlendSpace1D::ReadFromDataStream(Zenith_DataStream& xStr
 	{
 		float fPosition = 0.0f;
 		xStream >> fPosition;
-
-		bool bHasNode = false;
-		xStream >> bHasNode;
-
-		Flux_BlendTreeNode* pxNode = nullptr;
-		if (bHasNode)
-		{
-			std::string strType;
-			xStream >> strType;
-			pxNode = Flux_BlendTreeNode::CreateFromTypeName(strType);
-			if (pxNode)
-				pxNode->ReadFromDataStream(xStream);
-		}
-
+		Flux_BlendTreeNode* pxNode = ReadChildNode(xStream);
 		m_xBlendPoints.PushBack({ pxNode, fPosition });
 	}
 
@@ -577,20 +539,9 @@ void Flux_BlendTreeNode_BlendSpace2D::Evaluate(float fDt,
 			m_xTempPoses.PushBack(Flux_SkeletonPose());
 
 		// Evaluate the three vertices
-		if (m_xBlendPoints.Get(idx0).m_pxNode)
-			m_xBlendPoints.Get(idx0).m_pxNode->Evaluate(fDt, m_xTempPoses.Get(0), xSkeleton);
-		else
-			m_xTempPoses.Get(0).Reset();
-
-		if (m_xBlendPoints.Get(idx1).m_pxNode)
-			m_xBlendPoints.Get(idx1).m_pxNode->Evaluate(fDt, m_xTempPoses.Get(1), xSkeleton);
-		else
-			m_xTempPoses.Get(1).Reset();
-
-		if (m_xBlendPoints.Get(idx2).m_pxNode)
-			m_xBlendPoints.Get(idx2).m_pxNode->Evaluate(fDt, m_xTempPoses.Get(2), xSkeleton);
-		else
-			m_xTempPoses.Get(2).Reset();
+		EvaluateChildOrReset(m_xBlendPoints.Get(idx0).m_pxNode, fDt, m_xTempPoses.Get(0), xSkeleton);
+		EvaluateChildOrReset(m_xBlendPoints.Get(idx1).m_pxNode, fDt, m_xTempPoses.Get(1), xSkeleton);
+		EvaluateChildOrReset(m_xBlendPoints.Get(idx2).m_pxNode, fDt, m_xTempPoses.Get(2), xSkeleton);
 
 		// Blend with barycentric weights
 		Flux_SkeletonPose xTemp;
@@ -616,10 +567,7 @@ void Flux_BlendTreeNode_BlendSpace2D::Evaluate(float fDt,
 		for (u_int i = 0; i < xWeights.GetSize(); ++i)
 		{
 			uint32_t uIdx = xWeights.Get(i).m_uIndex;
-			if (m_xBlendPoints.Get(uIdx).m_pxNode)
-				m_xBlendPoints.Get(uIdx).m_pxNode->Evaluate(fDt, m_xTempPoses.Get(i), xSkeleton);
-			else
-				m_xTempPoses.Get(i).Reset();
+			EvaluateChildOrReset(m_xBlendPoints.Get(uIdx).m_pxNode, fDt, m_xTempPoses.Get(i), xSkeleton);
 		}
 
 		// Blend based on weights
@@ -681,15 +629,7 @@ void Flux_BlendTreeNode_BlendSpace2D::WriteToDataStream(Zenith_DataStream& xStre
 		const BlendPoint& xPoint = m_xBlendPoints.Get(u);
 		xStream << xPoint.m_xPosition.x;
 		xStream << xPoint.m_xPosition.y;
-
-		bool bHasNode = (xPoint.m_pxNode != nullptr);
-		xStream << bHasNode;
-		if (bHasNode)
-		{
-			std::string strType = xPoint.m_pxNode->GetNodeTypeName();
-			xStream << strType;
-			xPoint.m_pxNode->WriteToDataStream(xStream);
-		}
+		WriteChildNode(xStream, xPoint.m_pxNode);
 	}
 }
 
@@ -707,19 +647,7 @@ void Flux_BlendTreeNode_BlendSpace2D::ReadFromDataStream(Zenith_DataStream& xStr
 		xStream >> xPosition.x;
 		xStream >> xPosition.y;
 
-		bool bHasNode = false;
-		xStream >> bHasNode;
-
-		Flux_BlendTreeNode* pxNode = nullptr;
-		if (bHasNode)
-		{
-			std::string strType;
-			xStream >> strType;
-			pxNode = Flux_BlendTreeNode::CreateFromTypeName(strType);
-			if (pxNode)
-				pxNode->ReadFromDataStream(xStream);
-		}
-
+		Flux_BlendTreeNode* pxNode = ReadChildNode(xStream);
 		m_xBlendPoints.PushBack({ pxNode, xPosition });
 	}
 
@@ -748,19 +676,8 @@ void Flux_BlendTreeNode_Additive::Evaluate(float fDt,
 	Flux_SkeletonPose& xOutPose,
 	const Zenith_SkeletonAsset& xSkeleton)
 {
-	// Evaluate base
-	if (m_pxBaseNode)
-		m_pxBaseNode->Evaluate(fDt, m_xBasePose, xSkeleton);
-	else
-		m_xBasePose.Reset();
-
-	// Evaluate additive
-	if (m_pxAdditiveNode)
-		m_pxAdditiveNode->Evaluate(fDt, m_xAdditivePose, xSkeleton);
-	else
-		m_xAdditivePose.Reset();
-
-	// Apply additive blend
+	EvaluateChildOrReset(m_pxBaseNode, fDt, m_xBasePose, xSkeleton);
+	EvaluateChildOrReset(m_pxAdditiveNode, fDt, m_xAdditivePose, xSkeleton);
 	Flux_SkeletonPose::AdditiveBlend(xOutPose, m_xBasePose, m_xAdditivePose, m_fAdditiveWeight);
 }
 
@@ -778,55 +695,15 @@ void Flux_BlendTreeNode_Additive::Reset()
 void Flux_BlendTreeNode_Additive::WriteToDataStream(Zenith_DataStream& xStream) const
 {
 	xStream << m_fAdditiveWeight;
-
-	// Base node
-	bool bHasBase = (m_pxBaseNode != nullptr);
-	xStream << bHasBase;
-	if (bHasBase)
-	{
-		std::string strType = m_pxBaseNode->GetNodeTypeName();
-		xStream << strType;
-		m_pxBaseNode->WriteToDataStream(xStream);
-	}
-
-	// Additive node
-	bool bHasAdditive = (m_pxAdditiveNode != nullptr);
-	xStream << bHasAdditive;
-	if (bHasAdditive)
-	{
-		std::string strType = m_pxAdditiveNode->GetNodeTypeName();
-		xStream << strType;
-		m_pxAdditiveNode->WriteToDataStream(xStream);
-	}
+	WriteChildNode(xStream, m_pxBaseNode);
+	WriteChildNode(xStream, m_pxAdditiveNode);
 }
 
 void Flux_BlendTreeNode_Additive::ReadFromDataStream(Zenith_DataStream& xStream)
 {
 	xStream >> m_fAdditiveWeight;
-
-	// Base node
-	bool bHasBase = false;
-	xStream >> bHasBase;
-	if (bHasBase)
-	{
-		std::string strType;
-		xStream >> strType;
-		m_pxBaseNode = Flux_BlendTreeNode::CreateFromTypeName(strType);
-		if (m_pxBaseNode)
-			m_pxBaseNode->ReadFromDataStream(xStream);
-	}
-
-	// Additive node
-	bool bHasAdditive = false;
-	xStream >> bHasAdditive;
-	if (bHasAdditive)
-	{
-		std::string strType;
-		xStream >> strType;
-		m_pxAdditiveNode = Flux_BlendTreeNode::CreateFromTypeName(strType);
-		if (m_pxAdditiveNode)
-			m_pxAdditiveNode->ReadFromDataStream(xStream);
-	}
+	m_pxBaseNode = ReadChildNode(xStream);
+	m_pxAdditiveNode = ReadChildNode(xStream);
 }
 
 //=============================================================================
@@ -851,19 +728,8 @@ void Flux_BlendTreeNode_Masked::Evaluate(float fDt,
 	Flux_SkeletonPose& xOutPose,
 	const Zenith_SkeletonAsset& xSkeleton)
 {
-	// Evaluate base
-	if (m_pxBaseNode)
-		m_pxBaseNode->Evaluate(fDt, m_xBasePose, xSkeleton);
-	else
-		m_xBasePose.Reset();
-
-	// Evaluate override
-	if (m_pxOverrideNode)
-		m_pxOverrideNode->Evaluate(fDt, m_xOverridePose, xSkeleton);
-	else
-		m_xOverridePose.Reset();
-
-	// Apply masked blend
+	EvaluateChildOrReset(m_pxBaseNode, fDt, m_xBasePose, xSkeleton);
+	EvaluateChildOrReset(m_pxOverrideNode, fDt, m_xOverridePose, xSkeleton);
 	Flux_SkeletonPose::MaskedBlend(xOutPose, m_xBasePose, m_xOverridePose, m_xBoneMask.GetWeights());
 }
 
@@ -881,55 +747,15 @@ void Flux_BlendTreeNode_Masked::Reset()
 void Flux_BlendTreeNode_Masked::WriteToDataStream(Zenith_DataStream& xStream) const
 {
 	m_xBoneMask.WriteToDataStream(xStream);
-
-	// Base node
-	bool bHasBase = (m_pxBaseNode != nullptr);
-	xStream << bHasBase;
-	if (bHasBase)
-	{
-		std::string strType = m_pxBaseNode->GetNodeTypeName();
-		xStream << strType;
-		m_pxBaseNode->WriteToDataStream(xStream);
-	}
-
-	// Override node
-	bool bHasOverride = (m_pxOverrideNode != nullptr);
-	xStream << bHasOverride;
-	if (bHasOverride)
-	{
-		std::string strType = m_pxOverrideNode->GetNodeTypeName();
-		xStream << strType;
-		m_pxOverrideNode->WriteToDataStream(xStream);
-	}
+	WriteChildNode(xStream, m_pxBaseNode);
+	WriteChildNode(xStream, m_pxOverrideNode);
 }
 
 void Flux_BlendTreeNode_Masked::ReadFromDataStream(Zenith_DataStream& xStream)
 {
 	m_xBoneMask.ReadFromDataStream(xStream);
-
-	// Base node
-	bool bHasBase = false;
-	xStream >> bHasBase;
-	if (bHasBase)
-	{
-		std::string strType;
-		xStream >> strType;
-		m_pxBaseNode = Flux_BlendTreeNode::CreateFromTypeName(strType);
-		if (m_pxBaseNode)
-			m_pxBaseNode->ReadFromDataStream(xStream);
-	}
-
-	// Override node
-	bool bHasOverride = false;
-	xStream >> bHasOverride;
-	if (bHasOverride)
-	{
-		std::string strType;
-		xStream >> strType;
-		m_pxOverrideNode = Flux_BlendTreeNode::CreateFromTypeName(strType);
-		if (m_pxOverrideNode)
-			m_pxOverrideNode->ReadFromDataStream(xStream);
-	}
+	m_pxBaseNode = ReadChildNode(xStream);
+	m_pxOverrideNode = ReadChildNode(xStream);
 }
 
 //=============================================================================
@@ -969,30 +795,24 @@ void Flux_BlendTreeNode_Select::SetSelectedIndex(int32_t iIndex)
 	}
 }
 
+Flux_BlendTreeNode* Flux_BlendTreeNode_Select::GetSelectedChild() const
+{
+	if (m_iSelectedIndex >= 0 && m_iSelectedIndex < static_cast<int32_t>(m_xChildren.GetSize()))
+		return m_xChildren.Get(m_iSelectedIndex);
+	return nullptr;
+}
+
 void Flux_BlendTreeNode_Select::Evaluate(float fDt,
 	Flux_SkeletonPose& xOutPose,
 	const Zenith_SkeletonAsset& xSkeleton)
 {
-	if (m_iSelectedIndex >= 0 && m_iSelectedIndex < static_cast<int32_t>(m_xChildren.GetSize()))
-	{
-		if (m_xChildren.Get(m_iSelectedIndex))
-		{
-			m_xChildren.Get(m_iSelectedIndex)->Evaluate(fDt, xOutPose, xSkeleton);
-			return;
-		}
-	}
-
-	xOutPose.Reset();
+	EvaluateChildOrReset(GetSelectedChild(), fDt, xOutPose, xSkeleton);
 }
 
 float Flux_BlendTreeNode_Select::GetNormalizedTime() const
 {
-	if (m_iSelectedIndex >= 0 && m_iSelectedIndex < static_cast<int32_t>(m_xChildren.GetSize()))
-	{
-		if (m_xChildren.Get(m_iSelectedIndex))
-			return m_xChildren.Get(m_iSelectedIndex)->GetNormalizedTime();
-	}
-	return 0.0f;
+	Flux_BlendTreeNode* pxChild = GetSelectedChild();
+	return pxChild ? pxChild->GetNormalizedTime() : 0.0f;
 }
 
 void Flux_BlendTreeNode_Select::Reset()
@@ -1006,12 +826,8 @@ void Flux_BlendTreeNode_Select::Reset()
 
 bool Flux_BlendTreeNode_Select::IsFinished() const
 {
-	if (m_iSelectedIndex >= 0 && m_iSelectedIndex < static_cast<int32_t>(m_xChildren.GetSize()))
-	{
-		if (m_xChildren.Get(m_iSelectedIndex))
-			return m_xChildren.Get(m_iSelectedIndex)->IsFinished();
-	}
-	return true;
+	Flux_BlendTreeNode* pxChild = GetSelectedChild();
+	return pxChild ? pxChild->IsFinished() : true;
 }
 
 void Flux_BlendTreeNode_Select::WriteToDataStream(Zenith_DataStream& xStream) const
@@ -1022,17 +838,7 @@ void Flux_BlendTreeNode_Select::WriteToDataStream(Zenith_DataStream& xStream) co
 	xStream << uNumChildren;
 
 	for (u_int u = 0; u < m_xChildren.GetSize(); u++)
-	{
-		const Flux_BlendTreeNode* pxChild = m_xChildren.Get(u);
-		bool bHasChild = (pxChild != nullptr);
-		xStream << bHasChild;
-		if (bHasChild)
-		{
-			std::string strType = pxChild->GetNodeTypeName();
-			xStream << strType;
-			pxChild->WriteToDataStream(xStream);
-		}
-	}
+		WriteChildNode(xStream, m_xChildren.Get(u));
 }
 
 void Flux_BlendTreeNode_Select::ReadFromDataStream(Zenith_DataStream& xStream)
@@ -1043,20 +849,5 @@ void Flux_BlendTreeNode_Select::ReadFromDataStream(Zenith_DataStream& xStream)
 	xStream >> uNumChildren;
 
 	for (uint32_t i = 0; i < uNumChildren; ++i)
-	{
-		bool bHasChild = false;
-		xStream >> bHasChild;
-
-		Flux_BlendTreeNode* pxChild = nullptr;
-		if (bHasChild)
-		{
-			std::string strType;
-			xStream >> strType;
-			pxChild = Flux_BlendTreeNode::CreateFromTypeName(strType);
-			if (pxChild)
-				pxChild->ReadFromDataStream(xStream);
-		}
-
-		m_xChildren.PushBack(pxChild);
-	}
+		m_xChildren.PushBack(ReadChildNode(xStream));
 }

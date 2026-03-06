@@ -88,6 +88,7 @@ struct Flux_SlangGraphicsPipelineResult
 
 class Flux_SlangCompiler
 {
+	friend class Zenith_UnitTests;
 public:
 	static void Initialise();
 	static void Shutdown();
@@ -107,6 +108,26 @@ public:
 										 Flux_SlangGraphicsPipelineResult& xResultOut);
 
 private:
+	// Splits a file path into directory and filename at the last '/' or '\'.
+	// If no separator is found, strDirectoryOut is "." and strFileNameOut is the full path.
+	static void SplitFilePath(const std::string& strPath, std::string& strFileNameOut, std::string& strDirectoryOut);
+
+	// Creates a Slang compile request configured with SPIR-V target, search paths, and compiler flags.
+	// Returns the request pointer via pxRequestOut and the target index via iTargetIndexOut.
+	// Returns false and populates strErrorOut on failure.
+	static bool CreateConfiguredCompileRequest(void*& pxRequestOut, int& iTargetIndexOut,
+											   const char* const* aszSearchPaths, u_int uSearchPathCount,
+											   std::string& strErrorOut);
+
+	// Extracts SPIR-V code from a compiled entry point blob into axSpirvOut.
+	// Returns false and populates strErrorOut on failure.
+	static bool ExtractSpirvBlob(void* pxRequest, int iEntryPoint, int iTargetIndex,
+								 Zenith_Vector<uint32_t>& axSpirvOut, std::string& strErrorOut);
+
+	// Extracts a single parameter's binding info from reflection data.
+	// Returns true if the parameter is a valid descriptor binding (not a varying).
+	static bool ExtractParameterBinding(void* pxParam, void* pxTypeLayout, Flux_ReflectedBinding& xBindingOut);
+
 	static void ExtractReflection(void* pxEntryPointReflection, Flux_ShaderReflection& xReflectionOut);
 	static DescriptorType SlangTypeToDescriptorType(void* pxTypeLayout);
 };

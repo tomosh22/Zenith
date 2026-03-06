@@ -2,6 +2,7 @@
 #include <fstream>
 #include "UnitTests/Zenith_SceneTests.h"
 #include "UnitTests/Zenith_PhysicsTests.h"
+#include "UnitTests/Zenith_AITests.h"
 
 class Zenith_UnitTests
 {
@@ -36,6 +37,7 @@ private:
 	static void TestComponentSerialization();
 	static void TestEntitySerialization();
 	static void TestSceneRoundTrip();
+	static void TestSceneDisableDestroyHelpers();
 
 	// Animation system tests
 	static void TestBoneLocalPoseBlending();
@@ -54,7 +56,16 @@ private:
 	static void TestBlendSpace2D();
 	static void TestBlendTreeEvaluation();
 	static void TestBlendTreeSerialization();
+	static void TestBlendTreeWriteReadChildNode();
+	static void TestBlendTreeEvaluateChildOrReset();
+	static void TestBlendTreeSelectGetSelectedChild();
 	static void TestFABRIKSolver();
+
+	// IK helper refactoring tests
+	static void TestIKSafeNormalize();
+	static void TestIKFindPerpendicularAxis();
+	static void TestIKConstrainBoneLength();
+
 	static void TestAnimationEvents();
 	static void TestBoneMasking();
 
@@ -193,6 +204,8 @@ private:
 	static void TestNavMeshFindNearestPolygon();
 	static void TestNavMeshIsPointOnMesh();
 	static void TestNavMeshRaycast();
+	static void TestNavMeshFindNearestPolygonInCell();
+	static void TestNavMeshComputePolygonBounds();
 	static void TestPathfindingStraightLine();
 	static void TestPathfindingAroundObstacle();
 	static void TestPathfindingNoPath();
@@ -208,6 +221,16 @@ private:
 	static void TestPathfindingNoDuplicateWaypoints();
 	static void TestPathfindingBatchProcessing();
 	static void TestPathfindingPartialPath();
+
+	// NavMesh Generator helper tests
+	static void TestCountWalkableSpans();
+	static void TestHasSufficientClearance();
+	static void TestMergeOverlappingSpans();
+
+	// Physics mesh generator helper tests
+	static void TestFindExtremeVertexIndices();
+	static void TestComputeAABBFromPositions();
+	static void TestComputeVertexNormals();
 
 	// AI System tests - Perception
 	static void TestSightConeInRange();
@@ -234,9 +257,33 @@ private:
 	static void TestTacticalPointCoverScoring();
 	static void TestTacticalPointFlankScoring();
 
+	// AI System tests - Tactical Point refactoring tests
+	static void TestGetEntityPositionValid();
+	static void TestGetEntityPositionInvalid();
+	static void TestFindBestPointNoMatches();
+	static void TestFindBestPointSelectsHighest();
+	static void TestScoreCoverDistance();
+	static void TestScoreFlankAngle();
+	static void TestScoreOverwatchElevation();
+
 	// AI System tests - Debug Variables
 	static void TestTacticalPointDebugColor();
+	static void TestFindBestPointNoPointsActive();
+	static void TestFindBestPointOutOfRange();
 	static void TestSquadDebugRoleColor();
+
+	// Squad refactoring tests (FindSharedTargetIndex, formation slot assignment)
+	static void TestSharedTargetUpdate();
+	static void TestSharedTargetUnknown();
+	static void TestFormationSlotsLeaderFirst();
+	static void TestFormationSlotsRoleMatching();
+
+	// Squad order helper and alive status refactoring tests
+	static void TestSquadPositionOrder();
+	static void TestSquadTargetOrderClearsPosition();
+	static void TestSquadSimpleOrderClearsAll();
+	static void TestSquadDeadMemberTriggersLeaderReassign();
+	static void TestSquadAliveMemberPreservesLeader();
 
 	// Asset Handle tests (operator bool fix for procedural assets)
 	static void TestAssetHandleProceduralBoolConversion();
@@ -338,8 +385,37 @@ private:
 	static void TestLayerMaskedOverrideBlend();
 	static void TestPingPongAsymmetricEasing();
 	static void TestTransitionCompletionFramePose();
+	static void TestStateMachineUpdateNoStates();
+	static void TestStateMachineAutoInitDefaultState();
 
 	// Scene Management tests moved to Zenith_SceneTests.h/.cpp
+
+	// Terrain streaming tests
+	static void TestChunkDistanceSymmetry();
+	static void TestChunkDistanceZero();
+
+	// Gizmo math helper tests (ZENITH_TOOLS only)
+	static void TestGizmosLineLineParallel();
+	static void TestGizmosLineLinePerpendicular();
+	static void TestGizmosTangentFrame();
+
+	// Slang compiler helper tests
+	static void TestSlangSplitFilePath();
+	static void TestSlangSplitFilePathEdgeCases();
+
+	// Animation state machine helper tests
+	static void TestParamSerializationFloat();
+	static void TestParamSerializationBoolTrigger();
+	static void TestCompareNumericGreater();
+	static void TestCompareNumericLessEqual();
+	static void TestPriorityInsertionMiddle();
+	static void TestPriorityInsertionEmpty();
+
+	// Vulkan Memory Manager refactoring tests
+	static void TestImageViewType3D();
+	static void TestImageViewTypeCube();
+	static void TestImageViewTypeDefault2D();
+	static void TestDestroySkipsInvalidHandle();
 };
 
 // Include editor/tools-only tests separately as they are only available in ZENITH_TOOLS builds

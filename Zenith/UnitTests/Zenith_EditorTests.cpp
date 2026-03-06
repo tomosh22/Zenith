@@ -17,7 +17,14 @@
 #include "EntityComponent/Components/Zenith_CameraComponent.h"
 #include "Input/Zenith_Input.h"
 #include "Maths/Zenith_Maths.h"
+#include "Editor/Panels/Zenith_EditorPanel_Hierarchy.h"
+#include "Editor/Panels/Zenith_EditorPanel_ContentBrowser.h"
+#include "AssetHandling/Zenith_ModelAsset.h"
+#include "Flux/MeshAnimation/Flux_AnimationClip.h"
+#include "FileAccess/Zenith_FileAccess.h"
 #include <cmath>
+#include <filesystem>
+#include <fstream>
 
 void Zenith_EditorTests::RunAllTests()
 {
@@ -60,6 +67,7 @@ void Zenith_EditorTests::RunAllTests()
 	TestUnparentEntity();
 	TestHierarchyCircularPrevention();
 	TestDeleteParentWithChildren();
+	TestIsAncestorOf();
 
 	// Selection System tests (expanded)
 	TestRangeSelection();
@@ -155,6 +163,15 @@ void Zenith_EditorTests::RunAllTests()
 	TestCreateEntityViaEditor();
 	TestAddInvalidComponent();
 	TestSetSelectedEntityTransient();
+
+	// Deferred Scene Operation tests
+	TestDeferredOpClearedAfterExecution();
+	TestDeferredOpSkippedWhenFlagFalse();
+
+	// Content Browser tests
+	TestTypeFilterMatchesTexture();
+	TestTypeFilterAllPass();
+	TestUniqueFilenameWithExisting();
 
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "[EditorTests] All editor tests passed");
 }
@@ -1746,6 +1763,195 @@ void Zenith_EditorTests::TestSetSelectedEntityTransient()
 	Zenith_Assert(!pxEntity->IsTransient(), "Should be non-transient after SetSelectedEntityTransient(false)");
 
 	EDITOR_TEST_END(TestSetSelectedEntityTransient);
+}
+
+void Zenith_EditorTests::TestIsAncestorOf()
+{
+	EDITOR_TEST_BEGIN(TestIsAncestorOf);
+
+	// Create a 3-level hierarchy: Grandparent -> Parent -> Child, plus a sibling
+	Zenith_EntityID uGrandparent = Zenith_EditorTestFixture::CreateTestEntity("Grandparent");
+	Zenith_EntityID uParent = Zenith_EditorTestFixture::CreateTestEntity("Parent");
+	Zenith_EntityID uChild = Zenith_EditorTestFixture::CreateTestEntity("Child");
+	Zenith_EntityID uSibling = Zenith_EditorTestFixture::CreateTestEntity("Sibling");
+
+	Zenith_EditorTestFixture::SetupHierarchy(uGrandparent, uParent);
+	Zenith_EditorTestFixture::SetupHierarchy(uParent, uChild);
+
+	// Direct parent is ancestor of child
+	Zenith_Assert(
+		Zenith_EditorPanelHierarchy::IsAncestorOf(uParent, uChild),
+		"Direct parent should be ancestor of child");
+
+	// Grandparent is ancestor of grandchild (transitive)
+	Zenith_Assert(
+		Zenith_EditorPanelHierarchy::IsAncestorOf(uGrandparent, uChild),
+		"Grandparent should be ancestor of grandchild");
+
+	// Self is NOT ancestor of self
+	Zenith_Assert(
+		!Zenith_EditorPanelHierarchy::IsAncestorOf(uParent, uParent),
+		"Entity should not be ancestor of itself");
+
+	// Child is NOT ancestor of parent (reverse direction)
+	Zenith_Assert(
+		!Zenith_EditorPanelHierarchy::IsAncestorOf(uChild, uParent),
+		"Child should not be ancestor of parent");
+
+	// Sibling is NOT ancestor of child (no parent relationship)
+	Zenith_Assert(
+		!Zenith_EditorPanelHierarchy::IsAncestorOf(uSibling, uChild),
+		"Sibling should not be ancestor of child");
+
+	// Invalid entity is not ancestor of anything
+	Zenith_Assert(
+		!Zenith_EditorPanelHierarchy::IsAncestorOf(INVALID_ENTITY_ID, uChild),
+		"Invalid entity should not be ancestor of anything");
+
+	// Nothing is ancestor of invalid entity
+	Zenith_Assert(
+		!Zenith_EditorPanelHierarchy::IsAncestorOf(uParent, INVALID_ENTITY_ID),
+		"Nothing should be ancestor of invalid entity");
+
+	EDITOR_TEST_END(TestIsAncestorOf);
+}
+
+void Zenith_EditorTests::TestDeferredOpClearedAfterExecution()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestDeferredOpClearedAfterExecution...");
+	Zenith_EditorTestFixture::SetUp();
+
+	// Enter Play mode to create a scene backup
+	Zenith_Editor::SetEditorMode(EditorMode::Playing);
+	Zenith_Assert(Zenith_Editor::GetEditorMode() == EditorMode::Playing,
+		"Should be in Playing mode");
+
+	// Stop Play mode — this sets the s_bPendingSceneLoad flag (deferred restore)
+	Zenith_Editor::SetEditorMode(EditorMode::Stopped);
+	Zenith_Assert(Zenith_Editor::GetEditorMode() == EditorMode::Stopped,
+		"Should be in Stopped mode");
+
+	// Flush pending ops — this should execute the deferred load and clear the flag
+	Zenith_Editor::FlushPendingSceneOperations();
+
+	// Flush again — if the flag was properly cleared, this is a no-op and should not crash
+	Zenith_Editor::FlushPendingSceneOperations();
+
+	// Verify the scene is still valid after the double-flush
+	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
+	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
+	Zenith_Assert(pxSceneData != nullptr, "Scene data should be valid after deferred op completed");
+
+	Zenith_EditorTestFixture::TearDown();
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestDeferredOpClearedAfterExecution PASSED");
+}
+
+void Zenith_EditorTests::TestDeferredOpSkippedWhenFlagFalse()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestDeferredOpSkippedWhenFlagFalse...");
+	Zenith_EditorTestFixture::SetUp();
+
+	// Create an entity to track scene identity — if no deferred op fires, it should survive
+	Zenith_EntityID uEntityID = Zenith_EditorTestFixture::CreateTestEntity("DeferredFlagTestEntity");
+
+	// Verify the entity exists
+	Zenith_SceneData* pxSceneData = Zenith_EditorTestFixture::GetTestScene();
+	Zenith_Assert(pxSceneData != nullptr, "Test scene should exist");
+	Zenith_Assert(pxSceneData->EntityExists(uEntityID), "Entity should exist before flush");
+
+	// Call FlushPendingSceneOperations with NO flags set
+	Zenith_Editor::FlushPendingSceneOperations();
+
+	// Verify the entity still exists — proving no scene operation was executed
+	Zenith_Assert(pxSceneData->EntityExists(uEntityID),
+		"Entity should still exist after flush with no pending flags");
+
+	Zenith_EditorTestFixture::TearDown();
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestDeferredOpSkippedWhenFlagFalse PASSED");
+}
+
+void Zenith_EditorTests::TestTypeFilterMatchesTexture()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestTypeFilterMatchesTexture...");
+
+	Zenith_Assert(Zenith_EditorPanelContentBrowser::MatchesAssetTypeFilter(1, ZENITH_TEXTURE_EXT),
+		"Texture extension should match texture filter");
+
+	Zenith_Assert(!Zenith_EditorPanelContentBrowser::MatchesAssetTypeFilter(1, ZENITH_MATERIAL_EXT),
+		"Material extension should not match texture filter");
+
+	Zenith_Assert(!Zenith_EditorPanelContentBrowser::MatchesAssetTypeFilter(1, ZENITH_MESH_EXT),
+		"Mesh extension should not match texture filter");
+
+	Zenith_Assert(!Zenith_EditorPanelContentBrowser::MatchesAssetTypeFilter(1, ZENITH_MODEL_EXT),
+		"Model extension should not match texture filter");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestTypeFilterMatchesTexture PASSED");
+}
+
+void Zenith_EditorTests::TestTypeFilterAllPass()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestTypeFilterAllPass...");
+
+	Zenith_Assert(Zenith_EditorPanelContentBrowser::MatchesAssetTypeFilter(0, ZENITH_TEXTURE_EXT),
+		"Texture should pass 'All' filter");
+	Zenith_Assert(Zenith_EditorPanelContentBrowser::MatchesAssetTypeFilter(0, ZENITH_MATERIAL_EXT),
+		"Material should pass 'All' filter");
+	Zenith_Assert(Zenith_EditorPanelContentBrowser::MatchesAssetTypeFilter(0, ZENITH_MESH_EXT),
+		"Mesh should pass 'All' filter");
+	Zenith_Assert(Zenith_EditorPanelContentBrowser::MatchesAssetTypeFilter(0, ZENITH_MODEL_EXT),
+		"Model should pass 'All' filter");
+	Zenith_Assert(Zenith_EditorPanelContentBrowser::MatchesAssetTypeFilter(0, ZENITH_PREFAB_EXT),
+		"Prefab should pass 'All' filter");
+	Zenith_Assert(Zenith_EditorPanelContentBrowser::MatchesAssetTypeFilter(0, ZENITH_SCENE_EXT),
+		"Scene should pass 'All' filter");
+	Zenith_Assert(Zenith_EditorPanelContentBrowser::MatchesAssetTypeFilter(0, ZENITH_ANIMATION_EXT),
+		"Animation should pass 'All' filter");
+	Zenith_Assert(Zenith_EditorPanelContentBrowser::MatchesAssetTypeFilter(0, ".unknown"),
+		"Unknown extension should pass 'All' filter");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestTypeFilterAllPass PASSED");
+}
+
+void Zenith_EditorTests::TestUniqueFilenameWithExisting()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestUniqueFilenameWithExisting...");
+
+	std::string strTempDir = std::filesystem::temp_directory_path().string();
+	std::string strTestDir = strTempDir + "/zenith_test_unique_filename";
+
+	std::filesystem::remove_all(strTestDir);
+	std::filesystem::create_directory(strTestDir);
+
+	std::string strBasePath = strTestDir + "/TestFile";
+	std::string strSuffix = ".txt";
+
+	// No existing file - should return base path + suffix directly
+	std::string strResult1 = Zenith_EditorPanelContentBrowser::GenerateUniqueFilename(strBasePath, strSuffix);
+	Zenith_Assert(strResult1 == strBasePath + strSuffix,
+		"With no existing files, should return base path directly");
+
+	std::ofstream xFile1(strResult1);
+	xFile1.close();
+
+	// First file exists - should return _1 variant
+	std::string strResult2 = Zenith_EditorPanelContentBrowser::GenerateUniqueFilename(strBasePath, strSuffix);
+	std::string strExpected2 = strBasePath + "_1" + strSuffix;
+	Zenith_Assert(strResult2 == strExpected2,
+		"With base file existing, should return _1 variant");
+
+	std::ofstream xFile2(strResult2);
+	xFile2.close();
+
+	// Both base and _1 exist - should return _2 variant
+	std::string strResult3 = Zenith_EditorPanelContentBrowser::GenerateUniqueFilename(strBasePath, strSuffix);
+	std::string strExpected3 = strBasePath + "_2" + strSuffix;
+	Zenith_Assert(strResult3 == strExpected3,
+		"With base and _1 existing, should return _2 variant");
+
+	std::filesystem::remove_all(strTestDir);
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestUniqueFilenameWithExisting PASSED");
 }
 
 #endif // ZENITH_TOOLS

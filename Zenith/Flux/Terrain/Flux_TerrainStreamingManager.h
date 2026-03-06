@@ -136,6 +136,8 @@ public:
 	};
 	static const StreamingStats& GetStats() { return s_xStats; }
 
+	friend class Zenith_UnitTests;
+
 private:
 	// ========== State ==========
 	static bool s_bInitialized;
@@ -167,7 +169,23 @@ private:
 	static StreamingStats s_xStats;
 
 	// ========== Internal Helpers ==========
-	
+
+	// Calculate squared distance from a chunk's center to a world position
+	static float GetChunkDistanceSq(uint32_t uChunkIndex, const Zenith_Maths::Vector3& xWorldPos);
+
+	// Attempt to allocate vertex+index space in the streaming buffers.
+	// If the initial allocation fails, evicts distant chunks and retries.
+	// On success, fills xAllocOut with the relative offsets and returns true.
+	struct StreamingAllocation
+	{
+		uint32_t m_uVertexOffset;
+		uint32_t m_uIndexOffset;
+	};
+	static bool TryAllocateStreamingSpace(uint32_t uNumVerts, uint32_t uNumIndices, const Zenith_Maths::Vector3& xCameraPos, StreamingAllocation& xAllocOut);
+
+	// Update streaming statistics (HIGH LOD count, memory usage, fragmentation)
+	static void UpdateStreamingStats();
+
 	// Stream in a LOD for a chunk. Returns true on success.
 	static bool StreamInLOD(uint32_t uChunkIndex, uint32_t uLODLevel);
 	

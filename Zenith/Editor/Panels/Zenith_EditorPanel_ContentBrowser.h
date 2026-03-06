@@ -61,6 +61,33 @@ namespace Zenith_EditorPanelContentBrowser
 	 * @param xState Reference to content browser state
 	 */
 	void NavigateToParent(ContentBrowserState& xState);
+
+	/**
+	 * Render the right-click context menu for a content browser entry
+	 * Shared between list and grid views
+	 *
+	 * @param xEntry The content browser entry to render the context menu for
+	 * @param xState Reference to content browser state
+	 */
+	void RenderItemContextMenu(const ContentBrowserEntry& xEntry, ContentBrowserState& xState);
+
+	/**
+	 * Generate a unique filename by appending _1, _2, etc. until no collision
+	 *
+	 * @param strBasePath Base file path without extension (e.g., "C:/assets/NewFolder")
+	 * @param strSuffix File suffix including extension (e.g., ".zmtrl") or empty for folders
+	 * @return A unique path that does not yet exist on disk
+	 */
+	std::string GenerateUniqueFilename(const std::string& strBasePath, const std::string& strSuffix);
+
+	/**
+	 * Check if a file extension matches the current asset type filter
+	 *
+	 * @param iFilterIndex Current filter dropdown index (0 = All, 1 = Textures, etc.)
+	 * @param strExtension File extension to check (e.g., ".ztxtr")
+	 * @return true if the file should be shown under this filter
+	 */
+	bool MatchesAssetTypeFilter(int iFilterIndex, const std::string& strExtension);
 }
 
 #endif // ZENITH_TOOLS

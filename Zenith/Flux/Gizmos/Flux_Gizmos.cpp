@@ -140,27 +140,113 @@ void Flux_Gizmos::Reset()
 	Zenith_Log(LOG_CATEGORY_GIZMOS, "Flux_Gizmos::Reset() - Reset command list and cleared entity reference");
 }
 
-void Flux_Gizmos::Render(void*)
+// ==================== EXTRACTED HELPERS ====================
+
+Zenith_TransformComponent* Flux_Gizmos::GetEditableTransform()
 {
-	if (!dbg_bRenderGizmos || !s_pxTargetEntity)
+	if (!s_pxTargetEntity)
 	{
-		return;
+		return nullptr;
 	}
 
-	// Get entity transform
 	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
 	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
 	if (!pxSceneData)
 	{
-		return;
+		return nullptr;
 	}
 	if (!pxSceneData->EntityHasComponent<Zenith_TransformComponent>(s_pxTargetEntity->GetEntityID()))
 	{
-		Zenith_Log(LOG_CATEGORY_GIZMOS, "Gizmos: Entity has no transform component");
+		return nullptr;
+	}
+
+	return &pxSceneData->GetComponentFromEntity<Zenith_TransformComponent>(s_pxTargetEntity->GetEntityID());
+}
+
+void Flux_Gizmos::InterleaveVertexData(Zenith_Vector<float>& xOut, const Zenith_Vector<Zenith_Maths::Vector3>& xPositions, const Zenith_Vector<Zenith_Maths::Vector3>& xColors)
+{
+	for (uint32_t i = 0; i < xPositions.GetSize(); ++i)
+	{
+		xOut.PushBack(xPositions.Get(i).x);
+		xOut.PushBack(xPositions.Get(i).y);
+		xOut.PushBack(xPositions.Get(i).z);
+		xOut.PushBack(xColors.Get(i).x);
+		xOut.PushBack(xColors.Get(i).y);
+		xOut.PushBack(xColors.Get(i).z);
+	}
+}
+
+void Flux_Gizmos::UploadGizmoGeometry(Zenith_Vector<GizmoGeometry>& xGeometryList, const Zenith_Vector<float>& xVertexData, const Zenith_Vector<uint32_t>& xIndices, const Zenith_Maths::Vector3& xColor, GizmoComponent eComponent)
+{
+	GizmoGeometry xGeom;
+	xGeom.m_eComponent = eComponent;
+	xGeom.m_xColor = xColor;
+	xGeom.m_uIndexCount = xIndices.GetSize();
+
+	Flux_MemoryManager::InitialiseVertexBuffer(
+		xVertexData.GetDataPointer(),
+		xVertexData.GetSize() * sizeof(float),
+		xGeom.m_xVertexBuffer
+	);
+
+	Flux_MemoryManager::InitialiseIndexBuffer(
+		xIndices.GetDataPointer(),
+		xIndices.GetSize() * sizeof(uint32_t),
+		xGeom.m_xIndexBuffer
+	);
+
+	xGeometryList.PushBack(xGeom);
+}
+
+bool Flux_Gizmos::GetLineLineClosestPointParameter(const Zenith_Maths::Vector3& xAxisOrigin, const Zenith_Maths::Vector3& xAxis, const Zenith_Maths::Vector3& xRayOrigin, const Zenith_Maths::Vector3& xRayDir, float& fOutT)
+{
+	// Standard line-line closest point formula:
+	// w = AxisOrigin - RayOrigin
+	// t = (b*e - c*d) / (a*c - b*b)
+	// where a = axis.axis, b = axis.rayDir, c = rayDir.rayDir, d = axis.w, e = rayDir.w
+
+	Zenith_Maths::Vector3 w = xAxisOrigin - xRayOrigin;
+
+	float a = glm::dot(xAxis, xAxis);
+	float b = glm::dot(xAxis, xRayDir);
+	float c = glm::dot(xRayDir, xRayDir);
+	float d = glm::dot(xAxis, w);
+	float e = glm::dot(xRayDir, w);
+
+	float fDenom = a * c - b * b;
+
+	if (glm::abs(fDenom) < 0.0001f)
+	{
+		return false;
+	}
+
+	fOutT = (b * e - c * d) / fDenom;
+	return true;
+}
+
+void Flux_Gizmos::ComputeTangentFrame(const Zenith_Maths::Vector3& xAxis, Zenith_Maths::Vector3& xOutTangent, Zenith_Maths::Vector3& xOutBitangent)
+{
+	Zenith_Maths::Vector3 xPerpendicular = glm::abs(xAxis.x) > 0.9f ? Zenith_Maths::Vector3(0, 1, 0) : Zenith_Maths::Vector3(1, 0, 0);
+	xOutTangent = glm::normalize(glm::cross(xAxis, xPerpendicular));
+	xOutBitangent = glm::cross(xAxis, xOutTangent);
+}
+
+// ==================== RENDERING ====================
+
+void Flux_Gizmos::Render(void*)
+{
+	if (!dbg_bRenderGizmos)
+	{
 		return;
 	}
 
-	Zenith_TransformComponent& xTransform = pxSceneData->GetComponentFromEntity<Zenith_TransformComponent>(s_pxTargetEntity->GetEntityID());
+	Zenith_TransformComponent* pxTransform = GetEditableTransform();
+	if (!pxTransform)
+	{
+		return;
+	}
+
+	Zenith_TransformComponent& xTransform = *pxTransform;
 
 	// Calculate gizmo scale based on camera distance for consistent screen size
 	Zenith_Maths::Vector3 xEntityPos;
@@ -292,17 +378,12 @@ void Flux_Gizmos::BeginInteraction(const Zenith_Maths::Vector3& rayOrigin, const
 		s_xInteractionStartPos = rayOrigin + rayDir * fDistance;
 
 		// Store initial entity transform
-		Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-		Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
-		if (pxSceneData)
+		Zenith_TransformComponent* pxTransform = GetEditableTransform();
+		if (pxTransform)
 		{
-			if (pxSceneData->EntityHasComponent<Zenith_TransformComponent>(s_pxTargetEntity->GetEntityID()))
-			{
-				Zenith_TransformComponent& xTransform = pxSceneData->GetComponentFromEntity<Zenith_TransformComponent>(s_pxTargetEntity->GetEntityID());
-				xTransform.GetPosition(s_xInitialEntityPosition);
-				xTransform.GetRotation(s_xInitialEntityRotation);
-				xTransform.GetScale(s_xInitialEntityScale);
-			}
+			pxTransform->GetPosition(s_xInitialEntityPosition);
+			pxTransform->GetRotation(s_xInitialEntityRotation);
+			pxTransform->GetScale(s_xInitialEntityScale);
 		}
 	}
 }
@@ -369,9 +450,8 @@ void Flux_Gizmos::GenerateArrowGeometry(Zenith_Vector<GizmoGeometry>& geometryLi
 
 	// Create arrow shaft (thin cylinder)
 	const uint32_t shaftSegments = 8;
-	Zenith_Maths::Vector3 perpendicular = glm::abs(axis.x) > 0.9f ? Zenith_Maths::Vector3(0, 1, 0) : Zenith_Maths::Vector3(1, 0, 0);
-	Zenith_Maths::Vector3 tangent = glm::normalize(glm::cross(axis, perpendicular));
-	Zenith_Maths::Vector3 bitangent = glm::cross(axis, tangent);
+	Zenith_Maths::Vector3 tangent, bitangent;
+	ComputeTangentFrame(axis, tangent, bitangent);
 
 	// Shaft vertices
 	for (uint32_t i = 0; i <= shaftSegments; ++i)
@@ -423,39 +503,10 @@ void Flux_Gizmos::GenerateArrowGeometry(Zenith_Vector<GizmoGeometry>& geometryLi
 		indices.PushBack(headBaseIndex + i + 1);
 	}
 
-	// Create GPU buffers
-	GizmoGeometry geom;
-	geom.m_eComponent = component;
-	geom.m_xColor = color;
-	geom.m_uIndexCount = indices.GetSize();
-
-	// Interleave position and color data
-	Zenith_Vector<float> vertexData;
-	for (uint32_t i = 0; i < positions.GetSize(); ++i)
-	{
-		vertexData.PushBack(positions.Get(i).x);
-		vertexData.PushBack(positions.Get(i).y);
-		vertexData.PushBack(positions.Get(i).z);
-		vertexData.PushBack(colors.Get(i).x);
-		vertexData.PushBack(colors.Get(i).y);
-		vertexData.PushBack(colors.Get(i).z);
-	}
-
-	// Create vertex buffer
-	Flux_MemoryManager::InitialiseVertexBuffer(
-		vertexData.GetDataPointer(),
-		vertexData.GetSize() * sizeof(float),
-		geom.m_xVertexBuffer
-	);
-
-	// Create index buffer
-	Flux_MemoryManager::InitialiseIndexBuffer(
-		indices.GetDataPointer(),
-		indices.GetSize() * sizeof(uint32_t),
-		geom.m_xIndexBuffer
-	);
-
-	geometryList.PushBack(geom);
+	// Interleave and upload
+	Zenith_Vector<float> xVertexData;
+	InterleaveVertexData(xVertexData, positions, colors);
+	UploadGizmoGeometry(geometryList, xVertexData, indices, color, component);
 }
 
 void Flux_Gizmos::GenerateCircleGeometry(Zenith_Vector<GizmoGeometry>& geometryList, const Zenith_Maths::Vector3& normal, const Zenith_Maths::Vector3& color, GizmoComponent component)
@@ -465,9 +516,8 @@ void Flux_Gizmos::GenerateCircleGeometry(Zenith_Vector<GizmoGeometry>& geometryL
 	Zenith_Vector<uint32_t> indices;
 
 	// Find perpendicular vectors for the circle plane
-	Zenith_Maths::Vector3 perpendicular = glm::abs(normal.x) > 0.9f ? Zenith_Maths::Vector3(0, 1, 0) : Zenith_Maths::Vector3(1, 0, 0);
-	Zenith_Maths::Vector3 tangent = glm::normalize(glm::cross(normal, perpendicular));
-	Zenith_Maths::Vector3 bitangent = glm::cross(normal, tangent);
+	Zenith_Maths::Vector3 tangent, bitangent;
+	ComputeTangentFrame(normal, tangent, bitangent);
 
 	// FIXED: Generate circle as a 3D tube/ribbon with actual triangle geometry
 	// Create two rings (inner and outer) to form a visible tube
@@ -510,37 +560,10 @@ void Flux_Gizmos::GenerateCircleGeometry(Zenith_Vector<GizmoGeometry>& geometryL
 		indices.PushBack(nextBaseIdx);      // Inner next
 	}
 
-	// Create GPU buffers
-	GizmoGeometry geom;
-	geom.m_eComponent = component;
-	geom.m_xColor = color;
-	geom.m_uIndexCount = indices.GetSize();
-
-	// Interleave position and color data
-	Zenith_Vector<float> vertexData;
-	for (uint32_t i = 0; i < positions.GetSize(); ++i)
-	{
-		vertexData.PushBack(positions.Get(i).x);
-		vertexData.PushBack(positions.Get(i).y);
-		vertexData.PushBack(positions.Get(i).z);
-		vertexData.PushBack(colors.Get(i).x);
-		vertexData.PushBack(colors.Get(i).y);
-		vertexData.PushBack(colors.Get(i).z);
-	}
-
-	Flux_MemoryManager::InitialiseVertexBuffer(
-		vertexData.GetDataPointer(),
-		vertexData.GetSize() * sizeof(float),
-		geom.m_xVertexBuffer
-	);
-
-	Flux_MemoryManager::InitialiseIndexBuffer(
-		indices.GetDataPointer(),
-		indices.GetSize() * sizeof(uint32_t),
-		geom.m_xIndexBuffer
-	);
-
-	geometryList.PushBack(geom);
+	// Interleave and upload
+	Zenith_Vector<float> xVertexData;
+	InterleaveVertexData(xVertexData, positions, colors);
+	UploadGizmoGeometry(geometryList, xVertexData, indices, color, component);
 }
 
 void Flux_Gizmos::GenerateCubeGeometry(Zenith_Vector<GizmoGeometry>& geometryList, const Zenith_Maths::Vector3& offset, const Zenith_Maths::Vector3& color, GizmoComponent component)
@@ -582,56 +605,22 @@ void Flux_Gizmos::GenerateCubeGeometry(Zenith_Vector<GizmoGeometry>& geometryLis
 	for (uint32_t i = 0; i < 36; ++i)
 		indices.PushBack(cubeIndices[i]);
 
-	// Create GPU buffers
-	GizmoGeometry geom;
-	geom.m_eComponent = component;
-	geom.m_xColor = color;
-	geom.m_uIndexCount = indices.GetSize();
-
-	Zenith_Vector<float> vertexData;
-	for (uint32_t i = 0; i < positions.GetSize(); ++i)
-	{
-		vertexData.PushBack(positions.Get(i).x);
-		vertexData.PushBack(positions.Get(i).y);
-		vertexData.PushBack(positions.Get(i).z);
-		vertexData.PushBack(colors.Get(i).x);
-		vertexData.PushBack(colors.Get(i).y);
-		vertexData.PushBack(colors.Get(i).z);
-	}
-
-	Flux_MemoryManager::InitialiseVertexBuffer(
-		vertexData.GetDataPointer(),
-		vertexData.GetSize() * sizeof(float),
-		geom.m_xVertexBuffer
-	);
-
-	Flux_MemoryManager::InitialiseIndexBuffer(
-		indices.GetDataPointer(),
-		indices.GetSize() * sizeof(uint32_t),
-		geom.m_xIndexBuffer
-	);
-
-	geometryList.PushBack(geom);
+	// Interleave and upload
+	Zenith_Vector<float> xVertexData;
+	InterleaveVertexData(xVertexData, positions, colors);
+	UploadGizmoGeometry(geometryList, xVertexData, indices, color, component);
 }
 
 // ==================== RAYCASTING ====================
 
 GizmoComponent Flux_Gizmos::RaycastGizmo(const Zenith_Maths::Vector3& rayOrigin, const Zenith_Maths::Vector3& rayDir, float& outDistance)
 {
-	if (!s_pxTargetEntity)
+	Zenith_TransformComponent* pxTransform = GetEditableTransform();
+	if (!pxTransform)
 		return GizmoComponent::None;
 
-	// Get entity position (gizmo center)
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
-	if (!pxSceneData)
-		return GizmoComponent::None;
-	if (!pxSceneData->EntityHasComponent<Zenith_TransformComponent>(s_pxTargetEntity->GetEntityID()))
-		return GizmoComponent::None;
-
-	Zenith_TransformComponent& xTransform = pxSceneData->GetComponentFromEntity<Zenith_TransformComponent>(s_pxTargetEntity->GetEntityID());
 	Zenith_Maths::Vector3 xGizmoPos;
-	xTransform.GetPosition(xGizmoPos);
+	pxTransform->GetPosition(xGizmoPos);
 
 	// FIXED: Do all calculations in WORLD space
 	// Translate ray origin relative to gizmo center, but keep same units
@@ -709,14 +698,9 @@ GizmoComponent Flux_Gizmos::RaycastGizmo(const Zenith_Maths::Vector3& rayOrigin,
 
 void Flux_Gizmos::ApplyTranslation(const Zenith_Maths::Vector3& rayOrigin, const Zenith_Maths::Vector3& rayDir)
 {
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
-	if (!pxSceneData)
+	Zenith_TransformComponent* pxTransform = GetEditableTransform();
+	if (!pxTransform)
 		return;
-	if (!pxSceneData->EntityHasComponent<Zenith_TransformComponent>(s_pxTargetEntity->GetEntityID()))
-		return;
-
-	Zenith_TransformComponent& xTransform = pxSceneData->GetComponentFromEntity<Zenith_TransformComponent>(s_pxTargetEntity->GetEntityID());
 
 	// Get constraint axis
 	Zenith_Maths::Vector3 axis(0, 0, 0);
@@ -728,70 +712,35 @@ void Flux_Gizmos::ApplyTranslation(const Zenith_Maths::Vector3& rayOrigin, const
 		default: return;
 	}
 
-	// CORRECT APPROACH: Track offset from initial click and maintain it
-	// 
-	// The user clicks at s_xInteractionStartPos on the gizmo.
-	// As they drag, we want the gizmo to "follow" the mouse ray along the constraint axis.
-	// 
-	// The key insight: Find the closest point on the constraint axis to BOTH rays:
-	// - Initial ray (at click): Find closest point -> this is our reference offset
-	// - Current ray (during drag): Find closest point -> this is where we want to be
-	// The difference between these is how much to move the entity.
-	
-	// The constraint axis always passes through s_xInitialEntityPosition (where entity started)
-	// Axis line: P(t) = s_xInitialEntityPosition + t * axis
-	
-	// First: Find closest point on axis to the INITIAL click position
+	// Track offset from initial click and maintain it.
+	// Find the closest point on the constraint axis to BOTH the initial click and current ray;
+	// the difference determines how much to move the entity.
+
+	// First: Project initial click onto axis
 	Zenith_Maths::Vector3 offsetToClick = s_xInteractionStartPos - s_xInitialEntityPosition;
-	float t_initial = glm::dot(offsetToClick, axis);  // Project click onto axis
-	
-	// Second: Find closest point on axis to the CURRENT mouse ray using line-line closest point
-	// Ray: R(s) = rayOrigin + s * rayDir
-	// Axis: A(t) = s_xInitialEntityPosition + t * axis
-	// We want to find t that minimizes distance between the lines
-	//
-	// Standard formula: w = AxisOrigin - RayOrigin (P1 - P2)
-	// t = (b*e - c*d) / (a*c - b*b)
-	// where a = axis·axis, b = axis·rayDir, c = rayDir·rayDir, d = axis·w, e = rayDir·w
+	float fInitialT = glm::dot(offsetToClick, axis);
 
-	Zenith_Maths::Vector3 w = s_xInitialEntityPosition - rayOrigin;  // FIXED: w = P1 - P2
-
-	float a = 1.0f;                           // dot(axis, axis) = 1 for unit vector
-	float b = glm::dot(axis, rayDir);
-	float c = glm::dot(rayDir, rayDir);
-	float d = glm::dot(axis, w);
-	float e = glm::dot(rayDir, w);
-
-	float denom = a * c - b * b;
-
-	// Check if ray is parallel to axis
-	if (glm::abs(denom) < 0.0001f)
+	// Second: Find closest point on axis to the current mouse ray
+	float fCurrentT;
+	if (!GetLineLineClosestPointParameter(s_xInitialEntityPosition, axis, rayOrigin, rayDir, fCurrentT))
 	{
 		return;
 	}
 
-	// Solve for t (parameter along axis for closest point to current ray)
-	float t_current = (b * e - c * d) / denom;
-	
-	// The entity should move by the difference
-	float delta_t = t_current - t_initial;
-	
 	// Apply the movement
-	Zenith_Maths::Vector3 newPosition = s_xInitialEntityPosition + axis * delta_t;
-	
-	xTransform.SetPosition(newPosition);
+	float fDeltaT = fCurrentT - fInitialT;
+	Zenith_Maths::Vector3 xNewPosition = s_xInitialEntityPosition + axis * fDeltaT;
+
+	pxTransform->SetPosition(xNewPosition);
 }
 
 void Flux_Gizmos::ApplyRotation(const Zenith_Maths::Vector3& rayOrigin, const Zenith_Maths::Vector3& rayDir)
 {
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
-	if (!pxSceneData)
-		return;
-	if (!pxSceneData->EntityHasComponent<Zenith_TransformComponent>(s_pxTargetEntity->GetEntityID()))
+	Zenith_TransformComponent* pxTransform = GetEditableTransform();
+	if (!pxTransform)
 		return;
 
-	Zenith_TransformComponent& xTransform = pxSceneData->GetComponentFromEntity<Zenith_TransformComponent>(s_pxTargetEntity->GetEntityID());
+	Zenith_TransformComponent& xTransform = *pxTransform;
 
 	// Get rotation axis
 	Zenith_Maths::Vector3 axis(0, 0, 0);
@@ -833,14 +782,9 @@ void Flux_Gizmos::ApplyRotation(const Zenith_Maths::Vector3& rayOrigin, const Ze
 
 void Flux_Gizmos::ApplyScale(const Zenith_Maths::Vector3& rayOrigin, const Zenith_Maths::Vector3& rayDir)
 {
-	Zenith_Scene xActiveScene = Zenith_SceneManager::GetActiveScene();
-	Zenith_SceneData* pxSceneData = Zenith_SceneManager::GetSceneData(xActiveScene);
-	if (!pxSceneData)
+	Zenith_TransformComponent* pxTransform = GetEditableTransform();
+	if (!pxTransform)
 		return;
-	if (!pxSceneData->EntityHasComponent<Zenith_TransformComponent>(s_pxTargetEntity->GetEntityID()))
-		return;
-
-	Zenith_TransformComponent& xTransform = pxSceneData->GetComponentFromEntity<Zenith_TransformComponent>(s_pxTargetEntity->GetEntityID());
 
 	// Get constraint axis
 	Zenith_Maths::Vector3 axis(0, 0, 0);
@@ -858,77 +802,51 @@ void Flux_Gizmos::ApplyScale(const Zenith_Maths::Vector3& rayOrigin, const Zenit
 		default: return;
 	}
 
-	// FIXED: Use same line-line closest point algorithm as translation
-	// Scale is calculated based on offset along the constraint axis
-	//
-	// The key insight: measure how far along the axis the user has dragged
-	// and convert that distance to a scale multiplier
-
-	// For uniform scale, use the camera view direction as the constraint "axis"
+	// For uniform scale, use the camera view direction as the constraint axis
 	if (bUniformScale)
 	{
-		// Get camera position and forward direction
 		Zenith_Maths::Vector3 xCameraPos = Flux_Graphics::GetCameraPosition();
 		axis = glm::normalize(s_xInitialEntityPosition - xCameraPos);
 	}
 
-	// Find closest point on axis to the INITIAL click position
+	// Project initial click onto axis
 	Zenith_Maths::Vector3 offsetToClick = s_xInteractionStartPos - s_xInitialEntityPosition;
-	float t_initial = glm::dot(offsetToClick, axis);  // Project click onto axis
+	float fInitialT = glm::dot(offsetToClick, axis);
 
-	// Find closest point on axis to the CURRENT mouse ray
-	// Using line-line closest point formula (same as translation)
-	Zenith_Maths::Vector3 w = s_xInitialEntityPosition - rayOrigin;
-
-	float a = 1.0f;  // dot(axis, axis) = 1 for unit vector
-	float b = glm::dot(axis, rayDir);
-	float c = glm::dot(rayDir, rayDir);
-	float d = glm::dot(axis, w);
-	float e = glm::dot(rayDir, w);
-
-	float denom = a * c - b * b;
-
-	// Check if ray is parallel to axis
-	if (glm::abs(denom) < 0.0001f)
+	// Find closest point on axis to the current mouse ray
+	float fCurrentT;
+	if (!GetLineLineClosestPointParameter(s_xInitialEntityPosition, axis, rayOrigin, rayDir, fCurrentT))
 		return;
 
-	// Solve for t (parameter along axis for closest point to current ray)
-	float t_current = (b * e - c * d) / denom;
-
 	// Calculate scale factor based on movement along axis
-	// delta = how far we've moved along the axis
-	float delta_t = t_current - t_initial;
+	float fDeltaT = fCurrentT - fInitialT;
 
 	// Convert delta to scale factor
-	// Use a scaling factor to make the manipulation feel natural
-	// A movement of 1.0 unit along axis = 1.0 additional scale (2x total)
-	const float scaleSpeed = 0.5f;  // Adjust for sensitivity
-	float scaleFactor = 1.0f + (delta_t * scaleSpeed);
+	const float fScaleSpeed = 0.5f;
+	float fScaleFactor = 1.0f + (fDeltaT * fScaleSpeed);
 
 	// Clamp to prevent negative or zero scale
-	scaleFactor = glm::max(scaleFactor, 0.01f);
+	fScaleFactor = glm::max(fScaleFactor, 0.01f);
 
 	// Apply scale based on active component
-	Zenith_Maths::Vector3 newScale = s_xInitialEntityScale;
+	Zenith_Maths::Vector3 xNewScale = s_xInitialEntityScale;
 
 	if (bUniformScale)
 	{
-		// Uniform scaling
-		newScale *= scaleFactor;
+		xNewScale *= fScaleFactor;
 	}
 	else
 	{
-		// Per-axis scaling
 		switch (s_eActiveComponent)
 		{
-			case GizmoComponent::ScaleX: newScale.x *= scaleFactor; break;
-			case GizmoComponent::ScaleY: newScale.y *= scaleFactor; break;
-			case GizmoComponent::ScaleZ: newScale.z *= scaleFactor; break;
+			case GizmoComponent::ScaleX: xNewScale.x *= fScaleFactor; break;
+			case GizmoComponent::ScaleY: xNewScale.y *= fScaleFactor; break;
+			case GizmoComponent::ScaleZ: xNewScale.z *= fScaleFactor; break;
 			default: return;
 		}
 	}
 
-	xTransform.SetScale(newScale);
+	pxTransform->SetScale(xNewScale);
 }
 
 #endif // ZENITH_TOOLS

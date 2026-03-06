@@ -290,59 +290,15 @@ Flux_MeshGeometry* Zenith_PhysicsMeshGenerator::CreateMeshFromData(
 	pxMesh->m_pxNormals = static_cast<Zenith_Maths::Vector3*>(Zenith_MemoryManagement::Allocate(pxMesh->m_uNumVerts * sizeof(Zenith_Maths::Vector3)));
 	pxMesh->m_puIndices = static_cast<Flux_MeshGeometry::IndexType*>(Zenith_MemoryManagement::Allocate(pxMesh->m_uNumIndices * sizeof(Flux_MeshGeometry::IndexType)));
 
-	// Copy positions
+	// Copy positions and indices
 	for (uint32_t i = 0; i < pxMesh->m_uNumVerts; i++)
-	{
 		pxMesh->m_pxPositions[i] = xPositions.Get(i);
-		pxMesh->m_pxNormals[i] = Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f); // Initialize normals
-	}
-
-	// Copy indices
 	for (uint32_t i = 0; i < pxMesh->m_uNumIndices; i++)
-	{
 		pxMesh->m_puIndices[i] = xIndices.Get(i);
-	}
 
-	// Generate proper normals from triangles
-	// First zero out all normals
-	for (uint32_t i = 0; i < pxMesh->m_uNumVerts; i++)
-	{
-		pxMesh->m_pxNormals[i] = Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f);
-	}
-
-	// Accumulate face normals to vertices
-	for (uint32_t t = 0; t < pxMesh->m_uNumIndices; t += 3)
-	{
-		uint32_t i0 = pxMesh->m_puIndices[t + 0];
-		uint32_t i1 = pxMesh->m_puIndices[t + 1];
-		uint32_t i2 = pxMesh->m_puIndices[t + 2];
-
-		Zenith_Maths::Vector3 xV0 = pxMesh->m_pxPositions[i0];
-		Zenith_Maths::Vector3 xV1 = pxMesh->m_pxPositions[i1];
-		Zenith_Maths::Vector3 xV2 = pxMesh->m_pxPositions[i2];
-
-		Zenith_Maths::Vector3 xEdge1 = xV1 - xV0;
-		Zenith_Maths::Vector3 xEdge2 = xV2 - xV0;
-		Zenith_Maths::Vector3 xFaceNormal = Zenith_Maths::Cross(xEdge1, xEdge2);
-
-		pxMesh->m_pxNormals[i0] += xFaceNormal;
-		pxMesh->m_pxNormals[i1] += xFaceNormal;
-		pxMesh->m_pxNormals[i2] += xFaceNormal;
-	}
-
-	// Normalize all vertex normals
-	for (uint32_t i = 0; i < pxMesh->m_uNumVerts; i++)
-	{
-		float fLen = Zenith_Maths::Length(pxMesh->m_pxNormals[i]);
-		if (fLen > 0.0001f)
-		{
-			pxMesh->m_pxNormals[i] = pxMesh->m_pxNormals[i] / fLen;
-		}
-		else
-		{
-			pxMesh->m_pxNormals[i] = Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f);
-		}
-	}
+	// Generate smooth vertex normals
+	ComputeVertexNormals(pxMesh->m_pxNormals, pxMesh->m_pxPositions,
+		pxMesh->m_uNumVerts, pxMesh->m_puIndices, pxMesh->m_uNumIndices);
 
 	return pxMesh;
 }
@@ -386,24 +342,15 @@ xAllPositions.GetSize());
 	// 1. Find extreme points in 6 directions (±X, ±Y, ±Z)
 	// 2. Build a simple convex polyhedron from these points
 	
-	// Find extreme points
-	Zenith_Maths::Vector3 xMinPt[3], xMaxPt[3];
-	int32_t iMinIdx[3] = { 0, 0, 0 };
-	int32_t iMaxIdx[3] = { 0, 0, 0 };
+	// Find extreme points using shared helper
+	uint32_t auExtremeIndices[6];
+	FindExtremeVertexIndices(xAllPositions, auExtremeIndices);
 
+	Zenith_Maths::Vector3 xMinPt[3], xMaxPt[3];
 	for (int axis = 0; axis < 3; axis++)
 	{
-		float fMin = FLT_MAX, fMax = -FLT_MAX;
-		for (uint32_t i = 0; i < xAllPositions.GetSize(); i++)
-		{
-			float fVal = (axis == 0) ? xAllPositions.Get(i).x :
-			             (axis == 1) ? xAllPositions.Get(i).y :
-			                           xAllPositions.Get(i).z;
-			if (fVal < fMin) { fMin = fVal; iMinIdx[axis] = i; }
-			if (fVal > fMax) { fMax = fVal; iMaxIdx[axis] = i; }
-		}
-		xMinPt[axis] = xAllPositions.Get(iMinIdx[axis]);
-		xMaxPt[axis] = xAllPositions.Get(iMaxIdx[axis]);
+		xMinPt[axis] = xAllPositions.Get(auExtremeIndices[axis * 2]);
+		xMaxPt[axis] = xAllPositions.Get(auExtremeIndices[axis * 2 + 1]);
 	}
 
 	// Collect unique extreme points
@@ -462,23 +409,8 @@ void Zenith_PhysicsMeshGenerator::DecimateVertices(
 
 	// CRITICAL: First identify extreme vertices (min/max in each axis)
 	// These must be preserved to maintain correct bounding volume
-	uint32_t uExtremeIndices[6] = { 0, 0, 0, 0, 0, 0 }; // minX, maxX, minY, maxY, minZ, maxZ
-	float fExtremeValues[6] = { FLT_MAX, -FLT_MAX, FLT_MAX, -FLT_MAX, FLT_MAX, -FLT_MAX };
-
-	for (uint32_t i = 0; i < xPositions.GetSize(); i++)
-	{
-		const Zenith_Maths::Vector3& xPos = xPositions.Get(i);
-
-		// Check X extremes
-		if (xPos.x < fExtremeValues[0]) { fExtremeValues[0] = xPos.x; uExtremeIndices[0] = i; }
-		if (xPos.x > fExtremeValues[1]) { fExtremeValues[1] = xPos.x; uExtremeIndices[1] = i; }
-		// Check Y extremes
-		if (xPos.y < fExtremeValues[2]) { fExtremeValues[2] = xPos.y; uExtremeIndices[2] = i; }
-		if (xPos.y > fExtremeValues[3]) { fExtremeValues[3] = xPos.y; uExtremeIndices[3] = i; }
-		// Check Z extremes
-		if (xPos.z < fExtremeValues[4]) { fExtremeValues[4] = xPos.z; uExtremeIndices[4] = i; }
-		if (xPos.z > fExtremeValues[5]) { fExtremeValues[5] = xPos.z; uExtremeIndices[5] = i; }
-	}
+	uint32_t uExtremeIndices[6];
+	FindExtremeVertexIndices(xPositions, uExtremeIndices);
 
 	// Create a set of extreme vertex indices for quick lookup
 	std::unordered_set<uint32_t> xExtremeVertexSet;
@@ -530,6 +462,7 @@ void Zenith_PhysicsMeshGenerator::DecimateVertices(
 		// Extreme vertices always get their own slot, even if cell already exists
 		// Use a unique key by adding a large offset to prevent collision
 		CellKey xUniqueKey = xKey;
+		bool bMerged = false;
 		while (xCellToVertex.find(xUniqueKey) != xCellToVertex.end())
 		{
 			// If the cell already has an extreme vertex with the same position, merge
@@ -537,19 +470,20 @@ void Zenith_PhysicsMeshGenerator::DecimateVertices(
 			if (Zenith_Maths::Length(xPositionsOut.Get(uExistingIdx) - xPos) < 0.0001f)
 			{
 				xOldToNewIndex[i] = uExistingIdx;
-				goto next_extreme;
+				bMerged = true;
+				break;
 			}
 			// Otherwise, find a unique key
 			xUniqueKey.x += 1000000;
 		}
 
+		if (!bMerged)
 		{
 			uint32_t uNewIdx = xPositionsOut.GetSize();
 			xPositionsOut.PushBack(xPos);
 			xCellToVertex[xKey] = uNewIdx; // Map the original key to this extreme vertex
 			xOldToNewIndex[i] = uNewIdx;
 		}
-		next_extreme:;
 	}
 
 	// Second pass: Merge non-extreme vertices that fall into the same cell
@@ -597,6 +531,80 @@ void Zenith_PhysicsMeshGenerator::DecimateVertices(
 	}
 }
 
+void Zenith_PhysicsMeshGenerator::FindExtremeVertexIndices(
+	const Zenith_Vector<Zenith_Maths::Vector3>& xPositions,
+	uint32_t auOutIndices[6])
+{
+	float afExtremeValues[6] = { FLT_MAX, -FLT_MAX, FLT_MAX, -FLT_MAX, FLT_MAX, -FLT_MAX };
+	for (int i = 0; i < 6; i++) auOutIndices[i] = 0;
+
+	for (uint32_t i = 0; i < xPositions.GetSize(); i++)
+	{
+		const Zenith_Maths::Vector3& xPos = xPositions.Get(i);
+		if (xPos.x < afExtremeValues[0]) { afExtremeValues[0] = xPos.x; auOutIndices[0] = i; }
+		if (xPos.x > afExtremeValues[1]) { afExtremeValues[1] = xPos.x; auOutIndices[1] = i; }
+		if (xPos.y < afExtremeValues[2]) { afExtremeValues[2] = xPos.y; auOutIndices[2] = i; }
+		if (xPos.y > afExtremeValues[3]) { afExtremeValues[3] = xPos.y; auOutIndices[3] = i; }
+		if (xPos.z < afExtremeValues[4]) { afExtremeValues[4] = xPos.z; auOutIndices[4] = i; }
+		if (xPos.z > afExtremeValues[5]) { afExtremeValues[5] = xPos.z; auOutIndices[5] = i; }
+	}
+}
+
+void Zenith_PhysicsMeshGenerator::ComputeAABBFromPositions(
+	const Zenith_Vector<Zenith_Maths::Vector3>& xPositions,
+	Zenith_Maths::Vector3& xMinOut,
+	Zenith_Maths::Vector3& xMaxOut)
+{
+	xMinOut = Zenith_Maths::Vector3(FLT_MAX, FLT_MAX, FLT_MAX);
+	xMaxOut = Zenith_Maths::Vector3(-FLT_MAX, -FLT_MAX, -FLT_MAX);
+
+	for (uint32_t i = 0; i < xPositions.GetSize(); i++)
+	{
+		const Zenith_Maths::Vector3& xPos = xPositions.Get(i);
+		xMinOut.x = std::min(xMinOut.x, xPos.x);
+		xMinOut.y = std::min(xMinOut.y, xPos.y);
+		xMinOut.z = std::min(xMinOut.z, xPos.z);
+		xMaxOut.x = std::max(xMaxOut.x, xPos.x);
+		xMaxOut.y = std::max(xMaxOut.y, xPos.y);
+		xMaxOut.z = std::max(xMaxOut.z, xPos.z);
+	}
+}
+
+void Zenith_PhysicsMeshGenerator::ComputeVertexNormals(
+	Zenith_Maths::Vector3* pxNormals,
+	const Zenith_Maths::Vector3* pxPositions,
+	uint32_t uNumVerts,
+	const Flux_MeshGeometry::IndexType* puIndices,
+	uint32_t uNumIndices)
+{
+	for (uint32_t i = 0; i < uNumVerts; i++)
+		pxNormals[i] = Zenith_Maths::Vector3(0.0f, 0.0f, 0.0f);
+
+	for (uint32_t t = 0; t < uNumIndices; t += 3)
+	{
+		uint32_t i0 = puIndices[t + 0];
+		uint32_t i1 = puIndices[t + 1];
+		uint32_t i2 = puIndices[t + 2];
+
+		Zenith_Maths::Vector3 xEdge1 = pxPositions[i1] - pxPositions[i0];
+		Zenith_Maths::Vector3 xEdge2 = pxPositions[i2] - pxPositions[i0];
+		Zenith_Maths::Vector3 xFaceNormal = Zenith_Maths::Cross(xEdge1, xEdge2);
+
+		pxNormals[i0] += xFaceNormal;
+		pxNormals[i1] += xFaceNormal;
+		pxNormals[i2] += xFaceNormal;
+	}
+
+	for (uint32_t i = 0; i < uNumVerts; i++)
+	{
+		float fLen = Zenith_Maths::Length(pxNormals[i]);
+		if (fLen > 0.0001f)
+			pxNormals[i] = pxNormals[i] / fLen;
+		else
+			pxNormals[i] = Zenith_Maths::Vector3(0.0f, 1.0f, 0.0f);
+	}
+}
+
 Flux_MeshGeometry* Zenith_PhysicsMeshGenerator::GenerateSimplifiedMesh(
 	const Zenith_Vector<Flux_MeshGeometry*>& xMeshGeometries,
 	const PhysicsMeshConfig& xConfig)
@@ -641,18 +649,8 @@ xAllPositions.GetSize(), xAllIndices.GetSize(), xMeshGeometries.GetSize());
 	}
 
 	// Compute AABB for cell size calculation
-	Zenith_Maths::Vector3 xMin(FLT_MAX, FLT_MAX, FLT_MAX);
-	Zenith_Maths::Vector3 xMax(-FLT_MAX, -FLT_MAX, -FLT_MAX);
-	for (uint32_t i = 0; i < xAllPositions.GetSize(); i++)
-	{
-		const Zenith_Maths::Vector3& xPos = xAllPositions.Get(i);
-		xMin.x = std::min(xMin.x, xPos.x);
-		xMin.y = std::min(xMin.y, xPos.y);
-		xMin.z = std::min(xMin.z, xPos.z);
-		xMax.x = std::max(xMax.x, xPos.x);
-		xMax.y = std::max(xMax.y, xPos.y);
-		xMax.z = std::max(xMax.z, xPos.z);
-	}
+	Zenith_Maths::Vector3 xMin, xMax;
+	ComputeAABBFromPositions(xAllPositions, xMin, xMax);
 
 	Zenith_Maths::Vector3 xExtent = xMax - xMin;
 	float fMaxExtent = std::max(std::max(xExtent.x, xExtent.y), xExtent.z);

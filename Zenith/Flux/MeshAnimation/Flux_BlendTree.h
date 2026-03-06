@@ -46,6 +46,14 @@ public:
 
 	// Factory method for creating nodes from type name
 	static Flux_BlendTreeNode* CreateFromTypeName(const std::string& strTypeName);
+
+	// Shared serialization helpers for child nodes
+	static void WriteChildNode(Zenith_DataStream& xStream, const Flux_BlendTreeNode* pxChild);
+	static Flux_BlendTreeNode* ReadChildNode(Zenith_DataStream& xStream);
+
+	// Shared evaluation helper — evaluates child or resets pose if null
+	static void EvaluateChildOrReset(Flux_BlendTreeNode* pxChild, float fDt,
+		Flux_SkeletonPose& xPose, const Zenith_SkeletonAsset& xSkeleton);
 };
 
 //=============================================================================
@@ -362,6 +370,8 @@ public:
 	int32_t GetSelectedIndex() const { return m_iSelectedIndex; }
 	void SetSelectedIndex(int32_t iIndex);
 	const Zenith_Vector<Flux_BlendTreeNode*>& GetChildren() const { return m_xChildren; }
+
+	Flux_BlendTreeNode* GetSelectedChild() const;
 
 private:
 	Zenith_Vector<Flux_BlendTreeNode*> m_xChildren;

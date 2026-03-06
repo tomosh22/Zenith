@@ -67,6 +67,25 @@ Zenith_SceneData::~Zenith_SceneData()
 	Reset();
 }
 
+void Zenith_SceneData::DisableEntity(Zenith_EntityID xID)
+{
+	if (!EntityExists(xID)) return;
+	Zenith_Entity xEntity(this, xID);
+	Zenith_EntitySlot& xSlot = s_axEntitySlots.Get(xID.m_uIndex);
+	if (xEntity.IsEnabled() && xSlot.m_bOnEnableDispatched)
+	{
+		Zenith_ComponentMetaRegistry::Get().DispatchOnDisable(xEntity);
+		xSlot.m_bOnEnableDispatched = false;
+	}
+}
+
+void Zenith_SceneData::DestroyEntityComponents(Zenith_EntityID xID)
+{
+	if (!EntityExists(xID)) return;
+	Zenith_Entity xEntity(this, xID);
+	Zenith_ComponentMetaRegistry::Get().RemoveAllComponents(xEntity);
+}
+
 void Zenith_SceneData::Reset()
 {
 	Zenith_Assert(!m_bIsUpdating, "Reset() called during Update - this would corrupt iteration state");
@@ -76,32 +95,13 @@ void Zenith_SceneData::Reset()
 	// Pass 1: OnDisable for all entities (all entities still alive during this pass)
 	// Reverse iteration so later-created entities are disabled first
 	for (int i = static_cast<int>(m_xActiveEntities.GetSize()) - 1; i >= 0; --i)
-	{
-		Zenith_EntityID xID = m_xActiveEntities.Get(i);
-		if (EntityExists(xID))
-		{
-			Zenith_Entity xEntity(this, xID);
-			Zenith_EntitySlot& xSlot = s_axEntitySlots.Get(xID.m_uIndex);
-			if (xEntity.IsEnabled() && xSlot.m_bOnEnableDispatched)
-			{
-				Zenith_ComponentMetaRegistry::Get().DispatchOnDisable(xEntity);
-				xSlot.m_bOnEnableDispatched = false;
-			}
-		}
-	}
+		DisableEntity(m_xActiveEntities.Get(i));
 
 	// Pass 2: OnDestroy + component removal in correct reverse serialization order
 	// Using RemoveAllComponents ensures components are destroyed in dependency-safe order
 	// (e.g. ScriptComponent before ColliderComponent before TransformComponent)
 	for (int i = static_cast<int>(m_xActiveEntities.GetSize()) - 1; i >= 0; --i)
-	{
-		Zenith_EntityID xID = m_xActiveEntities.Get(i);
-		if (EntityExists(xID))
-		{
-			Zenith_Entity xEntity(this, xID);
-			Zenith_ComponentMetaRegistry::Get().RemoveAllComponents(xEntity);
-		}
-	}
+		DestroyEntityComponents(m_xActiveEntities.Get(i));
 
 	// Delete now-empty component pools
 	for (Zenith_Vector<Zenith_ComponentPoolBase*>::Iterator xIt(m_xComponents); !xIt.Done(); xIt.Next())
@@ -294,27 +294,15 @@ void Zenith_SceneData::RemoveEntity(Zenith_EntityID xID)
 	// Unity parity: Two-pass destruction
 	// Pass 1: OnDisable for entire hierarchy (all entities still alive during this pass)
 	for (u_int i = 0; i < axHierarchy.GetSize(); ++i)
-	{
-		Zenith_EntityID xEntityID = axHierarchy.Get(i);
-		if (!EntityExists(xEntityID)) continue;
-		Zenith_EntitySlot& xSlot = s_axEntitySlots.Get(xEntityID.m_uIndex);
-		Zenith_Entity xEntity(this, xEntityID);
-		if (xEntity.IsEnabled() && xSlot.m_bOnEnableDispatched)
-		{
-			Zenith_ComponentMetaRegistry::Get().DispatchOnDisable(xEntity);
-			xSlot.m_bOnEnableDispatched = false;
-		}
-	}
+		DisableEntity(axHierarchy.Get(i));
 
 	// Pass 2: OnDestroy + component removal + slot cleanup
 	for (u_int i = 0; i < axHierarchy.GetSize(); ++i)
 	{
 		Zenith_EntityID xEntityID = axHierarchy.Get(i);
 		if (!EntityExists(xEntityID)) continue;
-		Zenith_Entity xEntity(this, xEntityID);
+		DestroyEntityComponents(xEntityID);
 		Zenith_EntitySlot& xSlot = s_axEntitySlots.Get(xEntityID.m_uIndex);
-
-		Zenith_ComponentMetaRegistry::Get().RemoveAllComponents(xEntity);
 
 		s_axEntityComponents.Get(xEntityID.m_uIndex).clear();
 
@@ -976,6 +964,55 @@ bool Zenith_SceneData::LoadFromFile(const std::string& strFilename)
 	return true;
 }
 
+Zenith_EntityID Zenith_SceneData::ReadEntityFromDataStream(Zenith_DataStream& xStream, u_int uVersion,
+	std::unordered_map<uint32_t, Zenith_EntityID>& xFileIndexToNewID) // #TODO: Replace with engine hash map
+{
+	uint32_t uFileIndex;
+	std::string strName;
+	uint32_t uFileParentIndex = Zenith_EntityID::INVALID_INDEX;
+
+	if (uVersion == 3)
+	{
+		xStream >> uFileIndex;
+		xStream >> uFileParentIndex;
+		xStream >> strName;
+
+		uint32_t uChildCount = 0;
+		xStream >> uChildCount;
+		for (uint32_t i = 0; i < uChildCount; ++i)
+		{
+			uint32_t uChildIndex;
+			xStream >> uChildIndex;
+		}
+	}
+	else // v4 and v5 share the same entity format
+	{
+		xStream >> uFileIndex;
+		xStream >> strName;
+	}
+
+	Zenith_EntityID xNewID = CreateEntity();
+	xFileIndexToNewID[uFileIndex] = xNewID;
+
+	Zenith_EntitySlot& xSlot = s_axEntitySlots.Get(xNewID.m_uIndex);
+	xSlot.m_strName = strName;
+	xSlot.m_bEnabled = true;
+	xSlot.m_bTransient = false;
+
+	Zenith_Entity xEntity(this, xNewID);
+	xEntity.AddComponent<Zenith_TransformComponent>();
+
+	Zenith_ComponentMetaRegistry::Get().DeserializeEntityComponents(xEntity, xStream);
+
+	if (uVersion == 3 && uFileParentIndex != Zenith_EntityID::INVALID_INDEX)
+	{
+		Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
+		xTransform.SetPendingParentFileIndex(uFileParentIndex);
+	}
+
+	return xNewID;
+}
+
 bool Zenith_SceneData::LoadFromDataStream(Zenith_DataStream& xStream)
 {
 	// Validate stream has minimum header data (magic + version = 8 bytes)
@@ -1015,50 +1052,7 @@ bool Zenith_SceneData::LoadFromDataStream(Zenith_DataStream& xStream)
 	std::unordered_map<uint32_t, Zenith_EntityID> xFileIndexToNewID; // #TODO: Replace with engine hash map
 
 	for (u_int u = 0; u < uNumEntities; u++)
-	{
-		uint32_t uFileIndex;
-		std::string strName;
-		uint32_t uFileParentIndex = Zenith_EntityID::INVALID_INDEX;
-
-		if (uVersion == 3)
-		{
-			xStream >> uFileIndex;
-			xStream >> uFileParentIndex;
-			xStream >> strName;
-
-			uint32_t uChildCount = 0;
-			xStream >> uChildCount;
-			for (uint32_t i = 0; i < uChildCount; ++i)
-			{
-				uint32_t uChildIndex;
-				xStream >> uChildIndex;
-			}
-		}
-		else // v4 and v5 share the same entity format (no child list, parent resolved via transform hierarchy)
-		{
-			xStream >> uFileIndex;
-			xStream >> strName;
-		}
-
-		Zenith_EntityID xNewID = CreateEntity();
-		xFileIndexToNewID[uFileIndex] = xNewID;
-
-		Zenith_EntitySlot& xSlot = s_axEntitySlots.Get(xNewID.m_uIndex);
-		xSlot.m_strName = strName;
-		xSlot.m_bEnabled = true;
-		xSlot.m_bTransient = false;
-
-		Zenith_Entity xEntity(this, xNewID);
-		xEntity.AddComponent<Zenith_TransformComponent>();
-
-		Zenith_ComponentMetaRegistry::Get().DeserializeEntityComponents(xEntity, xStream);
-
-		if (uVersion == 3 && uFileParentIndex != Zenith_EntityID::INVALID_INDEX)
-		{
-			Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
-			xTransform.SetPendingParentFileIndex(uFileParentIndex);
-		}
-	}
+		ReadEntityFromDataStream(xStream, uVersion, xFileIndexToNewID);
 
 	// Rebuild hierarchy
 	for (u_int u = 0; u < m_xActiveEntities.GetSize(); ++u)

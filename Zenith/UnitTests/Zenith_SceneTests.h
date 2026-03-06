@@ -715,4 +715,12 @@ private:
 	//==========================================================================
 	static void TestLoadSceneDeferredDuringUpdate();
 	static void TestLoadSceneSyncOutsideUpdate();
+
+	//==========================================================================
+	// Cat 43: Extract-Function Refactoring Verification
+	//==========================================================================
+	static void TestMakeInvalidSceneFields();
+	static void TestCircularLoadNoMatch();
+	static void TestCircularLoadWithMatch();
+	static void TestFireUnloadCallbacksAndSelectNewActive();
 };

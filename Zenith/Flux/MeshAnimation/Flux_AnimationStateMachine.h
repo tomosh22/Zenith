@@ -84,6 +84,10 @@ public:
 	void WriteToDataStream(Zenith_DataStream& xStream) const;
 	void ReadFromDataStream(Zenith_DataStream& xStream);
 
+	// Shared serialization helpers for parameter union values
+	static void WriteParamValueToStream(Zenith_DataStream& xStream, ParamType eType, float fVal, int32_t iVal, bool bVal);
+	static void ReadParamValueFromStream(Zenith_DataStream& xStream, ParamType eType, float& fVal, int32_t& iVal, bool& bVal);
+
 private:
 	std::unordered_map<std::string, Parameter> m_xParameters; // #TODO: Replace with engine hash map
 };
@@ -296,6 +300,7 @@ private:
 	void StartTransition(const Flux_StateTransition& xTransition);
 	void UpdateTransition(float fDt, const Zenith_SkeletonAsset& xSkeleton);
 	void CompleteTransition();
+	void EvaluateState(Flux_AnimationState* pxState, float fDt, Flux_SkeletonPose& xOutPose, const Zenith_SkeletonAsset& xSkeleton);
 
 	// Check any-state transitions (skips transitions targeting current state and below iMinPriority)
 	const Flux_StateTransition* CheckAnyStateTransitions(int32_t iMinPriority = INT32_MIN);

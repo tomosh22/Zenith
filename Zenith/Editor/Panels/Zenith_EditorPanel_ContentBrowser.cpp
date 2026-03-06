@@ -196,6 +196,122 @@ static Flux_ImGuiTextureHandle GetTextureThumbnail(const std::string& strPath)
 	return xEntry.m_xImGuiHandle;
 }
 
+//=============================================================================
+// Extracted helper: MatchesAssetTypeFilter
+//=============================================================================
+bool Zenith_EditorPanelContentBrowser::MatchesAssetTypeFilter(int iFilterIndex, const std::string& strExtension)
+{
+	switch (iFilterIndex)
+	{
+	case 0: return true; // All Types
+	case 1: return (strExtension == ZENITH_TEXTURE_EXT);
+	case 2: return (strExtension == ZENITH_MATERIAL_EXT);
+	case 3: return (strExtension == ZENITH_MESH_EXT);
+	case 4: return (strExtension == ZENITH_MODEL_EXT);
+	case 5: return (strExtension == ZENITH_PREFAB_EXT);
+	case 6: return (strExtension == ZENITH_SCENE_EXT);
+	case 7: return (strExtension == ZENITH_ANIMATION_EXT);
+	default: return false;
+	}
+}
+
+//=============================================================================
+// Extracted helper: GenerateUniqueFilename
+//=============================================================================
+std::string Zenith_EditorPanelContentBrowser::GenerateUniqueFilename(const std::string& strBasePath, const std::string& strSuffix)
+{
+	std::string strResult = strBasePath + strSuffix;
+	int iCounter = 1;
+	while (std::filesystem::exists(strResult))
+	{
+		strResult = strBasePath + "_" + std::to_string(iCounter++) + strSuffix;
+	}
+	return strResult;
+}
+
+//=============================================================================
+// Extracted helper: RenderItemContextMenu
+//=============================================================================
+void Zenith_EditorPanelContentBrowser::RenderItemContextMenu(const ContentBrowserEntry& xEntry, ContentBrowserState& xState)
+{
+	if (ImGui::BeginPopupContextItem())
+	{
+		if (ImGui::MenuItem("Show in Explorer"))
+		{
+#ifdef _WIN32
+			std::string strCmd = "explorer /select,\"" + xEntry.m_strFullPath + "\"";
+			system(strCmd.c_str());
+#endif
+		}
+		if (!xEntry.m_bIsDirectory)
+		{
+			if (ImGui::MenuItem("Delete"))
+			{
+				if (std::filesystem::remove(xEntry.m_strFullPath))
+				{
+					std::string strMetaPath = xEntry.m_strFullPath + ".zmeta";
+					std::filesystem::remove(strMetaPath);
+					xState.m_bDirectoryNeedsRefresh = true;
+				}
+			}
+			if (ImGui::MenuItem("Duplicate"))
+			{
+				std::filesystem::path xPath(xEntry.m_strFullPath);
+				std::string strBasePath = xPath.parent_path().string() + "/" + xPath.stem().string() + "_copy";
+				std::string strNewPath = GenerateUniqueFilename(strBasePath, xPath.extension().string());
+				std::filesystem::copy(xEntry.m_strFullPath, strNewPath);
+				xState.m_bDirectoryNeedsRefresh = true;
+			}
+
+			// Export image files to .ztxtr
+			static const char* aszExportableExtensions[] = { ".png", ".jpg", ".jpeg", ".tif", ".tiff" };
+			bool bCanExport = false;
+			for (const char* szExt : aszExportableExtensions)
+			{
+				if (xEntry.m_strExtension == szExt)
+				{
+					bCanExport = true;
+					break;
+				}
+			}
+
+			if (bCanExport && ImGui::MenuItem("Export to .ztxtr"))
+			{
+				if (xEntry.m_strExtension == ".tif" || xEntry.m_strExtension == ".tiff")
+				{
+					Zenith_Tools_TextureExport::ExportFromTifFile(xEntry.m_strFullPath);
+				}
+				else
+				{
+					// PNG/JPG - use existing export (extension without dot)
+					Zenith_Tools_TextureExport::ExportFromFile(
+						xEntry.m_strFullPath,
+						xEntry.m_strExtension.c_str() + 1,
+						TextureCompressionMode::Uncompressed);
+				}
+				xState.m_bDirectoryNeedsRefresh = true;
+			}
+		}
+		else
+		{
+			if (ImGui::MenuItem("Delete Folder"))
+			{
+				// Only delete empty folders for safety
+				if (std::filesystem::is_empty(xEntry.m_strFullPath))
+				{
+					std::filesystem::remove(xEntry.m_strFullPath);
+					xState.m_bDirectoryNeedsRefresh = true;
+				}
+				else
+				{
+					Zenith_Log(LOG_CATEGORY_EDITOR, "[ContentBrowser] Cannot delete non-empty folder");
+				}
+			}
+		}
+		ImGui::EndPopup();
+	}
+}
+
 void Zenith_EditorPanelContentBrowser::Render(ContentBrowserState& xState)
 {
 	ImGui::Begin("Content Browser");
@@ -361,18 +477,7 @@ void Zenith_EditorPanelContentBrowser::Render(ContentBrowserState& xState)
 			// Type filter (directories always pass)
 			if (xState.m_iAssetTypeFilter > 0 && !xEntry.m_bIsDirectory)
 			{
-				bool bPassFilter = false;
-				switch (xState.m_iAssetTypeFilter)
-				{
-				case 1: bPassFilter = (xEntry.m_strExtension == ZENITH_TEXTURE_EXT); break;
-				case 2: bPassFilter = (xEntry.m_strExtension == ZENITH_MATERIAL_EXT); break;
-				case 3: bPassFilter = (xEntry.m_strExtension == ZENITH_MESH_EXT); break;
-				case 4: bPassFilter = (xEntry.m_strExtension == ZENITH_MODEL_EXT); break;
-				case 5: bPassFilter = (xEntry.m_strExtension == ZENITH_PREFAB_EXT); break;
-				case 6: bPassFilter = (xEntry.m_strExtension == ZENITH_SCENE_EXT); break;
-				case 7: bPassFilter = (xEntry.m_strExtension == ZENITH_ANIMATION_EXT); break;
-				}
-				if (!bPassFilter)
+				if (!MatchesAssetTypeFilter(xState.m_iAssetTypeFilter, xEntry.m_strExtension))
 				{
 					continue;
 				}
@@ -392,24 +497,14 @@ void Zenith_EditorPanelContentBrowser::Render(ContentBrowserState& xState)
 			if (ImGui::MenuItem("Folder"))
 			{
 				// Create new folder
-				std::string strNewFolder = xState.m_strCurrentDirectory + "/NewFolder";
-				int iCounter = 1;
-				while (std::filesystem::exists(strNewFolder))
-				{
-					strNewFolder = xState.m_strCurrentDirectory + "/NewFolder" + std::to_string(iCounter++);
-				}
+				std::string strNewFolder = GenerateUniqueFilename(xState.m_strCurrentDirectory + "/NewFolder", "");
 				std::filesystem::create_directory(strNewFolder);
 				xState.m_bDirectoryNeedsRefresh = true;
 			}
 			if (ImGui::MenuItem("Material"))
 			{
 				// Create new material
-				std::string strNewMaterial = xState.m_strCurrentDirectory + "/NewMaterial" + ZENITH_MATERIAL_EXT;
-				int iCounter = 1;
-				while (std::filesystem::exists(strNewMaterial))
-				{
-					strNewMaterial = xState.m_strCurrentDirectory + "/NewMaterial" + std::to_string(iCounter++) + ZENITH_MATERIAL_EXT;
-				}
+				std::string strNewMaterial = GenerateUniqueFilename(xState.m_strCurrentDirectory + "/NewMaterial", ZENITH_MATERIAL_EXT);
 				Zenith_MaterialAsset* pxNewMat = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
 				if (pxNewMat)
 				{
@@ -497,29 +592,7 @@ void Zenith_EditorPanelContentBrowser::Render(ContentBrowserState& xState)
 				}
 
 				// Context menu
-				if (ImGui::BeginPopupContextItem())
-				{
-					if (ImGui::MenuItem("Show in Explorer"))
-					{
-#ifdef _WIN32
-						std::string strCmd = "explorer /select,\"" + xEntry.m_strFullPath + "\"";
-						system(strCmd.c_str());
-#endif
-					}
-					if (!xEntry.m_bIsDirectory)
-					{
-						if (ImGui::MenuItem("Delete"))
-						{
-							if (std::filesystem::remove(xEntry.m_strFullPath))
-							{
-								std::string strMetaPath = xEntry.m_strFullPath + ".zmeta";
-								std::filesystem::remove(strMetaPath);
-								xState.m_bDirectoryNeedsRefresh = true;
-							}
-						}
-					}
-					ImGui::EndPopup();
-				}
+				RenderItemContextMenu(xEntry, xState);
 
 				// Type column
 				ImGui::TableNextColumn();
@@ -679,89 +752,7 @@ void Zenith_EditorPanelContentBrowser::Render(ContentBrowserState& xState)
 			}
 
 			// Context menu for individual items
-			if (ImGui::BeginPopupContextItem())
-			{
-				if (ImGui::MenuItem("Show in Explorer"))
-				{
-#ifdef _WIN32
-					std::string strCmd = "explorer /select,\"" + xEntry.m_strFullPath + "\"";
-					system(strCmd.c_str());
-#endif
-				}
-				if (!xEntry.m_bIsDirectory)
-				{
-					if (ImGui::MenuItem("Delete"))
-					{
-						if (std::filesystem::remove(xEntry.m_strFullPath))
-						{
-							// Also try to remove the .zmeta file
-							std::string strMetaPath = xEntry.m_strFullPath + ".zmeta";
-							std::filesystem::remove(strMetaPath);
-							xState.m_bDirectoryNeedsRefresh = true;
-						}
-					}
-					if (ImGui::MenuItem("Duplicate"))
-					{
-						std::filesystem::path xPath(xEntry.m_strFullPath);
-						std::string strNewPath = xPath.parent_path().string() + "/" +
-							xPath.stem().string() + "_copy" + xPath.extension().string();
-						int iCounter = 1;
-						while (std::filesystem::exists(strNewPath))
-						{
-							strNewPath = xPath.parent_path().string() + "/" +
-								xPath.stem().string() + "_copy" + std::to_string(iCounter++) + xPath.extension().string();
-						}
-						std::filesystem::copy(xEntry.m_strFullPath, strNewPath);
-						xState.m_bDirectoryNeedsRefresh = true;
-					}
-
-					// Export image files to .ztxtr
-					static const char* aszExportableExtensions[] = { ".png", ".jpg", ".jpeg", ".tif", ".tiff" };
-					bool bCanExport = false;
-					for (const char* szExt : aszExportableExtensions)
-					{
-						if (xEntry.m_strExtension == szExt)
-						{
-							bCanExport = true;
-							break;
-						}
-					}
-
-					if (bCanExport && ImGui::MenuItem("Export to .ztxtr"))
-					{
-						if (xEntry.m_strExtension == ".tif" || xEntry.m_strExtension == ".tiff")
-						{
-							Zenith_Tools_TextureExport::ExportFromTifFile(xEntry.m_strFullPath);
-						}
-						else
-						{
-							// PNG/JPG - use existing export (extension without dot)
-							Zenith_Tools_TextureExport::ExportFromFile(
-								xEntry.m_strFullPath,
-								xEntry.m_strExtension.c_str() + 1,
-								TextureCompressionMode::Uncompressed);
-						}
-						xState.m_bDirectoryNeedsRefresh = true;
-					}
-				}
-				else
-				{
-					if (ImGui::MenuItem("Delete Folder"))
-					{
-						// Only delete empty folders for safety
-						if (std::filesystem::is_empty(xEntry.m_strFullPath))
-						{
-							std::filesystem::remove(xEntry.m_strFullPath);
-							xState.m_bDirectoryNeedsRefresh = true;
-						}
-						else
-						{
-							Zenith_Log(LOG_CATEGORY_EDITOR, "[ContentBrowser] Cannot delete non-empty folder");
-						}
-					}
-				}
-				ImGui::EndPopup();
-			}
+			RenderItemContextMenu(xEntry, xState);
 
 			// Display truncated filename below icon
 			// Calculate max chars based on cell width (~7 pixels per char at default font)
