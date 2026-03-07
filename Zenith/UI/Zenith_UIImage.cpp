@@ -102,7 +102,7 @@ void Zenith_UIImage::WriteToDataStream(Zenith_DataStream& xStream) const
 
     // Write image-specific data
     xStream << UI_IMAGE_VERSION;
-    std::string strTexturePath = m_xTexture.GetPath();
+    std::string strTexturePath = Zenith_AssetRegistry::NormalizeAssetPath(m_xTexture.GetPath());
     xStream << strTexturePath;
     xStream << m_xUVMin.x;
     xStream << m_xUVMin.y;
@@ -127,7 +127,7 @@ void Zenith_UIImage::ReadFromDataStream(Zenith_DataStream& xStream)
 
     std::string strTexturePath;
     xStream >> strTexturePath;
-    m_xTexture.SetPath(strTexturePath);
+    m_xTexture.SetPath(Zenith_AssetRegistry::NormalizeAssetPath(strTexturePath));
 
     xStream >> m_xUVMin.x;
     xStream >> m_xUVMin.y;

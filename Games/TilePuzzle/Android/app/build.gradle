@@ -33,8 +33,16 @@ android {
 				'../../../../Zenith/Assets',
 				'../../../../Zenith/Flux/Shaders'
 			]
-			// Native libraries staged by deploy_android.bat
-			jniLibs.srcDirs = ['jniLibs']
+		}
+		// Point jniLibs at AGDE's IntDir (contains arm64-v8a/libtilepuzzle.so + libc++_shared.so)
+		debug {
+			jniLibs.srcDirs = [
+				'../../build/obj/agde/arm64_v8a_vs2022_debug_agde_false',
+				'src/debug/jniLibs'
+			]
+		}
+		release {
+			jniLibs.srcDirs = ['../../build/obj/agde/arm64_v8a_vs2022_release_agde_false']
 		}
 	}
 }

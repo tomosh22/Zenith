@@ -11,6 +11,7 @@
 #include "AssetHandling/Zenith_ModelAsset.h"
 #include "AssetHandling/Zenith_MeshGeometryAsset.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
+#include "FileAccess/Zenith_FileAccess.h"
 #include "Core/Zenith_Core.h"
 #include <filesystem>
 
@@ -287,7 +288,7 @@ void Zenith_ModelComponent::WriteToDataStream(Zenith_DataStream& xStream) const
 			const MeshEntry& xEntry = m_xMeshEntries.Get(u);
 
 			// Get mesh source path
-			std::string strMeshPath = xEntry.m_pxGeometry ? xEntry.m_pxGeometry->m_strSourcePath : "";
+			std::string strMeshPath = xEntry.m_pxGeometry ? Zenith_AssetRegistry::NormalizeAssetPath(xEntry.m_pxGeometry->m_strSourcePath) : "";
 			xStream << strMeshPath;
 
 			// Serialize the entire material
@@ -308,7 +309,7 @@ void Zenith_ModelComponent::WriteToDataStream(Zenith_DataStream& xStream) const
 			std::string strAnimPath = "";
 			if (xEntry.m_pxGeometry && xEntry.m_pxGeometry->m_pxAnimation)
 			{
-				strAnimPath = xEntry.m_pxGeometry->m_pxAnimation->GetSourcePath();
+				strAnimPath = Zenith_AssetRegistry::NormalizeAssetPath(xEntry.m_pxGeometry->m_pxAnimation->GetSourcePath());
 			}
 			xStream << strAnimPath;
 		}
@@ -393,6 +394,9 @@ void Zenith_ModelComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 			std::string strMeshPath;
 			xStream >> strMeshPath;
 
+			// Resolve prefixed path to absolute for direct file loading
+			std::string strResolvedMeshPath = Zenith_AssetRegistry::ResolvePath(strMeshPath);
+
 			// Read material data through registry for proper lifetime management
 			Zenith_MaterialAsset* pxMaterial = Zenith_AssetRegistry::Get().Create<Zenith_MaterialAsset>();
 			if (pxMaterial)
@@ -405,11 +409,11 @@ void Zenith_ModelComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 				xStream >> strAnimPath;
 
 				// If mesh path is set, load the mesh from file
-				if (!strMeshPath.empty() && std::filesystem::exists(strMeshPath))
+				if (!strResolvedMeshPath.empty() && Zenith_FileAccess::FileExists(strResolvedMeshPath.c_str()))
 				{
 					Flux_MeshGeometry* pxGeometry = new Flux_MeshGeometry();
-					Flux_MeshGeometry::LoadFromFile(strMeshPath.c_str(), *pxGeometry);
-					pxGeometry->m_strSourcePath = strMeshPath;  // Preserve path for future serialization
+					Flux_MeshGeometry::LoadFromFile(strResolvedMeshPath.c_str(), *pxGeometry);
+					pxGeometry->m_strSourcePath = strMeshPath;  // Preserve prefixed path for future serialization
 
 					// Create mesh entry with handle (handles ref counting automatically)
 					MeshEntry xEntry;

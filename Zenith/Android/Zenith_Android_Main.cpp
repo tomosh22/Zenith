@@ -127,6 +127,7 @@ static int32_t OnInputEvent(android_app* pxApp, AInputEvent* pxEvent)
 }
 
 extern void Project_SetGraphicsOptions(Zenith_GraphicsOptions& xOptions);
+extern const char* Project_GetGameAssetsDir();
 
 void android_main(android_app* pxApp)
 {
@@ -134,6 +135,9 @@ void android_main(android_app* pxApp)
 
 	// Initialize file access with AAssetManager for reading APK assets
 	Zenith_FileAccess::InitialisePlatform(pxApp->activity->assetManager);
+
+	// Set writable directory for file writes (saves, unit test output, etc.)
+	Zenith_FileAccess::SetWritableDirectory(pxApp->activity->internalDataPath);
 
 	// Store app state for window class
 	Zenith_Window::SetAndroidApp(pxApp);

@@ -118,6 +118,14 @@ public:
 	 */
 	static std::string MakeRelativePath(const std::string& strAbsolutePath);
 
+	/**
+	 * Normalize a path for serialization: converts absolute paths to prefixed relative paths
+	 * Already-prefixed paths (game:, engine:, procedural://) pass through unchanged
+	 * @param strPath Path to normalize
+	 * @return Normalized path suitable for cross-machine serialization
+	 */
+	static std::string NormalizeAssetPath(const std::string& strPath);
+
 	//--------------------------------------------------------------------------
 	// Initialization
 	//--------------------------------------------------------------------------

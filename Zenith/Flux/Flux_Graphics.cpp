@@ -180,11 +180,16 @@ void Flux_Graphics::InitialiseRenderTargets()
 	Zenith_Log(LOG_CATEGORY_RENDERER, "DEBUG: Main depth buffer VRAM=%u VkImage=0x%llx",
 		s_xDepthBuffer.m_xVRAMHandle.AsUInt(), (unsigned long long)(VkImage)pxDepthVRAM->GetImage());
 
+	Zenith_Log(LOG_CATEGORY_RENDERER, "Creating render targets: %ux%u", xBuilder.m_uWidth, xBuilder.m_uHeight);
+
 	{
 		for (uint32_t u = 0; u < MRT_INDEX_COUNT; u++)
 		{
 			xBuilder.m_eFormat = s_aeMRTFormats[u];
+			Zenith_Log(LOG_CATEGORY_RENDERER, "Creating MRT[%u] format=%u", u, static_cast<uint32_t>(s_aeMRTFormats[u]));
 			xBuilder.BuildColour(s_xMRTTarget.m_axColourAttachments[u], "Flux Graphics MRT " + std::to_string(u));
+			Zenith_Assert(s_xMRTTarget.m_axColourAttachments[u].m_pxRTV.m_xImageViewHandle.IsValid(), "MRT[%u] RTV image view is invalid", u);
+			Zenith_Assert(s_xMRTTarget.m_axColourAttachments[u].m_pxSRV.m_xImageViewHandle.IsValid(), "MRT[%u] SRV image view is invalid", u);
 		}
 
 		s_xMRTTarget.AssignDepthStencil(&s_xDepthBuffer);
@@ -192,12 +197,16 @@ void Flux_Graphics::InitialiseRenderTargets()
 
 	{
 		xBuilder.m_eFormat = TEXTURE_FORMAT_R16G16B16A16_UNORM;
+		Zenith_Log(LOG_CATEGORY_RENDERER, "Creating final render target format=%u", static_cast<uint32_t>(TEXTURE_FORMAT_R16G16B16A16_UNORM));
 		xBuilder.BuildColour(s_xFinalRenderTarget.m_axColourAttachments[0], "Flux Graphics Final Render Target");
+		Zenith_Assert(s_xFinalRenderTarget.m_axColourAttachments[0].m_pxRTV.m_xImageViewHandle.IsValid(), "Final RT RTV image view is invalid");
 
 		s_xFinalRenderTarget.AssignDepthStencil(&s_xDepthBuffer);
 
 		s_xFinalRenderTarget_NoDepth.m_axColourAttachments[0] = s_xFinalRenderTarget.m_axColourAttachments[0];
 	}
+
+	Zenith_Log(LOG_CATEGORY_RENDERER, "Render targets created successfully");
 }
 
 bool Flux_Graphics::BuildCameraMatrices(FrameConstants& xConstants)

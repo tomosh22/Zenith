@@ -100,6 +100,32 @@ public class GameProject : ZenithBaseProject
 			conf.AdditionalLinkerOptions.Add("-landroid");
 			conf.AdditionalLinkerOptions.Add("-llog");
 			conf.AdditionalLinkerOptions.Add("-lvulkan");
+
+			// UBSan for debug builds - catch undefined behavior at runtime
+			if (target.Optimization == Optimization.Debug)
+			{
+				conf.AdditionalLinkerOptions.Add("-fsanitize=undefined");
+			}
+
+			// Force-include ANativeActivity_onCreate from libzenith.a
+			// (linker would otherwise discard it since game code doesn't reference it directly)
+			conf.AdditionalLinkerOptions.Add("-u ANativeActivity_onCreate");
+
+			// APK packaging - point to Gradle project in Games/<GameName>/Android/
+			conf.CustomProperties.Add("AndroidEnablePackaging", "true");
+			conf.CustomProperties.Add("AndroidGradleBuildDir", zenithRoot + "/Games/" + GameName + "/Android");
+			conf.CustomProperties.Add("AndroidApplicationModule", "app");
+
+			// AGDE packaging requires OutDir to end with the ABI directory (arm64-v8a\)
+			string configSuffix = target.Optimization == Optimization.Debug ? "debug" : "release";
+			string agdeOutDir = "$(ProjectDir)output\\agde\\arm64_v8a_vs2022_" + configSuffix + "_agde_false\\arm64-v8a\\";
+			conf.CustomProperties.Add("OutDir", agdeOutDir);
+
+			// Map MSBuild configuration name to Gradle build type (debug/release)
+			conf.CustomProperties.Add("AndroidGradleBuildType", configSuffix);
+
+			// Match the APK filename that Gradle actually produces
+			conf.CustomProperties.Add("AndroidGradlePackageOutputName", "app-" + configSuffix + ".apk");
 		}
 
 		// Add Zenith engine dependency (includes Tools when ToolsEnabled)

@@ -208,6 +208,8 @@ struct Zenith_GUID
 	operator uint32_t() = delete;
 };
 
+inline Zenith_GUID Zenith_GUID::Invalid = Zenith_GUID(static_cast<GUIDType>(0u));
+
 template <>
 struct std::hash<Zenith_GUID>
 {

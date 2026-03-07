@@ -46,7 +46,7 @@ Zenith_TextureAsset* Zenith_AssetHandle<Zenith_TextureAsset>::Get() const
 template<>
 void Zenith_AssetHandle<Zenith_TextureAsset>::WriteToDataStream(Zenith_DataStream& xStream) const
 {
-	xStream << m_strPath;
+	xStream << Zenith_AssetRegistry::NormalizeAssetPath(m_strPath);
 }
 
 template<>
@@ -60,6 +60,7 @@ void Zenith_AssetHandle<Zenith_TextureAsset>::ReadFromDataStream(Zenith_DataStre
 	}
 
 	xStream >> m_strPath;
+	m_strPath = Zenith_AssetRegistry::NormalizeAssetPath(m_strPath);
 }
 
 //--------------------------------------------------------------------------
@@ -168,7 +169,7 @@ Zenith_ModelAsset* Zenith_AssetHandle<Zenith_ModelAsset>::Get() const
 template<>
 void Zenith_AssetHandle<Zenith_MaterialAsset>::WriteToDataStream(Zenith_DataStream& xStream) const
 {
-	xStream << m_strPath;
+	xStream << Zenith_AssetRegistry::NormalizeAssetPath(m_strPath);
 }
 
 template<>
@@ -180,12 +181,13 @@ void Zenith_AssetHandle<Zenith_MaterialAsset>::ReadFromDataStream(Zenith_DataStr
 		m_pxCached = nullptr;
 	}
 	xStream >> m_strPath;
+	m_strPath = Zenith_AssetRegistry::NormalizeAssetPath(m_strPath);
 }
 
 template<>
 void Zenith_AssetHandle<Zenith_MeshAsset>::WriteToDataStream(Zenith_DataStream& xStream) const
 {
-	xStream << m_strPath;
+	xStream << Zenith_AssetRegistry::NormalizeAssetPath(m_strPath);
 }
 
 template<>
@@ -197,12 +199,13 @@ void Zenith_AssetHandle<Zenith_MeshAsset>::ReadFromDataStream(Zenith_DataStream&
 		m_pxCached = nullptr;
 	}
 	xStream >> m_strPath;
+	m_strPath = Zenith_AssetRegistry::NormalizeAssetPath(m_strPath);
 }
 
 template<>
 void Zenith_AssetHandle<Zenith_SkeletonAsset>::WriteToDataStream(Zenith_DataStream& xStream) const
 {
-	xStream << m_strPath;
+	xStream << Zenith_AssetRegistry::NormalizeAssetPath(m_strPath);
 }
 
 template<>
@@ -214,12 +217,13 @@ void Zenith_AssetHandle<Zenith_SkeletonAsset>::ReadFromDataStream(Zenith_DataStr
 		m_pxCached = nullptr;
 	}
 	xStream >> m_strPath;
+	m_strPath = Zenith_AssetRegistry::NormalizeAssetPath(m_strPath);
 }
 
 template<>
 void Zenith_AssetHandle<Zenith_ModelAsset>::WriteToDataStream(Zenith_DataStream& xStream) const
 {
-	xStream << m_strPath;
+	xStream << Zenith_AssetRegistry::NormalizeAssetPath(m_strPath);
 }
 
 template<>
@@ -231,6 +235,7 @@ void Zenith_AssetHandle<Zenith_ModelAsset>::ReadFromDataStream(Zenith_DataStream
 		m_pxCached = nullptr;
 	}
 	xStream >> m_strPath;
+	m_strPath = Zenith_AssetRegistry::NormalizeAssetPath(m_strPath);
 }
 
 //--------------------------------------------------------------------------
@@ -264,7 +269,7 @@ Zenith_Prefab* Zenith_AssetHandle<Zenith_Prefab>::Get() const
 template<>
 void Zenith_AssetHandle<Zenith_Prefab>::WriteToDataStream(Zenith_DataStream& xStream) const
 {
-	xStream << m_strPath;
+	xStream << Zenith_AssetRegistry::NormalizeAssetPath(m_strPath);
 }
 
 template<>
@@ -276,6 +281,7 @@ void Zenith_AssetHandle<Zenith_Prefab>::ReadFromDataStream(Zenith_DataStream& xS
 		m_pxCached = nullptr;
 	}
 	xStream >> m_strPath;
+	m_strPath = Zenith_AssetRegistry::NormalizeAssetPath(m_strPath);
 }
 
 //--------------------------------------------------------------------------
@@ -309,7 +315,7 @@ Zenith_AnimationAsset* Zenith_AssetHandle<Zenith_AnimationAsset>::Get() const
 template<>
 void Zenith_AssetHandle<Zenith_AnimationAsset>::WriteToDataStream(Zenith_DataStream& xStream) const
 {
-	xStream << m_strPath;
+	xStream << Zenith_AssetRegistry::NormalizeAssetPath(m_strPath);
 }
 
 template<>
@@ -321,6 +327,7 @@ void Zenith_AssetHandle<Zenith_AnimationAsset>::ReadFromDataStream(Zenith_DataSt
 		m_pxCached = nullptr;
 	}
 	xStream >> m_strPath;
+	m_strPath = Zenith_AssetRegistry::NormalizeAssetPath(m_strPath);
 }
 
 //--------------------------------------------------------------------------
@@ -354,7 +361,7 @@ Zenith_MeshGeometryAsset* Zenith_AssetHandle<Zenith_MeshGeometryAsset>::Get() co
 template<>
 void Zenith_AssetHandle<Zenith_MeshGeometryAsset>::WriteToDataStream(Zenith_DataStream& xStream) const
 {
-	xStream << m_strPath;
+	xStream << Zenith_AssetRegistry::NormalizeAssetPath(m_strPath);
 }
 
 template<>
@@ -366,4 +373,5 @@ void Zenith_AssetHandle<Zenith_MeshGeometryAsset>::ReadFromDataStream(Zenith_Dat
 		m_pxCached = nullptr;
 	}
 	xStream >> m_strPath;
+	m_strPath = Zenith_AssetRegistry::NormalizeAssetPath(m_strPath);
 }

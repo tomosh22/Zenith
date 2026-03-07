@@ -175,7 +175,7 @@ vk::ShaderModule Zenith_Vulkan_Shader::CreateShaderModule(const char* szCode, ui
 	vk::ShaderModuleCreateInfo xCreateInfo = vk::ShaderModuleCreateInfo()
 		.setCodeSize(ulCodeLength)
 		.setPCode(reinterpret_cast<const uint32_t*>(szCode));
-	return Zenith_Vulkan::GetDevice().createShaderModule(xCreateInfo);
+	return VkUnwrap(Zenith_Vulkan::GetDevice().createShaderModule(xCreateInfo));
 }
 
 void Zenith_Vulkan_Shader::MergeReflection(const Flux_ShaderReflection& xStageReflection)
@@ -398,7 +398,7 @@ public:
 			m_xCreateInfo.flags |= vk::DescriptorSetLayoutCreateFlagBits::eUpdateAfterBindPool;
 		}
 
-		vk::DescriptorSetLayout layout = device.createDescriptorSetLayout(m_xCreateInfo);
+		vk::DescriptorSetLayout layout = VkUnwrap(device.createDescriptorSetLayout(m_xCreateInfo));
 		return layout;
 	}
 
@@ -757,7 +757,7 @@ vk::RenderPass Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(Flux_TargetSetup&
 		.setDependencyCount(0)
 		.setPDependencies(nullptr);
 
-	return Zenith_Vulkan::GetDevice().createRenderPass(xRenderPassInfo);
+	return VkUnwrap(Zenith_Vulkan::GetDevice().createRenderPass(xRenderPassInfo));
 }
 
 vk::Framebuffer Zenith_Vulkan_Pipeline::TargetSetupToFramebuffer(Flux_TargetSetup& xTargetSetup, uint32_t uWidth, uint32_t uHeight, const vk::RenderPass& xPass)
@@ -767,11 +767,21 @@ vk::Framebuffer Zenith_Vulkan_Pipeline::TargetSetupToFramebuffer(Flux_TargetSetu
 	const uint32_t uNumColourAttachments = CountColourAttachments(xTargetSetup);
 	const uint32_t uNumAttachments = bHasDepth ? uNumColourAttachments + 1 : uNumColourAttachments;
 
+	Zenith_Assert(uNumAttachments > 0, "TargetSetupToFramebuffer: no attachments");
+	Zenith_Assert(uWidth > 0 && uHeight > 0, "TargetSetupToFramebuffer: invalid dimensions %ux%u", uWidth, uHeight);
+	Zenith_Assert(xPass, "TargetSetupToFramebuffer: null render pass");
+
 	vk::ImageView axAttachments[FLUX_MAX_TARGETS];
 	for (uint32_t i = 0; i < uNumColourAttachments; i++)
+	{
 		axAttachments[i] = Zenith_Vulkan_MemoryManager::GetImageView(xTargetSetup.m_axColourAttachments[i].m_pxRTV.m_xImageViewHandle);
+		Zenith_Assert(axAttachments[i], "TargetSetupToFramebuffer: null image view for colour attachment %u (format %u)", i, static_cast<uint32_t>(xTargetSetup.m_axColourAttachments[i].m_xSurfaceInfo.m_eFormat));
+	}
 	if (bHasDepth)
+	{
 		axAttachments[uNumAttachments - 1] = Zenith_Vulkan_MemoryManager::GetImageView(xTargetSetup.m_pxDepthStencil->m_pxDSV.m_xImageViewHandle);
+		Zenith_Assert(axAttachments[uNumAttachments - 1], "TargetSetupToFramebuffer: null depth image view (format %u)", static_cast<uint32_t>(xTargetSetup.m_pxDepthStencil->m_xSurfaceInfo.m_eFormat));
+	}
 
 	vk::FramebufferCreateInfo framebufferInfo = vk::FramebufferCreateInfo()
 		.setRenderPass(xPass)
@@ -781,7 +791,7 @@ vk::Framebuffer Zenith_Vulkan_Pipeline::TargetSetupToFramebuffer(Flux_TargetSetu
 		.setHeight(uHeight)
 		.setLayers(1);
 
-	return xDevice.createFramebuffer(framebufferInfo);
+	return VkUnwrap(xDevice.createFramebuffer(framebufferInfo));
 }
 
 void Zenith_Vulkan_PipelineBuilder::FromSpecification(Zenith_Vulkan_Pipeline& xPipelineOut, const Flux_PipelineSpecification& xSpec)
@@ -913,7 +923,7 @@ void Zenith_Vulkan_PipelineBuilder::FromSpecification(Zenith_Vulkan_Pipeline& xP
 	xPipelineInfo.setLayout(xPipelineOut.m_xRootSig.m_xLayout);
 #pragma endregion
 
-	xPipelineOut.m_xPipeline = Zenith_Vulkan::GetDevice().createGraphicsPipeline(VK_NULL_HANDLE, xPipelineInfo).value;
+	xPipelineOut.m_xPipeline = VkUnwrap(Zenith_Vulkan::GetDevice().createGraphicsPipeline(VK_NULL_HANDLE, xPipelineInfo));
 
 #ifdef ZENITH_TOOLS
 	// Register pipeline for hot reload if shader has source paths
@@ -1027,6 +1037,9 @@ void Zenith_Vulkan_RootSigBuilder::FromSpecification(Zenith_Vulkan_RootSig& xRoo
 			case(DESCRIPTOR_TYPE_UNBOUNDED_TEXTURES):
 				Zenith_Assert(false, "Unbounded textures must be in their own table");
 				break;
+			case(DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE):
+			case(DESCRIPTOR_TYPE_MAX):
+				break;
 			}
 
 			uNumDescriptors++;
@@ -1035,7 +1048,7 @@ void Zenith_Vulkan_RootSigBuilder::FromSpecification(Zenith_Vulkan_RootSig& xRoo
 		xInfo.setPBindings(axBindings);
 		xInfo.setFlags(vk::DescriptorSetLayoutCreateFlagBits::eUpdateAfterBindPool);
 
-		xRootSigOut.m_axDescSetLayouts[uDescSet] = Zenith_Vulkan::GetDevice().createDescriptorSetLayout(xInfo);
+		xRootSigOut.m_axDescSetLayouts[uDescSet] = VkUnwrap(Zenith_Vulkan::GetDevice().createDescriptorSetLayout(xInfo));
 	}
 	// Push constants replaced with scratch buffer system - no push constant ranges needed
 	vk::PipelineLayoutCreateInfo xPipelineLayoutInfo = vk::PipelineLayoutCreateInfo()
@@ -1044,7 +1057,7 @@ void Zenith_Vulkan_RootSigBuilder::FromSpecification(Zenith_Vulkan_RootSig& xRoo
 		.setPushConstantRangeCount(0)
 		.setPPushConstantRanges(nullptr);
 
-	xRootSigOut.m_xLayout = Zenith_Vulkan::GetDevice().createPipelineLayout(xPipelineLayoutInfo);
+	xRootSigOut.m_xLayout = VkUnwrap(Zenith_Vulkan::GetDevice().createPipelineLayout(xPipelineLayoutInfo));
 }
 
 void Zenith_Vulkan_RootSigBuilder::FromReflection(Zenith_Vulkan_RootSig& xRootSigOut, const Flux_ShaderReflection& xReflection)

@@ -643,6 +643,12 @@ Zenith_Scene Zenith_SceneManager::LoadScene(const std::string& strPath, Zenith_S
 {
 	Zenith_Assert(Zenith_Multithreading::IsMainThread(), "LoadScene must be called from main thread");
 
+	if (strPath.empty())
+	{
+		Zenith_Error(LOG_CATEGORY_SCENE, "LoadScene: Path is empty");
+		return MakeInvalidScene();
+	}
+
 	// Unity parity: LoadScene called during script execution (Update/FixedUpdate/callbacks)
 	// is deferred to next frame's ProcessPendingAsyncLoads, matching Unity's
 	// EarlyUpdate.UpdatePreloading behavior. This prevents use-after-free when the

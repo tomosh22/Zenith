@@ -399,9 +399,11 @@ private:
 	static void TestGizmosLineLinePerpendicular();
 	static void TestGizmosTangentFrame();
 
-	// Slang compiler helper tests
+	// Slang compiler helper tests (Windows only)
+#ifdef ZENITH_WINDOWS
 	static void TestSlangSplitFilePath();
 	static void TestSlangSplitFilePathEdgeCases();
+#endif
 
 	// Animation state machine helper tests
 	static void TestParamSerializationFloat();

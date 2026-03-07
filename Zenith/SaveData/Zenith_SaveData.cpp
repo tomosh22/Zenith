@@ -6,6 +6,10 @@
 #include <ctime>
 #include <filesystem>
 
+#ifdef ZENITH_ANDROID
+#include <android_native_app_glue.h>
+#endif
+
 namespace Zenith_SaveData
 {
 	// ============================================================================
@@ -70,16 +74,19 @@ namespace Zenith_SaveData
 		Zenith_Assert(uResult > 0 && uResult < ZENITH_MAX_PATH_LENGTH, "SaveData: Failed to get APPDATA environment variable");
 		snprintf(s_acSaveDirectory, ZENITH_MAX_PATH_LENGTH, "%s/Zenith/%s/", szAppData, szGameName);
 #elif defined(ZENITH_ANDROID)
-		// On Android, use the internal files directory
-		// The path is typically /data/data/<package>/files/
-		// For now, use a relative path that the Android file access layer can resolve
-		snprintf(s_acSaveDirectory, ZENITH_MAX_PATH_LENGTH, "Zenith/%s/", szGameName);
+		// On Android, use the app's internal files directory
+		// e.g. /data/data/<package>/files/Zenith/TilePuzzle/
+		android_app* pxApp = Zenith_Window::GetAndroidApp();
+		Zenith_Assert(pxApp && pxApp->activity && pxApp->activity->internalDataPath, "SaveData: android_app internalDataPath not available");
+		snprintf(s_acSaveDirectory, ZENITH_MAX_PATH_LENGTH, "%s/Zenith/%s/", pxApp->activity->internalDataPath, szGameName);
 #else
 		snprintf(s_acSaveDirectory, ZENITH_MAX_PATH_LENGTH, "Zenith/%s/", szGameName);
 #endif
 
 		// Ensure directory exists
-		std::filesystem::create_directories(s_acSaveDirectory);
+		std::error_code xEC;
+		std::filesystem::create_directories(s_acSaveDirectory, xEC);
+		Zenith_Assert(!xEC, "SaveData: Failed to create directory '%s': %s", s_acSaveDirectory, xEC.message().c_str());
 
 		s_bInitialised = true;
 

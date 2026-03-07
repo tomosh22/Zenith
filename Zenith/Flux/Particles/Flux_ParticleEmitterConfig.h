@@ -204,7 +204,7 @@ public:
 		xStream << m_fRotationSpeedMax;
 
 		// Visual
-		xStream << m_strTexturePath;
+		xStream << Zenith_AssetRegistry::NormalizeAssetPath(m_strTexturePath);
 
 		// Compute mode
 		xStream << m_bUseGPUCompute;
@@ -259,6 +259,7 @@ public:
 
 			// Visual
 			xStream >> m_strTexturePath;
+			m_strTexturePath = Zenith_AssetRegistry::NormalizeAssetPath(m_strTexturePath);
 
 			// Compute mode
 			xStream >> m_bUseGPUCompute;

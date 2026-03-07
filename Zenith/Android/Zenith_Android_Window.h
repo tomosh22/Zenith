@@ -14,6 +14,7 @@ public:
 
 	static void Inititalise(const char* szTitle, uint32_t uWidth, uint32_t uHeight);
 	static void SetAndroidApp(android_app* pxApp);
+	static android_app* GetAndroidApp() { return s_pxAndroidApp; }
 
 	ANativeWindow* GetNativeWindow() const { return m_pxNativeWindow; }
 

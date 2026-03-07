@@ -1,5 +1,6 @@
 #include "Zenith.h"
 #include "Flux_AnimationClip.h"
+#include "AssetHandling/Zenith_AssetRegistry.h"
 #include "Core/Zenith_Core.h"
 
 #ifdef ZENITH_TOOLS
@@ -514,7 +515,7 @@ void Flux_AnimationClip::WriteToDataStream(Zenith_DataStream& xStream) const
 	m_xMetadata.WriteToDataStream(xStream);
 
 	// Source path
-	xStream << m_strSourcePath;
+	xStream << Zenith_AssetRegistry::NormalizeAssetPath(m_strSourcePath);
 
 	// Bone channels
 	uint32_t uNumChannels = static_cast<uint32_t>(m_xBoneChannels.size());
@@ -543,6 +544,7 @@ void Flux_AnimationClip::ReadFromDataStream(Zenith_DataStream& xStream)
 
 	// Source path
 	xStream >> m_strSourcePath;
+	m_strSourcePath = Zenith_AssetRegistry::NormalizeAssetPath(m_strSourcePath);
 
 	// Bone channels
 	uint32_t uNumChannels = 0;

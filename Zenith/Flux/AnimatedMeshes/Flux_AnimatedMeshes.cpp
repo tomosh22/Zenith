@@ -53,7 +53,7 @@ DEBUGVAR bool dbg_bEnable = true;
 void Flux_AnimatedMeshes::Initialise()
 {
 	s_xGBufferShader.Initialise("AnimatedMeshes/Flux_AnimatedMeshes_ToGBuffer.vert", "AnimatedMeshes/Flux_AnimatedMeshes_ToGBuffer.frag");
-	s_xShadowShader.Initialise("AnimatedMeshes/Flux_AnimatedMeshes_ToShadowMap.vert", "AnimatedMeshes/Flux_AnimatedMeshes_ToShadowMap.frag");
+	s_xShadowShader.Initialise("AnimatedMeshes/Flux_AnimatedMeshes_ToShadowmap.vert", "AnimatedMeshes/Flux_AnimatedMeshes_ToShadowmap.frag");
 
 	Flux_VertexInputDescription xVertexDesc;
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_TRIANGLES;

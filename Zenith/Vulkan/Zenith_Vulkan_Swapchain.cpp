@@ -54,17 +54,18 @@ static SwapChainSupportDetails QuerySwapChainSupport()
 	const vk::SurfaceKHR& xSurface = Zenith_Vulkan::GetSurface();
 
 	SwapChainSupportDetails xDetails;
-	xDetails.m_xCapabilities = xPhysicalDevice.getSurfaceCapabilitiesKHR(xSurface);
+	xDetails.m_xCapabilities = VkUnwrap(xPhysicalDevice.getSurfaceCapabilitiesKHR(xSurface));
 
-	xDetails.m_xFormats = xPhysicalDevice.getSurfaceFormatsKHR(xSurface);
+	xDetails.m_xFormats = VkUnwrap(xPhysicalDevice.getSurfaceFormatsKHR(xSurface));
 
-	xDetails.m_xPresentModes = xPhysicalDevice.getSurfacePresentModesKHR(xSurface);
+	xDetails.m_xPresentModes = VkUnwrap(xPhysicalDevice.getSurfacePresentModesKHR(xSurface));
 
 	return xDetails;
 }
 
 static vk::SurfaceFormatKHR ChooseSwapSurfaceFormat(const std::vector<vk::SurfaceFormatKHR>& xAvailableFormats)
 {
+	// Prefer BGRA (Windows), fall back to RGBA (Android)
 	for (const vk::SurfaceFormatKHR& xFormat : xAvailableFormats)
 	{
 		if (xFormat.format == vk::Format::eB8G8R8A8Srgb && xFormat.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear)
@@ -72,12 +73,25 @@ static vk::SurfaceFormatKHR ChooseSwapSurfaceFormat(const std::vector<vk::Surfac
 			return xFormat;
 		}
 	}
-	Zenith_Assert(false, "b8g8r8a8_srgb not supported");
+	for (const vk::SurfaceFormatKHR& xFormat : xAvailableFormats)
+	{
+		if (xFormat.format == vk::Format::eR8G8B8A8Srgb && xFormat.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear)
+		{
+			return xFormat;
+		}
+	}
+	Zenith_Assert(false, "No suitable sRGB surface format found");
 	return xAvailableFormats[0];
 }
 
 static vk::Extent2D ChooseSwapExtent(const vk::SurfaceCapabilitiesKHR& xCapabilities)
 {
+	if (xCapabilities.currentExtent.width != std::numeric_limits<uint32_t>::max())
+	{
+		return xCapabilities.currentExtent;
+	}
+
+#ifdef ZENITH_WINDOWS
 	GLFWwindow* pxWindow = Zenith_Window::GetInstance()->GetNativeWindow();
 	int32_t iExtentWidth, iExtentHeight;
 	glfwGetFramebufferSize(pxWindow, &iExtentWidth, &iExtentHeight);
@@ -88,13 +102,12 @@ static vk::Extent2D ChooseSwapExtent(const vk::SurfaceCapabilitiesKHR& xCapabili
 		glfwGetFramebufferSize(pxWindow, &iExtentWidth, &iExtentHeight);
 		glfwWaitEvents();
 	}
+#else
+	int32_t iExtentWidth, iExtentHeight;
+	Zenith_Window::GetInstance()->GetSize(iExtentWidth, iExtentHeight);
+#endif
 
-	if (xCapabilities.currentExtent.width != std::numeric_limits <uint32_t>::max())
-	{
-		return xCapabilities.currentExtent;
-	}
-
-	vk::Extent2D xExtent = { static_cast<uint32_t>(iExtentWidth),static_cast<uint32_t>(iExtentHeight) };
+	vk::Extent2D xExtent = { static_cast<uint32_t>(iExtentWidth), static_cast<uint32_t>(iExtentHeight) };
 	xExtent.width = Zenith_Maths::Clamp(xExtent.width, xCapabilities.minImageExtent.width, xCapabilities.maxImageExtent.width);
 	xExtent.height = Zenith_Maths::Clamp(xExtent.height, xCapabilities.minImageExtent.height, xCapabilities.maxImageExtent.height);
 	return xExtent;
@@ -168,8 +181,7 @@ void Zenith_Vulkan_Swapchain::Initialise()
 	vk::PresentModeKHR ePresentMode = ChooseSwapPresentMode(xSwapChainSupport.m_xPresentModes);
 	vk::Extent2D xExtent = ChooseSwapExtent(xSwapChainSupport.m_xCapabilities);
 
-	Zenith_Assert(MAX_FRAMES_IN_FLIGHT >= xSwapChainSupport.m_xCapabilities.minImageCount, "Not enough frames in flight");
-	uint32_t uImageCount = MAX_FRAMES_IN_FLIGHT;
+	uint32_t uImageCount = std::max(static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT), xSwapChainSupport.m_xCapabilities.minImageCount);
 
 	if (xSwapChainSupport.m_xCapabilities.maxImageCount > 0 && uImageCount > xSwapChainSupport.m_xCapabilities.maxImageCount)
 	{
@@ -206,16 +218,13 @@ void Zenith_Vulkan_Swapchain::Initialise()
 	xCreateInfo.oldSwapchain = VK_NULL_HANDLE;
 
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
-	s_xSwapChain = xDevice.createSwapchainKHR(xCreateInfo);
+	s_xSwapChain = VkUnwrap(xDevice.createSwapchainKHR(xCreateInfo));
 
-	vk::Result eResult = xDevice.getSwapchainImagesKHR(s_xSwapChain, &uImageCount, nullptr);
-	Zenith_Assert(eResult == vk::Result::eSuccess);
-	s_xImages.resize(uImageCount);
+	s_xImages = VkUnwrap(xDevice.getSwapchainImagesKHR(s_xSwapChain));
+	uImageCount = static_cast<uint32_t>(s_xImages.size());
 	s_xImageViews.resize(uImageCount);
-	eResult = xDevice.getSwapchainImagesKHR(s_xSwapChain, &uImageCount, s_xImages.data());
-	Zenith_Assert(eResult == vk::Result::eSuccess);
 
-	Zenith_Assert(uImageCount == MAX_FRAMES_IN_FLIGHT, "Swapchain has wrong number of images");
+	Zenith_Assert(uImageCount <= MAX_FRAMES_IN_FLIGHT, "Swapchain image count %u exceeds MAX_FRAMES_IN_FLIGHT %u", uImageCount, MAX_FRAMES_IN_FLIGHT);
 
 	for (uint32_t u = 0; u < s_xImages.size(); u++)
 	{
@@ -235,7 +244,7 @@ void Zenith_Vulkan_Swapchain::Initialise()
 			.setFormat(xSurfaceFormat.format)
 			.setSubresourceRange(xSubresourceRange);
 
-		s_xImageViews[u] = xDevice.createImageView(xViewCreate);
+		s_xImageViews[u] = VkUnwrap(xDevice.createImageView(xViewCreate));
 
 		// Swapchain images don't use VRAM handles since they're managed by the swapchain
 		s_axTargetSetups[u].m_axColourAttachments[0].m_xVRAMHandle.SetValue(UINT32_MAX);
@@ -257,11 +266,24 @@ void Zenith_Vulkan_Swapchain::Initialise()
 	s_xImageFormat = xSurfaceFormat.format;
 	s_xExtent = xExtent;
 
+	Zenith_Log(LOG_CATEGORY_VULKAN, "Swapchain: %ux%u, format=%d, images=%u, present=%d",
+		xExtent.width, xExtent.height,
+		static_cast<int>(xSurfaceFormat.format),
+		uImageCount,
+		static_cast<int>(ePresentMode));
+	Zenith_Log(LOG_CATEGORY_VULKAN, "Swapchain surface capabilities: minImages=%u, maxImages=%u, minExtent=%ux%u, maxExtent=%ux%u",
+		xSwapChainSupport.m_xCapabilities.minImageCount,
+		xSwapChainSupport.m_xCapabilities.maxImageCount,
+		xSwapChainSupport.m_xCapabilities.minImageExtent.width,
+		xSwapChainSupport.m_xCapabilities.minImageExtent.height,
+		xSwapChainSupport.m_xCapabilities.maxImageExtent.width,
+		xSwapChainSupport.m_xCapabilities.maxImageExtent.height);
+
 	vk::SemaphoreCreateInfo xSemaphoreInfo;
 
 	for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
 	{
-		s_axImageAvailableSemaphores[i] = xDevice.createSemaphore(xSemaphoreInfo);
+		s_axImageAvailableSemaphores[i] = VkUnwrap(xDevice.createSemaphore(xSemaphoreInfo));
 	}
 
 	InitialiseCopyToFramebufferCommands();
@@ -410,7 +432,7 @@ void Zenith_Vulkan_Swapchain::EndFrame()
 #endif
 
 	s_xCopyToFramebufferCmd.GetCurrentCmdBuffer().endRenderPass();
-	s_xCopyToFramebufferCmd.GetCurrentCmdBuffer().end();
+	VkCheck(s_xCopyToFramebufferCmd.GetCurrentCmdBuffer().end());
 
 	vk::SubmitInfo xRenderSubmitInfo = vk::SubmitInfo()
 		.setCommandBufferCount(1)
@@ -420,7 +442,7 @@ void Zenith_Vulkan_Swapchain::EndFrame()
 		.setWaitSemaphoreCount(0)
 		.setSignalSemaphoreCount(0);
 
-	Zenith_Vulkan::GetQueue(COMMANDTYPE_GRAPHICS).submit(xRenderSubmitInfo, Zenith_Vulkan::GetCurrentInFlightFence());
+	VkCheck(Zenith_Vulkan::GetQueue(COMMANDTYPE_GRAPHICS).submit(xRenderSubmitInfo, Zenith_Vulkan::GetCurrentInFlightFence()));
 
 	if (s_bShouldWaitOnImageAvailableSem)
 	{

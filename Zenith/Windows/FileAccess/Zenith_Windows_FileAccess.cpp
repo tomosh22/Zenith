@@ -11,6 +11,12 @@ namespace Zenith_FileAccess
 		(void)pPlatformData;
 	}
 
+	void SetWritableDirectory(const char* szPath)
+	{
+		// No-op for Windows - relative paths work from the working directory
+		(void)szPath;
+	}
+
 	char* ReadFile(const char* szFilename)
 	{
 		std::ifstream xFile(szFilename, std::ios::ate | std::ios::binary);

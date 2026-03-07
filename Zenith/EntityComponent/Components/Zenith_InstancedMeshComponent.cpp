@@ -205,8 +205,9 @@ void Zenith_InstancedMeshComponent::LoadAnimationTexture(const std::string& strP
 	delete m_pxOwnedAnimTexture;
 	m_pxOwnedAnimTexture = nullptr;
 
-	// Load animation texture
-	m_pxOwnedAnimTexture = Flux_AnimationTexture::LoadFromFile(strPath);
+	// Load animation texture (resolve prefixed path for direct file access)
+	std::string strResolved = Zenith_AssetRegistry::ResolvePath(strPath);
+	m_pxOwnedAnimTexture = Flux_AnimationTexture::LoadFromFile(strResolved);
 	if (m_pxOwnedAnimTexture == nullptr)
 	{
 		Zenith_Error(LOG_CATEGORY_MESH, "[InstancedMeshComponent] Failed to load animation texture: %s", strPath.c_str());
@@ -433,10 +434,10 @@ void Zenith_InstancedMeshComponent::WriteToDataStream(Zenith_DataStream& xStream
 	xStream << uVersion;
 
 	// Asset paths (get from handles for registry assets)
-	std::string strMeshPath = m_xMeshAsset.GetPath();
-	std::string strMaterialPath = m_xMaterial.GetPath();
+	std::string strMeshPath = Zenith_AssetRegistry::NormalizeAssetPath(m_xMeshAsset.GetPath());
+	std::string strMaterialPath = Zenith_AssetRegistry::NormalizeAssetPath(m_xMaterial.GetPath());
 	xStream << strMeshPath;
-	xStream << m_strAnimTexturePath;
+	xStream << Zenith_AssetRegistry::NormalizeAssetPath(m_strAnimTexturePath);
 	xStream << strMaterialPath;
 
 	// For procedural materials (no path), serialize the material data directly
@@ -490,8 +491,11 @@ void Zenith_InstancedMeshComponent::ReadFromDataStream(Zenith_DataStream& xStrea
 	std::string strMeshPath;
 	std::string strMaterialPath;
 	xStream >> strMeshPath;
+	strMeshPath = Zenith_AssetRegistry::NormalizeAssetPath(strMeshPath);
 	xStream >> m_strAnimTexturePath;
+	m_strAnimTexturePath = Zenith_AssetRegistry::NormalizeAssetPath(m_strAnimTexturePath);
 	xStream >> strMaterialPath;
+	strMaterialPath = Zenith_AssetRegistry::NormalizeAssetPath(strMaterialPath);
 
 	// Load assets
 	if (!strMeshPath.empty())

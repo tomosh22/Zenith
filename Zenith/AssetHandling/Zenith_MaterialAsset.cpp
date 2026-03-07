@@ -112,11 +112,11 @@ void Zenith_MaterialAsset::WriteToDataStream(Zenith_DataStream& xStream) const
 	xStream << m_bUnlit;
 
 	// Texture paths (version 4+: path-based, no GUIDs)
-	xStream << m_xDiffuseTexture.GetPath();
-	xStream << m_xNormalTexture.GetPath();
-	xStream << m_xRoughnessMetallicTexture.GetPath();
-	xStream << m_xOcclusionTexture.GetPath();
-	xStream << m_xEmissiveTexture.GetPath();
+	xStream << Zenith_AssetRegistry::NormalizeAssetPath(m_xDiffuseTexture.GetPath());
+	xStream << Zenith_AssetRegistry::NormalizeAssetPath(m_xNormalTexture.GetPath());
+	xStream << Zenith_AssetRegistry::NormalizeAssetPath(m_xRoughnessMetallicTexture.GetPath());
+	xStream << Zenith_AssetRegistry::NormalizeAssetPath(m_xOcclusionTexture.GetPath());
+	xStream << Zenith_AssetRegistry::NormalizeAssetPath(m_xEmissiveTexture.GetPath());
 }
 
 void Zenith_MaterialAsset::ReadFromDataStream(Zenith_DataStream& xStream)
@@ -182,19 +182,19 @@ void Zenith_MaterialAsset::ReadFromDataStream(Zenith_DataStream& xStream)
 		std::string strPath;
 
 		xStream >> strPath;
-		m_xDiffuseTexture.SetPath(strPath);
+		m_xDiffuseTexture.SetPath(Zenith_AssetRegistry::NormalizeAssetPath(strPath));
 
 		xStream >> strPath;
-		m_xNormalTexture.SetPath(strPath);
+		m_xNormalTexture.SetPath(Zenith_AssetRegistry::NormalizeAssetPath(strPath));
 
 		xStream >> strPath;
-		m_xRoughnessMetallicTexture.SetPath(strPath);
+		m_xRoughnessMetallicTexture.SetPath(Zenith_AssetRegistry::NormalizeAssetPath(strPath));
 
 		xStream >> strPath;
-		m_xOcclusionTexture.SetPath(strPath);
+		m_xOcclusionTexture.SetPath(Zenith_AssetRegistry::NormalizeAssetPath(strPath));
 
 		xStream >> strPath;
-		m_xEmissiveTexture.SetPath(strPath);
+		m_xEmissiveTexture.SetPath(Zenith_AssetRegistry::NormalizeAssetPath(strPath));
 	}
 	else if (uVersion >= 2)
 	{

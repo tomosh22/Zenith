@@ -2,15 +2,42 @@
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "vulkan/vulkan.hpp"
 #pragma warning(push, 0)
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wnullability-completeness"
+#endif
 #include "vma/vk_mem_alloc.h"
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
 #pragma warning(pop)
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
 #include "Flux/Flux_Types.h"
 #include "Zenith_Vulkan_CommandBuffer.h"
 
-#define ZENITH_VULKAN_PER_FRAME_DESC_SET 0
-#define ZENITH_VULKAN_PER_DRAW_DESC_SET 1
-#define ZENITH_VULKAN_BINDLESS_TEXTURES_DESC_SET 2
+// VkUnwrap: extract value from vk::ResultValue<T>
+// Some Vulkan calls (e.g. createGraphicsPipeline) return ResultValue<T> on all platforms
+// because they have non-error success codes like VK_PIPELINE_COMPILE_REQUIRED
+template<typename T>
+inline T VkUnwrap(vk::ResultValue<T> xResult)
+{
+	Zenith_Assert(xResult.result == vk::Result::eSuccess, "Vulkan error: %d", static_cast<int>(xResult.result));
+	return std::move(xResult.value);
+}
+
+#ifdef VULKAN_HPP_NO_EXCEPTIONS
+// When exceptions are disabled, all vulkan.hpp calls return ResultValue<T>
+inline void VkCheckImpl(vk::Result eResult)
+{
+	Zenith_Assert(eResult == vk::Result::eSuccess, "Vulkan error: %d", static_cast<int>(eResult));
+}
+#define VkCheck(expr) VkCheckImpl(expr)
+#else
+// With exceptions enabled, most calls return T directly — pass through unchanged
+template<typename T>
+inline T VkUnwrap(T xValue) { return xValue; }
+#define VkCheck(expr) (expr)
+#endif
 
 class Zenith_Vulkan_CommandBuffer;
 class Zenith_Vulkan_VRAM;
@@ -81,6 +108,7 @@ public:
 #endif
 	static void CreateSurface();
 	static void CreatePhysicalDevice();
+	static void LogFormatSupport();
 	static void CreateQueueFamilies();
 	static void CreateDevice();
 	static void CreateCommandPools();

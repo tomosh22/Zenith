@@ -108,8 +108,13 @@ static const char* s_aszDeviceExtensions[] = {
 				VK_KHR_RAY_QUERY_EXTENSION_NAME,
 				VK_NV_RAY_TRACING_EXTENSION_NAME,
 #endif
+#ifndef ZENITH_ANDROID
 				VK_KHR_FRAGMENT_SHADER_BARYCENTRIC_EXTENSION_NAME,
+#endif
+				// Core in Vulkan 1.2 - only needed as extension on 1.1 devices
+#ifndef ZENITH_ANDROID
 				VK_KHR_DRAW_INDIRECT_COUNT_EXTENSION_NAME
+#endif
 };
 
 vk::Instance Zenith_Vulkan::s_xInstance;
@@ -253,6 +258,7 @@ void Zenith_Vulkan::Initialise()
 #endif
 	CreateSurface();
 	CreatePhysicalDevice();
+	LogFormatSupport();
 	CreateQueueFamilies();
 	CreateDevice();
 #ifdef ZENITH_DEBUG
@@ -416,7 +422,7 @@ void Zenith_Vulkan::RecordCommandBuffersTask(void* pData, u_int uInvocationIndex
 		//Zenith_Log(LOG_CATEGORY_RENDERER, "Worker %u: END - no render pass (compute only or no work)", uInvocationIndex);
 	}
 
-	xCommandBuffer.GetCurrentCmdBuffer().end();
+	VkCheck(xCommandBuffer.GetCurrentCmdBuffer().end());
 
 }
 
@@ -454,7 +460,7 @@ void Zenith_Vulkan::EndFrame(bool bSubmitRenderWork)
 		.setWaitSemaphoreCount(bShouldWait);
 
 	//#TO_TODO: change this to copy queue, how do I make sure this finishes before graphics?
-	s_axQueues[COMMANDTYPE_GRAPHICS].submit(xMemorySubmitInfo, VK_NULL_HANDLE);
+	VkCheck(s_axQueues[COMMANDTYPE_GRAPHICS].submit(xMemorySubmitInfo, VK_NULL_HANDLE));
 
 	if (!bHasRenderWork)
 	{
@@ -505,7 +511,7 @@ void Zenith_Vulkan::EndFrame(bool bSubmitRenderWork)
 			.setPSignalSemaphores(nullptr)
 			.setSignalSemaphoreCount(0);
 
-		s_axQueues[COMMANDTYPE_GRAPHICS].submit(xRenderSubmitInfo, VK_NULL_HANDLE);
+		VkCheck(s_axQueues[COMMANDTYPE_GRAPHICS].submit(xRenderSubmitInfo, VK_NULL_HANDLE));
 	}
 
 }
@@ -515,7 +521,7 @@ void Zenith_Vulkan::WaitForGPUIdle()
 	// Wait for all GPU work to complete
 	// This is expensive (stalls the entire pipeline) but necessary for critical synchronization
 	// Use cases: scene transitions, shutdown, debugging
-	s_xDevice.waitIdle();
+	VkCheck(s_xDevice.waitIdle());
 
 	Zenith_Log(LOG_CATEGORY_VULKAN, "GPU idle wait completed");
 }
@@ -527,36 +533,71 @@ void Zenith_Vulkan::CreateInstance()
 		.setApplicationVersion(VK_MAKE_VERSION(1, 0, 0))
 		.setPEngineName("Zenith")
 		.setEngineVersion(VK_MAKE_VERSION(1, 0, 0))
+#ifdef ZENITH_ANDROID
+		.setApiVersion(VK_API_VERSION_1_1);
+#else
 		.setApiVersion(VK_API_VERSION_1_3);
+#endif
 
 	// Get platform-specific Vulkan extensions
 	std::vector<const char*> xExtensions = Zenith_Vulkan_Platform::GetRequiredInstanceExtensions();
+
+#ifdef ZENITH_DEBUG
+	// Check which validation layers are actually available on this device
+	std::vector<const char*> xEnabledLayers;
+	std::vector<vk::LayerProperties> xAvailableLayers = VkUnwrap(vk::enumerateInstanceLayerProperties());
+	for (const char* szLayerName : s_xValidationLayers)
+	{
+		bool bFound = false;
+		for (const auto& xLayer : xAvailableLayers)
+		{
+			if (strcmp(szLayerName, xLayer.layerName) == 0)
+			{
+				bFound = true;
+				break;
+			}
+		}
+		if (bFound)
+		{
+			xEnabledLayers.push_back(szLayerName);
+			Zenith_Log(LOG_CATEGORY_VULKAN, "Enabling validation layer: %s", szLayerName);
+		}
+		else
+		{
+			Zenith_Log(LOG_CATEGORY_VULKAN, "Validation layer not available: %s", szLayerName);
+		}
+	}
+#endif
 
 	vk::InstanceCreateInfo xInstanceInfo = vk::InstanceCreateInfo()
 		.setPApplicationInfo(&xAppInfo)
 		.setEnabledExtensionCount(static_cast<uint32_t>(xExtensions.size()))
 		.setPpEnabledExtensionNames(xExtensions.data())
 #ifdef ZENITH_DEBUG
-		.setEnabledLayerCount(static_cast<uint32_t>(s_xValidationLayers.size()))
-		.setPpEnabledLayerNames(s_xValidationLayers.data());
+		.setEnabledLayerCount(static_cast<uint32_t>(xEnabledLayers.size()))
+		.setPpEnabledLayerNames(xEnabledLayers.data());
 #else
 		.setEnabledLayerCount(0);
 #endif
-	s_xInstance = vk::createInstance(xInstanceInfo);
+	s_xInstance = VkUnwrap(vk::createInstance(xInstanceInfo));
 
 	Zenith_Log(LOG_CATEGORY_VULKAN, "Vulkan instance created");
 }
 
 VKAPI_ATTR vk::Bool32 VKAPI_CALL Zenith_Vulkan::DebugCallback(vk::DebugUtilsMessageSeverityFlagBitsEXT eMessageSeverity, vk::DebugUtilsMessageTypeFlagsEXT, const vk::DebugUtilsMessengerCallbackDataEXT* pxCallbackData, void*)
 {
-	if (eMessageSeverity >= vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning)
-	{
-		Zenith_Error(LOG_CATEGORY_VULKAN, "%s%s", "Zenith_Vulkan::DebugCallback: ", pxCallbackData->pMessage);
-	}
-	// Only break on actual errors, not performance warnings
 	if (eMessageSeverity >= vk::DebugUtilsMessageSeverityFlagBitsEXT::eError)
 	{
+		Zenith_Error(LOG_CATEGORY_VULKAN, "VK ERROR: %s", pxCallbackData->pMessage);
 		Zenith_DebugBreak();
+	}
+	else if (eMessageSeverity >= vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning)
+	{
+		Zenith_Warning(LOG_CATEGORY_VULKAN, "VK WARN: %s", pxCallbackData->pMessage);
+	}
+	else
+	{
+		Zenith_Log(LOG_CATEGORY_VULKAN, "VK INFO: %s", pxCallbackData->pMessage);
 	}
 	return VK_FALSE;
 }
@@ -566,6 +607,7 @@ void Zenith_Vulkan::CreateDebugMessenger()
 {
 	vk::DebugUtilsMessengerCreateInfoEXT xCreateInfo = vk::DebugUtilsMessengerCreateInfoEXT()
 		.setMessageSeverity(vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose |
+			vk::DebugUtilsMessageSeverityFlagBitsEXT::eInfo |
 			vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning |
 			vk::DebugUtilsMessageSeverityFlagBitsEXT::eError)
 		.setMessageType(vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral |
@@ -573,11 +615,11 @@ void Zenith_Vulkan::CreateDebugMessenger()
 			vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance)
 		.setPfnUserCallback((PFN_vkDebugUtilsMessengerCallbackEXT)DebugCallback)
 		.setPUserData(nullptr);
-	s_xDebugMessenger = s_xInstance.createDebugUtilsMessengerEXT(
+	s_xDebugMessenger = VkUnwrap(s_xInstance.createDebugUtilsMessengerEXT(
 		xCreateInfo,
 		nullptr,
 		vk::DispatchLoaderDynamic(s_xInstance, vkGetInstanceProcAddr)
-	);
+	));
 
 	Zenith_Log(LOG_CATEGORY_VULKAN, "Vulkan debug messenger created");
 }
@@ -617,7 +659,63 @@ void Zenith_Vulkan::CreatePhysicalDevice()
 	s_xGPUCapabilties.m_uMaxFramebufferWidth = xProps.limits.maxFramebufferWidth;
 	s_xGPUCapabilties.m_uMaxFramebufferHeight = xProps.limits.maxFramebufferHeight;
 
-	Zenith_Log(LOG_CATEGORY_VULKAN, "Vulkan physical device created");
+	Zenith_Log(LOG_CATEGORY_VULKAN, "GPU: %s", xProps.deviceName);
+	Zenith_Log(LOG_CATEGORY_VULKAN, "GPU API version: %u.%u.%u",
+		VK_API_VERSION_MAJOR(xProps.apiVersion),
+		VK_API_VERSION_MINOR(xProps.apiVersion),
+		VK_API_VERSION_PATCH(xProps.apiVersion));
+	Zenith_Log(LOG_CATEGORY_VULKAN, "GPU driver version: %u", xProps.driverVersion);
+	Zenith_Log(LOG_CATEGORY_VULKAN, "Max image dimension 2D: %u", xProps.limits.maxImageDimension2D);
+	Zenith_Log(LOG_CATEGORY_VULKAN, "Max framebuffer: %ux%u", xProps.limits.maxFramebufferWidth, xProps.limits.maxFramebufferHeight);
+	Zenith_Log(LOG_CATEGORY_VULKAN, "Max memory alloc count: %u", xProps.limits.maxMemoryAllocationCount);
+	Zenith_Log(LOG_CATEGORY_VULKAN, "Max bound descriptor sets: %u", xProps.limits.maxBoundDescriptorSets);
+
+	vk::PhysicalDeviceMemoryProperties xMemProps = s_xPhysicalDevice.getMemoryProperties();
+	Zenith_Log(LOG_CATEGORY_VULKAN, "Memory heaps: %u, Memory types: %u", xMemProps.memoryHeapCount, xMemProps.memoryTypeCount);
+	for (uint32_t i = 0; i < xMemProps.memoryHeapCount; i++)
+	{
+		Zenith_Log(LOG_CATEGORY_VULKAN, "  Heap %u: %llu MB, flags: %u", i,
+			xMemProps.memoryHeaps[i].size / (1024 * 1024),
+			static_cast<uint32_t>(xMemProps.memoryHeaps[i].flags));
+	}
+}
+
+void Zenith_Vulkan::LogFormatSupport()
+{
+	// Check support for formats used by the renderer
+	struct FormatCheck
+	{
+		vk::Format m_eFormat;
+		const char* m_szName;
+		vk::FormatFeatureFlags m_eRequired;
+	};
+
+	FormatCheck axFormats[] = {
+		{ vk::Format::eR8G8B8A8Unorm, "RGBA8_UNORM (MRT diffuse/material)", vk::FormatFeatureFlagBits::eColorAttachment | vk::FormatFeatureFlagBits::eSampledImage },
+		{ vk::Format::eR16G16B16A16Sfloat, "RGBA16F (MRT normals)", vk::FormatFeatureFlagBits::eColorAttachment | vk::FormatFeatureFlagBits::eSampledImage },
+		{ vk::Format::eR16G16B16A16Unorm, "RGBA16_UNORM (final RT)", vk::FormatFeatureFlagBits::eColorAttachment | vk::FormatFeatureFlagBits::eSampledImage },
+		{ vk::Format::eD32Sfloat, "D32F (depth)", vk::FormatFeatureFlagBits::eDepthStencilAttachment },
+		{ vk::Format::eB8G8R8A8Srgb, "BGRA8_SRGB (swapchain)", vk::FormatFeatureFlagBits::eColorAttachment },
+		{ vk::Format::eR8G8B8A8Srgb, "RGBA8_SRGB (swapchain fallback)", vk::FormatFeatureFlagBits::eColorAttachment },
+	};
+
+	Zenith_Log(LOG_CATEGORY_VULKAN, "=== Format support check ===");
+	for (const FormatCheck& xCheck : axFormats)
+	{
+		vk::FormatProperties xProps = s_xPhysicalDevice.getFormatProperties(xCheck.m_eFormat);
+		bool bOptimalSupported = (xProps.optimalTilingFeatures & xCheck.m_eRequired) == xCheck.m_eRequired;
+		Zenith_Log(LOG_CATEGORY_VULKAN, "  %s: optimal=%s linear=0x%x optimal=0x%x buffer=0x%x",
+			xCheck.m_szName,
+			bOptimalSupported ? "YES" : "NO",
+			static_cast<uint32_t>(xProps.linearTilingFeatures),
+			static_cast<uint32_t>(xProps.optimalTilingFeatures),
+			static_cast<uint32_t>(xProps.bufferFeatures));
+		if (!bOptimalSupported)
+		{
+			Zenith_Warning(LOG_CATEGORY_VULKAN, "FORMAT NOT SUPPORTED: %s - this will likely cause rendering issues!", xCheck.m_szName);
+		}
+	}
+	Zenith_Log(LOG_CATEGORY_VULKAN, "=== End format support check ===");
 }
 
 void Zenith_Vulkan::CreateQueueFamilies()
@@ -633,7 +731,7 @@ void Zenith_Vulkan::CreateQueueFamilies()
 
 	for (uint32_t i = 0; i < xQueueFamilyProperties.size(); ++i)
 	{
-		uSupportsPresent = static_cast<VkBool32>(s_xPhysicalDevice.getSurfaceSupportKHR(i, s_xSurface));
+		uSupportsPresent = static_cast<VkBool32>(VkUnwrap(s_xPhysicalDevice.getSurfaceSupportKHR(i, s_xSurface)));
 
 		if (s_auQueueIndices[COMMANDTYPE_GRAPHICS] == UINT32_MAX && xQueueFamilyProperties[i].queueFlags & vk::QueueFlagBits::eGraphics)
 		{
@@ -686,12 +784,7 @@ void Zenith_Vulkan::CreateDevice()
 		.setQueueCreateInfoCount(static_cast<uint32_t>(xQueueInfos.size()))
 		.setEnabledExtensionCount(COUNT_OF(s_aszDeviceExtensions))
 		.setPpEnabledExtensionNames(s_aszDeviceExtensions)
-#ifdef ZENITH_DEBUG
-		.setEnabledLayerCount(static_cast<uint32_t>(s_xValidationLayers.size()))
-		.setPpEnabledLayerNames(s_xValidationLayers.data());
-#else
 		.setEnabledLayerCount(0);
-#endif
 
 	
 
@@ -716,20 +809,24 @@ void Zenith_Vulkan::CreateDevice()
 		.setRuntimeDescriptorArray(true)
 		.setPNext(&xShaderDrawFeatures);
 
+#ifndef ZENITH_ANDROID
 	vk::PhysicalDeviceFeatures2 xTemp;
 	vk::PhysicalDeviceFragmentShaderBarycentricFeaturesKHR xTempBary;
 	xTemp.setPNext(&xTempBary);
 	s_xPhysicalDevice.getFeatures2(&xTemp);
 	xTempBary.setPNext(&xIndexingFeatures);
-
 	xDeviceCreateInfo.setPNext(&xTempBary);
+#else
+	xDeviceCreateInfo.setPNext(&xIndexingFeatures);
+#endif
 
-	s_xDevice = s_xPhysicalDevice.createDevice(xDeviceCreateInfo);
+	s_xDevice = VkUnwrap(s_xPhysicalDevice.createDevice(xDeviceCreateInfo));
 
 	for (uint32_t i = 0; i < COMMANDTYPE_MAX; i++)
 	{
 		s_axQueues[i] = s_xDevice.getQueue(s_auQueueIndices[i], 0);
 	}
+
 
 	Zenith_Log(LOG_CATEGORY_VULKAN, "Vulkan device created");
 }
@@ -738,7 +835,7 @@ void Zenith_Vulkan::CreateCommandPools()
 {
 	for (uint32_t i = 0; i < COMMANDTYPE_MAX; i++)
 	{
-		s_axCommandPools[i] = s_xDevice.createCommandPool(vk::CommandPoolCreateInfo(vk::CommandPoolCreateFlagBits::eResetCommandBuffer, s_auQueueIndices[i]));
+		s_axCommandPools[i] = VkUnwrap(s_xDevice.createCommandPool(vk::CommandPoolCreateInfo(vk::CommandPoolCreateFlagBits::eResetCommandBuffer, s_auQueueIndices[i])));
 	}
 	
 	// Note: Worker thread command pools are now created per-frame in Zenith_Vulkan_PerFrame::Initialise()
@@ -769,7 +866,7 @@ void Zenith_Vulkan::CreateDefaultDescriptorPool()
 		.setMaxSets(10000)
 		.setFlags(vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet | vk::DescriptorPoolCreateFlagBits::eUpdateAfterBind);
 
-	s_xDefaultDescriptorPool = s_xDevice.createDescriptorPool(xPoolInfo);
+	s_xDefaultDescriptorPool = VkUnwrap(s_xDevice.createDescriptorPool(xPoolInfo));
 
 	Zenith_Log(LOG_CATEGORY_VULKAN, "Vulkan default descriptor pool created");
 }
@@ -787,7 +884,7 @@ void Zenith_Vulkan::CreateBindlessTexturesDescriptorPool()
 		.setMaxSets(1)
 		.setFlags(vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet | vk::DescriptorPoolCreateFlagBits::eUpdateAfterBind);
 
-	s_xBindlessTexturesDescriptorPool = s_xDevice.createDescriptorPool(xPoolInfo);
+	s_xBindlessTexturesDescriptorPool = VkUnwrap(s_xDevice.createDescriptorPool(xPoolInfo));
 
 	Zenith_Log(LOG_CATEGORY_VULKAN, "Vulkan bindless textures descriptor pool created");
 
@@ -810,14 +907,14 @@ void Zenith_Vulkan::CreateBindlessTexturesDescriptorPool()
 		.setFlags(vk::DescriptorSetLayoutCreateFlagBits::eUpdateAfterBindPool)
 		.setPNext(&xBindingFlagsInfo);
 
-	s_xBindlessTexturesDescriptorSetLayout = s_xDevice.createDescriptorSetLayout(xLayoutInfo);
+	s_xBindlessTexturesDescriptorSetLayout = VkUnwrap(s_xDevice.createDescriptorSetLayout(xLayoutInfo));
 
 	vk::DescriptorSetAllocateInfo xSetInfo = vk::DescriptorSetAllocateInfo()
 		.setDescriptorPool(s_xBindlessTexturesDescriptorPool)
 		.setDescriptorSetCount(1)
 		.setPSetLayouts(&s_xBindlessTexturesDescriptorSetLayout);
 
-	s_xBindlessTexturesDescriptorSet = s_xDevice.allocateDescriptorSets(xSetInfo)[0];
+	s_xBindlessTexturesDescriptorSet = VkUnwrap(s_xDevice.allocateDescriptorSets(xSetInfo))[0];
 }
 
 void Zenith_Vulkan::WriteBindlessDescriptor(uint32_t uIndex, vk::ImageView xImageView, vk::Sampler xSampler)
@@ -954,7 +1051,7 @@ void Zenith_Vulkan::ImGuiBeginFrame()
 void Zenith_Vulkan::ShutdownImGui()
 {
 	// Wait for GPU to finish before destroying ImGui resources
-	s_xDevice.waitIdle();
+	VkCheck(s_xDevice.waitIdle());
 
 	// Shutdown ImGui backends
 	ImGui_ImplVulkan_Shutdown();
@@ -996,15 +1093,15 @@ void Zenith_Vulkan_PerFrame::Initialise()
 
 	for (vk::DescriptorPool& xPool : m_axDescriptorPools)
 	{
-		xPool = Zenith_Vulkan::GetDevice().createDescriptorPool(xPoolInfo);
+		xPool = VkUnwrap(Zenith_Vulkan::GetDevice().createDescriptorPool(xPoolInfo));
 	}
 	
 	// Create per-worker-thread command pools for multithreaded command buffer recording
 	for (u_int i = 0; i < NUM_WORKER_THREADS; i++)
 	{
-		m_axCommandPools[i] = Zenith_Vulkan::GetDevice().createCommandPool(
-			vk::CommandPoolCreateInfo(vk::CommandPoolCreateFlagBits::eResetCommandBuffer, 
-			Zenith_Vulkan::GetQueueIndex(COMMANDTYPE_GRAPHICS)));
+		m_axCommandPools[i] = VkUnwrap(Zenith_Vulkan::GetDevice().createCommandPool(
+			vk::CommandPoolCreateInfo(vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
+			Zenith_Vulkan::GetQueueIndex(COMMANDTYPE_GRAPHICS))));
 		
 		// Initialize worker command buffers with their dedicated command pools and worker index
 		m_axWorkerCommandBuffers[i].InitialiseWithCustomPool(m_axCommandPools[i], i);
@@ -1012,10 +1109,10 @@ void Zenith_Vulkan_PerFrame::Initialise()
 
 	vk::FenceCreateInfo xFenceInfo = vk::FenceCreateInfo()
 		.setFlags(vk::FenceCreateFlagBits::eSignaled);
-	m_xFence = Zenith_Vulkan::GetDevice().createFence(xFenceInfo);
+	m_xFence = VkUnwrap(Zenith_Vulkan::GetDevice().createFence(xFenceInfo));
 
 	// Create persistent semaphore for memory submit synchronization (fixes per-frame semaphore leak)
-	m_xMemorySemaphore = Zenith_Vulkan::GetDevice().createSemaphore(vk::SemaphoreCreateInfo());
+	m_xMemorySemaphore = VkUnwrap(Zenith_Vulkan::GetDevice().createSemaphore(vk::SemaphoreCreateInfo()));
 }
 
 void Zenith_Vulkan_PerFrame::InitialiseScratchBuffers()
@@ -1264,5 +1361,5 @@ vk::DescriptorSet Zenith_Vulkan::CreateDescriptorSet(const vk::DescriptorSetLayo
 		.setDescriptorSetCount(1)
 		.setPSetLayouts(&xLayout);
 
-	return (s_xDevice.allocateDescriptorSets(xInfo)[0]);
+	return VkUnwrap(s_xDevice.allocateDescriptorSets(xInfo))[0];
 }

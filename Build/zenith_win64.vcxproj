@@ -1299,6 +1299,7 @@
     <ClInclude Include="..\Zenith\UI\Zenith_UILayoutGroup.h" />
     <ClInclude Include="..\Zenith\UI\Zenith_UIRect.h" />
     <ClInclude Include="..\Zenith\UI\Zenith_UIText.h" />
+    <ClInclude Include="..\Zenith\UnitTests\Zenith_AITests.h" />
     <ClInclude Include="..\Zenith\UnitTests\Zenith_AutomationTests.h" />
     <ClInclude Include="..\Zenith\UnitTests\Zenith_EditorTestFixture.h" />
     <ClInclude Include="..\Zenith\UnitTests\Zenith_EditorTests.h" />

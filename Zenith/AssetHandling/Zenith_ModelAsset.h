@@ -114,12 +114,12 @@ public:
 	/**
 	 * Set the skeleton path (for animated models)
 	 */
-	void SetSkeletonPath(const std::string& strPath) { m_strSkeletonPath = strPath; }
+	void SetSkeletonPath(const std::string& strPath) { m_strSkeletonPath = Zenith_AssetRegistry::NormalizeAssetPath(strPath); }
 
 	/**
 	 * Add an animation path
 	 */
-	void AddAnimationPath(const std::string& strPath) { m_xAnimationPaths.PushBack(strPath); }
+	void AddAnimationPath(const std::string& strPath) { m_xAnimationPaths.PushBack(Zenith_AssetRegistry::NormalizeAssetPath(strPath)); }
 
 	/**
 	 * Clear all data

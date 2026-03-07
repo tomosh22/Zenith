@@ -51,7 +51,7 @@ void Flux_StaticMeshes::Initialise()
 {
 
 	s_xGBufferShader.Initialise("StaticMeshes/Flux_StaticMeshes_ToGBuffer.vert", "StaticMeshes/Flux_StaticMeshes_ToGBuffer.frag");
-	s_xShadowShader.Initialise("StaticMeshes/Flux_StaticMeshes_ToShadowMap.vert", "StaticMeshes/Flux_StaticMeshes_ToShadowMap.frag");
+	s_xShadowShader.Initialise("StaticMeshes/Flux_StaticMeshes_ToShadowmap.vert", "StaticMeshes/Flux_StaticMeshes_ToShadowmap.frag");
 
 	Flux_VertexInputDescription xVertexDesc;
 	xVertexDesc.m_eTopology = MESH_TOPOLOGY_TRIANGLES;

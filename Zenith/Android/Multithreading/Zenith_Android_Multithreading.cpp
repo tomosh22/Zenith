@@ -13,31 +13,18 @@ thread_local static char tl_g_acThreadName[Zenith_Multithreading::uMAX_THREAD_NA
 thread_local static u_int tl_g_uThreadID = -1;
 static u_int g_uMainThreadID = -1;
 
-Zenith_Android_Mutex::Zenith_Android_Mutex()
-{
-	pthread_mutex_init(&m_xMutex, nullptr);
-}
-
-Zenith_Android_Mutex::~Zenith_Android_Mutex()
-{
-	pthread_mutex_destroy(&m_xMutex);
-}
-
-void Zenith_Android_Mutex::Lock()
+template<>
+void Zenith_Android_Mutex_T<true>::Lock()
 {
 	Zenith_Profiling::BeginProfile(ZENITH_PROFILE_INDEX__WAIT_FOR_MUTEX);
 	pthread_mutex_lock(&m_xMutex);
 	Zenith_Profiling::EndProfile(ZENITH_PROFILE_INDEX__WAIT_FOR_MUTEX);
 }
 
-bool Zenith_Android_Mutex::TryLock()
+template<>
+void Zenith_Android_Mutex_T<false>::Lock()
 {
-	return pthread_mutex_trylock(&m_xMutex) == 0;
-}
-
-void Zenith_Android_Mutex::Unlock()
-{
-	pthread_mutex_unlock(&m_xMutex);
+	pthread_mutex_lock(&m_xMutex);
 }
 
 Zenith_Android_Semaphore::Zenith_Android_Semaphore(u_int uInitialValue, u_int uMaxValue)

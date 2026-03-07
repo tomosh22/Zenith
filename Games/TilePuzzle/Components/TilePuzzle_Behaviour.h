@@ -582,6 +582,9 @@ public:
 #endif
 			break;
 
+		case TILEPUZZLE_STATE_VICTORY_OVERLAY:
+			break;
+
 		}
 
 		// Update main menu meta-game displays
@@ -3287,8 +3290,8 @@ private:
 		float fCurrentIntensity = m_fScreenShakeIntensity * fProgress;
 
 		// Random offset in XZ plane (camera looks down Y axis)
-		float fOffsetX = (static_cast<float>(rand()) / RAND_MAX * 2.0f - 1.0f) * fCurrentIntensity;
-		float fOffsetZ = (static_cast<float>(rand()) / RAND_MAX * 2.0f - 1.0f) * fCurrentIntensity;
+		float fOffsetX = (static_cast<float>(rand()) / static_cast<float>(RAND_MAX) * 2.0f - 1.0f) * fCurrentIntensity;
+		float fOffsetZ = (static_cast<float>(rand()) / static_cast<float>(RAND_MAX) * 2.0f - 1.0f) * fCurrentIntensity;
 
 		if (m_xParentEntity.HasComponent<Zenith_CameraComponent>())
 		{

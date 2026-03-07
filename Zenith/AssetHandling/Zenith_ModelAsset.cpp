@@ -1,5 +1,6 @@
 #include "Zenith.h"
 #include "AssetHandling/Zenith_ModelAsset.h"
+#include "AssetHandling/Zenith_AssetRegistry.h"
 
 //------------------------------------------------------------------------------
 // MeshMaterialBinding Serialization
@@ -88,7 +89,7 @@ Zenith_ModelAsset* Zenith_ModelAsset::LoadFromFile(const char* szPath)
 
 	Zenith_ModelAsset* pxAsset = new Zenith_ModelAsset();
 	pxAsset->ReadFromDataStream(xStream);
-	pxAsset->m_strSourcePath = szPath;
+	pxAsset->m_strSourcePath = Zenith_AssetRegistry::NormalizeAssetPath(szPath);
 
 	Zenith_Log(LOG_CATEGORY_ASSET, "Loaded model asset '%s' from %s with %u mesh bindings",
 		pxAsset->m_strName.c_str(), szPath, pxAsset->GetNumMeshes());
@@ -137,7 +138,7 @@ void Zenith_ModelAsset::WriteToDataStream(Zenith_DataStream& xStream) const
 	xStream << bHasSkeleton;
 	if (bHasSkeleton)
 	{
-		xStream << m_strSkeletonPath;
+		xStream << Zenith_AssetRegistry::NormalizeAssetPath(m_strSkeletonPath);
 	}
 
 	// Animations
@@ -145,7 +146,7 @@ void Zenith_ModelAsset::WriteToDataStream(Zenith_DataStream& xStream) const
 	xStream << uNumAnimations;
 	for (uint32_t u = 0; u < uNumAnimations; u++)
 	{
-		xStream << m_xAnimationPaths.Get(u);
+		xStream << Zenith_AssetRegistry::NormalizeAssetPath(m_xAnimationPaths.Get(u));
 	}
 }
 
@@ -182,6 +183,7 @@ void Zenith_ModelAsset::ReadFromDataStream(Zenith_DataStream& xStream)
 	if (bHasSkeleton)
 	{
 		xStream >> m_strSkeletonPath;
+		m_strSkeletonPath = Zenith_AssetRegistry::NormalizeAssetPath(m_strSkeletonPath);
 	}
 
 	// Animations
@@ -191,6 +193,7 @@ void Zenith_ModelAsset::ReadFromDataStream(Zenith_DataStream& xStream)
 	{
 		std::string strPath;
 		xStream >> strPath;
+		strPath = Zenith_AssetRegistry::NormalizeAssetPath(strPath);
 		m_xAnimationPaths.PushBack(strPath);
 	}
 }

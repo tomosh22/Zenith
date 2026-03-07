@@ -2,9 +2,7 @@
 
 #include <string>
 #include "AssetHandling/Zenith_Asset.h"
-
-// Forward declarations
-class Zenith_AssetRegistry;
+#include "AssetHandling/Zenith_AssetRegistry.h"
 class Zenith_TextureAsset;
 class Zenith_MaterialAsset;
 class Zenith_MeshAsset;
@@ -53,7 +51,7 @@ public:
 	 * Construct from path - does NOT load immediately
 	 */
 	explicit Zenith_AssetHandle(const std::string& strPath)
-		: m_strPath(strPath)
+		: m_strPath(Zenith_AssetRegistry::NormalizeAssetPath(strPath))
 		, m_pxCached(nullptr)
 	{
 	}
@@ -191,17 +189,19 @@ public:
 
 	/**
 	 * Set the path (releases current asset if any)
+	 * Normalizes absolute paths to prefixed relative paths for cross-machine portability
 	 */
 	void SetPath(const std::string& strPath)
 	{
-		if (m_strPath != strPath)
+		std::string strNormalized = Zenith_AssetRegistry::NormalizeAssetPath(strPath);
+		if (m_strPath != strNormalized)
 		{
 			if (m_pxCached)
 			{
 				reinterpret_cast<Zenith_Asset*>(m_pxCached)->Release();
 				m_pxCached = nullptr;
 			}
-			m_strPath = strPath;
+			m_strPath = strNormalized;
 		}
 	}
 

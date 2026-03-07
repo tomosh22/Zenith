@@ -287,7 +287,7 @@ void Zenith_TerrainComponent::WriteToDataStream(Zenith_DataStream& xStream) cons
 
 	// NOTE: Terrain component uses hardcoded paths for physics geometry during construction
 	// We serialize the source paths for reference, but reconstruction is handled by the constructor
-	std::string strPhysicsGeometryPath = m_pxPhysicsGeometry ? m_pxPhysicsGeometry->m_strSourcePath : "";
+	std::string strPhysicsGeometryPath = m_pxPhysicsGeometry ? Zenith_AssetRegistry::NormalizeAssetPath(m_pxPhysicsGeometry->m_strSourcePath) : "";
 	xStream << strPhysicsGeometryPath;
 
 	// Version 3: Serialize 4 materials + splatmap path
@@ -306,7 +306,7 @@ void Zenith_TerrainComponent::WriteToDataStream(Zenith_DataStream& xStream) cons
 	}
 
 	// Splatmap path
-	std::string strSplatmapPath = m_xSplatmap.GetPath();
+	std::string strSplatmapPath = Zenith_AssetRegistry::NormalizeAssetPath(m_xSplatmap.GetPath());
 	xStream << strSplatmapPath;
 }
 
@@ -359,7 +359,7 @@ void Zenith_TerrainComponent::ReadFromDataStream(Zenith_DataStream& xStream)
 		xStream >> strSplatmapPath;
 		if (!strSplatmapPath.empty())
 		{
-			m_xSplatmap.SetPath(strSplatmapPath);
+			m_xSplatmap.SetPath(Zenith_AssetRegistry::NormalizeAssetPath(strSplatmapPath));
 		}
 	}
 	else if (uVersion >= 2)

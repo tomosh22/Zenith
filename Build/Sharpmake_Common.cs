@@ -68,10 +68,14 @@ public abstract class ZenithBaseProject : Project
 		else if (target.Platform == Platform.agde)
 		{
 			conf.Defines.Add("ZENITH_ANDROID");
-			// vulkan.hpp uses throw, but exceptions are disabled on Android
+			// vulkan.hpp: exceptions are disabled on Android, use ResultValue returns
 			conf.Defines.Add("VULKAN_HPP_NO_EXCEPTIONS");
 			// Set C++20 for AGDE (Options.Vc.Compiler.CppLanguageStandard.CPP20 only works for Win64)
 			conf.Options.Add(Options.Agde.Compiler.CppLanguageStandard.Cpp20);
+			// Vulkan 1.1 functions require API 30+ (Android 11)
+			conf.Options.Add(Options.Android.General.AndroidAPILevel.Android30);
+			// Cap VMA at Vulkan 1.1 - Android NDK libvulkan.so doesn't export 1.2/1.3 symbols
+			conf.Defines.Add("VMA_VULKAN_VERSION=1001000");
 		}
 
 		conf.Defines.Add("ZENITH_VULKAN");
@@ -125,7 +129,7 @@ public abstract class ZenithBaseProject : Project
 				conf.Options.Add(new Options.Vc.Linker.IgnoreSpecificLibraryNames("LIBCMT"));
 			}
 		}
-		// Android links against system Vulkan loader, no static libs needed
+		// Android links against system Vulkan loader via --sysroot (see Sharpmake_Games.cs)
 	}
 }
 

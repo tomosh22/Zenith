@@ -1,4 +1,5 @@
 #pragma once
+#include "AssetHandling/Zenith_AssetRegistry.h"
 #include "Maths/Zenith_Maths.h"
 #include "DataStream/Zenith_DataStream.h"
 #include <vector>
@@ -184,7 +185,7 @@ public:
 
 	// Source path for serialization
 	const std::string& GetSourcePath() const { return m_strSourcePath; }
-	void SetSourcePath(const std::string& strPath) { m_strSourcePath = strPath; }
+	void SetSourcePath(const std::string& strPath) { m_strSourcePath = Zenith_AssetRegistry::NormalizeAssetPath(strPath); }
 
 	// Serialization
 	void WriteToDataStream(Zenith_DataStream& xStream) const;

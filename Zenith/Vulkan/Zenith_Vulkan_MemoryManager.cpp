@@ -42,7 +42,7 @@ void Zenith_Vulkan_MemoryManager::InitialiseStagingBuffer()
 		.setUsage(vk::BufferUsageFlagBits::eTransferSrc)
 		.setSharingMode(vk::SharingMode::eExclusive);
 
-	vk::Buffer xBuffer = xDevice.createBuffer(xInfo);
+	vk::Buffer xBuffer = VkUnwrap(xDevice.createBuffer(xInfo));
 	s_xStagingBuffer = xBuffer;
 
 	vk::MemoryRequirements xRequirements = xDevice.getBufferMemoryRequirements(xBuffer);
@@ -62,8 +62,8 @@ void Zenith_Vulkan_MemoryManager::InitialiseStagingBuffer()
 		.setAllocationSize(ALIGN(xRequirements.size, 4096))
 		.setMemoryTypeIndex(memoryType);
 
-	s_xStagingMem = xDevice.allocateMemory(xAllocInfo);
-	xDevice.bindBufferMemory(xBuffer, s_xStagingMem, 0);
+	s_xStagingMem = VkUnwrap(xDevice.allocateMemory(xAllocInfo));
+	VkCheck(xDevice.bindBufferMemory(xBuffer, s_xStagingMem, 0));
 }
 
 void Zenith_Vulkan_MemoryManager::Initialise()
@@ -74,7 +74,9 @@ void Zenith_Vulkan_MemoryManager::Initialise()
 	xCreateInfo.device = Zenith_Vulkan::GetDevice();
 	xCreateInfo.physicalDevice = Zenith_Vulkan::GetPhysicalDevice();
 	xCreateInfo.instance = Zenith_Vulkan::GetInstance();
-#ifdef VK_VERSION_1_3
+#ifdef ZENITH_ANDROID
+	xCreateInfo.vulkanApiVersion = VK_API_VERSION_1_1;
+#elif defined(VK_VERSION_1_3)
 	xCreateInfo.vulkanApiVersion = VK_API_VERSION_1_3;
 #else
 #error check vulkan version
@@ -263,7 +265,7 @@ void Zenith_Vulkan_MemoryManager::EndFrame(bool bDefer /*= true*/)
 
 	if (bDefer)
 	{
-		s_xCommandBuffer.GetCurrentCmdBuffer().end();
+		VkCheck(s_xCommandBuffer.GetCurrentCmdBuffer().end());
 		Zenith_Vulkan::s_pxMemoryUpdateCmdBuf = &s_xCommandBuffer;
 	}
 	else
@@ -703,7 +705,7 @@ Flux_VRAMHandle Zenith_Vulkan_MemoryManager::CreateTextureVRAM(const void* pData
 			xStagingAlloc.m_uOffset = s_uNextFreeStagingOffset;
 			s_xStagingAllocations.PushBack(xStagingAlloc);
 
-			void* pMap = xDevice.mapMemory(s_xStagingMem, s_uNextFreeStagingOffset, ulDataSize);
+			void* pMap = VkUnwrap(xDevice.mapMemory(s_xStagingMem, s_uNextFreeStagingOffset, ulDataSize));
 			memcpy(pMap, pData, ulDataSize);
 			xDevice.unmapMemory(s_xStagingMem);
 			s_uNextFreeStagingOffset += ulDataSize;
@@ -766,7 +768,7 @@ Flux_RenderTargetView Zenith_Vulkan_MemoryManager::CreateRenderTargetView(Flux_V
 		.setFormat(xFormat)
 		.setSubresourceRange(xSubresourceRange);
 
-	vk::ImageView xVkView = xDevice.createImageView(xViewCreate);
+	vk::ImageView xVkView = VkUnwrap(xDevice.createImageView(xViewCreate));
 	xView.m_xImageViewHandle = RegisterImageView(xVkView);
 	return xView;
 }
@@ -797,7 +799,7 @@ Flux_RenderTargetView Zenith_Vulkan_MemoryManager::CreateRenderTargetViewForLaye
 		.setFormat(xFormat)
 		.setSubresourceRange(xSubresourceRange);
 
-	vk::ImageView xVkView = xDevice.createImageView(xViewCreate);
+	vk::ImageView xVkView = VkUnwrap(xDevice.createImageView(xViewCreate));
 	xView.m_xImageViewHandle = RegisterImageView(xVkView);
 	return xView;
 }
@@ -829,7 +831,7 @@ Flux_DepthStencilView Zenith_Vulkan_MemoryManager::CreateDepthStencilView(Flux_V
 		.setFormat(xFormat)
 		.setSubresourceRange(xSubresourceRange);
 
-	vk::ImageView xVkView = xDevice.createImageView(xViewCreate);
+	vk::ImageView xVkView = VkUnwrap(xDevice.createImageView(xViewCreate));
 	xView.m_xImageViewHandle = RegisterImageView(xVkView);
 	return xView;
 }
@@ -867,7 +869,7 @@ Flux_ShaderResourceView Zenith_Vulkan_MemoryManager::CreateShaderResourceView(Fl
 		.setFormat(xFormat)
 		.setSubresourceRange(xSubresourceRange);
 
-	vk::ImageView xVkView = xDevice.createImageView(xViewCreate);
+	vk::ImageView xVkView = VkUnwrap(xDevice.createImageView(xViewCreate));
 	xView.m_xImageViewHandle = RegisterImageView(xVkView);
 	xView.m_bIsDepthStencil = bIsDepth;
 	xView.m_uBaseMip = uBaseMip;    // Store mip level for barrier tracking
@@ -911,7 +913,7 @@ Flux_ShaderResourceView Zenith_Vulkan_MemoryManager::CreateShaderResourceViewFor
 		.setFormat(xFormat)
 		.setSubresourceRange(xSubresourceRange);
 
-	vk::ImageView xVkView = xDevice.createImageView(xViewCreate);
+	vk::ImageView xVkView = VkUnwrap(xDevice.createImageView(xViewCreate));
 	xView.m_xImageViewHandle = RegisterImageView(xVkView);
 	xView.m_bIsDepthStencil = bIsDepth;
 	xView.m_uBaseMip = uBaseMip;    // Store mip level for barrier tracking
@@ -960,7 +962,7 @@ Flux_UnorderedAccessView_Texture Zenith_Vulkan_MemoryManager::CreateUnorderedAcc
 		.setFormat(xFormat)
 		.setSubresourceRange(xSubresourceRange);
 
-	vk::ImageView xVkView = xDevice.createImageView(xViewCreate);
+	vk::ImageView xVkView = VkUnwrap(xDevice.createImageView(xViewCreate));
 	xView.m_xImageViewHandle = RegisterImageView(xVkView);
 	xView.m_uMipLevel = uMipLevel;  // Store mip level for barrier tracking
 	return xView;
@@ -1019,7 +1021,7 @@ void Zenith_Vulkan_MemoryManager::UploadBufferData(Flux_VRAMHandle xBufferHandle
 		xAllocation.m_uOffset = s_uNextFreeStagingOffset;
 		s_xStagingAllocations.PushBack(xAllocation);
 
-		void* pMap = xDevice.mapMemory(s_xStagingMem, s_uNextFreeStagingOffset, uSize);
+		void* pMap = VkUnwrap(xDevice.mapMemory(s_xStagingMem, s_uNextFreeStagingOffset, uSize));
 		memcpy(pMap, pData, uSize);
 		xDevice.unmapMemory(s_xStagingMem);
 		s_uNextFreeStagingOffset += uSize;
@@ -1153,7 +1155,7 @@ void Zenith_Vulkan_MemoryManager::UploadBufferDataAtOffset(Flux_VRAMHandle xBuff
 			}
 
 			// Copy data to staging buffer
-			void* pMap = xDevice.mapMemory(s_xStagingMem, 0, uChunkSize);
+			void* pMap = VkUnwrap(xDevice.mapMemory(s_xStagingMem, 0, uChunkSize));
 			memcpy(pMap, pSrcData + uCurrentSrcOffset, uChunkSize);
 			xDevice.unmapMemory(s_xStagingMem);
 
@@ -1335,7 +1337,7 @@ void Zenith_Vulkan_MemoryManager::UploadBufferDataChunked(vk::Buffer xDestBuffer
 		s_xStagingAllocations.PushBack(xAllocation);
 
 		// Map, copy, and unmap
-		void* pMap = xDevice.mapMemory(s_xStagingMem, 0, uChunkSize);
+		void* pMap = VkUnwrap(xDevice.mapMemory(s_xStagingMem, 0, uChunkSize));
 		memcpy(pMap, pSrcData + uCurrentOffset, uChunkSize);
 		xDevice.unmapMemory(s_xStagingMem);
 		s_uNextFreeStagingOffset = ALIGN(uChunkSize, 8);
@@ -1408,7 +1410,7 @@ void Zenith_Vulkan_MemoryManager::UploadTextureDataChunked(vk::Image xDestImage,
 		}
 
 		// Map, copy, and unmap
-		void* pMap = xDevice.mapMemory(s_xStagingMem, 0, uChunkSize);
+		void* pMap = VkUnwrap(xDevice.mapMemory(s_xStagingMem, 0, uChunkSize));
 		memcpy(pMap, pSrcData + uCurrentOffset, uChunkSize);
 		xDevice.unmapMemory(s_xStagingMem);
 

@@ -1,5 +1,6 @@
 #include "Zenith.h"
 #include "AssetHandling/Zenith_SkeletonAsset.h"
+#include "AssetHandling/Zenith_AssetRegistry.h"
 
 //------------------------------------------------------------------------------
 // Bone Serialization
@@ -97,7 +98,7 @@ Zenith_SkeletonAsset* Zenith_SkeletonAsset::LoadFromFile(const char* szPath)
 
 	Zenith_SkeletonAsset* pxAsset = new Zenith_SkeletonAsset();
 	pxAsset->ReadFromDataStream(xStream);
-	pxAsset->m_strSourcePath = szPath;
+	pxAsset->m_strSourcePath = Zenith_AssetRegistry::NormalizeAssetPath(szPath);
 
 	// Debug logging for skeleton
 	Zenith_Log(LOG_CATEGORY_ANIMATION, "Loaded %s with %u bones:", szPath, pxAsset->GetNumBones());

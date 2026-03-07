@@ -35,6 +35,8 @@ const char* Project_GetGameAssetsDirectory()
 #include "Editor/Zenith_EditorAutomation.h"
 #endif
 
+const char* Project_GetGameAssetsDir() { return GAME_ASSETS_DIR; }
+
 void Project_SetGraphicsOptions(Zenith_GraphicsOptions&)
 {
 }

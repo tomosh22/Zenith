@@ -41,7 +41,11 @@ namespace ZenithConfig {
 //   - Zenith/Flux/Flux_Buffers.h
 //   - Zenith/Editor/Zenith_Editor.cpp
 
+#ifdef ZENITH_ANDROID
+static constexpr uint32_t MAX_FRAMES_IN_FLIGHT = 4; // Android surfaces require >= 4 swapchain images
+#else
 static constexpr uint32_t MAX_FRAMES_IN_FLIGHT = 2;
+#endif
 
 
 // ============================================================================

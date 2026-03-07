@@ -306,7 +306,9 @@ void Zenith_SceneTests::RunAllTests()
 	TestTryGetMainCameraNull();
 
 	// NEW: Scene Query Edge Case Tests
+#ifndef ZENITH_ANDROID // Uses raw std::filesystem with relative paths
 	TestGetSceneByNameFilenameMatch();
+#endif
 	TestGetTotalSceneCount();
 
 	// NEW: Unity Parity & Bug Fix Tests
@@ -337,7 +339,9 @@ void Zenith_SceneTests::RunAllTests()
 	TestAsyncLoadDuringAsyncUnloadSameScene();
 	TestEntitySpawnDuringOnDestroy();
 	TestCallbackExceptionHandling();
+#ifndef ZENITH_ANDROID // Uses raw std::ofstream with relative paths
 	TestMalformedSceneFile();
+#endif
 	TestMaxConcurrentAsyncLoadWarning();
 
 	// Bug Fix Verification Tests (from 2026-02 code review)
@@ -682,12 +686,14 @@ void Zenith_SceneTests::RunAllTests()
 	TestReparentDuringForEachChild();
 	TestDeepHierarchyBuildModelMatrix();
 
+#ifndef ZENITH_ANDROID // Path canonicalization tests write/load files with unusual paths
 	// Cat 38: Path Canonicalization
 	TestCanonicalizeDotSlashPrefix();
 	TestCanonicalizeParentResolution();
 	TestCanonicalizeDoubleSlash();
 	TestCanonicalizeAlreadyCanonical();
 	TestGetSceneByPathNonCanonical();
+#endif
 
 	// Cat 39: Stress & Boundary
 	TestRapidCreateDestroyEntitySlotIntegrity();

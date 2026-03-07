@@ -1175,7 +1175,7 @@ void Zenith_AutomationTests::TestSetUIImageTexturePathStep()
 	Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
 	Zenith_UI::Zenith_UIImage* pxImage = xUI.FindElement<Zenith_UI::Zenith_UIImage>("TexImg");
 	Zenith_Assert(pxImage != nullptr, "Should find UI image 'TexImg'");
-	Zenith_Assert(pxImage->GetTexturePath() == ENGINE_ASSETS_DIR "Textures/Font/FontAtlas.ztxtr",
+	Zenith_Assert(pxImage->GetTexturePath() == "engine:Textures/Font/FontAtlas.ztxtr",
 		"Texture path should be set");
 
 	Zenith_EditorAutomation::ExecuteNextStep();

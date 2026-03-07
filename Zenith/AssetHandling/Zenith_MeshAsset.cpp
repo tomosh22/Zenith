@@ -137,7 +137,7 @@ Zenith_MeshAsset* Zenith_MeshAsset::LoadFromFile(const char* szPath)
 
 	Zenith_MeshAsset* pxAsset = new Zenith_MeshAsset();
 	pxAsset->ReadFromDataStream(xStream);
-	pxAsset->m_strSourcePath = szPath;
+	pxAsset->m_strSourcePath = Zenith_AssetRegistry::NormalizeAssetPath(szPath);
 
 	// Debug: Log mesh bounds and first few vertex positions
 	Zenith_Log(LOG_CATEGORY_MESH, "Loaded %s: %u verts, bounds=(%.2f,%.2f,%.2f)-(%.2f,%.2f,%.2f)",
@@ -198,7 +198,7 @@ void Zenith_MeshAsset::WriteToDataStream(Zenith_DataStream& xStream) const
 	xStream << bHasSkinning;
 	if (bHasSkinning)
 	{
-		xStream << m_strSkeletonPath;
+		xStream << Zenith_AssetRegistry::NormalizeAssetPath(m_strSkeletonPath);
 	}
 
 	// Vertex data - write presence flags and data
@@ -267,6 +267,7 @@ void Zenith_MeshAsset::ReadFromDataStream(Zenith_DataStream& xStream)
 	if (bHasSkinning)
 	{
 		xStream >> m_strSkeletonPath;
+		m_strSkeletonPath = Zenith_AssetRegistry::NormalizeAssetPath(m_strSkeletonPath);
 	}
 
 	// Read vertex arrays

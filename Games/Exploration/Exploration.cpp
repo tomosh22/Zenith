@@ -607,7 +607,7 @@ void Exploration_CreateWorldContent(Zenith_SceneData* pxSceneData)
 		// Set materials 2-3 and splatmap
 		xTerrain.GetMaterialHandle(2).Set(g_axTerrainMaterials[2].Get());
 		xTerrain.GetMaterialHandle(3).Set(g_axTerrainMaterials[3].Get());
-		xTerrain.GetSplatmapHandle().SetPath(std::string(GAME_ASSETS_DIR) + "Terrain/Splatmap" ZENITH_TEXTURE_EXT);
+		xTerrain.GetSplatmapHandle().SetPath("game:Terrain/Splatmap" ZENITH_TEXTURE_EXT);
 
 		Zenith_Log(LOG_CATEGORY_TERRAIN, "[Exploration] Terrain entity created successfully!");
 	};
@@ -656,6 +656,8 @@ const char* Project_GetGameAssetsDirectory()
 {
 	return GAME_ASSETS_DIR;
 }
+
+const char* Project_GetGameAssetsDir() { return GAME_ASSETS_DIR; }
 
 void Project_SetGraphicsOptions(Zenith_GraphicsOptions&)
 {

@@ -19,6 +19,10 @@ namespace Zenith_FileAccess
 	// Initialize platform-specific file access (e.g., set Android AAssetManager)
 	void InitialisePlatform(void* pPlatformData);
 
+	// Set the writable directory for file operations (Android: internalDataPath)
+	// Relative paths in WriteFile/ReadFile(filesystem)/FileExists(filesystem) will be resolved relative to this
+	void SetWritableDirectory(const char* szPath);
+
 	// Read file into allocated memory (caller must free with FreeFileData)
 	char* ReadFile(const char* szFilename);
 	char* ReadFile(const char* szFilename, uint64_t& ulSize);

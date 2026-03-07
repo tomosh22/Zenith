@@ -6,6 +6,6 @@
 #include "Android/Multithreading/Zenith_Android_Multithreading.h"
 #include "Android/Callstack/Zenith_Android_Callstack.h"
 
-#define Zenith_Mutex Zenith_Android_Mutex
-#define Zenith_Mutex_NoProfiling Zenith_Android_Mutex
+#define Zenith_Mutex Zenith_Android_Mutex_T<true>
+#define Zenith_Mutex_NoProfiling Zenith_Android_Mutex_T<false>
 #define Zenith_Semaphore Zenith_Android_Semaphore

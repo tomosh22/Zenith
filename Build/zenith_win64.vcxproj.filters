@@ -3804,6 +3804,9 @@
     <ClInclude Include="..\Zenith\UI\Zenith_UIText.h">
       <Filter>UI</Filter>
     </ClInclude>
+    <ClInclude Include="..\Zenith\UnitTests\Zenith_AITests.h">
+      <Filter>UnitTests</Filter>
+    </ClInclude>
     <ClInclude Include="..\Zenith\UnitTests\Zenith_AutomationTests.h">
       <Filter>UnitTests</Filter>
     </ClInclude>

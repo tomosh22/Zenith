@@ -211,13 +211,23 @@ std::string Zenith_AssetRegistry::ResolvePath(const std::string& strPrefixedPath
 	// Check for game: prefix
 	if (strPrefixedPath.size() > 5 && strPrefixedPath.compare(0, 5, "game:") == 0)
 	{
-		return s_strGameAssetsDir + "/" + strPrefixedPath.substr(5);
+		std::string strRelative = strPrefixedPath.substr(5);
+		if (s_strGameAssetsDir.empty())
+		{
+			return strRelative;
+		}
+		return s_strGameAssetsDir + "/" + strRelative;
 	}
 
 	// Check for engine: prefix
 	if (strPrefixedPath.size() > 7 && strPrefixedPath.compare(0, 7, "engine:") == 0)
 	{
-		return s_strEngineAssetsDir + "/" + strPrefixedPath.substr(7);
+		std::string strRelative = strPrefixedPath.substr(7);
+		if (s_strEngineAssetsDir.empty())
+		{
+			return strRelative;
+		}
+		return s_strEngineAssetsDir + "/" + strRelative;
 	}
 
 	// Check for procedural: prefix (these don't resolve to files)
@@ -226,8 +236,17 @@ std::string Zenith_AssetRegistry::ResolvePath(const std::string& strPrefixedPath
 		return strPrefixedPath; // Return as-is
 	}
 
-	// No prefix - treat as absolute path (legacy support or already absolute)
-	return strPrefixedPath;
+	// No prefix - treat as absolute or relative path
+	// Normalize backslashes to forward slashes for consistency
+	std::string strNormalized = strPrefixedPath;
+	for (char& c : strNormalized)
+	{
+		if (c == '\\')
+		{
+			c = '/';
+		}
+	}
+	return strNormalized;
 }
 
 std::string Zenith_AssetRegistry::MakeRelativePath(const std::string& strAbsolutePath)
@@ -270,6 +289,26 @@ std::string Zenith_AssetRegistry::MakeRelativePath(const std::string& strAbsolut
 
 	// Not in a known directory - return empty string
 	return "";
+}
+
+std::string Zenith_AssetRegistry::NormalizeAssetPath(const std::string& strPath)
+{
+	if (strPath.empty())
+	{
+		return strPath;
+	}
+
+	// Already has a recognized prefix - no normalization needed
+	if (strPath.compare(0, 5, "game:") == 0 ||
+		strPath.compare(0, 7, "engine:") == 0 ||
+		strPath.compare(0, 12, "procedural://") == 0)
+	{
+		return strPath;
+	}
+
+	// Try to convert absolute path to prefixed relative path
+	std::string strRelative = MakeRelativePath(strPath);
+	return strRelative.empty() ? strPath : strRelative;
 }
 
 void Zenith_AssetRegistry::Initialize()

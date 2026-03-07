@@ -4,16 +4,50 @@
 #include <android/asset_manager.h>
 #include <android/log.h>
 #include <fstream>
+#include <filesystem>
 
 #define LOGE(...) ((void)__android_log_print(ANDROID_LOG_ERROR, "Zenith_FileAccess", __VA_ARGS__))
 
 namespace Zenith_FileAccess
 {
 	static AAssetManager* s_pxAssetManager = nullptr;
+	static char s_acWritableDir[ZENITH_MAX_PATH_LENGTH] = { 0 };
 
 	void InitialisePlatform(void* pPlatformData)
 	{
 		s_pxAssetManager = static_cast<AAssetManager*>(pPlatformData);
+	}
+
+	void SetWritableDirectory(const char* szPath)
+	{
+		strncpy(s_acWritableDir, szPath, ZENITH_MAX_PATH_LENGTH - 1);
+		s_acWritableDir[ZENITH_MAX_PATH_LENGTH - 1] = '\0';
+		// Ensure trailing slash
+		size_t uLen = strlen(s_acWritableDir);
+		if (uLen > 0 && uLen < ZENITH_MAX_PATH_LENGTH - 1 && s_acWritableDir[uLen - 1] != '/')
+		{
+			s_acWritableDir[uLen] = '/';
+			s_acWritableDir[uLen + 1] = '\0';
+		}
+	}
+
+	static bool IsAbsolutePath(const char* szPath)
+	{
+		return szPath[0] == '/';
+	}
+
+	// Resolve relative paths to the writable directory
+	static void ResolveWritablePath(const char* szFilename, char* szOut, size_t uOutSize)
+	{
+		if (IsAbsolutePath(szFilename) || s_acWritableDir[0] == '\0')
+		{
+			strncpy(szOut, szFilename, uOutSize - 1);
+			szOut[uOutSize - 1] = '\0';
+		}
+		else
+		{
+			snprintf(szOut, uOutSize, "%s%s", s_acWritableDir, szFilename);
+		}
 	}
 
 	char* ReadFile(const char* szFilename)
@@ -38,11 +72,14 @@ namespace Zenith_FileAccess
 			}
 		}
 
-		// Fall back to filesystem (external storage)
-		std::ifstream xFile(szFilename, std::ios::ate | std::ios::binary);
+		// Fall back to filesystem (internal storage)
+		char acResolvedPath[ZENITH_MAX_PATH_LENGTH];
+		ResolveWritablePath(szFilename, acResolvedPath, ZENITH_MAX_PATH_LENGTH);
+
+		std::ifstream xFile(acResolvedPath, std::ios::ate | std::ios::binary);
 		if (!xFile.is_open())
 		{
-			LOGE("Failed to open file: %s", szFilename);
+			LOGE("Failed to open file: %s (resolved: %s)", szFilename, acResolvedPath);
 			Zenith_Assert(false, "Failed to open file %s", szFilename);
 			return nullptr;
 		}
@@ -62,14 +99,24 @@ namespace Zenith_FileAccess
 
 	void WriteFile(const char* szFilename, const void* const pData, const uint64_t ulSize)
 	{
-		// Writing is only supported to external storage, not APK assets
-		char acFixedFilename[ZENITH_MAX_PATH_LENGTH]{ 0 };
-		// Use destination buffer size, not source string length, to prevent buffer overflow
-		strncpy(acFixedFilename, szFilename, ZENITH_MAX_PATH_LENGTH - 1);
-		acFixedFilename[ZENITH_MAX_PATH_LENGTH - 1] = '\0';  // Ensure null termination
-		Zenith_StringUtil::ReplaceAllChars(acFixedFilename, '\\', '/');
+		// Resolve relative paths to writable internal storage
+		char acResolvedPath[ZENITH_MAX_PATH_LENGTH]{ 0 };
+		ResolveWritablePath(szFilename, acResolvedPath, ZENITH_MAX_PATH_LENGTH);
+		Zenith_StringUtil::ReplaceAllChars(acResolvedPath, '\\', '/');
 
-		std::ofstream xFile(acFixedFilename, std::ios::trunc | std::ios::binary);
+		// Create parent directories if needed
+		char acDirPath[ZENITH_MAX_PATH_LENGTH];
+		strncpy(acDirPath, acResolvedPath, ZENITH_MAX_PATH_LENGTH - 1);
+		acDirPath[ZENITH_MAX_PATH_LENGTH - 1] = '\0';
+		char* pLastSlash = strrchr(acDirPath, '/');
+		if (pLastSlash)
+		{
+			*pLastSlash = '\0';
+			std::error_code xEC;
+			std::filesystem::create_directories(acDirPath, xEC);
+		}
+
+		std::ofstream xFile(acResolvedPath, std::ios::trunc | std::ios::binary);
 		if (!xFile.is_open())
 		{
 			LOGE("Failed to open file for writing: %s", szFilename);
@@ -95,7 +142,9 @@ namespace Zenith_FileAccess
 		}
 
 		// Fall back to filesystem check
-		std::ifstream xFile(szFilename);
+		char acResolvedPath[ZENITH_MAX_PATH_LENGTH];
+		ResolveWritablePath(szFilename, acResolvedPath, ZENITH_MAX_PATH_LENGTH);
+		std::ifstream xFile(acResolvedPath);
 		return xFile.good();
 	}
 }

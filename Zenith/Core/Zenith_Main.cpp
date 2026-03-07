@@ -33,6 +33,7 @@ extern void GenerateTestAssets();
 #endif
 
 extern void Project_SetGraphicsOptions(Zenith_GraphicsOptions& xOptions);
+extern const char* Project_GetGameAssetsDir();
 extern void Project_RegisterScriptBehaviours();
 extern void Project_Shutdown();
 
@@ -49,16 +50,13 @@ void Zenith_Core::Zenith_Init()
 	// CRITICAL: Memory tracking must be initialized FIRST to capture all allocations
 	Zenith_MemoryManagement::Initialise();
 
-	Zenith_Profiling::Initialise();
 	Zenith_Multithreading::RegisterThread(true);
+	Zenith_Profiling::Initialise();
 	Zenith_TaskSystem::Inititalise();
 
 	// Set asset directories before registry initialization
-#ifdef GAME_ASSETS_DIR
-	Zenith_AssetRegistry::SetGameAssetsDir(GAME_ASSETS_DIR);
-#else
-	Zenith_AssetRegistry::SetGameAssetsDir("./Assets/");
-#endif
+	// Game assets dir comes from the game project (each game defines GAME_ASSETS_DIR)
+	Zenith_AssetRegistry::SetGameAssetsDir(Project_GetGameAssetsDir());
 #ifdef ENGINE_ASSETS_DIR
 	Zenith_AssetRegistry::SetEngineAssetsDir(ENGINE_ASSETS_DIR);
 #else
@@ -74,8 +72,11 @@ void Zenith_Core::Zenith_Init()
 	GenerateTestAssets();      // Generate procedural test assets (StickFigure, Tree)
 #endif
 
+	Zenith_Log(LOG_CATEGORY_CORE, "Zenith_Init: Flux::EarlyInitialise...");
 	Flux::EarlyInitialise();
+	Zenith_Log(LOG_CATEGORY_CORE, "Zenith_Init: Physics::Initialise...");
 	Zenith_Physics::Initialise();
+	Zenith_Log(LOG_CATEGORY_CORE, "Zenith_Init: SceneManager::Initialise...");
 	Zenith_SceneManager::Initialise();
 
 	//#TO_TODO: move somewhere sensible
@@ -98,10 +99,11 @@ void Zenith_Core::Zenith_Init()
 		}
 
 		// Load water normal texture
-		Flux_Graphics::s_pxWaterNormalTexture = Zenith_AssetRegistry::Get().Get<Zenith_TextureAsset>(ENGINE_ASSETS_DIR"Textures/water/normal" ZENITH_TEXTURE_EXT);
+		Flux_Graphics::s_pxWaterNormalTexture = Zenith_AssetRegistry::Get().Get<Zenith_TextureAsset>(ENGINE_ASSETS_DIR"Textures/Water/normal" ZENITH_TEXTURE_EXT);
 
 		Flux_MemoryManager::EndFrame(false);
 	}
+	Zenith_Log(LOG_CATEGORY_CORE, "Zenith_Init: Flux::LateInitialise...");
 	Flux::LateInitialise();
 
 	// Apply project graphics options

@@ -11,12 +11,14 @@ if %ERRORLEVEL% NEQ 0 (
     exit /b 1
 )
 
-REM Fix AGDE C++ standard: Sharpmake generates "cpp20" but AGDE only accepts "cpp2a"
-powershell -Command "Get-ChildItem -Path '%~dp0..' -Recurse -Filter '*_agde.vcxproj' | ForEach-Object { (Get-Content $_.FullName) -replace '<CppLanguageStandard>cpp20</CppLanguageStandard>','<CppLanguageStandard>cpp2a</CppLanguageStandard>' | Set-Content $_.FullName }"
+REM Fix AGDE vcxproj: C++ standard (cpp20->cpp2a) and inject UBSan flags for debug builds
+powershell -ExecutionPolicy Bypass -File "%~dp0fix_agde_vcxproj.ps1"
 
 echo.
 echo Solution files generated successfully.
 echo Generated solutions:
 echo   - zenith_win64.sln (Windows)
 echo   - zenith_agde.sln (Android)
+echo.
+echo AGDE debug builds have UBSan enabled (-fsanitize=undefined)
 pause

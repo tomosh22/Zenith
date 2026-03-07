@@ -148,7 +148,7 @@ static void InitialiseSampler(Zenith_Vulkan_Sampler& xSampler, vk::SamplerAddres
 		.setMipmapMode(vk::SamplerMipmapMode::eLinear)
 		.setMaxLod(FLT_MAX);
 
-	xSampler.m_xSampler = xDevice.createSampler(xInfo);
+	xSampler.m_xSampler = VkUnwrap(xDevice.createSampler(xInfo));
 }
 
 void Zenith_Vulkan_Sampler::InitialiseRepeat(Zenith_Vulkan_Sampler& xSampler)

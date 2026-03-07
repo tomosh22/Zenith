@@ -1230,7 +1230,10 @@ private:
 		}
 
 		if (axFloorPositions.size() < 3)
+		{
+			Zenith_Profiling::EndProfile(ZENITH_PROFILE_INDEX__TILEPUZZLE_GRID_SETUP);
 			return false;
+		}
 
 		std::shuffle(axFloorPositions.begin(), axFloorPositions.end(), xRng);
 
@@ -1337,7 +1340,10 @@ private:
 			}
 
 			if (!bPlaced)
+			{
+				Zenith_Profiling::EndProfile(ZENITH_PROFILE_INDEX__TILEPUZZLE_GRID_SETUP);
 				return false;
+			}
 		}
 
 		// ---- Phase 2: Place cats ----
@@ -1374,7 +1380,10 @@ private:
 					break;
 				}
 				if (!bPlaced)
+				{
+					Zenith_Profiling::EndProfile(ZENITH_PROFILE_INDEX__TILEPUZZLE_GRID_SETUP);
 					return false;
+				}
 			}
 		}
 
@@ -1397,7 +1406,10 @@ private:
 				}
 			}
 			if (eColor == TILEPUZZLE_COLOR_NONE)
+			{
+				Zenith_Profiling::EndProfile(ZENITH_PROFILE_INDEX__TILEPUZZLE_GRID_SETUP);
 				return false;
+			}
 
 			TilePuzzleCatData xCat;
 			xCat.eColor = eColor;
@@ -1434,7 +1446,10 @@ private:
 					}
 				}
 				if (iTargetCatIdx < 0)
+				{
+					Zenith_Profiling::EndProfile(ZENITH_PROFILE_INDEX__TILEPUZZLE_GRID_SETUP);
 					return false;
+				}
 
 				const TilePuzzleCatData& xTargetCat = xLevelOut.axCats[iTargetCatIdx];
 
@@ -1588,7 +1603,10 @@ private:
 		}
 
 		if (axDraggableIndices.empty())
+		{
+			Zenith_Profiling::EndProfile(ZENITH_PROFILE_INDEX__TILEPUZZLE_SCRAMBLE);
 			return false;
+		}
 
 		// Build cat state array
 		Zenith_Vector<TilePuzzle_Rules::CatState> axCatStates;
@@ -1627,7 +1645,11 @@ private:
 				xRng,
 				uBFSDepth);
 			if (!bOK)
+			{
+				Zenith_Profiling::EndProfile(ZENITH_PROFILE_INDEX__TILEPUZZLE_SCRAMBLE);
 				return false;
+			}
+			Zenith_Profiling::EndProfile(ZENITH_PROFILE_INDEX__TILEPUZZLE_SCRAMBLE);
 			uSuccessfulMovesOut = uBFSDepth;
 			return true;
 		}

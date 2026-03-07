@@ -2,7 +2,14 @@
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "vulkan/vulkan.hpp"
 #pragma warning(push, 0)
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wnullability-completeness"
+#endif
 #include "vma/vk_mem_alloc.h"
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
 #pragma warning(pop)
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
 

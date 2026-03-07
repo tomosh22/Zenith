@@ -1,5 +1,6 @@
 #pragma once
 #include "AssetHandling/Zenith_Asset.h"
+#include "AssetHandling/Zenith_AssetRegistry.h"
 #include "Maths/Zenith_Maths.h"
 #include "Collections/Zenith_Vector.h"
 #include "DataStream/Zenith_DataStream.h"
@@ -129,7 +130,7 @@ public:
 	/**
 	 * Set the skeleton path for skinned meshes
 	 */
-	void SetSkeletonPath(const std::string& strPath) { m_strSkeletonPath = strPath; }
+	void SetSkeletonPath(const std::string& strPath) { m_strSkeletonPath = Zenith_AssetRegistry::NormalizeAssetPath(strPath); }
 
 	/**
 	 * Compute bounding box from vertex positions

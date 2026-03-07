@@ -11,10 +11,12 @@
 //#TO purely for the static assert in SetIndexBuffer
 #include "Flux/MeshGeometry/Flux_MeshGeometry.h"
 
+#ifdef ZENITH_TOOLS
 #include "Memory/Zenith_MemoryManagement_Disabled.h"
 #include "imgui.h"
 #include "backends/imgui_impl_vulkan.h"
 #include "Memory/Zenith_MemoryManagement_Enabled.h"
+#endif
 
 void Zenith_Vulkan_CommandBuffer::Initialise(CommandType eType /*= COMMANDTYPE_GRAPHICS*/)
 {
@@ -24,7 +26,7 @@ void Zenith_Vulkan_CommandBuffer::Initialise(CommandType eType /*= COMMANDTYPE_G
 	xAllocInfo.commandPool = Zenith_Vulkan::GetCommandPool(eType);
 	xAllocInfo.level = vk::CommandBufferLevel::ePrimary;
 	xAllocInfo.commandBufferCount = MAX_FRAMES_IN_FLIGHT;
-	m_xCmdBuffers = xDevice.allocateCommandBuffers(xAllocInfo);
+	m_xCmdBuffers = VkUnwrap(xDevice.allocateCommandBuffers(xAllocInfo));
 }
 
 void Zenith_Vulkan_CommandBuffer::InitialiseWithCustomPool(const vk::CommandPool& xCustomPool, u_int uWorkerIndex, CommandType eType /*= COMMANDTYPE_GRAPHICS*/)
@@ -36,7 +38,7 @@ void Zenith_Vulkan_CommandBuffer::InitialiseWithCustomPool(const vk::CommandPool
 	xAllocInfo.commandPool = xCustomPool;
 	xAllocInfo.level = vk::CommandBufferLevel::ePrimary;
 	xAllocInfo.commandBufferCount = MAX_FRAMES_IN_FLIGHT;
-	m_xCmdBuffers = xDevice.allocateCommandBuffers(xAllocInfo);
+	m_xCmdBuffers = VkUnwrap(xDevice.allocateCommandBuffers(xAllocInfo));
 }
 
 void Zenith_Vulkan_CommandBuffer::BeginRecording()
@@ -48,7 +50,7 @@ void Zenith_Vulkan_CommandBuffer::BeginRecording()
 	m_xCurrentCmdBuffer = m_xCmdBuffers[uFrameIndex];
 	vk::CommandBufferBeginInfo xBeginInfo;
 	xBeginInfo.setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit);
-	m_xCurrentCmdBuffer.begin(xBeginInfo);
+	VkCheck(m_xCurrentCmdBuffer.begin(xBeginInfo));
 	m_uCurrentBindFreq = FLUX_MAX_DESCRIPTOR_SET_LAYOUTS;
 	m_uDescriptorDirty = ~0u;
 	m_pxCurrentPipeline = nullptr;  // Reset pipeline to catch any stale access
@@ -78,7 +80,7 @@ void Zenith_Vulkan_CommandBuffer::EndRecording(bool bEndPass /*= true*/)
 		m_xCurrentCmdBuffer.endRenderPass();
 		m_xCurrentRenderPass = VK_NULL_HANDLE;
 	}
-	m_xCurrentCmdBuffer.end();
+	VkCheck(m_xCurrentCmdBuffer.end());
 	m_uCurrentBindFreq = FLUX_MAX_DESCRIPTOR_SET_LAYOUTS;
 }
 
@@ -91,7 +93,7 @@ void Zenith_Vulkan_CommandBuffer::EndAndCpuWait(bool bEndPass)
 		m_xCurrentCmdBuffer.endRenderPass();
 		m_xCurrentRenderPass = VK_NULL_HANDLE;
 	}
-	m_xCurrentCmdBuffer.end();
+	VkCheck(m_xCurrentCmdBuffer.end());
 
 	vk::PipelineStageFlags eWaitStages = vk::PipelineStageFlagBits::eTransfer;
 
@@ -102,16 +104,16 @@ void Zenith_Vulkan_CommandBuffer::EndAndCpuWait(bool bEndPass)
 		.setSignalSemaphoreCount(0);
 
 	vk::FenceCreateInfo fenceInfo;
-	vk::Fence xFence = xDevice.createFence(fenceInfo);
+	vk::Fence xFence = VkUnwrap(xDevice.createFence(fenceInfo));
 
-	Zenith_Vulkan::GetQueue(m_eCommandType).submit(xSubmitInfo, xFence);
+	VkCheck(Zenith_Vulkan::GetQueue(m_eCommandType).submit(xSubmitInfo, xFence));
 
 	vk::Result eResult = xDevice.waitForFences(1, &xFence, VK_TRUE, UINT64_MAX);
 	Zenith_Assert(eResult == vk::Result::eSuccess, "Failed to wait for fence");
 	xDevice.destroyFence(xFence);
 
 	// Reset the command buffer so it can be recorded again
-	m_xCurrentCmdBuffer.reset(vk::CommandBufferResetFlags());
+	VkCheck(m_xCurrentCmdBuffer.reset(vk::CommandBufferResetFlags()));
 }
 
 template<typename T>
@@ -188,8 +190,7 @@ void Zenith_Vulkan_CommandBuffer::UpdateDescriptorSets()
 	Zenith_Profiling::BeginProfile(ZENITH_PROFILE_INDEX__VULKAN_UPDATE_DESCRIPTOR_SETS);
 	const vk::Device& xDevice = Zenith_Vulkan::GetDevice();
 	
-	// Validate this pointer and command buffer state
-	Zenith_Assert(this != nullptr, "UpdateDescriptorSets called with null this pointer");
+	// Validate command buffer state
 	
 	// Validate worker index is in range
 	Zenith_Assert(m_uWorkerIndex < FLUX_NUM_WORKER_THREADS, 
@@ -232,7 +233,7 @@ void Zenith_Vulkan_CommandBuffer::UpdateDescriptorSets()
 				.setDescriptorPool(Zenith_Vulkan::GetPerFrameDescriptorPool(m_uWorkerIndex))
 				.setDescriptorSetCount(1)
 				.setPSetLayouts(&xLayout);
-			m_axCurrentDescSet[uDescSet] = xDevice.allocateDescriptorSets(xInfo)[0];
+			m_axCurrentDescSet[uDescSet] = VkUnwrap(xDevice.allocateDescriptorSets(xInfo))[0];
 			#ifdef ZENITH_DEBUG_VARIABLES
 			Zenith_Vulkan::IncrementDescriptorSetAllocations();
 			#endif
@@ -401,7 +402,15 @@ void Zenith_Vulkan_CommandBuffer::DrawIndexedIndirectCount(const Flux_IndirectBu
 		if (!pxIndirectVRAM || !pxCountVRAM) return;  // Safety guard for release builds
 		const vk::Buffer xIndirectBuffer = pxIndirectVRAM->GetBuffer();
 		const vk::Buffer xCountBuffer = pxCountVRAM->GetBuffer();
+#ifdef ZENITH_ANDROID
+		// Vulkan 1.2 functions aren't in Android's libvulkan.so - load dynamically
+		static PFN_vkCmdDrawIndexedIndirectCount pfnDrawIndexedIndirectCount = reinterpret_cast<PFN_vkCmdDrawIndexedIndirectCount>(
+			vkGetDeviceProcAddr(static_cast<VkDevice>(Zenith_Vulkan::GetDevice()), "vkCmdDrawIndexedIndirectCount"));
+		Zenith_Assert(pfnDrawIndexedIndirectCount != nullptr, "vkCmdDrawIndexedIndirectCount not supported");
+		pfnDrawIndexedIndirectCount(static_cast<VkCommandBuffer>(m_xCurrentCmdBuffer), static_cast<VkBuffer>(xIndirectBuffer), uIndirectOffset, static_cast<VkBuffer>(xCountBuffer), uCountOffset, uMaxDrawCount, uStride);
+#else
 		m_xCurrentCmdBuffer.drawIndexedIndirectCount(xIndirectBuffer, uIndirectOffset, xCountBuffer, uCountOffset, uMaxDrawCount, uStride);
+#endif
 	}
 }
 
@@ -419,6 +428,7 @@ void Zenith_Vulkan_CommandBuffer::BeginRenderPass(Flux_TargetSetup& xTargetSetup
 	}
 
 	m_xCurrentRenderPass = Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(xTargetSetup, eColourLoad, STORE_ACTION_STORE, eDepthStencilLoad, STORE_ACTION_STORE, RENDER_TARGET_USAGE_RENDERTARGET);
+	Zenith_Assert(m_xCurrentRenderPass, "BeginRenderPass: TargetSetupToRenderPass returned null render pass");
 
 	uint32_t uWidth, uHeight;
 	if (xTargetSetup.m_axColourAttachments[0].m_xSurfaceInfo.m_eFormat != TEXTURE_FORMAT_NONE)
@@ -827,19 +837,21 @@ void Zenith_Vulkan_CommandBuffer::ImageBarrier(Flux_Texture* pxTexture, uint32_t
 
 void Zenith_Vulkan_CommandBuffer::RenderImGui()
 {
+#ifdef ZENITH_TOOLS
 	// Get ImGui draw data
 	ImDrawData* pxDrawData = ImGui::GetDrawData();
 	if (!pxDrawData || pxDrawData->TotalVtxCount == 0)
 	{
 		return;  // Nothing to render
 	}
-	
+
 	// ImGui rendering must happen inside an active render pass
 	// The render pass should have been begun by BeginRenderPass() before this is called
 	Zenith_Assert(m_xCurrentRenderPass != VK_NULL_HANDLE, "ImGui rendering requires an active render pass");
-	
+
 	// Call ImGui's Vulkan rendering backend with raw Vulkan command buffer handle
 	ImGui_ImplVulkan_RenderDrawData(pxDrawData, static_cast<VkCommandBuffer>(m_xCurrentCmdBuffer));
+#endif
 }
 
 #ifdef ZENITH_DEBUG
