@@ -201,6 +201,52 @@ static void TransitionColorTargets(Zenith_Vulkan_CommandBuffer& xCommandBuffer, 
 	}
 }
 
+// Transition depth/stencil target between layouts with proper access masks for memory barriers
+static void TransitionDepthStencilTarget(Zenith_Vulkan_CommandBuffer& xCommandBuffer, const Flux_TargetSetup& xTargetSetup,
+	vk::ImageLayout eOldLayout, vk::ImageLayout eNewLayout, vk::AccessFlags eSrcAccessMask, vk::AccessFlags eDstAccessMask,
+	vk::PipelineStageFlags eSrcStage, vk::PipelineStageFlags eDstStage)
+{
+	if (!xTargetSetup.m_pxDepthStencil)
+	{
+		return;
+	}
+
+	Flux_VRAMHandle xDepthVRAMHandle = xTargetSetup.m_pxDepthStencil->m_xVRAMHandle;
+	if (xDepthVRAMHandle.AsUInt() == UINT32_MAX)
+	{
+		return;
+	}
+
+	Zenith_Vulkan_VRAM* pxDepthVRAM = Zenith_Vulkan::GetVRAM(xDepthVRAMHandle);
+	if (!pxDepthVRAM)
+	{
+		return;
+	}
+
+	// Derive aspect mask from the Vulkan format - include stencil for combined depth/stencil formats
+	vk::Format eVkFormat = Zenith_Vulkan::ConvertToVkFormat_DepthStencil(xTargetSetup.m_pxDepthStencil->m_xSurfaceInfo.m_eFormat);
+	vk::ImageAspectFlags eAspectFlags = vk::ImageAspectFlagBits::eDepth;
+	if (eVkFormat == vk::Format::eD16UnormS8Uint || eVkFormat == vk::Format::eD24UnormS8Uint || eVkFormat == vk::Format::eD32SfloatS8Uint)
+	{
+		eAspectFlags |= vk::ImageAspectFlagBits::eStencil;
+	}
+
+	vk::ImageMemoryBarrier xBarrier = vk::ImageMemoryBarrier()
+		.setImage(pxDepthVRAM->GetImage())
+		.setOldLayout(eOldLayout)
+		.setNewLayout(eNewLayout)
+		.setSrcAccessMask(eSrcAccessMask)
+		.setDstAccessMask(eDstAccessMask)
+		.setSubresourceRange(vk::ImageSubresourceRange(eAspectFlags, 0, 1, 0, 1));
+
+	xCommandBuffer.GetCurrentCmdBuffer().pipelineBarrier(
+		eSrcStage, eDstStage, vk::DependencyFlags(),
+		0, nullptr,
+		0, nullptr,
+		1, &xBarrier
+	);
+}
+
 static void TransitionTargetsForRenderPass(Zenith_Vulkan_CommandBuffer& xCommandBuffer, const Flux_TargetSetup& xTargetSetup,
 	vk::PipelineStageFlags eSrcStage, vk::PipelineStageFlags eDstStage, bool bClear)
 {
@@ -209,10 +255,19 @@ static void TransitionTargetsForRenderPass(Zenith_Vulkan_CommandBuffer& xCommand
 	vk::AccessFlags eSrcAccess = bClear ? vk::AccessFlags() : vk::AccessFlagBits::eShaderRead;
 	TransitionColorTargets(xCommandBuffer, xTargetSetup, eOldLayout, vk::ImageLayout::eColorAttachmentOptimal,
 		eSrcAccess, vk::AccessFlagBits::eColorAttachmentWrite, eSrcStage, eDstStage);
+
+	// When loading depth (not clearing), ensure prior shader reads complete and depth data
+	// is visible for depth attachment access. Needed when render orders split across workers.
+	if (!bClear)
+	{
+		TransitionDepthStencilTarget(xCommandBuffer, xTargetSetup,
+			vk::ImageLayout::eDepthStencilReadOnlyOptimal, vk::ImageLayout::eDepthStencilReadOnlyOptimal,
+			vk::AccessFlagBits::eShaderRead, vk::AccessFlagBits::eDepthStencilAttachmentRead | vk::AccessFlagBits::eDepthStencilAttachmentWrite,
+			eSrcStage, eDstStage);
+	}
 }
 
-// Transition color targets back to ShaderReadOnlyOptimal after render pass
-// Depth stays in DepthStencilReadOnlyOptimal for shader sampling (that's the render pass final layout)
+// Transition targets back to read-optimal layouts after render pass
 static void TransitionTargetsAfterRenderPass(Zenith_Vulkan_CommandBuffer& xCommandBuffer, const Flux_TargetSetup& xTargetSetup,
 	vk::PipelineStageFlags eSrcStage, vk::PipelineStageFlags eDstStage)
 {
@@ -220,9 +275,14 @@ static void TransitionTargetsAfterRenderPass(Zenith_Vulkan_CommandBuffer& xComma
 	TransitionColorTargets(xCommandBuffer, xTargetSetup, vk::ImageLayout::eColorAttachmentOptimal,
 		vk::ImageLayout::eShaderReadOnlyOptimal, vk::AccessFlagBits::eColorAttachmentWrite, vk::AccessFlagBits::eShaderRead, eSrcStage, eDstStage);
 
-	// NOTE: Depth stays in DepthStencilReadOnlyOptimal (the render pass final layout)
-	// This is the correct layout for sampling depth textures in shaders
-	// The descriptor binding code now uses DepthStencilReadOnlyOptimal for depth SRVs
+	// Flush depth writes for shader sampling
+	// The render pass finalLayout already transitions depth to eDepthStencilReadOnlyOptimal,
+	// but without an explicit memory barrier, depth tile data may not be flushed to VRAM
+	// on mobile tiled renderers (Adreno/Mali), causing stale depth reads in deferred shading
+	TransitionDepthStencilTarget(xCommandBuffer, xTargetSetup,
+		vk::ImageLayout::eDepthStencilReadOnlyOptimal, vk::ImageLayout::eDepthStencilReadOnlyOptimal,
+		vk::AccessFlagBits::eDepthStencilAttachmentWrite, vk::AccessFlagBits::eShaderRead,
+		eSrcStage, eDstStage);
 }
 
 const vk::DescriptorPool& Zenith_Vulkan::GetPerFrameDescriptorPool(u_int uWorkerIndex)
