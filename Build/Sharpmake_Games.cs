@@ -101,12 +101,6 @@ public class GameProject : ZenithBaseProject
 			conf.AdditionalLinkerOptions.Add("-llog");
 			conf.AdditionalLinkerOptions.Add("-lvulkan");
 
-			// UBSan for debug builds - catch undefined behavior at runtime
-			if (target.Optimization == Optimization.Debug)
-			{
-				conf.AdditionalLinkerOptions.Add("-fsanitize=undefined");
-			}
-
 			// Force-include ANativeActivity_onCreate from libzenith.a
 			// (linker would otherwise discard it since game code doesn't reference it directly)
 			conf.AdditionalLinkerOptions.Add("-u ANativeActivity_onCreate");

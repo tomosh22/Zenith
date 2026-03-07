@@ -149,9 +149,9 @@ DEBUGVAR bool dbg_bUseDescSetCache = true;
 DEBUGVAR bool dbg_bOnlyUpdateDirtyDescriptors = true;
 DEBUGVAR u_int dbg_uNumDescSetAllocations = 0;
 
-// Transition color targets to ColorAttachmentOptimal and ensure depth is in ReadOnlyOptimal before render pass
+// Transition color targets between layouts with proper access masks for memory barriers
 static void TransitionColorTargets(Zenith_Vulkan_CommandBuffer& xCommandBuffer, const Flux_TargetSetup& xTargetSetup,
-	vk::ImageLayout eOldLayout, vk::ImageLayout eNewLayout, vk::AccessFlags eAccessMask,
+	vk::ImageLayout eOldLayout, vk::ImageLayout eNewLayout, vk::AccessFlags eSrcAccessMask, vk::AccessFlags eDstAccessMask,
 	vk::PipelineStageFlags eSrcStage, vk::PipelineStageFlags eDstStage)
 {
 	vk::ImageMemoryBarrier axBarriers[FLUX_MAX_TARGETS];
@@ -177,7 +177,8 @@ static void TransitionColorTargets(Zenith_Vulkan_CommandBuffer& xCommandBuffer, 
 						.setImage(pxVRAM->GetImage())
 						.setOldLayout(eOldLayout)
 						.setNewLayout(eNewLayout)
-						.setDstAccessMask(eAccessMask);
+						.setSrcAccessMask(eSrcAccessMask)
+						.setDstAccessMask(eDstAccessMask);
 
 					uNumBarriers++;
 				}
@@ -205,13 +206,9 @@ static void TransitionTargetsForRenderPass(Zenith_Vulkan_CommandBuffer& xCommand
 {
 	// Transition color attachments to ColorAttachmentOptimal
 	vk::ImageLayout eOldLayout = bClear ? vk::ImageLayout::eUndefined : vk::ImageLayout::eShaderReadOnlyOptimal;
+	vk::AccessFlags eSrcAccess = bClear ? vk::AccessFlags() : vk::AccessFlagBits::eShaderRead;
 	TransitionColorTargets(xCommandBuffer, xTargetSetup, eOldLayout, vk::ImageLayout::eColorAttachmentOptimal,
-		vk::AccessFlagBits::eColorAttachmentWrite, eSrcStage, eDstStage);
-
-	// Depth stays in DepthStencilReadOnlyOptimal between render passes
-	// The render pass initial layout is DepthStencilReadOnlyOptimal (when loading) or Undefined (when clearing)
-	// No explicit transition needed - depth is already in the correct layout from previous render pass
-	// (or will be transitioned from Undefined by the render pass itself when clearing)
+		eSrcAccess, vk::AccessFlagBits::eColorAttachmentWrite, eSrcStage, eDstStage);
 }
 
 // Transition color targets back to ShaderReadOnlyOptimal after render pass
@@ -219,9 +216,9 @@ static void TransitionTargetsForRenderPass(Zenith_Vulkan_CommandBuffer& xCommand
 static void TransitionTargetsAfterRenderPass(Zenith_Vulkan_CommandBuffer& xCommandBuffer, const Flux_TargetSetup& xTargetSetup,
 	vk::PipelineStageFlags eSrcStage, vk::PipelineStageFlags eDstStage)
 {
-	// Transition color attachments
+	// Transition color attachments - flush color writes before shader reads
 	TransitionColorTargets(xCommandBuffer, xTargetSetup, vk::ImageLayout::eColorAttachmentOptimal,
-		vk::ImageLayout::eShaderReadOnlyOptimal, vk::AccessFlagBits::eShaderRead, eSrcStage, eDstStage);
+		vk::ImageLayout::eShaderReadOnlyOptimal, vk::AccessFlagBits::eColorAttachmentWrite, vk::AccessFlagBits::eShaderRead, eSrcStage, eDstStage);
 
 	// NOTE: Depth stays in DepthStencilReadOnlyOptimal (the render pass final layout)
 	// This is the correct layout for sampling depth textures in shaders
@@ -533,11 +530,7 @@ void Zenith_Vulkan::CreateInstance()
 		.setApplicationVersion(VK_MAKE_VERSION(1, 0, 0))
 		.setPEngineName("Zenith")
 		.setEngineVersion(VK_MAKE_VERSION(1, 0, 0))
-#ifdef ZENITH_ANDROID
-		.setApiVersion(VK_API_VERSION_1_1);
-#else
 		.setApiVersion(VK_API_VERSION_1_3);
-#endif
 
 	// Get platform-specific Vulkan extensions
 	std::vector<const char*> xExtensions = Zenith_Vulkan_Platform::GetRequiredInstanceExtensions();
@@ -1151,11 +1144,38 @@ void Zenith_Vulkan_PerFrame::BeginFrame()
 		xDevice.resetDescriptorPool(xPool);
 	}
 	Zenith_Profiling::EndProfile(ZENITH_PROFILE_INDEX__VULKAN_RESET_DESCRIPTOR_POOLS);
+	// Destroy framebuffers and render passes from the previous use of this frame slot
+	for (vk::Framebuffer& xFB : m_axPendingFramebuffers)
+	{
+		xDevice.destroyFramebuffer(xFB);
+	}
+	m_axPendingFramebuffers.clear();
+
+	for (vk::RenderPass& xRP : m_axPendingRenderPasses)
+	{
+		xDevice.destroyRenderPass(xRP);
+	}
+	m_axPendingRenderPasses.clear();
+
 	// Reset scratch buffer offsets for each worker
 	for (u_int i = 0; i < NUM_WORKER_THREADS; i++)
 	{
 		m_auWorkerScratchOffsets[i] = i * uWORKER_PARTITION_SIZE;
 	}
+}
+
+void Zenith_Vulkan_PerFrame::DeferDestroyFramebuffer(vk::Framebuffer xFramebuffer)
+{
+	m_xDeferredDestroyMutex.Lock();
+	m_axPendingFramebuffers.push_back(xFramebuffer);
+	m_xDeferredDestroyMutex.Unlock();
+}
+
+void Zenith_Vulkan_PerFrame::DeferDestroyRenderPass(vk::RenderPass xRenderPass)
+{
+	m_xDeferredDestroyMutex.Lock();
+	m_axPendingRenderPasses.push_back(xRenderPass);
+	m_xDeferredDestroyMutex.Unlock();
 }
 
 const vk::DescriptorPool& Zenith_Vulkan_PerFrame::GetDescriptorPoolForWorkerIndex(u_int uWorkerIndex)
@@ -1252,6 +1272,8 @@ vk::Format Zenith_Vulkan::ConvertToVkFormat_Colour(TextureFormat eFormat) {
 		return vk::Format::eR8G8B8A8Unorm;
 	case TEXTURE_FORMAT_BGRA8_SRGB:
 		return vk::Format::eB8G8R8A8Srgb;
+	case TEXTURE_FORMAT_RGBA8_SRGB:
+		return vk::Format::eR8G8B8A8Srgb;
 	case TEXTURE_FORMAT_R16G16B16A16_SFLOAT:
 		return vk::Format::eR16G16B16A16Sfloat;
 	case TEXTURE_FORMAT_R32G32B32A32_SFLOAT:

@@ -41,6 +41,10 @@ static void OnAppCmd(android_app* pxApp, int32_t iCmd)
 		LOGI("APP_CMD_INIT_WINDOW");
 		if (pxApp->window != nullptr)
 		{
+			int32_t iNativeWidth = ANativeWindow_getWidth(pxApp->window);
+			int32_t iNativeHeight = ANativeWindow_getHeight(pxApp->window);
+			LOGI("Native window size: %dx%d", iNativeWidth, iNativeHeight);
+
 			Zenith_Window::GetInstance()->SetNativeWindow(pxApp->window);
 			s_bWindowReady = true;
 
@@ -115,6 +119,11 @@ static int32_t OnInputEvent(android_app* pxApp, AInputEvent* pxEvent)
 		float fX = AMotionEvent_getX(pxEvent, 0);
 		float fY = AMotionEvent_getY(pxEvent, 0);
 
+		if (iAction == 0 || iAction == 1)
+		{
+			LOGI("Touch %s at (%.1f, %.1f)", iAction == 0 ? "DOWN" : "UP", fX, fY);
+		}
+
 		if (Zenith_Window::GetInstance())
 		{
 			Zenith_Window::GetInstance()->OnTouchEvent(iAction, fX, fY);
@@ -142,10 +151,11 @@ void android_main(android_app* pxApp)
 	// Store app state for window class
 	Zenith_Window::SetAndroidApp(pxApp);
 
-	// Initialise window (without native window - that comes later via APP_CMD_INIT_WINDOW)
+	// Initialise window with placeholder dimensions
+	// The actual screen size is set in APP_CMD_INIT_WINDOW via SetNativeWindow
 	Zenith_GraphicsOptions xOptions;
 	Project_SetGraphicsOptions(xOptions);
-	Zenith_Window::Inititalise("Zenith", xOptions.m_uWindowWidth, xOptions.m_uWindowHeight);
+	Zenith_Window::Inititalise("Zenith", 0, 0);
 
 	// Set up callbacks
 	pxApp->onAppCmd = OnAppCmd;

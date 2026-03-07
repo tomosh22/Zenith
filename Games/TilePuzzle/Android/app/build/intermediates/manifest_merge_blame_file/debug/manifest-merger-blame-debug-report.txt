@@ -25,8 +25,8 @@
 19-->C:\dev\Zenith\Games\TilePuzzle\Android\app\src\main\AndroidManifest.xml:10:4-78
 20            android:exported="true"
 20-->C:\dev\Zenith\Games\TilePuzzle\Android\app\src\main\AndroidManifest.xml:11:4-27
-21            android:screenOrientation="landscape" >
-21-->C:\dev\Zenith\Games\TilePuzzle\Android\app\src\main\AndroidManifest.xml:12:4-41
+21            android:screenOrientation="portrait" >
+21-->C:\dev\Zenith\Games\TilePuzzle\Android\app\src\main\AndroidManifest.xml:12:4-40
 22            <meta-data
 22-->C:\dev\Zenith\Games\TilePuzzle\Android\app\src\main\AndroidManifest.xml:14:4-16:34
 23                android:name="android.app.lib_name"

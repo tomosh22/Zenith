@@ -30,6 +30,7 @@ vk::Format Zenith_Vulkan_Swapchain::s_xImageFormat;
 vk::Extent2D Zenith_Vulkan_Swapchain::s_xExtent;
 uint32_t Zenith_Vulkan_Swapchain::s_uCurrentImageIndex = 0;
 vk::Semaphore Zenith_Vulkan_Swapchain::s_axImageAvailableSemaphores[MAX_FRAMES_IN_FLIGHT];
+vk::Semaphore Zenith_Vulkan_Swapchain::s_axRenderFinishedSemaphores[MAX_FRAMES_IN_FLIGHT];
 uint32_t Zenith_Vulkan_Swapchain::s_uFrameIndex = 0;
 Flux_TargetSetup Zenith_Vulkan_Swapchain::s_axTargetSetups[MAX_FRAMES_IN_FLIGHT];
 bool Zenith_Vulkan_Swapchain::s_bShouldWaitOnImageAvailableSem;
@@ -212,7 +213,15 @@ void Zenith_Vulkan_Swapchain::Initialise()
 		xCreateInfo.pQueueFamilyIndices = nullptr;
 	}
 	xCreateInfo.preTransform = xSwapChainSupport.m_xCapabilities.currentTransform;
-	xCreateInfo.compositeAlpha = vk::CompositeAlphaFlagBitsKHR::eOpaque;
+	// Use INHERIT if OPAQUE is not supported (Android only supports INHERIT)
+	if (xSwapChainSupport.m_xCapabilities.supportedCompositeAlpha & vk::CompositeAlphaFlagBitsKHR::eOpaque)
+	{
+		xCreateInfo.compositeAlpha = vk::CompositeAlphaFlagBitsKHR::eOpaque;
+	}
+	else
+	{
+		xCreateInfo.compositeAlpha = vk::CompositeAlphaFlagBitsKHR::eInherit;
+	}
 	xCreateInfo.presentMode = ePresentMode;
 	xCreateInfo.clipped = VK_TRUE;
 	xCreateInfo.oldSwapchain = VK_NULL_HANDLE;
@@ -251,8 +260,8 @@ void Zenith_Vulkan_Swapchain::Initialise()
 
 		s_axTargetSetups[u].m_axColourAttachments[0].m_xSurfaceInfo.m_uWidth = xExtent.width;
 		s_axTargetSetups[u].m_axColourAttachments[0].m_xSurfaceInfo.m_uHeight = xExtent.height;
-		//#TO_TODO: stop hardcoding swapchain colour format
-		s_axTargetSetups[u].m_axColourAttachments[0].m_xSurfaceInfo.m_eFormat = TEXTURE_FORMAT_BGRA8_SRGB;
+		s_axTargetSetups[u].m_axColourAttachments[0].m_xSurfaceInfo.m_eFormat =
+			xSurfaceFormat.format == vk::Format::eR8G8B8A8Srgb ? TEXTURE_FORMAT_RGBA8_SRGB : TEXTURE_FORMAT_BGRA8_SRGB;
 		
 		// Create views for swapchain images - register with handle system for consistency
 		s_axTargetSetups[u].m_axColourAttachments[0].m_pxSRV.m_xImageViewHandle = Zenith_Vulkan_MemoryManager::RegisterImageView(s_xImageViews[u]);
@@ -284,6 +293,7 @@ void Zenith_Vulkan_Swapchain::Initialise()
 	for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
 	{
 		s_axImageAvailableSemaphores[i] = VkUnwrap(xDevice.createSemaphore(xSemaphoreInfo));
+		s_axRenderFinishedSemaphores[i] = VkUnwrap(xDevice.createSemaphore(xSemaphoreInfo));
 	}
 
 	InitialiseCopyToFramebufferCommands();
@@ -325,6 +335,7 @@ bool Zenith_Vulkan_Swapchain::BeginFrame()
 		{
 			// Destroy image views directly - GPU is already idle so no deferred deletion needed`nxDevice.destroyImageView(s_xImageViews[u]);
 			xDevice.destroySemaphore(s_axImageAvailableSemaphores[u]);
+			xDevice.destroySemaphore(s_axRenderFinishedSemaphores[u]);
 		}
 		s_xImages.clear();
 		s_xImageViews.clear();
@@ -343,8 +354,10 @@ void Zenith_Vulkan_Swapchain::BindAsTarget()
 #else
 	vk::RenderPass xRenderPass = Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(s_axTargetSetups[s_uCurrentImageIndex], LOAD_ACTION_DONTCARE, STORE_ACTION_STORE, LOAD_ACTION_DONTCARE, STORE_ACTION_DONTCARE, RENDER_TARGET_USAGE_PRESENT);
 #endif
+	Zenith_Vulkan::s_pxCurrentFrame->DeferDestroyRenderPass(xRenderPass);
 
 	vk::Framebuffer xFramebuffer = Zenith_Vulkan_Pipeline::TargetSetupToFramebuffer(s_axTargetSetups[s_uCurrentImageIndex], Zenith_Vulkan_Swapchain::GetWidth(), Zenith_Vulkan_Swapchain::GetHeight(), xRenderPass);
+	Zenith_Vulkan::s_pxCurrentFrame->DeferDestroyFramebuffer(xFramebuffer);
 
 	vk::ClearValue xClear;
 	vk::ClearColorValue xClearColourValue(0.f, 0.f, 0.f, 1.f);
@@ -434,13 +447,14 @@ void Zenith_Vulkan_Swapchain::EndFrame()
 	s_xCopyToFramebufferCmd.GetCurrentCmdBuffer().endRenderPass();
 	VkCheck(s_xCopyToFramebufferCmd.GetCurrentCmdBuffer().end());
 
+	// Use per-image semaphores to avoid signaling a semaphore still in use by a previous present
 	vk::SubmitInfo xRenderSubmitInfo = vk::SubmitInfo()
 		.setCommandBufferCount(1)
 		.setPCommandBuffers(&s_xCopyToFramebufferCmd.GetCurrentCmdBuffer())
 		.setPWaitSemaphores(nullptr)
-		.setPSignalSemaphores(nullptr)
 		.setWaitSemaphoreCount(0)
-		.setSignalSemaphoreCount(0);
+		.setPSignalSemaphores(&s_axRenderFinishedSemaphores[s_uCurrentImageIndex])
+		.setSignalSemaphoreCount(1);
 
 	VkCheck(Zenith_Vulkan::GetQueue(COMMANDTYPE_GRAPHICS).submit(xRenderSubmitInfo, Zenith_Vulkan::GetCurrentInFlightFence()));
 
@@ -450,8 +464,8 @@ void Zenith_Vulkan_Swapchain::EndFrame()
 			.setSwapchainCount(1)
 			.setPSwapchains(&s_xSwapChain)
 			.setPImageIndices(&s_uCurrentImageIndex)
-			.setWaitSemaphoreCount(0).
-			setPWaitSemaphores(nullptr);
+			.setWaitSemaphoreCount(1)
+			.setPWaitSemaphores(&s_axRenderFinishedSemaphores[s_uCurrentImageIndex]);
 
 #ifdef ZENITH_ASSERT
 		vk::Result eResult =

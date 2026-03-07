@@ -24,7 +24,7 @@ INJECTED from C:\dev\Zenith\Games\TilePuzzle\Android\app\src\main\AndroidManifes
 activity#android.app.NativeActivity
 ADDED from C:\dev\Zenith\Games\TilePuzzle\Android\app\src\main\AndroidManifest.xml:8:3-22:14
 	android:screenOrientation
-		ADDED from C:\dev\Zenith\Games\TilePuzzle\Android\app\src\main\AndroidManifest.xml:12:4-41
+		ADDED from C:\dev\Zenith\Games\TilePuzzle\Android\app\src\main\AndroidManifest.xml:12:4-40
 	android:exported
 		ADDED from C:\dev\Zenith\Games\TilePuzzle\Android\app\src\main\AndroidManifest.xml:11:4-27
 	android:configChanges

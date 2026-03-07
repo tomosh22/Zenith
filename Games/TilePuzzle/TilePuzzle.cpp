@@ -880,8 +880,11 @@ const char* Project_GetGameAssetsDir() { return GAME_ASSETS_DIR; }
 
 void Project_SetGraphicsOptions(Zenith_GraphicsOptions& xOptions)
 {
+#ifdef ZENITH_WINDOWS
 	xOptions.m_uWindowWidth = 720;
 	xOptions.m_uWindowHeight = 1280;
+#endif
+	// On Android, window dimensions come from the native window (SetNativeWindow)
 	xOptions.m_bFogEnabled = false;
 	xOptions.m_bSSREnabled = false;
 	xOptions.m_bSkyboxEnabled = false;

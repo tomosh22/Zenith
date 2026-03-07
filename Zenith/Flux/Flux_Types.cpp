@@ -42,6 +42,7 @@ uint32_t ColourFormatBitsPerPixel(TextureFormat eFormat)
 	case TEXTURE_FORMAT_RGBA8_UNORM:
 		return 32u;
 	case TEXTURE_FORMAT_BGRA8_SRGB:
+	case TEXTURE_FORMAT_RGBA8_SRGB:
 		return 32u;
 	case TEXTURE_FORMAT_BGRA8_UNORM:
 		return 32u;

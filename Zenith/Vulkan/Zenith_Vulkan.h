@@ -69,11 +69,18 @@ public:
 	vk::CommandPool m_axCommandPools[NUM_WORKER_THREADS];
 	Zenith_Vulkan_CommandBuffer m_axWorkerCommandBuffers[NUM_WORKER_THREADS];
 
+	// Deferred destruction of per-frame Vulkan objects
+	void DeferDestroyFramebuffer(vk::Framebuffer xFramebuffer);
+	void DeferDestroyRenderPass(vk::RenderPass xRenderPass);
+
 	// Scratch buffer for push constant replacement (1MB total, 128KB per worker)
 	static constexpr u_int uSCRATCH_BUFFER_SIZE = 1 * 1024 * 1024;
 	static constexpr u_int uWORKER_PARTITION_SIZE = uSCRATCH_BUFFER_SIZE / NUM_WORKER_THREADS;
 
 private:
+	std::vector<vk::Framebuffer> m_axPendingFramebuffers;
+	std::vector<vk::RenderPass> m_axPendingRenderPasses;
+	Zenith_Mutex m_xDeferredDestroyMutex;
 	vk::Buffer m_xScratchBuffer;
 	VmaAllocation m_xScratchAllocation = VK_NULL_HANDLE;
 	void* m_pScratchBufferMapped = nullptr;

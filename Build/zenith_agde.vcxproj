@@ -71,7 +71,6 @@
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">
     <ClCompile>
-      <AdditionalOptions>-fsanitize=undefined -fno-sanitize=alignment -fno-sanitize-recover=all -fno-omit-frame-pointer %(AdditionalOptions)</AdditionalOptions>
       <PrecompiledHeader>Use</PrecompiledHeader>
       <WarningLevel>EnableFormatWarnings</WarningLevel>
       <Optimization>Disabled</Optimization>

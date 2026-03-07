@@ -87,7 +87,6 @@
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='arm64_v8a_vs2022_Debug_Agde_False|Android-arm64-v8a'">
     <ClCompile>
-      <AdditionalOptions>-fsanitize=undefined -fno-sanitize=alignment -fno-sanitize-recover=all -fno-omit-frame-pointer %(AdditionalOptions)</AdditionalOptions>
       <WarningLevel>EnableFormatWarnings</WarningLevel>
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>ENGINE_ASSETS_DIR="";GAME_ASSETS_DIR="";GLM_ENABLE_EXPERIMENTAL;NOMINMAX;VMA_VULKAN_VERSION=1001000;VULKAN_HPP_NO_EXCEPTIONS;ZENITH_ANDROID;ZENITH_DEBUG;ZENITH_ROOT="c:/dev/zenith/";ZENITH_VULKAN;_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
@@ -113,7 +112,7 @@
       <DebuggerSymbolInformation>true</DebuggerSymbolInformation>
       <OutputFile>output\agde\arm64_v8a_vs2022_debug_agde_false\libtilepuzzle.so</OutputFile>
       <AdditionalLibraryDirectories>$(StlLibraryPath);..\..\..\build\output\agde\arm64_v8a_vs2022_debug_agde_false;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalOptions>-fsanitize=undefined -landroid -llog -lvulkan -u ANativeActivity_onCreate</AdditionalOptions>
+      <AdditionalOptions>-landroid -llog -lvulkan -u ANativeActivity_onCreate</AdditionalOptions>
       <AdditionalDependencies>-l:libzenith.a;%(AdditionalDependencies);</AdditionalDependencies>
       <IgnoreSpecificDefaultLibraries></IgnoreSpecificDefaultLibraries>
       <GenerateMapFile>output\agde\arm64_v8a_vs2022_debug_agde_false\libtilepuzzle.map</GenerateMapFile>

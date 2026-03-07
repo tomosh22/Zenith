@@ -429,6 +429,7 @@ void Zenith_Vulkan_CommandBuffer::BeginRenderPass(Flux_TargetSetup& xTargetSetup
 
 	m_xCurrentRenderPass = Zenith_Vulkan_Pipeline::TargetSetupToRenderPass(xTargetSetup, eColourLoad, STORE_ACTION_STORE, eDepthStencilLoad, STORE_ACTION_STORE, RENDER_TARGET_USAGE_RENDERTARGET);
 	Zenith_Assert(m_xCurrentRenderPass, "BeginRenderPass: TargetSetupToRenderPass returned null render pass");
+	Zenith_Vulkan::s_pxCurrentFrame->DeferDestroyRenderPass(m_xCurrentRenderPass);
 
 	uint32_t uWidth, uHeight;
 	if (xTargetSetup.m_axColourAttachments[0].m_xSurfaceInfo.m_eFormat != TEXTURE_FORMAT_NONE)
@@ -443,9 +444,12 @@ void Zenith_Vulkan_CommandBuffer::BeginRenderPass(Flux_TargetSetup& xTargetSetup
 		uHeight = xTargetSetup.m_pxDepthStencil->m_xSurfaceInfo.m_uHeight;
 	}
 
+	vk::Framebuffer xFramebuffer = Zenith_Vulkan_Pipeline::TargetSetupToFramebuffer(xTargetSetup, uWidth, uHeight, m_xCurrentRenderPass);
+	Zenith_Vulkan::s_pxCurrentFrame->DeferDestroyFramebuffer(xFramebuffer);
+
 	vk::RenderPassBeginInfo xRenderPassInfo = vk::RenderPassBeginInfo()
 		.setRenderPass(m_xCurrentRenderPass)
-		.setFramebuffer(Zenith_Vulkan_Pipeline::TargetSetupToFramebuffer(xTargetSetup, uWidth, uHeight, m_xCurrentRenderPass))
+		.setFramebuffer(xFramebuffer)
 		.setRenderArea({ {0,0}, {uWidth, uHeight} });
 
 	vk::ClearValue axClearColour[FLUX_MAX_TARGETS+1];

@@ -43,6 +43,7 @@ private:
 	static vk::Format s_xImageFormat;
 	static vk::Extent2D s_xExtent;
 	static vk::Semaphore s_axImageAvailableSemaphores[MAX_FRAMES_IN_FLIGHT];
+	static vk::Semaphore s_axRenderFinishedSemaphores[MAX_FRAMES_IN_FLIGHT];
 	static uint32_t s_uCurrentImageIndex; //set by acquireNextImageKHR
 	static uint32_t s_uFrameIndex; //set by us
 	static bool s_bShouldWaitOnImageAvailableSem;
