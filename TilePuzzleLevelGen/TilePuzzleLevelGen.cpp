@@ -37,12 +37,59 @@ static void SignalHandler(int)
 // TilePuzzleLevelMetadata, s_uMETA_VERSION, ReadMetadataFromFile, WriteMetadataAndLevel
 // are defined in TilePuzzleLevelMetadata.h
 
-// DifficultyTier kept only for PfnLevelValidate signature compatibility
+// ============================================================================
+// Difficulty Tier Definitions
+// ============================================================================
+
 enum DifficultyTier : uint8_t
 {
 	DIFFICULTY_TIER_NONE = 0,
+	DIFFICULTY_TIER_TUTORIAL,
+	DIFFICULTY_TIER_EASY,
+	DIFFICULTY_TIER_MEDIUM,
+	DIFFICULTY_TIER_HARD,
+	DIFFICULTY_TIER_EXPERT,
+	DIFFICULTY_TIER_MASTER,
 	DIFFICULTY_TIER_COUNT
 };
+
+struct TierConstraints
+{
+	uint32_t uMinGrid, uMaxGrid;
+	uint32_t uMinColors, uMaxColors;
+	uint32_t uMinCatsPerColor, uMaxCatsPerColor;
+	uint32_t uMinBlockers, uMaxBlockers;
+	uint32_t uMinComplexity, uMaxComplexity; // 1=Single, 2=+Domino, 3=+L/T/I, 4=+S/Z/O
+	uint32_t uMinMoves, uMaxMoves;
+	uint32_t uMinConditional, uMaxConditional;
+	uint32_t uMinBlockerCats, uMaxBlockerCats;
+};
+
+static const TierConstraints s_axTierConstraints[] =
+{
+	{},                                                               // NONE (unused)
+	{ 5,  6,  1, 2,  1, 2,  0, 0,  1, 2,   3,  5,  0, 0,  0, 0 },  // TUTORIAL
+	{ 6,  7,  2, 3,  1, 2,  0, 1,  1, 3,   5,  8,  0, 0,  0, 0 },  // EASY
+	{ 7,  8,  3, 3,  2, 2,  1, 2,  2, 3,   8, 12,  0, 0,  0, 1 },  // MEDIUM
+	{ 8,  9,  3, 4,  2, 3,  1, 2,  3, 4,  10, 15,  0, 2,  0, 1 },  // HARD
+	{ 9, 10,  4, 5,  2, 3,  2, 3,  3, 4,  15, 20,  1, 3,  0, 2 },  // EXPERT
+	{ 9, 10,  4, 5,  3, 4,  2, 3,  3, 4,  18, 99,  1, 3,  1, 2 },  // MASTER
+};
+
+static const char* s_aszTierNames[] =
+{
+	"none", "tutorial", "easy", "medium", "hard", "expert", "master"
+};
+
+static DifficultyTier ParseTierName(const char* szName)
+{
+	for (uint32_t i = 1; i < DIFFICULTY_TIER_COUNT; ++i)
+	{
+		if (strcmp(szName, s_aszTierNames[i]) == 0)
+			return static_cast<DifficultyTier>(i);
+	}
+	return DIFFICULTY_TIER_NONE;
+}
 
 // ============================================================================
 // Shape Type to Complexity Mapping
@@ -259,6 +306,156 @@ static TilePuzzle_LevelGenerator::DifficultyParams RandomizeDifficultyParams(std
 		xParams.uMaxDeepVerificationsPerWorker = 5;
 		xParams.uMaxAttempts = 3000;
 		// Keep SCRAMBLE_MODE_RANDOM (default) for lower targets
+	}
+
+	return xParams;
+}
+
+/**
+ * RandomizeDifficultyParamsForTier - Picks random values constrained to a specific GDD difficulty tier
+ *
+ * Uses the TierConstraints table to enforce tight parameter ranges matching the GDD spec.
+ * Falls back to the min-moves-based RandomizeDifficultyParams for solver/scramble settings.
+ */
+static TilePuzzle_LevelGenerator::DifficultyParams RandomizeDifficultyParamsForTier(
+	std::mt19937& xRng, DifficultyTier eTier)
+{
+	const TierConstraints& xTC = s_axTierConstraints[eTier];
+
+	TilePuzzle_LevelGenerator::DifficultyParams xParams;
+
+	// Grid dimensions
+	std::uniform_int_distribution<uint32_t> xGridDist(xTC.uMinGrid, xTC.uMaxGrid);
+	uint32_t uGridW = xGridDist(xRng);
+	uint32_t uGridH = xGridDist(xRng);
+	xParams.uMinGridWidth = uGridW;
+	xParams.uMaxGridWidth = uGridW;
+	xParams.uMinGridHeight = uGridH;
+	xParams.uMaxGridHeight = uGridH;
+
+	// Colors
+	std::uniform_int_distribution<uint32_t> xColorDist(xTC.uMinColors, xTC.uMaxColors);
+	uint32_t uColors = xColorDist(xRng);
+	xParams.uMinNumColors = uColors;
+	xParams.uNumColors = uColors;
+
+	// Cats per color
+	std::uniform_int_distribution<uint32_t> xCatDist(xTC.uMinCatsPerColor, xTC.uMaxCatsPerColor);
+	uint32_t uCats = xCatDist(xRng);
+	xParams.uMinCatsPerColor = uCats;
+	xParams.uNumCatsPerColor = uCats;
+
+	xParams.uNumShapesPerColor = 1;
+
+	// Blockers
+	std::uniform_int_distribution<uint32_t> xBlockerDist(xTC.uMinBlockers, xTC.uMaxBlockers);
+	uint32_t uBlockers = xBlockerDist(xRng);
+	xParams.uMinBlockers = uBlockers;
+	xParams.uNumBlockers = uBlockers;
+
+	// Blocker cats
+	uint32_t uMaxBC = std::min(xTC.uMaxBlockerCats, uBlockers);
+	uint32_t uMinBC = std::min(xTC.uMinBlockerCats, uMaxBC);
+	std::uniform_int_distribution<uint32_t> xBlockerCatDist(uMinBC, uMaxBC);
+	uint32_t uBlockerCats = (uBlockers > 0) ? xBlockerCatDist(xRng) : 0;
+	xParams.uMinBlockerCats = uBlockerCats;
+	xParams.uNumBlockerCats = uBlockerCats;
+
+	// Enforce solver cat limit: colors * catsPerColor + blockerCats <= 16
+	while (uColors * uCats + uBlockerCats > 16)
+	{
+		if (uCats > 1)
+			uCats--;
+		else if (uBlockerCats > 0)
+			uBlockerCats--;
+		else
+			uColors--;
+	}
+	xParams.uMinNumColors = uColors;
+	xParams.uNumColors = uColors;
+	xParams.uMinCatsPerColor = uCats;
+	xParams.uNumCatsPerColor = uCats;
+	xParams.uMinBlockerCats = uBlockerCats;
+	xParams.uNumBlockerCats = uBlockerCats;
+
+	// Shape complexity
+	std::uniform_int_distribution<uint32_t> xComplexDist(xTC.uMinComplexity, xTC.uMaxComplexity);
+	uint32_t uComplexity = xComplexDist(xRng);
+	xParams.uMinMaxShapeSize = uComplexity;
+	xParams.uMaxShapeSize = uComplexity;
+
+	// Conditional shapes
+	uint32_t uMaxCond = std::min(xTC.uMaxConditional, uColors - 1);
+	uint32_t uMinCond = std::min(xTC.uMinConditional, uMaxCond);
+	std::uniform_int_distribution<uint32_t> xCondDist(uMinCond, uMaxCond);
+	uint32_t uCond = xCondDist(xRng);
+	xParams.uMinConditionalShapes = uCond;
+	xParams.uNumConditionalShapes = uCond;
+
+	if (uCond > 0)
+	{
+		std::uniform_int_distribution<uint32_t> xThreshDist(1, 4);
+		uint32_t uThresh = xThreshDist(xRng);
+		xParams.uMinConditionalThreshold = uThresh;
+		xParams.uConditionalThreshold = uThresh;
+	}
+	else
+	{
+		xParams.uMinConditionalThreshold = 0;
+		xParams.uConditionalThreshold = 0;
+	}
+
+	// Scramble moves - scale with tier
+	uint32_t uMinScramble, uMaxScramble;
+	switch (eTier)
+	{
+	case DIFFICULTY_TIER_TUTORIAL: uMinScramble = 50;  uMaxScramble = 200;  break;
+	case DIFFICULTY_TIER_EASY:     uMinScramble = 100; uMaxScramble = 400;  break;
+	case DIFFICULTY_TIER_MEDIUM:   uMinScramble = 200; uMaxScramble = 600;  break;
+	case DIFFICULTY_TIER_HARD:     uMinScramble = 300; uMaxScramble = 800;  break;
+	case DIFFICULTY_TIER_EXPERT:   uMinScramble = 300; uMaxScramble = 1000; break;
+	case DIFFICULTY_TIER_MASTER:   uMinScramble = 300; uMaxScramble = 1500; break;
+	default:                       uMinScramble = 100; uMaxScramble = 500;  break;
+	}
+	std::uniform_int_distribution<uint32_t> xScrambleDist(uMinScramble, uMaxScramble);
+	xParams.uScrambleMoves = xScrambleDist(xRng);
+	xParams.uMinScrambleMoves = std::max(10u, xParams.uScrambleMoves / 10);
+
+	// Solver settings - delegate to the min-moves-based logic
+	xParams.uMinSolverMoves = 4;
+	uint32_t uTierMinMoves = xTC.uMinMoves;
+	if (uTierMinMoves >= 20)
+	{
+		xParams.uSolverStateLimit = 1000000;
+		xParams.uDeepSolverStateLimit = 5000000;
+		xParams.uMaxDeepVerificationsPerWorker = 0;
+		xParams.uMaxAttempts = 500;
+		xParams.eScrambleMode = TilePuzzle_LevelGenerator::SCRAMBLE_MODE_GUIDED;
+		xParams.uScrambleRestarts = 20;
+	}
+	else if (uTierMinMoves >= 10)
+	{
+		xParams.uSolverStateLimit = 1000000;
+		xParams.uDeepSolverStateLimit = 5000000;
+		xParams.uMaxDeepVerificationsPerWorker = 5;
+		xParams.uMaxAttempts = 2000;
+		if (uGridW * uGridH <= 49)
+		{
+			xParams.eScrambleMode = TilePuzzle_LevelGenerator::SCRAMBLE_MODE_REVERSE_BFS;
+			xParams.uReverseBFSStateLimit = 5000000;
+		}
+		else
+		{
+			xParams.eScrambleMode = TilePuzzle_LevelGenerator::SCRAMBLE_MODE_GUIDED;
+		}
+	}
+	else
+	{
+		uint32_t uGridArea = uGridW * uGridH;
+		xParams.uSolverStateLimit = 500000;
+		xParams.uDeepSolverStateLimit = (uGridArea >= 64) ? 5000000 : 3000000;
+		xParams.uMaxDeepVerificationsPerWorker = 5;
+		xParams.uMaxAttempts = 3000;
 	}
 
 	return xParams;
@@ -693,7 +890,8 @@ struct LevelRegistry
 
 	const RegistryEntry* FindMatch(
 		uint32_t uMinMoves,
-		const DuplicateDetector& xDuplicateDetector) const
+		const DuplicateDetector& xDuplicateDetector,
+		DifficultyTier eTier = DIFFICULTY_TIER_NONE) const
 	{
 		for (size_t i = 0; i < axEntries.size(); ++i)
 		{
@@ -707,6 +905,28 @@ struct LevelRegistry
 
 			if (xDuplicateDetector.xHashToSignatures.count(xEntry.xMetadata.ulLayoutHash))
 				continue;
+
+			// When a tier is specified, filter by tier-compatible structural parameters
+			if (eTier != DIFFICULTY_TIER_NONE)
+			{
+				const TierConstraints& xTC = s_axTierConstraints[eTier];
+				const TilePuzzleLevelMetadata& xMeta = xEntry.xMetadata;
+
+				if (xMeta.uGridWidth < xTC.uMinGrid || xMeta.uGridWidth > xTC.uMaxGrid)
+					continue;
+				if (xMeta.uGridHeight < xTC.uMinGrid || xMeta.uGridHeight > xTC.uMaxGrid)
+					continue;
+				if (xMeta.uNumColors < xTC.uMinColors || xMeta.uNumColors > xTC.uMaxColors)
+					continue;
+				if (xMeta.uNumStaticBlockers < xTC.uMinBlockers || xMeta.uNumStaticBlockers > xTC.uMaxBlockers)
+					continue;
+				if (xMeta.uMaxShapeComplexity > xTC.uMaxComplexity)
+					continue;
+				if (xMeta.uNumConditionalShapes > xTC.uMaxConditional)
+					continue;
+				if (xMeta.uParMoves > xTC.uMaxMoves && xTC.uMaxMoves < 99)
+					continue;
+			}
 
 			return &xEntry;
 		}
@@ -930,23 +1150,61 @@ static void AccumulateGenerationStats(
 // ============================================================================
 
 /**
- * IsLevelValid - Basic structural validation for generated levels
+ * IsLevelValid - Structural validation for generated levels
+ *
+ * When eTier != DIFFICULTY_TIER_NONE, validates against the tier's GDD constraints.
  */
-static bool IsLevelValid(const TilePuzzleLevelData& xLevel, DifficultyTier /*eTier*/)
+static bool IsLevelValid(const TilePuzzleLevelData& xLevel, DifficultyTier eTier)
 {
 	uint32_t uDraggableShapes = 0;
 	uint32_t uTotalBlockerCells = 0;
+	uint32_t uStaticBlockers = 0;
+	uint32_t uMaxComplexity = 0;
+	std::unordered_set<uint8_t> xColors;
+
 	for (size_t i = 0; i < xLevel.axShapes.size(); ++i)
 	{
 		const auto& xShape = xLevel.axShapes[i];
 		if (!xShape.pxDefinition)
 			continue;
 		if (xShape.pxDefinition->bDraggable)
+		{
 			uDraggableShapes++;
+			xColors.insert(xShape.eColor);
+			uint32_t uC = ShapeTypeToComplexity(xShape.pxDefinition->eType);
+			if (uC > uMaxComplexity)
+				uMaxComplexity = uC;
+		}
 		else
+		{
+			uStaticBlockers++;
 			uTotalBlockerCells += static_cast<uint32_t>(xShape.pxDefinition->axCells.size());
+		}
 	}
-	return uDraggableShapes >= 1 && uTotalBlockerCells <= 12;
+
+	// Basic validation
+	if (uDraggableShapes < 1 || uTotalBlockerCells > 12)
+		return false;
+
+	// Tier-specific validation
+	if (eTier != DIFFICULTY_TIER_NONE)
+	{
+		const TierConstraints& xTC = s_axTierConstraints[eTier];
+		uint32_t uNumColors = static_cast<uint32_t>(xColors.size());
+
+		if (xLevel.uGridWidth < xTC.uMinGrid || xLevel.uGridWidth > xTC.uMaxGrid)
+			return false;
+		if (xLevel.uGridHeight < xTC.uMinGrid || xLevel.uGridHeight > xTC.uMaxGrid)
+			return false;
+		if (uNumColors < xTC.uMinColors || uNumColors > xTC.uMaxColors)
+			return false;
+		if (uStaticBlockers < xTC.uMinBlockers || uStaticBlockers > xTC.uMaxBlockers)
+			return false;
+		if (uMaxComplexity > xTC.uMaxComplexity)
+			return false;
+	}
+
+	return true;
 }
 
 // ============================================================================
@@ -1007,8 +1265,11 @@ static uint32_t GenerateSingleLevel(
 
 	while (s_bRunning)
 	{
-		// Re-randomize params each retry round (biased by min-moves target)
-		TilePuzzle_LevelGenerator::DifficultyParams xLevelParams = RandomizeDifficultyParams(xParamRng, uMinMoves);
+		// Re-randomize params each retry round
+		TilePuzzle_LevelGenerator::DifficultyParams xLevelParams =
+			(eTier != DIFFICULTY_TIER_NONE)
+				? RandomizeDifficultyParamsForTier(xParamRng, eTier)
+				: RandomizeDifficultyParams(xParamRng, uMinMoves);
 
 		TilePuzzleLevelData xLevel = {};
 		TilePuzzle_LevelGenerator::GenerationStats xStats = {};
@@ -1156,6 +1417,7 @@ int main(int argc, char* argv[])
 	uint32_t uStartSeed = rand();
 	uint32_t uCount = 0;
 	uint32_t uMinMoves = 0;
+	DifficultyTier eTier = DIFFICULTY_TIER_NONE;
 	bool bValidateRegistry = false;
 	bool bDeleteInvalid = false;
 	bool bProfile = false;
@@ -1183,6 +1445,15 @@ int main(int argc, char* argv[])
 		{
 			uMinMoves = static_cast<uint32_t>(atoi(argv[++i]));
 		}
+		else if (strcmp(argv[i], "--tier") == 0 && i + 1 < argc)
+		{
+			eTier = ParseTierName(argv[++i]);
+			if (eTier == DIFFICULTY_TIER_NONE)
+			{
+				fprintf(stderr, "Error: Unknown tier '%s'. Valid tiers: tutorial, easy, medium, hard, expert, master\n", argv[i]);
+				return 1;
+			}
+		}
 		else if (strcmp(argv[i], "--validate-registry") == 0)
 		{
 			bValidateRegistry = true;
@@ -1202,19 +1473,27 @@ int main(int argc, char* argv[])
 		}
 	}
 
+	// When --tier is specified, derive --min-moves from the tier constraints if not explicitly set
+	if (eTier != DIFFICULTY_TIER_NONE && uMinMoves == 0)
+	{
+		uMinMoves = s_axTierConstraints[eTier].uMinMoves;
+	}
+
 	// Validate required arguments (not needed for --validate-registry)
 	if (!bValidateRegistry)
 	{
 		if (uCount == 0)
 		{
 			fprintf(stderr, "Error: --count <N> is required (number of levels to generate).\n");
-			fprintf(stderr, "Usage: tilepuzzlelevelgen --count N --min-moves M [--output DIR] [--timeout S] [--seed N] [--profile]\n");
+			fprintf(stderr, "Usage: tilepuzzlelevelgen --count N --min-moves M [--tier TIER] [--output DIR] [--timeout S] [--seed N] [--profile]\n");
+			fprintf(stderr, "       tilepuzzlelevelgen --count N --tier TIER [--output DIR] [--timeout S] [--seed N] [--profile]\n");
 			fprintf(stderr, "       tilepuzzlelevelgen --validate-registry [--delete-invalid] [--validate-max-states N]\n");
+			fprintf(stderr, "Tiers: tutorial, easy, medium, hard, expert, master\n");
 			return 1;
 		}
 		if (uMinMoves == 0)
 		{
-			fprintf(stderr, "Error: --min-moves <M> is required (minimum solver moves).\n");
+			fprintf(stderr, "Error: --min-moves <M> or --tier <TIER> is required.\n");
 			return 1;
 		}
 	}
@@ -1378,7 +1657,10 @@ int main(int argc, char* argv[])
 	// Random Generation
 	// ========================================================================
 
-	printf("Mode: Random Generation (%u levels, min-moves=%u)\n", uCount, uMinMoves);
+	if (eTier != DIFFICULTY_TIER_NONE)
+		printf("Mode: Tier Generation (%u levels, tier=%s, min-moves=%u)\n", uCount, s_aszTierNames[eTier], uMinMoves);
+	else
+		printf("Mode: Random Generation (%u levels, min-moves=%u)\n", uCount, uMinMoves);
 	printf("Timeout per level: %us, Seed: %u\n\n", uTimeoutSeconds, uStartSeed);
 	fflush(stdout);
 
@@ -1408,8 +1690,8 @@ int main(int argc, char* argv[])
 		printf("Generating level %u/%u...", uIdx + 1, uCount);
 		fflush(stdout);
 
-		// Registry lookup (flat, min-moves only)
-		const RegistryEntry* pxMatch = xRegistry.FindMatch(uMinMoves, xDuplicateDetector);
+		// Registry lookup
+		const RegistryEntry* pxMatch = xRegistry.FindMatch(uMinMoves, xDuplicateDetector, eTier);
 		if (pxMatch)
 		{
 			TilePuzzleLevelData xCachedLevel = {};
@@ -1454,7 +1736,7 @@ int main(int argc, char* argv[])
 				uMinMoves, uTimeoutSeconds,
 				uGlobalSeedCounter, uIdx,
 				xAccumulatedStats, uRetryRounds, bTimedOut,
-				&IsLevelValid, DIFFICULTY_TIER_NONE);
+				&IsLevelValid, eTier);
 
 			auto xEndTime = std::chrono::high_resolution_clock::now();
 			double fTimeMs = std::chrono::duration<double, std::milli>(xEndTime - xStartTime).count();
@@ -1481,7 +1763,8 @@ int main(int argc, char* argv[])
 				bAccepted = true;
 
 				// Build metadata
-				TilePuzzleLevelMetadata xMeta = BuildMetadata(uLevelNum, xBestLevel, UINT32_MAX, ulLayoutHash,
+				TilePuzzleLevelMetadata xMeta = BuildMetadata(uLevelNum, xBestLevel,
+					static_cast<uint32_t>(eTier), ulLayoutHash,
 					uGlobalSeedCounter, fTimeMs, uRetryRounds, &xAccumulatedStats, bTimedOut);
 
 				// Build output file paths

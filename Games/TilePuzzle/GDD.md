@@ -120,6 +120,25 @@ Every 10th level (levels 10, 20, ..., 100) triggers a pinball minigame. 10 total
 | 8 | 90 | Combined (Score + All Pegs) | 3,000 | 8 | Unlimited |
 | 9 | 100 | Target Hits (10) | - | 8 | Unlimited |
 
+**Pinball HUD:**
+
+Each gate displays clear on-screen instructions telling the player what they need to do:
+
+| HUD Element | Position | Color | Visibility | Content |
+|-------------|----------|-------|------------|---------|
+| `PinballObjective` | Top-left | Amber | Always | Pass criteria in plain English (e.g., "Score 1000 points", "Hit all 6 pegs", "Hit the target 5 times", "Score 3000 + Hit all pegs") |
+| `PinballPegCount` | Below objective | Cyan | Hit-all-pegs / combined gates only | "Pegs: X/Y" progress counter |
+| `PinballTargetCount` | Below peg count | Cyan | Target-hits / combined gates only | "Targets: X/Y" progress counter |
+| `PinballBalls` | Top-right | Orange | Limited-ball gates only | "Balls: N" remaining counter |
+| `PinballGateStatus` | Center | Yellow/Green/Red | Gate end | Pass/fail result display |
+| `PinballGateNum` | Top-center | Purple | During gate | "Gate N" label |
+| `PinballScore` | Top-left, below objective | White | Always | "Score: N" current session score |
+| `PinballHighScore` | Below score | White | Always | "Total: N" lifetime pinball score |
+
+After all 10 gates are cleared, the objective text shows "Freeplay - All gates cleared!" and the player can continue playing pinball for fun with cycling peg layouts.
+
+**Quick Play Pinball:** Unlocked after clearing Gate 1 (level 10). Accessible from the main menu "Pinball" button. Allows replaying any cleared gate or freeplay mode without needing to reach the gate through puzzle progression. Daily bonus: one free pinball game per day awards 25 coins.
+
 **Pinball Playfield:**
 - Bounds: x=[-2.4, 2.4], y=[0.0, 8.0]
 - Wall thickness: 0.3 units
@@ -137,14 +156,26 @@ Every 10th level (levels 10, 20, ..., 100) triggers a pinball minigame. 10 total
 
 ### 3.2 Difficulty Curve (6 Tiers)
 
-| Tier | Levels | Grid | Colors | Cats/Color | Blockers | Shapes | Special Mechanics |
-|------|--------|------|--------|-----------|----------|--------|-------------------|
-| Tutorial | 1-10 | 5x5-6x6 | 1-2 | 1 | 0 | Single, Domino | None |
-| Easy | 11-25 | 6x6-7x7 | 2 | 1-2 | 1-2 | +I-Shape | Static blockers |
-| Medium | 26-45 | 7x7-8x8 | 2-3 | 2 | 1-2 | +L,T,S shapes | Blocker-cats (0-1) |
-| Hard | 46-65 | 8x8 | 3 | 2-3 | 1-2 | All 8 shapes | Conditional shapes |
-| Expert | 66-80 | 8x8-9x9 | 3-4 | 2-3 | 1-2 | All 8 shapes | Multiple conditionals |
-| Master | 81-100 | 8x8 | 3 | 3 | 1-2 | All 8 shapes | All mechanics combined |
+| Tier | Levels | Grid | Colors | Cats/Color | Blockers | Shapes | Min Moves | Special Mechanics |
+|------|--------|------|--------|-----------|----------|--------|-----------|-------------------|
+| Tutorial | 1-10 | 5x5-6x6 | 1-2 | 1-2 | 0 | Single, Domino | 3-5 | None |
+| Easy | 11-25 | 6x6-7x7 | 2-3 | 1-2 | 0-1 | +L, T shapes | 5-8 | Static blockers |
+| Medium | 26-45 | 7x7-8x8 | 3 | 2 | 1-2 | +I, S shapes | 8-12 | Blocker-cats (0-1) |
+| Hard | 46-65 | 8x8-9x9 | 3-4 | 2-3 | 1-2 | All 8 shapes | 10-15 | Conditional shapes |
+| Expert | 66-80 | 9x9-10x10 | 4-5 | 2-3 | 2-3 | All 8 shapes | 15-20 | Multiple conditionals |
+| Master | 81-100 | 9x9-10x10 | 4-5 | 3-4 | 2-3 | All 8 shapes | 18+ | All mechanics combined |
+
+**Level Generation CLI:** Levels are generated per-tier using the offline tool:
+```bash
+tilepuzzlelevelgen --count 10 --tier tutorial --output Levels/
+tilepuzzlelevelgen --count 15 --tier easy --output Levels/
+tilepuzzlelevelgen --count 20 --tier medium --output Levels/
+tilepuzzlelevelgen --count 20 --tier hard --output Levels/
+tilepuzzlelevelgen --count 15 --tier expert --output Levels/
+tilepuzzlelevelgen --count 20 --tier master --output Levels/
+```
+
+**Runtime Validation:** On game boot, all 100 levels are loaded into RAM. Each level is validated via `Zenith_Assert` against its tier's expected parameter ranges (grid size, color count, blocker count, shape complexity). This ensures the offline tool and game expectations stay in sync.
 
 ### 3.3 Level Generation Algorithm
 
@@ -250,7 +281,7 @@ Each cat has:
 ### 6.1 Save Format
 
 - **Binary serialization** via `Zenith_DataStream`
-- **Save version:** 5 (`uGAME_SAVE_VERSION`)
+- **Save version:** 6 (`uGAME_SAVE_VERSION`)
 - **Auto-save triggers:** Level complete, menu return, quit
 - **Slot:** Single `autosave` slot
 
@@ -395,11 +426,38 @@ Staggered reveal sequence (~2.5s total):
 - Star images use `star_filled`/`star_empty` textures (not text asterisks)
 - Each star appearance triggers a gold particle burst at grid center
 
+**Victory Celebration Intensity (by star count):**
+- **1 star:** Modest celebration — smaller title text, no confetti, single brief zoom pulse
+- **2 stars:** Standard celebration — normal title, confetti burst (40 particles), zoom pulse
+- **3 stars:** Full celebration — large title with glow, full confetti burst (80 particles), extended zoom pulse, bonus particle effects per star
+
+**"New Best!" Indicator:**
+When replaying a level and achieving a better star rating or fewer moves than the previous best, display a "New Best!" callout text (gold, pulsing) below the star display. Shows the improvement: "2 moves under par!" or "Improved: 3 stars!"
+
 ### 7.6 Input
 
 **Mouse/Touch (Primary):** Tap to select shape (emissive glow highlight + breathing pulse), drag to move shape in dominant direction, up to 4 cells per drag update, auto-snap on release. All menus are touch/click navigated.
 
 **Keyboard (Development Only):** Escape key available in `#ifdef ZENITH_TOOLS` builds for quick menu return. No keyboard gameplay controls — the game targets mobile touch input exclusively.
+
+### 7.7 Settings Screen
+
+Accessible from main menu via settings gear button. Contains:
+
+| Setting | Type | Default | Persisted |
+|---------|------|---------|-----------|
+| Sound Effects | Toggle | On | Yes |
+| Music | Toggle | On | Yes |
+| Haptics | Toggle | On | Yes |
+| Credits/About | Button | — | — |
+| Privacy Policy | Link | — | — |
+| Reset Progress | Button (with confirmation dialog) | — | — |
+
+**Credits/About:** Displays game version, engine version, and credits text. Scrollable if content exceeds screen height.
+
+**Privacy Policy:** Opens the privacy policy URL in the system browser. Required by Google Play.
+
+**Reset Progress:** Shows a confirmation dialog ("Are you sure? This will delete all progress, coins, and cat collection. This cannot be undone.") with "Cancel" and "Reset" buttons. On confirm, clears save data and returns to main menu.
 
 ---
 
@@ -536,7 +594,16 @@ Tutorial tier uses simplified parameters:
 | 26-30 | Blocker-cats | "Some cats sit on blockers - get adjacent!" |
 | 46-50 | Conditional shapes | "Locked shapes unlock after eliminating cats" |
 
-### 10.3 Hint System as Safety Net
+### 10.3 Guided Onboarding (Target)
+
+The current tutorial uses text overlays. The target onboarding experience uses contextual visual guidance:
+
+- **Ghost hand animation:** An animated hand icon that points at the shape to drag, then traces the correct direction. Used for the first 3 levels.
+- **Target cat highlight:** When the player picks up a shape, the matching-color cat(s) pulse with a highlight border (first 3 levels only).
+- **Progressive button disclosure:** Undo button appears at level 3, Hint button at level 5, Skip button at level 10. Before these thresholds, the buttons are hidden entirely (not just disabled).
+- **Stuck detection:** After 60 seconds of no moves on levels 1-10, show a subtle "Need a hint?" prompt that auto-triggers the free hint.
+
+### 10.4 Hint System as Safety Net
 
 - First hint per level is free
 - BFS solver computes optimal next move from current state
@@ -555,12 +622,56 @@ Already implemented:
 - 50 coin reward
 - Streak tracking
 
-### 11.2 Future Considerations
+### 11.2 Weekly Challenges
 
-- **Weekly Challenges:** Themed puzzle packs (e.g., "Only L-shapes this week")
+Time-limited goals that give players a medium-term engagement target beyond daily puzzles:
+
+| Challenge Type | Example | Reward | Duration |
+|---------------|---------|--------|----------|
+| Level Completion | "Complete 5 levels this week" | 50 coins | 7 days |
+| Star Collection | "Earn 10 stars this week" | 75 coins | 7 days |
+| Cat Rescue | "Rescue 5 cats this week" | 100 coins | 7 days |
+| Perfect Clear | "Get 3 stars on 3 levels" | 50 coins | 7 days |
+
+- One active challenge at a time, refreshes every Monday at midnight UTC
+- Challenge progress persisted in save data
+- UI: challenge banner on main menu showing progress bar and reward
+
+### 11.3 Achievement System
+
+15-20 persistent achievements that give players long-term goals beyond level completion:
+
+**Progression Achievements:**
+- "First Steps" — Complete level 1
+- "Getting Started" — Complete 10 levels
+- "Halfway There" — Complete 50 levels
+- "Cat Master" — Complete all 100 levels
+- "Pinball Rookie" — Clear first pinball gate
+- "Pinball Pro" — Clear all 10 pinball gates
+
+**Skill Achievements:**
+- "Perfect Puzzle" — Complete a level at par (3 stars)
+- "Speed Solver" — Complete 10 levels at par
+- "No Take-Backs" — Complete a level without using undo
+- "Flawless" — Complete 5 levels in a row at par
+
+**Collection Achievements:**
+- "Cat Lover" — Collect 10 cats
+- "Cat Enthusiast" — Collect 25 cats
+- "Cat Collector" — Collect 50 cats
+- "Crazy Cat Person" — Collect all 100 cats
+
+**Daily Achievements:**
+- "Regular" — Complete 7 daily puzzles
+- "Dedicated" — Reach a 14-day daily streak
+- "Committed" — Reach a 30-day daily streak
+
+UI: Dedicated achievements screen accessible from main menu. Each achievement shows name, description, icon, and locked/unlocked state. Unlocked achievements show a gold border.
+
+### 11.4 Future Considerations
+
 - **Seasonal Events:** Holiday-themed cat skins and level backgrounds
 - **Leaderboards:** Best moves/time per level (requires online infrastructure)
-- **Push Notifications:** Daily puzzle reminder, life refill notification
 
 ---
 
@@ -738,33 +849,46 @@ Pinball:
 5. ~~Particle effect enhancements (color-matched, unlock particles)~~ Done
 6. ~~Victory overlay redesign (staggered reveal sequence)~~ Done
 
-### Phase 2: Onboarding & Tutorial
-1. Contextual tutorial overlays (levels 1, 6, 11, 26, 46)
-2. First-time user experience (progressive menu disclosure)
+### Phase 2: Onboarding & Tutorial (COMPLETED)
+1. ~~Contextual tutorial overlays (levels 1, 6, 11, 26, 46)~~ Done
+2. ~~First-time user experience (progressive menu disclosure)~~ Done
 
-### Phase 3: Visual Polish
-1. Per-color material PBR variation (roughness/metallic)
-2. Cat mesh upgrade (ear shapes, idle bob animation)
-3. Background gradient per difficulty tier
-4. Screen transitions between menus
+### Phase 3: Visual Polish (COMPLETED)
+1. ~~Per-color material variation~~ Done
+2. ~~Background gradient per difficulty tier~~ Done
+3. ~~Screen transitions between menus~~ Done
 
-### Phase 4: Meta-Game Polish
-1. New cat unlock celebration sequence
-2. Level select visual upgrade (star icons, lock icons, color coding)
-3. Cat Cafe visual upgrade (cat face images, collection progress bar)
-4. Settings screen (sound, music, haptics toggles)
-5. Retention features (milestones, "New Best!" indicator, total star counter)
+### Phase 4: Meta-Game Polish (COMPLETED)
+1. ~~Cat Cafe collection system~~ Done
+2. ~~Level select visual upgrade (star icons, lock icons, color coding)~~ Done
+3. ~~Settings screen (sound, music, haptics toggles)~~ Done
+4. ~~Victory overlay redesign~~ Done
+5. ~~Milestone coin bonuses~~ Done
 
-### Phase 5: Audio Integration
-1. Integrate audio library (miniaudio)
-2. Add SFX for all gameplay events
-3. Add background music (menu, puzzle, pinball)
+### Phase 5: Difficulty & Content
+1. Add `--tier` argument to TilePuzzleLevelGen for tier-aware generation
+2. Re-generate 100 levels with proper 6-tier difficulty curve
+3. Add runtime level validation (Zenith_Assert per-tier checks at boot)
+4. Implement lives gate (enforce lives deduction on level entry)
+5. Verify daily puzzle generation and caching
 
-### Phase 6: Monetization & Store
-1. Integrate ad SDK (AdMob)
-2. Add rewarded video ad placements
-3. Integrate Google Play Billing for IAPs
-4. Create store listing assets (icon, feature graphic, screenshots)
+### Phase 6: Retention & Engagement
+1. Weekly challenge system (progress tracking, rewards, UI)
+2. Achievement system (15-20 achievements, dedicated screen)
+3. Victory overlay variety (star-count-based intensity, "New Best!" indicator)
+4. Improved onboarding (ghost hand, target highlighting, stuck detection)
+5. Settings additions (credits, privacy policy, reset progress)
+
+### Phase 7: Visual Upgrade
+1. Cat mesh upgrade (replace sphere with low-poly cat model)
+2. PBR material polish (roughness/metallic per shape color)
+3. Splash screen / logo
+
+### Phase 8: Store Release
+1. Create store listing assets (icon, feature graphic, screenshots)
+2. Privacy policy creation
+3. Content rating questionnaire
+4. APK size optimization
 
 ---
 

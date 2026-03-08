@@ -471,6 +471,42 @@ Each asset includes:
 | Sound Effects | 10 | 4 | 14 |
 | **Total** | **42** | **12** | **54** |
 
+### Implementation Status (Audit)
+
+| Asset | Status | File on Disk |
+|-------|--------|-------------|
+| **UI Icons (all 15)** | DONE | `Assets/Textures/Icons/*.ztxtr` |
+| **Cat Face Textures (5)** | DONE | `Assets/Textures/CatFaces/cat_face_0-4.ztxtr` |
+| **Floor Tile Texture** | DONE | `Assets/Textures/Gameplay/floor_tile.ztxtr` |
+| **Blocker Texture** | DONE | `Assets/Textures/Gameplay/blocker.ztxtr` |
+| **Shape Meshes (8)** | DONE | `Assets/Meshes/shape_0-7.bin` |
+| **Materials Pack** | DONE | `Assets/Materials/materials.bin` |
+| **Elimination Particles** | DONE | `Assets/Particles/elimination.zptcl` |
+| **Victory Confetti** | DONE | `Assets/Particles/victory_confetti.zptcl` |
+| **Selection Highlight** | DONE | In-code (emissive material override) |
+| **Pinball Ball Material** | DONE | `Assets/Materials/pinball_ball.zmtrl` |
+| **Pinball Peg Material** | DONE | `Assets/Materials/pinball_peg.zmtrl` |
+| **Pinball Peg-Hit Material** | DONE | `Assets/Materials/pinball_peg_hit.zmtrl` |
+| **Cat Card BG** | DONE | Procedural (UIRect in code) |
+| **Page Indicator Dots** | DONE | Procedural (SDF in code) |
+| **Lock Indicator Overlay** | DONE | Uses Flux_Text |
+| **Cat 3D Mesh** | NOT DONE | Using sphere placeholder |
+| **Shape Material Variants (PBR)** | PARTIAL | Flat colors exist, not PBR-tuned |
+| **App Icon** | NOT DONE | Required for store submission |
+| **Feature Graphic** | NOT DONE | Required for store submission |
+| **Screenshots** | NOT DONE | Required for store submission |
+| **Splash Screen/Logo** | NOT DONE | — |
+| **All Audio SFX (14)** | NOT DONE | No audio files exist |
+| **All Music (5 tracks)** | NOT DONE | No audio files exist |
+| **Promo Video** | NOT DONE | Nice-to-Have |
+| **Cat Portrait** | NOT DONE | Nice-to-Have |
+| **Cafe Background** | NOT DONE | Nice-to-Have (gradient in code) |
+| **Loading Spinner** | NOT DONE | Nice-to-Have |
+| **Pinball Target Material** | NOT DONE | Nice-to-Have (green emissive in code) |
+| **Pinball Floor Material** | NOT DONE | Nice-to-Have (procedural in code) |
+
+**Summary:** 31 of 54 assets (57%) are implemented. All 15 UI icons, all gameplay textures, meshes, particles, and pinball materials are complete. The major gaps are: all 19 audio assets (100% of audio is missing), 4 store listing assets (blockers for release), the cat 3D mesh (still placeholder sphere), and the splash screen.
+
 ### Procedural Feasibility Breakdown
 
 | Feasibility | Count | Percentage |

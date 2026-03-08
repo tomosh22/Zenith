@@ -233,7 +233,7 @@ public:
 		}
 		m_uCurrentLevelNumber = m_xSaveData.uCurrentLevel;
 
-		// Scan for available level files
+		// Load all levels into RAM and validate against tier constraints
 		m_uAvailableLevelCount = 0;
 		for (uint32_t u = 1; u <= TilePuzzleSaveData::uMAX_LEVELS; ++u)
 		{
@@ -241,6 +241,20 @@ public:
 			snprintf(szPath, sizeof(szPath), GAME_ASSETS_DIR "Levels/level_%04u.tlvl", u);
 			if (!Zenith_FileAccess::FileExists(szPath))
 				break;
+
+			Zenith_DataStream xValidateStream;
+			xValidateStream.ReadFromFile(szPath);
+			Zenith_Assert(xValidateStream.IsValid(), "Failed to load level file for validation: %s", szPath);
+
+			TilePuzzleLevelData xValidateLevel = {};
+			Zenith_Vector<TilePuzzleShapeDefinition> axValidateDefs;
+			bool bParsed = TilePuzzleLevelSerialize::Read(xValidateStream, xValidateLevel, axValidateDefs);
+			Zenith_Assert(bParsed, "Failed to parse level file for validation: %s", szPath);
+
+			ValidateLevelTier(u, xValidateLevel);
+
+			m_axPreloadedLevels.PushBack(std::move(xValidateLevel));
+			m_axPreloadedShapeDefs.PushBack(std::move(axValidateDefs));
 			m_uAvailableLevelCount++;
 		}
 
@@ -1365,6 +1379,10 @@ private:
 	Zenith_Vector<TilePuzzleShapeDefinition> m_axLoadedShapeDefs;  // Owns shape defs for loaded level (must outlive m_xCurrentLevel)
 	Zenith_Vector<Flux_MeshGeometry*> m_apxGeneratedShapeMeshes;  // Per-shape meshes generated from loaded cell offsets
 
+	// Preloaded level data (all levels loaded into RAM at boot for instant access + tier validation)
+	Zenith_Vector<TilePuzzleLevelData> m_axPreloadedLevels;
+	Zenith_Vector<Zenith_Vector<TilePuzzleShapeDefinition>> m_axPreloadedShapeDefs;
+
 	// Entity IDs - floor entities indexed by grid position (y * 1000 + x)
 	std::unordered_map<uint32_t, Zenith_EntityID> m_axFloorEntityIDs; // #TODO: Replace with engine hash map
 
@@ -1624,25 +1642,82 @@ private:
 	// ========================================================================
 	// Level Loading
 	// ========================================================================
+	void ValidateLevelTier(uint32_t uLevelNumber, const TilePuzzleLevelData& xLevel)
+	{
+		struct TierSpec
+		{
+			uint32_t uMinGrid, uMaxGrid;
+			uint32_t uMinColors, uMaxColors;
+			uint32_t uMinBlockers, uMaxBlockers;
+		};
+
+		TierSpec xSpec;
+		if (uLevelNumber <= 10)        xSpec = { 5,  6, 1, 2, 0, 0 }; // Tutorial
+		else if (uLevelNumber <= 25)   xSpec = { 6,  7, 2, 3, 0, 1 }; // Easy
+		else if (uLevelNumber <= 45)   xSpec = { 7,  8, 3, 3, 1, 2 }; // Medium
+		else if (uLevelNumber <= 65)   xSpec = { 8,  9, 3, 4, 1, 2 }; // Hard
+		else if (uLevelNumber <= 80)   xSpec = { 9, 10, 4, 5, 2, 3 }; // Expert
+		else                           xSpec = { 9, 10, 4, 5, 2, 3 }; // Master
+
+		// Validate grid size
+		Zenith_Assert(xLevel.uGridWidth >= xSpec.uMinGrid && xLevel.uGridWidth <= xSpec.uMaxGrid,
+			"Level %u: grid width %u outside tier range [%u, %u]", uLevelNumber, xLevel.uGridWidth, xSpec.uMinGrid, xSpec.uMaxGrid);
+		Zenith_Assert(xLevel.uGridHeight >= xSpec.uMinGrid && xLevel.uGridHeight <= xSpec.uMaxGrid,
+			"Level %u: grid height %u outside tier range [%u, %u]", uLevelNumber, xLevel.uGridHeight, xSpec.uMinGrid, xSpec.uMaxGrid);
+
+		// Count unique colors used by cats
+		bool abColorUsed[TILEPUZZLE_COLOR_COUNT] = {};
+		for (const auto& xCat : xLevel.axCats)
+		{
+			if (xCat.eColor < TILEPUZZLE_COLOR_COUNT)
+				abColorUsed[xCat.eColor] = true;
+		}
+		uint32_t uColorCount = 0;
+		for (uint32_t i = 0; i < TILEPUZZLE_COLOR_COUNT; ++i)
+			if (abColorUsed[i]) uColorCount++;
+
+		Zenith_Assert(uColorCount >= xSpec.uMinColors && uColorCount <= xSpec.uMaxColors,
+			"Level %u: %u colors, expected [%u, %u]", uLevelNumber, uColorCount, xSpec.uMinColors, xSpec.uMaxColors);
+
+		// Count blocker shapes (non-draggable)
+		uint32_t uBlockerCount = 0;
+		for (const auto& xShape : xLevel.axShapes)
+		{
+			if (xShape.pxDefinition && !xShape.pxDefinition->bDraggable)
+				uBlockerCount++;
+		}
+		Zenith_Assert(uBlockerCount >= xSpec.uMinBlockers && uBlockerCount <= xSpec.uMaxBlockers,
+			"Level %u: %u blockers, expected [%u, %u]", uLevelNumber, uBlockerCount, xSpec.uMinBlockers, xSpec.uMaxBlockers);
+	}
+
 	void LoadLevelFromFile()
 	{
-		// Build path for current level number
-		char szPath[ZENITH_MAX_PATH_LENGTH];
-		snprintf(szPath, sizeof(szPath), GAME_ASSETS_DIR "Levels/level_%04u.tlvl", m_uCurrentLevelNumber);
-
-		// Load and deserialize
-		Zenith_DataStream xStream;
-		xStream.ReadFromFile(szPath);
-		Zenith_Assert(xStream.IsValid(), "Failed to load level file: %s", szPath);
-
 		// Clean up previously generated per-shape meshes
 		for (uint32_t i = 0; i < m_apxGeneratedShapeMeshes.GetSize(); ++i)
 			delete m_apxGeneratedShapeMeshes.Get(i);
 		m_apxGeneratedShapeMeshes.Clear();
 
+		// Use preloaded level data (loaded at boot in OnAwake)
+		uint32_t uIndex = m_uCurrentLevelNumber - 1;
+		Zenith_Assert(uIndex < m_axPreloadedLevels.GetSize(), "Level %u not preloaded", m_uCurrentLevelNumber);
+
+		m_xCurrentLevel = m_axPreloadedLevels.Get(uIndex);
+
+		// Copy shape definitions and remap pointers
 		m_axLoadedShapeDefs.Clear();
-		bool bParsed = TilePuzzleLevelSerialize::Read(xStream, m_xCurrentLevel, m_axLoadedShapeDefs);
-		Zenith_Assert(bParsed, "Failed to parse level file: %s", szPath);
+		const Zenith_Vector<TilePuzzleShapeDefinition>& axSrcDefs = m_axPreloadedShapeDefs.Get(uIndex);
+		for (uint32_t i = 0; i < axSrcDefs.GetSize(); ++i)
+			m_axLoadedShapeDefs.PushBack(axSrcDefs.Get(i));
+
+		uint32_t uDefIdx = 0;
+		for (size_t i = 0; i < m_xCurrentLevel.axShapes.size(); ++i)
+		{
+			if (m_xCurrentLevel.axShapes[i].pxDefinition)
+			{
+				m_xCurrentLevel.axShapes[i].pxDefinition = &m_axLoadedShapeDefs.Get(uDefIdx);
+				uDefIdx++;
+			}
+		}
 
 		// Compute solution if the level file didn't contain one (v1 file)
 		if (m_xCurrentLevel.axSolution.empty())
@@ -1650,7 +1725,8 @@ private:
 			TilePuzzle_Solver::SolveLevelWithPath(m_xCurrentLevel, m_xCurrentLevel.axSolution);
 			if (!m_xCurrentLevel.axSolution.empty())
 			{
-				// Write updated file back with solution data
+				char szPath[ZENITH_MAX_PATH_LENGTH];
+				snprintf(szPath, sizeof(szPath), GAME_ASSETS_DIR "Levels/level_%04u.tlvl", m_uCurrentLevelNumber);
 				Zenith_DataStream xWriteStream;
 				TilePuzzleLevelSerialize::Write(xWriteStream, m_xCurrentLevel);
 				xWriteStream.WriteToFile(szPath);
