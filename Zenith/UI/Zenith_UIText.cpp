@@ -12,7 +12,7 @@
 
 namespace Zenith_UI {
 
-static constexpr uint32_t UI_TEXT_VERSION = 1;
+static constexpr uint32_t UI_TEXT_VERSION = 2;
 
 Zenith_UIText::Zenith_UIText(const std::string& strText, const std::string& strName)
     : Zenith_UIElement(strName)
@@ -71,8 +71,24 @@ void Zenith_UIText::Render(Zenith_UICanvas& xCanvas)
         break;
     }
 
-    // Submit text to canvas for rendering (uses Flux_Text)
-    xCanvas.SubmitText(m_strText, xTextPos, m_fFontSize, m_xColor);
+    float fAlpha = GetEffectiveAlpha();
+
+    // Shadow pass
+    if (m_bShadowEnabled)
+    {
+        Zenith_Maths::Vector2 xShadowPos = {
+            xTextPos.x + m_xShadowOffset.x,
+            xTextPos.y + m_xShadowOffset.y
+        };
+        Zenith_Maths::Vector4 xShadowColor = m_xShadowColor;
+        xShadowColor.a *= fAlpha;
+        xCanvas.SubmitText(m_strText, xShadowPos, m_fFontSize, xShadowColor);
+    }
+
+    // Main text pass
+    Zenith_Maths::Vector4 xTextColor = m_xColor;
+    xTextColor.a *= fAlpha;
+    xCanvas.SubmitText(m_strText, xTextPos, m_fFontSize, xTextColor);
 
     // Render children (if any)
     Zenith_UIElement::Render(xCanvas);
@@ -89,6 +105,9 @@ void Zenith_UIText::WriteToDataStream(Zenith_DataStream& xStream) const
     xStream << m_fFontSize;
     xStream << static_cast<uint32_t>(m_eAlignment);
     xStream << static_cast<uint32_t>(m_eVerticalAlignment);
+    xStream << m_bShadowEnabled;
+    xStream << m_xShadowColor.x; xStream << m_xShadowColor.y; xStream << m_xShadowColor.z; xStream << m_xShadowColor.w;
+    xStream << m_xShadowOffset.x; xStream << m_xShadowOffset.y;
 }
 
 void Zenith_UIText::ReadFromDataStream(Zenith_DataStream& xStream)
@@ -100,6 +119,8 @@ void Zenith_UIText::ReadFromDataStream(Zenith_DataStream& xStream)
     uint32_t uVersion;
     xStream >> uVersion;
 
+    Zenith_Assert(uVersion == UI_TEXT_VERSION, "UIText version mismatch");
+
     xStream >> m_strText;
     xStream >> m_fFontSize;
 
@@ -109,6 +130,10 @@ void Zenith_UIText::ReadFromDataStream(Zenith_DataStream& xStream)
 
     xStream >> uAlign;
     m_eVerticalAlignment = static_cast<TextVerticalAlignment>(uAlign);
+
+    xStream >> m_bShadowEnabled;
+    xStream >> m_xShadowColor.x; xStream >> m_xShadowColor.y; xStream >> m_xShadowColor.z; xStream >> m_xShadowColor.w;
+    xStream >> m_xShadowOffset.x; xStream >> m_xShadowOffset.y;
 }
 
 #ifdef ZENITH_TOOLS

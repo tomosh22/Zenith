@@ -8,7 +8,7 @@
 
 namespace Zenith_UI {
 
-static constexpr uint32_t UI_CANVAS_VERSION = 1;
+static constexpr uint32_t UI_CANVAS_VERSION = 2;
 
 // Static member initialization
 Zenith_UICanvas* Zenith_UICanvas::s_pxPrimaryCanvas = nullptr;
@@ -255,7 +255,8 @@ void Zenith_UICanvas::SetReferenceResolution(float fWidth, float fHeight)
     UpdateSize();
 }
 
-void Zenith_UICanvas::SubmitQuad(const Zenith_Maths::Vector4& xBounds, const Zenith_Maths::Vector4& xColor, uint32_t uTextureID)
+void Zenith_UICanvas::SubmitQuad(const Zenith_Maths::Vector4& xBounds, const Zenith_Maths::Vector4& xColor, uint32_t uTextureID,
+    float fCornerRadius, const Zenith_Maths::Vector4& xGradientColor)
 {
     float fLeft = xBounds.x;
     float fTop = xBounds.y;
@@ -273,8 +274,9 @@ void Zenith_UICanvas::SubmitQuad(const Zenith_Maths::Vector4& xBounds, const Zen
     };
 
     Zenith_Maths::Vector2 xUVMultAdd = { 1.0f, 0.0f };
+    Zenith_Maths::Vector2 xSizePixels = { fWidth, fHeight };
 
-    Flux_Quads::Quad xQuad(xPositionSize, xColor, uTextureID, xUVMultAdd);
+    Flux_Quads::Quad xQuad(xPositionSize, xColor, uTextureID, xUVMultAdd, fCornerRadius, xSizePixels, xGradientColor);
     Flux_Quads::UploadQuad(xQuad);
 }
 
@@ -318,37 +320,68 @@ void Zenith_UICanvas::SubmitText(const std::string& strText, const Zenith_Maths:
     s_xPendingTextEntries.PushBack(xEntry);
 }
 
+// Recursive helper: write element + children tree
+static void WriteElementTree(const Zenith_UIElement* pxElement, Zenith_DataStream& xStream)
+{
+    xStream << static_cast<uint32_t>(pxElement->GetType());
+    pxElement->WriteToDataStream(xStream);
+
+    uint32_t uNumChildren = static_cast<uint32_t>(pxElement->GetChildCount());
+    xStream << uNumChildren;
+
+    for (size_t i = 0; i < uNumChildren; i++)
+    {
+        Zenith_UIElement* pxChild = pxElement->GetChild(i);
+        if (pxChild)
+        {
+            WriteElementTree(pxChild, xStream);
+        }
+    }
+}
+
+// Recursive helper: read element + children tree
+static Zenith_UIElement* ReadElementTree(Zenith_DataStream& xStream, Zenith_Vector<Zenith_UIElement*>& xAllElements)
+{
+    uint32_t uType;
+    xStream >> uType;
+
+    UIElementType eType = static_cast<UIElementType>(uType);
+    Zenith_UIElement* pxElement = Zenith_UIElement::CreateFromType(eType);
+
+    if (pxElement)
+    {
+        pxElement->ReadFromDataStream(xStream);
+        xAllElements.PushBack(pxElement);
+
+        uint32_t uNumChildren;
+        xStream >> uNumChildren;
+
+        for (uint32_t c = 0; c < uNumChildren; c++)
+        {
+            Zenith_UIElement* pxChild = ReadElementTree(xStream, xAllElements);
+            if (pxChild)
+            {
+                pxElement->AddChild(pxChild);
+            }
+        }
+    }
+
+    return pxElement;
+}
+
 void Zenith_UICanvas::WriteToDataStream(Zenith_DataStream& xStream) const
 {
     xStream << UI_CANVAS_VERSION;
 
-    // Write number of root elements
     uint32_t uNumElements = static_cast<uint32_t>(m_xRootElements.GetSize());
     xStream << uNumElements;
 
-    // Write each root element (they will write their children)
     for (Zenith_Vector<Zenith_UIElement*>::Iterator xIt(m_xRootElements); !xIt.Done(); xIt.Next())
     {
         const Zenith_UIElement* pxElement = xIt.GetData();
         if (pxElement)
         {
-            // Write type first so we can create correct type on load
-            xStream << static_cast<uint32_t>(pxElement->GetType());
-            pxElement->WriteToDataStream(xStream);
-
-            // Write children count and children
-            uint32_t uNumChildren = static_cast<uint32_t>(pxElement->GetChildCount());
-            xStream << uNumChildren;
-
-            for (size_t i = 0; i < uNumChildren; i++)
-            {
-                Zenith_UIElement* pxChild = pxElement->GetChild(i);
-                if (pxChild)
-                {
-                    xStream << static_cast<uint32_t>(pxChild->GetType());
-                    pxChild->WriteToDataStream(xStream);
-                }
-            }
+            WriteElementTree(pxElement, xStream);
         }
     }
 }
@@ -365,38 +398,19 @@ void Zenith_UICanvas::ReadFromDataStream(Zenith_DataStream& xStream)
 
     for (uint32_t i = 0; i < uNumElements; i++)
     {
-        uint32_t uType;
-        xStream >> uType;
-
-        UIElementType eType = static_cast<UIElementType>(uType);
-        Zenith_UIElement* pxElement = Zenith_UIElement::CreateFromType(eType);
-
+        Zenith_UIElement* pxElement = ReadElementTree(xStream, m_xAllElements);
         if (pxElement)
         {
-            pxElement->ReadFromDataStream(xStream);
-
-            // Read children
-            uint32_t uNumChildren;
-            xStream >> uNumChildren;
-
-            for (uint32_t c = 0; c < uNumChildren; c++)
-            {
-                uint32_t uChildType;
-                xStream >> uChildType;
-
-                UIElementType eChildType = static_cast<UIElementType>(uChildType);
-                Zenith_UIElement* pxChild = Zenith_UIElement::CreateFromType(eChildType);
-
-                if (pxChild)
-                {
-                    pxChild->ReadFromDataStream(xStream);
-                    pxElement->AddChild(pxChild);
-                    m_xAllElements.PushBack(pxChild);
-                }
-            }
-
-            AddElement(pxElement);
+            pxElement->m_pxCanvas = this;
+            m_xRootElements.PushBack(pxElement);
         }
+    }
+
+    // Set canvas pointer on all elements (AddChild propagates from parent,
+    // but root elements need it set first, then propagate to children)
+    for (uint32_t i = 0; i < m_xAllElements.GetSize(); i++)
+    {
+        m_xAllElements.Get(i)->m_pxCanvas = this;
     }
 }
 

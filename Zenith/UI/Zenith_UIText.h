@@ -53,6 +53,19 @@ public:
     void SetVerticalAlignment(TextVerticalAlignment eAlign) { m_eVerticalAlignment = eAlign; }
     TextVerticalAlignment GetVerticalAlignment() const { return m_eVerticalAlignment; }
 
+    // ========== Text Shadow ==========
+
+    void SetTextShadow(bool bEnabled, const Zenith_Maths::Vector4& xColor = {0,0,0,0.5f}, const Zenith_Maths::Vector2& xOffset = {2,2})
+    {
+        m_bShadowEnabled = bEnabled;
+        m_xShadowColor = xColor;
+        m_xShadowOffset = xOffset;
+    }
+
+    void SetShadowEnabled(bool bEnabled) { m_bShadowEnabled = bEnabled; }
+    void SetShadowColor(const Zenith_Maths::Vector4& xColor) { m_xShadowColor = xColor; }
+    void SetShadowOffset(const Zenith_Maths::Vector2& xOffset) { m_xShadowOffset = xOffset; }
+
     // ========== Text Metrics ==========
 
     float GetTextWidth() const;
@@ -73,6 +86,11 @@ private:
     float m_fFontSize = 24.0f;
     TextAlignment m_eAlignment = TextAlignment::Left;
     TextVerticalAlignment m_eVerticalAlignment = TextVerticalAlignment::Top;
+
+    // Shadow
+    bool m_bShadowEnabled = false;
+    Zenith_Maths::Vector4 m_xShadowColor = {0.0f, 0.0f, 0.0f, 0.5f};
+    Zenith_Maths::Vector2 m_xShadowOffset = {2.0f, 2.0f};
 };
 
 } // namespace Zenith_UI

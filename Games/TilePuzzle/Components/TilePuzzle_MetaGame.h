@@ -436,11 +436,8 @@ void SetLivesDisplayVisible(bool bVisible)
 
 	Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
 
-	Zenith_UI::Zenith_UIText* pxLives = xUI.FindElement<Zenith_UI::Zenith_UIText>("LivesText");
-	if (pxLives) pxLives->SetVisible(bVisible);
-
-	Zenith_UI::Zenith_UIButton* pxRefill = xUI.FindElement<Zenith_UI::Zenith_UIButton>("RefillLivesButton");
-	if (pxRefill) pxRefill->SetVisible(bVisible && m_xSaveData.uLives < TilePuzzleSaveData::uMAX_LIVES);
+	if (auto* pxArea = xUI.FindElement("LivesArea"))
+		pxArea->SetVisible(bVisible);
 }
 
 void UpdateLivesDisplay()
@@ -453,22 +450,27 @@ void UpdateLivesDisplay()
 	Zenith_UI::Zenith_UIText* pxLives = xUI.FindElement<Zenith_UI::Zenith_UIText>("LivesText");
 	if (pxLives)
 	{
-		// Build heart display
 		char szLives[64];
-		uint32_t uTimerSecs = m_xSaveData.GetSecondsUntilNextLife(GetCurrentTimestamp());
-		if (m_xSaveData.uLives >= TilePuzzleSaveData::uMAX_LIVES)
+		snprintf(szLives, sizeof(szLives), "Lives: %u/%u",
+			m_xSaveData.uLives, TilePuzzleSaveData::uMAX_LIVES);
+		pxLives->SetText(szLives);
+	}
+
+	// Timer text shown below lives group when regenerating
+	Zenith_UI::Zenith_UIText* pxTimer = xUI.FindElement<Zenith_UI::Zenith_UIText>("LivesTimerText");
+	if (pxTimer)
+	{
+		bool bRegenerating = m_xSaveData.uLives < TilePuzzleSaveData::uMAX_LIVES;
+		pxTimer->SetVisible(bRegenerating && m_eState == TILEPUZZLE_STATE_MAIN_MENU);
+		if (bRegenerating)
 		{
-			snprintf(szLives, sizeof(szLives), "Lives: %u/%u",
-				m_xSaveData.uLives, TilePuzzleSaveData::uMAX_LIVES);
-		}
-		else
-		{
+			uint32_t uTimerSecs = m_xSaveData.GetSecondsUntilNextLife(GetCurrentTimestamp());
 			uint32_t uMins = uTimerSecs / 60;
 			uint32_t uSecs = uTimerSecs % 60;
-			snprintf(szLives, sizeof(szLives), "Lives: %u/%u  Next: %u:%02u",
-				m_xSaveData.uLives, TilePuzzleSaveData::uMAX_LIVES, uMins, uSecs);
+			char szTimer[32];
+			snprintf(szTimer, sizeof(szTimer), "Next: %u:%02u", uMins, uSecs);
+			pxTimer->SetText(szTimer);
 		}
-		pxLives->SetText(szLives);
 	}
 
 	// Show/hide refill button based on lives count
@@ -556,7 +558,7 @@ void UpdateDailyStreakDisplay()
 	if (pxStreak)
 	{
 		char szStreak[32];
-		snprintf(szStreak, sizeof(szStreak), "Streak: %u days", m_xSaveData.uDailyStreak);
+		snprintf(szStreak, sizeof(szStreak), "%u days", m_xSaveData.uDailyStreak);
 		pxStreak->SetText(szStreak);
 	}
 }

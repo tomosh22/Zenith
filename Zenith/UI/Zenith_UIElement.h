@@ -2,6 +2,7 @@
 
 #include "Maths/Zenith_Maths.h"
 #include "Collections/Zenith_Vector.h"
+#include "UI/Zenith_UIStyle.h"
 #include <string>
 
 class Zenith_DataStream;
@@ -123,6 +124,49 @@ public:
     bool IsVisible() const { return m_bVisible; }
 
     virtual void OnChildVisibilityChanged() {}
+    virtual void OnChildAdded() {}
+    virtual void OnChildRemoved() {}
+
+    // ========== Group Alpha / Interactable ==========
+
+    void SetGroupAlpha(float fAlpha) { m_fGroupAlpha = fAlpha; }
+    float GetGroupAlpha() const { return m_fGroupAlpha; }
+
+    float GetEffectiveAlpha() const
+    {
+        float fAlpha = m_fGroupAlpha;
+        Zenith_UIElement* pxCurrent = m_pxParent;
+        while (pxCurrent)
+        {
+            fAlpha *= pxCurrent->m_fGroupAlpha;
+            pxCurrent = pxCurrent->m_pxParent;
+        }
+        return fAlpha;
+    }
+
+    void SetGroupInteractable(bool bInteractable) { m_bGroupInteractable = bInteractable; }
+    bool IsGroupInteractable() const
+    {
+        if (!m_bGroupInteractable) return false;
+        return m_pxParent ? m_pxParent->IsGroupInteractable() : true;
+    }
+
+    // ========== Background Style ==========
+
+    void SetBackgroundEnabled(bool bEnabled) { m_bHasBackground = bEnabled; }
+    bool HasBackground() const { return m_bHasBackground; }
+
+    void SetBackgroundColor(const Zenith_Maths::Vector4& xColor)
+    {
+        m_xBackgroundStyle.m_xFillColor = xColor;
+        m_bHasBackground = true;
+    }
+
+    void SetBackgroundCornerRadius(float fRadius) { m_xBackgroundStyle.m_fCornerRadius = fRadius; }
+    void SetBackgroundBorderColor(const Zenith_Maths::Vector4& xColor) { m_xBackgroundStyle.m_xBorderColor = xColor; }
+    void SetBackgroundBorderThickness(float fThickness) { m_xBackgroundStyle.m_fBorderThickness = fThickness; }
+    void SetBackgroundStyle(const UIStyle& xStyle) { m_xBackgroundStyle = xStyle; m_bHasBackground = true; }
+    const UIStyle& GetBackgroundStyle() const { return m_xBackgroundStyle; }
 
     // ========== Hierarchy ==========
 
@@ -176,6 +220,12 @@ protected:
     // Appearance
     Zenith_Maths::Vector4 m_xColor = { 1.0f, 1.0f, 1.0f, 1.0f };
     bool m_bVisible = true;
+    float m_fGroupAlpha = 1.0f;
+    bool m_bGroupInteractable = true;
+
+    // Background
+    bool m_bHasBackground = false;
+    UIStyle m_xBackgroundStyle;
 
     // Hierarchy - raw pointers, canvas owns all elements
     Zenith_UIElement* m_pxParent = nullptr;

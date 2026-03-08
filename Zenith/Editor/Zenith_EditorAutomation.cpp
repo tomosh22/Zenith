@@ -13,9 +13,6 @@
 #include "EntityComponent/Components/Zenith_ParticleEmitterComponent.h"
 #include "EntityComponent/Components/Zenith_ColliderComponent.h"
 #include "UI/Zenith_UI.h"
-#include "UI/Zenith_UIButton.h"
-#include "UI/Zenith_UIImage.h"
-#include "UI/Zenith_UILayoutGroup.h"
 #include "Flux/Particles/Flux_ParticleEmitterConfig.h"
 #include "AssetHandling/Zenith_MaterialAsset.h"
 
@@ -474,6 +471,225 @@ void Zenith_EditorAutomation::AddStep_SetUIButtonFontSize(const char* szElement,
 	xAction.m_eType = Zenith_EditorActionType::SET_UI_BUTTON_FONT_SIZE;
 	xAction.m_szArg1 = szElement;
 	xAction.m_afArgs[0] = fSize;
+	s_axActions.PushBack(xAction);
+}
+
+// -- UIElement Background --
+
+void Zenith_EditorAutomation::AddStep_SetUIBackgroundColor(const char* szElement, float fR, float fG, float fB, float fA)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = Zenith_EditorActionType::SET_UI_BACKGROUND_COLOR;
+	xAction.m_szArg1 = szElement;
+	xAction.m_afArgs[0] = fR;
+	xAction.m_afArgs[1] = fG;
+	xAction.m_afArgs[2] = fB;
+	xAction.m_afArgs[3] = fA;
+	s_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_SetUIBackgroundCornerRadius(const char* szElement, float fRadius)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = Zenith_EditorActionType::SET_UI_BACKGROUND_CORNER_RADIUS;
+	xAction.m_szArg1 = szElement;
+	xAction.m_afArgs[0] = fRadius;
+	s_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_SetUIBackgroundBorder(const char* szElement, float fR, float fG, float fB, float fThickness)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = Zenith_EditorActionType::SET_UI_BACKGROUND_BORDER;
+	xAction.m_szArg1 = szElement;
+	xAction.m_afArgs[0] = fR;
+	xAction.m_afArgs[1] = fG;
+	xAction.m_afArgs[2] = fB;
+	xAction.m_afArgs[3] = fThickness;
+	s_axActions.PushBack(xAction);
+}
+
+// -- UIRect Styling --
+
+void Zenith_EditorAutomation::AddStep_SetUICornerRadius(const char* szElement, float fRadius)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = Zenith_EditorActionType::SET_UI_CORNER_RADIUS;
+	xAction.m_szArg1 = szElement;
+	xAction.m_afArgs[0] = fRadius;
+	s_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_SetUIGradientColor(const char* szElement, float fR, float fG, float fB, float fA)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = Zenith_EditorActionType::SET_UI_GRADIENT_COLOR;
+	xAction.m_szArg1 = szElement;
+	xAction.m_afArgs[0] = fR;
+	xAction.m_afArgs[1] = fG;
+	xAction.m_afArgs[2] = fB;
+	xAction.m_afArgs[3] = fA;
+	s_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_SetUIShadow(const char* szElement, float fOffX, float fOffY, float fSpread, bool bEnabled)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = Zenith_EditorActionType::SET_UI_SHADOW;
+	xAction.m_szArg1 = szElement;
+	xAction.m_afArgs[0] = fOffX;
+	xAction.m_afArgs[1] = fOffY;
+	xAction.m_afArgs[2] = fSpread;
+	xAction.m_bArg = bEnabled;
+	s_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_SetUIShadowColor(const char* szElement, float fR, float fG, float fB, float fA)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = Zenith_EditorActionType::SET_UI_SHADOW_COLOR;
+	xAction.m_szArg1 = szElement;
+	xAction.m_afArgs[0] = fR;
+	xAction.m_afArgs[1] = fG;
+	xAction.m_afArgs[2] = fB;
+	xAction.m_afArgs[3] = fA;
+	s_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_SetUIRectBorder(const char* szElement, float fR, float fG, float fB, float fThickness)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = Zenith_EditorActionType::SET_UI_RECT_BORDER;
+	xAction.m_szArg1 = szElement;
+	xAction.m_afArgs[0] = fR;
+	xAction.m_afArgs[1] = fG;
+	xAction.m_afArgs[2] = fB;
+	xAction.m_afArgs[3] = fThickness;
+	s_axActions.PushBack(xAction);
+}
+
+// -- UIText Shadow --
+
+void Zenith_EditorAutomation::AddStep_SetUITextShadow(const char* szElement, float fOffX, float fOffY, bool bEnabled)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = Zenith_EditorActionType::SET_UI_TEXT_SHADOW;
+	xAction.m_szArg1 = szElement;
+	xAction.m_afArgs[0] = fOffX;
+	xAction.m_afArgs[1] = fOffY;
+	xAction.m_bArg = bEnabled;
+	s_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_SetUITextShadowColor(const char* szElement, float fR, float fG, float fB, float fA)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = Zenith_EditorActionType::SET_UI_TEXT_SHADOW_COLOR;
+	xAction.m_szArg1 = szElement;
+	xAction.m_afArgs[0] = fR;
+	xAction.m_afArgs[1] = fG;
+	xAction.m_afArgs[2] = fB;
+	xAction.m_afArgs[3] = fA;
+	s_axActions.PushBack(xAction);
+}
+
+// -- UIButton Styling --
+
+void Zenith_EditorAutomation::AddStep_SetUIButtonCornerRadius(const char* szElement, float fRadius)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = Zenith_EditorActionType::SET_UI_BUTTON_CORNER_RADIUS;
+	xAction.m_szArg1 = szElement;
+	xAction.m_afArgs[0] = fRadius;
+	s_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_SetUIButtonShadow(const char* szElement, float fOffX, float fOffY, float fSpread, bool bEnabled)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = Zenith_EditorActionType::SET_UI_BUTTON_SHADOW;
+	xAction.m_szArg1 = szElement;
+	xAction.m_afArgs[0] = fOffX;
+	xAction.m_afArgs[1] = fOffY;
+	xAction.m_afArgs[2] = fSpread;
+	xAction.m_bArg = bEnabled;
+	s_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_SetUIButtonShadowColor(const char* szElement, float fR, float fG, float fB, float fA)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = Zenith_EditorActionType::SET_UI_BUTTON_SHADOW_COLOR;
+	xAction.m_szArg1 = szElement;
+	xAction.m_afArgs[0] = fR;
+	xAction.m_afArgs[1] = fG;
+	xAction.m_afArgs[2] = fB;
+	xAction.m_afArgs[3] = fA;
+	s_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_SetUIButtonGradientColor(const char* szElement, float fR, float fG, float fB, float fA)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = Zenith_EditorActionType::SET_UI_BUTTON_GRADIENT_COLOR;
+	xAction.m_szArg1 = szElement;
+	xAction.m_afArgs[0] = fR;
+	xAction.m_afArgs[1] = fG;
+	xAction.m_afArgs[2] = fB;
+	xAction.m_afArgs[3] = fA;
+	s_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_SetUIButtonBorderColor(const char* szElement, float fR, float fG, float fB, float fA)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = Zenith_EditorActionType::SET_UI_BUTTON_BORDER_COLOR;
+	xAction.m_szArg1 = szElement;
+	xAction.m_afArgs[0] = fR;
+	xAction.m_afArgs[1] = fG;
+	xAction.m_afArgs[2] = fB;
+	xAction.m_afArgs[3] = fA;
+	s_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_SetUIButtonBorderThickness(const char* szElement, float fThickness)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = Zenith_EditorActionType::SET_UI_BUTTON_BORDER_THICKNESS;
+	xAction.m_szArg1 = szElement;
+	xAction.m_afArgs[0] = fThickness;
+	s_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_SetUIButtonTransitionDuration(const char* szElement, float fDuration)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = Zenith_EditorActionType::SET_UI_BUTTON_TRANSITION_DURATION;
+	xAction.m_szArg1 = szElement;
+	xAction.m_afArgs[0] = fDuration;
+	s_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_SetUIButtonTextShadow(const char* szElement, float fOffX, float fOffY, bool bEnabled)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = Zenith_EditorActionType::SET_UI_BUTTON_TEXT_SHADOW;
+	xAction.m_szArg1 = szElement;
+	xAction.m_afArgs[0] = fOffX;
+	xAction.m_afArgs[1] = fOffY;
+	xAction.m_bArg = bEnabled;
+	s_axActions.PushBack(xAction);
+}
+
+void Zenith_EditorAutomation::AddStep_SetUIButtonTextShadowColor(const char* szElement, float fR, float fG, float fB, float fA)
+{
+	Zenith_EditorAction xAction = {};
+	xAction.m_eType = Zenith_EditorActionType::SET_UI_BUTTON_TEXT_SHADOW_COLOR;
+	xAction.m_szArg1 = szElement;
+	xAction.m_afArgs[0] = fR;
+	xAction.m_afArgs[1] = fG;
+	xAction.m_afArgs[2] = fB;
+	xAction.m_afArgs[3] = fA;
 	s_axActions.PushBack(xAction);
 }
 
@@ -976,6 +1192,235 @@ void Zenith_EditorAutomation::ExecuteAction(const Zenith_EditorAction& xAction)
 		Zenith_UI::Zenith_UIButton* pxButton = xUI.FindElement<Zenith_UI::Zenith_UIButton>(xAction.m_szArg1);
 		Zenith_Assert(pxButton, "UI button not found: %s", xAction.m_szArg1);
 		pxButton->SetFontSize(xAction.m_afArgs[0]);
+		break;
+	}
+
+	//--------------------------------------------------------------------------
+	// UIElement background operations
+	//--------------------------------------------------------------------------
+	case Zenith_EditorActionType::SET_UI_BACKGROUND_COLOR:
+	{
+		Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for SET_UI_BACKGROUND_COLOR");
+		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+		Zenith_UI::Zenith_UIElement* pxElement = xUI.FindElement(xAction.m_szArg1);
+		Zenith_Assert(pxElement, "UI element not found: %s", xAction.m_szArg1);
+		pxElement->SetBackgroundColor({xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2], xAction.m_afArgs[3]});
+		break;
+	}
+
+	case Zenith_EditorActionType::SET_UI_BACKGROUND_CORNER_RADIUS:
+	{
+		Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for SET_UI_BACKGROUND_CORNER_RADIUS");
+		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+		Zenith_UI::Zenith_UIElement* pxElement = xUI.FindElement(xAction.m_szArg1);
+		Zenith_Assert(pxElement, "UI element not found: %s", xAction.m_szArg1);
+		pxElement->SetBackgroundCornerRadius(xAction.m_afArgs[0]);
+		break;
+	}
+
+	case Zenith_EditorActionType::SET_UI_BACKGROUND_BORDER:
+	{
+		Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for SET_UI_BACKGROUND_BORDER");
+		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+		Zenith_UI::Zenith_UIElement* pxElement = xUI.FindElement(xAction.m_szArg1);
+		Zenith_Assert(pxElement, "UI element not found: %s", xAction.m_szArg1);
+		pxElement->SetBackgroundBorderColor({xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2], 1.0f});
+		pxElement->SetBackgroundBorderThickness(xAction.m_afArgs[3]);
+		break;
+	}
+
+	//--------------------------------------------------------------------------
+	// UIRect styling operations
+	//--------------------------------------------------------------------------
+	case Zenith_EditorActionType::SET_UI_CORNER_RADIUS:
+	{
+		Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for SET_UI_CORNER_RADIUS");
+		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+		Zenith_UI::Zenith_UIRect* pxRect = xUI.FindElement<Zenith_UI::Zenith_UIRect>(xAction.m_szArg1);
+		Zenith_Assert(pxRect, "UI rect not found: %s", xAction.m_szArg1);
+		pxRect->SetCornerRadius(xAction.m_afArgs[0]);
+		break;
+	}
+
+	case Zenith_EditorActionType::SET_UI_GRADIENT_COLOR:
+	{
+		Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for SET_UI_GRADIENT_COLOR");
+		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+		Zenith_UI::Zenith_UIRect* pxRect = xUI.FindElement<Zenith_UI::Zenith_UIRect>(xAction.m_szArg1);
+		Zenith_Assert(pxRect, "UI rect not found: %s", xAction.m_szArg1);
+		pxRect->SetGradientColor({xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2], xAction.m_afArgs[3]});
+		break;
+	}
+
+	case Zenith_EditorActionType::SET_UI_SHADOW:
+	{
+		Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for SET_UI_SHADOW");
+		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+		Zenith_UI::Zenith_UIRect* pxRect = xUI.FindElement<Zenith_UI::Zenith_UIRect>(xAction.m_szArg1);
+		Zenith_Assert(pxRect, "UI rect not found: %s", xAction.m_szArg1);
+		pxRect->SetShadowEnabled(xAction.m_bArg);
+		pxRect->SetShadowOffset({xAction.m_afArgs[0], xAction.m_afArgs[1]});
+		pxRect->SetShadowSpread(xAction.m_afArgs[2]);
+		break;
+	}
+
+	case Zenith_EditorActionType::SET_UI_SHADOW_COLOR:
+	{
+		Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for SET_UI_SHADOW_COLOR");
+		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+		Zenith_UI::Zenith_UIRect* pxRect = xUI.FindElement<Zenith_UI::Zenith_UIRect>(xAction.m_szArg1);
+		Zenith_Assert(pxRect, "UI rect not found: %s", xAction.m_szArg1);
+		pxRect->SetShadowColor({xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2], xAction.m_afArgs[3]});
+		break;
+	}
+
+	case Zenith_EditorActionType::SET_UI_RECT_BORDER:
+	{
+		Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for SET_UI_RECT_BORDER");
+		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+		Zenith_UI::Zenith_UIRect* pxRect = xUI.FindElement<Zenith_UI::Zenith_UIRect>(xAction.m_szArg1);
+		Zenith_Assert(pxRect, "UI rect not found: %s", xAction.m_szArg1);
+		pxRect->SetBorderColor({xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2], 1.0f});
+		pxRect->SetBorderThickness(xAction.m_afArgs[3]);
+		break;
+	}
+
+	//--------------------------------------------------------------------------
+	// UIText shadow operations
+	//--------------------------------------------------------------------------
+	case Zenith_EditorActionType::SET_UI_TEXT_SHADOW:
+	{
+		Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for SET_UI_TEXT_SHADOW");
+		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+		Zenith_UI::Zenith_UIText* pxText = xUI.FindElement<Zenith_UI::Zenith_UIText>(xAction.m_szArg1);
+		Zenith_Assert(pxText, "UI text not found: %s", xAction.m_szArg1);
+		pxText->SetShadowEnabled(xAction.m_bArg);
+		pxText->SetShadowOffset({xAction.m_afArgs[0], xAction.m_afArgs[1]});
+		break;
+	}
+
+	case Zenith_EditorActionType::SET_UI_TEXT_SHADOW_COLOR:
+	{
+		Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for SET_UI_TEXT_SHADOW_COLOR");
+		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+		Zenith_UI::Zenith_UIText* pxText = xUI.FindElement<Zenith_UI::Zenith_UIText>(xAction.m_szArg1);
+		Zenith_Assert(pxText, "UI text not found: %s", xAction.m_szArg1);
+		pxText->SetShadowColor({xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2], xAction.m_afArgs[3]});
+		break;
+	}
+
+	//--------------------------------------------------------------------------
+	// UIButton styling operations
+	//--------------------------------------------------------------------------
+	case Zenith_EditorActionType::SET_UI_BUTTON_CORNER_RADIUS:
+	{
+		Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for SET_UI_BUTTON_CORNER_RADIUS");
+		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+		Zenith_UI::Zenith_UIButton* pxButton = xUI.FindElement<Zenith_UI::Zenith_UIButton>(xAction.m_szArg1);
+		Zenith_Assert(pxButton, "UI button not found: %s", xAction.m_szArg1);
+		pxButton->SetCornerRadius(xAction.m_afArgs[0]);
+		break;
+	}
+
+	case Zenith_EditorActionType::SET_UI_BUTTON_SHADOW:
+	{
+		Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for SET_UI_BUTTON_SHADOW");
+		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+		Zenith_UI::Zenith_UIButton* pxButton = xUI.FindElement<Zenith_UI::Zenith_UIButton>(xAction.m_szArg1);
+		Zenith_Assert(pxButton, "UI button not found: %s", xAction.m_szArg1);
+		pxButton->SetShadowEnabled(xAction.m_bArg);
+		pxButton->SetShadowOffset({xAction.m_afArgs[0], xAction.m_afArgs[1]});
+		pxButton->SetShadowSpread(xAction.m_afArgs[2]);
+		break;
+	}
+
+	case Zenith_EditorActionType::SET_UI_BUTTON_SHADOW_COLOR:
+	{
+		Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for SET_UI_BUTTON_SHADOW_COLOR");
+		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+		Zenith_UI::Zenith_UIButton* pxButton = xUI.FindElement<Zenith_UI::Zenith_UIButton>(xAction.m_szArg1);
+		Zenith_Assert(pxButton, "UI button not found: %s", xAction.m_szArg1);
+		pxButton->SetShadowColor({xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2], xAction.m_afArgs[3]});
+		break;
+	}
+
+	case Zenith_EditorActionType::SET_UI_BUTTON_GRADIENT_COLOR:
+	{
+		Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for SET_UI_BUTTON_GRADIENT_COLOR");
+		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+		Zenith_UI::Zenith_UIButton* pxButton = xUI.FindElement<Zenith_UI::Zenith_UIButton>(xAction.m_szArg1);
+		Zenith_Assert(pxButton, "UI button not found: %s", xAction.m_szArg1);
+		pxButton->SetGradientColor({xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2], xAction.m_afArgs[3]});
+		break;
+	}
+
+	case Zenith_EditorActionType::SET_UI_BUTTON_BORDER_COLOR:
+	{
+		Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for SET_UI_BUTTON_BORDER_COLOR");
+		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+		Zenith_UI::Zenith_UIButton* pxButton = xUI.FindElement<Zenith_UI::Zenith_UIButton>(xAction.m_szArg1);
+		Zenith_Assert(pxButton, "UI button not found: %s", xAction.m_szArg1);
+		pxButton->SetBorderColor({xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2], xAction.m_afArgs[3]});
+		break;
+	}
+
+	case Zenith_EditorActionType::SET_UI_BUTTON_BORDER_THICKNESS:
+	{
+		Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for SET_UI_BUTTON_BORDER_THICKNESS");
+		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+		Zenith_UI::Zenith_UIButton* pxButton = xUI.FindElement<Zenith_UI::Zenith_UIButton>(xAction.m_szArg1);
+		Zenith_Assert(pxButton, "UI button not found: %s", xAction.m_szArg1);
+		pxButton->SetBorderThickness(xAction.m_afArgs[0]);
+		break;
+	}
+
+	case Zenith_EditorActionType::SET_UI_BUTTON_TRANSITION_DURATION:
+	{
+		Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for SET_UI_BUTTON_TRANSITION_DURATION");
+		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+		Zenith_UI::Zenith_UIButton* pxButton = xUI.FindElement<Zenith_UI::Zenith_UIButton>(xAction.m_szArg1);
+		Zenith_Assert(pxButton, "UI button not found: %s", xAction.m_szArg1);
+		pxButton->SetTransitionDuration(xAction.m_afArgs[0]);
+		break;
+	}
+
+	case Zenith_EditorActionType::SET_UI_BUTTON_TEXT_SHADOW:
+	{
+		Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for SET_UI_BUTTON_TEXT_SHADOW");
+		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+		Zenith_UI::Zenith_UIButton* pxButton = xUI.FindElement<Zenith_UI::Zenith_UIButton>(xAction.m_szArg1);
+		Zenith_Assert(pxButton, "UI button not found: %s", xAction.m_szArg1);
+		pxButton->SetTextShadowEnabled(xAction.m_bArg);
+		pxButton->SetTextShadowOffset({xAction.m_afArgs[0], xAction.m_afArgs[1]});
+		break;
+	}
+
+	case Zenith_EditorActionType::SET_UI_BUTTON_TEXT_SHADOW_COLOR:
+	{
+		Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+		Zenith_Assert(pxEntity, "No entity selected for SET_UI_BUTTON_TEXT_SHADOW_COLOR");
+		Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+		Zenith_UI::Zenith_UIButton* pxButton = xUI.FindElement<Zenith_UI::Zenith_UIButton>(xAction.m_szArg1);
+		Zenith_Assert(pxButton, "UI button not found: %s", xAction.m_szArg1);
+		pxButton->SetTextShadowColor({xAction.m_afArgs[0], xAction.m_afArgs[1], xAction.m_afArgs[2], xAction.m_afArgs[3]});
 		break;
 	}
 

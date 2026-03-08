@@ -110,6 +110,18 @@ void Zenith_UILayoutGroup::RecalculateLayout()
 {
 	m_bLayoutDirty = false;
 
+	// Force dirty child layout groups to recalculate first so their sizes are up-to-date
+	for (uint32_t i = 0; i < m_xChildren.GetSize(); ++i)
+	{
+		Zenith_UIElement* pxChild = m_xChildren.Get(i);
+		if (pxChild && pxChild->GetType() == UIElementType::LayoutGroup)
+		{
+			Zenith_UILayoutGroup* pxChildLayout = static_cast<Zenith_UILayoutGroup*>(pxChild);
+			if (pxChildLayout->m_bLayoutDirty)
+				pxChildLayout->RecalculateLayout();
+		}
+	}
+
 	float fPadLeft = m_xPadding.x;
 	float fPadTop = m_xPadding.y;
 	float fPadRight = m_xPadding.z;

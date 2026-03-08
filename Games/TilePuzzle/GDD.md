@@ -300,6 +300,65 @@ MAIN_MENU -> LEVEL_SELECT -> PLAYING -> SHAPE_SLIDING -> CHECK_ELIMINATION
 - **New Game / Reset Save:** Reset all progress
 - **Displays:** Coins, lives (with regen timer), daily streak
 
+### 7.2.1 Main Menu Visual Style
+
+The main menu establishes Paws & Pins' cozy visual identity. Every element uses
+the engine's UIStyle system for consistent styling.
+
+**Background:**
+- Vertical gradient: dark navy `(0.06, 0.06, 0.12)` at top to dark indigo
+  `(0.10, 0.06, 0.18)` at bottom
+- No border or shadow (fills entire screen)
+
+**Title Area:**
+- Title text: "Paws & Pins", 84pt, white with text shadow (2px offset, black 50% alpha)
+- Subtitle text: "A Cat Puzzle Game", 24pt, muted lavender `(0.6, 0.6, 0.8, 0.7)` with text shadow
+
+**Button Styling (all buttons):**
+- Corner radius: 12px
+- Drop shadow: 3px offset, 2px spread, black 30% alpha
+- Border: 2px thickness, lighter tint of fill color
+- Transition duration: 0.12s smooth color blend between states
+- Text shadow: 1px offset, black 40% alpha
+- Font size: 32pt, white text
+
+**Button Color Palette:**
+
+| Button | Normal | Hover | Pressed | Border |
+|--------|--------|-------|---------|--------|
+| Continue | `(0.18, 0.30, 0.55)` | `(0.22, 0.36, 0.65)` | `(0.12, 0.22, 0.42)` | `(0.30, 0.45, 0.70)` |
+| Level Select | `(0.18, 0.30, 0.55)` | `(0.22, 0.36, 0.65)` | `(0.12, 0.22, 0.42)` | `(0.30, 0.45, 0.70)` |
+| Cat Cafe | `(0.45, 0.22, 0.35)` | `(0.55, 0.28, 0.42)` | `(0.35, 0.16, 0.28)` | `(0.60, 0.35, 0.50)` |
+| Daily Puzzle | `(0.22, 0.38, 0.22)` | `(0.28, 0.48, 0.28)` | `(0.16, 0.28, 0.16)` | `(0.35, 0.55, 0.35)` |
+| Pinball | `(0.18, 0.35, 0.40)` | `(0.22, 0.42, 0.48)` | `(0.12, 0.26, 0.30)` | `(0.30, 0.50, 0.55)` |
+| Settings | `(0.22, 0.22, 0.28)` | `(0.30, 0.30, 0.38)` | `(0.15, 0.15, 0.20)` | `(0.35, 0.35, 0.42)` |
+| New Game | `(0.20, 0.25, 0.40)` | `(0.28, 0.33, 0.50)` | `(0.14, 0.18, 0.30)` | `(0.32, 0.38, 0.55)` |
+| Reset Save | `(0.45, 0.15, 0.15)` | `(0.55, 0.20, 0.20)` | `(0.35, 0.10, 0.10)` | `(0.60, 0.25, 0.25)` |
+| Refill Lives | `(0.50, 0.20, 0.20)` | `(0.60, 0.30, 0.30)` | `(0.35, 0.12, 0.12)` | `(0.65, 0.32, 0.32)` |
+
+**Button Layout:**
+- Vertical stack with 24px spacing
+- Width: 300px, height: 80px per button
+
+**Corner HUD Displays:**
+- Each display (coins, lives, streak, stars) sits inside a pill-shaped
+  background rect:
+  - Corner radius: 16px
+  - Fill: dark translucent `(0.05, 0.05, 0.10, 0.6)`
+  - Border: 1px, subtle `(0.2, 0.2, 0.3, 0.4)`
+  - Padding: 8px horizontal, 4px vertical around content
+
+**Version Text:**
+- "v1.0" text at bottom center
+- 20pt, very muted `(0.4, 0.4, 0.5, 0.4)`
+
+**Level Select & Cat Cafe:**
+- Same background gradient as main menu
+- Level grid buttons: corner radius 8px, shadow enabled, blue palette
+- Cat card background rects: corner radius 10px, shadow enabled
+- Navigation buttons: corner radius 8px
+- All titles get text shadow
+
 ### 7.3 Level Select
 
 - **20 levels per page** (4x5 grid)

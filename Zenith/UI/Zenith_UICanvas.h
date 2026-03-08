@@ -91,7 +91,8 @@ public:
     // ========== Rendering Interface ==========
 
     // Submit a quad (called by UI elements)
-    void SubmitQuad(const Zenith_Maths::Vector4& xBounds, const Zenith_Maths::Vector4& xColor, uint32_t uTextureID = 0);
+    void SubmitQuad(const Zenith_Maths::Vector4& xBounds, const Zenith_Maths::Vector4& xColor, uint32_t uTextureID = 0,
+        float fCornerRadius = 0.0f, const Zenith_Maths::Vector4& xGradientColor = {-1,-1,-1,-1});
     void SubmitQuadWithUV(const Zenith_Maths::Vector4& xBounds, const Zenith_Maths::Vector4& xColor, uint32_t uTextureID, const Zenith_Maths::Vector2& xUVMin, const Zenith_Maths::Vector2& xUVMax);
 
     // Submit text (called by UI elements, batched and sent to Flux_Text)

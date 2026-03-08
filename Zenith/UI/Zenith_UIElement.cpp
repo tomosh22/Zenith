@@ -1,6 +1,7 @@
 #include "Zenith.h"
 #include "UI/Zenith_UIElement.h"
 #include "UI/Zenith_UICanvas.h"
+#include "UI/Zenith_UIStyleRenderer.h"
 #include "UI/Zenith_UIText.h"
 #include "UI/Zenith_UIRect.h"
 #include "UI/Zenith_UIImage.h"
@@ -16,7 +17,7 @@
 
 namespace Zenith_UI {
 
-static constexpr uint32_t UI_ELEMENT_VERSION = 1;
+static constexpr uint32_t UI_ELEMENT_VERSION = 2;
 
 Zenith_UIElement::Zenith_UIElement(const std::string& strName)
     : m_strName(strName)
@@ -66,12 +67,14 @@ void Zenith_UIElement::AddChild(Zenith_UIElement* pxChild)
         pxChild->m_pxCanvas = m_pxCanvas;
         pxChild->m_bTransformDirty = true;
         m_xChildren.PushBack(pxChild);
+        OnChildAdded();
     }
 }
 
 void Zenith_UIElement::RemoveChild(Zenith_UIElement* pxChild)
 {
     m_xChildren.EraseValue(pxChild);
+    OnChildRemoved();
     // Note: Does not delete - canvas owns all elements
 }
 
@@ -148,6 +151,16 @@ void Zenith_UIElement::Render(Zenith_UICanvas& xCanvas)
     if (!m_bVisible)
         return;
 
+    // Render background if enabled (before children so it appears behind)
+    if (m_bHasBackground)
+    {
+        Zenith_Maths::Vector4 xBounds = GetScreenBounds();
+        float fAlpha = GetEffectiveAlpha();
+        UIStyle xBgStyle = m_xBackgroundStyle;
+        xBgStyle.m_xFillColor = m_xBackgroundStyle.m_xFillColor;
+        UIStyleRenderer::RenderStyledRect(xCanvas, xBgStyle, xBounds, fAlpha);
+    }
+
     for (Zenith_Vector<Zenith_UIElement*>::Iterator xIt(m_xChildren); !xIt.Done(); xIt.Next())
     {
         Zenith_UIElement* pxChild = xIt.GetData();
@@ -180,6 +193,19 @@ void Zenith_UIElement::WriteToDataStream(Zenith_DataStream& xStream) const
     xStream << m_xColor.z;
     xStream << m_xColor.w;
     xStream << m_bVisible;
+
+    // Background (v2)
+    xStream << m_bHasBackground;
+    xStream << m_xBackgroundStyle.m_xFillColor.x;
+    xStream << m_xBackgroundStyle.m_xFillColor.y;
+    xStream << m_xBackgroundStyle.m_xFillColor.z;
+    xStream << m_xBackgroundStyle.m_xFillColor.w;
+    xStream << m_xBackgroundStyle.m_fCornerRadius;
+    xStream << m_xBackgroundStyle.m_xBorderColor.x;
+    xStream << m_xBackgroundStyle.m_xBorderColor.y;
+    xStream << m_xBackgroundStyle.m_xBorderColor.z;
+    xStream << m_xBackgroundStyle.m_xBorderColor.w;
+    xStream << m_xBackgroundStyle.m_fBorderThickness;
 }
 
 void Zenith_UIElement::ReadFromDataStream(Zenith_DataStream& xStream)
@@ -208,6 +234,22 @@ void Zenith_UIElement::ReadFromDataStream(Zenith_DataStream& xStream)
     xStream >> m_xColor.z;
     xStream >> m_xColor.w;
     xStream >> m_bVisible;
+
+    // Background (v2)
+    if (uVersion >= 2)
+    {
+        xStream >> m_bHasBackground;
+        xStream >> m_xBackgroundStyle.m_xFillColor.x;
+        xStream >> m_xBackgroundStyle.m_xFillColor.y;
+        xStream >> m_xBackgroundStyle.m_xFillColor.z;
+        xStream >> m_xBackgroundStyle.m_xFillColor.w;
+        xStream >> m_xBackgroundStyle.m_fCornerRadius;
+        xStream >> m_xBackgroundStyle.m_xBorderColor.x;
+        xStream >> m_xBackgroundStyle.m_xBorderColor.y;
+        xStream >> m_xBackgroundStyle.m_xBorderColor.z;
+        xStream >> m_xBackgroundStyle.m_xBorderColor.w;
+        xStream >> m_xBackgroundStyle.m_fBorderThickness;
+    }
 
     m_bTransformDirty = true;
 }
@@ -310,6 +352,26 @@ void Zenith_UIElement::RenderPropertiesPanel()
     }
 
     ImGui::Checkbox("Element Visible", &m_bVisible);
+
+    ImGui::Separator();
+    ImGui::Text("Background");
+
+    ImGui::Checkbox("Has Background", &m_bHasBackground);
+    if (m_bHasBackground)
+    {
+        float fBgColor[4] = { m_xBackgroundStyle.m_xFillColor.x, m_xBackgroundStyle.m_xFillColor.y, m_xBackgroundStyle.m_xFillColor.z, m_xBackgroundStyle.m_xFillColor.w };
+        if (ImGui::ColorEdit4("Bg Color", fBgColor))
+        {
+            m_xBackgroundStyle.m_xFillColor = { fBgColor[0], fBgColor[1], fBgColor[2], fBgColor[3] };
+        }
+        ImGui::DragFloat("Bg Corner Radius", &m_xBackgroundStyle.m_fCornerRadius, 0.5f, 0.0f, 100.0f);
+        ImGui::DragFloat("Bg Border Thickness", &m_xBackgroundStyle.m_fBorderThickness, 0.5f, 0.0f, 50.0f);
+        float fBorderColor[4] = { m_xBackgroundStyle.m_xBorderColor.x, m_xBackgroundStyle.m_xBorderColor.y, m_xBackgroundStyle.m_xBorderColor.z, m_xBackgroundStyle.m_xBorderColor.w };
+        if (ImGui::ColorEdit4("Bg Border Color", fBorderColor))
+        {
+            m_xBackgroundStyle.m_xBorderColor = { fBorderColor[0], fBorderColor[1], fBorderColor[2], fBorderColor[3] };
+        }
+    }
 
     ImGui::PopID();
 }

@@ -913,6 +913,9 @@
     <ClCompile Include="..\Zenith\UI\Zenith_UIRect.cpp">
       <Filter>UI</Filter>
     </ClCompile>
+    <ClCompile Include="..\Zenith\UI\Zenith_UIStyleRenderer.cpp">
+      <Filter>UI</Filter>
+    </ClCompile>
     <ClCompile Include="..\Zenith\UI\Zenith_UIText.cpp">
       <Filter>UI</Filter>
     </ClCompile>
@@ -3799,6 +3802,12 @@
       <Filter>UI</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\UI\Zenith_UIRect.h">
+      <Filter>UI</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\UI\Zenith_UIStyle.h">
+      <Filter>UI</Filter>
+    </ClInclude>
+    <ClInclude Include="..\Zenith\UI\Zenith_UIStyleRenderer.h">
       <Filter>UI</Filter>
     </ClInclude>
     <ClInclude Include="..\Zenith\UI\Zenith_UIText.h">

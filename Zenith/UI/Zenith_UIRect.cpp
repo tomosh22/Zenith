@@ -1,6 +1,7 @@
 #include "Zenith.h"
 #include "UI/Zenith_UIRect.h"
 #include "UI/Zenith_UICanvas.h"
+#include "UI/Zenith_UIStyleRenderer.h"
 #include "DataStream/Zenith_DataStream.h"
 
 #ifdef ZENITH_TOOLS
@@ -11,7 +12,7 @@
 
 namespace Zenith_UI {
 
-static constexpr uint32_t UI_RECT_VERSION = 1;
+static constexpr uint32_t UI_RECT_VERSION = 2;
 
 Zenith_UIRect::Zenith_UIRect(const std::string& strName)
     : Zenith_UIElement(strName)
@@ -23,39 +24,20 @@ void Zenith_UIRect::Render(Zenith_UICanvas& xCanvas)
     if (!m_bVisible)
         return;
 
+    float fAlpha = GetEffectiveAlpha();
     Zenith_Maths::Vector4 xBounds = GetScreenBounds();
 
-    // Render glow effect first (behind main rect)
-    if (m_bGlowEnabled && m_fGlowSize > 0.0f)
-    {
-        Zenith_Maths::Vector4 xGlowBounds = {
-            xBounds.x - m_fGlowSize,
-            xBounds.y - m_fGlowSize,
-            xBounds.z + m_fGlowSize,
-            xBounds.w + m_fGlowSize
-        };
-        xCanvas.SubmitQuad(xGlowBounds, m_xGlowColor, 0);
-    }
+    // Apply fill color from element color
+    UIStyle xRenderStyle = m_xStyle;
+    xRenderStyle.m_xFillColor = m_xColor;
 
-    // Render border (if any)
-    if (m_fBorderThickness > 0.0f)
+    // Handle fill amount — adjust bounds before rendering
+    if (m_fFillAmount < 1.0f && m_fFillAmount > 0.0f)
     {
-        xCanvas.SubmitQuad(xBounds, m_xBorderColor, 0);
-
-        // Inset for the fill area
-        xBounds.x += m_fBorderThickness;
-        xBounds.y += m_fBorderThickness;
-        xBounds.z -= m_fBorderThickness;
-        xBounds.w -= m_fBorderThickness;
-    }
-
-    // Render the fill rect based on fill amount and direction
-    if (m_fFillAmount > 0.0f)
-    {
-        Zenith_Maths::Vector4 xFillBounds = xBounds;
         float fWidth = xBounds.z - xBounds.x;
         float fHeight = xBounds.w - xBounds.y;
 
+        Zenith_Maths::Vector4 xFillBounds = xBounds;
         switch (m_eFillDirection)
         {
         case FillDirection::LeftToRight:
@@ -72,7 +54,11 @@ void Zenith_UIRect::Render(Zenith_UICanvas& xCanvas)
             break;
         }
 
-        xCanvas.SubmitQuad(xFillBounds, m_xColor, 0);
+        UIStyleRenderer::RenderStyledRect(xCanvas, xRenderStyle, xFillBounds, fAlpha);
+    }
+    else if (m_fFillAmount >= 1.0f)
+    {
+        UIStyleRenderer::RenderStyledRect(xCanvas, xRenderStyle, xBounds, fAlpha);
     }
 
     // Render children
@@ -81,56 +67,52 @@ void Zenith_UIRect::Render(Zenith_UICanvas& xCanvas)
 
 void Zenith_UIRect::WriteToDataStream(Zenith_DataStream& xStream) const
 {
-    // Write base class data
     Zenith_UIElement::WriteToDataStream(xStream);
 
-    // Write rect-specific data
     xStream << UI_RECT_VERSION;
     xStream << m_fFillAmount;
     xStream << static_cast<uint32_t>(m_eFillDirection);
-    xStream << m_xBorderColor.x;
-    xStream << m_xBorderColor.y;
-    xStream << m_xBorderColor.z;
-    xStream << m_xBorderColor.w;
-    xStream << m_fBorderThickness;
-    xStream << m_bGlowEnabled;
-    xStream << m_xGlowColor.x;
-    xStream << m_xGlowColor.y;
-    xStream << m_xGlowColor.z;
-    xStream << m_xGlowColor.w;
-    xStream << m_fGlowSize;
+
+    // UIStyle fields
+    xStream << m_xStyle.m_xFillColor.x; xStream << m_xStyle.m_xFillColor.y; xStream << m_xStyle.m_xFillColor.z; xStream << m_xStyle.m_xFillColor.w;
+    xStream << m_xStyle.m_xGradientBottomColor.x; xStream << m_xStyle.m_xGradientBottomColor.y; xStream << m_xStyle.m_xGradientBottomColor.z; xStream << m_xStyle.m_xGradientBottomColor.w;
+    xStream << m_xStyle.m_xBorderColor.x; xStream << m_xStyle.m_xBorderColor.y; xStream << m_xStyle.m_xBorderColor.z; xStream << m_xStyle.m_xBorderColor.w;
+    xStream << m_xStyle.m_fBorderThickness;
+    xStream << m_xStyle.m_fCornerRadius;
+    xStream << m_xStyle.m_bShadowEnabled;
+    xStream << m_xStyle.m_xShadowColor.x; xStream << m_xStyle.m_xShadowColor.y; xStream << m_xStyle.m_xShadowColor.z; xStream << m_xStyle.m_xShadowColor.w;
+    xStream << m_xStyle.m_xShadowOffset.x; xStream << m_xStyle.m_xShadowOffset.y;
+    xStream << m_xStyle.m_fShadowSpread;
 }
 
 void Zenith_UIRect::ReadFromDataStream(Zenith_DataStream& xStream)
 {
-    // Read base class data
     Zenith_UIElement::ReadFromDataStream(xStream);
 
-    // Read rect-specific data
     uint32_t uVersion;
     xStream >> uVersion;
+
+    Zenith_Assert(uVersion == UI_RECT_VERSION, "UIRect version mismatch");
 
     xStream >> m_fFillAmount;
     uint32_t uDir;
     xStream >> uDir;
     m_eFillDirection = static_cast<FillDirection>(uDir);
-    xStream >> m_xBorderColor.x;
-    xStream >> m_xBorderColor.y;
-    xStream >> m_xBorderColor.z;
-    xStream >> m_xBorderColor.w;
-    xStream >> m_fBorderThickness;
-    xStream >> m_bGlowEnabled;
-    xStream >> m_xGlowColor.x;
-    xStream >> m_xGlowColor.y;
-    xStream >> m_xGlowColor.z;
-    xStream >> m_xGlowColor.w;
-    xStream >> m_fGlowSize;
+
+    xStream >> m_xStyle.m_xFillColor.x; xStream >> m_xStyle.m_xFillColor.y; xStream >> m_xStyle.m_xFillColor.z; xStream >> m_xStyle.m_xFillColor.w;
+    xStream >> m_xStyle.m_xGradientBottomColor.x; xStream >> m_xStyle.m_xGradientBottomColor.y; xStream >> m_xStyle.m_xGradientBottomColor.z; xStream >> m_xStyle.m_xGradientBottomColor.w;
+    xStream >> m_xStyle.m_xBorderColor.x; xStream >> m_xStyle.m_xBorderColor.y; xStream >> m_xStyle.m_xBorderColor.z; xStream >> m_xStyle.m_xBorderColor.w;
+    xStream >> m_xStyle.m_fBorderThickness;
+    xStream >> m_xStyle.m_fCornerRadius;
+    xStream >> m_xStyle.m_bShadowEnabled;
+    xStream >> m_xStyle.m_xShadowColor.x; xStream >> m_xStyle.m_xShadowColor.y; xStream >> m_xStyle.m_xShadowColor.z; xStream >> m_xStyle.m_xShadowColor.w;
+    xStream >> m_xStyle.m_xShadowOffset.x; xStream >> m_xStyle.m_xShadowOffset.y;
+    xStream >> m_xStyle.m_fShadowSpread;
 }
 
 #ifdef ZENITH_TOOLS
 void Zenith_UIRect::RenderPropertiesPanel()
 {
-    // Render base properties
     Zenith_UIElement::RenderPropertiesPanel();
 
     ImGui::Separator();
@@ -146,30 +128,30 @@ void Zenith_UIRect::RenderPropertiesPanel()
     }
 
     ImGui::Separator();
-    ImGui::Text("Border");
+    ImGui::Text("Style");
 
-    ImGui::DragFloat("Border Thickness", &m_fBorderThickness, 0.5f, 0.0f, 50.0f);
+    ImGui::DragFloat("Corner Radius", &m_xStyle.m_fCornerRadius, 0.5f, 0.0f, 100.0f);
+    ImGui::DragFloat("Border Thickness", &m_xStyle.m_fBorderThickness, 0.5f, 0.0f, 50.0f);
 
-    float fBorderColor[4] = { m_xBorderColor.x, m_xBorderColor.y, m_xBorderColor.z, m_xBorderColor.w };
+    float fBorderColor[4] = { m_xStyle.m_xBorderColor.x, m_xStyle.m_xBorderColor.y, m_xStyle.m_xBorderColor.z, m_xStyle.m_xBorderColor.w };
     if (ImGui::ColorEdit4("Border Color", fBorderColor))
     {
-        m_xBorderColor = { fBorderColor[0], fBorderColor[1], fBorderColor[2], fBorderColor[3] };
+        m_xStyle.m_xBorderColor = { fBorderColor[0], fBorderColor[1], fBorderColor[2], fBorderColor[3] };
     }
 
     ImGui::Separator();
-    ImGui::Text("Glow Effect");
+    ImGui::Text("Shadow");
 
-    ImGui::Checkbox("Enable Glow", &m_bGlowEnabled);
-
-    if (m_bGlowEnabled)
+    ImGui::Checkbox("Enable Shadow", &m_xStyle.m_bShadowEnabled);
+    if (m_xStyle.m_bShadowEnabled)
     {
-        ImGui::DragFloat("Glow Size", &m_fGlowSize, 0.5f, 0.0f, 50.0f);
-
-        float fGlowColor[4] = { m_xGlowColor.x, m_xGlowColor.y, m_xGlowColor.z, m_xGlowColor.w };
-        if (ImGui::ColorEdit4("Glow Color", fGlowColor))
+        float fShadowColor[4] = { m_xStyle.m_xShadowColor.x, m_xStyle.m_xShadowColor.y, m_xStyle.m_xShadowColor.z, m_xStyle.m_xShadowColor.w };
+        if (ImGui::ColorEdit4("Shadow Color", fShadowColor))
         {
-            m_xGlowColor = { fGlowColor[0], fGlowColor[1], fGlowColor[2], fGlowColor[3] };
+            m_xStyle.m_xShadowColor = { fShadowColor[0], fShadowColor[1], fShadowColor[2], fShadowColor[3] };
         }
+        ImGui::DragFloat2("Shadow Offset", &m_xStyle.m_xShadowOffset.x, 0.5f, -50.0f, 50.0f);
+        ImGui::DragFloat("Shadow Spread", &m_xStyle.m_fShadowSpread, 0.5f, 0.0f, 50.0f);
     }
 }
 #endif

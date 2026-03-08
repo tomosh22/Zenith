@@ -8,10 +8,16 @@ layout(location = 2) in uvec4 a_xInstancePositionSize;
 layout(location = 3) in vec4 a_xInstanceColour;
 layout(location = 4) in uint a_uTexture;
 layout(location = 5) in vec2 a_xUVMult_UVAdd;
+layout(location = 6) in float a_fCornerRadius;
+layout(location = 7) in vec2 a_xSizePixels;
+layout(location = 8) in vec4 a_xColour2;
 
 layout(location = 0) out vec2 o_xUV;
 layout(location = 1) out vec4 o_xColour;
 layout(location = 2) flat out uint o_uTexture;
+layout(location = 3) out float o_fCornerRadius;
+layout(location = 4) out vec2 o_xSizePixels;
+layout(location = 5) out vec4 o_xColour2;
 
 void main()
 {
@@ -20,6 +26,9 @@ void main()
 	o_xUV = xFlippedUV * a_xUVMult_UVAdd.x + a_xUVMult_UVAdd.y;
 	o_xColour = a_xInstanceColour;
 	o_uTexture = a_uTexture;
+	o_fCornerRadius = a_fCornerRadius;
+	o_xSizePixels = a_xSizePixels;
+	o_xColour2 = a_xColour2;
 
 	// Transform quad vertices from [-1,1] to [0,1] range for proper scaling
 	vec2 xQuadPos = a_xPosition.xy * 0.5 + 0.5;

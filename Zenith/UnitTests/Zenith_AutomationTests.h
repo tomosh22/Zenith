@@ -106,6 +106,46 @@ private:
 	static void TestDoubleBeginWithoutReset();
 
 	//--------------------------------------------------------------------------
+	// UIStyle Automation Tests
+	//--------------------------------------------------------------------------
+	static void TestSetUICornerRadiusStep();
+	static void TestSetUIGradientColorStep();
+	static void TestSetUIShadowStep();
+	static void TestSetUIShadowColorStep();
+	static void TestSetUIRectBorderStep();
+	static void TestSetUITextShadowStep();
+	static void TestSetUITextShadowColorStep();
+	static void TestSetUIButtonCornerRadiusStep();
+	static void TestSetUIButtonShadowStep();
+	static void TestSetUIButtonShadowColorStep();
+	static void TestSetUIButtonGradientColorStep();
+	static void TestSetUIButtonBorderColorStep();
+	static void TestSetUIButtonBorderThicknessStep();
+	static void TestSetUIButtonTransitionDurationStep();
+	static void TestSetUIButtonTextShadowStep();
+	static void TestSetUIButtonTextShadowColorStep();
+
+	//--------------------------------------------------------------------------
+	// Group Alpha Tests
+	//--------------------------------------------------------------------------
+	static void TestGroupAlphaDefault();
+	static void TestGroupAlphaPropagation();
+	static void TestGroupInteractableDefault();
+	static void TestGroupInteractableParentDisabled();
+
+	//--------------------------------------------------------------------------
+	// UIElement Background Tests
+	//--------------------------------------------------------------------------
+	static void TestSetUIBackgroundColorStep();
+	static void TestSetUIBackgroundCornerRadiusStep();
+	static void TestSetUIBackgroundBorderStep();
+
+	//--------------------------------------------------------------------------
+	// Button Transition Tests
+	//--------------------------------------------------------------------------
+	static void TestButtonTransitionInitialState();
+
+	//--------------------------------------------------------------------------
 	// Layout Group Tests
 	//--------------------------------------------------------------------------
 	static void TestCreateUILayoutGroupStep();

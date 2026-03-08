@@ -418,12 +418,13 @@ void PlayerController_Behaviour::UpdateInventoryUI()
 		{
 			if (i == m_iSelectedSlot)
 			{
-				m_apxInventorySlots[i]->SetGlowEnabled(true);
-				m_apxInventorySlots[i]->SetGlowColor({ 1.0f, 0.8f, 0.2f, 0.6f });
+				m_apxInventorySlots[i]->SetShadowEnabled(true);
+				m_apxInventorySlots[i]->SetShadowColor({ 1.0f, 0.8f, 0.2f, 0.6f });
+				m_apxInventorySlots[i]->SetShadowOffset({ 0.0f, 0.0f });
 			}
 			else
 			{
-				m_apxInventorySlots[i]->SetGlowEnabled(false);
+				m_apxInventorySlots[i]->SetShadowEnabled(false);
 			}
 		}
 	}

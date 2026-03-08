@@ -1,22 +1,23 @@
 #pragma once
 
 #include "UI/Zenith_UIElement.h"
+#include "UI/Zenith_UIStyle.h"
 #include "Maths/Zenith_Maths.h"
 
 /**
- * Zenith_UIRect - Colored rectangle widget
+ * Zenith_UIRect - Styled rectangle widget
  *
- * Renders a solid colored rectangle. Useful for:
+ * Renders a styled rectangle using UIStyle. Useful for:
  *   - Health bars
  *   - Progress bars
  *   - Backgrounds
  *   - Borders
+ *   - Pill-shaped HUD displays
  *
  * Features:
  *   - Fill amount (0-1) for progress bar functionality
  *   - Fill direction (horizontal/vertical, left-to-right or right-to-left)
- *   - Border with configurable color and thickness
- *   - Glow effect for highlighting
+ *   - Full UIStyle support (rounded corners, gradient, shadow, border)
  */
 
 namespace Zenith_UI {
@@ -39,31 +40,25 @@ public:
 
     // ========== Fill Properties ==========
 
-    // Fill amount (0-1, where 1 = fully filled)
     void SetFillAmount(float fAmount) { m_fFillAmount = Zenith_Maths::Clamp(fAmount, 0.0f, 1.0f); }
     float GetFillAmount() const { return m_fFillAmount; }
 
     void SetFillDirection(FillDirection eDir) { m_eFillDirection = eDir; }
     FillDirection GetFillDirection() const { return m_eFillDirection; }
 
-    // ========== Border Properties ==========
+    // ========== Style ==========
 
-    void SetBorderColor(const Zenith_Maths::Vector4& xColor) { m_xBorderColor = xColor; }
-    Zenith_Maths::Vector4 GetBorderColor() const { return m_xBorderColor; }
+    void SetStyle(const UIStyle& xStyle) { m_xStyle = xStyle; }
+    const UIStyle& GetStyle() const { return m_xStyle; }
 
-    void SetBorderThickness(float fThickness) { m_fBorderThickness = fThickness; }
-    float GetBorderThickness() const { return m_fBorderThickness; }
-
-    // ========== Glow Effect ==========
-
-    void SetGlowEnabled(bool bEnabled) { m_bGlowEnabled = bEnabled; }
-    bool IsGlowEnabled() const { return m_bGlowEnabled; }
-
-    void SetGlowColor(const Zenith_Maths::Vector4& xColor) { m_xGlowColor = xColor; }
-    Zenith_Maths::Vector4 GetGlowColor() const { return m_xGlowColor; }
-
-    void SetGlowSize(float fSize) { m_fGlowSize = fSize; }
-    float GetGlowSize() const { return m_fGlowSize; }
+    void SetCornerRadius(float fRadius) { m_xStyle.m_fCornerRadius = fRadius; }
+    void SetBorderColor(const Zenith_Maths::Vector4& xColor) { m_xStyle.m_xBorderColor = xColor; }
+    void SetBorderThickness(float fThickness) { m_xStyle.m_fBorderThickness = fThickness; }
+    void SetGradientColor(const Zenith_Maths::Vector4& xColor) { m_xStyle.m_xGradientBottomColor = xColor; }
+    void SetShadowEnabled(bool bEnabled) { m_xStyle.m_bShadowEnabled = bEnabled; }
+    void SetShadowColor(const Zenith_Maths::Vector4& xColor) { m_xStyle.m_xShadowColor = xColor; }
+    void SetShadowOffset(const Zenith_Maths::Vector2& xOffset) { m_xStyle.m_xShadowOffset = xOffset; }
+    void SetShadowSpread(float fSpread) { m_xStyle.m_fShadowSpread = fSpread; }
 
     // ========== Overrides ==========
 
@@ -76,18 +71,11 @@ public:
 #endif
 
 private:
+    UIStyle m_xStyle;
+
     // Fill properties
     float m_fFillAmount = 1.0f;
     FillDirection m_eFillDirection = FillDirection::LeftToRight;
-
-    // Border properties
-    Zenith_Maths::Vector4 m_xBorderColor = { 0.0f, 0.0f, 0.0f, 1.0f };
-    float m_fBorderThickness = 0.0f;
-
-    // Glow effect
-    bool m_bGlowEnabled = false;
-    Zenith_Maths::Vector4 m_xGlowColor = { 1.0f, 1.0f, 0.0f, 0.5f };
-    float m_fGlowSize = 8.0f;
 };
 
 } // namespace Zenith_UI

@@ -8,11 +8,15 @@ public:
 	struct Quad
 	{
 		Quad() = default;
-		Quad(Zenith_Maths::UVector4 xPosition_Size, Zenith_Maths::Vector4 xColour, uint32_t uTexture, Zenith_Maths::Vector2 xUVMult_UVAdd)
+		Quad(Zenith_Maths::UVector4 xPosition_Size, Zenith_Maths::Vector4 xColour, uint32_t uTexture, Zenith_Maths::Vector2 xUVMult_UVAdd,
+			float fCornerRadius = 0.0f, Zenith_Maths::Vector2 xSizePixels = {0,0}, Zenith_Maths::Vector4 xColour2 = {-1,-1,-1,-1})
 			: m_xPosition_Size(xPosition_Size)
 			, m_xColour(xColour)
 			, m_uTexture(uTexture)
 			, m_xUVMult_UVAdd(xUVMult_UVAdd)
+			, m_fCornerRadius(fCornerRadius)
+			, m_xSizePixels(xSizePixels)
+			, m_xColour2(xColour2)
 		{
 
 		}
@@ -20,6 +24,9 @@ public:
 		Zenith_Maths::Vector4 m_xColour;
 		uint32_t m_uTexture;
 		Zenith_Maths::Vector2 m_xUVMult_UVAdd;
+		float m_fCornerRadius = 0.0f;
+		Zenith_Maths::Vector2 m_xSizePixels = {0, 0};
+		Zenith_Maths::Vector4 m_xColour2 = {-1, -1, -1, -1};
 	};
 
 	static void Initialise();

@@ -91,6 +91,33 @@ enum class Zenith_EditorActionType
 	SET_UI_BUTTON_PRESSED_COLOR,
 	SET_UI_BUTTON_FONT_SIZE,
 
+	// UIRect styling
+	SET_UI_CORNER_RADIUS,
+	SET_UI_GRADIENT_COLOR,
+	SET_UI_SHADOW,
+	SET_UI_SHADOW_COLOR,
+	SET_UI_RECT_BORDER,
+
+	// UIText shadow
+	SET_UI_TEXT_SHADOW,
+	SET_UI_TEXT_SHADOW_COLOR,
+
+	// UIElement background
+	SET_UI_BACKGROUND_COLOR,
+	SET_UI_BACKGROUND_CORNER_RADIUS,
+	SET_UI_BACKGROUND_BORDER,
+
+	// UIButton styling
+	SET_UI_BUTTON_CORNER_RADIUS,
+	SET_UI_BUTTON_SHADOW,
+	SET_UI_BUTTON_SHADOW_COLOR,
+	SET_UI_BUTTON_GRADIENT_COLOR,
+	SET_UI_BUTTON_BORDER_COLOR,
+	SET_UI_BUTTON_BORDER_THICKNESS,
+	SET_UI_BUTTON_TRANSITION_DURATION,
+	SET_UI_BUTTON_TEXT_SHADOW,
+	SET_UI_BUTTON_TEXT_SHADOW_COLOR,
+
 	// Script (via Zenith_Editor::SetBehaviourOnSelected / SetBehaviourForSerializationOnSelected)
 	SET_BEHAVIOUR,
 	SET_BEHAVIOUR_FOR_SERIALIZATION,
@@ -230,6 +257,41 @@ public:
 	static void AddStep_SetUIButtonHoverColor(const char* szElement, float fR, float fG, float fB, float fA);
 	static void AddStep_SetUIButtonPressedColor(const char* szElement, float fR, float fG, float fB, float fA);
 	static void AddStep_SetUIButtonFontSize(const char* szElement, float fSize);
+
+	//--------------------------------------------------------------------------
+	// UIElement Background Step Helpers
+	//--------------------------------------------------------------------------
+	static void AddStep_SetUIBackgroundColor(const char* szElement, float fR, float fG, float fB, float fA);
+	static void AddStep_SetUIBackgroundCornerRadius(const char* szElement, float fRadius);
+	static void AddStep_SetUIBackgroundBorder(const char* szElement, float fR, float fG, float fB, float fThickness);
+
+	//--------------------------------------------------------------------------
+	// UIRect Styling Step Helpers
+	//--------------------------------------------------------------------------
+	static void AddStep_SetUICornerRadius(const char* szElement, float fRadius);
+	static void AddStep_SetUIGradientColor(const char* szElement, float fR, float fG, float fB, float fA);
+	static void AddStep_SetUIShadow(const char* szElement, float fOffX, float fOffY, float fSpread, bool bEnabled);
+	static void AddStep_SetUIShadowColor(const char* szElement, float fR, float fG, float fB, float fA);
+	static void AddStep_SetUIRectBorder(const char* szElement, float fR, float fG, float fB, float fThickness);
+
+	//--------------------------------------------------------------------------
+	// UIText Shadow Step Helpers
+	//--------------------------------------------------------------------------
+	static void AddStep_SetUITextShadow(const char* szElement, float fOffX, float fOffY, bool bEnabled);
+	static void AddStep_SetUITextShadowColor(const char* szElement, float fR, float fG, float fB, float fA);
+
+	//--------------------------------------------------------------------------
+	// UIButton Styling Step Helpers
+	//--------------------------------------------------------------------------
+	static void AddStep_SetUIButtonCornerRadius(const char* szElement, float fRadius);
+	static void AddStep_SetUIButtonShadow(const char* szElement, float fOffX, float fOffY, float fSpread, bool bEnabled);
+	static void AddStep_SetUIButtonShadowColor(const char* szElement, float fR, float fG, float fB, float fA);
+	static void AddStep_SetUIButtonGradientColor(const char* szElement, float fR, float fG, float fB, float fA);
+	static void AddStep_SetUIButtonBorderColor(const char* szElement, float fR, float fG, float fB, float fA);
+	static void AddStep_SetUIButtonBorderThickness(const char* szElement, float fThickness);
+	static void AddStep_SetUIButtonTransitionDuration(const char* szElement, float fDuration);
+	static void AddStep_SetUIButtonTextShadow(const char* szElement, float fOffX, float fOffY, bool bEnabled);
+	static void AddStep_SetUIButtonTextShadowColor(const char* szElement, float fR, float fG, float fB, float fA);
 
 	//--------------------------------------------------------------------------
 	// Script Step Helpers

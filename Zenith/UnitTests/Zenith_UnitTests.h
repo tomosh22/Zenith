@@ -418,6 +418,13 @@ private:
 	static void TestImageViewTypeCube();
 	static void TestImageViewTypeDefault2D();
 	static void TestDestroySkipsInvalidHandle();
+
+	// UIStyle tests
+	static void TestUIStyleDefaultValues();
+	static void TestUIStyleLerpIdentity();
+	static void TestUIStyleLerpHalfway();
+	static void TestUIStyleLerpEndpoints();
+	static void TestUIStyleLerpShadowBool();
 };
 
 // Include editor/tools-only tests separately as they are only available in ZENITH_TOOLS builds

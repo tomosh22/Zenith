@@ -1,6 +1,7 @@
 #include "Zenith.h"
 #include "UI/Zenith_UIImage.h"
 #include "UI/Zenith_UICanvas.h"
+#include "UI/Zenith_UIStyleRenderer.h"
 #include "AssetHandling/Zenith_AssetRegistry.h"
 #include "AssetHandling/Zenith_TextureAsset.h"
 #include "Flux/Flux_Buffers.h"
@@ -14,7 +15,7 @@
 
 namespace Zenith_UI {
 
-static constexpr uint32_t UI_IMAGE_VERSION = 1;
+static constexpr uint32_t UI_IMAGE_VERSION = 2;
 
 Zenith_UIImage::Zenith_UIImage(const std::string& strName)
     : Zenith_UIElement(strName)
@@ -23,7 +24,6 @@ Zenith_UIImage::Zenith_UIImage(const std::string& strName)
 
 Zenith_UIImage::~Zenith_UIImage()
 {
-    // Texture lifetime managed by asset registry
 }
 
 void Zenith_UIImage::SetTexturePath(const std::string& strPath)
@@ -39,7 +39,6 @@ void Zenith_UIImage::LoadTexture()
         return;
     }
 
-    // Load texture via handle (handles caching and ref counting)
     Zenith_TextureAsset* pxTexture = m_xTexture.Get();
 
     if (pxTexture)
@@ -66,18 +65,22 @@ void Zenith_UIImage::Render(Zenith_UICanvas& xCanvas)
     if (!m_bVisible)
         return;
 
+    float fAlpha = GetEffectiveAlpha();
     Zenith_Maths::Vector4 xBounds = GetScreenBounds();
 
-    // Render glow effect first (behind image)
-    if (m_bGlowEnabled && m_fGlowSize > 0.0f)
+    // Render shadow if enabled
+    if (m_xStyle.m_bShadowEnabled)
     {
-        Zenith_Maths::Vector4 xGlowBounds = {
-            xBounds.x - m_fGlowSize,
-            xBounds.y - m_fGlowSize,
-            xBounds.z + m_fGlowSize,
-            xBounds.w + m_fGlowSize
+        Zenith_Maths::Vector4 xShadowBounds = {
+            xBounds.x + m_xStyle.m_xShadowOffset.x - m_xStyle.m_fShadowSpread,
+            xBounds.y + m_xStyle.m_xShadowOffset.y - m_xStyle.m_fShadowSpread,
+            xBounds.z + m_xStyle.m_xShadowOffset.x + m_xStyle.m_fShadowSpread,
+            xBounds.w + m_xStyle.m_xShadowOffset.y + m_xStyle.m_fShadowSpread
         };
-        xCanvas.SubmitQuad(xGlowBounds, m_xGlowColor, 0);
+        Zenith_Maths::Vector4 xShadowColor = m_xStyle.m_xShadowColor;
+        xShadowColor.a *= fAlpha;
+        xCanvas.SubmitQuad(xShadowBounds, xShadowColor, 0,
+            m_xStyle.m_fCornerRadius + m_xStyle.m_fShadowSpread);
     }
 
     // Render the image with bindless texture
@@ -88,8 +91,9 @@ void Zenith_UIImage::Render(Zenith_UICanvas& xCanvas)
         uTextureID = pxTexture->m_xSRV.m_xImageViewHandle.AsUInt();
     }
 
-    // Apply color tint
-    xCanvas.SubmitQuadWithUV(xBounds, m_xColor, uTextureID, m_xUVMin, m_xUVMax);
+    Zenith_Maths::Vector4 xColor = m_xColor;
+    xColor.a *= fAlpha;
+    xCanvas.SubmitQuadWithUV(xBounds, xColor, uTextureID, m_xUVMin, m_xUVMax);
 
     // Render children
     Zenith_UIElement::Render(xCanvas);
@@ -97,57 +101,50 @@ void Zenith_UIImage::Render(Zenith_UICanvas& xCanvas)
 
 void Zenith_UIImage::WriteToDataStream(Zenith_DataStream& xStream) const
 {
-    // Write base class data
     Zenith_UIElement::WriteToDataStream(xStream);
 
-    // Write image-specific data
     xStream << UI_IMAGE_VERSION;
     std::string strTexturePath = Zenith_AssetRegistry::NormalizeAssetPath(m_xTexture.GetPath());
     xStream << strTexturePath;
-    xStream << m_xUVMin.x;
-    xStream << m_xUVMin.y;
-    xStream << m_xUVMax.x;
-    xStream << m_xUVMax.y;
-    xStream << m_bGlowEnabled;
-    xStream << m_xGlowColor.x;
-    xStream << m_xGlowColor.y;
-    xStream << m_xGlowColor.z;
-    xStream << m_xGlowColor.w;
-    xStream << m_fGlowSize;
+    xStream << m_xUVMin.x; xStream << m_xUVMin.y;
+    xStream << m_xUVMax.x; xStream << m_xUVMax.y;
+
+    // UIStyle
+    xStream << m_xStyle.m_bShadowEnabled;
+    xStream << m_xStyle.m_xShadowColor.x; xStream << m_xStyle.m_xShadowColor.y; xStream << m_xStyle.m_xShadowColor.z; xStream << m_xStyle.m_xShadowColor.w;
+    xStream << m_xStyle.m_xShadowOffset.x; xStream << m_xStyle.m_xShadowOffset.y;
+    xStream << m_xStyle.m_fShadowSpread;
+    xStream << m_xStyle.m_fCornerRadius;
 }
 
 void Zenith_UIImage::ReadFromDataStream(Zenith_DataStream& xStream)
 {
-    // Read base class data
     Zenith_UIElement::ReadFromDataStream(xStream);
 
-    // Read image-specific data
     uint32_t uVersion;
     xStream >> uVersion;
+
+    Zenith_Assert(uVersion == UI_IMAGE_VERSION, "UIImage version mismatch");
 
     std::string strTexturePath;
     xStream >> strTexturePath;
     m_xTexture.SetPath(Zenith_AssetRegistry::NormalizeAssetPath(strTexturePath));
 
-    xStream >> m_xUVMin.x;
-    xStream >> m_xUVMin.y;
-    xStream >> m_xUVMax.x;
-    xStream >> m_xUVMax.y;
-    xStream >> m_bGlowEnabled;
-    xStream >> m_xGlowColor.x;
-    xStream >> m_xGlowColor.y;
-    xStream >> m_xGlowColor.z;
-    xStream >> m_xGlowColor.w;
-    xStream >> m_fGlowSize;
+    xStream >> m_xUVMin.x; xStream >> m_xUVMin.y;
+    xStream >> m_xUVMax.x; xStream >> m_xUVMax.y;
 
-    // Reload texture
+    xStream >> m_xStyle.m_bShadowEnabled;
+    xStream >> m_xStyle.m_xShadowColor.x; xStream >> m_xStyle.m_xShadowColor.y; xStream >> m_xStyle.m_xShadowColor.z; xStream >> m_xStyle.m_xShadowColor.w;
+    xStream >> m_xStyle.m_xShadowOffset.x; xStream >> m_xStyle.m_xShadowOffset.y;
+    xStream >> m_xStyle.m_fShadowSpread;
+    xStream >> m_xStyle.m_fCornerRadius;
+
     LoadTexture();
 }
 
 #ifdef ZENITH_TOOLS
 void Zenith_UIImage::RenderPropertiesPanel()
 {
-    // Render base properties
     Zenith_UIElement::RenderPropertiesPanel();
 
     ImGui::Separator();
@@ -186,20 +183,21 @@ void Zenith_UIImage::RenderPropertiesPanel()
     }
 
     ImGui::Separator();
-    ImGui::Text("Glow Effect");
+    ImGui::Text("Shadow");
 
-    ImGui::Checkbox("Enable Glow##Image", &m_bGlowEnabled);
-
-    if (m_bGlowEnabled)
+    ImGui::Checkbox("Enable Shadow##Image", &m_xStyle.m_bShadowEnabled);
+    if (m_xStyle.m_bShadowEnabled)
     {
-        ImGui::DragFloat("Glow Size##Image", &m_fGlowSize, 0.5f, 0.0f, 50.0f);
-
-        float fGlowColor[4] = { m_xGlowColor.x, m_xGlowColor.y, m_xGlowColor.z, m_xGlowColor.w };
-        if (ImGui::ColorEdit4("Glow Color##Image", fGlowColor))
+        float fShadowColor[4] = { m_xStyle.m_xShadowColor.x, m_xStyle.m_xShadowColor.y, m_xStyle.m_xShadowColor.z, m_xStyle.m_xShadowColor.w };
+        if (ImGui::ColorEdit4("Shadow Color##Image", fShadowColor))
         {
-            m_xGlowColor = { fGlowColor[0], fGlowColor[1], fGlowColor[2], fGlowColor[3] };
+            m_xStyle.m_xShadowColor = { fShadowColor[0], fShadowColor[1], fShadowColor[2], fShadowColor[3] };
         }
+        ImGui::DragFloat2("Shadow Offset##Image", &m_xStyle.m_xShadowOffset.x, 0.5f, -50.0f, 50.0f);
+        ImGui::DragFloat("Shadow Spread##Image", &m_xStyle.m_fShadowSpread, 0.5f, 0.0f, 50.0f);
     }
+
+    ImGui::DragFloat("Corner Radius##Image", &m_xStyle.m_fCornerRadius, 0.5f, 0.0f, 100.0f);
 }
 #endif
 

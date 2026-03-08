@@ -97,6 +97,38 @@ void Zenith_AutomationTests::RunAllTests()
 	TestBeginWithZeroSteps();
 	TestDoubleBeginWithoutReset();
 
+	// UIStyle Automation tests
+	TestSetUICornerRadiusStep();
+	TestSetUIGradientColorStep();
+	TestSetUIShadowStep();
+	TestSetUIShadowColorStep();
+	TestSetUIRectBorderStep();
+	TestSetUITextShadowStep();
+	TestSetUITextShadowColorStep();
+	TestSetUIButtonCornerRadiusStep();
+	TestSetUIButtonShadowStep();
+	TestSetUIButtonShadowColorStep();
+	TestSetUIButtonGradientColorStep();
+	TestSetUIButtonBorderColorStep();
+	TestSetUIButtonBorderThicknessStep();
+	TestSetUIButtonTransitionDurationStep();
+	TestSetUIButtonTextShadowStep();
+	TestSetUIButtonTextShadowColorStep();
+
+	// Group Alpha tests
+	TestGroupAlphaDefault();
+	TestGroupAlphaPropagation();
+	TestGroupInteractableDefault();
+	TestGroupInteractableParentDisabled();
+
+	// UIElement Background tests
+	TestSetUIBackgroundColorStep();
+	TestSetUIBackgroundCornerRadiusStep();
+	TestSetUIBackgroundBorderStep();
+
+	// Button Transition tests
+	TestButtonTransitionInitialState();
+
 	// Layout Group tests
 	TestCreateUILayoutGroupStep();
 	TestAddUIChildStep();
@@ -2191,6 +2223,598 @@ void Zenith_AutomationTests::TestLayoutSerializationRoundTrip()
 	Zenith_EditorAutomation::Reset();
 
 	EDITOR_TEST_END(TestLayoutSerializationRoundTrip);
+}
+
+//=============================================================================
+// UIStyle Automation Tests
+//=============================================================================
+
+void Zenith_AutomationTests::TestSetUICornerRadiusStep()
+{
+	EDITOR_TEST_BEGIN(TestSetUICornerRadiusStep);
+
+	Zenith_EditorAutomation::Reset();
+	Zenith_EditorAutomation::AddStep_CreateEntity("AutoCornerRadiusEntity");
+	Zenith_EditorAutomation::AddStep_AddUI();
+	Zenith_EditorAutomation::AddStep_CreateUIRect("TestRect");
+	Zenith_EditorAutomation::AddStep_SetUICornerRadius("TestRect", 12.0f);
+	Zenith_EditorAutomation::Begin();
+
+	for (uint32_t i = 0; i < 4; i++)
+		Zenith_EditorAutomation::ExecuteNextStep();
+
+	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+	Zenith_Assert(pxEntity != nullptr, "Should have selected entity");
+
+	Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+	auto* pxRect = xUI.FindElement<Zenith_UI::Zenith_UIRect>("TestRect");
+	Zenith_Assert(pxRect != nullptr, "Should find UI rect");
+	Zenith_Assert(std::abs(pxRect->GetStyle().m_fCornerRadius - 12.0f) < 0.001f, "Corner radius should be 12");
+
+	Zenith_EditorAutomation::ExecuteNextStep();
+	Zenith_EditorAutomation::Reset();
+
+	EDITOR_TEST_END(TestSetUICornerRadiusStep);
+}
+
+void Zenith_AutomationTests::TestSetUIGradientColorStep()
+{
+	EDITOR_TEST_BEGIN(TestSetUIGradientColorStep);
+
+	Zenith_EditorAutomation::Reset();
+	Zenith_EditorAutomation::AddStep_CreateEntity("AutoGradientEntity");
+	Zenith_EditorAutomation::AddStep_AddUI();
+	Zenith_EditorAutomation::AddStep_CreateUIRect("TestRect");
+	Zenith_EditorAutomation::AddStep_SetUIGradientColor("TestRect", 0.5f, 0.3f, 0.1f, 1.0f);
+	Zenith_EditorAutomation::Begin();
+
+	for (uint32_t i = 0; i < 4; i++)
+		Zenith_EditorAutomation::ExecuteNextStep();
+
+	auto* pxRect = Zenith_Editor::GetSelectedEntity()->GetComponent<Zenith_UIComponent>()
+		.FindElement<Zenith_UI::Zenith_UIRect>("TestRect");
+	Zenith_Assert(pxRect != nullptr, "Should find UI rect");
+	Zenith_Assert(std::abs(pxRect->GetStyle().m_xGradientBottomColor.x - 0.5f) < 0.001f, "Gradient R should be 0.5");
+	Zenith_Assert(std::abs(pxRect->GetStyle().m_xGradientBottomColor.y - 0.3f) < 0.001f, "Gradient G should be 0.3");
+
+	Zenith_EditorAutomation::ExecuteNextStep();
+	Zenith_EditorAutomation::Reset();
+
+	EDITOR_TEST_END(TestSetUIGradientColorStep);
+}
+
+void Zenith_AutomationTests::TestSetUIShadowStep()
+{
+	EDITOR_TEST_BEGIN(TestSetUIShadowStep);
+
+	Zenith_EditorAutomation::Reset();
+	Zenith_EditorAutomation::AddStep_CreateEntity("AutoShadowEntity");
+	Zenith_EditorAutomation::AddStep_AddUI();
+	Zenith_EditorAutomation::AddStep_CreateUIRect("TestRect");
+	Zenith_EditorAutomation::AddStep_SetUIShadow("TestRect", 3.0f, 4.0f, 2.0f, true);
+	Zenith_EditorAutomation::Begin();
+
+	for (uint32_t i = 0; i < 4; i++)
+		Zenith_EditorAutomation::ExecuteNextStep();
+
+	auto* pxRect = Zenith_Editor::GetSelectedEntity()->GetComponent<Zenith_UIComponent>()
+		.FindElement<Zenith_UI::Zenith_UIRect>("TestRect");
+	Zenith_Assert(pxRect != nullptr, "Should find UI rect");
+	Zenith_Assert(pxRect->GetStyle().m_bShadowEnabled == true, "Shadow should be enabled");
+	Zenith_Assert(std::abs(pxRect->GetStyle().m_xShadowOffset.x - 3.0f) < 0.001f, "Shadow offset X should be 3");
+	Zenith_Assert(std::abs(pxRect->GetStyle().m_xShadowOffset.y - 4.0f) < 0.001f, "Shadow offset Y should be 4");
+	Zenith_Assert(std::abs(pxRect->GetStyle().m_fShadowSpread - 2.0f) < 0.001f, "Shadow spread should be 2");
+
+	Zenith_EditorAutomation::ExecuteNextStep();
+	Zenith_EditorAutomation::Reset();
+
+	EDITOR_TEST_END(TestSetUIShadowStep);
+}
+
+void Zenith_AutomationTests::TestSetUIShadowColorStep()
+{
+	EDITOR_TEST_BEGIN(TestSetUIShadowColorStep);
+
+	Zenith_EditorAutomation::Reset();
+	Zenith_EditorAutomation::AddStep_CreateEntity("AutoShadowColorEntity");
+	Zenith_EditorAutomation::AddStep_AddUI();
+	Zenith_EditorAutomation::AddStep_CreateUIRect("TestRect");
+	Zenith_EditorAutomation::AddStep_SetUIShadowColor("TestRect", 0.1f, 0.2f, 0.3f, 0.5f);
+	Zenith_EditorAutomation::Begin();
+
+	for (uint32_t i = 0; i < 4; i++)
+		Zenith_EditorAutomation::ExecuteNextStep();
+
+	auto* pxRect = Zenith_Editor::GetSelectedEntity()->GetComponent<Zenith_UIComponent>()
+		.FindElement<Zenith_UI::Zenith_UIRect>("TestRect");
+	Zenith_Assert(pxRect != nullptr, "Should find UI rect");
+	Zenith_Assert(std::abs(pxRect->GetStyle().m_xShadowColor.x - 0.1f) < 0.001f, "Shadow color R");
+	Zenith_Assert(std::abs(pxRect->GetStyle().m_xShadowColor.w - 0.5f) < 0.001f, "Shadow color A");
+
+	Zenith_EditorAutomation::ExecuteNextStep();
+	Zenith_EditorAutomation::Reset();
+
+	EDITOR_TEST_END(TestSetUIShadowColorStep);
+}
+
+void Zenith_AutomationTests::TestSetUIRectBorderStep()
+{
+	EDITOR_TEST_BEGIN(TestSetUIRectBorderStep);
+
+	Zenith_EditorAutomation::Reset();
+	Zenith_EditorAutomation::AddStep_CreateEntity("AutoRectBorderEntity");
+	Zenith_EditorAutomation::AddStep_AddUI();
+	Zenith_EditorAutomation::AddStep_CreateUIRect("TestRect");
+	Zenith_EditorAutomation::AddStep_SetUIRectBorder("TestRect", 0.5f, 0.6f, 0.7f, 3.0f);
+	Zenith_EditorAutomation::Begin();
+
+	for (uint32_t i = 0; i < 4; i++)
+		Zenith_EditorAutomation::ExecuteNextStep();
+
+	auto* pxRect = Zenith_Editor::GetSelectedEntity()->GetComponent<Zenith_UIComponent>()
+		.FindElement<Zenith_UI::Zenith_UIRect>("TestRect");
+	Zenith_Assert(pxRect != nullptr, "Should find UI rect");
+	Zenith_Assert(std::abs(pxRect->GetStyle().m_xBorderColor.x - 0.5f) < 0.001f, "Border color R");
+	Zenith_Assert(std::abs(pxRect->GetStyle().m_fBorderThickness - 3.0f) < 0.001f, "Border thickness should be 3");
+
+	Zenith_EditorAutomation::ExecuteNextStep();
+	Zenith_EditorAutomation::Reset();
+
+	EDITOR_TEST_END(TestSetUIRectBorderStep);
+}
+
+void Zenith_AutomationTests::TestSetUITextShadowStep()
+{
+	EDITOR_TEST_BEGIN(TestSetUITextShadowStep);
+
+	Zenith_EditorAutomation::Reset();
+	Zenith_EditorAutomation::AddStep_CreateEntity("AutoTextShadowEntity");
+	Zenith_EditorAutomation::AddStep_AddUI();
+	Zenith_EditorAutomation::AddStep_CreateUIText("TestText", "Hello");
+	Zenith_EditorAutomation::AddStep_SetUITextShadow("TestText", 2.0f, 3.0f, true);
+	Zenith_EditorAutomation::Begin();
+
+	for (uint32_t i = 0; i < 4; i++)
+		Zenith_EditorAutomation::ExecuteNextStep();
+
+	auto* pxText = Zenith_Editor::GetSelectedEntity()->GetComponent<Zenith_UIComponent>()
+		.FindElement<Zenith_UI::Zenith_UIText>("TestText");
+	Zenith_Assert(pxText != nullptr, "Should find UI text");
+
+	Zenith_EditorAutomation::ExecuteNextStep();
+	Zenith_EditorAutomation::Reset();
+
+	EDITOR_TEST_END(TestSetUITextShadowStep);
+}
+
+void Zenith_AutomationTests::TestSetUITextShadowColorStep()
+{
+	EDITOR_TEST_BEGIN(TestSetUITextShadowColorStep);
+
+	Zenith_EditorAutomation::Reset();
+	Zenith_EditorAutomation::AddStep_CreateEntity("AutoTextShadowColorEntity");
+	Zenith_EditorAutomation::AddStep_AddUI();
+	Zenith_EditorAutomation::AddStep_CreateUIText("TestText", "Hello");
+	Zenith_EditorAutomation::AddStep_SetUITextShadowColor("TestText", 0.1f, 0.2f, 0.3f, 0.8f);
+	Zenith_EditorAutomation::Begin();
+
+	for (uint32_t i = 0; i < 4; i++)
+		Zenith_EditorAutomation::ExecuteNextStep();
+
+	auto* pxText = Zenith_Editor::GetSelectedEntity()->GetComponent<Zenith_UIComponent>()
+		.FindElement<Zenith_UI::Zenith_UIText>("TestText");
+	Zenith_Assert(pxText != nullptr, "Should find UI text");
+
+	Zenith_EditorAutomation::ExecuteNextStep();
+	Zenith_EditorAutomation::Reset();
+
+	EDITOR_TEST_END(TestSetUITextShadowColorStep);
+}
+
+void Zenith_AutomationTests::TestSetUIButtonCornerRadiusStep()
+{
+	EDITOR_TEST_BEGIN(TestSetUIButtonCornerRadiusStep);
+
+	Zenith_EditorAutomation::Reset();
+	Zenith_EditorAutomation::AddStep_CreateEntity("AutoBtnCornerEntity");
+	Zenith_EditorAutomation::AddStep_AddUI();
+	Zenith_EditorAutomation::AddStep_CreateUIButton("TestBtn", "Click");
+	Zenith_EditorAutomation::AddStep_SetUIButtonCornerRadius("TestBtn", 16.0f);
+	Zenith_EditorAutomation::Begin();
+
+	for (uint32_t i = 0; i < 4; i++)
+		Zenith_EditorAutomation::ExecuteNextStep();
+
+	auto* pxBtn = Zenith_Editor::GetSelectedEntity()->GetComponent<Zenith_UIComponent>()
+		.FindElement<Zenith_UI::Zenith_UIButton>("TestBtn");
+	Zenith_Assert(pxBtn != nullptr, "Should find UI button");
+	Zenith_Assert(std::abs(pxBtn->GetNormalStyle().m_fCornerRadius - 16.0f) < 0.001f, "Normal corner radius should be 16");
+	Zenith_Assert(std::abs(pxBtn->GetHoveredStyle().m_fCornerRadius - 16.0f) < 0.001f, "Hovered corner radius should be 16");
+	Zenith_Assert(std::abs(pxBtn->GetPressedStyle().m_fCornerRadius - 16.0f) < 0.001f, "Pressed corner radius should be 16");
+
+	Zenith_EditorAutomation::ExecuteNextStep();
+	Zenith_EditorAutomation::Reset();
+
+	EDITOR_TEST_END(TestSetUIButtonCornerRadiusStep);
+}
+
+void Zenith_AutomationTests::TestSetUIButtonShadowStep()
+{
+	EDITOR_TEST_BEGIN(TestSetUIButtonShadowStep);
+
+	Zenith_EditorAutomation::Reset();
+	Zenith_EditorAutomation::AddStep_CreateEntity("AutoBtnShadowEntity");
+	Zenith_EditorAutomation::AddStep_AddUI();
+	Zenith_EditorAutomation::AddStep_CreateUIButton("TestBtn", "Click");
+	Zenith_EditorAutomation::AddStep_SetUIButtonShadow("TestBtn", 3.0f, 3.0f, 2.0f, true);
+	Zenith_EditorAutomation::Begin();
+
+	for (uint32_t i = 0; i < 4; i++)
+		Zenith_EditorAutomation::ExecuteNextStep();
+
+	auto* pxBtn = Zenith_Editor::GetSelectedEntity()->GetComponent<Zenith_UIComponent>()
+		.FindElement<Zenith_UI::Zenith_UIButton>("TestBtn");
+	Zenith_Assert(pxBtn != nullptr, "Should find UI button");
+	Zenith_Assert(pxBtn->GetNormalStyle().m_bShadowEnabled == true, "Shadow should be enabled on all states");
+	Zenith_Assert(std::abs(pxBtn->GetNormalStyle().m_xShadowOffset.x - 3.0f) < 0.001f, "Shadow offset X");
+	Zenith_Assert(std::abs(pxBtn->GetNormalStyle().m_fShadowSpread - 2.0f) < 0.001f, "Shadow spread");
+
+	Zenith_EditorAutomation::ExecuteNextStep();
+	Zenith_EditorAutomation::Reset();
+
+	EDITOR_TEST_END(TestSetUIButtonShadowStep);
+}
+
+void Zenith_AutomationTests::TestSetUIButtonShadowColorStep()
+{
+	EDITOR_TEST_BEGIN(TestSetUIButtonShadowColorStep);
+
+	Zenith_EditorAutomation::Reset();
+	Zenith_EditorAutomation::AddStep_CreateEntity("AutoBtnShadowColEntity");
+	Zenith_EditorAutomation::AddStep_AddUI();
+	Zenith_EditorAutomation::AddStep_CreateUIButton("TestBtn", "Click");
+	Zenith_EditorAutomation::AddStep_SetUIButtonShadowColor("TestBtn", 0.0f, 0.0f, 0.0f, 0.3f);
+	Zenith_EditorAutomation::Begin();
+
+	for (uint32_t i = 0; i < 4; i++)
+		Zenith_EditorAutomation::ExecuteNextStep();
+
+	auto* pxBtn = Zenith_Editor::GetSelectedEntity()->GetComponent<Zenith_UIComponent>()
+		.FindElement<Zenith_UI::Zenith_UIButton>("TestBtn");
+	Zenith_Assert(pxBtn != nullptr, "Should find UI button");
+	Zenith_Assert(std::abs(pxBtn->GetNormalStyle().m_xShadowColor.w - 0.3f) < 0.001f, "Shadow color A should be 0.3");
+
+	Zenith_EditorAutomation::ExecuteNextStep();
+	Zenith_EditorAutomation::Reset();
+
+	EDITOR_TEST_END(TestSetUIButtonShadowColorStep);
+}
+
+void Zenith_AutomationTests::TestSetUIButtonGradientColorStep()
+{
+	EDITOR_TEST_BEGIN(TestSetUIButtonGradientColorStep);
+
+	Zenith_EditorAutomation::Reset();
+	Zenith_EditorAutomation::AddStep_CreateEntity("AutoBtnGradEntity");
+	Zenith_EditorAutomation::AddStep_AddUI();
+	Zenith_EditorAutomation::AddStep_CreateUIButton("TestBtn", "Click");
+	Zenith_EditorAutomation::AddStep_SetUIButtonGradientColor("TestBtn", 0.2f, 0.4f, 0.6f, 1.0f);
+	Zenith_EditorAutomation::Begin();
+
+	for (uint32_t i = 0; i < 4; i++)
+		Zenith_EditorAutomation::ExecuteNextStep();
+
+	auto* pxBtn = Zenith_Editor::GetSelectedEntity()->GetComponent<Zenith_UIComponent>()
+		.FindElement<Zenith_UI::Zenith_UIButton>("TestBtn");
+	Zenith_Assert(pxBtn != nullptr, "Should find UI button");
+	Zenith_Assert(std::abs(pxBtn->GetNormalStyle().m_xGradientBottomColor.x - 0.2f) < 0.001f, "Gradient R");
+	Zenith_Assert(std::abs(pxBtn->GetNormalStyle().m_xGradientBottomColor.y - 0.4f) < 0.001f, "Gradient G");
+
+	Zenith_EditorAutomation::ExecuteNextStep();
+	Zenith_EditorAutomation::Reset();
+
+	EDITOR_TEST_END(TestSetUIButtonGradientColorStep);
+}
+
+void Zenith_AutomationTests::TestSetUIButtonBorderColorStep()
+{
+	EDITOR_TEST_BEGIN(TestSetUIButtonBorderColorStep);
+
+	Zenith_EditorAutomation::Reset();
+	Zenith_EditorAutomation::AddStep_CreateEntity("AutoBtnBorderColEntity");
+	Zenith_EditorAutomation::AddStep_AddUI();
+	Zenith_EditorAutomation::AddStep_CreateUIButton("TestBtn", "Click");
+	Zenith_EditorAutomation::AddStep_SetUIButtonBorderColor("TestBtn", 0.3f, 0.5f, 0.7f, 1.0f);
+	Zenith_EditorAutomation::Begin();
+
+	for (uint32_t i = 0; i < 4; i++)
+		Zenith_EditorAutomation::ExecuteNextStep();
+
+	auto* pxBtn = Zenith_Editor::GetSelectedEntity()->GetComponent<Zenith_UIComponent>()
+		.FindElement<Zenith_UI::Zenith_UIButton>("TestBtn");
+	Zenith_Assert(pxBtn != nullptr, "Should find UI button");
+	Zenith_Assert(std::abs(pxBtn->GetNormalStyle().m_xBorderColor.x - 0.3f) < 0.001f, "Border color R");
+	Zenith_Assert(std::abs(pxBtn->GetHoveredStyle().m_xBorderColor.y - 0.5f) < 0.001f, "Hover border color G");
+	Zenith_Assert(std::abs(pxBtn->GetPressedStyle().m_xBorderColor.z - 0.7f) < 0.001f, "Pressed border color B");
+
+	Zenith_EditorAutomation::ExecuteNextStep();
+	Zenith_EditorAutomation::Reset();
+
+	EDITOR_TEST_END(TestSetUIButtonBorderColorStep);
+}
+
+void Zenith_AutomationTests::TestSetUIButtonBorderThicknessStep()
+{
+	EDITOR_TEST_BEGIN(TestSetUIButtonBorderThicknessStep);
+
+	Zenith_EditorAutomation::Reset();
+	Zenith_EditorAutomation::AddStep_CreateEntity("AutoBtnBorderThickEntity");
+	Zenith_EditorAutomation::AddStep_AddUI();
+	Zenith_EditorAutomation::AddStep_CreateUIButton("TestBtn", "Click");
+	Zenith_EditorAutomation::AddStep_SetUIButtonBorderThickness("TestBtn", 3.0f);
+	Zenith_EditorAutomation::Begin();
+
+	for (uint32_t i = 0; i < 4; i++)
+		Zenith_EditorAutomation::ExecuteNextStep();
+
+	auto* pxBtn = Zenith_Editor::GetSelectedEntity()->GetComponent<Zenith_UIComponent>()
+		.FindElement<Zenith_UI::Zenith_UIButton>("TestBtn");
+	Zenith_Assert(pxBtn != nullptr, "Should find UI button");
+	Zenith_Assert(std::abs(pxBtn->GetNormalStyle().m_fBorderThickness - 3.0f) < 0.001f, "Border thickness should be 3");
+
+	Zenith_EditorAutomation::ExecuteNextStep();
+	Zenith_EditorAutomation::Reset();
+
+	EDITOR_TEST_END(TestSetUIButtonBorderThicknessStep);
+}
+
+void Zenith_AutomationTests::TestSetUIButtonTransitionDurationStep()
+{
+	EDITOR_TEST_BEGIN(TestSetUIButtonTransitionDurationStep);
+
+	Zenith_EditorAutomation::Reset();
+	Zenith_EditorAutomation::AddStep_CreateEntity("AutoBtnTransEntity");
+	Zenith_EditorAutomation::AddStep_AddUI();
+	Zenith_EditorAutomation::AddStep_CreateUIButton("TestBtn", "Click");
+	Zenith_EditorAutomation::AddStep_SetUIButtonTransitionDuration("TestBtn", 0.25f);
+	Zenith_EditorAutomation::Begin();
+
+	for (uint32_t i = 0; i < 4; i++)
+		Zenith_EditorAutomation::ExecuteNextStep();
+
+	auto* pxBtn = Zenith_Editor::GetSelectedEntity()->GetComponent<Zenith_UIComponent>()
+		.FindElement<Zenith_UI::Zenith_UIButton>("TestBtn");
+	Zenith_Assert(pxBtn != nullptr, "Should find UI button");
+
+	Zenith_EditorAutomation::ExecuteNextStep();
+	Zenith_EditorAutomation::Reset();
+
+	EDITOR_TEST_END(TestSetUIButtonTransitionDurationStep);
+}
+
+void Zenith_AutomationTests::TestSetUIButtonTextShadowStep()
+{
+	EDITOR_TEST_BEGIN(TestSetUIButtonTextShadowStep);
+
+	Zenith_EditorAutomation::Reset();
+	Zenith_EditorAutomation::AddStep_CreateEntity("AutoBtnTextShadEntity");
+	Zenith_EditorAutomation::AddStep_AddUI();
+	Zenith_EditorAutomation::AddStep_CreateUIButton("TestBtn", "Click");
+	Zenith_EditorAutomation::AddStep_SetUIButtonTextShadow("TestBtn", 1.0f, 2.0f, true);
+	Zenith_EditorAutomation::Begin();
+
+	for (uint32_t i = 0; i < 4; i++)
+		Zenith_EditorAutomation::ExecuteNextStep();
+
+	auto* pxBtn = Zenith_Editor::GetSelectedEntity()->GetComponent<Zenith_UIComponent>()
+		.FindElement<Zenith_UI::Zenith_UIButton>("TestBtn");
+	Zenith_Assert(pxBtn != nullptr, "Should find UI button");
+
+	Zenith_EditorAutomation::ExecuteNextStep();
+	Zenith_EditorAutomation::Reset();
+
+	EDITOR_TEST_END(TestSetUIButtonTextShadowStep);
+}
+
+void Zenith_AutomationTests::TestSetUIButtonTextShadowColorStep()
+{
+	EDITOR_TEST_BEGIN(TestSetUIButtonTextShadowColorStep);
+
+	Zenith_EditorAutomation::Reset();
+	Zenith_EditorAutomation::AddStep_CreateEntity("AutoBtnTextShadColEntity");
+	Zenith_EditorAutomation::AddStep_AddUI();
+	Zenith_EditorAutomation::AddStep_CreateUIButton("TestBtn", "Click");
+	Zenith_EditorAutomation::AddStep_SetUIButtonTextShadowColor("TestBtn", 0.0f, 0.0f, 0.0f, 0.4f);
+	Zenith_EditorAutomation::Begin();
+
+	for (uint32_t i = 0; i < 4; i++)
+		Zenith_EditorAutomation::ExecuteNextStep();
+
+	auto* pxBtn = Zenith_Editor::GetSelectedEntity()->GetComponent<Zenith_UIComponent>()
+		.FindElement<Zenith_UI::Zenith_UIButton>("TestBtn");
+	Zenith_Assert(pxBtn != nullptr, "Should find UI button");
+
+	Zenith_EditorAutomation::ExecuteNextStep();
+	Zenith_EditorAutomation::Reset();
+
+	EDITOR_TEST_END(TestSetUIButtonTextShadowColorStep);
+}
+
+//=============================================================================
+// Group Alpha Tests
+//=============================================================================
+
+void Zenith_AutomationTests::TestGroupAlphaDefault()
+{
+	EDITOR_TEST_BEGIN(TestGroupAlphaDefault);
+
+	Zenith_UI::Zenith_UIRect xRect("TestRect");
+	Zenith_Assert(std::abs(xRect.GetGroupAlpha() - 1.0f) < 0.001f, "Default group alpha should be 1.0");
+	Zenith_Assert(std::abs(xRect.GetEffectiveAlpha() - 1.0f) < 0.001f, "Default effective alpha should be 1.0");
+
+	EDITOR_TEST_END(TestGroupAlphaDefault);
+}
+
+void Zenith_AutomationTests::TestGroupAlphaPropagation()
+{
+	EDITOR_TEST_BEGIN(TestGroupAlphaPropagation);
+
+	Zenith_UI::Zenith_UIRect xParent("Parent");
+	Zenith_UI::Zenith_UIRect xChild("Child");
+	Zenith_UI::Zenith_UIRect xGrandchild("Grandchild");
+
+	xParent.AddChild(&xChild);
+	xChild.AddChild(&xGrandchild);
+
+	// Default: all alpha 1.0
+	Zenith_Assert(std::abs(xGrandchild.GetEffectiveAlpha() - 1.0f) < 0.001f, "Default effective alpha should be 1.0");
+
+	// Set parent alpha to 0.5
+	xParent.SetGroupAlpha(0.5f);
+	Zenith_Assert(std::abs(xChild.GetEffectiveAlpha() - 0.5f) < 0.001f, "Child inherits parent alpha 0.5");
+	Zenith_Assert(std::abs(xGrandchild.GetEffectiveAlpha() - 0.5f) < 0.001f, "Grandchild inherits parent alpha 0.5");
+
+	// Set child alpha to 0.5 (effective = 0.5 * 0.5 = 0.25)
+	xChild.SetGroupAlpha(0.5f);
+	Zenith_Assert(std::abs(xGrandchild.GetEffectiveAlpha() - 0.25f) < 0.001f, "Grandchild: 0.5 * 0.5 = 0.25");
+
+	// Cleanup hierarchy
+	xChild.RemoveChild(&xGrandchild);
+	xParent.RemoveChild(&xChild);
+
+	EDITOR_TEST_END(TestGroupAlphaPropagation);
+}
+
+void Zenith_AutomationTests::TestGroupInteractableDefault()
+{
+	EDITOR_TEST_BEGIN(TestGroupInteractableDefault);
+
+	Zenith_UI::Zenith_UIRect xRect("TestRect");
+	Zenith_Assert(xRect.IsGroupInteractable() == true, "Default interactable should be true");
+
+	xRect.SetGroupInteractable(false);
+	Zenith_Assert(xRect.IsGroupInteractable() == false, "Interactable should be false after setting");
+
+	EDITOR_TEST_END(TestGroupInteractableDefault);
+}
+
+void Zenith_AutomationTests::TestGroupInteractableParentDisabled()
+{
+	EDITOR_TEST_BEGIN(TestGroupInteractableParentDisabled);
+
+	Zenith_UI::Zenith_UIRect xParent("Parent");
+	Zenith_UI::Zenith_UIRect xChild("Child");
+
+	xParent.AddChild(&xChild);
+
+	Zenith_Assert(xChild.IsGroupInteractable() == true, "Child default interactable should be true");
+
+	xParent.SetGroupInteractable(false);
+	Zenith_Assert(xChild.IsGroupInteractable() == false, "Child should not be interactable when parent is disabled");
+
+	// Child's own flag is still true, just parent overrides
+	xParent.SetGroupInteractable(true);
+	Zenith_Assert(xChild.IsGroupInteractable() == true, "Child should be interactable when parent re-enabled");
+
+	xParent.RemoveChild(&xChild);
+
+	EDITOR_TEST_END(TestGroupInteractableParentDisabled);
+}
+
+//=============================================================================
+// UIElement Background Tests
+//=============================================================================
+
+void Zenith_AutomationTests::TestSetUIBackgroundColorStep()
+{
+	EDITOR_TEST_BEGIN(TestSetUIBackgroundColorStep);
+
+	Zenith_EditorAutomation::Reset();
+	Zenith_EditorAutomation::AddStep_CreateEntity("Entity");
+	Zenith_EditorAutomation::AddStep_AddUI();
+	Zenith_EditorAutomation::AddStep_CreateUILayoutGroup("TestGroup");
+	Zenith_EditorAutomation::AddStep_SetUIBackgroundColor("TestGroup", 0.1f, 0.2f, 0.3f, 0.5f);
+	Zenith_EditorAutomation::Begin();
+	while (!Zenith_EditorAutomation::IsComplete())
+		Zenith_EditorAutomation::ExecuteNextStep();
+
+	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+	Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+	auto* pxGroup = xUI.FindElement<Zenith_UI::Zenith_UIElement>("TestGroup");
+	Zenith_Assert(pxGroup->HasBackground(), "Background must be enabled");
+	Zenith_Assert(std::abs(pxGroup->GetBackgroundStyle().m_xFillColor.x - 0.1f) < 0.001f, "Bg color R");
+	Zenith_Assert(std::abs(pxGroup->GetBackgroundStyle().m_xFillColor.w - 0.5f) < 0.001f, "Bg color A");
+
+	Zenith_EditorAutomation::Reset();
+	EDITOR_TEST_END(TestSetUIBackgroundColorStep);
+}
+
+void Zenith_AutomationTests::TestSetUIBackgroundCornerRadiusStep()
+{
+	EDITOR_TEST_BEGIN(TestSetUIBackgroundCornerRadiusStep);
+
+	Zenith_EditorAutomation::Reset();
+	Zenith_EditorAutomation::AddStep_CreateEntity("Entity");
+	Zenith_EditorAutomation::AddStep_AddUI();
+	Zenith_EditorAutomation::AddStep_CreateUILayoutGroup("TestGroup");
+	Zenith_EditorAutomation::AddStep_SetUIBackgroundColor("TestGroup", 0.5f, 0.5f, 0.5f, 1.0f);
+	Zenith_EditorAutomation::AddStep_SetUIBackgroundCornerRadius("TestGroup", 16.0f);
+	Zenith_EditorAutomation::Begin();
+	while (!Zenith_EditorAutomation::IsComplete())
+		Zenith_EditorAutomation::ExecuteNextStep();
+
+	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+	Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+	auto* pxGroup = xUI.FindElement<Zenith_UI::Zenith_UIElement>("TestGroup");
+	Zenith_Assert(std::abs(pxGroup->GetBackgroundStyle().m_fCornerRadius - 16.0f) < 0.001f, "Bg corner radius must be 16");
+
+	Zenith_EditorAutomation::Reset();
+	EDITOR_TEST_END(TestSetUIBackgroundCornerRadiusStep);
+}
+
+void Zenith_AutomationTests::TestSetUIBackgroundBorderStep()
+{
+	EDITOR_TEST_BEGIN(TestSetUIBackgroundBorderStep);
+
+	Zenith_EditorAutomation::Reset();
+	Zenith_EditorAutomation::AddStep_CreateEntity("Entity");
+	Zenith_EditorAutomation::AddStep_AddUI();
+	Zenith_EditorAutomation::AddStep_CreateUILayoutGroup("TestGroup");
+	Zenith_EditorAutomation::AddStep_SetUIBackgroundColor("TestGroup", 0.5f, 0.5f, 0.5f, 1.0f);
+	Zenith_EditorAutomation::AddStep_SetUIBackgroundBorder("TestGroup", 0.3f, 0.4f, 0.5f, 2.0f);
+	Zenith_EditorAutomation::Begin();
+	while (!Zenith_EditorAutomation::IsComplete())
+		Zenith_EditorAutomation::ExecuteNextStep();
+
+	Zenith_Entity* pxEntity = Zenith_Editor::GetSelectedEntity();
+	Zenith_UIComponent& xUI = pxEntity->GetComponent<Zenith_UIComponent>();
+	auto* pxGroup = xUI.FindElement<Zenith_UI::Zenith_UIElement>("TestGroup");
+	Zenith_Assert(std::abs(pxGroup->GetBackgroundStyle().m_xBorderColor.x - 0.3f) < 0.001f, "Bg border R");
+	Zenith_Assert(std::abs(pxGroup->GetBackgroundStyle().m_fBorderThickness - 2.0f) < 0.001f, "Bg border thickness");
+
+	Zenith_EditorAutomation::Reset();
+	EDITOR_TEST_END(TestSetUIBackgroundBorderStep);
+}
+
+//=============================================================================
+// Button Transition Tests
+//=============================================================================
+
+void Zenith_AutomationTests::TestButtonTransitionInitialState()
+{
+	EDITOR_TEST_BEGIN(TestButtonTransitionInitialState);
+
+	Zenith_UI::Zenith_UIButton xButton("Test", "TestBtn");
+
+	// Initial state should be NORMAL
+	Zenith_Assert(xButton.GetState() == Zenith_UI::Zenith_UIButton::ButtonState::NORMAL, "Initial state should be NORMAL");
+
+	// Normal style fill should match what was set in constructor
+	Zenith_Assert(std::abs(xButton.GetNormalStyle().m_xFillColor.x - 0.25f) < 0.001f, "Normal fill R should be 0.25");
+	Zenith_Assert(std::abs(xButton.GetHoveredStyle().m_xFillColor.x - 0.35f) < 0.001f, "Hovered fill R should be 0.35");
+	Zenith_Assert(std::abs(xButton.GetPressedStyle().m_xFillColor.x - 0.15f) < 0.001f, "Pressed fill R should be 0.15");
+
+	EDITOR_TEST_END(TestButtonTransitionInitialState);
 }
 
 #endif // ZENITH_TOOLS

@@ -1,6 +1,7 @@
 #include "Zenith.h"
 #include "UI/Zenith_UIButton.h"
 #include "UI/Zenith_UICanvas.h"
+#include "UI/Zenith_UIStyleRenderer.h"
 #include "Flux/Text/Flux_Text.h"
 #include "Input/Zenith_Input.h"
 #include "DataStream/Zenith_DataStream.h"
@@ -14,7 +15,33 @@
 
 namespace Zenith_UI {
 
-static constexpr uint32_t UI_BUTTON_VERSION = 1;
+static constexpr uint32_t UI_BUTTON_VERSION = 2;
+
+static void WriteStyleToStream(Zenith_DataStream& xStream, const UIStyle& xStyle)
+{
+	xStream << xStyle.m_xFillColor.x; xStream << xStyle.m_xFillColor.y; xStream << xStyle.m_xFillColor.z; xStream << xStyle.m_xFillColor.w;
+	xStream << xStyle.m_xGradientBottomColor.x; xStream << xStyle.m_xGradientBottomColor.y; xStream << xStyle.m_xGradientBottomColor.z; xStream << xStyle.m_xGradientBottomColor.w;
+	xStream << xStyle.m_xBorderColor.x; xStream << xStyle.m_xBorderColor.y; xStream << xStyle.m_xBorderColor.z; xStream << xStyle.m_xBorderColor.w;
+	xStream << xStyle.m_fBorderThickness;
+	xStream << xStyle.m_fCornerRadius;
+	xStream << xStyle.m_bShadowEnabled;
+	xStream << xStyle.m_xShadowColor.x; xStream << xStyle.m_xShadowColor.y; xStream << xStyle.m_xShadowColor.z; xStream << xStyle.m_xShadowColor.w;
+	xStream << xStyle.m_xShadowOffset.x; xStream << xStyle.m_xShadowOffset.y;
+	xStream << xStyle.m_fShadowSpread;
+}
+
+static void ReadStyleFromStream(Zenith_DataStream& xStream, UIStyle& xStyle)
+{
+	xStream >> xStyle.m_xFillColor.x; xStream >> xStyle.m_xFillColor.y; xStream >> xStyle.m_xFillColor.z; xStream >> xStyle.m_xFillColor.w;
+	xStream >> xStyle.m_xGradientBottomColor.x; xStream >> xStyle.m_xGradientBottomColor.y; xStream >> xStyle.m_xGradientBottomColor.z; xStream >> xStyle.m_xGradientBottomColor.w;
+	xStream >> xStyle.m_xBorderColor.x; xStream >> xStyle.m_xBorderColor.y; xStream >> xStyle.m_xBorderColor.z; xStream >> xStyle.m_xBorderColor.w;
+	xStream >> xStyle.m_fBorderThickness;
+	xStream >> xStyle.m_fCornerRadius;
+	xStream >> xStyle.m_bShadowEnabled;
+	xStream >> xStyle.m_xShadowColor.x; xStream >> xStyle.m_xShadowColor.y; xStream >> xStyle.m_xShadowColor.z; xStream >> xStyle.m_xShadowColor.w;
+	xStream >> xStyle.m_xShadowOffset.x; xStream >> xStyle.m_xShadowOffset.y;
+	xStream >> xStyle.m_fShadowSpread;
+}
 
 Zenith_UIButton::Zenith_UIButton(const std::string& strText, const std::string& strName)
 	: Zenith_UIElement(strName)
@@ -22,6 +49,21 @@ Zenith_UIButton::Zenith_UIButton(const std::string& strText, const std::string& 
 {
 	// Default button size
 	m_xSize = { 200.0f, 50.0f };
+
+	// Default per-state colors
+	m_xNormalStyle.m_xFillColor = {0.25f, 0.25f, 0.30f, 1.0f};
+	m_xHoveredStyle.m_xFillColor = {0.35f, 0.35f, 0.45f, 1.0f};
+	m_xPressedStyle.m_xFillColor = {0.15f, 0.15f, 0.20f, 1.0f};
+
+	// Default border on all states
+	m_xNormalStyle.m_fBorderThickness = 2.0f;
+	m_xNormalStyle.m_xBorderColor = {0.5f, 0.5f, 0.6f, 1.0f};
+	m_xHoveredStyle.m_fBorderThickness = 2.0f;
+	m_xHoveredStyle.m_xBorderColor = {0.5f, 0.5f, 0.6f, 1.0f};
+	m_xPressedStyle.m_fBorderThickness = 2.0f;
+	m_xPressedStyle.m_xBorderColor = {0.5f, 0.5f, 0.6f, 1.0f};
+
+	m_xCurrentStyle = m_xNormalStyle;
 }
 
 void Zenith_UIButton::Update(float fDt)
@@ -33,8 +75,6 @@ void Zenith_UIButton::Update(float fDt)
 	}
 
 #ifdef ZENITH_TOOLS
-	// Clear transient runtime state when editor is Stopped - DontDestroyOnLoad
-	// entities survive the Play/Stop cycle but these are set by game scripts
 	if (Zenith_Editor::GetEditorMode() == EditorMode::Stopped)
 	{
 		m_bFocused = false;
@@ -43,12 +83,12 @@ void Zenith_UIButton::Update(float fDt)
 	}
 #endif
 
+	// Check group interactable
+	bool bInteractable = IsGroupInteractable();
+
 	Zenith_Maths::Vector2_64 xMousePos;
 	Zenith_Input::GetMousePosition(xMousePos);
 
-	// In tools builds, transform mouse from window space to render-target space.
-	// The game renders to an offscreen texture displayed inside an ImGui viewport panel,
-	// so GLFW window coordinates don't match render-target coordinates.
 	float fMouseX = static_cast<float>(xMousePos.x);
 	float fMouseY = static_cast<float>(xMousePos.y);
 #ifdef ZENITH_TOOLS
@@ -64,46 +104,46 @@ void Zenith_UIButton::Update(float fDt)
 	}
 #endif
 
-	Zenith_Maths::Vector4 xBounds = GetScreenBounds(); // {left, top, right, bottom}
-	bool bHovered = fMouseX >= xBounds.x
+	Zenith_Maths::Vector4 xBounds = GetScreenBounds();
+	bool bHovered = bInteractable
+		&& fMouseX >= xBounds.x
 		&& fMouseX <= xBounds.z
 		&& fMouseY >= xBounds.y
 		&& fMouseY <= xBounds.w;
 
 	bool bMouseDown = Zenith_Input::IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_LEFT);
 
-	// Track mouse press inside button for click-on-release
-	if (bMouseDown && !m_bMouseDownLastFrame && bHovered)
+	if (bInteractable)
 	{
-		m_bMousePressedInside = true;
-	}
-	if (!bMouseDown)
-	{
-		// Mouse released - fire callback if released while hovering and press started inside
-		if (m_bMouseDownLastFrame && m_bMousePressedInside && bHovered)
+		if (bMouseDown && !m_bMouseDownLastFrame && bHovered)
+		{
+			m_bMousePressedInside = true;
+		}
+		if (!bMouseDown)
+		{
+			if (m_bMouseDownLastFrame && m_bMousePressedInside && bHovered)
+			{
+				if (m_pfnOnClick)
+				{
+					m_pfnOnClick(m_pxUserData);
+				}
+			}
+			m_bMousePressedInside = false;
+		}
+		m_bMouseDownLastFrame = bMouseDown;
+
+		bool bActivated = m_bFocused
+			&& (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ENTER)
+				|| Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_SPACE));
+		if (bActivated)
 		{
 			if (m_pfnOnClick)
 			{
 				m_pfnOnClick(m_pxUserData);
 			}
 		}
-		m_bMousePressedInside = false;
-	}
-	m_bMouseDownLastFrame = bMouseDown;
-
-	// Keyboard activation (Enter/Space when focused)
-	bool bActivated = m_bFocused
-		&& (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ENTER)
-			|| Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_SPACE));
-	if (bActivated)
-	{
-		if (m_pfnOnClick)
-		{
-			m_pfnOnClick(m_pxUserData);
-		}
 	}
 
-	// Visual state: mouse hover shows HOVERED, focus only affects border (not background)
 	if (m_bMousePressedInside && bHovered && bMouseDown)
 	{
 		m_eState = ButtonState::PRESSED;
@@ -117,7 +157,22 @@ void Zenith_UIButton::Update(float fDt)
 		m_eState = ButtonState::NORMAL;
 	}
 
-	// Update children
+	// Lerp current style toward target
+	const UIStyle& xTargetStyle = (m_eState == ButtonState::PRESSED) ? m_xPressedStyle
+		: (m_eState == ButtonState::HOVERED) ? m_xHoveredStyle
+		: m_xNormalStyle;
+
+	if (m_fTransitionDuration > 0.0f)
+	{
+		float fSpeed = fDt / m_fTransitionDuration;
+		float fT = glm::min(fSpeed, 1.0f);
+		m_xCurrentStyle = UIStyle::Lerp(m_xCurrentStyle, xTargetStyle, fT);
+	}
+	else
+	{
+		m_xCurrentStyle = xTargetStyle;
+	}
+
 	Zenith_UIElement::Update(fDt);
 }
 
@@ -126,42 +181,19 @@ void Zenith_UIButton::Render(Zenith_UICanvas& xCanvas)
 	if (!m_bVisible)
 		return;
 
+	float fAlpha = GetEffectiveAlpha();
 	Zenith_Maths::Vector4 xBounds = GetScreenBounds();
 
-	// 1. Render border (full bounds, brighter when focused for keyboard navigation)
-	if (m_fBorderThickness > 0.0f)
+	// Override focus border color
+	UIStyle xRenderStyle = m_xCurrentStyle;
+	if (m_bFocused)
 	{
-		Zenith_Maths::Vector4 xBorder = m_xBorderColor;
-		if (m_bFocused)
-		{
-			xBorder = {1.0f, 1.0f, 1.0f, 1.0f};
-		}
-		xCanvas.SubmitQuad(xBounds, xBorder, 0);
-
-		// Inset for the background area
-		xBounds.x += m_fBorderThickness;
-		xBounds.y += m_fBorderThickness;
-		xBounds.z -= m_fBorderThickness;
-		xBounds.w -= m_fBorderThickness;
+		xRenderStyle.m_xBorderColor = {1.0f, 1.0f, 1.0f, 1.0f};
 	}
 
-	// 2. Render background (color based on state)
-	Zenith_Maths::Vector4 xBgColor;
-	switch (m_eState)
-	{
-	case ButtonState::HOVERED:
-		xBgColor = m_xHoverColor;
-		break;
-	case ButtonState::PRESSED:
-		xBgColor = m_xPressedColor;
-		break;
-	default:
-		xBgColor = m_xNormalColor;
-		break;
-	}
-	xCanvas.SubmitQuad(xBounds, xBgColor, 0);
+	UIStyleRenderer::RenderStyledRect(xCanvas, xRenderStyle, xBounds, fAlpha);
 
-	// 3. Render centered text
+	// Render text
 	if (!m_strText.empty())
 	{
 		float fCharWidth = m_fFontSize * fCHAR_SPACING;
@@ -176,99 +208,77 @@ void Zenith_UIButton::Render(Zenith_UICanvas& xCanvas)
 			xBounds.y + (fBoundsHeight - fTextHeight) * 0.5f
 		};
 
-		xCanvas.SubmitText(m_strText, xTextPos, m_fFontSize, m_xTextColor);
+		// Text shadow
+		if (m_bTextShadowEnabled)
+		{
+			Zenith_Maths::Vector2 xShadowPos = {
+				xTextPos.x + m_xTextShadowOffset.x,
+				xTextPos.y + m_xTextShadowOffset.y
+			};
+			Zenith_Maths::Vector4 xShadowColor = m_xTextShadowColor;
+			xShadowColor.a *= fAlpha;
+			xCanvas.SubmitText(m_strText, xShadowPos, m_fFontSize, xShadowColor);
+		}
+
+		Zenith_Maths::Vector4 xTextColor = m_xTextColor;
+		xTextColor.a *= fAlpha;
+		xCanvas.SubmitText(m_strText, xTextPos, m_fFontSize, xTextColor);
 	}
 
-	// Render children
 	Zenith_UIElement::Render(xCanvas);
 }
 
 void Zenith_UIButton::WriteToDataStream(Zenith_DataStream& xStream) const
 {
-	// Write base class data
 	Zenith_UIElement::WriteToDataStream(xStream);
 
-	// Write button-specific data
 	xStream << UI_BUTTON_VERSION;
 	xStream << m_strText;
 	xStream << m_fFontSize;
 
-	// Text color
-	xStream << m_xTextColor.x;
-	xStream << m_xTextColor.y;
-	xStream << m_xTextColor.z;
-	xStream << m_xTextColor.w;
+	xStream << m_xTextColor.x; xStream << m_xTextColor.y; xStream << m_xTextColor.z; xStream << m_xTextColor.w;
 
-	// State colors
-	xStream << m_xNormalColor.x;
-	xStream << m_xNormalColor.y;
-	xStream << m_xNormalColor.z;
-	xStream << m_xNormalColor.w;
+	WriteStyleToStream(xStream, m_xNormalStyle);
+	WriteStyleToStream(xStream, m_xHoveredStyle);
+	WriteStyleToStream(xStream, m_xPressedStyle);
 
-	xStream << m_xHoverColor.x;
-	xStream << m_xHoverColor.y;
-	xStream << m_xHoverColor.z;
-	xStream << m_xHoverColor.w;
+	xStream << m_fTransitionDuration;
 
-	xStream << m_xPressedColor.x;
-	xStream << m_xPressedColor.y;
-	xStream << m_xPressedColor.z;
-	xStream << m_xPressedColor.w;
-
-	// Border
-	xStream << m_fBorderThickness;
-	xStream << m_xBorderColor.x;
-	xStream << m_xBorderColor.y;
-	xStream << m_xBorderColor.z;
-	xStream << m_xBorderColor.w;
+	xStream << m_bTextShadowEnabled;
+	xStream << m_xTextShadowColor.x; xStream << m_xTextShadowColor.y; xStream << m_xTextShadowColor.z; xStream << m_xTextShadowColor.w;
+	xStream << m_xTextShadowOffset.x; xStream << m_xTextShadowOffset.y;
 }
 
 void Zenith_UIButton::ReadFromDataStream(Zenith_DataStream& xStream)
 {
-	// Read base class data
 	Zenith_UIElement::ReadFromDataStream(xStream);
 
-	// Read button-specific data
 	uint32_t uVersion;
 	xStream >> uVersion;
+
+	Zenith_Assert(uVersion == UI_BUTTON_VERSION, "UIButton version mismatch");
 
 	xStream >> m_strText;
 	xStream >> m_fFontSize;
 
-	// Text color
-	xStream >> m_xTextColor.x;
-	xStream >> m_xTextColor.y;
-	xStream >> m_xTextColor.z;
-	xStream >> m_xTextColor.w;
+	xStream >> m_xTextColor.x; xStream >> m_xTextColor.y; xStream >> m_xTextColor.z; xStream >> m_xTextColor.w;
 
-	// State colors
-	xStream >> m_xNormalColor.x;
-	xStream >> m_xNormalColor.y;
-	xStream >> m_xNormalColor.z;
-	xStream >> m_xNormalColor.w;
+	ReadStyleFromStream(xStream, m_xNormalStyle);
+	ReadStyleFromStream(xStream, m_xHoveredStyle);
+	ReadStyleFromStream(xStream, m_xPressedStyle);
 
-	xStream >> m_xHoverColor.x;
-	xStream >> m_xHoverColor.y;
-	xStream >> m_xHoverColor.z;
-	xStream >> m_xHoverColor.w;
+	xStream >> m_fTransitionDuration;
 
-	xStream >> m_xPressedColor.x;
-	xStream >> m_xPressedColor.y;
-	xStream >> m_xPressedColor.z;
-	xStream >> m_xPressedColor.w;
+	xStream >> m_bTextShadowEnabled;
+	xStream >> m_xTextShadowColor.x; xStream >> m_xTextShadowColor.y; xStream >> m_xTextShadowColor.z; xStream >> m_xTextShadowColor.w;
+	xStream >> m_xTextShadowOffset.x; xStream >> m_xTextShadowOffset.y;
 
-	// Border
-	xStream >> m_fBorderThickness;
-	xStream >> m_xBorderColor.x;
-	xStream >> m_xBorderColor.y;
-	xStream >> m_xBorderColor.z;
-	xStream >> m_xBorderColor.w;
+	m_xCurrentStyle = m_xNormalStyle;
 }
 
 #ifdef ZENITH_TOOLS
 void Zenith_UIButton::RenderPropertiesPanel()
 {
-	// Render base properties
 	Zenith_UIElement::RenderPropertiesPanel();
 
 	ImGui::PushID("UIButtonProps");
@@ -276,7 +286,6 @@ void Zenith_UIButton::RenderPropertiesPanel()
 	ImGui::Separator();
 	ImGui::Text("Button Properties");
 
-	// Text content
 	char szTextBuffer[256];
 	strncpy_s(szTextBuffer, m_strText.c_str(), sizeof(szTextBuffer) - 1);
 	if (ImGui::InputText("Button Text", szTextBuffer, sizeof(szTextBuffer)))
@@ -286,7 +295,6 @@ void Zenith_UIButton::RenderPropertiesPanel()
 
 	ImGui::DragFloat("Font Size", &m_fFontSize, 1.0f, 8.0f, 200.0f);
 
-	// Text color
 	float fTextColor[4] = { m_xTextColor.x, m_xTextColor.y, m_xTextColor.z, m_xTextColor.w };
 	if (ImGui::ColorEdit4("Text Color", fTextColor))
 	{
@@ -296,36 +304,33 @@ void Zenith_UIButton::RenderPropertiesPanel()
 	ImGui::Separator();
 	ImGui::Text("State Colors");
 
-	float fNormalColor[4] = { m_xNormalColor.x, m_xNormalColor.y, m_xNormalColor.z, m_xNormalColor.w };
+	float fNormalColor[4] = { m_xNormalStyle.m_xFillColor.x, m_xNormalStyle.m_xFillColor.y, m_xNormalStyle.m_xFillColor.z, m_xNormalStyle.m_xFillColor.w };
 	if (ImGui::ColorEdit4("Normal", fNormalColor))
 	{
-		m_xNormalColor = { fNormalColor[0], fNormalColor[1], fNormalColor[2], fNormalColor[3] };
+		m_xNormalStyle.m_xFillColor = { fNormalColor[0], fNormalColor[1], fNormalColor[2], fNormalColor[3] };
 	}
 
-	float fHoverColor[4] = { m_xHoverColor.x, m_xHoverColor.y, m_xHoverColor.z, m_xHoverColor.w };
+	float fHoverColor[4] = { m_xHoveredStyle.m_xFillColor.x, m_xHoveredStyle.m_xFillColor.y, m_xHoveredStyle.m_xFillColor.z, m_xHoveredStyle.m_xFillColor.w };
 	if (ImGui::ColorEdit4("Hover", fHoverColor))
 	{
-		m_xHoverColor = { fHoverColor[0], fHoverColor[1], fHoverColor[2], fHoverColor[3] };
+		m_xHoveredStyle.m_xFillColor = { fHoverColor[0], fHoverColor[1], fHoverColor[2], fHoverColor[3] };
 	}
 
-	float fPressedColor[4] = { m_xPressedColor.x, m_xPressedColor.y, m_xPressedColor.z, m_xPressedColor.w };
+	float fPressedColor[4] = { m_xPressedStyle.m_xFillColor.x, m_xPressedStyle.m_xFillColor.y, m_xPressedStyle.m_xFillColor.z, m_xPressedStyle.m_xFillColor.w };
 	if (ImGui::ColorEdit4("Pressed", fPressedColor))
 	{
-		m_xPressedColor = { fPressedColor[0], fPressedColor[1], fPressedColor[2], fPressedColor[3] };
+		m_xPressedStyle.m_xFillColor = { fPressedColor[0], fPressedColor[1], fPressedColor[2], fPressedColor[3] };
 	}
 
 	ImGui::Separator();
-	ImGui::Text("Border");
+	ImGui::Text("Style (all states)");
+	ImGui::DragFloat("Corner Radius", &m_xNormalStyle.m_fCornerRadius, 0.5f, 0.0f, 100.0f);
+	ImGui::DragFloat("Border Thickness", &m_xNormalStyle.m_fBorderThickness, 0.5f, 0.0f, 50.0f);
+	ImGui::DragFloat("Transition Duration", &m_fTransitionDuration, 0.01f, 0.0f, 2.0f);
 
-	ImGui::DragFloat("Border Thickness", &m_fBorderThickness, 0.5f, 0.0f, 50.0f);
+	ImGui::Checkbox("Shadow", &m_xNormalStyle.m_bShadowEnabled);
+	ImGui::Checkbox("Text Shadow", &m_bTextShadowEnabled);
 
-	float fBorderColor[4] = { m_xBorderColor.x, m_xBorderColor.y, m_xBorderColor.z, m_xBorderColor.w };
-	if (ImGui::ColorEdit4("Border Color", fBorderColor))
-	{
-		m_xBorderColor = { fBorderColor[0], fBorderColor[1], fBorderColor[2], fBorderColor[3] };
-	}
-
-	// State display (read-only)
 	const char* szStates[] = { "Normal", "Hovered", "Pressed" };
 	ImGui::Text("Current State: %s", szStates[static_cast<int>(m_eState)]);
 	ImGui::Text("Focused: %s", m_bFocused ? "Yes" : "No");

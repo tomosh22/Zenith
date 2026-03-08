@@ -51,6 +51,9 @@
 // Vulkan memory manager (for DetermineImageViewType tests)
 #include "Vulkan/Zenith_Vulkan_MemoryManager.h"
 
+// UIStyle (for UIStyle tests)
+#include "UI/Zenith_UIStyle.h"
+
 // Animation texture include (for VAT baking)
 #include "Flux/InstancedMeshes/Flux_AnimationTexture.h"
 
@@ -503,6 +506,13 @@ void Zenith_UnitTests::RunAllTests()
 
 	// AI extracted-helper tests (in separate file)
 	Zenith_AITests::RunAllTests();
+
+	// UIStyle tests
+	TestUIStyleDefaultValues();
+	TestUIStyleLerpIdentity();
+	TestUIStyleLerpHalfway();
+	TestUIStyleLerpEndpoints();
+	TestUIStyleLerpShadowBool();
 
 #ifdef ZENITH_TOOLS
 	// Gizmo math helper tests
@@ -10616,6 +10626,126 @@ void Zenith_UnitTests::TestDestroySkipsInvalidHandle()
 	Zenith_Vulkan_MemoryManager::QueueImageViewDeletion(xInvalidViewHandle);
 
 	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestDestroySkipsInvalidHandle PASSED");
+}
+
+//=============================================================================
+// UIStyle tests
+//=============================================================================
+
+void Zenith_UnitTests::TestUIStyleDefaultValues()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestUIStyleDefaultValues...");
+
+	Zenith_UI::UIStyle xStyle;
+	Zenith_Assert(std::abs(xStyle.m_xFillColor.x - 1.0f) < 0.001f, "Default fill R should be 1");
+	Zenith_Assert(std::abs(xStyle.m_xFillColor.y - 1.0f) < 0.001f, "Default fill G should be 1");
+	Zenith_Assert(std::abs(xStyle.m_xFillColor.z - 1.0f) < 0.001f, "Default fill B should be 1");
+	Zenith_Assert(std::abs(xStyle.m_xFillColor.w - 1.0f) < 0.001f, "Default fill A should be 1");
+	Zenith_Assert(xStyle.m_xGradientBottomColor.x < 0.0f, "Default gradient should be sentinel (-1)");
+	Zenith_Assert(std::abs(xStyle.m_fBorderThickness) < 0.001f, "Default border thickness should be 0");
+	Zenith_Assert(std::abs(xStyle.m_fCornerRadius) < 0.001f, "Default corner radius should be 0");
+	Zenith_Assert(!xStyle.m_bShadowEnabled, "Default shadow should be disabled");
+	Zenith_Assert(std::abs(xStyle.m_xShadowOffset.x - 4.0f) < 0.001f, "Default shadow offset X should be 4");
+	Zenith_Assert(std::abs(xStyle.m_fShadowSpread - 4.0f) < 0.001f, "Default shadow spread should be 4");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestUIStyleDefaultValues PASSED");
+}
+
+void Zenith_UnitTests::TestUIStyleLerpIdentity()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestUIStyleLerpIdentity...");
+
+	Zenith_UI::UIStyle xStyle;
+	xStyle.m_xFillColor = {0.5f, 0.3f, 0.1f, 1.0f};
+	xStyle.m_fCornerRadius = 10.0f;
+	xStyle.m_fBorderThickness = 2.0f;
+
+	Zenith_UI::UIStyle xResult = Zenith_UI::UIStyle::Lerp(xStyle, xStyle, 0.5f);
+	Zenith_Assert(std::abs(xResult.m_xFillColor.x - 0.5f) < 0.001f, "Lerp identity fill R");
+	Zenith_Assert(std::abs(xResult.m_xFillColor.y - 0.3f) < 0.001f, "Lerp identity fill G");
+	Zenith_Assert(std::abs(xResult.m_fCornerRadius - 10.0f) < 0.001f, "Lerp identity corner radius");
+	Zenith_Assert(std::abs(xResult.m_fBorderThickness - 2.0f) < 0.001f, "Lerp identity border thickness");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestUIStyleLerpIdentity PASSED");
+}
+
+void Zenith_UnitTests::TestUIStyleLerpHalfway()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestUIStyleLerpHalfway...");
+
+	Zenith_UI::UIStyle xA;
+	xA.m_xFillColor = {1.0f, 0.0f, 0.0f, 1.0f};
+	xA.m_fCornerRadius = 0.0f;
+	xA.m_fBorderThickness = 0.0f;
+	xA.m_fShadowSpread = 0.0f;
+
+	Zenith_UI::UIStyle xB;
+	xB.m_xFillColor = {0.0f, 1.0f, 0.0f, 1.0f};
+	xB.m_fCornerRadius = 20.0f;
+	xB.m_fBorderThickness = 4.0f;
+	xB.m_fShadowSpread = 8.0f;
+
+	Zenith_UI::UIStyle xResult = Zenith_UI::UIStyle::Lerp(xA, xB, 0.5f);
+	Zenith_Assert(std::abs(xResult.m_xFillColor.x - 0.5f) < 0.001f, "Halfway fill R should be 0.5");
+	Zenith_Assert(std::abs(xResult.m_xFillColor.y - 0.5f) < 0.001f, "Halfway fill G should be 0.5");
+	Zenith_Assert(std::abs(xResult.m_xFillColor.z) < 0.001f, "Halfway fill B should be 0");
+	Zenith_Assert(std::abs(xResult.m_fCornerRadius - 10.0f) < 0.001f, "Halfway corner radius should be 10");
+	Zenith_Assert(std::abs(xResult.m_fBorderThickness - 2.0f) < 0.001f, "Halfway border thickness should be 2");
+	Zenith_Assert(std::abs(xResult.m_fShadowSpread - 4.0f) < 0.001f, "Halfway shadow spread should be 4");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestUIStyleLerpHalfway PASSED");
+}
+
+void Zenith_UnitTests::TestUIStyleLerpEndpoints()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestUIStyleLerpEndpoints...");
+
+	Zenith_UI::UIStyle xA;
+	xA.m_xFillColor = {1.0f, 0.0f, 0.0f, 1.0f};
+	xA.m_fCornerRadius = 5.0f;
+
+	Zenith_UI::UIStyle xB;
+	xB.m_xFillColor = {0.0f, 0.0f, 1.0f, 1.0f};
+	xB.m_fCornerRadius = 25.0f;
+
+	// t=0 should return A
+	Zenith_UI::UIStyle xAt0 = Zenith_UI::UIStyle::Lerp(xA, xB, 0.0f);
+	Zenith_Assert(std::abs(xAt0.m_xFillColor.x - 1.0f) < 0.001f, "t=0 fill R should be 1");
+	Zenith_Assert(std::abs(xAt0.m_xFillColor.z) < 0.001f, "t=0 fill B should be 0");
+	Zenith_Assert(std::abs(xAt0.m_fCornerRadius - 5.0f) < 0.001f, "t=0 corner radius should be 5");
+
+	// t=1 should return B
+	Zenith_UI::UIStyle xAt1 = Zenith_UI::UIStyle::Lerp(xA, xB, 1.0f);
+	Zenith_Assert(std::abs(xAt1.m_xFillColor.x) < 0.001f, "t=1 fill R should be 0");
+	Zenith_Assert(std::abs(xAt1.m_xFillColor.z - 1.0f) < 0.001f, "t=1 fill B should be 1");
+	Zenith_Assert(std::abs(xAt1.m_fCornerRadius - 25.0f) < 0.001f, "t=1 corner radius should be 25");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestUIStyleLerpEndpoints PASSED");
+}
+
+void Zenith_UnitTests::TestUIStyleLerpShadowBool()
+{
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "Running TestUIStyleLerpShadowBool...");
+
+	Zenith_UI::UIStyle xA;
+	xA.m_bShadowEnabled = true;
+
+	Zenith_UI::UIStyle xB;
+	xB.m_bShadowEnabled = false;
+
+	// t < 0.5 should follow A
+	Zenith_UI::UIStyle xResult1 = Zenith_UI::UIStyle::Lerp(xA, xB, 0.3f);
+	Zenith_Assert(xResult1.m_bShadowEnabled == true, "t<0.5 shadow should follow A (true)");
+
+	// t >= 0.5 should follow B
+	Zenith_UI::UIStyle xResult2 = Zenith_UI::UIStyle::Lerp(xA, xB, 0.7f);
+	Zenith_Assert(xResult2.m_bShadowEnabled == false, "t>=0.5 shadow should follow B (false)");
+
+	// Verify boundary: t=0.5 should follow B
+	Zenith_UI::UIStyle xResult3 = Zenith_UI::UIStyle::Lerp(xA, xB, 0.5f);
+	Zenith_Assert(xResult3.m_bShadowEnabled == false, "t=0.5 shadow should follow B (false)");
+
+	Zenith_Log(LOG_CATEGORY_UNITTEST, "TestUIStyleLerpShadowBool PASSED");
 }
 
 //=============================================================================

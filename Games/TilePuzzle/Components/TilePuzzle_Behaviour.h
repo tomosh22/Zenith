@@ -717,7 +717,7 @@ private:
 			Zenith_UI::Zenith_UIText* pxStreakText = xUI.FindElement<Zenith_UI::Zenith_UIText>("DailyStreakText");
 			if (pxStreakText)
 			{
-				pxStreakText->SetText("Streak: 0 days");
+				pxStreakText->SetText("0 days");
 			}
 
 			// Hide refill button since lives are full
@@ -1137,16 +1137,20 @@ private:
 		if (pxBg) pxBg->SetVisible(bVisible);
 
 		// Meta-game info texts
-		const char* aszInfoTexts[] = { "CoinText", "LivesText", "DailyStreakText", "TotalStarsText" };
+		const char* aszInfoTexts[] = { "CoinText", "TotalStarsText" };
 		for (const char* szName : aszInfoTexts)
 		{
 			Zenith_UI::Zenith_UIText* pxText = xUI.FindElement<Zenith_UI::Zenith_UIText>(szName);
 			if (pxText) pxText->SetVisible(bVisible);
 		}
 
-		// Lives refill button (only when visible and lives < max)
-		Zenith_UI::Zenith_UIButton* pxRefill = xUI.FindElement<Zenith_UI::Zenith_UIButton>("RefillLivesButton");
-		if (pxRefill) pxRefill->SetVisible(bVisible && m_xSaveData.uLives < TilePuzzleSaveData::uMAX_LIVES);
+		// Streak group (vertical stack: label + value)
+		if (auto* pxStreak = xUI.FindElement("StreakGroup"))
+			pxStreak->SetVisible(bVisible);
+
+		// Lives area (vertical stack: pill, timer, refill button)
+		if (auto* pxArea = xUI.FindElement("LivesArea"))
+			pxArea->SetVisible(bVisible);
 
 		// FTUE progressive disclosure: hide buttons until player reaches milestone levels
 		uint32_t uProgress = m_xSaveData.uHighestLevelReached;
@@ -1163,6 +1167,9 @@ private:
 		Zenith_UI::Zenith_UIButton* pxPinballBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("PinballButton");
 		if (pxPinballBtn) pxPinballBtn->SetVisible(bVisible && uProgress >= 10);
 
+		// New styled elements
+		if (auto* px = xUI.FindElement("MenuSubtitle")) px->SetVisible(bVisible);
+		if (auto* px = xUI.FindElement("VersionText")) px->SetVisible(bVisible);
 		// Legacy fallback
 		Zenith_UI::Zenith_UIButton* pxPlay = xUI.FindElement<Zenith_UI::Zenith_UIButton>("MenuPlay");
 		if (pxPlay) pxPlay->SetVisible(bVisible);
