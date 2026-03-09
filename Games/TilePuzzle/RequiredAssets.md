@@ -473,39 +473,45 @@ Each asset includes:
 
 ### Implementation Status (Audit)
 
-| Asset | Status | File on Disk |
-|-------|--------|-------------|
-| **UI Icons (all 15)** | DONE | `Assets/Textures/Icons/*.ztxtr` |
-| **Cat Face Textures (5)** | DONE | `Assets/Textures/CatFaces/cat_face_0-4.ztxtr` |
+| Asset | Status | Notes |
+|-------|--------|-------|
+| **UI Icons (all 15)** | ON DISK (unused) | `Assets/Textures/Icons/*.ztxtr` exist but UI buttons use text labels instead of icon images. Icons are not loaded or rendered. |
+| **Star Icons (filled/empty)** | IN USE | `star_filled` / `star_empty` textures used in victory overlay star animation |
+| **Cat Face Textures (5)** | ON DISK (unused) | `Assets/Textures/CatFaces/cat_face_0-4.ztxtr` exist but cats render as solid-color spheres with no UV mapping |
 | **Floor Tile Texture** | DONE | `Assets/Textures/Gameplay/floor_tile.ztxtr` |
 | **Blocker Texture** | DONE | `Assets/Textures/Gameplay/blocker.ztxtr` |
 | **Shape Meshes (8)** | DONE | `Assets/Meshes/shape_0-7.bin` |
 | **Materials Pack** | DONE | `Assets/Materials/materials.bin` |
-| **Elimination Particles** | DONE | `Assets/Particles/elimination.zptcl` |
-| **Victory Confetti** | DONE | `Assets/Particles/victory_confetti.zptcl` |
+| **Elimination Particles** | DONE | In-code (`Flux_ParticleEmitterConfig`) |
+| **Victory Confetti** | DONE | In-code (`Flux_ParticleEmitterConfig`) |
 | **Selection Highlight** | DONE | In-code (emissive material override) |
-| **Pinball Ball Material** | DONE | `Assets/Materials/pinball_ball.zmtrl` |
-| **Pinball Peg Material** | DONE | `Assets/Materials/pinball_peg.zmtrl` |
-| **Pinball Peg-Hit Material** | DONE | `Assets/Materials/pinball_peg_hit.zmtrl` |
+| **Pinball Ball Material** | DONE | In-code (material properties set programmatically) |
+| **Pinball Peg Material** | DONE | In-code (material properties set programmatically) |
+| **Pinball Peg-Hit Material** | DONE | In-code (flash via emissive boost) |
 | **Cat Card BG** | DONE | Procedural (UIRect in code) |
-| **Page Indicator Dots** | DONE | Procedural (SDF in code) |
-| **Lock Indicator Overlay** | DONE | Uses Flux_Text |
+| **Page Indicator Dots** | DONE | Procedural (text-based in code) |
+| **Lock Indicator Overlay** | DONE | Uses Flux_Text (floating number) |
 | **Cat 3D Mesh** | NOT DONE | Using sphere placeholder |
 | **Shape Material Variants (PBR)** | PARTIAL | Flat colors exist, not PBR-tuned |
 | **App Icon** | NOT DONE | Required for store submission |
 | **Feature Graphic** | NOT DONE | Required for store submission |
 | **Screenshots** | NOT DONE | Required for store submission |
 | **Splash Screen/Logo** | NOT DONE | — |
-| **All Audio SFX (14)** | NOT DONE | No audio files exist |
-| **All Music (5 tracks)** | NOT DONE | No audio files exist |
+| **All Audio SFX (14)** | NOT DONE | No audio system in engine |
+| **All Music (5 tracks)** | NOT DONE | No audio system in engine |
 | **Promo Video** | NOT DONE | Nice-to-Have |
 | **Cat Portrait** | NOT DONE | Nice-to-Have |
 | **Cafe Background** | NOT DONE | Nice-to-Have (gradient in code) |
 | **Loading Spinner** | NOT DONE | Nice-to-Have |
-| **Pinball Target Material** | NOT DONE | Nice-to-Have (green emissive in code) |
+| **Pinball Target Material** | DONE | In-code (green emissive) |
 | **Pinball Floor Material** | NOT DONE | Nice-to-Have (procedural in code) |
 
-**Summary:** 31 of 54 assets (57%) are implemented. All 15 UI icons, all gameplay textures, meshes, particles, and pinball materials are complete. The major gaps are: all 19 audio assets (100% of audio is missing), 4 store listing assets (blockers for release), the cat 3D mesh (still placeholder sphere), and the splash screen.
+**Key findings:**
+- **UI icons on disk but unused:** All 15 icon texture files exist on disk but are never loaded. All UI buttons (undo, hint, skip, reset, menu, settings, etc.) render text labels only. These icon assets could be integrated as `Zenith_UIImage` elements on buttons.
+- **Cat face textures on disk but unused:** 5 color-variant cat face textures exist but cats are rendered as solid-color spheres. These textures can't be applied until the cat mesh is upgraded with UV mapping.
+- **Most visual effects are code-driven:** Particles, materials, and highlights are all configured programmatically rather than loaded from asset files.
+
+**Summary:** While many asset files exist on disk, actual in-game usage is more limited. The primary rendering approach is code-driven materials and text labels rather than texture-based icons. Major gaps remain: audio (no engine support), store listing assets, cat 3D mesh, and splash screen.
 
 ### Procedural Feasibility Breakdown
 

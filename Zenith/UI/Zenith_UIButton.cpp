@@ -71,7 +71,18 @@ void Zenith_UIButton::Update(float fDt)
 	if (!m_bVisible)
 	{
 		m_eState = ButtonState::NORMAL;
+		m_bWasInvisible = true;
 		return;
+	}
+
+	// Snap current style to target on first visible frame to avoid stale-style transitions
+	if (m_bWasInvisible)
+	{
+		m_xCurrentStyle = m_xNormalStyle;
+		m_bWasInvisible = false;
+		// Sync mouse state to prevent false press/release detection on the first visible frame
+		m_bMousePressedInside = false;
+		m_bMouseDownLastFrame = Zenith_Input::IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_LEFT);
 	}
 
 #ifdef ZENITH_TOOLS

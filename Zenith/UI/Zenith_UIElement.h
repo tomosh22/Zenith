@@ -93,8 +93,8 @@ public:
     void SetPosition(const Zenith_Maths::Vector2& xPos) { m_xPosition = xPos; m_bTransformDirty = true; }
     Zenith_Maths::Vector2 GetPosition() const { return m_xPosition; }
 
-    void SetSize(float fWidth, float fHeight) { m_xSize = { fWidth, fHeight }; m_bTransformDirty = true; }
-    void SetSize(const Zenith_Maths::Vector2& xSize) { m_xSize = xSize; m_bTransformDirty = true; }
+    void SetSize(float fWidth, float fHeight) { m_xSize = { fWidth, fHeight }; m_bTransformDirty = true; if (m_pxParent) m_pxParent->OnChildSizeChanged(); }
+    void SetSize(const Zenith_Maths::Vector2& xSize) { m_xSize = xSize; m_bTransformDirty = true; if (m_pxParent) m_pxParent->OnChildSizeChanged(); }
     Zenith_Maths::Vector2 GetSize() const { return m_xSize; }
 
     void SetAnchor(float fX, float fY) { m_xAnchor = { fX, fY }; m_bTransformDirty = true; }
@@ -124,6 +124,7 @@ public:
     bool IsVisible() const { return m_bVisible; }
 
     virtual void OnChildVisibilityChanged() {}
+    virtual void OnChildSizeChanged() {}
     virtual void OnChildAdded() {}
     virtual void OnChildRemoved() {}
 

@@ -49,7 +49,32 @@ enum TilePuzzleGameState : uint8_t
 	TILEPUZZLE_STATE_LEVEL_SELECT,
 	TILEPUZZLE_STATE_CAT_CAFE,
 	TILEPUZZLE_STATE_VICTORY_OVERLAY,
-	TILEPUZZLE_STATE_SETTINGS
+	TILEPUZZLE_STATE_SETTINGS,
+	TILEPUZZLE_STATE_ACHIEVEMENTS
+};
+
+// Confirmation dialog types
+enum TilePuzzleConfirmDialogType : uint8_t
+{
+	CONFIRM_RESET_SAVE = 0,
+	CONFIRM_EXIT_LEVEL,
+	CONFIRM_SKIP_LEVEL
+};
+
+// Achievement IDs (stored as bitfield in save data)
+enum TilePuzzleAchievement : uint8_t
+{
+	ACHIEVEMENT_FIRST_STEPS = 0,      // Complete level 1
+	ACHIEVEMENT_GETTING_STARTED,       // Complete 10 levels
+	ACHIEVEMENT_HALFWAY,               // Complete 50 levels
+	ACHIEVEMENT_CAT_MASTER,            // Complete all 100 levels
+	ACHIEVEMENT_PERFECT_PUZZLE,        // 3-star any level
+	ACHIEVEMENT_SPEED_SOLVER,          // 3-star 10 levels
+	ACHIEVEMENT_CAT_LOVER,             // Collect 10 cats
+	ACHIEVEMENT_CAT_COLLECTOR,         // Collect 50 cats
+	ACHIEVEMENT_DAILY_REGULAR,         // 7-day streak
+	ACHIEVEMENT_PINBALL_PRO,           // Clear 3 pinball gates
+	ACHIEVEMENT_COUNT
 };
 
 // Shape types (polyomino templates)

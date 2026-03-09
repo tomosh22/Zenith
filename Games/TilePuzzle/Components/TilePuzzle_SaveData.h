@@ -23,7 +23,7 @@ struct TilePuzzleSaveData
 	static constexpr uint32_t uMAX_LIVES = 5;
 	static constexpr uint32_t uLIFE_REGEN_SECONDS = 1200; // 20 minutes
 	static constexpr uint32_t uLIFE_REFILL_COST = 50;
-	static constexpr uint32_t uGAME_SAVE_VERSION = 6;
+	static constexpr uint32_t uGAME_SAVE_VERSION = 7;
 	static constexpr uint32_t uTUTORIAL_COUNT = 6;
 
 	// v1 fields
@@ -59,6 +59,16 @@ struct TilePuzzleSaveData
 	bool bMusicEnabled;
 	bool bHapticsEnabled;
 
+	// v7 fields
+	uint32_t uWeeklyChallengeType;              // 0=levels, 1=stars, 2=cats, 3=perfect
+	uint32_t uWeeklyChallengeTarget;            // Target count
+	uint32_t uWeeklyChallengeProgress;          // Current progress
+	uint32_t uWeeklyChallengeReward;            // Coin reward
+	uint32_t uWeeklyChallengeStartDate;         // YYYYMMDD of Monday
+	bool bWeeklyChallengeCompleted;
+	uint16_t uAchievementFlags;                 // Bitfield for 10 achievements
+	uint32_t uLastDailyPinballDate;             // YYYYMMDD for daily pinball bonus
+
 	void Reset()
 	{
 		uHighestLevelReached = 1;
@@ -82,6 +92,14 @@ struct TilePuzzleSaveData
 		bSoundEnabled = true;
 		bMusicEnabled = true;
 		bHapticsEnabled = true;
+		uWeeklyChallengeType = 0;
+		uWeeklyChallengeTarget = 0;
+		uWeeklyChallengeProgress = 0;
+		uWeeklyChallengeReward = 0;
+		uWeeklyChallengeStartDate = 0;
+		bWeeklyChallengeCompleted = false;
+		uAchievementFlags = 0;
+		uLastDailyPinballDate = 0;
 	}
 
 	// ========================================================================
@@ -312,6 +330,85 @@ struct TilePuzzleSaveData
 	}
 
 	// ========================================================================
+	// Achievement Flags
+	// ========================================================================
+
+	bool IsAchievementUnlocked(uint32_t uID) const
+	{
+		if (uID >= 16) return false;
+		return (uAchievementFlags & (1u << uID)) != 0;
+	}
+
+	void UnlockAchievement(uint32_t uID)
+	{
+		if (uID >= 16) return;
+		uAchievementFlags |= static_cast<uint16_t>(1u << uID);
+	}
+
+	// ========================================================================
+	// Weekly Challenge
+	// ========================================================================
+
+	void GenerateWeeklyChallenge(uint32_t uTodayDate)
+	{
+		// Deterministic from week number
+		uint32_t uWeekNum = uTodayDate / 7;
+		uWeeklyChallengeType = uWeekNum % 4;
+
+		static const uint32_t s_auTargets[] = { 5, 10, 5, 3 };
+		static const uint32_t s_auRewards[] = { 50, 75, 100, 50 };
+
+		uWeeklyChallengeTarget = s_auTargets[uWeeklyChallengeType];
+		uWeeklyChallengeReward = s_auRewards[uWeeklyChallengeType];
+		uWeeklyChallengeProgress = 0;
+		bWeeklyChallengeCompleted = false;
+		uWeeklyChallengeStartDate = uTodayDate;
+	}
+
+	bool IsWeeklyChallengeExpired(uint32_t uTodayDate) const
+	{
+		if (uWeeklyChallengeStartDate == 0) return true;
+		// Simple: challenge lasts 7 "days" (YYYYMMDD units)
+		return (uTodayDate - uWeeklyChallengeStartDate) >= 7;
+	}
+
+	void UpdateWeeklyChallengeProgress(uint32_t uType, uint32_t uAmount)
+	{
+		if (bWeeklyChallengeCompleted) return;
+		if (uType != uWeeklyChallengeType) return;
+		uWeeklyChallengeProgress += uAmount;
+	}
+
+	const char* GetWeeklyChallengeDescription() const
+	{
+		static char s_szDesc[64];
+		switch (uWeeklyChallengeType)
+		{
+		case 0: snprintf(s_szDesc, sizeof(s_szDesc), "Complete %u levels", uWeeklyChallengeTarget); break;
+		case 1: snprintf(s_szDesc, sizeof(s_szDesc), "Earn %u stars", uWeeklyChallengeTarget); break;
+		case 2: snprintf(s_szDesc, sizeof(s_szDesc), "Rescue %u cats", uWeeklyChallengeTarget); break;
+		case 3: snprintf(s_szDesc, sizeof(s_szDesc), "3-star %u levels", uWeeklyChallengeTarget); break;
+		default: s_szDesc[0] = '\0'; break;
+		}
+		return s_szDesc;
+	}
+
+	// ========================================================================
+	// Daily Pinball Bonus
+	// ========================================================================
+
+	bool HasDailyPinballBonus(uint32_t uToday) const
+	{
+		return uLastDailyPinballDate != uToday;
+	}
+
+	void ClaimDailyPinballBonus(uint32_t uToday)
+	{
+		uLastDailyPinballDate = uToday;
+		AddCoins(25);
+	}
+
+	// ========================================================================
 	// Utility: Recalculate cached values
 	// ========================================================================
 
@@ -381,6 +478,15 @@ static void TilePuzzle_WriteSaveData(Zenith_DataStream& xStream, void* pxUserDat
 	xStream << pxData->bSoundEnabled;
 	xStream << pxData->bMusicEnabled;
 	xStream << pxData->bHapticsEnabled;
+	// v7 fields
+	xStream << pxData->uWeeklyChallengeType;
+	xStream << pxData->uWeeklyChallengeTarget;
+	xStream << pxData->uWeeklyChallengeProgress;
+	xStream << pxData->uWeeklyChallengeReward;
+	xStream << pxData->uWeeklyChallengeStartDate;
+	xStream << pxData->bWeeklyChallengeCompleted;
+	xStream << pxData->uAchievementFlags;
+	xStream << pxData->uLastDailyPinballDate;
 }
 
 // Static read callback for Zenith_SaveData
@@ -447,5 +553,16 @@ static void TilePuzzle_ReadSaveData(Zenith_DataStream& xStream, uint32_t uGameVe
 		xStream >> pxData->bSoundEnabled;
 		xStream >> pxData->bMusicEnabled;
 		xStream >> pxData->bHapticsEnabled;
+	}
+	if (uGameVersion >= 7)
+	{
+		xStream >> pxData->uWeeklyChallengeType;
+		xStream >> pxData->uWeeklyChallengeTarget;
+		xStream >> pxData->uWeeklyChallengeProgress;
+		xStream >> pxData->uWeeklyChallengeReward;
+		xStream >> pxData->uWeeklyChallengeStartDate;
+		xStream >> pxData->bWeeklyChallengeCompleted;
+		xStream >> pxData->uAchievementFlags;
+		xStream >> pxData->uLastDailyPinballDate;
 	}
 }

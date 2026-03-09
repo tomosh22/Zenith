@@ -127,6 +127,28 @@ void Zenith_UILayoutGroup::RecalculateLayout()
 	float fPadRight = m_xPadding.z;
 	float fPadBottom = m_xPadding.w;
 
+	// Auto-wrap text children to fit available cross-axis space (only when group has a fixed size)
+	if (!m_bFitToContent)
+	{
+		float fCrossSpace;
+		if (m_eDirection == LayoutDirection::Horizontal)
+			fCrossSpace = m_xSize.y - fPadTop - fPadBottom;
+		else
+			fCrossSpace = m_xSize.x - fPadLeft - fPadRight;
+
+		if (fCrossSpace > 0.f)
+		{
+			for (uint32_t i = 0; i < m_xChildren.GetSize(); ++i)
+			{
+				Zenith_UIElement* pxChild = m_xChildren.Get(i);
+				if (pxChild && pxChild->IsVisible() && pxChild->GetType() == UIElementType::Text)
+				{
+					static_cast<Zenith_UIText*>(pxChild)->SetMaxWidth(fCrossSpace);
+				}
+			}
+		}
+	}
+
 	// Phase 1 — Measure: accumulate primary-axis extent and max cross-axis extent
 	float fTotalPrimary = 0.f;
 	float fMaxCross = 0.f;
@@ -190,6 +212,10 @@ void Zenith_UILayoutGroup::RecalculateLayout()
 		fExpandedPrimarySize = (fAvailablePrimary - fSpacingTotal) / uVisibleCount;
 	}
 
+	// Pre-compute force-expand cross flag (needed during placement to avoid double-centering)
+	bool bForceExpandCross = (m_eDirection == LayoutDirection::Horizontal)
+		? m_bChildForceExpandHeight : m_bChildForceExpandWidth;
+
 	// Extract alignment components
 	uint32_t uAlignVal = static_cast<uint32_t>(m_eChildAlignment);
 	uint32_t uAlignRow = uAlignVal / 3;  // 0=Upper, 1=Middle, 2=Lower
@@ -210,6 +236,23 @@ void Zenith_UILayoutGroup::RecalculateLayout()
 
 		float fPrimary = GetChildPrimarySize(pxChild, m_eDirection);
 		float fCross = GetChildCrossSize(pxChild, m_eDirection);
+
+		// Sync text element size to match actual text dimensions so element bounds
+		// accurately reflect the space the text occupies (prevents overlap with siblings)
+		if (pxChild->GetType() == UIElementType::Text)
+		{
+			Zenith_UIText* pxText = static_cast<Zenith_UIText*>(pxChild);
+			if (m_eDirection == LayoutDirection::Horizontal)
+				pxText->SetSize(pxText->GetTextWidth(), pxText->GetTextHeight());
+			else
+				pxText->SetSize(pxText->GetTextWidth(), pxText->GetTextHeight());
+		}
+
+		// When force-expanding cross-axis, text elements will be expanded to fill
+		// the available space and self-center within their bounds. Use the expanded
+		// size for alignment to avoid double-centering (layout + text alignment).
+		if (bForceExpandCross && pxChild->GetType() == UIElementType::Text)
+			fCross = fAvailableCross;
 
 		// Force expand: override primary size
 		if (bForceExpandPrimary && !m_bFitToContent)
@@ -277,9 +320,6 @@ void Zenith_UILayoutGroup::RecalculateLayout()
 	}
 
 	// Force expand cross-axis: expand all children to fill cross dimension
-	bool bForceExpandCross = (m_eDirection == LayoutDirection::Horizontal)
-		? m_bChildForceExpandHeight : m_bChildForceExpandWidth;
-
 	if (bForceExpandCross)
 	{
 		for (uint32_t i = 0; i < m_xChildren.GetSize(); ++i)

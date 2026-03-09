@@ -8,7 +8,7 @@
  * Zenith_UIText - Text widget for UI
  *
  * Renders text at a specified position using the Flux_Text system.
- * Supports color, size, and alignment options.
+ * Supports color, size, alignment, and word wrapping options.
  */
 
 namespace Zenith_UI {
@@ -37,12 +37,12 @@ public:
 
     // ========== Text Content ==========
 
-    void SetText(const std::string& strText) { m_strText = strText; }
+    void SetText(const std::string& strText) { m_strText = strText; RebuildWrappedText(); }
     const std::string& GetText() const { return m_strText; }
 
     // ========== Text Appearance ==========
 
-    void SetFontSize(float fSize) { m_fFontSize = fSize; }
+    void SetFontSize(float fSize) { m_fFontSize = fSize; RebuildWrappedText(); }
     float GetFontSize() const { return m_fFontSize; }
 
     // ========== Text Layout ==========
@@ -52,6 +52,9 @@ public:
 
     void SetVerticalAlignment(TextVerticalAlignment eAlign) { m_eVerticalAlignment = eAlign; }
     TextVerticalAlignment GetVerticalAlignment() const { return m_eVerticalAlignment; }
+
+    void SetMaxWidth(float fMaxWidth) { m_fMaxWidth = fMaxWidth; RebuildWrappedText(); }
+    float GetMaxWidth() const { return m_fMaxWidth; }
 
     // ========== Text Shadow ==========
 
@@ -69,7 +72,7 @@ public:
     // ========== Text Metrics ==========
 
     float GetTextWidth() const;
-    float GetTextHeight() const { return m_fFontSize; }
+    float GetTextHeight() const;
 
     // ========== Overrides ==========
 
@@ -82,8 +85,13 @@ public:
 #endif
 
 private:
+    void RebuildWrappedText();
+    const std::string& GetDisplayText() const { return m_fMaxWidth > 0.f ? m_strWrappedText : m_strText; }
+
     std::string m_strText;
+    std::string m_strWrappedText;
     float m_fFontSize = 24.0f;
+    float m_fMaxWidth = 0.f;
     TextAlignment m_eAlignment = TextAlignment::Left;
     TextVerticalAlignment m_eVerticalAlignment = TextVerticalAlignment::Top;
 

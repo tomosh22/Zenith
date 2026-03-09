@@ -1516,6 +1516,14 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_SetUIColor("PageText", 0.7f, 0.7f, 0.8f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIVisible("PageText", false);
 
+	// Star progress text (starts hidden)
+	Zenith_EditorAutomation::AddStep_CreateUIText("LevelSelectStarProgress", "Stars: 0 / 300");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("LevelSelectStarProgress", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("LevelSelectStarProgress", 0.f, -240.f);
+	Zenith_EditorAutomation::AddStep_SetUIFontSize("LevelSelectStarProgress", 24.f);
+	Zenith_EditorAutomation::AddStep_SetUIColor("LevelSelectStarProgress", 1.0f, 0.85f, 0.2f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIVisible("LevelSelectStarProgress", false);
+
 	// Level select grid (4x5)
 	for (uint32_t u = 0; u < 20; ++u)
 	{
@@ -1586,6 +1594,15 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_SetUIButtonPressedColor("SettingsButton", 0.15f, 0.15f, 0.2f, 1.f);
 	Zenith_EditorAutomation::AddStep_AddUIChild("MenuButtonGroup", "SettingsButton");
 
+	// ---- Achievements Button (main menu) ----
+	Zenith_EditorAutomation::AddStep_CreateUIButton("AchievementsButton", "Achievements");
+	Zenith_EditorAutomation::AddStep_SetUISize("AchievementsButton", 300.f, 80.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("AchievementsButton", 32.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("AchievementsButton", 0.4f, 0.35f, 0.1f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("AchievementsButton", 0.5f, 0.45f, 0.15f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonPressedColor("AchievementsButton", 0.3f, 0.25f, 0.08f, 1.f);
+	Zenith_EditorAutomation::AddStep_AddUIChild("MenuButtonGroup", "AchievementsButton");
+
 	// ---- Settings Screen UI elements (starts hidden) ----
 
 	// Settings background
@@ -1638,10 +1655,21 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_SetUIButtonPressedColor("SettingsHapticsBtn", 0.12f, 0.25f, 0.18f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIVisible("SettingsHapticsBtn", false);
 
+	// Credits button
+	Zenith_EditorAutomation::AddStep_CreateUIButton("SettingsCreditsBtn", "Credits");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("SettingsCreditsBtn", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("SettingsCreditsBtn", 0.f, 170.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("SettingsCreditsBtn", 200.f, 55.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("SettingsCreditsBtn", 26.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("SettingsCreditsBtn", 0.2f, 0.2f, 0.3f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("SettingsCreditsBtn", 0.3f, 0.3f, 0.42f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonPressedColor("SettingsCreditsBtn", 0.14f, 0.14f, 0.22f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIVisible("SettingsCreditsBtn", false);
+
 	// Settings back button
 	Zenith_EditorAutomation::AddStep_CreateUIButton("SettingsBackBtn", "Back");
 	Zenith_EditorAutomation::AddStep_SetUIAnchor("SettingsBackBtn", static_cast<int>(Zenith_UI::AnchorPreset::Center));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("SettingsBackBtn", 0.f, 200.f);
+	Zenith_EditorAutomation::AddStep_SetUIPosition("SettingsBackBtn", 0.f, 240.f);
 	Zenith_EditorAutomation::AddStep_SetUISize("SettingsBackBtn", 200.f, 60.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("SettingsBackBtn", 28.f);
 	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("SettingsBackBtn", 0.15f, 0.2f, 0.3f, 1.f);
@@ -1765,16 +1793,6 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_AddUIChild("HUDButtonGroup", "HintBtn");
 	Zenith_EditorAutomation::AddStep_AddUIChild("HUDButtonGroup", "SkipBtn");
 
-	// Next Level button
-	Zenith_EditorAutomation::AddStep_CreateUIButton("NextLevelBtn", "Next Level");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("NextLevelBtn", static_cast<int>(Zenith_UI::AnchorPreset::Center));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("NextLevelBtn", 0.f, 80.f);
-	Zenith_EditorAutomation::AddStep_SetUISize("NextLevelBtn", 200.f, 60.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("NextLevelBtn", 28.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("NextLevelBtn", 0.15f, 0.4f, 0.2f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("NextLevelBtn", 0.25f, 0.55f, 0.3f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIVisible("NextLevelBtn", false);
-
 	// ---- Victory Overlay UI elements (starts hidden) ----
 
 	// Victory background
@@ -1803,15 +1821,24 @@ void Project_RegisterEditorAutomationSteps()
 	Zenith_EditorAutomation::AddStep_SetUIColor("VictoryStars", 1.f, 0.85f, 0.1f, 1.f);
 	Zenith_EditorAutomation::AddStep_SetUIVisible("VictoryStars", false);
 
+	// Victory content vertical layout group (holds stars, text, coins)
+	Zenith_EditorAutomation::AddStep_CreateUILayoutGroup("VictoryContentGroup");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("VictoryContentGroup", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("VictoryContentGroup", 0.f, 20.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("VictoryContentGroup", 460.f, 250.f);
+	Zenith_EditorAutomation::AddStep_SetUILayoutDirection("VictoryContentGroup", static_cast<int>(Zenith_UI::LayoutDirection::Vertical));
+	Zenith_EditorAutomation::AddStep_SetUILayoutSpacing("VictoryContentGroup", 20.f);
+	Zenith_EditorAutomation::AddStep_SetUILayoutChildAlignment("VictoryContentGroup", static_cast<int>(Zenith_UI::ChildAlignment::UpperCenter));
+	Zenith_EditorAutomation::AddStep_SetUILayoutChildForceExpand("VictoryContentGroup", true, false);
+	Zenith_EditorAutomation::AddStep_SetUILayoutFitToContent("VictoryContentGroup", false);
+	Zenith_EditorAutomation::AddStep_SetUIVisible("VictoryContentGroup", false);
+
 	// Victory star images layout group (3 stars for rating display)
 	Zenith_EditorAutomation::AddStep_CreateUILayoutGroup("VictoryStarGroup");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("VictoryStarGroup", static_cast<int>(Zenith_UI::AnchorPreset::Center));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("VictoryStarGroup", 0.f, -50.f);
 	Zenith_EditorAutomation::AddStep_SetUILayoutDirection("VictoryStarGroup", static_cast<int>(Zenith_UI::LayoutDirection::Horizontal));
 	Zenith_EditorAutomation::AddStep_SetUILayoutSpacing("VictoryStarGroup", 12.f);
 	Zenith_EditorAutomation::AddStep_SetUILayoutChildAlignment("VictoryStarGroup", static_cast<int>(Zenith_UI::ChildAlignment::MiddleCenter));
 	Zenith_EditorAutomation::AddStep_SetUILayoutFitToContent("VictoryStarGroup", true);
-	Zenith_EditorAutomation::AddStep_SetUIVisible("VictoryStarGroup", false);
 
 	{
 		static const char* s_aszVictoryStarNames[] = { "VictoryStar0", "VictoryStar1", "VictoryStar2" };
@@ -1825,24 +1852,32 @@ void Project_RegisterEditorAutomationSteps()
 			Zenith_EditorAutomation::AddStep_AddUIChild("VictoryStarGroup", s_aszVictoryStarNames[u]);
 		}
 	}
+	Zenith_EditorAutomation::AddStep_AddUIChild("VictoryContentGroup", "VictoryStarGroup");
 
 	// Victory cat text
 	Zenith_EditorAutomation::AddStep_CreateUIText("VictoryCatText", "Cat rescued!");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("VictoryCatText", static_cast<int>(Zenith_UI::AnchorPreset::Center));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("VictoryCatText", 0.f, 20.f);
 	Zenith_EditorAutomation::AddStep_SetUIFontSize("VictoryCatText", 36.f);
 	Zenith_EditorAutomation::AddStep_SetUIAlignment("VictoryCatText", static_cast<int>(Zenith_UI::TextAlignment::Center));
 	Zenith_EditorAutomation::AddStep_SetUIColor("VictoryCatText", 0.9f, 0.7f, 0.5f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIVisible("VictoryCatText", false);
+	Zenith_EditorAutomation::AddStep_AddUIChild("VictoryContentGroup", "VictoryCatText");
 
 	// Victory coins text
 	Zenith_EditorAutomation::AddStep_CreateUIText("VictoryCoinsText", "+10 coins");
-	Zenith_EditorAutomation::AddStep_SetUIAnchor("VictoryCoinsText", static_cast<int>(Zenith_UI::AnchorPreset::Center));
-	Zenith_EditorAutomation::AddStep_SetUIPosition("VictoryCoinsText", 0.f, 70.f);
 	Zenith_EditorAutomation::AddStep_SetUIFontSize("VictoryCoinsText", 32.f);
 	Zenith_EditorAutomation::AddStep_SetUIAlignment("VictoryCoinsText", static_cast<int>(Zenith_UI::TextAlignment::Center));
 	Zenith_EditorAutomation::AddStep_SetUIColor("VictoryCoinsText", 1.f, 0.85f, 0.2f, 1.f);
-	Zenith_EditorAutomation::AddStep_SetUIVisible("VictoryCoinsText", false);
+	Zenith_EditorAutomation::AddStep_AddUIChild("VictoryContentGroup", "VictoryCoinsText");
+
+	// Next Level button (created last so it renders on top of VictoryBg overlay)
+	Zenith_EditorAutomation::AddStep_CreateUIButton("NextLevelBtn", "Next Level");
+	Zenith_EditorAutomation::AddStep_SetUIAnchor("NextLevelBtn", static_cast<int>(Zenith_UI::AnchorPreset::Center));
+	Zenith_EditorAutomation::AddStep_SetUIPosition("NextLevelBtn", 0.f, 145.f);
+	Zenith_EditorAutomation::AddStep_SetUISize("NextLevelBtn", 200.f, 60.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonFontSize("NextLevelBtn", 28.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonNormalColor("NextLevelBtn", 0.15f, 0.4f, 0.2f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonHoverColor("NextLevelBtn", 0.25f, 0.55f, 0.3f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIButtonPressedColor("NextLevelBtn", 0.1f, 0.3f, 0.15f, 1.f);
+	Zenith_EditorAutomation::AddStep_SetUIVisible("NextLevelBtn", false);
 
 	// Elimination particle emitter
 	Zenith_EditorAutomation::AddStep_CreateEntity("EliminationEmitter");
@@ -1978,7 +2013,7 @@ static bool TilePuzzle_HasAutoTestFlag()
 			return true;
 	}
 #endif
-	return true;
+	return false;
 }
 
 #endif // ZENITH_INPUT_SIMULATOR

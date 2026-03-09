@@ -137,7 +137,20 @@ Each gate displays clear on-screen instructions telling the player what they nee
 
 After all 10 gates are cleared, the objective text shows "Freeplay - All gates cleared!" and the player can continue playing pinball for fun with cycling peg layouts.
 
-**Quick Play Pinball:** Unlocked after clearing Gate 1 (level 10). Accessible from the main menu "Pinball" button. Allows replaying any cleared gate or freeplay mode without needing to reach the gate through puzzle progression. Daily bonus: one free pinball game per day awards 25 coins.
+**Quick Play Pinball:** Unlocked after clearing Gate 1 (level 10). Accessible from the main menu "Pinball" button.
+
+**Gate Selection UI:** On entering Quick Play, a gate selection screen (`PINBALL_STATE_GATE_SELECT`) shows 10 gate buttons in a 5x2 grid:
+- Cleared gates: blue with checkmark, selectable
+- Locked gates: gray, not selectable
+- "Freeplay" button: visible after all 10 gates cleared
+- "Back" button: returns to main menu scene
+
+**Daily Pinball Bonus:** First gate completion of the day awards 25 bonus coins. Tracked via `uLastDailyPinballDate` (YYYYMMDD) in save data. Shows "+25 Daily Bonus!" text on award.
+
+**Thematic Elements:**
+- Pinball pegs use flattened cylinder geometry with warm orange tint (cat-themed)
+- Ball material uses orange base color instead of silver for cat-face color tint
+- Collision remains circular regardless of visual geometry
 
 **Pinball Playfield:**
 - Bounds: x=[-2.4, 2.4], y=[0.0, 8.0]
@@ -231,7 +244,7 @@ else:                      1 star
 
 - **Maximum:** 5 lives
 - **Regeneration:** 1 life every 20 minutes (1,200 seconds)
-- **Loss trigger:** Exiting a puzzle without completing it costs 1 life
+- **Loss trigger:** Exiting a puzzle without completing it costs 1 life. Exception: exiting before making any moves does not cost a life.
 - **Refill:** 50 coins for instant full refill
 
 ### 4.4 Monetization Strategy (Proposed)
@@ -281,7 +294,7 @@ Each cat has:
 ### 6.1 Save Format
 
 - **Binary serialization** via `Zenith_DataStream`
-- **Save version:** 6 (`uGAME_SAVE_VERSION`)
+- **Save version:** 7 (`uGAME_SAVE_VERSION`)
 - **Auto-save triggers:** Level complete, menu return, quit
 - **Slot:** Single `autosave` slot
 
@@ -305,6 +318,14 @@ Each cat has:
 | `uLastDailyPuzzleDate` | uint32 | YYYYMMDD |
 | `uLives` | uint32 | Current lives (0-5) |
 | `uLastLifeRegenTime` | uint32 | Unix timestamp for regeneration |
+| `uWeeklyChallengeType` | uint32 | 0=levels, 1=stars, 2=cats, 3=perfect |
+| `uWeeklyChallengeTarget` | uint32 | Target count (e.g., 5 levels) |
+| `uWeeklyChallengeProgress` | uint32 | Current progress toward target |
+| `uWeeklyChallengeReward` | uint32 | Coin reward on completion |
+| `uWeeklyChallengeStartDate` | uint32 | YYYYMMDD of challenge start Monday |
+| `bWeeklyChallengeCompleted` | bool | Whether current challenge is done |
+| `uAchievementFlags` | uint16 | Bitfield for 10 achievements |
+| `uLastDailyPinballDate` | uint32 | YYYYMMDD for daily pinball bonus |
 
 ---
 
@@ -396,9 +417,11 @@ the engine's UIStyle system for consistent styling.
 - Color coding:
   - Gold = 3-star completed
   - Purple = Pinball gate level (every 10th)
-  - Green = Current level
+  - Green = Current level (pulsing brightness animation, sine wave at 3 Hz)
   - Blue = Unlocked, not yet completed
   - Dim gray = Locked
+- **Star progress bar:** "Stars: X / 300" text displayed at top of level select screen
+- **Star display:** Each level button shows star rating using Unicode star characters (★ filled, ☆ empty)
 
 ### 7.4 Gameplay HUD
 
@@ -407,6 +430,7 @@ the engine's UIStyle system for consistent styling.
 - Cats remaining counter
 - Progress bar
 - Buttons: Reset, Undo, Hint, Skip (offered after 3 resets), Menu
+- **Confirmation dialogs:** Exit Level ("Exit level? You will lose 1 life." / Cancel / Exit) and Skip Level ("Skip level for 100 coins?" / Cancel / Skip) require confirmation before action
 
 ### 7.5 Victory Overlay
 
@@ -599,9 +623,9 @@ Tutorial tier uses simplified parameters:
 The current tutorial uses text overlays. The target onboarding experience uses contextual visual guidance:
 
 - **Ghost hand animation:** An animated hand icon that points at the shape to drag, then traces the correct direction. Used for the first 3 levels.
-- **Target cat highlight:** When the player picks up a shape, the matching-color cat(s) pulse with a highlight border (first 3 levels only).
+- **Target cat highlight:** When the player picks up a shape on levels 1-5, all matching-color cats pulse with an emissive highlight (1.5x scale oscillation over 0.6s, color-matched). Highlight clears when shape is deselected.
 - **Progressive button disclosure:** Undo button appears at level 3, Hint button at level 5, Skip button at level 10. Before these thresholds, the buttons are hidden entirely (not just disabled).
-- **Stuck detection:** After 60 seconds of no moves on levels 1-10, show a subtle "Need a hint?" prompt that auto-triggers the free hint.
+- **Stuck detection:** After 45 seconds of no moves on levels 1-10, a pulsing "Need a hint?" prompt appears. If the player still hasn't moved after 90 seconds, the free hint auto-triggers.
 
 ### 10.4 Hint System as Safety Net
 
@@ -634,39 +658,32 @@ Time-limited goals that give players a medium-term engagement target beyond dail
 | Perfect Clear | "Get 3 stars on 3 levels" | 50 coins | 7 days |
 
 - One active challenge at a time, refreshes every Monday at midnight UTC
-- Challenge progress persisted in save data
-- UI: challenge banner on main menu showing progress bar and reward
+- Challenge type deterministically selected from week number (YYYYMMDD / 7), cycling through the 4 types
+- Challenge progress persisted in save data (type, target, progress, reward, start date, completed flag)
+- UI: challenge banner on main menu showing challenge description, progress bar, and coin reward
+- On completion: coins awarded automatically, "Challenge Complete!" toast displayed
+- On new week: previous challenge replaced with new one, progress reset
 
 ### 11.3 Achievement System
 
-15-20 persistent achievements that give players long-term goals beyond level completion:
+10 persistent achievements stored as a `uint16_t` bitfield in save data. Each achievement unlocks once and persists permanently.
 
-**Progression Achievements:**
-- "First Steps" — Complete level 1
-- "Getting Started" — Complete 10 levels
-- "Halfway There" — Complete 50 levels
-- "Cat Master" — Complete all 100 levels
-- "Pinball Rookie" — Clear first pinball gate
-- "Pinball Pro" — Clear all 10 pinball gates
+| ID | Name | Condition | Check Trigger |
+|----|------|-----------|---------------|
+| 0 | First Steps | Complete level 1 | OnLevelCompleted |
+| 1 | Getting Started | Complete 10 levels | OnLevelCompleted |
+| 2 | Halfway There | Complete 50 levels | OnLevelCompleted |
+| 3 | Cat Master | Complete all 100 levels | OnLevelCompleted |
+| 4 | Perfect Puzzle | 3-star any level | OnLevelCompleted |
+| 5 | Speed Solver | 3-star 10 levels | OnLevelCompleted |
+| 6 | Cat Lover | Collect 10 cats | OnLevelCompleted |
+| 7 | Cat Collector | Collect 50 cats | OnLevelCompleted |
+| 8 | Daily Regular | 7-day daily streak | OnDailyPuzzleCompleted |
+| 9 | Pinball Pro | Clear 3 pinball gates | OnPinballGateCleared |
 
-**Skill Achievements:**
-- "Perfect Puzzle" — Complete a level at par (3 stars)
-- "Speed Solver" — Complete 10 levels at par
-- "No Take-Backs" — Complete a level without using undo
-- "Flawless" — Complete 5 levels in a row at par
+**Toast UI:** Gold banner at top of screen showing achievement name, auto-dismisses after 2 seconds.
 
-**Collection Achievements:**
-- "Cat Lover" — Collect 10 cats
-- "Cat Enthusiast" — Collect 25 cats
-- "Cat Collector" — Collect 50 cats
-- "Crazy Cat Person" — Collect all 100 cats
-
-**Daily Achievements:**
-- "Regular" — Complete 7 daily puzzles
-- "Dedicated" — Reach a 14-day daily streak
-- "Committed" — Reach a 30-day daily streak
-
-UI: Dedicated achievements screen accessible from main menu. Each achievement shows name, description, icon, and locked/unlocked state. Unlocked achievements show a gold border.
+**Achievement Screen:** Accessible from main menu via "Achievements" button. Uses `TILEPUZZLE_STATE_ACHIEVEMENTS` game state. Simple scrollable list of 10 achievements showing name, description, and locked/unlocked state. Unlocked achievements show a gold border.
 
 ### 11.4 Future Considerations
 
@@ -763,6 +780,20 @@ TilePuzzleGameState:
   LEVEL_SELECT (5)
   CAT_CAFE (6)
   VICTORY_OVERLAY (7)
+  SETTINGS (8)
+  ACHIEVEMENTS (9)
+
+ConfirmDialogType:
+  CONFIRM_RESET_SAVE (0)
+  CONFIRM_EXIT_LEVEL (1)
+  CONFIRM_SKIP_LEVEL (2)
+
+PinballState:
+  PINBALL_STATE_GATE_SELECT -- gate selection UI for Quick Play
+  PINBALL_STATE_READY       -- waiting to launch
+  PINBALL_STATE_LAUNCHING   -- plunger released
+  PINBALL_STATE_PLAYING     -- ball in play
+  PINBALL_STATE_BALL_LOST   -- ball drained
 ```
 
 ### A.2 Scene Structure
@@ -872,12 +903,21 @@ Pinball:
 4. Implement lives gate (enforce lives deduction on level entry)
 5. Verify daily puzzle generation and caching
 
-### Phase 6: Retention & Engagement
-1. Weekly challenge system (progress tracking, rewards, UI)
-2. Achievement system (15-20 achievements, dedicated screen)
-3. Victory overlay variety (star-count-based intensity, "New Best!" indicator)
-4. Improved onboarding (ghost hand, target highlighting, stuck detection)
-5. Settings additions (credits, privacy policy, reset progress)
+### Phase 6: Retention & Engagement (IN PROGRESS)
+1. Weekly challenge system (4 challenge types, save v7, main menu banner UI)
+2. Achievement system (10 achievements, bitfield save, toast UI, dedicated screen)
+3. Victory celebration scaling by star count (confetti: 0/40/80 particles)
+4. "New Best!" pulsing gold animation in victory overlay
+5. Target cat highlighting on levels 1-5
+6. Stuck detection (45s prompt, 90s auto-hint on levels 1-10)
+7. Confirmation dialogs (reset save, exit level, skip level)
+8. Credits/About screen in settings
+9. No life loss on zero-move exit
+10. Level select UX polish (time-based pulse, star counter, Unicode stars)
+11. Cat Cafe visual upgrade (tier borders, progress bar)
+12. Pinball gate selection UI for Quick Play
+13. Daily pinball bonus (25 coins/day)
+14. Pinball thematic elements (cat-themed materials)
 
 ### Phase 7: Visual Upgrade
 1. Cat mesh upgrade (replace sphere with low-poly cat model)

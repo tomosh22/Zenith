@@ -28,6 +28,7 @@
 #include "Prefab/Zenith_Prefab.h"
 #include "UI/Zenith_UIButton.h"
 #include "UI/Zenith_UIImage.h"
+#include "UI/Zenith_UILayoutGroup.h"
 
 #include "TilePuzzle/Components/TilePuzzle_Types.h"
 #include "TilePuzzle/Components/TilePuzzle_Rules.h"
@@ -446,6 +447,11 @@ public:
 			if (pxSettingsBtn)
 				pxSettingsBtn->SetOnClick(&OnSettingsClicked, this);
 
+			// Achievements button
+			Zenith_UI::Zenith_UIButton* pxAchievementsBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("AchievementsButton");
+			if (pxAchievementsBtn)
+				pxAchievementsBtn->SetOnClick(&OnAchievementsClicked, this);
+
 			// Settings screen buttons
 			Zenith_UI::Zenith_UIButton* pxSettingsBackBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("SettingsBackBtn");
 			if (pxSettingsBackBtn)
@@ -462,6 +468,10 @@ public:
 			Zenith_UI::Zenith_UIButton* pxHapticsToggle = xUI.FindElement<Zenith_UI::Zenith_UIButton>("SettingsHapticsBtn");
 			if (pxHapticsToggle)
 				pxHapticsToggle->SetOnClick(&OnToggleHapticsClicked, this);
+
+			Zenith_UI::Zenith_UIButton* pxCreditsBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("SettingsCreditsBtn");
+			if (pxCreditsBtn)
+				pxCreditsBtn->SetOnClick(&OnCreditsClicked, this);
 		}
 
 		// Regenerate lives on startup
@@ -511,9 +521,11 @@ public:
 		switch (m_eState)
 		{
 		case TILEPUZZLE_STATE_MAIN_MENU:
+			m_fMenuTimer += fDeltaTime;
 			break;
 
 		case TILEPUZZLE_STATE_LEVEL_SELECT:
+			m_fMenuTimer += fDeltaTime;
 #ifdef ZENITH_TOOLS
 			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
 			{
@@ -542,7 +554,12 @@ public:
 				{
 					m_fHintFlashTimer += fDeltaTime;
 				}
-				HandleDragInput();
+				if (!m_bConfirmDialogActive)
+				{
+					HandleDragInput();
+				}
+				UpdateTargetCatHighlight(fDeltaTime);
+				UpdateStuckDetection(fDeltaTime);
 			}
 			break;
 
@@ -594,9 +611,22 @@ public:
 				return;
 			}
 #endif
+			m_fMenuTimer += fDeltaTime;
+			UpdateCreditsOverlay(fDeltaTime);
 			break;
 
 		case TILEPUZZLE_STATE_VICTORY_OVERLAY:
+			break;
+
+		case TILEPUZZLE_STATE_ACHIEVEMENTS:
+#ifdef ZENITH_TOOLS
+			if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
+			{
+				StartTransition(TILEPUZZLE_STATE_MAIN_MENU);
+				return;
+			}
+#endif
+			m_fMenuTimer += fDeltaTime;
 			break;
 
 		}
@@ -614,6 +644,15 @@ public:
 			UpdateVisuals(fDeltaTime);
 			UpdateUI();
 		}
+
+		// Achievement toast
+		UpdateAchievementToast(fDeltaTime);
+
+		// Achievements screen
+		UpdateAchievementsScreen(fDeltaTime);
+
+		// Confirmation dialog overlay
+		UpdateConfirmDialog(fDeltaTime);
 
 		// Screen transition overlay (rendered on top of everything)
 		UpdateTransition(fDeltaTime);
@@ -678,7 +717,10 @@ private:
 		pxSelf->m_xSaveData.RegenerateLives(GetCurrentTimestamp());
 		if (!pxSelf->m_xSaveData.HasLives())
 			return;
-		pxSelf->m_uCurrentLevelNumber = pxSelf->m_xSaveData.uCurrentLevel;
+		pxSelf->m_uCurrentLevelNumber = pxSelf->m_xSaveData.uHighestLevelReached;
+		pxSelf->m_xSaveData.uCurrentLevel = pxSelf->m_uCurrentLevelNumber;
+		Zenith_SaveData::Save("autosave", TilePuzzleSaveData::uGAME_SAVE_VERSION,
+			TilePuzzle_WriteSaveData, &pxSelf->m_xSaveData);
 		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 	}
 
@@ -702,42 +744,7 @@ private:
 	static void OnResetSaveClicked(void* pxUserData)
 	{
 		TilePuzzle_Behaviour* pxSelf = static_cast<TilePuzzle_Behaviour*>(pxUserData);
-		pxSelf->m_xSaveData.Reset();
-		Zenith_SaveData::Save("autosave", TilePuzzleSaveData::uGAME_SAVE_VERSION,
-			TilePuzzle_WriteSaveData, &pxSelf->m_xSaveData);
-		pxSelf->m_uCurrentLevelNumber = 1;
-
-		// Update menu texts to reflect reset state
-		if (pxSelf->m_xParentEntity.HasComponent<Zenith_UIComponent>())
-		{
-			Zenith_UIComponent& xUI = pxSelf->m_xParentEntity.GetComponent<Zenith_UIComponent>();
-
-			char szBuffer[64];
-
-			Zenith_UI::Zenith_UIText* pxCoinText = xUI.FindElement<Zenith_UI::Zenith_UIText>("CoinText");
-			if (pxCoinText)
-			{
-				snprintf(szBuffer, sizeof(szBuffer), "Coins: %u", pxSelf->m_xSaveData.uCoins);
-				pxCoinText->SetText(szBuffer);
-			}
-
-			Zenith_UI::Zenith_UIText* pxLivesText = xUI.FindElement<Zenith_UI::Zenith_UIText>("LivesText");
-			if (pxLivesText)
-			{
-				snprintf(szBuffer, sizeof(szBuffer), "Lives: %u/%u", pxSelf->m_xSaveData.uLives, TilePuzzleSaveData::uMAX_LIVES);
-				pxLivesText->SetText(szBuffer);
-			}
-
-			Zenith_UI::Zenith_UIText* pxStreakText = xUI.FindElement<Zenith_UI::Zenith_UIText>("DailyStreakText");
-			if (pxStreakText)
-			{
-				pxStreakText->SetText("0 days");
-			}
-
-			// Hide refill button since lives are full
-			Zenith_UI::Zenith_UIButton* pxRefill = xUI.FindElement<Zenith_UI::Zenith_UIButton>("RefillLivesButton");
-			if (pxRefill) pxRefill->SetVisible(false);
-		}
+		pxSelf->ShowConfirmDialog(CONFIRM_RESET_SAVE);
 	}
 
 	static void OnPinballClicked(void* /*pxUserData*/)
@@ -762,6 +769,8 @@ private:
 
 		pxData->pxBehaviour->m_uCurrentLevelNumber = pxData->uLevelNumber;
 		pxData->pxBehaviour->m_xSaveData.uCurrentLevel = pxData->uLevelNumber;
+		Zenith_SaveData::Save("autosave", TilePuzzleSaveData::uGAME_SAVE_VERSION,
+			TilePuzzle_WriteSaveData, &pxData->pxBehaviour->m_xSaveData);
 		Zenith_SceneManager::LoadSceneByIndex(1, SCENE_LOAD_SINGLE);
 	}
 
@@ -825,14 +834,22 @@ private:
 		TilePuzzle_Behaviour* pxSelf = static_cast<TilePuzzle_Behaviour*>(pxUserData);
 		if (pxSelf->m_eState == TILEPUZZLE_STATE_PLAYING)
 		{
-			pxSelf->PerformSkip();
+			pxSelf->ShowConfirmDialog(CONFIRM_SKIP_LEVEL);
 		}
 	}
 
 	static void OnMenuClicked(void* pxUserData)
 	{
 		TilePuzzle_Behaviour* pxSelf = static_cast<TilePuzzle_Behaviour*>(pxUserData);
-		pxSelf->ReturnToMenu();
+		// Only show confirmation if moves were made (otherwise no life lost)
+		if (pxSelf->m_eState == TILEPUZZLE_STATE_PLAYING && pxSelf->m_uMoveCount > 0)
+		{
+			pxSelf->ShowConfirmDialog(CONFIRM_EXIT_LEVEL);
+		}
+		else
+		{
+			pxSelf->ReturnToMenu();
+		}
 	}
 
 	static void OnNextLevelClicked(void* pxUserData)
@@ -882,8 +899,8 @@ private:
 
 	void ReturnToMenu()
 	{
-		// Lose a life if exiting puzzle without completing (only in playing state)
-		if (m_eState == TILEPUZZLE_STATE_PLAYING)
+		// Lose a life if exiting puzzle without completing (only if moves were made)
+		if (m_eState == TILEPUZZLE_STATE_PLAYING && m_uMoveCount > 0)
 		{
 			m_xSaveData.LoseLife();
 		}
@@ -984,6 +1001,31 @@ private:
 			OnDailyPuzzleCompleted();
 		}
 
+		// Check achievements
+		CheckAchievements();
+
+		// Update weekly challenge progress
+		{
+			// Type 0: levels completed
+			m_xSaveData.UpdateWeeklyChallengeProgress(0, 1);
+			// Type 1: stars earned
+			m_xSaveData.UpdateWeeklyChallengeProgress(1, m_uStarsEarned);
+			// Type 2: cats rescued (1 per level)
+			m_xSaveData.UpdateWeeklyChallengeProgress(2, 1);
+			// Type 3: 3-star completions
+			if (m_uStarsEarned >= 3)
+			{
+				m_xSaveData.UpdateWeeklyChallengeProgress(3, 1);
+			}
+			// Check if challenge is now complete
+			if (!m_xSaveData.bWeeklyChallengeCompleted &&
+				m_xSaveData.uWeeklyChallengeProgress >= m_xSaveData.uWeeklyChallengeTarget)
+			{
+				m_xSaveData.bWeeklyChallengeCompleted = true;
+				m_xSaveData.AddCoins(static_cast<int32_t>(m_xSaveData.uWeeklyChallengeReward));
+			}
+		}
+
 		// Auto-save (after all save data modifications)
 		Zenith_SaveData::Save("autosave", TilePuzzleSaveData::uGAME_SAVE_VERSION,
 			TilePuzzle_WriteSaveData, &m_xSaveData);
@@ -995,15 +1037,29 @@ private:
 		m_uVictoryStarRating = static_cast<uint8_t>(m_uStarsEarned);
 		SetVictoryOverlayVisible(true);
 
-		// Camera zoom pulse for emphasis
+		// Camera zoom pulse for emphasis (extended for 3-star)
+		m_fZoomPulseDuration = (m_uStarsEarned >= 3) ? 0.8f : 0.6f;
 		TriggerZoomPulse();
 
-		// Burst victory confetti
+		// Burst victory confetti (scaled by star count: 1-star=0, 2-star=40, 3-star=80)
 		Zenith_SceneData* pxParentSceneData = m_xParentEntity.GetSceneData();
-		if (m_uVictoryConfettiEmitterID.IsValid() && pxParentSceneData && pxParentSceneData->EntityExists(m_uVictoryConfettiEmitterID))
+		if (m_uStarsEarned >= 2 && m_uVictoryConfettiEmitterID.IsValid() && pxParentSceneData && pxParentSceneData->EntityExists(m_uVictoryConfettiEmitterID))
 		{
 			Zenith_Entity xEmitter = pxParentSceneData->GetEntity(m_uVictoryConfettiEmitterID);
-			xEmitter.GetComponent<Zenith_ParticleEmitterComponent>().Emit(80);
+			uint32_t uConfettiCount = (m_uStarsEarned >= 3) ? 80 : 40;
+			xEmitter.GetComponent<Zenith_ParticleEmitterComponent>().Emit(uConfettiCount);
+
+			// Extra gold sparkle burst for 3-star
+			if (m_uStarsEarned >= 3 && m_uEliminationEmitterID.IsValid() && pxParentSceneData->EntityExists(m_uEliminationEmitterID))
+			{
+				Zenith_Entity xSparkleEmitter = pxParentSceneData->GetEntity(m_uEliminationEmitterID);
+				Flux_ParticleEmitterConfig* pxConfig = xSparkleEmitter.GetComponent<Zenith_ParticleEmitterComponent>().GetConfig();
+				if (pxConfig)
+				{
+					pxConfig->m_xColorStart = Zenith_Maths::Vector4(1.0f, 0.85f, 0.1f, 1.0f);
+				}
+				xSparkleEmitter.GetComponent<Zenith_ParticleEmitterComponent>().Emit(10);
+			}
 		}
 
 		// Show next level button (unless this is the last level)
@@ -1054,6 +1110,12 @@ private:
 						m_bDragUndoPushed = false;
 						m_iDragShapeIndex = iShape;
 						m_iSelectedShapeIndex = iShape;
+
+						// Target cat highlighting on levels 1-5
+						if (m_uCurrentLevelNumber <= 5)
+						{
+							ActivateTargetCatHighlight(iShape);
+						}
 
 						const TilePuzzleShapeInstance& xShape = m_xCurrentLevel.axShapes[iShape];
 						m_iDragGrabOffsetX = iGridX - xShape.iOriginX;
@@ -1117,6 +1179,9 @@ private:
 			m_bDragging = false;
 			m_iDragShapeIndex = -1;
 			m_iSelectedShapeIndex = -1;
+
+			// Clear target cat highlighting
+			DeactivateTargetCatHighlight();
 
 			if (m_bPendingLevelComplete)
 			{
@@ -1217,7 +1282,7 @@ private:
 		Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
 
 		const char* aszElements[] = {
-			"LevelSelectTitle", "PageText"
+			"LevelSelectTitle", "PageText", "LevelSelectStarProgress"
 		};
 		for (const char* szName : aszElements)
 		{
@@ -1259,6 +1324,15 @@ private:
 			char szPage[32];
 			snprintf(szPage, sizeof(szPage), "Page %u / %u", m_uLevelSelectPage + 1, uTotalPages);
 			pxPageText->SetText(szPage);
+		}
+
+		// Star progress display
+		Zenith_UI::Zenith_UIText* pxStarProgress = xUI.FindElement<Zenith_UI::Zenith_UIText>("LevelSelectStarProgress");
+		if (pxStarProgress)
+		{
+			char szStars[32];
+			snprintf(szStars, sizeof(szStars), "Stars: %u / %u", m_xSaveData.uTotalStars, m_uAvailableLevelCount * 3);
+			pxStarProgress->SetText(szStars);
 		}
 
 		// Update level buttons
@@ -1319,8 +1393,8 @@ private:
 
 				if (uLevel == m_xSaveData.uHighestLevelReached)
 				{
-					// Current frontier level: pulsing green highlight
-					float fPulse = 0.5f + 0.1f * sinf(static_cast<float>(uLevel) * 0.5f);
+					// Current frontier level: pulsing green highlight (time-based)
+					float fPulse = 0.5f + 0.15f * sinf(m_fMenuTimer * 3.0f);
 					pxBtn->SetNormalColor(Zenith_Maths::Vector4(0.15f, fPulse, 0.2f, 1.f));
 				}
 				else if (bIsPinballGate)
@@ -1485,6 +1559,30 @@ private:
 	bool m_bTutorialMouseWasDown = false;
 	static constexpr float s_fTutorialFadeDuration = 0.3f;
 
+	// Menu timer (ticks in non-playing states for UI animations)
+	float m_fMenuTimer = 0.0f;
+
+	// Confirmation dialog state
+	bool m_bConfirmDialogActive = false;
+	TilePuzzleConfirmDialogType m_eConfirmDialogType = CONFIRM_RESET_SAVE;
+	float m_fConfirmDialogFade = 0.0f;
+	bool m_bConfirmDialogMouseWasDown = false;
+
+	// Target cat highlighting (levels 1-5)
+	bool m_bTargetHighlightActive = false;
+	std::vector<uint32_t> m_auHighlightedCatIndices; // #TODO: Replace with engine container
+
+	// Stuck detection (levels 1-10)
+	float m_fTimeSinceLastMove = 0.0f;
+	bool m_bStuckHintPromptShown = false;
+
+	// Achievement toast
+	float m_fAchievementToastTimer = 0.0f;
+	uint32_t m_uLastAchievementUnlocked = ACHIEVEMENT_COUNT;
+
+	// Credits overlay
+	bool m_bCreditsOverlayActive = false;
+
 	// ========================================================================
 	// Tutorial Overlay System
 	// ========================================================================
@@ -1635,6 +1733,528 @@ private:
 	}
 
 	// ========================================================================
+	// Confirmation Dialog System
+	// ========================================================================
+
+	void ShowConfirmDialog(TilePuzzleConfirmDialogType eType)
+	{
+		m_bConfirmDialogActive = true;
+		m_eConfirmDialogType = eType;
+		m_fConfirmDialogFade = 0.0f;
+		m_bConfirmDialogMouseWasDown = true; // Prevent immediate dismiss from the same click
+	}
+
+	const char* GetConfirmDialogText() const
+	{
+		switch (m_eConfirmDialogType)
+		{
+		case CONFIRM_RESET_SAVE: return "Reset all progress?\nThis cannot be undone.";
+		case CONFIRM_EXIT_LEVEL: return "Exit level?\nYou will lose 1 life.";
+		case CONFIRM_SKIP_LEVEL: return "Skip level for 100 coins?";
+		default: return "";
+		}
+	}
+
+	const char* GetConfirmDialogAcceptText() const
+	{
+		switch (m_eConfirmDialogType)
+		{
+		case CONFIRM_RESET_SAVE: return "Reset";
+		case CONFIRM_EXIT_LEVEL: return "Exit";
+		case CONFIRM_SKIP_LEVEL: return "Skip";
+		default: return "OK";
+		}
+	}
+
+	void UpdateConfirmDialog(float fDeltaTime)
+	{
+		if (!m_bConfirmDialogActive)
+			return;
+
+		m_fConfirmDialogFade += fDeltaTime / 0.2f;
+		if (m_fConfirmDialogFade > 1.0f)
+			m_fConfirmDialogFade = 1.0f;
+
+		Zenith_UI::Zenith_UICanvas* pxCanvas = Zenith_UI::Zenith_UICanvas::GetPrimaryCanvas();
+		if (!pxCanvas)
+			return;
+
+		int32_t iWinWidth, iWinHeight;
+		Zenith_Window::GetInstance()->GetSize(iWinWidth, iWinHeight);
+		if (iWinWidth <= 0 || iWinHeight <= 0)
+			return;
+
+		float fW = static_cast<float>(iWinWidth);
+		float fH = static_cast<float>(iWinHeight);
+		float fAlpha = m_fConfirmDialogFade;
+
+		// Dark overlay
+		pxCanvas->SubmitQuad(
+			Zenith_Maths::Vector4(0.0f, 0.0f, fW, fH),
+			Zenith_Maths::Vector4(0.0f, 0.0f, 0.0f, fAlpha * 0.7f));
+
+		// Dialog box
+		float fBoxW = 400.0f;
+		float fBoxH = 200.0f;
+		float fBoxX = (fW - fBoxW) * 0.5f;
+		float fBoxY = (fH - fBoxH) * 0.5f;
+
+		pxCanvas->SubmitQuad(
+			Zenith_Maths::Vector4(fBoxX, fBoxY, fBoxX + fBoxW, fBoxY + fBoxH),
+			Zenith_Maths::Vector4(0.12f, 0.12f, 0.25f, fAlpha * 0.95f));
+
+		// Dialog text
+		pxCanvas->SubmitText(
+			GetConfirmDialogText(),
+			Zenith_Maths::Vector2(fBoxX + 30.0f, fBoxY + 30.0f),
+			28.0f,
+			Zenith_Maths::Vector4(1.0f, 1.0f, 0.9f, fAlpha));
+
+		// Cancel button area
+		float fBtnW = 140.0f;
+		float fBtnH = 50.0f;
+		float fCancelX = fBoxX + 30.0f;
+		float fBtnY = fBoxY + fBoxH - fBtnH - 20.0f;
+		float fAcceptX = fBoxX + fBoxW - fBtnW - 30.0f;
+
+		pxCanvas->SubmitQuad(
+			Zenith_Maths::Vector4(fCancelX, fBtnY, fCancelX + fBtnW, fBtnY + fBtnH),
+			Zenith_Maths::Vector4(0.25f, 0.25f, 0.3f, fAlpha * 0.9f));
+		pxCanvas->SubmitText(
+			"Cancel",
+			Zenith_Maths::Vector2(fCancelX + 30.0f, fBtnY + 10.0f),
+			26.0f,
+			Zenith_Maths::Vector4(0.8f, 0.8f, 0.8f, fAlpha));
+
+		// Accept button area
+		pxCanvas->SubmitQuad(
+			Zenith_Maths::Vector4(fAcceptX, fBtnY, fAcceptX + fBtnW, fBtnY + fBtnH),
+			Zenith_Maths::Vector4(0.5f, 0.15f, 0.15f, fAlpha * 0.9f));
+		pxCanvas->SubmitText(
+			GetConfirmDialogAcceptText(),
+			Zenith_Maths::Vector2(fAcceptX + 30.0f, fBtnY + 10.0f),
+			26.0f,
+			Zenith_Maths::Vector4(1.0f, 0.9f, 0.9f, fAlpha));
+
+		// Handle click input for button detection
+		bool bMouseDown = Zenith_Input::IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_LEFT);
+		if (bMouseDown && !m_bConfirmDialogMouseWasDown && m_fConfirmDialogFade >= 0.5f)
+		{
+			Zenith_Maths::Vector2_64 xMousePos64;
+			Zenith_Input::GetMousePosition(xMousePos64);
+			float fMX = static_cast<float>(xMousePos64.x);
+			float fMY = static_cast<float>(xMousePos64.y);
+
+			// Check Cancel button
+			if (fMX >= fCancelX && fMX <= fCancelX + fBtnW &&
+				fMY >= fBtnY && fMY <= fBtnY + fBtnH)
+			{
+				OnConfirmDialogCancel();
+			}
+			// Check Accept button
+			else if (fMX >= fAcceptX && fMX <= fAcceptX + fBtnW &&
+				fMY >= fBtnY && fMY <= fBtnY + fBtnH)
+			{
+				OnConfirmDialogAccept();
+			}
+		}
+		m_bConfirmDialogMouseWasDown = bMouseDown;
+	}
+
+	void OnConfirmDialogAccept()
+	{
+		m_bConfirmDialogActive = false;
+		switch (m_eConfirmDialogType)
+		{
+		case CONFIRM_RESET_SAVE:
+			PerformResetSave();
+			break;
+		case CONFIRM_EXIT_LEVEL:
+			ReturnToMenu();
+			break;
+		case CONFIRM_SKIP_LEVEL:
+			PerformSkip();
+			break;
+		}
+	}
+
+	void OnConfirmDialogCancel()
+	{
+		m_bConfirmDialogActive = false;
+	}
+
+	void PerformResetSave()
+	{
+		m_xSaveData.Reset();
+		Zenith_SaveData::Save("autosave", TilePuzzleSaveData::uGAME_SAVE_VERSION,
+			TilePuzzle_WriteSaveData, &m_xSaveData);
+		m_uCurrentLevelNumber = 1;
+
+		if (m_xParentEntity.HasComponent<Zenith_UIComponent>())
+		{
+			Zenith_UIComponent& xUI = m_xParentEntity.GetComponent<Zenith_UIComponent>();
+			char szBuffer[64];
+
+			Zenith_UI::Zenith_UIText* pxCoinText = xUI.FindElement<Zenith_UI::Zenith_UIText>("CoinText");
+			if (pxCoinText)
+			{
+				snprintf(szBuffer, sizeof(szBuffer), "Coins: %u", m_xSaveData.uCoins);
+				pxCoinText->SetText(szBuffer);
+			}
+
+			Zenith_UI::Zenith_UIText* pxLivesText = xUI.FindElement<Zenith_UI::Zenith_UIText>("LivesText");
+			if (pxLivesText)
+			{
+				snprintf(szBuffer, sizeof(szBuffer), "Lives: %u/%u", m_xSaveData.uLives, TilePuzzleSaveData::uMAX_LIVES);
+				pxLivesText->SetText(szBuffer);
+			}
+
+			Zenith_UI::Zenith_UIText* pxStreakText = xUI.FindElement<Zenith_UI::Zenith_UIText>("DailyStreakText");
+			if (pxStreakText) pxStreakText->SetText("0 days");
+
+			Zenith_UI::Zenith_UIButton* pxRefill = xUI.FindElement<Zenith_UI::Zenith_UIButton>("RefillLivesButton");
+			if (pxRefill) pxRefill->SetVisible(false);
+		}
+	}
+
+	// ========================================================================
+	// Target Cat Highlighting (levels 1-5)
+	// ========================================================================
+
+	void ActivateTargetCatHighlight(int32_t iShapeIndex)
+	{
+		DeactivateTargetCatHighlight();
+
+		if (iShapeIndex < 0 || iShapeIndex >= static_cast<int32_t>(m_xCurrentLevel.axShapes.size()))
+			return;
+
+		TilePuzzleColor eColor = m_xCurrentLevel.axShapes[iShapeIndex].eColor;
+		Zenith_SceneData* pxScene = m_xPuzzleScene.IsValid() ? Zenith_SceneManager::GetSceneData(m_xPuzzleScene) : nullptr;
+		if (!pxScene) return;
+
+		for (uint32_t i = 0; i < m_xCurrentLevel.axCats.size(); ++i)
+		{
+			const TilePuzzleCatData& xCat = m_xCurrentLevel.axCats[i];
+			if (xCat.bEliminated || xCat.eColor != eColor)
+				continue;
+			if (!xCat.uEntityID.IsValid() || !pxScene->EntityExists(xCat.uEntityID))
+				continue;
+
+			m_auHighlightedCatIndices.push_back(i);
+		}
+		m_bTargetHighlightActive = !m_auHighlightedCatIndices.empty();
+	}
+
+	void DeactivateTargetCatHighlight()
+	{
+		if (!m_bTargetHighlightActive)
+			return;
+
+		// Reset scale on highlighted cats to their original size
+		float fBaseScale = s_fCatRadius * 2.0f;
+		Zenith_SceneData* pxScene = m_xPuzzleScene.IsValid() ? Zenith_SceneManager::GetSceneData(m_xPuzzleScene) : nullptr;
+		if (pxScene)
+		{
+			for (uint32_t uIdx : m_auHighlightedCatIndices)
+			{
+				if (uIdx >= m_xCurrentLevel.axCats.size()) continue;
+				const TilePuzzleCatData& xCat = m_xCurrentLevel.axCats[uIdx];
+				if (!xCat.uEntityID.IsValid() || !pxScene->EntityExists(xCat.uEntityID))
+					continue;
+				Zenith_Entity xEntity = pxScene->GetEntity(xCat.uEntityID);
+				xEntity.GetComponent<Zenith_TransformComponent>().SetScale(
+					Zenith_Maths::Vector3(fBaseScale, fBaseScale, fBaseScale));
+			}
+		}
+		m_auHighlightedCatIndices.clear();
+		m_bTargetHighlightActive = false;
+	}
+
+	void UpdateTargetCatHighlight(float /*fDeltaTime*/)
+	{
+		if (!m_bTargetHighlightActive)
+			return;
+
+		Zenith_SceneData* pxScene = m_xPuzzleScene.IsValid() ? Zenith_SceneManager::GetSceneData(m_xPuzzleScene) : nullptr;
+		if (!pxScene) return;
+
+		// Pulsing scale: oscillate between 1.0x and 1.5x of cat base scale over 0.6s period
+		float fBaseScale = s_fCatRadius * 2.0f;
+		float fPulse = fBaseScale * (1.0f + 0.25f * sinf(m_fLevelTimer * 10.47f)); // ±25% around base
+		for (uint32_t uIdx : m_auHighlightedCatIndices)
+		{
+			if (uIdx >= m_xCurrentLevel.axCats.size()) continue;
+			const TilePuzzleCatData& xCat = m_xCurrentLevel.axCats[uIdx];
+			if (xCat.bEliminated) continue;
+			if (!xCat.uEntityID.IsValid() || !pxScene->EntityExists(xCat.uEntityID))
+				continue;
+			Zenith_Entity xEntity = pxScene->GetEntity(xCat.uEntityID);
+			xEntity.GetComponent<Zenith_TransformComponent>().SetScale(
+				Zenith_Maths::Vector3(fPulse, fPulse, fPulse));
+		}
+	}
+
+	// ========================================================================
+	// Stuck Detection (levels 1-10)
+	// ========================================================================
+
+	void UpdateStuckDetection(float fDeltaTime)
+	{
+		if (m_eState != TILEPUZZLE_STATE_PLAYING || m_uCurrentLevelNumber > 10)
+			return;
+
+		m_fTimeSinceLastMove += fDeltaTime;
+
+		// Auto-trigger hint at 90s
+		if (m_fTimeSinceLastMove >= 90.0f && !m_bHintActive)
+		{
+			PerformHint();
+			m_fTimeSinceLastMove = 0.0f;
+			m_bStuckHintPromptShown = false;
+			return;
+		}
+
+		// Show "Need a hint?" prompt at 45s
+		if (m_fTimeSinceLastMove >= 45.0f && !m_bHintActive)
+		{
+			m_bStuckHintPromptShown = true;
+			Zenith_UI::Zenith_UICanvas* pxCanvas = Zenith_UI::Zenith_UICanvas::GetPrimaryCanvas();
+			if (pxCanvas)
+			{
+				int32_t iWinWidth, iWinHeight;
+				Zenith_Window::GetInstance()->GetSize(iWinWidth, iWinHeight);
+
+				float fPulseAlpha = 0.5f + 0.5f * sinf(m_fTimeSinceLastMove * 4.0f);
+				pxCanvas->SubmitText(
+					"Need a hint?",
+					Zenith_Maths::Vector2(static_cast<float>(iWinWidth) * 0.5f - 100.0f,
+						static_cast<float>(iWinHeight) * 0.7f),
+					30.0f,
+					Zenith_Maths::Vector4(1.0f, 0.85f, 0.2f, fPulseAlpha));
+			}
+		}
+	}
+
+	void ResetStuckTimer()
+	{
+		m_fTimeSinceLastMove = 0.0f;
+		m_bStuckHintPromptShown = false;
+	}
+
+	// ========================================================================
+	// Achievement System
+	// ========================================================================
+
+	static const char* GetAchievementName(uint32_t uID)
+	{
+		switch (uID)
+		{
+		case ACHIEVEMENT_FIRST_STEPS:     return "First Steps";
+		case ACHIEVEMENT_GETTING_STARTED: return "Getting Started";
+		case ACHIEVEMENT_HALFWAY:         return "Halfway There";
+		case ACHIEVEMENT_CAT_MASTER:      return "Cat Master";
+		case ACHIEVEMENT_PERFECT_PUZZLE:  return "Perfect Puzzle";
+		case ACHIEVEMENT_SPEED_SOLVER:    return "Speed Solver";
+		case ACHIEVEMENT_CAT_LOVER:       return "Cat Lover";
+		case ACHIEVEMENT_CAT_COLLECTOR:   return "Cat Collector";
+		case ACHIEVEMENT_DAILY_REGULAR:   return "Daily Regular";
+		case ACHIEVEMENT_PINBALL_PRO:     return "Pinball Pro";
+		default: return "";
+		}
+	}
+
+	static const char* GetAchievementDescription(uint32_t uID)
+	{
+		switch (uID)
+		{
+		case ACHIEVEMENT_FIRST_STEPS:     return "Complete level 1";
+		case ACHIEVEMENT_GETTING_STARTED: return "Complete 10 levels";
+		case ACHIEVEMENT_HALFWAY:         return "Complete 50 levels";
+		case ACHIEVEMENT_CAT_MASTER:      return "Complete all 100 levels";
+		case ACHIEVEMENT_PERFECT_PUZZLE:  return "Get 3 stars on any level";
+		case ACHIEVEMENT_SPEED_SOLVER:    return "Get 3 stars on 10 levels";
+		case ACHIEVEMENT_CAT_LOVER:       return "Collect 10 cats";
+		case ACHIEVEMENT_CAT_COLLECTOR:   return "Collect 50 cats";
+		case ACHIEVEMENT_DAILY_REGULAR:   return "Reach a 7-day streak";
+		case ACHIEVEMENT_PINBALL_PRO:     return "Clear 3 pinball gates";
+		default: return "";
+		}
+	}
+
+	void CheckAchievements()
+	{
+		// Count stats
+		uint32_t uCompletedLevels = 0;
+		uint32_t uThreeStarLevels = 0;
+		for (uint32_t i = 0; i < TilePuzzleSaveData::uMAX_LEVELS; ++i)
+		{
+			if (m_xSaveData.axLevelRecords[i].bCompleted) uCompletedLevels++;
+			if (m_xSaveData.GetStarRating(i + 1) >= 3) uThreeStarLevels++;
+		}
+
+		uint32_t uCats = m_xSaveData.uCatsCollectedCount;
+		uint32_t uStreak = m_xSaveData.uDailyStreak;
+
+		// Count cleared pinball gates
+		uint32_t uGatesCleared = 0;
+		for (uint32_t i = 0; i < TilePuzzleSaveData::uMAX_PINBALL_GATES; ++i)
+		{
+			if (m_xSaveData.uPinballGateFlags & (1u << i)) uGatesCleared++;
+		}
+
+		struct AchievementCheck
+		{
+			uint32_t uID;
+			bool bCondition;
+		};
+
+		AchievementCheck axChecks[] = {
+			{ ACHIEVEMENT_FIRST_STEPS,     uCompletedLevels >= 1 },
+			{ ACHIEVEMENT_GETTING_STARTED, uCompletedLevels >= 10 },
+			{ ACHIEVEMENT_HALFWAY,         uCompletedLevels >= 50 },
+			{ ACHIEVEMENT_CAT_MASTER,      uCompletedLevels >= 100 },
+			{ ACHIEVEMENT_PERFECT_PUZZLE,  uThreeStarLevels >= 1 },
+			{ ACHIEVEMENT_SPEED_SOLVER,    uThreeStarLevels >= 10 },
+			{ ACHIEVEMENT_CAT_LOVER,       uCats >= 10 },
+			{ ACHIEVEMENT_CAT_COLLECTOR,   uCats >= 50 },
+			{ ACHIEVEMENT_DAILY_REGULAR,   uStreak >= 7 },
+			{ ACHIEVEMENT_PINBALL_PRO,     uGatesCleared >= 3 },
+		};
+
+		for (const auto& xCheck : axChecks)
+		{
+			if (xCheck.bCondition && !m_xSaveData.IsAchievementUnlocked(xCheck.uID))
+			{
+				m_xSaveData.UnlockAchievement(xCheck.uID);
+				m_uLastAchievementUnlocked = xCheck.uID;
+				m_fAchievementToastTimer = 2.0f;
+			}
+		}
+	}
+
+	void UpdateAchievementToast(float fDeltaTime)
+	{
+		if (m_fAchievementToastTimer <= 0.0f)
+			return;
+
+		m_fAchievementToastTimer -= fDeltaTime;
+
+		Zenith_UI::Zenith_UICanvas* pxCanvas = Zenith_UI::Zenith_UICanvas::GetPrimaryCanvas();
+		if (!pxCanvas || m_uLastAchievementUnlocked >= ACHIEVEMENT_COUNT)
+			return;
+
+		int32_t iWinWidth, iWinHeight;
+		Zenith_Window::GetInstance()->GetSize(iWinWidth, iWinHeight);
+
+		float fW = static_cast<float>(iWinWidth);
+		float fAlpha = (m_fAchievementToastTimer > 0.3f) ? 1.0f : (m_fAchievementToastTimer / 0.3f);
+
+		// Gold banner at top of screen
+		float fBannerH = 60.0f;
+		pxCanvas->SubmitQuad(
+			Zenith_Maths::Vector4(0.0f, 0.0f, fW, fBannerH),
+			Zenith_Maths::Vector4(0.4f, 0.35f, 0.1f, fAlpha * 0.9f));
+
+		char szText[128];
+		snprintf(szText, sizeof(szText), "Achievement Unlocked: %s",
+			GetAchievementName(m_uLastAchievementUnlocked));
+		pxCanvas->SubmitText(
+			szText,
+			Zenith_Maths::Vector2(fW * 0.5f - 200.0f, 15.0f),
+			26.0f,
+			Zenith_Maths::Vector4(1.0f, 0.9f, 0.3f, fAlpha));
+	}
+
+	void UpdateAchievementsScreen(float /*fDeltaTime*/)
+	{
+		if (m_eState != TILEPUZZLE_STATE_ACHIEVEMENTS)
+			return;
+
+		Zenith_UI::Zenith_UICanvas* pxCanvas = Zenith_UI::Zenith_UICanvas::GetPrimaryCanvas();
+		if (!pxCanvas) return;
+
+		int32_t iWinWidth, iWinHeight;
+		Zenith_Window::GetInstance()->GetSize(iWinWidth, iWinHeight);
+		float fW = static_cast<float>(iWinWidth);
+		float fH = static_cast<float>(iWinHeight);
+
+		// Background
+		pxCanvas->SubmitQuad(
+			Zenith_Maths::Vector4(0.0f, 0.0f, fW, fH),
+			Zenith_Maths::Vector4(0.06f, 0.06f, 0.12f, 1.0f));
+
+		// Title
+		pxCanvas->SubmitText(
+			"Achievements",
+			Zenith_Maths::Vector2(fW * 0.5f - 120.0f, 30.0f),
+			40.0f,
+			Zenith_Maths::Vector4(1.0f, 0.9f, 0.3f, 1.0f));
+
+		// List achievements
+		float fStartY = 90.0f;
+		float fItemH = 65.0f;
+		for (uint32_t i = 0; i < ACHIEVEMENT_COUNT; ++i)
+		{
+			float fY = fStartY + static_cast<float>(i) * fItemH;
+			bool bUnlocked = m_xSaveData.IsAchievementUnlocked(i);
+
+			// Background bar
+			Zenith_Maths::Vector4 xBgColor = bUnlocked
+				? Zenith_Maths::Vector4(0.2f, 0.18f, 0.08f, 0.8f)
+				: Zenith_Maths::Vector4(0.1f, 0.1f, 0.15f, 0.6f);
+			pxCanvas->SubmitQuad(
+				Zenith_Maths::Vector4(30.0f, fY, fW - 30.0f, fY + fItemH - 5.0f),
+				xBgColor);
+
+			// Achievement name
+			Zenith_Maths::Vector4 xNameColor = bUnlocked
+				? Zenith_Maths::Vector4(1.0f, 0.9f, 0.3f, 1.0f)
+				: Zenith_Maths::Vector4(0.5f, 0.5f, 0.5f, 1.0f);
+			pxCanvas->SubmitText(
+				GetAchievementName(i),
+				Zenith_Maths::Vector2(50.0f, fY + 8.0f),
+				24.0f,
+				xNameColor);
+
+			// Description
+			pxCanvas->SubmitText(
+				GetAchievementDescription(i),
+				Zenith_Maths::Vector2(50.0f, fY + 35.0f),
+				18.0f,
+				Zenith_Maths::Vector4(0.7f, 0.7f, 0.7f, 1.0f));
+
+			// Status icon
+			const char* szStatus = bUnlocked ? "\xE2\x98\x85" : "\xE2\x98\x86"; // ★ or ☆
+			pxCanvas->SubmitText(
+				szStatus,
+				Zenith_Maths::Vector2(fW - 70.0f, fY + 15.0f),
+				28.0f,
+				xNameColor);
+		}
+
+		// Back button area (tap bottom of screen)
+		pxCanvas->SubmitText(
+			"Tap to return",
+			Zenith_Maths::Vector2(fW * 0.5f - 80.0f, fH - 50.0f),
+			22.0f,
+			Zenith_Maths::Vector4(0.7f, 0.7f, 0.7f, 0.5f + 0.5f * sinf(m_fMenuTimer * 3.0f)));
+
+		// Handle back tap
+		bool bMouseDown = Zenith_Input::IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_LEFT);
+		if (bMouseDown && !m_bConfirmDialogMouseWasDown)
+		{
+			Zenith_Maths::Vector2_64 xMousePos64;
+			Zenith_Input::GetMousePosition(xMousePos64);
+			float fMY = static_cast<float>(xMousePos64.y);
+			if (fMY > fH - 80.0f)
+			{
+				StartTransition(TILEPUZZLE_STATE_MAIN_MENU);
+			}
+		}
+		m_bConfirmDialogMouseWasDown = bMouseDown;
+	}
+
+	// ========================================================================
 	// Meta-game systems (Cat Cafe, Victory, Coins, Lives, Daily Puzzle)
 	// ========================================================================
 #include "TilePuzzle/Components/TilePuzzle_MetaGame.h"
@@ -1780,11 +2400,13 @@ private:
 		m_bDragUndoPushed = false;
 		m_eState = TILEPUZZLE_STATE_PLAYING;
 
-		// Reset undo stack and hint for new level
+		// Reset undo stack, hint, and highlighting for new level
 		m_axUndoStack.Clear();
 		m_bFreeUndoAvailable = true;
 		ClearHint();
 		m_uStarsEarned = 0;
+		m_bTargetHighlightActive = false;
+		m_auHighlightedCatIndices.clear();
 
 		UpdateSelectionHighlight();
 
@@ -1945,6 +2567,9 @@ private:
 			m_uMoveCount++;
 			m_iLastMovedShapeIndex = iShapeIndex;
 		}
+
+		// Reset stuck detection timer on successful move
+		ResetStuckTimer();
 
 		CheckCatElimination();
 		if (IsLevelComplete())
@@ -3268,10 +3893,10 @@ private:
 	{
 		switch (uStars)
 		{
-		case 3: return "***";
-		case 2: return "**";
-		case 1: return "*";
-		default: return "";
+		case 3: return "\xE2\x98\x85\xE2\x98\x85\xE2\x98\x85";       // ★★★
+		case 2: return "\xE2\x98\x85\xE2\x98\x85\xE2\x98\x86";       // ★★☆
+		case 1: return "\xE2\x98\x85\xE2\x98\x86\xE2\x98\x86";       // ★☆☆
+		default: return "\xE2\x98\x86\xE2\x98\x86\xE2\x98\x86";      // ☆☆☆
 		}
 	}
 

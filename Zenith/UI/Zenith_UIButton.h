@@ -63,7 +63,7 @@ public:
 	const UIStyle& GetPressedStyle() const { return m_xPressedStyle; }
 
 	// Convenience setters/getters that access fill color on the appropriate state
-	void SetNormalColor(const Zenith_Maths::Vector4& xColor) { m_xNormalStyle.m_xFillColor = xColor; }
+	void SetNormalColor(const Zenith_Maths::Vector4& xColor) { m_xNormalStyle.m_xFillColor = xColor; m_xCurrentStyle.m_xFillColor = xColor; }
 	Zenith_Maths::Vector4 GetNormalColor() const { return m_xNormalStyle.m_xFillColor; }
 	void SetHoverColor(const Zenith_Maths::Vector4& xColor) { m_xHoveredStyle.m_xFillColor = xColor; }
 	Zenith_Maths::Vector4 GetHoverColor() const { return m_xHoveredStyle.m_xFillColor; }
@@ -120,6 +120,7 @@ private:
 	// State
 	ButtonState m_eState = ButtonState::NORMAL;
 	bool m_bFocused = false;
+	bool m_bWasInvisible = true;
 
 	// Mouse tracking for click-on-release
 	bool m_bMousePressedInside = false;

@@ -102,28 +102,58 @@ void UpdateCatCafeUI()
 			uint8_t uStars = m_xSaveData.GetStarRating(uLevel);
 
 			char szText[128];
-			snprintf(szText, sizeof(szText), "%s\n%s\nLvl %u %s", szName, szBreed, uLevel, GetStarString(uStars));
+			snprintf(szText, sizeof(szText), "=^.^= %s\n%s\nLvl %u %s", szName, szBreed, uLevel, GetStarString(uStars));
 			pxCard->SetText(szText);
 			pxCard->SetFontSize(20.f);
 
-			// Tint card background based on cat color (derived from level)
+			// Tier-colored border: Tutorial(1-10)=bronze, Easy(11-25)=silver, Medium+(26+)=gold
 			if (pxBg)
 			{
-				TilePuzzleColor eColor = static_cast<TilePuzzleColor>(uCatID % TILEPUZZLE_COLOR_COUNT);
-				Zenith_Maths::Vector4 xTint = GetParticleColorForTile(eColor);
-				xTint.w = 0.3f; // Subtle tint
-				pxBg->SetColor(xTint);
+				Zenith_Maths::Vector4 xBorderColor;
+				if (uLevel <= 10)
+					xBorderColor = Zenith_Maths::Vector4(0.6f, 0.4f, 0.2f, 0.8f); // Bronze
+				else if (uLevel <= 25)
+					xBorderColor = Zenith_Maths::Vector4(0.6f, 0.6f, 0.7f, 0.8f); // Silver
+				else
+					xBorderColor = Zenith_Maths::Vector4(0.8f, 0.7f, 0.2f, 0.8f); // Gold
+
+				pxBg->SetColor(xBorderColor);
 			}
 		}
 		else
 		{
-			pxCard->SetText("???");
+			pxCard->SetText("?");
 			pxCard->SetFontSize(28.f);
 			if (pxBg)
 			{
 				pxBg->SetColor(Zenith_Maths::Vector4(0.15f, 0.15f, 0.15f, 0.5f));
 			}
 		}
+	}
+
+	// Collection progress bar via canvas
+	Zenith_UI::Zenith_UICanvas* pxCanvas = Zenith_UI::Zenith_UICanvas::GetPrimaryCanvas();
+	if (pxCanvas)
+	{
+		int32_t iWinWidth, iWinHeight;
+		Zenith_Window::GetInstance()->GetSize(iWinWidth, iWinHeight);
+		float fW = static_cast<float>(iWinWidth);
+
+		float fBarX = 50.0f;
+		float fBarY = 70.0f;
+		float fBarW = fW - 100.0f;
+		float fBarH = 12.0f;
+
+		// Background bar
+		pxCanvas->SubmitQuad(
+			Zenith_Maths::Vector4(fBarX, fBarY, fBarX + fBarW, fBarY + fBarH),
+			Zenith_Maths::Vector4(0.15f, 0.15f, 0.2f, 0.8f));
+
+		// Fill bar
+		float fFillRatio = static_cast<float>(m_xSaveData.uCatsCollectedCount) / static_cast<float>(TilePuzzleSaveData::uMAX_CATS);
+		pxCanvas->SubmitQuad(
+			Zenith_Maths::Vector4(fBarX, fBarY, fBarX + fBarW * fFillRatio, fBarY + fBarH),
+			Zenith_Maths::Vector4(1.0f, 0.7f, 0.2f, 0.9f));
 	}
 }
 
@@ -174,9 +204,12 @@ void SetVictoryOverlayVisible(bool bVisible)
 
 	const char* aszVictoryElements[] = {
 		"VictoryBg", "VictoryTitle", "VictoryStars",
-		"VictoryCatText", "VictoryCoinsText", "NextLevelBtn",
+		"VictoryContentGroup", "VictoryCatText", "VictoryCoinsText",
 		"VictoryStarGroup", "VictoryStar0", "VictoryStar1", "VictoryStar2"
 	};
+
+	// Button handled separately — hidden until animation reveals it
+	Zenith_UI::Zenith_UIButton* pxNextBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("NextLevelBtn");
 
 	if (bVisible)
 	{
@@ -193,15 +226,26 @@ void SetVictoryOverlayVisible(bool bVisible)
 			}
 		}
 
-		// Reset star sizes to 0 for scale-in animation
-		static const char* s_aszStarNames[] = { "VictoryStar0", "VictoryStar1", "VictoryStar2" };
-		for (uint32_t u = 0; u < 3; ++u)
+		// Configure VictoryContentGroup layout at runtime to ensure correct positioning
+		// (scene generation values may differ from saved scene file)
+		Zenith_UI::Zenith_UILayoutGroup* pxContentGroup = xUI.FindElement<Zenith_UI::Zenith_UILayoutGroup>("VictoryContentGroup");
+		if (pxContentGroup)
 		{
-			Zenith_UI::Zenith_UIImage* pxStar = xUI.FindElement<Zenith_UI::Zenith_UIImage>(s_aszStarNames[u]);
-			if (pxStar)
-			{
-				pxStar->SetSize(0.0f, 0.0f);
-			}
+			pxContentGroup->SetFitToContent(false);
+			pxContentGroup->SetPosition(0.f, 20.f);
+			pxContentGroup->SetSize(460.f, 250.f);
+			pxContentGroup->SetSpacing(20.f);
+		}
+
+		// Keep button hidden until the animation makes it visible
+		if (pxNextBtn)
+		{
+			pxNextBtn->SetVisible(false);
+			pxNextBtn->SetPosition(0.f, 145.f);
+			pxNextBtn->SetNormalColor(Zenith_Maths::Vector4(0.15f, 0.4f, 0.2f, 1.0f));
+			pxNextBtn->SetHoverColor(Zenith_Maths::Vector4(0.25f, 0.55f, 0.3f, 1.0f));
+			pxNextBtn->SetPressedColor(Zenith_Maths::Vector4(0.1f, 0.3f, 0.15f, 1.0f));
+			pxNextBtn->SetGroupAlpha(1.0f);
 		}
 
 		// Reset coin display counter
@@ -214,6 +258,7 @@ void SetVictoryOverlayVisible(bool bVisible)
 			Zenith_UI::Zenith_UIElement* pxElem = xUI.FindElement<Zenith_UI::Zenith_UIElement>(szName);
 			if (pxElem) pxElem->SetVisible(false);
 		}
+		if (pxNextBtn) pxNextBtn->SetVisible(false);
 	}
 }
 
@@ -270,18 +315,18 @@ void UpdateVictoryOverlay(float fDeltaTime)
 			float fProgress = EaseInRange(fT, s_fTitleStart, s_fTitleDuration);
 			float fEased = Zenith_ApplyEasing(EASING_BACK_OUT, fProgress);
 			pxTitle->SetColor(Zenith_Maths::Vector4(1.0f, 1.0f, 0.5f, fProgress));
-			// Simulate scale via font size (base 56)
-			float fFontSize = 56.0f * fEased;
+			// Simulate scale via font size (scaled by star count: 1-star=40, 2-star=48, 3-star=56)
+			float fBaseFontSize = (m_uVictoryStarRating >= 3) ? 56.0f : ((m_uVictoryStarRating >= 2) ? 48.0f : 40.0f);
+			float fFontSize = fBaseFontSize * fEased;
 			if (fFontSize > 0.1f)
 				pxTitle->SetFontSize(fFontSize);
 		}
 	}
 
-	// (0.6s, 1.0s, 1.4s) Stars appear with scale bounce
+	// (0.6s, 1.0s, 1.4s) Stars appear with staggered fade-in
 	{
 		static const char* s_aszStarNames[] = { "VictoryStar0", "VictoryStar1", "VictoryStar2" };
 		static constexpr float s_afStarStarts[] = { s_fStar0Start, s_fStar1Start, s_fStar2Start };
-		static constexpr float s_fStarTargetSize = 48.0f;
 
 		uint32_t uPrevStarsShown = m_uVictoryStarsShown;
 
@@ -300,14 +345,9 @@ void UpdateVictoryOverlay(float fDeltaTime)
 				? GAME_ASSETS_DIR "Textures/Icons/star_filled" ZENITH_TEXTURE_EXT
 				: GAME_ASSETS_DIR "Textures/Icons/star_empty" ZENITH_TEXTURE_EXT);
 
-			// Scale with bounce easing (overshoot to 1.2x then settle)
-			float fEased = Zenith_ApplyEasing(EASING_BACK_OUT, fProgress);
-			float fSize = s_fStarTargetSize * fEased;
-			pxStar->SetSize(fSize, fSize);
-
-			Zenith_Maths::Vector4 xStarColor = pxStar->GetColor();
-			xStarColor.w = fProgress;
-			pxStar->SetColor(xStarColor);
+			// Fade in (size stays fixed at 48x48 so layout group remains stable)
+			float fAlpha = Zenith_ApplyEasing(EASING_QUAD_OUT, fProgress);
+			pxStar->SetColor(Zenith_Maths::Vector4(1.f, 0.85f, 0.1f, fAlpha));
 
 			// Track stars shown for particle burst
 			if (fProgress >= 1.0f && u >= m_uVictoryStarsShown)
@@ -354,7 +394,6 @@ void UpdateVictoryOverlay(float fDeltaTime)
 		if (pxCatText)
 		{
 			float fProgress = EaseInRange(fT, s_fCatTextStart, s_fCatTextDuration);
-			float fEased = Zenith_ApplyEasing(EASING_QUAD_OUT, fProgress);
 
 			uint32_t uCatID = m_uCurrentLevelNumber - 1;
 			const char* szCatName = s_aszCatNames[uCatID % s_uCatNameCount];
@@ -382,11 +421,19 @@ void UpdateVictoryOverlay(float fDeltaTime)
 			{
 				snprintf(szText, sizeof(szText), "Cat rescued: %s!", szCatName);
 			}
+			pxCatText->SetMaxWidth(460.f);
 			pxCatText->SetText(szText);
 
-			// Slide up from +10 offset
-			pxCatText->SetPosition(0.0f, 20.0f + 10.0f * (1.0f - fEased));
-			pxCatText->SetColor(Zenith_Maths::Vector4(0.9f, 0.7f, 0.5f, fProgress));
+			if (m_bVictoryNewBest)
+			{
+				// Gold pulsing animation for "New Best!" text
+				float fPulseAlpha = fProgress * (0.7f + 0.3f * sinf(fT * 10.47f)); // ~0.6s period (2*PI/0.6)
+				pxCatText->SetColor(Zenith_Maths::Vector4(1.0f, 0.85f, 0.2f, fPulseAlpha));
+			}
+			else
+			{
+				pxCatText->SetColor(Zenith_Maths::Vector4(0.9f, 0.7f, 0.5f, fProgress));
+			}
 		}
 	}
 
@@ -412,15 +459,16 @@ void UpdateVictoryOverlay(float fDeltaTime)
 		}
 	}
 
-	// (2.5s) Buttons fade in
+	// (2.5s) Button appears
 	{
 		Zenith_UI::Zenith_UIButton* pxNextBtn = xUI.FindElement<Zenith_UI::Zenith_UIButton>("NextLevelBtn");
 		if (pxNextBtn)
 		{
 			float fProgress = EaseInRange(fT, s_fButtonsStart, s_fButtonsDuration);
-			Zenith_Maths::Vector4 xColor = pxNextBtn->GetColor();
-			xColor.w = fProgress;
-			pxNextBtn->SetColor(xColor);
+			if (fProgress > 0.0f && !pxNextBtn->IsVisible())
+			{
+				pxNextBtn->SetVisible(true);
+			}
 		}
 	}
 }
@@ -604,7 +652,7 @@ void SetSettingsVisible(bool bVisible)
 	}
 
 	const char* aszSettingsButtons[] = {
-		"SettingsSoundBtn", "SettingsMusicBtn", "SettingsHapticsBtn", "SettingsBackBtn"
+		"SettingsSoundBtn", "SettingsMusicBtn", "SettingsHapticsBtn", "SettingsCreditsBtn", "SettingsBackBtn"
 	};
 	for (const char* szName : aszSettingsButtons)
 	{
@@ -683,6 +731,79 @@ static void OnToggleHapticsClicked(void* pxUserData)
 	pxSelf->UpdateSettingsUI();
 }
 
+static void OnCreditsClicked(void* pxUserData)
+{
+	TilePuzzle_Behaviour* pxSelf = static_cast<TilePuzzle_Behaviour*>(pxUserData);
+	pxSelf->m_bCreditsOverlayActive = true;
+}
+
+static void OnAchievementsClicked(void* pxUserData)
+{
+	TilePuzzle_Behaviour* pxSelf = static_cast<TilePuzzle_Behaviour*>(pxUserData);
+	pxSelf->StartTransition(TILEPUZZLE_STATE_ACHIEVEMENTS);
+}
+
+void UpdateCreditsOverlay(float /*fDeltaTime*/)
+{
+	if (!m_bCreditsOverlayActive)
+		return;
+
+	Zenith_UI::Zenith_UICanvas* pxCanvas = Zenith_UI::Zenith_UICanvas::GetPrimaryCanvas();
+	if (!pxCanvas) return;
+
+	int32_t iWinWidth, iWinHeight;
+	Zenith_Window::GetInstance()->GetSize(iWinWidth, iWinHeight);
+	float fW = static_cast<float>(iWinWidth);
+	float fH = static_cast<float>(iWinHeight);
+
+	// Dark overlay
+	pxCanvas->SubmitQuad(
+		Zenith_Maths::Vector4(0.0f, 0.0f, fW, fH),
+		Zenith_Maths::Vector4(0.0f, 0.0f, 0.0f, 0.8f));
+
+	// Credits box
+	float fBoxW = 350.0f;
+	float fBoxH = 250.0f;
+	float fBoxX = (fW - fBoxW) * 0.5f;
+	float fBoxY = (fH - fBoxH) * 0.5f;
+
+	pxCanvas->SubmitQuad(
+		Zenith_Maths::Vector4(fBoxX, fBoxY, fBoxX + fBoxW, fBoxY + fBoxH),
+		Zenith_Maths::Vector4(0.1f, 0.1f, 0.2f, 0.95f));
+
+	pxCanvas->SubmitText(
+		"Paws & Pins v1.0",
+		Zenith_Maths::Vector2(fBoxX + 60.0f, fBoxY + 30.0f),
+		32.0f,
+		Zenith_Maths::Vector4(1.0f, 0.9f, 0.3f, 1.0f));
+
+	pxCanvas->SubmitText(
+		"Built with Zenith Engine",
+		Zenith_Maths::Vector2(fBoxX + 50.0f, fBoxY + 80.0f),
+		22.0f,
+		Zenith_Maths::Vector4(0.8f, 0.8f, 0.9f, 1.0f));
+
+	pxCanvas->SubmitText(
+		"A Cat Puzzle Game",
+		Zenith_Maths::Vector2(fBoxX + 80.0f, fBoxY + 120.0f),
+		22.0f,
+		Zenith_Maths::Vector4(0.8f, 0.8f, 0.9f, 1.0f));
+
+	pxCanvas->SubmitText(
+		"Tap anywhere to dismiss",
+		Zenith_Maths::Vector2(fBoxX + 60.0f, fBoxY + 200.0f),
+		18.0f,
+		Zenith_Maths::Vector4(0.6f, 0.6f, 0.6f, 0.5f + 0.5f * sinf(m_fMenuTimer * 3.0f)));
+
+	// Tap to dismiss
+	bool bMouseDown = Zenith_Input::IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_LEFT);
+	if (bMouseDown && !m_bConfirmDialogMouseWasDown)
+	{
+		m_bCreditsOverlayActive = false;
+	}
+	m_bConfirmDialogMouseWasDown = bMouseDown;
+}
+
 // ============================================================================
 // Menu-Level Rendering with Meta-Game Info
 // ============================================================================
@@ -709,4 +830,71 @@ void UpdateMainMenuUI()
 
 	// Regenerate lives periodically
 	m_xSaveData.RegenerateLives(GetCurrentTimestamp());
+
+	// Weekly challenge management and display
+	uint32_t uToday = GetCurrentDateYYYYMMDD();
+	if (m_xSaveData.IsWeeklyChallengeExpired(uToday))
+	{
+		m_xSaveData.GenerateWeeklyChallenge(uToday);
+	}
+
+	// Weekly challenge banner via canvas
+	Zenith_UI::Zenith_UICanvas* pxCanvas = Zenith_UI::Zenith_UICanvas::GetPrimaryCanvas();
+	if (pxCanvas && m_xSaveData.uWeeklyChallengeTarget > 0)
+	{
+		int32_t iWinWidth, iWinHeight;
+		Zenith_Window::GetInstance()->GetSize(iWinWidth, iWinHeight);
+		float fW = static_cast<float>(iWinWidth);
+		float fH = static_cast<float>(iWinHeight);
+
+		// Banner at bottom of screen
+		float fBannerY = fH - 90.0f;
+		float fBannerH = 80.0f;
+		pxCanvas->SubmitQuad(
+			Zenith_Maths::Vector4(10.0f, fBannerY, fW - 10.0f, fBannerY + fBannerH),
+			Zenith_Maths::Vector4(0.1f, 0.1f, 0.2f, 0.85f));
+
+		if (m_xSaveData.bWeeklyChallengeCompleted)
+		{
+			pxCanvas->SubmitText(
+				"Weekly Challenge Complete!",
+				Zenith_Maths::Vector2(20.0f, fBannerY + 10.0f),
+				22.0f,
+				Zenith_Maths::Vector4(0.3f, 1.0f, 0.3f, 1.0f));
+		}
+		else
+		{
+			pxCanvas->SubmitText(
+				m_xSaveData.GetWeeklyChallengeDescription(),
+				Zenith_Maths::Vector2(20.0f, fBannerY + 8.0f),
+				20.0f,
+				Zenith_Maths::Vector4(1.0f, 0.9f, 0.7f, 1.0f));
+
+			// Progress bar
+			float fBarX = 20.0f;
+			float fBarY2 = fBannerY + 38.0f;
+			float fBarW = fW - 50.0f;
+			float fBarH2 = 10.0f;
+			pxCanvas->SubmitQuad(
+				Zenith_Maths::Vector4(fBarX, fBarY2, fBarX + fBarW, fBarY2 + fBarH2),
+				Zenith_Maths::Vector4(0.2f, 0.2f, 0.25f, 0.8f));
+
+			float fProgress = static_cast<float>(m_xSaveData.uWeeklyChallengeProgress) /
+				static_cast<float>(m_xSaveData.uWeeklyChallengeTarget);
+			if (fProgress > 1.0f) fProgress = 1.0f;
+			pxCanvas->SubmitQuad(
+				Zenith_Maths::Vector4(fBarX, fBarY2, fBarX + fBarW * fProgress, fBarY2 + fBarH2),
+				Zenith_Maths::Vector4(0.2f, 0.7f, 1.0f, 0.9f));
+
+			char szProgress[48];
+			snprintf(szProgress, sizeof(szProgress), "%u/%u  Reward: %u coins",
+				m_xSaveData.uWeeklyChallengeProgress, m_xSaveData.uWeeklyChallengeTarget,
+				m_xSaveData.uWeeklyChallengeReward);
+			pxCanvas->SubmitText(
+				szProgress,
+				Zenith_Maths::Vector2(20.0f, fBannerY + 55.0f),
+				16.0f,
+				Zenith_Maths::Vector4(0.7f, 0.7f, 0.8f, 1.0f));
+		}
+	}
 }

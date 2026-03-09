@@ -115,16 +115,19 @@ uint32_t Flux_Text::UploadChars()
 	for (Zenith_Vector<Zenith_UI::UITextEntry>::Iterator xIt(xUITextEntries); !xIt.Done(); xIt.Next())
 	{
 		const Zenith_UI::UITextEntry& xEntry = xIt.GetData();
+		float fCursorX = 0.f;
+		float fCursorY = 0.f;
 		for (uint32_t u = 0; u < xEntry.m_strText.size(); u++)
 		{
-			TextVertex xVertex;
-			xVertex.m_xTextRoot = { static_cast<uint32_t>(xEntry.m_xPosition.x), static_cast<uint32_t>(xEntry.m_xPosition.y) };
-			xVertex.m_fTextSize = xEntry.m_fSize;
-			// Character spacing includes small gap for natural appearance
-			xVertex.m_xPos = Zenith_Maths::Vector2(u * fCHAR_SPACING, 0.f);
-			xVertex.m_xColour = xEntry.m_xColor;
-
 			char cChar = xEntry.m_strText.at(u);
+
+			// Handle newline: advance to next line
+			if (cChar == '\n')
+			{
+				fCursorX = 0.f;
+				fCursorY += 1.f;
+				continue;
+			}
 
 			// Skip non-printable characters (ASCII < 32) to prevent index underflow
 			// Font atlas starts at space (ASCII 32), so characters below that are invalid
@@ -132,6 +135,12 @@ uint32_t Flux_Text::UploadChars()
 			{
 				continue;
 			}
+
+			TextVertex xVertex;
+			xVertex.m_xTextRoot = { static_cast<uint32_t>(xEntry.m_xPosition.x), static_cast<uint32_t>(xEntry.m_xPosition.y) };
+			xVertex.m_fTextSize = xEntry.m_fSize;
+			xVertex.m_xPos = Zenith_Maths::Vector2(fCursorX, fCursorY);
+			xVertex.m_xColour = xEntry.m_xColor;
 
 			const uint32_t uIndex = static_cast<uint32_t>(cChar - 32);
 
@@ -141,6 +150,7 @@ uint32_t Flux_Text::UploadChars()
 			uCharCount++;
 
 			xVertices.PushBack(xVertex);
+			fCursorX += fCHAR_SPACING;
 		}
 	}
 	// Clear UI text entries after processing

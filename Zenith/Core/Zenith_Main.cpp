@@ -47,6 +47,10 @@ static Zenith_GraphicsOptions s_xGraphicsOptions;
 
 void Zenith_Core::Zenith_Init()
 {
+	// Populate graphics options from the game project FIRST
+	// Must happen before any Flux initialisation reads from s_xGraphicsOptions
+	Project_SetGraphicsOptions(s_xGraphicsOptions);
+
 	// CRITICAL: Memory tracking must be initialized FIRST to capture all allocations
 	Zenith_MemoryManagement::Initialise();
 
@@ -196,6 +200,8 @@ void Zenith_Core::Zenith_Shutdown()
 #ifdef ZENITH_WINDOWS
 void Zenith_Core::Zenith_Main()
 {
+	// Graphics options are populated inside Zenith_Init() for all platforms
+	// but we need window dimensions before that, so call it here too (idempotent)
 	Project_SetGraphicsOptions(s_xGraphicsOptions);
 	Zenith_Window::Inititalise("Zenith", s_xGraphicsOptions.m_uWindowWidth, s_xGraphicsOptions.m_uWindowHeight);
 	Zenith_Init();

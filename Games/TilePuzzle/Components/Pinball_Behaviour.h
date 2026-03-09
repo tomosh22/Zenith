@@ -40,6 +40,7 @@
 #include "DataStream/Zenith_DataStream.h"
 
 #include <cmath>
+#include <ctime>
 #include <filesystem>
 #include <random>
 
@@ -130,6 +131,7 @@ struct PinballGateData
 // ============================================================================
 enum PinballState : uint8_t
 {
+	PINBALL_STATE_GATE_SELECT,
 	PINBALL_STATE_READY,
 	PINBALL_STATE_LAUNCHING,
 	PINBALL_STATE_PLAYING,
@@ -190,7 +192,7 @@ public:
 
 	Pinball_Behaviour() = delete;
 	Pinball_Behaviour(Zenith_Entity& /*xParentEntity*/)
-		: m_eState(PINBALL_STATE_READY)
+		: m_eState(PINBALL_STATE_GATE_SELECT)
 		, m_uSessionScore(0)
 		, m_fPlungerPull(0.f)
 		, m_bPlungerDragging(false)
@@ -473,17 +475,35 @@ public:
 		// Create HUD elements for objective display
 		CreateHUDElements();
 
-		// Create the dynamic pinball scene
-		m_xPinballScene = Zenith_SceneManager::CreateEmptyScene("PinballPlay");
-		Zenith_SceneManager::SetActiveScene(m_xPinballScene);
+		// Check if any gates are cleared - if so, show gate select screen
+		bool bHasClearedGates = false;
+		for (uint32_t i = 0; i < s_uPB_MaxGates; ++i)
+		{
+			if (m_xSaveData.IsPinballGateCleared(i))
+			{
+				bHasClearedGates = true;
+				break;
+			}
+		}
 
-		CreatePlayfield();
-		SpawnBall();
+		if (bHasClearedGates)
+		{
+			// Start in gate selection mode
+			m_eState = PINBALL_STATE_GATE_SELECT;
+			m_bGateSelectMouseWasDown = false;
+		}
+		else
+		{
+			// No gates cleared yet - go straight to gameplay
+			m_xPinballScene = Zenith_SceneManager::CreateEmptyScene("PinballPlay");
+			Zenith_SceneManager::SetActiveScene(m_xPinballScene);
 
-		// Initialize gate attempt state
-		ResetGateAttempt();
+			CreatePlayfield();
+			SpawnBall();
+			ResetGateAttempt();
 
-		m_eState = PINBALL_STATE_READY;
+			m_eState = PINBALL_STATE_READY;
+		}
 
 		UpdateUI();
 	}
@@ -497,7 +517,22 @@ public:
 		// Handle escape to return to menu
 		if (Zenith_Input::WasKeyPressedThisFrame(ZENITH_KEY_ESCAPE))
 		{
-			ReturnToMenu();
+			if (m_eState == PINBALL_STATE_GATE_SELECT)
+			{
+				ReturnToMenu();
+			}
+			else
+			{
+				// Return to gate select if we came from it, otherwise menu
+				ReturnToMenu();
+			}
+			return;
+		}
+
+		// Gate selection screen
+		if (m_eState == PINBALL_STATE_GATE_SELECT)
+		{
+			UpdateGateSelectUI();
 			return;
 		}
 
@@ -519,6 +554,7 @@ public:
 				{
 					// Advance to next gate
 					m_bGateCleared = false;
+					m_bDailyBonusAwarded = false;
 					DetermineCurrentGate();
 					ResetGateAttempt();
 					RebuildPegsForCurrentGate();
@@ -554,6 +590,9 @@ public:
 		case PINBALL_STATE_BALL_LOST:
 			HandleBallLost();
 			break;
+
+		default:
+			break;
 		}
 
 		UpdateUI();
@@ -568,7 +607,7 @@ public:
 		ImGui::Text("Total Score: %u", m_xSaveData.uPinballScore);
 		ImGui::Text("Plunger Pull: %.2f", m_fPlungerPull);
 
-		const char* aszStateNames[] = { "Ready", "Launching", "Playing", "Ball Lost" };
+		const char* aszStateNames[] = { "Gate Select", "Ready", "Launching", "Playing", "Ball Lost" };
 		ImGui::Text("State: %s", aszStateNames[m_eState]);
 
 		ImGui::Separator();
@@ -652,12 +691,12 @@ private:
 		auto& xRegistry = Zenith_AssetRegistry::Get();
 		Zenith_TextureAsset* pxGridTex = Flux_Graphics::s_pxGridTexture;
 
-		// Ball - bright white
+		// Ball - cat-themed orange
 		m_xBallMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
 		m_xBallMaterial.Get()->SetName("PinballBall");
 		m_xBallMaterial.Get()->SetDiffuseTextureDirectly(pxGridTex);
-		m_xBallMaterial.Get()->SetBaseColor({ 0.9f, 0.9f, 0.95f, 1.f });
-		m_xBallMaterial.Get()->SetEmissiveColor(Zenith_Maths::Vector3(0.3f, 0.3f, 0.4f));
+		m_xBallMaterial.Get()->SetBaseColor({ 0.95f, 0.6f, 0.2f, 1.f });
+		m_xBallMaterial.Get()->SetEmissiveColor(Zenith_Maths::Vector3(0.5f, 0.3f, 0.1f));
 		m_xBallMaterial.Get()->SetEmissiveIntensity(0.3f);
 
 		// Walls - dark blue
@@ -666,11 +705,11 @@ private:
 		m_xWallMaterial.Get()->SetDiffuseTextureDirectly(pxGridTex);
 		m_xWallMaterial.Get()->SetBaseColor({ 0.15f, 0.18f, 0.3f, 1.f });
 
-		// Pegs - teal
+		// Pegs - warm paw-themed pink-brown
 		m_xObstacleMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
 		m_xObstacleMaterial.Get()->SetName("PinballObstacle");
 		m_xObstacleMaterial.Get()->SetDiffuseTextureDirectly(pxGridTex);
-		m_xObstacleMaterial.Get()->SetBaseColor({ 0.1f, 0.4f, 0.5f, 1.f });
+		m_xObstacleMaterial.Get()->SetBaseColor({ 0.55f, 0.35f, 0.3f, 1.f });
 
 		// Plunger - red
 		m_xPlungerMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
@@ -692,20 +731,20 @@ private:
 		m_xFloorMaterial.Get()->SetDiffuseTextureDirectly(pxGridTex);
 		m_xFloorMaterial.Get()->SetBaseColor({ 0.06f, 0.06f, 0.1f, 1.f });
 
-		// Lit peg material - same teal but with bright emissive for hit pegs
+		// Lit peg material - warm glow for hit pegs
 		m_xPegHitMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
 		m_xPegHitMaterial.Get()->SetName("PinballPegHit");
 		m_xPegHitMaterial.Get()->SetDiffuseTextureDirectly(pxGridTex);
-		m_xPegHitMaterial.Get()->SetBaseColor({ 0.2f, 0.6f, 0.7f, 1.f });
-		m_xPegHitMaterial.Get()->SetEmissiveColor(Zenith_Maths::Vector3(0.1f, 0.8f, 0.9f));
+		m_xPegHitMaterial.Get()->SetBaseColor({ 0.7f, 0.5f, 0.4f, 1.f });
+		m_xPegHitMaterial.Get()->SetEmissiveColor(Zenith_Maths::Vector3(0.8f, 0.5f, 0.2f));
 		m_xPegHitMaterial.Get()->SetEmissiveIntensity(1.2f);
 
-		// Flash peg material - bright emissive spike for the moment of impact
+		// Flash peg material - bright warm emissive spike for the moment of impact
 		m_xPegFlashMaterial.Set(xRegistry.Create<Zenith_MaterialAsset>());
 		m_xPegFlashMaterial.Get()->SetName("PinballPegFlash");
 		m_xPegFlashMaterial.Get()->SetDiffuseTextureDirectly(pxGridTex);
-		m_xPegFlashMaterial.Get()->SetBaseColor({ 0.5f, 0.9f, 1.0f, 1.f });
-		m_xPegFlashMaterial.Get()->SetEmissiveColor(Zenith_Maths::Vector3(0.4f, 1.0f, 1.0f));
+		m_xPegFlashMaterial.Get()->SetBaseColor({ 1.0f, 0.8f, 0.5f, 1.f });
+		m_xPegFlashMaterial.Get()->SetEmissiveColor(Zenith_Maths::Vector3(1.0f, 0.7f, 0.3f));
 		m_xPegFlashMaterial.Get()->SetEmissiveIntensity(3.0f);
 
 		// Use loaded procedural materials when available
@@ -827,7 +866,8 @@ private:
 		Zenith_Entity xEntity(pxScene, szName);
 		Zenith_TransformComponent& xTransform = xEntity.GetComponent<Zenith_TransformComponent>();
 		xTransform.SetPosition(xPos);
-		xTransform.SetScale(Zenith_Maths::Vector3(fScale));
+		// Paw-pad shape: flattened in Z for thematic paw-print look
+		xTransform.SetScale(Zenith_Maths::Vector3(fScale, fScale, fScale * 0.6f));
 
 		Zenith_ModelComponent& xModel = xEntity.AddComponent<Zenith_ModelComponent>();
 		xModel.AddMeshEntry(*m_pxSphereGeometry, *xMaterial.Get());
@@ -1438,6 +1478,15 @@ private:
 
 		// Save gate as cleared
 		m_xSaveData.SetPinballGateCleared(m_uCurrentGate);
+
+		// Daily pinball bonus: award 25 coins on first gate completion of the day
+		uint32_t uToday = GetTodayDate();
+		if (m_xSaveData.HasDailyPinballBonus(uToday))
+		{
+			m_xSaveData.ClaimDailyPinballBonus(uToday);
+			m_bDailyBonusAwarded = true;
+		}
+
 		Zenith_SaveData::Save("autosave", TilePuzzleSaveData::uGAME_SAVE_VERSION,
 			TilePuzzle_WriteSaveData, &m_xSaveData);
 
@@ -1720,7 +1769,14 @@ private:
 		{
 			if (m_bGateCleared)
 			{
-				snprintf(szBuffer, sizeof(szBuffer), "Gate %u Cleared!", m_uCurrentGate + 1);
+				if (m_bDailyBonusAwarded)
+				{
+					snprintf(szBuffer, sizeof(szBuffer), "Gate %u Cleared! +25 Daily Bonus!", m_uCurrentGate + 1);
+				}
+				else
+				{
+					snprintf(szBuffer, sizeof(szBuffer), "Gate %u Cleared!", m_uCurrentGate + 1);
+				}
 				pxGateStatus->SetText(szBuffer);
 				pxGateStatus->SetColor({ 0.2f, 1.f, 0.3f, 1.f });
 				pxGateStatus->SetVisible(true);
@@ -1785,6 +1841,228 @@ private:
 			break;
 		}
 		}
+	}
+
+	// ========================================================================
+	// Gate Selection UI
+	// ========================================================================
+
+	void UpdateGateSelectUI()
+	{
+		Zenith_UI::Zenith_UICanvas* pxCanvas = Zenith_UI::Zenith_UICanvas::GetPrimaryCanvas();
+		if (!pxCanvas)
+			return;
+
+		int32_t iWinWidth, iWinHeight;
+		Zenith_Window::GetInstance()->GetSize(iWinWidth, iWinHeight);
+		float fWinW = static_cast<float>(iWinWidth);
+		float fWinH = static_cast<float>(iWinHeight);
+
+		// Dark background (bounds: left, top, right, bottom)
+		pxCanvas->SubmitQuad(
+			Zenith_Maths::Vector4(0.f, 0.f, fWinW, fWinH),
+			Zenith_Maths::Vector4(0.08f, 0.08f, 0.15f, 1.f));
+
+		// Title
+		pxCanvas->SubmitText("Select Gate",
+			Zenith_Maths::Vector2(fWinW * 0.5f - 80.f, 40.f), 28.f,
+			Zenith_Maths::Vector4(1.f, 0.9f, 0.5f, 1.f));
+
+		// Gate buttons (5x2 grid)
+		float fBtnW = 80.f;
+		float fBtnH = 80.f;
+		float fGap = 15.f;
+		float fGridW = 5.f * fBtnW + 4.f * fGap;
+		float fStartX = (fWinW - fGridW) * 0.5f;
+		float fStartY = 100.f;
+
+		bool bMouseDown = Zenith_Input::IsMouseButtonHeld(ZENITH_MOUSE_BUTTON_LEFT);
+		Zenith_Maths::Vector2_64 xMousePos64;
+		Zenith_Input::GetMousePosition(xMousePos64);
+		float fMouseX = static_cast<float>(xMousePos64.x);
+		float fMouseY = static_cast<float>(xMousePos64.y);
+
+		bool bAllCleared = true;
+		for (uint32_t i = 0; i < s_uPB_MaxGates; ++i)
+		{
+			if (!m_xSaveData.IsPinballGateCleared(i))
+			{
+				bAllCleared = false;
+				break;
+			}
+		}
+
+		for (uint32_t i = 0; i < s_uPB_MaxGates; ++i)
+		{
+			uint32_t uCol = i % 5;
+			uint32_t uRow = i / 5;
+			float fX = fStartX + uCol * (fBtnW + fGap);
+			float fY = fStartY + uRow * (fBtnH + fGap);
+
+			bool bCleared = m_xSaveData.IsPinballGateCleared(i);
+			bool bSelectable = bCleared || (m_bGateActive && i == m_uCurrentGate);
+
+			Zenith_Maths::Vector4 xBtnColor;
+			if (bCleared)
+				xBtnColor = Zenith_Maths::Vector4(0.15f, 0.4f, 0.7f, 1.f);
+			else if (bSelectable)
+				xBtnColor = Zenith_Maths::Vector4(0.2f, 0.5f, 0.3f, 1.f);
+			else
+				xBtnColor = Zenith_Maths::Vector4(0.3f, 0.3f, 0.3f, 1.f);
+
+			pxCanvas->SubmitQuad(
+				Zenith_Maths::Vector4(fX, fY, fX + fBtnW, fY + fBtnH),
+				xBtnColor);
+
+			char szNum[8];
+			snprintf(szNum, sizeof(szNum), "%u", i + 1);
+			pxCanvas->SubmitText(szNum,
+				Zenith_Maths::Vector2(fX + fBtnW * 0.5f - 8.f, fY + 15.f), 24.f,
+				Zenith_Maths::Vector4(1.f, 1.f, 1.f, 1.f));
+
+			if (bCleared)
+			{
+				pxCanvas->SubmitText("OK",
+					Zenith_Maths::Vector2(fX + fBtnW * 0.5f - 10.f, fY + 50.f), 14.f,
+					Zenith_Maths::Vector4(0.3f, 1.f, 0.4f, 1.f));
+			}
+			else if (!bSelectable)
+			{
+				pxCanvas->SubmitText("LOCKED",
+					Zenith_Maths::Vector2(fX + fBtnW * 0.5f - 20.f, fY + 50.f), 10.f,
+					Zenith_Maths::Vector4(0.5f, 0.5f, 0.5f, 1.f));
+			}
+
+			if (bSelectable && !bMouseDown && m_bGateSelectMouseWasDown)
+			{
+				if (fMouseX >= fX && fMouseX <= fX + fBtnW &&
+					fMouseY >= fY && fMouseY <= fY + fBtnH)
+				{
+					EnterGateFromSelect(i);
+					m_bGateSelectMouseWasDown = bMouseDown;
+					return;
+				}
+			}
+		}
+
+		// Freeplay button (visible after all 10 cleared)
+		if (bAllCleared)
+		{
+			float fFreeX = (fWinW - 200.f) * 0.5f;
+			float fFreeY = fStartY + 2.f * (fBtnH + fGap) + 20.f;
+			pxCanvas->SubmitQuad(
+				Zenith_Maths::Vector4(fFreeX, fFreeY, fFreeX + 200.f, fFreeY + 50.f),
+				Zenith_Maths::Vector4(0.5f, 0.3f, 0.6f, 1.f));
+			pxCanvas->SubmitText("Freeplay",
+				Zenith_Maths::Vector2(fFreeX + 50.f, fFreeY + 12.f), 22.f,
+				Zenith_Maths::Vector4(1.f, 1.f, 1.f, 1.f));
+
+			if (!bMouseDown && m_bGateSelectMouseWasDown)
+			{
+				if (fMouseX >= fFreeX && fMouseX <= fFreeX + 200.f &&
+					fMouseY >= fFreeY && fMouseY <= fFreeY + 50.f)
+				{
+					EnterFreeplayFromSelect();
+					m_bGateSelectMouseWasDown = bMouseDown;
+					return;
+				}
+			}
+		}
+
+		// Back button
+		float fBackX = (fWinW - 150.f) * 0.5f;
+		float fBackY = fWinH - 80.f;
+		pxCanvas->SubmitQuad(
+			Zenith_Maths::Vector4(fBackX, fBackY, fBackX + 150.f, fBackY + 45.f),
+			Zenith_Maths::Vector4(0.4f, 0.2f, 0.2f, 1.f));
+		pxCanvas->SubmitText("Back",
+			Zenith_Maths::Vector2(fBackX + 50.f, fBackY + 10.f), 20.f,
+			Zenith_Maths::Vector4(1.f, 1.f, 1.f, 1.f));
+
+		if (!bMouseDown && m_bGateSelectMouseWasDown)
+		{
+			if (fMouseX >= fBackX && fMouseX <= fBackX + 150.f &&
+				fMouseY >= fBackY && fMouseY <= fBackY + 45.f)
+			{
+				ReturnToMenu();
+				m_bGateSelectMouseWasDown = bMouseDown;
+				return;
+			}
+		}
+
+		m_bGateSelectMouseWasDown = bMouseDown;
+	}
+
+	void EnterGateFromSelect(uint32_t uGateIndex)
+	{
+		m_uCurrentGate = uGateIndex;
+		m_xCurrentGateData = m_axGateData[uGateIndex];
+		m_uCurrentGatePegCount = m_xCurrentGateData.uNumPegs;
+		m_bGateActive = true;
+
+		// Create dynamic scene and enter gameplay
+		if (!m_xPinballScene.IsValid())
+		{
+			m_xPinballScene = Zenith_SceneManager::CreateEmptyScene("PinballPlay");
+			Zenith_SceneManager::SetActiveScene(m_xPinballScene);
+			CreatePlayfield();
+			SpawnBall();
+		}
+		else
+		{
+			// Rebuild pegs for selected gate
+			RebuildPegsForCurrentGate();
+			RespawnBall();
+		}
+
+		ResetGateAttempt();
+		m_eState = PINBALL_STATE_READY;
+	}
+
+	void EnterFreeplayFromSelect()
+	{
+		m_bGateActive = false;
+		m_uCurrentGate = 0;
+
+		// Create dynamic scene and enter gameplay
+		if (!m_xPinballScene.IsValid())
+		{
+			m_xPinballScene = Zenith_SceneManager::CreateEmptyScene("PinballPlay");
+			Zenith_SceneManager::SetActiveScene(m_xPinballScene);
+			CreatePlayfield();
+			SpawnBall();
+		}
+		else
+		{
+			DestroyPegs();
+			LoadPegLayouts();
+			m_uCurrentLayout = 0;
+			Zenith_SceneData* pxScene = Zenith_SceneManager::GetSceneData(m_xPinballScene);
+			if (pxScene)
+			{
+				CreatePegs(m_uCurrentLayout);
+			}
+			RespawnBall();
+		}
+
+		ResetGateAttempt();
+		m_eState = PINBALL_STATE_READY;
+	}
+
+	// ========================================================================
+	// Date Helper
+	// ========================================================================
+
+	static uint32_t GetTodayDate()
+	{
+		time_t xTime = time(nullptr);
+		struct tm xTm;
+#ifdef ZENITH_WINDOWS
+		localtime_s(&xTm, &xTime);
+#else
+		localtime_r(&xTime, &xTm);
+#endif
+		return static_cast<uint32_t>((xTm.tm_year + 1900) * 10000 + (xTm.tm_mon + 1) * 100 + xTm.tm_mday);
 	}
 
 	// ========================================================================
@@ -1858,4 +2136,10 @@ private:
 
 	// HUD state
 	bool m_bHUDCreated;
+
+	// Daily bonus
+	bool m_bDailyBonusAwarded = false;
+
+	// Gate select UI
+	bool m_bGateSelectMouseWasDown = false;
 };
